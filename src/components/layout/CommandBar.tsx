@@ -60,7 +60,7 @@ export default function CommandBar() {
               <Search className="w-4 h-4 text-ink-3" />
               <Command.Input
                 placeholder="Type a command or search…"
-                className="flex-1 py-4 bg-transparent text-ink placeholder:text-ink-3 outline-none font-sans text-sm"
+                className="flex-1 min-w-0 py-4 bg-transparent text-ink placeholder:text-ink-3 outline-none font-sans text-sm"
               />
               <kbd className="font-mono text-[10px] text-ink-3 px-1.5 py-0.5 rounded border border-white/10">ESC</kbd>
             </div>

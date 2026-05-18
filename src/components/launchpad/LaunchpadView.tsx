@@ -158,9 +158,9 @@ export default function LaunchpadView() {
         {/* CTA — Launch your own */}
         <div className="mt-7 aurora-border p-px">
           <div className="rounded-[18px] glass p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-5">
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <span className="section-label">Token factory</span>
-              <h2 className="font-display font-extrabold text-2xl text-ink mt-2 mb-2">
+              <h2 className="font-display font-extrabold text-2xl text-ink mt-2 mb-2 break-words">
                 Launch your own token in 60 seconds.
               </h2>
               <p className="font-sans text-sm text-ink-2 leading-relaxed max-w-2xl">

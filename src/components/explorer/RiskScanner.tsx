@@ -111,13 +111,13 @@ export default function RiskScanner() {
                   <option key={c.id} value={c.id}>{c.short} · {c.name}</option>
                 ))}
               </select>
-              <div className="flex-1 flex items-center gap-2 px-3 bg-bg-2 border border-white/10 rounded-lg focus-within:border-cyan/40">
+              <div className="flex-1 min-w-0 flex items-center gap-2 px-3 bg-bg-2 border border-white/10 rounded-lg focus-within:border-cyan/40">
                 <Search className="w-4 h-4 text-ink-3 flex-shrink-0" />
                 <input
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="0x... or paste a token address to scan"
-                  className="flex-1 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4 py-2.5"
+                  className="flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4 py-2.5"
                 />
               </div>
               <button

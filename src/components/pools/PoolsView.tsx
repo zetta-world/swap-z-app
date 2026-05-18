@@ -116,7 +116,7 @@ export default function PoolsView() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search by token symbol or DEX…"
-                className="flex-1 bg-transparent outline-none text-sm font-sans text-ink placeholder:text-ink-4"
+                className="flex-1 min-w-0 bg-transparent outline-none text-sm font-sans text-ink placeholder:text-ink-4"
               />
             </div>
             <select

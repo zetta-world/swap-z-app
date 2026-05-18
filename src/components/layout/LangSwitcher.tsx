@@ -39,7 +39,7 @@ export default function LangSwitcher() {
               className="flex items-center gap-2 px-2.5 py-2 rounded-md text-sm text-ink-2 hover:text-ink hover:bg-white/5 outline-none cursor-pointer"
             >
               <span className="text-base">{l.flag}</span>
-              <span className="flex-1 font-sans">{l.label}</span>
+              <span className="flex-1 min-w-0 font-sans truncate">{l.label}</span>
               {lang === l.id && <Check className="w-3.5 h-3.5 text-cyan" />}
             </DropdownMenu.Item>
           ))}

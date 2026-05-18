@@ -62,21 +62,21 @@ export default function ExecuteConfirmModal({ card, onClose }: Props) {
                 </div>
 
                 {(card.from || card.to) && (
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5 min-w-0">
                     {card.from && (
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Pay</div>
-                        <div className="font-display font-bold text-base text-ink">
+                        <div className="font-display font-bold text-base text-ink truncate">
                           {card.from.amount && <span>{card.from.amount} </span>}
                           {card.from.symbol}
                         </div>
                       </div>
                     )}
-                    <ArrowRight className="w-4 h-4 text-cyan" />
+                    <ArrowRight className="w-4 h-4 text-cyan flex-shrink-0" />
                     {card.to && (
-                      <div className="flex-1 text-right">
+                      <div className="flex-1 min-w-0 text-right">
                         <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Receive</div>
-                        <div className="font-display font-bold text-base text-ink">{card.to.symbol}</div>
+                        <div className="font-display font-bold text-base text-ink truncate">{card.to.symbol}</div>
                       </div>
                     )}
                   </div>

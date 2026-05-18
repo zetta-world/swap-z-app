@@ -127,29 +127,29 @@ export default function OrdersView() {
                 </div>
 
                 <Field label={tab === "dca" ? "Total budget" : "Amount"}>
-                  <div className="flex items-center gap-2 bg-bg-2 border border-white/10 rounded-lg px-3 py-2 focus-within:border-violet/30">
+                  <div className="flex items-center gap-2 bg-bg-2 border border-white/10 rounded-lg px-3 py-2 focus-within:border-violet/30 min-w-0">
                     <input
                       inputMode="decimal"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                       placeholder="0.00"
-                      className="flex-1 bg-transparent outline-none text-2xl font-display font-bold text-ink placeholder:text-ink-4"
+                      className="flex-1 min-w-0 bg-transparent outline-none text-2xl font-display font-bold text-ink placeholder:text-ink-4"
                     />
-                    <span className="font-display font-bold text-sm text-ink-2">{fromToken?.symbol}</span>
+                    <span className="font-display font-bold text-sm text-ink-2 flex-shrink-0">{fromToken?.symbol}</span>
                   </div>
                 </Field>
 
                 {/* Type-specific fields */}
                 {tab === "limit" && (
                   <Field label={`Trigger price (${toToken?.symbol} in USD)`}>
-                    <div className="flex items-center gap-2 bg-bg-2 border border-white/10 rounded-lg px-3 py-2 focus-within:border-violet/30">
-                      <span className="font-mono text-ink-3">$</span>
+                    <div className="flex items-center gap-2 bg-bg-2 border border-white/10 rounded-lg px-3 py-2 focus-within:border-violet/30 min-w-0">
+                      <span className="font-mono text-ink-3 flex-shrink-0">$</span>
                       <input
                         inputMode="decimal"
                         value={limitPrice}
                         onChange={(e) => setLimitPrice(e.target.value)}
                         placeholder="0.00"
-                        className="flex-1 bg-transparent outline-none text-xl font-display font-bold text-ink placeholder:text-ink-4"
+                        className="flex-1 min-w-0 bg-transparent outline-none text-xl font-display font-bold text-ink placeholder:text-ink-4"
                       />
                     </div>
                   </Field>
