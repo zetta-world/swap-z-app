@@ -42,7 +42,7 @@ export default function ComingSoon({
               <span className="font-mono text-[10px] text-gold tracking-widest uppercase">{phase}</span>
             </div>
 
-            <h1 className="font-display font-extrabold text-[clamp(2rem,5vw,3.6rem)] leading-tight tracking-tight text-ink mb-4">
+            <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-tight tracking-tight text-ink mb-4">
               {title}
             </h1>
             <p className="font-sans text-lg text-ink-2 leading-relaxed mb-8 max-w-2xl">

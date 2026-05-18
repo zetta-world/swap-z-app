@@ -14,7 +14,7 @@ const LiquidNexus = dynamic(() => import("@/components/viz/LiquidNexus"), { ssr:
 
 export default function SwapDashboard() {
   return (
-    <div className="relative min-h-[calc(100vh-4rem)]">
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       {/* Cinematic 3D backdrop */}
       <div className="absolute inset-0 pointer-events-none">
         <LiquidNexus />

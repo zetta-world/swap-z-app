@@ -54,19 +54,19 @@ export default function OrdersView() {
   }, [tab, amount, intervals, freq, fromToken, toToken, limitPrice]);
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)]">
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       <div className="absolute inset-0 grid-bg opacity-30 pointer-events-none" />
-      <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] rounded-full bg-violet/10 blur-3xl pointer-events-none" />
+      <div className="absolute top-1/4 left-1/4 w-[60vw] max-w-[400px] aspect-square rounded-full bg-violet/10 blur-3xl pointer-events-none" />
 
-      <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-8 lg:py-10 max-w-6xl mx-auto">
+      <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-8 lg:py-10 max-w-6xl mx-auto w-full">
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-7">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity className="w-4 h-4 text-violet" />
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <Activity className="w-4 h-4 text-violet flex-shrink-0" />
             <span className="font-mono text-[10px] text-violet/80 tracking-widest uppercase">
               Order Engine · Limit · DCA · TWAP
             </span>
           </div>
-          <h1 className="font-display font-extrabold text-[clamp(2rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
+          <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3 break-words">
             Set and <span className="text-grad-aurora">walk away</span>
           </h1>
           <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">
@@ -281,14 +281,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function ChainSelect({ chain, onChange }: { chain: ChainId; onChange: (c: ChainId) => void }) {
   const cur = CHAINS.find((c) => c.id === chain);
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <select
         value={chain}
         onChange={(e) => onChange(e.target.value as ChainId)}
-        className="appearance-none bg-bg-2 border border-white/10 rounded-lg pl-6 pr-7 py-2 text-sm font-mono uppercase tracking-wider text-ink-2 outline-none focus:border-violet/30 cursor-pointer w-full"
+        aria-label="Chain"
+        className="appearance-none bg-bg-2 border border-white/10 rounded-lg pl-6 pr-7 py-2 text-sm font-mono uppercase tracking-wider text-ink-2 outline-none focus:border-violet/30 cursor-pointer w-full truncate"
       >
         {CHAINS.filter((c) => !c.comingSoon).map((c) => (
-          <option key={c.id} value={c.id}>{c.short} · {c.name}</option>
+          <option key={c.id} value={c.id}>{c.short}</option>
         ))}
       </select>
       <span className="absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full pointer-events-none" style={{ background: cur?.color }} />
@@ -299,14 +300,15 @@ function ChainSelect({ chain, onChange }: { chain: ChainId; onChange: (c: ChainI
 
 function TokenSelect({ token, tokens, onChange }: { token: Token | undefined; tokens: Token[]; onChange: (t: Token) => void }) {
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <select
         value={token?.address ?? ""}
         onChange={(e) => {
           const t = tokens.find((x) => x.address === e.target.value);
           if (t) onChange(t);
         }}
-        className="appearance-none w-full bg-bg-2 border border-white/10 rounded-lg pl-3 pr-7 py-2 text-sm font-display font-bold text-ink outline-none focus:border-violet/30 cursor-pointer"
+        aria-label="Token"
+        className="appearance-none w-full bg-bg-2 border border-white/10 rounded-lg pl-3 pr-7 py-2 text-sm font-display font-bold text-ink outline-none focus:border-violet/30 cursor-pointer truncate"
       >
         {tokens.map((t) => (
           <option key={t.address} value={t.address}>{t.symbol}</option>

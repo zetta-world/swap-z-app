@@ -73,7 +73,7 @@ const STATUS_CFG = {
 
 export default function GovernanceView() {
   return (
-    <div className="relative min-h-[calc(100vh-4rem)]">
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       <div className="absolute inset-0 grid-bg opacity-30 pointer-events-none" />
       <div className="absolute top-1/3 right-1/4 w-[420px] h-[420px] rounded-full bg-violet/10 blur-3xl pointer-events-none" />
 
@@ -85,7 +85,7 @@ export default function GovernanceView() {
               ZETTA DAO · stake-weighted voting · hybrid on/off-chain
             </span>
           </div>
-          <h1 className="font-display font-extrabold text-[clamp(2rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
+          <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
             <span className="text-grad-aurora">Governance</span>
           </h1>
           <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">

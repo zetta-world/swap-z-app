@@ -41,7 +41,7 @@ const RATING_CFG = {
 
 export default function LaunchpadView() {
   return (
-    <div className="relative min-h-[calc(100vh-4rem)]">
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       <div className="absolute inset-0 grid-bg opacity-30 pointer-events-none" />
       <div className="absolute top-1/3 right-1/3 w-[480px] h-[480px] rounded-full bg-gold/10 blur-3xl pointer-events-none" />
 
@@ -53,7 +53,7 @@ export default function LaunchpadView() {
               Z-PAD · Token Factory · Fair-Launch AMM
             </span>
           </div>
-          <h1 className="font-display font-extrabold text-[clamp(2rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
+          <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
             Launchpad <span className="text-grad-aurora">Universe</span>
           </h1>
           <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">

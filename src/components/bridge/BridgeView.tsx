@@ -46,21 +46,21 @@ export default function BridgeView() {
   };
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)]">
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       <div className="absolute inset-0 grid-bg opacity-30 pointer-events-none" />
-      <div className="absolute top-1/3 left-1/4 w-[420px] h-[420px] rounded-full bg-cyan/10 blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/3 right-1/4 w-[360px] h-[360px] rounded-full bg-violet/15 blur-3xl pointer-events-none" />
+      <div className="absolute top-1/3 left-1/4 w-[60vw] max-w-[420px] aspect-square rounded-full bg-cyan/10 blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/3 right-1/4 w-[55vw] max-w-[360px] aspect-square rounded-full bg-violet/15 blur-3xl pointer-events-none" />
 
-      <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-8 lg:py-10 max-w-6xl mx-auto">
+      <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-8 lg:py-10 max-w-6xl mx-auto w-full">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <Workflow className="w-4 h-4 text-cyan" />
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <Workflow className="w-4 h-4 text-cyan flex-shrink-0" />
             <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">
               Cross-Chain Settlement · 11 networks
             </span>
           </div>
-          <h1 className="font-display font-extrabold text-[clamp(2rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
+          <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3 break-words">
             One Router. <span className="text-grad-aurora">Every Chain.</span>
           </h1>
           <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">
@@ -243,12 +243,12 @@ interface BoxProps {
 function ChainTokenBox({ side, chain, onChain, token, onToken, amount, onAmount, amountEditable, usd }: BoxProps) {
   const chainObj = CHAINS.find((c) => c.id === chain);
   return (
-    <div className="rounded-xl border border-white/5 bg-bg-1/30 p-3.5 hover:border-white/10 transition-colors">
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">{side}</span>
+    <div className="rounded-xl border border-white/5 bg-bg-1/30 p-3.5 hover:border-white/10 transition-colors min-w-0">
+      <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
+        <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest truncate">{side}</span>
         <ChainPicker chain={chain} onChange={onChain} />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0">
         <input
           inputMode="decimal"
           value={amount}
@@ -256,19 +256,19 @@ function ChainTokenBox({ side, chain, onChain, token, onToken, amount, onAmount,
           placeholder="0.00"
           readOnly={!amountEditable}
           className={cn(
-            "flex-1 bg-transparent text-2xl sm:text-3xl font-display font-bold text-ink outline-none placeholder:text-ink-4",
+            "flex-1 min-w-0 bg-transparent text-2xl sm:text-3xl font-display font-bold text-ink outline-none placeholder:text-ink-4",
             !amountEditable && "cursor-default",
           )}
         />
         <TokenChip token={token} chain={chain} onToken={onToken} />
       </div>
-      <div className="flex items-center justify-between mt-2">
-        <span className="font-mono text-[11px] text-ink-3">
+      <div className="flex items-center justify-between mt-2 gap-2 min-w-0">
+        <span className="font-mono text-[11px] text-ink-3 truncate">
           {usd !== undefined ? formatUsd(usd) : "$0.00"}
         </span>
-        <span className="font-mono text-[10px] text-ink-3 flex items-center gap-1">
+        <span className="font-mono text-[10px] text-ink-3 flex items-center gap-1 flex-shrink-0">
           <span className="w-1.5 h-1.5 rounded-full" style={{ background: chainObj?.color }} />
-          {chainObj?.name}
+          <span className="truncate max-w-[100px]">{chainObj?.name}</span>
         </span>
       </div>
     </div>
@@ -278,14 +278,15 @@ function ChainTokenBox({ side, chain, onChain, token, onToken, amount, onAmount,
 function ChainPicker({ chain, onChange }: { chain: ChainId; onChange: (c: ChainId) => void }) {
   const cur = CHAINS.find((c) => c.id === chain);
   return (
-    <div className="relative">
+    <div className="relative flex-shrink-0 max-w-[110px]">
       <select
         value={chain}
         onChange={(e) => onChange(e.target.value as ChainId)}
-        className="appearance-none bg-bg-2 border border-white/10 rounded-lg pl-2.5 pr-7 py-1.5 text-[11px] font-mono uppercase tracking-wider text-ink-2 outline-none focus:border-cyan/40 cursor-pointer"
+        aria-label="Chain"
+        className="appearance-none bg-bg-2 border border-white/10 rounded-lg pl-5 pr-6 py-1.5 text-[11px] font-mono uppercase tracking-wider text-ink-2 outline-none focus:border-cyan/40 cursor-pointer w-full truncate"
       >
         {CHAINS.map((c) => (
-          <option key={c.id} value={c.id}>{c.short} · {c.name}</option>
+          <option key={c.id} value={c.id}>{c.short}</option>
         ))}
       </select>
       <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-ink-3 pointer-events-none" />
@@ -297,14 +298,15 @@ function ChainPicker({ chain, onChange }: { chain: ChainId; onChange: (c: ChainI
 function TokenChip({ token, chain, onToken }: { token: Token | undefined; chain: ChainId; onToken: (t: Token) => void }) {
   const tokens = tokensByChain(chain);
   return (
-    <div className="relative">
+    <div className="relative flex-shrink-0 max-w-[120px]">
       <select
         value={token?.address ?? ""}
         onChange={(e) => {
           const t = tokens.find((x) => x.address === e.target.value);
           if (t) onToken(t);
         }}
-        className="appearance-none bg-white/[0.03] border border-white/5 rounded-xl pl-2.5 pr-8 py-2 text-sm font-display font-bold text-ink outline-none focus:border-cyan/40 cursor-pointer hover:border-white/10"
+        aria-label="Token"
+        className="appearance-none bg-white/[0.03] border border-white/5 rounded-xl pl-2.5 pr-7 py-2 text-sm font-display font-bold text-ink outline-none focus:border-cyan/40 cursor-pointer hover:border-white/10 w-full truncate"
       >
         {tokens.map((t) => (
           <option key={t.address} value={t.address}>{t.symbol}</option>

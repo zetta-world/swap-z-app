@@ -24,7 +24,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         <Topbar onOpenMobileNav={() => setMobileOpen(true)} />
-        <main className="flex-1">
+        <main className="flex-1 min-w-0 overflow-x-hidden">
           {children}
         </main>
       </div>

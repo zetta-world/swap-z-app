@@ -88,7 +88,7 @@ export default function PortfolioView() {
   const mask = (v: string) => (hidden ? "•••••" : v);
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)]">
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       <div className="absolute inset-0 grid-bg opacity-30 pointer-events-none" />
       <div className="absolute top-32 right-1/4 w-[420px] h-[420px] rounded-full bg-green/10 blur-3xl pointer-events-none" />
 
@@ -102,7 +102,7 @@ export default function PortfolioView() {
           </div>
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div>
-              <h1 className="font-display font-extrabold text-[clamp(2rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
+              <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
                 Portfolio <span className="text-grad-aurora">snapshot</span>
               </h1>
               <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">
