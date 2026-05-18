@@ -3,38 +3,44 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
-import { Sparkles, X, Send, Zap, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Sparkles, X, Send, Zap, RefreshCw, Scan, MessageSquare, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
+import ActionCardView from "./ActionCardView";
+import ExecuteConfirmModal from "./ExecuteConfirmModal";
+import { cn } from "@/lib/cn";
 
-/**
- * ZION drawer — connects to /api/zion which streams Claude Haiku 4.5
- * (with prompt caching on the system prompt) over a plain text stream.
- *
- * We re-trigger an analysis whenever the drawer opens or the pair changes.
- * Follow-up questions ("why...?") are sent as message=... and skip re-fetch.
- */
+type Mode = "analyze_pair" | "scan_opportunities" | "ask";
+
+const MODE_META: { id: Mode; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "analyze_pair",       label: "Pair",          Icon: Search   },
+  { id: "scan_opportunities", label: "Opportunities", Icon: Scan     },
+  { id: "ask",                label: "Ask",           Icon: MessageSquare },
+];
+
 export default function ZionDrawer() {
   const { zionOpen, setZion } = useUI();
   const { fromToken, toToken, fromChain, amountIn } = useSwap();
 
-  const [stream, setStream] = useState("");
+  const [mode, setMode] = useState<Mode>("analyze_pair");
+  const [buffer, setBuffer] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [question, setQuestion] = useState("");
-  const [transcript, setTranscript] = useState<{ q: string; a: string }[]>([]);
+  const [executing, setExecuting] = useState<ActionCard | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const run = useCallback(async (followUp = "") => {
-    // Cancel any in-flight stream
+  const run = useCallback(async (runMode: Mode, followUp: string) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    setStream("");
+    setBuffer("");
     setStreaming(true);
 
     const params = new URLSearchParams({
+      mode:     runMode === "ask" ? "ask" : runMode,
       chain:    fromChain,
       fromAddr: fromToken?.address ?? "",
       toAddr:   toToken?.address   ?? "",
@@ -45,59 +51,65 @@ export default function ZionDrawer() {
     try {
       const res = await fetch(`/api/zion?${params.toString()}`, { signal: ctrl.signal });
       if (!res.ok || !res.body) {
-        setStream(`[ZION offline: ${res.status} ${res.statusText}]`);
+        setBuffer(`[ZION offline: ${res.status} ${res.statusText}]`);
         setStreaming(false);
         return;
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buf = "";
+      let acc = "";
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        setStream(buf);
-        // auto-scroll
+        acc += decoder.decode(value, { stream: true });
+        setBuffer(acc);
         requestAnimationFrame(() => {
-          scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+          const el = scrollRef.current;
+          if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
         });
       }
-      // Push to transcript if this was a follow-up question
-      if (followUp) setTranscript((t) => [...t, { q: followUp, a: buf }]);
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
-        setStream((s) => s + `\n\n[stream interrupted]`);
+        setBuffer((s) => s + `\n\n[stream interrupted]`);
       }
     } finally {
       setStreaming(false);
     }
   }, [fromChain, fromToken?.address, toToken?.address, amountIn]);
 
-  // Auto-run on drawer open or pair change
+  // Auto-trigger when drawer opens, mode changes, or pair changes
   useEffect(() => {
     if (!zionOpen) {
       abortRef.current?.abort();
       return;
     }
-    setTranscript([]);
     setQuestion("");
-    run("");
+    if (mode === "ask") {
+      // In ask mode, wait for a question
+      setBuffer("");
+      return;
+    }
+    run(mode, "");
     return () => abortRef.current?.abort();
-  }, [zionOpen, fromToken?.symbol, toToken?.symbol, fromChain, run]);
+  }, [zionOpen, mode, fromToken?.symbol, toToken?.symbol, fromChain, run]);
 
   const onAsk = (e: React.FormEvent) => {
     e.preventDefault();
     const q = question.trim();
     if (!q || streaming) return;
     setQuestion("");
-    run(q);
+    setMode("ask");
+    run("ask", q);
   };
+
+  // Parse the rolling buffer into terminal text + cards
+  const parsed = useMemo(() => parseZionStream(buffer), [buffer]);
 
   return (
     <Dialog.Root open={zionOpen} onOpenChange={setZion}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-bg/60 backdrop-blur-sm animate-fade-in" />
-        <Dialog.Content className="fixed right-0 top-0 bottom-0 z-50 w-full sm:w-[440px] outline-none">
+        <Dialog.Content className="fixed right-0 top-0 bottom-0 z-50 w-full sm:w-[460px] outline-none">
           <Dialog.Title className="sr-only">ZION AI Advisory</Dialog.Title>
           <motion.div
             initial={{ x: "100%" }}
@@ -118,18 +130,18 @@ export default function ZionDrawer() {
                 <div>
                   <div className="font-display font-bold text-sm text-ink leading-none">ZION</div>
                   <div className="font-mono text-[9px] text-gold/70 tracking-widest uppercase mt-1">
-                    Haiku 4.5 · advisory · {streaming ? "thinking…" : "ready"}
+                    Haiku 4.5 · {streaming ? "thinking…" : "ready"}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => run("")}
-                  className="w-8 h-8 rounded-md flex items-center justify-center text-ink-3 hover:text-gold hover:bg-gold/5"
-                  title="Re-run analysis"
-                  disabled={streaming}
+                  onClick={() => run(mode, "")}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-ink-3 hover:text-gold hover:bg-gold/5 disabled:opacity-40"
+                  title="Re-run"
+                  disabled={streaming || mode === "ask"}
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${streaming ? "animate-spin" : ""}`} />
+                  <RefreshCw className={cn("w-3.5 h-3.5", streaming && "animate-spin")} />
                 </button>
                 <Dialog.Close asChild>
                   <button className="w-8 h-8 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
@@ -139,48 +151,86 @@ export default function ZionDrawer() {
               </div>
             </div>
 
-            {/* Pair header */}
-            <div className="p-5 pb-3 flex-shrink-0">
-              <div className="rounded-xl border border-white/5 bg-bg-1/40 p-3.5">
-                <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">Analyzing</div>
-                <div className="flex items-center justify-between">
-                  <div className="font-display font-bold text-base text-ink">
-                    {fromToken?.symbol ?? "—"} <span className="text-ink-3 mx-1.5">→</span> {toToken?.symbol ?? "—"}
-                  </div>
-                  <span className="font-mono text-[10px] text-ink-3 tracking-wider uppercase">{fromChain}</span>
-                </div>
+            {/* Mode tabs */}
+            <div className="px-5 pt-3 flex-shrink-0">
+              <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/[0.03] border border-white/5">
+                {MODE_META.map((m) => {
+                  const active = mode === m.id;
+                  const Icon = m.Icon;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setMode(m.id)}
+                      disabled={streaming}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all disabled:opacity-50",
+                        active
+                          ? "bg-gold/15 text-gold border border-gold/30"
+                          : "text-ink-3 hover:text-ink-2 border border-transparent",
+                      )}
+                    >
+                      <Icon className="w-3 h-3" />
+                      {m.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Terminal */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-3">
+            {/* Pair context — visible only for analyze_pair and ask */}
+            {mode !== "scan_opportunities" && (
+              <div className="px-5 pt-3 flex-shrink-0">
+                <div className="rounded-xl border border-white/5 bg-bg-1/40 p-3">
+                  <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">
+                    {mode === "ask" ? "Context" : "Analyzing"}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-display font-bold text-sm text-ink">
+                      {fromToken?.symbol ?? "—"}{" "}
+                      <span className="text-ink-3 mx-1">→</span>{" "}
+                      {toToken?.symbol ?? "—"}
+                    </div>
+                    <span className="font-mono text-[9px] text-ink-3 tracking-wider uppercase">{fromChain}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Body */}
+            <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+              {/* Terminal */}
               <div className="rounded-xl border border-gold/15 bg-black/40 overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/5 bg-white/[0.02] sticky top-0">
+                <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-white/[0.02]">
                   <span className="w-2 h-2 rounded-full bg-red/60" />
                   <span className="w-2 h-2 rounded-full bg-gold/60" />
                   <span className="w-2 h-2 rounded-full bg-green/60" />
-                  <span className="ml-2 font-mono text-[10px] text-ink-3 tracking-wider">ZION · claude-haiku-4-5</span>
+                  <span className="ml-2 font-mono text-[10px] text-ink-3 tracking-wider">
+                    ZION · {modeLabel(mode)}
+                  </span>
                   <div className="flex-1" />
                   <span className="flex items-center gap-1 font-mono text-[9px] text-gold/70 tracking-widest uppercase">
                     <Zap className="w-2.5 h-2.5" /> {streaming ? "streaming" : "idle"}
                   </span>
                 </div>
-                <div className="p-4 font-mono text-[11px] sm:text-xs leading-[1.75] whitespace-pre-wrap min-h-[320px] text-ink-2">
-                  {stream || (streaming ? "" : "Awaiting analysis…")}
+                <div className="p-4 font-mono text-[11px] sm:text-xs leading-[1.75] whitespace-pre-wrap min-h-[220px] text-ink-2">
+                  {parsed.visible || (streaming
+                    ? ""
+                    : mode === "ask"
+                      ? "Ask ZION anything about your current pair, market conditions, or execution timing."
+                      : "Awaiting analysis…"
+                  )}
                   {streaming && <span className="term-cursor" />}
                 </div>
               </div>
 
-              {/* Past Q&A in transcript */}
-              {transcript.length > 0 && (
-                <div className="mt-3 space-y-3">
-                  {transcript.slice(0, -1).reverse().map((t, i) => (
-                    <div key={i} className="rounded-xl border border-white/5 bg-bg-1/40 p-3">
-                      <div className="font-mono text-[10px] text-cyan tracking-widest uppercase mb-1.5">Question</div>
-                      <div className="font-sans text-xs text-ink-2 mb-2">{t.q}</div>
-                      <div className="font-mono text-[10px] text-gold/80 tracking-widest uppercase mb-1.5">ZION</div>
-                      <div className="font-mono text-[11px] text-ink-2 leading-relaxed whitespace-pre-wrap">{t.a}</div>
-                    </div>
+              {/* Action cards */}
+              {parsed.cards.length > 0 && (
+                <div className="space-y-2">
+                  <div className="font-mono text-[10px] text-cyan tracking-widest uppercase">
+                    {parsed.cards.length === 1 ? "Executable proposal" : `${parsed.cards.length} executable proposals`}
+                  </div>
+                  {parsed.cards.map((c, i) => (
+                    <ActionCardView key={i} card={c} index={i} onExecute={setExecuting} />
                   ))}
                 </div>
               )}
@@ -192,7 +242,7 @@ export default function ZionDrawer() {
                 <input
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  placeholder={streaming ? "ZION is responding…" : "Ask ZION about this swap…"}
+                  placeholder={streaming ? "ZION is responding…" : "Ask ZION anything…"}
                   disabled={streaming}
                   className="flex-1 bg-transparent outline-none text-sm font-sans text-ink placeholder:text-ink-4 disabled:opacity-50"
                 />
@@ -205,12 +255,20 @@ export default function ZionDrawer() {
                 </button>
               </div>
               <p className="font-mono text-[9px] text-ink-4 mt-2 text-center">
-                ZION operates in advisory mode · execute swaps manually
+                ZION proposes · you confirm · advisory only
               </p>
             </form>
           </motion.div>
         </Dialog.Content>
       </Dialog.Portal>
+
+      <ExecuteConfirmModal card={executing} onClose={() => setExecuting(null)} />
     </Dialog.Root>
   );
+}
+
+function modeLabel(m: Mode): string {
+  if (m === "analyze_pair")       return "pair analysis";
+  if (m === "scan_opportunities") return "opportunity scout";
+  return "conversation";
 }
