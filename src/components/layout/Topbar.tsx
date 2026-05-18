@@ -1,10 +1,11 @@
 "use client";
 
-import { Search, Sparkles, Bell, Menu, Wallet } from "lucide-react";
+import { Search, Sparkles, Bell, Menu } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
 import { cn } from "@/lib/cn";
 import ModeSwitcher from "./ModeSwitcher";
 import LangSwitcher from "./LangSwitcher";
+import ConnectButton from "@/components/wallet/ConnectButton";
 
 export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const { setCommand, toggleZion, zionOpen } = useUI();
@@ -93,12 +94,8 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
           <Bell className="w-4 h-4" />
         </button>
 
-        {/* Connect wallet — icon-only on tiny screens, full on sm+ */}
-        <button className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 sm:px-3.5 rounded-lg bg-grad-cyan text-bg font-display font-bold text-xs sm:text-[13px] tracking-wide whitespace-nowrap hover:opacity-90 transition-opacity shadow-glow-cyan/30">
-          <Wallet className="w-3.5 h-3.5 sm:hidden" />
-          <span className="hidden sm:inline">Connect Wallet</span>
-          <span className="hidden xs:inline sm:hidden">Connect</span>
-        </button>
+        {/* Connect wallet — real wagmi integration */}
+        <ConnectButton />
       </div>
     </header>
   );

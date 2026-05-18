@@ -1,8 +1,10 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { WagmiProvider } from "wagmi";
 import { useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
+import { wagmiConfig } from "@/lib/wagmi";
 
 export default function Providers({ children }: { children: ReactNode }) {
   const [qc] = useState(
@@ -19,20 +21,22 @@ export default function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={qc}>
-      {children}
-      <Toaster
-        position="top-right"
-        theme="dark"
-        toastOptions={{
-          style: {
-            background: "rgba(8,11,34,0.92)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            backdropFilter: "blur(20px)",
-            color: "#F2F4FF",
-          },
-        }}
-      />
-    </QueryClientProvider>
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={qc}>
+        {children}
+        <Toaster
+          position="top-right"
+          theme="dark"
+          toastOptions={{
+            style: {
+              background: "rgba(8,11,34,0.92)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              backdropFilter: "blur(20px)",
+              color: "#F2F4FF",
+            },
+          }}
+        />
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }
