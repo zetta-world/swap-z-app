@@ -38,8 +38,9 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
         <button
+          type="button"
           className={cn(
-            "flex items-center gap-2 px-2.5 py-2 rounded-xl border border-white/5 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/10 transition-colors flex-shrink-0",
+            "flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-2 rounded-xl border border-white/5 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/10 transition-colors flex-shrink-0 max-w-[140px]",
             !value && "border-cyan/30 bg-cyan/5 hover:bg-cyan/10",
           )}
         >
@@ -52,122 +53,183 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
                 {value.symbol.slice(0, 2)}
               </span>
               <div className="text-left min-w-0">
-                <div className="font-display font-bold text-sm text-ink leading-none">{value.symbol}</div>
-                <div className="font-mono text-[9px] text-ink-3 uppercase tracking-wider mt-1">{value.chain}</div>
+                <div className="font-display font-bold text-sm text-ink leading-none truncate">{value.symbol}</div>
+                <div className="font-mono text-[9px] text-ink-3 uppercase tracking-wider mt-1 truncate">{value.chain}</div>
               </div>
-              <ChevronDown className="w-3.5 h-3.5 text-ink-3 ml-1" />
+              <ChevronDown className="w-3.5 h-3.5 text-ink-3 flex-shrink-0" />
             </>
           ) : (
             <>
-              <span className="font-display font-bold text-sm text-cyan">Select token</span>
-              <ChevronDown className="w-3.5 h-3.5 text-cyan ml-1" />
+              <span className="font-display font-bold text-sm text-cyan whitespace-nowrap">Select</span>
+              <ChevronDown className="w-3.5 h-3.5 text-cyan flex-shrink-0" />
             </>
           )}
         </button>
       </Dialog.Trigger>
 
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-bg/80 backdrop-blur-sm animate-fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-[10%] z-50 w-[95%] max-w-lg -translate-x-1/2 outline-none animate-scale-in">
-          <div className="rounded-2xl border border-white/10 glass-strong shadow-card overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
-              <Dialog.Title className="font-display font-bold text-base text-ink">
-                Select a token <span className="font-mono text-[10px] text-ink-3 ml-2 uppercase tracking-widest">{side}</span>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-bg/85 backdrop-blur-md animate-fade-in" />
+
+        {/*
+         * Mobile (< sm): bottom-sheet — full width minus tiny margins,
+         *   slides up from below, fills most of the screen height.
+         * Desktop (sm+): centered modal — top-anchored, bounded width.
+         */}
+        <Dialog.Content
+          className={cn(
+            "fixed z-50 outline-none flex flex-col",
+            // Mobile bottom sheet
+            "inset-x-2 bottom-2 top-14",
+            // Desktop centered modal
+            "sm:inset-x-auto sm:bottom-auto sm:top-[8%]",
+            "sm:left-1/2 sm:-translate-x-1/2",
+            "sm:w-[95%] sm:max-w-lg sm:max-h-[85vh]",
+            "animate-scale-in",
+          )}
+        >
+          <div className="flex flex-col flex-1 min-h-0 rounded-2xl border border-white/10 glass-strong shadow-card overflow-hidden">
+            {/* ─── Header ──────────────────────────────────────────── */}
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-white/5 flex-shrink-0">
+              <Dialog.Title className="font-display font-bold text-sm sm:text-base text-ink flex items-center gap-2 min-w-0">
+                <span className="truncate">Select a token</span>
+                <span className="font-mono text-[9px] sm:text-[10px] text-ink-3 uppercase tracking-widest border border-white/10 bg-white/[0.03] px-1.5 py-0.5 rounded flex-shrink-0">
+                  {side}
+                </span>
               </Dialog.Title>
               <Dialog.Close asChild>
-                <button className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
+                <button
+                  type="button"
+                  aria-label="Close"
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5 flex-shrink-0"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </Dialog.Close>
             </div>
 
-            {/* Search */}
-            <div className="px-5 py-4 border-b border-white/5">
-              <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/[0.03] border border-white/5 focus-within:border-cyan/30">
+            {/* ─── Search + chain pills ────────────────────────────── */}
+            <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-white/5 space-y-3 flex-shrink-0">
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-white/[0.03] border border-white/5 focus-within:border-cyan/30">
                 <Search className="w-4 h-4 text-ink-3 flex-shrink-0" />
                 <input
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Symbol, name, or address"
-                  className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-3 outline-none font-sans"
+                  className="flex-1 min-w-0 bg-transparent text-sm text-ink placeholder:text-ink-3 outline-none font-sans"
                 />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="flex-shrink-0 text-ink-3 hover:text-ink"
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
-              {/* Chain pills */}
-              <div className="flex gap-1.5 mt-3 overflow-x-auto no-scrollbar -mx-1 px-1">
-                <button
-                  onClick={() => setChain("all")}
-                  className={cn(
-                    "flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-mono uppercase tracking-wider border transition-all",
-                    chain === "all"
-                      ? "bg-white/[0.06] border-white/15 text-ink"
-                      : "border-white/5 text-ink-3 hover:text-ink-2",
-                  )}
-                >
-                  All
-                </button>
-                {CHAINS.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setChain(c.id)}
-                    className={cn(
-                      "flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-mono uppercase tracking-wider border transition-all",
-                      chain === c.id
-                        ? "bg-white/[0.06] border-white/15 text-ink"
-                        : "border-white/5 text-ink-3 hover:text-ink-2",
-                    )}
-                  >
-                    <span className="w-2 h-2 rounded-full" style={{ background: c.color }} />
-                    {c.short}
-                  </button>
-                ))}
+              {/* Chain pills — horizontal scroll with edge fade */}
+              <div className="relative -mx-1">
+                <div className="flex gap-1.5 overflow-x-auto no-scrollbar px-1 py-0.5">
+                  <ChainPill
+                    active={chain === "all"}
+                    onClick={() => setChain("all")}
+                    label="All"
+                  />
+                  {CHAINS.map((c) => (
+                    <ChainPill
+                      key={c.id}
+                      active={chain === c.id}
+                      onClick={() => setChain(c.id)}
+                      label={c.short}
+                      color={c.color}
+                    />
+                  ))}
+                </div>
+                {/* Edge fades */}
+                <div className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-bg-2 to-transparent" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-bg-2 to-transparent" />
               </div>
             </div>
 
-            {/* List */}
-            <div className="max-h-[60vh] overflow-y-auto py-2">
-              {list.length === 0 && (
+            {/* ─── Token list (scroll) ─────────────────────────────── */}
+            <div className="flex-1 overflow-y-auto py-1">
+              {list.length === 0 ? (
                 <div className="px-5 py-12 text-center font-sans text-sm text-ink-3">No tokens match.</div>
-              )}
-              {list.map((t) => {
-                const r = riskFromScore(t.riskScore);
-                return (
-                  <button
-                    key={`${t.chain}-${t.address}`}
-                    onClick={() => { onChange(t); setOpen(false); }}
-                    className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/[0.03] transition-colors text-left"
-                  >
-                    <span
-                      className="w-9 h-9 rounded-full flex items-center justify-center font-mono text-xs font-bold flex-shrink-0"
-                      style={{ background: `${t.color}22`, color: t.color, border: `1px solid ${t.color}55` }}
+              ) : (
+                list.map((t) => {
+                  const r = riskFromScore(t.riskScore);
+                  return (
+                    <button
+                      key={`${t.chain}-${t.address}`}
+                      type="button"
+                      onClick={() => { onChange(t); setOpen(false); }}
+                      className="w-full flex items-center gap-3 px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-white/[0.04] transition-colors text-left"
                     >
-                      {t.symbol.slice(0, 2)}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-display font-bold text-sm text-ink">{t.symbol}</span>
-                        <span className="font-mono text-[10px] text-ink-3 uppercase tracking-wider">{t.chain}</span>
-                        <span className={cn(
-                          "ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0",
-                          r === "safe" && "bg-green",
-                          r === "caution" && "bg-gold",
-                          r === "danger" && "bg-red",
-                        )} title={`Risk: ${r}`} />
+                      <span
+                        className="w-9 h-9 rounded-full flex items-center justify-center font-mono text-xs font-bold flex-shrink-0"
+                        style={{ background: `${t.color}22`, color: t.color, border: `1px solid ${t.color}55` }}
+                      >
+                        {t.symbol.slice(0, 2)}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-display font-bold text-sm text-ink truncate">{t.symbol}</span>
+                          <span className="font-mono text-[10px] text-ink-3 uppercase tracking-wider flex-shrink-0">{t.chain}</span>
+                          <span
+                            className={cn(
+                              "ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0",
+                              r === "safe"    && "bg-green",
+                              r === "caution" && "bg-gold",
+                              r === "danger"  && "bg-red",
+                            )}
+                            title={`Risk: ${r}`}
+                          />
+                        </div>
+                        <div className="font-sans text-xs text-ink-3 truncate">{t.name}</div>
                       </div>
-                      <div className="font-sans text-xs text-ink-3 truncate">{t.name}</div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="font-mono text-sm text-ink">{formatUsd(t.priceUsd)}</div>
-                    </div>
-                  </button>
-                );
-              })}
+                      <div className="text-right flex-shrink-0">
+                        <div className="font-mono text-sm text-ink whitespace-nowrap">{formatUsd(t.priceUsd)}</div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* ─── Footer disclaimer ───────────────────────────────── */}
+            <div className="px-4 sm:px-5 py-2.5 border-t border-white/5 flex-shrink-0">
+              <p className="font-mono text-[9px] sm:text-[10px] text-ink-4 text-center tracking-wide">
+                {list.length} tokens · risk dots reflect ZION baseline score
+              </p>
             </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function ChainPill({
+  active, onClick, label, color,
+}: {
+  active: boolean; onClick: () => void; label: string; color?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-mono uppercase tracking-wider border transition-all whitespace-nowrap",
+        active
+          ? "bg-white/[0.08] border-white/20 text-ink"
+          : "border-white/5 bg-white/[0.02] text-ink-3 hover:text-ink-2 hover:border-white/10",
+      )}
+    >
+      {color && <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />}
+      {label}
+    </button>
   );
 }
