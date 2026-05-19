@@ -51,7 +51,16 @@ export default function ZionDrawer() {
     try {
       const res = await fetch(`/api/zion?${params.toString()}`, { signal: ctrl.signal });
       if (!res.ok || !res.body) {
-        setBuffer(`[ZION offline: ${res.status} ${res.statusText}]`);
+        // Friendly messages for the rate-limit and bad-request cases
+        if (res.status === 429) {
+          const retry = res.headers.get("Retry-After") ?? "60";
+          setBuffer(`[Rate limit reached]\n\nZION is throttled for ${retry}s. This keeps your Claude API\nbudget safe — too many analyses in a short window. Try again shortly.`);
+        } else if (res.status === 400) {
+          const body = await res.text().catch(() => "");
+          setBuffer(`[Bad request: ${body || res.statusText}]\n\nThe pair or address looks malformed. Pick a token from the list\nand retry.`);
+        } else {
+          setBuffer(`[ZION offline: ${res.status} ${res.statusText}]\n\nThe server returned an error. If this persists, the ANTHROPIC_API_KEY may need to be configured in Vercel.`);
+        }
         setStreaming(false);
         return;
       }

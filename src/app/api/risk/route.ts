@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
 import { getHoneypot, isHoneypotSupported, type HoneypotResponse } from "@/lib/api/honeypot";
 import { getTokenInfo, type TokenInfo } from "@/lib/api/geckoterminal";
+import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { isValidChain, validateAddress } from "@/lib/validate";
 
 export const runtime = "nodejs";
 export const revalidate = 60;
+
+// Risk scanner is read-only on free APIs — slightly more permissive limit.
+const RL_OPTS = { windowMs: 60_000, max: 30 };
 
 /**
  * /api/risk?chain=ethereum&address=0x...
@@ -12,11 +17,25 @@ export const revalidate = 60;
  * the client renders directly. Also derives a deterministic risk score 0-100.
  */
 export async function GET(req: NextRequest) {
-  const chain   = req.nextUrl.searchParams.get("chain")   || "";
-  const address = req.nextUrl.searchParams.get("address") || "";
+  // Rate limit
+  const rl = rateLimit(`risk:${getClientId(req.headers)}`, RL_OPTS);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate_limited", retryAfter: rl.retryAfter },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
+  }
 
-  if (!chain || !address) {
-    return NextResponse.json({ error: "missing chain or address" }, { status: 400 });
+  // Validate inputs
+  const chain   = req.nextUrl.searchParams.get("chain");
+  const addrRaw = req.nextUrl.searchParams.get("address");
+
+  if (!isValidChain(chain)) {
+    return NextResponse.json({ error: "invalid chain" }, { status: 400 });
+  }
+  const address = validateAddress(addrRaw);
+  if (!address) {
+    return NextResponse.json({ error: "invalid address" }, { status: 400 });
   }
 
   const [security, honey, info] = await Promise.all([
