@@ -3,38 +3,85 @@
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import type { Token } from "@/lib/tokens";
+import type { ZxFill } from "@/lib/api/zerox";
 
 interface Hop {
   protocol: string;
-  pool: string;
-  share: number;   // 0-1
-  color: string;
+  share:    number;   // 0-1
+  color:    string;
 }
 
-const SAMPLE_HOPS: Hop[] = [
-  { protocol: "Uniswap V3", pool: "ETH/USDC 0.05%", share: 0.62, color: "#FF007A" },
-  { protocol: "Curve",      pool: "3pool",          share: 0.23, color: "#3676FF" },
-  { protocol: "Balancer",   pool: "wstETH/USDC",    share: 0.15, color: "#FF6B00" },
+const FALLBACK_HOPS: Hop[] = [
+  { protocol: "Uniswap V3",  share: 0.62, color: "#FF007A" },
+  { protocol: "Curve",       share: 0.23, color: "#3676FF" },
+  { protocol: "Balancer V2", share: 0.15, color: "#FF6B00" },
 ];
 
+// Brand colors for known DEX sources from 0x
+const DEX_COLOR: Record<string, string> = {
+  uniswap_v2:   "#FF007A",
+  uniswap_v3:   "#FF007A",
+  uniswap_v4:   "#FF007A",
+  pancakeswap:  "#F3BA2F",
+  pancakeswap_v2: "#F3BA2F",
+  pancakeswap_v3: "#F3BA2F",
+  curve:        "#3676FF",
+  curve_v2:     "#3676FF",
+  balancer:     "#FF6B00",
+  balancer_v2:  "#FF6B00",
+  sushi:        "#FA52A0",
+  sushiswap:    "#FA52A0",
+  maverick:     "#FF5C8A",
+  aerodrome:    "#5046E5",
+  velodrome:    "#FF0420",
+  trader_joe:   "#E84142",
+  raydium:      "#14F195",
+  zeroex:       "#00E8FF",
+};
+
+function colorFor(source: string): string {
+  const key = source.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
+  return DEX_COLOR[key] ?? "#9F5FFF";
+}
+
+function prettySource(source: string): string {
+  return source
+    .replace(/_/g, " ")
+    .replace(/\b(v\d)\b/gi, (m) => m.toUpperCase());
+}
+
 export default function RoutePreview({
-  from,
-  to,
-  showSavings = true,
+  from, to, fills = null, showSavings = true,
 }: {
-  from: Token | undefined;
-  to:   Token | undefined;
+  from:  Token | undefined;
+  to:    Token | undefined;
+  fills?: ZxFill[] | null;
   showSavings?: boolean;
 }) {
   if (!from || !to) return null;
 
+  // Normalize fills into our Hop shape; fall back to a curated default
+  const hops: Hop[] = fills && fills.length > 0
+    ? fills
+        .map((f) => ({
+          protocol: prettySource(f.source),
+          share:    f.proportionBps / 10_000,
+          color:    colorFor(f.source),
+        }))
+        .filter((h) => h.share > 0)
+        .sort((a, b) => b.share - a.share)
+        .slice(0, 5)   // cap at 5 hops to fit the card
+    : FALLBACK_HOPS;
+
+  const isLive = fills !== null;
+
   return (
     <div className="rounded-xl border border-white/5 bg-bg-1/40 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">Optimal Route</span>
-        <span className="font-mono text-[10px] text-cyan tracking-widest uppercase flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan pulse-dot" />
-          Live
+        <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">Optimal route</span>
+        <span className={`font-mono text-[10px] tracking-widest uppercase flex items-center gap-1.5 ${isLive ? "text-cyan" : "text-ink-3"}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-cyan pulse-dot" : "bg-ink-4"}`} />
+          {isLive ? "Live · 0x" : "Sample"}
         </span>
       </div>
 
@@ -49,13 +96,13 @@ export default function RoutePreview({
 
       {/* Hop breakdown */}
       <div className="space-y-2 pt-2 border-t border-white/5">
-        {SAMPLE_HOPS.map((h, i) => (
+        {hops.map((h, i) => (
           <motion.div
             key={i}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="flex items-center gap-3"
+            transition={{ delay: i * 0.04 }}
+            className="flex items-center gap-3 min-w-0"
           >
             <div className="flex items-center gap-2 min-w-0 flex-1">
               <span
@@ -63,7 +110,6 @@ export default function RoutePreview({
                 style={{ background: h.color, boxShadow: `0 0 8px ${h.color}` }}
               />
               <span className="font-mono text-[11px] text-ink-2 truncate">{h.protocol}</span>
-              <span className="font-mono text-[10px] text-ink-4 truncate">{h.pool}</span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <div className="w-16 h-1 rounded-full bg-white/5 overflow-hidden">
@@ -72,18 +118,18 @@ export default function RoutePreview({
                   style={{ width: `${h.share * 100}%`, background: h.color }}
                 />
               </div>
-              <span className="font-mono text-[11px] text-ink-2 w-9 text-right">
-                {(h.share * 100).toFixed(0)}%
+              <span className="font-mono text-[11px] text-ink-2 w-10 text-right">
+                {(h.share * 100).toFixed(h.share < 0.01 ? 2 : 0)}%
               </span>
             </div>
           </motion.div>
         ))}
       </div>
 
-      {showSavings && (
+      {showSavings && !isLive && (
         <div className="flex items-center justify-between pt-2 border-t border-white/5">
-          <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">vs. Direct</span>
-          <span className="font-mono text-[11px] text-green">+0.42% better · saves $18 gas</span>
+          <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">Demo route</span>
+          <span className="font-mono text-[11px] text-ink-3">Real fills on quote</span>
         </div>
       )}
     </div>

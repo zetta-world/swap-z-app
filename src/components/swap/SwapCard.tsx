@@ -1,49 +1,111 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown } from "lucide-react";
+import { useAccount } from "wagmi";
+import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Loader2, AlertTriangle } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
+import ExecuteSwap from "./ExecuteSwap";
 import { useSwap, riskFromScore } from "@/lib/store/swap";
 import { useUI } from "@/lib/store/ui";
 import { formatUsd, formatAmount, parseDecimalInput } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { Token } from "@/lib/tokens";
+import { useZeroXPrice } from "@/lib/hooks/useZeroXPrice";
+import { isZeroXSupported } from "@/lib/api/zerox";
 
 export default function SwapCard() {
   const {
+    fromChain,
     fromToken, toToken, amountIn, slippageBps, mevProtect, privacyMode,
     setFromToken, setToToken, setAmountIn, setSlippage, setMev, setPrivacy, flipPair,
   } = useSwap();
   const { toggleZion } = useUI();
+  const { address } = useAccount();
 
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings,  setShowSettings] = useState(false);
+  const [executeOpen,   setExecuteOpen]  = useState(false);
 
-  // Demo cotation (mock until LiFi/0x integration in sprint 2)
-  const quote = useMemo(() => {
+  const supported = isZeroXSupported(fromChain);
+
+  // ─── Convert UI amount (decimal) → base units (integer) ─────────────
+  const sellAmountBase = useMemo(() => {
+    if (!fromToken) return "0";
     const amt = parseDecimalInput(amountIn) ?? 0;
-    if (!fromToken || !toToken || amt <= 0) return null;
-    const inUsd  = amt * (fromToken.priceUsd ?? 0);
-    const outAmt = (inUsd / (toToken.priceUsd ?? 1)) * (1 - 0.0008);   // simulate 8bps fee
-    const slip   = (slippageBps / 10_000);
-    const minOut = outAmt * (1 - slip);
-    return { inUsd, outAmt, outUsd: outAmt * (toToken.priceUsd ?? 0), minOut, priceImpactBps: 12 };
-  }, [fromToken, toToken, amountIn, slippageBps]);
+    if (amt <= 0) return "0";
+    // Multiply by 10**decimals using string math to avoid float drift
+    const [intPart, fracPart = ""] = amt.toString().split(".");
+    const fracPadded = (fracPart + "0".repeat(fromToken.decimals)).slice(0, fromToken.decimals);
+    return (intPart + fracPadded).replace(/^0+/, "") || "0";
+  }, [amountIn, fromToken]);
 
-  // Aurora risk derived from heavier of two tokens
+  // ─── Live indicative quote from 0x ──────────────────────────────────
+  const price = useZeroXPrice({
+    chain:       fromChain,
+    sellToken:   fromToken?.address === "native" ? "native" : (fromToken?.address ?? ""),
+    buyToken:    toToken?.address   === "native" ? "native" : (toToken?.address   ?? ""),
+    sellAmount:  sellAmountBase,
+    taker:       address,
+    slippageBps,
+    enabled:     !!(fromToken && toToken && sellAmountBase !== "0"),
+  });
+
+  // ─── Derived display values ────────────────────────────────────────
+  const display = useMemo(() => {
+    if (!fromToken || !toToken) return null;
+    const sellDec = Number(sellAmountBase) / Math.pow(10, fromToken.decimals);
+    if (sellDec <= 0) return null;
+
+    if (price.data) {
+      const buyDec  = Number(price.data.buyAmount)    / Math.pow(10, toToken.decimals);
+      const minDec  = Number(price.data.minBuyAmount) / Math.pow(10, toToken.decimals);
+      const rate    = sellDec > 0 ? buyDec / sellDec : 0;
+      const inUsd   = sellDec * (fromToken.priceUsd ?? 0);
+      const outUsd  = buyDec  * (toToken.priceUsd   ?? 0);
+      return { sellDec, buyDec, minDec, rate, inUsd, outUsd, source: "live" as const };
+    }
+    if (!supported) {
+      // Fallback mock for non-EVM chains (Solana, ZETTA)
+      const inUsd  = sellDec * (fromToken.priceUsd ?? 0);
+      const outAmt = (inUsd / (toToken.priceUsd ?? 1)) * (1 - 0.0008);
+      const slip   = slippageBps / 10_000;
+      return {
+        sellDec, buyDec: outAmt, minDec: outAmt * (1 - slip),
+        rate: outAmt / sellDec, inUsd, outUsd: outAmt * (toToken.priceUsd ?? 0),
+        source: "mock" as const,
+      };
+    }
+    return null;
+  }, [price.data, sellAmountBase, fromToken, toToken, supported, slippageBps]);
+
+  // ─── Aurora risk ────────────────────────────────────────────────────
   const risk = useMemo(() => {
     const a = fromToken?.riskScore ?? 0;
     const b = toToken?.riskScore ?? 0;
     return riskFromScore(Math.max(a, b));
   }, [fromToken, toToken]);
 
+  // Reset modal when key inputs change
+  useEffect(() => {
+    if (executeOpen) setExecuteOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromToken?.address, toToken?.address, fromChain, sellAmountBase]);
+
+  const canExecute   = !!(display && fromToken && toToken && supported && address);
+  const cantReason   = !fromToken || !toToken
+    ? "Pick tokens"
+    : !supported
+      ? "Chain not supported"
+      : !address
+        ? "Connect wallet"
+        : !display
+          ? (price.loading ? "Fetching quote…" : "Enter amount")
+          : "";
+
   return (
     <div className="relative w-full max-w-md mx-auto">
-      <div
-        data-risk={risk}
-        className="aurora-border p-1"
-      >
+      <div data-risk={risk} className="aurora-border p-1">
         <div className="relative rounded-[20px] glass p-5 sm:p-6 space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -52,46 +114,25 @@ export default function SwapCard() {
               <RiskBadge risk={risk} />
             </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => setMev(!mevProtect)}
-                className={cn(
-                  "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
-                  mevProtect ? "text-green bg-green/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5",
-                )}
-                title="MEV Protection"
-                aria-pressed={mevProtect}
-              >
+              <button type="button" onClick={() => setMev(!mevProtect)} aria-pressed={mevProtect} title="MEV Protection"
+                className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", mevProtect ? "text-green bg-green/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
                 <Shield className="w-3.5 h-3.5" />
               </button>
-              <button
-                onClick={() => setPrivacy(!privacyMode)}
-                className={cn(
-                  "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
-                  privacyMode ? "text-gold bg-gold/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5",
-                )}
-                title="Privacy Mode"
-                aria-pressed={privacyMode}
-              >
+              <button type="button" onClick={() => setPrivacy(!privacyMode)} aria-pressed={privacyMode} title="Privacy Mode"
+                className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", privacyMode ? "text-gold bg-gold/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
                 <EyeOff className="w-3.5 h-3.5" />
               </button>
-              <button
-                onClick={() => setShowSettings((s) => !s)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-3 hover:text-ink-2 hover:bg-white/5 transition-colors"
-                title="Settings"
-              >
+              <button type="button" onClick={() => setShowSettings((s) => !s)} title="Settings"
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-3 hover:text-ink-2 hover:bg-white/5 transition-colors">
                 <Settings2 className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Settings expandable */}
+          {/* Settings */}
           {showSettings && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="rounded-lg border border-white/5 bg-bg-1/40 p-3 space-y-2.5"
-            >
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+              className="rounded-lg border border-white/5 bg-bg-1/40 p-3 space-y-2.5">
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">Slippage Tolerance</label>
@@ -99,16 +140,9 @@ export default function SwapCard() {
                 </div>
                 <div className="flex gap-1.5">
                   {[10, 50, 100, 300].map((bps) => (
-                    <button
-                      key={bps}
-                      onClick={() => setSlippage(bps)}
-                      className={cn(
-                        "flex-1 py-1.5 rounded-md text-[11px] font-mono transition-colors",
-                        slippageBps === bps
-                          ? "bg-cyan/15 text-cyan border border-cyan/30"
-                          : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2",
-                      )}
-                    >
+                    <button type="button" key={bps} onClick={() => setSlippage(bps)}
+                      className={cn("flex-1 py-1.5 rounded-md text-[11px] font-mono transition-colors",
+                        slippageBps === bps ? "bg-cyan/15 text-cyan border border-cyan/30" : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2")}>
                       {bps === 10 ? "0.1%" : bps === 50 ? "0.5%" : bps === 100 ? "1%" : "3%"}
                     </button>
                   ))}
@@ -118,79 +152,111 @@ export default function SwapCard() {
           )}
 
           {/* From */}
-          <SideBox
-            label="You pay"
-            token={fromToken}
-            amount={amountIn}
-            usdValue={quote?.inUsd}
-            onAmountChange={setAmountIn}
-            onTokenChange={setFromToken}
-            side="from"
-            editable
-          />
+          <SideBox label="You pay" token={fromToken} amount={amountIn} usdValue={display?.inUsd}
+            onAmountChange={setAmountIn} onTokenChange={setFromToken} side="from" editable />
 
           {/* Flip */}
           <div className="relative h-0 flex items-center justify-center">
-            <button
-              onClick={flipPair}
-              className="absolute -my-3 w-10 h-10 rounded-xl bg-bg-2 border border-white/10 flex items-center justify-center text-ink-2 hover:text-cyan hover:border-cyan/30 hover:rotate-180 transition-all duration-300 shadow-card"
-              aria-label="Flip pair"
-            >
+            <button type="button" onClick={flipPair} aria-label="Flip pair"
+              className="absolute -my-3 w-10 h-10 rounded-xl bg-bg-2 border border-white/10 flex items-center justify-center text-ink-2 hover:text-cyan hover:border-cyan/30 hover:rotate-180 transition-all duration-300 shadow-card">
               <ArrowDownUp className="w-3.5 h-3.5" />
             </button>
           </div>
 
           {/* To */}
-          <SideBox
-            label="You receive"
-            token={toToken}
-            amount={quote ? formatAmount(quote.outAmt, 6) : ""}
-            usdValue={quote?.outUsd}
-            onAmountChange={() => {}}
-            onTokenChange={setToToken}
-            side="to"
-            editable={false}
-          />
+          <SideBox label="You receive" token={toToken}
+            amount={display ? formatAmount(display.buyDec, 6) : (price.loading ? "…" : "")}
+            usdValue={display?.outUsd}
+            onAmountChange={() => {}} onTokenChange={setToToken} side="to" editable={false} />
 
-          {/* Stats / Route */}
-          {quote && (
+          {/* Stats + Route */}
+          {display && (
             <div className="space-y-2.5">
-              <RoutePreview from={fromToken} to={toToken} />
+              <RoutePreview from={fromToken} to={toToken} fills={price.data?.route.fills ?? null} />
 
               <div className="grid grid-cols-3 gap-2 text-center">
-                <Stat label="Rate"          value={`1 ${fromToken?.symbol} = ${formatAmount((fromToken?.priceUsd ?? 0) / (toToken?.priceUsd ?? 1), 4)} ${toToken?.symbol}`} compact />
-                <Stat label="Impact"        value={`${(quote.priceImpactBps / 100).toFixed(2)}%`} tone="green" />
-                <Stat label="Min received"  value={`${formatAmount(quote.minOut, 4)} ${toToken?.symbol}`} compact />
+                <Stat label="Rate"
+                  value={`1 ${fromToken?.symbol} = ${formatAmount(display.rate, 4)} ${toToken?.symbol}`}
+                  compact />
+                <Stat label="Slippage" value={`${(slippageBps / 100).toFixed(2)}%`} tone="green" />
+                <Stat label="Min received"
+                  value={`${formatAmount(display.minDec, 4)} ${toToken?.symbol}`}
+                  compact />
+              </div>
+
+              {/* Source badge */}
+              <div className="flex items-center justify-center gap-1.5 font-mono text-[9px] tracking-widest uppercase">
+                {display.source === "live" ? (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-green pulse-dot" />
+                    <span className="text-green/80">Live · 0x Swap API</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-gold" />
+                    <span className="text-gold/80">Indicative · {fromChain} not on 0x</span>
+                  </>
+                )}
               </div>
             </div>
           )}
 
-          {/* ZION advisory teaser */}
-          <button
-            onClick={toggleZion}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-gold/15 bg-gold/[0.04] hover:bg-gold/[0.08] hover:border-gold/25 transition-all group"
-          >
+          {/* Loading state when fetching */}
+          {price.loading && !display && (
+            <div className="rounded-xl border border-cyan/20 bg-cyan/[0.04] p-3 flex items-center gap-2.5">
+              <Loader2 className="w-3.5 h-3.5 text-cyan animate-spin flex-shrink-0" />
+              <span className="font-mono text-xs text-ink-2">Fetching live quote from 0x…</span>
+            </div>
+          )}
+
+          {/* Error state */}
+          {price.error && supported && (
+            <div className="rounded-xl border border-gold/20 bg-gold/[0.04] p-3 flex items-start gap-2.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">Quote unavailable</div>
+                <p className="font-sans text-xs text-ink-2 leading-relaxed truncate">{price.error}</p>
+              </div>
+            </div>
+          )}
+
+          {/* ZION teaser */}
+          <button type="button" onClick={toggleZion}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-gold/15 bg-gold/[0.04] hover:bg-gold/[0.08] hover:border-gold/25 transition-all group">
             <Sparkles className="w-3.5 h-3.5 text-gold flex-shrink-0" />
             <span className="font-mono text-[11px] text-gold/90 tracking-wide flex-1 text-left">
-              ZION rates this swap <span className="text-gold font-bold">SAFE · Score 92</span>
+              Ask ZION about this swap
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-gold/60 -rotate-90 group-hover:translate-x-0.5 transition-transform" />
           </button>
 
           {/* CTA */}
-          <button
-            className="w-full btn btn-primary py-3.5 text-sm tracking-widest"
-            disabled={!quote}
-          >
-            {quote ? "Review Swap" : "Enter Amount"}
+          <button type="button"
+            onClick={() => canExecute && setExecuteOpen(true)}
+            disabled={!canExecute}
+            className="w-full btn btn-primary py-3.5 text-sm tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
+            {canExecute ? "Review &amp; swap" : cantReason}
           </button>
 
           {/* Disclaimer */}
           <p className="font-mono text-[10px] text-ink-4 text-center leading-relaxed">
-            Demo environment · advisory only · not investment advice
+            Powered by 0x Swap API · Permit2 · MEV-shielded · non-custodial
           </p>
         </div>
       </div>
+
+      {/* Execute modal — only mount when needed to avoid stale state */}
+      {executeOpen && fromToken && toToken && (
+        <ExecuteSwap
+          open={executeOpen}
+          onClose={() => setExecuteOpen(false)}
+          fromToken={fromToken}
+          toToken={toToken}
+          chain={fromChain}
+          sellAmount={sellAmountBase}
+          slippageBps={slippageBps}
+        />
+      )}
     </div>
   );
 }
@@ -240,7 +306,7 @@ function SideBox({
         {editable && (
           <div className="flex gap-1">
             {["25%", "50%", "MAX"].map((p) => (
-              <button key={p} className="font-mono text-[10px] text-ink-3 px-1.5 py-0.5 rounded hover:text-cyan hover:bg-cyan/5 transition-colors">
+              <button type="button" key={p} className="font-mono text-[10px] text-ink-3 px-1.5 py-0.5 rounded hover:text-cyan hover:bg-cyan/5 transition-colors">
                 {p}
               </button>
             ))}
@@ -253,7 +319,7 @@ function SideBox({
 
 function Stat({ label, value, tone, compact }: { label: string; value: string; tone?: "green"; compact?: boolean }) {
   return (
-    <div className="rounded-lg border border-white/5 bg-bg-1/30 px-2 py-2">
+    <div className="rounded-lg border border-white/5 bg-bg-1/30 px-2 py-2 min-w-0">
       <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest mb-0.5">{label}</div>
       <div className={cn(
         "font-mono text-[11px] truncate",
