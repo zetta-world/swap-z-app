@@ -171,9 +171,76 @@ export function geckoNetworkId(chainName: string): string | undefined {
   return NETWORK_IDS[chainName];
 }
 
+// ─── Pool metadata (used to determine base/quote correctly) ──────────
+
+export interface PoolMeta {
+  address:           string;
+  name:              string;
+  dexId:             string;
+  baseTokenSymbol:   string;
+  baseTokenAddress:  string;
+  quoteTokenSymbol:  string;
+  quoteTokenAddress: string;
+  priceUsd:          number;
+  tvlUsd:            number;
+  volume24h:         number;
+  change24h:         number;
+}
+
+interface GTIncluded {
+  id: string;
+  type: string;
+  attributes?: { symbol?: string; address?: string; name?: string };
+}
+
+export async function getPoolMeta(chainName: string, poolAddress: string): Promise<PoolMeta | null> {
+  const network = NETWORK_IDS[chainName];
+  if (!network || !poolAddress) return null;
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress.toLowerCase()}?include=base_token,quote_token,dex`;
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json;version=20230302" },
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      data?: { id: string; attributes: GTPoolAttrs; relationships?: GTPool["relationships"] };
+      included?: GTIncluded[];
+    };
+    const pool = data.data;
+    if (!pool) return null;
+    const a = pool.attributes;
+    const inc = data.included ?? [];
+
+    const baseId  = pool.relationships?.base_token?.data?.id;
+    const quoteId = pool.relationships?.quote_token?.data?.id;
+    const dexId   = pool.relationships?.dex?.data?.id ?? "—";
+
+    const baseTok  = inc.find((x) => x.type === "token" && x.id === baseId);
+    const quoteTok = inc.find((x) => x.type === "token" && x.id === quoteId);
+
+    return {
+      address:           a.address ?? poolAddress,
+      name:              a.name ?? "",
+      dexId,
+      baseTokenSymbol:   baseTok?.attributes?.symbol  ?? "?",
+      baseTokenAddress:  baseTok?.attributes?.address ?? "",
+      quoteTokenSymbol:  quoteTok?.attributes?.symbol ?? "?",
+      quoteTokenAddress: quoteTok?.attributes?.address ?? "",
+      priceUsd:          attrNumber(a.base_token_price_usd),
+      tvlUsd:            attrNumber(a.reserve_in_usd),
+      volume24h:         attrNumber(a.volume_usd?.h24),
+      change24h:         attrNumber(a.price_change_percentage?.h24),
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ─── OHLCV (chart candles) ───────────────────────────────────────────
 
 export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+export type PriceToken = "base" | "quote";
 
 const TF_MAP: Record<Timeframe, { timeframe: string; aggregate: number }> = {
   "1m":  { timeframe: "minute", aggregate: 1  },
@@ -195,20 +262,28 @@ export interface Candle {
 
 /**
  * Fetch OHLCV candles for a specific pool from GeckoTerminal.
- * Returns candles sorted ascending (oldest first) for lightweight-charts.
+ *
+ * `token` selects which side of the pool's price we want:
+ *   - "base"  (default) → price of the pool's base_token in USD
+ *   - "quote"           → price of the pool's quote_token in USD
+ *
+ * Caller is responsible for picking the side that matches the symbol the
+ * user expects to see on the chart (e.g. for BNB/USDT on a pool where
+ * USDT is base, pass token: "quote" to chart BNB).
  */
 export async function getOHLCV(
   chainName: string,
   poolAddress: string,
   tf: Timeframe,
   limit = 200,
+  token: PriceToken = "base",
 ): Promise<Candle[]> {
   const network = NETWORK_IDS[chainName];
   if (!network || !poolAddress) return [];
   const cfg = TF_MAP[tf];
   if (!cfg) return [];
 
-  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress.toLowerCase()}/ohlcv/${cfg.timeframe}?aggregate=${cfg.aggregate}&limit=${Math.min(limit, 1000)}&currency=usd`;
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress.toLowerCase()}/ohlcv/${cfg.timeframe}?aggregate=${cfg.aggregate}&limit=${Math.min(limit, 1000)}&currency=usd&token=${token}`;
   try {
     const res = await fetch(url, {
       headers: { Accept: "application/json;version=20230302" },

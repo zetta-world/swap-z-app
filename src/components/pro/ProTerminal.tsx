@@ -9,7 +9,7 @@ import {
 import { cn } from "@/lib/cn";
 import { compactNumber } from "@/lib/format";
 import type { Timeframe } from "@/lib/api/geckoterminal";
-import { PRO_PAIRS, DEFAULT_PRO_PAIR, type ProPair } from "@/lib/pro-pairs";
+import { PRO_PAIRS, DEFAULT_PRO_PAIR, CATEGORY_LABELS, groupPairs, type ProPair } from "@/lib/pro-pairs";
 import { CHAINS } from "@/lib/chains";
 import ProChart, { type ChartKind } from "./ProChart";
 import ProTrades from "./ProTrades";
@@ -39,6 +39,7 @@ export default function ProTerminal() {
   const [maOn, setMaOn]       = useState(false);
   const [emaOn, setEmaOn]     = useState(false);
   const [pairOpen, setPairOpen] = useState(false);
+  const [pairQuery, setPairQuery] = useState("");
 
   // Live header values pushed from ProChart
   const [hdr, setHdr] = useState<{ last: number; change: number; high: number; low: number; vol: number } | null>(null);
@@ -47,6 +48,16 @@ export default function ProTerminal() {
   }, []);
 
   const chainObj = useMemo(() => CHAINS.find((c) => c.id === pair.chain), [pair.chain]);
+
+  // Filtered list for the picker
+  const filteredPairs = useMemo(() => {
+    const q = pairQuery.trim().toLowerCase();
+    if (!q) return PRO_PAIRS;
+    return PRO_PAIRS.filter((p) =>
+      (p.base + p.quote + p.dex + p.chain).toLowerCase().includes(q),
+    );
+  }, [pairQuery]);
+  const grouped = useMemo(() => groupPairs(filteredPairs), [filteredPairs]);
 
   // Keyboard shortcut: 1-9 → switch pair
   useEffect(() => {
@@ -110,33 +121,58 @@ export default function ProTerminal() {
               <ChevronDown className={cn("w-4 h-4 text-ink-3 transition-transform", pairOpen && "rotate-180")} />
             </button>
             {pairOpen && (
-              <div className="absolute left-0 top-full mt-1 z-20 w-72 rounded-lg border border-white/10 glass-strong shadow-card overflow-hidden">
-                {PRO_PAIRS.map((p, i) => {
-                  const c = CHAINS.find((c) => c.id === p.chain);
-                  const active = p.id === pair.id;
-                  return (
-                    <button
-                      type="button"
-                      key={p.id}
-                      onClick={() => { setPair(p); setPairOpen(false); }}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/[0.04] transition-colors",
-                        active && "bg-cyan/[0.06]",
-                      )}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: c?.color }} />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-display font-bold text-xs text-ink truncate">
-                          {p.base} / {p.quote}
-                        </div>
-                        <div className="font-mono text-[9px] text-ink-3 uppercase tracking-wider truncate">
-                          {c?.short} · {p.dex} {p.feeTier && `· ${p.feeTier}`}
-                        </div>
+              <div className="absolute left-0 top-full mt-1 z-20 w-[300px] sm:w-[340px] rounded-lg border border-white/10 glass-strong shadow-card overflow-hidden flex flex-col max-h-[420px]">
+                <div className="p-2 border-b border-white/5 flex-shrink-0">
+                  <input
+                    autoFocus
+                    value={pairQuery}
+                    onChange={(e) => setPairQuery(e.target.value)}
+                    placeholder="Search BNB, ETH, USDC…"
+                    className="w-full bg-bg-2 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-ink placeholder:text-ink-4 outline-none focus:border-cyan/40"
+                  />
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {filteredPairs.length === 0 && (
+                    <div className="p-6 text-center font-mono text-[10px] text-ink-3">No matching pairs</div>
+                  )}
+                  {(Object.keys(grouped) as ProPair["category"][]).map((cat) => (
+                    <div key={cat}>
+                      <div className="px-3 py-1.5 font-mono text-[9px] text-ink-4 tracking-widest uppercase bg-white/[0.02] border-b border-white/5">
+                        {CATEGORY_LABELS[cat]} · {grouped[cat].length}
                       </div>
-                      <kbd className="font-mono text-[9px] text-ink-3 px-1 py-0.5 rounded border border-white/10">{i + 1}</kbd>
-                    </button>
-                  );
-                })}
+                      {grouped[cat].map((p) => {
+                        const c = CHAINS.find((c) => c.id === p.chain);
+                        const active = p.id === pair.id;
+                        return (
+                          <button
+                            type="button"
+                            key={p.id}
+                            onClick={() => { setPair(p); setPairOpen(false); setPairQuery(""); }}
+                            className={cn(
+                              "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/[0.04] transition-colors",
+                              active && "bg-cyan/[0.06]",
+                            )}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: c?.color }} />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-display font-bold text-xs text-ink truncate">
+                                {p.base} / {p.quote}
+                              </div>
+                              <div className="font-mono text-[9px] text-ink-3 uppercase tracking-wider truncate">
+                                {c?.short} · {p.dex} {p.feeTier && `· ${p.feeTier}`}
+                              </div>
+                            </div>
+                            {active && <span className="font-mono text-[9px] text-cyan tracking-widest uppercase">live</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <div className="px-3 py-2 border-t border-white/5 font-mono text-[9px] text-ink-4 flex items-center justify-between flex-shrink-0">
+                  <span>{PRO_PAIRS.length} pairs available</span>
+                  <span>Keys 1-9 cycle</span>
+                </div>
               </div>
             )}
           </div>
@@ -242,6 +278,7 @@ export default function ProTerminal() {
                 kind={kind}
                 ma={maOn}
                 ema={emaOn}
+                targetSymbol={pair.targetSymbol}
                 onLastPrice={onLastPrice}
               />
             </div>
@@ -277,7 +314,7 @@ export default function ProTerminal() {
         </div>
 
         <p className="font-mono text-[10px] text-ink-4 text-center mt-4">
-          Live OHLCV + trades via GeckoTerminal · TradingView Lightweight Charts · {PRO_PAIRS.length} pairs available · keys 1-{PRO_PAIRS.length} switch
+          Live OHLCV + trades via GeckoTerminal · TradingView Lightweight Charts · {PRO_PAIRS.length} pairs available · keys 1-9 cycle the first nine
         </p>
       </div>
     </div>

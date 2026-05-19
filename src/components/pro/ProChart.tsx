@@ -16,18 +16,26 @@ import {
   type LineData,
   type HistogramData,
 } from "lightweight-charts";
-import type { Candle, Timeframe } from "@/lib/api/geckoterminal";
+import type { Candle, Timeframe, PriceToken, PoolMeta } from "@/lib/api/geckoterminal";
 
 export type ChartKind = "candle" | "bar" | "line";
 
 interface Props {
-  chain:      string;
-  pool:       string;
-  tf:         Timeframe;
-  kind:       ChartKind;
-  ma:         boolean;     // 20-period simple moving average overlay
-  ema:        boolean;     // 50-period exponential moving average overlay
+  chain:        string;
+  pool:         string;
+  tf:           Timeframe;
+  kind:         ChartKind;
+  ma:           boolean;     // 20-period simple moving average overlay
+  ema:          boolean;     // 50-period exponential moving average overlay
+  /**
+   * Symbol the user expects to see on the chart. The component fetches the
+   * pool's metadata and automatically picks token=base or token=quote based
+   * on which side of the pool that symbol is. Without this, naively-base
+   * requests would chart USDT@$1 instead of BNB@$700 on inverted pools.
+   */
+  targetSymbol: string;
   onLastPrice?: (last: number, change24h: number, high: number, low: number, vol24hUsd: number) => void;
+  onMeta?:      (meta: PoolMeta | null, side: PriceToken) => void;
 }
 
 /**
@@ -39,7 +47,7 @@ interface Props {
  * - MA / EMA overlays toggle via props
  * - Auto-resizes via ResizeObserver
  */
-export default function ProChart({ chain, pool, tf, kind, ma, ema, onLastPrice }: Props) {
+export default function ProChart({ chain, pool, tf, kind, ma, ema, targetSymbol, onLastPrice, onMeta }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const chartRef        = useRef<IChartApi | null>(null);
   const priceSeriesRef  = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line"> | null>(null);
@@ -195,7 +203,7 @@ export default function ProChart({ chain, pool, tf, kind, ma, ema, onLastPrice }
     }
   }, [ema, candles]);
 
-  // ── Fetch OHLCV on chain / pool / tf change ─────────────────────────
+  // ── Fetch pool metadata + OHLCV on chain / pool / tf change ─────────
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -204,7 +212,31 @@ export default function ProChart({ chain, pool, tf, kind, ma, ema, onLastPrice }
 
     async function fetchData() {
       try {
-        const url = `/api/ohlcv?chain=${chain}&pool=${pool}&tf=${tf}`;
+        // 1. Fetch pool metadata to learn which side has our target symbol
+        const metaUrl = `/api/pool-meta?chain=${chain}&pool=${pool}`;
+        const metaRes = await fetch(metaUrl, { signal: ctrl.signal });
+        let side: PriceToken = "base";
+        let meta: PoolMeta | null = null;
+        if (metaRes.ok) {
+          const j = await metaRes.json() as { meta?: PoolMeta | null };
+          meta = j.meta ?? null;
+          if (meta) {
+            const wantUpper = targetSymbol.toLowerCase();
+            const baseSym   = meta.baseTokenSymbol.toLowerCase();
+            const quoteSym  = meta.quoteTokenSymbol.toLowerCase();
+            // Match exactly OR allow W-prefix wrap (WETH ≈ ETH, WBNB ≈ BNB, etc.)
+            const matchBase  = baseSym  === wantUpper || baseSym  === "w" + wantUpper || "w" + baseSym  === wantUpper;
+            const matchQuote = quoteSym === wantUpper || quoteSym === "w" + wantUpper || "w" + quoteSym === wantUpper;
+            if (matchBase) side = "base";
+            else if (matchQuote) side = "quote";
+            // Fall back to base if neither matches (likely a custom symbol)
+          }
+        }
+        if (cancelled) return;
+        onMeta?.(meta, side);
+
+        // 2. Fetch OHLCV with the correct token side
+        const url = `/api/ohlcv?chain=${chain}&pool=${pool}&tf=${tf}&token=${side}`;
         const res = await fetch(url, { signal: ctrl.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as { candles?: Candle[] };
@@ -254,7 +286,7 @@ export default function ProChart({ chain, pool, tf, kind, ma, ema, onLastPrice }
       cancelled = true;
       ctrl.abort();
     };
-  }, [chain, pool, tf, kind, onLastPrice]);
+  }, [chain, pool, tf, kind, targetSymbol, onLastPrice, onMeta]);
 
   return (
     <div className="relative w-full h-full min-h-[320px]">
