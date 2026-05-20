@@ -2,17 +2,22 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion } from "framer-motion";
-import { CheckCircle2, X, ArrowRight, AlertTriangle, Loader2, ExternalLink } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { CheckCircle2, X, ArrowRight, AlertTriangle, Loader2, ExternalLink, Globe } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  useAccount, useChainId, useSendTransaction, useSignTypedData, useSwitchChain, useWaitForTransactionReceipt,
+  useAccount, useChainId, usePublicClient, useSendTransaction,
+  useSignTypedData, useSwitchChain, useWaitForTransactionReceipt, useWriteContract,
 } from "wagmi";
-import { concat, numberToHex, size, type Hex } from "viem";
+import { concat, erc20Abi, maxUint256, numberToHex, size, type Hex } from "viem";
 import type { Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
+import { CHAIN_BY_ID } from "@/lib/chains";
 import type { ZxQuoteResponse, ZxPermit2Eip712 } from "@/lib/api/zerox";
-import { ZEROX_CHAIN_IDS, ZEROX_NATIVE } from "@/lib/api/zerox";
+import { ZEROX_CHAIN_IDS } from "@/lib/api/zerox";
+import { LIFI_CHAIN_IDS } from "@/lib/api/lifi";
+import type { LfQuote } from "@/lib/api/lifi";
+import type { QuoteSource } from "@/lib/api/quote-types";
 import { cn } from "@/lib/cn";
 import { formatAmount } from "@/lib/format";
 
@@ -21,15 +26,19 @@ interface Props {
   onClose:     () => void;
   fromToken:   Token;
   toToken:     Token;
-  chain:       ChainId;
+  fromChain:   ChainId;
+  toChain:     ChainId;
   sellAmount:  string;        // BASE UNITS
   slippageBps: number;
+  source:      QuoteSource;
 }
 
 type Phase =
   | "idle"
   | "fetching_quote"
   | "needs_chain_switch"
+  | "needs_approval"
+  | "approving"
   | "needs_permit2_sig"
   | "needs_tx_signature"
   | "tx_pending"
@@ -37,20 +46,27 @@ type Phase =
   | "tx_failed";
 
 export default function ExecuteSwap({
-  open, onClose, fromToken, toToken, chain, sellAmount, slippageBps,
+  open, onClose, fromToken, toToken, fromChain, toChain, sellAmount, slippageBps, source,
 }: Props) {
   const { address, isConnected } = useAccount();
   const currentChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { signTypedDataAsync } = useSignTypedData();
   const { sendTransactionAsync } = useSendTransaction();
+  const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
 
   const [phase, setPhase] = useState<Phase>("idle");
-  const [quote, setQuote] = useState<ZxQuoteResponse | null>(null);
+  const [zxQuote, setZxQuote] = useState<ZxQuoteResponse | null>(null);
+  const [lfQuote, setLfQuote] = useState<LfQuote | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<Hex | null>(null);
 
-  const targetChainId = ZEROX_CHAIN_IDS[chain];
+  const isCrossChain = fromChain !== toChain;
+
+  const targetChainId = source === "0x"
+    ? ZEROX_CHAIN_IDS[fromChain]
+    : LIFI_CHAIN_IDS[fromChain];
 
   const { data: receipt, isLoading: receiptLoading } = useWaitForTransactionReceipt({
     hash: txHash ?? undefined,
@@ -63,7 +79,8 @@ export default function ExecuteSwap({
     if (!open) {
       setTimeout(() => {
         setPhase("idle");
-        setQuote(null);
+        setZxQuote(null);
+        setLfQuote(null);
         setError(null);
         setTxHash(null);
       }, 300);
@@ -80,12 +97,14 @@ export default function ExecuteSwap({
     (async () => {
       try {
         const params = new URLSearchParams({
-          mode:       "quote",
-          chain,
-          sellToken:  fromToken.address === "native" ? "native" : fromToken.address,
-          buyToken:   toToken.address   === "native" ? "native" : toToken.address,
+          mode:        "quote",
+          source,
+          fromChain,
+          toChain,
+          sellToken:   fromToken.address === "native" ? "native" : fromToken.address,
+          buyToken:    toToken.address   === "native" ? "native" : toToken.address,
           sellAmount,
-          taker:      address,
+          taker:       address,
           slippageBps: String(slippageBps),
         });
         const res = await fetch(`/api/quote?${params.toString()}`);
@@ -94,16 +113,41 @@ export default function ExecuteSwap({
         if (!res.ok || !body.ok) {
           throw new Error(body.message || body.error || `HTTP ${res.status}`);
         }
-        const q = body.result as ZxQuoteResponse;
-        setQuote(q);
 
-        // Decide next step
-        if (currentChainId !== targetChainId) {
-          setPhase("needs_chain_switch");
-        } else if (q.permit2) {
-          setPhase("needs_permit2_sig");
+        if (source === "0x") {
+          const q = body.result as ZxQuoteResponse;
+          setZxQuote(q);
+          if (currentChainId !== targetChainId) {
+            setPhase("needs_chain_switch");
+          } else if (q.permit2) {
+            setPhase("needs_permit2_sig");
+          } else {
+            setPhase("needs_tx_signature");
+          }
         } else {
-          setPhase("needs_tx_signature");
+          const q = body.result as LfQuote;
+          setLfQuote(q);
+          if (currentChainId !== targetChainId) {
+            setPhase("needs_chain_switch");
+          } else if (
+            fromToken.address !== "native" &&
+            q.estimate.approvalAddress &&
+            publicClient
+          ) {
+            const allowance = await publicClient.readContract({
+              address: fromToken.address as Hex,
+              abi: erc20Abi,
+              functionName: "allowance",
+              args: [address as Hex, q.estimate.approvalAddress as Hex],
+            });
+            if (allowance < BigInt(sellAmount)) {
+              setPhase("needs_approval");
+            } else {
+              setPhase("needs_tx_signature");
+            }
+          } else {
+            setPhase("needs_tx_signature");
+          }
         }
       } catch (e) {
         if (cancelled) return;
@@ -113,62 +157,115 @@ export default function ExecuteSwap({
     })();
 
     return () => { cancelled = true; };
-  }, [open, address, chain, fromToken, toToken, sellAmount, slippageBps, targetChainId, currentChainId]);
+  }, [open, address, fromChain, toChain, fromToken, toToken, sellAmount, slippageBps, source, targetChainId, currentChainId, publicClient]);
 
   // Track receipt
   useEffect(() => {
     if (!receipt) return;
     if (receipt.status === "success") {
       setPhase("tx_confirmed");
-      toast.success("Swap confirmed", {
+      toast.success(isCrossChain ? "Source tx confirmed · bridging…" : "Swap confirmed", {
         description: `Tx ${receipt.transactionHash.slice(0, 10)}…${receipt.transactionHash.slice(-6)}`,
       });
     } else {
       setPhase("tx_failed");
       setError("Transaction reverted on-chain.");
     }
-  }, [receipt]);
+  }, [receipt, isCrossChain]);
 
   const onSwitchChain = useCallback(async () => {
     if (!targetChainId) return;
     try {
       await switchChainAsync({ chainId: targetChainId });
-      setPhase(quote?.permit2 ? "needs_permit2_sig" : "needs_tx_signature");
+      // Re-decide next phase
+      if (source === "0x") {
+        setPhase(zxQuote?.permit2 ? "needs_permit2_sig" : "needs_tx_signature");
+      } else if (
+        lfQuote &&
+        fromToken.address !== "native" &&
+        lfQuote.estimate.approvalAddress &&
+        publicClient
+      ) {
+        const allowance = await publicClient.readContract({
+          address: fromToken.address as Hex,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [address as Hex, lfQuote.estimate.approvalAddress as Hex],
+        });
+        setPhase(allowance < BigInt(sellAmount) ? "needs_approval" : "needs_tx_signature");
+      } else {
+        setPhase("needs_tx_signature");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [targetChainId, switchChainAsync, quote]);
+  }, [targetChainId, switchChainAsync, source, zxQuote, lfQuote, fromToken, sellAmount, publicClient, address]);
+
+  const onApprove = useCallback(async () => {
+    if (!lfQuote || !targetChainId) return;
+    setError(null);
+    setPhase("approving");
+    try {
+      const hash = await writeContractAsync({
+        address:      fromToken.address as Hex,
+        abi:          erc20Abi,
+        functionName: "approve",
+        args:         [lfQuote.estimate.approvalAddress as Hex, maxUint256],
+        chainId:      targetChainId,
+      });
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+      setPhase("needs_tx_signature");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("user denied");
+      setError(denied ? "Approval rejected by user." : msg);
+      setPhase("tx_failed");
+    }
+  }, [lfQuote, fromToken, targetChainId, writeContractAsync, publicClient]);
 
   const onExecute = useCallback(async () => {
-    if (!quote) return;
     setError(null);
     try {
-      let data = quote.transaction.data as Hex;
+      if (source === "0x") {
+        if (!zxQuote) return;
+        let data = zxQuote.transaction.data as Hex;
 
-      // If selling ERC-20 → need Permit2 signature appended to calldata
-      if (quote.permit2) {
-        setPhase("needs_permit2_sig");
-        const eip712 = quote.permit2.eip712 as ZxPermit2Eip712;
-        // wagmi's signTypedData expects strictly-typed EIP-712 — cast the
-        // 0x payload to the generic shape it accepts at runtime.
-        const typedPayload = {
-          types:       eip712.types,
-          domain:      eip712.domain,
-          primaryType: eip712.primaryType,
-          message:     eip712.message,
-        } as unknown as Parameters<typeof signTypedDataAsync>[0];
-        const signature = (await signTypedDataAsync(typedPayload)) as Hex;
+        if (zxQuote.permit2) {
+          setPhase("needs_permit2_sig");
+          const eip712 = zxQuote.permit2.eip712 as ZxPermit2Eip712;
+          const typedPayload = {
+            types:       eip712.types,
+            domain:      eip712.domain,
+            primaryType: eip712.primaryType,
+            message:     eip712.message,
+          } as unknown as Parameters<typeof signTypedDataAsync>[0];
+          const signature = (await signTypedDataAsync(typedPayload)) as Hex;
+          const sigLenHex = numberToHex(size(signature), { size: 32 });
+          data = concat([data, sigLenHex, signature]) as Hex;
+        }
 
-        // 0x v2 expects: calldata + 32-byte length + signature
-        const sigLenHex = numberToHex(size(signature), { size: 32 });
-        data = concat([data, sigLenHex, signature]) as Hex;
+        setPhase("needs_tx_signature");
+        const hash = await sendTransactionAsync({
+          to:      zxQuote.transaction.to as Hex,
+          data,
+          value:   BigInt(zxQuote.transaction.value || "0"),
+          chainId: targetChainId,
+        });
+        setTxHash(hash);
+        setPhase("tx_pending");
+        return;
       }
 
+      // LiFi path
+      if (!lfQuote) return;
       setPhase("needs_tx_signature");
+      const tx = lfQuote.transactionRequest;
       const hash = await sendTransactionAsync({
-        to:    quote.transaction.to as Hex,
-        data,
-        value: BigInt(quote.transaction.value || "0"),
+        to:      tx.to as Hex,
+        data:    tx.data as Hex,
+        value:   BigInt(tx.value || "0"),
         chainId: targetChainId,
       });
       setTxHash(hash);
@@ -179,18 +276,38 @@ export default function ExecuteSwap({
       setError(denied ? "Signature rejected by user." : msg);
       setPhase("tx_failed");
     }
-  }, [quote, signTypedDataAsync, sendTransactionAsync, targetChainId]);
+  }, [source, zxQuote, lfQuote, signTypedDataAsync, sendTransactionAsync, targetChainId]);
 
-  // Pretty estimated output amount (firm quote)
-  const estOut = quote
-    ? Number(quote.buyAmount) / Math.pow(10, toToken.decimals)
-    : null;
-  const minOut = quote
-    ? Number(quote.minBuyAmount) / Math.pow(10, toToken.decimals)
-    : null;
-  const estIn  = Number(sellAmount) / Math.pow(10, fromToken.decimals);
+  // Quote-derived display values
+  const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);
+  const { estOut, minOut, routeText, durationText } = useMemo(() => {
+    if (source === "0x" && zxQuote) {
+      return {
+        estOut: Number(zxQuote.buyAmount) / Math.pow(10, toToken.decimals),
+        minOut: Number(zxQuote.minBuyAmount) / Math.pow(10, toToken.decimals),
+        routeText: zxQuote.route.fills.length === 1
+          ? zxQuote.route.fills[0].source
+          : `${zxQuote.route.fills.length} hops · ${zxQuote.route.fills.map((f) => f.source).slice(0, 3).join(" · ")}${zxQuote.route.fills.length > 3 ? "…" : ""}`,
+        durationText: "~12s · 1 block",
+      };
+    }
+    if (source === "lifi" && lfQuote) {
+      const steps = lfQuote.includedSteps ?? [];
+      const dur = lfQuote.estimate.executionDuration;
+      return {
+        estOut: Number(lfQuote.estimate.toAmount)    / Math.pow(10, toToken.decimals),
+        minOut: Number(lfQuote.estimate.toAmountMin) / Math.pow(10, toToken.decimals),
+        routeText: steps.length > 0
+          ? steps.map((s) => s.toolDetails?.name ?? s.tool).filter(Boolean).slice(0, 4).join(" → ")
+          : (lfQuote.toolDetails?.name ?? lfQuote.tool ?? "LiFi"),
+        durationText: dur < 60 ? `~${dur}s` : dur < 3600 ? `~${Math.round(dur / 60)}min` : `~${Math.round(dur / 3600)}h`,
+      };
+    }
+    return { estOut: null, minOut: null, routeText: "", durationText: "" };
+  }, [source, zxQuote, lfQuote, toToken.decimals]);
 
-  const explorerBase = explorerForChain(chain);
+  const explorerBase = explorerForChain(fromChain);
+  const sourceLabel  = source === "0x" ? "0x Settler" : "LiFi Router";
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -208,6 +325,24 @@ export default function ExecuteSwap({
                     <X className="w-4 h-4" />
                   </button>
                 </Dialog.Close>
+              </div>
+
+              {/* Aggregator badge */}
+              <div className="flex items-center gap-2 mb-3">
+                <span className={cn(
+                  "font-mono text-[9px] px-2 py-0.5 rounded border tracking-widest uppercase",
+                  source === "0x"
+                    ? "border-cyan/30 bg-cyan/10 text-cyan"
+                    : "border-violet/30 bg-violet/10 text-violet",
+                )}>
+                  {sourceLabel}
+                </span>
+                {isCrossChain && (
+                  <span className="font-mono text-[9px] px-2 py-0.5 rounded border border-violet/30 bg-violet/5 text-violet tracking-widest uppercase inline-flex items-center gap-1">
+                    <Globe className="w-2.5 h-2.5" />
+                    {CHAIN_BY_ID[fromChain]?.short} → {CHAIN_BY_ID[toChain]?.short}
+                  </span>
+                )}
               </div>
 
               {/* Pair summary */}
@@ -228,23 +363,12 @@ export default function ExecuteSwap({
               </div>
 
               {/* Quote details */}
-              {quote && (
+              {(zxQuote || lfQuote) && (
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <Cell label="Slippage"  value={`${(slippageBps / 100).toFixed(2)}%`} />
                   <Cell label="Min received" value={minOut !== null ? `${formatAmount(minOut, 6)} ${toToken.symbol}` : "—"} tone="green" />
-                  {quote.route.fills.length > 0 && (
-                    <Cell
-                      label="Route"
-                      value={
-                        quote.route.fills.length === 1
-                          ? quote.route.fills[0].source
-                          : `${quote.route.fills.length} hops · ${quote.route.fills.map((f) => f.source).slice(0, 3).join(" · ")}${quote.route.fills.length > 3 ? "…" : ""}`
-                      }
-                    />
-                  )}
-                  {quote.totalNetworkFee && (
-                    <Cell label="Network fee" value={`~$${(Number(quote.totalNetworkFee) / 1e18 * 0).toFixed(2) || "—"}`} />
-                  )}
+                  {routeText && <Cell label="Route" value={routeText} />}
+                  {durationText && <Cell label="Est. time" value={durationText} />}
                 </div>
               )}
 
@@ -256,6 +380,8 @@ export default function ExecuteSwap({
                 explorerBase={explorerBase}
                 receiptLoading={receiptLoading}
                 isConnected={isConnected}
+                isCrossChain={isCrossChain}
+                source={source}
               />
 
               {/* CTA */}
@@ -264,7 +390,7 @@ export default function ExecuteSwap({
                   type="button"
                   onClick={onClose}
                   className="flex-1 btn btn-secondary text-xs"
-                  disabled={phase === "needs_permit2_sig" || phase === "needs_tx_signature" || phase === "tx_pending"}
+                  disabled={phase === "approving" || phase === "needs_permit2_sig" || phase === "needs_tx_signature" || phase === "tx_pending"}
                 >
                   {phase === "tx_confirmed" ? "Done" : "Cancel"}
                 </button>
@@ -273,12 +399,17 @@ export default function ExecuteSwap({
                     Switch network
                   </button>
                 )}
+                {phase === "needs_approval" && (
+                  <button type="button" onClick={onApprove} className="flex-1 btn btn-primary text-xs">
+                    Approve {fromToken.symbol}
+                  </button>
+                )}
                 {(phase === "needs_permit2_sig" || phase === "needs_tx_signature") && (
                   <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
                     Sign &amp; send
                   </button>
                 )}
-                {phase === "tx_failed" && quote && (
+                {phase === "tx_failed" && (zxQuote || lfQuote) && (
                   <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
                     Retry
                   </button>
@@ -287,7 +418,11 @@ export default function ExecuteSwap({
 
               {/* Disclaimer */}
               <p className="font-mono text-[10px] text-ink-4 text-center mt-3 leading-relaxed">
-                {quote ? "Powered by 0x Settler · MEV-shielded routing · no custody" : "Fetching firm quote from 0x…"}
+                {(zxQuote || lfQuote)
+                  ? source === "0x"
+                    ? "Powered by 0x Settler · Permit2 · no custody"
+                    : "Powered by LiFi · bridges + DEX aggregators · no custody"
+                  : `Fetching firm quote from ${sourceLabel}…`}
               </p>
             </div>
           </motion.div>
@@ -300,7 +435,7 @@ export default function ExecuteSwap({
 // ─── Sub-components ──────────────────────────────────────────────────
 
 function PhaseBlock({
-  phase, error, txHash, explorerBase, receiptLoading, isConnected,
+  phase, error, txHash, explorerBase, receiptLoading, isConnected, isCrossChain, source,
 }: {
   phase: Phase;
   error: string | null;
@@ -308,6 +443,8 @@ function PhaseBlock({
   explorerBase: string;
   receiptLoading: boolean;
   isConnected: boolean;
+  isCrossChain: boolean;
+  source: QuoteSource;
 }) {
   if (!isConnected) {
     return (
@@ -322,16 +459,27 @@ function PhaseBlock({
 
   switch (phase) {
     case "fetching_quote":
-      return <Stepper text="Fetching firm quote from 0x…" />;
+      return <Stepper text={`Fetching firm quote from ${source === "0x" ? "0x" : "LiFi"}…`} />;
     case "needs_chain_switch":
       return (
         <Card tone="gold" Icon={AlertTriangle}>
           <div className="font-display font-bold text-xs text-gold mb-0.5">Wrong network</div>
           <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-            Switch your wallet to the target chain to continue.
+            Switch your wallet to the source chain to continue.
           </p>
         </Card>
       );
+    case "needs_approval":
+      return (
+        <Card tone="cyan" Icon={CheckCircle2}>
+          <div className="font-display font-bold text-xs text-cyan mb-0.5">Approval needed</div>
+          <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
+            LiFi needs permission to spend your tokens. One-time approval, then the swap signs.
+          </p>
+        </Card>
+      );
+    case "approving":
+      return <Stepper text="Waiting for approval to be mined…" />;
     case "needs_permit2_sig":
       return (
         <Card tone="cyan" Icon={CheckCircle2}>
@@ -346,14 +494,18 @@ function PhaseBlock({
         <Card tone="cyan" Icon={CheckCircle2}>
           <div className="font-display font-bold text-xs text-cyan mb-0.5">Ready to send</div>
           <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-            Your wallet will prompt you to confirm the transaction.
+            {isCrossChain
+              ? "Your wallet will confirm the source-chain transaction. The bridge then delivers and swaps on the destination chain."
+              : "Your wallet will prompt you to confirm the transaction."}
           </p>
         </Card>
       );
     case "tx_pending":
       return (
         <Card tone="cyan" Icon={Loader2} spinning>
-          <div className="font-display font-bold text-xs text-cyan mb-0.5">Confirming on-chain…</div>
+          <div className="font-display font-bold text-xs text-cyan mb-0.5">
+            {isCrossChain ? "Confirming source tx…" : "Confirming on-chain…"}
+          </div>
           {txHash && (
             <a
               href={`${explorerBase}/tx/${txHash}`}
@@ -372,7 +524,14 @@ function PhaseBlock({
     case "tx_confirmed":
       return (
         <Card tone="green" Icon={CheckCircle2}>
-          <div className="font-display font-bold text-xs text-green mb-0.5">Swap confirmed</div>
+          <div className="font-display font-bold text-xs text-green mb-0.5">
+            {isCrossChain ? "Source confirmed · bridging" : "Swap confirmed"}
+          </div>
+          {isCrossChain && (
+            <p className="font-sans text-[11px] text-ink-2 leading-relaxed mb-1">
+              Funds are being bridged. Final delivery typically takes a few minutes depending on the route.
+            </p>
+          )}
           {txHash && (
             <a
               href={`${explorerBase}/tx/${txHash}`}

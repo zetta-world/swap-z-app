@@ -3,9 +3,8 @@
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import type { Token } from "@/lib/tokens";
-import type { ZxFill } from "@/lib/api/zerox";
 
-interface Hop {
+export interface Hop {
   protocol: string;
   share:    number;   // 0-1
   color:    string;
@@ -51,29 +50,30 @@ function prettySource(source: string): string {
 }
 
 export default function RoutePreview({
-  from, to, fills = null, showSavings = true,
+  from, to, hops: hopsIn = null, sourceLabel, showSavings = true,
 }: {
   from:  Token | undefined;
   to:    Token | undefined;
-  fills?: ZxFill[] | null;
+  hops?: { protocol: string; share: number; color?: string }[] | null;
+  sourceLabel?: string;
   showSavings?: boolean;
 }) {
   if (!from || !to) return null;
 
-  // Normalize fills into our Hop shape; fall back to a curated default
-  const hops: Hop[] = fills && fills.length > 0
-    ? fills
-        .map((f) => ({
-          protocol: prettySource(f.source),
-          share:    f.proportionBps / 10_000,
-          color:    colorFor(f.source),
+  // Normalize hops into the local Hop shape; fall back to a curated default
+  const hops: Hop[] = hopsIn && hopsIn.length > 0
+    ? hopsIn
+        .map((h) => ({
+          protocol: prettySource(h.protocol),
+          share:    h.share,
+          color:    h.color ?? colorFor(h.protocol),
         }))
         .filter((h) => h.share > 0)
         .sort((a, b) => b.share - a.share)
-        .slice(0, 5)   // cap at 5 hops to fit the card
+        .slice(0, 5)
     : FALLBACK_HOPS;
 
-  const isLive = fills !== null;
+  const isLive = hopsIn !== null;
 
   return (
     <div className="rounded-xl border border-white/5 bg-bg-1/40 p-4 space-y-3">
@@ -81,7 +81,7 @@ export default function RoutePreview({
         <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">Optimal route</span>
         <span className={`font-mono text-[10px] tracking-widest uppercase flex items-center gap-1.5 ${isLive ? "text-cyan" : "text-ink-3"}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-cyan pulse-dot" : "bg-ink-4"}`} />
-          {isLive ? "Live · 0x" : "Sample"}
+          {isLive ? `Live · ${sourceLabel ?? "router"}` : "Sample"}
         </span>
       </div>
 

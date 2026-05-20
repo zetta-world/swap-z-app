@@ -77,54 +77,48 @@ export const useSwap = create<SwapState>((set, get) => ({
   setToChain: (c) => set({ toChain: c }),
 
   /**
-   * Setting the FROM token also re-aligns the chain. If the current TO
-   * token is on a different chain (or is the same as the new from token),
-   * pick a sensible same-chain counterpart.
+   * Setting the FROM token updates the from-side and its chain. If the
+   * resulting pair would be (X → X) on same chain, picks a sensible
+   * counterpart on the same chain so the quote is queryable. The user can
+   * freely choose any to-token on any chain afterwards (cross-chain is
+   * supported via LiFi).
    */
   setFromToken: (t) => {
     const { toToken } = get();
-    const needsToReset =
-      !toToken ||
-      toToken.chain !== t.chain ||
+    // Only reset toToken if it would create an identical-token pair on the
+    // same chain. Cross-chain identical tokens (USDC on ETH ↔ USDC on Base)
+    // are a valid bridge operation, so we KEEP those.
+    const sameTokenSameChain =
+      toToken &&
+      toToken.chain === t.chain &&
       toToken.address.toLowerCase() === t.address.toLowerCase();
-    const newTo = needsToReset ? defaultCounterpart(t.chain, t.address) : toToken;
+    const newTo = sameTokenSameChain ? defaultCounterpart(t.chain, t.address) : toToken;
     set({
       fromToken: t,
       fromChain: t.chain,
       toToken:   newTo,
-      toChain:   t.chain,
     });
   },
 
   /**
-   * Setting the TO token also enforces same-chain. If the picked token is
-   * on a different chain than the current FROM, switch the WHOLE pair to
-   * that chain and pick a sensible same-chain from-token (usually native).
+   * Setting the TO token updates the to-side and its chain. Cross-chain
+   * pairs (different fromChain vs toChain) are valid — they route through
+   * LiFi. Only the identical-token-same-chain case needs auto-fix.
    */
   setToToken: (t) => {
-    const { fromToken, fromChain } = get();
-    if (!fromToken || t.chain === fromChain) {
-      // Same chain — straight update, but ensure tokens are distinct
-      if (fromToken && fromToken.address.toLowerCase() === t.address.toLowerCase()) {
-        // User picked the same token as from — pick a sensible different from-token
-        const newFrom =
-          DEFAULT_TOKENS.find((x) => x.chain === t.chain && x.address === "native" && x.address.toLowerCase() !== t.address.toLowerCase()) ??
-          defaultCounterpart(t.chain, t.address);
-        set({ toToken: t, toChain: t.chain, fromToken: newFrom });
-      } else {
-        set({ toToken: t, toChain: t.chain });
-      }
-    } else {
-      // Different chain → switch the whole pair to this chain
+    const { fromToken } = get();
+    const sameTokenSameChain =
+      fromToken &&
+      fromToken.chain === t.chain &&
+      fromToken.address.toLowerCase() === t.address.toLowerCase();
+    if (sameTokenSameChain) {
+      // Pick a sensible new from-token on the same chain
       const newFrom =
         DEFAULT_TOKENS.find((x) => x.chain === t.chain && x.address === "native" && x.address.toLowerCase() !== t.address.toLowerCase()) ??
         defaultCounterpart(t.chain, t.address);
-      set({
-        toToken: t,
-        toChain: t.chain,
-        fromChain: t.chain,
-        fromToken: newFrom,
-      });
+      set({ toToken: t, toChain: t.chain, fromToken: newFrom });
+    } else {
+      set({ toToken: t, toChain: t.chain });
     }
   },
 

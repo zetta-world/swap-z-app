@@ -3,22 +3,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useAccount } from "wagmi";
-import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Loader2, AlertTriangle, Workflow } from "lucide-react";
+import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
 import ExecuteSwap from "./ExecuteSwap";
+import QuoteComparison from "./QuoteComparison";
 import { useSwap, riskFromScore } from "@/lib/store/swap";
 import { useUI } from "@/lib/store/ui";
 import { formatUsd, formatAmount, parseDecimalInput } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { Token } from "@/lib/tokens";
-import { useZeroXPrice } from "@/lib/hooks/useZeroXPrice";
-import { isZeroXSupported } from "@/lib/api/zerox";
+import { useQuotes } from "@/lib/hooks/useQuotes";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
+import type { QuoteSource } from "@/lib/api/quote-types";
 
 export default function SwapCard() {
   const {
-    fromChain,
+    fromChain, toChain,
     fromToken, toToken, amountIn, slippageBps, mevProtect, privacyMode,
     setFromToken, setToToken, setAmountIn, setSlippage, setMev, setPrivacy, flipPair,
   } = useSwap();
@@ -27,15 +28,13 @@ export default function SwapCard() {
 
   const [showSettings,  setShowSettings] = useState(false);
   const [executeOpen,   setExecuteOpen]  = useState(false);
-
-  const supported = isZeroXSupported(fromChain);
+  const [selectedSource, setSelectedSource] = useState<QuoteSource | null>(null);
 
   // ─── Real balances (wagmi useBalance per token) ─────────────────────
   const fromBalance = useTokenBalance(fromToken);
   const toBalance   = useTokenBalance(toToken);
 
-  // ─── Same-chain enforcement ─────────────────────────────────────────
-  const sameChain = !!(fromToken && toToken && fromToken.chain === toToken.chain);
+  const isCrossChain = !!(fromToken && toToken && fromToken.chain !== toToken.chain);
 
   // ─── Convert UI amount (decimal) → base units (integer) ─────────────
   const sellAmountBase = useMemo(() => {
@@ -48,9 +47,10 @@ export default function SwapCard() {
     return (intPart + fracPadded).replace(/^0+/, "") || "0";
   }, [amountIn, fromToken]);
 
-  // ─── Live indicative quote from 0x ──────────────────────────────────
-  const price = useZeroXPrice({
-    chain:       fromChain,
+  // ─── Multi-aggregator quotes (0x + LiFi) ────────────────────────────
+  const quotesState = useQuotes({
+    fromChain,
+    toChain:     toToken?.chain ?? toChain,
     sellToken:   fromToken?.address === "native" ? "native" : (fromToken?.address ?? ""),
     buyToken:    toToken?.address   === "native" ? "native" : (toToken?.address   ?? ""),
     sellAmount:  sellAmountBase,
@@ -59,33 +59,35 @@ export default function SwapCard() {
     enabled:     !!(fromToken && toToken && sellAmountBase !== "0"),
   });
 
-  // ─── Derived display values ────────────────────────────────────────
+  // Auto-select the best quote when the list changes
+  useEffect(() => {
+    if (quotesState.quotes.length === 0) {
+      setSelectedSource(null);
+      return;
+    }
+    const stillValid = quotesState.quotes.some((q) => q.source === selectedSource);
+    if (!stillValid) {
+      setSelectedSource(quotesState.quotes[0].source);
+    }
+  }, [quotesState.quotes, selectedSource]);
+
+  const selectedQuote = useMemo(
+    () => quotesState.quotes.find((q) => q.source === selectedSource) ?? quotesState.quotes[0] ?? null,
+    [quotesState.quotes, selectedSource],
+  );
+
+  // ─── Derived display values from the selected quote ────────────────
   const display = useMemo(() => {
-    if (!fromToken || !toToken) return null;
+    if (!fromToken || !toToken || !selectedQuote) return null;
     const sellDec = Number(sellAmountBase) / Math.pow(10, fromToken.decimals);
     if (sellDec <= 0) return null;
-
-    if (price.data) {
-      const buyDec  = Number(price.data.buyAmount)    / Math.pow(10, toToken.decimals);
-      const minDec  = Number(price.data.minBuyAmount) / Math.pow(10, toToken.decimals);
-      const rate    = sellDec > 0 ? buyDec / sellDec : 0;
-      const inUsd   = sellDec * (fromToken.priceUsd ?? 0);
-      const outUsd  = buyDec  * (toToken.priceUsd   ?? 0);
-      return { sellDec, buyDec, minDec, rate, inUsd, outUsd, source: "live" as const };
-    }
-    if (!supported) {
-      // Fallback mock for non-EVM chains (Solana, ZETTA)
-      const inUsd  = sellDec * (fromToken.priceUsd ?? 0);
-      const outAmt = (inUsd / (toToken.priceUsd ?? 1)) * (1 - 0.0008);
-      const slip   = slippageBps / 10_000;
-      return {
-        sellDec, buyDec: outAmt, minDec: outAmt * (1 - slip),
-        rate: outAmt / sellDec, inUsd, outUsd: outAmt * (toToken.priceUsd ?? 0),
-        source: "mock" as const,
-      };
-    }
-    return null;
-  }, [price.data, sellAmountBase, fromToken, toToken, supported, slippageBps]);
+    const buyDec  = Number(selectedQuote.buyAmount)    / Math.pow(10, toToken.decimals);
+    const minDec  = Number(selectedQuote.minBuyAmount) / Math.pow(10, toToken.decimals);
+    const rate    = sellDec > 0 ? buyDec / sellDec : 0;
+    const inUsd   = sellDec * (fromToken.priceUsd ?? 0);
+    const outUsd  = buyDec  * (toToken.priceUsd   ?? 0);
+    return { sellDec, buyDec, minDec, rate, inUsd, outUsd };
+  }, [selectedQuote, sellAmountBase, fromToken, toToken]);
 
   // ─── Aurora risk ────────────────────────────────────────────────────
   const risk = useMemo(() => {
@@ -100,18 +102,16 @@ export default function SwapCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromToken?.address, toToken?.address, fromChain, sellAmountBase]);
 
-  const canExecute   = !!(display && fromToken && toToken && supported && address && sameChain);
+  const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && address);
   const cantReason   = !fromToken || !toToken
     ? "Pick tokens"
-    : !sameChain
-      ? "Cross-chain — use Bridge"
-      : !supported
-        ? "Chain not supported"
-        : !address
-          ? "Connect wallet"
-          : !display
-            ? (price.loading ? "Fetching quote…" : "Enter amount")
-            : "";
+    : !address
+      ? "Connect wallet"
+      : !display
+        ? (quotesState.loading ? "Fetching quotes…" : "Enter amount")
+        : !selectedQuote
+          ? "No route available"
+          : "";
 
   const onPercent = (pct: number) => {
     if (!fromBalance || fromBalance.isZero || !fromToken) return;
@@ -185,29 +185,32 @@ export default function SwapCard() {
 
           {/* To */}
           <SideBox label="You receive" token={toToken}
-            amount={display ? formatAmount(display.buyDec, 6) : (price.loading ? "…" : "")}
+            amount={display ? formatAmount(display.buyDec, 6) : (quotesState.loading ? "…" : "")}
             usdValue={display?.outUsd}
             onAmountChange={() => {}} onTokenChange={setToToken} side="to" editable={false}
             balance={toBalance} />
 
-          {/* Cross-chain warning */}
-          {fromToken && toToken && !sameChain && (
-            <div className="rounded-xl border border-gold/30 bg-gold/[0.05] p-3 flex items-start gap-2.5">
-              <Workflow className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">Cross-chain pair</div>
-                <p className="font-sans text-xs text-ink-2 leading-relaxed">
-                  {fromToken.symbol} is on <b>{fromToken.chain}</b>, {toToken.symbol} is on <b>{toToken.chain}</b>.
-                  Single-chain DEX swaps can&apos;t bridge — use the <a href="/bridge" className="text-cyan underline">Bridge</a> page for cross-chain.
-                </p>
-              </div>
-            </div>
+          {/* Quote comparison — side-by-side aggregator routes */}
+          {fromToken && toToken && sellAmountBase !== "0" && (
+            <QuoteComparison
+              quotes={quotesState.quotes}
+              selected={selectedSource}
+              onSelect={setSelectedSource}
+              toToken={toToken}
+              loading={quotesState.loading}
+              error={quotesState.error}
+            />
           )}
 
           {/* Stats + Route */}
-          {display && (
+          {display && selectedQuote && (
             <div className="space-y-2.5">
-              <RoutePreview from={fromToken} to={toToken} fills={price.data?.route.fills ?? null} />
+              <RoutePreview
+                from={fromToken}
+                to={toToken}
+                hops={selectedQuote.hops}
+                sourceLabel={selectedQuote.label}
+              />
 
               <div className="grid grid-cols-3 gap-2 text-center">
                 <Stat label="Rate"
@@ -221,36 +224,11 @@ export default function SwapCard() {
 
               {/* Source badge */}
               <div className="flex items-center justify-center gap-1.5 font-mono text-[9px] tracking-widest uppercase">
-                {display.source === "live" ? (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-green pulse-dot" />
-                    <span className="text-green/80">Live · 0x Swap API</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-gold" />
-                    <span className="text-gold/80">Indicative · {fromChain} not on 0x</span>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Loading state when fetching */}
-          {price.loading && !display && (
-            <div className="rounded-xl border border-cyan/20 bg-cyan/[0.04] p-3 flex items-center gap-2.5">
-              <Loader2 className="w-3.5 h-3.5 text-cyan animate-spin flex-shrink-0" />
-              <span className="font-mono text-xs text-ink-2">Fetching live quote from 0x…</span>
-            </div>
-          )}
-
-          {/* Error state */}
-          {price.error && supported && (
-            <div className="rounded-xl border border-gold/20 bg-gold/[0.04] p-3 flex items-start gap-2.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">Quote unavailable</div>
-                <p className="font-sans text-xs text-ink-2 leading-relaxed truncate">{price.error}</p>
+                <span className="w-1.5 h-1.5 rounded-full bg-green pulse-dot" />
+                <span className="text-green/80">
+                  Live · {selectedQuote.label}
+                  {isCrossChain && " · cross-chain"}
+                </span>
               </div>
             </div>
           )}
@@ -275,21 +253,23 @@ export default function SwapCard() {
 
           {/* Disclaimer */}
           <p className="font-mono text-[10px] text-ink-4 text-center leading-relaxed">
-            Powered by 0x Swap API · Permit2 · MEV-shielded · non-custodial
+            Powered by 0x Settler &amp; LiFi · multi-aggregator · non-custodial
           </p>
         </div>
       </div>
 
       {/* Execute modal — only mount when needed to avoid stale state */}
-      {executeOpen && fromToken && toToken && (
+      {executeOpen && fromToken && toToken && selectedQuote && (
         <ExecuteSwap
           open={executeOpen}
           onClose={() => setExecuteOpen(false)}
           fromToken={fromToken}
           toToken={toToken}
-          chain={fromChain}
+          fromChain={fromChain}
+          toChain={toToken.chain}
           sellAmount={sellAmountBase}
           slippageBps={slippageBps}
+          source={selectedQuote.source}
         />
       )}
     </div>
