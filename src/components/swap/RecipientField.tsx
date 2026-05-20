@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, MapPin, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { isAddress } from "viem";
+import { isSolanaAddress } from "@/lib/solana";
+import type { ChainId } from "@/lib/chains";
 
 interface Props {
   /** Resolved recipient. `undefined` ⇒ deliver to the connected wallet. */
@@ -13,6 +15,8 @@ interface Props {
   connected?:   string;
   /** Target chain name (e.g. "Ethereum") shown in the label. */
   toChainName?: string;
+  /** Destination chain — controls address format validation (EVM vs Solana). */
+  destChain?:   ChainId;
 }
 
 /**
@@ -20,7 +24,7 @@ interface Props {
  * wallet; users can override to deliver bridge output to a different EVM
  * address. Validates with viem so we never forward malformed addresses to LiFi.
  */
-export default function RecipientField({ value, onChange, connected, toChainName }: Props) {
+export default function RecipientField({ value, onChange, connected, toChainName, destChain }: Props) {
   const [open,  setOpen]  = useState<boolean>(!!value);
   const [draft, setDraft] = useState<string>(value ?? "");
 
@@ -29,10 +33,16 @@ export default function RecipientField({ value, onChange, connected, toChainName
     if (value) setOpen(true);
   }, [value]);
 
+  const isAddressValid = (s: string): boolean => {
+    if (destChain === "solana") return isSolanaAddress(s);
+    return isAddress(s);
+  };
+
   const validity = useMemo<"empty" | "valid" | "invalid">(() => {
     if (!draft) return "empty";
-    return isAddress(draft) ? "valid" : "invalid";
-  }, [draft]);
+    return isAddressValid(draft) ? "valid" : "invalid";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, destChain]);
 
   const handleCommit = (next: string) => {
     setDraft(next);
@@ -40,7 +50,7 @@ export default function RecipientField({ value, onChange, connected, toChainName
       onChange(undefined);
       return;
     }
-    if (isAddress(next)) {
+    if (isAddressValid(next)) {
       onChange(next);
     } else {
       onChange(undefined);
@@ -99,7 +109,7 @@ export default function RecipientField({ value, onChange, connected, toChainName
         autoCorrect="off"
         value={draft}
         onChange={(e) => handleCommit(e.target.value.trim())}
-        placeholder={connected ?? "0x…"}
+        placeholder={connected ?? (destChain === "solana" ? "Base58 SOL address" : "0x…")}
         className={cn(
           "w-full bg-transparent text-xs font-mono text-ink outline-none placeholder:text-ink-4 truncate min-w-0",
           validity === "invalid" && "text-red",
@@ -107,7 +117,9 @@ export default function RecipientField({ value, onChange, connected, toChainName
       />
       {validity === "invalid" && (
         <p className="mt-1 font-mono text-[10px] text-red/90">
-          Not a valid EVM address.
+          {destChain === "solana"
+            ? "Not a valid Solana address."
+            : "Not a valid EVM address."}
         </p>
       )}
       {validity === "valid" && draft.toLowerCase() !== (connected ?? "").toLowerCase() && (

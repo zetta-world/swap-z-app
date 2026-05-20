@@ -1,8 +1,10 @@
 "use client";
 
 import { useAccount, useBalance } from "wagmi";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { formatUnits } from "viem";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { WAGMI_CHAIN_IDS } from "@/lib/wagmi";
 import type { Token } from "@/lib/tokens";
 
@@ -20,89 +22,144 @@ export interface TokenBalance {
 }
 
 /**
- * Fetch the connected wallet's balance of a specific token on the token's
- * native chain. Uses wagmi's `useBalance` (multicall under the hood for
- * ERC-20s) and computes a UI-friendly formatted string.
+ * Fetch the connected wallet's balance for a specific token. Branches on the
+ * token's chain: EVM tokens use wagmi's useBalance (multicall under the hood);
+ * Solana tokens use @solana/web3.js — native SOL via `getBalance`, SPL via
+ * `getParsedTokenAccountsByOwner` (matches the mint).
  *
- * Returns `loading: true` while connecting / fetching, and `null`-safe
- * defaults (zero balance) when wallet is disconnected — so the caller can
- * always trust `.display` to render.
+ * Returns `loading: true` while fetching and zero-defaults when disconnected
+ * — callers can always trust `.display` to render.
  */
 export function useTokenBalance(token: Token | undefined): TokenBalance {
-  const { address, isConnected } = useAccount();
+  const isSolana = token?.chain === "solana";
 
-  // For EVM, get the wagmi numeric chainId for the token's chain
-  const wagmiChainId = token ? WAGMI_CHAIN_IDS[token.chain] : undefined;
-  const isEvmSupported = !!wagmiChainId;
-
-  // Only enable the query when we have a wallet + an EVM token
-  const enabled = !!(address && token && isEvmSupported);
-
-  const { data, isLoading, error } = useBalance({
-    address,
-    token:   token?.address === "native" ? undefined : (token?.address as `0x${string}` | undefined),
+  // ─── EVM branch (always called; gated by `enabled`) ───────────────
+  const { address: evmAddr, isConnected: evmConnected } = useAccount();
+  const wagmiChainId = token && !isSolana ? WAGMI_CHAIN_IDS[token.chain] : undefined;
+  const evmEnabled = !!(evmAddr && token && !isSolana && wagmiChainId);
+  const evmRes = useBalance({
+    address: evmAddr,
+    token:   token?.address === "native" || isSolana
+      ? undefined
+      : (token?.address as `0x${string}` | undefined),
     chainId: wagmiChainId,
-    query: { enabled, staleTime: 15_000 },
+    query: { enabled: evmEnabled, staleTime: 15_000 },
   });
 
+  // ─── Solana branch (always called; gated internally) ──────────────
+  const { publicKey, connected: solConnected } = useWallet();
+  const { connection: solConnection }          = useConnection();
+  const [solRaw,     setSolRaw]     = useState<bigint>(0n);
+  const [solLoading, setSolLoading] = useState(false);
+  const [solError,   setSolError]   = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSolana || !token || !publicKey) {
+      setSolRaw(0n);
+      setSolLoading(false);
+      setSolError(null);
+      return;
+    }
+    let cancelled = false;
+    setSolLoading(true);
+    setSolError(null);
+    (async () => {
+      try {
+        if (token.address === "native") {
+          const lamports = await solConnection.getBalance(publicKey, "confirmed");
+          if (!cancelled) setSolRaw(BigInt(lamports));
+        } else {
+          const mint = new PublicKey(token.address);
+          const accounts = await solConnection.getParsedTokenAccountsByOwner(
+            publicKey, { mint }, "confirmed",
+          );
+          let total = 0n;
+          for (const acc of accounts.value) {
+            const amt = acc.account.data.parsed?.info?.tokenAmount?.amount;
+            if (amt) total += BigInt(amt);
+          }
+          if (!cancelled) setSolRaw(total);
+        }
+      } catch (e) {
+        if (!cancelled) setSolError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setSolLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isSolana, token, publicKey, solConnection]);
+
   return useMemo<TokenBalance>(() => {
-    const decimals = data?.decimals ?? token?.decimals ?? 18;
-    const symbol   = data?.symbol   ?? token?.symbol   ?? "";
-    if (!isConnected || !enabled) {
+    if (!token) return emptyBalance(18, "");
+    const decimals = token.decimals;
+    const symbol   = token.symbol;
+
+    if (isSolana) {
+      if (!solConnected || !publicKey) return emptyBalance(decimals, symbol);
+      if (solLoading)                  return loadingBalance(decimals, symbol);
+      if (solError)                    return errorBalance(decimals, symbol, solError);
+      const formatted = token.address === "native"
+        ? (Number(solRaw) / LAMPORTS_PER_SOL).toString()
+        : formatUnits(solRaw, decimals);
+      const num = Number(formatted);
       return {
-        raw:       0n,
-        formatted: "0",
-        decimals,
-        symbol,
+        raw:       solRaw,
+        formatted, decimals, symbol,
         loading:   false,
         error:     null,
-        isZero:    true,
-        display:   "—",
-        usdValue:  null,
+        isZero:    solRaw === 0n,
+        display:   formatDisplay(num),
+        usdValue:  token.priceUsd ? num * token.priceUsd : null,
       };
     }
-    if (isLoading) {
-      return {
-        raw:       0n,
-        formatted: "0",
-        decimals,
-        symbol,
-        loading:   true,
-        error:     null,
-        isZero:    true,
-        display:   "…",
-        usdValue:  null,
-      };
-    }
-    if (error) {
-      return {
-        raw:       0n,
-        formatted: "0",
-        decimals,
-        symbol,
-        loading:   false,
-        error:     error.message,
-        isZero:    true,
-        display:   "—",
-        usdValue:  null,
-      };
-    }
-    const raw       = data?.value ?? 0n;
-    const formatted = formatUnits(raw, decimals);
+
+    // EVM
+    if (!evmConnected || !evmEnabled) return emptyBalance(decimals, symbol);
+    if (evmRes.isLoading)             return loadingBalance(decimals, symbol);
+    if (evmRes.error)                 return errorBalance(decimals, symbol, evmRes.error.message);
+    const raw       = evmRes.data?.value ?? 0n;
+    const formatted = formatUnits(raw, evmRes.data?.decimals ?? decimals);
     const num       = Number(formatted);
-    const usdValue  = token?.priceUsd ? num * token.priceUsd : null;
     return {
       raw,
       formatted,
-      decimals,
-      symbol,
-      loading:  false,
-      error:    null,
-      isZero:   raw === 0n,
-      display:  formatDisplay(num),
-      usdValue,
+      decimals:  evmRes.data?.decimals ?? decimals,
+      symbol:    evmRes.data?.symbol   ?? symbol,
+      loading:   false,
+      error:     null,
+      isZero:    raw === 0n,
+      display:   formatDisplay(num),
+      usdValue:  token.priceUsd ? num * token.priceUsd : null,
     };
-  }, [data, isLoading, error, enabled, isConnected, token]);
+  }, [
+    token, isSolana,
+    solRaw, solLoading, solError, solConnected, publicKey,
+    evmRes.data, evmRes.isLoading, evmRes.error, evmConnected, evmEnabled,
+  ]);
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────
+
+function emptyBalance(decimals: number, symbol: string): TokenBalance {
+  return {
+    raw: 0n, formatted: "0", decimals, symbol,
+    loading: false, error: null, isZero: true,
+    display: "—", usdValue: null,
+  };
+}
+function loadingBalance(decimals: number, symbol: string): TokenBalance {
+  return {
+    raw: 0n, formatted: "0", decimals, symbol,
+    loading: true, error: null, isZero: true,
+    display: "…", usdValue: null,
+  };
+}
+function errorBalance(decimals: number, symbol: string, msg: string): TokenBalance {
+  return {
+    raw: 0n, formatted: "0", decimals, symbol,
+    loading: false, error: msg, isZero: true,
+    display: "—", usdValue: null,
+  };
 }
 
 function formatDisplay(n: number): string {

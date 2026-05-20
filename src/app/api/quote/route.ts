@@ -8,7 +8,11 @@ import {
   fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE,
 } from "@/lib/api/lifi";
 import {
-  normalizeZeroX, normalizeLiFi, rankQuotes, type NormalizedQuote,
+  fetchJupiterQuote, fetchJupiterSwap, JUPITER_SOL_MINT,
+} from "@/lib/api/jupiter";
+import {
+  normalizeZeroX, normalizeLiFi, normalizeJupiter,
+  rankQuotes, type NormalizedQuote,
 } from "@/lib/api/quote-types";
 import type { ChainId } from "@/lib/chains";
 
@@ -109,9 +113,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "invalid_slippage" }, { status: 400 });
   }
 
-  const isCrossChain = fromChain !== toChain;
+  const isCrossChain     = fromChain !== toChain;
+  const fromIsSolana     = fromChain === "solana";
+  const toIsSolana       = toChain   === "solana";
+  const isSameChainSolana = fromIsSolana && toIsSolana;
 
   // ─── Helpers ────────────────────────────────────────────────────────
+  // EVM aggregator args. Only meaningful when the chains in question are EVM
+  // (the `!` is safe because we gate every use behind isZeroXSupported / isLiFiSupported).
   const zxArgs = {
     chainId:     ZEROX_CHAIN_IDS[fromChain as ChainId]!,
     sellToken:   sellToken === "native" ? ZEROX_NATIVE : sellToken,
@@ -128,6 +137,13 @@ export async function GET(req: NextRequest) {
     fromAmount:  sellAmount,
     fromAddress: taker,
     toAddress:   recipient ?? taker,
+    slippageBps,
+  };
+  // Jupiter args (Solana-only). Native SOL → wrapped SOL mint per Jupiter convention.
+  const jupArgs = {
+    inputMint:   sellToken === "native" ? JUPITER_SOL_MINT : sellToken,
+    outputMint:  buyToken  === "native" ? JUPITER_SOL_MINT : buyToken,
+    amount:      sellAmount,
     slippageBps,
   };
 
@@ -158,6 +174,28 @@ export async function GET(req: NextRequest) {
           { headers: { "Cache-Control": "no-store" } },
         );
       }
+      if (source === "jupiter") {
+        if (!isSameChainSolana) {
+          return NextResponse.json({ error: "jupiter_solana_only" }, { status: 400 });
+        }
+        // Jupiter requires the user's wallet pubkey to build the swap tx.
+        // The /quote endpoint doesn't, but we need both to return a firm
+        // payload the client can sign and send.
+        const quote = await fetchJupiterQuote(jupArgs);
+        const swap  = await fetchJupiterSwap({
+          quoteResponse:    quote,
+          userPublicKey:    taker,
+          wrapAndUnwrapSol: true,
+        });
+        return NextResponse.json(
+          {
+            ok: true, mode, source,
+            result: { quote, swap },
+            normalized: normalizeJupiter(quote),
+          },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      }
       return NextResponse.json({ error: "invalid_source" }, { status: 400 });
     } catch (err) {
       console.warn("[quote/firm] upstream error:", err instanceof Error ? err.message : err);
@@ -183,13 +221,31 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // LiFi: any chain pair (same or cross), needs both chains supported
-  if (isLiFiSupported(fromChain as ChainId) && isLiFiSupported(toChain as ChainId)) {
+  // LiFi: any chain pair (same or cross), needs both chains supported.
+  // Skip when it's a same-chain Solana swap — Jupiter has deeper liquidity
+  // and faster execution there.
+  if (
+    !isSameChainSolana &&
+    isLiFiSupported(fromChain as ChainId) &&
+    isLiFiSupported(toChain   as ChainId)
+  ) {
     tasks.push(
       fetchLiFiQuote(lfArgs, lifiKey)
         .then(normalizeLiFi)
         .catch((e) => {
           console.warn("[quote/list] LiFi failed:", e instanceof Error ? e.message : e);
+          return null;
+        }),
+    );
+  }
+
+  // Jupiter: same-chain Solana only
+  if (isSameChainSolana) {
+    tasks.push(
+      fetchJupiterQuote(jupArgs)
+        .then(normalizeJupiter)
+        .catch((e) => {
+          console.warn("[quote/list] Jupiter failed:", e instanceof Error ? e.message : e);
           return null;
         }),
     );

@@ -17,8 +17,9 @@ interface Props {
 }
 
 const SOURCE_META: Record<QuoteSource, { label: string; color: string; tagline: string }> = {
-  "0x":   { label: "0x Settler",  color: "#00E8FF", tagline: "Same-chain · 100+ DEXs" },
-  "lifi": { label: "LiFi Router", color: "#9F5FFF", tagline: "Cross-chain · 30+ bridges" },
+  "0x":      { label: "0x Settler",     color: "#00E8FF", tagline: "Same-chain · 100+ DEXs" },
+  "lifi":    { label: "LiFi Router",    color: "#9F5FFF", tagline: "Cross-chain · 30+ bridges" },
+  "jupiter": { label: "Jupiter Router", color: "#14F195", tagline: "Solana · all AMMs" },
 };
 
 /**

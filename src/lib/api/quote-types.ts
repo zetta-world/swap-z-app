@@ -5,8 +5,9 @@
 
 import type { ZxQuoteResponse, ZxPriceResponse, ZxFill } from "./zerox";
 import type { LfQuote }                                  from "./lifi";
+import type { JupQuote }                                 from "./jupiter";
 
-export type QuoteSource = "0x" | "lifi";
+export type QuoteSource = "0x" | "lifi" | "jupiter";
 
 export interface NormalizedQuote {
   source:         QuoteSource;
@@ -32,7 +33,7 @@ export interface NormalizedQuote {
   hops:           { protocol: string; share: number; color?: string }[];
 
   // Raw payload (for execution; type-erased to keep the union flat)
-  raw:            ZxQuoteResponse | ZxPriceResponse | LfQuote;
+  raw:            ZxQuoteResponse | ZxPriceResponse | LfQuote | JupQuote;
 
   // Useful flags
   isFirm:         boolean;      // true = with calldata ready (0x quote mode, LiFi)
@@ -133,6 +134,63 @@ export function normalizeLiFi(q: LfQuote): NormalizedQuote {
     isFirm:        true,
     isIndicative:  false,
     gasUsd:        gasUsd || undefined,
+  };
+}
+
+// ─── Jupiter normalizer ─────────────────────────────────────────────
+
+const JUPITER_DEX_COLOR: Record<string, string> = {
+  raydium:    "#7C3AED",
+  raydium_clmm: "#7C3AED",
+  orca:       "#FFD15C",
+  orca_v2:    "#FFD15C",
+  whirlpool:  "#FFD15C",
+  meteora:    "#3DBFAE",
+  meteora_dlmm: "#3DBFAE",
+  phoenix:    "#FF7B5C",
+  lifinity:   "#5E7EFF",
+  saber:      "#5BE7C4",
+  openbook:   "#9F5FFF",
+  jupiter_lo: "#FBA124",
+  pump_amm:   "#00E8FF",
+  pumpswap:   "#00E8FF",
+};
+
+function jupiterColor(label?: string): string {
+  if (!label) return "#14F195";
+  const key = label.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
+  return JUPITER_DEX_COLOR[key] ?? "#14F195";
+}
+
+export function normalizeJupiter(q: JupQuote): NormalizedQuote {
+  const hops = (q.routePlan ?? []).map((step) => {
+    const label = step.swapInfo.label ?? "Solana DEX";
+    return {
+      protocol: label,
+      share:    (step.percent ?? 0) / 100,
+      color:    jupiterColor(label),
+    };
+  });
+  const routeSummary = hops.length
+    ? hops.slice(0, 3).map((h) => h.protocol).join(" · ") + (hops.length > 3 ? " …" : "")
+    : "Jupiter aggregator";
+  const topLabel = hops[0]?.protocol;
+  return {
+    source:        "jupiter",
+    label:         topLabel ? `Jupiter · ${topLabel}` : "Jupiter Router",
+    durationSec:   2,                       // ~1 Solana slot
+    isCrossChain:  false,
+    fromChainId:   101,                     // Solana mainnet-beta (Jupiter convention)
+    toChainId:     101,
+    sellAmount:    q.inAmount,
+    buyAmount:     q.outAmount,
+    minBuyAmount:  q.otherAmountThreshold,
+    routeSummary,
+    hops,
+    raw:           q,
+    isFirm:        true,
+    isIndicative:  false,
+    gasUsd:        undefined,               // Solana fees are negligible & not in the response
   };
 }
 

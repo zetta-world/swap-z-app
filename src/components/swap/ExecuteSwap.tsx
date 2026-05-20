@@ -9,6 +9,8 @@ import {
   useAccount, useChainId, usePublicClient, useSendTransaction,
   useSignTypedData, useSwitchChain, useWaitForTransactionReceipt, useWriteContract,
 } from "wagmi";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { VersionedTransaction } from "@solana/web3.js";
 import { concat, erc20Abi, maxUint256, numberToHex, size, type Hex } from "viem";
 import type { Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
@@ -17,6 +19,7 @@ import type { ZxQuoteResponse, ZxPermit2Eip712 } from "@/lib/api/zerox";
 import { ZEROX_CHAIN_IDS } from "@/lib/api/zerox";
 import { LIFI_CHAIN_IDS } from "@/lib/api/lifi";
 import type { LfQuote } from "@/lib/api/lifi";
+import type { JupQuote, JupSwapResponse } from "@/lib/api/jupiter";
 import type { QuoteSource } from "@/lib/api/quote-types";
 import { cn } from "@/lib/cn";
 import { formatAmount } from "@/lib/format";
@@ -57,23 +60,36 @@ export default function ExecuteSwap({
   const { sendTransactionAsync } = useSendTransaction();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
+  // Solana — used for source=jupiter; idle for EVM flows.
+  const sol = useWallet();
+  const { connection: solConn } = useConnection();
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [zxQuote, setZxQuote] = useState<ZxQuoteResponse | null>(null);
   const [lfQuote, setLfQuote] = useState<LfQuote | null>(null);
+  const [jupResult, setJupResult] = useState<{ quote: JupQuote; swap: JupSwapResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<Hex | null>(null);
+  const [solSig, setSolSig] = useState<string | null>(null);
 
   const isCrossChain = fromChain !== toChain;
+  const isJupiter    = source === "jupiter";
+  const isSolanaSrc  = fromChain === "solana";
+  const evmWallet    = isConnected && !!address;
+  const solWallet    = sol.connected && !!sol.publicKey;
+  const walletReady  = isJupiter ? solWallet : evmWallet;
+  const taker        = isJupiter ? sol.publicKey?.toBase58() : address;
 
   const targetChainId = source === "0x"
     ? ZEROX_CHAIN_IDS[fromChain]
-    : LIFI_CHAIN_IDS[fromChain];
+    : source === "lifi"
+      ? LIFI_CHAIN_IDS[fromChain]
+      : undefined; // Jupiter has no EVM chain ID
 
   const { data: receipt, isLoading: receiptLoading } = useWaitForTransactionReceipt({
     hash: txHash ?? undefined,
     chainId: targetChainId,
-    query: { enabled: !!txHash },
+    query: { enabled: !!txHash && !isJupiter },
   });
 
   // Reset on close
@@ -83,15 +99,20 @@ export default function ExecuteSwap({
         setPhase("idle");
         setZxQuote(null);
         setLfQuote(null);
+        setJupResult(null);
         setError(null);
         setTxHash(null);
+        setSolSig(null);
       }, 300);
     }
   }, [open]);
 
   // Pull firm quote when the modal opens
   useEffect(() => {
-    if (!open || !address || !targetChainId) return;
+    if (!open || !taker) return;
+    // EVM-targeting sources need a numeric chain id to proceed
+    if (!isJupiter && !targetChainId) return;
+
     let cancelled = false;
     setPhase("fetching_quote");
     setError(null);
@@ -106,7 +127,7 @@ export default function ExecuteSwap({
           sellToken:   fromToken.address === "native" ? "native" : fromToken.address,
           buyToken:    toToken.address   === "native" ? "native" : toToken.address,
           sellAmount,
-          taker:       address,
+          taker,
           slippageBps: String(slippageBps),
         });
         if (recipient) params.set("recipient", recipient);
@@ -127,7 +148,7 @@ export default function ExecuteSwap({
           } else {
             setPhase("needs_tx_signature");
           }
-        } else {
+        } else if (source === "lifi") {
           const q = body.result as LfQuote;
           setLfQuote(q);
           if (currentChainId !== targetChainId) {
@@ -151,6 +172,10 @@ export default function ExecuteSwap({
           } else {
             setPhase("needs_tx_signature");
           }
+        } else {
+          // Jupiter — body.result = { quote, swap }
+          setJupResult(body.result as { quote: JupQuote; swap: JupSwapResponse });
+          setPhase("needs_tx_signature");
         }
       } catch (e) {
         if (cancelled) return;
@@ -160,7 +185,7 @@ export default function ExecuteSwap({
     })();
 
     return () => { cancelled = true; };
-  }, [open, address, fromChain, toChain, fromToken, toToken, sellAmount, slippageBps, source, recipient, targetChainId, currentChainId, publicClient]);
+  }, [open, taker, isJupiter, address, fromChain, toChain, fromToken, toToken, sellAmount, slippageBps, source, recipient, targetChainId, currentChainId, publicClient]);
 
   // Track receipt
   useEffect(() => {
@@ -243,6 +268,47 @@ export default function ExecuteSwap({
   const onExecute = useCallback(async () => {
     setError(null);
     try {
+      // ─── Jupiter (Solana) path ───────────────────────────────────
+      if (isJupiter) {
+        if (!jupResult || !sol.publicKey) return;
+        if (!sol.signTransaction) {
+          setError("Connected Solana wallet doesn't support signTransaction.");
+          setPhase("tx_failed");
+          return;
+        }
+        setPhase("needs_tx_signature");
+        const swapTxBytes = Buffer.from(jupResult.swap.swapTransaction, "base64");
+        const tx = VersionedTransaction.deserialize(swapTxBytes);
+        const signed = await sol.signTransaction(tx);
+        const sig = await solConn.sendRawTransaction(signed.serialize(), {
+          skipPreflight: false,
+          maxRetries:    3,
+        });
+        setSolSig(sig);
+        setPhase("tx_pending");
+
+        // Wait for confirmation against the lastValidBlockHeight Jupiter returned.
+        try {
+          await solConn.confirmTransaction(
+            {
+              signature:            sig,
+              blockhash:            tx.message.recentBlockhash,
+              lastValidBlockHeight: jupResult.swap.lastValidBlockHeight,
+            },
+            "confirmed",
+          );
+          setPhase("tx_confirmed");
+          toast.success("Swap confirmed", {
+            description: `${sig.slice(0, 10)}…${sig.slice(-6)}`,
+          });
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Confirmation failed.");
+          setPhase("tx_failed");
+        }
+        return;
+      }
+
+      // ─── EVM paths ───────────────────────────────────────────────
       // Re-verify wallet is on the source chain before broadcasting. The user
       // could have switched networks externally between approval and send.
       if (!targetChainId) {
@@ -313,7 +379,7 @@ export default function ExecuteSwap({
       setError(denied ? "Signature rejected by user." : msg);
       setPhase("tx_failed");
     }
-  }, [source, zxQuote, lfQuote, signTypedDataAsync, sendTransactionAsync, targetChainId, currentChainId]);
+  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, signTypedDataAsync, sendTransactionAsync, targetChainId, currentChainId]);
 
   // Quote-derived display values
   const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);
@@ -340,11 +406,28 @@ export default function ExecuteSwap({
         durationText: dur < 60 ? `~${dur}s` : dur < 3600 ? `~${Math.round(dur / 60)}min` : `~${Math.round(dur / 3600)}h`,
       };
     }
+    if (source === "jupiter" && jupResult) {
+      const q = jupResult.quote;
+      const labels = (q.routePlan ?? [])
+        .map((s) => s.swapInfo.label).filter((x): x is string => !!x);
+      return {
+        estOut: Number(q.outAmount) / Math.pow(10, toToken.decimals),
+        minOut: Number(q.otherAmountThreshold) / Math.pow(10, toToken.decimals),
+        routeText: labels.length > 0
+          ? labels.slice(0, 4).join(" → ") + (labels.length > 4 ? " …" : "")
+          : "Jupiter",
+        durationText: "~2s · 1 slot",
+      };
+    }
     return { estOut: null, minOut: null, routeText: "", durationText: "" };
-  }, [source, zxQuote, lfQuote, toToken.decimals]);
+  }, [source, zxQuote, lfQuote, jupResult, toToken.decimals]);
 
-  const explorerBase = explorerForChain(fromChain);
-  const sourceLabel  = source === "0x" ? "0x Settler" : "LiFi Router";
+  const explorerBase = isJupiter ? "https://solscan.io" : explorerForChain(fromChain);
+  const sourceLabel  = source === "0x"      ? "0x Settler"
+                     : source === "lifi"    ? "LiFi Router"
+                     :                        "Jupiter Router";
+  // For Solana, the explorer URL path is /tx/<sig>; we reuse the same prop.
+  const txDisplayHash: string | null = isJupiter ? solSig : (txHash ?? null);
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -370,8 +453,11 @@ export default function ExecuteSwap({
                   "font-mono text-[9px] px-2 py-0.5 rounded border tracking-widest uppercase",
                   source === "0x"
                     ? "border-cyan/30 bg-cyan/10 text-cyan"
-                    : "border-violet/30 bg-violet/10 text-violet",
-                )}>
+                    : source === "lifi"
+                      ? "border-violet/30 bg-violet/10 text-violet"
+                      : "border-[#14F195]/40 bg-[#14F195]/10",
+                )}
+                style={source === "jupiter" ? { color: "#14F195" } : undefined}>
                   {sourceLabel}
                 </span>
                 {isCrossChain && (
@@ -415,7 +501,7 @@ export default function ExecuteSwap({
               )}
 
               {/* Quote details */}
-              {(zxQuote || lfQuote) && (
+              {(zxQuote || lfQuote || jupResult) && (
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <Cell label="Slippage"  value={`${(slippageBps / 100).toFixed(2)}%`} />
                   <Cell label="Min received" value={minOut !== null ? `${formatAmount(minOut, 6)} ${toToken.symbol}` : "—"} tone="green" />
@@ -428,10 +514,10 @@ export default function ExecuteSwap({
               <PhaseBlock
                 phase={phase}
                 error={error}
-                txHash={txHash}
+                txHash={txDisplayHash}
                 explorerBase={explorerBase}
                 receiptLoading={receiptLoading}
-                isConnected={isConnected}
+                isConnected={walletReady}
                 isCrossChain={isCrossChain}
                 source={source}
               />
@@ -446,7 +532,7 @@ export default function ExecuteSwap({
                 >
                   {phase === "tx_confirmed" ? "Done" : "Cancel"}
                 </button>
-                {phase === "needs_chain_switch" && (
+                {phase === "needs_chain_switch" && !isJupiter && (
                   <button type="button" onClick={onSwitchChain} className="flex-1 btn btn-primary text-xs">
                     Switch network
                   </button>
@@ -461,7 +547,7 @@ export default function ExecuteSwap({
                     Sign &amp; send
                   </button>
                 )}
-                {phase === "tx_failed" && (zxQuote || lfQuote) && (
+                {phase === "tx_failed" && (zxQuote || lfQuote || jupResult) && (
                   <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
                     Retry
                   </button>
@@ -470,10 +556,12 @@ export default function ExecuteSwap({
 
               {/* Disclaimer */}
               <p className="font-mono text-[10px] text-ink-4 text-center mt-3 leading-relaxed">
-                {(zxQuote || lfQuote)
+                {(zxQuote || lfQuote || jupResult)
                   ? source === "0x"
                     ? "Powered by 0x Settler · Permit2 · no custody"
-                    : "Powered by LiFi · bridges + DEX aggregators · no custody"
+                    : source === "lifi"
+                      ? "Powered by LiFi · bridges + DEX aggregators · no custody"
+                      : "Powered by Jupiter · Solana DEX aggregator · no custody"
                   : `Fetching firm quote from ${sourceLabel}…`}
               </p>
             </div>
@@ -491,7 +579,7 @@ function PhaseBlock({
 }: {
   phase: Phase;
   error: string | null;
-  txHash: Hex | null;
+  txHash: string | null;
   explorerBase: string;
   receiptLoading: boolean;
   isConnected: boolean;
@@ -511,7 +599,7 @@ function PhaseBlock({
 
   switch (phase) {
     case "fetching_quote":
-      return <Stepper text={`Fetching firm quote from ${source === "0x" ? "0x" : "LiFi"}…`} />;
+      return <Stepper text={`Fetching firm quote from ${source === "0x" ? "0x" : source === "lifi" ? "LiFi" : "Jupiter"}…`} />;
     case "needs_chain_switch":
       return (
         <Card tone="gold" Icon={AlertTriangle}>
@@ -526,7 +614,9 @@ function PhaseBlock({
         <Card tone="cyan" Icon={CheckCircle2}>
           <div className="font-display font-bold text-xs text-cyan mb-0.5">Approval needed</div>
           <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-            LiFi needs permission to spend your tokens. One-time approval, then the swap signs.
+            {source === "lifi"
+              ? "LiFi needs permission to spend your tokens. One-time approval, then the swap signs."
+              : "Approve token spending. One-time, then the swap signs."}
           </p>
         </Card>
       );

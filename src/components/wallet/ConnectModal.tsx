@@ -3,6 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion } from "framer-motion";
 import { useConnect, type Connector } from "wagmi";
+import { useWallet, type Wallet as SolWalletAdapter } from "@solana/wallet-adapter-react";
 import { X, Wallet, ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
@@ -22,6 +23,7 @@ export default function ConnectModal({
   onOpenChange: (o: boolean) => void;
 }) {
   const { connectors, connectAsync, isPending } = useConnect();
+  const solana = useWallet();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,6 +40,24 @@ export default function ConnectModal({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg.includes("User rejected") || msg.includes("rejected") ? "Connection rejected." : msg);
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const onConnectSolana = async (w: SolWalletAdapter) => {
+    setError(null);
+    setPendingId(`sol:${w.adapter.name}`);
+    try {
+      solana.select(w.adapter.name);
+      // select() schedules a connect when autoConnect is true, but explicit
+      // is safer — the user clicked, we connect.
+      await w.adapter.connect();
+      onOpenChange(false);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("user denied");
+      setError(denied ? "Connection rejected." : msg);
     } finally {
       setPendingId(null);
     }
@@ -69,7 +89,7 @@ export default function ConnectModal({
                   <div>
                     <div className="font-display font-bold text-sm text-ink leading-none">Connect a wallet</div>
                     <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest mt-1">
-                      EVM · 9 chains supported
+                      EVM · 9 chains · Solana
                     </div>
                   </div>
                 </div>
@@ -112,6 +132,13 @@ export default function ConnectModal({
                   </div>
                 )}
 
+                {sorted.length > 0 && (
+                  <div className="px-1 py-1 font-mono text-[9px] text-ink-3 tracking-widest uppercase flex items-center gap-2">
+                    <span>EVM</span>
+                    <span className="flex-1 h-px bg-white/5" />
+                  </div>
+                )}
+
                 {sorted.map((c, i) => {
                   const meta = getWalletMeta(c);
                   const isPendingThis = pendingId === c.uid;
@@ -150,6 +177,63 @@ export default function ConnectModal({
                     </motion.button>
                   );
                 })}
+
+                {/* Solana adapters */}
+                {solana.wallets.length > 0 && (
+                  <>
+                    <div className="px-1 pt-3 pb-1 font-mono text-[9px] text-ink-3 tracking-widest uppercase flex items-center gap-2">
+                      <span style={{ color: "#14F195" }}>Solana</span>
+                      <span className="flex-1 h-px bg-white/5" />
+                    </div>
+                    {solana.wallets.map((w, i) => {
+                      const id = `sol:${w.adapter.name}`;
+                      const isPendingThis = pendingId === id;
+                      const installed = w.readyState === "Installed" || w.readyState === "Loadable";
+                      return (
+                        <motion.button
+                          key={id}
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.04 + 0.12 }}
+                          onClick={() => onConnectSolana(w)}
+                          disabled={!installed && w.readyState !== "NotDetected"}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border transition-all text-left group",
+                            "border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-[#14F195]/30",
+                            isPendingThis && "border-[#14F195]/40 bg-[#14F195]/[0.06]",
+                          )}
+                        >
+                          {w.adapter.icon ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={w.adapter.icon} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                          ) : (
+                            <div
+                              className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 font-display font-extrabold text-xs"
+                              style={{ background: "#14F19522", color: "#14F195", border: "1px solid #14F19555" }}
+                            >
+                              {w.adapter.name.slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-display font-bold text-sm text-ink truncate">
+                              {w.adapter.name}
+                            </div>
+                            <div className="font-mono text-[10px] text-ink-3 uppercase tracking-wider truncate">
+                              {installed ? "Solana wallet · installed" : w.readyState === "NotDetected" ? "Tap to install" : "Loading…"}
+                            </div>
+                          </div>
+                          {isPendingThis ? (
+                            <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: "#14F195" }} />
+                          ) : (
+                            <span className="font-mono text-[10px] text-ink-4 group-hover:tracking-widest uppercase" style={{ color: installed ? undefined : "#14F19599" }}>
+                              {installed ? "Connect →" : "Install →"}
+                            </span>
+                          )}
+                        </motion.button>
+                      );
+                    })}
+                  </>
+                )}
               </div>
 
               {/* Error toast */}

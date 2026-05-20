@@ -25,8 +25,9 @@ export const LIFI_CHAIN_IDS: Partial<Record<ChainId, number>> = {
   avalanche: 43114,
   linea:     59144,
   zksync:    324,
-  // LiFi also supports Solana (1151111081099710), but our wagmi stack is
-  // EVM-only — keep it out of the EVM map.
+  // Solana — LiFi's synthetic chain id for mainnet-beta. Same-chain Solana
+  // quotes route through Jupiter (better depth); LiFi handles SOL↔EVM bridges.
+  solana:    1151111081099710,
 };
 
 export const LIFI_NATIVE = "0x0000000000000000000000000000000000000000";

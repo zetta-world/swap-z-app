@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount } from "wagmi";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
@@ -30,7 +31,14 @@ export default function SwapCard() {
     setMode, setRecipient,
   } = useSwap();
   const { toggleZion } = useUI();
-  const { address } = useAccount();
+  const { address }    = useAccount();
+  const sol            = useWallet();
+  const solAddress     = sol.publicKey?.toBase58();
+
+  // Pick the wallet address relevant for the FROM side (drives quote taker).
+  const fromTaker = fromChain === "solana" ? solAddress : address;
+  // Recipient defaults to the wallet of the destination chain when bridging.
+  const defaultDestWallet = toChain === "solana" ? solAddress : address;
 
   const [showSettings,  setShowSettings] = useState(false);
   const [executeOpen,   setExecuteOpen]  = useState(false);
@@ -69,7 +77,7 @@ export default function SwapCard() {
     sellToken:   fromToken?.address === "native" ? "native" : (fromToken?.address ?? ""),
     buyToken:    toToken?.address   === "native" ? "native" : (toToken?.address   ?? ""),
     sellAmount:  sellAmountBase,
-    taker:       address,
+    taker:       fromTaker,
     recipient:   isCrossChain ? recipient : undefined,
     slippageBps,
     enabled:     !!(fromToken && toToken && sellAmountBase !== "0"),
@@ -118,11 +126,11 @@ export default function SwapCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromToken?.address, toToken?.address, fromChain, sellAmountBase, recipient]);
 
-  const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && address);
+  const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker);
   const cantReason   = !fromToken || !toToken
     ? "Pick tokens"
-    : !address
-      ? "Connect wallet"
+    : !fromTaker
+      ? (fromChain === "solana" ? "Connect Solana wallet" : "Connect wallet")
       : !display
         ? (quotesState.loading ? "Fetching quotes…" : "Enter amount")
         : !selectedQuote
@@ -239,8 +247,9 @@ export default function SwapCard() {
                 <RecipientField
                   value={recipient}
                   onChange={setRecipient}
-                  connected={address}
+                  connected={defaultDestWallet}
                   toChainName={toToken ? CHAIN_BY_ID[toToken.chain]?.name : undefined}
+                  destChain={toToken?.chain}
                 />
               </motion.div>
             )}

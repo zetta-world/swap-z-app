@@ -292,6 +292,49 @@ async function run() {
     assert(body.error === "0x_no_cross_chain", "wrong error", body);
   });
 
+  // ─── /api/quote — Solana via Jupiter ──────────────────────────────
+  section("[/api/quote · jupiter] — Solana aggregator");
+  await test("same-chain Solana SOL→USDC returns Jupiter quote", async () => {
+    if (SKIP_NET) return "skip";
+    const usdcSpl = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+    const { status, body } = await call(
+      `/api/quote?fromChain=solana&toChain=solana&sellToken=native&buyToken=${usdcSpl}&sellAmount=1000000000`,
+    );
+    assert([200, 502].includes(status), `expected 200/502, got ${status}`, body);
+    if (status === 200 && body.quotes?.length) {
+      const jup = body.quotes.find((q) => q.source === "jupiter");
+      assert(jup, "expected a jupiter quote", body);
+      assert(jup.fromChainId === 101 && jup.toChainId === 101, "wrong chainId markers", jup);
+      assert(typeof jup.buyAmount === "string" && BigInt(jup.buyAmount) > 0n, "buyAmount missing", jup);
+    }
+  });
+  await test("jupiter firm mode without taker → 400", async () => {
+    const usdcSpl = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+    const { status, body } = await call(
+      `/api/quote?mode=quote&source=jupiter&fromChain=solana&toChain=solana&sellToken=native&buyToken=${usdcSpl}&sellAmount=1000000000`,
+    );
+    assert(status === 400, `expected 400, got ${status}`, body);
+    assert(body.error === "taker_required_for_quote", "wrong error", body);
+  });
+  await test("jupiter firm mode rejects cross-chain", async () => {
+    const usdcEth = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+    const { status, body } = await call(
+      `/api/quote?mode=quote&source=jupiter&fromChain=solana&toChain=ethereum&sellToken=native&buyToken=${usdcEth}&sellAmount=1000000000&taker=ELyx9b3myMmW4PoNVCfFwapsd1RNDPbtjyMTbXLJgwk1`,
+    );
+    assert(status === 400, `expected 400, got ${status}`, body);
+    assert(body.error === "jupiter_solana_only", "wrong error", body);
+  });
+  await test("recipient validates Solana address shape", async () => {
+    // Use a fresh IP so we don't trip rate limit
+    const usdcSpl = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+    const { status, body } = await call(
+      `/api/quote?fromChain=ethereum&toChain=solana&sellToken=native&buyToken=${usdcSpl}&sellAmount=1000000000000000000&recipient=ELyx9b3myMmW4PoNVCfFwapsd1RNDPbtjyMTbXLJgwk1`,
+      { headers: { "x-forwarded-for": "10.0.0.42" } },
+    );
+    // Either succeeds (LiFi quote) or upstream-fails on a real RPC, but never 400 — that would mean recipient validation rejected a valid SOL address.
+    assert(status !== 400, `recipient should be accepted, got 400: ${JSON.stringify(body)}`, body);
+  });
+
   // ─── /api/zion ─────────────────────────────────────────────────────
   section("[/api/zion] — Claude advisory");
   await test("invalid chain → 400", async () => {
