@@ -8,8 +8,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import FlowSphere from "./FlowSphere";
+import ConvictionBadge from "./ConvictionBadge";
 import { compactNumber, formatUsd, formatPct } from "@/lib/format";
 import { CHAIN_BY_ID, type ChainId } from "@/lib/chains";
+import { computeConviction, type ConvictionAudit } from "@/lib/conviction";
 import { cn } from "@/lib/cn";
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
@@ -123,6 +125,32 @@ function PairBody({ data, onRefresh }: { data: PairApi; onRefresh: () => void })
   const ChangeIcon = change >= 0 ? TrendingUp : TrendingDown;
   const changeTone = change >= 0 ? "text-green" : "text-red";
 
+  // Compute the conviction score from the data we already have
+  const conviction = useMemo(() => {
+    const audit: ConvictionAudit | null = data.audit
+      ? {
+          isHoneypot:   data.audit.isHoneypot,
+          buyTax:       data.audit.buyTax,
+          sellTax:      data.audit.sellTax,
+          openSource:   data.audit.openSource,
+          proxy:        data.audit.proxy,
+          mintable:     data.audit.mintable,
+          topHolderPct: data.audit.topHolderPct,
+          lpLockedPct:  data.audit.lpLockedPct,
+          honeypotRisk: data.audit.honeypotRisk,
+        }
+      : null;
+    return computeConviction({
+      audit,
+      pressureTxns:   data.pressure.txns,
+      pressureVolume: data.pressure.volume,
+      liquidityUsd:   p.liquidity.usd,
+      volume24hUsd:   p.volume.h24,
+      ageSec:         data.ageSec,
+      change24hPct:   p.priceChange.h24,
+    });
+  }, [data, p]);
+
   return (
     <div className="space-y-4 min-w-0">
       {/* Back link + refresh */}
@@ -223,6 +251,9 @@ function PairBody({ data, onRefresh }: { data: PairApi; onRefresh: () => void })
           </div>
         </div>
       </div>
+
+      {/* ─── Conviction badge ─────────────────────────────────────── */}
+      <ConvictionBadge result={conviction} />
 
       {/* ─── Flow Sphere + sidebar stats ───────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-w-0">

@@ -6,6 +6,7 @@ import {
   RefreshCw, Sparkles, Globe, AlertCircle, ArrowRight, TrendingUp, TrendingDown,
 } from "lucide-react";
 import { compactNumber, formatPct } from "@/lib/format";
+import { computeQuickScore } from "@/lib/conviction";
 import { cn } from "@/lib/cn";
 
 interface NarrativeMember {
@@ -210,6 +211,22 @@ function ClusterCard({
     [cluster.members],
   );
 
+  // Average quick-score across all cluster members → cluster-level conviction proxy.
+  const clusterScore = useMemo(() => {
+    if (cluster.members.length === 0) return 50;
+    const total = cluster.members.reduce((acc, m) => acc + computeQuickScore({
+      liquidityUsd: m.liquidity,
+      volume24hUsd: m.volume24h,
+      change24hPct: m.change24h,
+    }), 0);
+    return Math.round(total / cluster.members.length);
+  }, [cluster.members]);
+  const scoreColor =
+    clusterScore >= 75 ? "#27D49B" :
+    clusterScore >= 55 ? "#00E8FF" :
+    clusterScore >= 35 ? "#FFB820" :
+                         "#FF8A4C";
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -243,6 +260,14 @@ function ClusterCard({
               </h3>
               <span className={cn("font-mono text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase", riskCfg.color, riskCfg.bg, riskCfg.border)}>
                 {riskCfg.label}
+              </span>
+              <span
+                className="font-mono text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase inline-flex items-center gap-1 tabular-nums"
+                style={{ background: `${scoreColor}10`, borderColor: `${scoreColor}33`, color: scoreColor }}
+                title={`Cluster-level quick conviction (avg across ${cluster.members.length} members). Click any token for the full score.`}
+              >
+                <span className="w-1 h-1 rounded-full" style={{ background: scoreColor }} />
+                {clusterScore} CONV
               </span>
             </div>
             <p className="font-sans text-xs text-ink-2 leading-relaxed mt-0.5 line-clamp-2">

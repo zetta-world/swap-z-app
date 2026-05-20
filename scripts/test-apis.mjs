@@ -373,6 +373,46 @@ async function run() {
     }
   });
 
+  // ─── /api/conviction ───────────────────────────────────────────────
+  section("[/api/conviction] — 0-100 composite score");
+  await test("missing chain → 400", async () => {
+    const { status } = await call("/api/conviction?pair=0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640");
+    assert(status === 400, `expected 400, got ${status}`, null);
+  });
+  await test("invalid chain → 400", async () => {
+    const { status, body } = await call("/api/conviction?chain=mars&pair=0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640");
+    assert(status === 400 && body.error === "invalid_chain", "expected invalid_chain", body);
+  });
+  await test("invalid pair address → 400", async () => {
+    const { status, body } = await call("/api/conviction?chain=ethereum&pair=zzz");
+    assert(status === 400 && body.error === "invalid_pair_address", "expected invalid_pair_address", body);
+  });
+  await test("solana pair address accepted", async () => {
+    const { status, body } = await call(
+      "/api/conviction?chain=solana&pair=g4s53adujukyz5hikyrctbgfnsroixpp12yxy8qm4tjc",
+      { headers: { "x-forwarded-for": "10.0.0.81" } },
+    );
+    assert(status !== 400 || body.error !== "invalid_pair_address",
+      `should accept base58: ${status} ${JSON.stringify(body)}`, body);
+  });
+  await test("valid pair returns conviction object (or 404 when offline)", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call(
+      "/api/conviction?chain=ethereum&pair=0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+      { headers: { "x-forwarded-for": "10.0.0.82" } },
+    );
+    assert([200, 404].includes(status), `expected 200/404, got ${status}`, body);
+    if (status === 200) {
+      assert(body.ok === true, "ok must be true", body);
+      assert(body.conviction, "conviction key missing", body);
+      const c = body.conviction;
+      assert(typeof c.score === "number" && c.score >= 0 && c.score <= 100, "score out of range", c);
+      assert(["strong","solid","neutral","weak","avoid"].includes(c.band), "band invalid", c);
+      assert(/^#[0-9A-Fa-f]{6}$/.test(c.color), "color must be hex", c);
+      assert(Array.isArray(c.factors), "factors must be array", c);
+    }
+  });
+
   // ─── /api/narratives ───────────────────────────────────────────────
   section("[/api/narratives] — Nexus Radar clusters");
   await test("returns clusters[] shape (or empty when offline)", async () => {
