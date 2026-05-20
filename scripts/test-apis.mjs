@@ -335,6 +335,44 @@ async function run() {
     assert(status !== 400, `recipient should be accepted, got 400: ${JSON.stringify(body)}`, body);
   });
 
+  // ─── /api/pair ─────────────────────────────────────────────────────
+  section("[/api/pair] — DexScreener-backed pair detail + audit");
+  await test("missing chain → 400", async () => {
+    const { status } = await call("/api/pair?pair=0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640");
+    assert(status === 400, `expected 400, got ${status}`, null);
+  });
+  await test("invalid chain → 400", async () => {
+    const { status, body } = await call("/api/pair?chain=mars&pair=0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640");
+    assert(status === 400 && body.error === "invalid_chain", "expected invalid_chain", body);
+  });
+  await test("invalid pair address → 400", async () => {
+    const { status, body } = await call("/api/pair?chain=ethereum&pair=notvalid");
+    assert(status === 400 && body.error === "invalid_pair_address", "expected invalid_pair_address", body);
+  });
+  await test("solana pair address (base58) → not invalid_pair_address", async () => {
+    // Use the user's example pair from the DexScreener prints
+    const { status, body } = await call(
+      "/api/pair?chain=solana&pair=g4s53adujukyz5hikyrctbgfnsroixpp12yxy8qm4tjc",
+      { headers: { "x-forwarded-for": "10.0.0.71" } },
+    );
+    assert(status !== 400 || body.error !== "invalid_pair_address",
+      `should accept base58 pair: ${status} ${JSON.stringify(body)}`, body);
+  });
+  await test("valid ETH USDC/WETH pair returns detail (or 404 when offline)", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call(
+      "/api/pair?chain=ethereum&pair=0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+      { headers: { "x-forwarded-for": "10.0.0.72" } },
+    );
+    assert([200, 404].includes(status), `expected 200/404, got ${status}`, body);
+    if (status === 200) {
+      assert(body.ok === true, "ok must be true", body);
+      assert(body.pair, "pair must be present", body);
+      assert(typeof body.pair.priceUsd === "number", "priceUsd missing", body.pair);
+      assert(body.pressure?.txns, "pressure.txns missing", body.pressure);
+    }
+  });
+
   // ─── /api/narratives ───────────────────────────────────────────────
   section("[/api/narratives] — Nexus Radar clusters");
   await test("returns clusters[] shape (or empty when offline)", async () => {

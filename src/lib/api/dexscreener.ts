@@ -13,10 +13,108 @@ interface DSPair {
   liquidity?:  { usd?: number; base?: number; quote?: number };
   volume?:     { h24?: number; h6?: number; h1?: number; m5?: number };
   priceChange?: { h24?: number; h6?: number; h1?: number; m5?: number };
+  txns?:       { h24?: { buys?: number; sells?: number }; h6?: { buys?: number; sells?: number }; h1?: { buys?: number; sells?: number }; m5?: { buys?: number; sells?: number } };
   fdv?:        number;
   marketCap?:  number;
   pairCreatedAt?: number;
-  info?:       { imageUrl?: string };
+  info?:       { imageUrl?: string; websites?: { url?: string }[]; socials?: { type?: string; url?: string }[] };
+}
+
+export interface PairDetail {
+  chainId:     string;
+  dex:         string;
+  url:         string;
+  pairAddress: string;
+  baseToken:   { address: string; name: string; symbol: string };
+  quoteToken:  { address: string; name: string; symbol: string };
+  priceUsd:    number;
+  priceNative: number;
+  liquidity:   { usd: number; base: number; quote: number };
+  volume:      { h24: number; h6: number; h1: number; m5: number };
+  priceChange: { h24: number; h6: number; h1: number; m5: number };
+  txns:        { h24: { buys: number; sells: number }; h6: { buys: number; sells: number }; h1: { buys: number; sells: number }; m5: { buys: number; sells: number } };
+  fdv:         number;
+  marketCap:   number;
+  pairCreatedAt: number;
+  imageUrl?:   string;
+  websites:    string[];
+  socials:     { type: string; url: string }[];
+}
+
+function pairToDetail(p: DSPair): PairDetail {
+  return {
+    chainId:     p.chainId ?? "",
+    dex:         p.dexId ?? "—",
+    url:         p.url ?? "",
+    pairAddress: p.pairAddress ?? "",
+    baseToken:   {
+      address: p.baseToken?.address ?? "",
+      name:    p.baseToken?.name    ?? "",
+      symbol:  p.baseToken?.symbol  ?? "",
+    },
+    quoteToken:  {
+      address: p.quoteToken?.address ?? "",
+      name:    p.quoteToken?.name    ?? "",
+      symbol:  p.quoteToken?.symbol  ?? "",
+    },
+    priceUsd:    Number(p.priceUsd)    || 0,
+    priceNative: Number(p.priceNative) || 0,
+    liquidity: {
+      usd:   Number(p.liquidity?.usd)   || 0,
+      base:  Number(p.liquidity?.base)  || 0,
+      quote: Number(p.liquidity?.quote) || 0,
+    },
+    volume: {
+      h24: Number(p.volume?.h24) || 0,
+      h6:  Number(p.volume?.h6)  || 0,
+      h1:  Number(p.volume?.h1)  || 0,
+      m5:  Number(p.volume?.m5)  || 0,
+    },
+    priceChange: {
+      h24: Number(p.priceChange?.h24) || 0,
+      h6:  Number(p.priceChange?.h6)  || 0,
+      h1:  Number(p.priceChange?.h1)  || 0,
+      m5:  Number(p.priceChange?.m5)  || 0,
+    },
+    txns: {
+      h24: { buys: Number(p.txns?.h24?.buys) || 0, sells: Number(p.txns?.h24?.sells) || 0 },
+      h6:  { buys: Number(p.txns?.h6?.buys)  || 0, sells: Number(p.txns?.h6?.sells)  || 0 },
+      h1:  { buys: Number(p.txns?.h1?.buys)  || 0, sells: Number(p.txns?.h1?.sells)  || 0 },
+      m5:  { buys: Number(p.txns?.m5?.buys)  || 0, sells: Number(p.txns?.m5?.sells)  || 0 },
+    },
+    fdv:           Number(p.fdv)         || 0,
+    marketCap:     Number(p.marketCap)   || 0,
+    pairCreatedAt: Number(p.pairCreatedAt) || 0,
+    imageUrl:      p.info?.imageUrl,
+    websites:      (p.info?.websites ?? []).map((w) => w.url ?? "").filter(Boolean),
+    socials:       (p.info?.socials  ?? [])
+      .map((s) => ({ type: s.type ?? "", url: s.url ?? "" }))
+      .filter((s) => s.url),
+  };
+}
+
+/**
+ * Fetch full detail for one pair: /latest/dex/pairs/{chainId}/{pairAddress}.
+ * Returns null when the pair isn't found or the API fails.
+ */
+export async function getPairDetail(chainName: string, pairAddress: string): Promise<PairDetail | null> {
+  if (!chainName || !pairAddress) return null;
+  try {
+    const res = await fetch(
+      `https://api.dexscreener.com/latest/dex/pairs/${encodeURIComponent(chainName)}/${encodeURIComponent(pairAddress)}`,
+      {
+        headers: { Accept: "application/json" },
+        next: { revalidate: 30 },
+      },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as { pair?: DSPair | null; pairs?: DSPair[] | null };
+    const first = data.pair ?? (data.pairs ?? [])[0];
+    if (!first) return null;
+    return pairToDetail(first);
+  } catch {
+    return null;
+  }
 }
 
 export interface TrendingPair {

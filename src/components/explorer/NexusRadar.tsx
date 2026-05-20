@@ -350,11 +350,26 @@ function Metric({
   );
 }
 
+function pairHref(m: NarrativeMember): string | null {
+  // GeckoTerminal network slugs sometimes diverge from DexScreener's chain
+  // slugs (e.g. eth → ethereum, polygon_pos → polygon). Map the most common
+  // ones so the pair page can hit the right DexScreener endpoint.
+  const slug =
+    m.chain === "eth"         ? "ethereum" :
+    m.chain === "polygon_pos" ? "polygon"  :
+    m.chain;
+  if (!m.pairAddress) return null;
+  return `/pair/${encodeURIComponent(slug)}/${encodeURIComponent(m.pairAddress)}`;
+}
+
 function MemberChip({ member, clusterColor }: { member: NarrativeMember; clusterColor: string }) {
   const up = member.change24h >= 0;
+  const href = pairHref(member);
+  const Tag = href ? "a" : "span";
   return (
-    <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border font-mono text-[10px] truncate max-w-[140px]"
+    <Tag
+      {...(href ? { href } : {})}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border font-mono text-[10px] truncate max-w-[140px] hover:brightness-125 transition"
       style={{
         background: `${clusterColor}10`,
         borderColor: `${clusterColor}33`,
@@ -366,14 +381,22 @@ function MemberChip({ member, clusterColor }: { member: NarrativeMember; cluster
       <span className={cn("tabular-nums", up ? "text-green" : "text-red")}>
         {up ? "+" : ""}{member.change24h.toFixed(1)}%
       </span>
-    </span>
+    </Tag>
   );
 }
 
 function MemberRow({ m }: { m: NarrativeMember }) {
   const up = m.change24h >= 0;
+  const href = pairHref(m);
+  const Tag = href ? "a" : "div";
   return (
-    <div className="flex items-center gap-3 px-2.5 py-2 min-w-0">
+    <Tag
+      {...(href ? { href } : {})}
+      className={cn(
+        "flex items-center gap-3 px-2.5 py-2 min-w-0",
+        href && "hover:bg-white/[0.03] transition-colors",
+      )}
+    >
       <div className="min-w-0 flex-1">
         <div className="font-mono text-[11px] text-ink truncate">
           <b>{m.symbol}</b>
@@ -393,7 +416,7 @@ function MemberRow({ m }: { m: NarrativeMember }) {
           {up ? "+" : ""}{m.change24h.toFixed(2)}%
         </div>
       </div>
-    </div>
+    </Tag>
   );
 }
 
