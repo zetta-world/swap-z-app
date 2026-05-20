@@ -202,7 +202,7 @@ export default function ExecuteSwap({
   }, [targetChainId, switchChainAsync, source, zxQuote, lfQuote, fromToken, sellAmount, publicClient, address]);
 
   const onApprove = useCallback(async () => {
-    if (!lfQuote || !targetChainId) return;
+    if (!lfQuote || !targetChainId || !address) return;
     setError(null);
     setPhase("approving");
     try {
@@ -215,6 +215,18 @@ export default function ExecuteSwap({
       });
       if (publicClient) {
         await publicClient.waitForTransactionReceipt({ hash });
+        // Re-check allowance — guards against rare reorg / RPC inconsistencies
+        const fresh = await publicClient.readContract({
+          address:      fromToken.address as Hex,
+          abi:          erc20Abi,
+          functionName: "allowance",
+          args:         [address as Hex, lfQuote.estimate.approvalAddress as Hex],
+        });
+        if (fresh < BigInt(sellAmount)) {
+          setError("Approval mined but allowance still insufficient. Please retry.");
+          setPhase("tx_failed");
+          return;
+        }
       }
       setPhase("needs_tx_signature");
     } catch (e) {
@@ -223,13 +235,30 @@ export default function ExecuteSwap({
       setError(denied ? "Approval rejected by user." : msg);
       setPhase("tx_failed");
     }
-  }, [lfQuote, fromToken, targetChainId, writeContractAsync, publicClient]);
+  }, [lfQuote, fromToken, targetChainId, writeContractAsync, publicClient, address, sellAmount]);
 
   const onExecute = useCallback(async () => {
     setError(null);
     try {
+      // Re-verify wallet is on the source chain before broadcasting. The user
+      // could have switched networks externally between approval and send.
+      if (!targetChainId) {
+        setError("Chain not supported by the selected aggregator.");
+        setPhase("tx_failed");
+        return;
+      }
+      if (currentChainId !== targetChainId) {
+        setPhase("needs_chain_switch");
+        return;
+      }
+
       if (source === "0x") {
         if (!zxQuote) return;
+        if (!zxQuote.transaction?.to || !zxQuote.transaction?.data) {
+          setError("0x returned an incomplete quote. Please retry.");
+          setPhase("tx_failed");
+          return;
+        }
         let data = zxQuote.transaction.data as Hex;
 
         if (zxQuote.permit2) {
@@ -260,8 +289,13 @@ export default function ExecuteSwap({
 
       // LiFi path
       if (!lfQuote) return;
-      setPhase("needs_tx_signature");
       const tx = lfQuote.transactionRequest;
+      if (!tx || !tx.to || !tx.data) {
+        setError("LiFi returned an incomplete transaction. Please retry.");
+        setPhase("tx_failed");
+        return;
+      }
+      setPhase("needs_tx_signature");
       const hash = await sendTransactionAsync({
         to:      tx.to as Hex,
         data:    tx.data as Hex,
@@ -276,7 +310,7 @@ export default function ExecuteSwap({
       setError(denied ? "Signature rejected by user." : msg);
       setPhase("tx_failed");
     }
-  }, [source, zxQuote, lfQuote, signTypedDataAsync, sendTransactionAsync, targetChainId]);
+  }, [source, zxQuote, lfQuote, signTypedDataAsync, sendTransactionAsync, targetChainId, currentChainId]);
 
   // Quote-derived display values
   const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);

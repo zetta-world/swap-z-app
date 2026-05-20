@@ -129,13 +129,14 @@ async function runZion(args: RunArgs) {
           controller.enqueue(encoder.encode(delta));
         });
         msgStream.on("error", (err) => {
-          controller.enqueue(encoder.encode(`\n\n[ZION error: ${err?.message ?? String(err)}]\n`));
+          console.warn("[zion] stream error:", err?.message ?? err);
+          controller.enqueue(encoder.encode(`\n\n[ZION error: Stream interrupted. Please retry.]\n`));
         });
         await msgStream.finalMessage();
         controller.close();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        controller.enqueue(encoder.encode(`[ZION error: ${msg}]`));
+        console.warn("[zion] fatal:", err instanceof Error ? err.message : err);
+        controller.enqueue(encoder.encode(`[ZION error: Unable to complete analysis. Please retry.]`));
         controller.close();
       }
     },

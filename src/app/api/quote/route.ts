@@ -148,8 +148,11 @@ export async function GET(req: NextRequest) {
       }
       return NextResponse.json({ error: "invalid_source" }, { status: 400 });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "unknown";
-      return NextResponse.json({ ok: false, error: "upstream_failed", message }, { status: 502 });
+      console.warn("[quote/firm] upstream error:", err instanceof Error ? err.message : err);
+      return NextResponse.json(
+        { ok: false, error: "upstream_failed" },
+        { status: 502, headers: { "Cache-Control": "no-store" } },
+      );
     }
   }
 

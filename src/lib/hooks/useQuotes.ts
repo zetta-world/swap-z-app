@@ -79,7 +79,7 @@ export function useQuotes(args: Args): QuotesState {
           quotes:       body.quotes ?? [],
           loading:      false,
           error:        null,
-          isCrossChain: !!body.isCrossChain,
+          isCrossChain: body.isCrossChain ?? (fromChain !== toChain),
         });
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;

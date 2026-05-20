@@ -136,14 +136,21 @@ export function normalizeLiFi(q: LfQuote): NormalizedQuote {
   };
 }
 
-/** Rank quotes by best output (higher minBuyAmount wins). */
+/**
+ * Rank quotes by best output. Prefer minBuyAmount (worst-case guarantee);
+ * fall back to buyAmount when the source returns only a price-mode response
+ * with no minimum — otherwise indicative quotes would unfairly rank last.
+ */
 export function rankQuotes(quotes: NormalizedQuote[]): NormalizedQuote[] {
+  const score = (q: NormalizedQuote) => {
+    const min = q.minBuyAmount && q.minBuyAmount !== "0" ? q.minBuyAmount : null;
+    return BigInt(min ?? q.buyAmount ?? "0");
+  };
   return [...quotes].sort((a, b) => {
-    const aMin = BigInt(a.minBuyAmount || "0");
-    const bMin = BigInt(b.minBuyAmount || "0");
-    if (aMin > bMin) return -1;
-    if (aMin < bMin) return  1;
-    // Tie-breaker: faster
+    const aS = score(a);
+    const bS = score(b);
+    if (aS > bS) return -1;
+    if (aS < bS) return  1;
     return a.durationSec - b.durationSec;
   });
 }
