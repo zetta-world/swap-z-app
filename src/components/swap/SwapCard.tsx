@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useAccount } from "wagmi";
-import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Loader2, AlertTriangle } from "lucide-react";
+import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Loader2, AlertTriangle, Workflow } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
 import ExecuteSwap from "./ExecuteSwap";
@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import type { Token } from "@/lib/tokens";
 import { useZeroXPrice } from "@/lib/hooks/useZeroXPrice";
 import { isZeroXSupported } from "@/lib/api/zerox";
+import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
 
 export default function SwapCard() {
   const {
@@ -28,6 +29,13 @@ export default function SwapCard() {
   const [executeOpen,   setExecuteOpen]  = useState(false);
 
   const supported = isZeroXSupported(fromChain);
+
+  // ─── Real balances (wagmi useBalance per token) ─────────────────────
+  const fromBalance = useTokenBalance(fromToken);
+  const toBalance   = useTokenBalance(toToken);
+
+  // ─── Same-chain enforcement ─────────────────────────────────────────
+  const sameChain = !!(fromToken && toToken && fromToken.chain === toToken.chain);
 
   // ─── Convert UI amount (decimal) → base units (integer) ─────────────
   const sellAmountBase = useMemo(() => {
@@ -92,16 +100,27 @@ export default function SwapCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromToken?.address, toToken?.address, fromChain, sellAmountBase]);
 
-  const canExecute   = !!(display && fromToken && toToken && supported && address);
+  const canExecute   = !!(display && fromToken && toToken && supported && address && sameChain);
   const cantReason   = !fromToken || !toToken
     ? "Pick tokens"
-    : !supported
-      ? "Chain not supported"
-      : !address
-        ? "Connect wallet"
-        : !display
-          ? (price.loading ? "Fetching quote…" : "Enter amount")
-          : "";
+    : !sameChain
+      ? "Cross-chain — use Bridge"
+      : !supported
+        ? "Chain not supported"
+        : !address
+          ? "Connect wallet"
+          : !display
+            ? (price.loading ? "Fetching quote…" : "Enter amount")
+            : "";
+
+  const onPercent = (pct: number) => {
+    if (!fromBalance || fromBalance.isZero || !fromToken) return;
+    // For native token, leave a small buffer for gas (~0.001 of the token)
+    const buf  = fromToken.address === "native" ? 0.001 : 0;
+    const num  = Number(fromBalance.formatted) * pct;
+    const safe = Math.max(num - buf, 0);
+    setAmountIn(safe.toString().slice(0, 18));
+  };
 
   return (
     <div className="relative w-full max-w-md mx-auto">
@@ -153,7 +172,8 @@ export default function SwapCard() {
 
           {/* From */}
           <SideBox label="You pay" token={fromToken} amount={amountIn} usdValue={display?.inUsd}
-            onAmountChange={setAmountIn} onTokenChange={setFromToken} side="from" editable />
+            onAmountChange={setAmountIn} onTokenChange={setFromToken} side="from" editable
+            balance={fromBalance} onPercent={onPercent} />
 
           {/* Flip */}
           <div className="relative h-0 flex items-center justify-center">
@@ -167,7 +187,22 @@ export default function SwapCard() {
           <SideBox label="You receive" token={toToken}
             amount={display ? formatAmount(display.buyDec, 6) : (price.loading ? "…" : "")}
             usdValue={display?.outUsd}
-            onAmountChange={() => {}} onTokenChange={setToToken} side="to" editable={false} />
+            onAmountChange={() => {}} onTokenChange={setToToken} side="to" editable={false}
+            balance={toBalance} />
+
+          {/* Cross-chain warning */}
+          {fromToken && toToken && !sameChain && (
+            <div className="rounded-xl border border-gold/30 bg-gold/[0.05] p-3 flex items-start gap-2.5">
+              <Workflow className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">Cross-chain pair</div>
+                <p className="font-sans text-xs text-ink-2 leading-relaxed">
+                  {fromToken.symbol} is on <b>{fromToken.chain}</b>, {toToken.symbol} is on <b>{toToken.chain}</b>.
+                  Single-chain DEX swaps can&apos;t bridge — use the <a href="/bridge" className="text-cyan underline">Bridge</a> page for cross-chain.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Stats + Route */}
           {display && (
@@ -264,6 +299,7 @@ export default function SwapCard() {
 // ─── SideBox: token selector + amount input + USD value ─────────────────
 function SideBox({
   label, token, amount, usdValue, onAmountChange, onTokenChange, side, editable,
+  balance, onPercent,
 }: {
   label: string;
   token: Token | undefined;
@@ -273,18 +309,37 @@ function SideBox({
   onTokenChange: (t: Token) => void;
   side: "from" | "to";
   editable: boolean;
+  balance?: TokenBalance;
+  onPercent?: (pct: number) => void;
 }) {
+  const balanceText = balance
+    ? balance.loading
+      ? "…"
+      : balance.error
+        ? "—"
+        : balance.display
+    : "—";
+
   return (
     <div className="rounded-xl border border-white/5 bg-bg-1/30 p-3.5 sm:p-4 hover:border-white/10 transition-colors">
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">{label}</span>
+      <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
+        <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest flex-shrink-0">{label}</span>
         {token && (
-          <span className="font-mono text-[10px] text-ink-3">
-            Balance: <span className="text-ink-2">—</span>
+          <span className="font-mono text-[10px] text-ink-3 truncate">
+            Balance:{" "}
+            <span className={cn(
+              "font-bold",
+              balance && !balance.isZero ? "text-ink-2" : "text-ink-3",
+            )}>
+              {balanceText}
+            </span>
+            {balance?.usdValue !== null && balance?.usdValue !== undefined && balance.usdValue > 0 && (
+              <span className="text-ink-4"> · {formatUsd(balance.usdValue)}</span>
+            )}
           </span>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0">
         <input
           type="text"
           inputMode="decimal"
@@ -299,15 +354,24 @@ function SideBox({
         />
         <TokenSelector value={token} onChange={onTokenChange} side={side} />
       </div>
-      <div className="flex items-center justify-between mt-2">
-        <span className="font-mono text-[11px] text-ink-3">
+      <div className="flex items-center justify-between mt-2 gap-2 min-w-0">
+        <span className="font-mono text-[11px] text-ink-3 truncate">
           {usdValue !== undefined ? formatUsd(usdValue) : "$0.00"}
         </span>
-        {editable && (
-          <div className="flex gap-1">
-            {["25%", "50%", "MAX"].map((p) => (
-              <button type="button" key={p} className="font-mono text-[10px] text-ink-3 px-1.5 py-0.5 rounded hover:text-cyan hover:bg-cyan/5 transition-colors">
-                {p}
+        {editable && onPercent && balance && !balance.isZero && (
+          <div className="flex gap-1 flex-shrink-0">
+            {[
+              { label: "25%", pct: 0.25 },
+              { label: "50%", pct: 0.50 },
+              { label: "MAX", pct: 1.00 },
+            ].map((p) => (
+              <button
+                type="button"
+                key={p.label}
+                onClick={() => onPercent(p.pct)}
+                className="font-mono text-[10px] text-cyan/80 border border-cyan/20 bg-cyan/5 px-2 py-0.5 rounded hover:text-cyan hover:bg-cyan/10 hover:border-cyan/40 transition-colors"
+              >
+                {p.label}
               </button>
             ))}
           </div>

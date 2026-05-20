@@ -97,8 +97,22 @@ export default function PortfolioView() {
           <div className="flex items-center gap-2 mb-3">
             <Wallet className="w-4 h-4 text-cyan" />
             <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">
-              Multi-chain portfolio · demo wallet
+              Multi-chain portfolio · demo wallet snapshot
             </span>
+          </div>
+
+          {/* Disclosure banner */}
+          <div className="rounded-xl border border-gold/20 bg-gold/[0.04] p-3 mb-4 flex items-start gap-2.5">
+            <Wallet className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">Demo data</div>
+              <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
+                Real multi-chain holdings require a token-balance API (Alchemy / Zerion / Covalent).
+                Numbers below are illustrative. Native + ERC-20 balances on the connected chain are
+                already live in the Swap card; this dashboard ships in the next sprint with the
+                full multi-chain indexer wired up.
+              </p>
+            </div>
           </div>
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div>

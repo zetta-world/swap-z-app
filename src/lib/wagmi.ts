@@ -101,3 +101,16 @@ export const WAGMI_CHAIN_TO_INTERNAL: Record<number, ChainId> = {
   [zksync.id]:    "zksync",
   [linea.id]:     "linea",
 };
+
+// Inverse: internal ChainId → wagmi numeric chain id
+export const WAGMI_CHAIN_IDS: Partial<Record<ChainId, number>> = {
+  ethereum:  mainnet.id,
+  bsc:       bsc.id,
+  polygon:   polygon.id,
+  base:      base.id,
+  arbitrum:  arbitrum.id,
+  optimism:  optimism.id,
+  avalanche: avalanche.id,
+  zksync:    zksync.id,
+  linea:     linea.id,
+};

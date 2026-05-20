@@ -36,11 +36,15 @@ export const DEFAULT_TOKENS: Token[] = [
   { symbol: "BNB",   name: "BNB",           chain: "bsc",      address: "native", decimals: 18, color: "#F3BA2F", priceUsd: 720,   riskScore: 5,  tags: ["native"] },
   { symbol: "ZETTA", name: "ZETTA Token",   chain: "bsc",      address: "0x8aacc38933007ec530c552007e210b4667749df1", decimals: 18, color: "#00E8FF", priceUsd: 0.0084, riskScore: 8, tags: ["defi"] },
   { symbol: "USDT",  name: "Tether USD",    chain: "bsc",      address: "0x55d398326f99059fF775485246999027B3197955", decimals: 18, color: "#26A17B", priceUsd: 1.00,  riskScore: 5,  tags: ["stablecoin"] },
+  { symbol: "USDC",  name: "USD Coin",      chain: "bsc",      address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", decimals: 18, color: "#2775CA", priceUsd: 1.00,  riskScore: 4,  tags: ["stablecoin"] },
+  { symbol: "BUSD",  name: "Binance USD",   chain: "bsc",      address: "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56", decimals: 18, color: "#F0B90B", priceUsd: 1.00,  riskScore: 5,  tags: ["stablecoin"] },
   { symbol: "CAKE",  name: "PancakeSwap",   chain: "bsc",      address: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82", decimals: 18, color: "#D1884F", priceUsd: 2.85,  riskScore: 8,  tags: ["defi"] },
+  { symbol: "BTCB",  name: "BTC on BSC",    chain: "bsc",      address: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c", decimals: 18, color: "#F7931A", priceUsd: 96400, riskScore: 4,  tags: ["wrapped"] },
 
   // ─── Polygon ──────────────────────────────────────────────────────────
   { symbol: "POL",   name: "Polygon",       chain: "polygon",  address: "native", decimals: 18, color: "#8247E5", priceUsd: 0.52,  riskScore: 6,  tags: ["native"] },
   { symbol: "USDC",  name: "USD Coin",      chain: "polygon",  address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", decimals: 6,  color: "#2775CA", priceUsd: 1.00,  riskScore: 3,  tags: ["stablecoin"] },
+  { symbol: "USDT",  name: "Tether USD",    chain: "polygon",  address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", decimals: 6,  color: "#26A17B", priceUsd: 1.00,  riskScore: 5,  tags: ["stablecoin"] },
 
   // ─── Base ─────────────────────────────────────────────────────────────
   { symbol: "ETH",   name: "Ethereum",      chain: "base",     address: "native", decimals: 18, color: "#627EEA", priceUsd: 3450,  riskScore: 4,  tags: ["native"] },
@@ -49,14 +53,19 @@ export const DEFAULT_TOKENS: Token[] = [
 
   // ─── Arbitrum ─────────────────────────────────────────────────────────
   { symbol: "ETH",   name: "Ethereum",      chain: "arbitrum", address: "native", decimals: 18, color: "#627EEA", priceUsd: 3450,  riskScore: 4,  tags: ["native"] },
+  { symbol: "USDC",  name: "USD Coin",      chain: "arbitrum", address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6,  color: "#2775CA", priceUsd: 1.00,  riskScore: 3,  tags: ["stablecoin"] },
+  { symbol: "USDT",  name: "Tether USD",    chain: "arbitrum", address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", decimals: 6,  color: "#26A17B", priceUsd: 1.00,  riskScore: 5,  tags: ["stablecoin"] },
   { symbol: "ARB",   name: "Arbitrum",      chain: "arbitrum", address: "0x912CE59144191C1204E64559FE8253a0e49E6548", decimals: 18, color: "#28A0F0", priceUsd: 0.78,  riskScore: 6,  tags: ["defi"] },
   { symbol: "GMX",   name: "GMX",           chain: "arbitrum", address: "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a", decimals: 18, color: "#3D8FFF", priceUsd: 24.6,  riskScore: 7,  tags: ["defi"] },
 
   // ─── Optimism ─────────────────────────────────────────────────────────
+  { symbol: "ETH",   name: "Ethereum",      chain: "optimism", address: "native", decimals: 18, color: "#627EEA", priceUsd: 3450,  riskScore: 4,  tags: ["native"] },
+  { symbol: "USDC",  name: "USD Coin",      chain: "optimism", address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", decimals: 6,  color: "#2775CA", priceUsd: 1.00,  riskScore: 3,  tags: ["stablecoin"] },
   { symbol: "OP",    name: "Optimism",      chain: "optimism", address: "0x4200000000000000000000000000000000000042", decimals: 18, color: "#FF0420", priceUsd: 1.62,  riskScore: 5,  tags: ["defi"] },
 
   // ─── Avalanche ────────────────────────────────────────────────────────
   { symbol: "AVAX",  name: "Avalanche",     chain: "avalanche", address: "native", decimals: 18, color: "#E84142", priceUsd: 39.8, riskScore: 6, tags: ["native"] },
+  { symbol: "USDC",  name: "USD Coin",      chain: "avalanche", address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", decimals: 6, color: "#2775CA", priceUsd: 1.00, riskScore: 3, tags: ["stablecoin"] },
 
   // ─── zkSync ───────────────────────────────────────────────────────────
   { symbol: "ETH",   name: "Ethereum",      chain: "zksync",   address: "native", decimals: 18, color: "#627EEA", priceUsd: 3450, riskScore: 4, tags: ["native"] },
