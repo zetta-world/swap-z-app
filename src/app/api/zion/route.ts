@@ -175,7 +175,20 @@ async function buildUserMessage(args: RunArgs): Promise<string> {
   }
   // analyze_pair (default)
   const payload = await buildPairPayload(args);
-  return `Analyze this pair end-to-end using your standard framework. Output ONLY the terminal trace plus one ACTION card.\n\nReference data:\n${payload}`;
+  return [
+    "Analyze this pair end-to-end using your standard framework:",
+    "  Phases 1-5 (discovery, security, liquidity, routing, verdict)",
+    "  PLUS Phase 6 — TRADE THESIS (entry zone, 3 profit targets safe/balanced/aggressive,",
+    "  stop loss, R/R, expected timeframe)",
+    "  PLUS Phase 7 — emit a FIVE-CARD bundle: buy_limit + sell_safe + sell_medium",
+    "  + sell_aggressive + stop_loss. Each card MUST include estReturn and targetReturn",
+    "  populated. Trigger prices on the limit/stop cards.",
+    "",
+    "Output ONLY the terminal trace plus the 5 ACTION cards.",
+    "",
+    "Reference data:",
+    payload,
+  ].join("\n");
 }
 
 async function buildOpportunityScan(args: RunArgs): Promise<string> {

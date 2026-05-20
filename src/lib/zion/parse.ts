@@ -8,14 +8,24 @@
  */
 
 export interface ActionCard {
-  kind:       "swap" | "bridge" | "sniper_watch" | "arbitrage" | "limit" | "yield" | "approve" | string;
+  kind:
+    | "swap" | "bridge"
+    | "arbitrage" | "arbitrage_same_chain" | "arbitrage_cross_chain"
+    | "sniper_watch"
+    | "limit" | "buy_limit"
+    | "sell_safe" | "sell_medium" | "sell_aggressive"
+    | "stop_loss"
+    | "yield" | "approve"
+    | string;
   title:      string;
   summary:    string;
   chain:      string;
   from?:      { symbol: string; address: string; amount?: string };
   to?:        { symbol: string; address: string };
+  triggerPrice?: string;
   estCost?:   string;
   estReturn?: string;
+  targetReturn?: string;
   confidence?: "high" | "medium" | "low" | string;
   risk?:      "safe" | "caution" | "risky" | "danger" | string;
   expiresIn?: string;
