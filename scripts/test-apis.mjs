@@ -335,6 +335,36 @@ async function run() {
     assert(status !== 400, `recipient should be accepted, got 400: ${JSON.stringify(body)}`, body);
   });
 
+  // ─── /api/narratives ───────────────────────────────────────────────
+  section("[/api/narratives] — Nexus Radar clusters");
+  await test("returns clusters[] shape (or empty when offline)", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call("/api/narratives", { headers: { "x-forwarded-for": "10.0.0.55" } });
+    assert(status === 200, `expected 200, got ${status}`, body);
+    assert(body.ok === true, "ok must be true", body);
+    assert(Array.isArray(body.clusters), "clusters must be array", body);
+    assert(body.source === "zion" || body.source === "fallback", "source must be zion|fallback", body);
+    assert(typeof body.generatedAt === "number", "generatedAt must be number", body);
+    if (body.clusters.length > 0) {
+      const c = body.clusters[0];
+      assert(typeof c.id === "string"   && c.id.length > 0,   "cluster.id missing", c);
+      assert(typeof c.name === "string" && c.name.length > 0, "cluster.name missing", c);
+      assert(/^#[0-9A-Fa-f]{6}$/.test(c.color), "cluster.color must be hex", c);
+      assert(["low", "medium", "high"].includes(c.risk), "cluster.risk must be enum", c);
+      assert(Array.isArray(c.members), "cluster.members must be array", c);
+      assert(typeof c.aggVolume24h === "number", "aggVolume24h must be number", c);
+    }
+  });
+  await test("rate-limit fires after 12 calls/min", async () => {
+    // Different IP to not interfere with the previous test
+    let hit429 = false;
+    for (let i = 0; i < 15; i++) {
+      const { status } = await call("/api/narratives", { headers: { "x-forwarded-for": "10.0.0.56" } });
+      if (status === 429) { hit429 = true; break; }
+    }
+    assert(hit429, "expected 429 within 15 calls (limit 12/min)", null);
+  });
+
   // ─── /api/zion ─────────────────────────────────────────────────────
   section("[/api/zion] — Claude advisory");
   await test("invalid chain → 400", async () => {
