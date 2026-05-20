@@ -4,28 +4,57 @@ import { http, createConfig } from "wagmi";
 import {
   mainnet, bsc, polygon, base, arbitrum, optimism, avalanche, zksync, linea,
 } from "wagmi/chains";
-import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
+import { coinbaseWallet, injected, metaMask, walletConnect } from "wagmi/connectors";
 
 /**
  * Wagmi v2 client config — EVM chains supported by the Liquidity Nexus.
  *
- * Connectors:
- *   - `injected()` auto-discovers EIP-6963 wallets (MetaMask, Rabby, Brave,
- *     Phantom EVM, OKX, etc.). Each detected wallet gets its own connector
- *     entry so the user picks from a real list, not just "Browser Wallet".
- *   - `coinbaseWallet()` always available (uses Coinbase SDK fallback popup
- *     if extension not installed).
- *   - `walletConnect()` only if NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is set
- *     — gracefully omitted otherwise.
+ * Connectors (order matters — first match wins in some UIs):
+ *
+ *   1. `metaMask()` — uses MetaMask SDK under the hood. Handles the mobile
+ *      deep-link round trip via a WebSocket relay: when a user on a mobile
+ *      external browser clicks "MetaMask", the SDK opens MM app, MM signs
+ *      the connect request, and the relay completes the handshake. Without
+ *      this, mobile-external-browser → MM mobile would hang on "Connecting…"
+ *      because there's no `window.ethereum` to inject into.
+ *
+ *   2. `injected({ shimDisconnect })` — EIP-6963 auto-discovery for every
+ *      installed wallet (Rabby, Brave, OKX, Phantom EVM, Trust, etc.). On
+ *      desktop with MetaMask extension installed, MM extension also surfaces
+ *      via this connector — but #1 above takes priority for the explicit
+ *      "MetaMask" button so mobile users get the proper flow.
+ *
+ *   3. `coinbaseWallet()` — always available, popup fallback when extension
+ *      not installed.
+ *
+ *   4. `walletConnect()` — added only if NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
+ *      is set. Provides QR + mobile wallet pairing.
  *
  * Solana wallets are deferred to a later sprint — wagmi only handles EVM.
  */
 
 const WC_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
+const APP_URL  = (typeof window !== "undefined" && window.location?.origin)
+  ? window.location.origin
+  : "https://z-swap-app.vercel.app";
+
 const connectors = [
+  metaMask({
+    dappMetadata: {
+      name:    "Z-SWAP — The Liquidity Nexus",
+      url:     APP_URL,
+      iconUrl: `${APP_URL}/favicon.svg`,
+    },
+    extensionOnly: false,        // also work on mobile via SDK relay
+    enableAnalytics: false,
+    logging: { developerMode: false, sdk: false },
+  }),
   injected({ shimDisconnect: true }),
-  coinbaseWallet({ appName: "Z-SWAP", appLogoUrl: undefined }),
+  coinbaseWallet({
+    appName:     "Z-SWAP",
+    appLogoUrl:  `${APP_URL}/favicon.svg`,
+  }),
   ...(WC_PROJECT_ID
     ? [walletConnect({
         projectId: WC_PROJECT_ID,
@@ -33,8 +62,8 @@ const connectors = [
         metadata: {
           name:        "Z-SWAP",
           description: "The Liquidity Nexus — multi-chain DEX with ZION AI",
-          url:         "https://z-swap.app",
-          icons:       [],
+          url:         APP_URL,
+          icons:       [`${APP_URL}/favicon.svg`],
         },
       })]
     : []),

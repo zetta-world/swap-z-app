@@ -80,6 +80,16 @@ export default function ConnectModal({
                 </Dialog.Close>
               </div>
 
+              {/* Mobile hint banner — only visible on touch devices */}
+              <div className="md:hidden px-4 pt-3 flex-shrink-0">
+                <div className="rounded-lg border border-cyan/20 bg-cyan/[0.04] p-2.5 flex gap-2 items-start">
+                  <Wallet className="w-3.5 h-3.5 text-cyan flex-shrink-0 mt-0.5" />
+                  <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
+                    Mobile tip: tap MetaMask to deep-link into the app. If it hangs, open <span className="font-mono text-cyan">z-swap-app.vercel.app</span> directly inside MetaMask&apos;s browser.
+                  </p>
+                </div>
+              </div>
+
               {/* Wallet list */}
               <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
                 {sorted.length === 0 && (
@@ -225,18 +235,41 @@ function WalletIcon({ meta }: { meta: WalletMeta }) {
 }
 
 function dedupeConnectors(connectors: readonly Connector[]): Connector[] {
-  const byName = new Map<string, Connector>();
+  // Strategy: prefer connectors that handle mobile deep-link properly
+  // (metaMask SDK over plain "MetaMask" via injected EIP-6963).
+  const byKey = new Map<string, Connector>();
+
   for (const c of connectors) {
-    const key = c.name.toLowerCase();
-    const existing = byName.get(key);
+    const name = c.name.toLowerCase();
+    const isMetaMask = name === "metamask" || c.id === "metaMask" || c.id === "io.metamask";
+    const isCoinbase = name.includes("coinbase") || c.id === "coinbaseWallet" || c.id === "coinbaseWalletSDK";
+    const isWC       = c.type === "walletConnect" || c.id === "walletConnect";
+
+    // Group by canonical wallet name
+    const key = isMetaMask ? "metamask"
+              : isCoinbase ? "coinbase"
+              : isWC       ? "walletconnect"
+              : name;
+
+    const existing = byKey.get(key);
     if (!existing) {
-      byName.set(key, c);
+      byKey.set(key, c);
       continue;
     }
-    // Prefer the connector that has an icon (EIP-6963) over generic ones
+
+    // For MetaMask, prefer the SDK-based `metaMask` connector over the
+    // injected duplicate — it handles mobile deep-link properly.
+    if (isMetaMask) {
+      const existingIsSdk = existing.id === "metaMask";
+      const currentIsSdk  = c.id === "metaMask";
+      if (currentIsSdk && !existingIsSdk) byKey.set(key, c);
+      continue;
+    }
+
+    // For other wallets, prefer the connector that has an EIP-6963 icon
     const cHasIcon = !!(c as { icon?: string }).icon;
     const eHasIcon = !!(existing as { icon?: string }).icon;
-    if (cHasIcon && !eHasIcon) byName.set(key, c);
+    if (cHasIcon && !eHasIcon) byKey.set(key, c);
   }
-  return Array.from(byName.values());
+  return Array.from(byKey.values());
 }
