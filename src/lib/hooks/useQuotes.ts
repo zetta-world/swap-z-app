@@ -11,6 +11,7 @@ interface Args {
   buyToken:     string;
   sellAmount:   string;     // base units
   taker?:       string;
+  recipient?:   string;
   slippageBps?: number;
   enabled?:     boolean;
   debounceMs?:  number;
@@ -37,7 +38,7 @@ export function useQuotes(args: Args): QuotesState {
 
   const {
     fromChain, toChain, sellToken, buyToken, sellAmount,
-    taker, slippageBps, enabled = true, debounceMs = 500,
+    taker, recipient, slippageBps, enabled = true, debounceMs = 500,
   } = args;
 
   useEffect(() => {
@@ -64,6 +65,7 @@ export function useQuotes(args: Args): QuotesState {
           fromChain, toChain, sellToken, buyToken, sellAmount,
         });
         if (taker)       params.set("taker", taker);
+        if (recipient)   params.set("recipient", recipient);
         if (slippageBps) params.set("slippageBps", String(slippageBps));
 
         const res  = await fetch(`/api/quote?${params.toString()}`, { signal: ctrl.signal });
@@ -92,7 +94,7 @@ export function useQuotes(args: Args): QuotesState {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       ctrlRef.current?.abort();
     };
-  }, [fromChain, toChain, sellToken, buyToken, sellAmount, taker, slippageBps, enabled, debounceMs]);
+  }, [fromChain, toChain, sellToken, buyToken, sellAmount, taker, recipient, slippageBps, enabled, debounceMs]);
 
   return state;
 }

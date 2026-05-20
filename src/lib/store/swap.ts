@@ -4,6 +4,8 @@ import type { ChainId } from "../chains";
 
 type Risk = "safe" | "caution" | "danger";
 
+export type SwapMode = "swap" | "cross" | "sniper";
+
 export function riskFromScore(score: number | undefined): Risk {
   if (score === undefined || score === null) return "safe";
   if (score < 20) return "safe";
@@ -36,6 +38,13 @@ interface SwapState {
   slippageBps: number;            // basis points e.g. 50 = 0.5%
   mevProtect: boolean;
   privacyMode: boolean;
+  mode:        SwapMode;
+  /**
+   * Optional override for the destination address when bridging cross-chain.
+   * `undefined` means deliver to the connected wallet (msg.sender).
+   * Stored as the raw user input; validation happens at the boundary.
+   */
+  recipient:   string | undefined;
   setFromChain: (c: ChainId) => void;
   setToChain:   (c: ChainId) => void;
   setFromToken: (t: Token) => void;
@@ -44,6 +53,8 @@ interface SwapState {
   setSlippage:  (bps: number) => void;
   setMev:       (b: boolean) => void;
   setPrivacy:   (b: boolean) => void;
+  setMode:      (m: SwapMode) => void;
+  setRecipient: (r: string | undefined) => void;
   flipPair:     () => void;
 }
 
@@ -56,6 +67,8 @@ export const useSwap = create<SwapState>((set, get) => ({
   slippageBps: 50,
   mevProtect:  true,
   privacyMode: false,
+  mode:        "swap",
+  recipient:   undefined,
 
   setFromChain: (c) => {
     const { fromToken, toToken } = get();
@@ -126,6 +139,8 @@ export const useSwap = create<SwapState>((set, get) => ({
   setSlippage:  (bps) => set({ slippageBps: bps }),
   setMev:       (b) => set({ mevProtect: b }),
   setPrivacy:   (b) => set({ privacyMode: b }),
+  setMode:      (m) => set({ mode: m }),
+  setRecipient: (r) => set({ recipient: r === "" ? undefined : r }),
 
   flipPair: () => {
     const { fromChain, toChain, fromToken, toToken } = get();

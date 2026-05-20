@@ -129,6 +129,8 @@ interface QuoteArgs {
   toToken:      string;
   fromAmount:   string;     // base units
   fromAddress?: string;
+  /** Override the destination address on the target chain. */
+  toAddress?:   string;
   slippageBps?: number;     // 1-5000
 }
 
@@ -147,6 +149,7 @@ export async function fetchLiFiQuote(args: QuoteArgs, integratorKey?: string): P
     order:        "RECOMMENDED",
   });
   if (args.fromAddress) params.set("fromAddress", args.fromAddress);
+  if (args.toAddress)   params.set("toAddress",   args.toAddress);
   if (args.slippageBps) params.set("slippage", (args.slippageBps / 10_000).toString());
 
   const res = await fetch(`${LIFI_BASE}/quote?${params.toString()}`, {

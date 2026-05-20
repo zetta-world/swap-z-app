@@ -31,6 +31,8 @@ interface Props {
   sellAmount:  string;        // BASE UNITS
   slippageBps: number;
   source:      QuoteSource;
+  /** Cross-chain only: deliver to this address instead of the connected wallet. */
+  recipient?:  string;
 }
 
 type Phase =
@@ -46,7 +48,7 @@ type Phase =
   | "tx_failed";
 
 export default function ExecuteSwap({
-  open, onClose, fromToken, toToken, fromChain, toChain, sellAmount, slippageBps, source,
+  open, onClose, fromToken, toToken, fromChain, toChain, sellAmount, slippageBps, source, recipient,
 }: Props) {
   const { address, isConnected } = useAccount();
   const currentChainId = useChainId();
@@ -107,6 +109,7 @@ export default function ExecuteSwap({
           taker:       address,
           slippageBps: String(slippageBps),
         });
+        if (recipient) params.set("recipient", recipient);
         const res = await fetch(`/api/quote?${params.toString()}`);
         const body = await res.json();
         if (cancelled) return;
@@ -157,7 +160,7 @@ export default function ExecuteSwap({
     })();
 
     return () => { cancelled = true; };
-  }, [open, address, fromChain, toChain, fromToken, toToken, sellAmount, slippageBps, source, targetChainId, currentChainId, publicClient]);
+  }, [open, address, fromChain, toChain, fromToken, toToken, sellAmount, slippageBps, source, recipient, targetChainId, currentChainId, publicClient]);
 
   // Track receipt
   useEffect(() => {
@@ -395,6 +398,21 @@ export default function ExecuteSwap({
                   </div>
                 </div>
               </div>
+
+              {/* Recipient override notice — bridge will deliver to a non-wallet address */}
+              {isCrossChain && recipient && address && recipient.toLowerCase() !== address.toLowerCase() && (
+                <div className="rounded-xl border border-gold/30 bg-gold/[0.05] p-2.5 mb-3 flex items-start gap-2">
+                  <Globe className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">
+                      Custom recipient
+                    </div>
+                    <p className="font-mono text-[11px] text-ink-2 truncate">
+                      Deliver to {recipient.slice(0, 8)}…{recipient.slice(-6)}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Quote details */}
               {(zxQuote || lfQuote) && (

@@ -1,27 +1,33 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAccount } from "wagmi";
-import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown } from "lucide-react";
+import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
 import ExecuteSwap from "./ExecuteSwap";
 import QuoteComparison from "./QuoteComparison";
+import SwapModeTabs from "./SwapModeTabs";
+import CrossChainBanner from "./CrossChainBanner";
+import RecipientField from "./RecipientField";
 import { useSwap, riskFromScore } from "@/lib/store/swap";
 import { useUI } from "@/lib/store/ui";
+import { CHAIN_BY_ID } from "@/lib/chains";
 import { formatUsd, formatAmount, parseDecimalInput } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { Token } from "@/lib/tokens";
 import { useQuotes } from "@/lib/hooks/useQuotes";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
-import type { QuoteSource } from "@/lib/api/quote-types";
+import type { QuoteSource, NormalizedQuote } from "@/lib/api/quote-types";
 
 export default function SwapCard() {
   const {
     fromChain, toChain,
     fromToken, toToken, amountIn, slippageBps, mevProtect, privacyMode,
+    mode, recipient,
     setFromToken, setToToken, setAmountIn, setSlippage, setMev, setPrivacy, flipPair,
+    setMode, setRecipient,
   } = useSwap();
   const { toggleZion } = useUI();
   const { address } = useAccount();
@@ -36,12 +42,21 @@ export default function SwapCard() {
 
   const isCrossChain = !!(fromToken && toToken && fromToken.chain !== toToken.chain);
 
+  // Keep tab and pair state in sync — picking cross-chain tokens flips to
+  // the cross tab; picking same-chain back drops you on swap.
+  useEffect(() => {
+    if (isCrossChain && mode !== "cross" && mode !== "sniper") {
+      setMode("cross");
+    } else if (!isCrossChain && mode === "cross") {
+      setMode("swap");
+    }
+  }, [isCrossChain, mode, setMode]);
+
   // ─── Convert UI amount (decimal) → base units (integer) ─────────────
   const sellAmountBase = useMemo(() => {
     if (!fromToken) return "0";
     const amt = parseDecimalInput(amountIn) ?? 0;
     if (amt <= 0) return "0";
-    // Multiply by 10**decimals using string math to avoid float drift
     const [intPart, fracPart = ""] = amt.toString().split(".");
     const fracPadded = (fracPart + "0".repeat(fromToken.decimals)).slice(0, fromToken.decimals);
     return (intPart + fracPadded).replace(/^0+/, "") || "0";
@@ -55,6 +70,7 @@ export default function SwapCard() {
     buyToken:    toToken?.address   === "native" ? "native" : (toToken?.address   ?? ""),
     sellAmount:  sellAmountBase,
     taker:       address,
+    recipient:   isCrossChain ? recipient : undefined,
     slippageBps,
     enabled:     !!(fromToken && toToken && sellAmountBase !== "0"),
   });
@@ -100,7 +116,7 @@ export default function SwapCard() {
   useEffect(() => {
     if (executeOpen) setExecuteOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromToken?.address, toToken?.address, fromChain, sellAmountBase]);
+  }, [fromToken?.address, toToken?.address, fromChain, sellAmountBase, recipient]);
 
   const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && address);
   const cantReason   = !fromToken || !toToken
@@ -115,12 +131,19 @@ export default function SwapCard() {
 
   const onPercent = (pct: number) => {
     if (!fromBalance || fromBalance.isZero || !fromToken) return;
-    // For native token, leave a small buffer for gas (~0.001 of the token)
     const buf  = fromToken.address === "native" ? 0.001 : 0;
     const num  = Number(fromBalance.formatted) * pct;
     const safe = Math.max(num - buf, 0);
     setAmountIn(safe.toString().slice(0, 18));
   };
+
+  const ctaLabel = canExecute
+    ? mode === "cross"
+      ? `Review bridge & swap`
+      : mode === "sniper"
+        ? `Snipe ${toToken?.symbol ?? "token"}`
+        : "Review & swap"
+    : cantReason;
 
   return (
     <div className="relative w-full max-w-md mx-auto">
@@ -129,7 +152,11 @@ export default function SwapCard() {
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="section-label">Swap</span>
+              <span className="section-label">
+                {mode === "cross"  ? "Cross-chain" :
+                 mode === "sniper" ? "Sniper"      :
+                                     "Swap"}
+              </span>
               <RiskBadge risk={risk} />
             </div>
             <div className="flex items-center gap-1">
@@ -148,27 +175,32 @@ export default function SwapCard() {
             </div>
           </div>
 
+          {/* Mode tabs — Swap / Cross-Chain / Sniper */}
+          <SwapModeTabs mode={mode} onChange={setMode} />
+
           {/* Settings */}
-          {showSettings && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-              className="rounded-lg border border-white/5 bg-bg-1/40 p-3 space-y-2.5">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">Slippage Tolerance</label>
-                  <span className="font-mono text-[11px] text-cyan">{(slippageBps / 100).toFixed(2)}%</span>
+          <AnimatePresence>
+            {showSettings && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                className="rounded-lg border border-white/5 bg-bg-1/40 p-3 space-y-2.5 overflow-hidden">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">Slippage Tolerance</label>
+                    <span className="font-mono text-[11px] text-cyan">{(slippageBps / 100).toFixed(2)}%</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {[10, 50, 100, 300].map((bps) => (
+                      <button type="button" key={bps} onClick={() => setSlippage(bps)}
+                        className={cn("flex-1 py-1.5 rounded-md text-[11px] font-mono transition-colors",
+                          slippageBps === bps ? "bg-cyan/15 text-cyan border border-cyan/30" : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2")}>
+                        {bps === 10 ? "0.1%" : bps === 50 ? "0.5%" : bps === 100 ? "1%" : "3%"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex gap-1.5">
-                  {[10, 50, 100, 300].map((bps) => (
-                    <button type="button" key={bps} onClick={() => setSlippage(bps)}
-                      className={cn("flex-1 py-1.5 rounded-md text-[11px] font-mono transition-colors",
-                        slippageBps === bps ? "bg-cyan/15 text-cyan border border-cyan/30" : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2")}>
-                      {bps === 10 ? "0.1%" : bps === 50 ? "0.5%" : bps === 100 ? "1%" : "3%"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* From */}
           <SideBox label="You pay" token={fromToken} amount={amountIn} usdValue={display?.inUsd}
@@ -189,6 +221,35 @@ export default function SwapCard() {
             usdValue={display?.outUsd}
             onAmountChange={() => {}} onTokenChange={setToToken} side="to" editable={false}
             balance={toBalance} />
+
+          {/* Cross-chain ticker (rate + bridge + ETA) */}
+          <AnimatePresence>
+            {isCrossChain && selectedQuote && fromToken && toToken && (
+              <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}>
+                <CrossChainBanner quote={selectedQuote} fromToken={fromToken} toToken={toToken} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Recipient (cross-chain only) */}
+          <AnimatePresence>
+            {isCrossChain && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden">
+                <RecipientField
+                  value={recipient}
+                  onChange={setRecipient}
+                  connected={address}
+                  toChainName={toToken ? CHAIN_BY_ID[toToken.chain]?.name : undefined}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Sniper-mode telemetry: risk, age, pooled depth (lightweight inline preview) */}
+          {mode === "sniper" && toToken && (
+            <SniperTelemetry token={toToken} />
+          )}
 
           {/* Quote comparison — side-by-side aggregator routes */}
           {fromToken && toToken && sellAmountBase !== "0" && (
@@ -212,17 +273,17 @@ export default function SwapCard() {
                 sourceLabel={selectedQuote.label}
               />
 
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <Stat label="Rate"
-                  value={`1 ${fromToken?.symbol} = ${formatAmount(display.rate, 4)} ${toToken?.symbol}`}
-                  compact />
-                <Stat label="Slippage" value={`${(slippageBps / 100).toFixed(2)}%`} tone="green" />
-                <Stat label="Min received"
-                  value={`${formatAmount(display.minDec, 4)} ${toToken?.symbol}`}
-                  compact />
-              </div>
+              <StatsGrid
+                fromSymbol={fromToken?.symbol ?? ""}
+                toSymbol={toToken?.symbol ?? ""}
+                rate={display.rate}
+                minDec={display.minDec}
+                slippageBps={slippageBps}
+                quote={selectedQuote}
+                isCrossChain={isCrossChain}
+              />
 
-              {/* Source badge */}
+              {/* Live source ticker */}
               <div className="flex items-center justify-center gap-1.5 font-mono text-[9px] tracking-widest uppercase">
                 <span className="w-1.5 h-1.5 rounded-full bg-green pulse-dot" />
                 <span className="text-green/80">
@@ -248,7 +309,7 @@ export default function SwapCard() {
             onClick={() => canExecute && setExecuteOpen(true)}
             disabled={!canExecute}
             className="w-full btn btn-primary py-3.5 text-sm tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
-            {canExecute ? "Review &amp; swap" : cantReason}
+            {ctaLabel}
           </button>
 
           {/* Disclaimer */}
@@ -270,8 +331,91 @@ export default function SwapCard() {
           sellAmount={sellAmountBase}
           slippageBps={slippageBps}
           source={selectedQuote.source}
+          recipient={isCrossChain ? recipient : undefined}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Cross-chain–aware stats grid ───────────────────────────────────────
+function StatsGrid({
+  fromSymbol, toSymbol, rate, minDec, slippageBps, quote, isCrossChain,
+}: {
+  fromSymbol:   string;
+  toSymbol:     string;
+  rate:         number;
+  minDec:       number;
+  slippageBps:  number;
+  quote:        NormalizedQuote;
+  isCrossChain: boolean;
+}) {
+  if (!isCrossChain) {
+    return (
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <Stat label="Rate"
+          value={`1 ${fromSymbol} = ${formatAmount(rate, 4)} ${toSymbol}`}
+          compact />
+        <Stat label="Slippage" value={`${(slippageBps / 100).toFixed(2)}%`} tone="green" />
+        <Stat label="Min received"
+          value={`${formatAmount(minDec, 4)} ${toSymbol}`}
+          compact />
+      </div>
+    );
+  }
+  const dur = quote.durationSec;
+  const durationLabel = dur < 60
+    ? `~${dur}s`
+    : dur < 3600
+      ? `~${Math.round(dur / 60)}min`
+      : `~${Math.round(dur / 3600)}h`;
+  const bridge = quote.label.replace(/^LiFi\s·\s/, "");
+  return (
+    <div className="grid grid-cols-3 gap-2 text-center">
+      <Stat icon="rate" label="Rate"
+        value={`1 ${fromSymbol} = ${formatAmount(rate, 4)} ${toSymbol}`}
+        compact />
+      <Stat icon="time" label="ETA" value={durationLabel} tone="violet" />
+      <Stat icon="bridge" label="Bridge" value={bridge} compact />
+      <Stat label="Slippage" value={`${(slippageBps / 100).toFixed(2)}%`} tone="green" />
+      <Stat label="Min received"
+        value={`${formatAmount(minDec, 4)} ${toSymbol}`}
+        compact />
+      <Stat icon="gas" label="Gas (est.)"
+        value={quote.gasUsd ? `~$${quote.gasUsd.toFixed(2)}` : "—"}
+        compact />
+    </div>
+  );
+}
+
+// ─── Sniper-mode inline telemetry (Phase 4 will replace with real data) ─
+function SniperTelemetry({ token }: { token: Token }) {
+  return (
+    <div className="rounded-xl border border-gold/15 bg-gradient-to-r from-gold/[0.04] to-cyan/[0.02] p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Flame className="w-3.5 h-3.5 text-gold" />
+        <span className="font-mono text-[10px] text-gold tracking-widest uppercase">
+          Sniper telemetry · {token.symbol}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+        <Telem label="Chain" value={CHAIN_BY_ID[token.chain]?.name ?? token.chain} />
+        <Telem label="Risk" value={token.riskScore !== undefined ? `${token.riskScore}/100` : "—"} />
+        <Telem label="Address" value={token.address === "native" ? "native" : `${token.address.slice(0, 6)}…${token.address.slice(-4)}`} />
+        <Telem label="Price" value={token.priceUsd ? `$${token.priceUsd.toFixed(6)}` : "—"} />
+      </div>
+      <p className="mt-2 font-mono text-[9px] text-ink-4 leading-relaxed">
+        Pool depth · holder map · creator wallet · coming in Pair view.
+      </p>
+    </div>
+  );
+}
+
+function Telem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between min-w-0 gap-2">
+      <span className="text-ink-3 uppercase tracking-widest text-[9px] flex-shrink-0">{label}</span>
+      <span className="text-ink-2 truncate">{value}</span>
     </div>
   );
 }
@@ -361,14 +505,35 @@ function SideBox({
   );
 }
 
-function Stat({ label, value, tone, compact }: { label: string; value: string; tone?: "green"; compact?: boolean }) {
+function Stat({
+  label, value, tone, compact, icon,
+}: {
+  label:    string;
+  value:    string;
+  tone?:    "green" | "violet";
+  compact?: boolean;
+  icon?:    "rate" | "time" | "bridge" | "gas";
+}) {
+  const IconEl =
+    icon === "time"   ? Clock    :
+    icon === "bridge" ? Workflow :
+    icon === "gas"    ? Fuel     :
+    icon === "rate"   ? Globe    :
+                        null;
+  const toneCls =
+    tone === "green"  ? "text-green"  :
+    tone === "violet" ? "text-violet" :
+                        "text-ink";
   return (
     <div className="rounded-lg border border-white/5 bg-bg-1/30 px-2 py-2 min-w-0">
-      <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest mb-0.5">{label}</div>
+      <div className="flex items-center gap-1 mb-0.5">
+        {IconEl && <IconEl className="w-2.5 h-2.5 text-ink-4" />}
+        <span className="font-mono text-[9px] text-ink-3 uppercase tracking-widest truncate">{label}</span>
+      </div>
       <div className={cn(
-        "font-mono text-[11px] truncate",
-        tone === "green" ? "text-green" : "text-ink",
-        compact ? "text-[10px]" : "",
+        "font-mono truncate",
+        toneCls,
+        compact ? "text-[10px]" : "text-[11px]",
       )}>
         {value}
       </div>

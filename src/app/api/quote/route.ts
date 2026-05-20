@@ -92,6 +92,17 @@ export async function GET(req: NextRequest) {
     taker = t;
   }
 
+  // Optional override for cross-chain delivery address. Defaults to taker.
+  let recipient: string | undefined;
+  const recipientRaw = params.get("recipient");
+  if (recipientRaw) {
+    const r = validateAddress(recipientRaw);
+    if (!r || r === "native") {
+      return NextResponse.json({ error: "invalid_recipient" }, { status: 400 });
+    }
+    recipient = r;
+  }
+
   const slipRaw    = params.get("slippageBps");
   const slippageBps = slipRaw ? parseInt(slipRaw, 10) : 50;
   if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 5000) {
@@ -116,6 +127,7 @@ export async function GET(req: NextRequest) {
     toToken:     buyToken  === "native" ? LIFI_NATIVE : buyToken,
     fromAmount:  sellAmount,
     fromAddress: taker,
+    toAddress:   recipient ?? taker,
     slippageBps,
   };
 
