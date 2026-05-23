@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame } from "lucide-react";
+import Link from "next/link";
+import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame, Banknote } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
 import QuoteComparison from "./QuoteComparison";
@@ -324,6 +325,26 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
             <ChevronDown className="w-3.5 h-3.5 text-gold/60 -rotate-90 group-hover:translate-x-0.5 transition-transform" />
           </button>
 
+          {/* CEX comparison deep-link — appears only when the pair has a
+              plausible centralized-exchange equivalent (stable↔asset) */}
+          {(() => {
+            const cexHint = inferCexFromPair(fromToken, toToken);
+            if (!cexHint) return null;
+            const href = `/cex?symbol=${encodeURIComponent(cexHint.symbol)}&side=${cexHint.side}`;
+            return (
+              <Link
+                href={href}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-cyan/15 bg-cyan/[0.03] hover:bg-cyan/[0.07] hover:border-cyan/25 transition-all group min-w-0"
+              >
+                <Banknote className="w-3.5 h-3.5 text-cyan flex-shrink-0" />
+                <span className="font-mono text-[11px] text-cyan/90 tracking-wide flex-1 text-left truncate">
+                  Compare on CEX · {cexHint.symbol} · {cexHint.side}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-cyan/60 -rotate-90 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+              </Link>
+            );
+          })()}
+
           {/* CTA */}
           <button type="button"
             onClick={() => canExecute && setExecuteOpen(true)}
@@ -557,4 +578,43 @@ function RiskBadge({ risk }: { risk: "safe" | "caution" | "danger" }) {
       {cfg.label}
     </span>
   );
+}
+
+
+// ─── CEX cross-comparison helper ─────────────────────────────────────────
+//
+// Looks at the current pair and decides whether it has a plausible CEX
+// equivalent. Returns { symbol, side } so the SwapCard can deep-link the
+// user to /cex with the trade pre-filled.
+//
+// Logic: a CEX "comparable" pair has one stable side and one non-stable
+// side. We pick BASE = non-stable, QUOTE = "USDT" (the most-listed quote
+// across our 10 supported CEXes — Coinbase / Kraken / Bitfinex users land
+// here and switch the quote manually since they use USD).
+
+const STABLES = new Set(["USDC", "USDT", "DAI", "BUSD", "FRAX", "USD", "TUSD", "USDP"]);
+
+function inferCexFromPair(
+  from: Token | undefined,
+  to:   Token | undefined,
+): { symbol: string; side: "buy" | "sell" } | null {
+  if (!from || !to) return null;
+  const fromSym = (from.symbol || "").toUpperCase();
+  const toSym   = (to.symbol   || "").toUpperCase();
+  if (!fromSym || !toSym) return null;
+  // Normalize wrapped → unwrapped for CEX equivalents
+  const norm = (s: string) =>
+    s === "WETH" ? "ETH" :
+    s === "WBTC" ? "BTC" :
+    s === "WBNB" ? "BNB" :
+    s === "WMATIC" ? "MATIC" :
+    s === "WSOL" ? "SOL" :
+    s;
+  const f = norm(fromSym);
+  const t = norm(toSym);
+  const fromStable = STABLES.has(f);
+  const toStable   = STABLES.has(t);
+  if (fromStable === toStable) return null;            // both stable or both volatile → no clear CEX side
+  if (fromStable) return { symbol: `${t}/USDT`, side: "buy"  };
+  return                       { symbol: `${f}/USDT`, side: "sell" };
 }

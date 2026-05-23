@@ -30,8 +30,12 @@ const SUGGESTED_SYMBOLS: Record<CexId, string[]> = {
 const ORDERBOOK_POLL_MS = 5_000;
 
 interface Props {
-  exchangeId:  CexId;
-  credentials: CexCredentials;
+  exchangeId:    CexId;
+  credentials:   CexCredentials;
+  /** Pre-filled symbol from a deep-link (e.g. SwapCard → /cex). */
+  initialSymbol?: string;
+  /** Pre-filled side (buy / sell) from a deep-link. */
+  initialSide?:  "buy" | "sell";
 }
 
 /**
@@ -40,13 +44,17 @@ interface Props {
  * CexOrderConfirm which adds a 3-second cooldown + literal "I-CONFIRM-REAL-ORDER"
  * payload before the order hits the exchange.
  */
-export default function CexTradePanel({ exchangeId, credentials }: Props) {
+export default function CexTradePanel({
+  exchangeId, credentials, initialSymbol, initialSide,
+}: Props) {
   const meta = CEX_META[exchangeId];
 
-  // Inputs
-  const [symbol, setSymbol] = useState<string>(SUGGESTED_SYMBOLS[exchangeId][0]);
-  const [side,   setSide]   = useState<CexOrderSide>("buy");
+  // Inputs — honor deep-link prefill on first render
+  const [symbol, setSymbol] = useState<string>(initialSymbol ?? SUGGESTED_SYMBOLS[exchangeId][0]);
+  const [side,   setSide]   = useState<CexOrderSide>(initialSide ?? "buy");
+  const [type,   setType]   = useState<"market" | "limit">("market");
   const [amount, setAmount] = useState<string>("");
+  const [limitPrice, setLimitPrice] = useState<string>("");
 
   // Live data
   const [orderbook, setOrderbook] = useState<CexOrderbookSnapshot | null>(null);
@@ -124,10 +132,16 @@ export default function CexTradePanel({ exchangeId, credentials }: Props) {
   const baseBalance  = balances.find((b) => b.asset === baseAsset);
   const quoteBalance = balances.find((b) => b.asset === quoteAsset);
 
-  const amountNum = parseFloat(amount) || 0;
-  const referencePrice =
+  const amountNum    = parseFloat(amount) || 0;
+  const limitPriceNum = parseFloat(limitPrice) || 0;
+  const marketRefPrice =
     side === "buy"  ? orderbook?.bestAsk ?? 0
                     : orderbook?.bestBid ?? 0;
+  // For market orders, reference = top of book on the relevant side
+  // For limit orders, reference = the user-set price (used for cost preview)
+  const referencePrice = type === "limit" && limitPriceNum > 0
+    ? limitPriceNum
+    : marketRefPrice;
   const estCostQuote = amountNum * referencePrice;
 
   // Sanity warnings
@@ -246,6 +260,67 @@ export default function CexTradePanel({ exchangeId, credentials }: Props) {
           </button>
         </div>
 
+        {/* Order type toggle */}
+        <div className="grid grid-cols-2 gap-2 p-0.5 rounded-lg bg-white/[0.03] border border-white/8">
+          {(["market", "limit"] as const).map((t) => {
+            const active = type === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setType(t)}
+                className={cn(
+                  "py-1.5 rounded-md font-mono text-[10px] tracking-widest uppercase transition-all",
+                  active
+                    ? "bg-cyan/15 text-cyan border border-cyan/30"
+                    : "text-ink-3 hover:text-ink-2 border border-transparent",
+                )}
+              >
+                {t}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Limit price (only when type === limit) */}
+        {type === "limit" && (
+          <label className="block min-w-0">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
+                Limit price ({quoteAsset})
+              </span>
+              {marketRefPrice > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setLimitPrice(String(marketRefPrice))}
+                  className="font-mono text-[10px] text-cyan hover:underline tracking-wider"
+                >
+                  use market: {marketRefPrice.toLocaleString("en-US", { maximumFractionDigits: 6 })}
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={limitPrice}
+              onChange={(e) => setLimitPrice(e.target.value.replace(/[^0-9.]/g, ""))}
+              placeholder="0.0"
+              className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/8 focus:border-cyan/30 outline-none text-base font-display font-bold text-ink placeholder:text-ink-4 tabular-nums"
+            />
+            {marketRefPrice > 0 && limitPriceNum > 0 && (
+              <div className="mt-1 font-mono text-[10px] text-ink-3">
+                {side === "buy"
+                  ? limitPriceNum < marketRefPrice
+                    ? `${(((marketRefPrice - limitPriceNum) / marketRefPrice) * 100).toFixed(2)}% below market — fills when price drops`
+                    : `${(((limitPriceNum - marketRefPrice) / marketRefPrice) * 100).toFixed(2)}% above market — would fill immediately (acts like market)`
+                  : limitPriceNum > marketRefPrice
+                    ? `${(((limitPriceNum - marketRefPrice) / marketRefPrice) * 100).toFixed(2)}% above market — fills when price rises`
+                    : `${(((marketRefPrice - limitPriceNum) / marketRefPrice) * 100).toFixed(2)}% below market — would fill immediately (acts like market)`}
+              </div>
+            )}
+          </label>
+        )}
+
         {/* Amount */}
         <label className="block min-w-0">
           <div className="flex items-center justify-between mb-1">
@@ -276,7 +351,12 @@ export default function CexTradePanel({ exchangeId, credentials }: Props) {
         <div className="rounded-xl border border-white/5 bg-bg-1/30 p-3 space-y-1.5 min-w-0">
           <PreviewRow label="Reference price" value={referencePrice > 0 ? `${referencePrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}` : "—"} />
           <PreviewRow label={side === "buy" ? "You spend ≈" : "You receive ≈"} value={amountNum > 0 && referencePrice > 0 ? `${estCostQuote.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${quoteAsset}` : "—"} />
-          <PreviewRow label="Order type" value="market · fills immediately" />
+          <PreviewRow
+            label="Order type"
+            value={type === "market"
+              ? "market · fills immediately"
+              : "limit · sits at the book until matched"}
+          />
         </div>
 
         {/* Warnings */}
@@ -295,7 +375,12 @@ export default function CexTradePanel({ exchangeId, credentials }: Props) {
         <button
           type="button"
           onClick={() => setConfirmOpen(true)}
-          disabled={amountNum <= 0 || referencePrice <= 0 || obError !== null}
+          disabled={
+            amountNum <= 0
+            || marketRefPrice <= 0
+            || (type === "limit" && limitPriceNum <= 0)
+            || obError !== null
+          }
           className={cn(
             "w-full py-3 rounded-lg font-display font-extrabold text-sm tracking-wide flex items-center justify-center gap-2 transition-all",
             side === "buy"
@@ -432,7 +517,9 @@ export default function CexTradePanel({ exchangeId, credentials }: Props) {
         credentials={credentials}
         symbol={symbol}
         side={side}
+        type={type}
         amount={amountNum}
+        limitPrice={type === "limit" ? limitPriceNum : undefined}
         referencePrice={referencePrice}
         baseAsset={baseAsset}
         quoteAsset={quoteAsset}

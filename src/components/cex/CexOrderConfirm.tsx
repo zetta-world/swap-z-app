@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-  CEX_META, type CexId, type CexCredentials, type CexOrder, type CexOrderResponse, type CexOrderSide,
+  CEX_META, type CexId, type CexCredentials, type CexOrder, type CexOrderResponse, type CexOrderSide, type CexOrderType,
 } from "@/lib/cex/types";
 import { cn } from "@/lib/cn";
 
@@ -20,7 +20,10 @@ interface Props {
   credentials:    CexCredentials;
   symbol:         string;
   side:           CexOrderSide;
+  type:           CexOrderType;
   amount:         number;
+  /** Required when type === "limit". */
+  limitPrice?:    number;
   referencePrice: number;
   baseAsset:      string;
   quoteAsset:     string;
@@ -35,9 +38,10 @@ interface Props {
  * cross-checks before forwarding to ccxt.
  */
 export default function CexOrderConfirm({
-  open, onClose, exchangeId, credentials, symbol, side, amount, referencePrice,
+  open, onClose, exchangeId, credentials, symbol, side, type, amount, limitPrice, referencePrice,
   baseAsset, quoteAsset, onConfirmed,
 }: Props) {
+  const isLimit = type === "limit";
   const meta = CEX_META[exchangeId];
   const [secondsLeft, setSecondsLeft] = useState(COOLDOWN_SECONDS);
   const [submitting,  setSubmitting]  = useState(false);
@@ -70,8 +74,9 @@ export default function CexOrderConfirm({
           exchange:   exchangeId,
           symbol,
           side,
-          type:       "market",
+          type,
           amount,
+          price:      isLimit ? limitPrice : undefined,
           confirm:    "I-CONFIRM-REAL-ORDER",
           apiKey:     credentials.apiKey,
           apiSecret:  credentials.apiSecret,
@@ -119,8 +124,10 @@ export default function CexOrderConfirm({
               <div className="rounded-xl border border-red/30 bg-red/[0.06] p-3 flex items-start gap-2 mb-4">
                 <ShieldAlert className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
                 <p className="font-mono text-[11px] text-ink-2 leading-relaxed">
-                  This places a <b>real market order</b> on {meta.label}. Funds will move now —
-                  no further confirmation, no undo.
+                  This places a <b>real {isLimit ? "limit" : "market"} order</b> on {meta.label}.
+                  {isLimit
+                    ? " Funds reserve immediately; the trade settles when the book hits your price (could be never)."
+                    : " Funds will move now — no further confirmation, no undo."}
                 </p>
               </div>
 
@@ -132,7 +139,7 @@ export default function CexOrderConfirm({
                     isBuy ? "text-green" : "text-red",
                   )}>
                     {isBuy ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                    {side.toUpperCase()} · MARKET
+                    {side.toUpperCase()} · {type.toUpperCase()}
                   </span>
                   <span
                     className="px-2 py-0.5 rounded-md border font-mono text-[10px] tracking-widest uppercase"
@@ -168,14 +175,17 @@ export default function CexOrderConfirm({
 
                 <div className="grid grid-cols-2 gap-2">
                   <Cell label="Symbol" value={symbol} />
-                  <Cell label="Reference" value={`${referencePrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}`} />
+                  {isLimit && limitPrice
+                    ? <Cell label="Limit price" value={`${limitPrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}`} />
+                    : <Cell label="Reference" value={`${referencePrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}`} />}
                 </div>
               </div>
 
-              {/* Slippage hint */}
+              {/* Order-type hint */}
               <p className="font-mono text-[10px] text-ink-3 leading-relaxed mb-4">
-                Market orders fill at the next available book levels. Actual fill price
-                can differ from the reference — especially on illiquid pairs.
+                {isLimit
+                  ? "Limit orders sit at the book until the price matches. Cancel anytime from the Open orders panel."
+                  : "Market orders fill at the next available book levels. Actual fill price can differ from the reference — especially on illiquid pairs."}
               </p>
 
               {error && (

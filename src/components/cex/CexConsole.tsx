@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Lock, Unlock, Eye, EyeOff, KeyRound, ShieldAlert, Activity, Power, AlertTriangle,
@@ -31,6 +32,14 @@ const AUTO_LOCK_MS = 10 * 60 * 1000; // 10 minutes idle → re-lock
  * endpoints, which themselves never persist them.
  */
 export default function CexConsole() {
+  const searchParams = useSearchParams();
+  // Deep-link from SwapCard: ?symbol=BTC/USDT&side=buy pre-fills the trade
+  // panel once the vault is unlocked. Captured once on mount.
+  const [prefill] = useState(() => ({
+    symbol: searchParams?.get("symbol") || undefined,
+    side:   (searchParams?.get("side") === "sell" ? "sell" : searchParams?.get("side") === "buy" ? "buy" : undefined) as ("buy" | "sell" | undefined),
+  }));
+
   const [vaultExists, setVaultExists] = useState(false);
   const [connected,   setConnected]   = useState<CexId[]>([]);
   const [passphrase,  setPassphrase]  = useState("");
@@ -291,6 +300,8 @@ export default function CexConsole() {
               key={selectedId}        // remount when switching exchanges
               exchangeId={selectedId}
               credentials={creds[selectedId]!}
+              initialSymbol={prefill.symbol}
+              initialSide={prefill.side}
             />
           </div>
         )}
