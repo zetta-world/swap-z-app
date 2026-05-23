@@ -24,17 +24,6 @@ const FREQS = [
   { v: "monthly", label: "Monthly"  },
 ];
 
-interface ActiveOrder {
-  id: string; type: OrderType; pair: string; status: "active" | "filled" | "cancelled";
-  detail: string; chain: ChainId; progress?: number;
-}
-
-const MOCK_ORDERS: ActiveOrder[] = [
-  { id: "ord_001", type: "limit", pair: "ETH → USDC",  status: "active",    detail: "Trigger at $3,600",     chain: "ethereum" },
-  { id: "ord_002", type: "dca",   pair: "USDC → wstETH",status: "active",   detail: "Daily · $200 · 12 of 30", chain: "ethereum", progress: 0.40 },
-  { id: "ord_003", type: "twap",  pair: "USDC → ARB",  status: "filled",    detail: "8 of 8 ticks · avg $0.79", chain: "arbitrum" },
-  { id: "ord_004", type: "limit", pair: "BNB → CAKE",  status: "cancelled", detail: "Manually cancelled",     chain: "bsc" },
-];
 
 export default function OrdersView() {
   const [tab, setTab] = useState<OrderType>("limit");
@@ -203,7 +192,7 @@ export default function OrdersView() {
                   {summary ? `Place ${TABS.find((t) => t.id === tab)?.label} order` : "Configure order"}
                 </button>
                 <p className="font-mono text-[10px] text-ink-4 text-center">
-                  Demo · order will be logged locally · execution requires wallet integration
+                  Limit / DCA / TWAP placement is in-flight — for now use ZION proposals (see panel on the right) or the swap card for immediate execution.
                 </p>
               </div>
             </div>

@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Wallet, TrendingUp, TrendingDown, ExternalLink, Eye, EyeOff } from "lucide-react";
 import { CHAINS } from "@/lib/chains";
 import { compactNumber, formatUsd, formatPct } from "@/lib/format";
+import CexPortfolioRollup from "./CexPortfolioRollup";
 import { cn } from "@/lib/cn";
 
 interface Holding {
@@ -275,8 +276,13 @@ export default function PortfolioView() {
           </div>
         </div>
 
+        {/* CEX rollup — real read-only data from the connected exchanges */}
+        <div className="mt-6">
+          <CexPortfolioRollup />
+        </div>
+
         <p className="font-mono text-[10px] text-ink-4 text-center mt-6">
-          Demo wallet · real connection lands with wagmi v2 + viem in Sprint 3
+          Wallet data above is demo · CEX rollup below is live read-only data via your saved API keys
         </p>
       </div>
     </div>
