@@ -3,35 +3,43 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
-import { Sparkles, X, Send, Zap, RefreshCw, Scan, MessageSquare, Search } from "lucide-react";
+import {
+  Sparkles, X, Send, Zap, RefreshCw, TrendingUp, Globe, Crosshair, FileText,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import ActionCardView from "./ActionCardView";
 import ZionExecuteRouter from "./ZionExecuteRouter";
+import type { ZionOp } from "@/lib/zion/mode-prompts";
 import { cn } from "@/lib/cn";
 
-type Mode = "analyze_pair" | "scan_opportunities" | "ask";
-
-const MODE_META: { id: Mode; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: "analyze_pair",       label: "Pair",          Icon: Search   },
-  { id: "scan_opportunities", label: "Opportunities", Icon: Scan     },
-  { id: "ask",                label: "Ask",           Icon: MessageSquare },
+const OPS: { id: ZionOp; label: string; tagline: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "trading",   label: "Trading",   tagline: "entry · 3 exits · stop",     Icon: TrendingUp },
+  { id: "arbitrage", label: "Arb",       tagline: "spread hunter",              Icon: Globe      },
+  { id: "sniper",    label: "Sniper",    tagline: "fresh pairs · paranoid",     Icon: Crosshair  },
+  { id: "pair",      label: "Deep",      tagline: "full pair breakdown",        Icon: FileText   },
 ];
 
 export default function ZionDrawer() {
   const { zionOpen, setZion } = useUI();
   const { fromToken, toToken, fromChain, amountIn } = useSwap();
 
-  const [mode, setMode] = useState<Mode>("analyze_pair");
+  const [op, setOp] = useState<ZionOp>("trading");
   const [buffer, setBuffer] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [question, setQuestion] = useState("");
   const [executing, setExecuting] = useState<ActionCard | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+
+  // Arb-mode filters
+  const [arbMinSpread, setArbMinSpread] = useState("0.5");
+  // Sniper-mode filters
+  const [snipeMaxAge,  setSnipeMaxAge]  = useState<"1h" | "6h" | "24h" | "7d">("24h");
+
+  const abortRef  = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const run = useCallback(async (runMode: Mode, followUp: string) => {
+  const run = useCallback(async (runOp: ZionOp, followUp: string) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -40,26 +48,27 @@ export default function ZionDrawer() {
     setStreaming(true);
 
     const params = new URLSearchParams({
-      mode:     runMode === "ask" ? "ask" : runMode,
+      op:       followUp ? "ask" : runOp,
       chain:    fromChain,
       fromAddr: fromToken?.address ?? "",
       toAddr:   toToken?.address   ?? "",
       amountIn: amountIn ?? "1.0",
     });
-    if (followUp) params.set("message", followUp);
+    if (followUp)            params.set("message", followUp);
+    if (runOp === "arbitrage") params.set("minSpread", arbMinSpread);
+    if (runOp === "sniper")    params.set("maxAge",    snipeMaxAge);
 
     try {
       const res = await fetch(`/api/zion?${params.toString()}`, { signal: ctrl.signal });
       if (!res.ok || !res.body) {
-        // Friendly messages for the rate-limit and bad-request cases
         if (res.status === 429) {
           const retry = res.headers.get("Retry-After") ?? "60";
-          setBuffer(`[Rate limit reached]\n\nZION is throttled for ${retry}s. This keeps your Claude API\nbudget safe — too many analyses in a short window. Try again shortly.`);
+          setBuffer(`[Rate limit reached]\n\nZION is throttled for ${retry}s — too many analyses in a short window. Try again shortly.`);
         } else if (res.status === 400) {
           const body = await res.text().catch(() => "");
-          setBuffer(`[Bad request: ${body || res.statusText}]\n\nThe pair or address looks malformed. Pick a token from the list\nand retry.`);
+          setBuffer(`[Bad request: ${body || res.statusText}]\n\nThe pair or address looks malformed. Pick a token and retry.`);
         } else {
-          setBuffer(`[ZION offline: ${res.status} ${res.statusText}]\n\nThe server returned an error. If this persists, the ANTHROPIC_API_KEY may need to be configured in Vercel.`);
+          setBuffer(`[ZION offline: ${res.status} ${res.statusText}]\n\nIf this persists, the ANTHROPIC_API_KEY may need to be configured.`);
         }
         setStreaming(false);
         return;
@@ -84,41 +93,44 @@ export default function ZionDrawer() {
     } finally {
       setStreaming(false);
     }
-  }, [fromChain, fromToken?.address, toToken?.address, amountIn]);
+  }, [fromChain, fromToken?.address, toToken?.address, amountIn, arbMinSpread, snipeMaxAge]);
 
-  // Auto-trigger when drawer opens, mode changes, or pair changes
+  // Auto-run when drawer opens or op changes (except for pair changes —
+  // those trigger inside trading/pair, but not arbitrage/sniper).
   useEffect(() => {
     if (!zionOpen) {
       abortRef.current?.abort();
       return;
     }
     setQuestion("");
-    if (mode === "ask") {
-      // In ask mode, wait for a question
-      setBuffer("");
-      return;
-    }
-    run(mode, "");
+    run(op, "");
     return () => abortRef.current?.abort();
-  }, [zionOpen, mode, fromToken?.symbol, toToken?.symbol, fromChain, run]);
+  }, [zionOpen, op, run]);
+
+  // For trading/pair, re-run when the user changes their selected pair
+  useEffect(() => {
+    if (!zionOpen) return;
+    if (op !== "trading" && op !== "pair") return;
+    run(op, "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromToken?.symbol, toToken?.symbol]);
 
   const onAsk = (e: React.FormEvent) => {
     e.preventDefault();
     const q = question.trim();
     if (!q || streaming) return;
     setQuestion("");
-    setMode("ask");
-    run("ask", q);
+    run(op, q);
   };
 
-  // Parse the rolling buffer into terminal text + cards
   const parsed = useMemo(() => parseZionStream(buffer), [buffer]);
+  const opMeta = OPS.find((o) => o.id === op)!;
 
   return (
     <Dialog.Root open={zionOpen} onOpenChange={setZion}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-bg/60 backdrop-blur-sm animate-fade-in" />
-        <Dialog.Content className="fixed right-0 top-0 bottom-0 z-50 w-full sm:w-[460px] outline-none">
+        <Dialog.Content className="fixed right-0 top-0 bottom-0 z-50 w-full sm:w-[480px] outline-none">
           <Dialog.Title className="sr-only">ZION AI Advisory</Dialog.Title>
           <motion.div
             initial={{ x: "100%" }}
@@ -139,16 +151,16 @@ export default function ZionDrawer() {
                 <div>
                   <div className="font-display font-bold text-sm text-ink leading-none">ZION</div>
                   <div className="font-mono text-[9px] text-gold/70 tracking-widest uppercase mt-1">
-                    Haiku 4.5 · {streaming ? "thinking…" : "ready"}
+                    Haiku 4.5 · {streaming ? "thinking…" : opMeta.label.toLowerCase()}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => run(mode, "")}
+                  onClick={() => run(op, "")}
                   className="w-8 h-8 rounded-md flex items-center justify-center text-ink-3 hover:text-gold hover:bg-gold/5 disabled:opacity-40"
                   title="Re-run"
-                  disabled={streaming || mode === "ask"}
+                  disabled={streaming}
                 >
                   <RefreshCw className={cn("w-3.5 h-3.5", streaming && "animate-spin")} />
                 </button>
@@ -160,41 +172,44 @@ export default function ZionDrawer() {
               </div>
             </div>
 
-            {/* Mode tabs */}
+            {/* Op tabs */}
             <div className="px-5 pt-3 flex-shrink-0">
-              <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/[0.03] border border-white/5">
-                {MODE_META.map((m) => {
-                  const active = mode === m.id;
-                  const Icon = m.Icon;
+              <div className="grid grid-cols-4 gap-0.5 p-0.5 rounded-xl bg-white/[0.03] border border-white/5">
+                {OPS.map((o) => {
+                  const active = op === o.id;
+                  const Icon = o.Icon;
                   return (
                     <button
-                      key={m.id}
-                      onClick={() => setMode(m.id)}
+                      key={o.id}
+                      onClick={() => setOp(o.id)}
                       disabled={streaming}
                       className={cn(
-                        "flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all disabled:opacity-50",
+                        "relative flex flex-col items-center justify-center gap-0.5 px-1 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all disabled:opacity-50 min-w-0",
                         active
                           ? "bg-gold/15 text-gold border border-gold/30"
                           : "text-ink-3 hover:text-ink-2 border border-transparent",
                       )}
                     >
-                      <Icon className="w-3 h-3" />
-                      {m.label}
+                      <Icon className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate">{o.label}</span>
                     </button>
                   );
                 })}
               </div>
+              <div className="font-mono text-[9px] text-ink-4 tracking-wide mt-1.5 text-center truncate">
+                {opMeta.tagline}
+              </div>
             </div>
 
-            {/* Pair context — visible only for analyze_pair and ask */}
-            {mode !== "scan_opportunities" && (
-              <div className="px-5 pt-3 flex-shrink-0">
+            {/* Mode-specific context */}
+            <div className="px-5 pt-3 flex-shrink-0">
+              {(op === "trading" || op === "pair") && (
                 <div className="rounded-xl border border-white/5 bg-bg-1/40 p-3">
                   <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">
-                    {mode === "ask" ? "Context" : "Analyzing"}
+                    Analyzing
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="font-display font-bold text-sm text-ink">
+                    <div className="font-display font-bold text-sm text-ink truncate">
                       {fromToken?.symbol ?? "—"}{" "}
                       <span className="text-ink-3 mx-1">→</span>{" "}
                       {toToken?.symbol ?? "—"}
@@ -202,8 +217,58 @@ export default function ZionDrawer() {
                     <span className="font-mono text-[9px] text-ink-3 tracking-wider uppercase">{fromChain}</span>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+
+              {op === "arbitrage" && (
+                <div className="rounded-xl border border-violet/15 bg-violet/[0.04] p-3 space-y-2">
+                  <div className="font-mono text-[9px] text-violet tracking-widest uppercase">
+                    Arb scan · min spread
+                  </div>
+                  <div className="flex gap-1">
+                    {["0.3", "0.5", "1.0", "2.0"].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setArbMinSpread(s)}
+                        disabled={streaming}
+                        className={cn(
+                          "flex-1 py-1.5 rounded-md font-mono text-[10px] tracking-wider transition-colors",
+                          arbMinSpread === s
+                            ? "bg-violet/20 text-violet border border-violet/40"
+                            : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2",
+                        )}
+                      >
+                        {s}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {op === "sniper" && (
+                <div className="rounded-xl border border-gold/15 bg-gold/[0.04] p-3 space-y-2">
+                  <div className="font-mono text-[9px] text-gold tracking-widest uppercase">
+                    Sniper scan · pair age window
+                  </div>
+                  <div className="flex gap-1">
+                    {(["1h", "6h", "24h", "7d"] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setSnipeMaxAge(s)}
+                        disabled={streaming}
+                        className={cn(
+                          "flex-1 py-1.5 rounded-md font-mono text-[10px] tracking-wider transition-colors",
+                          snipeMaxAge === s
+                            ? "bg-gold/20 text-gold border border-gold/40"
+                            : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2",
+                        )}
+                      >
+                        ≤{s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Body */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
@@ -214,7 +279,7 @@ export default function ZionDrawer() {
                   <span className="w-2 h-2 rounded-full bg-gold/60" />
                   <span className="w-2 h-2 rounded-full bg-green/60" />
                   <span className="ml-2 font-mono text-[10px] text-ink-3 tracking-wider">
-                    ZION · {modeLabel(mode)}
+                    ZION · {opMeta.label.toLowerCase()}
                   </span>
                   <div className="flex-1" />
                   <span className="flex items-center gap-1 font-mono text-[9px] text-gold/70 tracking-widest uppercase">
@@ -222,12 +287,7 @@ export default function ZionDrawer() {
                   </span>
                 </div>
                 <div className="p-4 font-mono text-[11px] sm:text-xs leading-[1.75] whitespace-pre-wrap min-h-[220px] text-ink-2">
-                  {parsed.visible || (streaming
-                    ? ""
-                    : mode === "ask"
-                      ? "Ask ZION anything about your current pair, market conditions, or execution timing."
-                      : "Awaiting analysis…"
-                  )}
+                  {parsed.visible || (streaming ? "" : "Awaiting analysis…")}
                   {streaming && <span className="term-cursor" />}
                 </div>
               </div>
@@ -251,7 +311,7 @@ export default function ZionDrawer() {
                 <input
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  placeholder={streaming ? "ZION is responding…" : "Ask ZION anything…"}
+                  placeholder={streaming ? "ZION is responding…" : `Ask ZION about ${opMeta.label.toLowerCase()}…`}
                   disabled={streaming}
                   className="flex-1 min-w-0 bg-transparent outline-none text-sm font-sans text-ink placeholder:text-ink-4 disabled:opacity-50"
                 />
@@ -274,10 +334,4 @@ export default function ZionDrawer() {
       <ZionExecuteRouter card={executing} onClose={() => setExecuting(null)} />
     </Dialog.Root>
   );
-}
-
-function modeLabel(m: Mode): string {
-  if (m === "analyze_pair")       return "pair analysis";
-  if (m === "scan_opportunities") return "opportunity scout";
-  return "conversation";
 }
