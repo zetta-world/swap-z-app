@@ -482,6 +482,71 @@ async function run() {
     assert(hit429, "expected 429 within 15 calls (limit 12/min)", null);
   });
 
+  // ─── /api/cex/balance ──────────────────────────────────────────────
+  section("[/api/cex/balance] — read-only CEX balance via ccxt");
+  await test("GET → 405 method_not_allowed", async () => {
+    const { status, body } = await call("/api/cex/balance", { headers: { "x-forwarded-for": "10.0.0.101" } });
+    // Note: Next.js returns 405 with no method handler; our route enforces POST too
+    assert(status === 405 || status === 404, `expected 405/404, got ${status}`, body);
+  });
+  await test("POST with invalid JSON → 400", async () => {
+    const { status, body } = await call("/api/cex/balance", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.102" },
+      body:    "not-json",
+    });
+    assert(status === 400, `expected 400, got ${status}`, body);
+  });
+  await test("POST unknown exchange → 400", async () => {
+    const { status, body } = await call("/api/cex/balance", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.103" },
+      body:    JSON.stringify({ exchange: "mtgox", apiKey: "x".repeat(32), apiSecret: "y".repeat(32) }),
+    });
+    assert(status === 400 && body.error === "invalid_exchange", "expected invalid_exchange", body);
+  });
+  await test("POST short api key → 400", async () => {
+    const { status, body } = await call("/api/cex/balance", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.104" },
+      body:    JSON.stringify({ exchange: "binance", apiKey: "x", apiSecret: "y".repeat(32) }),
+    });
+    assert(status === 400 && body.error === "invalid_api_key", "expected invalid_api_key", body);
+  });
+  await test("POST OKX without passphrase → 400", async () => {
+    const { status, body } = await call("/api/cex/balance", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.105" },
+      body:    JSON.stringify({ exchange: "okx", apiKey: "x".repeat(32), apiSecret: "y".repeat(32) }),
+    });
+    assert(status === 400 && body.error === "passphrase_required_for_okx", "expected passphrase_required_for_okx", body);
+  });
+  await test("POST with valid shape but fake creds → auth_failed (401) or upstream_failed (502)", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call("/api/cex/balance", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.106" },
+      body:    JSON.stringify({ exchange: "binance", apiKey: "0".repeat(64), apiSecret: "0".repeat(64) }),
+    });
+    assert([401, 502].includes(status), `expected 401/502, got ${status}`, body);
+    assert(body.ok === false, "ok must be false", body);
+    assert(typeof body.error === "string", "error must be string", body);
+    // Critical: error must NOT echo the apiKey or apiSecret
+    const blob = JSON.stringify(body);
+    assert(!blob.includes("0".repeat(64)), "response must not echo credentials", body);
+  });
+
+  // ─── /api/cex/orderbook ────────────────────────────────────────────
+  section("[/api/cex/orderbook] — read-only orderbook snapshot");
+  await test("POST malformed symbol → 400", async () => {
+    const { status, body } = await call("/api/cex/orderbook", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.111" },
+      body:    JSON.stringify({ exchange: "binance", symbol: "totallyinvalid", apiKey: "x".repeat(32), apiSecret: "y".repeat(32) }),
+    });
+    assert(status === 400 && body.error === "invalid_symbol", "expected invalid_symbol", body);
+  });
+
   // ─── /api/zion ─────────────────────────────────────────────────────
   section("[/api/zion] — Claude advisory");
   await test("invalid chain → 400", async () => {

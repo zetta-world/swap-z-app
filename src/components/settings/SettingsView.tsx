@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Settings as SettingsIcon, Shield, Bell, Globe, EyeOff, Zap, Brain, KeyRound } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
+import CexSettings from "./CexSettings";
 import { cn } from "@/lib/cn";
 
 export default function SettingsView() {
@@ -168,8 +169,13 @@ export default function SettingsView() {
           </Group>
         </div>
 
+        {/* CEX connections — keys live encrypted in this browser only */}
+        <div className="mt-5">
+          <CexSettings />
+        </div>
+
         <p className="font-mono text-[10px] text-ink-4 text-center mt-6">
-          All settings persist locally · synced to wallet identity in Sprint 3
+          All settings persist locally · synced to wallet identity in a future sprint
         </p>
       </div>
     </div>

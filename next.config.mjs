@@ -42,6 +42,12 @@ const nextConfig = {
   },
   experimental: {
     optimizePackageImports: ["lucide-react", "@radix-ui/react-dialog", "framer-motion"],
+    // ccxt is a huge runtime-only package (3+MB with all 100+ exchange
+    // adapters and their crypto deps). Forcing it through webpack pulls in
+    // optional deps for exchanges we don't use (dydx-v4 protobuf, etc.).
+    // External-ize it so the route handler `require()`s it from node_modules
+    // at runtime instead.
+    serverComponentsExternalPackages: ["ccxt"],
   },
   async headers() {
     return [
