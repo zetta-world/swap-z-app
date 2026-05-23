@@ -11,7 +11,7 @@ import {
   unlockKeystore, saveCredentials, removeExchange, forgetEverything,
 } from "@/lib/cex/keystore";
 import {
-  CEX_META, type CexId, type CexCredentials, type CexBalance,
+  CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials, type CexBalance,
 } from "@/lib/cex/types";
 import { compactNumber } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -22,11 +22,13 @@ type CexFormState = Record<CexId, {
   passphrase: string;
 }>;
 
-const EMPTY_FORM: CexFormState = {
-  binance:  { apiKey: "", apiSecret: "", passphrase: "" },
-  coinbase: { apiKey: "", apiSecret: "", passphrase: "" },
-  okx:      { apiKey: "", apiSecret: "", passphrase: "" },
-};
+const EMPTY_FORM: CexFormState = Object.fromEntries(
+  SUPPORTED_CEX_IDS.map((id) => [id, { apiKey: "", apiSecret: "", passphrase: "" }]),
+) as CexFormState;
+
+const EMPTY_STATE: Record<CexId, CexState> = Object.fromEntries(
+  SUPPORTED_CEX_IDS.map((id) => [id, { status: "idle" }]),
+) as Record<CexId, CexState>;
 
 interface CexState {
   status:   "idle" | "testing" | "connected" | "failed";
@@ -51,11 +53,7 @@ export default function CexSettings() {
   const [presentList,   setPresentList]   = useState<CexId[]>([]);
   const [fingerprint,   setFingerprint]   = useState<string | undefined>();
   const [busy,          setBusy]          = useState(false);
-  const [perExchange,   setPerExchange]   = useState<Record<CexId, CexState>>({
-    binance:  { status: "idle" },
-    coinbase: { status: "idle" },
-    okx:      { status: "idle" },
-  });
+  const [perExchange,   setPerExchange]   = useState<Record<CexId, CexState>>(EMPTY_STATE);
 
   // Hydrate vault presence from localStorage
   useEffect(() => {
@@ -92,8 +90,8 @@ export default function CexSettings() {
       toast.error("API key and secret are required.");
       return;
     }
-    if (id === "okx" && !cred.passphrase) {
-      toast.error("OKX requires a passphrase.");
+    if (CEX_META[id].needsPassphrase && !cred.passphrase) {
+      toast.error(`${CEX_META[id].label} requires a passphrase.`);
       return;
     }
     if (!unlocked && passphrase.length < 8) {
@@ -106,7 +104,7 @@ export default function CexSettings() {
         [id]: {
           apiKey:    cred.apiKey,
           apiSecret: cred.apiSecret,
-          passphrase: id === "okx" ? cred.passphrase : undefined,
+          passphrase: CEX_META[id].needsPassphrase ? cred.passphrase : undefined,
           readOnly:  true,
         },
       };
@@ -138,7 +136,7 @@ export default function CexSettings() {
           exchange:   id,
           apiKey:     cred.apiKey,
           apiSecret:  cred.apiSecret,
-          passphrase: id === "okx" ? cred.passphrase : undefined,
+          passphrase: CEX_META[id].needsPassphrase ? cred.passphrase : undefined,
           withUsd:    true,
         }),
       });
@@ -208,12 +206,12 @@ export default function CexSettings() {
     setFingerprint(undefined);
     setForm(EMPTY_FORM);
     setPassphrase("");
-    setPerExchange({ binance: { status: "idle" }, coinbase: { status: "idle" }, okx: { status: "idle" } });
+    setPerExchange(EMPTY_STATE);
     toast.success("All CEX keys forgotten.");
   };
 
   const showUnlockPrompt = vaultExists && !unlocked;
-  const supportedIds: CexId[] = useMemo(() => ["binance", "coinbase", "okx"], []);
+  const supportedIds: readonly CexId[] = SUPPORTED_CEX_IDS;
 
   return (
     <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5 sm:p-6 space-y-4">
@@ -514,9 +512,12 @@ function humanError(code: string): string {
     case "permission_denied":    return "API key lacks the required permission scope.";
     case "timeout":              return "Exchange timed out — try again.";
     case "rate_limited":         return "Slow down — rate-limited by the exchange.";
-    case "passphrase_required_for_okx":
-                                  return "OKX requires the trading passphrase you set on the exchange.";
     case "upstream_failed":      return "Exchange call failed — try again in a moment.";
-    default:                     return code;
+    default:
+      if (code.startsWith("passphrase_required_for_")) {
+        const ex = code.slice("passphrase_required_for_".length);
+        return `${ex.toUpperCase()} requires the trading passphrase you set on the exchange.`;
+      }
+      return code;
   }
 }

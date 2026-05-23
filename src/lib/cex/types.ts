@@ -5,7 +5,24 @@
  * come in a separate phase after the read flow has been validated.
  */
 
-export type CexId = "binance" | "coinbase" | "okx";
+export type CexId =
+  | "binance"
+  | "coinbase"
+  | "okx"
+  | "bybit"
+  | "kraken"
+  | "kucoin"
+  | "bitfinex"
+  | "mexc"
+  | "gateio"
+  | "htx";
+
+/** Concrete list of supported CEX ids. Mirrors the union above; used as a
+ *  runtime allow-list by the API routes and the UI. */
+export const SUPPORTED_CEX_IDS: readonly CexId[] = [
+  "binance", "coinbase", "okx",
+  "bybit", "kraken", "kucoin", "bitfinex", "mexc", "gateio", "htx",
+] as const;
 
 export interface CexCredentials {
   apiKey:     string;
@@ -134,5 +151,54 @@ export const CEX_META: Record<CexId, {
     needsPassphrase: true,
     homepage:        "https://www.okx.com",
     keysDocsUrl:     "https://www.okx.com/account/my-api",
+  },
+  bybit: {
+    label:           "Bybit",
+    color:           "#F7A600",
+    needsPassphrase: false,
+    homepage:        "https://www.bybit.com",
+    keysDocsUrl:     "https://www.bybit.com/app/user/api-management",
+  },
+  kraken: {
+    label:           "Kraken",
+    color:           "#5848FF",
+    needsPassphrase: false,
+    homepage:        "https://www.kraken.com",
+    keysDocsUrl:     "https://support.kraken.com/hc/en-us/articles/360000919966",
+  },
+  kucoin: {
+    label:           "KuCoin",
+    color:           "#24AE8F",
+    needsPassphrase: true,
+    homepage:        "https://www.kucoin.com",
+    keysDocsUrl:     "https://www.kucoin.com/account/api",
+  },
+  bitfinex: {
+    label:           "Bitfinex",
+    color:           "#B7DC0D",
+    needsPassphrase: false,
+    homepage:        "https://www.bitfinex.com",
+    keysDocsUrl:     "https://setting.bitfinex.com/api",
+  },
+  mexc: {
+    label:           "MEXC",
+    color:           "#1972E1",
+    needsPassphrase: false,
+    homepage:        "https://www.mexc.com",
+    keysDocsUrl:     "https://www.mexc.com/user/openapi",
+  },
+  gateio: {
+    label:           "Gate.io",
+    color:           "#2354E6",
+    needsPassphrase: false,
+    homepage:        "https://www.gate.com",
+    keysDocsUrl:     "https://www.gate.com/myaccount/apiv4keys",
+  },
+  htx: {
+    label:           "HTX (Huobi)",
+    color:           "#1564F2",
+    needsPassphrase: false,
+    homepage:        "https://www.htx.com",
+    keysDocsUrl:     "https://www.htx.com/en-us/apikey/",
   },
 };

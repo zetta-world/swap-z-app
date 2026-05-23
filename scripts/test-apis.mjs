@@ -566,6 +566,30 @@ async function run() {
     });
     assert(status === 400 && body.error === "passphrase_required_for_okx", "expected passphrase_required_for_okx", body);
   });
+  await test("POST KuCoin without passphrase → 400", async () => {
+    const { status, body } = await call("/api/cex/balance", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.107" },
+      body:    JSON.stringify({ exchange: "kucoin", apiKey: "x".repeat(32), apiSecret: "y".repeat(32) }),
+    });
+    assert(status === 400 && body.error === "passphrase_required_for_kucoin",
+           "expected passphrase_required_for_kucoin", body);
+  });
+  await test("Bybit / Kraken / MEXC / Gate.io / HTX / Bitfinex all accepted as valid exchange names", async () => {
+    const ids = ["bybit", "kraken", "mexc", "gateio", "htx", "bitfinex"];
+    for (const id of ids) {
+      // Shape-only check — invalid keys but valid exchange/passphrase combo
+      // → either 401 (auth_failed if network reaches), 502 (network blocked
+      // in sandbox), or 400 if the request is malformed. Critically NOT
+      // 400 invalid_exchange.
+      const { status, body } = await call("/api/cex/balance", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "x-forwarded-for": `10.0.0.108-${id}` },
+        body:    JSON.stringify({ exchange: id, apiKey: "0".repeat(32), apiSecret: "0".repeat(32) }),
+      });
+      assert(body.error !== "invalid_exchange", `${id} should be accepted as a valid exchange`, { id, status, body });
+    }
+  });
   await test("POST with valid shape but fake creds → auth_failed (401) or upstream_failed (502)", async () => {
     if (SKIP_NET) return "skip";
     const { status, body } = await call("/api/cex/balance", {

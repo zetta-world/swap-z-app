@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import {
   hasKeystore, unlockKeystore, listExchanges,
 } from "@/lib/cex/keystore";
-import { CEX_META, type CexId, type CexCredentials } from "@/lib/cex/types";
+import { CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials } from "@/lib/cex/types";
 import CexTradePanel from "./CexTradePanel";
 import CexOpenOrdersPanel from "./CexOpenOrdersPanel";
 import { cn } from "@/lib/cn";
@@ -188,26 +188,26 @@ export default function CexConsole() {
               </button>
             </div>
 
-            <div className="mt-5 grid grid-cols-3 gap-3 max-w-md">
-              {(["binance", "coinbase", "okx"] as CexId[]).map((id) => {
+            <div className="mt-5 grid grid-cols-3 sm:grid-cols-5 gap-2 max-w-2xl">
+              {SUPPORTED_CEX_IDS.map((id) => {
                 const meta    = CEX_META[id];
                 const present = connected.includes(id);
                 return (
                   <div
                     key={id}
                     className={cn(
-                      "rounded-xl border p-3 text-center",
-                      present ? "border-cyan/20 bg-cyan/[0.04]" : "border-white/5 bg-bg-1/30 opacity-60",
+                      "rounded-xl border p-2 text-center min-w-0",
+                      present ? "border-cyan/20 bg-cyan/[0.04]" : "border-white/5 bg-bg-1/30 opacity-50",
                     )}
                   >
                     <div
-                      className="w-7 h-7 rounded-lg mx-auto mb-1 flex items-center justify-center font-display font-extrabold text-xs"
+                      className="w-6 h-6 rounded-md mx-auto mb-1 flex items-center justify-center font-display font-extrabold text-[11px]"
                       style={{ background: `${meta.color}1A`, color: meta.color, border: `1px solid ${meta.color}55` }}
                     >
                       {id.slice(0, 1).toUpperCase()}
                     </div>
                     <div className="font-mono text-[9px] text-ink-3 tracking-wider uppercase truncate">
-                      {meta.label.replace(" Advanced", "")}
+                      {meta.label.replace(" Advanced", "").replace(" (Huobi)", "")}
                     </div>
                     <div className="font-mono text-[9px] mt-0.5 truncate" style={{ color: present ? "#27D49B" : "var(--ink-4, #666)" }}>
                       {present ? "ready" : "off"}
@@ -252,7 +252,7 @@ export default function CexConsole() {
 
         {/* Exchange selector */}
         <div className="mt-5 flex flex-wrap gap-2">
-          {(["binance", "coinbase", "okx"] as CexId[]).map((id) => {
+          {SUPPORTED_CEX_IDS.map((id) => {
             const meta      = CEX_META[id];
             const isAvail   = availableIds.includes(id);
             const isSel     = selectedId === id;

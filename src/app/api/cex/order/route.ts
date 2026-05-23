@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { placeCexOrder } from "@/lib/cex/server";
-import type {
-  CexId, CexCredentials, CexOrderResponse, CexOrderSide, CexOrderType,
+import {
+  type CexId, type CexCredentials, type CexOrderResponse, type CexOrderSide, type CexOrderType,
+  SUPPORTED_CEX_IDS, CEX_META,
 } from "@/lib/cex/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const VALID_EXCHANGES = new Set<CexId>(["binance", "coinbase", "okx"]);
+const VALID_EXCHANGES = new Set<CexId>(SUPPORTED_CEX_IDS);
 
 // Tight rate limit — placing real orders is intentionally slow. The user
 // must wait between submissions; bursts trigger a 429 we let through.
@@ -113,8 +114,11 @@ export async function POST(req: NextRequest) {
   if (typeof body.apiSecret !== "string" || body.apiSecret.length < 8 || body.apiSecret.length > 600) {
     return NextResponse.json({ ok: false, error: "invalid_api_secret" }, { status: 400 });
   }
-  if (exchange === "okx" && (!body.passphrase || typeof body.passphrase !== "string")) {
-    return NextResponse.json({ ok: false, error: "passphrase_required_for_okx" }, { status: 400 });
+  if (CEX_META[exchange].needsPassphrase && (!body.passphrase || typeof body.passphrase !== "string")) {
+    return NextResponse.json(
+      { ok: false, error: `passphrase_required_for_${exchange}` },
+      { status: 400 },
+    );
   }
 
   const creds: CexCredentials = {

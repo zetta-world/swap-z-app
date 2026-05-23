@@ -18,7 +18,18 @@ const EXCHANGE_CLASSES: Record<CexId, keyof typeof ccxt> = {
   binance:  "binance",
   coinbase: "coinbaseadvanced",
   okx:      "okx",
+  bybit:    "bybit",
+  kraken:   "kraken",
+  kucoin:   "kucoin",
+  bitfinex: "bitfinex",
+  mexc:     "mexc",
+  gateio:   "gateio",
+  htx:      "htx",
 };
+
+// Exchanges that take the trading passphrase as the `password` field on the
+// ccxt config. The user supplies it as creds.passphrase in our schema.
+const PASSPHRASE_EXCHANGES = new Set<CexId>(["okx", "kucoin"]);
 
 function instantiate(id: CexId, creds: CexCredentials): Exchange {
   const klass = EXCHANGE_CLASSES[id];
@@ -33,7 +44,7 @@ function instantiate(id: CexId, creds: CexCredentials): Exchange {
     enableRateLimit: true,
     timeout:   12_000,
   };
-  if (id === "okx" && creds.passphrase) {
+  if (PASSPHRASE_EXCHANGES.has(id) && creds.passphrase) {
     config.password = creds.passphrase;
   }
   return new ExchangeClass(config);

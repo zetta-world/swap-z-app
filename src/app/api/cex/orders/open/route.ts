@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { listOpenCexOrders } from "@/lib/cex/server";
-import type { CexId, CexCredentials, CexOpenOrdersResponse } from "@/lib/cex/types";
+import { type CexId, type CexCredentials, type CexOpenOrdersResponse, SUPPORTED_CEX_IDS, CEX_META } from "@/lib/cex/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const VALID_EXCHANGES = new Set<CexId>(["binance", "coinbase", "okx"]);
+const VALID_EXCHANGES = new Set<CexId>(SUPPORTED_CEX_IDS);
 const RL_OPTS = { windowMs: 60_000, max: 30 };
 
 interface OpenOrdersRequestBody {
@@ -56,8 +56,11 @@ export async function POST(req: NextRequest) {
   if (typeof body.apiSecret !== "string" || body.apiSecret.length < 8 || body.apiSecret.length > 600) {
     return NextResponse.json({ ok: false, error: "invalid_api_secret" }, { status: 400 });
   }
-  if (exchange === "okx" && (!body.passphrase || typeof body.passphrase !== "string")) {
-    return NextResponse.json({ ok: false, error: "passphrase_required_for_okx" }, { status: 400 });
+  if (CEX_META[exchange].needsPassphrase && (!body.passphrase || typeof body.passphrase !== "string")) {
+    return NextResponse.json(
+      { ok: false, error: `passphrase_required_for_${exchange}` },
+      { status: 400 },
+    );
   }
 
   const creds: CexCredentials = {

@@ -18,6 +18,13 @@ const SUGGESTED_SYMBOLS: Record<CexId, string[]> = {
   binance:  ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "ARB/USDT"],
   coinbase: ["BTC/USD",  "ETH/USD",  "SOL/USD",  "MATIC/USD", "AVAX/USD", "LINK/USD"],
   okx:      ["BTC/USDT", "ETH/USDT", "SOL/USDT", "OKB/USDT", "DOGE/USDT", "TON/USDT"],
+  bybit:    ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BIT/USDT", "TON/USDT",  "ARB/USDT"],
+  kraken:   ["XBT/USD",  "ETH/USD",  "SOL/USD",  "DOT/USD",  "ADA/USD",   "ATOM/USD"],
+  kucoin:   ["BTC/USDT", "ETH/USDT", "SOL/USDT", "KCS/USDT", "DOGE/USDT", "MATIC/USDT"],
+  bitfinex: ["BTC/USD",  "ETH/USD",  "SOL/USD",  "LEO/USD",  "XAUT/USD",  "ALGO/USD"],
+  mexc:     ["BTC/USDT", "ETH/USDT", "SOL/USDT", "MX/USDT",  "DOGE/USDT", "PEPE/USDT"],
+  gateio:   ["BTC/USDT", "ETH/USDT", "SOL/USDT", "GT/USDT",  "DOGE/USDT", "ARB/USDT"],
+  htx:      ["BTC/USDT", "ETH/USDT", "SOL/USDT", "HT/USDT",  "DOGE/USDT", "TRX/USDT"],
 };
 
 const ORDERBOOK_POLL_MS = 5_000;
@@ -494,6 +501,11 @@ function humanError(code: string): string {
     case "symbol_not_found":    return "Symbol not listed on this exchange.";
     case "timeout":             return "Exchange timed out.";
     case "upstream_failed":     return "Exchange call failed — try again in a moment.";
-    default:                    return code;
+    default:
+      if (code.startsWith("passphrase_required_for_")) {
+        const ex = code.slice("passphrase_required_for_".length);
+        return `${ex.toUpperCase()} needs the trading passphrase saved in Settings.`;
+      }
+      return code;
   }
 }
