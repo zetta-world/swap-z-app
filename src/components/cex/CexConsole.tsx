@@ -12,6 +12,7 @@ import {
 } from "@/lib/cex/keystore";
 import { CEX_META, type CexId, type CexCredentials } from "@/lib/cex/types";
 import CexTradePanel from "./CexTradePanel";
+import CexOpenOrdersPanel from "./CexOpenOrdersPanel";
 import { cn } from "@/lib/cn";
 
 const AUTO_LOCK_MS = 10 * 60 * 1000; // 10 minutes idle → re-lock
@@ -288,6 +289,17 @@ export default function CexConsole() {
           <div className="mt-5">
             <CexTradePanel
               key={selectedId}        // remount when switching exchanges
+              exchangeId={selectedId}
+              credentials={creds[selectedId]!}
+            />
+          </div>
+        )}
+
+        {/* Open orders */}
+        {selectedId && creds[selectedId] && (
+          <div className="mt-5">
+            <CexOpenOrdersPanel
+              key={`open-${selectedId}`}
               exchangeId={selectedId}
               credentials={creds[selectedId]!}
             />

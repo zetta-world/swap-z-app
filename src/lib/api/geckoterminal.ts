@@ -87,6 +87,52 @@ function poolToSummary(pool: GTPool, networkSlug: string): PoolSummary {
   };
 }
 
+/**
+ * Page through every pool on a chain. GeckoTerminal v2 paginates 20 pools
+ * per page; we pass the page through and let the caller decide how deep to
+ * go. Used by the catalog/search page in /explorer.
+ */
+export async function getPoolsPage(chainName: string, page: number): Promise<PoolSummary[]> {
+  const network = NETWORK_IDS[chainName];
+  if (!network) return [];
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools?page=${Math.max(1, Math.min(100, page))}&include=dex`;
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json;version=20230302" },
+      next: { revalidate: 30 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as { data: GTPool[] };
+    return (data.data ?? []).map((p) => poolToSummary(p, network));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Search GeckoTerminal by token symbol or address. Returns matching pools
+ * across all networks.
+ */
+export async function searchPools(query: string, limit = 30): Promise<PoolSummary[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const url = `https://api.geckoterminal.com/api/v2/search/pools?query=${encodeURIComponent(q)}&include=dex&page=1`;
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json;version=20230302" },
+      next: { revalidate: 30 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as { data: GTPool[] };
+    return (data.data ?? []).slice(0, limit).map((p) => {
+      const networkId = p.relationships?.network?.data?.id ?? "";
+      return poolToSummary(p, networkId);
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function getTopPools(chainName: string, limit = 8): Promise<PoolSummary[]> {
   const network = NETWORK_IDS[chainName];
   if (!network) return [];

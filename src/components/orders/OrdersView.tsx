@@ -6,6 +6,7 @@ import { Activity, Target, Calendar, Clock, ChevronDown, AlertCircle, Sparkles }
 import { CHAINS, type ChainId } from "@/lib/chains";
 import { tokensByChain, type Token } from "@/lib/tokens";
 import { formatUsd, parseDecimalInput } from "@/lib/format";
+import ZionOrdersList from "./ZionOrdersList";
 import { cn } from "@/lib/cn";
 
 type OrderType = "limit" | "dca" | "twap";
@@ -208,57 +209,18 @@ export default function OrdersView() {
             </div>
           </div>
 
-          {/* Active orders panel */}
+          {/* ZION saved orders — real, from localStorage */}
           <div className="lg:col-span-5 space-y-4">
-            <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-                <span className="font-display font-bold text-sm text-ink">Active orders</span>
-                <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{MOCK_ORDERS.filter((o) => o.status === "active").length} live</span>
-              </div>
-              <div className="divide-y divide-white/[0.04]">
-                {MOCK_ORDERS.map((o) => {
-                  const meta = TABS.find((t) => t.id === o.type)!;
-                  const Icon = meta.Icon;
-                  const statusCfg = {
-                    active:    "text-green border-green/30 bg-green/5",
-                    filled:    "text-cyan border-cyan/30 bg-cyan/5",
-                    cancelled: "text-ink-3 border-white/10 bg-white/[0.02]",
-                  }[o.status];
-                  return (
-                    <div key={o.id} className="px-4 py-3">
-                      <div className="flex items-start gap-3">
-                        <div className="w-7 h-7 rounded-lg bg-violet/10 border border-violet/30 flex items-center justify-center flex-shrink-0">
-                          <Icon className="w-3.5 h-3.5 text-violet" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-display font-bold text-xs text-ink truncate">{o.pair}</span>
-                            <span className={cn("font-mono text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase", statusCfg)}>
-                              {o.status}
-                            </span>
-                          </div>
-                          <div className="font-mono text-[10px] text-ink-3 mb-1">{o.detail}</div>
-                          <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{o.chain} · {meta.label}</div>
-                          {o.progress !== undefined && (
-                            <div className="mt-2 h-1 bg-white/5 rounded-full overflow-hidden">
-                              <div className="h-full bg-violet rounded-full" style={{ width: `${o.progress * 100}%` }} />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <ZionOrdersList />
 
             <div className="rounded-2xl border border-gold/15 bg-gold/[0.04] p-4 flex gap-3">
               <AlertCircle className="w-4 h-4 text-gold flex-shrink-0 mt-0.5" />
               <div>
-                <div className="font-display font-bold text-sm text-gold">Persistent strategies</div>
+                <div className="font-display font-bold text-sm text-gold">Save now, fire later</div>
                 <p className="font-sans text-xs text-ink-2 leading-relaxed mt-1">
-                  Orders survive page refresh and run server-side. ZION watches the market 24/7
-                  and notifies on trigger. Limit and DCA settle through MEV-shielded routes.
+                  ZION&apos;s limit / stop / sniper-watch proposals land here. Z-SWAP never
+                  holds your keys — when the trigger price hits, hit Fire now to load the
+                  pair into the swap card and sign with your wallet.
                 </p>
               </div>
             </div>

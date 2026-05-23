@@ -413,6 +413,51 @@ async function run() {
     }
   });
 
+  // ─── /api/pools-catalog ────────────────────────────────────────────
+  section("[/api/pools-catalog] — paginated + searchable pool catalog");
+  await test("invalid chain → 400", async () => {
+    const { status, body } = await call("/api/pools-catalog?chain=mars");
+    assert(status === 400 && body.error === "invalid_chain", "expected invalid_chain", body);
+  });
+  await test("paginated default → shape ok", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call("/api/pools-catalog?chain=ethereum&page=1", {
+      headers: { "x-forwarded-for": "10.0.0.81" },
+    });
+    assert(status === 200, `expected 200, got ${status}`, body);
+    assert(body.ok === true, "ok must be true", body);
+    assert(Array.isArray(body.pools), "pools must be array", body);
+    assert(body.page === 1, "page must echo back", body);
+    assert(typeof body.hasMore === "boolean", "hasMore must be boolean", body);
+  });
+  await test("page param clamped to [1,100]", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call("/api/pools-catalog?chain=ethereum&page=9999", {
+      headers: { "x-forwarded-for": "10.0.0.82" },
+    });
+    assert(status === 200 && body.page === 100, "page must be clamped to 100", body);
+  });
+  await test("query mode wins over chain pagination", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call("/api/pools-catalog?q=usdc&chain=ethereum&page=5", {
+      headers: { "x-forwarded-for": "10.0.0.83" },
+    });
+    assert(status === 200 && body.page === 1, "search must reset to page 1", body);
+    assert(body.hasMore === false, "search mode has no pagination", body);
+  });
+  await test("query with invalid chars → query rejected (still 200, no pools)", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call("/api/pools-catalog?q=" + encodeURIComponent("<script>"), {
+      headers: { "x-forwarded-for": "10.0.0.84" },
+    });
+    // The route silently drops the bad query and treats it as no query →
+    // falls back to chain pagination on default chain. We just verify it
+    // doesn't crash and doesn't reflect the query.
+    const blob = JSON.stringify(body);
+    assert(!blob.includes("<script>"), "must not reflect unsafe query in response", body);
+    assert(status === 200, `expected 200, got ${status}`, body);
+  });
+
   // ─── /api/new-pairs ────────────────────────────────────────────────
   section("[/api/new-pairs] — Live Feed of freshly listed pools");
   await test("invalid chain → 400", async () => {
