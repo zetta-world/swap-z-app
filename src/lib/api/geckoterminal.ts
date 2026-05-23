@@ -52,6 +52,10 @@ export interface PoolSummary {
   baseSymbol: string;
   quoteSymbol: string;
   address:    string;
+  /** ISO 8601 string of pool creation timestamp (when available). */
+  createdAt?: string;
+  /** Unix ms of pool creation, derived from createdAt. Undefined when unknown. */
+  createdAtMs?: number;
 }
 
 function attrNumber(v: string | undefined | null): number {
@@ -64,6 +68,8 @@ function poolToSummary(pool: GTPool, networkSlug: string): PoolSummary {
   const a = pool.attributes;
   const [base, quote] = (a.name ?? " / ").split(" / ");
   const dexId = pool.relationships?.dex?.data?.id ?? "—";
+  const createdAt = a.pool_created_at;
+  const createdAtMs = createdAt ? Date.parse(createdAt) : NaN;
   return {
     id:          pool.id,
     dex:         dexId.replace(/_/g, " "),
@@ -76,6 +82,8 @@ function poolToSummary(pool: GTPool, networkSlug: string): PoolSummary {
     baseSymbol:  base?.trim() ?? "",
     quoteSymbol: quote?.trim() ?? "",
     address:     a.address ?? "",
+    createdAt,
+    createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : undefined,
   };
 }
 
@@ -95,6 +103,41 @@ export async function getTopPools(chainName: string, limit = 8): Promise<PoolSum
   } catch {
     return [];
   }
+}
+
+/**
+ * New pools on a specific chain — GeckoTerminal returns these in
+ * reverse-chronological order, fresh first. Used by the Live Feed in
+ * /explorer to surface tokens that just hit the market.
+ */
+export async function getNewPoolsForChain(chainName: string, limit = 20): Promise<PoolSummary[]> {
+  const network = NETWORK_IDS[chainName];
+  if (!network) return [];
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/new_pools?page=1&include=dex`;
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json;version=20230302" },
+      // Tighter cache: new pairs feed needs to feel live
+      next: { revalidate: 15 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as { data: GTPool[] };
+    return (data.data ?? []).slice(0, limit).map((p) => poolToSummary(p, network));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * New pools across every chain we know — paginates one call per chain in
+ * parallel and merges. The Live Feed sorts the union by pool age desc.
+ */
+export async function getNewPoolsAcrossChains(perChain = 10): Promise<PoolSummary[]> {
+  const chains = Object.keys(NETWORK_IDS);
+  const results = await Promise.all(
+    chains.map((c) => getNewPoolsForChain(c, perChain).catch(() => [] as PoolSummary[])),
+  );
+  return results.flat();
 }
 
 export async function getTrendingPools(limit = 12): Promise<PoolSummary[]> {

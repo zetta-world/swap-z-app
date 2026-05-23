@@ -413,6 +413,45 @@ async function run() {
     }
   });
 
+  // ─── /api/new-pairs ────────────────────────────────────────────────
+  section("[/api/new-pairs] — Live Feed of freshly listed pools");
+  await test("invalid chain → 400", async () => {
+    const { status, body } = await call("/api/new-pairs?chain=mars");
+    assert(status === 400 && body.error === "invalid_chain", "expected invalid_chain", body);
+  });
+  await test("returns pools[] shape (or empty when offline)", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call("/api/new-pairs?limit=10", { headers: { "x-forwarded-for": "10.0.0.91" } });
+    assert(status === 200, `expected 200, got ${status}`, body);
+    assert(body.ok === true, "ok must be true", body);
+    assert(Array.isArray(body.pools), "pools must be array", body);
+    assert(typeof body.generatedAt === "number", "generatedAt must be number", body);
+    if (body.pools.length > 0) {
+      const p = body.pools[0];
+      assert(typeof p.baseSymbol === "string",  "baseSymbol missing", p);
+      assert(typeof p.network    === "string",  "network missing",    p);
+      assert(typeof p.tvlUsd     === "number",  "tvlUsd missing",     p);
+    }
+  });
+  await test("limit clamped to [1,60]", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call("/api/new-pairs?limit=999", { headers: { "x-forwarded-for": "10.0.0.92" } });
+    assert(status === 200 && body.pools.length <= 60, "pools should be ≤60", body);
+  });
+  await test("maxAgeH filter drops old pools", async () => {
+    if (SKIP_NET) return "skip";
+    // ageH=0 would drop everything; ageH=0.001 (3.6s) too — confirm route accepts the param
+    const { status, body } = await call("/api/new-pairs?maxAgeH=0.001&limit=20", { headers: { "x-forwarded-for": "10.0.0.93" } });
+    assert(status === 200, `expected 200, got ${status}`, body);
+    // All pools must satisfy the age filter
+    for (const p of body.pools) {
+      if (p.createdAtMs) {
+        const ageMs = Date.now() - p.createdAtMs;
+        assert(ageMs <= 0.001 * 3_600_000 + 5_000, "pool exceeds maxAge filter", p);
+      }
+    }
+  });
+
   // ─── /api/narratives ───────────────────────────────────────────────
   section("[/api/narratives] — Nexus Radar clusters");
   await test("returns clusters[] shape (or empty when offline)", async () => {
