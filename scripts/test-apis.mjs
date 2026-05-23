@@ -547,6 +547,108 @@ async function run() {
     assert(status === 400 && body.error === "invalid_symbol", "expected invalid_symbol", body);
   });
 
+  // ─── /api/cex/order — REAL TRADING (guard tests only, no live placement)
+  section("[/api/cex/order] — order placement (guard layer)");
+  await test("POST without confirm string → 400 missing_confirmation", async () => {
+    const { status, body } = await call("/api/cex/order", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.121" },
+      body:    JSON.stringify({
+        exchange: "binance", symbol: "BTC/USDT", side: "buy", type: "market", amount: 0.001,
+        apiKey: "0".repeat(32), apiSecret: "0".repeat(32),
+      }),
+    });
+    assert(status === 400 && body.error === "missing_confirmation",
+           "expected missing_confirmation guard", body);
+  });
+  await test("POST with wrong confirm string → 400", async () => {
+    const { status, body } = await call("/api/cex/order", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.122" },
+      body:    JSON.stringify({
+        exchange: "binance", symbol: "BTC/USDT", side: "buy", type: "market", amount: 0.001,
+        confirm: "yes", apiKey: "0".repeat(32), apiSecret: "0".repeat(32),
+      }),
+    });
+    assert(status === 400 && body.error === "missing_confirmation",
+           "must reject any string other than I-CONFIRM-REAL-ORDER", body);
+  });
+  await test("POST invalid side → 400", async () => {
+    const { status, body } = await call("/api/cex/order", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.123" },
+      body:    JSON.stringify({
+        exchange: "binance", symbol: "BTC/USDT", side: "hodl", type: "market", amount: 0.001,
+        confirm: "I-CONFIRM-REAL-ORDER", apiKey: "0".repeat(32), apiSecret: "0".repeat(32),
+      }),
+    });
+    assert(status === 400 && body.error === "invalid_side", "expected invalid_side", body);
+  });
+  await test("POST limit order without price → 400 invalid_price", async () => {
+    const { status, body } = await call("/api/cex/order", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.124" },
+      body:    JSON.stringify({
+        exchange: "binance", symbol: "BTC/USDT", side: "buy", type: "limit", amount: 0.001,
+        confirm: "I-CONFIRM-REAL-ORDER", apiKey: "0".repeat(32), apiSecret: "0".repeat(32),
+      }),
+    });
+    assert(status === 400 && body.error === "invalid_price", "expected invalid_price", body);
+  });
+  await test("POST zero amount → 400", async () => {
+    const { status, body } = await call("/api/cex/order", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.125" },
+      body:    JSON.stringify({
+        exchange: "binance", symbol: "BTC/USDT", side: "buy", type: "market", amount: 0,
+        confirm: "I-CONFIRM-REAL-ORDER", apiKey: "0".repeat(32), apiSecret: "0".repeat(32),
+      }),
+    });
+    assert(status === 400 && body.error === "invalid_amount", "expected invalid_amount", body);
+  });
+  await test("POST with valid shape + fake creds → 401/502, no echo of credentials", async () => {
+    if (SKIP_NET) return "skip";
+    const { status, body } = await call("/api/cex/order", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.126" },
+      body:    JSON.stringify({
+        exchange: "binance", symbol: "BTC/USDT", side: "buy", type: "market", amount: 0.0001,
+        confirm: "I-CONFIRM-REAL-ORDER",
+        apiKey: "0".repeat(64), apiSecret: "9".repeat(64),
+      }),
+    });
+    assert([401, 502].includes(status), `expected 401/502, got ${status}`, body);
+    assert(body.ok === false, "ok must be false", body);
+    const blob = JSON.stringify(body);
+    assert(!blob.includes("0".repeat(64)), "response must not echo apiKey", body);
+    assert(!blob.includes("9".repeat(64)), "response must not echo apiSecret", body);
+  });
+
+  // ─── /api/cex/order/cancel ─────────────────────────────────────────
+  section("[/api/cex/order/cancel] — cancel open order");
+  await test("POST missing orderId → 400", async () => {
+    const { status, body } = await call("/api/cex/order/cancel", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.131" },
+      body:    JSON.stringify({
+        exchange: "binance", orderId: "", symbol: "BTC/USDT",
+        apiKey: "0".repeat(32), apiSecret: "0".repeat(32),
+      }),
+    });
+    assert(status === 400 && body.error === "invalid_order_id", "expected invalid_order_id", body);
+  });
+
+  // ─── /api/cex/orders/open ──────────────────────────────────────────
+  section("[/api/cex/orders/open] — list user's open orders");
+  await test("POST invalid exchange → 400", async () => {
+    const { status, body } = await call("/api/cex/orders/open", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.141" },
+      body:    JSON.stringify({ exchange: "ftx", apiKey: "0".repeat(32), apiSecret: "0".repeat(32) }),
+    });
+    assert(status === 400 && body.error === "invalid_exchange", "expected invalid_exchange", body);
+  });
+
   // ─── /api/zion ─────────────────────────────────────────────────────
   section("[/api/zion] — Claude advisory");
   await test("invalid chain → 400", async () => {

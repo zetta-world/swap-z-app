@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3,
-  Shield, Vote, Wallet, Settings, ChevronLeft, Activity, Boxes,
+  Shield, Vote, Wallet, Settings, ChevronLeft, Activity, Boxes, Banknote,
 } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
 import { cn } from "@/lib/cn";
@@ -22,6 +22,7 @@ const NAV: NavItem[] = [
   { href: "/",          label: "Swap",       icon: ArrowLeftRight, group: "trade" },
   { href: "/bridge",    label: "Bridge",     icon: Workflow,        group: "trade" },
   { href: "/orders",    label: "Limit / DCA", icon: Activity,       group: "trade", badge: "NEW" },
+  { href: "/cex",       label: "CEX Console", icon: Banknote,       group: "trade", badge: "NEW" },
   { href: "/pro",       label: "Pro Terminal", icon: BarChart3,     group: "trade", badge: "BETA" },
 
   { href: "/pools",     label: "Pools",      icon: Layers,          group: "discover" },

@@ -11,6 +11,7 @@
 import ccxt, { type Exchange } from "ccxt";
 import type {
   CexId, CexCredentials, CexBalance, CexOrderbookSnapshot,
+  CexOrderRequest, CexOrder, CexOrderSide, CexOrderType,
 } from "./types";
 
 const EXCHANGE_CLASSES: Record<CexId, keyof typeof ccxt> = {
@@ -125,4 +126,95 @@ export async function fetchCexOrderbook(
   const bestBid = bids[0]?.price ?? 0;
   const mid     = bestAsk > 0 && bestBid > 0 ? (bestAsk + bestBid) / 2 : Math.max(bestAsk, bestBid);
   return { symbol, bids, asks, mid, bestAsk, bestBid };
+}
+
+// ─── Trading ────────────────────────────────────────────────────────────
+
+// ccxt's Order type is intentionally loose (every exchange returns slightly
+// different fields). We normalize down to our CexOrder schema.
+function normalizeOrder(raw: Record<string, unknown>): CexOrder {
+  const amount    = Number(raw.amount    ?? 0);
+  const filled    = Number(raw.filled    ?? 0);
+  const remaining = Number(raw.remaining ?? Math.max(0, amount - filled));
+  const feeRaw    = raw.fee as { cost?: number; currency?: string } | undefined;
+  return {
+    id:         String(raw.id ?? ""),
+    symbol:     String(raw.symbol ?? ""),
+    side:       (raw.side as CexOrderSide) ?? "buy",
+    type:       (raw.type as CexOrderType) ?? "market",
+    status:     String(raw.status ?? "open"),
+    amount,
+    filled,
+    remaining,
+    price:      typeof raw.price   === "number" ? raw.price   : undefined,
+    average:    typeof raw.average === "number" ? raw.average : undefined,
+    cost:       typeof raw.cost    === "number" ? raw.cost    : undefined,
+    fee:        feeRaw && typeof feeRaw.cost === "number"
+                  ? { cost: feeRaw.cost, currency: String(feeRaw.currency ?? "") }
+                  : undefined,
+    timestamp:  typeof raw.timestamp === "number" ? raw.timestamp : undefined,
+  };
+}
+
+/**
+ * Place a single order. Market orders fill against the orderbook now;
+ * limit orders sit at the book until matched or cancelled.
+ *
+ * REAL FUNDS MOVE WHEN THIS IS CALLED. The API route layer enforces a
+ * "confirm" guard from the client side, but defense in depth — the v1
+ * server is otherwise a thin pass-through to ccxt.createOrder.
+ */
+export async function placeCexOrder(
+  id: CexId,
+  creds: CexCredentials,
+  req: CexOrderRequest,
+): Promise<{ order: CexOrder; filledImmediately: boolean }> {
+  if (req.amount <= 0 || !Number.isFinite(req.amount)) {
+    throw new Error("Invalid amount.");
+  }
+  if (req.type === "limit" && (!req.price || !Number.isFinite(req.price) || req.price <= 0)) {
+    throw new Error("Limit orders require a positive price.");
+  }
+
+  const exchange = instantiate(id, creds);
+  const raw = await exchange.createOrder(
+    req.symbol,
+    req.type,
+    req.side,
+    req.amount,
+    req.type === "limit" ? req.price : undefined,
+  ) as unknown as Record<string, unknown>;
+
+  const order = normalizeOrder(raw);
+
+  // Market orders typically come back "closed" immediately on ccxt; if not,
+  // we still treat any non-zero filled amount as immediate-fill for UX.
+  const filledImmediately =
+    order.status === "closed" ||
+    (order.type === "market" && order.filled > 0 && order.remaining === 0);
+
+  return { order, filledImmediately };
+}
+
+/** Cancel one specific order by exchange id + symbol. */
+export async function cancelCexOrder(
+  id: CexId,
+  creds: CexCredentials,
+  orderId: string,
+  symbol: string,
+): Promise<CexOrder> {
+  const exchange = instantiate(id, creds);
+  const raw = await exchange.cancelOrder(orderId, symbol) as unknown as Record<string, unknown>;
+  return normalizeOrder(raw);
+}
+
+/** Open orders (optionally filtered by symbol). */
+export async function listOpenCexOrders(
+  id: CexId,
+  creds: CexCredentials,
+  symbol?: string,
+): Promise<CexOrder[]> {
+  const exchange = instantiate(id, creds);
+  const raw = await exchange.fetchOpenOrders(symbol) as unknown as Record<string, unknown>[];
+  return raw.map(normalizeOrder);
 }

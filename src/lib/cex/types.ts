@@ -54,6 +54,59 @@ export interface CexOrderbookSnapshot {
   fetchedAt: number;
 }
 
+export type CexOrderSide = "buy"  | "sell";
+export type CexOrderType = "market" | "limit";
+
+export interface CexOrderRequest {
+  symbol:    string;
+  side:      CexOrderSide;
+  type:      CexOrderType;
+  /** Base-asset amount. For BTC/USDT this is BTC. */
+  amount:    number;
+  /** Required when type=limit. */
+  price?:    number;
+}
+
+export interface CexOrder {
+  id:         string;
+  symbol:     string;
+  side:       CexOrderSide;
+  type:       CexOrderType;
+  status:     "open" | "closed" | "canceled" | "expired" | "rejected" | string;
+  /** Total base amount the user requested. */
+  amount:     number;
+  /** Already-filled base amount. */
+  filled:     number;
+  /** Remaining base amount. */
+  remaining:  number;
+  /** Limit price (limit orders) or undefined (market). */
+  price?:     number;
+  /** Average fill price. */
+  average?:   number;
+  /** Cost in quote currency (USDT/USD). */
+  cost?:      number;
+  /** Fee in quote currency. */
+  fee?:       { cost: number; currency: string };
+  /** Order creation timestamp (unix ms). */
+  timestamp?: number;
+}
+
+export interface CexOrderResponse {
+  ok:        boolean;
+  exchange:  CexId;
+  order:     CexOrder;
+  /** Whether the order filled fully on submission (market orders usually do). */
+  filledImmediately: boolean;
+  fetchedAt: number;
+}
+
+export interface CexOpenOrdersResponse {
+  ok:        boolean;
+  exchange:  CexId;
+  orders:    CexOrder[];
+  fetchedAt: number;
+}
+
 export const CEX_META: Record<CexId, {
   label:        string;
   color:        string;
