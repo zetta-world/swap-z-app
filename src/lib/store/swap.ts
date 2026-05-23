@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { findToken, DEFAULT_TOKENS, type Token } from "../tokens";
 import type { ChainId } from "../chains";
+import type { QuoteSource } from "../api/quote-types";
 
 type Risk = "safe" | "caution" | "danger";
 
@@ -45,6 +46,17 @@ interface SwapState {
    * Stored as the raw user input; validation happens at the boundary.
    */
   recipient:   string | undefined;
+  /**
+   * When `true`, the global ExecuteSwap modal portal is open. Triggered by
+   * the swap card CTA, by the ZION execute router, and (eventually) by the
+   * orders page when a stored proposal is fired manually.
+   */
+  executeOpen: boolean;
+  /**
+   * Aggregator source the user picked in the QuoteComparison panel. The
+   * ExecuteSwap portal uses this — if null it auto-picks best output.
+   */
+  selectedSource: QuoteSource | null;
   setFromChain: (c: ChainId) => void;
   setToChain:   (c: ChainId) => void;
   setFromToken: (t: Token) => void;
@@ -55,6 +67,8 @@ interface SwapState {
   setPrivacy:   (b: boolean) => void;
   setMode:      (m: SwapMode) => void;
   setRecipient: (r: string | undefined) => void;
+  setExecuteOpen: (b: boolean) => void;
+  setSelectedSource: (s: QuoteSource | null) => void;
   flipPair:     () => void;
 }
 
@@ -69,6 +83,8 @@ export const useSwap = create<SwapState>((set, get) => ({
   privacyMode: false,
   mode:        "swap",
   recipient:   undefined,
+  executeOpen: false,
+  selectedSource: null,
 
   setFromChain: (c) => {
     const { fromToken, toToken } = get();
@@ -141,6 +157,8 @@ export const useSwap = create<SwapState>((set, get) => ({
   setPrivacy:   (b) => set({ privacyMode: b }),
   setMode:      (m) => set({ mode: m }),
   setRecipient: (r) => set({ recipient: r === "" ? undefined : r }),
+  setExecuteOpen: (b) => set({ executeOpen: b }),
+  setSelectedSource: (s) => set({ selectedSource: s }),
 
   flipPair: () => {
     const { fromChain, toChain, fromToken, toToken } = get();

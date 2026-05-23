@@ -2,8 +2,9 @@
 
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
+import { ArrowRight, Globe } from "lucide-react";
+import Link from "next/link";
 import SwapCard from "@/components/swap/SwapCard";
-import LiquidityPulse from "./LiquidityPulse";
 import StatPanel from "./StatPanel";
 import TopMovers from "./TopMovers";
 import ChainConstellation from "./ChainConstellation";
@@ -58,16 +59,6 @@ export default function SwapDashboard() {
           <StatPanel />
         </motion.div>
 
-        {/* Liquidity Pulse marquee */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="mb-6 lg:mb-8"
-        >
-          <LiquidityPulse />
-        </motion.div>
-
         {/* Main grid: Swap centerpiece + side rails */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
           {/* Left rail: chain constellation */}
@@ -88,6 +79,27 @@ export default function SwapDashboard() {
             className="lg:col-span-6 order-1 lg:order-2"
           >
             <SwapCard />
+
+            {/* Cross-Chain discovery CTA */}
+            <Link
+              href="/bridge"
+              className="mt-4 block rounded-xl border border-violet/20 bg-gradient-to-r from-violet/[0.06] via-cyan/[0.03] to-violet/[0.06] hover:border-violet/40 hover:from-violet/[0.10] transition-all p-3 group"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-violet/15 border border-violet/30 flex items-center justify-center flex-shrink-0">
+                  <Globe className="w-4 h-4 text-violet" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-display font-bold text-sm text-ink">
+                    Send to a different chain
+                  </div>
+                  <p className="font-mono text-[10px] text-ink-3 tracking-wide truncate">
+                    Cross-chain bridge · LiFi · 30+ networks · with custom recipient
+                  </p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-violet/70 group-hover:text-violet group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              </div>
+            </Link>
 
             {/* Strip under swap: quick chips */}
             <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">

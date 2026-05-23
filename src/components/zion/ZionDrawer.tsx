@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import ActionCardView from "./ActionCardView";
-import ExecuteConfirmModal from "./ExecuteConfirmModal";
+import ZionExecuteRouter from "./ZionExecuteRouter";
 import { cn } from "@/lib/cn";
 
 type Mode = "analyze_pair" | "scan_opportunities" | "ask";
@@ -271,7 +271,7 @@ export default function ZionDrawer() {
         </Dialog.Content>
       </Dialog.Portal>
 
-      <ExecuteConfirmModal card={executing} onClose={() => setExecuting(null)} />
+      <ZionExecuteRouter card={executing} onClose={() => setExecuting(null)} />
     </Dialog.Root>
   );
 }

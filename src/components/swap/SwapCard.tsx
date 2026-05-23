@@ -7,7 +7,6 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
-import ExecuteSwap from "./ExecuteSwap";
 import QuoteComparison from "./QuoteComparison";
 import SwapModeTabs from "./SwapModeTabs";
 import CrossChainBanner from "./CrossChainBanner";
@@ -20,15 +19,24 @@ import { cn } from "@/lib/cn";
 import type { Token } from "@/lib/tokens";
 import { useQuotes } from "@/lib/hooks/useQuotes";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
-import type { QuoteSource, NormalizedQuote } from "@/lib/api/quote-types";
+import type { NormalizedQuote } from "@/lib/api/quote-types";
 
-export default function SwapCard() {
+interface SwapCardProps {
+  /**
+   * When set, the SwapCard is locked to this mode and the mode tabs are
+   * hidden. Used by the dedicated `/bridge` page (cross) and any future
+   * dedicated mode pages.
+   */
+  lockedMode?: import("@/lib/store/swap").SwapMode;
+}
+
+export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   const {
     fromChain, toChain,
     fromToken, toToken, amountIn, slippageBps, mevProtect, privacyMode,
-    mode, recipient,
+    mode, recipient, executeOpen, selectedSource,
     setFromToken, setToToken, setAmountIn, setSlippage, setMev, setPrivacy, flipPair,
-    setMode, setRecipient,
+    setMode, setRecipient, setExecuteOpen, setSelectedSource,
   } = useSwap();
   const { toggleZion } = useUI();
   const { address }    = useAccount();
@@ -41,8 +49,6 @@ export default function SwapCard() {
   const defaultDestWallet = toChain === "solana" ? solAddress : address;
 
   const [showSettings,  setShowSettings] = useState(false);
-  const [executeOpen,   setExecuteOpen]  = useState(false);
-  const [selectedSource, setSelectedSource] = useState<QuoteSource | null>(null);
 
   // ─── Real balances (wagmi useBalance per token) ─────────────────────
   const fromBalance = useTokenBalance(fromToken);
@@ -50,15 +56,19 @@ export default function SwapCard() {
 
   const isCrossChain = !!(fromToken && toToken && fromToken.chain !== toToken.chain);
 
-  // Keep tab and pair state in sync — picking cross-chain tokens flips to
-  // the cross tab; picking same-chain back drops you on swap.
+  // When a parent page locks the mode (e.g. /bridge → "cross") respect it
+  // unconditionally. Otherwise keep mode in sync with the cross-chain pair.
   useEffect(() => {
+    if (lockedMode) {
+      if (mode !== lockedMode) setMode(lockedMode);
+      return;
+    }
     if (isCrossChain && mode !== "cross" && mode !== "sniper") {
       setMode("cross");
     } else if (!isCrossChain && mode === "cross") {
       setMode("swap");
     }
-  }, [isCrossChain, mode, setMode]);
+  }, [lockedMode, isCrossChain, mode, setMode]);
 
   // ─── Convert UI amount (decimal) → base units (integer) ─────────────
   const sellAmountBase = useMemo(() => {
@@ -93,7 +103,7 @@ export default function SwapCard() {
     if (!stillValid) {
       setSelectedSource(quotesState.quotes[0].source);
     }
-  }, [quotesState.quotes, selectedSource]);
+  }, [quotesState.quotes, selectedSource, setSelectedSource]);
 
   const selectedQuote = useMemo(
     () => quotesState.quotes.find((q) => q.source === selectedSource) ?? quotesState.quotes[0] ?? null,
@@ -183,8 +193,9 @@ export default function SwapCard() {
             </div>
           </div>
 
-          {/* Mode tabs — Swap / Cross-Chain / Sniper */}
-          <SwapModeTabs mode={mode} onChange={setMode} />
+          {/* Mode tabs — Swap / Cross-Chain / Sniper.
+              Hidden when this card is rendered in a locked-mode context (e.g. /bridge). */}
+          {!lockedMode && <SwapModeTabs mode={mode} onChange={setMode} />}
 
           {/* Settings */}
           <AnimatePresence>
@@ -327,22 +338,6 @@ export default function SwapCard() {
           </p>
         </div>
       </div>
-
-      {/* Execute modal — only mount when needed to avoid stale state */}
-      {executeOpen && fromToken && toToken && selectedQuote && (
-        <ExecuteSwap
-          open={executeOpen}
-          onClose={() => setExecuteOpen(false)}
-          fromToken={fromToken}
-          toToken={toToken}
-          fromChain={fromChain}
-          toChain={toToken.chain}
-          sellAmount={sellAmountBase}
-          slippageBps={slippageBps}
-          source={selectedQuote.source}
-          recipient={isCrossChain ? recipient : undefined}
-        />
-      )}
     </div>
   );
 }
