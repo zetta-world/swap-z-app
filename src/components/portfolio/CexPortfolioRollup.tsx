@@ -14,6 +14,7 @@ import {
   CEX_META, type CexId, type CexBalance, type CexCredentials,
 } from "@/lib/cex/types";
 import { compactNumber } from "@/lib/format";
+import { useT, t as tImp } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 const AUTO_LOCK_MS = 10 * 60 * 1000;
@@ -35,6 +36,7 @@ interface ExchangeRollup {
  * Auto-locks after 10 minutes of no user activity. Visit /cex to trade.
  */
 export default function CexPortfolioRollup() {
+  const t = useT();
   const [vaultExists, setVaultExists] = useState(false);
   const [connected,   setConnected]   = useState<CexId[]>([]);
   const [passphrase,  setPassphrase]  = useState("");
@@ -60,7 +62,7 @@ export default function CexPortfolioRollup() {
         setCreds(null);
         setPassphrase("");
         setRollups({} as Record<CexId, ExchangeRollup>);
-        toast.info("Portfolio CEX vault auto-locked after 10 minutes idle.");
+        toast.info(t("portfolio.autoLockedToast"));
       }
     }, 30_000);
     return () => {
@@ -125,14 +127,14 @@ export default function CexPortfolioRollup() {
     try {
       const decrypted = await unlockKeystore(passphrase);
       if (Object.keys(decrypted).length === 0) {
-        toast.error("Vault is empty — connect an exchange in Settings.");
+        toast.error(t("portfolio.noVaultBody"));
         return;
       }
       setCreds(decrypted);
       lastActivity.current = Date.now();
-      toast.success("CEX rollup unlocked.");
+      toast.success(t("portfolio.unlockToast"));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Unlock failed.");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setUnlocking(false);
     }
@@ -142,7 +144,7 @@ export default function CexPortfolioRollup() {
     setCreds(null);
     setPassphrase("");
     setRollups({} as Record<CexId, ExchangeRollup>);
-    toast.success("CEX rollup locked.");
+    toast.success(t("portfolio.lockToast"));
   };
 
   const totalCexUsd = useMemo(() => {
@@ -160,17 +162,16 @@ export default function CexPortfolioRollup() {
           <KeyRound className="w-4 h-4 text-gold flex-shrink-0 mt-0.5" />
           <div className="min-w-0">
             <div className="font-display font-bold text-sm text-ink">
-              No CEX vault yet
+              {t("portfolio.noVaultTitle")}
             </div>
             <p className="font-sans text-xs text-ink-2 leading-relaxed mt-1 max-w-xl">
-              Connect Binance / Coinbase / OKX (or 7 more) in Settings to see your
-              centralized-exchange balances roll up here alongside your wallet.
+              {t("portfolio.noVaultBody")}
             </p>
             <Link
               href="/settings"
               className="inline-flex items-center gap-1 mt-2 font-mono text-[10px] text-cyan hover:underline tracking-widest uppercase"
             >
-              Open Settings →
+              {t("portfolio.openSettings")}
             </Link>
           </div>
         </div>
@@ -186,14 +187,15 @@ export default function CexPortfolioRollup() {
         <div className="rounded-xl border border-white/5 bg-bg-1/30 p-4">
           <div className="flex items-center gap-2 mb-2">
             <Lock className="w-3.5 h-3.5 text-gold" />
-            <span className="font-mono text-[10px] text-gold tracking-widest uppercase">Vault locked</span>
+            <span className="font-mono text-[10px] text-gold tracking-widest uppercase">{t("portfolio.vaultLocked")}</span>
             <span className="font-mono text-[10px] text-ink-3 ml-auto">
-              {connected.length} {connected.length === 1 ? "exchange" : "exchanges"} saved
+              {connected.length === 1
+                ? t("portfolio.vaultExchangesSavedSingular")
+                : t("portfolio.vaultExchangesSavedPlural", { n: connected.length })}
             </span>
           </div>
           <p className="font-sans text-xs text-ink-2 leading-relaxed mb-3">
-            Enter your vault passphrase to fetch balances from every connected CEX.
-            Read-only — funds don&apos;t move.
+            {t("portfolio.unlockBody")}
           </p>
           <div className="flex gap-2 max-w-md">
             <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/8 focus-within:border-gold/30 min-w-0">
@@ -202,7 +204,7 @@ export default function CexPortfolioRollup() {
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void onUnlock(); }}
-                placeholder="Vault passphrase"
+                placeholder={t("cex.vaultPassphrasePlaceholder")}
                 autoComplete="current-password"
                 className="flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4"
               />
@@ -210,6 +212,7 @@ export default function CexPortfolioRollup() {
                 type="button"
                 onClick={() => setShowPwd((s) => !s)}
                 className="text-ink-3 hover:text-ink-2"
+                aria-label={showPwd ? t("common.hide") : t("common.show")}
               >
                 {showPwd ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
@@ -220,7 +223,7 @@ export default function CexPortfolioRollup() {
               disabled={unlocking || passphrase.length < 8}
               className="btn btn-primary text-xs px-4 disabled:opacity-50"
             >
-              {unlocking ? "Unlocking…" : "Unlock"}
+              {unlocking ? t("cex.unlockingShort") : t("common.unlock")}
             </button>
           </div>
         </div>
@@ -238,7 +241,7 @@ export default function CexPortfolioRollup() {
           className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-cyan/20 bg-cyan/[0.04] text-cyan hover:bg-cyan/[0.08] font-mono text-[10px] tracking-widest uppercase"
         >
           <RefreshCw className="w-3 h-3" />
-          refresh
+          {t("portfolio.refreshShort")}
         </button>
         <button
           type="button"
@@ -246,14 +249,17 @@ export default function CexPortfolioRollup() {
           className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-red/30 bg-red/[0.04] text-red hover:bg-red/[0.08] font-mono text-[10px] tracking-widest uppercase"
         >
           <Power className="w-3 h-3" />
-          lock
+          {t("portfolio.lockShort")}
         </button>
       </Header>
 
       {/* Total */}
       <div className="rounded-xl border border-cyan/20 bg-cyan/[0.04] p-3 flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="font-mono text-[10px] text-cyan tracking-widest uppercase">
-          Total across {Object.keys(creds).length} {Object.keys(creds).length === 1 ? "exchange" : "exchanges"}
+          {t("portfolio.totalAcross", {
+            n: Object.keys(creds).length,
+            label: Object.keys(creds).length === 1 ? t("portfolio.exchange") : t("portfolio.exchanges"),
+          })}
         </div>
         <div className="font-display font-extrabold text-xl text-ink tabular-nums">
           ${compactNumber(totalCexUsd)}
@@ -289,9 +295,11 @@ export default function CexPortfolioRollup() {
                     {meta.label.replace(" (Huobi)", "").replace(" Advanced", "")}
                   </div>
                   <div className="font-mono text-[10px] text-ink-3 truncate">
-                    {r.status === "loading"  && "loading…"}
-                    {r.status === "loaded"   && `${r.balances.length} ${r.balances.length === 1 ? "asset" : "assets"}`}
-                    {r.status === "failed"   && "failed"}
+                    {r.status === "loading"  && t("common.loading")}
+                    {r.status === "loaded"   && (r.balances.length === 1
+                      ? t("portfolio.assetsCountSingular")
+                      : t("portfolio.assetsCountPlural", { n: r.balances.length }))}
+                    {r.status === "failed"   && t("common.failed")}
                     {r.status === "idle"     && "—"}
                   </div>
                 </div>
@@ -314,7 +322,7 @@ export default function CexPortfolioRollup() {
                   ))}
                   {r.balances.length > topAssets.length && (
                     <span className="font-mono text-[9px] text-ink-3 tracking-wider">
-                      +{r.balances.length - topAssets.length} more
+                      {t("portfolio.moreAssets", { n: r.balances.length - topAssets.length })}
                     </span>
                   )}
                 </div>
@@ -334,8 +342,7 @@ export default function CexPortfolioRollup() {
       <div className="mt-3 rounded-xl border border-white/5 bg-bg-1/30 p-2.5 flex items-start gap-2">
         <AlertCircle className="w-3 h-3 text-ink-3 flex-shrink-0 mt-0.5" />
         <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-          Read-only. Trade from <Link href="/cex" className="text-cyan hover:underline">/cex</Link>.
-          Vault auto-locks after 10 minutes of no activity.
+          {t("portfolio.rollupFooter")}
         </p>
       </div>
     </SectionShell>
@@ -351,16 +358,16 @@ function SectionShell({ children }: { children: React.ReactNode }) {
 }
 
 function Header({ children }: { children?: React.ReactNode }) {
+  const t = useT();
   return (
     <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
       <div className="min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <Banknote className="w-4 h-4 text-cyan" />
-          <span className="section-label">Centralized exchanges</span>
+          <span className="section-label">{t("portfolio.cexHeading")}</span>
         </div>
         <p className="font-sans text-xs text-ink-3 leading-relaxed max-w-2xl">
-          Your CEX balances aggregated alongside your wallet. Keys live encrypted in
-          this browser; Z-SWAP never persists them on the server.
+          {t("portfolio.cexBody")}
         </p>
       </div>
       <div className="flex items-center gap-1.5">{children}</div>
@@ -370,12 +377,12 @@ function Header({ children }: { children?: React.ReactNode }) {
 
 function humanError(code: string): string {
   switch (code) {
-    case "auth_failed":          return "Auth rejected — check saved keys.";
-    case "ip_not_whitelisted":   return "IP not whitelisted on the exchange.";
-    case "permission_denied":    return "Key lacks read permission.";
-    case "timeout":              return "Exchange timed out.";
-    case "rate_limited":         return "Rate-limited — retry in a moment.";
-    case "upstream_failed":      return "Exchange call failed.";
+    case "auth_failed":          return tImp("cex.errAuthFailed");
+    case "ip_not_whitelisted":   return tImp("cex.errIpWhitelist");
+    case "permission_denied":    return tImp("cex.errPermDenied");
+    case "timeout":              return tImp("cex.errTimeout");
+    case "rate_limited":         return tImp("cex.errRateLimit");
+    case "upstream_failed":      return tImp("cex.errUpstreamFailed");
     default:                     return code;
   }
 }

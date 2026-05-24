@@ -13,6 +13,7 @@ import {
 import {
   CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials, type CexBalance,
 } from "@/lib/cex/types";
+import { useT, t as tImp } from "@/lib/i18n";
 import { compactNumber } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -45,6 +46,7 @@ interface CexState {
  * never persist them.
  */
 export default function CexSettings() {
+  const t = useT();
   const [vaultExists,   setVaultExists]   = useState(false);
   const [unlocked,      setUnlocked]      = useState(false);
   const [passphrase,    setPassphrase]    = useState("");
@@ -76,9 +78,9 @@ export default function CexSettings() {
       }
       setForm(nextForm);
       setUnlocked(true);
-      toast.success("Vault unlocked.");
+      toast.success(t("cex.vaultUnlockedToast"));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Unlock failed.");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setBusy(false);
     }
@@ -87,15 +89,15 @@ export default function CexSettings() {
   const onSave = async (id: CexId) => {
     const cred = form[id];
     if (!cred.apiKey || !cred.apiSecret) {
-      toast.error("API key and secret are required.");
+      toast.error(t("cex.keysRequired"));
       return;
     }
     if (CEX_META[id].needsPassphrase && !cred.passphrase) {
-      toast.error(`${CEX_META[id].label} requires a passphrase.`);
+      toast.error(t("cex.errPassReqGeneric", { label: CEX_META[id].label }));
       return;
     }
     if (!unlocked && passphrase.length < 8) {
-      toast.error("Set a vault passphrase first — at least 8 characters.");
+      toast.error(t("cex.passphraseSetFirst"));
       return;
     }
     setBusy(true);
@@ -113,9 +115,9 @@ export default function CexSettings() {
       setUnlocked(true);
       setPresentList(listExchanges());
       setFingerprint(getFingerprint());
-      toast.success(`${CEX_META[id].label} keys saved (encrypted locally).`);
+      toast.success(t("cex.settingsSavedToast", { label: CEX_META[id].label }));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Save failed.");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setBusy(false);
     }
@@ -124,7 +126,7 @@ export default function CexSettings() {
   const onTest = async (id: CexId) => {
     const cred = form[id];
     if (!cred.apiKey || !cred.apiSecret) {
-      toast.error("Fill in keys first, then test.");
+      toast.error(t("cex.fillKeysFirst"));
       return;
     }
     setPerExchange((s) => ({ ...s, [id]: { status: "testing" } }));
@@ -168,7 +170,7 @@ export default function CexSettings() {
           fetchedAt: Date.now(),
         },
       }));
-      toast.success(`${CEX_META[id].label}: connected.`);
+      toast.success(t("cex.settingsConnectedToast", { label: CEX_META[id].label }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setPerExchange((s) => ({ ...s, [id]: { status: "failed", error: msg, fetchedAt: Date.now() } }));
@@ -178,7 +180,7 @@ export default function CexSettings() {
 
   const onDisconnect = async (id: CexId) => {
     if (!passphrase) {
-      toast.error("Enter the vault passphrase to disconnect.");
+      toast.error(t("cex.passphraseSetFirst"));
       return;
     }
     setBusy(true);
@@ -189,16 +191,16 @@ export default function CexSettings() {
       setVaultExists(hasKeystore());
       setForm((f) => ({ ...f, [id]: { apiKey: "", apiSecret: "", passphrase: "" } }));
       setPerExchange((s) => ({ ...s, [id]: { status: "idle" } }));
-      toast.success(`${CEX_META[id].label} disconnected.`);
+      toast.success(t("cex.settingsDisconnectedToast", { label: CEX_META[id].label }));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Disconnect failed.");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setBusy(false);
     }
   };
 
   const onForgetAll = () => {
-    if (!confirm("Wipe all CEX credentials from this browser? You'll need to re-paste them to reconnect.")) return;
+    if (!confirm(t("cex.forgetConfirm"))) return;
     forgetEverything();
     setVaultExists(false);
     setUnlocked(false);
@@ -207,7 +209,7 @@ export default function CexSettings() {
     setForm(EMPTY_FORM);
     setPassphrase("");
     setPerExchange(EMPTY_STATE);
-    toast.success("All CEX keys forgotten.");
+    toast.success(t("cex.forgetToast"));
   };
 
   const showUnlockPrompt = vaultExists && !unlocked;
@@ -219,12 +221,10 @@ export default function CexSettings() {
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <KeyRound className="w-4 h-4 text-gold" />
-            <span className="section-label">CEX connections</span>
+            <span className="section-label">{t("cex.settingsTitle")}</span>
           </div>
           <p className="font-sans text-xs text-ink-3 leading-relaxed max-w-xl">
-            Connect Binance / Coinbase / OKX with <b>trade-only</b> API keys (no withdraw scope).
-            Keys are encrypted in this browser only — Z-SWAP servers never persist them and
-            never appear in any log.
+            {t("cex.settingsBody")}
           </p>
         </div>
         {vaultExists && (
@@ -234,7 +234,7 @@ export default function CexSettings() {
             className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-red/30 bg-red/[0.04] text-red hover:bg-red/[0.08] font-mono text-[10px] tracking-widest uppercase"
           >
             <Trash2 className="w-3 h-3" />
-            forget all keys
+            {t("cex.forgetAll")}
           </button>
         )}
       </header>
@@ -246,9 +246,9 @@ export default function CexSettings() {
             ? <Lock     className="w-3.5 h-3.5 text-gold" />
             : <Unlock   className="w-3.5 h-3.5 text-green" />}
           <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-            {showUnlockPrompt ? "Vault locked"
-              : vaultExists ? "Vault unlocked"
-              : "Set a vault passphrase"}
+            {showUnlockPrompt ? t("cex.vaultLocked")
+              : vaultExists ? t("cex.vaultUnlocked")
+              : t("cex.setPassphrase")}
           </span>
           {fingerprint && (
             <span className="font-mono text-[9px] text-ink-4 truncate">
@@ -262,7 +262,7 @@ export default function CexSettings() {
               type={showPwd ? "text" : "password"}
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
-              placeholder="Passphrase (≥8 chars)"
+              placeholder={t("cex.passphraseShortHint")}
               autoComplete="new-password"
               className="flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4"
             />
@@ -270,7 +270,7 @@ export default function CexSettings() {
               type="button"
               onClick={() => setShowPwd((s) => !s)}
               className="text-ink-3 hover:text-ink-2"
-              aria-label="Toggle visibility"
+              aria-label={showPwd ? t("common.hide") : t("common.show")}
             >
               {showPwd ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
@@ -282,12 +282,12 @@ export default function CexSettings() {
               disabled={busy || passphrase.length < 8}
               className="btn btn-primary text-xs px-4 disabled:opacity-50"
             >
-              Unlock
+              {t("common.unlock")}
             </button>
           )}
         </div>
         <p className="font-mono text-[10px] text-ink-4 leading-relaxed">
-          PBKDF2 (250k iterations) → AES-GCM. The passphrase is never sent to the server.
+          {t("cex.pbkdf2Hint")}
         </p>
       </div>
 
@@ -314,9 +314,7 @@ export default function CexSettings() {
       <div className="rounded-xl border border-cyan/15 bg-cyan/[0.04] p-3 flex items-start gap-2">
         <ShieldCheck className="w-3.5 h-3.5 text-cyan mt-0.5 flex-shrink-0" />
         <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
-          Always create CEX API keys with <b>read + trade only</b>. NEVER enable withdrawal
-          permission. IP-whitelist them when your exchange offers it (Binance · OKX support this).
-          Z-SWAP only fetches balances and order books in this version — no order placement yet.
+          {t("cex.securityFooter")}
         </p>
       </div>
     </section>
@@ -340,6 +338,7 @@ function ExchangeCard({
   showPwd:    boolean;
 }) {
   const meta = CEX_META[id];
+  const t = useT();
   const [open, setOpen] = useState(false);
 
   const StatusIcon =
@@ -376,18 +375,18 @@ function ExchangeCard({
           <div className="font-mono text-[10px] text-ink-3 truncate">
             {connected
               ? state.status === "connected" && state.totalUsd !== undefined
-                ? `Connected · $${compactNumber(state.totalUsd)} on books`
-                : "Connected"
-              : "Not connected"}
+                ? t("cex.onBooks", { total: compactNumber(state.totalUsd) })
+                : t("common.connected")
+              : t("common.notConnected")}
           </div>
         </div>
         <span className={cn("inline-flex items-center gap-1 font-mono text-[10px] tracking-widest uppercase", statusTone)}>
           <StatusIcon className={cn("w-3 h-3", state.status === "testing" && "animate-spin")} />
-          {state.status === "testing"   ? "testing"
-            : state.status === "connected" ? "online"
-            : state.status === "failed"    ? "failed"
-            : connected                     ? "saved"
-            :                                 "off"}
+          {state.status === "testing"   ? t("cex.statusTesting")
+            : state.status === "connected" ? t("cex.statusOnline")
+            : state.status === "failed"    ? t("cex.statusFailedShort")
+            : connected                     ? t("cex.statusSaved")
+            :                                 t("cex.statusOff")}
         </span>
       </button>
 
@@ -401,26 +400,26 @@ function ExchangeCard({
           >
             <div className="p-4 space-y-3">
               <Field
-                label="API key"
+                label={t("cex.apiKey")}
                 value={form.apiKey}
                 onChange={(v) => onChange({ apiKey: v })}
-                placeholder={`${meta.label} API key`}
+                placeholder={t("cex.keyPlaceholderApi", { label: meta.label })}
                 disabled={disabled}
               />
               <Field
-                label="API secret"
+                label={t("cex.apiSecret")}
                 value={form.apiSecret}
                 onChange={(v) => onChange({ apiSecret: v })}
-                placeholder={`${meta.label} API secret`}
+                placeholder={t("cex.keyPlaceholderSecret", { label: meta.label })}
                 disabled={disabled}
                 secret={!showPwd}
               />
               {meta.needsPassphrase && (
                 <Field
-                  label="OKX passphrase"
+                  label={t("cex.okxPassphraseLabel", { label: meta.label })}
                   value={form.passphrase}
                   onChange={(v) => onChange({ passphrase: v })}
-                  placeholder="Trading passphrase (set on OKX)"
+                  placeholder={t("cex.keyPlaceholderPass", { label: meta.label })}
                   disabled={disabled}
                   secret={!showPwd}
                 />
@@ -439,7 +438,7 @@ function ExchangeCard({
                   disabled={disabled || !form.apiKey || !form.apiSecret}
                   className="btn btn-secondary text-xs px-3 disabled:opacity-50"
                 >
-                  Test connection
+                  {t("cex.testConnection")}
                 </button>
                 <button
                   type="button"
@@ -447,7 +446,7 @@ function ExchangeCard({
                   disabled={disabled || !form.apiKey || !form.apiSecret}
                   className="btn btn-primary text-xs px-3 disabled:opacity-50"
                 >
-                  Save encrypted
+                  {t("cex.saveEncrypted")}
                 </button>
                 {connected && (
                   <button
@@ -456,7 +455,7 @@ function ExchangeCard({
                     className="ml-auto inline-flex items-center gap-1 font-mono text-[10px] text-red/90 hover:text-red tracking-widest uppercase"
                   >
                     <Trash2 className="w-3 h-3" />
-                    disconnect
+                    {t("common.disconnect")}
                   </button>
                 )}
               </div>
@@ -468,7 +467,7 @@ function ExchangeCard({
                 className="inline-flex items-center gap-1 font-mono text-[10px] text-cyan/80 hover:text-cyan tracking-widest uppercase"
               >
                 <ExternalLink className="w-2.5 h-2.5" />
-                how to create the key
+                {t("cex.howToCreateKey")}
               </a>
             </div>
           </motion.div>
@@ -507,16 +506,16 @@ function Field({
 
 function humanError(code: string): string {
   switch (code) {
-    case "auth_failed":          return "Authentication rejected — check the API key, secret, and passphrase.";
-    case "ip_not_whitelisted":   return "Your IP isn't allowed by this key — whitelist it on the exchange.";
-    case "permission_denied":    return "API key lacks the required permission scope.";
-    case "timeout":              return "Exchange timed out — try again.";
-    case "rate_limited":         return "Slow down — rate-limited by the exchange.";
-    case "upstream_failed":      return "Exchange call failed — try again in a moment.";
+    case "auth_failed":          return tImp("cex.errAuthFailed");
+    case "ip_not_whitelisted":   return tImp("cex.errIpWhitelist");
+    case "permission_denied":    return tImp("cex.errPermDenied");
+    case "timeout":              return tImp("cex.errTimeout");
+    case "rate_limited":         return tImp("cex.errRateLimit");
+    case "upstream_failed":      return tImp("cex.errUpstreamFailed");
     default:
       if (code.startsWith("passphrase_required_for_")) {
         const ex = code.slice("passphrase_required_for_".length);
-        return `${ex.toUpperCase()} requires the trading passphrase you set on the exchange.`;
+        return tImp("cex.errPassReqGeneric", { label: ex.toUpperCase() });
       }
       return code;
   }

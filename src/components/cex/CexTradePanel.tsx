@@ -12,6 +12,7 @@ import {
 } from "@/lib/cex/types";
 import CexOrderConfirm from "./CexOrderConfirm";
 import { compactNumber } from "@/lib/format";
+import { useT, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 const SUGGESTED_SYMBOLS: Record<CexId, string[]> = {
@@ -48,6 +49,7 @@ export default function CexTradePanel({
   exchangeId, credentials, initialSymbol, initialSide,
 }: Props) {
   const meta = CEX_META[exchangeId];
+  const t    = useT();
 
   // Inputs — honor deep-link prefill on first render
   const [symbol, setSymbol] = useState<string>(initialSymbol ?? SUGGESTED_SYMBOLS[exchangeId][0]);
@@ -158,22 +160,22 @@ export default function CexTradePanel({
         if (consumed >= amountNum) break;
       }
       if (consumed < amountNum) {
-        w.push(`Top-10 levels only show ${consumed.toFixed(4)} ${baseAsset} — your order is bigger than visible book depth.`);
+        w.push(t("cex.warningTopBook", { qty: consumed.toFixed(4), base: baseAsset }));
       } else if (referencePrice > 0) {
         const slip = Math.abs(worstPrice - referencePrice) / referencePrice;
         if (slip > 0.005) {
-          w.push(`Likely slippage ~${(slip * 100).toFixed(2)}% — order eats multiple book levels.`);
+          w.push(t("cex.warningSlippage", { pct: (slip * 100).toFixed(2) }));
         }
       }
     }
     if (side === "sell" && baseBalance && amountNum > baseBalance.free) {
-      w.push(`Selling ${amountNum} ${baseAsset} but only ${baseBalance.free.toFixed(6)} ${baseAsset} is free on ${meta.label}.`);
+      w.push(t("cex.warningSellFree", { amount: amountNum, base: baseAsset, free: baseBalance.free.toFixed(6), exchange: meta.label }));
     }
     if (side === "buy" && quoteBalance && estCostQuote > quoteBalance.free) {
-      w.push(`Buy needs ~${estCostQuote.toFixed(2)} ${quoteAsset} but only ${quoteBalance.free.toFixed(2)} ${quoteAsset} is free on ${meta.label}.`);
+      w.push(t("cex.warningBuyFree", { cost: estCostQuote.toFixed(2), quote: quoteAsset, free: quoteBalance.free.toFixed(2), exchange: meta.label }));
     }
     return w;
-  }, [amountNum, orderbook, side, referencePrice, baseAsset, quoteAsset, baseBalance, quoteBalance, estCostQuote, meta.label]);
+  }, [amountNum, orderbook, side, referencePrice, baseAsset, quoteAsset, baseBalance, quoteBalance, estCostQuote, meta.label, t]);
 
   // ─── Place-order outcomes ──────────────────────────────────────────
   const onConfirmed = (order: CexOrder, filledImmediately: boolean) => {
@@ -181,9 +183,9 @@ export default function CexTradePanel({
     setRecentOrder(order);
     setAmount("");
     if (filledImmediately) {
-      toast.success(`Market order filled: ${order.filled.toFixed(6)} ${baseAsset} @ ~${order.average?.toFixed(2) ?? "—"}.`);
+      toast.success(t("cex.fillMarketToast", { amount: order.filled.toFixed(6), base: baseAsset, avg: order.average?.toFixed(2) ?? "—" }));
     } else {
-      toast.success(`Order placed: id ${order.id.slice(0, 12)}…`);
+      toast.success(t("cex.placedToast", { id: order.id.slice(0, 12) }));
     }
     void loadBalances();
   };
@@ -198,17 +200,17 @@ export default function CexTradePanel({
       >
         <div className="flex items-center gap-2">
           <ArrowDownUp className="w-4 h-4 text-cyan" />
-          <span className="section-label">Place order · {meta.label}</span>
+          <span className="section-label">{t("cex.placeOrder", { exchange: meta.label })}</span>
         </div>
 
         {/* Symbol picker */}
         <label className="block min-w-0">
-          <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1">Symbol</div>
+          <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1">{t("cex.symbol")}</div>
           <input
             type="text"
             value={symbol}
             onChange={(e) => setSymbol(e.target.value.toUpperCase().trim())}
-            placeholder="e.g. BTC/USDT"
+            placeholder={t("cex.symbolPlaceholder")}
             spellCheck={false}
             autoCorrect="off"
             className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/8 focus:border-cyan/30 outline-none text-sm font-mono text-ink placeholder:text-ink-4"
@@ -244,7 +246,7 @@ export default function CexTradePanel({
                 : "border-white/10 bg-white/[0.02] text-ink-3 hover:text-ink-2",
             )}
           >
-            <TrendingUp className="w-3.5 h-3.5" /> BUY {baseAsset}
+            <TrendingUp className="w-3.5 h-3.5" /> {t("cex.sideBuy", { base: baseAsset })}
           </button>
           <button
             type="button"
@@ -256,19 +258,19 @@ export default function CexTradePanel({
                 : "border-white/10 bg-white/[0.02] text-ink-3 hover:text-ink-2",
             )}
           >
-            <TrendingDown className="w-3.5 h-3.5" /> SELL {baseAsset}
+            <TrendingDown className="w-3.5 h-3.5" /> {t("cex.sideSell", { base: baseAsset })}
           </button>
         </div>
 
         {/* Order type toggle */}
         <div className="grid grid-cols-2 gap-2 p-0.5 rounded-lg bg-white/[0.03] border border-white/8">
-          {(["market", "limit"] as const).map((t) => {
-            const active = type === t;
+          {(["market", "limit"] as const).map((ty) => {
+            const active = type === ty;
             return (
               <button
-                key={t}
+                key={ty}
                 type="button"
-                onClick={() => setType(t)}
+                onClick={() => setType(ty)}
                 className={cn(
                   "py-1.5 rounded-md font-mono text-[10px] tracking-widest uppercase transition-all",
                   active
@@ -276,7 +278,7 @@ export default function CexTradePanel({
                     : "text-ink-3 hover:text-ink-2 border border-transparent",
                 )}
               >
-                {t}
+                {ty === "market" ? t("cex.orderTypeMarket") : t("cex.orderTypeLimit")}
               </button>
             );
           })}
@@ -287,7 +289,7 @@ export default function CexTradePanel({
           <label className="block min-w-0">
             <div className="flex items-center justify-between mb-1">
               <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-                Limit price ({quoteAsset})
+                {t("cex.limitPriceLabel", { quote: quoteAsset })}
               </span>
               {marketRefPrice > 0 && (
                 <button
@@ -295,7 +297,7 @@ export default function CexTradePanel({
                   onClick={() => setLimitPrice(String(marketRefPrice))}
                   className="font-mono text-[10px] text-cyan hover:underline tracking-wider"
                 >
-                  use market: {marketRefPrice.toLocaleString("en-US", { maximumFractionDigits: 6 })}
+                  {t("cex.useMarketPrice", { price: marketRefPrice.toLocaleString("en-US", { maximumFractionDigits: 6 }) })}
                 </button>
               )}
             </div>
@@ -309,13 +311,19 @@ export default function CexTradePanel({
             />
             {marketRefPrice > 0 && limitPriceNum > 0 && (
               <div className="mt-1 font-mono text-[10px] text-ink-3">
-                {side === "buy"
-                  ? limitPriceNum < marketRefPrice
-                    ? `${(((marketRefPrice - limitPriceNum) / marketRefPrice) * 100).toFixed(2)}% below market — fills when price drops`
-                    : `${(((limitPriceNum - marketRefPrice) / marketRefPrice) * 100).toFixed(2)}% above market — would fill immediately (acts like market)`
-                  : limitPriceNum > marketRefPrice
-                    ? `${(((limitPriceNum - marketRefPrice) / marketRefPrice) * 100).toFixed(2)}% above market — fills when price rises`
-                    : `${(((marketRefPrice - limitPriceNum) / marketRefPrice) * 100).toFixed(2)}% below market — would fill immediately (acts like market)`}
+                {(() => {
+                  const isBuy = side === "buy";
+                  const below = limitPriceNum < marketRefPrice;
+                  const pct = ((below ? marketRefPrice - limitPriceNum : limitPriceNum - marketRefPrice) / marketRefPrice) * 100;
+                  const pctStr = pct.toFixed(2);
+                  if (isBuy)
+                    return below
+                      ? t("cex.limitBelowMarket", { pct: pctStr })
+                      : t("cex.limitWouldFill", { pct: pctStr, dir: t("common.show") /* placeholder */ });
+                  return below
+                    ? t("cex.limitWouldFill", { pct: pctStr, dir: "" })
+                    : t("cex.limitAboveMarket", { pct: pctStr });
+                })()}
               </div>
             )}
           </label>
@@ -325,7 +333,7 @@ export default function CexTradePanel({
         <label className="block min-w-0">
           <div className="flex items-center justify-between mb-1">
             <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-              Amount ({baseAsset})
+              {t("cex.amountLabel", { base: baseAsset })}
             </span>
             {baseBalance && (
               <button
@@ -333,7 +341,7 @@ export default function CexTradePanel({
                 onClick={() => setAmount(String(baseBalance.free))}
                 className="font-mono text-[10px] text-cyan hover:underline tracking-wider"
               >
-                max: {compactNumber(baseBalance.free)}
+                {t("cex.maxBalance", { amount: compactNumber(baseBalance.free) })}
               </button>
             )}
           </div>
@@ -349,13 +357,17 @@ export default function CexTradePanel({
 
         {/* Preview */}
         <div className="rounded-xl border border-white/5 bg-bg-1/30 p-3 space-y-1.5 min-w-0">
-          <PreviewRow label="Reference price" value={referencePrice > 0 ? `${referencePrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}` : "—"} />
-          <PreviewRow label={side === "buy" ? "You spend ≈" : "You receive ≈"} value={amountNum > 0 && referencePrice > 0 ? `${estCostQuote.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${quoteAsset}` : "—"} />
           <PreviewRow
-            label="Order type"
-            value={type === "market"
-              ? "market · fills immediately"
-              : "limit · sits at the book until matched"}
+            label={t("cex.referencePrice")}
+            value={referencePrice > 0 ? `${referencePrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}` : "—"}
+          />
+          <PreviewRow
+            label={side === "buy" ? t("cex.youSpend") : t("cex.youReceive")}
+            value={amountNum > 0 && referencePrice > 0 ? `${estCostQuote.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${quoteAsset}` : "—"}
+          />
+          <PreviewRow
+            label={t("cex.orderTypeNote")}
+            value={type === "market" ? t("cex.marketDesc") : t("cex.limitDesc")}
           />
         </div>
 
@@ -389,7 +401,9 @@ export default function CexTradePanel({
             "disabled:cursor-not-allowed",
           )}
         >
-          Review {side === "buy" ? "BUY" : "SELL"} {amountNum > 0 ? `${amount} ${baseAsset}` : baseAsset}
+          {amountNum > 0
+            ? t("cex.reviewBtn",      { side: side === "buy" ? "BUY" : "SELL", amount, base: baseAsset })
+            : t("cex.reviewBtnEmpty", { side: side === "buy" ? "BUY" : "SELL", base: baseAsset })}
         </button>
       </motion.div>
 
@@ -404,7 +418,7 @@ export default function CexTradePanel({
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-cyan" />
-              <span className="section-label">Order book · {symbol}</span>
+              <span className="section-label">{t("cex.orderbookTitle", { symbol })}</span>
             </div>
             <button
               type="button"
@@ -413,7 +427,7 @@ export default function CexTradePanel({
               className="inline-flex items-center gap-1 font-mono text-[10px] text-ink-3 hover:text-cyan tracking-widest uppercase"
             >
               <RefreshCw className={cn("w-3 h-3", obLoading && "animate-spin")} />
-              {obLoading ? "fetching…" : "refresh"}
+              {obLoading ? t("cex.fetching") : t("cex.refreshShort")}
             </button>
           </div>
 
@@ -426,14 +440,14 @@ export default function CexTradePanel({
           {!obError && orderbook && (
             <div className="grid grid-cols-2 gap-3">
               <BookSide
-                label="Asks (sell wall)"
+                label={t("cex.asksLabel")}
                 tone="red"
                 rows={orderbook.asks}
                 referencePrice={orderbook.bestAsk}
                 quote={quoteAsset}
               />
               <BookSide
-                label="Bids (buy wall)"
+                label={t("cex.bidsLabel")}
                 tone="green"
                 rows={orderbook.bids}
                 referencePrice={orderbook.bestBid}
@@ -445,10 +459,10 @@ export default function CexTradePanel({
           {!obError && orderbook && (
             <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between flex-wrap gap-2">
               <div className="font-mono text-[10px] text-ink-3">
-                Mid <span className="text-ink">${orderbook.mid.toLocaleString("en-US", { maximumFractionDigits: 6 })}</span>
+                {t("cex.mid")} <span className="text-ink">${orderbook.mid.toLocaleString("en-US", { maximumFractionDigits: 6 })}</span>
               </div>
               <div className="font-mono text-[10px] text-ink-3">
-                Spread <span className="text-ink">{((orderbook.bestAsk - orderbook.bestBid) / orderbook.mid * 100).toFixed(3)}%</span>
+                {t("cex.spread")} <span className="text-ink">{((orderbook.bestAsk - orderbook.bestBid) / orderbook.mid * 100).toFixed(3)}%</span>
               </div>
             </div>
           )}
@@ -459,7 +473,7 @@ export default function CexTradePanel({
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Wallet className="w-4 h-4 text-gold" />
-              <span className="section-label">Available · {meta.label}</span>
+              <span className="section-label">{t("cex.availableTitle", { exchange: meta.label })}</span>
             </div>
             <button
               type="button"
@@ -468,11 +482,11 @@ export default function CexTradePanel({
               className="inline-flex items-center gap-1 font-mono text-[10px] text-ink-3 hover:text-gold tracking-widest uppercase"
             >
               <RefreshCw className={cn("w-3 h-3", bLoading && "animate-spin")} />
-              {bLoading ? "fetching…" : "refresh"}
+              {bLoading ? t("cex.fetching") : t("cex.refreshShort")}
             </button>
           </div>
           {balances.length === 0
-            ? <p className="font-mono text-[11px] text-ink-3">No balances yet — refresh or fund the account.</p>
+            ? <p className="font-mono text-[11px] text-ink-3">{t("cex.noBalances")}</p>
             : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {balances.slice(0, 9).map((b) => (
@@ -496,7 +510,7 @@ export default function CexTradePanel({
             <div className="flex items-center gap-2 mb-1">
               <TrendingUp className="w-3.5 h-3.5 text-green" />
               <span className="font-mono text-[10px] text-green tracking-widest uppercase">
-                Last order · {recentOrder.status}
+                {t("cex.lastOrderTitle", { status: recentOrder.status })}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2 text-xs font-mono">
@@ -550,6 +564,7 @@ function BookSide({
   quote:          string;
 }) {
   void quote;
+  const tImp = useT();
   const total = rows.reduce((acc, r) => acc + r.amount, 0);
   const toneText = tone === "red" ? "text-red" : "text-green";
   const toneBg   = tone === "red" ? "bg-red/[0.04]" : "bg-green/[0.04]";
@@ -573,7 +588,7 @@ function BookSide({
         })}
       </div>
       <div className="mt-1 font-mono text-[10px] text-ink-3">
-        ref <span className="text-ink tabular-nums">{referencePrice.toLocaleString("en-US", { maximumFractionDigits: 6 })}</span>
+        {tImp("cex.ref")} <span className="text-ink tabular-nums">{referencePrice.toLocaleString("en-US", { maximumFractionDigits: 6 })}</span>
       </div>
     </div>
   );
@@ -581,17 +596,17 @@ function BookSide({
 
 function humanError(code: string): string {
   switch (code) {
-    case "auth_failed":         return "Authentication rejected. Check the saved keys in Settings.";
-    case "ip_not_whitelisted":  return "Your IP isn't whitelisted by this key.";
-    case "permission_denied":   return "The API key lacks the required scope.";
-    case "rate_limited":        return "Slow down — rate-limited by the exchange.";
-    case "symbol_not_found":    return "Symbol not listed on this exchange.";
-    case "timeout":             return "Exchange timed out.";
-    case "upstream_failed":     return "Exchange call failed — try again in a moment.";
+    case "auth_failed":         return t("cex.errAuthFailed");
+    case "ip_not_whitelisted":  return t("cex.errIpWhitelist");
+    case "permission_denied":   return t("cex.errPermDenied");
+    case "rate_limited":        return t("cex.errRateLimit");
+    case "symbol_not_found":    return t("cex.errSymbolNotFound");
+    case "timeout":             return t("cex.errTimeout");
+    case "upstream_failed":     return t("cex.errUpstreamFailed");
     default:
       if (code.startsWith("passphrase_required_for_")) {
         const ex = code.slice("passphrase_required_for_".length);
-        return `${ex.toUpperCase()} needs the trading passphrase saved in Settings.`;
+        return t("cex.errPassReqGeneric", { label: ex.toUpperCase() });
       }
       return code;
   }

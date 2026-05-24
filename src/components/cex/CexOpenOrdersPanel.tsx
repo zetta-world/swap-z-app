@@ -10,6 +10,7 @@ import {
   type CexId, type CexCredentials, type CexOrder,
 } from "@/lib/cex/types";
 import { compactNumber } from "@/lib/format";
+import { useT, t as tImp } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 const POLL_MS = 8_000;
@@ -27,6 +28,7 @@ interface Props {
  * confirm() prompt for the user.
  */
 export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
+  const t = useT();
   const [orders,  setOrders]  = useState<CexOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
@@ -64,7 +66,7 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
   }, [load]);
 
   const onCancel = async (order: CexOrder) => {
-    if (!confirm(`Cancel ${order.side.toUpperCase()} ${order.amount} on ${order.symbol}?`)) return;
+    if (!confirm(t("cex.cancelConfirm", { side: order.side.toUpperCase(), amount: order.amount, symbol: order.symbol }))) return;
     setCancelling(order.id);
     try {
       const res = await fetch("/api/cex/order/cancel", {
@@ -81,11 +83,11 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
       });
       const body = await res.json() as { ok: boolean; error?: string };
       if (!res.ok || !body.ok) throw new Error(humanError(body.error ?? `HTTP ${res.status}`));
-      toast.success("Order cancelled.");
+      toast.success(t("cex.cancelledToast"));
       // Optimistically remove the row; the next poll re-syncs
       setOrders((o) => o.filter((x) => x.id !== order.id));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Cancel failed.");
+      toast.error(e instanceof Error ? e.message : t("cex.cancelFailToast"));
     } finally {
       setCancelling(null);
     }
@@ -96,10 +98,10 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <ListChecks className="w-4 h-4 text-violet" />
-          <span className="section-label">Open orders</span>
+          <span className="section-label">{t("cex.openOrders")}</span>
           {orders.length > 0 && (
             <span className="font-mono text-[10px] text-violet tracking-widest uppercase">
-              · {orders.length} live
+              {t("cex.openOrdersLive", { n: orders.length })}
             </span>
           )}
         </div>
@@ -110,7 +112,7 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
           className="inline-flex items-center gap-1 font-mono text-[10px] text-ink-3 hover:text-violet tracking-widest uppercase"
         >
           <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
-          {loading ? "fetching…" : "refresh"}
+          {loading ? t("cex.fetching") : t("cex.refreshShort")}
         </button>
       </div>
 
@@ -125,7 +127,7 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
         <div className="rounded-xl border border-white/5 bg-bg-1/30 p-5 text-center">
           <Activity className="w-4 h-4 text-ink-3 mx-auto mb-1" />
           <p className="font-mono text-[11px] text-ink-3">
-            No open orders right now. Limit orders sit here until matched or cancelled.
+            {t("cex.openOrdersEmpty")}
           </p>
         </div>
       )}
@@ -152,12 +154,12 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
                     "border-red/30 bg-red/[0.04] text-red hover:bg-red/[0.10]",
                     cancelling === o.id && "opacity-60 cursor-wait",
                   )}
-                  title="Cancel this order"
+                  title={t("cex.cancelBtn")}
                 >
                   {cancelling === o.id
                     ? <Loader2 className="w-3 h-3 animate-spin" />
                     : <X className="w-3 h-3" />}
-                  cancel
+                  {t("cex.cancelBtn")}
                 </button>
               </motion.div>
             ))}
@@ -186,8 +188,8 @@ function OrderRow({ order }: { order: CexOrder }) {
         </span>
       </div>
       <div className="font-mono text-[10px] text-ink-3 tabular-nums truncate">
-        {compactNumber(order.amount)} @ {order.price ? `${order.price.toLocaleString("en-US", { maximumFractionDigits: 6 })}` : "market"}
-        {filledPct > 0 && filledPct < 100 && ` · ${filledPct.toFixed(1)}% filled`}
+        {compactNumber(order.amount)} @ {order.price ? `${order.price.toLocaleString("en-US", { maximumFractionDigits: 6 })}` : tImp("cex.orderTypeMarket")}
+        {filledPct > 0 && filledPct < 100 && ` · ${filledPct.toFixed(1)}%`}
       </div>
     </div>
   );
@@ -195,13 +197,13 @@ function OrderRow({ order }: { order: CexOrder }) {
 
 function humanError(code: string): string {
   switch (code) {
-    case "auth_failed":           return "Authentication rejected.";
-    case "order_not_found":       return "Order no longer exists on the exchange.";
-    case "order_already_closed":  return "Order already filled or cancelled.";
-    case "permission_denied":     return "API key lacks the required permission.";
-    case "timeout":               return "Exchange timed out.";
-    case "rate_limited":          return "Rate-limited — wait a few seconds.";
-    case "upstream_failed":       return "Exchange call failed.";
+    case "auth_failed":           return tImp("cex.errAuthFailed");
+    case "order_not_found":       return tImp("cex.errOrderNotFound");
+    case "order_already_closed":  return tImp("cex.errOrderClosed");
+    case "permission_denied":     return tImp("cex.errPermDenied");
+    case "timeout":               return tImp("cex.errTimeout");
+    case "rate_limited":          return tImp("cex.errRateLimit");
+    case "upstream_failed":       return tImp("cex.errUpstreamFailed");
     default:                      return code;
   }
 }

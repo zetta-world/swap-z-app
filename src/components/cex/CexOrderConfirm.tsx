@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import {
   CEX_META, type CexId, type CexCredentials, type CexOrder, type CexOrderResponse, type CexOrderSide, type CexOrderType,
 } from "@/lib/cex/types";
+import { useT, t as tImp } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 const COOLDOWN_SECONDS = 3;
@@ -41,6 +42,7 @@ export default function CexOrderConfirm({
   open, onClose, exchangeId, credentials, symbol, side, type, amount, limitPrice, referencePrice,
   baseAsset, quoteAsset, onConfirmed,
 }: Props) {
+  const t = useT();
   const isLimit = type === "limit";
   const meta = CEX_META[exchangeId];
   const [secondsLeft, setSecondsLeft] = useState(COOLDOWN_SECONDS);
@@ -107,7 +109,7 @@ export default function CexOrderConfirm({
             )}>
               <div className="flex items-center justify-between mb-4">
                 <Dialog.Title className="font-display font-extrabold text-base text-ink">
-                  Confirm real order
+                  {t("cex.confirmRealOrder")}
                 </Dialog.Title>
                 <Dialog.Close asChild>
                   <button
@@ -124,10 +126,9 @@ export default function CexOrderConfirm({
               <div className="rounded-xl border border-red/30 bg-red/[0.06] p-3 flex items-start gap-2 mb-4">
                 <ShieldAlert className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
                 <p className="font-mono text-[11px] text-ink-2 leading-relaxed">
-                  This places a <b>real {isLimit ? "limit" : "market"} order</b> on {meta.label}.
                   {isLimit
-                    ? " Funds reserve immediately; the trade settles when the book hits your price (could be never)."
-                    : " Funds will move now — no further confirmation, no undo."}
+                    ? t("cex.realLimitWarning",  { exchange: meta.label })
+                    : t("cex.realMarketWarning", { exchange: meta.label })}
                 </p>
               </div>
 
@@ -152,7 +153,7 @@ export default function CexOrderConfirm({
                 <div className="flex items-center gap-2 min-w-0 mb-3">
                   <div className="flex-1 min-w-0">
                     <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-                      {isBuy ? "Spend ≈" : "Sell"}
+                      {isBuy ? t("cex.youSpend") : t("swap.sell")}
                     </div>
                     <div className="font-display font-bold text-lg text-ink truncate tabular-nums">
                       {isBuy
@@ -163,7 +164,7 @@ export default function CexOrderConfirm({
                   <ArrowRight className={cn("w-4 h-4 flex-shrink-0", isBuy ? "text-green" : "text-red")} />
                   <div className="flex-1 min-w-0 text-right">
                     <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-                      {isBuy ? "Receive ≈" : "Receive ≈"}
+                      {t("cex.youReceive")}
                     </div>
                     <div className="font-display font-bold text-lg text-ink truncate tabular-nums">
                       {isBuy
@@ -174,18 +175,16 @@ export default function CexOrderConfirm({
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <Cell label="Symbol" value={symbol} />
+                  <Cell label={t("cex.symbol")} value={symbol} />
                   {isLimit && limitPrice
-                    ? <Cell label="Limit price" value={`${limitPrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}`} />
-                    : <Cell label="Reference" value={`${referencePrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}`} />}
+                    ? <Cell label={t("cex.limitPriceCell")} value={`${limitPrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}`} />
+                    : <Cell label={t("cex.referenceCell")}  value={`${referencePrice.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${quoteAsset}`} />}
                 </div>
               </div>
 
               {/* Order-type hint */}
               <p className="font-mono text-[10px] text-ink-3 leading-relaxed mb-4">
-                {isLimit
-                  ? "Limit orders sit at the book until the price matches. Cancel anytime from the Open orders panel."
-                  : "Market orders fill at the next available book levels. Actual fill price can differ from the reference — especially on illiquid pairs."}
+                {isLimit ? t("cex.limitHint") : t("cex.marketHint")}
               </p>
 
               {error && (
@@ -203,7 +202,7 @@ export default function CexOrderConfirm({
                   disabled={submitting}
                   className="flex-1 btn btn-secondary text-xs disabled:opacity-50"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="button"
@@ -218,10 +217,10 @@ export default function CexOrderConfirm({
                   )}
                 >
                   {submitting
-                    ? (<><Loader2 className="w-3.5 h-3.5 animate-spin" /> Placing…</>)
+                    ? (<><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t("cex.placing")}</>)
                     : secondsLeft > 0
-                      ? (<>Wait {secondsLeft}s</>)
-                      : (<><CheckCircle2 className="w-3.5 h-3.5" /> Place {side.toUpperCase()}</>)}
+                      ? (<>{t("cex.waitSeconds", { seconds: secondsLeft })}</>)
+                      : (<><CheckCircle2 className="w-3.5 h-3.5" /> {t("cex.placeBtn", { side: side.toUpperCase() })}</>)}
                 </button>
               </div>
             </div>
@@ -243,15 +242,15 @@ function Cell({ label, value }: { label: string; value: string }) {
 
 function humanError(code: string): string {
   switch (code) {
-    case "auth_failed":           return "Authentication rejected — keys may have expired.";
-    case "insufficient_balance":  return "Not enough balance on the exchange for this order.";
-    case "below_minimum":         return "Below the exchange's minimum order size.";
-    case "above_maximum":         return "Above the exchange's per-order limit.";
-    case "missing_confirmation":  return "Confirmation guard failed — close and retry.";
-    case "permission_denied":     return "API key lacks trading permission.";
-    case "symbol_not_found":      return "Symbol not listed on this exchange.";
-    case "timeout":               return "Exchange timed out — order may or may not have placed. Check open orders.";
-    case "rate_limited":          return "Rate-limited — wait a few seconds and retry.";
+    case "auth_failed":           return tImp("cex.errAuthFailed");
+    case "insufficient_balance":  return tImp("cex.errInsuffBal");
+    case "below_minimum":         return tImp("cex.errBelowMin");
+    case "above_maximum":         return tImp("cex.errAboveMax");
+    case "missing_confirmation":  return tImp("cex.errMissingConfirm");
+    case "permission_denied":     return tImp("cex.errPermDenied");
+    case "symbol_not_found":      return tImp("cex.errSymbolNotFound");
+    case "timeout":               return tImp("cex.errTimeout");
+    case "rate_limited":          return tImp("cex.errRateLimit");
     default:                      return code;
   }
 }

@@ -12,6 +12,7 @@ import {
   hasKeystore, unlockKeystore, listExchanges,
 } from "@/lib/cex/keystore";
 import { CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials } from "@/lib/cex/types";
+import { useT } from "@/lib/i18n";
 import CexTradePanel from "./CexTradePanel";
 import CexOpenOrdersPanel from "./CexOpenOrdersPanel";
 import { cn } from "@/lib/cn";
@@ -40,6 +41,7 @@ export default function CexConsole() {
     side:   (searchParams?.get("side") === "sell" ? "sell" : searchParams?.get("side") === "buy" ? "buy" : undefined) as ("buy" | "sell" | undefined),
   }));
 
+  const t = useT();
   const [vaultExists, setVaultExists] = useState(false);
   const [connected,   setConnected]   = useState<CexId[]>([]);
   const [passphrase,  setPassphrase]  = useState("");
@@ -75,7 +77,7 @@ export default function CexConsole() {
         setCreds(null);
         setPassphrase("");
         setSelectedId(null);
-        toast.info("Vault auto-locked after 10 minutes idle.");
+        toast.info(t("cex.autoLocked"));
       }
     }, 30_000);
     return () => {
@@ -90,12 +92,12 @@ export default function CexConsole() {
       const decrypted = await unlockKeystore(passphrase);
       const ids = Object.keys(decrypted) as CexId[];
       if (ids.length === 0) {
-        toast.error("Vault is empty — connect an exchange in Settings first.");
+        toast.error(t("cex.noVaultBody"));
         return;
       }
       setCreds(decrypted);
       lastActivity.current = Date.now();
-      toast.success("Vault unlocked.");
+      toast.success(t("cex.vaultUnlockedToast"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Unlock failed.");
     } finally {
@@ -107,7 +109,7 @@ export default function CexConsole() {
     setCreds(null);
     setPassphrase("");
     setSelectedId(null);
-    toast.success("Vault locked.");
+    toast.success(t("cex.vaultLockedToast"));
   };
 
   // ─── No vault state ─────────────────────────────────────────────────
@@ -124,16 +126,14 @@ export default function CexConsole() {
           >
             <KeyRound className="w-7 h-7 text-gold mx-auto mb-3" />
             <h2 className="font-display font-bold text-base text-ink mb-1">
-              No CEX keys connected yet
+              {t("cex.noVaultTitle")}
             </h2>
             <p className="font-sans text-sm text-ink-2 max-w-md mx-auto mb-4">
-              To trade on Binance, Coinbase, or OKX from here, first connect API keys
-              in Settings. Keys are encrypted in your browser only — Z-SWAP servers
-              never store them.
+              {t("cex.noVaultBody")}
             </p>
             <Link href="/settings" className="btn btn-primary text-xs inline-flex items-center gap-1.5">
               <KeyRound className="w-3 h-3" />
-              Open Settings
+              {t("cex.openSettings")}
             </Link>
           </motion.div>
         </div>
@@ -156,14 +156,13 @@ export default function CexConsole() {
           >
             <div className="flex items-center gap-2 mb-3">
               <Lock className="w-4 h-4 text-gold" />
-              <span className="font-mono text-[10px] text-gold tracking-widest uppercase">Vault locked</span>
+              <span className="font-mono text-[10px] text-gold tracking-widest uppercase">{t("cex.vaultLocked")}</span>
             </div>
             <h2 className="font-display font-bold text-lg text-ink mb-2">
-              Unlock your CEX vault to trade
+              {t("cex.unlockTitle")}
             </h2>
             <p className="font-sans text-sm text-ink-2 max-w-xl mb-4">
-              Enter your vault passphrase. Once unlocked, credentials live in this
-              browser tab only and auto-clear after 10 minutes of no activity.
+              {t("cex.unlockBody")}
             </p>
 
             <div className="flex gap-2 max-w-md">
@@ -173,7 +172,7 @@ export default function CexConsole() {
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") void onUnlock(); }}
-                  placeholder="Vault passphrase"
+                  placeholder={t("cex.vaultPassphrasePlaceholder")}
                   autoFocus
                   autoComplete="current-password"
                   className="flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4"
@@ -182,7 +181,7 @@ export default function CexConsole() {
                   type="button"
                   onClick={() => setShowPwd((s) => !s)}
                   className="text-ink-3 hover:text-ink-2"
-                  aria-label="Toggle visibility"
+                  aria-label={showPwd ? t("common.hide") : t("common.show")}
                 >
                   {showPwd ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
@@ -193,7 +192,7 @@ export default function CexConsole() {
                 disabled={unlocking || passphrase.length < 8}
                 className="btn btn-primary text-xs px-4 disabled:opacity-50"
               >
-                {unlocking ? "Unlocking…" : "Unlock"}
+                {unlocking ? t("cex.unlockingShort") : t("common.unlock")}
               </button>
             </div>
 
@@ -219,7 +218,7 @@ export default function CexConsole() {
                       {meta.label.replace(" Advanced", "").replace(" (Huobi)", "")}
                     </div>
                     <div className="font-mono text-[9px] mt-0.5 truncate" style={{ color: present ? "#27D49B" : "var(--ink-4, #666)" }}>
-                      {present ? "ready" : "off"}
+                      {present ? t("cex.readyShort") : t("cex.statusOff")}
                     </div>
                   </div>
                 );
@@ -245,7 +244,7 @@ export default function CexConsole() {
             className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-red/30 bg-red/[0.04] text-red hover:bg-red/[0.08] font-mono text-[10px] tracking-widest uppercase"
           >
             <Power className="w-3 h-3" />
-            Lock vault
+            {t("cex.lockVault")}
           </button>
         </PageHeader>
 
@@ -253,9 +252,7 @@ export default function CexConsole() {
         <div className="mt-5 rounded-xl border border-red/30 bg-red/[0.05] p-3 flex items-start gap-2">
           <ShieldAlert className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
           <p className="font-mono text-[11px] text-ink-2 leading-relaxed">
-            Orders placed here move REAL funds on the exchange. Double-check symbol,
-            side and amount before confirming. Market orders execute at the next
-            available book level — slippage on thin books can be brutal.
+            {t("cex.realFundsWarning")}
           </p>
         </div>
 
@@ -285,7 +282,7 @@ export default function CexConsole() {
                 <div className="text-left min-w-0">
                   <div className="font-display font-bold text-xs text-ink leading-none">{meta.label}</div>
                   <div className="font-mono text-[9px] text-ink-3 tracking-wider mt-0.5">
-                    {isAvail ? (isSel ? "active" : "switch") : "not connected"}
+                    {isAvail ? (isSel ? t("cex.activeAvail") : t("cex.switchAvail")) : t("cex.notConnectedAvail")}
                   </div>
                 </div>
               </button>
@@ -321,8 +318,7 @@ export default function CexConsole() {
         <div className="mt-8 rounded-xl border border-white/5 bg-bg-1/30 p-3 flex items-start gap-2 max-w-4xl">
           <Activity className="w-3.5 h-3.5 text-ink-3 flex-shrink-0 mt-0.5" />
           <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-            v1 trading supports market orders only. Limit orders, OCO, and DCA arrive
-            in a follow-up sprint once the market-order path proves stable.
+            {t("cex.footerLimitation")}
           </p>
         </div>
       </div>
@@ -333,6 +329,7 @@ export default function CexConsole() {
 // ─── Page header ───────────────────────────────────────────────────────
 
 function PageHeader({ children }: { children?: React.ReactNode }) {
+  const t = useT();
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -340,15 +337,14 @@ function PageHeader({ children }: { children?: React.ReactNode }) {
           <div className="flex items-center gap-2 mb-2">
             <Unlock className="w-4 h-4 text-cyan" />
             <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">
-              CEX Console · live trading
+              {t("cex.consoleEyebrow")}
             </span>
           </div>
           <h1 className="font-display font-extrabold text-[clamp(1.6rem,4vw,2.4rem)] leading-[1.05] tracking-[-0.02em] text-ink">
-            Trade your <span className="text-grad-aurora">CEX accounts</span> from here.
+            {t("cex.consoleTitle1")} <span className="text-grad-aurora">{t("cex.consoleTitleHL")}</span> {t("cex.consoleTitle2")}
           </h1>
           <p className="font-sans text-sm text-ink-2/95 leading-relaxed mt-2 max-w-2xl">
-            Place market orders directly on Binance, Coinbase or OKX. Funds settle in
-            your CEX account on the exchange — Z-SWAP routes the call, never the keys.
+            {t("cex.consoleBody")}
           </p>
         </div>
         {children}
