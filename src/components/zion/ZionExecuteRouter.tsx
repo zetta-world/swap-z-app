@@ -11,6 +11,7 @@ import type { ActionCard } from "@/lib/zion/parse";
 import { isImmediateCard, savePendingOrder } from "@/lib/zion/orders";
 import { useSwap } from "@/lib/store/swap";
 import { useUI } from "@/lib/store/ui";
+import { useT } from "@/lib/i18n";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { cn } from "@/lib/cn";
@@ -42,6 +43,7 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const { setFromToken, setToToken, setAmountIn, setExecuteOpen, setSelectedSource } = useSwap();
   const { setZion } = useUI();
+  const t = useT();
 
   if (!card) return null;
 
@@ -56,9 +58,7 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
         const toToken   = resolveToken(chain, card.to?.symbol,   card.to?.address);
 
         if (!fromToken || !toToken) {
-          toast.error("Missing token info", {
-            description: "ZION didn't return enough token data to wire the swap. Set the pair manually and retry.",
-          });
+          toast.error(t("orders.missingTokenToast"));
           setBusy(false);
           return;
         }
@@ -78,10 +78,10 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
       } else {
         // Conditional / watch — save as a pending order
         savePendingOrder(card);
-        toast.success("Order saved", {
-          description: "Pending in /orders — fire manually when conditions match.",
+        toast.success(t("toast.saved"), {
+          description: t("orders.saveNowBody"),
           action: {
-            label: "Open",
+            label: t("common.open"),
             onClick: () => { window.location.href = "/orders"; },
           },
           duration: 6000,
@@ -98,7 +98,7 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
   const toneClass = tone === "cyan"
     ? "text-cyan border-cyan/30 bg-cyan/[0.04]"
     : "text-violet border-violet/30 bg-violet/[0.04]";
-  const cta = isImmediate ? "Open execution" : "Save as pending order";
+  const cta = isImmediate ? t("zion.routerCtaImmediate") : t("zion.routerCtaConditional");
 
   return (
     <Dialog.Root open={!!card} onOpenChange={(o) => !o && onClose()}>
@@ -109,7 +109,7 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
             <div className="rounded-[20px] glass-strong p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <Dialog.Title className="font-display font-extrabold text-base text-ink">
-                  ZION proposal
+                  {t("zion.routerTitle")}
                 </Dialog.Title>
                 <Dialog.Close asChild>
                   <button className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
@@ -132,7 +132,7 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5 min-w-0 mb-3">
                   {card.from && (
                     <div className="flex-1 min-w-0">
-                      <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Pay</div>
+                      <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("zion.pay")}</div>
                       <div className="font-display font-bold text-base text-ink truncate">
                         {card.from.amount && <span>{card.from.amount} </span>}
                         {card.from.symbol}
@@ -142,7 +142,7 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
                   <ArrowRight className="w-4 h-4 text-cyan flex-shrink-0" />
                   {card.to && (
                     <div className="flex-1 min-w-0 text-right">
-                      <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Receive</div>
+                      <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("zion.receive")}</div>
                       <div className="font-display font-bold text-base text-ink truncate">{card.to.symbol}</div>
                     </div>
                   )}
@@ -151,12 +151,12 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
 
               {/* Stats */}
               <div className="grid grid-cols-2 gap-2 mb-3">
-                {card.estCost   && <Cell label="Cost"   value={card.estCost} />}
-                {card.estReturn && <Cell label="Return" value={card.estReturn} tone="green" />}
-                {card.triggerPrice && <Cell label="Trigger" value={card.triggerPrice} tone="violet" />}
-                {card.targetReturn && <Cell label="Target" value={card.targetReturn} tone="green" />}
-                <Cell label="Chain" value={card.chain} />
-                {card.confidence && <Cell label="Confidence" value={card.confidence} />}
+                {card.estCost   && <Cell label={t("common.cost")}   value={card.estCost} />}
+                {card.estReturn && <Cell label={t("common.return")} value={card.estReturn} tone="green" />}
+                {card.triggerPrice && <Cell label={t("zion.triggerLabel")} value={card.triggerPrice} tone="violet" />}
+                {card.targetReturn && <Cell label={t("zion.targetLabel")} value={card.targetReturn} tone="green" />}
+                <Cell label={t("common.chain")} value={card.chain} />
+                {card.confidence && <Cell label={t("zion.confidence", { level: card.confidence })} value={card.confidence} />}
               </div>
 
               {/* Mode notice */}
@@ -164,24 +164,21 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
                 <div className="rounded-xl border border-cyan/20 bg-cyan/[0.04] p-3 flex items-start gap-2 mb-3">
                   <Bot className="w-3.5 h-3.5 text-cyan flex-shrink-0 mt-0.5" />
                   <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-                    We&apos;ll wire this pair into the swap card and open the real on-chain
-                    execution modal. You sign in your wallet — Z-SWAP holds no custody.
+                    {t("zion.routerImmediate")}
                   </p>
                 </div>
               ) : (
                 <div className="rounded-xl border border-violet/20 bg-violet/[0.04] p-3 flex items-start gap-2 mb-3">
                   <Bell className="w-3.5 h-3.5 text-violet flex-shrink-0 mt-0.5" />
                   <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-                    Limit / stop / sniper proposals can&apos;t fire automatically yet — we don&apos;t
-                    keep your private keys. We&apos;ll save this to <a href="/orders" className="text-violet underline">/orders</a>;
-                    you fire it manually when the trigger hits.
+                    {t("zion.routerConditional")}
                   </p>
                 </div>
               )}
 
               <div className="flex gap-2">
                 <button onClick={onClose} disabled={busy} className="flex-1 btn btn-secondary text-xs">
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   onClick={onConfirm}
@@ -191,7 +188,7 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
                     busy && "opacity-70",
                   )}
                 >
-                  {busy ? "Wiring…" : (
+                  {busy ? t("zion.routerWiring") : (
                     <>
                       <CheckCircle2 className="w-3 h-3" />
                       {cta}
@@ -203,7 +200,7 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
               {!isImmediate && (
                 <p className="font-mono text-[10px] text-ink-4 text-center mt-3 leading-relaxed inline-flex items-center justify-center gap-1 w-full">
                   <ExternalLink className="w-2.5 h-2.5" />
-                  Pending orders sync to your browser only — never to our servers.
+                  {t("zion.routerFootnote")}
                 </p>
               )}
             </div>

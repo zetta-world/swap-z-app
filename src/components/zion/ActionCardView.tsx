@@ -6,36 +6,37 @@ import {
   ArrowDownToLine, ArrowUpFromLine, ShieldX, Globe, Crosshair,
 } from "lucide-react";
 import type { ActionCard } from "@/lib/zion/parse";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface KindMeta {
-  Icon:  React.ComponentType<{ className?: string }>;
-  label: string;
-  tone:  "cyan" | "violet" | "gold" | "green" | "red";
+  Icon:     React.ComponentType<{ className?: string }>;
+  labelKey: MessageKey;
+  tone:     "cyan" | "violet" | "gold" | "green" | "red";
 }
 
 const KIND_META: Record<string, KindMeta> = {
   // Generic
-  swap:                  { Icon: Repeat,           label: "Swap",          tone: "cyan"   },
-  bridge:                { Icon: Globe,            label: "Bridge",        tone: "cyan"   },
-  approve:               { Icon: ShieldCheck,      label: "Approve",       tone: "cyan"   },
-  yield:                 { Icon: Coins,            label: "Yield",         tone: "green"  },
+  swap:                  { Icon: Repeat,           labelKey: "zion.cardKindSwap",     tone: "cyan"   },
+  bridge:                { Icon: Globe,            labelKey: "zion.cardKindBridge",   tone: "cyan"   },
+  approve:               { Icon: ShieldCheck,      labelKey: "zion.cardKindApprove",  tone: "cyan"   },
+  yield:                 { Icon: Coins,            labelKey: "zion.cardKindSwap",     tone: "green"  },
 
   // Arbitrage family
-  arbitrage:             { Icon: TrendingUp,       label: "Arbitrage",     tone: "violet" },
-  arbitrage_same_chain:  { Icon: TrendingUp,       label: "Arb · DEX",     tone: "violet" },
-  arbitrage_cross_chain: { Icon: Globe,            label: "Arb · Chain",   tone: "violet" },
+  arbitrage:             { Icon: TrendingUp,       labelKey: "zion.cardKindArb",      tone: "violet" },
+  arbitrage_same_chain:  { Icon: TrendingUp,       labelKey: "zion.cardKindArbDex",   tone: "violet" },
+  arbitrage_cross_chain: { Icon: Globe,            labelKey: "zion.cardKindArbChain", tone: "violet" },
 
   // Watch
-  sniper_watch:          { Icon: Crosshair,        label: "Sniper",        tone: "gold"   },
+  sniper_watch:          { Icon: Crosshair,        labelKey: "zion.cardKindSniper",   tone: "gold"   },
 
   // Orders
-  limit:                 { Icon: Bot,              label: "Limit",         tone: "violet" },
-  buy_limit:             { Icon: ArrowDownToLine,  label: "Buy",           tone: "cyan"   },
-  sell_safe:             { Icon: ArrowUpFromLine,  label: "Sell · Safe",   tone: "green"  },
-  sell_medium:           { Icon: Target,           label: "Sell · Balanced", tone: "gold" },
-  sell_aggressive:       { Icon: TrendingUp,       label: "Sell · Stretch", tone: "violet" },
-  stop_loss:             { Icon: ShieldX,          label: "Stop Loss",     tone: "red"    },
+  limit:                 { Icon: Bot,              labelKey: "zion.cardKindLimit",    tone: "violet" },
+  buy_limit:             { Icon: ArrowDownToLine,  labelKey: "zion.cardKindBuyLimit", tone: "cyan"   },
+  sell_safe:             { Icon: ArrowUpFromLine,  labelKey: "zion.cardKindSellSafe", tone: "green"  },
+  sell_medium:           { Icon: Target,           labelKey: "zion.cardKindSellMed",  tone: "gold"   },
+  sell_aggressive:       { Icon: TrendingUp,       labelKey: "zion.cardKindSellAggr", tone: "violet" },
+  stop_loss:             { Icon: ShieldX,          labelKey: "zion.cardKindStop",     tone: "red"    },
 };
 
 const TONE_CFG = {
@@ -59,14 +60,30 @@ interface Props {
   onExecute: (card: ActionCard) => void;
 }
 
+const RISK_KEY: Record<string, MessageKey> = {
+  safe:    "zion.riskSafe",
+  caution: "zion.riskCaution",
+  risky:   "zion.riskRisky",
+  danger:  "zion.riskDanger",
+};
+
+const CONF_KEY: Record<string, MessageKey> = {
+  high:   "zion.confHigh",
+  medium: "zion.confMedium",
+  low:    "zion.confLow",
+};
+
 export default function ActionCardView({ card, index, onExecute }: Props) {
   const meta = KIND_META[card.kind] ?? KIND_META.swap;
   const tone = TONE_CFG[meta.tone];
   const Icon = meta.Icon;
+  const t    = useT();
 
   // Whether target return is a profit (+) or a stop (-)
   const isStopLoss = card.kind === "stop_loss";
   const targetText = card.targetReturn ?? card.estReturn;
+  const riskLabel  = card.risk       ? t(RISK_KEY[card.risk] ?? "zion.riskSafe") : "";
+  const confLabel  = card.confidence ? t(CONF_KEY[card.confidence] ?? "zion.confMedium") : "";
 
   return (
     <motion.div
@@ -86,17 +103,17 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className={cn("font-mono text-[9px] tracking-widest uppercase font-bold", tone.text)}>
-              {meta.label}
+              {t(meta.labelKey)}
             </span>
             <span className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">· {card.chain}</span>
             {card.risk && (
               <span className={cn("font-mono text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase", RISK_CFG[card.risk] ?? "text-ink-3 border-white/10")}>
-                {card.risk}
+                {riskLabel || card.risk}
               </span>
             )}
             {card.confidence && (
               <span className="font-mono text-[9px] text-ink-3 uppercase tracking-widest border border-white/10 px-1.5 py-0.5 rounded">
-                conf · {card.confidence}
+                {t("zion.confidence", { level: confLabel || card.confidence })}
               </span>
             )}
           </div>
@@ -114,7 +131,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
       {/* Trigger price (limit / stop) */}
       {card.triggerPrice && (
         <div className="rounded-lg border border-white/5 bg-bg-1/50 px-3 py-2 flex items-center justify-between">
-          <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Trigger price</div>
+          <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("zion.triggerLabel")}</div>
           <div className={cn("font-display font-bold text-sm tabular-nums", isStopLoss ? "text-red" : tone.text)}>
             {card.triggerPrice}
           </div>
@@ -131,7 +148,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
             "font-mono text-[10px] tracking-widest uppercase",
             isStopLoss ? "text-red/80" : "text-green/80",
           )}>
-            {isStopLoss ? "Max loss" : "Profit target"}
+            {isStopLoss ? t("zion.maxLossLabel") : t("zion.targetLabel")}
           </div>
           <div className={cn(
             "font-display font-bold text-sm tabular-nums truncate ml-2",
@@ -147,7 +164,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
         <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-bg-1/50 border border-white/5 min-w-0">
           {card.from && (
             <div className="flex-1 min-w-0">
-              <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">From</div>
+              <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">{t("common.from")}</div>
               <div className="font-display font-bold text-xs text-ink truncate">
                 {card.from.amount && <span className="text-ink-2">{card.from.amount} </span>}
                 {card.from.symbol}
@@ -157,7 +174,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
           <ArrowRight className="w-3 h-3 text-ink-3 flex-shrink-0" />
           {card.to && (
             <div className="flex-1 min-w-0 text-right">
-              <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">To</div>
+              <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">{t("common.to")}</div>
               <div className="font-display font-bold text-xs text-ink truncate">{card.to.symbol}</div>
             </div>
           )}
@@ -167,7 +184,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
       {/* Cost — only when targetReturn doesn't already absorb the row */}
       {card.estCost && (
         <div className="rounded-lg border border-white/5 bg-bg-1/40 px-2.5 py-1.5 flex items-center justify-between">
-          <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">Cost</div>
+          <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">{t("common.cost")}</div>
           <div className="font-mono text-[11px] text-ink truncate ml-2">{card.estCost}</div>
         </div>
       )}
@@ -175,7 +192,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
       {card.expiresIn && (
         <div className="flex items-center gap-1.5 text-[10px] font-mono text-gold/80">
           <Zap className="w-2.5 h-2.5" />
-          Expires {card.expiresIn}
+          {t("zion.expires", { when: card.expiresIn })}
         </div>
       )}
 
@@ -189,7 +206,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
         )}
       >
         <Zap className="w-3 h-3" />
-        Execute proposal
+        {t("zion.executeProposal")}
       </button>
     </motion.div>
   );

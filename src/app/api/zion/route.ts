@@ -118,11 +118,17 @@ export async function GET(req: NextRequest) {
   // If the user submitted a message, that's an "ask" follow-up regardless of op
   const effectiveOp: ZionOp = message ? "ask" : op;
 
+  // Reply language — instructs Claude which idiom to use in the terminal trace.
+  // Whitelist mirrors the UI's AppLang union; unknown values silently fall back to en.
+  const langRaw = (p.get("lang") || "en").toLowerCase();
+  const lang: "en" | "pt" | "es" | "zh" =
+    langRaw === "pt" || langRaw === "es" || langRaw === "zh" ? langRaw : "en";
+
   return runZion({
     op:         effectiveOp,
     contextOp:  op,           // remember the current tab so "ask" knows where to point
     chain, fromAddr, toAddr, amountIn, message,
-    minSpread, maxAge, chainsList,
+    minSpread, maxAge, chainsList, lang,
   });
 }
 
@@ -144,7 +150,15 @@ interface RunArgs {
   minSpread:  number;
   maxAge:     "1h" | "6h" | "24h" | "7d";
   chainsList: ChainId[];
+  lang:       "en" | "pt" | "es" | "zh";
 }
+
+const LANG_INSTRUCTION: Record<RunArgs["lang"], string> = {
+  en: "Respond in English.",
+  pt: "Responda em Português (Brasil). Mantenha tickers, símbolos de token, nomes de protocolo, e jargão técnico (swap, slippage, MEV, R/R, TVL, ACTION) em inglês — apenas a prosa explicativa deve ser em português.",
+  es: "Responde en Español. Mantén tickers, símbolos de token, nombres de protocolo y jerga técnica (swap, slippage, MEV, R/R, TVL, ACTION) en inglés — solo la prosa explicativa debe ser en español.",
+  zh: "请用简体中文回复。代币符号、协议名称和技术术语(swap、slippage、MEV、R/R、TVL、ACTION)请保持英文 — 仅解释性文本使用中文。",
+};
 
 async function runZion(args: RunArgs) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -171,6 +185,10 @@ async function runZion(args: RunArgs) {
             { type: "text", text: ZION_FOUNDATION,    cache_control: { type: "ephemeral" } },
             // Mode-specific — cached per-mode (each mode's prefix repeats)
             { type: "text", text: modeInstructions,   cache_control: { type: "ephemeral" } },
+            // Language instruction — short, not cached (varies per request).
+            // Placed after the cached blocks so the cache keeps hitting even
+            // when users switch language.
+            { type: "text", text: LANG_INSTRUCTION[args.lang] },
           ],
           messages: [{ role: "user", content: userText }],
         });

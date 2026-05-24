@@ -12,18 +12,20 @@ import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import ActionCardView from "./ActionCardView";
 import ZionExecuteRouter from "./ZionExecuteRouter";
 import type { ZionOp } from "@/lib/zion/mode-prompts";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
-const OPS: { id: ZionOp; label: string; tagline: string; Icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: "trading",   label: "Trading",   tagline: "entry · 3 exits · stop",     Icon: TrendingUp },
-  { id: "arbitrage", label: "Arb",       tagline: "spread hunter",              Icon: Globe      },
-  { id: "sniper",    label: "Sniper",    tagline: "fresh pairs · paranoid",     Icon: Crosshair  },
-  { id: "pair",      label: "Deep",      tagline: "full pair breakdown",        Icon: FileText   },
+const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "trading",   labelKey: "zion.tabTrading", taglineKey: "zion.taglineTrading", Icon: TrendingUp },
+  { id: "arbitrage", labelKey: "zion.tabArb",     taglineKey: "zion.taglineArb",     Icon: Globe      },
+  { id: "sniper",    labelKey: "zion.tabSniper",  taglineKey: "zion.taglineSniper",  Icon: Crosshair  },
+  { id: "pair",      labelKey: "zion.tabDeep",    taglineKey: "zion.taglineDeep",    Icon: FileText   },
 ];
 
 export default function ZionDrawer() {
-  const { zionOpen, setZion } = useUI();
+  const { zionOpen, setZion, lang } = useUI();
   const { fromToken, toToken, fromChain, amountIn } = useSwap();
+  const t = useT();
 
   const [op, setOp] = useState<ZionOp>("trading");
   const [buffer, setBuffer] = useState("");
@@ -57,18 +59,20 @@ export default function ZionDrawer() {
     if (followUp)            params.set("message", followUp);
     if (runOp === "arbitrage") params.set("minSpread", arbMinSpread);
     if (runOp === "sniper")    params.set("maxAge",    snipeMaxAge);
+    // Forward UI language so the server prompt tells Claude which idiom to reply in
+    params.set("lang", lang);
 
     try {
       const res = await fetch(`/api/zion?${params.toString()}`, { signal: ctrl.signal });
       if (!res.ok || !res.body) {
         if (res.status === 429) {
           const retry = res.headers.get("Retry-After") ?? "60";
-          setBuffer(`[Rate limit reached]\n\nZION is throttled for ${retry}s — too many analyses in a short window. Try again shortly.`);
+          setBuffer(`[${t("common.rateLimit")}]\n\n${t("zion.rateLimit", { seconds: retry })}`);
         } else if (res.status === 400) {
           const body = await res.text().catch(() => "");
-          setBuffer(`[Bad request: ${body || res.statusText}]\n\nThe pair or address looks malformed. Pick a token and retry.`);
+          setBuffer(`[${body || res.statusText}]\n\n${t("zion.badRequest")}`);
         } else {
-          setBuffer(`[ZION offline: ${res.status} ${res.statusText}]\n\nIf this persists, the ANTHROPIC_API_KEY may need to be configured.`);
+          setBuffer(`[ZION ${t("common.offline")}: ${res.status} ${res.statusText}]\n\n${t("zion.serverError")}`);
         }
         setStreaming(false);
         return;
@@ -88,12 +92,12 @@ export default function ZionDrawer() {
       }
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
-        setBuffer((s) => s + `\n\n[stream interrupted]`);
+        setBuffer((s) => s + `\n\n[${t("zion.streamInterrupted")}]`);
       }
     } finally {
       setStreaming(false);
     }
-  }, [fromChain, fromToken?.address, toToken?.address, amountIn, arbMinSpread, snipeMaxAge]);
+  }, [fromChain, fromToken?.address, toToken?.address, amountIn, arbMinSpread, snipeMaxAge, lang, t]);
 
   // Auto-run when drawer opens or op changes (except for pair changes —
   // those trigger inside trading/pair, but not arbitrage/sniper).
@@ -151,7 +155,7 @@ export default function ZionDrawer() {
                 <div>
                   <div className="font-display font-bold text-sm text-ink leading-none">ZION</div>
                   <div className="font-mono text-[9px] text-gold/70 tracking-widest uppercase mt-1">
-                    Haiku 4.5 · {streaming ? "thinking…" : opMeta.label.toLowerCase()}
+                    {t("zion.drawerSubtitle", { state: streaming ? t("zion.thinking") : t(opMeta.labelKey).toLowerCase() })}
                   </div>
                 </div>
               </div>
@@ -159,7 +163,7 @@ export default function ZionDrawer() {
                 <button
                   onClick={() => run(op, "")}
                   className="w-8 h-8 rounded-md flex items-center justify-center text-ink-3 hover:text-gold hover:bg-gold/5 disabled:opacity-40"
-                  title="Re-run"
+                  title={t("zion.rerun")}
                   disabled={streaming}
                 >
                   <RefreshCw className={cn("w-3.5 h-3.5", streaming && "animate-spin")} />
@@ -191,13 +195,13 @@ export default function ZionDrawer() {
                       )}
                     >
                       <Icon className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">{o.label}</span>
+                      <span className="truncate">{t(o.labelKey)}</span>
                     </button>
                   );
                 })}
               </div>
               <div className="font-mono text-[9px] text-ink-4 tracking-wide mt-1.5 text-center truncate">
-                {opMeta.tagline}
+                {t(opMeta.taglineKey)}
               </div>
             </div>
 
@@ -206,7 +210,7 @@ export default function ZionDrawer() {
               {(op === "trading" || op === "pair") && (
                 <div className="rounded-xl border border-white/5 bg-bg-1/40 p-3">
                   <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">
-                    Analyzing
+                    {t("zion.contextAnalyzing")}
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="font-display font-bold text-sm text-ink truncate">
@@ -222,7 +226,7 @@ export default function ZionDrawer() {
               {op === "arbitrage" && (
                 <div className="rounded-xl border border-violet/15 bg-violet/[0.04] p-3 space-y-2">
                   <div className="font-mono text-[9px] text-violet tracking-widest uppercase">
-                    Arb scan · min spread
+                    {t("zion.arbMinSpread")}
                   </div>
                   <div className="flex gap-1">
                     {["0.3", "0.5", "1.0", "2.0"].map((s) => (
@@ -247,7 +251,7 @@ export default function ZionDrawer() {
               {op === "sniper" && (
                 <div className="rounded-xl border border-gold/15 bg-gold/[0.04] p-3 space-y-2">
                   <div className="font-mono text-[9px] text-gold tracking-widest uppercase">
-                    Sniper scan · pair age window
+                    {t("zion.sniperAge")}
                   </div>
                   <div className="flex gap-1">
                     {(["1h", "6h", "24h", "7d"] as const).map((s) => (
@@ -279,15 +283,15 @@ export default function ZionDrawer() {
                   <span className="w-2 h-2 rounded-full bg-gold/60" />
                   <span className="w-2 h-2 rounded-full bg-green/60" />
                   <span className="ml-2 font-mono text-[10px] text-ink-3 tracking-wider">
-                    ZION · {opMeta.label.toLowerCase()}
+                    {t("zion.terminal", { label: t(opMeta.labelKey).toLowerCase() })}
                   </span>
                   <div className="flex-1" />
                   <span className="flex items-center gap-1 font-mono text-[9px] text-gold/70 tracking-widest uppercase">
-                    <Zap className="w-2.5 h-2.5" /> {streaming ? "streaming" : "idle"}
+                    <Zap className="w-2.5 h-2.5" /> {streaming ? t("zion.streamingState") : t("zion.idle")}
                   </span>
                 </div>
                 <div className="p-4 font-mono text-[11px] sm:text-xs leading-[1.75] whitespace-pre-wrap min-h-[220px] text-ink-2">
-                  {parsed.visible || (streaming ? "" : "Awaiting analysis…")}
+                  {parsed.visible || (streaming ? "" : t("zion.awaitingAnalysis"))}
                   {streaming && <span className="term-cursor" />}
                 </div>
               </div>
@@ -296,7 +300,9 @@ export default function ZionDrawer() {
               {parsed.cards.length > 0 && (
                 <div className="space-y-2">
                   <div className="font-mono text-[10px] text-cyan tracking-widest uppercase">
-                    {parsed.cards.length === 1 ? "Executable proposal" : `${parsed.cards.length} executable proposals`}
+                    {parsed.cards.length === 1
+                      ? t("zion.proposalsSingular")
+                      : t("zion.proposalsPlural", { n: parsed.cards.length })}
                   </div>
                   {parsed.cards.map((c, i) => (
                     <ActionCardView key={i} card={c} index={i} onExecute={setExecuting} />
@@ -311,7 +317,9 @@ export default function ZionDrawer() {
                 <input
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  placeholder={streaming ? "ZION is responding…" : `Ask ZION about ${opMeta.label.toLowerCase()}…`}
+                  placeholder={streaming
+                    ? t("zion.askWhileThinking")
+                    : t("zion.askPlaceholder", { mode: t(opMeta.labelKey).toLowerCase() })}
                   disabled={streaming}
                   className="flex-1 min-w-0 bg-transparent outline-none text-sm font-sans text-ink placeholder:text-ink-4 disabled:opacity-50"
                 />
@@ -324,7 +332,7 @@ export default function ZionDrawer() {
                 </button>
               </div>
               <p className="font-mono text-[9px] text-ink-4 mt-2 text-center">
-                ZION proposes · you confirm · advisory only
+                {t("zion.proposes")}
               </p>
             </form>
           </motion.div>
