@@ -9,11 +9,13 @@ import StatPanel from "./StatPanel";
 import TopMovers from "./TopMovers";
 import ChainConstellation from "./ChainConstellation";
 import { Activity, Sparkles } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 // Liquid Nexus (R3F) is heavy and uses browser-only APIs — load client-only
 const LiquidNexus = dynamic(() => import("@/components/viz/LiquidNexus"), { ssr: false });
 
 export default function SwapDashboard() {
+  const t = useT();
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       {/* Cinematic 3D backdrop */}
@@ -35,17 +37,16 @@ export default function SwapDashboard() {
           <div className="flex items-center gap-2 mb-3">
             <div className="h-px w-8 bg-cyan/40" />
             <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">
-              ZETTA · Liquidity Layer · v0.1 demo
+              {t("hero.eyebrow")}
             </span>
           </div>
           <h1 className="font-display font-extrabold text-[clamp(2rem,5.2vw,3.6rem)] leading-[0.98] tracking-[-0.02em] text-ink mb-3">
-            The{" "}
-            <span className="text-grad-aurora">Liquidity Nexus</span>
+            {t("hero.titleThe")}{" "}
+            <span className="text-grad-aurora">{t("hero.titleNexus")}</span>
           </h1>
           <p className="font-sans text-base sm:text-lg text-ink-2/95 leading-relaxed max-w-2xl">
-            Trade, route and analyze across <span className="text-cyan font-semibold">11 chains</span> with{" "}
-            <span className="text-gold font-semibold">ZION AI</span> advising every move.
-            Cross-chain native. MEV-protected. Institutional grade.
+            {t("hero.body1")} <span className="text-cyan font-semibold">{t("hero.chains11")}</span> {t("hero.body2")}{" "}
+            <span className="text-gold font-semibold">{t("hero.zionAi")}</span> {t("hero.body3")}
           </p>
         </motion.div>
 
@@ -91,10 +92,10 @@ export default function SwapDashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-display font-bold text-sm text-ink">
-                    Send to a different chain
+                    {t("swap.sendToDiffChain")}
                   </div>
                   <p className="font-mono text-[10px] text-ink-3 tracking-wide truncate">
-                    Cross-chain bridge · LiFi · 30+ networks · with custom recipient
+                    {t("swap.bridgeCtaSub")}
                   </p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-violet/70 group-hover:text-violet group-hover:translate-x-0.5 transition-all flex-shrink-0" />
@@ -103,9 +104,9 @@ export default function SwapDashboard() {
 
             {/* Strip under swap: quick chips */}
             <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
-              <Chip icon={<Sparkles className="w-3 h-3" />}    label="ZION rates this safe" tone="gold"   />
-              <Chip icon={<Activity className="w-3 h-3" />}     label="14 routes evaluated"  tone="cyan"   />
-              <Chip label="MEV shield active"                    tone="green"  />
+              <Chip icon={<Sparkles className="w-3 h-3" />}    label={t("swap.chipZionSafe")} tone="gold"   />
+              <Chip icon={<Activity className="w-3 h-3" />}     label={t("swap.chipRoutes", { n: 14 })}  tone="cyan"   />
+              <Chip label={t("swap.chipMev")}                    tone="green"  />
             </div>
           </motion.div>
 
@@ -123,8 +124,7 @@ export default function SwapDashboard() {
         {/* Footer disclaimer */}
         <div className="mt-12 pt-6 border-t border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <p className="font-mono text-[10px] text-ink-4 tracking-wide leading-relaxed max-w-2xl">
-            Z-SWAP is infrastructure software. ZION operates in advisory mode exclusively — all suggestions require manual user review.
-            Demo environment · not investment advice · VARA / VASP alignment in preparation.
+            {t("hero.footerDisclaimer")}
           </p>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] text-ink-3">Powered by</span>

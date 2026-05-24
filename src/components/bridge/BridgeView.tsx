@@ -7,6 +7,7 @@ import { ArrowLeft, Globe, Shield, Zap, Workflow, Clock } from "lucide-react";
 import SwapCard from "@/components/swap/SwapCard";
 import { useSwap } from "@/lib/store/swap";
 import { findToken } from "@/lib/tokens";
+import { useT } from "@/lib/i18n";
 
 /**
  * Dedicated cross-chain page — purpose-built UX for users coming here to
@@ -20,6 +21,7 @@ import { findToken } from "@/lib/tokens";
  */
 export default function BridgeView() {
   const { fromToken, toToken, setFromToken, setToToken } = useSwap();
+  const t = useT();
 
   // On first mount, if the user landed here with a same-chain pair selected
   // we seed a sensible cross-chain default (ETH on Ethereum → USDC on Base).
@@ -45,7 +47,7 @@ export default function BridgeView() {
           className="inline-flex items-center gap-1.5 font-mono text-[10px] text-ink-3 hover:text-cyan tracking-widest uppercase mb-4"
         >
           <ArrowLeft className="w-3 h-3" />
-          back to swap
+          {t("bridge.crumb")}
         </Link>
 
         {/* Hero */}
@@ -53,16 +55,14 @@ export default function BridgeView() {
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <Globe className="w-4 h-4 text-violet flex-shrink-0" />
             <span className="font-mono text-[10px] text-violet/90 tracking-widest uppercase">
-              Cross-Chain Bridge · 30+ networks
+              {t("bridge.eyebrow")}
             </span>
           </div>
           <h1 className="font-display font-extrabold text-[clamp(1.8rem,4.6vw,3rem)] leading-[0.98] tracking-[-0.02em] text-ink mb-3">
-            Move <span className="text-grad-aurora">across chains</span> in one transaction.
+            {t("bridge.heroLine1")} <span className="text-grad-aurora">{t("bridge.heroLine2")}</span> {t("bridge.heroLine3")}
           </h1>
           <p className="font-sans text-base text-ink-2/95 leading-relaxed max-w-2xl">
-            Pick the source and destination chains, pick the tokens, and Z-SWAP routes through the
-            best bridge automatically. You sign once on your wallet — the bridge delivers on the
-            other side. Want to send to someone else? Drop their address in the recipient field.
+            {t("bridge.heroBody")}
           </p>
         </motion.div>
 
@@ -85,30 +85,30 @@ export default function BridgeView() {
           >
             <Benefit
               Icon={Workflow}
-              label="One signature"
-              body="The bridge protocol delivers on the destination chain — no second wallet pop-up, no manual claim."
+              label={t("bridge.benefitOneSig")}
+              body={t("bridge.benefitOneSigBody")}
             />
             <Benefit
               Icon={Clock}
-              label="ETA visible upfront"
-              body="Most routes settle in 5-15 minutes. You see the bridge name, processing time and platform fee before you sign."
+              label={t("bridge.benefitEta")}
+              body={t("bridge.benefitEtaBody")}
             />
             <Benefit
               Icon={Shield}
-              label="Non-custodial"
-              body="Z-SWAP never holds your funds. The router LiFi aggregates Stargate, Across, Hop, LayerZero and others on the fly."
+              label={t("bridge.benefitNonCustodial")}
+              body={t("bridge.benefitNonCustodialBody")}
             />
             <Benefit
               Icon={Zap}
-              label="Custom recipient"
-              body="The destination defaults to your wallet — open the Recipient field to send to a friend, a cold wallet, or a CEX deposit."
+              label={t("bridge.benefitRecipient")}
+              body={t("bridge.benefitRecipientBody")}
             />
             <div className="rounded-xl border border-gold/15 bg-gold/[0.04] p-3 mt-2">
               <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-1">
-                Need same-chain instead?
+                {t("bridge.needSameChain")}
               </div>
               <Link href="/" className="font-mono text-[11px] text-cyan hover:underline">
-                ← Use the simple Swap on the home page
+                {t("bridge.backToSimpleSwap")}
               </Link>
             </div>
           </motion.div>

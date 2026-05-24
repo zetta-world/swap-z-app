@@ -14,6 +14,7 @@ import CrossChainBanner from "./CrossChainBanner";
 import RecipientField from "./RecipientField";
 import { useSwap, riskFromScore } from "@/lib/store/swap";
 import { useUI } from "@/lib/store/ui";
+import { useT } from "@/lib/i18n";
 import { CHAIN_BY_ID } from "@/lib/chains";
 import { formatUsd, formatAmount, parseDecimalInput } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -40,6 +41,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     setMode, setRecipient, setExecuteOpen, setSelectedSource,
   } = useSwap();
   const { toggleZion } = useUI();
+  const t = useT();
   const { address }    = useAccount();
   const sol            = useWallet();
   const solAddress     = sol.publicKey?.toBase58();
@@ -139,13 +141,13 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
 
   const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker);
   const cantReason   = !fromToken || !toToken
-    ? "Pick tokens"
+    ? t("swap.pickTokens")
     : !fromTaker
-      ? (fromChain === "solana" ? "Connect Solana wallet" : "Connect wallet")
+      ? (fromChain === "solana" ? t("swap.connectSolana") : t("swap.connectWallet"))
       : !display
-        ? (quotesState.loading ? "Fetching quotes…" : "Enter amount")
+        ? (quotesState.loading ? t("swap.fetchingQuotes") : t("swap.enterAmount"))
         : !selectedQuote
-          ? "No route available"
+          ? t("swap.noRoute")
           : "";
 
   const onPercent = (pct: number) => {
@@ -158,10 +160,10 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
 
   const ctaLabel = canExecute
     ? mode === "cross"
-      ? `Review bridge & swap`
+      ? t("swap.reviewBridge")
       : mode === "sniper"
-        ? `Snipe ${toToken?.symbol ?? "token"}`
-        : "Review & swap"
+        ? t("swap.snipeToken", { symbol: toToken?.symbol ?? "" })
+        : t("swap.reviewSwap")
     : cantReason;
 
   return (
@@ -172,22 +174,22 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="section-label">
-                {mode === "cross"  ? "Cross-chain" :
-                 mode === "sniper" ? "Sniper"      :
-                                     "Swap"}
+                {mode === "cross"  ? t("swap.titleCross") :
+                 mode === "sniper" ? t("swap.titleSniper") :
+                                     t("swap.titleSwap")}
               </span>
               <RiskBadge risk={risk} />
             </div>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setMev(!mevProtect)} aria-pressed={mevProtect} title="MEV Protection"
+              <button type="button" onClick={() => setMev(!mevProtect)} aria-pressed={mevProtect} title={t("swap.mevProtection")}
                 className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", mevProtect ? "text-green bg-green/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
                 <Shield className="w-3.5 h-3.5" />
               </button>
-              <button type="button" onClick={() => setPrivacy(!privacyMode)} aria-pressed={privacyMode} title="Privacy Mode"
+              <button type="button" onClick={() => setPrivacy(!privacyMode)} aria-pressed={privacyMode} title={t("swap.privacyMode")}
                 className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", privacyMode ? "text-gold bg-gold/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
                 <EyeOff className="w-3.5 h-3.5" />
               </button>
-              <button type="button" onClick={() => setShowSettings((s) => !s)} title="Settings"
+              <button type="button" onClick={() => setShowSettings((s) => !s)} title={t("swap.settings")}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-3 hover:text-ink-2 hover:bg-white/5 transition-colors">
                 <Settings2 className="w-3.5 h-3.5" />
               </button>
@@ -308,8 +310,8 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
               <div className="flex items-center justify-center gap-1.5 font-mono text-[9px] tracking-widest uppercase">
                 <span className="w-1.5 h-1.5 rounded-full bg-green pulse-dot" />
                 <span className="text-green/80">
-                  Live · {selectedQuote.label}
-                  {isCrossChain && " · cross-chain"}
+                  {t("swap.liveLabel", { label: selectedQuote.label })}
+                  {isCrossChain && ` · ${t("swap.crossChainLive")}`}
                 </span>
               </div>
             </div>
@@ -320,7 +322,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
             className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-gold/15 bg-gold/[0.04] hover:bg-gold/[0.08] hover:border-gold/25 transition-all group">
             <Sparkles className="w-3.5 h-3.5 text-gold flex-shrink-0" />
             <span className="font-mono text-[11px] text-gold/90 tracking-wide flex-1 text-left">
-              Ask ZION about this swap
+              {t("swap.askZionAboutSwap")}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-gold/60 -rotate-90 group-hover:translate-x-0.5 transition-transform" />
           </button>
@@ -338,7 +340,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
               >
                 <Banknote className="w-3.5 h-3.5 text-cyan flex-shrink-0" />
                 <span className="font-mono text-[11px] text-cyan/90 tracking-wide flex-1 text-left truncate">
-                  Compare on CEX · {cexHint.symbol} · {cexHint.side}
+                  {t("swap.compareOnCex", { symbol: cexHint.symbol, side: cexHint.side })}
                 </span>
                 <ChevronDown className="w-3.5 h-3.5 text-cyan/60 -rotate-90 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
               </Link>
