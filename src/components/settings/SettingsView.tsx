@@ -6,12 +6,25 @@ import { Settings as SettingsIcon, Shield, Bell, Globe, EyeOff, Zap, Brain, KeyR
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
 import CexSettings from "./CexSettings";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 export default function SettingsView() {
   const { mode, setMode, lang, setLang } = useUI();
   const { mevProtect, privacyMode, slippageBps, setMev, setPrivacy, setSlippage } = useSwap();
   const [zionMode, setZionMode] = useState<"conservative" | "advanced" | "institutional">("advanced");
+  const t = useT();
+
+  const modeLabels: Record<"standard" | "pro" | "privacy", MessageKey> = {
+    standard: "settings.appModeStandard",
+    pro:      "settings.appModePro",
+    privacy:  "settings.appModePrivacy",
+  };
+  const zionLabels: Record<"conservative" | "advanced" | "institutional", MessageKey> = {
+    conservative:  "settings.zionModeConservative",
+    advanced:      "settings.zionModeAdvanced",
+    institutional: "settings.zionModeInstitutional",
+  };
 
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
@@ -22,21 +35,20 @@ export default function SettingsView() {
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-7">
           <div className="flex items-center gap-2 mb-3">
             <SettingsIcon className="w-4 h-4 text-cyan" />
-            <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">Preferences · Z-SWAP profile</span>
+            <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">{t("settings.title")}</span>
           </div>
           <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
-            Your <span className="text-grad-aurora">Nexus</span>
+            {t("settings.pageTitleA")} <span className="text-grad-aurora">{t("settings.pageTitleHL")}</span>
           </h1>
           <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">
-            Tune every behavior — slippage defaults, MEV posture, ZION operating mode,
-            privacy stance. Settings persist locally and apply across every swap.
+            {t("settings.pageBody")}
           </p>
         </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Mode + Language */}
-          <Group title="Appearance" Icon={Globe}>
-            <Field label="UI Mode">
+          <Group title={t("settings.groupAppearance")} Icon={Globe}>
+            <Field label={t("settings.uiMode")}>
               <div className="grid grid-cols-3 gap-1.5 p-1 rounded-lg bg-bg-2 border border-white/10">
                 {(["standard", "pro", "privacy"] as const).map((m) => (
                   <button
@@ -47,12 +59,12 @@ export default function SettingsView() {
                       mode === m ? "bg-cyan/15 text-cyan" : "text-ink-3 hover:text-ink-2",
                     )}
                   >
-                    {m}
+                    {t(modeLabels[m])}
                   </button>
                 ))}
               </div>
             </Field>
-            <Field label="Language">
+            <Field label={t("settings.langLabel")}>
               <div className="grid grid-cols-4 gap-1.5 p-1 rounded-lg bg-bg-2 border border-white/10">
                 {(["en", "pt", "es", "zh"] as const).map((l) => (
                   <button
@@ -71,8 +83,8 @@ export default function SettingsView() {
           </Group>
 
           {/* Execution defaults */}
-          <Group title="Execution defaults" Icon={Zap}>
-            <Field label={`Default slippage · ${(slippageBps / 100).toFixed(2)}%`}>
+          <Group title={t("settings.groupExecution")} Icon={Zap}>
+            <Field label={t("settings.defaultSlippage", { pct: (slippageBps / 100).toFixed(2) })}>
               <input
                 type="range"
                 min={5}
@@ -89,15 +101,15 @@ export default function SettingsView() {
               </div>
             </Field>
             <Toggle
-              label="MEV protection"
-              description="Encrypted submission · anti-sandwich · private mempool"
+              label={t("settings.mevProtectionTitle")}
+              description={t("settings.mevProtectionDesc")}
               value={mevProtect}
               onChange={setMev}
               tone="green"
             />
             <Toggle
-              label="Privacy mode"
-              description="Encrypted logs · randomized execution delay · hidden routes"
+              label={t("settings.privacyModeTitle")}
+              description={t("settings.privacyModeDesc")}
               value={privacyMode}
               onChange={setPrivacy}
               tone="gold"
@@ -105,10 +117,9 @@ export default function SettingsView() {
           </Group>
 
           {/* ZION */}
-          <Group title="ZION operating mode" Icon={Brain}>
+          <Group title={t("settings.groupZion")} Icon={Brain}>
             <p className="font-sans text-xs text-ink-3 leading-relaxed">
-              How aggressively ZION analyzes and proposes. Conservative limits suggestions
-              to high-confidence trades only. Institutional surfaces every flag.
+              {t("settings.zionModeBody")}
             </p>
             <div className="grid grid-cols-3 gap-1.5 p-1 rounded-lg bg-bg-2 border border-white/10">
               {(["conservative", "advanced", "institutional"] as const).map((m) => (
@@ -120,31 +131,30 @@ export default function SettingsView() {
                     zionMode === m ? "bg-gold/15 text-gold" : "text-ink-3 hover:text-ink-2",
                   )}
                 >
-                  {m}
+                  {t(zionLabels[m])}
                 </button>
               ))}
             </div>
             <div className="rounded-lg border border-gold/15 bg-gold/[0.04] p-3 flex gap-2.5">
               <Brain className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
               <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-                ZION runs on Claude Haiku 4.5 with prompt caching. Each analysis costs ~$0.003.
-                Switching modes only changes prompt framing — base model stays the same.
+                {t("settings.zionCostNote")}
               </p>
             </div>
           </Group>
 
           {/* Notifications */}
-          <Group title="Notifications" Icon={Bell}>
-            <Toggle label="Price alerts"        description="Notify when watched pairs hit your trigger" value={true}  onChange={() => {}} tone="cyan" />
-            <Toggle label="Liquidity alerts"    description="Notify on abnormal liquidity movements"      value={true}  onChange={() => {}} tone="violet" />
-            <Toggle label="Governance reminders" description="Active proposal voting deadlines"             value={false} onChange={() => {}} tone="gold" />
-            <Toggle label="Order fills"          description="Limit / DCA / TWAP executions"               value={true}  onChange={() => {}} tone="green" />
+          <Group title={t("settings.groupNotifications")} Icon={Bell}>
+            <Toggle label={t("settings.notifPriceAlerts")} description={t("settings.notifPriceAlertsDesc")} value={true}  onChange={() => {}} tone="cyan" />
+            <Toggle label={t("settings.notifLiquidity")}   description={t("settings.notifLiquidityDesc")}   value={true}  onChange={() => {}} tone="violet" />
+            <Toggle label={t("settings.notifGovernance")}  description={t("settings.notifGovernanceDesc")}  value={false} onChange={() => {}} tone="gold" />
+            <Toggle label={t("settings.notifFills")}       description={t("settings.notifFillsDesc")}       value={true}  onChange={() => {}} tone="green" />
           </Group>
 
           {/* RPC */}
-          <Group title="Custom RPC endpoints" Icon={KeyRound}>
+          <Group title={t("settings.groupRpc")} Icon={KeyRound}>
             <p className="font-sans text-xs text-ink-3 leading-relaxed">
-              Override default RPC for any chain. Useful for private endpoints, archive nodes, or testnets.
+              {t("settings.rpcBody")}
             </p>
             {[
               { chain: "Ethereum", placeholder: "https://eth-mainnet.g.alchemy.com/v2/…" },
@@ -161,11 +171,11 @@ export default function SettingsView() {
           </Group>
 
           {/* Security */}
-          <Group title="Security" Icon={Shield}>
-            <Toggle label="Confirm every swap"       description="Always show the confirmation modal before executing" value={true}  onChange={() => {}} tone="green" />
-            <Toggle label="Block unverified contracts" description="Refuse to swap into tokens without GoPlus coverage" value={false} onChange={() => {}} tone="red" />
-            <Toggle label="High-risk warning gate"     description="Require typed confirmation when risk score > 70"     value={true}  onChange={() => {}} tone="gold" />
-            <Toggle label="Encrypted local cache"      description="Persist preferences with AES-256 (browser keyring)"   value={true}  onChange={() => {}} tone="cyan" />
+          <Group title={t("settings.groupSecurity")} Icon={Shield}>
+            <Toggle label={t("settings.confirmEverySwap")} description={t("settings.confirmEverySwapDesc")} value={true}  onChange={() => {}} tone="green" />
+            <Toggle label={t("settings.blockUnverified")}  description={t("settings.blockUnverifiedDesc")}  value={false} onChange={() => {}} tone="red" />
+            <Toggle label={t("settings.highRiskGate")}     description={t("settings.highRiskGateDesc")}     value={true}  onChange={() => {}} tone="gold" />
+            <Toggle label={t("settings.encryptedCache")}   description={t("settings.encryptedCacheDesc")}   value={true}  onChange={() => {}} tone="cyan" />
           </Group>
         </div>
 
@@ -175,7 +185,7 @@ export default function SettingsView() {
         </div>
 
         <p className="font-mono text-[10px] text-ink-4 text-center mt-6">
-          All settings persist locally · synced to wallet identity in a future sprint
+          {t("settings.saveSettings")}
         </p>
       </div>
     </div>

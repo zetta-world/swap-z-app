@@ -6,6 +6,7 @@ import { Wallet, TrendingUp, TrendingDown, ExternalLink, Eye, EyeOff } from "luc
 import { CHAINS } from "@/lib/chains";
 import { compactNumber, formatUsd, formatPct } from "@/lib/format";
 import CexPortfolioRollup from "./CexPortfolioRollup";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface Holding {
@@ -58,6 +59,7 @@ const TX_KIND: Record<string, string> = {
 };
 
 export default function PortfolioView() {
+  const t = useT();
   const [hidden, setHidden] = useState(false);
 
   const totals = useMemo(() => {
@@ -98,7 +100,7 @@ export default function PortfolioView() {
           <div className="flex items-center gap-2 mb-3">
             <Wallet className="w-4 h-4 text-cyan" />
             <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">
-              Multi-chain portfolio · demo wallet snapshot
+              {t("portfolio.eyebrow")}
             </span>
           </div>
 
@@ -106,23 +108,19 @@ export default function PortfolioView() {
           <div className="rounded-xl border border-gold/20 bg-gold/[0.04] p-3 mb-4 flex items-start gap-2.5">
             <Wallet className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
             <div className="min-w-0">
-              <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">Demo data</div>
+              <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">{t("portfolio.demoBanner")}</div>
               <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-                Real multi-chain holdings require a token-balance API (Alchemy / Zerion / Covalent).
-                Numbers below are illustrative. Native + ERC-20 balances on the connected chain are
-                already live in the Swap card; this dashboard ships in the next sprint with the
-                full multi-chain indexer wired up.
+                {t("portfolio.demoBodyExtended")}
               </p>
             </div>
           </div>
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div>
               <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
-                Portfolio <span className="text-grad-aurora">snapshot</span>
+                {t("portfolio.titleA")} <span className="text-grad-aurora">{t("portfolio.titleHL")}</span>
               </h1>
               <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">
-                Balances, positions and P&amp;L unified across 11 chains.
-                ZION watches each holding and flags structural risk changes.
+                {t("portfolio.titleBody")}
               </p>
             </div>
             <button
@@ -130,7 +128,7 @@ export default function PortfolioView() {
               className="btn btn-secondary py-2 text-xs"
             >
               {hidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-              {hidden ? "Show balances" : "Hide balances"}
+              {hidden ? t("portfolio.showBalances") : t("portfolio.hideBalances")}
             </button>
           </div>
         </motion.div>
@@ -140,25 +138,25 @@ export default function PortfolioView() {
           <div className="rounded-[20px] glass p-5 sm:p-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">Total Net Worth</div>
+                <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">{t("portfolio.netWorth")}</div>
                 <div className="font-display font-extrabold text-3xl sm:text-4xl text-ink">{mask(formatUsd(totals.total))}</div>
                 <div className={cn("flex items-center gap-1.5 mt-1.5 font-mono text-xs", totals.change24h >= 0 ? "text-green" : "text-red")}>
                   {totals.change24h >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                   {hidden ? "•••" : `${formatUsd(totals.changeUsd)} (${formatPct(totals.change24h)}) · 24h`}
                 </div>
               </div>
-              <Metric label="Wallet balance"  value={mask(formatUsd(totals.portfolio))} tone="cyan" />
-              <Metric label="LP positions"    value={mask(formatUsd(totals.positions))} tone="violet" />
-              <Metric label="Chains tracked"  value={String(byChain.length)}            tone="gold" />
+              <Metric label={t("portfolio.walletBalance")} value={mask(formatUsd(totals.portfolio))} tone="cyan" />
+              <Metric label={t("portfolio.lpPositions")}   value={mask(formatUsd(totals.positions))} tone="violet" />
+              <Metric label={t("portfolio.chainsTracked")} value={String(byChain.length)}            tone="gold" />
             </div>
 
             {/* Chain distribution bar */}
             <div className="mt-5">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Distribution by chain</span>
+                <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("portfolio.distribution")}</span>
                 <span className="font-mono text-[10px] text-cyan tracking-widest uppercase flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan pulse-dot" />
-                  Live
+                  {t("portfolio.distributionLive")}
                 </span>
               </div>
               <div className="flex h-3 rounded-full overflow-hidden bg-white/[0.03]">
@@ -191,8 +189,8 @@ export default function PortfolioView() {
           {/* Holdings */}
           <div className="lg:col-span-7 rounded-2xl border border-white/5 glass-pane overflow-hidden">
             <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-              <span className="font-display font-bold text-sm text-ink">Holdings</span>
-              <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{MOCK_HOLDINGS.length} assets</span>
+              <span className="font-display font-bold text-sm text-ink">{t("portfolio.holdings")}</span>
+              <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{t("portfolio.assetsCount", { n: MOCK_HOLDINGS.length })}</span>
             </div>
             <div className="divide-y divide-white/[0.04]">
               {MOCK_HOLDINGS.map((h) => {
@@ -231,15 +229,15 @@ export default function PortfolioView() {
             {/* LP positions */}
             <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden">
               <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-                <span className="font-display font-bold text-sm text-ink">LP positions</span>
-                <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{MOCK_POSITIONS.length} active</span>
+                <span className="font-display font-bold text-sm text-ink">{t("portfolio.lpPositions")}</span>
+                <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{t("portfolio.activePositions", { n: MOCK_POSITIONS.length })}</span>
               </div>
               <div className="divide-y divide-white/[0.04]">
                 {MOCK_POSITIONS.map((p, i) => (
                   <div key={i} className="px-4 py-3">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-display font-bold text-xs text-ink">{p.pair}</span>
-                      <span className="font-mono text-xs text-green">{p.apr.toFixed(1)}% APR</span>
+                      <span className="font-mono text-xs text-green">{t("portfolio.apr", { n: p.apr.toFixed(1) })}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{p.protocol} · {p.chain}</span>
@@ -253,22 +251,22 @@ export default function PortfolioView() {
             {/* Activity */}
             <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden">
               <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-                <span className="font-display font-bold text-sm text-ink">Recent activity</span>
+                <span className="font-display font-bold text-sm text-ink">{t("portfolio.activity")}</span>
                 <a href="#" className="font-mono text-[9px] text-cyan/70 hover:text-cyan tracking-widest uppercase inline-flex items-center gap-0.5">
-                  All <ExternalLink className="w-2.5 h-2.5" />
+                  {t("common.show")} <ExternalLink className="w-2.5 h-2.5" />
                 </a>
               </div>
               <div className="divide-y divide-white/[0.04]">
-                {MOCK_TXS.map((t, i) => (
+                {MOCK_TXS.map((tx, i) => (
                   <div key={i} className="px-4 py-2.5">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">{TX_KIND[t.type]}</span>
-                        <span className="font-display font-bold text-xs text-ink truncate">{t.description}</span>
+                        <span className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">{TX_KIND[tx.type]}</span>
+                        <span className="font-display font-bold text-xs text-ink truncate">{tx.description}</span>
                       </div>
-                      <span className={cn("font-mono text-xs", t.positive ? "text-green" : "text-ink-2")}>{hidden ? "•••" : t.amount}</span>
+                      <span className={cn("font-mono text-xs", tx.positive ? "text-green" : "text-ink-2")}>{hidden ? "•••" : tx.amount}</span>
                     </div>
-                    <div className="font-mono text-[10px] text-ink-4 tracking-widest uppercase">{t.ts} · {t.chain}</div>
+                    <div className="font-mono text-[10px] text-ink-4 tracking-widest uppercase">{tx.ts} · {tx.chain}</div>
                   </div>
                 ))}
               </div>
@@ -282,7 +280,7 @@ export default function PortfolioView() {
         </div>
 
         <p className="font-mono text-[10px] text-ink-4 text-center mt-6">
-          Wallet data above is demo · CEX rollup below is live read-only data via your saved API keys
+          {t("portfolio.wallets")}
         </p>
       </div>
     </div>

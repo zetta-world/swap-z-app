@@ -7,25 +7,27 @@ import { CHAINS, type ChainId } from "@/lib/chains";
 import { tokensByChain, type Token } from "@/lib/tokens";
 import { formatUsd, parseDecimalInput } from "@/lib/format";
 import ZionOrdersList from "./ZionOrdersList";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 type OrderType = "limit" | "dca" | "twap";
 
-const TABS: { id: OrderType; label: string; Icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
-  { id: "limit", label: "Limit",          Icon: Target,    desc: "Buy or sell when the price hits your target" },
-  { id: "dca",   label: "DCA",            Icon: Calendar,  desc: "Dollar-cost average on a recurring schedule"  },
-  { id: "twap",  label: "TWAP",           Icon: Clock,     desc: "Split a large order across N intervals"        },
+const TABS: { id: OrderType; labelKey: MessageKey; Icon: React.ComponentType<{ className?: string }>; descKey: MessageKey }[] = [
+  { id: "limit", labelKey: "orders.tabLimit", Icon: Target,    descKey: "orders.descLimit" },
+  { id: "dca",   labelKey: "orders.tabDca",   Icon: Calendar,  descKey: "orders.descDca"   },
+  { id: "twap",  labelKey: "orders.tabTwap",  Icon: Clock,     descKey: "orders.descTwap"  },
 ];
 
-const FREQS = [
-  { v: "hourly",  label: "Hourly"   },
-  { v: "daily",   label: "Daily"    },
-  { v: "weekly",  label: "Weekly"   },
-  { v: "monthly", label: "Monthly"  },
+const FREQS: { v: string; labelKey: MessageKey }[] = [
+  { v: "hourly",  labelKey: "orders.freqHourly"  },
+  { v: "daily",   labelKey: "orders.freqDaily"   },
+  { v: "weekly",  labelKey: "orders.freqWeekly"  },
+  { v: "monthly", labelKey: "orders.freqMonthly" },
 ];
 
 
 export default function OrdersView() {
+  const t = useT();
   const [tab, setTab] = useState<OrderType>("limit");
   const [chain, setChain] = useState<ChainId>("ethereum");
   const [fromToken, setFromToken] = useState<Token | undefined>(() => tokensByChain("ethereum").find((t) => t.symbol === "USDC"));
@@ -38,10 +40,14 @@ export default function OrdersView() {
   const summary = useMemo(() => {
     const a = parseDecimalInput(amount) ?? 0;
     if (!a) return null;
-    if (tab === "limit") return `Buy when ${toToken?.symbol} = $${limitPrice} per ${fromToken?.symbol}`;
-    if (tab === "dca")   return `${freq} · $${(a / parseInt(intervals || "1")).toFixed(2)} per cycle · ${intervals} cycles`;
-    return `Split ${amount} ${fromToken?.symbol} across ${intervals} intervals`;
-  }, [tab, amount, intervals, freq, fromToken, toToken, limitPrice]);
+    if (tab === "limit") return t("orders.summaryLimit", { symbol: toToken?.symbol ?? "", price: limitPrice, fromSymbol: fromToken?.symbol ?? "" });
+    if (tab === "dca")   return t("orders.summaryDca",   {
+      freq:     t((FREQS.find((f) => f.v === freq)?.labelKey ?? "orders.freqDaily") as MessageKey),
+      perCycle: (a / parseInt(intervals || "1")).toFixed(2),
+      cycles:   intervals,
+    });
+    return t("orders.summaryTwap", { amount, fromSymbol: fromToken?.symbol ?? "", intervals });
+  }, [tab, amount, intervals, freq, fromToken, toToken, limitPrice, t]);
 
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
@@ -53,15 +59,14 @@ export default function OrdersView() {
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <Activity className="w-4 h-4 text-violet flex-shrink-0" />
             <span className="font-mono text-[10px] text-violet/80 tracking-widest uppercase">
-              Order Engine · Limit · DCA · TWAP
+              {t("orders.eyebrow")}
             </span>
           </div>
           <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3 break-words">
-            Set and <span className="text-grad-aurora">walk away</span>
+            {t("orders.pageTitleA")} <span className="text-grad-aurora">{t("orders.pageTitleHL")}</span>
           </h1>
           <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">
-            Programmable order strategies that beat Jupiter and Matcha. Set the conditions —
-            ZION watches the market continuously and executes when your rules are met.
+            {t("orders.pageBody")}
           </p>
         </motion.div>
 
@@ -70,53 +75,59 @@ export default function OrdersView() {
           <div className="lg:col-span-7 space-y-4">
             {/* Tabs */}
             <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-xl border border-white/5 glass-pane">
-              {TABS.map((t) => {
-                const Icon = t.Icon;
-                const active = tab === t.id;
+              {TABS.map((tab2) => {
+                const Icon = tab2.Icon;
+                const active = tab === tab2.id;
                 return (
                   <button
-                    key={t.id}
-                    onClick={() => setTab(t.id)}
+                    key={tab2.id}
+                    onClick={() => setTab(tab2.id)}
                     className={cn(
                       "flex flex-col items-center gap-1 px-3 py-3 rounded-lg transition-all",
                       active ? "bg-violet/15 border border-violet/30 text-violet" : "text-ink-3 hover:text-ink-2 border border-transparent",
                     )}
                   >
                     <Icon className="w-4 h-4" />
-                    <span className="font-display font-bold text-[11px] tracking-widest uppercase">{t.label}</span>
+                    <span className="font-display font-bold text-[11px] tracking-widest uppercase">{t(tab2.labelKey)}</span>
                   </button>
                 );
               })}
             </div>
 
             <div className="font-sans text-xs text-ink-3 leading-relaxed">
-              {TABS.find((t) => t.id === tab)?.desc}
+              {(() => {
+                const k = TABS.find((x) => x.id === tab)?.descKey;
+                return k ? t(k) : "";
+              })()}
             </div>
 
             {/* Form */}
             <div className="aurora-border p-px">
               <div className="rounded-[18px] glass p-5 space-y-3">
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="Chain">
+                  <Field label={t("orders.fieldChain")}>
                     <ChainSelect chain={chain} onChange={(c) => { setChain(c); setFromToken(tokensByChain(c)[0]); setToToken(tokensByChain(c)[1]); }} />
                   </Field>
-                  <Field label="Type">
+                  <Field label={t("orders.fieldType")}>
                     <div className="bg-bg-2 border border-white/10 rounded-lg px-2.5 py-2 text-sm font-mono text-ink-2 uppercase tracking-widest">
-                      {TABS.find((t) => t.id === tab)?.label}
+                      {(() => {
+                        const k = TABS.find((x) => x.id === tab)?.labelKey;
+                        return k ? t(k) : "";
+                      })()}
                     </div>
                   </Field>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="Pay">
+                  <Field label={t("orders.fieldPay")}>
                     <TokenSelect token={fromToken} tokens={tokensByChain(chain)} onChange={setFromToken} />
                   </Field>
-                  <Field label="Receive">
+                  <Field label={t("orders.fieldReceive")}>
                     <TokenSelect token={toToken} tokens={tokensByChain(chain)} onChange={setToToken} />
                   </Field>
                 </div>
 
-                <Field label={tab === "dca" ? "Total budget" : "Amount"}>
+                <Field label={tab === "dca" ? t("orders.fieldTotalBudget") : t("orders.fieldAmount")}>
                   <div className="flex items-center gap-2 bg-bg-2 border border-white/10 rounded-lg px-3 py-2 focus-within:border-violet/30 min-w-0">
                     <input
                       inputMode="decimal"
@@ -131,7 +142,7 @@ export default function OrdersView() {
 
                 {/* Type-specific fields */}
                 {tab === "limit" && (
-                  <Field label={`Trigger price (${toToken?.symbol} in USD)`}>
+                  <Field label={t("orders.fieldTriggerPrice", { symbol: toToken?.symbol ?? "" })}>
                     <div className="flex items-center gap-2 bg-bg-2 border border-white/10 rounded-lg px-3 py-2 focus-within:border-violet/30 min-w-0">
                       <span className="font-mono text-ink-3 flex-shrink-0">$</span>
                       <input
@@ -147,16 +158,16 @@ export default function OrdersView() {
 
                 {tab === "dca" && (
                   <div className="grid grid-cols-2 gap-2">
-                    <Field label="Frequency">
+                    <Field label={t("orders.fieldFrequency")}>
                       <select
                         value={freq}
                         onChange={(e) => setFreq(e.target.value)}
                         className="bg-bg-2 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-ink-2 uppercase tracking-widest w-full"
                       >
-                        {FREQS.map((f) => <option key={f.v} value={f.v}>{f.label}</option>)}
+                        {FREQS.map((f) => <option key={f.v} value={f.v}>{t(f.labelKey)}</option>)}
                       </select>
                     </Field>
-                    <Field label="Number of cycles">
+                    <Field label={t("orders.fieldCycles")}>
                       <input
                         value={intervals}
                         onChange={(e) => setIntervals(e.target.value)}
@@ -168,7 +179,7 @@ export default function OrdersView() {
                 )}
 
                 {tab === "twap" && (
-                  <Field label="Intervals (split the order into N slices)">
+                  <Field label={t("orders.fieldIntervals")}>
                     <input
                       value={intervals}
                       onChange={(e) => setIntervals(e.target.value)}
@@ -189,10 +200,17 @@ export default function OrdersView() {
                 )}
 
                 <button className="w-full btn btn-primary py-3.5 text-sm tracking-widest" disabled={!summary}>
-                  {summary ? `Place ${TABS.find((t) => t.id === tab)?.label} order` : "Configure order"}
+                  {summary
+                    ? t("orders.placeBtn", {
+                        label: (() => {
+                          const k = TABS.find((x) => x.id === tab)?.labelKey;
+                          return k ? t(k) : "";
+                        })(),
+                      })
+                    : t("orders.configureBtn")}
                 </button>
                 <p className="font-mono text-[10px] text-ink-4 text-center">
-                  Limit / DCA / TWAP placement is in-flight — for now use ZION proposals (see panel on the right) or the swap card for immediate execution.
+                  {t("orders.placerFooter")}
                 </p>
               </div>
             </div>
@@ -205,11 +223,9 @@ export default function OrdersView() {
             <div className="rounded-2xl border border-gold/15 bg-gold/[0.04] p-4 flex gap-3">
               <AlertCircle className="w-4 h-4 text-gold flex-shrink-0 mt-0.5" />
               <div>
-                <div className="font-display font-bold text-sm text-gold">Save now, fire later</div>
+                <div className="font-display font-bold text-sm text-gold">{t("orders.saveNowTitle")}</div>
                 <p className="font-sans text-xs text-ink-2 leading-relaxed mt-1">
-                  ZION&apos;s limit / stop / sniper-watch proposals land here. Z-SWAP never
-                  holds your keys — when the trigger price hits, hit Fire now to load the
-                  pair into the swap card and sign with your wallet.
+                  {t("orders.saveNowBody")}
                 </p>
               </div>
             </div>

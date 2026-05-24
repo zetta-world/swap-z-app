@@ -14,25 +14,26 @@ import {
 import { useSwap } from "@/lib/store/swap";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 const KIND_META: Record<string, {
-  Icon:  React.ComponentType<{ className?: string }>;
-  label: string;
-  tone:  "cyan" | "violet" | "gold" | "green" | "red";
+  Icon:     React.ComponentType<{ className?: string }>;
+  labelKey: MessageKey;
+  tone:     "cyan" | "violet" | "gold" | "green" | "red";
 }> = {
-  swap:                  { Icon: Zap,             label: "Swap",          tone: "cyan"   },
-  bridge:                { Icon: Zap,             label: "Bridge",        tone: "cyan"   },
-  arbitrage:             { Icon: TrendingUp,      label: "Arb",           tone: "violet" },
-  arbitrage_same_chain:  { Icon: TrendingUp,      label: "Arb · DEX",     tone: "violet" },
-  arbitrage_cross_chain: { Icon: TrendingUp,      label: "Arb · Chain",   tone: "violet" },
-  sniper_watch:          { Icon: Crosshair,       label: "Sniper",        tone: "gold"   },
-  buy_limit:             { Icon: ArrowDownToLine, label: "Buy limit",     tone: "cyan"   },
-  sell_safe:             { Icon: ArrowUpFromLine, label: "Sell · Safe",   tone: "green"  },
-  sell_medium:           { Icon: Target,          label: "Sell · Med",    tone: "gold"   },
-  sell_aggressive:       { Icon: TrendingUp,      label: "Sell · Stretch", tone: "violet" },
-  stop_loss:             { Icon: ShieldX,         label: "Stop loss",     tone: "red"    },
-  limit:                 { Icon: Bot,             label: "Limit",         tone: "violet" },
+  swap:                  { Icon: Zap,             labelKey: "zion.cardKindSwap",     tone: "cyan"   },
+  bridge:                { Icon: Zap,             labelKey: "zion.cardKindBridge",   tone: "cyan"   },
+  arbitrage:             { Icon: TrendingUp,      labelKey: "zion.cardKindArb",      tone: "violet" },
+  arbitrage_same_chain:  { Icon: TrendingUp,      labelKey: "zion.cardKindArbDex",   tone: "violet" },
+  arbitrage_cross_chain: { Icon: TrendingUp,      labelKey: "zion.cardKindArbChain", tone: "violet" },
+  sniper_watch:          { Icon: Crosshair,       labelKey: "zion.cardKindSniper",   tone: "gold"   },
+  buy_limit:             { Icon: ArrowDownToLine, labelKey: "zion.cardKindBuyLimit", tone: "cyan"   },
+  sell_safe:             { Icon: ArrowUpFromLine, labelKey: "zion.cardKindSellSafe", tone: "green"  },
+  sell_medium:           { Icon: Target,          labelKey: "zion.cardKindSellMed",  tone: "gold"   },
+  sell_aggressive:       { Icon: TrendingUp,      labelKey: "zion.cardKindSellAggr", tone: "violet" },
+  stop_loss:             { Icon: ShieldX,         labelKey: "zion.cardKindStop",     tone: "red"    },
+  limit:                 { Icon: Bot,             labelKey: "zion.cardKindLimit",    tone: "violet" },
 };
 
 const TONE_BORDER: Record<string, string> = {
@@ -59,6 +60,7 @@ const FALLBACK_DECIMALS: Record<string, number> = {
  * the "advisory only" posture intact and avoids any custody.
  */
 export default function ZionOrdersList() {
+  const t = useT();
   const [orders, setOrders] = useState<PendingOrder[]>([]);
   const { setFromToken, setToToken, setAmountIn, setExecuteOpen, setSelectedSource } = useSwap();
 
@@ -77,7 +79,7 @@ export default function ZionOrdersList() {
   const onDelete = (id: string) => {
     deletePendingOrder(id);
     refresh();
-    toast.success("Order removed.");
+    toast.success(t("orders.orderRemovedToast"));
   };
 
   const onFireNow = (o: PendingOrder) => {
@@ -85,16 +87,14 @@ export default function ZionOrdersList() {
     const chain = card.chain as ChainId;
 
     if (!isImmediateCard(card.kind)) {
-      toast.error(
-        "This is a conditional order — fire-now isn't supported yet. Use the swap card manually when the trigger price hits.",
-      );
+      toast.error(t("orders.notImmediateToast"));
       return;
     }
 
     const fromToken = resolveToken(chain, card.from?.symbol, card.from?.address);
     const toToken   = resolveToken(chain, card.to?.symbol,   card.to?.address);
     if (!fromToken || !toToken) {
-      toast.error("Missing token info on the original proposal — can't fire automatically.");
+      toast.error(t("orders.missingTokenToast"));
       return;
     }
 
@@ -106,7 +106,7 @@ export default function ZionOrdersList() {
     refresh();
 
     // Tiny delay so the user sees the toast first
-    toast.success("Pair loaded — opening execution…");
+    toast.success(t("orders.pairLoadedToast"));
     setTimeout(() => setExecuteOpen(true), 220);
   };
 
@@ -115,11 +115,10 @@ export default function ZionOrdersList() {
       <div className="rounded-2xl border border-white/5 glass-pane p-5 text-center">
         <Sparkles className="w-5 h-5 text-gold mx-auto mb-2" />
         <div className="font-display font-bold text-sm text-ink mb-1">
-          No ZION orders saved
+          {t("zion.orderNone")}
         </div>
         <p className="font-sans text-xs text-ink-3 max-w-sm mx-auto">
-          When ZION suggests a buy_limit, stop_loss, or sniper_watch and you click
-          Save in the proposal modal, it shows up here.
+          {t("zion.orderNoneHint")}
         </p>
       </div>
     );
@@ -130,10 +129,13 @@ export default function ZionOrdersList() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 flex-wrap gap-2">
         <span className="font-display font-bold text-sm text-ink inline-flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-gold" />
-          ZION saved orders
+          {t("zion.orderTitle")}
         </span>
         <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">
-          {orders.length} saved · {orders.filter((o) => o.status === "pending").length} pending
+          {t("zion.orderSavedCount", {
+            n: orders.length,
+            pending: orders.filter((o) => o.status === "pending").length,
+          })}
         </span>
       </div>
       <AnimatePresence initial={false}>
@@ -156,9 +158,7 @@ export default function ZionOrdersList() {
       <div className="px-4 py-3 border-t border-white/5 bg-bg-1/30 flex items-start gap-2">
         <AlertCircle className="w-3 h-3 text-ink-3 flex-shrink-0 mt-0.5" />
         <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-          Conditional orders (limit / stop / sniper) DON&apos;T auto-execute.
-          You watch the market — when conditions match, hit Fire now to load the
-          pair into the swap card.
+          {t("orders.conditionalHint")}
         </p>
       </div>
     </div>
@@ -172,6 +172,7 @@ function OrderRow({
   onDelete: () => void;
   onFire:   () => void;
 }) {
+  const t = useT();
   const { card } = order;
   const meta = KIND_META[card.kind] ?? KIND_META.swap;
   const Icon = meta.Icon;
@@ -199,13 +200,15 @@ function OrderRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap mb-1">
           <span className={cn("font-mono text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase", statusCfg)}>
-            {order.status}
+            {order.status === "pending"   ? t("common.pending") :
+             order.status === "cancelled" ? t("common.failed") :
+             order.status}
           </span>
           <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">
-            {meta.label} · {card.chain}
+            {t(meta.labelKey)} · {card.chain}
           </span>
           <span className="font-mono text-[9px] text-ink-4 tracking-widest">
-            saved {ageLabel} ago
+            {ageLabel}
           </span>
         </div>
         <div className="font-display font-bold text-xs text-ink leading-snug break-words">
@@ -219,16 +222,20 @@ function OrderRow({
 
         <div className="mt-2 grid grid-cols-2 gap-1.5 min-w-0">
           {card.from && (
-            <Field label="From" value={`${card.from.amount ?? ""} ${card.from.symbol}`.trim()} />
+            <Field label={t("common.from")} value={`${card.from.amount ?? ""} ${card.from.symbol}`.trim()} />
           )}
           {card.to && (
-            <Field label="To" value={card.to.symbol} />
+            <Field label={t("common.to")} value={card.to.symbol} />
           )}
           {card.triggerPrice && (
-            <Field label="Trigger" value={card.triggerPrice} tone="violet" />
+            <Field label={t("zion.triggerLabel")} value={card.triggerPrice} tone="violet" />
           )}
           {card.targetReturn && (
-            <Field label={card.kind === "stop_loss" ? "Max loss" : "Target"} value={card.targetReturn} tone={card.kind === "stop_loss" ? "red" : "green"} />
+            <Field
+              label={card.kind === "stop_loss" ? t("zion.maxLossLabel") : t("zion.targetLabel")}
+              value={card.targetReturn}
+              tone={card.kind === "stop_loss" ? "red" : "green"}
+            />
           )}
         </div>
 
@@ -249,10 +256,10 @@ function OrderRow({
                 ? "border-cyan/30 bg-cyan/[0.06] text-cyan hover:bg-cyan/[0.10]"
                 : "border-white/10 bg-white/[0.02] text-ink-4 cursor-not-allowed",
             )}
-            title={immediate ? "Load the pair and open execution" : "Conditional orders need manual fire when trigger hits"}
+            title={immediate ? t("orders.pairLoadedToast") : t("orders.conditionalHint")}
           >
             <Zap className="w-3 h-3" />
-            Fire now
+            {t("zion.fireNow")}
           </button>
           <button
             type="button"
@@ -260,7 +267,7 @@ function OrderRow({
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-white/10 bg-white/[0.02] text-ink-3 hover:text-red hover:border-red/30 font-mono text-[10px] tracking-widest uppercase"
           >
             <Trash2 className="w-3 h-3" />
-            Delete
+            {t("common.delete")}
           </button>
         </div>
       </div>
