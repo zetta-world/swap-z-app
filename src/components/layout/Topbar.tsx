@@ -2,6 +2,7 @@
 
 import { Search, Sparkles, Bell, Menu } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import ModeSwitcher from "./ModeSwitcher";
 import LangSwitcher from "./LangSwitcher";
@@ -9,6 +10,7 @@ import ConnectButton from "@/components/wallet/ConnectButton";
 
 export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const { setCommand, toggleZion, zionOpen } = useUI();
+  const t = useT();
 
   return (
     <header className="sticky top-0 z-30 h-14 sm:h-16 px-3 sm:px-5 lg:px-6 flex items-center gap-2 sm:gap-3 border-b border-white/5 glass-pane">
@@ -16,7 +18,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
       <div className="flex items-center gap-2 lg:hidden min-w-0 flex-shrink-0">
         <button
           onClick={onOpenMobileNav}
-          aria-label="Open menu"
+          aria-label={t("topbar.openCommand")}
           className="w-9 h-9 rounded-lg flex items-center justify-center text-ink-2 hover:text-ink hover:bg-white/5 transition-colors flex-shrink-0"
         >
           <Menu className="w-5 h-5" />
@@ -41,7 +43,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
       >
         <Search className="w-4 h-4 text-ink-3 group-hover:text-cyan transition-colors flex-shrink-0" />
         <span className="font-sans text-sm text-ink-3 group-hover:text-ink-2 transition-colors flex-1 text-left truncate">
-          Search tokens, pools, chains…
+          {t("topbar.commandPalette")}
         </span>
         <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono text-ink-3 border border-white/10 bg-white/[0.02]">
           ⌘K
@@ -56,7 +58,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
         {/* Live indicator — xl only */}
         <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.02] border border-white/5">
           <span className="w-1.5 h-1.5 rounded-full bg-green pulse-dot" />
-          <span className="font-mono text-[10px] text-ink-2 tracking-widest uppercase">Network Live</span>
+          <span className="font-mono text-[10px] text-ink-2 tracking-widest uppercase">{t("explorer.liveActive")}</span>
         </div>
 
         <ModeSwitcher />
@@ -65,7 +67,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
         {/* Mobile-only search icon (replaces command bar) */}
         <button
           onClick={() => setCommand(true)}
-          aria-label="Search"
+          aria-label={t("common.search")}
           className="md:hidden w-9 h-9 rounded-lg flex items-center justify-center text-ink-2 hover:text-cyan hover:bg-white/5 transition-colors"
         >
           <Search className="w-4 h-4" />
@@ -74,7 +76,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
         {/* ZION button — always visible */}
         <button
           onClick={toggleZion}
-          aria-label="Open ZION AI"
+          aria-label={t("topbar.askZion")}
           className={cn(
             "relative flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-lg border transition-all",
             zionOpen
@@ -88,7 +90,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
 
         {/* Notifications — lg+ */}
         <button
-          aria-label="Notifications"
+          aria-label={t("settings.groupNotifications")}
           className="hidden lg:flex items-center justify-center w-9 h-9 rounded-lg border border-white/8 bg-white/[0.03] text-ink-2 hover:text-cyan hover:border-cyan/30 transition-colors"
         >
           <Bell className="w-4 h-4" />

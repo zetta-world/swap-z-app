@@ -8,44 +8,47 @@ import {
   Shield, Vote, Wallet, Settings, ChevronLeft, Activity, Boxes, Banknote,
 } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface NavItem {
   href: string;
-  label: string;
+  labelKey: MessageKey;
   icon: React.ComponentType<{ className?: string }>;
-  badge?: string;
+  badgeKey?: MessageKey;
+  badgeTone?: "ai" | "new" | "beta";
   group: "trade" | "discover" | "build" | "manage";
 }
 
 const NAV: NavItem[] = [
-  { href: "/",          label: "Swap",       icon: ArrowLeftRight, group: "trade" },
-  { href: "/bridge",    label: "Bridge",     icon: Workflow,        group: "trade" },
-  { href: "/orders",    label: "Limit / DCA", icon: Activity,       group: "trade", badge: "NEW" },
-  { href: "/cex",       label: "CEX Console", icon: Banknote,       group: "trade", badge: "NEW" },
-  { href: "/pro",       label: "Pro Terminal", icon: BarChart3,     group: "trade", badge: "BETA" },
+  { href: "/",          labelKey: "nav.swap",       icon: ArrowLeftRight, group: "trade" },
+  { href: "/bridge",    labelKey: "nav.bridge",     icon: Workflow,        group: "trade" },
+  { href: "/orders",    labelKey: "nav.orders",     icon: Activity,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
+  { href: "/cex",       labelKey: "nav.cex",        icon: Banknote,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
+  { href: "/pro",       labelKey: "nav.pro",        icon: BarChart3,       group: "trade", badgeKey: "nav.badgeBeta", badgeTone: "beta" },
 
-  { href: "/pools",     label: "Pools",      icon: Layers,          group: "discover" },
-  { href: "/explorer",  label: "Risk Scanner", icon: Shield,        group: "discover" },
-  { href: "/zion",      label: "ZION AI",    icon: Sparkles,        group: "discover", badge: "AI" },
+  { href: "/pools",     labelKey: "nav.pools",      icon: Layers,          group: "discover" },
+  { href: "/explorer",  labelKey: "nav.explorer",   icon: Shield,          group: "discover" },
+  { href: "/zion",      labelKey: "nav.zion",       icon: Sparkles,        group: "discover", badgeKey: "nav.badgeAi", badgeTone: "ai" },
 
-  { href: "/launchpad", label: "Z-PAD Launch", icon: Rocket,        group: "build" },
-  { href: "/governance", label: "Governance", icon: Vote,           group: "build" },
+  { href: "/launchpad", labelKey: "nav.launchpad",  icon: Rocket,          group: "build" },
+  { href: "/governance", labelKey: "nav.governance", icon: Vote,           group: "build" },
 
-  { href: "/portfolio", label: "Portfolio",  icon: Wallet,          group: "manage" },
-  { href: "/settings",  label: "Settings",   icon: Settings,        group: "manage" },
+  { href: "/portfolio", labelKey: "nav.portfolio",  icon: Wallet,          group: "manage" },
+  { href: "/settings",  labelKey: "nav.settings",   icon: Settings,        group: "manage" },
 ];
 
-const GROUP_LABELS: Record<NavItem["group"], string> = {
-  trade:    "Trade",
-  discover: "Discover",
-  build:    "Build",
-  manage:   "Manage",
+const GROUP_KEYS: Record<NavItem["group"], MessageKey> = {
+  trade:    "nav.groupTrade",
+  discover: "nav.groupDiscover",
+  build:    "nav.groupBuild",
+  manage:   "nav.groupManage",
 };
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar } = useUI();
+  const t = useT();
   const w = sidebarCollapsed ? 80 : 248;
 
   const grouped = NAV.reduce<Record<string, NavItem[]>>((acc, item) => {
@@ -91,7 +94,7 @@ export default function Sidebar() {
           <div key={g} className="mb-5">
             {!sidebarCollapsed && (
               <div className="font-mono text-[10px] text-ink-4 tracking-[0.18em] uppercase px-2 mb-2">
-                {GROUP_LABELS[g]}
+                {t(GROUP_KEYS[g])}
               </div>
             )}
             <ul className="flex flex-col gap-0.5">
@@ -118,15 +121,15 @@ export default function Sidebar() {
                       <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-cyan" : "text-ink-3 group-hover:text-ink-2")} />
                       {!sidebarCollapsed && (
                         <>
-                          <span className="font-sans text-sm flex-1 truncate">{item.label}</span>
-                          {item.badge && (
+                          <span className="font-sans text-sm flex-1 truncate">{t(item.labelKey)}</span>
+                          {item.badgeKey && (
                             <span className={cn(
                               "font-mono text-[9px] tracking-widest px-1.5 py-0.5 rounded-full border",
-                              item.badge === "AI"   && "text-gold border-gold/30 bg-gold/5",
-                              item.badge === "NEW"  && "text-cyan border-cyan/30 bg-cyan/5",
-                              item.badge === "BETA" && "text-violet border-violet/30 bg-violet/5",
+                              item.badgeTone === "ai"   && "text-gold border-gold/30 bg-gold/5",
+                              item.badgeTone === "new"  && "text-cyan border-cyan/30 bg-cyan/5",
+                              item.badgeTone === "beta" && "text-violet border-violet/30 bg-violet/5",
                             )}>
-                              {item.badge}
+                              {t(item.badgeKey)}
                             </span>
                           )}
                         </>
