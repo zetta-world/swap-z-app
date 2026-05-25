@@ -6,6 +6,7 @@ import { useConnect, type Connector } from "wagmi";
 import { useWallet, type Wallet as SolWalletAdapter } from "@solana/wallet-adapter-react";
 import { X, Wallet, ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 /**
@@ -22,6 +23,7 @@ export default function ConnectModal({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
+  const t = useT();
   const { connectors, connectAsync, isPending } = useConnect();
   const solana = useWallet();
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export default function ConnectModal({
       onOpenChange(false);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg.includes("User rejected") || msg.includes("rejected") ? "Connection rejected." : msg);
+      setError(msg.includes("User rejected") || msg.includes("rejected") ? t("topbar.connectionRejected") : msg);
     } finally {
       setPendingId(null);
     }
@@ -57,7 +59,7 @@ export default function ConnectModal({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("user denied");
-      setError(denied ? "Connection rejected." : msg);
+      setError(denied ? t("topbar.connectionRejected") : msg);
     } finally {
       setPendingId(null);
     }
@@ -77,7 +79,7 @@ export default function ConnectModal({
             "animate-scale-in",
           )}
         >
-          <Dialog.Title className="sr-only">Connect a wallet</Dialog.Title>
+          <Dialog.Title className="sr-only">{t("topbar.connectAWallet")}</Dialog.Title>
           <div className="aurora-border p-px flex flex-col h-full">
             <div className="rounded-[19px] glass-strong flex flex-col flex-1 min-h-0">
               {/* Header */}
@@ -87,9 +89,9 @@ export default function ConnectModal({
                     <Wallet className="w-4 h-4 text-cyan" />
                   </div>
                   <div>
-                    <div className="font-display font-bold text-sm text-ink leading-none">Connect a wallet</div>
+                    <div className="font-display font-bold text-sm text-ink leading-none">{t("topbar.connectAWallet")}</div>
                     <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest mt-1">
-                      EVM · 9 chains · Solana
+                      {t("topbar.walletEyebrow")}
                     </div>
                   </div>
                 </div>
@@ -105,7 +107,7 @@ export default function ConnectModal({
                 <div className="rounded-lg border border-cyan/20 bg-cyan/[0.04] p-2.5 flex gap-2 items-start">
                   <Wallet className="w-3.5 h-3.5 text-cyan flex-shrink-0 mt-0.5" />
                   <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-                    Mobile tip: tap MetaMask to deep-link into the app. If it hangs, open <span className="font-mono text-cyan">z-swap-app.vercel.app</span> directly inside MetaMask&apos;s browser.
+                    {t("topbar.mobileTip")}
                   </p>
                 </div>
               </div>
@@ -117,9 +119,9 @@ export default function ConnectModal({
                     <div className="w-12 h-12 rounded-full bg-white/[0.03] border border-white/5 mx-auto mb-3 flex items-center justify-center">
                       <Wallet className="w-5 h-5 text-ink-3" />
                     </div>
-                    <div className="font-display font-bold text-sm text-ink mb-1">No wallets detected</div>
+                    <div className="font-display font-bold text-sm text-ink mb-1">{t("topbar.noWalletsDetected")}</div>
                     <p className="font-sans text-xs text-ink-3 leading-relaxed max-w-xs mx-auto mb-4">
-                      Install a browser wallet to get started. MetaMask, Rabby, and Coinbase Wallet are popular options.
+                      {t("topbar.noWalletsBody")}
                     </p>
                     <a
                       href="https://metamask.io/download/"
@@ -127,14 +129,14 @@ export default function ConnectModal({
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 font-mono text-[11px] text-cyan hover:text-cyan-dim tracking-wider uppercase"
                     >
-                      Get MetaMask <ExternalLink className="w-3 h-3" />
+                      {t("topbar.getMetaMask")} <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
                 )}
 
                 {sorted.length > 0 && (
                   <div className="px-1 py-1 font-mono text-[9px] text-ink-3 tracking-widest uppercase flex items-center gap-2">
-                    <span>EVM</span>
+                    <span>{t("topbar.sectionEvm")}</span>
                     <span className="flex-1 h-px bg-white/5" />
                   </div>
                 )}
@@ -171,7 +173,7 @@ export default function ConnectModal({
                         <Loader2 className="w-4 h-4 text-cyan animate-spin flex-shrink-0" />
                       ) : (
                         <span className="font-mono text-[10px] text-ink-4 group-hover:text-cyan tracking-widest uppercase">
-                          Connect →
+                          {t("topbar.connectArrow")}
                         </span>
                       )}
                     </motion.button>
@@ -182,7 +184,7 @@ export default function ConnectModal({
                 {solana.wallets.length > 0 && (
                   <>
                     <div className="px-1 pt-3 pb-1 font-mono text-[9px] text-ink-3 tracking-widest uppercase flex items-center gap-2">
-                      <span style={{ color: "#14F195" }}>Solana</span>
+                      <span style={{ color: "#14F195" }}>{t("topbar.sectionSolana")}</span>
                       <span className="flex-1 h-px bg-white/5" />
                     </div>
                     {solana.wallets.map((w, i) => {
@@ -219,14 +221,14 @@ export default function ConnectModal({
                               {w.adapter.name}
                             </div>
                             <div className="font-mono text-[10px] text-ink-3 uppercase tracking-wider truncate">
-                              {installed ? "Solana wallet · installed" : w.readyState === "NotDetected" ? "Tap to install" : "Loading…"}
+                              {installed ? t("topbar.solInstalled") : w.readyState === "NotDetected" ? t("topbar.solTapInstall") : t("topbar.solLoading")}
                             </div>
                           </div>
                           {isPendingThis ? (
                             <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: "#14F195" }} />
                           ) : (
                             <span className="font-mono text-[10px] text-ink-4 group-hover:tracking-widest uppercase" style={{ color: installed ? undefined : "#14F19599" }}>
-                              {installed ? "Connect →" : "Install →"}
+                              {installed ? t("topbar.connectArrow") : t("topbar.installArrow")}
                             </span>
                           )}
                         </motion.button>
@@ -239,7 +241,7 @@ export default function ConnectModal({
               {/* Error toast */}
               {error && (
                 <div className="mx-3 mb-3 rounded-lg border border-red/30 bg-red/5 p-3 flex-shrink-0">
-                  <div className="font-mono text-[10px] text-red tracking-widest uppercase mb-1">Connection error</div>
+                  <div className="font-mono text-[10px] text-red tracking-widest uppercase mb-1">{t("topbar.connectionError")}</div>
                   <p className="font-sans text-xs text-ink-2 leading-relaxed">{error}</p>
                 </div>
               )}
@@ -247,8 +249,7 @@ export default function ConnectModal({
               {/* Footer */}
               <div className="px-5 py-3 border-t border-white/5 flex-shrink-0">
                 <p className="font-mono text-[10px] text-ink-4 text-center leading-relaxed">
-                  By connecting you accept Z-SWAP&apos;s advisory-only posture.
-                  ZION suggests · you confirm · we settle.
+                  {t("topbar.walletFooter")}
                 </p>
               </div>
             </div>

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { CHAIN_BY_ID, type ChainId } from "@/lib/chains";
 import { compactNumber } from "@/lib/format";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface Pool {
@@ -37,15 +38,15 @@ interface ApiResponse {
 type SortKey  = "tvl" | "volume" | "change";
 type SortDir  = "desc" | "asc";
 
-const PAGE_CHAINS: { id: ChainId; label: string }[] = [
-  { id: "ethereum", label: "ETH" },
-  { id: "bsc",      label: "BSC" },
-  { id: "base",     label: "Base" },
-  { id: "arbitrum", label: "ARB" },
-  { id: "polygon",  label: "POL" },
-  { id: "optimism", label: "OP"  },
-  { id: "avalanche", label: "AVX" },
-  { id: "solana",   label: "SOL" },
+const PAGE_CHAINS: { id: ChainId; labelKey: MessageKey }[] = [
+  { id: "ethereum",  labelKey: "explorer.chainEth"  },
+  { id: "bsc",       labelKey: "explorer.chainBsc"  },
+  { id: "base",      labelKey: "explorer.chainBase" },
+  { id: "arbitrum",  labelKey: "explorer.chainArb"  },
+  { id: "polygon",   labelKey: "explorer.chainPol"  },
+  { id: "optimism",  labelKey: "explorer.chainOp"   },
+  { id: "avalanche", labelKey: "explorer.chainAvax" },
+  { id: "solana",    labelKey: "explorer.chainSol"  },
 ];
 
 /**
@@ -113,6 +114,7 @@ export default function PoolsCatalog() {
     else { setSortKey(k); setSortDir("desc"); }
   };
 
+  const t = useT();
   return (
     <div className="space-y-4 min-w-0">
       {/* Header */}
@@ -120,18 +122,17 @@ export default function PoolsCatalog() {
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <Layers className="w-4 h-4 text-cyan" />
-            <span className="section-label">Catalog</span>
+            <span className="section-label">{t("explorer.catalogEyebrow")}</span>
             <span className="tag tag-cyan inline-flex items-center gap-1.5">
               <Globe className="w-2.5 h-2.5" />
-              30+ chains
+              {t("explorer.catalog30Chains")}
             </span>
           </div>
           <h1 className="font-display font-extrabold text-xl sm:text-2xl text-ink leading-tight">
-            Every pool listed, paginated and searchable.
+            {t("explorer.catalogTitle")}
           </h1>
           <p className="font-sans text-xs sm:text-sm text-ink-3 leading-relaxed mt-1 max-w-2xl">
-            Browse the entire DEX catalog on a chain, page by page, or search any
-            token symbol or address to find every pool that lists it.
+            {t("explorer.catalogBody")}
           </p>
         </div>
         <button
@@ -141,7 +142,7 @@ export default function PoolsCatalog() {
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border font-mono text-[10px] tracking-widest uppercase border-cyan/20 bg-cyan/[0.05] text-cyan hover:bg-cyan/[0.10] disabled:opacity-50"
         >
           <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
-          {loading ? "loading" : "refresh"}
+          {loading ? t("explorer.loading") : t("explorer.refresh")}
         </button>
       </div>
 
@@ -154,7 +155,7 @@ export default function PoolsCatalog() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by token symbol or address (cross-chain)…"
+            placeholder={t("explorer.catalogSearchPlaceholder")}
             spellCheck={false}
             autoComplete="off"
             className="flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4"
@@ -164,7 +165,7 @@ export default function PoolsCatalog() {
               type="button"
               onClick={() => setQuery("")}
               className="text-ink-3 hover:text-ink-2"
-              aria-label="Clear search"
+              aria-label={t("common.clear")}
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -174,7 +175,7 @@ export default function PoolsCatalog() {
         {/* Chain selector — disabled in search mode */}
         <div className={cn("flex items-center gap-2", inSearchMode && "opacity-40")}>
           <Filter className="w-3 h-3 text-ink-3 flex-shrink-0" />
-          <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase flex-shrink-0">Chain</span>
+          <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase flex-shrink-0">{t("explorer.filterChain")}</span>
           <div className="flex gap-1 flex-wrap min-w-0">
             {PAGE_CHAINS.map((c) => {
               const active = chain === c.id;
@@ -190,14 +191,14 @@ export default function PoolsCatalog() {
                       : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2",
                   )}
                 >
-                  {c.label}
+                  {t(c.labelKey)}
                 </button>
               );
             })}
           </div>
           {inSearchMode && (
             <span className="font-mono text-[9px] text-cyan tracking-widest uppercase ml-auto">
-              search mode · cross-chain
+              {t("explorer.catalogSearchMode")}
             </span>
           )}
         </div>
@@ -208,7 +209,7 @@ export default function PoolsCatalog() {
         <div className="rounded-xl border border-red/30 bg-red/[0.05] p-3 flex items-start gap-2">
           <AlertCircle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
           <div className="min-w-0">
-            <div className="font-display font-bold text-xs text-red">Catalog offline</div>
+            <div className="font-display font-bold text-xs text-red">{t("explorer.catalogOffline")}</div>
             <p className="font-mono text-[11px] text-ink-2 mt-0.5 truncate">{error}</p>
           </div>
         </div>
@@ -218,11 +219,11 @@ export default function PoolsCatalog() {
       {!error && pools.length > 0 && (
         <div className="rounded-xl border border-white/5 bg-bg-1/30 overflow-hidden">
           <div className="grid grid-cols-12 gap-2 px-3 sm:px-4 py-2 border-b border-white/5 font-mono text-[9px] text-ink-3 tracking-widest uppercase">
-            <div className="col-span-5">Pair · DEX</div>
-            <SortHeader label="TVL"    onClick={() => toggleSort("tvl")}    active={sortKey === "tvl"}    dir={sortDir} />
-            <SortHeader label="24h Vol" onClick={() => toggleSort("volume")} active={sortKey === "volume"} dir={sortDir} />
-            <SortHeader label="Δ 24h"  onClick={() => toggleSort("change")} active={sortKey === "change"} dir={sortDir} />
-            <div className="col-span-1 text-right">Price</div>
+            <div className="col-span-5">{t("explorer.catalogSortPair")}</div>
+            <SortHeader label={t("common.tvl")}                onClick={() => toggleSort("tvl")}    active={sortKey === "tvl"}    dir={sortDir} />
+            <SortHeader label={t("explorer.catalogSortVol")}   onClick={() => toggleSort("volume")} active={sortKey === "volume"} dir={sortDir} />
+            <SortHeader label={t("explorer.catalogSortChg")} onClick={() => toggleSort("change")} active={sortKey === "change"} dir={sortDir} />
+            <div className="col-span-1 text-right">{t("common.price")}</div>
           </div>
           <div className="divide-y divide-white/[0.04]">
             {sortedPools.map((p) => <CatalogRow key={`${p.network}-${p.address}-${p.id}`} pool={p} />)}
@@ -235,8 +236,8 @@ export default function PoolsCatalog() {
           <Search className="w-5 h-5 text-ink-3 mx-auto mb-2" />
           <p className="font-mono text-xs text-ink-3">
             {inSearchMode
-              ? "No pools match that query."
-              : "No pools returned for this chain. Try a different chain."}
+              ? t("explorer.catalogEmpty")
+              : t("explorer.catalogEmptyChain")}
           </p>
         </div>
       )}
@@ -254,10 +255,10 @@ export default function PoolsCatalog() {
             className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-white/10 bg-bg-1/40 text-ink-3 hover:text-ink hover:border-cyan/20 font-mono text-[10px] tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <ChevronLeft className="w-3 h-3" />
-            prev
+            {t("explorer.prev")}
           </button>
           <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-            page {page} · 20 per page
+            {t("explorer.pageInfo", { n: page })}
           </span>
           <button
             type="button"
@@ -265,7 +266,7 @@ export default function PoolsCatalog() {
             disabled={!hasMore || loading}
             className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-white/10 bg-bg-1/40 text-ink-3 hover:text-ink hover:border-cyan/20 font-mono text-[10px] tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            next
+            {t("explorer.next")}
             <ChevronRight className="w-3 h-3" />
           </button>
         </div>

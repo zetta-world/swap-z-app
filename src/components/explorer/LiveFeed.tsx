@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { CHAIN_BY_ID, type ChainId } from "@/lib/chains";
 import { compactNumber } from "@/lib/format";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface Pool {
@@ -31,22 +32,22 @@ interface ApiResponse {
   generatedAt: number;
 }
 
-const AGE_FILTERS: { label: string; hours: number | null }[] = [
-  { label: "≤15m", hours: 0.25 },
-  { label: "≤1h",  hours: 1 },
-  { label: "≤6h",  hours: 6 },
-  { label: "≤24h", hours: 24 },
-  { label: "any",  hours: null },
+const AGE_FILTERS: { labelKey: MessageKey; hours: number | null }[] = [
+  { labelKey: "explorer.age15m", hours: 0.25 },
+  { labelKey: "explorer.age1h",  hours: 1 },
+  { labelKey: "explorer.age6h",  hours: 6 },
+  { labelKey: "explorer.age24h", hours: 24 },
+  { labelKey: "explorer.ageAny", hours: null },
 ];
 
-const FEATURED_CHAINS: { id: ChainId | "all"; label: string }[] = [
-  { id: "all",      label: "All" },
-  { id: "ethereum", label: "ETH" },
-  { id: "bsc",      label: "BSC" },
-  { id: "base",     label: "Base" },
-  { id: "solana",   label: "SOL" },
-  { id: "arbitrum", label: "ARB" },
-  { id: "polygon",  label: "POL" },
+const FEATURED_CHAINS: { id: ChainId | "all"; labelKey: MessageKey }[] = [
+  { id: "all",      labelKey: "explorer.chainAll"  },
+  { id: "ethereum", labelKey: "explorer.chainEth"  },
+  { id: "bsc",      labelKey: "explorer.chainBsc"  },
+  { id: "base",     labelKey: "explorer.chainBase" },
+  { id: "solana",   labelKey: "explorer.chainSol"  },
+  { id: "arbitrum", labelKey: "explorer.chainArb"  },
+  { id: "polygon",  labelKey: "explorer.chainPol"  },
 ];
 
 /**
@@ -113,6 +114,7 @@ export default function LiveFeed() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paused, chain, ageHours, minLiq]);
 
+  const t = useT();
   return (
     <div className="space-y-4 min-w-0">
       <Header
@@ -127,7 +129,7 @@ export default function LiveFeed() {
       <div className="rounded-xl border border-white/5 bg-bg-1/40 p-3 space-y-3">
         <div className="flex items-center gap-2">
           <Filter className="w-3 h-3 text-ink-3" />
-          <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">Chain</span>
+          <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">{t("explorer.filterChain")}</span>
           <div className="flex gap-1 flex-wrap min-w-0">
             {FEATURED_CHAINS.map((c) => {
               const active = chain === c.id;
@@ -142,7 +144,7 @@ export default function LiveFeed() {
                       : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2",
                   )}
                 >
-                  {c.label}
+                  {t(c.labelKey)}
                 </button>
               );
             })}
@@ -151,13 +153,13 @@ export default function LiveFeed() {
 
         <div className="flex items-center gap-2">
           <Clock className="w-3 h-3 text-ink-3" />
-          <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">Age</span>
+          <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">{t("explorer.filterAge")}</span>
           <div className="flex gap-1 flex-wrap min-w-0">
             {AGE_FILTERS.map((a) => {
               const active = ageHours === a.hours;
               return (
                 <button
-                  key={a.label}
+                  key={a.labelKey}
                   onClick={() => setAgeHours(a.hours)}
                   className={cn(
                     "px-2 py-0.5 rounded-md font-mono text-[10px] tracking-wider transition-colors",
@@ -166,7 +168,7 @@ export default function LiveFeed() {
                       : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2",
                   )}
                 >
-                  {a.label}
+                  {t(a.labelKey)}
                 </button>
               );
             })}
@@ -175,7 +177,7 @@ export default function LiveFeed() {
 
         <div className="flex items-center gap-2">
           <Activity className="w-3 h-3 text-ink-3" />
-          <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">Min Liq</span>
+          <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">{t("explorer.filterMinLiq")}</span>
           <div className="flex gap-1 flex-wrap min-w-0">
             {[0, 5_000, 25_000, 100_000].map((m) => {
               const active = minLiq === m;
@@ -190,7 +192,7 @@ export default function LiveFeed() {
                       : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2",
                   )}
                 >
-                  {m === 0 ? "any" : `$${compactNumber(m)}`}
+                  {m === 0 ? t("explorer.liqAny") : `$${compactNumber(m)}`}
                 </button>
               );
             })}
@@ -203,7 +205,7 @@ export default function LiveFeed() {
         <div className="rounded-xl border border-red/30 bg-red/[0.05] p-3 flex items-start gap-2">
           <AlertCircle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
           <div className="min-w-0">
-            <div className="font-display font-bold text-xs text-red">Feed offline</div>
+            <div className="font-display font-bold text-xs text-red">{t("explorer.feedOffline")}</div>
             <p className="font-mono text-[11px] text-ink-2 mt-0.5 truncate">{error}</p>
           </div>
         </div>
@@ -214,7 +216,7 @@ export default function LiveFeed() {
         <div className="rounded-xl border border-white/5 bg-bg-1/30 p-6 text-center">
           <Activity className="w-5 h-5 text-ink-3 mx-auto mb-2" />
           <p className="font-mono text-xs text-ink-3">
-            No new pairs matching the filters. Loosen them or wait — feed refreshes every 20s.
+            {t("explorer.feedEmpty")}
           </p>
         </div>
       )}
@@ -245,19 +247,20 @@ function Header({
   onRefresh: () => void;
   pulseAt:   number;
 }) {
+  const t = useT();
   // Pulse cue every time new rows arrive
   const recent = pulseAt > 0 && Date.now() - pulseAt < 2500;
   return (
     <div className="flex items-start justify-between gap-3 flex-wrap">
       <div className="min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <span className="section-label">Live Feed</span>
+          <span className="section-label">{t("explorer.tabLive")}</span>
           <span className={cn(
             "tag tag-green inline-flex items-center gap-1.5",
             paused && "opacity-50",
           )}>
             <span className={cn("w-1.5 h-1.5 rounded-full bg-current", !paused && "pulse-dot")} />
-            {paused ? "Paused" : "Live"}
+            {paused ? t("explorer.livePaused") : t("explorer.liveActive")}
           </span>
           {recent && (
             <motion.span
@@ -267,16 +270,15 @@ function Header({
               className="inline-flex items-center gap-1 font-mono text-[9px] text-cyan tracking-widest uppercase"
             >
               <Activity className="w-2.5 h-2.5" />
-              new
+              {t("explorer.liveNew")}
             </motion.span>
           )}
         </div>
         <h1 className="font-display font-extrabold text-xl sm:text-2xl text-ink leading-tight">
-          Pairs entering the market right now.
+          {t("explorer.liveTitle")}
         </h1>
         <p className="font-sans text-xs sm:text-sm text-ink-3 leading-relaxed mt-1 max-w-2xl">
-          Fresh pools across the Nexus, polled every 20 seconds. Sniper-grade dust
-          filter built in — you control chain, age, and minimum liquidity.
+          {t("explorer.liveBody")}
         </p>
       </div>
       <div className="flex items-center gap-1.5">
@@ -290,7 +292,7 @@ function Header({
               : "border-gold/30 bg-gold/[0.04] text-gold hover:bg-gold/[0.08]",
           )}
         >
-          {paused ? "resume" : "pause"}
+          {paused ? t("explorer.resume") : t("explorer.pause")}
         </button>
         <button
           type="button"
@@ -302,7 +304,7 @@ function Header({
           )}
         >
           <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
-          {loading ? "loading" : "refresh"}
+          {loading ? t("explorer.loading") : t("explorer.refresh")}
         </button>
       </div>
     </div>

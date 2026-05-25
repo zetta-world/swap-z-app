@@ -4,11 +4,12 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import AppShell from "./AppShell";
+import { useT } from "@/lib/i18n";
 
 export default function ComingSoon({
   title,
   subtitle,
-  phase = "In Development",
+  phase,
   bullets = [],
 }: {
   title: string;
@@ -16,6 +17,8 @@ export default function ComingSoon({
   phase?: string;
   bullets?: string[];
 }) {
+  const t = useT();
+  const phaseLabel = phase ?? t("comingSoon.inDevelopment");
   return (
     <AppShell>
       <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden">
@@ -34,12 +37,12 @@ export default function ComingSoon({
               className="inline-flex items-center gap-2 font-mono text-[11px] text-ink-3 hover:text-cyan tracking-widest uppercase mb-6 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              Back to Swap
+              {t("comingSoon.backToSwap")}
             </Link>
 
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-gold/30 bg-gold/[0.06] mb-5">
               <Sparkles className="w-3 h-3 text-gold" />
-              <span className="font-mono text-[10px] text-gold tracking-widest uppercase">{phase}</span>
+              <span className="font-mono text-[10px] text-gold tracking-widest uppercase">{phaseLabel}</span>
             </div>
 
             <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-tight tracking-tight text-ink mb-4">
@@ -52,7 +55,7 @@ export default function ComingSoon({
             {bullets.length > 0 && (
               <div className="rounded-2xl border border-white/5 glass-pane p-6 space-y-3">
                 <div className="font-mono text-[10px] text-cyan tracking-widest uppercase mb-2">
-                  Coming in this module
+                  {t("comingSoon.comingInModule")}
                 </div>
                 {bullets.map((b, i) => (
                   <motion.div

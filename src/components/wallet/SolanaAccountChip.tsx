@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Copy, LogOut, ExternalLink, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { formatAmount } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 
 /**
  * Compact Solana account pill in the topbar — sits beside the EVM AccountMenu
@@ -14,6 +15,7 @@ import { formatAmount } from "@/lib/format";
  * neither feels like a second-class citizen.
  */
 export default function SolanaAccountChip() {
+  const t = useT();
   const { publicKey, disconnect, wallet } = useWallet();
   const { connection } = useConnection();
   const [lamports, setLamports] = useState<bigint | null>(null);
@@ -44,9 +46,9 @@ export default function SolanaAccountChip() {
   const onCopy = async () => {
     try {
       await navigator.clipboard.writeText(addr);
-      toast.success("Address copied");
+      toast.success(t("topbar.accountCopiedToast"));
     } catch {
-      toast.error("Couldn't copy");
+      toast.error(t("toast.error"));
     }
   };
 
@@ -68,14 +70,14 @@ export default function SolanaAccountChip() {
         >
           <div className="px-2.5 py-2 mb-1">
             <div className="font-mono text-[9px] tracking-widest uppercase mb-1" style={{ color: "#14F195" }}>
-              Solana · {wallet?.adapter.name ?? "wallet"}
+              Solana · {wallet?.adapter.name ?? t("common.connected").toLowerCase()}
             </div>
             <div className="font-mono text-[11px] text-ink tabular-nums break-all">
               {addr}
             </div>
             {solBalance !== null && (
               <div className="mt-2 font-mono text-[10px] text-ink-3">
-                Balance: <span className="text-ink-2 font-bold">{formatAmount(solBalance, 4)} SOL</span>
+                {t("topbar.accountBalance")}: <span className="text-ink-2 font-bold">{formatAmount(solBalance, 4)} SOL</span>
               </div>
             )}
           </div>
@@ -88,7 +90,7 @@ export default function SolanaAccountChip() {
               className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left font-mono text-[11px] text-ink-2 hover:bg-white/5 outline-none"
             >
               <Copy className="w-3.5 h-3.5" />
-              Copy address
+              {t("topbar.accountCopy")}
             </button>
           </DropdownMenu.Item>
 
@@ -100,7 +102,7 @@ export default function SolanaAccountChip() {
               className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg font-mono text-[11px] text-ink-2 hover:bg-white/5 outline-none"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              View on Solscan
+              {t("topbar.accountExplorer")}
             </a>
           </DropdownMenu.Item>
 
@@ -112,7 +114,7 @@ export default function SolanaAccountChip() {
               className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg font-mono text-[11px] text-red/90 hover:bg-red/10 hover:text-red outline-none"
             >
               <LogOut className="w-3.5 h-3.5" />
-              Disconnect
+              {t("topbar.accountDisconnect")}
             </button>
           </DropdownMenu.Item>
         </DropdownMenu.Content>

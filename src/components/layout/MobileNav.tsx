@@ -3,32 +3,35 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { X, ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3, Shield, Vote, Wallet, Settings, Activity } from "lucide-react";
+import { X, ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3, Shield, Vote, Wallet, Settings, Activity, Banknote } from "lucide-react";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
-const NAV = [
-  { href: "/",          label: "Swap",          icon: ArrowLeftRight },
-  { href: "/bridge",    label: "Bridge",        icon: Workflow },
-  { href: "/orders",    label: "Limit / DCA",   icon: Activity },
-  { href: "/pro",       label: "Pro Terminal",  icon: BarChart3 },
-  { href: "/pools",     label: "Pools",         icon: Layers },
-  { href: "/explorer",  label: "Risk Scanner",  icon: Shield },
-  { href: "/zion",      label: "ZION AI",       icon: Sparkles },
-  { href: "/launchpad", label: "Z-PAD",         icon: Rocket },
-  { href: "/governance", label: "Governance",   icon: Vote },
-  { href: "/portfolio", label: "Portfolio",     icon: Wallet },
-  { href: "/settings",  label: "Settings",      icon: Settings },
+const NAV: { href: string; labelKey: MessageKey; icon: React.ComponentType<{ className?: string }> }[] = [
+  { href: "/",          labelKey: "nav.swap",       icon: ArrowLeftRight },
+  { href: "/bridge",    labelKey: "nav.bridge",     icon: Workflow },
+  { href: "/orders",    labelKey: "nav.orders",     icon: Activity },
+  { href: "/cex",       labelKey: "nav.cex",        icon: Banknote },
+  { href: "/pro",       labelKey: "nav.pro",        icon: BarChart3 },
+  { href: "/pools",     labelKey: "nav.pools",      icon: Layers },
+  { href: "/explorer",  labelKey: "nav.explorer",   icon: Shield },
+  { href: "/zion",      labelKey: "nav.zion",       icon: Sparkles },
+  { href: "/launchpad", labelKey: "nav.launchpad",  icon: Rocket },
+  { href: "/governance", labelKey: "nav.governance", icon: Vote },
+  { href: "/portfolio", labelKey: "nav.portfolio",  icon: Wallet },
+  { href: "/settings",  labelKey: "nav.settings",   icon: Settings },
 ];
 
 export default function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
+  const t = useT();
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-bg/80 backdrop-blur-sm animate-fade-in lg:hidden" />
         <Dialog.Content className="fixed left-0 top-0 bottom-0 z-50 w-[85%] max-w-xs glass-strong border-r border-white/10 lg:hidden outline-none flex flex-col">
-          <Dialog.Title className="sr-only">Menu</Dialog.Title>
+          <Dialog.Title className="sr-only">{t("topbar.openCommand")}</Dialog.Title>
           <div className="h-16 flex items-center justify-between px-4 border-b border-white/5">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-grad-cyan flex items-center justify-center">
@@ -55,7 +58,7 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
                   )}
                 >
                   <Icon className={cn("w-4 h-4", active ? "text-cyan" : "text-ink-3")} />
-                  <span className="font-sans text-sm">{item.label}</span>
+                  <span className="font-sans text-sm">{t(item.labelKey)}</span>
                 </Link>
               );
             })}
