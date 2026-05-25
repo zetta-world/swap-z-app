@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { ArrowLeft, Globe, Shield, Zap, Workflow, Clock } from "lucide-react";
 import SwapCard from "@/components/swap/SwapCard";
+import BridgeWalletStatus from "./BridgeWalletStatus";
 import { useSwap } from "@/lib/store/swap";
 import { findToken } from "@/lib/tokens";
 import { useT } from "@/lib/i18n";
@@ -72,8 +73,9 @@ export default function BridgeView() {
             initial={{ opacity: 0, scale: 0.97, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ delay: 0.1, duration: 0.5 }}
-            className="lg:col-span-7 lg:order-2"
+            className="lg:col-span-7 lg:order-2 space-y-3"
           >
+            <BridgeWalletStatus />
             <SwapCard lockedMode="cross" />
           </motion.div>
 

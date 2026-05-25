@@ -51,8 +51,22 @@ THEN emit FIVE action cards in this order:
   sell_aggressive
   stop_loss
 
-Each card MUST include triggerPrice (for limit/stop) and either estReturn
-(immediate) or targetReturn (limit/stop). estCost on the buy.
+Each card MUST fully populate the trade-thesis fields from the
+foundation schema:
+  • entryPrice, positionSize         (every card)
+  • triggerPrice                     (buy_limit / sell_* / stop_loss)
+  • stopLoss                         (buy_limit / swap — protective exit)
+  • expectedProfitPct, riskReward    (every sell / buy — at the target)
+  • targetReturn                     (sell_safe / sell_medium / sell_aggressive)
+  • timeframe                        (every card)
+  • estCost                          (on the entry card)
+  • exits[] ladder with 3 rungs (Safe / Balanced / Stretch) on the
+    PRIMARY buy_limit / swap entry card. Each rung has price + profitPct
+    + probability (0-100) + sizeFraction.
+
+Do not leave these as terminal-only commentary — populate them in the
+JSON. The card UI surfaces them as a structured trade thesis the user
+can act on directly.
 
 REJECT the trade openly if structural risk is critical: emit a single
 "⌬ NO-GO" line with the reason and skip the cards. Don't dance.

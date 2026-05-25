@@ -29,6 +29,37 @@ export interface ActionCard {
   confidence?: "high" | "medium" | "low" | string;
   risk?:      "safe" | "caution" | "risky" | "danger" | string;
   expiresIn?: string;
+
+  // ─── Extended trade-thesis fields ──────────────────────────────────
+  // The model fills these when the card is a tradeable proposal. Free-form
+  // string values so locale-specific number formatting stays the model's
+  // responsibility (e.g. "$3,420.50", "1,234,56 USDT", "+8.4%").
+
+  /** Buy / entry price the user should pay. Quoted in the quote-asset. */
+  entryPrice?:        string;
+  /** Position size suggestion (e.g. "0.5 ETH" or "5% of portfolio"). */
+  positionSize?:      string;
+  /** Stop-loss price — protective exit on the downside. */
+  stopLoss?:          string;
+  /** Expected profit in % at the primary target (positive number string). */
+  expectedProfitPct?: string;
+  /** Risk / reward ratio at the primary target (e.g. "2.5:1"). */
+  riskReward?:        string;
+  /** Expected timeframe to reach the target (e.g. "24h", "2-7d", "2-4w"). */
+  timeframe?:         string;
+  /** Optional ladder of profit-take rungs, for trade-thesis style proposals. */
+  exits?: Array<{
+    /** Label (e.g. "Safe", "Balanced", "Stretch"). */
+    label:        string;
+    /** Target price in the quote-asset. */
+    price:        string;
+    /** Expected profit % from entry. */
+    profitPct:    string;
+    /** Approximate probability of reaching this target (0-100). */
+    probability?: string;
+    /** Suggested fraction of the position to exit here (e.g. "30%"). */
+    sizeFraction?: string;
+  }>;
 }
 
 export interface ParsedZion {

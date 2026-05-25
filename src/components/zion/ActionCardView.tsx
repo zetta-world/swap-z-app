@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import {
   Zap, ArrowRight, Bot, Repeat, Target, Coins, TrendingUp, ShieldCheck,
   ArrowDownToLine, ArrowUpFromLine, ShieldX, Globe, Crosshair,
+  Clock, Wallet, Scale, TrendingDown,
 } from "lucide-react";
 import type { ActionCard } from "@/lib/zion/parse";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -16,21 +17,14 @@ interface KindMeta {
 }
 
 const KIND_META: Record<string, KindMeta> = {
-  // Generic
   swap:                  { Icon: Repeat,           labelKey: "zion.cardKindSwap",     tone: "cyan"   },
   bridge:                { Icon: Globe,            labelKey: "zion.cardKindBridge",   tone: "cyan"   },
   approve:               { Icon: ShieldCheck,      labelKey: "zion.cardKindApprove",  tone: "cyan"   },
   yield:                 { Icon: Coins,            labelKey: "zion.cardKindSwap",     tone: "green"  },
-
-  // Arbitrage family
   arbitrage:             { Icon: TrendingUp,       labelKey: "zion.cardKindArb",      tone: "violet" },
   arbitrage_same_chain:  { Icon: TrendingUp,       labelKey: "zion.cardKindArbDex",   tone: "violet" },
   arbitrage_cross_chain: { Icon: Globe,            labelKey: "zion.cardKindArbChain", tone: "violet" },
-
-  // Watch
   sniper_watch:          { Icon: Crosshair,        labelKey: "zion.cardKindSniper",   tone: "gold"   },
-
-  // Orders
   limit:                 { Icon: Bot,              labelKey: "zion.cardKindLimit",    tone: "violet" },
   buy_limit:             { Icon: ArrowDownToLine,  labelKey: "zion.cardKindBuyLimit", tone: "cyan"   },
   sell_safe:             { Icon: ArrowUpFromLine,  labelKey: "zion.cardKindSellSafe", tone: "green"  },
@@ -54,12 +48,6 @@ const RISK_CFG: Record<string, string> = {
   danger:  "text-red border-red/30 bg-red/5",
 };
 
-interface Props {
-  card: ActionCard;
-  index: number;
-  onExecute: (card: ActionCard) => void;
-}
-
 const RISK_KEY: Record<string, MessageKey> = {
   safe:    "zion.riskSafe",
   caution: "zion.riskCaution",
@@ -73,17 +61,41 @@ const CONF_KEY: Record<string, MessageKey> = {
   low:    "zion.confLow",
 };
 
+interface Props {
+  card:      ActionCard;
+  index:     number;
+  onExecute: (card: ActionCard) => void;
+}
+
+/**
+ * Renders a ZION ActionCard as a detailed trade thesis card. The model
+ * fills the rich fields (entryPrice, stopLoss, expectedProfitPct, riskReward,
+ * timeframe, exits[]) per the foundation prompt; this component lays them
+ * out cleanly. Empty fields are silently skipped so minimal cards (e.g.
+ * a plain approve / arbitrage row) still render compactly.
+ */
 export default function ActionCardView({ card, index, onExecute }: Props) {
   const meta = KIND_META[card.kind] ?? KIND_META.swap;
   const tone = TONE_CFG[meta.tone];
   const Icon = meta.Icon;
   const t    = useT();
 
-  // Whether target return is a profit (+) or a stop (-)
   const isStopLoss = card.kind === "stop_loss";
-  const targetText = card.targetReturn ?? card.estReturn;
   const riskLabel  = card.risk       ? t(RISK_KEY[card.risk] ?? "zion.riskSafe") : "";
   const confLabel  = card.confidence ? t(CONF_KEY[card.confidence] ?? "zion.confMedium") : "";
+
+  // Pick the headline number to surface in the big top row. Preference order:
+  // expectedProfitPct (richest), then targetReturn, then estReturn.
+  const headlineNumber = card.expectedProfitPct
+    ?? card.targetReturn
+    ?? card.estReturn
+    ?? null;
+
+  const hasTradeThesis = !!(
+    card.entryPrice || card.stopLoss || card.expectedProfitPct ||
+    card.riskReward || card.timeframe || card.positionSize ||
+    (card.exits && card.exits.length > 0)
+  );
 
   return (
     <motion.div
@@ -95,7 +107,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
         tone.border,
       )}
     >
-      {/* Header row */}
+      {/* Header — kind chip + chain + risk + confidence */}
       <div className="flex items-center gap-2 min-w-0">
         <div className={cn("w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0", tone.bg, tone.border)}>
           <Icon className={cn("w-3.5 h-3.5", tone.text)} />
@@ -128,38 +140,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
         <div className="font-sans text-[12px] text-ink-2 leading-relaxed break-words">{card.summary}</div>
       )}
 
-      {/* Trigger price (limit / stop) */}
-      {card.triggerPrice && (
-        <div className="rounded-lg border border-white/5 bg-bg-1/50 px-3 py-2 flex items-center justify-between">
-          <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("zion.triggerLabel")}</div>
-          <div className={cn("font-display font-bold text-sm tabular-nums", isStopLoss ? "text-red" : tone.text)}>
-            {card.triggerPrice}
-          </div>
-        </div>
-      )}
-
-      {/* Profit pretension — featured row */}
-      {targetText && (
-        <div className={cn(
-          "rounded-lg border px-3 py-2 flex items-center justify-between",
-          isStopLoss ? "border-red/20 bg-red/[0.04]" : "border-green/20 bg-green/[0.04]",
-        )}>
-          <div className={cn(
-            "font-mono text-[10px] tracking-widest uppercase",
-            isStopLoss ? "text-red/80" : "text-green/80",
-          )}>
-            {isStopLoss ? t("zion.maxLossLabel") : t("zion.targetLabel")}
-          </div>
-          <div className={cn(
-            "font-display font-bold text-sm tabular-nums truncate ml-2",
-            isStopLoss ? "text-red" : "text-green",
-          )}>
-            {targetText}
-          </div>
-        </div>
-      )}
-
-      {/* From / To */}
+      {/* From / To row */}
       {(card.from || card.to) && (
         <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-bg-1/50 border border-white/5 min-w-0">
           {card.from && (
@@ -181,7 +162,112 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
         </div>
       )}
 
-      {/* Cost — only when targetReturn doesn't already absorb the row */}
+      {/* Headline number — only when the model gave us a strong signal */}
+      {headlineNumber && (
+        <div className={cn(
+          "rounded-lg border px-3 py-2.5 flex items-center justify-between gap-2 min-w-0",
+          isStopLoss ? "border-red/30 bg-red/[0.06]" : "border-green/30 bg-green/[0.06]",
+        )}>
+          <div className={cn(
+            "inline-flex items-center gap-1.5 font-mono text-[10px] tracking-widest uppercase flex-shrink-0",
+            isStopLoss ? "text-red/80" : "text-green/80",
+          )}>
+            {isStopLoss
+              ? <><TrendingDown className="w-3 h-3" />{t("zion.maxLossLabel")}</>
+              : <><TrendingUp   className="w-3 h-3" />{card.expectedProfitPct ? t("zion.profitLabel") : t("zion.targetLabel")}</>}
+          </div>
+          <div className={cn(
+            "font-display font-extrabold text-lg tabular-nums truncate",
+            isStopLoss ? "text-red" : "text-green",
+          )}>
+            {headlineNumber}
+          </div>
+        </div>
+      )}
+
+      {/* Trade-thesis grid: Entry · Stop · R/R · Timeframe · Size · Trigger */}
+      {hasTradeThesis && (
+        <div className="grid grid-cols-2 gap-1.5">
+          {card.entryPrice && (
+            <ThesisCell
+              Icon={ArrowDownToLine}
+              label={t("zion.entryPriceLabel")}
+              value={card.entryPrice}
+              tone="cyan"
+            />
+          )}
+          {card.stopLoss && !isStopLoss && (
+            <ThesisCell
+              Icon={ShieldX}
+              label={t("zion.stopLossLabel")}
+              value={card.stopLoss}
+              tone="red"
+            />
+          )}
+          {card.triggerPrice && card.triggerPrice !== card.entryPrice && (
+            <ThesisCell
+              Icon={Bot}
+              label={t("zion.triggerLabel")}
+              value={card.triggerPrice}
+              tone={isStopLoss ? "red" : "violet"}
+            />
+          )}
+          {card.riskReward && (
+            <ThesisCell
+              Icon={Scale}
+              label={t("zion.riskRewardLabel")}
+              value={card.riskReward}
+              tone="gold"
+            />
+          )}
+          {card.timeframe && (
+            <ThesisCell
+              Icon={Clock}
+              label={t("zion.timeframeLabel")}
+              value={card.timeframe}
+              tone="cyan"
+            />
+          )}
+          {card.positionSize && (
+            <ThesisCell
+              Icon={Wallet}
+              label={t("zion.positionSizeLabel")}
+              value={card.positionSize}
+              tone="violet"
+            />
+          )}
+        </div>
+      )}
+
+      {/* Exit ladder (Safe / Balanced / Stretch) */}
+      {card.exits && card.exits.length > 0 && (
+        <div className="rounded-lg border border-white/5 bg-bg-1/40 overflow-hidden">
+          <div className="px-3 py-1.5 border-b border-white/5 bg-white/[0.02] font-mono text-[9px] text-green tracking-widest uppercase">
+            {t("zion.exitLadderLabel")}
+          </div>
+          <div className="divide-y divide-white/[0.04]">
+            {card.exits.map((rung, i) => (
+              <div key={i} className="px-3 py-2 grid grid-cols-12 gap-2 min-w-0 items-center">
+                <div className="col-span-3 font-display font-bold text-xs text-ink truncate">{rung.label}</div>
+                <div className="col-span-3 font-mono text-xs text-ink tabular-nums truncate">{rung.price}</div>
+                <div className="col-span-2 font-mono text-xs text-green tabular-nums truncate">{rung.profitPct}</div>
+                {rung.probability && (
+                  <div className="col-span-2 font-mono text-[10px] text-ink-3 tabular-nums truncate">
+                    {t("zion.probabilityShort", { p: rung.probability })}
+                  </div>
+                )}
+                {rung.sizeFraction && (
+                  <div className="col-span-2 font-mono text-[10px] text-violet tabular-nums truncate text-right">
+                    {t("zion.sizeFractionShort", { pct: rung.sizeFraction })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cost row (gas + bridge fees) */}
       {card.estCost && (
         <div className="rounded-lg border border-white/5 bg-bg-1/40 px-2.5 py-1.5 flex items-center justify-between">
           <div className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">{t("common.cost")}</div>
@@ -189,6 +275,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
         </div>
       )}
 
+      {/* Expiry */}
       {card.expiresIn && (
         <div className="flex items-center gap-1.5 text-[10px] font-mono text-gold/80">
           <Zap className="w-2.5 h-2.5" />
@@ -209,5 +296,30 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
         {t("zion.executeProposal")}
       </button>
     </motion.div>
+  );
+}
+
+// ─── Helper sub-components ─────────────────────────────────────────────
+
+function ThesisCell({
+  Icon, label, value, tone,
+}: {
+  Icon:  React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  tone:  "cyan" | "violet" | "gold" | "green" | "red";
+}) {
+  const cfg = TONE_CFG[tone];
+  return (
+    <div className={cn(
+      "rounded-md border bg-bg-1/40 px-2.5 py-1.5 min-w-0",
+      cfg.border,
+    )}>
+      <div className={cn("flex items-center gap-1 font-mono text-[9px] tracking-widest uppercase mb-0.5", cfg.text)}>
+        <Icon className="w-2.5 h-2.5" />
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="font-mono text-[12px] text-ink tabular-nums truncate">{value}</div>
+    </div>
   );
 }

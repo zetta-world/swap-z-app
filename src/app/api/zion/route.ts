@@ -164,8 +164,8 @@ async function runZion(args: RunArgs) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return new Response(
-      "Missing ANTHROPIC_API_KEY on the server. Configure it in Vercel project settings.",
-      { headers: { "Content-Type": "text/plain; charset=utf-8" } },
+      "ANTHROPIC_API_KEY is not configured on the server. Set it in Vercel project → Settings → Environment Variables (Production + Preview + Development), then redeploy.",
+      { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } },
     );
   }
 

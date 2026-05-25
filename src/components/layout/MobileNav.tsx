@@ -3,9 +3,17 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { X, ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3, Shield, Vote, Wallet, Settings, Activity, Banknote } from "lucide-react";
+import { X, ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3, Shield, Vote, Wallet, Settings, Activity, Banknote, Globe } from "lucide-react";
+import { useUI, type AppLang } from "@/lib/store/ui";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+
+const LANGS: { id: AppLang; label: string; flag: string }[] = [
+  { id: "en", label: "English",   flag: "🇺🇸" },
+  { id: "pt", label: "Português", flag: "🇧🇷" },
+  { id: "es", label: "Español",   flag: "🇪🇸" },
+  { id: "zh", label: "中文",       flag: "🇨🇳" },
+];
 
 const NAV: { href: string; labelKey: MessageKey; icon: React.ComponentType<{ className?: string }> }[] = [
   { href: "/",          labelKey: "nav.swap",       icon: ArrowLeftRight },
@@ -24,6 +32,7 @@ const NAV: { href: string; labelKey: MessageKey; icon: React.ComponentType<{ cla
 
 export default function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
+  const { lang, setLang } = useUI();
   const t = useT();
 
   return (
@@ -62,6 +71,34 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
                 </Link>
               );
             })}
+
+            {/* Language picker — moved out of the topbar to keep the header
+                uncluttered on mobile. Lives near the bottom of the drawer. */}
+            <div className="mt-4 pt-4 border-t border-white/5">
+              <div className="px-3 mb-2 flex items-center gap-2">
+                <Globe className="w-3.5 h-3.5 text-ink-3" />
+                <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
+                  {t("topbar.languageLabel")}
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1 px-1">
+                {LANGS.map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={() => setLang(l.id)}
+                    className={cn(
+                      "flex flex-col items-center gap-0.5 py-2 rounded-lg transition-colors",
+                      lang === l.id
+                        ? "bg-cyan/15 border border-cyan/30 text-cyan"
+                        : "text-ink-3 hover:text-ink-2 border border-transparent",
+                    )}
+                  >
+                    <span className="text-base leading-none">{l.flag}</span>
+                    <span className="font-mono text-[9px] tracking-widest uppercase">{l.id}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </nav>
         </Dialog.Content>
       </Dialog.Portal>

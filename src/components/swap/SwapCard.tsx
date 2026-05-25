@@ -60,18 +60,18 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   const isCrossChain = !!(fromToken && toToken && fromToken.chain !== toToken.chain);
 
   // When a parent page locks the mode (e.g. /bridge → "cross") respect it
-  // unconditionally. Otherwise keep mode in sync with the cross-chain pair.
+  // unconditionally. Otherwise force mode to "swap" or "sniper" — the home
+  // swap card no longer auto-flips into cross-chain. Users land on /bridge
+  // (via the CTA below) when they want a cross-chain operation.
   useEffect(() => {
     if (lockedMode) {
       if (mode !== lockedMode) setMode(lockedMode);
       return;
     }
-    if (isCrossChain && mode !== "cross" && mode !== "sniper") {
-      setMode("cross");
-    } else if (!isCrossChain && mode === "cross") {
+    if (mode === "cross") {
       setMode("swap");
     }
-  }, [lockedMode, isCrossChain, mode, setMode]);
+  }, [lockedMode, mode, setMode]);
 
   // ─── Convert UI amount (decimal) → base units (integer) ─────────────
   const sellAmountBase = useMemo(() => {
@@ -315,6 +315,25 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
                 </span>
               </div>
             </div>
+          )}
+
+          {/* Cross-chain detected — push user to /bridge (the dedicated page).
+              Same-chain swaps happen here; cross-chain has its own UX so the
+              card stays focused. */}
+          {!lockedMode && isCrossChain && fromToken && toToken && (
+            <Link
+              href="/bridge"
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-violet/30 bg-violet/[0.08] hover:bg-violet/[0.14] hover:border-violet/50 transition-all group min-w-0"
+            >
+              <Globe className="w-3.5 h-3.5 text-violet flex-shrink-0" />
+              <span className="font-mono text-[11px] text-violet/95 tracking-wide flex-1 text-left truncate">
+                {t("swap.crossChainDetected", {
+                  from: CHAIN_BY_ID[fromToken.chain]?.short ?? fromToken.chain,
+                  to:   CHAIN_BY_ID[toToken.chain]?.short ?? toToken.chain,
+                })}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-violet/70 -rotate-90 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+            </Link>
           )}
 
           {/* ZION teaser */}

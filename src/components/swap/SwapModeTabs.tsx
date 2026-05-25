@@ -6,11 +6,16 @@ import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { SwapMode } from "@/lib/store/swap";
 
+// "cross" mode is intentionally absent — cross-chain has its own dedicated
+// page at /bridge (linked from the CTA under the swap card). Keeping it
+// out of the tabs avoids the "Multi-rede" label crowding the same-chain
+// swap UI when there's already a clear path to /bridge.
 const TABS: { mode: SwapMode; labelKey: MessageKey; Icon: typeof ArrowLeftRight }[] = [
   { mode: "swap",   labelKey: "swap.titleSwap",   Icon: ArrowLeftRight },
-  { mode: "cross",  labelKey: "swap.titleCross",  Icon: Globe          },
   { mode: "sniper", labelKey: "swap.titleSniper", Icon: Crosshair      },
 ];
+// Globe kept imported for future use; suppress unused-import lint
+void Globe;
 
 export default function SwapModeTabs({
   mode, onChange,
@@ -20,7 +25,7 @@ export default function SwapModeTabs({
 }) {
   const t = useT();
   return (
-    <div className="relative grid grid-cols-3 gap-1 p-1 rounded-xl border border-white/5 bg-bg-1/60">
+    <div className="relative grid grid-cols-2 gap-1 p-1 rounded-xl border border-white/5 bg-bg-1/60">
       {TABS.map((tab) => {
         const active = mode === tab.mode;
         return (

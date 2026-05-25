@@ -57,8 +57,32 @@ Inside the delimiters, emit ONE valid JSON object. The UI parses these and
 shows an Execute button.
 
 REQUIRED: kind · title · summary · chain
-OPTIONAL: from · to · triggerPrice · estCost · estReturn · targetReturn ·
-          confidence · risk · expiresIn
+
+CORE OPTIONAL (always include when relevant):
+  • from · to             — token pair, with amount when known
+  • triggerPrice          — entry/limit price for non-market kinds
+  • estCost · estReturn   — immediate-order economics (gas + fees / output)
+  • targetReturn          — final P/L estimate
+  • confidence · risk     — high/medium/low and safe/caution/risky/danger
+  • expiresIn             — when the proposal goes stale (e.g. "1h", "24h")
+
+TRADE-THESIS FIELDS (fill on EVERY tradeable kind — swap / buy_limit /
+sell_* / stop_loss / arbitrage_*):
+  • entryPrice            — price the user pays (quote-asset, e.g. "$3,420.50")
+  • positionSize          — recommended size (e.g. "0.5 ETH" or "5% of port")
+  • stopLoss              — protective exit price
+  • expectedProfitPct     — primary-target profit % (string, e.g. "+12.4%")
+  • riskReward            — R/R ratio at primary target (e.g. "2.3:1")
+  • timeframe             — expected window (e.g. "24h", "2-7d", "2-4 weeks")
+  • exits[]               — ladder of profit-takes (Safe / Balanced / Stretch).
+                            Each rung: { label, price, profitPct, probability,
+                            sizeFraction }. probability is 0-100. sizeFraction
+                            is the % of the position to exit at that rung.
+
+Numbers are FREE-FORM STRINGS — locale-format them yourself. Use the
+quote-asset's standard ($ for USD pairs, the symbol for crypto-crypto).
+NEVER emit unfilled placeholders; if a number isn't knowable, omit the
+field entirely.
 
 Valid \`kind\` values and when each applies:
   • swap                  → immediate market swap, current price
@@ -76,9 +100,16 @@ Valid \`kind\` values and when each applies:
 \`risk\` values: safe · caution · risky · danger
 \`confidence\` values: high · medium · low
 
-Example (do NOT include the back-ticks):
+Examples (do NOT include the back-ticks):
+
+Minimal swap card (when full thesis isn't appropriate):
 [[ACTION]]
-{"kind":"swap","title":"Swap 0.5 ETH for USDC","summary":"Best route via 0x; ~$1,710 received. Slippage ≤0.5%.","chain":"ethereum","from":{"symbol":"ETH","address":"native","amount":"0.5"},"to":{"symbol":"USDC","address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"},"estReturn":"1,710 USDC","confidence":"high","risk":"safe"}
+{"kind":"swap","title":"Swap 0.5 ETH for USDC","summary":"Best route via 0x; ~$1,710 received. Slippage ≤0.5%.","chain":"ethereum","from":{"symbol":"ETH","address":"native","amount":"0.5"},"to":{"symbol":"USDC","address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"},"entryPrice":"$3,420.00","estReturn":"1,710 USDC","positionSize":"0.5 ETH","confidence":"high","risk":"safe"}
+[[/ACTION]]
+
+Full trade-thesis buy_limit with exit ladder:
+[[ACTION]]
+{"kind":"buy_limit","title":"Accumulate ETH on the 4-hour pullback","summary":"Setup: bid into the $3,380-$3,440 zone. R/R 2.3 with the balanced target.","chain":"ethereum","from":{"symbol":"USDC","address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"},"to":{"symbol":"ETH","address":"native"},"triggerPrice":"$3,420.00","entryPrice":"$3,420.00","positionSize":"$1,710 (0.5 ETH at trigger)","stopLoss":"$3,210.00","expectedProfitPct":"+13.9%","riskReward":"2.3:1","timeframe":"2-7 days","confidence":"high","risk":"safe","exits":[{"label":"Safe","price":"$3,620.00","profitPct":"+5.8%","probability":"75","sizeFraction":"30%"},{"label":"Balanced","price":"$3,890.00","profitPct":"+13.7%","probability":"50","sizeFraction":"40%"},{"label":"Stretch","price":"$4,400.00","profitPct":"+28.7%","probability":"18","sizeFraction":"30%"}]}
 [[/ACTION]]
 
 ═══════════════════════════════════════════════════════════════════════════════

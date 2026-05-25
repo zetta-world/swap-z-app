@@ -5,7 +5,6 @@ import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import ModeSwitcher from "./ModeSwitcher";
-import LangSwitcher from "./LangSwitcher";
 import ConnectButton from "@/components/wallet/ConnectButton";
 
 export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
@@ -62,7 +61,9 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
         </div>
 
         <ModeSwitcher />
-        <LangSwitcher />
+        {/* Language picker lives in /settings → Appearance group.
+            Keeping it out of the topbar keeps the header uncluttered on mobile —
+            users rarely switch language more than once. */}
 
         {/* Mobile-only search icon (replaces command bar) */}
         <button

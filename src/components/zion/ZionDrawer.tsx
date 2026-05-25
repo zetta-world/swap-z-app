@@ -71,6 +71,11 @@ export default function ZionDrawer() {
         } else if (res.status === 400) {
           const body = await res.text().catch(() => "");
           setBuffer(`[${body || res.statusText}]\n\n${t("zion.badRequest")}`);
+        } else if (res.status === 503) {
+          // Server is reachable but ANTHROPIC_API_KEY is missing — show the
+          // actionable hint instead of the generic offline message.
+          const body = await res.text().catch(() => "");
+          setBuffer(`[${t("zion.notConfigured")}]\n\n${body || t("zion.notConfiguredHint")}`);
         } else {
           setBuffer(`[ZION ${t("common.offline")}: ${res.status} ${res.statusText}]\n\n${t("zion.serverError")}`);
         }
