@@ -69,7 +69,7 @@ export default function CexPortfolioRollup() {
       events.forEach((ev) => window.removeEventListener(ev, bump));
       clearInterval(id);
     };
-  }, [creds]);
+  }, [creds, t]);
 
   const loadOne = useCallback(async (id: CexId, c: CexCredentials) => {
     setRollups((r) => ({ ...r, [id]: { ...(r[id] ?? { status: "idle", totalUsd: 0, balances: [] }), status: "loading" } }));

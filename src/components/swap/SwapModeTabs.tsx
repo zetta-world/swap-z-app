@@ -2,13 +2,14 @@
 
 import { ArrowLeftRight, Globe, Crosshair } from "lucide-react";
 import { motion } from "framer-motion";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { SwapMode } from "@/lib/store/swap";
 
-const TABS: { mode: SwapMode; label: string; Icon: typeof ArrowLeftRight; tagline: string }[] = [
-  { mode: "swap",   label: "Swap",        Icon: ArrowLeftRight, tagline: "single-chain" },
-  { mode: "cross",  label: "Cross-Chain", Icon: Globe,          tagline: "bridge + swap" },
-  { mode: "sniper", label: "Sniper",      Icon: Crosshair,      tagline: "fresh pairs" },
+const TABS: { mode: SwapMode; labelKey: MessageKey; Icon: typeof ArrowLeftRight }[] = [
+  { mode: "swap",   labelKey: "swap.titleSwap",   Icon: ArrowLeftRight },
+  { mode: "cross",  labelKey: "swap.titleCross",  Icon: Globe          },
+  { mode: "sniper", labelKey: "swap.titleSniper", Icon: Crosshair      },
 ];
 
 export default function SwapModeTabs({
@@ -17,15 +18,16 @@ export default function SwapModeTabs({
   mode:     SwapMode;
   onChange: (m: SwapMode) => void;
 }) {
+  const t = useT();
   return (
     <div className="relative grid grid-cols-3 gap-1 p-1 rounded-xl border border-white/5 bg-bg-1/60">
-      {TABS.map((t) => {
-        const active = mode === t.mode;
+      {TABS.map((tab) => {
+        const active = mode === tab.mode;
         return (
           <button
             type="button"
-            key={t.mode}
-            onClick={() => onChange(t.mode)}
+            key={tab.mode}
+            onClick={() => onChange(tab.mode)}
             className={cn(
               "relative z-10 flex items-center justify-center gap-1.5 py-2 rounded-lg transition-colors min-w-0",
               active ? "text-cyan" : "text-ink-3 hover:text-ink-2",
@@ -38,9 +40,9 @@ export default function SwapModeTabs({
                 transition={{ type: "spring", stiffness: 400, damping: 32 }}
               />
             )}
-            <t.Icon className="w-3.5 h-3.5 relative" />
+            <tab.Icon className="w-3.5 h-3.5 relative" />
             <span className="font-mono text-[10px] tracking-widest uppercase relative truncate">
-              {t.label}
+              {t(tab.labelKey)}
             </span>
           </button>
         );

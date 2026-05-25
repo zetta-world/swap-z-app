@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import type { Token } from "@/lib/tokens";
 
 export interface Hop {
@@ -58,6 +59,7 @@ export default function RoutePreview({
   sourceLabel?: string;
   showSavings?: boolean;
 }) {
+  const t = useT();
   if (!from || !to) return null;
 
   // Normalize hops into the local Hop shape; fall back to a curated default
@@ -78,10 +80,10 @@ export default function RoutePreview({
   return (
     <div className="rounded-xl border border-white/5 bg-bg-1/40 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">Optimal route</span>
+        <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">{t("swap.optimalRoute")}</span>
         <span className={`font-mono text-[10px] tracking-widest uppercase flex items-center gap-1.5 ${isLive ? "text-cyan" : "text-ink-3"}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-cyan pulse-dot" : "bg-ink-4"}`} />
-          {isLive ? `Live · ${sourceLabel ?? "router"}` : "Sample"}
+          {isLive ? t("swap.routeSampleLive", { label: sourceLabel ?? t("swap.routeRouter") }) : t("swap.routeSample")}
         </span>
       </div>
 
@@ -128,8 +130,8 @@ export default function RoutePreview({
 
       {showSavings && !isLive && (
         <div className="flex items-center justify-between pt-2 border-t border-white/5">
-          <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">Demo route</span>
-          <span className="font-mono text-[11px] text-ink-3">Real fills on quote</span>
+          <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">{t("swap.routeDemoLabel")}</span>
+          <span className="font-mono text-[11px] text-ink-3">{t("swap.routeRealFills")}</span>
         </div>
       )}
     </div>

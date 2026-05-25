@@ -5,6 +5,7 @@ import { ChevronRight, MapPin, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { isAddress } from "viem";
 import { isSolanaAddress } from "@/lib/solana";
+import { useT } from "@/lib/i18n";
 import type { ChainId } from "@/lib/chains";
 
 interface Props {
@@ -25,6 +26,7 @@ interface Props {
  * address. Validates with viem so we never forward malformed addresses to LiFi.
  */
 export default function RecipientField({ value, onChange, connected, toChainName, destChain }: Props) {
+  const t = useT();
   const [open,  setOpen]  = useState<boolean>(!!value);
   const [draft, setDraft] = useState<string>(value ?? "");
 
@@ -66,7 +68,7 @@ export default function RecipientField({ value, onChange, connected, toChainName
       >
         <MapPin className="w-3.5 h-3.5 text-ink-3 group-hover:text-violet" />
         <span className="font-mono text-[11px] text-ink-3 group-hover:text-ink-2 tracking-wide flex-1 text-left">
-          Send to my wallet
+          {t("swap.sendToMyWallet")}
           {connected && (
             <span className="text-ink-4 ml-1">
               · {connected.slice(0, 6)}…{connected.slice(-4)}
@@ -74,7 +76,7 @@ export default function RecipientField({ value, onChange, connected, toChainName
           )}
         </span>
         <span className="font-mono text-[9px] text-violet/70 tracking-widest uppercase">
-          Change
+          {t("swap.change")}
         </span>
         <ChevronRight className="w-3 h-3 text-ink-4 group-hover:translate-x-0.5 transition-transform" />
       </button>
@@ -90,13 +92,13 @@ export default function RecipientField({ value, onChange, connected, toChainName
     <div className={cn("rounded-xl border p-3 transition-colors", tone)}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="font-mono text-[10px] text-violet tracking-widest uppercase">
-          Recipient on {toChainName ?? "destination"}
+          {t("swap.recipientOnChain", { chain: toChainName ?? t("swap.destination") })}
         </span>
         <button
           type="button"
           onClick={() => { setDraft(""); onChange(undefined); setOpen(false); }}
           className="text-ink-3 hover:text-ink-2"
-          aria-label="Use my wallet"
+          aria-label={t("swap.useMyWallet")}
         >
           <X className="w-3 h-3" />
         </button>
@@ -109,7 +111,7 @@ export default function RecipientField({ value, onChange, connected, toChainName
         autoCorrect="off"
         value={draft}
         onChange={(e) => handleCommit(e.target.value.trim())}
-        placeholder={connected ?? (destChain === "solana" ? "Base58 SOL address" : "0x…")}
+        placeholder={connected ?? (destChain === "solana" ? t("swap.addrPlaceholderSol") : t("swap.addrPlaceholderEvm"))}
         className={cn(
           "w-full bg-transparent text-xs font-mono text-ink outline-none placeholder:text-ink-4 truncate min-w-0",
           validity === "invalid" && "text-red",
@@ -118,13 +120,13 @@ export default function RecipientField({ value, onChange, connected, toChainName
       {validity === "invalid" && (
         <p className="mt-1 font-mono text-[10px] text-red/90">
           {destChain === "solana"
-            ? "Not a valid Solana address."
-            : "Not a valid EVM address."}
+            ? t("swap.notValidSolana")
+            : t("swap.notValidEvm")}
         </p>
       )}
       {validity === "valid" && draft.toLowerCase() !== (connected ?? "").toLowerCase() && (
         <p className="mt-1 font-mono text-[10px] text-gold/80">
-          Bridge will deliver to a different address than your wallet — double-check.
+          {t("swap.bridgeDifferent")}
         </p>
       )}
     </div>

@@ -7,6 +7,7 @@ import { DEFAULT_TOKENS, type Token } from "@/lib/tokens";
 import { CHAINS, type ChainId } from "@/lib/chains";
 import { formatUsd } from "@/lib/format";
 import { riskFromScore } from "@/lib/store/swap";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export default function TokenSelector({ value, onChange, chainFilter, side }: Props) {
+  const t = useT();
   const [open, setOpen]   = useState(false);
   const [query, setQuery] = useState("");
   const [chain, setChain] = useState<ChainId | "all">(chainFilter ?? "all");
@@ -60,7 +62,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
             </>
           ) : (
             <>
-              <span className="font-display font-bold text-sm text-cyan whitespace-nowrap">Select</span>
+              <span className="font-display font-bold text-sm text-cyan whitespace-nowrap">{t("swap.tokenSelectorSelect")}</span>
               <ChevronDown className="w-3.5 h-3.5 text-cyan flex-shrink-0" />
             </>
           )}
@@ -91,7 +93,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
             {/* ─── Header ──────────────────────────────────────────── */}
             <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-white/5 flex-shrink-0">
               <Dialog.Title className="font-display font-bold text-sm sm:text-base text-ink flex items-center gap-2 min-w-0">
-                <span className="truncate">Select a token</span>
+                <span className="truncate">{t("swap.tokenSelectorHeader")}</span>
                 <span className="font-mono text-[9px] sm:text-[10px] text-ink-3 uppercase tracking-widest border border-white/10 bg-white/[0.03] px-1.5 py-0.5 rounded flex-shrink-0">
                   {side}
                 </span>
@@ -99,7 +101,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
               <Dialog.Close asChild>
                 <button
                   type="button"
-                  aria-label="Close"
+                  aria-label={t("common.close")}
                   className="w-8 h-8 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5 flex-shrink-0"
                 >
                   <X className="w-4 h-4" />
@@ -115,7 +117,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Symbol, name, or address"
+                  placeholder={t("swap.tokenSelectorPlaceholder")}
                   className="flex-1 min-w-0 bg-transparent text-sm text-ink placeholder:text-ink-3 outline-none font-sans"
                 />
                 {query && (
@@ -123,7 +125,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
                     type="button"
                     onClick={() => setQuery("")}
                     className="flex-shrink-0 text-ink-3 hover:text-ink"
-                    aria-label="Clear search"
+                    aria-label={t("common.clear")}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -136,7 +138,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
                   <ChainPill
                     active={chain === "all"}
                     onClick={() => setChain("all")}
-                    label="All"
+                    label={t("explorer.chainAll")}
                   />
                   {CHAINS.map((c) => (
                     <ChainPill
@@ -157,27 +159,27 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
             {/* ─── Token list (scroll) ─────────────────────────────── */}
             <div className="flex-1 overflow-y-auto py-1">
               {list.length === 0 ? (
-                <div className="px-5 py-12 text-center font-sans text-sm text-ink-3">No tokens match.</div>
+                <div className="px-5 py-12 text-center font-sans text-sm text-ink-3">{t("swap.tokenSelectorNoMatch")}</div>
               ) : (
-                list.map((t) => {
-                  const r = riskFromScore(t.riskScore);
+                list.map((tk) => {
+                  const r = riskFromScore(tk.riskScore);
                   return (
                     <button
-                      key={`${t.chain}-${t.address}`}
+                      key={`${tk.chain}-${tk.address}`}
                       type="button"
-                      onClick={() => { onChange(t); setOpen(false); }}
+                      onClick={() => { onChange(tk); setOpen(false); }}
                       className="w-full flex items-center gap-3 px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-white/[0.04] transition-colors text-left"
                     >
                       <span
                         className="w-9 h-9 rounded-full flex items-center justify-center font-mono text-xs font-bold flex-shrink-0"
-                        style={{ background: `${t.color}22`, color: t.color, border: `1px solid ${t.color}55` }}
+                        style={{ background: `${tk.color}22`, color: tk.color, border: `1px solid ${tk.color}55` }}
                       >
-                        {t.symbol.slice(0, 2)}
+                        {tk.symbol.slice(0, 2)}
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-display font-bold text-sm text-ink truncate">{t.symbol}</span>
-                          <span className="font-mono text-[10px] text-ink-3 uppercase tracking-wider flex-shrink-0">{t.chain}</span>
+                          <span className="font-display font-bold text-sm text-ink truncate">{tk.symbol}</span>
+                          <span className="font-mono text-[10px] text-ink-3 uppercase tracking-wider flex-shrink-0">{tk.chain}</span>
                           <span
                             className={cn(
                               "ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0",
@@ -185,13 +187,13 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
                               r === "caution" && "bg-gold",
                               r === "danger"  && "bg-red",
                             )}
-                            title={`Risk: ${r}`}
+                            title={t("swap.riskTooltip", { level: r })}
                           />
                         </div>
-                        <div className="font-sans text-xs text-ink-3 truncate">{t.name}</div>
+                        <div className="font-sans text-xs text-ink-3 truncate">{tk.name}</div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <div className="font-mono text-sm text-ink whitespace-nowrap">{formatUsd(t.priceUsd)}</div>
+                        <div className="font-mono text-sm text-ink whitespace-nowrap">{formatUsd(tk.priceUsd)}</div>
                       </div>
                     </button>
                   );
@@ -202,7 +204,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
             {/* ─── Footer disclaimer ───────────────────────────────── */}
             <div className="px-4 sm:px-5 py-2.5 border-t border-white/5 flex-shrink-0">
               <p className="font-mono text-[9px] sm:text-[10px] text-ink-4 text-center tracking-wide">
-                {list.length} tokens · risk dots reflect ZION baseline score
+                {t("swap.tokenSelectorFooter", { n: list.length })}
               </p>
             </div>
           </div>

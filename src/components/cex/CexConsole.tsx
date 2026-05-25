@@ -84,7 +84,7 @@ export default function CexConsole() {
       events.forEach((ev) => window.removeEventListener(ev, bump));
       clearInterval(id);
     };
-  }, [creds]);
+  }, [creds, t]);
 
   const onUnlock = async () => {
     setUnlocking(true);
