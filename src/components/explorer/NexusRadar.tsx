@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { compactNumber, formatPct } from "@/lib/format";
 import { computeQuickScore } from "@/lib/conviction";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface NarrativeMember {
@@ -58,6 +59,7 @@ interface ApiResponse {
  * a tradable thesis the user can read in one glance.
  */
 export default function NexusRadar() {
+  const t = useT();
   const [data, setData]     = useState<ApiResponse | null>(null);
   const [loading, setLoad]  = useState(true);
   const [error, setError]   = useState<string | null>(null);
@@ -93,7 +95,7 @@ export default function NexusRadar() {
         <div className="rounded-xl border border-red/30 bg-red/[0.05] p-4 flex items-start gap-3">
           <AlertCircle className="w-4 h-4 text-red flex-shrink-0 mt-0.5" />
           <div className="min-w-0">
-            <div className="font-display font-bold text-sm text-red mb-1">Radar offline</div>
+            <div className="font-display font-bold text-sm text-red mb-1">{t("explorer.radarOffline")}</div>
             <p className="font-sans text-xs text-ink-2">{error}</p>
           </div>
         </div>
@@ -106,7 +108,7 @@ export default function NexusRadar() {
             <div className="rounded-xl border border-white/5 bg-bg-1/40 p-6 text-center">
               <Sparkles className="w-6 h-6 text-cyan/60 mx-auto mb-2" />
               <p className="font-mono text-xs text-ink-3">
-                {data.note ?? "ZION is reading the Nexus. Refresh in a moment."}
+                {data.note ?? t("explorer.radarEmpty")}
               </p>
             </div>
           )}
@@ -129,7 +131,7 @@ export default function NexusRadar() {
 
       {data && data.source === "fallback" && (
         <p className="font-mono text-[10px] text-ink-4 text-center">
-          Live ZION clustering unavailable — falling back to chain bucketing.
+          {t("explorer.radarFallback")}
         </p>
       )}
     </div>
@@ -146,25 +148,25 @@ function Header({
   generatedAt?: number;
   onRefresh: () => void;
 }) {
+  const t = useT();
   const age = generatedAt ? Math.round((Date.now() - generatedAt) / 1000) : null;
-  const ageLabel = age === null ? "" : age < 60 ? `${age}s ago` : `${Math.round(age / 60)}m ago`;
+  const ageLabel = age === null ? "" : age < 60 ? t("explorer.ageSeconds", { n: age }) : t("explorer.ageMinutes", { n: Math.round(age / 60) });
 
   return (
     <div className="flex items-start justify-between gap-3 min-w-0 flex-wrap">
       <div className="min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <span className="section-label">Nexus Radar</span>
+          <span className="section-label">{t("explorer.tabRadar")}</span>
           <span className="tag tag-green">
             <span className="w-1.5 h-1.5 rounded-full bg-current pulse-dot" />
-            Live
+            {t("explorer.radarLive")}
           </span>
         </div>
         <h1 className="font-display font-extrabold text-xl sm:text-2xl text-ink leading-tight">
-          What the Nexus is doing right now.
+          {t("explorer.radarTitle")}
         </h1>
         <p className="font-sans text-xs sm:text-sm text-ink-3 leading-relaxed mt-1 max-w-2xl">
-          ZION reads every trending pair across the Nexus and clusters them into theses you can act on.
-          Cross-chain spreads, momentum, and risk — surfaced in one glance.
+          {t("explorer.radarBody")}
         </p>
       </div>
       <button
@@ -178,10 +180,10 @@ function Header({
         )}
       >
         <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
-        {loading ? "scanning" : "refresh"}
+        {loading ? t("explorer.radarScanning") : t("explorer.refresh")}
         {!loading && ageLabel && <span className="text-ink-4 ml-1">· {ageLabel}</span>}
         {source === "zion"     && !loading && <span className="text-gold/80 ml-1">· ZION</span>}
-        {source === "fallback" && !loading && <span className="text-gold/80 ml-1">· static</span>}
+        {source === "fallback" && !loading && <span className="text-gold/80 ml-1">· {t("explorer.radarStatic")}</span>}
       </button>
     </div>
   );
@@ -197,10 +199,11 @@ function ClusterCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const t = useT();
   const riskCfg = {
-    low:    { color: "text-green",  bg: "bg-green/10",  border: "border-green/30",  label: "low risk"    },
-    medium: { color: "text-gold",   bg: "bg-gold/10",   border: "border-gold/30",   label: "medium risk" },
-    high:   { color: "text-red",    bg: "bg-red/10",    border: "border-red/30",    label: "high risk"   },
+    low:    { color: "text-green",  bg: "bg-green/10",  border: "border-green/30",  label: t("explorer.riskLowLabel")  },
+    medium: { color: "text-gold",   bg: "bg-gold/10",   border: "border-gold/30",   label: t("explorer.riskMedLabel")  },
+    high:   { color: "text-red",    bg: "bg-red/10",    border: "border-red/30",    label: t("explorer.riskHighLabel") },
   }[cluster.risk];
 
   const ChangeIcon = cluster.avgChange24h >= 0 ? TrendingUp : TrendingDown;
@@ -278,10 +281,10 @@ function ClusterCard({
 
         {/* Metrics row */}
         <div className="grid grid-cols-3 gap-2">
-          <Metric label="Volume 24h" value={`$${compactNumber(cluster.aggVolume24h)}`} accent={cluster.color} />
-          <Metric label="Liquidity"  value={`$${compactNumber(cluster.aggLiquidity)}`} />
+          <Metric label={t("explorer.metricVolume24h")} value={`$${compactNumber(cluster.aggVolume24h)}`} accent={cluster.color} />
+          <Metric label={t("explorer.metricLiquidity")}  value={`$${compactNumber(cluster.aggLiquidity)}`} />
           <Metric
-            label="Δ avg 24h"
+            label={t("explorer.metricAvgChange")}
             value={formatPct(cluster.avgChange24h)}
             icon={<ChangeIcon className={cn("w-2.5 h-2.5", changeTone)} />}
             tone={changeTone}
@@ -321,7 +324,7 @@ function ClusterCard({
           onClick={onToggle}
           className="w-full flex items-center justify-between text-left font-mono text-[10px] text-ink-3 tracking-widest uppercase hover:text-cyan transition-colors pt-1"
         >
-          <span>{expanded ? "hide thesis" : "open thesis"}</span>
+          <span>{expanded ? t("explorer.hideThesis") : t("explorer.openThesis")}</span>
           <ArrowRight className={cn("w-3 h-3 transition-transform", expanded && "rotate-90")} />
         </button>
 

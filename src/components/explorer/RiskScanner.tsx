@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Shield, Search, ExternalLink, AlertTriangle, CheckCircle2, XCircle, Info } from "lucide-react";
 import { CHAINS } from "@/lib/chains";
 import { compactNumber, formatUsd, formatPct, shortenAddress } from "@/lib/format";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface Signal { kind: "ok" | "warn" | "danger"; label: string; weight: number; }
@@ -31,12 +32,12 @@ const EXAMPLES = [
   { chain: "bsc",      addr: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82", label: "CAKE (defi)"      },
 ];
 
-const CAT_CFG = {
-  safe:    { color: "text-green",  bg: "bg-green/10",  border: "border-green/30",  label: "SAFE",    glow: "shadow-glow-green" },
-  caution: { color: "text-gold",   bg: "bg-gold/10",   border: "border-gold/30",   label: "CAUTION", glow: "shadow-glow-gold"  },
-  risky:   { color: "text-gold",   bg: "bg-gold/15",   border: "border-gold/40",   label: "RISKY",   glow: "shadow-glow-gold"  },
-  danger:  { color: "text-red",    bg: "bg-red/10",    border: "border-red/30",    label: "DANGER",  glow: "shadow-glow-red"   },
-} as const;
+const CAT_CFG: Record<"safe"|"caution"|"risky"|"danger", { color: string; bg: string; border: string; labelKey: MessageKey; glow: string }> = {
+  safe:    { color: "text-green",  bg: "bg-green/10",  border: "border-green/30",  labelKey: "explorer.scannerCatSafe",    glow: "shadow-glow-green" },
+  caution: { color: "text-gold",   bg: "bg-gold/10",   border: "border-gold/30",   labelKey: "explorer.scannerCatCaution", glow: "shadow-glow-gold"  },
+  risky:   { color: "text-gold",   bg: "bg-gold/15",   border: "border-gold/40",   labelKey: "explorer.scannerCatRisky",   glow: "shadow-glow-gold"  },
+  danger:  { color: "text-red",    bg: "bg-red/10",    border: "border-red/30",    labelKey: "explorer.scannerCatDanger",  glow: "shadow-glow-red"   },
+};
 
 const SIGNAL_ICONS = {
   ok:     { Icon: CheckCircle2,   color: "text-green" },
@@ -45,6 +46,7 @@ const SIGNAL_ICONS = {
 } as const;
 
 export default function RiskScanner() {
+  const t = useT();
   const [chain, setChain] = useState("ethereum");
   const [address, setAddress] = useState("");
   const [result, setResult] = useState<RiskResponse | null>(null);
@@ -62,7 +64,7 @@ export default function RiskScanner() {
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : t("common.error"));
     } finally {
       setLoading(false);
     }
@@ -86,15 +88,15 @@ export default function RiskScanner() {
           <div className="flex items-center gap-2 mb-3">
             <Shield className="w-4 h-4 text-red" />
             <span className="font-mono text-[10px] text-red/80 tracking-widest uppercase">
-              06 — Security Layer · live
+              {t("explorer.scannerEyebrow")}
             </span>
           </div>
           <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
-            Risk <span className="text-grad-aurora">Scanner</span>
+            {t("explorer.scannerTitleA")} <span className="text-grad-aurora">{t("explorer.scannerTitleHL")}</span>
           </h1>
           <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">
-            Real-time honeypot detection, tax simulation, holder concentration, contract verification.
-            Powered by <span className="text-cyan">GoPlus Security</span> + <span className="text-violet">Honeypot.is</span> + <span className="text-gold">GeckoTerminal</span>.
+            {t("explorer.scannerLongBody")}
+            {" "}{t("explorer.scannerPoweredBy")} <span className="text-cyan">GoPlus Security</span> + <span className="text-violet">Honeypot.is</span> + <span className="text-gold">GeckoTerminal</span>.
           </p>
         </motion.div>
 
@@ -116,7 +118,7 @@ export default function RiskScanner() {
                 <input
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="0x... or paste a token address to scan"
+                  placeholder={t("explorer.scannerInputPlaceholder")}
                   className="flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4 py-2.5"
                 />
               </div>
@@ -125,7 +127,7 @@ export default function RiskScanner() {
                 disabled={loading || !address.trim()}
                 className="btn btn-primary px-6 disabled:opacity-50"
               >
-                {loading ? "Scanning…" : "Scan"}
+                {loading ? t("explorer.scannerScanning") : t("explorer.scannerScan")}
               </button>
             </div>
           </div>
@@ -133,7 +135,7 @@ export default function RiskScanner() {
 
         {/* Examples */}
         <div className="mt-3 flex flex-wrap gap-2 items-center">
-          <span className="font-mono text-[10px] text-ink-4 tracking-widest uppercase">Try:</span>
+          <span className="font-mono text-[10px] text-ink-4 tracking-widest uppercase">{t("explorer.scannerTry")}</span>
           {EXAMPLES.map((e) => (
             <button
               key={e.label}
@@ -158,7 +160,7 @@ export default function RiskScanner() {
           <div className="mt-6 rounded-xl border border-red/30 bg-red/5 p-4">
             <div className="flex items-center gap-2 mb-1">
               <XCircle className="w-4 h-4 text-red" />
-              <span className="font-display font-bold text-sm text-red">Scan failed</span>
+              <span className="font-display font-bold text-sm text-red">{t("explorer.scannerFailed")}</span>
             </div>
             <p className="font-mono text-xs text-red/80">{error}</p>
           </div>
@@ -175,8 +177,8 @@ export default function RiskScanner() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={cn("font-display font-extrabold text-2xl", cat.color)}>{cat.label}</span>
-                    <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">verdict</span>
+                    <span className={cn("font-display font-extrabold text-2xl", cat.color)}>{t(cat.labelKey)}</span>
+                    <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("explorer.scannerVerdict").toLowerCase()}</span>
                   </div>
                   <div className="font-mono text-[11px] text-ink-2 truncate">
                     {result.info?.symbol ?? "TOKEN"} <span className="text-ink-3">·</span> {result.info?.name ?? "—"}
@@ -189,7 +191,7 @@ export default function RiskScanner() {
                 </div>
                 <div className="text-right flex-shrink-0">
                   <div className={cn("font-display font-extrabold text-4xl tabular-nums", cat.color)}>{result.score}</div>
-                  <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mt-1">/ 100 risk</div>
+                  <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mt-1">{t("explorer.scannerScoreOf100")}</div>
                 </div>
               </div>
 
@@ -205,10 +207,10 @@ export default function RiskScanner() {
             {/* Token info */}
             {result.info && (
               <div className="rounded-2xl border border-white/5 glass-pane p-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Stat label="Price"        value={formatUsd(result.info.priceUsd)} />
-                <Stat label="Market Cap"   value={result.info.mcapUsd ? `$${compactNumber(result.info.mcapUsd)}` : "—"} />
-                <Stat label="24h Volume"   value={result.info.volume24h ? `$${compactNumber(result.info.volume24h)}` : "—"} />
-                <Stat label="Supply"       value={result.info.totalSupply ? compactNumber(result.info.totalSupply) : "—"} />
+                <Stat label={t("explorer.scannerStatPrice")}  value={formatUsd(result.info.priceUsd)} />
+                <Stat label={t("explorer.scannerStatMcap")}   value={result.info.mcapUsd ? `$${compactNumber(result.info.mcapUsd)}` : "—"} />
+                <Stat label={t("explorer.scannerStatVolume")} value={result.info.volume24h ? `$${compactNumber(result.info.volume24h)}` : "—"} />
+                <Stat label={t("explorer.scannerStatSupply")} value={result.info.totalSupply ? compactNumber(result.info.totalSupply) : "—"} />
               </div>
             )}
 
@@ -216,9 +218,11 @@ export default function RiskScanner() {
             <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden">
               <div className="flex items-center gap-2 px-5 py-3 border-b border-white/5">
                 <Info className="w-3.5 h-3.5 text-cyan" />
-                <span className="font-display font-bold text-sm text-ink">Signal Breakdown</span>
+                <span className="font-display font-bold text-sm text-ink">{t("explorer.scannerSignalBreakdown")}</span>
                 <span className="ml-auto font-mono text-[10px] text-ink-4 tracking-widest uppercase">
-                  {result.signals.length} signal{result.signals.length === 1 ? "" : "s"}
+                  {result.signals.length === 1
+                    ? t("explorer.scannerSignalCount", { n: 1 })
+                    : t("explorer.scannerSignalCountPlural", { n: result.signals.length })}
                 </span>
               </div>
               <div className="divide-y divide-white/[0.04]">
@@ -245,10 +249,9 @@ export default function RiskScanner() {
 
             {/* Disclaimer */}
             <div className="rounded-xl border border-gold/15 bg-gold/[0.03] p-4">
-              <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-1.5">Scoring methodology</div>
+              <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-1.5">{t("explorer.scannerScoringTitle")}</div>
               <p className="font-sans text-xs text-ink-2 leading-relaxed">
-                Deterministic score derived from GoPlus security flags and Honeypot.is simulation results.
-                This is structural risk analysis, not investment advice. Final execution requires your manual approval.
+                {t("explorer.scannerScoringBody")}
               </p>
             </div>
           </motion.div>
