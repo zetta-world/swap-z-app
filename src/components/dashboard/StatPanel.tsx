@@ -2,12 +2,13 @@
 
 import { motion } from "framer-motion";
 import { TrendingUp, Layers, Network, Shield } from "lucide-react";
+import { useT, type MessageKey } from "@/lib/i18n";
 
-const STATS = [
-  { icon: TrendingUp, label: "24h Volume",      value: "$2.84B",   change: "+12.4%", tone: "cyan"   as const },
-  { icon: Layers,     label: "Pools Indexed",    value: "8,420",    change: "+128",   tone: "violet" as const },
-  { icon: Network,    label: "Chains Connected", value: "11",       change: "Live",   tone: "gold"   as const },
-  { icon: Shield,     label: "MEV Saved (7d)",   value: "$148K",    change: "+8.6%",  tone: "green"  as const },
+const STATS: { icon: typeof TrendingUp; labelKey: MessageKey; value: string; change: string; changeIsKey?: MessageKey; tone: "cyan" | "violet" | "gold" | "green" }[] = [
+  { icon: TrendingUp, labelKey: "swap.stat24hVolume", value: "$2.84B",   change: "+12.4%",                            tone: "cyan"   },
+  { icon: Layers,     labelKey: "swap.statPools",      value: "8,420",    change: "+128",                              tone: "violet" },
+  { icon: Network,    labelKey: "swap.statChains",     value: "11",       change: "Live",   changeIsKey: "swap.statLive", tone: "gold" },
+  { icon: Shield,     labelKey: "swap.statMevSaved",   value: "$148K",    change: "+8.6%",                             tone: "green"  },
 ];
 
 const TONES = {
@@ -18,14 +19,17 @@ const TONES = {
 } as const;
 
 export default function StatPanel() {
+  const t = useT();
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {STATS.map((s, i) => {
         const Icon = s.icon;
         const cfg = TONES[s.tone];
+        const label = t(s.labelKey);
+        const change = s.changeIsKey ? t(s.changeIsKey) : s.change;
         return (
           <motion.div
-            key={s.label}
+            key={s.labelKey}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
@@ -37,10 +41,10 @@ export default function StatPanel() {
                 <div className={`w-7 h-7 rounded-lg ${cfg.bg} ${cfg.border} border flex items-center justify-center`}>
                   <Icon className={`w-3.5 h-3.5 ${cfg.text}`} />
                 </div>
-                <span className={`font-mono text-[10px] ${cfg.text}`}>{s.change}</span>
+                <span className={`font-mono text-[10px] ${cfg.text}`}>{change}</span>
               </div>
               <div className="font-display font-bold text-xl sm:text-2xl text-ink leading-none">{s.value}</div>
-              <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mt-1.5">{s.label}</div>
+              <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mt-1.5">{label}</div>
             </div>
           </motion.div>
         );

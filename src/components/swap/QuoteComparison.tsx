@@ -5,6 +5,7 @@ import { Check, Clock, Globe, Zap, Sparkles } from "lucide-react";
 import type { NormalizedQuote, QuoteSource } from "@/lib/api/quote-types";
 import type { Token } from "@/lib/tokens";
 import { formatAmount } from "@/lib/format";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -16,10 +17,10 @@ interface Props {
   error?:        string | null;
 }
 
-const SOURCE_META: Record<QuoteSource, { label: string; color: string; tagline: string }> = {
-  "0x":      { label: "0x Settler",     color: "#00E8FF", tagline: "Same-chain · 100+ DEXs" },
-  "lifi":    { label: "LiFi Router",    color: "#9F5FFF", tagline: "Cross-chain · 30+ bridges" },
-  "jupiter": { label: "Jupiter Router", color: "#14F195", tagline: "Solana · all AMMs" },
+const SOURCE_META: Record<QuoteSource, { labelKey: MessageKey; color: string; taglineKey: MessageKey }> = {
+  "0x":      { labelKey: "swap.routerZeroEx",  color: "#00E8FF", taglineKey: "swap.quoteTaglineZeroX"  },
+  "lifi":    { labelKey: "swap.routerLiFi",    color: "#9F5FFF", taglineKey: "swap.quoteTaglineLiFi"   },
+  "jupiter": { labelKey: "swap.routerJupiter", color: "#14F195", taglineKey: "swap.quoteTaglineJupiter" },
 };
 
 /**
@@ -30,12 +31,13 @@ const SOURCE_META: Record<QuoteSource, { label: string; color: string; tagline: 
 export default function QuoteComparison({
   quotes, selected, onSelect, toToken, loading, error,
 }: Props) {
+  const t = useT();
   if (loading && quotes.length === 0) {
     return (
       <div className="rounded-xl border border-cyan/15 bg-cyan/[0.03] p-4 flex items-center gap-3">
         <span className="w-2 h-2 rounded-full bg-cyan animate-pulse" />
         <span className="font-mono text-[11px] text-cyan/80 tracking-widest uppercase">
-          Polling aggregators…
+          {t("swap.quotePolling")}
         </span>
       </div>
     );
@@ -44,7 +46,7 @@ export default function QuoteComparison({
   if (error && quotes.length === 0) {
     return (
       <div className="rounded-xl border border-gold/20 bg-gold/[0.04] p-3">
-        <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-1">Quote error</div>
+        <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-1">{t("swap.quoteError")}</div>
         <p className="font-sans text-xs text-ink-2 leading-relaxed break-words">{error}</p>
       </div>
     );
@@ -60,11 +62,13 @@ export default function QuoteComparison({
         <div className="flex items-center gap-2">
           <Sparkles className="w-3 h-3 text-cyan" />
           <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-            {quotes.length} {quotes.length === 1 ? "route" : "routes"} · pick the best for you
+            {quotes.length === 1
+              ? t("swap.quoteRoutesSingular")
+              : t("swap.quoteRoutesCount", { n: quotes.length })}
           </span>
         </div>
         <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">
-          {loading ? "refreshing…" : "live"}
+          {loading ? t("swap.quoteRefreshing") : t("swap.quoteLive")}
         </span>
       </div>
 
@@ -109,22 +113,22 @@ export default function QuoteComparison({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="font-display font-bold text-xs" style={{ color: meta.color }}>
-                      {meta.label}
+                      {t(meta.labelKey)}
                     </span>
                     {q.isCrossChain && (
                       <span className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-violet/30 bg-violet/5 text-violet tracking-widest uppercase">
                         <Globe className="w-2.5 h-2.5 inline mr-0.5" />
-                        Cross-chain
+                        {t("swap.quoteCrossChain")}
                       </span>
                     )}
                     {isBest && (
                       <span className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-green/30 bg-green/10 text-green tracking-widest uppercase">
-                        Best
+                        {t("swap.quoteBest")}
                       </span>
                     )}
                     {q.isIndicative && (
                       <span className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-gold/20 bg-gold/5 text-gold/80 tracking-widest uppercase">
-                        Indicative
+                        {t("swap.quoteIndicative")}
                       </span>
                     )}
                   </div>
@@ -149,7 +153,7 @@ export default function QuoteComparison({
                 {q.gasUsd !== undefined && q.gasUsd > 0 && (
                   <span className="flex items-center gap-1">
                     <Zap className="w-2.5 h-2.5" />
-                    ~${q.gasUsd.toFixed(2)} gas
+                    {t("swap.bannerGas", { gas: q.gasUsd.toFixed(2) })}
                   </span>
                 )}
                 <span className="flex items-center gap-1">
@@ -166,7 +170,7 @@ export default function QuoteComparison({
                         title={h.protocol}
                       />
                     ))}
-                    <span>{q.hops.length} {q.hops.length === 1 ? "hop" : "hops"}</span>
+                    <span>{q.hops.length === 1 ? t("swap.quoteHopsSingular") : t("swap.quoteHops", { n: q.hops.length })}</span>
                   </span>
                 )}
               </div>

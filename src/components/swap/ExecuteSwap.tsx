@@ -23,6 +23,7 @@ import type { JupQuote, JupSwapResponse } from "@/lib/api/jupiter";
 import type { QuoteSource } from "@/lib/api/quote-types";
 import { cn } from "@/lib/cn";
 import { formatAmount } from "@/lib/format";
+import { useT, t as tImp } from "@/lib/i18n";
 
 interface Props {
   open:        boolean;
@@ -53,6 +54,7 @@ type Phase =
 export default function ExecuteSwap({
   open, onClose, fromToken, toToken, fromChain, toChain, sellAmount, slippageBps, source, recipient,
 }: Props) {
+  const t = useT();
   const { address, isConnected } = useAccount();
   const currentChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
@@ -192,12 +194,12 @@ export default function ExecuteSwap({
     if (!receipt) return;
     if (receipt.status === "success") {
       setPhase("tx_confirmed");
-      toast.success(isCrossChain ? "Source tx confirmed · bridging…" : "Swap confirmed", {
+      toast.success(isCrossChain ? tImp("swap.bridgingToast") : tImp("swap.swapConfirmed"), {
         description: `Tx ${receipt.transactionHash.slice(0, 10)}…${receipt.transactionHash.slice(-6)}`,
       });
     } else {
       setPhase("tx_failed");
-      setError("Transaction reverted on-chain.");
+      setError(tImp("swap.txReverted"));
     }
   }, [receipt, isCrossChain]);
 
@@ -251,7 +253,7 @@ export default function ExecuteSwap({
           args:         [address as Hex, lfQuote.estimate.approvalAddress as Hex],
         });
         if (fresh < BigInt(sellAmount)) {
-          setError("Approval mined but allowance still insufficient. Please retry.");
+          setError(tImp("swap.approvalShort"));
           setPhase("tx_failed");
           return;
         }
@@ -260,7 +262,7 @@ export default function ExecuteSwap({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("user denied");
-      setError(denied ? "Approval rejected by user." : msg);
+      setError(denied ? tImp("swap.approvalRejected") : msg);
       setPhase("tx_failed");
     }
   }, [lfQuote, fromToken, targetChainId, writeContractAsync, publicClient, address, sellAmount]);
@@ -272,7 +274,7 @@ export default function ExecuteSwap({
       if (isJupiter) {
         if (!jupResult || !sol.publicKey) return;
         if (!sol.signTransaction) {
-          setError("Connected Solana wallet doesn't support signTransaction.");
+          setError(tImp("swap.solNoSign"));
           setPhase("tx_failed");
           return;
         }
@@ -298,11 +300,11 @@ export default function ExecuteSwap({
             "confirmed",
           );
           setPhase("tx_confirmed");
-          toast.success("Swap confirmed", {
+          toast.success(tImp("swap.swapConfirmed"), {
             description: `${sig.slice(0, 10)}…${sig.slice(-6)}`,
           });
         } catch (e) {
-          setError(e instanceof Error ? e.message : "Confirmation failed.");
+          setError(e instanceof Error ? e.message : tImp("swap.confirmationFailed"));
           setPhase("tx_failed");
         }
         return;
@@ -312,7 +314,7 @@ export default function ExecuteSwap({
       // Re-verify wallet is on the source chain before broadcasting. The user
       // could have switched networks externally between approval and send.
       if (!targetChainId) {
-        setError("Chain not supported by the selected aggregator.");
+        setError(tImp("swap.chainUnsupported"));
         setPhase("tx_failed");
         return;
       }
@@ -423,9 +425,9 @@ export default function ExecuteSwap({
   }, [source, zxQuote, lfQuote, jupResult, toToken.decimals]);
 
   const explorerBase = isJupiter ? "https://solscan.io" : explorerForChain(fromChain);
-  const sourceLabel  = source === "0x"      ? "0x Settler"
-                     : source === "lifi"    ? "LiFi Router"
-                     :                        "Jupiter Router";
+  const sourceLabel  = source === "0x"      ? t("swap.routerZeroEx")
+                     : source === "lifi"    ? t("swap.routerLiFi")
+                     :                        t("swap.routerJupiter");
   // For Solana, the explorer URL path is /tx/<sig>; we reuse the same prop.
   const txDisplayHash: string | null = isJupiter ? solSig : (txHash ?? null);
 
@@ -438,7 +440,7 @@ export default function ExecuteSwap({
             <div className="rounded-[20px] glass-strong p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <Dialog.Title className="font-display font-extrabold text-base text-ink">
-                  Execute swap
+                  {t("swap.executeSwap")}
                 </Dialog.Title>
                 <Dialog.Close asChild>
                   <button type="button" className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
@@ -471,14 +473,14 @@ export default function ExecuteSwap({
               {/* Pair summary */}
               <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5 min-w-0 mb-3">
                 <div className="flex-1 min-w-0">
-                  <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Pay</div>
+                  <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("zion.pay")}</div>
                   <div className="font-display font-bold text-base text-ink truncate">
                     {formatAmount(estIn, 6)} {fromToken.symbol}
                   </div>
                 </div>
                 <ArrowRight className="w-4 h-4 text-cyan flex-shrink-0" />
                 <div className="flex-1 min-w-0 text-right">
-                  <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Receive (est.)</div>
+                  <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("zion.receive")}</div>
                   <div className="font-display font-bold text-base text-ink truncate">
                     {estOut !== null ? `~${formatAmount(estOut, 6)}` : "—"} {toToken.symbol}
                   </div>
@@ -503,9 +505,9 @@ export default function ExecuteSwap({
               {/* Quote details */}
               {(zxQuote || lfQuote || jupResult) && (
                 <div className="grid grid-cols-2 gap-2 mb-3">
-                  <Cell label="Slippage"  value={`${(slippageBps / 100).toFixed(2)}%`} />
-                  <Cell label="Min received" value={minOut !== null ? `${formatAmount(minOut, 6)} ${toToken.symbol}` : "—"} tone="green" />
-                  {routeText && <Cell label="Route" value={routeText} />}
+                  <Cell label={t("swap.cellSlippage")}    value={`${(slippageBps / 100).toFixed(2)}%`} />
+                  <Cell label={t("swap.cellMinReceived")} value={minOut !== null ? `${formatAmount(minOut, 6)} ${toToken.symbol}` : "—"} tone="green" />
+                  {routeText && <Cell label={t("swap.cellRoute")} value={routeText} />}
                   {durationText && <Cell label="Est. time" value={durationText} />}
                 </div>
               )}
@@ -520,6 +522,7 @@ export default function ExecuteSwap({
                 isConnected={walletReady}
                 isCrossChain={isCrossChain}
                 source={source}
+                t={t}
               />
 
               {/* CTA */}
@@ -530,7 +533,7 @@ export default function ExecuteSwap({
                   className="flex-1 btn btn-secondary text-xs"
                   disabled={phase === "approving" || phase === "needs_permit2_sig" || phase === "needs_tx_signature" || phase === "tx_pending"}
                 >
-                  {phase === "tx_confirmed" ? "Done" : "Cancel"}
+                  {phase === "tx_confirmed" ? t("swap.btnDone") : t("common.cancel")}
                 </button>
                 {phase === "needs_chain_switch" && !isJupiter && (
                   <button type="button" onClick={onSwitchChain} className="flex-1 btn btn-primary text-xs">
@@ -575,7 +578,7 @@ export default function ExecuteSwap({
 // ─── Sub-components ──────────────────────────────────────────────────
 
 function PhaseBlock({
-  phase, error, txHash, explorerBase, receiptLoading, isConnected, isCrossChain, source,
+  phase, error, txHash, explorerBase, receiptLoading, isConnected, isCrossChain, source, t,
 }: {
   phase: Phase;
   error: string | null;
@@ -585,6 +588,7 @@ function PhaseBlock({
   isConnected: boolean;
   isCrossChain: boolean;
   source: QuoteSource;
+  t: (k: import("@/lib/i18n").MessageKey, vars?: Record<string, string | number>) => string;
 }) {
   if (!isConnected) {
     return (
@@ -599,7 +603,7 @@ function PhaseBlock({
 
   switch (phase) {
     case "fetching_quote":
-      return <Stepper text={`Fetching firm quote from ${source === "0x" ? "0x" : source === "lifi" ? "LiFi" : "Jupiter"}…`} />;
+      return <Stepper text={t("swap.fetchingFirm", { label: source === "0x" ? "0x" : source === "lifi" ? "LiFi" : "Jupiter" })} />;
     case "needs_chain_switch":
       return (
         <Card tone="gold" Icon={AlertTriangle}>
@@ -667,7 +671,7 @@ function PhaseBlock({
       return (
         <Card tone="green" Icon={CheckCircle2}>
           <div className="font-display font-bold text-xs text-green mb-0.5">
-            {isCrossChain ? "Source confirmed · bridging" : "Swap confirmed"}
+            {isCrossChain ? t("swap.sourceConfirmed") : t("swap.swapConfirmed")}
           </div>
           {isCrossChain && (
             <p className="font-sans text-[11px] text-ink-2 leading-relaxed mb-1">

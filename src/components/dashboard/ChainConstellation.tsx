@@ -2,13 +2,15 @@
 
 import { motion } from "framer-motion";
 import { CHAINS } from "@/lib/chains";
+import { useT } from "@/lib/i18n";
 
 export default function ChainConstellation() {
+  const t = useT();
   return (
     <div className="rounded-xl border border-white/5 glass-pane overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5">
-        <span className="font-display font-bold text-sm text-ink">Constellation</span>
-        <span className="ml-auto font-mono text-[9px] text-ink-4 tracking-widest uppercase">11 chains</span>
+        <span className="font-display font-bold text-sm text-ink">{t("swap.constellationLabel")}</span>
+        <span className="ml-auto font-mono text-[9px] text-ink-4 tracking-widest uppercase">{t("swap.constellationCount")}</span>
       </div>
       <div className="divide-y divide-white/[0.04]">
         {CHAINS.map((c, i) => (
@@ -32,12 +34,12 @@ export default function ChainConstellation() {
                 <span className="font-display font-bold text-xs text-ink truncate">{c.name}</span>
                 {c.featured && (
                   <span className="font-mono text-[8px] text-cyan border border-cyan/30 bg-cyan/5 px-1 py-0.5 rounded uppercase tracking-widest">
-                    Featured
+                    {t("swap.featured")}
                   </span>
                 )}
                 {c.comingSoon && (
                   <span className="font-mono text-[8px] text-gold border border-gold/30 bg-gold/5 px-1 py-0.5 rounded uppercase tracking-widest">
-                    Soon
+                    {t("swap.soon")}
                   </span>
                 )}
               </div>

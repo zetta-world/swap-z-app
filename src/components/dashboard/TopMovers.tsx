@@ -5,12 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, Flame } from "lucide-react";
 import type { TrendingPair } from "@/lib/api/dexscreener";
 import { formatUsd, formatPct } from "@/lib/format";
+import { useT, t as tImp } from "@/lib/i18n";
 
 interface TrendingResponse { pairs: TrendingPair[]; ts: number; }
 
 async function fetchTrending(): Promise<TrendingPair[]> {
   const res = await fetch("/api/trending");
-  if (!res.ok) throw new Error("Failed to fetch trending");
+  if (!res.ok) throw new Error(tImp("swap.topMoversError"));
   const data = (await res.json()) as TrendingResponse;
   return data.pairs ?? [];
 }
@@ -27,6 +28,7 @@ const CHAIN_COLOR: Record<string, string> = {
 };
 
 export default function TopMovers() {
+  const t = useT();
   const { data, isError, isLoading } = useQuery({
     queryKey: ["top-movers"],
     queryFn: fetchTrending,
@@ -40,9 +42,9 @@ export default function TopMovers() {
     <div className="rounded-xl border border-white/5 glass-pane overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5">
         <Flame className="w-3.5 h-3.5 text-gold" />
-        <span className="font-display font-bold text-sm text-ink">Hot Movers</span>
+        <span className="font-display font-bold text-sm text-ink">{t("swap.topMoversTitle")}</span>
         <span className="ml-auto font-mono text-[9px] text-ink-4 tracking-widest uppercase">
-          {isLoading ? "loading" : isError ? "cached" : "24h live"}
+          {isLoading ? t("explorer.loading") : isError ? t("common.offline") : t("explorer.liveActive")}
         </span>
       </div>
       <div className="divide-y divide-white/[0.04]">

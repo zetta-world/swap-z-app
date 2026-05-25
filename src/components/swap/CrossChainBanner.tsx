@@ -5,6 +5,7 @@ import type { NormalizedQuote } from "@/lib/api/quote-types";
 import type { Token } from "@/lib/tokens";
 import { CHAIN_BY_ID } from "@/lib/chains";
 import { formatAmount } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 
 /**
  * Compact ticker between the From/To boxes that surfaces the cross-chain
@@ -18,6 +19,7 @@ export default function CrossChainBanner({
   fromToken: Token;
   toToken:   Token;
 }) {
+  const t = useT();
   const sellDec = Number(quote.sellAmount) / Math.pow(10, fromToken.decimals);
   const buyDec  = Number(quote.buyAmount)  / Math.pow(10, toToken.decimals);
   const rate    = sellDec > 0 ? buyDec / sellDec : 0;
@@ -51,7 +53,7 @@ export default function CrossChainBanner({
         <div className="flex items-center gap-3 font-mono text-[10px] text-ink-3 flex-wrap">
           <span className="flex items-center gap-1">
             <Workflow className="w-2.5 h-2.5" />
-            via <span className="text-ink-2">{quote.label.replace(/^LiFi\s·\s/, "")}</span>
+            {t("swap.bannerVia")} <span className="text-ink-2">{quote.label.replace(/^LiFi\s·\s/, "")}</span>
           </span>
           <span className="flex items-center gap-1">
             <Clock className="w-2.5 h-2.5" />
@@ -60,7 +62,7 @@ export default function CrossChainBanner({
           {quote.gasUsd !== undefined && quote.gasUsd > 0 && (
             <span className="flex items-center gap-1">
               <Fuel className="w-2.5 h-2.5" />
-              ~${quote.gasUsd.toFixed(2)} gas
+              {t("swap.bannerGas", { gas: quote.gasUsd.toFixed(2) })}
             </span>
           )}
         </div>
