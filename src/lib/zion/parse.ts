@@ -15,7 +15,7 @@ export interface ActionCard {
     | "limit" | "buy_limit"
     | "sell_safe" | "sell_medium" | "sell_aggressive"
     | "stop_loss"
-    | "yield" | "approve"
+    | "approve"
     | string;
   title:      string;
   summary:    string;
@@ -102,8 +102,12 @@ export function parseZionStream(buffer: string): ParsedZion {
       if (parsed && typeof parsed.kind === "string" && parsed.title) {
         cards.push(parsed);
       }
-    } catch {
-      // Malformed JSON — quietly skip; the user still sees the terminal text
+    } catch (err) {
+      // Malformed JSON from the model — skip the card so the rest of the
+      // stream still renders, but log in dev so we can spot recurring issues.
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[zion/parse] malformed ACTION JSON, skipped:", err instanceof Error ? err.message : err, "\nraw:", json.slice(0, 200));
+      }
     }
     i = closeIdx + CLOSE.length;
     // Drop any leading newline immediately after the close tag

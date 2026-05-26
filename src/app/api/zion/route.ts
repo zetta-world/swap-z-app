@@ -173,16 +173,34 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
   const userText = await buildUserMessage(args);
   const modeInstructions = getModeInstructions(args.op);
 
+  // Belt-and-suspenders timeout. Anthropic-side responses occasionally stall
+  // mid-stream; without a hard cap the ReadableStream + frontend spinner sit
+  // forever. 90s is well past a normal Haiku response (~10-20s).
+  const STREAM_TIMEOUT_MS = 90_000;
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
       let closed = false;
+      let timedOut = false;
       const closeOnce = () => { if (!closed) { closed = true; try { controller.close(); } catch {} } };
+
+      const timeoutCtrl = new AbortController();
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        timeoutCtrl.abort();
+      }, STREAM_TIMEOUT_MS);
+
+      // Combine the client-disconnect signal with our own timeout signal so
+      // EITHER condition aborts the upstream Anthropic call.
+      const combinedSignal = signal
+        ? AbortSignal.any([signal, timeoutCtrl.signal])
+        : timeoutCtrl.signal;
 
       // When the client disconnects (user closes drawer / navigates away),
       // close the response stream so the loop unwinds. The Anthropic SDK's
-      // request is also aborted via the signal we pass below, so upstream
-      // tokens stop billing.
+      // request is also aborted via the combined signal we pass below, so
+      // upstream tokens stop billing.
       const onAbort = () => closeOnce();
       signal?.addEventListener("abort", onAbort);
 
@@ -203,7 +221,7 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
             ],
             messages: [{ role: "user", content: userText }],
           },
-          { signal },
+          { signal: combinedSignal },
         );
 
         msgStream.on("text", (delta) => {
@@ -216,13 +234,18 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
         });
         await msgStream.finalMessage();
       } catch (err) {
-        // AbortError is the expected path when the client disconnects — stay quiet.
+        // AbortError is the expected path when the client disconnects or the
+        // upstream call hits our timeout — surface the timeout case to the
+        // user, stay silent on client disconnect.
         const isAbort = err instanceof Error && (err.name === "AbortError" || /aborted/i.test(err.message));
-        if (!isAbort) {
+        if (timedOut && !closed) {
+          controller.enqueue(encoder.encode(`\n\n[ZION error: Upstream stalled past ${STREAM_TIMEOUT_MS / 1000}s. Please retry.]`));
+        } else if (!isAbort) {
           console.warn("[zion] fatal:", err instanceof Error ? err.message : err);
           if (!closed) controller.enqueue(encoder.encode(`[ZION error: Unable to complete analysis. Please retry.]`));
         }
       } finally {
+        clearTimeout(timeoutId);
         signal?.removeEventListener("abort", onAbort);
         closeOnce();
       }
@@ -273,12 +296,31 @@ async function buildArbitragePayload(args: RunArgs): Promise<string> {
       .then((arr) => arr.flat()),
   ]);
 
+  // Dedupe across the three pool sources — GeckoTerminal trending and the
+  // per-chain top lists frequently overlap, and feeding the same pool twice
+  // makes the model treat it as two opportunities (false positives).
+  const poolKey = (network: string, dex: string, base: string, quote: string) =>
+    `${network}:${dex}:${base}/${quote}`.toLowerCase();
+  const seenPools = new Set<string>();
+  const uniqueTrending = trendingPools.filter((p) => {
+    const k = poolKey(p.network, p.dex, p.baseSymbol, p.quoteSymbol);
+    if (seenPools.has(k)) return false;
+    seenPools.add(k);
+    return true;
+  });
+  const uniqueChainPools = chainPools.filter((p) => {
+    const k = poolKey(p.network, p.dex, p.baseSymbol, p.quoteSymbol);
+    if (seenPools.has(k)) return false;
+    seenPools.add(k);
+    return true;
+  });
+
   const lines: string[] = [];
   lines.push(`MIN SPREAD THRESHOLD: ${args.minSpread.toFixed(2)}%`);
   lines.push(`CHAINS WHITELIST: ${args.chainsList.length > 0 ? args.chainsList.join(", ") : "all"}`);
   lines.push("");
   lines.push("TRENDING POOLS (cross-chain):");
-  trendingPools.slice(0, 12).forEach((p) => {
+  uniqueTrending.slice(0, 12).forEach((p) => {
     lines.push(`  - ${p.baseSymbol}/${p.quoteSymbol} | ${p.network}:${p.dex} | $${Math.round(p.priceUsd * 1e6) / 1e6} | TVL $${Math.round(p.tvlUsd)} | vol24h $${Math.round(p.volume24h)} | Δ${p.change24h.toFixed(2)}%`);
   });
 
@@ -290,10 +332,10 @@ async function buildArbitragePayload(args: RunArgs): Promise<string> {
     });
   }
 
-  if (chainPools.length > 0) {
+  if (uniqueChainPools.length > 0) {
     lines.push("");
     lines.push("WHITELISTED CHAIN POOLS:");
-    chainPools.slice(0, 18).forEach((p) => {
+    uniqueChainPools.slice(0, 18).forEach((p) => {
       lines.push(`  - ${p.baseSymbol}/${p.quoteSymbol} | ${p.network}:${p.dex} | $${p.priceUsd.toFixed(6)} | TVL $${Math.round(p.tvlUsd)} | Δ${p.change24h.toFixed(2)}%`);
     });
   }

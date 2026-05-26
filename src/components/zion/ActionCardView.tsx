@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import {
-  Zap, ArrowRight, Bot, Repeat, Target, Coins, TrendingUp, ShieldCheck,
+  Zap, ArrowRight, Bot, Repeat, Target, TrendingUp, ShieldCheck,
   ArrowDownToLine, ArrowUpFromLine, ShieldX, Globe, Crosshair,
   Clock, Wallet, Scale, TrendingDown,
 } from "lucide-react";
@@ -20,7 +20,6 @@ const KIND_META: Record<string, KindMeta> = {
   swap:                  { Icon: Repeat,           labelKey: "zion.cardKindSwap",     tone: "cyan"   },
   bridge:                { Icon: Globe,            labelKey: "zion.cardKindBridge",   tone: "cyan"   },
   approve:               { Icon: ShieldCheck,      labelKey: "zion.cardKindApprove",  tone: "cyan"   },
-  yield:                 { Icon: Coins,            labelKey: "zion.cardKindSwap",     tone: "green"  },
   arbitrage:             { Icon: TrendingUp,       labelKey: "zion.cardKindArb",      tone: "violet" },
   arbitrage_same_chain:  { Icon: TrendingUp,       labelKey: "zion.cardKindArbDex",   tone: "violet" },
   arbitrage_cross_chain: { Icon: Globe,            labelKey: "zion.cardKindArbChain", tone: "violet" },
@@ -32,6 +31,8 @@ const KIND_META: Record<string, KindMeta> = {
   sell_aggressive:       { Icon: TrendingUp,       labelKey: "zion.cardKindSellAggr", tone: "violet" },
   stop_loss:             { Icon: ShieldX,          labelKey: "zion.cardKindStop",     tone: "red"    },
 };
+
+const KNOWN_KINDS = new Set(Object.keys(KIND_META));
 
 const TONE_CFG = {
   cyan:   { text: "text-cyan",   bg: "bg-cyan/10",   border: "border-cyan/30",   glow: "shadow-glow-cyan"   },
@@ -75,6 +76,12 @@ interface Props {
  * a plain approve / arbitrage row) still render compactly.
  */
 export default function ActionCardView({ card, index, onExecute }: Props) {
+  if (!KNOWN_KINDS.has(card.kind) && process.env.NODE_ENV !== "production") {
+    // Unknown kind means the model emitted something outside the foundation
+    // schema. We still render with the "swap" fallback so the card isn't lost,
+    // but warn so the prompt can be tightened.
+    console.warn("[zion/ActionCard] unknown kind, falling back to swap:", card.kind);
+  }
   const meta = KIND_META[card.kind] ?? KIND_META.swap;
   const tone = TONE_CFG[meta.tone];
   const Icon = meta.Icon;
