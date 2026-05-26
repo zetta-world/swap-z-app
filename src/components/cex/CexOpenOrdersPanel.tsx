@@ -34,7 +34,7 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
   const [error,   setError]   = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
@@ -47,22 +47,29 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
           apiSecret:  credentials.apiSecret,
           passphrase: credentials.passphrase,
         }),
+        signal,
       });
       const body = await res.json() as { ok: boolean; orders?: CexOrder[]; error?: string };
       if (!res.ok || !body.ok) throw new Error(humanError(body.error ?? `HTTP ${res.status}`));
       setOrders(body.orders ?? []);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [exchangeId, credentials]);
 
-  // Initial fetch + interval
+  // Initial fetch + interval. AbortController prevents responses from a
+  // previous exchange from overwriting orders for the newly-selected one.
   useEffect(() => {
-    void load();
-    const id = setInterval(load, POLL_MS);
-    return () => clearInterval(id);
+    const ctrl = new AbortController();
+    void load(ctrl.signal);
+    const id = setInterval(() => load(ctrl.signal), POLL_MS);
+    return () => {
+      clearInterval(id);
+      ctrl.abort();
+    };
   }, [load]);
 
   const onCancel = async (order: CexOrder) => {
