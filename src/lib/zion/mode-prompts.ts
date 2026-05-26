@@ -44,12 +44,19 @@ REQUIRED OUTPUT ORDER:
   8. Expected window: "▸ Window: 24h / 2-7d / 2-4 weeks"
   9. "⌬ Awaiting your decision."
 
-THEN emit FIVE action cards in this order:
-  buy_limit (or swap if the user is buying at market)
-  sell_safe
-  sell_medium
-  sell_aggressive
-  stop_loss
+THEN emit FIVE action cards in this order. THIS IS NON-NEGOTIABLE — you
+MUST output all five [[ACTION]] blocks before ending the response, even
+if the narrative section ran longer than budgeted. Truncate the prose,
+not the cards:
+  1. buy_limit (or swap if the user is buying at market)
+  2. sell_safe
+  3. sell_medium
+  4. sell_aggressive
+  5. stop_loss
+
+ALWAYS use the actual token symbols from the FROM TOKEN / TO TOKEN
+sections of the reference data — never write "TOKEN", "<from>", or any
+generic placeholder in your response.
 
 Each card MUST fully populate the trade-thesis fields from the
 foundation schema:
@@ -68,8 +75,10 @@ Do not leave these as terminal-only commentary — populate them in the
 JSON. The card UI surfaces them as a structured trade thesis the user
 can act on directly.
 
-REJECT the trade openly if structural risk is critical: emit a single
-"⌬ NO-GO" line with the reason and skip the cards. Don't dance.
+The ONLY time you skip the five cards is if structural risk is critical
+(honeypot, sub-$25k liquidity, sell tax >10%, sell-only token). In that
+case emit a single "⌬ NO-GO" line with the concrete reason and skip the
+cards entirely — don't dance.
 `;
 
 // ─── ARBITRAGE — same-chain DEX gaps + cross-chain spreads ─────────────
@@ -99,7 +108,9 @@ REQUIRED OUTPUT:
        Include net P/L estimate after gas, slippage, and bridge fees.
   5. "⌬ Awaiting your decision."
 
-EMIT action cards for each tradeable opportunity:
+EMIT one action card PER opportunity row above. If you listed 4 rows,
+emit 4 [[ACTION]] blocks. Do NOT collapse multiple opportunities into a
+single card. Use the appropriate kind:
   arbitrage_same_chain  — two-leg same-chain trade
   arbitrage_cross_chain — bridge + swap
 

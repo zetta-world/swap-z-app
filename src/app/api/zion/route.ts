@@ -154,10 +154,10 @@ interface RunArgs {
 }
 
 const LANG_INSTRUCTION: Record<RunArgs["lang"], string> = {
-  en: "Respond in English.",
-  pt: "Responda em Português (Brasil). Mantenha tickers, símbolos de token, nomes de protocolo, e jargão técnico (swap, slippage, MEV, R/R, TVL, ACTION) em inglês — apenas a prosa explicativa deve ser em português.",
-  es: "Responde en Español. Mantén tickers, símbolos de token, nombres de protocolo y jerga técnica (swap, slippage, MEV, R/R, TVL, ACTION) en inglés — solo la prosa explicativa debe ser en español.",
-  zh: "请用简体中文回复。代币符号、协议名称和技术术语(swap、slippage、MEV、R/R、TVL、ACTION)请保持英文 — 仅解释性文本使用中文。",
+  en: "OUTPUT LANGUAGE: English. All narrative prose, headings and verdict lines must be in English.",
+  pt: "IDIOMA DE SAÍDA OBRIGATÓRIO: Português do Brasil. TODA a prosa narrativa, comentários, motivos, vereditos e linhas explicativas devem estar em português. Não responda em inglês mesmo que as instruções acima estejam em inglês. Mantenha SOMENTE tickers, símbolos de token, nomes de protocolo e jargão técnico fixo (swap, slippage, MEV, R/R, TVL, ACTION, no-go, watch, snipe) em inglês — toda explicação ao redor é em português.",
+  es: "IDIOMA DE SALIDA OBLIGATORIO: Español. TODA la prosa narrativa, comentarios, razones, veredictos y líneas explicativas deben estar en español. No respondas en inglés aunque las instrucciones de arriba estén en inglés. Mantén SOLO tickers, símbolos de token, nombres de protocolo y jerga técnica fija (swap, slippage, MEV, R/R, TVL, ACTION, no-go, watch, snipe) en inglés — toda explicación alrededor va en español.",
+  zh: "输出语言要求(严格执行):简体中文。所有叙述性文本、评论、理由、结论和解释必须用中文,即使上面的指令是英文。只保留代币符号、协议名称和固定技术术语(swap、slippage、MEV、R/R、TVL、ACTION、no-go、watch、snipe)为英文 —— 周围的解释文字一律使用中文。",
 };
 
 async function runZion(args: RunArgs, signal?: AbortSignal) {
@@ -208,7 +208,11 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
         const msgStream = await client.messages.stream(
           {
             model: "claude-haiku-4-5",
-            max_tokens: 1800,
+            // 4000 leaves room for: ~500 tokens of terminal-trace text PLUS
+            // up to 5 fully-populated trade-thesis action cards (each ~250-400
+            // tokens of JSON with entryPrice/exits[]/etc). 1800 was clipping
+            // TRADING mode responses before the 4th and 5th cards landed.
+            max_tokens: 4000,
             system: [
               // Foundation cached — same across every request, gets cache hits
               { type: "text", text: ZION_FOUNDATION,    cache_control: { type: "ephemeral" } },
@@ -216,10 +220,19 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
               { type: "text", text: modeInstructions,   cache_control: { type: "ephemeral" } },
               // Language instruction — short, not cached (varies per request).
               // Placed after the cached blocks so the cache keeps hitting even
-              // when users switch language.
+              // when users switch language. Also repeated inside the user
+              // message so the model can't anchor on the English foundation
+              // and respond in English anyway.
               { type: "text", text: LANG_INSTRUCTION[args.lang] },
             ],
-            messages: [{ role: "user", content: userText }],
+            messages: [{
+              role: "user",
+              // Front-load the language directive so it's the FIRST thing the
+              // model sees in the user turn — system-prompt-tail directives
+              // were being ignored when the rest of the system prompt is
+              // ~10K tokens of English.
+              content: `${LANG_INSTRUCTION[args.lang]}\n\n${userText}`,
+            }],
           },
           { signal: combinedSignal },
         );
