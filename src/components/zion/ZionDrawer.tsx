@@ -41,6 +41,12 @@ export default function ZionDrawer() {
   const abortRef  = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // The user's typed amount is read at call-time via a ref so that typing in
+  // the swap card's input field doesn't recompute `run` on every keystroke
+  // (which used to re-fire the auto-open useEffect and burn Anthropic quota).
+  const amountInRef = useRef(amountIn);
+  amountInRef.current = amountIn;
+
   const run = useCallback(async (runOp: ZionOp, followUp: string) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -54,7 +60,7 @@ export default function ZionDrawer() {
       chain:    fromChain,
       fromAddr: fromToken?.address ?? "",
       toAddr:   toToken?.address   ?? "",
-      amountIn: amountIn ?? "1.0",
+      amountIn: amountInRef.current ?? "1.0",
     });
     if (followUp)            params.set("message", followUp);
     if (runOp === "arbitrage") params.set("minSpread", arbMinSpread);
@@ -102,7 +108,7 @@ export default function ZionDrawer() {
     } finally {
       setStreaming(false);
     }
-  }, [fromChain, fromToken?.address, toToken?.address, amountIn, arbMinSpread, snipeMaxAge, lang, t]);
+  }, [fromChain, fromToken?.address, toToken?.address, arbMinSpread, snipeMaxAge, lang, t]);
 
   // Auto-run when drawer opens or op changes (except for pair changes —
   // those trigger inside trading/pair, but not arbitrage/sniper).
@@ -191,9 +197,8 @@ export default function ZionDrawer() {
                     <button
                       key={o.id}
                       onClick={() => setOp(o.id)}
-                      disabled={streaming}
                       className={cn(
-                        "relative flex flex-col items-center justify-center gap-0.5 px-1 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all disabled:opacity-50 min-w-0",
+                        "relative flex flex-col items-center justify-center gap-0.5 px-1 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all min-w-0",
                         active
                           ? "bg-gold/15 text-gold border border-gold/30"
                           : "text-ink-3 hover:text-ink-2 border border-transparent",

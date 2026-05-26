@@ -3,11 +3,13 @@
 import { useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Globe, Shield, Zap, Workflow, Clock } from "lucide-react";
 import SwapCard from "@/components/swap/SwapCard";
 import BridgeWalletStatus from "./BridgeWalletStatus";
 import { useSwap } from "@/lib/store/swap";
 import { findToken } from "@/lib/tokens";
+import { isValidChain } from "@/lib/validate";
 import { useT } from "@/lib/i18n";
 
 /**
@@ -23,11 +25,27 @@ import { useT } from "@/lib/i18n";
 export default function BridgeView() {
   const { fromToken, toToken, setFromToken, setToToken } = useSwap();
   const t = useT();
+  const params = useSearchParams();
 
-  // On first mount, if the user landed here with a same-chain pair selected
-  // we seed a sensible cross-chain default (ETH on Ethereum → USDC on Base).
-  // Power users with an already-cross-chain pair keep theirs.
+  // On first mount, decide what pair to show:
+  //   1. URL hint "?from=chain:addr&to=chain:addr" wins (the home swap card
+  //      links here with the user's active pair preserved).
+  //   2. Otherwise, if an already-cross-chain pair is selected, keep it.
+  //   3. Otherwise, seed a sensible default (ETH on Ethereum → USDC on Base).
   useEffect(() => {
+    const tokenFromHint = (raw: string | null) => {
+      if (!raw) return undefined;
+      const [chain, addr] = raw.split(":");
+      if (!chain || !addr || !isValidChain(chain)) return undefined;
+      return findToken(chain, addr);
+    };
+    const hintFrom = tokenFromHint(params.get("from"));
+    const hintTo   = tokenFromHint(params.get("to"));
+    if (hintFrom && hintTo && hintFrom.chain !== hintTo.chain) {
+      setFromToken(hintFrom);
+      setToToken(hintTo);
+      return;
+    }
     if (fromToken && toToken && fromToken.chain !== toToken.chain) return;
     const ethEth  = findToken("ethereum", "ETH");
     const usdcBase = findToken("base",     "USDC");

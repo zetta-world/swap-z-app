@@ -326,7 +326,7 @@ export default function ExecuteSwap({
       if (source === "0x") {
         if (!zxQuote) return;
         if (!zxQuote.transaction?.to || !zxQuote.transaction?.data) {
-          setError("0x returned an incomplete quote. Please retry.");
+          setError(tImp("swap.executeIncompleteQuote0x"));
           setPhase("tx_failed");
           return;
         }
@@ -362,7 +362,7 @@ export default function ExecuteSwap({
       if (!lfQuote) return;
       const tx = lfQuote.transactionRequest;
       if (!tx || !tx.to || !tx.data) {
-        setError("LiFi returned an incomplete transaction. Please retry.");
+        setError(tImp("swap.executeIncompleteTxLiFi"));
         setPhase("tx_failed");
         return;
       }
@@ -378,7 +378,7 @@ export default function ExecuteSwap({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("user denied");
-      setError(denied ? "Signature rejected by user." : msg);
+      setError(denied ? tImp("swap.executeSigRejected") : msg);
       setPhase("tx_failed");
     }
   }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, signTypedDataAsync, sendTransactionAsync, targetChainId, currentChainId]);
@@ -435,8 +435,8 @@ export default function ExecuteSwap({
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[60] bg-bg/80 backdrop-blur-sm animate-fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-[60] w-[95%] max-w-md -translate-x-1/2 -translate-y-1/2 outline-none">
-          <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="aurora-border p-px">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-[60] w-[95%] max-w-md -translate-x-1/2 -translate-y-1/2 outline-none max-h-[90vh]">
+          <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="aurora-border p-px max-h-[90vh] overflow-y-auto rounded-[20px]">
             <div className="rounded-[20px] glass-strong p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <Dialog.Title className="font-display font-extrabold text-base text-ink">
@@ -493,10 +493,10 @@ export default function ExecuteSwap({
                   <Globe className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
                   <div className="min-w-0">
                     <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">
-                      Custom recipient
+                      {t("swap.executeCustomRecipient")}
                     </div>
                     <p className="font-mono text-[11px] text-ink-2 truncate">
-                      Deliver to {recipient.slice(0, 8)}…{recipient.slice(-6)}
+                      {t("swap.executeDeliverTo", { addr: `${recipient.slice(0, 8)}…${recipient.slice(-6)}` })}
                     </p>
                   </div>
                 </div>
@@ -508,7 +508,7 @@ export default function ExecuteSwap({
                   <Cell label={t("swap.cellSlippage")}    value={`${(slippageBps / 100).toFixed(2)}%`} />
                   <Cell label={t("swap.cellMinReceived")} value={minOut !== null ? `${formatAmount(minOut, 6)} ${toToken.symbol}` : "—"} tone="green" />
                   {routeText && <Cell label={t("swap.cellRoute")} value={routeText} />}
-                  {durationText && <Cell label="Est. time" value={durationText} />}
+                  {durationText && <Cell label={t("swap.executeEstTime")} value={durationText} />}
                 </div>
               )}
 
@@ -537,22 +537,22 @@ export default function ExecuteSwap({
                 </button>
                 {phase === "needs_chain_switch" && !isJupiter && (
                   <button type="button" onClick={onSwitchChain} className="flex-1 btn btn-primary text-xs">
-                    Switch network
+                    {t("swap.executeSwitchNetwork")}
                   </button>
                 )}
                 {phase === "needs_approval" && (
                   <button type="button" onClick={onApprove} className="flex-1 btn btn-primary text-xs">
-                    Approve {fromToken.symbol}
+                    {t("swap.executeApproveToken", { symbol: fromToken.symbol })}
                   </button>
                 )}
                 {(phase === "needs_permit2_sig" || phase === "needs_tx_signature") && (
                   <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
-                    Sign &amp; send
+                    {t("swap.executeSignAndSend")}
                   </button>
                 )}
                 {phase === "tx_failed" && (zxQuote || lfQuote || jupResult) && (
                   <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
-                    Retry
+                    {t("swap.executeRetry")}
                   </button>
                 )}
               </div>
@@ -561,11 +561,11 @@ export default function ExecuteSwap({
               <p className="font-mono text-[10px] text-ink-4 text-center mt-3 leading-relaxed">
                 {(zxQuote || lfQuote || jupResult)
                   ? source === "0x"
-                    ? "Powered by 0x Settler · Permit2 · no custody"
+                    ? t("swap.executePoweredBy0x")
                     : source === "lifi"
-                      ? "Powered by LiFi · bridges + DEX aggregators · no custody"
-                      : "Powered by Jupiter · Solana DEX aggregator · no custody"
-                  : `Fetching firm quote from ${sourceLabel}…`}
+                      ? t("swap.executePoweredByLiFi")
+                      : t("swap.executePoweredByJupiter")
+                  : t("swap.fetchingFirm", { label: sourceLabel })}
               </p>
             </div>
           </motion.div>
@@ -593,9 +593,9 @@ function PhaseBlock({
   if (!isConnected) {
     return (
       <Card tone="gold" Icon={AlertTriangle}>
-        <div className="font-display font-bold text-xs text-gold mb-0.5">Wallet not connected</div>
+        <div className="font-display font-bold text-xs text-gold mb-0.5">{t("swap.executeWalletNotConnected")}</div>
         <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-          Connect a wallet to execute the swap. Top-right of the topbar.
+          {t("swap.executeWalletConnectBody")}
         </p>
       </Card>
     );
@@ -607,42 +607,42 @@ function PhaseBlock({
     case "needs_chain_switch":
       return (
         <Card tone="gold" Icon={AlertTriangle}>
-          <div className="font-display font-bold text-xs text-gold mb-0.5">Wrong network</div>
+          <div className="font-display font-bold text-xs text-gold mb-0.5">{t("swap.executeWrongNetwork")}</div>
           <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-            Switch your wallet to the source chain to continue.
+            {t("swap.executeWrongNetworkBody")}
           </p>
         </Card>
       );
     case "needs_approval":
       return (
         <Card tone="cyan" Icon={CheckCircle2}>
-          <div className="font-display font-bold text-xs text-cyan mb-0.5">Approval needed</div>
+          <div className="font-display font-bold text-xs text-cyan mb-0.5">{t("swap.executeApprovalNeeded")}</div>
           <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
             {source === "lifi"
-              ? "LiFi needs permission to spend your tokens. One-time approval, then the swap signs."
-              : "Approve token spending. One-time, then the swap signs."}
+              ? t("swap.executeApprovalLiFi")
+              : t("swap.executeApprovalGeneric")}
           </p>
         </Card>
       );
     case "approving":
-      return <Stepper text="Waiting for approval to be mined…" />;
+      return <Stepper text={t("swap.executeWaitingApproval")} />;
     case "needs_permit2_sig":
       return (
         <Card tone="cyan" Icon={CheckCircle2}>
-          <div className="font-display font-bold text-xs text-cyan mb-0.5">Ready to sign</div>
+          <div className="font-display font-bold text-xs text-cyan mb-0.5">{t("swap.executeReadyToSign")}</div>
           <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-            You&apos;ll first sign a gasless <b>Permit2</b> approval, then a single transaction. No separate approve tx.
+            {t("swap.executePermit2Hint")}
           </p>
         </Card>
       );
     case "needs_tx_signature":
       return (
         <Card tone="cyan" Icon={CheckCircle2}>
-          <div className="font-display font-bold text-xs text-cyan mb-0.5">Ready to send</div>
+          <div className="font-display font-bold text-xs text-cyan mb-0.5">{t("swap.executeReadyToSend")}</div>
           <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
             {isCrossChain
-              ? "Your wallet will confirm the source-chain transaction. The bridge then delivers and swaps on the destination chain."
-              : "Your wallet will prompt you to confirm the transaction."}
+              ? t("swap.executeReadyToSendCross")
+              : t("swap.executeReadyToSendSame")}
           </p>
         </Card>
       );
@@ -650,7 +650,7 @@ function PhaseBlock({
       return (
         <Card tone="cyan" Icon={Loader2} spinning>
           <div className="font-display font-bold text-xs text-cyan mb-0.5">
-            {isCrossChain ? "Confirming source tx…" : "Confirming on-chain…"}
+            {isCrossChain ? t("swap.executeConfirmingSource") : t("swap.executeConfirmingOnChain")}
           </div>
           {txHash && (
             <a
@@ -663,7 +663,7 @@ function PhaseBlock({
             </a>
           )}
           {receiptLoading && (
-            <p className="font-sans text-[11px] text-ink-3 mt-1">Waiting for block inclusion…</p>
+            <p className="font-sans text-[11px] text-ink-3 mt-1">{t("swap.executeBlockInclusion")}</p>
           )}
         </Card>
       );
@@ -675,7 +675,7 @@ function PhaseBlock({
           </div>
           {isCrossChain && (
             <p className="font-sans text-[11px] text-ink-2 leading-relaxed mb-1">
-              Funds are being bridged. Final delivery typically takes a few minutes depending on the route.
+              {t("swap.executeBridgeInProgress")}
             </p>
           )}
           {txHash && (
@@ -685,7 +685,7 @@ function PhaseBlock({
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 font-mono text-[11px] text-green/80 hover:text-green"
             >
-              View on explorer <ExternalLink className="w-3 h-3" />
+              {t("swap.executeViewExplorer")} <ExternalLink className="w-3 h-3" />
             </a>
           )}
         </Card>
@@ -693,9 +693,9 @@ function PhaseBlock({
     case "tx_failed":
       return (
         <Card tone="red" Icon={AlertTriangle}>
-          <div className="font-display font-bold text-xs text-red mb-0.5">Failed</div>
+          <div className="font-display font-bold text-xs text-red mb-0.5">{t("swap.executeFailed")}</div>
           <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-            {error ?? "Transaction failed. Try again or refresh the quote."}
+            {error ?? t("swap.executeTxFailedGeneric")}
           </p>
         </Card>
       );

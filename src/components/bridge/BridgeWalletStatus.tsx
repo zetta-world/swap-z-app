@@ -41,10 +41,16 @@ export default function BridgeWalletStatus() {
   const dstIsSolana = dstChain === "solana";
 
   const srcWalletReady = srcIsSolana ? sol.connected : isConnected;
-  // Destination is satisfied when EITHER the appropriate wallet is connected
-  // OR the user has overridden with a custom recipient address.
+  // A custom recipient counts as "ready" only when the address actually
+  // matches the destination chain family. A malformed string used to slip
+  // through here and only fail downstream at quote time.
+  const recipientValid = recipient
+    ? (dstIsSolana
+        ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(recipient.trim())
+        : /^0x[0-9a-fA-F]{40}$/.test(recipient.trim()))
+    : false;
   const dstWalletReady = recipient
-    ? true
+    ? recipientValid
     : dstIsSolana ? sol.connected : isConnected;
 
   return (

@@ -87,20 +87,26 @@ export const useSwap = create<SwapState>((set, get) => ({
   selectedSource: null,
 
   setFromChain: (c) => {
-    const { fromToken, toToken } = get();
-    // If chain is changing, find appropriate default tokens for the new chain
-    if (c !== get().fromChain) {
-      const newFrom =
-        (fromToken && fromToken.chain === c ? fromToken : undefined) ??
-        DEFAULT_TOKENS.find((t) => t.chain === c && t.address === "native") ??
-        DEFAULT_TOKENS.find((t) => t.chain === c);
-      const newTo = defaultCounterpart(c, newFrom?.address);
-      set({ fromChain: c, toChain: c, fromToken: newFrom, toToken: newTo });
-      // toToken stays on the same chain via this reset
-      void toToken;
-    } else {
+    const oldFromChain = get().fromChain;
+    if (c === oldFromChain) {
       set({ fromChain: c });
+      return;
     }
+    const { fromToken, toToken } = get();
+    const newFrom =
+      (fromToken && fromToken.chain === c ? fromToken : undefined) ??
+      DEFAULT_TOKENS.find((t) => t.chain === c && t.address === "native") ??
+      DEFAULT_TOKENS.find((t) => t.chain === c);
+    // Preserve cross-chain intent: if the user deliberately picked a toToken
+    // on a different chain than the old fromChain, that's a bridge pair —
+    // keep the destination side instead of collapsing it to the new chain.
+    const wasCrossChain = !!(toToken && toToken.chain !== oldFromChain);
+    if (wasCrossChain && toToken) {
+      set({ fromChain: c, toChain: toToken.chain, fromToken: newFrom, toToken });
+      return;
+    }
+    const newTo = defaultCounterpart(c, newFrom?.address);
+    set({ fromChain: c, toChain: c, fromToken: newFrom, toToken: newTo });
   },
 
   setToChain: (c) => set({ toChain: c }),
