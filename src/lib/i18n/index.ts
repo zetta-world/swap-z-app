@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useUI } from "@/lib/store/ui";
 import { messages, type MessageKey } from "./messages";
 
@@ -41,15 +42,24 @@ function lookup(catalog: Record<string, unknown>, key: string): string {
  *   <h1>{t("swap.titleSwap")}</h1>
  *   <p>{t("zion.proposalsPlural", { n: 3 })}</p>
  *
+ * IMPORTANT: the returned function reference is STABLE across renders
+ * as long as `lang` doesn't change. This matters because consumers add
+ * `t` to useEffect / useCallback dependency arrays — a fresh reference
+ * on every render would cause infinite re-fires (and previously hung
+ * the ZION drawer when the drawer re-streamed on every render).
+ *
  * The MessageKey type gives full autocomplete + compile-time safety on
  * the key names; runtime fallback handles any drift.
  */
 export function useT() {
   const lang = useUI((s) => s.lang);
-  const catalog = messages[lang] ?? messages.en;
-  return (key: MessageKey, vars?: Record<string, string | number>): string => {
-    return format(lookup(catalog as Record<string, unknown>, key), vars);
-  };
+  return useCallback(
+    (key: MessageKey, vars?: Record<string, string | number>): string => {
+      const catalog = messages[lang] ?? messages.en;
+      return format(lookup(catalog as Record<string, unknown>, key), vars);
+    },
+    [lang],
+  );
 }
 
 /**
