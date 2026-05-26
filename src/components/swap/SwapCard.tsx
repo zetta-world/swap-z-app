@@ -319,10 +319,11 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
 
           {/* Cross-chain detected — push user to /bridge (the dedicated page).
               Same-chain swaps happen here; cross-chain has its own UX so the
-              card stays focused. */}
+              card stays focused. We pass the active pair via query params so
+              /bridge picks them up instead of resetting to its default ETH→USDC. */}
           {!lockedMode && isCrossChain && fromToken && toToken && (
             <Link
-              href="/bridge"
+              href={`/bridge?from=${encodeURIComponent(`${fromToken.chain}:${fromToken.address}`)}&to=${encodeURIComponent(`${toToken.chain}:${toToken.address}`)}`}
               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-violet/30 bg-violet/[0.08] hover:bg-violet/[0.14] hover:border-violet/50 transition-all group min-w-0"
             >
               <Globe className="w-3.5 h-3.5 text-violet flex-shrink-0" />
@@ -376,7 +377,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
 
           {/* Disclaimer */}
           <p className="font-mono text-[10px] text-ink-4 text-center leading-relaxed">
-            Powered by 0x Settler &amp; LiFi · multi-aggregator · non-custodial
+            {t("swap.poweredByMultiAggregator")}
           </p>
         </div>
       </div>

@@ -72,7 +72,7 @@ export default function CexTradePanel({
   const [recentOrder, setRecentOrder] = useState<CexOrder | null>(null);
 
   // ─── Orderbook polling ──────────────────────────────────────────────
-  const loadOrderbook = useCallback(async () => {
+  const loadOrderbook = useCallback(async (signal?: AbortSignal) => {
     setObLoading(true);
     setObError(null);
     try {
@@ -87,26 +87,34 @@ export default function CexTradePanel({
           passphrase: credentials.passphrase,
           depth:      10,
         }),
+        signal,
       });
       const body = await res.json() as CexOrderbookSnapshot & { error?: string };
       if (!res.ok || !body.ok) throw new Error(humanError(body.error ?? `HTTP ${res.status}`));
       setOrderbook(body);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setObError(e instanceof Error ? e.message : String(e));
     } finally {
-      setObLoading(false);
+      if (!signal?.aborted) setObLoading(false);
     }
   }, [exchangeId, symbol, credentials]);
 
-  // Initial fetch + poll
+  // Initial fetch + poll. The AbortController guards against responses from
+  // the prior symbol/exchange clobbering the new one's state when the user
+  // switches mid-flight.
   useEffect(() => {
-    void loadOrderbook();
-    const id = setInterval(loadOrderbook, ORDERBOOK_POLL_MS);
-    return () => clearInterval(id);
+    const ctrl = new AbortController();
+    void loadOrderbook(ctrl.signal);
+    const id = setInterval(() => loadOrderbook(ctrl.signal), ORDERBOOK_POLL_MS);
+    return () => {
+      clearInterval(id);
+      ctrl.abort();
+    };
   }, [loadOrderbook]);
 
   // ─── Balances ───────────────────────────────────────────────────────
-  const loadBalances = useCallback(async () => {
+  const loadBalances = useCallback(async (signal?: AbortSignal) => {
     setBLoading(true);
     try {
       const res = await fetch("/api/cex/balance", {
@@ -119,13 +127,23 @@ export default function CexTradePanel({
           passphrase: credentials.passphrase,
           withUsd:    true,
         }),
+        signal,
       });
       const body = await res.json() as { ok: boolean; balances?: CexBalance[]; error?: string };
       if (res.ok && body.ok && body.balances) setBalances(body.balances);
-    } catch { /* */ } finally { setBLoading(false); }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      /* swallow non-abort balance errors — sticky balances UI is acceptable */
+    } finally {
+      if (!signal?.aborted) setBLoading(false);
+    }
   }, [exchangeId, credentials]);
 
-  useEffect(() => { void loadBalances(); }, [loadBalances]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    void loadBalances(ctrl.signal);
+    return () => ctrl.abort();
+  }, [loadBalances]);
 
   // ─── Derived ───────────────────────────────────────────────────────
   const baseAsset  = symbol.split(/[\/\-]/)[0];
