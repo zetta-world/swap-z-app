@@ -29,6 +29,16 @@ export interface ActionCard {
   confidence?: "high" | "medium" | "low" | string;
   risk?:      "safe" | "caution" | "risky" | "danger" | string;
   expiresIn?: string;
+  /**
+   * Top-level probability the card's primary thesis plays out (0-100 as a
+   * string, e.g. "65"). For ladder cards (buy_limit / swap with exits[])
+   * this represents the BALANCED-target probability — it should match
+   * exits[1].probability. For single-target cards (sell_*, stop_loss,
+   * arbitrage_*, sniper_*) it's the chance the trigger fires within the
+   * timeframe. Free-form string so locale-formatted variants are allowed
+   * (e.g. "~65", "65"), the UI strips non-digits to render.
+   */
+  probability?: string;
 
   // ─── Extended trade-thesis fields ──────────────────────────────────
   // The model fills these when the card is a tradeable proposal. Free-form

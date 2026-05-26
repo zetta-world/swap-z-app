@@ -4,14 +4,17 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
 import {
-  Sparkles, X, Send, Zap, RefreshCw, TrendingUp, Globe, Crosshair, FileText,
+  Sparkles, X, Send, RefreshCw, TrendingUp, Globe, Crosshair, FileText,
+  ChevronDown, ChevronUp, RotateCcw, Loader2, Sparkle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import ActionCardView from "./ActionCardView";
 import ZionExecuteRouter from "./ZionExecuteRouter";
+import TokenSelector from "@/components/swap/TokenSelector";
 import type { ZionOp } from "@/lib/zion/mode-prompts";
+import type { Token } from "@/lib/tokens";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
@@ -32,18 +35,31 @@ export default function ZionDrawer() {
   const [streaming, setStreaming] = useState(false);
   const [question, setQuestion] = useState("");
   const [executing, setExecuting] = useState<ActionCard | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
 
-  // Arb-mode filters
+  // Local pair override — lets the user analyze ANY pair from inside the
+  // drawer without committing to it on the swap card. `null` means "use the
+  // active swap pair" (the default + a one-click "reset" puts us back there).
+  const [pairOverrideFrom, setPairOverrideFrom] = useState<Token | null>(null);
+  const [pairOverrideTo,   setPairOverrideTo  ] = useState<Token | null>(null);
+
+  // Arb-mode filter
   const [arbMinSpread, setArbMinSpread] = useState("0.5");
-  // Sniper-mode filters
+  // Sniper-mode filter
   const [snipeMaxAge,  setSnipeMaxAge]  = useState<"1h" | "6h" | "24h" | "7d">("24h");
 
   const abortRef  = useRef<AbortController | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // The user's typed amount is read at call-time via a ref so that typing in
-  // the swap card's input field doesn't recompute `run` on every keystroke
-  // (which used to re-fire the auto-open useEffect and burn Anthropic quota).
+  // Effective pair: override wins when set, else the swap store. The chain
+  // tracks the FROM side because ZION analyses are anchored to the source
+  // chain.
+  const effectiveFromToken = pairOverrideFrom ?? fromToken;
+  const effectiveToToken   = pairOverrideTo   ?? toToken;
+  const effectiveChain     = effectiveFromToken?.chain ?? fromChain;
+  const hasOverride        = !!(pairOverrideFrom || pairOverrideTo);
+
+  // Read amountIn at call-time via a ref so typing in the swap card doesn't
+  // recompute the run callback (which would re-fire the auto-open effect).
   const amountInRef = useRef(amountIn);
   amountInRef.current = amountIn;
 
@@ -57,15 +73,14 @@ export default function ZionDrawer() {
 
     const params = new URLSearchParams({
       op:       followUp ? "ask" : runOp,
-      chain:    fromChain,
-      fromAddr: fromToken?.address ?? "",
-      toAddr:   toToken?.address   ?? "",
+      chain:    effectiveChain,
+      fromAddr: effectiveFromToken?.address ?? "",
+      toAddr:   effectiveToToken?.address   ?? "",
       amountIn: amountInRef.current ?? "1.0",
     });
-    if (followUp)            params.set("message", followUp);
+    if (followUp)              params.set("message",   followUp);
     if (runOp === "arbitrage") params.set("minSpread", arbMinSpread);
     if (runOp === "sniper")    params.set("maxAge",    snipeMaxAge);
-    // Forward UI language so the server prompt tells Claude which idiom to reply in
     params.set("lang", lang);
 
     try {
@@ -78,8 +93,6 @@ export default function ZionDrawer() {
           const body = await res.text().catch(() => "");
           setBuffer(`[${body || res.statusText}]\n\n${t("zion.badRequest")}`);
         } else if (res.status === 503) {
-          // Server is reachable but ANTHROPIC_API_KEY is missing — show the
-          // actionable hint instead of the generic offline message.
           const body = await res.text().catch(() => "");
           setBuffer(`[${t("zion.notConfigured")}]\n\n${body || t("zion.notConfiguredHint")}`);
         } else {
@@ -96,10 +109,6 @@ export default function ZionDrawer() {
         if (done) break;
         acc += decoder.decode(value, { stream: true });
         setBuffer(acc);
-        requestAnimationFrame(() => {
-          const el = scrollRef.current;
-          if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-        });
       }
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
@@ -108,10 +117,9 @@ export default function ZionDrawer() {
     } finally {
       setStreaming(false);
     }
-  }, [fromChain, fromToken?.address, toToken?.address, arbMinSpread, snipeMaxAge, lang, t]);
+  }, [effectiveChain, effectiveFromToken?.address, effectiveToToken?.address, arbMinSpread, snipeMaxAge, lang, t]);
 
-  // Auto-run when drawer opens or op changes (except for pair changes —
-  // those trigger inside trading/pair, but not arbitrage/sniper).
+  // Auto-run when drawer opens or op changes.
   useEffect(() => {
     if (!zionOpen) {
       abortRef.current?.abort();
@@ -122,13 +130,15 @@ export default function ZionDrawer() {
     return () => abortRef.current?.abort();
   }, [zionOpen, op, run]);
 
-  // For trading/pair, re-run when the user changes their selected pair
+  // For trading/pair, re-run when the EFFECTIVE pair changes.
   useEffect(() => {
     if (!zionOpen) return;
     if (op !== "trading" && op !== "pair") return;
     run(op, "");
+    // Intentionally only re-fires on pair-symbol changes — run() is stable
+    // enough that we don't want every filter change to re-trigger this path.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromToken?.symbol, toToken?.symbol]);
+  }, [effectiveFromToken?.symbol, effectiveToToken?.symbol]);
 
   const onAsk = (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,6 +150,27 @@ export default function ZionDrawer() {
 
   const parsed = useMemo(() => parseZionStream(buffer), [buffer]);
   const opMeta = OPS.find((o) => o.id === op)!;
+
+  // Stream stage — derived from buffer content to drive a clean progress UI
+  // in place of the raw terminal trace.
+  const streamStage: "idle" | "preparing" | "thinking" | "rendering" | "complete" = (() => {
+    if (!streaming && parsed.cards.length > 0) return "complete";
+    if (!streaming && !buffer)                  return "idle";
+    if (!streaming)                             return "complete";
+    if (!buffer)                                return "preparing";
+    if (parsed.cards.length > 0 || parsed.inProgress) return "rendering";
+    return "thinking";
+  })();
+
+  const onResetPair = () => {
+    setPairOverrideFrom(null);
+    setPairOverrideTo(null);
+  };
+
+  // Pair selector visible in every mode. For trading/pair it IS the subject
+  // of the analysis; for arb/sniper it acts as a focus filter the prompt
+  // honors (bias opportunities toward this token if set, else scan freely).
+  const showPairSelector = true;
 
   return (
     <Dialog.Root open={zionOpen} onOpenChange={setZion}>
@@ -217,18 +248,42 @@ export default function ZionDrawer() {
 
             {/* Mode-specific context */}
             <div className="px-5 pt-3 flex-shrink-0">
-              {(op === "trading" || op === "pair") && (
-                <div className="rounded-xl border border-white/5 bg-bg-1/40 p-3">
-                  <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">
-                    {t("zion.contextAnalyzing")}
-                  </div>
+              {showPairSelector && (
+                <div className="rounded-xl border border-white/5 bg-bg-1/40 p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="font-display font-bold text-sm text-ink truncate">
-                      {fromToken?.symbol ?? "—"}{" "}
-                      <span className="text-ink-3 mx-1">→</span>{" "}
-                      {toToken?.symbol ?? "—"}
+                    <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">
+                      {t("zion.overridePair")}
                     </div>
-                    <span className="font-mono text-[9px] text-ink-3 tracking-wider uppercase">{fromChain}</span>
+                    {hasOverride && (
+                      <button
+                        type="button"
+                        onClick={onResetPair}
+                        className="inline-flex items-center gap-1 font-mono text-[9px] text-cyan/80 hover:text-cyan tracking-widest uppercase"
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        {t("zion.overrideReset")}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex-1 min-w-0">
+                      <TokenSelector
+                        value={effectiveFromToken}
+                        onChange={(tk) => setPairOverrideFrom(tk)}
+                        side="from"
+                      />
+                    </div>
+                    <span className="text-ink-3 text-xs flex-shrink-0">→</span>
+                    <div className="flex-1 min-w-0">
+                      <TokenSelector
+                        value={effectiveToToken}
+                        onChange={(tk) => setPairOverrideTo(tk)}
+                        side="to"
+                      />
+                    </div>
+                  </div>
+                  <div className="font-mono text-[9px] text-ink-4 tracking-wider uppercase text-right">
+                    {effectiveChain}
                   </div>
                 </div>
               )}
@@ -285,26 +340,20 @@ export default function ZionDrawer() {
             </div>
 
             {/* Body */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
-              {/* Terminal */}
-              <div className="rounded-xl border border-gold/15 bg-black/40 overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-white/[0.02]">
-                  <span className="w-2 h-2 rounded-full bg-red/60" />
-                  <span className="w-2 h-2 rounded-full bg-gold/60" />
-                  <span className="w-2 h-2 rounded-full bg-green/60" />
-                  <span className="ml-2 font-mono text-[10px] text-ink-3 tracking-wider">
-                    {t("zion.terminal", { label: t(opMeta.labelKey).toLowerCase() })}
-                  </span>
-                  <div className="flex-1" />
-                  <span className="flex items-center gap-1 font-mono text-[9px] text-gold/70 tracking-widest uppercase">
-                    <Zap className="w-2.5 h-2.5" /> {streaming ? t("zion.streamingState") : t("zion.idle")}
-                  </span>
-                </div>
-                <div className="p-4 font-mono text-[11px] sm:text-xs leading-[1.75] whitespace-pre-wrap min-h-[220px] text-ink-2">
-                  {parsed.visible || (streaming ? "" : t("zion.awaitingAnalysis"))}
-                  {streaming && <span className="term-cursor" />}
-                </div>
-              </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+              {/* Streaming / empty / complete indicator
+                  We no longer dump the raw terminal trace by default — the
+                  cards ARE the deliverable. A small expandable section lets
+                  power users still see the underlying analysis text if they
+                  want context. */}
+              {streamStage !== "complete" && (
+                <StreamIndicator
+                  stage={streamStage}
+                  hasBuffer={!!buffer}
+                  cardsCount={parsed.cards.length}
+                  t={t}
+                />
+              )}
 
               {/* Action cards */}
               {parsed.cards.length > 0 && (
@@ -314,10 +363,32 @@ export default function ZionDrawer() {
                       ? t("zion.proposalsSingular")
                       : t("zion.proposalsPlural", { n: parsed.cards.length })}
                   </div>
-                  {parsed.cards.map((c, i) => (
-                    <ActionCardView key={i} card={c} index={i} onExecute={setExecuting} />
-                  ))}
+                  <AnimatePresence initial={false}>
+                    {parsed.cards.map((c, i) => (
+                      <ActionCardView key={i} card={c} index={i} onExecute={setExecuting} />
+                    ))}
+                  </AnimatePresence>
                 </div>
+              )}
+
+              {/* "Show analysis text" expandable section — collapsed by default.
+                  Hidden until there's actually something to show. */}
+              {parsed.visible && (
+                <details
+                  className="rounded-xl border border-white/5 bg-bg-1/30 overflow-hidden"
+                  open={showDetails}
+                  onToggle={(e) => setShowDetails((e.target as HTMLDetailsElement).open)}
+                >
+                  <summary className="cursor-pointer list-none px-3 py-2 flex items-center gap-2 font-mono text-[10px] text-ink-3 hover:text-ink-2 tracking-widest uppercase">
+                    {showDetails
+                      ? <ChevronUp   className="w-3 h-3" />
+                      : <ChevronDown className="w-3 h-3" />}
+                    {showDetails ? t("zion.hideDetails") : t("zion.showDetails")}
+                  </summary>
+                  <div className="px-4 pb-4 pt-1 font-mono text-[11px] leading-[1.7] whitespace-pre-wrap text-ink-3 border-t border-white/5">
+                    {parsed.visible}
+                  </div>
+                </details>
               )}
             </div>
 
@@ -351,5 +422,49 @@ export default function ZionDrawer() {
 
       <ZionExecuteRouter card={executing} onClose={() => setExecuting(null)} />
     </Dialog.Root>
+  );
+}
+
+// ─── Stream stage indicator ──────────────────────────────────────────────
+
+function StreamIndicator({
+  stage, hasBuffer, cardsCount, t,
+}: {
+  stage:      "idle" | "preparing" | "thinking" | "rendering" | "complete";
+  hasBuffer:  boolean;
+  cardsCount: number;
+  t:          (k: MessageKey, vars?: Record<string, string | number>) => string;
+}) {
+  void hasBuffer;
+  void cardsCount;
+
+  if (stage === "idle") {
+    return (
+      <div className="rounded-xl border border-white/5 bg-bg-1/30 p-6 text-center">
+        <Sparkle className="w-5 h-5 text-gold/40 mx-auto mb-2" />
+        <p className="font-mono text-[11px] text-ink-3">{t("zion.noCardsYet")}</p>
+      </div>
+    );
+  }
+
+  const labelByStage: Record<"preparing" | "thinking" | "rendering" | "complete", string> = {
+    preparing:  t("zion.streamPreparing"),
+    thinking:   t("zion.streamThinking"),
+    rendering:  t("zion.streamRendering"),
+    complete:   t("zion.streamComplete"),
+  };
+
+  return (
+    <div className="rounded-xl border border-gold/20 bg-gold/[0.04] p-4 flex items-center gap-3">
+      <Loader2 className="w-4 h-4 text-gold animate-spin flex-shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="font-display font-bold text-xs text-gold">
+          {labelByStage[stage]}
+        </div>
+        <p className="font-mono text-[10px] text-ink-3 leading-relaxed mt-0.5">
+          {t("zion.noCardsExplain")}
+        </p>
+      </div>
+    </div>
   );
 }

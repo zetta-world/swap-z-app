@@ -91,6 +91,17 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
   const riskLabel  = card.risk       ? t(RISK_KEY[card.risk] ?? "zion.riskSafe") : "";
   const confLabel  = card.confidence ? t(CONF_KEY[card.confidence] ?? "zion.confMedium") : "";
 
+  // Pull the probability out as a clamped 0-100 integer for the badge color
+  // (free-form string in the schema, so "~65%", "65" and "0.65" all collapse).
+  const probabilityNum = (() => {
+    if (!card.probability) return null;
+    const m = String(card.probability).match(/(\d+(?:\.\d+)?)/);
+    if (!m) return null;
+    let n = parseFloat(m[1]);
+    if (n > 0 && n <= 1) n *= 100;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  })();
+
   // Pick the headline number to surface in the big top row. Preference order:
   // expectedProfitPct (richest), then targetReturn, then estReturn.
   const headlineNumber = card.expectedProfitPct
@@ -133,6 +144,17 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
             {card.confidence && (
               <span className="font-mono text-[9px] text-ink-3 uppercase tracking-widest border border-white/10 px-1.5 py-0.5 rounded">
                 {t("zion.confidence", { level: confLabel || card.confidence })}
+              </span>
+            )}
+            {probabilityNum !== null && (
+              <span className={cn(
+                "font-mono text-[9px] tracking-widest uppercase border px-1.5 py-0.5 rounded inline-flex items-center gap-1 font-bold",
+                probabilityNum >= 65 ? "text-green border-green/40 bg-green/[0.06]" :
+                probabilityNum >= 40 ? "text-gold  border-gold/40  bg-gold/[0.06]" :
+                                       "text-red   border-red/40   bg-red/[0.06]",
+              )}>
+                <Scale className="w-2.5 h-2.5" />
+                {t("zion.probabilityBadge", { p: probabilityNum })}
               </span>
             )}
           </div>

@@ -56,7 +56,15 @@ ACTION CARD SCHEMA (delimited by [[ACTION]] and [[/ACTION]])
 Inside the delimiters, emit ONE valid JSON object. The UI parses these and
 shows an Execute button.
 
-REQUIRED: kind · title · summary · chain
+REQUIRED: kind · title · summary · chain · probability
+
+PROBABILITY (REQUIRED on every card): your honest 0-100 estimate that
+the card's primary thesis plays out within timeframe. For ladder cards
+with exits[], this matches the BALANCED rung probability. For arb /
+sniper cards, this is the chance the proposed leg fires successfully
+(spread holds long enough to execute, bridge clears within ETA, etc).
+Keep it a plain number string (e.g. "65", not "~65%"). Don't inflate;
+honest 30-40% is more useful than a fabricated 85%.
 
 CORE OPTIONAL (always include when relevant):
   • from · to             — token pair, with amount when known
@@ -104,12 +112,17 @@ Examples (do NOT include the back-ticks):
 
 Minimal swap card (when full thesis isn't appropriate):
 [[ACTION]]
-{"kind":"swap","title":"Swap 0.5 ETH for USDC","summary":"Best route via 0x; ~$1,710 received. Slippage ≤0.5%.","chain":"ethereum","from":{"symbol":"ETH","address":"native","amount":"0.5"},"to":{"symbol":"USDC","address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"},"entryPrice":"$3,420.00","estReturn":"1,710 USDC","positionSize":"0.5 ETH","confidence":"high","risk":"safe"}
+{"kind":"swap","title":"Swap 0.5 ETH for USDC","summary":"Best route via 0x; ~$1,710 received. Slippage ≤0.5%.","chain":"ethereum","from":{"symbol":"ETH","address":"native","amount":"0.5"},"to":{"symbol":"USDC","address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"},"entryPrice":"$3,420.00","estReturn":"1,710 USDC","positionSize":"0.5 ETH","confidence":"high","risk":"safe","probability":"92"}
 [[/ACTION]]
 
 Full trade-thesis buy_limit with exit ladder:
 [[ACTION]]
-{"kind":"buy_limit","title":"Accumulate ETH on the 4-hour pullback","summary":"Setup: bid into the $3,380-$3,440 zone. R/R 2.3 with the balanced target.","chain":"ethereum","from":{"symbol":"USDC","address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"},"to":{"symbol":"ETH","address":"native"},"triggerPrice":"$3,420.00","entryPrice":"$3,420.00","positionSize":"$1,710 (0.5 ETH at trigger)","stopLoss":"$3,210.00","expectedProfitPct":"+13.9%","riskReward":"2.3:1","timeframe":"2-7 days","confidence":"high","risk":"safe","exits":[{"label":"Safe","price":"$3,620.00","profitPct":"+5.8%","probability":"75","sizeFraction":"30%"},{"label":"Balanced","price":"$3,890.00","profitPct":"+13.7%","probability":"50","sizeFraction":"40%"},{"label":"Stretch","price":"$4,400.00","profitPct":"+28.7%","probability":"18","sizeFraction":"30%"}]}
+{"kind":"buy_limit","title":"Accumulate ETH on the 4-hour pullback","summary":"Setup: bid into the $3,380-$3,440 zone. R/R 2.3 with the balanced target.","chain":"ethereum","from":{"symbol":"USDC","address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"},"to":{"symbol":"ETH","address":"native"},"triggerPrice":"$3,420.00","entryPrice":"$3,420.00","positionSize":"$1,710 (0.5 ETH at trigger)","stopLoss":"$3,210.00","expectedProfitPct":"+13.9%","riskReward":"2.3:1","timeframe":"2-7 days","confidence":"high","risk":"safe","probability":"50","exits":[{"label":"Safe","price":"$3,620.00","profitPct":"+5.8%","probability":"75","sizeFraction":"30%"},{"label":"Balanced","price":"$3,890.00","profitPct":"+13.7%","probability":"50","sizeFraction":"40%"},{"label":"Stretch","price":"$4,400.00","profitPct":"+28.7%","probability":"18","sizeFraction":"30%"}]}
+[[/ACTION]]
+
+Arbitrage cross-chain card (probability accounts for spread holding + bridge ETA):
+[[ACTION]]
+{"kind":"arbitrage_cross_chain","title":"USDC arb · Polygon → Base","summary":"Buy USDC at $0.9942 on QuickSwap, bridge via Stargate, sell at $1.0017 on Aerodrome. Net ~+0.51% after fees.","chain":"polygon","from":{"symbol":"USDC","address":"0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174","amount":"1000"},"to":{"symbol":"USDC","address":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"},"triggerPrice":"$0.9942","estCost":"$3.20 gas + bridge","estReturn":"1,002 USDC","targetReturn":"+$5.10 net","timeframe":"~4 min","confidence":"medium","risk":"caution","probability":"55"}
 [[/ACTION]]
 
 ═══════════════════════════════════════════════════════════════════════════════
