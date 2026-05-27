@@ -11,17 +11,6 @@ import { cn } from "@/lib/cn";
 
 type SortKey = "tvl" | "vol" | "change";
 
-const FALLBACK: PoolSummary[] = [
-  { id: "1", name: "ETH / USDC",  network: "eth",     tvlUsd: 142_800_000, volume24h: 892_000,   change24h: 0.42,  priceUsd: 3450, baseSymbol: "ETH",   quoteSymbol: "USDC", dex: "uniswap_v3",  address: "" },
-  { id: "2", name: "BNB / USDT",  network: "bsc",     tvlUsd: 98_300_000,  volume24h: 654_000,   change24h: 1.20,  priceUsd: 720,  baseSymbol: "BNB",   quoteSymbol: "USDT", dex: "pancakeswap", address: "" },
-  { id: "3", name: "SOL / USDC",  network: "solana",  tvlUsd: 203_100_000, volume24h: 1_400_000, change24h: -0.18, priceUsd: 218,  baseSymbol: "SOL",   quoteSymbol: "USDC", dex: "raydium",     address: "" },
-  { id: "4", name: "WBTC / ETH",  network: "eth",     tvlUsd: 67_500_000,  volume24h: 420_000,   change24h: 0.06,  priceUsd: 96400,baseSymbol: "WBTC",  quoteSymbol: "ETH",  dex: "uniswap_v3",  address: "" },
-  { id: "5", name: "wstETH / ETH",network: "eth",     tvlUsd: 312_700_000, volume24h: 2_100_000, change24h: 0.02,  priceUsd: 3445, baseSymbol: "wstETH",quoteSymbol: "ETH",  dex: "balancer",    address: "" },
-  { id: "6", name: "ARB / USDC",  network: "arbitrum",tvlUsd: 54_200_000,  volume24h: 310_000,   change24h: 0.84,  priceUsd: 0.78, baseSymbol: "ARB",   quoteSymbol: "USDC", dex: "uniswap_v3",  address: "" },
-  { id: "7", name: "OP / USDC",   network: "optimism",tvlUsd: 32_800_000,  volume24h: 186_000,   change24h: -0.32, priceUsd: 1.62, baseSymbol: "OP",    quoteSymbol: "USDC", dex: "velodrome",   address: "" },
-  { id: "8", name: "AVAX / USDC", network: "avax",    tvlUsd: 28_600_000,  volume24h: 172_000,   change24h: 0.51,  priceUsd: 39.8, baseSymbol: "AVAX",  quoteSymbol: "USDC", dex: "trader_joe",  address: "" },
-];
-
 async function fetchPools(chain: ChainId | "all"): Promise<PoolSummary[]> {
   const url = chain === "all" ? "/api/pools?trending=1" : `/api/pools?chain=${chain}`;
   const res = await fetch(url);
@@ -55,7 +44,9 @@ export default function PoolsView() {
   });
 
   const pools = useMemo(() => {
-    const list = data && data.length ? data : FALLBACK;
+    // No FALLBACK substitution any more — empty array means "upstream
+    // returned nothing", and the table renders an honest empty state.
+    const list = data ?? [];
     const filtered = q.trim()
       ? list.filter((p) =>
           (p.baseSymbol + p.quoteSymbol + p.dex).toLowerCase().includes(q.trim().toLowerCase()),
@@ -153,9 +144,9 @@ export default function PoolsView() {
 
         {/* Status pill */}
         <div className="flex items-center gap-2 mb-3">
-          <span className={cn("w-1.5 h-1.5 rounded-full", isError ? "bg-gold" : "bg-cyan", "pulse-dot")} />
+          <span className={cn("w-1.5 h-1.5 rounded-full", isError ? "bg-red" : "bg-cyan", "pulse-dot")} />
           <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-            {isLoading ? "Loading live pools…" : isError ? "Upstream quiet · showing cached" : "Refreshes every 60s"}
+            {isLoading ? "Loading live pools…" : isError ? "Upstream unavailable · retry shortly" : "Refreshes every 60s"}
           </span>
         </div>
 
@@ -172,7 +163,13 @@ export default function PoolsView() {
 
           <div className="divide-y divide-white/[0.04]">
             {pools.length === 0 && (
-              <div className="px-4 py-10 text-center font-sans text-sm text-ink-3">No pools match the filter.</div>
+              <div className="px-4 py-10 text-center font-sans text-sm text-ink-3">
+                {isLoading
+                  ? "Fetching live pools from GeckoTerminal…"
+                  : isError
+                    ? "GeckoTerminal is unavailable right now. Refresh in a minute."
+                    : "No pools match the current filter."}
+              </div>
             )}
             {pools.map((p, i) => {
               const color = CHAIN_COLOR[p.network] ?? "#00E8FF";

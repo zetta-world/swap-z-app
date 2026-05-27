@@ -15,6 +15,7 @@ import ZionExecuteRouter from "./ZionExecuteRouter";
 import TokenSelector from "@/components/swap/TokenSelector";
 import type { ZionOp } from "@/lib/zion/mode-prompts";
 import type { Token } from "@/lib/tokens";
+import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
@@ -63,6 +64,14 @@ export default function ZionDrawer() {
   const amountInRef = useRef(amountIn);
   amountInRef.current = amountIn;
 
+  // Pull the connected-wallet balance of the FROM token so ZION can size
+  // proposals against what the user actually has. Read at call-time via a
+  // ref — balance can refresh on its own polling cadence, and we don't want
+  // that to re-fire the analysis effect.
+  const fromBalance = useTokenBalance(effectiveFromToken);
+  const balanceRef = useRef(fromBalance);
+  balanceRef.current = fromBalance;
+
   const run = useCallback(async (runOp: ZionOp, followUp: string) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -82,6 +91,18 @@ export default function ZionDrawer() {
     if (runOp === "arbitrage") params.set("minSpread", arbMinSpread);
     if (runOp === "sniper")    params.set("maxAge",    snipeMaxAge);
     params.set("lang", lang);
+
+    // Forward the live wallet balance so the server can size proposals to
+    // what the user can actually afford. "unknown" = wallet not connected /
+    // balance not yet loaded, which tells the model to fall back to generic
+    // sizing instead of fabricating numbers.
+    const bal = balanceRef.current;
+    if (bal && !bal.loading && !bal.error) {
+      params.set("fromBalance",    bal.formatted);
+      if (bal.usdValue !== null && Number.isFinite(bal.usdValue)) {
+        params.set("fromBalanceUsd", String(bal.usdValue));
+      }
+    }
 
     try {
       const res = await fetch(`/api/zion?${params.toString()}`, { signal: ctrl.signal });

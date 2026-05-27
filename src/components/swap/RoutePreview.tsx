@@ -11,12 +11,6 @@ export interface Hop {
   color:    string;
 }
 
-const FALLBACK_HOPS: Hop[] = [
-  { protocol: "Uniswap V3",  share: 0.62, color: "#FF007A" },
-  { protocol: "Curve",       share: 0.23, color: "#3676FF" },
-  { protocol: "Balancer V2", share: 0.15, color: "#FF6B00" },
-];
-
 // Brand colors for known DEX sources from 0x
 const DEX_COLOR: Record<string, string> = {
   uniswap_v2:   "#FF007A",
@@ -62,7 +56,9 @@ export default function RoutePreview({
   const t = useT();
   if (!from || !to) return null;
 
-  // Normalize hops into the local Hop shape; fall back to a curated default
+  // Normalize hops into the local Hop shape. No fabricated fallback any
+  // more — if there's no live quote, the breakdown row hides and we surface
+  // a "waiting for quote" hint instead of inventing a DEX split.
   const hops: Hop[] = hopsIn && hopsIn.length > 0
     ? hopsIn
         .map((h) => ({
@@ -73,9 +69,9 @@ export default function RoutePreview({
         .filter((h) => h.share > 0)
         .sort((a, b) => b.share - a.share)
         .slice(0, 5)
-    : FALLBACK_HOPS;
+    : [];
 
-  const isLive = hopsIn !== null;
+  const isLive = hopsIn !== null && hops.length > 0;
 
   return (
     <div className="rounded-xl border border-white/5 bg-bg-1/40 p-4 space-y-3">
@@ -97,7 +93,13 @@ export default function RoutePreview({
       </div>
 
       {/* Hop breakdown */}
-      <div className="space-y-2 pt-2 border-t border-white/5">
+      {hops.length === 0 ? (
+        <div className="pt-2 border-t border-white/5">
+          <p className="font-mono text-[10px] text-ink-3 text-center py-2">
+            {t("swap.routeWaiting")}
+          </p>
+        </div>
+      ) : <div className="space-y-2 pt-2 border-t border-white/5">
         {hops.map((h, i) => (
           <motion.div
             key={i}
@@ -126,11 +128,11 @@ export default function RoutePreview({
             </div>
           </motion.div>
         ))}
-      </div>
+      </div>}
 
-      {showSavings && !isLive && (
+      {showSavings && !isLive && hops.length === 0 && (
         <div className="flex items-center justify-between pt-2 border-t border-white/5">
-          <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">{t("swap.routeDemoLabel")}</span>
+          <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest">{t("swap.routePending")}</span>
           <span className="font-mono text-[11px] text-ink-3">{t("swap.routeRealFills")}</span>
         </div>
       )}

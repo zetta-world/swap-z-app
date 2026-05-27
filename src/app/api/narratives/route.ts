@@ -112,9 +112,27 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // No ZION-derived clusters → surface that honestly. We used to substitute
+  // a chain-bucketed `fallbackCluster()` that the UI rendered as real
+  // narratives; that's removed so the frontend can show an empty state
+  // instead of fabricated buckets.
   if (clusters.length === 0) {
-    clusters = fallbackCluster(members);
-    source   = "fallback";
+    return NextResponse.json<NarrativeResponse>(
+      {
+        ok: true,
+        clusters: [],
+        generatedAt: Date.now(),
+        source: "fallback",
+        note: apiKey
+          ? "ZION clustering produced no themes from the current trending set."
+          : "Narrative clustering needs ANTHROPIC_API_KEY configured on the server.",
+      },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+        },
+      },
+    );
   }
 
   // Enrich each cluster with derived metrics (cross-chain spread)
@@ -300,64 +318,6 @@ function sanitizeColor(c: unknown): string {
 function normalizeRisk(r: unknown): "low" | "medium" | "high" {
   if (r === "low" || r === "medium" || r === "high") return r;
   return "medium";
-}
-
-// ─── Fallback bucketing when ZION is offline ────────────────────────
-
-function fallbackCluster(members: NarrativeMember[]): NarrativeCluster[] {
-  // Group by chain — the dumbest possible bucketing, but always-on.
-  const byChain = new Map<string, NarrativeMember[]>();
-  for (const m of members) {
-    const list = byChain.get(m.chain) ?? [];
-    list.push(m);
-    byChain.set(m.chain, list);
-  }
-
-  const chainColor: Record<string, string> = {
-    eth: "#627EEA", ethereum: "#627EEA",
-    bsc: "#F3BA2F",
-    polygon_pos: "#8247E5", polygon: "#8247E5",
-    base: "#0052FF",
-    arbitrum: "#28A0F0",
-    optimism: "#FF0420",
-    avalanche: "#E84142",
-    solana: "#14F195",
-  };
-
-  const chainEmoji: Record<string, string> = {
-    eth: "💎", ethereum: "💎",
-    bsc: "🟡",
-    polygon_pos: "🟣", polygon: "🟣",
-    base: "🔵",
-    arbitrum: "🌀",
-    optimism: "🔴",
-    avalanche: "❄️",
-    solana: "🟢",
-  };
-
-  return [...byChain.entries()]
-    .map(([chain, list]) => {
-      const sorted = list.sort((a, b) => b.volume24h - a.volume24h).slice(0, 8);
-      const aggVolume = sorted.reduce((acc, m) => acc + m.volume24h, 0);
-      const aggLiq    = sorted.reduce((acc, m) => acc + m.liquidity, 0);
-      const avgChange = sorted.length ? sorted.reduce((acc, m) => acc + m.change24h, 0) / sorted.length : 0;
-      return {
-        id:      `chain-${chain}`,
-        name:    chain.toUpperCase(),
-        tagline: `Top volume on ${chain}`,
-        emoji:   chainEmoji[chain] ?? "✦",
-        color:   chainColor[chain] ?? "#00E8FF",
-        thesis:  "Chain-level rotation; ZION clustering offline.",
-        risk:    "medium" as const,
-        edge:    "Volume-led flows across the chain's top venues.",
-        members: sorted,
-        aggVolume24h: aggVolume,
-        aggLiquidity: aggLiq,
-        avgChange24h: avgChange,
-      };
-    })
-    .sort((a, b) => b.aggVolume24h - a.aggVolume24h)
-    .slice(0, 6);
 }
 
 // ─── Enrichment: detect cross-chain spread on duplicate symbols ─────

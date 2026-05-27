@@ -77,7 +77,19 @@ CORE OPTIONAL (always include when relevant):
 TRADE-THESIS FIELDS (fill on EVERY tradeable kind — swap / buy_limit /
 sell_* / stop_loss / arbitrage_*):
   • entryPrice            — price the user pays (quote-asset, e.g. "$3,420.50")
-  • positionSize          — recommended size (e.g. "0.5 ETH" or "5% of port")
+  • positionSize          — recommended size, ANCHORED TO REAL WALLET CAPACITY:
+                            - If reference data shows from_balance > 0, size to
+                              a fraction of it (blue chips 15-25%, mid-cap 8-15%,
+                              speculative 3-7%). Express the absolute size AND the
+                              fraction: "0.35 ETH (~10% of 3.5 ETH balance)".
+                            - If from_balance is "unknown" (wallet not connected),
+                              fall back to a generic sizing relative to amount_in
+                              and add a note like "size shown for a 1 ETH position
+                              — adjust to your portfolio".
+                            - If from_balance is 0, do NOT propose any tradeable
+                              card; emit a single line "✗ Fund wallet first" and
+                              skip the [[ACTION]] blocks.
+                            NEVER recommend a size larger than from_balance.
   • stopLoss              — protective exit price
   • expectedProfitPct     — primary-target profit % (string, e.g. "+12.4%")
   • riskReward            — R/R ratio at primary target (e.g. "2.3:1")
