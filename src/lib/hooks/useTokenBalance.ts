@@ -29,8 +29,14 @@ export interface TokenBalance {
  *
  * Returns `loading: true` while fetching and zero-defaults when disconnected
  * — callers can always trust `.display` to render.
+ *
+ * `livePriceUsd` is an optional override that takes precedence over the
+ * token's bundled `priceUsd` snapshot. Callers that batch-fetch from the
+ * live price feed (`useTokenPrices`) should pass the freshly-fetched
+ * value here so the USD column tracks the real market instead of the
+ * stale token-list snapshot.
  */
-export function useTokenBalance(token: Token | undefined): TokenBalance {
+export function useTokenBalance(token: Token | undefined, livePriceUsd?: number | null): TokenBalance {
   const isSolana = token?.chain === "solana";
 
   // ─── EVM branch (always called; gated by `enabled`) ───────────────
@@ -94,6 +100,12 @@ export function useTokenBalance(token: Token | undefined): TokenBalance {
     const decimals = token.decimals;
     const symbol   = token.symbol;
 
+    // Live price wins over the stale token-list snapshot. `undefined` =
+    // caller didn't opt in to the live feed → fall back to token.priceUsd;
+    // `null` = live feed couldn't price this token → no USD value.
+    const effectivePriceUsd =
+      livePriceUsd === undefined ? (token.priceUsd ?? null) : livePriceUsd;
+
     if (isSolana) {
       if (!solConnected || !publicKey) return emptyBalance(decimals, symbol);
       if (solLoading)                  return loadingBalance(decimals, symbol);
@@ -109,7 +121,7 @@ export function useTokenBalance(token: Token | undefined): TokenBalance {
         error:     null,
         isZero:    solRaw === 0n,
         display:   formatDisplay(num),
-        usdValue:  token.priceUsd ? num * token.priceUsd : null,
+        usdValue:  effectivePriceUsd !== null ? num * effectivePriceUsd : null,
       };
     }
 
@@ -129,10 +141,10 @@ export function useTokenBalance(token: Token | undefined): TokenBalance {
       error:     null,
       isZero:    raw === 0n,
       display:   formatDisplay(num),
-      usdValue:  token.priceUsd ? num * token.priceUsd : null,
+      usdValue:  effectivePriceUsd !== null ? num * effectivePriceUsd : null,
     };
   }, [
-    token, isSolana,
+    token, isSolana, livePriceUsd,
     solRaw, solLoading, solError, solConnected, publicKey,
     evmRes.data, evmRes.isLoading, evmRes.error, evmConnected, evmEnabled,
   ]);

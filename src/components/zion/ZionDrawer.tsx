@@ -16,6 +16,7 @@ import TokenSelector from "@/components/swap/TokenSelector";
 import type { ZionOp } from "@/lib/zion/mode-prompts";
 import type { Token } from "@/lib/tokens";
 import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
+import { useTokenPrice } from "@/lib/hooks/useTokenPrices";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
@@ -64,11 +65,13 @@ export default function ZionDrawer() {
   const amountInRef = useRef(amountIn);
   amountInRef.current = amountIn;
 
-  // Pull the connected-wallet balance of the FROM token so ZION can size
-  // proposals against what the user actually has. Read at call-time via a
-  // ref — balance can refresh on its own polling cadence, and we don't want
-  // that to re-fire the analysis effect.
-  const fromBalance = useTokenBalance(effectiveFromToken);
+  // Pull the connected-wallet balance of the FROM token + the live USD
+  // price so ZION can size proposals against what the user actually has,
+  // valued at the current market price. Read at call-time via a ref —
+  // balance/price refreshes happen on their own polling cadence and we
+  // don't want either to re-fire the analysis effect.
+  const { priceUsd: fromLivePrice } = useTokenPrice(effectiveFromToken);
+  const fromBalance = useTokenBalance(effectiveFromToken, fromLivePrice);
   const balanceRef = useRef(fromBalance);
   balanceRef.current = fromBalance;
 

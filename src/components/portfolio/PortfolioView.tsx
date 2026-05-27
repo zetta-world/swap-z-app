@@ -9,6 +9,7 @@ import { CHAINS } from "@/lib/chains";
 import { findToken, type Token } from "@/lib/tokens";
 import { compactNumber, formatUsd } from "@/lib/format";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
+import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import CexPortfolioRollup from "./CexPortfolioRollup";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
@@ -61,26 +62,33 @@ export default function PortfolioView() {
     [],
   );
 
+  // One batched call to /api/prices for every tracked token. Refreshes
+  // every 60 s; useTokenBalance per slot reads the live USD value from
+  // here via livePriceUsd instead of the stale token-list snapshot.
+  const { prices: livePrices } = useTokenPrices(trackedTokens);
+  const livePrice = (t: Token | undefined) =>
+    (t ? livePrices[tokenPriceKey(t)] : null) ?? null;
+
   // 17 fixed slots — call useTokenBalance once per slot. The hook handles
   // the "wallet not connected" case internally (returns emptyBalance).
   const balances: TokenBalance[] = [
-    useTokenBalance(trackedTokens[0]),
-    useTokenBalance(trackedTokens[1]),
-    useTokenBalance(trackedTokens[2]),
-    useTokenBalance(trackedTokens[3]),
-    useTokenBalance(trackedTokens[4]),
-    useTokenBalance(trackedTokens[5]),
-    useTokenBalance(trackedTokens[6]),
-    useTokenBalance(trackedTokens[7]),
-    useTokenBalance(trackedTokens[8]),
-    useTokenBalance(trackedTokens[9]),
-    useTokenBalance(trackedTokens[10]),
-    useTokenBalance(trackedTokens[11]),
-    useTokenBalance(trackedTokens[12]),
-    useTokenBalance(trackedTokens[13]),
-    useTokenBalance(trackedTokens[14]),
-    useTokenBalance(trackedTokens[15]),
-    useTokenBalance(trackedTokens[16]),
+    useTokenBalance(trackedTokens[0],  livePrice(trackedTokens[0])),
+    useTokenBalance(trackedTokens[1],  livePrice(trackedTokens[1])),
+    useTokenBalance(trackedTokens[2],  livePrice(trackedTokens[2])),
+    useTokenBalance(trackedTokens[3],  livePrice(trackedTokens[3])),
+    useTokenBalance(trackedTokens[4],  livePrice(trackedTokens[4])),
+    useTokenBalance(trackedTokens[5],  livePrice(trackedTokens[5])),
+    useTokenBalance(trackedTokens[6],  livePrice(trackedTokens[6])),
+    useTokenBalance(trackedTokens[7],  livePrice(trackedTokens[7])),
+    useTokenBalance(trackedTokens[8],  livePrice(trackedTokens[8])),
+    useTokenBalance(trackedTokens[9],  livePrice(trackedTokens[9])),
+    useTokenBalance(trackedTokens[10], livePrice(trackedTokens[10])),
+    useTokenBalance(trackedTokens[11], livePrice(trackedTokens[11])),
+    useTokenBalance(trackedTokens[12], livePrice(trackedTokens[12])),
+    useTokenBalance(trackedTokens[13], livePrice(trackedTokens[13])),
+    useTokenBalance(trackedTokens[14], livePrice(trackedTokens[14])),
+    useTokenBalance(trackedTokens[15], livePrice(trackedTokens[15])),
+    useTokenBalance(trackedTokens[16], livePrice(trackedTokens[16])),
   ];
 
   // Build the rows the UI renders: only non-zero balances, paired with
