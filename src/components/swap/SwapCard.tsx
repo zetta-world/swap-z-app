@@ -21,6 +21,7 @@ import { cn } from "@/lib/cn";
 import type { Token } from "@/lib/tokens";
 import { useQuotes } from "@/lib/hooks/useQuotes";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
+import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import type { NormalizedQuote } from "@/lib/api/quote-types";
 
 interface SwapCardProps {
@@ -53,9 +54,16 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
 
   const [showSettings,  setShowSettings] = useState(false);
 
-  // ─── Real balances (wagmi useBalance per token) ─────────────────────
-  const fromBalance = useTokenBalance(fromToken);
-  const toBalance   = useTokenBalance(toToken);
+  // ─── Real balances + live USD prices ───────────────────────────────
+  // useTokenPrices batches a single /api/prices call for both sides of
+  // the pair. The fresh USD figure is passed into useTokenBalance so
+  // the "Balance: 1.5 ETH · $5,175.00" row reflects the live market
+  // instead of the stale snapshot in tokens.ts.
+  const { prices: livePrices } = useTokenPrices([fromToken, toToken]);
+  const fromLivePrice = fromToken ? livePrices[tokenPriceKey(fromToken)] ?? null : null;
+  const toLivePrice   = toToken   ? livePrices[tokenPriceKey(toToken)]   ?? null : null;
+  const fromBalance = useTokenBalance(fromToken, fromLivePrice);
+  const toBalance   = useTokenBalance(toToken,   toLivePrice);
 
   const isCrossChain = !!(fromToken && toToken && fromToken.chain !== toToken.chain);
 
@@ -121,10 +129,13 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     const buyDec  = Number(selectedQuote.buyAmount)    / Math.pow(10, toToken.decimals);
     const minDec  = Number(selectedQuote.minBuyAmount) / Math.pow(10, toToken.decimals);
     const rate    = sellDec > 0 ? buyDec / sellDec : 0;
-    const inUsd   = sellDec * (fromToken.priceUsd ?? 0);
-    const outUsd  = buyDec  * (toToken.priceUsd   ?? 0);
+    // Live prices win over the stale token.priceUsd snapshot.
+    const fromPx  = fromLivePrice ?? fromToken.priceUsd ?? 0;
+    const toPx    = toLivePrice   ?? toToken.priceUsd   ?? 0;
+    const inUsd   = sellDec * fromPx;
+    const outUsd  = buyDec  * toPx;
     return { sellDec, buyDec, minDec, rate, inUsd, outUsd };
-  }, [selectedQuote, sellAmountBase, fromToken, toToken]);
+  }, [selectedQuote, sellAmountBase, fromToken, toToken, fromLivePrice, toLivePrice]);
 
   // ─── Aurora risk ────────────────────────────────────────────────────
   const risk = useMemo(() => {
