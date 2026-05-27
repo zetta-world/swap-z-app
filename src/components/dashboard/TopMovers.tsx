@@ -16,12 +16,6 @@ async function fetchTrending(): Promise<TrendingPair[]> {
   return data.pairs ?? [];
 }
 
-const FALLBACK: TrendingPair[] = [
-  { chain: "solana",   dex: "raydium",     symbol: "WIF/SOL",   baseSymbol: "WIF",   quoteSymbol: "SOL",  priceUsd: 1.86,  change24h: 18.4, volume24h: 0, liquidity: 0, marketCap: 0, url: "", baseAddress: "", pairAddress: "wif1" },
-  { chain: "solana",   dex: "raydium",     symbol: "JUP/USDC",  baseSymbol: "JUP",   quoteSymbol: "USDC", priceUsd: 0.95,  change24h: 9.2,  volume24h: 0, liquidity: 0, marketCap: 0, url: "", baseAddress: "", pairAddress: "jup1" },
-  { chain: "arbitrum", dex: "uniswap_v3",  symbol: "GMX/ETH",   baseSymbol: "GMX",   quoteSymbol: "ETH",  priceUsd: 24.6,  change24h: 7.1,  volume24h: 0, liquidity: 0, marketCap: 0, url: "", baseAddress: "", pairAddress: "gmx1" },
-];
-
 const CHAIN_COLOR: Record<string, string> = {
   ethereum: "#627EEA", bsc: "#F3BA2F", polygon: "#8247E5", base: "#0052FF",
   arbitrum: "#28A0F0", optimism: "#FF0420", solana: "#14F195", avalanche: "#E84142",
@@ -36,7 +30,7 @@ export default function TopMovers() {
     retry: 1,
   });
 
-  const movers = data && data.length > 0 ? data.slice(0, 7) : FALLBACK;
+  const movers = data && data.length > 0 ? data.slice(0, 7) : [];
 
   return (
     <div className="rounded-xl border border-white/5 glass-pane overflow-hidden">
@@ -47,6 +41,15 @@ export default function TopMovers() {
           {isLoading ? t("explorer.loading") : isError ? t("common.offline") : t("explorer.liveActive")}
         </span>
       </div>
+      {movers.length === 0 && (
+        <div className="px-4 py-6 text-center font-mono text-[11px] text-ink-3">
+          {isLoading
+            ? t("explorer.loading")
+            : isError
+              ? t("swap.topMoversError")
+              : t("swap.topMoversEmpty")}
+        </div>
+      )}
       <div className="divide-y divide-white/[0.04]">
         {movers.map((m, i) => {
           const color = CHAIN_COLOR[m.chain] ?? "#00E8FF";

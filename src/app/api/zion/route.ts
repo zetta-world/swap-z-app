@@ -92,6 +92,16 @@ export async function GET(req: NextRequest) {
 
   const amountIn = validateAmount(p.get("amountIn") || "1.0") ?? "1.0";
 
+  // Live wallet balance (optional). The frontend includes these when a
+  // wallet is connected; absence is meaningful — ZION knows to fall back
+  // to generic sizing instead of fabricating numbers against unknown caps.
+  const fromBalance    = validateAmount(p.get("fromBalance") || "") ?? "";
+  const fromBalanceUsdRaw = p.get("fromBalanceUsd") || "";
+  const fromBalanceUsd =
+    fromBalanceUsdRaw && /^\d+(\.\d+)?$/.test(fromBalanceUsdRaw)
+      ? parseFloat(fromBalanceUsdRaw)
+      : null;
+
   const messageRaw = p.get("message") || "";
   const message    = messageRaw ? (sanitizePromptText(messageRaw, 500) ?? "") : "";
 
@@ -129,6 +139,7 @@ export async function GET(req: NextRequest) {
     contextOp:  op,           // remember the current tab so "ask" knows where to point
     chain, fromAddr, toAddr, amountIn, message,
     minSpread, maxAge, chainsList, lang,
+    fromBalance, fromBalanceUsd,
   }, req.signal);
 }
 
@@ -151,6 +162,10 @@ interface RunArgs {
   maxAge:     "1h" | "6h" | "24h" | "7d";
   chainsList: ChainId[];
   lang:       "en" | "pt" | "es" | "zh";
+  /** Decimal wallet balance for the FROM token, "" = wallet not connected. */
+  fromBalance:    string;
+  /** USD value of that balance, null = unknown / no price data. */
+  fromBalanceUsd: number | null;
 }
 
 const LANG_INSTRUCTION: Record<RunArgs["lang"], string> = {
@@ -445,6 +460,11 @@ async function buildPairData(args: RunArgs): Promise<string> {
   const lines: string[] = [];
   lines.push(`chain: ${args.chain}`);
   lines.push(`amount_in: ${args.amountIn}`);
+  // Wallet capacity — empty string means "wallet not connected, balance
+  // unknown". The model is instructed to fall back to generic sizing in
+  // that case rather than fabricating a position.
+  lines.push(`from_balance: ${args.fromBalance || "unknown"}`);
+  lines.push(`from_balance_usd: ${args.fromBalanceUsd !== null ? args.fromBalanceUsd.toFixed(2) : "unknown"}`);
 
   lines.push("\nFROM TOKEN:");
   lines.push(`  symbol: ${fromToken?.symbol ?? "?"}`);

@@ -2,91 +2,116 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Wallet, TrendingUp, TrendingDown, ExternalLink, Eye, EyeOff } from "lucide-react";
+import { Wallet, TrendingUp, TrendingDown, Eye, EyeOff, Inbox } from "lucide-react";
+import { useAccount } from "wagmi";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { CHAINS } from "@/lib/chains";
-import { compactNumber, formatUsd, formatPct } from "@/lib/format";
+import { findToken, type Token } from "@/lib/tokens";
+import { compactNumber, formatUsd } from "@/lib/format";
+import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
 import CexPortfolioRollup from "./CexPortfolioRollup";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
-interface Holding {
-  symbol: string;
-  name:   string;
-  chain:  string;
-  qty:    number;
-  priceUsd: number;
-  change24h: number;
-  color:  string;
-}
-
-const MOCK_HOLDINGS: Holding[] = [
-  { symbol: "ETH",  name: "Ethereum",       chain: "ethereum", qty: 2.4,       priceUsd: 3450,  change24h: 0.42,  color: "#627EEA" },
-  { symbol: "USDC", name: "USD Coin",       chain: "ethereum", qty: 4_280,     priceUsd: 1.00,  change24h: 0.01,  color: "#2775CA" },
-  { symbol: "wstETH", name: "Lido stETH",   chain: "ethereum", qty: 0.8,       priceUsd: 3445,  change24h: 0.02,  color: "#00A3FF" },
-  { symbol: "WBTC", name: "Wrapped BTC",    chain: "ethereum", qty: 0.035,     priceUsd: 96400, change24h: -0.18, color: "#F7931A" },
-  { symbol: "BNB",  name: "BNB",            chain: "bsc",      qty: 4.5,       priceUsd: 720,   change24h: 1.20,  color: "#F3BA2F" },
-  { symbol: "Z",    name: "ZETTA Token",    chain: "bsc",      qty: 124_000,   priceUsd: 0.0084,change24h: 4.10,  color: "#00E8FF" },
-  { symbol: "ARB",  name: "Arbitrum",       chain: "arbitrum", qty: 1_240,     priceUsd: 0.78,  change24h: 0.84,  color: "#28A0F0" },
-  { symbol: "SOL",  name: "Solana",         chain: "solana",   qty: 18.4,      priceUsd: 218,   change24h: -0.18, color: "#14F195" },
-  { symbol: "JUP",  name: "Jupiter",        chain: "solana",   qty: 1_820,     priceUsd: 0.95,  change24h: 9.2,   color: "#FBA124" },
+// Curated set of tokens whose balances we surface on the portfolio page.
+// Hooks can't live in loops, so we resolve them statically at module scope
+// and call useTokenBalance once per slot below.
+const TRACKED: Array<{ chain: Token["chain"]; symbol: string }> = [
+  { chain: "ethereum",  symbol: "ETH"   },
+  { chain: "ethereum",  symbol: "USDC"  },
+  { chain: "ethereum",  symbol: "USDT"  },
+  { chain: "ethereum",  symbol: "WBTC"  },
+  { chain: "ethereum",  symbol: "stETH" },
+  { chain: "bsc",       symbol: "BNB"   },
+  { chain: "bsc",       symbol: "USDT"  },
+  { chain: "polygon",   symbol: "POL"   },
+  { chain: "polygon",   symbol: "USDC"  },
+  { chain: "base",      symbol: "ETH"   },
+  { chain: "base",      symbol: "USDC"  },
+  { chain: "arbitrum",  symbol: "ETH"   },
+  { chain: "arbitrum",  symbol: "USDC"  },
+  { chain: "optimism",  symbol: "ETH"   },
+  { chain: "avalanche", symbol: "AVAX"  },
+  { chain: "solana",    symbol: "SOL"   },
+  { chain: "solana",    symbol: "USDC"  },
 ];
 
-interface Position {
-  protocol: string; pair: string; chain: string; valueUsd: number; apr: number; color: string;
-}
-
-const MOCK_POSITIONS: Position[] = [
-  { protocol: "Uniswap V3",  pair: "ETH/USDC 0.05%",  chain: "ethereum", valueUsd: 8_240,  apr: 14.2, color: "#FF007A" },
-  { protocol: "Curve",       pair: "3pool",            chain: "ethereum", valueUsd: 5_120,  apr: 6.8,  color: "#3676FF" },
-  { protocol: "Trader Joe",  pair: "AVAX/USDC v2.1",  chain: "avalanche", valueUsd: 2_840,  apr: 22.4, color: "#E84142" },
-];
-
-interface Tx {
-  ts: string; type: "swap" | "bridge" | "lp" | "stake";
-  description: string; chain: string; amount: string; positive: boolean;
-}
-
-const MOCK_TXS: Tx[] = [
-  { ts: "2 min ago",   type: "swap",   description: "ETH → USDC",       chain: "ethereum", amount: "+3,448 USDC", positive: true  },
-  { ts: "1h ago",      type: "bridge", description: "USDC → ARB",       chain: "arbitrum", amount: "−500 USDC",   positive: false },
-  { ts: "5h ago",      type: "lp",     description: "Add LP wstETH/ETH",chain: "ethereum", amount: "+0.8 wstETH", positive: false },
-  { ts: "yesterday",   type: "stake",  description: "Stake ZETTA",      chain: "bsc",      amount: "−10,000 Z",   positive: false },
-  { ts: "2 days ago",  type: "swap",   description: "JUP → SOL",        chain: "solana",   amount: "+8.2 SOL",    positive: true  },
-];
-
-const TX_KIND: Record<string, string> = {
-  swap: "Swap", bridge: "Bridge", lp: "Liquidity", stake: "Stake",
-};
-
+/**
+ * Real, live portfolio. Reads balances from the connected EVM and Solana
+ * wallets via useTokenBalance, sums them in USD via the curated token
+ * priceUsd (a follow-up will replace these with a live price feed), and
+ * shows the CEX rollup at the bottom for users who linked exchanges.
+ *
+ * Nothing on this page is mocked any more: if a wallet isn't connected,
+ * the corresponding section shows an empty state instead of fabricated
+ * holdings.
+ */
 export default function PortfolioView() {
   const t = useT();
   const [hidden, setHidden] = useState(false);
 
-  const totals = useMemo(() => {
-    const portfolio = MOCK_HOLDINGS.reduce((acc, h) => acc + h.qty * h.priceUsd, 0);
-    const positions = MOCK_POSITIONS.reduce((acc, p) => acc + p.valueUsd, 0);
-    const total = portfolio + positions;
-    // mocked rollup
-    const change24h = 2.4;       // %
-    const changeUsd = total * (change24h / 100);
-    return { portfolio, positions, total, change24h, changeUsd };
-  }, []);
+  const { isConnected: evmConnected } = useAccount();
+  const sol = useWallet();
+  const anyWalletConnected = evmConnected || sol.connected;
 
-  // Aggregate per chain for chart
+  // Resolve each tracked slot to a Token (or undefined if it's not in the
+  // curated list — defensive, the static list above should always resolve).
+  const trackedTokens = useMemo(
+    () => TRACKED.map(({ chain, symbol }) => findToken(chain, symbol)),
+    [],
+  );
+
+  // 17 fixed slots — call useTokenBalance once per slot. The hook handles
+  // the "wallet not connected" case internally (returns emptyBalance).
+  const balances: TokenBalance[] = [
+    useTokenBalance(trackedTokens[0]),
+    useTokenBalance(trackedTokens[1]),
+    useTokenBalance(trackedTokens[2]),
+    useTokenBalance(trackedTokens[3]),
+    useTokenBalance(trackedTokens[4]),
+    useTokenBalance(trackedTokens[5]),
+    useTokenBalance(trackedTokens[6]),
+    useTokenBalance(trackedTokens[7]),
+    useTokenBalance(trackedTokens[8]),
+    useTokenBalance(trackedTokens[9]),
+    useTokenBalance(trackedTokens[10]),
+    useTokenBalance(trackedTokens[11]),
+    useTokenBalance(trackedTokens[12]),
+    useTokenBalance(trackedTokens[13]),
+    useTokenBalance(trackedTokens[14]),
+    useTokenBalance(trackedTokens[15]),
+    useTokenBalance(trackedTokens[16]),
+  ];
+
+  // Build the rows the UI renders: only non-zero balances, paired with
+  // their token metadata.
+  const holdings = useMemo(() => {
+    return trackedTokens
+      .map((token, i) => ({ token, balance: balances[i] }))
+      .filter((row): row is { token: Token; balance: TokenBalance } =>
+        !!row.token && !row.balance.isZero && !row.balance.loading && !row.balance.error,
+      )
+      .sort((a, b) => (b.balance.usdValue ?? 0) - (a.balance.usdValue ?? 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackedTokens, ...balances]);
+
+  const totals = useMemo(() => {
+    const portfolio = holdings.reduce((acc, h) => acc + (h.balance.usdValue ?? 0), 0);
+    return { portfolio, total: portfolio };
+  }, [holdings]);
+
+  // Distribution across chains for the bar chart.
   const byChain = useMemo(() => {
     const map = new Map<string, number>();
-    for (const h of MOCK_HOLDINGS) {
-      const v = h.qty * h.priceUsd;
-      map.set(h.chain, (map.get(h.chain) ?? 0) + v);
+    for (const h of holdings) {
+      const v = h.balance.usdValue ?? 0;
+      if (v <= 0) continue;
+      map.set(h.token.chain, (map.get(h.token.chain) ?? 0) + v);
     }
-    for (const p of MOCK_POSITIONS) {
-      map.set(p.chain, (map.get(p.chain) ?? 0) + p.valueUsd);
-    }
-    const arr = [...map.entries()]
+    return [...map.entries()]
       .map(([id, v]) => ({ id, value: v, chain: CHAINS.find((c) => c.id === id) }))
       .sort((a, b) => b.value - a.value);
-    return arr;
-  }, []);
+  }, [holdings]);
 
   const mask = (v: string) => (hidden ? "•••••" : v);
 
@@ -104,16 +129,6 @@ export default function PortfolioView() {
             </span>
           </div>
 
-          {/* Disclosure banner */}
-          <div className="rounded-xl border border-gold/20 bg-gold/[0.04] p-3 mb-4 flex items-start gap-2.5">
-            <Wallet className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <div className="font-mono text-[10px] text-gold tracking-widest uppercase mb-0.5">{t("portfolio.demoBanner")}</div>
-              <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-                {t("portfolio.demoBodyExtended")}
-              </p>
-            </div>
-          </div>
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div>
               <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
@@ -133,151 +148,120 @@ export default function PortfolioView() {
           </div>
         </motion.div>
 
-        {/* Net worth card */}
-        <div className="aurora-border p-px mb-5">
-          <div className="rounded-[20px] glass p-5 sm:p-6">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">{t("portfolio.netWorth")}</div>
-                <div className="font-display font-extrabold text-3xl sm:text-4xl text-ink">{mask(formatUsd(totals.total))}</div>
-                <div className={cn("flex items-center gap-1.5 mt-1.5 font-mono text-xs", totals.change24h >= 0 ? "text-green" : "text-red")}>
-                  {totals.change24h >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                  {hidden ? "•••" : `${formatUsd(totals.changeUsd)} (${formatPct(totals.change24h)}) · 24h`}
-                </div>
-              </div>
-              <Metric label={t("portfolio.walletBalance")} value={mask(formatUsd(totals.portfolio))} tone="cyan" />
-              <Metric label={t("portfolio.lpPositions")}   value={mask(formatUsd(totals.positions))} tone="violet" />
-              <Metric label={t("portfolio.chainsTracked")} value={String(byChain.length)}            tone="gold" />
+        {/* If no wallet is connected, show a clean empty state — no fake
+            holdings, no fabricated chart. The CEX rollup below still works
+            on its own if the user linked exchanges. */}
+        {!anyWalletConnected && holdings.length === 0 && (
+          <div className="rounded-2xl border border-white/8 bg-bg-1/40 p-8 text-center mb-5">
+            <Wallet className="w-6 h-6 text-ink-3 mx-auto mb-3" />
+            <div className="font-display font-bold text-base text-ink mb-1.5">
+              {t("portfolio.connectWalletTitle")}
             </div>
+            <p className="font-sans text-sm text-ink-2 max-w-md mx-auto leading-relaxed">
+              {t("portfolio.connectWalletBody")}
+            </p>
+          </div>
+        )}
 
-            {/* Chain distribution bar */}
-            <div className="mt-5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("portfolio.distribution")}</span>
-                <span className="font-mono text-[10px] text-cyan tracking-widest uppercase flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan pulse-dot" />
-                  {t("portfolio.distributionLive")}
-                </span>
+        {/* Net worth card — only when there's real data to show */}
+        {(anyWalletConnected || holdings.length > 0) && (
+          <div className="aurora-border p-px mb-5">
+            <div className="rounded-[20px] glass p-5 sm:p-6">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">{t("portfolio.netWorth")}</div>
+                  <div className="font-display font-extrabold text-3xl sm:text-4xl text-ink">{mask(formatUsd(totals.total))}</div>
+                </div>
+                <Metric label={t("portfolio.walletBalance")} value={mask(formatUsd(totals.portfolio))} tone="cyan" />
+                <Metric label={t("portfolio.chainsTracked")} value={String(byChain.length)} tone="gold" />
               </div>
-              <div className="flex h-3 rounded-full overflow-hidden bg-white/[0.03]">
-                {byChain.map((c) => (
-                  <div
-                    key={c.id}
-                    title={`${c.chain?.name}: ${formatUsd(c.value)}`}
-                    className="hover:brightness-125 transition-all"
-                    style={{
-                      width:  `${(c.value / totals.total) * 100}%`,
-                      background: c.chain?.color ?? "#00E8FF",
-                    }}
-                  />
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2.5">
-                {byChain.map((c) => (
-                  <div key={c.id} className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.chain?.color }} />
-                    <span className="font-mono text-[10px] text-ink-2">{c.chain?.short}</span>
-                    <span className="font-mono text-[10px] text-ink-4">{((c.value / totals.total) * 100).toFixed(1)}%</span>
+
+              {byChain.length > 0 && (
+                <div className="mt-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("portfolio.distribution")}</span>
+                    <span className="font-mono text-[10px] text-cyan tracking-widest uppercase flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan pulse-dot" />
+                      {t("portfolio.distributionLive")}
+                    </span>
                   </div>
-                ))}
-              </div>
+                  <div className="flex h-3 rounded-full overflow-hidden bg-white/[0.03]">
+                    {byChain.map((c) => (
+                      <div
+                        key={c.id}
+                        title={`${c.chain?.name}: ${formatUsd(c.value)}`}
+                        className="hover:brightness-125 transition-all"
+                        style={{
+                          width:  `${(c.value / totals.total) * 100}%`,
+                          background: c.chain?.color ?? "#00E8FF",
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2.5">
+                    {byChain.map((c) => (
+                      <div key={c.id} className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.chain?.color }} />
+                        <span className="font-mono text-[10px] text-ink-2">{c.chain?.short}</span>
+                        <span className="font-mono text-[10px] text-ink-4">{((c.value / totals.total) * 100).toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
+        )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Holdings */}
-          <div className="lg:col-span-7 rounded-2xl border border-white/5 glass-pane overflow-hidden">
-            <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-              <span className="font-display font-bold text-sm text-ink">{t("portfolio.holdings")}</span>
-              <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{t("portfolio.assetsCount", { n: MOCK_HOLDINGS.length })}</span>
+        {/* Holdings — only real, non-zero balances from the connected wallet(s) */}
+        <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden mb-4">
+          <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+            <span className="font-display font-bold text-sm text-ink">{t("portfolio.holdings")}</span>
+            <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">
+              {t("portfolio.assetsCount", { n: holdings.length })}
+            </span>
+          </div>
+          {holdings.length === 0 ? (
+            <div className="px-4 py-6 text-center">
+              <Inbox className="w-5 h-5 text-ink-4 mx-auto mb-2" />
+              <p className="font-mono text-[11px] text-ink-3">
+                {anyWalletConnected
+                  ? t("portfolio.noBalances")
+                  : t("portfolio.connectToSeeHoldings")}
+              </p>
             </div>
+          ) : (
             <div className="divide-y divide-white/[0.04]">
-              {MOCK_HOLDINGS.map((h) => {
-                const value = h.qty * h.priceUsd;
+              {holdings.map(({ token, balance }) => {
+                const usd = balance.usdValue ?? 0;
+                const qtyNum = Number(balance.formatted) || 0;
                 return (
-                  <div key={h.symbol + h.chain} className="px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02]">
+                  <div key={token.symbol + ":" + token.chain} className="px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02]">
                     <span
                       className="w-8 h-8 rounded-full flex items-center justify-center font-mono text-[11px] font-bold flex-shrink-0"
-                      style={{ background: `${h.color}22`, color: h.color, border: `1px solid ${h.color}55` }}
+                      style={{ background: `${token.color}22`, color: token.color, border: `1px solid ${token.color}55` }}
                     >
-                      {h.symbol.slice(0, 2).toUpperCase()}
+                      {token.symbol.slice(0, 2).toUpperCase()}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="font-display font-bold text-sm text-ink truncate">{h.symbol}</div>
-                      <div className="font-mono text-[10px] text-ink-3 uppercase tracking-wider truncate">{h.chain}</div>
+                      <div className="font-display font-bold text-sm text-ink truncate">{token.symbol}</div>
+                      <div className="font-mono text-[10px] text-ink-3 uppercase tracking-wider truncate">{token.chain}</div>
                     </div>
                     <div className="text-right min-w-0">
-                      <div className="font-mono text-sm text-ink">{mask(formatUsd(value))}</div>
+                      <div className="font-mono text-sm text-ink">{mask(formatUsd(usd))}</div>
                       <div className="font-mono text-[10px] text-ink-3 truncate">
-                        {hidden ? "•••••" : `${compactNumber(h.qty)} ${h.symbol}`}
-                      </div>
-                    </div>
-                    <div className="text-right w-16">
-                      <div className={cn("font-mono text-xs", h.change24h >= 0 ? "text-green" : "text-red")}>
-                        {formatPct(h.change24h)}
+                        {hidden ? "•••••" : `${compactNumber(qtyNum)} ${token.symbol}`}
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
-
-          {/* Right column: positions + tx history */}
-          <div className="lg:col-span-5 space-y-4">
-            {/* LP positions */}
-            <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden">
-              <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-                <span className="font-display font-bold text-sm text-ink">{t("portfolio.lpPositions")}</span>
-                <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{t("portfolio.activePositions", { n: MOCK_POSITIONS.length })}</span>
-              </div>
-              <div className="divide-y divide-white/[0.04]">
-                {MOCK_POSITIONS.map((p, i) => (
-                  <div key={i} className="px-4 py-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-display font-bold text-xs text-ink">{p.pair}</span>
-                      <span className="font-mono text-xs text-green">{t("portfolio.apr", { n: p.apr.toFixed(1) })}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{p.protocol} · {p.chain}</span>
-                      <span className="font-mono text-xs text-ink-2">{mask(formatUsd(p.valueUsd))}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Activity */}
-            <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden">
-              <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-                <span className="font-display font-bold text-sm text-ink">{t("portfolio.activity")}</span>
-                <a href="#" className="font-mono text-[9px] text-cyan/70 hover:text-cyan tracking-widest uppercase inline-flex items-center gap-0.5">
-                  {t("common.show")} <ExternalLink className="w-2.5 h-2.5" />
-                </a>
-              </div>
-              <div className="divide-y divide-white/[0.04]">
-                {MOCK_TXS.map((tx, i) => (
-                  <div key={i} className="px-4 py-2.5">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[9px] text-ink-3 uppercase tracking-widest">{TX_KIND[tx.type]}</span>
-                        <span className="font-display font-bold text-xs text-ink truncate">{tx.description}</span>
-                      </div>
-                      <span className={cn("font-mono text-xs", tx.positive ? "text-green" : "text-ink-2")}>{hidden ? "•••" : tx.amount}</span>
-                    </div>
-                    <div className="font-mono text-[10px] text-ink-4 tracking-widest uppercase">{tx.ts} · {tx.chain}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* CEX rollup — real read-only data from the connected exchanges */}
-        <div className="mt-6">
-          <CexPortfolioRollup />
-        </div>
+        <CexPortfolioRollup />
 
         <p className="font-mono text-[10px] text-ink-4 text-center mt-6">
           {t("portfolio.wallets")}
