@@ -104,7 +104,11 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     enabled:     !!(fromToken && toToken && sellAmountBase !== "0"),
   });
 
-  // Auto-select the best quote when the list changes
+  // Auto-select the best quote when the list changes. Prefer a FIRM
+  // quote over an indicative one — an indicative quote is price-only
+  // and can't actually execute, so picking it by default would leave
+  // the user with a dead CTA button. We still keep the indicative on
+  // the list so the user can compare or manually opt in.
   useEffect(() => {
     if (quotesState.quotes.length === 0) {
       setSelectedSource(null);
@@ -112,7 +116,8 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     }
     const stillValid = quotesState.quotes.some((q) => q.source === selectedSource);
     if (!stillValid) {
-      setSelectedSource(quotesState.quotes[0].source);
+      const firstFirm = quotesState.quotes.find((q) => q.isFirm !== false);
+      setSelectedSource((firstFirm ?? quotesState.quotes[0]).source);
     }
   }, [quotesState.quotes, selectedSource, setSelectedSource]);
 
@@ -159,7 +164,9 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
         ? (quotesState.loading ? t("swap.fetchingQuotes") : t("swap.enterAmount"))
         : !selectedQuote
           ? t("swap.noRoute")
-          : "";
+          : selectedQuote.isFirm === false
+            ? t("swap.indicativeOnly")
+            : "";
 
   const onPercent = (pct: number) => {
     if (!fromBalance || fromBalance.isZero || !fromToken) return;
