@@ -112,34 +112,30 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // No ZION-derived clusters → surface that honestly. We used to substitute
-  // a chain-bucketed `fallbackCluster()` that the UI rendered as real
-  // narratives; that's removed so the frontend can show an empty state
-  // instead of fabricated buckets.
+  // No ZION-derived clusters → fall back to deterministic category
+  // clustering. This is NOT the chain-bucketed fake from earlier — it
+  // recognizes real narratives (memes, LSTs, L2 natives, blue chips,
+  // stablecoin rotation, DeFi blue, long-tail) by symbol pattern and
+  // emits real aggregate metrics derived from live trending data. Good
+  // enough to make the Radar always useful, even when ZION is unavailable.
   if (clusters.length === 0) {
-    return NextResponse.json<NarrativeResponse>(
-      {
-        ok: true,
-        clusters: [],
-        generatedAt: Date.now(),
-        source: "fallback",
-        note: apiKey
-          ? "ZION clustering produced no themes from the current trending set."
-          : "Narrative clustering needs ANTHROPIC_API_KEY configured on the server.",
-      },
-      {
-        headers: {
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
-        },
-      },
-    );
+    clusters = deterministicClusters(members);
+    source = "fallback";
   }
 
   // Enrich each cluster with derived metrics (cross-chain spread)
   clusters = clusters.map((c) => enrichCluster(c, members));
 
   return NextResponse.json<NarrativeResponse>(
-    { ok: true, clusters, generatedAt: Date.now(), source },
+    {
+      ok: true,
+      clusters,
+      generatedAt: Date.now(),
+      source,
+      note: source === "fallback"
+        ? "Auto-categorized from trending data — ZION clustering offline."
+        : undefined,
+    },
     {
       headers: {
         "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
@@ -318,6 +314,181 @@ function sanitizeColor(c: unknown): string {
 function normalizeRisk(r: unknown): "low" | "medium" | "high" {
   if (r === "low" || r === "medium" || r === "high") return r;
   return "medium";
+}
+
+// ─── Deterministic category clustering (always-on fallback) ─────────
+//
+// When ZION clustering is unavailable, we still want the Radar to be
+// useful. This function categorizes the trending members into a small
+// set of real narratives via symbol-pattern matching: memes, LSTs, L2
+// natives, blue chips, stables, DeFi blue, and a long-tail bucket per
+// chain for whatever's left. All aggregate metrics (volume, liquidity,
+// avg change) come from the actual live data — nothing fabricated.
+
+interface Category {
+  id:        string;
+  name:      string;
+  tagline:   string;
+  emoji?:    string;
+  color:     string;
+  risk:      "low" | "medium" | "high";
+  edge:      string;
+  thesis:    string;
+  match:     (m: NarrativeMember) => boolean;
+}
+
+const CATEGORIES: Category[] = [
+  {
+    id:      "memes",
+    name:    "Meme rotation",
+    tagline: "Volatile sentiment plays — high reward, high rug",
+    emoji:   "★",
+    color:   "#FFB820",
+    risk:    "high",
+    edge:    "Momentum trades; size small, exit fast",
+    thesis:  "Memetic flows concentrate liquidity on the hottest tickers — buy strength, sell into euphoria.",
+    match:   (m) => /^(pepe|wif|mog|doge|shib|bonk|floki|brett|popcat|wojak|fart|memecoin|inu|baby|moon|safe|elon|chad|trump|maga|book|dogwifhat)/i.test(m.symbol),
+  },
+  {
+    id:      "lst-restake",
+    name:    "LST & Restaking",
+    tagline: "Yield-bearing ETH derivatives — stable carry",
+    emoji:   "◆",
+    color:   "#00A3FF",
+    risk:    "low",
+    edge:    "Spread plays vs ETH spot; collect staking yield",
+    thesis:  "Liquid-staking derivatives quietly compound while ETH ranges; deep liquidity, low surprise risk.",
+    match:   (m) => /^(steth|wsteth|reth|cbeth|meth|sweth|frxeth|sfrxeth|ankreth|ezeth|weeth|rseth|pufeth|oseth)/i.test(m.symbol),
+  },
+  {
+    id:      "l2-natives",
+    name:    "L2 rotation",
+    tagline: "Layer-2 governance + ecosystem bets",
+    emoji:   "△",
+    color:   "#9F5FFF",
+    risk:    "medium",
+    edge:    "Catalyst rotation across L2 ecosystems",
+    thesis:  "L2 token unlocks, fee burn changes and ecosystem grants drive sharp re-ratings — trade the calendar.",
+    match:   (m) => /^(arb|op|mnt|metis|strk|zk|linea|scr|mantle|base|blast)$/i.test(m.symbol),
+  },
+  {
+    id:      "blue-chips",
+    name:    "Blue chips",
+    tagline: "Liquid majors — direction tracks BTC bias",
+    emoji:   "✦",
+    color:   "#627EEA",
+    risk:    "low",
+    edge:    "Lower beta vs alt-coins; clean execution",
+    thesis:  "ETH, WBTC, BNB and SOL set the macro bias; large-cap moves flow into everything else.",
+    match:   (m) => /^(eth|weth|wbtc|btc|btcb|bnb|wbnb|sol|wsol|avax|wavax)$/i.test(m.symbol),
+  },
+  {
+    id:      "stables",
+    name:    "Stables flow",
+    tagline: "Stablecoin pair-trading & basis",
+    emoji:   "≡",
+    color:   "#5C8DFF",
+    risk:    "low",
+    edge:    "Peg arbs & yield differentials between issuers",
+    thesis:  "Stablecoin issuance + redemption tells you who's de-risking. Pool flow leads price.",
+    match:   (m) => /^(usdc|usdt|busd|dai|frax|tusd|usdd|usde|fdusd|crvusd|sdai|usds|gusd|pyusd)$/i.test(m.symbol),
+  },
+  {
+    id:      "defi-blue",
+    name:    "DeFi blue",
+    tagline: "Established DeFi infra with real cashflows",
+    emoji:   "◈",
+    color:   "#3D8FFF",
+    risk:    "medium",
+    edge:    "Fee accrual + governance reflex trades",
+    thesis:  "AAVE / UNI / MKR / CRV / PENDLE earn real fees; protocol-revenue narratives compound on cycle turns.",
+    match:   (m) => /^(uni|aave|comp|mkr|cake|crv|sushi|joe|gmx|gns|pendle|ldo|fxs|rune|dydx|ena|eth|cake)$/i.test(m.symbol),
+  },
+  {
+    id:      "ai-depin",
+    name:    "AI · DePIN",
+    tagline: "AI agents + decentralized infrastructure",
+    emoji:   "◊",
+    color:   "#00E8FF",
+    risk:    "high",
+    edge:    "Catalyst-driven; size small ahead of demos",
+    thesis:  "AI agent and DePIN tokens lead narrative spikes; volume often runs ahead of fundamentals.",
+    match:   (m) => /^(fet|agix|rndr|render|tao|wld|grass|io|nos|akt|ar|filecoin|fil|hnt|theta|noi|virtual|ai16z|aixbt|griffain)/i.test(m.symbol),
+  },
+];
+
+function deterministicClusters(members: NarrativeMember[]): NarrativeCluster[] {
+  const buckets: Record<string, NarrativeMember[]> = {};
+  const longtail: NarrativeMember[] = [];
+
+  outer: for (const m of members) {
+    for (const cat of CATEGORIES) {
+      if (cat.match(m)) {
+        (buckets[cat.id] ||= []).push(m);
+        continue outer;
+      }
+    }
+    longtail.push(m);
+  }
+
+  const clusters: NarrativeCluster[] = [];
+  for (const cat of CATEGORIES) {
+    const list = buckets[cat.id] ?? [];
+    if (list.length === 0) continue;
+    // Dedupe by pair address inside the cluster, take top 8 by volume.
+    const seen = new Set<string>();
+    const top = list
+      .filter((m) => {
+        const key = `${m.chain}:${m.pairAddress}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .slice(0, 8);
+    clusters.push({
+      id:      cat.id,
+      name:    cat.name,
+      tagline: cat.tagline,
+      emoji:   cat.emoji,
+      color:   cat.color,
+      thesis:  cat.thesis,
+      risk:    cat.risk,
+      edge:    cat.edge,
+      members: top,
+      aggVolume24h: top.reduce((acc, m) => acc + m.volume24h, 0),
+      aggLiquidity: top.reduce((acc, m) => acc + m.liquidity, 0),
+      avgChange24h: top.length ? top.reduce((acc, m) => acc + m.change24h, 0) / top.length : 0,
+    });
+  }
+
+  // Long-tail bucket: only emit if we ended up with very few clusters,
+  // so the Radar always shows something but we don't dilute the page
+  // with a "miscellaneous" card when there are already 5+ themes.
+  if (clusters.length < 3 && longtail.length > 0) {
+    const top = longtail
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .slice(0, 8);
+    clusters.push({
+      id:      "long-tail",
+      name:    "Long tail",
+      tagline: "Niche trending pairs across the Nexus",
+      emoji:   "·",
+      color:   "#FF5C5C",
+      thesis:  "These pairs are pumping in volume but don't fit a clean narrative — investigate before trading.",
+      risk:    "high",
+      edge:    "Higher information edge if you can verify fundamentals fast",
+      members: top,
+      aggVolume24h: top.reduce((acc, m) => acc + m.volume24h, 0),
+      aggLiquidity: top.reduce((acc, m) => acc + m.liquidity, 0),
+      avgChange24h: top.length ? top.reduce((acc, m) => acc + m.change24h, 0) / top.length : 0,
+    });
+  }
+
+  // Sort by aggregate volume (most active narratives first), cap at 6.
+  return clusters
+    .sort((a, b) => b.aggVolume24h - a.aggVolume24h)
+    .slice(0, 6);
 }
 
 // ─── Enrichment: detect cross-chain spread on duplicate symbols ─────
