@@ -406,6 +406,13 @@ export interface Trade {
   amountIn:  number;
   amountOut: number;
   txHash:    string;
+  /** Wallet that signed the trade (lowercased hex). Exposed for whale
+   *  highlighting + explorer links. Empty if upstream didn't include it. */
+  trader:    string;
+  /** Trade size in USD as reported by GeckoTerminal — preferred over
+   *  recomputing from amounts × priceUsd because the upstream value is
+   *  already routed through the right token side. */
+  sizeUsd:   number;
 }
 
 interface GTTradeAttrs {
@@ -449,6 +456,8 @@ export async function getRecentTrades(
         amountIn:  Number(a.from_token_amount ?? 0),
         amountOut: Number(a.to_token_amount   ?? 0),
         txHash:    a.tx_hash ?? "",
+        trader:    (a.tx_from_address ?? "").toLowerCase(),
+        sizeUsd:   Number(a.volume_in_usd ?? 0),
       };
     }).filter((t) => t.ts > 0);
   } catch {
