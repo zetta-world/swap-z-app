@@ -4,15 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   BarChart3, CandlestickChart, LineChart, BarChart2,
-  ArrowUp, ArrowDown, Zap, Activity, ChevronDown, Sparkles,
+  ArrowUp, ArrowDown, Zap, Activity, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { compactNumber } from "@/lib/format";
-import type { Timeframe } from "@/lib/api/geckoterminal";
+import type { Timeframe, Trade } from "@/lib/api/geckoterminal";
 import { PRO_PAIRS, DEFAULT_PRO_PAIR, CATEGORY_LABELS, groupPairs, type ProPair } from "@/lib/pro-pairs";
 import { CHAINS } from "@/lib/chains";
+import { findToken } from "@/lib/tokens";
 import ProChart, { type ChartKind } from "./ProChart";
 import ProTrades from "./ProTrades";
+import ProPoolStats from "./ProPoolStats";
+import ProDepth from "./ProDepth";
+import ProFlow from "./ProFlow";
+import ProZionDock from "./ProZionDock";
 
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
 
@@ -46,6 +51,15 @@ export default function ProTerminal() {
   const onLastPrice = useCallback((last: number, change: number, high: number, low: number, vol: number) => {
     setHdr({ last, change, high, low, vol });
   }, []);
+
+  // ProTrades publishes its current trade window up to the parent so the
+  // flow + depth panels can derive aggregate stats without re-fetching.
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const onTrades = useCallback((next: Trade[]) => setTrades(next), []);
+
+  // Resolve Tokens for the depth matrix (it needs decimals + addresses).
+  const fromToken = useMemo(() => findToken(pair.chain, pair.base), [pair.chain, pair.base]);
+  const toToken   = useMemo(() => findToken(pair.chain, pair.quote), [pair.chain, pair.quote]);
 
   const chainObj = useMemo(() => CHAINS.find((c) => c.id === pair.chain), [pair.chain]);
 
@@ -284,37 +298,56 @@ export default function ProTerminal() {
             </div>
           </div>
 
-          {/* Trades */}
+          {/* Right rail: ZION dock + trades */}
           <div className="col-span-12 lg:col-span-4 space-y-3">
-            <ProTrades chain={pair.chain} pool={pair.pool} />
-
-            <div className="rounded-lg border border-gold/15 bg-gold/[0.04] p-3 flex gap-2.5">
-              <Sparkles className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
-              <div>
-                <div className="font-display font-bold text-xs text-gold mb-0.5">ZION standby</div>
-                <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-                  Press <kbd className="font-mono text-ink px-1 py-0.5 rounded border border-white/10 bg-white/5">Z</kbd> or open the drawer to ask ZION about this pair.
-                </p>
-              </div>
-            </div>
-
-            {/* Keybinds */}
-            <div className="rounded-lg border border-white/5 bg-black/40 p-3 space-y-1.5">
-              <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase flex items-center gap-1.5">
-                <Zap className="w-3 h-3 text-gold" /> Keybinds
-              </div>
-              {KEYBINDS.map((k) => (
-                <div key={k.keys} className="flex items-center justify-between">
-                  <kbd className="font-mono text-[10px] text-ink-2 px-1.5 py-0.5 rounded border border-white/10 bg-white/[0.02]">{k.keys}</kbd>
-                  <span className="font-mono text-[10px] text-ink-3">{k.label}</span>
-                </div>
-              ))}
-            </div>
+            <ProZionDock
+              chain={pair.chain}
+              fromSymbol={pair.base}
+              toSymbol={pair.quote}
+              midPrice={hdr?.last ?? 0}
+            />
+            <ProTrades chain={pair.chain} pool={pair.pool} onTrades={onTrades} />
           </div>
         </div>
 
+        {/* Pro tools row: pool stats · depth · flow */}
+        <div className="grid grid-cols-12 gap-3 mt-3">
+          <div className="col-span-12 xl:col-span-4">
+            <ProPoolStats chain={pair.chain} pool={pair.pool} feeTier={pair.feeTier} />
+          </div>
+          <div className="col-span-12 md:col-span-7 xl:col-span-5">
+            <ProDepth
+              fromToken={fromToken}
+              toToken={toToken}
+              chain={pair.chain}
+              midPrice={hdr?.last ?? 0}
+            />
+          </div>
+          <div className="col-span-12 md:col-span-5 xl:col-span-3">
+            <ProFlow trades={trades} />
+          </div>
+        </div>
+
+        {/* Keybinds footer — collapsed by default, expand via the chip */}
+        <details className="mt-3 rounded-lg border border-white/5 bg-black/40 overflow-hidden">
+          <summary className="px-3 py-2 cursor-pointer list-none flex items-center gap-2 font-mono text-[10px] text-ink-3 tracking-widest uppercase hover:bg-white/[0.02]">
+            <Zap className="w-3 h-3 text-gold" />
+            Keybinds
+            <span className="text-ink-4">·</span>
+            <span className="text-ink-4">{PRO_PAIRS.length} pairs · 1-9 cycle</span>
+          </summary>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-1.5 px-3 py-2 border-t border-white/5">
+            {KEYBINDS.map((k) => (
+              <div key={k.keys} className="flex items-center gap-2">
+                <kbd className="font-mono text-[10px] text-ink-2 px-1.5 py-0.5 rounded border border-white/10 bg-white/[0.02]">{k.keys}</kbd>
+                <span className="font-mono text-[10px] text-ink-3">{k.label}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+
         <p className="font-mono text-[10px] text-ink-4 text-center mt-4">
-          Live OHLCV + trades via GeckoTerminal · TradingView Lightweight Charts · {PRO_PAIRS.length} pairs available · keys 1-9 cycle the first nine
+          OHLCV + trades · GeckoTerminal · depth · 0x quote · flow · last {/* trades.length */} fills · ZION dock · trading-mode analysis
         </p>
       </div>
     </div>
