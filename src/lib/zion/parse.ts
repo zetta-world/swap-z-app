@@ -10,7 +10,7 @@
 export interface ActionCard {
   kind:
     | "swap" | "bridge"
-    | "arbitrage" | "arbitrage_same_chain" | "arbitrage_cross_chain"
+    | "arbitrage" | "arbitrage_same_chain" | "arbitrage_cross_chain" | "arbitrage_dex_cex"
     | "sniper_watch"
     | "limit" | "buy_limit"
     | "sell_safe" | "sell_medium" | "sell_aggressive"
@@ -57,6 +57,21 @@ export interface ActionCard {
   riskReward?:        string;
   /** Expected timeframe to reach the target (e.g. "24h", "2-7d", "2-4w"). */
   timeframe?:         string;
+  /**
+   * For arbitrage_dex_cex cards: structured description of the CEX leg
+   * the autopilot can fire programmatically. The DEX leg is described
+   * by the rest of the card (`from` / `to` / `chain` / `triggerPrice`).
+   * Without this field, the autopilot leaves the card to manual execution.
+   */
+  cexLeg?: {
+    /** "buy" or "sell" relative to the BASE symbol. */
+    side:   "buy" | "sell";
+    /** Base symbol, e.g. "ETH". Pair is implicit "<symbol>/USDT". */
+    symbol: string;
+    /** Limit price quoted in USDT; market order when omitted. */
+    price?: string;
+  };
+
   /** Optional ladder of profit-take rungs, for trade-thesis style proposals. */
   exits?: Array<{
     /** Label (e.g. "Safe", "Balanced", "Stretch"). */

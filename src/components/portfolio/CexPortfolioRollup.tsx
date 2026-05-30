@@ -36,7 +36,20 @@ interface ExchangeRollup {
  *
  * Auto-locks after 10 minutes of no user activity. Visit /cex to trade.
  */
-export default function CexPortfolioRollup() {
+/**
+ * CEX portfolio rollup. Renders the encrypted-keystore unlock UI, then
+ * fans out parallel balance calls to every connected exchange and shows
+ * a per-exchange breakdown.
+ *
+ * `onTotalUsdChange` lets the parent (PortfolioView) include the
+ * aggregated CEX total in its top-level "Net Worth" figure. We push
+ * 0 on lock / failure so the parent doesn't keep stale numbers.
+ */
+export default function CexPortfolioRollup({
+  onTotalUsdChange,
+}: {
+  onTotalUsdChange?: (totalUsd: number) => void;
+} = {}) {
   const t = useT();
   const [vaultExists, setVaultExists] = useState(false);
   const [connected,   setConnected]   = useState<CexId[]>([]);
@@ -156,6 +169,13 @@ export default function CexPortfolioRollup() {
     for (const r of Object.values(rollups)) sum += r.totalUsd ?? 0;
     return sum;
   }, [rollups]);
+
+  // Bubble the rolled-up CEX total up to the parent so /portfolio can
+  // include it in the headline Net Worth. Pushes 0 whenever the vault
+  // isn't loaded so a stale CEX total doesn't outlive the unlock.
+  useEffect(() => {
+    onTotalUsdChange?.(creds ? totalCexUsd : 0);
+  }, [creds, totalCexUsd, onTotalUsdChange]);
 
   // ─── No vault ──────────────────────────────────────────────────────
   if (!vaultExists) {

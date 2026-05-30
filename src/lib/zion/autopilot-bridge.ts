@@ -60,6 +60,30 @@ const QUOTES_PREFERRED = ["USDT", "USDC", "FDUSD", "BUSD", "USD"];
  * the existing drawer path.
  */
 export function mapCardToCexIntent(card: ActionCard): AutopilotIntent | null {
+  // arbitrage_dex_cex carries its OWN structured cexLeg description and
+  // doesn't depend on the standard from/to pair semantics — handle it
+  // up-front before the stable-pair heuristics kick in.
+  if (card.kind === "arbitrage_dex_cex") {
+    if (!card.cexLeg || !card.cexLeg.symbol || !card.cexLeg.side) return null;
+    const baseSym = normalizeSymbol(card.cexLeg.symbol);
+    if (!(AUTOPILOT_MAJOR_SYMBOLS as readonly string[]).includes(baseSym)) return null;
+    const priceNum = card.cexLeg.price ? parsePrice(card.cexLeg.price) : 0;
+    const notional = card.from?.amount ? Number(card.from.amount) : 0;
+    if (!Number.isFinite(notional) || notional <= 0) return null;
+    const refPrice = priceNum || parsePrice(card.triggerPrice ?? card.entryPrice ?? "");
+    if (!refPrice) return null;
+    const baseAmount = notional / refPrice;
+    if (!Number.isFinite(baseAmount) || baseAmount <= 0) return null;
+    return {
+      symbol:      `${baseSym}/USDT`,
+      side:        card.cexLeg.side,
+      type:        priceNum ? "limit" : "market",
+      amount:      baseAmount,
+      price:       priceNum || undefined,
+      notionalUsd: notional,
+    };
+  }
+
   if (!card.from || !card.to) return null;
 
   const fromSym = normalizeSymbol(card.from.symbol);
