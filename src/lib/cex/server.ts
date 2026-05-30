@@ -43,6 +43,13 @@ function instantiate(id: CexId, creds: CexCredentials): Exchange {
     secret:    creds.apiSecret,
     enableRateLimit: true,
     timeout:   12_000,
+    // Serverless cold starts on Vercel can be seconds off real wall-clock
+    // time; without this Binance / Bybit / OKX reject signatures as "stale".
+    // Forces ccxt to call /time once and offset every signed request.
+    options: {
+      adjustForTimeDifference: true,
+      recvWindow: 60_000,
+    },
   };
   if (PASSPHRASE_EXCHANGES.has(id) && creds.passphrase) {
     config.password = creds.passphrase;

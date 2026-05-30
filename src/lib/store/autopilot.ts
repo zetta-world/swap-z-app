@@ -1,0 +1,165 @@
+"use client";
+
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type { CexId } from "@/lib/cex/types";
+
+/**
+ * ZION Autopilot — opt-in auto-execution of ZION action cards against
+ * connected CEX accounts.
+ *
+ * Threat model (read before changing anything):
+ *   - Default OFF. Master toggle is gated by a confirmation dialog the
+ *     first time it's flipped. Re-confirms whenever it's been off > 24h.
+ *   - Hard caps the user CANNOT bypass without re-confirming:
+ *       • maxTradeUsd      — single-trade USD ceiling
+ *       • maxTradesPerDay  — count ceiling, resets at UTC midnight
+ *       • dailyLossStopUsd — cumulative realized + estimated unreal'd
+ *                            loss for the day; once crossed, autopilot
+ *                            freezes itself OFF until midnight.
+ *   - Per-fire countdown (default 30 s) gives the user a chance to
+ *     cancel ANY individual trade. The countdown banner is the only
+ *     UI surface that fires the trade — there is no "execute now"
+ *     button on autopilot, by design.
+ *   - allowedExchanges / allowedSymbols are explicit whitelists. ZION
+ *     cards that don't fit are still rendered for manual execution; the
+ *     autopilot just skips them.
+ *
+ * Everything persists to localStorage so the rules survive reloads.
+ * The trade history log is bounded at 200 entries (FIFO).
+ */
+
+export const AUTOPILOT_MAJOR_SYMBOLS = [
+  "BTC", "ETH", "SOL", "BNB", "AVAX", "MATIC", "POL", "ARB", "OP",
+  "LINK", "UNI", "AAVE", "PEPE", "WIF", "DOGE",
+] as const;
+
+export interface AutopilotEntry {
+  ts:         number;
+  exchange:   CexId;
+  symbol:     string;
+  side:       "buy" | "sell";
+  type:       "market" | "limit";
+  amount:     number;
+  price?:     number;
+  status:     "fired" | "rejected" | "canceled" | "errored";
+  orderId?:   string;
+  cardKind:   string;
+  cardTitle:  string;
+  /** When status="rejected" or "errored", why. */
+  reason?:    string;
+}
+
+interface AutopilotState {
+  enabled:           boolean;
+  countdownMs:       number;
+  maxTradeUsd:       number;
+  maxTradesPerDay:   number;
+  dailyLossStopUsd:  number;
+  allowedExchanges:  CexId[];
+  allowedSymbols:    string[];
+  /** Runtime counters — reset at UTC midnight (see noteUtcDay). */
+  tradesToday:       number;
+  pnlToday:          number;
+  lastResetDay:      string;
+  /** Locally-only audit log of every auto-execution attempt. */
+  history:           AutopilotEntry[];
+  /** Set when daily loss stop fires — blocks autopilot until rolled to next day. */
+  frozenUntilDay:    string | null;
+
+  setEnabled:          (b: boolean) => void;
+  setCountdownMs:      (n: number)  => void;
+  setMaxTradeUsd:      (n: number)  => void;
+  setMaxTradesPerDay:  (n: number)  => void;
+  setDailyLossStopUsd: (n: number)  => void;
+  setAllowedExchanges: (ids: CexId[]) => void;
+  setAllowedSymbols:   (syms: string[]) => void;
+  /**
+   * Append a new entry to the audit log. Caller computes everything;
+   * we just FIFO-cap the list at 200 entries.
+   */
+  pushHistory:         (entry: AutopilotEntry) => void;
+  /** Bump the daily counters when a successful auto-trade fires. */
+  recordTrade:         (notionalUsd: number) => void;
+  /** Adjust the daily P&L; freezes autopilot when the stop is hit. */
+  recordPnl:           (deltaUsd: number) => void;
+  /** Force the daily-reset check; called on app boot. */
+  rolloverIfNewDay:    () => void;
+  clearHistory:        () => void;
+}
+
+function utcDayKey(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+export const useAutopilot = create<AutopilotState>()(
+  persist(
+    (set, get) => ({
+      enabled:          false,
+      countdownMs:      30_000,
+      maxTradeUsd:      250,
+      maxTradesPerDay:  6,
+      dailyLossStopUsd: 200,
+      allowedExchanges: [] as CexId[],
+      allowedSymbols:   ["BTC", "ETH", "SOL"],
+      tradesToday:      0,
+      pnlToday:         0,
+      lastResetDay:     utcDayKey(),
+      history:          [],
+      frozenUntilDay:   null,
+
+      setEnabled: (b) => {
+        get().rolloverIfNewDay();
+        set({ enabled: b });
+      },
+      setCountdownMs:      (n) => set({ countdownMs:      Math.max(5_000, Math.min(180_000, n)) }),
+      setMaxTradeUsd:      (n) => set({ maxTradeUsd:      Math.max(10, Math.min(50_000, n))    }),
+      setMaxTradesPerDay:  (n) => set({ maxTradesPerDay:  Math.max(1,  Math.min(50,     n))    }),
+      setDailyLossStopUsd: (n) => set({ dailyLossStopUsd: Math.max(10, Math.min(100_000, n))   }),
+      setAllowedExchanges: (ids)  => set({ allowedExchanges: [...new Set(ids)] }),
+      setAllowedSymbols:   (syms) => set({ allowedSymbols:   [...new Set(syms.map((s) => s.toUpperCase().trim()).filter(Boolean))] }),
+
+      pushHistory: (entry) => {
+        const next = [entry, ...get().history].slice(0, 200);
+        set({ history: next });
+      },
+
+      recordTrade: (notionalUsd) => {
+        get().rolloverIfNewDay();
+        set((s) => ({ tradesToday: s.tradesToday + 1 }));
+        // Notional only counts toward the count cap; the loss-stop tracks
+        // P&L explicitly via recordPnl, which the caller invokes once the
+        // trade settles.
+        void notionalUsd;
+      },
+
+      recordPnl: (deltaUsd) => {
+        get().rolloverIfNewDay();
+        const next = get().pnlToday + deltaUsd;
+        set({ pnlToday: next });
+        if (next <= -get().dailyLossStopUsd) {
+          set({ enabled: false, frozenUntilDay: utcDayKey() });
+        }
+      },
+
+      rolloverIfNewDay: () => {
+        const today = utcDayKey();
+        if (get().lastResetDay !== today) {
+          set({
+            lastResetDay:   today,
+            tradesToday:    0,
+            pnlToday:       0,
+            frozenUntilDay: get().frozenUntilDay === today ? get().frozenUntilDay : null,
+          });
+        }
+      },
+
+      clearHistory: () => set({ history: [] }),
+    }),
+    {
+      name:    "zswap_autopilot_v1",
+      version: 1,
+    },
+  ),
+);

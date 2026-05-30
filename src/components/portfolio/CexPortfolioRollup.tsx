@@ -13,6 +13,7 @@ import {
 import {
   CEX_META, type CexId, type CexBalance, type CexCredentials,
 } from "@/lib/cex/types";
+import { useCexVault } from "@/lib/cex/vault";
 import { compactNumber } from "@/lib/format";
 import { useT, t as tImp } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
@@ -60,6 +61,7 @@ export default function CexPortfolioRollup() {
     const id = setInterval(() => {
       if (Date.now() - lastActivity.current > AUTO_LOCK_MS) {
         setCreds(null);
+        useCexVault.getState().lock();
         setPassphrase("");
         setRollups({} as Record<CexId, ExchangeRollup>);
         toast.info(t("portfolio.autoLockedToast"));
@@ -131,6 +133,7 @@ export default function CexPortfolioRollup() {
         return;
       }
       setCreds(decrypted);
+      useCexVault.getState().setUnlocked(decrypted);
       lastActivity.current = Date.now();
       toast.success(t("portfolio.unlockToast"));
     } catch (e) {
@@ -142,6 +145,7 @@ export default function CexPortfolioRollup() {
 
   const onLock = () => {
     setCreds(null);
+    useCexVault.getState().lock();
     setPassphrase("");
     setRollups({} as Record<CexId, ExchangeRollup>);
     toast.success(t("portfolio.lockToast"));

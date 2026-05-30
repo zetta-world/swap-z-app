@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { fetchCexOrderbook } from "@/lib/cex/server";
+import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import { type CexId, type CexCredentials, type CexOrderbookSnapshot, SUPPORTED_CEX_IDS, CEX_META } from "@/lib/cex/types";
 
 export const runtime = "nodejs";
@@ -92,19 +93,10 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[cex/orderbook]", exchange, body.symbol, "failed:", msg);
     const code = classifyCexError(msg);
+    const detail = sanitizeUpstreamMessage(msg, body.apiKey);
     return NextResponse.json(
-      { ok: false, error: code },
-      { status: code === "auth_failed" ? 401 : 502, headers: { "Cache-Control": "no-store" } },
+      { ok: false, error: code, detail },
+      { status: statusForError(code), headers: { "Cache-Control": "no-store" } },
     );
   }
-}
-
-function classifyCexError(msg: string): string {
-  const m = msg.toLowerCase();
-  if (m.includes("invalid api") || m.includes("signature") || m.includes("unauthorized") || m.includes("apikey")) {
-    return "auth_failed";
-  }
-  if (m.includes("symbol") && (m.includes("not") || m.includes("invalid"))) return "symbol_not_found";
-  if (m.includes("timeout") || m.includes("etimeout")) return "timeout";
-  return "upstream_failed";
 }
