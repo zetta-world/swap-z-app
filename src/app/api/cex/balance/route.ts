@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { fetchCexBalance } from "@/lib/cex/server";
+import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import { type CexId, type CexCredentials, type CexBalanceResponse, SUPPORTED_CEX_IDS, CEX_META } from "@/lib/cex/types";
 
 export const runtime = "nodejs";
@@ -86,27 +87,13 @@ export async function POST(req: NextRequest) {
       headers: { "Cache-Control": "no-store, no-transform" },
     });
   } catch (err) {
-    // Never echo the raw ccxt error — it can leak schema details and even
-    // sometimes the key itself in retry-after URLs. Log server-side, return
-    // a coarse code.
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[cex/balance]", exchange, "failed:", msg);
     const code = classifyCexError(msg);
+    const detail = sanitizeUpstreamMessage(msg, body.apiKey);
     return NextResponse.json(
-      { ok: false, error: code },
-      { status: code === "auth_failed" ? 401 : 502, headers: { "Cache-Control": "no-store" } },
+      { ok: false, error: code, detail },
+      { status: statusForError(code), headers: { "Cache-Control": "no-store" } },
     );
   }
-}
-
-function classifyCexError(msg: string): string {
-  const m = msg.toLowerCase();
-  if (m.includes("invalid api") || m.includes("signature") || m.includes("unauthorized")
-      || m.includes("apikey") || m.includes("invalid key")) {
-    return "auth_failed";
-  }
-  if (m.includes("ip") && m.includes("not")) return "ip_not_whitelisted";
-  if (m.includes("permission") || m.includes("scope")) return "permission_denied";
-  if (m.includes("timeout") || m.includes("etimeout")) return "timeout";
-  return "upstream_failed";
 }

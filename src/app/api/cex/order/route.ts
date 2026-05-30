@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { placeCexOrder } from "@/lib/cex/server";
+import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import {
   type CexId, type CexCredentials, type CexOrderResponse, type CexOrderSide, type CexOrderType,
   SUPPORTED_CEX_IDS, CEX_META,
@@ -149,24 +150,10 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[cex/order]", exchange, body.symbol, side, type, "failed:", msg);
     const code = classifyCexError(msg);
+    const detail = sanitizeUpstreamMessage(msg, body.apiKey);
     return NextResponse.json(
-      { ok: false, error: code },
-      { status: code === "auth_failed" ? 401 : 502, headers: { "Cache-Control": "no-store" } },
+      { ok: false, error: code, detail },
+      { status: statusForError(code), headers: { "Cache-Control": "no-store" } },
     );
   }
-}
-
-function classifyCexError(msg: string): string {
-  const m = msg.toLowerCase();
-  if (m.includes("invalid api") || m.includes("signature") || m.includes("unauthorized") || m.includes("apikey")) {
-    return "auth_failed";
-  }
-  if (m.includes("insufficient") && (m.includes("balance") || m.includes("fund"))) return "insufficient_balance";
-  if (m.includes("min") && (m.includes("notional") || m.includes("size") || m.includes("amount"))) return "below_minimum";
-  if (m.includes("max") && (m.includes("position") || m.includes("size"))) return "above_maximum";
-  if (m.includes("price") && (m.includes("filter") || m.includes("range") || m.includes("tick"))) return "invalid_price";
-  if (m.includes("symbol") && (m.includes("not") || m.includes("invalid"))) return "symbol_not_found";
-  if (m.includes("timeout") || m.includes("etimeout")) return "timeout";
-  if (m.includes("permission") || m.includes("scope") || m.includes("not allowed")) return "permission_denied";
-  return "upstream_failed";
 }

@@ -36,6 +36,9 @@ interface CexState {
   totalUsd?: number;
   topAsset?: string;
   error?:    string;
+  /** Sanitized upstream error message — surfaces actionable detail
+   *  beneath the localized headline (e.g. the actual Binance error). */
+  detail?:   string;
   fetchedAt?: number;
 }
 
@@ -147,6 +150,7 @@ export default function CexSettings() {
         balances?: CexBalance[];
         totalUsd?: number;
         error?:    string;
+        detail?:   string;
       };
       if (!res.ok || !body.ok) {
         setPerExchange((s) => ({
@@ -154,6 +158,7 @@ export default function CexSettings() {
           [id]: {
             status: "failed",
             error:  body.error ?? `HTTP ${res.status}`,
+            detail: body.detail,
             fetchedAt: Date.now(),
           },
         }));
@@ -426,8 +431,13 @@ function ExchangeCard({
               )}
 
               {state.error && (
-                <div className="rounded-md border border-red/20 bg-red/[0.04] px-2.5 py-2 font-mono text-[10px] text-red">
-                  {humanError(state.error)}
+                <div className="rounded-md border border-red/20 bg-red/[0.04] px-2.5 py-2 font-mono text-[10px] text-red space-y-1">
+                  <div>{humanError(state.error)}</div>
+                  {state.detail && (
+                    <div className="text-red/70 leading-relaxed break-words">
+                      {state.detail}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -507,8 +517,10 @@ function Field({
 function humanError(code: string): string {
   switch (code) {
     case "auth_failed":          return tImp("cex.errAuthFailed");
+    case "timestamp_drift":      return tImp("cex.errTimestampDrift");
     case "ip_not_whitelisted":   return tImp("cex.errIpWhitelist");
     case "permission_denied":    return tImp("cex.errPermDenied");
+    case "region_blocked":       return tImp("cex.errRegionBlocked");
     case "timeout":              return tImp("cex.errTimeout");
     case "rate_limited":         return tImp("cex.errRateLimit");
     case "upstream_failed":      return tImp("cex.errUpstreamFailed");
