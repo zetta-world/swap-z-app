@@ -103,10 +103,14 @@ export default function PortfolioView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackedTokens, ...balances]);
 
+  // CEX total bubbled up from the rollup once the vault is unlocked.
+  // 0 when locked / no vault — never stale.
+  const [cexUsd, setCexUsd] = useState(0);
+
   const totals = useMemo(() => {
     const portfolio = holdings.reduce((acc, h) => acc + (h.balance.usdValue ?? 0), 0);
-    return { portfolio, total: portfolio };
-  }, [holdings]);
+    return { portfolio, cex: cexUsd, total: portfolio + cexUsd };
+  }, [holdings, cexUsd]);
 
   // Distribution across chains for the bar chart.
   const byChain = useMemo(() => {
@@ -172,15 +176,16 @@ export default function PortfolioView() {
         )}
 
         {/* Net worth card — only when there's real data to show */}
-        {(anyWalletConnected || holdings.length > 0) && (
+        {(anyWalletConnected || holdings.length > 0 || cexUsd > 0) && (
           <div className="aurora-border p-px mb-5">
             <div className="rounded-[20px] glass p-5 sm:p-6">
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">{t("portfolio.netWorth")}</div>
                   <div className="font-display font-extrabold text-3xl sm:text-4xl text-ink">{mask(formatUsd(totals.total))}</div>
                 </div>
                 <Metric label={t("portfolio.walletBalance")} value={mask(formatUsd(totals.portfolio))} tone="cyan" />
+                <Metric label={t("portfolio.cexBalance")}    value={mask(formatUsd(totals.cex))}       tone="violet" />
                 <Metric label={t("portfolio.chainsTracked")} value={String(byChain.length)} tone="gold" />
               </div>
 
@@ -269,7 +274,7 @@ export default function PortfolioView() {
         </div>
 
         {/* CEX rollup — real read-only data from the connected exchanges */}
-        <CexPortfolioRollup />
+        <CexPortfolioRollup onTotalUsdChange={setCexUsd} />
 
         <p className="font-mono text-[10px] text-ink-4 text-center mt-6">
           {t("portfolio.wallets")}

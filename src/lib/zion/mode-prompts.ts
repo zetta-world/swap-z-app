@@ -130,6 +130,7 @@ emit 4 [[ACTION]] blocks. Do NOT collapse multiple opportunities into a
 single card. Use the appropriate kind:
   arbitrage_same_chain  — two-leg same-chain trade
   arbitrage_cross_chain — bridge + swap
+  arbitrage_dex_cex     — one DEX leg + one CEX leg (uses CEX SPOT REFERENCE)
 
 For arbitrage_cross_chain, the action card MUST include:
   • from.amount: the suggested test size (don't go all-in on first attempt)
@@ -137,9 +138,28 @@ For arbitrage_cross_chain, the action card MUST include:
   • triggerPrice: the chain-A buy price you're targeting
   • risk: "caution" by default, "risky" if liquidity on either side <$50k
 
+For arbitrage_dex_cex, the action card MUST include:
+  • from.symbol / to.symbol matching the DEX leg the user will swap
+  • from.amount: USD-notional size of the test trade (the autopilot uses
+    this to size the matching CEX leg)
+  • triggerPrice: the DEX side price you're targeting
+  • estCost (gas + CEX taker fee), estReturn (gross), targetReturn (net)
+  • cexLeg: { "side": "buy" | "sell", "symbol": "<BASE>", "price": "<USDT-price>" }
+    The OPPOSITE direction of the DEX leg, expressed against the BASE.
+    Example: if the DEX leg is "sell ETH on Uniswap", the cexLeg is
+    { "side": "buy", "symbol": "ETH", "price": "3408.10" }.
+    The autopilot uses this field to fire the CEX side automatically; if
+    you omit it the user has to fire both legs manually.
+  • summary MUST spell out both legs in plain English, e.g.:
+    "Sell ETH on Uniswap V3 Base @ $3,420.50, buy ETH on Binance @
+    $3,408.10 (-0.36%). Net edge ≈ +0.18% after gas + 0.10% taker."
+  • risk: "caution" by default, "risky" if either DEX pool < $100k liq
+    or the CEX side has gating (deposit suspension, withdrawal queue).
+
 PROMPT FILTER:
   • Skip same-chain "arbitrage" with spread <0.3% — that's noise.
   • Skip cross-chain with spread <0.8% — bridge eats it.
+  • Skip DEX-vs-CEX with spread <0.4% — taker fees + gas eat it.
   • Skip pairs where either side has <$25k liquidity.
   • If user-allowed chains is given, ONLY use those.
 `;

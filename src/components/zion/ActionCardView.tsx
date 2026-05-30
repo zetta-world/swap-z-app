@@ -23,6 +23,7 @@ const KIND_META: Record<string, KindMeta> = {
   arbitrage:             { Icon: TrendingUp,       labelKey: "zion.cardKindArb",      tone: "violet" },
   arbitrage_same_chain:  { Icon: TrendingUp,       labelKey: "zion.cardKindArbDex",   tone: "violet" },
   arbitrage_cross_chain: { Icon: Globe,            labelKey: "zion.cardKindArbChain", tone: "violet" },
+  arbitrage_dex_cex:     { Icon: TrendingUp,       labelKey: "zion.cardKindArbDexCex", tone: "gold"   },
   sniper_watch:          { Icon: Crosshair,        labelKey: "zion.cardKindSniper",   tone: "gold"   },
   limit:                 { Icon: Bot,              labelKey: "zion.cardKindLimit",    tone: "violet" },
   buy_limit:             { Icon: ArrowDownToLine,  labelKey: "zion.cardKindBuyLimit", tone: "cyan"   },
