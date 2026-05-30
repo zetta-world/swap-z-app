@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import ActionCardView from "./ActionCardView";
+import AutopilotPilot from "./AutopilotPilot";
 import ZionExecuteRouter from "./ZionExecuteRouter";
 import TokenSelector from "@/components/swap/TokenSelector";
 import type { ZionOp } from "@/lib/zion/mode-prompts";
@@ -387,6 +388,11 @@ export default function ZionDrawer() {
                       ? t("zion.proposalsSingular")
                       : t("zion.proposalsPlural", { n: parsed.cards.length })}
                   </div>
+                  {/* Autopilot banner — picks the next eligible card and runs
+                      a cancel-able countdown before firing it through the
+                      CEX API. Hidden when autopilot is OFF or nothing
+                      matches the rails. */}
+                  <AutopilotPilot cards={parsed.cards} />
                   <AnimatePresence initial={false}>
                     {parsed.cards.map((c, i) => (
                       <ActionCardView key={i} card={c} index={i} onExecute={setExecuting} />

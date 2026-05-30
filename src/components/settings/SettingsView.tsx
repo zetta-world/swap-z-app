@@ -6,6 +6,7 @@ import { Settings as SettingsIcon, Shield, Bell, Globe, EyeOff, Zap, Brain, KeyR
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
 import CexSettings from "./CexSettings";
+import AutopilotPanel from "./AutopilotPanel";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
@@ -177,6 +178,11 @@ export default function SettingsView() {
             <Toggle label={t("settings.highRiskGate")}     description={t("settings.highRiskGateDesc")}     value={true}  onChange={() => {}} tone="gold" />
             <Toggle label={t("settings.encryptedCache")}   description={t("settings.encryptedCacheDesc")}   value={true}  onChange={() => {}} tone="cyan" />
           </Group>
+        </div>
+
+        {/* ZION autopilot — opt-in CEX auto-execution */}
+        <div className="mt-5">
+          <AutopilotPanel />
         </div>
 
         {/* CEX connections — keys live encrypted in this browser only */}

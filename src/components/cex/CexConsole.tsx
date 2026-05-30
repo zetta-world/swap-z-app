@@ -12,6 +12,7 @@ import {
   hasKeystore, unlockKeystore, listExchanges,
 } from "@/lib/cex/keystore";
 import { CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials } from "@/lib/cex/types";
+import { useCexVault } from "@/lib/cex/vault";
 import { useT } from "@/lib/i18n";
 import CexTradePanel from "./CexTradePanel";
 import CexOpenOrdersPanel from "./CexOpenOrdersPanel";
@@ -75,6 +76,7 @@ export default function CexConsole() {
     const id = setInterval(() => {
       if (Date.now() - lastActivity.current > AUTO_LOCK_MS) {
         setCreds(null);
+        useCexVault.getState().lock();
         setPassphrase("");
         setSelectedId(null);
         toast.info(t("cex.autoLocked"));
@@ -96,6 +98,10 @@ export default function CexConsole() {
         return;
       }
       setCreds(decrypted);
+      // Share the unlocked creds with the global vault so the ZION
+      // autopilot (or any other cross-page surface) can use them
+      // without re-asking for the passphrase.
+      useCexVault.getState().setUnlocked(decrypted);
       lastActivity.current = Date.now();
       toast.success(t("cex.vaultUnlockedToast"));
     } catch (e) {
@@ -107,6 +113,7 @@ export default function CexConsole() {
 
   const onLock = () => {
     setCreds(null);
+    useCexVault.getState().lock();
     setPassphrase("");
     setSelectedId(null);
     toast.success(t("cex.vaultLockedToast"));
