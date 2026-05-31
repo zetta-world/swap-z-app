@@ -11,7 +11,7 @@ import {
 } from "wagmi";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
-import { concat, erc20Abi, maxUint256, numberToHex, size, type Hex } from "viem";
+import { concat, erc20Abi, numberToHex, size, type Hex } from "viem";
 import type { Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { CHAIN_BY_ID } from "@/lib/chains";
@@ -240,7 +240,7 @@ export default function ExecuteSwap({
         address:      fromToken.address as Hex,
         abi:          erc20Abi,
         functionName: "approve",
-        args:         [lfQuote.estimate.approvalAddress as Hex, maxUint256],
+        args:         [lfQuote.estimate.approvalAddress as Hex, BigInt(sellAmount)],
         chainId:      targetChainId,
       });
       if (publicClient) {

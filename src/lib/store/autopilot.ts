@@ -160,6 +160,26 @@ export const useAutopilot = create<AutopilotState>()(
     {
       name:    "zswap_autopilot_v1",
       version: 1,
+      // SECURITY: never persist `enabled`. If it survived a reload, auto-
+      // trading would silently resume the moment the page loads — before
+      // the user has a chance to see the UI or re-confirm. The daily
+      // counters (tradesToday / pnlToday / lastResetDay / frozenUntilDay)
+      // MUST persist, otherwise a reload would reset the caps and let a
+      // user (or a runaway loop) blow past maxTradesPerDay by refreshing.
+      partialize: (s) => ({
+        countdownMs:      s.countdownMs,
+        maxTradeUsd:      s.maxTradeUsd,
+        maxTradesPerDay:  s.maxTradesPerDay,
+        dailyLossStopUsd: s.dailyLossStopUsd,
+        allowedExchanges: s.allowedExchanges,
+        allowedSymbols:   s.allowedSymbols,
+        tradesToday:      s.tradesToday,
+        pnlToday:         s.pnlToday,
+        lastResetDay:     s.lastResetDay,
+        history:          s.history,
+        frozenUntilDay:   s.frozenUntilDay,
+        // enabled intentionally omitted → always rehydrates to false.
+      }),
     },
   ),
 );

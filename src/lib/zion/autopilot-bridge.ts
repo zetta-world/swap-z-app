@@ -221,6 +221,11 @@ export async function fireAutopilotIntent(
       type:      intent.type,
       amount:    intent.amount,
       price:     intent.price,
+      // REQUIRED by /api/cex/order — without it the route rejects every
+      // call with 400 missing_confirmation. The autopilot's own countdown
+      // banner IS the user's confirmation surface, so we attach the token
+      // here once the countdown has elapsed unblocked.
+      confirm:   "I-CONFIRM-REAL-ORDER",
     }),
   });
   const body = await res.json().catch(() => ({})) as {

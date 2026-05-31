@@ -109,6 +109,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Server-side notional ceiling — defense in depth. The client enforces
+  // per-trade caps, but a buggy client, a replayed request, or a direct
+  // call must NOT be able to place a catastrophic order. When the notional
+  // is computable (a price is present), hard-cap it well above any sane
+  // single trade. Market orders carry no price so this can't bind them;
+  // those still pass through the client cap + the confirm guard.
+  const HARD_NOTIONAL_CEILING_USD = 100_000;
+  if (typeof body.price === "number" && Number.isFinite(body.price) && body.price > 0) {
+    const notional = body.amount * body.price;
+    if (Number.isFinite(notional) && notional > HARD_NOTIONAL_CEILING_USD) {
+      return NextResponse.json({ ok: false, error: "notional_too_large" }, { status: 400 });
+    }
+  }
+
   if (typeof body.apiKey !== "string" || body.apiKey.length < 8 || body.apiKey.length > 200) {
     return NextResponse.json({ ok: false, error: "invalid_api_key" }, { status: 400 });
   }
