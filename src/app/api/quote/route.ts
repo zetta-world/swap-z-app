@@ -32,7 +32,7 @@ const RL_FIRM  = { windowMs: 60_000, max: 20 };   // firm quote per source
  *   buyToken      "native" | 0x... (required)
  *   sellAmount    integer base units (required)
  *   taker         user wallet (required for `mode=quote` / `source=lifi`)
- *   slippageBps   1-5000 (default 50)
+ *   slippageBps   1-1000 (default 50)
  *   mode          "list"   → list of normalized quotes (default)
  *                 "quote"  → firm quote from one source for execution
  *   source        "0x" | "lifi"  (required when mode=quote)
@@ -109,7 +109,10 @@ export async function GET(req: NextRequest) {
 
   const slipRaw    = params.get("slippageBps");
   const slippageBps = slipRaw ? parseInt(slipRaw, 10) : 50;
-  if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 5000) {
+  // Cap at 1000 bps (10%). The UI maxes out at 5%; anything beyond 10% is
+  // almost always a fat-finger or a sandwich-bait setup, so we reject it
+  // server-side even on direct API calls.
+  if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 1000) {
     return NextResponse.json({ error: "invalid_slippage" }, { status: 400 });
   }
 

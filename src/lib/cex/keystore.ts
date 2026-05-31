@@ -28,10 +28,19 @@
 import type { CexCredentials, CexId } from "./types";
 
 const STORAGE_KEY = "zswap_cex_keystore_v1";
-const PBKDF2_ITERATIONS = 250_000;
+// OWASP 2024 floor for PBKDF2-HMAC-SHA256 is 600k. New vaults use this;
+// existing vaults that predate the bump stored no `iter` field and are
+// read back at the legacy 250k so they still decrypt (then re-save at
+// 600k the next time the user edits them).
+const PBKDF2_ITERATIONS = 600_000;
+const PBKDF2_ITERATIONS_LEGACY = 250_000;
+const MIN_PASSPHRASE_LEN = 12;
 
 interface EncryptedRecord {
   v:      1;
+  /** PBKDF2 iteration count used for THIS record. Absent on pre-600k
+   *  vaults — readers default to the legacy 250k when missing. */
+  iter?:  number;
   salt:   string;       // base64 16 bytes
   iv:     string;       // base64 12 bytes
   cipher: string;       // base64 ciphertext (creds JSON encrypted)
@@ -58,7 +67,7 @@ function base64ToBytes(s: string): Uint8Array {
 
 // ─── PBKDF2 → AES-GCM key ───────────────────────────────────────────
 
-async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveKey(passphrase: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
   const enc = new TextEncoder();
   // Make a fresh ArrayBuffer copy so TS' BufferSource type accepts it
   // regardless of whether the input is backed by a SharedArrayBuffer.
@@ -70,7 +79,7 @@ async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKe
     {
       name:       "PBKDF2",
       salt:       saltCopy,
-      iterations: PBKDF2_ITERATIONS,
+      iterations,
       hash:       "SHA-256",
     },
     keyMaterial,
@@ -124,7 +133,7 @@ export async function unlockKeystore(passphrase: string): Promise<Partial<Record
   const salt   = base64ToBytes(rec.salt);
   const iv     = new Uint8Array(base64ToBytes(rec.iv));
   const cipher = new Uint8Array(base64ToBytes(rec.cipher));
-  const key    = await deriveKey(passphrase, salt);
+  const key    = await deriveKey(passphrase, salt, rec.iter ?? PBKDF2_ITERATIONS_LEGACY);
   try {
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher);
     return JSON.parse(new TextDecoder().decode(plain)) as Partial<Record<CexId, CexCredentials>>;
@@ -142,8 +151,8 @@ export async function saveCredentials(
   passphrase: string,
   next: Partial<Record<CexId, CexCredentials>>,
 ): Promise<void> {
-  if (!passphrase || passphrase.length < 8) {
-    throw new Error("Passphrase must be at least 8 characters.");
+  if (!passphrase || passphrase.length < MIN_PASSPHRASE_LEN) {
+    throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LEN} characters.`);
   }
 
   // Merge into any existing vault (so the user doesn't lose Binance keys
@@ -166,7 +175,7 @@ export async function saveCredentials(
 
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv   = crypto.getRandomValues(new Uint8Array(12));
-  const key  = await deriveKey(passphrase, salt);
+  const key  = await deriveKey(passphrase, salt, PBKDF2_ITERATIONS);
   const plain  = new Uint8Array(new TextEncoder().encode(JSON.stringify(merged)));
   const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
 
@@ -177,6 +186,7 @@ export async function saveCredentials(
 
   safeWriteRecord({
     v: 1,
+    iter:   PBKDF2_ITERATIONS,
     salt:   bytesToBase64(salt),
     iv:     bytesToBase64(iv),
     cipher: bytesToBase64(new Uint8Array(cipher)),

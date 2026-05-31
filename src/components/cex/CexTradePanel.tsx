@@ -162,7 +162,8 @@ export default function CexTradePanel({
   const referencePrice = type === "limit" && limitPriceNum > 0
     ? limitPriceNum
     : marketRefPrice;
-  const estCostQuote = amountNum * referencePrice;
+  const estCostQuoteRaw = amountNum * referencePrice;
+  const estCostQuote = Number.isFinite(estCostQuoteRaw) ? estCostQuoteRaw : 0;
 
   // Sanity warnings
   const warnings = useMemo(() => {

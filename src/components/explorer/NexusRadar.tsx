@@ -300,7 +300,7 @@ function ClusterCard({
               <p className="font-mono text-[10px] text-ink-2 leading-relaxed truncate">
                 <b>{cluster.crossChainSpread.symbol}</b> · {cluster.crossChainSpread.bestChain} vs {cluster.crossChainSpread.worstChain}
                 {" · "}
-                <span className="text-violet font-bold">{cluster.crossChainSpread.spreadPct.toFixed(2)}%</span>
+                <span className="text-violet font-bold">{Number.isFinite(cluster.crossChainSpread.spreadPct) ? cluster.crossChainSpread.spreadPct.toFixed(2) : "—"}%</span>
               </p>
             </div>
           </div>

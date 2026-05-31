@@ -36,6 +36,12 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   // or re-render. Identity = first 64 chars of title — Claude-emitted
   // titles are deterministic per card / pair.
   const consumedRef = useRef<Set<string>>(new Set());
+  // Re-entrancy guard. setPhase is async, so two rapid effect runs (React
+  // StrictMode double-invoke, a parent re-render landing on the same
+  // expired countdown) could both call fire() before phase flips to
+  // "firing". This ref flips synchronously and blocks the second call —
+  // without it the same order could be sent to the exchange twice.
+  const firingRef = useRef(false);
   const [activeIntent, setActiveIntent] = useState<{
     cardKey:  string;
     card:     ActionCard;
@@ -53,8 +59,11 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   const nextCandidate = useMemo(() => {
     if (!enabled || a.frozenUntilDay || a.tradesToday >= a.maxTradesPerDay) return null;
     for (const c of cards) {
-      const key = (c.title || "").slice(0, 64);
-      if (!key) continue;
+      // Identity = kind + full title + the pair, so two distinct cards
+      // (e.g. same title prefix on different chains) never collide into
+      // one consumed-key and silently skip a legitimate second trade.
+      const key = `${c.kind}:${c.title ?? ""}:${c.from?.symbol ?? ""}>${c.to?.symbol ?? ""}`;
+      if (!key || key.length < 4) continue;
       if (consumedRef.current.has(key)) continue;
       const intent = mapCardToCexIntent(c);
       if (!intent) continue;
@@ -124,75 +133,79 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
 
   const fire = async () => {
     if (!activeIntent) return;
-    setPhase("firing");
-    const live = vault.getActive();
-    if (!live) {
-      consumedRef.current.add(activeIntent.cardKey);
+    // Re-entrancy guard — block a second concurrent fire of the same intent.
+    if (firingRef.current) return;
+    firingRef.current = true;
+
+    const intent = activeIntent.intent;
+    const cardKey = activeIntent.cardKey;
+    const card = activeIntent.card;
+
+    const reject = (reason: string, status: "rejected" | "errored" = "rejected") => {
+      consumedRef.current.add(cardKey);
       a.pushHistory({
-        ts:        Date.now(),
-        exchange:  "binance",
-        symbol:    activeIntent.intent.symbol,
-        side:      activeIntent.intent.side,
-        type:      activeIntent.intent.type,
-        amount:    activeIntent.intent.amount,
-        price:     activeIntent.intent.price,
-        status:    "rejected",
-        cardKind:  activeIntent.card.kind,
-        cardTitle: activeIntent.card.title.slice(0, 80),
-        reason:    "vault re-locked before fire",
+        ts: Date.now(), exchange: "binance",
+        symbol: intent.symbol, side: intent.side, type: intent.type,
+        amount: intent.amount, price: intent.price,
+        status, cardKind: card.kind, cardTitle: card.title.slice(0, 80), reason,
       });
       setActiveIntent(null);
       setPhase("idle");
+      firingRef.current = false;
+    };
+
+    setPhase("firing");
+
+    // ── Re-validate EVERY rail at fire time using FRESH store state ──
+    // The 30-second countdown is a window in which the user could have
+    // tightened a cap, the daily counter could have rolled, the vault
+    // could have locked, or the loss-stop could have frozen autopilot.
+    // The select-time check is not enough; re-check against getState().
+    const live = vault.getActive();
+    if (!live) {
+      reject("vault re-locked before fire");
       toast.error("Autopilot: vault re-locked. Unlock to resume.");
       return;
     }
-    const exchange = pickExchangeForIntent(a.allowedExchanges, live);
-    if (!exchange) {
-      consumedRef.current.add(activeIntent.cardKey);
-      setActiveIntent(null);
-      setPhase("idle");
-      return;
-    }
+    const ap = useAutopilot.getState();
+    ap.rolloverIfNewDay();
+    const fresh = useAutopilot.getState();
+    if (!fresh.enabled)                                   return reject("autopilot turned off during countdown");
+    if (fresh.frozenUntilDay)                             return reject("autopilot frozen (daily stop)");
+    if (fresh.tradesToday >= fresh.maxTradesPerDay)       return reject("daily trade cap reached");
+    if (intent.notionalUsd > fresh.maxTradeUsd)           return reject("exceeds per-trade cap (changed during countdown)");
+    if (!fresh.allowedSymbols.includes(intent.symbol.split("/")[0]))
+                                                          return reject("symbol no longer allowed");
+    const exchange = pickExchangeForIntent(fresh.allowedExchanges, live);
+    if (!exchange)                                        return reject("no allowed+connected exchange");
+
     try {
-      const order = await fireAutopilotIntent(exchange, live[exchange]!, activeIntent.intent);
-      a.recordTrade(activeIntent.intent.notionalUsd);
+      const order = await fireAutopilotIntent(exchange, live[exchange]!, intent);
+      a.recordTrade(intent.notionalUsd);
       a.pushHistory({
-        ts:        Date.now(),
-        exchange,
-        symbol:    activeIntent.intent.symbol,
-        side:      activeIntent.intent.side,
-        type:      activeIntent.intent.type,
-        amount:    activeIntent.intent.amount,
-        price:     activeIntent.intent.price,
-        status:    "fired",
-        orderId:   order.id,
-        cardKind:  activeIntent.card.kind,
-        cardTitle: activeIntent.card.title.slice(0, 80),
+        ts: Date.now(), exchange,
+        symbol: intent.symbol, side: intent.side, type: intent.type,
+        amount: intent.amount, price: intent.price,
+        status: "fired", orderId: order.id,
+        cardKind: card.kind, cardTitle: card.title.slice(0, 80),
       });
-      toast.success(`Autopilot ${activeIntent.intent.side.toUpperCase()} ${activeIntent.intent.symbol} sent to ${exchange}.`);
-      consumedRef.current.add(activeIntent.cardKey);
+      toast.success(`Autopilot ${intent.side.toUpperCase()} ${intent.symbol} sent to ${exchange}.`);
+      consumedRef.current.add(cardKey);
       setPhase("done");
-      setTimeout(() => { setActiveIntent(null); setPhase("idle"); }, 2500);
+      setTimeout(() => { setActiveIntent(null); setPhase("idle"); firingRef.current = false; }, 2500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      consumedRef.current.add(activeIntent.cardKey);
+      consumedRef.current.add(cardKey);
       a.pushHistory({
-        ts:        Date.now(),
-        exchange,
-        symbol:    activeIntent.intent.symbol,
-        side:      activeIntent.intent.side,
-        type:      activeIntent.intent.type,
-        amount:    activeIntent.intent.amount,
-        price:     activeIntent.intent.price,
-        status:    "errored",
-        cardKind:  activeIntent.card.kind,
-        cardTitle: activeIntent.card.title.slice(0, 80),
-        reason:    msg,
+        ts: Date.now(), exchange,
+        symbol: intent.symbol, side: intent.side, type: intent.type,
+        amount: intent.amount, price: intent.price,
+        status: "errored", cardKind: card.kind, cardTitle: card.title.slice(0, 80), reason: msg,
       });
       setError(msg);
       setPhase("errored");
       toast.error(`Autopilot rejected: ${msg.slice(0, 120)}`);
-      setTimeout(() => { setActiveIntent(null); setPhase("idle"); setError(null); }, 4000);
+      setTimeout(() => { setActiveIntent(null); setPhase("idle"); setError(null); firingRef.current = false; }, 4000);
     }
   };
 
