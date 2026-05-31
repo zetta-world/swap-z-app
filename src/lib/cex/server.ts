@@ -43,18 +43,61 @@ function instantiate(id: CexId, creds: CexCredentials): Exchange {
     secret:    creds.apiSecret,
     enableRateLimit: true,
     timeout:   12_000,
-    // Serverless cold starts on Vercel can be seconds off real wall-clock
-    // time; without this Binance / Bybit / OKX reject signatures as "stale".
-    // Forces ccxt to call /time once and offset every signed request.
-    options: {
-      adjustForTimeDifference: true,
-      recvWindow: 60_000,
-    },
   };
   if (PASSPHRASE_EXCHANGES.has(id) && creds.passphrase) {
     config.password = creds.passphrase;
   }
-  return new ExchangeClass(config);
+  const exchange = new ExchangeClass(config);
+
+  // CRITICAL: do NOT pass `options` in the constructor — ccxt overwrites
+  // `this.options` with the config.options object, wiping every per-exchange
+  // default (Binance loses defaultType:"spot" and related signing params,
+  // which is why only Binance manifested timestamp_drift in production while
+  // Gate.io etc kept working under the exact same code path). We have to
+  // MERGE into the existing options dict after construction.
+  //
+  // Why both fields are still needed even with the merge fix:
+  //   - adjustForTimeDifference makes ccxt call /time once and offset every
+  //     signed request against the upstream's clock. Without it, serverless
+  //     cold-start skew (Vercel functions can be 1-3 s off real time on the
+  //     first invocation) instantly trips Binance's strict default
+  //     recvWindow of 5000 ms.
+  //   - recvWindow:60000 is the documented Binance maximum and gives the
+  //     network round-trip a wide cushion on top of the offset fix.
+  const opts = exchange.options as Record<string, unknown> | undefined;
+  if (opts) {
+    opts.adjustForTimeDifference = true;
+    opts.recvWindow = 60_000;
+  }
+
+  return exchange;
+}
+
+/**
+ * Wrap a signed CCXT call with a one-shot time-difference sync. Binance is
+ * the strictest of the supported exchanges (default ±5000 ms recvWindow,
+ * -1021 Timestamp out of recvWindow on the slightest skew), and the lazy
+ * sync inside ccxt only fires once per instance — but we instantiate a
+ * fresh instance per request on serverless. Explicitly calling
+ * loadTimeDifference() up front guarantees the offset is loaded BEFORE the
+ * signed call. A network blip during the sync is caught and ignored so the
+ * subsequent call still goes out (it will then surface a real error if
+ * something is genuinely wrong, rather than failing silently here).
+ *
+ * This is a no-op for exchanges that don't implement loadTimeDifference
+ * (only the Binance-family adapter does it in ccxt).
+ */
+async function syncTimeIfNeeded(exchange: Exchange): Promise<void> {
+  const e = exchange as unknown as { id?: string; loadTimeDifference?: () => Promise<number> };
+  if (e.id !== "binance" || typeof e.loadTimeDifference !== "function") return;
+  try {
+    await e.loadTimeDifference();
+  } catch (err) {
+    // Don't throw — let the next signed call surface the real error so the
+    // user sees a concrete code via classifyCexError (timestamp_drift /
+    // region_blocked / whatever) instead of an opaque sync failure.
+    console.warn("[cex] binance loadTimeDifference failed:", err instanceof Error ? err.message : err);
+  }
 }
 
 /**
@@ -68,6 +111,7 @@ export async function fetchCexBalance(
   withUsd = true,
 ): Promise<{ balances: CexBalance[]; totalUsd: number }> {
   const exchange = instantiate(id, creds);
+  await syncTimeIfNeeded(exchange);
   const raw = await exchange.fetchBalance();
 
   // ccxt normalizes to { ASSET: { free, used, total } }
@@ -131,6 +175,7 @@ export async function fetchCexOrderbook(
   depth = 10,
 ): Promise<Omit<CexOrderbookSnapshot, "ok" | "exchange" | "fetchedAt">> {
   const exchange = instantiate(id, creds);
+  await syncTimeIfNeeded(exchange);
   const ob = await exchange.fetchOrderBook(symbol, depth);
   const asks = (ob.asks || [])
     .slice(0, depth)
@@ -195,6 +240,7 @@ export async function placeCexOrder(
   }
 
   const exchange = instantiate(id, creds);
+  await syncTimeIfNeeded(exchange);
   const raw = await exchange.createOrder(
     req.symbol,
     req.type,
@@ -222,6 +268,7 @@ export async function cancelCexOrder(
   symbol: string,
 ): Promise<CexOrder> {
   const exchange = instantiate(id, creds);
+  await syncTimeIfNeeded(exchange);
   const raw = await exchange.cancelOrder(orderId, symbol) as unknown as Record<string, unknown>;
   return normalizeOrder(raw);
 }
@@ -233,6 +280,7 @@ export async function listOpenCexOrders(
   symbol?: string,
 ): Promise<CexOrder[]> {
   const exchange = instantiate(id, creds);
+  await syncTimeIfNeeded(exchange);
   const raw = await exchange.fetchOpenOrders(symbol) as unknown as Record<string, unknown>[];
   return raw.map(normalizeOrder);
 }
