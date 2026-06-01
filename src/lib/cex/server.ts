@@ -284,3 +284,137 @@ export async function listOpenCexOrders(
   const raw = await exchange.fetchOpenOrders(symbol) as unknown as Record<string, unknown>[];
   return raw.map(normalizeOrder);
 }
+
+// ─── Bridge: wallet ↔ CEX ───────────────────────────────────────────────
+
+export interface CexDepositAddress {
+  /** The on-chain address the user sends funds TO to credit the CEX. */
+  address: string;
+  /** Optional memo / tag — REQUIRED for some currencies (XRP, EOS, TON, …).
+   *  Sending without this when required means the funds are credited to
+   *  the exchange's omnibus account and effectively lost without manual
+   *  support intervention. The UI MUST surface this prominently. */
+  tag?:    string;
+  /** Network slug as the exchange names it (BSC, ETH, TRX, POLYGON, …).
+   *  Sending the right token on the WRONG network is the #1 cause of
+   *  permanent loss in this flow. */
+  network?: string;
+  /** Raw upstream response for the UI to render any exchange-specific
+   *  hint (min-deposit, expected-confirmations, etc.). */
+  info?:   unknown;
+}
+
+/**
+ * Fetch the user's deposit address for a given currency on a given
+ * network. Read-only — does NOT move funds. Safe to call from the UI
+ * to display a copy-able address + memo + network warning.
+ */
+export async function fetchCexDepositAddress(
+  id: CexId,
+  creds: CexCredentials,
+  currency: string,
+  network?: string,
+): Promise<CexDepositAddress> {
+  const exchange = instantiate(id, creds);
+  await syncTimeIfNeeded(exchange);
+  const params: Record<string, unknown> = {};
+  if (network) params.network = network;
+  const raw = await exchange.fetchDepositAddress(currency, params) as unknown as {
+    address?: string;
+    tag?:     string;
+    network?: string;
+    info?:    unknown;
+  };
+  if (!raw.address || typeof raw.address !== "string") {
+    throw new Error("Exchange did not return a deposit address. Try again or set up the wallet on the exchange UI first.");
+  }
+  return {
+    address: raw.address,
+    tag:     raw.tag,
+    network: raw.network ?? network,
+    info:    raw.info,
+  };
+}
+
+export interface CexWithdrawalRequest {
+  currency: string;
+  amount:   number;
+  address:  string;
+  network?: string;
+  tag?:     string;
+  /** Optional 2FA code — most exchanges require this for withdrawals. */
+  twoFactorCode?: string;
+}
+
+export interface CexWithdrawalReceipt {
+  id:        string;
+  currency:  string;
+  amount:    number;
+  address:   string;
+  network?:  string;
+  status:    string;
+  fee?:      { cost: number; currency: string };
+  txid?:     string;
+  timestamp?: number;
+}
+
+/**
+ * Place a withdrawal from the CEX to an on-chain address. This is the
+ * "money leaves the building" operation — every guard rail we have
+ * lives in the route layer (notional cap, address whitelist check,
+ * 2FA passthrough). This function itself does no policy, just the
+ * mechanical ccxt call. Treat it like placeCexOrder: never call it
+ * from anywhere except the dedicated /api/cex/withdraw route.
+ */
+export async function withdrawFromCex(
+  id: CexId,
+  creds: CexCredentials,
+  req: CexWithdrawalRequest,
+): Promise<CexWithdrawalReceipt> {
+  if (req.amount <= 0 || !Number.isFinite(req.amount)) {
+    throw new Error("Invalid amount.");
+  }
+  if (!/^[A-Za-z0-9_-]{2,20}$/.test(req.currency)) {
+    throw new Error("Invalid currency.");
+  }
+  if (typeof req.address !== "string" || req.address.length < 20 || req.address.length > 200) {
+    throw new Error("Invalid destination address.");
+  }
+  const exchange = instantiate(id, creds);
+  await syncTimeIfNeeded(exchange);
+
+  const params: Record<string, unknown> = {};
+  if (req.network)       params.network = req.network;
+  if (req.twoFactorCode) params.twoFactorCode = req.twoFactorCode;
+
+  const raw = await exchange.withdraw(
+    req.currency,
+    req.amount,
+    req.address,
+    req.tag,
+    params,
+  ) as unknown as {
+    id?:        string;
+    amount?:    number;
+    address?:   string;
+    network?:   string;
+    status?:    string;
+    fee?:       { cost?: number; currency?: string };
+    txid?:      string;
+    timestamp?: number;
+  };
+
+  return {
+    id:        String(raw.id ?? ""),
+    currency:  req.currency,
+    amount:    typeof raw.amount === "number" ? raw.amount : req.amount,
+    address:   raw.address ?? req.address,
+    network:   raw.network ?? req.network,
+    status:    String(raw.status ?? "pending"),
+    fee:       raw.fee && typeof raw.fee.cost === "number"
+                 ? { cost: raw.fee.cost, currency: String(raw.fee.currency ?? req.currency) }
+                 : undefined,
+    txid:      raw.txid,
+    timestamp: typeof raw.timestamp === "number" ? raw.timestamp : undefined,
+  };
+}

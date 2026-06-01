@@ -15,6 +15,7 @@ import { CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials } from "@/
 import { useCexVault } from "@/lib/cex/vault";
 import { useT } from "@/lib/i18n";
 import CexTradePanel from "./CexTradePanel";
+import WalletCexBridge from "./WalletCexBridge";
 import CexOpenOrdersPanel from "./CexOpenOrdersPanel";
 import { cn } from "@/lib/cn";
 
@@ -315,6 +316,17 @@ export default function CexConsole() {
           <div className="mt-5">
             <CexOpenOrdersPanel
               key={`open-${selectedId}`}
+              exchangeId={selectedId}
+              credentials={creds[selectedId]!}
+            />
+          </div>
+        )}
+
+        {/* Wallet ↔ CEX bridge — deposit address + withdrawal flow */}
+        {selectedId && creds[selectedId] && (
+          <div className="mt-5">
+            <WalletCexBridge
+              key={`bridge-${selectedId}`}
               exchangeId={selectedId}
               credentials={creds[selectedId]!}
             />
