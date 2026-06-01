@@ -84,6 +84,50 @@ const QUOTES_PREFERRED = ["USDT", "USDC", "FDUSD", "BUSD", "USD"];
  * full plan.
  */
 export function mapCardToCexIntents(card: ActionCard): AutopilotIntent[] | null {
+  if (card.kind === "arbitrage_triangular") {
+    const legs = card.cexLegs;
+    if (!Array.isArray(legs) || legs.length !== 3) return null;
+    const exchange = legs[0].exchange?.toLowerCase?.() as CexId;
+    if (!SUPPORTED_CEX_IDS.includes(exchange)) return null;
+    // Cycle invariant: every leg must pin to the same CEX. Triangular
+    // arb across venues would need on-chain transfers — out of scope.
+    for (const leg of legs) {
+      if (!leg.exchange || leg.exchange.toLowerCase() !== exchange) return null;
+      if (leg.side !== "buy" && leg.side !== "sell")                return null;
+      if (typeof leg.pair !== "string" || !/^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/i.test(leg.pair)) return null;
+    }
+    // Every base symbol that appears must be on the whitelist (the
+    // quote side can be anything — USDT, USDC, BTC, ETH).
+    for (const leg of legs) {
+      const base = normalizeSymbol(leg.pair.split("/")[0]);
+      if (!(AUTOPILOT_MAJOR_SYMBOLS as readonly string[]).includes(base)) return null;
+    }
+    // Sum-of-notionals USD ceiling: the cycle exposes ~notional × 3 in
+    // gross flow but only the seed amount in directional risk. We size
+    // each leg's notionalUsd as the seed (the autopilot's per-trade cap
+    // applies once per leg, not per gross flow). Seed comes from
+    // card.from.amount (USD).
+    const seedUsd = card.from?.amount ? Number(card.from.amount) : NaN;
+    if (!Number.isFinite(seedUsd) || seedUsd <= 0) return null;
+
+    const intents: AutopilotIntent[] = [];
+    for (const leg of legs) {
+      const priceNum = leg.price ? parsePrice(leg.price) : 0;
+      const baseAmount = leg.baseAmount ? parseFloat(String(leg.baseAmount).replace(/[, ]/g, "")) : 0;
+      if (!Number.isFinite(baseAmount) || baseAmount <= 0) return null;
+      intents.push({
+        exchange,
+        symbol:      leg.pair.toUpperCase(),
+        side:        leg.side,
+        type:        priceNum ? "limit" : "market",
+        amount:      baseAmount,
+        price:       priceNum || undefined,
+        notionalUsd: seedUsd,
+      });
+    }
+    return intents;
+  }
+
   if (card.kind === "arbitrage_cross_cex") {
     const a = card.cexLegA, b = card.cexLegB;
     if (!a || !b || !a.exchange || !b.exchange || !a.symbol || !b.symbol) return null;

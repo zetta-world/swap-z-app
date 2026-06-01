@@ -201,14 +201,51 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
       resolved.push({ exchange: ex, intent });
     }
 
-    // ── Fire all legs in PARALLEL ──
-    // For cross-CEX: parallel minimizes the price drift window between
-    // the two legs. If one fails the other still runs — that leaves the
-    // user with directional exposure on whichever filled. We log clearly
-    // so the user can manually close the orphan leg.
-    const results = await Promise.allSettled(
-      resolved.map((r) => fireAutopilotIntent(r.exchange, live[r.exchange]!, r.intent)),
-    );
+    // ── Fire legs ──
+    // Strategy depends on the card kind:
+    //   * arbitrage_triangular → SEQUENTIAL. Leg N+1's amount was sized
+    //     off leg N's expected fill, and the cycle is meaningless if a
+    //     middle leg fails (no way to close it from the next leg). On
+    //     any leg's failure we abort — remaining legs are NOT fired and
+    //     show up as "skipped" in history so the user can see the
+    //     partial position they need to unwind.
+    //   * everything else (single-leg, cross-CEX) → PARALLEL. For
+    //     cross-CEX in particular, parallel minimizes the price drift
+    //     window between the two legs.
+    const isTriangular = card.kind === "arbitrage_triangular";
+    type LegResult = { status: "fulfilled"; value: CexOrder } | { status: "rejected"; reason: unknown } | { status: "skipped" };
+    let results: LegResult[];
+    if (isTriangular) {
+      results = [];
+      for (let i = 0; i < resolved.length; i++) {
+        const r = resolved[i];
+        try {
+          const order = await fireAutopilotIntent(r.exchange, live[r.exchange]!, r.intent);
+          results.push({ status: "fulfilled", value: order });
+          // Between legs of a triangular, give the exchange a moment
+          // to settle and the user's balance to reflect the new asset
+          // before the next leg's "insufficient balance" check runs.
+          if (i < resolved.length - 1) {
+            await new Promise((res) => setTimeout(res, 1_500));
+          }
+        } catch (err) {
+          results.push({ status: "rejected", reason: err });
+          // Skip remaining legs — they would either fail with
+          // "insufficient balance" or compound the partial position.
+          for (let j = i + 1; j < resolved.length; j++) {
+            results.push({ status: "skipped" });
+          }
+          break;
+        }
+      }
+    } else {
+      const settled = await Promise.allSettled(
+        resolved.map((r) => fireAutopilotIntent(r.exchange, live[r.exchange]!, r.intent)),
+      );
+      results = settled.map((s) => s.status === "fulfilled"
+        ? { status: "fulfilled", value: s.value }
+        : { status: "rejected", reason: s.reason });
+    }
 
     let allOk = true;
     const summaries: string[] = [];
@@ -225,6 +262,18 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
           cardKind: card.kind, cardTitle: card.title.slice(0, 80),
         });
         summaries.push(`${intent.side.toUpperCase()} ${intent.symbol} → ${exchange} ✓`);
+      } else if (result.status === "skipped") {
+        // Earlier leg failed; this one was never sent. Log as canceled
+        // so the user can see the cycle aborted at the right spot.
+        allOk = false;
+        a.pushHistory({
+          ts: Date.now(), exchange,
+          symbol: intent.symbol, side: intent.side, type: intent.type,
+          amount: intent.amount, price: intent.price,
+          status: "canceled", cardKind: card.kind, cardTitle: card.title.slice(0, 80),
+          reason: "triangular cycle aborted on earlier-leg failure",
+        });
+        summaries.push(`${intent.side.toUpperCase()} ${intent.symbol} → ${exchange} ⊘ skipped`);
       } else {
         allOk = false;
         const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
@@ -246,14 +295,14 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
       setTimeout(() => { setActiveIntent(null); setPhase("idle"); firingRef.current = false; }, 2500);
 
       // ── Loss-stop activation ──
-      // Cross-CEX arb is the only autopilot kind with a CLOSED-FORM
-      // realized PnL: spread captured between the two limit fills minus
-      // taker fees. Single-leg cards (swap / buy_limit / sell_*) leave
-      // an open position so we can't know realized PnL without tracking
-      // it to close; we don't pretend. For cross-CEX, kick off a
-      // background poll: when both legs settle, compute PnL and feed
-      // it to the store, which trips the daily loss-stop if the user's
-      // cumulative loss crosses the threshold.
+      // Cross-CEX arb and arbitrage_triangular both have closed-form
+      // realized PnL once every leg settles: spread captured minus fees.
+      // Single-leg cards (swap / buy_limit / sell_*) leave an open
+      // position so we can't know realized PnL without tracking it to
+      // close; we don't pretend. For the two arb kinds, kick off a
+      // background poll — when fills settle, compute PnL and feed it
+      // to the store, which trips the daily loss-stop if cumulative
+      // loss crosses the threshold.
       if (intents.length === 2 && card.kind === "arbitrage_cross_cex") {
         const fulfilled: Array<{ orderId: string; leg: { exchange: CexId; intent: AutopilotIntent } }> = [];
         for (let i = 0; i < results.length; i++) {
@@ -265,11 +314,28 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
         if (fulfilled.length === 2) {
           void settleCrossCexAndRecordPnl(fulfilled, live, a.recordPnl);
         }
+      } else if (intents.length === 3 && card.kind === "arbitrage_triangular") {
+        const fulfilled: Array<{ orderId: string; leg: { exchange: CexId; intent: AutopilotIntent } }> = [];
+        for (let i = 0; i < results.length; i++) {
+          const r = results[i];
+          if (r.status === "fulfilled") {
+            fulfilled.push({ orderId: r.value.id, leg: resolved[i] });
+          }
+        }
+        if (fulfilled.length === 3) {
+          void settleTriangularAndRecordPnl(fulfilled, live, a.recordPnl);
+        }
       }
     } else if (intents.length > 1 && summaries.some((s) => s.includes("✓"))) {
-      // Partial fill on cross-CEX is the worst case — directional risk.
-      // Surface loudly so the user goes to close the orphan leg manually.
-      const errMsg = `PARTIAL FILL — one leg failed: ${summaries.join(" | ")}. Close the open leg manually on the exchange.`;
+      // Partial fill on a multi-leg arb is the worst case — directional
+      // risk on whatever leg(s) filled. Surface loudly so the user goes
+      // to close the orphan position manually. Wording adapts to the
+      // card kind so the user knows it's a triangular partial (one mid
+      // currency stranded) vs cross-CEX (one venue holds opposite side).
+      const noun = card.kind === "arbitrage_triangular"
+        ? "triangular cycle partial — stranded mid-cycle asset"
+        : "PARTIAL FILL — one leg failed";
+      const errMsg = `${noun}: ${summaries.join(" | ")}. Close the open position manually on the exchange.`;
       setError(errMsg);
       setPhase("errored");
       toast.error(errMsg, { duration: 12_000 });
@@ -289,7 +355,10 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   const remaining  = Math.max(0, activeIntent.expiresAt - now);
   const remainingS = Math.ceil(remaining / 1000);
   const progress   = Math.max(0, Math.min(1, 1 - remaining / a.countdownMs));
-  const isPair     = activeIntent.intents.length > 1;
+  const legCount   = activeIntent.intents.length;
+  const isPair     = legCount > 1;
+  const isTri      = legCount === 3 && activeIntent.card.kind === "arbitrage_triangular";
+  const legNoun    = isTri ? "3 legs sequentially" : isPair ? "2 legs in parallel" : "order";
 
   return (
     <AnimatePresence>
@@ -318,9 +387,9 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
             phase === "errored" ? "text-red" : phase === "done" ? "text-green" : isPair ? "text-green" : "text-gold",
           )}>
             {phase === "errored" ? "Autopilot rejected"
-              : phase === "done"  ? `Autopilot fired ${isPair ? "(2 legs)" : ""}`
-              : phase === "firing" ? `Sending ${isPair ? "2 legs in parallel…" : "order…"}`
-                                    : `Autopilot will fire${isPair ? " 2 legs" : ""}`}
+              : phase === "done"  ? `Autopilot fired ${isTri ? "(3 legs)" : isPair ? "(2 legs)" : ""}`
+              : phase === "firing" ? `Sending ${legNoun}…`
+                                    : `Autopilot will fire${isTri ? " 3 legs" : isPair ? " 2 legs" : ""}`}
           </span>
           {phase === "countdown" && (
             <button
@@ -464,5 +533,123 @@ async function settleCrossCexAndRecordPnl(
     // shown as errored). A failed PnL computation is a missing
     // accounting line, not a user-actionable event.
     console.warn("[autopilot] settle failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+// ─── Triangular realized-PnL settler ─────────────────────────────────────
+//
+// Fires after all 3 legs of a single-CEX triangular cycle were accepted.
+// Polls each order until terminal status, then accumulates a per-currency
+// balance delta and converts the residual to USD.
+//
+// Cycle invariant: in a perfect close (USDT → BTC → ETH → USDT) every
+// non-seed currency nets to ~0 and the seed currency's delta IS the PnL.
+// In practice fees and slippage leak across multiple currencies, so we
+// convert every non-zero delta to USD via a rough price reference (the
+// limit prices ZION carried on the card) and sum.
+//
+// Rough by design — we don't pretend to mark-to-market exactly. The
+// loss-stop only needs directionally correct USD signals to do its job.
+async function settleTriangularAndRecordPnl(
+  arb: Array<{
+    orderId: string;
+    leg:     { exchange: CexId; intent: AutopilotIntent };
+  }>,
+  vault: Partial<Record<CexId, CexCredentials>>,
+  recordPnl: (deltaUsd: number) => void,
+): Promise<void> {
+  try {
+    const settled = await Promise.allSettled(arb.map((x) =>
+      pollOrderUntilSettled(
+        x.leg.exchange,
+        vault[x.leg.exchange]!,
+        x.orderId,
+        x.leg.intent.symbol,
+      ),
+    ));
+    const orders: CexOrder[] = [];
+    for (const s of settled) {
+      if (s.status === "fulfilled") orders.push(s.value);
+    }
+    if (orders.length !== 3) return;
+    if (orders.some((o) => {
+      const s = o.status?.toLowerCase() ?? "";
+      return s !== "closed" && s !== "filled";
+    })) return; // any leg short-filled → orphan, skip recording
+
+    // Per-currency balance delta in NATIVE units (BTC, USDT, …).
+    const delta = new Map<string, number>();
+    const bump  = (cur: string, x: number) => {
+      if (!cur) return;
+      const k = cur.toUpperCase();
+      delta.set(k, (delta.get(k) ?? 0) + x);
+    };
+
+    // Approximate USD price index built from the limit prices on the
+    // card itself, plus 1:1 for stable quotes. Good enough for the
+    // residual-conversion step.
+    const usdRef = new Map<string, number>();
+    usdRef.set("USDT", 1); usdRef.set("USDC", 1); usdRef.set("BUSD", 1);
+    usdRef.set("FDUSD", 1); usdRef.set("DAI", 1); usdRef.set("TUSD", 1); usdRef.set("USD", 1);
+    for (let i = 0; i < arb.length; i++) {
+      const intent = arb[i].leg.intent;
+      const [base, quote] = intent.symbol.split("/");
+      const price = intent.price ?? Number(orders[i].average ?? 0);
+      if (price && Number.isFinite(price)) {
+        // base price in quote-asset units. If quote is a stable that's
+        // pinned to 1 USD, the base's USD price is just `price`.
+        const quoteUsd = usdRef.get(quote.toUpperCase());
+        if (quoteUsd) usdRef.set(base.toUpperCase(), price * quoteUsd);
+      }
+    }
+
+    for (let i = 0; i < arb.length; i++) {
+      const order  = orders[i];
+      const intent = arb[i].leg.intent;
+      const [base, quote] = intent.symbol.split("/");
+      const filled = Number(order.filled ?? 0);
+      // ccxt order.cost is the QUOTE-amount value of the fill
+      // (filled × avgPrice). Falls back to amount × avgPrice when
+      // missing (some exchanges omit it on partial fills).
+      const cost = Number(order.cost ?? 0) || filled * Number(order.average ?? intent.price ?? 0);
+      if (!(filled > 0) || !(cost > 0)) return;     // can't compute reliably
+      if (intent.side === "buy") {
+        bump(base,  +filled);
+        bump(quote, -cost);
+      } else {
+        bump(base,  -filled);
+        bump(quote, +cost);
+      }
+      // Fees are usually denominated in whichever currency the user
+      // received (base on buys, quote on sells). ccxt reports it as
+      // {cost, currency}; subtract from that currency's delta.
+      const feeCost = Number(order.fee?.cost ?? 0);
+      if (feeCost > 0 && order.fee?.currency) {
+        bump(order.fee.currency, -feeCost);
+      }
+    }
+
+    let netUsd = 0;
+    for (const [cur, amt] of delta.entries()) {
+      if (Math.abs(amt) < 1e-12) continue;
+      const px = usdRef.get(cur) ?? 0;
+      if (!px) {
+        // Can't convert one of the residual currencies → bail rather
+        // than record a half-truth.
+        console.warn("[autopilot/triangular] no USD reference for", cur, "— skipping PnL record");
+        return;
+      }
+      netUsd += amt * px;
+    }
+    if (!Number.isFinite(netUsd)) return;
+
+    recordPnl(netUsd);
+    if (netUsd < 0) {
+      toast.error(`Autopilot triangular settled at ${netUsd.toFixed(2)} USD (counts toward daily loss-stop)`, { duration: 8000 });
+    } else {
+      toast.success(`Autopilot triangular settled at +${netUsd.toFixed(2)} USD net`, { duration: 6000 });
+    }
+  } catch (err) {
+    console.warn("[autopilot/triangular] settle failed:", err instanceof Error ? err.message : err);
   }
 }
