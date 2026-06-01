@@ -9,9 +9,10 @@ import { useAutopilot } from "@/lib/store/autopilot";
 import { useCexVault } from "@/lib/cex/vault";
 import {
   mapCardToCexIntents, pickExchangeForIntent, fireAutopilotIntent,
+  pollOrderUntilSettled,
   type AutopilotIntent,
 } from "@/lib/zion/autopilot-bridge";
-import type { CexId } from "@/lib/cex/types";
+import type { CexId, CexOrder, CexCredentials } from "@/lib/cex/types";
 import { cn } from "@/lib/cn";
 
 /**
@@ -243,6 +244,28 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
       toast.success(`Autopilot fired ${intents.length === 1 ? "order" : "BOTH legs"}: ${summaries.join(" | ")}`);
       setPhase("done");
       setTimeout(() => { setActiveIntent(null); setPhase("idle"); firingRef.current = false; }, 2500);
+
+      // ── Loss-stop activation ──
+      // Cross-CEX arb is the only autopilot kind with a CLOSED-FORM
+      // realized PnL: spread captured between the two limit fills minus
+      // taker fees. Single-leg cards (swap / buy_limit / sell_*) leave
+      // an open position so we can't know realized PnL without tracking
+      // it to close; we don't pretend. For cross-CEX, kick off a
+      // background poll: when both legs settle, compute PnL and feed
+      // it to the store, which trips the daily loss-stop if the user's
+      // cumulative loss crosses the threshold.
+      if (intents.length === 2 && card.kind === "arbitrage_cross_cex") {
+        const fulfilled: Array<{ orderId: string; leg: { exchange: CexId; intent: AutopilotIntent } }> = [];
+        for (let i = 0; i < results.length; i++) {
+          const r = results[i];
+          if (r.status === "fulfilled") {
+            fulfilled.push({ orderId: r.value.id, leg: resolved[i] });
+          }
+        }
+        if (fulfilled.length === 2) {
+          void settleCrossCexAndRecordPnl(fulfilled, live, a.recordPnl);
+        }
+      }
     } else if (intents.length > 1 && summaries.some((s) => s.includes("✓"))) {
       // Partial fill on cross-CEX is the worst case — directional risk.
       // Surface loudly so the user goes to close the orphan leg manually.
@@ -360,4 +383,86 @@ function formatBase(n: number): string {
   if (n >= 1)     return n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
   if (n >= 0.001) return n.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
   return n.toExponential(2);
+}
+
+// ─── Cross-CEX realized-PnL settler ──────────────────────────────────────
+//
+// Fires after both arb legs were accepted by their exchanges. Polls each
+// order until it reaches a terminal status, then computes PnL as:
+//
+//     pnl = (sell_avg_fill - buy_avg_fill) * filled_base
+//           - fee_buy - fee_sell
+//
+// Skips PnL when either leg failed to fill (gets canceled / expires) —
+// in that case the position is asymmetric and the user has to close
+// the orphan leg manually. We deliberately don't auto-reverse.
+async function settleCrossCexAndRecordPnl(
+  arb: Array<{
+    orderId: string;
+    leg:     { exchange: CexId; intent: AutopilotIntent };
+  }>,
+  vault: Partial<Record<CexId, CexCredentials>>,
+  recordPnl: (deltaUsd: number) => void,
+): Promise<void> {
+  try {
+    const settled = await Promise.allSettled(arb.map((x) =>
+      pollOrderUntilSettled(
+        x.leg.exchange,
+        vault[x.leg.exchange]!,
+        x.orderId,
+        x.leg.intent.symbol,
+      ),
+    ));
+    // Any non-fulfilled poll → can't compute; skip silently.
+    const fulfilledOrders: CexOrder[] = [];
+    for (const s of settled) {
+      if (s.status === "fulfilled") fulfilledOrders.push(s.value);
+    }
+    if (fulfilledOrders.length !== settled.length) return;
+
+    const orders = fulfilledOrders;
+    const buyIdx  = arb.findIndex((x) => x.leg.intent.side === "buy");
+    const sellIdx = arb.findIndex((x) => x.leg.intent.side === "sell");
+    if (buyIdx < 0 || sellIdx < 0) return;
+
+    const buyOrder  = orders[buyIdx];
+    const sellOrder = orders[sellIdx];
+    const buyStatus  = buyOrder.status?.toLowerCase()  ?? "";
+    const sellStatus = sellOrder.status?.toLowerCase() ?? "";
+    const bothFilled = (buyStatus === "closed" || buyStatus === "filled")
+                    && (sellStatus === "closed" || sellStatus === "filled");
+    if (!bothFilled) return;          // orphan leg — user must close manually
+
+    // Use the smaller filled base so we don't compute PnL on imaginary
+    // size. In practice both should be equal (same limit qty on both
+    // legs of an arb) but defensively cap to the lower number.
+    const filledBase = Math.min(
+      Number(buyOrder.filled  ?? 0),
+      Number(sellOrder.filled ?? 0),
+    );
+    if (!(filledBase > 0)) return;
+
+    const buyAvg  = Number(buyOrder.average  ?? 0);
+    const sellAvg = Number(sellOrder.average ?? 0);
+    if (!(buyAvg > 0) || !(sellAvg > 0)) return;
+
+    const grossPnl = (sellAvg - buyAvg) * filledBase;
+    const feeBuy   = Number(buyOrder.fee?.cost  ?? 0);
+    const feeSell  = Number(sellOrder.fee?.cost ?? 0);
+    const netPnl   = grossPnl - feeBuy - feeSell;
+    if (!Number.isFinite(netPnl)) return;
+
+    recordPnl(netPnl);
+    if (netPnl < 0) {
+      toast.error(`Autopilot arb settled at ${netPnl.toFixed(2)} USD (counts toward daily loss-stop)`, { duration: 8000 });
+    } else {
+      toast.success(`Autopilot arb settled at +${netPnl.toFixed(2)} USD net`, { duration: 6000 });
+    }
+  } catch (err) {
+    // Don't surface poll-loop errors to the user — the orders themselves
+    // already either succeeded (logged in history) or didn't (already
+    // shown as errored). A failed PnL computation is a missing
+    // accounting line, not a user-actionable event.
+    console.warn("[autopilot] settle failed:", err instanceof Error ? err.message : err);
+  }
 }

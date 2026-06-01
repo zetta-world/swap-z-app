@@ -285,6 +285,23 @@ export async function listOpenCexOrders(
   return raw.map(normalizeOrder);
 }
 
+/**
+ * Look up ONE specific order by id (and symbol — most exchanges require
+ * it). Used by the autopilot loss-stop machinery to poll a previously-
+ * fired order until it closes and the average fill price is known.
+ */
+export async function fetchCexOrderStatus(
+  id: CexId,
+  creds: CexCredentials,
+  orderId: string,
+  symbol: string,
+): Promise<CexOrder> {
+  const exchange = instantiate(id, creds);
+  await syncTimeIfNeeded(exchange);
+  const raw = await exchange.fetchOrder(orderId, symbol) as unknown as Record<string, unknown>;
+  return normalizeOrder(raw);
+}
+
 // ─── Bridge: wallet ↔ CEX ───────────────────────────────────────────────
 
 export interface CexDepositAddress {

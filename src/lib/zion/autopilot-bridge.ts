@@ -309,3 +309,57 @@ export async function fireAutopilotIntent(
   }
   return body.order;
 }
+
+/**
+ * Poll /api/cex/order/status until the order is in a terminal state
+ * ("closed", "filled", "canceled") OR the timeout elapses. Returns the
+ * last-known order. Used by the autopilot loss-stop machinery to wait
+ * for fills before computing realized PnL.
+ *
+ * Polling cadence is intentionally slow (8s) — order books rarely move
+ * fast enough for a tighter loop to matter and we want to keep the
+ * /order/status endpoint's request budget under control.
+ */
+export async function pollOrderUntilSettled(
+  exchange: CexId,
+  creds:    CexCredentials,
+  orderId:  string,
+  symbol:   string,
+  opts?: { timeoutMs?: number; intervalMs?: number },
+): Promise<CexOrder> {
+  const timeoutMs  = opts?.timeoutMs  ?? 15 * 60_000;    // 15 minutes
+  const intervalMs = opts?.intervalMs ?? 8_000;          // 8 seconds
+  const deadline   = Date.now() + timeoutMs;
+  // Tiny initial wait so we don't poll the exchange for a status that
+  // hasn't even propagated yet.
+  await new Promise((r) => setTimeout(r, 1_500));
+
+  let last: CexOrder | null = null;
+  while (Date.now() < deadline) {
+    const res = await fetch("/api/cex/order/status", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        exchange,
+        orderId,
+        symbol,
+        apiKey:     creds.apiKey,
+        apiSecret:  creds.apiSecret,
+        passphrase: creds.passphrase,
+      }),
+    });
+    if (res.ok) {
+      const body = await res.json().catch(() => ({})) as { ok?: boolean; order?: CexOrder };
+      if (body.ok && body.order) {
+        last = body.order;
+        const status = last.status?.toLowerCase() ?? "";
+        if (status === "closed" || status === "filled" || status === "canceled" || status === "cancelled" || status === "expired") {
+          return last;
+        }
+      }
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  if (last) return last;          // timeout — best-effort last snapshot
+  throw new Error("order status poll timed out without any response");
+}
