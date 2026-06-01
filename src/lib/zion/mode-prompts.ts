@@ -132,6 +132,7 @@ single card. Use the appropriate kind:
   arbitrage_cross_chain — bridge + swap
   arbitrage_dex_cex     — one DEX leg + one CEX leg (uses CEX SPOT REFERENCE)
   arbitrage_cross_cex   — TWO CEX legs (uses CROSS-CEX MATRIX)
+  arbitrage_triangular  — THREE CEX legs on the SAME exchange (cross-pair cycle)
 
 For arbitrage_cross_chain, the action card MUST include:
   • from.amount: the suggested test size (don't go all-in on first attempt)
@@ -180,12 +181,45 @@ For arbitrage_cross_cex, the action card MUST include:
   exchange names MUST be lowercase and match one of the user's
   connected exchanges, else the autopilot silently skips the card.
 
+For arbitrage_triangular, the action card MUST include:
+  • cexLegs: an ORDERED array of EXACTLY 3 entries describing a closed
+    cycle on ONE CEX. Every entry has the same shape:
+      { "exchange": "<binance|coinbase|gateio|okx|bybit|...>",
+        "side":     "buy" | "sell",
+        "pair":     "<BASE>/<QUOTE>",  // e.g. "ETH/USDT", "ETH/BTC", "BTC/USDT"
+        "price":    "<limit-price>",   // omit for market
+        "baseAmount": "<base-qty-this-leg>" }
+    The seed currency (e.g. USDT) MUST appear as a quote in leg 1 and
+    in leg 3 — the cycle starts and ends in the same currency. All 3
+    "exchange" fields MUST be the same lowercase value; the autopilot
+    rejects the card otherwise.
+  • from.symbol / from.amount: the seed currency and its USD-equivalent
+    notional. The autopilot uses notional as the per-trade cap check.
+  • triggerPrice: the first-leg price you're targeting (UX surface).
+  • estCost (combined 3× taker fee ~0.30%), estReturn, targetReturn.
+  • summary MUST spell out all 3 legs + net edge in plain English:
+    "USDT→BTC→ETH→USDT on Binance: buy BTC/USDT @ $68,520, sell ETH/BTC
+    @ 0.0502, sell ETH/USDT @ $3,441.2. Gross +0.42%, net +0.12% after
+    3× 0.10% taker."
+  • risk: "safe" only when every pair has deep books (>$10M order book
+    depth); "caution" for mid-tier pairs; "risky" for thin/illiquid.
+  Triangular legs fire SEQUENTIALLY in the order you list them — leg 2
+  cannot start until leg 1 confirms a fill, etc. If any leg fails the
+  cycle aborts and the user is left with a stranded mid-cycle asset
+  they must close manually. That's why baseAmount per leg MUST be
+  computed off the LIMIT price: leg N+1 expects leg N to fill at its
+  limit. Slight under-fills will cascade to an "insufficient balance"
+  on leg N+1 — safe failure mode but it costs the user the cycle.
+
 PROMPT FILTER:
   • Skip same-chain "arbitrage" with spread <0.3% — that's noise.
   • Skip cross-chain with spread <0.8% — bridge eats it.
   • Skip DEX-vs-CEX with spread <0.4% — taker fees + gas eat it.
   • Skip cross-CEX with spread <0.25% — combined taker (~0.20%) eats it;
     only ≥0.25% is worth firing, and the lower the better.
+  • Skip triangular cycles with gross edge <0.35% — 3× taker fees
+    (~0.30%) and inter-leg slippage will wipe anything thinner. Prefer
+    cycles routed through deep pairs (BTC/USDT, ETH/USDT, ETH/BTC).
   • Skip pairs where either side has <$25k liquidity.
   • If user-allowed chains is given, ONLY use those.
 `;

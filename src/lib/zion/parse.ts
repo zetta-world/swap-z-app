@@ -11,6 +11,7 @@ export interface ActionCard {
   kind:
     | "swap" | "bridge"
     | "arbitrage" | "arbitrage_same_chain" | "arbitrage_cross_chain" | "arbitrage_dex_cex" | "arbitrage_cross_cex"
+    | "arbitrage_triangular"
     | "sniper_watch"
     | "limit" | "buy_limit"
     | "sell_safe" | "sell_medium" | "sell_aggressive"
@@ -94,6 +95,34 @@ export interface ActionCard {
     symbol:   string;
     price?:   string;
   };
+
+  /**
+   * For arbitrage_triangular cards: ordered description of the 3 spot
+   * orders that close a single-CEX cycle (e.g. USDT→BTC→ETH→USDT). All
+   * legs MUST share the same `exchange`; the autopilot rejects the card
+   * otherwise. Legs fire SEQUENTIALLY (the next can't size correctly
+   * until the previous one fills), so any leg failing aborts the
+   * cycle — the user is left with whatever partial position closed and
+   * must unwind manually.
+   *
+   * `pair` carries the full BASE/QUOTE (e.g. "ETH/BTC") instead of a
+   * bare symbol because triangular cycles route through crypto-crypto
+   * pairs that aren't quoted in USDT.
+   */
+  cexLegs?: Array<{
+    exchange:   string;
+    side:       "buy" | "sell";
+    /** "ETH/USDT", "ETH/BTC", "BTC/USDT" — full pair, not just base. */
+    pair:       string;
+    /** Limit price in the quote-asset; omitted → market order. */
+    price?:     string;
+    /** Base-token amount for this leg. Free-form string so locale /
+     *  scientific notation are OK. The autopilot trusts ZION's sizing
+     *  here — leg N+1's amount comes from leg N's expected fill, so
+     *  if a leg under-fills the next one may itself fail with
+     *  "insufficient balance" (safe failure mode). */
+    baseAmount?: string;
+  }>;
 
   /** Optional ladder of profit-take rungs, for trade-thesis style proposals. */
   exits?: Array<{
