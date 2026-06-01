@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowDownToLine, ArrowUpFromLine, Copy, Check, AlertTriangle,
-  Loader2, Shield, ExternalLink,
+  Loader2, Shield, ExternalLink, Wallet as WalletIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAccount } from "wagmi";
@@ -56,7 +56,8 @@ interface DepositAddress {
 // Common networks per currency — surfaced as a dropdown so the user
 // picks "BSC" or "TRC20" up-front instead of relying on the exchange's
 // default (which can be misleading). Not exhaustive — if a network
-// isn't in here the user can still type one.
+// isn't in here the user can still type one. SPL-only tokens map to
+// ["SOL"] alone so the deposit panel auto-targets the Phantom address.
 const COMMON_NETWORKS: Record<string, string[]> = {
   USDT: ["ERC20", "BSC", "TRC20", "POLYGON", "ARBITRUM", "OPTIMISM", "SOL"],
   USDC: ["ERC20", "BSC", "POLYGON", "ARBITRUM", "OPTIMISM", "BASE", "SOL"],
@@ -66,7 +67,70 @@ const COMMON_NETWORKS: Record<string, string[]> = {
   SOL:  ["SOL"],
   MATIC: ["POLYGON", "ERC20"],
   LINK: ["ERC20", "BSC"],
+  // SPL-native tokens that only live on Solana. Locking the network to
+  // SOL prevents the "right token, wrong network" loss class.
+  JUP:  ["SOL"],
+  JTO:  ["SOL"],
+  BONK: ["SOL"],
+  PYTH: ["SOL"],
+  WIF:  ["SOL"],
+  RAY:  ["SOL"],
+  ORCA: ["SOL"],
+  MSOL: ["SOL"],
+  JITOSOL: ["SOL"],
+  RNDR: ["SOL", "ERC20"],
 };
+
+/**
+ * Classify a network slug so we can match it to the right wallet
+ * (Phantom vs MetaMask) and address format. Anything we don't
+ * recognise falls through as "other" and the UI runs in permissive
+ * mode (no auto-fill, looser validation).
+ */
+type NetworkKind = "solana" | "evm" | "btc" | "other";
+function networkKind(network: string): NetworkKind {
+  const n = network.toUpperCase();
+  if (n === "SOL" || n === "SPL" || n === "SOLANA") return "solana";
+  if (n === "BTC" || n === "BITCOIN" || n === "LIGHTNING") return "btc";
+  if (
+    n === "ERC20"   || n === "ETH"     || n === "ETHEREUM" ||
+    n === "BSC"     || n === "BEP20"   || n === "BNB"      ||
+    n === "POLYGON" || n === "MATIC"   ||
+    n === "ARBITRUM"|| n === "ARB"     ||
+    n === "OPTIMISM"|| n === "OP"      ||
+    n === "BASE"    || n === "AVAX"    || n === "AVAXC"
+  ) return "evm";
+  return "other";
+}
+
+/**
+ * Return null when the address format is plausible for the given
+ * network, or a human-readable warning string when there's an obvious
+ * mismatch (e.g. EVM 0x address pasted into a SOL withdrawal). We do
+ * NOT try to validate base58 checksum / EIP-55 — that's the exchange's
+ * job; we just catch the cross-format goofs that lead to permanent
+ * loss.
+ */
+function validateAddressForNetwork(address: string, network: string): string | null {
+  const a = address.trim();
+  if (!a) return null;
+  const kind = networkKind(network);
+  if (kind === "evm") {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(a)) {
+      return "EVM networks expect a 0x… address (42 chars). This looks wrong — verify before sending.";
+    }
+  } else if (kind === "solana") {
+    if (a.startsWith("0x")) {
+      return "Solana addresses are base58 (no 0x prefix). EVM addresses sent to SOL are permanently lost.";
+    }
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a)) {
+      return "This doesn't look like a Solana base58 address (32–44 chars). Double-check before sending.";
+    }
+  } else if (kind === "btc") {
+    if (a.startsWith("0x")) return "BTC addresses don't start with 0x.";
+  }
+  return null;
+}
 
 export default function WalletCexBridge({ exchangeId, credentials }: Props) {
   const meta = CEX_META[exchangeId];
@@ -123,6 +187,11 @@ export default function WalletCexBridge({ exchangeId, credentials }: Props) {
 // ─── Deposit (wallet → CEX) ─────────────────────────────────────────────
 
 function DepositPanel({ exchangeId, credentials }: Props) {
+  const { address: evmAddress } = useAccount();
+  const sol = useWallet();
+  const solAddress = sol.publicKey?.toBase58() ?? null;
+  const phantomLabel = sol.wallet?.adapter?.name ?? "Phantom";
+
   const [currency, setCurrency] = useState("USDT");
   const [network,  setNetwork]  = useState<string>("BSC");
   const [addr, setAddr] = useState<DepositAddress | null>(null);
@@ -130,7 +199,27 @@ function DepositPanel({ exchangeId, credentials }: Props) {
   const [error,   setError]   = useState<{ code: string; detail?: string } | null>(null);
   const [copied,  setCopied]  = useState<"addr" | "tag" | null>(null);
 
-  const networks = COMMON_NETWORKS[currency.toUpperCase()] ?? [];
+  const networks = useMemo(() => COMMON_NETWORKS[currency.toUpperCase()] ?? [], [currency]);
+  const kind = networkKind(network);
+  // SPL-only currencies should auto-pick SOL the moment the user types
+  // them, so the next click already targets the correct network.
+  useEffect(() => {
+    if (networks.length > 0 && !networks.includes(network)) {
+      setNetwork(networks[0]);
+    }
+  }, [networks, network]);
+
+  // Wallet-mismatch hint: surface it as soon as we can tell, so the
+  // user fixes it before paying for a worthless on-chain transfer.
+  const walletHint = (() => {
+    if (kind === "solana" && !solAddress) {
+      return { tone: "warn" as const, msg: `Connect ${phantomLabel} to send on the Solana network.` };
+    }
+    if (kind === "evm" && !evmAddress) {
+      return { tone: "warn" as const, msg: "Connect MetaMask (or any EVM wallet) to send on this network." };
+    }
+    return null;
+  })();
 
   const fetchAddr = async () => {
     setLoading(true);
@@ -204,6 +293,13 @@ function DepositPanel({ exchangeId, credentials }: Props) {
           )}
         </label>
       </div>
+
+      {walletHint && (
+        <div className="rounded-md border border-gold/30 bg-gold/[0.05] px-3 py-2 inline-flex items-start gap-2 w-full">
+          <WalletIcon className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
+          <p className="font-mono text-[10px] text-ink-2 leading-relaxed">{walletHint.msg}</p>
+        </div>
+      )}
 
       <button
         type="button"
@@ -279,8 +375,12 @@ function DepositPanel({ exchangeId, credentials }: Props) {
           )}
 
           <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-            Open MetaMask / Phantom and send to this address. Z-SWAP doesn&apos;t move the funds — your wallet does.
-            Wait for the exchange to credit (typically 1–12 minutes depending on network).
+            {kind === "solana"
+              ? <>Open <b className="text-ink-2">{phantomLabel}</b> and send to this address. Z-SWAP doesn&apos;t move the funds — your wallet does.</>
+              : kind === "evm"
+                ? <>Open <b className="text-ink-2">MetaMask</b> (or any EVM wallet) and send to this address. Z-SWAP doesn&apos;t move the funds — your wallet does.</>
+                : <>Open your wallet and send to this address. Z-SWAP doesn&apos;t move the funds — your wallet does.</>}
+            {" "}Wait for the exchange to credit (typically 1–12 minutes depending on network).
           </p>
         </motion.div>
       )}
@@ -293,12 +393,13 @@ function DepositPanel({ exchangeId, credentials }: Props) {
 function WithdrawPanel({ exchangeId, credentials }: Props) {
   const { address: evmAddress } = useAccount();
   const sol = useWallet();
-  const defaultDestination = sol.publicKey?.toBase58() ?? evmAddress ?? "";
+  const solAddress = sol.publicKey?.toBase58() ?? null;
+  const phantomLabel = sol.wallet?.adapter?.name ?? "Phantom";
 
   const [currency, setCurrency] = useState("USDT");
   const [network,  setNetwork]  = useState<string>("BSC");
   const [amount,   setAmount]   = useState<string>("");
-  const [destination, setDestination] = useState(defaultDestination);
+  const [destination, setDestination] = useState<string>("");
   const [tag,      setTag]      = useState("");
   const [twoFa,    setTwoFa]    = useState("");
 
@@ -306,10 +407,63 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
   const [error,   setError]   = useState<{ code: string; detail?: string } | null>(null);
   const [receipt, setReceipt] = useState<{ id: string; status: string; txid?: string; network?: string; address?: string } | null>(null);
 
-  const networks = COMMON_NETWORKS[currency.toUpperCase()] ?? [];
+  const networks = useMemo(() => COMMON_NETWORKS[currency.toUpperCase()] ?? [], [currency]);
+  const kind = networkKind(network);
+
+  // The "expected destination" follows the picked network so it always
+  // matches: SOL → Phantom, EVM → MetaMask. Without this the panel can
+  // pre-fill an EVM address into a Solana withdrawal — guaranteed loss.
+  const expectedDestination = useMemo(() => {
+    if (kind === "solana") return solAddress ?? "";
+    if (kind === "evm")    return evmAddress ?? "";
+    return "";
+  }, [kind, solAddress, evmAddress]);
+
+  // Only auto-fill the destination when the user hasn't typed their own
+  // address yet, OR when the previous value matches the previous
+  // network's expected destination (so switching networks doesn't strand
+  // them on a wrong address).
+  const prevExpectedRef = useRef(expectedDestination);
+  const userEditedRef   = useRef(false);
+  useEffect(() => {
+    setDestination((current) => {
+      if (!userEditedRef.current || current === prevExpectedRef.current) {
+        prevExpectedRef.current = expectedDestination;
+        return expectedDestination;
+      }
+      prevExpectedRef.current = expectedDestination;
+      return current;
+    });
+  }, [expectedDestination]);
+
+  // SPL-only currencies auto-pick SOL the moment they're typed.
+  useEffect(() => {
+    if (networks.length > 0 && !networks.includes(network)) {
+      setNetwork(networks[0]);
+    }
+  }, [networks, network]);
+
+  // Sticky tone: we leave 2FA + tag as-is across network changes (small
+  // and rare values) but reset stage to form so a stale "confirm" can't
+  // be submitted against a freshly-changed network.
+  useEffect(() => {
+    if (stage === "confirm") setStage("form");
+  }, [network, currency]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const amountNum = parseFloat(amount);
   const amountValid = Number.isFinite(amountNum) && amountNum > 0;
-  const destinationValid = destination.length >= 20;
+  const addressWarn = validateAddressForNetwork(destination, network);
+  const destinationValid = destination.length >= 20 && !addressWarn;
+  const isAutoFilled = !!expectedDestination && destination === expectedDestination;
+  const walletHint = (() => {
+    if (kind === "solana" && !solAddress) {
+      return `${phantomLabel} not connected — paste your Solana address manually or connect Phantom to auto-fill.`;
+    }
+    if (kind === "evm" && !evmAddress) {
+      return "No EVM wallet connected — paste your 0x… address manually or connect MetaMask to auto-fill.";
+    }
+    return null;
+  })();
 
   const submit = async () => {
     setStage("sending");
@@ -435,19 +589,34 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
       </label>
 
       <label className="block">
-        <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1 inline-flex items-center gap-1">
+        <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1 inline-flex items-center gap-1 flex-wrap">
           Destination address
-          {defaultDestination && destination === defaultDestination && (
-            <span className="text-cyan/70 normal-case">· auto-filled from connected wallet</span>
+          {isAutoFilled && (
+            <span className="text-cyan/70 normal-case">
+              · auto-filled from {kind === "solana" ? phantomLabel : kind === "evm" ? "MetaMask" : "connected wallet"}
+            </span>
           )}
         </div>
         <input
           value={destination}
-          onChange={(e) => setDestination(e.target.value.trim())}
+          onChange={(e) => { userEditedRef.current = true; setDestination(e.target.value.trim()); }}
           disabled={stage !== "form"}
-          placeholder="0x… or base58…"
-          className="w-full bg-bg-2 border border-white/10 rounded px-2.5 py-1.5 font-mono text-[11px] text-ink outline-none focus:border-cyan/40 disabled:opacity-60"
+          placeholder={kind === "solana" ? "base58 Solana address" : kind === "evm" ? "0x…" : "0x… or base58…"}
+          className={cn(
+            "w-full bg-bg-2 border rounded px-2.5 py-1.5 font-mono text-[11px] text-ink outline-none disabled:opacity-60",
+            addressWarn ? "border-red/40 focus:border-red/60" : "border-white/10 focus:border-cyan/40",
+          )}
         />
+        {addressWarn && (
+          <div className="mt-1 font-mono text-[10px] text-red/90 leading-relaxed inline-flex items-start gap-1">
+            <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" /> {addressWarn}
+          </div>
+        )}
+        {walletHint && !addressWarn && (
+          <div className="mt-1 font-mono text-[10px] text-gold/80 leading-relaxed inline-flex items-start gap-1">
+            <WalletIcon className="w-3 h-3 mt-0.5 flex-shrink-0" /> {walletHint}
+          </div>
+        )}
       </label>
 
       <div className="grid grid-cols-2 gap-2">
