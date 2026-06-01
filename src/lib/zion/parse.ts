@@ -10,7 +10,7 @@
 export interface ActionCard {
   kind:
     | "swap" | "bridge"
-    | "arbitrage" | "arbitrage_same_chain" | "arbitrage_cross_chain" | "arbitrage_dex_cex"
+    | "arbitrage" | "arbitrage_same_chain" | "arbitrage_cross_chain" | "arbitrage_dex_cex" | "arbitrage_cross_cex"
     | "sniper_watch"
     | "limit" | "buy_limit"
     | "sell_safe" | "sell_medium" | "sell_aggressive"
@@ -70,6 +70,29 @@ export interface ActionCard {
     symbol: string;
     /** Limit price quoted in USDT; market order when omitted. */
     price?: string;
+  };
+
+  /**
+   * For arbitrage_cross_cex cards: structured description of BOTH CEX
+   * legs the autopilot can fire in parallel (both venues are user-owned,
+   * no wallet signature required). cexLegA is the BUY side (cheap
+   * venue), cexLegB is the SELL side (expensive venue). Without both
+   * fields the autopilot leaves the card to manual execution.
+   */
+  cexLegA?: {
+    /** Which CEX runs this leg — must be one of the user's connected
+     *  exchanges or the autopilot will skip the card. */
+    exchange: string;
+    side:     "buy" | "sell";
+    symbol:   string;
+    /** Limit price quoted in USDT; market order when omitted. */
+    price?:   string;
+  };
+  cexLegB?: {
+    exchange: string;
+    side:     "buy" | "sell";
+    symbol:   string;
+    price?:   string;
   };
 
   /** Optional ladder of profit-take rungs, for trade-thesis style proposals. */

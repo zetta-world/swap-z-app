@@ -8,16 +8,24 @@ import type { ActionCard } from "@/lib/zion/parse";
 import { useAutopilot } from "@/lib/store/autopilot";
 import { useCexVault } from "@/lib/cex/vault";
 import {
-  mapCardToCexIntent, pickExchangeForIntent, fireAutopilotIntent,
+  mapCardToCexIntents, pickExchangeForIntent, fireAutopilotIntent,
   type AutopilotIntent,
 } from "@/lib/zion/autopilot-bridge";
+import type { CexId } from "@/lib/cex/types";
 import { cn } from "@/lib/cn";
 
 /**
  * The autopilot "pilot" — a single banner above the ZION action cards
  * that watches the card stream, picks the next CEX-mappable card that
  * passes every rail, runs a countdown the user can cancel, and fires
- * the trade through /api/cex/order when the countdown expires.
+ * the trade(s) through /api/cex/order when the countdown expires.
+ *
+ * A single card can produce one OR two intents:
+ *   - One leg  → swap, buy_limit, sell_*, arbitrage_dex_cex (CEX side).
+ *   - Two legs → arbitrage_cross_cex (BUY on cheap venue + SELL on
+ *                expensive venue, atomic — both legs fire in parallel
+ *                so price moves between them can't open one-sided
+ *                directional risk).
  *
  * Why one banner instead of one per card: pros expect a clear single
  * "next action" they can intercept. Showing 5 simultaneous countdowns
@@ -32,9 +40,6 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   const vault = useCexVault();
   const enabled = a.enabled;
 
-  // Track consumed card identities so we don't re-fire after navigation
-  // or re-render. Identity = first 64 chars of title — Claude-emitted
-  // titles are deterministic per card / pair.
   const consumedRef = useRef<Set<string>>(new Set());
   // Re-entrancy guard. setPhase is async, so two rapid effect runs (React
   // StrictMode double-invoke, a parent re-render landing on the same
@@ -43,9 +48,9 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   // without it the same order could be sent to the exchange twice.
   const firingRef = useRef(false);
   const [activeIntent, setActiveIntent] = useState<{
-    cardKey:  string;
-    card:     ActionCard;
-    intent:   AutopilotIntent;
+    cardKey:   string;
+    card:      ActionCard;
+    intents:   AutopilotIntent[];  // 1 for single, 2 for cross-CEX
     expiresAt: number;
   } | null>(null);
   const [phase, setPhase] = useState<"idle" | "countdown" | "firing" | "done" | "errored">("idle");
@@ -57,26 +62,33 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
 
   // Pick the next card to act on whenever the deck changes.
   const nextCandidate = useMemo(() => {
-    if (!enabled || a.frozenUntilDay || a.tradesToday >= a.maxTradesPerDay) return null;
+    if (!enabled || a.frozenUntilDay) return null;
+    // The daily cap counts LEGS not cards — a cross-CEX card costs 2
+    // toward the cap. Reject the candidate if it would push us over.
     for (const c of cards) {
-      // Identity = kind + full title + the pair, so two distinct cards
-      // (e.g. same title prefix on different chains) never collide into
-      // one consumed-key and silently skip a legitimate second trade.
       const key = `${c.kind}:${c.title ?? ""}:${c.from?.symbol ?? ""}>${c.to?.symbol ?? ""}`;
       if (!key || key.length < 4) continue;
       if (consumedRef.current.has(key)) continue;
-      const intent = mapCardToCexIntent(c);
-      if (!intent) continue;
-      // Rail checks
-      if (intent.notionalUsd > a.maxTradeUsd) continue;
-      const base = intent.symbol.split("/")[0];
-      if (!a.allowedSymbols.includes(base)) continue;
-      // Vault + exchange
+      const intents = mapCardToCexIntents(c);
+      if (!intents || intents.length === 0) continue;
+      if (a.tradesToday + intents.length > a.maxTradesPerDay) continue;
+      // Every leg has to clear the per-trade USD cap independently.
+      if (intents.some((i) => i.notionalUsd > a.maxTradeUsd)) continue;
+      // Every leg's base must be in the symbol whitelist.
+      if (intents.some((i) => !a.allowedSymbols.includes(i.symbol.split("/")[0]))) continue;
+      // Vault must be unlocked AND every leg's exchange must be
+      // reachable (pinned for cross-CEX, picker for single-CEX).
       const live = vault.getActive();
       if (!live) continue;
-      const exchange = pickExchangeForIntent(a.allowedExchanges, live);
-      if (!exchange) continue;
-      return { key, card: c, intent };
+      const allExchangesReady = intents.every((i) => {
+        const ex = i.exchange ?? pickExchangeForIntent(a.allowedExchanges, live);
+        if (!ex) return false;
+        if (!a.allowedExchanges.includes(ex)) return false;
+        if (!live[ex]) return false;
+        return true;
+      });
+      if (!allExchangesReady) continue;
+      return { key, card: c, intents };
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -86,9 +98,9 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   useEffect(() => {
     if (phase !== "idle" || !nextCandidate) return;
     setActiveIntent({
-      cardKey:  nextCandidate.key,
-      card:     nextCandidate.card,
-      intent:   nextCandidate.intent,
+      cardKey:   nextCandidate.key,
+      card:      nextCandidate.card,
+      intents:   nextCandidate.intents,
       expiresAt: Date.now() + a.countdownMs,
     });
     setPhase("countdown");
@@ -114,41 +126,42 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   const cancel = () => {
     if (!activeIntent) return;
     consumedRef.current.add(activeIntent.cardKey);
-    a.pushHistory({
-      ts:        Date.now(),
-      exchange:  "binance", // placeholder; the real exchange lives in fired entries
-      symbol:    activeIntent.intent.symbol,
-      side:      activeIntent.intent.side,
-      type:      activeIntent.intent.type,
-      amount:    activeIntent.intent.amount,
-      price:     activeIntent.intent.price,
-      status:    "canceled",
-      cardKind:  activeIntent.card.kind,
-      cardTitle: activeIntent.card.title.slice(0, 80),
-      reason:    "user canceled during countdown",
-    });
+    for (const intent of activeIntent.intents) {
+      a.pushHistory({
+        ts: Date.now(),
+        exchange:  intent.exchange ?? "binance",
+        symbol:    intent.symbol, side: intent.side, type: intent.type,
+        amount:    intent.amount, price: intent.price,
+        status:    "canceled",
+        cardKind:  activeIntent.card.kind,
+        cardTitle: activeIntent.card.title.slice(0, 80),
+        reason:    "user canceled during countdown",
+      });
+    }
     setActiveIntent(null);
     setPhase("idle");
   };
 
   const fire = async () => {
     if (!activeIntent) return;
-    // Re-entrancy guard — block a second concurrent fire of the same intent.
     if (firingRef.current) return;
     firingRef.current = true;
 
-    const intent = activeIntent.intent;
+    const intents = activeIntent.intents;
     const cardKey = activeIntent.cardKey;
-    const card = activeIntent.card;
+    const card    = activeIntent.card;
 
-    const reject = (reason: string, status: "rejected" | "errored" = "rejected") => {
+    const rejectAll = (reason: string, status: "rejected" | "errored" = "rejected") => {
       consumedRef.current.add(cardKey);
-      a.pushHistory({
-        ts: Date.now(), exchange: "binance",
-        symbol: intent.symbol, side: intent.side, type: intent.type,
-        amount: intent.amount, price: intent.price,
-        status, cardKind: card.kind, cardTitle: card.title.slice(0, 80), reason,
-      });
+      for (const intent of intents) {
+        a.pushHistory({
+          ts: Date.now(),
+          exchange:  intent.exchange ?? "binance",
+          symbol:    intent.symbol, side: intent.side, type: intent.type,
+          amount:    intent.amount, price: intent.price,
+          status, cardKind: card.kind, cardTitle: card.title.slice(0, 80), reason,
+        });
+      }
       setActiveIntent(null);
       setPhase("idle");
       firingRef.current = false;
@@ -157,54 +170,92 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     setPhase("firing");
 
     // ── Re-validate EVERY rail at fire time using FRESH store state ──
-    // The 30-second countdown is a window in which the user could have
-    // tightened a cap, the daily counter could have rolled, the vault
-    // could have locked, or the loss-stop could have frozen autopilot.
-    // The select-time check is not enough; re-check against getState().
+    // The countdown is a window in which the user could have tightened
+    // a cap, the daily counter could have rolled, the vault could have
+    // locked, or the loss-stop could have frozen autopilot. Select-time
+    // check isn't enough; re-check against getState().
     const live = vault.getActive();
     if (!live) {
-      reject("vault re-locked before fire");
+      rejectAll("vault re-locked before fire");
       toast.error("Autopilot: vault re-locked. Unlock to resume.");
       return;
     }
-    const ap = useAutopilot.getState();
-    ap.rolloverIfNewDay();
+    useAutopilot.getState().rolloverIfNewDay();
     const fresh = useAutopilot.getState();
-    if (!fresh.enabled)                                   return reject("autopilot turned off during countdown");
-    if (fresh.frozenUntilDay)                             return reject("autopilot frozen (daily stop)");
-    if (fresh.tradesToday >= fresh.maxTradesPerDay)       return reject("daily trade cap reached");
-    if (intent.notionalUsd > fresh.maxTradeUsd)           return reject("exceeds per-trade cap (changed during countdown)");
-    if (!fresh.allowedSymbols.includes(intent.symbol.split("/")[0]))
-                                                          return reject("symbol no longer allowed");
-    const exchange = pickExchangeForIntent(fresh.allowedExchanges, live);
-    if (!exchange)                                        return reject("no allowed+connected exchange");
+    if (!fresh.enabled)                                          return rejectAll("autopilot turned off during countdown");
+    if (fresh.frozenUntilDay)                                    return rejectAll("autopilot frozen (daily stop)");
+    if (fresh.tradesToday + intents.length > fresh.maxTradesPerDay)
+                                                                 return rejectAll("daily trade cap would be exceeded");
+    if (intents.some((i) => i.notionalUsd > fresh.maxTradeUsd))  return rejectAll("exceeds per-trade cap (changed during countdown)");
+    if (intents.some((i) => !fresh.allowedSymbols.includes(i.symbol.split("/")[0])))
+                                                                 return rejectAll("symbol no longer allowed");
 
-    try {
-      const order = await fireAutopilotIntent(exchange, live[exchange]!, intent);
-      a.recordTrade(intent.notionalUsd);
-      a.pushHistory({
-        ts: Date.now(), exchange,
-        symbol: intent.symbol, side: intent.side, type: intent.type,
-        amount: intent.amount, price: intent.price,
-        status: "fired", orderId: order.id,
-        cardKind: card.kind, cardTitle: card.title.slice(0, 80),
-      });
-      toast.success(`Autopilot ${intent.side.toUpperCase()} ${intent.symbol} sent to ${exchange}.`);
-      consumedRef.current.add(cardKey);
+    // Resolve each leg's exchange (pinned for cross-CEX, picker otherwise).
+    const resolved: { exchange: CexId; intent: AutopilotIntent }[] = [];
+    for (const intent of intents) {
+      const ex = intent.exchange ?? pickExchangeForIntent(fresh.allowedExchanges, live);
+      if (!ex || !fresh.allowedExchanges.includes(ex) || !live[ex]) {
+        return rejectAll(`exchange ${intent.exchange ?? "auto"} not connected/allowed`);
+      }
+      resolved.push({ exchange: ex, intent });
+    }
+
+    // ── Fire all legs in PARALLEL ──
+    // For cross-CEX: parallel minimizes the price drift window between
+    // the two legs. If one fails the other still runs — that leaves the
+    // user with directional exposure on whichever filled. We log clearly
+    // so the user can manually close the orphan leg.
+    const results = await Promise.allSettled(
+      resolved.map((r) => fireAutopilotIntent(r.exchange, live[r.exchange]!, r.intent)),
+    );
+
+    let allOk = true;
+    const summaries: string[] = [];
+    for (let i = 0; i < resolved.length; i++) {
+      const { exchange, intent } = resolved[i];
+      const result = results[i];
+      if (result.status === "fulfilled") {
+        a.recordTrade(intent.notionalUsd);
+        a.pushHistory({
+          ts: Date.now(), exchange,
+          symbol: intent.symbol, side: intent.side, type: intent.type,
+          amount: intent.amount, price: intent.price,
+          status: "fired", orderId: result.value.id,
+          cardKind: card.kind, cardTitle: card.title.slice(0, 80),
+        });
+        summaries.push(`${intent.side.toUpperCase()} ${intent.symbol} → ${exchange} ✓`);
+      } else {
+        allOk = false;
+        const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        a.pushHistory({
+          ts: Date.now(), exchange,
+          symbol: intent.symbol, side: intent.side, type: intent.type,
+          amount: intent.amount, price: intent.price,
+          status: "errored", cardKind: card.kind, cardTitle: card.title.slice(0, 80), reason: msg,
+        });
+        summaries.push(`${intent.side.toUpperCase()} ${intent.symbol} → ${exchange} ✗ ${msg.slice(0, 60)}`);
+      }
+    }
+
+    consumedRef.current.add(cardKey);
+
+    if (allOk) {
+      toast.success(`Autopilot fired ${intents.length === 1 ? "order" : "BOTH legs"}: ${summaries.join(" | ")}`);
       setPhase("done");
       setTimeout(() => { setActiveIntent(null); setPhase("idle"); firingRef.current = false; }, 2500);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      consumedRef.current.add(cardKey);
-      a.pushHistory({
-        ts: Date.now(), exchange,
-        symbol: intent.symbol, side: intent.side, type: intent.type,
-        amount: intent.amount, price: intent.price,
-        status: "errored", cardKind: card.kind, cardTitle: card.title.slice(0, 80), reason: msg,
-      });
-      setError(msg);
+    } else if (intents.length > 1 && summaries.some((s) => s.includes("✓"))) {
+      // Partial fill on cross-CEX is the worst case — directional risk.
+      // Surface loudly so the user goes to close the orphan leg manually.
+      const errMsg = `PARTIAL FILL — one leg failed: ${summaries.join(" | ")}. Close the open leg manually on the exchange.`;
+      setError(errMsg);
       setPhase("errored");
-      toast.error(`Autopilot rejected: ${msg.slice(0, 120)}`);
+      toast.error(errMsg, { duration: 12_000 });
+      setTimeout(() => { setActiveIntent(null); setPhase("idle"); setError(null); firingRef.current = false; }, 8000);
+    } else {
+      const errMsg = summaries.join(" | ");
+      setError(errMsg);
+      setPhase("errored");
+      toast.error(`Autopilot rejected: ${errMsg.slice(0, 160)}`);
       setTimeout(() => { setActiveIntent(null); setPhase("idle"); setError(null); firingRef.current = false; }, 4000);
     }
   };
@@ -212,9 +263,10 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   // Nothing to show when autopilot is OFF or there's no candidate cooking.
   if (!enabled || !activeIntent) return null;
 
-  const remaining = Math.max(0, activeIntent.expiresAt - now);
+  const remaining  = Math.max(0, activeIntent.expiresAt - now);
   const remainingS = Math.ceil(remaining / 1000);
-  const progress = Math.max(0, Math.min(1, 1 - remaining / a.countdownMs));
+  const progress   = Math.max(0, Math.min(1, 1 - remaining / a.countdownMs));
+  const isPair     = activeIntent.intents.length > 1;
 
   return (
     <AnimatePresence>
@@ -228,22 +280,24 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
             ? "border-red/30 bg-red/[0.05]"
             : phase === "done"
               ? "border-green/30 bg-green/[0.05]"
-              : "border-gold/30 bg-gold/[0.05]",
+              : isPair
+                ? "border-green/40 bg-green/[0.06]"
+                : "border-gold/30 bg-gold/[0.05]",
         )}
       >
         <div className="flex items-center gap-2">
           <Bot className={cn(
             "w-3.5 h-3.5 flex-shrink-0",
-            phase === "errored" ? "text-red" : phase === "done" ? "text-green" : "text-gold",
+            phase === "errored" ? "text-red" : phase === "done" ? "text-green" : isPair ? "text-green" : "text-gold",
           )} />
           <span className={cn(
             "font-mono text-[10px] tracking-widest uppercase font-bold flex-1 min-w-0",
-            phase === "errored" ? "text-red" : phase === "done" ? "text-green" : "text-gold",
+            phase === "errored" ? "text-red" : phase === "done" ? "text-green" : isPair ? "text-green" : "text-gold",
           )}>
             {phase === "errored" ? "Autopilot rejected"
-              : phase === "done"  ? "Autopilot fired"
-              : phase === "firing" ? "Sending order…"
-                                    : "Autopilot will fire"}
+              : phase === "done"  ? `Autopilot fired ${isPair ? "(2 legs)" : ""}`
+              : phase === "firing" ? `Sending ${isPair ? "2 legs in parallel…" : "order…"}`
+                                    : `Autopilot will fire${isPair ? " 2 legs" : ""}`}
           </span>
           {phase === "countdown" && (
             <button
@@ -260,21 +314,24 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
           {phase === "errored" && <AlertTriangle className="w-3.5 h-3.5 text-red" />}
         </div>
 
-        {/* Order summary */}
-        <div className="font-mono text-[11px] text-ink tabular-nums">
-          <span className={activeIntent.intent.side === "buy" ? "text-green" : "text-red"}>
-            {activeIntent.intent.side.toUpperCase()}
-          </span>
-          {" "}
-          <span className="text-ink">{activeIntent.intent.symbol}</span>
-          {" · "}
-          <span className="text-ink-2">{formatBase(activeIntent.intent.amount)} base</span>
-          {activeIntent.intent.type === "limit" && activeIntent.intent.price && (
-            <> · <span className="text-ink-2">@${activeIntent.intent.price.toLocaleString("en-US", { maximumFractionDigits: 4 })}</span></>
-          )}
-          {" · "}
-          <span className="text-ink-3">~${activeIntent.intent.notionalUsd.toFixed(2)}</span>
-        </div>
+        {/* Per-leg summary */}
+        {activeIntent.intents.map((intent, i) => (
+          <div key={i} className="font-mono text-[11px] text-ink tabular-nums">
+            <span className={intent.side === "buy" ? "text-green" : "text-red"}>
+              {intent.side.toUpperCase()}
+            </span>
+            {" "}
+            <span className="text-ink">{intent.symbol}</span>
+            {intent.exchange && <> <span className="text-ink-3">@ {intent.exchange}</span></>}
+            {" · "}
+            <span className="text-ink-2">{formatBase(intent.amount)} base</span>
+            {intent.type === "limit" && intent.price && (
+              <> · <span className="text-ink-2">@${intent.price.toLocaleString("en-US", { maximumFractionDigits: 4 })}</span></>
+            )}
+            {" · "}
+            <span className="text-ink-3">~${intent.notionalUsd.toFixed(2)}</span>
+          </div>
+        ))}
 
         {/* Countdown bar */}
         {phase === "countdown" && (
