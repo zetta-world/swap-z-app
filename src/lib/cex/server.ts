@@ -88,10 +88,53 @@ function instantiate(id: CexId, creds: CexCredentials): Exchange {
  * (only the Binance-family adapter does it in ccxt).
  */
 async function syncTimeIfNeeded(exchange: Exchange): Promise<void> {
-  const e = exchange as unknown as { id?: string; loadTimeDifference?: () => Promise<number> };
-  if (e.id !== "binance" || typeof e.loadTimeDifference !== "function") return;
+  const e = exchange as unknown as { id?: string; loadTimeDifference?: () => Promise<number>; fetchTime?: () => Promise<number> };
+  if (e.id !== "binance") return;
+
+  // Pre-flight: hit Binance's public /time endpoint directly. If it
+  // returns something obviously wrong (geo-block: HTML body, 0, NaN),
+  // we throw a SPECIFIC error here so the downstream classifyCexError
+  // picks `region_blocked` instead of letting the next signed call
+  // fail with a timestamp-shaped message.
+  //
+  // This matters because Vercel's serverless functions run from US
+  // data centers (iad1, sfo1, ...) and Binance.com blocks AWS US
+  // ranges with HTTP 451 / 418, sometimes returning HTML that ccxt's
+  // JSON parser interprets as a zero-diff (silently). Without this
+  // pre-flight, the user sees "timestamp_drift" forever and chases a
+  // clock fix that won't help.
+  if (typeof e.fetchTime === "function") {
+    try {
+      const serverTime = await e.fetchTime();
+      if (!Number.isFinite(serverTime) || serverTime < 1_500_000_000_000) {
+        // Binance epoch should be ~1.7e12; 0 / NaN / way-too-low =
+        // upstream returned garbage (HTML or empty body). Treat as
+        // region block since that's overwhelmingly the cause.
+        throw new Error("Service unavailable from a restricted location (binance returned malformed time response — likely region block on this serverless region)");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Re-throw only if the upstream message itself looks like a
+      // region/geo block. Other failures (transient network blips)
+      // should fall through so the next call can retry.
+      const lower = msg.toLowerCase();
+      if (lower.includes("restricted") || lower.includes("eligible") || lower.includes("451") || lower.includes("418") || lower.includes("region") || lower.includes("forbidden")) {
+        throw err;
+      }
+      console.warn("[cex] binance fetchTime soft-failed:", msg);
+    }
+  }
+
+  if (typeof e.loadTimeDifference !== "function") return;
   try {
-    await e.loadTimeDifference();
+    const diff = await e.loadTimeDifference();
+    // Sanity-check the diff. A skew > 2 minutes means either the host
+    // clock is wildly wrong (unlikely on Vercel) OR Binance returned a
+    // bogus 0-equivalent that ccxt interpreted as a real time. Log so
+    // we can spot recurring issues in the Vercel function logs.
+    if (typeof diff === "number" && Math.abs(diff) > 120_000) {
+      console.warn("[cex] binance loadTimeDifference returned suspicious diff:", diff, "ms");
+    }
   } catch (err) {
     // Don't throw — let the next signed call surface the real error so the
     // user sees a concrete code via classifyCexError (timestamp_drift /
