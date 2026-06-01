@@ -23,6 +23,7 @@
 
 import type { ActionCard } from "@/lib/zion/parse";
 import type { CexCredentials, CexId, CexOrder, CexOrderSide, CexOrderType } from "@/lib/cex/types";
+import { SUPPORTED_CEX_IDS } from "@/lib/cex/types";
 import { AUTOPILOT_MAJOR_SYMBOLS } from "@/lib/store/autopilot";
 
 export interface AutopilotIntent {
@@ -36,6 +37,13 @@ export interface AutopilotIntent {
   price?:   number;
   /** Approx USD notional, for cap checks. */
   notionalUsd: number;
+  /**
+   * For cross-CEX arbitrage, the venue is pinned by ZION (BUY on
+   * gateio, SELL on coinbase). When set, the pilot uses this exact
+   * exchange instead of picking from `allowedExchanges`. Single-CEX
+   * intents leave it undefined and rely on the picker.
+   */
+  exchange?: CexId;
 }
 
 /** Strip wrapped / bridged token prefixes so "WETH" → "ETH" etc. */
@@ -59,6 +67,70 @@ const QUOTES_PREFERRED = ["USDT", "USDC", "FDUSD", "BUSD", "USD"];
  * on unmappable cards — the user can still execute them manually via
  * the existing drawer path.
  */
+/**
+ * Resolve a ZION card into one OR more CEX order intents.
+ *
+ * Returns:
+ *   - null            → card not mappable (autopilot skips it).
+ *   - [intent]        → single-leg trade (swap, buy_limit, sell_*,
+ *                       arbitrage_dex_cex CEX side).
+ *   - [intentA, intentB] → atomic pair (arbitrage_cross_cex). The
+ *                       pilot must fire both or neither — partial
+ *                       fills leave the user with directional risk.
+ *
+ * mapCardToCexIntent (singular) below is the v1 backwards-compatible
+ * wrapper that returns the first intent of the pair. Direct callers
+ * (the new AutopilotPilot) should use mapCardToCexIntents to see the
+ * full plan.
+ */
+export function mapCardToCexIntents(card: ActionCard): AutopilotIntent[] | null {
+  if (card.kind === "arbitrage_cross_cex") {
+    const a = card.cexLegA, b = card.cexLegB;
+    if (!a || !b || !a.exchange || !b.exchange || !a.symbol || !b.symbol) return null;
+    const base = normalizeSymbol(a.symbol);
+    if (base !== normalizeSymbol(b.symbol)) return null; // legs must be on the SAME base
+    if (!(AUTOPILOT_MAJOR_SYMBOLS as readonly string[]).includes(base)) return null;
+    const exA = a.exchange.toLowerCase() as CexId;
+    const exB = b.exchange.toLowerCase() as CexId;
+    if (!SUPPORTED_CEX_IDS.includes(exA) || !SUPPORTED_CEX_IDS.includes(exB)) return null;
+    if (exA === exB) return null; // would self-arb, nonsense
+    // Sides must be opposite — one buy, one sell.
+    if (a.side === b.side) return null;
+    const priceA = a.price ? parsePrice(a.price) : 0;
+    const priceB = b.price ? parsePrice(b.price) : 0;
+    if (!priceA || !priceB) return null; // require limits for cross-CEX to bound slippage
+    const notional = card.from?.amount ? Number(card.from.amount) : 0;
+    if (!Number.isFinite(notional) || notional <= 0) return null;
+    // Both legs trade the same BASE quantity, sized off the BUY price.
+    const buyPrice = a.side === "buy" ? priceA : priceB;
+    const baseAmount = notional / buyPrice;
+    if (!Number.isFinite(baseAmount) || baseAmount <= 0) return null;
+    return [
+      {
+        exchange:    exA,
+        symbol:      `${base}/USDT`,
+        side:        a.side,
+        type:        "limit",
+        amount:      baseAmount,
+        price:       priceA,
+        notionalUsd: notional,
+      },
+      {
+        exchange:    exB,
+        symbol:      `${base}/USDT`,
+        side:        b.side,
+        type:        "limit",
+        amount:      baseAmount,
+        price:       priceB,
+        notionalUsd: notional,
+      },
+    ];
+  }
+
+  const single = mapCardToCexIntent(card);
+  return single ? [single] : null;
+}
+
 export function mapCardToCexIntent(card: ActionCard): AutopilotIntent | null {
   // arbitrage_dex_cex carries its OWN structured cexLeg description and
   // doesn't depend on the standard from/to pair semantics — handle it

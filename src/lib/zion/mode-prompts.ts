@@ -131,6 +131,7 @@ single card. Use the appropriate kind:
   arbitrage_same_chain  — two-leg same-chain trade
   arbitrage_cross_chain — bridge + swap
   arbitrage_dex_cex     — one DEX leg + one CEX leg (uses CEX SPOT REFERENCE)
+  arbitrage_cross_cex   — TWO CEX legs (uses CROSS-CEX MATRIX)
 
 For arbitrage_cross_chain, the action card MUST include:
   • from.amount: the suggested test size (don't go all-in on first attempt)
@@ -156,10 +157,35 @@ For arbitrage_dex_cex, the action card MUST include:
   • risk: "caution" by default, "risky" if either DEX pool < $100k liq
     or the CEX side has gating (deposit suspension, withdrawal queue).
 
+For arbitrage_cross_cex, the action card MUST include:
+  • cexLegA: { "exchange": "<binance|coinbase|gateio|okx|bybit|...>",
+              "side": "buy", "symbol": "<BASE>", "price": "<USDT-price>" }
+    The BUY leg, on the CHEAPER venue from the CROSS-CEX MATRIX.
+  • cexLegB: { "exchange": "<...>", "side": "sell", "symbol": "<BASE>",
+              "price": "<USDT-price>" }
+    The SELL leg, on the MORE EXPENSIVE venue.
+  • from.symbol / from.amount: the base symbol and USD notional of the
+    test trade. The autopilot uses notional to size the equal base
+    amount on both legs.
+  • triggerPrice: the BUY-side price you're targeting.
+  • estCost (combined taker fees ~0.20% total), estReturn, targetReturn
+  • summary MUST spell out both venues + the spread in plain English:
+    "Buy 0.05 BTC on Gate.io @ $79,998, sell 0.05 BTC on Coinbase @
+    $80,041 (+0.054%). Net edge ~+0.05% after 2× 0.10% taker."
+  • risk: "safe" if both venues are the largest (Binance, Coinbase,
+    Kraken, OKX); "caution" if either is mid-tier; "risky" if either
+    has known withdrawal delays.
+  Cross-CEX is the only arb where BOTH legs are CEX orders, so the
+  autopilot will fire them in parallel with no wallet sign needed.
+  exchange names MUST be lowercase and match one of the user's
+  connected exchanges, else the autopilot silently skips the card.
+
 PROMPT FILTER:
   • Skip same-chain "arbitrage" with spread <0.3% — that's noise.
   • Skip cross-chain with spread <0.8% — bridge eats it.
   • Skip DEX-vs-CEX with spread <0.4% — taker fees + gas eat it.
+  • Skip cross-CEX with spread <0.25% — combined taker (~0.20%) eats it;
+    only ≥0.25% is worth firing, and the lower the better.
   • Skip pairs where either side has <$25k liquidity.
   • If user-allowed chains is given, ONLY use those.
 `;
