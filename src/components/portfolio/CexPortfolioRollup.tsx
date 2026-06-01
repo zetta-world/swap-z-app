@@ -21,11 +21,17 @@ import { cn } from "@/lib/cn";
 const AUTO_LOCK_MS = 10 * 60 * 1000;
 
 interface ExchangeRollup {
-  status:    "idle" | "loading" | "loaded" | "failed";
-  totalUsd:  number;
-  balances:  CexBalance[];
-  error?:    string;
-  fetchedAt?: number;
+  status:      "idle" | "loading" | "loaded" | "failed";
+  totalUsd:    number;
+  balances:    CexBalance[];
+  /** Granular error code (e.g. "timestamp_drift", "region_blocked"). */
+  error?:      string;
+  /** Sanitized upstream message — surfaced as a copy-able expander so the
+   *  user can SEE what the exchange actually said. The error code alone
+   *  has been useless for diagnosing region-block-disguised-as-timestamp
+   *  cases. */
+  errorDetail?: string;
+  fetchedAt?:  number;
 }
 
 /**
@@ -100,8 +106,16 @@ export default function CexPortfolioRollup({
           withUsd:    true,
         }),
       });
-      const body = await res.json() as { ok: boolean; balances?: CexBalance[]; totalUsd?: number; error?: string };
-      if (!res.ok || !body.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      const body = await res.json() as { ok: boolean; balances?: CexBalance[]; totalUsd?: number; error?: string; detail?: string };
+      if (!res.ok || !body.ok) {
+        // Carry BOTH the code (for the humanError lookup) AND the
+        // detail (the actual upstream message) so the UI can render
+        // both — the code alone has been useless for diagnosing
+        // region-block-disguised-as-timestamp-drift cases.
+        const err = new Error(body.error ?? `HTTP ${res.status}`);
+        (err as Error & { detail?: string }).detail = body.detail;
+        throw err;
+      }
       setRollups((r) => ({
         ...r,
         [id]: {
@@ -112,13 +126,15 @@ export default function CexPortfolioRollup({
         },
       }));
     } catch (e) {
+      const err = e as Error & { detail?: string };
       setRollups((r) => ({
         ...r,
         [id]: {
-          status:   "failed",
-          totalUsd: 0,
-          balances: [],
-          error:    e instanceof Error ? e.message : String(e),
+          status:    "failed",
+          totalUsd:  0,
+          balances:  [],
+          error:     err?.message ? String(err.message) : String(e),
+          errorDetail: err?.detail,
           fetchedAt: Date.now(),
         },
       }));
@@ -353,8 +369,20 @@ export default function CexPortfolioRollup({
               )}
 
               {r.status === "failed" && r.error && (
-                <div className="mt-2 pt-2 border-t border-white/5 font-mono text-[10px] text-red truncate">
-                  {humanError(r.error)}
+                <div className="mt-2 pt-2 border-t border-white/5 space-y-1">
+                  <div className="font-mono text-[10px] text-red leading-relaxed break-words">
+                    {humanError(r.error)}
+                  </div>
+                  {r.errorDetail && (
+                    <details className="font-mono text-[9px] text-ink-3">
+                      <summary className="cursor-pointer hover:text-ink-2 tracking-wider uppercase">
+                        upstream detail
+                      </summary>
+                      <pre className="mt-1 px-1.5 py-1 rounded bg-bg-1 border border-white/5 whitespace-pre-wrap break-all text-ink-2">
+                        {r.errorDetail}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
             </motion.div>
@@ -406,6 +434,8 @@ function humanError(code: string): string {
     case "permission_denied":    return tImp("cex.errPermDenied");
     case "timeout":              return tImp("cex.errTimeout");
     case "rate_limited":         return tImp("cex.errRateLimit");
+    case "timestamp_drift":      return tImp("cex.errTimestampDrift");
+    case "region_blocked":       return tImp("cex.errRegionBlocked");
     case "upstream_failed":      return tImp("cex.errUpstreamFailed");
     default:                     return code;
   }

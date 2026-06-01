@@ -13,6 +13,24 @@
  */
 export function classifyCexError(msg: string): string {
   const m = msg.toLowerCase();
+  // Region block MUST come first — Binance's geo-block response from
+  // Vercel's US data centers sometimes also mentions "timestamp" or
+  // "service" in the same message; without this ordering the user
+  // sees "timestamp drift" and chases a clock issue that doesn't
+  // exist. Common phrasings:
+  //   "Service unavailable from a restricted location according to..."
+  //   "Eligibility — your country is not supported"
+  //   "451 Unavailable For Legal Reasons"
+  //   "418 I'm a teapot"  (Binance's actual ban response on AWS US ranges)
+  if (m.includes("restricted location") || m.includes("restricted region")
+      || m.includes("eligible") || m.includes("eligibility")
+      || m.includes("451") || m.includes("418")
+      || m.includes("-2010")
+      || (m.includes("region") && (m.includes("not") || m.includes("unavailable") || m.includes("supported")))
+      || (m.includes("country") && (m.includes("not") || m.includes("unsupported")))
+      || (m.includes("forbidden") && (m.includes("legal") || m.includes("region")))) {
+    return "region_blocked";
+  }
   // Timestamp / clock drift — Binance -1021, Bybit -7011, OKX 50114 etc.
   if (m.includes("timestamp") || m.includes("recvwindow") || m.includes("recv_window")
       || m.includes("clock") || m.includes("nonce") || m.includes("ahead of")
@@ -26,10 +44,6 @@ export function classifyCexError(msg: string): string {
   if (m.includes("permission") || m.includes("scope") || m.includes("not authorized for")
       || m.includes("-2015")) {
     return "permission_denied";
-  }
-  if (m.includes("region") || m.includes("country") || m.includes("forbidden")
-      || m.includes("restricted") || m.includes("eligible") || m.includes("-2010")) {
-    return "region_blocked";
   }
   if (m.includes("invalid api") || m.includes("signature") || m.includes("unauthorized")
       || m.includes("apikey") || m.includes("api-key") || m.includes("invalid key")
