@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Bot, Lock, AlertTriangle, History, RefreshCw, X } from "lucide-react";
+import { Bot, Lock, AlertTriangle, History, RefreshCw, X, Banknote } from "lucide-react";
 import { useAutopilot, AUTOPILOT_MAJOR_SYMBOLS, type AutopilotEntry } from "@/lib/store/autopilot";
 import { useCexVault } from "@/lib/cex/vault";
 import { CEX_META, SUPPORTED_CEX_IDS, type CexId } from "@/lib/cex/types";
@@ -192,9 +192,63 @@ export default function AutopilotPanel() {
         </div>
       </div>
 
+      {/* Auto-rebalance — separate opt-in pipeline that lets the
+          autopilot fire a CEX→wallet withdrawal when ZION emits a
+          `rebalance` card. The user still has to manually re-deposit
+          to the destination CEX from their wallet; v1 doesn't auto-sign. */}
+      <div className="rounded-md border border-violet/20 bg-violet/[0.04] p-3 space-y-3">
+        <div className="flex items-center gap-2">
+          <Banknote className="w-3.5 h-3.5 text-violet flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="font-display font-bold text-xs text-violet">Auto-rebalance (CEX → wallet)</div>
+            <div className="font-mono text-[9px] text-ink-3 tracking-wider uppercase">
+              Auto-withdraw to your connected wallet when ZION says a venue is low
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => a.setAutoRebalanceEnabled(!a.autoRebalanceEnabled)}
+            className={cn(
+              "px-2.5 py-1 rounded font-mono text-[10px] tracking-widest uppercase border",
+              a.autoRebalanceEnabled
+                ? "border-violet/50 bg-violet/15 text-violet hover:bg-violet/25"
+                : "border-white/15 bg-white/[0.03] text-ink-3 hover:bg-white/[0.06]",
+            )}
+          >
+            {a.autoRebalanceEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <NumRail
+            label="Max / rebalance"
+            unit="$"
+            value={a.maxRebalanceUsd}
+            onChange={a.setMaxRebalanceUsd}
+            step={25}
+            min={10}
+            max={5_000}
+          />
+          <NumRail
+            label="Rebalances / day"
+            unit=""
+            value={a.maxRebalancesPerDay}
+            onChange={a.setMaxRebalancesPerDay}
+            step={1}
+            min={1}
+            max={20}
+          />
+        </div>
+        <div className="font-mono text-[10px] text-ink-3 leading-relaxed">
+          Destination is your connected wallet (Phantom for SOL, MetaMask for EVM). The withdrawal address
+          must be pre-whitelisted on the source exchange — if it isn&apos;t, the call surfaces the exchange&apos;s
+          rejection. After the funds land, you re-deposit manually to the destination CEX.
+        </div>
+      </div>
+
       {/* Counters */}
-      <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t border-white/5">
-        <Counter label="Today / max" value={`${a.tradesToday} / ${a.maxTradesPerDay}`} tone="cyan" />
+      <div className="grid grid-cols-4 gap-2 text-center pt-2 border-t border-white/5">
+        <Counter label="Trades today" value={`${a.tradesToday} / ${a.maxTradesPerDay}`} tone="cyan" />
+        <Counter label="Rebalances today" value={`${a.rebalancesToday} / ${a.maxRebalancesPerDay}`} tone="violet" />
         <Counter label="Day P&L" value={`${a.pnlToday >= 0 ? "+" : ""}$${a.pnlToday.toFixed(2)}`} tone={a.pnlToday < 0 ? "red" : "green"} />
         <Counter label="History" value={String(a.history.length)} tone="violet" />
       </div>

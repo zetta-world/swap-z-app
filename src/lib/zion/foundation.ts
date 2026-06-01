@@ -110,6 +110,7 @@ Valid \`kind\` values and when each applies:
   • arbitrage_same_chain  → buy on DEX A, sell on DEX B, same chain
   • arbitrage_cross_chain → buy on chain X, sell on chain Y
   • arbitrage_triangular  → 3 spot orders on the SAME CEX that close a cycle (e.g. USDT→BTC→ETH→USDT)
+  • rebalance             → withdraw funds from a CEX that's running dry into the user's wallet (autopilot may fire if opted-in)
   • sniper_watch          → newly-listed pair worth monitoring (not buying)
   • buy_limit             → buy when price drops to triggerPrice
   • sell_safe             → conservative profit-take exit (tight target)
