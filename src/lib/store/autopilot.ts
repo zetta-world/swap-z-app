@@ -58,9 +58,23 @@ interface AutopilotState {
   dailyLossStopUsd:  number;
   allowedExchanges:  CexId[];
   allowedSymbols:    string[];
+  /**
+   * Auto-rebalance — a separate opt-in that lets the autopilot fire a
+   * CEX→wallet withdrawal when ZION surfaces a `rebalance` card. Off
+   * by default and persisted-as-false so a reload always resets the
+   * opt-in. Trade-side rails (maxTradeUsd, maxTradesPerDay,
+   * dailyLossStopUsd) DO NOT cover rebalances — they're a separate
+   * cap pair below.
+   */
+  autoRebalanceEnabled: boolean;
+  /** Per-rebalance USD ceiling. Hard cap regardless of card.from.amount. */
+  maxRebalanceUsd:      number;
+  /** Daily count cap on rebalance fires. */
+  maxRebalancesPerDay:  number;
   /** Runtime counters — reset at UTC midnight (see noteUtcDay). */
   tradesToday:       number;
   pnlToday:          number;
+  rebalancesToday:   number;
   lastResetDay:      string;
   /** Locally-only audit log of every auto-execution attempt. */
   history:           AutopilotEntry[];
@@ -74,6 +88,9 @@ interface AutopilotState {
   setDailyLossStopUsd: (n: number)  => void;
   setAllowedExchanges: (ids: CexId[]) => void;
   setAllowedSymbols:   (syms: string[]) => void;
+  setAutoRebalanceEnabled: (b: boolean) => void;
+  setMaxRebalanceUsd:      (n: number)  => void;
+  setMaxRebalancesPerDay:  (n: number)  => void;
   /**
    * Append a new entry to the audit log. Caller computes everything;
    * we just FIFO-cap the list at 200 entries.
@@ -81,6 +98,8 @@ interface AutopilotState {
   pushHistory:         (entry: AutopilotEntry) => void;
   /** Bump the daily counters when a successful auto-trade fires. */
   recordTrade:         (notionalUsd: number) => void;
+  /** Bump the rebalance counter — separate from tradesToday. */
+  recordRebalance:     (notionalUsd: number) => void;
   /** Adjust the daily P&L; freezes autopilot when the stop is hit. */
   recordPnl:           (deltaUsd: number) => void;
   /** Force the daily-reset check; called on app boot. */
@@ -96,18 +115,22 @@ function utcDayKey(): string {
 export const useAutopilot = create<AutopilotState>()(
   persist(
     (set, get) => ({
-      enabled:          false,
-      countdownMs:      30_000,
-      maxTradeUsd:      250,
-      maxTradesPerDay:  6,
-      dailyLossStopUsd: 200,
-      allowedExchanges: [] as CexId[],
-      allowedSymbols:   ["BTC", "ETH", "SOL"],
-      tradesToday:      0,
-      pnlToday:         0,
-      lastResetDay:     utcDayKey(),
-      history:          [],
-      frozenUntilDay:   null,
+      enabled:              false,
+      countdownMs:          30_000,
+      maxTradeUsd:          250,
+      maxTradesPerDay:      6,
+      dailyLossStopUsd:     200,
+      allowedExchanges:     [] as CexId[],
+      allowedSymbols:       ["BTC", "ETH", "SOL"],
+      autoRebalanceEnabled: false,
+      maxRebalanceUsd:      200,
+      maxRebalancesPerDay:  2,
+      tradesToday:          0,
+      pnlToday:             0,
+      rebalancesToday:      0,
+      lastResetDay:         utcDayKey(),
+      history:              [],
+      frozenUntilDay:       null,
 
       setEnabled: (b) => {
         get().rolloverIfNewDay();
@@ -119,6 +142,12 @@ export const useAutopilot = create<AutopilotState>()(
       setDailyLossStopUsd: (n) => set({ dailyLossStopUsd: Math.max(10, Math.min(100_000, n))   }),
       setAllowedExchanges: (ids)  => set({ allowedExchanges: [...new Set(ids)] }),
       setAllowedSymbols:   (syms) => set({ allowedSymbols:   [...new Set(syms.map((s) => s.toUpperCase().trim()).filter(Boolean))] }),
+      setAutoRebalanceEnabled: (b) => {
+        get().rolloverIfNewDay();
+        set({ autoRebalanceEnabled: b });
+      },
+      setMaxRebalanceUsd:     (n) => set({ maxRebalanceUsd:     Math.max(10, Math.min(5_000, n)) }),
+      setMaxRebalancesPerDay: (n) => set({ maxRebalancesPerDay: Math.max(1,  Math.min(20,    n)) }),
 
       pushHistory: (entry) => {
         const next = [entry, ...get().history].slice(0, 200);
@@ -134,12 +163,24 @@ export const useAutopilot = create<AutopilotState>()(
         void notionalUsd;
       },
 
+      recordRebalance: (notionalUsd) => {
+        get().rolloverIfNewDay();
+        set((s) => ({ rebalancesToday: s.rebalancesToday + 1 }));
+        // Rebalance USD is informational only — it doesn't fold into
+        // pnlToday because the funds are just MOVING, not lost. The
+        // loss-stop only triggers off trading PnL via recordPnl().
+        void notionalUsd;
+      },
+
       recordPnl: (deltaUsd) => {
         get().rolloverIfNewDay();
         const next = get().pnlToday + deltaUsd;
         set({ pnlToday: next });
         if (next <= -get().dailyLossStopUsd) {
-          set({ enabled: false, frozenUntilDay: utcDayKey() });
+          // Loss-stop trips BOTH the trade pilot AND auto-rebalance —
+          // if the user is hemorrhaging, the last thing they need is
+          // the bot also auto-moving funds between venues.
+          set({ enabled: false, autoRebalanceEnabled: false, frozenUntilDay: utcDayKey() });
         }
       },
 
@@ -147,10 +188,11 @@ export const useAutopilot = create<AutopilotState>()(
         const today = utcDayKey();
         if (get().lastResetDay !== today) {
           set({
-            lastResetDay:   today,
-            tradesToday:    0,
-            pnlToday:       0,
-            frozenUntilDay: get().frozenUntilDay === today ? get().frozenUntilDay : null,
+            lastResetDay:    today,
+            tradesToday:     0,
+            pnlToday:        0,
+            rebalancesToday: 0,
+            frozenUntilDay:  get().frozenUntilDay === today ? get().frozenUntilDay : null,
           });
         }
       },
@@ -167,18 +209,23 @@ export const useAutopilot = create<AutopilotState>()(
       // MUST persist, otherwise a reload would reset the caps and let a
       // user (or a runaway loop) blow past maxTradesPerDay by refreshing.
       partialize: (s) => ({
-        countdownMs:      s.countdownMs,
-        maxTradeUsd:      s.maxTradeUsd,
-        maxTradesPerDay:  s.maxTradesPerDay,
-        dailyLossStopUsd: s.dailyLossStopUsd,
-        allowedExchanges: s.allowedExchanges,
-        allowedSymbols:   s.allowedSymbols,
-        tradesToday:      s.tradesToday,
-        pnlToday:         s.pnlToday,
-        lastResetDay:     s.lastResetDay,
-        history:          s.history,
-        frozenUntilDay:   s.frozenUntilDay,
-        // enabled intentionally omitted → always rehydrates to false.
+        countdownMs:         s.countdownMs,
+        maxTradeUsd:         s.maxTradeUsd,
+        maxTradesPerDay:     s.maxTradesPerDay,
+        dailyLossStopUsd:    s.dailyLossStopUsd,
+        allowedExchanges:    s.allowedExchanges,
+        allowedSymbols:      s.allowedSymbols,
+        maxRebalanceUsd:     s.maxRebalanceUsd,
+        maxRebalancesPerDay: s.maxRebalancesPerDay,
+        tradesToday:         s.tradesToday,
+        pnlToday:            s.pnlToday,
+        rebalancesToday:     s.rebalancesToday,
+        lastResetDay:        s.lastResetDay,
+        history:             s.history,
+        frozenUntilDay:      s.frozenUntilDay,
+        // enabled + autoRebalanceEnabled intentionally omitted → both
+        // always rehydrate to false. Same reasoning: a reload should
+        // never silently resume auto-execution of any kind.
       }),
     },
   ),

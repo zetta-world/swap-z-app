@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import ActionCardView from "./ActionCardView";
 import AutopilotPilot from "./AutopilotPilot";
+import RebalancePilot from "./RebalancePilot";
 import ZionExecuteRouter from "./ZionExecuteRouter";
 import TokenSelector from "@/components/swap/TokenSelector";
 import type { ZionOp } from "@/lib/zion/mode-prompts";
@@ -393,6 +394,10 @@ export default function ZionDrawer() {
                       CEX API. Hidden when autopilot is OFF or nothing
                       matches the rails. */}
                   <AutopilotPilot cards={parsed.cards} />
+                  {/* Auto-rebalance banner — sibling pilot for `rebalance`
+                      cards (CEX→wallet withdrawal). Independent opt-in toggle
+                      in settings, hidden when off or no rebalance card pending. */}
+                  <RebalancePilot cards={parsed.cards} />
                   <AnimatePresence initial={false}>
                     {parsed.cards.map((c, i) => (
                       <ActionCardView key={i} card={c} index={i} onExecute={setExecuting} />

@@ -12,6 +12,7 @@ export interface ActionCard {
     | "swap" | "bridge"
     | "arbitrage" | "arbitrage_same_chain" | "arbitrage_cross_chain" | "arbitrage_dex_cex" | "arbitrage_cross_cex"
     | "arbitrage_triangular"
+    | "rebalance"
     | "sniper_watch"
     | "limit" | "buy_limit"
     | "sell_safe" | "sell_medium" | "sell_aggressive"
@@ -123,6 +124,29 @@ export interface ActionCard {
      *  "insufficient balance" (safe failure mode). */
     baseAmount?: string;
   }>;
+
+  /**
+   * For `rebalance` cards: a request to MOVE funds from one venue
+   * (typically a CEX) to the user's connected wallet, so the user can
+   * then re-deposit to a different CEX that's running dry. The
+   * autopilot only fires this when:
+   *   1. User has flipped autoRebalanceEnabled on (default OFF).
+   *   2. amount × spot ≤ maxRebalanceUsd.
+   *   3. rebalancesToday < maxRebalancesPerDay.
+   *   4. The destination network maps cleanly to a connected wallet
+   *      (Phantom for SOL, MetaMask for EVM) — otherwise we skip.
+   * `toExchange` is informational — the user has to manually deposit
+   * to it from their wallet after the funds land. v1 doesn't auto-
+   * deposit because that requires a wallet signature we can't perform.
+   */
+  rebalance?: {
+    fromExchange: string;
+    currency:     string;     // e.g. "USDT"
+    amount:       string;     // free-form string, parsed at fire time
+    network:      string;     // "SOL", "ERC20", "BSC", "POLYGON", …
+    tag?:         string;     // memo / destination tag if the chain needs one
+    toExchange?:  string;     // suggested re-deposit target (UX only)
+  };
 
   /** Optional ladder of profit-take rungs, for trade-thesis style proposals. */
   exits?: Array<{

@@ -220,6 +220,33 @@ PROMPT FILTER:
   • Skip triangular cycles with gross edge <0.35% — 3× taker fees
     (~0.30%) and inter-leg slippage will wipe anything thinner. Prefer
     cycles routed through deep pairs (BTC/USDT, ETH/USDT, ETH/BTC).
+
+REBALANCE CARDS (rare — only when the data tells you a venue is the
+bottleneck for the best arb you found):
+  If the BEST arb opportunity you'd otherwise propose is gated on the
+  user holding more of some currency on a CEX they don't have it on,
+  emit a "rebalance" card alongside the arb card. Shape:
+    kind: "rebalance"
+    rebalance: {
+      fromExchange: "<lowercase CEX with the funds today>",
+      currency:     "USDT" | "USDC" | etc.,
+      amount:       "<base-units to move>",
+      network:      "ERC20" | "BSC" | "SOL" | "POLYGON" | ...,
+      tag?:         "<memo if the chain needs one>",
+      toExchange?:  "<lowercase CEX they should redeposit to>"
+    }
+    summary: explain WHY moving these funds unlocks an opportunity.
+    estReturn / targetReturn: USD-equivalent of the move (for the
+      autopilot's per-rebalance cap check).
+  Constraints:
+    • Only when autopilot has a clear net-positive use for the moved
+      funds within the next 24h. Don't propose rebalances as
+      housekeeping — the user has the manual deposit/withdraw UI for that.
+    • Pick a network that's CHEAP (SOL, BSC, POLYGON) — ERC20 gas
+      eats small rebalances. Never propose a $50 USDT move over ERC20.
+    • Default to USDT/USDC. Don't propose moving long positions (BTC,
+      ETH) for rebalance purposes — that's a directional bet, not a
+      rebalance.
   • Skip pairs where either side has <$25k liquidity.
   • If user-allowed chains is given, ONLY use those.
 `;
