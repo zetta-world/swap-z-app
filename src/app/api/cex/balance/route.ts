@@ -6,6 +6,13 @@ import { type CexId, type CexCredentials, type CexBalanceResponse, SUPPORTED_CEX
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Pin CEX routes to non-US Vercel regions because Binance.com geo-blocks
+// AWS US ranges (iad1 / sfo1 / cle1 all return HTTP 451 with payloads
+// that LOOK like timestamp errors but aren't). gru1 = São Paulo first,
+// fra1 = Frankfurt as fallback. Coinbase / Gate.io / OKX are reachable
+// from both. Only the CEX surface needs this — other /api/* routes
+// hit DEX / Anthropic / price feeds with no source-IP policy.
+export const preferredRegion = ["gru1", "fra1"];
 
 const VALID_EXCHANGES = new Set<CexId>(SUPPORTED_CEX_IDS);
 const RL_OPTS = { windowMs: 60_000, max: 15 };

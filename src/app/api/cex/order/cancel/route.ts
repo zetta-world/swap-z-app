@@ -6,6 +6,9 @@ import { type CexId, type CexCredentials, SUPPORTED_CEX_IDS, CEX_META } from "@/
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Pin to non-US regions to bypass Binance.com geo-block on AWS US IPs.
+// See balance/route.ts for the full rationale.
+export const preferredRegion = ["gru1", "fra1"];
 
 const VALID_EXCHANGES = new Set<CexId>(SUPPORTED_CEX_IDS);
 const RL_OPTS = { windowMs: 60_000, max: 20 };
