@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   CreditCard, ArrowDownToLine, ArrowUpFromLine, Wallet as WalletIcon,
-  ShieldCheck, AlertTriangle, ExternalLink,
+  ShieldCheck, AlertTriangle, ExternalLink, Loader2,
 } from "lucide-react";
 import { useAccount } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -13,7 +13,7 @@ import type { Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import {
   isTransakSupportedChain, isTransakSupportedSymbol,
-  buildTransakUrl, buildTransakSellUrl,
+  fetchTransakWidgetUrl,
 } from "@/lib/onramp/transak";
 import { cn } from "@/lib/cn";
 
@@ -55,39 +55,39 @@ export default function OnrampView() {
   const sol = useWallet();
   const solAddress = sol.publicKey?.toBase58() ?? undefined;
 
-  const apiKeyConfigured = !!process.env.NEXT_PUBLIC_TRANSAK_API_KEY;
   const walletAddress = chain === "solana" ? solAddress : evmAddress;
   const chainSupported  = isTransakSupportedChain(chain);
   const tokenSupported  = !!token && isTransakSupportedSymbol(token.symbol);
+  const formReady = !!walletAddress && !!token && chainSupported && tokenSupported;
 
-  const widgetUrl = useMemo(() => {
-    if (!apiKeyConfigured || !walletAddress || !token || !chainSupported || !tokenSupported) {
-      return null;
-    }
-    if (mode === "buy") {
-      const amt = parseFloat(brlAmount);
-      return buildTransakUrl({
-        cryptoCurrency: token.symbol,
+  // The widget URL is minted on demand by our backend (Transak's new
+  // mandatory API flow). We don't have it until the user clicks the CTA.
+  const [widgetUrl, setWidgetUrl] = useState<string | null>(null);
+  const [loading, setLoading]     = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+
+  const onContinue = async () => {
+    if (!formReady || !token || !walletAddress) return;
+    setLoading(true);
+    setSessionError(null);
+    setWidgetUrl(null);
+    try {
+      const amtBrl    = parseFloat(brlAmount);
+      const amtCrypto = parseFloat(cryptoAmount);
+      const url = await fetchTransakWidgetUrl({
+        product:        mode === "buy" ? "BUY" : "SELL",
         chain,
-        walletAddress,
-        fiatAmount: Number.isFinite(amt) && amt > 0 ? amt : undefined,
-      });
-    } else {
-      const amt = parseFloat(cryptoAmount);
-      return buildTransakSellUrl({
         cryptoCurrency: token.symbol,
-        chain,
         walletAddress,
-        cryptoAmount: Number.isFinite(amt) && amt > 0 ? amt : undefined,
+        fiatAmount:     mode === "buy"  && Number.isFinite(amtBrl)    && amtBrl    > 0 ? amtBrl    : undefined,
+        cryptoAmount:   mode === "sell" && Number.isFinite(amtCrypto) && amtCrypto > 0 ? amtCrypto : undefined,
       });
+      setWidgetUrl(url);
+    } catch (e) {
+      setSessionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
     }
-  }, [apiKeyConfigured, walletAddress, token, chain, chainSupported, tokenSupported, mode, brlAmount, cryptoAmount]);
-
-  const [widgetVisible, setWidgetVisible] = useState(false);
-
-  const onContinue = () => {
-    if (!widgetUrl) return;
-    setWidgetVisible(true);
   };
 
   return (
@@ -114,23 +114,11 @@ export default function OnrampView() {
         </p>
       </div>
 
-      {/* Setup banner if env var missing */}
-      {!apiKeyConfigured && (
-        <div className="rounded-xl border border-gold/30 bg-gold/[0.05] p-3 flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-gold flex-shrink-0 mt-0.5" />
-          <div className="font-mono text-[11px] text-ink-2 leading-relaxed">
-            <b className="text-gold">Onramp não configurado.</b> Defina a env var{" "}
-            <code className="px-1 py-0.5 rounded bg-bg-1 text-cyan">NEXT_PUBLIC_TRANSAK_API_KEY</code>{" "}
-            na Vercel (Settings → Environment Variables → Production + Preview + Development) e refaça o deploy.
-          </div>
-        </div>
-      )}
-
       {/* Mode tabs */}
       <div className="inline-flex w-full rounded-xl border border-white/5 bg-bg-1/30 p-1">
         <button
           type="button"
-          onClick={() => { setMode("buy"); setWidgetVisible(false); }}
+          onClick={() => { setMode("buy"); setWidgetUrl(null); setSessionError(null); }}
           className={cn(
             "flex-1 py-2.5 rounded-lg font-mono text-[11px] tracking-widest uppercase inline-flex items-center justify-center gap-1.5 transition-colors",
             mode === "buy"
@@ -143,7 +131,7 @@ export default function OnrampView() {
         </button>
         <button
           type="button"
-          onClick={() => { setMode("sell"); setWidgetVisible(false); }}
+          onClick={() => { setMode("sell"); setWidgetUrl(null); setSessionError(null); }}
           className={cn(
             "flex-1 py-2.5 rounded-lg font-mono text-[11px] tracking-widest uppercase inline-flex items-center justify-center gap-1.5 transition-colors",
             mode === "sell"
@@ -258,21 +246,31 @@ export default function OnrampView() {
           </div>
         )}
 
+        {/* Session error (backend / Transak rejection) */}
+        {sessionError && (
+          <div className="rounded-lg border border-red/30 bg-red/[0.05] px-3 py-2 flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
+            <p className="font-mono text-[10px] text-ink-2 leading-relaxed break-words">{sessionError}</p>
+          </div>
+        )}
+
         {/* CTA */}
         <button
           type="button"
           onClick={onContinue}
-          disabled={!widgetUrl}
+          disabled={!formReady || loading}
           className={cn(
             "w-full btn btn-primary py-3.5 text-sm tracking-widest inline-flex items-center justify-center gap-2 transition-opacity",
-            !widgetUrl && "opacity-50 cursor-not-allowed",
+            (!formReady || loading) && "opacity-50 cursor-not-allowed",
             mode === "buy"
               ? "from-green/20 to-cyan/20 border-green/40 bg-gradient-to-r hover:border-green/60"
               : "from-violet/20 to-cyan/20 border-violet/40 bg-gradient-to-r hover:border-violet/60",
           )}
         >
-          {mode === "buy" ? <ArrowDownToLine className="w-3.5 h-3.5" /> : <ArrowUpFromLine className="w-3.5 h-3.5" />}
-          {mode === "buy" ? "Comprar com PIX" : "Vender por PIX"}
+          {loading
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : mode === "buy" ? <ArrowDownToLine className="w-3.5 h-3.5" /> : <ArrowUpFromLine className="w-3.5 h-3.5" />}
+          {loading ? "Gerando sessão segura…" : mode === "buy" ? "Comprar com PIX" : "Vender por PIX"}
         </button>
 
         {/* Footnotes */}
@@ -285,8 +283,9 @@ export default function OnrampView() {
         </div>
       </motion.div>
 
-      {/* Widget panel — appears below the form after the user clicks the CTA. */}
-      {widgetVisible && widgetUrl && (
+      {/* Widget panel — appears below the form once the backend returns a
+          minted, single-use widget URL. */}
+      {widgetUrl && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -295,11 +294,11 @@ export default function OnrampView() {
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5 bg-bg-1/40">
             <span className="font-mono text-[10px] text-cyan tracking-widest uppercase inline-flex items-center gap-1.5">
               <ExternalLink className="w-3 h-3" />
-              Transak iframe · pagamento + KYC + entrega
+              Transak · pagamento + KYC + entrega
             </span>
             <button
               type="button"
-              onClick={() => setWidgetVisible(false)}
+              onClick={() => setWidgetUrl(null)}
               className="font-mono text-[10px] text-ink-3 hover:text-ink-2 tracking-widest uppercase"
             >
               Fechar
@@ -307,6 +306,10 @@ export default function OnrampView() {
           </div>
           <iframe
             src={widgetUrl}
+            // strict-origin-when-cross-origin is REQUIRED by Transak's
+            // runtime domain validation — do NOT switch to noreferrer or
+            // the widget refuses to load (it can't verify referrerDomain).
+            referrerPolicy="strict-origin-when-cross-origin"
             allow="accelerometer; autoplay; camera; gyroscope; payment; clipboard-write"
             className="w-full bg-white"
             style={{ height: "min(85vh, 760px)" }}
