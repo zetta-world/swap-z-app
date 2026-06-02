@@ -14,7 +14,12 @@ const ContentSecurityPolicy = [
   "font-src 'self' https://fonts.gstatic.com data:",
   "connect-src 'self' https: wss:",                         // wagmi+walletconnect needs wss + RPC over https
   "worker-src 'self' blob:",
-  "frame-src 'self' https://*.walletconnect.com https://*.walletconnect.org https://*.reown.com",
+  // frame-src whitelist for embedded iframes. Defaults to 'self' so we
+  // never accidentally allow a malicious origin to embed inside us, but
+  // we have to opt-in each legitimate partner explicitly:
+  //   - walletconnect / reown — WC v2 verification + pairing iframe
+  //   - transak — fiat onramp + offramp widget (BUY/SELL via PIX)
+  "frame-src 'self' https://*.walletconnect.com https://*.walletconnect.org https://*.reown.com https://*.transak.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
