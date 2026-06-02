@@ -150,6 +150,73 @@ export function buildTransakUrl(input: TransakWidgetInput): string | null {
   return `${base}?${params.toString()}`;
 }
 
+// ─── Off-ramp (SELL crypto → PIX) ──────────────────────────────────────
+//
+// Mirror of the buy flow, but for the SELL side. The user picks a token
+// they hold + an amount → Transak generates a payout target (PIX key
+// linked to the user's bank — set up once inside the KYC flow). After
+// the user signs an on-chain transfer to Transak's hot wallet, Transak
+// confirms receipt and pushes BRL to the user's bank via PIX.
+//
+// Z-SWAP NEVER receives the user's PIX key or bank info — same posture
+// as the BUY side. The wallet signs ONE outgoing transfer to Transak,
+// nothing else.
+
+export interface TransakSellInput {
+  /** Token symbol the user wants to sell. */
+  cryptoCurrency: string;
+  /** Chain where the token is held. */
+  chain:          ChainId;
+  /** Source wallet — the user's connected EVM/Solana address. */
+  walletAddress:  string;
+  /** Optional crypto amount to pre-fill (in user units, e.g. 0.05). */
+  cryptoAmount?:  number;
+  staging?:       boolean;
+  themeColor?:    string;
+}
+
+export function buildTransakSellUrl(input: TransakSellInput): string | null {
+  const apiKey = process.env.NEXT_PUBLIC_TRANSAK_API_KEY;
+  if (!apiKey) return null;
+
+  const network = TRANSAK_NETWORK[input.chain];
+  if (!network) return null;
+
+  const symbol = input.cryptoCurrency.toUpperCase();
+  if (!isTransakSupportedSymbol(symbol)) return null;
+
+  if (!input.walletAddress || input.walletAddress.length < 10) return null;
+
+  const base = input.staging
+    ? "https://staging-global.transak.com"
+    : PROD_URL;
+
+  const params = new URLSearchParams({
+    apiKey,
+    defaultCryptoCurrency:     symbol,
+    network,
+    fiatCurrency:              "BRL",
+    defaultPaymentMethod:      "pix",
+    walletAddress:             input.walletAddress,
+    disableWalletAddressForm:  "true",
+    cryptoCurrencyLock:        "true",
+    networkLock:               "true",
+    countryCode:               "BR",
+    themeColor:                input.themeColor ?? "00E8FF",
+    // The only difference vs the buy URL: pin productsAvailed to SELL
+    // (forces the off-ramp side of the widget).
+    productsAvailed:           "SELL",
+    exchangeScreenTitle:       "Vender por PIX · Z-SWAP",
+    hideMenu:                  "true",
+  });
+
+  if (input.cryptoAmount && input.cryptoAmount > 0) {
+    params.set("cryptoAmount", String(input.cryptoAmount));
+  }
+
+  return `${base}?${params.toString()}`;
+}
+
 /**
  * Quick predicate the SwapCard uses to decide whether to even SHOW
  * the "Comprar com PIX" toggle. False when:

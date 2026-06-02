@@ -5,11 +5,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAccount } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
 import Link from "next/link";
-import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame, Banknote, CreditCard } from "lucide-react";
+import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame, Banknote } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
-import PixOnrampModal from "./PixOnrampModal";
-import { canOpenTransak } from "@/lib/onramp/transak";
 import QuoteComparison from "./QuoteComparison";
 import SwapModeTabs from "./SwapModeTabs";
 import CrossChainBanner from "./CrossChainBanner";
@@ -55,13 +53,6 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   const defaultDestWallet = toChain === "solana" ? solAddress : address;
 
   const [showSettings,  setShowSettings] = useState(false);
-  const [pixOpen,       setPixOpen]      = useState(false);
-
-  // PIX onramp visibility — depends on the BUY token + destination wallet
-  // + env var. Hides the toggle entirely if the deploy doesn't have the
-  // Transak key set, or if the picked token/chain isn't on Transak.
-  const pixDestWallet = toChain === "solana" ? solAddress : address;
-  const pixAvailable  = canOpenTransak(toToken?.symbol, toChain, pixDestWallet);
 
   // ─── Real balances + live USD prices ───────────────────────────────
   // useTokenPrices batches a single /api/prices call for both sides of
@@ -402,42 +393,12 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
             {ctaLabel}
           </button>
 
-          {/* PIX onramp shortcut — only shows when the BUY token is on
-              Transak (BSC, Ethereum, Polygon, Arbitrum, Optimism, Base,
-              Avalanche; major tokens). Lets the user skip "I need to get
-              crypto first" entirely. */}
-          {pixAvailable && toToken && (
-            <button
-              type="button"
-              onClick={() => setPixOpen(true)}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-green/30 bg-gradient-to-r from-green/[0.06] to-cyan/[0.04] hover:from-green/[0.12] hover:to-cyan/[0.08] transition-colors group"
-            >
-              <CreditCard className="w-3.5 h-3.5 text-green flex-shrink-0" />
-              <span className="font-mono text-[11px] text-ink tracking-widest uppercase">
-                Comprar {toToken.symbol} com <span className="text-green">PIX</span>
-              </span>
-              <ChevronDown className="w-3.5 h-3.5 text-ink-3 -rotate-90 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
-            </button>
-          )}
-
           {/* Disclaimer */}
           <p className="font-mono text-[10px] text-ink-4 text-center leading-relaxed">
             {t("swap.poweredByMultiAggregator")}
           </p>
         </div>
       </div>
-
-      {/* PIX onramp modal — Transak iframe with destination locked to
-          the connected wallet. Closes automatically when the user
-          completes (or cancels) inside the widget. */}
-      {pixAvailable && toToken && (
-        <PixOnrampModal
-          open={pixOpen}
-          onOpenChange={setPixOpen}
-          cryptoSymbol={toToken.symbol}
-          chain={toChain}
-        />
-      )}
     </div>
   );
 }
