@@ -10,8 +10,29 @@
  */
 
 import type { ActionCard } from "./parse";
+import type { ChainId } from "@/lib/chains";
 
 const KEY = "zion_pending_orders_v1";
+
+/**
+ * Optional CoW Protocol attachment for orders that have been pre-signed
+ * for autopilot fill. When present, the order is "armed" — a solver will
+ * fill it automatically the moment the market hits the limit. Without
+ * this, the order stays in pure-manual mode.
+ */
+export interface CowAttachment {
+  chain:     ChainId;
+  /** The CoW orderUid (0x… 56-byte hash) returned by the POST. */
+  orderUid:  string;
+  /** Unix ms when the user signed. */
+  signedAt:  number;
+  /** Unix ms when the order auto-expires per validTo. */
+  expiresAt: number;
+  /** Cached last-known status — refreshed by /orders on load. */
+  lastStatus?: "open" | "fulfilled" | "cancelled" | "expired" | "unknown";
+  /** Unix ms of the last status refresh, for cache invalidation. */
+  lastChecked?: number;
+}
 
 export interface PendingOrder {
   id:        string;     // local random id
@@ -20,6 +41,8 @@ export interface PendingOrder {
   status:    "pending" | "fired" | "expired" | "cancelled";
   /** Last error if the user tried to fire and it failed. */
   lastError?: string;
+  /** Set when the order was pre-signed via CoW Protocol. */
+  cow?:      CowAttachment;
 }
 
 function safeRead(): PendingOrder[] {
@@ -68,6 +91,27 @@ export function deletePendingOrder(id: string) {
 export function updatePendingOrder(id: string, patch: Partial<PendingOrder>) {
   const existing = safeRead();
   safeWrite(existing.map((o) => (o.id === id ? { ...o, ...patch } : o)));
+}
+
+/**
+ * Attach a CoW Protocol pre-sign payload to an existing pending order.
+ * Idempotent — calling again overwrites the previous attachment. Used
+ * right after SignLimitOrderButton successfully POSTs to CoW.
+ */
+export function attachCowOrder(id: string, cow: CowAttachment) {
+  updatePendingOrder(id, { cow });
+}
+
+/**
+ * Update the cached CoW status on an order. Called by /orders when it
+ * polls api.cow.fi to refresh the badge.
+ */
+export function updateCowStatus(id: string, status: CowAttachment["lastStatus"]) {
+  const existing = safeRead();
+  safeWrite(existing.map((o) => {
+    if (o.id !== id || !o.cow) return o;
+    return { ...o, cow: { ...o.cow, lastStatus: status, lastChecked: Date.now() } };
+  }));
 }
 
 /**
