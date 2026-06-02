@@ -4,13 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Trash2, Zap, AlertCircle, Bot, ShieldX, ArrowDownToLine,
-  ArrowUpFromLine, Crosshair, Target, TrendingUp,
+  ArrowUpFromLine, Crosshair, Target, TrendingUp, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  listPendingOrders, deletePendingOrder, updatePendingOrder, isImmediateCard,
-  type PendingOrder,
+  listPendingOrders, deletePendingOrder, updatePendingOrder, updateCowStatus,
+  isImmediateCard, type PendingOrder,
 } from "@/lib/zion/orders";
+import { fetchCowOrderStatus } from "@/lib/limit/cow";
 import { useSwap } from "@/lib/store/swap";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
@@ -74,6 +75,31 @@ export default function ZionOrdersList() {
     const onFocus = () => refresh();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
+  }, [refresh]);
+
+  // Refresh CoW status for every pre-signed order on mount + every 60s.
+  // Each request is per-order so partial failures don't block the rest.
+  // We skip orders we checked in the last 30s to keep traffic low.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      const list = listPendingOrders();
+      const stale = list.filter((o) =>
+        o.cow && (!o.cow.lastChecked || Date.now() - o.cow.lastChecked > 30_000),
+      );
+      for (const o of stale) {
+        if (cancelled || !o.cow) continue;
+        try {
+          const st = await fetchCowOrderStatus(o.cow.chain, o.cow.orderUid);
+          if (cancelled) break;
+          updateCowStatus(o.id, st.status);
+        } catch { /* leave previous status; will retry next tick */ }
+      }
+      if (!cancelled) refresh();
+    };
+    void tick();
+    const id = setInterval(tick, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
   }, [refresh]);
 
   const onDelete = (id: string) => {
@@ -204,6 +230,7 @@ function OrderRow({
              order.status === "cancelled" ? t("common.failed") :
              order.status}
           </span>
+          {order.cow && <CowStatusBadge cow={order.cow} />}
           <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">
             {t(meta.labelKey)} · {card.chain}
           </span>
@@ -272,6 +299,23 @@ function OrderRow({
         </div>
       </div>
     </div>
+  );
+}
+
+function CowStatusBadge({ cow }: { cow: NonNullable<PendingOrder["cow"]> }) {
+  const status = cow.lastStatus ?? "open";
+  const cfg = {
+    open:      { cls: "text-cyan border-cyan/30 bg-cyan/[0.05]",     label: "AUTOPILOT · ARMED" },
+    fulfilled: { cls: "text-green border-green/30 bg-green/[0.05]",  label: "AUTOPILOT · FILLED" },
+    cancelled: { cls: "text-ink-3 border-white/15 bg-white/[0.02]",  label: "AUTOPILOT · CANCELED" },
+    expired:   { cls: "text-ink-3 border-white/15 bg-white/[0.02]",  label: "AUTOPILOT · EXPIRED" },
+    unknown:   { cls: "text-ink-4 border-white/10 bg-white/[0.02]",  label: "AUTOPILOT · CHECKING…" },
+  }[status] ?? { cls: "text-ink-4 border-white/10 bg-white/[0.02]", label: "AUTOPILOT" };
+  return (
+    <span className={cn("inline-flex items-center gap-1 font-mono text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase", cfg.cls)}>
+      <ShieldCheck className="w-2.5 h-2.5" />
+      {cfg.label}
+    </span>
   );
 }
 

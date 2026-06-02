@@ -14,6 +14,8 @@ import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
+import { isCowEligibleCard } from "@/lib/limit/cow";
+import SignLimitOrderButton from "./SignLimitOrderButton";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -173,6 +175,24 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
                   <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
                     {t("zion.routerConditional")}
                   </p>
+                </div>
+              )}
+
+              {/* CoW pre-sign rail — only for buy_limit / sell_* on supported
+                  chains. Hides itself on cards it can't service. The
+                  "Save as pending" button below remains the manual
+                  fallback, available for every conditional card. */}
+              {!isImmediate && isCowEligibleCard(card) && (
+                <div className="rounded-xl border border-cyan/20 bg-cyan/[0.04] p-3 mb-3 space-y-2">
+                  <div className="flex items-center gap-1.5 font-mono text-[10px] text-cyan tracking-widest uppercase">
+                    <Bot className="w-3 h-3" />
+                    Autopilot DEX · pre-sign via CoW
+                  </div>
+                  <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
+                    Sign once now and CoW solvers will fill the order automatically
+                    when the market hits your trigger — no popup needed at trigger time.
+                  </p>
+                  <SignLimitOrderButton card={card} onDone={onClose} />
                 </div>
               )}
 
