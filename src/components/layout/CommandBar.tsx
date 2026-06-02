@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeftRight, Workflow, Activity, BarChart3, Layers, Shield,
-  Sparkles, Rocket, Vote, Wallet, Settings, Search, Banknote,
+  Sparkles, Rocket, Vote, Wallet, Settings, Search, Banknote, CreditCard,
 } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
 import { DEFAULT_TOKENS } from "@/lib/tokens";
@@ -15,6 +15,7 @@ import { useT, type MessageKey } from "@/lib/i18n";
 
 const PAGES: { href: string; labelKey: MessageKey; icon: React.ComponentType<{ className?: string }> }[] = [
   { href: "/",          labelKey: "nav.swap",       icon: ArrowLeftRight },
+  { href: "/buy",       labelKey: "nav.buy",        icon: CreditCard },
   { href: "/bridge",    labelKey: "nav.bridge",     icon: Workflow },
   { href: "/orders",    labelKey: "nav.orders",     icon: Activity },
   { href: "/cex",       labelKey: "nav.cex",        icon: Banknote },
