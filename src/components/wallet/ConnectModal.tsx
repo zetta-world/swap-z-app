@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion } from "framer-motion";
-import { useConnect, type Connector } from "wagmi";
+import { useConnect, useDisconnect, type Connector } from "wagmi";
 import { useWallet, type Wallet as SolWalletAdapter } from "@solana/wallet-adapter-react";
 import { X, Wallet, ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
@@ -25,6 +25,7 @@ export default function ConnectModal({
 }) {
   const t = useT();
   const { connectors, connectAsync, isPending } = useConnect();
+  const { disconnectAsync } = useDisconnect();
   const solana = useWallet();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +38,25 @@ export default function ConnectModal({
     setError(null);
     setPendingId(c.uid);
     try {
-      await connectAsync({ connector: c });
-      onOpenChange(false);
+      try {
+        await connectAsync({ connector: c });
+        onOpenChange(false);
+      } catch (firstErr) {
+        // wagmi v2 throws "Connector already connected" when its internal
+        // state still holds an old connection (page reload, MM SDK relay
+        // leftover, EIP-6963 provider re-registration). The connection
+        // itself is dead but the slot is locked. The recovery is a
+        // disconnect + retry — this gives the user the same one-click
+        // UX without forcing them to clear localStorage manually.
+        const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+        if (/already connected|connector.*connected/i.test(msg)) {
+          await disconnectAsync().catch(() => { /* best-effort reset */ });
+          await connectAsync({ connector: c });
+          onOpenChange(false);
+        } else {
+          throw firstErr;
+        }
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg.includes("User rejected") || msg.includes("rejected") ? t("topbar.connectionRejected") : msg);
