@@ -223,7 +223,13 @@ export async function createTransakWidgetUrl(p: TransakSessionParams): Promise<s
     headers: {
       "accept":       "application/json",
       "content-type": "application/json",
-      "access-token": accessToken,
+      // Send BOTH header variants so we're robust to a gateway expectation
+      // mismatch. The reference search said `access-token`; the official
+      // SDK (white-label) sets `Authorization: <token>` (no Bearer prefix,
+      // raw token). The session endpoint accepts either — both being
+      // present in one call is harmless.
+      "access-token":  accessToken,
+      "Authorization": accessToken,
     },
     body: JSON.stringify({ widgetParams }),
     cache: "no-store",
