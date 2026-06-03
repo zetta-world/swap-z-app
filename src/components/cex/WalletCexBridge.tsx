@@ -198,6 +198,12 @@ function DepositPanel({ exchangeId, credentials }: Props) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<{ code: string; detail?: string } | null>(null);
   const [copied,  setCopied]  = useState<"addr" | "tag" | null>(null);
+  // Track the "copied" timer so a fast modal close / re-mount doesn't
+  // leak the setState onto a dead component.
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+  }, []);
 
   const networks = useMemo(() => COMMON_NETWORKS[currency.toUpperCase()] ?? [], [currency]);
   const kind = networkKind(network);
@@ -255,7 +261,8 @@ function DepositPanel({ exchangeId, credentials }: Props) {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(which);
-      setTimeout(() => setCopied(null), 1500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(null), 1500);
     } catch {
       toast.error("Couldn't copy — long-press to select instead.");
     }
