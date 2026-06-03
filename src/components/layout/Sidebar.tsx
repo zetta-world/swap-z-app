@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3,
-  Shield, Vote, Wallet, Settings, ChevronLeft, Activity, Boxes, Banknote, CreditCard,
+  Shield, Vote, Wallet, Settings, ChevronLeft, Activity, Boxes, Banknote, CreditCard, Handshake,
 } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -26,6 +26,7 @@ const NAV: NavItem[] = [
   { href: "/bridge",    labelKey: "nav.bridge",     icon: Workflow,        group: "trade" },
   { href: "/orders",    labelKey: "nav.orders",     icon: Activity,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
   { href: "/cex",       labelKey: "nav.cex",        icon: Banknote,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
+  { href: "/otc",       labelKey: "nav.otc",        icon: Handshake,       group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
   { href: "/pro",       labelKey: "nav.pro",        icon: BarChart3,       group: "trade", badgeKey: "nav.badgeBeta", badgeTone: "beta" },
 
   { href: "/pools",     labelKey: "nav.pools",      icon: Layers,          group: "discover" },
