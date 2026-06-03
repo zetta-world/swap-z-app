@@ -167,14 +167,18 @@ export default async function OG() {
 // ─── Sub-components ────────────────────────────────────────────────────
 
 function Sidebar() {
-  const items: { icon: string; label: string; tone?: string }[] = [
-    { icon: "⇄", label: "Swap" },
-    { icon: "💳", label: "Buy",     tone: GOLD },
-    { icon: "🌉", label: "Bridge" },
-    { icon: "📊", label: "Orders" },
-    { icon: "💰", label: "CEX" },
-    { icon: "📈", label: "Pro" },
-    { icon: "✨", label: "ZION",    tone: GOLD },
+  // Pure CSS pictograms — satori can't load emoji fonts so the previous
+  // ⇄/💳/🌉 etc. rendered as empty tofu boxes. These are drawn from div
+  // primitives so they're always present at the same visual weight as
+  // the real lucide icons in the app.
+  const items: { kind: PictoKind; label: string; tone?: string }[] = [
+    { kind: "swap",    label: "Swap" },
+    { kind: "card",    label: "Buy",    tone: GOLD },
+    { kind: "bridge",  label: "Bridge" },
+    { kind: "chart",   label: "Orders" },
+    { kind: "wallet",  label: "CEX" },
+    { kind: "bars",    label: "Pro" },
+    { kind: "sparks",  label: "ZION",   tone: GOLD },
   ];
   return (
     <div
@@ -233,8 +237,8 @@ function Sidebar() {
               color: it.label === "Swap" ? INK : INK_2,
             }}
           >
-            <span style={{ fontSize: 13, color: it.tone ?? INK_3, width: 16, display: "flex" }}>
-              {it.icon}
+            <span style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Picto kind={it.kind} color={it.tone ?? INK_3} />
             </span>
             <span style={{ flex: 1, display: "flex" }}>{it.label}</span>
             {it.tone === GOLD && (
@@ -412,6 +416,83 @@ function ChainCard() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── Pictograms (CSS-only — satori can't load icon fonts or emojis) ────
+
+type PictoKind = "swap" | "card" | "bridge" | "chart" | "wallet" | "bars" | "sparks";
+
+function Picto({ kind, color }: { kind: PictoKind; color: string }) {
+  switch (kind) {
+    case "swap":   return <SwapPicto   color={color} />;
+    case "card":   return <CardPicto   color={color} />;
+    case "bridge": return <BridgePicto color={color} />;
+    case "chart":  return <ChartPicto  color={color} />;
+    case "wallet": return <WalletPicto color={color} />;
+    case "bars":   return <BarsPicto   color={color} />;
+    case "sparks": return <SparksPicto color={color} />;
+  }
+}
+
+function SwapPicto({ color }: { color: string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
+      <div style={{ width: 12, height: 2, background: color, borderRadius: 1, display: "flex" }} />
+      <div style={{ width: 12, height: 2, background: color, borderRadius: 1, display: "flex" }} />
+    </div>
+  );
+}
+function CardPicto({ color }: { color: string }) {
+  return (
+    <div style={{ width: 14, height: 10, border: `1.5px solid ${color}`, borderRadius: 2, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+      <div style={{ width: 14, height: 2, background: color, display: "flex" }} />
+    </div>
+  );
+}
+function BridgePicto({ color }: { color: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <div style={{ width: 4, height: 4, borderRadius: "50%", border: `1.5px solid ${color}`, display: "flex" }} />
+      <div style={{ width: 6, height: 1.5, background: color, display: "flex" }} />
+      <div style={{ width: 4, height: 4, borderRadius: "50%", border: `1.5px solid ${color}`, display: "flex" }} />
+    </div>
+  );
+}
+function ChartPicto({ color }: { color: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5 }}>
+      <div style={{ width: 2, height: 6,  background: color, display: "flex" }} />
+      <div style={{ width: 2, height: 10, background: color, display: "flex" }} />
+      <div style={{ width: 2, height: 4,  background: color, display: "flex" }} />
+      <div style={{ width: 2, height: 12, background: color, display: "flex" }} />
+    </div>
+  );
+}
+function WalletPicto({ color }: { color: string }) {
+  return (
+    <div style={{ width: 14, height: 10, border: `1.5px solid ${color}`, borderRadius: 2, display: "flex", justifyContent: "flex-end", alignItems: "center", paddingRight: 2 }}>
+      <div style={{ width: 3, height: 3, borderRadius: "50%", background: color, display: "flex" }} />
+    </div>
+  );
+}
+function BarsPicto({ color }: { color: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5 }}>
+      <div style={{ width: 2.5, height: 5,  background: color, display: "flex" }} />
+      <div style={{ width: 2.5, height: 9,  background: color, display: "flex" }} />
+      <div style={{ width: 2.5, height: 7,  background: color, display: "flex" }} />
+      <div style={{ width: 2.5, height: 12, background: color, display: "flex" }} />
+    </div>
+  );
+}
+function SparksPicto({ color }: { color: string }) {
+  // Simple 4-point starlet shape using rotated diamond plus a dot
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", position: "relative", width: 14, height: 14 }}>
+      <div style={{ width: 10, height: 2, background: color, borderRadius: 1, position: "absolute", display: "flex" }} />
+      <div style={{ width: 2, height: 10, background: color, borderRadius: 1, position: "absolute", display: "flex" }} />
     </div>
   );
 }
