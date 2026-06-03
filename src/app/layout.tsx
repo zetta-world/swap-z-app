@@ -22,15 +22,85 @@ const dmMono = DM_Mono({
   display: "swap",
 });
 
+// metadataBase: where Next.js resolves relative OG image paths from.
+// We prefer the explicit env override (set this on Vercel for the
+// canonical custom domain), then fall back to the Vercel-provided URL
+// (auto-set per deployment), then the canonical zettaword domain.
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : null) ??
+  "https://swap-z-app.vercel.app";
+
+const TITLE       = "Z-SWAP — The Liquidity Nexus";
+const DESCRIPTION =
+  "Multi-chain DEX aggregator with ZION AI advisory, autopilot trading, and CEX-bridged arbitrage. 11 chains, 132 functions, one intelligent liquidity layer.";
+
 export const metadata: Metadata = {
-  title:       "Z-SWAP — The Liquidity Nexus",
-  description: "Premium multi-chain liquidity intelligence platform. Trade, route and analyze across 11 chains with ZION AI advisory.",
-  keywords:    ["dex", "swap", "z-swap", "zetta", "liquidity", "cross-chain", "defi", "ai", "zion"],
-  metadataBase: new URL("https://app.zettaword.global"),
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default:  TITLE,
+    template: "%s · Z-SWAP",
+  },
+  description: DESCRIPTION,
+  applicationName: "Z-SWAP",
+  authors: [{ name: "Zettaword", url: "https://zettaword.global" }],
+  generator: "Next.js",
+  keywords: [
+    "dex", "swap", "z-swap", "zetta", "zion ai", "liquidity",
+    "cross-chain", "defi", "multi-chain", "autopilot", "arbitrage",
+    "metamask", "phantom", "uniswap", "0x", "lifi", "pix", "onramp",
+  ],
+
+  // OpenGraph — opengraph-image.tsx supplies the image automatically.
   openGraph: {
-    title:       "Z-SWAP — The Liquidity Nexus",
-    description: "11 chains. 132 functions. One intelligent liquidity layer.",
-    type:        "website",
+    type:       "website",
+    siteName:   "Z-SWAP",
+    title:      TITLE,
+    description: DESCRIPTION,
+    url:        SITE_URL,
+    locale:     "en_US",
+    alternateLocale: ["pt_BR", "es_ES", "zh_CN"],
+  },
+
+  // Twitter — twitter-image.tsx supplies the image automatically.
+  twitter: {
+    card:        "summary_large_image",
+    title:       TITLE,
+    description: DESCRIPTION,
+    creator:     "@zettaword",
+    site:        "@zettaword",
+  },
+
+  // Browsers + crawlers
+  robots: {
+    index:    true,
+    follow:   true,
+    noimageindex: false,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+
+  // iOS / Android home-screen integration
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Z-SWAP",
+  },
+
+  formatDetection: {
+    telephone: false,
+    email:     false,
+    address:   false,
+  },
+
+  // Discovery + verification slots — wire these up later by setting the
+  // matching env var on Vercel without code changes.
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
   },
 };
 
