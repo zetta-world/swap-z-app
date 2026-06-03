@@ -119,6 +119,10 @@ export default function RiskScanner() {
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder={t("explorer.scannerInputPlaceholder")}
+                  maxLength={120}
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
                   className="flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4 py-2.5"
                 />
               </div>

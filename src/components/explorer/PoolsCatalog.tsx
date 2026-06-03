@@ -156,6 +156,7 @@ export default function PoolsCatalog() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("explorer.catalogSearchPlaceholder")}
+            maxLength={120}
             spellCheck={false}
             autoComplete="off"
             className="flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4"

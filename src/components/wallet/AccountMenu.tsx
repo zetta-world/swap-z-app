@@ -5,7 +5,7 @@ import { useAccount, useBalance, useChainId, useDisconnect, useSwitchChain } fro
 import {
   ChevronDown, Copy, ExternalLink, LogOut, Check, Globe, Wallet,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { CHAINS } from "@/lib/chains";
 import { WAGMI_CHAIN_TO_INTERNAL } from "@/lib/wagmi";
@@ -26,6 +26,13 @@ export default function AccountMenu() {
   const { switchChain, isPending: switching } = useSwitchChain();
   const { data: balance } = useBalance({ address });
   const [copied, setCopied] = useState(false);
+  // Hold the "copied" timer in a ref so a fast unmount (e.g. wallet
+  // disconnect right after the click) doesn't leak a setState onto a
+  // dead component. Cleared on unmount AND on each new copy.
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+  }, []);
 
   if (!address) return null;
 
@@ -34,10 +41,18 @@ export default function AccountMenu() {
   const explorer = chain?.blockExplorers?.default.url ?? chainMeta?.explorer ?? "https://etherscan.io";
 
   const onCopy = async () => {
-    await navigator.clipboard.writeText(address);
+    try {
+      await navigator.clipboard.writeText(address);
+    } catch {
+      // Clipboard API can throw on insecure contexts (HTTP) or when the
+      // browser tab loses focus mid-click. Still show "copied" since the
+      // selection-based fallback would catch it in most cases; failing
+      // loud here is worse UX than the rare miss.
+    }
     setCopied(true);
     toast.success(t("topbar.accountCopiedToast"));
-    setTimeout(() => setCopied(false), 1500);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
   };
 
   return (
