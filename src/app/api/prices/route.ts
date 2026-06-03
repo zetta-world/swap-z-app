@@ -83,7 +83,22 @@ function parseQuery(raw: string): ParsedTok[] {
   return out;
 }
 
+// Rate limit defense-in-depth: the response is CDN-cacheable per unique
+// `tokens` query but a malicious caller can sidestep the cache by adding
+// dummy params or rotating the token list. 90 req/min/IP is generous
+// for legitimate use (the swap card re-quotes on every input keystroke).
+const RL_OPTS = { windowMs: 60_000, max: 90 };
+
 export async function GET(req: NextRequest) {
+  const { rateLimit, getClientId } = await import("@/lib/rate-limit");
+  const rl = rateLimit(`prices:${getClientId(req.headers)}`, RL_OPTS);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { ok: false, error: "rate_limited" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
+  }
+
   const tokens = parseQuery(req.nextUrl.searchParams.get("tokens") || "");
 
   if (tokens.length === 0) {
