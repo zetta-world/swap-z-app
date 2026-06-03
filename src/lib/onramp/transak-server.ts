@@ -105,14 +105,20 @@ async function getAccessToken(): Promise<string> {
     );
   }
 
-  let parsed: { data?: { accessToken?: string; expiresAt?: number | string } };
+  let parsed: {
+    data?: { accessToken?: string; expiresAt?: number | string };
+    accessToken?: string;
+    expiresAt?: number | string;
+  };
   try {
     parsed = JSON.parse(text) as typeof parsed;
   } catch {
     throw new TransakUpstreamError("refresh-token returned non-JSON", 502);
   }
 
-  const accessToken = parsed.data?.accessToken;
+  // Transak wraps the payload under `data` per their spec, but tolerate a
+  // flat shape too in case the gateway ever changes the envelope.
+  const accessToken = parsed.data?.accessToken ?? parsed.accessToken;
   if (!accessToken) {
     throw new TransakUpstreamError("refresh-token response missing accessToken", 502);
   }
@@ -121,7 +127,7 @@ async function getAccessToken(): Promise<string> {
   // Default to 6 days out (one day before the documented 7-day expiry)
   // when we can't parse it, so we always refresh with margin.
   let refreshAt = now + 6 * 24 * 3600 * 1000;
-  const exp = parsed.data?.expiresAt;
+  const exp = parsed.data?.expiresAt ?? parsed.expiresAt;
   if (typeof exp === "number" && Number.isFinite(exp)) {
     const expMs = exp > 1e12 ? exp : exp * 1000; // tolerate s or ms
     refreshAt = Math.max(now + 60_000, expMs - 24 * 3600 * 1000);
