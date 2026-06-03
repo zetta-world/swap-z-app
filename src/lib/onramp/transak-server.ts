@@ -25,7 +25,23 @@
  * partner knows which case they're in.
  */
 
-const TRANSAK_API_BASE = "https://api-gateway.transak.com";
+const TRANSAK_API_BASE = "https://api.transak.com";          // refresh-token, partners API
+const TRANSAK_GATEWAY_BASE = "https://api-gateway.transak.com"; // session creation, widget infra
+
+/* Confirmed from Transak docs + search index examples:
+ *
+ *   Production:
+ *     POST https://api.transak.com/partners/api/v2/refresh-token        ← partner auth
+ *     POST https://api-gateway.transak.com/api/v2/auth/session          ← widget session
+ *
+ *   Staging (for reference, not used here):
+ *     POST https://api-stg.transak.com/partners/api/v2/refresh-token
+ *     POST https://api-gateway-stg.transak.com/api/v2/auth/session
+ *
+ * The previous version pointed BOTH calls at api-gateway.transak.com,
+ * which 404'd on the refresh-token side — the partners API lives on a
+ * different host than the session/widget gateway.
+ */
 
 interface CachedToken {
   accessToken: string;
@@ -174,7 +190,7 @@ export async function createTransakWidgetUrl(p: TransakSessionParams): Promise<s
     widgetParams.cryptoAmount = p.cryptoAmount;
   }
 
-  const res = await fetch(`${TRANSAK_API_BASE}/api/v2/auth/session`, {
+  const res = await fetch(`${TRANSAK_GATEWAY_BASE}/api/v2/auth/session`, {
     method:  "POST",
     headers: {
       "accept":       "application/json",
