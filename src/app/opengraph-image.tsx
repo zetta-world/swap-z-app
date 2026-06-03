@@ -1,22 +1,30 @@
 import { ImageResponse } from "next/og";
 
 /**
- * Dynamic OpenGraph card — what WhatsApp, Telegram, Discord, Twitter,
- * LinkedIn, iMessage, Slack, and every other modern unfurl-er render
- * when someone shares a swap-z-app.vercel.app link.
+ * Dashboard-style OG card — visually replicates the real app surface
+ * so when the link is shared on WhatsApp / Telegram / Twitter the
+ * preview looks like a screenshot of Z-SWAP, not an abstract teaser.
  *
- * Industry standard: 1200×630, served at runtime by Vercel's Edge.
- * No static PNG to maintain — brand updates flow automatically.
+ * 1200×630, Edge-rendered. Satori (the underlying renderer) supports
+ * only flexbox + inline styles, so the layout is built from explicit
+ * flex containers — no CSS grid, no transforms, no backdrop-filter.
  *
- * Design choices (premium-tier feel):
- *   - Deep #02030A base with offset cyan + violet aurora blooms
- *   - Big "Z-SWAP" wordmark in display weight with cyan→violet gradient
- *   - One-line value prop below
- *   - Stat strip across the bottom (11 chains · 132 fns · ZION AI · CEX+DEX)
- *   - Subtle hairline rule + monospaced eyebrow for technical credibility
+ * Composition:
+ *   [ Sidebar ][      Main canvas                      ]
  *
- * No external font load — using system stack with explicit weights so
- * the image cold-starts in <100ms on Edge without bytes-on-fetch.
+ *   Sidebar (compact):
+ *     - "Z" mark + Z-SWAP wordmark
+ *     - Nav icon strip (Swap / Buy / Bridge / Orders / CEX / Pro / ZION)
+ *
+ *   Main canvas:
+ *     - Eyebrow "ZETTA Ecosystem · Live"
+ *     - "The Liquidity Nexus" headline (cyan→violet gradient)
+ *     - One-line value prop
+ *     - Stat strip — TVL / Swaps 24h / Chains / Routes
+ *     - Two mock cards (top pair + chain breakdown) to fill the bottom
+ *
+ * No external font load — system stack with weights, so the image
+ * cold-starts in <100ms.
  */
 export const runtime = "edge";
 
@@ -24,14 +32,18 @@ export const alt = "Z-SWAP — The Liquidity Nexus · multi-chain DEX with ZION 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const CYAN = "#00E8FF";
+const CYAN   = "#00E8FF";
 const VIOLET = "#9F5FFF";
-const GOLD = "#F2C879";
-const INK = "#E6E9F5";
-const INK_2 = "#A5ADC4";
-const INK_3 = "#6C7590";
-const BG = "#02030A";
-const BG_1 = "#0A0E1B";
+const GOLD   = "#F2C879";
+const GREEN  = "#22D27E";
+const RED    = "#FF5C7A";
+const INK    = "#E6E9F5";
+const INK_2  = "#A5ADC4";
+const INK_3  = "#6C7590";
+const INK_4  = "#3F4862";
+const BG     = "#02030A";
+const BG_1   = "#0A0E1B";
+const BG_2   = "#11162A";
 
 export default async function OG() {
   return new ImageResponse(
@@ -41,161 +53,110 @@ export default async function OG() {
           width:  "100%",
           height: "100%",
           display: "flex",
-          flexDirection: "column",
+          flexDirection: "row",
           background: BG,
           color: INK,
           fontFamily: "system-ui, -apple-system, sans-serif",
           position: "relative",
-          padding: "64px",
         }}
       >
-        {/* Aurora blooms */}
+        {/* Aurora wash (single gradient — satori-safe) */}
         <div
           style={{
             position: "absolute",
-            top: -180,
-            right: -160,
-            width: 540,
-            height: 540,
+            top: -200,
+            right: -120,
+            width: 620,
+            height: 620,
             borderRadius: "50%",
-            background: `radial-gradient(closest-side, ${CYAN}38, transparent 70%)`,
+            background: `radial-gradient(closest-side, ${CYAN}28, transparent 70%)`,
+            display: "flex",
           }}
         />
         <div
           style={{
             position: "absolute",
-            bottom: -200,
-            left: -180,
+            bottom: -220,
+            left: 100,
             width: 600,
             height: 600,
             borderRadius: "50%",
-            background: `radial-gradient(closest-side, ${VIOLET}44, transparent 70%)`,
-          }}
-        />
-        {/* Subtle hairline atmosphere (full grid not possible: satori
-            doesn't render repeated background patterns) */}
-        <div
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: 0,
-            right: 0,
-            height: 1,
-            background: `linear-gradient(90deg, transparent, ${INK_3}66, transparent)`,
+            background: `radial-gradient(closest-side, ${VIOLET}28, transparent 70%)`,
             display: "flex",
           }}
         />
 
-        {/* Top eyebrow row */}
+        {/* ── Sidebar ─────────────────────────────────────── */}
+        <Sidebar />
+
+        {/* ── Main canvas ─────────────────────────────────── */}
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+            flexDirection: "column",
+            flex: 1,
+            padding: "44px 56px 40px",
+            gap: 20,
             zIndex: 1,
           }}
         >
-          {/* Logo + brand */}
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 16,
-                background: `linear-gradient(135deg, ${CYAN}, ${VIOLET})`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 40,
-                fontWeight: 900,
-                color: BG,
-                boxShadow: `0 0 60px ${CYAN}44`,
-              }}
-            >
-              Z
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ fontSize: 14, color: INK_3, letterSpacing: 4, textTransform: "uppercase", fontFamily: "monospace" }}>
-                ZETTA Ecosystem
-              </div>
-              <div style={{ fontSize: 20, color: INK, fontWeight: 700, letterSpacing: 1 }}>
-                Z-SWAP
-              </div>
-            </div>
+          {/* Top eyebrow row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <Pill color={GREEN} label="ZETTA Ecosystem · Live" dot />
+            <Pill color={GOLD} label="ZION AI advisory" />
+            <Pill color={CYAN} label="Non-custodial" />
           </div>
 
-          {/* Right eyebrow */}
+          {/* Headline */}
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "8px 18px",
-              borderRadius: 999,
-              border: `1px solid ${GOLD}55`,
-              background: `${GOLD}10`,
-              fontSize: 14,
-              color: GOLD,
-              letterSpacing: 3,
-              textTransform: "uppercase",
-              fontFamily: "monospace",
-            }}
-          >
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: GOLD, display: "flex" }} />
-            Premium Liquidity Layer
-          </div>
-        </div>
-
-        {/* Main title block */}
-        <div style={{ display: "flex", flexDirection: "column", marginTop: 88, gap: 18, zIndex: 1 }}>
-          <div
-            style={{
-              fontSize: 132,
+              fontSize: 96,
               fontWeight: 900,
-              letterSpacing: -3,
+              letterSpacing: -2.5,
               lineHeight: 1.0,
               backgroundImage: `linear-gradient(95deg, ${CYAN} 0%, ${INK} 50%, ${VIOLET} 100%)`,
               backgroundClip: "text",
               color: "transparent",
               display: "flex",
+              marginTop: 4,
             }}
           >
             The Liquidity Nexus
           </div>
+
+          {/* Tagline */}
           <div
             style={{
-              fontSize: 30,
+              fontSize: 22,
               color: INK_2,
-              maxWidth: 980,
               lineHeight: 1.35,
+              maxWidth: 820,
               display: "flex",
             }}
           >
-            Multi-chain DEX aggregator with ZION AI advisory, autopilot trading,
-            and CEX-bridged arbitrage — built for sovereign liquidity.
+            Multi-chain DEX aggregator with ZION AI advisory, autopilot
+            trading, and CEX-bridged arbitrage.
           </div>
-        </div>
 
-        {/* Spacer */}
-        <div style={{ flex: 1, display: "flex" }} />
+          {/* Stat strip */}
+          <div
+            style={{
+              display: "flex",
+              gap: 14,
+              marginTop: 6,
+            }}
+          >
+            <StatCard label="TVL Routed"  value="$2.5B" sub="across 11 chains" tone={CYAN}   />
+            <StatCard label="Swaps · 24h" value="8,420" sub="aggregator + CEX" tone={INK}    />
+            <StatCard label="Chains"      value="11"    sub="EVM + Solana"     tone={VIOLET} />
+            <StatCard label="ZION cards"  value="132"   sub="distinct actions" tone={GOLD}   />
+          </div>
 
-        {/* Bottom hairline */}
-        <div style={{ height: 1, background: `${INK_3}33`, marginBottom: 28, display: "flex" }} />
-
-        {/* Stat strip */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            zIndex: 1,
-          }}
-        >
-          <Stat label="Chains"     value="11+" color={CYAN} />
-          <Stat label="Functions"  value="132" color={INK} />
-          <Stat label="AI Layer"   value="ZION" color={GOLD} />
-          <Stat label="Surface"    value="DEX + CEX" color={VIOLET} />
-          <Stat label="Posture"    value="Non-custodial" color={INK} />
+          {/* Two-card row at the bottom — mimics the dashboard mini-cards */}
+          <div style={{ display: "flex", gap: 14, marginTop: "auto", flex: 1 }}>
+            <PairCard />
+            <ChainCard />
+          </div>
         </div>
       </div>
     ),
@@ -203,14 +164,149 @@ export default async function OG() {
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color: string }) {
+// ─── Sub-components ────────────────────────────────────────────────────
+
+function Sidebar() {
+  const items: { icon: string; label: string; tone?: string }[] = [
+    { icon: "⇄", label: "Swap" },
+    { icon: "💳", label: "Buy",     tone: GOLD },
+    { icon: "🌉", label: "Bridge" },
+    { icon: "📊", label: "Orders" },
+    { icon: "💰", label: "CEX" },
+    { icon: "📈", label: "Pro" },
+    { icon: "✨", label: "ZION",    tone: GOLD },
+  ];
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div
+      style={{
+        width: 196,
+        background: BG_1,
+        borderRight: `1px solid ${INK_4}33`,
+        display: "flex",
+        flexDirection: "column",
+        padding: "28px 18px",
+        gap: 22,
+        zIndex: 2,
+      }}
+    >
+      {/* Brand */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            background: `linear-gradient(135deg, ${CYAN}, ${VIOLET})`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 22,
+            fontWeight: 900,
+            color: BG,
+          }}
+        >
+          Z
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: INK, letterSpacing: 0.5 }}>
+            Z-SWAP
+          </div>
+          <div style={{ fontSize: 8, color: INK_3, letterSpacing: 2, textTransform: "uppercase", fontFamily: "monospace" }}>
+            Liquidity Nexus
+          </div>
+        </div>
+      </div>
+
+      {/* Nav rows */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {items.map((it) => (
+          <div
+            key={it.label}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "8px 10px",
+              borderRadius: 8,
+              background: it.label === "Swap" ? "#FFFFFF0A" : "transparent",
+              fontSize: 13,
+              color: it.label === "Swap" ? INK : INK_2,
+            }}
+          >
+            <span style={{ fontSize: 13, color: it.tone ?? INK_3, width: 16, display: "flex" }}>
+              {it.icon}
+            </span>
+            <span style={{ flex: 1, display: "flex" }}>{it.label}</span>
+            {it.tone === GOLD && (
+              <span style={{
+                fontSize: 8,
+                color: GOLD,
+                border: `1px solid ${GOLD}55`,
+                padding: "1px 4px",
+                borderRadius: 999,
+                fontFamily: "monospace",
+                letterSpacing: 1.5,
+                display: "flex",
+              }}>
+                {it.label === "Buy" ? "SOON" : "AI"}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Pill({ color, label, dot }: { color: string; label: string; dot?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 14px",
+        borderRadius: 999,
+        border: `1px solid ${color}55`,
+        background: `${color}10`,
+        fontSize: 12,
+        color,
+        letterSpacing: 2.5,
+        textTransform: "uppercase",
+        fontFamily: "monospace",
+      }}
+    >
+      {dot && (
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "flex" }} />
+      )}
+      {label}
+    </div>
+  );
+}
+
+function StatCard({
+  label, value, sub, tone,
+}: {
+  label: string; value: string; sub: string; tone: string;
+}) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        background: `${BG_2}cc`,
+        border: `1px solid ${INK_4}66`,
+        borderRadius: 14,
+        padding: "16px 18px",
+        gap: 6,
+      }}
+    >
       <div
         style={{
-          fontSize: 13,
-          color: "#6C7590",
-          letterSpacing: 3,
+          fontSize: 11,
+          color: INK_3,
+          letterSpacing: 2.5,
           textTransform: "uppercase",
           fontFamily: "monospace",
           display: "flex",
@@ -218,16 +314,135 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
       >
         {label}
       </div>
-      <div
-        style={{
-          fontSize: 30,
-          fontWeight: 800,
-          color,
-          letterSpacing: -0.5,
-          display: "flex",
-        }}
-      >
+      <div style={{ fontSize: 32, fontWeight: 900, color: tone, letterSpacing: -0.5, display: "flex" }}>
         {value}
+      </div>
+      <div style={{ fontSize: 12, color: INK_3, display: "flex" }}>
+        {sub}
+      </div>
+    </div>
+  );
+}
+
+function PairCard() {
+  return (
+    <div
+      style={{
+        flex: 1.2,
+        display: "flex",
+        flexDirection: "column",
+        background: `${BG_2}cc`,
+        border: `1px solid ${INK_4}66`,
+        borderRadius: 14,
+        padding: 18,
+        gap: 12,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontSize: 10, color: INK_3, letterSpacing: 2.5, textTransform: "uppercase", fontFamily: "monospace", display: "flex" }}>
+          Top Pair · Routed
+        </div>
+        <div style={{ fontSize: 10, color: GREEN, fontFamily: "monospace", display: "flex" }}>
+          +2.41%
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <CoinDot label="ETH" color={CYAN} />
+        <span style={{ fontSize: 20, color: INK_3, display: "flex" }}>/</span>
+        <CoinDot label="USDC" color={GREEN} />
+        <span style={{ flex: 1, display: "flex" }} />
+        <div style={{ fontSize: 22, fontWeight: 800, color: INK, fontVariantNumeric: "tabular-nums", display: "flex" }}>
+          $3,421.50
+        </div>
+      </div>
+      {/* Fake spark/bar row */}
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 38, marginTop: 4 }}>
+        {[18, 26, 14, 32, 22, 30, 24, 36, 30, 33, 28, 38, 34, 30, 32, 36, 33, 38, 35, 36].map((h, i) => (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              height: h,
+              background: i > 12 ? CYAN : `${CYAN}66`,
+              borderRadius: 2,
+              display: "flex",
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChainCard() {
+  const rows: { name: string; pct: string; color: string; width: number }[] = [
+    { name: "Ethereum", pct: "38%", color: CYAN,   width: 100 },
+    { name: "Base",     pct: "21%", color: VIOLET, width: 55  },
+    { name: "Arbitrum", pct: "17%", color: GREEN,  width: 44  },
+    { name: "BSC",      pct: "12%", color: GOLD,   width: 31  },
+    { name: "Solana",   pct: "8%",  color: RED,    width: 21  },
+  ];
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        background: `${BG_2}cc`,
+        border: `1px solid ${INK_4}66`,
+        borderRadius: 14,
+        padding: 18,
+        gap: 10,
+      }}
+    >
+      <div style={{ fontSize: 10, color: INK_3, letterSpacing: 2.5, textTransform: "uppercase", fontFamily: "monospace", display: "flex" }}>
+        Chain Mix · 24h
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 2 }}>
+        {rows.map((r) => (
+          <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 7, height: 7, borderRadius: "50%", background: r.color, display: "flex" }} />
+            <div style={{ fontSize: 13, color: INK, flex: 1, display: "flex" }}>{r.name}</div>
+            <div style={{ width: 110, height: 4, background: `${INK_4}55`, borderRadius: 2, display: "flex" }}>
+              <div style={{ width: r.width, height: 4, background: r.color, borderRadius: 2, display: "flex" }} />
+            </div>
+            <div style={{ fontSize: 11, color: INK_2, fontFamily: "monospace", width: 36, textAlign: "right", display: "flex", justifyContent: "flex-end" }}>
+              {r.pct}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CoinDot({ label, color }: { label: string; color: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <div style={{
+        width: 28,
+        height: 28,
+        borderRadius: "50%",
+        background: `${color}22`,
+        border: `1px solid ${color}66`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 10,
+        color,
+        fontWeight: 800,
+        fontFamily: "monospace",
+      }}>
+        {label.slice(0, 2)}
+      </div>
+      <div style={{ fontSize: 14, color: INK, fontWeight: 700, display: "flex" }}>
+        {label}
       </div>
     </div>
   );
