@@ -111,6 +111,7 @@ const en = {
     badgeNew:         "NEW",
     badgeBeta:        "BETA",
     badgeAi:          "AI",
+    badgeSoon:        "SOON",
   },
   topbar: {
     selectLanguage:   "Select language",
@@ -956,6 +957,7 @@ const pt: Schema = {
     badgeNew:         "NOVO",
     badgeBeta:        "BETA",
     badgeAi:          "IA",
+    badgeSoon:        "EM BREVE",
   },
   topbar: {
     selectLanguage:   "Selecionar idioma",
@@ -1782,6 +1784,7 @@ const es: Schema = {
     groupManage:      "Gestionar",
     badgeNew:         "NUEVO",
     badgeBeta:        "BETA",
+    badgeSoon:        "PRONTO",
     badgeAi:          "IA",
   },
   topbar: {
@@ -2610,6 +2613,7 @@ const zh: Schema = {
     badgeNew:         "新",
     badgeBeta:        "BETA",
     badgeAi:          "AI",
+    badgeSoon:        "即将推出",
   },
   topbar: {
     selectLanguage:   "选择语言",

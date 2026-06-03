@@ -3,127 +3,83 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
-  CreditCard, ArrowDownToLine, ArrowUpFromLine, Wallet as WalletIcon,
-  ShieldCheck, AlertTriangle, ExternalLink, Loader2,
+  CreditCard, ArrowDownToLine, ArrowUpFromLine, ShieldCheck, Sparkles,
+  Mail, CheckCircle2, Loader2, ArrowRight, Bell,
 } from "lucide-react";
-import { useAccount } from "wagmi";
-import { useWallet } from "@solana/wallet-adapter-react";
-import TokenSelector from "@/components/swap/TokenSelector";
-import type { Token } from "@/lib/tokens";
-import type { ChainId } from "@/lib/chains";
-import {
-  isTransakSupportedChain, isTransakSupportedSymbol,
-  fetchTransakWidgetUrl,
-} from "@/lib/onramp/transak";
 import { cn } from "@/lib/cn";
 
 /**
- * Dedicated fiat ↔ crypto page. Two tabs:
+ * "Em breve" gate for the fiat ↔ crypto onramp.
  *
- *   BUY  (BRL → token)  — Transak ON-ramp via PIX.
- *   SELL (token → BRL)  — Transak OFF-ramp via PIX.
- *
- * The page is intentionally separate from the swap card. Mixing fiat
- * onramp into the swap UI clutters the swap experience and overloads
- * the mental model (cripto-cripto vs fiat-cripto are different flows
- * with different inputs, different KYC, different settlement times).
+ * The provider integration (Transak) ran into KYB blockers that need
+ * CNPJ + verification. Rather than tear out the surface entirely (and
+ * lose discoverability + product positioning), we keep the page live as
+ * a teaser: explains what's coming, lets the user join a waitlist with
+ * email, and surfaces the value proposition cleanly.
  *
  * Architecture:
- *   - Token + chain picker drives the Transak URL params (chain, token,
- *     wallet address, BRL or crypto amount).
- *   - When the user clicks "Continuar com PIX" the iframe opens in
- *     a full-page slot below the form (not a modal — feels native to
- *     the page, less stacking complexity).
- *   - For SELL, we reuse the same widget but with productsAvailed=SELL.
- *     Transak handles the entire flow including the on-chain transfer
- *     prompt the user has to sign in their wallet.
- *
- * Limitations surfaced clearly:
- *   - If wallet not connected → CTA disabled + hint to connect.
- *   - If token isn't on Transak's coverage → "esse token não tem onramp
- *     PIX agora; troca por outro ou usa swap interno" message.
- *   - If API key not configured (env var missing) → big setup banner.
+ *   - All the previous form-state code stays out of this build. When we
+ *     ship the real integration, swap this back for the form version
+ *     under git history.
+ *   - The waitlist is intentionally local-only for v0 (localStorage).
+ *     A future PR can wire it to a /api/waitlist route + persistence.
+ *     This keeps the page useful as a signal without standing up infra
+ *     we'll throw away.
  */
+
+const WAITLIST_KEY = "zswap_onramp_waitlist_v1";
+
 export default function OnrampView() {
   const [mode, setMode] = useState<"buy" | "sell">("buy");
-  const [token, setToken] = useState<Token | undefined>(undefined);
-  const [brlAmount, setBrlAmount] = useState<string>("100");
-  const [cryptoAmount, setCryptoAmount] = useState<string>("");
-  const chain: ChainId = token?.chain ?? "bsc";
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try { return !!window.localStorage.getItem(WAITLIST_KEY); } catch { return false; }
+  });
 
-  const { address: evmAddress } = useAccount();
-  const sol = useWallet();
-  const solAddress = sol.publicKey?.toBase58() ?? undefined;
-
-  const walletAddress = chain === "solana" ? solAddress : evmAddress;
-  const chainSupported  = isTransakSupportedChain(chain);
-  const tokenSupported  = !!token && isTransakSupportedSymbol(token.symbol);
-  const formReady = !!walletAddress && !!token && chainSupported && tokenSupported;
-
-  // The widget URL is minted on demand by our backend (Transak's new
-  // mandatory API flow). We don't have it until the user clicks the CTA.
-  const [widgetUrl, setWidgetUrl] = useState<string | null>(null);
-  const [loading, setLoading]     = useState(false);
-  const [sessionError, setSessionError] = useState<string | null>(null);
-
-  const onContinue = async () => {
-    if (!formReady || !token || !walletAddress) return;
-    setLoading(true);
-    setSessionError(null);
-    setWidgetUrl(null);
+  const onJoin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = email.trim().toLowerCase();
+    if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(trimmed)) return;
+    setSubmitting(true);
     try {
-      const amtBrl    = parseFloat(brlAmount);
-      const amtCrypto = parseFloat(cryptoAmount);
-      const url = await fetchTransakWidgetUrl({
-        product:        mode === "buy" ? "BUY" : "SELL",
-        chain,
-        cryptoCurrency: token.symbol,
-        walletAddress,
-        fiatAmount:     mode === "buy"  && Number.isFinite(amtBrl)    && amtBrl    > 0 ? amtBrl    : undefined,
-        cryptoAmount:   mode === "sell" && Number.isFinite(amtCrypto) && amtCrypto > 0 ? amtCrypto : undefined,
-      });
-      setWidgetUrl(url);
-    } catch (e) {
-      setSessionError(e instanceof Error ? e.message : String(e));
+      // Stored locally so the user gets the "you're in" confirmation
+      // surface across reloads. When we wire the server-side waitlist
+      // we'll replay these on first connection.
+      window.localStorage.setItem(WAITLIST_KEY, JSON.stringify({ email: trimmed, at: Date.now() }));
+      setSubmitted(true);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
-      {/* Header */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-green/10 border border-green/30 flex items-center justify-center">
-            <CreditCard className="w-4 h-4 text-green" />
-          </div>
-          <div>
-            <h1 className="font-display font-extrabold text-xl text-ink leading-none">
-              Comprar e Vender por PIX
-            </h1>
-            <p className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mt-1.5">
-              Z-SWAP × Transak · KYC + entrega ON-chain
-            </p>
-          </div>
+    <div className="max-w-3xl mx-auto px-4 py-6 sm:py-10 space-y-6">
+      {/* Hero */}
+      <div className="space-y-3">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gold/30 bg-gold/[0.05] font-mono text-[10px] tracking-widest uppercase text-gold">
+          <Sparkles className="w-3 h-3" /> Em breve no Z-SWAP
         </div>
-        <p className="font-sans text-sm text-ink-2 leading-relaxed">
-          Troque BRL por cripto direto via PIX, sem precisar de exchange centralizada.
-          O token é entregue na sua carteira conectada — Z-SWAP nunca toca nos seus fundos
+        <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-ink leading-tight">
+          Compre e venda cripto com <span className="text-gradient-cyan">PIX</span>,<br />
+          direto na sua carteira.
+        </h1>
+        <p className="font-sans text-sm sm:text-base text-ink-2 leading-relaxed max-w-2xl">
+          Sem exchange centralizada. Sem custódia. O token é entregue <b className="text-ink">on-chain</b> na
+          sua MetaMask ou Phantom em segundos — Z-SWAP nunca toca nos seus fundos
           nem vê seu CPF.
         </p>
       </div>
 
-      {/* Mode tabs */}
+      {/* Mode preview tabs (informational) */}
       <div className="inline-flex w-full rounded-xl border border-white/5 bg-bg-1/30 p-1">
         <button
           type="button"
-          onClick={() => { setMode("buy"); setWidgetUrl(null); setSessionError(null); }}
+          onClick={() => setMode("buy")}
           className={cn(
             "flex-1 py-2.5 rounded-lg font-mono text-[11px] tracking-widest uppercase inline-flex items-center justify-center gap-1.5 transition-colors",
-            mode === "buy"
-              ? "bg-green/15 text-green border border-green/30"
-              : "text-ink-3 hover:text-ink-2",
+            mode === "buy" ? "bg-green/15 text-green border border-green/30" : "text-ink-3 hover:text-ink-2",
           )}
         >
           <ArrowDownToLine className="w-3.5 h-3.5" />
@@ -131,12 +87,10 @@ export default function OnrampView() {
         </button>
         <button
           type="button"
-          onClick={() => { setMode("sell"); setWidgetUrl(null); setSessionError(null); }}
+          onClick={() => setMode("sell")}
           className={cn(
             "flex-1 py-2.5 rounded-lg font-mono text-[11px] tracking-widest uppercase inline-flex items-center justify-center gap-1.5 transition-colors",
-            mode === "sell"
-              ? "bg-violet/15 text-violet border border-violet/30"
-              : "text-ink-3 hover:text-ink-2",
+            mode === "sell" ? "bg-violet/15 text-violet border border-violet/30" : "text-ink-3 hover:text-ink-2",
           )}
         >
           <ArrowUpFromLine className="w-3.5 h-3.5" />
@@ -144,180 +98,173 @@ export default function OnrampView() {
         </button>
       </div>
 
-      {/* Form */}
+      {/* Preview card */}
       <motion.div
         layout
-        className="rounded-2xl border border-white/5 glass-pane p-4 sm:p-5 space-y-4"
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative rounded-2xl border border-white/5 glass-pane p-5 sm:p-6 overflow-hidden"
       >
-        {/* Token + chain picker */}
-        <div>
-          <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-2">
-            {mode === "buy" ? "Token que você quer receber" : "Token que você quer vender"}
-          </div>
-          <TokenSelector
-            value={token}
-            onChange={setToken}
-            side={mode === "buy" ? "to" : "from"}
-          />
-        </div>
+        {/* Decorative gradient blur */}
+        <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-cyan/10 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-24 -left-20 w-72 h-72 rounded-full bg-violet/10 blur-3xl pointer-events-none" />
 
-        {/* Amount input — BRL for buy, crypto for sell */}
-        {mode === "buy" ? (
-          <div>
-            <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-2">
-              Quanto você quer gastar
-            </div>
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-bg-2 px-3 py-2.5 focus-within:border-cyan/40">
-              <span className="font-mono text-sm text-ink-3 flex-shrink-0">R$</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={brlAmount}
-                onChange={(e) => setBrlAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                placeholder="100"
-                min={50}
-                max={50_000}
-                className="flex-1 bg-transparent outline-none font-display font-bold text-xl text-ink tabular-nums min-w-0"
-              />
-            </div>
-            <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-              {[50, 100, 250, 500, 1000].map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setBrlAmount(String(v))}
-                  className="px-2 py-0.5 rounded border border-white/10 bg-white/[0.02] font-mono text-[10px] text-ink-3 hover:text-ink-2 hover:bg-white/[0.06] tracking-widest"
-                >
-                  R$ {v}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div>
-            <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-2">
-              Quanto você quer vender (opcional — deixe vazio pra definir no widget)
-            </div>
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-bg-2 px-3 py-2.5 focus-within:border-violet/40">
-              <input
-                type="number"
-                inputMode="decimal"
-                value={cryptoAmount}
-                onChange={(e) => setCryptoAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                placeholder="0.05"
-                className="flex-1 bg-transparent outline-none font-display font-bold text-xl text-ink tabular-nums min-w-0"
-              />
-              {token && <span className="font-mono text-sm text-ink-3 flex-shrink-0">{token.symbol}</span>}
-            </div>
-          </div>
-        )}
+        <div className="relative space-y-5">
+          {mode === "buy" ? <BuyPreview /> : <SellPreview />}
 
-        {/* Wallet status */}
-        <div className={cn(
-          "rounded-lg border px-3 py-2 flex items-start gap-2",
-          walletAddress
-            ? "border-cyan/20 bg-cyan/[0.04]"
-            : "border-gold/30 bg-gold/[0.05]",
-        )}>
-          <WalletIcon className={cn("w-3.5 h-3.5 flex-shrink-0 mt-0.5", walletAddress ? "text-cyan" : "text-gold")} />
-          <div className="font-mono text-[10px] text-ink-2 leading-relaxed flex-1 min-w-0 break-all">
-            {walletAddress
-              ? <>{mode === "buy" ? "Entrega" : "Origem"}: <b className="text-cyan">{walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}</b> · trancado pela conexão da carteira</>
-              : <>Conecte a carteira ({chain === "solana" ? "Phantom" : "MetaMask"}) para {mode === "buy" ? "receber" : "vender"} em <b className="text-gold">{chain}</b>.</>}
+          {/* Stats / value props */}
+          <div className="grid grid-cols-3 gap-2 pt-4 border-t border-white/5">
+            <Stat label="Liquidação" value="~30s" tone="cyan" />
+            <Stat label="Fee total" value="~3%" tone="green" />
+            <Stat label="Redes" value="8" tone="violet" />
           </div>
-        </div>
-
-        {/* Errors */}
-        {token && !tokenSupported && (
-          <div className="rounded-lg border border-red/30 bg-red/[0.05] px-3 py-2 flex items-start gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
-            <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
-              <b className="text-red">{token.symbol}</b> não tem onramp PIX direto. Use{" "}
-              <a href="/" className="text-cyan underline">o swap interno</a> partindo de USDT/USDC.
-            </p>
-          </div>
-        )}
-        {!chainSupported && (
-          <div className="rounded-lg border border-red/30 bg-red/[0.05] px-3 py-2 flex items-start gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
-            <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
-              A rede <b className="text-red">{chain}</b> não está no Transak. Tente uma das suportadas: Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, Avalanche, Solana.
-            </p>
-          </div>
-        )}
-
-        {/* Session error (backend / Transak rejection) */}
-        {sessionError && (
-          <div className="rounded-lg border border-red/30 bg-red/[0.05] px-3 py-2 flex items-start gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
-            <p className="font-mono text-[10px] text-ink-2 leading-relaxed break-words">{sessionError}</p>
-          </div>
-        )}
-
-        {/* CTA */}
-        <button
-          type="button"
-          onClick={onContinue}
-          disabled={!formReady || loading}
-          className={cn(
-            "w-full btn btn-primary py-3.5 text-sm tracking-widest inline-flex items-center justify-center gap-2 transition-opacity",
-            (!formReady || loading) && "opacity-50 cursor-not-allowed",
-            mode === "buy"
-              ? "from-green/20 to-cyan/20 border-green/40 bg-gradient-to-r hover:border-green/60"
-              : "from-violet/20 to-cyan/20 border-violet/40 bg-gradient-to-r hover:border-violet/60",
-          )}
-        >
-          {loading
-            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            : mode === "buy" ? <ArrowDownToLine className="w-3.5 h-3.5" /> : <ArrowUpFromLine className="w-3.5 h-3.5" />}
-          {loading ? "Gerando sessão segura…" : mode === "buy" ? "Comprar com PIX" : "Vender por PIX"}
-        </button>
-
-        {/* Footnotes */}
-        <div className="rounded-lg border border-white/5 bg-bg-1/40 p-2.5 flex items-start gap-2">
-          <ShieldCheck className="w-3 h-3 text-ink-3 flex-shrink-0 mt-0.5" />
-          <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-            Z-SWAP nunca vê seu CPF, sua selfie, nem sua chave PIX. Tudo isso roda dentro do widget da Transak,
-            que é um PSP regulado pelo BCB. Z-SWAP apenas pré-configura o destino dos tokens.
-          </p>
         </div>
       </motion.div>
 
-      {/* Widget panel — appears below the form once the backend returns a
-          minted, single-use widget URL. */}
-      {widgetUrl && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-cyan/30 glass-pane overflow-hidden"
-        >
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5 bg-bg-1/40">
-            <span className="font-mono text-[10px] text-cyan tracking-widest uppercase inline-flex items-center gap-1.5">
-              <ExternalLink className="w-3 h-3" />
-              Transak · pagamento + KYC + entrega
-            </span>
-            <button
-              type="button"
-              onClick={() => setWidgetUrl(null)}
-              className="font-mono text-[10px] text-ink-3 hover:text-ink-2 tracking-widest uppercase"
-            >
-              Fechar
-            </button>
+      {/* Waitlist */}
+      <motion.div
+        layout
+        className="rounded-2xl border border-gold/20 bg-gradient-to-br from-gold/[0.04] to-cyan/[0.03] p-5 sm:p-6 space-y-4"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gold/10 border border-gold/30 flex items-center justify-center flex-shrink-0">
+            <Bell className="w-4 h-4 text-gold" />
           </div>
-          <iframe
-            src={widgetUrl}
-            // strict-origin-when-cross-origin is REQUIRED by Transak's
-            // runtime domain validation — do NOT switch to noreferrer or
-            // the widget refuses to load (it can't verify referrerDomain).
-            referrerPolicy="strict-origin-when-cross-origin"
-            allow="accelerometer; autoplay; camera; gyroscope; payment; clipboard-write"
-            className="w-full bg-white"
-            style={{ height: "min(85vh, 760px)" }}
-            title={mode === "buy" ? "Transak buy with PIX" : "Transak sell to PIX"}
-          />
-        </motion.div>
-      )}
+          <div className="min-w-0 flex-1">
+            <h2 className="font-display font-bold text-base text-ink">
+              Seja o primeiro a saber
+            </h2>
+            <p className="font-sans text-xs sm:text-sm text-ink-2 leading-relaxed mt-1">
+              Lista de espera prioritária — quem entrar agora ganha tarifa reduzida
+              nos primeiros 30 dias após o lançamento.
+            </p>
+          </div>
+        </div>
 
+        {submitted ? (
+          <div className="rounded-lg border border-green/30 bg-green/[0.05] px-3 py-3 flex items-start gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-green flex-shrink-0 mt-0.5" />
+            <div className="font-mono text-[11px] text-ink-2 leading-relaxed">
+              <b className="text-green">Você está na lista.</b> Vamos avisar por email no dia que
+              liberar — e a tarifa reduzida vai estar marcada na sua conta automaticamente.
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={onJoin} className="flex items-stretch gap-2">
+            <div className="flex-1 flex items-center gap-2 rounded-lg border border-white/10 bg-bg-2 px-3 focus-within:border-gold/40">
+              <Mail className="w-3.5 h-3.5 text-ink-3 flex-shrink-0" />
+              <input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="você@email.com"
+                className="flex-1 min-w-0 bg-transparent outline-none font-mono text-sm text-ink placeholder:text-ink-4 py-2.5"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={submitting || !email.trim()}
+              className="px-4 py-2.5 rounded-lg border border-gold/40 bg-gold/15 text-gold font-mono text-[11px] tracking-widest uppercase hover:bg-gold/25 disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              {submitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
+              Entrar
+            </button>
+          </form>
+        )}
+      </motion.div>
+
+      {/* Trust line */}
+      <div className="rounded-lg border border-white/5 bg-bg-1/40 p-3 flex items-start gap-2.5">
+        <ShieldCheck className="w-3.5 h-3.5 text-cyan flex-shrink-0 mt-0.5" />
+        <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
+          Z-SWAP é não-custodial. Quando esse fluxo abrir, o pagamento PIX vai
+          ser processado por um PSP regulado pelo BCB; Z-SWAP nunca terá acesso
+          ao seu CPF, conta bancária, ou chave PIX — apenas o endereço da
+          sua carteira como destino travado dos tokens.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sub-components ────────────────────────────────────────────────────
+
+function BuyPreview() {
+  return (
+    <>
+      <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
+        Exemplo de compra
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <PreviewSide label="Você paga" amount="R$ 500" sub="via PIX · BRL" tone="violet" icon={<CreditCard className="w-3.5 h-3.5" />} />
+        <PreviewSide label="Você recebe" amount="~0.7 BNB" sub="BSC · entrega on-chain" tone="green" icon={<ArrowDownToLine className="w-3.5 h-3.5" />} />
+      </div>
+      <ul className="space-y-1.5 font-mono text-[11px] text-ink-2">
+        <Li>PSP regulado pelo BCB processa o PIX</Li>
+        <Li>Token entregue direto na sua carteira conectada</Li>
+        <Li>KYC só uma vez — vale pra todas as próximas compras</Li>
+      </ul>
+    </>
+  );
+}
+
+function SellPreview() {
+  return (
+    <>
+      <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
+        Exemplo de venda
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <PreviewSide label="Você vende" amount="0.5 ETH" sub="Ethereum · da sua carteira" tone="violet" icon={<ArrowUpFromLine className="w-3.5 h-3.5" />} />
+        <PreviewSide label="Você recebe" amount="~R$ 8.500" sub="PIX · na sua conta" tone="green" icon={<CreditCard className="w-3.5 h-3.5" />} />
+      </div>
+      <ul className="space-y-1.5 font-mono text-[11px] text-ink-2">
+        <Li>Você assina UMA transferência on-chain pro PSP</Li>
+        <Li>PIX cai na sua conta cadastrada em minutos</Li>
+        <Li>Z-SWAP não custodia — sua carteira é a origem</Li>
+      </ul>
+    </>
+  );
+}
+
+function PreviewSide({
+  label, amount, sub, tone, icon,
+}: {
+  label: string; amount: string; sub: string;
+  tone: "violet" | "green"; icon: React.ReactNode;
+}) {
+  const ring = tone === "green" ? "border-green/20 bg-green/[0.04]" : "border-violet/20 bg-violet/[0.04]";
+  const txt  = tone === "green" ? "text-green" : "text-violet";
+  return (
+    <div className={cn("rounded-xl border p-3", ring)}>
+      <div className={cn("inline-flex items-center gap-1 font-mono text-[9px] tracking-widest uppercase", txt)}>
+        {icon}
+        {label}
+      </div>
+      <div className="font-display font-extrabold text-xl text-ink mt-1.5 tabular-nums">{amount}</div>
+      <div className="font-mono text-[10px] text-ink-3 tracking-wide mt-0.5">{sub}</div>
+    </div>
+  );
+}
+
+function Li({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="w-1 h-1 rounded-full bg-cyan mt-1.5 flex-shrink-0" />
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: string; tone: "cyan" | "green" | "violet" }) {
+  const txt = tone === "cyan" ? "text-cyan" : tone === "green" ? "text-green" : "text-violet";
+  return (
+    <div className="text-center">
+      <div className={cn("font-display font-bold text-lg tabular-nums", txt)}>{value}</div>
+      <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mt-0.5">{label}</div>
     </div>
   );
 }
