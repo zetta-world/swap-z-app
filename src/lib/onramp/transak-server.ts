@@ -55,6 +55,11 @@ interface CachedToken {
 // we use it immediately after minting.
 let tokenCache: CachedToken | null = null;
 
+// Non-sensitive signature of the last minted token (length + jwt-ish +
+// which field we read it from). Surfaced in a session 401 so we can tell
+// whether we grabbed the right field, without ever exposing the token.
+let lastTokenShape = "(none)";
+
 export class TransakConfigError extends Error {}
 export class TransakUpstreamError extends Error {
   constructor(message: string, readonly status: number) {
@@ -105,29 +110,46 @@ async function getAccessToken(): Promise<string> {
     );
   }
 
-  let parsed: {
-    data?: { accessToken?: string; expiresAt?: number | string };
-    accessToken?: string;
-    expiresAt?: number | string;
-  };
+  let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(text) as typeof parsed;
+    parsed = JSON.parse(text) as Record<string, unknown>;
   } catch {
     throw new TransakUpstreamError("refresh-token returned non-JSON", 502);
   }
 
-  // Transak wraps the payload under `data` per their spec, but tolerate a
-  // flat shape too in case the gateway ever changes the envelope.
-  const accessToken = parsed.data?.accessToken ?? parsed.accessToken;
+  // Transak's documented shape is { data: { accessToken, expiresAt } }, but
+  // we've seen the gateway vary the envelope. Probe every plausible path so
+  // a wrapper change doesn't silently mint an invalid token.
+  const data = (parsed.data ?? {}) as Record<string, unknown>;
+  const tokenCandidate =
+        data.accessToken ?? data.access_token ?? data.token ?? data.id ??
+        parsed.accessToken ?? parsed.access_token ?? parsed.token;
+  const accessToken = typeof tokenCandidate === "string" ? tokenCandidate : "";
+
   if (!accessToken) {
-    throw new TransakUpstreamError("refresh-token response missing accessToken", 502);
+    // Surface the SHAPE (keys only, never values) so we can diagnose from
+    // the client error without ever leaking a secret.
+    const shape = `root_keys=[${Object.keys(parsed).join(",")}] data_keys=[${Object.keys(data).join(",")}]`;
+    throw new TransakUpstreamError(`refresh-token: no token field found. ${shape}`, 502);
   }
+
+  // Capture a NON-SENSITIVE signature of what we extracted so a later
+  // session 401 can tell us whether the token looked structurally sane
+  // (JWTs start with "eyJ"; a short opaque string suggests we grabbed the
+  // wrong field). We never store or surface the token value itself.
+  lastTokenShape = `len=${accessToken.length} jwt=${accessToken.startsWith("eyJ")} from=${
+    data.accessToken ? "data.accessToken"
+    : data.access_token ? "data.access_token"
+    : data.token ? "data.token"
+    : data.id ? "data.id"
+    : "root"
+  }`;
 
   // expiresAt may come back as a unix-seconds number or ISO string.
   // Default to 6 days out (one day before the documented 7-day expiry)
   // when we can't parse it, so we always refresh with margin.
   let refreshAt = now + 6 * 24 * 3600 * 1000;
-  const exp = parsed.data?.expiresAt ?? parsed.expiresAt;
+  const exp = (data.expiresAt ?? parsed.expiresAt) as number | string | undefined;
   if (typeof exp === "number" && Number.isFinite(exp)) {
     const expMs = exp > 1e12 ? exp : exp * 1000; // tolerate s or ms
     refreshAt = Math.max(now + 60_000, expMs - 24 * 3600 * 1000);
@@ -210,8 +232,15 @@ export async function createTransakWidgetUrl(p: TransakSessionParams): Promise<s
   const text = await res.text();
   if (!res.ok) {
     // 401 here usually means a stale access token — clear the cache so the
-    // next call re-mints. Surface the upstream message either way.
-    if (res.status === 401) tokenCache = null;
+    // next call re-mints. Surface the upstream message + the (non-sensitive)
+    // token signature so we can see whether the token we minted looked sane.
+    if (res.status === 401) {
+      tokenCache = null;
+      throw new TransakUpstreamError(
+        `session failed: ${text.slice(0, 200)} | token_shape: ${lastTokenShape}`,
+        res.status,
+      );
+    }
     throw new TransakUpstreamError(
       `session failed: ${text.slice(0, 240)}`,
       res.status,
