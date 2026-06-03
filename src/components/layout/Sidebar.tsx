@@ -16,13 +16,13 @@ interface NavItem {
   labelKey: MessageKey;
   icon: React.ComponentType<{ className?: string }>;
   badgeKey?: MessageKey;
-  badgeTone?: "ai" | "new" | "beta";
+  badgeTone?: "ai" | "new" | "beta" | "soon";
   group: "trade" | "discover" | "build" | "manage";
 }
 
 const NAV: NavItem[] = [
   { href: "/",          labelKey: "nav.swap",       icon: ArrowLeftRight, group: "trade" },
-  { href: "/buy",       labelKey: "nav.buy",        icon: CreditCard,      group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
+  { href: "/buy",       labelKey: "nav.buy",        icon: CreditCard,      group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
   { href: "/bridge",    labelKey: "nav.bridge",     icon: Workflow,        group: "trade" },
   { href: "/orders",    labelKey: "nav.orders",     icon: Activity,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
   { href: "/cex",       labelKey: "nav.cex",        icon: Banknote,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
@@ -129,6 +129,7 @@ export default function Sidebar() {
                               item.badgeTone === "ai"   && "text-gold border-gold/30 bg-gold/5",
                               item.badgeTone === "new"  && "text-cyan border-cyan/30 bg-cyan/5",
                               item.badgeTone === "beta" && "text-violet border-violet/30 bg-violet/5",
+                              item.badgeTone === "soon" && "text-gold border-gold/40 bg-gold/10",
                             )}>
                               {t(item.badgeKey)}
                             </span>
