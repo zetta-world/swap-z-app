@@ -3,7 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { X, ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3, Shield, Vote, Wallet, Settings, Activity, Banknote, Globe, CreditCard, Handshake, Users } from "lucide-react";
+import { X, ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3, Shield, Vote, Wallet, Settings, Activity, Banknote, Globe, CreditCard, Handshake, Users, Gem } from "lucide-react";
 import { useUI, type AppLang } from "@/lib/store/ui";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
@@ -23,6 +23,7 @@ const NAV: { href: string; labelKey: MessageKey; icon: React.ComponentType<{ cla
   { href: "/cex",       labelKey: "nav.cex",        icon: Banknote },
   { href: "/otc",       labelKey: "nav.otc",        icon: Handshake },
   { href: "/p2p",       labelKey: "nav.p2p",        icon: Users },
+  { href: "/nft",       labelKey: "nav.nft",        icon: Gem },
   { href: "/pro",       labelKey: "nav.pro",        icon: BarChart3 },
   { href: "/pools",     labelKey: "nav.pools",      icon: Layers },
   { href: "/explorer",  labelKey: "nav.explorer",   icon: Shield },
