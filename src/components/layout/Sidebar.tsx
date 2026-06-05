@@ -48,7 +48,7 @@ export default function Sidebar() {
         <button
           onClick={toggleSidebar}
           className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-cyan hover:bg-white/5 transition-colors flex-shrink-0"
-          aria-label="Toggle sidebar"
+          aria-label={t("common.toggleSidebar")}
         >
           <ChevronLeft className={cn("w-4 h-4 transition-transform", sidebarCollapsed && "rotate-180")} />
         </button>

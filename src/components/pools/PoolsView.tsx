@@ -109,7 +109,7 @@ export default function PoolsView() {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by token symbol or DEX…"
+                placeholder={t("common.searchTokens")}
                 className="flex-1 min-w-0 bg-transparent outline-none text-sm font-sans text-ink placeholder:text-ink-4"
               />
             </div>

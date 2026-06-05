@@ -15,6 +15,7 @@ import { computeConviction, type ConvictionAudit } from "@/lib/conviction";
 import { cn } from "@/lib/cn";
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
+import { useT } from "@/lib/i18n";
 
 // Mirror of the server-side PairApiResponse shape (we keep a local copy so
 // the page bundle doesn't drag the server route's deps into the client).
@@ -506,17 +507,18 @@ function AddrRow({
   explorer?: string;
   onCopy:    (v: string) => void;
 }) {
+  const t = useT();
   if (!value) return null;
   return (
     <div className="flex items-center gap-2 px-3.5 py-2.5 min-w-0">
       <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase w-12 flex-shrink-0">{label}</div>
       <div className="font-mono text-[11px] text-ink truncate flex-1 min-w-0">{value}</div>
       <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase hidden sm:inline">{symbol}</span>
-      <button type="button" onClick={() => onCopy(value)} className="text-ink-3 hover:text-cyan p-1" aria-label="Copy">
+      <button type="button" onClick={() => onCopy(value)} className="text-ink-3 hover:text-cyan p-1" aria-label={t("common.copy")}>
         <Copy className="w-3 h-3" />
       </button>
       {explorer && (
-        <a href={explorer} target="_blank" rel="noopener noreferrer" className="text-ink-3 hover:text-cyan p-1" aria-label="View on explorer">
+        <a href={explorer} target="_blank" rel="noopener noreferrer" className="text-ink-3 hover:text-cyan p-1" aria-label={t("common.viewOnExplorer")}>
           <ExternalLink className="w-3 h-3" />
         </a>
       )}

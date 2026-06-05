@@ -246,13 +246,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function ChainSelect({ chain, onChange }: { chain: ChainId; onChange: (c: ChainId) => void }) {
+  const t = useT();
   const cur = CHAINS.find((c) => c.id === chain);
   return (
     <div className="relative min-w-0">
       <select
         value={chain}
         onChange={(e) => onChange(e.target.value as ChainId)}
-        aria-label="Chain"
+        aria-label={t("common.chain")}
         className="appearance-none bg-bg-2 border border-white/10 rounded-lg pl-6 pr-7 py-2 text-sm font-mono uppercase tracking-wider text-ink-2 outline-none focus:border-violet/30 cursor-pointer w-full truncate"
       >
         {CHAINS.filter((c) => !c.comingSoon).map((c) => (
@@ -266,6 +267,7 @@ function ChainSelect({ chain, onChange }: { chain: ChainId; onChange: (c: ChainI
 }
 
 function TokenSelect({ token, tokens, onChange }: { token: Token | undefined; tokens: Token[]; onChange: (t: Token) => void }) {
+  const tr = useT();
   return (
     <div className="relative min-w-0">
       <select
@@ -274,7 +276,7 @@ function TokenSelect({ token, tokens, onChange }: { token: Token | undefined; to
           const t = tokens.find((x) => x.address === e.target.value);
           if (t) onChange(t);
         }}
-        aria-label="Token"
+        aria-label={tr("common.token")}
         className="appearance-none w-full bg-bg-2 border border-white/10 rounded-lg pl-3 pr-7 py-2 text-sm font-display font-bold text-ink outline-none focus:border-violet/30 cursor-pointer truncate"
       >
         {tokens.map((t) => (
