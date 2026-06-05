@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useAccount } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { CEX_META, type CexId, type CexCredentials } from "@/lib/cex/types";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 /**
@@ -187,6 +188,7 @@ export default function WalletCexBridge({ exchangeId, credentials }: Props) {
 // ─── Deposit (wallet → CEX) ─────────────────────────────────────────────
 
 function DepositPanel({ exchangeId, credentials }: Props) {
+  const t = useT();
   const { address: evmAddress } = useAccount();
   const sol = useWallet();
   const solAddress = sol.publicKey?.toBase58() ?? null;
@@ -294,7 +296,7 @@ function DepositPanel({ exchangeId, credentials }: Props) {
             <input
               value={network}
               onChange={(e) => setNetwork(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32))}
-              placeholder="ERC20 / BSC / TRC20 …"
+              placeholder={t("common.networkPlaceholder")}
               className="w-full bg-bg-2 border border-white/10 rounded px-2.5 py-1.5 font-mono text-sm text-ink outline-none focus:border-cyan/40"
             />
           )}

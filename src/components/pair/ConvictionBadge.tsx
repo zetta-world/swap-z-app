@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { CheckCircle2, AlertTriangle, XCircle, Minus } from "lucide-react";
 import type { ConvictionResult, ConvictionFactor } from "@/lib/conviction";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 /**
@@ -28,6 +29,7 @@ export default function ConvictionBadge({
 // ─── Full badge (used on the pair page) ────────────────────────────
 
 function FullBadge({ result }: { result: ConvictionResult }) {
+  const t = useT();
   const arcLen = (result.score / 100) * 282.74; // 2π·45
   return (
     <div className="rounded-2xl border border-white/5 bg-bg-1/40 overflow-hidden">
@@ -38,7 +40,7 @@ function FullBadge({ result }: { result: ConvictionResult }) {
       <div className="p-4 sm:p-5 flex items-center gap-4 sm:gap-5 min-w-0">
         {/* SVG gauge */}
         <div className="relative flex-shrink-0">
-          <svg width="112" height="112" viewBox="0 0 112 112" role="img" aria-label="Conviction score">
+          <svg width="112" height="112" viewBox="0 0 112 112" role="img" aria-label={t("common.convictionScore")}>
             <defs>
               <linearGradient id="conv-arc" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0%"  stopColor={result.color} stopOpacity="0.6" />

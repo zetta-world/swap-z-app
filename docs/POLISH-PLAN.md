@@ -16,7 +16,7 @@ Foco: tudo que deixa "cheiro de protótipo" no produto.
 
 - [x] **1.1 — i18n completo do `/p2p`** ✅ — refatorado P2pView pra usar `t()` em todas as strings, mesmo padrão de #38 (buy + otc). Namespace `p2p` adicionado nos 4 idiomas (en/pt/es/zh) com 35 chaves.
 - [x] **1.2 — Badges nos navs mobile e ⌘K** ✅ — extraído `nav-items.ts` como fonte única; Sidebar, MobileNav e CommandBar agora compartilham a mesma estrutura e ambos renderizam os badges (SOON / NEW / BETA / AI).
-- [ ] **1.3 — Auditoria de hardcoded strings** — varrer todos os componentes funcionais (não-teaser) pra garantir zero pt-BR fora do tree de i18n. Migrar achados.
+- [x] **1.3 — Auditoria de hardcoded strings** ✅ — varredura confirmou zero pt-BR hardcoded fora do tree i18n. Migradas placeholders e aria-labels de alta visibilidade (Sidebar, SwapCard, OrdersView, PairView, ConvictionBadge, FlowSphere, PoolsView, ProTerminal, WalletCexBridge) usando novas chaves `common.*`. Strings inglesas hardcoded em componentes mais profundos (AutopilotPanel, NexusRadar) ficam pra iteração de tradução completa pós-grant.
 - [x] **1.4 — Empty states padronizados** ✅ — criado `<EmptyState>` reutilizável (`src/components/ui/EmptyState.tsx`) com ícone tonalizado + título + body opcional + CTA opcional. Migradas PoolsView (3 estados: loading/error/empty + CTA), PortfolioView (sem wallet + sem holdings) e ZionOrdersList. RiskScanner mantém o formulário-como-empty-state — não há gap real.
 
 ---
@@ -81,14 +81,14 @@ Foco: caminhos reais de receita. Não precisa estar 100% funcional pro grant, ma
 
 | Fase | Itens completos | Total |
 |---|---|---|
-| 1 — Críticos | 3 | 4 |
+| 1 — Críticos | 4 | 4 |
 | 2 — UX consistency | 0 | 4 |
 | 3 — Perf + A11y | 0 | 3 |
 | 4 — Materiais grant | 0 | 4 |
 | 5 — Monetização | 0 | 5 |
-| **Total geral** | **3** | **20** |
+| **Total geral** | **4** | **20** |
 
-**Próximo passo:** FASE 1 / item 1.3 — auditoria de hardcoded strings.
+**Próximo passo:** FASE 2 / item 2.1 — `<TeaserShell>` reutilizável.
 
 ---
 

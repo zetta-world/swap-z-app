@@ -12,6 +12,7 @@ import type { Timeframe, Trade } from "@/lib/api/geckoterminal";
 import { PRO_PAIRS, DEFAULT_PRO_PAIR, CATEGORY_LABELS, groupPairs, type ProPair } from "@/lib/pro-pairs";
 import { CHAINS } from "@/lib/chains";
 import { findToken } from "@/lib/tokens";
+import { useT } from "@/lib/i18n";
 import ProChart, { type ChartKind } from "./ProChart";
 import ProTrades from "./ProTrades";
 import ProPoolStats from "./ProPoolStats";
@@ -37,6 +38,7 @@ const KEYBINDS = [
 ];
 
 export default function ProTerminal() {
+  const t = useT();
   // ─── State ────────────────────────────────────────────────────────
   const [pair, setPair]       = useState<ProPair>(DEFAULT_PRO_PAIR);
   const [tf, setTf]           = useState<Timeframe>("5m");
@@ -141,7 +143,7 @@ export default function ProTerminal() {
                     autoFocus
                     value={pairQuery}
                     onChange={(e) => setPairQuery(e.target.value)}
-                    placeholder="Search BNB, ETH, USDC…"
+                    placeholder={t("common.searchTokens")}
                     className="w-full bg-bg-2 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-ink placeholder:text-ink-4 outline-none focus:border-cyan/40"
                   />
                 </div>

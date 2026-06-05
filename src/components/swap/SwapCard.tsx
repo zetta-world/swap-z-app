@@ -249,7 +249,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
 
           {/* Flip */}
           <div className="relative h-0 flex items-center justify-center">
-            <button type="button" onClick={flipPair} aria-label="Flip pair"
+            <button type="button" onClick={flipPair} aria-label={t("common.flipPair")}
               className="absolute -my-3 w-10 h-10 rounded-xl bg-bg-2 border border-white/10 flex items-center justify-center text-ink-2 hover:text-cyan hover:border-cyan/30 hover:rotate-180 transition-all duration-300 shadow-card">
               <ArrowDownUp className="w-3.5 h-3.5" />
             </button>

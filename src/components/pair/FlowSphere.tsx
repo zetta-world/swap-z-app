@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useMemo } from "react";
+import { useT } from "@/lib/i18n";
 
 interface RingData {
   /** Display label inside the ring center (TXNS / VOL / WALLETS). */
@@ -33,6 +34,7 @@ export default function FlowSphere({
   rings:         [RingData, RingData, RingData];
   dominantTone?: "buy" | "sell" | "neutral";
 }) {
+  const t = useT();
   // Hard-coded ring radii (in SVG units). The viewBox is 200 × 200; center 100,100.
   const R = [88, 64, 40] as const;
   const STROKE = 10;
@@ -64,7 +66,7 @@ export default function FlowSphere({
         viewBox="0 0 200 200"
         className="w-full h-full"
         role="img"
-        aria-label="Buy / sell flow sphere"
+        aria-label={t("common.flowSphere")}
       >
         <defs>
           <radialGradient id="flow-glow" cx="50%" cy="50%" r="50%">
