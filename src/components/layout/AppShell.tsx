@@ -9,6 +9,7 @@ import MobileNav from "./MobileNav";
 import PageTransition from "./PageTransition";
 import ZionDrawer from "@/components/zion/ZionDrawer";
 import { useUI } from "@/lib/store/ui";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 // Lazy guard — only imports the heavy execute portal (and pulls in the swap
@@ -22,9 +23,11 @@ const ExecuteSwapGuard = dynamic(() => import("@/components/swap/ExecuteSwapGuar
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarCollapsed } = useUI();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const t = useT();
 
   return (
     <div className="relative min-h-screen">
+      <a href="#main-content" className="skip-link">{t("common.skipToContent")}</a>
       <Sidebar />
 
       <div
@@ -34,7 +37,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         <Topbar onOpenMobileNav={() => setMobileOpen(true)} />
-        <main className="flex-1 min-w-0 overflow-x-hidden">
+        <main id="main-content" className="flex-1 min-w-0 overflow-x-hidden">
           <PageTransition>{children}</PageTransition>
         </main>
       </div>
