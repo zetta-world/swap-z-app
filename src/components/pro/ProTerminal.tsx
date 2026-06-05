@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import {
   BarChart3, CandlestickChart, LineChart, BarChart2,
@@ -18,7 +19,16 @@ import ProTrades from "./ProTrades";
 import ProPoolStats from "./ProPoolStats";
 import ProDepth from "./ProDepth";
 import ProFlow from "./ProFlow";
-import ProZionDock from "./ProZionDock";
+
+// Defer the ZION AI dock — it runs a streaming Anthropic call and is never
+// in the initial viewport. Loading it lazily lets the chart + trades panel
+// render first without waiting for the AI SDK import chain.
+const ProZionDock = dynamic(() => import("./ProZionDock"), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-lg border border-white/5 bg-black/40 h-[200px] shimmer" />
+  ),
+});
 
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
 

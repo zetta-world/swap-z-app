@@ -1,4 +1,12 @@
 /** @type {import('next').NextConfig} */
+import bundleAnalyzer from "@next/bundle-analyzer";
+
+const withBundleAnalyzer = bundleAnalyzer({
+  // Set ANALYZE=true to produce an interactive bundle map in .next/analyze/.
+  // Usage: ANALYZE=true npm run build
+  enabled: process.env.ANALYZE === "true",
+});
+
 
 // Security headers applied to every route.
 //
@@ -130,7 +138,16 @@ const nextConfig = {
     ],
   },
   experimental: {
-    optimizePackageImports: ["lucide-react", "@radix-ui/react-dialog", "framer-motion"],
+    optimizePackageImports: [
+      "lucide-react",
+      "framer-motion",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-tabs",
+      "@radix-ui/react-tooltip",
+      "@radix-ui/react-popover",
+      "@radix-ui/react-select",
+    ],
     // ccxt is a huge runtime-only package (3+MB with all 100+ exchange
     // adapters and their crypto deps). Forcing it through webpack pulls in
     // optional deps for exchanges we don't use (dydx-v4 protobuf, etc.).
@@ -148,4 +165,4 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);
