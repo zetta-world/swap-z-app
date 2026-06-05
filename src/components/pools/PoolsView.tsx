@@ -3,10 +3,12 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { Layers, ArrowUpDown, Search, ExternalLink } from "lucide-react";
+import { Layers, ArrowUpDown, Search, ExternalLink, Loader2, AlertTriangle } from "lucide-react";
 import { CHAINS, type ChainId } from "@/lib/chains";
 import { compactNumber, formatPct } from "@/lib/format";
 import type { PoolSummary } from "@/lib/api/geckoterminal";
+import { useT } from "@/lib/i18n";
+import EmptyState from "@/components/ui/EmptyState";
 import { cn } from "@/lib/cn";
 
 type SortKey = "tvl" | "vol" | "change";
@@ -33,11 +35,12 @@ const DEX_COLOR: Record<string, string> = {
 };
 
 export default function PoolsView() {
+  const t = useT();
   const [chain, setChain] = useState<ChainId | "all">("all");
   const [sortBy, setSortBy] = useState<SortKey>("tvl");
   const [q, setQ] = useState("");
 
-  const { data, isError, isLoading } = useQuery({
+  const { data, isError, isLoading, refetch } = useQuery({
     queryKey: ["pools-view", chain],
     queryFn: () => fetchPools(chain),
     refetchInterval: 60_000,
@@ -163,12 +166,34 @@ export default function PoolsView() {
 
           <div className="divide-y divide-white/[0.04]">
             {pools.length === 0 && (
-              <div className="px-4 py-10 text-center font-sans text-sm text-ink-3">
-                {isLoading
-                  ? "Fetching live pools from GeckoTerminal…"
-                  : isError
-                    ? "GeckoTerminal is unavailable right now. Refresh in a minute."
-                    : "No pools match the current filter."}
+              <div className="p-4">
+                {isLoading ? (
+                  <EmptyState
+                    Icon={Loader2}
+                    title={t("pools.loadingTitle")}
+                    body={t("pools.loadingBody")}
+                    tone="cyan"
+                    density="compact"
+                  />
+                ) : isError ? (
+                  <EmptyState
+                    Icon={AlertTriangle}
+                    title={t("pools.errorTitle")}
+                    body={t("pools.errorBody")}
+                    tone="gold"
+                    density="compact"
+                    cta={{ label: t("pools.errorCta"), onClick: () => refetch() }}
+                  />
+                ) : (
+                  <EmptyState
+                    Icon={Search}
+                    title={t("pools.emptyTitle")}
+                    body={t("pools.emptyBody")}
+                    tone="ink"
+                    density="compact"
+                    cta={q ? { label: t("pools.emptyCta"), onClick: () => setQ("") } : undefined}
+                  />
+                )}
               </div>
             )}
             {pools.map((p, i) => {
