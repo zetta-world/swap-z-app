@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { Layers, ArrowUpDown, Search, ExternalLink, Loader2, AlertTriangle } from "lucide-react";
+import { Layers, ArrowUpDown, Search, ExternalLink, AlertTriangle } from "lucide-react";
 import { CHAINS, type ChainId } from "@/lib/chains";
 import { compactNumber, formatPct } from "@/lib/format";
 import type { PoolSummary } from "@/lib/api/geckoterminal";
 import { useT } from "@/lib/i18n";
 import EmptyState from "@/components/ui/EmptyState";
+import Skeleton from "@/components/ui/Skeleton";
 import { cn } from "@/lib/cn";
 
 type SortKey = "tvl" | "vol" | "change";
@@ -165,17 +166,24 @@ export default function PoolsView() {
           </div>
 
           <div className="divide-y divide-white/[0.04]">
-            {pools.length === 0 && (
+            {pools.length === 0 && isLoading && (
+              <div className="px-4 py-3 space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="grid grid-cols-12 items-center gap-2 py-1.5">
+                    <div className="col-span-5 flex items-center gap-2">
+                      <Skeleton w="w-7" h="h-7" rounded="full" />
+                      <Skeleton w="w-28" h="h-3" />
+                    </div>
+                    <Skeleton className="col-span-2 ml-auto" w="w-14" h="h-3" />
+                    <Skeleton className="col-span-3 sm:col-span-2 ml-auto" w="w-14" h="h-3" />
+                    <Skeleton className="col-span-2 ml-auto" w="w-10" h="h-3" />
+                  </div>
+                ))}
+              </div>
+            )}
+            {pools.length === 0 && !isLoading && (
               <div className="p-4">
-                {isLoading ? (
-                  <EmptyState
-                    Icon={Loader2}
-                    title={t("pools.loadingTitle")}
-                    body={t("pools.loadingBody")}
-                    tone="cyan"
-                    density="compact"
-                  />
-                ) : isError ? (
+                {isError ? (
                   <EmptyState
                     Icon={AlertTriangle}
                     title={t("pools.errorTitle")}

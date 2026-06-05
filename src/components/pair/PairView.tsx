@@ -16,6 +16,7 @@ import { cn } from "@/lib/cn";
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
 import { useT } from "@/lib/i18n";
+import Skeleton from "@/components/ui/Skeleton";
 
 // Mirror of the server-side PairApiResponse shape (we keep a local copy so
 // the page bundle doesn't drag the server route's deps into the client).
@@ -548,14 +549,14 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "gr
 
 function PairSkeleton() {
   return (
-    <div className="space-y-4 animate-pulse">
-      <div className="rounded-2xl border border-white/5 bg-bg-1/40 p-4 h-28" />
+    <div className="space-y-4">
+      <Skeleton className="h-28" rounded="lg" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-white/5 bg-bg-1/40 aspect-square" />
-        <div className="rounded-2xl border border-white/5 bg-bg-1/40 h-64" />
+        <Skeleton className="aspect-square" rounded="lg" />
+        <Skeleton className="h-64" rounded="lg" />
       </div>
-      <div className="rounded-xl border border-white/5 bg-bg-1/30 h-16" />
-      <div className="rounded-xl border border-white/5 bg-bg-1/30 h-12" />
+      <Skeleton className="h-16" rounded="lg" />
+      <Skeleton className="h-12" rounded="lg" />
     </div>
   );
 }
