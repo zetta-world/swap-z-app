@@ -46,7 +46,7 @@ Foco: técnico mensurável que reviewer de grant roda no Lighthouse.
 
 Foco: dossiê técnico que cola direto na aplicação Solana / Colosseum / Arbitrum.
 
-- [ ] **4.1 — Página `/about` (whitepaper técnico)** — architecture diagram, value prop, tech stack, integrações reais nomeadas (0x, LiFi, Jupiter, CCXT, Anthropic, GoPlus, Honeypot, GeckoTerminal, DexScreener, CoW). Tudo na cara.
+- [x] **4.1 — Página `/about` (whitepaper técnico)** ✅ — `src/app/about/page.tsx` + `src/components/about/AboutView.tsx`. Seções: hero com stats (11 páginas / 13 chains / 10+ CEX), diagrama de arquitetura em camadas (CSS/flexbox), proposta de valor (3 cards), todas as integrações reais nomeadas (0x v2, LiFi, Jupiter, CoW, CCXT, Claude Haiku 4.5, GoPlus, Honeypot.is, GeckoTerminal, DexScreener), tech stack, postura não-custodial (4 pontos). i18n `about.*` em 4 locales + `nav.about` em sidebar. Design consistente com glass morphism do app.
 - [ ] **4.2 — Página `/changelog` gerada do git log** — histórico PR #1 → #N com resumo, mostra maturidade.
 - [ ] **4.3 — Script de vídeo demo guiado** — 5 cenas em ~4 min: (1) hero, (2) swap real, (3) ZION analisando pair, (4) autopilot CEX firing, (5) portfolio multi-chain. Tu grava com Loom/OBS.
 - [ ] **4.4 — Pitch deck em markdown** — 10-12 slides com texto pronto pra Canva/Figma. Estrutura: problema → solução → demo → tração → arquitetura → equipe → ask.
@@ -84,11 +84,11 @@ Foco: caminhos reais de receita. Não precisa estar 100% funcional pro grant, ma
 | 1 — Críticos | 4 | 4 |
 | 2 — UX consistency | 4 | 4 |
 | 3 — Perf + A11y | 3 | 3 |
-| 4 — Materiais grant | 0 | 4 |
+| 4 — Materiais grant | 1 | 4 |
 | 5 — Monetização | 0 | 5 |
-| **Total geral** | **11** | **20** |
+| **Total geral** | **12** | **20** |
 
-**Próximo passo:** FASE 4 / item 4.1 — Página /about (whitepaper técnico).
+**Próximo passo:** FASE 4 / item 4.2 — Página /changelog gerada do git log.
 
 ---
 
