@@ -316,6 +316,30 @@ input[type="number"] { -moz-appearance: textfield; }
 .no-scrollbar           { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
+/* ── Skip-to-content link (WCAG 2.4.1) ───────────────────────────────── */
+.skip-link {
+  position: absolute;
+  top: -9999px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  padding: 0.6rem 1.25rem;
+  border-radius: 0 0 8px 8px;
+  background: #02030A;
+  border: 1px solid rgba(0,232,255,0.6);
+  color: #00E8FF;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.skip-link:focus {
+  top: 0;
+  outline: 2px solid rgba(0,232,255,0.8);
+  outline-offset: 2px;
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

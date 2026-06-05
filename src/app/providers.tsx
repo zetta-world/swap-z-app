@@ -6,7 +6,8 @@ import {
   ConnectionProvider as RawConnectionProvider,
   WalletProvider     as RawWalletProvider,
 } from "@solana/wallet-adapter-react";
-import { useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useUI } from "@/lib/store/ui";
 import { Toaster } from "sonner";
 import { wagmiConfig } from "@/lib/wagmi";
 import { SOLANA_RPC, SOLANA_WALLETS } from "@/lib/solana";
@@ -23,6 +24,16 @@ const WalletProvider = RawWalletProvider as unknown as ComponentType<{
   autoConnect?: boolean;
   children:    ReactNode;
 }>;
+
+const LANG_MAP: Record<string, string> = { en: "en", pt: "pt-BR", es: "es", zh: "zh-CN" };
+
+function LangSync() {
+  const { lang } = useUI();
+  useEffect(() => {
+    document.documentElement.lang = LANG_MAP[lang] ?? lang;
+  }, [lang]);
+  return null;
+}
 
 export default function Providers({ children }: { children: ReactNode }) {
   const [qc] = useState(
@@ -46,6 +57,7 @@ export default function Providers({ children }: { children: ReactNode }) {
       <ConnectionProvider endpoint={SOLANA_RPC}>
         <WalletProvider wallets={solanaWallets} autoConnect>
           <QueryClientProvider client={qc}>
+            <LangSync />
             {children}
             <Toaster
               position="top-right"

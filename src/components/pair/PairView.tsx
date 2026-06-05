@@ -330,6 +330,7 @@ function Avatar({ src, fallback, chainColor }: { src?: string; fallback: string;
       <img
         src={src}
         alt=""
+        loading="lazy"
         className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover flex-shrink-0"
         style={{ border: `1px solid ${chainColor}40` }}
       />

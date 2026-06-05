@@ -97,6 +97,7 @@ const en = {
     searchTokens:     "Search by symbol or DEX…",
     networkPlaceholder: "ERC20 / BSC / TRC20 …",
     copy:             "Copy",
+    skipToContent:    "Skip to main content",
   },
   nav: {
     swap:             "Swap",
@@ -1126,6 +1127,7 @@ const pt: Schema = {
     searchTokens:     "Buscar por símbolo ou DEX…",
     networkPlaceholder: "ERC20 / BSC / TRC20 …",
     copy:             "Copiar",
+    skipToContent:    "Pular para o conteúdo principal",
   },
   nav: {
     swap:             "Swap",
@@ -2137,6 +2139,7 @@ const es: Schema = {
     searchTokens:     "Buscar por símbolo o DEX…",
     networkPlaceholder: "ERC20 / BSC / TRC20 …",
     copy:             "Copiar",
+    skipToContent:    "Saltar al contenido principal",
   },
   nav: {
     swap:             "Intercambiar",
@@ -3148,6 +3151,7 @@ const zh: Schema = {
     searchTokens:     "按符号或 DEX 搜索…",
     networkPlaceholder: "ERC20 / BSC / TRC20 …",
     copy:             "复制",
+    skipToContent:    "跳至主要内容",
   },
   nav: {
     swap:             "兑换",
