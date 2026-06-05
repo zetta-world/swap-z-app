@@ -43,9 +43,9 @@ body {
 /* Selection */
 ::selection { background: rgba(0,232,255,0.28); color: #F2F4FF; }
 
-/* Focus ring — premium subtle */
+/* Focus ring — 2px cyan, WCAG 2.1 AA+ compliant on dark backgrounds */
 :focus-visible {
-  outline: 1px solid rgba(0,232,255,0.6);
+  outline: 2px solid rgba(0,232,255,0.75);
   outline-offset: 2px;
   border-radius: 6px;
 }

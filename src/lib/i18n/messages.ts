@@ -1033,6 +1033,9 @@ const en = {
     sellAction:            "Sell",
     tradesLabel:           "trades",
   },
+  pro: {
+    selectPair:       "Select trading pair",
+  },
 };
 
 // Schema/shape comes from `en` once it's defined; other locales must match.
@@ -2058,6 +2061,9 @@ const pt: Schema = {
     sellAction:            "Vender",
     tradesLabel:           "trades",
   },
+  pro: {
+    selectPair:       "Selecionar par de trading",
+  },
   toast: {
     copied:           "Copiado",
     saved:            "Salvo",
@@ -3070,6 +3076,9 @@ const es: Schema = {
     sellAction:            "Vender",
     tradesLabel:           "trades",
   },
+  pro: {
+    selectPair:       "Seleccionar par de trading",
+  },
   toast: {
     copied:           "Copiado",
     saved:            "Guardado",
@@ -4081,6 +4090,9 @@ const zh: Schema = {
     buyAction:             "购买",
     sellAction:            "出售",
     tradesLabel:           "trades",
+  },
+  pro: {
+    selectPair:       "选择交易对",
   },
   toast: {
     copied:           "已复制",
