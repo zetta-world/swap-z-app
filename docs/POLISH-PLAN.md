@@ -27,7 +27,7 @@ Foco: o produto sentir "uma marca", não 17 páginas separadas.
 
 - [x] **2.1 — Extrair `<TeaserShell>` reutilizável** ✅ — extraído `src/components/teaser/TeaserShell.tsx` (shell + `<TeaserCard>` auxiliar). Os 4 teasers (Onramp/Otc/P2p/Nft) migrados: hero + tabs + waitlist (form + storage) + trust line vêm do shell; preview e seções de teaching ficam como children. Resultado: -198 linhas líquidas, identidade visual garantida.
 - [x] **2.2 — Loading states (skeleton)** ✅ — criado `<Skeleton>` reutilizável (`src/components/ui/Skeleton.tsx`) usando o `.shimmer` keyframe. Aplicado em PoolsView (6 linhas skeleton na tabela enquanto carrega), PortfolioView (4 linhas skeleton de holdings durante fetch inicial de balances), PairView (PairSkeleton agora usa shimmer consistente em vez de animate-pulse), CexPortfolioRollup (total $X aparece como skeleton enquanto `loading`).
-- [ ] **2.3 — Error boundaries por rota** — `error.tsx` por rota com fallback bonito + link de status + botão tentar de novo. Sem flash de tela em branco quando algo crasha.
+- [x] **2.3 — Error boundaries por rota** ✅ — criado `<RouteErrorFallback>` reutilizável + `app/error.tsx` (cobre todas as 17 páginas mantendo sidebar/topbar) + `app/global-error.tsx` (último recurso quando o root layout em si crasha — render self-contained com seu próprio html/body). Mostra mensagem, digest, "Try again" (chama `reset()`), "Back to swap" e link de status.
 - [ ] **2.4 — Page transitions** — Framer Motion route transitions discretas (fade + 8px translateY) — `loading.tsx` + animação consistente.
 
 ---
@@ -82,13 +82,13 @@ Foco: caminhos reais de receita. Não precisa estar 100% funcional pro grant, ma
 | Fase | Itens completos | Total |
 |---|---|---|
 | 1 — Críticos | 4 | 4 |
-| 2 — UX consistency | 2 | 4 |
+| 2 — UX consistency | 3 | 4 |
 | 3 — Perf + A11y | 0 | 3 |
 | 4 — Materiais grant | 0 | 4 |
 | 5 — Monetização | 0 | 5 |
-| **Total geral** | **6** | **20** |
+| **Total geral** | **7** | **20** |
 
-**Próximo passo:** FASE 2 / item 2.3 — error boundaries por rota.
+**Próximo passo:** FASE 2 / item 2.4 — page transitions (Framer Motion).
 
 ---
 
