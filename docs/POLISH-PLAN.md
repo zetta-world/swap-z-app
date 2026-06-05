@@ -37,7 +37,7 @@ Foco: o produto sentir "uma marca", não 17 páginas separadas.
 Foco: técnico mensurável que reviewer de grant roda no Lighthouse.
 
 - [x] **3.1 — Lighthouse pass mobile em todas as 17 rotas** ✅ — análise estática das 17 rotas: adicionado skip-to-content link (WCAG 2.4.1) em AppShell + id="main-content" no `<main>`; LangSync component que atualiza `document.documentElement.lang` dinamicamente ao trocar idioma; `loading="lazy"` em imgs de ConnectModal e PairView; i18n key `common.skipToContent` em 4 locales. Baseline documentado em `docs/LIGHTHOUSE-BASELINE.md`. Scores estimados: Perf 80–90, A11y 90–95, Best Practices 95–100, SEO 95–100.
-- [ ] **3.2 — Bundle analyzer + tree-shake** — identificar dead weight em `lucide-react`, `framer-motion`, `@radix-ui`. Lazy-load Pro Terminal (mais pesado: 63 kB). Objetivo: First Load < 90 kB shared.
+- [x] **3.2 — Bundle analyzer + tree-shake** ✅ — instalado `@next/bundle-analyzer` (ANALYZE=true npm run build gera mapa interativo em .next/analyze/). Expandido `optimizePackageImports` com 5 Radix packages adicionais. Lazy-load de `ProZionDock` em ProTerminal — AI dock não está no viewport inicial, defer libera chunk do Anthropic SDK para depois do primeiro paint do chart. LiquidNexus (Three.js) já estava lazy. Shared bundle manteve 89.1 kB ≤ 90 kB target ✓.
 - [ ] **3.3 — A11y completo** — todos os botões-ícone com `aria-label`, focus visible em todos os interativos, contraste mín 4.5:1, navegação por teclado funcional pelo app inteiro.
 
 ---
@@ -83,12 +83,12 @@ Foco: caminhos reais de receita. Não precisa estar 100% funcional pro grant, ma
 |---|---|---|
 | 1 — Críticos | 4 | 4 |
 | 2 — UX consistency | 4 | 4 |
-| 3 — Perf + A11y | 1 | 3 |
+| 3 — Perf + A11y | 2 | 3 |
 | 4 — Materiais grant | 0 | 4 |
 | 5 — Monetização | 0 | 5 |
-| **Total geral** | **9** | **20** |
+| **Total geral** | **10** | **20** |
 
-**Próximo passo:** FASE 3 / item 3.2 — Bundle analyzer + tree-shake.
+**Próximo passo:** FASE 3 / item 3.3 — A11y completo.
 
 ---
 
