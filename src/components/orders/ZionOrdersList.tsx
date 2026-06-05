@@ -16,6 +16,7 @@ import { useSwap } from "@/lib/store/swap";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { useT, type MessageKey } from "@/lib/i18n";
+import EmptyState from "@/components/ui/EmptyState";
 import { cn } from "@/lib/cn";
 
 const KIND_META: Record<string, {
@@ -138,15 +139,13 @@ export default function ZionOrdersList() {
 
   if (orders.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/5 glass-pane p-5 text-center">
-        <Sparkles className="w-5 h-5 text-gold mx-auto mb-2" />
-        <div className="font-display font-bold text-sm text-ink mb-1">
-          {t("zion.orderNone")}
-        </div>
-        <p className="font-sans text-xs text-ink-3 max-w-sm mx-auto">
-          {t("zion.orderNoneHint")}
-        </p>
-      </div>
+      <EmptyState
+        Icon={Sparkles}
+        title={t("zion.orderNone")}
+        body={t("zion.orderNoneHint")}
+        tone="gold"
+        density="compact"
+      />
     );
   }
 

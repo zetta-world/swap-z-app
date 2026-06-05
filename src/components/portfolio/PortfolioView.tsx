@@ -12,6 +12,7 @@ import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance"
 import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import CexPortfolioRollup from "./CexPortfolioRollup";
 import { useT } from "@/lib/i18n";
+import EmptyState from "@/components/ui/EmptyState";
 import { cn } from "@/lib/cn";
 
 // Curated set of tokens whose balances we surface on the portfolio page.
@@ -164,14 +165,13 @@ export default function PortfolioView() {
             holdings, no fabricated chart. The CEX rollup below still works
             on its own if the user linked exchanges. */}
         {!anyWalletConnected && holdings.length === 0 && (
-          <div className="rounded-2xl border border-white/8 bg-bg-1/40 p-8 text-center mb-5">
-            <Wallet className="w-6 h-6 text-ink-3 mx-auto mb-3" />
-            <div className="font-display font-bold text-base text-ink mb-1.5">
-              {t("portfolio.connectWalletTitle")}
-            </div>
-            <p className="font-sans text-sm text-ink-2 max-w-md mx-auto leading-relaxed">
-              {t("portfolio.connectWalletBody")}
-            </p>
+          <div className="mb-5">
+            <EmptyState
+              Icon={Wallet}
+              title={t("portfolio.connectWalletTitle")}
+              body={t("portfolio.connectWalletBody")}
+              tone="cyan"
+            />
           </div>
         )}
 
@@ -235,13 +235,13 @@ export default function PortfolioView() {
             </span>
           </div>
           {holdings.length === 0 ? (
-            <div className="px-4 py-6 text-center">
-              <Inbox className="w-5 h-5 text-ink-4 mx-auto mb-2" />
-              <p className="font-mono text-[11px] text-ink-3">
-                {anyWalletConnected
-                  ? t("portfolio.noBalances")
-                  : t("portfolio.connectToSeeHoldings")}
-              </p>
+            <div className="p-4">
+              <EmptyState
+                Icon={Inbox}
+                title={anyWalletConnected ? t("portfolio.noBalances") : t("portfolio.connectToSeeHoldings")}
+                tone="ink"
+                density="compact"
+              />
             </div>
           ) : (
             <div className="divide-y divide-white/[0.04]">
