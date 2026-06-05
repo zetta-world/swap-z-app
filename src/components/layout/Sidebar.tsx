@@ -3,51 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import {
-  ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3,
-  Shield, Vote, Wallet, Settings, ChevronLeft, Activity, Boxes, Banknote, CreditCard, Handshake, Users, Gem,
-} from "lucide-react";
+import { ChevronLeft, Boxes } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
-import { useT, type MessageKey } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
-
-interface NavItem {
-  href: string;
-  labelKey: MessageKey;
-  icon: React.ComponentType<{ className?: string }>;
-  badgeKey?: MessageKey;
-  badgeTone?: "ai" | "new" | "beta" | "soon";
-  group: "trade" | "discover" | "build" | "manage";
-}
-
-const NAV: NavItem[] = [
-  { href: "/",          labelKey: "nav.swap",       icon: ArrowLeftRight, group: "trade" },
-  { href: "/buy",       labelKey: "nav.buy",        icon: CreditCard,      group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
-  { href: "/bridge",    labelKey: "nav.bridge",     icon: Workflow,        group: "trade" },
-  { href: "/orders",    labelKey: "nav.orders",     icon: Activity,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
-  { href: "/cex",       labelKey: "nav.cex",        icon: Banknote,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
-  { href: "/otc",       labelKey: "nav.otc",        icon: Handshake,       group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
-  { href: "/p2p",       labelKey: "nav.p2p",        icon: Users,           group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
-  { href: "/nft",       labelKey: "nav.nft",        icon: Gem,             group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
-  { href: "/pro",       labelKey: "nav.pro",        icon: BarChart3,       group: "trade", badgeKey: "nav.badgeBeta", badgeTone: "beta" },
-
-  { href: "/pools",     labelKey: "nav.pools",      icon: Layers,          group: "discover" },
-  { href: "/explorer",  labelKey: "nav.explorer",   icon: Shield,          group: "discover" },
-  { href: "/zion",      labelKey: "nav.zion",       icon: Sparkles,        group: "discover", badgeKey: "nav.badgeAi", badgeTone: "ai" },
-
-  { href: "/launchpad", labelKey: "nav.launchpad",  icon: Rocket,          group: "build" },
-  { href: "/governance", labelKey: "nav.governance", icon: Vote,           group: "build" },
-
-  { href: "/portfolio", labelKey: "nav.portfolio",  icon: Wallet,          group: "manage" },
-  { href: "/settings",  labelKey: "nav.settings",   icon: Settings,        group: "manage" },
-];
-
-const GROUP_KEYS: Record<NavItem["group"], MessageKey> = {
-  trade:    "nav.groupTrade",
-  discover: "nav.groupDiscover",
-  build:    "nav.groupBuild",
-  manage:   "nav.groupManage",
-};
+import {
+  NAV_ITEMS, NAV_GROUP_KEYS, NAV_BADGE_CLASSES, type NavItem,
+} from "./nav-items";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -55,7 +17,7 @@ export default function Sidebar() {
   const t = useT();
   const w = sidebarCollapsed ? 80 : 248;
 
-  const grouped = NAV.reduce<Record<string, NavItem[]>>((acc, item) => {
+  const grouped = NAV_ITEMS.reduce<Record<string, NavItem[]>>((acc, item) => {
     (acc[item.group] = acc[item.group] || []).push(item);
     return acc;
   }, {});
@@ -98,7 +60,7 @@ export default function Sidebar() {
           <div key={g} className="mb-5">
             {!sidebarCollapsed && (
               <div className="font-mono text-[10px] text-ink-4 tracking-[0.18em] uppercase px-2 mb-2">
-                {t(GROUP_KEYS[g])}
+                {t(NAV_GROUP_KEYS[g])}
               </div>
             )}
             <ul className="flex flex-col gap-0.5">
@@ -126,13 +88,10 @@ export default function Sidebar() {
                       {!sidebarCollapsed && (
                         <>
                           <span className="font-sans text-sm flex-1 truncate">{t(item.labelKey)}</span>
-                          {item.badgeKey && (
+                          {item.badgeKey && item.badgeTone && (
                             <span className={cn(
                               "font-mono text-[9px] tracking-widest px-1.5 py-0.5 rounded-full border",
-                              item.badgeTone === "ai"   && "text-gold border-gold/30 bg-gold/5",
-                              item.badgeTone === "new"  && "text-cyan border-cyan/30 bg-cyan/5",
-                              item.badgeTone === "beta" && "text-violet border-violet/30 bg-violet/5",
-                              item.badgeTone === "soon" && "text-gold border-gold/40 bg-gold/10",
+                              NAV_BADGE_CLASSES[item.badgeTone],
                             )}>
                               {t(item.badgeKey)}
                             </span>
