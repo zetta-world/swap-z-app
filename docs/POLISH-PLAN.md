@@ -25,7 +25,7 @@ Foco: tudo que deixa "cheiro de protótipo" no produto.
 
 Foco: o produto sentir "uma marca", não 17 páginas separadas.
 
-- [ ] **2.1 — Extrair `<TeaserShell>` reutilizável** — OnrampView / OtcView / P2pView / NftView duplicam ~70% (hero + tabs + stats + waitlist + trust line). Extrair em um shell único parametrizado por slots. Garante identidade visual idêntica.
+- [x] **2.1 — Extrair `<TeaserShell>` reutilizável** ✅ — extraído `src/components/teaser/TeaserShell.tsx` (shell + `<TeaserCard>` auxiliar). Os 4 teasers (Onramp/Otc/P2p/Nft) migrados: hero + tabs + waitlist (form + storage) + trust line vêm do shell; preview e seções de teaching ficam como children. Resultado: -198 linhas líquidas, identidade visual garantida.
 - [ ] **2.2 — Loading states (skeleton)** — Pools, pair detail, portfolio, /cex balance: substituir flash branco por skeleton shimmer consistente.
 - [ ] **2.3 — Error boundaries por rota** — `error.tsx` por rota com fallback bonito + link de status + botão tentar de novo. Sem flash de tela em branco quando algo crasha.
 - [ ] **2.4 — Page transitions** — Framer Motion route transitions discretas (fade + 8px translateY) — `loading.tsx` + animação consistente.
@@ -82,13 +82,13 @@ Foco: caminhos reais de receita. Não precisa estar 100% funcional pro grant, ma
 | Fase | Itens completos | Total |
 |---|---|---|
 | 1 — Críticos | 4 | 4 |
-| 2 — UX consistency | 0 | 4 |
+| 2 — UX consistency | 1 | 4 |
 | 3 — Perf + A11y | 0 | 3 |
 | 4 — Materiais grant | 0 | 4 |
 | 5 — Monetização | 0 | 5 |
-| **Total geral** | **4** | **20** |
+| **Total geral** | **5** | **20** |
 
-**Próximo passo:** FASE 2 / item 2.1 — `<TeaserShell>` reutilizável.
+**Próximo passo:** FASE 2 / item 2.2 — loading states (skeleton).
 
 ---
 
