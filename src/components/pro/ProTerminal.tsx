@@ -124,6 +124,9 @@ export default function ProTerminal() {
             <button
               type="button"
               onClick={() => setPairOpen((o) => !o)}
+              aria-expanded={pairOpen}
+              aria-haspopup="listbox"
+              aria-label={t("pro.selectPair")}
               className="flex items-center gap-3 hover:bg-white/5 rounded-lg px-2 py-1 -mx-2 transition-colors"
             >
               <span
@@ -147,17 +150,22 @@ export default function ProTerminal() {
               <ChevronDown className={cn("w-4 h-4 text-ink-3 transition-transform", pairOpen && "rotate-180")} />
             </button>
             {pairOpen && (
-              <div className="absolute left-0 top-full mt-1 z-20 w-[300px] sm:w-[340px] rounded-lg border border-white/10 glass-strong shadow-card overflow-hidden flex flex-col max-h-[420px]">
+              <div
+                role="dialog"
+                aria-label={t("pro.selectPair")}
+                className="absolute left-0 top-full mt-1 z-20 w-[300px] sm:w-[340px] rounded-lg border border-white/10 glass-strong shadow-card overflow-hidden flex flex-col max-h-[420px]"
+              >
                 <div className="p-2 border-b border-white/5 flex-shrink-0">
                   <input
                     autoFocus
                     value={pairQuery}
                     onChange={(e) => setPairQuery(e.target.value)}
                     placeholder={t("common.searchTokens")}
+                    aria-label={t("common.searchTokens")}
                     className="w-full bg-bg-2 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-ink placeholder:text-ink-4 outline-none focus:border-cyan/40"
                   />
                 </div>
-                <div className="flex-1 overflow-y-auto">
+                <div role="listbox" aria-label={t("pro.selectPair")} className="flex-1 overflow-y-auto">
                   {filteredPairs.length === 0 && (
                     <div className="p-6 text-center font-mono text-[10px] text-ink-3">No matching pairs</div>
                   )}
@@ -173,6 +181,8 @@ export default function ProTerminal() {
                           <button
                             type="button"
                             key={p.id}
+                            role="option"
+                            aria-selected={active}
                             onClick={() => { setPair(p); setPairOpen(false); setPairQuery(""); }}
                             className={cn(
                               "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/[0.04] transition-colors",
@@ -241,6 +251,7 @@ export default function ProTerminal() {
                       type="button"
                       key={t}
                       onClick={() => setTf(t)}
+                      aria-pressed={t === tf}
                       className={cn(
                         "px-2 py-1 rounded font-mono text-[9px] tracking-widest uppercase transition-colors",
                         t === tf ? "bg-cyan/15 text-cyan" : "text-ink-3 hover:text-ink-2 hover:bg-white/5",
@@ -259,7 +270,8 @@ export default function ProTerminal() {
                         type="button"
                         key={k.id}
                         onClick={() => setKind(k.id)}
-                        title={k.label}
+                        aria-label={k.label}
+                        aria-pressed={active}
                         className={cn(
                           "p-1.5 rounded transition-colors",
                           active ? "bg-white/10 text-ink" : "text-ink-3 hover:text-ink-2 hover:bg-white/5",
@@ -276,6 +288,7 @@ export default function ProTerminal() {
                 <button
                   type="button"
                   onClick={() => setMaOn((v) => !v)}
+                  aria-pressed={maOn}
                   className={cn(
                     "px-2 py-1 rounded transition-colors",
                     maOn ? "bg-gold/15 text-gold" : "text-ink-3 hover:text-ink-2 hover:bg-white/5",
@@ -286,6 +299,7 @@ export default function ProTerminal() {
                 <button
                   type="button"
                   onClick={() => setEmaOn((v) => !v)}
+                  aria-pressed={emaOn}
                   className={cn(
                     "px-2 py-1 rounded transition-colors",
                     emaOn ? "bg-violet/15 text-violet" : "text-ink-3 hover:text-ink-2 hover:bg-white/5",
