@@ -7,6 +7,7 @@ import {
   Mail, CheckCircle2, Loader2, ArrowRight, MessageSquare, Star,
   Lock, Banknote,
 } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 /**
@@ -22,11 +23,15 @@ import { cn } from "@/lib/cn";
  * end-to-end encryption, escrow contract, reputation system, dispute
  * resolution) lives in subsequent PRs once the legal model (BCB
  * compliance, KYC tier) is finalized.
+ *
+ * This file is i18n-only — all visible strings come from messages.ts
+ * under the `p2p` and `teaser` namespaces.
  */
 
 const WAITLIST_KEY = "zswap_p2p_waitlist_v1";
 
 export default function P2pView() {
+  const t = useT();
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -48,23 +53,23 @@ export default function P2pView() {
     }
   };
 
+  const tradesLabel = t("p2p.tradesLabel");
+  const buyLabel = t("p2p.buyAction");
+  const sellLabel = t("p2p.sellAction");
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 sm:py-10 space-y-6">
       {/* Hero */}
       <div className="space-y-3">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gold/30 bg-gold/[0.05] font-mono text-[10px] tracking-widest uppercase text-gold">
-          <Sparkles className="w-3 h-3" /> Em breve no Z-SWAP
+          <Sparkles className="w-3 h-3" /> {t("teaser.soon")}
         </div>
         <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-ink leading-tight">
-          Mercado <span className="text-gradient-cyan">P2P</span><br />
-          Compre ou venda cripto direto com outra pessoa.
+          <span className="text-gradient-cyan">{t("p2p.titleA")}</span><br />
+          {t("p2p.titleB")}
         </h1>
         <p className="font-sans text-sm sm:text-base text-ink-2 leading-relaxed max-w-2xl">
-          PIX, TED, Mercado Pago, boleto — você escolhe como receber.
-          A cripto fica travada num <b className="text-ink">escrow on-chain</b>{" "}
-          enquanto o pagamento off-chain acontece. Sem exchange
-          centralizada, sem custódia intermediária, sem KYC institucional —{" "}
-          só reputação de quem negocia.
+          {t("p2p.subtitle")}
         </p>
       </div>
 
@@ -79,7 +84,7 @@ export default function P2pView() {
           )}
         >
           <ArrowDownToLine className="w-3.5 h-3.5" />
-          Comprar cripto
+          {t("p2p.tabBuy")}
         </button>
         <button
           type="button"
@@ -90,7 +95,7 @@ export default function P2pView() {
           )}
         >
           <ArrowUpFromLine className="w-3.5 h-3.5" />
-          Vender cripto
+          {t("p2p.tabSell")}
         </button>
       </div>
 
@@ -106,41 +111,41 @@ export default function P2pView() {
 
         <div className="relative space-y-4">
           <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-            Ofertas {side === "buy" ? "de venda · USDT/BRL" : "de compra · USDT/BRL"}
+            {side === "buy" ? t("p2p.offersBuy") : t("p2p.offersSell")}
           </div>
 
           {/* Table header */}
           <div className="grid grid-cols-[1.4fr_0.9fr_1.2fr_1.1fr_0.6fr] gap-2 px-3 pb-2 border-b border-white/5 font-mono text-[9px] text-ink-3 tracking-widest uppercase">
-            <span>Anunciante</span>
-            <span className="text-right">Preço</span>
-            <span>Limites · BRL</span>
-            <span>Pagamento</span>
+            <span>{t("p2p.colAdvertiser")}</span>
+            <span className="text-right">{t("p2p.colPrice")}</span>
+            <span>{t("p2p.colLimits")}</span>
+            <span>{t("p2p.colPayment")}</span>
             <span className="text-right">—</span>
           </div>
 
           {/* Offer rows */}
           <div className="space-y-1.5">
-            <OfferRow user="thiago.btc" rating={4.98} trades={2417} price="5.30"  limits="100 · 50.000" methods={["PIX", "TED"]} sideTone={side === "buy" ? "green" : "violet"} />
-            <OfferRow user="ana_cripto" rating={4.97} trades={1183} price="5.29"  limits="50 · 20.000"  methods={["PIX"]}        sideTone={side === "buy" ? "green" : "violet"} />
-            <OfferRow user="zion.trader" rating={4.95} trades={812}  price="5.28" limits="200 · 100k"   methods={["PIX", "MP"]}  sideTone={side === "buy" ? "green" : "violet"} />
-            <OfferRow user="otc_brasil"  rating={4.92} trades={609}  price="5.27" limits="500 · 200k"   methods={["PIX", "TED"]} sideTone={side === "buy" ? "green" : "violet"} />
+            <OfferRow user="thiago.btc" rating={4.98} trades={2417} price="5.30"  limits="100 · 50.000" methods={["PIX", "TED"]} sideTone={side === "buy" ? "green" : "violet"} tradesLabel={tradesLabel} ctaLabel={side === "buy" ? buyLabel : sellLabel} />
+            <OfferRow user="ana_cripto" rating={4.97} trades={1183} price="5.29"  limits="50 · 20.000"  methods={["PIX"]}        sideTone={side === "buy" ? "green" : "violet"} tradesLabel={tradesLabel} ctaLabel={side === "buy" ? buyLabel : sellLabel} />
+            <OfferRow user="zion.trader" rating={4.95} trades={812}  price="5.28" limits="200 · 100k"   methods={["PIX", "MP"]}  sideTone={side === "buy" ? "green" : "violet"} tradesLabel={tradesLabel} ctaLabel={side === "buy" ? buyLabel : sellLabel} />
+            <OfferRow user="otc_brasil"  rating={4.92} trades={609}  price="5.27" limits="500 · 200k"   methods={["PIX", "TED"]} sideTone={side === "buy" ? "green" : "violet"} tradesLabel={tradesLabel} ctaLabel={side === "buy" ? buyLabel : sellLabel} />
           </div>
 
           <div className="grid grid-cols-3 gap-2 pt-4 border-t border-white/5">
-            <Stat label="Liquidação PIX" value="~30s"  sub="após confirmar" tone="cyan"   />
-            <Stat label="Fee taker"      value="0%"   sub="só maker paga"  tone="green"  />
-            <Stat label="Disputa"        value="< 24h" sub="árbitro"       tone="violet" />
+            <Stat label={t("p2p.statSettle")}  value={t("p2p.statSettleVal")}  sub={t("p2p.statSettleSub")}  tone="cyan"   />
+            <Stat label={t("p2p.statFee")}     value={t("p2p.statFeeVal")}     sub={t("p2p.statFeeSub")}     tone="green"  />
+            <Stat label={t("p2p.statDispute")} value={t("p2p.statDisputeVal")} sub={t("p2p.statDisputeSub")} tone="violet" />
           </div>
         </div>
       </motion.div>
 
       {/* How it works */}
       <div className="rounded-2xl border border-white/5 glass-pane p-5 sm:p-6 space-y-4">
-        <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Como funciona o escrow</div>
+        <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("p2p.howItWorks")}</div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Step n={1} title="Cripto trava" body="Vendedor envia ao escrow contract — cripto fica visível on-chain, ninguém pode mover." Icon={Lock} tone="cyan" />
-          <Step n={2} title="PIX off-chain" body="Comprador paga via QR code do PIX direto pra conta do vendedor. Chat criptografado." Icon={MessageSquare} tone="violet" />
-          <Step n={3} title="Release" body="Vendedor confirma PIX recebido → escrow libera cripto automaticamente. Reputação +1." Icon={CheckCircle2} tone="green" />
+          <Step n={1} title={t("p2p.step1Title")} body={t("p2p.step1Body")} Icon={Lock}            tone="cyan"   />
+          <Step n={2} title={t("p2p.step2Title")} body={t("p2p.step2Body")} Icon={MessageSquare}   tone="violet" />
+          <Step n={3} title={t("p2p.step3Title")} body={t("p2p.step3Body")} Icon={CheckCircle2}    tone="green"  />
         </div>
       </div>
 
@@ -155,13 +160,10 @@ export default function P2pView() {
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="font-display font-bold text-base text-ink">
-              Reputação inicial gratuita
+              {t("p2p.waitlistTitle")}
             </h2>
             <p className="font-sans text-xs sm:text-sm text-ink-2 leading-relaxed mt-1">
-              Os primeiros 500 emails da lista começam o piloto com{" "}
-              <b className="text-gold">selo de "Trader Fundador"</b> no perfil —
-              maior limite por trade + prioridade no top da lista nos primeiros
-              60 dias.
+              {t("p2p.waitlistBody")}
             </p>
           </div>
         </div>
@@ -170,9 +172,7 @@ export default function P2pView() {
           <div className="rounded-lg border border-green/30 bg-green/[0.05] px-3 py-3 flex items-start gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-green flex-shrink-0 mt-0.5" />
             <div className="font-mono text-[11px] text-ink-2 leading-relaxed">
-              <b className="text-green">Vaga garantida.</b> Vamos avisar quando o piloto
-              abrir — com convite por email + selo Trader Fundador já ativo na
-              tua conta.
+              <b className="text-green">{t("p2p.waitlistDoneHL")}</b> {t("p2p.waitlistDoneBody")}
             </div>
           </div>
         ) : (
@@ -185,7 +185,7 @@ export default function P2pView() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="você@email.com"
+                placeholder={t("teaser.emailPersonal")}
                 maxLength={120}
                 className="flex-1 min-w-0 bg-transparent outline-none font-mono text-sm text-ink placeholder:text-ink-4 py-2.5"
                 required
@@ -197,7 +197,7 @@ export default function P2pView() {
               className="px-4 py-2.5 rounded-lg border border-gold/40 bg-gold/15 text-gold font-mono text-[11px] tracking-widest uppercase hover:bg-gold/25 disabled:opacity-50 inline-flex items-center gap-1.5"
             >
               {submitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
-              Entrar
+              {t("teaser.enter")}
             </button>
           </form>
         )}
@@ -207,10 +207,7 @@ export default function P2pView() {
       <div className="rounded-lg border border-white/5 bg-bg-1/40 p-3 flex items-start gap-2.5">
         <ShieldCheck className="w-3.5 h-3.5 text-cyan flex-shrink-0 mt-0.5" />
         <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-          Z-SWAP não custodia cripto nem intermedia pagamentos. Cada trade
-          P2P usa um contrato escrow open-source auditado; PIX rola direto
-          entre as duas partes (sem PSP no meio). Z-SWAP cobra apenas
-          arbitragem de disputas — e só do maker se a disputa for aberta.
+          {t("p2p.trustLine")}
         </p>
       </div>
 
@@ -223,16 +220,16 @@ export default function P2pView() {
 // ─── Sub-components ────────────────────────────────────────────────────
 
 function OfferRow({
-  user, rating, trades, price, limits, methods, sideTone,
+  user, rating, trades, price, limits, methods, sideTone, tradesLabel, ctaLabel,
 }: {
   user: string; rating: number; trades: number;
   price: string; limits: string; methods: string[];
   sideTone: "green" | "violet";
+  tradesLabel: string; ctaLabel: string;
 }) {
   const ctaCls = sideTone === "green"
     ? "border-green/30 bg-green/[0.08] text-green hover:bg-green/[0.15]"
     : "border-violet/30 bg-violet/[0.08] text-violet hover:bg-violet/[0.15]";
-  const ctaLabel = sideTone === "green" ? "Comprar" : "Vender";
   return (
     <div className="grid grid-cols-[1.4fr_0.9fr_1.2fr_1.1fr_0.6fr] gap-2 items-center px-3 py-2 rounded-lg border border-white/5 bg-white/[0.02] hover:border-white/10 transition-colors">
       <div className="flex items-center gap-2 min-w-0">
@@ -250,7 +247,7 @@ function OfferRow({
           <div className="font-mono text-[11px] text-ink truncate">{user}</div>
           <div className="flex items-center gap-1 font-mono text-[9px] text-ink-3">
             <Star className="w-2 h-2 text-gold fill-gold" />
-            {rating.toFixed(2)} · {trades} trades
+            {rating.toFixed(2)} · {trades} {tradesLabel}
           </div>
         </div>
       </div>
