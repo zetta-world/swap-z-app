@@ -4,33 +4,13 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Command } from "cmdk";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeftRight, Workflow, Activity, BarChart3, Layers, Shield,
-  Sparkles, Rocket, Vote, Wallet, Settings, Search, Banknote, CreditCard, Handshake, Users, Gem,
-} from "lucide-react";
+import { Search } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
 import { DEFAULT_TOKENS } from "@/lib/tokens";
 import { CHAINS } from "@/lib/chains";
-import { useT, type MessageKey } from "@/lib/i18n";
-
-const PAGES: { href: string; labelKey: MessageKey; icon: React.ComponentType<{ className?: string }> }[] = [
-  { href: "/",          labelKey: "nav.swap",       icon: ArrowLeftRight },
-  { href: "/buy",       labelKey: "nav.buy",        icon: CreditCard },
-  { href: "/bridge",    labelKey: "nav.bridge",     icon: Workflow },
-  { href: "/orders",    labelKey: "nav.orders",     icon: Activity },
-  { href: "/cex",       labelKey: "nav.cex",        icon: Banknote },
-  { href: "/otc",       labelKey: "nav.otc",        icon: Handshake },
-  { href: "/p2p",       labelKey: "nav.p2p",        icon: Users },
-  { href: "/nft",       labelKey: "nav.nft",        icon: Gem },
-  { href: "/pro",       labelKey: "nav.pro",        icon: BarChart3 },
-  { href: "/pools",     labelKey: "nav.pools",      icon: Layers },
-  { href: "/explorer",  labelKey: "nav.explorer",   icon: Shield },
-  { href: "/zion",      labelKey: "nav.zion",       icon: Sparkles },
-  { href: "/launchpad", labelKey: "nav.launchpad",  icon: Rocket },
-  { href: "/governance", labelKey: "nav.governance", icon: Vote },
-  { href: "/portfolio", labelKey: "nav.portfolio",  icon: Wallet },
-  { href: "/settings",  labelKey: "nav.settings",   icon: Settings },
-];
+import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
+import { NAV_ITEMS, NAV_BADGE_CLASSES } from "./nav-items";
 
 export default function CommandBar() {
   const { commandOpen, setCommand, toggleCommand } = useUI();
@@ -78,7 +58,7 @@ export default function CommandBar() {
               </Command.Empty>
 
               <Command.Group heading={t("topbar.commandNavigate")} className="px-1 py-1 [&>[cmdk-group-heading]]:font-mono [&>[cmdk-group-heading]]:text-[10px] [&>[cmdk-group-heading]]:tracking-widest [&>[cmdk-group-heading]]:uppercase [&>[cmdk-group-heading]]:text-ink-4 [&>[cmdk-group-heading]]:px-2 [&>[cmdk-group-heading]]:py-1.5">
-                {PAGES.map((p) => {
+                {NAV_ITEMS.map((p) => {
                   const Icon = p.icon;
                   return (
                     <Command.Item
@@ -86,8 +66,16 @@ export default function CommandBar() {
                       onSelect={() => go(p.href)}
                       className="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer text-ink-2 data-[selected=true]:bg-white/[0.06] data-[selected=true]:text-ink"
                     >
-                      <Icon className="w-4 h-4 text-ink-3" />
-                      <span className="font-sans text-sm">{t(p.labelKey)}</span>
+                      <Icon className="w-4 h-4 text-ink-3 flex-shrink-0" />
+                      <span className="font-sans text-sm flex-1 truncate">{t(p.labelKey)}</span>
+                      {p.badgeKey && p.badgeTone && (
+                        <span className={cn(
+                          "font-mono text-[9px] tracking-widest px-1.5 py-0.5 rounded-full border flex-shrink-0",
+                          NAV_BADGE_CLASSES[p.badgeTone],
+                        )}>
+                          {t(p.badgeKey)}
+                        </span>
+                      )}
                     </Command.Item>
                   );
                 })}

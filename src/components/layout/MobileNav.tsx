@@ -3,35 +3,17 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { X, ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3, Shield, Vote, Wallet, Settings, Activity, Banknote, Globe, CreditCard, Handshake, Users, Gem } from "lucide-react";
+import { X, Globe } from "lucide-react";
 import { useUI, type AppLang } from "@/lib/store/ui";
-import { useT, type MessageKey } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { NAV_ITEMS, NAV_BADGE_CLASSES } from "./nav-items";
 
 const LANGS: { id: AppLang; label: string; flag: string }[] = [
   { id: "en", label: "English",   flag: "🇺🇸" },
   { id: "pt", label: "Português", flag: "🇧🇷" },
   { id: "es", label: "Español",   flag: "🇪🇸" },
   { id: "zh", label: "中文",       flag: "🇨🇳" },
-];
-
-const NAV: { href: string; labelKey: MessageKey; icon: React.ComponentType<{ className?: string }> }[] = [
-  { href: "/",          labelKey: "nav.swap",       icon: ArrowLeftRight },
-  { href: "/buy",       labelKey: "nav.buy",        icon: CreditCard },
-  { href: "/bridge",    labelKey: "nav.bridge",     icon: Workflow },
-  { href: "/orders",    labelKey: "nav.orders",     icon: Activity },
-  { href: "/cex",       labelKey: "nav.cex",        icon: Banknote },
-  { href: "/otc",       labelKey: "nav.otc",        icon: Handshake },
-  { href: "/p2p",       labelKey: "nav.p2p",        icon: Users },
-  { href: "/nft",       labelKey: "nav.nft",        icon: Gem },
-  { href: "/pro",       labelKey: "nav.pro",        icon: BarChart3 },
-  { href: "/pools",     labelKey: "nav.pools",      icon: Layers },
-  { href: "/explorer",  labelKey: "nav.explorer",   icon: Shield },
-  { href: "/zion",      labelKey: "nav.zion",       icon: Sparkles },
-  { href: "/launchpad", labelKey: "nav.launchpad",  icon: Rocket },
-  { href: "/governance", labelKey: "nav.governance", icon: Vote },
-  { href: "/portfolio", labelKey: "nav.portfolio",  icon: Wallet },
-  { href: "/settings",  labelKey: "nav.settings",   icon: Settings },
 ];
 
 export default function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -57,7 +39,7 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
             </button>
           </div>
           <nav className="flex-1 overflow-y-auto py-3 px-3">
-            {NAV.map((item) => {
+            {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
               return (
@@ -70,8 +52,16 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
                     active ? "bg-white/[0.06] text-ink" : "text-ink-2 hover:bg-white/5 hover:text-ink",
                   )}
                 >
-                  <Icon className={cn("w-4 h-4", active ? "text-cyan" : "text-ink-3")} />
-                  <span className="font-sans text-sm">{t(item.labelKey)}</span>
+                  <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-cyan" : "text-ink-3")} />
+                  <span className="font-sans text-sm flex-1 truncate">{t(item.labelKey)}</span>
+                  {item.badgeKey && item.badgeTone && (
+                    <span className={cn(
+                      "font-mono text-[9px] tracking-widest px-1.5 py-0.5 rounded-full border flex-shrink-0",
+                      NAV_BADGE_CLASSES[item.badgeTone],
+                    )}>
+                      {t(item.badgeKey)}
+                    </span>
+                  )}
                 </Link>
               );
             })}
