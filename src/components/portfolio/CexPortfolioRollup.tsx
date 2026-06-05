@@ -16,6 +16,7 @@ import {
 import { useCexVault } from "@/lib/cex/vault";
 import { compactNumber } from "@/lib/format";
 import { useT, t as tImp } from "@/lib/i18n";
+import Skeleton from "@/components/ui/Skeleton";
 import { cn } from "@/lib/cn";
 
 const AUTO_LOCK_MS = 10 * 60 * 1000;
@@ -345,7 +346,11 @@ export default function CexPortfolioRollup({
                 </div>
                 <div className="text-right flex-shrink-0">
                   <div className="font-display font-bold text-sm text-ink tabular-nums">
-                    {r.status === "loaded" ? `$${compactNumber(r.totalUsd)}` : "—"}
+                    {r.status === "loaded"
+                      ? `$${compactNumber(r.totalUsd)}`
+                      : r.status === "loading"
+                        ? <Skeleton w="w-14" h="h-3.5" className="inline-block" />
+                        : "—"}
                   </div>
                 </div>
               </div>

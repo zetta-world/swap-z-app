@@ -13,6 +13,7 @@ import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import CexPortfolioRollup from "./CexPortfolioRollup";
 import { useT } from "@/lib/i18n";
 import EmptyState from "@/components/ui/EmptyState";
+import Skeleton from "@/components/ui/Skeleton";
 import { cn } from "@/lib/cn";
 
 // Curated set of tokens whose balances we surface on the portfolio page.
@@ -103,6 +104,12 @@ export default function PortfolioView() {
       .sort((a, b) => (b.balance.usdValue ?? 0) - (a.balance.usdValue ?? 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackedTokens, ...balances]);
+
+  // True while any slot is still resolving. Combined with the "wallet
+  // connected" check, we use this to show shimmer skeletons instead of
+  // an "empty" message during the initial fetch.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const balancesLoading = useMemo(() => balances.some((b) => b.loading), [...balances]);
 
   // CEX total bubbled up from the rollup once the vault is unlocked.
   // 0 when locked / no vault — never stale.
@@ -234,7 +241,23 @@ export default function PortfolioView() {
               {t("portfolio.assetsCount", { n: holdings.length })}
             </span>
           </div>
-          {holdings.length === 0 ? (
+          {holdings.length === 0 && anyWalletConnected && balancesLoading ? (
+            <div className="divide-y divide-white/[0.04]">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="px-4 py-3 flex items-center gap-3">
+                  <Skeleton w="w-8" h="h-8" rounded="full" />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Skeleton w="w-20" h="h-3" />
+                    <Skeleton w="w-32" h="h-2.5" />
+                  </div>
+                  <div className="text-right space-y-1.5">
+                    <Skeleton w="w-16" h="h-3" />
+                    <Skeleton w="w-12" h="h-2.5" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : holdings.length === 0 ? (
             <div className="p-4">
               <EmptyState
                 Icon={Inbox}
