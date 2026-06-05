@@ -6,6 +6,7 @@ import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import CommandBar from "./CommandBar";
 import MobileNav from "./MobileNav";
+import PageTransition from "./PageTransition";
 import ZionDrawer from "@/components/zion/ZionDrawer";
 import { useUI } from "@/lib/store/ui";
 import { cn } from "@/lib/cn";
@@ -34,7 +35,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       >
         <Topbar onOpenMobileNav={() => setMobileOpen(true)} />
         <main className="flex-1 min-w-0 overflow-x-hidden">
-          {children}
+          <PageTransition>{children}</PageTransition>
         </main>
       </div>
 
