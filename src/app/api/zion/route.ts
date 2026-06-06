@@ -24,12 +24,11 @@ const LEGACY_MODE_MAP: Record<string, ZionOp> = {
   ask:                "ask",
 };
 
-// Rate limit: 8 requests per 60s per IP. Each Claude call costs ~$0.003 with
-// caching, so this caps the worst-case-per-IP cost at ~$0.024/minute.
+// Rate limit: 8 requests per 60s per IP.
 const RL_OPTS = { windowMs: 60_000, max: 8 };
 
 /**
- * /api/zion — streaming Claude Haiku 4.5 advisory.
+ * /api/zion — streaming Claude Sonnet 4.6 advisory.
  *
  * Query params (all validated; invalid → 400):
  *   op         trading | arbitrage | sniper | pair | ask
@@ -191,7 +190,7 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
 
   // Belt-and-suspenders timeout. Anthropic-side responses occasionally stall
   // mid-stream; without a hard cap the ReadableStream + frontend spinner sit
-  // forever. 90s is well past a normal Haiku response (~10-20s).
+  // forever. 90s is well past a normal Sonnet 4.6 response (~15-30s).
   const STREAM_TIMEOUT_MS = 90_000;
 
   const stream = new ReadableStream<Uint8Array>({
@@ -221,9 +220,13 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
       signal?.addEventListener("abort", onAbort);
 
       try {
+        // Sonnet 4.6 default — env override (ZION_MODEL) lets us swap models
+        // without redeploy. Telemetry below captures usage tokens so we can
+        // compute real $/call once we have a few weeks of production traffic.
+        const model = process.env.ZION_MODEL ?? "claude-sonnet-4-6";
         const msgStream = await client.messages.stream(
           {
-            model: "claude-haiku-4-5",
+            model,
             // 4000 leaves room for: ~500 tokens of terminal-trace text PLUS
             // up to 5 fully-populated trade-thesis action cards (each ~250-400
             // tokens of JSON with entryPrice/exits[]/etc). 1800 was clipping
@@ -261,7 +264,19 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
           console.warn("[zion] stream error:", err?.message ?? err);
           if (!closed) controller.enqueue(encoder.encode(`\n\n[ZION error: Stream interrupted. Please retry.]\n`));
         });
-        await msgStream.finalMessage();
+        const finalMsg = await msgStream.finalMessage();
+        const { usage } = finalMsg;
+        console.log(JSON.stringify({
+          tag: "zion-usage",
+          ts: new Date().toISOString(),
+          model,
+          mode: args.op,
+          lang: args.lang,
+          inputTokens: usage.input_tokens,
+          cachedInputTokens: usage.cache_read_input_tokens ?? 0,
+          outputTokens: usage.output_tokens,
+          cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
+        }));
       } catch (err) {
         // AbortError is the expected path when the client disconnects or the
         // upstream call hits our timeout — surface the timeout case to the

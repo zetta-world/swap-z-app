@@ -222,8 +222,10 @@ async function clusterWithZion(
     .join("\n");
 
   const client = new Anthropic({ apiKey });
+  // Env override (NARRATIVES_MODEL) lets us swap models without redeploy.
+  const model = process.env.NARRATIVES_MODEL ?? "claude-sonnet-4-6";
   const msg = await client.messages.create({
-    model: "claude-haiku-4-5",
+    model,
     max_tokens: 1200,
     system: [
       { type: "text", text: ZION_NARRATIVE_SYSTEM, cache_control: { type: "ephemeral" } },
@@ -236,6 +238,17 @@ async function clusterWithZion(
         "\n</pairs>",
     }],
   });
+
+  const { usage } = msg;
+  console.log(JSON.stringify({
+    tag: "narratives-usage",
+    ts: new Date().toISOString(),
+    model,
+    inputTokens: usage.input_tokens,
+    cachedInputTokens: usage.cache_read_input_tokens ?? 0,
+    outputTokens: usage.output_tokens,
+    cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
+  }));
 
   const text = msg.content
     .map((b) => (b.type === "text" ? b.text : ""))

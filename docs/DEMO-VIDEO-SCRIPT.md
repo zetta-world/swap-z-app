@@ -84,7 +84,7 @@ from single-AMM interfaces.
 6. Scroll down to show:
    - **GoPlus risk score** (the number + label, e.g., "Risk: 2 / 10 — Low").
    - **Honeypot.is flag** (green = clean).
-   - **AI reasoning text** streaming (Claude Haiku 4.5 output visible).
+   - **AI reasoning text** streaming (Claude Sonnet 4.6 output visible).
 7. Pan back to show GeckoTerminal chart in the same view.
 
 **Captions:**
@@ -92,11 +92,11 @@ from single-AMM interfaces.
 ```
 [1:10 – 1:18]  ZION AI — analyzing a Solana mid-cap in real time.
 [1:18 – 1:28]  Conviction badge: [BULLISH / NEUTRAL / BEARISH].
-               Powered by Anthropic Claude Haiku 4.5.
+               Powered by Anthropic Claude Sonnet 4.6.
 [1:28 – 1:40]  GoPlus security scan — risk score live.
                Honeypot.is contract audit — clean.
 [1:40 – 1:55]  AI reasoning streaming. Not a score — an analysis.
-               Lower-third badge: "Claude Haiku 4.5 · GoPlus · Honeypot.is · GeckoTerminal"
+               Lower-third badge: "Claude Sonnet 4.6 · GoPlus · Honeypot.is · GeckoTerminal"
 [1:55 – 2:10]  Every token. Every trade. Screened before execution.
 ```
 
@@ -194,6 +194,6 @@ Four static PNGs, dark glass style matching the app:
 | Scene | Text |
 |---|---|
 | 2 | `0x v2 · LiFi · CoW Protocol` |
-| 3 | `Claude Haiku 4.5 · GoPlus · Honeypot.is · GeckoTerminal` |
+| 3 | `Claude Sonnet 4.6 · GoPlus · Honeypot.is · GeckoTerminal` |
 | 4 | `CCXT · Binance · OKX · Bybit · Kraken · +5 more` |
 | 5 | `Non-custodial · Multi-chain · AI-overlayed` |
