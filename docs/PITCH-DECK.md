@@ -53,7 +53,7 @@ Z-SWAP is a non-custodial multi-chain aggregator that unifies:
 |---|---|
 | **DEX routing** | Best-quote routing across 0x v2, LiFi, Jupiter, CoW Protocol — not a single AMM |
 | **CEX bridge** | CCXT read-only API: 10+ exchanges, autopilot rebalancing, no key custody |
-| **AI advisory** | ZION dock — Anthropic Claude Haiku 4.5 conviction badge, GoPlus risk score, Honeypot.is audit |
+| **AI advisory** | ZION dock — Anthropic Claude Sonnet 4.6 conviction badge, GoPlus risk score, Honeypot.is audit |
 | **Data layer** | GeckoTerminal + DexScreener real-time feeds inside the trade interface |
 | **Security** | Every token screened by GoPlus + Honeypot.is before execution |
 
@@ -101,7 +101,7 @@ Z-SWAP is a non-custodial multi-chain aggregator that unifies:
 │   Best-quote routing — not a single AMM               │
 ├──────────────────────────────────────────────────────┤
 │               Intelligence Layer                       │
-│   Anthropic Claude Haiku 4.5 (streaming, tool use)   │
+│   Anthropic Claude Sonnet 4.6 (streaming, tool use)   │
 │   GoPlus Security · Honeypot.is contract audit        │
 ├──────────────────────────────────────────────────────┤
 │                  Data Layer                            │
@@ -126,7 +126,7 @@ Z-SWAP is a non-custodial multi-chain aggregator that unifies:
 | DEX routing | Jupiter | ✅ Live |
 | DEX routing | CoW Protocol | ✅ Live |
 | CEX bridge | CCXT — Binance, OKX, Bybit, Kraken, Coinbase, Huobi, KuCoin, Gate, Bitfinex, MEXC | ✅ Live |
-| AI advisory | Anthropic Claude Haiku 4.5 (streaming, tool use) | ✅ Live |
+| AI advisory | Anthropic Claude Sonnet 4.6 (streaming, tool use) | ✅ Live |
 | Security | GoPlus Security API | ✅ Live |
 | Security | Honeypot.is | ✅ Live |
 | Price data | GeckoTerminal | ✅ Live |
@@ -185,7 +185,7 @@ Z-SWAP is a non-custodial multi-chain aggregator that unifies:
 | Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS |
 | State management | Zustand, TanStack Query |
 | Wallet auth | SIWE (EVM) + Solana sign-message — wallet-native |
-| AI | Anthropic Claude Haiku 4.5 (streaming, tool use) |
+| AI | Anthropic Claude Sonnet 4.6 (streaming, tool use) |
 | Deployment | Vercel (edge runtime, ISR, serverless functions) |
 | Analytics | Vercel Analytics + Mixpanel |
 | i18n | Custom `useT()` hook, 4 locales (EN/PT/ES/ZH) |
@@ -256,5 +256,5 @@ Submitting to the next available cohort — prize pool competition, not a grant 
 
 **Grant funds 6-month Solana delivery:**
 > (a) Jupiter v6 advanced routing with smart order types
-> (b) SPL token ZION analysis pipeline (RPC + Claude Haiku)
+> (b) SPL token ZION analysis pipeline (RPC + Claude Sonnet 4.6)
 > (c) Solana wallet session auth (SIWS — CAIP-122 standard)

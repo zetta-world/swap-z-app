@@ -29,7 +29,7 @@ const CEX_INTEGRATIONS = [
 ];
 
 const AI_INTEGRATIONS = [
-  { name: "Anthropic Claude Haiku 4.5", role: "ZION advisory layer — streaming analysis of pair risk, liquidity depth, trade signals. Advisory mode only; all suggestions require manual user review." },
+  { name: "Anthropic Claude Sonnet 4.6", role: "ZION advisory layer — streaming analysis of pair risk, liquidity depth, trade signals. Advisory mode only; all suggestions require manual user review." },
 ];
 
 /* ── Architecture node ─────────────────────────────────────────────────── */
@@ -148,7 +148,7 @@ export default function AboutView() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <ArchNode label="DEX Swap Layer" sublabel="0x v2 · LiFi · Jupiter · CoW" accent="cyan" />
             <ArchNode label="CEX Console" sublabel="CCXT → /api/cex/* proxy" accent="violet" />
-            <ArchNode label="ZION AI" sublabel="Claude Haiku 4.5 stream" accent="gold" />
+            <ArchNode label="ZION AI" sublabel="Claude Sonnet 4.6 stream" accent="gold" />
             <ArchNode label="Risk Scanner" sublabel="GoPlus · Honeypot.is" accent="green" />
           </div>
           <div className="flex justify-center">
