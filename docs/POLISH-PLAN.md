@@ -49,7 +49,7 @@ Foco: dossiê técnico que cola direto na aplicação Solana / Colosseum / Arbit
 - [x] **4.1 — Página `/about` (whitepaper técnico)** ✅ — `src/app/about/page.tsx` + `src/components/about/AboutView.tsx`. Seções: hero com stats (11 páginas / 13 chains / 10+ CEX), diagrama de arquitetura em camadas (CSS/flexbox), proposta de valor (3 cards), todas as integrações reais nomeadas (0x v2, LiFi, Jupiter, CoW, CCXT, Claude Haiku 4.5, GoPlus, Honeypot.is, GeckoTerminal, DexScreener), tech stack, postura não-custodial (4 pontos). i18n `about.*` em 4 locales + `nav.about` em sidebar. Design consistente com glass morphism do app.
 - [x] **4.2 — Página `/changelog` gerada do git log** ✅ — `src/lib/changelog.ts` (parser git log via execSync, filtra feat/fix/polish/chore/i18n/harden/diag, agrupa por mês YYYY-MM). `src/components/changelog/ChangelogView.tsx` (timeline vertical: dot colorido por tipo, badge, título, shortSha). `src/app/changelog/page.tsx` (Server Component, `revalidate = 3600` pra ISR). Nav entry + i18n `nav.changelog` em 4 locales.
 - [x] **4.3 — Script de vídeo demo guiado** ✅ — `docs/DEMO-VIDEO-SCRIPT.md`. 5 cenas ~3:50, caption-only hardcoded OBS (EN), hybrid tone (grant-committee-first). Cena 2: MetaMask/EVM; cenas 3+5: Phantom/Solana. Lower-third badges por cena (0x·LiFi·CoW / Claude·GoPlus·Honeypot / CCXT / thesis). Inclui pre/post-production checklists + badge asset table.
-- [ ] **4.4 — Pitch deck em markdown** — 10-12 slides com texto pronto pra Canva/Figma. Estrutura: problema → solução → demo → tração → arquitetura → equipe → ask.
+- [x] **4.4 — Pitch deck em markdown** ✅ — `docs/PITCH-DECK.md`. 12 slides completos pra Canva/Figma. Ask: US$ 50k Solana Foundation (Dev Tooling + DeFi Infra) + submissão Colosseum Eternal. Slides reais: TAM ~US$2.5T DEX volume (DefiLlama 2024) + 16M users BR (Chainalysis 2024). Slide 12 expandido: ZION SPL analysis, Jupiter v6, SIWS, Solana Mobile Stack. 5 metric placeholders marcados `{{}}` pra preencher pré-submission. Founder/CEO redacted, advisor CTA incluído.
 
 ---
 
@@ -84,11 +84,11 @@ Foco: caminhos reais de receita. Não precisa estar 100% funcional pro grant, ma
 | 1 — Críticos | 4 | 4 |
 | 2 — UX consistency | 4 | 4 |
 | 3 — Perf + A11y | 3 | 3 |
-| 4 — Materiais grant | 3 | 4 |
+| 4 — Materiais grant | 4 | 4 |
 | 5 — Monetização | 0 | 5 |
-| **Total geral** | **14** | **20** |
+| **Total geral** | **15** | **20** |
 
-**Próximo passo:** FASE 4 / item 4.4 — Pitch deck em markdown (10-12 slides).
+**Próximo passo:** FASE 5 — Monetização. ⚠️ Bloqueado — requer confirmação explícita do usuário antes de qualquer item. Revisar dossiê de grant completo primeiro.
 
 ---
 
