@@ -1,9 +1,9 @@
 # Z-SWAP — Pitch Deck
-## Solana Foundation Grant · Colosseum Eternal Hackathon
+## Solana Foundation Convertible Grant · Colosseum Eternal Hackathon
 
 > **Format:** Markdown source → Canva / Figma slides.
 > **Audience:** Solana Foundation grant committee (primary), Colosseum jury (secondary).
-> **Ask:** US$ 50,000 — Solana Foundation, Developer Tooling + DeFi Infra category.
+> **Ask:** US$ 50,000 — Solana Foundation **convertible grant** (Z-SWAP is a commercial project, so the convertible program is the applicable track — not the standard developer grant).
 
 ---
 
@@ -45,17 +45,18 @@ Solana / EVM · 11 chains · 10 real integrations
 
 ## Slide 3 — Solution
 
-### One interface. Every liquidity source. Your keys.
+### What Z-SWAP is — and what it isn't.
 
-Z-SWAP is a non-custodial multi-chain aggregator that unifies:
+We are not trying to out-aggregate Jupiter on Solana, out-route 1inch on EVM, or out-perp Hyperliquid. Those teams have years and billions of liquidity ahead of us in their lanes.
 
-| Layer | What it does |
-|---|---|
-| **DEX routing** | Best-quote routing across 0x v2, LiFi, Jupiter, CoW Protocol — not a single AMM |
-| **CEX bridge** | CCXT read-only API: 10+ exchanges, autopilot rebalancing, no key custody |
-| **AI advisory** | ZION dock — Anthropic Claude Sonnet 4.6 conviction badge, GoPlus risk score, Honeypot.is audit |
-| **Data layer** | GeckoTerminal + DexScreener real-time feeds inside the trade interface |
-| **Security** | Every token screened by GoPlus + Honeypot.is before execution |
+Where we *do* compete and win:
+
+1. **BR-first DeFi tooling.** ~16M crypto users in Brazil are underserved by English-only aggregators. Z-SWAP ships PT-BR-native, with PIX-aware UX and a non-custodial posture aligned with the new BCB Resolutions 519/520/521 (in force Feb 2026).
+2. **Pre-trade security layer integrated into routing.** Every route quote pulls GoPlus + Honeypot.is on the target token *before* execution. Aggregators optimize for slippage; we optimize for slippage + scam-survival.
+3. **ZION advisory for retail, not for bots.** 1inch's MCP exposes swap to AI agents (programmatic). ZION explains the trade to the human, in their language (4 locales), with conviction scoring and risk reasoning. Different layer of the stack.
+4. **CEX-DEX bridge for non-custodial flows.** CCXT-driven read-only key model — we never custody CEX funds. OpenOcean compares prices; Orion combines venues but is custodial-flavored. Z-SWAP keeps the entire stack custody-free.
+
+Honest about the field. Specific about the wedge.
 
 **Non-custodial is architectural, not a toggle.** No private key handling. No user fund custody. Read-only CEX keys. SIWE + Solana sign-message auth.
 
@@ -212,8 +213,15 @@ Z-SWAP is a non-custodial multi-chain aggregator that unifies:
 
 ## Slide 11 — Ask
 
-### Solana Foundation Grant — Developer Tooling + DeFi Infra
-**Ask: US$ 50,000** (regular grant cycle, non-RFG)
+### Solana Foundation convertible grant
+
+Z-SWAP is a commercial project, so we're applying for the Solana Foundation's convertible grant program — non-dilutive support up-front, converts to investment terms only if we raise a priced round. This aligns Z-SWAP's growth with the Foundation's long-term ecosystem return.
+
+**Target size:** US$ 50,000 — sufficient to complete the Solana-native features in Slide 12 over a 6-month delivery window.
+
+Returns from the convertible (if conversion triggers) flow back into the Solana grants pool — we're explicit about that and it's a feature, not a bug, of this funding model.
+
+> Solana Foundation convertible grants & investments: https://solana.com/news/solana-foundation-convertible-grants-investments
 
 ### Colosseum Eternal Hackathon
 Submitting to the next available cohort — prize pool competition, not a grant ask.
