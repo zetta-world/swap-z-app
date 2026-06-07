@@ -46,22 +46,38 @@ Foco: técnico mensurável que reviewer de grant roda no Lighthouse.
 
 Foco: dossiê técnico que cola direto na aplicação Solana / Colosseum / Arbitrum.
 
-- [x] **4.1 — Página `/about` (whitepaper técnico)** ✅ — `src/app/about/page.tsx` + `src/components/about/AboutView.tsx`. Seções: hero com stats (11 páginas / 13 chains / 10+ CEX), diagrama de arquitetura em camadas (CSS/flexbox), proposta de valor (3 cards), todas as integrações reais nomeadas (0x v2, LiFi, Jupiter, CoW, CCXT, Claude Haiku 4.5, GoPlus, Honeypot.is, GeckoTerminal, DexScreener), tech stack, postura não-custodial (4 pontos). i18n `about.*` em 4 locales + `nav.about` em sidebar. Design consistente com glass morphism do app.
+- [x] **4.1 — Página `/about` (whitepaper técnico)** ✅ — `src/app/about/page.tsx` + `src/components/about/AboutView.tsx`. Seções: hero com stats (11 páginas / 11 chains / 10+ CEX), diagrama de arquitetura em camadas (CSS/flexbox), proposta de valor (3 cards), todas as integrações reais nomeadas (0x v2, LiFi, Jupiter, CoW, CCXT, Claude Haiku 4.5, GoPlus, Honeypot.is, GeckoTerminal, DexScreener), tech stack, postura não-custodial (4 pontos). i18n `about.*` em 4 locales + `nav.about` em sidebar. Design consistente com glass morphism do app.
 - [x] **4.2 — Página `/changelog` gerada do git log** ✅ — `src/lib/changelog.ts` (parser git log via execSync, filtra feat/fix/polish/chore/i18n/harden/diag, agrupa por mês YYYY-MM). `src/components/changelog/ChangelogView.tsx` (timeline vertical: dot colorido por tipo, badge, título, shortSha). `src/app/changelog/page.tsx` (Server Component, `revalidate = 3600` pra ISR). Nav entry + i18n `nav.changelog` em 4 locales.
 - [x] **4.3 — Script de vídeo demo guiado** ✅ — `docs/DEMO-VIDEO-SCRIPT.md`. 5 cenas ~3:50, caption-only hardcoded OBS (EN), hybrid tone (grant-committee-first). Cena 2: MetaMask/EVM; cenas 3+5: Phantom/Solana. Lower-third badges por cena (0x·LiFi·CoW / Claude·GoPlus·Honeypot / CCXT / thesis). Inclui pre/post-production checklists + badge asset table.
 - [x] **4.4 — Pitch deck em markdown** ✅ — `docs/PITCH-DECK.md`. 12 slides completos pra Canva/Figma. Ask: US$ 50k Solana Foundation (Dev Tooling + DeFi Infra) + submissão Colosseum Eternal. Slides reais: TAM ~US$2.5T DEX volume (DefiLlama 2024) + 16M users BR (Chainalysis 2024). Slide 12 expandido: ZION SPL analysis, Jupiter v6, SIWS, Solana Mobile Stack. 5 metric placeholders marcados `{{}}` pra preencher pré-submission. Founder/CEO redacted, advisor CTA incluído.
 
 ---
 
-## FASE 5 — Monetização (assinatura + pilotos)
+## Auditoria Opus 4.8 (jun/2026)
 
-Foco: caminhos reais de receita. Não precisa estar 100% funcional pro grant, mas precisa estar visível.
+Audit god-view rodado pelo Opus 4.8 — relatório completo em `docs/AUDITORIA-OPUS.md`.
+Veredito: código sólido; o **pitch de grant estava factualmente errado** e a
+**estratégia de monetização precisava pivotar pra NFT-first**. 4 itens de ação
+foram entregues a partir do audit:
 
-- [ ] **5.1 — Página `/pricing`** — 4 tiers (Free / Pro R$89 / Trader R$249 / Pilot R$5-50k). Comparação feature-by-feature, CTA por tier.
-- [ ] **5.2 — Auth system híbrido** — wallet sign-in + email opcional (pra recuperação + receber update). Persistência via JWT + Vercel KV ou Supabase free tier.
-- [ ] **5.3 — Feature gates** — implementar gate de assinatura no autopilot CEX (Pro+), Pro Terminal (Pro+), cross-CEX arb feed (Trader+). Free tem rate-limit no ZION (5/dia).
-- [ ] **5.4 — Gateway pagamento — Stripe + Mercado Pago + Coinbase Commerce** — escolher 1 pra MVP (sugestão: **Mercado Pago** porque BR-first). Implementar webhook → atualizar tier do usuário.
-- [ ] **5.5 — Landing pilot/white-label** — página `/enterprise` ou `/pilots` com case técnico, exemplos de uso, formulário de contato. CTA: "agendar conversa".
+- [x] **A.1 — Migração silenciosa PBKDF2 → 600k no primeiro unlock** ✅ (PR #58) — vaults legados (250k) sobem pro piso OWASP de forma transparente e não-bloqueante; log `[keystore-migration]`.
+- [x] **A.2 — Correção do ask de grant + reposicionamento no pitch deck** ✅ (PR #59) — Z-SWAP é comercial → grant **convertível** da Solana Foundation (não o regular). Slide 3 reescrito reconhecendo concorrentes reais (Jupiter, 1inch, OpenOcean, Orion). Contagem de chains corrigida pra 11 (valor real em `src/lib/chains.ts`).
+- [x] **A.3 — Padronização 11 chains + framing convertível em todas as superfícies** ✅ (PR #60) — AboutView, messages.ts (4 locales) e DEMO-VIDEO-SCRIPT alinhados.
+- [x] **A.4 — Seção de audit no plano + FASE 5 reformulada NFT-first** ✅ (PR #61) — este documento.
+
+---
+
+## FASE 5 — Monetização (NFT-first, subscription como trilho B)
+
+Foco: NFT lifetime passes na Solana como mecanismo primário de adesão.
+Mercado Pago como trilho B opcional pós-grant.
+
+- [ ] **5.1 — Página `/pricing` unificada** — 2 colunas: NFT (lifetime, Solana) vs assinatura (mensal, MP) — ambas opções, mesmo gate de tier
+- [ ] **5.2 — Auth híbrido wallet-first** — SIWE EVM + sign-message Solana, email opcional pra recuperação
+- [ ] **5.3 — Feature gates via `useTier()`** — checa NFT ownership E subscription status, retorna tier mais alto
+- [ ] **5.4 — Coleção NFT Metaplex Core + mint UI self-hosted** — bloqueado em decisões do briefing
+- [ ] **5.5 — Mercado Pago como trilho B** — opcional pós-NFT, BR-first
+- [ ] **5.6 — Página `/enterprise`** — landing pra pilots (subscription-only, NFT não cabe enterprise)
 
 ---
 
@@ -85,10 +101,12 @@ Foco: caminhos reais de receita. Não precisa estar 100% funcional pro grant, ma
 | 2 — UX consistency | 4 | 4 |
 | 3 — Perf + A11y | 3 | 3 |
 | 4 — Materiais grant | 4 | 4 |
-| 5 — Monetização | 0 | 5 |
-| **Total geral** | **15** | **20** |
+| 5 — Monetização (NFT-first) | 0 | 6 |
+| **Total geral** | **15** | **21** |
 
-**Próximo passo:** FASE 5 — Monetização. ⚠️ Bloqueado — requer confirmação explícita do usuário antes de qualquer item. Revisar dossiê de grant completo primeiro.
+> Nota: os 4 itens da Auditoria Opus 4.8 (A.1–A.4) já foram entregues e não entram na contagem das fases 1–5 — são correções pós-audit, rastreadas na seção própria acima.
+
+**Próximo passo:** FASE 5 — Monetização NFT-first. ⚠️ Bloqueado — requer confirmação explícita do usuário antes de qualquer item. Decisões do briefing NFT (5.4) pendentes.
 
 ---
 
