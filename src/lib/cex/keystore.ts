@@ -9,7 +9,9 @@
  *     passphrase the user provides at unlock time.
  *   • The encryption uses Web Crypto's AES-GCM (256-bit key, random 96-bit
  *     IV per write). The key is derived from the passphrase via PBKDF2
- *     (SHA-256, 250 000 iterations, 16-byte random salt).
+ *     (SHA-256, 600 000 iterations — OWASP 2024 floor — with a 16-byte
+ *     random salt). Vaults created before the 600k bump are silently
+ *     re-encrypted at 600k on first unlock (see unlockKeystore).
  *   • Decrypted credentials are held in memory only while the user is
  *     making a call — the API routes receive them in the request header
  *     of one specific call and discard them immediately.
@@ -30,8 +32,9 @@ import type { CexCredentials, CexId } from "./types";
 const STORAGE_KEY = "zswap_cex_keystore_v1";
 // OWASP 2024 floor for PBKDF2-HMAC-SHA256 is 600k. New vaults use this;
 // existing vaults that predate the bump stored no `iter` field and are
-// read back at the legacy 250k so they still decrypt (then re-save at
-// 600k the next time the user edits them).
+// read back at the legacy 250k so they still decrypt. On first unlock such
+// vaults are transparently re-encrypted at 600k (see unlockKeystore) so a
+// user who only ever unlocks — never edits — still gets upgraded.
 const PBKDF2_ITERATIONS = 600_000;
 const PBKDF2_ITERATIONS_LEGACY = 250_000;
 const MIN_PASSPHRASE_LEN = 12;
@@ -130,16 +133,64 @@ export function getFingerprint(): string | undefined {
 export async function unlockKeystore(passphrase: string): Promise<Partial<Record<CexId, CexCredentials>>> {
   const rec = safeReadRecord();
   if (!rec) throw new Error("No vault found. Add credentials first.");
-  const salt   = base64ToBytes(rec.salt);
-  const iv     = new Uint8Array(base64ToBytes(rec.iv));
-  const cipher = new Uint8Array(base64ToBytes(rec.cipher));
-  const key    = await deriveKey(passphrase, salt, rec.iter ?? PBKDF2_ITERATIONS_LEGACY);
+  const salt    = base64ToBytes(rec.salt);
+  const iv      = new Uint8Array(base64ToBytes(rec.iv));
+  const cipher  = new Uint8Array(base64ToBytes(rec.cipher));
+  const iterUsed = rec.iter ?? PBKDF2_ITERATIONS_LEGACY;
+  const key     = await deriveKey(passphrase, salt, iterUsed);
+
+  let creds: Partial<Record<CexId, CexCredentials>>;
   try {
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher);
-    return JSON.parse(new TextDecoder().decode(plain)) as Partial<Record<CexId, CexCredentials>>;
+    creds = JSON.parse(new TextDecoder().decode(plain)) as Partial<Record<CexId, CexCredentials>>;
   } catch {
     throw new Error("Wrong passphrase. Try again.");
   }
+
+  // One-time silent migration: legacy vaults (iter < 600k) get transparently
+  // re-encrypted at the OWASP floor on first unlock. This must NEVER block the
+  // unlock — the user already holds valid creds; a failed migration just gets
+  // retried on the next unlock.
+  if (iterUsed < PBKDF2_ITERATIONS) {
+    try {
+      await persistVault(passphrase, creds);
+      console.info(`[keystore-migration] re-encrypted vault ${iterUsed} → ${PBKDF2_ITERATIONS} PBKDF2 iterations`);
+    } catch (err) {
+      console.error("[keystore-migration] re-encrypt failed; will retry next unlock", err);
+    }
+  }
+
+  return creds;
+}
+
+/**
+ * Encrypt `creds` with `passphrase` at the current PBKDF2 iteration count and
+ * overwrite the stored vault. Fresh random salt + IV every write. Shared by
+ * saveCredentials and the first-unlock migration.
+ */
+async function persistVault(
+  passphrase: string,
+  creds: Partial<Record<CexId, CexCredentials>>,
+): Promise<void> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv   = crypto.getRandomValues(new Uint8Array(12));
+  const key  = await deriveKey(passphrase, salt, PBKDF2_ITERATIONS);
+  const plain  = new Uint8Array(new TextEncoder().encode(JSON.stringify(creds)));
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
+
+  const exchanges = Object.keys(creds) as CexId[];
+  const fingerprint = exchanges
+    .map((id) => `${id}:${creds[id]?.apiKey.slice(-4) ?? "----"}`)
+    .join(", ");
+
+  safeWriteRecord({
+    v: 1,
+    iter:   PBKDF2_ITERATIONS,
+    salt:   bytesToBase64(salt),
+    iv:     bytesToBase64(iv),
+    cipher: bytesToBase64(new Uint8Array(cipher)),
+    meta:   { exchanges, fingerprint },
+  });
 }
 
 /**
@@ -173,25 +224,7 @@ export async function saveCredentials(
     if (creds) merged[id as CexId] = creds;
   }
 
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv   = crypto.getRandomValues(new Uint8Array(12));
-  const key  = await deriveKey(passphrase, salt, PBKDF2_ITERATIONS);
-  const plain  = new Uint8Array(new TextEncoder().encode(JSON.stringify(merged)));
-  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
-
-  const exchanges = Object.keys(merged) as CexId[];
-  const fingerprint = exchanges
-    .map((id) => `${id}:${merged[id]?.apiKey.slice(-4) ?? "----"}`)
-    .join(", ");
-
-  safeWriteRecord({
-    v: 1,
-    iter:   PBKDF2_ITERATIONS,
-    salt:   bytesToBase64(salt),
-    iv:     bytesToBase64(iv),
-    cipher: bytesToBase64(new Uint8Array(cipher)),
-    meta:   { exchanges, fingerprint },
-  });
+  await persistVault(passphrase, merged);
 }
 
 /**
