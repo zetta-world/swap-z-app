@@ -35,6 +35,7 @@ export default function ZionDrawer() {
   const t = useT();
 
   const [op, setOp] = useState<ZionOp>("trading");
+  const [autoScan, setAutoScan] = useState(false);
   const [buffer, setBuffer] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [question, setQuestion] = useState("");
@@ -85,11 +86,12 @@ export default function ZionDrawer() {
     setBuffer("");
     setStreaming(true);
 
+    const useAutoScan = autoScan && (runOp === "trading" || runOp === "arbitrage");
     const params = new URLSearchParams({
       op:       followUp ? "ask" : runOp,
       chain:    effectiveChain,
-      fromAddr: effectiveFromToken?.address ?? "",
-      toAddr:   effectiveToToken?.address   ?? "",
+      fromAddr: useAutoScan ? "" : (effectiveFromToken?.address ?? ""),
+      toAddr:   useAutoScan ? "" : (effectiveToToken?.address   ?? ""),
       amountIn: amountInRef.current ?? "1.0",
     });
     if (followUp)              params.set("message",   followUp);
@@ -143,7 +145,7 @@ export default function ZionDrawer() {
     } finally {
       setStreaming(false);
     }
-  }, [effectiveChain, effectiveFromToken?.address, effectiveToToken?.address, arbMinSpread, snipeMaxAge, lang, t]);
+  }, [autoScan, effectiveChain, effectiveFromToken?.address, effectiveToToken?.address, arbMinSpread, snipeMaxAge, lang, t]);
 
   // Auto-run when drawer opens or op changes.
   useEffect(() => {
@@ -160,6 +162,7 @@ export default function ZionDrawer() {
   useEffect(() => {
     if (!zionOpen) return;
     if (op !== "trading" && op !== "pair") return;
+    if (autoScan) return;
     run(op, "");
     // Intentionally only re-fires on pair-symbol changes — run() is stable
     // enough that we don't want every filter change to re-trigger this path.
@@ -193,10 +196,24 @@ export default function ZionDrawer() {
     setPairOverrideTo(null);
   };
 
-  // Pair selector visible in every mode. For trading/pair it IS the subject
-  // of the analysis; for arb/sniper it acts as a focus filter the prompt
-  // honors (bias opportunities toward this token if set, else scan freely).
-  const showPairSelector = true;
+  const handleAutoScanToggle = () => {
+    const next = !autoScan;
+    if (next) {
+      setPairOverrideFrom(null);
+      setPairOverrideTo(null);
+    }
+    setAutoScan(next);
+  };
+
+  const handleModeChange = (next: ZionOp) => {
+    if (next === "sniper") {
+      setPairOverrideFrom(null);
+      setPairOverrideTo(null);
+    }
+    setOp(next);
+  };
+
+  const showPairSelector = op !== "sniper";
 
   return (
     <Dialog.Root open={zionOpen} onOpenChange={setZion}>
@@ -253,7 +270,7 @@ export default function ZionDrawer() {
                   return (
                     <button
                       key={o.id}
-                      onClick={() => setOp(o.id)}
+                      onClick={() => handleModeChange(o.id)}
                       className={cn(
                         "relative flex flex-col items-center justify-center gap-0.5 px-1 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all min-w-0",
                         active
@@ -276,22 +293,54 @@ export default function ZionDrawer() {
             <div className="px-5 pt-3 flex-shrink-0">
               {showPairSelector && (
                 <div className="rounded-xl border border-white/5 bg-bg-1/40 p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">
-                      {t("zion.overridePair")}
-                    </div>
-                    {hasOverride && (
+                  {/* Auto-scan toggle — trading + arb only */}
+                  {(op === "trading" || op === "arbitrage") && (
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">
+                          {t("zion.autoScan")}
+                        </div>
+                        {autoScan && (
+                          <div className="font-mono text-[9px] text-cyan/70 mt-0.5 normal-case tracking-normal leading-relaxed">
+                            {t("zion.autoScanHint")}
+                          </div>
+                        )}
+                      </div>
                       <button
                         type="button"
-                        onClick={onResetPair}
-                        className="inline-flex items-center gap-1 font-mono text-[9px] text-cyan/80 hover:text-cyan tracking-widest uppercase"
+                        onClick={handleAutoScanToggle}
+                        aria-pressed={autoScan}
+                        aria-label={t("zion.autoScan")}
+                        className={cn(
+                          "relative flex-shrink-0 h-5 w-9 rounded-full border transition-colors mt-0.5",
+                          autoScan ? "bg-cyan/20 border-cyan/40" : "bg-white/[0.08] border-white/10",
+                        )}
                       >
-                        <RotateCcw className="w-2.5 h-2.5" />
-                        {t("zion.overrideReset")}
+                        <span className={cn(
+                          "absolute top-0.5 h-4 w-4 rounded-full transition-all",
+                          autoScan ? "left-[18px] bg-cyan" : "left-0.5 bg-white/40",
+                        )} />
                       </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
+                    </div>
+                  )}
+                  {!autoScan && (
+                    <div className="flex items-center justify-between">
+                      <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">
+                        {t("zion.overridePair")}
+                      </div>
+                      {hasOverride && (
+                        <button
+                          type="button"
+                          onClick={onResetPair}
+                          className="inline-flex items-center gap-1 font-mono text-[9px] text-cyan/80 hover:text-cyan tracking-widest uppercase"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          {t("zion.overrideReset")}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div className={cn("flex items-center gap-1.5", autoScan && "opacity-40 pointer-events-none")}>
                     <div className="flex-1 min-w-0">
                       <TokenSelector
                         value={effectiveFromToken}
@@ -308,9 +357,11 @@ export default function ZionDrawer() {
                       />
                     </div>
                   </div>
-                  <div className="font-mono text-[9px] text-ink-4 tracking-wider uppercase text-right">
-                    {effectiveChain}
-                  </div>
+                  {!autoScan && (
+                    <div className="font-mono text-[9px] text-ink-4 tracking-wider uppercase text-right">
+                      {effectiveChain}
+                    </div>
+                  )}
                 </div>
               )}
 
