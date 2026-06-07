@@ -141,15 +141,25 @@ interface QuoteArgs {
  * the browser bundle.
  */
 export async function fetchLiFiQuote(args: QuoteArgs, integratorKey?: string): Promise<LfQuote> {
+  // LiFi's /v1/quote REQUIRES fromAddress to build the signable route — it
+  // rejects requests without it ("querystring must have required property
+  // 'fromAddress'", code 1011). An empty/undefined taker would otherwise be
+  // dropped silently here and surface as a confusing remote 400, so we fail
+  // locally with a clear message. Callers without a connected wallet must
+  // skip LiFi rather than reach this function.
+  if (!args.fromAddress) {
+    throw new Error("LiFi quote requires fromAddress (no wallet connected)");
+  }
+
   const params = new URLSearchParams({
     fromChain:    String(args.fromChainId),
     toChain:      String(args.toChainId),
     fromToken:    args.fromToken,
     toToken:      args.toToken,
     fromAmount:   args.fromAmount,
+    fromAddress:  args.fromAddress,
     order:        "RECOMMENDED",
   });
-  if (args.fromAddress) params.set("fromAddress", args.fromAddress);
   if (args.toAddress)   params.set("toAddress",   args.toAddress);
   if (args.slippageBps) params.set("slippage", (args.slippageBps / 10_000).toString());
 

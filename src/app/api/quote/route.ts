@@ -224,22 +224,33 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // LiFi: any chain pair (same or cross), needs both chains supported.
-  // Skip when it's a same-chain Solana swap — Jupiter has deeper liquidity
-  // and faster execution there.
+  // LiFi: CROSS-CHAIN only. Same-chain swaps are owned by 0x (EVM) and
+  // Jupiter (Solana) — both have deeper same-chain liquidity, and LiFi's
+  // /v1/quote is bridge-oriented, so firing it for a same-chain pair is pure
+  // redundancy + error surface (it was the source of the production
+  // "missing fromAddress" 400s on same-chain ETH→USDC).
+  //
+  // LiFi also HARD-REQUIRES `fromAddress` to build the signable route, so a
+  // speculative quote with no wallet connected can't get a LiFi route at all.
+  // We skip (info-level "skipped: no taker") instead of firing a request we
+  // know will 400 — that keeps "failed" in the logs meaning a real failure.
   if (
-    !isSameChainSolana &&
+    isCrossChain &&
     isLiFiSupported(fromChain as ChainId) &&
     isLiFiSupported(toChain   as ChainId)
   ) {
-    tasks.push(
-      fetchLiFiQuote(lfArgs, lifiKey)
-        .then(normalizeLiFi)
-        .catch((e) => {
-          console.warn("[quote/list] LiFi failed:", e instanceof Error ? e.message : e);
-          return null;
-        }),
-    );
+    if (!taker) {
+      console.info("[quote/list] LiFi skipped: no taker (connect wallet for cross-chain quotes)");
+    } else {
+      tasks.push(
+        fetchLiFiQuote(lfArgs, lifiKey)
+          .then(normalizeLiFi)
+          .catch((e) => {
+            console.warn("[quote/list] LiFi failed:", e instanceof Error ? e.message : e);
+            return null;
+          }),
+      );
+    }
   }
 
   // Jupiter: same-chain Solana only
