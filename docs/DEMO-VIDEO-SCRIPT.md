@@ -153,7 +153,7 @@ Non-custodial · Multi-chain · AI-overlayed
 6. Second title card:
 
 ```
-Applying: Solana Foundation Grant — Developer Tooling + DeFi Infra
+Applying: Solana Foundation convertible grant
 Submitting: Colosseum Eternal Hackathon
 ```
 
@@ -183,7 +183,7 @@ know exactly what to do next.
 - [ ] Add caption bars in OBS (bottom-center, white 24px font, dark 60% opacity bar)
 - [ ] Export: 1080p 30fps MP4, H.264, ~150–200 MB
 - [ ] Upload to Loom (private link for grant submission) + unlisted YouTube (for Twitter embed)
-- [ ] Thumbnail: `/about` architecture diagram with "Z-SWAP · Solana Foundation Grant 2026" text
+- [ ] Thumbnail: `/about` architecture diagram with "Z-SWAP · Solana Foundation Convertible Grant 2026" text
 
 ---
 

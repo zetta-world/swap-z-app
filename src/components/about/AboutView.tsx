@@ -120,7 +120,7 @@ export default function AboutView() {
             <span className="text-ink-4">·</span>
             <span>4 {t("about.statTeaserPages")}</span>
             <span className="text-ink-4">·</span>
-            <span>13 {t("about.statChains")}</span>
+            <span>11 {t("about.statChains")}</span>
             <span className="text-ink-4">·</span>
             <span>10+ {t("about.statCex")}</span>
           </div>
@@ -157,7 +157,7 @@ export default function AboutView() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <ArchNode label="Wallet Layer" sublabel="Wagmi · Viem · Solana Adapters" accent="cyan" />
             <ArchNode label="Price Data" sublabel="GeckoTerminal · DexScreener" accent="violet" />
-            <ArchNode label="On-chain RPCs" sublabel="13 chains · public + private" accent="gold" />
+            <ArchNode label="On-chain RPCs" sublabel="11 chains · public + private" accent="gold" />
           </div>
         </div>
       </Section>
