@@ -33,7 +33,7 @@ const SITE_URL =
 
 const TITLE       = "Z-SWAP — The Liquidity Nexus";
 const DESCRIPTION =
-  "Multi-chain DEX aggregator with ZION AI advisory, autopilot trading, and CEX-bridged arbitrage. 11 chains, 132 functions, one intelligent liquidity layer.";
+  "Solana-native DEX aggregator with ZION AI advisory, autopilot trading, and CEX-bridged arbitrage. Solana plus 10 EVM chains, 132 functions, one intelligent liquidity layer.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

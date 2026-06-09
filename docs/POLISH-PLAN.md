@@ -73,8 +73,8 @@ Foco: NFT lifetime passes na Solana como mecanismo primário de adesão.
 Mercado Pago como trilho B opcional pós-grant.
 
 - [x] **5.1 — Página `/pricing` unificada** ✅ — `src/app/pricing/page.tsx` + `PricingView` / `PricingCard` / `FounderBenefits`. 4 tiers (Free / Pro 1.5 SOL / Trader 4 SOL / Pilot 30 SOL — Cenário B travado), modelo IA + cap por tier, badge "assinatura em breve via PIX". Camada A (premium 3 anos) + Camada B (Founder eterna, 10 benefícios). FAQ 6 perguntas + disclaimer legal (utility, não security). CTA de mint abre modal de waitlist (localStorage, pattern dos teasers) até 5.4. i18n `pricing.*` nos 4 locales. UI-only — sem wallet/on-chain/MP ainda.
-- [ ] **5.2 — Auth híbrido wallet-first** — SIWE EVM + sign-message Solana, email opcional pra recuperação
-- [ ] **5.3 — Feature gates via `useTier()`** — checa NFT ownership E subscription status, retorna tier mais alto
+- [x] **5.2 — Auth híbrido wallet-first** ✅ — SIWE (EVM, viem `verifyMessage`) + SIWS (Solana, tweetnacl ed25519). Nonce single-use anti-replay em `auth_nonces` (TTL 5min), JWT HMAC-SHA256 via `jose` em cookie `zswap_session` httpOnly/Secure/SameSite=Lax (30 dias). Supabase service-role server-only (`lib/supabase/server.ts`, guard anti-browser). Rotas `/api/auth/nonce|verify|logout`. `SignInButton` Solana-first (Phantom preferido). i18n `auth.*` nos 4 locales. SQL `supabase/migrations/0001_auth.sql` (rodar manualmente — sem auto-runner). Degrada graciosamente sem env (503/free).
+- [x] **5.3 — Feature gates via `useTier()`** ✅ — `getTierForWallet()` server-side: tier_cache (TTL 5min) → Helius `getAssetsByOwner` (mainnet) → fallback free. `useTier()` client via @tanstack/react-query (não SWR), dedupe por query key. `<TierGate required>` wrapper + flag mestra `TIER_GATES_ENABLED` (default **false** = dormante: infra viva, nada gated). `/api/zion` retorna 402 `tier_required` quando enabled+free. `/pro` e `AutopilotPanel` envoltos. Seed admin row pra e2e antes do mint. Auditoria service_role no client bundle: **zero**.
 - [ ] **5.4 — Coleção NFT Metaplex Core + mint UI self-hosted** — bloqueado em decisões do briefing
 - [ ] **5.5 — Mercado Pago como trilho B** — opcional pós-NFT, BR-first
 - [x] **5.6 — Página `/enterprise`** ✅ — `src/app/enterprise/page.tsx` + `EnterpriseView`. Hero institucional, 3 use cases (family offices/RIAs, fundos cripto-nativos, fintechs BR PIX→DeFi), 4 diferenciais (BR-first, moat não-custodial, segurança pré-trade, ZION 4 idiomas), menção ao tier Pilot 30 SOL (Opus 4.8) + white-label, form "Agendar conversa" via `mailto:` pra contact@zettaword.global. i18n `enterprise.*` nos 4 locales. UI-only — sem MP/webhook.
@@ -101,12 +101,12 @@ Mercado Pago como trilho B opcional pós-grant.
 | 2 — UX consistency | 4 | 4 |
 | 3 — Perf + A11y | 3 | 3 |
 | 4 — Materiais grant | 4 | 4 |
-| 5 — Monetização (NFT-first) | 2 | 6 |
-| **Total geral** | **17** | **21** |
+| 5 — Monetização (NFT-first) | 4 | 6 |
+| **Total geral** | **19** | **21** |
 
 > Nota: os 4 itens da Auditoria Opus 4.8 (A.1–A.4) já foram entregues e não entram na contagem das fases 1–5 — são correções pós-audit, rastreadas na seção própria acima.
 
-**Próximo passo:** FASE 5 — itens 5.2 (auth wallet-first), 5.3 (feature gates `useTier()`), 5.4 (coleção NFT Metaplex + mint UI — bloqueado em decisões do briefing), 5.5 (Mercado Pago trilho B). ⚠️ Todos requerem confirmação/decisões do usuário antes de codar.
+**Próximo passo:** FASE 5 — item **5.4 (coleção NFT Metaplex Core + mint UI self-hosted)**, bloqueado em decisões do briefing. Quando 5.4 estiver live, virar `TIER_GATES_ENABLED=true` (uma env var) ativa toda a camada de gating já entregue em 5.2+5.3. Item 5.5 (Mercado Pago trilho B) é opcional pós-NFT. ⚠️ 5.4/5.5 requerem confirmação/decisões do usuário antes de codar.
 
 ---
 

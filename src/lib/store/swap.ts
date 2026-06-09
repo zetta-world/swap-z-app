@@ -73,10 +73,12 @@ interface SwapState {
 }
 
 export const useSwap = create<SwapState>((set, get) => ({
-  fromChain: "ethereum",
-  toChain:   "ethereum",
-  fromToken: findToken("ethereum", "ETH"),
-  toToken:   findToken("ethereum", "USDC"),
+  // Solana-first: Z-SWAP positions Solana as the home chain (10 EVM chains
+  // remain fully supported). The default pair opens on SOL → USDC.
+  fromChain: "solana",
+  toChain:   "solana",
+  fromToken: findToken("solana", "SOL"),
+  toToken:   findToken("solana", "USDC"),
   amountIn:  "1.0",
   slippageBps: 50,
   mevProtect:  true,
