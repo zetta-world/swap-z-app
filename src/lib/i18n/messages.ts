@@ -1175,7 +1175,7 @@ const en = {
     tagWhitepaper:         "Whitepaper",
     heroTitle:             "Z-SWAP —",
     heroTitleHL:           "The Liquidity Nexus",
-    heroBody:              "Multi-chain DEX aggregator with ZION AI advisory, autopilot CEX trading, and cross-chain bridging. Built for traders who need every liquidity source in one place — without giving up custody.",
+    heroBody:              "Solana-native DEX aggregator — plus 10 EVM chains — with ZION AI advisory, autopilot CEX trading, and cross-chain bridging. Built for traders who need every liquidity source in one place, without giving up custody.",
     statFunctionalPages:   "live pages",
     statTeaserPages:       "in development",
     statChains:            "chains",
@@ -1201,6 +1201,29 @@ const en = {
     ncPoint3:              "No CPF, bank account, or PIX data is collected or stored. PIX flows between counterparties directly (P2P escrow design).",
     ncPoint4:              "Private keys never leave the user's wallet. SIWE (Sign-In with Ethereum) and Solana sign-message are the only on-chain identity primitives used.",
     ncFooter:              "Z-SWAP is infrastructure software. ZION operates in advisory mode exclusively — all suggestions require manual user review. Demo environment · not investment advice · VARA / VASP alignment in preparation.",
+  },
+
+  auth: {
+    signIn:           "Sign in",
+    signing:          "Signing…",
+    signedIn:         "Signed in",
+    signOut:          "Sign out",
+    connectToSignIn:  "Connect wallet",
+    errRejected:      "Signature rejected — please approve to sign in.",
+    errUnconfigured:  "Sign-in is not available yet.",
+    errFailed:        "Sign-in failed. Please try again.",
+  },
+
+  tier: {
+    free:          "Free",
+    pro:           "Pro",
+    trader:        "Trader",
+    pilot:         "Pilot",
+    lockedHeading: "{tier} feature",
+    lockedBody:    "This feature is part of the {tier} membership. Mint a pass to unlock it.",
+    signInHeading: "Sign in to continue",
+    signInBody:    "Verify your wallet to check your membership tier and unlock this feature.",
+    viewPlans:     "View plans",
   },
 };
 
@@ -2369,7 +2392,7 @@ const pt: Schema = {
     tagWhitepaper:         "Whitepaper",
     heroTitle:             "Z-SWAP —",
     heroTitleHL:           "O Nexus de Liquidez",
-    heroBody:              "Agregador DEX multi-chain com camada de IA ZION, trading automatizado em CEX e bridging cross-chain. Construído para traders que precisam de todas as fontes de liquidez em um só lugar — sem abrir mão da custódia.",
+    heroBody:              "Agregador DEX nativo de Solana — mais 10 chains EVM — com camada de IA ZION, trading automatizado em CEX e bridging cross-chain. Construído para traders que precisam de todas as fontes de liquidez em um só lugar, sem abrir mão da custódia.",
     statFunctionalPages:   "páginas ativas",
     statTeaserPages:       "em desenvolvimento",
     statChains:            "chains",
@@ -2400,6 +2423,29 @@ const pt: Schema = {
     copied:           "Copiado",
     saved:            "Salvo",
     error:            "Algo deu errado",
+  },
+
+  auth: {
+    signIn:           "Entrar",
+    signing:          "Assinando…",
+    signedIn:         "Conectado",
+    signOut:          "Sair",
+    connectToSignIn:  "Conectar carteira",
+    errRejected:      "Assinatura recusada — aprove para entrar.",
+    errUnconfigured:  "Login ainda não está disponível.",
+    errFailed:        "Falha no login. Tente novamente.",
+  },
+
+  tier: {
+    free:          "Free",
+    pro:           "Pro",
+    trader:        "Trader",
+    pilot:         "Pilot",
+    lockedHeading: "Recurso {tier}",
+    lockedBody:    "Este recurso faz parte da assinatura {tier}. Faça mint de um passe para desbloquear.",
+    signInHeading: "Entre para continuar",
+    signInBody:    "Verifique sua carteira para conferir seu tier de assinatura e desbloquear este recurso.",
+    viewPlans:     "Ver planos",
   },
 };
 
@@ -3550,7 +3596,7 @@ const es: Schema = {
     tagWhitepaper:         "Whitepaper",
     heroTitle:             "Z-SWAP —",
     heroTitleHL:           "El Nexo de Liquidez",
-    heroBody:              "Agregador DEX multi-chain con capa de IA ZION, trading automatizado en CEX y bridging cross-chain. Construido para traders que necesitan todas las fuentes de liquidez en un solo lugar, sin renunciar a la custodia.",
+    heroBody:              "Agregador DEX nativo de Solana — más 10 chains EVM — con capa de IA ZION, trading automatizado en CEX y bridging cross-chain. Construido para traders que necesitan todas las fuentes de liquidez en un solo lugar, sin renunciar a la custodia.",
     statFunctionalPages:   "páginas activas",
     statTeaserPages:       "en desarrollo",
     statChains:            "chains",
@@ -3581,6 +3627,29 @@ const es: Schema = {
     copied:           "Copiado",
     saved:            "Guardado",
     error:            "Algo salió mal",
+  },
+
+  auth: {
+    signIn:           "Iniciar sesión",
+    signing:          "Firmando…",
+    signedIn:         "Conectado",
+    signOut:          "Cerrar sesión",
+    connectToSignIn:  "Conectar cartera",
+    errRejected:      "Firma rechazada — apruébala para iniciar sesión.",
+    errUnconfigured:  "El inicio de sesión aún no está disponible.",
+    errFailed:        "Error al iniciar sesión. Inténtalo de nuevo.",
+  },
+
+  tier: {
+    free:          "Free",
+    pro:           "Pro",
+    trader:        "Trader",
+    pilot:         "Pilot",
+    lockedHeading: "Función {tier}",
+    lockedBody:    "Esta función forma parte de la membresía {tier}. Haz mint de un pase para desbloquearla.",
+    signInHeading: "Inicia sesión para continuar",
+    signInBody:    "Verifica tu cartera para comprobar tu nivel de membresía y desbloquear esta función.",
+    viewPlans:     "Ver planes",
   },
 };
 
@@ -4731,7 +4800,7 @@ const zh: Schema = {
     tagWhitepaper:         "白皮书",
     heroTitle:             "Z-SWAP —",
     heroTitleHL:           "流动性枢纽",
-    heroBody:              "多链 DEX 聚合器，搭载 ZION AI 顾问、CEX 自动交易和跨链桥接。专为需要在一个平台接入所有流动性来源的交易者构建——无需放弃资产托管权。",
+    heroBody:              "Solana 原生 DEX 聚合器——另支持 10 条 EVM 链——搭载 ZION AI 顾问、CEX 自动交易和跨链桥接。专为需要在一个平台接入所有流动性来源的交易者构建，无需放弃资产托管权。",
     statFunctionalPages:   "个上线页面",
     statTeaserPages:       "个开发中",
     statChains:            "条链",
@@ -4762,6 +4831,29 @@ const zh: Schema = {
     copied:           "已复制",
     saved:            "已保存",
     error:            "出错了",
+  },
+
+  auth: {
+    signIn:           "登录",
+    signing:          "签名中…",
+    signedIn:         "已登录",
+    signOut:          "退出登录",
+    connectToSignIn:  "连接钱包",
+    errRejected:      "签名被拒绝 —— 请批准以登录。",
+    errUnconfigured:  "登录功能尚未开放。",
+    errFailed:        "登录失败，请重试。",
+  },
+
+  tier: {
+    free:          "Free",
+    pro:           "Pro",
+    trader:        "Trader",
+    pilot:         "Pilot",
+    lockedHeading: "{tier} 功能",
+    lockedBody:    "此功能属于 {tier} 会员。铸造通行证即可解锁。",
+    signInHeading: "登录以继续",
+    signInBody:    "验证你的钱包以确认会员等级并解锁此功能。",
+    viewPlans:     "查看方案",
   },
 };
 

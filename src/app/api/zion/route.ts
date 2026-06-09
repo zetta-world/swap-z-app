@@ -11,6 +11,10 @@ import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { isValidChain, validateAddress, validateAmount, sanitizePromptText } from "@/lib/validate";
+import { getSession } from "@/lib/auth/session";
+import { getTierForWallet } from "@/lib/tier/check";
+import { gatesEnabled } from "@/lib/tier/flags";
+import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +64,23 @@ export async function GET(req: NextRequest) {
         },
       },
     );
+  }
+
+  // ─── 1b. Tier gate (dormant unless TIER_GATES_ENABLED=true) ───────────
+  // ZION advisory sits behind the "pro" tier. While gates are dormant this
+  // block is a no-op — the live ZION stays fully open. When enabled, a wallet
+  // below pro (or no session) gets a 402 pointing at /pricing. We never crash
+  // when Supabase/Helius are unconfigured: getTierForWallet falls back to free.
+  if (gatesEnabled()) {
+    const required = FEATURE_TIER.zionAdvisory; // "pro"
+    const session = await getSession();
+    const tier = session ? (await getTierForWallet(session.sub, session.chain)).tier : "free";
+    if (!tierSatisfies(tier, required)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "tier_required", requiredTier: required, upgradeUrl: "/pricing" }),
+        { status: 402, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+      );
+    }
   }
 
   // ─── 2. Input validation ─────────────────────────────────────────────

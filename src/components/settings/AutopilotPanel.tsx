@@ -8,6 +8,7 @@ import { useCexVault } from "@/lib/cex/vault";
 import { CEX_META, SUPPORTED_CEX_IDS, type CexId } from "@/lib/cex/types";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import TierGate from "@/components/auth/TierGate";
 
 /**
  * Settings UI for the ZION autopilot. Designed so the user has to
@@ -18,7 +19,19 @@ import { cn } from "@/lib/cn";
  * The history viewer at the bottom is read-only; everything's stored
  * locally via the zustand persist of useAutopilot.
  */
+/**
+ * CEX autopilot is a "pro"-tier feature. The gate is dormant until
+ * TIER_GATES_ENABLED=true, so this wrapper is a pass-through until launch.
+ */
 export default function AutopilotPanel() {
+  return (
+    <TierGate required="pro">
+      <AutopilotPanelInner />
+    </TierGate>
+  );
+}
+
+function AutopilotPanelInner() {
   const t = useT();
   const a = useAutopilot();
   const vault = useCexVault();
