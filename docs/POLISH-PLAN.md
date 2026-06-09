@@ -72,12 +72,12 @@ foram entregues a partir do audit:
 Foco: NFT lifetime passes na Solana como mecanismo primário de adesão.
 Mercado Pago como trilho B opcional pós-grant.
 
-- [ ] **5.1 — Página `/pricing` unificada** — 2 colunas: NFT (lifetime, Solana) vs assinatura (mensal, MP) — ambas opções, mesmo gate de tier
+- [x] **5.1 — Página `/pricing` unificada** ✅ — `src/app/pricing/page.tsx` + `PricingView` / `PricingCard` / `FounderBenefits`. 4 tiers (Free / Pro 1.5 SOL / Trader 4 SOL / Pilot 30 SOL — Cenário B travado), modelo IA + cap por tier, badge "assinatura em breve via PIX". Camada A (premium 3 anos) + Camada B (Founder eterna, 10 benefícios). FAQ 6 perguntas + disclaimer legal (utility, não security). CTA de mint abre modal de waitlist (localStorage, pattern dos teasers) até 5.4. i18n `pricing.*` nos 4 locales. UI-only — sem wallet/on-chain/MP ainda.
 - [ ] **5.2 — Auth híbrido wallet-first** — SIWE EVM + sign-message Solana, email opcional pra recuperação
 - [ ] **5.3 — Feature gates via `useTier()`** — checa NFT ownership E subscription status, retorna tier mais alto
 - [ ] **5.4 — Coleção NFT Metaplex Core + mint UI self-hosted** — bloqueado em decisões do briefing
 - [ ] **5.5 — Mercado Pago como trilho B** — opcional pós-NFT, BR-first
-- [ ] **5.6 — Página `/enterprise`** — landing pra pilots (subscription-only, NFT não cabe enterprise)
+- [x] **5.6 — Página `/enterprise`** ✅ — `src/app/enterprise/page.tsx` + `EnterpriseView`. Hero institucional, 3 use cases (family offices/RIAs, fundos cripto-nativos, fintechs BR PIX→DeFi), 4 diferenciais (BR-first, moat não-custodial, segurança pré-trade, ZION 4 idiomas), menção ao tier Pilot 30 SOL (Opus 4.8) + white-label, form "Agendar conversa" via `mailto:` pra contact@zettaword.global. i18n `enterprise.*` nos 4 locales. UI-only — sem MP/webhook.
 
 ---
 
@@ -101,12 +101,12 @@ Mercado Pago como trilho B opcional pós-grant.
 | 2 — UX consistency | 4 | 4 |
 | 3 — Perf + A11y | 3 | 3 |
 | 4 — Materiais grant | 4 | 4 |
-| 5 — Monetização (NFT-first) | 0 | 6 |
-| **Total geral** | **15** | **21** |
+| 5 — Monetização (NFT-first) | 2 | 6 |
+| **Total geral** | **17** | **21** |
 
 > Nota: os 4 itens da Auditoria Opus 4.8 (A.1–A.4) já foram entregues e não entram na contagem das fases 1–5 — são correções pós-audit, rastreadas na seção própria acima.
 
-**Próximo passo:** FASE 5 — Monetização NFT-first. ⚠️ Bloqueado — requer confirmação explícita do usuário antes de qualquer item. Decisões do briefing NFT (5.4) pendentes.
+**Próximo passo:** FASE 5 — itens 5.2 (auth wallet-first), 5.3 (feature gates `useTier()`), 5.4 (coleção NFT Metaplex + mint UI — bloqueado em decisões do briefing), 5.5 (Mercado Pago trilho B). ⚠️ Todos requerem confirmação/decisões do usuário antes de codar.
 
 ---
 
