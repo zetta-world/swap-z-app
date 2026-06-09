@@ -177,6 +177,39 @@ export default function ConnectModal({
                         );
                       }
 
+                      // Desktop + not installed → clean download link (no adapter.connect() call)
+                      if (notDetected && !isMobile) {
+                        const isSolflare = w.adapter.name.toLowerCase() === "solflare";
+                        const downloadUrl = isPhantom
+                          ? "https://phantom.app/download"
+                          : isSolflare
+                          ? "https://solflare.com/download"
+                          : "https://solana.com/ecosystem/explore?types=wallet";
+                        return (
+                          <motion.a
+                            key={id}
+                            href={downloadUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.04 }}
+                            className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border transition-all text-left group border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-[#14F195]/30"
+                          >
+                            {icon}
+                            <div className="flex-1 min-w-0">
+                              <div className="font-display font-bold text-sm text-ink truncate">{w.adapter.name}</div>
+                              <div className="font-mono text-[10px] text-ink-3 uppercase tracking-wider truncate">
+                                {t("topbar.solTapInstall")}
+                              </div>
+                            </div>
+                            <span className="font-mono text-[10px] group-hover:tracking-widest uppercase" style={{ color: "#14F19599" }}>
+                              {t("topbar.installArrow")}
+                            </span>
+                          </motion.a>
+                        );
+                      }
+
                       return (
                         <motion.button
                           key={id}
@@ -184,7 +217,7 @@ export default function ConnectModal({
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: i * 0.04 }}
                           onClick={() => onConnectSolana(w)}
-                          disabled={!installed && !notDetected}
+                          disabled={!installed}
                           className={cn(
                             "w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border transition-all text-left group",
                             "border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-[#14F195]/30",
@@ -195,18 +228,14 @@ export default function ConnectModal({
                           <div className="flex-1 min-w-0">
                             <div className="font-display font-bold text-sm text-ink truncate">{w.adapter.name}</div>
                             <div className="font-mono text-[10px] text-ink-3 uppercase tracking-wider truncate">
-                              {installed
-                                ? t("topbar.solInstalled")
-                                : notDetected
-                                ? t("topbar.solTapInstall")
-                                : t("topbar.solLoading")}
+                              {installed ? t("topbar.solInstalled") : t("topbar.solLoading")}
                             </div>
                           </div>
                           {isPendingThis ? (
                             <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: "#14F195" }} />
                           ) : (
-                            <span className="font-mono text-[10px] group-hover:tracking-widest uppercase" style={{ color: installed ? undefined : "#14F19599" }}>
-                              {installed ? t("topbar.connectArrow") : t("topbar.installArrow")}
+                            <span className="font-mono text-[10px] group-hover:tracking-widest uppercase">
+                              {t("topbar.connectArrow")}
                             </span>
                           )}
                         </motion.button>
