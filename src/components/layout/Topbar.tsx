@@ -13,6 +13,9 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
 
   return (
     <header className="sticky top-0 z-30 h-14 sm:h-16 px-3 sm:px-5 lg:px-6 flex items-center gap-2 sm:gap-3 border-b border-white/5 glass-pane">
+      {/* Pilot-only ambient shimmer — display:none unless html[data-tier="pilot"] */}
+      <div aria-hidden className="tier-ambient" />
+
       {/* ─── LEFT: hamburger + brand (mobile/tablet only) ─────────────── */}
       <div className="flex items-center gap-2 lg:hidden min-w-0 flex-shrink-0">
         <button

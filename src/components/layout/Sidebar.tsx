@@ -41,6 +41,7 @@ export default function Sidebar() {
           {!sidebarCollapsed && (
             <div className="min-w-0">
               <div className="font-display font-extrabold text-ink text-sm leading-none tracking-wide">Z-SWAP</div>
+              <span aria-hidden className="tier-logo-underline" />
               <div className="font-mono text-[9px] text-ink-3 tracking-[0.18em] uppercase mt-1">Liquidity Nexus</div>
             </div>
           )}

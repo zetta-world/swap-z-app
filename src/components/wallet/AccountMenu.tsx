@@ -58,10 +58,10 @@ export default function AccountMenu() {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button className="inline-flex items-center gap-2 h-9 px-2.5 sm:px-3 rounded-lg border border-cyan/30 bg-cyan/[0.06] hover:bg-cyan/[0.12] transition-colors group">
+        <button className="tier-pill inline-flex items-center gap-2 h-9 px-2.5 sm:px-3 rounded-lg border border-cyan/30 bg-cyan/[0.06] hover:bg-cyan/[0.12] transition-colors group">
           <span
             className="w-2 h-2 rounded-full pulse-dot flex-shrink-0"
-            style={{ background: chainMeta?.color ?? "#00E8FF" }}
+            style={{ background: `var(--tier-dot, ${chainMeta?.color ?? "#00E8FF"})` }}
             aria-label={chainMeta?.short ?? "chain"}
           />
           <span className="font-mono text-xs text-ink hidden xs:inline tabular-nums">

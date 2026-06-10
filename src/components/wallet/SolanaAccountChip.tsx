@@ -55,9 +55,8 @@ export default function SolanaAccountChip() {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
-          style={{ borderColor: "#14F19533" }}>
-          <span className="w-1.5 h-1.5 rounded-full pulse-dot" style={{ background: "#14F195" }} />
+        <button className="tier-pill inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-[#14F195]/20 bg-white/[0.03] hover:bg-white/[0.06] transition-colors">
+          <span className="w-1.5 h-1.5 rounded-full pulse-dot" style={{ background: "var(--tier-dot, #14F195)" }} />
           <span className="font-mono text-[11px] text-ink tabular-nums">{short}</span>
           <ChevronDown className="w-3 h-3 text-ink-3" />
         </button>

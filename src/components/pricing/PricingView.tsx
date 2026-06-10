@@ -3,7 +3,7 @@
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  Sparkles, X, Mail, ArrowRight, CheckCircle2, Loader2,
+  Sparkles, X, Mail, ArrowRight, CheckCircle2, Loader2, Check,
   ShieldCheck, CalendarClock, ChevronDown, Clock, Infinity as InfinityIcon,
 } from "lucide-react";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -13,33 +13,30 @@ import FounderBenefits from "./FounderBenefits";
 
 const TIERS: TierConfig[] = [
   {
-    id: "free", accent: "ink", cta: "free",
-    nameKey: "pricing.tierFreeName", priceKey: "pricing.tierFreePrice",
-    modelKey: "pricing.tierFreeModel", capKey: "pricing.tierFreeCap",
-    features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionSonnet"],
-  },
-  {
-    id: "pro", accent: "cyan", cta: "mint",
+    id: "pro", accent: "gold", art: "/nft/pro.jpg",
     nameKey: "pricing.tierProName", priceKey: "pricing.tierProPrice",
     fiatKey: "pricing.tierProFiat", subKey: "pricing.tierProSub",
     modelKey: "pricing.tierProModel", capKey: "pricing.tierProCap",
     features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionSonnet", "pricing.featAutopilot", "pricing.featFounder"],
   },
   {
-    id: "trader", accent: "violet", cta: "mint", highlighted: true,
+    id: "trader", accent: "violet", art: "/nft/trader.png",
     nameKey: "pricing.tierTraderName", priceKey: "pricing.tierTraderPrice",
     fiatKey: "pricing.tierTraderFiat", subKey: "pricing.tierTraderSub",
     modelKey: "pricing.tierTraderModel", capKey: "pricing.tierTraderCap",
     features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionSonnet", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport", "pricing.featFounder"],
   },
   {
-    id: "pilot", accent: "gold", cta: "mint",
+    id: "pilot", accent: "prismatic", art: "/nft/pilot.jpg",
+    highlighted: true, badgeKey: "pricing.founderPick",
     nameKey: "pricing.tierPilotName", priceKey: "pricing.tierPilotPrice",
     fiatKey: "pricing.tierPilotFiat", subKey: "pricing.tierPilotSub",
     modelKey: "pricing.tierPilotModel", capKey: "pricing.tierPilotCap",
     features: ["pricing.featZionOpus", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport", "pricing.featFounder"],
   },
 ];
+
+const FREE_FEATURES: MessageKey[] = ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionSonnet"];
 
 const FAQ: { q: MessageKey; a: MessageKey }[] = [
   { q: "pricing.faq1Q", a: "pricing.faq1A" },
@@ -72,15 +69,49 @@ export default function PricingView() {
         </p>
       </div>
 
-      {/* Tier comparison */}
+      {/* Tier comparison — 3 paid passes with their Access Pass artwork */}
       <div>
-        <h2 className="font-mono text-[10px] tracking-widest uppercase text-ink-3 text-center mb-4">
+        <h2 className="font-mono text-[10px] tracking-widest uppercase text-ink-3 text-center mb-5">
           {t("pricing.tiersHeading")}
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-4 items-stretch pt-2">
           {TIERS.map((tier) => (
-            <PricingCard key={tier.id} tier={tier} onMint={() => setMintOpen(true)} />
+            <div
+              key={tier.id}
+              className={cn(tier.highlighted && "md:scale-105 md:z-10")}
+            >
+              <PricingCard tier={tier} onMint={() => setMintOpen(true)} />
+            </div>
           ))}
+        </div>
+
+        {/* Free tier — simpler, no artwork */}
+        <div className="mt-5 md:mt-8 rounded-2xl border border-white/8 bg-bg-1/40 backdrop-blur-sm p-4 sm:p-5 max-w-3xl mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="sm:w-44 flex-shrink-0">
+              <div className="font-display font-bold text-sm text-ink tracking-wide">{t("pricing.tierFreeName")}</div>
+              <div className="font-display font-extrabold text-xl text-ink mt-1">{t("pricing.tierFreePrice")}</div>
+              <div className="font-mono text-[10px] text-ink-3 mt-1">
+                {t("pricing.tierFreeModel")} · {t("pricing.tierFreeCap")}
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-sans text-[12px] text-ink-2 leading-relaxed mb-2">{t("pricing.freeTagline")}</p>
+              <ul className="space-y-1.5">
+                {FREE_FEATURES.map((f) => (
+                  <li key={f} className="flex items-start gap-2">
+                    <Check className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-ink-3" />
+                    <span className="font-sans text-[12px] text-ink-2 leading-snug">{t(f)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="sm:w-36 flex-shrink-0">
+              <div className="w-full text-center rounded-lg border border-white/8 bg-white/[0.02] py-2.5 font-mono text-[10px] tracking-widest uppercase text-ink-3">
+                {t("pricing.tierFreeCta")}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
