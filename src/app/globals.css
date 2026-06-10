@@ -340,6 +340,90 @@ input[type="number"] { -moz-appearance: textfield; }
   outline-offset: 2px;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Tier experience layer (FASE 5.x)
+ * <TierAccentProvider> sets data-tier="pro|trader|pilot" on <html> for
+ * signed-in paid-tier wallets. Everything below is ADDITIVE: with no
+ * attribute, every opt-in class renders exactly today's neutral UI.
+ * ─────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --tier-accent: #00E8FF;                 /* default = brand cyan */
+  --tier-glow:   rgba(0, 232, 255, 0.35);
+}
+html[data-tier="pro"] {
+  --tier-accent:   #F5A623;
+  --tier-glow:     rgba(245, 166, 35, 0.40);
+  --tier-dot:      #F5A623;
+  --tier-gradient: linear-gradient(120deg, #F5A623, #C9A955);
+}
+html[data-tier="trader"] {
+  --tier-accent:   #9F5FFF;
+  --tier-glow:     rgba(159, 95, 255, 0.40);
+  --tier-dot:      #9F5FFF;
+  --tier-gradient: linear-gradient(120deg, #9F5FFF, #7C3AED);
+}
+html[data-tier="pilot"] {
+  --tier-accent:   #C9A2FF;
+  --tier-glow:     rgba(159, 95, 255, 0.45);
+  --tier-dot:      #C9A2FF;
+  --tier-gradient: linear-gradient(120deg, #00E8FF, #9F5FFF, #F5A623);
+}
+
+/* Wallet pill in the topbar — neutral border by default, tier accent when
+   a paid tier is active. Specificity (type + class) wins over Tailwind's
+   single-class border utilities without !important. */
+html[data-tier] .tier-pill {
+  border-color: color-mix(in srgb, var(--tier-accent) 45%, transparent);
+  box-shadow: 0 0 14px -4px var(--tier-glow);
+}
+
+/* Sidebar logo underline — invisible 1px line until a tier is active. */
+.tier-logo-underline {
+  display: block;
+  height: 1px;
+  margin-top: 3px;
+  background: transparent;
+}
+html[data-tier] .tier-logo-underline {
+  background: var(--tier-gradient, var(--tier-accent));
+  opacity: 0.3;
+}
+
+/* Pilot-only ambient shimmer behind the Topbar — display:none for every
+   other tier; slow (>15s) and overlay-blended so it never competes with
+   the trading UI. */
+.tier-ambient { display: none; }
+html[data-tier="pilot"] .tier-ambient {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  background: linear-gradient(
+    115deg,
+    rgba(0, 232, 255, 0.16),
+    rgba(159, 95, 255, 0.18),
+    rgba(245, 166, 35, 0.12),
+    rgba(0, 232, 255, 0.16)
+  );
+  background-size: 300% 100%;
+  opacity: 0.55;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-tier="pilot"] .tier-ambient {
+    animation: tierAmbientShift 18s ease-in-out infinite;
+  }
+}
+@keyframes tierAmbientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+@layer utilities {
+  .glow-tier { box-shadow: 0 0 24px -8px var(--tier-glow); }
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

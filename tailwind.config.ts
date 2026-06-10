@@ -63,6 +63,9 @@ const config: Config = {
           DEFAULT: "#00E087",
           dim:     "#009E5E",
         },
+        // Tier experience layer — resolves via the CSS var set on <html> by
+        // TierAccentProvider; falls back to brand cyan for free/anonymous.
+        "tier-accent": "var(--tier-accent)",
         // Risk Aurora palette (used for the SwapCard border that shifts with risk)
         aurora: {
           safe:    "#00E087",
