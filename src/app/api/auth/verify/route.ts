@@ -72,16 +72,24 @@ async function finishVerify(address: string, chain: WalletChain, signature: stri
     return json({ ok: false, error: "challenge_expired" }, 400);
   }
 
+  // The wallet signed a message built with `new Date().toISOString()` (…Z),
+  // but PostgREST returns timestamptz as `…+00:00`. Round-trip through Date
+  // so the reconstructed message matches the signed bytes exactly.
+  const issuedAt = new Date(nonceRow.issued_at).toISOString();
+
   const ok =
     chain === "evm"
-      ? await verifyEvmSignature({ address, signature, nonce: nonceRow.nonce, issuedAt: nonceRow.issued_at })
-      : verifySolanaSignature({ address, signature, nonce: nonceRow.nonce, issuedAt: nonceRow.issued_at });
+      ? await verifyEvmSignature({ address, signature, nonce: nonceRow.nonce, issuedAt })
+      : verifySolanaSignature({ address, signature, nonce: nonceRow.nonce, issuedAt });
 
   // Single-use regardless of outcome — burn the nonce so failed attempts can't
   // be brute-forced and successes can't be replayed.
   await db.from("auth_nonces").delete().eq("wallet_address", address);
 
-  if (!ok) return json({ ok: false, error: "bad_signature" }, 401);
+  if (!ok) {
+    console.warn(`[auth] signature verification failed for ${chain} wallet ${address.slice(0, 6)}…`);
+    return json({ ok: false, error: "bad_signature" }, 401);
+  }
 
   // Upsert the user record (wallet-first; email stays null until captured).
   await db
