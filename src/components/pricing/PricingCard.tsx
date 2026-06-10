@@ -2,11 +2,18 @@
 
 import Image from "next/image";
 import { motion, useMotionValue, useSpring, useReducedMotion } from "framer-motion";
-import { Check, Wallet } from "lucide-react";
+import { Check, Wallet, Loader2, BadgeCheck } from "lucide-react";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 export type TierAccent = "gold" | "violet" | "prismatic";
+
+/** Admin test mode — the seeded admin wallet can switch to any plan live. */
+export interface AdminSelectState {
+  isCurrent: boolean;
+  selecting: boolean;
+  onSelect:  () => void;
+}
 
 export interface TierConfig {
   id:        string;
@@ -62,7 +69,11 @@ const ACCENT: Record<TierAccent, {
 
 const TILT_DEG = 3;
 
-export default function PricingCard({ tier, onMint }: { tier: TierConfig; onMint: () => void }) {
+export default function PricingCard({ tier, onMint, admin }: {
+  tier: TierConfig;
+  onMint: () => void;
+  admin?: AdminSelectState;
+}) {
   const t = useT();
   const a = ACCENT[tier.accent];
   const reduceMotion = useReducedMotion();
@@ -148,19 +159,42 @@ export default function PricingCard({ tier, onMint }: { tier: TierConfig; onMint
           ))}
         </ul>
 
-        {/* CTA — keeps the waitlist modal behavior (no mint flow yet) */}
+        {/* CTA — waitlist modal for visitors; live plan switch for the admin
+            test wallet (source='admin' in tier_cache) */}
         <div className="mt-5">
-          <button
-            type="button"
-            onClick={onMint}
-            className={cn(
-              "w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-2.5 font-mono text-[11px] tracking-widest uppercase transition-all",
-              a.cta,
-            )}
-          >
-            <Wallet className="w-3.5 h-3.5" />
-            {t("pricing.ctaMint")}
-          </button>
+          {admin ? (
+            admin.isCurrent ? (
+              <div className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-2.5 font-mono text-[11px] tracking-widest uppercase border border-green/40 bg-green/[0.08] text-green">
+                <BadgeCheck className="w-3.5 h-3.5" />
+                {t("pricing.adminActive")}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={admin.onSelect}
+                disabled={admin.selecting}
+                className={cn(
+                  "w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-2.5 font-mono text-[11px] tracking-widest uppercase transition-all disabled:opacity-60",
+                  a.cta,
+                )}
+              >
+                {admin.selecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5" />}
+                {t("pricing.adminUse")}
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              onClick={onMint}
+              className={cn(
+                "w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-2.5 font-mono text-[11px] tracking-widest uppercase transition-all",
+                a.cta,
+              )}
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              {t("pricing.ctaMint")}
+            </button>
+          )}
         </div>
       </div>
     </motion.div>

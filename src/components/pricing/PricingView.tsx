@@ -6,8 +6,12 @@ import {
   Sparkles, X, Mail, ArrowRight, CheckCircle2, Loader2, Check,
   ShieldCheck, CalendarClock, ChevronDown, Clock, Infinity as InfinityIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { useTier } from "@/lib/tier/client";
+import type { Tier } from "@/lib/tier/types";
+import SignInButton from "@/components/auth/SignInButton";
 import PricingCard, { type TierConfig } from "./PricingCard";
 import FounderBenefits from "./FounderBenefits";
 
@@ -52,6 +56,37 @@ const WAITLIST_KEY = "zswap_pricing_mint_waitlist";
 export default function PricingView() {
   const t = useT();
   const [mintOpen, setMintOpen] = useState(false);
+  const { authenticated, source, tier: currentTier, refresh } = useTier();
+  const [selecting, setSelecting] = useState<Tier | null>(null);
+
+  // The seeded admin wallet (source='admin' in tier_cache) can switch plans
+  // live to test every gated surface — visitors keep the waitlist CTA.
+  const isAdmin = authenticated && source === "admin";
+
+  const selectTier = async (tier: Tier) => {
+    setSelecting(tier);
+    try {
+      const res = await fetch("/api/tier/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ tier }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.ok) throw new Error(j?.error ?? `select ${res.status}`);
+      refresh();
+      toast.success(t("pricing.adminSwitched"));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSelecting(null);
+    }
+  };
+
+  const adminFor = (tier: Tier) =>
+    isAdmin
+      ? { isCurrent: currentTier === tier, selecting: selecting === tier, onSelect: () => selectTier(tier) }
+      : undefined;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-10 space-y-10">
@@ -74,13 +109,33 @@ export default function PricingView() {
         <h2 className="font-mono text-[10px] tracking-widest uppercase text-ink-3 text-center mb-5">
           {t("pricing.tiersHeading")}
         </h2>
+
+        {/* Sign-in strip — verify wallet tier; admin wallet unlocks the live
+            plan switcher below */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 mb-6">
+          {isAdmin ? (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-gold/30 bg-gold/[0.05] font-mono text-[10px] tracking-wider uppercase text-gold text-center">
+              {t("pricing.adminHint")}
+            </div>
+          ) : (
+            <>
+              <span className="font-sans text-xs text-ink-3">{t("pricing.signInHint")}</span>
+              <SignInButton />
+            </>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-4 items-stretch pt-2">
           {TIERS.map((tier) => (
             <div
               key={tier.id}
               className={cn(tier.highlighted && "md:scale-105 md:z-10")}
             >
-              <PricingCard tier={tier} onMint={() => setMintOpen(true)} />
+              <PricingCard
+                tier={tier}
+                onMint={() => setMintOpen(true)}
+                admin={adminFor(tier.id as Tier)}
+              />
             </div>
           ))}
         </div>
@@ -107,9 +162,26 @@ export default function PricingView() {
               </ul>
             </div>
             <div className="sm:w-36 flex-shrink-0">
-              <div className="w-full text-center rounded-lg border border-white/8 bg-white/[0.02] py-2.5 font-mono text-[10px] tracking-widest uppercase text-ink-3">
-                {t("pricing.tierFreeCta")}
-              </div>
+              {isAdmin ? (
+                currentTier === "free" ? (
+                  <div className="w-full text-center rounded-lg border border-green/40 bg-green/[0.08] py-2.5 font-mono text-[10px] tracking-widest uppercase text-green">
+                    {t("pricing.adminActive")}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => selectTier("free")}
+                    disabled={selecting === "free"}
+                    className="w-full text-center rounded-lg border border-white/15 bg-white/[0.04] hover:bg-white/[0.08] py-2.5 font-mono text-[10px] tracking-widest uppercase text-ink-2 disabled:opacity-60"
+                  >
+                    {selecting === "free" ? "…" : t("pricing.adminUse")}
+                  </button>
+                )
+              ) : (
+                <div className="w-full text-center rounded-lg border border-white/8 bg-white/[0.02] py-2.5 font-mono text-[10px] tracking-widest uppercase text-ink-3">
+                  {t("pricing.tierFreeCta")}
+                </div>
+              )}
             </div>
           </div>
         </div>
