@@ -101,7 +101,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
           onClick={toggleZion}
           aria-label={t("topbar.askZion")}
           className={cn(
-            "relative flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-lg border transition-all",
+            "relative flex items-center gap-1.5 h-9 px-2 sm:px-3 rounded-lg border transition-all",
             zionOpen
               ? "border-gold/40 bg-gold/10 text-gold shadow-glow-gold"
               : "border-white/8 bg-white/[0.03] text-ink-2 hover:text-gold hover:border-gold/30",

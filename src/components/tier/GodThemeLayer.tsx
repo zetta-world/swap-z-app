@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "framer-motion";
 import { useTierAccent } from "./TierAccentProvider";
 import { GOD_META, isPaidTier, type PaidTier } from "@/lib/tier/gods";
+import { ceremonyArmed, disarmCeremony } from "@/lib/tier/ceremony";
 import type { Tier } from "@/lib/tier/types";
 import { cn } from "@/lib/cn";
 
@@ -32,9 +33,12 @@ export default function GodThemeLayer() {
     const cur: Tier = active ? tier : "free";
     const old = prev.current;
     prev.current = cur;
-    if (old !== null && old !== cur && isPaidTier(cur) && !reduceMotion) {
+    // Only celebrate tier changes the user just caused (sign-in / plan
+    // switch arm the ceremony) — never ambient page-load resolution.
+    if (old !== null && old !== cur && isPaidTier(cur) && ceremonyArmed() && !reduceMotion) {
+      disarmCeremony();
       setCeremony(cur);
-      const t = setTimeout(() => setCeremony(null), 2600);
+      const t = setTimeout(() => setCeremony(null), 2100);
       return () => clearTimeout(t);
     }
   }, [active, tier, reduceMotion]);
