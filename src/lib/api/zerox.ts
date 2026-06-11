@@ -1,23 +1,27 @@
 /**
- * 0x Swap API v2 — Permit2 flow.
+ * 0x Swap API v2 — AllowanceHolder flow.
  *
  * Two endpoints:
- *   - /swap/permit2/price  → indicative quote (no allowance/permit needed)
- *                            Used for live preview as the user types.
- *   - /swap/permit2/quote  → firm quote with calldata + Permit2 payload
- *                            Used when the user clicks Execute.
+ *   - /swap/allowance-holder/price  → indicative quote (no allowance needed)
+ *                                     Used for live preview as the user types.
+ *   - /swap/allowance-holder/quote  → firm quote with ready-to-send calldata
+ *                                     Used when the user clicks Execute.
  *
- * Flow when selling ERC-20:
- *   1. fetch /quote → get `transaction.{to,data,value,gas}` + `permit2.eip712`
- *   2. signTypedData(permit2.eip712) → produce signature
- *   3. concat:  finalData = transaction.data + signatureLength + signature
- *      (technically: append a 32-byte ABI-encoded length + signature bytes)
- *   4. sendTransaction({ to: transaction.to, data: finalData, value })
+ * Why AllowanceHolder over Permit2: a swap is a SINGLE eth_sendTransaction —
+ * no EIP-712 typed-data signature, no signature-appending to calldata. The
+ * Permit2 sign-then-send double wallet popup was failing constantly on
+ * mobile in-app browsers (the wallet drops the second request while the
+ * first dialog is still closing).
  *
- * Flow when selling native ETH (or chain native):
- *   1. fetch /quote → `permit2` is null
- *   2. sendTransaction({ to: transaction.to, data: transaction.data,
- *                        value: transaction.value })
+ * Flow when selling ERC-20 (first time per token):
+ *   1. fetch /quote → `issues.allowance` is set
+ *   2. approve(issues.allowance.spender, MaxUint256)   — one-time tx
+ *   3. re-fetch /quote (fresh calldata after the approval wait)
+ *   4. sendTransaction({ to, data, value, gas })
+ *
+ * Flow when allowance already granted, or selling chain-native:
+ *   1. fetch /quote → `issues.allowance` is null
+ *   2. sendTransaction({ to, data, value, gas })       — that's it
  */
 
 import type { ChainId } from "../chains";
@@ -66,26 +70,6 @@ export interface ZxIssue {
   invalidSourcesPassed?: string[];
 }
 
-export interface ZxEip712Domain {
-  name?:   string;
-  version?: string;
-  chainId?: number;
-  verifyingContract?: string;
-}
-
-export interface ZxPermit2Eip712 {
-  types:        Record<string, { name: string; type: string }[]>;
-  domain:       ZxEip712Domain;
-  primaryType:  string;
-  message:      Record<string, unknown>;
-}
-
-export interface ZxPermit2 {
-  type:    "Permit2";
-  hash:    string;
-  eip712:  ZxPermit2Eip712;
-}
-
 export interface ZxTransaction {
   to:    string;
   data:  string;
@@ -117,7 +101,6 @@ export interface ZxPriceResponse {
 
 export interface ZxQuoteResponse extends ZxPriceResponse {
   transaction:  ZxTransaction;
-  permit2:      ZxPermit2 | null;
 }
 
 // ─── Server-side fetchers (called from /api/quote) ───────────────────
@@ -141,7 +124,7 @@ export async function fetchZeroXPrice(args: QuoteArgs, apiKey: string): Promise<
   if (args.taker)       params.set("taker", args.taker);
   if (args.slippageBps) params.set("slippageBps", String(args.slippageBps));
 
-  const res = await fetch(`${BASE_URL}/swap/permit2/price?${params.toString()}`, {
+  const res = await fetch(`${BASE_URL}/swap/allowance-holder/price?${params.toString()}`, {
     headers: {
       "0x-api-key": apiKey,
       "0x-version": "v2",
@@ -170,7 +153,7 @@ export async function fetchZeroXQuote(args: QuoteArgs, apiKey: string): Promise<
   });
   if (args.slippageBps) params.set("slippageBps", String(args.slippageBps));
 
-  const res = await fetch(`${BASE_URL}/swap/permit2/quote?${params.toString()}`, {
+  const res = await fetch(`${BASE_URL}/swap/allowance-holder/quote?${params.toString()}`, {
     headers: {
       "0x-api-key": apiKey,
       "0x-version": "v2",

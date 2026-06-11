@@ -3,19 +3,19 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion } from "framer-motion";
 import { CheckCircle2, X, ArrowRight, AlertTriangle, Loader2, ExternalLink, Globe } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   useAccount, useChainId, usePublicClient, useSendTransaction,
-  useSignTypedData, useSwitchChain, useWaitForTransactionReceipt, useWriteContract,
+  useSwitchChain, useWaitForTransactionReceipt, useWriteContract,
 } from "wagmi";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
-import { concat, erc20Abi, numberToHex, size, type Hex } from "viem";
+import { erc20Abi, type Hex } from "viem";
 import type { Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { CHAIN_BY_ID } from "@/lib/chains";
-import type { ZxQuoteResponse, ZxPermit2Eip712 } from "@/lib/api/zerox";
+import type { ZxQuoteResponse } from "@/lib/api/zerox";
 import { ZEROX_CHAIN_IDS } from "@/lib/api/zerox";
 import { LIFI_CHAIN_IDS } from "@/lib/api/lifi";
 import type { LfQuote } from "@/lib/api/lifi";
@@ -45,11 +45,13 @@ type Phase =
   | "needs_chain_switch"
   | "needs_approval"
   | "approving"
-  | "needs_permit2_sig"
   | "needs_tx_signature"
   | "tx_pending"
   | "tx_confirmed"
   | "tx_failed";
+
+/** Firm 0x calldata embeds pricing — refetch before sending if older than this. */
+const ZX_QUOTE_TTL_MS = 30_000;
 
 export default function ExecuteSwap({
   open, onClose, fromToken, toToken, fromChain, toChain, sellAmount, slippageBps, source, recipient,
@@ -58,7 +60,6 @@ export default function ExecuteSwap({
   const { address, isConnected } = useAccount();
   const currentChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
-  const { signTypedDataAsync } = useSignTypedData();
   const { sendTransactionAsync } = useSendTransaction();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
@@ -68,6 +69,7 @@ export default function ExecuteSwap({
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [zxQuote, setZxQuote] = useState<ZxQuoteResponse | null>(null);
+  const zxQuoteAtRef = useRef(0);
   const [lfQuote, setLfQuote] = useState<LfQuote | null>(null);
   const [jupResult, setJupResult] = useState<{ quote: JupQuote; swap: JupSwapResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -143,13 +145,12 @@ export default function ExecuteSwap({
         if (source === "0x") {
           const q = body.result as ZxQuoteResponse;
           setZxQuote(q);
+          zxQuoteAtRef.current = Date.now();
           if (currentChainId !== targetChainId) {
             setPhase("needs_chain_switch");
-          } else if (q.issues?.allowance) {
-            // Permit2 contract needs a standard ERC-20 approve() first
+          } else if (q.issues?.allowance && fromToken.address !== "native") {
+            // AllowanceHolder spender needs a one-time ERC-20 approve()
             setPhase("needs_approval");
-          } else if (q.permit2) {
-            setPhase("needs_permit2_sig");
           } else {
             setPhase("needs_tx_signature");
           }
@@ -206,92 +207,36 @@ export default function ExecuteSwap({
     }
   }, [receipt, isCrossChain]);
 
-  const onSwitchChain = useCallback(async () => {
-    if (!targetChainId) return;
-    try {
-      await switchChainAsync({ chainId: targetChainId });
-      // Re-decide next phase
-      if (source === "0x") {
-        if (zxQuote?.issues?.allowance) {
-          setPhase("needs_approval");
-        } else {
-          setPhase(zxQuote?.permit2 ? "needs_permit2_sig" : "needs_tx_signature");
-        }
-      } else if (
-        lfQuote &&
-        fromToken.address !== "native" &&
-        lfQuote.estimate.approvalAddress &&
-        publicClient
-      ) {
-        const allowance = await publicClient.readContract({
-          address: fromToken.address as Hex,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address as Hex, lfQuote.estimate.approvalAddress as Hex],
-        });
-        setPhase(allowance < BigInt(sellAmount) ? "needs_approval" : "needs_tx_signature");
-      } else {
-        setPhase("needs_tx_signature");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+  /** Re-pull a firm 0x quote — calldata embeds pricing and goes stale fast. */
+  const fetchFreshZxQuote = useCallback(async (): Promise<ZxQuoteResponse> => {
+    const params = new URLSearchParams({
+      mode:        "quote",
+      source:      "0x",
+      fromChain,
+      toChain,
+      sellToken:   fromToken.address === "native" ? "native" : fromToken.address,
+      buyToken:    toToken.address   === "native" ? "native" : toToken.address,
+      sellAmount,
+      taker:       taker ?? "",
+      slippageBps: String(slippageBps),
+    });
+    const res  = await fetch(`/api/quote?${params.toString()}`);
+    const body = await res.json();
+    if (!res.ok || !body.ok) {
+      throw new Error(body.message || body.error || `HTTP ${res.status}`);
     }
-  }, [targetChainId, switchChainAsync, source, zxQuote, lfQuote, fromToken, sellAmount, publicClient, address]);
+    const q = body.result as ZxQuoteResponse;
+    setZxQuote(q);
+    zxQuoteAtRef.current = Date.now();
+    return q;
+  }, [fromChain, toChain, fromToken, toToken, sellAmount, taker, slippageBps]);
 
-  const onApprove = useCallback(async () => {
-    if (!targetChainId || !address) return;
-    setError(null);
-    setPhase("approving");
-    try {
-      // ── 0x path: approve Permit2 contract (MaxUint256 = no repeated approvals) ──
-      if (source === "0x" && zxQuote?.issues?.allowance) {
-        const spender = zxQuote.issues.allowance.spender as Hex;
-        const hash = await writeContractAsync({
-          address:      fromToken.address as Hex,
-          abi:          erc20Abi,
-          functionName: "approve",
-          args:         [spender, 2n ** 256n - 1n],
-          chainId:      targetChainId,
-        });
-        if (publicClient) {
-          await publicClient.waitForTransactionReceipt({ hash });
-        }
-        setPhase(zxQuote.permit2 ? "needs_permit2_sig" : "needs_tx_signature");
-        return;
-      }
-      // ── LiFi path: approve exact sell amount ──────────────────────────────────
-      if (!lfQuote) return;
-      const hash = await writeContractAsync({
-        address:      fromToken.address as Hex,
-        abi:          erc20Abi,
-        functionName: "approve",
-        args:         [lfQuote.estimate.approvalAddress as Hex, BigInt(sellAmount)],
-        chainId:      targetChainId,
-      });
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash });
-        // Re-check allowance — guards against rare reorg / RPC inconsistencies
-        const fresh = await publicClient.readContract({
-          address:      fromToken.address as Hex,
-          abi:          erc20Abi,
-          functionName: "allowance",
-          args:         [address as Hex, lfQuote.estimate.approvalAddress as Hex],
-        });
-        if (fresh < BigInt(sellAmount)) {
-          setError(tImp("swap.approvalShort"));
-          setPhase("tx_failed");
-          return;
-        }
-      }
-      setPhase("needs_tx_signature");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("user denied");
-      setError(denied ? tImp("swap.approvalRejected") : msg);
-      setPhase("tx_failed");
-    }
-  }, [source, zxQuote, lfQuote, fromToken, targetChainId, writeContractAsync, publicClient, address, sellAmount]);
-
+  /**
+   * One click does the whole journey: switch network → one-time approval →
+   * fresh quote → send. The wallet only ever sees plain transactions (no
+   * EIP-712 popups), and the user never has to come back to this modal to
+   * push a second button.
+   */
   const onExecute = useCallback(async () => {
     setError(null);
     try {
@@ -336,46 +281,55 @@ export default function ExecuteSwap({
       }
 
       // ─── EVM paths ───────────────────────────────────────────────
-      // Re-verify wallet is on the source chain before broadcasting. The user
-      // could have switched networks externally between approval and send.
       if (!targetChainId) {
         setError(tImp("swap.chainUnsupported"));
         setPhase("tx_failed");
         return;
       }
+      // Wrong network? Switch in-line and keep going — no extra click.
       if (currentChainId !== targetChainId) {
         setPhase("needs_chain_switch");
-        return;
+        await switchChainAsync({ chainId: targetChainId });
       }
 
       if (source === "0x") {
-        if (!zxQuote) return;
-        if (!zxQuote.transaction?.to || !zxQuote.transaction?.data) {
+        let q = zxQuote;
+        if (!q) return;
+
+        // One-time ERC-20 approval of the 0x AllowanceHolder spender.
+        // MaxUint256 so the user never sees this step again for this token.
+        if (q.issues?.allowance && fromToken.address !== "native") {
+          setPhase("approving");
+          const approveHash = await writeContractAsync({
+            address:      fromToken.address as Hex,
+            abi:          erc20Abi,
+            functionName: "approve",
+            args:         [q.issues.allowance.spender as Hex, 2n ** 256n - 1n],
+            chainId:      targetChainId,
+          });
+          if (publicClient) await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          zxQuoteAtRef.current = 0;   // force a fresh quote below
+        }
+
+        // Stale calldata is the top cause of on-chain reverts — refetch if
+        // the quote sat around (modal idle, approval wait, chain switch).
+        if (Date.now() - zxQuoteAtRef.current > ZX_QUOTE_TTL_MS) {
+          setPhase("fetching_quote");
+          q = await fetchFreshZxQuote();
+        }
+        if (!q.transaction?.to || !q.transaction?.data) {
           setError(tImp("swap.executeIncompleteQuote0x"));
           setPhase("tx_failed");
           return;
         }
-        let data = zxQuote.transaction.data as Hex;
 
-        if (zxQuote.permit2) {
-          setPhase("needs_permit2_sig");
-          const eip712 = zxQuote.permit2.eip712 as ZxPermit2Eip712;
-          const typedPayload = {
-            types:       eip712.types,
-            domain:      eip712.domain,
-            primaryType: eip712.primaryType,
-            message:     eip712.message,
-          } as unknown as Parameters<typeof signTypedDataAsync>[0];
-          const signature = (await signTypedDataAsync(typedPayload)) as Hex;
-          const sigLenHex = numberToHex(size(signature), { size: 32 });
-          data = concat([data, sigLenHex, signature]) as Hex;
-        }
-
+        // AllowanceHolder = a single plain transaction. No EIP-712 signature.
         setPhase("needs_tx_signature");
         const hash = await sendTransactionAsync({
-          to:      zxQuote.transaction.to as Hex,
-          data,
-          value:   BigInt(zxQuote.transaction.value || "0"),
+          to:      q.transaction.to as Hex,
+          data:    q.transaction.data as Hex,
+          value:   BigInt(q.transaction.value || "0"),
+          gas:     q.transaction.gas ? BigInt(q.transaction.gas) : undefined,
           chainId: targetChainId,
         });
         setTxHash(hash);
@@ -383,13 +337,36 @@ export default function ExecuteSwap({
         return;
       }
 
-      // LiFi path
+      // LiFi path — approval (when short) chained into the same click
       if (!lfQuote) return;
       const tx = lfQuote.transactionRequest;
       if (!tx || !tx.to || !tx.data) {
         setError(tImp("swap.executeIncompleteTxLiFi"));
         setPhase("tx_failed");
         return;
+      }
+      if (
+        fromToken.address !== "native" &&
+        lfQuote.estimate.approvalAddress &&
+        publicClient && address
+      ) {
+        const allowance = await publicClient.readContract({
+          address:      fromToken.address as Hex,
+          abi:          erc20Abi,
+          functionName: "allowance",
+          args:         [address as Hex, lfQuote.estimate.approvalAddress as Hex],
+        });
+        if (allowance < BigInt(sellAmount)) {
+          setPhase("approving");
+          const approveHash = await writeContractAsync({
+            address:      fromToken.address as Hex,
+            abi:          erc20Abi,
+            functionName: "approve",
+            args:         [lfQuote.estimate.approvalAddress as Hex, BigInt(sellAmount)],
+            chainId:      targetChainId,
+          });
+          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        }
       }
       setPhase("needs_tx_signature");
       const hash = await sendTransactionAsync({
@@ -402,11 +379,11 @@ export default function ExecuteSwap({
       setPhase("tx_pending");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("user denied");
+      const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("denied");
       setError(denied ? tImp("swap.executeSigRejected") : msg);
       setPhase("tx_failed");
     }
-  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, signTypedDataAsync, sendTransactionAsync, targetChainId, currentChainId]);
+  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, targetChainId, currentChainId]);
 
   // Quote-derived display values
   const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);
@@ -556,21 +533,13 @@ export default function ExecuteSwap({
                   type="button"
                   onClick={onClose}
                   className="flex-1 btn btn-secondary text-xs"
-                  disabled={phase === "approving" || phase === "needs_permit2_sig" || phase === "needs_tx_signature" || phase === "tx_pending"}
+                  disabled={phase === "approving" || phase === "needs_tx_signature" || phase === "tx_pending"}
                 >
                   {phase === "tx_confirmed" ? t("swap.btnDone") : t("common.cancel")}
                 </button>
-                {phase === "needs_chain_switch" && !isJupiter && (
-                  <button type="button" onClick={onSwitchChain} className="flex-1 btn btn-primary text-xs">
-                    {t("swap.executeSwitchNetwork")}
-                  </button>
-                )}
-                {phase === "needs_approval" && (
-                  <button type="button" onClick={onApprove} className="flex-1 btn btn-primary text-xs">
-                    {t("swap.executeApproveToken", { symbol: fromToken.symbol })}
-                  </button>
-                )}
-                {(phase === "needs_permit2_sig" || phase === "needs_tx_signature") && (
+                {/* Single CTA — network switch, approval and send are all
+                    chained behind this one click. */}
+                {(phase === "needs_chain_switch" || phase === "needs_approval" || phase === "needs_tx_signature") && (
                   <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
                     {t("swap.executeSignAndSend")}
                   </button>
@@ -651,15 +620,6 @@ function PhaseBlock({
       );
     case "approving":
       return <Stepper text={t("swap.executeWaitingApproval")} />;
-    case "needs_permit2_sig":
-      return (
-        <Card tone="cyan" Icon={CheckCircle2}>
-          <div className="font-display font-bold text-xs text-cyan mb-0.5">{t("swap.executeReadyToSign")}</div>
-          <p className="font-sans text-[11px] text-ink-2 leading-relaxed">
-            {t("swap.executePermit2Hint")}
-          </p>
-        </Card>
-      );
     case "needs_tx_signature":
       return (
         <Card tone="cyan" Icon={CheckCircle2}>
