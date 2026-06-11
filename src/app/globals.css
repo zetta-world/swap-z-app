@@ -688,6 +688,47 @@ html[data-tier] .tier-active-bar {
   box-shadow: 0 0 14px -2px var(--tier-glow);
 }
 
+/* ── God details, part 2 — component-level accents ────────────────────── */
+
+/* Headline highlight spans (pricing/enterprise heroes). Default defines the
+   previously-missing utility; an active god retints it with his gradient. */
+.text-gradient-cyan {
+  background-image: linear-gradient(120deg, #00E8FF, #9F5FFF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html[data-tier] .text-gradient-cyan {
+  background-image: var(--tier-gradient, linear-gradient(120deg, #00E8FF, #9F5FFF));
+}
+
+/* Text selection takes the god's color */
+html[data-tier] ::selection {
+  background: color-mix(in srgb, var(--tier-accent) 30%, transparent);
+}
+
+/* Topbar/sidebar glass borders pick up a faint god hue */
+html[data-tier] .glass-pane {
+  border-color: color-mix(in srgb, var(--tier-accent) 12%, rgba(255, 255, 255, 0.05));
+}
+
+/* Active nav icons (sidebar + mobile drawer) follow the god accent */
+html[data-tier] .tier-active-icon {
+  color: var(--tier-accent);
+}
+
+/* 1px god gradient line — used under the ZION drawer header and the
+   MobileNav god banner. Invisible without an active tier. */
+.tier-godline {
+  display: block;
+  height: 1px;
+  background: transparent;
+}
+html[data-tier] .tier-godline {
+  background: var(--tier-gradient, var(--tier-accent));
+  opacity: 0.45;
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
