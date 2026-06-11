@@ -1121,6 +1121,150 @@ html[data-tier="trader"] aside.glass-pane::before {
   z-index: 1;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * THOR — Peça 4: Swap Card Mjölnir
+ *
+ * .aurora-border background     : deep obsidian replacing default navy
+ * .aurora-border::after         : ᚦ runic watermark at 3.2% opacity
+ * .aurora-border .god-card.glass: energy veins via extra background-image
+ *                                 layers, animated via background-position
+ * border gradient               : violet + Ancient Gold flash on 6s cycle
+ * .thor-token-slot              : obsidian slot + Electric Violet border
+ * .btn.btn-primary inside card  : Deep Purple → Electric Violet gradient
+ * .hover\:rotate-180            : flip button recolored violet
+ * ══════════════════════════════════════════════════════════════════════*/
+
+/* ── Card body background — obsidian obsidian, replacing default navy ─ */
+html[data-tier="trader"] .aurora-border {
+  background: linear-gradient(
+    180deg,
+    rgba(6, 3, 16, 0.96) 0%,
+    rgba(4, 2, 12, 0.94) 100%
+  );
+}
+
+/* ── Energy veins — diagonal Electric Violet cracks through the glass ─
+   Extra layers prepended to background-image; background-position
+   animates them across the surface on independent vectors.               */
+html[data-tier="trader"] .aurora-border .god-card.glass {
+  background-image:
+    /* Primary vein — upper-left → lower-right diagonal */
+    linear-gradient(
+      142deg,
+      transparent           28%,
+      rgba(138, 92,255,0.07) 36%,
+      rgba(179,136,255,0.18) 42%,
+      rgba(245,245,255,0.10) 46%,
+      rgba(138, 92,255,0.07) 52%,
+      transparent           60%
+    ),
+    /* Secondary vein — opposing diagonal */
+    linear-gradient(
+      218deg,
+      transparent           42%,
+      rgba( 95, 47,255,0.05) 48%,
+      rgba(138, 92,255,0.12) 54%,
+      rgba( 95, 47,255,0.05) 60%,
+      transparent           68%
+    ),
+    /* Preserved violet top fade from god-card trader rule */
+    linear-gradient(180deg, rgba(159,95,255,0.05) 0%, transparent 40%) !important;
+  background-size:     280% 100%, 320% 100%, 100% 100% !important;
+  background-position: 0% 50%,   100% 50%,  0% 0%   !important;
+  animation: thorVeins 18s ease-in-out infinite;
+}
+@keyframes thorVeins {
+  0%, 100% { background-position:   0% 50%, 100% 50%, 0% 0%; }
+  40%       { background-position:  70% 50%,  30% 50%, 0% 0%; }
+  80%       { background-position: 100% 50%,   0% 50%, 0% 0%; }
+}
+
+/* ── Runic watermark — ᚦ (Thurisaz) ghosted behind card content ──────
+   240px rune centered via ::after on .aurora-border (overflow:hidden
+   clips it to the card edges). At 3.2% opacity it reads as texture,
+   not text. pointer-events:none + z-index:2 keeps it above the border
+   gradient but passes through all mouse/touch events.                   */
+html[data-tier="trader"] .aurora-border::after {
+  content: "ᚦ";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 240px;
+  line-height: 1;
+  font-family: var(--font-mono);
+  color: rgba(138, 92, 255, 0.032);
+  pointer-events: none;
+  user-select: none;
+  z-index: 2;
+}
+
+/* ── Border gradient — Ancient Gold flash mid-sweep ─────────────────── */
+html[data-tier="trader"] .aurora-border:not([data-risk="caution"]):not([data-risk="danger"])::before {
+  background: linear-gradient(
+    120deg,
+    #5F2FFF  0%,
+    #8A5CFF 18%,
+    #B388FF 35%,
+    #F5F5FF 50%,
+    #D4AF37 62%,
+    #B388FF 75%,
+    #8A5CFF 88%,
+    #5F2FFF 100%
+  );
+  background-size: 300% 300%;
+  animation: thorCardBorder 6s ease-in-out infinite;
+  opacity: 1;
+}
+@keyframes thorCardBorder {
+  0%, 100% { background-position:   0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+
+/* ── Token input slots — obsidian + Electric Violet border ───────────  */
+html[data-tier="trader"] .thor-token-slot {
+  background: rgba(6, 3, 16, 0.55) !important;
+  border-color: rgba(95, 47, 255, 0.22) !important;
+}
+html[data-tier="trader"] .thor-token-slot:hover {
+  border-color: rgba(138, 92, 255, 0.42) !important;
+  box-shadow: 0 0 24px -8px rgba(138, 92, 255, 0.28) inset;
+}
+
+/* ── CTA button — Deep Purple → Electric Violet pulsing gradient ─────  */
+html[data-tier="trader"] .aurora-border .btn.btn-primary {
+  background: linear-gradient(135deg, #5F2FFF 0%, #8A5CFF 40%, #7C3AED 60%, #5F2FFF 100%);
+  background-size: 300% 100%;
+  color: rgba(245, 245, 255, 0.97);
+  box-shadow:
+    0 0 36px -8px rgba(138, 92, 255, 0.65),
+    0 1px 0 rgba(245, 245, 255, 0.18) inset;
+  animation: thorCTAPulse 8s ease-in-out infinite;
+}
+@keyframes thorCTAPulse {
+  0%, 100% { background-position:   0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+html[data-tier="trader"] .aurora-border .btn.btn-primary:not(:disabled):hover {
+  box-shadow:
+    0 0 56px -6px rgba(138, 92, 255, 0.88),
+    0 0 28px -8px rgba(212, 175,  55, 0.28),
+    0 1px 0 rgba(245, 245, 255, 0.28) inset;
+  transform: translateY(-1px);
+}
+
+/* ── Flip button — Electric Violet recolor ───────────────────────────
+   .hover\:rotate-180 is the Tailwind class unique to the flip button.  */
+html[data-tier="trader"] .aurora-border .hover\:rotate-180 {
+  border-color: rgba(95, 47, 255, 0.30);
+  color: rgba(138, 92, 255, 0.65);
+}
+html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
+  border-color: rgba(138, 92, 255, 0.58);
+  color: rgba(179, 136, 255, 0.95);
+  box-shadow: 0 0 20px -4px rgba(138, 92, 255, 0.52);
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

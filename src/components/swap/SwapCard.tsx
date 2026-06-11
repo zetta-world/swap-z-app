@@ -510,7 +510,7 @@ function SideBox({
     : "—";
 
   return (
-    <div className="rounded-xl border border-white/5 bg-bg-1/30 p-3.5 sm:p-4 hover:border-white/10 transition-colors">
+    <div className="thor-token-slot rounded-xl border border-white/5 bg-bg-1/30 p-3.5 sm:p-4 hover:border-white/10 transition-colors">
       <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
         <span className="font-mono text-[10px] text-ink-3 uppercase tracking-widest flex-shrink-0">{label}</span>
         {token && (
