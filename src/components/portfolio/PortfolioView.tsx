@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Wallet, TrendingUp, TrendingDown, Eye, EyeOff, Inbox } from "lucide-react";
 import { useAccount } from "wagmi";
@@ -10,7 +10,9 @@ import { findToken, type Token } from "@/lib/tokens";
 import { compactNumber, formatUsd } from "@/lib/format";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
 import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
+import { usePortfolioHistory } from "@/lib/store/portfolioHistory";
 import CexPortfolioRollup from "./CexPortfolioRollup";
+import PortfolioEvolution from "./PortfolioEvolution";
 import { useT } from "@/lib/i18n";
 import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
@@ -119,6 +121,14 @@ export default function PortfolioView() {
     const portfolio = holdings.reduce((acc, h) => acc + (h.balance.usdValue ?? 0), 0);
     return { portfolio, cex: cexUsd, total: portfolio + cexUsd };
   }, [holdings, cexUsd]);
+
+  // Record a balance snapshot once the live totals settle. The store
+  // throttles writes internally, so calling on every change is safe.
+  const recordSnapshot = usePortfolioHistory((s) => s.record);
+  useEffect(() => {
+    if (balancesLoading || totals.total <= 0) return;
+    recordSnapshot(totals.total, totals.portfolio, totals.cex);
+  }, [balancesLoading, totals.total, totals.portfolio, totals.cex, recordSnapshot]);
 
   // Distribution across chains for the bar chart.
   const byChain = useMemo(() => {
@@ -231,6 +241,11 @@ export default function PortfolioView() {
               )}
             </div>
           </div>
+        )}
+
+        {/* Balance evolution — snapshot timeline + realized P&L per op type */}
+        {(anyWalletConnected || holdings.length > 0 || cexUsd > 0) && (
+          <PortfolioEvolution liveTotalUsd={totals.total} hidden={hidden} />
         )}
 
         {/* Holdings — only real, non-zero balances from the connected wallet(s) */}
