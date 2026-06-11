@@ -5,6 +5,7 @@ import { useAccount, useSignMessage } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
 import bs58 from "bs58";
 import { useTier } from "@/lib/tier/client";
+import { armCeremony } from "@/lib/tier/ceremony";
 
 /**
  * Wallet-first sign-in flow, shared by every entry point (SignInButton,
@@ -87,6 +88,7 @@ export function useWalletAuth(): WalletAuth {
       if (verifyRes.status === 503) { setError("unconfigured"); return false; }
       if (!verifyRes.ok) { setError("failed"); return false; }
 
+      armCeremony();
       await refresh();
       return true;
     } catch {

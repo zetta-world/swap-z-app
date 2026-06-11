@@ -444,7 +444,7 @@ html[data-tier="pilot"] .tier-ambient {
 /* ── FREYR (pro) — warm golden haze rising from below ─────────────────── */
 .god-ambient.god-pro {
   background:
-    radial-gradient(70% 45% at 50% 112%, rgba(245, 166, 35, 0.13), transparent 70%),
+    radial-gradient(70% 45% at 50% 112%, rgba(245, 166, 35, 0.10), transparent 70%),
     radial-gradient(40% 30% at 88% -8%, rgba(201, 169, 85, 0.07), transparent 70%);
 }
 .god-ambient.god-pro::before {
@@ -483,9 +483,9 @@ html[data-tier="pilot"] .tier-ambient {
 /* ── THOR (trader) — violet storm front + random lightning flicker ────── */
 .god-ambient.god-trader {
   background:
-    radial-gradient(60% 38% at 50% -10%, rgba(159, 95, 255, 0.14), transparent 70%),
-    radial-gradient(45% 30% at 8% 112%, rgba(124, 58, 237, 0.09), transparent 70%),
-    radial-gradient(45% 30% at 92% 112%, rgba(159, 95, 255, 0.07), transparent 70%);
+    radial-gradient(60% 38% at 50% -10%, rgba(159, 95, 255, 0.10), transparent 70%),
+    radial-gradient(45% 30% at 8% 112%, rgba(124, 58, 237, 0.07), transparent 70%),
+    radial-gradient(45% 30% at 92% 112%, rgba(159, 95, 255, 0.05), transparent 70%);
 }
 .god-ambient.god-trader::before {
   content: "";
@@ -507,11 +507,11 @@ html[data-tier="pilot"] .tier-ambient {
 }
 @keyframes thorFlicker {
   0%, 89%, 100% { opacity: 0; }
-  90%   { opacity: 0.9; }
-  91%   { opacity: 0.05; }
-  92.5% { opacity: 0.65; }
+  90%   { opacity: 0.45; }
+  91%   { opacity: 0.04; }
+  92.5% { opacity: 0.3; }
   93.5% { opacity: 0; }
-  95%   { opacity: 0.3; }
+  95%   { opacity: 0.16; }
   96%   { opacity: 0; }
 }
 
@@ -561,13 +561,28 @@ html[data-tier="pilot"] .tier-ambient {
   place-items: center;
   overflow: hidden;
 }
+/* Dark veil under every ceremony — separates the ritual from page content
+   so it reads as a deliberate scene, not a glitch over the UI. */
+.god-ceremony::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(130% 130% at 50% 50%, rgba(2, 3, 10, 0.55), rgba(2, 3, 10, 0.82));
+  animation: ceremonyVeil 2s ease-out forwards;
+}
+@keyframes ceremonyVeil {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  78%  { opacity: 1; }
+  100% { opacity: 0; }
+}
 .god-flash { position: absolute; inset: 0; }
 
 /* Thor: triple lightning flash + bolt strike */
 .god-ceremony.god-trader .god-flash {
   background:
     radial-gradient(80% 60% at 50% 0%, rgba(214, 178, 255, 0.55), rgba(159, 95, 255, 0.18) 50%, transparent 75%);
-  animation: thorStrikeFlash 1.5s ease-out forwards;
+  animation: thorStrikeFlash 1.4s ease-out forwards;
 }
 .god-bolt {
   position: absolute;
@@ -577,7 +592,7 @@ html[data-tier="pilot"] .tier-ambient {
   height: 72vh;
   transform: translateX(-50%);
   filter: drop-shadow(0 0 18px rgba(190, 150, 255, 0.9)) drop-shadow(0 0 48px rgba(159, 95, 255, 0.6));
-  animation: thorBolt 1.5s ease-out forwards;
+  animation: thorBolt 1.4s ease-out forwards;
 }
 @keyframes thorStrikeFlash {
   0%   { opacity: 0; }
@@ -598,7 +613,7 @@ html[data-tier="pilot"] .tier-ambient {
 /* Freyr: golden bloom swelling from the heart of the screen */
 .god-ceremony.god-pro .god-flash {
   background: radial-gradient(50% 50% at 50% 55%, rgba(245, 166, 35, 0.5), rgba(201, 169, 85, 0.15) 55%, transparent 78%);
-  animation: freyrBloomFlash 2.2s ease-out forwards;
+  animation: freyrBloomFlash 1.9s ease-out forwards;
 }
 .god-bloom {
   position: absolute;
@@ -606,7 +621,7 @@ html[data-tier="pilot"] .tier-ambient {
   height: 38vmin;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 214, 120, 0.5), rgba(245, 166, 35, 0.18) 55%, transparent 72%);
-  animation: freyrBloomRing 2.2s ease-out forwards;
+  animation: freyrBloomRing 1.9s ease-out forwards;
 }
 @keyframes freyrBloomFlash {
   0%   { opacity: 0; }
@@ -623,7 +638,7 @@ html[data-tier="pilot"] .tier-ambient {
 /* Odin: prismatic iris ring expanding outward */
 .god-ceremony.god-pilot .god-flash {
   background: radial-gradient(45% 45% at 50% 50%, rgba(12, 17, 48, 0.65), transparent 75%);
-  animation: freyrBloomFlash 2.2s ease-out forwards;
+  animation: freyrBloomFlash 1.9s ease-out forwards;
 }
 .god-iris {
   position: absolute;
@@ -635,7 +650,7 @@ html[data-tier="pilot"] .tier-ambient {
     linear-gradient(#02030A, #02030A) padding-box,
     conic-gradient(from 0deg, #00E8FF, #9F5FFF, #F5A623, #00E8FF) border-box;
   box-shadow: 0 0 42px rgba(159, 95, 255, 0.55), inset 0 0 42px rgba(0, 232, 255, 0.25);
-  animation: odinIris 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: odinIris 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 @keyframes odinIris {
   0%   { transform: scale(0.12) rotate(0deg); opacity: 0; }
@@ -650,7 +665,7 @@ html[data-tier="pilot"] .tier-ambient {
   flex-direction: column;
   align-items: center;
   gap: 0.4rem;
-  animation: godSigil 2.4s ease-out forwards;
+  animation: godSigil 2s ease-out forwards;
 }
 .god-rune {
   font-size: clamp(3.4rem, 11vw, 6rem);

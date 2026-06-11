@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useTier } from "@/lib/tier/client";
+import { armCeremony } from "@/lib/tier/ceremony";
 import type { Tier } from "@/lib/tier/types";
 import SignInButton from "@/components/auth/SignInButton";
 import PricingCard, { type TierConfig } from "./PricingCard";
@@ -74,6 +75,7 @@ export default function PricingView() {
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.ok) throw new Error(j?.error ?? `select ${res.status}`);
+      armCeremony();
       refresh();
       toast.success(t("pricing.adminSwitched"));
     } catch (e) {
