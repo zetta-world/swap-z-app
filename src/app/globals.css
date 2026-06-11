@@ -1030,6 +1030,97 @@ html[data-tier] .tier-godline {
   opacity: 0.45;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * THOR — Peça 3: Topbar obsidian glass + gold metallic edges
+ *
+ * header.glass-pane : deeper obsidian bg · hammered-gold bottom rim ·
+ *                     violet aura below the header
+ * Z logo glyph      : Electric Violet #8A5CFF gradient (header scope)
+ * God sigil pill    : obsidian fill · Ancient Gold border · violet glow
+ * Sidebar           : Electric Violet right border · gold-to-violet
+ *                     accent stripe across the very top
+ *
+ * 100% additive — free tier sees no change.
+ * ══════════════════════════════════════════════════════════════════════*/
+
+/* ── Obsidian header ───────────────────────────────────────────────────
+   Replaces glass-pane's default neutral backdrop with deep obsidian.
+   High saturation blur makes the storm behind it feel tactile.          */
+html[data-tier="trader"] header.glass-pane {
+  background: linear-gradient(180deg, rgba(4, 2, 10, 0.92) 0%, rgba(6, 3, 14, 0.86) 100%);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border-bottom-color: rgba(212, 175, 55, 0.28) !important;
+  box-shadow:
+    0  1px 0 0 rgba(212, 175, 55, 0.20) inset,   /* top inner gold shine */
+    0 -1px 0 0 rgba(138, 92, 255, 0.08) inset,   /* bottom inner violet bleed */
+    0 8px 48px -12px rgba(95, 47, 255, 0.30);    /* Electric Storm aura below */
+  position: relative;
+}
+/* Hammered-gold gradient shimmer — bright gold center, fading at the edges
+   exactly like a brushed-metal bar on a God of War UI panel.             */
+html[data-tier="trader"] header.glass-pane::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent          0%,
+    rgba(212,175, 55,0.30) 10%,
+    rgba(245,215,100,0.82) 35%,
+    rgba(255,232,140,1.00) 50%,
+    rgba(245,215,100,0.82) 65%,
+    rgba(212,175, 55,0.30) 90%,
+    transparent         100%
+  );
+  animation: thorGoldEdge 10s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes thorGoldEdge {
+  0%, 100% { opacity: 0.72; }
+  50%       { opacity: 1.00; }
+}
+
+/* ── Z logo glyph — Electric Violet in the header (header scope only) ─ */
+html[data-tier="trader"] header .bg-grad-cyan {
+  background-image: linear-gradient(135deg, #8A5CFF 0%, #5F2FFF 100%) !important;
+}
+
+/* ── God sigil pill — obsidian fill · Ancient Gold border · violet glow  */
+html[data-tier="trader"] .tier-pill {
+  background: rgba(5, 3, 14, 0.88) !important;
+  border-color: rgba(212, 175, 55, 0.48) !important;
+  box-shadow:
+    0 0 22px -4px rgba(138, 92, 255, 0.58),
+    0 0  8px -2px rgba(212, 175, 55, 0.18) inset;
+}
+
+/* ── Sidebar — Electric Violet right border + gold→violet top stripe ─── */
+html[data-tier="trader"] aside.glass-pane {
+  border-right-color: rgba(138, 92, 255, 0.22) !important;
+}
+html[data-tier="trader"] aside.glass-pane::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent            0%,
+    rgba(212,175, 55,0.45) 30%,
+    rgba(138, 92,255,0.55) 65%,
+    transparent           100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
