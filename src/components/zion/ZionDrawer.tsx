@@ -5,7 +5,7 @@ import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
 import {
   Sparkles, X, Send, RefreshCw, TrendingUp, Globe, Crosshair, FileText,
-  ChevronDown, ChevronUp, RotateCcw, Loader2, Sparkle,
+  ChevronDown, ChevronUp, RotateCcw, Loader2, Sparkle, Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -27,6 +27,7 @@ import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "trading",   labelKey: "zion.tabTrading", taglineKey: "zion.taglineTrading", Icon: TrendingUp },
   { id: "arbitrage", labelKey: "zion.tabArb",     taglineKey: "zion.taglineArb",     Icon: Globe      },
+  { id: "futures",   labelKey: "zion.tabFutures", taglineKey: "zion.taglineFutures", Icon: Zap        },
   { id: "sniper",    labelKey: "zion.tabSniper",  taglineKey: "zion.taglineSniper",  Icon: Crosshair  },
   { id: "pair",      labelKey: "zion.tabDeep",    taglineKey: "zion.taglineDeep",    Icon: FileText   },
 ];
@@ -55,6 +56,9 @@ export default function ZionDrawer() {
   const [arbMinSpread, setArbMinSpread] = useState("0.5");
   // Sniper-mode filter
   const [snipeMaxAge,  setSnipeMaxAge]  = useState<"1h" | "6h" | "24h" | "7d">("24h");
+  // Futures-mode filters
+  const [futuresLeverage, setFuturesLeverage] = useState("5");
+  const [futuresDir,      setFuturesDir]      = useState<"long" | "short">("long");
 
   const abortRef  = useRef<AbortController | null>(null);
 
@@ -100,6 +104,10 @@ export default function ZionDrawer() {
     if (followUp)              params.set("message",   followUp);
     if (runOp === "arbitrage") params.set("minSpread", arbMinSpread);
     if (runOp === "sniper")    params.set("maxAge",    snipeMaxAge);
+    if (runOp === "futures") {
+      params.set("leverage",    futuresLeverage);
+      params.set("futuresDir",  futuresDir);
+    }
     params.set("lang", lang);
 
     // Forward the live wallet balance so the server can size proposals to

@@ -21,7 +21,7 @@ import type { CexCredentials, CexId } from "./types";
  * vault; older paths that don't simply don't enable autopilot.
  */
 
-const AUTO_LOCK_MS = 30 * 60_000;
+const AUTO_LOCK_MS = 8 * 60 * 60_000; // 8 hours — only re-locks on long inactivity
 
 interface VaultState {
   creds:       Partial<Record<CexId, CexCredentials>> | null;

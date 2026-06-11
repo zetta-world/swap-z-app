@@ -19,7 +19,7 @@ import { useT, t as tImp } from "@/lib/i18n";
 import Skeleton from "@/components/ui/Skeleton";
 import { cn } from "@/lib/cn";
 
-const AUTO_LOCK_MS = 10 * 60 * 1000;
+const AUTO_LOCK_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 interface ExchangeRollup {
   status:      "idle" | "loading" | "loaded" | "failed";

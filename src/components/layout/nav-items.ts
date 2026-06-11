@@ -46,6 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/enterprise", labelKey: "nav.enterprise", icon: Building2,       group: "build" },
 
   { href: "/portfolio", labelKey: "nav.portfolio",  icon: Wallet,          group: "manage" },
+  { href: "/history",   labelKey: "nav.history",    icon: History,         group: "manage" },
   { href: "/settings",  labelKey: "nav.settings",   icon: Settings,        group: "manage" },
 ];
 
