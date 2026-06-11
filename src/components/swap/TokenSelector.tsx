@@ -9,6 +9,7 @@ import { formatUsd } from "@/lib/format";
 import { riskFromScore } from "@/lib/store/swap";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 
 interface Props {
   value: Token | undefined;
@@ -35,6 +36,9 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
       );
     });
   }, [query, chain]);
+
+  // Live prices for all visible tokens. Falls back to token.priceUsd while loading.
+  const { prices } = useTokenPrices(open ? list : []);
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -193,7 +197,9 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
                         <div className="font-sans text-xs text-ink-3 truncate">{tk.name}</div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <div className="font-mono text-sm text-ink whitespace-nowrap">{formatUsd(tk.priceUsd)}</div>
+                        <div className="font-mono text-sm text-ink whitespace-nowrap">
+                          {formatUsd(prices[tokenPriceKey(tk)] ?? tk.priceUsd)}
+                        </div>
                       </div>
                     </button>
                   );
