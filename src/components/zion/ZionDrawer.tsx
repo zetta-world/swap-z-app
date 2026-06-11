@@ -229,7 +229,7 @@ export default function ZionDrawer() {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-            className="h-full glass-strong border-l border-white/10 flex flex-col"
+            className="god-card h-full glass-strong border-l border-white/10 flex flex-col"
           >
             {/* Header */}
             <span className="tier-godline flex-shrink-0" aria-hidden />

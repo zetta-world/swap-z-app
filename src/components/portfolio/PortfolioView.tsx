@@ -185,7 +185,7 @@ export default function PortfolioView() {
         {/* Net worth card — only when there's real data to show */}
         {(anyWalletConnected || holdings.length > 0 || cexUsd > 0) && (
           <div className="aurora-border p-px mb-5">
-            <div className="rounded-[20px] glass p-5 sm:p-6">
+            <div className="god-card rounded-[20px] glass p-5 sm:p-6">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">{t("portfolio.netWorth")}</div>
@@ -234,7 +234,7 @@ export default function PortfolioView() {
         )}
 
         {/* Holdings — only real, non-zero balances from the connected wallet(s) */}
-        <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden mb-4">
+        <div className="god-card rounded-2xl border border-white/5 glass-pane overflow-hidden mb-4">
           <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
             <span className="font-display font-bold text-sm text-ink">{t("portfolio.holdings")}</span>
             <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">

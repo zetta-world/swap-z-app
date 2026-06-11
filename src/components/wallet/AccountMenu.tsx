@@ -83,7 +83,7 @@ export default function AccountMenu({ compact = false }: { compact?: boolean }) 
         <DropdownMenu.Content
           align="end"
           sideOffset={8}
-          className="z-50 w-72 rounded-2xl border border-white/10 glass-strong shadow-card overflow-hidden"
+          className="god-card z-50 w-72 rounded-2xl border border-white/10 glass-strong shadow-card overflow-hidden"
         >
           {/* Account header */}
           <div className="p-4 border-b border-white/5">
