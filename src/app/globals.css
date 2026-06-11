@@ -447,15 +447,15 @@ html[data-tier="pilot"] .tier-ambient {
    its own phase — no whole-layer opacity pulsing.                          */
 .god-ambient.god-pro {
   background:
-    /* Bright corona at the horizon */
-    radial-gradient(48% 38% at 50% 118%, rgba(255, 220, 100, 0.28) 0%, rgba(245, 166, 35, 0.18) 40%, transparent 72%),
-    /* Wide ambient haze */
-    radial-gradient(88% 62% at 50% 112%, rgba(245, 166, 35, 0.12), transparent 65%),
-    /* Amber accent top-corners */
-    radial-gradient(36% 28% at 92% -4%, rgba(201, 169, 85, 0.10), transparent 65%),
-    radial-gradient(36% 28% at 8%  -4%, rgba(255, 180, 40,  0.07), transparent 65%),
-    /* Warm floor bleed */
-    radial-gradient(100% 18% at 50% 102%, rgba(180, 100, 10, 0.14), transparent 60%);
+    /* Blazing sun corona rising from below */
+    radial-gradient(54% 46% at 50% 116%, rgba(255, 210, 80, 0.48) 0%, rgba(255, 130, 10, 0.30) 32%, transparent 64%),
+    /* Warm atmosphere spread */
+    radial-gradient(90% 58% at 50% 114%, rgba(245, 155, 20, 0.18), transparent 60%),
+    /* Sunrise catching the far walls */
+    radial-gradient(42% 32% at 98%  -8%, rgba(255, 170, 30, 0.16), transparent 65%),
+    radial-gradient(42% 32% at  2%  -8%, rgba(255, 185, 50, 0.13), transparent 65%),
+    /* Scorched ground glow */
+    radial-gradient(100% 22% at 50% 106%, rgba(210, 55, 0, 0.26), transparent 54%);
 }
 /* Three sweeping god-rays at independent phase offsets */
 .god-ambient.god-pro::before {
@@ -463,11 +463,11 @@ html[data-tier="pilot"] .tier-ambient {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(168deg, transparent 34%, rgba(255, 218, 85, 0.10) 41%, rgba(255, 242, 160, 0.20) 46%, rgba(255, 218, 85, 0.10) 51%, transparent 58%),
-    linear-gradient(195deg, transparent 38%, rgba(245, 166, 35, 0.08) 45%, rgba(255, 225, 115, 0.15) 50%, rgba(245, 166, 35, 0.08) 55%, transparent 63%),
-    linear-gradient(146deg, transparent 28%, rgba(201, 169, 85, 0.09) 36%, rgba(255, 205, 95, 0.14) 42%, transparent 52%);
-  background-size: 380% 100%, 310% 100%, 460% 100%;
-  animation: freyrRays 24s ease-in-out infinite;
+    linear-gradient(162deg, transparent 30%, rgba(255, 235, 110, 0.15) 38%, rgba(255, 252, 190, 0.34) 44%, rgba(255, 235, 110, 0.15) 50%, transparent 58%),
+    linear-gradient(198deg, transparent 35%, rgba(245, 166, 35, 0.12) 43%, rgba(255, 232, 135, 0.26) 50%, rgba(245, 166, 35, 0.12) 57%, transparent 66%),
+    linear-gradient(141deg, transparent 26%, rgba(210, 165, 55, 0.13) 34%, rgba(255, 218, 115, 0.22) 41%, transparent 52%);
+  background-size: 440% 100%, 360% 100%, 520% 100%;
+  animation: freyrRays 20s ease-in-out infinite;
 }
 @keyframes freyrRays {
   0%   { background-position: 0% 0,    100% 0,  25% 0; }
@@ -497,63 +497,63 @@ html[data-tier="pilot"] .tier-ambient {
    edge glow are STATIC: only the bolts flash.                             */
 .god-ambient.god-trader {
   background:
-    /* Storm wall overhead */
-    radial-gradient(72% 48% at 50% -18%, rgba(159, 95, 255, 0.22), transparent 68%),
-    /* Storm flanks rising */
-    radial-gradient(52% 38% at 4%  112%, rgba(124, 58, 237, 0.14), transparent 68%),
-    radial-gradient(52% 38% at 96% 112%, rgba(159, 95, 255, 0.12), transparent 68%),
-    /* Charged mid-atmosphere */
-    radial-gradient(90% 22% at 50% 52%, rgba(139, 79, 255, 0.06), transparent 60%),
-    /* Floor charge */
-    radial-gradient(64% 22% at 50% 108%, rgba(90, 40, 180, 0.14), transparent 58%);
-  box-shadow: 0 0 110px -18px rgba(159, 95, 255, 0.22) inset;
+    /* Massive storm crown bearing down */
+    radial-gradient(84% 58% at 50% -20%, rgba(130, 70, 255, 0.36), transparent 66%),
+    /* Electric flanks — towering storm walls */
+    radial-gradient(55% 48% at 0%   45%, rgba(100, 40, 220, 0.24), transparent 65%),
+    radial-gradient(55% 48% at 100% 45%, rgba(159, 95, 255, 0.22), transparent 65%),
+    /* Charged mid-air atmosphere */
+    radial-gradient(90% 28% at 50% 52%, rgba(120, 60, 200, 0.10), transparent 58%),
+    /* Ground charge (ionised air before strike) */
+    radial-gradient(72% 30% at 50% 112%, rgba(70, 22, 160, 0.28), transparent 54%);
+  box-shadow: 0 0 150px -18px rgba(139, 79, 255, 0.32) inset;
 }
-/* Primary lightning — 7s cycle, triple-flash event */
+/* DOM SVG bolts (ThorBolts component) replace the old CSS gradient lightning.
+   Here we only keep ambient edge-static glow — no more whole-layer flickers. */
 .god-ambient.god-trader::before {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(108deg, transparent 42%, rgba(222, 188, 255, 0.26) 47%, rgba(255, 255, 255, 0.18) 50%, rgba(222, 188, 255, 0.26) 53%, transparent 58%),
-    linear-gradient(136deg, transparent 38%, rgba(190, 148, 255, 0.18) 44%, rgba(255, 255, 255, 0.10) 48%, transparent 55%),
-    linear-gradient(88deg,  rgba(159, 95, 255, 0.09), transparent 22%),
-    linear-gradient(272deg, rgba(159, 95, 255, 0.07), transparent 22%);
-  opacity: 0;
-  animation: thorLightning1 7s linear infinite;
+    linear-gradient(88deg,  rgba(130, 70, 255, 0.10), transparent 22%),
+    linear-gradient(272deg, rgba(159, 95, 255, 0.08), transparent 22%);
 }
-/* Secondary lightning — 11s cycle (prime offset), different bolt angle */
-.god-ambient.god-trader::after {
-  content: "";
+
+/* ── DOM bolt SVG CSS ─────────────────────────────────────────────────── */
+/* Bolt-a: 13 s cycle  |  bolt-b: 19 s cycle (prime → almost never sync) */
+.thor-bolt {
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(258deg, transparent 40%, rgba(204, 160, 255, 0.22) 46%, rgba(255, 255, 255, 0.14) 49%, transparent 56%),
-    linear-gradient(72deg,  transparent 44%, rgba(178, 118, 255, 0.16) 50%, transparent 57%),
-    linear-gradient(180deg, rgba(139, 79, 255, 0.06), transparent 14%);
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
   opacity: 0;
-  animation: thorLightning2 11s linear infinite 3.1s;
+  will-change: opacity;
 }
-@keyframes thorLightning1 {
-  0%, 70%   { opacity: 0; }
-  71%   { opacity: 0.90; }  /* flash 1 */
-  72%   { opacity: 0.06; }
-  73.5% { opacity: 0.68; }  /* flash 2 */
-  74.5% { opacity: 0.03; }
-  76%   { opacity: 0.48; }  /* flash 3 */
-  77.5% { opacity: 0; }
-  80%   { opacity: 0.16; }  /* afterglow */
-  82%   { opacity: 0; }
-  100%  { opacity: 0; }
+.thor-bolt.bolt-a { animation: thorStrikeA 13s linear infinite 0.6s; }
+.thor-bolt.bolt-b { animation: thorStrikeB 19s linear infinite 6.2s; }
+
+@keyframes thorStrikeA {
+  0%, 62%   { opacity: 0; }
+  63%       { opacity: 1; }        /* flash 1 */
+  63.4%     { opacity: 0.06; }
+  64%       { opacity: 0.82; }     /* flash 2 */
+  64.6%     { opacity: 0.03; }
+  65.2%     { opacity: 0.58; }     /* flash 3 */
+  66%       { opacity: 0; }
+  67%       { opacity: 0.14; }     /* afterglow */
+  68.5%     { opacity: 0; }
+  100%      { opacity: 0; }
 }
-@keyframes thorLightning2 {
-  0%, 57%   { opacity: 0; }
-  58%   { opacity: 0.78; }
-  59%   { opacity: 0.05; }
-  60.5% { opacity: 0.58; }
-  61.5% { opacity: 0; }
-  63%   { opacity: 0.28; }
-  64.5% { opacity: 0; }
-  100%  { opacity: 0; }
+@keyframes thorStrikeB {
+  0%, 55%   { opacity: 0; }
+  56%       { opacity: 0.88; }
+  56.5%     { opacity: 0.04; }
+  57%       { opacity: 0.70; }
+  57.8%     { opacity: 0; }
+  59%       { opacity: 0.10; }
+  60.5%     { opacity: 0; }
+  100%      { opacity: 0; }
 }
 
 /* ── ODIN (pilot) — Cosmic Expanse ────────────────────────────────────── */
@@ -864,38 +864,7 @@ html[data-tier="pilot"] .god-card:hover {
     0 8px 32px -8px rgba(0, 0, 0, 0.55);
 }
 
-/* ── God rune watermark — every god-card is branded with its deity ────── */
-.god-card::after {
-  content: none;
-  position: absolute;
-  top: 2px;
-  right: 12px;
-  font-family: var(--font-display);
-  font-size: 72px;
-  line-height: 1;
-  font-weight: 800;
-  pointer-events: none;
-  user-select: none;
-  z-index: 0;
-}
-html[data-tier="pro"] .god-card::after {
-  content: "ᚠ";
-  color: #F5A623;
-  opacity: 0.10;
-  text-shadow: 0 0 26px rgba(245, 166, 35, 0.55);
-}
-html[data-tier="trader"] .god-card::after {
-  content: "ᚦ";
-  color: #B98AFF;
-  opacity: 0.11;
-  text-shadow: 0 0 26px rgba(159, 95, 255, 0.60);
-}
-html[data-tier="pilot"] .god-card::after {
-  content: "ᚨ";
-  color: #C9A2FF;
-  opacity: 0.11;
-  text-shadow: 0 0 18px rgba(0, 232, 255, 0.50), 0 0 36px rgba(159, 95, 255, 0.40);
-}
+/* god-card rune watermarks removed */
 
 /* ── God-energized aurora border — the swap card channels its deity ───── */
 /* The swap card (and other aurora-border surfaces) take on the god's

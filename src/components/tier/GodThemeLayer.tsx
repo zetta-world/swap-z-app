@@ -47,8 +47,9 @@ export default function GodThemeLayer() {
     <>
       {active && isPaidTier(tier) && (
         <div aria-hidden className={cn("god-ambient", `god-${tier}`)}>
-          {!reduceMotion && tier === "pilot" && <OdinStars />}
-          {!reduceMotion && tier === "pro" && <FreyrEmbers />}
+          {!reduceMotion && tier === "pilot"  && <OdinStars />}
+          {!reduceMotion && tier === "pro"    && <FreyrEmbers />}
+          {!reduceMotion && tier === "trader" && <ThorBolts />}
         </div>
       )}
 
@@ -146,6 +147,60 @@ const EMBER_COLORS = [
   "rgba(255,214,120,0.85)",
   "rgba(201,169,85,0.80)",
 ];
+
+/**
+ * Two SVG bolts that cut full-screen diagonally for Thor's ambient.
+ * bolt-a fires on a 13 s cycle, bolt-b on a 19 s cycle (prime offset so
+ * they almost never coincide) — giving genuine randomness without JS.
+ */
+function ThorBolts() {
+  return (
+    <>
+      {/* Primary bolt — upper-right → lower-left */}
+      <svg className="thor-bolt bolt-a" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
+        <defs>
+          <filter id="thor-halo-a" x="-200%" y="-5%" width="500%" height="110%">
+            <feGaussianBlur stdDeviation="2.8" />
+          </filter>
+          <filter id="thor-glow-a" x="-100%" y="-5%" width="300%" height="110%">
+            <feGaussianBlur stdDeviation="0.8" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {/* Sky flash rectangle */}
+        <rect width="100" height="100" fill="rgba(180,130,255,0.08)" />
+        {/* Halo (wide, diffuse) */}
+        <path d="M67 0 L52 32 L63 35 L44 66 L58 69 L32 100"
+          stroke="rgba(180,130,255,0.55)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-halo-a)" />
+        {/* Core (sharp white) */}
+        <path d="M67 0 L52 32 L63 35 L44 66 L58 69 L32 100"
+          stroke="rgba(255,255,255,0.97)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-glow-a)" />
+      </svg>
+
+      {/* Secondary bolt — slightly different angle + position */}
+      <svg className="thor-bolt bolt-b" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
+        <defs>
+          <filter id="thor-halo-b" x="-200%" y="-5%" width="500%" height="110%">
+            <feGaussianBlur stdDeviation="2.2" />
+          </filter>
+          <filter id="thor-glow-b" x="-100%" y="-5%" width="300%" height="110%">
+            <feGaussianBlur stdDeviation="0.6" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        <rect width="100" height="100" fill="rgba(160,100,255,0.06)" />
+        <path d="M74 0 L61 26 L72 29 L55 56 L67 59 L43 100"
+          stroke="rgba(200,160,255,0.45)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-halo-b)" />
+        <path d="M74 0 L61 26 L72 29 L55 56 L67 59 L43 100"
+          stroke="rgba(255,255,255,0.92)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-glow-b)" />
+      </svg>
+    </>
+  );
+}
 
 function FreyrEmbers() {
   const embers = useMemo(
