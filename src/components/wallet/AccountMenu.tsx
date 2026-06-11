@@ -18,7 +18,7 @@ import { cn } from "@/lib/cn";
  * Shows native balance, chain badge with switcher, copy address, view
  * on block explorer, disconnect.
  */
-export default function AccountMenu() {
+export default function AccountMenu({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const { address, connector, chain } = useAccount();
   const chainId = useChainId();
@@ -58,18 +58,23 @@ export default function AccountMenu() {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button className="inline-flex items-center gap-2 h-9 px-2.5 sm:px-3 rounded-lg border border-cyan/30 bg-cyan/[0.06] hover:bg-cyan/[0.12] transition-colors group">
+        <button className={cn(
+          "tier-pill inline-flex items-center rounded-lg border border-cyan/30 bg-cyan/[0.06] hover:bg-cyan/[0.12] transition-colors group h-9",
+          compact ? "gap-1 px-2 sm:gap-2 sm:px-3" : "gap-2 px-2.5 sm:px-3",
+        )}>
           <span
             className="w-2 h-2 rounded-full pulse-dot flex-shrink-0"
-            style={{ background: chainMeta?.color ?? "#00E8FF" }}
+            style={{ background: `var(--tier-dot, ${chainMeta?.color ?? "#00E8FF"})` }}
             aria-label={chainMeta?.short ?? "chain"}
           />
-          <span className="font-mono text-xs text-ink hidden xs:inline tabular-nums">
+          <span className={cn("font-mono text-xs text-ink tabular-nums", compact ? "hidden sm:inline" : "hidden xs:inline")}>
             {shortenAddress(address, 4, 4)}
           </span>
-          <span className="font-mono text-xs text-ink xs:hidden tabular-nums">
-            {shortenAddress(address, 2, 4)}
-          </span>
+          {!compact && (
+            <span className="font-mono text-xs text-ink xs:hidden tabular-nums">
+              {shortenAddress(address, 2, 4)}
+            </span>
+          )}
           <ChevronDown className="w-3.5 h-3.5 text-ink-3 group-hover:text-cyan flex-shrink-0" />
         </button>
       </DropdownMenu.Trigger>

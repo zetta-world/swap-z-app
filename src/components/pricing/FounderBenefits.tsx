@@ -29,7 +29,9 @@ export default function FounderBenefits() {
   const t = useT();
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-gold/30 bg-gradient-to-br from-gold/[0.07] via-bg-1/40 to-violet/[0.05] p-6 sm:p-8">
+    // Gold-tinted glass frame matching the Access Pass card aesthetic
+    <div className="rounded-3xl p-px bg-[linear-gradient(150deg,rgba(245,166,35,0.5),rgba(245,166,35,0.12)_45%,rgba(159,95,255,0.35))] shadow-[0_0_56px_-18px_rgba(245,166,35,0.35)]">
+    <div className="relative overflow-hidden rounded-[23px] bg-gradient-to-br from-gold/[0.08] via-bg-1/70 to-violet/[0.06] backdrop-blur-xl p-6 sm:p-8">
       {/* Ambient glow */}
       <div className="absolute -top-24 -right-16 w-80 h-80 rounded-full bg-gold/10 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-28 -left-20 w-80 h-80 rounded-full bg-violet/10 blur-3xl pointer-events-none" />
@@ -75,6 +77,7 @@ export default function FounderBenefits() {
           ))}
         </div>
       </div>
+    </div>
     </div>
   );
 }

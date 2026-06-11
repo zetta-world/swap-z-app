@@ -340,6 +340,410 @@ input[type="number"] { -moz-appearance: textfield; }
   outline-offset: 2px;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Tier experience layer (FASE 5.x)
+ * <TierAccentProvider> sets data-tier="pro|trader|pilot" on <html> for
+ * signed-in paid-tier wallets. Everything below is ADDITIVE: with no
+ * attribute, every opt-in class renders exactly today's neutral UI.
+ * ─────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --tier-accent: #00E8FF;                 /* default = brand cyan */
+  --tier-glow:   rgba(0, 232, 255, 0.35);
+}
+html[data-tier="pro"] {
+  --tier-accent:   #F5A623;
+  --tier-glow:     rgba(245, 166, 35, 0.40);
+  --tier-dot:      #F5A623;
+  --tier-gradient: linear-gradient(120deg, #F5A623, #C9A955);
+}
+html[data-tier="trader"] {
+  --tier-accent:   #9F5FFF;
+  --tier-glow:     rgba(159, 95, 255, 0.40);
+  --tier-dot:      #9F5FFF;
+  --tier-gradient: linear-gradient(120deg, #9F5FFF, #7C3AED);
+}
+html[data-tier="pilot"] {
+  --tier-accent:   #C9A2FF;
+  --tier-glow:     rgba(159, 95, 255, 0.45);
+  --tier-dot:      #C9A2FF;
+  --tier-gradient: linear-gradient(120deg, #00E8FF, #9F5FFF, #F5A623);
+}
+
+/* Wallet pill in the topbar — neutral border by default, tier accent when
+   a paid tier is active. Specificity (type + class) wins over Tailwind's
+   single-class border utilities without !important. */
+html[data-tier] .tier-pill {
+  border-color: color-mix(in srgb, var(--tier-accent) 45%, transparent);
+  box-shadow: 0 0 14px -4px var(--tier-glow);
+}
+
+/* Sidebar logo underline — invisible 1px line until a tier is active. */
+.tier-logo-underline {
+  display: block;
+  height: 1px;
+  margin-top: 3px;
+  background: transparent;
+}
+html[data-tier] .tier-logo-underline {
+  background: var(--tier-gradient, var(--tier-accent));
+  opacity: 0.3;
+}
+
+/* Pilot-only ambient shimmer behind the Topbar — display:none for every
+   other tier; slow (>15s) and overlay-blended so it never competes with
+   the trading UI. */
+.tier-ambient { display: none; }
+html[data-tier="pilot"] .tier-ambient {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  background: linear-gradient(
+    115deg,
+    rgba(0, 232, 255, 0.16),
+    rgba(159, 95, 255, 0.18),
+    rgba(245, 166, 35, 0.12),
+    rgba(0, 232, 255, 0.16)
+  );
+  background-size: 300% 100%;
+  opacity: 0.55;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-tier="pilot"] .tier-ambient {
+    animation: tierAmbientShift 18s ease-in-out infinite;
+  }
+}
+@keyframes tierAmbientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+@layer utilities {
+  .glow-tier { box-shadow: 0 0 24px -8px var(--tier-glow); }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * God themes — each paid tier channels its god from the Access Pass art:
+ *   pro    → FREYR  (golden prosperity haze, drifting embers)
+ *   trader → THOR   (violet storm, ambient lightning flicker)
+ *   pilot  → ODIN   (cosmic nebula, twinkling starfield)
+ * `.god-ambient` is the persistent backdrop; `.god-ceremony` is the one-shot
+ * plan-switch ritual. Both are pointer-events-none; functional surfaces
+ * (swap card, Pro Terminal, charts) render above and stay untouched.
+ * ─────────────────────────────────────────────────────────────────────── */
+
+.god-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ── FREYR (pro) — warm golden haze rising from below ─────────────────── */
+.god-ambient.god-pro {
+  background:
+    radial-gradient(70% 45% at 50% 112%, rgba(245, 166, 35, 0.10), transparent 70%),
+    radial-gradient(40% 30% at 88% -8%, rgba(201, 169, 85, 0.07), transparent 70%);
+}
+.god-ambient.god-pro::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(75deg, transparent 44%, rgba(245, 166, 35, 0.07) 50%, transparent 56%);
+  background-size: 300% 100%;
+  animation: freyrSweep 16s ease-in-out infinite;
+}
+/* drifting embers — pure background-image dots, no extra DOM */
+.god-ambient.god-pro::after {
+  content: "";
+  position: absolute;
+  inset: -20% 0 0 0;
+  background-image:
+    radial-gradient(2px 2px at 12% 85%, rgba(245, 166, 35, 0.55), transparent 60%),
+    radial-gradient(1.5px 1.5px at 34% 70%, rgba(255, 200, 90, 0.45), transparent 60%),
+    radial-gradient(2px 2px at 58% 92%, rgba(245, 166, 35, 0.5), transparent 60%),
+    radial-gradient(1.5px 1.5px at 76% 64%, rgba(255, 214, 120, 0.4), transparent 60%),
+    radial-gradient(2px 2px at 90% 80%, rgba(245, 166, 35, 0.45), transparent 60%);
+  animation: freyrEmbers 22s linear infinite;
+  opacity: 0.8;
+}
+@keyframes freyrSweep {
+  0%, 100% { background-position: 0% 0; }
+  50%      { background-position: 100% 0; }
+}
+@keyframes freyrEmbers {
+  0%   { transform: translateY(12%); opacity: 0; }
+  12%  { opacity: 0.8; }
+  88%  { opacity: 0.8; }
+  100% { transform: translateY(-14%); opacity: 0; }
+}
+
+/* ── THOR (trader) — violet storm front + random lightning flicker ────── */
+.god-ambient.god-trader {
+  background:
+    radial-gradient(60% 38% at 50% -10%, rgba(159, 95, 255, 0.10), transparent 70%),
+    radial-gradient(45% 30% at 8% 112%, rgba(124, 58, 237, 0.07), transparent 70%),
+    radial-gradient(45% 30% at 92% 112%, rgba(159, 95, 255, 0.05), transparent 70%);
+}
+.god-ambient.god-trader::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(112deg, transparent 44%, rgba(214, 178, 255, 0.20) 49%, rgba(255, 255, 255, 0.10) 50%, transparent 55%);
+  opacity: 0;
+  animation: thorFlicker 11s linear infinite;
+}
+.god-ambient.god-trader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(248deg, transparent 46%, rgba(190, 150, 255, 0.16) 51%, transparent 56%);
+  opacity: 0;
+  animation: thorFlicker 17s linear infinite reverse;
+}
+@keyframes thorFlicker {
+  0%, 89%, 100% { opacity: 0; }
+  90%   { opacity: 0.45; }
+  91%   { opacity: 0.04; }
+  92.5% { opacity: 0.3; }
+  93.5% { opacity: 0; }
+  95%   { opacity: 0.16; }
+  96%   { opacity: 0; }
+}
+
+/* ── ODIN (pilot) — nebula + twinkling stars ──────────────────────────── */
+.god-ambient.god-pilot {
+  background:
+    radial-gradient(60% 42% at 50% -12%, rgba(159, 95, 255, 0.12), transparent 70%),
+    radial-gradient(38% 26% at 12% 112%, rgba(0, 232, 255, 0.08), transparent 70%),
+    radial-gradient(38% 26% at 88% 112%, rgba(245, 166, 35, 0.07), transparent 70%);
+}
+.god-ambient.god-pilot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 8% 18%, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 22% 65%, rgba(0, 232, 255, 0.6), transparent 60%),
+    radial-gradient(1.5px 1.5px at 37% 30%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(1px 1px at 52% 78%, rgba(214, 178, 255, 0.6), transparent 60%),
+    radial-gradient(1.5px 1.5px at 67% 14%, rgba(255, 255, 255, 0.6), transparent 60%),
+    radial-gradient(1px 1px at 81% 52%, rgba(245, 166, 35, 0.55), transparent 60%),
+    radial-gradient(1.5px 1.5px at 93% 84%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(1px 1px at 45% 48%, rgba(0, 232, 255, 0.45), transparent 60%);
+  animation: odinTwinkle 7s ease-in-out infinite;
+}
+.god-ambient.god-pilot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(0, 232, 255, 0.05), rgba(159, 95, 255, 0.07), rgba(245, 166, 35, 0.05));
+  background-size: 300% 300%;
+  animation: auroraShift 24s ease-in-out infinite;
+  mix-blend-mode: screen;
+}
+@keyframes odinTwinkle {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+/* ── Ceremony — one-shot ritual when the plan changes ─────────────────── */
+.god-ceremony {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+/* Dark veil under every ceremony — separates the ritual from page content
+   so it reads as a deliberate scene, not a glitch over the UI. */
+.god-ceremony::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(130% 130% at 50% 50%, rgba(2, 3, 10, 0.55), rgba(2, 3, 10, 0.82));
+  animation: ceremonyVeil 2s ease-out forwards;
+}
+@keyframes ceremonyVeil {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  78%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.god-flash { position: absolute; inset: 0; }
+
+/* Thor: triple lightning flash + bolt strike */
+.god-ceremony.god-trader .god-flash {
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgba(214, 178, 255, 0.55), rgba(159, 95, 255, 0.18) 50%, transparent 75%);
+  animation: thorStrikeFlash 1.4s ease-out forwards;
+}
+.god-bolt {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: clamp(80px, 18vw, 160px);
+  height: 72vh;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 0 18px rgba(190, 150, 255, 0.9)) drop-shadow(0 0 48px rgba(159, 95, 255, 0.6));
+  animation: thorBolt 1.4s ease-out forwards;
+}
+@keyframes thorStrikeFlash {
+  0%   { opacity: 0; }
+  6%   { opacity: 1; }
+  12%  { opacity: 0.08; }
+  18%  { opacity: 0.85; }
+  26%  { opacity: 0.05; }
+  34%  { opacity: 0.45; }
+  100% { opacity: 0; }
+}
+@keyframes thorBolt {
+  0%   { opacity: 0; transform: translateX(-50%) scaleY(0.2); transform-origin: top; }
+  6%   { opacity: 1; transform: translateX(-50%) scaleY(1); }
+  30%  { opacity: 0.9; }
+  100% { opacity: 0; transform: translateX(-50%) scaleY(1); }
+}
+
+/* Freyr: golden bloom swelling from the heart of the screen */
+.god-ceremony.god-pro .god-flash {
+  background: radial-gradient(50% 50% at 50% 55%, rgba(245, 166, 35, 0.5), rgba(201, 169, 85, 0.15) 55%, transparent 78%);
+  animation: freyrBloomFlash 1.9s ease-out forwards;
+}
+.god-bloom {
+  position: absolute;
+  width: 38vmin;
+  height: 38vmin;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 214, 120, 0.5), rgba(245, 166, 35, 0.18) 55%, transparent 72%);
+  animation: freyrBloomRing 1.9s ease-out forwards;
+}
+@keyframes freyrBloomFlash {
+  0%   { opacity: 0; }
+  18%  { opacity: 1; }
+  60%  { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+@keyframes freyrBloomRing {
+  0%   { transform: scale(0.3); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: scale(3.4); opacity: 0; }
+}
+
+/* Odin: prismatic iris ring expanding outward */
+.god-ceremony.god-pilot .god-flash {
+  background: radial-gradient(45% 45% at 50% 50%, rgba(12, 17, 48, 0.65), transparent 75%);
+  animation: freyrBloomFlash 1.9s ease-out forwards;
+}
+.god-iris {
+  position: absolute;
+  width: 30vmin;
+  height: 30vmin;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  background:
+    linear-gradient(#02030A, #02030A) padding-box,
+    conic-gradient(from 0deg, #00E8FF, #9F5FFF, #F5A623, #00E8FF) border-box;
+  box-shadow: 0 0 42px rgba(159, 95, 255, 0.55), inset 0 0 42px rgba(0, 232, 255, 0.25);
+  animation: odinIris 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes odinIris {
+  0%   { transform: scale(0.12) rotate(0deg); opacity: 0; }
+  16%  { opacity: 1; }
+  100% { transform: scale(4.2) rotate(140deg); opacity: 0; }
+}
+
+/* Sigil — the god's rune + name, all ceremonies */
+.god-sigil {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  animation: godSigil 2s ease-out forwards;
+}
+.god-rune {
+  font-size: clamp(3.4rem, 11vw, 6rem);
+  line-height: 1;
+  color: var(--tier-accent);
+  text-shadow: 0 0 28px var(--tier-glow), 0 0 64px var(--tier-glow);
+}
+.god-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.4rem, 5vw, 2.2rem);
+  letter-spacing: 0.34em;
+  margin-left: 0.34em; /* visually recentre the tracked text */
+  color: #F2F4FF;
+  text-shadow: 0 0 22px var(--tier-glow);
+}
+.god-epithet {
+  font-family: var(--font-mono);
+  font-size: clamp(0.6rem, 2.4vw, 0.75rem);
+  letter-spacing: 0.5em;
+  margin-left: 0.5em;
+  color: var(--tier-accent);
+  text-transform: uppercase;
+}
+@keyframes godSigil {
+  0%   { opacity: 0; transform: scale(0.86); }
+  18%  { opacity: 1; transform: scale(1); }
+  72%  { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.05); }
+}
+
+/* Sidebar active-item bar adopts the god's accent */
+html[data-tier] .tier-active-bar {
+  background: var(--tier-accent);
+  box-shadow: 0 0 14px -2px var(--tier-glow);
+}
+
+/* ── God details, part 2 — component-level accents ────────────────────── */
+
+/* Headline highlight spans (pricing/enterprise heroes). Default defines the
+   previously-missing utility; an active god retints it with his gradient. */
+.text-gradient-cyan {
+  background-image: linear-gradient(120deg, #00E8FF, #9F5FFF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html[data-tier] .text-gradient-cyan {
+  background-image: var(--tier-gradient, linear-gradient(120deg, #00E8FF, #9F5FFF));
+}
+
+/* Text selection takes the god's color */
+html[data-tier] ::selection {
+  background: color-mix(in srgb, var(--tier-accent) 30%, transparent);
+}
+
+/* Topbar/sidebar glass borders pick up a faint god hue */
+html[data-tier] .glass-pane {
+  border-color: color-mix(in srgb, var(--tier-accent) 12%, rgba(255, 255, 255, 0.05));
+}
+
+/* Active nav icons (sidebar + mobile drawer) follow the god accent */
+html[data-tier] .tier-active-icon {
+  color: var(--tier-accent);
+}
+
+/* 1px god gradient line — used under the ZION drawer header and the
+   MobileNav god banner. Invisible without an active tier. */
+.tier-godline {
+  display: block;
+  height: 1px;
+  background: transparent;
+}
+html[data-tier] .tier-godline {
+  background: var(--tier-gradient, var(--tier-accent));
+  opacity: 0.45;
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

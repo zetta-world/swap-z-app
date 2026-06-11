@@ -7,6 +7,8 @@ import { X, Globe } from "lucide-react";
 import { useUI, type AppLang } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { useTierAccent } from "@/components/tier/TierAccentProvider";
+import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 import { NAV_ITEMS, NAV_BADGE_CLASSES } from "./nav-items";
 
 const LANGS: { id: AppLang; label: string; flag: string }[] = [
@@ -19,6 +21,7 @@ const LANGS: { id: AppLang; label: string; flag: string }[] = [
 export default function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const { lang, setLang } = useUI();
+  const { active: tierActive, tier: activeTier } = useTierAccent();
   const t = useT();
 
   return (
@@ -38,6 +41,26 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {/* God banner — mobile users get the deity identity here, since the
+              topbar sigil chip is md+ only */}
+          {tierActive && isPaidTier(activeTier) && (
+            <div className="px-4 py-2.5 border-b border-white/5 flex items-center gap-2.5">
+              <span className="font-display font-bold text-lg leading-none" style={{ color: "var(--tier-accent)" }}>
+                {GOD_META[activeTier].rune}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="font-display font-bold text-xs tracking-[0.22em]" style={{ color: "var(--tier-accent)" }}>
+                  {GOD_META[activeTier].god}
+                </div>
+                <span className="tier-godline mt-1" />
+                <div className="font-mono text-[8px] text-ink-3 tracking-[0.3em] uppercase mt-1">
+                  {GOD_META[activeTier].epithet}
+                </div>
+              </div>
+            </div>
+          )}
+
           <nav className="flex-1 overflow-y-auto py-3 px-3">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
@@ -52,7 +75,7 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
                     active ? "bg-white/[0.06] text-ink" : "text-ink-2 hover:bg-white/5 hover:text-ink",
                   )}
                 >
-                  <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-cyan" : "text-ink-3")} />
+                  <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "tier-active-icon text-cyan" : "text-ink-3")} />
                   <span className="font-sans text-sm flex-1 truncate">{t(item.labelKey)}</span>
                   {item.badgeKey && item.badgeTone && (
                     <span className={cn(

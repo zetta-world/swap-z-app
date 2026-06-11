@@ -21,6 +21,8 @@ import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
 import { useTokenPrice } from "@/lib/hooks/useTokenPrices";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { useTierAccent } from "@/components/tier/TierAccentProvider";
+import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 
 const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "trading",   labelKey: "zion.tabTrading", taglineKey: "zion.taglineTrading", Icon: TrendingUp },
@@ -31,6 +33,7 @@ const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: Rea
 
 export default function ZionDrawer() {
   const { zionOpen, setZion, lang } = useUI();
+  const { active: tierActive, tier: activeTier } = useTierAccent();
   const { fromToken, toToken, fromChain, amountIn } = useSwap();
   const t = useT();
 
@@ -229,6 +232,7 @@ export default function ZionDrawer() {
             className="h-full glass-strong border-l border-white/10 flex flex-col"
           >
             {/* Header */}
+            <span className="tier-godline flex-shrink-0" aria-hidden />
             <div className="h-16 flex items-center justify-between px-5 border-b border-white/5 flex-shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="relative w-9 h-9">
@@ -238,7 +242,18 @@ export default function ZionDrawer() {
                   </div>
                 </div>
                 <div>
-                  <div className="font-display font-bold text-sm text-ink leading-none">ZION</div>
+                  <div className="font-display font-bold text-sm text-ink leading-none flex items-center gap-1.5">
+                    ZION
+                    {tierActive && isPaidTier(activeTier) && (
+                      <span
+                        className="font-mono text-[8px] tracking-[0.25em] uppercase px-1.5 py-0.5 rounded border"
+                        style={{ color: "var(--tier-accent)", borderColor: "color-mix(in srgb, var(--tier-accent) 40%, transparent)" }}
+                        title={GOD_META[activeTier].epithet}
+                      >
+                        {GOD_META[activeTier].rune} {GOD_META[activeTier].god}
+                      </span>
+                    )}
+                  </div>
                   <div className="font-mono text-[9px] text-gold/70 tracking-widest uppercase mt-1">
                     {t("zion.drawerSubtitle", { state: streaming ? t("zion.thinking") : t(opMeta.labelKey).toLowerCase() })}
                   </div>

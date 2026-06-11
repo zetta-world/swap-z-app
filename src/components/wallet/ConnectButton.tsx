@@ -34,10 +34,14 @@ export default function ConnectButton() {
   const evmOn = isConnected && !!address;
   const solOn = sol.connected && !!sol.publicKey;
 
+  const both = evmOn && solOn;
+
   if (evmOn || solOn) {
     return (
-      <div className="flex items-center gap-1.5">
-        {evmOn && <AccountMenu />}
+      <div className="flex items-center gap-1 sm:gap-1.5">
+        {/* With both wallets connected, the EVM chip collapses to dot+chevron
+            below sm so the pair fits a 360px Phantom in-app viewport. */}
+        {evmOn && <AccountMenu compact={both} />}
         {solOn && <SolanaAccountChip />}
         {(!evmOn || !solOn) && (
           <button

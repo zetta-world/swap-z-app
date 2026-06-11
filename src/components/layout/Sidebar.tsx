@@ -41,6 +41,7 @@ export default function Sidebar() {
           {!sidebarCollapsed && (
             <div className="min-w-0">
               <div className="font-display font-extrabold text-ink text-sm leading-none tracking-wide">Z-SWAP</div>
+              <span aria-hidden className="tier-logo-underline" />
               <div className="font-mono text-[9px] text-ink-3 tracking-[0.18em] uppercase mt-1">Liquidity Nexus</div>
             </div>
           )}
@@ -81,10 +82,10 @@ export default function Sidebar() {
                       {active && (
                         <motion.div
                           layoutId="sidebar-active"
-                          className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full bg-cyan shadow-glow-cyan"
+                          className="tier-active-bar absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full bg-cyan shadow-glow-cyan"
                         />
                       )}
-                      <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-cyan" : "text-ink-3 group-hover:text-ink-2")} />
+                      <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "tier-active-icon text-cyan" : "text-ink-3 group-hover:text-ink-2")} />
                       {!sidebarCollapsed && (
                         <>
                           <span className="font-sans text-sm flex-1 truncate">{t(item.labelKey)}</span>
