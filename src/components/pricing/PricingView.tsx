@@ -3,7 +3,7 @@
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  Sparkles, X, Mail, ArrowRight, CheckCircle2, Loader2, Check,
+  Sparkles, X, Mail, ArrowRight, CheckCircle2, Loader2, Check, Crown,
   ShieldCheck, CalendarClock, ChevronDown, Clock, Infinity as InfinityIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -112,16 +112,19 @@ export default function PricingView() {
 
         {/* Sign-in strip — verify wallet tier; admin wallet unlocks the live
             plan switcher below */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 mb-6">
+        <div className="mb-6 max-w-2xl mx-auto">
           {isAdmin ? (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-gold/30 bg-gold/[0.05] font-mono text-[10px] tracking-wider uppercase text-gold text-center">
-              {t("pricing.adminHint")}
+            <div className="rounded-xl border border-gold/30 bg-gold/[0.05] px-3.5 py-2.5 flex items-start gap-2.5">
+              <Crown className="w-4 h-4 text-gold flex-shrink-0 mt-0.5" />
+              <p className="font-sans text-[12px] text-ink-2 leading-snug">
+                <b className="text-gold">{t("pricing.adminBadge")}</b> · {t("pricing.adminHint")}
+              </p>
             </div>
           ) : (
-            <>
-              <span className="font-sans text-xs text-ink-3">{t("pricing.signInHint")}</span>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">
+              <span className="font-sans text-xs text-ink-3 text-center">{t("pricing.signInHint")}</span>
               <SignInButton />
-            </>
+            </div>
           )}
         </div>
 

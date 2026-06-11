@@ -82,7 +82,7 @@ export default function Sidebar() {
                       {active && (
                         <motion.div
                           layoutId="sidebar-active"
-                          className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full bg-cyan shadow-glow-cyan"
+                          className="tier-active-bar absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full bg-cyan shadow-glow-cyan"
                         />
                       )}
                       <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-cyan" : "text-ink-3 group-hover:text-ink-2")} />
