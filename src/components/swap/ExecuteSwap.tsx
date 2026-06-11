@@ -24,6 +24,7 @@ import type { QuoteSource } from "@/lib/api/quote-types";
 import { cn } from "@/lib/cn";
 import { formatAmount } from "@/lib/format";
 import { useT, t as tImp } from "@/lib/i18n";
+import { useTxHistory } from "@/lib/store/txHistory";
 
 interface Props {
   open:        boolean;
@@ -75,6 +76,8 @@ export default function ExecuteSwap({
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<Hex | null>(null);
   const [solSig, setSolSig] = useState<string | null>(null);
+  const historyId = useRef<string | null>(null);
+  const { push: pushHistory, update: updateHistory } = useTxHistory();
 
   const isCrossChain = fromChain !== toChain;
   const isJupiter    = source === "jupiter";
@@ -193,7 +196,7 @@ export default function ExecuteSwap({
     return () => { cancelled = true; };
   }, [open, taker, isJupiter, address, fromChain, toChain, fromToken, toToken, sellAmount, slippageBps, source, recipient, targetChainId, currentChainId, publicClient]);
 
-  // Track receipt
+  // Track receipt + update history
   useEffect(() => {
     if (!receipt) return;
     if (receipt.status === "success") {
@@ -201,11 +204,17 @@ export default function ExecuteSwap({
       toast.success(isCrossChain ? tImp("swap.bridgingToast") : tImp("swap.swapConfirmed"), {
         description: `Tx ${receipt.transactionHash.slice(0, 10)}…${receipt.transactionHash.slice(-6)}`,
       });
+      if (historyId.current) {
+        updateHistory(historyId.current, { status: "confirmed", txHash: receipt.transactionHash });
+      }
     } else {
       setPhase("tx_failed");
       setError(tImp("swap.txReverted"));
+      if (historyId.current) {
+        updateHistory(historyId.current, { status: "failed" });
+      }
     }
-  }, [receipt, isCrossChain]);
+  }, [receipt, isCrossChain, updateHistory]);
 
   /** Re-pull a firm 0x quote — calldata embeds pricing and goes stale fast. */
   const fetchFreshZxQuote = useCallback(async (): Promise<ZxQuoteResponse> => {
@@ -258,6 +267,11 @@ export default function ExecuteSwap({
         });
         setSolSig(sig);
         setPhase("tx_pending");
+        historyId.current = pushHistory({
+          type: "dex_swap", status: "pending",
+          fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
+          toSymbol: toToken.symbol, toChain, route: "jupiter",
+        });
 
         // Wait for confirmation against the lastValidBlockHeight Jupiter returned.
         try {
@@ -334,6 +348,11 @@ export default function ExecuteSwap({
         });
         setTxHash(hash);
         setPhase("tx_pending");
+        historyId.current = pushHistory({
+          type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
+          fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
+          toSymbol: toToken.symbol, toChain, txHash: hash, route: "0x",
+        });
         return;
       }
 
@@ -377,13 +396,19 @@ export default function ExecuteSwap({
       });
       setTxHash(hash);
       setPhase("tx_pending");
+      historyId.current = pushHistory({
+        type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
+        fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
+        toSymbol: toToken.symbol, toChain, txHash: hash, route: "lifi",
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("denied");
       setError(denied ? tImp("swap.executeSigRejected") : msg);
       setPhase("tx_failed");
+      if (historyId.current) updateHistory(historyId.current, { status: "failed" });
     }
-  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, targetChainId, currentChainId]);
+  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory]);
 
   // Quote-derived display values
   const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);

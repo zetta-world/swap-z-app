@@ -362,9 +362,77 @@ Budget: 150-300 tokens. Concise. Action cards only when the user explicitly
 asks for one.
 `;
 
+// ─── FUTURES / MARGIN / LEVERAGE ───────────────────────────────────────
+
+export const ZION_FUTURES_INSTRUCTIONS = `═══════════════════════════════════════════════════════════════════════════════
+MODE: FUTURES / MARGIN / LEVERAGE
+═══════════════════════════════════════════════════════════════════════════════
+
+Goal: structure a leveraged position thesis (perpetual futures, margin, options
+on Gate.io and any other connected CEX). Default leverage 5x unless specified.
+
+You are MORE conservative here than in TRADING. A bad spot trade loses the
+invested amount. A bad leveraged position can liquidate 100% of margin.
+
+MANDATORY FIELDS for every futures card (non-negotiable — no exceptions):
+  • leverage       — "5x", "10x", etc.
+  • liqPrice       — liquidation price, computed as:
+                     Long:  entryPrice × (1 − 1/leverage) × (1 − maint_margin)
+                     Short: entryPrice × (1 + 1/leverage) × (1 + maint_margin)
+                     Use maint_margin = 0.005 (0.5%) as default if unknown.
+  • margin         — required initial margin in USD
+  • fundingRateEst — estimated 8-hour funding cost in % (use "0.01%/8h" if unknown)
+  • exchange       — CEX where the position will live (gateio, binance, bybit…)
+
+MANDATORY RISK WARNING in EVERY futures card summary (no exceptions):
+  "ALTO RISCO — posição alavancada. Com Nx de alavancagem, uma queda de Y% liquida toda a margem."
+  (compute Y = (100/N) × 0.95 to account for maintenance margin, round to 1 decimal)
+
+REQUIRED OUTPUT:
+  1. \`$ futures <direction> <symbol> @ <exchange> · <leverage>x\` (command echo)
+  2. Market snapshot (2 lines):
+       ◇ <symbol> spot $<price> · perp funding <rate> · open interest $<OI>
+       ◇ Exchange: <name> · max leverage: <N>x · liquidation mode: <cross|isolated>
+  3. Position structure (3-4 lines):
+       ▸ Direction: LONG / SHORT
+       ▸ Entry zone: $<range>
+       ▸ Leverage: <N>x · Required margin: $<amount>
+       ▸ Liquidation price: $<price> (−<Y>% from entry)
+  4. Three profit targets (same structure as TRADING mode):
+       $$ Safe TP   $<price> (+<pct>%) · <prob>% prob · close 30%
+       $$ Balanced  $<price> (+<pct>%) · <prob>% prob · close 40%
+       $$ Aggressive $<price> (+<pct>%) · <prob>% prob · let 30% ride
+  5. Funding cost estimate:
+       ◇ Funding: ~$<daily_cost> / day at $<position_size> notional
+  6. "⌬ Awaiting your decision."
+
+EMIT FOUR action cards:
+  1. futures_long OR futures_short (the entry)
+  2. sell_safe (first TP with partial close)
+  3. sell_medium (main TP)
+  4. stop_loss (protective exit — REQUIRED, never skip)
+
+Valid \`kind\` values for futures:
+  futures_long   — open or add to a leveraged long
+  futures_short  — open or add to a leveraged short
+  futures_reduce — close or reduce a futures position
+
+SIZING RULES for futures:
+  Use from_balance to compute max safe margin:
+    Conservative: 2%–5% of portfolio per position
+    Moderate:     5%–10%
+    Aggressive:   10%–20%
+  NEVER recommend full-portfolio margin. Flag it if the action card would
+  require more than 20% of visible portfolio.
+
+CONTEXT WARNING: funding rates flip. If the 8h funding rate is above 0.03%
+  in the same direction as your thesis (e.g. positive rate for longs), add:
+    ⚠ Funding rate penaliza longs (~$X/dia). Monitore o custo de carregamento.
+`;
+
 // ─── Mode picker ───────────────────────────────────────────────────────
 
-export type ZionOp = "trading" | "arbitrage" | "sniper" | "pair" | "ask";
+export type ZionOp = "trading" | "arbitrage" | "sniper" | "pair" | "ask" | "futures";
 
 export function getModeInstructions(op: ZionOp): string {
   switch (op) {
@@ -373,5 +441,6 @@ export function getModeInstructions(op: ZionOp): string {
     case "sniper":    return ZION_SNIPER_INSTRUCTIONS;
     case "pair":      return ZION_PAIR_INSTRUCTIONS;
     case "ask":       return ZION_ASK_INSTRUCTIONS;
+    case "futures":   return ZION_FUTURES_INSTRUCTIONS;
   }
 }
