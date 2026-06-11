@@ -535,7 +535,8 @@ html[data-tier="pilot"] .tier-ambient {
 }
 
 /* ── DOM bolt SVG CSS ─────────────────────────────────────────────────── */
-/* Bolt-a: 13 s cycle  |  bolt-b: 19 s cycle (prime → almost never sync) */
+/* Three prime cycles: 17 s · 29 s · 41 s — almost never coincide.
+   bolt-mega adds pre-ionization glow + branching + long afterglow.        */
 .thor-bolt {
   position: absolute;
   inset: 0;
@@ -545,29 +546,46 @@ html[data-tier="pilot"] .tier-ambient {
   opacity: 0;
   will-change: opacity;
 }
-.thor-bolt.bolt-a { animation: thorStrikeA 13s linear infinite 0.6s; }
-.thor-bolt.bolt-b { animation: thorStrikeB 19s linear infinite 6.2s; }
+.thor-bolt.bolt-a    { animation: thorStrikeA    17s linear infinite  0.8s; }
+.thor-bolt.bolt-b    { animation: thorStrikeB    29s linear infinite  8.5s; }
+.thor-bolt.bolt-mega { animation: thorStrikeMega 41s linear infinite  3.2s; }
 
 @keyframes thorStrikeA {
-  0%, 62%   { opacity: 0; }
-  63%       { opacity: 1; }        /* flash 1 */
-  63.4%     { opacity: 0.06; }
-  64%       { opacity: 0.82; }     /* flash 2 */
-  64.6%     { opacity: 0.03; }
-  65.2%     { opacity: 0.58; }     /* flash 3 */
-  66%       { opacity: 0; }
-  67%       { opacity: 0.14; }     /* afterglow */
-  68.5%     { opacity: 0; }
+  0%, 63%   { opacity: 0; }
+  64%       { opacity: 0.96; }     /* primary flash */
+  64.5%     { opacity: 0.04; }
+  65.2%     { opacity: 0.86; }     /* second flash */
+  65.8%     { opacity: 0.02; }
+  66.6%     { opacity: 0.62; }     /* third flash */
+  67.6%     { opacity: 0; }
+  68.6%     { opacity: 0.20; }     /* afterglow */
+  70.4%     { opacity: 0; }
   100%      { opacity: 0; }
 }
 @keyframes thorStrikeB {
-  0%, 55%   { opacity: 0; }
-  56%       { opacity: 0.88; }
-  56.5%     { opacity: 0.04; }
-  57%       { opacity: 0.70; }
-  57.8%     { opacity: 0; }
-  59%       { opacity: 0.10; }
-  60.5%     { opacity: 0; }
+  0%, 57%   { opacity: 0; }
+  58%       { opacity: 0.92; }     /* primary flash */
+  58.6%     { opacity: 0.03; }
+  59.2%     { opacity: 0.76; }     /* second flash */
+  60%       { opacity: 0; }
+  61%       { opacity: 0.24; }     /* afterglow */
+  62.8%     { opacity: 0; }
+  100%      { opacity: 0; }
+}
+/* Mega bolt: pre-ionization glow → triple strike → extended afterglow */
+@keyframes thorStrikeMega {
+  0%, 70%   { opacity: 0; }
+  70.5%     { opacity: 0.32; }     /* sky pre-ionization */
+  71%       { opacity: 0.02; }
+  71.5%     { opacity: 1; }        /* primary strike */
+  72%       { opacity: 0.05; }
+  72.6%     { opacity: 0.94; }     /* second strike */
+  73.2%     { opacity: 0.03; }
+  73.9%     { opacity: 0.72; }     /* third strike */
+  75%       { opacity: 0; }
+  75.8%     { opacity: 0.32; }     /* afterglow peak */
+  77.5%     { opacity: 0.12; }
+  80%       { opacity: 0; }
   100%      { opacity: 0; }
 }
 

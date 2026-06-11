@@ -155,54 +155,94 @@ const EMBER_COLORS = [
 ];
 
 /**
- * Two SVG bolts that cut full-screen diagonally for Thor's ambient.
- * bolt-a fires on a 13 s cycle, bolt-b on a 19 s cycle (prime offset so
- * they almost never coincide) — giving genuine randomness without JS.
+ * Three cinematic SVG bolts at prime-number cycles so they almost never
+ * coincide — authentic randomness without JS.
+ *   bolt-a   : 17 s — primary diagonal (upper-right → lower-left)
+ *   bolt-b   : 29 s — counter-diagonal (upper-left → lower-right)
+ *   bolt-mega: 41 s — rare center branching strike with gold-tinted halo
  */
 function ThorBolts() {
   return (
     <>
-      {/* Primary bolt — upper-right → lower-left */}
+      {/* Bolt A — 17s prime cycle, upper-right → lower-left */}
       <svg className="thor-bolt bolt-a" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
         <defs>
-          <filter id="thor-halo-a" x="-200%" y="-5%" width="500%" height="110%">
+          <filter id="thor-halo-a" x="-220%" y="-5%" width="540%" height="110%">
+            <feGaussianBlur stdDeviation="3.5" />
+          </filter>
+          <filter id="thor-glow-a" x="-120%" y="-5%" width="340%" height="110%">
+            <feGaussianBlur stdDeviation="1.0" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {/* Sky ionization flash */}
+        <rect width="100" height="100" fill="rgba(245,245,255,0.06)" />
+        {/* Halo — Thunder Glow #B388FF */}
+        <path d="M72 0 L58 28 L70 31 L52 58 L65 62 L40 100"
+          stroke="rgba(179,136,255,0.62)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-halo-a)" />
+        {/* Core — Lightning White #F5F5FF */}
+        <path d="M72 0 L58 28 L70 31 L52 58 L65 62 L40 100"
+          stroke="rgba(245,245,255,0.98)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-glow-a)" />
+      </svg>
+
+      {/* Bolt B — 29s prime cycle, upper-left → lower-right */}
+      <svg className="thor-bolt bolt-b" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
+        <defs>
+          <filter id="thor-halo-b" x="-220%" y="-5%" width="540%" height="110%">
             <feGaussianBlur stdDeviation="2.8" />
           </filter>
-          <filter id="thor-glow-a" x="-100%" y="-5%" width="300%" height="110%">
+          <filter id="thor-glow-b" x="-120%" y="-5%" width="340%" height="110%">
             <feGaussianBlur stdDeviation="0.8" result="b" />
             <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
         </defs>
-        {/* Sky flash rectangle */}
-        <rect width="100" height="100" fill="rgba(180,130,255,0.08)" />
-        {/* Halo (wide, diffuse) */}
-        <path d="M67 0 L52 32 L63 35 L44 66 L58 69 L32 100"
-          stroke="rgba(180,130,255,0.55)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"
-          filter="url(#thor-halo-a)" />
-        {/* Core (sharp white) */}
-        <path d="M67 0 L52 32 L63 35 L44 66 L58 69 L32 100"
-          stroke="rgba(255,255,255,0.97)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
-          filter="url(#thor-glow-a)" />
+        <rect width="100" height="100" fill="rgba(138,92,255,0.05)" />
+        <path d="M28 0 L44 24 L32 27 L50 56 L36 60 L62 100"
+          stroke="rgba(179,136,255,0.52)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-halo-b)" />
+        <path d="M28 0 L44 24 L32 27 L50 56 L36 60 L62 100"
+          stroke="rgba(245,245,255,0.94)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-glow-b)" />
       </svg>
 
-      {/* Secondary bolt — slightly different angle + position */}
-      <svg className="thor-bolt bolt-b" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
+      {/* Mega Bolt — 41s prime cycle, center-screen with branches */}
+      {/* Gold-tinted halo: Mjölnir's divine power in this rare strike  */}
+      <svg className="thor-bolt bolt-mega" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
         <defs>
-          <filter id="thor-halo-b" x="-200%" y="-5%" width="500%" height="110%">
-            <feGaussianBlur stdDeviation="2.2" />
+          <filter id="thor-halo-mega" x="-320%" y="-5%" width="740%" height="110%">
+            <feGaussianBlur stdDeviation="5.5" />
           </filter>
-          <filter id="thor-glow-b" x="-100%" y="-5%" width="300%" height="110%">
-            <feGaussianBlur stdDeviation="0.6" result="b" />
+          <filter id="thor-glow-mega" x="-140%" y="-5%" width="380%" height="110%">
+            <feGaussianBlur stdDeviation="1.4" result="b" />
             <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
         </defs>
-        <rect width="100" height="100" fill="rgba(160,100,255,0.06)" />
-        <path d="M74 0 L61 26 L72 29 L55 56 L67 59 L43 100"
-          stroke="rgba(200,160,255,0.45)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"
-          filter="url(#thor-halo-b)" />
-        <path d="M74 0 L61 26 L72 29 L55 56 L67 59 L43 100"
-          stroke="rgba(255,255,255,0.92)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"
-          filter="url(#thor-glow-b)" />
+        {/* Full-screen sky ionization */}
+        <rect width="100" height="100" fill="rgba(245,245,255,0.10)" />
+        {/* Main halo — Ancient Gold tint for divine power */}
+        <path d="M50 0 L42 22 L55 26 L38 52 L52 56 L35 80 L46 84 L28 100"
+          stroke="rgba(212,175,55,0.35)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-halo-mega)" />
+        {/* Branch halos */}
+        <path d="M55 26 L74 48 L82 60"
+          stroke="rgba(179,136,255,0.28)" strokeWidth="6" strokeLinecap="round"
+          filter="url(#thor-halo-mega)" />
+        <path d="M52 56 L24 76"
+          stroke="rgba(179,136,255,0.24)" strokeWidth="5" strokeLinecap="round"
+          filter="url(#thor-halo-mega)" />
+        {/* Main core — Lightning White */}
+        <path d="M50 0 L42 22 L55 26 L38 52 L52 56 L35 80 L46 84 L28 100"
+          stroke="rgba(250,250,255,0.99)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-glow-mega)" />
+        {/* Branch cores */}
+        <path d="M55 26 L74 48 L82 60"
+          stroke="rgba(245,245,255,0.88)" strokeWidth="1.1" strokeLinecap="round"
+          filter="url(#thor-glow-mega)" />
+        <path d="M52 56 L24 76"
+          stroke="rgba(245,245,255,0.82)" strokeWidth="1.0" strokeLinecap="round"
+          filter="url(#thor-glow-mega)" />
       </svg>
     </>
   );
