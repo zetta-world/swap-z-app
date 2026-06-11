@@ -49,7 +49,13 @@ export default function GodThemeLayer() {
         <div aria-hidden className={cn("god-ambient", `god-${tier}`)}>
           {!reduceMotion && tier === "pilot"  && <OdinStars />}
           {!reduceMotion && tier === "pro"    && <FreyrEmbers />}
-          {!reduceMotion && tier === "trader" && <ThorBolts />}
+          {!reduceMotion && tier === "trader" && (
+            <>
+              <ThorNetwork />
+              <ThorRunes />
+              <ThorBolts />
+            </>
+          )}
         </div>
       )}
 
@@ -199,6 +205,103 @@ function ThorBolts() {
           filter="url(#thor-glow-b)" />
       </svg>
     </>
+  );
+}
+
+/* ── Elder Futhark runes drifting in the charged plasma ─────────────────
+ * Each rune has its own duration/delay so the field never pulses in unison.
+ * ~12% chance any rune is gold (Ancient Gold #D4AF37) — power rune.       */
+const THOR_RUNE_CHARS = ["ᚦ", "ᚱ", "ᛏ", "ᛚ", "ᛉ", "ᚷ", "ᚾ", "ᛗ", "ᚠ", "ᚨ", "ᛁ", "ᚹ", "ᛟ", "ᚲ"];
+
+function ThorRunes() {
+  const runes = useMemo(
+    () =>
+      Array.from({ length: 18 }, (_, i) => ({
+        id:    i,
+        char:  THOR_RUNE_CHARS[Math.floor(Math.random() * THOR_RUNE_CHARS.length)],
+        left:  `${(Math.random() * 94 + 3).toFixed(1)}%`,
+        top:   `${(Math.random() * 88 + 6).toFixed(1)}%`,
+        size:  `${(12 + Math.random() * 20).toFixed(0)}px`,
+        dur:   `${(22 + Math.random() * 26).toFixed(1)}s`,
+        delay: `${(Math.random() * 22).toFixed(1)}s`,
+        sway:  `${(Math.random() * 24 - 12).toFixed(0)}px`,
+        peak:  (0.10 + Math.random() * 0.14).toFixed(2),
+        gold:  Math.random() < 0.12,
+      })),
+    [],
+  );
+  return (
+    <>
+      {runes.map((r) => (
+        <span
+          key={r.id}
+          className={cn("thor-rune", r.gold && "is-gold")}
+          style={{
+            left:     r.left,
+            top:      r.top,
+            fontSize: r.size,
+            ["--dur"   as string]: r.dur,
+            ["--delay" as string]: r.delay,
+            ["--sway"  as string]: r.sway,
+            ["--o"     as string]: r.peak,
+          }}
+        >
+          {r.char}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/* ── SVG energy network — electric field topology ────────────────────────
+ * Fixed node positions form a network; edges pulse energy (moving dashes).
+ * Subtle enough to read as atmosphere, not decoration.                     */
+function ThorNetwork() {
+  const { nodes, edges } = useMemo(() => {
+    const pts = [
+      { x: 12, y: 20 }, { x: 38, y:  6 }, { x: 68, y: 14 }, { x: 88, y: 36 },
+      { x: 80, y: 62 }, { x: 55, y: 86 }, { x: 26, y: 76 }, { x:  5, y: 50 },
+      { x: 32, y: 44 }, { x: 62, y: 34 }, { x: 50, y: 52 },
+    ];
+    const segs: Array<{ x1: number; y1: number; x2: number; y2: number; key: string }> = [];
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const dx = pts[i].x - pts[j].x;
+        const dy = pts[i].y - pts[j].y;
+        if (Math.sqrt(dx * dx + dy * dy) < 34) {
+          segs.push({ x1: pts[i].x, y1: pts[i].y, x2: pts[j].x, y2: pts[j].y, key: `${i}-${j}` });
+        }
+      }
+    }
+    return { nodes: pts, edges: segs };
+  }, []);
+
+  return (
+    <svg
+      className="thor-network"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid slice"
+      fill="none"
+      aria-hidden
+    >
+      {edges.map((e, i) => (
+        <line
+          key={e.key}
+          x1={e.x1} y1={e.y1}
+          x2={e.x2} y2={e.y2}
+          className="thor-connector"
+          style={{ animationDelay: `${(i * 1.1 % 10).toFixed(1)}s` }}
+        />
+      ))}
+      {nodes.map((n, i) => (
+        <circle
+          key={i}
+          cx={n.x} cy={n.y} r="0.45"
+          className="thor-node"
+          style={{ animationDelay: `${(i * 0.55 % 5).toFixed(1)}s` }}
+        />
+      ))}
+    </svg>
   );
 }
 

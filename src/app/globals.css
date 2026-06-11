@@ -492,31 +492,46 @@ html[data-tier="pilot"] .tier-ambient {
 }
 
 /* ── THOR (trader) — Electric Storm ───────────────────────────────────── */
-/* Two independent lightning systems fire at prime-number intervals so
-   they never sync — creating genuine randomness without JS. The base and
-   edge glow are STATIC: only the bolts flash.                             */
+/* Color palette: Electric Violet #8A5CFF · Thunder Glow #B388FF ·
+   Deep Purple #5F2FFF · Ancient Gold #D4AF37 · Obsidian Black #050505.
+   Runes + energy network handle all movement; bolts flash at prime cycles.*/
 .god-ambient.god-trader {
   background:
-    /* Massive storm crown bearing down */
-    radial-gradient(84% 58% at 50% -20%, rgba(130, 70, 255, 0.36), transparent 66%),
-    /* Electric flanks — towering storm walls */
-    radial-gradient(55% 48% at 0%   45%, rgba(100, 40, 220, 0.24), transparent 65%),
-    radial-gradient(55% 48% at 100% 45%, rgba(159, 95, 255, 0.22), transparent 65%),
+    /* Obsidian core — places the user inside the storm */
+    radial-gradient(110% 110% at 50% 50%, rgba(5, 5, 8, 0.62), transparent 80%),
+    /* Massive Electric Violet storm crown bearing down */
+    radial-gradient(82% 56% at 50% -20%, rgba(138, 92, 255, 0.44), transparent 66%),
+    /* Left storm wall — Deep Purple */
+    radial-gradient(54% 46% at -4%  44%, rgba(95,  47, 255, 0.30), transparent 68%),
+    /* Right storm wall — Electric Violet */
+    radial-gradient(54% 46% at 104% 40%, rgba(138, 92, 255, 0.28), transparent 68%),
     /* Charged mid-air atmosphere */
-    radial-gradient(90% 28% at 50% 52%, rgba(120, 60, 200, 0.10), transparent 58%),
-    /* Ground charge (ionised air before strike) */
-    radial-gradient(72% 30% at 50% 112%, rgba(70, 22, 160, 0.28), transparent 54%);
-  box-shadow: 0 0 150px -18px rgba(139, 79, 255, 0.32) inset;
+    radial-gradient(88% 28% at 50%  50%, rgba(110, 55, 200, 0.12), transparent 58%),
+    /* Ground ionization — pre-strike charge accumulating */
+    radial-gradient(72% 30% at 50% 112%, rgba(63,  22, 160, 0.38), transparent 52%);
+  box-shadow: 0 0 200px -16px rgba(138, 92, 255, 0.40) inset;
 }
-/* DOM SVG bolts (ThorBolts component) replace the old CSS gradient lightning.
-   Here we only keep ambient edge-static glow — no more whole-layer flickers. */
+/* Mjölnir's Ancient Gold corona above the storm + Electric Violet edge halos */
 .god-ambient.god-trader::before {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(88deg,  rgba(130, 70, 255, 0.10), transparent 22%),
-    linear-gradient(272deg, rgba(159, 95, 255, 0.08), transparent 22%);
+    /* Ancient Gold divine crown — where Mjölnir's power bleeds through */
+    radial-gradient(28% 14% at 50% -5%, rgba(212, 175, 55, 0.12), transparent 62%),
+    /* Electric edge halos */
+    linear-gradient(88deg,  rgba(138, 92, 255, 0.12), transparent 24%),
+    linear-gradient(272deg, rgba(179, 136, 255, 0.10), transparent 24%);
+}
+/* Ground energy accumulation — the floor charges before a bolt strikes */
+.god-ambient.god-trader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 20% at 50% 106%, rgba(95,  47, 255, 0.24), transparent 55%),
+    radial-gradient(38% 12% at 20%  94%, rgba(138, 92, 255, 0.10), transparent 55%),
+    radial-gradient(38% 12% at 80%  94%, rgba(138, 92, 255, 0.10), transparent 55%);
 }
 
 /* ── DOM bolt SVG CSS ─────────────────────────────────────────────────── */
@@ -554,6 +569,64 @@ html[data-tier="pilot"] .tier-ambient {
   59%       { opacity: 0.10; }
   60.5%     { opacity: 0; }
   100%      { opacity: 0; }
+}
+
+/* ── Thor rune field — Elder Futhark drifting in charged plasma ─────────
+ * Each rune has independent duration/delay via CSS vars — organic shimmer,
+ * never pulsing in unison. Gold variant for Ancient Gold #D4AF37 runes.   */
+.thor-rune {
+  position: absolute;
+  font-family: var(--font-mono);
+  color: rgba(179, 136, 255, 0.15);   /* Thunder Glow */
+  pointer-events: none;
+  user-select: none;
+  line-height: 1;
+  text-shadow: 0 0 8px rgba(138, 92, 255, 0.35);
+  animation: thorRuneDrift var(--dur, 30s) ease-in-out var(--delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+.thor-rune.is-gold {
+  color: rgba(212, 175, 55, 0.20);    /* Ancient Gold — rare power rune */
+  text-shadow: 0 0 10px rgba(212, 175, 55, 0.28);
+}
+@keyframes thorRuneDrift {
+  0%   { opacity: 0; transform: translate(0, 0); }
+  7%   { opacity: var(--o, 0.15); }
+  48%  { opacity: var(--o, 0.15); transform: translate(var(--sway, 6px), -14px); }
+  93%  { opacity: var(--o, 0.15); }
+  100% { opacity: 0; transform: translate(calc(var(--sway, 6px) * -0.5), -26px); }
+}
+
+/* ── Thor energy network — SVG electric field topology ──────────────────
+ * Fixed nodes pulse; connector edges carry moving dashes of energy.
+ * stroke-dashoffset animation simulates charge flowing between nodes.      */
+.thor-network {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.thor-node {
+  fill: #B388FF;
+  animation: thorNodePulse 4.5s ease-in-out infinite;
+}
+@keyframes thorNodePulse {
+  0%, 100% { opacity: 0.18; }
+  50%       { opacity: 0.65; }
+}
+.thor-connector {
+  stroke: rgba(138, 92, 255, 0.30);
+  stroke-width: 0.18;
+  stroke-linecap: round;
+  stroke-dasharray: 2.5 13;
+  animation: thorConnFlow 7s linear infinite;
+}
+@keyframes thorConnFlow {
+  0%   { opacity: 0.10; stroke-dashoffset: 20; }
+  40%  { opacity: 0.48; }
+  60%  { opacity: 0.48; }
+  100% { opacity: 0.10; stroke-dashoffset: -15; }
 }
 
 /* ── ODIN (pilot) — Cosmic Expanse ────────────────────────────────────── */
