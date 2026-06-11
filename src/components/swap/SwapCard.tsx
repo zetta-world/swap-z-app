@@ -187,7 +187,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   return (
     <div className="relative w-full max-w-md mx-auto">
       <div data-risk={risk} className="aurora-border p-1">
-        <div className="relative rounded-[20px] glass p-5 sm:p-6 space-y-4">
+        <div className="god-card relative rounded-[20px] glass p-5 sm:p-6 space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
