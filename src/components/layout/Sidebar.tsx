@@ -85,7 +85,7 @@ export default function Sidebar() {
                           className="tier-active-bar absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full bg-cyan shadow-glow-cyan"
                         />
                       )}
-                      <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-cyan" : "text-ink-3 group-hover:text-ink-2")} />
+                      <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "tier-active-icon text-cyan" : "text-ink-3 group-hover:text-ink-2")} />
                       {!sidebarCollapsed && (
                         <>
                           <span className="font-sans text-sm flex-1 truncate">{t(item.labelKey)}</span>
