@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "framer-motion";
 import { useTierAccent } from "./TierAccentProvider";
 import { GOD_META, isPaidTier, type PaidTier } from "@/lib/tier/gods";
@@ -11,11 +11,11 @@ import { cn } from "@/lib/cn";
 /**
  * God theme layer — the dramatic half of the tier experience.
  *
- * Two pieces, both pointer-events-none and pure CSS animation:
+ * Two pieces, both pointer-events-none:
  *   1. `.god-ambient` — a persistent full-viewport background wash themed per
- *      god (Freyr's golden haze, Thor's storm + lightning flicker, Odin's
- *      cosmos). Sits at z-0 behind the app shell; functional surfaces render
- *      above it untouched.
+ *      god. Freyr/Odin get individually-phased DOM particles (embers/stars)
+ *      so the field shimmers organically — never a whole-layer opacity pulse,
+ *      which reads as "blinking". Thor's lightning stays pure CSS.
  *   2. `.god-ceremony` — a one-shot ~2.4s overlay played when the active tier
  *      CHANGES (sign-in or admin plan switch): Thor's bolt strikes, Freyr's
  *      gold blooms, Odin's prismatic iris opens — plus the god's rune sigil.
@@ -46,7 +46,10 @@ export default function GodThemeLayer() {
   return (
     <>
       {active && isPaidTier(tier) && (
-        <div aria-hidden className={cn("god-ambient", `god-${tier}`)} />
+        <div aria-hidden className={cn("god-ambient", `god-${tier}`)}>
+          {!reduceMotion && tier === "pilot" && <OdinStars />}
+          {!reduceMotion && tier === "pro" && <FreyrEmbers />}
+        </div>
       )}
 
       {ceremony && (
@@ -75,5 +78,114 @@ function ThorBolt() {
         fill="rgba(226,208,255,0.95)"
       />
     </svg>
+  );
+}
+
+/* ── Ambient particle fields ─────────────────────────────────────────────
+ * Generated once per mount with Math.random — this component only renders
+ * client-side after the tier resolves, so there is no SSR hydration risk.
+ * Each particle gets its own duration/delay so the field never pulses in
+ * unison.                                                                  */
+
+const STAR_COLORS = [
+  "rgba(255,255,255,0.95)",
+  "rgba(255,255,255,0.95)",   // white twice as likely
+  "rgba(0,232,255,0.90)",
+  "rgba(214,178,255,0.90)",
+  "rgba(245,166,35,0.85)",
+];
+
+function OdinStars() {
+  const stars = useMemo(
+    () =>
+      Array.from({ length: 38 }, (_, i) => {
+        const size = 1 + Math.random() * 1.8;
+        const color = STAR_COLORS[Math.floor(Math.random() * STAR_COLORS.length)];
+        return {
+          id:    i,
+          left:  `${(Math.random() * 100).toFixed(2)}%`,
+          top:   `${(Math.random() * 100).toFixed(2)}%`,
+          size:  `${size.toFixed(2)}px`,
+          color,
+          glow:  size > 1.9,
+          dur:   `${(2.6 + Math.random() * 4.4).toFixed(2)}s`,
+          delay: `${(Math.random() * 7).toFixed(2)}s`,
+          peak:  (0.65 + Math.random() * 0.35).toFixed(2),
+        };
+      }),
+    [],
+  );
+  return (
+    <>
+      {stars.map((s) => (
+        <span
+          key={s.id}
+          className="odin-star"
+          style={{
+            left: s.left,
+            top: s.top,
+            width: s.size,
+            height: s.size,
+            background: s.color,
+            boxShadow: s.glow ? `0 0 6px 1px ${s.color}` : undefined,
+            ["--dur" as string]: s.dur,
+            ["--delay" as string]: s.delay,
+            ["--o" as string]: s.peak,
+          }}
+        />
+      ))}
+      <span className="odin-comet" />
+    </>
+  );
+}
+
+const EMBER_COLORS = [
+  "rgba(255,225,110,0.95)",
+  "rgba(245,166,35,0.90)",
+  "rgba(255,205,80,0.92)",
+  "rgba(255,214,120,0.85)",
+  "rgba(201,169,85,0.80)",
+];
+
+function FreyrEmbers() {
+  const embers = useMemo(
+    () =>
+      Array.from({ length: 22 }, (_, i) => {
+        const size = 1.5 + Math.random() * 2.5;
+        const color = EMBER_COLORS[Math.floor(Math.random() * EMBER_COLORS.length)];
+        return {
+          id:    i,
+          left:  `${(Math.random() * 100).toFixed(2)}%`,
+          size:  `${size.toFixed(2)}px`,
+          color,
+          glow:  size > 2.8,
+          dur:   `${(9 + Math.random() * 11).toFixed(2)}s`,
+          delay: `${(Math.random() * 16).toFixed(2)}s`,
+          sway:  `${(Math.random() * 70 - 35).toFixed(0)}px`,
+          peak:  (0.55 + Math.random() * 0.4).toFixed(2),
+        };
+      }),
+    [],
+  );
+  return (
+    <>
+      {embers.map((e) => (
+        <span
+          key={e.id}
+          className="freyr-ember"
+          style={{
+            left: e.left,
+            width: e.size,
+            height: e.size,
+            background: e.color,
+            boxShadow: e.glow ? `0 0 8px 2px rgba(245,166,35,0.45)` : undefined,
+            ["--dur" as string]: e.dur,
+            ["--delay" as string]: e.delay,
+            ["--sway" as string]: e.sway,
+            ["--o" as string]: e.peak,
+          }}
+        />
+      ))}
+    </>
   );
 }
