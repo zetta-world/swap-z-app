@@ -9,6 +9,7 @@ import MobileNav from "./MobileNav";
 import PageTransition from "./PageTransition";
 import ZionDrawer from "@/components/zion/ZionDrawer";
 import TierAccentProvider from "@/components/tier/TierAccentProvider";
+import GodThemeLayer from "@/components/tier/GodThemeLayer";
 import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
@@ -30,11 +31,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <TierAccentProvider>
       <div className="relative min-h-screen">
         <a href="#main-content" className="skip-link">{t("common.skipToContent")}</a>
+        <GodThemeLayer />
         <Sidebar />
 
         <div
           className={cn(
-            "flex flex-col min-h-screen transition-[padding] duration-300",
+            "relative z-[1] flex flex-col min-h-screen transition-[padding] duration-300",
             sidebarCollapsed ? "lg:pl-[80px]" : "lg:pl-[248px]",
           )}
         >

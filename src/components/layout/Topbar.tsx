@@ -6,9 +6,12 @@ import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import ModeSwitcher from "./ModeSwitcher";
 import ConnectButton from "@/components/wallet/ConnectButton";
+import { useTierAccent } from "@/components/tier/TierAccentProvider";
+import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 
 export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const { setCommand, toggleZion, zionOpen } = useUI();
+  const { active: tierActive, tier: activeTier } = useTierAccent();
   const t = useT();
 
   return (
@@ -62,6 +65,22 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
           <span className="w-1.5 h-1.5 rounded-full bg-green pulse-dot" />
           <span className="font-mono text-[10px] text-ink-2 tracking-widest uppercase">{t("explorer.liveActive")}</span>
         </div>
+
+        {/* God sigil — which deity (tier) powers this session. md+ only;
+            mobile gets the ambient theme + ceremony instead. */}
+        {tierActive && isPaidTier(activeTier) && (
+          <div
+            className="tier-pill hidden md:flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-white/8 bg-white/[0.03]"
+            title={`${GOD_META[activeTier].god} · ${GOD_META[activeTier].epithet}`}
+          >
+            <span className="font-display font-bold text-[15px] leading-none" style={{ color: "var(--tier-accent)" }}>
+              {GOD_META[activeTier].rune}
+            </span>
+            <span className="font-mono text-[9px] tracking-widest uppercase" style={{ color: "var(--tier-accent)" }}>
+              {GOD_META[activeTier].god}
+            </span>
+          </div>
+        )}
 
         <ModeSwitcher />
         {/* Language picker lives in /settings → Appearance group.
