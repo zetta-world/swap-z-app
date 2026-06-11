@@ -145,6 +145,9 @@ export default function ExecuteSwap({
           setZxQuote(q);
           if (currentChainId !== targetChainId) {
             setPhase("needs_chain_switch");
+          } else if (q.issues?.allowance) {
+            // Permit2 contract needs a standard ERC-20 approve() first
+            setPhase("needs_approval");
           } else if (q.permit2) {
             setPhase("needs_permit2_sig");
           } else {
@@ -209,7 +212,11 @@ export default function ExecuteSwap({
       await switchChainAsync({ chainId: targetChainId });
       // Re-decide next phase
       if (source === "0x") {
-        setPhase(zxQuote?.permit2 ? "needs_permit2_sig" : "needs_tx_signature");
+        if (zxQuote?.issues?.allowance) {
+          setPhase("needs_approval");
+        } else {
+          setPhase(zxQuote?.permit2 ? "needs_permit2_sig" : "needs_tx_signature");
+        }
       } else if (
         lfQuote &&
         fromToken.address !== "native" &&
@@ -232,10 +239,28 @@ export default function ExecuteSwap({
   }, [targetChainId, switchChainAsync, source, zxQuote, lfQuote, fromToken, sellAmount, publicClient, address]);
 
   const onApprove = useCallback(async () => {
-    if (!lfQuote || !targetChainId || !address) return;
+    if (!targetChainId || !address) return;
     setError(null);
     setPhase("approving");
     try {
+      // ── 0x path: approve Permit2 contract (MaxUint256 = no repeated approvals) ──
+      if (source === "0x" && zxQuote?.issues?.allowance) {
+        const spender = zxQuote.issues.allowance.spender as Hex;
+        const hash = await writeContractAsync({
+          address:      fromToken.address as Hex,
+          abi:          erc20Abi,
+          functionName: "approve",
+          args:         [spender, 2n ** 256n - 1n],
+          chainId:      targetChainId,
+        });
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+        setPhase(zxQuote.permit2 ? "needs_permit2_sig" : "needs_tx_signature");
+        return;
+      }
+      // ── LiFi path: approve exact sell amount ──────────────────────────────────
+      if (!lfQuote) return;
       const hash = await writeContractAsync({
         address:      fromToken.address as Hex,
         abi:          erc20Abi,
@@ -265,7 +290,7 @@ export default function ExecuteSwap({
       setError(denied ? tImp("swap.approvalRejected") : msg);
       setPhase("tx_failed");
     }
-  }, [lfQuote, fromToken, targetChainId, writeContractAsync, publicClient, address, sellAmount]);
+  }, [source, zxQuote, lfQuote, fromToken, targetChainId, writeContractAsync, publicClient, address, sellAmount]);
 
   const onExecute = useCallback(async () => {
     setError(null);
