@@ -13,6 +13,7 @@ import GodThemeLayer from "@/components/tier/GodThemeLayer";
 import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { useOrderWatcher } from "@/lib/hooks/useOrderWatcher";
 
 // Lazy guard — only imports the heavy execute portal (and pulls in the swap
 // quote stack) the first time the user opens a swap. Keeps page-navigation
@@ -26,6 +27,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarCollapsed } = useUI();
   const [mobileOpen, setMobileOpen] = useState(false);
   const t = useT();
+  useOrderWatcher();
 
   return (
     <TierAccentProvider>

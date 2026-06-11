@@ -38,11 +38,13 @@ export interface PendingOrder {
   id:        string;     // local random id
   createdAt: number;     // unix ms
   card:      ActionCard;
-  status:    "pending" | "fired" | "expired" | "cancelled";
+  status:    "pending" | "fired" | "expired" | "cancelled" | "triggered";
   /** Last error if the user tried to fire and it failed. */
   lastError?: string;
   /** Set when the order was pre-signed via CoW Protocol. */
   cow?:      CowAttachment;
+  /** Unix ms when the price watcher detected the trigger was reached. */
+  triggeredAt?: number;
 }
 
 function safeRead(): PendingOrder[] {

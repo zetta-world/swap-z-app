@@ -52,47 +52,41 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
   const isImmediate = isImmediateCard(card.kind);
   const chain = card.chain as ChainId;
 
-  const onConfirm = async () => {
+  const executeNow = async () => {
     setBusy(true);
     try {
-      if (isImmediate) {
-        const fromToken = resolveToken(chain, card.from?.symbol, card.from?.address);
-        const toToken   = resolveToken(chain, card.to?.symbol,   card.to?.address);
+      const fromToken = resolveToken(chain, card.from?.symbol, card.from?.address);
+      const toToken   = resolveToken(chain, card.to?.symbol,   card.to?.address);
 
-        if (!fromToken || !toToken) {
-          toast.error(t("orders.missingTokenToast"));
-          setBusy(false);
-          return;
-        }
-
-        setFromToken(fromToken);
-        setToToken(toToken);
-        if (card.from?.amount) setAmountIn(card.from.amount);
-        // Let the portal auto-pick the best aggregator
-        setSelectedSource(null);
-
-        // Close the ZION drawer and open the real execute modal
-        setZion(false);
-        // Tiny delay so the drawer close animation doesn't compete with the
-        // modal open — feels smoother on mobile.
-        setTimeout(() => setExecuteOpen(true), 220);
-        onClose();
-      } else {
-        // Conditional / watch — save as a pending order
-        savePendingOrder(card);
-        toast.success(t("toast.saved"), {
-          description: t("orders.saveNowBody"),
-          action: {
-            label: t("common.open"),
-            onClick: () => { window.location.href = "/orders"; },
-          },
-          duration: 6000,
-        });
-        onClose();
+      if (!fromToken || !toToken) {
+        toast.error(t("orders.missingTokenToast"));
+        setBusy(false);
+        return;
       }
+
+      setFromToken(fromToken);
+      setToToken(toToken);
+      if (card.from?.amount) setAmountIn(card.from.amount);
+      setSelectedSource(null);
+      setZion(false);
+      setTimeout(() => setExecuteOpen(true), 220);
+      onClose();
     } finally {
       setBusy(false);
     }
+  };
+
+  const saveOrder = () => {
+    savePendingOrder(card);
+    toast.success(t("toast.saved"), {
+      description: t("orders.saveNowBody"),
+      action: {
+        label: t("common.open"),
+        onClick: () => { window.location.href = "/orders"; },
+      },
+      duration: 6000,
+    });
+    onClose();
   };
 
   const Icon  = isImmediate ? Zap : Bell;
@@ -100,7 +94,6 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
   const toneClass = tone === "cyan"
     ? "text-cyan border-cyan/30 bg-cyan/[0.04]"
     : "text-violet border-violet/30 bg-violet/[0.04]";
-  const cta = isImmediate ? t("zion.routerCtaImmediate") : t("zion.routerCtaConditional");
 
   return (
     <Dialog.Root open={!!card} onOpenChange={(o) => !o && onClose()}>
@@ -196,32 +189,47 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
                 </div>
               )}
 
-              <div className="flex gap-2">
-                <button onClick={onClose} disabled={busy} className="flex-1 btn btn-secondary text-xs">
-                  {t("common.cancel")}
-                </button>
-                <button
-                  onClick={onConfirm}
-                  disabled={busy}
-                  className={cn(
-                    "flex-1 btn btn-primary text-xs flex items-center justify-center gap-1.5",
-                    busy && "opacity-70",
-                  )}
-                >
-                  {busy ? t("zion.routerWiring") : (
-                    <>
-                      <CheckCircle2 className="w-3 h-3" />
-                      {cta}
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {!isImmediate && (
-                <p className="font-mono text-[10px] text-ink-4 text-center mt-3 leading-relaxed inline-flex items-center justify-center gap-1 w-full">
-                  <ExternalLink className="w-2.5 h-2.5" />
-                  {t("zion.routerFootnote")}
-                </p>
+              {isImmediate ? (
+                <div className="flex gap-2">
+                  <button onClick={onClose} disabled={busy} className="flex-1 btn btn-secondary text-xs">
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    onClick={executeNow}
+                    disabled={busy}
+                    className={cn("flex-1 btn btn-primary text-xs flex items-center justify-center gap-1.5", busy && "opacity-70")}
+                  >
+                    {busy ? t("zion.routerWiring") : <><CheckCircle2 className="w-3 h-3" />{t("zion.routerCtaImmediate")}</>}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {/* Execute at market — always available */}
+                  <button
+                    onClick={executeNow}
+                    disabled={busy}
+                    className={cn("w-full btn btn-primary text-xs flex items-center justify-center gap-1.5", busy && "opacity-70")}
+                  >
+                    {busy ? t("zion.routerWiring") : <><Zap className="w-3.5 h-3.5" />{t("zion.routerCtaMarket")}</>}
+                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={onClose} disabled={busy} className="flex-1 btn btn-secondary text-xs">
+                      {t("common.cancel")}
+                    </button>
+                    <button
+                      onClick={saveOrder}
+                      disabled={busy}
+                      className="flex-1 btn btn-secondary text-xs flex items-center justify-center gap-1.5"
+                    >
+                      <Bell className="w-3 h-3" />
+                      {t("zion.routerCtaConditional")}
+                    </button>
+                  </div>
+                  <p className="font-mono text-[10px] text-ink-4 text-center leading-relaxed inline-flex items-center justify-center gap-1 w-full">
+                    <ExternalLink className="w-2.5 h-2.5" />
+                    {t("zion.routerFootnote")}
+                  </p>
+                </div>
               )}
             </div>
           </motion.div>
