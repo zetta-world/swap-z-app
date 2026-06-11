@@ -212,15 +212,20 @@ export async function GET(req: NextRequest) {
   // ─── List path — query all applicable sources in parallel ───────────
   const tasks: Promise<NormalizedQuote | null>[] = [];
 
-  // 0x: same-chain only
+  // 0x: same-chain only.
+  // When the user has a wallet connected (`taker` is set) we call the
+  // /quote endpoint (firm — returns transaction calldata). Without a taker
+  // we fall back to /price (indicative — price-only, no calldata). This
+  // ensures the swap CTA is never stuck disabled with "pick a firm route".
   if (!isCrossChain && isZeroXSupported(fromChain as ChainId) && zeroXKey) {
     tasks.push(
-      fetchZeroXPrice(zxArgs, zeroXKey)
-        .then((q) => normalizeZeroX(q, zxArgs.chainId, false))
-        .catch((e) => {
-          console.warn("[quote/list] 0x failed:", e instanceof Error ? e.message : e);
-          return null;
-        }),
+      (taker
+        ? fetchZeroXQuote(zxArgs, zeroXKey).then((q) => normalizeZeroX(q, zxArgs.chainId, true))
+        : fetchZeroXPrice(zxArgs, zeroXKey).then((q) => normalizeZeroX(q, zxArgs.chainId, false))
+      ).catch((e) => {
+        console.warn("[quote/list] 0x failed:", e instanceof Error ? e.message : e);
+        return null;
+      }),
     );
   }
 
@@ -278,8 +283,14 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(
     { ok: true, mode, quotes, isCrossChain },
     {
-      // Indicative quotes — short CDN cache OK
-      headers: { "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15" },
+      // When a taker is present the list contains firm quotes with calldata —
+      // those must never be cached. Without a taker we only have indicative
+      // price estimates and a short CDN cache is fine.
+      headers: {
+        "Cache-Control": taker
+          ? "no-store"
+          : "public, s-maxage=5, stale-while-revalidate=15",
+      },
     },
   );
 }

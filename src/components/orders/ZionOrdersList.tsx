@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Trash2, Zap, AlertCircle, Bot, ShieldX, ArrowDownToLine,
-  ArrowUpFromLine, Crosshair, Target, TrendingUp, ShieldCheck,
+  ArrowUpFromLine, Crosshair, Target, TrendingUp, ShieldCheck, Flame,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -113,11 +113,6 @@ export default function ZionOrdersList() {
     const { card } = o;
     const chain = card.chain as ChainId;
 
-    if (!isImmediateCard(card.kind)) {
-      toast.error(t("orders.notImmediateToast"));
-      return;
-    }
-
     const fromToken = resolveToken(chain, card.from?.symbol, card.from?.address);
     const toToken   = resolveToken(chain, card.to?.symbol,   card.to?.address);
     if (!fromToken || !toToken) {
@@ -132,7 +127,6 @@ export default function ZionOrdersList() {
     updatePendingOrder(o.id, { status: "fired", lastError: undefined });
     refresh();
 
-    // Tiny delay so the user sees the toast first
     toast.success(t("orders.pairLoadedToast"));
     setTimeout(() => setExecuteOpen(true), 220);
   };
@@ -205,6 +199,7 @@ function OrderRow({
 
   const statusCfg = {
     pending:   "text-gold border-gold/30 bg-gold/5",
+    triggered: "text-green border-green/30 bg-green/[0.08]",
     fired:     "text-cyan border-cyan/30 bg-cyan/5",
     expired:   "text-ink-3 border-white/10 bg-white/[0.02]",
     cancelled: "text-ink-3 border-white/10 bg-white/[0.02]",
@@ -224,8 +219,10 @@ function OrderRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap mb-1">
-          <span className={cn("font-mono text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase", statusCfg)}>
-            {order.status === "pending"   ? t("common.pending") :
+          <span className={cn("font-mono text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase inline-flex items-center gap-1", statusCfg)}>
+            {order.status === "triggered" && <Flame className="w-2.5 h-2.5" />}
+            {order.status === "triggered" ? t("orders.triggerHitBadge") :
+             order.status === "pending"   ? t("common.pending") :
              order.status === "cancelled" ? t("common.failed") :
              order.status}
           </span>
@@ -275,16 +272,14 @@ function OrderRow({
           <button
             type="button"
             onClick={onFire}
-            disabled={!immediate}
             className={cn(
               "inline-flex items-center gap-1 px-2.5 py-1 rounded-md border font-mono text-[10px] tracking-widest uppercase transition-colors",
-              immediate
-                ? "border-cyan/30 bg-cyan/[0.06] text-cyan hover:bg-cyan/[0.10]"
-                : "border-white/10 bg-white/[0.02] text-ink-4 cursor-not-allowed",
+              order.status === "triggered"
+                ? "border-green/40 bg-green/[0.08] text-green hover:bg-green/[0.14]"
+                : "border-cyan/30 bg-cyan/[0.06] text-cyan hover:bg-cyan/[0.10]",
             )}
-            title={immediate ? t("orders.pairLoadedToast") : t("orders.conditionalHint")}
           >
-            <Zap className="w-3 h-3" />
+            {order.status === "triggered" ? <Flame className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
             {t("zion.fireNow")}
           </button>
           <button
