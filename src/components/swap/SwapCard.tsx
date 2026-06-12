@@ -23,6 +23,7 @@ import { useQuotes } from "@/lib/hooks/useQuotes";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
 import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import type { NormalizedQuote } from "@/lib/api/quote-types";
+import { useTierAccent } from "@/components/tier/TierAccentProvider";
 
 interface SwapCardProps {
   /**
@@ -183,6 +184,15 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
         ? t("swap.snipeToken", { symbol: toToken?.symbol ?? "" })
         : t("swap.reviewSwap")
     : cantReason;
+
+  const { active: tierActive, tier: activeTier } = useTierAccent();
+  const isTrader = tierActive && activeTier === "trader";
+  const isNotConnected = !fromTaker;
+  const displayLabel = isTrader && isNotConnected
+    ? "⚡ CONECTAR AO REINO DE THOR"
+    : isTrader && canExecute
+      ? `⚡ ${ctaLabel}`
+      : ctaLabel;
 
   return (
     <div className="relative w-full max-w-md mx-auto">
@@ -399,9 +409,19 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
           <button type="button"
             onClick={() => canExecute && setExecuteOpen(true)}
             disabled={!canExecute}
-            className="w-full btn btn-primary py-3.5 text-sm tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
-            {ctaLabel}
+            className={cn(
+              "w-full py-3.5 text-sm tracking-widest disabled:opacity-50 disabled:cursor-not-allowed",
+              isTrader ? "thor-cta-btn" : "btn btn-primary"
+            )}>
+            {displayLabel}
           </button>
+
+          {/* Trader subtitle */}
+          {isTrader && (
+            <p className="font-mono text-[9px] text-center tracking-[0.30em] uppercase text-ink-4 -mt-1">
+              SEGURANÇA · VELOCIDADE · PODER
+            </p>
+          )}
 
           {/* Disclaimer */}
           <p className="font-mono text-[10px] text-ink-4 text-center leading-relaxed">

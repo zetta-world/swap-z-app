@@ -2364,6 +2364,85 @@ html[data-tier="trader"] .thor-orn-runes.right { right: -19px; }
   html[data-tier="trader"] .thor-orn-runes { display: none; }
 }
 
+/* ── THOR CTA button — Trader-class premium swap call-to-action ─────────
+   Replaces btn-primary for html[data-tier="trader"].
+   Gold→violet gradient with shimmer sweep + electric glow on hover.     */
+.thor-cta-btn {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding-top: 0.875rem;
+  padding-bottom: 0.875rem;
+  font-family: var(--font-display, "Space Grotesk", sans-serif);
+  font-weight: 800;
+  font-size: 0.875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #d4a035 0%, #b87cff 55%, #7c3aed 100%);
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  box-shadow:
+    0 0 18px rgba(212, 160, 53, 0.35),
+    0 0 40px rgba(159, 95, 255, 0.20),
+    inset 0 1px 0 rgba(255,255,255,0.18);
+  transition: box-shadow 0.25s ease, transform 0.15s ease;
+}
+/* Shimmer sweep overlay */
+.thor-cta-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255,255,255,0.18) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  background-position: -100% 0;
+  animation: thorCtaShimmer 2.8s ease-in-out infinite;
+}
+@keyframes thorCtaShimmer {
+  0%   { background-position: -100% 0; }
+  60%  { background-position:  200% 0; }
+  100% { background-position:  200% 0; }
+}
+/* Lightning edge pulse */
+.thor-cta-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.5px solid transparent;
+  background: linear-gradient(135deg, rgba(212,160,53,0.7), rgba(159,95,255,0.7)) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  animation: thorEdgePulse 2.5s ease-in-out infinite;
+}
+@keyframes thorEdgePulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1.0; }
+}
+.thor-cta-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 28px rgba(212, 160, 53, 0.55),
+    0 0 60px rgba(159, 95, 255, 0.35),
+    inset 0 1px 0 rgba(255,255,255,0.22);
+}
+.thor-cta-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.thor-cta-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* ── God-class hero strip — "⚡ TRADER — THOR CLASS" ──────────────────
    Component renders null for free/anonymous; these rules only ever see
    paid tiers. Colors keyed per data-tier; trader gets the gold+violet
