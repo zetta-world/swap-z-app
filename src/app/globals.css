@@ -494,40 +494,52 @@ html[data-tier="pilot"] .tier-ambient {
 /* ── THOR (trader) — Electric Storm ───────────────────────────────────── */
 /* Color palette: Electric Violet #8A5CFF · Thunder Glow #B388FF ·
    Deep Purple #5F2FFF · Ancient Gold #D4AF37 · Obsidian Black #050505.
-   Runes + energy network handle all movement; bolts flash at prime cycles.*/
+   Layer stack (bottom→top):
+     0. Realm-of-Thor PNG (cinematic backdrop)
+     1. CSS gradient atmosphere (storm depth + color grading)
+     2. ::before — gold corona + nebula cloud clusters
+     3. ::after  — ground ionization + floor energy
+     4. DOM children — network, runes, bolts, canvas particles          */
 .god-ambient.god-trader {
-  background:
-    /* Obsidian core — places the user inside the storm */
-    radial-gradient(110% 110% at 50% 50%, rgba(5, 5, 8, 0.55), transparent 80%),
-    /* Massive Electric Violet storm crown bearing down */
-    radial-gradient(82% 56% at 50% -20%, rgba(138, 92, 255, 0.62), transparent 70%),
-    /* Left storm wall — Deep Purple */
-    radial-gradient(54% 48% at -4%  44%, rgba(95,  47, 255, 0.46), transparent 70%),
-    /* Right storm wall — Electric Violet */
-    radial-gradient(54% 48% at 104% 40%, rgba(138, 92, 255, 0.44), transparent 70%),
-    /* Charged mid-air atmosphere */
-    radial-gradient(88% 30% at 50%  50%, rgba(110, 55, 200, 0.20), transparent 60%),
-    /* Ground ionization — pre-strike charge accumulating */
-    radial-gradient(72% 32% at 50% 112%, rgba(63,  22, 160, 0.52), transparent 55%);
+  background-image:
+    /* ── Layer 1: atmosphere gradients ── */
+    /* Obsidian vignette — deepens the horizon like a real storm */
+    radial-gradient(110% 110% at 50% 50%, rgba(5, 5, 8, 0.42), transparent 75%),
+    /* Electric Violet storm crown */
+    radial-gradient(82% 56% at 50% -15%, rgba(138, 92, 255, 0.50), transparent 68%),
+    /* Left storm wall */
+    radial-gradient(54% 48% at -4% 44%, rgba(95, 47, 255, 0.32), transparent 68%),
+    /* Right storm wall */
+    radial-gradient(54% 48% at 104% 40%, rgba(138, 92, 255, 0.30), transparent 68%),
+    /* Charged mid-air atmosphere — links PNG lightning to UI glow */
+    radial-gradient(88% 30% at 50% 50%, rgba(60, 20, 120, 0.28), transparent 60%),
+    /* Ground ionization */
+    radial-gradient(72% 32% at 50% 110%, rgba(63, 22, 160, 0.40), transparent 55%),
+    /* ── Layer 0: Realm of Thor PNG ── */
+    url('/assets/trader/realm-of-thor.png');
+  background-size:
+    auto, auto, auto, auto, auto, auto,
+    cover;
+  background-position:
+    center, center, center, center, center, center,
+    center;
+  background-repeat: no-repeat;
   box-shadow: 0 0 220px -12px rgba(138, 92, 255, 0.55) inset;
 }
-/* Mjölnir's Ancient Gold corona above the storm + Electric Violet edge halos */
+/* Mjölnir's Ancient Gold corona + nebula clouds */
 .god-ambient.god-trader::before {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    /* Ancient Gold divine crown — where Mjölnir's power bleeds through */
     radial-gradient(32% 16% at 50% -5%, rgba(212, 175, 55, 0.18), transparent 65%),
-    /* Nebula cloud clusters — Thunder Glow billowing in the upper sky */
     radial-gradient(26% 18% at 22%  10%, rgba(179, 136, 255, 0.22), transparent 70%),
     radial-gradient(30% 20% at 76%  14%, rgba(138, 92, 255, 0.20), transparent 70%),
     radial-gradient(20% 14% at 48%  26%, rgba(110, 55, 200, 0.16), transparent 70%),
-    /* Electric edge halos */
     linear-gradient(88deg,  rgba(138, 92, 255, 0.16), transparent 26%),
     linear-gradient(272deg, rgba(179, 136, 255, 0.14), transparent 26%);
 }
-/* Ground energy accumulation — the floor charges before a bolt strikes */
+/* Ground energy accumulation */
 .god-ambient.god-trader::after {
   content: "";
   position: absolute;
@@ -536,6 +548,47 @@ html[data-tier="pilot"] .tier-ambient {
     radial-gradient(60% 22% at 50% 106%, rgba(95,  47, 255, 0.34), transparent 58%),
     radial-gradient(38% 14% at 20%  94%, rgba(138, 92, 255, 0.16), transparent 58%),
     radial-gradient(38% 14% at 80%  94%, rgba(138, 92, 255, 0.16), transparent 58%);
+}
+
+/* ── Animated purple mist — drifts slow across the PNG sky ─────────────
+   Two pseudo-layers with drift animations keep the painting alive
+   without hiding the artwork.                                           */
+.thor-mist {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.thor-mist::before,
+.thor-mist::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(64px);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.thor-mist::before {
+  width: 70%; height: 40%;
+  top: 5%; left: -10%;
+  background: radial-gradient(ellipse, rgba(95, 47, 255, 0.22) 0%, transparent 65%);
+  animation: thorMistLeft 28s alternate infinite;
+}
+.thor-mist::after {
+  width: 65%; height: 38%;
+  top: 10%; right: -8%;
+  background: radial-gradient(ellipse, rgba(138, 92, 255, 0.18) 0%, transparent 65%);
+  animation: thorMistRight 34s alternate infinite;
+}
+@keyframes thorMistLeft  {
+  0%   { transform: translate(0%, 0%)   scale(1);    opacity: 0.7; }
+  40%  { transform: translate(12%, 6%)  scale(1.08); opacity: 1;   }
+  100% { transform: translate(6%, -4%)  scale(0.95); opacity: 0.6; }
+}
+@keyframes thorMistRight {
+  0%   { transform: translate(0%, 0%)   scale(1);    opacity: 0.65; }
+  50%  { transform: translate(-10%, 5%) scale(1.06); opacity: 0.95; }
+  100% { transform: translate(-5%, -3%) scale(0.92); opacity: 0.60; }
 }
 
 /* ── DOM bolt SVG CSS ─────────────────────────────────────────────────── */
@@ -1051,47 +1104,86 @@ html[data-tier] .tier-godline {
    Replaces glass-pane's default neutral backdrop with deep obsidian.
    High saturation blur makes the storm behind it feel tactile.          */
 html[data-tier="trader"] header.glass-pane {
-  background: linear-gradient(180deg, rgba(4, 2, 10, 0.92) 0%, rgba(6, 3, 14, 0.86) 100%);
-  backdrop-filter: blur(32px) saturate(200%);
-  -webkit-backdrop-filter: blur(32px) saturate(200%);
-  border-bottom-color: rgba(212, 175, 55, 0.28) !important;
+  background: linear-gradient(180deg, rgba(3, 1, 10, 0.96) 0%, rgba(5, 2, 14, 0.92) 100%);
+  backdrop-filter: blur(40px) saturate(240%);
+  -webkit-backdrop-filter: blur(40px) saturate(240%);
+  border-bottom: 1px solid transparent !important;
   box-shadow:
-    0  1px 0 0 rgba(212, 175, 55, 0.20) inset,   /* top inner gold shine */
-    0 -1px 0 0 rgba(138, 92, 255, 0.08) inset,   /* bottom inner violet bleed */
-    0 8px 48px -12px rgba(95, 47, 255, 0.30);    /* Electric Storm aura below */
+    0  1px 0 0 rgba(212, 175, 55, 0.28) inset,
+    0 -1px 0 0 rgba(138, 92, 255, 0.10) inset,
+    0 1px 0  rgba(212, 175, 55, 0.18),
+    0 8px 60px -8px rgba(95, 47, 255, 0.42),
+    0 0 0 1px rgba(212, 175, 55, 0.06) inset;
   position: relative;
+  overflow: hidden;
 }
-/* Hammered-gold gradient shimmer — bright gold center, fading at the edges
-   exactly like a brushed-metal bar on a God of War UI panel.             */
+/* Hammered-gold shimmer line at the bottom */
 html[data-tier="trader"] header.glass-pane::after {
   content: "";
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent          0%,
-    rgba(212,175, 55,0.30) 10%,
-    rgba(245,215,100,0.82) 35%,
+  background: linear-gradient(90deg,
+    transparent           0%,
+    rgba(212,175, 55,0.28) 8%,
+    rgba(245,215,100,0.85) 32%,
     rgba(255,232,140,1.00) 50%,
-    rgba(245,215,100,0.82) 65%,
-    rgba(212,175, 55,0.30) 90%,
-    transparent         100%
+    rgba(245,215,100,0.85) 68%,
+    rgba(212,175, 55,0.28) 92%,
+    transparent          100%
   );
   animation: thorGoldEdge 10s ease-in-out infinite;
   pointer-events: none;
+  z-index: 2;
+}
+/* Lightning pulse — a bolt of light sweeps the header width every 18s */
+html[data-tier="trader"] header.glass-pane::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 120px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(179,136,255,0.14) 40%,
+    rgba(245,245,255,0.22) 50%,
+    rgba(179,136,255,0.14) 60%,
+    transparent 100%
+  );
+  animation: thorHeaderPulse 18s ease-in-out infinite;
+  pointer-events: none;
   z-index: 1;
 }
+@keyframes thorHeaderPulse {
+  0%, 10%  { left: -15%; opacity: 0; }
+  12%      { opacity: 1; }
+  40%      { left: 110%; opacity: 0.8; }
+  42%, 100% { left: 110%; opacity: 0; }
+}
 @keyframes thorGoldEdge {
-  0%, 100% { opacity: 0.72; }
+  0%, 100% { opacity: 0.75; }
   50%       { opacity: 1.00; }
 }
 
 /* ── Z logo glyph — Electric Violet in the header (header scope only) ─ */
 html[data-tier="trader"] header .bg-grad-cyan {
-  background-image: linear-gradient(135deg, #8A5CFF 0%, #5F2FFF 100%) !important;
+  background: linear-gradient(135deg, #5F2FFF 0%, #8A5CFF 50%, #B388FF 100%) !important;
+  box-shadow: 0 0 20px rgba(138, 92, 255, 0.65), 0 0 6px rgba(212, 175, 55, 0.20);
+}
+/* Command bar (search) — obsidian + violet border on hover */
+html[data-tier="trader"] header button[class*="max-w-md"] {
+  background: rgba(6, 3, 18, 0.60) !important;
+  border-color: rgba(138, 92, 255, 0.16) !important;
+}
+html[data-tier="trader"] header button[class*="max-w-md"]:hover {
+  border-color: rgba(138, 92, 255, 0.45) !important;
+  background: rgba(8, 4, 22, 0.75) !important;
+  box-shadow: 0 0 16px -4px rgba(138, 92, 255, 0.35);
+}
+/* Notification + ZION buttons — violet hover discharge */
+html[data-tier="trader"] header button[class*="rounded-lg"]:not([class*="max-w-md"]):hover {
+  border-color: rgba(138, 92, 255, 0.38) !important;
+  color: #b388ff !important;
+  box-shadow: 0 0 14px -4px rgba(138, 92, 255, 0.45);
 }
 
 /* ── God sigil pill — obsidian fill · Ancient Gold border · violet glow  */
@@ -1103,26 +1195,108 @@ html[data-tier="trader"] .tier-pill {
     0 0  8px -2px rgba(212, 175, 55, 0.18) inset;
 }
 
-/* ── Sidebar — Electric Violet right border + gold→violet top stripe ─── */
+/* ── Sidebar — full ornate NFT-frame treatment ───────────────────────── */
 html[data-tier="trader"] aside.glass-pane {
-  border-right-color: rgba(138, 92, 255, 0.22) !important;
+  background: linear-gradient(
+    180deg,
+    rgba(4, 2, 14, 0.96) 0%,
+    rgba(3, 1, 10, 0.94) 100%
+  ) !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  border-right: 1px solid rgba(138, 92, 255, 0.30) !important;
+  box-shadow:
+    1px 0 0 rgba(212, 175, 55, 0.14),          /* gold inner glow */
+    4px 0 28px -4px rgba(95, 47, 255, 0.28),   /* violet outer bloom */
+    0 0 0 1px rgba(138, 92, 255, 0.08) inset;
 }
+/* Gold→violet top stripe */
 html[data-tier="trader"] aside.glass-pane::before {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(
-    90deg,
+  background: linear-gradient(90deg,
     transparent            0%,
-    rgba(212,175, 55,0.45) 30%,
-    rgba(138, 92,255,0.55) 65%,
+    rgba(212,175, 55,0.50) 28%,
+    rgba(138, 92,255,0.65) 62%,
     transparent           100%
   );
   pointer-events: none;
-  z-index: 1;
+  z-index: 2;
+}
+/* Energy flow — a single pulse of light runs down the right edge */
+html[data-tier="trader"] aside.glass-pane::after {
+  content: "";
+  position: absolute;
+  top: 0; right: -1px;
+  width: 2px; height: 35%;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(179, 136, 255, 0.85) 40%,
+    rgba(212, 175, 55, 0.90) 60%,
+    transparent 100%
+  );
+  border-radius: 1px;
+  animation: thorSideEdge 8s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+@keyframes thorSideEdge {
+  0%   { top:  -35%; opacity: 0; }
+  5%   { opacity: 1; }
+  80%  { opacity: 0.9; }
+  100% { top: 100%;  opacity: 0; }
+}
+/* Active nav item — violet glow + runic left bar */
+html[data-tier="trader"] aside .tier-active-bar {
+  background: linear-gradient(180deg, #8A5CFF, #D4AF37) !important;
+  box-shadow: 0 0 10px 2px rgba(138, 92, 255, 0.75) !important;
+  width: 3px !important;
+}
+html[data-tier="trader"] aside a[class*="bg-white"] {
+  background: rgba(138, 92, 255, 0.10) !important;
+  border: 1px solid rgba(138, 92, 255, 0.18);
+}
+html[data-tier="trader"] aside .tier-active-icon {
+  color: #b388ff !important;
+  filter: drop-shadow(0 0 5px rgba(138, 92, 255, 0.70));
+}
+/* Logo "Z" glyph — violet in the sidebar (scoped to aside) */
+html[data-tier="trader"] aside .bg-grad-cyan {
+  background: linear-gradient(135deg, #5F2FFF 0%, #8A5CFF 50%, #B388FF 100%) !important;
+  box-shadow: 0 0 18px rgba(138, 92, 255, 0.60);
+}
+/* Sidebar subtitle "Realm of Thor" instead of "Liquidity Nexus" */
+html[data-tier="trader"] aside .tier-logo-underline::after {
+  content: "REALM OF THOR";
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(212, 175, 55, 0.75);
+  text-shadow: 0 0 8px rgba(212, 175, 55, 0.40);
+  margin-top: 2px;
+}
+/* Group separators — faint runic gold line */
+html[data-tier="trader"] aside .mb-5:not(:first-child)::before {
+  content: "⋯ ᚦ ⋯";
+  display: block;
+  text-align: center;
+  font-size: 10px;
+  color: rgba(212, 175, 55, 0.28);
+  letter-spacing: 0.5em;
+  margin-bottom: 6px;
+}
+/* Nav hover — electric violet discharge */
+html[data-tier="trader"] aside a:hover {
+  background: rgba(138, 92, 255, 0.08) !important;
+  box-shadow: 0 0 12px -4px rgba(138, 92, 255, 0.35) inset;
+}
+/* ZETTA Ecosystem footer card — gold border */
+html[data-tier="trader"] aside .border-white\/5:last-child {
+  border-color: rgba(212, 175, 55, 0.22) !important;
+  background: rgba(212, 175, 55, 0.04) !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
