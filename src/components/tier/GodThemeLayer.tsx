@@ -5,6 +5,7 @@ import { useReducedMotion } from "framer-motion";
 import { useTierAccent } from "./TierAccentProvider";
 import { GOD_META, isPaidTier, type PaidTier } from "@/lib/tier/gods";
 import { ceremonyArmed, disarmCeremony } from "@/lib/tier/ceremony";
+import { SWAP_STRIKE_EVENT } from "@/lib/tier/strike";
 import type { Tier } from "@/lib/tier/types";
 import { cn } from "@/lib/cn";
 
@@ -59,7 +60,12 @@ export default function GodThemeLayer() {
         </div>
       )}
 
-      {active && tier === "trader" && !reduceMotion && <ThorNFTBadge />}
+      {active && tier === "trader" && !reduceMotion && (
+        <>
+          <ThorNFTBadge />
+          <ThorStrikeFX />
+        </>
+      )}
 
       {ceremony && (
         <div aria-hidden className={cn("god-ceremony", `god-${ceremony}`)}>
@@ -384,6 +390,66 @@ function ThorNFTBadge() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Swap-confirmed strike — Mjölnir falls ───────────────────────────────
+ * Listens for the SWAP_STRIKE_EVENT fired by ExecuteSwap on tx_confirmed
+ * and plays a ~1.5s one-shot: four bolts converge from the screen edges
+ * into a ᚦ sigil at the center, shockwave rings ripple out, all fades.
+ * Only mounted for trader tier without reduced motion, so the event is a
+ * silent no-op everywhere else. Sits above the execute modal (z 70 > 60)
+ * but is pointer-events-none — never blocks the Done button.             */
+function ThorStrikeFX() {
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    const onStrike = () => {
+      // Remount even mid-play so back-to-back swaps each get a strike.
+      setPlaying(false);
+      requestAnimationFrame(() => setPlaying(true));
+    };
+    window.addEventListener(SWAP_STRIKE_EVENT, onStrike);
+    return () => window.removeEventListener(SWAP_STRIKE_EVENT, onStrike);
+  }, []);
+  useEffect(() => {
+    if (!playing) return;
+    const t = setTimeout(() => setPlaying(false), 1600);
+    return () => clearTimeout(t);
+  }, [playing]);
+
+  if (!playing) return null;
+  return (
+    <div aria-hidden className="thor-strike">
+      <div className="thor-strike-flash" />
+      <svg className="thor-strike-bolts" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
+        <defs>
+          <filter id="thor-strike-halo" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="2.4" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {/* Four jagged bolts converging on the center (50,50) */}
+        <path className="thor-strike-bolt" pathLength="1"
+          d="M2 6 L18 16 L13 22 L32 33 L27 38 L50 50"
+          stroke="rgba(245,245,255,0.95)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-strike-halo)" />
+        <path className="thor-strike-bolt" pathLength="1" style={{ animationDelay: "0.04s" }}
+          d="M98 3 L80 15 L86 21 L64 32 L69 38 L50 50"
+          stroke="rgba(179,136,255,0.92)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-strike-halo)" />
+        <path className="thor-strike-bolt" pathLength="1" style={{ animationDelay: "0.08s" }}
+          d="M4 97 L21 83 L15 78 L35 64 L30 59 L50 50"
+          stroke="rgba(179,136,255,0.92)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-strike-halo)" />
+        <path className="thor-strike-bolt" pathLength="1" style={{ animationDelay: "0.12s" }}
+          d="M97 95 L79 82 L85 76 L62 62 L67 57 L50 50"
+          stroke="rgba(212,175,55,0.85)" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-strike-halo)" />
+      </svg>
+      <div className="thor-strike-ring" />
+      <div className="thor-strike-ring ring-gold" />
+      <span className="thor-strike-rune">ᚦ</span>
     </div>
   );
 }
