@@ -1692,6 +1692,285 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
   100%   { opacity: 0; transform: translate(-50%, -50%) scale(1.10); filter: blur(3px); }
 }
 
+/* ═══ LAYOUT REBUILD — Dashboard & Topbar structure ══════════════════════
+ * Three-column institutional dashboard layout:
+ *   Topbar (80px fixed) / Sidebar (fixed left) / Center / Right (320px)
+ * All free-tier content is unchanged — structure additions are neutral.
+ * ═════════════════════════════════════════════════════════════════════ */
+
+/* ── Topbar shell ─────────────────────────────────────────────────────── */
+.topbar-shell {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+@media (min-width: 1024px) { .topbar-shell { padding: 0 28px; } }
+
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Primary nav tabs — center of the topbar */
+.topbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  justify-content: center;
+}
+.topbar-tab {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border-radius: 8px;
+  color: rgba(255,255,255,0.45);
+  border: 1px solid transparent;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  white-space: nowrap;
+}
+.topbar-tab:hover {
+  color: rgba(255,255,255,0.80);
+  background: rgba(255,255,255,0.04);
+}
+.topbar-tab--active {
+  color: rgba(255,255,255,0.95);
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.10);
+}
+
+/* Trader: active tab gets violet glow */
+html[data-tier="trader"] .topbar-tab--active {
+  color: #b388ff;
+  background: rgba(138, 92, 255, 0.12);
+  border-color: rgba(138, 92, 255, 0.28);
+  box-shadow: 0 0 12px -4px rgba(138, 92, 255, 0.45);
+}
+html[data-tier="trader"] .topbar-tab:hover {
+  color: rgba(179, 136, 255, 0.85);
+}
+
+/* THOR badge / tier pill in topbar */
+.topbar-thor-badge {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
+/* ZION button sizing */
+.topbar-zion-btn {
+  height: 36px;
+  padding: 0 10px;
+}
+@media (min-width: 640px) { .topbar-zion-btn { padding: 0 14px; } }
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── Dashboard shell — three-column layout ───────────────────────────── */
+.dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 80px);
+  padding: 0;
+}
+
+.dashboard-body {
+  display: flex;
+  flex: 1;
+  gap: 0;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* Center column: grows, has padding */
+.dashboard-center {
+  flex: 1;
+  min-width: 0;
+  padding: 20px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;   /* cap so the swap card never becomes a 1200px monster */
+  margin: 0 auto;
+}
+
+/* Compact hero */
+.dashboard-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Right panel: fixed 320px, sticky top, separated by a border */
+.dashboard-right {
+  width: 320px;
+  flex-shrink: 0;
+  padding: 20px 16px 24px 0;
+  align-self: flex-start;
+  position: sticky;
+  top: 80px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* hide scrollbar but keep scroll */
+  scrollbar-width: none;
+}
+.dashboard-right::-webkit-scrollbar { display: none; }
+/* show right panel only on large screens */
+@media (max-width: 1199px) { .dashboard-right { display: none; } }
+
+/* On screens wide enough, give center column room to breathe */
+@media (min-width: 1200px) {
+  .dashboard-body  { align-items: flex-start; }
+  .dashboard-center { margin: 0; padding-left: 24px; }
+}
+@media (min-width: 1400px) {
+  .dashboard-center { max-width: 680px; }
+}
+
+/* ── Trader right-panel card ─────────────────────────────────────────── */
+.trader-panel-card {
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: linear-gradient(160deg, rgba(8,4,22,0.88) 0%, rgba(5,3,14,0.82) 100%);
+  padding: 14px;
+  backdrop-filter: blur(20px);
+}
+/* trader tier: gold border + violet glow */
+html[data-tier="trader"] .trader-panel-card {
+  border-color: rgba(212,175,55,0.20);
+  box-shadow:
+    0 0 20px -8px rgba(138,92,255,0.30),
+    0 1px 0 rgba(212,175,55,0.12) inset;
+}
+
+.trader-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.trader-panel-rune {
+  font-size: 18px;
+  color: rgba(212,175,55,0.80);
+  text-shadow: 0 0 8px rgba(212,175,55,0.40);
+  line-height: 1;
+}
+.trader-panel-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.90);
+}
+.trader-panel-subtitle {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(212,175,55,0.60);
+}
+
+/* ── Inline NFT talisman card ────────────────────────────────────────── */
+.trader-nft-inline { padding: 0; overflow: hidden; }
+.trader-nft-inner {
+  position: relative;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.trader-nft-holo-inline {
+  position: absolute;
+  inset: -60%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg, rgba(179,136,255,0.14) 50deg, transparent 105deg,
+    rgba(212,175,55,0.10) 165deg, transparent 220deg,
+    rgba(245,245,255,0.07) 290deg, transparent 360deg
+  );
+  mix-blend-mode: screen;
+  animation: thorHoloSpin 8s linear infinite;
+  pointer-events: none;
+}
+.trader-nft-corner-set { position: absolute; inset: 0; pointer-events: none; }
+.tnc {
+  position: absolute;
+  width: 12px; height: 12px;
+  border-color: rgba(212,175,55,0.80);
+  border-style: solid; border-width: 0;
+}
+.tnc.tl { top: 6px;    left: 6px;  border-top-width: 1.5px; border-left-width: 1.5px;   border-top-left-radius: 6px; }
+.tnc.tr { top: 6px;    right: 6px; border-top-width: 1.5px; border-right-width: 1.5px;  border-top-right-radius: 6px; }
+.tnc.bl { bottom: 6px; left: 6px;  border-bottom-width: 1.5px; border-left-width: 1.5px;  border-bottom-left-radius: 6px; }
+.tnc.br { bottom: 6px; right: 6px; border-bottom-width: 1.5px; border-right-width: 1.5px; border-bottom-right-radius: 6px; }
+
+.trader-nft-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0 16px;
+}
+.trader-nft-rune-big {
+  font-size: 44px;
+  line-height: 1;
+  color: #b388ff;
+  text-shadow:
+    0 0 10px rgba(179,136,255,0.90),
+    0 0 24px rgba(138,92,255,0.60),
+    0 0 48px rgba(95,47,255,0.35);
+  flex-shrink: 0;
+}
+.trader-nft-label { flex: 1; }
+.trader-nft-name {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  color: rgba(255,255,255,0.95);
+}
+.trader-nft-sub {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(212,175,55,0.65);
+}
+.trader-nft-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(138,92,255,0.16);
+  border: 1px solid rgba(138,92,255,0.35);
+  color: #b388ff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
 /* ═══ THOR · Peça 7 — Fidelity to the key art ═════════════════════════════
  * Closes the gap with the TRADER mockup: the giant ᚦ sigil ring crowning
  * the storm, the ornate gold frame around the swap card, and the god-class
