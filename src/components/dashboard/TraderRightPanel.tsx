@@ -15,10 +15,10 @@ const BENEFITS = [
 ];
 
 const ACTIVITY = [
-  { label: "Swap Executado",   detail: "+168.00 USDC",   time: "Agora",   tone: "green"  as const },
-  { label: "Nova Conquista",   detail: "Relâmpago Preciso", time: "2m",   tone: "gold"   as const },
-  { label: "ZION AI Insight",  detail: "Oportunidade detectada", time: "5m", tone: "violet" as const },
-  { label: "Liquidez Adicionada", detail: "MATIC/USDC 0.3%", time: "12m", tone: "cyan"   as const },
+  { label: "Swap Executado",   detail: "+168.00 USDC",   time: "Agora",   tone: "green"  as const, icon: "bolt"   as const },
+  { label: "Nova Conquista",   detail: "Relâmpago Preciso", time: "2m",   tone: "gold"   as const, icon: "trophy" as const },
+  { label: "ZION AI Insight",  detail: "Oportunidade detectada", time: "5m", tone: "violet" as const, icon: "brain" as const },
+  { label: "Liquidez Adicionada", detail: "MATIC/USDC 0.3%", time: "12m", tone: "cyan"   as const, icon: "drop"   as const },
 ];
 
 const TONE_CLS: Record<string, string> = {
@@ -42,7 +42,8 @@ export default function TraderRightPanel() {
       className="flex flex-col gap-3 h-full"
     >
       {/* ── NFT Talisman card ── */}
-      <div className="trader-panel-card trader-nft-inline">
+      <div className="trader-panel-card trader-nft-inline thor-nft-framecard">
+        <div className="thor-nft-art" aria-hidden />
         <div className="trader-nft-inner">
           <div className="trader-nft-holo-inline" />
           <div className="trader-nft-corner-set">
@@ -95,6 +96,7 @@ export default function TraderRightPanel() {
           </div>
           <span className="ml-auto font-display font-bold text-base text-ink">$0.1487</span>
         </div>
+        <div className="thor-zetta-spark" aria-hidden />
         <div className="flex gap-2 mt-2.5">
           <div className="flex-1 rounded-lg bg-white/[0.03] border border-white/5 px-2.5 py-2">
             <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">Vol 24h</div>
@@ -119,8 +121,8 @@ export default function TraderRightPanel() {
         </div>
         <div className="flex flex-col gap-2 mt-3">
           {ACTIVITY.map((a, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${a.tone === "green" ? "bg-green" : a.tone === "gold" ? "bg-gold" : a.tone === "violet" ? "bg-violet" : "bg-cyan"}`} />
+            <div key={i} className="thor-ray-row flex items-start gap-2">
+              <span aria-hidden className={`thor-ray-icon thor-ray-icon--${a.icon} flex-shrink-0`} />
               <div className="min-w-0 flex-1">
                 <div className="font-sans text-[11px] text-ink leading-tight">{a.label}</div>
                 <div className="font-mono text-[10px] text-ink-3 truncate">{a.detail}</div>

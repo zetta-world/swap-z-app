@@ -2604,6 +2604,172 @@ html[data-tier="trader"] aside .sidebar-eco-card {
   html[data-tier="trader"] .topbar-wallet-wrap { border-width: 7px; }
 }
 
+/* ═══ TRADER KIT — ETAPA 6: Painéis + Analytics ══════════════════════════
+ * NFT Access Pass emoldurado, sparkline ZETTA, candles no Thunder
+ * Terminal, feed Raios do Trovão com ícones, stats chanfrados.
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/* hooks neutros fora do trader */
+.thor-nft-art    { display: none; }
+.thor-zetta-spark { display: none; }
+.thor-ray-icon   { width: 6px; height: 6px; border-radius: 50%; margin-top: 6px; background: rgba(255,255,255,0.35); }
+
+/* cantos em L nos cards do painel */
+html[data-tier="trader"] .trader-panel-card::before,
+html[data-tier="trader"] .trader-panel-card::after {
+  content: "";
+  position: absolute;
+  width: 12px; height: 12px;
+  border: 1.5px solid rgba(201, 162, 39, 0.7);
+  pointer-events: none;
+}
+html[data-tier="trader"] .trader-panel-card {
+  position: relative;
+  border-color: rgba(201, 162, 39, 0.25);
+  background: rgba(12, 7, 22, 0.78);
+}
+html[data-tier="trader"] .trader-panel-card::before {
+  top: -1px; left: -1px;
+  border-right: 0; border-bottom: 0;
+  border-radius: 8px 0 0 0;
+}
+html[data-tier="trader"] .trader-panel-card::after {
+  bottom: -1px; right: -1px;
+  border-left: 0; border-top: 0;
+  border-radius: 0 0 8px 0;
+}
+
+/* títulos dos painéis — Cinzel ouro */
+html[data-tier="trader"] .trader-panel-title {
+  font-family: var(--tr-font-display);
+  background: var(--tr-grad-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── NFT Access Pass — moldura tripla + arte Mjölnir ─────────────────── */
+html[data-tier="trader"] .thor-nft-framecard {
+  border: 14px solid transparent;
+  border-image-source: url("/assets/trader/nft-frame.svg");
+  border-image-slice: 38;
+  border-image-repeat: round;
+  border-radius: 0;
+  background: rgba(8, 5, 16, 0.92);
+  background-clip: padding-box;
+  overflow: visible;
+  animation: trNftFloat 6s ease-in-out infinite;
+  filter:
+    drop-shadow(0 0 20px rgba(124, 58, 237, 0.35))
+    drop-shadow(0 8px 26px rgba(0, 0, 0, 0.55));
+}
+@keyframes trNftFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-7px); }
+}
+/* moldura substitui os cantinhos antigos */
+html[data-tier="trader"] .thor-nft-framecard .trader-nft-corner-set { display: none; }
+
+/* arte do NFT — matte Mjölnir com glow interno violeta */
+html[data-tier="trader"] .thor-nft-art {
+  display: block;
+  position: relative;
+  height: 148px;
+  margin: 6px 6px 0;
+  background: url("/assets/trader/nft-trader.png") center 30% / cover no-repeat;
+  border: 1px solid rgba(201, 162, 39, 0.4);
+  border-radius: 6px;
+  box-shadow: inset 0 0 26px rgba(124, 58, 237, 0.5);
+}
+html[data-tier="trader"] .thor-nft-framecard .trader-nft-inner {
+  height: auto;
+  padding: 8px 6px 6px;
+}
+html[data-tier="trader"] .thor-nft-framecard .trader-nft-name {
+  font-family: var(--tr-font-display);
+  background: var(--tr-grad-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── ZETTA sparkline ─────────────────────────────────────────────────── */
+html[data-tier="trader"] .thor-zetta-spark {
+  display: block;
+  width: 100%;
+  height: 56px;
+  margin-top: 8px;
+  background: url("/assets/trader/spark-zetta.svg") center / 100% 100% no-repeat;
+}
+
+/* ── Thunder Terminal — candlestick decorativo ───────────────────────── */
+html[data-tier="trader"] .thor-terminal-title {
+  font-family: var(--tr-font-display);
+  letter-spacing: 0.14em;
+  background: var(--tr-grad-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html[data-tier="trader"] .thunder-spark {
+  height: 132px;
+  background: url("/assets/trader/candles.svg") center / calc(100% - 32px) calc(100% - 16px) no-repeat;
+}
+html[data-tier="trader"] .thunder-spark svg { display: none; }
+
+/* ── Raios do Trovão — ícones circulares com glow ────────────────────── */
+html[data-tier="trader"] .thor-ray-row {
+  background: rgba(16, 10, 30, 0.6);
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  border-radius: 11px;
+  padding: 8px 10px;
+  align-items: center;
+}
+html[data-tier="trader"] .thor-ray-icon {
+  width: 28px; height: 28px;
+  margin-top: 0;
+  border-radius: 50%;
+  border: 1.5px solid;
+  background-size: 13px 13px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: transparent;
+}
+html[data-tier="trader"] .thor-ray-icon--bolt {
+  border-color: rgba(139, 92, 246, 0.7);
+  box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23C9A1FF' d='M13 1 L4 14 H10.5 L9 23 L20 9 H13.5 Z'/%3E%3C/svg%3E");
+}
+html[data-tier="trader"] .thor-ray-icon--trophy {
+  border-color: rgba(201, 162, 39, 0.7);
+  box-shadow: 0 0 10px rgba(201, 162, 39, 0.4);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23F8E98E' d='M5 3 H19 V8 C19 11.3 16.6 13.6 13.8 14.3 L13.5 17 H16 V20 H8 V17 H10.5 L10.2 14.3 C7.4 13.6 5 11.3 5 8 Z'/%3E%3C/svg%3E");
+}
+html[data-tier="trader"] .thor-ray-icon--brain {
+  border-color: rgba(139, 92, 246, 0.7);
+  box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23C9A1FF' d='M12 3 C8.5 3 6.5 5.3 6.5 8 C5 8.5 5 11.5 6.5 12 C6.5 15 8.5 17 10.5 17 L10.5 21 H13.5 L13.5 17 C15.5 17 17.5 15 17.5 12 C19 11.5 19 8.5 17.5 8 C17.5 5.3 15.5 3 12 3 Z'/%3E%3C/svg%3E");
+}
+html[data-tier="trader"] .thor-ray-icon--drop {
+  border-color: rgba(90, 157, 240, 0.7);
+  box-shadow: 0 0 10px rgba(90, 157, 240, 0.45);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%237FB5F5' d='M12 2 C12 2 5.5 10 5.5 15 A6.5 6.5 0 0 0 18.5 15 C18.5 10 12 2 12 2 Z'/%3E%3C/svg%3E");
+}
+
+/* ── Stats chanfrados ────────────────────────────────────────────────── */
+html[data-tier="trader"] .stat-chamfer {
+  border-radius: 0 !important;
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%,
+    0 calc(100% - 12px), 0 12px);
+  border-color: rgba(201, 162, 39, 0.35) !important;
+  background: linear-gradient(180deg, #0E0818, #0A0512) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-tier="trader"] .thor-nft-framecard { animation: none; }
+}
+
 /* ── God-class hero strip — "⚡ TRADER — THOR CLASS" ──────────────────
    Component renders null for free/anonymous; these rules only ever see
    paid tiers. Colors keyed per data-tier; trader gets the gold+violet

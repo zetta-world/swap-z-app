@@ -33,7 +33,7 @@ export default function StatPanel() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
-            className="god-card relative rounded-xl border border-white/5 glass-pane p-3.5 sm:p-4 overflow-hidden group hover:border-white/10 transition-colors"
+            className="stat-chamfer god-card relative rounded-xl border border-white/5 glass-pane p-3.5 sm:p-4 overflow-hidden group hover:border-white/10 transition-colors"
           >
             <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full blur-2xl opacity-40 transition-opacity group-hover:opacity-70" style={{ background: cfg.ring }} />
             <div className="relative">

@@ -106,11 +106,11 @@ export default function SwapDashboard() {
             <div className="god-card glass-pane rounded-xl border border-white/5 overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5">
                 <BarChart2 className="w-3.5 h-3.5 text-violet" />
-                <span className="font-display font-bold text-sm text-ink">Thunder Terminal</span>
+                <span className="thor-terminal-title font-display font-bold text-sm text-ink">Thunder Terminal</span>
                 <span className="ml-auto font-mono text-[9px] text-ink-4 tracking-widest uppercase">Terminal Pro</span>
               </div>
-              {/* Sparkline placeholder */}
-              <div className="px-4 pt-3 pb-1">
+              {/* Sparkline (free) / candles via CSS (trader) */}
+              <div className="thunder-spark px-4 pt-3 pb-1">
                 <SparklineMock />
               </div>
               <div className="p-4 pt-2 space-y-2">
