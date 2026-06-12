@@ -186,6 +186,16 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
 
   return (
     <div className="relative w-full max-w-md mx-auto">
+      {/* Trader-tier ornate frame — sibling of .aurora-border (which clips
+          overflow); display:none unless html[data-tier="trader"] */}
+      <div className="thor-ornaments" aria-hidden>
+        <span className="thor-orn tl" />
+        <span className="thor-orn tr" />
+        <span className="thor-orn bl" />
+        <span className="thor-orn br" />
+        <span className="thor-orn-runes left">ᚱ ᛏ ᚦ</span>
+        <span className="thor-orn-runes right">ᚦ ᛚ ᚱ</span>
+      </div>
       <div data-risk={risk} className="aurora-border p-1">
         <div className="god-card relative rounded-[20px] glass p-5 sm:p-6 space-y-4">
           {/* Header */}

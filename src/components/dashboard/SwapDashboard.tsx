@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { ArrowRight, Globe } from "lucide-react";
 import Link from "next/link";
 import SwapCard from "@/components/swap/SwapCard";
+import TierClassBanner from "@/components/tier/TierClassBanner";
 import StatPanel from "./StatPanel";
 import TopMovers from "./TopMovers";
 import ChainConstellation from "./ChainConstellation";
@@ -40,6 +41,7 @@ export default function SwapDashboard() {
               {t("hero.eyebrow")}
             </span>
           </div>
+          <TierClassBanner />
           <h1 className="font-display font-extrabold text-[clamp(2rem,5.2vw,3.6rem)] leading-[0.98] tracking-[-0.02em] text-ink mb-3">
             {t("hero.titleThe")}{" "}
             <span className="text-grad-aurora">{t("hero.titleNexus")}</span>

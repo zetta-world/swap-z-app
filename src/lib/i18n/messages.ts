@@ -1248,6 +1248,10 @@ const en = {
     signInHeading: "Sign in to continue",
     signInBody:    "Verify your wallet to check your membership tier and unlock this feature.",
     viewPlans:     "View plans",
+    classOf:       "{god} CLASS",
+    taglinePro:    "Prosperity flows with Freyr. Golden harvests await.",
+    taglineTrader: "Thunder guides your trades. Harness the power of Thor.",
+    taglinePilot:  "The Allfather sees every route. Trade with Odin's wisdom.",
   },
 };
 
@@ -2494,6 +2498,10 @@ const pt: Schema = {
     signInHeading: "Entre para continuar",
     signInBody:    "Verifique sua carteira para conferir seu tier de assinatura e desbloquear este recurso.",
     viewPlans:     "Ver planos",
+    classOf:       "{god} CLASS",
+    taglinePro:    "A prosperidade flui com Freyr. Colheitas douradas esperam por você.",
+    taglineTrader: "O trovão guia seus trades. Aproveite o poder de Thor.",
+    taglinePilot:  "O Pai de Todos vê cada rota. Opere com a sabedoria de Odin.",
   },
 };
 
@@ -3722,6 +3730,10 @@ const es: Schema = {
     signInHeading: "Inicia sesión para continuar",
     signInBody:    "Verifica tu cartera para comprobar tu nivel de membresía y desbloquear esta función.",
     viewPlans:     "Ver planes",
+    classOf:       "{god} CLASS",
+    taglinePro:    "La prosperidad fluye con Freyr. Cosechas doradas te esperan.",
+    taglineTrader: "El trueno guía tus trades. Aprovecha el poder de Thor.",
+    taglinePilot:  "El Padre de Todos ve cada ruta. Opera con la sabiduría de Odín.",
   },
 };
 
@@ -4950,6 +4962,10 @@ const zh: Schema = {
     signInHeading: "登录以继续",
     signInBody:    "验证你的钱包以确认会员等级并解锁此功能。",
     viewPlans:     "查看方案",
+    classOf:       "{god} CLASS",
+    taglinePro:    "繁荣随弗雷而来，黄金收获在等待。",
+    taglineTrader: "雷霆指引你的交易，驾驭索尔之力。",
+    taglinePilot:  "众神之父洞察每条路径，以奥丁的智慧交易。",
   },
 };
 
