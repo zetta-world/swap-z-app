@@ -1428,9 +1428,9 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
     transparent 80%
   );
   opacity: 0;
-  animation: thorStrikeFlash 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: thorMjolnirFlash 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-@keyframes thorStrikeFlash {
+@keyframes thorMjolnirFlash {
   0%, 7%  { opacity: 0; }
   11%     { opacity: 1; }
   16%     { opacity: 0.45; }
@@ -1449,9 +1449,9 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
 .thor-strike-bolt {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: thorStrikeDraw 1.5s linear forwards;
+  animation: thorMjolnirDraw 1.5s linear forwards;
 }
-@keyframes thorStrikeDraw {
+@keyframes thorMjolnirDraw {
   0%   { stroke-dashoffset: 1; opacity: 1; }
   11%  { stroke-dashoffset: 0; opacity: 1; }
   30%  { stroke-dashoffset: 0; opacity: 0.85; }
@@ -1473,7 +1473,7 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
     0 0 40px rgba(138, 92, 255, 0.55),
     0 0 60px rgba(95, 47, 255, 0.30) inset;
   opacity: 0;
-  animation: thorStrikeRing 1.3s cubic-bezier(0.16, 1, 0.3, 1) 0.14s forwards;
+  animation: thorMjolnirRing 1.3s cubic-bezier(0.16, 1, 0.3, 1) 0.14s forwards;
 }
 .thor-strike-ring.ring-gold {
   border-color: rgba(212, 175, 55, 0.70);
@@ -1482,7 +1482,7 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
     0 0 48px rgba(212, 175, 55, 0.18) inset;
   animation-delay: 0.26s;
 }
-@keyframes thorStrikeRing {
+@keyframes thorMjolnirRing {
   0%   { opacity: 0; transform: scale(0.18); }
   7%   { opacity: 1; }
   100% { opacity: 0; transform: scale(16); }
@@ -1503,9 +1503,9 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
     0 0 90px rgba(138, 92, 255, 0.60),
     0 0 140px rgba(212, 175, 55, 0.30);
   opacity: 0;
-  animation: thorStrikeRune 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: thorMjolnirRune 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-@keyframes thorStrikeRune {
+@keyframes thorMjolnirRune {
   0%, 9% { opacity: 0; transform: translate(-50%, -50%) scale(1.7); filter: blur(8px); }
   14%    { opacity: 1; transform: translate(-50%, -50%) scale(0.94); filter: blur(0); }
   20%    { transform: translate(-50%, -50%) scale(1.05); }
