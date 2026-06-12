@@ -55,6 +55,9 @@ export default function GodThemeLayer() {
               <ThorNetwork />
               <ThorRunes />
               <ThorBolts />
+              <div className="thor-sigil-ring">
+                <span className="thor-sigil-glyph">ᚦ</span>
+              </div>
             </>
           )}
         </div>
@@ -269,12 +272,12 @@ function ThorRunes() {
         char:  THOR_RUNE_CHARS[Math.floor(Math.random() * THOR_RUNE_CHARS.length)],
         left:  `${(Math.random() * 94 + 3).toFixed(1)}%`,
         top:   `${(Math.random() * 88 + 6).toFixed(1)}%`,
-        size:  `${(12 + Math.random() * 20).toFixed(0)}px`,
+        size:  `${(14 + Math.random() * 24).toFixed(0)}px`,
         dur:   `${(22 + Math.random() * 26).toFixed(1)}s`,
         delay: `${(Math.random() * 22).toFixed(1)}s`,
         sway:  `${(Math.random() * 24 - 12).toFixed(0)}px`,
-        peak:  (0.10 + Math.random() * 0.14).toFixed(2),
-        gold:  Math.random() < 0.12,
+        peak:  (0.18 + Math.random() * 0.20).toFixed(2),
+        gold:  Math.random() < 0.18,
       })),
     [],
   );
