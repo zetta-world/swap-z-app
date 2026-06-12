@@ -188,25 +188,20 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   const { active: tierActive, tier: activeTier } = useTierAccent();
   const isTrader = tierActive && activeTier === "trader";
   const isNotConnected = !fromTaker;
+  // Bolt icon comes from CSS (::before on .thor-cta-btn) for trader
   const displayLabel = isTrader && isNotConnected
-    ? "⚡ CONECTAR AO REINO DE THOR"
-    : isTrader && canExecute
-      ? `⚡ ${ctaLabel}`
-      : ctaLabel;
+    ? "CONECTAR AO REINO DE THOR"
+    : ctaLabel;
 
   return (
     <div className="relative w-full max-w-md mx-auto">
       {/* Trader-tier ornate frame — sibling of .aurora-border (which clips
           overflow); display:none unless html[data-tier="trader"] */}
       <div className="thor-ornaments" aria-hidden>
-        <span className="thor-orn tl" />
-        <span className="thor-orn tr" />
-        <span className="thor-orn bl" />
-        <span className="thor-orn br" />
-        <span className="thor-orn-runes left">ᚱ ᛏ ᚦ</span>
-        <span className="thor-orn-runes right">ᚦ ᛚ ᚱ</span>
+        <span className="thor-finial thor-finial--top" />
+        <span className="thor-finial thor-finial--bottom" />
       </div>
-      <div data-risk={risk} className="aurora-border p-1">
+      <div data-risk={risk} className="aurora-border thor-swap-frame p-1">
         <div className="god-card relative rounded-[20px] glass p-5 sm:p-6 space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -418,7 +413,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
 
           {/* Trader subtitle */}
           {isTrader && (
-            <p className="font-mono text-[9px] text-center tracking-[0.30em] uppercase text-ink-4 -mt-1">
+            <p className="thor-cta-sub font-mono text-[9px] text-center tracking-[0.30em] uppercase text-ink-4 -mt-1">
               SEGURANÇA · VELOCIDADE · PODER
             </p>
           )}
