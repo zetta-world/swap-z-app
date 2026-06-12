@@ -492,35 +492,51 @@ html[data-tier="pilot"] .tier-ambient {
 }
 
 /* ── THOR (trader) — Electric Storm ───────────────────────────────────── */
-/* Two independent lightning systems fire at prime-number intervals so
-   they never sync — creating genuine randomness without JS. The base and
-   edge glow are STATIC: only the bolts flash.                             */
+/* Color palette: Electric Violet #8A5CFF · Thunder Glow #B388FF ·
+   Deep Purple #5F2FFF · Ancient Gold #D4AF37 · Obsidian Black #050505.
+   Runes + energy network handle all movement; bolts flash at prime cycles.*/
 .god-ambient.god-trader {
   background:
-    /* Massive storm crown bearing down */
-    radial-gradient(84% 58% at 50% -20%, rgba(130, 70, 255, 0.36), transparent 66%),
-    /* Electric flanks — towering storm walls */
-    radial-gradient(55% 48% at 0%   45%, rgba(100, 40, 220, 0.24), transparent 65%),
-    radial-gradient(55% 48% at 100% 45%, rgba(159, 95, 255, 0.22), transparent 65%),
+    /* Obsidian core — places the user inside the storm */
+    radial-gradient(110% 110% at 50% 50%, rgba(5, 5, 8, 0.62), transparent 80%),
+    /* Massive Electric Violet storm crown bearing down */
+    radial-gradient(82% 56% at 50% -20%, rgba(138, 92, 255, 0.44), transparent 66%),
+    /* Left storm wall — Deep Purple */
+    radial-gradient(54% 46% at -4%  44%, rgba(95,  47, 255, 0.30), transparent 68%),
+    /* Right storm wall — Electric Violet */
+    radial-gradient(54% 46% at 104% 40%, rgba(138, 92, 255, 0.28), transparent 68%),
     /* Charged mid-air atmosphere */
-    radial-gradient(90% 28% at 50% 52%, rgba(120, 60, 200, 0.10), transparent 58%),
-    /* Ground charge (ionised air before strike) */
-    radial-gradient(72% 30% at 50% 112%, rgba(70, 22, 160, 0.28), transparent 54%);
-  box-shadow: 0 0 150px -18px rgba(139, 79, 255, 0.32) inset;
+    radial-gradient(88% 28% at 50%  50%, rgba(110, 55, 200, 0.12), transparent 58%),
+    /* Ground ionization — pre-strike charge accumulating */
+    radial-gradient(72% 30% at 50% 112%, rgba(63,  22, 160, 0.38), transparent 52%);
+  box-shadow: 0 0 200px -16px rgba(138, 92, 255, 0.40) inset;
 }
-/* DOM SVG bolts (ThorBolts component) replace the old CSS gradient lightning.
-   Here we only keep ambient edge-static glow — no more whole-layer flickers. */
+/* Mjölnir's Ancient Gold corona above the storm + Electric Violet edge halos */
 .god-ambient.god-trader::before {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(88deg,  rgba(130, 70, 255, 0.10), transparent 22%),
-    linear-gradient(272deg, rgba(159, 95, 255, 0.08), transparent 22%);
+    /* Ancient Gold divine crown — where Mjölnir's power bleeds through */
+    radial-gradient(28% 14% at 50% -5%, rgba(212, 175, 55, 0.12), transparent 62%),
+    /* Electric edge halos */
+    linear-gradient(88deg,  rgba(138, 92, 255, 0.12), transparent 24%),
+    linear-gradient(272deg, rgba(179, 136, 255, 0.10), transparent 24%);
+}
+/* Ground energy accumulation — the floor charges before a bolt strikes */
+.god-ambient.god-trader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 20% at 50% 106%, rgba(95,  47, 255, 0.24), transparent 55%),
+    radial-gradient(38% 12% at 20%  94%, rgba(138, 92, 255, 0.10), transparent 55%),
+    radial-gradient(38% 12% at 80%  94%, rgba(138, 92, 255, 0.10), transparent 55%);
 }
 
 /* ── DOM bolt SVG CSS ─────────────────────────────────────────────────── */
-/* Bolt-a: 13 s cycle  |  bolt-b: 19 s cycle (prime → almost never sync) */
+/* Three prime cycles: 17 s · 29 s · 41 s — almost never coincide.
+   bolt-mega adds pre-ionization glow + branching + long afterglow.        */
 .thor-bolt {
   position: absolute;
   inset: 0;
@@ -530,30 +546,105 @@ html[data-tier="pilot"] .tier-ambient {
   opacity: 0;
   will-change: opacity;
 }
-.thor-bolt.bolt-a { animation: thorStrikeA 13s linear infinite 0.6s; }
-.thor-bolt.bolt-b { animation: thorStrikeB 19s linear infinite 6.2s; }
+.thor-bolt.bolt-a    { animation: thorStrikeA    17s linear infinite  0.8s; }
+.thor-bolt.bolt-b    { animation: thorStrikeB    29s linear infinite  8.5s; }
+.thor-bolt.bolt-mega { animation: thorStrikeMega 41s linear infinite  3.2s; }
 
 @keyframes thorStrikeA {
-  0%, 62%   { opacity: 0; }
-  63%       { opacity: 1; }        /* flash 1 */
-  63.4%     { opacity: 0.06; }
-  64%       { opacity: 0.82; }     /* flash 2 */
-  64.6%     { opacity: 0.03; }
-  65.2%     { opacity: 0.58; }     /* flash 3 */
-  66%       { opacity: 0; }
-  67%       { opacity: 0.14; }     /* afterglow */
-  68.5%     { opacity: 0; }
+  0%, 63%   { opacity: 0; }
+  64%       { opacity: 0.96; }     /* primary flash */
+  64.5%     { opacity: 0.04; }
+  65.2%     { opacity: 0.86; }     /* second flash */
+  65.8%     { opacity: 0.02; }
+  66.6%     { opacity: 0.62; }     /* third flash */
+  67.6%     { opacity: 0; }
+  68.6%     { opacity: 0.20; }     /* afterglow */
+  70.4%     { opacity: 0; }
   100%      { opacity: 0; }
 }
 @keyframes thorStrikeB {
-  0%, 55%   { opacity: 0; }
-  56%       { opacity: 0.88; }
-  56.5%     { opacity: 0.04; }
-  57%       { opacity: 0.70; }
-  57.8%     { opacity: 0; }
-  59%       { opacity: 0.10; }
-  60.5%     { opacity: 0; }
+  0%, 57%   { opacity: 0; }
+  58%       { opacity: 0.92; }     /* primary flash */
+  58.6%     { opacity: 0.03; }
+  59.2%     { opacity: 0.76; }     /* second flash */
+  60%       { opacity: 0; }
+  61%       { opacity: 0.24; }     /* afterglow */
+  62.8%     { opacity: 0; }
   100%      { opacity: 0; }
+}
+/* Mega bolt: pre-ionization glow → triple strike → extended afterglow */
+@keyframes thorStrikeMega {
+  0%, 70%   { opacity: 0; }
+  70.5%     { opacity: 0.32; }     /* sky pre-ionization */
+  71%       { opacity: 0.02; }
+  71.5%     { opacity: 1; }        /* primary strike */
+  72%       { opacity: 0.05; }
+  72.6%     { opacity: 0.94; }     /* second strike */
+  73.2%     { opacity: 0.03; }
+  73.9%     { opacity: 0.72; }     /* third strike */
+  75%       { opacity: 0; }
+  75.8%     { opacity: 0.32; }     /* afterglow peak */
+  77.5%     { opacity: 0.12; }
+  80%       { opacity: 0; }
+  100%      { opacity: 0; }
+}
+
+/* ── Thor rune field — Elder Futhark drifting in charged plasma ─────────
+ * Each rune has independent duration/delay via CSS vars — organic shimmer,
+ * never pulsing in unison. Gold variant for Ancient Gold #D4AF37 runes.   */
+.thor-rune {
+  position: absolute;
+  font-family: var(--font-mono);
+  color: rgba(179, 136, 255, 0.15);   /* Thunder Glow */
+  pointer-events: none;
+  user-select: none;
+  line-height: 1;
+  text-shadow: 0 0 8px rgba(138, 92, 255, 0.35);
+  animation: thorRuneDrift var(--dur, 30s) ease-in-out var(--delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+.thor-rune.is-gold {
+  color: rgba(212, 175, 55, 0.20);    /* Ancient Gold — rare power rune */
+  text-shadow: 0 0 10px rgba(212, 175, 55, 0.28);
+}
+@keyframes thorRuneDrift {
+  0%   { opacity: 0; transform: translate(0, 0); }
+  7%   { opacity: var(--o, 0.15); }
+  48%  { opacity: var(--o, 0.15); transform: translate(var(--sway, 6px), -14px); }
+  93%  { opacity: var(--o, 0.15); }
+  100% { opacity: 0; transform: translate(calc(var(--sway, 6px) * -0.5), -26px); }
+}
+
+/* ── Thor energy network — SVG electric field topology ──────────────────
+ * Fixed nodes pulse; connector edges carry moving dashes of energy.
+ * stroke-dashoffset animation simulates charge flowing between nodes.      */
+.thor-network {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.thor-node {
+  fill: #B388FF;
+  animation: thorNodePulse 4.5s ease-in-out infinite;
+}
+@keyframes thorNodePulse {
+  0%, 100% { opacity: 0.18; }
+  50%       { opacity: 0.65; }
+}
+.thor-connector {
+  stroke: rgba(138, 92, 255, 0.30);
+  stroke-width: 0.18;
+  stroke-linecap: round;
+  stroke-dasharray: 2.5 13;
+  animation: thorConnFlow 7s linear infinite;
+}
+@keyframes thorConnFlow {
+  0%   { opacity: 0.10; stroke-dashoffset: 20; }
+  40%  { opacity: 0.48; }
+  60%  { opacity: 0.48; }
+  100% { opacity: 0.10; stroke-dashoffset: -15; }
 }
 
 /* ── ODIN (pilot) — Cosmic Expanse ────────────────────────────────────── */
@@ -937,6 +1028,490 @@ html[data-tier] .tier-active-icon {
 html[data-tier] .tier-godline {
   background: var(--tier-gradient, var(--tier-accent));
   opacity: 0.45;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * THOR — Peça 3: Topbar obsidian glass + gold metallic edges
+ *
+ * header.glass-pane : deeper obsidian bg · hammered-gold bottom rim ·
+ *                     violet aura below the header
+ * Z logo glyph      : Electric Violet #8A5CFF gradient (header scope)
+ * God sigil pill    : obsidian fill · Ancient Gold border · violet glow
+ * Sidebar           : Electric Violet right border · gold-to-violet
+ *                     accent stripe across the very top
+ *
+ * 100% additive — free tier sees no change.
+ * ══════════════════════════════════════════════════════════════════════*/
+
+/* ── Obsidian header ───────────────────────────────────────────────────
+   Replaces glass-pane's default neutral backdrop with deep obsidian.
+   High saturation blur makes the storm behind it feel tactile.          */
+html[data-tier="trader"] header.glass-pane {
+  background: linear-gradient(180deg, rgba(4, 2, 10, 0.92) 0%, rgba(6, 3, 14, 0.86) 100%);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border-bottom-color: rgba(212, 175, 55, 0.28) !important;
+  box-shadow:
+    0  1px 0 0 rgba(212, 175, 55, 0.20) inset,   /* top inner gold shine */
+    0 -1px 0 0 rgba(138, 92, 255, 0.08) inset,   /* bottom inner violet bleed */
+    0 8px 48px -12px rgba(95, 47, 255, 0.30);    /* Electric Storm aura below */
+  position: relative;
+}
+/* Hammered-gold gradient shimmer — bright gold center, fading at the edges
+   exactly like a brushed-metal bar on a God of War UI panel.             */
+html[data-tier="trader"] header.glass-pane::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent          0%,
+    rgba(212,175, 55,0.30) 10%,
+    rgba(245,215,100,0.82) 35%,
+    rgba(255,232,140,1.00) 50%,
+    rgba(245,215,100,0.82) 65%,
+    rgba(212,175, 55,0.30) 90%,
+    transparent         100%
+  );
+  animation: thorGoldEdge 10s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes thorGoldEdge {
+  0%, 100% { opacity: 0.72; }
+  50%       { opacity: 1.00; }
+}
+
+/* ── Z logo glyph — Electric Violet in the header (header scope only) ─ */
+html[data-tier="trader"] header .bg-grad-cyan {
+  background-image: linear-gradient(135deg, #8A5CFF 0%, #5F2FFF 100%) !important;
+}
+
+/* ── God sigil pill — obsidian fill · Ancient Gold border · violet glow  */
+html[data-tier="trader"] .tier-pill {
+  background: rgba(5, 3, 14, 0.88) !important;
+  border-color: rgba(212, 175, 55, 0.48) !important;
+  box-shadow:
+    0 0 22px -4px rgba(138, 92, 255, 0.58),
+    0 0  8px -2px rgba(212, 175, 55, 0.18) inset;
+}
+
+/* ── Sidebar — Electric Violet right border + gold→violet top stripe ─── */
+html[data-tier="trader"] aside.glass-pane {
+  border-right-color: rgba(138, 92, 255, 0.22) !important;
+}
+html[data-tier="trader"] aside.glass-pane::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent            0%,
+    rgba(212,175, 55,0.45) 30%,
+    rgba(138, 92,255,0.55) 65%,
+    transparent           100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * THOR — Peça 4: Swap Card Mjölnir
+ *
+ * .aurora-border background     : deep obsidian replacing default navy
+ * .aurora-border::after         : ᚦ runic watermark at 3.2% opacity
+ * .aurora-border .god-card.glass: energy veins via extra background-image
+ *                                 layers, animated via background-position
+ * border gradient               : violet + Ancient Gold flash on 6s cycle
+ * .thor-token-slot              : obsidian slot + Electric Violet border
+ * .btn.btn-primary inside card  : Deep Purple → Electric Violet gradient
+ * .hover\:rotate-180            : flip button recolored violet
+ * ══════════════════════════════════════════════════════════════════════*/
+
+/* ── Card body background — obsidian obsidian, replacing default navy ─ */
+html[data-tier="trader"] .aurora-border {
+  background: linear-gradient(
+    180deg,
+    rgba(6, 3, 16, 0.96) 0%,
+    rgba(4, 2, 12, 0.94) 100%
+  );
+}
+
+/* ── Energy veins — diagonal Electric Violet cracks through the glass ─
+   Extra layers prepended to background-image; background-position
+   animates them across the surface on independent vectors.               */
+html[data-tier="trader"] .aurora-border .god-card.glass {
+  background-image:
+    /* Primary vein — upper-left → lower-right diagonal */
+    linear-gradient(
+      142deg,
+      transparent           28%,
+      rgba(138, 92,255,0.07) 36%,
+      rgba(179,136,255,0.18) 42%,
+      rgba(245,245,255,0.10) 46%,
+      rgba(138, 92,255,0.07) 52%,
+      transparent           60%
+    ),
+    /* Secondary vein — opposing diagonal */
+    linear-gradient(
+      218deg,
+      transparent           42%,
+      rgba( 95, 47,255,0.05) 48%,
+      rgba(138, 92,255,0.12) 54%,
+      rgba( 95, 47,255,0.05) 60%,
+      transparent           68%
+    ),
+    /* Preserved violet top fade from god-card trader rule */
+    linear-gradient(180deg, rgba(159,95,255,0.05) 0%, transparent 40%) !important;
+  background-size:     280% 100%, 320% 100%, 100% 100% !important;
+  background-position: 0% 50%,   100% 50%,  0% 0%   !important;
+  animation: thorVeins 18s ease-in-out infinite;
+}
+@keyframes thorVeins {
+  0%, 100% { background-position:   0% 50%, 100% 50%, 0% 0%; }
+  40%       { background-position:  70% 50%,  30% 50%, 0% 0%; }
+  80%       { background-position: 100% 50%,   0% 50%, 0% 0%; }
+}
+
+/* ── Runic watermark — ᚦ (Thurisaz) ghosted behind card content ──────
+   240px rune centered via ::after on .aurora-border (overflow:hidden
+   clips it to the card edges). At 3.2% opacity it reads as texture,
+   not text. pointer-events:none + z-index:2 keeps it above the border
+   gradient but passes through all mouse/touch events.                   */
+html[data-tier="trader"] .aurora-border::after {
+  content: "ᚦ";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 240px;
+  line-height: 1;
+  font-family: var(--font-mono);
+  color: rgba(138, 92, 255, 0.032);
+  pointer-events: none;
+  user-select: none;
+  z-index: 2;
+}
+
+/* ── Border gradient — Ancient Gold flash mid-sweep ─────────────────── */
+html[data-tier="trader"] .aurora-border:not([data-risk="caution"]):not([data-risk="danger"])::before {
+  background: linear-gradient(
+    120deg,
+    #5F2FFF  0%,
+    #8A5CFF 18%,
+    #B388FF 35%,
+    #F5F5FF 50%,
+    #D4AF37 62%,
+    #B388FF 75%,
+    #8A5CFF 88%,
+    #5F2FFF 100%
+  );
+  background-size: 300% 300%;
+  animation: thorCardBorder 6s ease-in-out infinite;
+  opacity: 1;
+}
+@keyframes thorCardBorder {
+  0%, 100% { background-position:   0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+
+/* ── Token input slots — obsidian + Electric Violet border ───────────  */
+html[data-tier="trader"] .thor-token-slot {
+  background: rgba(6, 3, 16, 0.55) !important;
+  border-color: rgba(95, 47, 255, 0.22) !important;
+}
+html[data-tier="trader"] .thor-token-slot:hover {
+  border-color: rgba(138, 92, 255, 0.42) !important;
+  box-shadow: 0 0 24px -8px rgba(138, 92, 255, 0.28) inset;
+}
+
+/* ── CTA button — Deep Purple → Electric Violet pulsing gradient ─────  */
+html[data-tier="trader"] .aurora-border .btn.btn-primary {
+  background: linear-gradient(135deg, #5F2FFF 0%, #8A5CFF 40%, #7C3AED 60%, #5F2FFF 100%);
+  background-size: 300% 100%;
+  color: rgba(245, 245, 255, 0.97);
+  box-shadow:
+    0 0 36px -8px rgba(138, 92, 255, 0.65),
+    0 1px 0 rgba(245, 245, 255, 0.18) inset;
+  animation: thorCTAPulse 8s ease-in-out infinite;
+}
+@keyframes thorCTAPulse {
+  0%, 100% { background-position:   0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+html[data-tier="trader"] .aurora-border .btn.btn-primary:not(:disabled):hover {
+  box-shadow:
+    0 0 56px -6px rgba(138, 92, 255, 0.88),
+    0 0 28px -8px rgba(212, 175,  55, 0.28),
+    0 1px 0 rgba(245, 245, 255, 0.28) inset;
+  transform: translateY(-1px);
+}
+
+/* ── Flip button — Electric Violet recolor ───────────────────────────
+   .hover\:rotate-180 is the Tailwind class unique to the flip button.  */
+html[data-tier="trader"] .aurora-border .hover\:rotate-180 {
+  border-color: rgba(95, 47, 255, 0.30);
+  color: rgba(138, 92, 255, 0.65);
+}
+html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
+  border-color: rgba(138, 92, 255, 0.58);
+  color: rgba(179, 136, 255, 0.95);
+  box-shadow: 0 0 20px -4px rgba(138, 92, 255, 0.52);
+}
+
+/* ═══ THOR · Peça 5 — Floating holographic TRADER NFT badge ═══════════════
+ * Fixed talisman in the top-right mirroring the Access Pass card.
+ * Three transform layers (parallax wrap → float bob → hover card) so the
+ * effects compose without fighting. Desktop only — hidden below md.
+ * .thor-nft-wrap    : fixed anchor, receives inline parallax transform
+ * .thor-nft-float   : idle bob (thorBadgeFloat)
+ * .thor-nft-card    : obsidian slab, gold border, violet+gold glow, hover
+ * .thor-nft-holo    : rotating conic holographic shimmer (screen blend)
+ * .thor-nft-corner  : Ancient Gold L-brackets in the four corners
+ * ═════════════════════════════════════════════════════════════════════ */
+.thor-nft-wrap {
+  position: fixed;
+  top: 80px;
+  right: 16px;
+  z-index: 20;
+  display: none;
+  pointer-events: none;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+@media (min-width: 768px) {
+  .thor-nft-wrap { display: block; }
+}
+
+.thor-nft-float {
+  animation: thorBadgeFloat 4s ease-in-out infinite;
+}
+@keyframes thorBadgeFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+
+.thor-nft-card {
+  position: relative;
+  width: 72px;
+  height: 96px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(95, 47, 255, 0.22) 0%, transparent 60%),
+    linear-gradient(165deg, rgba(16, 10, 28, 0.96) 0%, rgba(5, 5, 8, 0.98) 100%);
+  box-shadow:
+    0 0 28px -6px rgba(138, 92, 255, 0.55),
+    0 0 14px -6px rgba(212, 175, 55, 0.40),
+    0 8px 24px -8px rgba(0, 0, 0, 0.85),
+    0 1px 0 rgba(245, 245, 255, 0.10) inset;
+  pointer-events: auto;
+  cursor: default;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+}
+.thor-nft-card:hover {
+  transform: scale(1.10);
+  box-shadow:
+    0 0 44px -4px rgba(138, 92, 255, 0.80),
+    0 0 22px -4px rgba(212, 175, 55, 0.60),
+    0 12px 32px -8px rgba(0, 0, 0, 0.90),
+    0 1px 0 rgba(245, 245, 255, 0.18) inset;
+}
+
+/* Rotating holographic shimmer — like tilting a foil card in the light */
+.thor-nft-holo {
+  position: absolute;
+  inset: -55%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(179, 136, 255, 0.16) 50deg,
+    transparent 105deg,
+    rgba(212, 175, 55, 0.13) 165deg,
+    transparent 220deg,
+    rgba(245, 245, 255, 0.10) 290deg,
+    transparent 360deg
+  );
+  mix-blend-mode: screen;
+  animation: thorHoloSpin 8s linear infinite;
+  pointer-events: none;
+}
+@keyframes thorHoloSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Ancient Gold corner brackets — museum-frame engraving */
+.thor-nft-corner {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: rgba(212, 175, 55, 0.85);
+  border-style: solid;
+  border-width: 0;
+  pointer-events: none;
+}
+.thor-nft-corner.tl { top: 3px;    left: 3px;  border-top-width: 1.5px; border-left-width: 1.5px;   border-top-left-radius: 5px; }
+.thor-nft-corner.tr { top: 3px;    right: 3px; border-top-width: 1.5px; border-right-width: 1.5px;  border-top-right-radius: 5px; }
+.thor-nft-corner.bl { bottom: 3px; left: 3px;  border-bottom-width: 1.5px; border-left-width: 1.5px;  border-bottom-left-radius: 5px; }
+.thor-nft-corner.br { bottom: 3px; right: 3px; border-bottom-width: 1.5px; border-right-width: 1.5px; border-bottom-right-radius: 5px; }
+
+.thor-nft-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  padding: 8px 6px;
+}
+.thor-nft-rune {
+  font-size: 42px;
+  line-height: 1;
+  color: #b388ff;
+  text-shadow:
+    0 0 10px rgba(179, 136, 255, 0.90),
+    0 0 22px rgba(138, 92, 255, 0.60),
+    0 0 40px rgba(95, 47, 255, 0.40);
+}
+.thor-nft-divider {
+  width: 60%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.75), transparent);
+}
+.thor-nft-god {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #d4af37;
+  text-shadow: 0 0 8px rgba(212, 175, 55, 0.45);
+}
+.thor-nft-tier {
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  color: rgba(179, 136, 255, 0.85);
+}
+
+/* ═══ THOR · Peça 6 — Swap-confirmed strike (Mjölnir falls) ═══════════════
+ * One-shot ~1.5s overlay played by ThorStrikeFX when ExecuteSwap confirms.
+ * Timeline: bolts converge from the edges (0–250ms, staggered) → flash
+ * peaks and the ᚦ sigil slams in (~150ms) → shockwave rings ripple out
+ * (violet then gold) → everything fades by 1.5s.
+ * z-index 70 sits above the execute modal (60); pointer-events: none so
+ * the Done button stays clickable through the celebration.
+ * ═════════════════════════════════════════════════════════════════════ */
+.thor-strike {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Full-screen ionization flash — triple pulse like a real strike */
+.thor-strike-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    60% 60% at 50% 50%,
+    rgba(245, 245, 255, 0.50) 0%,
+    rgba(179, 136, 255, 0.28) 35%,
+    rgba(95, 47, 255, 0.12) 60%,
+    transparent 80%
+  );
+  opacity: 0;
+  animation: thorMjolnirFlash 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes thorMjolnirFlash {
+  0%, 7%  { opacity: 0; }
+  11%     { opacity: 1; }
+  16%     { opacity: 0.45; }
+  21%     { opacity: 0.85; }
+  55%     { opacity: 0.15; }
+  100%    { opacity: 0; }
+}
+
+/* Converging bolts — drawn edge → center via stroke-dashoffset */
+.thor-strike-bolts {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.thor-strike-bolt {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: thorMjolnirDraw 1.5s linear forwards;
+}
+@keyframes thorMjolnirDraw {
+  0%   { stroke-dashoffset: 1; opacity: 1; }
+  11%  { stroke-dashoffset: 0; opacity: 1; }
+  30%  { stroke-dashoffset: 0; opacity: 0.85; }
+  50%  { stroke-dashoffset: 0; opacity: 0; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* Shockwave rings — violet first, gold echo behind it */
+.thor-strike-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border-radius: 9999px;
+  border: 2px solid rgba(179, 136, 255, 0.85);
+  box-shadow:
+    0 0 40px rgba(138, 92, 255, 0.55),
+    0 0 60px rgba(95, 47, 255, 0.30) inset;
+  opacity: 0;
+  animation: thorMjolnirRing 1.3s cubic-bezier(0.16, 1, 0.3, 1) 0.14s forwards;
+}
+.thor-strike-ring.ring-gold {
+  border-color: rgba(212, 175, 55, 0.70);
+  box-shadow:
+    0 0 32px rgba(212, 175, 55, 0.40),
+    0 0 48px rgba(212, 175, 55, 0.18) inset;
+  animation-delay: 0.26s;
+}
+@keyframes thorMjolnirRing {
+  0%   { opacity: 0; transform: scale(0.18); }
+  7%   { opacity: 1; }
+  100% { opacity: 0; transform: scale(16); }
+}
+
+/* ᚦ sigil — slams in with the flash peak, breathes, dissolves */
+.thor-strike-rune {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(96px, 18vw, 180px);
+  line-height: 1;
+  color: #f5f5ff;
+  text-shadow:
+    0 0 18px rgba(245, 245, 255, 0.95),
+    0 0 44px rgba(179, 136, 255, 0.85),
+    0 0 90px rgba(138, 92, 255, 0.60),
+    0 0 140px rgba(212, 175, 55, 0.30);
+  opacity: 0;
+  animation: thorMjolnirRune 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes thorMjolnirRune {
+  0%, 9% { opacity: 0; transform: translate(-50%, -50%) scale(1.7); filter: blur(8px); }
+  14%    { opacity: 1; transform: translate(-50%, -50%) scale(0.94); filter: blur(0); }
+  20%    { transform: translate(-50%, -50%) scale(1.05); }
+  26%    { transform: translate(-50%, -50%) scale(1.00); }
+  60%    { opacity: 1; transform: translate(-50%, -50%) scale(1.02); filter: blur(0); }
+  100%   { opacity: 0; transform: translate(-50%, -50%) scale(1.10); filter: blur(3px); }
 }
 
 /* ── Reduced motion ───────────────────────────────────────────────────── */

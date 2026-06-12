@@ -5,6 +5,7 @@ import { useReducedMotion } from "framer-motion";
 import { useTierAccent } from "./TierAccentProvider";
 import { GOD_META, isPaidTier, type PaidTier } from "@/lib/tier/gods";
 import { ceremonyArmed, disarmCeremony } from "@/lib/tier/ceremony";
+import { SWAP_STRIKE_EVENT } from "@/lib/tier/strike";
 import type { Tier } from "@/lib/tier/types";
 import { cn } from "@/lib/cn";
 
@@ -49,8 +50,21 @@ export default function GodThemeLayer() {
         <div aria-hidden className={cn("god-ambient", `god-${tier}`)}>
           {!reduceMotion && tier === "pilot"  && <OdinStars />}
           {!reduceMotion && tier === "pro"    && <FreyrEmbers />}
-          {!reduceMotion && tier === "trader" && <ThorBolts />}
+          {!reduceMotion && tier === "trader" && (
+            <>
+              <ThorNetwork />
+              <ThorRunes />
+              <ThorBolts />
+            </>
+          )}
         </div>
+      )}
+
+      {active && tier === "trader" && !reduceMotion && (
+        <>
+          <ThorNFTBadge />
+          <ThorStrikeFX />
+        </>
       )}
 
       {ceremony && (
@@ -149,56 +163,294 @@ const EMBER_COLORS = [
 ];
 
 /**
- * Two SVG bolts that cut full-screen diagonally for Thor's ambient.
- * bolt-a fires on a 13 s cycle, bolt-b on a 19 s cycle (prime offset so
- * they almost never coincide) — giving genuine randomness without JS.
+ * Three cinematic SVG bolts at prime-number cycles so they almost never
+ * coincide — authentic randomness without JS.
+ *   bolt-a   : 17 s — primary diagonal (upper-right → lower-left)
+ *   bolt-b   : 29 s — counter-diagonal (upper-left → lower-right)
+ *   bolt-mega: 41 s — rare center branching strike with gold-tinted halo
  */
 function ThorBolts() {
   return (
     <>
-      {/* Primary bolt — upper-right → lower-left */}
+      {/* Bolt A — 17s prime cycle, upper-right → lower-left */}
       <svg className="thor-bolt bolt-a" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
         <defs>
-          <filter id="thor-halo-a" x="-200%" y="-5%" width="500%" height="110%">
+          <filter id="thor-halo-a" x="-220%" y="-5%" width="540%" height="110%">
+            <feGaussianBlur stdDeviation="3.5" />
+          </filter>
+          <filter id="thor-glow-a" x="-120%" y="-5%" width="340%" height="110%">
+            <feGaussianBlur stdDeviation="1.0" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {/* Sky ionization flash */}
+        <rect width="100" height="100" fill="rgba(245,245,255,0.06)" />
+        {/* Halo — Thunder Glow #B388FF */}
+        <path d="M72 0 L58 28 L70 31 L52 58 L65 62 L40 100"
+          stroke="rgba(179,136,255,0.62)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-halo-a)" />
+        {/* Core — Lightning White #F5F5FF */}
+        <path d="M72 0 L58 28 L70 31 L52 58 L65 62 L40 100"
+          stroke="rgba(245,245,255,0.98)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-glow-a)" />
+      </svg>
+
+      {/* Bolt B — 29s prime cycle, upper-left → lower-right */}
+      <svg className="thor-bolt bolt-b" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
+        <defs>
+          <filter id="thor-halo-b" x="-220%" y="-5%" width="540%" height="110%">
             <feGaussianBlur stdDeviation="2.8" />
           </filter>
-          <filter id="thor-glow-a" x="-100%" y="-5%" width="300%" height="110%">
+          <filter id="thor-glow-b" x="-120%" y="-5%" width="340%" height="110%">
             <feGaussianBlur stdDeviation="0.8" result="b" />
             <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
         </defs>
-        {/* Sky flash rectangle */}
-        <rect width="100" height="100" fill="rgba(180,130,255,0.08)" />
-        {/* Halo (wide, diffuse) */}
-        <path d="M67 0 L52 32 L63 35 L44 66 L58 69 L32 100"
-          stroke="rgba(180,130,255,0.55)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"
-          filter="url(#thor-halo-a)" />
-        {/* Core (sharp white) */}
-        <path d="M67 0 L52 32 L63 35 L44 66 L58 69 L32 100"
-          stroke="rgba(255,255,255,0.97)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
-          filter="url(#thor-glow-a)" />
+        <rect width="100" height="100" fill="rgba(138,92,255,0.05)" />
+        <path d="M28 0 L44 24 L32 27 L50 56 L36 60 L62 100"
+          stroke="rgba(179,136,255,0.52)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-halo-b)" />
+        <path d="M28 0 L44 24 L32 27 L50 56 L36 60 L62 100"
+          stroke="rgba(245,245,255,0.94)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-glow-b)" />
       </svg>
 
-      {/* Secondary bolt — slightly different angle + position */}
-      <svg className="thor-bolt bolt-b" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
+      {/* Mega Bolt — 41s prime cycle, center-screen with branches */}
+      {/* Gold-tinted halo: Mjölnir's divine power in this rare strike  */}
+      <svg className="thor-bolt bolt-mega" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
         <defs>
-          <filter id="thor-halo-b" x="-200%" y="-5%" width="500%" height="110%">
-            <feGaussianBlur stdDeviation="2.2" />
+          <filter id="thor-halo-mega" x="-320%" y="-5%" width="740%" height="110%">
+            <feGaussianBlur stdDeviation="5.5" />
           </filter>
-          <filter id="thor-glow-b" x="-100%" y="-5%" width="300%" height="110%">
-            <feGaussianBlur stdDeviation="0.6" result="b" />
+          <filter id="thor-glow-mega" x="-140%" y="-5%" width="380%" height="110%">
+            <feGaussianBlur stdDeviation="1.4" result="b" />
             <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
         </defs>
-        <rect width="100" height="100" fill="rgba(160,100,255,0.06)" />
-        <path d="M74 0 L61 26 L72 29 L55 56 L67 59 L43 100"
-          stroke="rgba(200,160,255,0.45)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"
-          filter="url(#thor-halo-b)" />
-        <path d="M74 0 L61 26 L72 29 L55 56 L67 59 L43 100"
-          stroke="rgba(255,255,255,0.92)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"
-          filter="url(#thor-glow-b)" />
+        {/* Full-screen sky ionization */}
+        <rect width="100" height="100" fill="rgba(245,245,255,0.10)" />
+        {/* Main halo — Ancient Gold tint for divine power */}
+        <path d="M50 0 L42 22 L55 26 L38 52 L52 56 L35 80 L46 84 L28 100"
+          stroke="rgba(212,175,55,0.35)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-halo-mega)" />
+        {/* Branch halos */}
+        <path d="M55 26 L74 48 L82 60"
+          stroke="rgba(179,136,255,0.28)" strokeWidth="6" strokeLinecap="round"
+          filter="url(#thor-halo-mega)" />
+        <path d="M52 56 L24 76"
+          stroke="rgba(179,136,255,0.24)" strokeWidth="5" strokeLinecap="round"
+          filter="url(#thor-halo-mega)" />
+        {/* Main core — Lightning White */}
+        <path d="M50 0 L42 22 L55 26 L38 52 L52 56 L35 80 L46 84 L28 100"
+          stroke="rgba(250,250,255,0.99)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-glow-mega)" />
+        {/* Branch cores */}
+        <path d="M55 26 L74 48 L82 60"
+          stroke="rgba(245,245,255,0.88)" strokeWidth="1.1" strokeLinecap="round"
+          filter="url(#thor-glow-mega)" />
+        <path d="M52 56 L24 76"
+          stroke="rgba(245,245,255,0.82)" strokeWidth="1.0" strokeLinecap="round"
+          filter="url(#thor-glow-mega)" />
       </svg>
     </>
+  );
+}
+
+/* ── Elder Futhark runes drifting in the charged plasma ─────────────────
+ * Each rune has its own duration/delay so the field never pulses in unison.
+ * ~12% chance any rune is gold (Ancient Gold #D4AF37) — power rune.       */
+const THOR_RUNE_CHARS = ["ᚦ", "ᚱ", "ᛏ", "ᛚ", "ᛉ", "ᚷ", "ᚾ", "ᛗ", "ᚠ", "ᚨ", "ᛁ", "ᚹ", "ᛟ", "ᚲ"];
+
+function ThorRunes() {
+  const runes = useMemo(
+    () =>
+      Array.from({ length: 18 }, (_, i) => ({
+        id:    i,
+        char:  THOR_RUNE_CHARS[Math.floor(Math.random() * THOR_RUNE_CHARS.length)],
+        left:  `${(Math.random() * 94 + 3).toFixed(1)}%`,
+        top:   `${(Math.random() * 88 + 6).toFixed(1)}%`,
+        size:  `${(12 + Math.random() * 20).toFixed(0)}px`,
+        dur:   `${(22 + Math.random() * 26).toFixed(1)}s`,
+        delay: `${(Math.random() * 22).toFixed(1)}s`,
+        sway:  `${(Math.random() * 24 - 12).toFixed(0)}px`,
+        peak:  (0.10 + Math.random() * 0.14).toFixed(2),
+        gold:  Math.random() < 0.12,
+      })),
+    [],
+  );
+  return (
+    <>
+      {runes.map((r) => (
+        <span
+          key={r.id}
+          className={cn("thor-rune", r.gold && "is-gold")}
+          style={{
+            left:     r.left,
+            top:      r.top,
+            fontSize: r.size,
+            ["--dur"   as string]: r.dur,
+            ["--delay" as string]: r.delay,
+            ["--sway"  as string]: r.sway,
+            ["--o"     as string]: r.peak,
+          }}
+        >
+          {r.char}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/* ── SVG energy network — electric field topology ────────────────────────
+ * Fixed node positions form a network; edges pulse energy (moving dashes).
+ * Subtle enough to read as atmosphere, not decoration.                     */
+function ThorNetwork() {
+  const { nodes, edges } = useMemo(() => {
+    const pts = [
+      { x: 12, y: 20 }, { x: 38, y:  6 }, { x: 68, y: 14 }, { x: 88, y: 36 },
+      { x: 80, y: 62 }, { x: 55, y: 86 }, { x: 26, y: 76 }, { x:  5, y: 50 },
+      { x: 32, y: 44 }, { x: 62, y: 34 }, { x: 50, y: 52 },
+    ];
+    const segs: Array<{ x1: number; y1: number; x2: number; y2: number; key: string }> = [];
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const dx = pts[i].x - pts[j].x;
+        const dy = pts[i].y - pts[j].y;
+        if (Math.sqrt(dx * dx + dy * dy) < 34) {
+          segs.push({ x1: pts[i].x, y1: pts[i].y, x2: pts[j].x, y2: pts[j].y, key: `${i}-${j}` });
+        }
+      }
+    }
+    return { nodes: pts, edges: segs };
+  }, []);
+
+  return (
+    <svg
+      className="thor-network"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid slice"
+      fill="none"
+      aria-hidden
+    >
+      {edges.map((e, i) => (
+        <line
+          key={e.key}
+          x1={e.x1} y1={e.y1}
+          x2={e.x2} y2={e.y2}
+          className="thor-connector"
+          style={{ animationDelay: `${(i * 1.1 % 10).toFixed(1)}s` }}
+        />
+      ))}
+      {nodes.map((n, i) => (
+        <circle
+          key={i}
+          cx={n.x} cy={n.y} r="0.45"
+          className="thor-node"
+          style={{ animationDelay: `${(i * 0.55 % 5).toFixed(1)}s` }}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/* ── Floating holographic TRADER NFT badge ───────────────────────────────
+ * Fixed top-right talisman mirroring the Access Pass card: obsidian slab,
+ * gold corner brackets, rotating holo shimmer, ᚦ sigil. Three transform
+ * layers so effects never fight: wrapper (mouse parallax, inline) →
+ * float (CSS bob) → card (hover scale/glow). Desktop only via CSS.       */
+function ThorNFTBadge() {
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      setPos({ x: ((e.clientX - cx) / cx) * -10, y: ((e.clientY - cy) / cy) * -6 });
+    };
+    window.addEventListener("mousemove", handle, { passive: true });
+    return () => window.removeEventListener("mousemove", handle);
+  }, []);
+  return (
+    <div
+      aria-hidden
+      className="thor-nft-wrap"
+      style={{ transform: `translate(${pos.x.toFixed(2)}px, ${pos.y.toFixed(2)}px)` }}
+    >
+      <div className="thor-nft-float">
+        <div className="thor-nft-card">
+          <div className="thor-nft-holo" />
+          <div className="thor-nft-corner tl" />
+          <div className="thor-nft-corner tr" />
+          <div className="thor-nft-corner bl" />
+          <div className="thor-nft-corner br" />
+          <div className="thor-nft-body">
+            <span className="thor-nft-rune">ᚦ</span>
+            <div className="thor-nft-divider" />
+            <span className="thor-nft-god">THOR</span>
+            <span className="thor-nft-tier">TRADER</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Swap-confirmed strike — Mjölnir falls ───────────────────────────────
+ * Listens for the SWAP_STRIKE_EVENT fired by ExecuteSwap on tx_confirmed
+ * and plays a ~1.5s one-shot: four bolts converge from the screen edges
+ * into a ᚦ sigil at the center, shockwave rings ripple out, all fades.
+ * Only mounted for trader tier without reduced motion, so the event is a
+ * silent no-op everywhere else. Sits above the execute modal (z 70 > 60)
+ * but is pointer-events-none — never blocks the Done button.             */
+function ThorStrikeFX() {
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    const onStrike = () => {
+      // Remount even mid-play so back-to-back swaps each get a strike.
+      setPlaying(false);
+      requestAnimationFrame(() => setPlaying(true));
+    };
+    window.addEventListener(SWAP_STRIKE_EVENT, onStrike);
+    return () => window.removeEventListener(SWAP_STRIKE_EVENT, onStrike);
+  }, []);
+  useEffect(() => {
+    if (!playing) return;
+    const t = setTimeout(() => setPlaying(false), 1600);
+    return () => clearTimeout(t);
+  }, [playing]);
+
+  if (!playing) return null;
+  return (
+    <div aria-hidden className="thor-strike">
+      <div className="thor-strike-flash" />
+      <svg className="thor-strike-bolts" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" fill="none">
+        <defs>
+          <filter id="thor-strike-halo" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="2.4" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {/* Four jagged bolts converging on the center (50,50) */}
+        <path className="thor-strike-bolt" pathLength="1"
+          d="M2 6 L18 16 L13 22 L32 33 L27 38 L50 50"
+          stroke="rgba(245,245,255,0.95)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-strike-halo)" />
+        <path className="thor-strike-bolt" pathLength="1" style={{ animationDelay: "0.04s" }}
+          d="M98 3 L80 15 L86 21 L64 32 L69 38 L50 50"
+          stroke="rgba(179,136,255,0.92)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-strike-halo)" />
+        <path className="thor-strike-bolt" pathLength="1" style={{ animationDelay: "0.08s" }}
+          d="M4 97 L21 83 L15 78 L35 64 L30 59 L50 50"
+          stroke="rgba(179,136,255,0.92)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-strike-halo)" />
+        <path className="thor-strike-bolt" pathLength="1" style={{ animationDelay: "0.12s" }}
+          d="M97 95 L79 82 L85 76 L62 62 L67 57 L50 50"
+          stroke="rgba(212,175,55,0.85)" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"
+          filter="url(#thor-strike-halo)" />
+      </svg>
+      <div className="thor-strike-ring" />
+      <div className="thor-strike-ring ring-gold" />
+      <span className="thor-strike-rune">ᚦ</span>
+    </div>
   );
 }
 

@@ -25,6 +25,7 @@ import { cn } from "@/lib/cn";
 import { formatAmount } from "@/lib/format";
 import { useT, t as tImp } from "@/lib/i18n";
 import { useTxHistory } from "@/lib/store/txHistory";
+import { fireSwapStrike } from "@/lib/tier/strike";
 
 interface Props {
   open:        boolean;
@@ -195,6 +196,13 @@ export default function ExecuteSwap({
 
     return () => { cancelled = true; };
   }, [open, taker, isJupiter, address, fromChain, toChain, fromToken, toToken, sellAmount, slippageBps, source, recipient, targetChainId, currentChainId, publicClient]);
+
+  // Announce confirmed swaps to the god theme layer (no-op without a
+  // listener — free tier / reduced motion). Covers all three sources,
+  // since both the receipt effect and the Jupiter path land on this phase.
+  useEffect(() => {
+    if (phase === "tx_confirmed") fireSwapStrike();
+  }, [phase]);
 
   // Track receipt + update history
   useEffect(() => {
