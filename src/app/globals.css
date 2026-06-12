@@ -1703,81 +1703,303 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
   height: 80px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 20px;
+  gap: 8px;
+  padding: 0 16px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
+  position: relative;
 }
-@media (min-width: 1024px) { .topbar-shell { padding: 0 28px; } }
+@media (min-width: 768px)  { .topbar-shell { gap: 10px; padding: 0 20px; } }
+@media (min-width: 1024px) { .topbar-shell { gap: 12px; padding: 0 28px; } }
 
+/* ── Logo block ──────────────────────────────────────────────────────── */
 .topbar-logo {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
 }
+.topbar-logo-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
 
-/* Primary nav tabs — center of the topbar */
+/* Default "Z" mark — cyan square */
+.topbar-z-mark {
+  width: 38px; height: 38px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgba(0,120,140,0.92), rgba(0,200,220,0.82));
+  border: 1px solid rgba(0,232,255,0.28);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 14px -4px rgba(0,232,255,0.45);
+  flex-shrink: 0;
+}
+.topbar-z-mark span {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 20px;
+  color: #02030A;
+  line-height: 1;
+}
+
+/* Trader NFT thumbnail as logo mark */
+.topbar-nft-frame {
+  position: relative;
+  flex-shrink: 0;
+  width: 38px; height: 50px;
+  border-radius: 8px;
+  border: 1px solid rgba(212,175,55,0.55);
+  overflow: hidden;
+  box-shadow:
+    0 0 16px -3px rgba(138,92,255,0.65),
+    0 0  8px -2px rgba(212,175,55,0.30),
+    0 0  0  1px rgba(212,175,55,0.10) inset;
+}
+.topbar-nft-img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+
+/* Logo text */
+.topbar-logo-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.95);
+  line-height: 1.15;
+}
+html[data-tier="trader"] .topbar-logo-name {
+  background: linear-gradient(130deg, #C9A227 0%, #F8E98E 45%, #C9A227 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.topbar-logo-sub {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.28);
+  margin-top: 1px;
+}
+html[data-tier="trader"] .topbar-logo-sub {
+  color: rgba(212,175,55,0.55);
+}
+
+/* ── Nav tabs ─────────────────────────────────────────────────────────── */
 .topbar-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   flex: 1;
   justify-content: center;
 }
 .topbar-tab {
+  position: relative;
   font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 10px 16px;
+  color: rgba(255,255,255,0.38);
+  transition: color 0.2s;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+@media (min-width: 1200px) { .topbar-tab { padding: 10px 20px; } }
+
+.topbar-tab-label { position: relative; z-index: 1; }
+
+/* Energetic underline that scales in on hover / active */
+.topbar-tab-line {
+  position: absolute;
+  bottom: 6px; left: 50%;
+  transform: translateX(-50%) scaleX(0);
+  width: 65%;
+  height: 1px;
+  border-radius: 1px;
+  background: rgba(138,92,255,0.60);
+  transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1);
+}
+.topbar-tab:hover { color: rgba(255,255,255,0.70); }
+.topbar-tab:hover .topbar-tab-line {
+  transform: translateX(-50%) scaleX(0.55);
+}
+.topbar-tab--active { color: rgba(255,255,255,0.92); }
+.topbar-tab--active .topbar-tab-line {
+  transform: translateX(-50%) scaleX(1);
+  background: rgba(255,255,255,0.45);
+}
+
+/* Trader: gold active underline + violet hover */
+html[data-tier="trader"] .topbar-tab:hover { color: rgba(179,136,255,0.72); }
+html[data-tier="trader"] .topbar-tab:hover .topbar-tab-line {
+  background: rgba(138,92,255,0.65);
+}
+html[data-tier="trader"] .topbar-tab--active { color: #c4a0ff; }
+html[data-tier="trader"] .topbar-tab--active .topbar-tab-line {
+  background: linear-gradient(90deg, transparent 0%, rgba(212,175,55,0.90) 50%, transparent 100%);
+  box-shadow: 0 0 8px rgba(212,175,55,0.45);
+}
+
+/* ── ⚡ THOR button ───────────────────────────────────────────────────── */
+.topbar-thor-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 9px;
+  background: linear-gradient(160deg, rgba(8,4,22,0.96), rgba(4,2,12,0.94));
+  border: 1px solid rgba(212,175,55,0.50);
+  color: rgba(212,175,55,0.85);
+  font-family: var(--font-display);
+  font-weight: 700;
   font-size: 11px;
-  font-weight: 500;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: all 0.25s;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow:
+    0 0 20px -6px rgba(138,92,255,0.55),
+    0 0  0  1px rgba(212,175,55,0.06) inset;
+}
+.topbar-thor-btn::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 110%, rgba(138,92,255,0.22), transparent 70%);
+  pointer-events: none;
+}
+.topbar-thor-btn:hover {
+  border-color: rgba(212,175,55,0.80);
+  color: #F2D88F;
+  box-shadow:
+    0 0 28px -4px rgba(138,92,255,0.75),
+    0 0 16px -4px rgba(212,175,55,0.45);
+}
+.topbar-thor-rune {
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+/* ── Chain selector ──────────────────────────────────────────────────── */
+.topbar-chain-btn {
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.48);
+  font-family: var(--font-mono);
+  font-size: 10px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  padding: 6px 14px;
-  border-radius: 8px;
-  color: rgba(255,255,255,0.45);
-  border: 1px solid transparent;
-  transition: color 0.2s, border-color 0.2s, background 0.2s;
-  white-space: nowrap;
+  transition: all 0.20s;
+  flex-shrink: 0;
 }
-.topbar-tab:hover {
-  color: rgba(255,255,255,0.80);
-  background: rgba(255,255,255,0.04);
+.topbar-chain-btn:hover {
+  border-color: rgba(138,92,255,0.32);
+  color: rgba(179,136,255,0.80);
+  background: rgba(138,92,255,0.06);
 }
-.topbar-tab--active {
-  color: rgba(255,255,255,0.95);
-  background: rgba(255,255,255,0.06);
-  border-color: rgba(255,255,255,0.10);
+html[data-tier="trader"] .topbar-chain-btn {
+  border-color: rgba(138,92,255,0.20);
+  color: rgba(179,136,255,0.60);
 }
-
-/* Trader: active tab gets violet glow */
-html[data-tier="trader"] .topbar-tab--active {
+html[data-tier="trader"] .topbar-chain-btn:hover {
+  border-color: rgba(138,92,255,0.50);
   color: #b388ff;
-  background: rgba(138, 92, 255, 0.12);
-  border-color: rgba(138, 92, 255, 0.28);
-  box-shadow: 0 0 12px -4px rgba(138, 92, 255, 0.45);
+  box-shadow: 0 0 12px -4px rgba(138,92,255,0.35);
 }
-html[data-tier="trader"] .topbar-tab:hover {
-  color: rgba(179, 136, 255, 0.85);
-}
-
-/* THOR badge / tier pill in topbar */
-.topbar-thor-badge {
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 10px;
+.topbar-chain-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #9F5FFF;
+  box-shadow: 0 0 6px rgba(159,95,255,0.75);
+  flex-shrink: 0;
 }
 
-/* ZION button sizing */
+/* ── Tool strip ──────────────────────────────────────────────────────── */
+.topbar-tools {
+  height: 34px;
+  padding: 0 5px;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.015);
+  gap: 1px;
+  flex-shrink: 0;
+}
+html[data-tier="trader"] .topbar-tools {
+  border-color: rgba(212,175,55,0.12);
+  background: rgba(8,4,22,0.55);
+}
+.topbar-tool-btn {
+  width: 28px; height: 26px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.30);
+  transition: color 0.15s, background 0.15s;
+  text-decoration: none;
+}
+.topbar-tool-btn:hover {
+  color: rgba(255,255,255,0.70);
+  background: rgba(255,255,255,0.06);
+}
+.topbar-tool-btn--active {
+  color: rgba(212,175,55,0.85) !important;
+  background: rgba(212,175,55,0.08) !important;
+}
+html[data-tier="trader"] .topbar-tool-btn:hover {
+  color: #c4a0ff;
+  background: rgba(138,92,255,0.12);
+}
+
+/* ── ZION button ─────────────────────────────────────────────────────── */
 .topbar-zion-btn {
   height: 36px;
   padding: 0 10px;
 }
 @media (min-width: 640px) { .topbar-zion-btn { padding: 0 14px; } }
 
+/* ── Right actions strip ─────────────────────────────────────────────── */
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
   margin-left: auto;
+}
+@media (min-width: 640px) { .topbar-actions { gap: 8px; } }
+
+/* ── Wallet wrapper — ornate gold corners for trader tier ────────────── */
+.topbar-wallet-wrap { position: relative; }
+html[data-tier="trader"] .topbar-wallet-wrap::before,
+html[data-tier="trader"] .topbar-wallet-wrap::after {
+  content: "";
+  position: absolute;
+  width: 7px; height: 7px;
+  border-color: rgba(212,175,55,0.70);
+  border-style: solid;
+  pointer-events: none;
+  z-index: 4;
+}
+html[data-tier="trader"] .topbar-wallet-wrap::before {
+  top: -2px; left: -2px;
+  border-width: 1px 0 0 1px;
+}
+html[data-tier="trader"] .topbar-wallet-wrap::after {
+  bottom: -2px; right: -2px;
+  border-width: 0 1px 1px 0;
 }
 
 /* ── Dashboard shell — three-column layout ───────────────────────────── */

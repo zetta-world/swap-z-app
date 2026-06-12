@@ -1,35 +1,36 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Search, Sparkles, Bell, Menu, Zap } from "lucide-react";
+import { Shield, EyeOff, Settings, ChevronDown, Zap, Menu, Sparkles, Search } from "lucide-react";
+import { useState } from "react";
 import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import ConnectButton from "@/components/wallet/ConnectButton";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
-import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 
 const NAV_TABS = [
-  { label: "SWAP",      href: "/"          },
-  { label: "POOLS",     href: "/pools"     },
-  { label: "DASHBOARD", href: "/explorer"  },
-  { label: "TERMINAL",  href: "/pro"       },
+  { label: "SWAP",      href: "/"         },
+  { label: "POOLS",     href: "/pools"    },
+  { label: "DASHBOARD", href: "/explorer" },
+  { label: "TERMINAL",  href: "/pro"      },
 ] as const;
 
 export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
-  const pathname   = usePathname();
+  const pathname = usePathname();
   const { setCommand, toggleZion, zionOpen } = useUI();
   const { active: tierActive, tier: activeTier } = useTierAccent();
   const t = useT();
   const isTrader = tierActive && activeTier === "trader";
+  const [hideBalance, setHideBalance] = useState(false);
 
   return (
     <header className="topbar-shell glass-pane sticky top-0 z-30">
-      {/* Tier ambient shimmer */}
       <div aria-hidden className="tier-ambient" />
 
-      {/* ── LEFT: Logo ─────────────────────────── */}
+      {/* ── LEFT: Logo ──────────────────────────────────────── */}
       <div className="topbar-logo">
         {/* Mobile hamburger */}
         <button
@@ -40,24 +41,37 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
           <Menu className="w-5 h-5" />
         </button>
 
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="relative w-9 h-9 flex-shrink-0">
-            <div className="absolute inset-0 rounded-xl bg-grad-cyan opacity-25 blur-md" />
-            <div className="relative w-9 h-9 rounded-xl bg-grad-cyan flex items-center justify-center">
-              <span className="font-display font-extrabold text-bg text-lg leading-none">Z</span>
+        <Link href="/" className="topbar-logo-link">
+          {/* Logo mark */}
+          {isTrader ? (
+            <div className="topbar-nft-frame">
+              <Image
+                src="/assets/trader/nft-trader.png"
+                alt="Z-SWAP Trader NFT"
+                width={38}
+                height={50}
+                className="topbar-nft-img"
+                priority
+              />
             </div>
-          </div>
-          <div className="hidden sm:block min-w-0">
-            <div className="font-display font-extrabold text-ink text-sm leading-none tracking-wide">Z-SWAP</div>
+          ) : (
+            <div className="topbar-z-mark">
+              <span>Z</span>
+            </div>
+          )}
+
+          {/* Logo text */}
+          <div className="hidden sm:flex flex-col min-w-0 justify-center">
+            <div className="topbar-logo-name">Z-SWAP</div>
             <span aria-hidden className="tier-logo-underline" />
-            <div className="font-mono text-[9px] text-ink-3 tracking-[0.18em] uppercase mt-0.5">
-              {isTrader ? "REALM OF THOR" : "Liquidity Nexus"}
+            <div className="topbar-logo-sub">
+              {isTrader ? "THE REALM OF THOR" : "Liquidity Nexus"}
             </div>
           </div>
         </Link>
       </div>
 
-      {/* ── CENTER: Primary nav tabs ────────────── */}
+      {/* ── CENTER: Nav tabs ────────────────────────────────── */}
       <nav className="topbar-tabs hidden md:flex" aria-label="Primary navigation">
         {NAV_TABS.map((tab) => {
           const active =
@@ -70,40 +84,50 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
               href={tab.href}
               className={cn("topbar-tab", active && "topbar-tab--active")}
             >
-              {tab.label}
+              <span className="topbar-tab-label">{tab.label}</span>
+              <span aria-hidden className="topbar-tab-line" />
             </Link>
           );
         })}
       </nav>
 
-      {/* ── RIGHT: controls ─────────────────────── */}
+      {/* ── RIGHT: Controls ─────────────────────────────────── */}
       <div className="topbar-actions">
-        {/* Search — md+ */}
-        <button
-          onClick={() => setCommand(true)}
-          className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 hover:border-white/10 hover:bg-white/[0.05] transition-colors group"
-          aria-label={t("topbar.commandPalette")}
-        >
-          <Search className="w-3.5 h-3.5 text-ink-3 group-hover:text-cyan transition-colors" />
-          <kbd className="hidden xl:inline font-mono text-[10px] text-ink-4 border border-white/10 rounded px-1.5">⌘K</kbd>
-        </button>
 
-        {/* THOR badge — tier pill enhanced */}
-        {tierActive && isPaidTier(activeTier) && (
-          <div
-            className="tier-pill topbar-thor-badge hidden sm:flex items-center gap-1.5"
-            title={`${GOD_META[activeTier].god} · ${GOD_META[activeTier].epithet}`}
-          >
-            <span className="font-display font-bold text-base leading-none" style={{ color: "var(--tier-accent)" }}>
-              {GOD_META[activeTier].rune}
-            </span>
-            <span className="font-mono text-[9px] tracking-widest uppercase" style={{ color: "var(--tier-accent)" }}>
-              {GOD_META[activeTier].god}
-            </span>
-          </div>
+        {/* ⚡ THOR button — trader tier only */}
+        {isTrader && (
+          <Link href="/pro" className="topbar-thor-btn hidden sm:flex items-center gap-1.5">
+            <span className="topbar-thor-rune">ᚦ</span>
+            <span>THOR</span>
+            <Zap className="w-3 h-3 opacity-60" />
+          </Link>
         )}
 
-        {/* ZION */}
+        {/* Chain selector */}
+        <button className="topbar-chain-btn hidden lg:flex items-center gap-1.5">
+          <span className="topbar-chain-dot" />
+          <span>SOLANA</span>
+          <ChevronDown className="w-3 h-3 opacity-50" />
+        </button>
+
+        {/* Tool strip */}
+        <div className="topbar-tools hidden xl:flex items-center">
+          <button aria-label="Security" className="topbar-tool-btn">
+            <Shield className="w-3.5 h-3.5" />
+          </button>
+          <button
+            aria-label="Hide balance"
+            onClick={() => setHideBalance((v) => !v)}
+            className={cn("topbar-tool-btn", hideBalance && "topbar-tool-btn--active")}
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+          </button>
+          <Link href="/settings" className="topbar-tool-btn">
+            <Settings className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {/* ZION AI */}
         <button
           onClick={toggleZion}
           aria-label={t("topbar.askZion")}
@@ -115,15 +139,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
           )}
         >
           <Sparkles className="w-4 h-4 flex-shrink-0" />
-          <span className="hidden sm:inline font-display font-bold text-xs tracking-wide">ZION</span>
-        </button>
-
-        {/* Notifications — xl+ */}
-        <button
-          aria-label={t("settings.groupNotifications")}
-          className="hidden xl:flex items-center justify-center w-9 h-9 rounded-lg border border-white/8 bg-white/[0.03] text-ink-2 hover:text-cyan hover:border-cyan/30 transition-colors"
-        >
-          <Bell className="w-4 h-4" />
+          <span className="hidden xl:inline font-display font-bold text-xs tracking-wide">ZION</span>
         </button>
 
         {/* Mobile search */}
@@ -135,7 +151,10 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
           <Search className="w-4 h-4" />
         </button>
 
-        <ConnectButton />
+        {/* Wallet — wrapped for trader ornate corners */}
+        <div className="topbar-wallet-wrap">
+          <ConnectButton />
+        </div>
       </div>
     </header>
   );
