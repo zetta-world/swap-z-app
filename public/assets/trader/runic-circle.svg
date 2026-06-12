@@ -1,0 +1,83 @@
+<svg viewBox="0 0 520 520" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Círculo rúnico de Thor">
+  <defs>
+    <filter id="rcGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="b"/>
+      <feFlood flood-color="#7C3AED" flood-opacity="0.75"/>
+      <feComposite in2="b" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="rcGlowBig" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b"/>
+      <feFlood flood-color="#8B5CF6" flood-opacity="0.85"/>
+      <feComposite in2="b" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="rcHalo" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+  </defs>
+
+  <!-- halo difuso -->
+  <circle cx="260" cy="260" r="252" stroke="#7C3AED" stroke-width="7" opacity="0.22" filter="url(#rcHalo)"/>
+
+  <!-- ANEL EXTERNO: runas, gira horário 80s -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+      from="0 260 260" to="360 260 260" dur="80s" repeatCount="indefinite"/>
+
+    <circle cx="260" cy="260" r="250" stroke="#B388FF" stroke-width="2" opacity="0.85" filter="url(#rcGlow)"/>
+    <circle cx="260" cy="260" r="212" stroke="#B388FF" stroke-width="1.2" opacity="0.5"/>
+
+    <g stroke="#C9A1FF" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" filter="url(#rcGlow)">
+      <g transform="rotate(0 260 260)"><path transform="translate(253 18) scale(1.25)" d="M5 0 V20 M5 6 L11 10 L5 14"/></g>
+      <g transform="rotate(22.5 260 260)"><path transform="translate(253 18) scale(1.25)" d="M3 0 V20 M3 0 L10 5 L3 10 L10 20"/></g>
+      <g transform="rotate(45 260 260)"><path transform="translate(253 18) scale(1.25)" d="M9 0 L3 8 L9 12 L3 20"/></g>
+      <g transform="rotate(67.5 260 260)"><path transform="translate(253 18) scale(1.25)" d="M6 0 V20 M1 6 L6 0 L11 6"/></g>
+      <g transform="rotate(90 260 260)"><path transform="translate(253 18) scale(1.25)" d="M6 0 V20 M6 7 L1 1 M6 7 L11 1"/></g>
+      <g transform="rotate(112.5 260 260)"><path transform="translate(253 18) scale(1.25)" d="M2 0 V20 M10 0 V20 M2 7 L10 13"/></g>
+      <g transform="rotate(135 260 260)"><path transform="translate(253 18) scale(1.25)" d="M2 0 V20 M10 0 V20 M2 0 L10 10 M10 0 L2 10"/></g>
+      <g transform="rotate(157.5 260 260)"><path transform="translate(253 18) scale(1.25)" d="M9 0 L3 10 L9 20"/></g>
+      <g transform="rotate(180 260 260)"><path transform="translate(253 18) scale(1.25)" d="M5 0 V20 M5 6 L11 10 L5 14"/></g>
+      <g transform="rotate(202.5 260 260)"><path transform="translate(253 18) scale(1.25)" d="M3 0 V20 M3 0 L10 5 L3 10 L10 20"/></g>
+      <g transform="rotate(225 260 260)"><path transform="translate(253 18) scale(1.25)" d="M9 0 L3 8 L9 12 L3 20"/></g>
+      <g transform="rotate(247.5 260 260)"><path transform="translate(253 18) scale(1.25)" d="M6 0 V20 M1 6 L6 0 L11 6"/></g>
+      <g transform="rotate(270 260 260)"><path transform="translate(253 18) scale(1.25)" d="M6 0 V20 M6 7 L1 1 M6 7 L11 1"/></g>
+      <g transform="rotate(292.5 260 260)"><path transform="translate(253 18) scale(1.25)" d="M2 0 V20 M10 0 V20 M2 7 L10 13"/></g>
+      <g transform="rotate(315 260 260)"><path transform="translate(253 18) scale(1.25)" d="M2 0 V20 M10 0 V20 M2 0 L10 10 M10 0 L2 10"/></g>
+      <g transform="rotate(337.5 260 260)"><path transform="translate(253 18) scale(1.25)" d="M9 0 L3 10 L9 20"/></g>
+    </g>
+
+    <!-- 8 diamantes entre runas -->
+    <g fill="#B388FF" opacity="0.9">
+      <g transform="rotate(11.25 260 260)"><path d="M260 40 L264 46 L260 52 L256 46 Z"/></g>
+      <g transform="rotate(56.25 260 260)"><path d="M260 40 L264 46 L260 52 L256 46 Z"/></g>
+      <g transform="rotate(101.25 260 260)"><path d="M260 40 L264 46 L260 52 L256 46 Z"/></g>
+      <g transform="rotate(146.25 260 260)"><path d="M260 40 L264 46 L260 52 L256 46 Z"/></g>
+      <g transform="rotate(191.25 260 260)"><path d="M260 40 L264 46 L260 52 L256 46 Z"/></g>
+      <g transform="rotate(236.25 260 260)"><path d="M260 40 L264 46 L260 52 L256 46 Z"/></g>
+      <g transform="rotate(281.25 260 260)"><path d="M260 40 L264 46 L260 52 L256 46 Z"/></g>
+      <g transform="rotate(326.25 260 260)"><path d="M260 40 L264 46 L260 52 L256 46 Z"/></g>
+    </g>
+  </g>
+
+  <!-- ANEL DE TICKS: contra-rotativo 60s -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+      from="360 260 260" to="0 260 260" dur="60s" repeatCount="indefinite"/>
+    <circle cx="260" cy="260" r="178" stroke="#B388FF" stroke-width="1.4"
+            stroke-dasharray="2 11" stroke-linecap="round" opacity="0.7"/>
+    <circle cx="260" cy="260" r="170" stroke="#B388FF" stroke-width="0.8" opacity="0.35"/>
+  </g>
+
+  <!-- anel pontilhado estático -->
+  <circle cx="260" cy="260" r="148" stroke="#B388FF" stroke-width="1.5"
+          stroke-dasharray="3 12" stroke-linecap="round" opacity="0.6"/>
+
+  <!-- runa central ᚱ pulsando -->
+  <g filter="url(#rcGlowBig)">
+    <path d="M238 192 V328 M238 192 L284 230 L238 262 L288 328"
+          stroke="#C9A1FF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="4s" repeatCount="indefinite"/>
+    </path>
+  </g>
+</svg>

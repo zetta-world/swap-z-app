@@ -44,7 +44,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
         <Link href="/" className="topbar-logo-link">
           {/* Emblem — runic Z medallion */}
           <Image
-            src="/assets/trader/emblem.png"
+            src="/assets/trader/z-medallion-small.svg"
             alt="Z-SWAP"
             width={38}
             height={38}

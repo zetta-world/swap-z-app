@@ -1,0 +1,19 @@
+<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Runa Thurisaz">
+  <defs>
+    <linearGradient id="rtGold" gradientUnits="userSpaceOnUse" x1="16" y1="3" x2="16" y2="29">
+      <stop offset="0%" stop-color="#FBF3B9"/>
+      <stop offset="55%" stop-color="#D9B83A"/>
+      <stop offset="100%" stop-color="#9A7A1E"/>
+    </linearGradient>
+    <filter id="rtGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="b"/>
+      <feFlood flood-color="#8B5CF6" flood-opacity="0.85"/>
+      <feComposite in2="b" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#rtGlow)">
+    <path d="M13 3.5 V28.5 M13 10 L23 16 L13 22"
+          stroke="url(#rtGold)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

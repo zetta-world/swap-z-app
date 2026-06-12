@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { Globe, Sparkles, Activity, Zap, BarChart2 } from "lucide-react";
@@ -31,39 +30,11 @@ export default function SwapDashboard() {
             className="dashboard-hero"
           >
             {isTrader ? (
-              /* ── TRADER: immersive storm hero ── */
+              /* ── TRADER: hero tempestade (matte + FX vetoriais via CSS) ── */
               <div className="trader-hero">
-                {/* Background — Realm of Thor PNG + color grade */}
-                <div aria-hidden className="trader-hero-bg" />
-
-                {/* Emblem watermark */}
-                <div aria-hidden className="trader-hero-emblem-wrap">
-                  <Image
-                    src="/assets/trader/emblem.png"
-                    alt=""
-                    width={220}
-                    height={220}
-                    className="trader-hero-emblem"
-                    priority
-                  />
-                </div>
-
-                {/* Vertical lightning bolts */}
-                <div aria-hidden className="trader-hero-bolts">
-                  <span className="thb thb-1" />
-                  <span className="thb thb-2" />
-                  <span className="thb thb-3" />
-                  <span className="thb thb-4" />
-                  <span className="thb thb-5" />
-                </div>
-
-                {/* Content */}
                 <div className="trader-hero-content">
-                  <div className="trader-hero-eyebrow">
-                    <span className="trader-hero-zap">⚡</span>
-                    <span className="trader-hero-class-label">THOR CLASS</span>
-                  </div>
                   <h1 className="trader-hero-title">TRADER</h1>
+                  <div className="trader-hero-subtitle">THOR CLASS</div>
                   <p className="trader-hero-tagline">
                     {t("tier.taglineTrader")}
                   </p>

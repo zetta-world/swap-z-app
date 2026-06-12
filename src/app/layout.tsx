@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Syne, DM_Sans, DM_Mono } from "next/font/google";
+import { Syne, DM_Sans, DM_Mono, Cinzel } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
 
@@ -19,6 +19,13 @@ const dmMono = DM_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
   variable: "--font-mono",
+  display: "swap",
+});
+// Trader-tier display serif — only consumed under html[data-tier="trader"]
+const cinzel = Cinzel({
+  subsets: ["latin"],
+  weight: ["700", "800", "900"],
+  variable: "--font-cinzel",
   display: "swap",
 });
 
@@ -114,7 +121,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${syne.variable} ${dmSans.variable} ${dmMono.variable}`}>
+    <html lang="en" className={`${syne.variable} ${dmSans.variable} ${dmMono.variable} ${cinzel.variable}`}>
       <body className="font-sans antialiased min-h-screen">
         <Providers>{children}</Providers>
       </body>

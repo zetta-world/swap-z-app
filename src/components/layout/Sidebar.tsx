@@ -34,7 +34,7 @@ export default function Sidebar() {
       <div className="sidebar-logo-area flex items-center justify-between px-4 border-b border-white/5 flex-shrink-0">
         <Link href="/" className="topbar-logo-link flex items-center gap-2.5 min-w-0">
           <Image
-            src="/assets/trader/emblem.png"
+            src="/assets/trader/z-medallion-small.svg"
             alt="Z-SWAP"
             width={36}
             height={36}

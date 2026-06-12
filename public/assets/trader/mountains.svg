@@ -1,0 +1,31 @@
+<svg viewBox="0 0 1200 300" preserveAspectRatio="xMidYMax slice" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Montanhas">
+  <defs>
+    <linearGradient id="mtFog" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7C3AED" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#1B1030" stop-opacity="0.75"/>
+    </linearGradient>
+  </defs>
+
+  <!-- cordilheira distante -->
+  <path fill="#1A0F30" opacity="0.9"
+        d="M0 188 L80 132 L168 168 L260 104 L348 156 L436 118 L530 98 L624 142 L716 96 L808 148 L900 112 L992 158 L1086 118 L1200 162 V300 H0 Z"/>
+
+  <!-- cordilheira média -->
+  <path fill="#120A22"
+        d="M0 216 L96 148 L188 192 L286 122 L374 178 L470 134 L556 86 L652 168 L748 124 L844 182 L938 140 L1036 192 L1130 150 L1200 184 V300 H0 Z"/>
+
+  <!-- cordilheira frontal (pico alto em x≈556, ponto de impacto do raio) -->
+  <path fill="#0A0614"
+        d="M0 252 L118 168 L214 222 L324 146 L428 208 L556 118 L666 226 L762 156 L856 214 L962 168 L1066 224 L1200 172 V300 H0 Z"/>
+
+  <!-- rim light violeta no contorno frontal -->
+  <path stroke="#B388FF" stroke-width="2" opacity="0.18" fill="none"
+        d="M0 252 L118 168 L214 222 L324 146 L428 208 L556 118 L666 226 L762 156 L856 214 L962 168 L1066 224 L1200 172"/>
+
+  <!-- brilho no pico de impacto -->
+  <path stroke="#C9A1FF" stroke-width="2.4" opacity="0.5" fill="none"
+        stroke-linecap="round" d="M520 144 L556 118 L592 152"/>
+
+  <!-- névoa de base -->
+  <rect y="170" width="1200" height="130" fill="url(#mtFog)"/>
+</svg>

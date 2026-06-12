@@ -1,0 +1,16 @@
+<svg viewBox="0 0 28 96" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Coluna de runas">
+  <defs>
+    <filter id="rsGlow" x="-60%" y="-30%" width="220%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b"/>
+      <feFlood flood-color="#7C3AED" flood-opacity="0.8"/>
+      <feComposite in2="b" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#rsGlow)">
+    <animate attributeName="opacity" values="0.5;1;0.5" dur="3.6s" repeatCount="indefinite"/>
+    <path d="M10 12 V58 M10 12 L20 23 L10 33 L21 58"
+          stroke="#C9A1FF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M14 72 L18 77 L14 82 L10 77 Z" fill="#B388FF"/>
+  </g>
+</svg>

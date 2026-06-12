@@ -2491,205 +2491,270 @@ html[data-tier="trader"] .tier-class-name {
     0 0 34px rgba(138, 92, 255, 0.45);
 }
 
-/* ═══ PEÇA A — Trader Hero · Emblem Logo ═══════════════════════════════
- * Immersive storm hero section for Trader Class.
- * Additive: only applies under html[data-tier="trader"] or .trader-hero.
- * ════════════════════════════════════════════════════════════════════ */
+/* ═══ TRADER KIT — FUNDAÇÃO: DESIGN TOKENS ═══════════════════════════════
+ * Asset kit oficial do tier (SVGs em /public/assets/trader/).
+ * Tudo aditivo: só existe sob html[data-tier="trader"].
+ * ═══════════════════════════════════════════════════════════════════════ */
+html[data-tier="trader"] {
+  /* metal: escala de ouro */
+  --tr-gold-100: #FBF3B9;
+  --tr-gold-200: #F8E98E;
+  --tr-gold-300: #E2C04B;
+  --tr-gold-400: #C9A227;
+  --tr-gold-500: #A8861F;
+  --tr-gold-600: #8A6D1A;
+  --tr-gold-700: #6B520F;
 
-/* ── Emblem logo (topbar + sidebar) ──────────────────────────────────── */
+  /* tempestade: escala de violeta */
+  --tr-violet-100: #E9DCFF;
+  --tr-violet-200: #C9A1FF;
+  --tr-violet-300: #B388FF;
+  --tr-violet-400: #8B5CF6;
+  --tr-violet-500: #7C3AED;
+  --tr-violet-600: #5B21B6;
+  --tr-violet-700: #3B1380;
+
+  /* base obsidiana */
+  --tr-obsidian: #0B0B12;
+  --tr-night: #130B24;
+  --tr-nebula: #0E0A1C;
+  --tr-ink: #0A0614;
+  --tr-ink-2: #160C28;
+
+  /* semânticos */
+  --tr-positive: #34D399;
+  --tr-text: rgba(255, 255, 255, 0.86);
+  --tr-text-muted: rgba(255, 255, 255, 0.55);
+  --tr-line-gold: rgba(201, 162, 39, 0.32);
+  --tr-line-soft: rgba(255, 255, 255, 0.08);
+  --tr-surface: rgba(10, 6, 20, 0.72);
+
+  /* gradientes nomeados */
+  --tr-grad-gold: linear-gradient(180deg,
+    var(--tr-gold-100) 8%, var(--tr-gold-300) 46%,
+    var(--tr-gold-400) 70%, var(--tr-gold-600));
+  --tr-grad-gold-line: linear-gradient(90deg,
+    transparent, var(--tr-gold-400), var(--tr-gold-100),
+    var(--tr-gold-400), transparent);
+  --tr-grad-violet: linear-gradient(180deg,
+    var(--tr-violet-200), var(--tr-violet-500));
+  --tr-grad-cta: linear-gradient(135deg,
+    var(--tr-violet-400), var(--tr-violet-600));
+
+  /* glows nomeados */
+  --tr-glow-gold: 0 0 6px rgba(201,162,39,.5), 0 0 18px rgba(201,162,39,.28);
+  --tr-glow-violet: 0 0 8px rgba(124,58,237,.55), 0 0 24px rgba(124,58,237,.3);
+  --tr-glow-text-gold: 0 3px 16px rgba(201,162,39,.4);
+
+  /* tipografia (Cinzel via next/font no layout raiz) */
+  --tr-font-display: var(--font-cinzel), 'Cinzel', serif;
+  --tr-font-mono: var(--font-mono), 'DM Mono', ui-monospace, monospace;
+
+  /* camadas */
+  --tr-z-bg: 0;
+  --tr-z-fx: 1;
+  --tr-z-content: 2;
+}
+
+/* ═══ TRADER KIT — ETAPA 2: Medalhão & Marca ═════════════════════════════ */
+
+/* Medalhão SVG (transparente) — logo na topbar + sidebar, todos os tiers */
 .topbar-logo-emblem {
   width: 38px; height: 38px;
   object-fit: contain;
   flex-shrink: 0;
-  mix-blend-mode: screen;
-  filter: drop-shadow(0 0 6px rgba(138,92,255,0.35));
+  filter: drop-shadow(0 0 5px rgba(138,92,255,0.35));
   transition: filter 0.25s;
 }
 .topbar-logo-link:hover .topbar-logo-emblem {
   filter: drop-shadow(0 0 10px rgba(138,92,255,0.60)) drop-shadow(0 0 4px rgba(212,175,55,0.30));
 }
 html[data-tier="trader"] .topbar-logo-emblem {
-  filter: drop-shadow(0 0 10px rgba(212,175,55,0.45)) drop-shadow(0 0 6px rgba(138,92,255,0.45));
+  filter:
+    drop-shadow(0 0 5px rgba(201, 162, 39, 0.45))
+    drop-shadow(0 0 12px rgba(124, 58, 237, 0.35));
 }
 
-/* ── Trader hero container ───────────────────────────────────────────── */
-.trader-hero {
+/* Wordmark dourado em Cinzel para o trader */
+html[data-tier="trader"] .topbar-logo-name {
+  font-family: var(--tr-font-display);
+  font-weight: 800;
+  letter-spacing: 0.10em;
+}
+html[data-tier="trader"] .topbar-logo-sub {
+  letter-spacing: 0.34em;
+  color: var(--tr-gold-400);
+}
+
+/* ═══ TRADER KIT — ETAPA 3: Hero Tempestade (Modo B híbrido) ═════════════
+ * Matte: realm-of-thor.png · FX vetoriais por cima (stars + sigilo + flash)
+ * ════════════════════════════════════════════════════════════════════════ */
+html[data-tier="trader"] .trader-hero {
   position: relative;
   overflow: hidden;
   border-radius: 16px;
-  min-height: 215px;
+  min-height: 230px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(212,175,55,0.20);
-  box-shadow:
-    0 0 48px -12px rgba(138,92,255,0.55),
-    0 0  0   1px rgba(138,92,255,0.06) inset;
-}
-@media (max-width: 640px) {
-  .trader-hero { min-height: 168px; border-radius: 12px; }
-}
-
-/* ── Background — Realm of Thor PNG with cinematic grade ────────────── */
-.trader-hero-bg {
-  position: absolute; inset: 0;
-  background-image:
-    linear-gradient(180deg,
-      rgba(4,2,14,0.38) 0%,
-      rgba(10,5,26,0.52) 45%,
-      rgba(4,2,14,0.88) 100%
-    ),
+  border: 1px solid var(--tr-line-gold);
+  background:
+    url("/assets/trader/stars.svg") center / cover no-repeat,
     linear-gradient(90deg,
-      rgba(4,2,14,0.55) 0%,
-      transparent 30%,
-      transparent 70%,
-      rgba(4,2,14,0.55) 100%
-    ),
-    url('/assets/trader/realm-of-thor.png');
-  background-size: cover;
-  background-position: center 38%;
-  filter: saturate(145%) brightness(0.82);
-}
-
-/* ── Runic emblem — centered watermark, slow float ──────────────────── */
-.trader-hero-emblem-wrap {
-  position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  z-index: 1;
-}
-.trader-hero-emblem {
-  width: 200px; height: 200px;
-  object-fit: contain;
-  opacity: 0.20;
-  mix-blend-mode: screen;
-  filter: blur(0.4px) drop-shadow(0 0 28px rgba(138,92,255,0.70));
-  animation: heroEmblemFloat 9s ease-in-out infinite;
-  display: block;
+      rgba(11,11,18,.92) 0%,
+      rgba(14,10,28,.7) 16%,
+      rgba(14,10,28,0) 48%),
+    url("/assets/trader/realm-of-thor.png") 62% 40% / cover no-repeat,
+    var(--tr-nebula);
+  animation: trSkyDrift 34s ease-in-out infinite;
+  box-shadow: 0 0 48px -12px rgba(124,58,237,.45);
 }
 @media (max-width: 640px) {
-  .trader-hero-emblem { width: 140px; height: 140px; }
-}
-@keyframes heroEmblemFloat {
-  0%, 100% { opacity: 0.18; transform: scale(1)   rotate(0deg);   }
-  50%      { opacity: 0.28; transform: scale(1.04) rotate(1.5deg); }
+  html[data-tier="trader"] .trader-hero {
+    min-height: 188px; border-radius: 12px;
+    background-position: center, center, 68% 40%, center;
+  }
 }
 
-/* ── Lightning bolt strips ───────────────────────────────────────────── */
-.trader-hero-bolts {
-  position: absolute; inset: 0;
-  pointer-events: none;
-  z-index: 1;
+/* deriva lenta do céu (Ken Burns via background-position) */
+@keyframes trSkyDrift {
+  0%, 100% { background-position: center, center, 62% 40%, center; }
+  50%      { background-position: center, center, 58% 44%, center; }
 }
-.thb {
+
+/* sigilo rúnico em dupla rotação (SMIL dentro do SVG) */
+html[data-tier="trader"] .trader-hero::before {
+  content: "";
   position: absolute;
-  top: 0; bottom: 0;
-  width: 1px;
-  border-radius: 2px;
+  left: 62%;
+  top: 48%;
+  width: min(300px, 56vw);
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, -50%);
+  background: url("/assets/trader/runic-circle.svg") center / contain no-repeat;
+  opacity: 0.55;
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 24px rgba(124, 58, 237, 0.45));
+  pointer-events: none;
+  z-index: var(--tr-z-bg);
 }
-.thb-1 {
-  left: 8%;
-  background: linear-gradient(180deg, transparent 5%, rgba(138,92,255,0.90) 28%, rgba(200,160,255,0.98) 50%, rgba(138,92,255,0.90) 72%, transparent 95%);
-  box-shadow: 0 0 10px rgba(138,92,255,0.70), 0 0 20px rgba(138,92,255,0.30);
-  animation: boltFlash 4.3s ease-in-out infinite;
-}
-.thb-2 {
-  left: 22%;
-  background: linear-gradient(180deg, transparent 20%, rgba(120,80,220,0.65) 50%, transparent 80%);
-  animation: boltFlash 3.1s ease-in-out infinite;
-  animation-delay: 0.7s;
-}
-.thb-3 {
-  right: 20%;
-  background: linear-gradient(180deg, transparent 10%, rgba(138,92,255,0.85) 38%, rgba(200,160,255,0.95) 58%, transparent 92%);
-  box-shadow: 0 0 8px rgba(138,92,255,0.60);
-  animation: boltFlash 3.9s ease-in-out infinite;
-  animation-delay: 1.8s;
-}
-.thb-4 {
-  right: 7%;
-  background: linear-gradient(180deg, transparent 15%, rgba(110,70,200,0.70) 48%, rgba(138,92,255,0.80) 68%, transparent 92%);
-  animation: boltFlash 5.3s ease-in-out infinite;
-  animation-delay: 2.9s;
-}
-.thb-5 {
-  left: 50%;
-  background: linear-gradient(180deg, transparent 8%, rgba(138,92,255,0.50) 40%, transparent 72%);
-  animation: boltFlash 6.7s ease-in-out infinite;
-  animation-delay: 1.2s;
-}
-@keyframes boltFlash {
-  0%, 100% { opacity: 0; transform: scaleX(1);   }
-  2%       { opacity: 1; transform: scaleX(2.8); }
-  4.5%     { opacity: 0; transform: scaleX(1);   }
-  52%      { opacity: 0; }
-  54%      { opacity: 0.70; transform: scaleX(2.0); }
-  56%      { opacity: 0; }
+@media (max-width: 640px) {
+  html[data-tier="trader"] .trader-hero::before {
+    left: 50%; width: min(240px, 80vw); opacity: 0.35;
+  }
 }
 
-/* ── Hero content layer ──────────────────────────────────────────────── */
-.trader-hero-content {
+/* clarão periódico do raio */
+html[data-tier="trader"] .trader-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--tr-z-fx);
+  mix-blend-mode: screen;
+  opacity: 0;
+  background:
+    radial-gradient(16% 52% at 58% 30%, rgba(233,216,255,.95), transparent 70%),
+    radial-gradient(30% 12% at 57% 88%, rgba(201,161,255,.9), transparent 72%);
+  animation: trMatteFlash 6.5s linear infinite;
+}
+@keyframes trMatteFlash {
+  0%, 72%, 90%, 100% { opacity: 0; }
+  75% { opacity: 1; }
+  78% { opacity: .25; }
+  81% { opacity: .85; }
+  86% { opacity: .12; }
+}
+
+html[data-tier="trader"] .trader-hero > * {
   position: relative;
-  z-index: 2;
+  z-index: var(--tr-z-content);
+}
+
+/* ── Conteúdo do hero ─────────────────────────────────────────────────── */
+.trader-hero-content {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 28px 20px;
-  gap: 3px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 30px 28px;
+  gap: 0;
 }
 
-/* "⚡ THOR CLASS" eyebrow */
-.trader-hero-eyebrow {
+/* "TRADER" — Cinzel ouro com raio à esquerda */
+html[data-tier="trader"] .trader-hero-title {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 6px;
-}
-.trader-hero-zap {
-  font-size: 18px;
-  line-height: 1;
-  filter: drop-shadow(0 0 8px rgba(212,175,55,0.80));
-}
-.trader-hero-class-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.45em;
-  text-transform: uppercase;
-  color: rgba(179,136,255,0.80);
-}
-
-/* "TRADER" giant gold title */
-.trader-hero-title {
-  font-family: var(--font-display);
-  font-weight: 900;
-  font-size: clamp(34px, 6vw, 52px);
-  letter-spacing: 0.08em;
+  gap: 14px;
+  font-family: var(--tr-font-display);
+  font-weight: 800;
+  font-size: clamp(36px, 6vw, 58px);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   line-height: 1;
-  background: linear-gradient(130deg, #C9A227 0%, #F8E98E 35%, #EDD060 65%, #C9A227 100%);
+  background: var(--tr-grad-gold);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 0 28px rgba(212,175,55,0.55));
+  filter: drop-shadow(var(--tr-glow-text-gold));
   margin: 0;
+}
+html[data-tier="trader"] .trader-hero-title::before {
+  content: "";
+  width: 0.52em;
+  height: 0.52em;
+  flex: none;
+  background: url("/assets/trader/bolt-icon.svg") center / contain no-repeat;
+  filter: drop-shadow(0 0 10px rgba(124, 58, 237, 0.8));
+}
+
+/* "THOR CLASS" — violeta espaçado */
+html[data-tier="trader"] .trader-hero-subtitle {
+  font-family: var(--tr-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: var(--tr-violet-300);
+  text-shadow: 0 0 14px rgba(124, 58, 237, 0.7);
+  margin-top: 10px;
 }
 
 /* Tagline */
-.trader-hero-tagline {
-  font-family: var(--font-sans);
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: rgba(255,255,255,0.48);
-  max-width: 270px;
-  margin-top: 6px;
+html[data-tier="trader"] .trader-hero-tagline {
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--tr-text-muted);
+  max-width: 300px;
+  margin-top: 12px;
 }
 @media (max-width: 640px) {
-  .trader-hero-title    { font-size: 30px; }
-  .trader-hero-content  { padding: 20px 16px; }
-  .trader-hero-tagline  { font-size: 11px; }
+  html[data-tier="trader"] .trader-hero-title    { font-size: 32px; }
+  .trader-hero-content                            { padding: 22px 18px; }
+  html[data-tier="trader"] .trader-hero-tagline  { font-size: 11.5px; }
+}
+
+/* ── Raios laterais da página (flash duplo via SMIL no SVG) ──────────── */
+html[data-tier="trader"] body::before,
+html[data-tier="trader"] body::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  height: 100vh;
+  width: 90px;
+  background: url("/assets/trader/bolt-edge.svg") center / auto 100% no-repeat;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: var(--tr-z-bg);
+}
+html[data-tier="trader"] body::before { left: -10px; }
+html[data-tier="trader"] body::after  { right: -10px; transform: scaleX(-1); }
+@media (max-width: 640px) {
+  html[data-tier="trader"] body::before,
+  html[data-tier="trader"] body::after { width: 54px; opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-tier="trader"] .trader-hero,
+  html[data-tier="trader"] .trader-hero::after { animation: none; }
 }
 
 /* ── Reduced motion ───────────────────────────────────────────────────── */

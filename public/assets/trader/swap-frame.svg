@@ -1,0 +1,66 @@
+<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Moldura SwapCard">
+  <defs>
+    <linearGradient id="sfGold" gradientUnits="userSpaceOnUse" x1="60" y1="0" x2="60" y2="120">
+      <stop offset="0%" stop-color="#F8E98E"/>
+      <stop offset="50%" stop-color="#C9A227"/>
+      <stop offset="100%" stop-color="#8A6D1A"/>
+    </linearGradient>
+    <filter id="sfGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="b"/>
+      <feFlood flood-color="#F8E98E" flood-opacity="0.45"/>
+      <feComposite in2="b" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- canto TL: bracket duplo chanfrado + losango -->
+  <g filter="url(#sfGlow)">
+    <path d="M4 38 V13 L13 4 H38" stroke="url(#sfGold)" stroke-width="3" stroke-linecap="square"/>
+    <path d="M10 35 V16 L16 10 H35" stroke="url(#sfGold)" stroke-width="1.1" opacity="0.75"/>
+    <path d="M19 10.5 L23.5 15 L19 19.5 L14.5 15 Z" fill="url(#sfGold)"/>
+    <path d="M2 38 H7 M38 2 V7" stroke="url(#sfGold)" stroke-width="2"/>
+  </g>
+  <!-- canto TR -->
+  <g filter="url(#sfGlow)" transform="translate(120 0) scale(-1 1)">
+    <path d="M4 38 V13 L13 4 H38" stroke="url(#sfGold)" stroke-width="3" stroke-linecap="square"/>
+    <path d="M10 35 V16 L16 10 H35" stroke="url(#sfGold)" stroke-width="1.1" opacity="0.75"/>
+    <path d="M19 10.5 L23.5 15 L19 19.5 L14.5 15 Z" fill="url(#sfGold)"/>
+    <path d="M2 38 H7 M38 2 V7" stroke="url(#sfGold)" stroke-width="2"/>
+  </g>
+  <!-- canto BL -->
+  <g filter="url(#sfGlow)" transform="translate(0 120) scale(1 -1)">
+    <path d="M4 38 V13 L13 4 H38" stroke="url(#sfGold)" stroke-width="3" stroke-linecap="square"/>
+    <path d="M10 35 V16 L16 10 H35" stroke="url(#sfGold)" stroke-width="1.1" opacity="0.75"/>
+    <path d="M19 10.5 L23.5 15 L19 19.5 L14.5 15 Z" fill="url(#sfGold)"/>
+    <path d="M2 38 H7 M38 2 V7" stroke="url(#sfGold)" stroke-width="2"/>
+  </g>
+  <!-- canto BR -->
+  <g filter="url(#sfGlow)" transform="translate(120 120) scale(-1 -1)">
+    <path d="M4 38 V13 L13 4 H38" stroke="url(#sfGold)" stroke-width="3" stroke-linecap="square"/>
+    <path d="M10 35 V16 L16 10 H35" stroke="url(#sfGold)" stroke-width="1.1" opacity="0.75"/>
+    <path d="M19 10.5 L23.5 15 L19 19.5 L14.5 15 Z" fill="url(#sfGold)"/>
+    <path d="M2 38 H7 M38 2 V7" stroke="url(#sfGold)" stroke-width="2"/>
+  </g>
+
+  <!-- arestas: corrente de losangos (tile 40px, repeat round) -->
+  <g fill="url(#sfGold)">
+    <path d="M60 2.5 L64 6.5 L60 10.5 L56 6.5 Z"/>
+    <path d="M48 4.5 L50.5 6.5 L48 8.5 L45.5 6.5 Z" opacity="0.8"/>
+    <path d="M72 4.5 L74.5 6.5 L72 8.5 L69.5 6.5 Z" opacity="0.8"/>
+    <path d="M60 109.5 L64 113.5 L60 117.5 L56 113.5 Z"/>
+    <path d="M48 111.5 L50.5 113.5 L48 115.5 L45.5 113.5 Z" opacity="0.8"/>
+    <path d="M72 111.5 L74.5 113.5 L72 115.5 L69.5 113.5 Z" opacity="0.8"/>
+    <path d="M2.5 60 L6.5 56 L10.5 60 L6.5 64 Z"/>
+    <path d="M4.5 48 L6.5 45.5 L8.5 48 L6.5 50.5 Z" opacity="0.8"/>
+    <path d="M4.5 72 L6.5 69.5 L8.5 72 L6.5 74.5 Z" opacity="0.8"/>
+    <path d="M109.5 60 L113.5 56 L117.5 60 L113.5 64 Z"/>
+    <path d="M111.5 48 L113.5 45.5 L115.5 48 L113.5 50.5 Z" opacity="0.8"/>
+    <path d="M111.5 72 L113.5 69.5 L115.5 72 L113.5 74.5 Z" opacity="0.8"/>
+  </g>
+  <g stroke="url(#sfGold)" stroke-width="1" opacity="0.5">
+    <line x1="40" y1="6.5" x2="80" y2="6.5"/>
+    <line x1="40" y1="113.5" x2="80" y2="113.5"/>
+    <line x1="6.5" y1="40" x2="6.5" y2="80"/>
+    <line x1="113.5" y1="40" x2="113.5" y2="80"/>
+  </g>
+</svg>
