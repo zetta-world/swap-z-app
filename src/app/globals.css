@@ -2466,6 +2466,144 @@ html[data-tier="trader"] .thor-cta-sub {
   html[data-tier="trader"] .thor-cta-btn::after { animation: none; }
 }
 
+/* ═══ TRADER KIT — ETAPA 5: Topbar + Sidebar ═════════════════════════════
+ * Tabs mono ouro, wallet pill com moldura (pill-frame.svg), botão THOR
+ * com runa ᚦ, sidebar obsidiana com itens ativos violeta.
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/* topbar — obsidiana com linha de ouro */
+html[data-tier="trader"] .topbar-shell {
+  background: rgba(11, 11, 18, 0.88);
+  border-bottom: 1px solid var(--tr-line-gold);
+}
+
+/* tabs */
+html[data-tier="trader"] .topbar-tab-label {
+  font-family: var(--tr-font-mono);
+  letter-spacing: 0.2em;
+  color: var(--tr-text-muted);
+  transition: color 0.2s;
+}
+html[data-tier="trader"] .topbar-tab:hover .topbar-tab-label {
+  color: var(--tr-gold-100);
+}
+html[data-tier="trader"] .topbar-tab--active .topbar-tab-label {
+  color: #fff;
+}
+html[data-tier="trader"] .topbar-tab--active .topbar-tab-line {
+  background: var(--tr-grad-gold-line);
+  box-shadow: 0 0 9px rgba(201, 162, 39, 0.65);
+}
+
+/* botão THOR — obsidiana, aro de ouro, anel violeta */
+html[data-tier="trader"] .topbar-thor-btn {
+  background: radial-gradient(circle at 35% 30%, #1A1030, var(--tr-ink));
+  border: 1.5px solid var(--tr-gold-600);
+  box-shadow:
+    0 0 0 2.5px rgba(124, 58, 237, 0.35),
+    0 0 14px rgba(124, 58, 237, 0.5);
+  color: var(--tr-gold-100);
+  font-family: var(--tr-font-mono);
+  transition: box-shadow 0.25s;
+}
+html[data-tier="trader"] .topbar-thor-btn:hover {
+  box-shadow:
+    0 0 0 2.5px rgba(201, 161, 255, 0.6),
+    0 0 22px rgba(124, 58, 237, 0.75);
+}
+html[data-tier="trader"] .topbar-thor-rune {
+  color: var(--tr-gold-200);
+  text-shadow: 0 0 8px rgba(201, 162, 39, 0.7);
+}
+
+/* chain selector — mono + ouro */
+html[data-tier="trader"] .topbar-chain-btn {
+  font-family: var(--tr-font-mono);
+  letter-spacing: 0.18em;
+  border-color: var(--tr-line-gold);
+  background: rgba(10, 6, 20, 0.6);
+  color: var(--tr-text);
+}
+html[data-tier="trader"] .topbar-chain-btn:hover {
+  border-color: rgba(201, 162, 39, 0.55);
+  color: var(--tr-gold-100);
+}
+
+/* tool strip */
+html[data-tier="trader"] .topbar-tool-btn {
+  border-color: var(--tr-line-gold);
+  background: rgba(10, 6, 20, 0.6);
+  color: var(--tr-gold-100);
+}
+html[data-tier="trader"] .topbar-tool-btn:hover {
+  border-color: rgba(201, 162, 39, 0.55);
+  color: var(--tr-gold-200);
+}
+
+/* wallet pill — moldura ornamentada via border-image */
+html[data-tier="trader"] .topbar-wallet-wrap {
+  border: 9px solid transparent;
+  border-image-source: url("/assets/trader/pill-frame.svg");
+  border-image-slice: 20;
+  border-image-repeat: stretch;
+  background: rgba(10, 6, 20, 0.72);
+  background-clip: padding-box;
+  border-radius: 0;
+}
+/* cantos dourados antigos desligados (moldura substitui) */
+html[data-tier="trader"] .topbar-wallet-wrap::before,
+html[data-tier="trader"] .topbar-wallet-wrap::after {
+  display: none;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+html[data-tier="trader"] aside.god-card {
+  background: rgba(10, 6, 20, 0.85);
+  border-right: 1px solid var(--tr-line-gold) !important;
+}
+
+html[data-tier="trader"] aside .sidebar-group-label {
+  font-family: var(--tr-font-mono);
+  letter-spacing: 0.2em;
+  color: var(--tr-gold-400);
+}
+
+html[data-tier="trader"] aside .sidebar-nav-icon {
+  color: var(--tr-gold-300);
+}
+html[data-tier="trader"] aside .sidebar-nav-item:hover .sidebar-nav-icon {
+  color: var(--tr-gold-100);
+}
+
+/* item ativo — violeta brilhante */
+html[data-tier="trader"] aside .sidebar-nav-item--active {
+  background: linear-gradient(160deg, rgba(139, 92, 246, 0.28), rgba(91, 33, 182, 0.38)) !important;
+  box-shadow:
+    0 0 18px rgba(124, 58, 237, 0.40),
+    inset 0 0 10px rgba(124, 58, 237, 0.22);
+}
+html[data-tier="trader"] aside .sidebar-nav-item--active .sidebar-nav-icon {
+  color: #EDE4FF !important;
+}
+html[data-tier="trader"] aside .sidebar-nav-item--active .sidebar-nav-label {
+  color: var(--tr-violet-100);
+  text-shadow: 0 0 8px rgba(124, 58, 237, 0.8);
+}
+html[data-tier="trader"] aside .tier-active-bar {
+  background: var(--tr-grad-gold) !important;
+  box-shadow: 0 0 10px rgba(201, 162, 39, 0.7) !important;
+}
+
+/* eco card — moldura de ouro */
+html[data-tier="trader"] aside .sidebar-eco-card {
+  border-color: var(--tr-line-gold) !important;
+  background: rgba(16, 10, 30, 0.5) !important;
+}
+
+@media (max-width: 640px) {
+  html[data-tier="trader"] .topbar-wallet-wrap { border-width: 7px; }
+}
+
 /* ── God-class hero strip — "⚡ TRADER — THOR CLASS" ──────────────────
    Component renders null for free/anonymous; these rules only ever see
    paid tiers. Colors keyed per data-tier; trader gets the gold+violet
