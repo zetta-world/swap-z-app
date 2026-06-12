@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
@@ -32,9 +33,14 @@ export default function Sidebar() {
       {/* Logo — 80px to align with topbar */}
       <div className="sidebar-logo-area flex items-center justify-between px-4 border-b border-white/5 flex-shrink-0">
         <Link href="/" className="topbar-logo-link flex items-center gap-2.5 min-w-0">
-          <div className="topbar-z-mark">
-            <span>Z</span>
-          </div>
+          <Image
+            src="/assets/trader/emblem.png"
+            alt="Z-SWAP"
+            width={36}
+            height={36}
+            className="topbar-logo-emblem"
+            priority
+          />
           {!sidebarCollapsed && (
             <div className="min-w-0 flex flex-col justify-center">
               <div className="topbar-logo-name">Z-SWAP</div>

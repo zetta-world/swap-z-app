@@ -42,10 +42,15 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
         </button>
 
         <Link href="/" className="topbar-logo-link">
-          {/* Z mark — CSS-only, styled gold for trader tier */}
-          <div className="topbar-z-mark">
-            <span>Z</span>
-          </div>
+          {/* Emblem — runic Z medallion */}
+          <Image
+            src="/assets/trader/emblem.png"
+            alt="Z-SWAP"
+            width={38}
+            height={38}
+            className="topbar-logo-emblem"
+            priority
+          />
 
           {/* Logo text */}
           <div className="hidden sm:flex flex-col min-w-0 justify-center">
