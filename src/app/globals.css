@@ -1265,6 +1265,141 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
   box-shadow: 0 0 20px -4px rgba(138, 92, 255, 0.52);
 }
 
+/* ═══ THOR · Peça 5 — Floating holographic TRADER NFT badge ═══════════════
+ * Fixed talisman in the top-right mirroring the Access Pass card.
+ * Three transform layers (parallax wrap → float bob → hover card) so the
+ * effects compose without fighting. Desktop only — hidden below md.
+ * .thor-nft-wrap    : fixed anchor, receives inline parallax transform
+ * .thor-nft-float   : idle bob (thorBadgeFloat)
+ * .thor-nft-card    : obsidian slab, gold border, violet+gold glow, hover
+ * .thor-nft-holo    : rotating conic holographic shimmer (screen blend)
+ * .thor-nft-corner  : Ancient Gold L-brackets in the four corners
+ * ═════════════════════════════════════════════════════════════════════ */
+.thor-nft-wrap {
+  position: fixed;
+  top: 80px;
+  right: 16px;
+  z-index: 20;
+  display: none;
+  pointer-events: none;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+@media (min-width: 768px) {
+  .thor-nft-wrap { display: block; }
+}
+
+.thor-nft-float {
+  animation: thorBadgeFloat 4s ease-in-out infinite;
+}
+@keyframes thorBadgeFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+
+.thor-nft-card {
+  position: relative;
+  width: 72px;
+  height: 96px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(95, 47, 255, 0.22) 0%, transparent 60%),
+    linear-gradient(165deg, rgba(16, 10, 28, 0.96) 0%, rgba(5, 5, 8, 0.98) 100%);
+  box-shadow:
+    0 0 28px -6px rgba(138, 92, 255, 0.55),
+    0 0 14px -6px rgba(212, 175, 55, 0.40),
+    0 8px 24px -8px rgba(0, 0, 0, 0.85),
+    0 1px 0 rgba(245, 245, 255, 0.10) inset;
+  pointer-events: auto;
+  cursor: default;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+}
+.thor-nft-card:hover {
+  transform: scale(1.10);
+  box-shadow:
+    0 0 44px -4px rgba(138, 92, 255, 0.80),
+    0 0 22px -4px rgba(212, 175, 55, 0.60),
+    0 12px 32px -8px rgba(0, 0, 0, 0.90),
+    0 1px 0 rgba(245, 245, 255, 0.18) inset;
+}
+
+/* Rotating holographic shimmer — like tilting a foil card in the light */
+.thor-nft-holo {
+  position: absolute;
+  inset: -55%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(179, 136, 255, 0.16) 50deg,
+    transparent 105deg,
+    rgba(212, 175, 55, 0.13) 165deg,
+    transparent 220deg,
+    rgba(245, 245, 255, 0.10) 290deg,
+    transparent 360deg
+  );
+  mix-blend-mode: screen;
+  animation: thorHoloSpin 8s linear infinite;
+  pointer-events: none;
+}
+@keyframes thorHoloSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Ancient Gold corner brackets — museum-frame engraving */
+.thor-nft-corner {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: rgba(212, 175, 55, 0.85);
+  border-style: solid;
+  border-width: 0;
+  pointer-events: none;
+}
+.thor-nft-corner.tl { top: 3px;    left: 3px;  border-top-width: 1.5px; border-left-width: 1.5px;   border-top-left-radius: 5px; }
+.thor-nft-corner.tr { top: 3px;    right: 3px; border-top-width: 1.5px; border-right-width: 1.5px;  border-top-right-radius: 5px; }
+.thor-nft-corner.bl { bottom: 3px; left: 3px;  border-bottom-width: 1.5px; border-left-width: 1.5px;  border-bottom-left-radius: 5px; }
+.thor-nft-corner.br { bottom: 3px; right: 3px; border-bottom-width: 1.5px; border-right-width: 1.5px; border-bottom-right-radius: 5px; }
+
+.thor-nft-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  padding: 8px 6px;
+}
+.thor-nft-rune {
+  font-size: 42px;
+  line-height: 1;
+  color: #b388ff;
+  text-shadow:
+    0 0 10px rgba(179, 136, 255, 0.90),
+    0 0 22px rgba(138, 92, 255, 0.60),
+    0 0 40px rgba(95, 47, 255, 0.40);
+}
+.thor-nft-divider {
+  width: 60%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.75), transparent);
+}
+.thor-nft-god {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #d4af37;
+  text-shadow: 0 0 8px rgba(212, 175, 55, 0.45);
+}
+.thor-nft-tier {
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  color: rgba(179, 136, 255, 0.85);
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

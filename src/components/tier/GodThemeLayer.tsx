@@ -59,6 +59,8 @@ export default function GodThemeLayer() {
         </div>
       )}
 
+      {active && tier === "trader" && !reduceMotion && <ThorNFTBadge />}
+
       {ceremony && (
         <div aria-hidden className={cn("god-ceremony", `god-${ceremony}`)}>
           <div className="god-flash" />
@@ -342,6 +344,47 @@ function ThorNetwork() {
         />
       ))}
     </svg>
+  );
+}
+
+/* ── Floating holographic TRADER NFT badge ───────────────────────────────
+ * Fixed top-right talisman mirroring the Access Pass card: obsidian slab,
+ * gold corner brackets, rotating holo shimmer, ᚦ sigil. Three transform
+ * layers so effects never fight: wrapper (mouse parallax, inline) →
+ * float (CSS bob) → card (hover scale/glow). Desktop only via CSS.       */
+function ThorNFTBadge() {
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      setPos({ x: ((e.clientX - cx) / cx) * -10, y: ((e.clientY - cy) / cy) * -6 });
+    };
+    window.addEventListener("mousemove", handle, { passive: true });
+    return () => window.removeEventListener("mousemove", handle);
+  }, []);
+  return (
+    <div
+      aria-hidden
+      className="thor-nft-wrap"
+      style={{ transform: `translate(${pos.x.toFixed(2)}px, ${pos.y.toFixed(2)}px)` }}
+    >
+      <div className="thor-nft-float">
+        <div className="thor-nft-card">
+          <div className="thor-nft-holo" />
+          <div className="thor-nft-corner tl" />
+          <div className="thor-nft-corner tr" />
+          <div className="thor-nft-corner bl" />
+          <div className="thor-nft-corner br" />
+          <div className="thor-nft-body">
+            <span className="thor-nft-rune">ᚦ</span>
+            <div className="thor-nft-divider" />
+            <span className="thor-nft-god">THOR</span>
+            <span className="thor-nft-tier">TRADER</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
