@@ -2501,6 +2501,7 @@ html[data-tier="trader"] .tier-class-name {
   width: 38px; height: 38px;
   object-fit: contain;
   flex-shrink: 0;
+  mix-blend-mode: screen;
   filter: drop-shadow(0 0 6px rgba(138,92,255,0.35));
   transition: filter 0.25s;
 }
@@ -2562,6 +2563,7 @@ html[data-tier="trader"] .topbar-logo-emblem {
   width: 200px; height: 200px;
   object-fit: contain;
   opacity: 0.20;
+  mix-blend-mode: screen;
   filter: blur(0.4px) drop-shadow(0 0 28px rgba(138,92,255,0.70));
   animation: heroEmblemFloat 9s ease-in-out infinite;
   display: block;
