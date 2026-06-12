@@ -42,23 +42,10 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
         </button>
 
         <Link href="/" className="topbar-logo-link">
-          {/* Logo mark */}
-          {isTrader ? (
-            <div className="topbar-nft-frame">
-              <Image
-                src="/assets/trader/nft-trader.png"
-                alt="Z-SWAP Trader NFT"
-                width={38}
-                height={50}
-                className="topbar-nft-img"
-                priority
-              />
-            </div>
-          ) : (
-            <div className="topbar-z-mark">
-              <span>Z</span>
-            </div>
-          )}
+          {/* Z mark — CSS-only, styled gold for trader tier */}
+          <div className="topbar-z-mark">
+            <span>Z</span>
+          </div>
 
           {/* Logo text */}
           <div className="hidden sm:flex flex-col min-w-0 justify-center">

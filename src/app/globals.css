@@ -1743,24 +1743,20 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
   line-height: 1;
 }
 
-/* Trader NFT thumbnail as logo mark */
-.topbar-nft-frame {
-  position: relative;
-  flex-shrink: 0;
-  width: 38px; height: 50px;
-  border-radius: 8px;
-  border: 1px solid rgba(212,175,55,0.55);
-  overflow: hidden;
+/* Trader tier: Z mark becomes gold-bordered obsidian slab */
+html[data-tier="trader"] .topbar-z-mark {
+  background: linear-gradient(160deg, rgba(10,6,28,0.98), rgba(6,3,16,0.96));
+  border-color: rgba(212,175,55,0.55);
   box-shadow:
-    0 0 16px -3px rgba(138,92,255,0.65),
+    0 0 18px -3px rgba(138,92,255,0.60),
     0 0  8px -2px rgba(212,175,55,0.30),
     0 0  0  1px rgba(212,175,55,0.10) inset;
 }
-.topbar-nft-img {
-  width: 100%; height: 100%;
-  object-fit: cover;
-  object-position: center top;
-  display: block;
+html[data-tier="trader"] .topbar-z-mark span {
+  background: linear-gradient(135deg, #C9A227 0%, #F8E98E 50%, #C9A227 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 /* Logo text */
@@ -2000,6 +1996,64 @@ html[data-tier="trader"] .topbar-wallet-wrap::before {
 html[data-tier="trader"] .topbar-wallet-wrap::after {
   bottom: -2px; right: -2px;
   border-width: 0 1px 1px 0;
+}
+
+/* ── Sidebar shared layout ───────────────────────────────────────────── */
+.sidebar-logo-area {
+  height: 80px; /* aligns with 80px topbar */
+  display: flex;
+  align-items: center;
+}
+
+/* Trader tier: sidebar matches topbar premium aesthetic */
+
+/* Remove old ::after injection for logo sub (now using .topbar-logo-sub class) */
+html[data-tier="trader"] aside .tier-logo-underline::after {
+  content: none !important;
+}
+
+/* Group labels — ancient gold, extra tracking */
+html[data-tier="trader"] aside .sidebar-group-label {
+  color: rgba(212,175,55,0.45) !important;
+  letter-spacing: 0.28em !important;
+  font-size: 9.5px !important;
+}
+html[data-tier="trader"] aside .sidebar-group:not(:first-child) {
+  border-top: 1px solid rgba(212,175,55,0.07);
+  padding-top: 8px;
+  margin-top: -3px;
+}
+
+/* Nav item labels — mono terminal font */
+html[data-tier="trader"] aside .sidebar-nav-label {
+  font-family: var(--font-mono) !important;
+  font-size: 10.5px !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+}
+
+/* Active item — violet/gold tinted obsidian */
+html[data-tier="trader"] aside .sidebar-nav-item--active {
+  background: rgba(138,92,255,0.10) !important;
+  border: 1px solid rgba(138,92,255,0.22) !important;
+  box-shadow: 0 0 14px -4px rgba(138,92,255,0.30) inset;
+}
+
+/* Collapse toggle — violet on hover */
+html[data-tier="trader"] aside .sidebar-collapse-btn:hover {
+  color: #b388ff !important;
+  background: rgba(138,92,255,0.10) !important;
+}
+
+/* Ecosystem footer card — gold framing */
+html[data-tier="trader"] aside .sidebar-eco-card {
+  border-color: rgba(212,175,55,0.22) !important;
+  background: rgba(212,175,55,0.03) !important;
+}
+html[data-tier="trader"] aside .sidebar-eco-card:hover {
+  border-color: rgba(212,175,55,0.40) !important;
+  background: rgba(212,175,55,0.06) !important;
+  box-shadow: 0 0 14px -4px rgba(212,175,55,0.22);
 }
 
 /* ── Dashboard shell — three-column layout ───────────────────────────── */
