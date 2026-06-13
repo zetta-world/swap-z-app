@@ -23,7 +23,7 @@ export default function SignInButton({ className }: { className?: string }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const { isConnected: evmConnected } = useAccount();
   const sol = useWallet();
-  const { signIn, signOut, pending, error, activeChain } = useWalletAuth();
+  const { signIn, signOut, pending, error, activeChain, evmAvailable, solanaAvailable } = useWalletAuth();
   const { authenticated, isLoading } = useTier();
 
   const anyWallet = (sol.connected && !!sol.publicKey) || evmConnected;
@@ -71,19 +71,47 @@ export default function SignInButton({ className }: { className?: string }) {
   }
 
   // ── 2. Wallet connected, needs to sign ────────────────────────────────────
+  // When both chains are connected, expose a button for each so the user can
+  // choose which wallet to authenticate with (e.g. Phantom OR MetaMask/BSC).
+  const bothConnected = solanaAvailable && evmAvailable;
+
   return (
     <div className={cn("inline-flex flex-col items-start gap-1", className)}>
-      <button
-        onClick={() => signIn()}
-        disabled={pending}
-        className="inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-lg border border-cyan/40 bg-cyan/15 text-cyan font-mono text-[11px] tracking-widest uppercase hover:bg-cyan/25 disabled:opacity-60"
-      >
-        {pending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-        {pending ? t("auth.signing") : t("auth.signIn")}
-        {activeChain && !pending && (
-          <span className="font-mono text-[9px] text-cyan/60">· {activeChain === "solana" ? "Phantom" : "EVM"}</span>
+      <div className="inline-flex items-center gap-1.5">
+        {/* Solana / Phantom button — shown when Phantom is connected */}
+        {solanaAvailable && (
+          <button
+            onClick={() => signIn("solana")}
+            disabled={pending}
+            className="inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-lg border border-cyan/40 bg-cyan/15 text-cyan font-mono text-[11px] tracking-widest uppercase hover:bg-cyan/25 disabled:opacity-60"
+          >
+            {pending && activeChain === "solana"
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <ShieldCheck className="w-3.5 h-3.5" />}
+            {bothConnected ? "Phantom" : pending ? t("auth.signing") : t("auth.signIn")}
+            {!bothConnected && !pending && (
+              <span className="font-mono text-[9px] text-cyan/60">· Phantom</span>
+            )}
+          </button>
         )}
-      </button>
+
+        {/* EVM button — shown when an EVM wallet (MetaMask / BSC) is connected */}
+        {evmAvailable && (
+          <button
+            onClick={() => signIn("evm")}
+            disabled={pending}
+            className="inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-lg border border-violet/40 bg-violet/15 text-violet font-mono text-[11px] tracking-widest uppercase hover:bg-violet/25 disabled:opacity-60"
+          >
+            {pending && activeChain === "evm"
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <ShieldCheck className="w-3.5 h-3.5" />}
+            {bothConnected ? "EVM" : pending ? t("auth.signing") : t("auth.signIn")}
+            {!bothConnected && !pending && (
+              <span className="font-mono text-[9px] text-violet/60">· EVM</span>
+            )}
+          </button>
+        )}
+      </div>
       {error && (
         <span className="font-mono text-[10px] text-red leading-tight">
           {t(error === "rejected" ? "auth.errRejected" : error === "unconfigured" ? "auth.errUnconfigured" : "auth.errFailed")}

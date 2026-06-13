@@ -25,12 +25,15 @@ export type SignInError =
   | "failed";
 
 export interface WalletAuth {
-  signIn: () => Promise<boolean>;
+  signIn: (forceChain?: AuthChain) => Promise<boolean>;
   signOut: () => Promise<void>;
   pending: boolean;
   error: SignInError | null;
-  /** Which wallet the next signIn() would use, or null if none connected. */
+  /** Which wallet the next signIn() would use when called without args. */
   activeChain: AuthChain | null;
+  /** Whether each chain currently has a connected wallet available to sign. */
+  evmAvailable:    boolean;
+  solanaAvailable: boolean;
 }
 
 export function useWalletAuth(): WalletAuth {
@@ -43,12 +46,20 @@ export function useWalletAuth(): WalletAuth {
   const [error, setError] = useState<SignInError | null>(null);
 
   const solConnected = sol.connected && !!sol.publicKey;
-  const activeChain: AuthChain | null = solConnected ? "solana" : evmConnected && evmAddress ? "evm" : null;
+  const evmAvailable    = evmConnected && !!evmAddress;
+  const solanaAvailable = solConnected;
+  const activeChain: AuthChain | null = solConnected ? "solana" : evmAvailable ? "evm" : null;
 
-  const signIn = useCallback(async (): Promise<boolean> => {
+  const signIn = useCallback(async (forceChain?: AuthChain): Promise<boolean> => {
     setError(null);
 
-    const chain: AuthChain | null = solConnected ? "solana" : evmConnected && evmAddress ? "evm" : null;
+    // Use forceChain when provided (user explicitly chose a wallet), otherwise
+    // prefer Solana → EVM by default (Solana-first platform).
+    const chain: AuthChain | null =
+      forceChain === "evm"    && evmAvailable    ? "evm"    :
+      forceChain === "solana" && solanaAvailable ? "solana" :
+      forceChain ? null // requested chain not available
+      : solConnected ? "solana" : evmAvailable ? "evm" : null;
     const address = chain === "solana" ? sol.publicKey?.toBase58() : evmAddress;
     if (!chain || !address) {
       setError("no_wallet");
@@ -97,7 +108,7 @@ export function useWalletAuth(): WalletAuth {
     } finally {
       setPending(false);
     }
-  }, [solConnected, evmConnected, evmAddress, sol, signMessageAsync, refresh]);
+  }, [solConnected, evmAvailable, solanaAvailable, evmAddress, sol, signMessageAsync, refresh]);
 
   const signOut = useCallback(async () => {
     try {
@@ -107,5 +118,5 @@ export function useWalletAuth(): WalletAuth {
     }
   }, [refresh]);
 
-  return { signIn, signOut, pending, error, activeChain };
+  return { signIn, signOut, pending, error, activeChain, evmAvailable, solanaAvailable };
 }
