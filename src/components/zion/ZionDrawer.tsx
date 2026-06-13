@@ -5,7 +5,7 @@ import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
 import {
   Sparkles, X, Send, RefreshCw, TrendingUp, Globe, Crosshair, FileText,
-  ChevronDown, ChevronUp, RotateCcw, Loader2, Sparkle, Zap,
+  ChevronDown, ChevronUp, RotateCcw, Loader2, Sparkle, Zap, Lock, ArrowRight, Crown,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -23,6 +23,7 @@ import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
 import { GOD_META, isPaidTier } from "@/lib/tier/gods";
+import { useTier } from "@/lib/tier/client";
 
 const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "trading",   labelKey: "zion.tabTrading", taglineKey: "zion.taglineTrading", Icon: TrendingUp },
@@ -35,6 +36,8 @@ const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: Rea
 export default function ZionDrawer() {
   const { zionOpen, setZion, lang } = useUI();
   const { active: tierActive, tier: activeTier } = useTierAccent();
+  const { satisfies, authenticated } = useTier();
+  const tierLocked = !satisfies("pro");
   const { fromToken, toToken, fromChain, amountIn } = useSwap();
   const t = useT();
 
@@ -131,6 +134,10 @@ export default function ZionDrawer() {
         } else if (res.status === 400) {
           const body = await res.text().catch(() => "");
           setBuffer(`[${body || res.statusText}]\n\n${t("zion.badRequest")}`);
+        } else if (res.status === 402) {
+          // Tier gate — locked UI in the body will take over; clear buffer so
+          // it doesn't flash an error before the tierLocked render path kicks in.
+          setBuffer("");
         } else if (res.status === 503) {
           const body = await res.text().catch(() => "");
           setBuffer(`[${t("zion.notConfigured")}]\n\n${body || t("zion.notConfiguredHint")}`);
@@ -158,32 +165,34 @@ export default function ZionDrawer() {
     }
   }, [autoScan, effectiveChain, effectiveFromToken?.address, effectiveToToken?.address, arbMinSpread, snipeMaxAge, lang, t]);
 
-  // Auto-run when drawer opens or op changes.
+  // Auto-run when drawer opens or op changes — skip when tier-locked.
   useEffect(() => {
     if (!zionOpen) {
       abortRef.current?.abort();
       return;
     }
     setQuestion("");
+    if (tierLocked) return;
     run(op, "");
     return () => abortRef.current?.abort();
-  }, [zionOpen, op, run]);
+  }, [zionOpen, op, run, tierLocked]);
 
-  // For trading/pair, re-run when the EFFECTIVE pair changes.
+  // For trading/pair, re-run when the EFFECTIVE pair changes — skip when locked.
   useEffect(() => {
     if (!zionOpen) return;
+    if (tierLocked) return;
     if (op !== "trading" && op !== "pair") return;
     if (autoScan) return;
     run(op, "");
     // Intentionally only re-fires on pair-symbol changes — run() is stable
     // enough that we don't want every filter change to re-trigger this path.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveFromToken?.symbol, effectiveToToken?.symbol]);
+  }, [effectiveFromToken?.symbol, effectiveToToken?.symbol, tierLocked]);
 
   const onAsk = (e: React.FormEvent) => {
     e.preventDefault();
     const q = question.trim();
-    if (!q || streaming) return;
+    if (!q || streaming || tierLocked) return;
     setQuestion("");
     run(op, q);
   };
@@ -441,96 +450,144 @@ export default function ZionDrawer() {
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
-              {/* Streaming / empty / complete indicator
-                  We no longer dump the raw terminal trace by default — the
-                  cards ARE the deliverable. A small expandable section lets
-                  power users still see the underlying analysis text if they
-                  want context. */}
-              {streamStage !== "complete" && (
-                <StreamIndicator
-                  stage={streamStage}
-                  hasBuffer={!!buffer}
-                  cardsCount={parsed.cards.length}
-                  t={t}
-                />
-              )}
+              {tierLocked ? (
+                <ZionLocked authenticated={authenticated} t={t} />
+              ) : (
+                <>
+                  {/* Streaming / empty / complete indicator
+                      We no longer dump the raw terminal trace by default — the
+                      cards ARE the deliverable. A small expandable section lets
+                      power users still see the underlying analysis text if they
+                      want context. */}
+                  {streamStage !== "complete" && (
+                    <StreamIndicator
+                      stage={streamStage}
+                      hasBuffer={!!buffer}
+                      cardsCount={parsed.cards.length}
+                      t={t}
+                    />
+                  )}
 
-              {/* Action cards */}
-              {parsed.cards.length > 0 && (
-                <div className="space-y-2">
-                  <div className="font-mono text-[10px] text-cyan tracking-widest uppercase">
-                    {parsed.cards.length === 1
-                      ? t("zion.proposalsSingular")
-                      : t("zion.proposalsPlural", { n: parsed.cards.length })}
-                  </div>
-                  {/* Autopilot banner — picks the next eligible card and runs
-                      a cancel-able countdown before firing it through the
-                      CEX API. Hidden when autopilot is OFF or nothing
-                      matches the rails. */}
-                  <AutopilotPilot cards={parsed.cards} />
-                  {/* Auto-rebalance banner — sibling pilot for `rebalance`
-                      cards (CEX→wallet withdrawal). Independent opt-in toggle
-                      in settings, hidden when off or no rebalance card pending. */}
-                  <RebalancePilot cards={parsed.cards} />
-                  <AnimatePresence initial={false}>
-                    {parsed.cards.map((c, i) => (
-                      <ActionCardView key={i} card={c} index={i} onExecute={setExecuting} />
-                    ))}
-                  </AnimatePresence>
-                </div>
-              )}
+                  {/* Action cards */}
+                  {parsed.cards.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="font-mono text-[10px] text-cyan tracking-widest uppercase">
+                        {parsed.cards.length === 1
+                          ? t("zion.proposalsSingular")
+                          : t("zion.proposalsPlural", { n: parsed.cards.length })}
+                      </div>
+                      {/* Autopilot banner — picks the next eligible card and runs
+                          a cancel-able countdown before firing it through the
+                          CEX API. Hidden when autopilot is OFF or nothing
+                          matches the rails. */}
+                      <AutopilotPilot cards={parsed.cards} />
+                      {/* Auto-rebalance banner — sibling pilot for `rebalance`
+                          cards (CEX→wallet withdrawal). Independent opt-in toggle
+                          in settings, hidden when off or no rebalance card pending. */}
+                      <RebalancePilot cards={parsed.cards} />
+                      <AnimatePresence initial={false}>
+                        {parsed.cards.map((c, i) => (
+                          <ActionCardView key={i} card={c} index={i} onExecute={setExecuting} />
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  )}
 
-              {/* "Show analysis text" expandable section — collapsed by default.
-                  Hidden until there's actually something to show. */}
-              {parsed.visible && (
-                <details
-                  className="rounded-xl border border-white/5 bg-bg-1/30 overflow-hidden"
-                  open={showDetails}
-                  onToggle={(e) => setShowDetails((e.target as HTMLDetailsElement).open)}
-                >
-                  <summary className="cursor-pointer list-none px-3 py-2 flex items-center gap-2 font-mono text-[10px] text-ink-3 hover:text-ink-2 tracking-widest uppercase">
-                    {showDetails
-                      ? <ChevronUp   className="w-3 h-3" />
-                      : <ChevronDown className="w-3 h-3" />}
-                    {showDetails ? t("zion.hideDetails") : t("zion.showDetails")}
-                  </summary>
-                  <div className="px-4 pb-4 pt-1 font-mono text-[11px] leading-[1.7] whitespace-pre-wrap text-ink-3 border-t border-white/5">
-                    {parsed.visible}
-                  </div>
-                </details>
+                  {/* "Show analysis text" expandable section — collapsed by default.
+                      Hidden until there's actually something to show. */}
+                  {parsed.visible && (
+                    <details
+                      className="rounded-xl border border-white/5 bg-bg-1/30 overflow-hidden"
+                      open={showDetails}
+                      onToggle={(e) => setShowDetails((e.target as HTMLDetailsElement).open)}
+                    >
+                      <summary className="cursor-pointer list-none px-3 py-2 flex items-center gap-2 font-mono text-[10px] text-ink-3 hover:text-ink-2 tracking-widest uppercase">
+                        {showDetails
+                          ? <ChevronUp   className="w-3 h-3" />
+                          : <ChevronDown className="w-3 h-3" />}
+                        {showDetails ? t("zion.hideDetails") : t("zion.showDetails")}
+                      </summary>
+                      <div className="px-4 pb-4 pt-1 font-mono text-[11px] leading-[1.7] whitespace-pre-wrap text-ink-3 border-t border-white/5">
+                        {parsed.visible}
+                      </div>
+                    </details>
+                  )}
+                </>
               )}
             </div>
 
-            {/* Input bar */}
-            <form onSubmit={onAsk} className="border-t border-white/5 p-4 flex-shrink-0">
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/8 focus-within:border-gold/30">
-                <input
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder={streaming
-                    ? t("zion.askWhileThinking")
-                    : t("zion.askPlaceholder", { mode: t(opMeta.labelKey).toLowerCase() })}
-                  disabled={streaming}
-                  className="flex-1 min-w-0 bg-transparent outline-none text-sm font-sans text-ink placeholder:text-ink-4 disabled:opacity-50"
-                />
-                <button
-                  type="submit"
-                  disabled={streaming || !question.trim()}
-                  className="w-7 h-7 rounded-md flex items-center justify-center text-gold hover:bg-gold/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <p className="font-mono text-[9px] text-ink-4 mt-2 text-center">
-                {t("zion.proposes")}
-              </p>
-            </form>
+            {/* Input bar — hidden when tier-locked */}
+            {!tierLocked && (
+              <form onSubmit={onAsk} className="border-t border-white/5 p-4 flex-shrink-0">
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/8 focus-within:border-gold/30">
+                  <input
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder={streaming
+                      ? t("zion.askWhileThinking")
+                      : t("zion.askPlaceholder", { mode: t(opMeta.labelKey).toLowerCase() })}
+                    disabled={streaming}
+                    className="flex-1 min-w-0 bg-transparent outline-none text-sm font-sans text-ink placeholder:text-ink-4 disabled:opacity-50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={streaming || !question.trim()}
+                    className="w-7 h-7 rounded-md flex items-center justify-center text-gold hover:bg-gold/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="font-mono text-[9px] text-ink-4 mt-2 text-center">
+                  {t("zion.proposes")}
+                </p>
+              </form>
+            )}
           </motion.div>
         </Dialog.Content>
       </Dialog.Portal>
 
       <ZionExecuteRouter card={executing} onClose={() => setExecuting(null)} />
     </Dialog.Root>
+  );
+}
+
+// ─── Tier-locked upgrade view ────────────────────────────────────────────
+
+function ZionLocked({
+  authenticated,
+  t,
+}: {
+  authenticated: boolean;
+  t: (k: MessageKey, vars?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-gold/25 bg-gradient-to-br from-gold/[0.05] to-violet/[0.03] p-6 text-center">
+      <div className="absolute -top-16 -right-12 w-56 h-56 rounded-full bg-gold/10 blur-3xl pointer-events-none" />
+      <div className="relative flex flex-col items-center gap-3">
+        <div className="w-12 h-12 rounded-2xl bg-gold/10 border border-gold/30 flex items-center justify-center">
+          {authenticated
+            ? <Crown className="w-5 h-5 text-gold" />
+            : <Lock  className="w-5 h-5 text-gold" />}
+        </div>
+        <h3 className="font-display font-bold text-base text-ink">
+          {authenticated
+            ? t("tier.lockedHeading", { tier: "Pro" })
+            : t("tier.signInHeading")}
+        </h3>
+        <p className="font-sans text-[13px] text-ink-2 leading-relaxed max-w-xs">
+          {authenticated
+            ? t("tier.lockedBody", { tier: "Pro" })
+            : t("tier.signInBody")}
+        </p>
+        <a
+          href="/pricing"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/15 text-gold px-4 py-2.5 font-mono text-[11px] tracking-widest uppercase hover:bg-gold/25 transition-colors"
+        >
+          {t("tier.viewPlans")}
+          <ArrowRight className="w-3.5 h-3.5" />
+        </a>
+      </div>
+    </div>
   );
 }
 
