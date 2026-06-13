@@ -52,8 +52,6 @@ export default function GodThemeLayer() {
           {!reduceMotion && tier === "pro"    && <FreyrEmbers />}
           {!reduceMotion && tier === "trader" && (
             <>
-              <div className="thor-mist" />
-              <ThorParticles />
               <ThorNetwork />
               <ThorRunes />
               <ThorBolts />
@@ -355,84 +353,6 @@ function ThorNetwork() {
         />
       ))}
     </svg>
-  );
-}
-
-/* ── Electric particle field — Canvas, 60 fps ───────────────────────────
- * Tiny charged particles drifting upward like ions escaping the storm.
- * Canvas is preferred over DOM spans: 90+ particles with no layout cost.
- * Particle colors sampled from the Thor palette; ~8% chance of gold.     */
-function ThorParticles() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let raf: number;
-    const resize = () => {
-      canvas.width  = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    resize();
-    window.addEventListener("resize", resize, { passive: true });
-
-    type Particle = { x: number; y: number; vx: number; vy: number; r: number; o: number; do: number; gold: boolean };
-    const N = 88;
-    const make = (): Particle => ({
-      x:    Math.random() * window.innerWidth,
-      y:    Math.random() * window.innerHeight,
-      vx:   (Math.random() - 0.5) * 0.35,
-      vy:   -(0.18 + Math.random() * 0.40),
-      r:    0.5 + Math.random() * 1.4,
-      o:    Math.random(),
-      do:   0.003 + Math.random() * 0.007,
-      gold: Math.random() < 0.08,
-    });
-    const particles: Particle[] = Array.from({ length: N }, make);
-
-    const tick = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const p of particles) {
-        p.x  += p.vx;
-        p.y  += p.vy;
-        p.o  += p.do;
-        if (p.o > 1 || p.o < 0) p.do *= -1;
-        if (p.y < -4) { p.y = canvas.height + 4; p.x = Math.random() * canvas.width; }
-        const color = p.gold
-          ? `rgba(212,175,55,${(p.o * 0.55).toFixed(2)})`
-          : `rgba(${138 + Math.floor(Math.random() * 40)},${88 + Math.floor(Math.random() * 48)},255,${(p.o * 0.45).toFixed(2)})`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
-        /* tiny sparkle cross on large particles */
-        if (p.r > 1.2) {
-          ctx.strokeStyle = color;
-          ctx.lineWidth   = 0.5;
-          ctx.beginPath();
-          ctx.moveTo(p.x - p.r * 1.8, p.y);
-          ctx.lineTo(p.x + p.r * 1.8, p.y);
-          ctx.moveTo(p.x, p.y - p.r * 1.8);
-          ctx.lineTo(p.x, p.y + p.r * 1.8);
-          ctx.stroke();
-        }
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
-  return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
-    />
   );
 }
 

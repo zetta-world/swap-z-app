@@ -494,52 +494,40 @@ html[data-tier="pilot"] .tier-ambient {
 /* ── THOR (trader) — Electric Storm ───────────────────────────────────── */
 /* Color palette: Electric Violet #8A5CFF · Thunder Glow #B388FF ·
    Deep Purple #5F2FFF · Ancient Gold #D4AF37 · Obsidian Black #050505.
-   Layer stack (bottom→top):
-     0. Realm-of-Thor PNG (cinematic backdrop)
-     1. CSS gradient atmosphere (storm depth + color grading)
-     2. ::before — gold corona + nebula cloud clusters
-     3. ::after  — ground ionization + floor energy
-     4. DOM children — network, runes, bolts, canvas particles          */
+   Runes + energy network handle all movement; bolts flash at prime cycles.*/
 .god-ambient.god-trader {
-  background-image:
-    /* ── Layer 1: atmosphere gradients ── */
-    /* Obsidian vignette — deepens the horizon like a real storm */
-    radial-gradient(110% 110% at 50% 50%, rgba(5, 5, 8, 0.42), transparent 75%),
-    /* Electric Violet storm crown */
-    radial-gradient(82% 56% at 50% -15%, rgba(138, 92, 255, 0.50), transparent 68%),
-    /* Left storm wall */
-    radial-gradient(54% 48% at -4% 44%, rgba(95, 47, 255, 0.32), transparent 68%),
-    /* Right storm wall */
-    radial-gradient(54% 48% at 104% 40%, rgba(138, 92, 255, 0.30), transparent 68%),
-    /* Charged mid-air atmosphere — links PNG lightning to UI glow */
-    radial-gradient(88% 30% at 50% 50%, rgba(60, 20, 120, 0.28), transparent 60%),
-    /* Ground ionization */
-    radial-gradient(72% 32% at 50% 110%, rgba(63, 22, 160, 0.40), transparent 55%),
-    /* ── Layer 0: Realm of Thor PNG ── */
-    url('/assets/trader/realm-of-thor.png');
-  background-size:
-    auto, auto, auto, auto, auto, auto,
-    cover;
-  background-position:
-    center, center, center, center, center, center,
-    center;
-  background-repeat: no-repeat;
+  background:
+    /* Obsidian core — places the user inside the storm */
+    radial-gradient(110% 110% at 50% 50%, rgba(5, 5, 8, 0.55), transparent 80%),
+    /* Massive Electric Violet storm crown bearing down */
+    radial-gradient(82% 56% at 50% -20%, rgba(138, 92, 255, 0.62), transparent 70%),
+    /* Left storm wall — Deep Purple */
+    radial-gradient(54% 48% at -4%  44%, rgba(95,  47, 255, 0.46), transparent 70%),
+    /* Right storm wall — Electric Violet */
+    radial-gradient(54% 48% at 104% 40%, rgba(138, 92, 255, 0.44), transparent 70%),
+    /* Charged mid-air atmosphere */
+    radial-gradient(88% 30% at 50%  50%, rgba(110, 55, 200, 0.20), transparent 60%),
+    /* Ground ionization — pre-strike charge accumulating */
+    radial-gradient(72% 32% at 50% 112%, rgba(63,  22, 160, 0.52), transparent 55%);
   box-shadow: 0 0 220px -12px rgba(138, 92, 255, 0.55) inset;
 }
-/* Mjölnir's Ancient Gold corona + nebula clouds */
+/* Mjölnir's Ancient Gold corona above the storm + Electric Violet edge halos */
 .god-ambient.god-trader::before {
   content: "";
   position: absolute;
   inset: 0;
   background:
+    /* Ancient Gold divine crown — where Mjölnir's power bleeds through */
     radial-gradient(32% 16% at 50% -5%, rgba(212, 175, 55, 0.18), transparent 65%),
+    /* Nebula cloud clusters — Thunder Glow billowing in the upper sky */
     radial-gradient(26% 18% at 22%  10%, rgba(179, 136, 255, 0.22), transparent 70%),
     radial-gradient(30% 20% at 76%  14%, rgba(138, 92, 255, 0.20), transparent 70%),
     radial-gradient(20% 14% at 48%  26%, rgba(110, 55, 200, 0.16), transparent 70%),
+    /* Electric edge halos */
     linear-gradient(88deg,  rgba(138, 92, 255, 0.16), transparent 26%),
     linear-gradient(272deg, rgba(179, 136, 255, 0.14), transparent 26%);
 }
-/* Ground energy accumulation */
+/* Ground energy accumulation — the floor charges before a bolt strikes */
 .god-ambient.god-trader::after {
   content: "";
   position: absolute;
@@ -548,47 +536,6 @@ html[data-tier="pilot"] .tier-ambient {
     radial-gradient(60% 22% at 50% 106%, rgba(95,  47, 255, 0.34), transparent 58%),
     radial-gradient(38% 14% at 20%  94%, rgba(138, 92, 255, 0.16), transparent 58%),
     radial-gradient(38% 14% at 80%  94%, rgba(138, 92, 255, 0.16), transparent 58%);
-}
-
-/* ── Animated purple mist — drifts slow across the PNG sky ─────────────
-   Two pseudo-layers with drift animations keep the painting alive
-   without hiding the artwork.                                           */
-.thor-mist {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-.thor-mist::before,
-.thor-mist::after {
-  content: "";
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(64px);
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-}
-.thor-mist::before {
-  width: 70%; height: 40%;
-  top: 5%; left: -10%;
-  background: radial-gradient(ellipse, rgba(95, 47, 255, 0.22) 0%, transparent 65%);
-  animation: thorMistLeft 28s alternate infinite;
-}
-.thor-mist::after {
-  width: 65%; height: 38%;
-  top: 10%; right: -8%;
-  background: radial-gradient(ellipse, rgba(138, 92, 255, 0.18) 0%, transparent 65%);
-  animation: thorMistRight 34s alternate infinite;
-}
-@keyframes thorMistLeft  {
-  0%   { transform: translate(0%, 0%)   scale(1);    opacity: 0.7; }
-  40%  { transform: translate(12%, 6%)  scale(1.08); opacity: 1;   }
-  100% { transform: translate(6%, -4%)  scale(0.95); opacity: 0.6; }
-}
-@keyframes thorMistRight {
-  0%   { transform: translate(0%, 0%)   scale(1);    opacity: 0.65; }
-  50%  { transform: translate(-10%, 5%) scale(1.06); opacity: 0.95; }
-  100% { transform: translate(-5%, -3%) scale(0.92); opacity: 0.60; }
 }
 
 /* ── DOM bolt SVG CSS ─────────────────────────────────────────────────── */
@@ -1104,86 +1051,47 @@ html[data-tier] .tier-godline {
    Replaces glass-pane's default neutral backdrop with deep obsidian.
    High saturation blur makes the storm behind it feel tactile.          */
 html[data-tier="trader"] header.glass-pane {
-  background: linear-gradient(180deg, rgba(3, 1, 10, 0.96) 0%, rgba(5, 2, 14, 0.92) 100%);
-  backdrop-filter: blur(40px) saturate(240%);
-  -webkit-backdrop-filter: blur(40px) saturate(240%);
-  border-bottom: 1px solid transparent !important;
+  background: linear-gradient(180deg, rgba(4, 2, 10, 0.92) 0%, rgba(6, 3, 14, 0.86) 100%);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border-bottom-color: rgba(212, 175, 55, 0.28) !important;
   box-shadow:
-    0  1px 0 0 rgba(212, 175, 55, 0.28) inset,
-    0 -1px 0 0 rgba(138, 92, 255, 0.10) inset,
-    0 1px 0  rgba(212, 175, 55, 0.18),
-    0 8px 60px -8px rgba(95, 47, 255, 0.42),
-    0 0 0 1px rgba(212, 175, 55, 0.06) inset;
+    0  1px 0 0 rgba(212, 175, 55, 0.20) inset,   /* top inner gold shine */
+    0 -1px 0 0 rgba(138, 92, 255, 0.08) inset,   /* bottom inner violet bleed */
+    0 8px 48px -12px rgba(95, 47, 255, 0.30);    /* Electric Storm aura below */
   position: relative;
-  overflow: hidden;
 }
-/* Hammered-gold shimmer line at the bottom */
+/* Hammered-gold gradient shimmer — bright gold center, fading at the edges
+   exactly like a brushed-metal bar on a God of War UI panel.             */
 html[data-tier="trader"] header.glass-pane::after {
   content: "";
   position: absolute;
-  bottom: 0; left: 0; right: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 1px;
-  background: linear-gradient(90deg,
-    transparent           0%,
-    rgba(212,175, 55,0.28) 8%,
-    rgba(245,215,100,0.85) 32%,
+  background: linear-gradient(
+    90deg,
+    transparent          0%,
+    rgba(212,175, 55,0.30) 10%,
+    rgba(245,215,100,0.82) 35%,
     rgba(255,232,140,1.00) 50%,
-    rgba(245,215,100,0.85) 68%,
-    rgba(212,175, 55,0.28) 92%,
-    transparent          100%
+    rgba(245,215,100,0.82) 65%,
+    rgba(212,175, 55,0.30) 90%,
+    transparent         100%
   );
   animation: thorGoldEdge 10s ease-in-out infinite;
   pointer-events: none;
-  z-index: 2;
-}
-/* Lightning pulse — a bolt of light sweeps the header width every 18s */
-html[data-tier="trader"] header.glass-pane::before {
-  content: "";
-  position: absolute;
-  top: 0; bottom: 0;
-  width: 120px;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(179,136,255,0.14) 40%,
-    rgba(245,245,255,0.22) 50%,
-    rgba(179,136,255,0.14) 60%,
-    transparent 100%
-  );
-  animation: thorHeaderPulse 18s ease-in-out infinite;
-  pointer-events: none;
   z-index: 1;
 }
-@keyframes thorHeaderPulse {
-  0%, 10%  { left: -15%; opacity: 0; }
-  12%      { opacity: 1; }
-  40%      { left: 110%; opacity: 0.8; }
-  42%, 100% { left: 110%; opacity: 0; }
-}
 @keyframes thorGoldEdge {
-  0%, 100% { opacity: 0.75; }
+  0%, 100% { opacity: 0.72; }
   50%       { opacity: 1.00; }
 }
 
 /* ── Z logo glyph — Electric Violet in the header (header scope only) ─ */
 html[data-tier="trader"] header .bg-grad-cyan {
-  background: linear-gradient(135deg, #5F2FFF 0%, #8A5CFF 50%, #B388FF 100%) !important;
-  box-shadow: 0 0 20px rgba(138, 92, 255, 0.65), 0 0 6px rgba(212, 175, 55, 0.20);
-}
-/* Command bar (search) — obsidian + violet border on hover */
-html[data-tier="trader"] header button[class*="max-w-md"] {
-  background: rgba(6, 3, 18, 0.60) !important;
-  border-color: rgba(138, 92, 255, 0.16) !important;
-}
-html[data-tier="trader"] header button[class*="max-w-md"]:hover {
-  border-color: rgba(138, 92, 255, 0.45) !important;
-  background: rgba(8, 4, 22, 0.75) !important;
-  box-shadow: 0 0 16px -4px rgba(138, 92, 255, 0.35);
-}
-/* Notification + ZION buttons — violet hover discharge */
-html[data-tier="trader"] header button[class*="rounded-lg"]:not([class*="max-w-md"]):hover {
-  border-color: rgba(138, 92, 255, 0.38) !important;
-  color: #b388ff !important;
-  box-shadow: 0 0 14px -4px rgba(138, 92, 255, 0.45);
+  background-image: linear-gradient(135deg, #8A5CFF 0%, #5F2FFF 100%) !important;
 }
 
 /* ── God sigil pill — obsidian fill · Ancient Gold border · violet glow  */
@@ -1195,108 +1103,26 @@ html[data-tier="trader"] .tier-pill {
     0 0  8px -2px rgba(212, 175, 55, 0.18) inset;
 }
 
-/* ── Sidebar — full ornate NFT-frame treatment ───────────────────────── */
+/* ── Sidebar — Electric Violet right border + gold→violet top stripe ─── */
 html[data-tier="trader"] aside.glass-pane {
-  background: linear-gradient(
-    180deg,
-    rgba(4, 2, 14, 0.96) 0%,
-    rgba(3, 1, 10, 0.94) 100%
-  ) !important;
-  backdrop-filter: blur(40px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
-  border-right: 1px solid rgba(138, 92, 255, 0.30) !important;
-  box-shadow:
-    1px 0 0 rgba(212, 175, 55, 0.14),          /* gold inner glow */
-    4px 0 28px -4px rgba(95, 47, 255, 0.28),   /* violet outer bloom */
-    0 0 0 1px rgba(138, 92, 255, 0.08) inset;
+  border-right-color: rgba(138, 92, 255, 0.22) !important;
 }
-/* Gold→violet top stripe */
 html[data-tier="trader"] aside.glass-pane::before {
   content: "";
   position: absolute;
-  top: 0; left: 0; right: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 1px;
-  background: linear-gradient(90deg,
+  background: linear-gradient(
+    90deg,
     transparent            0%,
-    rgba(212,175, 55,0.50) 28%,
-    rgba(138, 92,255,0.65) 62%,
+    rgba(212,175, 55,0.45) 30%,
+    rgba(138, 92,255,0.55) 65%,
     transparent           100%
   );
   pointer-events: none;
-  z-index: 2;
-}
-/* Energy flow — a single pulse of light runs down the right edge */
-html[data-tier="trader"] aside.glass-pane::after {
-  content: "";
-  position: absolute;
-  top: 0; right: -1px;
-  width: 2px; height: 35%;
-  background: linear-gradient(180deg,
-    transparent 0%,
-    rgba(179, 136, 255, 0.85) 40%,
-    rgba(212, 175, 55, 0.90) 60%,
-    transparent 100%
-  );
-  border-radius: 1px;
-  animation: thorSideEdge 8s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 2;
-}
-@keyframes thorSideEdge {
-  0%   { top:  -35%; opacity: 0; }
-  5%   { opacity: 1; }
-  80%  { opacity: 0.9; }
-  100% { top: 100%;  opacity: 0; }
-}
-/* Active nav item — violet glow + runic left bar */
-html[data-tier="trader"] aside .tier-active-bar {
-  background: linear-gradient(180deg, #8A5CFF, #D4AF37) !important;
-  box-shadow: 0 0 10px 2px rgba(138, 92, 255, 0.75) !important;
-  width: 3px !important;
-}
-html[data-tier="trader"] aside a[class*="bg-white"] {
-  background: rgba(138, 92, 255, 0.10) !important;
-  border: 1px solid rgba(138, 92, 255, 0.18);
-}
-html[data-tier="trader"] aside .tier-active-icon {
-  color: #b388ff !important;
-  filter: drop-shadow(0 0 5px rgba(138, 92, 255, 0.70));
-}
-/* Logo "Z" glyph — violet in the sidebar (scoped to aside) */
-html[data-tier="trader"] aside .bg-grad-cyan {
-  background: linear-gradient(135deg, #5F2FFF 0%, #8A5CFF 50%, #B388FF 100%) !important;
-  box-shadow: 0 0 18px rgba(138, 92, 255, 0.60);
-}
-/* Sidebar subtitle "Realm of Thor" instead of "Liquidity Nexus" */
-html[data-tier="trader"] aside .tier-logo-underline::after {
-  content: "REALM OF THOR";
-  display: block;
-  font-size: 9px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: rgba(212, 175, 55, 0.75);
-  text-shadow: 0 0 8px rgba(212, 175, 55, 0.40);
-  margin-top: 2px;
-}
-/* Group separators — faint runic gold line */
-html[data-tier="trader"] aside .mb-5:not(:first-child)::before {
-  content: "⋯ ᚦ ⋯";
-  display: block;
-  text-align: center;
-  font-size: 10px;
-  color: rgba(212, 175, 55, 0.28);
-  letter-spacing: 0.5em;
-  margin-bottom: 6px;
-}
-/* Nav hover — electric violet discharge */
-html[data-tier="trader"] aside a:hover {
-  background: rgba(138, 92, 255, 0.08) !important;
-  box-shadow: 0 0 12px -4px rgba(138, 92, 255, 0.35) inset;
-}
-/* ZETTA Ecosystem footer card — gold border */
-html[data-tier="trader"] aside .border-white\/5:last-child {
-  border-color: rgba(212, 175, 55, 0.22) !important;
-  background: rgba(212, 175, 55, 0.04) !important;
+  z-index: 1;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1692,561 +1518,6 @@ html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
   100%   { opacity: 0; transform: translate(-50%, -50%) scale(1.10); filter: blur(3px); }
 }
 
-/* ═══ LAYOUT REBUILD — Dashboard & Topbar structure ══════════════════════
- * Three-column institutional dashboard layout:
- *   Topbar (80px fixed) / Sidebar (fixed left) / Center / Right (320px)
- * All free-tier content is unchanged — structure additions are neutral.
- * ═════════════════════════════════════════════════════════════════════ */
-
-/* ── Topbar shell ─────────────────────────────────────────────────────── */
-.topbar-shell {
-  height: 80px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  position: relative;
-}
-@media (min-width: 768px)  { .topbar-shell { gap: 10px; padding: 0 20px; } }
-@media (min-width: 1024px) { .topbar-shell { gap: 12px; padding: 0 28px; } }
-
-/* ── Logo block ──────────────────────────────────────────────────────── */
-.topbar-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-.topbar-logo-link {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-}
-
-/* Default "Z" mark — cyan square */
-.topbar-z-mark {
-  width: 38px; height: 38px;
-  border-radius: 11px;
-  background: linear-gradient(135deg, rgba(0,120,140,0.92), rgba(0,200,220,0.82));
-  border: 1px solid rgba(0,232,255,0.28);
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 0 14px -4px rgba(0,232,255,0.45);
-  flex-shrink: 0;
-}
-.topbar-z-mark span {
-  font-family: var(--font-display);
-  font-weight: 900;
-  font-size: 20px;
-  color: #02030A;
-  line-height: 1;
-}
-
-/* Trader tier: Z mark becomes gold-bordered obsidian slab */
-html[data-tier="trader"] .topbar-z-mark {
-  background: linear-gradient(160deg, rgba(10,6,28,0.98), rgba(6,3,16,0.96));
-  border-color: rgba(212,175,55,0.55);
-  box-shadow:
-    0 0 18px -3px rgba(138,92,255,0.60),
-    0 0  8px -2px rgba(212,175,55,0.30),
-    0 0  0  1px rgba(212,175,55,0.10) inset;
-}
-html[data-tier="trader"] .topbar-z-mark span {
-  background: linear-gradient(135deg, #C9A227 0%, #F8E98E 50%, #C9A227 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* Logo text */
-.topbar-logo-name {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.95);
-  line-height: 1.15;
-}
-html[data-tier="trader"] .topbar-logo-name {
-  background: linear-gradient(130deg, #C9A227 0%, #F8E98E 45%, #C9A227 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-.topbar-logo-sub {
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.28);
-  margin-top: 1px;
-}
-html[data-tier="trader"] .topbar-logo-sub {
-  color: rgba(212,175,55,0.55);
-}
-
-/* ── Nav tabs ─────────────────────────────────────────────────────────── */
-.topbar-tabs {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  flex: 1;
-  justify-content: center;
-}
-.topbar-tab {
-  position: relative;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 400;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  padding: 10px 16px;
-  color: rgba(255,255,255,0.38);
-  transition: color 0.2s;
-  white-space: nowrap;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
-}
-@media (min-width: 1200px) { .topbar-tab { padding: 10px 20px; } }
-
-.topbar-tab-label { position: relative; z-index: 1; }
-
-/* Energetic underline that scales in on hover / active */
-.topbar-tab-line {
-  position: absolute;
-  bottom: 6px; left: 50%;
-  transform: translateX(-50%) scaleX(0);
-  width: 65%;
-  height: 1px;
-  border-radius: 1px;
-  background: rgba(138,92,255,0.60);
-  transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1);
-}
-.topbar-tab:hover { color: rgba(255,255,255,0.70); }
-.topbar-tab:hover .topbar-tab-line {
-  transform: translateX(-50%) scaleX(0.55);
-}
-.topbar-tab--active { color: rgba(255,255,255,0.92); }
-.topbar-tab--active .topbar-tab-line {
-  transform: translateX(-50%) scaleX(1);
-  background: rgba(255,255,255,0.45);
-}
-
-/* Trader: gold active underline + violet hover */
-html[data-tier="trader"] .topbar-tab:hover { color: rgba(179,136,255,0.72); }
-html[data-tier="trader"] .topbar-tab:hover .topbar-tab-line {
-  background: rgba(138,92,255,0.65);
-}
-html[data-tier="trader"] .topbar-tab--active { color: #c4a0ff; }
-html[data-tier="trader"] .topbar-tab--active .topbar-tab-line {
-  background: linear-gradient(90deg, transparent 0%, rgba(212,175,55,0.90) 50%, transparent 100%);
-  box-shadow: 0 0 8px rgba(212,175,55,0.45);
-}
-
-/* ── ⚡ THOR button ───────────────────────────────────────────────────── */
-.topbar-thor-btn {
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 9px;
-  background: linear-gradient(160deg, rgba(8,4,22,0.96), rgba(4,2,12,0.94));
-  border: 1px solid rgba(212,175,55,0.50);
-  color: rgba(212,175,55,0.85);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.20em;
-  text-transform: uppercase;
-  text-decoration: none;
-  transition: all 0.25s;
-  position: relative;
-  overflow: hidden;
-  flex-shrink: 0;
-  box-shadow:
-    0 0 20px -6px rgba(138,92,255,0.55),
-    0 0  0  1px rgba(212,175,55,0.06) inset;
-}
-.topbar-thor-btn::before {
-  content: "";
-  position: absolute; inset: 0;
-  background: radial-gradient(ellipse at 50% 110%, rgba(138,92,255,0.22), transparent 70%);
-  pointer-events: none;
-}
-.topbar-thor-btn:hover {
-  border-color: rgba(212,175,55,0.80);
-  color: #F2D88F;
-  box-shadow:
-    0 0 28px -4px rgba(138,92,255,0.75),
-    0 0 16px -4px rgba(212,175,55,0.45);
-}
-.topbar-thor-rune {
-  font-size: 14px;
-  line-height: 1;
-  opacity: 0.85;
-}
-
-/* ── Chain selector ──────────────────────────────────────────────────── */
-.topbar-chain-btn {
-  height: 34px;
-  padding: 0 11px;
-  border-radius: 9px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.07);
-  color: rgba(255,255,255,0.48);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  transition: all 0.20s;
-  flex-shrink: 0;
-}
-.topbar-chain-btn:hover {
-  border-color: rgba(138,92,255,0.32);
-  color: rgba(179,136,255,0.80);
-  background: rgba(138,92,255,0.06);
-}
-html[data-tier="trader"] .topbar-chain-btn {
-  border-color: rgba(138,92,255,0.20);
-  color: rgba(179,136,255,0.60);
-}
-html[data-tier="trader"] .topbar-chain-btn:hover {
-  border-color: rgba(138,92,255,0.50);
-  color: #b388ff;
-  box-shadow: 0 0 12px -4px rgba(138,92,255,0.35);
-}
-.topbar-chain-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: #9F5FFF;
-  box-shadow: 0 0 6px rgba(159,95,255,0.75);
-  flex-shrink: 0;
-}
-
-/* ── Tool strip ──────────────────────────────────────────────────────── */
-.topbar-tools {
-  height: 34px;
-  padding: 0 5px;
-  border-radius: 9px;
-  border: 1px solid rgba(255,255,255,0.05);
-  background: rgba(255,255,255,0.015);
-  gap: 1px;
-  flex-shrink: 0;
-}
-html[data-tier="trader"] .topbar-tools {
-  border-color: rgba(212,175,55,0.12);
-  background: rgba(8,4,22,0.55);
-}
-.topbar-tool-btn {
-  width: 28px; height: 26px;
-  border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  color: rgba(255,255,255,0.30);
-  transition: color 0.15s, background 0.15s;
-  text-decoration: none;
-}
-.topbar-tool-btn:hover {
-  color: rgba(255,255,255,0.70);
-  background: rgba(255,255,255,0.06);
-}
-.topbar-tool-btn--active {
-  color: rgba(212,175,55,0.85) !important;
-  background: rgba(212,175,55,0.08) !important;
-}
-html[data-tier="trader"] .topbar-tool-btn:hover {
-  color: #c4a0ff;
-  background: rgba(138,92,255,0.12);
-}
-
-/* ── ZION button ─────────────────────────────────────────────────────── */
-.topbar-zion-btn {
-  height: 36px;
-  padding: 0 10px;
-}
-@media (min-width: 640px) { .topbar-zion-btn { padding: 0 14px; } }
-
-/* ── Right actions strip ─────────────────────────────────────────────── */
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-@media (min-width: 640px) { .topbar-actions { gap: 8px; } }
-
-/* ── Wallet wrapper — ornate gold corners for trader tier ────────────── */
-.topbar-wallet-wrap { position: relative; }
-html[data-tier="trader"] .topbar-wallet-wrap::before,
-html[data-tier="trader"] .topbar-wallet-wrap::after {
-  content: "";
-  position: absolute;
-  width: 7px; height: 7px;
-  border-color: rgba(212,175,55,0.70);
-  border-style: solid;
-  pointer-events: none;
-  z-index: 4;
-}
-html[data-tier="trader"] .topbar-wallet-wrap::before {
-  top: -2px; left: -2px;
-  border-width: 1px 0 0 1px;
-}
-html[data-tier="trader"] .topbar-wallet-wrap::after {
-  bottom: -2px; right: -2px;
-  border-width: 0 1px 1px 0;
-}
-
-/* ── Sidebar shared layout ───────────────────────────────────────────── */
-.sidebar-logo-area {
-  height: 80px; /* aligns with 80px topbar */
-  display: flex;
-  align-items: center;
-}
-
-/* Trader tier: sidebar matches topbar premium aesthetic */
-
-/* Remove old ::after injection for logo sub (now using .topbar-logo-sub class) */
-html[data-tier="trader"] aside .tier-logo-underline::after {
-  content: none !important;
-}
-
-/* Group labels — ancient gold, extra tracking */
-html[data-tier="trader"] aside .sidebar-group-label {
-  color: rgba(212,175,55,0.45) !important;
-  letter-spacing: 0.28em !important;
-  font-size: 9.5px !important;
-}
-html[data-tier="trader"] aside .sidebar-group:not(:first-child) {
-  border-top: 1px solid rgba(212,175,55,0.07);
-  padding-top: 8px;
-  margin-top: -3px;
-}
-
-/* Nav item labels — mono terminal font */
-html[data-tier="trader"] aside .sidebar-nav-label {
-  font-family: var(--font-mono) !important;
-  font-size: 10.5px !important;
-  letter-spacing: 0.12em !important;
-  text-transform: uppercase !important;
-}
-
-/* Active item — violet/gold tinted obsidian */
-html[data-tier="trader"] aside .sidebar-nav-item--active {
-  background: rgba(138,92,255,0.10) !important;
-  border: 1px solid rgba(138,92,255,0.22) !important;
-  box-shadow: 0 0 14px -4px rgba(138,92,255,0.30) inset;
-}
-
-/* Collapse toggle — violet on hover */
-html[data-tier="trader"] aside .sidebar-collapse-btn:hover {
-  color: #b388ff !important;
-  background: rgba(138,92,255,0.10) !important;
-}
-
-/* Ecosystem footer card — gold framing */
-html[data-tier="trader"] aside .sidebar-eco-card {
-  border-color: rgba(212,175,55,0.22) !important;
-  background: rgba(212,175,55,0.03) !important;
-}
-html[data-tier="trader"] aside .sidebar-eco-card:hover {
-  border-color: rgba(212,175,55,0.40) !important;
-  background: rgba(212,175,55,0.06) !important;
-  box-shadow: 0 0 14px -4px rgba(212,175,55,0.22);
-}
-
-/* ── Dashboard shell — three-column layout ───────────────────────────── */
-.dashboard-shell {
-  display: flex;
-  flex-direction: column;
-  min-height: calc(100vh - 80px);
-  padding: 0;
-}
-
-.dashboard-body {
-  display: flex;
-  flex: 1;
-  gap: 0;
-  align-items: flex-start;
-  min-width: 0;
-}
-
-/* Center column: grows, has padding */
-.dashboard-center {
-  flex: 1;
-  min-width: 0;
-  padding: 20px 16px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 640px;   /* cap so the swap card never becomes a 1200px monster */
-  margin: 0 auto;
-}
-
-/* Compact hero */
-.dashboard-hero {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/* Right panel: fixed 320px, sticky top, separated by a border */
-.dashboard-right {
-  width: 320px;
-  flex-shrink: 0;
-  padding: 20px 16px 24px 0;
-  align-self: flex-start;
-  position: sticky;
-  top: 80px;
-  max-height: calc(100vh - 80px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  /* hide scrollbar but keep scroll */
-  scrollbar-width: none;
-}
-.dashboard-right::-webkit-scrollbar { display: none; }
-/* show right panel only on large screens */
-@media (max-width: 1199px) { .dashboard-right { display: none; } }
-
-/* On screens wide enough, give center column room to breathe */
-@media (min-width: 1200px) {
-  .dashboard-body  { align-items: flex-start; }
-  .dashboard-center { margin: 0; padding-left: 24px; }
-}
-@media (min-width: 1400px) {
-  .dashboard-center { max-width: 680px; }
-}
-
-/* ── Trader right-panel card ─────────────────────────────────────────── */
-.trader-panel-card {
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.06);
-  background: linear-gradient(160deg, rgba(8,4,22,0.88) 0%, rgba(5,3,14,0.82) 100%);
-  padding: 14px;
-  backdrop-filter: blur(20px);
-}
-/* trader tier: gold border + violet glow */
-html[data-tier="trader"] .trader-panel-card {
-  border-color: rgba(212,175,55,0.20);
-  box-shadow:
-    0 0 20px -8px rgba(138,92,255,0.30),
-    0 1px 0 rgba(212,175,55,0.12) inset;
-}
-
-.trader-panel-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.trader-panel-rune {
-  font-size: 18px;
-  color: rgba(212,175,55,0.80);
-  text-shadow: 0 0 8px rgba(212,175,55,0.40);
-  line-height: 1;
-}
-.trader-panel-title {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.90);
-}
-.trader-panel-subtitle {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgba(212,175,55,0.60);
-}
-
-/* ── Inline NFT talisman card ────────────────────────────────────────── */
-.trader-nft-inline { padding: 0; overflow: hidden; }
-.trader-nft-inner {
-  position: relative;
-  height: 88px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-.trader-nft-holo-inline {
-  position: absolute;
-  inset: -60%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg, rgba(179,136,255,0.14) 50deg, transparent 105deg,
-    rgba(212,175,55,0.10) 165deg, transparent 220deg,
-    rgba(245,245,255,0.07) 290deg, transparent 360deg
-  );
-  mix-blend-mode: screen;
-  animation: thorHoloSpin 8s linear infinite;
-  pointer-events: none;
-}
-.trader-nft-corner-set { position: absolute; inset: 0; pointer-events: none; }
-.tnc {
-  position: absolute;
-  width: 12px; height: 12px;
-  border-color: rgba(212,175,55,0.80);
-  border-style: solid; border-width: 0;
-}
-.tnc.tl { top: 6px;    left: 6px;  border-top-width: 1.5px; border-left-width: 1.5px;   border-top-left-radius: 6px; }
-.tnc.tr { top: 6px;    right: 6px; border-top-width: 1.5px; border-right-width: 1.5px;  border-top-right-radius: 6px; }
-.tnc.bl { bottom: 6px; left: 6px;  border-bottom-width: 1.5px; border-left-width: 1.5px;  border-bottom-left-radius: 6px; }
-.tnc.br { bottom: 6px; right: 6px; border-bottom-width: 1.5px; border-right-width: 1.5px; border-bottom-right-radius: 6px; }
-
-.trader-nft-content {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 0 16px;
-}
-.trader-nft-rune-big {
-  font-size: 44px;
-  line-height: 1;
-  color: #b388ff;
-  text-shadow:
-    0 0 10px rgba(179,136,255,0.90),
-    0 0 24px rgba(138,92,255,0.60),
-    0 0 48px rgba(95,47,255,0.35);
-  flex-shrink: 0;
-}
-.trader-nft-label { flex: 1; }
-.trader-nft-name {
-  display: block;
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 16px;
-  letter-spacing: 0.08em;
-  color: rgba(255,255,255,0.95);
-}
-.trader-nft-sub {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: rgba(212,175,55,0.65);
-}
-.trader-nft-tag {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: rgba(138,92,255,0.16);
-  border: 1px solid rgba(138,92,255,0.35);
-  color: #b388ff;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-
 /* ═══ THOR · Peça 7 — Fidelity to the key art ═════════════════════════════
  * Closes the gap with the TRADER mockup: the giant ᚦ sigil ring crowning
  * the storm, the ornate gold frame around the swap card, and the god-class
@@ -2309,465 +1580,59 @@ html[data-tier="trader"] .trader-panel-card {
   to { transform: rotate(360deg); }
 }
 
-/* ═══ TRADER KIT — ETAPA 4: SwapCard Premium ═════════════════════════════
- * Moldura border-image (swap-frame.svg) + finiais + colunas de runas +
- * campos chanfrados + CTA "Reino de Thor".
- * Markup: .thor-swap-frame no wrapper .aurora-border; .thor-ornaments
- * carrega os dois finiais. Tudo display:none/neutro fora do trader.
- * ════════════════════════════════════════════════════════════════════════ */
+/* ── Ornate gold frame on the swap card ───────────────────────────────
+   Markup ships in SwapCard (.thor-ornaments) but is display:none for
+   everyone except trader — free tier renders an empty hidden div.
+   Corners are double-gold L-brackets; sides carry engraved rune strips. */
 .thor-ornaments { display: none; }
-.thor-finial { display: none; }
-
-/* moldura ornamentada — substitui o anel aurora no trader */
-html[data-tier="trader"] .thor-swap-frame {
-  border: 22px solid transparent;
-  border-image-source: url("/assets/trader/swap-frame.svg");
-  border-image-slice: 40;
-  border-image-repeat: round;
-  border-radius: 0;
-  padding: 0;
-  background:
-    url("/assets/trader/rune-strip.svg") 5px 12px / 18px auto repeat-y,
-    url("/assets/trader/rune-strip.svg") calc(100% - 5px) 12px / 18px auto repeat-y,
-    linear-gradient(180deg, rgba(8, 4, 18, 0.97), rgba(5, 2, 13, 0.95));
-  background-clip: padding-box;
-  filter:
-    drop-shadow(0 0 22px rgba(124, 58, 237, 0.18))
-    drop-shadow(0 4px 30px rgba(0, 0, 0, 0.5));
-}
-/* anel gradiente do aurora-border desligado sob a moldura */
-html[data-tier="trader"] .thor-swap-frame::before {
-  display: none;
-}
-
-/* finiais gema+lanças no topo/base do card */
 html[data-tier="trader"] .thor-ornaments {
   display: block;
   position: absolute;
   inset: 0;
-  pointer-events: none;
   z-index: 3;
-}
-html[data-tier="trader"] .thor-finial {
-  display: block;
-  position: absolute;
-  left: 50%;
-  width: 62px;
-  height: 26px;
-  background: url("/assets/trader/frame-finial.svg") center / contain no-repeat;
-  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.7));
-}
-html[data-tier="trader"] .thor-finial--top    { top: -12px;    transform: translateX(-50%); }
-html[data-tier="trader"] .thor-finial--bottom { bottom: -12px; transform: translateX(-50%) rotate(180deg); }
-
-/* título do card — Cinzel ouro */
-html[data-tier="trader"] .aurora-border .section-label {
-  font-family: var(--tr-font-display);
-  font-weight: 800;
-  letter-spacing: 0.28em;
-  background: var(--tr-grad-gold);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* campos chanfrados (corta cantos opostos) */
-html[data-tier="trader"] .thor-token-slot {
-  background: rgba(8, 5, 16, 0.78) !important;
-  border: 1px solid rgba(201, 162, 39, 0.16) !important;
-  border-radius: 0 !important;
-  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px),
-                     calc(100% - 14px) 100%, 0 100%, 0 14px);
-}
-html[data-tier="trader"] .thor-token-slot:hover {
-  border-color: rgba(201, 162, 39, 0.38) !important;
-  box-shadow: 0 0 24px -8px rgba(124, 58, 237, 0.30) inset;
-}
-
-/* botão inverter — disco obsidiana com aro de ouro */
-html[data-tier="trader"] .aurora-border .hover\:rotate-180 {
-  border-radius: 50% !important;
-  background: radial-gradient(circle at 35% 30%, #1A1030, var(--tr-ink)) !important;
-  border: 2px solid var(--tr-gold-600) !important;
-  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.14), 0 0 16px rgba(124, 58, 237, 0.4) !important;
-  color: var(--tr-gold-100) !important;
-}
-html[data-tier="trader"] .aurora-border .hover\:rotate-180:hover {
-  border-color: var(--tr-gold-400) !important;
-  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.26), 0 0 26px rgba(124, 58, 237, 0.65) !important;
-}
-
-/* ── CTA: Reino de Thor ──────────────────────────────────────────────── */
-.thor-cta-btn {
-  /* base neutra — só renderiza para trader (markup condicionado),
-     estilização completa abaixo sob o tier */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-html[data-tier="trader"] .thor-cta-btn {
-  position: relative;
-  overflow: hidden;
-  gap: 9px;
-  border: 0;
-  border-radius: 13px;
-  background: var(--tr-grad-cta);
-  box-shadow: 0 0 0 1px rgba(179, 136, 255, 0.55), 0 0 22px rgba(124, 58, 237, 0.45);
-  animation: trCtaPulse 2.6s ease-in-out infinite;
-  font-family: var(--tr-font-mono);
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #fff;
-  text-shadow: 0 0 12px rgba(233, 216, 255, 0.6);
-  cursor: pointer;
-}
-@keyframes trCtaPulse {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(179,136,255,.5), 0 0 16px rgba(124,58,237,.35); }
-  50%      { box-shadow: 0 0 0 1.5px rgba(201,161,255,.9), 0 0 34px rgba(124,58,237,.65); }
-}
-/* raio à esquerda do texto (flex item) */
-html[data-tier="trader"] .thor-cta-btn::before {
-  content: "";
-  width: 15px;
-  height: 15px;
-  flex: none;
-  background: url("/assets/trader/bolt-icon.svg") center / contain no-repeat;
-  filter: drop-shadow(0 0 8px rgba(233, 216, 255, 0.8));
-}
-/* shimmer varrendo o botão */
-html[data-tier="trader"] .thor-cta-btn::after {
-  content: "";
-  position: absolute;
-  top: -20%; bottom: -20%; left: -45%;
-  width: 34%;
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.34), transparent);
-  transform: skewX(-18deg);
-  animation: trCtaShimmer 3.4s ease-in-out infinite;
-}
-@keyframes trCtaShimmer { 0%, 55% { left: -45%; } 90%, 100% { left: 130%; } }
-html[data-tier="trader"] .thor-cta-btn:disabled {
-  cursor: not-allowed;
-  animation: none;
-}
-
-/* subtítulo sob o CTA */
-html[data-tier="trader"] .thor-cta-sub {
-  color: rgba(233, 220, 255, 0.65);
-}
-
-@media (max-width: 640px) {
-  html[data-tier="trader"] .thor-swap-frame { border-width: 16px; }
-  html[data-tier="trader"] .thor-finial--top    { top: -9px; }
-  html[data-tier="trader"] .thor-finial--bottom { bottom: -9px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  html[data-tier="trader"] .thor-cta-btn,
-  html[data-tier="trader"] .thor-cta-btn::after { animation: none; }
-}
-
-/* ═══ TRADER KIT — ETAPA 5: Topbar + Sidebar ═════════════════════════════
- * Tabs mono ouro, wallet pill com moldura (pill-frame.svg), botão THOR
- * com runa ᚦ, sidebar obsidiana com itens ativos violeta.
- * ════════════════════════════════════════════════════════════════════════ */
-
-/* topbar — obsidiana com linha de ouro */
-html[data-tier="trader"] .topbar-shell {
-  background: rgba(11, 11, 18, 0.88);
-  border-bottom: 1px solid var(--tr-line-gold);
-}
-
-/* tabs */
-html[data-tier="trader"] .topbar-tab-label {
-  font-family: var(--tr-font-mono);
-  letter-spacing: 0.2em;
-  color: var(--tr-text-muted);
-  transition: color 0.2s;
-}
-html[data-tier="trader"] .topbar-tab:hover .topbar-tab-label {
-  color: var(--tr-gold-100);
-}
-html[data-tier="trader"] .topbar-tab--active .topbar-tab-label {
-  color: #fff;
-}
-html[data-tier="trader"] .topbar-tab--active .topbar-tab-line {
-  background: var(--tr-grad-gold-line);
-  box-shadow: 0 0 9px rgba(201, 162, 39, 0.65);
-}
-
-/* botão THOR — obsidiana, aro de ouro, anel violeta */
-html[data-tier="trader"] .topbar-thor-btn {
-  background: radial-gradient(circle at 35% 30%, #1A1030, var(--tr-ink));
-  border: 1.5px solid var(--tr-gold-600);
-  box-shadow:
-    0 0 0 2.5px rgba(124, 58, 237, 0.35),
-    0 0 14px rgba(124, 58, 237, 0.5);
-  color: var(--tr-gold-100);
-  font-family: var(--tr-font-mono);
-  transition: box-shadow 0.25s;
-}
-html[data-tier="trader"] .topbar-thor-btn:hover {
-  box-shadow:
-    0 0 0 2.5px rgba(201, 161, 255, 0.6),
-    0 0 22px rgba(124, 58, 237, 0.75);
-}
-html[data-tier="trader"] .topbar-thor-rune {
-  color: var(--tr-gold-200);
-  text-shadow: 0 0 8px rgba(201, 162, 39, 0.7);
-}
-
-/* chain selector — mono + ouro */
-html[data-tier="trader"] .topbar-chain-btn {
-  font-family: var(--tr-font-mono);
-  letter-spacing: 0.18em;
-  border-color: var(--tr-line-gold);
-  background: rgba(10, 6, 20, 0.6);
-  color: var(--tr-text);
-}
-html[data-tier="trader"] .topbar-chain-btn:hover {
-  border-color: rgba(201, 162, 39, 0.55);
-  color: var(--tr-gold-100);
-}
-
-/* tool strip */
-html[data-tier="trader"] .topbar-tool-btn {
-  border-color: var(--tr-line-gold);
-  background: rgba(10, 6, 20, 0.6);
-  color: var(--tr-gold-100);
-}
-html[data-tier="trader"] .topbar-tool-btn:hover {
-  border-color: rgba(201, 162, 39, 0.55);
-  color: var(--tr-gold-200);
-}
-
-/* wallet pill — moldura ornamentada via border-image */
-html[data-tier="trader"] .topbar-wallet-wrap {
-  border: 9px solid transparent;
-  border-image-source: url("/assets/trader/pill-frame.svg");
-  border-image-slice: 20;
-  border-image-repeat: stretch;
-  background: rgba(10, 6, 20, 0.72);
-  background-clip: padding-box;
-  border-radius: 0;
-}
-/* cantos dourados antigos desligados (moldura substitui) */
-html[data-tier="trader"] .topbar-wallet-wrap::before,
-html[data-tier="trader"] .topbar-wallet-wrap::after {
-  display: none;
-}
-
-/* ── Sidebar ─────────────────────────────────────────────────────────── */
-html[data-tier="trader"] aside.god-card {
-  background: rgba(10, 6, 20, 0.85);
-  border-right: 1px solid var(--tr-line-gold) !important;
-}
-
-html[data-tier="trader"] aside .sidebar-group-label {
-  font-family: var(--tr-font-mono);
-  letter-spacing: 0.2em;
-  color: var(--tr-gold-400);
-}
-
-html[data-tier="trader"] aside .sidebar-nav-icon {
-  color: var(--tr-gold-300);
-}
-html[data-tier="trader"] aside .sidebar-nav-item:hover .sidebar-nav-icon {
-  color: var(--tr-gold-100);
-}
-
-/* item ativo — violeta brilhante */
-html[data-tier="trader"] aside .sidebar-nav-item--active {
-  background: linear-gradient(160deg, rgba(139, 92, 246, 0.28), rgba(91, 33, 182, 0.38)) !important;
-  box-shadow:
-    0 0 18px rgba(124, 58, 237, 0.40),
-    inset 0 0 10px rgba(124, 58, 237, 0.22);
-}
-html[data-tier="trader"] aside .sidebar-nav-item--active .sidebar-nav-icon {
-  color: #EDE4FF !important;
-}
-html[data-tier="trader"] aside .sidebar-nav-item--active .sidebar-nav-label {
-  color: var(--tr-violet-100);
-  text-shadow: 0 0 8px rgba(124, 58, 237, 0.8);
-}
-html[data-tier="trader"] aside .tier-active-bar {
-  background: var(--tr-grad-gold) !important;
-  box-shadow: 0 0 10px rgba(201, 162, 39, 0.7) !important;
-}
-
-/* eco card — moldura de ouro */
-html[data-tier="trader"] aside .sidebar-eco-card {
-  border-color: var(--tr-line-gold) !important;
-  background: rgba(16, 10, 30, 0.5) !important;
-}
-
-@media (max-width: 640px) {
-  html[data-tier="trader"] .topbar-wallet-wrap { border-width: 7px; }
-}
-
-/* ═══ TRADER KIT — ETAPA 6: Painéis + Analytics ══════════════════════════
- * NFT Access Pass emoldurado, sparkline ZETTA, candles no Thunder
- * Terminal, feed Raios do Trovão com ícones, stats chanfrados.
- * ════════════════════════════════════════════════════════════════════════ */
-
-/* hooks neutros fora do trader */
-.thor-nft-art    { display: none; }
-.thor-zetta-spark { display: none; }
-.thor-ray-icon   { width: 6px; height: 6px; border-radius: 50%; margin-top: 6px; background: rgba(255,255,255,0.35); }
-
-/* cantos em L nos cards do painel */
-html[data-tier="trader"] .trader-panel-card::before,
-html[data-tier="trader"] .trader-panel-card::after {
-  content: "";
-  position: absolute;
-  width: 12px; height: 12px;
-  border: 1.5px solid rgba(201, 162, 39, 0.7);
   pointer-events: none;
 }
-html[data-tier="trader"] .trader-panel-card {
-  position: relative;
-  border-color: rgba(201, 162, 39, 0.25);
-  background: rgba(12, 7, 22, 0.78);
+html[data-tier="trader"] .thor-orn {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 0 solid rgba(212, 175, 55, 0.90);
+  filter: drop-shadow(0 0 6px rgba(212, 175, 55, 0.45));
 }
-html[data-tier="trader"] .trader-panel-card::before {
-  top: -1px; left: -1px;
-  border-right: 0; border-bottom: 0;
-  border-radius: 8px 0 0 0;
+/* Inner echo bracket — the "double engraving" of the key art */
+html[data-tier="trader"] .thor-orn::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 0 solid rgba(212, 175, 55, 0.45);
+  border-top-width: inherit;
+  border-right-width: inherit;
+  border-bottom-width: inherit;
+  border-left-width: inherit;
+  border-radius: inherit;
 }
-html[data-tier="trader"] .trader-panel-card::after {
-  bottom: -1px; right: -1px;
-  border-left: 0; border-top: 0;
-  border-radius: 0 0 8px 0;
+html[data-tier="trader"] .thor-orn.tl { top: -3px;    left: -3px;  border-top-width: 2px;    border-left-width: 2px;  border-top-left-radius: 14px; }
+html[data-tier="trader"] .thor-orn.tr { top: -3px;    right: -3px; border-top-width: 2px;    border-right-width: 2px; border-top-right-radius: 14px; }
+html[data-tier="trader"] .thor-orn.bl { bottom: -3px; left: -3px;  border-bottom-width: 2px; border-left-width: 2px;  border-bottom-left-radius: 14px; }
+html[data-tier="trader"] .thor-orn.br { bottom: -3px; right: -3px; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 14px; }
+/* Engraved rune strips on the card flanks */
+html[data-tier="trader"] .thor-orn-runes {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.9em;
+  color: rgba(212, 175, 55, 0.38);
+  text-shadow: 0 0 8px rgba(212, 175, 55, 0.30);
+  user-select: none;
 }
-
-/* títulos dos painéis — Cinzel ouro */
-html[data-tier="trader"] .trader-panel-title {
-  font-family: var(--tr-font-display);
-  background: var(--tr-grad-gold);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* ── NFT Access Pass — moldura tripla + arte Mjölnir ─────────────────── */
-html[data-tier="trader"] .thor-nft-framecard {
-  border: 14px solid transparent;
-  border-image-source: url("/assets/trader/nft-frame.svg");
-  border-image-slice: 38;
-  border-image-repeat: round;
-  border-radius: 0;
-  background: rgba(8, 5, 16, 0.92);
-  background-clip: padding-box;
-  overflow: visible;
-  animation: trNftFloat 6s ease-in-out infinite;
-  filter:
-    drop-shadow(0 0 20px rgba(124, 58, 237, 0.35))
-    drop-shadow(0 8px 26px rgba(0, 0, 0, 0.55));
-}
-@keyframes trNftFloat {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-7px); }
-}
-/* moldura substitui os cantinhos antigos */
-html[data-tier="trader"] .thor-nft-framecard .trader-nft-corner-set { display: none; }
-
-/* arte do NFT — matte Mjölnir com glow interno violeta */
-html[data-tier="trader"] .thor-nft-art {
-  display: block;
-  position: relative;
-  height: 148px;
-  margin: 6px 6px 0;
-  background: url("/assets/trader/nft-trader.png") center 30% / cover no-repeat;
-  border: 1px solid rgba(201, 162, 39, 0.4);
-  border-radius: 6px;
-  box-shadow: inset 0 0 26px rgba(124, 58, 237, 0.5);
-}
-html[data-tier="trader"] .thor-nft-framecard .trader-nft-inner {
-  height: auto;
-  padding: 8px 6px 6px;
-}
-html[data-tier="trader"] .thor-nft-framecard .trader-nft-name {
-  font-family: var(--tr-font-display);
-  background: var(--tr-grad-gold);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* ── ZETTA sparkline ─────────────────────────────────────────────────── */
-html[data-tier="trader"] .thor-zetta-spark {
-  display: block;
-  width: 100%;
-  height: 56px;
-  margin-top: 8px;
-  background: url("/assets/trader/spark-zetta.svg") center / 100% 100% no-repeat;
-}
-
-/* ── Thunder Terminal — candlestick decorativo ───────────────────────── */
-html[data-tier="trader"] .thor-terminal-title {
-  font-family: var(--tr-font-display);
-  letter-spacing: 0.14em;
-  background: var(--tr-grad-gold);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-html[data-tier="trader"] .thunder-spark {
-  height: 132px;
-  background: url("/assets/trader/candles.svg") center / calc(100% - 32px) calc(100% - 16px) no-repeat;
-}
-html[data-tier="trader"] .thunder-spark svg { display: none; }
-
-/* ── Raios do Trovão — ícones circulares com glow ────────────────────── */
-html[data-tier="trader"] .thor-ray-row {
-  background: rgba(16, 10, 30, 0.6);
-  border: 1px solid rgba(124, 58, 237, 0.18);
-  border-radius: 11px;
-  padding: 8px 10px;
-  align-items: center;
-}
-html[data-tier="trader"] .thor-ray-icon {
-  width: 28px; height: 28px;
-  margin-top: 0;
-  border-radius: 50%;
-  border: 1.5px solid;
-  background-size: 13px 13px;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-color: transparent;
-}
-html[data-tier="trader"] .thor-ray-icon--bolt {
-  border-color: rgba(139, 92, 246, 0.7);
-  box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23C9A1FF' d='M13 1 L4 14 H10.5 L9 23 L20 9 H13.5 Z'/%3E%3C/svg%3E");
-}
-html[data-tier="trader"] .thor-ray-icon--trophy {
-  border-color: rgba(201, 162, 39, 0.7);
-  box-shadow: 0 0 10px rgba(201, 162, 39, 0.4);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23F8E98E' d='M5 3 H19 V8 C19 11.3 16.6 13.6 13.8 14.3 L13.5 17 H16 V20 H8 V17 H10.5 L10.2 14.3 C7.4 13.6 5 11.3 5 8 Z'/%3E%3C/svg%3E");
-}
-html[data-tier="trader"] .thor-ray-icon--brain {
-  border-color: rgba(139, 92, 246, 0.7);
-  box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23C9A1FF' d='M12 3 C8.5 3 6.5 5.3 6.5 8 C5 8.5 5 11.5 6.5 12 C6.5 15 8.5 17 10.5 17 L10.5 21 H13.5 L13.5 17 C15.5 17 17.5 15 17.5 12 C19 11.5 19 8.5 17.5 8 C17.5 5.3 15.5 3 12 3 Z'/%3E%3C/svg%3E");
-}
-html[data-tier="trader"] .thor-ray-icon--drop {
-  border-color: rgba(90, 157, 240, 0.7);
-  box-shadow: 0 0 10px rgba(90, 157, 240, 0.45);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%237FB5F5' d='M12 2 C12 2 5.5 10 5.5 15 A6.5 6.5 0 0 0 18.5 15 C18.5 10 12 2 12 2 Z'/%3E%3C/svg%3E");
-}
-
-/* ── Stats chanfrados ────────────────────────────────────────────────── */
-html[data-tier="trader"] .stat-chamfer {
-  border-radius: 0 !important;
-  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px,
-    100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%,
-    0 calc(100% - 12px), 0 12px);
-  border-color: rgba(201, 162, 39, 0.35) !important;
-  background: linear-gradient(180deg, #0E0818, #0A0512) !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html[data-tier="trader"] .thor-nft-framecard { animation: none; }
+html[data-tier="trader"] .thor-orn-runes.left  { left: -19px; }
+html[data-tier="trader"] .thor-orn-runes.right { right: -19px; }
+/* Flank runes overflow the card — hide where the card is edge-to-edge */
+@media (max-width: 700px) {
+  html[data-tier="trader"] .thor-orn-runes { display: none; }
 }
 
 /* ── God-class hero strip — "⚡ TRADER — THOR CLASS" ──────────────────
@@ -2816,272 +1681,6 @@ html[data-tier="trader"] .tier-class-name {
   text-shadow:
     0 0 14px rgba(179, 136, 255, 0.80),
     0 0 34px rgba(138, 92, 255, 0.45);
-}
-
-/* ═══ TRADER KIT — FUNDAÇÃO: DESIGN TOKENS ═══════════════════════════════
- * Asset kit oficial do tier (SVGs em /public/assets/trader/).
- * Tudo aditivo: só existe sob html[data-tier="trader"].
- * ═══════════════════════════════════════════════════════════════════════ */
-html[data-tier="trader"] {
-  /* metal: escala de ouro */
-  --tr-gold-100: #FBF3B9;
-  --tr-gold-200: #F8E98E;
-  --tr-gold-300: #E2C04B;
-  --tr-gold-400: #C9A227;
-  --tr-gold-500: #A8861F;
-  --tr-gold-600: #8A6D1A;
-  --tr-gold-700: #6B520F;
-
-  /* tempestade: escala de violeta */
-  --tr-violet-100: #E9DCFF;
-  --tr-violet-200: #C9A1FF;
-  --tr-violet-300: #B388FF;
-  --tr-violet-400: #8B5CF6;
-  --tr-violet-500: #7C3AED;
-  --tr-violet-600: #5B21B6;
-  --tr-violet-700: #3B1380;
-
-  /* base obsidiana */
-  --tr-obsidian: #0B0B12;
-  --tr-night: #130B24;
-  --tr-nebula: #0E0A1C;
-  --tr-ink: #0A0614;
-  --tr-ink-2: #160C28;
-
-  /* semânticos */
-  --tr-positive: #34D399;
-  --tr-text: rgba(255, 255, 255, 0.86);
-  --tr-text-muted: rgba(255, 255, 255, 0.55);
-  --tr-line-gold: rgba(201, 162, 39, 0.32);
-  --tr-line-soft: rgba(255, 255, 255, 0.08);
-  --tr-surface: rgba(10, 6, 20, 0.72);
-
-  /* gradientes nomeados */
-  --tr-grad-gold: linear-gradient(180deg,
-    var(--tr-gold-100) 8%, var(--tr-gold-300) 46%,
-    var(--tr-gold-400) 70%, var(--tr-gold-600));
-  --tr-grad-gold-line: linear-gradient(90deg,
-    transparent, var(--tr-gold-400), var(--tr-gold-100),
-    var(--tr-gold-400), transparent);
-  --tr-grad-violet: linear-gradient(180deg,
-    var(--tr-violet-200), var(--tr-violet-500));
-  --tr-grad-cta: linear-gradient(135deg,
-    var(--tr-violet-400), var(--tr-violet-600));
-
-  /* glows nomeados */
-  --tr-glow-gold: 0 0 6px rgba(201,162,39,.5), 0 0 18px rgba(201,162,39,.28);
-  --tr-glow-violet: 0 0 8px rgba(124,58,237,.55), 0 0 24px rgba(124,58,237,.3);
-  --tr-glow-text-gold: 0 3px 16px rgba(201,162,39,.4);
-
-  /* tipografia (Cinzel via next/font no layout raiz) */
-  --tr-font-display: var(--font-cinzel), 'Cinzel', serif;
-  --tr-font-mono: var(--font-mono), 'DM Mono', ui-monospace, monospace;
-
-  /* camadas */
-  --tr-z-bg: 0;
-  --tr-z-fx: 1;
-  --tr-z-content: 2;
-}
-
-/* ═══ TRADER KIT — ETAPA 2: Medalhão & Marca ═════════════════════════════ */
-
-/* Medalhão SVG (transparente) — logo na topbar + sidebar, todos os tiers */
-.topbar-logo-emblem {
-  width: 38px; height: 38px;
-  object-fit: contain;
-  flex-shrink: 0;
-  filter: drop-shadow(0 0 5px rgba(138,92,255,0.35));
-  transition: filter 0.25s;
-}
-.topbar-logo-link:hover .topbar-logo-emblem {
-  filter: drop-shadow(0 0 10px rgba(138,92,255,0.60)) drop-shadow(0 0 4px rgba(212,175,55,0.30));
-}
-html[data-tier="trader"] .topbar-logo-emblem {
-  filter:
-    drop-shadow(0 0 5px rgba(201, 162, 39, 0.45))
-    drop-shadow(0 0 12px rgba(124, 58, 237, 0.35));
-}
-
-/* Wordmark dourado em Cinzel para o trader */
-html[data-tier="trader"] .topbar-logo-name {
-  font-family: var(--tr-font-display);
-  font-weight: 800;
-  letter-spacing: 0.10em;
-}
-html[data-tier="trader"] .topbar-logo-sub {
-  letter-spacing: 0.34em;
-  color: var(--tr-gold-400);
-}
-
-/* ═══ TRADER KIT — ETAPA 3: Hero Tempestade (Modo B híbrido) ═════════════
- * Matte: realm-of-thor.png · FX vetoriais por cima (stars + sigilo + flash)
- * ════════════════════════════════════════════════════════════════════════ */
-html[data-tier="trader"] .trader-hero {
-  position: relative;
-  overflow: hidden;
-  border-radius: 16px;
-  min-height: 230px;
-  display: flex;
-  align-items: center;
-  border: 1px solid var(--tr-line-gold);
-  background:
-    url("/assets/trader/stars.svg") center / cover no-repeat,
-    linear-gradient(90deg,
-      rgba(11,11,18,.92) 0%,
-      rgba(14,10,28,.7) 16%,
-      rgba(14,10,28,0) 48%),
-    url("/assets/trader/realm-of-thor.png") 62% 40% / cover no-repeat,
-    var(--tr-nebula);
-  animation: trSkyDrift 34s ease-in-out infinite;
-  box-shadow: 0 0 48px -12px rgba(124,58,237,.45);
-}
-@media (max-width: 640px) {
-  html[data-tier="trader"] .trader-hero {
-    min-height: 188px; border-radius: 12px;
-    background-position: center, center, 68% 40%, center;
-  }
-}
-
-/* deriva lenta do céu (Ken Burns via background-position) */
-@keyframes trSkyDrift {
-  0%, 100% { background-position: center, center, 62% 40%, center; }
-  50%      { background-position: center, center, 58% 44%, center; }
-}
-
-/* sigilo rúnico em dupla rotação (SMIL dentro do SVG) */
-html[data-tier="trader"] .trader-hero::before {
-  content: "";
-  position: absolute;
-  left: 62%;
-  top: 48%;
-  width: min(300px, 56vw);
-  aspect-ratio: 1 / 1;
-  transform: translate(-50%, -50%);
-  background: url("/assets/trader/runic-circle.svg") center / contain no-repeat;
-  opacity: 0.55;
-  mix-blend-mode: screen;
-  filter: drop-shadow(0 0 24px rgba(124, 58, 237, 0.45));
-  pointer-events: none;
-  z-index: var(--tr-z-bg);
-}
-@media (max-width: 640px) {
-  html[data-tier="trader"] .trader-hero::before {
-    left: 50%; width: min(240px, 80vw); opacity: 0.35;
-  }
-}
-
-/* clarão periódico do raio */
-html[data-tier="trader"] .trader-hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: var(--tr-z-fx);
-  mix-blend-mode: screen;
-  opacity: 0;
-  background:
-    radial-gradient(16% 52% at 58% 30%, rgba(233,216,255,.95), transparent 70%),
-    radial-gradient(30% 12% at 57% 88%, rgba(201,161,255,.9), transparent 72%);
-  animation: trMatteFlash 6.5s linear infinite;
-}
-@keyframes trMatteFlash {
-  0%, 72%, 90%, 100% { opacity: 0; }
-  75% { opacity: 1; }
-  78% { opacity: .25; }
-  81% { opacity: .85; }
-  86% { opacity: .12; }
-}
-
-html[data-tier="trader"] .trader-hero > * {
-  position: relative;
-  z-index: var(--tr-z-content);
-}
-
-/* ── Conteúdo do hero ─────────────────────────────────────────────────── */
-.trader-hero-content {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  padding: 30px 28px;
-  gap: 0;
-}
-
-/* "TRADER" — Cinzel ouro com raio à esquerda */
-html[data-tier="trader"] .trader-hero-title {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-family: var(--tr-font-display);
-  font-weight: 800;
-  font-size: clamp(36px, 6vw, 58px);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  line-height: 1;
-  background: var(--tr-grad-gold);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(var(--tr-glow-text-gold));
-  margin: 0;
-}
-html[data-tier="trader"] .trader-hero-title::before {
-  content: "";
-  width: 0.52em;
-  height: 0.52em;
-  flex: none;
-  background: url("/assets/trader/bolt-icon.svg") center / contain no-repeat;
-  filter: drop-shadow(0 0 10px rgba(124, 58, 237, 0.8));
-}
-
-/* "THOR CLASS" — violeta espaçado */
-html[data-tier="trader"] .trader-hero-subtitle {
-  font-family: var(--tr-font-mono);
-  font-size: 12px;
-  letter-spacing: 0.5em;
-  text-transform: uppercase;
-  color: var(--tr-violet-300);
-  text-shadow: 0 0 14px rgba(124, 58, 237, 0.7);
-  margin-top: 10px;
-}
-
-/* Tagline */
-html[data-tier="trader"] .trader-hero-tagline {
-  font-size: 12.5px;
-  line-height: 1.75;
-  color: var(--tr-text-muted);
-  max-width: 300px;
-  margin-top: 12px;
-}
-@media (max-width: 640px) {
-  html[data-tier="trader"] .trader-hero-title    { font-size: 32px; }
-  .trader-hero-content                            { padding: 22px 18px; }
-  html[data-tier="trader"] .trader-hero-tagline  { font-size: 11.5px; }
-}
-
-/* ── Raios laterais da página (flash duplo via SMIL no SVG) ──────────── */
-html[data-tier="trader"] body::before,
-html[data-tier="trader"] body::after {
-  content: "";
-  position: fixed;
-  top: 0;
-  height: 100vh;
-  width: 90px;
-  background: url("/assets/trader/bolt-edge.svg") center / auto 100% no-repeat;
-  opacity: 0.5;
-  pointer-events: none;
-  z-index: var(--tr-z-bg);
-}
-html[data-tier="trader"] body::before { left: -10px; }
-html[data-tier="trader"] body::after  { right: -10px; transform: scaleX(-1); }
-@media (max-width: 640px) {
-  html[data-tier="trader"] body::before,
-  html[data-tier="trader"] body::after { width: 54px; opacity: 0.35; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html[data-tier="trader"] .trader-hero,
-  html[data-tier="trader"] .trader-hero::after { animation: none; }
 }
 
 /* ── Reduced motion ───────────────────────────────────────────────────── */
