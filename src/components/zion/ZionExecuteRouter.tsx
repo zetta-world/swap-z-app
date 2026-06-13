@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import {
   CheckCircle2, X, ArrowRight, AlertTriangle, Bot, Bell, Zap, ExternalLink,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { ActionCard } from "@/lib/zion/parse";
 import { isImmediateCard, savePendingOrder } from "@/lib/zion/orders";
@@ -14,6 +14,10 @@ import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
+import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
+import { useTokenPrice } from "@/lib/hooks/useTokenPrices";
+import { applyNativeGasReserve } from "@/lib/zion/gas-reserve";
+import { formatUsd } from "@/lib/format";
 import { isCowEligibleCard } from "@/lib/limit/cow";
 import SignLimitOrderButton from "./SignLimitOrderButton";
 import { cn } from "@/lib/cn";
@@ -47,6 +51,17 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
   const { setZion } = useUI();
   const t = useT();
 
+  // Resolve the SELL token up-front so we can read its live balance + price
+  // and reserve gas before writing the amount into the swap store. Hooks must
+  // run on every render, so this sits above the `!card` early return; both
+  // hooks no-op on an undefined token.
+  const sellToken = useMemo(
+    () => (card ? resolveToken(card.chain as ChainId, card.from?.symbol, card.from?.address) : undefined),
+    [card],
+  );
+  const { priceUsd: sellPriceUsd } = useTokenPrice(sellToken);
+  const sellBalance = useTokenBalance(sellToken, sellPriceUsd);
+
   if (!card) return null;
 
   const isImmediate = isImmediateCard(card.kind);
@@ -66,7 +81,25 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
 
       setFromToken(fromToken);
       setToToken(toToken);
-      if (card.from?.amount) setAmountIn(card.from.amount);
+      if (card.from?.amount) {
+        // Never let an autonomous swap drain the gas token below the network-fee
+        // reserve: when selling the native coin, cap the amount so ~$1 stays in
+        // the wallet for gas. No-op for ERC-20/SPL sells and when ZION already
+        // sized below the reserve.
+        const reserved = applyNativeGasReserve({
+          token:            fromToken,
+          requestedAmount:  card.from.amount,
+          balanceFormatted: sellBalance.formatted,
+          nativePriceUsd:   sellPriceUsd,
+        });
+        setAmountIn(reserved.amount);
+        if (reserved.adjusted) {
+          toast.success(t("zion.gasReserveToast", {
+            usd:    formatUsd(reserved.reservedUsd),
+            symbol: fromToken.symbol,
+          }));
+        }
+      }
       setSelectedSource(null);
       setZion(false);
       setTimeout(() => setExecuteOpen(true), 220);
