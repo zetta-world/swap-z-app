@@ -204,6 +204,14 @@ export default function ExecuteSwap({
     if (phase === "tx_confirmed") fireSwapStrike();
   }, [phase]);
 
+  // Auto-close 2.5 s after confirmation so the user sees the success state
+  // briefly without having to dismiss manually.
+  useEffect(() => {
+    if (phase !== "tx_confirmed") return;
+    const timer = setTimeout(() => onClose(), 2500);
+    return () => clearTimeout(timer);
+  }, [phase, onClose]);
+
   // Track receipt + update history
   useEffect(() => {
     if (!receipt) return;
