@@ -54,13 +54,14 @@ export default function HistoryView() {
     });
   }, [entries, typeFilter, statusFilter, query]);
 
-  // P&L summary
+  // P&L summary — count all entries, aggregate economics from confirmed only
   const summary = useMemo(() => {
     const confirmed = entries.filter((e) => e.status === "confirmed");
-    const totalVol = confirmed.reduce((s, e) => s + (e.valueUsd ?? 0), 0);
+    const pending   = entries.filter((e) => e.status === "pending").length;
+    const totalVol  = confirmed.reduce((s, e) => s + (e.valueUsd ?? 0), 0);
     const totalFees = confirmed.reduce((s, e) => s + (e.feesUsd ?? 0), 0);
     const totalPnl  = confirmed.filter((e) => e.pnlUsd !== undefined).reduce((s, e) => s + (e.pnlUsd ?? 0), 0);
-    return { count: confirmed.length, totalVol, totalFees, totalPnl };
+    return { count: entries.length, confirmed: confirmed.length, pending, totalVol, totalFees, totalPnl };
   }, [entries]);
 
   return (
@@ -99,7 +100,12 @@ export default function HistoryView() {
 
         {/* Summary cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <SummaryCard label="Operações" value={String(summary.count)} tone="ink" />
+          <SummaryCard
+            label="Operações"
+            value={String(summary.count)}
+            sub={summary.pending > 0 ? `${summary.pending} pendente${summary.pending > 1 ? "s" : ""}` : `${summary.confirmed} confirmada${summary.confirmed !== 1 ? "s" : ""}`}
+            tone="ink"
+          />
           <SummaryCard label="Volume total" value={formatUsd(summary.totalVol)} tone="cyan" />
           <SummaryCard label="Taxas pagas" value={formatUsd(summary.totalFees)} tone="gold" />
           <SummaryCard
@@ -135,7 +141,7 @@ export default function HistoryView() {
           </div>
 
           {/* Status pills */}
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {(["all", "confirmed", "pending", "failed", "canceled"] as const).map((s) => (
               <FilterPill
                 key={s}
@@ -332,7 +338,7 @@ function Detail({ label, value, mono }: { label: string; value: string; mono?: b
   );
 }
 
-function SummaryCard({ label, value, tone }: { label: string; value: string; tone: string }) {
+function SummaryCard({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone: string }) {
   const colors: Record<string, string> = {
     cyan: "text-cyan", green: "text-green", red: "text-red",
     gold: "text-gold", ink: "text-ink",
@@ -341,6 +347,7 @@ function SummaryCard({ label, value, tone }: { label: string; value: string; ton
     <div className="god-card rounded-xl border border-white/5 glass-pane p-3">
       <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-1">{label}</div>
       <div className={cn("font-display font-bold text-lg leading-none", colors[tone] ?? "text-ink")}>{value}</div>
+      {sub && <div className="font-mono text-[9px] text-ink-4 mt-0.5">{sub}</div>}
     </div>
   );
 }

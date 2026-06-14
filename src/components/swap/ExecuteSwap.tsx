@@ -319,12 +319,18 @@ export default function ExecuteSwap({
             "confirmed",
           );
           setPhase("tx_confirmed");
+          if (historyId.current) {
+            updateHistory(historyId.current, { status: "confirmed", txHash: sig });
+          }
           toast.success(tImp("swap.swapConfirmed"), {
             description: `${sig.slice(0, 10)}…${sig.slice(-6)}`,
           });
         } catch (e) {
           setError(e instanceof Error ? e.message : tImp("swap.confirmationFailed"));
           setPhase("tx_failed");
+          if (historyId.current) {
+            updateHistory(historyId.current, { status: "failed" });
+          }
         }
         return;
       }
