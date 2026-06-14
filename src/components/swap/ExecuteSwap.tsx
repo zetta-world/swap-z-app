@@ -78,6 +78,9 @@ export default function ExecuteSwap({
   const [txHash, setTxHash] = useState<Hex | null>(null);
   const [solSig, setSolSig] = useState<string | null>(null);
   const historyId = useRef<string | null>(null);
+  // Guards the firm-quote fetch so it runs once per unique param set per open —
+  // not on every currentChainId / publicClient / token-object identity change.
+  const fetchKeyRef = useRef("");
   const { push: pushHistory, update: updateHistory } = useTxHistory();
 
   const isCrossChain = fromChain !== toChain;
@@ -103,6 +106,7 @@ export default function ExecuteSwap({
   // Reset on close
   useEffect(() => {
     if (!open) {
+      fetchKeyRef.current = "";   // next open refetches a firm quote
       setTimeout(() => {
         setPhase("idle");
         setZxQuote(null);
@@ -115,11 +119,22 @@ export default function ExecuteSwap({
     }
   }, [open]);
 
-  // Pull firm quote when the modal opens
+  // Pull firm quote when the modal opens.
+  //
+  // Keyed on PRIMITIVES only. Earlier this effect also depended on
+  // `currentChainId` and `publicClient`: clicking "Sign & send" runs
+  // switchChainAsync, which bumps currentChainId, which re-fired this effect
+  // mid-execution — cancelling the in-flight swap, resetting the phase back to
+  // "fetching_quote" (the visible flicker) and forcing the user to reconfirm.
+  // The key guard makes it fetch exactly once per unique param set per open.
   useEffect(() => {
     if (!open || !taker) return;
     // EVM-targeting sources need a numeric chain id to proceed
     if (!isJupiter && !targetChainId) return;
+
+    const fetchKey = `${source}|${fromChain}|${toChain}|${fromToken.address}|${toToken.address}|${sellAmount}|${slippageBps}|${taker}|${recipient ?? ""}`;
+    if (fetchKeyRef.current === fetchKey) return;
+    fetchKeyRef.current = fetchKey;
 
     let cancelled = false;
     setPhase("fetching_quote");
@@ -195,7 +210,11 @@ export default function ExecuteSwap({
     })();
 
     return () => { cancelled = true; };
-  }, [open, taker, isJupiter, address, fromChain, toChain, fromToken, toToken, sellAmount, slippageBps, source, recipient, targetChainId, currentChainId, publicClient]);
+    // currentChainId / publicClient / token objects are read inside but
+    // intentionally excluded from deps — they're captured at fetch time and
+    // re-evaluated live in onExecute. See the comment above the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, taker, isJupiter, targetChainId, source, fromChain, toChain, fromToken.address, toToken.address, sellAmount, slippageBps, recipient]);
 
   // Announce confirmed swaps to the god theme layer (no-op without a
   // listener — free tier / reduced motion). Covers all three sources,
@@ -203,6 +222,14 @@ export default function ExecuteSwap({
   useEffect(() => {
     if (phase === "tx_confirmed") fireSwapStrike();
   }, [phase]);
+
+  // Auto-close 2.5 s after confirmation so the user sees the success state
+  // briefly without having to dismiss manually.
+  useEffect(() => {
+    if (phase !== "tx_confirmed") return;
+    const timer = setTimeout(() => onClose(), 2500);
+    return () => clearTimeout(timer);
+  }, [phase, onClose]);
 
   // Track receipt + update history
   useEffect(() => {
