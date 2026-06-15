@@ -7,7 +7,7 @@
 import {
   ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3,
   Shield, Vote, Wallet, Settings, Activity, Banknote, CreditCard,
-  Handshake, Users, Gem, Info, History, Building2,
+  Handshake, Users, Gem, Info, History, Building2, LayoutDashboard,
 } from "lucide-react";
 import { type MessageKey } from "@/lib/i18n";
 
@@ -45,6 +45,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/pricing",   labelKey: "nav.pricing",    icon: CreditCard,      group: "build", badgeKey: "nav.badgeNew", badgeTone: "new" },
   { href: "/enterprise", labelKey: "nav.enterprise", icon: Building2,       group: "build" },
 
+  { href: "/dashboard", labelKey: "nav.dashboard",  icon: LayoutDashboard, group: "manage", badgeKey: "nav.badgeNew", badgeTone: "new" },
   { href: "/portfolio", labelKey: "nav.portfolio",  icon: Wallet,          group: "manage" },
   { href: "/history",   labelKey: "nav.history",    icon: History,         group: "manage" },
   { href: "/settings",  labelKey: "nav.settings",   icon: Settings,        group: "manage" },
