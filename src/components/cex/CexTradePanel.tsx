@@ -14,6 +14,7 @@ import CexOrderConfirm from "./CexOrderConfirm";
 import { compactNumber } from "@/lib/format";
 import { useT, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { useTxHistory } from "@/lib/store/txHistory";
 
 const SUGGESTED_SYMBOLS: Record<CexId, string[]> = {
   binance:  ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "ARB/USDT"],
@@ -70,6 +71,7 @@ export default function CexTradePanel({
 
   // Track open orders refresh trigger after a successful place
   const [recentOrder, setRecentOrder] = useState<CexOrder | null>(null);
+  const { push: pushHistory } = useTxHistory();
 
   // ─── Orderbook polling ──────────────────────────────────────────────
   const loadOrderbook = useCallback(async (signal?: AbortSignal) => {
@@ -207,6 +209,22 @@ export default function CexTradePanel({
       toast.success(t("cex.placedToast", { id: order.id.slice(0, 12) }));
     }
     void loadBalances();
+    const fillPrice = order.average ?? referencePrice;
+    pushHistory({
+      type: "cex_spot",
+      status: filledImmediately ? "confirmed" : "pending",
+      fromSymbol: side === "buy" ? quoteAsset : baseAsset,
+      fromChain:  exchangeId,
+      fromAmount: side === "buy"
+        ? (amountNum * fillPrice).toFixed(6)
+        : String(amountNum),
+      toSymbol:   side === "buy" ? baseAsset : quoteAsset,
+      toChain:    exchangeId,
+      exchange:   exchangeId,
+      orderId:    order.id,
+      route:      order.type,
+      notes:      `${order.type} ${side} ${symbol} @ ${fillPrice.toFixed(2)}`,
+    });
   };
 
   return (

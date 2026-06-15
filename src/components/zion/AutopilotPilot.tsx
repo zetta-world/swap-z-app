@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { ActionCard } from "@/lib/zion/parse";
 import { useAutopilot } from "@/lib/store/autopilot";
 import { useCexVault } from "@/lib/cex/vault";
+import { useTxHistory } from "@/lib/store/txHistory";
 import {
   mapCardToCexIntents, pickExchangeForIntent, fireAutopilotIntent,
   pollOrderUntilSettled,
@@ -39,6 +40,7 @@ import { cn } from "@/lib/cn";
 export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   const a = useAutopilot();
   const vault = useCexVault();
+  const { push: pushTxHistory } = useTxHistory();
   const enabled = a.enabled;
 
   const consumedRef = useRef<Set<string>>(new Set());
@@ -260,6 +262,23 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
           amount: intent.amount, price: intent.price,
           status: "fired", orderId: result.value.id,
           cardKind: card.kind, cardTitle: card.title.slice(0, 80),
+        });
+        const [baseSymbol, quoteSymbol] = intent.symbol.split("/");
+        pushTxHistory({
+          type: "autopilot_cex",
+          status: "confirmed",
+          fromSymbol: intent.side === "buy" ? (quoteSymbol ?? "USDT") : (baseSymbol ?? intent.symbol),
+          fromChain: exchange,
+          fromAmount: intent.side === "buy"
+            ? String((intent.notionalUsd).toFixed(6))
+            : String(intent.amount),
+          toSymbol: intent.side === "buy" ? (baseSymbol ?? intent.symbol) : (quoteSymbol ?? "USDT"),
+          toChain: exchange,
+          exchange,
+          orderId: result.value.id,
+          route: intent.type,
+          notes: card.title.slice(0, 80),
+          valueUsd: intent.notionalUsd,
         });
         summaries.push(`${intent.side.toUpperCase()} ${intent.symbol} → ${exchange} ✓`);
       } else if (result.status === "skipped") {

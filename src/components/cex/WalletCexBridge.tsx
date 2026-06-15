@@ -17,6 +17,7 @@ import { PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana
 import { getAssociatedTokenAddress, createTransferInstruction } from "@solana/spl-token";
 import { erc20Abi, parseUnits, formatUnits, type Hex } from "viem";
 import { CEX_META, type CexId, type CexCredentials, type CexBalance } from "@/lib/cex/types";
+import { useTxHistory } from "@/lib/store/txHistory";
 import { DEFAULT_TOKENS, type Token } from "@/lib/tokens";
 import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
 import { CHAIN_BY_ID, type ChainId } from "@/lib/chains";
@@ -432,6 +433,8 @@ function DepositPanel({ exchangeId, credentials }: Props) {
           loadingDestination={loading}
           networkKindHint={kind as "evm" | "solana"}
           exchangeLabel={CEX_META[exchangeId].label}
+          exchangeId={exchangeId}
+          currency={currency}
         />
       )}
 
@@ -551,13 +554,15 @@ function DepositPanel({ exchangeId, credentials }: Props) {
 // their wallet (MetaMask / Phantom).
 
 function WalletSendToCex({
-  token, destination, loadingDestination, networkKindHint, exchangeLabel,
+  token, destination, loadingDestination, networkKindHint, exchangeLabel, exchangeId, currency,
 }: {
   token: Token;
   destination: string | null;
   loadingDestination: boolean;
   networkKindHint: "evm" | "solana";
   exchangeLabel: string;
+  exchangeId: string;
+  currency: string;
 }) {
   const isSolana = networkKindHint === "solana";
   const chainMeta = CHAIN_BY_ID[token.chain];
@@ -582,6 +587,7 @@ function WalletSendToCex({
   const [error,        setError]        = useState<string | null>(null);
   const [txHash,       setTxHash]       = useState<string | null>(null);
   const [estimatingMax, setEstimatingMax] = useState(false);
+  const { push: pushHistory } = useTxHistory();
 
   const amountNum   = parseFloat(amount);
   const amountValid = Number.isFinite(amountNum) && amountNum > 0;
@@ -656,6 +662,7 @@ function WalletSendToCex({
     if (!destination) { setError("Endereço de destino não disponível — aguarde."); return; }
     setStage("sending");
     setError(null);
+    let sentTxHash: string | null = null;
     try {
       if (isSolana) {
         if (!sol.publicKey) throw new Error("Phantom não conectado.");
@@ -678,6 +685,7 @@ function WalletSendToCex({
         const sig = await sol.sendTransaction(tx, connection);
         await connection.confirmTransaction(sig, "confirmed");
         setTxHash(sig);
+        sentTxHash = sig;
       } else {
         const targetChainId = WAGMI_CHAIN_IDS[token.chain];
         if (targetChainId && currentChainId !== targetChainId) {
@@ -704,9 +712,23 @@ function WalletSendToCex({
           await publicClient.waitForTransactionReceipt({ hash });
         }
         setTxHash(hash);
+        sentTxHash = hash;
       }
       setStage("sent");
       toast.success("Enviado — aguarde o crédito na corretora.");
+      pushHistory({
+        type: "dex_swap",
+        status: "confirmed",
+        fromSymbol: currency || token.symbol,
+        fromChain: token.chain,
+        fromAmount: amount,
+        toSymbol: currency || token.symbol,
+        toChain: exchangeId,
+        exchange: exchangeId,
+        txHash: sentTxHash ?? undefined,
+        route: isSolana ? "solana" : token.chain,
+        notes: `Depósito → ${exchangeLabel}`,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(/reject|denied|user/i.test(msg) ? "Assinatura cancelada na carteira." : msg);
@@ -874,6 +896,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
 
   const [cexBalances,    setCexBalances]    = useState<CexBalance[] | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  const { push: pushHistory } = useTxHistory();
 
   const fetchCexBalances = async () => {
     setBalanceLoading(true);
@@ -985,6 +1008,20 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
       setReceipt(body.receipt);
       setStage("done");
       toast.success(`Saque enviado: ${body.receipt.id || "(sem id)"}`);
+      pushHistory({
+        type: "rebalance",
+        status: "pending",
+        fromSymbol: currency.toUpperCase(),
+        fromChain: exchangeId,
+        fromAmount: String(amountNum),
+        toSymbol: currency.toUpperCase(),
+        toChain: networkToChainId(network) ?? network.toLowerCase(),
+        exchange: exchangeId,
+        orderId: body.receipt.id,
+        route: network,
+        txHash: body.receipt.txid ?? undefined,
+        notes: `Saque ${exchangeId} → carteira`,
+      });
     } catch (e) {
       setError({ code: "network_error", detail: e instanceof Error ? e.message : String(e) });
       setStage("confirm");
