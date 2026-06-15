@@ -194,7 +194,7 @@ function DepositPanel({ exchangeId, credentials }: Props) {
   const [network,  setNetwork]  = useState<string>("BSC");
   const [addr, setAddr] = useState<DepositAddress | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState<{ code: string; detail?: string; notListed?: boolean } | null>(null);
+  const [error,   setError]   = useState<{ code: string; detail?: string; notListed?: boolean; addrNotGenerated?: boolean } | null>(null);
   const [copied,  setCopied]  = useState<"addr" | "tag" | null>(null);
   const [showManual, setShowManual] = useState(false);
 
@@ -251,13 +251,25 @@ function DepositPanel({ exchangeId, credentials }: Props) {
       const body = await res.json() as { ok: boolean; address?: string; tag?: string; network?: string; error?: string; detail?: string };
       if (!res.ok || !body.ok || !body.address) {
         const detail = (body.detail ?? "").toLowerCase();
+        // "notListed" = the currency itself isn't supported by this exchange.
+        // Must NOT trigger on "not found on chain BSC" (wrong network name) or
+        // "address does not exist" (address not yet generated on the exchange).
         const notListed =
           body.error === "currency_not_found" ||
-          detail.includes("not support") ||
           detail.includes("invalid currency") ||
-          detail.includes("not found") ||
-          detail.includes("not listed");
-        setError({ code: body.error ?? `HTTP ${res.status}`, detail: body.detail, notListed });
+          detail.includes("currency not") ||
+          detail.includes("not listed") ||
+          (detail.includes("not support") && (detail.includes("currenc") || detail.includes("coin") || detail.includes("asset") || detail.includes("token")));
+        // "addrNotGenerated" = currency IS supported but the deposit address hasn't
+        // been created yet (Gate.io returns "Not found USDT on chain BSC" until the
+        // user visits the exchange and generates the address for that chain).
+        const addrNotGenerated =
+          !notListed && (
+            body.error === "deposit_address_unavailable" ||
+            detail.includes("does not exist") ||
+            (detail.includes("not found") && (detail.includes("chain") || detail.includes("network") || detail.includes(" on ")))
+          );
+        setError({ code: body.error ?? `HTTP ${res.status}`, detail: body.detail, notListed, addrNotGenerated });
         return;
       }
       setAddr({ address: body.address, tag: body.tag, network: body.network ?? network });
@@ -363,6 +375,29 @@ function DepositPanel({ exchangeId, credentials }: Props) {
           <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
             Esta moeda não é suportada para depósito nessa corretora. Verifique a lista oficial de ativos disponíveis.
           </p>
+        </div>
+      ) : error && error.addrNotGenerated ? (
+        <div className="rounded-md border border-gold/30 bg-gold/[0.05] px-3 py-2 space-y-1.5">
+          <div className="font-mono text-[10px] text-gold flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+            Endereço de depósito não encontrado
+          </div>
+          <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
+            O endereço para <b className="text-ink-2">{currency.toUpperCase()}</b> na rede <b className="text-ink-2">{network}</b> ainda
+            não foi gerado na sua conta do <b className="text-ink-2">{CEX_META[exchangeId].label}</b>.
+          </p>
+          <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
+            Acesse <b className="text-ink-2">{CEX_META[exchangeId].label}</b> → Carteira → Depósito → selecione{" "}
+            <b className="text-ink-2">{currency.toUpperCase()}</b> e a rede <b className="text-ink-2">{network}</b> e clique em
+            &ldquo;Gerar endereço&rdquo;. Depois volte aqui e clique em &ldquo;Tentar novamente&rdquo;.
+          </p>
+          <button
+            type="button"
+            onClick={fetchAddr}
+            className="text-cyan hover:text-cyan/80 uppercase tracking-widest text-[9px] mt-0.5"
+          >
+            Tentar novamente
+          </button>
         </div>
       ) : error && (
         <div className="rounded-md border border-red/20 bg-red/[0.04] px-3 py-2 font-mono text-[10px] text-red space-y-1">

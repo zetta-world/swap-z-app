@@ -379,21 +379,62 @@ export async function fetchCexDepositAddress(
   await syncTimeIfNeeded(exchange);
   const params: Record<string, unknown> = {};
   if (network) params.network = network;
-  const raw = await exchange.fetchDepositAddress(currency, params) as unknown as {
-    address?: string;
-    tag?:     string;
-    network?: string;
-    info?:    unknown;
-  };
-  if (!raw.address || typeof raw.address !== "string") {
-    throw new Error("Exchange did not return a deposit address. Try again or set up the wallet on the exchange UI first.");
+
+  // Primary attempt: fetchDepositAddress (singular) with network param.
+  let primaryError: unknown;
+  try {
+    const raw = await exchange.fetchDepositAddress(currency, params) as unknown as {
+      address?: string;
+      tag?:     string;
+      network?: string;
+      info?:    unknown;
+    };
+    if (raw.address && typeof raw.address === "string") {
+      return { address: raw.address, tag: raw.tag, network: raw.network ?? network, info: raw.info };
+    }
+  } catch (e) {
+    primaryError = e;
   }
-  return {
-    address: raw.address,
-    tag:     raw.tag,
-    network: raw.network ?? network,
-    info:    raw.info,
-  };
+
+  // Fallback: fetchDepositAddresses (plural) — Gate.io and some other exchanges
+  // support this endpoint and return all chain addresses at once. We pick the
+  // entry matching the requested network. This also handles the case where the
+  // exchange ignores the `params.network` argument in the singular call.
+  const hasPlural = !!(exchange.has as Record<string, unknown>)["fetchDepositAddresses"];
+  if (hasPlural && network) {
+    try {
+      type AddrEntry = { address?: string; tag?: string; network?: string; chain?: string; info?: unknown };
+      const plural = await exchange.fetchDepositAddresses([currency]) as unknown as
+        Record<string, AddrEntry> | AddrEntry[];
+
+      const netUpper = network.toUpperCase();
+      let found: AddrEntry | undefined;
+
+      if (Array.isArray(plural)) {
+        found = plural.find((a) => {
+          const n = (a.network ?? a.chain ?? "").toUpperCase();
+          return n === netUpper;
+        });
+      } else if (typeof plural === "object" && plural !== null) {
+        const key = Object.keys(plural).find((k) => k.toUpperCase() === netUpper);
+        found = key ? plural[key] : undefined;
+      }
+
+      if (found?.address) {
+        return {
+          address: found.address,
+          tag:     found.tag,
+          network: found.network ?? found.chain ?? network,
+          info:    found.info,
+        };
+      }
+    } catch {
+      // plural fetch also failed; fall through to rethrow primary error
+    }
+  }
+
+  if (primaryError) throw primaryError;
+  throw new Error("Exchange did not return a deposit address. Try again or set up the wallet on the exchange UI first.");
 }
 
 export interface CexWithdrawalRequest {
