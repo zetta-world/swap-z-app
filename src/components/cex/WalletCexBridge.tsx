@@ -42,28 +42,20 @@ function networkToChainId(network: string): ChainId | undefined {
  * Wallet ↔ CEX bridge — two flows side-by-side on /cex once the vault
  * is unlocked.
  *
- * DEPOSIT (wallet → CEX): fetches the user's deposit address from the
- *   exchange, displays it with the memo + network warnings, lets the
- *   user copy it and execute the send from MetaMask / Phantom manually.
- *   No funds move from this page on the deposit side — we deliberately
- *   keep the wallet sign in the user's own wallet UI so the gas + slip
- *   confirmation stays in their familiar surface.
+ * DEPOSIT (wallet → CEX): auto-fetches the deposit address as soon as the
+ *   user picks a currency + network, then presents a direct-send panel so
+ *   the user can push funds without leaving the page. The signing still
+ *   happens in MetaMask / Phantom — we only build + submit the tx.
+ *   A "copy address manually" toggle is available as a secondary option.
  *
- * WITHDRAW (CEX → wallet): collects the destination (pre-filled with
- *   the connected wallet so a typo can't redirect anywhere), the
- *   amount, the network, and a 2FA code if the exchange requires it.
- *   On confirm, calls /api/cex/withdraw which runs the ccxt withdraw
- *   call. The exchange does the actual on-chain send.
+ * WITHDRAW (CEX → wallet): collects the destination (pre-filled with the
+ *   connected wallet), amount, network and optional 2FA code. On confirm,
+ *   calls /api/cex/withdraw which runs the ccxt withdraw call.
  *
  * THREAT MODEL & UX rails:
- *   - Network selector is mandatory and prominent: USDT-ERC20 vs
- *     USDT-BEP20 vs USDT-TRC20 are not interchangeable and sending the
- *     wrong network = permanent loss.
- *   - Memo / tag is rendered as a separate red-bordered banner when
- *     the exchange returned one.
- *   - Withdraw side requires a two-step "really do it" confirmation +
- *     the I-CONFIRM-REAL-WITHDRAWAL magic string set client-side only
- *     after that confirmation.
+ *   - Network selector is mandatory and prominent.
+ *   - Memo / tag disables the auto-send and forces manual copy.
+ *   - Withdraw requires a two-step confirmation.
  */
 
 interface Props {
@@ -79,11 +71,6 @@ interface DepositAddress {
   network?: string;
 }
 
-// Common networks per currency — surfaced as a dropdown so the user
-// picks "BSC" or "TRC20" up-front instead of relying on the exchange's
-// default (which can be misleading). Not exhaustive — if a network
-// isn't in here the user can still type one. SPL-only tokens map to
-// ["SOL"] alone so the deposit panel auto-targets the Phantom address.
 const COMMON_NETWORKS: Record<string, string[]> = {
   USDT: ["ERC20", "BSC", "TRC20", "POLYGON", "ARBITRUM", "OPTIMISM", "SOL"],
   USDC: ["ERC20", "BSC", "POLYGON", "ARBITRUM", "OPTIMISM", "BASE", "SOL"],
@@ -93,8 +80,6 @@ const COMMON_NETWORKS: Record<string, string[]> = {
   SOL:  ["SOL"],
   MATIC: ["POLYGON", "ERC20"],
   LINK: ["ERC20", "BSC"],
-  // SPL-native tokens that only live on Solana. Locking the network to
-  // SOL prevents the "right token, wrong network" loss class.
   JUP:  ["SOL"],
   JTO:  ["SOL"],
   BONK: ["SOL"],
@@ -107,12 +92,6 @@ const COMMON_NETWORKS: Record<string, string[]> = {
   RNDR: ["SOL", "ERC20"],
 };
 
-/**
- * Classify a network slug so we can match it to the right wallet
- * (Phantom vs MetaMask) and address format. Anything we don't
- * recognise falls through as "other" and the UI runs in permissive
- * mode (no auto-fill, looser validation).
- */
 type NetworkKind = "solana" | "evm" | "btc" | "other";
 function networkKind(network: string): NetworkKind {
   const n = network.toUpperCase();
@@ -129,14 +108,6 @@ function networkKind(network: string): NetworkKind {
   return "other";
 }
 
-/**
- * Return null when the address format is plausible for the given
- * network, or a human-readable warning string when there's an obvious
- * mismatch (e.g. EVM 0x address pasted into a SOL withdrawal). We do
- * NOT try to validate base58 checksum / EIP-55 — that's the exchange's
- * job; we just catch the cross-format goofs that lead to permanent
- * loss.
- */
 function validateAddressForNetwork(address: string, network: string): string | null {
   const a = address.trim();
   if (!a) return null;
@@ -188,7 +159,7 @@ export default function WalletCexBridge({ exchangeId, credentials }: Props) {
               mode === "deposit" ? "bg-cyan/15 text-cyan" : "text-ink-3 hover:bg-white/5",
             )}
           >
-            <ArrowDownToLine className="w-3 h-3" /> Deposit
+            <ArrowDownToLine className="w-3 h-3" /> Depositar
           </button>
           <button
             type="button"
@@ -198,7 +169,7 @@ export default function WalletCexBridge({ exchangeId, credentials }: Props) {
               mode === "withdraw" ? "bg-gold/15 text-gold" : "text-ink-3 hover:bg-white/5",
             )}
           >
-            <ArrowUpFromLine className="w-3 h-3" /> Withdraw
+            <ArrowUpFromLine className="w-3 h-3" /> Sacar
           </button>
         </div>
       </div>
@@ -225,8 +196,8 @@ function DepositPanel({ exchangeId, credentials }: Props) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<{ code: string; detail?: string; notListed?: boolean } | null>(null);
   const [copied,  setCopied]  = useState<"addr" | "tag" | null>(null);
+  const [showManual, setShowManual] = useState(false);
 
-  // Live wallet balance for the selected currency / network combo
   const walletToken = useMemo(() => {
     const chain = networkToChainId(network);
     if (!chain) return undefined;
@@ -234,10 +205,8 @@ function DepositPanel({ exchangeId, credentials }: Props) {
       (t) => t.chain === chain && t.symbol.toUpperCase() === currency.toUpperCase(),
     );
   }, [currency, network]);
-  // useTokenBalance must be called unconditionally
   const walletBal = useTokenBalance(walletToken, null);
-  // Track the "copied" timer so a fast modal close / re-mount doesn't
-  // leak the setState onto a dead component.
+
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
@@ -245,22 +214,19 @@ function DepositPanel({ exchangeId, credentials }: Props) {
 
   const networks = useMemo(() => COMMON_NETWORKS[currency.toUpperCase()] ?? [], [currency]);
   const kind = networkKind(network);
-  // SPL-only currencies should auto-pick SOL the moment the user types
-  // them, so the next click already targets the correct network.
+
   useEffect(() => {
     if (networks.length > 0 && !networks.includes(network)) {
       setNetwork(networks[0]);
     }
   }, [networks, network]);
 
-  // Wallet-mismatch hint: surface it as soon as we can tell, so the
-  // user fixes it before paying for a worthless on-chain transfer.
   const walletHint = (() => {
     if (kind === "solana" && !solAddress) {
-      return { tone: "warn" as const, msg: `Connect ${phantomLabel} to send on the Solana network.` };
+      return { msg: `Conecte ${phantomLabel} para enviar na rede Solana.` };
     }
     if (kind === "evm" && !evmAddress) {
-      return { tone: "warn" as const, msg: "Connect MetaMask (or any EVM wallet) to send on this network." };
+      return { msg: "Conecte MetaMask (ou outra carteira EVM) para enviar nesta rede." };
     }
     return null;
   })();
@@ -302,6 +268,18 @@ function DepositPanel({ exchangeId, credentials }: Props) {
     }
   };
 
+  // Auto-fetch whenever currency / network / exchange changes (debounced 500 ms).
+  // Ref pattern avoids stale-closure issues without adding fetchAddr to deps.
+  const fetchAddrRef = useRef(fetchAddr);
+  fetchAddrRef.current = fetchAddr;
+  useEffect(() => {
+    if (!currency || !network) return;
+    setAddr(null);
+    setError(null);
+    const timer = setTimeout(() => { void fetchAddrRef.current(); }, 500);
+    return () => clearTimeout(timer);
+  }, [currency, network, exchangeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const copy = async (which: "addr" | "tag", value: string) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -313,11 +291,14 @@ function DepositPanel({ exchangeId, credentials }: Props) {
     }
   };
 
+  const canDirectSend = !!(walletToken && (kind === "evm" || kind === "solana"));
+  const hasTag = !!addr?.tag;
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Currency</div>
+          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Moeda</div>
           <input
             value={currency}
             onChange={(e) => setCurrency(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12))}
@@ -326,7 +307,7 @@ function DepositPanel({ exchangeId, credentials }: Props) {
           />
         </label>
         <label className="block">
-          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Network</div>
+          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Rede</div>
           {networks.length > 0 ? (
             <select
               value={network}
@@ -346,7 +327,7 @@ function DepositPanel({ exchangeId, credentials }: Props) {
         </label>
       </div>
 
-      {/* Live wallet balance for selected token/network */}
+      {/* Live wallet balance */}
       {walletToken && walletBal.loading && (
         <div className="flex items-center gap-1.5 -mt-1 px-0.5">
           <Loader2 className="w-3 h-3 text-ink-4 animate-spin" />
@@ -372,16 +353,7 @@ function DepositPanel({ exchangeId, credentials }: Props) {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={fetchAddr}
-        disabled={loading || !currency || !network}
-        className="w-full btn btn-secondary text-xs disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
-      >
-        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowDownToLine className="w-3.5 h-3.5" />}
-        {loading ? "Fetching…" : "Get deposit address"}
-      </button>
-
+      {/* Error states */}
       {error && error.notListed ? (
         <div className="rounded-md border border-gold/30 bg-gold/[0.05] px-3 py-2 space-y-1">
           <div className="font-mono text-[10px] text-gold flex items-center gap-1.5">
@@ -396,94 +368,141 @@ function DepositPanel({ exchangeId, credentials }: Props) {
         <div className="rounded-md border border-red/20 bg-red/[0.04] px-3 py-2 font-mono text-[10px] text-red space-y-1">
           <div>{error.code}</div>
           {error.detail && <div className="text-red/70 break-words">{error.detail}</div>}
+          <button
+            type="button"
+            onClick={fetchAddr}
+            className="text-cyan hover:text-cyan/80 uppercase tracking-widest text-[9px] mt-0.5"
+          >
+            Tentar novamente
+          </button>
         </div>
       )}
 
+      {/* Memo/tag warning — direct send disabled */}
+      {hasTag && (
+        <div className="rounded-md border border-gold/30 bg-gold/[0.06] p-2 flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
+          <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
+            Esta rede exige memo/tag — envie manualmente anexando o memo abaixo. O envio
+            automático foi desativado para evitar perda de fundos.
+          </p>
+        </div>
+      )}
+
+      {/* PRIMARY: direct-send panel for EVM / Solana without memo */}
+      {canDirectSend && walletToken && !hasTag && !error && (
+        <WalletSendToCex
+          token={walletToken}
+          destination={addr?.address ?? null}
+          loadingDestination={loading}
+          networkKindHint={kind as "evm" | "solana"}
+          exchangeLabel={CEX_META[exchangeId].label}
+        />
+      )}
+
+      {/* Non-EVM/SOL networks: show loader or retry button until address arrives */}
+      {!canDirectSend && !error && !addr && (
+        loading ? (
+          <div className="flex items-center gap-2 py-2">
+            <Loader2 className="w-3.5 h-3.5 text-ink-4 animate-spin" />
+            <span className="font-mono text-[10px] text-ink-4">Obtendo endereço de depósito…</span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={fetchAddr}
+            disabled={!currency || !network}
+            className="w-full btn btn-secondary text-xs disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+          >
+            <ArrowDownToLine className="w-3.5 h-3.5" />
+            Obter endereço de depósito
+          </button>
+        )
+      )}
+
+      {/* Deposit address — always visible for non-direct-send networks;
+          toggled as a secondary option for EVM/SOL direct-send */}
       {addr && (
-        <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-lg border border-cyan/20 bg-cyan/[0.04] p-3 space-y-2.5"
-        >
-          {/* The big honest network warning. */}
-          <div className="rounded-md border border-gold/30 bg-gold/[0.06] p-2 flex items-start gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
-            <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
-              Send <b className="text-gold">{currency}</b> on the <b className="text-gold">{addr.network ?? network}</b> network ONLY.
-              Sending on a different network from your wallet will be lost permanently — there is no recovery.
-            </p>
-          </div>
-
-          <div>
-            <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Deposit address</div>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 min-w-0 px-2 py-2 rounded bg-bg-1 border border-white/10 font-mono text-[11px] text-ink break-all">
-                {addr.address}
-              </code>
-              <button
-                type="button"
-                onClick={() => copy("addr", addr.address)}
-                className="flex-shrink-0 px-2.5 py-2 rounded border border-cyan/30 bg-cyan/10 text-cyan inline-flex items-center gap-1 font-mono text-[10px] tracking-widest uppercase hover:bg-cyan/20"
-              >
-                {copied === "addr" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                {copied === "addr" ? "Copied" : "Copy"}
-              </button>
-            </div>
-          </div>
-
-          {addr.tag && (
-            <div className="rounded-md border border-red/30 bg-red/[0.06] p-2 space-y-1.5">
-              <div className="font-mono text-[9px] text-red tracking-widest uppercase inline-flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> Memo / tag REQUIRED
-              </div>
-              <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
-                You MUST attach this memo to the transaction or your funds will be lost.
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 px-2 py-1.5 rounded bg-bg-1 border border-white/10 font-mono text-[11px] text-ink break-all">
-                  {addr.tag}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => copy("tag", addr.tag!)}
-                  className="flex-shrink-0 px-2 py-1.5 rounded border border-red/30 bg-red/10 text-red inline-flex items-center gap-1 font-mono text-[10px] tracking-widest uppercase hover:bg-red/20"
-                >
-                  {copied === "tag" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  {copied === "tag" ? "Copied" : "Copy memo"}
-                </button>
-              </div>
-            </div>
+        <div className="space-y-2">
+          {canDirectSend && !hasTag && (
+            <button
+              type="button"
+              onClick={() => setShowManual((v) => !v)}
+              className="flex items-center gap-1.5 font-mono text-[10px] text-ink-3 hover:text-ink-2 tracking-widest uppercase"
+            >
+              <Copy className="w-3 h-3" />
+              {showManual ? "Ocultar endereço" : "Copiar endereço manualmente"}
+            </button>
           )}
 
-          <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-            {kind === "solana"
-              ? <>Open <b className="text-ink-2">{phantomLabel}</b> and send to this address. Z-SWAP doesn&apos;t move the funds — your wallet does.</>
-              : kind === "evm"
-                ? <>Open <b className="text-ink-2">MetaMask</b> (or any EVM wallet) and send to this address. Z-SWAP doesn&apos;t move the funds — your wallet does.</>
-                : <>Open your wallet and send to this address. Z-SWAP doesn&apos;t move the funds — your wallet does.</>}
-            {" "}Wait for the exchange to credit (typically 1–12 minutes depending on network).
-          </p>
+          {(!canDirectSend || hasTag || showManual) && (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-lg border border-cyan/20 bg-cyan/[0.04] p-3 space-y-2.5"
+            >
+              <div className="rounded-md border border-gold/30 bg-gold/[0.06] p-2 flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
+                <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
+                  Envie <b className="text-gold">{currency}</b> APENAS pela rede <b className="text-gold">{addr.network ?? network}</b>.
+                  Enviar pela rede errada resulta em perda permanente dos fundos.
+                </p>
+              </div>
 
-          {/* Direct send from the connected wallet. Disabled when the exchange
-           * requires a memo/tag — auto-send can't reliably attach it, so the
-           * user must do it from their wallet UI by hand. */}
-          {addr.tag ? (
-            <div className="rounded-md border border-gold/30 bg-gold/[0.06] p-2 flex items-start gap-2">
-              <AlertTriangle className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
-              <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
-                Esta rede exige memo/tag — envie manualmente anexando o memo acima. O envio
-                automático foi desativado para evitar perda de fundos.
-              </p>
-            </div>
-          ) : walletToken && (kind === "evm" || kind === "solana") ? (
-            <WalletSendToCex
-              token={walletToken}
-              destination={addr.address}
-              networkKindHint={kind}
-              exchangeLabel={CEX_META[exchangeId].label}
-            />
-          ) : null}
-        </motion.div>
+              <div>
+                <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Endereço de depósito</div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 min-w-0 px-2 py-2 rounded bg-bg-1 border border-white/10 font-mono text-[11px] text-ink break-all">
+                    {addr.address}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copy("addr", addr.address)}
+                    className="flex-shrink-0 px-2.5 py-2 rounded border border-cyan/30 bg-cyan/10 text-cyan inline-flex items-center gap-1 font-mono text-[10px] tracking-widest uppercase hover:bg-cyan/20"
+                  >
+                    {copied === "addr" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    {copied === "addr" ? "Copiado" : "Copiar"}
+                  </button>
+                </div>
+              </div>
+
+              {addr.tag && (
+                <div className="rounded-md border border-red/30 bg-red/[0.06] p-2 space-y-1.5">
+                  <div className="font-mono text-[9px] text-red tracking-widest uppercase inline-flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> Memo / tag OBRIGATÓRIO
+                  </div>
+                  <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
+                    Você DEVE incluir este memo na transação ou seus fundos serão perdidos.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 px-2 py-1.5 rounded bg-bg-1 border border-white/10 font-mono text-[11px] text-ink break-all">
+                      {addr.tag}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => copy("tag", addr.tag!)}
+                      className="flex-shrink-0 px-2 py-1.5 rounded border border-red/30 bg-red/10 text-red inline-flex items-center gap-1 font-mono text-[10px] tracking-widest uppercase hover:bg-red/20"
+                    >
+                      {copied === "tag" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      {copied === "tag" ? "Copiado" : "Copiar memo"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!addr.tag && (
+                <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
+                  {kind === "solana"
+                    ? <>Abra <b className="text-ink-2">{phantomLabel}</b> e envie para este endereço.</>
+                    : kind === "evm"
+                      ? <>Abra <b className="text-ink-2">MetaMask</b> (ou outra carteira EVM) e envie para este endereço.</>
+                      : <>Abra sua carteira e envie para este endereço.</>}
+                  {" "}Aguarde o crédito na corretora (normalmente 1–12 minutos).
+                </p>
+              )}
+            </motion.div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -491,16 +510,17 @@ function DepositPanel({ exchangeId, credentials }: Props) {
 
 // ─── Direct send (wallet → CEX deposit address) ─────────────────────────
 //
-// When the exchange returned a memo-less deposit address on a network we
-// recognise (EVM or Solana), we can let the user push the funds straight
-// from the page instead of copy-pasting into MetaMask/Phantom. The signing
-// still happens in their wallet — we only build + submit the transaction.
+// Shown as the PRIMARY UI in DepositPanel for EVM and Solana without memo.
+// The deposit address is fetched automatically in the background — no button
+// click required. Once it arrives the user enters an amount and signs in
+// their wallet (MetaMask / Phantom).
 
 function WalletSendToCex({
-  token, destination, networkKindHint, exchangeLabel,
+  token, destination, loadingDestination, networkKindHint, exchangeLabel,
 }: {
   token: Token;
-  destination: string;
+  destination: string | null;
+  loadingDestination: boolean;
   networkKindHint: "evm" | "solana";
   exchangeLabel: string;
 }) {
@@ -536,6 +556,7 @@ function WalletSendToCex({
     : null;
 
   const send = async () => {
+    if (!destination) { setError("Endereço de destino não disponível — aguarde."); return; }
     setStage("sending");
     setError(null);
     try {
@@ -561,7 +582,6 @@ function WalletSendToCex({
         await connection.confirmTransaction(sig, "confirmed");
         setTxHash(sig);
       } else {
-        // EVM: make sure we're on the right chain first.
         const targetChainId = WAGMI_CHAIN_IDS[token.chain];
         if (targetChainId && currentChainId !== targetChainId) {
           await switchChainAsync({ chainId: targetChainId });
@@ -592,7 +612,6 @@ function WalletSendToCex({
       toast.success("Enviado — aguarde o crédito na corretora.");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // User-rejected signature isn't an error worth a red banner.
       setError(/reject|denied|user/i.test(msg) ? "Assinatura cancelada na carteira." : msg);
       setStage("confirm");
     }
@@ -628,12 +647,25 @@ function WalletSendToCex({
     );
   }
 
+  /* Loading: deposit address not yet available */
+  if (!destination && loadingDestination) {
+    return (
+      <div className="rounded-lg border border-cyan/20 bg-cyan/[0.03] p-3 flex items-center gap-2">
+        <Loader2 className="w-3.5 h-3.5 text-cyan animate-spin" />
+        <span className="font-mono text-[10px] text-ink-2">Obtendo endereço de depósito da corretora…</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-2.5">
+    <div className="rounded-lg border border-cyan/20 bg-cyan/[0.03] p-3 space-y-2.5">
       <div className="flex items-center gap-1.5">
         <Send className="w-3.5 h-3.5 text-cyan" />
         <span className="font-mono text-[10px] text-ink-2 tracking-widest uppercase">
-          Enviar direto da carteira
+          Depositar da carteira → {exchangeLabel}
+        </span>
+        <span className="ml-auto font-mono text-[9px] text-ink-4 tabular-nums">
+          {chainMeta?.short ?? token.chain} · {token.symbol}
         </span>
       </div>
 
@@ -644,11 +676,16 @@ function WalletSendToCex({
             ? "Conecte a Phantom para enviar SOL/SPL diretamente."
             : "Conecte uma carteira EVM (MetaMask) para enviar diretamente."}
         </p>
+      ) : !destination ? (
+        <p className="font-mono text-[10px] text-red/80 leading-relaxed inline-flex items-start gap-1">
+          <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+          Não foi possível obter o endereço de depósito. Use "Tentar novamente" acima.
+        </p>
       ) : (
         <>
           <label className="block">
             <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1 flex items-center justify-between">
-              <span>Valor</span>
+              <span>Valor a depositar</span>
               {!bal.isZero && stage === "form" && (
                 <button
                   type="button"
@@ -680,9 +717,9 @@ function WalletSendToCex({
               type="button"
               onClick={() => setStage("confirm")}
               disabled={!amountValid}
-              className="w-full btn btn-secondary text-xs disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+              className="w-full btn btn-primary text-xs disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
             >
-              <Send className="w-3.5 h-3.5" /> Revisar envio
+              <Send className="w-3.5 h-3.5" /> Revisar depósito
             </button>
           )}
 
@@ -691,6 +728,7 @@ function WalletSendToCex({
               <div className="font-mono text-[11px] text-ink-2 leading-relaxed space-y-0.5 tabular-nums">
                 <div>{amount} {token.symbol} <span className="text-ink-3">via {chainMeta?.short ?? token.chain}</span></div>
                 <div className="text-ink-3 break-all">→ {destination}</div>
+                <div className="text-ink-4 text-[9px]">Destino: {exchangeLabel}</div>
               </div>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setStage("form")} className="flex-1 btn btn-secondary text-xs">
@@ -734,7 +772,6 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
   const [error,   setError]   = useState<{ code: string; detail?: string } | null>(null);
   const [receipt, setReceipt] = useState<{ id: string; status: string; txid?: string; network?: string; address?: string } | null>(null);
 
-  // Live CEX balances — fetched once on mount / credential change
   const [cexBalances,    setCexBalances]    = useState<CexBalance[] | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
 
@@ -769,19 +806,12 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
   const networks = useMemo(() => COMMON_NETWORKS[currency.toUpperCase()] ?? [], [currency]);
   const kind = networkKind(network);
 
-  // The "expected destination" follows the picked network so it always
-  // matches: SOL → Phantom, EVM → MetaMask. Without this the panel can
-  // pre-fill an EVM address into a Solana withdrawal — guaranteed loss.
   const expectedDestination = useMemo(() => {
     if (kind === "solana") return solAddress ?? "";
     if (kind === "evm")    return evmAddress ?? "";
     return "";
   }, [kind, solAddress, evmAddress]);
 
-  // Only auto-fill the destination when the user hasn't typed their own
-  // address yet, OR when the previous value matches the previous
-  // network's expected destination (so switching networks doesn't strand
-  // them on a wrong address).
   const prevExpectedRef = useRef(expectedDestination);
   const userEditedRef   = useRef(false);
   useEffect(() => {
@@ -795,16 +825,12 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
     });
   }, [expectedDestination]);
 
-  // SPL-only currencies auto-pick SOL the moment they're typed.
   useEffect(() => {
     if (networks.length > 0 && !networks.includes(network)) {
       setNetwork(networks[0]);
     }
   }, [networks, network]);
 
-  // Sticky tone: we leave 2FA + tag as-is across network changes (small
-  // and rare values) but reset stage to form so a stale "confirm" can't
-  // be submitted against a freshly-changed network.
   useEffect(() => {
     if (stage === "confirm") setStage("form");
   }, [network, currency]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -816,10 +842,10 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
   const isAutoFilled = !!expectedDestination && destination === expectedDestination;
   const walletHint = (() => {
     if (kind === "solana" && !solAddress) {
-      return `${phantomLabel} not connected — paste your Solana address manually or connect Phantom to auto-fill.`;
+      return `${phantomLabel} não conectado — cole seu endereço Solana manualmente ou conecte para preencher automaticamente.`;
     }
     if (kind === "evm" && !evmAddress) {
-      return "No EVM wallet connected — paste your 0x… address manually or connect MetaMask to auto-fill.";
+      return "Nenhuma carteira EVM conectada — cole seu endereço 0x… manualmente ou conecte o MetaMask.";
     }
     return null;
   })();
@@ -858,7 +884,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
       }
       setReceipt(body.receipt);
       setStage("done");
-      toast.success(`Withdrawal queued: ${body.receipt.id || "(no id)"}`);
+      toast.success(`Saque enviado: ${body.receipt.id || "(sem id)"}`);
     } catch (e) {
       setError({ code: "network_error", detail: e instanceof Error ? e.message : String(e) });
       setStage("confirm");
@@ -869,24 +895,24 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-md border border-green/30 bg-green/[0.05] p-3 space-y-2">
         <div className="inline-flex items-center gap-1.5 font-mono text-[10px] text-green tracking-widest uppercase">
-          <Check className="w-3 h-3" /> Withdrawal accepted by exchange
+          <Check className="w-3 h-3" /> Saque aceito pela corretora
         </div>
         <div className="font-mono text-[10px] text-ink-2 space-y-0.5 tabular-nums">
           <div>id: {receipt.id || "—"}</div>
           <div>status: {receipt.status}</div>
-          {receipt.network && <div>network: {receipt.network}</div>}
-          {receipt.address && <div className="break-all">to: {receipt.address}</div>}
+          {receipt.network && <div>rede: {receipt.network}</div>}
+          {receipt.address && <div className="break-all">para: {receipt.address}</div>}
           {receipt.txid && <div className="break-all">tx: {receipt.txid}</div>}
         </div>
         <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-          The exchange typically takes 1–30 minutes to broadcast, depending on its internal review queue and the network.
+          A corretora normalmente leva 1–30 minutos para transmitir, dependendo da fila interna e da rede.
         </p>
         <button
           type="button"
           onClick={() => { setStage("form"); setAmount(""); setTwoFa(""); setReceipt(null); }}
           className="font-mono text-[10px] text-cyan/80 hover:text-cyan tracking-widest uppercase"
         >
-          New withdrawal
+          Novo saque
         </button>
       </motion.div>
     );
@@ -897,15 +923,15 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
       <div className="rounded-md border border-gold/30 bg-gold/[0.05] p-2 flex items-start gap-2">
         <Shield className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
         <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
-          The destination address must be <b className="text-gold">pre-whitelisted on the exchange</b>. Most exchanges
-          (Binance, Coinbase, Kraken, OKX, …) require email/SMS confirmation + a 24–48h cooldown for new addresses.
-          If you haven&apos;t whitelisted this wallet yet, the call below will fail with a specific error from the exchange.
+          O endereço de destino deve estar <b className="text-gold">pré-autorizado na corretora</b>. A maioria das corretoras
+          (Binance, Coinbase, Kraken, OKX…) exige confirmação por e-mail/SMS e um período de 24–48h para novos endereços.
+          Se ainda não autorizou esta carteira, a chamada abaixo falhará com um erro específico da corretora.
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Currency</div>
+          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Moeda</div>
           <input
             value={currency}
             onChange={(e) => setCurrency(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12))}
@@ -914,7 +940,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
           />
         </label>
         <label className="block">
-          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Network</div>
+          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Rede</div>
           {networks.length > 0 ? (
             <select
               value={network}
@@ -965,7 +991,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
 
       <label className="block">
         <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1 flex items-center justify-between">
-          <span>Amount</span>
+          <span>Valor</span>
           {activeCexBal && activeCexBal.free > 0 && stage === "form" && (
             <button
               type="button"
@@ -988,10 +1014,10 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
 
       <label className="block">
         <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1 inline-flex items-center gap-1 flex-wrap">
-          Destination address
+          Endereço de destino
           {isAutoFilled && (
             <span className="text-cyan/70 normal-case">
-              · auto-filled from {kind === "solana" ? phantomLabel : kind === "evm" ? "MetaMask" : "connected wallet"}
+              · preenchido de {kind === "solana" ? phantomLabel : kind === "evm" ? "MetaMask" : "carteira conectada"}
             </span>
           )}
         </div>
@@ -999,7 +1025,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
           value={destination}
           onChange={(e) => { userEditedRef.current = true; setDestination(e.target.value.trim()); }}
           disabled={stage !== "form"}
-          placeholder={kind === "solana" ? "base58 Solana address" : kind === "evm" ? "0x…" : "0x… or base58…"}
+          placeholder={kind === "solana" ? "endereço Solana base58" : kind === "evm" ? "0x…" : "0x… ou base58…"}
           className={cn(
             "w-full bg-bg-2 border rounded px-2.5 py-1.5 font-mono text-[11px] text-ink outline-none disabled:opacity-60",
             addressWarn ? "border-red/40 focus:border-red/60" : "border-white/10 focus:border-cyan/40",
@@ -1019,17 +1045,17 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
 
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Memo / tag (optional)</div>
+          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Memo / tag (opcional)</div>
           <input
             value={tag}
             onChange={(e) => setTag(e.target.value.slice(0, 64))}
             disabled={stage !== "form"}
-            placeholder="leave blank"
+            placeholder="deixe em branco"
             className="w-full bg-bg-2 border border-white/10 rounded px-2.5 py-1.5 font-mono text-sm text-ink outline-none focus:border-cyan/40 disabled:opacity-60"
           />
         </label>
         <label className="block">
-          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">2FA code (if required)</div>
+          <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Código 2FA (se necessário)</div>
           <input
             value={twoFa}
             onChange={(e) => setTwoFa(e.target.value.replace(/[^0-9]/g, "").slice(0, 10))}
@@ -1056,7 +1082,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
           className="w-full btn btn-primary text-xs disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
         >
           <ArrowUpFromLine className="w-3.5 h-3.5" />
-          Review withdrawal
+          Revisar saque
         </button>
       )}
 
@@ -1067,7 +1093,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
           className="rounded-md border border-gold/30 bg-gold/[0.05] p-3 space-y-2"
         >
           <div className="font-display font-bold text-xs text-gold inline-flex items-center gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5" /> Confirm real on-chain withdrawal
+            <AlertTriangle className="w-3.5 h-3.5" /> Confirmar saque real on-chain
           </div>
           <div className="font-mono text-[11px] text-ink-2 leading-relaxed space-y-0.5 tabular-nums">
             <div>{amount} {currency} <span className="text-ink-3">via {network}</span></div>
@@ -1076,7 +1102,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
             {twoFa && <div className="text-ink-3">2FA: ******{twoFa.slice(-2)}</div>}
           </div>
           <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-            This is irreversible. The exchange will broadcast the transaction. Double-check the address and the network.
+            Esta operação é irreversível. Verifique o endereço e a rede antes de confirmar.
           </p>
           <div className="flex gap-2">
             <button
@@ -1084,14 +1110,14 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
               onClick={() => setStage("form")}
               className="flex-1 btn btn-secondary text-xs"
             >
-              Back
+              Voltar
             </button>
             <button
               type="button"
               onClick={submit}
               className="flex-1 btn btn-primary text-xs inline-flex items-center justify-center gap-1.5"
             >
-              <ArrowUpFromLine className="w-3.5 h-3.5" /> Withdraw
+              <ArrowUpFromLine className="w-3.5 h-3.5" /> Sacar
             </button>
           </div>
         </motion.div>
@@ -1100,13 +1126,13 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
       {stage === "sending" && (
         <div className="rounded-md border border-cyan/30 bg-cyan/[0.05] p-3 inline-flex items-center gap-2">
           <Loader2 className="w-3.5 h-3.5 text-cyan animate-spin" />
-          <span className="font-mono text-[11px] text-ink-2">Sending withdrawal to exchange…</span>
+          <span className="font-mono text-[11px] text-ink-2">Enviando saque para a corretora…</span>
         </div>
       )}
 
       <p className="font-mono text-[10px] text-ink-4 leading-relaxed inline-flex items-start gap-1">
         <ExternalLink className="w-3 h-3 mt-0.5 flex-shrink-0" />
-        Server caps withdrawals at ~$50k USD. Larger transfers go through the exchange&apos;s own UI.
+        Saques limitados a ~US$50k. Transferências maiores devem ser feitas pela interface da corretora.
       </p>
     </div>
   );
