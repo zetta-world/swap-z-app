@@ -17,6 +17,7 @@ import { useT } from "@/lib/i18n";
 import CexTradePanel from "./CexTradePanel";
 import WalletCexBridge from "./WalletCexBridge";
 import CexOpenOrdersPanel from "./CexOpenOrdersPanel";
+import ZionCexAutopilot from "./ZionCexAutopilot";
 import { cn } from "@/lib/cn";
 
 const AUTO_LOCK_MS = 10 * 60 * 1000; // 10 minutes idle → re-lock
@@ -297,6 +298,17 @@ export default function CexConsole() {
             );
           })}
         </div>
+
+        {/* ZION Autopilot CEX panel */}
+        {selectedId && creds[selectedId] && (
+          <div className="mt-5">
+            <ZionCexAutopilot
+              key={`zion-${selectedId}`}
+              exchangeId={selectedId}
+              credentials={creds[selectedId]!}
+            />
+          </div>
+        )}
 
         {/* Trade panel */}
         {selectedId && creds[selectedId] && (

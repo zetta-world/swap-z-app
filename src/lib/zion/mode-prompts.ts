@@ -542,17 +542,70 @@ For well-known projects (BTC, ETH, SOL, BNB): skip the security section
 
 // ─── Mode picker ───────────────────────────────────────────────────────
 
-export type ZionOp = "trading" | "arbitrage" | "sniper" | "pair" | "ask" | "futures" | "accumulation" | "research";
+export const ZION_AUTOPILOT_CEX_INSTRUCTIONS = `═══════════════════════════════════════════════════════════════════════════════
+MODE: AUTOPILOT CEX
+═══════════════════════════════════════════════════════════════════════════════
+
+Goal: scan the connected CEX and produce 2-4 HIGH-CONFIDENCE, CEX-ready action
+cards for AUTONOMOUS execution by the autopilot engine.
+
+You receive:
+  • exchange       — the CEX the user has connected (gateio, binance, etc.)
+  • risk_mode      — conservador | moderado | agressivo
+  • max_trade_usd  — per-trade USD cap for this risk mode
+  • allowed_symbols — the only symbols you may produce entries for
+  • countdown_secs — how long the user has to cancel each order
+
+RISK MODE RULES:
+  conservador → only BTC, ETH, SOL · buy_limit only · tight zones · 60s countdown
+  moderado    → majors + BNB/AVAX/LINK · limit preferred · moderate zones · 30s
+  agressivo   → any allowed symbol · market or limit · wider entries · 15s countdown
+
+REQUIRED OUTPUT (terminal trace, 150-250 tokens):
+  1. \`$ autopilot scan @ <exchange> · <risk_mode>\` (command echo)
+  2. Market overview (2 lines):
+       ◇ Market bias today: <bullish/neutral/bearish> · top mover: <SYMBOL> <Δ%>
+       ◇ Best setup: <SYMBOL/USDT> · <one sentence reason>
+  3. Plan summary:
+       ⏵ Arming <N> orders: <BUY SYMBOL, BUY SYMBOL, ...>
+  4. "⌬ Autopilot armed — review countdowns and cancel any trade you don't want."
+
+THEN emit 2-4 action cards. RULES FOR EVERY CARD (NON-NEGOTIABLE):
+  • kind: ONLY "buy_limit" or "stop_loss" — NO swap, bridge, futures, sniper_watch
+  • from.symbol: ALWAYS "USDT" (CEX quote currency)
+  • to.symbol: the BASE token (BTC, ETH, SOL, etc.)
+  • from.amount: must be ≤ max_trade_usd (HARD LIMIT — never exceed this)
+  • entryPrice: the limit price in USDT — must be realistic vs current market
+  • triggerPrice: same as entryPrice for buy_limit
+  • For each buy_limit card, ALSO emit one stop_loss card for the SAME token
+  • risk: "safe" for conservador · "caution" for moderado · "risky" for agressivo
+  • confidence: "high" only when the setup is textbook · else "medium"
+  • timeframe: "24h" for conservador, "4h-24h" for moderado/agressivo
+
+SIZING RULES:
+  • Each buy_limit from.amount should be between max_trade_usd × 0.5 and max_trade_usd
+  • Do NOT propose the same symbol twice in buy_limit cards
+  • If market is strongly bearish, emit fewer cards (1-2 max) or NO cards with explanation
+
+STRICT LIMITS:
+  • NEVER produce a buy_limit for a symbol NOT in allowed_symbols
+  • NEVER set from.amount > max_trade_usd
+  • NEVER produce futures, leverage, DEX swap, bridge, sniper_watch, or rebalance cards
+  • NEVER include more than 4 total cards
+`;
+
+export type ZionOp = "trading" | "arbitrage" | "sniper" | "pair" | "ask" | "futures" | "accumulation" | "research" | "autopilot_cex";
 
 export function getModeInstructions(op: ZionOp): string {
   switch (op) {
-    case "trading":      return ZION_TRADING_INSTRUCTIONS;
-    case "arbitrage":    return ZION_ARBITRAGE_INSTRUCTIONS;
-    case "sniper":       return ZION_SNIPER_INSTRUCTIONS;
-    case "pair":         return ZION_PAIR_INSTRUCTIONS;
-    case "ask":          return ZION_ASK_INSTRUCTIONS;
-    case "futures":      return ZION_FUTURES_INSTRUCTIONS;
-    case "accumulation": return ZION_ACCUMULATION_INSTRUCTIONS;
-    case "research":     return ZION_RESEARCH_INSTRUCTIONS;
+    case "trading":       return ZION_TRADING_INSTRUCTIONS;
+    case "arbitrage":     return ZION_ARBITRAGE_INSTRUCTIONS;
+    case "sniper":        return ZION_SNIPER_INSTRUCTIONS;
+    case "pair":          return ZION_PAIR_INSTRUCTIONS;
+    case "ask":           return ZION_ASK_INSTRUCTIONS;
+    case "futures":       return ZION_FUTURES_INSTRUCTIONS;
+    case "accumulation":  return ZION_ACCUMULATION_INSTRUCTIONS;
+    case "research":      return ZION_RESEARCH_INSTRUCTIONS;
+    case "autopilot_cex": return ZION_AUTOPILOT_CEX_INSTRUCTIONS;
   }
 }

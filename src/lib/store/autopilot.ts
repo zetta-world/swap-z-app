@@ -29,6 +29,38 @@ import type { CexId } from "@/lib/cex/types";
  * The trade history log is bounded at 200 entries (FIFO).
  */
 
+export type AutopilotRiskMode = "conservador" | "moderado" | "agressivo";
+
+export const AUTOPILOT_RISK_PRESETS: Record<AutopilotRiskMode, {
+  maxTradeUsd:       number;
+  maxTradesPerDay:   number;
+  dailyLossStopUsd:  number;
+  countdownMs:       number;
+  allowedSymbols:    string[];
+}> = {
+  conservador: {
+    maxTradeUsd:      25,
+    maxTradesPerDay:  3,
+    dailyLossStopUsd: 20,
+    countdownMs:      60_000,
+    allowedSymbols:   ["BTC", "ETH", "SOL"],
+  },
+  moderado: {
+    maxTradeUsd:      50,
+    maxTradesPerDay:  5,
+    dailyLossStopUsd: 40,
+    countdownMs:      30_000,
+    allowedSymbols:   ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK"],
+  },
+  agressivo: {
+    maxTradeUsd:      100,
+    maxTradesPerDay:  8,
+    dailyLossStopUsd: 60,
+    countdownMs:      15_000,
+    allowedSymbols:   ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "UNI", "DOGE", "ARB", "OP"],
+  },
+};
+
 export const AUTOPILOT_MAJOR_SYMBOLS = [
   "BTC", "ETH", "SOL", "BNB", "AVAX", "MATIC", "POL", "ARB", "OP",
   "LINK", "UNI", "AAVE", "PEPE", "WIF", "DOGE",
@@ -92,6 +124,12 @@ interface AutopilotState {
   setMaxRebalanceUsd:      (n: number)  => void;
   setMaxRebalancesPerDay:  (n: number)  => void;
   /**
+   * Apply a risk-mode preset in one call — sets maxTradeUsd,
+   * maxTradesPerDay, dailyLossStopUsd, countdownMs, and allowedSymbols.
+   * Optionally pins a single exchange in allowedExchanges.
+   */
+  applyRiskPreset: (mode: AutopilotRiskMode, exchangeId?: CexId) => void;
+  /**
    * Append a new entry to the audit log. Caller computes everything;
    * we just FIFO-cap the list at 200 entries.
    */
@@ -148,6 +186,18 @@ export const useAutopilot = create<AutopilotState>()(
       },
       setMaxRebalanceUsd:     (n) => set({ maxRebalanceUsd:     Math.max(10, Math.min(5_000, n)) }),
       setMaxRebalancesPerDay: (n) => set({ maxRebalancesPerDay: Math.max(1,  Math.min(20,    n)) }),
+
+      applyRiskPreset: (mode, exchangeId) => {
+        const p = AUTOPILOT_RISK_PRESETS[mode];
+        set({
+          maxTradeUsd:       p.maxTradeUsd,
+          maxTradesPerDay:   p.maxTradesPerDay,
+          dailyLossStopUsd:  p.dailyLossStopUsd,
+          countdownMs:       p.countdownMs,
+          allowedSymbols:    p.allowedSymbols,
+          ...(exchangeId ? { allowedExchanges: [exchangeId] } : {}),
+        });
+      },
 
       pushHistory: (entry) => {
         const next = [entry, ...get().history].slice(0, 200);
