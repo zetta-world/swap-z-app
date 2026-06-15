@@ -147,6 +147,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
                       onClick={() => setChain(c.id)}
                       label={c.short}
                       color={c.color}
+                      logo={c.logo}
                     />
                   ))}
                 </div>
@@ -212,9 +213,9 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
 }
 
 function ChainPill({
-  active, onClick, label, color,
+  active, onClick, label, color, logo,
 }: {
-  active: boolean; onClick: () => void; label: string; color?: string;
+  active: boolean; onClick: () => void; label: string; color?: string; logo?: string;
 }) {
   return (
     <button
@@ -227,7 +228,10 @@ function ChainPill({
           : "border-white/5 bg-white/[0.02] text-ink-3 hover:text-ink-2 hover:border-white/10",
       )}
     >
-      {color && <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />}
+      {/* Network badge: logo when available, colored dot as graceful fallback. */}
+      {logo
+        ? <TokenLogo symbol={label} logo={logo} color={color} size={14} />
+        : color && <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />}
       {label}
     </button>
   );

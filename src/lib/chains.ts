@@ -24,10 +24,24 @@ export interface Chain {
   gradient: string;
   nativeToken: string;
   explorer: string;
+  logo?: string;               // public CDN URL for the network badge
   rpc?: string;
   featured?: boolean;
   comingSoon?: boolean;
 }
+
+// Shared network logo URLs (CoinGecko CDN). Falls back gracefully to the
+// colored dot via <TokenLogo> if a URL ever 404s.
+const NL = {
+  ethereum:  "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
+  bsc:       "https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png",
+  polygon:   "https://assets.coingecko.com/coins/images/4713/small/matic-token-icon.png",
+  base:      "https://assets.coingecko.com/asset_platforms/images/131/small/base-network.png",
+  arbitrum:  "https://assets.coingecko.com/coins/images/16547/small/photo_2023-03-29_21.47.00.jpeg",
+  optimism:  "https://assets.coingecko.com/coins/images/25244/small/Optimism.png",
+  avalanche: "https://assets.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png",
+  solana:    "https://assets.coingecko.com/coins/images/4128/small/solana.png",
+} as const;
 
 export const CHAINS: Chain[] = [
   {
@@ -52,6 +66,7 @@ export const CHAINS: Chain[] = [
     gradient: "linear-gradient(135deg,#627EEA,#454A75)",
     nativeToken: "ETH",
     explorer: "https://etherscan.io",
+    logo: NL.ethereum,
     featured: true,
   },
   {
@@ -64,6 +79,7 @@ export const CHAINS: Chain[] = [
     gradient: "linear-gradient(135deg,#F3BA2F,#B58A22)",
     nativeToken: "BNB",
     explorer: "https://bscscan.com",
+    logo: NL.bsc,
     featured: true,
   },
   {
@@ -76,6 +92,7 @@ export const CHAINS: Chain[] = [
     gradient: "linear-gradient(135deg,#8247E5,#4A1E9C)",
     nativeToken: "POL",
     explorer: "https://polygonscan.com",
+    logo: NL.polygon,
   },
   {
     id: "base",
@@ -87,6 +104,7 @@ export const CHAINS: Chain[] = [
     gradient: "linear-gradient(135deg,#0052FF,#003BCC)",
     nativeToken: "ETH",
     explorer: "https://basescan.org",
+    logo: NL.base,
     featured: true,
   },
   {
@@ -99,6 +117,7 @@ export const CHAINS: Chain[] = [
     gradient: "linear-gradient(135deg,#28A0F0,#1B6A9E)",
     nativeToken: "ETH",
     explorer: "https://arbiscan.io",
+    logo: NL.arbitrum,
     featured: true,
   },
   {
@@ -111,6 +130,7 @@ export const CHAINS: Chain[] = [
     gradient: "linear-gradient(135deg,#FF0420,#A60016)",
     nativeToken: "ETH",
     explorer: "https://optimistic.etherscan.io",
+    logo: NL.optimism,
   },
   {
     id: "avalanche",
@@ -122,6 +142,7 @@ export const CHAINS: Chain[] = [
     gradient: "linear-gradient(135deg,#E84142,#9A2A2B)",
     nativeToken: "AVAX",
     explorer: "https://snowtrace.io",
+    logo: NL.avalanche,
   },
   {
     id: "zksync",
@@ -154,6 +175,7 @@ export const CHAINS: Chain[] = [
     gradient: "linear-gradient(135deg,#14F195,#9945FF)",
     nativeToken: "SOL",
     explorer: "https://solscan.io",
+    logo: NL.solana,
     featured: true,
   },
 ];

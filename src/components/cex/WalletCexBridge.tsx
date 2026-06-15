@@ -5,15 +5,22 @@ import { motion } from "framer-motion";
 import {
   ArrowDownToLine, ArrowUpFromLine, Copy, Check, AlertTriangle,
   Loader2, Shield, ExternalLink, Wallet as WalletIcon, RefreshCw,
-  PackageX,
+  PackageX, Send,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAccount } from "wagmi";
-import { useWallet } from "@solana/wallet-adapter-react";
+import {
+  useAccount, useChainId, usePublicClient, useSendTransaction,
+  useSwitchChain, useWriteContract,
+} from "wagmi";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { getAssociatedTokenAddress, createTransferInstruction } from "@solana/spl-token";
+import { erc20Abi, parseUnits, type Hex } from "viem";
 import { CEX_META, type CexId, type CexCredentials, type CexBalance } from "@/lib/cex/types";
-import { DEFAULT_TOKENS } from "@/lib/tokens";
+import { DEFAULT_TOKENS, type Token } from "@/lib/tokens";
 import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
-import { type ChainId } from "@/lib/chains";
+import { CHAIN_BY_ID, type ChainId } from "@/lib/chains";
+import { WAGMI_CHAIN_IDS } from "@/lib/wagmi";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
@@ -340,6 +347,12 @@ function DepositPanel({ exchangeId, credentials }: Props) {
       </div>
 
       {/* Live wallet balance for selected token/network */}
+      {walletToken && walletBal.loading && (
+        <div className="flex items-center gap-1.5 -mt-1 px-0.5">
+          <Loader2 className="w-3 h-3 text-ink-4 animate-spin" />
+          <span className="font-mono text-[10px] text-ink-4">Lendo saldo da carteira…</span>
+        </div>
+      )}
       {walletToken && !walletBal.loading && (
         <div className="flex items-center gap-1.5 -mt-1 px-0.5">
           <WalletIcon className="w-3 h-3 text-ink-4" />
@@ -450,7 +463,253 @@ function DepositPanel({ exchangeId, credentials }: Props) {
                 : <>Open your wallet and send to this address. Z-SWAP doesn&apos;t move the funds — your wallet does.</>}
             {" "}Wait for the exchange to credit (typically 1–12 minutes depending on network).
           </p>
+
+          {/* Direct send from the connected wallet. Disabled when the exchange
+           * requires a memo/tag — auto-send can't reliably attach it, so the
+           * user must do it from their wallet UI by hand. */}
+          {addr.tag ? (
+            <div className="rounded-md border border-gold/30 bg-gold/[0.06] p-2 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
+              <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
+                Esta rede exige memo/tag — envie manualmente anexando o memo acima. O envio
+                automático foi desativado para evitar perda de fundos.
+              </p>
+            </div>
+          ) : walletToken && (kind === "evm" || kind === "solana") ? (
+            <WalletSendToCex
+              token={walletToken}
+              destination={addr.address}
+              networkKindHint={kind}
+              exchangeLabel={CEX_META[exchangeId].label}
+            />
+          ) : null}
         </motion.div>
+      )}
+    </div>
+  );
+}
+
+// ─── Direct send (wallet → CEX deposit address) ─────────────────────────
+//
+// When the exchange returned a memo-less deposit address on a network we
+// recognise (EVM or Solana), we can let the user push the funds straight
+// from the page instead of copy-pasting into MetaMask/Phantom. The signing
+// still happens in their wallet — we only build + submit the transaction.
+
+function WalletSendToCex({
+  token, destination, networkKindHint, exchangeLabel,
+}: {
+  token: Token;
+  destination: string;
+  networkKindHint: "evm" | "solana";
+  exchangeLabel: string;
+}) {
+  const isSolana = networkKindHint === "solana";
+  const chainMeta = CHAIN_BY_ID[token.chain];
+
+  // EVM hooks
+  const { address: evmAddress } = useAccount();
+  const currentChainId          = useChainId();
+  const publicClient            = usePublicClient();
+  const { sendTransactionAsync } = useSendTransaction();
+  const { switchChainAsync }     = useSwitchChain();
+  const { writeContractAsync }   = useWriteContract();
+
+  // Solana hooks
+  const sol = useWallet();
+  const { connection } = useConnection();
+  const solAddress = sol.publicKey?.toBase58() ?? null;
+
+  const bal = useTokenBalance(token, null);
+
+  const [amount, setAmount] = useState("");
+  const [stage,  setStage]  = useState<"form" | "confirm" | "sending" | "sent">("form");
+  const [error,  setError]  = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+
+  const amountNum   = parseFloat(amount);
+  const amountValid = Number.isFinite(amountNum) && amountNum > 0;
+  const walletReady = isSolana ? !!solAddress : !!evmAddress;
+
+  const explorerHref = txHash
+    ? `${chainMeta?.explorer ?? ""}/tx/${txHash}`
+    : null;
+
+  const send = async () => {
+    setStage("sending");
+    setError(null);
+    try {
+      if (isSolana) {
+        if (!sol.publicKey) throw new Error("Phantom não conectado.");
+        const toOwner = new PublicKey(destination);
+        const tx = new Transaction();
+        if (token.address === "native") {
+          const lamports = BigInt(Math.round(amountNum * LAMPORTS_PER_SOL));
+          tx.add(SystemProgram.transfer({
+            fromPubkey: sol.publicKey,
+            toPubkey:   toOwner,
+            lamports,
+          }));
+        } else {
+          const mint    = new PublicKey(token.address);
+          const fromAta = await getAssociatedTokenAddress(mint, sol.publicKey);
+          const toAta   = await getAssociatedTokenAddress(mint, toOwner);
+          const raw     = parseUnits(amount, token.decimals);
+          tx.add(createTransferInstruction(fromAta, toAta, sol.publicKey, raw));
+        }
+        const sig = await sol.sendTransaction(tx, connection);
+        await connection.confirmTransaction(sig, "confirmed");
+        setTxHash(sig);
+      } else {
+        // EVM: make sure we're on the right chain first.
+        const targetChainId = WAGMI_CHAIN_IDS[token.chain];
+        if (targetChainId && currentChainId !== targetChainId) {
+          await switchChainAsync({ chainId: targetChainId });
+        }
+        const raw = parseUnits(amount, token.decimals);
+        let hash: Hex;
+        if (token.address === "native") {
+          hash = await sendTransactionAsync({
+            to: destination as Hex,
+            value: raw,
+            chainId: targetChainId,
+          });
+        } else {
+          hash = await writeContractAsync({
+            address: token.address as Hex,
+            abi: erc20Abi,
+            functionName: "transfer",
+            args: [destination as Hex, raw],
+            chainId: targetChainId,
+          });
+        }
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+        setTxHash(hash);
+      }
+      setStage("sent");
+      toast.success("Enviado — aguarde o crédito na corretora.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // User-rejected signature isn't an error worth a red banner.
+      setError(/reject|denied|user/i.test(msg) ? "Assinatura cancelada na carteira." : msg);
+      setStage("confirm");
+    }
+  };
+
+  if (stage === "sent") {
+    return (
+      <div className="rounded-md border border-green/30 bg-green/[0.05] p-3 space-y-2">
+        <div className="inline-flex items-center gap-1.5 font-mono text-[10px] text-green tracking-widest uppercase">
+          <Check className="w-3 h-3" /> Enviado para {exchangeLabel}
+        </div>
+        <div className="font-mono text-[10px] text-ink-2 tabular-nums">
+          {amount} {token.symbol} · {chainMeta?.short ?? token.chain}
+        </div>
+        {explorerHref && (
+          <a
+            href={explorerHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-mono text-[10px] text-cyan/80 hover:text-cyan break-all"
+          >
+            <ExternalLink className="w-3 h-3 flex-shrink-0" /> ver no explorer
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={() => { setStage("form"); setAmount(""); setTxHash(null); }}
+          className="block font-mono text-[10px] text-ink-3 hover:text-ink-2 tracking-widest uppercase"
+        >
+          Novo envio
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-2.5">
+      <div className="flex items-center gap-1.5">
+        <Send className="w-3.5 h-3.5 text-cyan" />
+        <span className="font-mono text-[10px] text-ink-2 tracking-widest uppercase">
+          Enviar direto da carteira
+        </span>
+      </div>
+
+      {!walletReady ? (
+        <p className="font-mono text-[10px] text-gold/80 leading-relaxed inline-flex items-start gap-1">
+          <WalletIcon className="w-3 h-3 mt-0.5 flex-shrink-0" />
+          {isSolana
+            ? "Conecte a Phantom para enviar SOL/SPL diretamente."
+            : "Conecte uma carteira EVM (MetaMask) para enviar diretamente."}
+        </p>
+      ) : (
+        <>
+          <label className="block">
+            <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1 flex items-center justify-between">
+              <span>Valor</span>
+              {!bal.isZero && stage === "form" && (
+                <button
+                  type="button"
+                  onClick={() => setAmount(bal.formatted)}
+                  className="font-mono text-[9px] text-cyan tracking-widest uppercase hover:text-cyan/80"
+                >
+                  MAX · {bal.display} {token.symbol}
+                </button>
+              )}
+            </div>
+            <input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, "").slice(0, 24))}
+              disabled={stage !== "form"}
+              placeholder="0"
+              inputMode="decimal"
+              className="w-full bg-bg-2 border border-white/10 rounded px-2.5 py-1.5 font-mono text-sm text-ink outline-none focus:border-cyan/40 disabled:opacity-60"
+            />
+          </label>
+
+          {error && (
+            <div className="rounded-md border border-red/20 bg-red/[0.04] px-2.5 py-1.5 font-mono text-[10px] text-red break-words">
+              {error}
+            </div>
+          )}
+
+          {stage === "form" && (
+            <button
+              type="button"
+              onClick={() => setStage("confirm")}
+              disabled={!amountValid}
+              className="w-full btn btn-secondary text-xs disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+            >
+              <Send className="w-3.5 h-3.5" /> Revisar envio
+            </button>
+          )}
+
+          {stage === "confirm" && (
+            <div className="rounded-md border border-cyan/30 bg-cyan/[0.05] p-2.5 space-y-2">
+              <div className="font-mono text-[11px] text-ink-2 leading-relaxed space-y-0.5 tabular-nums">
+                <div>{amount} {token.symbol} <span className="text-ink-3">via {chainMeta?.short ?? token.chain}</span></div>
+                <div className="text-ink-3 break-all">→ {destination}</div>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setStage("form")} className="flex-1 btn btn-secondary text-xs">
+                  Voltar
+                </button>
+                <button type="button" onClick={send} className="flex-1 btn btn-primary text-xs inline-flex items-center justify-center gap-1.5">
+                  <Send className="w-3.5 h-3.5" /> Enviar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {stage === "sending" && (
+            <div className="rounded-md border border-cyan/30 bg-cyan/[0.05] p-2.5 inline-flex items-center gap-2 w-full">
+              <Loader2 className="w-3.5 h-3.5 text-cyan animate-spin" />
+              <span className="font-mono text-[11px] text-ink-2">Enviando… confirme na carteira.</span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
