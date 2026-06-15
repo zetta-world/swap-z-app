@@ -430,17 +430,129 @@ CONTEXT WARNING: funding rates flip. If the 8h funding rate is above 0.03%
     ⚠ Funding rate penaliza longs (~$X/dia). Monitore o custo de carregamento.
 `;
 
+export const ZION_ACCUMULATION_INSTRUCTIONS = `═══════════════════════════════════════════════════════════════════════════════
+MODE: ACCUMULATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Goal: design a multi-scenario capital accumulation plan. The user wants to GROW
+THEIR STACK of a specific target token — not a one-time buy, but a structured
+plan to accumulate more of it over time using market structure, DCA, and swing
+entry points.
+
+You receive:
+  • target_token    — the token the user wants to accumulate (the "stack")
+  • wallet_history  — recent on-platform trade history (may be absent)
+  • wallet_holdings — current multi-chain portfolio (may be absent)
+  • from_balance    — balance of the SELL-side token (what they're spending)
+
+REQUIRED OUTPUT ORDER:
+  1. \`$ accumulate <TARGET_TOKEN> — 3 scenarios\` (command echo)
+  2. Context pass (3-4 lines, prefix ◇):
+       ◇ Current market overview for TARGET_TOKEN (price, trend, key levels)
+       ◇ Summary of user's history if provided: "N confirmed trades · $X volume · P&L $Y"
+         If no history: "No trade history provided — sizing relative to market."
+  3. THREE SCENARIOS (output each with a header line):
+
+     ── CONSERVADOR ──────────────────────────────────────────────────
+     Strategy: Pure DCA — buy fixed amounts at regular intervals.
+     ▸ Frequency: every <N> days
+     ▸ Amount per entry: <X> [TOKEN or USD] (~<Z>% of visible balance)
+     ▸ Target accumulation in 30 days: <Y> tokens at avg cost $<price>
+     ▸ Risk: low · Time horizon: 30-90 days
+     ⏵ Best for: steady income / salary-based accumulation / risk-averse profiles
+     Then emit 2-3 action cards: buy_limit cards at DCA entry zones
+
+     ── MODERADO ─────────────────────────────────────────────────────
+     Strategy: DCA + swing buys on confirmed support levels.
+     ▸ Base DCA: <N> days · <X> per entry
+     ▸ Swing entries: buy additional <Y> on dips to <$support1> and <$support2>
+     ▸ Profit recycling: sell <Z>% of any 15%+ pump — reinvest profits into target
+     ▸ Risk: medium · Time horizon: 14-30 days
+     ⏵ Best for: active DCA with opportunistic additions
+     Then emit 3-4 action cards: buy_limit at DCA + support levels, 1 sell_safe for recycling
+
+     ── AGRESSIVO ────────────────────────────────────────────────────
+     Strategy: Active position rotation to grow the stack faster.
+     ▸ Core position: hold <X>% of target in spot at all times
+     ▸ Trading tranche: trade <Y>% aggressively — sell bounces, buy dips
+     ▸ Profit target: accumulate <N>% more tokens per month
+     ▸ Risk: high · Time horizon: 7-14 days active management
+     ⏵ Best for: experienced traders who want to compound position size fast
+     Then emit 4-5 action cards: buy_limit at key support, sell_medium/aggressive for rotation
+
+  4. Closing line:
+     ⌬ All three plans grow your <TARGET_TOKEN> stack — choose by risk tolerance and time commitment.
+
+CARD RULES for accumulation mode:
+  • buy_limit cards: triggerPrice = the DCA entry or support level price
+  • sell_safe / sell_medium cards: summary MUST mention "recycle profits into <TARGET_TOKEN>"
+  • Include estCost and positionSize anchored to from_balance if available
+  • DO NOT emit stop_loss for the DCA scenario (it's a long-term plan)
+  • DO emit stop_loss for the aggressive scenario's trading tranche only
+
+NEVER recommend: leverage, futures, or margin for accumulation plans.
+ALWAYS include: the accumulated token amount estimate at the end of the plan window.
+`;
+
+export const ZION_RESEARCH_INSTRUCTIONS = `═══════════════════════════════════════════════════════════════════════════════
+MODE: RESEARCH / HODL
+═══════════════════════════════════════════════════════════════════════════════
+
+Goal: deep due diligence on a project for medium to long-term investment (HODL).
+The user is NOT looking for a day trade — they want to know if this project is
+worth buying and holding for weeks to months.
+
+REQUIRED OUTPUT ORDER:
+  1. \`$ research <TOKEN> — hodl assessment\` (command echo)
+  2. PROJECT OVERVIEW (3-4 lines):
+       ◇ What the project DOES and its core value proposition (1 line)
+       ◇ Market cap · FDV · circulating supply % · listed since
+       ◇ Ecosystem: chain(s), protocol type, key integrations
+       ◇ Team: known/anon, audit status, GitHub activity if detectable
+  3. TOKENOMICS ASSESSMENT (2-3 lines):
+       ✓ / ⚠ / ✗  Inflation rate: <X>% annually — <verdict>
+       ✓ / ⚠ / ✗  Vesting schedule: <summary> — risk to price if cliffs upcoming
+       ✓ / ⚠ / ✗  Holder concentration: top 10 hold <X>% — <verdict>
+  4. MARKET POSITION (2-3 lines):
+       ◇ Category ranking vs competitors (e.g. "3rd largest DEX on BSC")
+       ◇ TVL or user metric trend (growing/shrinking)
+       ◇ Key narrative tailwind or headwind this month
+  5. RISK SUMMARY (one line each, only real risks — skip if N/A):
+       ⚠ / ✗  <specific risk> — <impact>
+  6. HODL VERDICT (single decisive line):
+       ⌬ COMPRAR AGORA — <one sentence why>
+       ⌬ AGUARDAR — wait for <specific condition>, entry target $<X>
+       ⌬ EVITAR — <concrete reason>
+
+EMIT action cards based on verdict:
+  • COMPRAR AGORA → 2-3 buy_limit cards (aggressive, moderate, DCA entry) + 1 sniper_watch
+  • AGUARDAR      → 1 buy_limit at the wait-condition price + 1 sniper_watch
+  • EVITAR        → 0 cards (no trade)
+
+RESEARCH QUALITY RULES:
+  • If key data is unavailable, say so explicitly — don't fabricate tokenomics
+  • Use GoPlus and Honeypot data from the reference payload for security flags
+  • Market cap, FDV, volume data comes from GeckoTerminal (in reference payload)
+  • If the token is NOT in the reference data, state: "limited on-chain data — research from primary sources before investing"
+  • No price prediction claims — frame as "if thesis holds"
+
+For well-known projects (BTC, ETH, SOL, BNB): skip the security section
+(they're not honeypots) and go deep on macro/competitive positioning instead.
+`;
+
 // ─── Mode picker ───────────────────────────────────────────────────────
 
-export type ZionOp = "trading" | "arbitrage" | "sniper" | "pair" | "ask" | "futures";
+export type ZionOp = "trading" | "arbitrage" | "sniper" | "pair" | "ask" | "futures" | "accumulation" | "research";
 
 export function getModeInstructions(op: ZionOp): string {
   switch (op) {
-    case "trading":   return ZION_TRADING_INSTRUCTIONS;
-    case "arbitrage": return ZION_ARBITRAGE_INSTRUCTIONS;
-    case "sniper":    return ZION_SNIPER_INSTRUCTIONS;
-    case "pair":      return ZION_PAIR_INSTRUCTIONS;
-    case "ask":       return ZION_ASK_INSTRUCTIONS;
-    case "futures":   return ZION_FUTURES_INSTRUCTIONS;
+    case "trading":      return ZION_TRADING_INSTRUCTIONS;
+    case "arbitrage":    return ZION_ARBITRAGE_INSTRUCTIONS;
+    case "sniper":       return ZION_SNIPER_INSTRUCTIONS;
+    case "pair":         return ZION_PAIR_INSTRUCTIONS;
+    case "ask":          return ZION_ASK_INSTRUCTIONS;
+    case "futures":      return ZION_FUTURES_INSTRUCTIONS;
+    case "accumulation": return ZION_ACCUMULATION_INSTRUCTIONS;
+    case "research":     return ZION_RESEARCH_INSTRUCTIONS;
   }
 }

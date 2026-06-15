@@ -6,6 +6,7 @@ import { useSwap } from "@/lib/store/swap";
 import {
   Sparkles, X, Send, RefreshCw, TrendingUp, Globe, Crosshair, FileText,
   ChevronDown, ChevronUp, RotateCcw, Loader2, Sparkle, Zap, Lock, ArrowRight, Crown,
+  Target, BookOpen,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -17,6 +18,7 @@ import ZionExecuteRouter from "./ZionExecuteRouter";
 import TokenSelector from "@/components/swap/TokenSelector";
 import type { ZionOp } from "@/lib/zion/mode-prompts";
 import type { Token } from "@/lib/tokens";
+import { useTxHistory } from "@/lib/store/txHistory";
 import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
 import { useTokenPrice } from "@/lib/hooks/useTokenPrices";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -26,11 +28,13 @@ import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 import { useTier } from "@/lib/tier/client";
 
 const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: "trading",   labelKey: "zion.tabTrading", taglineKey: "zion.taglineTrading", Icon: TrendingUp },
-  { id: "arbitrage", labelKey: "zion.tabArb",     taglineKey: "zion.taglineArb",     Icon: Globe      },
-  { id: "futures",   labelKey: "zion.tabFutures", taglineKey: "zion.taglineFutures", Icon: Zap        },
-  { id: "sniper",    labelKey: "zion.tabSniper",  taglineKey: "zion.taglineSniper",  Icon: Crosshair  },
-  { id: "pair",      labelKey: "zion.tabDeep",    taglineKey: "zion.taglineDeep",    Icon: FileText   },
+  { id: "trading",      labelKey: "zion.tabTrading",      taglineKey: "zion.taglineTrading",      Icon: TrendingUp },
+  { id: "arbitrage",    labelKey: "zion.tabArb",          taglineKey: "zion.taglineArb",          Icon: Globe      },
+  { id: "futures",      labelKey: "zion.tabFutures",      taglineKey: "zion.taglineFutures",      Icon: Zap        },
+  { id: "sniper",       labelKey: "zion.tabSniper",       taglineKey: "zion.taglineSniper",       Icon: Crosshair  },
+  { id: "pair",         labelKey: "zion.tabDeep",         taglineKey: "zion.taglineDeep",         Icon: FileText   },
+  { id: "accumulation", labelKey: "zion.tabAccumulation", taglineKey: "zion.taglineAccumulation", Icon: Target     },
+  { id: "research",     labelKey: "zion.tabResearch",     taglineKey: "zion.taglineResearch",     Icon: BookOpen   },
 ];
 
 export default function ZionDrawer() {
@@ -40,6 +44,8 @@ export default function ZionDrawer() {
   const tierLocked = !satisfies("pro");
   const { fromToken, toToken, fromChain, amountIn } = useSwap();
   const t = useT();
+
+  const { entries: txEntries } = useTxHistory();
 
   const [op, setOp] = useState<ZionOp>("trading");
   const [autoScan, setAutoScan] = useState(false);
@@ -54,6 +60,9 @@ export default function ZionDrawer() {
   // active swap pair" (the default + a one-click "reset" puts us back there).
   const [pairOverrideFrom, setPairOverrideFrom] = useState<Token | null>(null);
   const [pairOverrideTo,   setPairOverrideTo  ] = useState<Token | null>(null);
+
+  // Accumulation target — single token selector (different from pair override)
+  const [accTarget, setAccTarget] = useState<Token | null>(null);
 
   // Arb-mode filter
   const [arbMinSpread, setArbMinSpread] = useState("0.5");
@@ -111,6 +120,30 @@ export default function ZionDrawer() {
       params.set("leverage",    futuresLeverage);
       params.set("futuresDir",  futuresDir);
     }
+    if (runOp === "accumulation") {
+      const target = accTarget ?? effectiveFromToken;
+      if (target) params.set("fromAddr", target.address);
+      params.set("accTarget", accTarget?.symbol ?? effectiveFromToken?.symbol ?? "");
+      params.set("chain", target?.chain ?? effectiveChain);
+    }
+
+    // Pass compact tx history context (last 20 entries) when available
+    if (txEntries.length > 0) {
+      const compact = txEntries.slice(0, 20).map((e) => ({
+        ts: e.ts,
+        t: e.type,
+        s: e.status,
+        f: e.fromSymbol,
+        to: e.toSymbol,
+        a: e.fromAmount,
+        v: e.valueUsd,
+        pnl: e.pnlUsd,
+        r: e.route,
+      }));
+      const json = JSON.stringify(compact);
+      if (json.length < 4096) params.set("txHistory", json);
+    }
+
     params.set("lang", lang);
 
     // Forward the live wallet balance so the server can size proposals to
@@ -163,7 +196,7 @@ export default function ZionDrawer() {
     } finally {
       setStreaming(false);
     }
-  }, [autoScan, effectiveChain, effectiveFromToken?.address, effectiveToToken?.address, arbMinSpread, snipeMaxAge, lang, t]);
+  }, [autoScan, effectiveChain, effectiveFromToken?.address, effectiveToToken?.address, arbMinSpread, snipeMaxAge, lang, t, accTarget, txEntries]);
 
   // Auto-run when drawer opens or op changes — skip when tier-locked.
   useEffect(() => {
@@ -230,10 +263,13 @@ export default function ZionDrawer() {
       setPairOverrideFrom(null);
       setPairOverrideTo(null);
     }
+    if (next !== "accumulation") {
+      setAccTarget(null);
+    }
     setOp(next);
   };
 
-  const showPairSelector = op !== "sniper";
+  const showPairSelector = op !== "sniper" && op !== "accumulation";
 
   return (
     <Dialog.Root open={zionOpen} onOpenChange={setZion}>
@@ -295,7 +331,7 @@ export default function ZionDrawer() {
 
             {/* Op tabs */}
             <div className="px-5 pt-3 flex-shrink-0">
-              <div className="grid grid-cols-4 gap-0.5 p-0.5 rounded-xl bg-white/[0.03] border border-white/5">
+              <div className="flex overflow-x-auto gap-0.5 p-0.5 rounded-xl bg-white/[0.03] border border-white/5" style={{ scrollbarWidth: "none" }}>
                 {OPS.map((o) => {
                   const active = op === o.id;
                   const Icon = o.Icon;
@@ -304,14 +340,14 @@ export default function ZionDrawer() {
                       key={o.id}
                       onClick={() => handleModeChange(o.id)}
                       className={cn(
-                        "relative flex flex-col items-center justify-center gap-0.5 px-1 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all min-w-0",
+                        "relative flex-none flex flex-col items-center justify-center gap-0.5 px-2.5 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all min-w-0",
                         active
                           ? "bg-gold/15 text-gold border border-gold/30"
                           : "text-ink-3 hover:text-ink-2 border border-transparent",
                       )}
                     >
                       <Icon className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">{t(o.labelKey)}</span>
+                      <span className="whitespace-nowrap">{t(o.labelKey)}</span>
                     </button>
                   );
                 })}
@@ -444,6 +480,27 @@ export default function ZionDrawer() {
                       </button>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {op === "accumulation" && (
+                <div className="rounded-xl border border-green/15 bg-green/[0.04] p-3 space-y-2">
+                  <div className="font-mono text-[9px] text-green tracking-widest uppercase">
+                    {t("zion.targetToken")}
+                  </div>
+                  <TokenSelector
+                    value={accTarget ?? effectiveToToken}
+                    onChange={(tk) => setAccTarget(tk)}
+                    side="to"
+                  />
+                  <div className="font-mono text-[9px] text-ink-4 normal-case tracking-normal leading-relaxed">
+                    {t("zion.targetTokenHint")}
+                  </div>
+                  {txEntries.length > 0 && (
+                    <div className="font-mono text-[9px] text-green/70 normal-case tracking-normal">
+                      ✓ {txEntries.filter((e) => e.status === "confirmed").length} {t("zion.historyContext")}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
