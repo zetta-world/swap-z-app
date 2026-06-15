@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Wallet, TrendingUp, TrendingDown, Minus, Eye, EyeOff,
   LineChart, PieChart, Layers, Activity, Bot, Receipt, Coins, Percent,
   ArrowUpRight, Banknote, AlertTriangle, CheckCircle2, Power,
+  Sparkles, Flame, Crown,
 } from "lucide-react";
 import { usePortfolioHistory, type PortfolioSnapshot } from "@/lib/store/portfolioHistory";
 import {
@@ -14,9 +15,18 @@ import {
   type TxType, type TxStatus,
 } from "@/lib/store/txHistory";
 import { useAutopilot } from "@/lib/store/autopilot";
+import { useTrackedHoldings } from "@/lib/hooks/useTrackedHoldings";
 import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Panel, Kpi, AreaChart, Donut, Bars, Gauge } from "./widgets";
+
+type AllocMode = "chains" | "assets" | "venues";
+
+interface Insight {
+  Icon: React.ComponentType<{ className?: string }>;
+  tone: "cyan" | "violet" | "gold" | "green" | "red";
+  text: string;
+}
 
 type Range = "24h" | "7d" | "30d" | "all";
 
@@ -67,17 +77,21 @@ export default function DashboardView() {
   const { snapshots } = usePortfolioHistory();
   const { entries }   = useTxHistory();
   const a             = useAutopilot();
+  const live          = useTrackedHoldings();
 
   const [hidden, setHidden] = useState(false);
   const [range,  setRange]  = useState<Range>("7d");
+  const [allocMode, setAllocMode] = useState<AllocMode>("chains");
 
   const mask = (v: string) => (hidden ? "•••••" : v);
 
-  // ─── Current totals from the latest snapshot ──────────────────────────
+  // ─── Current totals — live wallet when connected, else last snapshot ──
   const latest = snapshots[snapshots.length - 1] ?? null;
-  const totalUsd  = latest?.totalUsd  ?? 0;
-  const walletUsd = latest?.walletUsd ?? 0;
-  const cexUsd    = latest?.cexUsd    ?? 0;
+  // CEX total isn't fetched here (no second unlock UI) — the freshest value
+  // we have is whatever the portfolio page last recorded into the snapshot.
+  const cexUsd    = latest?.cexUsd ?? 0;
+  const walletUsd = live.anyWalletConnected ? live.walletUsd : (latest?.walletUsd ?? 0);
+  const totalUsd  = live.anyWalletConnected ? live.walletUsd + cexUsd : (latest?.totalUsd ?? 0);
 
   // ─── Hero P&L windows ─────────────────────────────────────────────────
   const pnl24h = useMemo(() => pnlOverWindow(snapshots, RANGE_MS["24h"]), [snapshots]);
@@ -116,14 +130,30 @@ export default function DashboardView() {
     return { abs, pct: first > 0 ? (abs / first) * 100 : 0 };
   }, [series]);
 
-  // ─── Allocation: wallet vs CEX ────────────────────────────────────────
+  // ─── Allocation: mode-aware segments ──────────────────────────────────
   const allocation = useMemo(() => {
-    const segs = [
-      { label: "Carteira", value: walletUsd, color: "#00E8FF" },
-      { label: "CEX",      value: cexUsd,    color: "#A78BFA" },
-    ].filter((s) => s.value > 0);
+    if (allocMode === "venues") {
+      return [
+        { label: "Carteira", value: walletUsd, color: "#00E8FF" },
+        { label: "CEX",      value: cexUsd,    color: "#A78BFA" },
+      ].filter((s) => s.value > 0);
+    }
+    if (allocMode === "chains") {
+      return live.byChain.map((c) => ({
+        label: c.chain?.short ?? c.id,
+        value: c.value,
+        color: c.chain?.color ?? "#00E8FF",
+      }));
+    }
+    // assets — top 6, fold the rest into "Outros"
+    const top = live.byAsset.slice(0, 6);
+    const rest = live.byAsset.slice(6).reduce((s, x) => s + x.value, 0);
+    const segs = top.map((x) => ({ label: x.symbol, value: x.value, color: x.color }));
+    if (rest > 0) segs.push({ label: "Outros", value: rest, color: "#64748b" });
     return segs;
-  }, [walletUsd, cexUsd]);
+  }, [allocMode, walletUsd, cexUsd, live.byChain, live.byAsset]);
+
+  const allocTotal = useMemo(() => allocation.reduce((s, x) => s + x.value, 0), [allocation]);
 
   // ─── P&L / volume by operation type ───────────────────────────────────
   const byType = useMemo(() => {
@@ -174,7 +204,69 @@ export default function DashboardView() {
   // ─── Recent operations ────────────────────────────────────────────────
   const recent = useMemo(() => entries.slice(0, 8), [entries]);
 
-  const hasAnyData = snapshots.length > 0 || entries.length > 0 || a.history.length > 0;
+  // ─── ZION insights — derived locally from the stores (instant, free) ──
+  const insights = useMemo<Insight[]>(() => {
+    const out: Insight[] = [];
+
+    // Patrimônio trend (7d)
+    if (pnl7d) {
+      out.push(pnl7d.abs >= 0
+        ? { Icon: TrendingUp, tone: "green", text: `Patrimônio em alta: ${pnl7d.pct >= 0 ? "+" : ""}${pnl7d.pct.toFixed(1)}% nos últimos 7 dias.` }
+        : { Icon: TrendingDown, tone: "red", text: `Patrimônio recuou ${pnl7d.pct.toFixed(1)}% em 7 dias — momento de cautela.` });
+    }
+
+    // Best / worst op type by realized P&L
+    const scored = byType.filter(([, r]) => r.pnl !== 0);
+    if (scored.length > 0) {
+      const best = scored.reduce((m, x) => (x[1].pnl > m[1].pnl ? x : m));
+      if (best[1].pnl > 0) out.push({ Icon: Crown, tone: "gold", text: `Melhor desempenho: ${TX_TYPE_LABELS_PT[best[0]]} (+${formatUsd(best[1].pnl)} realizado).` });
+      const worst = scored.reduce((m, x) => (x[1].pnl < m[1].pnl ? x : m));
+      if (worst[1].pnl < 0) out.push({ Icon: AlertTriangle, tone: "red", text: `Atenção: ${TX_TYPE_LABELS_PT[worst[0]]} acumula ${formatUsd(worst[1].pnl)}.` });
+    }
+
+    // Most traded pair
+    const pairCount = new Map<string, number>();
+    for (const e of entries) {
+      if (e.status !== "confirmed") continue;
+      const k = `${e.fromSymbol}→${e.toSymbol}`;
+      pairCount.set(k, (pairCount.get(k) ?? 0) + 1);
+    }
+    if (pairCount.size > 0) {
+      const [pair, n] = [...pairCount.entries()].sort((x, y) => y[1] - x[1])[0];
+      if (n >= 2) out.push({ Icon: Activity, tone: "cyan", text: `Par mais operado: ${pair} (${n} vezes).` });
+    }
+
+    // Fees as % of volume
+    if (stats.volume > 0 && stats.fees > 0) {
+      const ratio = (stats.fees / stats.volume) * 100;
+      out.push({ Icon: Receipt, tone: "violet", text: `Taxas consumiram ${ratio.toFixed(2)}% do volume operado (${formatUsd(stats.fees)}).` });
+    }
+
+    // Concentration of largest live asset
+    if (live.anyWalletConnected && live.walletUsd > 0 && live.byAsset.length > 0) {
+      const top = live.byAsset[0];
+      const pct = (top.value / live.walletUsd) * 100;
+      if (pct >= 40) out.push({ Icon: PieChart, tone: "gold", text: `Carteira concentrada: ${top.symbol} = ${pct.toFixed(0)}% do total — considere diversificar.` });
+    }
+
+    // Win rate
+    if (stats.winRate !== null) {
+      out.push(stats.winRate >= 55
+        ? { Icon: Percent, tone: "green", text: `Win rate saudável de ${stats.winRate.toFixed(0)}% (${stats.wins}/${stats.scored}).` }
+        : { Icon: Percent, tone: "gold", text: `Win rate de ${stats.winRate.toFixed(0)}% — revise os pontos de entrada/saída.` });
+    }
+
+    // Autopilot
+    if (a.frozenUntilDay) {
+      out.push({ Icon: Bot, tone: "red", text: "Autopilot congelado pelo stop de perda diário — reabre à meia-noite UTC." });
+    } else if (a.enabled) {
+      out.push({ Icon: Bot, tone: a.pnlToday >= 0 ? "green" : "red", text: `Autopilot ativo · P&L de hoje ${a.pnlToday >= 0 ? "+" : ""}${formatUsd(a.pnlToday)} em ${a.tradesToday} trade(s).` });
+    }
+
+    return out.slice(0, 6);
+  }, [pnl7d, byType, entries, stats, live.anyWalletConnected, live.walletUsd, live.byAsset, a.frozenUntilDay, a.enabled, a.pnlToday, a.tradesToday]);
+
+  const hasAnyData = snapshots.length > 0 || entries.length > 0 || a.history.length > 0 || live.walletUsd > 0;
 
   const DeltaPill = ({ d }: { d: { abs: number; pct: number } | null }) => {
     if (!d) return <span className="font-mono text-[10px] text-ink-4">—</span>;
@@ -288,6 +380,49 @@ export default function DashboardView() {
           />
         </div>
 
+        {/* ── ZION insights ────────────────────────────────────────────── */}
+        <div className="aurora-border p-px rounded-2xl mb-4">
+          <div className="god-card rounded-[15px] glass overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between gap-2">
+              <span className="font-display font-bold text-sm text-ink flex items-center gap-2">
+                <Sparkles className="w-3.5 h-3.5 text-gold" />
+                ZION · Insights do dia
+              </span>
+              <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-gold pulse-dot" />
+                gerado dos seus dados
+              </span>
+            </div>
+            <div className="p-4">
+              {insights.length === 0 ? (
+                <p className="font-sans text-xs text-ink-3 leading-relaxed py-2">
+                  Conecte a carteira e faça algumas operações — o ZION passa a destacar tendências, melhores
+                  desempenhos, concentração de risco e o status do autopilot automaticamente aqui.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {insights.map((ins, i) => {
+                    const tone = {
+                      cyan: "text-cyan", violet: "text-violet", gold: "text-gold", green: "text-green", red: "text-red",
+                    }[ins.tone];
+                    const bg = {
+                      cyan: "bg-cyan/[0.06] border-cyan/15", violet: "bg-violet/[0.06] border-violet/15",
+                      gold: "bg-gold/[0.06] border-gold/15", green: "bg-green/[0.06] border-green/15",
+                      red: "bg-red/[0.06] border-red/15",
+                    }[ins.tone];
+                    return (
+                      <div key={i} className={cn("flex items-start gap-2.5 rounded-xl border p-2.5 min-w-0", bg)}>
+                        <ins.Icon className={cn("w-3.5 h-3.5 flex-shrink-0 mt-0.5", tone)} />
+                        <p className="font-sans text-[12px] text-ink-2 leading-snug">{hidden ? "•••••••••••••••" : ins.text}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* ── Equity curve ─────────────────────────────────────────────── */}
         <Panel
           title="Evolução do patrimônio"
@@ -337,28 +472,49 @@ export default function DashboardView() {
         {/* ── Allocation + Autopilot row ───────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           {/* Allocation */}
-          <Panel title="Alocação" icon={<PieChart className="w-3.5 h-3.5 text-violet" />}>
+          <Panel
+            title="Alocação"
+            icon={<PieChart className="w-3.5 h-3.5 text-violet" />}
+            right={
+              <div className="flex gap-1">
+                {([["chains", "Chains"], ["assets", "Ativos"], ["venues", "Carteira/CEX"]] as [AllocMode, string][]).map(([m, label]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setAllocMode(m)}
+                    className={cn(
+                      "px-2 py-0.5 rounded-md font-mono text-[10px] uppercase tracking-wider border transition-all",
+                      allocMode === m ? "bg-white/[0.08] border-white/20 text-ink" : "border-white/5 bg-white/[0.02] text-ink-3 hover:text-ink-2",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            }
+          >
             {allocation.length === 0 ? (
-              <p className="py-6 text-center font-sans text-xs text-ink-3">Sem saldo registrado para alocar.</p>
+              <p className="py-6 text-center font-sans text-xs text-ink-3 leading-relaxed max-w-xs mx-auto">
+                {allocMode === "venues"
+                  ? "Sem saldo registrado para alocar."
+                  : live.anyWalletConnected
+                    ? (live.loading ? "Carregando saldos da carteira…" : "Nenhum saldo encontrado nos tokens monitorados.")
+                    : "Conecte a carteira para ver a alocação por chain e por ativo."}
+              </p>
             ) : (
               <div className="flex items-center gap-5 flex-wrap">
-                <div className="relative">
-                  <Donut segments={allocation} centerValue={mask(formatUsd(totalUsd, { compact: true }))} centerLabel="total" />
-                </div>
-                <div className="flex-1 min-w-[140px] space-y-2.5">
+                <Donut segments={allocation} centerValue={mask(formatUsd(allocTotal, { compact: true }))} centerLabel={allocMode === "venues" ? "total" : allocMode === "chains" ? "chains" : "ativos"} />
+                <div className="flex-1 min-w-[150px] space-y-2 max-h-44 overflow-y-auto">
                   {allocation.map((s) => (
                     <div key={s.label} className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }} />
-                      <span className="font-mono text-[11px] text-ink-2 flex-1">{s.label}</span>
+                      <span className="font-mono text-[11px] text-ink-2 flex-1 truncate">{s.label}</span>
                       <span className="font-mono text-[11px] text-ink tabular-nums">{mask(formatUsd(s.value, { compact: true }))}</span>
-                      <span className="font-mono text-[10px] text-ink-4 w-12 text-right">
-                        {totalUsd > 0 ? ((s.value / totalUsd) * 100).toFixed(0) : 0}%
+                      <span className="font-mono text-[10px] text-ink-4 w-10 text-right">
+                        {allocTotal > 0 ? ((s.value / allocTotal) * 100).toFixed(0) : 0}%
                       </span>
                     </div>
                   ))}
-                  <Link href="/portfolio" className="inline-flex items-center gap-1 font-mono text-[10px] text-cyan hover:underline pt-1">
-                    Ver detalhamento por ativo <ArrowUpRight className="w-2.5 h-2.5" />
-                  </Link>
                 </div>
               </div>
             )}
