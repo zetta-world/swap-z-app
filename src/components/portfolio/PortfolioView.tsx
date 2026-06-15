@@ -16,6 +16,7 @@ import PortfolioEvolution from "./PortfolioEvolution";
 import { useT } from "@/lib/i18n";
 import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
+import TokenLogo from "@/components/ui/TokenLogo";
 import { cn } from "@/lib/cn";
 
 // Curated set of tokens whose balances we surface on the portfolio page.
@@ -288,12 +289,7 @@ export default function PortfolioView() {
                 const qtyNum = Number(balance.formatted) || 0;
                 return (
                   <div key={token.symbol + ":" + token.chain} className="px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02]">
-                    <span
-                      className="w-8 h-8 rounded-full flex items-center justify-center font-mono text-[11px] font-bold flex-shrink-0"
-                      style={{ background: `${token.color}22`, color: token.color, border: `1px solid ${token.color}55` }}
-                    >
-                      {token.symbol.slice(0, 2).toUpperCase()}
-                    </span>
+                    <TokenLogo symbol={token.symbol} logo={token.logo} color={token.color} size={32} />
                     <div className="flex-1 min-w-0">
                       <div className="font-display font-bold text-sm text-ink truncate">{token.symbol}</div>
                       <div className="font-mono text-[10px] text-ink-3 uppercase tracking-wider truncate">{token.chain}</div>

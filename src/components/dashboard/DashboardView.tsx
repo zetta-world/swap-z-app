@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, Wallet, TrendingUp, TrendingDown, Minus, Eye, EyeOff,
   LineChart, PieChart, Layers, Activity, Bot, Receipt, Coins, Percent,
   ArrowUpRight, Banknote, AlertTriangle, CheckCircle2, Power,
-  Sparkles, Flame, Crown,
+  Sparkles, Flame, Crown, Loader2, Zap,
 } from "lucide-react";
 import { usePortfolioHistory, type PortfolioSnapshot } from "@/lib/store/portfolioHistory";
 import {
@@ -16,9 +16,49 @@ import {
 } from "@/lib/store/txHistory";
 import { useAutopilot } from "@/lib/store/autopilot";
 import { useTrackedHoldings } from "@/lib/hooks/useTrackedHoldings";
+import { useCexVault } from "@/lib/cex/vault";
+import { type CexId, type CexCredentials, type CexBalanceResponse } from "@/lib/cex/types";
 import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Panel, Kpi, AreaChart, Donut, Bars, Gauge } from "./widgets";
+
+/** Fetch live CEX totals if the vault is unlocked — returns 0 otherwise. */
+function useLiveCexTotal(): { total: number; loading: boolean } {
+  const creds = useCexVault((s) => s.creds);
+  const [total,   setTotal]   = useState(0);
+  const [loading, setLoading] = useState(false);
+  const prevCredsRef = useRef<typeof creds>(null);
+
+  useEffect(() => {
+    // Only re-fetch when credentials actually change
+    if (creds === prevCredsRef.current) return;
+    prevCredsRef.current = creds;
+    if (!creds) { setTotal(0); return; }
+    const entries = Object.entries(creds) as [CexId, CexCredentials][];
+    if (entries.length === 0) return;
+    setLoading(true);
+    Promise.all(
+      entries.map(([exchangeId, c]) =>
+        fetch("/api/cex/balance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            exchange: exchangeId, apiKey: c.apiKey,
+            apiSecret: c.apiSecret, passphrase: c.passphrase, withUsd: true,
+          }),
+        })
+        .then((r) => r.json())
+        .then((d: CexBalanceResponse) => (d.ok ? d.totalUsd : 0))
+        .catch(() => 0),
+      ),
+    ).then((totals) => {
+      setTotal(totals.reduce((s, v) => s + v, 0));
+      setLoading(false);
+    });
+  }, [creds]);
+
+  return { total, loading };
+}
 
 type AllocMode = "chains" | "assets" | "venues";
 
@@ -78,18 +118,22 @@ export default function DashboardView() {
   const { entries }   = useTxHistory();
   const a             = useAutopilot();
   const live          = useTrackedHoldings();
+  const liveCex       = useLiveCexTotal();
 
   const [hidden, setHidden] = useState(false);
   const [range,  setRange]  = useState<Range>("7d");
   const [allocMode, setAllocMode] = useState<AllocMode>("chains");
 
+  // ZION narrative streaming state
+  const [zionNarrative,  setZionNarrative]  = useState<string>("");
+  const [zionStreaming,  setZionStreaming]   = useState(false);
+
   const mask = (v: string) => (hidden ? "•••••" : v);
 
-  // ─── Current totals — live wallet when connected, else last snapshot ──
+  // ─── Current totals ────────────────────────────────────────────────────
   const latest = snapshots[snapshots.length - 1] ?? null;
-  // CEX total isn't fetched here (no second unlock UI) — the freshest value
-  // we have is whatever the portfolio page last recorded into the snapshot.
-  const cexUsd    = latest?.cexUsd ?? 0;
+  // Use live CEX total if vault is unlocked; fall back to last snapshot value
+  const cexUsd = liveCex.total > 0 ? liveCex.total : (latest?.cexUsd ?? 0);
   const walletUsd = live.anyWalletConnected ? live.walletUsd : (latest?.walletUsd ?? 0);
   const totalUsd  = live.anyWalletConnected ? live.walletUsd + cexUsd : (latest?.totalUsd ?? 0);
 
@@ -383,15 +427,60 @@ export default function DashboardView() {
         {/* ── ZION insights ────────────────────────────────────────────── */}
         <div className="aurora-border p-px rounded-2xl mb-4">
           <div className="god-card rounded-[15px] glass overflow-hidden">
-            <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between gap-2">
+            <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between gap-2 flex-wrap">
               <span className="font-display font-bold text-sm text-ink flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5 text-gold" />
                 ZION · Insights do dia
               </span>
-              <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-gold pulse-dot" />
-                gerado dos seus dados
-              </span>
+              <div className="flex items-center gap-2">
+                {insights.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={zionStreaming}
+                    onClick={async () => {
+                      setZionNarrative("");
+                      setZionStreaming(true);
+                      try {
+                        const ctx = [
+                          `Patrimônio total: ${formatUsd(totalUsd)}`,
+                          `CEX: ${formatUsd(cexUsd)} | Carteira: ${formatUsd(walletUsd)}`,
+                          `P&L 7d: ${pnl7d ? `${pnl7d.abs >= 0 ? "+" : ""}${formatUsd(pnl7d.abs)} (${pnl7d.pct.toFixed(1)}%)` : "n/a"}`,
+                          `Win rate: ${stats.winRate !== null ? `${stats.winRate.toFixed(0)}%` : "n/a"} | Volume: ${formatUsd(stats.volume)}`,
+                          `Insights identificados:`,
+                          ...insights.map((ins) => `- ${ins.text}`),
+                        ].join("\n");
+                        const params = new URLSearchParams({
+                          op:      "trading",
+                          message: `Sou um investidor cripto. Analise meu portfólio e gere um resumo estratégico em 3-4 parágrafos em português, fluido e direto ao ponto.\n\n${ctx}`,
+                        });
+                        const res = await fetch(`/api/zion?${params}`);
+                        if (!res.body) return;
+                        const reader = res.body.getReader();
+                        const dec = new TextDecoder();
+                        let buf = "";
+                        while (true) {
+                          const { done, value } = await reader.read();
+                          if (done) break;
+                          buf += dec.decode(value, { stream: true });
+                          // strip action cards, keep only narrative text
+                          const clean = buf.replace(/```[\s\S]*?```/g, "").replace(/\[ACTION_CARD[\s\S]*?\]/g, "").trim();
+                          setZionNarrative(clean);
+                        }
+                      } catch { /* ignore */ }
+                      finally { setZionStreaming(false); }
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet/15 border border-violet/25 font-mono text-[10px] text-violet tracking-widest uppercase hover:bg-violet/25 disabled:opacity-50 transition-colors"
+                  >
+                    {zionStreaming
+                      ? <><Loader2 className="w-3 h-3 animate-spin" /> gerando…</>
+                      : <><Zap className="w-3 h-3" /> gerar análise</>}
+                  </button>
+                )}
+                <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gold pulse-dot" />
+                  dos seus dados
+                </span>
+              </div>
             </div>
             <div className="p-4">
               {insights.length === 0 ? (
@@ -400,24 +489,45 @@ export default function DashboardView() {
                   desempenhos, concentração de risco e o status do autopilot automaticamente aqui.
                 </p>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {insights.map((ins, i) => {
-                    const tone = {
-                      cyan: "text-cyan", violet: "text-violet", gold: "text-gold", green: "text-green", red: "text-red",
-                    }[ins.tone];
-                    const bg = {
-                      cyan: "bg-cyan/[0.06] border-cyan/15", violet: "bg-violet/[0.06] border-violet/15",
-                      gold: "bg-gold/[0.06] border-gold/15", green: "bg-green/[0.06] border-green/15",
-                      red: "bg-red/[0.06] border-red/15",
-                    }[ins.tone];
-                    return (
-                      <div key={i} className={cn("flex items-start gap-2.5 rounded-xl border p-2.5 min-w-0", bg)}>
-                        <ins.Icon className={cn("w-3.5 h-3.5 flex-shrink-0 mt-0.5", tone)} />
-                        <p className="font-sans text-[12px] text-ink-2 leading-snug">{hidden ? "•••••••••••••••" : ins.text}</p>
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {insights.map((ins, i) => {
+                      const tone = {
+                        cyan: "text-cyan", violet: "text-violet", gold: "text-gold", green: "text-green", red: "text-red",
+                      }[ins.tone];
+                      const bg = {
+                        cyan: "bg-cyan/[0.06] border-cyan/15", violet: "bg-violet/[0.06] border-violet/15",
+                        gold: "bg-gold/[0.06] border-gold/15", green: "bg-green/[0.06] border-green/15",
+                        red: "bg-red/[0.06] border-red/15",
+                      }[ins.tone];
+                      return (
+                        <div key={i} className={cn("flex items-start gap-2.5 rounded-xl border p-2.5 min-w-0", bg)}>
+                          <ins.Icon className={cn("w-3.5 h-3.5 flex-shrink-0 mt-0.5", tone)} />
+                          <p className="font-sans text-[12px] text-ink-2 leading-snug">{hidden ? "•••••••••••••••" : ins.text}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ZION narrative — appears after "Gerar análise" is clicked */}
+                  {(zionNarrative || zionStreaming) && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-3 rounded-xl border border-violet/20 bg-violet/[0.04] p-3.5"
+                    >
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Sparkles className="w-3 h-3 text-violet" />
+                        <span className="font-mono text-[9px] text-violet/70 tracking-widest uppercase">análise ZION</span>
+                        {zionStreaming && <Loader2 className="w-3 h-3 text-violet animate-spin ml-auto" />}
                       </div>
-                    );
-                  })}
-                </div>
+                      <p className="font-sans text-[12px] text-ink-2 leading-relaxed whitespace-pre-wrap">
+                        {hidden ? "•••••••••••••••••••••" : zionNarrative}
+                        {zionStreaming && <span className="inline-block w-1.5 h-3.5 bg-violet/60 animate-pulse ml-0.5 align-text-bottom" />}
+                      </p>
+                    </motion.div>
+                  )}
+                </>
               )}
             </div>
           </div>

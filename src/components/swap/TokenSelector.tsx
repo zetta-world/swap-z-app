@@ -10,6 +10,7 @@ import { riskFromScore } from "@/lib/store/swap";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
+import TokenLogo from "@/components/ui/TokenLogo";
 
 interface Props {
   value: Token | undefined;
@@ -52,12 +53,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
         >
           {value ? (
             <>
-              <span
-                className="w-6 h-6 rounded-full flex items-center justify-center font-mono text-[10px] font-bold flex-shrink-0"
-                style={{ background: `${value.color}22`, color: value.color, border: `1px solid ${value.color}55` }}
-              >
-                {value.symbol.slice(0, 2)}
-              </span>
+              <TokenLogo symbol={value.symbol} logo={value.logo} color={value.color} size={24} />
               <div className="text-left min-w-0">
                 <div className="font-display font-bold text-sm text-ink leading-none truncate">{value.symbol}</div>
                 <div className="font-mono text-[9px] text-ink-3 uppercase tracking-wider mt-1 truncate">{value.chain}</div>
@@ -174,12 +170,7 @@ export default function TokenSelector({ value, onChange, chainFilter, side }: Pr
                       onClick={() => { onChange(tk); setOpen(false); }}
                       className="w-full flex items-center gap-3 px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-white/[0.04] transition-colors text-left"
                     >
-                      <span
-                        className="w-9 h-9 rounded-full flex items-center justify-center font-mono text-xs font-bold flex-shrink-0"
-                        style={{ background: `${tk.color}22`, color: tk.color, border: `1px solid ${tk.color}55` }}
-                      >
-                        {tk.symbol.slice(0, 2)}
-                      </span>
+                      <TokenLogo symbol={tk.symbol} logo={tk.logo} color={tk.color} size={36} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-display font-bold text-sm text-ink truncate">{tk.symbol}</span>

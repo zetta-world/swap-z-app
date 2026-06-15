@@ -4,14 +4,32 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowDownToLine, ArrowUpFromLine, Copy, Check, AlertTriangle,
-  Loader2, Shield, ExternalLink, Wallet as WalletIcon,
+  Loader2, Shield, ExternalLink, Wallet as WalletIcon, RefreshCw,
+  PackageX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAccount } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { CEX_META, type CexId, type CexCredentials } from "@/lib/cex/types";
+import { CEX_META, type CexId, type CexCredentials, type CexBalance } from "@/lib/cex/types";
+import { DEFAULT_TOKENS } from "@/lib/tokens";
+import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
+import { type ChainId } from "@/lib/chains";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+
+/** Maps a CEX network slug to our internal ChainId, best-effort. */
+function networkToChainId(network: string): ChainId | undefined {
+  const n = network.toUpperCase();
+  if (n === "ERC20" || n === "ETH" || n === "ETHEREUM")  return "ethereum";
+  if (n === "BSC"   || n === "BEP20" || n === "BNB")     return "bsc";
+  if (n === "POLYGON"|| n === "MATIC")                    return "polygon";
+  if (n === "ARBITRUM"|| n === "ARB")                     return "arbitrum";
+  if (n === "OPTIMISM"|| n === "OP")                      return "optimism";
+  if (n === "BASE")                                        return "base";
+  if (n === "AVAX"  || n === "AVAXC")                     return "avalanche";
+  if (n === "SOL"   || n === "SPL" || n === "SOLANA")     return "solana";
+  return undefined;
+}
 
 /**
  * Wallet ↔ CEX bridge — two flows side-by-side on /cex once the vault
@@ -198,8 +216,19 @@ function DepositPanel({ exchangeId, credentials }: Props) {
   const [network,  setNetwork]  = useState<string>("BSC");
   const [addr, setAddr] = useState<DepositAddress | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState<{ code: string; detail?: string } | null>(null);
+  const [error,   setError]   = useState<{ code: string; detail?: string; notListed?: boolean } | null>(null);
   const [copied,  setCopied]  = useState<"addr" | "tag" | null>(null);
+
+  // Live wallet balance for the selected currency / network combo
+  const walletToken = useMemo(() => {
+    const chain = networkToChainId(network);
+    if (!chain) return undefined;
+    return DEFAULT_TOKENS.find(
+      (t) => t.chain === chain && t.symbol.toUpperCase() === currency.toUpperCase(),
+    );
+  }, [currency, network]);
+  // useTokenBalance must be called unconditionally
+  const walletBal = useTokenBalance(walletToken, null);
   // Track the "copied" timer so a fast modal close / re-mount doesn't
   // leak the setState onto a dead component.
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -248,7 +277,14 @@ function DepositPanel({ exchangeId, credentials }: Props) {
       });
       const body = await res.json() as { ok: boolean; address?: string; tag?: string; network?: string; error?: string; detail?: string };
       if (!res.ok || !body.ok || !body.address) {
-        setError({ code: body.error ?? `HTTP ${res.status}`, detail: body.detail });
+        const detail = (body.detail ?? "").toLowerCase();
+        const notListed =
+          body.error === "currency_not_found" ||
+          detail.includes("not support") ||
+          detail.includes("invalid currency") ||
+          detail.includes("not found") ||
+          detail.includes("not listed");
+        setError({ code: body.error ?? `HTTP ${res.status}`, detail: body.detail, notListed });
         return;
       }
       setAddr({ address: body.address, tag: body.tag, network: body.network ?? network });
@@ -303,6 +339,19 @@ function DepositPanel({ exchangeId, credentials }: Props) {
         </label>
       </div>
 
+      {/* Live wallet balance for selected token/network */}
+      {walletToken && !walletBal.loading && (
+        <div className="flex items-center gap-1.5 -mt-1 px-0.5">
+          <WalletIcon className="w-3 h-3 text-ink-4" />
+          <span className="font-mono text-[10px] text-ink-3">
+            Saldo na carteira:{" "}
+            <span className={cn("tabular-nums", walletBal.isZero ? "text-ink-4" : "text-cyan")}>
+              {walletBal.isZero ? "0" : walletBal.formatted} {currency.toUpperCase()}
+            </span>
+          </span>
+        </div>
+      )}
+
       {walletHint && (
         <div className="rounded-md border border-gold/30 bg-gold/[0.05] px-3 py-2 inline-flex items-start gap-2 w-full">
           <WalletIcon className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
@@ -320,7 +369,17 @@ function DepositPanel({ exchangeId, credentials }: Props) {
         {loading ? "Fetching…" : "Get deposit address"}
       </button>
 
-      {error && (
+      {error && error.notListed ? (
+        <div className="rounded-md border border-gold/30 bg-gold/[0.05] px-3 py-2 space-y-1">
+          <div className="font-mono text-[10px] text-gold flex items-center gap-1.5">
+            <PackageX className="w-3.5 h-3.5 flex-shrink-0" />
+            {currency.toUpperCase()} não está disponível no {CEX_META[exchangeId].label}
+          </div>
+          <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
+            Esta moeda não é suportada para depósito nessa corretora. Verifique a lista oficial de ativos disponíveis.
+          </p>
+        </div>
+      ) : error && (
         <div className="rounded-md border border-red/20 bg-red/[0.04] px-3 py-2 font-mono text-[10px] text-red space-y-1">
           <div>{error.code}</div>
           {error.detail && <div className="text-red/70 break-words">{error.detail}</div>}
@@ -415,6 +474,38 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
   const [stage,   setStage]   = useState<"form" | "confirm" | "sending" | "done">("form");
   const [error,   setError]   = useState<{ code: string; detail?: string } | null>(null);
   const [receipt, setReceipt] = useState<{ id: string; status: string; txid?: string; network?: string; address?: string } | null>(null);
+
+  // Live CEX balances — fetched once on mount / credential change
+  const [cexBalances,    setCexBalances]    = useState<CexBalance[] | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+
+  const fetchCexBalances = async () => {
+    setBalanceLoading(true);
+    try {
+      const res = await fetch("/api/cex/balance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          exchange:   exchangeId,
+          apiKey:     credentials.apiKey,
+          apiSecret:  credentials.apiSecret,
+          passphrase: credentials.passphrase,
+        }),
+      });
+      const data = await res.json() as { ok: boolean; balances?: CexBalance[] };
+      if (data.ok && data.balances) setCexBalances(data.balances);
+    } catch { /* silently ignore */ }
+    finally { setBalanceLoading(false); }
+  };
+
+  useEffect(() => { void fetchCexBalances(); }, [exchangeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const activeCexBal = useMemo(() => {
+    if (!cexBalances) return null;
+    return cexBalances.find((b) => b.asset.toUpperCase() === currency.toUpperCase()) ?? null;
+  }, [cexBalances, currency]);
+
+  const notListed = cexBalances !== null && activeCexBal === null;
 
   const networks = useMemo(() => COMMON_NETWORKS[currency.toUpperCase()] ?? [], [currency]);
   const kind = networkKind(network);
@@ -585,8 +676,47 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
         </label>
       </div>
 
+      {/* CEX live balance + "not listed" warning */}
+      {notListed ? (
+        <div className="rounded-md border border-gold/30 bg-gold/[0.05] px-3 py-2 space-y-1">
+          <div className="font-mono text-[10px] text-gold flex items-center gap-1.5">
+            <PackageX className="w-3.5 h-3.5 flex-shrink-0" />
+            {currency.toUpperCase()} não está disponível no {CEX_META[exchangeId].label}
+          </div>
+          <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
+            Esta moeda não aparece no seu saldo da corretora. Verifique o símbolo ou consulte a lista oficial de ativos.
+          </p>
+        </div>
+      ) : activeCexBal !== null && (
+        <div className="flex items-center gap-2 -mt-1 px-0.5">
+          <span className="font-mono text-[10px] text-ink-3">
+            Disponível na CEX:{" "}
+            <span className="text-cyan tabular-nums">{activeCexBal.free.toFixed(6)} {currency.toUpperCase()}</span>
+            {activeCexBal.used > 0 && (
+              <span className="text-ink-4 ml-1">({activeCexBal.used.toFixed(4)} em uso)</span>
+            )}
+          </span>
+          {balanceLoading
+            ? <Loader2 className="w-3 h-3 text-ink-4 animate-spin ml-auto" />
+            : <button type="button" onClick={fetchCexBalances} className="ml-auto text-ink-4 hover:text-ink-2">
+                <RefreshCw className="w-3 h-3" />
+              </button>}
+        </div>
+      )}
+
       <label className="block">
-        <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1">Amount</div>
+        <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase mb-1 flex items-center justify-between">
+          <span>Amount</span>
+          {activeCexBal && activeCexBal.free > 0 && stage === "form" && (
+            <button
+              type="button"
+              onClick={() => setAmount(String(activeCexBal.free))}
+              className="font-mono text-[9px] text-cyan tracking-widest uppercase hover:text-cyan/80"
+            >
+              MAX
+            </button>
+          )}
+        </div>
         <input
           value={amount}
           onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, "").slice(0, 24))}
