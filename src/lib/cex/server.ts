@@ -378,7 +378,19 @@ export async function fetchCexDepositAddress(
   const exchange = instantiate(id, creds);
   await syncTimeIfNeeded(exchange);
   const params: Record<string, unknown> = {};
-  if (network) params.network = network;
+  if (network) {
+    // Convert the user-facing network name to the CCXT unified network code.
+    // Gate.io (and Binance, OKX, Bybit) all map the raw chain name 'BSC' to
+    // the unified code 'BEP20'. fetchDepositAddress (singular) on exchanges
+    // that use the base-class implementation will call
+    // selectNetworkKeyFromNetworks with this networkCode against a response
+    // indexed by unified codes — passing 'BSC' would fail with "not found".
+    const ex = exchange as unknown as { networkIdToCode?: (id: string) => string | undefined };
+    const unified = typeof ex.networkIdToCode === "function"
+      ? (ex.networkIdToCode(network) ?? network)
+      : network;
+    params.network = unified;
+  }
 
   // Primary attempt: fetchDepositAddress (singular) with network param.
   let primaryError: unknown;
