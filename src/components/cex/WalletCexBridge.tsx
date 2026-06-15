@@ -15,7 +15,7 @@ import {
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { getAssociatedTokenAddress, createTransferInstruction } from "@solana/spl-token";
-import { erc20Abi, parseUnits, type Hex } from "viem";
+import { erc20Abi, parseUnits, formatUnits, type Hex } from "viem";
 import { CEX_META, type CexId, type CexCredentials, type CexBalance } from "@/lib/cex/types";
 import { DEFAULT_TOKENS, type Token } from "@/lib/tokens";
 import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
@@ -577,14 +577,76 @@ function WalletSendToCex({
 
   const bal = useTokenBalance(token, null);
 
-  const [amount, setAmount] = useState("");
-  const [stage,  setStage]  = useState<"form" | "confirm" | "sending" | "sent">("form");
-  const [error,  setError]  = useState<string | null>(null);
-  const [txHash, setTxHash] = useState<string | null>(null);
+  const [amount,       setAmount]       = useState("");
+  const [stage,        setStage]        = useState<"form" | "confirm" | "sending" | "sent">("form");
+  const [error,        setError]        = useState<string | null>(null);
+  const [txHash,       setTxHash]       = useState<string | null>(null);
+  const [estimatingMax, setEstimatingMax] = useState(false);
 
   const amountNum   = parseFloat(amount);
   const amountValid = Number.isFinite(amountNum) && amountNum > 0;
   const walletReady = isSolana ? !!solAddress : !!evmAddress;
+
+  /**
+   * MAX with gas reservation.
+   *
+   * Native EVM (ETH/BNB/MATIC/…): estimate the actual gas cost for this
+   *   transfer, add a 20% safety buffer, subtract from the wallet balance.
+   *   Without this, sending MAX fails because there's nothing left to pay gas.
+   *
+   * ERC-20: token amount = full balance; gas is paid in the native token,
+   *   so we don't need to reduce the token amount. If the native balance
+   *   is too low to cover gas the wallet will reject at signing time.
+   *
+   * Native SOL: reserve a fixed 10,000-lamport cushion (~0.00001 SOL).
+   *   A simple SOL transfer costs ~5,000 lamports; the 2× buffer covers
+   *   priority fees and future network changes.
+   *
+   * SPL token: amount = full balance; fee is in SOL, not the token.
+   */
+  const handleMax = async () => {
+    if (bal.isZero || bal.loading || estimatingMax) return;
+
+    if (isSolana) {
+      if (token.address === "native") {
+        const FEE_LAMPORTS = 10_000; // ~0.00001 SOL cushion
+        const balLamports = Math.floor(parseFloat(bal.formatted) * LAMPORTS_PER_SOL);
+        const maxLamports = Math.max(0, balLamports - FEE_LAMPORTS);
+        const maxSol = maxLamports / LAMPORTS_PER_SOL;
+        setAmount(maxSol > 0 ? maxSol.toFixed(9).replace(/\.?0+$/, "") : "0");
+      } else {
+        setAmount(bal.formatted);
+      }
+      return;
+    }
+
+    // EVM path
+    if (token.address === "native" && publicClient && evmAddress && destination) {
+      setEstimatingMax(true);
+      try {
+        const rawBal = parseUnits(bal.formatted, token.decimals);
+        const [gasPrice, gasLimit] = await Promise.all([
+          publicClient.getGasPrice(),
+          publicClient.estimateGas({
+            account: evmAddress as Hex,
+            to:      destination as Hex,
+            value:   rawBal,
+          }).catch(() => 21_000n), // standard ETH transfer fallback
+        ]);
+        // 20% safety buffer on top of the estimate
+        const safeGasCost = (gasPrice * gasLimit * 120n) / 100n;
+        const maxRaw = rawBal > safeGasCost ? rawBal - safeGasCost : 0n;
+        setAmount(maxRaw > 0n ? formatUnits(maxRaw, token.decimals) : "0");
+      } catch {
+        setAmount(bal.formatted);
+      } finally {
+        setEstimatingMax(false);
+      }
+    } else {
+      // ERC-20: full token balance; gas is in native token
+      setAmount(bal.formatted);
+    }
+  };
 
   const explorerHref = txHash
     ? `${chainMeta?.explorer ?? ""}/tx/${txHash}`
@@ -724,10 +786,13 @@ function WalletSendToCex({
               {!bal.isZero && stage === "form" && (
                 <button
                   type="button"
-                  onClick={() => setAmount(bal.formatted)}
-                  className="font-mono text-[9px] text-cyan tracking-widest uppercase hover:text-cyan/80"
+                  onClick={handleMax}
+                  disabled={estimatingMax}
+                  className="font-mono text-[9px] text-cyan tracking-widest uppercase hover:text-cyan/80 inline-flex items-center gap-1 disabled:opacity-60"
                 >
-                  MAX · {bal.display} {token.symbol}
+                  {estimatingMax
+                    ? <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Calculando taxa…</>
+                    : <>MAX · {bal.display} {token.symbol}</>}
                 </button>
               )}
             </div>
