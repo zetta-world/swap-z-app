@@ -8,6 +8,7 @@ import type { ActionCard } from "@/lib/zion/parse";
 import { useAutopilot } from "@/lib/store/autopilot";
 import { useCexVault } from "@/lib/cex/vault";
 import { useTxHistory } from "@/lib/store/txHistory";
+import { useAutopilotPositions } from "@/lib/store/autopilotPositions";
 import {
   mapCardToCexIntents, pickExchangeForIntent, fireAutopilotIntent,
   pollOrderUntilSettled,
@@ -41,6 +42,8 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   const a = useAutopilot();
   const vault = useCexVault();
   const { push: pushTxHistory } = useTxHistory();
+  const recordEntry   = useAutopilotPositions((s) => s.recordEntry);
+  const markExitArmed = useAutopilotPositions((s) => s.markExitArmed);
   const enabled = a.enabled;
 
   const consumedRef = useRef<Set<string>>(new Set());
@@ -189,7 +192,12 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     if (fresh.frozenUntilDay)                                    return rejectAll("autopilot frozen (daily stop)");
     if (fresh.tradesToday + intents.length > fresh.maxTradesPerDay)
                                                                  return rejectAll("daily trade cap would be exceeded");
-    if (intents.some((i) => i.notionalUsd > fresh.maxTradeUsd))  return rejectAll("exceeds per-trade cap (changed during countdown)");
+    // Per-trade USD cap applies to BUYS only. A SELL reduces exposure (it's
+    // exiting a position the user already holds) — capping it would block
+    // legitimate take-profit exits whose notional naturally exceeds the
+    // buy-side cap once the position has grown.
+    if (intents.some((i) => i.side === "buy" && i.notionalUsd > fresh.maxTradeUsd))
+                                                                 return rejectAll("exceeds per-trade cap (changed during countdown)");
     if (intents.some((i) => !fresh.allowedSymbols.includes(i.symbol.split("/")[0])))
                                                                  return rejectAll("symbol no longer allowed");
 
@@ -280,6 +288,24 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
           notes: card.title.slice(0, 80),
           valueUsd: intent.notionalUsd,
         });
+        // ── Position memory ──
+        // A BUY opens a position we must later exit — remember it (price +
+        // ZION's reasoning) so the next scan can arm a profitable sell even
+        // after a disconnect. A SELL that matches an open position flags it
+        // as exited so we stop proposing more exits for it.
+        if (intent.side === "buy" && intent.price && intent.price > 0) {
+          recordEntry({
+            exchange,
+            pair:       intent.symbol,
+            entryPrice: intent.price,
+            baseAmount: intent.amount,
+            costUsd:    intent.notionalUsd,
+            reasoning:  (card.summary ?? "").slice(0, 300),
+            entryLabel: card.title.slice(0, 80),
+          });
+        } else if (intent.side === "sell") {
+          markExitArmed(exchange, baseSymbol ?? intent.symbol.split("/")[0], result.value.id);
+        }
         summaries.push(`${intent.side.toUpperCase()} ${intent.symbol} → ${exchange} ✓`);
       } else if (result.status === "skipped") {
         // Earlier leg failed; this one was never sent. Log as canceled

@@ -559,6 +559,44 @@ You receive:
   • total_usd       — total portfolio value in USD (derived from balance_context)
   • allowed_symbols — the only symbols you may produce entries for
   • countdown_secs  — how long the user has to cancel each order
+  • OPEN POSITIONS  — (optional) holdings the autopilot bought whose exit may
+                      not be armed yet. Each line: pair | held=<qty> |
+                      entry=$<price> | now=$<price> | unrealized=<%> | age |
+                      exit_armed=yes/no | entry_reason="<why ZION bought>"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POSITION MANAGEMENT — HIGHEST PRIORITY (when OPEN POSITIONS are present)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  This is the disconnect-recovery path: the autopilot opened a position, the
+  user's browser dropped before an exit was armed, and they re-ran the scan.
+  Your FIRST job now is to PROTECT AND EXIT those positions, not to open new
+  ones.
+
+  For EACH open position with exit_armed=no:
+    1. Read entry_reason — honor the ORIGINAL thesis. You are continuing the
+       plan you already made, not inventing a new one.
+    2. Emit ONE sell_safe (or sell_medium) LIMIT card to take profit:
+         • from.symbol = the BASE asset (e.g. SOL), from.amount = the EXACT
+           held= quantity (never more than is held — oversell fails).
+         • to.symbol = USDT.
+         • entryPrice = the LIMIT SELL price, set ABOVE entry=$ to lock profit.
+           Anchor to live CEX price (now=$) and the original target:
+             - Already in profit (now > entry): place a sensible take-profit
+               just above current (e.g. +1–3% blue, +3–8% mid) — capture it.
+             - Near break-even: target a modest profit above entry + fees
+               (≥ +0.5% to clear the 2× taker).
+             - Underwater (now < entry): if the thesis still holds, set a
+               recovery target slightly above entry; if the thesis BROKE
+               (entry_reason no longer valid), say so plainly and propose a
+               sell at-or-near market to cut the loss — explain why.
+         • timeframe + a one-line summary referencing the entry.
+    3. Do NOT open a NEW buy_limit for an asset you ALREADY hold an open
+       position in — manage what's there first.
+    4. If exit_armed=yes already, leave it alone (don't double up) unless
+       price moved enough to justify replacing the target — if so, say why.
+
+  Only AFTER every open position has an exit armed may you use leftover
+  stablecoin to consider a new entry (subject to all the rules below).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MARKET TYPE RULES
@@ -628,14 +666,23 @@ REQUIRED OUTPUT (terminal trace, 150-250 tokens)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CARD RULES (NON-NEGOTIABLE)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Spot cards:
-    • kind: ONLY "buy_limit" or "stop_loss"
+  Spot ENTRY cards (buy):
+    • kind: "buy_limit" (and optionally a matching "stop_loss")
     • from.symbol: ALWAYS "USDT"
     • to.symbol: the BASE token (BTC, ETH, BNB, etc.)
     • from.amount: ≤ max_trade_usd (HARD LIMIT — never exceed this)
     • entryPrice: realistic limit price vs live market data
     • triggerPrice: same as entryPrice for buy_limit
-    • For each buy_limit, emit one matching stop_loss for the SAME token
+
+  Spot EXIT cards (sell — used by POSITION MANAGEMENT for open positions):
+    • kind: "sell_safe" or "sell_medium"
+    • from.symbol: the BASE token being sold (e.g. SOL)
+    • from.amount: the EXACT held quantity from the OPEN POSITIONS line
+                   (NEVER more than is held — an oversell is rejected)
+    • to.symbol: "USDT"
+    • entryPrice: the LIMIT SELL price (the take-profit level)
+    • The per-trade USD cap does NOT apply to exits — you're reducing an
+      existing position, not opening new risk.
 
   Futures cards:
     • kind: "futures_long" or "futures_short"

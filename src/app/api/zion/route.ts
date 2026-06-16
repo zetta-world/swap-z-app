@@ -183,6 +183,15 @@ export async function GET(req: NextRequest) {
     ? balanceContextRaw.replace(/[<>]/g, "") // strip any HTML angle brackets
     : "";
 
+  // Autopilot CEX: open-position context (entries the autopilot opened that
+  // still need an exit armed). One line per position with entry price + the
+  // reasoning ZION recorded at entry. Lets a re-scan pick up where it left off
+  // and arm a profitable exit after a disconnect. Sanitized as DATA.
+  const positionsContextRaw = p.get("positionsContext") || "";
+  const positionsContext = positionsContextRaw.length < 2048
+    ? positionsContextRaw.replace(/[<>]/g, "")
+    : "";
+
   // Futures-specific: leverage (default 5x if not specified)
   const leverageRaw = p.get("leverage") || "";
   const leverage = leverageRaw && /^\d+$/.test(leverageRaw)
@@ -227,7 +236,7 @@ export async function GET(req: NextRequest) {
     fromBalance, fromBalanceUsd,
     walletJson, autopilotMode, leverage, futuresDir,
     txHistorySummary, accTargetSymbol,
-    riskMode, exchangeId, maxTradeUsd, marketType, balanceContext,
+    riskMode, exchangeId, maxTradeUsd, marketType, balanceContext, positionsContext,
   }, req.signal);
 }
 
@@ -276,6 +285,8 @@ interface RunArgs {
   marketType:       "spot" | "futures" | "margin";
   /** Autopilot CEX: real-time balance context string from client balance fetch. */
   balanceContext:   string;
+  /** Autopilot CEX: open-position context for arming exits after a disconnect. */
+  positionsContext: string;
 }
 
 const LANG_INSTRUCTION: Record<RunArgs["lang"], string> = {
@@ -935,6 +946,11 @@ async function buildAutopilotCexPayload(args: RunArgs): Promise<string> {
     // Extract totalUsd for micro-portfolio detection
     const totalMatch = /total:\s*\$?([\d.]+)/i.exec(args.balanceContext);
     if (totalMatch) lines.push(`total_usd: ${totalMatch[1]}`);
+  }
+  if (args.positionsContext) {
+    lines.push("");
+    lines.push("OPEN POSITIONS (opened by the autopilot — exits may not be armed yet):");
+    args.positionsContext.split("\n").forEach((l) => lines.push(`  - ${l}`));
   }
   lines.push("");
 

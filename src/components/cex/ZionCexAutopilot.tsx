@@ -11,6 +11,7 @@ import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import ActionCardView from "@/components/zion/ActionCardView";
 import AutopilotPilot from "@/components/zion/AutopilotPilot";
 import { useAutopilot, AUTOPILOT_RISK_PRESETS, type AutopilotRiskMode } from "@/lib/store/autopilot";
+import { useAutopilotPositions } from "@/lib/store/autopilotPositions";
 import { useCexVault } from "@/lib/cex/vault";
 import type { CexId, CexCredentials, CexBalance } from "@/lib/cex/types";
 import { useUI } from "@/lib/store/ui";
@@ -87,6 +88,9 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
   const vault   = useCexVault();
   const { lang } = useUI();
 
+  const positionsRecord = useAutopilotPositions((s) => s.positions);
+  const closePosition   = useAutopilotPositions((s) => s.closePosition);
+
   const [riskMode,    setRiskMode]    = useState<AutopilotRiskMode>("conservador");
   const [marketType,  setMarketType]  = useState<MarketType>("spot");
   const [buffer,      setBuffer]      = useState("");
@@ -148,6 +152,51 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
     return `total: $${cexBalance.totalUsd.toFixed(2)} | ${parts}`;
   }, [cexBalance]);
 
+  // ── Open positions opened by the autopilot (entry memory) ─────────────
+  const openPositions = useMemo(
+    () => Object.values(positionsRecord).filter((p) => p.exchange === exchangeId && p.status !== "closed"),
+    [positionsRecord, exchangeId],
+  );
+
+  // Reap positions that are no longer held (exit filled / sold elsewhere).
+  // Guarded by a 2-min age buffer so a freshly-opened position isn't reaped
+  // by a balance snapshot taken before the buy settled.
+  useEffect(() => {
+    if (!cexBalance) return;
+    const now = Date.now();
+    for (const p of openPositions) {
+      if (now - p.entryTs < 120_000) continue;
+      const bal = cexBalance.balances.find((b) => b.asset.toUpperCase() === p.base);
+      if (!bal || bal.total <= 0) closePosition(p.exchange, p.base);
+    }
+  }, [cexBalance, openPositions, closePosition]);
+
+  // Position context fed to ZION so a re-scan arms profitable EXITS for
+  // holdings the autopilot opened — using the entry price + the reasoning it
+  // recorded at entry time. Cross-referenced with the live balance (source of
+  // truth for what's actually held right now).
+  const positionsContext = useMemo(() => {
+    if (openPositions.length === 0) return "";
+    const lines = openPositions.map((p) => {
+      const bal = cexBalance?.balances.find((b) => b.asset.toUpperCase() === p.base);
+      const held = bal?.total ?? p.baseAmount;
+      const curPrice = bal && bal.total > 0 && bal.usdValue ? bal.usdValue / bal.total : undefined;
+      const pnlPct = curPrice ? ((curPrice - p.entryPrice) / p.entryPrice) * 100 : undefined;
+      const ageH = Math.max(0, Math.round((Date.now() - p.entryTs) / 3_600_000));
+      return [
+        p.pair,
+        `held=${held}`,
+        `entry=$${p.entryPrice}`,
+        curPrice ? `now=$${curPrice.toFixed(4)}` : "",
+        pnlPct !== undefined ? `unrealized=${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%` : "",
+        `age=${ageH}h`,
+        `exit_armed=${p.status === "exit_armed" ? "yes" : "no"}`,
+        p.reasoning ? `entry_reason="${p.reasoning.replace(/"/g, "'").slice(0, 140)}"` : "",
+      ].filter(Boolean).join(" | ");
+    });
+    return lines.join("\n");
+  }, [openPositions, cexBalance]);
+
   const { visible, cards } = useMemo(() => parseZionStream(buffer), [buffer]);
 
   // ── Arm: apply dynamic preset, enable autopilot, run ZION scan ────────
@@ -186,6 +235,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
       autopilotMode:  "true",
       lang: lang === "pt" ? "pt" : lang === "es" ? "es" : lang === "zh" ? "zh" : "en",
     });
+    if (positionsContext) params.set("positionsContext", positionsContext);
 
     try {
       const res = await fetch(`/api/zion?${params.toString()}`, { signal: ctrl.signal });
@@ -204,7 +254,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
     } finally {
       setStreaming(false);
     }
-  }, [riskMode, marketType, exchangeId, credentials, a, vault, lang, effectiveMaxTradeUsd, effectiveDailyLossStopUsd, balanceContext]);
+  }, [riskMode, marketType, exchangeId, credentials, a, vault, lang, effectiveMaxTradeUsd, effectiveDailyLossStopUsd, balanceContext, positionsContext]);
 
   const disarm = useCallback(() => {
     abortRef.current?.abort();
