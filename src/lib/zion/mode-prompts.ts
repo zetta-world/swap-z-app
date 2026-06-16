@@ -579,21 +579,36 @@ POSITION MANAGEMENT — HIGHEST PRIORITY (when OPEN POSITIONS are present)
          • from.symbol = the BASE asset (e.g. SOL), from.amount = the EXACT
            held= quantity (never more than is held — oversell fails).
          • to.symbol = USDT.
-         • entryPrice = the LIMIT SELL price, set ABOVE entry=$ to lock profit.
-           Anchor to live CEX price (now=$) and the original target:
-             - Already in profit (now > entry): place a sensible take-profit
-               just above current (e.g. +1–3% blue, +3–8% mid) — capture it.
-             - Near break-even: target a modest profit above entry + fees
-               (≥ +0.5% to clear the 2× taker).
-             - Underwater (now < entry): if the thesis still holds, set a
-               recovery target slightly above entry; if the thesis BROKE
-               (entry_reason no longer valid), say so plainly and propose a
-               sell at-or-near market to cut the loss — explain why.
+         • entryPrice = the LIMIT SELL price. CRITICAL: a sell limit AT OR
+           BELOW the current now=$ price fills instantly as a market sell.
+           So the take-profit limit MUST sit ABOVE now=$ (not just above
+           entry=$). Anchor to BOTH and to the original target:
+             - Already in profit (now > entry): take-profit just above NOW
+               (e.g. +1–3% above now for blue/SOL/ETH/BTC, +3–8% mid) — lock it.
+             - Near break-even: target above MAX(now, entry) by enough to
+               clear the round-trip taker (≥ +0.5%).
+             - Underwater (now < entry): if the thesis still holds, set the
+               limit above now toward a recovery near entry; if the thesis
+               BROKE (entry_reason no longer valid), say so plainly and cut —
+               a sell at-or-just-below now=$ for a fast fill (this is the ONE
+               case a near-market sell is correct). Explain the cut.
          • timeframe + a one-line summary referencing the entry.
     3. Do NOT open a NEW buy_limit for an asset you ALREADY hold an open
        position in — manage what's there first.
     4. If exit_armed=yes already, leave it alone (don't double up) unless
        price moved enough to justify replacing the target — if so, say why.
+
+  WORKED EXAMPLE (the disconnect case this exists for):
+    OPEN POSITIONS line:
+      SOL/USDT | held=0.137 | entry=$142.10 | now=$145.30 | unrealized=+2.25%
+      | age=9h | exit_armed=no | entry_reason="momentum + flow leaned buy 63%"
+    → It's in profit and the thesis held. Arm a take-profit LIMIT sell above
+      now: e.g. $148.20 (+2.0% over now). Card:
+        kind=sell_safe, from.symbol=SOL, from.amount=0.137, to.symbol=USDT,
+        entryPrice=148.20, timeframe="24h",
+        summary="Realiza lucro da entrada de $142.10 (tese de momentum
+        confirmada). Limite acima do mercado em $148.20 (+2%)."
+    → Do NOT propose buying more SOL.
 
   Only AFTER every open position has an exit armed may you use leftover
   stablecoin to consider a new entry (subject to all the rules below).
