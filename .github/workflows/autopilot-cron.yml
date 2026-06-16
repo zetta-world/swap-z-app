@@ -1,0 +1,49 @@
+name: Autopilot Background Cron
+
+# Drives the background CEX autopilot. GitHub's scheduler is best-effort and
+# can drift 5-15 min under load, so we register THREE offset schedules to
+# approximate a ~5-minute effective cadence. The cron endpoint is idempotent
+# per-run (it just scans + fires within the session's daily caps), so an
+# occasional double-fire window is bounded by maxTradesPerDay.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   CRON_SECRET        — must match the same env var in Vercel
+#   AUTOPILOT_CRON_URL — e.g. https://swap-z-app.vercel.app/api/autopilot/cron
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"      # :00 :15 :30 :45
+    - cron: "5-59/15 * * * *"   # :05 :20 :35 :50
+    - cron: "10-59/15 * * * *"  # :10 :25 :40 :55
+  workflow_dispatch:            # manual "Run workflow" button for testing
+
+# Never let two runs overlap — a long batch shouldn't stack on the next tick.
+concurrency:
+  group: autopilot-cron
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger autopilot worker
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          AUTOPILOT_CRON_URL: ${{ secrets.AUTOPILOT_CRON_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$AUTOPILOT_CRON_URL" ]; then
+            echo "::error::CRON_SECRET and AUTOPILOT_CRON_URL secrets must be set."
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$AUTOPILOT_CRON_URL" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 90)
+          echo "HTTP $code"
+          echo "Response:"; cat /tmp/resp.json || true; echo
+          if [ "$code" -ge 400 ]; then
+            echo "::error::Autopilot cron returned HTTP $code"
+            exit 1
+          fi

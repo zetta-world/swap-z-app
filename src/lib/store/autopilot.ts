@@ -61,10 +61,9 @@ export const AUTOPILOT_RISK_PRESETS: Record<AutopilotRiskMode, {
   },
 };
 
-export const AUTOPILOT_MAJOR_SYMBOLS = [
-  "BTC", "ETH", "SOL", "BNB", "AVAX", "MATIC", "POL", "ARB", "OP",
-  "LINK", "UNI", "AAVE", "PEPE", "WIF", "DOGE",
-] as const;
+// Moved to the server-safe card-mapping module so server routes can import it
+// without pulling in this zustand store. Re-exported for back-compat.
+export { AUTOPILOT_MAJOR_SYMBOLS } from "@/lib/zion/card-mapping";
 
 export interface AutopilotEntry {
   ts:         number;
