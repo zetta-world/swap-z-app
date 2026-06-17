@@ -13,6 +13,7 @@ import ActionCardView from "@/components/zion/ActionCardView";
 import AutopilotPilot from "@/components/zion/AutopilotPilot";
 import CexOrderConfirm from "@/components/cex/CexOrderConfirm";
 import { mapCardToCexIntents, type AutopilotIntent } from "@/lib/zion/autopilot-bridge";
+import BackgroundAutopilotPanel from "@/components/cex/BackgroundAutopilotPanel";
 import { useAutopilot, AUTOPILOT_RISK_PRESETS, type AutopilotRiskMode } from "@/lib/store/autopilot";
 import { useAutopilotPositions } from "@/lib/store/autopilotPositions";
 import { useTxHistory } from "@/lib/store/txHistory";
@@ -491,6 +492,19 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
               </div>
             )}
           </div>
+
+          {/* Background mode — keep operating after the browser closes */}
+          <BackgroundAutopilotPanel
+            exchangeId={exchangeId}
+            credentials={credentials}
+            riskMode={riskMode}
+            marketType={marketType}
+            maxTradeUsd={effectiveMaxTradeUsd}
+            dailyLossStopUsd={effectiveDailyLossStopUsd}
+            maxTradesPerDay={preset.maxTradesPerDay}
+            allowedSymbols={preset.allowedSymbols}
+            lang={lang === "pt" ? "pt" : lang === "es" ? "es" : lang === "zh" ? "zh" : "en"}
+          />
         </div>
       )}
 
