@@ -7,7 +7,7 @@ import { getHoneypot, isHoneypotSupported, type HoneypotResponse } from "@/lib/a
 import { getTokenInfo, getTopPools, getTrendingPools, type TokenInfo, type PoolSummary } from "@/lib/api/geckoterminal";
 import { getTrending, type TrendingPair } from "@/lib/api/dexscreener";
 import { getCexSpotPrices, getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
-import { getMarketIndicators, formatIndicatorsForPrompt } from "@/lib/api/market-indicators";
+import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt } from "@/lib/api/market-indicators";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
@@ -804,10 +804,19 @@ async function buildPairData(args: RunArgs): Promise<string> {
 }
 
 async function buildFuturesPayload(args: RunArgs): Promise<string> {
-  const payload = await buildPairData(args);
   const symbol = args.fromAddr
     ? (resolveToken(args.chain, args.fromAddr)?.symbol ?? args.fromAddr.toUpperCase())
     : args.chain.toUpperCase();
+
+  const isCexTracked = (CEX_TRACKED_SYMBOLS as readonly string[]).includes(symbol.toUpperCase());
+  const [payload, fundingData] = await Promise.all([
+    buildPairData(args),
+    isCexTracked
+      ? getFundingAndOI([symbol.toUpperCase()]).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+
+  const fundingText = formatFuturesForPrompt(fundingData).trim();
 
   return [
     `Produce a complete FUTURES / LEVERAGE thesis for the position below.`,
@@ -824,6 +833,7 @@ async function buildFuturesPayload(args: RunArgs): Promise<string> {
     `futures_direction: ${args.futuresDir}`,
     `futures_leverage: ${args.leverage}x`,
     payload,
+    ...(fundingText ? [``, fundingText] : []),
     `</data>`,
   ].join("\n");
 }
@@ -951,10 +961,13 @@ async function buildAutopilotCexPayload(args: RunArgs): Promise<string> {
   const allowedSymbols = RISK_ALLOWED[args.riskMode] ?? RISK_ALLOWED.conservador;
   const countdownSecs  = RISK_COUNTDOWN[args.riskMode] ?? 60;
 
-  const [trendingPools, cexMatrix, marketData] = await Promise.all([
+  const [trendingPools, cexMatrix, marketData, fundingData] = await Promise.all([
     getTrendingPools(12).catch(() => [] as PoolSummary[]),
     getMultiExchangeSpot(allowedSymbols),
     getMarketIndicators(allowedSymbols).catch(() => ({ indicators: [], orderBooks: [], fearGreed: null })),
+    args.marketType === "futures"
+      ? getFundingAndOI(allowedSymbols).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   const lines: string[] = [];
@@ -1009,10 +1022,17 @@ async function buildAutopilotCexPayload(args: RunArgs): Promise<string> {
     lines.push("");
   }
 
-  // Technical indicators (RSI, MACD, EMA, order book, Fear & Greed)
+  // Technical indicators (RSI, MACD, EMA, OBV, order book, Fear & Greed, confidence score)
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
   if (indicatorsText) {
     lines.push(indicatorsText);
+    lines.push("");
+  }
+
+  // Funding rate + open interest — injected only for futures market_type
+  const fundingText = formatFuturesForPrompt(fundingData).trim();
+  if (fundingText) {
+    lines.push(fundingText);
     lines.push("");
   }
 

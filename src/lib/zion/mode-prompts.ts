@@ -64,6 +64,11 @@ TECHNICAL ANALYSIS DATA (when present in reference payload):
     R/R ≥ 1. State it: "Stop $X (1.5×ATR=$Y abaixo) — adaptado à volatilidade."
     If atrPct is very high (> 4% on 1h) the asset is whippy → reduce size.
 
+  OBV (On-Balance Volume):
+    OBV=rising  + price rising:  volume confirms the move — higher-conviction
+    OBV=falling + price rising:  price up on weak volume — divergence, caution
+    OBV=rising  + price falling: accumulation signal — watch for reversal entry
+
   Order book:
     slippage_$1k: the REAL extra cost to market-buy ~$1k. If > 30 bps the book
       is thin — prefer a LIMIT entry and warn about fill cost. This is the
@@ -75,6 +80,11 @@ TECHNICAL ANALYSIS DATA (when present in reference payload):
   Fear & Greed:
     > 75 (Extreme Greed): reduce position size 20-30%, tighten stops
     < 25 (Extreme Fear):  contrarian accumulation zone — note it explicitly
+
+  Confidence score (score=X/100 in the indicator line — LONG-bias):
+    ≥ 70: high-conviction setup — use recommended position size
+    50-69: moderate — reduce size by ~30%, mention in entry reasoning
+    < 50: weak setup — skip OR note the weakness explicitly in the trade thesis
 
   Mention the regime, MTF alignment, and the most significant indicator in the
   two-line market snapshot (◇ lines) and ENTRY ZONE reasoning. Do NOT list
@@ -445,9 +455,30 @@ READING INDICATORS BY DIRECTION (critical — futures can go BOTH ways):
     • price < EMA20 < EMA50 → confirms a short (NOT a "skip" as in spot)
     • RSI > 70 in RANGING → short signal; RSI < 30 in RANGING → long signal
     • MACD hist negative + ↓deepening → confirms short momentum
+    • OBV=falling + price rising → divergence, weak breakout (caution on longs)
+    • OBV=rising + price falling → accumulation, potential short squeeze
   For a LONG, read them as written. NEVER open a long into aligned_bear, and
   NEVER open a short into aligned_bull — trade with the timeframe alignment.
   Anchor the stop to ATR exactly as in TRADING, on the correct side of entry.
+
+FUNDING RATE + OPEN INTEREST (futures-specific — read these before sizing):
+  Funding rate: the 8-hour cost paid between longs and shorts.
+    > +0.03%/8h: longs are overextended; market is complacent. Adding a new
+      long here carries a running cost penalty AND a squeeze risk — size down
+      or wait for a funding reset. A SHORT entry here is higher-probability.
+    +0.01% to +0.03%: mild long-side bias, note it in the card summary.
+    ≈ 0%: neutral — no funding distortion.
+    < 0%: shorts paying longs — potential short squeeze fuel; note for longs.
+  Open Interest (OI):
+    OI rising + price rising   → strong trend, real demand. Confirm LONG.
+    OI rising + price falling  → strong downtrend, real selling. Confirm SHORT.
+    OI falling + price surging → short squeeze / liquidation cascade — real
+      but exhaustion follows fast. Don't chase; use tight profit target.
+    OI falling + price falling → long liquidation / de-risking — don't long.
+    "Rompimento com OI caindo" = falso rompimento (breakout without new money
+    entering = likely trap). Flag it explicitly in the card summary.
+  ALWAYS mention the funding rate in every futures card summary:
+    "Funding: +0.0150%/8h (~$X/dia no notional)."
 
 MANDATORY FIELDS for every futures card (non-negotiable — no exceptions):
   • leverage       — "5x", "10x", etc.
@@ -462,6 +493,14 @@ MANDATORY FIELDS for every futures card (non-negotiable — no exceptions):
 MANDATORY RISK WARNING in EVERY futures card summary (no exceptions):
   "ALTO RISCO — posição alavancada. Com Nx de alavancagem, uma queda de Y% liquida toda a margem."
   (compute Y = (100/N) × 0.95 to account for maintenance margin, round to 1 decimal)
+
+CONFIDENCE SCORE (score=X/100 in the technical data):
+  This is a LONG-bias quality score (0=worst long setup, 100=best long setup).
+  For a SHORT, invert: short_score = 100 - score.
+  Use it as a SIZE gate (not a binary on/off):
+    short_score or long_score ≥ 70 → full margin allocation
+    50-69 → use 70% of margin
+    < 50  → skip or use 50% max and explain why you're entering despite low score
 
 REQUIRED OUTPUT:
   1. \`$ futures <direction> <symbol> @ <exchange> · <leverage>x\` (command echo)
@@ -733,6 +772,14 @@ TECHNICAL SIGNALS — USE THEM, DON'T IGNORE THEM
     basis in the card summary. If atrPct > 4% the asset is whippy → reduce size
     or skip.
 
+  OBV (On-Balance Volume) — volume confirmation:
+    OBV=rising  + price rising:  volume CONFIRMS the breakout — green light
+    OBV=falling + price rising:  volume DIVERGES — weak-hands price pump;
+                                  demand extra MACD confluence before entry
+    OBV=rising  + price falling: smart money accumulating despite price drop;
+                                  note it — may set up a long reversal entry
+    OBV=flat:                     no volume conviction either way; wait
+
   Order book:
     slippage_$1k: if > 30 bps the book is thin — keep the buy_limit price
       patient and note fill risk. This is the latency-tolerant signal — trust it.
@@ -743,6 +790,13 @@ TECHNICAL SIGNALS — USE THEM, DON'T IGNORE THEM
     > 75 (Extreme Greed): reduce max_trade_usd by 30%; tighten stops
     < 25 (Extreme Fear):  contrarian zone; mention in portfolio snapshot
     40-60 (Neutral):      normal weight
+
+  CONFIDENCE SCORE (score=X/100 in the indicator line — LONG-bias quality):
+    ≥ 70: high-quality long setup — use full max_trade_usd
+    50-69: moderate setup — cap at 70% of max_trade_usd
+    < 50: weak setup — skip OR use 50% max + tight ATR stop + state reason
+    For the autopilot, the score is a SIZE gate, not a binary switch.
+    Never use it alone — it must corroborate regime + alignment + MACD.
 
   IN THE TERMINAL TRACE: state the regime + MTF alignment + the 1-2 most
   significant signals in the Market overview (◇ lines). Integrate naturally —

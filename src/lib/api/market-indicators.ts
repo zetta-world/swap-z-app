@@ -203,6 +203,35 @@ function calcADX(candles: Candle[], period = 14): ADXResult | null {
   return { adx, plusDI: last.pDI, minusDI: last.mDI };
 }
 
+// ─── OBV (On-Balance Volume) ────────────────────────────────────────────
+
+/**
+ * Returns the last OBV value and a trend label derived from comparing the
+ * mean of the last 10 bars against the 10 bars before that. The absolute
+ * value is meaningless across symbols; only the trend direction matters.
+ */
+function calcOBV(candles: Candle[]): { obv: number; trend: "rising" | "falling" | "flat" } | null {
+  if (candles.length < 20) return null;
+  const series: number[] = [0];
+  for (let i = 1; i < candles.length; i++) {
+    const prev = series[i - 1];
+    if      (candles[i].close > candles[i - 1].close) series.push(prev + candles[i].volume);
+    else if (candles[i].close < candles[i - 1].close) series.push(prev - candles[i].volume);
+    else                                               series.push(prev);
+  }
+  const last = series[series.length - 1];
+  const w = Math.min(10, Math.floor(series.length / 3));
+  const recentAvg = series.slice(-w).reduce((a, b) => a + b, 0) / w;
+  const priorAvg  = series.slice(-w * 2, -w).reduce((a, b) => a + b, 0) / w;
+  // Normalise by range so near-zero OBV doesn't produce false signals.
+  const range = Math.max(Math.abs(last), Math.abs(priorAvg), 1);
+  const ratio = (recentAvg - priorAvg) / range;
+  const trend: "rising" | "falling" | "flat" =
+    ratio >  0.01 ? "rising" :
+    ratio < -0.01 ? "falling" : "flat";
+  return { obv: last, trend };
+}
+
 // ─── Interfaces ──────────────────────────────────────────────────────────
 
 export type MarketRegime = "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "TRANSITIONING";
@@ -231,6 +260,18 @@ export interface SymbolIndicators {
   htf1d:    TimeframeTrend | null;
   /** Alignment of 1h direction with 4h+1D. */
   alignment: "aligned_bull" | "aligned_bear" | "conflict" | "mixed";
+  /** OBV raw value from the last 1h bar (cumulative). */
+  obv:             number | null;
+  /** OBV direction vs prior 10 bars — the only meaningful OBV signal. */
+  obvTrend:        "rising" | "falling" | "flat" | null;
+  /**
+   * 0-100 long-bias setup quality (higher = better LONG setup).
+   * Provisional weights: alignment 30%, regime 20%, MACD 20%,
+   * RSI 15%, order book 10%, Fear&Greed 5%.
+   * NOTE: weights are unbacktested — treat as directional signal only.
+   * Filled in by getMarketIndicators() after order book + F&G are known.
+   */
+  confidenceScore: number | null;
 }
 
 export interface OrderBookSnapshot {
@@ -255,6 +296,18 @@ export interface MarketIndicatorsResult {
   indicators: SymbolIndicators[];
   orderBooks: OrderBookSnapshot[];
   fearGreed:  FearGreedData | null;
+}
+
+/** Binance perpetual futures market data — funding + open interest. */
+export interface FuturesData {
+  symbol:           string;   // uppercase base, e.g. "BTC"
+  /** Last 8-hour funding rate, e.g. 0.0001 = 0.01%. */
+  fundingRate:      number;
+  markPrice:        number;
+  /** Open interest in base currency (e.g. BTC). */
+  openInterestCoin: number;
+  /** Open interest in USD (markPrice × coin). */
+  openInterestUsd:  number;
 }
 
 // ─── Data fetchers ────────────────────────────────────────────────────────
@@ -357,6 +410,7 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
     symbol, price: null, rsi14: null, ema20: null, ema50: null, macd: null,
     atr14: null, atrPct: null, adx: null, regime: "TRANSITIONING",
     trend: "neutral", htf4h: null, htf1d: null, alignment: "mixed",
+    obv: null, obvTrend: null, confidenceScore: null,
   };
   if (c1h.length < 52) return empty;
 
@@ -405,22 +459,159 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
   else if (bears >= 2 && bulls === 0) alignment = "aligned_bear";
   else if (bulls > 0 && bears > 0) alignment = "conflict";
 
-  return { symbol, price, rsi14, ema20, ema50, macd, atr14, atrPct, adx: adxRes?.adx ?? null, regime, trend, htf4h, htf1d, alignment };
+  const obvResult = calcOBV(c1h);
+
+  return {
+    symbol, price, rsi14, ema20, ema50, macd, atr14, atrPct,
+    adx: adxRes?.adx ?? null, regime, trend, htf4h, htf1d, alignment,
+    obv:      obvResult?.obv      ?? null,
+    obvTrend: obvResult?.trend    ?? null,
+    confidenceScore: null, // filled by getMarketIndicators after ob + f&g are available
+  };
+}
+
+// ─── Funding rate + open interest (Binance perpetuals) ───────────────────
+
+/**
+ * Fetches the latest funding rate and open interest from Binance FAPI.
+ * Uses the public endpoints — no API key required.
+ * Revalidate 30s: funding rates update every 8h but OI moves fast.
+ */
+export async function getFundingAndOI(symbols: string[]): Promise<FuturesData[]> {
+  const results = await Promise.all(symbols.map(async (sym) => {
+    const s = sym.toUpperCase();
+    try {
+      const [premRes, oiRes] = await Promise.all([
+        // premiumIndex returns lastFundingRate + markPrice in one call
+        fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${s}USDT`, { next: { revalidate: 30 } }),
+        fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${s}USDT`,  { next: { revalidate: 30 } }),
+      ]);
+      if (!premRes.ok || !oiRes.ok) return null;
+      const prem = await premRes.json() as {
+        markPrice?: string;
+        lastFundingRate?: string;
+      };
+      const oi = await oiRes.json() as {
+        openInterest?: string;
+      };
+      const markPrice         = parseFloat(prem.markPrice        ?? "0");
+      const openInterestCoin  = parseFloat(oi.openInterest       ?? "0");
+      if (!(markPrice > 0) || !(openInterestCoin >= 0)) return null;
+      return {
+        symbol:           s,
+        fundingRate:      parseFloat(prem.lastFundingRate ?? "0"),
+        markPrice,
+        openInterestCoin,
+        openInterestUsd:  markPrice * openInterestCoin,
+      } satisfies FuturesData;
+    } catch {
+      return null;
+    }
+  }));
+  return results.filter((r): r is FuturesData => r !== null);
+}
+
+// ─── Confidence score (0-100 long-bias setup quality) ────────────────────
+
+/**
+ * Composite quality score for a LONG setup. Higher = better setup.
+ * For a SHORT, invert: 100 - score.
+ *
+ * Weights are provisional (not backtested) — use as directional signal only.
+ */
+function computeConfidenceScore(
+  ind: Omit<SymbolIndicators, "confidenceScore">,
+  ob:  OrderBookSnapshot | undefined,
+  fg:  FearGreedData | null,
+): number {
+  // Alignment — 30%
+  const alignScore =
+    ind.alignment === "aligned_bull" ? 1.0 :
+    ind.alignment === "mixed"        ? 0.5 :
+    ind.alignment === "conflict"     ? 0.3 :
+    0.0; // aligned_bear
+
+  // Regime — 20%
+  const regimeScore =
+    ind.regime === "TRENDING_UP"   ? 1.0 :
+    ind.regime === "RANGING"       ? 0.5 :
+    ind.regime === "TRANSITIONING" ? 0.4 :
+    0.0; // TRENDING_DOWN
+
+  // MACD — 20%
+  let macdScore = 0.5;
+  if (ind.macd) {
+    const { histogram, histPrev } = ind.macd;
+    const growing = histPrev !== null && histogram > histPrev;
+    if      (histogram >= 0 &&  growing)  macdScore = 1.0;
+    else if (histogram >= 0 && !growing)  macdScore = 0.7;
+    else if (histogram  < 0 &&  growing)  macdScore = 0.4;
+    else                                  macdScore = 0.0; // negative + deepening
+  }
+
+  // RSI — 15%
+  let rsiScore = 0.5;
+  if (ind.rsi14 !== null) {
+    const r = ind.rsi14;
+    if      (r >= 50 && r < 65) rsiScore = 1.0;  // sweet spot
+    else if (r >= 45 && r < 70) rsiScore = 0.7;
+    else if (r >= 70 && r < 80) rsiScore = 0.5;  // hot but ok trending
+    else if (r >= 30 && r < 45) rsiScore = 0.4;
+    else if (r >= 80)           rsiScore = 0.2;  // extreme overbought
+    else                        rsiScore = 0.3;  // < 30 oversold
+  }
+
+  // Order book slippage — 10%
+  let obScore = 0.5;
+  if (ob?.slip1kBps != null) {
+    if      (ob.slip1kBps <  5)  obScore = 1.0;
+    else if (ob.slip1kBps < 15)  obScore = 0.7;
+    else if (ob.slip1kBps < 30)  obScore = 0.5;
+    else                          obScore = 0.1; // thin book
+  }
+
+  // Fear & Greed — 5%
+  let fgScore = 0.5;
+  if (fg) {
+    const v = fg.value;
+    if      (v >= 40 && v <= 65) fgScore = 1.0;
+    else if (v >= 25 && v <= 75) fgScore = 0.7;
+    else                          fgScore = 0.3; // extreme readings
+  }
+
+  let score = Math.round(
+    alignScore  * 30 +
+    regimeScore * 20 +
+    macdScore   * 20 +
+    rsiScore    * 15 +
+    obScore     * 10 +
+    fgScore     *  5,
+  );
+
+  // ATR penalty: very whippy assets have more noise, reduce score
+  if (ind.atrPct !== null && ind.atrPct > 4) score = Math.max(0, score - 5);
+
+  return Math.max(0, Math.min(100, score));
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────
 
 export async function getMarketIndicators(symbols: string[]): Promise<MarketIndicatorsResult> {
-  const [indicators, rawBooks, fearGreed] = await Promise.all([
+  const [rawIndicators, rawBooks, fearGreed] = await Promise.all([
     Promise.all(symbols.map((s) => getSymbolIndicators(s.toUpperCase()))),
     Promise.all(symbols.map((s) => fetchOrderBook(s.toUpperCase()))),
     getFearGreedIndex(),
   ]);
-  return {
-    indicators,
-    orderBooks: rawBooks.filter((b): b is OrderBookSnapshot => b !== null),
-    fearGreed,
-  };
+  const books = rawBooks.filter((b): b is OrderBookSnapshot => b !== null);
+  const obMap = new Map(books.map((ob) => [ob.symbol, ob]));
+
+  // Compute confidence scores now that order book + F&G are available
+  const indicators = rawIndicators.map((ind) => ({
+    ...ind,
+    confidenceScore: computeConfidenceScore(ind, obMap.get(ind.symbol), fearGreed),
+  }));
+
+  return { indicators, orderBooks: books, fearGreed };
 }
 
 // ─── Prompt formatter ─────────────────────────────────────────────────────
@@ -478,8 +669,13 @@ export function formatIndicatorsForPrompt(result: MarketIndicatorsResult): strin
         : "ATR=n/a";
       const adxStr = ind.adx !== null ? `ADX=${ind.adx.toFixed(0)}` : "ADX=n/a";
 
+      const obvStr = ind.obvTrend !== null ? `OBV=${ind.obvTrend}` : "OBV=n/a";
+      const scoreStr = ind.confidenceScore !== null
+        ? ` | score=${ind.confidenceScore}/100`
+        : "";
+
       lines.push(
-        `  ${ind.symbol}/USDT: price=${fmt(ind.price)} | RSI=${rsi} ${rsiLabel} | MACD ${macdStr} | EMA20=${fmt(ind.ema20)} EMA50=${fmt(ind.ema50)} | ${atrStr} | ${adxStr} | regime=${ind.regime} | trend1h=${ind.trend}`
+        `  ${ind.symbol}/USDT: price=${fmt(ind.price)} | RSI=${rsi} ${rsiLabel} | MACD ${macdStr} | EMA20=${fmt(ind.ema20)} EMA50=${fmt(ind.ema50)} | ${atrStr} | ${adxStr} | ${obvStr} | regime=${ind.regime} | trend1h=${ind.trend}${scoreStr}`
       );
 
       // Multi-timeframe confirmation line
@@ -511,5 +707,35 @@ export function formatIndicatorsForPrompt(result: MarketIndicatorsResult): strin
     lines.push("");
   }
 
+  return lines.join("\n");
+}
+
+/**
+ * Format Binance perpetual futures data (funding rate + OI) for the ZION prompt.
+ * Call this separately from formatIndicatorsForPrompt — it is only relevant
+ * for futures / margin mode and is kept out of the spot indicator block.
+ */
+export function formatFuturesForPrompt(futures: FuturesData[]): string {
+  if (futures.length === 0) return "";
+  const lines: string[] = [];
+  lines.push("FUTURES MARKET DATA (Binance perpetuals — funding + open interest):");
+  for (const f of futures) {
+    const ratePct = (f.fundingRate * 100).toFixed(4);
+    const rateSign = f.fundingRate >= 0 ? "+" : "";
+    const oiB = f.openInterestUsd >= 1e9
+      ? `$${(f.openInterestUsd / 1e9).toFixed(2)}B`
+      : `$${(f.openInterestUsd / 1e6).toFixed(0)}M`;
+
+    // Derive a plain-language funding bias
+    let fundingNote = "";
+    if      (f.fundingRate >  0.0003) fundingNote = " ⚠ longs heavily penalised — possible short squeeze risk";
+    else if (f.fundingRate >  0.0001) fundingNote = " — mild long bias";
+    else if (f.fundingRate < -0.0001) fundingNote = " — shorts paying, short squeeze fuel";
+    else                              fundingNote = " — neutral";
+
+    lines.push(
+      `  ${f.symbol}/USDT: mark=$${f.markPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })} | funding=${rateSign}${ratePct}%/8h${fundingNote} | OI=${oiB} (${f.openInterestCoin.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${f.symbol})`
+    );
+  }
   return lines.join("\n");
 }
