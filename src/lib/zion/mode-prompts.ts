@@ -16,6 +16,44 @@ MODE: TRADING
 Goal: produce a complete trade thesis for the pair the user has loaded.
 Length budget: 350-500 tokens. Be surgical, not exhaustive.
 
+TECHNICAL ANALYSIS DATA (when present in reference payload):
+  The payload may include a TECHNICAL ANALYSIS section with RSI(14), MACD
+  histogram, EMA20/EMA50, order book depth, and the Fear & Greed Index.
+  USE THESE — they are the difference between data-blind guesses and
+  professional-grade analysis.
+
+  RSI(14):
+    > 70 [OVERBOUGHT]  → narrow the entry zone, reduce size, emphasize
+                         stop-loss discipline; note "momentum stretched"
+    50-70 [bullish]    → normal conditions; full position sizing allowed
+    30-50 [neutral]    → confirm with MACD before entry; moderate size
+    < 30 [OVERSOLD]    → potential reversal; flag as "contrarian entry"
+                         with confirming structure required
+
+  MACD histogram:
+    positive + ↑growing:   "bullish momentum" — widen profit targets
+    positive + ↓fading:    "momentum fading" — tighten targets, exit sooner
+    negative + ↑recovering:"early recovery" — smaller size, wait for cross
+    negative + ↓deepening: "downtrend" — skip buy or wait; note explicitly
+
+  EMA trend:
+    price > EMA20 > EMA50:  strong uptrend — label "bullish structure"
+    price > EMA20, EMA20 < EMA50: mixed — require RSI < 60 for entry
+    price < EMA20 < EMA50:  downtrend — only long if RSI deeply oversold
+
+  Order book imbalance:
+    BUY PRESSURE:  entry more likely to fill fast; slightly more aggressive
+    SELL PRESSURE: widen entry zone downward; mention "headwind"
+    balanced:      tiebreaker → use RSI/MACD as primary signal
+
+  Fear & Greed:
+    > 75 (Extreme Greed): reduce position size 20-30%, tighten stops
+    < 25 (Extreme Fear):  contrarian accumulation zone — note it explicitly
+
+  Mention the most significant indicator reading in the two-line market
+  snapshot (◇ lines) and in the ENTRY ZONE reasoning. Do NOT list every
+  indicator mechanically — integrate them into your narrative.
+
 WALLET CAPACITY (critical):
 The reference data includes from_balance and from_balance_usd — the
 user's REAL holdings of the FROM token. Use them to anchor every
@@ -612,6 +650,49 @@ POSITION MANAGEMENT — HIGHEST PRIORITY (when OPEN POSITIONS are present)
 
   Only AFTER every open position has an exit armed may you use leftover
   stablecoin to consider a new entry (subject to all the rules below).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TECHNICAL SIGNALS — USE THEM, DON'T IGNORE THEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  The <market> block contains TECHNICAL INDICATORS, ORDER BOOK DEPTH, and
+  the FEAR & GREED INDEX computed fresh for every allowed symbol. This is
+  real data — not available in prior ZION versions. USE IT as follows:
+
+  RSI(14):
+    > 70 [OVERBOUGHT]  → do NOT open new longs; focus only on exits or
+                         short-term scalp with tight stop. Say explicitly:
+                         "RSI sobrecomprado — evitando nova entrada longa."
+    55-70 [bullish]    → favorable momentum; proceed with normal buy setup
+    45-55 [neutral]    → mixed; require order book BUY pressure to proceed
+    < 45 [weak/bearish]→ prefer waiting; if entering, reduce size 30-40%
+    < 30 [OVERSOLD]    → contrarian buy zone for exit recoveries only
+                         (micro-portfolio: only if total_usd still healthy)
+
+  MACD histogram:
+    hist positive + ↑growing:   confirm entry — momentum is accelerating
+    hist positive + ↓fading:    entry ok but use tighter profit targets
+    hist negative + ↑recovering:watch only; wait for cross before entering
+    hist negative + ↓deepening: SKIP the entry, emit 0 buy cards, explain
+
+  EMA:
+    price > EMA20 > EMA50: "tendência de alta" — entry preferred
+    price > EMA20 only:    mixed; acceptable only with RSI < 65
+    price < EMA20:         "tendência de baixa" — skip buy, flag it
+
+  Order book:
+    BUY PRESSURE (+8%+):  note in plan summary; entry has tailwind
+    SELL PRESSURE:        widen entry zone, reduce size, or skip if combined
+                          with bearish MACD or RSI > 65
+    balanced:             neutral; RSI/MACD are tiebreaker
+
+  Fear & Greed:
+    > 75 (Extreme Greed): reduce max_trade_usd by 30%; tighten stops 1%
+    < 25 (Extreme Fear):  contrarian zone; mention in portfolio snapshot
+    40-60 (Neutral):      normal weight; don't override other signals
+
+  IN THE TERMINAL TRACE: mention the 1-2 most significant signals in the
+  Market overview section (◇ lines). Do NOT list every indicator as a
+  table — integrate them naturally into the reasoning.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MARKET TYPE RULES
