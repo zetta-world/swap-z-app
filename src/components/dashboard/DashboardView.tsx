@@ -22,18 +22,37 @@ import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Panel, Kpi, AreaChart, Donut, Bars, Gauge } from "./widgets";
 
-/** Fetch live CEX totals if the vault is unlocked — returns 0 otherwise. */
-function useLiveCexTotal(): { total: number; loading: boolean } {
+const CEX_TOTAL_CACHE_KEY = "zswap_cex_last_total_usd";
+
+function readCachedCexTotal(): number {
+  try {
+    return parseFloat(localStorage.getItem(CEX_TOTAL_CACHE_KEY) ?? "0") || 0;
+  } catch { return 0; }
+}
+
+/**
+ * Fetch live CEX totals when vault is unlocked.
+ * When locked: returns the last successfully-fetched total from localStorage
+ * so the portfolio doesn't suddenly show $0 just because the vault is locked.
+ */
+function useLiveCexTotal(): { total: number; loading: boolean; stale: boolean } {
   const creds = useCexVault((s) => s.creds);
-  const [total,   setTotal]   = useState(0);
+  const [total,   setTotal]   = useState(() => readCachedCexTotal());
   const [loading, setLoading] = useState(false);
+  const [stale,   setStale]   = useState(true);
   const prevCredsRef = useRef<typeof creds>(null);
 
   useEffect(() => {
     // Only re-fetch when credentials actually change
     if (creds === prevCredsRef.current) return;
     prevCredsRef.current = creds;
-    if (!creds) { setTotal(0); return; }
+    if (!creds) {
+      // Vault locked — fall back to cached value instead of zeroing out
+      const cached = readCachedCexTotal();
+      setTotal(cached);
+      setStale(true);
+      return;
+    }
     const entries = Object.entries(creds) as [CexId, CexCredentials][];
     if (entries.length === 0) return;
     setLoading(true);
@@ -52,12 +71,18 @@ function useLiveCexTotal(): { total: number; loading: boolean } {
         .catch(() => 0),
       ),
     ).then((totals) => {
-      setTotal(totals.reduce((s, v) => s + v, 0));
+      const live = totals.reduce((s, v) => s + v, 0);
+      setTotal(live);
+      setStale(false);
       setLoading(false);
+      // Cache the fresh total so future locked-vault sessions stay accurate
+      if (live > 0) {
+        try { localStorage.setItem(CEX_TOTAL_CACHE_KEY, String(live)); } catch {}
+      }
     });
   }, [creds]);
 
-  return { total, loading };
+  return { total, loading, stale };
 }
 
 type AllocMode = "chains" | "assets" | "all" | "venues";
@@ -132,10 +157,14 @@ export default function DashboardView() {
 
   // ─── Current totals ────────────────────────────────────────────────────
   const latest = snapshots[snapshots.length - 1] ?? null;
-  // Use live CEX total if vault is unlocked; fall back to last snapshot value
-  const cexUsd = liveCex.total > 0 ? liveCex.total : (latest?.cexUsd ?? 0);
+  // liveCex.total now returns cached value even when vault is locked, so
+  // the portfolio doesn't suddenly show $0 because of a locked session.
+  const cexUsd    = liveCex.total > 0 ? liveCex.total : (latest?.cexUsd ?? 0);
   const walletUsd = live.anyWalletConnected ? live.walletUsd : (latest?.walletUsd ?? 0);
-  const totalUsd  = live.anyWalletConnected ? live.walletUsd + cexUsd : (latest?.totalUsd ?? 0);
+  // Include CEX even when no wallet is connected (user may be CEX-only)
+  const totalUsd  = (live.anyWalletConnected || cexUsd > 0)
+    ? walletUsd + cexUsd
+    : (latest?.totalUsd ?? 0);
 
   // ─── Hero P&L windows ─────────────────────────────────────────────────
   const pnl24h = useMemo(() => pnlOverWindow(snapshots, RANGE_MS["24h"]), [snapshots]);
@@ -190,14 +219,17 @@ export default function DashboardView() {
       }));
     }
     if (allocMode === "all") {
-      // every asset, no truncation
-      return live.byAsset.map((x) => ({ label: x.symbol, value: x.value, color: x.color }));
+      // All wallet assets + CEX as a single block
+      const segs = live.byAsset.map((x) => ({ label: x.symbol, value: x.value, color: x.color }));
+      if (cexUsd > 0) segs.push({ label: "CEX", value: cexUsd, color: "#A78BFA" });
+      return segs;
     }
-    // assets — top 6, fold the rest into "Outros"
-    const top = live.byAsset.slice(0, 6);
-    const rest = live.byAsset.slice(6).reduce((s, x) => s + x.value, 0);
+    // assets — top 5, fold the rest + CEX into summary entries
+    const top = live.byAsset.slice(0, 5);
+    const rest = live.byAsset.slice(5).reduce((s, x) => s + x.value, 0);
     const segs = top.map((x) => ({ label: x.symbol, value: x.value, color: x.color }));
     if (rest > 0) segs.push({ label: "Outros", value: rest, color: "#64748b" });
+    if (cexUsd > 0) segs.push({ label: "CEX", value: cexUsd, color: "#A78BFA" });
     return segs;
   }, [allocMode, walletUsd, cexUsd, live.byChain, live.byAsset]);
 

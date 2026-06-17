@@ -115,8 +115,12 @@ export default function PortfolioView() {
   const balancesLoading = useMemo(() => balances.some((b) => b.loading), [...balances]);
 
   // CEX total bubbled up from the rollup once the vault is unlocked.
-  // 0 when locked / no vault — never stale.
-  const [cexUsd, setCexUsd] = useState(0);
+  // Initialised from localStorage cache so the portfolio shows a sensible
+  // total even before (or without) unlocking the vault.
+  const [cexUsd, setCexUsd] = useState(() => {
+    try { return parseFloat(localStorage.getItem("zswap_cex_last_total_usd") ?? "0") || 0; }
+    catch { return 0; }
+  });
 
   const totals = useMemo(() => {
     const portfolio = holdings.reduce((acc, h) => acc + (h.balance.usdValue ?? 0), 0);

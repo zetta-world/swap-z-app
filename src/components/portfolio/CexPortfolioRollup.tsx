@@ -72,6 +72,15 @@ export default function CexPortfolioRollup({
     setConnected(listExchanges());
   }, []);
 
+  // If vault was already unlocked elsewhere (e.g. CEX panel), skip prompt.
+  useEffect(() => {
+    const active = useCexVault.getState().getActive();
+    if (active && Object.keys(active).length > 0) {
+      setCreds(active);
+      useCexVault.getState().touch();
+    }
+  }, []);
+
   // Auto-lock after idle
   useEffect(() => {
     if (!creds) return;
@@ -188,10 +197,20 @@ export default function CexPortfolioRollup({
   }, [rollups]);
 
   // Bubble the rolled-up CEX total up to the parent so /portfolio can
-  // include it in the headline Net Worth. Pushes 0 whenever the vault
-  // isn't loaded so a stale CEX total doesn't outlive the unlock.
+  // include it in the headline Net Worth. Also cache the last live total
+  // in localStorage so the dashboard + portfolio can show it even when
+  // the vault is locked (avoiding the misleading -$X "loss" on the chart).
   useEffect(() => {
-    onTotalUsdChange?.(creds ? totalCexUsd : 0);
+    if (creds && totalCexUsd > 0) {
+      try { localStorage.setItem("zswap_cex_last_total_usd", String(totalCexUsd)); } catch {}
+      onTotalUsdChange?.(totalCexUsd);
+    } else if (!creds) {
+      // Vault locked — bubble the cached value so the parent doesn't zero out
+      try {
+        const cached = parseFloat(localStorage.getItem("zswap_cex_last_total_usd") ?? "0") || 0;
+        onTotalUsdChange?.(cached);
+      } catch { onTotalUsdChange?.(0); }
+    }
   }, [creds, totalCexUsd, onTotalUsdChange]);
 
   // ─── No vault ──────────────────────────────────────────────────────

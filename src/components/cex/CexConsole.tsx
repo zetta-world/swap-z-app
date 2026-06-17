@@ -61,6 +61,16 @@ export default function CexConsole() {
     setConnected(listExchanges());
   }, []);
 
+  // If the vault was already unlocked elsewhere (e.g. Portfolio page), skip
+  // the password prompt and use the in-memory credentials directly.
+  useEffect(() => {
+    const active = useCexVault.getState().getActive();
+    if (active && Object.keys(active).length > 0) {
+      setCreds(active);
+      useCexVault.getState().touch();
+    }
+  }, []);
+
   // Pick a default exchange once credentials land
   useEffect(() => {
     if (!creds) return;
