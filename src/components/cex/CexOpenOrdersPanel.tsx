@@ -31,6 +31,7 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
   const t = useT();
   const [orders,  setOrders]  = useState<CexOrder[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
@@ -56,7 +57,10 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+        setHasLoaded(true);
+      }
     }
   }, [exchangeId, credentials]);
 
@@ -130,8 +134,20 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
         </div>
       )}
 
-      {!error && orders.length === 0 && !loading && (
-        <div className="rounded-xl border border-white/5 bg-bg-1/30 p-5 text-center">
+      {/* Initial load only — a stable-height skeleton so the panel doesn't
+          collapse to the header before the first response lands. */}
+      {!error && !hasLoaded && (
+        <div className="rounded-xl border border-white/5 bg-bg-1/30 p-5 min-h-[84px] flex items-center justify-center">
+          <Loader2 className="w-4 h-4 text-ink-3 animate-spin" />
+        </div>
+      )}
+
+      {/* Empty state — keyed off hasLoaded (not !loading) so it PERSISTS
+          during the 8s background re-poll instead of vanishing each cycle.
+          That vanish/reappear was the vertical "pulsing" that shoved the
+          panels below it up and down. min-h matches the skeleton. */}
+      {!error && hasLoaded && orders.length === 0 && (
+        <div className="rounded-xl border border-white/5 bg-bg-1/30 p-5 min-h-[84px] flex flex-col items-center justify-center text-center">
           <Activity className="w-4 h-4 text-ink-3 mx-auto mb-1" />
           <p className="font-mono text-[11px] text-ink-3">
             {t("cex.openOrdersEmpty")}

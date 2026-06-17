@@ -167,8 +167,30 @@ export async function GET(req: NextRequest) {
 
   const maxTradeUsdRaw = p.get("maxTradeUsd") || "";
   const maxTradeUsd = maxTradeUsdRaw && /^\d+(\.\d+)?$/.test(maxTradeUsdRaw)
-    ? Math.max(5, Math.min(10_000, parseFloat(maxTradeUsdRaw)))
+    ? Math.max(2, Math.min(10_000, parseFloat(maxTradeUsdRaw)))
     : 50;
+
+  // Autopilot CEX: market type (spot | futures | margin)
+  const marketTypeRaw = p.get("marketType") || "spot";
+  const marketType: "spot" | "futures" | "margin" =
+    marketTypeRaw === "futures" || marketTypeRaw === "margin" ? marketTypeRaw : "spot";
+
+  // Autopilot CEX: real-balance context string (from client balance fetch)
+  // Shape: "total: $19.20 | BNB: 2.91 (~$16.80), USDT: 0.01 (~$0.01)"
+  // Sanitized to plain text — used as DATA inside <market> tags, never executed.
+  const balanceContextRaw = p.get("balanceContext") || "";
+  const balanceContext = balanceContextRaw.length < 512
+    ? balanceContextRaw.replace(/[<>]/g, "") // strip any HTML angle brackets
+    : "";
+
+  // Autopilot CEX: open-position context (entries the autopilot opened that
+  // still need an exit armed). One line per position with entry price + the
+  // reasoning ZION recorded at entry. Lets a re-scan pick up where it left off
+  // and arm a profitable exit after a disconnect. Sanitized as DATA.
+  const positionsContextRaw = p.get("positionsContext") || "";
+  const positionsContext = positionsContextRaw.length < 2048
+    ? positionsContextRaw.replace(/[<>]/g, "")
+    : "";
 
   // Futures-specific: leverage (default 5x if not specified)
   const leverageRaw = p.get("leverage") || "";
@@ -214,7 +236,7 @@ export async function GET(req: NextRequest) {
     fromBalance, fromBalanceUsd,
     walletJson, autopilotMode, leverage, futuresDir,
     txHistorySummary, accTargetSymbol,
-    riskMode, exchangeId, maxTradeUsd,
+    riskMode, exchangeId, maxTradeUsd, marketType, balanceContext, positionsContext,
   }, req.signal);
 }
 
@@ -257,8 +279,14 @@ interface RunArgs {
   riskMode:         "conservador" | "moderado" | "agressivo";
   /** Autopilot CEX: connected exchange ID (gateio, binance, etc.). */
   exchangeId:       string;
-  /** Autopilot CEX: per-trade USD cap from the risk mode preset. */
+  /** Autopilot CEX: per-trade USD cap computed from real balance. */
   maxTradeUsd:      number;
+  /** Autopilot CEX: market type chosen by the user (spot | futures | margin). */
+  marketType:       "spot" | "futures" | "margin";
+  /** Autopilot CEX: real-time balance context string from client balance fetch. */
+  balanceContext:   string;
+  /** Autopilot CEX: open-position context for arming exits after a disconnect. */
+  positionsContext: string;
 }
 
 const LANG_INSTRUCTION: Record<RunArgs["lang"], string> = {
@@ -908,10 +936,22 @@ async function buildAutopilotCexPayload(args: RunArgs): Promise<string> {
   const lines: string[] = [];
   lines.push(`exchange: ${args.exchangeId}`);
   lines.push(`risk_mode: ${args.riskMode}`);
+  lines.push(`market_type: ${args.marketType}`);
   lines.push(`max_trade_usd: ${args.maxTradeUsd}`);
   lines.push(`allowed_symbols: ${allowedSymbols.join(", ")}`);
   lines.push(`countdown_secs: ${countdownSecs}`);
   lines.push(`autopilot_mode: true`);
+  if (args.balanceContext) {
+    lines.push(`balance_context: ${args.balanceContext}`);
+    // Extract totalUsd for micro-portfolio detection
+    const totalMatch = /total:\s*\$?([\d.]+)/i.exec(args.balanceContext);
+    if (totalMatch) lines.push(`total_usd: ${totalMatch[1]}`);
+  }
+  if (args.positionsContext) {
+    lines.push("");
+    lines.push("OPEN POSITIONS (opened by the autopilot — exits may not be armed yet):");
+    args.positionsContext.split("\n").forEach((l) => lines.push(`  - ${l}`));
+  }
   lines.push("");
 
   // CEX spot prices for the allowed symbols

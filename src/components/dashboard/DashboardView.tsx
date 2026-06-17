@@ -60,7 +60,7 @@ function useLiveCexTotal(): { total: number; loading: boolean } {
   return { total, loading };
 }
 
-type AllocMode = "chains" | "assets" | "venues";
+type AllocMode = "chains" | "assets" | "all" | "venues";
 
 interface Insight {
   Icon: React.ComponentType<{ className?: string }>;
@@ -188,6 +188,10 @@ export default function DashboardView() {
         value: c.value,
         color: c.chain?.color ?? "#00E8FF",
       }));
+    }
+    if (allocMode === "all") {
+      // every asset, no truncation
+      return live.byAsset.map((x) => ({ label: x.symbol, value: x.value, color: x.color }));
     }
     // assets — top 6, fold the rest into "Outros"
     const top = live.byAsset.slice(0, 6);
@@ -587,7 +591,7 @@ export default function DashboardView() {
             icon={<PieChart className="w-3.5 h-3.5 text-violet" />}
             right={
               <div className="flex gap-1">
-                {([["chains", "Chains"], ["assets", "Ativos"], ["venues", "Carteira/CEX"]] as [AllocMode, string][]).map(([m, label]) => (
+                {([["chains", "Chains"], ["assets", "Ativos"], ["all", "Todos"], ["venues", "Carteira/CEX"]] as [AllocMode, string][]).map(([m, label]) => (
                   <button
                     key={m}
                     type="button"
