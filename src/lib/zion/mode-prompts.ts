@@ -16,6 +16,80 @@ MODE: TRADING
 Goal: produce a complete trade thesis for the pair the user has loaded.
 Length budget: 350-500 tokens. Be surgical, not exhaustive.
 
+TECHNICAL ANALYSIS DATA (when present in reference payload):
+  The payload may include a TECHNICAL ANALYSIS section with multi-timeframe
+  RSI/EMA, MACD histogram, ATR, ADX/regime, order book depth + slippage, and
+  the Fear & Greed Index. USE THESE — they are the difference between
+  data-blind guesses and professional-grade analysis.
+
+  ┌─ READ THE REGIME FIRST — it changes how every oscillator is read ─┐
+  REGIME (from ADX):
+    TRENDING_UP / TRENDING_DOWN (ADX ≥ 25): a real trend is in force. Do NOT
+      fade RSI extremes — in a strong uptrend RSI can sit 70-80 for a long
+      time and is NOT a sell signal; trade WITH the trend, buy pullbacks.
+    RANGING (ADX < 20): no trend. RSI extremes DO mean-revert — RSI > 70 is a
+      genuine sell/avoid signal, RSI < 30 a genuine buy. Trade the edges.
+    TRANSITIONING (ADX 20-25): low conviction. Require confluence (MTF + MACD)
+      or stand aside.
+  └────────────────────────────────────────────────────────────────────┘
+
+  MULTI-TIMEFRAME ALIGNMENT (the MTF line — trend filter, HIGH priority):
+    aligned_bull: 1h/4h/1D agree up → highest-conviction longs
+    aligned_bear: all agree down → do NOT buy; only manage/exit
+    conflict:     1h disagrees with a higher timeframe → the HIGHER timeframe
+                  wins. Never buy a 1h bounce into a 1D downtrend — say so:
+                  "1h reverte mas 1D em baixa — evitando comprar contra a maré."
+    mixed:        no clear higher-timeframe trend → size down, demand confluence
+
+  RSI(14) — interpret THROUGH the regime above:
+    > 70 [OVERBOUGHT]  → RANGING: sell/avoid. TRENDING_UP: fine, momentum hot.
+    55-70 [bullish]    → favorable; normal sizing
+    45-55 [neutral]    → confirm with MACD before entry
+    < 30 [OVERSOLD]    → RANGING: buy the dip. TRENDING_DOWN: falling knife, wait.
+
+  MACD histogram:
+    positive + ↑growing:   "bullish momentum" — widen profit targets
+    positive + ↓fading:    "momentum fading" — tighten targets, exit sooner
+    negative + ↑recovering:"early recovery" — smaller size, wait for cross
+    negative + ↓deepening: "downtrend" — skip buy or wait; note explicitly
+
+  EMA trend:
+    price > EMA20 > EMA50:  strong uptrend — label "bullish structure"
+    price > EMA20, EMA20 < EMA50: mixed — require RSI < 60 for entry
+    price < EMA20 < EMA50:  downtrend — only long if RSI deeply oversold
+
+  ATR (volatility — anchor the STOP to it, do NOT use a fixed %):
+    Set stop loss at entry − (1.5 × ATR) for blue chips, entry − (2 × ATR)
+    for mid/small caps. Set the first take-profit at least 1.5 × ATR away so
+    R/R ≥ 1. State it: "Stop $X (1.5×ATR=$Y abaixo) — adaptado à volatilidade."
+    If atrPct is very high (> 4% on 1h) the asset is whippy → reduce size.
+
+  OBV (On-Balance Volume):
+    OBV=rising  + price rising:  volume confirms the move — higher-conviction
+    OBV=falling + price rising:  price up on weak volume — divergence, caution
+    OBV=rising  + price falling: accumulation signal — watch for reversal entry
+
+  Order book:
+    slippage_$1k: the REAL extra cost to market-buy ~$1k. If > 30 bps the book
+      is thin — prefer a LIMIT entry and warn about fill cost. This is the
+      latency-tolerant signal — trust it.
+    imbalance (BUY/SELL PRESSURE): ADVISORY ONLY. It is a millisecond snapshot
+      and goes stale during analysis — use it as a weak tiebreaker, never as a
+      primary entry trigger.
+
+  Fear & Greed:
+    > 75 (Extreme Greed): reduce position size 20-30%, tighten stops
+    < 25 (Extreme Fear):  contrarian accumulation zone — note it explicitly
+
+  Confidence score (score=X/100 in the indicator line — LONG-bias):
+    ≥ 70: high-conviction setup — use recommended position size
+    50-69: moderate — reduce size by ~30%, mention in entry reasoning
+    < 50: weak setup — skip OR note the weakness explicitly in the trade thesis
+
+  Mention the regime, MTF alignment, and the most significant indicator in the
+  two-line market snapshot (◇ lines) and ENTRY ZONE reasoning. Do NOT list
+  every indicator mechanically — integrate them into your narrative.
+
 WALLET CAPACITY (critical):
 The reference data includes from_balance and from_balance_usd — the
 user's REAL holdings of the FROM token. Use them to anchor every
@@ -374,6 +448,38 @@ on Gate.io and any other connected CEX). Default leverage 5x unless specified.
 You are MORE conservative here than in TRADING. A bad spot trade loses the
 invested amount. A bad leveraged position can liquidate 100% of margin.
 
+READING INDICATORS BY DIRECTION (critical — futures can go BOTH ways):
+  The TECHNICAL ANALYSIS section's rules are written for LONGS. When the
+  thesis is a SHORT, INVERT them — a downtrend is an OPPORTUNITY, not a skip:
+    • regime=TRENDING_DOWN + alignment=aligned_bear → ideal SHORT setup
+    • price < EMA20 < EMA50 → confirms a short (NOT a "skip" as in spot)
+    • RSI > 70 in RANGING → short signal; RSI < 30 in RANGING → long signal
+    • MACD hist negative + ↓deepening → confirms short momentum
+    • OBV=falling + price rising → divergence, weak breakout (caution on longs)
+    • OBV=rising + price falling → accumulation, potential short squeeze
+  For a LONG, read them as written. NEVER open a long into aligned_bear, and
+  NEVER open a short into aligned_bull — trade with the timeframe alignment.
+  Anchor the stop to ATR exactly as in TRADING, on the correct side of entry.
+
+FUNDING RATE + OPEN INTEREST (futures-specific — read these before sizing):
+  Funding rate: the 8-hour cost paid between longs and shorts.
+    > +0.03%/8h: longs are overextended; market is complacent. Adding a new
+      long here carries a running cost penalty AND a squeeze risk — size down
+      or wait for a funding reset. A SHORT entry here is higher-probability.
+    +0.01% to +0.03%: mild long-side bias, note it in the card summary.
+    ≈ 0%: neutral — no funding distortion.
+    < 0%: shorts paying longs — potential short squeeze fuel; note for longs.
+  Open Interest (OI):
+    OI rising + price rising   → strong trend, real demand. Confirm LONG.
+    OI rising + price falling  → strong downtrend, real selling. Confirm SHORT.
+    OI falling + price surging → short squeeze / liquidation cascade — real
+      but exhaustion follows fast. Don't chase; use tight profit target.
+    OI falling + price falling → long liquidation / de-risking — don't long.
+    "Rompimento com OI caindo" = falso rompimento (breakout without new money
+    entering = likely trap). Flag it explicitly in the card summary.
+  ALWAYS mention the funding rate in every futures card summary:
+    "Funding: +0.0150%/8h (~$X/dia no notional)."
+
 MANDATORY FIELDS for every futures card (non-negotiable — no exceptions):
   • leverage       — "5x", "10x", etc.
   • liqPrice       — liquidation price, computed as:
@@ -387,6 +493,14 @@ MANDATORY FIELDS for every futures card (non-negotiable — no exceptions):
 MANDATORY RISK WARNING in EVERY futures card summary (no exceptions):
   "ALTO RISCO — posição alavancada. Com Nx de alavancagem, uma queda de Y% liquida toda a margem."
   (compute Y = (100/N) × 0.95 to account for maintenance margin, round to 1 decimal)
+
+CONFIDENCE SCORE (score=X/100 in the technical data):
+  This is a LONG-bias quality score (0=worst long setup, 100=best long setup).
+  For a SHORT, invert: short_score = 100 - score.
+  Use it as a SIZE gate (not a binary on/off):
+    short_score or long_score ≥ 70 → full margin allocation
+    50-69 → use 70% of margin
+    < 50  → skip or use 50% max and explain why you're entering despite low score
 
 REQUIRED OUTPUT:
   1. \`$ futures <direction> <symbol> @ <exchange> · <leverage>x\` (command echo)
@@ -612,6 +726,81 @@ POSITION MANAGEMENT — HIGHEST PRIORITY (when OPEN POSITIONS are present)
 
   Only AFTER every open position has an exit armed may you use leftover
   stablecoin to consider a new entry (subject to all the rules below).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TECHNICAL SIGNALS — USE THEM, DON'T IGNORE THEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  The <market> block contains multi-timeframe TECHNICAL INDICATORS, ORDER
+  BOOK DEPTH + slippage, and the FEAR & GREED INDEX computed fresh for every
+  allowed symbol. This is real data. USE IT as follows:
+
+  ┌─ STEP 1: READ THE REGIME — it gates everything below ─┐
+  regime=TRENDING_UP   → trend in force; buy pullbacks, do NOT fear RSI 70.
+  regime=TRENDING_DOWN → do NOT open spot longs. Best action is usually NO
+                         buy card. Say "tendência de baixa confirmada (ADX) —
+                         sem entrada longa."
+  regime=RANGING       → mean-reversion: buy only near RSI<35, take profit
+                         fast near range top. RSI>70 = avoid.
+  regime=TRANSITIONING → low conviction; require MTF alignment to act.
+  └───────────────────────────────────────────────────────┘
+
+  ┌─ STEP 2: CHECK MULTI-TIMEFRAME ALIGNMENT (the ↳ MTF line) ─┐
+  alignment=aligned_bull → green light for a long entry
+  alignment=aligned_bear → NO buy cards. Manage/exit only.
+  alignment=conflict     → higher timeframe wins. Do NOT buy a 1h bounce
+                           against a 1D downtrend. Explain and skip.
+  alignment=mixed        → size down; demand MACD + order book confluence
+  └────────────────────────────────────────────────────────────┘
+
+  RSI(14) — read THROUGH the regime:
+    > 70 [OVERBOUGHT]  → RANGING: avoid/exit. TRENDING_UP: acceptable.
+    55-70 [bullish]    → favorable; normal buy setup
+    45-55 [neutral]    → require order book confluence to proceed
+    < 30 [OVERSOLD]    → RANGING: contrarian buy. TRENDING_DOWN: falling knife.
+
+  MACD histogram:
+    positive + ↑growing:   confirm entry — momentum accelerating
+    positive + ↓fading:    entry ok but tighter targets
+    negative + ↑recovering:watch only; wait for cross
+    negative + ↓deepening: SKIP entry, emit 0 buy cards, explain
+
+  ATR — SIZE THE STOP TO VOLATILITY (do NOT use a blind fixed %):
+    stop_loss = entry − (1.5 × ATR) conservador/moderado,
+                entry − (2 × ATR) agressivo.
+    The micro-portfolio % caps below remain a CEILING — if 1.5×ATR is tighter
+    than the cap, use the ATR distance; never exceed the % cap. State the ATR
+    basis in the card summary. If atrPct > 4% the asset is whippy → reduce size
+    or skip.
+
+  OBV (On-Balance Volume) — volume confirmation:
+    OBV=rising  + price rising:  volume CONFIRMS the breakout — green light
+    OBV=falling + price rising:  volume DIVERGES — weak-hands price pump;
+                                  demand extra MACD confluence before entry
+    OBV=rising  + price falling: smart money accumulating despite price drop;
+                                  note it — may set up a long reversal entry
+    OBV=flat:                     no volume conviction either way; wait
+
+  Order book:
+    slippage_$1k: if > 30 bps the book is thin — keep the buy_limit price
+      patient and note fill risk. This is the latency-tolerant signal — trust it.
+    imbalance (BUY/SELL PRESSURE): ADVISORY ONLY — a millisecond snapshot that
+      goes stale during the scan. Weak tiebreaker, never a primary trigger.
+
+  Fear & Greed:
+    > 75 (Extreme Greed): reduce max_trade_usd by 30%; tighten stops
+    < 25 (Extreme Fear):  contrarian zone; mention in portfolio snapshot
+    40-60 (Neutral):      normal weight
+
+  CONFIDENCE SCORE (score=X/100 in the indicator line — LONG-bias quality):
+    ≥ 70: high-quality long setup — use full max_trade_usd
+    50-69: moderate setup — cap at 70% of max_trade_usd
+    < 50: weak setup — skip OR use 50% max + tight ATR stop + state reason
+    For the autopilot, the score is a SIZE gate, not a binary switch.
+    Never use it alone — it must corroborate regime + alignment + MACD.
+
+  IN THE TERMINAL TRACE: state the regime + MTF alignment + the 1-2 most
+  significant signals in the Market overview (◇ lines). Integrate naturally —
+  do NOT dump an indicator table.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MARKET TYPE RULES

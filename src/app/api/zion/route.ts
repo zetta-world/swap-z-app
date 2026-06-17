@@ -6,7 +6,8 @@ import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@
 import { getHoneypot, isHoneypotSupported, type HoneypotResponse } from "@/lib/api/honeypot";
 import { getTokenInfo, getTopPools, getTrendingPools, type TokenInfo, type PoolSummary } from "@/lib/api/geckoterminal";
 import { getTrending, type TrendingPair } from "@/lib/api/dexscreener";
-import { getCexSpotPrices, getMultiExchangeSpot, type CexSpotSource } from "@/lib/api/cex-spot";
+import { getCexSpotPrices, getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
+import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt } from "@/lib/api/market-indicators";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
@@ -461,9 +462,12 @@ async function buildTradingPayload(args: RunArgs): Promise<string> {
 }
 
 async function buildAutoScanTradingPayload(): Promise<string> {
-  const [trendingPools, hotPairs] = await Promise.all([
+  const [trendingPools, hotPairs, marketData] = await Promise.all([
     getTrendingPools(20).catch(() => [] as PoolSummary[]),
     getTrending(10).catch(()   => [] as TrendingPair[]),
+    getMarketIndicators(["BTC", "ETH", "SOL", "BNB"]).catch(
+      () => ({ indicators: [], orderBooks: [], fearGreed: null }),
+    ),
   ]);
 
   const lines: string[] = [];
@@ -479,10 +483,12 @@ async function buildAutoScanTradingPayload(): Promise<string> {
     });
   }
 
+  const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
+
   return [
     "AUTO-SCAN MODE: No pair pre-selected.",
     "From the candidates below, pick the SINGLE best trade opportunity right now.",
-    "Evaluate each for: momentum (Δ%), liquidity depth (TVL), volume-to-TVL ratio.",
+    "Evaluate each for: momentum (Δ%), liquidity depth (TVL), volume-to-TVL ratio, RSI, MACD, order book imbalance.",
     "In the terminal trace, explain in 2-3 sentences WHY this pair wins over the others right now.",
     "Then produce a complete TRADING thesis for the chosen pair: entry zone, 3 targets, stop loss, R/R, window.",
     "Then emit the FIVE action cards for the chosen pair: buy_limit, sell_safe, sell_medium, sell_aggressive, stop_loss.",
@@ -490,6 +496,7 @@ async function buildAutoScanTradingPayload(): Promise<string> {
     "",
     "<candidates>",
     lines.join("\n"),
+    ...(indicatorsText ? ["", indicatorsText] : []),
     "</candidates>",
   ].join("\n");
 }
@@ -697,7 +704,13 @@ async function buildPairData(args: RunArgs): Promise<string> {
   const fromToken = resolveToken(args.chain, args.fromAddr);
   const toToken   = resolveToken(args.chain, args.toAddr);
 
-  const [fromSec, toSec, fromHoney, toHoney, fromInfo, toInfo, pools] = await Promise.all([
+  // Collect symbols that have Binance klines coverage for indicator enrichment.
+  const indicatorSymbols = [
+    fromToken?.symbol?.toUpperCase(),
+    toToken?.symbol?.toUpperCase(),
+  ].filter((s): s is string => !!s && (CEX_TRACKED_SYMBOLS as readonly string[]).includes(s));
+
+  const [fromSec, toSec, fromHoney, toHoney, fromInfo, toInfo, pools, marketData] = await Promise.all([
     safeGoPlus(args.chain, fromToken?.address),
     safeGoPlus(args.chain, toToken?.address),
     safeHoneypot(args.chain, fromToken?.address),
@@ -705,6 +718,9 @@ async function buildPairData(args: RunArgs): Promise<string> {
     safeGeckoToken(args.chain, fromToken?.address),
     safeGeckoToken(args.chain, toToken?.address),
     getTopPools(args.chain, 4).catch(() => [] as PoolSummary[]),
+    indicatorSymbols.length > 0
+      ? getMarketIndicators(indicatorSymbols).catch(() => ({ indicators: [], orderBooks: [], fearGreed: null }))
+      : Promise.resolve({ indicators: [], orderBooks: [], fearGreed: null }),
   ]);
 
   const lines: string[] = [];
@@ -753,6 +769,13 @@ async function buildPairData(args: RunArgs): Promise<string> {
     lines.push("\nNOTE: No external risk-API coverage returned data. Apply your edge-case rules.");
   }
 
+  // Technical indicators — only present for CEX-tracked symbols.
+  const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
+  if (indicatorsText) {
+    lines.push("\nTECHNICAL ANALYSIS:");
+    lines.push(indicatorsText);
+  }
+
   // Multi-chain wallet composition — injected when the frontend passes it.
   // Lets ZION reason about cross-chain cost and cross-chain bridging needs.
   if (args.walletJson) {
@@ -781,10 +804,19 @@ async function buildPairData(args: RunArgs): Promise<string> {
 }
 
 async function buildFuturesPayload(args: RunArgs): Promise<string> {
-  const payload = await buildPairData(args);
   const symbol = args.fromAddr
     ? (resolveToken(args.chain, args.fromAddr)?.symbol ?? args.fromAddr.toUpperCase())
     : args.chain.toUpperCase();
+
+  const isCexTracked = (CEX_TRACKED_SYMBOLS as readonly string[]).includes(symbol.toUpperCase());
+  const [payload, fundingData] = await Promise.all([
+    buildPairData(args),
+    isCexTracked
+      ? getFundingAndOI([symbol.toUpperCase()]).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+
+  const fundingText = formatFuturesForPrompt(fundingData).trim();
 
   return [
     `Produce a complete FUTURES / LEVERAGE thesis for the position below.`,
@@ -801,6 +833,7 @@ async function buildFuturesPayload(args: RunArgs): Promise<string> {
     `futures_direction: ${args.futuresDir}`,
     `futures_leverage: ${args.leverage}x`,
     payload,
+    ...(fundingText ? [``, fundingText] : []),
     `</data>`,
   ].join("\n");
 }
@@ -928,9 +961,13 @@ async function buildAutopilotCexPayload(args: RunArgs): Promise<string> {
   const allowedSymbols = RISK_ALLOWED[args.riskMode] ?? RISK_ALLOWED.conservador;
   const countdownSecs  = RISK_COUNTDOWN[args.riskMode] ?? 60;
 
-  const [trendingPools, cexMatrix] = await Promise.all([
+  const [trendingPools, cexMatrix, marketData, fundingData] = await Promise.all([
     getTrendingPools(12).catch(() => [] as PoolSummary[]),
     getMultiExchangeSpot(allowedSymbols),
+    getMarketIndicators(allowedSymbols).catch(() => ({ indicators: [], orderBooks: [], fearGreed: null })),
+    args.marketType === "futures"
+      ? getFundingAndOI(allowedSymbols).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   const lines: string[] = [];
@@ -982,6 +1019,20 @@ async function buildAutopilotCexPayload(args: RunArgs): Promise<string> {
     relevantPools.slice(0, 6).forEach((p) => {
       lines.push(`  - ${p.baseSymbol}/USDT | ${p.network} | price $${(p.priceUsd).toLocaleString("en-US", { maximumFractionDigits: 2 })} | Δ24h ${p.change24h.toFixed(2)}% | vol $${Math.round(p.volume24h).toLocaleString()}`);
     });
+    lines.push("");
+  }
+
+  // Technical indicators (RSI, MACD, EMA, OBV, order book, Fear & Greed, confidence score)
+  const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
+  if (indicatorsText) {
+    lines.push(indicatorsText);
+    lines.push("");
+  }
+
+  // Funding rate + open interest — injected only for futures market_type
+  const fundingText = formatFuturesForPrompt(fundingData).trim();
+  if (fundingText) {
+    lines.push(fundingText);
     lines.push("");
   }
 
