@@ -7,13 +7,17 @@ import {
   Shield, Target, Zap, AlertTriangle, CheckCircle2, Loader2,
   BookOpen, TrendingUp, Layers,
 } from "lucide-react";
+import { toast } from "sonner";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import ActionCardView from "@/components/zion/ActionCardView";
 import AutopilotPilot from "@/components/zion/AutopilotPilot";
+import CexOrderConfirm from "@/components/cex/CexOrderConfirm";
+import { mapCardToCexIntents, type AutopilotIntent } from "@/lib/zion/autopilot-bridge";
 import { useAutopilot, AUTOPILOT_RISK_PRESETS, type AutopilotRiskMode } from "@/lib/store/autopilot";
 import { useAutopilotPositions } from "@/lib/store/autopilotPositions";
+import { useTxHistory } from "@/lib/store/txHistory";
 import { useCexVault } from "@/lib/cex/vault";
-import type { CexId, CexCredentials, CexBalance } from "@/lib/cex/types";
+import type { CexId, CexCredentials, CexBalance, CexOrder } from "@/lib/cex/types";
 import { useUI } from "@/lib/store/ui";
 import { cn } from "@/lib/cn";
 
@@ -90,6 +94,17 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
 
   const positionsRecord = useAutopilotPositions((s) => s.positions);
   const closePosition   = useAutopilotPositions((s) => s.closePosition);
+  const recordEntry     = useAutopilotPositions((s) => s.recordEntry);
+  const markExitArmed   = useAutopilotPositions((s) => s.markExitArmed);
+  const pushTxHistory   = useTxHistory((s) => s.push);
+
+  // Manual "Executar proposta" → opens the CexOrderConfirm guard for the
+  // selected card's resolved intent. Distinct from the autonomous pilot:
+  // here the user clicks each card explicitly and confirms in the modal.
+  const [manualOrder, setManualOrder] = useState<{
+    card:   ActionCard;
+    intent: AutopilotIntent;
+  } | null>(null);
 
   const [riskMode,    setRiskMode]    = useState<AutopilotRiskMode>("conservador");
   const [marketType,  setMarketType]  = useState<MarketType>("spot");
@@ -274,7 +289,65 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
   const meta     = RISK_META[riskMode];
   const ModeIcon = meta.Icon;
 
-  const noopExecute = useCallback((_card: ActionCard) => {}, []);
+  // Manual execution from the "Executar proposta" button on a card.
+  // Maps the card → CEX intent and opens the confirmation guard. The
+  // autonomous pilot (countdown banner) is unchanged and independent.
+  const executeCard = useCallback((card: ActionCard) => {
+    const intents = mapCardToCexIntents(card);
+    if (!intents || intents.length === 0) {
+      if (card.kind === "stop_loss") {
+        toast.error("Stop-loss precisa ser configurado manualmente no painel da exchange (ordem stop separada).");
+      } else {
+        toast.error("Esta proposta não pôde ser convertida em ordem CEX automaticamente. Use o painel de trade manual.");
+      }
+      return;
+    }
+    if (intents.length > 1) {
+      // Multi-leg arb (cross-CEX / triangular) — these fire atomically and
+      // belong to the autonomous pilot. Manual single-confirm would leave
+      // directional risk on a partial fill.
+      toast.error("Propostas de arbitragem multi-perna são executadas pelo Autopilot armado, não manualmente.");
+      return;
+    }
+    setManualOrder({ card, intent: intents[0] });
+  }, []);
+
+  // After a manual order is accepted by the exchange, mirror the pilot's
+  // bookkeeping: record to tx history + position memory.
+  const onManualConfirmed = useCallback((order: CexOrder) => {
+    if (!manualOrder) return;
+    const { card, intent } = manualOrder;
+    const [baseSymbol, quoteSymbol] = intent.symbol.split("/");
+    pushTxHistory({
+      type:       "cex_spot",
+      status:     "confirmed",
+      fromSymbol: intent.side === "buy" ? (quoteSymbol ?? "USDT") : (baseSymbol ?? intent.symbol),
+      fromChain:  exchangeId,
+      fromAmount: intent.side === "buy" ? String(intent.notionalUsd.toFixed(6)) : String(intent.amount),
+      toSymbol:   intent.side === "buy" ? (baseSymbol ?? intent.symbol) : (quoteSymbol ?? "USDT"),
+      toChain:    exchangeId,
+      exchange:   exchangeId,
+      orderId:    order.id,
+      route:      intent.type,
+      notes:      card.title.slice(0, 80),
+      valueUsd:   intent.notionalUsd,
+    });
+    if (intent.side === "buy" && intent.price && intent.price > 0) {
+      recordEntry({
+        exchange:   exchangeId,
+        pair:       intent.symbol,
+        entryPrice: intent.price,
+        baseAmount: intent.amount,
+        costUsd:    intent.notionalUsd,
+        reasoning:  (card.summary ?? "").slice(0, 300),
+        entryLabel: card.title.slice(0, 80),
+      });
+    } else if (intent.side === "sell") {
+      markExitArmed(exchangeId, baseSymbol ?? intent.symbol.split("/")[0], order.id);
+    }
+    toast.success(`Ordem enviada: ${intent.side.toUpperCase()} ${intent.symbol} @ ${exchangeId}`);
+    setManualOrder(null);
+  }, [manualOrder, exchangeId, pushTxHistory, recordEntry, markExitArmed]);
 
   return (
     <motion.div
@@ -437,7 +510,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
               key={i}
               card={card}
               index={i}
-              onExecute={noopExecute}
+              onExecute={executeCard}
             />
           ))}
         </div>
@@ -518,6 +591,32 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
         <p>· Stop automático ao atingir <strong className="text-red">${effectiveDailyLossStopUsd}</strong> de perda diária.</p>
         <p>· Máximo <strong className="text-ink-3">{preset.maxTradesPerDay}</strong> trades/dia · <strong className="text-ink-3">${effectiveMaxTradeUsd}</strong> por operação ({meta.pct * 100}% do saldo).</p>
       </div>
+
+      {/* ── Manual execution confirm (from "Executar proposta") ─────────── */}
+      {manualOrder && (() => {
+        const { intent } = manualOrder;
+        const [baseAsset, quoteAsset] = intent.symbol.split("/");
+        const referencePrice = intent.price && intent.price > 0
+          ? intent.price
+          : (intent.amount > 0 ? intent.notionalUsd / intent.amount : 0);
+        return (
+          <CexOrderConfirm
+            open
+            onClose={() => setManualOrder(null)}
+            exchangeId={exchangeId}
+            credentials={credentials}
+            symbol={intent.symbol}
+            side={intent.side}
+            type={intent.type}
+            amount={intent.amount}
+            limitPrice={intent.type === "limit" ? intent.price : undefined}
+            referencePrice={referencePrice}
+            baseAsset={baseAsset ?? intent.symbol}
+            quoteAsset={quoteAsset ?? "USDT"}
+            onConfirmed={onManualConfirmed}
+          />
+        );
+      })()}
     </motion.div>
   );
 }
