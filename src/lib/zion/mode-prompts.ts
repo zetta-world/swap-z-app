@@ -69,6 +69,26 @@ TECHNICAL ANALYSIS DATA (when present in reference payload):
     OBV=falling + price rising:  price up on weak volume — divergence, caution
     OBV=rising  + price falling: accumulation signal — watch for reversal entry
 
+  Relative volume (relVol):
+    > 2x avg: elevated volume CONFIRMS the move — higher conviction entry
+    0.5-2x:   normal — use other signals for conviction
+    < 0.5x:   quiet market — moves are less reliable (trap risk)
+
+  Divergence (⚠ DIVERGENCE line — only shown when detected):
+    bearish_rsi: price new high, RSI lower high → weakening momentum.
+      TIGHTEN stop by 0.5×ATR; note in thesis: "divergência de baixa detectada."
+    bullish_rsi: price new low, RSI higher low → sellers losing steam.
+      Opens a contrarian long — small size, tight stop.
+
+  Support / Resistance (↳ S/R and ↳ Pivot lines):
+    Entry: target the nearest support as an ideal limit-buy anchor.
+    TP1:   nearest resistance — natural profit-taking level.
+    Stop:  below the second support (gives the trade room to breathe).
+    Daily Pivot (PP): price above PP = intraday bullish bias; below = bearish.
+    R1/S1 = first meaningful pivot targets; R2/S2 = stretch targets.
+    If there's no resistance between price and TP3, the path is open — say so
+    and widen the aggressive target.
+
   Order book:
     slippage_$1k: the REAL extra cost to market-buy ~$1k. If > 30 bps the book
       is thin — prefer a LIMIT entry and warn about fill cost. This is the
@@ -502,6 +522,14 @@ CONFIDENCE SCORE (score=X/100 in the technical data):
     50-69 → use 70% of margin
     < 50  → skip or use 50% max and explain why you're entering despite low score
 
+  S/R levels and relative volume (futures-specific):
+    For LONGS: entry near support, stop below second support. A long between
+      two close resistances (small gap) has limited upside — say so and reduce
+      leverage. relVol > 2x on a breakout above resistance = high conviction.
+    For SHORTS: entry near resistance, stop above second resistance.
+    bearish_rsi divergence in a TRENDING_UP regime = the ideal short setup —
+      momentum is visibly breaking while price is still high.
+
 REQUIRED OUTPUT:
   1. \`$ futures <direction> <symbol> @ <exchange> · <leverage>x\` (command echo)
   2. Market snapshot (2 lines):
@@ -779,6 +807,17 @@ TECHNICAL SIGNALS — USE THEM, DON'T IGNORE THEM
     OBV=rising  + price falling: smart money accumulating despite price drop;
                                   note it — may set up a long reversal entry
     OBV=flat:                     no volume conviction either way; wait
+
+  Relative volume (relVol): > 2x = confirms entry momentum. < 0.5x = skip,
+    wait for volume to return before arming an order.
+
+  Divergence: if ⚠ DIVERGENCE: bearish_rsi is present, REDUCE from.amount by
+    30% and add "divergência de baixa — size reduzido" to card summary.
+    bullish_rsi in a downtrend = contrarian long opportunity; small size only.
+
+  S/R levels and daily pivot: anchor buy_limit at/near the nearest support.
+    Do NOT place a buy_limit above the nearest resistance (chasing).
+    PP above current price = bearish intraday bias; factor into stop placement.
 
   Order book:
     slippage_$1k: if > 30 bps the book is thin — keep the buy_limit price
