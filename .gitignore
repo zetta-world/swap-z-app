@@ -35,3 +35,6 @@ next-env.d.ts
 *.pem
 .idea
 .vscode
+
+# Claude Code agent worktrees (ephemeral, never commit)
+.claude/
