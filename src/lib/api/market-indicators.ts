@@ -69,9 +69,8 @@ function calcEMA(closes: number[], period: number): number[] {
   return out;
 }
 
-function calcRSI(closes: number[], period = 14): number | null {
-  if (closes.length < period + 2) return null;
-  // Prime the pump with a simple avg over the first `period` diffs
+function calcRSIArray(closes: number[], period = 14): number[] {
+  if (closes.length < period + 2) return [];
   let avgGain = 0, avgLoss = 0;
   for (let i = 1; i <= period; i++) {
     const d = closes[i] - closes[i - 1];
@@ -79,16 +78,21 @@ function calcRSI(closes: number[], period = 14): number | null {
   }
   avgGain /= period;
   avgLoss /= period;
-  // Wilder's smoothing over the rest
+  const result: number[] = [];
+  // result[j] corresponds to closes[j + period]
+  result.push(avgLoss === 0 ? (avgGain === 0 ? 50 : 100) : 100 - 100 / (1 + avgGain / avgLoss));
   for (let i = period + 1; i < closes.length; i++) {
     const d = closes[i] - closes[i - 1];
     avgGain = (avgGain * (period - 1) + Math.max(d, 0)) / period;
     avgLoss = (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
+    result.push(avgLoss === 0 ? (avgGain === 0 ? 50 : 100) : 100 - 100 / (1 + avgGain / avgLoss));
   }
-  // Edge cases: no losses → 100 (pure uptrend); but a fully flat market
-  // (no gains AND no losses) is undefined — return neutral 50, not 100.
-  if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
-  return 100 - 100 / (1 + avgGain / avgLoss);
+  return result;
+}
+
+function calcRSI(closes: number[], period = 14): number | null {
+  const arr = calcRSIArray(closes, period);
+  return arr.length > 0 ? arr[arr.length - 1] : null;
 }
 
 interface MACDResult {
@@ -232,6 +236,131 @@ function calcOBV(candles: Candle[]): { obv: number; trend: "rising" | "falling" 
   return { obv: last, trend };
 }
 
+// ─── Relative Volume ─────────────────────────────────────────────────────
+
+function calcRelativeVolume(candles: Candle[], period = 20): number | null {
+  if (candles.length < period + 1) return null;
+  const current = candles[candles.length - 1].volume;
+  const avgVol = candles.slice(-period - 1, -1).reduce((a, c) => a + c.volume, 0) / period;
+  if (avgVol <= 0) return null;
+  return current / avgVol; // e.g. 2.5 = 2.5× average
+}
+
+// ─── RSI Divergence Detection ────────────────────────────────────────────
+
+function detectRSIDivergence(
+  closes: number[],
+  rsiArray: number[],  // rsiArray[j] corresponds to closes[j + period]
+  period = 14,
+): "bullish_rsi" | "bearish_rsi" | null {
+  const left = 4, right = 4;
+  const minSwingPct = 1.5; // minimum % between two consecutive pivots
+
+  const priceHighs: Array<{ price: number; rsi: number }> = [];
+  const priceLows:  Array<{ price: number; rsi: number }> = [];
+
+  // Scan last 60 candles, leave right-side buffer
+  const scanStart = Math.max(period + left, closes.length - 60);
+  const scanEnd   = closes.length - right;
+
+  for (let i = scanStart; i < scanEnd; i++) {
+    let isHigh = true, isLow = true;
+    for (let k = -left; k <= right; k++) {
+      if (k === 0) continue;
+      if (closes[i + k] >= closes[i]) isHigh = false;
+      if (closes[i + k] <= closes[i]) isLow  = false;
+    }
+    const rsiIdx = i - period;
+    if (rsiIdx < 0 || rsiIdx >= rsiArray.length) continue;
+    if (isHigh) priceHighs.push({ price: closes[i], rsi: rsiArray[rsiIdx] });
+    if (isLow)  priceLows.push( { price: closes[i], rsi: rsiArray[rsiIdx] });
+  }
+
+  // Bearish divergence: price higher high + RSI lower high
+  if (priceHighs.length >= 2) {
+    const [a, b] = priceHighs.slice(-2);
+    if ((b.price - a.price) / a.price * 100 > minSwingPct && b.rsi < a.rsi - 2) {
+      return "bearish_rsi";
+    }
+  }
+
+  // Bullish divergence: price lower low + RSI higher low
+  if (priceLows.length >= 2) {
+    const [a, b] = priceLows.slice(-2);
+    if ((a.price - b.price) / a.price * 100 > minSwingPct && b.rsi > a.rsi + 2) {
+      return "bullish_rsi";
+    }
+  }
+
+  return null;
+}
+
+// ─── Support / Resistance + Daily Pivots ─────────────────────────────────
+
+function calcSupportResistance(
+  candles: Candle[],
+  price: number,
+  leftRight = 5,
+): { supports: number[]; resistances: number[] } {
+  if (candles.length < leftRight * 2 + 5) return { supports: [], resistances: [] };
+
+  const swingHighs: number[] = [];
+  const swingLows:  number[] = [];
+
+  for (let i = leftRight; i < candles.length - leftRight; i++) {
+    let isHigh = true, isLow = true;
+    for (let k = -leftRight; k <= leftRight; k++) {
+      if (k === 0) continue;
+      if (candles[i + k].high >= candles[i].high) isHigh = false;
+      if (candles[i + k].low  <= candles[i].low)  isLow  = false;
+    }
+    if (isHigh) swingHighs.push(candles[i].high);
+    if (isLow)  swingLows.push(candles[i].low);
+  }
+
+  // Cluster levels within 0.5% of each other
+  const cluster = (levels: number[]): number[] => {
+    if (!levels.length) return [];
+    const sorted = [...levels].sort((a, b) => a - b);
+    const out: number[] = [];
+    let group: number[] = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+      if ((sorted[i] - sorted[i - 1]) / sorted[i - 1] < 0.005) {
+        group.push(sorted[i]);
+      } else {
+        out.push(group.reduce((a, b) => a + b, 0) / group.length);
+        group = [sorted[i]];
+      }
+    }
+    out.push(group.reduce((a, b) => a + b, 0) / group.length);
+    return out;
+  };
+
+  const clusteredHighs = cluster(swingHighs);
+  const clusteredLows  = cluster(swingLows);
+
+  const supports    = clusteredLows.filter(l => l < price * 0.999).sort((a, b) => b - a).slice(0, 3);
+  const resistances = clusteredHighs.filter(h => h > price * 1.001).sort((a, b) => a - b).slice(0, 3);
+
+  return { supports, resistances };
+}
+
+function calcDailyPivots(
+  dailyCandles: Candle[],
+): { pp: number; r1: number; r2: number; s1: number; s2: number } | null {
+  // Use the second-to-last candle (last FULLY closed day)
+  if (dailyCandles.length < 2) return null;
+  const prev = dailyCandles[dailyCandles.length - 2];
+  const pp = (prev.high + prev.low + prev.close) / 3;
+  return {
+    pp,
+    r1: 2 * pp - prev.low,
+    r2: pp + (prev.high - prev.low),
+    s1: 2 * pp - prev.high,
+    s2: pp - (prev.high - prev.low),
+  };
+}
+
 // ─── Interfaces ──────────────────────────────────────────────────────────
 
 export type MarketRegime = "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "TRANSITIONING";
@@ -272,6 +401,16 @@ export interface SymbolIndicators {
    * Filled in by getMarketIndicators() after order book + F&G are known.
    */
   confidenceScore: number | null;
+  /** Current volume relative to the prior 20-bar average. */
+  relVol:          number | null;
+  /** RSI divergence detected in the last 60 candles, or null if none. */
+  divergence:      "bullish_rsi" | "bearish_rsi" | null;
+  /** Swing lows below price, nearest first (up to 3). */
+  supports:        number[];
+  /** Swing highs above price, nearest first (up to 3). */
+  resistances:     number[];
+  /** Daily pivot levels derived from the prior closed day. */
+  pivotLevels:     { pp: number; r1: number; r2: number; s1: number; s2: number } | null;
 }
 
 export interface OrderBookSnapshot {
@@ -411,11 +550,13 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
     atr14: null, atrPct: null, adx: null, regime: "TRANSITIONING",
     trend: "neutral", htf4h: null, htf1d: null, alignment: "mixed",
     obv: null, obvTrend: null, confidenceScore: null,
+    relVol: null, divergence: null, supports: [], resistances: [], pivotLevels: null,
   };
   if (c1h.length < 52) return empty;
 
   const closes = c1h.map((c) => c.close);
-  const rsi14   = calcRSI(closes, 14);
+  const rsiArray = calcRSIArray(closes, 14);
+  const rsi14   = rsiArray.length > 0 ? rsiArray[rsiArray.length - 1] : null;
   const ema20Arr = calcEMA(closes, 20);
   const ema50Arr = calcEMA(closes, 50);
   const macd    = calcMACD(closes);
@@ -460,6 +601,10 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
   else if (bulls > 0 && bears > 0) alignment = "conflict";
 
   const obvResult = calcOBV(c1h);
+  const relVol = calcRelativeVolume(c1h, 20);
+  const divergence = detectRSIDivergence(closes, rsiArray);
+  const srLevels = price !== null ? calcSupportResistance(c1h, price, 5) : { supports: [], resistances: [] };
+  const pivotLevels = calcDailyPivots(c1d);
 
   return {
     symbol, price, rsi14, ema20, ema50, macd, atr14, atrPct,
@@ -467,6 +612,11 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
     obv:      obvResult?.obv      ?? null,
     obvTrend: obvResult?.trend    ?? null,
     confidenceScore: null, // filled by getMarketIndicators after ob + f&g are available
+    relVol,
+    divergence,
+    supports:    srLevels.supports,
+    resistances: srLevels.resistances,
+    pivotLevels,
   };
 }
 
@@ -670,12 +820,13 @@ export function formatIndicatorsForPrompt(result: MarketIndicatorsResult): strin
       const adxStr = ind.adx !== null ? `ADX=${ind.adx.toFixed(0)}` : "ADX=n/a";
 
       const obvStr = ind.obvTrend !== null ? `OBV=${ind.obvTrend}` : "OBV=n/a";
+      const relVolStr = ind.relVol !== null ? ` | relVol=${ind.relVol.toFixed(1)}x` : "";
       const scoreStr = ind.confidenceScore !== null
         ? ` | score=${ind.confidenceScore}/100`
         : "";
 
       lines.push(
-        `  ${ind.symbol}/USDT: price=${fmt(ind.price)} | RSI=${rsi} ${rsiLabel} | MACD ${macdStr} | EMA20=${fmt(ind.ema20)} EMA50=${fmt(ind.ema50)} | ${atrStr} | ${adxStr} | ${obvStr} | regime=${ind.regime} | trend1h=${ind.trend}${scoreStr}`
+        `  ${ind.symbol}/USDT: price=${fmt(ind.price)} | RSI=${rsi} ${rsiLabel} | MACD ${macdStr} | EMA20=${fmt(ind.ema20)} EMA50=${fmt(ind.ema50)} | ${atrStr} | ${adxStr} | ${obvStr}${relVolStr} | regime=${ind.regime} | trend1h=${ind.trend}${scoreStr}`
       );
 
       // Multi-timeframe confirmation line
@@ -684,6 +835,35 @@ export function formatIndicatorsForPrompt(result: MarketIndicatorsResult): strin
       lines.push(
         `      ↳ MTF: 4h=${tf(ind.htf4h)} · 1D=${tf(ind.htf1d)} → alignment=${ind.alignment}`
       );
+
+      // S/R sub-line (only when levels exist)
+      if (ind.supports.length > 0 || ind.resistances.length > 0) {
+        const supStr = ind.supports.length > 0
+          ? ind.supports.map(fmt).join("/")
+          : "none";
+        const resStr = ind.resistances.length > 0
+          ? ind.resistances.map(fmt).join("/")
+          : "none";
+        lines.push(
+          `      ↳ S/R(1h): supports=${supStr} | resistances=${resStr}`
+        );
+      }
+
+      // Pivot sub-line (only when available)
+      if (ind.pivotLevels !== null) {
+        const { pp, r1, r2, s1, s2 } = ind.pivotLevels;
+        lines.push(
+          `      ↳ Pivot(D): PP=${fmt(pp)} | R1=${fmt(r1)} R2=${fmt(r2)} | S1=${fmt(s1)} S2=${fmt(s2)}`
+        );
+      }
+
+      // Divergence sub-line (only when detected — no noise when none)
+      if (ind.divergence !== null) {
+        const divMsg = ind.divergence === "bearish_rsi"
+          ? "⚠ DIVERGENCE: bearish_rsi — price new high, RSI lower high. Weakening momentum."
+          : "⚠ DIVERGENCE: bullish_rsi — price new low, RSI higher low. Sellers losing steam.";
+        lines.push(`      ↳ ${divMsg}`);
+      }
     }
     lines.push("");
   }
