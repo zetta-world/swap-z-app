@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  Lock, Unlock, Eye, EyeOff, KeyRound, ShieldAlert, Activity, Power, AlertTriangle,
+  Lock, Unlock, Eye, EyeOff, KeyRound, ShieldAlert, Power,
+  ArrowDownUp, ListOrdered, Wallet, Bot,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -22,26 +23,36 @@ import { cn } from "@/lib/cn";
 
 const AUTO_LOCK_MS = 10 * 60 * 1000; // 10 minutes idle → re-lock
 
+type ConsoleTab = "trade" | "orders" | "balance" | "zion";
+
+const TABS: Array<{
+  id:    ConsoleTab;
+  label: string;
+  Icon:  React.ComponentType<{ className?: string }>;
+}> = [
+  { id: "trade",   label: "Negociar", Icon: ArrowDownUp  },
+  { id: "orders",  label: "Ordens",   Icon: ListOrdered  },
+  { id: "balance", label: "Saldo",    Icon: Wallet       },
+  { id: "zion",    label: "ZION",     Icon: Bot          },
+];
+
 /**
- * CEX Console — the user-facing trading panel for Binance / Coinbase / OKX.
+ * CEX Console — tabbed trading interface (Negociar / Ordens / Saldo / ZION).
  *
  * Real funds move here. The whole page is gated behind a vault unlock:
  *   1. User enters passphrase → keystore decrypts → credentials in memory
- *   2. Auto-lock after 10 minutes of no activity (mouse / key / scroll)
- *   3. Explicit Lock button always visible
- *   4. Navigation away from /cex (Sidebar link, browser back, tab close)
- *      destroys the React tree which destroys the in-memory creds
- *
- * The page never sends credentials anywhere except to the /api/cex/*
- * endpoints, which themselves never persist them.
+ *   2. Auto-lock after 10 minutes of no activity
+ *   3. Explicit Lock button always visible in the top bar
  */
 export default function CexConsole() {
   const searchParams = useSearchParams();
-  // Deep-link from SwapCard: ?symbol=BTC/USDT&side=buy pre-fills the trade
-  // panel once the vault is unlocked. Captured once on mount.
   const [prefill] = useState(() => ({
     symbol: searchParams?.get("symbol") || undefined,
-    side:   (searchParams?.get("side") === "sell" ? "sell" : searchParams?.get("side") === "buy" ? "buy" : undefined) as ("buy" | "sell" | undefined),
+    side:   (
+      searchParams?.get("side") === "sell" ? "sell"
+      : searchParams?.get("side") === "buy"  ? "buy"
+      : undefined
+    ) as ("buy" | "sell" | undefined),
   }));
 
   const t = useT();
@@ -52,6 +63,7 @@ export default function CexConsole() {
   const [unlocking,   setUnlocking]   = useState(false);
   const [creds,       setCreds]       = useState<Partial<Record<CexId, CexCredentials>> | null>(null);
   const [selectedId,  setSelectedId]  = useState<CexId | null>(null);
+  const [activeTab,   setActiveTab]   = useState<ConsoleTab>("trade");
 
   const lastActivity = useRef<number>(Date.now());
 
@@ -78,8 +90,7 @@ export default function CexConsole() {
     if (ids.length > 0 && !selectedId) setSelectedId(ids[0]);
   }, [creds, selectedId]);
 
-  // Auto-lock on idle. Wired to all user input events at the document
-  // level — any interaction resets the timer.
+  // Auto-lock on idle
   useEffect(() => {
     if (!creds) return;
     const bump = () => { lastActivity.current = Date.now(); };
@@ -110,9 +121,6 @@ export default function CexConsole() {
         return;
       }
       setCreds(decrypted);
-      // Share the unlocked creds with the global vault so the ZION
-      // autopilot (or any other cross-page surface) can use them
-      // without re-asking for the passphrase.
       useCexVault.getState().setUnlocked(decrypted);
       lastActivity.current = Date.now();
       toast.success(t("cex.vaultUnlockedToast"));
@@ -249,147 +257,156 @@ export default function CexConsole() {
     );
   }
 
-  // ─── Unlocked: render the trading console ───────────────────────────
+  // ─── Unlocked: tabbed trading console ───────────────────────────────
   const availableIds = Object.keys(creds) as CexId[];
+  const activeCreds  = selectedId ? creds[selectedId] ?? null : null;
 
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       <div className="absolute inset-0 grid-bg opacity-25 pointer-events-none" />
-      <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-6 lg:py-8 max-w-7xl mx-auto">
-        <PageHeader>
-          <button
-            type="button"
-            onClick={onLock}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-red/30 bg-red/[0.04] text-red hover:bg-red/[0.08] font-mono text-[10px] tracking-widest uppercase"
-          >
-            <Power className="w-3 h-3" />
-            {t("cex.lockVault")}
-          </button>
-        </PageHeader>
 
-        {/* Real-funds warning banner */}
-        <div className="mt-5 rounded-xl border border-red/30 bg-red/[0.05] p-3 flex items-start gap-2">
-          <ShieldAlert className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
-          <p className="font-mono text-[11px] text-ink-2 leading-relaxed">
-            {t("cex.realFundsWarning")}
-          </p>
-        </div>
+      <div className="relative z-10 max-w-7xl mx-auto">
 
-        {/* Exchange selector */}
-        <div className="mt-5 flex flex-wrap gap-2">
-          {SUPPORTED_CEX_IDS.map((id) => {
-            const meta      = CEX_META[id];
-            const isAvail   = availableIds.includes(id);
-            const isSel     = selectedId === id;
-            return (
+        {/* ── Sticky top bar: exchange pills + lock ─────────────────── */}
+        <div className="sticky top-0 z-20 bg-bg/90 backdrop-blur-md border-b border-white/5">
+          <div className="px-4 sm:px-6 pt-3 pb-0">
+
+            {/* Exchange row */}
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-1 pb-2 min-w-0">
+                {availableIds.map((id) => {
+                  const meta  = CEX_META[id];
+                  const isSel = selectedId === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setSelectedId(id)}
+                      className={cn(
+                        "flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border font-display font-bold text-xs tracking-wide transition-all whitespace-nowrap",
+                        isSel
+                          ? "border-cyan/40 bg-cyan/[0.10] text-cyan"
+                          : "border-white/10 bg-bg-1/40 text-ink-2 hover:text-ink hover:border-white/20",
+                      )}
+                    >
+                      <div
+                        className="w-4 h-4 rounded-full flex items-center justify-center font-display font-extrabold text-[9px] flex-shrink-0"
+                        style={{ background: `${meta.color}22`, color: meta.color }}
+                      >
+                        {id.slice(0, 1).toUpperCase()}
+                      </div>
+                      {meta.label.replace(" Advanced", "").replace(" (Huobi)", "")}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Lock */}
               <button
-                key={id}
-                onClick={() => isAvail && setSelectedId(id)}
-                disabled={!isAvail}
-                className={cn(
-                  "inline-flex items-center gap-2 px-3 py-2 rounded-lg border transition-all min-w-0",
-                  isSel  ? "border-cyan/40 bg-cyan/[0.08]"
-                         : isAvail ? "border-white/10 bg-bg-1/40 hover:border-white/20" : "border-white/5 bg-bg-1/20 opacity-40 cursor-not-allowed",
-                )}
+                type="button"
+                onClick={onLock}
+                className="flex-shrink-0 flex items-center gap-1.5 h-8 px-3 rounded-full border border-red/30 bg-red/[0.04] text-red hover:bg-red/[0.08] font-mono text-[10px] tracking-widest uppercase transition-colors mb-2"
               >
-                <div
-                  className="w-7 h-7 rounded-md flex items-center justify-center font-display font-extrabold text-[11px] flex-shrink-0"
-                  style={{ background: `${meta.color}1A`, color: meta.color, border: `1px solid ${meta.color}55` }}
-                >
-                  {id.slice(0, 1).toUpperCase()}
-                </div>
-                <div className="text-left min-w-0">
-                  <div className="font-display font-bold text-xs text-ink leading-none">{meta.label}</div>
-                  <div className="font-mono text-[9px] text-ink-3 tracking-wider mt-0.5">
-                    {isAvail ? (isSel ? t("cex.activeAvail") : t("cex.switchAvail")) : t("cex.notConnectedAvail")}
-                  </div>
-                </div>
+                <Power className="w-3 h-3" />
+                <span className="hidden sm:inline">{t("cex.lockVault")}</span>
               </button>
-            );
-          })}
+            </div>
+
+            {/* Tab bar */}
+            <div className="flex">
+              {TABS.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setActiveTab(id)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-4 py-2.5 font-mono text-[10px] tracking-widest uppercase transition-all border-b-2 -mb-px",
+                    activeTab === id
+                      ? "border-cyan text-cyan"
+                      : "border-transparent text-ink-3 hover:text-ink-2 hover:border-white/10",
+                  )}
+                >
+                  <Icon className="w-3 h-3" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* ZION Autopilot CEX panel */}
-        {selectedId && creds[selectedId] && (
-          <div className="mt-5">
-            <ZionCexAutopilot
-              key={`zion-${selectedId}`}
-              exchangeId={selectedId}
-              credentials={creds[selectedId]!}
-            />
-          </div>
-        )}
+        {/* ── Tab content ───────────────────────────────────────────── */}
+        <div className="px-4 sm:px-6 py-5">
 
-        {/* Trade panel */}
-        {selectedId && creds[selectedId] && (
-          <div className="mt-5">
-            <CexTradePanel
-              key={selectedId}        // remount when switching exchanges
-              exchangeId={selectedId}
-              credentials={creds[selectedId]!}
-              initialSymbol={prefill.symbol}
-              initialSide={prefill.side}
-            />
-          </div>
-        )}
+          {/* Real-funds warning — compact strip in the Trade tab only */}
+          {activeTab === "trade" && (
+            <div className="mb-4 rounded-xl border border-red/20 bg-red/[0.04] px-3 py-2 flex items-center gap-2">
+              <ShieldAlert className="w-3.5 h-3.5 text-red flex-shrink-0" />
+              <p className="font-mono text-[10px] text-ink-2 leading-relaxed">{t("cex.realFundsWarning")}</p>
+            </div>
+          )}
 
-        {/* Open orders */}
-        {selectedId && creds[selectedId] && (
-          <div className="mt-5">
-            <CexOpenOrdersPanel
-              key={`open-${selectedId}`}
-              exchangeId={selectedId}
-              credentials={creds[selectedId]!}
-            />
-          </div>
-        )}
-
-        {/* Wallet ↔ CEX bridge — deposit address + withdrawal flow */}
-        {selectedId && creds[selectedId] && (
-          <div className="mt-5">
-            <WalletCexBridge
-              key={`bridge-${selectedId}`}
-              exchangeId={selectedId}
-              credentials={creds[selectedId]!}
-            />
-          </div>
-        )}
-
-        {/* Footer hint */}
-        <div className="mt-8 rounded-xl border border-white/5 bg-bg-1/30 p-3 flex items-start gap-2 max-w-4xl">
-          <Activity className="w-3.5 h-3.5 text-ink-3 flex-shrink-0 mt-0.5" />
-          <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-            {t("cex.footerLimitation")}
-          </p>
+          {selectedId && activeCreds ? (
+            <>
+              {activeTab === "trade" && (
+                <CexTradePanel
+                  key={selectedId}
+                  exchangeId={selectedId}
+                  credentials={activeCreds}
+                  initialSymbol={prefill.symbol}
+                  initialSide={prefill.side}
+                />
+              )}
+              {activeTab === "orders" && (
+                <CexOpenOrdersPanel
+                  key={`orders-${selectedId}`}
+                  exchangeId={selectedId}
+                  credentials={activeCreds}
+                />
+              )}
+              {activeTab === "balance" && (
+                <WalletCexBridge
+                  key={`bridge-${selectedId}`}
+                  exchangeId={selectedId}
+                  credentials={activeCreds}
+                />
+              )}
+              {activeTab === "zion" && (
+                <ZionCexAutopilot
+                  key={`zion-${selectedId}`}
+                  exchangeId={selectedId}
+                  credentials={activeCreds}
+                />
+              )}
+            </>
+          ) : (
+            <div className="py-20 text-center">
+              <p className="font-mono text-sm text-ink-3">Selecione uma exchange para começar</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Page header ───────────────────────────────────────────────────────
+// ─── Page header (shown only in locked / no-vault states) ──────────────
 
-function PageHeader({ children }: { children?: React.ReactNode }) {
+function PageHeader() {
   const t = useT();
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <Unlock className="w-4 h-4 text-cyan" />
-            <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">
-              {t("cex.consoleEyebrow")}
-            </span>
-          </div>
-          <h1 className="font-display font-extrabold text-[clamp(1.6rem,4vw,2.4rem)] leading-[1.05] tracking-[-0.02em] text-ink">
-            {t("cex.consoleTitle1")} <span className="text-grad-aurora">{t("cex.consoleTitleHL")}</span> {t("cex.consoleTitle2")}
-          </h1>
-          <p className="font-sans text-sm text-ink-2/95 leading-relaxed mt-2 max-w-2xl">
-            {t("cex.consoleBody")}
-          </p>
-        </div>
-        {children}
+      <div className="flex items-center gap-2 mb-2">
+        <Unlock className="w-4 h-4 text-cyan" />
+        <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">
+          {t("cex.consoleEyebrow")}
+        </span>
       </div>
+      <h1 className="font-display font-extrabold text-[clamp(1.6rem,4vw,2.4rem)] leading-[1.05] tracking-[-0.02em] text-ink">
+        {t("cex.consoleTitle1")} <span className="text-grad-aurora">{t("cex.consoleTitleHL")}</span> {t("cex.consoleTitle2")}
+      </h1>
+      <p className="font-sans text-sm text-ink-2/95 leading-relaxed mt-2 max-w-2xl">
+        {t("cex.consoleBody")}
+      </p>
     </motion.div>
   );
 }
