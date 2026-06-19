@@ -148,43 +148,63 @@ export default function CexPairSelector({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[70] bg-bg/70 backdrop-blur-sm animate-fade-in" />
+        <Dialog.Overlay className="fixed inset-0 z-[70] bg-bg/80 backdrop-blur-md animate-fade-in" />
         <Dialog.Content
-          className="fixed bottom-0 left-0 right-0 z-[70] flex flex-col bg-bg border-t border-white/10 rounded-t-2xl outline-none sm:left-1/2 sm:-translate-x-1/2 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 sm:w-[440px] sm:rounded-2xl sm:border"
-          style={{ maxHeight: "90vh" }}
+          className={cn(
+            "fixed z-[70] flex flex-col outline-none overflow-hidden",
+            // mobile: bottom sheet, fixed height so header never clips off-screen
+            "bottom-0 left-0 right-0 h-[82vh] rounded-t-3xl",
+            "border-t border-white/10 bg-gradient-to-b from-bg-1 to-bg shadow-2xl",
+            // desktop: centered card
+            "sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2",
+            "sm:w-[440px] sm:h-[640px] sm:max-h-[88vh] sm:rounded-3xl sm:border",
+          )}
           onOpenAutoFocus={(e) => { e.preventDefault(); searchRef.current?.focus(); }}
         >
           {/* Mobile drag handle */}
-          <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
-            <div className="w-10 h-1 rounded-full bg-white/15" />
+          <div className="flex justify-center pt-3 pb-1 sm:hidden flex-shrink-0">
+            <div className="w-9 h-1 rounded-full bg-white/20" />
           </div>
 
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 pt-2 pb-3 border-b border-white/5">
-            <Dialog.Title className="font-display font-extrabold text-sm text-ink">
-              Selecionar Par
-            </Dialog.Title>
+          {/* Header — title + prominent close button */}
+          <div className="flex items-center justify-between px-5 pt-2 pb-3 flex-shrink-0">
+            <div className="min-w-0">
+              <Dialog.Title className="font-display font-extrabold text-base text-ink leading-none">
+                Selecionar Par
+              </Dialog.Title>
+              <p className="font-mono text-[10px] text-ink-3 tracking-wider mt-1 uppercase">
+                {markets.length > 0 ? `${markets.length} mercados` : "—"}
+              </p>
+            </div>
             <Dialog.Close asChild>
-              <button type="button" className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
+              <button
+                type="button"
+                aria-label="Fechar"
+                className="w-9 h-9 rounded-full flex items-center justify-center text-ink-2 bg-white/[0.05] border border-white/10 hover:bg-white/[0.10] hover:text-ink active:scale-95 transition-all flex-shrink-0"
+              >
                 <X className="w-4 h-4" />
               </button>
             </Dialog.Close>
           </div>
 
           {/* Search */}
-          <div className="px-4 pt-3 pb-2">
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/8 focus-within:border-cyan/30 transition-colors">
-              <Search className="w-3.5 h-3.5 text-ink-3 flex-shrink-0" />
+          <div className="px-5 pb-3 flex-shrink-0">
+            <div className="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl bg-white/[0.05] border border-white/8 focus-within:border-cyan/40 focus-within:bg-white/[0.07] transition-all">
+              <Search className="w-4 h-4 text-ink-3 flex-shrink-0" />
               <input
                 ref={searchRef}
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Pesquisar… BTC, ETH, SOL"
-                className="flex-1 bg-transparent outline-none text-sm font-mono text-ink placeholder:text-ink-4"
+                placeholder="Pesquisar BTC, ETH, SOL…"
+                className="flex-1 bg-transparent outline-none text-sm font-medium text-ink placeholder:text-ink-4"
               />
               {search && (
-                <button type="button" onClick={() => setSearch("")} className="text-ink-3 hover:text-ink">
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="w-5 h-5 rounded-full flex items-center justify-center bg-white/10 text-ink-3 hover:text-ink flex-shrink-0"
+                >
                   <X className="w-3 h-3" />
                 </button>
               )}
@@ -193,17 +213,17 @@ export default function CexPairSelector({
 
           {/* Quote tabs — hidden while searching */}
           {!isSearching && quoteAssets.length > 0 && (
-            <div className="flex gap-1 px-4 pb-2 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-2 px-5 pb-3 overflow-x-auto scrollbar-hide flex-shrink-0">
               {quoteAssets.map((q) => (
                 <button
                   key={q}
                   type="button"
                   onClick={() => setQuoteFilter(q)}
                   className={cn(
-                    "flex-shrink-0 px-3 py-1.5 rounded-full font-mono text-[10px] tracking-widest uppercase border transition-all",
+                    "flex-shrink-0 px-4 py-1.5 rounded-full font-display font-bold text-[11px] tracking-wide border transition-all",
                     quoteFilter === q
-                      ? "bg-cyan/15 text-cyan border-cyan/30"
-                      : "bg-white/[0.03] text-ink-3 border-white/8 hover:text-ink-2",
+                      ? "bg-cyan/15 text-cyan border-cyan/40 shadow-[0_0_12px_-2px] shadow-cyan/30"
+                      : "bg-white/[0.04] text-ink-3 border-white/8 hover:text-ink-2 hover:border-white/15",
                   )}
                 >
                   {q}
@@ -212,37 +232,25 @@ export default function CexPairSelector({
             </div>
           )}
 
-          <div className="border-t border-white/5" />
-
           {/* Pair list */}
-          <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">
+          <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 border-t border-white/5">
 
             {loading && (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="flex flex-col items-center justify-center py-20 gap-3">
                 <Loader2 className="w-5 h-5 animate-spin text-cyan" />
                 <p className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Carregando mercados…</p>
               </div>
             )}
 
             {!loading && error && (
-              <div className="mx-4 mt-4 rounded-xl border border-red/20 bg-red/[0.05] p-3 flex items-start gap-2">
+              <div className="mx-5 mt-4 rounded-xl border border-red/20 bg-red/[0.05] p-3 flex items-start gap-2">
                 <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
                 <p className="font-mono text-[11px] text-red leading-relaxed">{error}</p>
               </div>
             )}
 
             {!loading && !error && displayed.length === 0 && (
-              <p className="text-center font-mono text-[11px] text-ink-3 py-12">Nenhum par encontrado</p>
-            )}
-
-            {/* Column headers */}
-            {!loading && !error && displayed.length > 0 && (
-              <div className="flex items-center px-4 py-1.5 sticky top-0 bg-bg/95 backdrop-blur-sm">
-                <span className="flex-1 font-mono text-[9px] text-ink-4 tracking-widest uppercase">Par</span>
-                {isSearching && (
-                  <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">Quote</span>
-                )}
-              </div>
+              <p className="text-center font-mono text-[11px] text-ink-3 py-16">Nenhum par encontrado</p>
             )}
 
             {!loading && !error && displayed.map((m) => {
@@ -253,35 +261,35 @@ export default function CexPairSelector({
                   type="button"
                   onClick={() => handleSelect(m.symbol)}
                   className={cn(
-                    "w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.03] active:bg-white/[0.05] transition-colors",
-                    isCurrent && "bg-cyan/[0.05]",
+                    "w-full flex items-center gap-3 px-5 py-3 transition-colors",
+                    isCurrent ? "bg-cyan/[0.07]" : "hover:bg-white/[0.04] active:bg-white/[0.06]",
                   )}
                 >
                   <TokenLogo base={m.base} />
 
                   <div className="flex-1 text-left min-w-0">
-                    <div className="font-display font-bold text-[13px] leading-tight">
+                    <div className="font-display font-bold text-sm leading-tight flex items-baseline gap-0.5">
                       <span className={isCurrent ? "text-cyan" : "text-ink"}>{m.base}</span>
-                      <span className="text-ink-3 font-normal text-[11px]">/{m.quote}</span>
+                      <span className="text-ink-3 font-normal text-xs">/{m.quote}</span>
                     </div>
-                    <div className="font-mono text-[10px] text-ink-4 mt-0.5 truncate">{m.symbol}</div>
                   </div>
 
-                  {isCurrent
-                    ? <Check className="w-4 h-4 text-cyan flex-shrink-0" />
-                    : <span className="w-4 flex-shrink-0" />}
+                  {isCurrent && (
+                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-cyan/15 flex-shrink-0">
+                      <Check className="w-3 h-3 text-cyan" />
+                    </span>
+                  )}
                 </button>
               );
             })}
 
-            {/* Show count when in search mode */}
             {isSearching && displayed.length > 0 && (
-              <p className="text-center font-mono text-[9px] text-ink-4 py-3">
+              <p className="text-center font-mono text-[9px] text-ink-4 py-4">
                 {displayed.length} resultado{displayed.length !== 1 ? "s" : ""}
               </p>
             )}
 
-            <div className="h-6" />
+            <div className="h-4" />
           </div>
         </Dialog.Content>
       </Dialog.Portal>
