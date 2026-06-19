@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  TrendingUp, TrendingDown, ArrowDownUp, RefreshCw, BookOpen, AlertTriangle, Wallet,
+  TrendingUp, TrendingDown, ArrowDownUp, RefreshCw, BookOpen, AlertTriangle, Wallet, ChevronDown, LayoutGrid,
 } from "lucide-react";
+import CexPairSelector from "./CexPairSelector";
 import { toast } from "sonner";
 import {
   CEX_META, type CexId, type CexCredentials, type CexBalance,
@@ -67,7 +68,9 @@ export default function CexTradePanel({
   const [bLoading,  setBLoading]  = useState(false);
 
   // Confirm modal
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmOpen,   setConfirmOpen]   = useState(false);
+  // Pair selector modal
+  const [selectorOpen,  setSelectorOpen]  = useState(false);
 
   // Track open orders refresh trigger after a successful place
   const [recentOrder, setRecentOrder] = useState<CexOrder | null>(null);
@@ -241,18 +244,27 @@ export default function CexTradePanel({
         </div>
 
         {/* Symbol picker */}
-        <label className="block min-w-0">
+        <div className="min-w-0">
           <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1">{t("cex.symbol")}</div>
-          <input
-            type="text"
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value.toUpperCase().trim())}
-            placeholder={t("cex.symbolPlaceholder")}
-            spellCheck={false}
-            autoCorrect="off"
-            className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/8 focus:border-cyan/30 outline-none text-sm font-mono text-ink placeholder:text-ink-4"
-          />
-          <div className="mt-2 flex flex-wrap gap-1">
+
+          {/* Current pair — clickable, opens full market list */}
+          <button
+            type="button"
+            onClick={() => setSelectorOpen(true)}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/8 hover:border-cyan/25 transition-colors group"
+          >
+            <div className="flex items-baseline gap-1 min-w-0">
+              <span className="font-display font-extrabold text-base text-ink leading-none">{baseAsset}</span>
+              <span className="font-mono text-xs text-ink-3">/{quoteAsset}</span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase hidden sm:inline">trocar</span>
+              <ChevronDown className="w-3.5 h-3.5 text-ink-3 group-hover:text-cyan transition-colors" />
+            </div>
+          </button>
+
+          {/* Quick-access chips + "Ver todos" */}
+          <div className="mt-2 flex items-center gap-1 flex-wrap">
             {SUGGESTED_SYMBOLS[exchangeId].map((s) => (
               <button
                 key={s}
@@ -265,11 +277,19 @@ export default function CexTradePanel({
                     : "bg-white/[0.03] text-ink-3 border border-white/5 hover:text-ink-2",
                 )}
               >
-                {s}
+                {s.split("/")[0]}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => setSelectorOpen(true)}
+              className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[10px] text-ink-3 border border-white/5 bg-white/[0.02] hover:text-cyan hover:border-cyan/20 transition-colors"
+            >
+              <LayoutGrid className="w-2.5 h-2.5" />
+              Ver todos
+            </button>
           </div>
-        </label>
+        </div>
 
         {/* Side toggle */}
         <div className="grid grid-cols-2 gap-2">
@@ -575,6 +595,15 @@ export default function CexTradePanel({
         baseAsset={baseAsset}
         quoteAsset={quoteAsset}
         onConfirmed={onConfirmed}
+      />
+
+      <CexPairSelector
+        open={selectorOpen}
+        onClose={() => setSelectorOpen(false)}
+        exchangeId={exchangeId}
+        credentials={credentials}
+        currentSymbol={symbol}
+        onSelect={setSymbol}
       />
     </div>
   );

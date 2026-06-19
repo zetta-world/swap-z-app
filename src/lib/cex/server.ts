@@ -479,6 +479,30 @@ export interface CexWithdrawalReceipt {
  * mechanical ccxt call. Treat it like placeCexOrder: never call it
  * from anywhere except the dedicated /api/cex/withdraw route.
  */
+/** Spot markets available on the exchange. Sorted by symbol. */
+export interface CexMarket {
+  symbol: string;
+  base:   string;
+  quote:  string;
+}
+
+/**
+ * Return every active spot market for the exchange. Loads the market
+ * catalogue once via ccxt (no signed request needed on most exchanges).
+ * The caller is expected to cache the result for several minutes.
+ */
+export async function fetchCexMarkets(
+  id: CexId,
+  creds: CexCredentials,
+): Promise<CexMarket[]> {
+  const ex = instantiate(id, creds);
+  const raw = await ex.loadMarkets();
+  return Object.values(raw)
+    .filter((m): m is NonNullable<typeof m> => !!m && m.active !== false && m.type === "spot" && !!m.symbol)
+    .map((m) => ({ symbol: m.symbol!, base: m.base ?? "", quote: m.quote ?? "" }))
+    .sort((a, b) => a.symbol.localeCompare(b.symbol));
+}
+
 export async function withdrawFromCex(
   id: CexId,
   creds: CexCredentials,
