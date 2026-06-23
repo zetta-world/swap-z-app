@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  History, Filter, Trash2, ExternalLink, ChevronDown, ChevronUp,
+  History, Trash2, ExternalLink, ChevronDown, ChevronUp,
   ArrowRight, TrendingUp, TrendingDown, Minus, Search,
+  SlidersHorizontal, Download, X,
 } from "lucide-react";
 import {
   useTxHistory, TX_TYPE_LABELS_PT, STATUS_LABELS_PT,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/store/txHistory";
 import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import HistoryExportModal from "./HistoryExportModal";
 
 const TYPE_COLORS: Record<TxType, string> = {
   dex_swap:       "text-cyan   border-cyan/30   bg-cyan/5",
@@ -31,10 +33,16 @@ const STATUS_COLORS: Record<TxStatus, string> = {
   canceled:  "text-ink-3",
 };
 
-const ALL_TYPES: TxType[] = [
-  "dex_swap", "dex_bridge", "cex_spot", "cex_futures",
-  "autopilot_dex", "autopilot_cex", "autopilot_arb", "rebalance",
+// Types grouped by venue — far more scannable than one flat row of 8 pills.
+const TYPE_GROUPS: { label: string; types: TxType[] }[] = [
+  { label: "DEX",       types: ["dex_swap", "dex_bridge"] },
+  { label: "CEX",       types: ["cex_spot", "cex_futures"] },
+  { label: "Autopilot", types: ["autopilot_dex", "autopilot_cex", "autopilot_arb", "rebalance"] },
 ];
+
+const STATUSES: TxStatus[] = ["confirmed", "pending", "failed", "canceled"];
+
+const PAGE = 25;
 
 export default function HistoryView() {
   const { entries, clear } = useTxHistory();
@@ -43,6 +51,9 @@ export default function HistoryView() {
   const [statusFilter, setStatusFilter] = useState<TxStatus | "all">("all");
   const [query,        setQuery]        = useState("");
   const [expanded,     setExpanded]     = useState<string | null>(null);
+  const [showFilters,  setShowFilters]  = useState(false);
+  const [showExport,   setShowExport]   = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -54,7 +65,23 @@ export default function HistoryView() {
     });
   }, [entries, typeFilter, statusFilter, query]);
 
-  // P&L summary — count all entries, aggregate economics from confirmed only
+  // Reset pagination whenever the result set changes.
+  useEffect(() => { setVisibleCount(PAGE); }, [typeFilter, statusFilter, query]);
+
+  const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+
+  // Group the visible slice by day, preserving newest-first order.
+  const groups = useMemo(() => {
+    const out: { label: string; items: TxHistoryEntry[] }[] = [];
+    for (const e of visible) {
+      const label = dateGroupLabel(e.ts);
+      const last = out[out.length - 1];
+      if (last && last.label === label) last.items.push(e);
+      else out.push({ label, items: [e] });
+    }
+    return out;
+  }, [visible]);
+
   const summary = useMemo(() => {
     const confirmed = entries.filter((e) => e.status === "confirmed");
     const pending   = entries.filter((e) => e.status === "pending").length;
@@ -64,11 +91,14 @@ export default function HistoryView() {
     return { count: entries.length, confirmed: confirmed.length, pending, totalVol, totalFees, totalPnl };
   }, [entries]);
 
+  const activeFilterCount = (typeFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0);
+  const remaining = filtered.length - visible.length;
+
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       <div className="absolute inset-0 grid-bg opacity-30 pointer-events-none" />
 
-      <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-8 lg:py-10 max-w-7xl mx-auto">
+      <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-8 lg:py-10 max-w-5xl mx-auto">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-7">
           <div className="flex items-center gap-2 mb-3">
@@ -83,18 +113,29 @@ export default function HistoryView() {
                 Histórico <span className="text-grad-aurora">Completo</span>
               </h1>
               <p className="font-sans text-sm text-ink-2 max-w-xl">
-                Todas as operações — swaps, bridges, CEX spot/futuros, autopilot e rebalances — com P&L detalhado por tipo.
+                Swaps, bridges, CEX e autopilot num só lugar — com P&amp;L detalhado e exportação sob medida.
               </p>
             </div>
-            {entries.length > 0 && (
-              <button
-                onClick={() => { if (confirm("Limpar todo o histórico?")) clear(); }}
-                className="btn btn-secondary py-2 text-xs gap-1.5 text-red/70 hover:text-red border-red/20 hover:border-red/40"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Limpar tudo
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {entries.length > 0 && (
+                <button
+                  onClick={() => setShowExport(true)}
+                  className="btn btn-secondary py-2 text-xs gap-1.5 border-cyan/20 text-cyan/90 hover:border-cyan/40 hover:text-cyan"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Exportar
+                </button>
+              )}
+              {entries.length > 0 && (
+                <button
+                  onClick={() => { if (confirm("Limpar todo o histórico?")) clear(); }}
+                  className="btn btn-secondary py-2 text-xs gap-1.5 text-red/70 hover:text-red border-red/20 hover:border-red/40"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Limpar</span>
+                </button>
+              )}
+            </div>
           </div>
         </motion.div>
 
@@ -115,43 +156,110 @@ export default function HistoryView() {
           />
         </div>
 
-        {/* Filters */}
-        <div className="god-card rounded-2xl border border-white/5 glass-pane p-4 mb-4 space-y-3">
-          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/5 focus-within:border-cyan/30">
+        {/* Toolbar: search + filters trigger */}
+        <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/5 focus-within:border-cyan/30 flex-1 transition-colors">
             <Search className="w-4 h-4 text-ink-3 flex-shrink-0" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Buscar por token, rede, hash…"
-              className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-3 outline-none font-sans"
+              className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-3 outline-none font-sans min-w-0"
             />
+            {query && (
+              <button onClick={() => setQuery("")} className="text-ink-4 hover:text-ink transition-colors">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-
-          {/* Type pills */}
-          <div className="flex flex-wrap gap-1.5">
-            <FilterPill active={typeFilter === "all"} onClick={() => setTypeFilter("all")} label="Todos" />
-            {ALL_TYPES.map((t) => (
-              <FilterPill
-                key={t}
-                active={typeFilter === t}
-                onClick={() => setTypeFilter(t)}
-                label={TX_TYPE_LABELS_PT[t]}
-              />
-            ))}
-          </div>
-
-          {/* Status pills */}
-          <div className="flex flex-wrap gap-1.5">
-            {(["all", "confirmed", "pending", "failed", "canceled"] as const).map((s) => (
-              <FilterPill
-                key={s}
-                active={statusFilter === s}
-                onClick={() => setStatusFilter(s)}
-                label={s === "all" ? "Todos status" : STATUS_LABELS_PT[s]}
-              />
-            ))}
-          </div>
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-mono uppercase tracking-wider transition-all flex-shrink-0",
+              showFilters || activeFilterCount > 0
+                ? "bg-cyan/[0.08] border-cyan/30 text-cyan"
+                : "bg-white/[0.03] border-white/5 text-ink-3 hover:text-ink-2 hover:border-white/10",
+            )}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Filtros</span>
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 w-4 h-4 rounded-full bg-cyan text-bg text-[9px] font-bold flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Active filter chips */}
+        {activeFilterCount > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-3">
+            {typeFilter !== "all" && (
+              <ActiveChip label={TX_TYPE_LABELS_PT[typeFilter]} onRemove={() => setTypeFilter("all")} />
+            )}
+            {statusFilter !== "all" && (
+              <ActiveChip label={STATUS_LABELS_PT[statusFilter]} onRemove={() => setStatusFilter("all")} />
+            )}
+            <button
+              onClick={() => { setTypeFilter("all"); setStatusFilter("all"); }}
+              className="font-mono text-[9px] text-ink-4 hover:text-ink-2 tracking-wider uppercase ml-1 transition-colors"
+            >
+              Limpar filtros
+            </button>
+          </div>
+        )}
+
+        {/* Filter panel (collapsible) */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="god-card rounded-2xl border border-white/5 glass-pane p-4 mb-4 space-y-4">
+                {/* Type */}
+                <div>
+                  <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase block mb-2">Tipo</span>
+                  <div className="space-y-2">
+                    <FilterPill active={typeFilter === "all"} onClick={() => setTypeFilter("all")} label="Todos os tipos" />
+                    {TYPE_GROUPS.map((g) => (
+                      <div key={g.label} className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[8px] text-ink-5 tracking-widest uppercase w-14 flex-shrink-0">{g.label}</span>
+                        {g.types.map((t) => (
+                          <FilterPill
+                            key={t}
+                            active={typeFilter === t}
+                            onClick={() => setTypeFilter(t)}
+                            label={TX_TYPE_LABELS_PT[t]}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase block mb-2">Status</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <FilterPill active={statusFilter === "all"} onClick={() => setStatusFilter("all")} label="Todos" />
+                    {STATUSES.map((s) => (
+                      <FilterPill
+                        key={s}
+                        active={statusFilter === s}
+                        onClick={() => setStatusFilter(s)}
+                        label={STATUS_LABELS_PT[s]}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Transaction list */}
         <div className="god-card rounded-2xl border border-white/5 glass-pane overflow-hidden">
@@ -172,18 +280,40 @@ export default function HistoryView() {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-white/[0.04]">
-              <AnimatePresence initial={false}>
-                {filtered.map((entry) => (
-                  <TxRow
-                    key={entry.id}
-                    entry={entry}
-                    expanded={expanded === entry.id}
-                    onToggle={() => setExpanded(expanded === entry.id ? null : entry.id)}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
+            <>
+              {groups.map((g) => (
+                <div key={g.label}>
+                  {/* Date section header */}
+                  <div className="px-4 py-2 bg-white/[0.02] border-b border-white/[0.04] flex items-center justify-between sticky top-0 z-[1] backdrop-blur-sm">
+                    <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">{g.label}</span>
+                    <span className="font-mono text-[9px] text-ink-5">{g.items.length}</span>
+                  </div>
+                  <div className="divide-y divide-white/[0.04]">
+                    <AnimatePresence initial={false}>
+                      {g.items.map((entry) => (
+                        <TxRow
+                          key={entry.id}
+                          entry={entry}
+                          expanded={expanded === entry.id}
+                          onToggle={() => setExpanded(expanded === entry.id ? null : entry.id)}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              ))}
+
+              {/* Load more */}
+              {remaining > 0 && (
+                <button
+                  onClick={() => setVisibleCount((c) => c + PAGE)}
+                  className="w-full px-4 py-3.5 border-t border-white/5 font-mono text-[11px] text-ink-3 hover:text-cyan hover:bg-white/[0.02] transition-colors flex items-center justify-center gap-2"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  Carregar mais ({remaining} restante{remaining !== 1 ? "s" : ""})
+                </button>
+              )}
+            </>
           )}
         </div>
 
@@ -191,6 +321,13 @@ export default function HistoryView() {
           Histórico armazenado localmente · máx. 500 entradas · nunca enviado a servidores
         </p>
       </div>
+
+      <HistoryExportModal
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        filtered={filtered}
+        all={entries}
+      />
     </div>
   );
 }
@@ -205,7 +342,6 @@ function TxRow({
   onToggle: () => void;
 }) {
   const date = new Date(entry.ts);
-  const dateStr = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
   const timeStr = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
   const pnl = entry.pnlUsd;
@@ -233,12 +369,10 @@ function TxRow({
         {/* Pair */}
         <div className="flex items-center gap-1 min-w-0 flex-1">
           <span className="font-display font-bold text-sm text-ink truncate">{entry.fromSymbol}</span>
-          <span className="font-mono text-[9px] text-ink-4 flex-shrink-0">{entry.fromChain}</span>
-          {isCross
-            ? <ArrowRight className="w-3 h-3 text-violet flex-shrink-0" />
-            : <ArrowRight className="w-3 h-3 text-ink-4 flex-shrink-0" />}
+          <span className="font-mono text-[9px] text-ink-4 flex-shrink-0 hidden sm:inline">{entry.fromChain}</span>
+          <ArrowRight className={cn("w-3 h-3 flex-shrink-0", isCross ? "text-violet" : "text-ink-4")} />
           <span className="font-display font-bold text-sm text-ink truncate">{entry.toSymbol}</span>
-          <span className="font-mono text-[9px] text-ink-4 flex-shrink-0">{entry.toChain}</span>
+          <span className="font-mono text-[9px] text-ink-4 flex-shrink-0 hidden sm:inline">{entry.toChain}</span>
         </div>
 
         {/* Value / P&L */}
@@ -255,14 +389,16 @@ function TxRow({
         </div>
 
         {/* Status */}
-        <span className={cn("flex-shrink-0 font-mono text-[10px]", STATUS_COLORS[entry.status])}>
+        <span className={cn("flex-shrink-0 font-mono text-[10px] hidden sm:inline", STATUS_COLORS[entry.status])}>
           {STATUS_LABELS_PT[entry.status]}
         </span>
 
-        {/* Date */}
+        {/* Time */}
         <div className="flex-shrink-0 text-right">
-          <div className="font-mono text-[10px] text-ink-3">{dateStr}</div>
-          <div className="font-mono text-[10px] text-ink-4">{timeStr}</div>
+          <div className="font-mono text-[10px] text-ink-3">{timeStr}</div>
+          <div className={cn("font-mono text-[9px] sm:hidden", STATUS_COLORS[entry.status])}>
+            {STATUS_LABELS_PT[entry.status]}
+          </div>
         </div>
 
         {expanded ? <ChevronUp className="w-3.5 h-3.5 text-ink-4 flex-shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-ink-4 flex-shrink-0" />}
@@ -360,12 +496,23 @@ function FilterPill({ active, onClick, label }: { active: boolean; onClick: () =
       className={cn(
         "flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-mono uppercase tracking-wider border transition-all whitespace-nowrap",
         active
-          ? "bg-white/[0.08] border-white/20 text-ink"
+          ? "bg-cyan/[0.1] border-cyan/40 text-cyan"
           : "border-white/5 bg-white/[0.02] text-ink-3 hover:text-ink-2 hover:border-white/10",
       )}
     >
       {label}
     </button>
+  );
+}
+
+function ActiveChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-cyan/[0.08] border border-cyan/30 text-cyan font-mono text-[10px] uppercase tracking-wider">
+      {label}
+      <button onClick={onRemove} className="hover:text-ink transition-colors">
+        <X className="w-3 h-3" />
+      </button>
+    </span>
   );
 }
 
@@ -383,4 +530,20 @@ function buildExplorerUrl(entry: TxHistoryEntry): string | null {
   };
   const base = explorers[entry.fromChain];
   return base ? `${base}${entry.txHash}` : null;
+}
+
+// Group label: Hoje / Ontem / weekday (within a week) / full date.
+function dateGroupLabel(ts: number): string {
+  const d = new Date(ts);
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const today = startOfDay(new Date());
+  const day   = startOfDay(d);
+  const diffDays = Math.round((today - day) / 86_400_000);
+  if (diffDays === 0) return "Hoje";
+  if (diffDays === 1) return "Ontem";
+  if (diffDays > 1 && diffDays < 7) {
+    const wd = d.toLocaleDateString("pt-BR", { weekday: "long" });
+    return wd.charAt(0).toUpperCase() + wd.slice(1);
+  }
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 }
