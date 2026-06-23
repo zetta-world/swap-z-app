@@ -139,7 +139,10 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     const toPx    = toLivePrice   ?? toToken.priceUsd   ?? 0;
     const inUsd   = sellDec * fromPx;
     const outUsd  = buyDec  * toPx;
-    return { sellDec, buyDec, minDec, rate, inUsd, outUsd };
+    const priceImpact = inUsd > 0 && outUsd > 0
+      ? ((outUsd - inUsd) / inUsd) * 100
+      : null;
+    return { sellDec, buyDec, minDec, rate, inUsd, outUsd, priceImpact };
   }, [selectedQuote, sellAmountBase, fromToken, toToken, fromLivePrice, toLivePrice]);
 
   // ─── Aurora risk ────────────────────────────────────────────────────
@@ -253,7 +256,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
           </AnimatePresence>
 
           {/* From */}
-          <SideBox label="You pay" token={fromToken} amount={amountIn} usdValue={display?.inUsd}
+          <SideBox label={t("swap.youPay")} token={fromToken} amount={amountIn} usdValue={display?.inUsd}
             onAmountChange={setAmountIn} onTokenChange={setFromToken} side="from" editable
             balance={fromBalance} onPercent={onPercent} />
 
@@ -266,7 +269,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
           </div>
 
           {/* To */}
-          <SideBox label="You receive" token={toToken}
+          <SideBox label={t("swap.youReceive")} token={toToken}
             amount={display ? formatAmount(display.buyDec, 6) : (quotesState.loading ? "…" : "")}
             usdValue={display?.outUsd}
             onAmountChange={() => {}} onTokenChange={setToToken} side="to" editable={false}
@@ -317,6 +320,14 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
           {/* Stats + Route */}
           {display && selectedQuote && (
             <div className="space-y-2.5">
+              <TxDetailsStrip
+                priceImpact={display.priceImpact}
+                gasUsd={selectedQuote.gasUsd}
+                minDec={display.minDec}
+                toSymbol={toToken?.symbol ?? ""}
+                inUsd={display.inUsd}
+              />
+
               <RoutePreview
                 from={fromToken}
                 to={toToken}
@@ -425,14 +436,15 @@ function StatsGrid({
   quote:        NormalizedQuote;
   isCrossChain: boolean;
 }) {
+  const t = useT();
   if (!isCrossChain) {
     return (
       <div className="grid grid-cols-3 gap-2 text-center">
-        <Stat label="Rate"
+        <Stat label={t("swap.rate")}
           value={`1 ${fromSymbol} = ${formatAmount(rate, 4)} ${toSymbol}`}
           compact />
-        <Stat label="Slippage" value={`${(slippageBps / 100).toFixed(2)}%`} tone="green" />
-        <Stat label="Min received"
+        <Stat label={t("swap.slippage")} value={`${(slippageBps / 100).toFixed(2)}%`} tone="green" />
+        <Stat label={t("swap.minReceive")}
           value={`${formatAmount(minDec, 4)} ${toSymbol}`}
           compact />
       </div>
@@ -447,16 +459,16 @@ function StatsGrid({
   const bridge = quote.label.replace(/^LiFi\s·\s/, "");
   return (
     <div className="grid grid-cols-3 gap-2 text-center">
-      <Stat icon="rate" label="Rate"
+      <Stat icon="rate" label={t("swap.rate")}
         value={`1 ${fromSymbol} = ${formatAmount(rate, 4)} ${toSymbol}`}
         compact />
       <Stat icon="time" label="ETA" value={durationLabel} tone="violet" />
       <Stat icon="bridge" label="Bridge" value={bridge} compact />
-      <Stat label="Slippage" value={`${(slippageBps / 100).toFixed(2)}%`} tone="green" />
-      <Stat label="Min received"
+      <Stat label={t("swap.slippage")} value={`${(slippageBps / 100).toFixed(2)}%`} tone="green" />
+      <Stat label={t("swap.minReceive")}
         value={`${formatAmount(minDec, 4)} ${toSymbol}`}
         compact />
-      <Stat icon="gas" label="Gas (est.)"
+      <Stat icon="gas" label={t("swap.networkFee")}
         value={quote.gasUsd ? `~$${quote.gasUsd.toFixed(2)}` : "—"}
         compact />
     </div>
@@ -627,6 +639,98 @@ function RiskBadge({ risk }: { risk: "safe" | "caution" | "danger" }) {
       <span className="w-1.5 h-1.5 rounded-full bg-current pulse-dot" />
       {cfg.label}
     </span>
+  );
+}
+
+// ─── Transaction details strip ────────────────────────────────────────────
+function TxDetailsStrip({
+  priceImpact, gasUsd, minDec, toSymbol, inUsd,
+}: {
+  priceImpact: number | null;
+  gasUsd:      number | undefined;
+  minDec:      number;
+  toSymbol:    string;
+  inUsd:       number;
+}) {
+  const t = useT();
+  const impact    = priceImpact ?? 0;
+  const impactAbs = Math.abs(impact);
+
+  const impactColor =
+    impactAbs < 0.5 ? "text-green" :
+    impactAbs < 2   ? "text-gold"  :
+                      "text-red";
+
+  const impactBorder =
+    impactAbs < 0.5 ? "border-green/15" :
+    impactAbs < 2   ? "border-gold/15"  :
+                      "border-red/20";
+
+  const impactLabel =
+    impactAbs < 0.5 ? t("swap.impactLow")    :
+    impactAbs < 2   ? t("swap.impactMedium") :
+                      t("swap.impactHigh");
+
+  const impactSign = impact >= 0 ? "+" : "";
+  const totalCost  = inUsd + (gasUsd ?? 0);
+
+  return (
+    <div className={cn("rounded-xl border overflow-hidden divide-y divide-white/[0.04]", impactBorder, "bg-bg-1/40")}>
+      {/* Price impact */}
+      <div className="flex items-center justify-between px-3.5 py-2.5 gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="font-mono text-[10px] text-ink-3 truncate">{t("swap.priceImpact")}</span>
+          <span
+            className="w-3.5 h-3.5 rounded-full border border-white/15 bg-white/5 text-ink-4 font-mono text-[8px] leading-none flex items-center justify-center flex-shrink-0 cursor-help"
+            title={t("swap.priceImpactTip")}
+          >?</span>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className={cn("font-mono text-[9px] tracking-widest uppercase", impactColor)}>
+            {impactLabel}
+          </span>
+          <span className={cn("font-display font-bold text-[12px] tabular-nums", impactColor)}>
+            {priceImpact !== null ? `${impactSign}${impact.toFixed(2)}%` : "—"}
+          </span>
+        </div>
+      </div>
+
+      {/* Network fee */}
+      {gasUsd !== undefined && gasUsd > 0 && (
+        <div className="flex items-center justify-between px-3.5 py-2.5 gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-mono text-[10px] text-ink-3 truncate">{t("swap.networkFee")}</span>
+            <span
+              className="w-3.5 h-3.5 rounded-full border border-white/15 bg-white/5 text-ink-4 font-mono text-[8px] leading-none flex items-center justify-center flex-shrink-0 cursor-help"
+              title={t("swap.networkFeeTip")}
+            >?</span>
+          </div>
+          <span className="font-mono text-[12px] text-ink-2 tabular-nums flex-shrink-0">≈${gasUsd.toFixed(2)}</span>
+        </div>
+      )}
+
+      {/* Min received */}
+      <div className="flex items-center justify-between px-3.5 py-2.5 gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="font-mono text-[10px] text-ink-3 truncate">{t("swap.minReceive")}</span>
+          <span
+            className="w-3.5 h-3.5 rounded-full border border-white/15 bg-white/5 text-ink-4 font-mono text-[8px] leading-none flex items-center justify-center flex-shrink-0 cursor-help"
+            title={t("swap.minReceiveTip")}
+          >?</span>
+        </div>
+        <span className="font-mono text-[12px] text-ink-2 tabular-nums flex-shrink-0">
+          {formatAmount(minDec, 4)} {toSymbol}
+        </span>
+      </div>
+
+      {/* Total estimated cost */}
+      <div className="flex items-center justify-between px-3.5 py-2.5 gap-2 bg-white/[0.02]">
+        <span className="font-mono text-[10px] text-ink-3">{t("swap.totalCostLabel")}</span>
+        <span className="font-display font-bold text-[13px] text-ink tabular-nums flex-shrink-0">
+          {formatUsd(totalCost)}
+        </span>
+      </div>
+    </div>
   );
 }
 
