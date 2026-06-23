@@ -11,7 +11,7 @@ interface ProOrderPanelProps {
 }
 
 type Side      = "buy" | "sell";
-type OrderType = "market" | "limit" | "stop";
+type OrderType = "market" | "limit" | "stop" | "oco";
 type SizePct   = 25 | 50 | 75 | 100;
 
 const SIZE_PCTS: SizePct[] = [25, 50, 75, 100];
@@ -21,9 +21,12 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor }: ProOrder
   const [orderType, setOrderType]   = useState<OrderType>("market");
   const [size, setSize]             = useState("");
   const [limitPrice, setLimitPrice] = useState("");
+  const [tpPrice, setTpPrice]   = useState("");
+  const [slPrice, setSlPrice]   = useState("");
   const [sizePercent, setSizePercent] = useState<SizePct | null>(null);
 
   const showLimitInput = orderType === "limit" || orderType === "stop";
+  const showOco = orderType === "oco";
 
   const sizeNum      = parseFloat(size)       || 0;
   const priceNum     = showLimitInput
@@ -90,7 +93,7 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor }: ProOrder
 
         {/* Order type */}
         <div className="flex gap-1">
-          {(["market", "limit", "stop"] as OrderType[]).map((ot) => (
+          {(["market", "limit", "stop", "oco"] as OrderType[]).map((ot) => (
             <button
               key={ot}
               type="button"
@@ -183,6 +186,70 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor }: ProOrder
           )}
         </AnimatePresence>
 
+        {/* OCO: Take Profit + Stop Loss (animated) */}
+        <AnimatePresence>
+          {showOco && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.18 }}
+              style={{ overflow: "hidden" }}
+              className="flex gap-2"
+            >
+              <div className="flex-1">
+                <label className="font-mono text-[9px] text-green tracking-widest uppercase block mb-1">
+                  Take Profit
+                </label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] text-ink-4">$</span>
+                  <input
+                    type="number" min="0" step="any"
+                    value={tpPrice}
+                    onChange={(e) => setTpPrice(e.target.value)}
+                    placeholder={lastPrice ? formatOrderPrice(lastPrice * 1.03) : "0.00"}
+                    aria-label="Take profit price"
+                    className="w-full bg-white/[0.03] border border-green/20 rounded-lg pl-6 pr-2.5 py-2 font-mono text-[11px] text-ink placeholder:text-ink-4 outline-none focus:border-green/50 transition-colors tabular-nums"
+                  />
+                </div>
+              </div>
+              <div className="flex-1">
+                <label className="font-mono text-[9px] text-red tracking-widest uppercase block mb-1">
+                  Stop Loss
+                </label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] text-ink-4">$</span>
+                  <input
+                    type="number" min="0" step="any"
+                    value={slPrice}
+                    onChange={(e) => setSlPrice(e.target.value)}
+                    placeholder={lastPrice ? formatOrderPrice(lastPrice * 0.98) : "0.00"}
+                    aria-label="Stop loss price"
+                    className="w-full bg-white/[0.03] border border-red/20 rounded-lg pl-6 pr-2.5 py-2 font-mono text-[11px] text-ink placeholder:text-ink-4 outline-none focus:border-red/50 transition-colors tabular-nums"
+                  />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* OCO risk/reward readout */}
+        {showOco && tpPrice && slPrice && lastPrice && (() => {
+          const tp = parseFloat(tpPrice); const sl = parseFloat(slPrice);
+          const risk = Math.abs(lastPrice - sl);
+          const reward = Math.abs(tp - lastPrice);
+          if (risk <= 0 || !Number.isFinite(risk) || !Number.isFinite(reward)) return null;
+          const rr = reward / risk;
+          return (
+            <div className="flex items-center justify-between font-mono text-[9px] text-ink-4 tracking-wider">
+              <span>Risk / Reward</span>
+              <span className="tabular-nums" style={{ color: rr >= 1.5 ? "#00E087" : rr >= 1 ? "#F5A623" : "#FF3B5C" }}>
+                1 : {rr.toFixed(2)}
+              </span>
+            </div>
+          );
+        })()}
+
         {/* Est. total */}
         <div className="flex items-center justify-between font-mono text-[9px] text-ink-4 tracking-wider">
           <span>Est. total</span>
@@ -201,7 +268,7 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor }: ProOrder
             color:       isBuy ? "#00E087" : "#FF3B5C",
           }}
         >
-          <span>▶ Execute {side === "buy" ? "Buy" : "Sell"}</span>
+          <span>▶ {showOco ? "Place OCO" : "Execute"} {side === "buy" ? "Buy" : "Sell"}</span>
           <kbd
             className="inline-flex items-center rounded border px-1 py-0.5 font-mono text-[8px] opacity-60"
             style={{ borderColor: isBuy ? "rgba(0,224,135,0.30)" : "rgba(255,59,92,0.30)" }}

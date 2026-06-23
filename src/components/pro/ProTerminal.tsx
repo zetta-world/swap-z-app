@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { compactNumber } from "@/lib/format";
-import type { Timeframe, Trade } from "@/lib/api/geckoterminal";
+import type { Timeframe, Trade, PriceToken, PoolMeta } from "@/lib/api/geckoterminal";
 import { PRO_PAIRS, DEFAULT_PRO_PAIR, CATEGORY_LABELS, groupPairs, type ProPair } from "@/lib/pro-pairs";
 import { CHAINS } from "@/lib/chains";
 import { findToken } from "@/lib/tokens";
@@ -21,6 +21,7 @@ import ProPoolStats from "./ProPoolStats";
 import ProDepth from "./ProDepth";
 import ProFlow from "./ProFlow";
 import ProOrderPanel from "./ProOrderPanel";
+import ProMTF from "./ProMTF";
 
 // Defer the ZION AI dock — it runs a streaming Anthropic call and is never
 // in the initial viewport. Loading it lazily lets the chart + trades panel
@@ -97,6 +98,9 @@ export default function ProTerminal() {
   const onTrades = useCallback((next: Trade[]) => setTrades(next), []);
 
   const onSignals = useCallback((s: ChartSignals) => setSignals(s), []);
+
+  const [chartSide, setChartSide] = useState<PriceToken>("base");
+  const onMeta = useCallback((_meta: PoolMeta | null, side: PriceToken) => setChartSide(side), []);
 
   // Resolve Tokens for the depth matrix (it needs decimals + addresses).
   const fromToken = useMemo(() => findToken(pair.chain, pair.base),  [pair.chain, pair.base]);
@@ -540,6 +544,7 @@ export default function ProTerminal() {
                 strategyLevels={strategyLevels}
                 targetSymbol={pair.targetSymbol}
                 onLastPrice={onLastPrice}
+                onMeta={onMeta}
               />
             </div>
           </div>
@@ -559,6 +564,10 @@ export default function ProTerminal() {
             />
             <ProTrades chain={pair.chain} pool={pair.pool} onTrades={onTrades} />
           </div>
+        </div>
+
+        <div className="mt-3">
+          <ProMTF chain={pair.chain} pool={pair.pool} side={chartSide} accentColor={accentColor} />
         </div>
 
         {/* Pro tools row: pool stats · depth · flow */}
