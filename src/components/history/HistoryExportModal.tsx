@@ -4,14 +4,14 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import {
-  X, Download, FileJson, FileText, Check, CheckCheck, Eraser,
+  X, Download, FileJson, FileText, Printer, Check, CheckCheck, Eraser,
 } from "lucide-react";
 import {
   TX_TYPE_LABELS_PT, STATUS_LABELS_PT, type TxHistoryEntry,
 } from "@/lib/store/txHistory";
 import { cn } from "@/lib/cn";
 
-type ExportFormat = "csv" | "json";
+type ExportFormat = "csv" | "json" | "pdf";
 type Scope        = "filtered" | "all";
 
 type FieldKey =
@@ -65,6 +65,18 @@ export default function HistoryExportModal({ open, onClose, filtered, all }: Pro
   function handleExport() {
     if (rows.length === 0 || selectedFields.length === 0) return;
     const stamp = new Date().toISOString().slice(0, 10);
+
+    if (format === "pdf") {
+      const win = window.open("", "_blank");
+      if (!win) return;
+      win.document.write(buildPrintHtml(rows, selectedFields, stamp));
+      win.document.close();
+      win.focus();
+      setTimeout(() => { win.print(); }, 400);
+      onClose();
+      return;
+    }
+
     const filename = `zswap-historico-${stamp}.${format}`;
 
     if (format === "json") {
@@ -136,7 +148,7 @@ export default function HistoryExportModal({ open, onClose, filtered, all }: Pro
 
               {/* Format */}
               <Section title="Formato">
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <ChoiceCard
                     active={format === "csv"}
                     onClick={() => setFormat("csv")}
@@ -150,6 +162,13 @@ export default function HistoryExportModal({ open, onClose, filtered, all }: Pro
                     title="JSON"
                     sub="Dados estruturados"
                     icon={<FileJson className="w-3.5 h-3.5" />}
+                  />
+                  <ChoiceCard
+                    active={format === "pdf"}
+                    onClick={() => setFormat("pdf")}
+                    title="PDF"
+                    sub="Imprimir / Salvar"
+                    icon={<Printer className="w-3.5 h-3.5" />}
                   />
                 </div>
               </Section>
@@ -223,8 +242,8 @@ export default function HistoryExportModal({ open, onClose, filtered, all }: Pro
                     : "opacity-40 cursor-not-allowed border border-white/10 text-ink-4",
                 )}
               >
-                <Download className="w-3.5 h-3.5" />
-                Baixar {format.toUpperCase()}
+                {format === "pdf" ? <Printer className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+                {format === "pdf" ? "Gerar PDF" : `Baixar ${format.toUpperCase()}`}
               </button>
             </div>
           </motion.div>
@@ -305,6 +324,56 @@ function cellValue(e: TxHistoryEntry, k: FieldKey): string {
 function csvEscape(v: string): string {
   if (/[",\n\r]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
   return v;
+}
+
+function buildPrintHtml(
+  rows: TxHistoryEntry[],
+  fields: { key: FieldKey; label: string }[],
+  stamp: string,
+): string {
+  const headerRow = fields.map((f) => `<th>${esc(f.label)}</th>`).join("");
+  const bodyRows  = rows.map((e) =>
+    `<tr>${fields.map((f) => `<td>${esc(cellValue(e, f.key))}</td>`).join("")}</tr>`
+  ).join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<title>ZSwap · Histórico ${stamp}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 11px; color: #0f1117; padding: 24px; }
+  h1 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 10px; color: #666; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead tr { background: #0f1117; color: #fff; }
+  th { padding: 7px 8px; text-align: left; font-weight: 600; font-size: 10px; letter-spacing: .04em; }
+  td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  tr:nth-child(even) td { background: #f9fafb; }
+  @media print {
+    body { padding: 0; }
+    @page { margin: 16mm 12mm; }
+  }
+</style>
+</head>
+<body>
+<h1>ZSwap · Histórico de Operações</h1>
+<p class="meta">Exportado em ${stamp} · ${rows.length} operação${rows.length !== 1 ? "ões" : ""} · ${fields.length} coluna${fields.length !== 1 ? "s" : ""}</p>
+<table>
+  <thead><tr>${headerRow}</tr></thead>
+  <tbody>${bodyRows}</tbody>
+</table>
+</body>
+</html>`;
+}
+
+function esc(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function downloadFile(content: string, mime: string, filename: string) {
