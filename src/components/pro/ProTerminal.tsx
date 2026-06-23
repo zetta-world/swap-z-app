@@ -15,7 +15,7 @@ import { CHAINS } from "@/lib/chains";
 import { findToken } from "@/lib/tokens";
 import { useT } from "@/lib/i18n";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
-import ProChart, { type ChartKind, type StrategyLevel } from "./ProChart";
+import ProChart, { type ChartKind, type StrategyLevel, type ChartSignals } from "./ProChart";
 import ProTrades from "./ProTrades";
 import ProPoolStats from "./ProPoolStats";
 import ProDepth from "./ProDepth";
@@ -76,6 +76,9 @@ export default function ProTerminal() {
   const [ema100, setEma100]     = useState(false);
   const [ema200, setEma200]     = useState(false);
   const [rsiOn, setRsiOn]       = useState(false);
+  const [macd, setMacd]         = useState(false);
+  const [stochRsi, setStochRsi] = useState(false);
+  const [signals, setSignals]   = useState<ChartSignals | null>(null);
   const [strategyOn, setStrategyOn]           = useState(false);
   const [strategyScenario, setStrategyScenario] = useState<StrategyScenario>("moderate");
   const [indicatorsOpen, setIndicatorsOpen]   = useState(false);
@@ -92,6 +95,8 @@ export default function ProTerminal() {
   // flow + depth panels can derive aggregate stats without re-fetching.
   const [trades, setTrades] = useState<Trade[]>([]);
   const onTrades = useCallback((next: Trade[]) => setTrades(next), []);
+
+  const onSignals = useCallback((s: ChartSignals) => setSignals(s), []);
 
   // Resolve Tokens for the depth matrix (it needs decimals + addresses).
   const fromToken = useMemo(() => findToken(pair.chain, pair.base),  [pair.chain, pair.base]);
@@ -112,22 +117,57 @@ export default function ProTerminal() {
   // ─── Strategy levels ─────────────────────────────────────────────
   const strategyLevels = useMemo((): StrategyLevel[] => {
     if (!strategyOn || !hdr) return [];
-    const p = hdr.last;
-    const scenarios: Record<StrategyScenario, {
-      entry: number; target: number; stop: number;
-      entryColor: string; targetColor: string; stopColor: string;
-    }> = {
-      conservative: { entry: p * 0.999, target: p * 1.020, stop: p * 0.989, entryColor: "#00E8FF", targetColor: "#00E087", stopColor: "#FF3B5C" },
-      moderate:     { entry: p * 0.999, target: p * 1.040, stop: p * 0.980, entryColor: "#00E8FF", targetColor: "#00E087", stopColor: "#FF3B5C" },
-      aggressive:   { entry: p * 0.998, target: p * 1.080, stop: p * 0.970, entryColor: "#00E8FF", targetColor: "#F5A623", stopColor: "#FF3B5C" },
+    const p   = hdr.last;
+    const atr = signals?.atr ?? (p * 0.01);
+    const configs: Record<StrategyScenario, { entryMult: number; targetMult: number; stopMult: number }> = {
+      conservative: { entryMult: 0.2, targetMult: 1.5, stopMult: 1.0 },
+      moderate:     { entryMult: 0.2, targetMult: 2.5, stopMult: 1.2 },
+      aggressive:   { entryMult: 0.3, targetMult: 4.0, stopMult: 1.5 },
     };
-    const s = scenarios[strategyScenario];
+    const c      = configs[strategyScenario];
+    const entry  = p - c.entryMult  * atr;
+    const target = entry + c.targetMult * atr;
+    const stop   = entry - c.stopMult   * atr;
     return [
-      { price: s.entry,  label: `Entry ${strategyScenario.slice(0, 3).toUpperCase()}`,  color: s.entryColor,  style: "solid"  },
-      { price: s.target, label: `Target +${((s.target / p - 1) * 100).toFixed(1)}%`,    color: s.targetColor, style: "dashed" },
-      { price: s.stop,   label: `Stop -${((1 - s.stop / p) * 100).toFixed(1)}%`,        color: s.stopColor,   style: "dashed" },
+      { price: entry,  label: `Entry ·${c.entryMult}×ATR`,   color: "#00E8FF", style: "solid"  },
+      { price: target, label: `TP +${c.targetMult}×ATR`,      color: strategyScenario === "aggressive" ? "#F5A623" : "#00E087", style: "dashed" },
+      { price: stop,   label: `SL -${c.stopMult}×ATR`,        color: "#FF3B5C", style: "dashed" },
     ];
-  }, [strategyOn, hdr, strategyScenario]);
+  }, [strategyOn, hdr, strategyScenario, signals]);
+
+  // ─── Conviction score ────────────────────────────────────────────
+  const convictionScore = useMemo((): { score: number; label: string; color: string } | null => {
+    if (!signals?.price) return null;
+    const p = signals.price;
+    let bull = 0; let total = 0;
+    if (ema9   && signals.ema9   != null) { total++; if (p > signals.ema9)   bull++; }
+    if (ema21  && signals.ema21  != null) { total++; if (p > signals.ema21)  bull++; }
+    if (emaOn  && signals.ema50  != null) { total++; if (p > signals.ema50)  bull++; }
+    if (ema100 && signals.ema100 != null) { total++; if (p > signals.ema100) bull++; }
+    if (ema200 && signals.ema200 != null) { total++; if (p > signals.ema200) bull++; }
+    if (vwap   && signals.vwap   != null) { total++; if (p > signals.vwap)   bull++; }
+    if (rsiOn  && signals.rsi    != null) { total++; if (signals.rsi > 50)   bull++; }
+    if (macd   && signals.macdBull != null) { total++; if (signals.macdBull) bull++; }
+    if (total === 0) return null;
+    const score = Math.round((bull / total) * 100);
+    if (score >= 70) return { score, label: "HIGH",   color: "#00E087" };
+    if (score >= 40) return { score, label: "MEDIUM", color: "#F5A623" };
+    return              { score, label: "LOW",    color: "#FF3B5C" };
+  }, [signals, ema9, ema21, emaOn, ema100, ema200, vwap, rsiOn, macd]);
+
+  // ─── Market regime ───────────────────────────────────────────────
+  const marketRegime = useMemo((): { label: string; color: string } | null => {
+    if (!signals?.price || !signals.atr) return null;
+    const { price, atr, ema21: e21, ema50: e50 } = signals;
+    const atrPct      = (atr / price) * 100;
+    const isVolatile  = atrPct > 2.5;
+    const isTrending  = e21 != null && e50 != null && Math.abs(e21 - e50) / price > 0.004;
+    const isBullTrend = e21 != null && e50 != null && e21 > e50;
+    if (isTrending && isBullTrend)  return { label: "TRENDING ↑", color: "#00E087" };
+    if (isTrending && !isBullTrend) return { label: "TRENDING ↓", color: "#FF3B5C" };
+    if (isVolatile)                 return { label: "VOLATILE ⚡", color: "#F5A623" };
+    return                                 { label: "RANGING ↔",  color: "#7E89C2" };
+  }, [signals]);
 
   // Keyboard shortcut: 1-9 → switch pair
   useEffect(() => {
@@ -345,6 +385,14 @@ export default function ProTerminal() {
           <Field label="High"   value={hdr ? formatPrice(hdr.high) : "—"} />
           <Field label="Low"    value={hdr ? formatPrice(hdr.low)  : "—"} />
           <Field label="Vol 24h" value={hdr ? `$${compactNumber(hdr.vol)}` : "—"} />
+          {marketRegime && (
+            <div className="font-mono hidden sm:block">
+              <div className="text-[10px] text-ink-3 tracking-widest uppercase">Regime</div>
+              <div className="text-[11px] font-bold tracking-wider" style={{ color: marketRegime.color }}>
+                {marketRegime.label}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Workspace */}
@@ -462,7 +510,9 @@ export default function ProTerminal() {
                   {/* Row 3: Oscillators */}
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-mono text-[8px] text-ink-4 tracking-widest uppercase w-14">Osc</span>
-                    <IndicatorChip label="RSI 14" on={rsiOn} onToggle={() => setRsiOn((v) => !v)} accentColor={accentColor} color="#9F5FFF" />
+                    <IndicatorChip label="RSI 14"  on={rsiOn}   onToggle={() => setRsiOn((v)   => !v)} accentColor={accentColor} color="#9F5FFF" />
+                    <IndicatorChip label="Stoch RSI" on={stochRsi} onToggle={() => setStochRsi((v) => !v)} accentColor={accentColor} color="#C9A2FF" />
+                    <IndicatorChip label="MACD"      on={macd}     onToggle={() => setMacd((v)     => !v)} accentColor={accentColor} color="#00E8FF" />
                   </div>
                 </motion.div>
               )}
@@ -484,6 +534,9 @@ export default function ProTerminal() {
                 ema100={ema100}
                 ema200={ema200}
                 rsiOn={rsiOn}
+                macd={macd}
+                stochRsi={stochRsi}
+                onSignals={onSignals}
                 strategyLevels={strategyLevels}
                 targetSymbol={pair.targetSymbol}
                 onLastPrice={onLastPrice}
@@ -575,33 +628,64 @@ export default function ProTerminal() {
 
                 {/* Levels grid */}
                 {hdr && (() => {
-                  const p = hdr.last;
-                  const scenarios = {
-                    conservative: { entry: p * 0.999, target: p * 1.020, stop: p * 0.989 },
-                    moderate:     { entry: p * 0.999, target: p * 1.040, stop: p * 0.980 },
-                    aggressive:   { entry: p * 0.998, target: p * 1.080, stop: p * 0.970 },
+                  const p   = hdr.last;
+                  const atr = signals?.atr ?? (p * 0.01);
+                  const cfgMap = {
+                    conservative: { entryMult: 0.2, targetMult: 1.5, stopMult: 1.0 },
+                    moderate:     { entryMult: 0.2, targetMult: 2.5, stopMult: 1.2 },
+                    aggressive:   { entryMult: 0.3, targetMult: 4.0, stopMult: 1.5 },
                   };
-                  const s = scenarios[strategyScenario];
-                  const rr = (s.target - s.entry) / (s.entry - s.stop);
+                  const cfg    = cfgMap[strategyScenario];
+                  const entry  = p - cfg.entryMult  * atr;
+                  const target = entry + cfg.targetMult * atr;
+                  const stop   = entry - cfg.stopMult   * atr;
+                  const rr     = (target - entry) / Math.max(entry - stop, 0.000001);
                   return (
                     <>
+                      {signals?.atr && (
+                        <div className="font-mono text-[9px] text-ink-4 mb-2">
+                          ATR(14) = <span className="text-ink-3">{formatPrice(signals.atr)}</span>
+                          <span className="mx-1.5">·</span>
+                          <span className="text-ink-3">{((signals.atr / hdr.last) * 100).toFixed(2)}% of price</span>
+                        </div>
+                      )}
+                      {convictionScore && (
+                        <div className="flex items-center gap-3 mb-3 rounded-lg border px-3 py-2"
+                          style={{ borderColor: `${convictionScore.color}25`, background: `${convictionScore.color}08` }}
+                        >
+                          <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">Conviction</span>
+                          <div className="flex items-center gap-2 ml-auto">
+                            <div className="w-20 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                              <div className="h-full rounded-full transition-all duration-500"
+                                style={{ width: `${convictionScore.score}%`, background: convictionScore.color }}
+                              />
+                            </div>
+                            <span className="font-mono text-[10px] font-bold tabular-nums" style={{ color: convictionScore.color }}>
+                              {convictionScore.score}%
+                            </span>
+                            <span className="font-mono text-[9px] tracking-widest uppercase" style={{ color: convictionScore.color }}>
+                              {convictionScore.label}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                       <div className="grid grid-cols-3 gap-3 mb-3">
                         <StrategyLevelCard
                           title="Entry"
-                          price={s.entry}
-                          pctLabel={`${((s.entry / p - 1) * 100).toFixed(2)}%`}
+                          price={entry}
+                          pctLabel={`${((entry / p - 1) * 100).toFixed(2)}%`}
                           color="#00E8FF"
                         />
                         <StrategyLevelCard
                           title="Target"
-                          price={s.target}
-                          pctLabel={`+${((s.target / p - 1) * 100).toFixed(1)}%`}
+                          price={target}
+                          pctLabel={`+${((target / p - 1) * 100).toFixed(1)}%`}
                           color="#00E087"
                         />
                         <StrategyLevelCard
                           title="Stop Loss"
-                          price={s.stop}
-                          pctLabel={`-${((1 - s.stop / p) * 100).toFixed(1)}%`}
+                          price={stop}
+                          pctLabel={`-${((1 - stop / p) * 100).toFixed(1)}%`}
                           color="#FF3B5C"
                         />
                       </div>

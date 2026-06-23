@@ -27,6 +27,19 @@ export interface StrategyLevel {
   style?: "solid" | "dashed" | "dotted";
 }
 
+export interface ChartSignals {
+  price:     number;
+  ema9?:     number;
+  ema21?:    number;
+  ema50?:    number;
+  ema100?:   number;
+  ema200?:   number;
+  vwap?:     number;
+  rsi?:      number;
+  macdBull?: boolean;
+  atr?:      number;
+}
+
 interface Props {
   chain:        string;
   pool:         string;
@@ -41,6 +54,9 @@ interface Props {
   ema100:       boolean;
   ema200:       boolean;
   rsiOn:        boolean;     // RSI 14 in lower portion of chart
+  macd:         boolean;
+  stochRsi:     boolean;
+  onSignals?:   (s: ChartSignals) => void;
   strategyLevels?: StrategyLevel[];
   /**
    * Symbol the user expects to see on the chart. The component fetches the
@@ -59,13 +75,14 @@ interface Props {
  * - Pulls OHLCV from /api/ohlcv (which proxies GeckoTerminal)
  * - Renders candle / bar / line by the `kind` prop (hot-swappable)
  * - Volume histogram pinned to the bottom 25% of the pane
- * - MA / EMA / BB / VWAP / EMA9/21/100/200 / RSI overlays toggle via props
+ * - MA / EMA / BB / VWAP / EMA9/21/100/200 / RSI / MACD / StochRSI overlays toggle via props
  * - Strategy levels drawn as price lines
  * - Auto-resizes via ResizeObserver
  */
 export default function ProChart({
   chain, pool, tf, kind, ma, ema,
   bb, vwap, ema9, ema21, ema100, ema200, rsiOn,
+  macd, stochRsi, onSignals,
   strategyLevels,
   targetSymbol, onLastPrice, onMeta,
 }: Props) {
@@ -84,6 +101,11 @@ export default function ProChart({
   const ema100Ref       = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200Ref       = useRef<ISeriesApi<"Line"> | null>(null);
   const rsiRef          = useRef<ISeriesApi<"Line"> | null>(null);
+  const macdLineRef     = useRef<ISeriesApi<"Line"> | null>(null);
+  const macdSignalRef   = useRef<ISeriesApi<"Line"> | null>(null);
+  const macdHistRef     = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const stochKRef       = useRef<ISeriesApi<"Line"> | null>(null);
+  const stochDRef       = useRef<ISeriesApi<"Line"> | null>(null);
 
   const [error, setError]     = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -156,6 +178,11 @@ export default function ProChart({
       ema100Ref.current      = null;
       ema200Ref.current      = null;
       rsiRef.current         = null;
+      macdLineRef.current    = null;
+      macdSignalRef.current  = null;
+      macdHistRef.current    = null;
+      stochKRef.current      = null;
+      stochDRef.current      = null;
     };
   }, []);
 
@@ -424,6 +451,70 @@ export default function ProChart({
     }
   }, [rsiOn, candles]);
 
+  // ── MACD toggle ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (macd) {
+      chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: 0.45 } });
+      if (!macdLineRef.current) {
+        macdLineRef.current = chart.addLineSeries({
+          color: "#00E8FF", lineWidth: 1, priceLineVisible: false, lastValueVisible: true, priceScaleId: "macd",
+        });
+        macdSignalRef.current = chart.addLineSeries({
+          color: "#F5A623", lineWidth: 1, lineStyle: LineStyle.Dashed,
+          priceLineVisible: false, lastValueVisible: false, priceScaleId: "macd",
+        });
+        macdHistRef.current = chart.addHistogramSeries({
+          priceScaleId: "macd", priceLineVisible: false, lastValueVisible: false,
+        });
+        chart.priceScale("macd").applyOptions({ scaleMargins: { top: 0.80, bottom: 0.02 } });
+        macdLineRef.current.createPriceLine({ price: 0, color: "rgba(255,255,255,0.10)", lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false, title: "" });
+      }
+      const { macdLine, signalLine, histogram } = macdCalc(candles);
+      macdLineRef.current.setData(macdLine);
+      macdSignalRef.current?.setData(signalLine);
+      macdHistRef.current?.setData(histogram as HistogramData<Time>[]);
+    } else {
+      if (macdLineRef.current)   { chart.removeSeries(macdLineRef.current);   macdLineRef.current   = null; }
+      if (macdSignalRef.current) { chart.removeSeries(macdSignalRef.current); macdSignalRef.current = null; }
+      if (macdHistRef.current)   { chart.removeSeries(macdHistRef.current);   macdHistRef.current   = null; }
+      if (!rsiOn && !stochRsi)
+        chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: 0.28 } });
+    }
+  }, [macd, candles, rsiOn, stochRsi]);
+
+  // ── Stoch RSI toggle ────────────────────────────────────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (stochRsi) {
+      chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: 0.45 } });
+      if (!stochKRef.current) {
+        stochKRef.current = chart.addLineSeries({
+          color: "#9F5FFF", lineWidth: 1, priceLineVisible: false, lastValueVisible: true, priceScaleId: "stoch",
+        });
+        stochDRef.current = chart.addLineSeries({
+          color: "#F5A623", lineWidth: 1, lineStyle: LineStyle.Dashed,
+          priceLineVisible: false, lastValueVisible: false, priceScaleId: "stoch",
+        });
+        chart.priceScale("stoch").applyOptions({ scaleMargins: { top: 0.80, bottom: 0.02 } });
+        stochKRef.current.createPriceLine({ price: 80, color: "#FF3B5C44", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "OB" });
+        stochKRef.current.createPriceLine({ price: 20, color: "#00E08744", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "OS" });
+      }
+      const { k, d } = stochRsiCalc(candles);
+      stochKRef.current.setData(k);
+      stochDRef.current?.setData(d);
+    } else {
+      if (stochKRef.current) { chart.removeSeries(stochKRef.current); stochKRef.current = null; }
+      if (stochDRef.current) { chart.removeSeries(stochDRef.current); stochDRef.current = null; }
+      if (!rsiOn && !macd)
+        chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: 0.28 } });
+    }
+  }, [stochRsi, candles, rsiOn, macd]);
+
   // ── Strategy levels — use a stable ref to track created lines ───────
   const strategyLineHandlesRef = useRef<ReturnType<NonNullable<typeof priceSeriesRef.current>["createPriceLine"]>[]>([]);
 
@@ -525,6 +616,26 @@ export default function ProChart({
           const vol24   = recent.reduce((acc, r) => acc + r.volume, 0);
           onLastPrice(last, change, high, low, vol24);
         }
+
+        if (onSignals && rows.length > 0) {
+          const lastClose = rows[rows.length - 1].close;
+          const s: ChartSignals = { price: lastClose };
+          if (ema9)    { const d = emaCalcN(rows, 9);   if (d.length) s.ema9   = d[d.length-1].value; }
+          if (ema21)   { const d = emaCalcN(rows, 21);  if (d.length) s.ema21  = d[d.length-1].value; }
+          if (ema)     { const d = emaCalcN(rows, 50);  if (d.length) s.ema50  = d[d.length-1].value; }
+          if (ema100)  { const d = emaCalcN(rows, 100); if (d.length) s.ema100 = d[d.length-1].value; }
+          if (ema200)  { const d = emaCalcN(rows, 200); if (d.length) s.ema200 = d[d.length-1].value; }
+          if (vwap)    { const d = vwapCalc(rows);      if (d.length) s.vwap   = d[d.length-1].value; }
+          if (rsiOn)   { const d = rsiCalc(rows);       if (d.length) s.rsi    = d[d.length-1].value; }
+          if (macd)    {
+            const { macdLine, signalLine } = macdCalc(rows);
+            if (macdLine.length && signalLine.length)
+              s.macdBull = macdLine[macdLine.length-1].value > signalLine[signalLine.length-1].value;
+          }
+          const atrData = atrCalc(rows);
+          if (atrData.length) s.atr = atrData[atrData.length-1];
+          onSignals(s);
+        }
       } catch (e) {
         if (cancelled) return;
         const name = e instanceof Error ? e.name : "";
@@ -541,7 +652,7 @@ export default function ProChart({
       cancelled = true;
       ctrl.abort();
     };
-  }, [chain, pool, tf, kind, targetSymbol, onLastPrice, onMeta]);
+  }, [chain, pool, tf, kind, targetSymbol, onLastPrice, onMeta, onSignals, ema9, ema21, ema, ema100, ema200, vwap, rsiOn, macd]);
 
   return (
     <div className="relative w-full h-full min-h-[320px]">
@@ -716,4 +827,83 @@ function findFirst24hAgo(rows: Candle[]): Candle | null {
     if (rows[i].time <= target) return rows[i];
   }
   return null;
+}
+
+function macdCalc(rows: Candle[]): {
+  macdLine: LineData<Time>[];
+  signalLine: LineData<Time>[];
+  histogram: { time: Time; value: number; color: string }[];
+} {
+  const fast = emaCalcN(rows, 12);
+  const slow = emaCalcN(rows, 26);
+  if (!fast.length || !slow.length) return { macdLine: [], signalLine: [], histogram: [] };
+  const slowMap = new Map<Time, number>(slow.map(d => [d.time, d.value]));
+  const macdLine: LineData<Time>[] = fast
+    .filter(d => slowMap.has(d.time))
+    .map(d => ({ time: d.time, value: d.value - slowMap.get(d.time)! }));
+  if (macdLine.length < 9) return { macdLine, signalLine: [], histogram: [] };
+  const kk = 2 / 10;
+  let prev = macdLine.slice(0, 9).reduce((a, b) => a + b.value, 0) / 9;
+  const signalLine: LineData<Time>[] = [{ time: macdLine[8].time, value: prev }];
+  for (let i = 9; i < macdLine.length; i++) {
+    prev = macdLine[i].value * kk + prev * (1 - kk);
+    signalLine.push({ time: macdLine[i].time, value: prev });
+  }
+  const sigMap = new Map<Time, number>(signalLine.map(d => [d.time, d.value]));
+  const histogram = macdLine
+    .filter(d => sigMap.has(d.time))
+    .map(d => {
+      const val = d.value - sigMap.get(d.time)!;
+      return { time: d.time, value: val, color: val >= 0 ? "#00E08766" : "#FF3B5C66" };
+    });
+  return { macdLine, signalLine, histogram };
+}
+
+function stochRsiCalc(
+  rows: Candle[],
+  rsiPeriod   = 14,
+  stochPeriod = 14,
+  kSmooth     = 3,
+  dSmooth     = 3,
+): { k: LineData<Time>[]; d: LineData<Time>[] } {
+  const rsiData = rsiCalc(rows, rsiPeriod);
+  if (rsiData.length < stochPeriod) return { k: [], d: [] };
+  const rawK: LineData<Time>[] = [];
+  for (let i = stochPeriod - 1; i < rsiData.length; i++) {
+    const window = rsiData.slice(i - stochPeriod + 1, i + 1).map(d => d.value);
+    const lo = Math.min(...window);
+    const hi = Math.max(...window);
+    rawK.push({ time: rsiData[i].time, value: hi === lo ? 50 : ((rsiData[i].value - lo) / (hi - lo)) * 100 });
+  }
+  const kSmoothed = smoothLineArr(rawK, kSmooth);
+  return { k: kSmoothed, d: smoothLineArr(kSmoothed, dSmooth) };
+}
+
+function smoothLineArr(data: LineData<Time>[], period: number): LineData<Time>[] {
+  if (data.length < period) return data;
+  const out: LineData<Time>[] = [];
+  for (let i = period - 1; i < data.length; i++) {
+    const avg = data.slice(i - period + 1, i + 1).reduce((a, b) => a + b.value, 0) / period;
+    out.push({ time: data[i].time, value: avg });
+  }
+  return out;
+}
+
+function atrCalc(rows: Candle[], period = 14): number[] {
+  if (rows.length < period + 1) return [];
+  const trues: number[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    trues.push(Math.max(
+      rows[i].high - rows[i].low,
+      Math.abs(rows[i].high - rows[i - 1].close),
+      Math.abs(rows[i].low  - rows[i - 1].close),
+    ));
+  }
+  let atr = trues.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  const out = [atr];
+  for (let i = period; i < trues.length; i++) {
+    atr = (atr * (period - 1) + trues[i]) / period;
+    out.push(atr);
+  }
+  return out;
 }
