@@ -22,6 +22,8 @@ import ProDepth from "./ProDepth";
 import ProFlow from "./ProFlow";
 import ProOrderPanel from "./ProOrderPanel";
 import ProMTF from "./ProMTF";
+import ProVolumeProfile from "./ProVolumeProfile";
+import ProSmartMoney from "./ProSmartMoney";
 
 // Defer the ZION AI dock — it runs a streaming Anthropic call and is never
 // in the initial viewport. Loading it lazily lets the chart + trades panel
@@ -710,6 +712,25 @@ export default function ProTerminal() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Phase 3 — Volume Profile + Smart Money */}
+        <div className="grid grid-cols-12 gap-3 mt-3">
+          <div className="col-span-12 xl:col-span-8">
+            <ProVolumeProfile
+              chain={pair.chain}
+              pool={pair.pool}
+              tf={tf}
+              token={chartSide}
+              accentColor={accentColor}
+            />
+          </div>
+          <div className="col-span-12 xl:col-span-4">
+            <ProSmartMoney
+              trades={trades}
+              accentColor={accentColor}
+            />
+          </div>
+        </div>
 
         {/* Keybinds footer */}
         <details className="mt-3 rounded-lg border border-white/5 bg-black/40 overflow-hidden">

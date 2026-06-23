@@ -53,6 +53,24 @@ Foco: dossiê técnico que cola direto na aplicação Solana / Colosseum / Arbit
 
 ---
 
+## PRO TERMINAL — Upgrade pós-plano (jun/2026)
+
+Iteração de produto entregue fora do escopo original do plano de polimento —
+motivada por análise comparativa com ChatGPT, DeepSeek e Gemini.
+
+- [x] **PT.1 — Terminal premium (Fase 1 base)** ✅ — ProChart com TradingView Lightweight Charts v4, ProOrderPanel, ProZionDock, logos de tokens e chains. EMA 9/21/50/100/200, VWAP, Bollinger Bands, RSI.
+- [x] **PT.2 — MACD + Stoch RSI + ATR-based ZION** ✅ — MACD (12/26/9) com histograma colorido, Stochastic RSI (14/3/3), ATR(14) via Wilder's smoothing, níveis ZION adaptativos por volatilidade (Conservative/Moderate/Aggressive).
+- [x] **PT.3 — Conviction Score + Market Regime** ✅ — Score 0–100% baseado em alinhamento de indicadores, badge TRENDING↑/↓/VOLATILE/RANGING derivado de ATR e spread EMA.
+- [x] **PT.4 — OCO orders** ✅ — ProOrderPanel com modo OCO: Take Profit + Stop Loss em brackets side-by-side, R/R ratio ao vivo (verde ≥1.5 / amarelo ≥1 / vermelho <1).
+- [x] **PT.5 — Multi-timeframe (MTF) strip** ✅ — ProMTF: EMA 21/50 para 6 TFs em paralelo, chips com ícone TrendingUp/Down/Minus, verdict bull/bear com contagem.
+- [x] **PT.6 — ZION Tier 2 (OBV, Funding Rate, Confidence Score)** ✅ — indicadores de market structure integrados no prompt ZION.
+- [x] **PT.7 — ZION Tier 3 (Rel. Volume, RSI divergence, S/R, pivots diários)** ✅ — análise avançada com suporte/resistência e divergências RSI.
+- [x] **PT.8 — Freyr logo (plano Pro)** ✅ — medallhão dourado com transparência extraída, integrado no BrandMark tier-aware.
+
+**Fase 3 (bloqueada por infraestrutura):** MEV Protection, Trailing Stop, Paper Trading, Volume Profile, Smart Money Tracker — detalhes em `docs/PLATFORM-PROGRESS.md`.
+
+---
+
 ## Auditoria Opus 4.8 (jun/2026)
 
 Audit god-view rodado pelo Opus 4.8 — relatório completo em `docs/AUDITORIA-OPUS.md`.
@@ -102,7 +120,8 @@ Mercado Pago como trilho B opcional pós-grant.
 | 3 — Perf + A11y | 3 | 3 |
 | 4 — Materiais grant | 4 | 4 |
 | 5 — Monetização (NFT-first) | 4 | 6 |
-| **Total geral** | **19** | **21** |
+| Pro Terminal (pós-plano) | 8 | 8 |
+| **Total geral** | **27** | **29** |
 
 > Nota: os 4 itens da Auditoria Opus 4.8 (A.1–A.4) já foram entregues e não entram na contagem das fases 1–5 — são correções pós-audit, rastreadas na seção própria acima.
 
