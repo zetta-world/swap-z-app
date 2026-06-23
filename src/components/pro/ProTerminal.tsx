@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   BarChart3, CandlestickChart, LineChart, BarChart2,
-  ArrowUp, ArrowDown, Zap, Activity, ChevronDown,
+  Zap, Activity, ChevronDown, SlidersHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { compactNumber } from "@/lib/format";
@@ -14,11 +14,13 @@ import { PRO_PAIRS, DEFAULT_PRO_PAIR, CATEGORY_LABELS, groupPairs, type ProPair 
 import { CHAINS } from "@/lib/chains";
 import { findToken } from "@/lib/tokens";
 import { useT } from "@/lib/i18n";
-import ProChart, { type ChartKind } from "./ProChart";
+import { useTierAccent } from "@/components/tier/TierAccentProvider";
+import ProChart, { type ChartKind, type StrategyLevel } from "./ProChart";
 import ProTrades from "./ProTrades";
 import ProPoolStats from "./ProPoolStats";
 import ProDepth from "./ProDepth";
 import ProFlow from "./ProFlow";
+import ProOrderPanel from "./ProOrderPanel";
 
 // Defer the ZION AI dock — it runs a streaming Anthropic call and is never
 // in the initial viewport. Loading it lazily lets the chart + trades panel
@@ -47,16 +49,38 @@ const KEYBINDS = [
   { keys: "1-9",   label: "Pair n"    },
 ];
 
+type StrategyScenario = "conservative" | "moderate" | "aggressive";
+
+// Cryptocurrency icon CDN base
+const CRYPTO_ICON_BASE = "https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/icon";
+
 export default function ProTerminal() {
   const t = useT();
+
+  // ─── Tier theming ──────────────────────────────────────────────────
+  const { accentColor, glowColor, active: tierActive } = useTierAccent();
+  const terminalBorder = tierActive
+    ? `1px solid ${accentColor}22`
+    : "1px solid rgba(255,255,255,0.06)";
+
   // ─── State ────────────────────────────────────────────────────────
-  const [pair, setPair]       = useState<ProPair>(DEFAULT_PRO_PAIR);
-  const [tf, setTf]           = useState<Timeframe>("5m");
-  const [kind, setKind]       = useState<ChartKind>("candle");
-  const [maOn, setMaOn]       = useState(false);
-  const [emaOn, setEmaOn]     = useState(false);
-  const [pairOpen, setPairOpen] = useState(false);
-  const [pairQuery, setPairQuery] = useState("");
+  const [pair, setPair]         = useState<ProPair>(DEFAULT_PRO_PAIR);
+  const [tf, setTf]             = useState<Timeframe>("5m");
+  const [kind, setKind]         = useState<ChartKind>("candle");
+  const [maOn, setMaOn]         = useState(false);
+  const [emaOn, setEmaOn]       = useState(false);
+  const [bb, setBb]             = useState(false);
+  const [vwap, setVwap]         = useState(false);
+  const [ema9, setEma9]         = useState(false);
+  const [ema21, setEma21]       = useState(false);
+  const [ema100, setEma100]     = useState(false);
+  const [ema200, setEma200]     = useState(false);
+  const [rsiOn, setRsiOn]       = useState(false);
+  const [strategyOn, setStrategyOn]           = useState(false);
+  const [strategyScenario, setStrategyScenario] = useState<StrategyScenario>("moderate");
+  const [indicatorsOpen, setIndicatorsOpen]   = useState(false);
+  const [pairOpen, setPairOpen]               = useState(false);
+  const [pairQuery, setPairQuery]             = useState("");
 
   // Live header values pushed from ProChart
   const [hdr, setHdr] = useState<{ last: number; change: number; high: number; low: number; vol: number } | null>(null);
@@ -70,7 +94,7 @@ export default function ProTerminal() {
   const onTrades = useCallback((next: Trade[]) => setTrades(next), []);
 
   // Resolve Tokens for the depth matrix (it needs decimals + addresses).
-  const fromToken = useMemo(() => findToken(pair.chain, pair.base), [pair.chain, pair.base]);
+  const fromToken = useMemo(() => findToken(pair.chain, pair.base),  [pair.chain, pair.base]);
   const toToken   = useMemo(() => findToken(pair.chain, pair.quote), [pair.chain, pair.quote]);
 
   const chainObj = useMemo(() => CHAINS.find((c) => c.id === pair.chain), [pair.chain]);
@@ -84,6 +108,26 @@ export default function ProTerminal() {
     );
   }, [pairQuery]);
   const grouped = useMemo(() => groupPairs(filteredPairs), [filteredPairs]);
+
+  // ─── Strategy levels ─────────────────────────────────────────────
+  const strategyLevels = useMemo((): StrategyLevel[] => {
+    if (!strategyOn || !hdr) return [];
+    const p = hdr.last;
+    const scenarios: Record<StrategyScenario, {
+      entry: number; target: number; stop: number;
+      entryColor: string; targetColor: string; stopColor: string;
+    }> = {
+      conservative: { entry: p * 0.999, target: p * 1.020, stop: p * 0.989, entryColor: "#00E8FF", targetColor: "#00E087", stopColor: "#FF3B5C" },
+      moderate:     { entry: p * 0.999, target: p * 1.040, stop: p * 0.980, entryColor: "#00E8FF", targetColor: "#00E087", stopColor: "#FF3B5C" },
+      aggressive:   { entry: p * 0.998, target: p * 1.080, stop: p * 0.970, entryColor: "#00E8FF", targetColor: "#F5A623", stopColor: "#FF3B5C" },
+    };
+    const s = scenarios[strategyScenario];
+    return [
+      { price: s.entry,  label: `Entry ${strategyScenario.slice(0, 3).toUpperCase()}`,  color: s.entryColor,  style: "solid"  },
+      { price: s.target, label: `Target +${((s.target / p - 1) * 100).toFixed(1)}%`,    color: s.targetColor, style: "dashed" },
+      { price: s.stop,   label: `Stop -${((1 - s.stop / p) * 100).toFixed(1)}%`,        color: s.stopColor,   style: "dashed" },
+    ];
+  }, [strategyOn, hdr, strategyScenario]);
 
   // Keyboard shortcut: 1-9 → switch pair
   useEffect(() => {
@@ -99,15 +143,28 @@ export default function ProTerminal() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Token logo URL helper
+  const tokenLogoUrl = (symbol: string) =>
+    `${CRYPTO_ICON_BASE}/${symbol.toLowerCase().replace(/^w/, "")}.png`;
+
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden bg-black">
       <div className="absolute inset-0 grid-bg-dense opacity-25 pointer-events-none" />
 
       <div className="relative z-10 p-3 sm:p-4 lg:p-5 max-w-[1900px] mx-auto w-full">
         {/* Top bar */}
-        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3 flex-wrap mb-3">
-          <BarChart3 className="w-4 h-4 text-cyan" />
-          <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">Pro Terminal · Z-SWAP</span>
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 flex-wrap mb-3"
+        >
+          <BarChart3 className="w-4 h-4" style={{ color: accentColor }} />
+          <span
+            className="font-mono text-[10px] tracking-widest uppercase"
+            style={{ color: `${accentColor}cc` }}
+          >
+            Pro Terminal · Z-SWAP
+          </span>
           <div className="ml-auto flex items-center gap-2 font-mono text-[10px] text-ink-3">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-green pulse-dot" /> LIVE
@@ -118,8 +175,11 @@ export default function ProTerminal() {
         </motion.div>
 
         {/* Pair header */}
-        <div className="rounded-lg border border-white/5 bg-black/40 p-3 flex items-center gap-3 sm:gap-5 flex-wrap mb-3">
-          {/* Pair selector */}
+        <div
+          className="rounded-lg bg-black/40 p-3 flex items-center gap-3 sm:gap-5 flex-wrap mb-3"
+          style={{ border: terminalBorder }}
+        >
+          {/* Pair selector with token logo */}
           <div className="relative flex-shrink-0">
             <button
               type="button"
@@ -129,31 +189,65 @@ export default function ProTerminal() {
               aria-label={t("pro.selectPair")}
               className="flex items-center gap-3 hover:bg-white/5 rounded-lg px-2 py-1 -mx-2 transition-colors"
             >
-              <span
-                className="w-9 h-9 rounded-lg flex items-center justify-center font-display font-extrabold"
-                style={{
-                  background: `${chainObj?.color}22`,
-                  color:      chainObj?.color,
-                  border:     `1px solid ${chainObj?.color}55`,
-                }}
-              >
-                {pair.base.slice(0, 3)}
-              </span>
+              {/* Token logo with chain badge */}
+              <div className="relative w-9 h-9 flex-shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={tokenLogoUrl(pair.base)}
+                  alt={pair.base}
+                  width={36}
+                  height={36}
+                  className="w-9 h-9 rounded-full object-cover bg-white/5"
+                  onError={(e) => {
+                    const el = e.currentTarget as HTMLImageElement;
+                    el.style.display = "none";
+                    const fallback = el.nextElementSibling as HTMLElement | null;
+                    if (fallback) fallback.style.display = "flex";
+                  }}
+                />
+                {/* Fallback colored square */}
+                <span
+                  className="w-9 h-9 rounded-full items-center justify-center font-display font-extrabold text-xs hidden absolute inset-0"
+                  style={{
+                    background: `${chainObj?.color}22`,
+                    color:      chainObj?.color,
+                    border:     `1px solid ${chainObj?.color}55`,
+                  }}
+                >
+                  {pair.base.slice(0, 2)}
+                </span>
+                {/* Chain badge */}
+                <div
+                  className="absolute bottom-0 right-0 w-4 h-4 rounded-full border border-black flex items-center justify-center overflow-hidden"
+                  style={{ background: chainObj?.color ?? "#444" }}
+                  title={chainObj?.name}
+                >
+                  {chainObj?.logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={chainObj.logo} alt={chainObj.short ?? ""} width={16} height={16} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-[6px] font-bold text-black">{chainObj?.short?.slice(0, 2) ?? "?"}</span>
+                  )}
+                </div>
+              </div>
               <div className="text-left">
                 <div className="font-display font-extrabold text-base sm:text-lg text-ink leading-none">
                   {pair.base} / {pair.quote}
                 </div>
                 <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mt-1">
-                  {chainObj?.name} · {pair.dex} {pair.feeTier && `· ${pair.feeTier}`}
+                  {chainObj?.short} · {pair.dex} {pair.feeTier && `· ${pair.feeTier}`}
                 </div>
               </div>
               <ChevronDown className={cn("w-4 h-4 text-ink-3 transition-transform", pairOpen && "rotate-180")} />
             </button>
+
+            {/* Pair dropdown */}
             {pairOpen && (
               <div
                 role="dialog"
                 aria-label={t("pro.selectPair")}
-                className="absolute left-0 top-full mt-1 z-20 w-[300px] sm:w-[340px] rounded-lg border border-white/10 glass-strong shadow-card overflow-hidden flex flex-col max-h-[420px]"
+                className="absolute left-0 top-full mt-1 z-20 w-[320px] sm:w-[360px] rounded-lg border border-white/10 glass-strong shadow-card overflow-hidden flex flex-col"
+                style={{ maxHeight: "440px" }}
               >
                 <div className="p-2 border-b border-white/5 flex-shrink-0">
                   <input
@@ -171,11 +265,13 @@ export default function ProTerminal() {
                   )}
                   {(Object.keys(grouped) as ProPair["category"][]).map((cat) => (
                     <div key={cat}>
-                      <div className="px-3 py-1.5 font-mono text-[9px] text-ink-4 tracking-widest uppercase bg-white/[0.02] border-b border-white/5">
-                        {CATEGORY_LABELS[cat]} · {grouped[cat].length}
+                      {/* Category header with count */}
+                      <div className="px-3 py-1.5 font-mono text-[9px] text-ink-4 tracking-widest uppercase bg-white/[0.02] border-b border-white/5 flex items-center gap-2">
+                        <span>{CATEGORY_LABELS[cat]}</span>
+                        <span className="ml-auto bg-white/5 rounded px-1.5 py-0.5 text-ink-4">{grouped[cat].length}</span>
                       </div>
                       {grouped[cat].map((p) => {
-                        const c = CHAINS.find((c) => c.id === p.chain);
+                        const c    = CHAINS.find((ch) => ch.id === p.chain);
                         const active = p.id === pair.id;
                         return (
                           <button
@@ -189,7 +285,18 @@ export default function ProTerminal() {
                               active && "bg-cyan/[0.06]",
                             )}
                           >
-                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: c?.color }} />
+                            {/* Chain logo */}
+                            <div
+                              className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden"
+                              style={{ background: c?.color ?? "#444" }}
+                            >
+                              {c?.logo ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={c.logo} alt={c.short ?? ""} width={16} height={16} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-[6px] font-bold text-black">{c?.short?.slice(0, 2) ?? "?"}</span>
+                              )}
+                            </div>
                             <div className="flex-1 min-w-0">
                               <div className="font-display font-bold text-xs text-ink truncate">
                                 {p.base} / {p.quote}
@@ -198,7 +305,18 @@ export default function ProTerminal() {
                                 {c?.short} · {p.dex} {p.feeTier && `· ${p.feeTier}`}
                               </div>
                             </div>
-                            {active && <span className="font-mono text-[9px] text-cyan tracking-widest uppercase">live</span>}
+                            {/* Fee tier chip */}
+                            {p.feeTier && (
+                              <span className="font-mono text-[8px] text-ink-4 bg-white/5 rounded px-1.5 py-0.5 flex-shrink-0">
+                                {p.feeTier}
+                              </span>
+                            )}
+                            {/* LIVE badge */}
+                            {active && (
+                              <span className="font-mono text-[9px] tracking-widest uppercase flex-shrink-0" style={{ color: accentColor }}>
+                                live
+                              </span>
+                            )}
                           </button>
                         );
                       })}
@@ -213,6 +331,7 @@ export default function ProTerminal() {
             )}
           </div>
 
+          {/* Price display */}
           <div className="font-mono">
             <div className="text-[10px] text-ink-3 tracking-widest uppercase">Last</div>
             <div className={cn(
@@ -222,29 +341,24 @@ export default function ProTerminal() {
               {hdr ? formatPrice(hdr.last) : "—"}
             </div>
           </div>
-          <Field label="24h" value={hdr ? `${hdr.change >= 0 ? "+" : ""}${hdr.change.toFixed(2)}%` : "—"} tone={hdr ? (hdr.change >= 0 ? "green" : "red") : undefined} />
-          <Field label="High" value={hdr ? formatPrice(hdr.high) : "—"} />
-          <Field label="Low"  value={hdr ? formatPrice(hdr.low)  : "—"} />
+          <Field label="24h"    value={hdr ? `${hdr.change >= 0 ? "+" : ""}${hdr.change.toFixed(2)}%` : "—"} tone={hdr ? (hdr.change >= 0 ? "green" : "red") : undefined} />
+          <Field label="High"   value={hdr ? formatPrice(hdr.high) : "—"} />
+          <Field label="Low"    value={hdr ? formatPrice(hdr.low)  : "—"} />
           <Field label="Vol 24h" value={hdr ? `$${compactNumber(hdr.vol)}` : "—"} />
-
-          <div className="ml-auto flex items-center gap-1.5">
-            <button type="button" className="px-3 py-1.5 rounded-md font-mono text-[10px] tracking-widest uppercase border border-green/30 bg-green/5 text-green hover:bg-green/10">
-              <ArrowUp className="w-3 h-3 inline mr-1" /> Buy (B)
-            </button>
-            <button type="button" className="px-3 py-1.5 rounded-md font-mono text-[10px] tracking-widest uppercase border border-red/30 bg-red/5 text-red hover:bg-red/10">
-              <ArrowDown className="w-3 h-3 inline mr-1" /> Sell (S)
-            </button>
-          </div>
         </div>
 
         {/* Workspace */}
         <div className="grid grid-cols-12 gap-3">
           {/* Chart */}
-          <div className="col-span-12 lg:col-span-8 rounded-lg border border-white/5 bg-black/40 flex flex-col">
+          <div
+            className="col-span-12 lg:col-span-8 rounded-lg bg-black/40 flex flex-col"
+            style={{ border: terminalBorder }}
+          >
             {/* Chart toolbar */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 flex-wrap gap-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Price · {tf}</span>
+                {/* Timeframes */}
                 <div className="flex items-center gap-0.5 ml-1">
                   {TIMEFRAMES.map((t) => (
                     <button
@@ -261,9 +375,10 @@ export default function ProTerminal() {
                     </button>
                   ))}
                 </div>
+                {/* Chart kind */}
                 <div className="flex items-center gap-0.5 ml-2 border-l border-white/5 pl-2">
                   {CHART_KINDS.map((k) => {
-                    const Icon = k.Icon;
+                    const Icon   = k.Icon;
                     const active = k.id === kind;
                     return (
                       <button
@@ -283,32 +398,76 @@ export default function ProTerminal() {
                   })}
                 </div>
               </div>
-              <div className="flex items-center gap-2 font-mono text-[10px]">
-                <span className="text-ink-3 tracking-widest uppercase hidden md:inline">Indicators</span>
+
+              {/* Indicators toggle + strategy toggle */}
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setMaOn((v) => !v)}
-                  aria-pressed={maOn}
+                  onClick={() => setStrategyOn((v) => !v)}
+                  aria-pressed={strategyOn}
                   className={cn(
-                    "px-2 py-1 rounded transition-colors",
-                    maOn ? "bg-gold/15 text-gold" : "text-ink-3 hover:text-ink-2 hover:bg-white/5",
+                    "flex items-center gap-1.5 px-2.5 py-1.5 rounded font-mono text-[9px] tracking-widest uppercase border transition-all",
+                    strategyOn
+                      ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-400"
+                      : "border-white/5 text-ink-3 hover:border-white/15 hover:text-ink-2",
                   )}
                 >
-                  MA 20
+                  <Zap className="w-3 h-3" />
+                  <span className="hidden sm:inline">ZION</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setEmaOn((v) => !v)}
-                  aria-pressed={emaOn}
+                  onClick={() => setIndicatorsOpen((v) => !v)}
+                  aria-pressed={indicatorsOpen}
                   className={cn(
-                    "px-2 py-1 rounded transition-colors",
-                    emaOn ? "bg-violet/15 text-violet" : "text-ink-3 hover:text-ink-2 hover:bg-white/5",
+                    "flex items-center gap-1.5 px-2.5 py-1.5 rounded font-mono text-[9px] tracking-widest uppercase border transition-all",
+                    indicatorsOpen
+                      ? "border-white/20 bg-white/8 text-ink"
+                      : "border-white/5 text-ink-3 hover:border-white/15 hover:text-ink-2",
                   )}
                 >
-                  EMA 50
+                  <SlidersHorizontal className="w-3 h-3" />
+                  <span className="hidden sm:inline">Indicators</span>
                 </button>
               </div>
             </div>
+
+            {/* Indicators panel */}
+            <AnimatePresence>
+              {indicatorsOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.18 }}
+                  style={{ overflow: "hidden" }}
+                  className="px-3 py-2 border-b border-white/5 flex flex-col gap-1.5"
+                >
+                  {/* Row 1: Moving averages */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono text-[8px] text-ink-4 tracking-widest uppercase w-14">MA</span>
+                    <IndicatorChip label="EMA 9"   on={ema9}   onToggle={() => setEma9((v)   => !v)} accentColor={accentColor} color="#00E8FF" />
+                    <IndicatorChip label="MA 20"   on={maOn}   onToggle={() => setMaOn((v)   => !v)} accentColor={accentColor} color="#F5A623" />
+                    <IndicatorChip label="EMA 21"  on={ema21}  onToggle={() => setEma21((v)  => !v)} accentColor={accentColor} color="#F5A623" />
+                    <IndicatorChip label="EMA 50"  on={emaOn}  onToggle={() => setEmaOn((v)  => !v)} accentColor={accentColor} color="#9F5FFF" />
+                    <IndicatorChip label="EMA 100" on={ema100} onToggle={() => setEma100((v) => !v)} accentColor={accentColor} color="#9F5FFF" />
+                    <IndicatorChip label="EMA 200" on={ema200} onToggle={() => setEma200((v) => !v)} accentColor={accentColor} color="#FF3B5C" />
+                  </div>
+                  {/* Row 2: Overlays */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono text-[8px] text-ink-4 tracking-widest uppercase w-14">Overlay</span>
+                    <IndicatorChip label="BB 20" on={bb}   onToggle={() => setBb((v)   => !v)} accentColor={accentColor} color="#FF6B35" />
+                    <IndicatorChip label="VWAP"  on={vwap} onToggle={() => setVwap((v) => !v)} accentColor={accentColor} color="#FFD700" />
+                  </div>
+                  {/* Row 3: Oscillators */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono text-[8px] text-ink-4 tracking-widest uppercase w-14">Osc</span>
+                    <IndicatorChip label="RSI 14" on={rsiOn} onToggle={() => setRsiOn((v) => !v)} accentColor={accentColor} color="#9F5FFF" />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Chart canvas */}
             <div className="p-2 h-[400px] sm:h-[460px]">
               <ProChart
@@ -318,14 +477,27 @@ export default function ProTerminal() {
                 kind={kind}
                 ma={maOn}
                 ema={emaOn}
+                bb={bb}
+                vwap={vwap}
+                ema9={ema9}
+                ema21={ema21}
+                ema100={ema100}
+                ema200={ema200}
+                rsiOn={rsiOn}
+                strategyLevels={strategyLevels}
                 targetSymbol={pair.targetSymbol}
                 onLastPrice={onLastPrice}
               />
             </div>
           </div>
 
-          {/* Right rail: ZION dock + trades */}
+          {/* Right rail: Order panel + ZION dock + trades */}
           <div className="col-span-12 lg:col-span-4 space-y-3">
+            <ProOrderPanel
+              pair={{ base: pair.base, quote: pair.quote, chain: pair.chain }}
+              lastPrice={hdr?.last ?? null}
+              accentColor={accentColor}
+            />
             <ProZionDock
               chain={pair.chain}
               fromSymbol={pair.base}
@@ -354,7 +526,99 @@ export default function ProTerminal() {
           </div>
         </div>
 
-        {/* Keybinds footer — collapsed by default, expand via the chip */}
+        {/* Strategy panel — full width, only when strategyOn */}
+        <AnimatePresence>
+          {strategyOn && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.22 }}
+              style={{ overflow: "hidden" }}
+              className="mt-3"
+            >
+              <div
+                className="rounded-lg bg-black/50 border p-4"
+                style={{ borderColor: `${accentColor}22` }}
+              >
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-3">
+                  <Zap className="w-4 h-4 text-yellow-400" />
+                  <span className="font-mono text-[10px] tracking-widest uppercase text-yellow-400">
+                    ZION Strategy
+                  </span>
+                  {hdr && (
+                    <span className="font-mono text-[10px] text-ink-3">
+                      · Based on price action at {formatPrice(hdr.last)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Scenario tabs */}
+                <div className="flex gap-1.5 mb-4">
+                  {(["conservative", "moderate", "aggressive"] as StrategyScenario[]).map((sc) => (
+                    <button
+                      key={sc}
+                      type="button"
+                      onClick={() => setStrategyScenario(sc)}
+                      aria-pressed={strategyScenario === sc}
+                      className="px-3 py-1.5 rounded font-mono text-[9px] tracking-widest uppercase border transition-all"
+                      style={strategyScenario === sc
+                        ? { borderColor: `${accentColor}55`, background: `${accentColor}15`, color: accentColor }
+                        : { borderColor: "rgba(255,255,255,0.07)", color: "#64748b" }
+                      }
+                    >
+                      {sc}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Levels grid */}
+                {hdr && (() => {
+                  const p = hdr.last;
+                  const scenarios = {
+                    conservative: { entry: p * 0.999, target: p * 1.020, stop: p * 0.989 },
+                    moderate:     { entry: p * 0.999, target: p * 1.040, stop: p * 0.980 },
+                    aggressive:   { entry: p * 0.998, target: p * 1.080, stop: p * 0.970 },
+                  };
+                  const s = scenarios[strategyScenario];
+                  const rr = (s.target - s.entry) / (s.entry - s.stop);
+                  return (
+                    <>
+                      <div className="grid grid-cols-3 gap-3 mb-3">
+                        <StrategyLevelCard
+                          title="Entry"
+                          price={s.entry}
+                          pctLabel={`${((s.entry / p - 1) * 100).toFixed(2)}%`}
+                          color="#00E8FF"
+                        />
+                        <StrategyLevelCard
+                          title="Target"
+                          price={s.target}
+                          pctLabel={`+${((s.target / p - 1) * 100).toFixed(1)}%`}
+                          color="#00E087"
+                        />
+                        <StrategyLevelCard
+                          title="Stop Loss"
+                          price={s.stop}
+                          pctLabel={`-${((1 - s.stop / p) * 100).toFixed(1)}%`}
+                          color="#FF3B5C"
+                        />
+                      </div>
+                      <div className="font-mono text-[10px] text-ink-3">
+                        Risk/Reward: <span className="text-ink">1:{rr.toFixed(1)}</span>
+                        <span className="mx-2 text-ink-4">·</span>
+                        Scenario: <span className="text-ink">{strategyScenario}</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Keybinds footer */}
         <details className="mt-3 rounded-lg border border-white/5 bg-black/40 overflow-hidden">
           <summary className="px-3 py-2 cursor-pointer list-none flex items-center gap-2 font-mono text-[10px] text-ink-3 tracking-widest uppercase hover:bg-white/[0.02]">
             <Zap className="w-3 h-3 text-gold" />
@@ -373,12 +637,14 @@ export default function ProTerminal() {
         </details>
 
         <p className="font-mono text-[10px] text-ink-4 text-center mt-4">
-          OHLCV + trades · GeckoTerminal · depth · 0x quote · flow · last {/* trades.length */} fills · ZION dock · trading-mode analysis
+          OHLCV + trades · GeckoTerminal · depth · 0x quote · flow · ZION dock · trading-mode analysis
         </p>
       </div>
     </div>
   );
 }
+
+// ─── Sub-components ───────────────────────────────────────────────────
 
 function Field({ label, value, tone }: { label: string; value: string; tone?: "green" | "red" }) {
   const cls = tone === "green" ? "text-green" : tone === "red" ? "text-red" : "text-ink";
@@ -386,6 +652,63 @@ function Field({ label, value, tone }: { label: string; value: string; tone?: "g
     <div className="font-mono">
       <div className="text-[10px] text-ink-3 tracking-widest uppercase">{label}</div>
       <div className={cn("text-sm tabular-nums", cls)}>{value}</div>
+    </div>
+  );
+}
+
+function IndicatorChip({
+  label, on, onToggle, accentColor, color,
+}: {
+  label: string;
+  on: boolean;
+  onToggle: () => void;
+  accentColor: string;
+  color: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={on}
+      className="px-2.5 py-1 rounded font-mono text-[9px] tracking-widest uppercase border transition-all"
+      style={on
+        ? { borderColor: `${color}55`, background: `${color}15`, color }
+        : { borderColor: "rgba(255,255,255,0.07)", color: "#64748b" }
+      }
+    >
+      {on && (
+        <span
+          className="inline-block w-1.5 h-1.5 rounded-full mr-1 -mt-0.5 align-middle"
+          style={{ background: accentColor }}
+        />
+      )}
+      {label}
+    </button>
+  );
+}
+
+function StrategyLevelCard({
+  title, price, pctLabel, color,
+}: {
+  title: string;
+  price: number;
+  pctLabel: string;
+  color: string;
+}) {
+  return (
+    <div
+      className="rounded-lg p-3 border"
+      style={{ borderColor: `${color}22`, background: `${color}08` }}
+    >
+      <div className="font-mono text-[9px] tracking-widest uppercase mb-1" style={{ color }}>
+        {title}
+      </div>
+      <div className="font-display font-bold text-sm text-ink tabular-nums">
+        {formatPrice(price)}
+      </div>
+      <div className="font-mono text-[9px] mt-0.5" style={{ color }}>
+        {pctLabel}
+      </div>
     </div>
   );
 }
@@ -398,5 +721,5 @@ function formatPrice(n: number): string {
   return n.toPrecision(4);
 }
 
-// keep BarChart export for future
+// keep unused Activity export for future
 void Activity;

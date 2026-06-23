@@ -20,6 +20,13 @@ import type { Candle, Timeframe, PriceToken, PoolMeta } from "@/lib/api/geckoter
 
 export type ChartKind = "candle" | "bar" | "line";
 
+export interface StrategyLevel {
+  price:  number;
+  label:  string;
+  color:  string;
+  style?: "solid" | "dashed" | "dotted";
+}
+
 interface Props {
   chain:        string;
   pool:         string;
@@ -27,6 +34,14 @@ interface Props {
   kind:         ChartKind;
   ma:           boolean;     // 20-period simple moving average overlay
   ema:          boolean;     // 50-period exponential moving average overlay
+  bb:           boolean;     // Bollinger Bands 20,2
+  vwap:         boolean;     // Volume-weighted average price
+  ema9:         boolean;
+  ema21:        boolean;
+  ema100:       boolean;
+  ema200:       boolean;
+  rsiOn:        boolean;     // RSI 14 in lower portion of chart
+  strategyLevels?: StrategyLevel[];
   /**
    * Symbol the user expects to see on the chart. The component fetches the
    * pool's metadata and automatically picks token=base or token=quote based
@@ -44,18 +59,33 @@ interface Props {
  * - Pulls OHLCV from /api/ohlcv (which proxies GeckoTerminal)
  * - Renders candle / bar / line by the `kind` prop (hot-swappable)
  * - Volume histogram pinned to the bottom 25% of the pane
- * - MA / EMA overlays toggle via props
+ * - MA / EMA / BB / VWAP / EMA9/21/100/200 / RSI overlays toggle via props
+ * - Strategy levels drawn as price lines
  * - Auto-resizes via ResizeObserver
  */
-export default function ProChart({ chain, pool, tf, kind, ma, ema, targetSymbol, onLastPrice, onMeta }: Props) {
+export default function ProChart({
+  chain, pool, tf, kind, ma, ema,
+  bb, vwap, ema9, ema21, ema100, ema200, rsiOn,
+  strategyLevels,
+  targetSymbol, onLastPrice, onMeta,
+}: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const chartRef        = useRef<IChartApi | null>(null);
   const priceSeriesRef  = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line"> | null>(null);
   const volSeriesRef    = useRef<ISeriesApi<"Histogram"> | null>(null);
   const maSeriesRef     = useRef<ISeriesApi<"Line"> | null>(null);
   const emaSeriesRef    = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbUpperRef      = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbMiddleRef     = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbLowerRef      = useRef<ISeriesApi<"Line"> | null>(null);
+  const vwapRef         = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema9Ref         = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema21Ref        = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema100Ref       = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema200Ref       = useRef<ISeriesApi<"Line"> | null>(null);
+  const rsiRef          = useRef<ISeriesApi<"Line"> | null>(null);
 
-  const [error, setError]   = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [candles, setCandles] = useState<Candle[]>([]);
 
@@ -112,11 +142,20 @@ export default function ProChart({ chain, pool, tf, kind, ma, ema, targetSymbol,
     return () => {
       ro.disconnect();
       chart.remove();
-      chartRef.current = null;
+      chartRef.current    = null;
       priceSeriesRef.current = null;
       volSeriesRef.current   = null;
       maSeriesRef.current    = null;
       emaSeriesRef.current   = null;
+      bbUpperRef.current     = null;
+      bbMiddleRef.current    = null;
+      bbLowerRef.current     = null;
+      vwapRef.current        = null;
+      ema9Ref.current        = null;
+      ema21Ref.current       = null;
+      ema100Ref.current      = null;
+      ema200Ref.current      = null;
+      rsiRef.current         = null;
     };
   }, []);
 
@@ -133,24 +172,24 @@ export default function ProChart({ chain, pool, tf, kind, ma, ema, targetSymbol,
 
     if (kind === "candle") {
       priceSeriesRef.current = chart.addCandlestickSeries({
-        upColor:        "#00E087",
-        downColor:      "#FF3B5C",
-        borderUpColor:  "#00E087",
-        borderDownColor:"#FF3B5C",
-        wickUpColor:    "#00E087",
-        wickDownColor:  "#FF3B5C",
+        upColor:         "#00E087",
+        downColor:       "#FF3B5C",
+        borderUpColor:   "#00E087",
+        borderDownColor: "#FF3B5C",
+        wickUpColor:     "#00E087",
+        wickDownColor:   "#FF3B5C",
       });
     } else if (kind === "bar") {
       priceSeriesRef.current = chart.addBarSeries({
-        upColor:    "#00E087",
-        downColor:  "#FF3B5C",
-        thinBars:   false,
+        upColor:     "#00E087",
+        downColor:   "#FF3B5C",
+        thinBars:    false,
         openVisible: true,
       });
     } else {
       priceSeriesRef.current = chart.addLineSeries({
-        color:     "#00E8FF",
-        lineWidth: 2,
+        color:            "#00E8FF",
+        lineWidth:        2,
         priceLineVisible: true,
       });
     }
@@ -169,20 +208,20 @@ export default function ProChart({ chain, pool, tf, kind, ma, ema, targetSymbol,
     if (ma) {
       if (!maSeriesRef.current) {
         maSeriesRef.current = chart.addLineSeries({
-          color: "#F5A623",
-          lineWidth: 1,
+          color:            "#F5A623",
+          lineWidth:        1,
           priceLineVisible: false,
           lastValueVisible: false,
         });
       }
-      maSeriesRef.current!.setData(sma(candles, 20));
+      maSeriesRef.current.setData(sma(candles, 20));
     } else if (maSeriesRef.current) {
       chart.removeSeries(maSeriesRef.current);
       maSeriesRef.current = null;
     }
   }, [ma, candles]);
 
-  // ── EMA overlay toggle ──────────────────────────────────────────────
+  // ── EMA 50 overlay toggle ──────────────────────────────────────────────
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -190,18 +229,234 @@ export default function ProChart({ chain, pool, tf, kind, ma, ema, targetSymbol,
     if (ema) {
       if (!emaSeriesRef.current) {
         emaSeriesRef.current = chart.addLineSeries({
-          color: "#9F5FFF",
-          lineWidth: 1,
+          color:            "#9F5FFF",
+          lineWidth:        1,
           priceLineVisible: false,
           lastValueVisible: false,
         });
       }
-      emaSeriesRef.current!.setData(emaCalc(candles, 50));
+      emaSeriesRef.current.setData(emaCalcN(candles, 50));
     } else if (emaSeriesRef.current) {
       chart.removeSeries(emaSeriesRef.current);
       emaSeriesRef.current = null;
     }
   }, [ema, candles]);
+
+  // ── Bollinger Bands toggle ──────────────────────────────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (bb) {
+      const { upper, middle, lower } = bbCalc(candles);
+      if (!bbUpperRef.current) {
+        bbUpperRef.current = chart.addLineSeries({
+          color:            "#FF6B35",
+          lineWidth:        1,
+          lineStyle:        LineStyle.Dashed,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+      }
+      if (!bbMiddleRef.current) {
+        bbMiddleRef.current = chart.addLineSeries({
+          color:            "#888888",
+          lineWidth:        1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+      }
+      if (!bbLowerRef.current) {
+        bbLowerRef.current = chart.addLineSeries({
+          color:            "#FF6B35",
+          lineWidth:        1,
+          lineStyle:        LineStyle.Dashed,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+      }
+      bbUpperRef.current.setData(upper);
+      bbMiddleRef.current.setData(middle);
+      bbLowerRef.current.setData(lower);
+    } else {
+      if (bbUpperRef.current)  { chart.removeSeries(bbUpperRef.current);  bbUpperRef.current  = null; }
+      if (bbMiddleRef.current) { chart.removeSeries(bbMiddleRef.current); bbMiddleRef.current = null; }
+      if (bbLowerRef.current)  { chart.removeSeries(bbLowerRef.current);  bbLowerRef.current  = null; }
+    }
+  }, [bb, candles]);
+
+  // ── VWAP toggle ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (vwap) {
+      if (!vwapRef.current) {
+        vwapRef.current = chart.addLineSeries({
+          color:            "#FFD700",
+          lineWidth:        1,
+          lineStyle:        LineStyle.Dashed,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+      }
+      vwapRef.current.setData(vwapCalc(candles));
+    } else if (vwapRef.current) {
+      chart.removeSeries(vwapRef.current);
+      vwapRef.current = null;
+    }
+  }, [vwap, candles]);
+
+  // ── EMA 9 toggle ────────────────────────────────────────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (ema9) {
+      if (!ema9Ref.current) {
+        ema9Ref.current = chart.addLineSeries({
+          color:            "#00E8FF",
+          lineWidth:        1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+      }
+      ema9Ref.current.setData(emaCalcN(candles, 9));
+    } else if (ema9Ref.current) {
+      chart.removeSeries(ema9Ref.current);
+      ema9Ref.current = null;
+    }
+  }, [ema9, candles]);
+
+  // ── EMA 21 toggle ───────────────────────────────────────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (ema21) {
+      if (!ema21Ref.current) {
+        ema21Ref.current = chart.addLineSeries({
+          color:            "#F5A623",
+          lineWidth:        1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+      }
+      ema21Ref.current.setData(emaCalcN(candles, 21));
+    } else if (ema21Ref.current) {
+      chart.removeSeries(ema21Ref.current);
+      ema21Ref.current = null;
+    }
+  }, [ema21, candles]);
+
+  // ── EMA 100 toggle ──────────────────────────────────────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (ema100) {
+      if (!ema100Ref.current) {
+        ema100Ref.current = chart.addLineSeries({
+          color:            "#9F5FFF",
+          lineWidth:        1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+      }
+      ema100Ref.current.setData(emaCalcN(candles, 100));
+    } else if (ema100Ref.current) {
+      chart.removeSeries(ema100Ref.current);
+      ema100Ref.current = null;
+    }
+  }, [ema100, candles]);
+
+  // ── EMA 200 toggle ──────────────────────────────────────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (ema200) {
+      if (!ema200Ref.current) {
+        ema200Ref.current = chart.addLineSeries({
+          color:            "#FF3B5C",
+          lineWidth:        1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+      }
+      ema200Ref.current.setData(emaCalcN(candles, 200));
+    } else if (ema200Ref.current) {
+      chart.removeSeries(ema200Ref.current);
+      ema200Ref.current = null;
+    }
+  }, [ema200, candles]);
+
+  // ── RSI toggle ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (rsiOn) {
+      // Shrink main price scale to make room for RSI
+      chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: 0.45 } });
+
+      if (!rsiRef.current) {
+        rsiRef.current = chart.addLineSeries({
+          color:            "#9F5FFF",
+          lineWidth:        1,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          priceScaleId:     "rsi",
+        });
+        chart.priceScale("rsi").applyOptions({ scaleMargins: { top: 0.80, bottom: 0.02 } });
+        // Reference lines at 30 and 70
+        rsiRef.current.createPriceLine({ price: 70, color: "#FF3B5C44", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "OB" });
+        rsiRef.current.createPriceLine({ price: 30, color: "#00E08744", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "OS" });
+      }
+      rsiRef.current.setData(rsiCalc(candles));
+    } else {
+      if (rsiRef.current) {
+        chart.removeSeries(rsiRef.current);
+        rsiRef.current = null;
+      }
+      // Restore main price scale margins
+      chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: 0.28 } });
+    }
+  }, [rsiOn, candles]);
+
+  // ── Strategy levels — use a stable ref to track created lines ───────
+  const strategyLineHandlesRef = useRef<ReturnType<NonNullable<typeof priceSeriesRef.current>["createPriceLine"]>[]>([]);
+
+  useEffect(() => {
+    const series = priceSeriesRef.current;
+    if (!series) return;
+
+    // Remove old lines
+    for (const line of strategyLineHandlesRef.current) {
+      try { series.removePriceLine(line); } catch { /* already gone */ }
+    }
+    strategyLineHandlesRef.current = [];
+
+    if (!strategyLevels || strategyLevels.length === 0) return;
+
+    const styleMap: Record<string, number> = {
+      solid:  LineStyle.Solid,
+      dashed: LineStyle.Dashed,
+      dotted: LineStyle.Dotted,
+    };
+
+    for (const lvl of strategyLevels) {
+      const handle = series.createPriceLine({
+        price:              lvl.price,
+        color:              lvl.color,
+        lineWidth:          1,
+        lineStyle:          styleMap[lvl.style ?? "solid"] ?? LineStyle.Solid,
+        axisLabelVisible:   true,
+        title:              lvl.label,
+      });
+      strategyLineHandlesRef.current.push(handle);
+    }
+  }, [strategyLevels]);
 
   // ── Fetch pool metadata + OHLCV on chain / pool / tf change ─────────
   useEffect(() => {
@@ -250,7 +505,7 @@ export default function ProChart({ chain, pool, tf, kind, ma, ema, targetSymbol,
         }
         if (volSeriesRef.current) {
           const vols: HistogramData<Time>[] = rows.map((c) => ({
-            time: c.time as Time,
+            time:  c.time as Time,
             value: c.volume,
             color: c.close >= c.open ? "#00E08744" : "#FF3B5C44",
           }));
@@ -325,7 +580,7 @@ function pushCandles(
 ) {
   if (kind === "candle") {
     const data: CandlestickData<Time>[] = rows.map((c) => ({
-      time:  c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close,
+      time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close,
     }));
     (series as ISeriesApi<"Candlestick">).setData(data);
   } else if (kind === "bar") {
@@ -355,7 +610,7 @@ function sma(rows: Candle[], period: number): LineData<Time>[] {
   return out;
 }
 
-function emaCalc(rows: Candle[], period: number): LineData<Time>[] {
+function emaCalcN(rows: Candle[], period: number): LineData<Time>[] {
   if (rows.length < period) return [];
   const k = 2 / (period + 1);
   const out: LineData<Time>[] = [];
@@ -365,6 +620,79 @@ function emaCalc(rows: Candle[], period: number): LineData<Time>[] {
   for (let i = period; i < rows.length; i++) {
     prev = rows[i].close * k + prev * (1 - k);
     out.push({ time: rows[i].time as Time, value: prev });
+  }
+  return out;
+}
+
+function bbCalc(rows: Candle[], period = 20, mult = 2): {
+  upper: LineData<Time>[];
+  middle: LineData<Time>[];
+  lower: LineData<Time>[];
+} {
+  if (rows.length < period) return { upper: [], middle: [], lower: [] };
+  const upper: LineData<Time>[] = [];
+  const middle: LineData<Time>[] = [];
+  const lower: LineData<Time>[] = [];
+
+  for (let i = period - 1; i < rows.length; i++) {
+    const slice = rows.slice(i - period + 1, i + 1);
+    const avg = slice.reduce((acc, r) => acc + r.close, 0) / period;
+    const variance = slice.reduce((acc, r) => acc + Math.pow(r.close - avg, 2), 0) / period;
+    const stddev = Math.sqrt(variance);
+    const t = rows[i].time as Time;
+    upper.push({ time: t, value: avg + mult * stddev });
+    middle.push({ time: t, value: avg });
+    lower.push({ time: t, value: avg - mult * stddev });
+  }
+  return { upper, middle, lower };
+}
+
+function vwapCalc(rows: Candle[]): LineData<Time>[] {
+  if (rows.length === 0) return [];
+  const out: LineData<Time>[] = [];
+  let cumVolume = 0;
+  let cumVolPrice = 0;
+  for (const c of rows) {
+    const typicalPrice = (c.high + c.low + c.close) / 3;
+    cumVolume   += c.volume;
+    cumVolPrice += typicalPrice * c.volume;
+    if (cumVolume > 0) {
+      out.push({ time: c.time as Time, value: cumVolPrice / cumVolume });
+    }
+  }
+  return out;
+}
+
+function rsiCalc(rows: Candle[], period = 14): LineData<Time>[] {
+  if (rows.length <= period) return [];
+  const out: LineData<Time>[] = [];
+
+  // Compute changes
+  const changes: number[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    changes.push(rows[i].close - rows[i - 1].close);
+  }
+
+  // Seed with simple average of first `period` gains/losses
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) avgGain += changes[i];
+    else avgLoss += Math.abs(changes[i]);
+  }
+  avgGain /= period;
+  avgLoss /= period;
+
+  const calcRsi = (g: number, l: number) => (l === 0 ? 100 : 100 - 100 / (1 + g / l));
+  out.push({ time: rows[period].time as Time, value: calcRsi(avgGain, avgLoss) });
+
+  // Wilder's smoothing
+  for (let i = period; i < changes.length; i++) {
+    const gain = changes[i] > 0 ? changes[i] : 0;
+    const loss = changes[i] < 0 ? Math.abs(changes[i]) : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    out.push({ time: rows[i + 1].time as Time, value: calcRsi(avgGain, avgLoss) });
   }
   return out;
 }
@@ -382,7 +710,7 @@ function ticksFor24h(tf: Timeframe): number {
 
 function findFirst24hAgo(rows: Candle[]): Candle | null {
   if (!rows.length) return null;
-  const last = rows[rows.length - 1].time;
+  const last   = rows[rows.length - 1].time;
   const target = last - 24 * 3600;
   for (let i = rows.length - 1; i >= 0; i--) {
     if (rows[i].time <= target) return rows[i];
