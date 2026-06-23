@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import {
   NAV_ITEMS, NAV_GROUP_KEYS, NAV_BADGE_CLASSES, type NavItem,
 } from "./nav-items";
+import BrandMark from "./BrandMark";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -32,12 +33,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-white/5 flex-shrink-0">
         <Link href="/" className="flex items-center gap-2.5 min-w-0">
-          <div className="relative w-9 h-9 flex-shrink-0">
-            <div className="absolute inset-0 rounded-xl bg-grad-cyan opacity-20 blur-md" />
-            <div className="relative w-9 h-9 rounded-xl bg-grad-cyan flex items-center justify-center">
-              <span className="font-display font-extrabold text-bg text-lg leading-none">Z</span>
-            </div>
-          </div>
+          <BrandMark size="lg" />
           {!sidebarCollapsed && (
             <div className="min-w-0">
               <div className="font-display font-extrabold text-ink text-sm leading-none tracking-wide">Z-SWAP</div>

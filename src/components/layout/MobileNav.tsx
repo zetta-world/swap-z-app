@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
 import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 import { NAV_ITEMS, NAV_BADGE_CLASSES } from "./nav-items";
+import BrandMark from "./BrandMark";
 
 const LANGS: { id: AppLang; label: string; flag: string }[] = [
   { id: "en", label: "English",   flag: "🇺🇸" },
@@ -32,9 +33,7 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
           <Dialog.Title className="sr-only">{t("topbar.openCommand")}</Dialog.Title>
           <div className="h-16 flex items-center justify-between px-4 border-b border-white/5">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-grad-cyan flex items-center justify-center">
-                <span className="font-display font-extrabold text-bg text-sm leading-none">Z</span>
-              </div>
+              <BrandMark size="md" />
               <span className="font-display font-extrabold text-ink text-sm">Z-SWAP</span>
             </div>
             <button onClick={onClose} className="w-8 h-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-white/5">

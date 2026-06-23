@@ -8,6 +8,7 @@ import ModeSwitcher from "./ModeSwitcher";
 import ConnectButton from "@/components/wallet/ConnectButton";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
 import { GOD_META, isPaidTier } from "@/lib/tier/gods";
+import BrandMark from "./BrandMark";
 
 export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const { setCommand, toggleZion, zionOpen } = useUI();
@@ -29,12 +30,7 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
           <Menu className="w-5 h-5" />
         </button>
         <a href="/" className="flex items-center gap-2 min-w-0">
-          <div className="relative w-7 h-7 flex-shrink-0">
-            <div className="absolute inset-0 rounded-lg bg-grad-cyan opacity-30 blur-md" />
-            <div className="relative w-7 h-7 rounded-lg bg-grad-cyan flex items-center justify-center">
-              <span className="font-display font-extrabold text-bg text-[13px] leading-none">Z</span>
-            </div>
-          </div>
+          <BrandMark size="sm" />
           <span className="font-display font-extrabold text-ink text-sm whitespace-nowrap hidden xs:inline">
             Z-SWAP
           </span>
