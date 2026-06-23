@@ -7,6 +7,7 @@ import { CHAINS, type ChainId } from "@/lib/chains";
 import { tokensByChain, type Token } from "@/lib/tokens";
 import { formatUsd, parseDecimalInput } from "@/lib/format";
 import ZionOrdersList from "./ZionOrdersList";
+import OrderTokenSelector from "./OrderTokenSelector";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
@@ -36,6 +37,17 @@ export default function OrdersView() {
   const [limitPrice, setLimitPrice] = useState("3600");
   const [intervals, setIntervals] = useState("12");
   const [freq, setFreq] = useState("daily");
+  const [fromSelectorOpen, setFromSelectorOpen] = useState(false);
+  const [toSelectorOpen,   setToSelectorOpen]   = useState(false);
+
+  const chainTokens = tokensByChain(chain);
+
+  const onChainChange = (c: ChainId) => {
+    setChain(c);
+    const tokens = tokensByChain(c);
+    setFromToken(tokens[0]);
+    setToToken(tokens[1]);
+  };
 
   const summary = useMemo(() => {
     const a = parseDecimalInput(amount) ?? 0;
@@ -106,7 +118,7 @@ export default function OrdersView() {
               <div className="rounded-[18px] glass p-5 space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <Field label={t("orders.fieldChain")}>
-                    <ChainSelect chain={chain} onChange={(c) => { setChain(c); setFromToken(tokensByChain(c)[0]); setToToken(tokensByChain(c)[1]); }} />
+                    <ChainSelect chain={chain} onChange={onChainChange} />
                   </Field>
                   <Field label={t("orders.fieldType")}>
                     <div className="bg-bg-2 border border-white/10 rounded-lg px-2.5 py-2 text-sm font-mono text-ink-2 uppercase tracking-widest">
@@ -120,10 +132,10 @@ export default function OrdersView() {
 
                 <div className="grid grid-cols-2 gap-2">
                   <Field label={t("orders.fieldPay")}>
-                    <TokenSelect token={fromToken} tokens={tokensByChain(chain)} onChange={setFromToken} />
+                    <TokenTrigger token={fromToken} onClick={() => setFromSelectorOpen(true)} />
                   </Field>
                   <Field label={t("orders.fieldReceive")}>
-                    <TokenSelect token={toToken} tokens={tokensByChain(chain)} onChange={setToToken} />
+                    <TokenTrigger token={toToken} onClick={() => setToSelectorOpen(true)} />
                   </Field>
                 </div>
 
@@ -216,7 +228,7 @@ export default function OrdersView() {
             </div>
           </div>
 
-          {/* ZION saved orders — real, from localStorage */}
+          {/* ZION saved orders */}
           <div className="lg:col-span-5 space-y-4">
             <ZionOrdersList />
 
@@ -232,6 +244,24 @@ export default function OrdersView() {
           </div>
         </div>
       </div>
+
+      {/* Token selectors */}
+      <OrderTokenSelector
+        open={fromSelectorOpen}
+        onClose={() => setFromSelectorOpen(false)}
+        tokens={chainTokens}
+        selected={fromToken}
+        onSelect={setFromToken}
+        title={t("orders.fieldPay")}
+      />
+      <OrderTokenSelector
+        open={toSelectorOpen}
+        onClose={() => setToSelectorOpen(false)}
+        tokens={chainTokens}
+        selected={toToken}
+        onSelect={setToToken}
+        title={t("orders.fieldReceive")}
+      />
     </div>
   );
 }
@@ -245,48 +275,128 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+// ─── Chain logo with fallback dot ─────────────────────────────────────────
+function ChainLogoImg({ chain }: { chain: (typeof CHAINS)[number] }) {
+  const [failed, setFailed] = useState(false);
+  if (chain.logo && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={chain.logo}
+        alt={chain.name}
+        width={16} height={16}
+        className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <span
+      className="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center font-mono text-[7px] font-bold text-bg"
+      style={{ background: chain.color }}
+    >
+      {chain.short.slice(0, 1)}
+    </span>
+  );
+}
+
+// ─── Custom chain selector with logos ────────────────────────────────────
 function ChainSelect({ chain, onChange }: { chain: ChainId; onChange: (c: ChainId) => void }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
   const cur = CHAINS.find((c) => c.id === chain);
+  const options = CHAINS.filter((c) => !c.comingSoon);
+
   return (
-    <div className="relative min-w-0">
-      <select
-        value={chain}
-        onChange={(e) => onChange(e.target.value as ChainId)}
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
         aria-label={t("common.chain")}
-        className="appearance-none bg-bg-2 border border-white/10 rounded-lg pl-6 pr-7 py-2 text-sm font-mono uppercase tracking-wider text-ink-2 outline-none focus:border-violet/30 cursor-pointer w-full truncate"
+        className="w-full flex items-center gap-2 bg-bg-2 border border-white/10 rounded-lg px-2.5 py-2 hover:border-white/20 focus:outline-none focus:border-violet/30 transition-colors min-w-0"
       >
-        {CHAINS.filter((c) => !c.comingSoon).map((c) => (
-          <option key={c.id} value={c.id}>{c.short}</option>
-        ))}
-      </select>
-      <span className="absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full pointer-events-none" style={{ background: cur?.color }} />
-      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-ink-3 pointer-events-none" />
+        {cur && <ChainLogoImg chain={cur} />}
+        <span className="flex-1 text-left font-mono text-sm uppercase tracking-wider text-ink-2 truncate min-w-0">
+          {cur?.short ?? chain}
+        </span>
+        <ChevronDown className={cn("w-3.5 h-3.5 text-ink-3 flex-shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <>
+          {/* backdrop */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-white/10 bg-bg-1 shadow-2xl overflow-hidden max-h-56 overflow-y-auto">
+            {options.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => { onChange(c.id as ChainId); setOpen(false); }}
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2.5 transition-colors text-left",
+                  c.id === chain ? "bg-white/[0.06]" : "hover:bg-white/[0.04]",
+                )}
+              >
+                <ChainLogoImg chain={c} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-sm text-ink-2 uppercase tracking-wider truncate">{c.short}</div>
+                  <div className="font-mono text-[9px] text-ink-4 truncate">{c.evm ? "EVM" : c.id === "solana" ? "SVM" : "ZVM"}</div>
+                </div>
+                {c.id === chain && (
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color, boxShadow: `0 0 6px ${c.color}` }} />
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function TokenSelect({ token, tokens, onChange }: { token: Token | undefined; tokens: Token[]; onChange: (t: Token) => void }) {
-  const tr = useT();
+// ─── Token trigger button showing logo + symbol ───────────────────────────
+function TokenTrigger({ token, onClick }: { token: Token | undefined; onClick: () => void }) {
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  const logoSrc = token
+    ? (token.logo ?? `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/icon/${token.symbol.toLowerCase()}.png`)
+    : null;
+
   return (
-    <div className="relative min-w-0">
-      <select
-        value={token?.address ?? ""}
-        onChange={(e) => {
-          const t = tokens.find((x) => x.address === e.target.value);
-          if (t) onChange(t);
-        }}
-        aria-label={tr("common.token")}
-        className="appearance-none w-full bg-bg-2 border border-white/10 rounded-lg pl-3 pr-7 py-2 text-sm font-display font-bold text-ink outline-none focus:border-violet/30 cursor-pointer truncate"
-      >
-        {tokens.map((t) => (
-          <option key={t.address} value={t.address}>{t.symbol}</option>
-        ))}
-      </select>
-      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-ink-3 pointer-events-none" />
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-2 bg-bg-2 border border-white/10 rounded-lg px-2.5 py-2 hover:border-white/20 focus:outline-none focus:border-violet/30 transition-colors min-w-0"
+    >
+      {token ? (
+        logoSrc && !logoFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoSrc}
+            alt={token.symbol}
+            width={24} height={24}
+            className="w-6 h-6 rounded-full object-cover flex-shrink-0 bg-white/5"
+            onError={() => setLogoFailed(true)}
+          />
+        ) : (
+          <span
+            className="w-6 h-6 rounded-full flex items-center justify-center font-display font-extrabold text-[9px] flex-shrink-0"
+            style={{ background: `${token.color ?? "#00E8FF"}22`, color: token.color ?? "#00E8FF", border: `1px solid ${token.color ?? "#00E8FF"}44` }}
+          >
+            {token.symbol.slice(0, 2)}
+          </span>
+        )
+      ) : (
+        <span className="w-6 h-6 rounded-full bg-white/10 flex-shrink-0" />
+      )}
+      <span className="flex-1 text-left font-display font-bold text-sm text-ink truncate min-w-0">
+        {token?.symbol ?? "—"}
+      </span>
+      <ChevronDown className="w-3.5 h-3.5 text-ink-3 flex-shrink-0" />
+    </button>
   );
 }
 
 // avoid unused import warning
 void formatUsd;
+
