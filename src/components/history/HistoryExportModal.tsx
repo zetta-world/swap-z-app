@@ -9,7 +9,20 @@ import {
 import {
   TX_TYPE_LABELS_PT, STATUS_LABELS_PT, type TxHistoryEntry,
 } from "@/lib/store/txHistory";
+import { useTierAccent } from "@/components/tier/TierAccentProvider";
+import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 import { cn } from "@/lib/cn";
+
+/** Branding applied to the printable PDF — driven by the active god/tier. */
+interface PrintTheme {
+  accent:   string;
+  gradient: string;
+  glow:     string;
+  god:      string | null;
+  epithet:  string | null;
+  rune:     string;
+  watermark:string;
+}
 
 type ExportFormat = "csv" | "json" | "pdf";
 type Scope        = "filtered" | "all";
@@ -55,8 +68,32 @@ export default function HistoryExportModal({ open, onClose, filtered, all }: Pro
   const [scope,  setScope]    = useState<Scope>("filtered");
   const [fields, setFields]   = useState<FieldKey[]>(DEFAULT_FIELDS);
 
+  const { tier, accentColor, glowColor, active } = useTierAccent();
+
   const rows = scope === "filtered" ? filtered : all;
   const selectedFields = useMemo(() => FIELDS.filter((f) => fields.includes(f.key)), [fields]);
+
+  // The PDF inherits the member's god identity — gold FREYR, violet THOR,
+  // prismatic ODIN — falling back to neutral Z-SWAP cyan on the free tier.
+  const theme: PrintTheme = useMemo(() => {
+    if (active && isPaidTier(tier)) {
+      const g = GOD_META[tier];
+      const gradient =
+        tier === "pro"    ? "linear-gradient(120deg, #F5A623, #C9A955)" :
+        tier === "trader" ? "linear-gradient(120deg, #9F5FFF, #7C3AED)" :
+                            "linear-gradient(120deg, #00E8FF, #9F5FFF, #F5A623)";
+      return {
+        accent: accentColor, gradient, glow: glowColor,
+        god: g.god, epithet: g.epithet, rune: g.rune, watermark: g.rune,
+      };
+    }
+    return {
+      accent: "#00E8FF",
+      gradient: "linear-gradient(120deg, #00E8FF, #0891B2)",
+      glow: "rgba(0,232,255,0.35)",
+      god: null, epithet: null, rune: "Z", watermark: "Z",
+    };
+  }, [active, tier, accentColor, glowColor]);
 
   function toggleField(k: FieldKey) {
     setFields((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
@@ -69,7 +106,7 @@ export default function HistoryExportModal({ open, onClose, filtered, all }: Pro
     if (format === "pdf") {
       const win = window.open("", "_blank");
       if (!win) return;
-      win.document.write(buildPrintHtml(rows, selectedFields, stamp));
+      win.document.write(buildPrintHtml(rows, selectedFields, stamp, theme));
       win.document.close();
       win.focus();
       setTimeout(() => { win.print(); }, 400);
@@ -330,40 +367,117 @@ function buildPrintHtml(
   rows: TxHistoryEntry[],
   fields: { key: FieldKey; label: string }[],
   stamp: string,
+  theme: PrintTheme,
 ): string {
   const headerRow = fields.map((f) => `<th>${esc(f.label)}</th>`).join("");
   const bodyRows  = rows.map((e) =>
     `<tr>${fields.map((f) => `<td>${esc(cellValue(e, f.key))}</td>`).join("")}</tr>`
   ).join("\n");
 
+  const opsCount = `${rows.length} operação${rows.length !== 1 ? "ões" : ""}`;
+  const colCount = `${fields.length} coluna${fields.length !== 1 ? "s" : ""}`;
+
+  // Identity line: god + epithet for paid tiers, generic for free.
+  const crest = theme.god
+    ? `<div class="crest-god">${esc(theme.god)}</div>
+       <div class="crest-epithet">${esc(theme.epithet ?? "")}</div>`
+    : `<div class="crest-god">Z-SWAP</div>
+       <div class="crest-epithet">MEMBERSHIP</div>`;
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"/>
-<title>ZSwap · Histórico ${stamp}</title>
+<title>Z-SWAP · Histórico ${stamp}</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 11px; color: #0f1117; padding: 24px; }
-  h1 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
-  .meta { font-size: 10px; color: #666; margin-bottom: 16px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 11px; color: #0f1117; background: #fff; }
+
+  /* ── Crest header — the god's banner ───────────────────────────────── */
+  .crest {
+    position: relative; overflow: hidden;
+    background: #0a0c14; color: #fff;
+    padding: 26px 28px 22px;
+    display: flex; align-items: center; gap: 18px;
+    border-bottom: 3px solid transparent;
+    border-image: ${theme.gradient} 1;
+  }
+  .crest::after {
+    content: ""; position: absolute; inset: 0;
+    background: ${theme.gradient}; opacity: 0.10; pointer-events: none;
+  }
+  .crest-rune {
+    font-size: 56px; line-height: 1; font-weight: 700;
+    width: 78px; height: 78px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 16px;
+    background: ${theme.gradient};
+    color: #0a0c14;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.14) inset;
+  }
+  .crest-text { flex: 1; min-width: 0; position: relative; z-index: 1; }
+  .crest-god { font-size: 22px; font-weight: 800; letter-spacing: 0.18em; line-height: 1.05; }
+  .crest-epithet { font-size: 9px; letter-spacing: 0.42em; opacity: 0.6; margin-top: 5px; }
+  .crest-title { font-size: 11px; letter-spacing: 0.05em; opacity: 0.85; margin-top: 12px; }
+  .crest-meta {
+    text-align: right; font-size: 9px; letter-spacing: 0.06em;
+    opacity: 0.7; line-height: 1.7; position: relative; z-index: 1; white-space: nowrap;
+  }
+  .crest-meta b { color: ${theme.accent}; font-weight: 700; }
+
+  /* ── Table ─────────────────────────────────────────────────────────── */
+  .wrap { padding: 22px 24px 0; }
   table { width: 100%; border-collapse: collapse; }
-  thead tr { background: #0f1117; color: #fff; }
-  th { padding: 7px 8px; text-align: left; font-weight: 600; font-size: 10px; letter-spacing: .04em; }
-  td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
-  tr:nth-child(even) td { background: #f9fafb; }
+  thead tr { background: #11141f; color: #fff; }
+  th {
+    padding: 8px 9px; text-align: left; font-weight: 700; font-size: 9px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    border-bottom: 2px solid ${theme.accent};
+  }
+  td { padding: 6px 9px; border-bottom: 1px solid #e8eaf0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f7f8fb; }
+
+  /* ── Footer ────────────────────────────────────────────────────────── */
+  .foot {
+    margin: 18px 24px 0; padding: 12px 0 22px;
+    border-top: 1px solid #e8eaf0;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 8px; letter-spacing: 0.08em; color: #8a90a6; text-transform: uppercase;
+  }
+  .foot-mark { font-weight: 800; color: ${theme.accent}; letter-spacing: 0.22em; }
+
   @media print {
-    body { padding: 0; }
-    @page { margin: 16mm 12mm; }
+    @page { margin: 0; }
+    .crest { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; }
   }
 </style>
 </head>
 <body>
-<h1>ZSwap · Histórico de Operações</h1>
-<p class="meta">Exportado em ${stamp} · ${rows.length} operação${rows.length !== 1 ? "ões" : ""} · ${fields.length} coluna${fields.length !== 1 ? "s" : ""}</p>
-<table>
-  <thead><tr>${headerRow}</tr></thead>
-  <tbody>${bodyRows}</tbody>
-</table>
+  <div class="crest">
+    <div class="crest-rune">${esc(theme.rune)}</div>
+    <div class="crest-text">
+      ${crest}
+      <div class="crest-title">Histórico de Operações</div>
+    </div>
+    <div class="crest-meta">
+      Emitido<br/><b>${esc(stamp)}</b><br/>
+      ${esc(opsCount)}<br/>${esc(colCount)}
+    </div>
+  </div>
+
+  <div class="wrap">
+    <table>
+      <thead><tr>${headerRow}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <span class="foot-mark">Z-SWAP</span>
+    <span>Documento gerado no dispositivo · dados nunca enviados a servidores</span>
+  </div>
 </body>
 </html>`;
 }

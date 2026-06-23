@@ -41,6 +41,10 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
             </button>
           </div>
 
+          {/* God gradient hairline — carries the plan identity across the very
+              top of the drawer. Invisible (transparent) on the free tier. */}
+          <span className="tier-godline" />
+
           {/* God banner — mobile users get the deity identity here, since the
               topbar sigil chip is md+ only */}
           {tierActive && isPaidTier(activeTier) && (
@@ -70,10 +74,24 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
                   href={item.href}
                   onClick={onClose}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-3 rounded-lg transition-colors",
-                    active ? "bg-white/[0.06] text-ink" : "text-ink-2 hover:bg-white/5 hover:text-ink",
+                    "relative flex items-center gap-3 px-3 py-3 rounded-lg transition-colors",
+                    active ? "text-ink" : "text-ink-2 hover:bg-white/5 hover:text-ink",
                   )}
+                  // Active row adopts the god accent: a left rune-bar + a faint
+                  // tint of the tier colour. var(--tier-accent) resolves to brand
+                  // cyan on free and to the god's hue (gold/violet/prismatic) on
+                  // paid tiers, so the menu shifts with the plan automatically.
+                  style={active ? {
+                    background: "color-mix(in srgb, var(--tier-accent) 9%, transparent)",
+                    boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--tier-accent) 22%, transparent)",
+                  } : undefined}
                 >
+                  {active && (
+                    <span
+                      className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full"
+                      style={{ background: "var(--tier-accent)", boxShadow: "0 0 10px -1px var(--tier-glow)" }}
+                    />
+                  )}
                   <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "tier-active-icon text-cyan" : "text-ink-3")} />
                   <span className="font-sans text-sm flex-1 truncate">{t(item.labelKey)}</span>
                   {item.badgeKey && item.badgeTone && (

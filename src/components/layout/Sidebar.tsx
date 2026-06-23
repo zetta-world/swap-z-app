@@ -71,9 +71,15 @@ export default function Sidebar() {
                       className={cn(
                         "relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group",
                         active
-                          ? "bg-white/[0.06] text-ink"
+                          ? "text-ink"
                           : "text-ink-2 hover:bg-white/[0.03] hover:text-ink",
                       )}
+                      // Active row tinted with the plan's god accent (brand cyan
+                      // on free) so the rail shifts gold/violet/prismatic per tier.
+                      style={active ? {
+                        background: "color-mix(in srgb, var(--tier-accent) 9%, transparent)",
+                        boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--tier-accent) 20%, transparent)",
+                      } : undefined}
                     >
                       {active && (
                         <motion.div
