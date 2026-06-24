@@ -184,10 +184,10 @@ export default function SignLimitOrderButton({
           disabled && "opacity-50 cursor-not-allowed",
         )}
         title={!ready
-          ? (!eligible ? "Card kind / chain not eligible"
-            : isNativeSell ? "Native ETH must be wrapped to WETH first"
-            : !sellTok || !buyTok ? "Tokens not in curated list — manual flow only"
-            : "Connect wallet to pre-sign")
+          ? (!eligible ? t("zion.signTitleNotEligible")
+            : isNativeSell ? t("zion.signTitleWrapEth")
+            : !sellTok || !buyTok ? t("zion.signTitleManualOnly")
+            : t("zion.signTitleConnectWallet"))
           : undefined}
       >
         {busy

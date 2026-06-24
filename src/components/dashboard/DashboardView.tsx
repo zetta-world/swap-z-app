@@ -236,7 +236,7 @@ export default function DashboardView() {
     if (rest > 0) segs.push({ label: t("dashboard.allocOthers"), value: rest, color: "#64748b" });
     if (cexUsd > 0) segs.push({ label: "CEX", value: cexUsd, color: "#A78BFA" });
     return segs;
-  }, [allocMode, walletUsd, cexUsd, live.byChain, live.byAsset]);
+  }, [allocMode, walletUsd, cexUsd, live.byChain, live.byAsset, t]);
 
   const allocTotal = useMemo(() => allocation.reduce((s, x) => s + x.value, 0), [allocation]);
 
@@ -349,7 +349,7 @@ export default function DashboardView() {
     }
 
     return out.slice(0, 6);
-  }, [pnl7d, byType, entries, stats, live.anyWalletConnected, live.walletUsd, live.byAsset, a.frozenUntilDay, a.enabled, a.pnlToday, a.tradesToday]);
+  }, [pnl7d, byType, entries, stats, live.anyWalletConnected, live.walletUsd, live.byAsset, a.frozenUntilDay, a.enabled, a.pnlToday, a.tradesToday, t]);
 
   const hasAnyData = snapshots.length > 0 || entries.length > 0 || a.history.length > 0 || live.walletUsd > 0;
 
@@ -671,7 +671,7 @@ export default function DashboardView() {
 
           {/* Autopilot */}
           <Panel
-            title="ZION Autopilot"
+            title={t("dashboard.apTitle")}
             icon={<Bot className="w-3.5 h-3.5 text-violet" />}
             right={
               <span className={cn(
