@@ -26,14 +26,14 @@ const AUTO_LOCK_MS = 10 * 60 * 1000; // 10 minutes idle → re-lock
 type ConsoleTab = "trade" | "orders" | "balance" | "zion";
 
 const TABS: Array<{
-  id:    ConsoleTab;
-  label: string;
-  Icon:  React.ComponentType<{ className?: string }>;
+  id:       ConsoleTab;
+  labelKey: string;
+  Icon:     React.ComponentType<{ className?: string }>;
 }> = [
-  { id: "trade",   label: "Negociar", Icon: ArrowDownUp  },
-  { id: "orders",  label: "Ordens",   Icon: ListOrdered  },
-  { id: "balance", label: "Saldo",    Icon: Wallet       },
-  { id: "zion",    label: "ZION",     Icon: Bot          },
+  { id: "trade",   labelKey: "cex.tabTrade",   Icon: ArrowDownUp  },
+  { id: "orders",  labelKey: "cex.tabOrders",  Icon: ListOrdered  },
+  { id: "balance", labelKey: "cex.tabBalance", Icon: Wallet       },
+  { id: "zion",    labelKey: "cex.tabZion",    Icon: Bot          },
 ];
 
 /**
@@ -314,7 +314,7 @@ export default function CexConsole() {
 
             {/* Tab bar */}
             <div className="flex">
-              {TABS.map(({ id, label, Icon }) => (
+              {TABS.map(({ id, labelKey, Icon }) => (
                 <button
                   key={id}
                   type="button"
@@ -327,7 +327,7 @@ export default function CexConsole() {
                   )}
                 >
                   <Icon className="w-3 h-3" />
-                  {label}
+                  {t(labelKey as Parameters<typeof t>[0])}
                 </button>
               ))}
             </div>

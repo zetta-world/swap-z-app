@@ -13,7 +13,16 @@ import {
 } from "@/lib/store/txHistory";
 import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useT, type MessageKey } from "@/lib/i18n";
+import { useUI } from "@/lib/store/ui";
 import HistoryExportModal from "./HistoryExportModal";
+
+const LOCALE_MAP: Record<string, string> = {
+  en: "en-US",
+  pt: "pt-BR",
+  es: "es-ES",
+  zh: "zh-CN",
+};
 
 const TYPE_COLORS: Record<TxType, string> = {
   dex_swap:       "text-cyan   border-cyan/30   bg-cyan/5",
@@ -45,6 +54,9 @@ const STATUSES: TxStatus[] = ["confirmed", "pending", "failed", "canceled"];
 const PAGE = 25;
 
 export default function HistoryView() {
+  const t = useT();
+  const lang = useUI((s) => s.lang);
+  const locale = LOCALE_MAP[lang] ?? "en-US";
   const { entries, clear } = useTxHistory();
 
   const [typeFilter,   setTypeFilter]   = useState<TxType | "all">("all");
@@ -74,13 +86,13 @@ export default function HistoryView() {
   const groups = useMemo(() => {
     const out: { label: string; items: TxHistoryEntry[] }[] = [];
     for (const e of visible) {
-      const label = dateGroupLabel(e.ts);
+      const label = dateGroupLabel(e.ts, locale, t);
       const last = out[out.length - 1];
       if (last && last.label === label) last.items.push(e);
       else out.push({ label, items: [e] });
     }
     return out;
-  }, [visible]);
+  }, [visible, locale, t]);
 
   const summary = useMemo(() => {
     const confirmed = entries.filter((e) => e.status === "confirmed");
@@ -104,16 +116,16 @@ export default function HistoryView() {
           <div className="flex items-center gap-2 mb-3">
             <History className="w-4 h-4 text-cyan" />
             <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">
-              Histórico de Operações
+              {t("history.eyebrow")}
             </span>
           </div>
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div>
               <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3rem)] leading-[0.98] tracking-tight text-ink mb-2">
-                Histórico <span className="text-grad-aurora">Completo</span>
+                {t("history.titlePrefix")} <span className="text-grad-aurora">{t("history.titleHighlight")}</span>
               </h1>
               <p className="font-sans text-sm text-ink-2 max-w-xl">
-                Swaps, bridges, CEX e autopilot num só lugar — com P&amp;L detalhado e exportação sob medida.
+                {t("history.subtitle")}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -123,16 +135,16 @@ export default function HistoryView() {
                   className="btn btn-secondary py-2 text-xs gap-1.5 border-cyan/20 text-cyan/90 hover:border-cyan/40 hover:text-cyan"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Exportar
+                  {t("history.export")}
                 </button>
               )}
               {entries.length > 0 && (
                 <button
-                  onClick={() => { if (confirm("Limpar todo o histórico?")) clear(); }}
+                  onClick={() => { if (confirm(t("history.clearConfirm"))) clear(); }}
                   className="btn btn-secondary py-2 text-xs gap-1.5 text-red/70 hover:text-red border-red/20 hover:border-red/40"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Limpar</span>
+                  <span className="hidden sm:inline">{t("history.clear")}</span>
                 </button>
               )}
             </div>
@@ -142,15 +154,17 @@ export default function HistoryView() {
         {/* Summary cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <SummaryCard
-            label="Operações"
+            label={t("history.summaryOperations")}
             value={String(summary.count)}
-            sub={summary.pending > 0 ? `${summary.pending} pendente${summary.pending > 1 ? "s" : ""}` : `${summary.confirmed} confirmada${summary.confirmed !== 1 ? "s" : ""}`}
+            sub={summary.pending > 0
+              ? (summary.pending > 1 ? t("history.pendingPlural", { count: summary.pending }) : t("history.pendingSingular", { count: summary.pending }))
+              : (summary.confirmed !== 1 ? t("history.confirmedPlural", { count: summary.confirmed }) : t("history.confirmedSingular", { count: summary.confirmed }))}
             tone="ink"
           />
-          <SummaryCard label="Volume total" value={formatUsd(summary.totalVol)} tone="cyan" />
-          <SummaryCard label="Taxas pagas" value={formatUsd(summary.totalFees)} tone="gold" />
+          <SummaryCard label={t("history.summaryVolume")} value={formatUsd(summary.totalVol)} tone="cyan" />
+          <SummaryCard label={t("history.summaryFees")} value={formatUsd(summary.totalFees)} tone="gold" />
           <SummaryCard
-            label="P&L realizado"
+            label={t("history.summaryPnl")}
             value={summary.totalPnl === 0 ? "–" : (summary.totalPnl > 0 ? "+" : "") + formatUsd(summary.totalPnl)}
             tone={summary.totalPnl > 0 ? "green" : summary.totalPnl < 0 ? "red" : "ink"}
           />
@@ -163,7 +177,7 @@ export default function HistoryView() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar por token, rede, hash…"
+              placeholder={t("history.searchPlaceholder")}
               className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-3 outline-none font-sans min-w-0"
             />
             {query && (
@@ -182,7 +196,7 @@ export default function HistoryView() {
             )}
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Filtros</span>
+            <span className="hidden sm:inline">{t("history.filters")}</span>
             {activeFilterCount > 0 && (
               <span className="ml-0.5 w-4 h-4 rounded-full bg-cyan text-bg text-[9px] font-bold flex items-center justify-center">
                 {activeFilterCount}
@@ -204,7 +218,7 @@ export default function HistoryView() {
               onClick={() => { setTypeFilter("all"); setStatusFilter("all"); }}
               className="font-mono text-[9px] text-ink-4 hover:text-ink-2 tracking-wider uppercase ml-1 transition-colors"
             >
-              Limpar filtros
+              {t("history.clearFilters")}
             </button>
           </div>
         )}
@@ -222,9 +236,9 @@ export default function HistoryView() {
               <div className="god-card rounded-2xl border border-white/5 glass-pane p-4 mb-4 space-y-4">
                 {/* Type */}
                 <div>
-                  <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase block mb-2">Tipo</span>
+                  <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase block mb-2">{t("history.filterTypeLabel")}</span>
                   <div className="space-y-2">
-                    <FilterPill active={typeFilter === "all"} onClick={() => setTypeFilter("all")} label="Todos os tipos" />
+                    <FilterPill active={typeFilter === "all"} onClick={() => setTypeFilter("all")} label={t("history.filterTypeAll")} />
                     {TYPE_GROUPS.map((g) => (
                       <div key={g.label} className="flex flex-wrap items-center gap-1.5">
                         <span className="font-mono text-[8px] text-ink-5 tracking-widest uppercase w-14 flex-shrink-0">{g.label}</span>
@@ -243,9 +257,9 @@ export default function HistoryView() {
 
                 {/* Status */}
                 <div>
-                  <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase block mb-2">Status</span>
+                  <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase block mb-2">{t("history.filterStatusLabel")}</span>
                   <div className="flex flex-wrap gap-1.5">
-                    <FilterPill active={statusFilter === "all"} onClick={() => setStatusFilter("all")} label="Todos" />
+                    <FilterPill active={statusFilter === "all"} onClick={() => setStatusFilter("all")} label={t("history.filterStatusAll")} />
                     {STATUSES.map((s) => (
                       <FilterPill
                         key={s}
@@ -264,9 +278,9 @@ export default function HistoryView() {
         {/* Transaction list */}
         <div className="god-card rounded-2xl border border-white/5 glass-pane overflow-hidden">
           <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-            <span className="font-display font-bold text-sm text-ink">Transações</span>
+            <span className="font-display font-bold text-sm text-ink">{t("history.transactionsTitle")}</span>
             <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">
-              {filtered.length} de {entries.length}
+              {t("history.countOf", { filtered: filtered.length, total: entries.length })}
             </span>
           </div>
 
@@ -275,8 +289,8 @@ export default function HistoryView() {
               <History className="w-8 h-8 text-ink-4 mx-auto mb-3" />
               <p className="font-sans text-sm text-ink-3">
                 {entries.length === 0
-                  ? "Nenhuma transação registrada ainda. Execute um swap ou trade para começar."
-                  : "Nenhum resultado para os filtros selecionados."}
+                  ? t("history.emptyNoTxs")
+                  : t("history.emptyFiltered")}
               </p>
             </div>
           ) : (
@@ -310,7 +324,7 @@ export default function HistoryView() {
                   className="w-full px-4 py-3.5 border-t border-white/5 font-mono text-[11px] text-ink-3 hover:text-cyan hover:bg-white/[0.02] transition-colors flex items-center justify-center gap-2"
                 >
                   <ChevronDown className="w-3.5 h-3.5" />
-                  Carregar mais ({remaining} restante{remaining !== 1 ? "s" : ""})
+                  {t("history.loadMore")} ({t(remaining !== 1 ? "history.remainingPlural" : "history.remainingSingular", { count: remaining })})
                 </button>
               )}
             </>
@@ -318,7 +332,7 @@ export default function HistoryView() {
         </div>
 
         <p className="font-mono text-[9px] text-ink-4 text-center mt-5">
-          Histórico armazenado localmente · máx. 500 entradas · nunca enviado a servidores
+          {t("history.footer")}
         </p>
       </div>
 
@@ -341,8 +355,11 @@ function TxRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const t = useT();
+  const lang = useUI((s) => s.lang);
+  const locale = LOCALE_MAP[lang] ?? "en-US";
   const date = new Date(entry.ts);
-  const timeStr = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const timeStr = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 
   const pnl = entry.pnlUsd;
   const PnlIcon = pnl === undefined ? Minus : pnl > 0 ? TrendingUp : pnl < 0 ? TrendingDown : Minus;
@@ -415,28 +432,28 @@ function TxRow({
             <div className="px-4 pb-4 pt-1 space-y-2 bg-white/[0.01]">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 font-mono text-[11px]">
                 {entry.fromAmount && (
-                  <Detail label="Enviado" value={`${entry.fromAmount} ${entry.fromSymbol}`} />
+                  <Detail label={t("history.detailSent")} value={`${entry.fromAmount} ${entry.fromSymbol}`} />
                 )}
                 {entry.toAmount && (
-                  <Detail label="Recebido" value={`${entry.toAmount} ${entry.toSymbol}`} />
+                  <Detail label={t("history.detailReceived")} value={`${entry.toAmount} ${entry.toSymbol}`} />
                 )}
                 {entry.feesUsd !== undefined && (
-                  <Detail label="Taxas" value={formatUsd(entry.feesUsd)} />
+                  <Detail label={t("history.detailFees")} value={formatUsd(entry.feesUsd)} />
                 )}
                 {entry.route && (
-                  <Detail label="Rota" value={entry.route} />
+                  <Detail label={t("history.detailRoute")} value={entry.route} />
                 )}
                 {entry.exchange && (
-                  <Detail label="Exchange" value={entry.exchange} />
+                  <Detail label={t("history.detailExchange")} value={entry.exchange} />
                 )}
                 {entry.orderId && (
-                  <Detail label="Order ID" value={entry.orderId.slice(0, 12) + "…"} mono />
+                  <Detail label={t("history.detailOrderId")} value={entry.orderId.slice(0, 12) + "…"} mono />
                 )}
                 {entry.leverage && (
-                  <Detail label="Alavancagem" value={`${entry.leverage}x`} />
+                  <Detail label={t("history.detailLeverage")} value={`${entry.leverage}x`} />
                 )}
                 {entry.liqPrice && (
-                  <Detail label="Liquidação" value={entry.liqPrice} />
+                  <Detail label={t("history.detailLiqPrice")} value={entry.liqPrice} />
                 )}
               </div>
 
@@ -454,7 +471,7 @@ function TxRow({
                   className="inline-flex items-center gap-1 font-mono text-[10px] text-cyan hover:underline"
                 >
                   <ExternalLink className="w-2.5 h-2.5" />
-                  Ver no explorer
+                  {t("history.viewExplorer")}
                 </a>
               )}
             </div>
@@ -532,18 +549,18 @@ function buildExplorerUrl(entry: TxHistoryEntry): string | null {
   return base ? `${base}${entry.txHash}` : null;
 }
 
-// Group label: Hoje / Ontem / weekday (within a week) / full date.
-function dateGroupLabel(ts: number): string {
+// Group label: Today / Yesterday / weekday (within a week) / full date.
+function dateGroupLabel(ts: number, locale: string, t: (key: MessageKey) => string): string {
   const d = new Date(ts);
   const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const today = startOfDay(new Date());
   const day   = startOfDay(d);
   const diffDays = Math.round((today - day) / 86_400_000);
-  if (diffDays === 0) return "Hoje";
-  if (diffDays === 1) return "Ontem";
+  if (diffDays === 0) return t("history.today");
+  if (diffDays === 1) return t("history.yesterday");
   if (diffDays > 1 && diffDays < 7) {
-    const wd = d.toLocaleDateString("pt-BR", { weekday: "long" });
+    const wd = d.toLocaleDateString(locale, { weekday: "long" });
     return wd.charAt(0).toUpperCase() + wd.slice(1);
   }
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  return d.toLocaleDateString(locale, { day: "2-digit", month: "long", year: "numeric" });
 }

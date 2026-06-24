@@ -20,6 +20,8 @@ import { useCexVault } from "@/lib/cex/vault";
 import { type CexId, type CexCredentials, type CexBalanceResponse } from "@/lib/cex/types";
 import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useT } from "@/lib/i18n";
+import { useUI } from "@/lib/store/ui";
 import { Panel, Kpi, AreaChart, Donut, Bars, Gauge } from "./widgets";
 
 const CEX_TOTAL_CACHE_KEY = "zswap_cex_last_total_usd";
@@ -139,6 +141,9 @@ function pnlOverWindow(snaps: PortfolioSnapshot[], windowMs: number): { abs: num
 }
 
 export default function DashboardView() {
+  const t = useT();
+  const lang = useUI((s) => s.lang);
+  const locale = { en: "en-US", pt: "pt-BR", es: "es-ES", zh: "zh-CN" }[lang] ?? "en-US";
   const { snapshots } = usePortfolioHistory();
   const { entries }   = useTxHistory();
   const a             = useAutopilot();
@@ -207,7 +212,7 @@ export default function DashboardView() {
   const allocation = useMemo(() => {
     if (allocMode === "venues") {
       return [
-        { label: "Carteira", value: walletUsd, color: "#00E8FF" },
+        { label: t("dashboard.allocWallet"), value: walletUsd, color: "#00E8FF" },
         { label: "CEX",      value: cexUsd,    color: "#A78BFA" },
       ].filter((s) => s.value > 0);
     }
@@ -228,7 +233,7 @@ export default function DashboardView() {
     const top = live.byAsset.slice(0, 5);
     const rest = live.byAsset.slice(5).reduce((s, x) => s + x.value, 0);
     const segs = top.map((x) => ({ label: x.symbol, value: x.value, color: x.color }));
-    if (rest > 0) segs.push({ label: "Outros", value: rest, color: "#64748b" });
+    if (rest > 0) segs.push({ label: t("dashboard.allocOthers"), value: rest, color: "#64748b" });
     if (cexUsd > 0) segs.push({ label: "CEX", value: cexUsd, color: "#A78BFA" });
     return segs;
   }, [allocMode, walletUsd, cexUsd, live.byChain, live.byAsset]);
@@ -291,17 +296,17 @@ export default function DashboardView() {
     // Patrimônio trend (7d)
     if (pnl7d) {
       out.push(pnl7d.abs >= 0
-        ? { Icon: TrendingUp, tone: "green", text: `Patrimônio em alta: ${pnl7d.pct >= 0 ? "+" : ""}${pnl7d.pct.toFixed(1)}% nos últimos 7 dias.` }
-        : { Icon: TrendingDown, tone: "red", text: `Patrimônio recuou ${pnl7d.pct.toFixed(1)}% em 7 dias — momento de cautela.` });
+        ? { Icon: TrendingUp, tone: "green", text: t("dashboard.insightNetWorthUp", { pct: `${pnl7d.pct >= 0 ? "+" : ""}${pnl7d.pct.toFixed(1)}` }) }
+        : { Icon: TrendingDown, tone: "red", text: t("dashboard.insightNetWorthDown", { pct: pnl7d.pct.toFixed(1) }) });
     }
 
     // Best / worst op type by realized P&L
     const scored = byType.filter(([, r]) => r.pnl !== 0);
     if (scored.length > 0) {
       const best = scored.reduce((m, x) => (x[1].pnl > m[1].pnl ? x : m));
-      if (best[1].pnl > 0) out.push({ Icon: Crown, tone: "gold", text: `Melhor desempenho: ${TX_TYPE_LABELS_PT[best[0]]} (+${formatUsd(best[1].pnl)} realizado).` });
+      if (best[1].pnl > 0) out.push({ Icon: Crown, tone: "gold", text: t("dashboard.insightBestType", { type: TX_TYPE_LABELS_PT[best[0]], amount: formatUsd(best[1].pnl) }) });
       const worst = scored.reduce((m, x) => (x[1].pnl < m[1].pnl ? x : m));
-      if (worst[1].pnl < 0) out.push({ Icon: AlertTriangle, tone: "red", text: `Atenção: ${TX_TYPE_LABELS_PT[worst[0]]} acumula ${formatUsd(worst[1].pnl)}.` });
+      if (worst[1].pnl < 0) out.push({ Icon: AlertTriangle, tone: "red", text: t("dashboard.insightWorstType", { type: TX_TYPE_LABELS_PT[worst[0]], amount: formatUsd(worst[1].pnl) }) });
     }
 
     // Most traded pair
@@ -313,34 +318,34 @@ export default function DashboardView() {
     }
     if (pairCount.size > 0) {
       const [pair, n] = [...pairCount.entries()].sort((x, y) => y[1] - x[1])[0];
-      if (n >= 2) out.push({ Icon: Activity, tone: "cyan", text: `Par mais operado: ${pair} (${n} vezes).` });
+      if (n >= 2) out.push({ Icon: Activity, tone: "cyan", text: t("dashboard.insightTopPair", { pair, count: n }) });
     }
 
     // Fees as % of volume
     if (stats.volume > 0 && stats.fees > 0) {
       const ratio = (stats.fees / stats.volume) * 100;
-      out.push({ Icon: Receipt, tone: "violet", text: `Taxas consumiram ${ratio.toFixed(2)}% do volume operado (${formatUsd(stats.fees)}).` });
+      out.push({ Icon: Receipt, tone: "violet", text: t("dashboard.insightFees", { pct: ratio.toFixed(2), amount: formatUsd(stats.fees) }) });
     }
 
     // Concentration of largest live asset
     if (live.anyWalletConnected && live.walletUsd > 0 && live.byAsset.length > 0) {
       const top = live.byAsset[0];
       const pct = (top.value / live.walletUsd) * 100;
-      if (pct >= 40) out.push({ Icon: PieChart, tone: "gold", text: `Carteira concentrada: ${top.symbol} = ${pct.toFixed(0)}% do total — considere diversificar.` });
+      if (pct >= 40) out.push({ Icon: PieChart, tone: "gold", text: t("dashboard.insightConcentration", { symbol: top.symbol, pct: pct.toFixed(0) }) });
     }
 
     // Win rate
     if (stats.winRate !== null) {
       out.push(stats.winRate >= 55
-        ? { Icon: Percent, tone: "green", text: `Win rate saudável de ${stats.winRate.toFixed(0)}% (${stats.wins}/${stats.scored}).` }
-        : { Icon: Percent, tone: "gold", text: `Win rate de ${stats.winRate.toFixed(0)}% — revise os pontos de entrada/saída.` });
+        ? { Icon: Percent, tone: "green", text: t("dashboard.insightWinRateHealthy", { pct: stats.winRate.toFixed(0), wins: stats.wins, scored: stats.scored }) }
+        : { Icon: Percent, tone: "gold", text: t("dashboard.insightWinRateLow", { pct: stats.winRate.toFixed(0) }) });
     }
 
     // Autopilot
     if (a.frozenUntilDay) {
-      out.push({ Icon: Bot, tone: "red", text: "Autopilot congelado pelo stop de perda diário — reabre à meia-noite UTC." });
+      out.push({ Icon: Bot, tone: "red", text: t("dashboard.insightAutopilotFrozen") });
     } else if (a.enabled) {
-      out.push({ Icon: Bot, tone: a.pnlToday >= 0 ? "green" : "red", text: `Autopilot ativo · P&L de hoje ${a.pnlToday >= 0 ? "+" : ""}${formatUsd(a.pnlToday)} em ${a.tradesToday} trade(s).` });
+      out.push({ Icon: Bot, tone: a.pnlToday >= 0 ? "green" : "red", text: t("dashboard.insightAutopilotActive", { pnl: `${a.pnlToday >= 0 ? "+" : ""}${formatUsd(a.pnlToday)}`, trades: a.tradesToday }) });
     }
 
     return out.slice(0, 6);
@@ -371,21 +376,21 @@ export default function DashboardView() {
           <div className="flex items-center gap-2 mb-3">
             <LayoutDashboard className="w-4 h-4 text-violet" />
             <span className="font-mono text-[10px] text-violet/80 tracking-widest uppercase">
-              Painel de Controle
+              {t("dashboard.controlPanel")}
             </span>
           </div>
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div>
               <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.4rem)] leading-[0.98] tracking-tight text-ink mb-2">
-                Sua <span className="text-grad-aurora">central</span> de operações
+                {t("dashboard.heroTitlePre")} <span className="text-grad-aurora">{t("dashboard.heroTitleHighlight")}</span> {t("dashboard.heroTitlePost")}
               </h1>
               <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">
-                Patrimônio, P&amp;L, alocação, atividade e autopilot — tudo num lugar só, em tempo real.
+                {t("dashboard.heroSubtitle")}
               </p>
             </div>
             <button onClick={() => setHidden((h) => !h)} className="btn btn-secondary py-2 text-xs">
               {hidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-              {hidden ? "Mostrar valores" : "Ocultar valores"}
+              {hidden ? t("dashboard.showValues") : t("dashboard.hideValues")}
             </button>
           </div>
         </motion.div>
@@ -394,17 +399,16 @@ export default function DashboardView() {
         {!hasAnyData && (
           <div className="god-card rounded-2xl border border-white/5 glass-pane p-8 text-center mb-6">
             <LayoutDashboard className="w-8 h-8 text-violet/60 mx-auto mb-3" />
-            <h2 className="font-display font-bold text-base text-ink mb-1">Ainda sem dados para exibir</h2>
+            <h2 className="font-display font-bold text-base text-ink mb-1">{t("dashboard.emptyTitle")}</h2>
             <p className="font-sans text-sm text-ink-2 max-w-md mx-auto mb-4 leading-relaxed">
-              Conecte sua carteira e visite o portfólio para começar a registrar a evolução do patrimônio, ou faça
-              sua primeira operação — o painel se preenche automaticamente.
+              {t("dashboard.emptyBody")}
             </p>
             <div className="flex items-center justify-center gap-2 flex-wrap">
               <Link href="/portfolio" className="btn btn-primary text-xs">
-                <Wallet className="w-3 h-3" /> Abrir portfólio
+                <Wallet className="w-3 h-3" /> {t("dashboard.emptyOpenPortfolio")}
               </Link>
               <Link href="/" className="btn btn-secondary text-xs">
-                <TrendingUp className="w-3 h-3" /> Fazer um swap
+                <TrendingUp className="w-3 h-3" /> {t("dashboard.emptyDoSwap")}
               </Link>
             </div>
           </div>
@@ -416,7 +420,7 @@ export default function DashboardView() {
             <div className="god-card rounded-[11px] glass p-3.5 h-full">
               <div className="flex items-center gap-1.5 mb-1.5">
                 <Coins className="w-3 h-3 text-cyan" />
-                <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">Patrimônio total</span>
+                <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">{t("dashboard.kpiNetWorth")}</span>
               </div>
               <div className="priv-value font-display font-extrabold text-2xl sm:text-3xl text-ink tabular-nums truncate">
                 {mask(formatUsd(totalUsd))}
@@ -429,34 +433,34 @@ export default function DashboardView() {
           </div>
 
           <Kpi
-            label="P&L 7 dias" Icon={LineChart}
+            label={t("dashboard.kpiPnl7d")} Icon={LineChart}
             tone={(pnl7d?.abs ?? 0) >= 0 ? "green" : "red"}
             value={mask(pnl7d ? `${pnl7d.abs >= 0 ? "+" : ""}${formatUsd(pnl7d.abs)}` : "—")}
             sub={pnl7d ? { text: `${pnl7d.pct >= 0 ? "+" : ""}${pnl7d.pct.toFixed(2)}%`, tone: pnl7d.abs >= 0 ? "green" : "red" } : null}
           />
           <Kpi
-            label="P&L 30 dias" Icon={LineChart}
+            label={t("dashboard.kpiPnl30d")} Icon={LineChart}
             tone={(pnl30d?.abs ?? 0) >= 0 ? "green" : "red"}
             value={mask(pnl30d ? `${pnl30d.abs >= 0 ? "+" : ""}${formatUsd(pnl30d.abs)}` : "—")}
             sub={pnl30d ? { text: `${pnl30d.pct >= 0 ? "+" : ""}${pnl30d.pct.toFixed(2)}%`, tone: pnl30d.abs >= 0 ? "green" : "red" } : null}
           />
           <Kpi
-            label="Win rate" Icon={Percent} tone="gold"
+            label={t("dashboard.kpiWinRate")} Icon={Percent} tone="gold"
             value={stats.winRate !== null ? `${stats.winRate.toFixed(0)}%` : "—"}
-            sub={stats.scored > 0 ? { text: `${stats.wins}/${stats.scored} trades`, tone: "ink" } : { text: "sem P&L registrado", tone: "ink" }}
+            sub={stats.scored > 0 ? { text: `${stats.wins}/${stats.scored} trades`, tone: "ink" } : { text: t("dashboard.kpiNoScoredTrades"), tone: "ink" }}
           />
         </div>
 
         {/* ── Secondary KPIs ───────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-          <Kpi label="Volume operado" Icon={Activity} tone="cyan" value={mask(formatUsd(stats.volume, { compact: true }))} sub={{ text: `${stats.confirmed} confirmadas`, tone: "ink" }} />
-          <Kpi label="Taxas pagas" Icon={Receipt} tone="violet" value={mask(formatUsd(stats.fees, { compact: true }))} sub={stats.pending > 0 ? { text: `${stats.pending} pendentes`, tone: "gold" } : null} />
-          <Kpi label="P&L realizado" Icon={TrendingUp} tone={stats.realized >= 0 ? "green" : "red"} value={mask(`${stats.realized >= 0 ? "+" : ""}${formatUsd(stats.realized)}`)} sub={{ text: `${stats.scored} com P&L`, tone: "ink" }} />
+          <Kpi label={t("dashboard.kpiVolume")} Icon={Activity} tone="cyan" value={mask(formatUsd(stats.volume, { compact: true }))} sub={{ text: t("dashboard.kpiVolumeConf", { n: stats.confirmed }), tone: "ink" }} />
+          <Kpi label={t("dashboard.kpiFees")} Icon={Receipt} tone="violet" value={mask(formatUsd(stats.fees, { compact: true }))} sub={stats.pending > 0 ? { text: t("dashboard.kpiPending", { n: stats.pending }), tone: "gold" } : null} />
+          <Kpi label={t("dashboard.kpiRealized")} Icon={TrendingUp} tone={stats.realized >= 0 ? "green" : "red"} value={mask(`${stats.realized >= 0 ? "+" : ""}${formatUsd(stats.realized)}`)} sub={{ text: t("dashboard.kpiScored", { n: stats.scored }), tone: "ink" }} />
           <Kpi
-            label="Autopilot" Icon={Bot}
+            label={t("dashboard.kpiAutopilot")} Icon={Bot}
             tone={a.frozenUntilDay ? "red" : a.enabled ? "green" : "ink"}
-            value={a.frozenUntilDay ? "Congelado" : a.enabled ? "Ativo" : "Parado"}
-            sub={{ text: `${a.tradesToday}/${a.maxTradesPerDay} trades hoje`, tone: "ink" }}
+            value={a.frozenUntilDay ? t("dashboard.apFrozen") : a.enabled ? t("dashboard.apActive") : t("dashboard.apStopped")}
+            sub={{ text: t("dashboard.apTradesToday", { n: a.tradesToday, max: a.maxTradesPerDay }), tone: "ink" }}
           />
         </div>
 
@@ -466,7 +470,7 @@ export default function DashboardView() {
             <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between gap-2 flex-wrap">
               <span className="font-display font-bold text-sm text-ink flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5 text-gold" />
-                ZION · Insights do dia
+                {t("dashboard.zionInsightsTitle")}
               </span>
               <div className="flex items-center gap-2">
                 {insights.length > 0 && (
@@ -508,21 +512,20 @@ export default function DashboardView() {
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet/15 border border-violet/25 font-mono text-[10px] text-violet tracking-widest uppercase hover:bg-violet/25 disabled:opacity-50 transition-colors"
                   >
                     {zionStreaming
-                      ? <><Loader2 className="w-3 h-3 animate-spin" /> gerando…</>
-                      : <><Zap className="w-3 h-3" /> gerar análise</>}
+                      ? <><Loader2 className="w-3 h-3 animate-spin" /> {t("dashboard.zionGenerating")}</>
+                      : <><Zap className="w-3 h-3" /> {t("dashboard.zionGenerateBtn")}</>}
                   </button>
                 )}
                 <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-gold pulse-dot" />
-                  dos seus dados
+                  {t("dashboard.zionFromData")}
                 </span>
               </div>
             </div>
             <div className="p-4">
               {insights.length === 0 ? (
                 <p className="font-sans text-xs text-ink-3 leading-relaxed py-2">
-                  Conecte a carteira e faça algumas operações — o ZION passa a destacar tendências, melhores
-                  desempenhos, concentração de risco e o status do autopilot automaticamente aqui.
+                  {t("dashboard.zionEmptyHint")}
                 </p>
               ) : (
                 <>
@@ -554,7 +557,7 @@ export default function DashboardView() {
                     >
                       <div className="flex items-center gap-1.5 mb-2">
                         <Sparkles className="w-3 h-3 text-violet" />
-                        <span className="font-mono text-[9px] text-violet/70 tracking-widest uppercase">análise ZION</span>
+                        <span className="font-mono text-[9px] text-violet/70 tracking-widest uppercase">{t("dashboard.zionAnalysisLabel")}</span>
                         {zionStreaming && <Loader2 className="w-3 h-3 text-violet animate-spin ml-auto" />}
                       </div>
                       <p className="font-sans text-[12px] text-ink-2 leading-relaxed whitespace-pre-wrap">
@@ -571,7 +574,7 @@ export default function DashboardView() {
 
         {/* ── Equity curve ─────────────────────────────────────────────── */}
         <Panel
-          title="Evolução do patrimônio"
+          title={t("dashboard.equityTitle")}
           icon={<LineChart className="w-3.5 h-3.5 text-cyan" />}
           className="mb-4"
           right={
@@ -586,7 +589,7 @@ export default function DashboardView() {
                     range === r ? "bg-white/[0.08] border-white/20 text-ink" : "border-white/5 bg-white/[0.02] text-ink-3 hover:text-ink-2",
                   )}
                 >
-                  {r === "all" ? "Tudo" : r}
+                  {r === "all" ? t("dashboard.rangeAll") : r}
                 </button>
               ))}
             </div>
@@ -594,7 +597,7 @@ export default function DashboardView() {
         >
           {series.length < 2 ? (
             <p className="py-8 text-center font-sans text-xs text-ink-3 max-w-sm mx-auto leading-relaxed">
-              Poucos snapshots de saldo ainda. Mantenha a carteira conectada — o painel registra a evolução automaticamente ao longo do tempo.
+              {t("dashboard.equityEmpty")}
             </p>
           ) : (
             <>
@@ -607,7 +610,7 @@ export default function DashboardView() {
                   {mask(`${(rangeDelta?.pct ?? 0) >= 0 ? "+" : ""}${(rangeDelta?.pct ?? 0).toFixed(2)}%`)}
                 </span>
                 <span className="font-mono text-[10px] text-ink-4 uppercase tracking-widest ml-auto">
-                  {range === "all" ? "tudo" : range}
+                  {range === "all" ? t("dashboard.rangeAllLower") : range}
                 </span>
               </div>
               <AreaChart points={series} positive={(rangeDelta?.abs ?? 0) >= 0} height={170} />
@@ -619,11 +622,11 @@ export default function DashboardView() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           {/* Allocation */}
           <Panel
-            title="Alocação"
+            title={t("dashboard.allocTitle")}
             icon={<PieChart className="w-3.5 h-3.5 text-violet" />}
             right={
               <div className="flex gap-1">
-                {([["chains", "Chains"], ["assets", "Ativos"], ["all", "Todos"], ["venues", "Carteira/CEX"]] as [AllocMode, string][]).map(([m, label]) => (
+                {([["chains", t("dashboard.allocModeChains")], ["assets", t("dashboard.allocModeAssets")], ["all", t("dashboard.allocModeAll")], ["venues", t("dashboard.allocModeVenues")]] as [AllocMode, string][]).map(([m, label]) => (
                   <button
                     key={m}
                     type="button"
@@ -642,14 +645,14 @@ export default function DashboardView() {
             {allocation.length === 0 ? (
               <p className="py-6 text-center font-sans text-xs text-ink-3 leading-relaxed max-w-xs mx-auto">
                 {allocMode === "venues"
-                  ? "Sem saldo registrado para alocar."
+                  ? t("dashboard.allocEmptyVenues")
                   : live.anyWalletConnected
-                    ? (live.loading ? "Carregando saldos da carteira…" : "Nenhum saldo encontrado nos tokens monitorados.")
-                    : "Conecte a carteira para ver a alocação por chain e por ativo."}
+                    ? (live.loading ? t("dashboard.allocLoading") : t("dashboard.allocEmptyTokens"))
+                    : t("dashboard.allocEmptyWallet")}
               </p>
             ) : (
               <div className="flex items-center gap-5 flex-wrap">
-                <Donut segments={allocation} centerValue={mask(formatUsd(allocTotal, { compact: true }))} centerLabel={allocMode === "venues" ? "total" : allocMode === "chains" ? "chains" : "ativos"} />
+                <Donut segments={allocation} centerValue={mask(formatUsd(allocTotal, { compact: true }))} centerLabel={allocMode === "venues" ? t("dashboard.allocCenterTotal") : allocMode === "chains" ? t("dashboard.allocCenterChains") : t("dashboard.allocCenterAssets")} />
                 <div className="flex-1 min-w-[150px] space-y-2 max-h-44 overflow-y-auto">
                   {allocation.map((s) => (
                     <div key={s.label} className="flex items-center gap-2">
@@ -675,34 +678,34 @@ export default function DashboardView() {
                 "font-mono text-[10px] tracking-widest uppercase flex items-center gap-1",
                 a.frozenUntilDay ? "text-red" : a.enabled ? "text-green" : "text-ink-4",
               )}>
-                {a.frozenUntilDay ? <><AlertTriangle className="w-3 h-3" /> congelado</>
-                  : a.enabled ? <><CheckCircle2 className="w-3 h-3" /> ativo</>
-                  : <><Power className="w-3 h-3" /> parado</>}
+                {a.frozenUntilDay ? <><AlertTriangle className="w-3 h-3" /> {t("dashboard.apFrozen")}</>
+                  : a.enabled ? <><CheckCircle2 className="w-3 h-3" /> {t("dashboard.apActive")}</>
+                  : <><Power className="w-3 h-3" /> {t("dashboard.apStopped")}</>}
               </span>
             }
           >
             <div className="grid grid-cols-3 gap-3 mb-4 text-center">
               <div>
-                <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">P&L hoje</div>
+                <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">{t("dashboard.apPnlToday")}</div>
                 <div className={cn("font-display font-bold text-lg tabular-nums", a.pnlToday > 0 ? "text-green" : a.pnlToday < 0 ? "text-red" : "text-ink")}>
                   {mask(`${a.pnlToday >= 0 ? "+" : ""}${formatUsd(a.pnlToday)}`)}
                 </div>
               </div>
               <div>
-                <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">Disparadas</div>
+                <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">{t("dashboard.apFired")}</div>
                 <div className="font-display font-bold text-lg text-ink tabular-nums">{apStats.fired}</div>
               </div>
               <div>
-                <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">Rejeitadas</div>
+                <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">{t("dashboard.apRejected")}</div>
                 <div className="font-display font-bold text-lg text-ink-3 tabular-nums">{apStats.rejected}</div>
               </div>
             </div>
             <div className="space-y-3">
-              <Gauge label="Trades hoje" tone="cyan" pct={apStats.tradesUsed} value={`${a.tradesToday}/${a.maxTradesPerDay}`} />
-              <Gauge label="Stop de perda diário" tone="red" pct={apStats.lossUsed} value={`${formatUsd(Math.max(0, -a.pnlToday))} / ${formatUsd(a.dailyLossStopUsd)}`} />
+              <Gauge label={t("dashboard.apTradesLabel")} tone="cyan" pct={apStats.tradesUsed} value={`${a.tradesToday}/${a.maxTradesPerDay}`} />
+              <Gauge label={t("dashboard.apLossStop")} tone="red" pct={apStats.lossUsed} value={`${formatUsd(Math.max(0, -a.pnlToday))} / ${formatUsd(a.dailyLossStopUsd)}`} />
             </div>
             <Link href="/cex" className="inline-flex items-center gap-1 font-mono text-[10px] text-cyan hover:underline mt-3">
-              <Banknote className="w-2.5 h-2.5" /> Abrir terminal CEX
+              <Banknote className="w-2.5 h-2.5" /> {t("dashboard.apOpenCex")}
             </Link>
           </Panel>
         </div>
@@ -710,9 +713,9 @@ export default function DashboardView() {
         {/* ── P&L by type + Activity row ───────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           {/* P&L / volume by type */}
-          <Panel title="Performance por tipo" icon={<Layers className="w-3.5 h-3.5 text-gold" />}>
+          <Panel title={t("dashboard.perfTitle")} icon={<Layers className="w-3.5 h-3.5 text-gold" />}>
             {byType.length === 0 ? (
-              <p className="py-6 text-center font-sans text-xs text-ink-3">Nenhuma operação confirmada ainda.</p>
+              <p className="py-6 text-center font-sans text-xs text-ink-3">{t("dashboard.perfEmpty")}</p>
             ) : (
               <div className="space-y-2.5">
                 {byType.map(([type, row]) => {
@@ -722,7 +725,7 @@ export default function DashboardView() {
                       <div className="flex items-center gap-2 mb-1">
                         <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: TYPE_COLOR[type] }} />
                         <span className="font-mono text-[11px] text-ink-2 flex-1 truncate">{TX_TYPE_LABELS_PT[type]}</span>
-                        <span className="font-mono text-[10px] text-ink-4">{row.count} ops</span>
+                        <span className="font-mono text-[10px] text-ink-4">{`${row.count} ${t("dashboard.ops")}`}</span>
                         <span className={cn("font-mono text-[11px] w-20 text-right tabular-nums", row.pnl > 0 ? "text-green" : row.pnl < 0 ? "text-red" : "text-ink-3")}>
                           {row.pnl !== 0 ? mask(`${row.pnl >= 0 ? "+" : ""}${formatUsd(row.pnl)}`) : "—"}
                         </span>
@@ -739,17 +742,17 @@ export default function DashboardView() {
 
           {/* Activity */}
           <Panel
-            title="Atividade · 14 dias"
+            title={t("dashboard.activityTitle")}
             icon={<Activity className="w-3.5 h-3.5 text-cyan" />}
-            right={<span className="font-mono text-[10px] text-ink-4 tracking-widest uppercase">volume/dia</span>}
+            right={<span className="font-mono text-[10px] text-ink-4 tracking-widest uppercase">{t("dashboard.activitySubLabel")}</span>}
           >
             {activity.every((d) => d.value === 0) ? (
-              <p className="py-6 text-center font-sans text-xs text-ink-3">Sem atividade nos últimos 14 dias.</p>
+              <p className="py-6 text-center font-sans text-xs text-ink-3">{t("dashboard.activityEmpty")}</p>
             ) : (
               <>
                 <Bars data={activity} height={140} color="#00E8FF" />
                 <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-                  <span className="font-mono text-[10px] text-ink-3">Total no período</span>
+                  <span className="font-mono text-[10px] text-ink-3">{t("dashboard.activityTotal")}</span>
                   <span className="font-mono text-[11px] text-ink tabular-nums">
                     {mask(formatUsd(activity.reduce((s, d) => s + d.value, 0), { compact: true }))}
                   </span>
@@ -761,16 +764,16 @@ export default function DashboardView() {
 
         {/* ── Recent operations ────────────────────────────────────────── */}
         <Panel
-          title="Operações recentes"
+          title={t("dashboard.recentTitle")}
           icon={<Receipt className="w-3.5 h-3.5 text-violet" />}
           right={
             <Link href="/history" className="inline-flex items-center gap-1 font-mono text-[10px] text-cyan hover:underline">
-              Ver tudo <ArrowUpRight className="w-2.5 h-2.5" />
+              {t("dashboard.recentViewAll")} <ArrowUpRight className="w-2.5 h-2.5" />
             </Link>
           }
         >
           {recent.length === 0 ? (
-            <p className="py-6 text-center font-sans text-xs text-ink-3">Nenhuma operação registrada ainda.</p>
+            <p className="py-6 text-center font-sans text-xs text-ink-3">{t("dashboard.recentEmpty")}</p>
           ) : (
             <div className="divide-y divide-white/[0.04] -mx-4">
               {recent.map((e) => (
@@ -786,7 +789,7 @@ export default function DashboardView() {
                       {e.fromSymbol} <span className="text-ink-4">→</span> {e.toSymbol}
                     </div>
                     <div className="font-mono text-[9px] text-ink-4 truncate">
-                      {new Date(e.ts).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      {new Date(e.ts).toLocaleString(locale, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
@@ -804,7 +807,7 @@ export default function DashboardView() {
         </Panel>
 
         <p className="font-mono text-[10px] text-ink-4 text-center mt-6">
-          Todos os dados são locais (neste navegador). Nada sai do seu dispositivo.
+          {t("dashboard.localDataNote")}
         </p>
       </div>
     </div>

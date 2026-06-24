@@ -16,6 +16,7 @@ import {
   type AutopilotWithdrawIntent,
 } from "@/lib/zion/autopilot-bridge";
 import { cn } from "@/lib/cn";
+import { useT, type MessageKey } from "@/lib/i18n";
 
 /**
  * Auto-rebalance pilot — sibling to AutopilotPilot, but for the new
@@ -44,6 +45,7 @@ import { cn } from "@/lib/cn";
  * surfaces it for the user to act on manually.
  */
 export default function RebalancePilot({ cards }: { cards: ActionCard[] }) {
+  const t = useT();
   const a = useAutopilot();
   const vault = useCexVault();
   const { address: evmAddress } = useAccount();
@@ -279,10 +281,10 @@ export default function RebalancePilot({ cards }: { cards: ActionCard[] }) {
             "font-mono text-[10px] tracking-widest uppercase font-bold flex-1 min-w-0",
             phase === "errored" ? "text-red" : phase === "done" ? "text-green" : "text-violet",
           )}>
-            {phase === "errored" ? "Auto-rebalance rejected"
-              : phase === "done"  ? "Auto-rebalance fired"
-              : phase === "firing" ? "Sending withdrawal…"
-                                    : "Auto-rebalance will fire"}
+            {phase === "errored" ? t("zion.rebalancePilotRejected" as MessageKey)
+              : phase === "done"  ? t("zion.rebalancePilotFired" as MessageKey)
+              : phase === "firing" ? t("zion.rebalancePilotSending" as MessageKey)
+                                    : t("zion.rebalancePilotWillFire" as MessageKey)}
           </span>
           {phase === "countdown" && (
             <button
@@ -291,7 +293,7 @@ export default function RebalancePilot({ cards }: { cards: ActionCard[] }) {
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-white/15 bg-white/[0.04] font-mono text-[10px] tracking-widest uppercase text-ink-3 hover:bg-white/[0.08]"
             >
               <X className="w-2.5 h-2.5" />
-              Cancel
+              {t("common.cancel")}
             </button>
           )}
           {phase === "firing"  && <Loader2 className="w-3.5 h-3.5 text-violet animate-spin" />}
@@ -300,7 +302,7 @@ export default function RebalancePilot({ cards }: { cards: ActionCard[] }) {
         </div>
 
         <div className="font-mono text-[11px] text-ink tabular-nums">
-          <span className="text-red">WITHDRAW</span>
+          <span className="text-red">{t("zion.rebalancePilotWithdraw" as MessageKey)}</span>
           {" "}
           <span className="text-ink-2">{active.intent.amount} {active.intent.currency}</span>
           {" · "}
@@ -312,7 +314,7 @@ export default function RebalancePilot({ cards }: { cards: ActionCard[] }) {
           {" · "}
           <span className="text-ink-3">{active.intent.network}</span>
           {active.intent.toExchange && (
-            <> · <span className="text-ink-3">then deposit → {active.intent.toExchange}</span></>
+            <> · <span className="text-ink-3">{t("zion.rebalancePilotThenDeposit" as MessageKey, { exchange: active.intent.toExchange })}</span></>
           )}
         </div>
 
@@ -325,7 +327,7 @@ export default function RebalancePilot({ cards }: { cards: ActionCard[] }) {
               />
             </div>
             <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-              {remainingS}s · click cancel to skip this one
+              {`${remainingS}s · ${t("zion.pilotSkipHint" as MessageKey)}`}
             </div>
           </div>
         )}

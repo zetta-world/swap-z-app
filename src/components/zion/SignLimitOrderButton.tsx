@@ -15,6 +15,7 @@ import {
 } from "@/lib/limit/cow";
 import { savePendingOrder, attachCowOrder } from "@/lib/zion/orders";
 import { cn } from "@/lib/cn";
+import { useT, type MessageKey } from "@/lib/i18n";
 
 /**
  * Pre-sign a ZION limit / sell card so CoW Protocol's solvers fill it
@@ -40,6 +41,7 @@ export default function SignLimitOrderButton({
   card:    ActionCard;
   onDone:  () => void;
 }) {
+  const t = useT();
   const { address, isConnected } = useAccount();
   const currentChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
@@ -195,7 +197,7 @@ export default function SignLimitOrderButton({
             : phase === "error"
               ? <AlertTriangle className="w-3.5 h-3.5 text-red" />
               : <Zap className="w-3.5 h-3.5" />}
-        <span>{phaseLabel(phase, !!ready, !!isNativeSell)}</span>
+        <span>{phaseLabel(phase, !!ready, !!isNativeSell, t as (k: string) => string)}</span>
       </button>
 
       {error && (
@@ -206,7 +208,7 @@ export default function SignLimitOrderButton({
 
       {ready && phase === "idle" && (
         <p className="font-mono text-[10px] text-ink-3 leading-relaxed text-center">
-          Gasless — you only sign. CoW solvers pay the fill gas.
+          {t("zion.signGasless" as MessageKey)}
         </p>
       )}
     </div>
@@ -217,20 +219,21 @@ function phaseLabel(
   phase: string,
   ready: boolean,
   isNativeSell: boolean,
+  t: (k: string) => string,
 ): string {
   if (!ready) {
-    if (isNativeSell) return "Wrap ETH first to pre-sign";
-    return "Pre-sign for autopilot (unavailable)";
+    if (isNativeSell) return t("zion.signWrapEth");
+    return t("zion.signUnavail");
   }
   switch (phase) {
-    case "switching_chain":      return "Switching chain…";
-    case "checking_allowance":   return "Checking allowance…";
-    case "needs_approval":       return "Need approval — confirm in wallet";
-    case "approving":            return "Approving CoW relayer…";
-    case "signing":              return "Sign the limit order in your wallet";
-    case "submitting":           return "Posting to CoW…";
-    case "done":                 return "Pre-signed — autopilot armed";
-    case "error":                return "Try again";
-    default:                     return "Pre-sign for autopilot (gasless)";
+    case "switching_chain":      return t("zion.signSwitchingChain");
+    case "checking_allowance":   return t("zion.signCheckingAllowance");
+    case "needs_approval":       return t("zion.signNeedsApproval");
+    case "approving":            return t("zion.signApproving");
+    case "signing":              return t("zion.signSigning");
+    case "submitting":           return t("zion.signPosting");
+    case "done":                 return t("zion.signDone");
+    case "error":                return t("common.retry");
+    default:                     return t("zion.signDefault");
   }
 }

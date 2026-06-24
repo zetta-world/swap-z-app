@@ -16,6 +16,7 @@ import {
 } from "@/lib/zion/autopilot-bridge";
 import type { CexId, CexOrder, CexCredentials } from "@/lib/cex/types";
 import { cn } from "@/lib/cn";
+import { useT, type MessageKey } from "@/lib/i18n";
 
 /**
  * The autopilot "pilot" — a single banner above the ZION action cards
@@ -39,6 +40,7 @@ import { cn } from "@/lib/cn";
  * never repeats. Re-running an analysis (new card list) resets state.
  */
 export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
+  const t = useT();
   const a = useAutopilot();
   const vault = useCexVault();
   const { push: pushTxHistory } = useTxHistory();
@@ -403,7 +405,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   const legCount   = activeIntent.intents.length;
   const isPair     = legCount > 1;
   const isTri      = legCount === 3 && activeIntent.card.kind === "arbitrage_triangular";
-  const legNoun    = isTri ? "3 legs sequentially" : isPair ? "2 legs in parallel" : "order";
+  const legNoun    = isTri ? t("zion.pilotLeg3Noun" as MessageKey) : isPair ? t("zion.pilotLeg2Noun" as MessageKey) : t("zion.pilotLeg1Noun" as MessageKey);
 
   return (
     <AnimatePresence>
@@ -431,10 +433,10 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
             "font-mono text-[10px] tracking-widest uppercase font-bold flex-1 min-w-0",
             phase === "errored" ? "text-red" : phase === "done" ? "text-green" : isPair ? "text-green" : "text-gold",
           )}>
-            {phase === "errored" ? "Autopilot rejected"
-              : phase === "done"  ? `Autopilot fired ${isTri ? "(3 legs)" : isPair ? "(2 legs)" : ""}`
-              : phase === "firing" ? `Sending ${legNoun}…`
-                                    : `Autopilot will fire${isTri ? " 3 legs" : isPair ? " 2 legs" : ""}`}
+            {phase === "errored" ? t("zion.pilotRejected" as MessageKey)
+              : phase === "done"  ? (isTri ? t("zion.pilotFired3" as MessageKey) : isPair ? t("zion.pilotFired2" as MessageKey) : t("zion.pilotFired" as MessageKey))
+              : phase === "firing" ? t("zion.pilotSending" as MessageKey, { noun: legNoun })
+                                    : (isTri ? t("zion.pilotWillFire3" as MessageKey) : isPair ? t("zion.pilotWillFire2" as MessageKey) : t("zion.pilotWillFire" as MessageKey))}
           </span>
           {phase === "countdown" && (
             <button
@@ -443,7 +445,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-white/15 bg-white/[0.04] font-mono text-[10px] tracking-widest uppercase text-ink-3 hover:bg-white/[0.08]"
             >
               <X className="w-2.5 h-2.5" />
-              Cancel
+              {t("common.cancel")}
             </button>
           )}
           {phase === "firing" && <Loader2 className="w-3.5 h-3.5 text-gold animate-spin" />}
@@ -480,7 +482,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
               />
             </div>
             <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-              {remainingS}s · click cancel to skip this one
+              {`${remainingS}s · ${t("zion.pilotSkipHint" as MessageKey)}`}
             </div>
           </div>
         )}
