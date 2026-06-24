@@ -41,7 +41,6 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/launchpad", labelKey: "nav.launchpad",  icon: Rocket,          group: "build" },
   { href: "/governance", labelKey: "nav.governance", icon: Vote,           group: "build" },
   { href: "/about",     labelKey: "nav.about",      icon: Info,            group: "build" },
-  { href: "/changelog", labelKey: "nav.changelog",  icon: History,         group: "build" },
   { href: "/pricing",   labelKey: "nav.pricing",    icon: CreditCard,      group: "build", badgeKey: "nav.badgeNew", badgeTone: "new" },
   { href: "/enterprise", labelKey: "nav.enterprise", icon: Building2,       group: "build" },
 
