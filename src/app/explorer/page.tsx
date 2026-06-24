@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Radar, Shield, Activity, Layers } from "lucide-react";
-import AppShell from "@/components/layout/AppShell";
 import NexusRadar from "@/components/explorer/NexusRadar";
 import LiveFeed from "@/components/explorer/LiveFeed";
 import PoolsCatalog from "@/components/explorer/PoolsCatalog";
@@ -16,40 +15,38 @@ export default function Page() {
   const [tab, setTab] = useState<Tab>("radar");
 
   return (
-    <AppShell>
-      <div className="space-y-4 min-w-0">
-        {/* Tab switcher */}
-        <div className="relative grid grid-cols-4 gap-1 p-1 rounded-xl border border-white/5 bg-bg-1/60 max-w-2xl">
-          <TabButton active={tab === "radar"}   Icon={Radar}    label="Nexus Radar"   onClick={() => setTab("radar")} />
-          <TabButton active={tab === "live"}    Icon={Activity} label="Live Feed"     onClick={() => setTab("live")} />
-          <TabButton active={tab === "catalog"} Icon={Layers}   label="Catalog"       onClick={() => setTab("catalog")} />
-          <TabButton active={tab === "scanner"} Icon={Shield}   label="Risk Scanner"  onClick={() => setTab("scanner")} />
-        </div>
-
-        <AnimatePresence mode="wait">
-          {tab === "radar" && (
-            <motion.div key="radar" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>
-              <NexusRadar />
-            </motion.div>
-          )}
-          {tab === "live" && (
-            <motion.div key="live" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>
-              <LiveFeed />
-            </motion.div>
-          )}
-          {tab === "catalog" && (
-            <motion.div key="catalog" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>
-              <PoolsCatalog />
-            </motion.div>
-          )}
-          {tab === "scanner" && (
-            <motion.div key="scanner" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>
-              <RiskScanner />
-            </motion.div>
-          )}
-        </AnimatePresence>
+    <div className="space-y-4 min-w-0">
+      {/* Tab switcher */}
+      <div className="relative grid grid-cols-4 gap-1 p-1 rounded-xl border border-white/5 bg-bg-1/60 max-w-2xl">
+        <TabButton active={tab === "radar"}   Icon={Radar}    label="Nexus Radar"   onClick={() => setTab("radar")} />
+        <TabButton active={tab === "live"}    Icon={Activity} label="Live Feed"     onClick={() => setTab("live")} />
+        <TabButton active={tab === "catalog"} Icon={Layers}   label="Catalog"       onClick={() => setTab("catalog")} />
+        <TabButton active={tab === "scanner"} Icon={Shield}   label="Risk Scanner"  onClick={() => setTab("scanner")} />
       </div>
-    </AppShell>
+
+      <AnimatePresence mode="wait">
+        {tab === "radar" && (
+          <motion.div key="radar" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>
+            <NexusRadar />
+          </motion.div>
+        )}
+        {tab === "live" && (
+          <motion.div key="live" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>
+            <LiveFeed />
+          </motion.div>
+        )}
+        {tab === "catalog" && (
+          <motion.div key="catalog" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>
+            <PoolsCatalog />
+          </motion.div>
+        )}
+        {tab === "scanner" && (
+          <motion.div key="scanner" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>
+            <RiskScanner />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

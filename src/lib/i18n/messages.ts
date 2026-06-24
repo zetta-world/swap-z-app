@@ -261,6 +261,11 @@ const en = {
     statChains:       "Chains Connected",
     statMevSaved:     "MEV Saved (7d)",
     statLive:         "Live",
+    statDexVolume:    "DEX Volume 24h",
+    statAggregators:  "DEX Aggregators",
+    statCexIntegrated: "CEXs Integrated",
+    statSourceMarket: "market",
+    statSourceCcxt:   "via CCXT",
     topMoversTitle:   "Top movers",
     topMoversBody:    "Highest momentum across the Nexus.",
     topMoversEmpty:   "Trending feed empty — try again shortly.",
@@ -1442,6 +1447,14 @@ const en = {
     taglineTrader: "Thunder guides your trades. Harness the power of Thor.",
     taglinePilot:  "The Allfather sees every route. Trade with Odin's wisdom.",
   },
+
+  notFound: {
+    title:         "This route doesn't exist",
+    body:          "The page you're looking for moved or never existed. Everything else on Z-SWAP is still here — pick a destination below.",
+    linkSwap:      "Back to swap",
+    linkExplorer:  "Explorer",
+    linkPortfolio: "Portfolio",
+  },
 };
 
 // Schema/shape comes from `en` once it's defined; other locales must match.
@@ -1700,6 +1713,11 @@ const pt: Schema = {
     statChains:       "Redes conectadas",
     statMevSaved:     "MEV economizado (7d)",
     statLive:         "Ao vivo",
+    statDexVolume:    "Volume DEX 24h",
+    statAggregators:  "Agregadores DEX",
+    statCexIntegrated: "CEXs integradas",
+    statSourceMarket: "mercado",
+    statSourceCcxt:   "via CCXT",
     topMoversTitle:   "Maiores movimentos",
     topMoversBody:    "Maior momentum no Nexus.",
     topMoversEmpty:   "Feed em tendência vazio — tente novamente em breve.",
@@ -2881,6 +2899,14 @@ const pt: Schema = {
     taglineTrader: "O trovão guia seus trades. Aproveite o poder de Thor.",
     taglinePilot:  "O Pai de Todos vê cada rota. Opere com a sabedoria de Odin.",
   },
+
+  notFound: {
+    title:         "Esta rota não existe",
+    body:          "A página que você procura mudou de lugar ou nunca existiu. Todo o resto do Z-SWAP continua aqui — escolha um destino abaixo.",
+    linkSwap:      "Voltar ao swap",
+    linkExplorer:  "Explorer",
+    linkPortfolio: "Portfólio",
+  },
 };
 
 const es: Schema = {
@@ -3121,6 +3147,11 @@ const es: Schema = {
     statChains:       "Cadenas conectadas",
     statMevSaved:     "MEV ahorrado (7d)",
     statLive:         "En vivo",
+    statDexVolume:    "Volumen DEX 24h",
+    statAggregators:  "Agregadores DEX",
+    statCexIntegrated: "CEXs integradas",
+    statSourceMarket: "mercado",
+    statSourceCcxt:   "vía CCXT",
     topMoversTitle:   "Mayores movimientos",
     topMoversBody:    "Mayor momentum en el Nexus.",
     topMoversEmpty:   "Feed en tendencia vacío — reintenta en breve.",
@@ -4302,6 +4333,14 @@ const es: Schema = {
     taglineTrader: "El trueno guía tus trades. Aprovecha el poder de Thor.",
     taglinePilot:  "El Padre de Todos ve cada ruta. Opera con la sabiduría de Odín.",
   },
+
+  notFound: {
+    title:         "Esta ruta no existe",
+    body:          "La página que buscas se movió o nunca existió. Todo lo demás en Z-SWAP sigue aquí — elige un destino abajo.",
+    linkSwap:      "Volver al swap",
+    linkExplorer:  "Explorer",
+    linkPortfolio: "Portafolio",
+  },
 };
 
 const zh: Schema = {
@@ -4542,6 +4581,11 @@ const zh: Schema = {
     statChains:       "已接入链",
     statMevSaved:     "MEV 节省 (7d)",
     statLive:         "实时",
+    statDexVolume:    "DEX 24小时成交量",
+    statAggregators:  "DEX 聚合器",
+    statCexIntegrated: "已接入 CEX",
+    statSourceMarket: "市场",
+    statSourceCcxt:   "经由 CCXT",
     topMoversTitle:   "涨幅榜",
     topMoversBody:    "Nexus 中动量最高的资产。",
     topMoversEmpty:   "趋势数据为空 — 请稍后再试。",
@@ -5722,6 +5766,14 @@ const zh: Schema = {
     taglinePro:    "繁荣随弗雷而来，黄金收获在等待。",
     taglineTrader: "雷霆指引你的交易，驾驭索尔之力。",
     taglinePilot:  "众神之父洞察每条路径，以奥丁的智慧交易。",
+  },
+
+  notFound: {
+    title:         "该页面不存在",
+    body:          "您查找的页面已移动或从未存在。Z-SWAP 的其他一切都还在 —— 请在下方选择一个去处。",
+    linkSwap:      "返回兑换",
+    linkExplorer:  "浏览器",
+    linkPortfolio: "资产组合",
   },
 };
 

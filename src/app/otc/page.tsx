@@ -1,4 +1,3 @@
-import AppShell from "@/components/layout/AppShell";
 import OtcView from "@/components/markets/OtcView";
 
 export const metadata = {
@@ -7,9 +6,5 @@ export const metadata = {
 };
 
 export default function Page() {
-  return (
-    <AppShell>
-      <OtcView />
-    </AppShell>
-  );
+  return <OtcView />;
 }

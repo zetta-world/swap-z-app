@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import AppShell from "@/components/layout/AppShell";
 import CexConsole from "@/components/cex/CexConsole";
 
 // Force dynamic so useSearchParams in CexConsole doesn't trigger a Suspense
@@ -9,10 +8,8 @@ export const dynamic = "force-dynamic";
 
 export default function Page() {
   return (
-    <AppShell>
-      <Suspense fallback={null}>
-        <CexConsole />
-      </Suspense>
-    </AppShell>
+    <Suspense fallback={null}>
+      <CexConsole />
+    </Suspense>
   );
 }

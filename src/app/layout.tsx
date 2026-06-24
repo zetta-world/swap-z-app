@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Syne, DM_Sans, DM_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
+import AppShell from "@/components/layout/AppShell";
 
 const syne = Syne({
   subsets: ["latin"],
@@ -116,7 +117,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${syne.variable} ${dmSans.variable} ${dmMono.variable}`}>
       <body className="font-sans antialiased min-h-screen">
-        <Providers>{children}</Providers>
+        <Providers><AppShell>{children}</AppShell></Providers>
       </body>
     </html>
   );

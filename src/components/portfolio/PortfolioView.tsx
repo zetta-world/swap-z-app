@@ -312,7 +312,7 @@ export default function PortfolioView() {
         </div>
 
         {/* CEX rollup — real read-only data from the connected exchanges */}
-        <CexPortfolioRollup onTotalUsdChange={setCexUsd} />
+        <CexPortfolioRollup onTotalUsdChange={setCexUsd} hidden={hidden} />
 
         <p className="font-mono text-[10px] text-ink-4 text-center mt-6">
           {t("portfolio.wallets")}

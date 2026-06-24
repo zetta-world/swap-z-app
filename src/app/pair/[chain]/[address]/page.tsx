@@ -1,4 +1,3 @@
-import AppShell from "@/components/layout/AppShell";
 import PairView from "@/components/pair/PairView";
 
 interface PageProps {
@@ -6,11 +5,7 @@ interface PageProps {
 }
 
 export default function Page({ params }: PageProps) {
-  return (
-    <AppShell>
-      <PairView chain={params.chain} pair={params.address} />
-    </AppShell>
-  );
+  return <PairView chain={params.chain} pair={params.address} />;
 }
 
 export const dynamic = "force-dynamic";

@@ -549,11 +549,11 @@ export default function CexTradePanel({
                 {balances.slice(0, 9).map((b) => (
                   <div key={b.asset} className="rounded-lg border border-white/5 bg-bg-1/30 px-2.5 py-2 min-w-0">
                     <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{b.asset}</div>
-                    <div className="font-display font-bold text-sm text-ink truncate tabular-nums">
+                    <div className="priv-value font-display font-bold text-sm text-ink truncate tabular-nums">
                       {compactNumber(b.total)}
                     </div>
                     {b.usdValue !== undefined && b.usdValue > 0.01 && (
-                      <div className="font-mono text-[10px] text-ink-3 tabular-nums">${compactNumber(b.usdValue)}</div>
+                      <div className="priv-value font-mono text-[10px] text-ink-3 tabular-nums">${compactNumber(b.usdValue)}</div>
                     )}
                   </div>
                 ))}

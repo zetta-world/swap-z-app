@@ -1,4 +1,3 @@
-import AppShell from "@/components/layout/AppShell";
 import OnrampView from "@/components/onramp/OnrampView";
 
 export const metadata = {
@@ -7,9 +6,5 @@ export const metadata = {
 };
 
 export default function Page() {
-  return (
-    <AppShell>
-      <OnrampView />
-    </AppShell>
-  );
+  return <OnrampView />;
 }

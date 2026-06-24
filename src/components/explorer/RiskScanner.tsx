@@ -77,6 +77,12 @@ export default function RiskScanner() {
 
   const cat = result ? CAT_CFG[result.category] : null;
 
+  // Explorer link must follow the scanned chain, not always Ethereum. Solana
+  // explorers use /account/<addr>; EVM explorers use /address/<addr>.
+  const explorerUrl = result
+    ? `${CHAINS.find((c) => c.id === result.chain)?.explorer ?? "https://etherscan.io"}/${result.chain === "solana" ? "account" : "address"}/${result.address}`
+    : "";
+
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
       <div className="absolute inset-0 grid-bg opacity-30 pointer-events-none" />
@@ -187,7 +193,7 @@ export default function RiskScanner() {
                   <div className="font-mono text-[11px] text-ink-2 truncate">
                     {result.info?.symbol ?? "TOKEN"} <span className="text-ink-3">·</span> {result.info?.name ?? "—"}
                     <span className="text-ink-4"> · </span>
-                    <a href={`https://etherscan.io/address/${result.address}`} target="_blank" rel="noopener" className="text-cyan/80 hover:text-cyan inline-flex items-center gap-0.5">
+                    <a href={explorerUrl} target="_blank" rel="noopener" className="text-cyan/80 hover:text-cyan inline-flex items-center gap-0.5">
                       {shortenAddress(result.address, 8, 6)}
                       <ExternalLink className="w-2.5 h-2.5" />
                     </a>

@@ -54,9 +54,13 @@ interface ExchangeRollup {
  */
 export default function CexPortfolioRollup({
   onTotalUsdChange,
+  hidden = false,
 }: {
   onTotalUsdChange?: (totalUsd: number) => void;
+  /** Mirrors the portfolio's "hide values" toggle — masks all balances. */
+  hidden?: boolean;
 } = {}) {
+  const mask = (v: string) => (hidden ? "•••••" : v);
   const t = useT();
   const [vaultExists, setVaultExists] = useState(false);
   const [connected,   setConnected]   = useState<CexId[]>([]);
@@ -321,8 +325,8 @@ export default function CexPortfolioRollup({
             label: Object.keys(creds).length === 1 ? t("portfolio.exchange") : t("portfolio.exchanges"),
           })}
         </div>
-        <div className="font-display font-extrabold text-xl text-ink tabular-nums">
-          ${compactNumber(totalCexUsd)}
+        <div className="priv-value font-display font-extrabold text-xl text-ink tabular-nums">
+          {mask(`$${compactNumber(totalCexUsd)}`)}
         </div>
       </div>
 
@@ -364,9 +368,9 @@ export default function CexPortfolioRollup({
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <div className="font-display font-bold text-sm text-ink tabular-nums">
+                  <div className="priv-value font-display font-bold text-sm text-ink tabular-nums">
                     {r.status === "loaded"
-                      ? `$${compactNumber(r.totalUsd)}`
+                      ? mask(`$${compactNumber(r.totalUsd)}`)
                       : r.status === "loading"
                         ? <Skeleton w="w-14" h="h-3.5" className="inline-block" />
                         : "—"}
@@ -381,7 +385,7 @@ export default function CexPortfolioRollup({
                       key={b.asset}
                       className="font-mono text-[9px] text-ink-2 px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/5"
                     >
-                      {b.asset} {compactNumber(b.total)}
+                      {b.asset} <span className="priv-value">{mask(compactNumber(b.total))}</span>
                     </span>
                   ))}
                   {r.balances.length > topAssets.length && (

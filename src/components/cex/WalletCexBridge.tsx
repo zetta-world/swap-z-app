@@ -1113,9 +1113,9 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
         <div className="flex items-center gap-2 -mt-1 px-0.5">
           <span className="font-mono text-[10px] text-ink-3">
             Disponível na CEX:{" "}
-            <span className="text-cyan tabular-nums">{activeCexBal.free.toFixed(6)} {currency.toUpperCase()}</span>
+            <span className="priv-value text-cyan tabular-nums">{activeCexBal.free.toFixed(6)} {currency.toUpperCase()}</span>
             {activeCexBal.used > 0 && (
-              <span className="text-ink-4 ml-1">({activeCexBal.used.toFixed(4)} em uso)</span>
+              <span className="priv-value text-ink-4 ml-1">({activeCexBal.used.toFixed(4)} em uso)</span>
             )}
           </span>
           {balanceLoading

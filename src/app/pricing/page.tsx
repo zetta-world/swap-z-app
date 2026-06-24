@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import AppShell from "@/components/layout/AppShell";
 import PricingView from "@/components/pricing/PricingView";
 
 export const metadata: Metadata = {
@@ -14,9 +13,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return (
-    <AppShell>
-      <PricingView />
-    </AppShell>
-  );
+  return <PricingView />;
 }

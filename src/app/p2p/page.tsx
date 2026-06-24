@@ -1,4 +1,3 @@
-import AppShell from "@/components/layout/AppShell";
 import P2pView from "@/components/markets/P2pView";
 
 export const metadata = {
@@ -7,9 +6,5 @@ export const metadata = {
 };
 
 export default function Page() {
-  return (
-    <AppShell>
-      <P2pView />
-    </AppShell>
-  );
+  return <P2pView />;
 }
