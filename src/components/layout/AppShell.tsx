@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
@@ -8,6 +8,7 @@ import CommandBar from "./CommandBar";
 import MobileNav from "./MobileNav";
 import PageTransition from "./PageTransition";
 import ZionDrawer from "@/components/zion/ZionDrawer";
+import ConnectModal from "@/components/wallet/ConnectModal";
 import TierAccentProvider from "@/components/tier/TierAccentProvider";
 import GodThemeLayer from "@/components/tier/GodThemeLayer";
 import { useUI } from "@/lib/store/ui";
@@ -24,10 +25,18 @@ const ExecuteSwapGuard = dynamic(() => import("@/components/swap/ExecuteSwapGuar
 });
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const { sidebarCollapsed } = useUI();
+  const { sidebarCollapsed, mode, walletModalOpen, setWalletModal } = useUI();
   const [mobileOpen, setMobileOpen] = useState(false);
   const t = useT();
   useOrderWatcher();
+
+  // Drive `data-mode` on <html> so the standard / pro / privacy UI mode can
+  // alter the app globally via CSS (privacy blurs balances, pro densifies).
+  useEffect(() => {
+    const el = document.documentElement;
+    el.setAttribute("data-mode", mode);
+    return () => el.removeAttribute("data-mode");
+  }, [mode]);
 
   return (
     <TierAccentProvider>
@@ -52,6 +61,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <CommandBar />
         <ZionDrawer />
         <ExecuteSwapGuard />
+        {/* Global wallet connector — opened by any surface via setWalletModal. */}
+        <ConnectModal open={walletModalOpen} onOpenChange={setWalletModal} />
       </div>
     </TierAccentProvider>
   );

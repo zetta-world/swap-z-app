@@ -178,13 +178,13 @@ const MODE_META: Record<"standard" | "pro" | "privacy", {
   pro: {
     Icon: Eye,
     labelKey: "settings.appModePro",
-    desc: "Gráficos avançados expandidos por padrão, métricas extras e painel de ordens sempre visível.",
+    desc: "Realça os painéis principais com bordas de destaque na cor do plano — visual de cockpit mais denso.",
     tone: "gold",
   },
   privacy: {
     Icon: EyeOff,
     labelKey: "settings.appModePrivacy",
-    desc: "Valores e saldos ficam ocultados automaticamente. Rotas e endereços são mascarados na tela.",
+    desc: "Saldos e valores ficam desfocados automaticamente em todo o app — passe o mouse para revelar.",
     tone: "violet",
   },
 };
@@ -346,7 +346,7 @@ function ExecutionPanel() {
 }
 
 function ZionPanel() {
-  const [zionMode, setZionMode] = useState<"conservative" | "advanced" | "institutional">("advanced");
+  const { zionMode, setZionMode } = useUI();
   const t = useT();
 
   const zionLabels: Record<"conservative" | "advanced" | "institutional", MessageKey> = {
@@ -359,7 +359,7 @@ function ZionPanel() {
     <div className="space-y-4">
       <PanelCard title={t("settings.groupZion")} Icon={Brain}>
         <p className="font-sans text-xs text-ink-3 leading-relaxed">{t("settings.zionModeBody")}</p>
-        <Field label="Modo de operação">
+        <Field label={t("settings.zionModeLabel")}>
           <Seg
             options={["conservative", "advanced", "institutional"] as const}
             value={zionMode}
@@ -402,23 +402,31 @@ function SecurityPanel() {
   );
 }
 
+const RPC_CHAINS: { id: string; label: string; placeholder: string }[] = [
+  { id: "ethereum", label: "Ethereum", placeholder: "https://eth-mainnet.g.alchemy.com/v2/…" },
+  { id: "bsc",      label: "BSC",      placeholder: "https://bsc-dataseed.binance.org" },
+  { id: "solana",   label: "Solana",  placeholder: "https://api.mainnet-beta.solana.com" },
+];
+
 function RpcPanel() {
+  const { customRpc, setCustomRpc } = useUI();
   const t = useT();
   return (
     <PanelCard title={t("settings.groupRpc")} Icon={KeyRound}>
       <p className="font-sans text-xs text-ink-3 leading-relaxed">{t("settings.rpcBody")}</p>
-      {[
-        { chain: "Ethereum", placeholder: "https://eth-mainnet.g.alchemy.com/v2/…" },
-        { chain: "BSC",      placeholder: "https://bsc-dataseed.binance.org" },
-        { chain: "Solana",   placeholder: "https://api.mainnet-beta.solana.com" },
-      ].map((r) => (
-        <Field key={r.chain} label={r.chain}>
+      {RPC_CHAINS.map((r) => (
+        <Field key={r.id} label={r.label}>
           <input
+            value={customRpc[r.id] ?? ""}
+            onChange={(e) => setCustomRpc(r.id, e.target.value)}
             placeholder={r.placeholder}
+            spellCheck={false}
+            autoComplete="off"
             className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5 text-xs font-mono text-ink-2 outline-none focus:border-cyan/30 placeholder:text-ink-4 transition-colors"
           />
         </Field>
       ))}
+      <p className="font-mono text-[9px] text-ink-4 leading-relaxed">{t("settings.rpcSavedNote")}</p>
     </PanelCard>
   );
 }

@@ -19,13 +19,12 @@ import { cn } from "@/lib/cn";
  *   • whether they're connected
  *   • same for destination (or whether they're using a custom recipient)
  *
- * It's a status surface, not a connect modal — the topbar already houses
- * the connect flow. Tapping the chip with no wallet opens the topbar
- * connector via the global useUI command bar event.
+ * It's a status surface, not a connect modal — tapping a chip with no
+ * wallet opens the global connector (rendered in AppShell) via useUI.
  */
 export default function BridgeWalletStatus() {
   const { fromToken, toToken, recipient } = useSwap();
-  const { setCommand } = useUI();
+  const { setWalletModal } = useUI();
   const { address, isConnected } = useAccount();
   const sol = useWallet();
   const t = useT();
@@ -66,7 +65,7 @@ export default function BridgeWalletStatus() {
           family={srcIsSolana ? "Solana" : "EVM"}
           address={srcIsSolana ? sol.publicKey?.toBase58() : address}
           ready={srcWalletReady}
-          onConnect={() => setCommand(false /* close any palette */)}
+          onConnect={() => setWalletModal(true)}
           tLabelKey="bridge.walletSource"
           tConnectKey="bridge.walletConnectNeeded"
         />
@@ -78,7 +77,7 @@ export default function BridgeWalletStatus() {
           address={recipient ?? (dstIsSolana ? sol.publicKey?.toBase58() : address)}
           ready={dstWalletReady}
           customRecipient={!!recipient}
-          onConnect={() => setCommand(false)}
+          onConnect={() => setWalletModal(true)}
           tLabelKey="bridge.walletDestination"
           tConnectKey="bridge.walletConnectNeeded"
         />

@@ -59,10 +59,14 @@ function safeRead(): PendingOrder[] {
   }
 }
 
+/** Event fired after any mutation so open lists (e.g. /orders) re-read. */
+export const ORDERS_CHANGED_EVENT = "zion-orders-changed";
+
 function safeWrite(orders: PendingOrder[]) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(KEY, JSON.stringify(orders));
+    window.dispatchEvent(new Event(ORDERS_CHANGED_EVENT));
   } catch {
     /* quota — silently drop */
   }

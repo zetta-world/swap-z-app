@@ -2,10 +2,13 @@
 
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { Activity, Target, Calendar, Clock, ChevronDown, AlertCircle, Sparkles } from "lucide-react";
 import { CHAINS, type ChainId } from "@/lib/chains";
 import { tokensByChain, type Token } from "@/lib/tokens";
 import { formatUsd, parseDecimalInput } from "@/lib/format";
+import { savePendingOrder } from "@/lib/zion/orders";
+import type { ActionCard } from "@/lib/zion/parse";
 import ZionOrdersList from "./ZionOrdersList";
 import OrderTokenSelector from "./OrderTokenSelector";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -60,6 +63,30 @@ export default function OrdersView() {
     });
     return t("orders.summaryTwap", { amount, fromSymbol: fromToken?.symbol ?? "", intervals });
   }, [tab, amount, intervals, freq, fromToken, toToken, limitPrice, t]);
+
+  // Persist the configured order locally (advisory-only, no custody — same
+  // store the ZION cards use). The list to the right refreshes via the
+  // ORDERS_CHANGED_EVENT dispatched inside savePendingOrder.
+  const onPlaceOrder = () => {
+    if (!summary || !fromToken || !toToken) return;
+    const typeLabel = (() => {
+      const k = TABS.find((x) => x.id === tab)?.labelKey;
+      return k ? t(k) : tab;
+    })();
+    const kind = tab === "limit" ? "buy_limit" : tab; // dca / twap kept as-is
+    const card: ActionCard = {
+      kind,
+      title:   `${typeLabel} · ${fromToken.symbol} → ${toToken.symbol}`,
+      summary,
+      chain:   fromToken.chain,
+      from:    { symbol: fromToken.symbol, address: fromToken.address, amount: amount || undefined },
+      to:      { symbol: toToken.symbol,   address: toToken.address },
+      triggerPrice: tab === "limit" ? limitPrice : undefined,
+    };
+    savePendingOrder(card);
+    toast.success(t("orders.placedToast", { label: typeLabel }));
+    setAmount("");
+  };
 
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
@@ -205,13 +232,13 @@ export default function OrdersView() {
                   <div className="rounded-lg border border-violet/20 bg-violet/[0.04] p-3 flex items-start gap-2.5">
                     <Sparkles className="w-3.5 h-3.5 text-violet flex-shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-mono text-[10px] text-violet tracking-widest uppercase mb-0.5">ZION will</div>
+                      <div className="font-mono text-[10px] text-violet tracking-widest uppercase mb-0.5">{t("orders.zionWillLabel")}</div>
                       <div className="font-sans text-xs text-ink-2 leading-relaxed">{summary}</div>
                     </div>
                   </div>
                 )}
 
-                <button className="w-full btn btn-primary py-3.5 text-sm tracking-widest" disabled={!summary}>
+                <button onClick={onPlaceOrder} className="w-full btn btn-primary py-3.5 text-sm tracking-widest" disabled={!summary}>
                   {summary
                     ? t("orders.placeBtn", {
                         label: (() => {

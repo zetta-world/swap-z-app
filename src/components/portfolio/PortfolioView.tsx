@@ -204,7 +204,7 @@ export default function PortfolioView() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">{t("portfolio.netWorth")}</div>
-                  <div className="font-display font-extrabold text-3xl sm:text-4xl text-ink">{mask(formatUsd(totals.total))}</div>
+                  <div className="priv-value font-display font-extrabold text-3xl sm:text-4xl text-ink">{mask(formatUsd(totals.total))}</div>
                 </div>
                 <Metric label={t("portfolio.walletBalance")} value={mask(formatUsd(totals.portfolio))} tone="cyan" />
                 <Metric label={t("portfolio.cexBalance")}    value={mask(formatUsd(totals.cex))}       tone="violet" />

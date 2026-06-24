@@ -418,7 +418,7 @@ export default function DashboardView() {
                 <Coins className="w-3 h-3 text-cyan" />
                 <span className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">Patrimônio total</span>
               </div>
-              <div className="font-display font-extrabold text-2xl sm:text-3xl text-ink tabular-nums truncate">
+              <div className="priv-value font-display font-extrabold text-2xl sm:text-3xl text-ink tabular-nums truncate">
                 {mask(formatUsd(totalUsd))}
               </div>
               <div className="flex items-center gap-3 mt-1.5">

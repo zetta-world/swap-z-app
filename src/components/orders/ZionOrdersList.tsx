@@ -5,11 +5,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Trash2, Zap, AlertCircle, Bot, ShieldX, ArrowDownToLine,
   ArrowUpFromLine, Crosshair, Target, TrendingUp, ShieldCheck, Flame,
+  Calendar, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   listPendingOrders, deletePendingOrder, updatePendingOrder, updateCowStatus,
-  isImmediateCard, type PendingOrder,
+  isImmediateCard, ORDERS_CHANGED_EVENT, type PendingOrder,
 } from "@/lib/zion/orders";
 import { fetchCowOrderStatus } from "@/lib/limit/cow";
 import { useSwap } from "@/lib/store/swap";
@@ -36,6 +37,8 @@ const KIND_META: Record<string, {
   sell_aggressive:       { Icon: TrendingUp,      labelKey: "zion.cardKindSellAggr", tone: "violet" },
   stop_loss:             { Icon: ShieldX,         labelKey: "zion.cardKindStop",     tone: "red"    },
   limit:                 { Icon: Bot,             labelKey: "zion.cardKindLimit",    tone: "violet" },
+  dca:                   { Icon: Calendar,        labelKey: "zion.cardKindDca",      tone: "cyan"   },
+  twap:                  { Icon: Clock,           labelKey: "zion.cardKindTwap",     tone: "cyan"   },
 };
 
 const TONE_BORDER: Record<string, string> = {
@@ -75,7 +78,11 @@ export default function ZionOrdersList() {
     refresh();
     const onFocus = () => refresh();
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    window.addEventListener(ORDERS_CHANGED_EVENT, onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener(ORDERS_CHANGED_EVENT, onFocus);
+    };
   }, [refresh]);
 
   // Refresh CoW status for every pre-signed order on mount + every 60s.

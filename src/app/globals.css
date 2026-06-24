@@ -1683,6 +1683,34 @@ html[data-tier="trader"] .tier-class-name {
     0 0 34px rgba(138, 92, 255, 0.45);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * UI MODE — standard / pro / privacy
+ *
+ * <AppShell> sets data-mode on <html>. These rules are 100% additive:
+ * "standard" leaves everything untouched.
+ *
+ * privacy : monetary values tagged `.priv-value` are blurred until hover,
+ *           so balances aren't shoulder-surfed. Reveal on hover / focus.
+ * pro     : surfaces tagged `.pro-dense` gain a subtle accent rim for an
+ *           information-dense cockpit feel.
+ * ══════════════════════════════════════════════════════════════════════*/
+
+html[data-mode="privacy"] .priv-value {
+  filter: blur(8px);
+  transition: filter 0.16s ease;
+  cursor: default;
+  user-select: none;
+}
+html[data-mode="privacy"] .priv-value:hover,
+html[data-mode="privacy"] .priv-value:focus-within {
+  filter: blur(0);
+  user-select: auto;
+}
+
+html[data-mode="pro"] .pro-dense {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tier-accent) 22%, transparent);
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

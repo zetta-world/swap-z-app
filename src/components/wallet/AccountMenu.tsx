@@ -99,7 +99,7 @@ export default function AccountMenu({ compact = false }: { compact?: boolean }) 
 
             <div className="mt-3 rounded-lg border border-white/5 bg-bg-1/40 p-2.5">
               <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-0.5">{t("topbar.accountBalance")}</div>
-              <div className="font-display font-bold text-base text-ink">
+              <div className="priv-value font-display font-bold text-base text-ink">
                 {balance ? `${formatAmount(parseFloat(balance.formatted), 4)} ${balance.symbol}` : "—"}
               </div>
             </div>

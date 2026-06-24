@@ -3,6 +3,10 @@ import { persist } from "zustand/middleware";
 
 export type AppMode = "standard" | "pro" | "privacy";
 export type AppLang = "en" | "pt" | "es" | "zh";
+export type ZionMode = "conservative" | "advanced" | "institutional";
+
+/** User-supplied custom RPC endpoints, keyed by chain id (e.g. "ethereum"). */
+export type CustomRpc = Record<string, string>;
 
 interface UIState {
   mode: AppMode;
@@ -14,6 +18,13 @@ interface UIState {
    *  is suppressed even for authenticated paid members. Lets power users revert
    *  to the neutral dark UI without downgrading their plan. */
   disableTierTheme: boolean;
+  /** ZION advisory posture — persisted so the choice survives reloads. */
+  zionMode: ZionMode;
+  /** Optional per-chain custom RPC endpoints (persisted). */
+  customRpc: CustomRpc;
+  /** Global wallet-connect modal flag — lets any surface (e.g. the bridge
+   *  wallet chips) open the connector without owning its own modal. */
+  walletModalOpen: boolean;
 
   setMode: (m: AppMode) => void;
   setLang: (l: AppLang) => void;
@@ -23,6 +34,9 @@ interface UIState {
   toggleCommand: () => void;
   toggleSidebar: () => void;
   setDisableTierTheme: (v: boolean) => void;
+  setZionMode: (m: ZionMode) => void;
+  setCustomRpc: (chain: string, url: string) => void;
+  setWalletModal: (open: boolean) => void;
 }
 
 export const useUI = create<UIState>()(
@@ -34,6 +48,9 @@ export const useUI = create<UIState>()(
       commandOpen: false,
       sidebarCollapsed: false,
       disableTierTheme: false,
+      zionMode: "advanced",
+      customRpc: {},
+      walletModalOpen: false,
 
       setMode:             (mode)  => set({ mode }),
       setLang:             (lang)  => set({ lang }),
@@ -43,6 +60,9 @@ export const useUI = create<UIState>()(
       toggleCommand:       ()      => set({ commandOpen: !get().commandOpen }),
       toggleSidebar:       ()      => set({ sidebarCollapsed: !get().sidebarCollapsed }),
       setDisableTierTheme: (v)     => set({ disableTierTheme: v }),
+      setZionMode:         (m)     => set({ zionMode: m }),
+      setCustomRpc:        (chain, url) => set({ customRpc: { ...get().customRpc, [chain]: url } }),
+      setWalletModal:      (open)  => set({ walletModalOpen: open }),
     }),
     {
       name: "zswap-ui",
@@ -50,6 +70,8 @@ export const useUI = create<UIState>()(
         mode: s.mode, lang: s.lang,
         sidebarCollapsed: s.sidebarCollapsed,
         disableTierTheme: s.disableTierTheme,
+        zionMode: s.zionMode,
+        customRpc: s.customRpc,
       }),
     },
   ),
