@@ -12,6 +12,8 @@ import CexSettings from "./CexSettings";
 import AutopilotPanel from "./AutopilotPanel";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
+import { useTier } from "@/lib/tier/client";
+import { isPaidTier } from "@/lib/tier/gods";
 import { cn } from "@/lib/cn";
 
 // ─── Tab registry ─────────────────────────────────────────────────────────
@@ -189,7 +191,12 @@ const MODE_META: Record<"standard" | "pro" | "privacy", {
 
 function AppearancePanel() {
   const { mode, setMode, lang, setLang, disableTierTheme, setDisableTierTheme } = useUI();
-  const { active: tierActive, tier, accentColor } = useTierAccent();
+  const { accentColor } = useTierAccent();
+  // Use the raw tier (unaffected by disableTierTheme) so the card stays
+  // visible even after the user disables the plan theme — otherwise the
+  // toggle that re-enables it would disappear and be unreachable.
+  const { tier } = useTier();
+  const hasPaidTier = isPaidTier(tier);
   const t = useT();
 
   const meta = MODE_META[mode];
@@ -275,7 +282,7 @@ function AppearancePanel() {
       </PanelCard>
 
       {/* Plan theme override — only shown for paid tier members */}
-      {tierActive && (
+      {hasPaidTier && (
         <div className="rounded-2xl border border-white/[0.07] glass-pane p-5">
           <div className="flex items-center gap-2.5 mb-4">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center"
