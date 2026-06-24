@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect } from "react";
 import { useTier } from "@/lib/tier/client";
+import { useUI } from "@/lib/store/ui";
 import type { Tier } from "@/lib/tier/types";
 
 /**
@@ -45,7 +46,8 @@ export function useTierAccent(): TierAccentState {
 
 export default function TierAccentProvider({ children }: { children: React.ReactNode }) {
   const { authenticated, tier, isError, isLoading } = useTier();
-  const active = authenticated && !isError && !isLoading && tier !== "free";
+  const { disableTierTheme } = useUI();
+  const active = authenticated && !isError && !isLoading && tier !== "free" && !disableTierTheme;
 
   useEffect(() => {
     const el = document.documentElement;

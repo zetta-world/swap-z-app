@@ -10,6 +10,10 @@ interface UIState {
   zionOpen: boolean;
   commandOpen: boolean;
   sidebarCollapsed: boolean;
+  /** When true the paid-tier visual theme (god ambient, accent colour, data-tier)
+   *  is suppressed even for authenticated paid members. Lets power users revert
+   *  to the neutral dark UI without downgrading their plan. */
+  disableTierTheme: boolean;
 
   setMode: (m: AppMode) => void;
   setLang: (l: AppLang) => void;
@@ -18,6 +22,7 @@ interface UIState {
   setCommand: (open: boolean) => void;
   toggleCommand: () => void;
   toggleSidebar: () => void;
+  setDisableTierTheme: (v: boolean) => void;
 }
 
 export const useUI = create<UIState>()(
@@ -28,18 +33,24 @@ export const useUI = create<UIState>()(
       zionOpen: false,
       commandOpen: false,
       sidebarCollapsed: false,
+      disableTierTheme: false,
 
-      setMode:         (mode)  => set({ mode }),
-      setLang:         (lang)  => set({ lang }),
-      toggleZion:      ()      => set({ zionOpen: !get().zionOpen }),
-      setZion:         (open)  => set({ zionOpen: open }),
-      setCommand:      (open)  => set({ commandOpen: open }),
-      toggleCommand:   ()      => set({ commandOpen: !get().commandOpen }),
-      toggleSidebar:   ()      => set({ sidebarCollapsed: !get().sidebarCollapsed }),
+      setMode:             (mode)  => set({ mode }),
+      setLang:             (lang)  => set({ lang }),
+      toggleZion:          ()      => set({ zionOpen: !get().zionOpen }),
+      setZion:             (open)  => set({ zionOpen: open }),
+      setCommand:          (open)  => set({ commandOpen: open }),
+      toggleCommand:       ()      => set({ commandOpen: !get().commandOpen }),
+      toggleSidebar:       ()      => set({ sidebarCollapsed: !get().sidebarCollapsed }),
+      setDisableTierTheme: (v)     => set({ disableTierTheme: v }),
     }),
     {
       name: "zswap-ui",
-      partialize: (s) => ({ mode: s.mode, lang: s.lang, sidebarCollapsed: s.sidebarCollapsed }),
+      partialize: (s) => ({
+        mode: s.mode, lang: s.lang,
+        sidebarCollapsed: s.sidebarCollapsed,
+        disableTierTheme: s.disableTierTheme,
+      }),
     },
   ),
 );

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Globe, Zap, Brain, Bell, Shield, KeyRound, Banknote,
+  Layers, Eye, EyeOff, Sparkles,
 } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
@@ -160,37 +161,146 @@ export default function SettingsView() {
 
 // ─── Tab panels ───────────────────────────────────────────────────────────
 
+const MODE_META: Record<"standard" | "pro" | "privacy", {
+  Icon: React.ComponentType<{ className?: string }>;
+  labelKey: MessageKey;
+  desc: string;
+  tone: "cyan" | "gold" | "violet";
+}> = {
+  standard: {
+    Icon: Layers,
+    labelKey: "settings.appModeStandard",
+    desc: "Interface limpa com todos os recursos essenciais. Ideal para uso diário sem ruído visual.",
+    tone: "cyan",
+  },
+  pro: {
+    Icon: Eye,
+    labelKey: "settings.appModePro",
+    desc: "Gráficos avançados expandidos por padrão, métricas extras e painel de ordens sempre visível.",
+    tone: "gold",
+  },
+  privacy: {
+    Icon: EyeOff,
+    labelKey: "settings.appModePrivacy",
+    desc: "Valores e saldos ficam ocultados automaticamente. Rotas e endereços são mascarados na tela.",
+    tone: "violet",
+  },
+};
+
 function AppearancePanel() {
-  const { mode, setMode, lang, setLang } = useUI();
+  const { mode, setMode, lang, setLang, disableTierTheme, setDisableTierTheme } = useUI();
+  const { active: tierActive, tier, accentColor } = useTierAccent();
   const t = useT();
 
-  const modeLabels: Record<"standard" | "pro" | "privacy", MessageKey> = {
-    standard: "settings.appModeStandard",
-    pro:      "settings.appModePro",
-    privacy:  "settings.appModePrivacy",
-  };
+  const meta = MODE_META[mode];
+  const ModeIcon = meta.Icon;
 
   return (
-    <PanelCard title={t("settings.groupAppearance")} Icon={Globe}>
-      <Field label={t("settings.uiMode")}>
-        <Seg
-          options={["standard", "pro", "privacy"] as const}
-          value={mode}
-          onChange={setMode}
-          label={(m) => t(modeLabels[m])}
-          tone="cyan"
-        />
-      </Field>
-      <Field label={t("settings.langLabel")}>
-        <Seg
-          options={["en", "pt", "es", "zh"] as const}
-          value={lang}
-          onChange={setLang}
-          label={(l) => l.toUpperCase()}
-          tone="cyan"
-        />
-      </Field>
-    </PanelCard>
+    <div className="space-y-4">
+      <PanelCard title={t("settings.groupAppearance")} Icon={Globe}>
+
+        {/* UI Mode — card picker, not just a segment */}
+        <Field label={t("settings.uiMode")}>
+          <div className="grid grid-cols-3 gap-2">
+            {(["standard", "pro", "privacy"] as const).map((m) => {
+              const mm = MODE_META[m];
+              const MIcon = mm.Icon;
+              const isActive = mode === m;
+              const toneText = {
+                cyan:   "text-cyan",
+                gold:   "text-gold",
+                violet: "text-violet",
+              }[mm.tone];
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  className={cn(
+                    "flex flex-col items-center gap-2 rounded-xl border px-2 py-3 transition-all",
+                    isActive
+                      ? "border-white/20 bg-white/[0.06]"
+                      : "border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/10",
+                  )}
+                >
+                  <div className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
+                    isActive ? "bg-white/10" : "bg-white/[0.04]",
+                  )}>
+                    <MIcon className={cn("w-4 h-4", isActive ? toneText : "text-ink-4")} />
+                  </div>
+                  <span className={cn(
+                    "font-mono text-[10px] tracking-widest uppercase",
+                    isActive ? toneText : "text-ink-4",
+                  )}>
+                    {t(mm.labelKey)}
+                  </span>
+                  {isActive && (
+                    <span className={cn("w-1.5 h-1.5 rounded-full", {
+                      cyan: "bg-cyan", gold: "bg-gold", violet: "bg-violet",
+                    }[mm.tone])} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {/* Active mode description */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={mode}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -2 }}
+              transition={{ duration: 0.14 }}
+              className="mt-2.5 flex items-start gap-2 rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2.5"
+            >
+              <ModeIcon className={cn("w-3.5 h-3.5 flex-shrink-0 mt-0.5", {
+                cyan: "text-cyan", gold: "text-gold", violet: "text-violet",
+              }[meta.tone])} />
+              <p className="font-sans text-[11px] text-ink-2 leading-relaxed">{meta.desc}</p>
+            </motion.div>
+          </AnimatePresence>
+        </Field>
+
+        {/* Language */}
+        <Field label={t("settings.langLabel")}>
+          <Seg
+            options={["en", "pt", "es", "zh"] as const}
+            value={lang}
+            onChange={setLang}
+            label={(l) => l.toUpperCase()}
+            tone="cyan"
+          />
+        </Field>
+      </PanelCard>
+
+      {/* Plan theme override — only shown for paid tier members */}
+      {tierActive && (
+        <div className="rounded-2xl border border-white/[0.07] glass-pane p-5">
+          <div className="flex items-center gap-2.5 mb-4">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+                 style={{ background: `color-mix(in srgb, ${accentColor} 15%, transparent)`, border: `1px solid color-mix(in srgb, ${accentColor} 30%, transparent)` }}>
+              <Sparkles className="w-4 h-4" style={{ color: accentColor }} />
+            </div>
+            <div>
+              <span className="font-display font-bold text-base text-ink block leading-none">
+                Tema do plano
+              </span>
+              <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mt-0.5 block">
+                {tier.toUpperCase()} · visual exclusivo
+              </span>
+            </div>
+          </div>
+          <Toggle
+            label="Usar tema do plano"
+            description="Ativa o visual exclusivo do seu plano — cores do deus, ambient glow e efeitos de identidade. Desative para usar a interface neutra padrão."
+            value={!disableTierTheme}
+            onChange={(v) => setDisableTierTheme(!v)}
+            tone="cyan"
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -401,10 +511,16 @@ function Toggle({
   tone: "green" | "cyan" | "gold" | "violet" | "red";
 }) {
   const trackOn = {
-    green: "bg-green",   cyan:   "bg-cyan",  gold: "bg-gold",
-    violet: "bg-violet", red:    "bg-red",
+    green:  "bg-green",
+    cyan:   "bg-cyan",
+    gold:   "bg-gold",
+    violet: "bg-violet",
+    red:    "bg-red",
   }[tone];
 
+  // Track: 44×24px  Thumb: 18×18px  Padding: 3px
+  // Inner space: 44-6 = 38px  Travel: 38-18 = 20px
+  // Inactive: x=0  Active: x=20  → always inside the track
   return (
     <div className="flex items-start gap-3.5 py-1">
       <button
@@ -412,15 +528,14 @@ function Toggle({
         onClick={() => onChange(!value)}
         aria-pressed={value}
         className={cn(
-          "relative w-10 h-[22px] rounded-full flex-shrink-0 transition-colors duration-200",
-          value ? trackOn : "bg-white/10",
+          "relative flex-shrink-0 w-11 h-6 rounded-full p-[3px] flex items-center transition-colors duration-200",
+          value ? trackOn : "bg-white/[0.12]",
         )}
       >
         <motion.span
-          animate={{ x: value ? 20 : 2 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-          className="absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm"
-          style={{ boxShadow: value ? "0 0 6px -1px rgba(0,0,0,0.4)" : undefined }}
+          animate={{ x: value ? 20 : 0 }}
+          transition={{ type: "spring", stiffness: 520, damping: 32 }}
+          className="w-[18px] h-[18px] rounded-full bg-white shadow-sm flex-shrink-0"
         />
       </button>
       <div className="flex-1 min-w-0">
