@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Search, X, Loader2, AlertTriangle, Check } from "lucide-react";
 import type { CexId, CexCredentials } from "@/lib/cex/types";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface Market {
@@ -77,6 +78,7 @@ function TokenLogo({ base }: { base: string }) {
 export default function CexPairSelector({
   open, onClose, exchangeId, credentials, currentSymbol, onSelect,
 }: Props) {
+  const t = useT();
   const [markets,     setMarkets]     = useState<Market[]>([]);
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState<string | null>(null);
@@ -170,16 +172,16 @@ export default function CexPairSelector({
           <div className="flex items-center justify-between px-5 pt-2 pb-3 flex-shrink-0">
             <div className="min-w-0">
               <Dialog.Title className="font-display font-extrabold text-base text-ink leading-none">
-                Selecionar Par
+                {t("cex.pairSelectTitle")}
               </Dialog.Title>
               <p className="font-mono text-[10px] text-ink-3 tracking-wider mt-1 uppercase">
-                {markets.length > 0 ? `${markets.length} mercados` : "—"}
+                {markets.length > 0 ? t("cex.pairMarketsCount", { n: markets.length }) : "—"}
               </p>
             </div>
             <Dialog.Close asChild>
               <button
                 type="button"
-                aria-label="Fechar"
+                aria-label={t("cex.pairClose")}
                 className="w-9 h-9 rounded-full flex items-center justify-center text-ink-2 bg-white/[0.05] border border-white/10 hover:bg-white/[0.10] hover:text-ink active:scale-95 transition-all flex-shrink-0"
               >
                 <X className="w-4 h-4" />
@@ -196,7 +198,7 @@ export default function CexPairSelector({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Pesquisar BTC, ETH, SOL…"
+                placeholder={t("cex.pairSearchPlaceholder")}
                 className="flex-1 bg-transparent outline-none text-sm font-medium text-ink placeholder:text-ink-4"
               />
               {search && (
@@ -238,7 +240,7 @@ export default function CexPairSelector({
             {loading && (
               <div className="flex flex-col items-center justify-center py-20 gap-3">
                 <Loader2 className="w-5 h-5 animate-spin text-cyan" />
-                <p className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Carregando mercados…</p>
+                <p className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("cex.pairLoading")}</p>
               </div>
             )}
 
@@ -250,7 +252,7 @@ export default function CexPairSelector({
             )}
 
             {!loading && !error && displayed.length === 0 && (
-              <p className="text-center font-mono text-[11px] text-ink-3 py-16">Nenhum par encontrado</p>
+              <p className="text-center font-mono text-[11px] text-ink-3 py-16">{t("cex.pairEmpty")}</p>
             )}
 
             {!loading && !error && displayed.map((m) => {
@@ -285,7 +287,9 @@ export default function CexPairSelector({
 
             {isSearching && displayed.length > 0 && (
               <p className="text-center font-mono text-[9px] text-ink-4 py-4">
-                {displayed.length} resultado{displayed.length !== 1 ? "s" : ""}
+                {displayed.length === 1
+                  ? t("cex.pairResultCount", { n: displayed.length })
+                  : t("cex.pairResultCountPlural", { n: displayed.length })}
               </p>
             )}
 

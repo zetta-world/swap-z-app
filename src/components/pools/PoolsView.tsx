@@ -82,24 +82,23 @@ export default function PoolsView() {
           <div className="flex items-center gap-2 mb-3">
             <Layers className="w-4 h-4 text-cyan" />
             <span className="font-mono text-[10px] text-cyan/80 tracking-widest uppercase">
-              Liquidity Layer · live · GeckoTerminal
+              {t("pools.eyebrow")} · GeckoTerminal
             </span>
           </div>
           <h1 className="font-display font-extrabold text-[clamp(1.75rem,5vw,3.6rem)] leading-[0.98] tracking-tight text-ink mb-3">
-            Pools <span className="text-grad-aurora">Universe</span>
+            {t("pools.titleA")} <span className="text-grad-aurora">{t("pools.titleHL")}</span>
           </h1>
           <p className="font-sans text-base text-ink-2 leading-relaxed max-w-2xl">
-            Real-time pool depth across 11 chains. Filter by chain, sort by TVL or volume,
-            click through to provide liquidity or analyze on the explorer.
+            {t("pools.body")}
           </p>
         </motion.div>
 
         {/* Aggregate stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-          <StatCard label="Aggregated TVL" value={`$${compactNumber(totals.tvl)}`} tone="cyan" />
-          <StatCard label="24h Volume"     value={`$${compactNumber(totals.vol)}`} tone="violet" />
-          <StatCard label="Pools tracked"  value={String(totals.count)}            tone="gold"   />
-          <StatCard label="Chains"         value={`${chain === "all" ? "all 11" : "1"}`} tone="green" />
+          <StatCard label={t("pools.statTvl")}     value={`$${compactNumber(totals.tvl)}`} tone="cyan" />
+          <StatCard label={t("pools.statVolume")}  value={`$${compactNumber(totals.vol)}`} tone="violet" />
+          <StatCard label={t("pools.statTracked")} value={String(totals.count)}            tone="gold"   />
+          <StatCard label={t("pools.statChains")}  value={`${chain === "all" ? t("pools.chainsAll") : "1"}`} tone="green" />
         </div>
 
         {/* Filters */}
@@ -119,7 +118,7 @@ export default function PoolsView() {
               onChange={(e) => setChain(e.target.value as ChainId | "all")}
               className="bg-bg-2 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-ink outline-none focus:border-cyan/30 min-w-[160px]"
             >
-              <option value="all">All chains · trending</option>
+              <option value="all">{t("pools.chainAllTrending")}</option>
               {CHAINS.filter((c) => !c.comingSoon).map((c) => (
                 <option key={c.id} value={c.id}>{c.short} · {c.name}</option>
               ))}
@@ -127,7 +126,7 @@ export default function PoolsView() {
             <div className="flex items-center gap-1 p-1 rounded-lg bg-bg-2 border border-white/10">
               {([
                 ["tvl",    "TVL"],
-                ["vol",    "Volume"],
+                ["vol",    t("pools.sortVolume")],
                 ["change", "Δ 24h"],
               ] as const).map(([k, label]) => (
                 <button
@@ -150,7 +149,7 @@ export default function PoolsView() {
         <div className="flex items-center gap-2 mb-3">
           <span className={cn("w-1.5 h-1.5 rounded-full", isError ? "bg-red" : "bg-cyan", "pulse-dot")} />
           <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-            {isLoading ? "Loading live pools…" : isError ? "Upstream unavailable · retry shortly" : "Refreshes every 60s"}
+            {isLoading ? t("pools.statusLoading") : isError ? t("pools.statusError") : t("pools.statusRefresh")}
           </span>
         </div>
 
@@ -158,10 +157,10 @@ export default function PoolsView() {
         <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden">
           {/* Header row */}
           <div className="grid grid-cols-12 px-4 py-3 border-b border-white/5 bg-white/[0.02] gap-2">
-            <div className="col-span-4 font-mono text-[10px] text-ink-3 tracking-widest uppercase">Pool</div>
+            <div className="col-span-4 font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("pools.thPool")}</div>
             <div className="col-span-2 hidden sm:block font-mono text-[10px] text-ink-3 tracking-widest uppercase">DEX</div>
             <div className="col-span-3 sm:col-span-2 font-mono text-[10px] text-ink-3 tracking-widest uppercase text-right">TVL</div>
-            <div className="col-span-3 sm:col-span-2 font-mono text-[10px] text-ink-3 tracking-widest uppercase text-right">24h Vol</div>
+            <div className="col-span-3 sm:col-span-2 font-mono text-[10px] text-ink-3 tracking-widest uppercase text-right">{t("pools.thVol24h")}</div>
             <div className="col-span-2 font-mono text-[10px] text-ink-3 tracking-widest uppercase text-right">Δ</div>
           </div>
 
@@ -255,7 +254,7 @@ export default function PoolsView() {
         </div>
 
         <p className="font-mono text-[10px] text-ink-4 text-center mt-4">
-          Powered by GeckoTerminal · ZION can analyze any of these pools — paste the address into <a className="text-cyan/70 hover:text-cyan inline-flex items-center gap-0.5" href="/explorer">/explorer <ExternalLink className="w-2.5 h-2.5" /></a>
+          {t("pools.footer")} <a className="text-cyan/70 hover:text-cyan inline-flex items-center gap-0.5" href="/explorer">/explorer <ExternalLink className="w-2.5 h-2.5" /></a>
         </p>
       </div>
     </div>

@@ -20,14 +20,15 @@ import { useTxHistory } from "@/lib/store/txHistory";
 import { useCexVault } from "@/lib/cex/vault";
 import type { CexId, CexCredentials, CexBalance, CexOrder } from "@/lib/cex/types";
 import { useUI } from "@/lib/store/ui";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 type MarketType = "spot" | "futures" | "margin";
 
-const MARKET_LABELS: Record<MarketType, { label: string; Icon: React.ComponentType<{ className?: string }> }> = {
-  spot:    { label: "Spot",    Icon: BookOpen },
-  futures: { label: "Futuros", Icon: TrendingUp },
-  margin:  { label: "Margem",  Icon: Layers },
+const MARKET_LABELS: Record<MarketType, { labelKey: MessageKey; Icon: React.ComponentType<{ className?: string }> }> = {
+  spot:    { labelKey: "cex.zionApMarketSpot",    Icon: BookOpen },
+  futures: { labelKey: "cex.zionApMarketFutures", Icon: TrendingUp },
+  margin:  { labelKey: "cex.zionApMarketMargin",  Icon: Layers },
 };
 
 const RISK_META: Record<AutopilotRiskMode, {
@@ -36,9 +37,9 @@ const RISK_META: Record<AutopilotRiskMode, {
   textClass:   string;
   borderClass: string;
   bgClass:     string;
-  label:       string;
+  labelKey:    MessageKey;
   pct:         number;
-  desc:        string;
+  descKey:     MessageKey;
 }> = {
   conservador: {
     Icon: Shield,
@@ -46,9 +47,9 @@ const RISK_META: Record<AutopilotRiskMode, {
     textClass:   "text-cyan",
     borderClass: "border-cyan/30",
     bgClass:     "bg-cyan/[0.08]",
-    label: "Conservador",
+    labelKey: "cex.zionApRiskConservative",
     pct:   0.20,
-    desc:  "BTC · ETH · SOL · 20% do saldo · 3 trades/dia",
+    descKey:  "cex.zionApRiskConservativeDesc",
   },
   moderado: {
     Icon: Target,
@@ -56,9 +57,9 @@ const RISK_META: Record<AutopilotRiskMode, {
     textClass:   "text-gold",
     borderClass: "border-gold/30",
     bgClass:     "bg-gold/[0.08]",
-    label: "Moderado",
+    labelKey: "cex.zionApRiskModerate",
     pct:   0.40,
-    desc:  "6 símbolos · 40% do saldo · 5 trades/dia",
+    descKey:  "cex.zionApRiskModerateDesc",
   },
   agressivo: {
     Icon: Zap,
@@ -66,9 +67,9 @@ const RISK_META: Record<AutopilotRiskMode, {
     textClass:   "text-red",
     borderClass: "border-red/30",
     bgClass:     "bg-red/[0.08]",
-    label: "Agressivo",
+    labelKey: "cex.zionApRiskAggressive",
     pct:   0.65,
-    desc:  "10 símbolos · 65% do saldo · 8 trades/dia",
+    descKey:  "cex.zionApRiskAggressiveDesc",
   },
 };
 
@@ -89,6 +90,7 @@ interface CexBalanceSnapshot {
 }
 
 export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
+  const t       = useT();
   const a       = useAutopilot();
   const vault   = useCexVault();
   const { lang } = useUI();
@@ -265,12 +267,12 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
       }
     } catch (e) {
       if (!(e instanceof Error && e.name === "AbortError")) {
-        setBuffer((prev) => prev + "\n\n[ZION: análise interrompida. Tente novamente.]");
+        setBuffer((prev) => prev + "\n\n" + t("cex.zionApStreamInterrupted"));
       }
     } finally {
       setStreaming(false);
     }
-  }, [riskMode, marketType, exchangeId, credentials, a, vault, lang, effectiveMaxTradeUsd, effectiveDailyLossStopUsd, balanceContext, positionsContext]);
+  }, [riskMode, marketType, exchangeId, credentials, a, vault, lang, effectiveMaxTradeUsd, effectiveDailyLossStopUsd, balanceContext, positionsContext, t]);
 
   const disarm = useCallback(() => {
     abortRef.current?.abort();
@@ -297,9 +299,9 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
     const intents = mapCardToCexIntents(card);
     if (!intents || intents.length === 0) {
       if (card.kind === "stop_loss") {
-        toast.error("Stop-loss precisa ser configurado manualmente no painel da exchange (ordem stop separada).");
+        toast.error(t("cex.zionApStopLossManual"));
       } else {
-        toast.error("Esta proposta não pôde ser convertida em ordem CEX automaticamente. Use o painel de trade manual.");
+        toast.error(t("cex.zionApNoConvert"));
       }
       return;
     }
@@ -307,11 +309,11 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
       // Multi-leg arb (cross-CEX / triangular) — these fire atomically and
       // belong to the autonomous pilot. Manual single-confirm would leave
       // directional risk on a partial fill.
-      toast.error("Propostas de arbitragem multi-perna são executadas pelo Autopilot armado, não manualmente.");
+      toast.error(t("cex.zionApMultiLeg"));
       return;
     }
     setManualOrder({ card, intent: intents[0] });
-  }, []);
+  }, [t]);
 
   // After a manual order is accepted by the exchange, mirror the pilot's
   // bookkeeping: record to tx history + position memory.
@@ -346,9 +348,9 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
     } else if (intent.side === "sell") {
       markExitArmed(exchangeId, baseSymbol ?? intent.symbol.split("/")[0], order.id);
     }
-    toast.success(`Ordem enviada: ${intent.side.toUpperCase()} ${intent.symbol} @ ${exchangeId}`);
+    toast.success(t("cex.zionApOrderSent", { side: intent.side.toUpperCase(), symbol: intent.symbol, exchange: exchangeId }));
     setManualOrder(null);
-  }, [manualOrder, exchangeId, pushTxHistory, recordEntry, markExitArmed]);
+  }, [manualOrder, exchangeId, pushTxHistory, recordEntry, markExitArmed, t]);
 
   return (
     <motion.div
@@ -361,7 +363,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-purple-400" />
           <span className="font-mono text-[10px] tracking-widest uppercase text-purple-300 font-bold">
-            ZION · Autopilot CEX
+            {t("cex.zionApHeader")}
           </span>
           {loadingBal && <Loader2 className="w-3 h-3 text-ink-4 animate-spin" />}
           {cexBalance && !loadingBal && (
@@ -375,17 +377,17 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
           isFrozen ? "text-red" : isArmed ? "text-green" : "text-ink-4",
         )}>
           {isFrozen
-            ? <><AlertTriangle className="w-3 h-3" /> CONGELADO</>
+            ? <><AlertTriangle className="w-3 h-3" /> {t("cex.zionApStatusFrozen")}</>
             : isArmed
-              ? <><CheckCircle2 className="w-3 h-3" /> ARMADO</>
-              : "● PARADO"}
+              ? <><CheckCircle2 className="w-3 h-3" /> {t("cex.zionApStatusArmed")}</>
+              : t("cex.zionApStatusStopped")}
         </div>
       </div>
 
       {/* ── Frozen warning ──────────────────────────────────────────── */}
       {isFrozen && (
         <div className="rounded-lg border border-red/30 bg-red/[0.06] px-3 py-2 font-mono text-[10px] text-red leading-relaxed">
-          Stop de perda diária atingido (−${effectiveDailyLossStopUsd}). Autopilot congelado até meia-noite UTC.
+          {t("cex.zionApFrozenMsg", { amount: effectiveDailyLossStopUsd })}
         </div>
       )}
 
@@ -394,10 +396,10 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
         <div className="space-y-3">
           {/* Market type */}
           <div>
-            <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-2">Tipo de mercado</div>
+            <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-2">{t("cex.zionApMarketTypeLabel")}</div>
             <div className="grid grid-cols-3 gap-2">
               {(["spot", "futures", "margin"] as const).map((mt) => {
-                const { label, Icon } = MARKET_LABELS[mt];
+                const { labelKey, Icon } = MARKET_LABELS[mt];
                 const active = marketType === mt;
                 return (
                   <button
@@ -412,7 +414,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
                     )}
                   >
                     <Icon className="w-3.5 h-3.5 mx-auto mb-1" />
-                    <div className="font-mono text-[9px] tracking-widest uppercase">{label}</div>
+                    <div className="font-mono text-[9px] tracking-widest uppercase">{t(labelKey)}</div>
                   </button>
                 );
               })}
@@ -421,7 +423,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
 
           {/* Risk mode */}
           <div>
-            <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-2">Modo de risco</div>
+            <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-2">{t("cex.zionApRiskModeLabel")}</div>
             <div className="grid grid-cols-3 gap-2">
               {(["conservador", "moderado", "agressivo"] as const).map((m) => {
                 const rm = RISK_META[m];
@@ -440,9 +442,9 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
                     )}
                   >
                     <RmIcon className="w-3.5 h-3.5 mx-auto mb-1" />
-                    <div className="font-mono text-[9px] tracking-widest uppercase">{rm.label}</div>
+                    <div className="font-mono text-[9px] tracking-widest uppercase">{t(rm.labelKey)}</div>
                     <div className="font-mono text-[9px] text-ink-3 mt-0.5">
-                      {rm.pct * 100}% do saldo
+                      {t("cex.zionApPctOfBalance", { pct: rm.pct * 100 })}
                     </div>
                   </button>
                 );
@@ -453,7 +455,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
           {/* Dynamic preset summary */}
           <div className="rounded-lg border border-white/5 bg-bg-1/30 p-3 grid grid-cols-3 gap-3 text-center">
             <div>
-              <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">Por trade</div>
+              <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">{t("cex.zionApPerTrade")}</div>
               <div className={cn("font-display font-bold text-sm", meta.textClass)}>
                 {loadingBal
                   ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
@@ -461,11 +463,11 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
               </div>
             </div>
             <div>
-              <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">Trades/dia</div>
+              <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">{t("cex.zionApTradesPerDay")}</div>
               <div className="font-display font-bold text-sm text-ink">{preset.maxTradesPerDay}</div>
             </div>
             <div>
-              <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">Stop perda</div>
+              <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-0.5">{t("cex.zionApLossStop")}</div>
               <div className="font-display font-bold text-sm text-red">
                 {loadingBal
                   ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
@@ -476,19 +478,19 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
 
           <div className="space-y-1">
             <div className="font-mono text-[9px] text-ink-4">
-              Pares: {preset.allowedSymbols.join(", ")}
+              {t("cex.zionApPairs", { pairs: preset.allowedSymbols.join(", ") })}
             </div>
             <div className="font-mono text-[9px] text-ink-4">
-              Countdown: {preset.countdownMs / 1000}s por ordem (cancelável)
+              {t("cex.zionApCountdown", { seconds: preset.countdownMs / 1000 })}
             </div>
             {cexBalance && (
               <div className="font-mono text-[9px] text-ink-4">
-                Saldo CEX: {cexBalance.balances
+                {t("cex.zionApCexBalance", { balances: cexBalance.balances
                   .filter((b) => b.total > 0)
                   .sort((x, y) => (y.usdValue ?? 0) - (x.usdValue ?? 0))
                   .slice(0, 4)
                   .map((b) => `${b.asset} ${b.total > 0.001 ? b.total.toFixed(4) : b.total}${b.usdValue ? ` ($${b.usdValue.toFixed(2)})` : ""}`)
-                  .join(" · ")}
+                  .join(" · ") })}
               </div>
             )}
           </div>
@@ -517,7 +519,9 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
       {isArmed && cards.length > 0 && (
         <div className="space-y-2">
           <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">
-            {cards.length} ordem{cards.length !== 1 ? "s" : ""} gerada{cards.length !== 1 ? "s" : ""}
+            {cards.length === 1
+              ? t("cex.zionApOrdersGenerated", { n: cards.length })
+              : t("cex.zionApOrdersGeneratedPlural", { n: cards.length })}
           </div>
           {cards.map((card, i) => (
             <ActionCardView
@@ -539,7 +543,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
             className="flex items-center gap-1.5 font-mono text-[10px] text-ink-3 hover:text-ink-2 tracking-widest uppercase transition-colors"
           >
             {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {showDetails ? "Ocultar análise" : "Ver análise ZION"}
+            {showDetails ? t("cex.zionApHideAnalysis") : t("cex.zionApShowAnalysis")}
             {streaming && <RefreshCw className="w-2.5 h-2.5 animate-spin ml-1" />}
           </button>
           <AnimatePresence>
@@ -551,7 +555,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
                 className="overflow-hidden"
               >
                 <pre className="text-[11px] text-ink-2 font-mono whitespace-pre-wrap leading-relaxed bg-bg-1/40 rounded-lg p-3 border border-white/5 max-h-56 overflow-y-auto">
-                  {visible || (streaming ? "Analisando mercado…" : "")}
+                  {visible || (streaming ? t("cex.zionApAnalyzing") : "")}
                 </pre>
               </motion.div>
             )}
@@ -573,8 +577,8 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
             )}
           >
             {streaming
-              ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Analisando mercado…</>
-              : <><Play className="w-3.5 h-3.5" /> Armar ZION · {MARKET_LABELS[marketType].label}</>
+              ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> {t("cex.zionApAnalyzing")}</>
+              : <><Play className="w-3.5 h-3.5" /> {t("cex.zionApArm")} {t(MARKET_LABELS[marketType].labelKey)}</>
             }
           </button>
         ) : (
@@ -584,7 +588,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
               onClick={disarm}
               className="flex-1 py-2.5 rounded-lg font-display font-extrabold text-xs tracking-wide flex items-center justify-center gap-2 border border-red/30 bg-red/[0.06] text-red hover:bg-red/[0.12] transition-all"
             >
-              <Square className="w-3.5 h-3.5" /> Desarmar
+              <Square className="w-3.5 h-3.5" /> {t("cex.zionApDisarm")}
             </button>
             {!streaming && (
               <button
@@ -592,7 +596,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
                 onClick={rescan}
                 className="px-3 py-2.5 rounded-lg border border-white/10 bg-white/[0.03] text-ink-3 hover:text-ink-2 hover:border-white/20 font-mono text-[10px] tracking-widest uppercase flex items-center gap-1.5 transition-all"
               >
-                <RefreshCw className="w-3 h-3" /> Nova scan
+                <RefreshCw className="w-3 h-3" /> {t("cex.zionApRescan")}
               </button>
             )}
           </>
@@ -601,9 +605,9 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
 
       {/* ── Safety footer ──────────────────────────────────────────────── */}
       <div className="rounded-lg border border-white/5 bg-white/[0.015] px-3 py-2 font-mono text-[9px] text-ink-4 leading-relaxed space-y-0.5">
-        <p>· Cada ordem tem <strong className="text-ink-3">{preset.countdownMs / 1000}s</strong> de countdown — você pode cancelar qualquer uma.</p>
-        <p>· Stop automático ao atingir <strong className="text-red">${effectiveDailyLossStopUsd}</strong> de perda diária.</p>
-        <p>· Máximo <strong className="text-ink-3">{preset.maxTradesPerDay}</strong> trades/dia · <strong className="text-ink-3">${effectiveMaxTradeUsd}</strong> por operação ({meta.pct * 100}% do saldo).</p>
+        <p>{t("cex.zionApRule1", { seconds: preset.countdownMs / 1000 })}</p>
+        <p>{t("cex.zionApRule2", { amount: effectiveDailyLossStopUsd })}</p>
+        <p>{t("cex.zionApRule3", { trades: preset.maxTradesPerDay, perTrade: effectiveMaxTradeUsd, pct: meta.pct * 100 })}</p>
       </div>
 
       {/* ── Manual execution confirm (from "Executar proposta") ─────────── */}

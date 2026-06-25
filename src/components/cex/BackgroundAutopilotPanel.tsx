@@ -9,6 +9,7 @@ import {
 import { toast } from "sonner";
 import { useWalletAuth } from "@/lib/auth/client";
 import type { CexId, CexCredentials } from "@/lib/cex/types";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface SessionStatus {
@@ -52,6 +53,7 @@ export default function BackgroundAutopilotPanel({
   exchangeId, credentials, riskMode, marketType,
   maxTradeUsd, dailyLossStopUsd, maxTradesPerDay, allowedSymbols, lang,
 }: Props) {
+  const t = useT();
   const { signIn, pending: authPending } = useWalletAuth();
 
   const [backend,  setBackend]  = useState<Backend>("loading");
@@ -94,38 +96,38 @@ export default function BackgroundAutopilotPanel({
       });
       const body = await res.json() as { ok: boolean; error?: string; autoFires?: boolean };
       if (res.status === 401) { setBackend("auth_required"); return; }
-      if (!res.ok || !body.ok) { toast.error(`Falha ao ativar: ${body.error ?? res.status}`); return; }
+      if (!res.ok || !body.ok) { toast.error(t("bgAutopilot.activateFail", { error: body.error ?? res.status })); return; }
       toast.success(
         body.autoFires
-          ? "Autopilot ativado em segundo plano (spot)."
-          : `Ativado — ${marketType} roda em modo análise (sem disparo automático).`,
+          ? t("bgAutopilot.activatedSpot")
+          : t("bgAutopilot.activatedAnalysis", { marketType }),
       );
       await refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Falha de rede.");
+      toast.error(e instanceof Error ? e.message : t("bgAutopilot.networkFail"));
     } finally {
       setBusy(false);
     }
-  }, [exchangeId, riskMode, marketType, maxTradeUsd, dailyLossStopUsd, maxTradesPerDay, allowedSymbols, lang, credentials, refresh]);
+  }, [exchangeId, riskMode, marketType, maxTradeUsd, dailyLossStopUsd, maxTradesPerDay, allowedSymbols, lang, credentials, refresh, t]);
 
   const disarm = useCallback(async () => {
-    if (!confirm("Desativar o autopilot em segundo plano? Ele para de operar imediatamente.")) return;
+    if (!confirm(t("bgAutopilot.disarmConfirm"))) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/autopilot/session?exchangeId=${exchangeId}`, { method: "DELETE" });
-      if (res.ok) { toast.success("Autopilot em segundo plano desativado."); await refresh(); }
-      else toast.error("Falha ao desativar.");
+      if (res.ok) { toast.success(t("bgAutopilot.deactivated")); await refresh(); }
+      else toast.error(t("bgAutopilot.deactivateFail"));
     } finally {
       setBusy(false);
     }
-  }, [exchangeId, refresh]);
+  }, [exchangeId, refresh, t]);
 
   // ── Backend states that block everything else ──
   if (backend === "loading") {
     return (
       <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3 flex items-center gap-2">
         <Loader2 className="w-3.5 h-3.5 text-ink-4 animate-spin" />
-        <span className="font-mono text-[10px] text-ink-4">Verificando modo segundo plano…</span>
+        <span className="font-mono text-[10px] text-ink-4">{t("bgAutopilot.checking")}</span>
       </div>
     );
   }
@@ -134,11 +136,10 @@ export default function BackgroundAutopilotPanel({
       <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
         <div className="flex items-center gap-2 mb-1">
           <CloudCog className="w-3.5 h-3.5 text-ink-4" />
-          <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">Segundo plano</span>
+          <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("bgAutopilot.title")}</span>
         </div>
         <p className="font-mono text-[10px] text-ink-4 leading-relaxed">
-          Modo segundo plano indisponível neste ambiente (backend não configurado).
-          O autopilot ainda funciona com o navegador aberto.
+          {t("bgAutopilot.unavailable")}
         </p>
       </div>
     );
@@ -160,16 +161,16 @@ export default function BackgroundAutopilotPanel({
         <div className="flex items-center gap-2">
           <CloudCog className={cn("w-3.5 h-3.5", isArmed ? "text-green" : "text-purple-400")} />
           <span className="font-mono text-[10px] tracking-widest uppercase font-bold text-ink-2">
-            Segundo plano
+            {t("bgAutopilot.title")}
           </span>
           <span className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-purple-500/30 bg-purple-500/10 text-purple-300 tracking-widest uppercase">
-            Beta
+            {t("bgAutopilot.beta")}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
           {isArmed
-            ? <span className="font-mono text-[9px] text-green tracking-widest uppercase inline-flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ativo</span>
-            : <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">Inativo</span>}
+            ? <span className="font-mono text-[9px] text-green tracking-widest uppercase inline-flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> {t("bgAutopilot.active")}</span>
+            : <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{t("bgAutopilot.inactive")}</span>}
           {expanded ? <ChevronUp className="w-3.5 h-3.5 text-ink-4" /> : <ChevronDown className="w-3.5 h-3.5 text-ink-4" />}
         </div>
       </button>
@@ -186,27 +187,27 @@ export default function BackgroundAutopilotPanel({
             {isArmed && status && (
               <div className="space-y-2">
                 <div className="grid grid-cols-3 gap-2 text-center">
-                  <Stat label="Trades hoje" value={`${status.trades_today}/${status.max_trades_per_day}`} />
-                  <Stat label="Por trade" value={`$${status.max_trade_usd}`} />
-                  <Stat label="Mercado" value={status.market_type} />
+                  <Stat label={t("bgAutopilot.tradesToday")} value={`${status.trades_today}/${status.max_trades_per_day}`} />
+                  <Stat label={t("bgAutopilot.perTrade")} value={`$${status.max_trade_usd}`} />
+                  <Stat label={t("bgAutopilot.market")} value={status.market_type} />
                 </div>
                 <div className="font-mono text-[9px] text-ink-4 space-y-0.5">
                   <div className="inline-flex items-center gap-1">
                     <Clock className="w-2.5 h-2.5" />
-                    Expira: {new Date(status.expires_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    {t("bgAutopilot.expires", { time: new Date(status.expires_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) })}
                   </div>
                   {status.last_scan_at && (
-                    <div>Última varredura: {new Date(status.last_scan_at).toLocaleString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</div>
+                    <div>{t("bgAutopilot.lastScan", { time: new Date(status.last_scan_at).toLocaleString("pt-BR", { hour: "2-digit", minute: "2-digit" }) })}</div>
                   )}
                   {status.frozen_until_day && (
-                    <div className="text-red">Congelado (stop de perda diária) até meia-noite UTC.</div>
+                    <div className="text-red">{t("bgAutopilot.frozen")}</div>
                   )}
                   {status.last_error && (
-                    <div className="text-gold break-words">Aviso: {status.last_error}</div>
+                    <div className="text-gold break-words">{t("bgAutopilot.warning", { error: status.last_error })}</div>
                   )}
                   {status.market_type !== "spot" && (
                     <div className="text-gold">
-                      {status.market_type} roda só em análise — disparo automático é exclusivo de spot.
+                      {t("bgAutopilot.analysisOnly", { marketType: status.market_type })}
                     </div>
                   )}
                 </div>
@@ -219,7 +220,7 @@ export default function BackgroundAutopilotPanel({
                       className="font-mono text-[9px] text-ink-3 hover:text-ink-2 tracking-widest uppercase inline-flex items-center gap-1"
                     >
                       {showRuns ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
-                      Atividade recente ({runs.length})
+                      {t("bgAutopilot.recentActivity", { n: runs.length })}
                     </button>
                     {showRuns && (
                       <div className="mt-1.5 space-y-1 max-h-40 overflow-y-auto">
@@ -245,7 +246,7 @@ export default function BackgroundAutopilotPanel({
                   className="w-full py-2 rounded-lg border border-red/30 bg-red/[0.06] text-red hover:bg-red/[0.12] font-display font-bold text-xs inline-flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
                 >
                   {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PowerOff className="w-3.5 h-3.5" />}
-                  Desativar segundo plano
+                  {t("bgAutopilot.deactivateBtn")}
                 </button>
               </div>
             )}
@@ -253,21 +254,21 @@ export default function BackgroundAutopilotPanel({
             {/* Not armed — consent + activate */}
             {!isArmed && (
               <div className="space-y-2.5">
-                <p className="font-mono text-[10px] text-ink-3 leading-relaxed">
-                  Mantém o autopilot operando <b className="text-ink-2">mesmo com o navegador fechado</b>,
-                  varrendo o mercado a cada ~5 min num servidor.
-                </p>
+                <p
+                  className="font-mono text-[10px] text-ink-3 leading-relaxed [&_b]:text-ink-2"
+                  dangerouslySetInnerHTML={{ __html: t("bgAutopilot.keepsRunning") }}
+                />
 
                 {/* Security consent */}
                 <div className="rounded-md border border-gold/30 bg-gold/[0.05] p-2 space-y-1.5">
                   <div className="font-mono text-[9px] text-gold tracking-widest uppercase inline-flex items-center gap-1">
-                    <Shield className="w-3 h-3" /> O que muda na segurança
+                    <Shield className="w-3 h-3" /> {t("bgAutopilot.securityHeading")}
                   </div>
-                  <ul className="font-mono text-[9px] text-ink-3 leading-relaxed space-y-1 list-disc pl-3.5">
-                    <li>Suas chaves da CEX serão <b className="text-ink-2">guardadas criptografadas</b> (AES-256) no servidor — sem isso o robô não opera sozinho.</li>
-                    <li>Só ordens <b className="text-ink-2">spot de compra</b> são disparadas automaticamente. Futuros/margem ficam só em análise.</li>
-                    <li>Sessão expira sozinha em <b className="text-ink-2">24h</b>. Limites diários e stop de perda continuam valendo.</li>
-                    <li>Você pode desativar a qualquer momento aqui.</li>
+                  <ul className="font-mono text-[9px] text-ink-3 leading-relaxed space-y-1 list-disc pl-3.5 [&_b]:text-ink-2">
+                    <li dangerouslySetInnerHTML={{ __html: t("bgAutopilot.securityBullet1") }} />
+                    <li dangerouslySetInnerHTML={{ __html: t("bgAutopilot.securityBullet2") }} />
+                    <li dangerouslySetInnerHTML={{ __html: t("bgAutopilot.securityBullet3") }} />
+                    <li>{t("bgAutopilot.securityBullet4")}</li>
                   </ul>
                 </div>
 
@@ -279,7 +280,7 @@ export default function BackgroundAutopilotPanel({
                     className="w-full py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-500 font-display font-bold text-xs inline-flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
                   >
                     {authPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5" />}
-                    Entrar com a carteira para ativar
+                    {t("bgAutopilot.signInToActivate")}
                   </button>
                 ) : (
                   <button
@@ -289,14 +290,14 @@ export default function BackgroundAutopilotPanel({
                     className="w-full py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-500 font-display font-bold text-xs inline-flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
                   >
                     {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
-                    Ativar em segundo plano (24h)
+                    {t("bgAutopilot.activate24h")}
                   </button>
                 )}
 
                 {marketType !== "spot" && (
                   <p className="font-mono text-[9px] text-gold leading-relaxed inline-flex items-start gap-1">
                     <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                    Você escolheu {marketType}. Em segundo plano só spot é executado — {marketType} roda apenas em análise.
+                    {t("bgAutopilot.marketTypeNote", { marketType })}
                   </p>
                 )}
               </div>

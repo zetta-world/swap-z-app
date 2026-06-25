@@ -68,9 +68,9 @@ function AutopilotPanelInner() {
           <Bot className="w-3.5 h-3.5 text-gold" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-display font-bold text-sm text-ink">ZION Autopilot</div>
+          <div className="font-display font-bold text-sm text-ink">{t("autopilot.title")}</div>
           <div className="font-mono text-[10px] text-ink-3 tracking-wider uppercase">
-            CEX auto-execution · advisory cards fire under your rails
+            {t("autopilot.subtitle")}
           </div>
         </div>
         <button
@@ -83,7 +83,7 @@ function AutopilotPanelInner() {
               : "border-white/15 bg-white/[0.03] text-ink-3 hover:bg-white/[0.06]",
           )}
         >
-          {a.enabled ? "ON" : "OFF"}
+          {a.enabled ? t("autopilot.on") : t("autopilot.off")}
         </button>
       </div>
 
@@ -97,8 +97,10 @@ function AutopilotPanelInner() {
         <Lock className={cn("w-3.5 h-3.5 flex-shrink-0 mt-0.5", vaultReady ? "text-cyan" : "text-gold")} />
         <div>
           {vaultReady
-            ? <>Vault unlocked. {connectedIds.length} exchange{connectedIds.length === 1 ? "" : "s"} ready to receive orders.</>
-            : <>Unlock the CEX vault (Portfolio or CEX page) before turning autopilot on — otherwise every fire will be skipped.</>}
+            ? (connectedIds.length === 1
+                ? t("autopilot.vaultUnlocked", { n: connectedIds.length })
+                : t("autopilot.vaultUnlockedPlural", { n: connectedIds.length }))
+            : t("autopilot.vaultLocked")}
         </div>
       </div>
 
@@ -107,7 +109,7 @@ function AutopilotPanelInner() {
         <div className="rounded-md border border-red/30 bg-red/[0.05] px-3 py-2.5 flex items-start gap-2 text-[11px] text-red">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <div>
-            Daily loss stop hit. Autopilot is frozen until UTC midnight rolls.
+            {t("autopilot.frozenMsg")}
           </div>
         </div>
       )}
@@ -115,28 +117,28 @@ function AutopilotPanelInner() {
       {/* Rails — numeric */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <NumRail
-          label="Max / trade"
+          label={t("autopilot.railMaxPerTrade")}
           unit="$"
           value={a.maxTradeUsd}
           onChange={a.setMaxTradeUsd}
           step={25}
         />
         <NumRail
-          label="Trades / day"
+          label={t("autopilot.railTradesPerDay")}
           unit=""
           value={a.maxTradesPerDay}
           onChange={a.setMaxTradesPerDay}
           step={1}
         />
         <NumRail
-          label="Daily loss stop"
+          label={t("autopilot.railDailyLossStop")}
           unit="$"
           value={a.dailyLossStopUsd}
           onChange={a.setDailyLossStopUsd}
           step={25}
         />
         <NumRail
-          label="Cancel window"
+          label={t("autopilot.railCancelWindow")}
           unit="s"
           value={Math.round(a.countdownMs / 1000)}
           onChange={(n) => a.setCountdownMs(n * 1000)}
@@ -148,7 +150,7 @@ function AutopilotPanelInner() {
 
       {/* Exchanges */}
       <div>
-        <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">Allowed exchanges</div>
+        <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">{t("autopilot.allowedExchanges")}</div>
         <div className="flex flex-wrap gap-1.5">
           {SUPPORTED_CEX_IDS.map((id) => {
             const active = a.allowedExchanges.includes(id);
@@ -174,13 +176,13 @@ function AutopilotPanelInner() {
           })}
         </div>
         <div className="font-mono text-[9px] text-ink-4 mt-1.5">
-          Green dot = currently connected. Autopilot will only fire to exchanges in this list AND with an active connection.
+          {t("autopilot.exchangesHelp")}
         </div>
       </div>
 
       {/* Symbols */}
       <div>
-        <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">Allowed base symbols</div>
+        <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">{t("autopilot.allowedSymbols")}</div>
         <div className="flex flex-wrap gap-1.5">
           {symbolPool.map((sym) => {
             const active = a.allowedSymbols.includes(sym);
@@ -213,9 +215,9 @@ function AutopilotPanelInner() {
         <div className="flex items-center gap-2">
           <Banknote className="w-3.5 h-3.5 text-violet flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="font-display font-bold text-xs text-violet">Auto-rebalance (CEX → wallet)</div>
+            <div className="font-display font-bold text-xs text-violet">{t("autopilot.rebalanceTitle")}</div>
             <div className="font-mono text-[9px] text-ink-3 tracking-wider uppercase">
-              Auto-withdraw to your connected wallet when ZION says a venue is low
+              {t("autopilot.rebalanceDesc")}
             </div>
           </div>
           <button
@@ -228,12 +230,12 @@ function AutopilotPanelInner() {
                 : "border-white/15 bg-white/[0.03] text-ink-3 hover:bg-white/[0.06]",
             )}
           >
-            {a.autoRebalanceEnabled ? "ON" : "OFF"}
+            {a.autoRebalanceEnabled ? t("autopilot.on") : t("autopilot.off")}
           </button>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <NumRail
-            label="Max / rebalance"
+            label={t("autopilot.railMaxPerRebalance")}
             unit="$"
             value={a.maxRebalanceUsd}
             onChange={a.setMaxRebalanceUsd}
@@ -242,7 +244,7 @@ function AutopilotPanelInner() {
             max={5_000}
           />
           <NumRail
-            label="Rebalances / day"
+            label={t("autopilot.railRebalancesPerDay")}
             unit=""
             value={a.maxRebalancesPerDay}
             onChange={a.setMaxRebalancesPerDay}
@@ -252,18 +254,16 @@ function AutopilotPanelInner() {
           />
         </div>
         <div className="font-mono text-[10px] text-ink-3 leading-relaxed">
-          Destination is your connected wallet (Phantom for SOL, MetaMask for EVM). The withdrawal address
-          must be pre-whitelisted on the source exchange — if it isn&apos;t, the call surfaces the exchange&apos;s
-          rejection. After the funds land, you re-deposit manually to the destination CEX.
+          {t("autopilot.rebalanceDestination")}
         </div>
       </div>
 
       {/* Counters */}
       <div className="grid grid-cols-4 gap-2 text-center pt-2 border-t border-white/5">
-        <Counter label="Trades today" value={`${a.tradesToday} / ${a.maxTradesPerDay}`} tone="cyan" />
-        <Counter label="Rebalances today" value={`${a.rebalancesToday} / ${a.maxRebalancesPerDay}`} tone="violet" />
-        <Counter label="Day P&L" value={`${a.pnlToday >= 0 ? "+" : ""}$${a.pnlToday.toFixed(2)}`} tone={a.pnlToday < 0 ? "red" : "green"} />
-        <Counter label="History" value={String(a.history.length)} tone="violet" />
+        <Counter label={t("autopilot.counterTradesToday")} value={`${a.tradesToday} / ${a.maxTradesPerDay}`} tone="cyan" />
+        <Counter label={t("autopilot.counterRebalancesToday")} value={`${a.rebalancesToday} / ${a.maxRebalancesPerDay}`} tone="violet" />
+        <Counter label={t("autopilot.counterDayPnl")} value={`${a.pnlToday >= 0 ? "+" : ""}$${a.pnlToday.toFixed(2)}`} tone={a.pnlToday < 0 ? "red" : "green"} />
+        <Counter label={t("autopilot.counterHistory")} value={String(a.history.length)} tone="violet" />
       </div>
 
       {/* History viewer */}
@@ -280,17 +280,17 @@ function AutopilotPanelInner() {
         >
           <div className="flex items-center gap-2 font-display font-bold text-xs text-gold">
             <AlertTriangle className="w-3.5 h-3.5" />
-            Confirm autopilot ON
+            {t("autopilot.confirmTitle")}
           </div>
           <ul className="font-mono text-[11px] text-ink-2 leading-relaxed list-disc list-inside space-y-1">
-            <li>Real CEX orders will fire from ZION cards that pass your rails.</li>
-            <li>Per trade max: ${a.maxTradeUsd}. Daily loss stop: ${a.dailyLossStopUsd}. Max trades/day: {a.maxTradesPerDay}.</li>
-            <li>You can cancel any pending fire during the {Math.round(a.countdownMs / 1000)}s countdown.</li>
-            <li>Lock the vault or flip this OFF to pause immediately.</li>
+            <li>{t("autopilot.confirmReal")}</li>
+            <li>{t("autopilot.confirmLimits", { maxTrade: a.maxTradeUsd, dailyLoss: a.dailyLossStopUsd, maxTrades: a.maxTradesPerDay })}</li>
+            <li>{t("autopilot.confirmCountdown", { n: Math.round(a.countdownMs / 1000) })}</li>
+            <li>{t("autopilot.confirmPause")}</li>
           </ul>
           {(a.allowedExchanges.length === 0 || a.allowedSymbols.length === 0) && (
             <div className="font-mono text-[11px] text-red">
-              Pick at least one exchange AND one symbol before enabling.
+              {t("autopilot.confirmPickOne")}
             </div>
           )}
           <div className="flex gap-2 pt-1">
@@ -299,7 +299,7 @@ function AutopilotPanelInner() {
               onClick={() => setConfirmOn(false)}
               className="px-3 py-1.5 rounded font-mono text-[10px] tracking-widest uppercase border border-white/10 text-ink-3 hover:bg-white/5"
             >
-              Cancel
+              {t("autopilot.confirmCancel")}
             </button>
             <button
               type="button"
@@ -307,7 +307,7 @@ function AutopilotPanelInner() {
               disabled={a.allowedExchanges.length === 0 || a.allowedSymbols.length === 0}
               className="px-3 py-1.5 rounded font-mono text-[10px] tracking-widest uppercase border border-gold/40 bg-gold/15 text-gold hover:bg-gold/25 disabled:opacity-40"
             >
-              Enable autopilot
+              {t("autopilot.confirmEnable")}
             </button>
           </div>
         </motion.div>
@@ -362,18 +362,19 @@ function Counter({ label, value, tone }: { label: string; value: string; tone: "
 }
 
 function AutopilotHistory({ history, onClear }: { history: AutopilotEntry[]; onClear: () => void }) {
+  const t = useT();
   return (
     <div className="rounded-md border border-white/5 bg-bg-1/40">
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/5">
         <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase inline-flex items-center gap-1.5">
-          <History className="w-3 h-3" /> Recent fires
+          <History className="w-3 h-3" /> {t("autopilot.recentFires")}
         </span>
         <button
           type="button"
           onClick={onClear}
           className="font-mono text-[9px] text-ink-3 hover:text-ink-2 tracking-widest uppercase inline-flex items-center gap-1"
         >
-          <X className="w-2.5 h-2.5" /> Clear
+          <X className="w-2.5 h-2.5" /> {t("autopilot.clear")}
         </button>
       </div>
       <div className="max-h-[200px] overflow-y-auto divide-y divide-white/[0.04]">

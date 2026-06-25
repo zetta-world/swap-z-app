@@ -267,7 +267,7 @@ function ClusterCard({
               <span
                 className="font-mono text-[9px] px-1.5 py-0.5 rounded border tracking-widest uppercase inline-flex items-center gap-1 tabular-nums"
                 style={{ background: `${scoreColor}10`, borderColor: `${scoreColor}33`, color: scoreColor }}
-                title={`Cluster-level quick conviction (avg across ${cluster.members.length} members). Click any token for the full score.`}
+                title={t("explorer.convTooltip", { n: cluster.members.length })}
               >
                 <span className="w-1 h-1 rounded-full" style={{ background: scoreColor }} />
                 {clusterScore} CONV
@@ -296,7 +296,7 @@ function ClusterCard({
           <div className="rounded-lg border border-violet/25 bg-violet/[0.05] p-2.5 flex items-start gap-2">
             <Globe className="w-3 h-3 text-violet mt-0.5 flex-shrink-0" />
             <div className="min-w-0">
-              <div className="font-mono text-[9px] text-violet tracking-widest uppercase">Cross-chain spread</div>
+              <div className="font-mono text-[9px] text-violet tracking-widest uppercase">{t("explorer.crossChainSpread")}</div>
               <p className="font-mono text-[10px] text-ink-2 leading-relaxed truncate">
                 <b>{cluster.crossChainSpread.symbol}</b> · {cluster.crossChainSpread.bestChain} vs {cluster.crossChainSpread.worstChain}
                 {" · "}
@@ -313,7 +313,7 @@ function ClusterCard({
           ))}
           {cluster.members.length > topMembers.length && (
             <span className="font-mono text-[10px] text-ink-3 px-1.5">
-              +{cluster.members.length - topMembers.length} more
+              {t("explorer.moreMembers", { n: cluster.members.length - topMembers.length })}
             </span>
           )}
         </div>
@@ -335,11 +335,11 @@ function ClusterCard({
             className="space-y-3 pt-2 border-t border-white/5 overflow-hidden"
           >
             <div>
-              <div className="font-mono text-[9px] text-cyan tracking-widest uppercase mb-1">ZION thesis</div>
+              <div className="font-mono text-[9px] text-cyan tracking-widest uppercase mb-1">{t("explorer.zionThesisLabel")}</div>
               <p className="font-sans text-xs text-ink-2 leading-relaxed">{cluster.thesis}</p>
             </div>
             <div>
-              <div className="font-mono text-[9px] text-gold tracking-widest uppercase mb-1">Where the edge is</div>
+              <div className="font-mono text-[9px] text-gold tracking-widest uppercase mb-1">{t("explorer.edgeTitle")}</div>
               <p className="font-sans text-xs text-ink-2 leading-relaxed">{cluster.edge}</p>
             </div>
 

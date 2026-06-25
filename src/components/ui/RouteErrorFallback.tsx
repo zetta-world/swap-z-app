@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { AlertTriangle, RefreshCw, Home, ArrowRight } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 /**
  * Canonical fallback for `error.tsx` route boundaries. Renders a glass
@@ -27,13 +28,14 @@ interface Props {
 }
 
 export default function RouteErrorFallback({ error, reset, title }: Props) {
+  const t = useT();
   useEffect(() => {
     if (typeof window !== "undefined") {
       console.error("[route-error]", error);
     }
   }, [error]);
 
-  const detail = error?.message?.slice(0, 280) || "Unknown error";
+  const detail = error?.message?.slice(0, 280) || t("routeError.unknownError");
 
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden">
@@ -48,22 +50,20 @@ export default function RouteErrorFallback({ error, reset, title }: Props) {
             </div>
             <div className="min-w-0 flex-1">
               <h1 className="font-display font-extrabold text-xl sm:text-2xl text-ink">
-                {title ?? "Something cracked."}
+                {title ?? t("routeError.title")}
               </h1>
               <p className="font-sans text-sm text-ink-2 leading-relaxed mt-1.5">
-                A page on Z-SWAP threw an unexpected error. The rest of the app
-                is fine — try this route again, or jump back to the swap and
-                continue.
+                {t("routeError.body")}
               </p>
             </div>
           </div>
 
           <div className="rounded-lg border border-white/5 bg-bg-2/60 p-3">
-            <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-1">Detail</div>
+            <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mb-1">{t("routeError.detail")}</div>
             <p className="font-mono text-[11px] text-ink-2 break-words leading-relaxed">{detail}</p>
             {error.digest && (
               <p className="font-mono text-[9px] text-ink-4 mt-2">
-                digest <span className="text-ink-3">{error.digest}</span>
+                {t("routeError.digest")} <span className="text-ink-3">{error.digest}</span>
               </p>
             )}
           </div>
@@ -75,14 +75,14 @@ export default function RouteErrorFallback({ error, reset, title }: Props) {
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-cyan/40 bg-cyan/15 text-cyan font-mono text-[11px] tracking-widest uppercase hover:bg-cyan/25"
             >
               <RefreshCw className="w-3 h-3" />
-              Try again
+              {t("routeError.tryAgain")}
             </button>
             <Link
               href="/"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-white/10 bg-white/[0.03] text-ink font-mono text-[11px] tracking-widest uppercase hover:bg-white/[0.06]"
             >
               <Home className="w-3 h-3" />
-              Back to swap
+              {t("routeError.backToSwap")}
             </Link>
             <a
               href="https://status.zettaword.global"
@@ -90,7 +90,7 @@ export default function RouteErrorFallback({ error, reset, title }: Props) {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-white/10 bg-white/[0.03] text-ink-2 font-mono text-[11px] tracking-widest uppercase hover:bg-white/[0.06]"
             >
-              Status
+              {t("routeError.status")}
               <ArrowRight className="w-3 h-3" />
             </a>
           </div>
