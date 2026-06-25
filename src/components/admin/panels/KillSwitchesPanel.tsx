@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAdminConfirm } from "../useAdminConfirm";
 
 type SwitchKey = "disable_swap" | "disable_cex" | "maintenance_mode";
 
@@ -21,6 +22,7 @@ export default function KillSwitchesPanel() {
   const [mutating, setMutating] = useState<SwitchKey | null>(null);
   const [err,      setErr]      = useState<string | null>(null);
   const [note,     setNote]     = useState<string | null>(null);
+  const { confirm, modal: confirmModal } = useAdminConfirm();
 
   async function load() {
     try {
@@ -40,6 +42,15 @@ export default function KillSwitchesPanel() {
 
   async function toggle(key: SwitchKey) {
     const next = !switches[key];
+    // Confirm only when ENABLING a kill-switch (the destructive direction).
+    if (next) {
+      const label = SWITCHES.find((s) => s.key === key)?.desc ?? key;
+      const ok = await confirm(
+        `Enable kill-switch: ${label}. This affects all users platform-wide and is recorded in the audit log.`,
+        true,
+      );
+      if (!ok) return;
+    }
     setMutating(key);
     setErr(null);
     try {
@@ -99,6 +110,7 @@ export default function KillSwitchesPanel() {
           </div>
         );
       })}
+      {confirmModal}
     </TerminalPanel>
   );
 }

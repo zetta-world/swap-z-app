@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAdminConfirm } from "../useAdminConfirm";
 
 type TierResult = {
   wallet:     string;
@@ -25,6 +26,7 @@ export default function TierControlPanel() {
   const [loading,  setLoading]  = useState(false);
   const [mutating, setMutating] = useState(false);
   const [msg,      setMsg]      = useState<string | null>(null);
+  const { confirm, modal: confirmModal } = useAdminConfirm();
 
   async function lookup() {
     if (!query.trim()) return;
@@ -40,6 +42,12 @@ export default function TierControlPanel() {
 
   async function mutate(action: "grant" | "revoke", tier: Tier) {
     if (!result) return;
+    const verb = action === "grant" ? "GRANT" : "REVOKE";
+    const ok = await confirm(
+      `${verb} tier "${tier.toUpperCase()}" for ${result.wallet}? This writes to tier_cache and is recorded in the audit log.`,
+      action === "revoke",
+    );
+    if (!ok) return;
     setMutating(true); setMsg(null); setErr(null);
     try {
       const res = await fetch("/admin/api/tier", {
@@ -151,6 +159,7 @@ export default function TierControlPanel() {
           </div>
         </>
       )}
+      {confirmModal}
     </TerminalPanel>
   );
 }
