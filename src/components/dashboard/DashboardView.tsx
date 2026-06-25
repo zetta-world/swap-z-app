@@ -150,11 +150,15 @@ function wealthChangeOverWindow(
   const pct = (abs / base.totalUsd) * 100;
 
   // Subtract net capital flows (deposits − withdrawals) within the window.
-  // Only flows with a known valueUsd contribute — entries without it are ignored.
+  // Both confirmed AND pending flows count: the measured wealth reflects a
+  // transfer the moment it happens, regardless of our local status label
+  // (deposits land as "confirmed", withdrawals as "pending"). Only flows with
+  // a known valueUsd contribute; failed/canceled ones are skipped.
   let netFlows = 0;
   let hasFlowData = false;
   for (const e of entries) {
-    if (e.ts < cutoff || e.status !== "confirmed") continue;
+    if (e.ts < cutoff) continue;
+    if (e.status === "failed" || e.status === "canceled") continue;
     if (e.type === "deposit" && (e.valueUsd ?? 0) > 0) {
       netFlows += e.valueUsd!;
       hasFlowData = true;
