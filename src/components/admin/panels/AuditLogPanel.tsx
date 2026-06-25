@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type LogRow = {
   id:           string;
@@ -16,25 +17,34 @@ export default function AuditLogPanel() {
   const [rows,    setRows]    = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err,     setErr]     = useState<string | null>(null);
+  const realtime = useAdminRealtime();
 
-  useEffect(() => {
-    let mounted = true;
-    async function load() {
-      try {
-        const res = await fetch("/admin/api/audit?limit=30");
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? res.status);
-        if (mounted) setRows(json.rows ?? []);
-      } catch (e) {
-        if (mounted) setErr(String(e));
-      } finally {
-        if (mounted) setLoading(false);
-      }
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/admin/api/audit?limit=30");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.status);
+      setRows(json.rows ?? []);
+      setErr(null);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setLoading(false);
     }
-    load();
-    const t = setInterval(load, 30_000);
-    return () => { mounted = false; clearInterval(t); };
   }, []);
+
+  // Initial load + slow heartbeat (realtime covers real changes)
+  useEffect(() => {
+    load();
+    const t = setInterval(load, realtime?.status === "live" ? 120_000 : 30_000);
+    return () => clearInterval(t);
+  }, [load, realtime?.status]);
+
+  // Realtime: refetch on any audit-scoped ping
+  useEffect(() => {
+    if (!realtime) return;
+    return realtime.subscribe((scope) => { if (scope === "audit") load(); });
+  }, [realtime, load]);
 
   function actionColor(action: string): string {
     if (action.startsWith("tier.grant"))   return "var(--adm-green)";

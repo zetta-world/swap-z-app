@@ -2,6 +2,10 @@
 
 import { useCallback, useState } from "react";
 import { useAutoRefresh } from "./useAutoRefresh";
+import type { RefreshScope } from "./AdminRealtimeProvider";
+
+// Stable array identity — tier changes shift the distribution, so listen to both.
+const STATS_SCOPES: RefreshScope[] = ["stats", "tier"];
 
 type StatsData = {
   wallets: {
@@ -46,6 +50,7 @@ export function useAdminStats(): State {
   const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({
     intervalMs: 60_000,
     onRefresh: load,
+    scopes: STATS_SCOPES,
   });
 
   if (!data && !error) return { status: "loading" };

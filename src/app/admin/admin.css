@@ -441,6 +441,28 @@
   border-radius: 2px;
 }
 
+.adm-header-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: var(--adm-ink-3);
+  border: 1px solid var(--adm-border);
+  padding: 3px 7px;
+  border-radius: 2px;
+  user-select: none;
+}
+
+.adm-dot-pulse {
+  animation: adm-dot-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes adm-dot-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);   }
+  50%       { opacity: 0.4; transform: scale(0.8); }
+}
+
 .adm-kbd-hint {
   font-size: 9px;
   color: var(--adm-ink-3);

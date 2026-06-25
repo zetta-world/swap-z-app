@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, logAdminAction } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 import type { Tier } from "@/lib/tier/types";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +71,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   await logAdminAction(actor, `tier.${action}`, target, { tier });
+  broadcastAdminRefresh("tier");
+  broadcastAdminRefresh("audit");
 
   return NextResponse.json({ ok: true, action, target, tier });
 }

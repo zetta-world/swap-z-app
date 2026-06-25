@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, logAdminAction } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   );
 
   await logAdminAction(actor, `killswitch.${key}`, undefined, { enabled });
+  broadcastAdminRefresh("killswitch");
+  broadcastAdminRefresh("audit");
 
   return NextResponse.json({ ok: true, key, enabled });
 }

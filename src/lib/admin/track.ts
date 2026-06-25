@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 
 type EventOpts = {
   wallet?: string | null;
@@ -22,4 +23,9 @@ export function recordEvent(type: string, opts: EventOpts = {}): void {
   });
   // Supabase builder returns a PromiseLike; cast to Promise for .catch
   Promise.resolve(promise).catch(() => undefined);
+
+  // Nudge the admin live feed — but NOT for page_view, which can fire many
+  // times per second under traffic and would flood the channel. Meaningful
+  // events (swap_intent, cex_order) ping; page views show up on the next poll.
+  if (type !== "page_view") broadcastAdminRefresh("events");
 }

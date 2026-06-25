@@ -2,14 +2,17 @@
 
 import { type ReactNode, useEffect } from "react";
 import { useAdminLayout } from "@/lib/store/admin-layout";
+import { AdminRealtimeProvider, type AdminRealtimeConfig } from "./AdminRealtimeProvider";
 import AdminHeader from "./AdminHeader";
 import AdminCommandBar from "./AdminCommandBar";
 
 export default function AdminShell({
   wallet,
+  realtime,
   children,
 }: {
-  wallet: string;
+  wallet:   string;
+  realtime: AdminRealtimeConfig;
   children: ReactNode;
 }) {
   const { setCmdOpen } = useAdminLayout();
@@ -30,25 +33,27 @@ export default function AdminShell({
   }, [setCmdOpen]);
 
   return (
-    <div className="admin-shell" style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-      {/* Odin ambient backdrop with shooting star */}
-      <div className="admin-odin-bg" aria-hidden>
-        <div className="adm-comet" aria-hidden />
+    <AdminRealtimeProvider config={realtime}>
+      <div className="admin-shell" style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
+        {/* Odin ambient backdrop with shooting star */}
+        <div className="admin-odin-bg" aria-hidden>
+          <div className="adm-comet" aria-hidden />
+        </div>
+
+        {/* Content above backdrop */}
+        <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1 }}>
+          <AdminHeader wallet={wallet} />
+          <main style={{ flex: 1, overflowY: "auto" }}>
+            {children}
+          </main>
+        </div>
+
+        {/* Rune watermark */}
+        <div className="adm-rune-watermark" aria-hidden>ᚨ · ᚦ · ᚠ · ᚢ</div>
+
+        {/* Command bar portal */}
+        <AdminCommandBar />
       </div>
-
-      {/* Content above backdrop */}
-      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1 }}>
-        <AdminHeader wallet={wallet} />
-        <main style={{ flex: 1, overflowY: "auto" }}>
-          {children}
-        </main>
-      </div>
-
-      {/* Rune watermark */}
-      <div className="adm-rune-watermark" aria-hidden>ᚨ · ᚦ · ᚠ · ᚢ</div>
-
-      {/* Command bar portal */}
-      <AdminCommandBar />
-    </div>
+    </AdminRealtimeProvider>
   );
 }

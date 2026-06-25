@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type AnalyticsData = {
   counts: {
@@ -34,27 +35,34 @@ export default function PlatformEventsPanel() {
   const [error,   setError]   = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab,     setTab]     = useState<"overview" | "pages" | "feed">("overview");
+  const realtime = useAdminRealtime();
 
-  useEffect(() => {
-    let mounted = true;
-    async function load() {
-      try {
-        const res  = await fetch("/admin/api/analytics");
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? res.status);
-        if (mounted) setData(json);
-      } catch (e) {
-        if (mounted) setError(String(e));
-      } finally {
-        if (mounted) setLoading(false);
-      }
+  const load = useCallback(async () => {
+    try {
+      const res  = await fetch("/admin/api/analytics");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.status);
+      setData(json);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
     }
-    load();
-    const t = setInterval(load, 60_000);
-    return () => { mounted = false; clearInterval(t); };
   }, []);
 
-  const ts = data ? new Date(data.fetchedAt).toLocaleTimeString() : undefined;
+  // Initial load + heartbeat (slower when realtime is live)
+  useEffect(() => {
+    load();
+    const t = setInterval(load, realtime?.status === "live" ? 180_000 : 60_000);
+    return () => clearInterval(t);
+  }, [load, realtime?.status]);
+
+  // Realtime: refetch on any events-scoped ping (swap_intent / cex_order)
+  useEffect(() => {
+    if (!realtime) return;
+    return realtime.subscribe((scope) => { if (scope === "events") load(); });
+  }, [realtime, load]);
 
   const EVENT_TYPES = ["page_view", "swap_intent", "cex_order"];
 
