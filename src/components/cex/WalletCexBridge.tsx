@@ -717,7 +717,7 @@ function WalletSendToCex({
       setStage("sent");
       toast.success("Enviado — aguarde o crédito na corretora.");
       pushHistory({
-        type: "dex_swap",
+        type: "deposit",
         status: "confirmed",
         fromSymbol: currency || token.symbol,
         fromChain: token.chain,
@@ -1010,7 +1010,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
       setStage("done");
       toast.success(`Saque enviado: ${body.receipt.id || "(sem id)"}`);
       pushHistory({
-        type: "rebalance",
+        type: "withdraw",
         status: "pending",
         fromSymbol: currency.toUpperCase(),
         fromChain: exchangeId,
