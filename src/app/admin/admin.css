@@ -591,3 +591,100 @@
   animation: adm-shimmer 1.6s linear infinite;
   border-radius: 2px;
 }
+
+/* ── Odin shooting star comet ────────────────────────────────────────────── */
+.admin-odin-bg .adm-comet {
+  position: absolute;
+  top: 15%;
+  left: -5%;
+  width: 180px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255 255 255 / 0.7), transparent);
+  transform: rotate(-30deg);
+  animation: adm-comet 14s ease-in-out infinite;
+  animation-delay: 4s;
+  opacity: 0;
+}
+
+@keyframes adm-comet {
+  0%   { left: -10%;  top: 8%;  opacity: 0; }
+  5%   { opacity: 0.9; }
+  20%  { left: 110%;  top: 22%; opacity: 0; }
+  100% { left: 110%;  top: 22%; opacity: 0; }
+}
+
+/* ── Valknut glow ring in header ─────────────────────────────────────────── */
+.adm-valknut {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.adm-valknut::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(245 166 35 / 0.25);
+  animation: adm-valknut-spin 12s linear infinite;
+}
+
+.adm-valknut::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 1px solid rgba(159 95 255 / 0.15);
+  animation: adm-valknut-spin 18s linear infinite reverse;
+}
+
+@keyframes adm-valknut-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.adm-valknut-rune {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+  color: var(--adm-gold);
+  animation: adm-rune-pulse 4s ease-in-out infinite;
+}
+
+/* ── Progress bar (for tier dist / etc) ──────────────────────────────────── */
+.adm-bar-track {
+  height: 3px;
+  background: var(--adm-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.adm-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 600ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Responsive: collapse to single column on narrow screens ─────────────── */
+@media (max-width: 860px) {
+  .adm-header {
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .adm-header-sub {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .adm-panel-subtitle {
+    display: none;
+  }
+  .adm-panel-body {
+    padding: 10px;
+  }
+}

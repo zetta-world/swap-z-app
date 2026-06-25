@@ -21,6 +21,9 @@ export default function TierDistPanel() {
       subtitle="distribution across all plans"
       icon="⊕"
       source="supabase/tier_cache"
+      secondsAgo={state.status === "ok" ? state.secondsAgo : undefined}
+      refreshing={state.status === "ok" ? state.refreshing : undefined}
+      onRefresh={state.status === "ok" || state.status === "error" ? state.refresh : undefined}
     >
       {state.status === "loading" && (
         <div className="adm-shimmer" style={{ height: 80 }} />

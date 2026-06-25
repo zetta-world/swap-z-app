@@ -31,8 +31,10 @@ export default function AdminShell({
 
   return (
     <div className="admin-shell" style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-      {/* Odin ambient backdrop */}
-      <div className="admin-odin-bg" aria-hidden />
+      {/* Odin ambient backdrop with shooting star */}
+      <div className="admin-odin-bg" aria-hidden>
+        <div className="adm-comet" aria-hidden />
+      </div>
 
       {/* Content above backdrop */}
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1 }}>

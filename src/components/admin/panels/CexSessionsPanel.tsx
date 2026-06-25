@@ -13,6 +13,9 @@ export default function CexSessionsPanel() {
       subtitle="active autopilot per exchange"
       icon="⊞"
       source="supabase/autopilot_sessions"
+      secondsAgo={state.status === "ok" ? state.secondsAgo : undefined}
+      refreshing={state.status === "ok" ? state.refreshing : undefined}
+      onRefresh={state.status === "ok" || state.status === "error" ? state.refresh : undefined}
     >
       {state.status === "loading" && (
         <div className="adm-shimmer" style={{ height: 80 }} />

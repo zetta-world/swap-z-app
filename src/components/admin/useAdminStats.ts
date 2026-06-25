@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useAutoRefresh } from "./useAutoRefresh";
 
 type StatsData = {
   wallets: {
@@ -23,30 +24,31 @@ type StatsData = {
 
 type State =
   | { status: "loading" }
-  | { status: "ok"; data: StatsData }
-  | { status: "error"; message: string };
+  | { status: "ok"; data: StatsData; secondsAgo: number; refreshing: boolean; refresh: () => void }
+  | { status: "error"; message: string; refresh: () => void };
 
-export function useAdminStats(refreshMs = 60_000): State {
-  const [state, setState] = useState<State>({ status: "loading" });
+export function useAdminStats(): State {
+  const [data,  setData]  = useState<StatsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function load() {
-      try {
-        const res = await fetch("/admin/api/stats");
-        if (!res.ok) throw new Error(`${res.status}`);
-        const data = await res.json();
-        if (mounted) setState({ status: "ok", data });
-      } catch (e) {
-        if (mounted) setState({ status: "error", message: String(e) });
-      }
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/admin/api/stats");
+      if (!res.ok) throw new Error(`${res.status}`);
+      const json = await res.json();
+      setData(json);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
     }
+  }, []);
 
-    load();
-    const timer = setInterval(load, refreshMs);
-    return () => { mounted = false; clearInterval(timer); };
-  }, [refreshMs]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({
+    intervalMs: 60_000,
+    onRefresh: load,
+  });
 
-  return state;
+  if (!data && !error) return { status: "loading" };
+  if (error)           return { status: "error", message: error, refresh: forceRefresh };
+  return { status: "ok", data: data!, secondsAgo, refreshing, refresh: forceRefresh };
 }

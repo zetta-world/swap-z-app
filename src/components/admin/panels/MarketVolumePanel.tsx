@@ -43,8 +43,6 @@ export default function MarketVolumePanel() {
     return `$${n.toLocaleString()}`;
   }
 
-  const ts = data ? new Date(data.fetchedAt).toLocaleTimeString() : undefined;
-
   return (
     <TerminalPanel
       id="market-volume"
@@ -52,7 +50,6 @@ export default function MarketVolumePanel() {
       subtitle="24h DEX volume — market data, not platform"
       icon="⋈"
       source="DefiLlama"
-      fresh={ts}
     >
       {!data && !error && (
         <div className="adm-shimmer" style={{ height: 80 }} />

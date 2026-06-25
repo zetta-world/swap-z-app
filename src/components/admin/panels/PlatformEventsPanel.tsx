@@ -65,7 +65,6 @@ export default function PlatformEventsPanel() {
       subtitle="page views · swap intents · orders"
       icon="◉"
       source="supabase/platform_events"
-      fresh={ts}
     >
       {/* Tab bar */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>

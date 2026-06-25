@@ -12,7 +12,9 @@ export default function AdminHeader({ wallet }: { wallet: string }) {
 
   return (
     <header className="adm-header">
-      <span className="adm-header-rune" aria-hidden>ᚨ</span>
+      <div className="adm-valknut" aria-hidden>
+        <span className="adm-valknut-rune">ᚨ</span>
+      </div>
       <span className="adm-header-title">Odin Control</span>
       <span className="adm-header-sep" aria-hidden />
       <span className="adm-header-sub">Z-SWAP Admin</span>

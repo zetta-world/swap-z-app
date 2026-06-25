@@ -6,10 +6,6 @@ import { useAdminStats } from "../useAdminStats";
 export default function WalletsKpiPanel() {
   const state = useAdminStats();
 
-  const ts = state.status === "ok"
-    ? new Date(state.data.fetchedAt).toLocaleTimeString()
-    : undefined;
-
   return (
     <TerminalPanel
       id="wallets-kpi"
@@ -17,7 +13,9 @@ export default function WalletsKpiPanel() {
       subtitle="signups · active · chain split"
       icon="◈"
       source="supabase/users"
-      fresh={ts}
+      secondsAgo={state.status === "ok" ? state.secondsAgo : undefined}
+      refreshing={state.status === "ok" ? state.refreshing : undefined}
+      onRefresh={state.status === "ok" || state.status === "error" ? state.refresh : undefined}
     >
       {state.status === "loading" && (
         <>
