@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useWalletAuth } from "@/lib/auth/client";
 import type { CexId, CexCredentials } from "@/lib/cex/types";
 import { useT } from "@/lib/i18n";
+import { useConfirm } from "@/components/ui/ConfirmModal";
 import { cn } from "@/lib/cn";
 
 interface SessionStatus {
@@ -54,6 +55,7 @@ export default function BackgroundAutopilotPanel({
   maxTradeUsd, dailyLossStopUsd, maxTradesPerDay, allowedSymbols, lang,
 }: Props) {
   const t = useT();
+  const { confirm, modal: confirmModal } = useConfirm();
   const { signIn, pending: authPending } = useWalletAuth();
 
   const [backend,  setBackend]  = useState<Backend>("loading");
@@ -111,7 +113,7 @@ export default function BackgroundAutopilotPanel({
   }, [exchangeId, riskMode, marketType, maxTradeUsd, dailyLossStopUsd, maxTradesPerDay, allowedSymbols, lang, credentials, refresh, t]);
 
   const disarm = useCallback(async () => {
-    if (!confirm(t("bgAutopilot.disarmConfirm"))) return;
+    if (!await confirm(t("bgAutopilot.disarmConfirm"))) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/autopilot/session?exchangeId=${exchangeId}`, { method: "DELETE" });
@@ -305,6 +307,7 @@ export default function BackgroundAutopilotPanel({
           </motion.div>
         )}
       </AnimatePresence>
+      {confirmModal}
     </div>
   );
 }

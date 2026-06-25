@@ -15,6 +15,7 @@ import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { useUI } from "@/lib/store/ui";
+import { useConfirm } from "@/components/ui/ConfirmModal";
 import HistoryExportModal from "./HistoryExportModal";
 
 const LOCALE_MAP: Record<string, string> = {
@@ -55,6 +56,7 @@ const PAGE = 25;
 
 export default function HistoryView() {
   const t = useT();
+  const { confirm, modal: confirmModal } = useConfirm();
   const lang = useUI((s) => s.lang);
   const locale = LOCALE_MAP[lang] ?? "en-US";
   const { entries, clear } = useTxHistory();
@@ -140,7 +142,7 @@ export default function HistoryView() {
               )}
               {entries.length > 0 && (
                 <button
-                  onClick={() => { if (confirm(t("history.clearConfirm"))) clear(); }}
+                  onClick={() => { void confirm(t("history.clearConfirm")).then((ok) => { if (ok) clear(); }); }}
                   className="btn btn-secondary py-2 text-xs gap-1.5 text-red/70 hover:text-red border-red/20 hover:border-red/40"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -181,7 +183,7 @@ export default function HistoryView() {
               className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-3 outline-none font-sans min-w-0"
             />
             {query && (
-              <button onClick={() => setQuery("")} className="text-ink-4 hover:text-ink transition-colors">
+              <button onClick={() => setQuery("")} aria-label={t("common.clear")} className="text-ink-4 hover:text-ink transition-colors">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
@@ -342,6 +344,7 @@ export default function HistoryView() {
         filtered={filtered}
         all={entries}
       />
+      {confirmModal}
     </div>
   );
 }
@@ -523,10 +526,11 @@ function FilterPill({ active, onClick, label }: { active: boolean; onClick: () =
 }
 
 function ActiveChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  const t = useT();
   return (
     <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-cyan/[0.08] border border-cyan/30 text-cyan font-mono text-[10px] uppercase tracking-wider">
       {label}
-      <button onClick={onRemove} className="hover:text-ink transition-colors">
+      <button onClick={onRemove} aria-label={t("common.clear")} className="hover:text-ink transition-colors">
         <X className="w-3 h-3" />
       </button>
     </span>

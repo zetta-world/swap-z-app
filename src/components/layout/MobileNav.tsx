@@ -36,7 +36,7 @@ export default function MobileNav({ open, onClose }: { open: boolean; onClose: (
               <BrandMark size="md" />
               <span className="font-display font-extrabold text-ink text-sm">Z-SWAP</span>
             </div>
-            <button onClick={onClose} className="w-8 h-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-white/5">
+            <button onClick={onClose} aria-label={t("common.close")} className="w-8 h-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-white/5">
               <X className="w-4 h-4" />
             </button>
           </div>

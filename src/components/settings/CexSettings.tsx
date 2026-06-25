@@ -14,6 +14,7 @@ import {
   CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials, type CexBalance,
 } from "@/lib/cex/types";
 import { useT, t as tImp } from "@/lib/i18n";
+import { useConfirm } from "@/components/ui/ConfirmModal";
 import { compactNumber } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -50,6 +51,7 @@ interface CexState {
  */
 export default function CexSettings() {
   const t = useT();
+  const { confirm, modal: confirmModal } = useConfirm();
   const [vaultExists,   setVaultExists]   = useState(false);
   const [unlocked,      setUnlocked]      = useState(false);
   const [passphrase,    setPassphrase]    = useState("");
@@ -204,8 +206,8 @@ export default function CexSettings() {
     }
   };
 
-  const onForgetAll = () => {
-    if (!confirm(t("cex.forgetConfirm"))) return;
+  const onForgetAll = async () => {
+    if (!await confirm(t("cex.forgetConfirm"))) return;
     forgetEverything();
     setVaultExists(false);
     setUnlocked(false);
@@ -322,6 +324,7 @@ export default function CexSettings() {
           {t("cex.securityFooter")}
         </p>
       </div>
+      {confirmModal}
     </section>
   );
 }

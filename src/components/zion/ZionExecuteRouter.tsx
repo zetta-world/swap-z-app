@@ -140,7 +140,7 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
                   {t("zion.routerTitle")}
                 </Dialog.Title>
                 <Dialog.Close asChild>
-                  <button className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
+                  <button aria-label={t("common.close")} className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
                     <X className="w-4 h-4" />
                   </button>
                 </Dialog.Close>

@@ -878,6 +878,7 @@ function WalletSendToCex({
 // ─── Withdraw (CEX → wallet) ────────────────────────────────────────────
 
 function WithdrawPanel({ exchangeId, credentials }: Props) {
+  const t = useT();
   const { address: evmAddress } = useAccount();
   const sol = useWallet();
   const solAddress = sol.publicKey?.toBase58() ?? null;
@@ -1120,7 +1121,7 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
           </span>
           {balanceLoading
             ? <Loader2 className="w-3 h-3 text-ink-4 animate-spin ml-auto" />
-            : <button type="button" onClick={fetchCexBalances} className="ml-auto text-ink-4 hover:text-ink-2">
+            : <button type="button" onClick={fetchCexBalances} aria-label={t("common.refresh")} className="ml-auto text-ink-4 hover:text-ink-2">
                 <RefreshCw className="w-3 h-3" />
               </button>}
         </div>

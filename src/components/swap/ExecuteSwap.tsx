@@ -511,7 +511,7 @@ export default function ExecuteSwap({
                   {t("swap.executeSwap")}
                 </Dialog.Title>
                 <Dialog.Close asChild>
-                  <button type="button" className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
+                  <button type="button" aria-label={t("common.close")} className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
                     <X className="w-4 h-4" />
                   </button>
                 </Dialog.Close>

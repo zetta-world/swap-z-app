@@ -11,6 +11,7 @@ import {
 } from "@/lib/cex/types";
 import { compactNumber } from "@/lib/format";
 import { useT, t as tImp } from "@/lib/i18n";
+import { useConfirm } from "@/components/ui/ConfirmModal";
 import { cn } from "@/lib/cn";
 
 const POLL_MS = 8_000;
@@ -29,6 +30,7 @@ interface Props {
  */
 export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
   const t = useT();
+  const { confirm, modal: confirmModal } = useConfirm();
   const [orders,  setOrders]  = useState<CexOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -77,7 +79,7 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
   }, [load]);
 
   const onCancel = async (order: CexOrder) => {
-    if (!confirm(t("cex.cancelConfirm", { side: order.side.toUpperCase(), amount: order.amount, symbol: order.symbol }))) return;
+    if (!await confirm(t("cex.cancelConfirm", { side: order.side.toUpperCase(), amount: order.amount, symbol: order.symbol }))) return;
     setCancelling(order.id);
     try {
       const res = await fetch("/api/cex/order/cancel", {
@@ -189,6 +191,7 @@ export default function CexOpenOrdersPanel({ exchangeId, credentials }: Props) {
           </AnimatePresence>
         </div>
       )}
+      {confirmModal}
     </div>
   );
 }
