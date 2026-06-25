@@ -132,6 +132,3 @@ export default function Sidebar() {
     </motion.aside>
   );
 }
-
-export const SIDEBAR_WIDTH_OPEN     = 248;
-export const SIDEBAR_WIDTH_COLLAPSED = 80;
