@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { recordEvent } from "@/lib/admin/track";
 import { isValidChain, validateAddress, validateAmount } from "@/lib/validate";
 import {
   fetchZeroXPrice, fetchZeroXQuote, isZeroXSupported, ZEROX_CHAIN_IDS, ZEROX_NATIVE,
@@ -162,6 +163,7 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({ error: "0x_unavailable" }, { status: 400 });
         }
         const q = await fetchZeroXQuote(zxArgs, zeroXKey);
+        recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain, toChain, sellToken, buyToken } });
         return NextResponse.json(
           { ok: true, mode, source, result: q, normalized: normalizeZeroX(q, zxArgs.chainId, true) },
           { headers: { "Cache-Control": "no-store" } },
@@ -172,6 +174,7 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({ error: "lifi_unsupported_chain" }, { status: 400 });
         }
         const q = await fetchLiFiQuote(lfArgs, lifiKey);
+        recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain, toChain, sellToken, buyToken, crossChain: true } });
         return NextResponse.json(
           { ok: true, mode, source, result: q, normalized: normalizeLiFi(q) },
           { headers: { "Cache-Control": "no-store" } },
@@ -181,15 +184,13 @@ export async function GET(req: NextRequest) {
         if (!isSameChainSolana) {
           return NextResponse.json({ error: "jupiter_solana_only" }, { status: 400 });
         }
-        // Jupiter requires the user's wallet pubkey to build the swap tx.
-        // The /quote endpoint doesn't, but we need both to return a firm
-        // payload the client can sign and send.
         const quote = await fetchJupiterQuote(jupArgs);
         const swap  = await fetchJupiterSwap({
           quoteResponse:    quote,
           userPublicKey:    taker,
           wrapAndUnwrapSol: true,
         });
+        recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain: "solana", toChain: "solana", sellToken, buyToken } });
         return NextResponse.json(
           {
             ok: true, mode, source,

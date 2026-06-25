@@ -81,6 +81,21 @@ export type AutopilotRunRow = {
   reason:         string | null;
 };
 
+export type PlatformEventRow = {
+  id:             string;
+  event_type:     string;
+  wallet_address: string | null;
+  path:           string | null;
+  metadata:       Record<string, unknown> | null;
+  created_at:     string;
+};
+
+export type AdminKvRow = {
+  key:        string;
+  value:      string;
+  updated_at: string;
+};
+
 export type AdminAuditLogRow = {
   id:           string;
   actor_wallet: string;
@@ -97,6 +112,8 @@ export interface Database {
       auth_nonces: { Row: AuthNonceRow; Insert: AuthNonceRow;                                                            Update: Partial<AuthNonceRow>; Relationships: [] };
       tier_cache:  { Row: TierCacheRow; Insert: TierCacheRow;                                                            Update: Partial<TierCacheRow>; Relationships: [] };
       admin_audit_log: { Row: AdminAuditLogRow; Insert: Omit<AdminAuditLogRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
+      platform_events: { Row: PlatformEventRow; Insert: Omit<PlatformEventRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
+      admin_kv: { Row: AdminKvRow; Insert: AdminKvRow; Update: Partial<AdminKvRow>; Relationships: [] };
       autopilot_sessions: {
         Row: AutopilotSessionRow;
         Insert: Partial<AutopilotSessionRow> & {

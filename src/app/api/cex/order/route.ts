@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { placeCexOrder } from "@/lib/cex/server";
+import { recordEvent } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import {
   type CexId, type CexCredentials, type CexOrderResponse, type CexOrderSide, type CexOrderType,
@@ -157,6 +158,16 @@ export async function POST(req: NextRequest) {
       filledImmediately,
       fetchedAt: Date.now(),
     };
+    recordEvent("cex_order", {
+      meta: {
+        exchange,
+        symbol: body.symbol,
+        side,
+        type,
+        filledImmediately,
+        notional: typeof body.price === "number" ? body.amount * body.price : null,
+      },
+    });
     return NextResponse.json(resp, {
       headers: { "Cache-Control": "no-store, no-transform" },
     });

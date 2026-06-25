@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { useUI } from "@/lib/store/ui";
 import { Toaster } from "sonner";
+import Beacon from "@/components/layout/Beacon";
 import { wagmiConfig } from "@/lib/wagmi";
 import { SOLANA_RPC, SOLANA_WALLETS } from "@/lib/solana";
 
@@ -58,6 +59,7 @@ export default function Providers({ children }: { children: ReactNode }) {
         <WalletProvider wallets={solanaWallets} autoConnect>
           <QueryClientProvider client={qc}>
             <LangSync />
+            <Beacon />
             {children}
             <Toaster
               position="top-right"

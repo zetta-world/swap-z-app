@@ -19,20 +19,19 @@ export async function GET(): Promise<NextResponse> {
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
-  // Attempt to read from admin_kv — may not exist yet
   const { data, error } = await db
-    .from("admin_kv" as never)
+    .from("admin_kv")
     .select("key, value")
     .in("key", VALID_KEYS);
 
   if (error) {
-    // Table doesn't exist → return all OFF
+    // Table doesn't exist yet (pre-migration) — return all OFF gracefully
     return NextResponse.json({ switches: {}, note: "admin_kv not yet migrated" });
   }
 
   const switches: Record<string, boolean> = {};
   for (const k of VALID_KEYS) switches[k] = false;
-  for (const row of (data as { key: string; value: string }[] | null) ?? []) {
+  for (const row of data ?? []) {
     switches[row.key] = row.value === "true";
   }
 
@@ -51,7 +50,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!VALID_KEYS.includes(key))
     return NextResponse.json({ error: "invalid key" }, { status: 400 });
 
-  await (db.from("admin_kv" as never) as ReturnType<typeof db.from>).upsert(
+  await db.from("admin_kv").upsert(
     { key, value: String(enabled), updated_at: new Date().toISOString() },
     { onConflict: "key" },
   );

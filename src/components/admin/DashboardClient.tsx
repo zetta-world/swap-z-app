@@ -9,8 +9,9 @@ import MarketVolumePanel  from "./panels/MarketVolumePanel";
 import TierControlPanel   from "./panels/TierControlPanel";
 import AuditLogPanel      from "./panels/AuditLogPanel";
 import KillSwitchesPanel  from "./panels/KillSwitchesPanel";
-import WhitelistPanel     from "./panels/WhitelistPanel";
-import type { ModuleId }  from "@/lib/admin/modules";
+import WhitelistPanel         from "./panels/WhitelistPanel";
+import PlatformEventsPanel    from "./panels/PlatformEventsPanel";
+import type { ModuleId }      from "@/lib/admin/modules";
 
 const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "wallets-kpi":        <WalletsKpiPanel />,
@@ -22,6 +23,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "audit-log":          <AuditLogPanel />,
   "kill-switches":      <KillSwitchesPanel />,
   "whitelist":          <WhitelistPanel />,
+  "platform-events":    <PlatformEventsPanel />,
 };
 
 export default function DashboardClient() {
