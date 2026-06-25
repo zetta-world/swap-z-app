@@ -14,10 +14,10 @@ import { cn } from "@/lib/cn";
  * without an emblem keep the neutral "Z" until their artwork ships.
  */
 
-// Transparent crest per paid tier. Add `pilot` here as artwork lands.
 const TIER_EMBLEM: Partial<Record<PaidTier, string>> = {
   pro:    "/tiers/freyr.png",
   trader: "/tiers/thor.png",
+  pilot:  "/tiers/pilot.png",
 };
 
 const SIZES = {
