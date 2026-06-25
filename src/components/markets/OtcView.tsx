@@ -109,8 +109,8 @@ function MockQuotesRow() {
     <div className="rounded-lg border border-white/5 bg-bg-1/40 p-3 space-y-2">
       <div className="flex items-center justify-between">
         <div className="font-mono text-[9px] text-ink-3 tracking-widest uppercase">{t("otc.quotesHeader")}</div>
-        <div className="inline-flex items-center gap-1 font-mono text-[9px] text-green">
-          <span className="w-1.5 h-1.5 rounded-full bg-green animate-pulse" />
+        <div className="inline-flex items-center gap-1 font-mono text-[9px] text-ink-4">
+          <span className="w-1.5 h-1.5 rounded-full bg-ink-4" />
           {t("otc.quotesLive")}
         </div>
       </div>

@@ -148,6 +148,11 @@ export default function PortfolioView() {
       .sort((a, b) => b.value - a.value);
   }, [holdings]);
 
+  // The distribution bar shows the split across chains of on-chain holdings
+  // only (CEX is not a chain). Divide by the on-chain total — not totals.total
+  // which also includes CEX — so the segments always sum to 100%.
+  const chainTotal = byChain.reduce((acc, c) => acc + c.value, 0) || 1;
+
   const mask = (v: string) => (hidden ? "•••••" : v);
 
   return (
@@ -227,7 +232,7 @@ export default function PortfolioView() {
                         title={`${c.chain?.name}: ${formatUsd(c.value)}`}
                         className="hover:brightness-125 transition-all"
                         style={{
-                          width:  `${(c.value / totals.total) * 100}%`,
+                          width:  `${(c.value / chainTotal) * 100}%`,
                           background: c.chain?.color ?? "#00E8FF",
                         }}
                       />
@@ -238,7 +243,7 @@ export default function PortfolioView() {
                       <div key={c.id} className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.chain?.color }} />
                         <span className="font-mono text-[10px] text-ink-2">{c.chain?.short}</span>
-                        <span className="font-mono text-[10px] text-ink-4">{((c.value / totals.total) * 100).toFixed(1)}%</span>
+                        <span className="font-mono text-[10px] text-ink-4">{((c.value / chainTotal) * 100).toFixed(1)}%</span>
                       </div>
                     ))}
                   </div>

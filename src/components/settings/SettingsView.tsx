@@ -166,25 +166,25 @@ export default function SettingsView() {
 const MODE_META: Record<"standard" | "pro" | "privacy", {
   Icon: React.ComponentType<{ className?: string }>;
   labelKey: MessageKey;
-  desc: string;
+  descKey: MessageKey;
   tone: "cyan" | "gold" | "violet";
 }> = {
   standard: {
     Icon: Layers,
     labelKey: "settings.appModeStandard",
-    desc: "Interface limpa com todos os recursos essenciais. Ideal para uso diário sem ruído visual.",
+    descKey: "settings.appModeStandardDesc",
     tone: "cyan",
   },
   pro: {
     Icon: Eye,
     labelKey: "settings.appModePro",
-    desc: "Realça os painéis principais com bordas de destaque na cor do plano — visual de cockpit mais denso.",
+    descKey: "settings.appModeProDesc",
     tone: "gold",
   },
   privacy: {
     Icon: EyeOff,
     labelKey: "settings.appModePrivacy",
-    desc: "Saldos e valores ficam desfocados automaticamente em todo o app — passe o mouse para revelar.",
+    descKey: "settings.appModePrivacyDesc",
     tone: "violet",
   },
 };
@@ -264,7 +264,7 @@ function AppearancePanel() {
               <ModeIcon className={cn("w-3.5 h-3.5 flex-shrink-0 mt-0.5", {
                 cyan: "text-cyan", gold: "text-gold", violet: "text-violet",
               }[meta.tone])} />
-              <p className="font-sans text-[11px] text-ink-2 leading-relaxed">{meta.desc}</p>
+              <p className="font-sans text-[11px] text-ink-2 leading-relaxed">{t(meta.descKey)}</p>
             </motion.div>
           </AnimatePresence>
         </Field>
@@ -291,16 +291,16 @@ function AppearancePanel() {
             </div>
             <div>
               <span className="font-display font-bold text-base text-ink block leading-none">
-                Tema do plano
+                {t("settings.planThemeTitle")}
               </span>
               <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase mt-0.5 block">
-                {tier.toUpperCase()} · visual exclusivo
+                {t("settings.planThemeSubtitle", { tier: tier.toUpperCase() })}
               </span>
             </div>
           </div>
           <Toggle
-            label="Usar tema do plano"
-            description="Ativa o visual exclusivo do seu plano — cores do deus, ambient glow e efeitos de identidade. Desative para usar a interface neutra padrão."
+            label={t("settings.planThemeToggle")}
+            description={t("settings.planThemeToggleDesc")}
             value={!disableTierTheme}
             onChange={(v) => setDisableTierTheme(!v)}
             tone="cyan"

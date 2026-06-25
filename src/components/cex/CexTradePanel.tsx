@@ -376,9 +376,9 @@ export default function CexTradePanel({
                   if (isBuy)
                     return below
                       ? t("cex.limitBelowMarket", { pct: pctStr })
-                      : t("cex.limitWouldFill", { pct: pctStr, dir: t("common.show") /* placeholder */ });
+                      : t("cex.limitWouldFill", { pct: pctStr, dir: t("cex.limitDirAbove") });
                   return below
-                    ? t("cex.limitWouldFill", { pct: pctStr, dir: "" })
+                    ? t("cex.limitWouldFill", { pct: pctStr, dir: t("cex.limitDirBelow") })
                     : t("cex.limitAboveMarket", { pct: pctStr });
                 })()}
               </div>

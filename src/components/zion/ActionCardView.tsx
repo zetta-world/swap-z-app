@@ -37,11 +37,11 @@ const KIND_META: Record<string, KindMeta> = {
 const KNOWN_KINDS = new Set(Object.keys(KIND_META));
 
 const TONE_CFG = {
-  cyan:   { text: "text-cyan",   bg: "bg-cyan/10",   border: "border-cyan/30",   glow: "shadow-glow-cyan"   },
-  violet: { text: "text-violet", bg: "bg-violet/10", border: "border-violet/30", glow: "shadow-glow-violet" },
-  gold:   { text: "text-gold",   bg: "bg-gold/10",   border: "border-gold/30",   glow: "shadow-glow-gold"   },
-  green:  { text: "text-green",  bg: "bg-green/10",  border: "border-green/30",  glow: "shadow-glow-green"  },
-  red:    { text: "text-red",    bg: "bg-red/10",    border: "border-red/30",    glow: "shadow-glow-red"    },
+  cyan:   { text: "text-cyan",   bg: "bg-cyan/10",   border: "border-cyan/30",   glow: "shadow-glow-cyan",   hoverGlow: "hover:shadow-glow-cyan"   },
+  violet: { text: "text-violet", bg: "bg-violet/10", border: "border-violet/30", glow: "shadow-glow-violet", hoverGlow: "hover:shadow-glow-violet" },
+  gold:   { text: "text-gold",   bg: "bg-gold/10",   border: "border-gold/30",   glow: "shadow-glow-gold",   hoverGlow: "hover:shadow-glow-gold"   },
+  green:  { text: "text-green",  bg: "bg-green/10",  border: "border-green/30",  glow: "shadow-glow-green",  hoverGlow: "hover:shadow-glow-green"  },
+  red:    { text: "text-red",    bg: "bg-red/10",    border: "border-red/30",    glow: "shadow-glow-red",    hoverGlow: "hover:shadow-glow-red"    },
 } as const;
 
 const RISK_CFG: Record<string, string> = {
@@ -320,7 +320,7 @@ export default function ActionCardView({ card, index, onExecute }: Props) {
         onClick={() => onExecute(card)}
         className={cn(
           "w-full mt-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border font-display font-bold text-xs tracking-widest uppercase transition-all",
-          tone.bg, tone.border, tone.text, "hover:opacity-90 hover:" + tone.glow,
+          tone.bg, tone.border, tone.text, "hover:opacity-90", tone.hoverGlow,
         )}
       >
         <Zap className="w-3 h-3" />
