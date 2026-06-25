@@ -81,12 +81,22 @@ export type AutopilotRunRow = {
   reason:         string | null;
 };
 
+export type AdminAuditLogRow = {
+  id:           string;
+  actor_wallet: string;
+  action:       string;
+  target:       string | null;
+  payload:      Record<string, unknown> | null;
+  created_at:   string;
+};
+
 export interface Database {
   public: {
     Tables: {
       users:       { Row: UserRow;      Insert: Partial<UserRow> & { wallet_address: string; wallet_chain: WalletChain }; Update: Partial<UserRow>;   Relationships: [] };
       auth_nonces: { Row: AuthNonceRow; Insert: AuthNonceRow;                                                            Update: Partial<AuthNonceRow>; Relationships: [] };
       tier_cache:  { Row: TierCacheRow; Insert: TierCacheRow;                                                            Update: Partial<TierCacheRow>; Relationships: [] };
+      admin_audit_log: { Row: AdminAuditLogRow; Insert: Omit<AdminAuditLogRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
       autopilot_sessions: {
         Row: AutopilotSessionRow;
         Insert: Partial<AutopilotSessionRow> & {
