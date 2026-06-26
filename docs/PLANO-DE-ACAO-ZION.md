@@ -29,7 +29,7 @@ Cada item abaixo foi **confirmado lendo o código**, com referência de arquivo.
 | C4 | Tamanho/preço da ordem vêm de texto livre do LLM sem reconciliação com preço real | ⚠️ | 🟢 |
 | C5 | Compra a mercado não é gravada na position memory → posição órfã, sem saída | ⚠️ | 🟢 |
 | C6 | Cap de rebalance (saque) burlável para moeda não-stable | ⚠️ | 🟢 |
-| A1 | Contadores split-brain (localStorage do browser vs Supabase do cron) | ⚠️ | 🟡 |
+| A1 | Contadores split-brain (localStorage do browser vs Supabase do cron) | ⚠️ | 🟢 |
 | A2 | Cron pode sobrepor execuções (`cancel-in-progress: false`, sem lock de sessão) | ⚠️ | 🟢 |
 | A3 | Rate limit em memória morre em cold start serverless | ▫️ | 🟢 |
 | A4 | Sem cap de exposição total (só por-trade e por-contagem) | ⚠️ | 🟢 |
@@ -185,12 +185,12 @@ nunca fallback para a quantidade de token.
 
 ### A1–A5 — Arquitetura de risco `⚠️/▫️`
 
-- **A1 split-brain:** 🟡 PARCIAL (2026-06-26). O pilot do browser agora busca
-  os contadores da sessão server-side (`trades_today`, `frozen_until_day`) por
-  exchange e os soma nas checagens de cap (candidate + fire-time), e respeita o
-  freeze do servidor. **Falta o write-back** (publicar as fires do browser no
-  servidor para o cron também enxergar) — janela de overlap é estreita e o cron
-  já é limitado pelo próprio cap de sessão.
+- **A1 split-brain:** 🟢 CONCLUÍDO (2026-06-26). Quando existe sessão, o
+  `trades_today` do servidor é a fonte única: o pilot usa a contagem do servidor
+  direto (sem somar local → sem dupla contagem), publica cada fire via
+  `/api/autopilot/session/record-fire` (RPC atômico `bump_session_trades`,
+  migração 0010) e re-sincroniza. Sem sessão, o contador local manda. Os dois
+  canais compartilham um único orçamento diário.
 - **A2 overlap do cron:** 🟢 CONCLUÍDO (2026-06-26). Adicionada coluna
   `locked_until` (migração 0007) + lock atômico por sessão (`tryLockSession`/
   `releaseLock`) no cron, com TTL de 3min para auto-release. **Mantido
