@@ -173,6 +173,10 @@ export interface Database {
         Args: { p_id: string; p_delta: number; p_today: string };
         Returns: undefined;
       };
+      bump_session_trades: {
+        Args: { p_wallet: string; p_exchange: string; p_n: number };
+        Returns: undefined;
+      };
     };
   };
 }

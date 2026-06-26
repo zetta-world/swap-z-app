@@ -64,7 +64,12 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   // browser pilot and the cron share ONE daily budget instead of two
   // independent ones (split-brain). Today only trades_today matters — the cron
   // is buys-only so its pnl_today stays 0 until the server exit engine (A5).
-  const [serverDaily, setServerDaily] = useState<{ trades: number; frozenToday: boolean }>({ trades: 0, frozenToday: false });
+  // When a background session exists, the SERVER's trades_today is the single
+  // source of truth (browser fires are published to it below) — so we use it
+  // directly instead of local+server, avoiding any double count. With no
+  // session, the local counter is authoritative.
+  const [serverDaily, setServerDaily] = useState<{ trades: number; frozenToday: boolean; hasSession: boolean }>({ trades: 0, frozenToday: false, hasSession: false });
+  const refreshServerDaily = useRef<() => void>(() => {});
   useEffect(() => {
     let cancelled = false;
     const todayKey = () => {
@@ -73,7 +78,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     };
     const load = async () => {
       if (!enabled || a.allowedExchanges.length === 0) {
-        if (!cancelled) setServerDaily({ trades: 0, frozenToday: false });
+        if (!cancelled) setServerDaily({ trades: 0, frozenToday: false, hasSession: false });
         return;
       }
       try {
@@ -85,15 +90,17 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
             { status?: { trades_today?: number; frozen_until_day?: string | null } | null } | null;
           return body?.status ?? null;
         }));
-        let trades = 0, frozenToday = false;
+        let trades = 0, frozenToday = false, hasSession = false;
         for (const st of rows) {
           if (!st) continue;
+          hasSession = true;
           if (typeof st.trades_today === "number") trades += st.trades_today;
           if (st.frozen_until_day === today) frozenToday = true;
         }
-        if (!cancelled) setServerDaily({ trades, frozenToday });
+        if (!cancelled) setServerDaily({ trades, frozenToday, hasSession });
       } catch { /* network/auth issue → fall back to local-only caps */ }
     };
+    refreshServerDaily.current = load;
     void load();
     const id = setInterval(load, 45_000);
     return () => { cancelled = true; clearInterval(id); };
@@ -132,7 +139,8 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
       if (consumedRef.current.has(key)) continue;
       const intents = mapCardToCexIntents(c);
       if (!intents || intents.length === 0) continue;
-      if (a.tradesToday + serverDaily.trades + intents.length > a.maxTradesPerDay) continue;
+      const usedTrades = serverDaily.hasSession ? serverDaily.trades : a.tradesToday;
+      if (usedTrades + intents.length > a.maxTradesPerDay) continue;
       // Every leg has to clear the per-trade USD cap independently.
       if (intents.some((i) => i.notionalUsd > a.maxTradeUsd)) continue;
       // A4: the BUY legs plus current open exposure can't exceed the total cap.
@@ -156,7 +164,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, enabled, a.frozenUntilDay, serverDaily.frozenToday, serverDaily.trades, a.tradesToday, a.maxTradesPerDay, a.maxTradeUsd, a.maxOpenExposureUsd, openExposureUsd, a.allowedSymbols, a.allowedExchanges, vault.creds]);
+  }, [cards, enabled, a.frozenUntilDay, serverDaily.frozenToday, serverDaily.trades, serverDaily.hasSession, a.tradesToday, a.maxTradesPerDay, a.maxTradeUsd, a.maxOpenExposureUsd, openExposureUsd, a.allowedSymbols, a.allowedExchanges, vault.creds]);
 
   // Bring the next candidate into the active slot when we're idle.
   useEffect(() => {
@@ -248,7 +256,8 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     const fresh = useAutopilot.getState();
     if (!fresh.enabled)                                          return rejectAll("autopilot turned off during countdown");
     if (fresh.frozenUntilDay || serverDaily.frozenToday)         return rejectAll("autopilot frozen (daily stop)");
-    if (fresh.tradesToday + serverDaily.trades + intents.length > fresh.maxTradesPerDay)
+    const usedTradesFire = serverDaily.hasSession ? serverDaily.trades : fresh.tradesToday;
+    if (usedTradesFire + intents.length > fresh.maxTradesPerDay)
                                                                  return rejectAll("daily trade cap would be exceeded (combined with background session)");
     // Per-trade USD cap applies to BUYS only. A SELL reduces exposure (it's
     // exiting a position the user already holds) — capping it would block
@@ -422,6 +431,26 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     }
 
     consumedRef.current.add(cardKey);
+
+    // A1 write-back: publish this card's fired legs to the server session(s)
+    // so the cron's trades_today reflects browser fires too. Counted per
+    // exchange; the endpoint no-ops if that exchange has no armed session.
+    if (serverDaily.hasSession) {
+      const firedByExchange = new Map<CexId, number>();
+      for (let i = 0; i < resolved.length; i++) {
+        if (results[i].status === "fulfilled") {
+          const ex = resolved[i].exchange;
+          firedByExchange.set(ex, (firedByExchange.get(ex) ?? 0) + 1);
+        }
+      }
+      for (const [ex, count] of firedByExchange) {
+        void fetch("/api/autopilot/session/record-fire", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ exchangeId: ex, count }),
+        }).then(() => refreshServerDaily.current()).catch(() => {});
+      }
+    }
 
     if (allOk) {
       toast.success(`Autopilot fired ${intents.length === 1 ? "order" : "BOTH legs"}: ${summaries.join(" | ")}`);

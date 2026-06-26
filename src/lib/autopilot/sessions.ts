@@ -167,6 +167,18 @@ export async function tryLockSession(id: string, ttlMs: number): Promise<boolean
   return (data?.length ?? 0) > 0;
 }
 
+/**
+ * Atomically add to a session's trades_today (A1 write-back). Lets the browser
+ * publish its own fires so the server counter reflects BOTH channels and can
+ * be read back as the single authoritative daily count. No-op if no session
+ * exists for the wallet+exchange.
+ */
+export async function bumpSessionTrades(walletAddress: string, exchangeId: string, n: number): Promise<void> {
+  const db = getSupabaseAdmin();
+  if (!db || n <= 0) return;
+  await db.rpc("bump_session_trades", { p_wallet: walletAddress, p_exchange: exchangeId, p_n: n });
+}
+
 /** Release the per-session lock so the next cron run can pick it up. */
 export async function releaseLock(id: string): Promise<void> {
   const db = getSupabaseAdmin();
