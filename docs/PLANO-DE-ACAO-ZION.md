@@ -29,9 +29,9 @@ Cada item abaixo foi **confirmado lendo o código**, com referência de arquivo.
 | C4 | Tamanho/preço da ordem vêm de texto livre do LLM sem reconciliação com preço real | ⚠️ | 🟢 |
 | C5 | Compra a mercado não é gravada na position memory → posição órfã, sem saída | ⚠️ | 🟢 |
 | C6 | Cap de rebalance (saque) burlável para moeda não-stable | ⚠️ | 🟢 |
-| A1 | Contadores split-brain (localStorage do browser vs Supabase do cron) | ⚠️ | 🔴 |
+| A1 | Contadores split-brain (localStorage do browser vs Supabase do cron) | ⚠️ | 🟡 |
 | A2 | Cron pode sobrepor execuções (`cancel-in-progress: false`, sem lock de sessão) | ⚠️ | 🟢 |
-| A3 | Rate limit em memória morre em cold start serverless | ▫️ | 🔴 |
+| A3 | Rate limit em memória morre em cold start serverless | ▫️ | 🟢 |
 | A4 | Sem cap de exposição total (só por-trade e por-contagem) | ⚠️ | 🟡 |
 | A5 | Sem exit-engine server-side (cron compra mas nunca vende nem lê posições) | ⚠️ | 🔴 |
 
@@ -185,18 +185,22 @@ nunca fallback para a quantidade de token.
 
 ### A1–A5 — Arquitetura de risco `⚠️/▫️`
 
-- **A1 split-brain:** browser conta em `localStorage` (`zswap_autopilot_v1`),
-  cron conta em Supabase (`autopilot_sessions`). Independentes → orçamento diário
-  dobrado com aba aberta + cron rodando. **Correção:** ledger único server-side;
-  browser lê dele.
+- **A1 split-brain:** 🟡 PARCIAL (2026-06-26). O pilot do browser agora busca
+  os contadores da sessão server-side (`trades_today`, `frozen_until_day`) por
+  exchange e os soma nas checagens de cap (candidate + fire-time), e respeita o
+  freeze do servidor. **Falta o write-back** (publicar as fires do browser no
+  servidor para o cron também enxergar) — janela de overlap é estreita e o cron
+  já é limitado pelo próprio cap de sessão.
 - **A2 overlap do cron:** 🟢 CONCLUÍDO (2026-06-26). Adicionada coluna
   `locked_until` (migração 0007) + lock atômico por sessão (`tryLockSession`/
   `releaseLock`) no cron, com TTL de 3min para auto-release. **Mantido
   `cancel-in-progress: false` de propósito** — flipar para `true` poderia
   cancelar um run no meio de uma ordem; o lock é a correção certa.
-- **A3 rate limit:** `src/lib/rate-limit.ts` usa `Map` em memória (o próprio
-  comentário admite "per-Vercel-instance"). **Correção:** Upstash/Redis +
-  tier-based.
+- **A3 rate limit:** 🟢 CONCLUÍDO (2026-06-26). Limiter durável no Postgres
+  (Supabase) via função atômica `consume_rate_limit` (migração 0008) +
+  `rateLimitDurable()` que falha-aberto para o in-memory se o DB cair. Ligado
+  em `cex/order`, `cex/withdraw` e `zion`. (Sem Upstash — usamos o Supabase
+  que já existe.)
 - **A4 sem cap de exposição total:** 🟡 PARCIAL (2026-06-26). Adicionado
   `maxOpenExposureUsd` (default 750; presets 75/200/400) e enforcement no
   **browser** (candidate + fire-time: `Σ posições abertas + novo buy ≤ cap`).
