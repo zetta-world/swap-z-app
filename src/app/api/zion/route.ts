@@ -8,6 +8,7 @@ import { getTokenInfo, getTopPools, getTrendingPools, type TokenInfo, type PoolS
 import { getTrending, type TrendingPair } from "@/lib/api/dexscreener";
 import { getCexSpotPrices, getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
 import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt } from "@/lib/api/market-indicators";
+import { appendMarketBrain } from "@/lib/zion/market-brain";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
@@ -483,7 +484,7 @@ async function buildAutoScanTradingPayload(): Promise<string> {
     });
   }
 
-  const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
+  const indicatorsText = await appendMarketBrain(formatIndicatorsForPrompt(marketData).trim(), marketData.indicators);
 
   return [
     "AUTO-SCAN MODE: No pair pre-selected.",
@@ -770,7 +771,7 @@ async function buildPairData(args: RunArgs): Promise<string> {
   }
 
   // Technical indicators — only present for CEX-tracked symbols.
-  const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
+  const indicatorsText = await appendMarketBrain(formatIndicatorsForPrompt(marketData).trim(), marketData.indicators);
   if (indicatorsText) {
     lines.push("\nTECHNICAL ANALYSIS:");
     lines.push(indicatorsText);
@@ -1023,7 +1024,7 @@ async function buildAutopilotCexPayload(args: RunArgs): Promise<string> {
   }
 
   // Technical indicators (RSI, MACD, EMA, OBV, order book, Fear & Greed, confidence score)
-  const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
+  const indicatorsText = await appendMarketBrain(formatIndicatorsForPrompt(marketData).trim(), marketData.indicators);
   if (indicatorsText) {
     lines.push(indicatorsText);
     lines.push("");

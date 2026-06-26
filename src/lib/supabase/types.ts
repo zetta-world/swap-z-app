@@ -119,6 +119,17 @@ export type AdminKvRow = {
   updated_at: string;
 };
 
+export type MarketBrainRow = {
+  symbol:       string;
+  regime:       string | null;
+  regime_since: string | null;
+  prev_regime:  string | null;
+  atr_pct:      number | null;
+  vol_avg:      number | null;
+  range_pct:    number | null;
+  updated_at:   string;
+};
+
 export type AdminAuditLogRow = {
   id:           string;
   actor_wallet: string;
@@ -137,6 +148,7 @@ export interface Database {
       admin_audit_log: { Row: AdminAuditLogRow; Insert: Omit<AdminAuditLogRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
       platform_events: { Row: PlatformEventRow; Insert: Omit<PlatformEventRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
       admin_kv: { Row: AdminKvRow; Insert: AdminKvRow; Update: Partial<AdminKvRow>; Relationships: [] };
+      market_brain: { Row: MarketBrainRow; Insert: Partial<MarketBrainRow> & { symbol: string }; Update: Partial<MarketBrainRow>; Relationships: [] };
       autopilot_sessions: {
         Row: AutopilotSessionRow;
         Insert: Partial<AutopilotSessionRow> & {
