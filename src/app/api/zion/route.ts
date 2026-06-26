@@ -4,10 +4,11 @@ import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { getModeInstructions, type ZionOp } from "@/lib/zion/mode-prompts";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
 import { getHoneypot, isHoneypotSupported, type HoneypotResponse } from "@/lib/api/honeypot";
-import { getTokenInfo, getTopPools, getTrendingPools, type TokenInfo, type PoolSummary } from "@/lib/api/geckoterminal";
+import { getTokenInfo, getTopPools, getTrendingPools, getTokenTopPool, type TokenInfo, type PoolSummary } from "@/lib/api/geckoterminal";
+import { getDexSymbolIndicators } from "@/lib/api/market-indicators";
 import { getTrending, type TrendingPair } from "@/lib/api/dexscreener";
 import { getCexSpotPrices, getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
-import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt } from "@/lib/api/market-indicators";
+import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { appendMarketBrain } from "@/lib/zion/market-brain";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
@@ -720,9 +721,31 @@ async function buildPairData(args: RunArgs): Promise<string> {
     safeGeckoToken(args.chain, toToken?.address),
     getTopPools(args.chain, 4).catch(() => [] as PoolSummary[]),
     indicatorSymbols.length > 0
-      ? getMarketIndicators(indicatorSymbols).catch(() => ({ indicators: [], orderBooks: [], fearGreed: null }))
-      : Promise.resolve({ indicators: [], orderBooks: [], fearGreed: null }),
+      ? getMarketIndicators(indicatorSymbols).catch((): MarketIndicatorsResult => ({ indicators: [], orderBooks: [], fearGreed: null }))
+      : Promise.resolve<MarketIndicatorsResult>({ indicators: [], orderBooks: [], fearGreed: null }),
   ]);
+
+  // E1: DEX technical analysis. When the analyzed asset has no CEX klines,
+  // pull its pool OHLCV from GeckoTerminal and compute the SAME indicators so
+  // ZION isn't blind on DeFi tokens. Picks the non-stable, non-CEX-tracked
+  // side; best-effort enrichment.
+  const STABLE_SYMS = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD"]);
+  const cexTracked = (s?: string) => !!s && (CEX_TRACKED_SYMBOLS as readonly string[]).includes(s.toUpperCase());
+  const dexCandidate = [toToken, fromToken].find((t) =>
+    !!t?.symbol && !!t.address && t.address !== "native" &&
+    !STABLE_SYMS.has(t.symbol.toUpperCase()) && !cexTracked(t.symbol),
+  );
+  if (dexCandidate?.address && dexCandidate.symbol) {
+    try {
+      const pool = await getTokenTopPool(args.chain, dexCandidate.address);
+      if (pool) {
+        const dexInd = await getDexSymbolIndicators(
+          dexCandidate.symbol.toUpperCase(), args.chain, pool.address, pool.tokenIsBase ? "base" : "quote",
+        );
+        if (dexInd.rsi14 !== null) marketData.indicators.push(dexInd);
+      }
+    } catch { /* DEX TA is best-effort */ }
+  }
 
   const lines: string[] = [];
   lines.push(`chain: ${args.chain}`);

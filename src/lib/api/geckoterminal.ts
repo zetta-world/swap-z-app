@@ -326,6 +326,40 @@ export async function getPoolMeta(chainName: string, poolAddress: string): Promi
   }
 }
 
+/**
+ * Resolve a token's most-liquid pool (E1) so we can pull its OHLCV for DEX
+ * technical analysis. Returns the pool address and whether the token is the
+ * pool's BASE side (which `getOHLCV(token:)` needs to chart the right price).
+ */
+export async function getTokenTopPool(
+  chainName: string,
+  tokenAddress: string,
+): Promise<{ address: string; tokenIsBase: boolean } | null> {
+  const network = NETWORK_IDS[chainName];
+  if (!network || !tokenAddress || tokenAddress === "native") return null;
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${tokenAddress.toLowerCase()}/pools?include=base_token&page=1`;
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json;version=20230302" },
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      data?: Array<{ attributes?: { address?: string }; relationships?: { base_token?: { data?: { id?: string } } } }>;
+      included?: GTIncluded[];
+    };
+    const pool = data.data?.[0];           // highest-liquidity pool first
+    const addr = pool?.attributes?.address;
+    if (!addr) return null;
+    const baseId   = pool?.relationships?.base_token?.data?.id;
+    const baseTok  = (data.included ?? []).find((x) => x.id === baseId);
+    const baseAddr = baseTok?.attributes?.address?.toLowerCase() ?? "";
+    return { address: addr, tokenIsBase: baseAddr === tokenAddress.toLowerCase() };
+  } catch {
+    return null;
+  }
+}
+
 // ─── OHLCV (chart candles) ───────────────────────────────────────────
 
 export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";

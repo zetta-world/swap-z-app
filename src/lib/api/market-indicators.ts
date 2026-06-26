@@ -28,6 +28,8 @@
  * Fear & Greed 1h.
  */
 
+import { getOHLCV } from "@/lib/api/geckoterminal";
+
 // ─── Candle type + fetch ────────────────────────────────────────────────
 
 interface Candle {
@@ -550,17 +552,22 @@ function timeframeTrend(closes: number[]): TimeframeTrend | null {
 }
 
 async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
-  // Fetch all timeframes in parallel. Daily reaches back a FULL YEAR and a
-  // weekly series adds multi-year cycle context (Z1) — so ZION can reason
-  // about where price sits in its long-range structure, not just the last
-  // few days.
+  // Binance klines for CEX-listed symbols. Daily reaches back a full year and
+  // the weekly adds multi-year cycle context (Z1).
   const [c1h, c4h, c1d, c1w] = await Promise.all([
     fetchCandles(symbol, "1h", 100, 60),
     fetchCandles(symbol, "4h", 100, 300),
     fetchCandles(symbol, "1d", 365, 600),
     fetchCandles(symbol, "1w", 130, 1800),
   ]);
+  return computeIndicators(symbol, c1h, c4h, c1d, c1w);
+}
 
+/**
+ * Compute the full indicator set from raw candles of ANY source — Binance
+ * klines (CEX symbols) or GeckoTerminal OHLCV (DEX pools, E1). Pure, no I/O.
+ */
+function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], c1d: Candle[], c1w: Candle[]): SymbolIndicators {
   const empty: SymbolIndicators = {
     symbol, price: null, rsi14: null, ema20: null, ema50: null, macd: null,
     atr14: null, atrPct: null, adx: null, regime: "TRANSITIONING",
@@ -656,6 +663,28 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
     pivotLevels,
     rsiTrajectory, yearHigh, yearLow, rangePct, distFromYearHighPct,
   };
+}
+
+/**
+ * Technical indicators for a DEX token from its pool's GeckoTerminal OHLCV
+ * (E1). Same math as the CEX path, so any token with a liquid pool gets the
+ * full RSI/MACD/ATR/ADX/regime read — not just the ~14 CEX majors. GeckoTerminal
+ * has no weekly candle, so the weekly TF is omitted (htf1w stays null).
+ */
+export async function getDexSymbolIndicators(
+  symbol: string,
+  chainName: string,
+  poolAddress: string,
+  token: "base" | "quote" = "base",
+): Promise<SymbolIndicators> {
+  const [g1h, g4h, g1d] = await Promise.all([
+    getOHLCV(chainName, poolAddress, "1h", 300, token),
+    getOHLCV(chainName, poolAddress, "4h", 250, token),
+    getOHLCV(chainName, poolAddress, "1d", 365, token),
+  ]);
+  const map = (cs: Array<{ high: number; low: number; close: number; volume: number }>): Candle[] =>
+    cs.map((c) => ({ high: c.high, low: c.low, close: c.close, volume: c.volume }));
+  return computeIndicators(symbol, map(g1h), map(g4h), map(g1d), []);
 }
 
 // ─── Funding rate + open interest (Binance perpetuals) ───────────────────
