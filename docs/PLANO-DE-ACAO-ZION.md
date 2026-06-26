@@ -247,3 +247,78 @@ fetchCandles(symbol, "1d", 100, ...)   // ~100 dias (≈3,3 meses)
   código linha a linha — e são os de maior risco de dinheiro.
 - **"Sistema de Score" do ChatGPT já existe parcial** como `confidenceScore`
   (falta validar e ampliar — vira Z8).
+
+---
+
+## PARTE 3 — SUGESTÕES EXTERNAS AVALIADAS (curadoria p/ o plano)
+
+Cada sugestão das 4 IAs foi cruzada com o código real e com as Partes 1 e 2.
+**Descoberta-chave:** várias features pedidas como "faltando" já estão
+50–80% construídas — o custo é menor do que as IAs estimaram.
+
+### 3.1 — Já existe parcial → só CONECTAR (ROI altíssimo)
+
+| ID | Item | Estado real no código | Status |
+|----|------|----------------------|--------|
+| E1 | TA para tokens DEX | `getOHLCV()` já existe (`src/lib/api/geckoterminal.ts:363`); os `calcRSI/calcADX/...` são funções puras. Falta só alimentar o pipeline com esses candles | 🔴 |
+| E2 | Trailing stop / OCO no autopiloto | Já existem como tipos de ordem em `src/components/pro/ProOrderPanel.tsx` (manual). Falta wirar no `AutopilotPilot` | 🔴 |
+| E3 | MEV protection em swaps grandes | CoW Protocol já existe (`src/lib/limit/cow.ts`). Falta estender a todo swap DEX > $X e tornar default | 🔴 |
+| E4 | Smart Money / Whale no ZION | `src/components/pro/ProSmartMoney.tsx` já analisa baleias (veredito accumulating/distributing). Falta injetar no prompt do ZION + grafo persistente de carteiras | 🔴 |
+
+### 3.2 — Adicionar agora (novo, alinhado a dinheiro/confiança)
+
+| ID | Item | Origem | Status |
+|----|------|--------|--------|
+| N1 | **Model fallback router** (Sonnet→Haiku/outro em 529/timeout) — resolve o SPOF | Kimi/Gemini/DeepSeek | 🔴 |
+| N2 | **Suprimir seção de TA quando não há candles** (paradoxo do sniper: não usar ADX de BTC para um token novo) | Gemini | 🔴 |
+| N3 | **Execution Quality Report** (slippage real vs estimado, fill rate) — alimenta a calibração (Z7) | Kimi/DeepSeek | 🔴 |
+| N4 | **Honeypot p/ Solana/Base/Arbitrum** (RugCheck.xyz, TokenSniffer) | Kimi/DeepSeek | 🔴 |
+| N5 | **Explicabilidade** (porque comprou / não comprou / vendeu / recusou) — barato, alta confiança | ChatGPT | 🔴 |
+| N6 | **Meta-IA / verificador adversarial** revisa o card antes de executar | ChatGPT | 🔴 |
+
+### 3.3 — Novo pilar: Inteligência de Portfólio & Risco
+
+| ID | Item | Origem | Status |
+|----|------|--------|--------|
+| R1 | Portfolio-level intelligence (correlação entre posições, concentração, beta vs BTC) | Kimi | 🔴 |
+| R2 | Risk Radar por ativo (liquidez, hack, bridge, governança, contrato, centralização, regulação) | ChatGPT | 🔴 |
+| R3 | Simulação de cenário ("se BTC cair 15%, o que acontece com a carteira") | ChatGPT/Kimi | 🔴 |
+| R4 | **Paper trading** (modo simulação 1:1 antes de dinheiro real) | Kimi/ChatGPT | 🔴 |
+
+### 3.4 — Camada de dados & infra (estende Eixo A/B)
+
+| ID | Item | Origem | Status |
+|----|------|--------|--------|
+| D1 | News intelligence (classificar impacto bull/bear, curto/longo) | ChatGPT | 🔴 |
+| D2 | Sentiment social → índice (X, Reddit, Telegram, Discord, GitHub) | ChatGPT | 🔴 |
+| D3 | Heat map global (fluxo por setor/narrativa: AI, RWA, gaming…) | ChatGPT | 🔴 |
+| D4 | Preço on-chain via oráculo (Pyth/Chainlink) p/ confiabilidade de preço DEX | Kimi | 🔴 |
+| D5 | WebSocket real-time (ProDepth/ProTrades/CEX prices) + event bus | Kimi/DeepSeek/Gemini | 🔴 |
+| D6 | LLM observability/evals (tracing por chamada, A/B de prompts) | Kimi | 🔴 |
+
+### 3.5 — Produto & conformidade
+
+| ID | Item | Origem | Status |
+|----|------|--------|--------|
+| P1 | Push notifications / alertas de preço (triggerPrice atingido, stop, freeze) | Kimi/DeepSeek | 🔴 |
+| P2 | Compliance & geoblocking (KYC/AML, jurisdições sancionadas) | Kimi | 🔴 |
+| P3 | Política de retenção/privacidade dos prompts (saldo, posições) | Kimi | 🔴 |
+
+### 3.6 — Deferir / NÃO fazer agora (com motivo)
+
+| ID | Item | Por que não agora |
+|----|------|-------------------|
+| X1 | Nós próprios (Erigon/Firedancer) + subgraphs próprios | Infra pesada e cara; não move a agulha do problema atual (segurança + confiança) |
+| X2 | Account Abstraction / Intents (ERC-4337 / ERC-7683) | Reescrita grande; CoW já cobre boa parte do benefício de execução |
+| X3 | Market making mode (Uniswap v3 ranges) | Produto diferente; foco agora é trade/advisory seguro |
+| X4 | Copy trading / leaderboard | Só faz sentido depois do track record (Z5/Z6) existir |
+| X5 | Multi-model ensemble | Complexidade alta, ganho incremental; o fallback router (N1) já dá resiliência |
+| X6 | VaR/CVaR formal | Provável over-engineering p/ o público atual; R1+R2+A4 cobrem ~80% do valor |
+
+### Sequência recomendada (Parte 3)
+
+1. **E1–E4** (só conectar o que já existe — maior ROI de todo o documento).
+2. **N1–N6** junto/depois dos Níveis 0–1 da Parte 1 (segurança e confiança).
+3. **R1–R4** (pilar de portfólio — diferencial competitivo).
+4. **D1–D6 / P1–P3** conforme tração e necessidade.
+5. **X1–X6** só se/quando houver justificativa de negócio clara.
