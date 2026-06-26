@@ -25,7 +25,7 @@ Cada item abaixo foi **confirmado lendo o código**, com referência de arquivo.
 |----|--------|-----------|--------|
 | C1 | Compra a mercado sem teto de dólar real (cap circular no número do LLM; servidor não limita market order) | 🩸 | 🔴 |
 | C2 | Daily loss-stop não-funcional (background nunca dispara; browser só conta arbitragem) | 🩸 | 🔴 |
-| C3 | `parsePrice` quebra com formato numérico PT/EU (3.420,50 → 3,42) | 🩸 | 🔴 |
+| C3 | `parsePrice` quebra com formato numérico PT/EU (3.420,50 → 3,42) | 🩸 | 🟢 |
 | C4 | Tamanho/preço da ordem vêm de texto livre do LLM sem reconciliação com preço real | ⚠️ | 🔴 |
 | C5 | Compra a mercado não é gravada na position memory → posição órfã, sem saída | ⚠️ | 🔴 |
 | C6 | Cap de rebalance (saque) burlável para moeda não-stable | ⚠️ | 🔴 |
@@ -87,7 +87,13 @@ Browser: só conta P&L de arbitragem.
 
 ---
 
-### C3 — `parsePrice` quebra com formato numérico PT/EU `🩸`
+### C3 — `parsePrice` quebra com formato numérico PT/EU `🩸` · 🟢 CONCLUÍDO (2026-06-26)
+
+> **Entregue:** `parsePrice` reescrito (regra "último separador = decimal", com
+> viés seguro no caso ambíguo) em `card-mapping.ts`; foundation prompt agora
+> exige formato máquina nos campos de execução; exemplos atualizados. Testado em
+> 12 casos de locale (incl. o catastrófico `3.420,50→3420.50`); `tsc` limpo.
+
 
 **Onde:** `src/lib/zion/card-mapping.ts:59`
 ```js
