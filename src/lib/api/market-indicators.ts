@@ -387,6 +387,8 @@ export interface SymbolIndicators {
   /** Higher-timeframe confirmation. */
   htf4h:    TimeframeTrend | null;
   htf1d:    TimeframeTrend | null;
+  /** Weekly timeframe — multi-year cycle structure (Z1). */
+  htf1w:    TimeframeTrend | null;
   /** Alignment of 1h direction with 4h+1D. */
   alignment: "aligned_bull" | "aligned_bear" | "conflict" | "mixed";
   /** OBV raw value from the last 1h bar (cumulative). */
@@ -411,6 +413,16 @@ export interface SymbolIndicators {
   resistances:     number[];
   /** Daily pivot levels derived from the prior closed day. */
   pivotLevels:     { pp: number; r1: number; r2: number; s1: number; s2: number } | null;
+  /** Recent RSI path (oldest→newest, up to 4) so the model sees momentum
+   *  DIRECTION, not a frozen snapshot (Z2). */
+  rsiTrajectory:   number[];
+  /** 1-year high/low (daily) — long-range structure (Z1). */
+  yearHigh:        number | null;
+  yearLow:         number | null;
+  /** Where price sits in the 1-year range, 0 (year low) … 100 (year high). */
+  rangePct:        number | null;
+  /** % distance from the 1-year high (negative = below it). */
+  distFromYearHighPct: number | null;
 }
 
 export interface OrderBookSnapshot {
@@ -538,19 +550,24 @@ function timeframeTrend(closes: number[]): TimeframeTrend | null {
 }
 
 async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
-  // Fetch all three timeframes in parallel.
-  const [c1h, c4h, c1d] = await Promise.all([
+  // Fetch all timeframes in parallel. Daily reaches back a FULL YEAR and a
+  // weekly series adds multi-year cycle context (Z1) — so ZION can reason
+  // about where price sits in its long-range structure, not just the last
+  // few days.
+  const [c1h, c4h, c1d, c1w] = await Promise.all([
     fetchCandles(symbol, "1h", 100, 60),
     fetchCandles(symbol, "4h", 100, 300),
-    fetchCandles(symbol, "1d", 100, 300),
+    fetchCandles(symbol, "1d", 365, 600),
+    fetchCandles(symbol, "1w", 130, 1800),
   ]);
 
   const empty: SymbolIndicators = {
     symbol, price: null, rsi14: null, ema20: null, ema50: null, macd: null,
     atr14: null, atrPct: null, adx: null, regime: "TRANSITIONING",
-    trend: "neutral", htf4h: null, htf1d: null, alignment: "mixed",
+    trend: "neutral", htf4h: null, htf1d: null, htf1w: null, alignment: "mixed",
     obv: null, obvTrend: null, confidenceScore: null,
     relVol: null, divergence: null, supports: [], resistances: [], pivotLevels: null,
+    rsiTrajectory: [], yearHigh: null, yearLow: null, rangePct: null, distFromYearHighPct: null,
   };
   if (c1h.length < 52) return empty;
 
@@ -584,9 +601,29 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
     }
   }
 
-  // Higher-timeframe trends
+  // Higher-timeframe trends (now including the weekly for cycle context).
   const htf4h = timeframeTrend(c4h.map((c) => c.close));
   const htf1d = timeframeTrend(c1d.map((c) => c.close));
+  const htf1w = timeframeTrend(c1w.map((c) => c.close));
+
+  // ── Long-range position + trajectory (Z1/Z2) ──
+  // Where does price sit inside its 1-year range, and is it near the cycle
+  // top/bottom? This is the "look back months/years" context ZION lacked.
+  let yearHigh: number | null = null;
+  let yearLow:  number | null = null;
+  let rangePct: number | null = null;
+  let distFromYearHighPct: number | null = null;
+  if (c1d.length >= 30) {
+    yearHigh = Math.max(...c1d.map((c) => c.high));
+    yearLow  = Math.min(...c1d.map((c) => c.low));
+    if (yearHigh > yearLow) {
+      rangePct = ((price - yearLow) / (yearHigh - yearLow)) * 100;
+      distFromYearHighPct = ((price - yearHigh) / yearHigh) * 100;
+    }
+  }
+  // Recent RSI path (oldest→newest) so ZION sees momentum DIRECTION, not just
+  // the current value frozen in time.
+  const rsiTrajectory = rsiArray.slice(-4).map((v) => Math.round(v * 10) / 10);
 
   // Alignment of the 1h directional bias with the higher timeframes.
   const dirOf = (t: SymbolIndicators["trend"] | TimeframeTrend["trend"]): 1 | -1 | 0 =>
@@ -608,7 +645,7 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
 
   return {
     symbol, price, rsi14, ema20, ema50, macd, atr14, atrPct,
-    adx: adxRes?.adx ?? null, regime, trend, htf4h, htf1d, alignment,
+    adx: adxRes?.adx ?? null, regime, trend, htf4h, htf1d, htf1w, alignment,
     obv:      obvResult?.obv      ?? null,
     obvTrend: obvResult?.trend    ?? null,
     confidenceScore: null, // filled by getMarketIndicators after ob + f&g are available
@@ -617,6 +654,7 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
     supports:    srLevels.supports,
     resistances: srLevels.resistances,
     pivotLevels,
+    rsiTrajectory, yearHigh, yearLow, rangePct, distFromYearHighPct,
   };
 }
 
@@ -829,12 +867,32 @@ export function formatIndicatorsForPrompt(result: MarketIndicatorsResult): strin
         `  ${ind.symbol}/USDT: price=${fmt(ind.price)} | RSI=${rsi} ${rsiLabel} | MACD ${macdStr} | EMA20=${fmt(ind.ema20)} EMA50=${fmt(ind.ema50)} | ${atrStr} | ${adxStr} | ${obvStr}${relVolStr} | regime=${ind.regime} | trend1h=${ind.trend}${scoreStr}`
       );
 
-      // Multi-timeframe confirmation line
+      // Multi-timeframe confirmation line (now incl. the weekly for cycle read)
       const tf = (t: TimeframeTrend | null) =>
         t ? `${t.trend}${t.rsi !== null ? ` RSI${t.rsi.toFixed(0)}` : ""}` : "n/a";
       lines.push(
-        `      ↳ MTF: 4h=${tf(ind.htf4h)} · 1D=${tf(ind.htf1d)} → alignment=${ind.alignment}`
+        `      ↳ MTF: 4h=${tf(ind.htf4h)} · 1D=${tf(ind.htf1d)} · 1W=${tf(ind.htf1w)} → alignment=${ind.alignment}`
       );
+
+      // Trajectory + long-range position (Z1/Z2) — momentum direction and
+      // where price sits in its 1-year range, so ZION reasons about history.
+      const trajParts: string[] = [];
+      if (ind.rsiTrajectory.length >= 2) {
+        trajParts.push(`RSI path ${ind.rsiTrajectory.join("→")}`);
+      }
+      if (ind.rangePct !== null && ind.yearLow !== null && ind.yearHigh !== null) {
+        const zone = ind.rangePct >= 80 ? "near 1Y HIGH" :
+                     ind.rangePct <= 20 ? "near 1Y LOW"  :
+                     ind.rangePct >= 55 ? "upper half"    :
+                     ind.rangePct <= 45 ? "lower half"    : "mid-range";
+        trajParts.push(`1Y range ${ind.rangePct.toFixed(0)}% (${zone}, ${fmt(ind.yearLow)}–${fmt(ind.yearHigh)})`);
+      }
+      if (ind.distFromYearHighPct !== null) {
+        trajParts.push(`${ind.distFromYearHighPct >= 0 ? "+" : ""}${ind.distFromYearHighPct.toFixed(1)}% vs 1Y high`);
+      }
+      if (trajParts.length > 0) {
+        lines.push(`      ↳ Trajectory/Cycle: ${trajParts.join(" | ")}`);
+      }
 
       // S/R sub-line (only when levels exist)
       if (ind.supports.length > 0 || ind.resistances.length > 0) {
