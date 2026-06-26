@@ -32,32 +32,36 @@ import type { CexId } from "@/lib/cex/types";
 export type AutopilotRiskMode = "conservador" | "moderado" | "agressivo";
 
 export const AUTOPILOT_RISK_PRESETS: Record<AutopilotRiskMode, {
-  maxTradeUsd:       number;
-  maxTradesPerDay:   number;
-  dailyLossStopUsd:  number;
-  countdownMs:       number;
-  allowedSymbols:    string[];
+  maxTradeUsd:        number;
+  maxTradesPerDay:    number;
+  dailyLossStopUsd:   number;
+  maxOpenExposureUsd: number;
+  countdownMs:        number;
+  allowedSymbols:     string[];
 }> = {
   conservador: {
-    maxTradeUsd:      25,
-    maxTradesPerDay:  3,
-    dailyLossStopUsd: 20,
-    countdownMs:      60_000,
-    allowedSymbols:   ["BTC", "ETH", "SOL"],
+    maxTradeUsd:        25,
+    maxTradesPerDay:    3,
+    dailyLossStopUsd:   20,
+    maxOpenExposureUsd: 75,
+    countdownMs:        60_000,
+    allowedSymbols:     ["BTC", "ETH", "SOL"],
   },
   moderado: {
-    maxTradeUsd:      50,
-    maxTradesPerDay:  5,
-    dailyLossStopUsd: 40,
-    countdownMs:      30_000,
-    allowedSymbols:   ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK"],
+    maxTradeUsd:        50,
+    maxTradesPerDay:    5,
+    dailyLossStopUsd:   40,
+    maxOpenExposureUsd: 200,
+    countdownMs:        30_000,
+    allowedSymbols:     ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK"],
   },
   agressivo: {
-    maxTradeUsd:      100,
-    maxTradesPerDay:  8,
-    dailyLossStopUsd: 60,
-    countdownMs:      15_000,
-    allowedSymbols:   ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "UNI", "DOGE", "ARB", "OP"],
+    maxTradeUsd:        100,
+    maxTradesPerDay:    8,
+    dailyLossStopUsd:   60,
+    maxOpenExposureUsd: 400,
+    countdownMs:        15_000,
+    allowedSymbols:     ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "UNI", "DOGE", "ARB", "OP"],
   },
 };
 
@@ -87,6 +91,13 @@ interface AutopilotState {
   maxTradeUsd:       number;
   maxTradesPerDay:   number;
   dailyLossStopUsd:  number;
+  /**
+   * Total-exposure cap (A4): the sum of OPEN autopilot positions' cost may
+   * never exceed this. Stops the bot from DCA-ing an unbounded bag across
+   * many small in-cap trades — the per-trade and daily-count caps don't
+   * bound cumulative capital deployed; this does.
+   */
+  maxOpenExposureUsd: number;
   allowedExchanges:  CexId[];
   allowedSymbols:    string[];
   /**
@@ -117,6 +128,7 @@ interface AutopilotState {
   setMaxTradeUsd:      (n: number)  => void;
   setMaxTradesPerDay:  (n: number)  => void;
   setDailyLossStopUsd: (n: number)  => void;
+  setMaxOpenExposureUsd: (n: number) => void;
   setAllowedExchanges: (ids: CexId[]) => void;
   setAllowedSymbols:   (syms: string[]) => void;
   setAutoRebalanceEnabled: (b: boolean) => void;
@@ -157,6 +169,7 @@ export const useAutopilot = create<AutopilotState>()(
       maxTradeUsd:          250,
       maxTradesPerDay:      6,
       dailyLossStopUsd:     200,
+      maxOpenExposureUsd:   750,
       allowedExchanges:     [] as CexId[],
       allowedSymbols:       ["BTC", "ETH", "SOL"],
       autoRebalanceEnabled: false,
@@ -177,6 +190,7 @@ export const useAutopilot = create<AutopilotState>()(
       setMaxTradeUsd:      (n) => set({ maxTradeUsd:      Math.max(10, Math.min(50_000, n))    }),
       setMaxTradesPerDay:  (n) => set({ maxTradesPerDay:  Math.max(1,  Math.min(50,     n))    }),
       setDailyLossStopUsd: (n) => set({ dailyLossStopUsd: Math.max(10, Math.min(100_000, n))   }),
+      setMaxOpenExposureUsd: (n) => set({ maxOpenExposureUsd: Math.max(10, Math.min(500_000, n)) }),
       setAllowedExchanges: (ids)  => set({ allowedExchanges: [...new Set(ids)] }),
       setAllowedSymbols:   (syms) => set({ allowedSymbols:   [...new Set(syms.map((s) => s.toUpperCase().trim()).filter(Boolean))] }),
       setAutoRebalanceEnabled: (b) => {
@@ -189,11 +203,12 @@ export const useAutopilot = create<AutopilotState>()(
       applyRiskPreset: (mode, exchangeId) => {
         const p = AUTOPILOT_RISK_PRESETS[mode];
         set({
-          maxTradeUsd:       p.maxTradeUsd,
-          maxTradesPerDay:   p.maxTradesPerDay,
-          dailyLossStopUsd:  p.dailyLossStopUsd,
-          countdownMs:       p.countdownMs,
-          allowedSymbols:    p.allowedSymbols,
+          maxTradeUsd:        p.maxTradeUsd,
+          maxTradesPerDay:    p.maxTradesPerDay,
+          dailyLossStopUsd:   p.dailyLossStopUsd,
+          maxOpenExposureUsd: p.maxOpenExposureUsd,
+          countdownMs:        p.countdownMs,
+          allowedSymbols:     p.allowedSymbols,
           ...(exchangeId ? { allowedExchanges: [exchangeId] } : {}),
         });
       },
@@ -262,6 +277,7 @@ export const useAutopilot = create<AutopilotState>()(
         maxTradeUsd:         s.maxTradeUsd,
         maxTradesPerDay:     s.maxTradesPerDay,
         dailyLossStopUsd:    s.dailyLossStopUsd,
+        maxOpenExposureUsd:  s.maxOpenExposureUsd,
         allowedExchanges:    s.allowedExchanges,
         allowedSymbols:      s.allowedSymbols,
         maxRebalanceUsd:     s.maxRebalanceUsd,

@@ -47,7 +47,18 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   const recordEntry   = useAutopilotPositions((s) => s.recordEntry);
   const markExitArmed = useAutopilotPositions((s) => s.markExitArmed);
   const closePosition = useAutopilotPositions((s) => s.closePosition);
+  const positions     = useAutopilotPositions((s) => s.positions);
   const enabled = a.enabled;
+
+  // A4: total capital currently deployed in OPEN autopilot positions (cost
+  // basis). The per-trade + daily-count caps don't bound cumulative exposure;
+  // this does — a new BUY may not push the sum past maxOpenExposureUsd.
+  const openExposureUsd = useMemo(
+    () => Object.values(positions)
+      .filter((p) => p.status !== "closed")
+      .reduce((sum, p) => sum + (p.costUsd || 0), 0),
+    [positions],
+  );
 
   const consumedRef = useRef<Set<string>>(new Set());
   // Re-entrancy guard. setPhase is async, so two rapid effect runs (React
@@ -83,6 +94,9 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
       if (a.tradesToday + intents.length > a.maxTradesPerDay) continue;
       // Every leg has to clear the per-trade USD cap independently.
       if (intents.some((i) => i.notionalUsd > a.maxTradeUsd)) continue;
+      // A4: the BUY legs plus current open exposure can't exceed the total cap.
+      const buyNotional = intents.filter((i) => i.side === "buy").reduce((sum, i) => sum + i.notionalUsd, 0);
+      if (buyNotional > 0 && openExposureUsd + buyNotional > a.maxOpenExposureUsd) continue;
       // Every leg's base must be in the symbol whitelist.
       if (intents.some((i) => !a.allowedSymbols.includes(i.symbol.split("/")[0]))) continue;
       // Vault must be unlocked AND every leg's exchange must be
@@ -101,7 +115,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, enabled, a.frozenUntilDay, a.tradesToday, a.maxTradesPerDay, a.maxTradeUsd, a.allowedSymbols, a.allowedExchanges, vault.creds]);
+  }, [cards, enabled, a.frozenUntilDay, a.tradesToday, a.maxTradesPerDay, a.maxTradeUsd, a.maxOpenExposureUsd, openExposureUsd, a.allowedSymbols, a.allowedExchanges, vault.creds]);
 
   // Bring the next candidate into the active slot when we're idle.
   useEffect(() => {
@@ -203,6 +217,15 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
                                                                  return rejectAll("exceeds per-trade cap (changed during countdown)");
     if (intents.some((i) => !fresh.allowedSymbols.includes(i.symbol.split("/")[0])))
                                                                  return rejectAll("symbol no longer allowed");
+    // A4: re-check the total-exposure cap against FRESH open positions.
+    const buyNotionalFire = intents.filter((i) => i.side === "buy").reduce((sum, i) => sum + i.notionalUsd, 0);
+    if (buyNotionalFire > 0) {
+      const exposureNow = Object.values(useAutopilotPositions.getState().positions)
+        .filter((p) => p.status !== "closed")
+        .reduce((sum, p) => sum + (p.costUsd || 0), 0);
+      if (exposureNow + buyNotionalFire > fresh.maxOpenExposureUsd)
+        return rejectAll("total exposure cap would be exceeded");
+    }
 
     // Resolve each leg's exchange (pinned for cross-CEX, picker otherwise).
     const resolved: { exchange: CexId; intent: AutopilotIntent }[] = [];
