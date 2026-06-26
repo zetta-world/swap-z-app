@@ -112,6 +112,8 @@ const TYPE_COLOR: Record<TxType, string> = {
   autopilot_cex: "#34d399",
   autopilot_arb: "#34d399",
   rebalance:     "#94a3b8",
+  deposit:       "#64748b",
+  withdraw:      "#64748b",
 };
 
 const STATUS_TEXT: Record<TxStatus, string> = {
@@ -121,13 +123,22 @@ const STATUS_TEXT: Record<TxStatus, string> = {
   canceled:  "text-ink-3",
 };
 
-/** P&L between the snapshot closest to (now - window) and the latest value. */
-function pnlOverWindow(snaps: PortfolioSnapshot[], windowMs: number): { abs: number; pct: number } | null {
+/**
+ * Wealth change between the snapshot closest to (now - window) and the latest.
+ * Returns raw change (includes deposits/withdrawals as-is) plus a capital-flow
+ * adjusted value if flow data is available.
+ *
+ * NOTE: This is portfolio WEALTH CHANGE, not trading profit. Deposits inflate
+ * the number; withdrawals deflate it. Use `tradeAdjusted` for pure trade P&L.
+ */
+function wealthChangeOverWindow(
+  snaps: PortfolioSnapshot[],
+  windowMs: number,
+  entries: import("@/lib/store/txHistory").TxHistoryEntry[],
+): { abs: number; pct: number; tradeAdjusted: number | null } | null {
   if (snaps.length < 2) return null;
   const latest = snaps[snaps.length - 1];
   const cutoff = Date.now() - windowMs;
-  // The last snapshot at or before the cutoff is our baseline; fall back to
-  // the earliest snapshot when the window predates our whole history.
   let base: PortfolioSnapshot | undefined;
   for (const s of snaps) {
     if (s.ts <= cutoff) base = s;
@@ -137,7 +148,28 @@ function pnlOverWindow(snaps: PortfolioSnapshot[], windowMs: number): { abs: num
   if (base.totalUsd <= 0 || base.ts === latest.ts) return null;
   const abs = latest.totalUsd - base.totalUsd;
   const pct = (abs / base.totalUsd) * 100;
-  return { abs, pct };
+
+  // Subtract net capital flows (deposits − withdrawals) within the window.
+  // Both confirmed AND pending flows count: the measured wealth reflects a
+  // transfer the moment it happens, regardless of our local status label
+  // (deposits land as "confirmed", withdrawals as "pending"). Only flows with
+  // a known valueUsd contribute; failed/canceled ones are skipped.
+  let netFlows = 0;
+  let hasFlowData = false;
+  for (const e of entries) {
+    if (e.ts < cutoff) continue;
+    if (e.status === "failed" || e.status === "canceled") continue;
+    if (e.type === "deposit" && (e.valueUsd ?? 0) > 0) {
+      netFlows += e.valueUsd!;
+      hasFlowData = true;
+    } else if (e.type === "withdraw" && (e.valueUsd ?? 0) > 0) {
+      netFlows -= e.valueUsd!;
+      hasFlowData = true;
+    }
+  }
+  const tradeAdjusted = hasFlowData ? abs - netFlows : null;
+
+  return { abs, pct, tradeAdjusted };
 }
 
 export default function DashboardView() {
@@ -171,14 +203,16 @@ export default function DashboardView() {
     ? walletUsd + cexUsd
     : (latest?.totalUsd ?? 0);
 
-  // ─── Hero P&L windows ─────────────────────────────────────────────────
-  const pnl24h = useMemo(() => pnlOverWindow(snapshots, RANGE_MS["24h"]), [snapshots]);
-  const pnl7d  = useMemo(() => pnlOverWindow(snapshots, RANGE_MS["7d"]),  [snapshots]);
-  const pnl30d = useMemo(() => pnlOverWindow(snapshots, RANGE_MS["30d"]), [snapshots]);
+  // ─── Hero wealth-change windows ───────────────────────────────────────
+  const pnl24h = useMemo(() => wealthChangeOverWindow(snapshots, RANGE_MS["24h"], entries), [snapshots, entries]);
+  const pnl7d  = useMemo(() => wealthChangeOverWindow(snapshots, RANGE_MS["7d"],  entries), [snapshots, entries]);
+  const pnl30d = useMemo(() => wealthChangeOverWindow(snapshots, RANGE_MS["30d"], entries), [snapshots, entries]);
 
   // ─── Trade aggregates from history ────────────────────────────────────
+  // Deposits/withdrawals are capital flows — excluded from trading stats.
   const stats = useMemo(() => {
-    const confirmed = entries.filter((e) => e.status === "confirmed");
+    const trades    = entries.filter((e) => e.type !== "deposit" && e.type !== "withdraw");
+    const confirmed = trades.filter((e) => e.status === "confirmed");
     const withPnl   = confirmed.filter((e) => e.pnlUsd !== undefined);
     const wins      = withPnl.filter((e) => (e.pnlUsd ?? 0) > 0).length;
     const volume    = confirmed.reduce((s, e) => s + (e.valueUsd ?? 0), 0);
@@ -241,10 +275,12 @@ export default function DashboardView() {
   const allocTotal = useMemo(() => allocation.reduce((s, x) => s + x.value, 0), [allocation]);
 
   // ─── P&L / volume by operation type ───────────────────────────────────
+  // Deposits and withdrawals are capital flows, not trading operations.
   const byType = useMemo(() => {
     const map = new Map<TxType, { count: number; volume: number; pnl: number; fees: number }>();
     for (const e of entries) {
       if (e.status !== "confirmed") continue;
+      if (e.type === "deposit" || e.type === "withdraw") continue;
       const row = map.get(e.type) ?? { count: 0, volume: 0, pnl: 0, fees: 0 };
       row.count  += 1;
       row.volume += e.valueUsd ?? 0;
@@ -255,7 +291,8 @@ export default function DashboardView() {
     return [...map.entries()].sort((x, y) => y[1].volume - x[1].volume);
   }, [entries]);
 
-  // ─── Activity: volume per day, last 14 days ───────────────────────────
+  // ─── Activity: trading volume per day, last 14 days ──────────────────
+  // Capital flows (deposit/withdraw) excluded — not trading volume.
   const activity = useMemo(() => {
     const DAYS = 14;
     const now = new Date();
@@ -269,6 +306,7 @@ export default function DashboardView() {
     const start = buckets[0].ts;
     for (const e of entries) {
       if (e.status !== "confirmed") continue;
+      if (e.type === "deposit" || e.type === "withdraw") continue;
       if (e.ts < start) continue;
       const idx = Math.floor((e.ts - start) / (24 * 60 * 60 * 1000));
       if (idx >= 0 && idx < buckets.length) buckets[idx].value += e.valueUsd ?? 0;
@@ -436,13 +474,27 @@ export default function DashboardView() {
             label={t("dashboard.kpiPnl7d")} Icon={LineChart}
             tone={(pnl7d?.abs ?? 0) >= 0 ? "green" : "red"}
             value={mask(pnl7d ? `${pnl7d.abs >= 0 ? "+" : ""}${formatUsd(pnl7d.abs)}` : "—")}
-            sub={pnl7d ? { text: `${pnl7d.pct >= 0 ? "+" : ""}${pnl7d.pct.toFixed(2)}%`, tone: pnl7d.abs >= 0 ? "green" : "red" } : null}
+            sub={pnl7d
+              ? {
+                  text: pnl7d.tradeAdjusted !== null
+                    ? `${pnl7d.pct >= 0 ? "+" : ""}${pnl7d.pct.toFixed(2)}% · trade: ${pnl7d.tradeAdjusted >= 0 ? "+" : ""}${formatUsd(pnl7d.tradeAdjusted)}`
+                    : `${pnl7d.pct >= 0 ? "+" : ""}${pnl7d.pct.toFixed(2)}% · ${t("dashboard.kpiPnlNote")}`,
+                  tone: pnl7d.abs >= 0 ? "green" : "red",
+                }
+              : null}
           />
           <Kpi
             label={t("dashboard.kpiPnl30d")} Icon={LineChart}
             tone={(pnl30d?.abs ?? 0) >= 0 ? "green" : "red"}
             value={mask(pnl30d ? `${pnl30d.abs >= 0 ? "+" : ""}${formatUsd(pnl30d.abs)}` : "—")}
-            sub={pnl30d ? { text: `${pnl30d.pct >= 0 ? "+" : ""}${pnl30d.pct.toFixed(2)}%`, tone: pnl30d.abs >= 0 ? "green" : "red" } : null}
+            sub={pnl30d
+              ? {
+                  text: pnl30d.tradeAdjusted !== null
+                    ? `${pnl30d.pct >= 0 ? "+" : ""}${pnl30d.pct.toFixed(2)}% · trade: ${pnl30d.tradeAdjusted >= 0 ? "+" : ""}${formatUsd(pnl30d.tradeAdjusted)}`
+                    : `${pnl30d.pct >= 0 ? "+" : ""}${pnl30d.pct.toFixed(2)}% · ${t("dashboard.kpiPnlNote")}`,
+                  tone: pnl30d.abs >= 0 ? "green" : "red",
+                }
+              : null}
           />
           <Kpi
             label={t("dashboard.kpiWinRate")} Icon={Percent} tone="gold"
@@ -484,7 +536,7 @@ export default function DashboardView() {
                         const ctx = [
                           `Patrimônio total: ${formatUsd(totalUsd)}`,
                           `CEX: ${formatUsd(cexUsd)} | Carteira: ${formatUsd(walletUsd)}`,
-                          `P&L 7d: ${pnl7d ? `${pnl7d.abs >= 0 ? "+" : ""}${formatUsd(pnl7d.abs)} (${pnl7d.pct.toFixed(1)}%)` : "n/a"}`,
+                          `Variação patrimônio 7d: ${pnl7d ? `${pnl7d.abs >= 0 ? "+" : ""}${formatUsd(pnl7d.abs)} (${pnl7d.pct.toFixed(1)}%, incl. dep/saq)` : "n/a"}`,
                           `Win rate: ${stats.winRate !== null ? `${stats.winRate.toFixed(0)}%` : "n/a"} | Volume: ${formatUsd(stats.volume)}`,
                           `Insights identificados:`,
                           ...insights.map((ins) => `- ${ins.text}`),
@@ -796,8 +848,15 @@ export default function DashboardView() {
                     {e.valueUsd !== undefined && (
                       <div className="font-mono text-[12px] text-ink tabular-nums">{mask(formatUsd(e.valueUsd))}</div>
                     )}
-                    <div className={cn("font-mono text-[9px] tracking-wider uppercase", STATUS_TEXT[e.status])}>
-                      {STATUS_LABELS_PT[e.status]}
+                    <div className="flex items-center justify-end gap-1">
+                      {(e.type === "deposit" || e.type === "withdraw") && (
+                        <span className="font-mono text-[9px] text-ink-4 tracking-wider uppercase">
+                          {e.type === "deposit" ? "entrada" : "saída"}
+                        </span>
+                      )}
+                      <div className={cn("font-mono text-[9px] tracking-wider uppercase", STATUS_TEXT[e.status])}>
+                        {STATUS_LABELS_PT[e.status]}
+                      </div>
                     </div>
                   </div>
                 </div>

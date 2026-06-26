@@ -13,7 +13,9 @@ export type TxType =
   | "autopilot_dex"  // DEX swap fired by autopilot
   | "autopilot_cex"  // CEX order fired by autopilot
   | "autopilot_arb"  // Arbitrage fired by autopilot
-  | "rebalance";     // CEX→wallet rebalance
+  | "rebalance"      // CEX→wallet rebalance (internal repositioning)
+  | "deposit"        // Capital in: wallet→CEX or external→wallet (not a trade)
+  | "withdraw";      // Capital out: CEX→wallet or wallet→external (not a trade)
 
 export type TxStatus = "pending" | "confirmed" | "failed" | "canceled";
 
@@ -107,6 +109,8 @@ export const TX_TYPE_LABELS: Record<TxType, string> = {
   autopilot_cex:  "Autopilot CEX",
   autopilot_arb:  "Autopilot Arb",
   rebalance:      "Rebalance",
+  deposit:        "Deposit",
+  withdraw:       "Withdraw",
 };
 
 export const TX_TYPE_LABELS_PT: Record<TxType, string> = {
@@ -118,6 +122,8 @@ export const TX_TYPE_LABELS_PT: Record<TxType, string> = {
   autopilot_cex:  "Autopilot CEX",
   autopilot_arb:  "Autopilot Arb",
   rebalance:      "Rebalance",
+  deposit:        "Depósito",
+  withdraw:       "Saque",
 };
 
 export const STATUS_LABELS_PT: Record<TxStatus, string> = {

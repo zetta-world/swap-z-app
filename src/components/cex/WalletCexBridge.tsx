@@ -20,6 +20,7 @@ import { CEX_META, type CexId, type CexCredentials, type CexBalance } from "@/li
 import { useTxHistory } from "@/lib/store/txHistory";
 import { DEFAULT_TOKENS, type Token } from "@/lib/tokens";
 import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
+import { useTokenPrice } from "@/lib/hooks/useTokenPrices";
 import { CHAIN_BY_ID, type ChainId } from "@/lib/chains";
 import { WAGMI_CHAIN_IDS } from "@/lib/wagmi";
 import { useT } from "@/lib/i18n";
@@ -581,6 +582,7 @@ function WalletSendToCex({
   const solAddress = sol.publicKey?.toBase58() ?? null;
 
   const bal = useTokenBalance(token, null);
+  const { priceUsd } = useTokenPrice(token);
 
   const [amount,       setAmount]       = useState("");
   const [stage,        setStage]        = useState<"form" | "confirm" | "sending" | "sent">("form");
@@ -717,7 +719,7 @@ function WalletSendToCex({
       setStage("sent");
       toast.success("Enviado — aguarde o crédito na corretora.");
       pushHistory({
-        type: "dex_swap",
+        type: "deposit",
         status: "confirmed",
         fromSymbol: currency || token.symbol,
         fromChain: token.chain,
@@ -725,6 +727,9 @@ function WalletSendToCex({
         toSymbol: currency || token.symbol,
         toChain: exchangeId,
         exchange: exchangeId,
+        // USD value of the moved capital — lets the dashboard subtract this
+        // flow from wealth change to show true trading performance.
+        valueUsd: priceUsd != null && Number.isFinite(amountNum) ? amountNum * priceUsd : undefined,
         txHash: sentTxHash ?? undefined,
         route: isSolana ? "solana" : token.chain,
         notes: `Depósito → ${exchangeLabel}`,
@@ -1009,15 +1014,21 @@ function WithdrawPanel({ exchangeId, credentials }: Props) {
       setReceipt(body.receipt);
       setStage("done");
       toast.success(`Saque enviado: ${body.receipt.id || "(sem id)"}`);
+      // Stablecoin withdrawals are ~$1, so we can record the USD value
+      // honestly. Non-stable assets are left without valueUsd rather than
+      // fabricating a price we don't have at withdraw time.
+      const STABLES = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP"]);
+      const cur = currency.toUpperCase();
       pushHistory({
-        type: "rebalance",
+        type: "withdraw",
         status: "pending",
-        fromSymbol: currency.toUpperCase(),
+        fromSymbol: cur,
         fromChain: exchangeId,
         fromAmount: String(amountNum),
-        toSymbol: currency.toUpperCase(),
+        toSymbol: cur,
         toChain: networkToChainId(network) ?? network.toLowerCase(),
         exchange: exchangeId,
+        valueUsd: STABLES.has(cur) ? amountNum : undefined,
         orderId: body.receipt.id,
         route: network,
         txHash: body.receipt.txid ?? undefined,

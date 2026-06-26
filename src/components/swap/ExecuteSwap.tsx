@@ -306,6 +306,7 @@ export default function ExecuteSwap({
           type: "dex_swap", status: "pending",
           fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
           toSymbol: toToken.symbol, toChain, route: "jupiter",
+          toAmount: String(Number(jupResult.quote.outAmount) / Math.pow(10, toToken.decimals)),
         });
 
         // Wait for confirmation against the lastValidBlockHeight Jupiter returned.
@@ -393,6 +394,7 @@ export default function ExecuteSwap({
           type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
           fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
           toSymbol: toToken.symbol, toChain, txHash: hash, route: "0x",
+          toAmount: String(Number(q.buyAmount) / Math.pow(10, toToken.decimals)),
         });
         return;
       }
@@ -441,6 +443,7 @@ export default function ExecuteSwap({
         type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
         fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
         toSymbol: toToken.symbol, toChain, txHash: hash, route: "lifi",
+        toAmount: String(Number(lfQuote.estimate.toAmount) / Math.pow(10, toToken.decimals)),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

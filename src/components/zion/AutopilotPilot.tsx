@@ -284,6 +284,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
             : String(intent.amount),
           toSymbol: intent.side === "buy" ? (baseSymbol ?? intent.symbol) : (quoteSymbol ?? "USDT"),
           toChain: exchange,
+          toAmount: intent.side === "buy" ? String(intent.amount) : String(intent.notionalUsd.toFixed(6)),
           exchange,
           orderId: result.value.id,
           route: intent.type,

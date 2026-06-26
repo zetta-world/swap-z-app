@@ -11,6 +11,7 @@ import {
   useTxHistory, TX_TYPE_LABELS_PT, STATUS_LABELS_PT,
   type TxType, type TxStatus, type TxHistoryEntry,
 } from "@/lib/store/txHistory";
+import { useRealizedPnl, effectiveRealizedUsd, effectiveRealizedPct, type RealizedLot } from "@/lib/store/costBasis";
 import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -34,6 +35,8 @@ const TYPE_COLORS: Record<TxType, string> = {
   autopilot_cex:  "text-green  border-green/30  bg-green/5",
   autopilot_arb:  "text-green  border-green/30  bg-green/5",
   rebalance:      "text-ink-2  border-white/20  bg-white/5",
+  deposit:        "text-ink-3  border-white/15  bg-white/3",
+  withdraw:       "text-ink-3  border-white/15  bg-white/3",
 };
 
 const STATUS_COLORS: Record<TxStatus, string> = {
@@ -43,11 +46,12 @@ const STATUS_COLORS: Record<TxStatus, string> = {
   canceled:  "text-ink-3",
 };
 
-// Types grouped by venue — far more scannable than one flat row of 8 pills.
+// Types grouped by venue — far more scannable than one flat row of pills.
 const TYPE_GROUPS: { label: string; types: TxType[] }[] = [
-  { label: "DEX",       types: ["dex_swap", "dex_bridge"] },
-  { label: "CEX",       types: ["cex_spot", "cex_futures"] },
-  { label: "Autopilot", types: ["autopilot_dex", "autopilot_cex", "autopilot_arb", "rebalance"] },
+  { label: "DEX",           types: ["dex_swap", "dex_bridge"] },
+  { label: "CEX",           types: ["cex_spot", "cex_futures"] },
+  { label: "Autopilot",     types: ["autopilot_dex", "autopilot_cex", "autopilot_arb", "rebalance"] },
+  { label: "Transferência", types: ["deposit", "withdraw"] },
 ];
 
 const STATUSES: TxStatus[] = ["confirmed", "pending", "failed", "canceled"];
@@ -60,6 +64,7 @@ export default function HistoryView() {
   const lang = useUI((s) => s.lang);
   const locale = LOCALE_MAP[lang] ?? "en-US";
   const { entries, clear } = useTxHistory();
+  const realized = useRealizedPnl();
 
   const [typeFilter,   setTypeFilter]   = useState<TxType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<TxStatus | "all">("all");
@@ -97,7 +102,8 @@ export default function HistoryView() {
   }, [visible, locale, t]);
 
   const summary = useMemo(() => {
-    const confirmed = entries.filter((e) => e.status === "confirmed");
+    const trades    = entries.filter((e) => e.type !== "deposit" && e.type !== "withdraw");
+    const confirmed = trades.filter((e) => e.status === "confirmed");
     const pending   = entries.filter((e) => e.status === "pending").length;
     const totalVol  = confirmed.reduce((s, e) => s + (e.valueUsd ?? 0), 0);
     const totalFees = confirmed.reduce((s, e) => s + (e.feesUsd ?? 0), 0);
@@ -312,6 +318,7 @@ export default function HistoryView() {
                           entry={entry}
                           expanded={expanded === entry.id}
                           onToggle={() => setExpanded(expanded === entry.id ? null : entry.id)}
+                          realized={realized}
                         />
                       ))}
                     </AnimatePresence>
@@ -352,11 +359,12 @@ export default function HistoryView() {
 // ─── Sub-components ──────────────────────────────────────────────────────
 
 function TxRow({
-  entry, expanded, onToggle,
+  entry, expanded, onToggle, realized,
 }: {
   entry: TxHistoryEntry;
   expanded: boolean;
   onToggle: () => void;
+  realized: Map<string, RealizedLot>;
 }) {
   const t = useT();
   const lang = useUI((s) => s.lang);
@@ -364,7 +372,9 @@ function TxRow({
   const date = new Date(entry.ts);
   const timeStr = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 
-  const pnl = entry.pnlUsd;
+  const isFlow = entry.type === "deposit" || entry.type === "withdraw";
+  const pnl    = isFlow ? undefined : effectiveRealizedUsd(entry, realized);
+  const pnlPct = isFlow ? undefined : effectiveRealizedPct(entry, realized);
   const PnlIcon = pnl === undefined ? Minus : pnl > 0 ? TrendingUp : pnl < 0 ? TrendingDown : Minus;
   const pnlColor = pnl === undefined ? "text-ink-4" : pnl > 0 ? "text-green" : pnl < 0 ? "text-red" : "text-ink-4";
 
@@ -400,12 +410,21 @@ function TxRow({
           {entry.valueUsd !== undefined && (
             <div className="font-mono text-sm text-ink">{formatUsd(entry.valueUsd)}</div>
           )}
-          {pnl !== undefined && (
+          {isFlow ? (
+            <div className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">
+              {entry.type === "deposit" ? "entrada" : "saída"}
+            </div>
+          ) : pnl !== undefined ? (
             <div className={cn("font-mono text-xs flex items-center gap-0.5 justify-end", pnlColor)}>
               <PnlIcon className="w-2.5 h-2.5" />
               {pnl > 0 ? "+" : ""}{formatUsd(pnl)}
+              {pnlPct !== undefined && (
+                <span className="ml-1 text-[9px] opacity-70">
+                  ({pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%)
+                </span>
+              )}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Status */}
