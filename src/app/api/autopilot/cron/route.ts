@@ -6,11 +6,15 @@ import {
 } from "@/lib/autopilot/sessions";
 import { runAutopilotCexScan } from "@/lib/autopilot/scan";
 import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
-import { fetchCexBalance, placeCexOrder } from "@/lib/cex/server";
-import { getCexSpotPrices } from "@/lib/api/cex-spot";
+import { fetchCexBalance, placeCexOrder, fetchCexOrderStatus } from "@/lib/cex/server";
+import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
-import type { AutopilotSessionRow, AutopilotRunRow } from "@/lib/supabase/types";
-import type { CexId, CexCredentials } from "@/lib/cex/types";
+import {
+  getOpenServerPositions, recordServerEntry, markServerExitArmed,
+  closeServerPosition, reopenServerPosition, applySessionPnl,
+} from "@/lib/autopilot/positions-server";
+import type { AutopilotSessionRow, AutopilotRunRow, AutopilotPositionRow } from "@/lib/supabase/types";
+import type { CexId, CexCredentials, CexOrder } from "@/lib/cex/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +44,80 @@ const RISK_PCT: Record<string, number> = {
   agressivo:   0.65,
 };
 const MAX_ORDERS_PER_RUN = 4;
+
+// Server-side total open-exposure cap per risk mode (mirrors the browser
+// presets in store/autopilot.ts). The cron never lets the sum of open
+// position cost exceed this (A4 server side).
+const RISK_EXPOSURE_USD: Record<string, number> = { conservador: 75, moderado: 200, agressivo: 400 };
+
+type RunRowT = Partial<AutopilotRunRow> & { wallet_address: string; exchange_id: string; status: string };
+
+const STABLE_FEE = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD"]);
+
+/** Realized USD P&L of a filled SELL against a position's average cost. */
+function realizedFromSell(order: CexOrder, pos: AutopilotPositionRow): number | null {
+  const filledQty = Number(order.filled ?? 0);
+  if (!(filledQty > 0)) return null;
+  const proceeds = Number(order.cost) > 0 ? Number(order.cost) : filledQty * Number(order.average ?? 0);
+  if (!(proceeds > 0)) return null;
+  const avgCost = Number(pos.base_amount) > 0 ? Number(pos.cost_usd) / Number(pos.base_amount) : 0;
+  if (!(avgCost > 0)) return null;
+  const costRemoved = avgCost * filledQty;
+  const feeCost = Number(order.fee?.cost ?? 0);
+  const feeCur  = (order.fee?.currency ?? "").toUpperCase();
+  const fee = feeCost > 0 && STABLE_FEE.has(feeCur) ? feeCost : 0;
+  const realized = proceeds - costRemoved - fee;
+  return Number.isFinite(realized) ? realized : null;
+}
+
+/**
+ * Settle exits armed on a PRIOR run (A5): poll each exit_armed position's
+ * order; a filled exit realizes P&L (fed atomically to the loss-stop) and
+ * closes the position; a canceled/expired one reopens so a later scan can
+ * re-arm. Returns the run-log rows and the total realized delta.
+ */
+async function settleArmedExits(
+  s: AutopilotSessionRow, creds: CexCredentials, exchange: CexId, today: string,
+): Promise<{ rows: RunRowT[]; realizedDelta: number }> {
+  const rows: RunRowT[] = [];
+  let realizedDelta = 0;
+  const armed = (await getOpenServerPositions(s.id)).filter((p) => p.status === "exit_armed" && p.exit_order_id);
+  for (const pos of armed) {
+    try {
+      const order = await fetchCexOrderStatus(exchange, creds, pos.exit_order_id!, pos.pair);
+      const st = order.status?.toLowerCase() ?? "";
+      if (st === "closed" || st === "filled") {
+        const realized = realizedFromSell(order, pos);
+        if (realized !== null) {
+          realizedDelta += realized;
+          await applySessionPnl(s.id, realized, today);
+        }
+        await closeServerPosition(s.id, pos.base);
+        rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", order_type: "limit", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: realized !== null ? `exit settled, realized $${realized.toFixed(2)}` : "exit settled" });
+      } else if (st === "canceled" || st === "cancelled" || st === "expired") {
+        await reopenServerPosition(s.id, pos.base);
+        rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "skipped", order_id: pos.exit_order_id, reason: "armed exit canceled/expired — reopened" });
+      }
+      // still open → leave it armed for the next run
+    } catch { /* transient — retry next run */ }
+  }
+  return { rows, realizedDelta };
+}
+
+/** Compact "held=… entry=… now=… unrealized=…" context so ZION proposes exits. */
+function buildPositionsContext(positions: AutopilotPositionRow[], refPrices: Map<string, CexSpotPrice>): string {
+  const open = positions.filter((p) => p.status !== "closed");
+  if (open.length === 0) return "";
+  return open.map((p) => {
+    const now = refPrices.get(p.base.toUpperCase())?.priceUsd ?? null;
+    const entry = Number(p.entry_price);
+    const unreal = now && entry > 0 ? ((now - entry) / entry) * 100 : null;
+    const armed = p.status === "exit_armed" ? "yes" : "no";
+    return `  - ${p.pair} | held=${Number(p.base_amount)} | entry=$${entry} | now=${now != null ? `$${now}` : "n/a"}`
+      + `${unreal != null ? ` | unrealized=${unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}%` : ""}`
+      + ` | exit_armed=${armed}${p.entry_label ? ` | reason='${String(p.entry_label).slice(0, 60)}'` : ""}`;
+  }).join("\n");
+}
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -107,26 +185,41 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   // ── 1. Daily rollover ──
   let tradesToday = s.trades_today;
   let frozenUntil = s.frozen_until_day;
+  let pnlToday    = s.pnl_today;
   if (s.last_reset_day !== today) {
     tradesToday = 0;
+    pnlToday    = 0;
     frozenUntil = frozenUntil === today ? frozenUntil : null;
     await patchSession(s.id, { trades_today: 0, pnl_today: 0, last_reset_day: today, frozen_until_day: frozenUntil });
   }
 
-  // ── 2. Freeze / cap gates ──
+  // ── 2. Decrypt creds ──
+  const creds: CexCredentials = decryptSessionCreds(s);
+  const exchange = s.exchange_id as CexId;
+
+  // ── 3. Settle exits armed on a prior run (A5). A filled exit realizes P&L
+  //      (fed atomically to the loss-stop) and can trip the freeze. ──
+  const runRows: RunRowT[] = [];
+  try {
+    const settle = await settleArmedExits(s, creds, exchange, today);
+    runRows.push(...settle.rows);
+    pnlToday += settle.realizedDelta;
+    if (pnlToday <= -s.daily_loss_stop_usd) frozenUntil = today;
+  } catch { /* settle failure must not abort the session */ }
+
+  // ── 4. Freeze / cap gates (AFTER settling — a settle can trip the freeze) ──
   if (frozenUntil === today) {
+    if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
     return { fired: 0, note: "frozen (daily loss-stop)" };
   }
   if (tradesToday >= s.max_trades_per_day) {
+    if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
     return { fired: 0, note: "daily trade cap reached" };
   }
 
-  // ── 3. Decrypt creds + read live balance ──
-  const creds: CexCredentials = decryptSessionCreds(s);
-  const exchange = s.exchange_id as CexId;
-
+  // ── 5. Read live balance ──
   let totalUsd = 0;
   let balanceContext = "";
   try {
@@ -141,18 +234,24 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
       .join(", ");
     balanceContext = `total: $${totalUsd.toFixed(2)} | ${parts}`;
   } catch (e) {
+    if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: `balance read failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300) });
     return { fired: 0, note: "balance read failed" };
   }
 
-  // ── 4. Recompute a BOUNDED per-trade cap from live balance ──
-  // Can only shrink relative to what the user armed (never grow) — a safety
-  // bias so a balance spike can't enlarge autonomous order sizes.
+  // ── 6. Bounded per-trade cap (can only shrink vs the armed cap) ──
   const pct = RISK_PCT[s.risk_mode] ?? 0.20;
   const dynamicMax = Math.max(2, Math.round(totalUsd * pct));
   const effectiveMaxTradeUsd = Math.min(dynamicMax, s.max_trade_usd);
 
-  // ── 5. Scan ──
+  // ── 7. Open positions + reference prices (guard + position context + cap) ──
+  const refPrices     = await getCexSpotPrices(s.allowed_symbols);
+  const openPositions = await getOpenServerPositions(s.id);
+  let   exposureUsd   = openPositions.reduce((sum, p) => sum + Number(p.cost_usd || 0), 0);
+  const maxExposureUsd = RISK_EXPOSURE_USD[s.risk_mode] ?? 200;
+  const ownedBases    = new Set(openPositions.map((p) => p.base.toUpperCase()));
+
+  // ── 8. Scan (with open positions so ZION proposes exits) ──
   const scan = await runAutopilotCexScan({
     exchangeId:     s.exchange_id,
     riskMode:       s.risk_mode,
@@ -160,25 +259,26 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     maxTradeUsd:    effectiveMaxTradeUsd,
     allowedSymbols: s.allowed_symbols,
     balanceContext,
+    openPositionsContext: buildPositionsContext(openPositions, refPrices),
     lang:           s.lang,
   });
 
   if (scan.error) {
+    if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: `scan: ${scan.error}`.slice(0, 300) });
     await recordRuns([{ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, status: "scan_error", reason: scan.error.slice(0, 200) }]);
     return { fired: 0, note: "scan error" };
   }
   if (scan.cards.length === 0) {
+    if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
     await recordRuns([{ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, status: "scan_empty", reason: "no actionable setup" }]);
     return { fired: 0, note: "no setup" };
   }
 
-  // ── 6. Background firing is SPOT-ONLY ──
-  // Autonomous leverage while the user is away can liquidate the whole margin
-  // with no one watching the countdown. Futures/margin sessions still scan
-  // (so the user sees the thesis in the run log) but we don't auto-fire them.
+  // ── 9. Background firing is SPOT-ONLY (no unattended leverage) ──
   if (s.market_type !== "spot") {
+    if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
     await recordRuns([{
       session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id,
@@ -188,61 +288,95 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     return { fired: 0, note: `${s.market_type} scan-only (spot-only firing in background)` };
   }
 
-  // ── 7. Fire eligible intents ──
-  // Fresh reference prices for the real-notional guard (C1/C4). The intent's
-  // own notional came from LLM text and can't be the cap basis; we recompute
-  // baseAmount × referencePrice and reject oversized buys.
-  const refPrices = await getCexSpotPrices(s.allowed_symbols);
-  const runRows: Array<Partial<AutopilotRunRow> & { wallet_address: string; exchange_id: string; status: string }> = [];
+  // ── 10. Fire eligible intents ──
   let fired = 0;
   let remainingTrades = s.max_trades_per_day - tradesToday;
+
+  const pushRow = (intent: { symbol: string; side: string; type: string; amount: number; price?: number; notionalUsd: number }, status: string, cardKind: string, extra: Partial<AutopilotRunRow> = {}) =>
+    runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: intent.notionalUsd, status, card_kind: cardKind, ...extra });
 
   outer:
   for (const card of scan.cards) {
     if (fired >= MAX_ORDERS_PER_RUN || remainingTrades <= 0) break;
+    if (frozenUntil === today) break;             // a sell may have tripped the freeze mid-run
     const intents = mapCardToCexIntents(card);
     if (!intents) continue;
 
     for (const intent of intents) {
       if (fired >= MAX_ORDERS_PER_RUN || remainingTrades <= 0) break outer;
+      if (frozenUntil === today) break outer;
 
-      const base = intent.symbol.split("/")[0];
-      // Cap + whitelist re-checks at fire time (defensive — the scan should
-      // already respect these, but never trust the model with real money).
-      if (!s.allowed_symbols.includes(base)) {
-        runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: intent.notionalUsd, status: "rejected", card_kind: card.kind, reason: "symbol not allowed" });
+      const base = intent.symbol.split("/")[0].toUpperCase();
+      if (!s.allowed_symbols.includes(intent.symbol.split("/")[0])) {
+        pushRow(intent, "rejected", card.kind, { reason: "symbol not allowed" });
         continue;
       }
-      // Real-price notional guard (C1/C4): recompute notional from a fresh
-      // reference price instead of trusting the LLM-supplied number, and
-      // reject oversized buys / anything over the hard ceiling / unpriceable.
-      const refPrice = refPrices.get(base.toUpperCase())?.priceUsd ?? null;
+      const refPrice = refPrices.get(base)?.priceUsd ?? null;
       const guard = checkRealNotional({ side: intent.side, baseAmount: intent.amount, refPrice, maxTradeUsd: effectiveMaxTradeUsd });
       if (!guard.ok) {
-        runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: guard.realNotionalUsd ?? intent.notionalUsd, status: "rejected", card_kind: card.kind, reason: guard.reason ?? "notional guard" });
-        continue;
-      }
-      // Background fires only BUYS — never an unattended market/limit SELL of
-      // a holding the user may not intend to part with. Sells/stops are left
-      // for the in-browser pilot where the user sees the countdown.
-      if (intent.side !== "buy") {
-        runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: intent.notionalUsd, status: "skipped", card_kind: card.kind, reason: "background fires buys only" });
+        pushRow(intent, "rejected", card.kind, { notional_usd: guard.realNotionalUsd ?? intent.notionalUsd, reason: guard.reason ?? "notional guard" });
         continue;
       }
 
+      // ── SELL (A5): only sell a base the bot actually holds — never dump an
+      //    unrelated user holding. Market sell settles P&L now; a limit sell
+      //    is armed and settled on a later run. ──
+      if (intent.side === "sell") {
+        const pos = openPositions.find((p) => p.base.toUpperCase() === base);
+        if (!pos || !ownedBases.has(base)) {
+          pushRow(intent, "skipped", card.kind, { reason: "no open autopilot position for this base" });
+          continue;
+        }
+        try {
+          const { order } = await placeCexOrder(exchange, creds, { symbol: intent.symbol, side: "sell", type: intent.type, amount: intent.amount, price: intent.price });
+          fired++; remainingTrades--;
+          if (intent.type === "market") {
+            const realized = realizedFromSell(order, pos);
+            if (realized !== null) {
+              pnlToday += realized;
+              await applySessionPnl(s.id, realized, today);
+              if (pnlToday <= -s.daily_loss_stop_usd) frozenUntil = today;
+            }
+            await closeServerPosition(s.id, pos.base);
+            ownedBases.delete(base);
+            exposureUsd = Math.max(0, exposureUsd - Number(pos.cost_usd || 0));
+            pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: realized ?? intent.notionalUsd, reason: realized !== null ? `exit filled, realized $${realized.toFixed(2)}` : "exit filled" });
+          } else {
+            await markServerExitArmed(s.id, pos.base, order.id);
+            pushRow(intent, "fired", card.kind, { order_id: order.id, reason: "exit armed (limit)" });
+          }
+        } catch (e) {
+          pushRow(intent, "errored", card.kind, { reason: (e instanceof Error ? e.message : String(e)).slice(0, 200) });
+        }
+        continue;
+      }
+
+      // ── BUY: enforce the total-exposure cap (A4 server side), then fire and
+      //    record the entry server-side (A5). ──
+      const buyNotional = guard.realNotionalUsd ?? intent.notionalUsd;
+      if (exposureUsd + buyNotional > maxExposureUsd) {
+        pushRow(intent, "rejected", card.kind, { reason: `total exposure cap $${maxExposureUsd} would be exceeded` });
+        continue;
+      }
       try {
-        const { order } = await placeCexOrder(exchange, creds, {
-          symbol: intent.symbol,
-          side:   intent.side,
-          type:   intent.type,
-          amount: intent.amount,
-          price:  intent.price,
-        });
-        fired++;
-        remainingTrades--;
-        runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: intent.notionalUsd, status: "fired", order_id: order.id, card_kind: card.kind });
+        const { order } = await placeCexOrder(exchange, creds, { symbol: intent.symbol, side: "buy", type: intent.type, amount: intent.amount, price: intent.price });
+        fired++; remainingTrades--;
+        // Record the entry with REAL fill data (fall back to the limit price).
+        const fillPrice = Number(order.average) > 0 ? Number(order.average) : (intent.price && intent.price > 0 ? intent.price : (refPrice ?? 0));
+        const filledQty = Number(order.filled)  > 0 ? Number(order.filled)  : intent.amount;
+        const spentUsd  = Number(order.cost)    > 0 ? Number(order.cost)    : (fillPrice > 0 ? fillPrice * filledQty : buyNotional);
+        if (fillPrice > 0 && filledQty > 0) {
+          await recordServerEntry({
+            sessionId: s.id, walletAddress: s.wallet_address, exchangeId: s.exchange_id,
+            pair: intent.symbol, entryPrice: fillPrice, baseAmount: filledQty, costUsd: spentUsd,
+            reasoning: card.summary?.slice(0, 300), entryLabel: card.title?.slice(0, 80),
+          });
+          exposureUsd += spentUsd;
+          ownedBases.add(base);
+        }
+        pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: buyNotional });
       } catch (e) {
-        runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: intent.notionalUsd, status: "errored", card_kind: card.kind, reason: (e instanceof Error ? e.message : String(e)).slice(0, 200) });
+        pushRow(intent, "errored", card.kind, { reason: (e instanceof Error ? e.message : String(e)).slice(0, 200) });
       }
     }
   }

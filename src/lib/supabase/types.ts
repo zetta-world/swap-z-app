@@ -83,6 +83,27 @@ export type AutopilotRunRow = {
   reason:         string | null;
 };
 
+export type AutopilotPositionStatus = "open" | "exit_armed" | "closed";
+
+export type AutopilotPositionRow = {
+  id:             string;
+  session_id:     string;
+  wallet_address: string;
+  exchange_id:    string;
+  base:           string;
+  pair:           string;
+  entry_price:    number;
+  base_amount:    number;
+  cost_usd:       number;
+  reasoning:      string | null;
+  entry_label:    string | null;
+  status:         AutopilotPositionStatus;
+  exit_order_id:  string | null;
+  exit_armed_at:  string | null;
+  entry_ts:       string;
+  updated_at:     string;
+};
+
 export type PlatformEventRow = {
   id:             string;
   event_type:     string;
@@ -132,12 +153,25 @@ export interface Database {
         Update: Partial<AutopilotRunRow>;
         Relationships: [];
       };
+      autopilot_positions: {
+        Row: AutopilotPositionRow;
+        Insert: Partial<AutopilotPositionRow> & {
+          session_id: string; wallet_address: string; exchange_id: string;
+          base: string; pair: string; entry_price: number; base_amount: number; cost_usd: number;
+        };
+        Update: Partial<AutopilotPositionRow>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
       consume_rate_limit: {
         Args: { p_bucket: string; p_max: number; p_window_secs: number };
         Returns: boolean;
+      };
+      apply_session_pnl: {
+        Args: { p_id: string; p_delta: number; p_today: string };
+        Returns: undefined;
       };
     };
   };

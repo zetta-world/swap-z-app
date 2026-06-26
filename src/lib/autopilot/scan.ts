@@ -31,6 +31,9 @@ export interface AutopilotScanArgs {
   allowedSymbols: string[];
   /** "total: $19.20 | BNB: 2.91 (~$16.80), USDT: 0.01" — from a live balance read. */
   balanceContext: string;
+  /** Preformatted open-position lines so ZION can propose EXITS (A5). Empty
+   *  string when the bot holds nothing. */
+  openPositionsContext?: string;
   lang:           string;
 }
 
@@ -66,6 +69,14 @@ async function buildPayload(args: AutopilotScanArgs): Promise<string> {
     if (totalMatch) lines.push(`total_usd: ${totalMatch[1]}`);
   }
   lines.push("");
+
+  // Open positions the autopilot is holding — ZION should propose EXITS
+  // (take-profit / stop) for these, not just new entries (A5).
+  if (args.openPositionsContext) {
+    lines.push("OPEN AUTOPILOT POSITIONS (held by the bot — propose exits with real P&L):");
+    lines.push(args.openPositionsContext);
+    lines.push("");
+  }
 
   if (cexMatrix.size > 0) {
     lines.push("CEX SPOT PRICES (live, for allowed symbols):");
