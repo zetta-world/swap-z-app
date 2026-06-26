@@ -46,6 +46,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   const { push: pushTxHistory } = useTxHistory();
   const recordEntry   = useAutopilotPositions((s) => s.recordEntry);
   const markExitArmed = useAutopilotPositions((s) => s.markExitArmed);
+  const closePosition = useAutopilotPositions((s) => s.closePosition);
   const enabled = a.enabled;
 
   const consumedRef = useRef<Set<string>>(new Set());
@@ -296,18 +297,39 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
         // ZION's reasoning) so the next scan can arm a profitable sell even
         // after a disconnect. A SELL that matches an open position flags it
         // as exited so we stop proposing more exits for it.
-        if (intent.side === "buy" && intent.price && intent.price > 0) {
-          recordEntry({
-            exchange,
-            pair:       intent.symbol,
-            entryPrice: intent.price,
-            baseAmount: intent.amount,
-            costUsd:    intent.notionalUsd,
-            reasoning:  (card.summary ?? "").slice(0, 300),
-            entryLabel: card.title.slice(0, 80),
-          });
+        const ord = result.value;
+        if (intent.side === "buy") {
+          // C5: record EVERY buy — including MARKET buys (which carry no
+          // intent.price and were previously skipped → orphan position with
+          // no exit memory). Prefer REAL fill data; fall back to the limit
+          // price for a not-yet-filled limit order.
+          const fillPrice = Number(ord.average) > 0 ? Number(ord.average)
+                          : (intent.price && intent.price > 0 ? intent.price : 0);
+          const filledQty = Number(ord.filled)  > 0 ? Number(ord.filled)  : intent.amount;
+          const spentUsd  = Number(ord.cost)    > 0 ? Number(ord.cost)
+                          : (fillPrice > 0 ? fillPrice * filledQty : intent.notionalUsd);
+          if (fillPrice > 0 && filledQty > 0) {
+            recordEntry({
+              exchange,
+              pair:       intent.symbol,
+              entryPrice: fillPrice,
+              baseAmount: filledQty,
+              costUsd:    spentUsd,
+              reasoning:  (card.summary ?? "").slice(0, 300),
+              entryLabel: card.title.slice(0, 80),
+            });
+          }
         } else if (intent.side === "sell") {
-          markExitArmed(exchange, baseSymbol ?? intent.symbol.split("/")[0], result.value.id);
+          const base = baseSymbol ?? intent.symbol.split("/")[0];
+          markExitArmed(exchange, base, ord.id);
+          // C2: a directional sell realizes P&L against the position's cost
+          // basis — settle it and feed the daily loss-stop. Previously ONLY
+          // arbitrage fed recordPnl, so spot exits never tripped the stop.
+          const pos = useAutopilotPositions.getState().positions[`${exchange.toLowerCase()}:${base.toUpperCase()}`];
+          const avgCost = pos && pos.baseAmount > 0 ? pos.costUsd / pos.baseAmount : null;
+          if (avgCost && avgCost > 0) {
+            void settleSellAndRecordPnl(exchange, intent.symbol, base, ord.id, live, avgCost, a.recordPnl, closePosition);
+          }
         }
         summaries.push(`${intent.side.toUpperCase()} ${intent.symbol} → ${exchange} ✓`);
       } else if (result.status === "skipped") {
@@ -500,6 +522,59 @@ function formatBase(n: number): string {
   if (n >= 1)     return n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
   if (n >= 0.001) return n.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
   return n.toExponential(2);
+}
+
+// ─── Single-leg realized-PnL settler (C2) ────────────────────────────────
+//
+// A directional autopilot SELL closes a position the autopilot opened. Poll
+// the sell order until it fills, compute realized P&L against the captured
+// average entry cost, feed it to the daily loss-stop, and close the position.
+// Without this, spot exits never reached recordPnl and the loss-stop only
+// ever counted arbitrage — so a losing run of directional trades could never
+// trip the freeze.
+async function settleSellAndRecordPnl(
+  exchange:      CexId,
+  symbol:        string,
+  base:          string,
+  orderId:       string,
+  vault:         Partial<Record<CexId, CexCredentials>>,
+  avgCost:       number,
+  recordPnl:     (deltaUsd: number) => void,
+  closePosition: (exchange: CexId, base: string) => void,
+): Promise<void> {
+  try {
+    const ord = await pollOrderUntilSettled(exchange, vault[exchange]!, orderId, symbol);
+    const status = ord.status?.toLowerCase() ?? "";
+    if (status !== "closed" && status !== "filled") return; // unfilled → nothing realized yet
+
+    const filledQty = Number(ord.filled ?? 0);
+    if (!(filledQty > 0)) return;
+    // ccxt cost is the quote received on a sell (filled × avgPrice); fall back
+    // to the explicit product when the exchange omits it on a partial fill.
+    const proceeds = Number(ord.cost) > 0 ? Number(ord.cost) : filledQty * Number(ord.average ?? 0);
+    if (!(proceeds > 0)) return;
+
+    const costRemoved = avgCost * filledQty;
+    // Subtract the fee only when it's denominated in the (stable) quote — a
+    // base-denominated fee already reduced filledQty on the exchange side.
+    const STABLE_FEE = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD"]);
+    const feeCost = Number(ord.fee?.cost ?? 0);
+    const feeCur  = (ord.fee?.currency ?? "").toUpperCase();
+    const fee = feeCost > 0 && STABLE_FEE.has(feeCur) ? feeCost : 0;
+
+    const realized = proceeds - costRemoved - fee;
+    if (!Number.isFinite(realized)) return;
+
+    recordPnl(realized);
+    closePosition(exchange, base);
+    if (realized < 0) {
+      toast.error(`Autopilot sell settled at ${realized.toFixed(2)} USD (counts toward daily loss-stop)`, { duration: 8000 });
+    } else {
+      toast.success(`Autopilot sell settled at +${realized.toFixed(2)} USD net`, { duration: 6000 });
+    }
+  } catch (err) {
+    console.warn("[autopilot/sell-settle] failed:", err instanceof Error ? err.message : err);
+  }
 }
 
 // ─── Cross-CEX realized-PnL settler ──────────────────────────────────────

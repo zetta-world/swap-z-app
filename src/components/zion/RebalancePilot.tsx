@@ -200,6 +200,7 @@ export default function RebalancePilot({ cards }: { cards: ActionCard[] }) {
         live[active.intent.exchange]!,
         active.intent,
         dest,
+        fresh.maxRebalanceUsd,
       );
       a.recordRebalance(active.intent.notionalUsd);
       a.pushHistory({

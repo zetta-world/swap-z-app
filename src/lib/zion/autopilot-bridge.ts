@@ -197,6 +197,7 @@ export async function fireAutopilotWithdraw(
   creds:       CexCredentials,
   intent:      AutopilotWithdrawIntent,
   destination: string,
+  maxNotionalUsd?: number,
 ): Promise<{ id: string; status: string; txid?: string; network?: string; address?: string }> {
   const res = await fetch("/api/cex/withdraw", {
     method:  "POST",
@@ -212,6 +213,9 @@ export async function fireAutopilotWithdraw(
       apiKey:     creds.apiKey,
       apiSecret:  creds.apiSecret,
       passphrase: creds.passphrase,
+      // Server-side per-rebalance cap check against a fresh real price (C6).
+      autopilot:      true,
+      maxNotionalUsd: maxNotionalUsd,
     }),
   });
   const body = await res.json().catch(() => ({})) as {

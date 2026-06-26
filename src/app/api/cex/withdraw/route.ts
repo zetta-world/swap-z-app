@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { withdrawFromCex } from "@/lib/cex/server";
+import { getReferencePriceUsd } from "@/lib/autopilot/price-guard";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import { type CexId, type CexCredentials, SUPPORTED_CEX_IDS, CEX_META } from "@/lib/cex/types";
 
@@ -43,7 +44,15 @@ interface BodyShape {
   apiKey:      string;
   apiSecret:   string;
   passphrase?: string;
+  /** Set true by the autopilot rebalance bridge — enables the real-price
+   *  per-rebalance cap check below (C6). */
+  autopilot?:  boolean;
+  /** The user's per-rebalance USD cap, enforced server-side against a fresh
+   *  price so a non-stable withdrawal can't bypass it via token quantity. */
+  maxNotionalUsd?: number;
 }
+
+const STABLE_CCY = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD", "USDE", "PYUSD"]);
 
 /**
  * POST /api/cex/withdraw
@@ -117,6 +126,34 @@ export async function POST(req: NextRequest) {
       { ok: false, error: "amount_exceeds_ceiling", detail: `Server-side cap is ~$${HARD_WITHDRAWAL_CEILING_USD.toLocaleString()}. Use the exchange's own UI for larger transfers.` },
       { status: 400 },
     );
+  }
+
+  // C6: autopilot per-rebalance cap with a FRESH real price. The intent's
+  // notionalUsd can fall back to the token QUANTITY for a non-stable currency
+  // (e.g. "5 ETH" → notionalUsd 5), letting a withdrawal blow past a small
+  // per-rebalance cap. Recompute the true USD value and enforce the cap here,
+  // server-side, where it can't be bypassed. Fail-safe: reject if we can't
+  // price a non-stable currency for an autopilot withdrawal.
+  if (body.autopilot === true) {
+    const unitUsd = STABLE_CCY.has(currency)
+      ? 1
+      : (await getReferencePriceUsd(currency)) ?? ROUGH_USD_PRICE[currency] ?? null;
+    if (unitUsd === null) {
+      return NextResponse.json(
+        { ok: false, error: "unpriceable_currency", detail: `Cannot price ${currency} for the per-rebalance cap check.` },
+        { status: 400 },
+      );
+    }
+    const estUsd = unitUsd * body.amount;
+    const cap = typeof body.maxNotionalUsd === "number" && body.maxNotionalUsd > 0
+      ? body.maxNotionalUsd
+      : HARD_WITHDRAWAL_CEILING_USD;
+    if (estUsd > cap * 1.5) {
+      return NextResponse.json(
+        { ok: false, error: "exceeds_rebalance_cap", detail: `Withdrawal ~$${estUsd.toFixed(2)} exceeds the per-rebalance cap of $${cap}.` },
+        { status: 400 },
+      );
+    }
   }
 
   if (typeof body.address !== "string" || body.address.length < 20 || body.address.length > 200) {
