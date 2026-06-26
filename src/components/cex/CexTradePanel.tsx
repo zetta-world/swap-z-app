@@ -202,6 +202,8 @@ export default function CexTradePanel({
   }, [amountNum, orderbook, side, referencePrice, baseAsset, quoteAsset, baseBalance, quoteBalance, estCostQuote, meta.label, t]);
 
   // ─── Place-order outcomes ──────────────────────────────────────────
+  const QUOTE_STABLES = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD", "USDE", "PYUSD"]);
+
   const onConfirmed = (order: CexOrder, filledImmediately: boolean) => {
     setConfirmOpen(false);
     setRecentOrder(order);
@@ -213,20 +215,22 @@ export default function CexTradePanel({
     }
     void loadBalances();
     const fillPrice = order.average ?? referencePrice;
+    const quoteAmt  = amountNum * fillPrice;
+    const isStableQuote = QUOTE_STABLES.has(quoteAsset.toUpperCase());
     pushHistory({
       type: "cex_spot",
       status: filledImmediately ? "confirmed" : "pending",
       fromSymbol: side === "buy" ? quoteAsset : baseAsset,
       fromChain:  exchangeId,
-      fromAmount: side === "buy"
-        ? (amountNum * fillPrice).toFixed(6)
-        : String(amountNum),
+      fromAmount: side === "buy" ? quoteAmt.toFixed(6) : String(amountNum),
       toSymbol:   side === "buy" ? baseAsset : quoteAsset,
       toChain:    exchangeId,
+      toAmount:   side === "buy" ? order.filled.toFixed(6) : quoteAmt.toFixed(6),
       exchange:   exchangeId,
       orderId:    order.id,
       route:      order.type,
       notes:      `${order.type} ${side} ${symbol} @ ${fillPrice.toFixed(2)}`,
+      valueUsd:   isStableQuote ? quoteAmt : undefined,
     });
   };
 

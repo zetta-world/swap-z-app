@@ -329,6 +329,7 @@ export default function ZionCexAutopilot({ exchangeId, credentials }: Props) {
       fromAmount: intent.side === "buy" ? String(intent.notionalUsd.toFixed(6)) : String(intent.amount),
       toSymbol:   intent.side === "buy" ? (baseSymbol ?? intent.symbol) : (quoteSymbol ?? "USDT"),
       toChain:    exchangeId,
+      toAmount:   intent.side === "buy" ? String(intent.amount) : String(intent.notionalUsd.toFixed(6)),
       exchange:   exchangeId,
       orderId:    order.id,
       route:      intent.type,
