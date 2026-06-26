@@ -23,10 +23,10 @@ Cada item abaixo foi **confirmado lendo o código**, com referência de arquivo.
 
 | ID | Achado | Severidade | Status |
 |----|--------|-----------|--------|
-| C1 | Compra a mercado sem teto de dólar real (cap circular no número do LLM; servidor não limita market order) | 🩸 | 🔴 |
+| C1 | Compra a mercado sem teto de dólar real (cap circular no número do LLM; servidor não limita market order) | 🩸 | 🟢 |
 | C2 | Daily loss-stop não-funcional (background nunca dispara; browser só conta arbitragem) | 🩸 | 🔴 |
 | C3 | `parsePrice` quebra com formato numérico PT/EU (3.420,50 → 3,42) | 🩸 | 🟢 |
-| C4 | Tamanho/preço da ordem vêm de texto livre do LLM sem reconciliação com preço real | ⚠️ | 🔴 |
+| C4 | Tamanho/preço da ordem vêm de texto livre do LLM sem reconciliação com preço real | ⚠️ | 🟢 |
 | C5 | Compra a mercado não é gravada na position memory → posição órfã, sem saída | ⚠️ | 🔴 |
 | C6 | Cap de rebalance (saque) burlável para moeda não-stable | ⚠️ | 🔴 |
 | A1 | Contadores split-brain (localStorage do browser vs Supabase do cron) | ⚠️ | 🔴 |
@@ -37,7 +37,16 @@ Cada item abaixo foi **confirmado lendo o código**, com referência de arquivo.
 
 ---
 
-### C1 — Compra a mercado sem teto de dólar real `🩸`
+### C1 — Compra a mercado sem teto de dólar real `🩸` · 🟢 CONCLUÍDO (2026-06-26)
+
+> **Entregue:** novo guard `src/lib/autopilot/price-guard.ts` — recomputa o
+> notional real (`baseAmount × preço_real` via spot público) e rejeita compras
+> acima do cap×1.5, acima do teto absoluto de $100k, ou que não podem ser
+> precificadas (fail-safe). Ligado nos DOIS canais: `/api/cex/order` (browser,
+> server-side, não burlável) e o cron. Testado em 8 cenários, incl. o overspend
+> de 1000× (rejeitado). **Follow-up não-bloqueante:** converter market buy em
+> marketable-limit para limitar também o slippage intra-fill.
+
 
 **Onde:**
 - `src/lib/zion/card-mapping.ts` (`mapCardToCexIntent`): `notionalUsd = card.from.amount`; `baseAmount = from.amount / parsePrice(entryPrice)`.
@@ -111,7 +120,12 @@ instruir o ZION a emitir números nos campos do card sempre em formato máquina
 
 ---
 
-### C4 — Origem do tamanho/preço sem reconciliação `⚠️`
+### C4 — Origem do tamanho/preço sem reconciliação `⚠️` · 🟢 CONCLUÍDO (2026-06-26)
+
+> **Entregue junto do C1:** o guard reconcilia tamanho/preço contra um preço de
+> referência fresco (spot público) em fire-time, nos dois canais, antes de
+> colocar a ordem. Ver `price-guard.ts` + `checkRealNotional`.
+
 
 **Onde:** todo o `mapCardToCexIntent` deriva tamanho e preço de
 `card.from.amount` / `card.entryPrice` (texto do LLM). Nunca há comparação com
