@@ -10,7 +10,7 @@ import { getCexSpotPrices, getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSp
 import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt } from "@/lib/api/market-indicators";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { isValidChain, validateAddress, validateAmount, sanitizePromptText } from "@/lib/validate";
 import { getSession } from "@/lib/auth/session";
 import { getTierForWallet } from "@/lib/tier/check";
@@ -51,7 +51,7 @@ const RL_OPTS = { windowMs: 60_000, max: 8 };
 export async function GET(req: NextRequest) {
   // ─── 1. Rate limit ────────────────────────────────────────────────────
   const clientId = getClientId(req.headers);
-  const rl = rateLimit(`zion:${clientId}`, RL_OPTS);
+  const rl = await rateLimitDurable(`zion:${clientId}`, RL_OPTS);
   if (!rl.ok) {
     return new Response(
       `Rate limit exceeded. Try again in ${rl.retryAfter}s.`,

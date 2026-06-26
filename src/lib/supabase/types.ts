@@ -134,6 +134,11 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      consume_rate_limit: {
+        Args: { p_bucket: string; p_max: number; p_window_secs: number };
+        Returns: boolean;
+      };
+    };
   };
 }

@@ -57,6 +57,39 @@ export function rateLimit(id: string, opts: RateLimitOptions = {}): RateLimitRes
 }
 
 /**
+ * Durable, cross-instance rate limit (A3) backed by a Postgres counter. Use
+ * this for high-stakes endpoints (orders, withdrawals, ZION) where the
+ * per-instance in-memory limiter — which resets on every serverless cold
+ * start — isn't strong enough.
+ *
+ * Fails OPEN to the in-memory limiter if the DB is unavailable: an infra blip
+ * must never hard-block legitimate trading, but we still keep per-instance
+ * protection in that window.
+ */
+export async function rateLimitDurable(id: string, opts: RateLimitOptions = {}): Promise<RateLimitResult> {
+  const windowMs   = opts.windowMs ?? 60_000;
+  const max        = opts.max      ?? 12;
+  const windowSecs = Math.max(1, Math.round(windowMs / 1000));
+  try {
+    const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+    const db = getSupabaseAdmin();
+    if (!db) return rateLimit(id, opts);
+    const { data, error } = await db.rpc("consume_rate_limit", {
+      p_bucket: id, p_max: max, p_window_secs: windowSecs,
+    });
+    if (error || typeof data !== "boolean") return rateLimit(id, opts);
+    return {
+      ok:         data,
+      remaining:  data ? 1 : 0,
+      resetAt:    Date.now() + windowMs,
+      retryAfter: data ? 0 : windowSecs,
+    };
+  } catch {
+    return rateLimit(id, opts);
+  }
+}
+
+/**
  * Derive a stable client identifier from request headers. Falls back to a
  * coarse bucket if none of the trusted forwarding headers are present.
  *
