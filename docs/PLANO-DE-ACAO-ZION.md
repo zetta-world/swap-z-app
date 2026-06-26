@@ -262,8 +262,8 @@ fetchCandles(symbol, "1d", 100, ...)   // ~100 dias (≈3,3 meses)
 
 | ID | Ação | Onde | Status |
 |----|------|------|--------|
-| Z1 | Estender lookback diário (200–365 velas) + adicionar **candle semanal** (ciclos multi-mês/ano) | `market-indicators.ts` `fetchCandles` | 🔴 |
-| Z2 | Injetar **trajetória** em vez de snapshot: "RSI 38→45→61", "regime virou há N barras", "preço no percentil X do range de 1 ano", "distância da máxima do ciclo" | `formatIndicatorsForPrompt` | 🔴 |
+| Z1 | Estender lookback diário (200–365 velas) + adicionar **candle semanal** (ciclos multi-mês/ano) | `market-indicators.ts` `fetchCandles` | 🟢 |
+| Z2 | Injetar **trajetória** em vez de snapshot: "RSI 38→45→61", "preço no percentil X do range de 1 ano", "distância da máxima do ciclo" | `formatIndicatorsForPrompt` | 🟢 |
 | Z3 | **Market Brain** persistente por ativo (Supabase): histórico de regime, posição no range, volatilidade vs média 90d — atualizado a cada scan | novo módulo + tabela | 🔴 |
 | Z4 | Adicionar **contexto global/macro** (DXY, S&P/Nasdaq, dominância BTC, fluxo ETF, stablecoin supply) | nova fonte de dados | 🔴 |
 
