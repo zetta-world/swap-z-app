@@ -48,6 +48,7 @@ export async function fireAutopilotIntent(
   exchange: CexId,
   creds:    CexCredentials,
   intent:   AutopilotIntent,
+  maxNotionalUsd?: number,
 ): Promise<CexOrder> {
   const res = await fetch("/api/cex/order", {
     method:  "POST",
@@ -67,6 +68,10 @@ export async function fireAutopilotIntent(
       // banner IS the user's confirmation surface, so we attach the token
       // here once the countdown has elapsed unblocked.
       confirm:   "I-CONFIRM-REAL-ORDER",
+      // Trigger the server-side real-price notional guard (C1/C4). The cap
+      // lets the server reject an order whose true notional blows past it.
+      autopilot:      true,
+      maxNotionalUsd: maxNotionalUsd,
     }),
   });
   const body = await res.json().catch(() => ({})) as {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { placeCexOrder } from "@/lib/cex/server";
+import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
 import { recordEvent } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import {
@@ -31,6 +32,14 @@ interface OrderRequestBody {
   apiKey:      string;
   apiSecret:   string;
   passphrase?: string;
+  /** Set true by the autopilot bridge. Triggers the real-price notional
+   *  guard below — the amount/price came from LLM text and must be checked
+   *  against a fresh reference price, not trusted as-is. */
+  autopilot?:  boolean;
+  /** The user's per-trade USD cap, forwarded so the server can reject an
+   *  order whose REAL notional (baseAmount × reference price) blows past it.
+   *  Defense in depth: a buggy client cannot place a catastrophic order. */
+  maxNotionalUsd?: number;
 }
 
 /**
@@ -121,6 +130,26 @@ export async function POST(req: NextRequest) {
     const notional = body.amount * body.price;
     if (Number.isFinite(notional) && notional > HARD_NOTIONAL_CEILING_USD) {
       return NextResponse.json({ ok: false, error: "notional_too_large" }, { status: 400 });
+    }
+  }
+
+  // Autopilot real-price notional guard (C1/C4). For autopilot orders the
+  // amount came from LLM text; a market BUY carries no price so the ceiling
+  // above can't bind it. Recompute the TRUE notional from a fresh reference
+  // price and reject oversized buys (and any order over the hard ceiling).
+  // Manual orders skip this — the user is present and accepted the trade.
+  if (body.autopilot === true) {
+    const base = body.symbol.split(/[\/\-]/)[0];
+    const refPrice = await getReferencePriceUsd(base);
+    const cap = typeof body.maxNotionalUsd === "number" && body.maxNotionalUsd > 0
+      ? body.maxNotionalUsd
+      : HARD_NOTIONAL_CEILING_USD;
+    const guard = checkRealNotional({ side, baseAmount: body.amount, refPrice, maxTradeUsd: cap });
+    if (!guard.ok) {
+      return NextResponse.json(
+        { ok: false, error: "notional_guard", detail: guard.reason },
+        { status: 400 },
+      );
     }
   }
 

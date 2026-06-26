@@ -232,7 +232,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
       for (let i = 0; i < resolved.length; i++) {
         const r = resolved[i];
         try {
-          const order = await fireAutopilotIntent(r.exchange, live[r.exchange]!, r.intent);
+          const order = await fireAutopilotIntent(r.exchange, live[r.exchange]!, r.intent, fresh.maxTradeUsd);
           results.push({ status: "fulfilled", value: order });
           // Between legs of a triangular, give the exchange a moment
           // to settle and the user's balance to reflect the new asset
@@ -252,7 +252,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
       }
     } else {
       const settled = await Promise.allSettled(
-        resolved.map((r) => fireAutopilotIntent(r.exchange, live[r.exchange]!, r.intent)),
+        resolved.map((r) => fireAutopilotIntent(r.exchange, live[r.exchange]!, r.intent, fresh.maxTradeUsd)),
       );
       results = settled.map((s) => s.status === "fulfilled"
         ? { status: "fulfilled", value: s.value }

@@ -6,6 +6,8 @@ import {
 import { runAutopilotCexScan } from "@/lib/autopilot/scan";
 import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
 import { fetchCexBalance, placeCexOrder } from "@/lib/cex/server";
+import { getCexSpotPrices } from "@/lib/api/cex-spot";
+import { checkRealNotional } from "@/lib/autopilot/price-guard";
 import type { AutopilotSessionRow, AutopilotRunRow } from "@/lib/supabase/types";
 import type { CexId, CexCredentials } from "@/lib/cex/types";
 
@@ -176,6 +178,10 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   }
 
   // ── 7. Fire eligible intents ──
+  // Fresh reference prices for the real-notional guard (C1/C4). The intent's
+  // own notional came from LLM text and can't be the cap basis; we recompute
+  // baseAmount × referencePrice and reject oversized buys.
+  const refPrices = await getCexSpotPrices(s.allowed_symbols);
   const runRows: Array<Partial<AutopilotRunRow> & { wallet_address: string; exchange_id: string; status: string }> = [];
   let fired = 0;
   let remainingTrades = s.max_trades_per_day - tradesToday;
@@ -196,8 +202,13 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: intent.notionalUsd, status: "rejected", card_kind: card.kind, reason: "symbol not allowed" });
         continue;
       }
-      if (intent.notionalUsd > effectiveMaxTradeUsd + 0.01) {
-        runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: intent.notionalUsd, status: "rejected", card_kind: card.kind, reason: `over per-trade cap ($${effectiveMaxTradeUsd})` });
+      // Real-price notional guard (C1/C4): recompute notional from a fresh
+      // reference price instead of trusting the LLM-supplied number, and
+      // reject oversized buys / anything over the hard ceiling / unpriceable.
+      const refPrice = refPrices.get(base.toUpperCase())?.priceUsd ?? null;
+      const guard = checkRealNotional({ side: intent.side, baseAmount: intent.amount, refPrice, maxTradeUsd: effectiveMaxTradeUsd });
+      if (!guard.ok) {
+        runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: guard.realNotionalUsd ?? intent.notionalUsd, status: "rejected", card_kind: card.kind, reason: guard.reason ?? "notional guard" });
         continue;
       }
       // Background fires only BUYS — never an unattended market/limit SELL of
