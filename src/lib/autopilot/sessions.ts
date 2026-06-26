@@ -146,6 +146,37 @@ export async function patchSession(
     .eq("id", id);
 }
 
+/**
+ * Atomically acquire the per-session lock (A2). Returns true only if this
+ * caller won the lock — i.e. it was free (null) or its TTL had expired. The
+ * conditional UPDATE is serialized by Postgres, so of two overlapping cron
+ * runs exactly one acquires and the other sees zero rows updated.
+ */
+export async function tryLockSession(id: string, ttlMs: number): Promise<boolean> {
+  const db = getSupabaseAdmin();
+  if (!db) return false;
+  const nowIso     = new Date().toISOString();
+  const lockUntil  = new Date(Date.now() + ttlMs).toISOString();
+  const { data, error } = await db
+    .from("autopilot_sessions")
+    .update({ locked_until: lockUntil, updated_at: nowIso })
+    .eq("id", id)
+    .or(`locked_until.is.null,locked_until.lt.${nowIso}`)
+    .select("id");
+  if (error) return false;
+  return (data?.length ?? 0) > 0;
+}
+
+/** Release the per-session lock so the next cron run can pick it up. */
+export async function releaseLock(id: string): Promise<void> {
+  const db = getSupabaseAdmin();
+  if (!db) return;
+  await db
+    .from("autopilot_sessions")
+    .update({ locked_until: null, updated_at: new Date().toISOString() })
+    .eq("id", id);
+}
+
 /** Append one (or more) run-log rows. Best-effort — swallows DB errors. */
 export async function recordRuns(rows: Array<Partial<AutopilotRunRow> & {
   wallet_address: string; exchange_id: string; status: string;

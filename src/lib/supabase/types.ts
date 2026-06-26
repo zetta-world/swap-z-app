@@ -59,6 +59,8 @@ export type AutopilotSessionRow = {
   frozen_until_day:    string | null;
   last_scan_at:        string | null;
   last_error:          string | null;
+  /** Advisory lock (A2): the cron holds this until `now()` passes it. */
+  locked_until:        string | null;
   created_at:          string;
   updated_at:          string;
 };

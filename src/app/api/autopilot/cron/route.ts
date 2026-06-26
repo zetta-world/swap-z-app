@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import {
   listRunnableSessions, decryptSessionCreds, patchSession, recordRuns, utcDayKey,
+  tryLockSession, releaseLock,
 } from "@/lib/autopilot/sessions";
 import { runAutopilotCexScan } from "@/lib/autopilot/scan";
 import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
@@ -69,6 +70,14 @@ export async function POST(req: NextRequest) {
   const summary: Array<{ exchange: string; wallet: string; fired: number; skipped: string }> = [];
 
   for (const s of sessions) {
+    // A2: acquire the per-session lock so a still-running prior cron pass can't
+    // double-process this session. TTL (3min) auto-releases a crashed/timed-out
+    // run well before the next scheduled tick (every ~5min).
+    const locked = await tryLockSession(s.id, 3 * 60_000);
+    if (!locked) {
+      summary.push({ exchange: s.exchange_id, wallet: `${s.wallet_address.slice(0, 6)}…`, fired: 0, skipped: "locked (already running)" });
+      continue;
+    }
     try {
       const result = await processSession(s);
       summary.push({
@@ -81,6 +90,8 @@ export async function POST(req: NextRequest) {
       const msg = e instanceof Error ? e.message : String(e);
       await patchSession(s.id, { last_error: msg.slice(0, 300), last_scan_at: new Date().toISOString() });
       summary.push({ exchange: s.exchange_id, wallet: `${s.wallet_address.slice(0, 6)}…`, fired: 0, skipped: `error: ${msg.slice(0, 80)}` });
+    } finally {
+      await releaseLock(s.id);
     }
   }
 
