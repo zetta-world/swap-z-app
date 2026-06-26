@@ -60,6 +60,46 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     [positions],
   );
 
+  // A1: fold the SERVER background-session counters into the cap checks so the
+  // browser pilot and the cron share ONE daily budget instead of two
+  // independent ones (split-brain). Today only trades_today matters — the cron
+  // is buys-only so its pnl_today stays 0 until the server exit engine (A5).
+  const [serverDaily, setServerDaily] = useState<{ trades: number; frozenToday: boolean }>({ trades: 0, frozenToday: false });
+  useEffect(() => {
+    let cancelled = false;
+    const todayKey = () => {
+      const d = new Date();
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    };
+    const load = async () => {
+      if (!enabled || a.allowedExchanges.length === 0) {
+        if (!cancelled) setServerDaily({ trades: 0, frozenToday: false });
+        return;
+      }
+      try {
+        const today = todayKey();
+        const rows = await Promise.all(a.allowedExchanges.map(async (ex) => {
+          const res = await fetch(`/api/autopilot/session?exchangeId=${ex}`);
+          if (!res.ok) return null;
+          const body = await res.json().catch(() => null) as
+            { status?: { trades_today?: number; frozen_until_day?: string | null } | null } | null;
+          return body?.status ?? null;
+        }));
+        let trades = 0, frozenToday = false;
+        for (const st of rows) {
+          if (!st) continue;
+          if (typeof st.trades_today === "number") trades += st.trades_today;
+          if (st.frozen_until_day === today) frozenToday = true;
+        }
+        if (!cancelled) setServerDaily({ trades, frozenToday });
+      } catch { /* network/auth issue → fall back to local-only caps */ }
+    };
+    void load();
+    const id = setInterval(load, 45_000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, a.allowedExchanges]);
+
   const consumedRef = useRef<Set<string>>(new Set());
   // Re-entrancy guard. setPhase is async, so two rapid effect runs (React
   // StrictMode double-invoke, a parent re-render landing on the same
@@ -82,16 +122,17 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
 
   // Pick the next card to act on whenever the deck changes.
   const nextCandidate = useMemo(() => {
-    if (!enabled || a.frozenUntilDay) return null;
+    if (!enabled || a.frozenUntilDay || serverDaily.frozenToday) return null;
     // The daily cap counts LEGS not cards — a cross-CEX card costs 2
-    // toward the cap. Reject the candidate if it would push us over.
+    // toward the cap. It's a COMBINED budget: local browser trades + the
+    // background session's server-side trades_today (A1).
     for (const c of cards) {
       const key = `${c.kind}:${c.title ?? ""}:${c.from?.symbol ?? ""}>${c.to?.symbol ?? ""}`;
       if (!key || key.length < 4) continue;
       if (consumedRef.current.has(key)) continue;
       const intents = mapCardToCexIntents(c);
       if (!intents || intents.length === 0) continue;
-      if (a.tradesToday + intents.length > a.maxTradesPerDay) continue;
+      if (a.tradesToday + serverDaily.trades + intents.length > a.maxTradesPerDay) continue;
       // Every leg has to clear the per-trade USD cap independently.
       if (intents.some((i) => i.notionalUsd > a.maxTradeUsd)) continue;
       // A4: the BUY legs plus current open exposure can't exceed the total cap.
@@ -115,7 +156,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, enabled, a.frozenUntilDay, a.tradesToday, a.maxTradesPerDay, a.maxTradeUsd, a.maxOpenExposureUsd, openExposureUsd, a.allowedSymbols, a.allowedExchanges, vault.creds]);
+  }, [cards, enabled, a.frozenUntilDay, serverDaily.frozenToday, serverDaily.trades, a.tradesToday, a.maxTradesPerDay, a.maxTradeUsd, a.maxOpenExposureUsd, openExposureUsd, a.allowedSymbols, a.allowedExchanges, vault.creds]);
 
   // Bring the next candidate into the active slot when we're idle.
   useEffect(() => {
@@ -206,9 +247,9 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     useAutopilot.getState().rolloverIfNewDay();
     const fresh = useAutopilot.getState();
     if (!fresh.enabled)                                          return rejectAll("autopilot turned off during countdown");
-    if (fresh.frozenUntilDay)                                    return rejectAll("autopilot frozen (daily stop)");
-    if (fresh.tradesToday + intents.length > fresh.maxTradesPerDay)
-                                                                 return rejectAll("daily trade cap would be exceeded");
+    if (fresh.frozenUntilDay || serverDaily.frozenToday)         return rejectAll("autopilot frozen (daily stop)");
+    if (fresh.tradesToday + serverDaily.trades + intents.length > fresh.maxTradesPerDay)
+                                                                 return rejectAll("daily trade cap would be exceeded (combined with background session)");
     // Per-trade USD cap applies to BUYS only. A SELL reduces exposure (it's
     // exiting a position the user already holds) — capping it would block
     // legitimate take-profit exits whose notional naturally exceeds the
