@@ -32,8 +32,8 @@ Cada item abaixo foi **confirmado lendo o código**, com referência de arquivo.
 | A1 | Contadores split-brain (localStorage do browser vs Supabase do cron) | ⚠️ | 🟡 |
 | A2 | Cron pode sobrepor execuções (`cancel-in-progress: false`, sem lock de sessão) | ⚠️ | 🟢 |
 | A3 | Rate limit em memória morre em cold start serverless | ▫️ | 🟢 |
-| A4 | Sem cap de exposição total (só por-trade e por-contagem) | ⚠️ | 🟡 |
-| A5 | Sem exit-engine server-side (cron compra mas nunca vende nem lê posições) | ⚠️ | 🔴 |
+| A4 | Sem cap de exposição total (só por-trade e por-contagem) | ⚠️ | 🟢 |
+| A5 | Sem exit-engine server-side (cron compra mas nunca vende nem lê posições) | ⚠️ | 🟢 |
 
 ---
 
@@ -76,9 +76,9 @@ maior — o countdown vira salvaguarda falsa. No cron não há humano.
 > `AutopilotPilot.tsx` — toda venda direcional faz poll até liquidar, calcula
 > P&L realizado contra o custo médio da posição e alimenta `recordPnl`, que
 > dispara o freeze ao cruzar o limite. Antes só arbitragem alimentava o
-> loss-stop. **Pendência honesta:** o cron de background é só-compra, então o
-> loss-stop dele segue dormente até o exit-engine server-side (A5) existir —
-> rastreado em A5. A proteção ativa de hoje cobre o usuário operando no browser.
+> loss-stop. **Lado-servidor concluído com o A5** (2026-06-26): o cron passou a
+> vender, calcula P&L realizado e alimenta `pnl_today`/freeze via
+> `apply_session_pnl`. Loss-stop agora funciona nos dois canais.
 
 
 **Onde:**
@@ -201,14 +201,18 @@ nunca fallback para a quantidade de token.
   `rateLimitDurable()` que falha-aberto para o in-memory se o DB cair. Ligado
   em `cex/order`, `cex/withdraw` e `zion`. (Sem Upstash — usamos o Supabase
   que já existe.)
-- **A4 sem cap de exposição total:** 🟡 PARCIAL (2026-06-26). Adicionado
-  `maxOpenExposureUsd` (default 750; presets 75/200/400) e enforcement no
-  **browser** (candidate + fire-time: `Σ posições abertas + novo buy ≤ cap`).
-  **Falta o cron** — depende das posições no servidor (A5).
-- **A5 sem exit-engine server-side:** cron é buys-only e não lê posições →
-  saco acumulado sem saída automática. **Correção:** mover position memory para
-  Supabase, injetar contexto de posições abertas no scan do cron, disparar
-  saídas server-side.
+- **A4 sem cap de exposição total:** 🟢 CONCLUÍDO (2026-06-26). `maxOpenExposureUsd`
+  (default 750; presets 75/200/400) no **browser** (candidate + fire-time) E no
+  **cron** (cap por risk_mode 75/200/400, `Σ custo aberto + novo buy ≤ cap`,
+  junto do A5).
+- **A5 sem exit-engine server-side:** 🟢 CONCLUÍDO (2026-06-26). Tabela
+  `autopilot_positions` (migração 0009) + `positions-server.ts` + RPC atômico
+  `apply_session_pnl`. O cron agora: liquida saídas armadas (P&L real → freeze),
+  injeta posições abertas no scan (ZION propõe saídas), vende SÓ bases que o bot
+  detém (nunca holdings não-relacionados), grava entradas server-side e aplica o
+  cap de exposição (A4 server). Completa o lado-servidor de C2 e A4.
+- **A4/C2 lado-servidor:** 🟢 completados junto do A5 — a perda realizada do cron
+  agora alimenta `pnl_today` e congela a sessão; o cap de exposição roda no cron.
 
 ---
 
