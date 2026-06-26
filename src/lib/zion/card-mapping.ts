@@ -55,10 +55,54 @@ export function normalizeSymbol(sym: string): string {
 
 const QUOTES_PREFERRED = ["USDT", "USDC", "FDUSD", "BUSD", "USD"];
 
-/** Pull a number out of a locale-formatted price string ("$3,420.50"). */
+/**
+ * Pull a number out of a price string, robust to BOTH locale conventions.
+ *
+ * MONEY-CRITICAL (see C3 in docs/PLANO-DE-ACAO-ZION.md). The old version did
+ * `.replace(/,/g,"")` which turned the PT/EU string "3.420,50" (= 3420.50)
+ * into "3.420.50" → parseFloat → 3.42, a 1000× under-read. On a market BUY,
+ * baseAmount = notional / price, so a price read 1000× too low means a base
+ * amount 1000× too large → catastrophic overspend.
+ *
+ * Rules:
+ *   - Both separators present → the LAST one is the decimal point; the other
+ *     is a thousands separator. "3,420.50" (EN) and "3.420,50" (PT/EU) both
+ *     resolve to 3420.50.
+ *   - Single separator type → ambiguous (decimal vs thousands). When the
+ *     groups look like thousands (every group after the first is exactly 3
+ *     digits, 1-3 leading digits), strip it. This biases toward the LARGER
+ *     price, which on a BUY means a SMALLER base amount — the SAFE direction
+ *     (can never overspend). Otherwise treat it as a decimal point.
+ *   - No separator → integer.
+ *
+ * Returns 0 for anything non-positive / unparseable (callers reject on 0).
+ */
 export function parsePrice(raw: string): number {
-  const m = String(raw).replace(/[^\d.,-]/g, "").replace(/,/g, "");
-  const n = parseFloat(m);
+  const s = String(raw).replace(/[^\d.,]/g, "").trim();
+  if (!s) return 0;
+
+  const lastComma = s.lastIndexOf(",");
+  const lastDot   = s.lastIndexOf(".");
+
+  let normalized: string;
+  if (lastComma !== -1 && lastDot !== -1) {
+    const decimalIsComma = lastComma > lastDot;
+    const thousands = decimalIsComma ? "." : ",";
+    const decimal   = decimalIsComma ? "," : ".";
+    normalized = s.split(thousands).join("").replace(decimal, ".");
+  } else if (lastComma !== -1 || lastDot !== -1) {
+    const sep   = lastComma !== -1 ? "," : ".";
+    const parts = s.split(sep);
+    const looksLikeThousands =
+      parts.length > 1 &&
+      parts[0].length >= 1 && parts[0].length <= 3 &&
+      parts.slice(1).every((p) => p.length === 3);
+    normalized = looksLikeThousands ? parts.join("") : s.replace(sep, ".");
+  } else {
+    normalized = s;
+  }
+
+  const n = parseFloat(normalized);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
