@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
-import { runAutopilotCexScan } from "@/lib/autopilot/scan";
-import { logSuggestions, resolveOpenSuggestions, getBacktestStats } from "@/lib/zion/backtest";
+import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan } from "@/lib/zion/backtest";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,18 +38,10 @@ export async function POST(req: NextRequest) {
   let logged = 0;
   let scanError: string | undefined;
   try {
-    const { indicators } = await getMarketIndicators(MAJORS);
-    const scan = await runAutopilotCexScan({
-      exchangeId:     "binance",
-      riskMode:       "moderado",
-      marketType:     "spot",
-      maxTradeUsd:    100,
-      allowedSymbols: MAJORS,
-      balanceContext: "",
-      lang:           "en",
-    });
-    if (scan.error) scanError = scan.error;
-    else logged = await logSuggestions(scan.cards, indicators, "self_scan");
+    const marketData = await getMarketIndicators(MAJORS);
+    const cards = await runBacktestScan(marketData);
+    logged = await logSuggestions(cards, marketData.indicators, "self_scan");
+    if (cards.length === 0) scanError = "no cards returned from scan";
   } catch (e) {
     scanError = e instanceof Error ? e.message : String(e);
   }

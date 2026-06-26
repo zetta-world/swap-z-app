@@ -10,12 +10,63 @@
  * Server-only. Best-effort: a DB hiccup never breaks the caller.
  */
 
+import Anthropic from "@anthropic-ai/sdk";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
-import type { ActionCard } from "@/lib/zion/parse";
-import type { SymbolIndicators } from "@/lib/api/market-indicators";
+import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
+import { ZION_FOUNDATION } from "@/lib/zion/foundation";
+import { formatIndicatorsForPrompt, type SymbolIndicators, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import type { ZionSuggestionRow } from "@/lib/supabase/types";
+
+/**
+ * Generate scored predictions for the backtester (Z6). Unlike the autopilot
+ * scan (deliberately "do nothing unless high-confidence"), this asks ZION for
+ * a directional call on EVERY symbol it has a lean on — so the ledger fills
+ * with a steady stream of predictions to measure. Non-streaming, one call.
+ */
+export async function runBacktestScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return [];
+  const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
+  if (!indicatorsText) return [];
+
+  const instruction = [
+    "You are ZION's prediction engine running in BACKTEST mode. Every call you",
+    "make here is logged and scored later against real price action, so honesty",
+    "and coverage matter — this is how we prove your edge.",
+    "",
+    "For EACH symbol in the market data below, decide your directional bias NOW",
+    "and emit ONE ACTION CARD:",
+    "  • bullish → kind \"buy_limit\" (side buy)",
+    "  • bearish → kind \"sell_safe\" (side sell)",
+    "Each card MUST include: from/to (USDT and the asset), entryPrice (use the",
+    "current price), one exits[] rung with a realistic take-profit price,",
+    "stopLoss, and probability (your HONEST confidence 0-100). Use the regime,",
+    "trajectory and 1Y-cycle context to choose direction and targets.",
+    "Skip a symbol ONLY if you genuinely have no lean. Cover as many as you can.",
+    "Machine-format every number (dot decimal, no separators, no symbols).",
+    "",
+    "<market>",
+    indicatorsText,
+    "</market>",
+  ].join("\n");
+
+  try {
+    const client = new Anthropic({ apiKey });
+    const model = process.env.ZION_MODEL ?? "claude-sonnet-4-6";
+    const msg = await client.messages.create({
+      model,
+      max_tokens: 3500,
+      system: [{ type: "text", text: ZION_FOUNDATION, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: instruction }],
+    });
+    const text = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+    return parseZionStream(text).cards;
+  } catch {
+    return [];
+  }
+}
 
 const STABLES = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD", "USDE", "PYUSD"]);
 const TRADEABLE_KINDS = new Set(["swap", "buy_limit", "sell_safe", "sell_medium", "sell_aggressive"]);
