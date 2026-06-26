@@ -24,11 +24,11 @@ Cada item abaixo foi **confirmado lendo o código**, com referência de arquivo.
 | ID | Achado | Severidade | Status |
 |----|--------|-----------|--------|
 | C1 | Compra a mercado sem teto de dólar real (cap circular no número do LLM; servidor não limita market order) | 🩸 | 🟢 |
-| C2 | Daily loss-stop não-funcional (background nunca dispara; browser só conta arbitragem) | 🩸 | 🔴 |
+| C2 | Daily loss-stop não-funcional (background nunca dispara; browser só conta arbitragem) | 🩸 | 🟢 |
 | C3 | `parsePrice` quebra com formato numérico PT/EU (3.420,50 → 3,42) | 🩸 | 🟢 |
 | C4 | Tamanho/preço da ordem vêm de texto livre do LLM sem reconciliação com preço real | ⚠️ | 🟢 |
-| C5 | Compra a mercado não é gravada na position memory → posição órfã, sem saída | ⚠️ | 🔴 |
-| C6 | Cap de rebalance (saque) burlável para moeda não-stable | ⚠️ | 🔴 |
+| C5 | Compra a mercado não é gravada na position memory → posição órfã, sem saída | ⚠️ | 🟢 |
+| C6 | Cap de rebalance (saque) burlável para moeda não-stable | ⚠️ | 🟢 |
 | A1 | Contadores split-brain (localStorage do browser vs Supabase do cron) | ⚠️ | 🔴 |
 | A2 | Cron pode sobrepor execuções (`cancel-in-progress: false`, sem lock de sessão) | ⚠️ | 🔴 |
 | A3 | Rate limit em memória morre em cold start serverless | ▫️ | 🔴 |
@@ -70,7 +70,16 @@ maior — o countdown vira salvaguarda falsa. No cron não há humano.
 
 ---
 
-### C2 — Daily loss-stop não-funcional `🩸`
+### C2 — Daily loss-stop não-funcional `🩸` · 🟢 CONCLUÍDO (2026-06-26)
+
+> **Entregue (canal browser):** novo `settleSellAndRecordPnl` em
+> `AutopilotPilot.tsx` — toda venda direcional faz poll até liquidar, calcula
+> P&L realizado contra o custo médio da posição e alimenta `recordPnl`, que
+> dispara o freeze ao cruzar o limite. Antes só arbitragem alimentava o
+> loss-stop. **Pendência honesta:** o cron de background é só-compra, então o
+> loss-stop dele segue dormente até o exit-engine server-side (A5) existir —
+> rastreado em A5. A proteção ativa de hoje cobre o usuário operando no browser.
+
 
 **Onde:**
 - `src/components/zion/AutopilotPilot.tsx`: `recordPnl` só é chamado pelos
@@ -136,7 +145,13 @@ sistema já sabe buscar `fetchCexOrderbook`/`fetchTickers` no servidor.
 
 ---
 
-### C5 — Compra a mercado vira posição órfã `⚠️`
+### C5 — Compra a mercado vira posição órfã `⚠️` · 🟢 CONCLUÍDO (2026-06-26)
+
+> **Entregue:** o registro de posição agora roda para TODA compra (não só
+> quando `intent.price>0`), usando os dados REAIS de fill (`order.average/
+> filled/cost`) com fallback para o preço-limite. Compras a mercado deixam de
+> ser órfãs.
+
 
 **Onde:** `src/components/zion/AutopilotPilot.tsx:299` — `recordEntry` só roda se
 `intent.price && intent.price > 0`. Market buy tem `price: undefined` → posição
@@ -147,7 +162,13 @@ ordem) em vez do `intent.price`. Resolve junto com C2/A5.
 
 ---
 
-### C6 — Cap de rebalance burlável `⚠️`
+### C6 — Cap de rebalance burlável `⚠️` · 🟢 CONCLUÍDO (2026-06-26)
+
+> **Entregue:** `/api/cex/withdraw` agora recomputa o valor USD real do saque
+> a partir de um preço fresco (stables = $1) e rejeita saques de autopiloto
+> acima de `maxRebalanceUsd × 1.5`, server-side. Fecha o bypass de "5 ETH →
+> notionalUsd 5". (O teto global de $50k já existia e continua.)
+
 
 **Onde:** `src/lib/zion/autopilot-bridge.ts:143` —
 `notionalUsd = parsePrice(card.estReturn ?? card.targetReturn) || amount`. Para
