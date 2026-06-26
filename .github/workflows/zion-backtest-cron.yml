@@ -1,0 +1,48 @@
+name: ZION Backtest (Shadow Flywheel)
+
+# Drives the Shadow Flywheel (Z5/Z6): every 30 min it asks ZION for setups on
+# the majors, logs each suggestion with the market price at emission, then
+# resolves any open suggestions whose target/stop was hit or whose horizon
+# elapsed. Over time this builds a measured win-rate / expectancy for ZION.
+#
+# Reuses the SAME CRON_SECRET as the autopilot cron. Set ZION_BACKTEST_URL to
+# e.g. https://swap-z-app.vercel.app/api/zion/backtest
+#
+# Required repository secrets:
+#   CRON_SECRET        — must match the same env var in Vercel
+#   ZION_BACKTEST_URL  — the /api/zion/backtest endpoint
+
+on:
+  schedule:
+    - cron: "20,50 * * * *"   # twice an hour, offset from the autopilot cron
+  workflow_dispatch:
+
+concurrency:
+  group: zion-backtest
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger ZION backtest tick
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ZION_BACKTEST_URL: ${{ secrets.ZION_BACKTEST_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$ZION_BACKTEST_URL" ]; then
+            echo "::error::CRON_SECRET and ZION_BACKTEST_URL secrets must be set."
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$ZION_BACKTEST_URL" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 90)
+          echo "HTTP $code"
+          echo "Response:"; cat /tmp/resp.json || true; echo
+          if [ "$code" -ge 400 ]; then
+            echo "::error::ZION backtest returned HTTP $code"
+            exit 1
+          fi

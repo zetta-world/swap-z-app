@@ -104,6 +104,26 @@ export type AutopilotPositionRow = {
   updated_at:     string;
 };
 
+export type ZionSuggestionRow = {
+  id:             string;
+  symbol:         string;
+  kind:           string;
+  side:           "buy" | "sell";
+  ref_price:      number;
+  entry_price:    number | null;
+  target_price:   number | null;
+  stop_price:     number | null;
+  probability:    number | null;
+  regime:         string | null;
+  source:         string;
+  horizon_hours:  number;
+  status:         string;
+  outcome_pct:    number | null;
+  resolved_price: number | null;
+  created_at:     string;
+  resolved_at:    string | null;
+};
+
 export type PlatformEventRow = {
   id:             string;
   event_type:     string;
@@ -149,6 +169,12 @@ export interface Database {
       platform_events: { Row: PlatformEventRow; Insert: Omit<PlatformEventRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
       admin_kv: { Row: AdminKvRow; Insert: AdminKvRow; Update: Partial<AdminKvRow>; Relationships: [] };
       market_brain: { Row: MarketBrainRow; Insert: Partial<MarketBrainRow> & { symbol: string }; Update: Partial<MarketBrainRow>; Relationships: [] };
+      zion_suggestions: {
+        Row: ZionSuggestionRow;
+        Insert: Partial<ZionSuggestionRow> & { symbol: string; kind: string; side: "buy" | "sell"; ref_price: number };
+        Update: Partial<ZionSuggestionRow>;
+        Relationships: [];
+      };
       autopilot_sessions: {
         Row: AutopilotSessionRow;
         Insert: Partial<AutopilotSessionRow> & {
