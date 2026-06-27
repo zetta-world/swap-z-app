@@ -11,12 +11,13 @@ export type ModuleId =
   | "market-volume"
   | "audit-log"
   | "logs-security"
+  | "system-health"
   | "tier-control"
   | "whitelist"
   | "kill-switches"
   | "platform-events";
 
-export type ModuleCategory = "dashboard" | "controls" | "logs";
+export type ModuleCategory = "dashboard" | "controls" | "logs" | "system";
 
 export type ModuleDef = {
   id:             ModuleId;
@@ -155,6 +156,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "logs",
     defaultEnabled: true,
     defaultOrder: 10,
+  },
+  {
+    id: "system-health",
+    title: "SYSTEM HEALTH",
+    subtitle: "crons · dependencies · uptime",
+    icon: "♥",
+    category: "system",
+    defaultEnabled: true,
+    defaultOrder: 11,
   },
 ];
 

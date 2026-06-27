@@ -10,6 +10,7 @@ import { fetchCexBalance, placeCexOrder, fetchCexOrderStatus } from "@/lib/cex/s
 import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
 import { logOperation } from "@/lib/admin/track";
+import { setCronHeartbeat } from "@/lib/admin/health";
 import {
   getOpenServerPositions, recordServerEntry, markServerExitArmed,
   closeServerPosition, reopenServerPosition, applySessionPnl,
@@ -136,6 +137,7 @@ export async function POST(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
+  await setCronHeartbeat("autopilot");
 
   let sessions: AutopilotSessionRow[];
   try {

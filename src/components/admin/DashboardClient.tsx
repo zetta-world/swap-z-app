@@ -15,6 +15,7 @@ import BacktestPanel          from "./panels/BacktestPanel";
 import OperationsPanel        from "./panels/OperationsPanel";
 import OperationsLedgerPanel  from "./panels/OperationsLedgerPanel";
 import LogsSecurityPanel      from "./panels/LogsSecurityPanel";
+import SystemHealthPanel      from "./panels/SystemHealthPanel";
 import type { ModuleId }      from "@/lib/admin/modules";
 
 const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
@@ -29,6 +30,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "tier-control":       <TierControlPanel />,
   "audit-log":          <AuditLogPanel />,
   "logs-security":      <LogsSecurityPanel />,
+  "system-health":      <SystemHealthPanel />,
   "kill-switches":      <KillSwitchesPanel />,
   "whitelist":          <WhitelistPanel />,
   "platform-events":    <PlatformEventsPanel />,

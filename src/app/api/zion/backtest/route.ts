@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
 import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan } from "@/lib/zion/backtest";
+import { setCronHeartbeat } from "@/lib/admin/health";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
+  await setCronHeartbeat("backtest");
 
   let logged = 0;
   let scanError: string | undefined;
