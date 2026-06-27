@@ -78,6 +78,23 @@ export const useAdminLayout = create<AdminLayoutState>()(
         },
         removeItem: (key) => localStorage.removeItem(key),
       },
+      // Reconcile newly-registered modules into a persisted layout: any module
+      // absent from the saved `order` is brand-new, so append it (and enable it
+      // if it's default-on). Modules the user explicitly disabled stay disabled.
+      merge: (persisted, current) => {
+        const p = persisted as { enabled?: Iterable<ModuleId>; order?: ModuleId[]; cmdOpen?: boolean } | undefined;
+        if (!p) return current;
+        const persistedOrder = Array.isArray(p.order) ? p.order : [];
+        const enabled = new Set<ModuleId>(p.enabled ? [...p.enabled] : []);
+        const order = [...persistedOrder];
+        for (const m of MODULE_REGISTRY) {
+          if (!persistedOrder.includes(m.id)) {
+            order.push(m.id);
+            if (m.defaultEnabled) enabled.add(m.id);
+          }
+        }
+        return { ...current, ...p, enabled, order, cmdOpen: false };
+      },
     },
   ),
 );

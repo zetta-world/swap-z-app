@@ -21,9 +21,10 @@ type AnalyticsData = {
 };
 
 const EVENT_COLOR: Record<string, string> = {
-  page_view:  "var(--adm-cyan)",
-  swap_intent: "var(--adm-green)",
-  cex_order:  "var(--adm-gold)",
+  page_view:     "var(--adm-cyan)",
+  swap_intent:   "var(--adm-green)",
+  cex_order:     "var(--adm-gold)",
+  zion_analysis: "var(--adm-violet)",
 };
 
 function eventColor(type: string): string {
@@ -64,7 +65,7 @@ export default function PlatformEventsPanel() {
     return realtime.subscribe((scope) => { if (scope === "events") load(); });
   }, [realtime, load]);
 
-  const EVENT_TYPES = ["page_view", "swap_intent", "cex_order"];
+  const EVENT_TYPES = ["page_view", "swap_intent", "cex_order", "zion_analysis"];
 
   return (
     <TerminalPanel

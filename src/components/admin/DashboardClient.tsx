@@ -11,12 +11,16 @@ import AuditLogPanel      from "./panels/AuditLogPanel";
 import KillSwitchesPanel  from "./panels/KillSwitchesPanel";
 import WhitelistPanel         from "./panels/WhitelistPanel";
 import PlatformEventsPanel    from "./panels/PlatformEventsPanel";
+import BacktestPanel          from "./panels/BacktestPanel";
+import OperationsPanel        from "./panels/OperationsPanel";
 import type { ModuleId }      from "@/lib/admin/modules";
 
 const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "wallets-kpi":        <WalletsKpiPanel />,
   "tier-dist":          <TierDistPanel />,
   "autopilot-activity": <AutopilotPanel />,
+  "live-ops":           <OperationsPanel />,
+  "backtest":           <BacktestPanel />,
   "cex-sessions":       <CexSessionsPanel />,
   "market-volume":      <MarketVolumePanel />,
   "tier-control":       <TierControlPanel />,

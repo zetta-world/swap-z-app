@@ -4,6 +4,8 @@ export type ModuleId =
   | "wallets-kpi"
   | "tier-dist"
   | "autopilot-activity"
+  | "live-ops"
+  | "backtest"
   | "cex-sessions"
   | "market-volume"
   | "audit-log"
@@ -54,13 +56,31 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     defaultOrder: 2,
   },
   {
+    id: "live-ops",
+    title: "LIVE OPS",
+    subtitle: "open positions · autopilot run feed",
+    icon: "⊠",
+    category: "dashboard",
+    defaultEnabled: true,
+    defaultOrder: 3,
+  },
+  {
+    id: "backtest",
+    title: "BACKTEST",
+    subtitle: "ZION win-rate · expectancy · suggestions",
+    icon: "◇",
+    category: "dashboard",
+    defaultEnabled: true,
+    defaultOrder: 4,
+  },
+  {
     id: "cex-sessions",
     title: "CEX SESSIONS",
     subtitle: "active autopilot per exchange",
     icon: "⊞",
     category: "dashboard",
     defaultEnabled: true,
-    defaultOrder: 3,
+    defaultOrder: 5,
   },
   {
     id: "market-volume",

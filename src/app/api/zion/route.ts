@@ -12,6 +12,7 @@ import { getCexSpotPrices, getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSp
 import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { appendMarketBrain } from "@/lib/zion/market-brain";
 import { getMacroContext } from "@/lib/api/macro";
+import { recordEvent } from "@/lib/admin/track";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
@@ -404,6 +405,13 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
           outputTokens: usage.output_tokens,
           cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
         }));
+        // Audit every analysis to platform_events (lacuna 3) — queryable in
+        // the admin Platform Events panel, unlike the console log above.
+        recordEvent("zion_analysis", { meta: {
+          op: args.op, chain: args.chain, model,
+          outTokens: usage.output_tokens,
+          cachedTokens: usage.cache_read_input_tokens ?? 0,
+        } });
       } catch (err) {
         // AbortError is the expected path when the client disconnects or the
         // upstream call hits our timeout — surface the timeout case to the
