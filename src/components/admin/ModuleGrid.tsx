@@ -8,6 +8,7 @@ type PanelMap = Partial<Record<ModuleId, React.ReactNode>>;
 
 const CATEGORIES: { id: ModuleCategory | "all"; label: string }[] = [
   { id: "all",       label: "ALL" },
+  { id: "command",   label: "COMMAND" },
   { id: "dashboard", label: "DASHBOARD" },
   { id: "finance",   label: "FINANCE" },
   { id: "users",     label: "USERS" },

@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 
 export type ModuleId =
+  | "command"
   | "wallets-kpi"
   | "tier-dist"
   | "autopilot-activity"
@@ -19,7 +20,7 @@ export type ModuleId =
   | "kill-switches"
   | "platform-events";
 
-export type ModuleCategory = "dashboard" | "finance" | "users" | "controls" | "logs" | "system";
+export type ModuleCategory = "command" | "dashboard" | "finance" | "users" | "controls" | "logs" | "system";
 
 export type ModuleDef = {
   id:             ModuleId;
@@ -33,6 +34,15 @@ export type ModuleDef = {
 };
 
 export const MODULE_REGISTRY: ModuleDef[] = [
+  {
+    id: "command",
+    title: "COMMAND",
+    subtitle: "the whole company at a glance",
+    icon: "◆",
+    category: "command",
+    defaultEnabled: true,
+    defaultOrder: -1,
+  },
   {
     id: "wallets-kpi",
     title: "WALLETS",

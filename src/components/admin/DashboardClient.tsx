@@ -18,9 +18,11 @@ import LogsSecurityPanel      from "./panels/LogsSecurityPanel";
 import SystemHealthPanel      from "./panels/SystemHealthPanel";
 import FinancePanel           from "./panels/FinancePanel";
 import UsersPanel             from "./panels/UsersPanel";
+import CommandPanel           from "./panels/CommandPanel";
 import type { ModuleId }      from "@/lib/admin/modules";
 
 const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
+  "command":            <CommandPanel />,
   "wallets-kpi":        <WalletsKpiPanel />,
   "tier-dist":          <TierDistPanel />,
   "autopilot-activity": <AutopilotPanel />,
