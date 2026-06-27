@@ -99,8 +99,12 @@ export function extractSuggestion(
   }
   if (!base || STABLES.has(base)) return null;
 
-  const refPrice = refPriceBySymbol.get(base) ?? parsePrice(card.entryPrice ?? card.triggerPrice ?? "");
-  if (!(refPrice > 0)) return null;
+  // ref_price MUST be a real market price from the indicators — never fall
+  // back to the card's entryPrice, which can be an LLM hallucination (e.g.
+  // ADA logged at $700 instead of $0.70) that would corrupt the win-rate.
+  // If we couldn't price the symbol this run, skip it rather than log garbage.
+  const refPrice = refPriceBySymbol.get(base);
+  if (!refPrice || !(refPrice > 0)) return null;
 
   const entry = parsePrice(card.entryPrice ?? card.triggerPrice ?? "") || null;
   const target = card.exits && card.exits[0] ? (parsePrice(card.exits[0].price) || null) : null;
