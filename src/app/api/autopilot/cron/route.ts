@@ -9,6 +9,7 @@ import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
 import { fetchCexBalance, placeCexOrder, fetchCexOrderStatus } from "@/lib/cex/server";
 import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
+import { logOperation } from "@/lib/admin/track";
 import {
   getOpenServerPositions, recordServerEntry, markServerExitArmed,
   closeServerPosition, reopenServerPosition, applySessionPnl,
@@ -93,6 +94,7 @@ async function settleArmedExits(
           await applySessionPnl(s.id, realized, today);
         }
         await closeServerPosition(s.id, pos.base);
+        logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: pos.pair, side: "sell", volumeUsd: Number(pos.cost_usd) || null, pnlUsd: realized, status: "settled", route: "cron", ref: `${exchange}:${pos.exit_order_id}` });
         rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", order_type: "limit", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: realized !== null ? `exit settled, realized $${realized.toFixed(2)}` : "exit settled" });
       } else if (st === "canceled" || st === "cancelled" || st === "expired") {
         await reopenServerPosition(s.id, pos.base);
@@ -340,6 +342,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
             await closeServerPosition(s.id, pos.base);
             ownedBases.delete(base);
             exposureUsd = Math.max(0, exposureUsd - Number(pos.cost_usd || 0));
+            logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: intent.symbol, side: "sell", volumeUsd: Number(pos.cost_usd) || null, pnlUsd: realized, status: "filled", route: "cron", ref: `${exchange}:${order.id}` });
             pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: realized ?? intent.notionalUsd, reason: realized !== null ? `exit filled, realized $${realized.toFixed(2)}` : "exit filled" });
           } else {
             await markServerExitArmed(s.id, pos.base, order.id);
@@ -374,6 +377,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
           exposureUsd += spentUsd;
           ownedBases.add(base);
         }
+        logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: intent.symbol, side: "buy", volumeUsd: buyNotional, pnlUsd: null, status: "fired", route: "cron", ref: `${exchange}:${order.id}` });
         pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: buyNotional });
       } catch (e) {
         pushRow(intent, "errored", card.kind, { reason: (e instanceof Error ? e.message : String(e)).slice(0, 200) });

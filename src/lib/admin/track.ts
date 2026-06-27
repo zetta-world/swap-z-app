@@ -50,3 +50,37 @@ export function logSecurity(kind: string, meta: Record<string, unknown> = {}, se
 export function logError(where: string, message: string, meta: Record<string, unknown> = {}): void {
   recordEvent("error", { meta: { where, message: String(message).slice(0, 300), ...meta } });
 }
+
+/**
+ * Record one operation in the server-side operations ledger (the background
+ * cron's equivalent of the browser's useOperationSync). Idempotent on `ref`;
+ * fire-and-forget. Pass a stable, unique `ref` (e.g. "exchange:orderId").
+ */
+export function logOperation(op: {
+  walletAddress?: string | null;
+  kind:           string;
+  chain?:         string | null;
+  pair?:          string | null;
+  side?:          string | null;
+  volumeUsd?:     number | null;
+  pnlUsd?:        number | null;
+  status:         string;
+  route?:         string | null;
+  ref?:           string | null;
+}): void {
+  const db = getSupabaseAdmin();
+  if (!db) return;
+  const promise = db.from("operations").upsert({
+    wallet_address: op.walletAddress ?? null,
+    kind:           op.kind,
+    chain:          op.chain ?? null,
+    pair:           op.pair ?? null,
+    side:           op.side ?? null,
+    volume_usd:     op.volumeUsd ?? null,
+    pnl_usd:        op.pnlUsd ?? null,
+    status:         op.status,
+    route:          op.route ?? null,
+    ref:            op.ref ?? null,
+  }, { onConflict: "ref", ignoreDuplicates: true });
+  Promise.resolve(promise).catch(() => undefined);
+}
