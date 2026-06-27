@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 
 export type ModuleId =
   | "command"
+  | "alerts"
   | "growth"
   | "wallets-kpi"
   | "tier-dist"
@@ -40,6 +41,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "COMMAND",
     subtitle: "the whole company at a glance",
     icon: "◆",
+    category: "command",
+    defaultEnabled: true,
+    defaultOrder: -2,
+  },
+  {
+    id: "alerts",
+    title: "ALERTS",
+    subtitle: "Telegram · proactive notifications",
+    icon: "🔔",
     category: "command",
     defaultEnabled: true,
     defaultOrder: -1,

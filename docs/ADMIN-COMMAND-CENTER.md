@@ -18,7 +18,7 @@
 | ⑤ | **SECURITY & COMPLIANCE** | CISO/Legal | 🟢 LOGS & SECURITY, AUDIT, KILL SWITCHES; +threat score, geoblock/ToS, retention 🔴 |
 | ⑥ | **SYSTEM HEALTH** | CTO/DevOps | 🟢 cron heartbeats + dependency pings + status light |
 | ⑦ | **USERS** | Support/Ops | 🟢 leaderboard + per-wallet drill-down (tier, sessions, ops, P&L, events) |
-| ⑧ | **ALERTS** | cross-cutting | 🟡 awaiting Telegram bot (token + chat id) — engine pluggable |
+| ⑧ | **ALERTS** | cross-cutting | 🟢 Telegram engine + ALERTS panel (test button, history); fires on high-sev security + autopilot freeze. Activates on TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID env. |
 
 ## Phases
 

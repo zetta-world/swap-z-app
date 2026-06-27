@@ -9,7 +9,7 @@ import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
 import { fetchCexBalance, placeCexOrder, fetchCexOrderStatus } from "@/lib/cex/server";
 import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
-import { logOperation } from "@/lib/admin/track";
+import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import {
   getOpenServerPositions, recordServerEntry, markServerExitArmed,
@@ -185,6 +185,12 @@ interface ProcessResult { fired: number; note: string; }
 async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   const nowIso = new Date().toISOString();
   const today = utcDayKey();
+  const wasFrozen = s.frozen_until_day === today;
+  const alertIfNewlyFrozen = () => {
+    if (!wasFrozen) {
+      notifyTelegram(`📉 <b>Autopilot frozen</b> — daily loss-stop hit.\nwallet ${s.wallet_address.slice(0, 8)}… · ${s.exchange_id}`, { dedupKey: `freeze:${s.id}` });
+    }
+  };
 
   // ── 1. Daily rollover ──
   let tradesToday = s.trades_today;
@@ -213,6 +219,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
 
   // ── 4. Freeze / cap gates (AFTER settling — a settle can trip the freeze) ──
   if (frozenUntil === today) {
+    alertIfNewlyFrozen();
     if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
     return { fired: 0, note: "frozen (daily loss-stop)" };
@@ -387,6 +394,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     }
   }
 
+  if (frozenUntil === today) alertIfNewlyFrozen(); // a sell may have tripped it mid-run
   await recordRuns(runRows);
   await patchSession(s.id, {
     trades_today: tradesToday + fired,

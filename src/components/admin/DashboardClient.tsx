@@ -20,10 +20,12 @@ import FinancePanel           from "./panels/FinancePanel";
 import UsersPanel             from "./panels/UsersPanel";
 import CommandPanel           from "./panels/CommandPanel";
 import GrowthPanel            from "./panels/GrowthPanel";
+import AlertsPanel            from "./panels/AlertsPanel";
 import type { ModuleId }      from "@/lib/admin/modules";
 
 const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "command":            <CommandPanel />,
+  "alerts":             <AlertsPanel />,
   "growth":             <GrowthPanel />,
   "wallets-kpi":        <WalletsKpiPanel />,
   "tier-dist":          <TierDistPanel />,

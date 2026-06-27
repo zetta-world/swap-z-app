@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
+import { rateLimit } from "@/lib/rate-limit";
 
 type EventOpts = {
   wallet?: string | null;
@@ -40,6 +41,9 @@ export type Severity = "low" | "med" | "high";
  */
 export function logSecurity(kind: string, meta: Record<string, unknown> = {}, severity: Severity = "med"): void {
   recordEvent("security", { meta: { kind, severity, ...meta } });
+  if (severity === "high") {
+    notifyTelegram(`🔴 <b>SECURITY</b>: ${kind}\n${JSON.stringify(meta).slice(0, 200)}`, { dedupKey: `sec:${kind}`, meta: { kind } });
+  }
 }
 
 /**
@@ -49,6 +53,39 @@ export function logSecurity(kind: string, meta: Record<string, unknown> = {}, se
  */
 export function logError(where: string, message: string, meta: Record<string, unknown> = {}): void {
   recordEvent("error", { meta: { where, message: String(message).slice(0, 300), ...meta } });
+}
+
+// ─── Proactive alerts (Telegram) ─────────────────────────────────────────
+
+/** True when the Telegram bot is wired up (token + chat id present). */
+export function alertConfigured(): boolean {
+  return !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
+}
+
+/**
+ * Push a proactive alert. Always logs to platform_events (visible in the
+ * Alerts panel even with no bot) and, when Telegram is configured, sends the
+ * message. `dedupKey` throttles repeats (1 per 5 min per key) so an attack
+ * spike can't flood the channel. Fire-and-forget, never throws.
+ */
+export function notifyTelegram(text: string, opts: { dedupKey?: string; meta?: Record<string, unknown> } = {}): void {
+  recordEvent("alert", { meta: { text: text.slice(0, 300), ...opts.meta } });
+
+  if (opts.dedupKey) {
+    const rl = rateLimit(`alert:${opts.dedupKey}`, { windowMs: 300_000, max: 1 });
+    if (!rl.ok) return; // throttled
+  }
+
+  const token  = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+
+  const promise = fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
+  });
+  Promise.resolve(promise).catch(() => undefined);
 }
 
 /**
