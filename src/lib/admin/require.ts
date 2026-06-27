@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { logSecurity } from "@/lib/admin/track";
 
 /**
  * Server helper — call at the top of every admin Server Component / Route
@@ -33,7 +34,11 @@ export async function requireAdmin(): Promise<{ wallet: string }> {
     .eq("source", "admin")
     .maybeSingle();
 
-  if (!data) notFound();
+  if (!data) {
+    // A signed-in wallet probing an admin surface — high-signal intrusion attempt.
+    logSecurity("admin_access_denied", { wallet: `${wallet.slice(0, 10)}…` }, "high");
+    notFound();
+  }
   return { wallet };
 }
 

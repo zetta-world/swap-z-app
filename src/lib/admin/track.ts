@@ -29,3 +29,24 @@ export function recordEvent(type: string, opts: EventOpts = {}): void {
   // events (swap_intent, cex_order) ping; page views show up on the next poll.
   if (type !== "page_view") broadcastAdminRefresh("events");
 }
+
+export type Severity = "low" | "med" | "high";
+
+/**
+ * Record a SECURITY-relevant event: a likely abuse / violation / attack
+ * signal (bad confirmation token on a money endpoint, a blocked guard, a
+ * rate-limit hit, an auth failure). Surfaced in the admin Logs & Security
+ * panel so we can spot probing/attacks without reading server logs.
+ */
+export function logSecurity(kind: string, meta: Record<string, unknown> = {}, severity: Severity = "med"): void {
+  recordEvent("security", { meta: { kind, severity, ...meta } });
+}
+
+/**
+ * Record an ERROR / failure (a caught exception, a failed upstream call) so
+ * bugs are queryable in the admin panel, not buried in Vercel logs. Messages
+ * are truncated; never pass secrets in `meta`.
+ */
+export function logError(where: string, message: string, meta: Record<string, unknown> = {}): void {
+  recordEvent("error", { meta: { where, message: String(message).slice(0, 300), ...meta } });
+}

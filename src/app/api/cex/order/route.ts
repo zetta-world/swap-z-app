@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { placeCexOrder } from "@/lib/cex/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
+import { logSecurity, logError } from "@/lib/admin/track";
 import { recordEvent } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import {
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest) {
 
   const rl = await rateLimitDurable(`cex_order:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
+    logSecurity("rate_limited", { route: "cex/order" }, "low");
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },
       { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
@@ -87,6 +89,9 @@ export async function POST(req: NextRequest) {
   // Confirmation guard — the client must pass this exact string. Default
   // catch for accidental scripted submissions.
   if (body.confirm !== "I-CONFIRM-REAL-ORDER") {
+    // Calling the live-order endpoint without the exact token is a strong
+    // abuse/probing signal — surface it loudly.
+    logSecurity("invalid_confirmation", { route: "cex/order" }, "high");
     return NextResponse.json({ ok: false, error: "missing_confirmation" }, { status: 400 });
   }
 
@@ -146,6 +151,7 @@ export async function POST(req: NextRequest) {
       : HARD_NOTIONAL_CEILING_USD;
     const guard = checkRealNotional({ side, baseAmount: body.amount, refPrice, maxTradeUsd: cap });
     if (!guard.ok) {
+      logSecurity("notional_guard_block", { route: "cex/order", symbol: body.symbol, reason: guard.reason }, "high");
       return NextResponse.json(
         { ok: false, error: "notional_guard", detail: guard.reason },
         { status: 400 },
@@ -204,6 +210,7 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[cex/order]", exchange, body.symbol, side, type, "failed:", msg);
     const code = classifyCexError(msg);
+    logError("cex/order", code, { exchange, symbol: body.symbol, side, type });
     const detail = sanitizeUpstreamMessage(msg, body.apiKey);
     return NextResponse.json(
       { ok: false, error: code, detail },

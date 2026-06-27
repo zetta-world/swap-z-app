@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { withdrawFromCex } from "@/lib/cex/server";
 import { getReferencePriceUsd } from "@/lib/autopilot/price-guard";
+import { logSecurity, logError } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import { type CexId, type CexCredentials, SUPPORTED_CEX_IDS, CEX_META } from "@/lib/cex/types";
 
@@ -86,6 +87,7 @@ export async function POST(req: NextRequest) {
 
   const rl = await rateLimitDurable(`cex_withdraw:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
+    logSecurity("rate_limited", { route: "cex/withdraw" }, "med");
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },
       { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
@@ -100,6 +102,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.confirm !== "I-CONFIRM-REAL-WITHDRAWAL") {
+    logSecurity("invalid_confirmation", { route: "cex/withdraw" }, "high");
     return NextResponse.json({ ok: false, error: "missing_confirmation" }, { status: 400 });
   }
 
@@ -122,6 +125,7 @@ export async function POST(req: NextRequest) {
   // most conservative possible interpretation.
   const roughUsd = (ROUGH_USD_PRICE[currency] ?? 1) * body.amount;
   if (roughUsd > HARD_WITHDRAWAL_CEILING_USD) {
+    logSecurity("withdraw_ceiling_block", { currency, roughUsd: Math.round(roughUsd) }, "high");
     return NextResponse.json(
       { ok: false, error: "amount_exceeds_ceiling", detail: `Server-side cap is ~$${HARD_WITHDRAWAL_CEILING_USD.toLocaleString()}. Use the exchange's own UI for larger transfers.` },
       { status: 400 },
@@ -206,6 +210,7 @@ export async function POST(req: NextRequest) {
     // never log the destination address.
     console.warn("[cex/withdraw]", exchange, currency, "failed:", msg.slice(0, 160));
     const code = classifyCexError(msg);
+    logError("cex/withdraw", code, { exchange, currency });
     const detail = sanitizeUpstreamMessage(msg, body.apiKey);
     return NextResponse.json(
       { ok: false, error: code, detail },

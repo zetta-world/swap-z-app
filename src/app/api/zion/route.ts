@@ -12,7 +12,7 @@ import { getCexSpotPrices, getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSp
 import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { appendMarketBrain } from "@/lib/zion/market-brain";
 import { getMacroContext } from "@/lib/api/macro";
-import { recordEvent } from "@/lib/admin/track";
+import { recordEvent, logSecurity, logError } from "@/lib/admin/track";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
   const clientId = getClientId(req.headers);
   const rl = await rateLimitDurable(`zion:${clientId}`, RL_OPTS);
   if (!rl.ok) {
+    logSecurity("rate_limited", { route: "zion" }, "low");
     return new Response(
       `Rate limit exceeded. Try again in ${rl.retryAfter}s.`,
       {
@@ -421,6 +422,7 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
           controller.enqueue(encoder.encode(`\n\n[ZION error: Upstream stalled past ${STREAM_TIMEOUT_MS / 1000}s. Please retry.]`));
         } else if (!isAbort) {
           console.warn("[zion] fatal:", err instanceof Error ? err.message : err);
+          logError("zion", err instanceof Error ? err.message : String(err), { op: args.op });
           if (!closed) controller.enqueue(encoder.encode(`[ZION error: Unable to complete analysis. Please retry.]`));
         }
       } finally {

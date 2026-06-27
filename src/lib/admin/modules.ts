@@ -9,6 +9,7 @@ export type ModuleId =
   | "cex-sessions"
   | "market-volume"
   | "audit-log"
+  | "logs-security"
   | "tier-control"
   | "whitelist"
   | "kill-switches"
@@ -135,6 +136,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "logs",
     defaultEnabled: true,
     defaultOrder: 9,
+  },
+  {
+    id: "logs-security",
+    title: "LOGS & SECURITY",
+    subtitle: "errors · abuse · intrusion attempts",
+    icon: "⚠",
+    category: "logs",
+    defaultEnabled: true,
+    defaultOrder: 10,
   },
 ];
 
