@@ -731,31 +731,45 @@ export async function getFundingAndOI(symbols: string[]): Promise<FuturesData[]>
 // ─── Confidence score (0-100 long-bias setup quality) ────────────────────
 
 /**
- * Composite quality score for a LONG setup. Higher = better setup.
- * For a SHORT, invert: 100 - score.
+ * Composite quality score for a LONG setup, 0-100 (for a SHORT, invert:
+ * 100 - score). Nine 0..1 sub-scores combined by SCORE_WEIGHTS.
  *
- * Weights are provisional (not backtested) — use as directional signal only.
+ * SCORE_WEIGHTS is the single source of truth for the blend — Z7 will REPLACE
+ * these provisional, hand-set numbers with weights fit from the suggestion
+ * ledger (which dimension actually predicts winners). Until then: directional
+ * signal only.
  */
+export const SCORE_WEIGHTS = {
+  alignment:  22,  // 1h/4h/1D directional agreement
+  regime:     18,  // ADX trend regime
+  macd:       16,  // momentum direction
+  rsi:        12,  // oscillator zone
+  cycle:      12,  // position in the 1-year range (Z1) — R/R vs the cycle
+  weekly:      8,  // weekly trend (Z1) — higher-timeframe structure
+  orderBook:   6,  // fill quality
+  divergence:  4,  // RSI divergence (Z2)
+  fearGreed:   2,  // market sentiment
+} as const; // sums to 100
+
 function computeConfidenceScore(
   ind: Omit<SymbolIndicators, "confidenceScore">,
   ob:  OrderBookSnapshot | undefined,
   fg:  FearGreedData | null,
 ): number {
-  // Alignment — 30%
+  const W = SCORE_WEIGHTS;
+
   const alignScore =
     ind.alignment === "aligned_bull" ? 1.0 :
     ind.alignment === "mixed"        ? 0.5 :
     ind.alignment === "conflict"     ? 0.3 :
     0.0; // aligned_bear
 
-  // Regime — 20%
   const regimeScore =
     ind.regime === "TRENDING_UP"   ? 1.0 :
     ind.regime === "RANGING"       ? 0.5 :
     ind.regime === "TRANSITIONING" ? 0.4 :
     0.0; // TRENDING_DOWN
 
-  // MACD — 20%
   let macdScore = 0.5;
   if (ind.macd) {
     const { histogram, histPrev } = ind.macd;
@@ -766,7 +780,6 @@ function computeConfidenceScore(
     else                                  macdScore = 0.0; // negative + deepening
   }
 
-  // RSI — 15%
   let rsiScore = 0.5;
   if (ind.rsi14 !== null) {
     const r = ind.rsi14;
@@ -778,7 +791,19 @@ function computeConfidenceScore(
     else                        rsiScore = 0.3;  // < 30 oversold
   }
 
-  // Order book slippage — 10%
+  // Cycle position (Z1): for a LONG, better risk/reward nearer the 1-year low.
+  let cycleScore = 0.5;
+  if (ind.rangePct !== null) {
+    const r = ind.rangePct;
+    cycleScore = r <= 20 ? 1.0 : r <= 40 ? 0.8 : r <= 60 ? 0.6 : r <= 80 ? 0.4 : 0.2;
+  }
+
+  // Weekly trend (Z1): higher-timeframe structure backing the setup.
+  let weeklyScore = 0.5;
+  if (ind.htf1w) {
+    weeklyScore = ind.htf1w.trend === "bullish" ? 1.0 : ind.htf1w.trend === "bearish" ? 0.1 : 0.5;
+  }
+
   let obScore = 0.5;
   if (ob?.slip1kBps != null) {
     if      (ob.slip1kBps <  5)  obScore = 1.0;
@@ -787,7 +812,12 @@ function computeConfidenceScore(
     else                          obScore = 0.1; // thin book
   }
 
-  // Fear & Greed — 5%
+  // RSI divergence (Z2): bullish divergence boosts a long; bearish warns.
+  const divScore =
+    ind.divergence === "bullish_rsi" ? 1.0 :
+    ind.divergence === "bearish_rsi" ? 0.1 :
+    0.5;
+
   let fgScore = 0.5;
   if (fg) {
     const v = fg.value;
@@ -797,15 +827,18 @@ function computeConfidenceScore(
   }
 
   let score = Math.round(
-    alignScore  * 30 +
-    regimeScore * 20 +
-    macdScore   * 20 +
-    rsiScore    * 15 +
-    obScore     * 10 +
-    fgScore     *  5,
+    alignScore   * W.alignment +
+    regimeScore  * W.regime +
+    macdScore    * W.macd +
+    rsiScore     * W.rsi +
+    cycleScore   * W.cycle +
+    weeklyScore  * W.weekly +
+    obScore      * W.orderBook +
+    divScore     * W.divergence +
+    fgScore      * W.fearGreed,
   );
 
-  // ATR penalty: very whippy assets have more noise, reduce score
+  // ATR penalty: very whippy assets have more noise, reduce score.
   if (ind.atrPct !== null && ind.atrPct > 4) score = Math.max(0, score - 5);
 
   return Math.max(0, Math.min(100, score));
