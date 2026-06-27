@@ -16,6 +16,7 @@ import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import { recordEvent } from "@/lib/admin/track";
+import { modelChain, isRetryableModelError } from "@/lib/zion/model";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { formatIndicatorsForPrompt, type SymbolIndicators, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { getMacroContext } from "@/lib/api/macro";
@@ -58,16 +59,23 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
 
   try {
     const client = new Anthropic({ apiKey });
-    const model = process.env.ZION_MODEL ?? "claude-sonnet-4-6";
-    const msg = await client.messages.create({
-      model,
+    const params = {
       max_tokens: 3500,
-      system: [{ type: "text", text: ZION_FOUNDATION, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: instruction }],
-    });
+      system: [{ type: "text" as const, text: ZION_FOUNDATION, cache_control: { type: "ephemeral" as const } }],
+      messages: [{ role: "user" as const, content: instruction }],
+    };
+    // N1: try the model chain — fall back to the backup on an overloaded primary.
+    const chain = modelChain();
+    let msg: Anthropic.Message | undefined;
+    let usedModel = chain[0];
+    for (const model of chain) {
+      try { msg = await client.messages.create({ model, ...params }); usedModel = model; break; }
+      catch (e) { if (!isRetryableModelError(e) || model === chain[chain.length - 1]) throw e; }
+    }
+    if (!msg) return [];
     const u = msg.usage;
     recordEvent("zion_analysis", { meta: {
-      op: "backtest", model, source: "backtest",
+      op: "backtest", model: usedModel, source: "backtest",
       inTokens: u.input_tokens, outTokens: u.output_tokens,
       cachedTokens: u.cache_read_input_tokens ?? 0,
     } });

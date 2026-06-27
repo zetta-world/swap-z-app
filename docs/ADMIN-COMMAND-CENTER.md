@@ -11,14 +11,14 @@
 
 | # | Workspace | Role | Status |
 |---|-----------|------|--------|
-| ① | **COMMAND** | CEO/President | overview of everything (users, revenue, volume, AUM, ZION win-rate, system light, alerts) — 🔴 |
-| ② | **GROWTH** | Marketing | funnel (visit→connect→signin→trade→autopilot→paid), conversion, retention cohorts, DAU/WAU/MAU, channels — 🔴 |
-| ③ | **FINANCE** | CFO/Accountant | tier/NFT revenue, MRR, AI+infra cost, margin, volume & fees, CSV export — 🔴 |
-| ④ | **TRADING & ZION** | Analyst | OPERATIONS 🟢, LIVE OPS 🟢, BACKTEST 🟢, ZION analyses 🟢, MARKET 🟢 |
-| ⑤ | **SECURITY & COMPLIANCE** | CISO/Legal | LOGS & SECURITY 🟢, AUDIT 🟢, KILL SWITCHES 🟢; +threat score, geoblock/ToS, retention 🔴 |
-| ⑥ | **SYSTEM HEALTH** | CTO/DevOps | dependency status, cron freshness, error rate, latency, API quotas — 🟡 (Phase 1) |
-| ⑦ | **USERS** | Support/Ops | list + per-wallet drill-down (tier, sessions, ops, P&L, events) — 🔴 |
-| ⑧ | **ALERTS** | cross-cutting | proactive notifications (Telegram/email) + history — 🔴 (Phase 2) |
+| ① | **COMMAND** | CEO/President | 🟢 consolidated KPI board (users, volume, P&L, autopilot, win-rate, AI cost) + alert strip |
+| ② | **GROWTH** | Marketing | 🟢 value-ladder funnel + DAU/WAU/MAU + stickiness + signups |
+| ③ | **FINANCE** | CFO/Accountant | 🟢 AI cost (all Claude calls), volume, attributed revenue, CSV export |
+| ④ | **TRADING & ZION** | Analyst | 🟢 OPERATIONS, LIVE OPS, BACKTEST, ZION analyses, MARKET |
+| ⑤ | **SECURITY & COMPLIANCE** | CISO/Legal | 🟢 LOGS & SECURITY, AUDIT, KILL SWITCHES; +threat score, geoblock/ToS, retention 🔴 |
+| ⑥ | **SYSTEM HEALTH** | CTO/DevOps | 🟢 cron heartbeats + dependency pings + status light |
+| ⑦ | **USERS** | Support/Ops | 🟢 leaderboard + per-wallet drill-down (tier, sessions, ops, P&L, events) |
+| ⑧ | **ALERTS** | cross-cutting | 🟡 awaiting Telegram bot (token + chat id) — engine pluggable |
 
 ## Phases
 

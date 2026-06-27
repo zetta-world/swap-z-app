@@ -5,6 +5,7 @@ import { getMultiExchangeSpot, type CexSpotSource } from "@/lib/api/cex-spot";
 import { getTrendingPools, type PoolSummary } from "@/lib/api/geckoterminal";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import { recordEvent } from "@/lib/admin/track";
+import { modelChain, isRetryableModelError } from "@/lib/zion/model";
 
 /**
  * Server-side, NON-streaming ZION autopilot-CEX scan. Used by the background
@@ -150,18 +151,25 @@ export async function runAutopilotCexScan(args: AutopilotScanArgs): Promise<Auto
   }
 
   const client = new Anthropic({ apiKey });
-  const model = process.env.ZION_MODEL ?? "claude-sonnet-4-6";
+  const params = {
+    max_tokens: 2500,
+    system: [
+      { type: "text" as const, text: ZION_FOUNDATION,                 cache_control: { type: "ephemeral" as const } },
+      { type: "text" as const, text: ZION_AUTOPILOT_CEX_INSTRUCTIONS, cache_control: { type: "ephemeral" as const } },
+    ],
+    messages: [{ role: "user" as const, content: payload }],
+  };
 
   try {
-    const msg = await client.messages.create({
-      model,
-      max_tokens: 2500,
-      system: [
-        { type: "text", text: ZION_FOUNDATION,                  cache_control: { type: "ephemeral" } },
-        { type: "text", text: ZION_AUTOPILOT_CEX_INSTRUCTIONS,  cache_control: { type: "ephemeral" } },
-      ],
-      messages: [{ role: "user", content: payload }],
-    });
+    // N1: model fallback chain — degrade to the backup on an overloaded primary.
+    const chain = modelChain();
+    let msg: Anthropic.Message | undefined;
+    let model = chain[0];
+    for (const m of chain) {
+      try { msg = await client.messages.create({ model: m, ...params }); model = m; break; }
+      catch (e) { if (!isRetryableModelError(e) || m === chain[chain.length - 1]) throw e; }
+    }
+    if (!msg) return { cards: [], rawText: "", error: "no model produced a response" };
 
     recordEvent("zion_analysis", { meta: {
       op: "autopilot_cex", model, source: "cron",
