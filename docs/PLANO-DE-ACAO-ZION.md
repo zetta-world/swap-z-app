@@ -265,7 +265,7 @@ fetchCandles(symbol, "1d", 100, ...)   // ~100 dias (≈3,3 meses)
 | Z1 | Estender lookback diário (200–365 velas) + adicionar **candle semanal** (ciclos multi-mês/ano) | `market-indicators.ts` `fetchCandles` | 🟢 |
 | Z2 | Injetar **trajetória** em vez de snapshot: "RSI 38→45→61", "preço no percentil X do range de 1 ano", "distância da máxima do ciclo" | `formatIndicatorsForPrompt` | 🟢 |
 | Z3 | **Market Brain** persistente por ativo (Supabase): regime + há quanto tempo, volatilidade vs baseline EWMA, posição no range — atualizado a cada análise | `market-brain.ts` + tabela (migração 0011) | 🟢 |
-| Z4 | Adicionar **contexto global/macro** (DXY, S&P/Nasdaq, dominância BTC, fluxo ETF, stablecoin supply) | nova fonte de dados | 🔴 |
+| Z4 | **Contexto macro** — dominância BTC/ETH + mcap total (CoinGecko), supply de stablecoins (DefiLlama), DXY+S&P (Yahoo, best-effort) | `src/lib/api/macro.ts`; ligado em `buildPairData` + backtester | 🟢 |
 
 ### Eixo B — Aprendizado dinâmico
 
