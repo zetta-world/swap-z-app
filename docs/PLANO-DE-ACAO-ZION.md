@@ -315,7 +315,7 @@ Cada sugestão das 4 IAs foi cruzada com o código real e com as Partes 1 e 2.
 | E1 | TA para tokens DEX | 🟢 CONCLUÍDO (2026-06-26) — `computeIndicators` extraído (math reusável) + `getDexSymbolIndicators` (OHLCV GeckoTerminal) + `getTokenTopPool`; ligado no `buildPairData`. ZION analisa milhares de tokens DEX, não só majors. | 🟢 |
 | E2 | Trailing stop / OCO no autopiloto | Já existem como tipos de ordem em `src/components/pro/ProOrderPanel.tsx` (manual). Falta wirar no `AutopilotPilot` | 🔴 |
 | E3 | MEV protection em swaps grandes | CoW Protocol já existe (`src/lib/limit/cow.ts`). Falta estender a todo swap DEX > $X e tornar default | 🔴 |
-| E4 | Smart Money / Whale no ZION | `src/components/pro/ProSmartMoney.tsx` já analisa baleias (veredito accumulating/distributing). Falta injetar no prompt do ZION + grafo persistente de carteiras | 🔴 |
+| E4 | Smart Money / Whale no ZION | 🟢 CONCLUÍDO (2026-06-27) — `analyzeSmartMoney` (server, mesmos thresholds do ProSmartMoney) injeta verdict ACCUMULATING/DISTRIBUTING no prompt, do pool do token analisado. (Grafo persistente de carteiras lucrativas = futuro.) | 🟢 |
 
 ### 3.2 — Adicionar agora (novo, alinhado a dinheiro/confiança)
 
