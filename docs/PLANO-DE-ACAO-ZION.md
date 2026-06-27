@@ -274,7 +274,7 @@ fetchCandles(symbol, "1d", 100, ...)   // ~100 dias (≈3,3 meses)
 | Z5 | **Ledger de sugestões → resultados**: grava todo card tradeable (símbolo, entry, target, stop, prob, regime, preço-ref) | `zion_suggestions` (migração 0012) + `backtest.ts` | 🟢 |
 | Z6 | **Backtester (Shadow Flywheel)**: resolve target/stop/horizonte vs preço atual → win-rate/expectancy; endpoint `/api/zion/backtest` + cron 30min | `backtest.ts` + workflow | 🟢 |
 | Z7 | **Calibração de probabilidade** (Platt/isotonic) sobre o ledger; renomear UI "probability" → "conviction score" com disclaimer | rota + i18n | 🔴 |
-| Z8 | **Ampliar/recalibrar `confidenceScore`** com macro+segurança+on-chain e pesos tirados do ledger (hoje são chutados) | `computeConfidenceScore` | 🔴 |
+| Z8 | **Ampliar `confidenceScore`** (6→9 dims: +ciclo 1Y, +semanal, +divergência) e centralizar pesos em `SCORE_WEIGHTS` p/ recalibração | `computeConfidenceScore` | 🟡 |
 | Z9 | (Longo prazo) Sizing por **Kelly** usando `p` real do ledger + R do card | `card-mapping`/pilot | 🔴 |
 
 ### Sequência recomendada (Parte 2)
