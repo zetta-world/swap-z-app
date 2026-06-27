@@ -4,8 +4,9 @@ import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { getModeInstructions, type ZionOp } from "@/lib/zion/mode-prompts";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
 import { getHoneypot, isHoneypotSupported, type HoneypotResponse } from "@/lib/api/honeypot";
-import { getTokenInfo, getTopPools, getTrendingPools, getTokenTopPool, type TokenInfo, type PoolSummary } from "@/lib/api/geckoterminal";
+import { getTokenInfo, getTopPools, getTrendingPools, getTokenTopPool, getRecentTrades, type TokenInfo, type PoolSummary } from "@/lib/api/geckoterminal";
 import { getDexSymbolIndicators } from "@/lib/api/market-indicators";
+import { analyzeSmartMoney } from "@/lib/api/smart-money";
 import { getTrending, type TrendingPair } from "@/lib/api/dexscreener";
 import { getCexSpotPrices, getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
 import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
@@ -737,16 +738,20 @@ async function buildPairData(args: RunArgs): Promise<string> {
     !!t?.symbol && !!t.address && t.address !== "native" &&
     !STABLE_SYMS.has(t.symbol.toUpperCase()) && !cexTracked(t.symbol),
   );
+  let smartMoneyLine = "";
   if (dexCandidate?.address && dexCandidate.symbol) {
     try {
       const pool = await getTokenTopPool(args.chain, dexCandidate.address);
       if (pool) {
-        const dexInd = await getDexSymbolIndicators(
-          dexCandidate.symbol.toUpperCase(), args.chain, pool.address, pool.tokenIsBase ? "base" : "quote",
-        );
+        // DEX technical analysis (E1) + smart-money flow (E4) off the same pool.
+        const [dexInd, trades] = await Promise.all([
+          getDexSymbolIndicators(dexCandidate.symbol.toUpperCase(), args.chain, pool.address, pool.tokenIsBase ? "base" : "quote"),
+          getRecentTrades(args.chain, pool.address, 100).catch(() => []),
+        ]);
         if (dexInd.rsi14 !== null) marketData.indicators.push(dexInd);
+        smartMoneyLine = analyzeSmartMoney(trades) ?? "";
       }
-    } catch { /* DEX TA is best-effort */ }
+    } catch { /* DEX enrichment is best-effort */ }
   }
 
   const lines: string[] = [];
@@ -804,6 +809,9 @@ async function buildPairData(args: RunArgs): Promise<string> {
     lines.push("\nTECHNICAL ANALYSIS:");
     lines.push(indicatorsText);
   }
+
+  // Smart-money / whale flow on the analyzed token's pool (E4).
+  if (smartMoneyLine) lines.push(`\n${smartMoneyLine}`);
 
   // Multi-chain wallet composition — injected when the frontend passes it.
   // Lets ZION reason about cross-chain cost and cross-chain bridging needs.
