@@ -10,6 +10,7 @@ import { getTrending, type TrendingPair } from "@/lib/api/dexscreener";
 import { getCexSpotPrices, getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
 import { getMarketIndicators, formatIndicatorsForPrompt, getFundingAndOI, formatFuturesForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { appendMarketBrain } from "@/lib/zion/market-brain";
+import { getMacroContext } from "@/lib/api/macro";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
@@ -712,7 +713,7 @@ async function buildPairData(args: RunArgs): Promise<string> {
     toToken?.symbol?.toUpperCase(),
   ].filter((s): s is string => !!s && (CEX_TRACKED_SYMBOLS as readonly string[]).includes(s));
 
-  const [fromSec, toSec, fromHoney, toHoney, fromInfo, toInfo, pools, marketData] = await Promise.all([
+  const [fromSec, toSec, fromHoney, toHoney, fromInfo, toInfo, pools, marketData, macroText] = await Promise.all([
     safeGoPlus(args.chain, fromToken?.address),
     safeGoPlus(args.chain, toToken?.address),
     safeHoneypot(args.chain, fromToken?.address),
@@ -723,6 +724,7 @@ async function buildPairData(args: RunArgs): Promise<string> {
     indicatorSymbols.length > 0
       ? getMarketIndicators(indicatorSymbols).catch((): MarketIndicatorsResult => ({ indicators: [], orderBooks: [], fearGreed: null }))
       : Promise.resolve<MarketIndicatorsResult>({ indicators: [], orderBooks: [], fearGreed: null }),
+    getMacroContext().catch(() => ""),
   ]);
 
   // E1: DEX technical analysis. When the analyzed asset has no CEX klines,
@@ -755,6 +757,9 @@ async function buildPairData(args: RunArgs): Promise<string> {
   // that case rather than fabricating a position.
   lines.push(`from_balance: ${args.fromBalance || "unknown"}`);
   lines.push(`from_balance_usd: ${args.fromBalanceUsd !== null ? args.fromBalanceUsd.toFixed(2) : "unknown"}`);
+
+  // Macro backdrop (Z4) — global context above the per-asset read.
+  if (macroText) { lines.push(""); lines.push(macroText); }
 
   lines.push("\nFROM TOKEN:");
   lines.push(`  symbol: ${fromToken?.symbol ?? "?"}`);

@@ -17,6 +17,7 @@ import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { formatIndicatorsForPrompt, type SymbolIndicators, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
+import { getMacroContext } from "@/lib/api/macro";
 import type { ZionSuggestionRow } from "@/lib/supabase/types";
 
 /**
@@ -30,6 +31,7 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
   if (!apiKey) return [];
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
   if (!indicatorsText) return [];
+  const macroText = await getMacroContext().catch(() => "");
 
   const instruction = [
     "You are ZION's prediction engine running in BACKTEST mode. Every call you",
@@ -48,6 +50,7 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
     "Machine-format every number (dot decimal, no separators, no symbols).",
     "",
     "<market>",
+    macroText ? `${macroText}\n` : "",
     indicatorsText,
     "</market>",
   ].join("\n");
