@@ -15,6 +15,7 @@ import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useOrderWatcher } from "@/lib/hooks/useOrderWatcher";
+import { useOperationSync } from "@/lib/hooks/useOperationSync";
 
 // Lazy guard — only imports the heavy execute portal (and pulls in the swap
 // quote stack) the first time the user opens a swap. Keeps page-navigation
@@ -29,6 +30,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const t = useT();
   useOrderWatcher();
+  useOperationSync(); // mirror confirmed operations to the server ledger
 
   // Drive `data-mode` on <html> so the standard / pro / privacy UI mode can
   // alter the app globally via CSS (privacy blurs balances, pro densifies).

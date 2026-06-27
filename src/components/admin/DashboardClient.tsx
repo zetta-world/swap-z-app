@@ -13,6 +13,7 @@ import WhitelistPanel         from "./panels/WhitelistPanel";
 import PlatformEventsPanel    from "./panels/PlatformEventsPanel";
 import BacktestPanel          from "./panels/BacktestPanel";
 import OperationsPanel        from "./panels/OperationsPanel";
+import OperationsLedgerPanel  from "./panels/OperationsLedgerPanel";
 import LogsSecurityPanel      from "./panels/LogsSecurityPanel";
 import type { ModuleId }      from "@/lib/admin/modules";
 
@@ -21,6 +22,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "tier-dist":          <TierDistPanel />,
   "autopilot-activity": <AutopilotPanel />,
   "live-ops":           <OperationsPanel />,
+  "ops-ledger":         <OperationsLedgerPanel />,
   "backtest":           <BacktestPanel />,
   "cex-sessions":       <CexSessionsPanel />,
   "market-volume":      <MarketVolumePanel />,

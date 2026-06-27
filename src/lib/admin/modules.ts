@@ -5,6 +5,7 @@ export type ModuleId =
   | "tier-dist"
   | "autopilot-activity"
   | "live-ops"
+  | "ops-ledger"
   | "backtest"
   | "cex-sessions"
   | "market-volume"
@@ -66,13 +67,22 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     defaultOrder: 3,
   },
   {
+    id: "ops-ledger",
+    title: "OPERATIONS",
+    subtitle: "every client trade · volume · realized P&L",
+    icon: "≣",
+    category: "dashboard",
+    defaultEnabled: true,
+    defaultOrder: 4,
+  },
+  {
     id: "backtest",
     title: "BACKTEST",
     subtitle: "ZION win-rate · expectancy · suggestions",
     icon: "◇",
     category: "dashboard",
     defaultEnabled: true,
-    defaultOrder: 4,
+    defaultOrder: 5,
   },
   {
     id: "cex-sessions",
