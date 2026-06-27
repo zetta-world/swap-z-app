@@ -17,6 +17,7 @@ import OperationsLedgerPanel  from "./panels/OperationsLedgerPanel";
 import LogsSecurityPanel      from "./panels/LogsSecurityPanel";
 import SystemHealthPanel      from "./panels/SystemHealthPanel";
 import FinancePanel           from "./panels/FinancePanel";
+import UsersPanel             from "./panels/UsersPanel";
 import type { ModuleId }      from "@/lib/admin/modules";
 
 const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
@@ -26,6 +27,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "live-ops":           <OperationsPanel />,
   "ops-ledger":         <OperationsLedgerPanel />,
   "finance":            <FinancePanel />,
+  "users-explorer":     <UsersPanel />,
   "backtest":           <BacktestPanel />,
   "cex-sessions":       <CexSessionsPanel />,
   "market-volume":      <MarketVolumePanel />,

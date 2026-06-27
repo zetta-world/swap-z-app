@@ -13,12 +13,13 @@ export type ModuleId =
   | "audit-log"
   | "logs-security"
   | "system-health"
+  | "users-explorer"
   | "tier-control"
   | "whitelist"
   | "kill-switches"
   | "platform-events";
 
-export type ModuleCategory = "dashboard" | "finance" | "controls" | "logs" | "system";
+export type ModuleCategory = "dashboard" | "finance" | "users" | "controls" | "logs" | "system";
 
 export type ModuleDef = {
   id:             ModuleId;
@@ -175,6 +176,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "finance",
     defaultEnabled: true,
     defaultOrder: 12,
+  },
+  {
+    id: "users-explorer",
+    title: "USERS",
+    subtitle: "leaderboard · per-wallet drill-down",
+    icon: "◭",
+    category: "users",
+    defaultEnabled: true,
+    defaultOrder: 13,
   },
 ];
 
