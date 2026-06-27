@@ -10,6 +10,7 @@ const CATEGORIES: { id: ModuleCategory | "all"; label: string }[] = [
   { id: "all",       label: "ALL" },
   { id: "command",   label: "COMMAND" },
   { id: "dashboard", label: "DASHBOARD" },
+  { id: "growth",    label: "GROWTH" },
   { id: "finance",   label: "FINANCE" },
   { id: "users",     label: "USERS" },
   { id: "system",    label: "SYSTEM" },
