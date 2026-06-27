@@ -15,6 +15,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
+import { recordEvent } from "@/lib/admin/track";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { formatIndicatorsForPrompt, type SymbolIndicators, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { getMacroContext } from "@/lib/api/macro";
@@ -64,6 +65,12 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
       system: [{ type: "text", text: ZION_FOUNDATION, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: instruction }],
     });
+    const u = msg.usage;
+    recordEvent("zion_analysis", { meta: {
+      op: "backtest", model, source: "backtest",
+      inTokens: u.input_tokens, outTokens: u.output_tokens,
+      cachedTokens: u.cache_read_input_tokens ?? 0,
+    } });
     const text = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
     return parseZionStream(text).cards;
   } catch {

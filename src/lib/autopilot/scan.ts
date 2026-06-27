@@ -4,6 +4,7 @@ import { ZION_AUTOPILOT_CEX_INSTRUCTIONS } from "@/lib/zion/mode-prompts";
 import { getMultiExchangeSpot, type CexSpotSource } from "@/lib/api/cex-spot";
 import { getTrendingPools, type PoolSummary } from "@/lib/api/geckoterminal";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
+import { recordEvent } from "@/lib/admin/track";
 
 /**
  * Server-side, NON-streaming ZION autopilot-CEX scan. Used by the background
@@ -162,6 +163,11 @@ export async function runAutopilotCexScan(args: AutopilotScanArgs): Promise<Auto
       messages: [{ role: "user", content: payload }],
     });
 
+    recordEvent("zion_analysis", { meta: {
+      op: "autopilot_cex", model, source: "cron",
+      inTokens: msg.usage.input_tokens, outTokens: msg.usage.output_tokens,
+      cachedTokens: msg.usage.cache_read_input_tokens ?? 0,
+    } });
     const rawText = msg.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)

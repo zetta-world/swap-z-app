@@ -6,6 +6,7 @@ export type ModuleId =
   | "autopilot-activity"
   | "live-ops"
   | "ops-ledger"
+  | "finance"
   | "backtest"
   | "cex-sessions"
   | "market-volume"
@@ -17,7 +18,7 @@ export type ModuleId =
   | "kill-switches"
   | "platform-events";
 
-export type ModuleCategory = "dashboard" | "controls" | "logs" | "system";
+export type ModuleCategory = "dashboard" | "finance" | "controls" | "logs" | "system";
 
 export type ModuleDef = {
   id:             ModuleId;
@@ -165,6 +166,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "system",
     defaultEnabled: true,
     defaultOrder: 11,
+  },
+  {
+    id: "finance",
+    title: "FINANCE",
+    subtitle: "AI cost · volume · revenue · CSV",
+    icon: "$",
+    category: "finance",
+    defaultEnabled: true,
+    defaultOrder: 12,
   },
 ];
 
