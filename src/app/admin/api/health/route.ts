@@ -33,7 +33,11 @@ export async function GET(): Promise<NextResponse> {
   const [heartbeats, pings, anthropicUp] = await Promise.all([
     getCronHeartbeats(),
     Promise.all([
-      ping("Binance",       "https://api.binance.com/api/v3/ping"),
+      // data-api.binance.vision is Binance's public market-data mirror; unlike
+      // api.binance.com it is NOT geo-blocked from US serverless IPs (Vercel
+      // iad1/sfo1), so this reflects real Binance reachability instead of a
+      // permanent 451 false-positive.
+      ping("Binance",       "https://data-api.binance.vision/api/v3/ping"),
       ping("CoinGecko",     "https://api.coingecko.com/api/v3/ping"),
       ping("GeckoTerminal", "https://api.geckoterminal.com/api/v2/networks?page=1"),
     ]),

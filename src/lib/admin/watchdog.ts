@@ -99,7 +99,10 @@ export async function runAlertWatchdog(): Promise<void> {
     }
 
     // 6. Dependency down
-    const deps: Array<[string, string]> = [["Binance", "https://api.binance.com/api/v3/ping"], ["CoinGecko", "https://api.coingecko.com/api/v3/ping"]];
+    // data-api.binance.vision: Binance public mirror that is NOT geo-blocked
+    // from US serverless IPs (api.binance.com returns 451 from Vercel iad1,
+    // which used to fire a permanent false "Binance down" alert).
+    const deps: Array<[string, string]> = [["Binance", "https://data-api.binance.vision/api/v3/ping"], ["CoinGecko", "https://api.coingecko.com/api/v3/ping"]];
     for (const [name, url] of deps) {
       if (!(await pingOk(url)) && await dedupOk(`dep_${name}`, 1_800_000)) {
         notifyTelegram(`🌐 <b>Dependency down</b> — ${name} not responding.`);
