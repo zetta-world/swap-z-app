@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { notifyTelegram } from "@/lib/admin/track";
 import { getCronHeartbeats } from "@/lib/admin/health";
+import { estimateCost } from "@/lib/admin/ai-cost";
 
 /**
  * Alert watchdog — the platform's autonomous monitor. Runs every cron tick
@@ -15,9 +16,6 @@ const SEC_FLOOD    = Number(process.env.ALERT_SEC_FLOOD     ?? 5);   // high-sev
 const AI_BUDGET    = Number(process.env.ALERT_AI_BUDGET_USD ?? 20);  // $ / 24h
 const LARGE_OP     = Number(process.env.ALERT_LARGE_OP_USD  ?? 5000);// $ single op
 const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75 };
-const PRICE = { input: 3, output: 15, cacheRead: 0.30 };
-
-const tokenCost = (i: number, o: number, c: number) => (i * PRICE.input + o * PRICE.output + c * PRICE.cacheRead) / 1e6;
 
 /** Persistent dedup: returns true (and stamps) only if `key` hasn't fired
  *  within `windowMs`. Survives across cron invocations/instances via admin_kv. */
@@ -84,8 +82,7 @@ export async function runAlertWatchdog(): Promise<void> {
     // 4. AI cost over budget
     let aiCost = 0;
     for (const r of aiRows.data ?? []) {
-      const m = (r.metadata ?? {}) as { inTokens?: number; outTokens?: number; cachedTokens?: number };
-      aiCost += tokenCost(m.inTokens ?? 0, m.outTokens ?? 0, m.cachedTokens ?? 0);
+      aiCost += estimateCost((r.metadata ?? {}) as Parameters<typeof estimateCost>[0]);
     }
     if (aiCost > AI_BUDGET && await dedupOk("ai_budget", 86_400_000)) {
       notifyTelegram(`💸 <b>AI cost</b> in 24h is $${aiCost.toFixed(2)} — over the $${AI_BUDGET} budget.`);

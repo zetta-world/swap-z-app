@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCronHeartbeats } from "@/lib/admin/health";
+import { estimateCost } from "@/lib/admin/ai-cost";
 
 export const dynamic = "force-dynamic";
 
-const PRICE = { input: 3, output: 15, cacheRead: 0.30 };
 const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75 };
 
 /** Consolidated top-line KPIs for the COMMAND overview — one screen pulling
@@ -47,8 +47,7 @@ export async function GET(): Promise<NextResponse> {
 
   let aiCost24h = 0;
   for (const r of ai ?? []) {
-    const m = (r.metadata ?? {}) as { inTokens?: number; outTokens?: number; cachedTokens?: number };
-    aiCost24h += ((m.inTokens ?? 0) * PRICE.input + (m.outTokens ?? 0) * PRICE.output + (m.cachedTokens ?? 0) * PRICE.cacheRead) / 1e6;
+    aiCost24h += estimateCost((r.metadata ?? {}) as Parameters<typeof estimateCost>[0]);
   }
 
   let apPnlToday = 0;

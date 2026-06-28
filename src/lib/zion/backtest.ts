@@ -92,6 +92,7 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
       op: "backtest", model: usedModel, source: "backtest",
       inTokens: u.input_tokens, outTokens: u.output_tokens,
       cachedTokens: u.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
     } });
     const text = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
     return parseZionStream(text).cards;

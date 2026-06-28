@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { estimateCost } from "@/lib/admin/ai-cost";
 
 export const dynamic = "force-dynamic";
 
-// Approx claude-sonnet-4-6 pricing, USD per 1M tokens. Adjust if the model
-// or rates change — this drives the AI cost estimate only.
-const PRICE = { input: 3, output: 15, cacheRead: 0.30 };
 // One-time NFT pass prices (SOL). Mirrors the pricing page.
 const TIER_SOL: Record<string, number> = { pro: 1.5, trader: 4, pilot: 30, free: 0 };
-
-const tokenCost = (inT: number, outT: number, cachedT: number) =>
-  (inT * PRICE.input + outT * PRICE.output + cachedT * PRICE.cacheRead) / 1_000_000;
 
 async function solUsd(): Promise<number | null> {
   try {
@@ -41,8 +36,8 @@ export async function GET(): Promise<NextResponse> {
   // ── AI cost ──
   const ai = { cost24h: 0, cost7d: 0, calls24h: 0, calls7d: 0, bySource: {} as Record<string, number> };
   for (const r of aiRows ?? []) {
-    const m = (r.metadata ?? {}) as { inTokens?: number; outTokens?: number; cachedTokens?: number; source?: string };
-    const c = tokenCost(m.inTokens ?? 0, m.outTokens ?? 0, m.cachedTokens ?? 0);
+    const m = (r.metadata ?? {}) as Parameters<typeof estimateCost>[0] & { source?: string };
+    const c = estimateCost(m);
     const within24h = r.created_at >= ago24h;
     ai.cost7d += c; ai.calls7d++;
     if (within24h) { ai.cost24h += c; ai.calls24h++; }

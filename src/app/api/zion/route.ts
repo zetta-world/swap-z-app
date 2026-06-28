@@ -413,6 +413,7 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
           inTokens: usage.input_tokens,
           outTokens: usage.output_tokens,
           cachedTokens: usage.cache_read_input_tokens ?? 0,
+          cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
         } });
       } catch (err) {
         // AbortError is the expected path when the client disconnects or the

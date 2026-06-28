@@ -1,0 +1,56 @@
+/**
+ * Model-aware Anthropic cost estimation — the single source of truth for
+ * "how much did this AI usage cost". Replaces the old flat `{input:3,
+ * output:15, cacheRead:0.30}` table that (a) priced every model as Sonnet and
+ * (b) ignored cache-WRITE entirely, which on a cache-heavy workload is the
+ * single largest input line item (~24% of the bill went uncounted).
+ *
+ * Prices are USD per 1M tokens. Cache write 5m = 1.25× base input; cache write
+ * 1h = 2× base input; cache read = 0.1× base input (Anthropic's standard
+ * prompt-cache multipliers).
+ */
+
+interface ModelPrice {
+  input: number;       // per 1M, uncached input
+  output: number;      // per 1M, output
+  cacheWrite5m: number;// per 1M, 5-minute cache write (1.25× input)
+  cacheWrite1h: number;// per 1M, 1-hour cache write (2× input)
+  cacheRead: number;   // per 1M, cache read (0.1× input)
+}
+
+function tier(input: number, output: number): ModelPrice {
+  return { input, output, cacheWrite5m: input * 1.25, cacheWrite1h: input * 2, cacheRead: input * 0.1 };
+}
+
+// Keyed by a substring of the model id so version suffixes still match.
+const PRICES: Array<[RegExp, ModelPrice]> = [
+  [/opus/i,   tier(15, 75)],
+  [/sonnet/i, tier(3, 15)],
+  [/haiku/i,  tier(1, 5)],
+];
+// Default to Sonnet pricing when the model is unknown/absent (old events).
+const DEFAULT_PRICE = tier(3, 15);
+
+export function priceForModel(model?: string | null): ModelPrice {
+  if (model) for (const [re, p] of PRICES) if (re.test(model)) return p;
+  return DEFAULT_PRICE;
+}
+
+export interface UsageTokens {
+  model?:            string | null;
+  inTokens?:         number;  // uncached input
+  outTokens?:        number;
+  cachedTokens?:     number;  // cache read
+  cacheWriteTokens?: number;  // cache creation (5m); 1h tracked separately if ever used
+}
+
+/** USD cost for one usage record, priced by its own model. */
+export function estimateCost(u: UsageTokens): number {
+  const p = priceForModel(u.model);
+  return (
+    (u.inTokens ?? 0)         * p.input        +
+    (u.outTokens ?? 0)        * p.output       +
+    (u.cachedTokens ?? 0)     * p.cacheRead    +
+    (u.cacheWriteTokens ?? 0) * p.cacheWrite5m
+  ) / 1_000_000;
+}

@@ -175,6 +175,7 @@ export async function runAutopilotCexScan(args: AutopilotScanArgs): Promise<Auto
       op: "autopilot_cex", model, source: "cron",
       inTokens: msg.usage.input_tokens, outTokens: msg.usage.output_tokens,
       cachedTokens: msg.usage.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0,
     } });
     const rawText = msg.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
