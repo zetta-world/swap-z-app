@@ -5,13 +5,23 @@ import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Finance = {
-  ai:     { cost24h: number; cost7d: number; calls24h: number; calls7d: number; bySource: Record<string, number> };
+  ai: {
+    today: number; week: number; month: number; year: number; all: number;
+    calls: { today: number; week: number; month: number; year: number; all: number };
+    byModel: Record<string, number>;
+    bySource: Record<string, number>;
+    tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
+    daily: Array<{ date: string; cost: number }>;
+    monthProjection: number;
+  };
   volume: { v24h: number; v7d: number; vAll: number; count: number };
   revenue:{ sol: number; usd: number | null; solUsd: number | null; tierCounts: Record<string, number> };
 };
 
 const usd  = (n: number) => `$${n >= 1000 ? Math.round(n).toLocaleString() : n.toFixed(2)}`;
 const usd0 = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const usd4 = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`;
+const compactModel = (m: string) => m.replace(/^claude-/, "").replace(/-\d{8}$/, "");
 
 export default function FinancePanel() {
   const [data, setData] = useState<Finance | null>(null);
@@ -50,24 +60,48 @@ export default function FinancePanel() {
 
       {data && tab === "ai" && (
         <div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <Stat label="AI COST 24H" value={usd(data.ai.cost24h)} color="var(--adm-gold)" />
-            <Stat label="AI COST 7D" value={usd(data.ai.cost7d)} color="var(--adm-ink)" />
-            <Stat label="CALLS 7D" value={String(data.ai.calls7d)} color="var(--adm-cyan)" />
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <Stat label="TODAY"  value={usd4(data.ai.today)} color="var(--adm-gold)" />
+            <Stat label="7 DAYS" value={usd4(data.ai.week)}  color="var(--adm-ink)" />
+            <Stat label="MONTH"  value={usd4(data.ai.month)} color="var(--adm-ink)" />
+            <Stat label="YEAR"   value={usd(data.ai.year)}   color="var(--adm-cyan)" />
           </div>
-          <div className="adm-category">By source (7d cost)</div>
-          {Object.keys(data.ai.bySource).length === 0 ? (
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Stat label="ALL-TIME"      value={usd(data.ai.all)}             color="var(--adm-violet)" />
+            <Stat label="MONTH PROJ."   value={usd4(data.ai.monthProjection)} color="var(--adm-gold)" />
+            <Stat label="CALLS (MONTH)" value={String(data.ai.calls.month)}   color="var(--adm-cyan)" />
+          </div>
+
+          <div className="adm-category">Daily spend · last 14 days</div>
+          <DailyBars daily={data.ai.daily} />
+
+          <div className="adm-category" style={{ marginTop: 12 }}>By model (all-time)</div>
+          {Object.keys(data.ai.byModel).length === 0 ? (
             <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>No ZION calls yet.</div>
           ) : (
             <table className="adm-table">
               <tbody>
-                {Object.entries(data.ai.bySource).sort((a, b) => b[1] - a[1]).map(([src, c]) => (
-                  <tr key={src}><td style={{ color: "var(--adm-cyan)", fontFamily: "monospace" }}>{src}</td><td style={{ textAlign: "right" }}>{usd(c)}</td></tr>
+                {Object.entries(data.ai.byModel).sort((a, b) => b[1] - a[1]).map(([m, c]) => (
+                  <tr key={m}><td style={{ color: "var(--adm-violet)", fontFamily: "monospace" }}>{compactModel(m)}</td><td style={{ textAlign: "right" }}>{usd4(c)}</td></tr>
                 ))}
               </tbody>
             </table>
           )}
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8 }}>Estimate @ Sonnet rates ($3/$15/$0.30 per 1M in/out/cache).</div>
+
+          <div className="adm-category" style={{ marginTop: 10 }}>By source (all-time)</div>
+          <table className="adm-table">
+            <tbody>
+              {Object.entries(data.ai.bySource).sort((a, b) => b[1] - a[1]).map(([src, c]) => (
+                <tr key={src}><td style={{ color: "var(--adm-cyan)", fontFamily: "monospace" }}>{src}</td><td style={{ textAlign: "right" }}>{usd4(c)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8 }}>
+            Model-aware estimate incl. cache-write (Opus/Sonnet/Haiku rates). Tokens all-time:
+            {" "}{Math.round(data.ai.tokens.input / 1000)}k in · {Math.round(data.ai.tokens.output / 1000)}k out ·
+            {" "}{Math.round(data.ai.tokens.cacheRead / 1000)}k cache-read · {Math.round(data.ai.tokens.cacheWrite / 1000)}k cache-write.
+          </div>
         </div>
       )}
 
@@ -97,6 +131,24 @@ export default function FinancePanel() {
         </div>
       )}
     </TerminalPanel>
+  );
+}
+
+function DailyBars({ daily }: { daily: Array<{ date: string; cost: number }> }) {
+  const max = Math.max(...daily.map((d) => d.cost), 0.0001);
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 48, marginTop: 4 }}>
+      {daily.map((d) => {
+        const h = Math.max(2, Math.round((d.cost / max) * 44));
+        const isToday = d.date === daily[daily.length - 1].date;
+        return (
+          <div key={d.date} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%" }}
+               title={`${d.date}: $${d.cost.toFixed(4)}`}>
+            <div style={{ height: h, background: isToday ? "var(--adm-gold)" : "var(--adm-cyan)", opacity: d.cost > 0 ? 0.85 : 0.25, borderRadius: 2 }} />
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

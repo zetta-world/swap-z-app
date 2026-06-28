@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getCronHeartbeats } from "@/lib/admin/health";
+import { getCronHeartbeats, pingAnthropic } from "@/lib/admin/health";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +28,7 @@ async function ping(name: string, url: string): Promise<Ping> {
 export async function GET(): Promise<NextResponse> {
   await requireAdmin();
   const db = getSupabaseAdmin();
-  const ago2h = new Date(Date.now() - 2 * 3_600_000).toISOString();
-
-  const [heartbeats, pings, anthropicUp] = await Promise.all([
+  const [heartbeats, pings, anthropic] = await Promise.all([
     getCronHeartbeats(),
     Promise.all([
       // data-api.binance.vision is Binance's public market-data mirror; unlike
@@ -41,12 +39,9 @@ export async function GET(): Promise<NextResponse> {
       ping("CoinGecko",     "https://api.coingecko.com/api/v3/ping"),
       ping("GeckoTerminal", "https://api.geckoterminal.com/api/v2/networks?page=1"),
     ]),
-    (async () => {
-      if (!db) return false;
-      const { data } = await db.from("platform_events").select("created_at")
-        .eq("event_type", "zion_analysis").gte("created_at", ago2h).limit(1);
-      return (data?.length ?? 0) > 0;
-    })(),
+    // Real /v1/models check (zero inference cost) — replaces the old
+    // "had an analysis in 2h" proxy that went falsely DOWN between cron runs.
+    pingAnthropic(),
   ]);
 
   const now = Date.now();
@@ -58,8 +53,8 @@ export async function GET(): Promise<NextResponse> {
 
   const deps: Ping[] = [
     ...pings,
-    { name: "Supabase",  ok: !!db,        latencyMs: null },
-    { name: "Anthropic", ok: anthropicUp, latencyMs: null, note: "inferred from recent analyses" },
+    { name: "Supabase",  ok: !!db,            latencyMs: null },
+    { name: "Anthropic", ok: anthropic.ok,    latencyMs: anthropic.latencyMs, note: anthropic.note },
   ];
 
   const allOk = crons.every((c) => !c.stale) && deps.every((d) => d.ok);

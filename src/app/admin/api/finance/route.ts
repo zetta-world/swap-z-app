@@ -27,23 +27,59 @@ export async function GET(): Promise<NextResponse> {
   const ago7d  = new Date(now - 7 * 86_400_000).toISOString();
 
   const [{ data: aiRows }, { data: opsRows }, { data: tierRows }, sol] = await Promise.all([
-    db.from("platform_events").select("metadata, created_at").eq("event_type", "zion_analysis").gte("created_at", ago7d),
+    // All AI events — we bucket day/week/month/year/all in JS so the panel can
+    // map spend over time. Tiny payload (metadata + ts) at current volume.
+    db.from("platform_events").select("metadata, created_at").eq("event_type", "zion_analysis").limit(100_000),
     db.from("operations").select("volume_usd, created_at"),
     db.from("tier_cache").select("tier"),
     solUsd(),
   ]);
 
-  // ── AI cost ──
-  const ai = { cost24h: 0, cost7d: 0, calls24h: 0, calls7d: 0, bySource: {} as Record<string, number> };
+  // ── AI spend, mapped over time (UTC calendar boundaries) ──
+  const d0 = new Date(now);
+  const Y = d0.getUTCFullYear(), Mo = d0.getUTCMonth(), Da = d0.getUTCDate();
+  const startOfDay   = Date.UTC(Y, Mo, Da);
+  const startOfMonth = Date.UTC(Y, Mo, 1);
+  const startOfYear  = Date.UTC(Y, 0, 1);
+  const weekAgo      = now - 7 * 86_400_000;
+  const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10); // YYYY-MM-DD UTC
+
+  // 14-day trend, pre-seeded to 0 so gaps render as empty bars.
+  const dailyMap = new Map<string, number>();
+  for (let i = 13; i >= 0; i--) dailyMap.set(dayKey(now - i * 86_400_000), 0);
+
+  const ai = {
+    today: 0, week: 0, month: 0, year: 0, all: 0,
+    calls: { today: 0, week: 0, month: 0, year: 0, all: 0 },
+    byModel:  {} as Record<string, number>,
+    bySource: {} as Record<string, number>,
+    tokens:   { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    daily:    [] as Array<{ date: string; cost: number }>,
+    monthProjection: 0,
+  };
+
   for (const r of aiRows ?? []) {
     const m = (r.metadata ?? {}) as Parameters<typeof estimateCost>[0] & { source?: string };
     const c = estimateCost(m);
-    const within24h = r.created_at >= ago24h;
-    ai.cost7d += c; ai.calls7d++;
-    if (within24h) { ai.cost24h += c; ai.calls24h++; }
-    const src = m.source ?? "user";
-    ai.bySource[src] = (ai.bySource[src] ?? 0) + c;
+    const ts = Date.parse(r.created_at);
+    ai.all += c; ai.calls.all++;
+    if (ts >= startOfYear)  { ai.year  += c; ai.calls.year++; }
+    if (ts >= startOfMonth) { ai.month += c; ai.calls.month++; }
+    if (ts >= weekAgo)      { ai.week  += c; ai.calls.week++; }
+    if (ts >= startOfDay)   { ai.today += c; ai.calls.today++; }
+    ai.byModel[m.model ?? "unknown"] = (ai.byModel[m.model ?? "unknown"] ?? 0) + c;
+    ai.bySource[m.source ?? "user"]  = (ai.bySource[m.source ?? "user"] ?? 0) + c;
+    ai.tokens.input     += m.inTokens ?? 0;
+    ai.tokens.output    += m.outTokens ?? 0;
+    ai.tokens.cacheRead += m.cachedTokens ?? 0;
+    ai.tokens.cacheWrite+= m.cacheWriteTokens ?? 0;
+    const k = dayKey(ts);
+    if (dailyMap.has(k)) dailyMap.set(k, (dailyMap.get(k) ?? 0) + c);
   }
+  ai.daily = [...dailyMap.entries()].map(([date, cost]) => ({ date, cost }));
+  // Run-rate projection for the current calendar month.
+  const daysInMonth = new Date(Date.UTC(Y, Mo + 1, 0)).getUTCDate();
+  ai.monthProjection = (ai.month / Da) * daysInMonth;
 
   // ── Volume ──
   const vol = { v24h: 0, v7d: 0, vAll: 0, count: (opsRows ?? []).length };

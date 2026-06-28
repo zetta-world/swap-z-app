@@ -19,6 +19,34 @@ export async function setCronHeartbeat(name: string): Promise<void> {
   } catch { /* heartbeat must never break the cron */ }
 }
 
+/**
+ * Real Anthropic reachability + key check. Hits the public /v1/models endpoint
+ * — authenticated but ZERO inference cost — so "Anthropic up" reflects the
+ * actual API, not the old proxy of "did a ZION analysis run in the last 2h"
+ * (which went falsely DOWN whenever the crons simply hadn't fired). Returns
+ * ok:false with a note when the key is absent so callers can degrade clearly.
+ */
+export async function pingAnthropic(): Promise<{ ok: boolean; latencyMs: number | null; note?: string }> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return { ok: false, latencyMs: null, note: "no ANTHROPIC_API_KEY in this env" };
+  const start = Date.now();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/models?limit=1", {
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+      signal: ctrl.signal, cache: "no-store",
+    });
+    // 401/403 = key problem (still "reachable" but broken) → report down with a note.
+    if (res.status === 401 || res.status === 403) return { ok: false, latencyMs: Date.now() - start, note: "auth rejected — check ANTHROPIC_API_KEY" };
+    return { ok: res.ok, latencyMs: Date.now() - start };
+  } catch {
+    return { ok: false, latencyMs: null };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 /** Read the last-seen timestamps for the known crons. */
 export async function getCronHeartbeats(): Promise<Record<string, string | null>> {
   const out: Record<string, string | null> = { autopilot: null, backtest: null };
