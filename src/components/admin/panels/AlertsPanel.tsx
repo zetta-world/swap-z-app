@@ -28,10 +28,10 @@ export default function AlertsPanel() {
     try {
       const res = await fetch("/admin/api/alert-test", { method: "POST" });
       const json = await res.json();
-      setTestMsg(json.configured ? "sent ✓ — check Telegram" : "logged, but Telegram not configured");
+      setTestMsg(json.ok ? "delivered ✓ — check Telegram" : `✗ ${json.detail ?? "failed"}`);
       load();
-    } catch { setTestMsg("failed"); }
-    setTimeout(() => setTestMsg(null), 6000);
+    } catch { setTestMsg("✗ request failed"); }
+    setTimeout(() => setTestMsg(null), 12000);
   };
 
   return (
