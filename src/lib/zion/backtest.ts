@@ -48,6 +48,16 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
     "current price), one exits[] rung with a realistic take-profit price,",
     "stopLoss, and probability (your HONEST confidence 0-100). Use the regime,",
     "trajectory and 1Y-cycle context to choose direction and targets.",
+    "",
+    "RISK DISCIPLINE — MANDATORY. A prediction that risks more than it aims to",
+    "win is worthless even when right half the time. Therefore:",
+    "  • reward:risk MUST be >= 1.5 — the take-profit has to be at least 1.5x",
+    "    as far from entry as the stop is (|target-entry| >= 1.5 * |entry-stop|).",
+    "  • Size BOTH target and stop to the asset's recent volatility (ATR / range),",
+    "    not to a fixed %. The stop goes beyond the noise; the target rides the move.",
+    "  • NEVER place the target within 0.3% of entry (that is a guaranteed stop-out).",
+    "  • If you cannot justify a >= 1.5 R:R target in your chosen direction, SKIP",
+    "    the symbol — emitting a losing-by-design card is worse than no card.",
     "Skip a symbol ONLY if you genuinely have no lean. Cover as many as you can.",
     "Machine-format every number (dot decimal, no separators, no symbols).",
     "",
@@ -128,6 +138,22 @@ export function extractSuggestion(
   const target = card.exits && card.exits[0] ? (parsePrice(card.exits[0].price) || null) : null;
   const stop  = parsePrice(card.stopLoss ?? "") || null;
   const prob  = parsePrice(card.probability ?? "") || null;
+
+  // Geometry gate: when the card carries a full target+stop, reject anything
+  // structurally broken before it pollutes the ledger / win-rate —
+  //   · target on the WRONG side of entry (reward <= 0),
+  //   · stop on the wrong side (risk <= 0),
+  //   · target essentially AT entry (the AVAX 6.288→6.2873 "0.01%" bug),
+  //   · reward:risk below 1 (stop wider than target = negative-EV by design).
+  // A directional call without explicit target/stop still passes (it resolves
+  // at horizon), so coverage isn't hurt — only losing-by-construction cards die.
+  if (entry && entry > 0 && target && stop) {
+    const dir = side === "buy" ? 1 : -1;
+    const reward = (target - entry) * dir;
+    const risk   = (entry - stop) * dir;
+    const targetPct = (Math.abs(target - entry) / entry) * 100;
+    if (!(reward > 0) || !(risk > 0) || targetPct < 0.15 || reward / risk < 1) return null;
+  }
 
   return {
     symbol: base, kind: card.kind, side, ref_price: refPrice,
