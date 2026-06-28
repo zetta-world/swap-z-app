@@ -18,7 +18,10 @@ import { useRealizedPnl, effectiveRealizedUsd } from "@/lib/store/costBasis";
  */
 
 const STABLES = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD", "USDE", "PYUSD"]);
-const KEY = "zswap_ops_synced_v1";
+// v2 → forces a one-time re-sync of the backlog now that we send the REAL
+// trade timestamp (entry.ts) as created_at. Without the bump, already-synced
+// rows would keep their wrong insert-time created_at and 24h volume stays off.
+const KEY = "zswap_ops_synced_v2";
 
 function loadSynced(): Set<string> {
   try { const r = localStorage.getItem(KEY); return new Set(r ? JSON.parse(r) as string[] : []); }
@@ -65,6 +68,7 @@ export function useOperationSync(): void {
           volumeUsd: e.valueUsd,
           pnlUsd:    effectiveRealizedUsd(e, realized),
           route:     e.route,
+          ts:        e.ts,
         });
         if (ok) synced.add(e.id);
       }

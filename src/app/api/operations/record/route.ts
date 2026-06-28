@@ -19,6 +19,10 @@ interface Body {
   pnlUsd?:     number;
   status?:     string;
   route?:      string;
+  /** Real trade timestamp (unix ms) from the client tx-history entry. Drives
+   *  created_at so 24h/7d aggregations reflect when the trade actually
+   *  happened — NOT when the browser first synced its backlog. */
+  ts?:         number;
 }
 
 /**
@@ -45,6 +49,16 @@ export async function POST(req: NextRequest) {
   const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : null);
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
+  // Real trade time → created_at. Only trust a sane unix-ms value in the past
+  // (no future dates, nothing before 2020); otherwise fall back to the DB
+  // default now(). This is what keeps the admin's 24h volume honest.
+  const MIN_TS = 1_577_836_800_000; // 2020-01-01
+  const tsMs = num(body.ts);
+  const createdAt =
+    tsMs !== null && tsMs >= MIN_TS && tsMs <= Date.now() + 60_000
+      ? new Date(tsMs).toISOString()
+      : null;
+
   try {
     await db.from("operations").upsert({
       ref:            str(body.ref, 120),
@@ -57,6 +71,9 @@ export async function POST(req: NextRequest) {
       pnl_usd:        num(body.pnlUsd),
       status:         str(body.status, 24)!,
       route:          str(body.route, 24),
+      // Only set when we have a trustworthy trade time; otherwise omit so the
+      // DB default now() applies.
+      ...(createdAt ? { created_at: createdAt } : {}),
     }, { onConflict: "ref", ignoreDuplicates: true });
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
