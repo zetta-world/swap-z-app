@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { withdrawFromCex } from "@/lib/cex/server";
 import { getReferencePriceUsd } from "@/lib/autopilot/price-guard";
-import { logSecurity, logError } from "@/lib/admin/track";
+import { logSecurity, logError, notifyTelegram } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import { type CexId, type CexCredentials, SUPPORTED_CEX_IDS, CEX_META } from "@/lib/cex/types";
 
@@ -198,6 +198,8 @@ export async function POST(req: NextRequest) {
       tag:           body.tag,
       twoFactorCode: body.twoFactorCode,
     });
+    // Money left the building — always worth a ping.
+    notifyTelegram(`💸 <b>Withdrawal sent</b> — ${currency} (~$${Math.round(roughUsd).toLocaleString()}) from ${exchange} → ${body.address.slice(0, 8)}…${body.address.slice(-4)}`);
     return NextResponse.json(
       { ok: true, exchange, receipt, fetchedAt: Date.now() },
       { headers: { "Cache-Control": "no-store, no-transform" } },

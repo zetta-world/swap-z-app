@@ -11,6 +11,7 @@ import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
+import { runAlertWatchdog } from "@/lib/admin/watchdog";
 import {
   getOpenServerPositions, recordServerEntry, markServerExitArmed,
   closeServerPosition, reopenServerPosition, applySessionPnl,
@@ -176,6 +177,10 @@ export async function POST(req: NextRequest) {
       await releaseLock(s.id);
     }
   }
+
+  // Platform-wide watchdog — error/security spikes, stale crons, AI budget,
+  // large ops, dependency health, daily digest. Runs every tick (~5 min).
+  await runAlertWatchdog();
 
   return NextResponse.json({ ok: true, processed: sessions.length, summary });
 }
