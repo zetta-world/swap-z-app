@@ -68,7 +68,11 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
   ].join("\n");
 
   try {
-    const client = new Anthropic({ apiKey });
+    // 504 guard: cap each model attempt at 25s and disable the SDK's internal
+    // retries — N1 (modelChain) already does our own fallback, and the default
+    // exponential backoff could eat the whole 60s function budget on an
+    // overloaded primary, killing the cron with FUNCTION_INVOCATION_TIMEOUT.
+    const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 25_000 });
     const params = {
       max_tokens: 3500,
       system: [{ type: "text" as const, text: ZION_FOUNDATION, cache_control: { type: "ephemeral" as const } }],
@@ -185,12 +189,74 @@ export async function logSuggestions(cards: ActionCard[], indicators: SymbolIndi
 
 export interface ResolveResult { checked: number; resolved: number; }
 
+const BINANCE_DATA = "https://data-api.binance.vision";
+interface Kline { t: number; high: number; low: number; close: number; }
+
+/** Hourly candles for [startMs, endMs] from Binance's non-geoblocked mirror.
+ *  Empty array on any failure — the caller falls back to a spot check. */
+async function fetchKlines(symbol: string, startMs: number, endMs: number): Promise<Kline[]> {
+  try {
+    const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=1h`
+      + `&startTime=${Math.floor(startMs)}&endTime=${Math.ceil(endMs)}&limit=1000`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return [];
+    const rows = await res.json() as Array<[number, string, string, string, string, ...unknown[]]>;
+    return rows.map((r) => ({ t: r[0], high: parseFloat(r[2]), low: parseFloat(r[3]), close: parseFloat(r[4]) }));
+  } catch { return []; }
+}
+
+interface Verdict { status: string; outcomePct: number; price: number; }
+
 /**
- * Resolve open suggestions against the current price:
- *   - target hit (in the trade's direction) → hit_target
- *   - stop hit                              → hit_stop
- *   - past the horizon                      → directional win/loss/neutral
- * outcome_pct is the directional return vs ref_price (positive = ZION right).
+ * Decide one suggestion's fate. PATH-AWARE: replays the hourly candles from
+ * the suggestion's creation to min(now, horizon) and returns the FIRST level
+ * touched in time — not just where price sits now. When a single candle
+ * straddles BOTH target and stop we assume the STOP hit first (the honest,
+ * pessimistic convention — never over-credit a win we can't prove). Falls back
+ * to a single current-spot check when candles aren't available.
+ */
+function resolveOne(r: ZionSuggestionRow, klines: Kline[], spot: number | undefined, nowMs: number): Verdict | null {
+  const dir = r.side === "buy" ? 1 : -1;
+  const createdMs = Date.parse(r.created_at);
+  const horizonMs = createdMs + r.horizon_hours * 3_600_000;
+  const tp = r.target_price, sp = r.stop_price;
+  const pct = (p: number) => ((p - r.ref_price) / r.ref_price) * 100 * dir;
+
+  // Only candles that OPENED at/after creation (ignore the partial creation
+  // candle so pre-entry price action can't trigger a phantom touch).
+  const window = klines.filter((k) => k.t >= createdMs && k.t <= Math.min(nowMs, horizonMs));
+  if (window.length > 0) {
+    for (const k of window) {
+      const hitStop   = sp != null && (dir > 0 ? k.low  <= sp : k.high >= sp);
+      const hitTarget = tp != null && (dir > 0 ? k.high >= tp : k.low  <= tp);
+      if (hitStop   && sp != null) return { status: "hit_stop",   outcomePct: pct(sp), price: sp };
+      if (hitTarget && tp != null) return { status: "hit_target", outcomePct: pct(tp), price: tp };
+    }
+    if (nowMs >= horizonMs) {
+      const close = window[window.length - 1].close;
+      const op = pct(close);
+      return { status: op > 0.5 ? "win" : op < -0.5 ? "loss" : "neutral", outcomePct: op, price: close };
+    }
+    return null; // in-flight: no level touched yet, horizon not elapsed
+  }
+
+  // Fallback — no candles: single current-spot check (legacy behaviour).
+  if (spot == null || spot <= 0) return null;
+  if (tp != null && (dir > 0 ? spot >= tp : spot <= tp)) return { status: "hit_target", outcomePct: pct(tp), price: tp };
+  if (sp != null && (dir > 0 ? spot <= sp : spot >= sp)) return { status: "hit_stop",   outcomePct: pct(sp), price: sp };
+  if (nowMs >= horizonMs) {
+    const op = pct(spot);
+    return { status: op > 0.5 ? "win" : op < -0.5 ? "loss" : "neutral", outcomePct: op, price: spot };
+  }
+  return null;
+}
+
+/**
+ * Resolve open suggestions by REPLAYING the price path (hourly candles) since
+ * each was logged — first target/stop touch wins; horizon elapsed → directional
+ * win/loss/neutral. One klines fetch per symbol (parallel), reused across that
+ * symbol's rows; spot prices are a fallback. outcome_pct is the directional
+ * return vs ref_price (positive = ZION right).
  */
 export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult> {
   const db = getSupabaseAdmin();
@@ -203,34 +269,28 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
     .limit(limit);
   if (!open || open.length === 0) return { checked: 0, resolved: 0 };
 
-  const symbols = [...new Set(open.map((r) => r.symbol))];
-  const priceMap = await getCexSpotPrices(symbols);
   const nowMs = Date.now();
+  const symbols = [...new Set(open.map((r) => r.symbol))];
+
+  // One candle fetch per symbol, in parallel, covering that symbol's oldest
+  // open suggestion → now. Spot map is the per-symbol fallback.
+  const klinesBySymbol = new Map<string, Kline[]>();
+  await Promise.all(symbols.map(async (sym) => {
+    const earliest = Math.min(...open.filter((r) => r.symbol === sym).map((r) => Date.parse(r.created_at)));
+    klinesBySymbol.set(sym, await fetchKlines(sym, earliest, nowMs));
+  }));
+  const spot = await getCexSpotPrices(symbols).catch(() => new Map());
+
   let resolved = 0;
-
   for (const r of open) {
-    const price = priceMap.get(r.symbol)?.priceUsd;
-    if (!price || price <= 0) continue;
-    const dir = r.side === "buy" ? 1 : -1;
-    const ageH = (nowMs - Date.parse(r.created_at)) / 3_600_000;
-    const outcomePct = ((price - r.ref_price) / r.ref_price) * 100 * dir;
-
-    let status: string | null = null;
-    if (r.target_price && ((dir > 0 && price >= r.target_price) || (dir < 0 && price <= r.target_price))) {
-      status = "hit_target";
-    } else if (r.stop_price && ((dir > 0 && price <= r.stop_price) || (dir < 0 && price >= r.stop_price))) {
-      status = "hit_stop";
-    } else if (ageH >= r.horizon_hours) {
-      status = outcomePct > 0.5 ? "win" : outcomePct < -0.5 ? "loss" : "neutral";
-    }
-    if (!status) continue;
-
+    const verdict = resolveOne(r, klinesBySymbol.get(r.symbol) ?? [], spot.get(r.symbol)?.priceUsd, nowMs);
+    if (!verdict) continue;
     try {
       await db.from("zion_suggestions").update({
-        status,
-        outcome_pct: Math.round(outcomePct * 100) / 100,
-        resolved_price: price,
-        resolved_at: new Date().toISOString(),
+        status:         verdict.status,
+        outcome_pct:    Math.round(verdict.outcomePct * 100) / 100,
+        resolved_price: verdict.price,
+        resolved_at:    new Date().toISOString(),
       }).eq("id", r.id);
       resolved++;
     } catch { /* skip */ }
