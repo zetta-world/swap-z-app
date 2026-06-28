@@ -321,7 +321,7 @@ Cada sugestão das 4 IAs foi cruzada com o código real e com as Partes 1 e 2.
 
 | ID | Item | Origem | Status |
 |----|------|--------|--------|
-| N1 | **Model fallback router** (Sonnet→Haiku/outro em 529/timeout) — resolve o SPOF | Kimi/Gemini/DeepSeek | 🔴 |
+| N1 | **Model fallback router** (Sonnet→Haiku/outro em 529/timeout) — resolve o SPOF | Kimi/Gemini/DeepSeek | 🟢 |
 | N2 | **Suprimir seção de TA quando não há candles** (paradoxo do sniper: não usar ADX de BTC para um token novo) | Gemini | 🔴 |
 | N3 | **Execution Quality Report** (slippage real vs estimado, fill rate) — alimenta a calibração (Z7) | Kimi/DeepSeek | 🔴 |
 | N4 | **Honeypot p/ Solana/Base/Arbitrum** (RugCheck.xyz, TokenSniffer) | Kimi/DeepSeek | 🔴 |
