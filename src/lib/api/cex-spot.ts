@@ -9,7 +9,11 @@
  * USDT; the model treats it as the dollar reference.
  */
 
-const BINANCE_URL = "https://api.binance.com/api/v3/ticker/price";
+// data-api.binance.vision is Binance's public market-data mirror. Unlike
+// api.binance.com it is NOT geo-blocked from US serverless IPs (Vercel
+// iad1/sfo1 return 451 there), so the Binance leg of the spot/arb matrix
+// actually resolves instead of silently falling through to Kraken.
+const BINANCE_URL = "https://data-api.binance.vision/api/v3/ticker/price";
 const KRAKEN_URL  = "https://api.kraken.com/0/public/Ticker";
 
 // Curated whitelist of symbols ZION can reason about as DEX-vs-CEX arbs.

@@ -30,6 +30,12 @@
 
 import { getOHLCV } from "@/lib/api/geckoterminal";
 
+// Binance's public market-data mirror. api.binance.com geo-blocks US
+// serverless IPs (Vercel iad1/sfo1) with HTTP 451, which silently emptied
+// every Binance-sourced indicator from those regions. data-api.binance.vision
+// serves the IDENTICAL /api/v3/* spot endpoints with no geofence.
+const BINANCE_DATA = "https://data-api.binance.vision";
+
 // ─── Candle type + fetch ────────────────────────────────────────────────
 
 interface Candle {
@@ -41,7 +47,7 @@ interface Candle {
 
 async function fetchCandles(symbol: string, interval: string, limit: number, revalidate: number): Promise<Candle[]> {
   try {
-    const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=${interval}&limit=${limit}`;
+    const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=${interval}&limit=${limit}`;
     const res = await fetch(url, { next: { revalidate } });
     if (!res.ok) return [];
     const data = await res.json() as Array<[number, string, string, string, string, string, ...unknown[]]>;
@@ -469,7 +475,7 @@ async function fetchOrderBook(symbol: string): Promise<OrderBookSnapshot | null>
   try {
     // 20 levels: top-5 drive the imbalance read, the full ladder feeds the
     // slippage estimate (a $1k sweep can cross several levels on thin books).
-    const url = `https://api.binance.com/api/v3/depth?symbol=${symbol}USDT&limit=20`;
+    const url = `${BINANCE_DATA}/api/v3/depth?symbol=${symbol}USDT&limit=20`;
     const res = await fetch(url, { next: { revalidate: 15 } });
     if (!res.ok) return null;
     const data = await res.json() as {
@@ -693,6 +699,11 @@ export async function getDexSymbolIndicators(
  * Fetches the latest funding rate and open interest from Binance FAPI.
  * Uses the public endpoints — no API key required.
  * Revalidate 30s: funding rates update every 8h but OI moves fast.
+ *
+ * NOTE: there is no data-api.binance.vision mirror for FUTURES (fapi only
+ * covers spot), so from geo-blocked US serverless regions these calls return
+ * 451 and the function degrades to []. Funding/OI is one signal among many;
+ * its absence weakens but doesn't break the confidence score.
  */
 export async function getFundingAndOI(symbols: string[]): Promise<FuturesData[]> {
   const results = await Promise.all(symbols.map(async (sym) => {
