@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
+import { waitUntil } from "@vercel/functions";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
 import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan } from "@/lib/zion/backtest";
 import { setCronHeartbeat } from "@/lib/admin/health";
@@ -47,22 +48,22 @@ export async function POST(req: NextRequest) {
   }
   await setCronHeartbeat("backtest");
 
-  let logged = 0;
-  let scanError: string | undefined;
-  try {
-    const marketData = await getMarketIndicators(scanSlice());
-    const cards = await runBacktestScan(marketData);
-    logged = await logSuggestions(cards, marketData.indicators, "self_scan");
-    if (cards.length === 0) scanError = "no cards returned from scan";
-  } catch (e) {
-    scanError = e instanceof Error ? e.message : String(e);
-  }
+  // The heavy work (market indicators + LLM scan + path-replay resolve) takes
+  // ~30-45s — longer than external cron pingers wait (cron-job.org caps at
+  // 30s and reports a false "timeout"). Respond immediately and finish in the
+  // background via waitUntil; the function stays alive up to maxDuration (60s).
+  // Results are verified in the DB / Backtest panel, not in this response.
+  waitUntil((async () => {
+    try {
+      const marketData = await getMarketIndicators(scanSlice());
+      const cards = await runBacktestScan(marketData);
+      await logSuggestions(cards, marketData.indicators, "self_scan");
+    } catch { /* best-effort: next tick retries */ }
+    // Resolve runs regardless — outcomes are independent of the scan.
+    try { await resolveOpenSuggestions(); } catch { /* best-effort */ }
+  })());
 
-  // Always resolve, even if the scan failed — outcomes are independent.
-  let resolved = { checked: 0, resolved: 0 };
-  try { resolved = await resolveOpenSuggestions(); } catch { /* best-effort */ }
-
-  return NextResponse.json({ ok: true, logged, resolved, scanError });
+  return NextResponse.json({ ok: true, queued: true });
 }
 
 export async function GET(req: NextRequest) {
