@@ -12,9 +12,20 @@ type Recent = {
 type BT = {
   total: number; open: number; resolved: number; wins: number; losses: number; neutral: number;
   winRate: number | null; avgOutcome: number | null;
+  expectancy: number | null; avgWin: number | null; avgLoss: number | null;
+  profitFactor: number | null; avgRR: number | null;
   byRegime: Record<string, { wins: number; losses: number }>;
   recent: Recent[];
 };
+
+function Mini({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "6px 8px" }}>
+      <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.08em" }}>{label}</div>
+      <div style={{ fontSize: 14, color, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
 
 function statusColor(s: string): string {
   if (s === "win" || s === "hit_target") return "var(--adm-green)";
@@ -60,17 +71,28 @@ export default function BacktestPanel() {
 
       {data && tab === "stats" && (
         <div>
-          {/* Headline */}
+          {/* Headline: EXPECTANCY — the true edge (bakes in win-rate × size of
+              wins vs losses). A 50% win-rate with R:R<1 is still negative. */}
           <div className="adm-stat" style={{ padding: "6px 0" }}>
-            <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>WIN RATE</span>
-            <span style={{ fontSize: 18, color: data.winRate == null ? "var(--adm-ink-3)" : data.winRate >= 0.5 ? "var(--adm-green)" : "var(--adm-gold)", fontVariantNumeric: "tabular-nums" }}>
-              {data.winRate == null ? "—" : `${(data.winRate * 100).toFixed(1)}%`}
+            <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>EXPECTANCY / TRADE</span>
+            <span style={{ fontSize: 18, color: data.expectancy == null ? "var(--adm-ink-3)" : data.expectancy >= 0 ? "var(--adm-green)" : "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>
+              {data.expectancy == null ? "—" : `${data.expectancy >= 0 ? "+" : ""}${data.expectancy.toFixed(2)}%`}
             </span>
           </div>
+          <div style={{ display: "flex", gap: 8, margin: "6px 0 4px" }}>
+            <Mini label="AVG R:R"        value={data.avgRR == null ? "—" : data.avgRR.toFixed(2)}
+                  color={data.avgRR == null ? "var(--adm-ink-3)" : data.avgRR >= 1.5 ? "var(--adm-green)" : data.avgRR >= 1 ? "var(--adm-gold)" : "var(--adm-red)"} />
+            <Mini label="PROFIT FACTOR"  value={data.profitFactor == null ? (data.losses === 0 && data.wins > 0 ? "∞" : "—") : data.profitFactor.toFixed(2)}
+                  color={data.profitFactor == null ? "var(--adm-ink-3)" : data.profitFactor >= 1 ? "var(--adm-green)" : "var(--adm-red)"} />
+            <Mini label="WIN RATE"       value={data.winRate == null ? "—" : `${(data.winRate * 100).toFixed(0)}%`}
+                  color="var(--adm-ink)" />
+          </div>
           <div className="adm-stat" style={{ padding: "4px 0" }}>
-            <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>AVG OUTCOME (resolved)</span>
-            <span style={{ fontSize: 12, color: (data.avgOutcome ?? 0) >= 0 ? "var(--adm-green)" : "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>
-              {data.avgOutcome == null ? "—" : `${data.avgOutcome >= 0 ? "+" : ""}${data.avgOutcome.toFixed(2)}%`}
+            <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>AVG WIN / AVG LOSS</span>
+            <span style={{ fontSize: 11, fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ color: "var(--adm-green)" }}>{data.avgWin == null ? "—" : `+${data.avgWin.toFixed(2)}%`}</span>
+              <span style={{ color: "var(--adm-ink-3)" }}> / </span>
+              <span style={{ color: "var(--adm-red)" }}>{data.avgLoss == null ? "—" : `${data.avgLoss.toFixed(2)}%`}</span>
             </span>
           </div>
           <table className="adm-table" style={{ marginTop: 8 }}>
