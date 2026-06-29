@@ -19,6 +19,16 @@ export const maxDuration = 60;
  */
 
 const MAJORS = ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "ARB", "OP", "UNI", "DOGE", "MATIC", "ADA", "XRP", "DOT"];
+// Scanning all 14 in one LLM call generates too much output to finish inside
+// the 60s function budget (it was timing out → 0 cards). Scan a rotating
+// window of 6 per tick instead; coverage cycles through every major over a
+// few ticks while each run completes in ~15-20s.
+const SCAN_WINDOW = 6;
+function scanSlice(): string[] {
+  const slot  = Math.floor(Date.now() / (30 * 60_000)); // 30-min rotation slots
+  const start = (slot * SCAN_WINDOW) % MAJORS.length;
+  return Array.from({ length: SCAN_WINDOW }, (_, i) => MAJORS[(start + i) % MAJORS.length]);
+}
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -40,7 +50,7 @@ export async function POST(req: NextRequest) {
   let logged = 0;
   let scanError: string | undefined;
   try {
-    const marketData = await getMarketIndicators(MAJORS);
+    const marketData = await getMarketIndicators(scanSlice());
     const cards = await runBacktestScan(marketData);
     logged = await logSuggestions(cards, marketData.indicators, "self_scan");
     if (cards.length === 0) scanError = "no cards returned from scan";

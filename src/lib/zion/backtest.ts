@@ -81,7 +81,9 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
     // budget; 25s was too tight and aborted the scan mid-generation → 0 cards.
     const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 40_000 });
     const params = {
-      max_tokens: 3500,
+      // 6-symbol window → ~6 cards; 2200 tokens is plenty and caps worst-case
+      // generation time so the call finishes inside the 40s timeout.
+      max_tokens: 2200,
       system: [{ type: "text" as const, text: ZION_FOUNDATION, cache_control: { type: "ephemeral" as const } }],
       messages: [{ role: "user" as const, content: instruction }],
     };
