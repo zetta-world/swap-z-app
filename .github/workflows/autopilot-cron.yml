@@ -11,10 +11,14 @@ name: Autopilot Background Cron
 #   AUTOPILOT_CRON_URL — e.g. https://swap-z-app.vercel.app/api/autopilot/cron
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"      # :00 :15 :30 :45
-    - cron: "5-59/15 * * * *"   # :05 :20 :35 :50
-    - cron: "10-59/15 * * * *"  # :10 :25 :40 :55
+  # Scheduling moved to cron-job.org (reliable). GitHub's scheduler drifted
+  # 15min–hours under load and left the cron silently stalled, which also
+  # froze the alert watchdog. cron-job.org now hits /api/autopilot/cron every
+  # 5 min. Schedule disabled; workflow_dispatch kept for manual test runs.
+  # schedule:
+  #   - cron: "*/15 * * * *"
+  #   - cron: "5-59/15 * * * *"
+  #   - cron: "10-59/15 * * * *"
   workflow_dispatch:            # manual "Run workflow" button for testing
 
 # Never let two runs overlap — a long batch shouldn't stack on the next tick.

@@ -13,8 +13,11 @@ name: ZION Backtest (Shadow Flywheel)
 #   ZION_BACKTEST_URL  — the /api/zion/backtest endpoint
 
 on:
-  schedule:
-    - cron: "20,50 * * * *"   # twice an hour, offset from the autopilot cron
+  # Scheduling moved to cron-job.org (reliable). cron-job.org now hits
+  # /api/zion/backtest every 30 min. Schedule disabled; workflow_dispatch kept
+  # for manual test runs.
+  # schedule:
+  #   - cron: "20,50 * * * *"
   workflow_dispatch:
 
 concurrency:
