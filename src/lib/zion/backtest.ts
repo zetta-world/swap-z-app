@@ -146,6 +146,15 @@ export function extractSuggestion(
   const stop  = parsePrice(card.stopLoss ?? "") || null;
   const prob  = parsePrice(card.probability ?? "") || null;
 
+  // Scale sanity: the prompt says entryPrice = the CURRENT price, so it must be
+  // within a sane band of the real ref_price. The model sometimes emits the
+  // whole card at the wrong scale (LINK at 7323 vs real 7.32, DOT at 816 vs
+  // 0.816 — a 1000x slip). Geometry stays internally consistent so the R:R
+  // check passes, but the target/stop then resolve against a garbage level and
+  // blow up outcome_pct (−97000%!). Reject when entry is >25% off the real
+  // price — it's a mis-scaled hallucination, not a tradeable setup.
+  if (entry && entry > 0 && Math.abs(entry / refPrice - 1) > 0.25) return null;
+
   // Geometry gate: when the card carries a full target+stop, reject anything
   // structurally broken before it pollutes the ledger / win-rate —
   //   · target on the WRONG side of entry (reward <= 0),
