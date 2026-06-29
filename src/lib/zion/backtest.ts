@@ -97,21 +97,7 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
       cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
     } });
     const text = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-    const parsed = parseZionStream(text);
-    // Diagnostic: when the scan yields no cards, capture what the model DID
-    // emit (length + head + tail) so we can see whether it's prose, truncation,
-    // or a format mismatch — queryable in platform_events. Cheap, temporary.
-    if (parsed.cards.length === 0) {
-      recordEvent("error", { meta: {
-        where: "backtest_scan_no_cards",
-        stopReason: msg.stop_reason,
-        outTokens: u.output_tokens,
-        len: text.length,
-        head: text.slice(0, 400),
-        tail: text.slice(-400),
-      } });
-    }
-    return parsed.cards;
+    return parseZionStream(text).cards;
   } catch {
     return [];
   }
