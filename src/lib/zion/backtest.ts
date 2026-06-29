@@ -16,7 +16,7 @@ import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import { recordEvent } from "@/lib/admin/track";
-import { modelChain, isRetryableModelError } from "@/lib/zion/model";
+import { modelChain } from "@/lib/zion/model";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { formatIndicatorsForPrompt, type SymbolIndicators, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { getMacroContext } from "@/lib/api/macro";
@@ -68,25 +68,22 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
   ].join("\n");
 
   try {
-    // 504 guard: cap each model attempt at 25s and disable the SDK's internal
-    // retries — N1 (modelChain) already does our own fallback, and the default
-    // exponential backoff could eat the whole 60s function budget on an
-    // overloaded primary, killing the cron with FUNCTION_INVOCATION_TIMEOUT.
-    const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 25_000 });
+    // 504 guard. The backtest scan is heavy (14 symbols, 3500 tokens) and runs
+    // inside a 60s Vercel function. A single attempt at 40s fits the budget
+    // (indicators ~3s + LLM ≤40s + resolve ~5s); stacking the N1 fallback chain
+    // would risk two timeouts = >60s = FUNCTION_INVOCATION_TIMEOUT. The backtest
+    // is best-effort, so we use ONE model and let the next 30-min tick retry,
+    // rather than failing the whole function. (The real-money autopilot path
+    // keeps the full fallback chain.) maxRetries:0 avoids SDK backoff eating the
+    // budget; 25s was too tight and aborted the scan mid-generation → 0 cards.
+    const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 40_000 });
     const params = {
       max_tokens: 3500,
       system: [{ type: "text" as const, text: ZION_FOUNDATION, cache_control: { type: "ephemeral" as const } }],
       messages: [{ role: "user" as const, content: instruction }],
     };
-    // N1: try the model chain — fall back to the backup on an overloaded primary.
-    const chain = modelChain();
-    let msg: Anthropic.Message | undefined;
-    let usedModel = chain[0];
-    for (const model of chain) {
-      try { msg = await client.messages.create({ model, ...params }); usedModel = model; break; }
-      catch (e) { if (!isRetryableModelError(e) || model === chain[chain.length - 1]) throw e; }
-    }
-    if (!msg) return [];
+    const usedModel = modelChain()[0];
+    const msg = await client.messages.create({ model: usedModel, ...params });
     const u = msg.usage;
     recordEvent("zion_analysis", { meta: {
       op: "backtest", model: usedModel, source: "backtest",
