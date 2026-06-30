@@ -11,6 +11,9 @@
 
 ---
 
+> **🗺️ Roadmap-mestre que amarra tudo:** `docs/PLANO-MESTRE.md` (fases A→E,
+> cronograma, Colosseum, pricing USD-pegged). Comece por ele.
+
 ## 1. Planos com documento completo
 
 | Ideia | Doc | Status | O que destrava |
