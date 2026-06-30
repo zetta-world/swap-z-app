@@ -10,6 +10,7 @@ type Finance = {
     calls: { today: number; week: number; month: number; year: number; all: number };
     byModel: Record<string, number>;
     bySource: Record<string, number>;
+    models: Array<{ model: string; today: number; week: number; month: number; all: number; calls: number }>;
     tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
     daily: Array<{ date: string; cost: number }>;
     monthProjection: number;
@@ -75,14 +76,31 @@ export default function FinancePanel() {
           <div className="adm-category">Daily spend · last 14 days</div>
           <DailyBars daily={data.ai.daily} />
 
-          <div className="adm-category" style={{ marginTop: 12 }}>By model (all-time)</div>
-          {Object.keys(data.ai.byModel).length === 0 ? (
+          <div className="adm-category" style={{ marginTop: 12 }}>Spend per model · every provider in one place</div>
+          {data.ai.models.length === 0 ? (
             <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>No ZION calls yet.</div>
           ) : (
             <table className="adm-table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>MODEL</th>
+                  <th style={{ textAlign: "right" }}>TODAY</th>
+                  <th style={{ textAlign: "right" }}>7D</th>
+                  <th style={{ textAlign: "right" }}>MONTH</th>
+                  <th style={{ textAlign: "right" }}>ALL</th>
+                  <th style={{ textAlign: "right" }}>CALLS</th>
+                </tr>
+              </thead>
               <tbody>
-                {Object.entries(data.ai.byModel).sort((a, b) => b[1] - a[1]).map(([m, c]) => (
-                  <tr key={m}><td style={{ color: "var(--adm-violet)", fontFamily: "monospace" }}>{compactModel(m)}</td><td style={{ textAlign: "right" }}>{usd4(c)}</td></tr>
+                {data.ai.models.map((m) => (
+                  <tr key={m.model}>
+                    <td style={{ color: "var(--adm-violet)", fontFamily: "monospace" }}>{compactModel(m.model)}</td>
+                    <td style={{ textAlign: "right", color: m.today > 0 ? "var(--adm-gold)" : "var(--adm-ink-3)" }}>{usd4(m.today)}</td>
+                    <td style={{ textAlign: "right" }}>{usd4(m.week)}</td>
+                    <td style={{ textAlign: "right" }}>{usd4(m.month)}</td>
+                    <td style={{ textAlign: "right", color: "var(--adm-ink)" }}>{usd4(m.all)}</td>
+                    <td style={{ textAlign: "right", color: "var(--adm-ink-3)" }}>{m.calls}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>

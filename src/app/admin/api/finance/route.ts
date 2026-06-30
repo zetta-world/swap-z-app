@@ -48,11 +48,25 @@ export async function GET(): Promise<NextResponse> {
   const dailyMap = new Map<string, number>();
   for (let i = 13; i >= 0; i--) dailyMap.set(dayKey(now - i * 86_400_000), 0);
 
+  // Per-model spend across the same time windows — the unified cost view so
+  // you never have to open each provider's dashboard. One row per model.
+  type ModelAgg = { model: string; today: number; week: number; month: number; all: number; calls: number };
+  const modelAgg = new Map<string, ModelAgg>();
+  const bumpModel = (model: string, c: number, ts: number) => {
+    const a = modelAgg.get(model) ?? { model, today: 0, week: 0, month: 0, all: 0, calls: 0 };
+    a.all += c; a.calls++;
+    if (ts >= startOfMonth) a.month += c;
+    if (ts >= weekAgo)      a.week  += c;
+    if (ts >= startOfDay)   a.today += c;
+    modelAgg.set(model, a);
+  };
+
   const ai = {
     today: 0, week: 0, month: 0, year: 0, all: 0,
     calls: { today: 0, week: 0, month: 0, year: 0, all: 0 },
     byModel:  {} as Record<string, number>,
     bySource: {} as Record<string, number>,
+    models:   [] as ModelAgg[],
     tokens:   { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     daily:    [] as Array<{ date: string; cost: number }>,
     monthProjection: 0,
@@ -67,6 +81,7 @@ export async function GET(): Promise<NextResponse> {
     if (ts >= startOfMonth) { ai.month += c; ai.calls.month++; }
     if (ts >= weekAgo)      { ai.week  += c; ai.calls.week++; }
     if (ts >= startOfDay)   { ai.today += c; ai.calls.today++; }
+    bumpModel(m.model ?? "unknown", c, ts);
     ai.byModel[m.model ?? "unknown"] = (ai.byModel[m.model ?? "unknown"] ?? 0) + c;
     ai.bySource[m.source ?? "user"]  = (ai.bySource[m.source ?? "user"] ?? 0) + c;
     ai.tokens.input     += m.inTokens ?? 0;
@@ -77,6 +92,7 @@ export async function GET(): Promise<NextResponse> {
     if (dailyMap.has(k)) dailyMap.set(k, (dailyMap.get(k) ?? 0) + c);
   }
   ai.daily = [...dailyMap.entries()].map(([date, cost]) => ({ date, cost }));
+  ai.models = [...modelAgg.values()].sort((a, b) => b.all - a.all);
   // Run-rate projection for the current calendar month.
   const daysInMonth = new Date(Date.UTC(Y, Mo + 1, 0)).getUTCDate();
   ai.monthProjection = (ai.month / Da) * daysInMonth;
