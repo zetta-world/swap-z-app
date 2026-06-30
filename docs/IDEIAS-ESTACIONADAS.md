@@ -16,7 +16,7 @@
 | Ideia | Doc | Status | O que destrava |
 |-------|-----|--------|----------------|
 | **Orquestração híbrida multi-modelo** (DeepSeek/Kimi/Grok baratos + Opus/GPT na decisão; OpenRouter; soberania de dado) | `docs/PLANO-HIBRIDO-MULTI-MODEL.md` (branch `feature/hybrid-ai-orchestrator`) | 📋 planejado | Founder fechar decisões §10; começar F1/F2 (infra+A/B, zero risco) quando quiser |
-| **Coleção NFT + mint (FASE 5.4)** — 2 camadas (Premium 3a/v3 + Founder vitalício) | `docs/NFT-BRIEFING.md` | 🔒 bloqueado | Founder responder §7 (supply, royalty %, critério de v3…) + revisão legal |
+| **Coleção NFT + mint (FASE 5.4)** — 2 camadas (Premium 3a/v3 + Founder vitalício); supply DECIDIDO (1.500/500/50); planos lançamento (deuses) vs normais (guerreiros, +30%) | `docs/NFT-BRIEFING.md` | 🔒 bloqueado | Founder responder §7 restante (royalty %, critério de v3…) + revisão legal |
 | **ZION olhar atrás + aprendizado** (Z7 calibração, Z9 Kelly) | `docs/PLANO-DE-ACAO-ZION.md` | 📊 travado por dados | Semanas de dados do flywheel (pós-11/07) |
 | **Monetização trilho B — Mercado Pago PIX** | `docs/POLISH-PLAN.md` (5.5) | ⏸️ deferido | Pós-NFT, BR-first |
 
