@@ -12,23 +12,29 @@ type EventOpts = {
  * Fire-and-forget platform event recorder.
  * Never throws, never awaited by callers — tracking must not add latency.
  */
-export function recordEvent(type: string, opts: EventOpts = {}): void {
+export function recordEvent(type: string, opts: EventOpts = {}): Promise<void> {
   const db = getSupabaseAdmin();
-  if (!db) return;
+  if (!db) return Promise.resolve();
 
-  const promise = db.from("platform_events").insert({
-    event_type:     type,
-    wallet_address: opts.wallet ?? null,
-    path:           opts.path   ?? null,
-    metadata:       opts.meta   ?? null,
-  });
-  // Supabase builder returns a PromiseLike; cast to Promise for .catch
-  Promise.resolve(promise).catch(() => undefined);
+  // Returns the insert promise so callers in a streaming/serverless context can
+  // AWAIT it before the response closes — otherwise the function freezes and
+  // the write is lost (this is why manual ZION analyses weren't being logged).
+  // Fire-and-forget callers can simply ignore the returned promise.
+  const promise = Promise.resolve(
+    db.from("platform_events").insert({
+      event_type:     type,
+      wallet_address: opts.wallet ?? null,
+      path:           opts.path   ?? null,
+      metadata:       opts.meta   ?? null,
+    }),
+  ).then(() => undefined).catch(() => undefined);
 
   // Nudge the admin live feed — but NOT for page_view, which can fire many
   // times per second under traffic and would flood the channel. Meaningful
   // events (swap_intent, cex_order) ping; page views show up on the next poll.
   if (type !== "page_view") broadcastAdminRefresh("events");
+
+  return promise;
 }
 
 export type Severity = "low" | "med" | "high";

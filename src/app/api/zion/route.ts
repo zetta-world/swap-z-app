@@ -408,7 +408,11 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
         }));
         // Audit every analysis to platform_events (lacuna 3) — queryable in
         // the admin Platform Events panel, unlike the console log above.
-        recordEvent("zion_analysis", { meta: {
+        // AWAIT it: this runs just before the stream closes, and on serverless
+        // the function freezes the instant the response ends — a fire-and-forget
+        // insert would be lost (which is why manual analyses never showed up in
+        // the AI-spend panel). Awaiting keeps the function alive until it lands.
+        await recordEvent("zion_analysis", { meta: {
           op: args.op, chain: args.chain, model, source: "user",
           inTokens: usage.input_tokens,
           outTokens: usage.output_tokens,
