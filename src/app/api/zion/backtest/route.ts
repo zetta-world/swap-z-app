@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
-import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan } from "@/lib/zion/backtest";
+import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan, runBacktestScanKimi } from "@/lib/zion/backtest";
 import { setCronHeartbeat } from "@/lib/admin/health";
 
 export const runtime = "nodejs";
@@ -56,8 +56,16 @@ export async function POST(req: NextRequest) {
   waitUntil((async () => {
     try {
       const marketData = await getMarketIndicators(scanSlice());
-      const cards = await runBacktestScan(marketData);
-      await logSuggestions(cards, marketData.indicators, "self_scan");
+      // A/B: run Claude and (if KIMI_API_KEY is set) Kimi on the SAME market
+      // data, in parallel, logged under separate sources so their expectancy
+      // can be compared head-to-head. runBacktestScanKimi is a no-op without
+      // the key, so this stays single-model until you opt in.
+      const [claudeCards, kimiCards] = await Promise.all([
+        runBacktestScan(marketData),
+        runBacktestScanKimi(marketData),
+      ]);
+      await logSuggestions(claudeCards, marketData.indicators, "self_scan");
+      if (kimiCards.length) await logSuggestions(kimiCards, marketData.indicators, "kimi_scan");
     } catch { /* best-effort: next tick retries */ }
     // Resolve runs regardless — outcomes are independent of the scan.
     try { await resolveOpenSuggestions(); } catch { /* best-effort */ }

@@ -28,14 +28,13 @@ import type { ZionSuggestionRow } from "@/lib/supabase/types";
  * a directional call on EVERY symbol it has a lean on — so the ledger fills
  * with a steady stream of predictions to measure. Non-streaming, one call.
  */
-export async function runBacktestScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return [];
+/** Build the backtest scan instruction (shared by every model in the A/B).
+ *  Returns null when there are no usable indicators this tick. */
+async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise<string | null> {
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
-  if (!indicatorsText) return [];
+  if (!indicatorsText) return null;
   const macroText = await getMacroContext().catch(() => "");
-
-  const instruction = [
+  return [
     "You are ZION's prediction engine running in BACKTEST mode. Every call you",
     "make here is logged and scored later against real price action, so honesty",
     "and coverage matter — this is how we prove your edge.",
@@ -69,6 +68,13 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
     indicatorsText,
     "</market>",
   ].join("\n");
+}
+
+export async function runBacktestScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return [];
+  const instruction = await buildScanInstruction(marketData);
+  if (!instruction) return [];
 
   try {
     // 504 guard. The backtest scan is heavy (14 symbols, 3500 tokens) and runs
@@ -100,6 +106,59 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
     return parseZionStream(text).cards;
   } catch {
     return [];
+  }
+}
+
+/**
+ * A/B variant — runs the SAME backtest scan through Kimi (Moonshot's
+ * OpenAI-compatible endpoint) so its expectancy can be measured against Claude
+ * on identical market data. Dormant until KIMI_API_KEY is set. No SDK needed —
+ * it's a plain chat/completions POST. Model + base URL are env-overridable
+ * because Moonshot ships new Kimi versions often (set KIMI_MODEL from your
+ * Moonshot console, e.g. the current Kimi K2 id).
+ */
+export async function runBacktestScanKimi(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
+  const apiKey = process.env.KIMI_API_KEY;
+  if (!apiKey) return [];
+  const baseUrl = (process.env.KIMI_BASE_URL ?? "https://api.moonshot.ai/v1").replace(/\/+$/, "");
+  const model   = process.env.KIMI_MODEL ?? "kimi-k2-0711-preview";
+  const instruction = await buildScanInstruction(marketData);
+  if (!instruction) return [];
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 40_000);
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method:  "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        max_tokens:  2200,
+        temperature: 0.6,
+        messages: [
+          { role: "system", content: ZION_FOUNDATION },
+          { role: "user",   content: instruction },
+        ],
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?:   { prompt_tokens?: number; completion_tokens?: number };
+    };
+    const text = data.choices?.[0]?.message?.content ?? "";
+    recordEvent("zion_analysis", { meta: {
+      op: "backtest", model, source: "backtest_kimi",
+      inTokens:  data.usage?.prompt_tokens ?? 0,
+      outTokens: data.usage?.completion_tokens ?? 0,
+      cachedTokens: 0, cacheWriteTokens: 0,
+    } });
+    return parseZionStream(text).cards;
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
   }
 }
 
