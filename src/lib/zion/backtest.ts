@@ -188,6 +188,10 @@ function buildCeoPrompt(indicatorsText: string, macro: string, sentiment: string
  * Missing specialist keys degrade gracefully (that report is just "(none)").
  */
 export async function runHybridScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
+  // Master switch — OFF by default so Agent B doesn't spend on the specialists
+  // while the CEO (Opus) has no credits. Flip HYBRID_B_ENABLED=true after the
+  // 11/07 Anthropic top-up to wake the full Ferrari.
+  if (process.env.HYBRID_B_ENABLED !== "true") return [];
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const brain = roleProvider("brain");
   if (!anthropicKey || !brain?.apiKey) return [];
