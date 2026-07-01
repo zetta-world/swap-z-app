@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
-import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan, runBacktestScanKimi } from "@/lib/zion/backtest";
+import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan, runBacktestScanForProvider } from "@/lib/zion/backtest";
+import { configuredProviders } from "@/lib/ai/registry";
 import { setCronHeartbeat } from "@/lib/admin/health";
 
 export const runtime = "nodejs";
@@ -56,16 +57,19 @@ export async function POST(req: NextRequest) {
   waitUntil((async () => {
     try {
       const marketData = await getMarketIndicators(scanSlice());
-      // A/B: run Claude and (if KIMI_API_KEY is set) Kimi on the SAME market
-      // data, in parallel, logged under separate sources so their expectancy
-      // can be compared head-to-head. runBacktestScanKimi is a no-op without
-      // the key, so this stays single-model until you opt in.
-      const [claudeCards, kimiCards] = await Promise.all([
+      // A/B: run Claude AND every configured direct provider (DeepSeek / Kimi /
+      // Mistral / Llama) on the SAME market data, in parallel, each logged under
+      // its own source so expectancy compares head-to-head. Providers with no
+      // key are simply absent — stays single-model (Claude) until you add keys.
+      const providers = configuredProviders();
+      const [claudeCards, ...providerCards] = await Promise.all([
         runBacktestScan(marketData),
-        runBacktestScanKimi(marketData),
+        ...providers.map((p) => runBacktestScanForProvider(marketData, p)),
       ]);
       await logSuggestions(claudeCards, marketData.indicators, "self_scan");
-      if (kimiCards.length) await logSuggestions(kimiCards, marketData.indicators, "kimi_scan");
+      for (let i = 0; i < providers.length; i++) {
+        if (providerCards[i]?.length) await logSuggestions(providerCards[i], marketData.indicators, `${providers[i].id}_scan`);
+      }
     } catch { /* best-effort: next tick retries */ }
     // Resolve runs regardless — outcomes are independent of the scan.
     try { await resolveOpenSuggestions(); } catch { /* best-effort */ }

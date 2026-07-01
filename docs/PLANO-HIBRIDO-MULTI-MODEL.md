@@ -46,42 +46,47 @@ teste, com teto controlado conforme escala.
 
 ---
 
-## 2. Gateway único — OpenRouter
+## 2. Provedores — DIRETO DA FONTE (sem OpenRouter) ✅ IMPLEMENTADO
 
-Uma única API pra todos os modelos (Claude, GPT, Grok, DeepSeek, Kimi, Llama,
-Mistral). Decisão tomada pela simplicidade operacional + observabilidade de
-custo centralizada (já temos a tabela por-modelo no painel FINANCE).
+**Decisão revista:** cada modelo direto do vendor (sem OpenRouter). Sem taxa de
+5.5%, sem intermediário, controle total. Todos são OpenAI-compatible → compartilham
+`openaiCompatChat` com base URL diferente. Implementado em `src/lib/ai/registry.ts`.
 
-**Custos/caveats validados (2026-06):**
-- Taxa: **5.5%** na compra de crédito, **sem markup por token** → comprar
-  crédito em lote (não recargas pequenas).
-- **Grok grátis ($175/mês xAI):** manter via **BYOK** (chave xAI no OpenRouter,
-  paga só 5% BYOK) — não perde o crédito.
-- **Cache da Anthropic:** validar se o desconto de cache passa pelo OpenRouter;
-  se não, manter Claude **direto** na Anthropic (cache vale mais que a
-  simplicidade pro modelo mais usado).
+| Provider | Origem | Env key | Base URL (default) | Cadastro da API |
+|----------|--------|---------|--------------------|-----------------|
+| **DeepSeek** | 🇨🇳 china | `DEEPSEEK_API_KEY` | `api.deepseek.com` | platform.deepseek.com |
+| **Kimi** (Moonshot) | 🇨🇳 china | `KIMI_API_KEY` | `api.moonshot.ai/v1` | platform.moonshot.ai |
+| **Mistral** | 🇫🇷 western | `MISTRAL_API_KEY` | `api.mistral.ai/v1` | console.mistral.ai |
+| **Llama** (Meta) | 🇺🇸 western | `LLAMA_API_KEY` | `api.llama.com/compat/v1` | llama.developer.meta.com |
+
+Model id / base URL são **env-overridáveis** (`*_MODEL`, `*_BASE_URL`) — os vendors
+trocam versão direto. Claude fica **direto na Anthropic** (preserva o cache). Cada
+provider é **dormente até a env key existir**.
 
 ---
 
-## 3. Soberania de dado — roteamento por jurisdição
+## 3. Geo-routing por jurisdição ✅ IMPLEMENTADO
 
-O risco regulatório de IA chinesa (DeepSeek/Kimi) é sobre **onde o dado vai**,
-não a origem do modelo. Como são open-weight, rodam em provedor ocidental.
+O sistema detecta o **país do acesso** (header `x-vercel-ip-country`, nativo do
+Vercel) e escolhe o stack sozinho — `regionForCountry()` em `registry.ts`:
 
-**Estratégia de roteamento (código, por país do usuário):**
+| Região | Países | Stack |
+|--------|--------|-------|
+| **`china_ok`** | Brasil, LatAm, resto sem sanção | 🇨🇳 **DeepSeek → Kimi** (mais baratos) |
+| **`western`** | EUA + aliados (Five Eyes, UE/EEA, JP/KR/TW) | 🇺🇸🇫🇷 **Mistral → Llama** (origem ocidental) |
 
-| Mercado | Stack permitido |
-|---------|-----------------|
-| **Brasil / sem restrição** | Stack mais barato (DeepSeek/Kimi, qualquer provedor) |
-| **EUA / UE / aliados** | (a) modelos ocidentais (Claude/GPT/Grok/**Llama**/**Mistral**), OU (b) open-weight chinês **pinado em provedor ocidental + ZDR** |
-| **Enterprise / gov** | Só origem ocidental + EU in-region routing + Zero Data Retention |
+- **Fail-safe:** país desconhecido/ausente → **western** (nunca manda dado pra
+  modelo de origem china sem confiança na jurisdição).
+- Lista `WESTERN_ALIGNED` em `registry.ts` — fácil estender conforme a política.
+- `providerForCountry()` retorna o 1º provider **configurado** (com key) da região;
+  `callGeoModel()` chama o modelo certo automaticamente.
 
-**Mecanismos OpenRouter (validados):** provider pinning (restringir a
-provedores US/UE), **ZDR por requisição**, EU in-region (enterprise), negar
-provedores que logam/treinam.
+**Plus competitivo:** "roteamento por jurisdição do cliente" = argumento enterprise.
 
-**Plus competitivo:** "roteamento com residência de dado conforme jurisdição do
-cliente" vira **argumento de venda enterprise**.
+> **Regra de ouro #2 aplicada:** o geo-routing está CONSTRUÍDO e o flywheel A/B
+> mede todos os modelos. O **flip do caminho do usuário** pros modelos baratos só
+> liga DEPOIS do A/B provar que mantêm o edge (expectancy). Até lá, usuário fica
+> no Claude; a máquina só está pronta.
 
 > **Opção fricção-zero:** se quiser eliminar até a pegada de *origem*, usar
 > **Llama (Meta/EUA)** e **Mistral (França/UE)** — abertos, baratos, ocidentais.

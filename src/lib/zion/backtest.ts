@@ -10,7 +10,8 @@
  * Server-only. Best-effort: a DB hiccup never breaks the caller.
  */
 
-import { anthropicChat, openaiCompatChat, openaiCompatConfigFromEnv } from "@/lib/ai/provider";
+import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
+import type { ProviderConfig } from "@/lib/ai/registry";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
@@ -96,24 +97,26 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
 }
 
 /**
- * A/B variant — runs the SAME backtest scan through Kimi (Moonshot's
- * OpenAI-compatible endpoint) so its expectancy can be measured against Claude
- * on identical market data. Dormant until KIMI_API_KEY is set. No SDK needed —
- * it's a plain chat/completions POST. Model + base URL are env-overridable
- * because Moonshot ships new Kimi versions often (set KIMI_MODEL from your
- * Moonshot console, e.g. the current Kimi K2 id).
+ * A/B variant — runs the SAME backtest scan through one configured direct
+ * provider (DeepSeek / Kimi / Mistral / Llama) so its expectancy can be
+ * measured against Claude on identical market data. Logs source
+ * `backtest_<providerId>`. The route runs this for EVERY provider that has a
+ * key set, so the flywheel compares all models head-to-head. Dormant per
+ * provider until its key exists.
  */
-export async function runBacktestScanKimi(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
-  const cfg = openaiCompatConfigFromEnv();
-  if (!cfg) return [];
+export async function runBacktestScanForProvider(
+  marketData: MarketIndicatorsResult,
+  provider: ProviderConfig,
+): Promise<ActionCard[]> {
+  if (!provider.apiKey) return [];
   const instruction = await buildScanInstruction(marketData);
   if (!instruction) return [];
   try {
     const r = await openaiCompatChat(
-      { model: cfg.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000 },
-      { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl },
+      { model: provider.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000 },
+      { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
-    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: "backtest_kimi", ...r.usage } });
+    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: `backtest_${provider.id}`, ...r.usage } });
     return parseZionStream(r.text).cards;
   } catch {
     return [];
