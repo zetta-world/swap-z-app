@@ -27,17 +27,27 @@ zero). Após o período Premium, o holder cai para o tier **Free** (swap aberto 
 
 ## 1. Os tiers (1:1 com o código — `src/lib/tier/types.ts` + `gods.ts`)
 
-| Tier (rank) | Deus / rune | Card | Preço atual* | Desbloqueia (Camada A) |
-|-------------|-------------|------|--------------|------------------------|
-| `free` (0)  | —           | —    | grátis       | Swap aberto + 5 análises ZION/dia (SEMPRE grátis pra todos) |
-| `pro` (1)   | FREYR ᚠ · PROSPERITY | `public/nft/pro.jpg` | 1.5 SOL | + ZION advisory (streaming) + CEX autopilot |
-| `trader` (2)| THOR ᚦ · THUNDER STRIKE | `public/nft/trader.png` | 4 SOL | + arb scanner + priority support |
-| `pilot` (3) | ODIN ᚨ · ALLFATHER | `public/nft/pilot.jpg` | 30 SOL | tudo, cap de uso mais alto |
+| Tier (rank) | Deus / rune | **Supply** | Preço | Total se 100% | Desbloqueia (Camada A) |
+|-------------|-------------|-----------|-------|---------------|------------------------|
+| `free` (0)  | —           | ∞ | grátis | — | Swap aberto + 5 análises ZION/dia (SEMPRE grátis) |
+| `pro` (1)   | FREYR ᚠ · PROSPERITY | **1.500** | 1.5 SOL | 2.250 SOL (~R$1,8M) | + ZION advisory + CEX autopilot |
+| `trader` (2)| THOR ᚦ · THUNDER STRIKE | **500** | 4 SOL | 2.000 SOL (~R$1,6M) | + arb scanner + priority support |
+| `pilot` (3) | ODIN ᚨ · ALLFATHER | **50** | 30 SOL | 1.500 SOL (~R$1,2M) | tudo, cap de uso mais alto |
+| **TOTAL** | | **2.050 NFTs** | — | **5.750 SOL (~R$4,6M)** | |
 
-\* Preços de `docs/PLATFORM-PROGRESS.md` — **a confirmar no mint** (§7).
+Cards: `public/nft/{pro.jpg, trader.png, pilot.jpg}`.
+**Lógica de escassez:** quanto mais alto o tier, mais raro. 50 Pilots = exclusividade
+real (status + valor de revenda); 1.500 Pros = volume de comunidade.
 
 Gates de feature já implementados (`FEATURE_TIER`):
 `zionAdvisory→pro`, `cexAutopilot→pro`, `arbScanner→trader`, `prioritySupport→trader`.
+
+**Tema da coleção — "Z-SWAP Access Pass NFT · Deuses Nórdicos":**
+progressão **Prosperidade (Freyr) → Poder (Thor) → Onisciência (Odin)**.
+Colecionar os 3 = "iniciação nórdica" (marketing orgânico de completismo).
+Identidade visual: card vertical 3:4, obsidian preto + ouro/filigrana, header
+"Z-SWAP · ACCESS PASS NFT", badge "LIMITED EDITION", 6 ícones de benefício,
+footer "ZS-{TIER}-0001 · BUILT FOR THE FUTURE".
 
 ---
 
@@ -156,8 +166,7 @@ do nosso backend. Proposta (exemplo para o tier `trader`):
 
 Estas escolhas não são código — são decisões de negócio que destravam o mint:
 
-1. **Supply por tier** — quantos passes de cada (pro/trader/pilot)? Escassez
-   define a narrativa de Founder. (ex: 1000 / 300 / 50?)
+1. ✅ **Supply por tier** — **DECIDIDO: 1.500 Pro / 500 Trader / 50 Pilot** (2.050 total).
 2. **Preço final** — confirmar 1.5 / 4 / 30 SOL ou ajustar.
 3. **Royalty %** — quanto de royalty secundário (ex: 5%) e **qual fração** vira
    pool de Founder rewards vs. tesouraria.
@@ -181,3 +190,62 @@ Estas escolhas não são código — são decisões de negócio que destravam o 
 - [ ] **Codar 5.4** (coleção Metaplex Core + mint UI self-hosted).
 - [ ] **Virar `TIER_GATES_ENABLED=true`** — ativa o gating já entregue.
 - [ ] **5.5 (Mercado Pago PIX, trilho B)** — opcional, pós-NFT, BR-first.
+
+---
+
+## 9. Planos de LANÇAMENTO (Deuses) vs NORMAIS (Guerreiros)
+
+Dois produtos distintos, duas páginas separadas:
+
+| | **Lançamento — DEUSES** | **Normal — GUERREIROS** |
+|---|---|---|
+| Mecanismo | NFT one-time (3 anos premium) | Assinatura recorrente |
+| Função | Capital de lançamento + comunidade + runway | Motor de receita perpétuo |
+| Preço | 1.5 / 4 / 30 SOL (one-time) | **+30% vs o equivalente do NFT-holder** (mensal) |
+| Tema | Deuses nórdicos (Freyr/Thor/Odin) | Guerreiros que servem aos deuses |
+| Página | `/pricing` (lançamento, escassez) | página separada (padrão contínuo) |
+
+**Por que +30%:** recompensa quem entra no lançamento ("você é um deus / Founder"),
+e as assinaturas normais — de **maior margem** (mesmo custo de IA, +30% de receita) —
+viram o motor que paga o salário do CEO a longo prazo.
+
+**Mapa de nomes (tema nórdico mantido, hierarquia deuses > guerreiros):**
+
+| | Lançamento (Deus) | Normal (Guerreiro) |
+|---|---|---|
+| Pro | **Freyr** ᚠ | **Drengr** (guerreiro de honra) |
+| Trader | **Thor** ᚦ | **Berserkr** (guerreiro feroz) |
+| Pilot | **Odin** ᚨ | **Einherjar** (escolhido de Valhalla que serve os deuses) |
+
+Outros nomes da lore p/ usar: Úlfheðnar, Huscarl, Jarl, Víkingr.
+Narrativa-âncora: *"Os deuses ergueram a plataforma. Os Einherjar a mantêm de pé."*
+
+> ⚠️ **Gotcha técnico:** cobrança **recorrente em cripto tem fricção** (sem débito
+> automático on-chain → renovação manual → churn). "Solana por enquanto" funciona,
+> mas o trilho recorrente ideal é **PIX/Mercado Pago** (FASE 5.5) — suporta débito
+> recorrente de verdade. Cripto = ótimo p/ o NFT one-time; friccionado p/ o mensal.
+
+---
+
+## 10. Economia do lançamento — runway e salário
+
+**Captação no mint (por % de venda do supply 1.500/500/50):**
+
+| Vendido | SOL | ≈ R$ |
+|---------|-----|------|
+| 100% | 5.750 | ~R$4,6M |
+| 50% | 2.875 | ~R$2,3M |
+| 30% | 1.725 | ~R$1,4M |
+
+**Custo de 3 anos (estimado, híbrido):** ~R$25k/mês solo (c/ salário CEO R$15k) =
+~R$900k; com equipe no ano 2-3 ≈ R$2,1M. IA no híbrido ~R$520k (realista).
+
+> **Conclusão:** vender **~40-50% da coleção banca 3 ANOS de operação incluindo o
+> salário do CEO — só com o mint**, antes de qualquer assinatura recorrente ou
+> royalty secundário. O mint dá o **runway**; as assinaturas (guerreiros, +30%)
+> são o **motor perpétuo**. Margem de IA no híbrido: Pro ~50% · Trader ~54% ·
+> Pilot ~93% (ver `docs/PLANO-HIBRIDO-MULTI-MODEL.md`).
+
+**Ressalvas:** margem de IA ≠ P&L completo (falta infra/mktg/equipe/jurídico);
+receita em SOL vs custo em USD (risco de queda do SOL); custo/análise é estimativa
+até medir 24h pós-recarga (11/07).

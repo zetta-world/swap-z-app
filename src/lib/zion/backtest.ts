@@ -10,7 +10,7 @@
  * Server-only. Best-effort: a DB hiccup never breaks the caller.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { anthropicChat, openaiCompatChat, openaiCompatConfigFromEnv } from "@/lib/ai/provider";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
@@ -77,33 +77,19 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
   if (!instruction) return [];
 
   try {
-    // 504 guard. The backtest scan is heavy (14 symbols, 3500 tokens) and runs
-    // inside a 60s Vercel function. A single attempt at 40s fits the budget
-    // (indicators ~3s + LLM ≤40s + resolve ~5s); stacking the N1 fallback chain
-    // would risk two timeouts = >60s = FUNCTION_INVOCATION_TIMEOUT. The backtest
-    // is best-effort, so we use ONE model and let the next 30-min tick retry,
-    // rather than failing the whole function. (The real-money autopilot path
-    // keeps the full fallback chain.) maxRetries:0 avoids SDK backoff eating the
-    // budget; 25s was too tight and aborted the scan mid-generation → 0 cards.
-    const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 40_000 });
-    const params = {
-      // 6-symbol window → ~6 cards; 2200 tokens is plenty and caps worst-case
-      // generation time so the call finishes inside the 40s timeout.
-      max_tokens: 2200,
-      system: [{ type: "text" as const, text: ZION_FOUNDATION, cache_control: { type: "ephemeral" as const } }],
-      messages: [{ role: "user" as const, content: instruction }],
-    };
-    const usedModel = modelChain()[0];
-    const msg = await client.messages.create({ model: usedModel, ...params });
-    const u = msg.usage;
-    recordEvent("zion_analysis", { meta: {
-      op: "backtest", model: usedModel, source: "backtest",
-      inTokens: u.input_tokens, outTokens: u.output_tokens,
-      cachedTokens: u.cache_read_input_tokens ?? 0,
-      cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
-    } });
-    const text = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-    return parseZionStream(text).cards;
+    // 504 guard. The backtest scan is heavy and runs inside a 60s Vercel
+    // function. A single attempt at 40s fits the budget (indicators ~3s + LLM
+    // ≤40s + resolve ~5s); stacking the N1 fallback chain would risk two
+    // timeouts = >60s. Best-effort — the next 30-min tick retries. (The real-
+    // money autopilot keeps the full fallback chain.) Prompt caching on the
+    // foundation via cacheSystem. Goes through the provider seam so the hybrid
+    // branch can swap this model without touching the flywheel logic.
+    const r = await anthropicChat(
+      { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, cacheSystem: true },
+      apiKey,
+    );
+    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: "backtest", ...r.usage } });
+    return parseZionStream(r.text).cards;
   } catch {
     return [];
   }
@@ -118,47 +104,19 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
  * Moonshot console, e.g. the current Kimi K2 id).
  */
 export async function runBacktestScanKimi(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
-  const apiKey = process.env.KIMI_API_KEY;
-  if (!apiKey) return [];
-  const baseUrl = (process.env.KIMI_BASE_URL ?? "https://api.moonshot.ai/v1").replace(/\/+$/, "");
-  const model   = process.env.KIMI_MODEL ?? "kimi-k2-0711-preview";
+  const cfg = openaiCompatConfigFromEnv();
+  if (!cfg) return [];
   const instruction = await buildScanInstruction(marketData);
   if (!instruction) return [];
-
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 40_000);
   try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method:  "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        max_tokens:  2200,
-        temperature: 0.6,
-        messages: [
-          { role: "system", content: ZION_FOUNDATION },
-          { role: "user",   content: instruction },
-        ],
-      }),
-      signal: ctrl.signal,
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-      usage?:   { prompt_tokens?: number; completion_tokens?: number };
-    };
-    const text = data.choices?.[0]?.message?.content ?? "";
-    recordEvent("zion_analysis", { meta: {
-      op: "backtest", model, source: "backtest_kimi",
-      inTokens:  data.usage?.prompt_tokens ?? 0,
-      outTokens: data.usage?.completion_tokens ?? 0,
-      cachedTokens: 0, cacheWriteTokens: 0,
-    } });
-    return parseZionStream(text).cards;
+    const r = await openaiCompatChat(
+      { model: cfg.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000 },
+      { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl },
+    );
+    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: "backtest_kimi", ...r.usage } });
+    return parseZionStream(r.text).cards;
   } catch {
     return [];
-  } finally {
-    clearTimeout(timer);
   }
 }
 

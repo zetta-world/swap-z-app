@@ -30,6 +30,16 @@ export interface TierConfig {
   /** Elevated premium card — gets the badge. */
   highlighted?: boolean;
   badgeKey?: MessageKey;
+  /** USD-pegged price. When set, overrides priceKey/fiatKey: shows "$USD" as the
+   *  headline and "≈ N SOL" (live) as subtext. */
+  priceUsd?: number;
+  priceSol?: number | null;
+}
+
+/** SOL amount to a readable precision (2dp under 10, 1dp under 100, else 0). */
+function fmtSol(n: number): string {
+  const dp = n < 10 ? 2 : n < 100 ? 1 : 0;
+  return n.toFixed(dp);
 }
 
 /* Per-accent styling. All class strings are literal so Tailwind JIT sees them. */
@@ -129,11 +139,22 @@ export default function PricingCard({ tier, onMint, admin }: {
           {t(tier.nameKey)}
         </div>
 
-        {/* Price */}
+        {/* Price — USD-pegged when priceUsd is set, else the i18n fallback */}
         <div className="mt-2 text-center">
-          <span className="font-display font-extrabold text-2xl text-ink">{t(tier.priceKey)}</span>
-          {tier.fiatKey && (
-            <span className="font-mono text-[11px] text-ink-3 ml-1.5">· {t(tier.fiatKey)}</span>
+          {typeof tier.priceUsd === "number" ? (
+            <>
+              <span className="font-display font-extrabold text-2xl text-ink">${tier.priceUsd.toLocaleString("en-US")}</span>
+              <span className="font-mono text-[11px] text-ink-3 ml-1.5">
+                {typeof tier.priceSol === "number" && tier.priceSol > 0 ? `· ≈ ${fmtSol(tier.priceSol)} SOL` : "· SOL"}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="font-display font-extrabold text-2xl text-ink">{t(tier.priceKey)}</span>
+              {tier.fiatKey && (
+                <span className="font-mono text-[11px] text-ink-3 ml-1.5">· {t(tier.fiatKey)}</span>
+              )}
+            </>
           )}
         </div>
         <div className="h-4 mt-0.5 text-center">

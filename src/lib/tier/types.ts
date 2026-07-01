@@ -45,3 +45,17 @@ export const FEATURE_TIER: Record<string, Tier> = {
   arbScanner:    "trader",
   prioritySupport: "trader",
 };
+
+/**
+ * ZION analysis quota — analyses per DAY per tier. Source of truth for the
+ * enforcement layer (dormant until TIER_GATES_ENABLED). DAILY (not monthly) so
+ * a burst/bot can't drain a month's budget in one afternoon, and it maps to how
+ * humans actually trade. Sized so even a maxed-out user stays profitable on the
+ * current model; the hybrid (cheap models) lets these grow later without risk.
+ */
+export const TIER_DAILY_ANALYSES: Record<Tier, number> = {
+  free:   5,
+  pro:    10,
+  trader: 25,
+  pilot:  30,
+};
