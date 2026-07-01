@@ -15,7 +15,7 @@ const ERROR_SPIKE  = Number(process.env.ALERT_ERROR_SPIKE   ?? 10);  // errors /
 const SEC_FLOOD    = Number(process.env.ALERT_SEC_FLOOD     ?? 5);   // high-sev / 10min
 const AI_BUDGET    = Number(process.env.ALERT_AI_BUDGET_USD ?? 20);  // $ / 24h
 const LARGE_OP     = Number(process.env.ALERT_LARGE_OP_USD  ?? 5000);// $ single op
-const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75 };
+const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75, radar: 5 };
 
 /** Persistent dedup: returns true (and stamps) only if `key` hasn't fired
  *  within `windowMs`. Survives across cron invocations/instances via admin_kv. */

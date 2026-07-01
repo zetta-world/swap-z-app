@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // How stale a cron's heartbeat can get before we flag it (it runs more often;
 // the threshold gives slack for GitHub Actions' scheduling jitter).
-const STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75 };
+const STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75, radar: 5 };
 
 type Ping = { name: string; ok: boolean; latencyMs: number | null; note?: string };
 

@@ -78,7 +78,7 @@ export async function pingAiProviders(): Promise<DepPing[]> {
 
 /** Read the last-seen timestamps for the known crons. */
 export async function getCronHeartbeats(): Promise<Record<string, string | null>> {
-  const out: Record<string, string | null> = { autopilot: null, backtest: null };
+  const out: Record<string, string | null> = { autopilot: null, backtest: null, radar: null };
   const db = getSupabaseAdmin();
   if (!db) return out;
   try {
