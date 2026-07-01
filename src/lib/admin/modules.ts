@@ -11,6 +11,8 @@ export type ModuleId =
   | "ops-ledger"
   | "finance"
   | "backtest"
+  | "tournament"
+  | "ai-controls"
   | "cex-sessions"
   | "market-volume"
   | "audit-log"
@@ -109,6 +111,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     defaultOrder: 5,
   },
   {
+    id: "tournament",
+    title: "TOURNAMENT",
+    subtitle: "agents & models ranked by net expectancy",
+    icon: "♛",
+    category: "dashboard",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
     id: "cex-sessions",
     title: "CEX SESSIONS",
     subtitle: "active autopilot per exchange",
@@ -158,6 +169,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "KILL SWITCHES",
     subtitle: "swap · cex · maintenance",
     icon: "⊝",
+    category: "controls",
+    defaultEnabled: true,
+    defaultOrder: 8,
+  },
+  {
+    id: "ai-controls",
+    title: "AI CONTROLS",
+    subtitle: "liga/desliga agentes · torneio · backtest",
+    icon: "⏻",
     category: "controls",
     defaultEnabled: true,
     defaultOrder: 8,

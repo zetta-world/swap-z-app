@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { notifyTelegram } from "@/lib/admin/track";
 import { getCronHeartbeats, pingAnthropic, pingAiProviders } from "@/lib/admin/health";
 import { estimateCost } from "@/lib/admin/ai-cost";
+import { getFlywheelGates } from "@/lib/admin/gates";
 
 /**
  * Alert watchdog — the platform's autonomous monitor. Runs every cron tick
@@ -115,9 +116,18 @@ export async function runAlertWatchdog(): Promise<void> {
     }
     // The rest of the Ferrari's model stack (DeepSeek / Kimi / Mistral / Grok /
     // …) — alert per provider so a dead model doesn't silently skew the A/B.
-    for (const p of await pingAiProviders()) {
-      if (!p.ok && await dedupOk(`dep_ai_${p.name}`, 1_800_000)) {
-        notifyTelegram(`🤖 <b>AI model down</b> — ${p.name} not responding${p.note ? ` (${p.note})` : ""}.`);
+    // BUT: only when the stack is actually in use. If the operator paused the
+    // whole backtest or the tournament, a dead/absent direct-provider key is
+    // expected, not an incident — pinging + alerting it would just be spam
+    // (the exact Grok/Kimi flood the CEO saw). Dedup widened to 6h so even an
+    // active-but-broken key pages at most a few times a day, not every 30 min.
+    const gates = await getFlywheelGates();
+    const stackInUse = !gates.pause_backtest && !gates.pause_tournament;
+    if (stackInUse) {
+      for (const p of await pingAiProviders()) {
+        if (!p.ok && await dedupOk(`dep_ai_${p.name}`, 21_600_000)) {
+          notifyTelegram(`🤖 <b>AI model down</b> — ${p.name} not responding${p.note ? ` (${p.note})` : ""}.`);
+        }
       }
     }
 

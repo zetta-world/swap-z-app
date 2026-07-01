@@ -5,8 +5,16 @@ import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 
 export const dynamic = "force-dynamic";
 
-type SwitchKey = "disable_swap" | "disable_cex" | "maintenance_mode";
-const VALID_KEYS: SwitchKey[] = ["disable_swap", "disable_cex", "maintenance_mode"];
+type SwitchKey =
+  | "disable_swap" | "disable_cex" | "maintenance_mode"
+  // AI flywheel on/off gates (read by the backtest cron + watchdog via
+  // getFlywheelGates). Same admin_kv "true"/"false" convention as the platform
+  // kill-switches, so this one route serves both panels.
+  | "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament";
+const VALID_KEYS: SwitchKey[] = [
+  "disable_swap", "disable_cex", "maintenance_mode",
+  "pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament",
+];
 
 /**
  * Kill-switches stored in a simple key-value table. The app checks these at

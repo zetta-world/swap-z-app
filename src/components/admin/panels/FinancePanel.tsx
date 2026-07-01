@@ -76,7 +76,11 @@ export default function FinancePanel() {
           <div className="adm-category">Daily spend · last 14 days</div>
           <DailyBars daily={data.ai.daily} />
 
-          <div className="adm-category" style={{ marginTop: 12 }}>Spend per model · every provider in one place</div>
+          <div className="adm-category" style={{ marginTop: 12 }}>Spend per model · ≈ estimativa (tokens × tarifa pública)</div>
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.4 }}>
+            NÃO é cobrança real — é tokens medidos × tarifa pública do modelo. Um modelo com
+            crédito de trial aparece aqui com "gasto" mesmo sem sair dinheiro da conta.
+          </div>
           {data.ai.models.length === 0 ? (
             <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>No ZION calls yet.</div>
           ) : (

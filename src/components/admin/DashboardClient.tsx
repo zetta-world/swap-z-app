@@ -12,6 +12,8 @@ import KillSwitchesPanel  from "./panels/KillSwitchesPanel";
 import WhitelistPanel         from "./panels/WhitelistPanel";
 import PlatformEventsPanel    from "./panels/PlatformEventsPanel";
 import BacktestPanel          from "./panels/BacktestPanel";
+import TournamentPanel        from "./panels/TournamentPanel";
+import AiControlsPanel        from "./panels/AiControlsPanel";
 import OperationsPanel        from "./panels/OperationsPanel";
 import OperationsLedgerPanel  from "./panels/OperationsLedgerPanel";
 import LogsSecurityPanel      from "./panels/LogsSecurityPanel";
@@ -35,6 +37,8 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "finance":            <FinancePanel />,
   "users-explorer":     <UsersPanel />,
   "backtest":           <BacktestPanel />,
+  "tournament":         <TournamentPanel />,
+  "ai-controls":        <AiControlsPanel />,
   "cex-sessions":       <CexSessionsPanel />,
   "market-volume":      <MarketVolumePanel />,
   "tier-control":       <TierControlPanel />,
