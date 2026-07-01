@@ -75,17 +75,32 @@ export function configuredProviders(): ProviderConfig[] {
 }
 
 /**
- * The cheap "brain" for the hybrid (Ferrari) orchestration's grunt stage —
- * DeepSeek preferred (cheapest + strong), else Mistral, else any configured
- * provider. Override with HYBRID_BRAIN=<provider id>. Null if none configured.
+ * Ferrari roles — each specialist in its strongest area. Preference order per
+ * role; each overridable via HYBRID_<ROLE> (e.g. HYBRID_BRAIN=mistral). Returns
+ * the first CONFIGURED provider for the role, or null.
+ *   • brain     — technical / quant reasoning (DeepSeek → Mistral)
+ *   • macro     — big-context macro digest (Kimi → DeepSeek)
+ *   • sentiment — X / social sentiment, native to Grok (Grok → Mistral)
+ * The CEO (synthesis) is Claude Opus, resolved separately in backtest.ts.
  */
-export function hybridBrain(): ProviderConfig | null {
+export type HybridRole = "brain" | "macro" | "sentiment";
+const ROLE_PREFERENCE: Record<HybridRole, string[]> = {
+  brain:     ["deepseek", "mistral"],
+  macro:     ["kimi", "deepseek"],
+  sentiment: ["grok", "mistral"],
+};
+
+export function roleProvider(role: HybridRole): ProviderConfig | null {
   const all = allProviders();
-  const forced = process.env.HYBRID_BRAIN;
+  const forced = process.env[`HYBRID_${role.toUpperCase()}`];
   if (forced && all[forced]?.apiKey) return all[forced];
-  return all.deepseek?.apiKey ? all.deepseek
-       : all.mistral?.apiKey  ? all.mistral
-       : (configuredProviders()[0] ?? null);
+  for (const id of ROLE_PREFERENCE[role]) if (all[id]?.apiKey) return all[id];
+  return null;
+}
+
+/** The technical brain (kept for the radar's cheap wake). */
+export function hybridBrain(): ProviderConfig | null {
+  return roleProvider("brain") ?? (configuredProviders()[0] ?? null);
 }
 
 export type Region = "western" | "china_ok";

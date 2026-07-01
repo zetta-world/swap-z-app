@@ -11,7 +11,7 @@
  */
 
 import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
-import { hybridBrain, type ProviderConfig } from "@/lib/ai/registry";
+import { roleProvider, type ProviderConfig } from "@/lib/ai/registry";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
@@ -123,69 +123,97 @@ export async function runBacktestScanForProvider(
   }
 }
 
-/** Opus review prompt — the T1 orchestrator judging the cheap model's draft. */
-function buildReviewInstruction(indicatorsText: string, draftText: string): string {
+/** Run one specialist (OpenAI-compatible). Returns "" if no provider or on
+ *  failure. Logs cost under source "hybrid" with the role in `op`. */
+async function runSpecialist(role: string, provider: ProviderConfig | null, user: string, maxTokens: number, timeoutMs: number): Promise<string> {
+  if (!provider?.apiKey) return "";
+  try {
+    const r = await openaiCompatChat(
+      { model: provider.model, system: ZION_FOUNDATION, user, maxTokens, timeoutMs },
+      { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
+    );
+    recordEvent("zion_analysis", { meta: { op: `hybrid_${role}`, model: r.model, source: "hybrid", ...r.usage } });
+    return r.text;
+  } catch { return ""; }
+}
+
+const MACRO_PROMPT = (macroText: string) => [
+  "You are the MACRO analyst on ZION's desk. From the macro context below, give a",
+  "TIGHT read (max 5 bullets): overall risk-on/risk-off, BTC/ETH dominance drift,",
+  "liquidity (stablecoin supply), and any macro cross-asset signal (DXY, S&P).",
+  "No trade calls — just the macro backdrop the desk should trade WITH.",
+  "", "<macro>", macroText || "(no macro data this tick)", "</macro>",
+].join("\n");
+
+const SENTIMENT_PROMPT = (symbolsCsv: string) => [
+  "You are the SENTIMENT analyst on ZION's desk, natively connected to X / social.",
+  "Give a TIGHT read (max 5 bullets) of current crypto market sentiment: fear vs",
+  "greed, notable narratives/rotations, and any whale/news flow you can see for:",
+  `  ${symbolsCsv}.`,
+  "No trade calls — just the crowd's mood the desk should factor in.",
+].join("\n");
+
+/** CEO synthesis prompt — Opus fuses the three specialist reads + the technical
+ *  draft into the FINAL cards. */
+function buildCeoPrompt(indicatorsText: string, macro: string, sentiment: string, technical: string): string {
   return [
-    "You are ZION's SENIOR decision-maker — the orchestrator. A junior analyst",
-    "produced the DRAFT predictions below for the current market. Review them and",
-    "output the FINAL set of ACTION CARDS:",
-    "  • CONFIRM a draft when its thesis and levels are sound.",
-    "  • REFINE the entry/target/stop when you can improve them (keep reward:risk",
-    "    >= 1.5, target never within 0.3% of entry, use the real current price).",
-    "  • DROP a draft whose directional thesis is weak or whose setup is poor.",
-    "Quality over coverage — your edge is JUDGMENT, not volume.",
+    "You are ZION's CEO — the final decision-maker. Your desk's specialists each",
+    "produced a report below. SYNTHESIZE them into the FINAL set of ACTION CARDS:",
+    "  • Weigh the TECHNICAL draft against the MACRO backdrop and the SENTIMENT.",
+    "  • Confirm strong setups; refine entry/target/stop (reward:risk >= 1.5, target",
+    "    never within 0.3% of entry, use the real current price); DROP the weak ones",
+    "    or ones fighting the macro/sentiment. Quality over coverage.",
+    "Output ONLY the final cards as [[ACTION]] ... [[/ACTION]] JSON blocks. Machine-format numbers.",
     "",
-    "Output ONLY the final cards as [[ACTION]] ... [[/ACTION]] JSON blocks (same",
-    "schema). Machine-format every number.",
+    "<technical_draft>", technical || "(none)", "</technical_draft>",
     "",
-    "<draft_predictions>",
-    draftText,
-    "</draft_predictions>",
+    "<macro_report>", macro || "(none)", "</macro_report>",
     "",
-    "<market>",
-    indicatorsText,
-    "</market>",
+    "<sentiment_report>", sentiment || "(none)", "</sentiment_report>",
+    "",
+    "<market>", indicatorsText, "</market>",
   ].join("\n");
 }
 
 /**
- * AGENT B — the Ferrari hybrid orchestration on the paper flywheel. A cheap
- * geo-appropriate model DRAFTS the scan (T2 grunt), then Opus 4.8 REVIEWS and
- * finalizes (T1 decision). Measures whether the full orchestration beats
- * Agent A (Sonnet-only, `self_scan`). Cost for both stages logs under source
- * "hybrid"; the caller logs the final suggestions as "hybrid_scan". Needs a
- * cheap provider key AND ANTHROPIC_API_KEY with live credits (Opus) — dormant
- * until both exist (so it wakes on its own after the 11/07 top-up).
+ * AGENT B — the TRUE Ferrari: each model in its strongest area, fused by a CEO.
+ *   • Kimi     → MACRO digest (big context)
+ *   • Grok     → SENTIMENT (native to X)
+ *   • DeepSeek → TECHNICAL/quant brain (the draft)   [roleProvider("brain")]
+ *   • Opus     → CEO that SYNTHESIZES all into the final cards
+ * The three specialists run in PARALLEL; Opus then fuses them. Every stage logs
+ * cost under source "hybrid"; the caller logs the final suggestions as
+ * "hybrid_scan". Needs the brain key + ANTHROPIC_API_KEY with live credits
+ * (Opus/CEO) — dormant until both exist (wakes itself after the 11/07 top-up).
+ * Missing specialist keys degrade gracefully (that report is just "(none)").
  */
 export async function runHybridScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const brain = hybridBrain();
+  const brain = roleProvider("brain");
   if (!anthropicKey || !brain?.apiKey) return [];
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
   if (!indicatorsText) return [];
-  const instruction = await buildScanInstruction(marketData);
-  if (!instruction) return [];
+  const macroText = await getMacroContext().catch(() => "");
+  const scanInstruction = await buildScanInstruction(marketData);
+  if (!scanInstruction) return [];
+  const symbolsCsv = marketData.indicators.map((i) => i.symbol).join(", ");
 
-  // Stage 1 — cheap grunt drafts the predictions.
-  let draftText = "";
-  try {
-    const d = await openaiCompatChat(
-      { model: brain.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 18_000 },
-      { apiKey: brain.apiKey, baseUrl: brain.baseUrl },
-    );
-    recordEvent("zion_analysis", { meta: { op: "hybrid_draft", model: d.model, source: "hybrid", ...d.usage } });
-    draftText = d.text;
-  } catch { return []; }
-  if (!draftText.trim()) return [];
+  // Three specialists in PARALLEL — each in its strongest area.
+  const [technical, macro, sentiment] = await Promise.all([
+    runSpecialist("brain",     brain,                    scanInstruction,             2200, 18_000),
+    runSpecialist("macro",     roleProvider("macro"),    MACRO_PROMPT(macroText),      600,  15_000),
+    runSpecialist("sentiment", roleProvider("sentiment"), SENTIMENT_PROMPT(symbolsCsv), 600, 15_000),
+  ]);
+  if (!technical.trim()) return []; // no draft to synthesize
 
-  // Stage 2 — Opus 4.8 orchestrator reviews + finalizes.
+  // CEO (Opus) fuses everything into the final cards.
   try {
-    const orchModel = process.env.HYBRID_ORCH_MODEL ?? "claude-opus-4-8";
+    const ceoModel = process.env.HYBRID_ORCH_MODEL ?? "claude-opus-4-8";
     const o = await anthropicChat(
-      { model: orchModel, system: ZION_FOUNDATION, user: buildReviewInstruction(indicatorsText, draftText), maxTokens: 2200, timeoutMs: 25_000, cacheSystem: true },
+      { model: ceoModel, system: ZION_FOUNDATION, user: buildCeoPrompt(indicatorsText, macro, sentiment, technical), maxTokens: 2200, timeoutMs: 25_000, cacheSystem: true },
       anthropicKey,
     );
-    recordEvent("zion_analysis", { meta: { op: "hybrid_orch", model: o.model, source: "hybrid", ...o.usage } });
+    recordEvent("zion_analysis", { meta: { op: "hybrid_ceo", model: o.model, source: "hybrid", ...o.usage } });
     return parseZionStream(o.text).cards;
   } catch {
     return [];

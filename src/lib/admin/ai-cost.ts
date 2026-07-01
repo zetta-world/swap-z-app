@@ -27,10 +27,13 @@ const PRICES: Array<[RegExp, ModelPrice]> = [
   [/opus/i,            tier(15, 75)],
   [/sonnet/i,          tier(3, 15)],
   [/haiku/i,           tier(1, 5)],
-  // Open models in the A/B (approximate public rates — the authoritative cost
-  // is each provider's own console balance). Kimi K2 / Moonshot ~ $0.60/$2.50.
+  // Open/hosted models in the A/B (approximate public rates — the authoritative
+  // cost is each provider's own console balance).
   [/kimi|moonshot/i,   tier(0.6, 2.5)],
   [/deepseek/i,        tier(0.27, 1.1)],
+  [/mistral/i,         tier(2, 6)],
+  [/grok|xai/i,        tier(1.25, 2.5)],
+  [/llama/i,           tier(0.2, 0.6)],
 ];
 // Default to Sonnet pricing when the model is unknown/absent (old events).
 const DEFAULT_PRICE = tier(3, 15);
