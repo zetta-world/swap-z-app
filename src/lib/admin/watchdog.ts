@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { notifyTelegram } from "@/lib/admin/track";
-import { getCronHeartbeats, pingAnthropic } from "@/lib/admin/health";
+import { getCronHeartbeats, pingAnthropic, pingAiProviders } from "@/lib/admin/health";
 import { estimateCost } from "@/lib/admin/ai-cost";
 
 /**
@@ -112,6 +112,13 @@ export async function runAlertWatchdog(): Promise<void> {
     const ant = await pingAnthropic();
     if (!ant.ok && ant.note !== "no ANTHROPIC_API_KEY in this env" && await dedupOk("dep_Anthropic", 1_800_000)) {
       notifyTelegram(`🧠 <b>Anthropic down</b> — ${ant.note ?? "API not responding"}. ZION analyses will fail until it recovers.`);
+    }
+    // The rest of the Ferrari's model stack (DeepSeek / Kimi / Mistral / Grok /
+    // …) — alert per provider so a dead model doesn't silently skew the A/B.
+    for (const p of await pingAiProviders()) {
+      if (!p.ok && await dedupOk(`dep_ai_${p.name}`, 1_800_000)) {
+        notifyTelegram(`🤖 <b>AI model down</b> — ${p.name} not responding${p.note ? ` (${p.note})` : ""}.`);
+      }
     }
 
     // 7. Daily digest (once / 24h)

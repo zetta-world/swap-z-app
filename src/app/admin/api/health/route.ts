@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getCronHeartbeats, pingAnthropic } from "@/lib/admin/health";
+import { getCronHeartbeats, pingAnthropic, pingAiProviders } from "@/lib/admin/health";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +28,7 @@ async function ping(name: string, url: string): Promise<Ping> {
 export async function GET(): Promise<NextResponse> {
   await requireAdmin();
   const db = getSupabaseAdmin();
-  const [heartbeats, pings, anthropic] = await Promise.all([
+  const [heartbeats, pings, anthropic, aiProviders] = await Promise.all([
     getCronHeartbeats(),
     Promise.all([
       // data-api.binance.vision is Binance's public market-data mirror; unlike
@@ -42,6 +42,9 @@ export async function GET(): Promise<NextResponse> {
     // Real /v1/models check (zero inference cost) — replaces the old
     // "had an analysis in 2h" proxy that went falsely DOWN between cron runs.
     pingAnthropic(),
+    // The Ferrari's whole model stack (DeepSeek / Kimi / Mistral / Grok / …) —
+    // only the providers with a key configured are pinged.
+    pingAiProviders(),
   ]);
 
   const now = Date.now();
@@ -53,6 +56,7 @@ export async function GET(): Promise<NextResponse> {
 
   const deps: Ping[] = [
     ...pings,
+    ...aiProviders,
     { name: "Supabase",  ok: !!db,            latencyMs: null },
     { name: "Anthropic", ok: anthropic.ok,    latencyMs: anthropic.latencyMs, note: anthropic.note },
   ];

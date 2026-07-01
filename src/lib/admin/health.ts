@@ -47,6 +47,35 @@ export async function pingAnthropic(): Promise<{ ok: boolean; latencyMs: number 
   }
 }
 
+export interface DepPing { name: string; ok: boolean; latencyMs: number | null; note?: string }
+
+/** Ping one OpenAI-compatible provider's /models endpoint (auth'd, ~free). */
+async function pingOpenAICompat(label: string, baseUrl: string, apiKey: string): Promise<DepPing> {
+  const start = Date.now();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` }, signal: ctrl.signal, cache: "no-store",
+    });
+    if (res.status === 401 || res.status === 403) return { name: label, ok: false, latencyMs: Date.now() - start, note: "auth rejected — check key" };
+    return { name: label, ok: res.ok, latencyMs: Date.now() - start };
+  } catch {
+    return { name: label, ok: false, latencyMs: null };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Health radar for every CONFIGURED AI provider (registry) — so the Ferrari's
+ *  whole model stack is monitored, not just Anthropic. Providers without a key
+ *  are skipped (not shown as down). Runs in parallel. */
+export async function pingAiProviders(): Promise<DepPing[]> {
+  const { configuredProviders } = await import("@/lib/ai/registry");
+  const providers = configuredProviders();
+  return Promise.all(providers.map((p) => pingOpenAICompat(p.label, p.baseUrl, p.apiKey!)));
+}
+
 /** Read the last-seen timestamps for the known crons. */
 export async function getCronHeartbeats(): Promise<Record<string, string | null>> {
   const out: Record<string, string | null> = { autopilot: null, backtest: null };
