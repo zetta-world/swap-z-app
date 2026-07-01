@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   Sparkles, X, Mail, ArrowRight, CheckCircle2, Loader2, Check, Crown,
@@ -15,6 +15,7 @@ import type { Tier } from "@/lib/tier/types";
 import SignInButton from "@/components/auth/SignInButton";
 import PricingCard, { type TierConfig } from "./PricingCard";
 import FounderBenefits from "./FounderBenefits";
+import { PLAN_TIERS, usdToSol } from "@/lib/pricing/plans";
 
 const TIERS: TierConfig[] = [
   {
@@ -59,6 +60,23 @@ export default function PricingView() {
   const [mintOpen, setMintOpen] = useState(false);
   const { authenticated, source, tier: currentTier, refresh } = useTier();
   const [selecting, setSelecting] = useState<Tier | null>(null);
+  // USD-pegged pricing: fetch the live SOL/USD once so each card shows its fixed
+  // USD target + the current SOL equivalent (degrades to USD-only if unavailable).
+  const [solUsd, setSolUsd] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/sol-price")
+      .then((r) => r.json())
+      .then((j) => { if (alive) setSolUsd(typeof j?.solUsd === "number" ? j.solUsd : null); })
+      .catch(() => { /* keep USD-only */ });
+    return () => { alive = false; };
+  }, []);
+
+  const priced = (tier: TierConfig): TierConfig => {
+    const cfg = PLAN_TIERS.find((p) => p.tier === (tier.id as Tier));
+    if (!cfg) return tier;
+    return { ...tier, priceUsd: cfg.usdTarget, priceSol: solUsd ? usdToSol(cfg.usdTarget, solUsd) : null };
+  };
 
   // The seeded admin wallet (source='admin' in tier_cache) can switch plans
   // live to test every gated surface — visitors keep the waitlist CTA.
@@ -137,7 +155,7 @@ export default function PricingView() {
               className={cn(tier.highlighted && "md:scale-105 md:z-10")}
             >
               <PricingCard
-                tier={tier}
+                tier={priced(tier)}
                 onMint={() => setMintOpen(true)}
                 admin={adminFor(tier.id as Tier)}
               />
