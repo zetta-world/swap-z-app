@@ -162,20 +162,25 @@ modelo, sobre o MESMO dado de mercado. O dado decide, não o marketing.
 
 ---
 
-## 8. Variáveis de ambiente (a definir)
+## 8. Variáveis de ambiente — DIRETO DA FONTE ✅ IMPLEMENTADO
+
+Cada provider dormente até a key existir. `*_MODEL` / `*_BASE_URL` opcionais
+(default no `registry.ts`). Claude usa a `ANTHROPIC_API_KEY` que já existe.
 
 ```
-OPENROUTER_API_KEY        # gateway único
-OPENROUTER_BASE_URL       # default https://openrouter.ai/api/v1
-AI_T2_QUANT_MODEL         # ex: deepseek/deepseek-v4
-AI_T2_DOCS_MODEL          # ex: moonshotai/kimi-k2.6
-AI_T2_SENTIMENT_MODEL     # ex: x-ai/grok-4.3
-AI_T1_ORCH_MODEL          # ex: anthropic/claude-opus-4.8
-AI_T1_RISK_MODEL          # ex: openai/gpt-5.5
-AI_PROVIDER_PINS          # JSON: jurisdição → provedores permitidos
-AI_ZDR_REQUIRED           # bool por jurisdição
-XAI_API_KEY               # BYOK p/ manter os $175 grátis do Grok
+# Modelos baratos (T2) — china_ok: Brasil/LatAm
+DEEPSEEK_API_KEY          # (+ DEEPSEEK_MODEL, DEEPSEEK_BASE_URL)
+KIMI_API_KEY              # (+ KIMI_MODEL, KIMI_BASE_URL)
+# Modelos ocidentais (T2/T1) — western: EUA + aliados
+MISTRAL_API_KEY          # (+ MISTRAL_MODEL, MISTRAL_BASE_URL)
+XAI_API_KEY              # Grok (+ XAI_MODEL, XAI_BASE_URL) — $175/mês grátis
+LLAMA_API_KEY            # Meta (lista de espera) (+ LLAMA_MODEL, LLAMA_BASE_URL)
+# Claude (Opus 4.8 / Sonnet 4.6) — MESMA key, modelo escolhido por request
+ANTHROPIC_API_KEY        # já existe; ZION_MODEL/ZION_FALLBACK_MODEL controlam qual
 ```
+
+> **Nota importante:** Sonnet e Opus **compartilham a `ANTHROPIC_API_KEY`** — o
+> modelo é escolhido no parâmetro `model` de cada chamada, não por key separada.
 
 ---
 
