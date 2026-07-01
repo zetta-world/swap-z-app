@@ -56,6 +56,16 @@ export function allProviders(): Record<string, ProviderConfig> {
       model:   process.env.LLAMA_MODEL   ?? "Llama-4-Maverick-17B-128E-Instruct-FP8",
       signup:  "https://llama.developer.meta.com",
     },
+    // xAI (US, Western-origin) — works in BOTH regions. Its real edge is the
+    // native real-time X / whale / news firehose (SENTIMENT radar), a separate
+    // feature to build (plan D2). Here it's a reasoning option + A/B participant.
+    grok: {
+      id: "grok", label: "Grok (xAI)", origin: "western",
+      apiKey:  process.env.XAI_API_KEY,
+      baseUrl: process.env.XAI_BASE_URL ?? "https://api.x.ai/v1",
+      model:   process.env.XAI_MODEL   ?? "grok-4.3",
+      signup:  "https://console.x.ai",
+    },
   };
 }
 
@@ -88,8 +98,8 @@ export function regionForCountry(country?: string | null): Region {
 
 /** Ordered provider preference per region (primary first, fallback second). */
 const REGION_STACK: Record<Region, string[]> = {
-  western:  ["mistral", "llama"],   // Western-origin only
-  china_ok: ["deepseek", "kimi"],   // cheaper China-origin allowed
+  western:  ["mistral", "llama", "grok"],   // Western-origin (grok = xAI/US)
+  china_ok: ["deepseek", "kimi"],           // cheaper China-origin allowed
 };
 
 /** First CONFIGURED provider allowed in the country's region, or null. */
