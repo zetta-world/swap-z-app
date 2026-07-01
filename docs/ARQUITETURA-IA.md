@@ -261,3 +261,87 @@ trades abertos mesmo sem gerar novos.
 5. Riscos que não estamos vendo (viés no backtest, overfitting, custo escondido,
    latência, confiabilidade dos provedores)?
 6. Faz sentido rodar A + B + torneio + radar em paralelo, ou é desperdício?
+
+---
+
+## ANEXO A — Como a análise é feita (dados, matemática e código)
+
+O LLM **não olha gráfico**. O código calcula um retrato técnico numérico e
+injeta como TEXTO no prompt. Arquivo: `src/lib/api/market-indicators.ts`.
+
+### A.1 Coleta de dados (fontes + timeframes)
+- **Klines (candles)** da Binance (mirror `data-api.binance.vision`, sem
+  geo-bloqueio): **1h, 4h, 1D, 1W**. Revalidação cacheada (1h=60s, 4h/1D=300s).
+- **Order book** (depth 20 níveis) — spread, imbalance, slippage.
+- **Funding + Open Interest** (Binance FAPI, perpétuos).
+- **Fear & Greed Index** (alternative.me).
+- **Macro** (`macro.ts`): dominância BTC/ETH + mcap (CoinGecko), supply de
+  stablecoins (DefiLlama), DXY + S&P (Yahoo).
+- Tokens DEX (fora dos majors CEX): OHLCV via GeckoTerminal (mesma matemática).
+
+### A.2 Indicadores e a MATEMÁTICA (todos calculados em código puro)
+- **EMA(p):** semente = SMA dos primeiros p; depois `EMA = close·k + EMAprev·(1−k)`, `k = 2/(p+1)`. Usa EMA20 e EMA50.
+- **RSI(14) — Wilder:** média de ganhos e perdas suavizada; `RS = avgGain/avgLoss`; `RSI = 100 − 100/(1+RS)`. Calcula o **array inteiro** (pra ver trajetória, não só o valor atual).
+- **MACD(12,26,9):** `MACD = EMA12 − EMA26`; `Signal = EMA9(MACD)`; `Histograma = MACD − Signal`. Guarda o **histograma anterior** (`histPrev`) pra saber a DIREÇÃO do momentum (crescendo/encolhendo).
+- **ATR(14) — Wilder:** True Range = `max(high−low, |high−closePrev|, |low−closePrev|)`, suavizado. Usado pra dimensionar stops à **volatilidade real** (não % fixo).
+- **ADX(14) + DI:** força de tendência via Directional Movement. Define o **regime** (abaixo).
+- **OBV** (On-Balance Volume) + tendência (rising/falling/flat).
+- **Volume relativo** (vs média de 20).
+- **Divergência de RSI** (preço faz novo topo/fundo, RSI não → reversão).
+- **Suporte/Resistência** (5 níveis por pivôs locais) + **Pivôs diários** (clássicos PP/R1/S1…).
+
+### A.3 Regime (o que mais importa — muda como ler o RSI)
+```
+ADX ≥ 25 → TENDÊNCIA (TRENDING_UP se +DI ≥ −DI, senão TRENDING_DOWN)
+ADX < 20 → RANGING (lateral)
+senão    → TRANSITIONING
+```
+**Por quê:** RSI extremo em tendência ≠ reversão (não fade); em range, RSI
+extremo reverte. O regime **inverte a leitura dos osciladores**.
+
+### A.4 Multi-timeframe + alinhamento
+1h dá o sinal; 4h/1D/1W dão o **filtro de tendência**. O código computa a
+direção (bull/bear/neutro) em cada TF e o **alinhamento**:
+`aligned_bull` (2+ bull, 0 bear), `aligned_bear`, `conflict`, `mixed`. Impede o
+ZION de operar contra a maré primária.
+
+### A.5 Contexto de ciclo (olhar meses/anos — Z1/Z2)
+- **Posição no range de 1 ano:** `rangePct = (preço − mín1a)/(máx1a − mín1a)·100`
+  + distância da máxima do ciclo. (Perto do fundo = melhor R/R pra long.)
+- **Trajetória do RSI:** últimos 4 valores (ex "38→45→52→61") — o modelo vê a
+  DIREÇÃO do momentum, não o valor congelado.
+
+### A.6 Order book (qualidade de execução)
+Spread, imbalance top-5 (advisory — envelhece no round-trip do LLM), e um
+**slippage estimado** varrendo $1k pela escada de asks (custo real de um market buy).
+
+### A.7 Confidence Score (0-100) — o compósito ponderado
+9 sub-scores (0..1) × pesos (`SCORE_WEIGHTS`, soma 100). Pra SHORT, inverte (100−score):
+```
+alignment 22 · regime 18 · macd 16 · rsi 12 · cycle 12 · weekly 8 · orderBook 6 · divergence 4 · fearGreed 2
+```
+Exemplos de sub-score: RSI 50-65 = 1.0 (sweet spot), ≥80 = 0.2 (extremo);
+regime TRENDING_UP = 1.0, TRENDING_DOWN = 0.0; cycle rangePct ≤20% = 1.0.
+> ⚠️ **Pesos são provisórios, definidos à mão.** O Z7 vai SUBSTITUÍ-los por
+> pesos ajustados do ledger (qual dimensão realmente prevê vencedor) — precisa
+> das semanas de dado do flywheel. Hoje é sinal direcional, não calibrado.
+
+### A.8 Montagem do prompt → saída do modelo
+`formatIndicatorsForPrompt` gera **uma linha de texto por símbolo** com tudo
+(ex: `BTC/USDT: price=… | RSI=61 | MACD … | EMA20/50 … | ATR … | ADX=28 | OBV … | regime=TRENDING_UP | trend1h=bullish | score=72`). Isso + o macro + o
+**system prompt cacheado** (`ZION_FOUNDATION`, ~10K tokens, com prompt caching)
+vão pro modelo. O modelo devolve **ACTION CARDS** em blocos `[[ACTION]]{json}[[/ACTION]]` (kind, entry, target, stop, probabilidade), parseados por `parseZionStream`.
+
+### A.9 Matemática de risco PÓS-análise (Regra de ouro #1 — código, não LLM)
+- **Cost-basis / P&L** (`costBasis.ts`): **custo médio ponderado** por ativo.
+  Cada venda realiza `(preço_venda − custo_médio) × quantidade`. Alimenta o
+  loss-stop diário. STABLES tratadas como caixa.
+- **Price-guard** (`price-guard.ts`): antes de QUALQUER ordem, recomputa o
+  notional real = `baseAmount × preço_de_referência_fresco` e **rejeita** se
+  passar do cap×1.5, do teto absoluto, ou se não conseguir precificar
+  (fail-safe). Fecha o buraco do "5 ETH tratado como $5" e o erro de escala do LLM.
+- **Real-notional no autopilot:** mesmo se o LLM alucinar o preço, o gasto real
+  = quantidade × preço real — e o guard corta antes de mandar pra exchange.
+
+**Resumo:** o LLM recebe um retrato numérico rico e devolve uma tese + níveis; o
+CÓDIGO calcula os indicadores, o score, e faz TODA a matemática de risco/execução.
