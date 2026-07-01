@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
-import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan, runBacktestScanForProvider } from "@/lib/zion/backtest";
+import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan, runBacktestScanForProvider, runHybridScan } from "@/lib/zion/backtest";
 import { configuredProviders } from "@/lib/ai/registry";
 import { setCronHeartbeat } from "@/lib/admin/health";
 
@@ -62,11 +62,13 @@ export async function POST(req: NextRequest) {
       // its own source so expectancy compares head-to-head. Providers with no
       // key are simply absent — stays single-model (Claude) until you add keys.
       const providers = configuredProviders();
-      const [claudeCards, ...providerCards] = await Promise.all([
-        runBacktestScan(marketData),
-        ...providers.map((p) => runBacktestScanForProvider(marketData, p)),
+      const [claudeCards, hybridCards, ...providerCards] = await Promise.all([
+        runBacktestScan(marketData),        // Agent A — Sonnet-only ZION (self_scan)
+        runHybridScan(marketData),          // Agent B — Ferrari: cheap draft → Opus review (hybrid_scan)
+        ...providers.map((p) => runBacktestScanForProvider(marketData, p)), // each raw model
       ]);
       await logSuggestions(claudeCards, marketData.indicators, "self_scan");
+      if (hybridCards.length) await logSuggestions(hybridCards, marketData.indicators, "hybrid_scan");
       for (let i = 0; i < providers.length; i++) {
         if (providerCards[i]?.length) await logSuggestions(providerCards[i], marketData.indicators, `${providers[i].id}_scan`);
       }

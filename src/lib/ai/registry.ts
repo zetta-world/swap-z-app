@@ -74,6 +74,20 @@ export function configuredProviders(): ProviderConfig[] {
   return Object.values(allProviders()).filter((p) => !!p.apiKey);
 }
 
+/**
+ * The cheap "brain" for the hybrid (Ferrari) orchestration's grunt stage —
+ * DeepSeek preferred (cheapest + strong), else Mistral, else any configured
+ * provider. Override with HYBRID_BRAIN=<provider id>. Null if none configured.
+ */
+export function hybridBrain(): ProviderConfig | null {
+  const all = allProviders();
+  const forced = process.env.HYBRID_BRAIN;
+  if (forced && all[forced]?.apiKey) return all[forced];
+  return all.deepseek?.apiKey ? all.deepseek
+       : all.mistral?.apiKey  ? all.mistral
+       : (configuredProviders()[0] ?? null);
+}
+
 export type Region = "western" | "china_ok";
 
 /**

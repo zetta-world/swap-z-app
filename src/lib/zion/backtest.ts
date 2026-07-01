@@ -11,7 +11,7 @@
  */
 
 import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
-import type { ProviderConfig } from "@/lib/ai/registry";
+import { hybridBrain, type ProviderConfig } from "@/lib/ai/registry";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
@@ -118,6 +118,75 @@ export async function runBacktestScanForProvider(
     );
     recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: `backtest_${provider.id}`, ...r.usage } });
     return parseZionStream(r.text).cards;
+  } catch {
+    return [];
+  }
+}
+
+/** Opus review prompt — the T1 orchestrator judging the cheap model's draft. */
+function buildReviewInstruction(indicatorsText: string, draftText: string): string {
+  return [
+    "You are ZION's SENIOR decision-maker — the orchestrator. A junior analyst",
+    "produced the DRAFT predictions below for the current market. Review them and",
+    "output the FINAL set of ACTION CARDS:",
+    "  • CONFIRM a draft when its thesis and levels are sound.",
+    "  • REFINE the entry/target/stop when you can improve them (keep reward:risk",
+    "    >= 1.5, target never within 0.3% of entry, use the real current price).",
+    "  • DROP a draft whose directional thesis is weak or whose setup is poor.",
+    "Quality over coverage — your edge is JUDGMENT, not volume.",
+    "",
+    "Output ONLY the final cards as [[ACTION]] ... [[/ACTION]] JSON blocks (same",
+    "schema). Machine-format every number.",
+    "",
+    "<draft_predictions>",
+    draftText,
+    "</draft_predictions>",
+    "",
+    "<market>",
+    indicatorsText,
+    "</market>",
+  ].join("\n");
+}
+
+/**
+ * AGENT B — the Ferrari hybrid orchestration on the paper flywheel. A cheap
+ * geo-appropriate model DRAFTS the scan (T2 grunt), then Opus 4.8 REVIEWS and
+ * finalizes (T1 decision). Measures whether the full orchestration beats
+ * Agent A (Sonnet-only, `self_scan`). Cost for both stages logs under source
+ * "hybrid"; the caller logs the final suggestions as "hybrid_scan". Needs a
+ * cheap provider key AND ANTHROPIC_API_KEY with live credits (Opus) — dormant
+ * until both exist (so it wakes on its own after the 11/07 top-up).
+ */
+export async function runHybridScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const brain = hybridBrain();
+  if (!anthropicKey || !brain?.apiKey) return [];
+  const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
+  if (!indicatorsText) return [];
+  const instruction = await buildScanInstruction(marketData);
+  if (!instruction) return [];
+
+  // Stage 1 — cheap grunt drafts the predictions.
+  let draftText = "";
+  try {
+    const d = await openaiCompatChat(
+      { model: brain.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 18_000 },
+      { apiKey: brain.apiKey, baseUrl: brain.baseUrl },
+    );
+    recordEvent("zion_analysis", { meta: { op: "hybrid_draft", model: d.model, source: "hybrid", ...d.usage } });
+    draftText = d.text;
+  } catch { return []; }
+  if (!draftText.trim()) return [];
+
+  // Stage 2 — Opus 4.8 orchestrator reviews + finalizes.
+  try {
+    const orchModel = process.env.HYBRID_ORCH_MODEL ?? "claude-opus-4-8";
+    const o = await anthropicChat(
+      { model: orchModel, system: ZION_FOUNDATION, user: buildReviewInstruction(indicatorsText, draftText), maxTokens: 2200, timeoutMs: 25_000, cacheSystem: true },
+      anthropicKey,
+    );
+    recordEvent("zion_analysis", { meta: { op: "hybrid_orch", model: o.model, source: "hybrid", ...o.usage } });
+    return parseZionStream(o.text).cards;
   } catch {
     return [];
   }
