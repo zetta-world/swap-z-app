@@ -18,7 +18,7 @@ import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import { recordEvent } from "@/lib/admin/track";
 import { modelChain } from "@/lib/zion/model";
-import { ZION_FOUNDATION } from "@/lib/zion/foundation";
+import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
 import { formatIndicatorsForPrompt, type SymbolIndicators, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { getMacroContext } from "@/lib/api/macro";
 import type { ZionSuggestionRow } from "@/lib/supabase/types";
@@ -89,7 +89,7 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
       { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, cacheSystem: true },
       apiKey,
     );
-    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: "backtest", ...r.usage } });
+    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: "backtest", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return parseZionStream(r.text).cards;
   } catch {
     return [];
@@ -116,7 +116,7 @@ export async function runBacktestScanForProvider(
       { model: provider.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000 },
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
-    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: `backtest_${provider.id}`, ...r.usage } });
+    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: `backtest_${provider.id}`, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return parseZionStream(r.text).cards;
   } catch {
     return [];
@@ -125,17 +125,27 @@ export async function runBacktestScanForProvider(
 
 /** Run one specialist (OpenAI-compatible). Returns "" if no provider or on
  *  failure. Logs cost under source "hybrid" with the role in `op`. */
-async function runSpecialist(role: string, provider: ProviderConfig | null, user: string, maxTokens: number, timeoutMs: number): Promise<string> {
+async function runSpecialist(role: string, provider: ProviderConfig | null, user: string, maxTokens: number, timeoutMs: number, extraBody?: Record<string, unknown>): Promise<string> {
   if (!provider?.apiKey) return "";
   try {
     const r = await openaiCompatChat(
-      { model: provider.model, system: ZION_FOUNDATION, user, maxTokens, timeoutMs },
+      { model: provider.model, system: ZION_FOUNDATION, user, maxTokens, timeoutMs, extraBody },
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
-    recordEvent("zion_analysis", { meta: { op: `hybrid_${role}`, model: r.model, source: "hybrid", ...r.usage } });
+    recordEvent("zion_analysis", { meta: { op: `hybrid_${role}`, model: r.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return r.text;
   } catch { return ""; }
 }
+
+/** xAI live-search body — turns Grok from a blind text model into a real-time
+ *  X/news reader for the SENTIMENT seat. Only attached when the sentiment
+ *  provider is actually Grok; other providers ignore/reject unknown fields, so
+ *  we gate it. `mode:"auto"` lets Grok decide when to search; sources scope it
+ *  to X + news (the crowd + the tape), which is exactly the sentiment desk's
+ *  job. Without this, the Grok seat adds noise the CEO has to filter (P0.2). */
+const GROK_SEARCH_BODY: Record<string, unknown> = {
+  search_parameters: { mode: "auto", sources: [{ type: "x" }, { type: "news" }] },
+};
 
 const MACRO_PROMPT = (macroText: string) => [
   "You are the MACRO analyst on ZION's desk. From the macro context below, give a",
@@ -201,27 +211,40 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
   const scanInstruction = await buildScanInstruction(marketData);
   if (!scanInstruction) return [];
   const symbolsCsv = marketData.indicators.map((i) => i.symbol).join(", ");
+  const sentimentProvider = roleProvider("sentiment");
 
-  // Three specialists in PARALLEL — each in its strongest area.
+  // Three specialists in PARALLEL — each in its strongest area. When the
+  // sentiment seat is Grok, attach xAI live-search so it reads the real X/news
+  // tape instead of hallucinating a mood (P0.2).
   const [technical, macro, sentiment] = await Promise.all([
-    runSpecialist("brain",     brain,                    scanInstruction,             2200, 18_000),
-    runSpecialist("macro",     roleProvider("macro"),    MACRO_PROMPT(macroText),      600,  15_000),
-    runSpecialist("sentiment", roleProvider("sentiment"), SENTIMENT_PROMPT(symbolsCsv), 600, 15_000),
+    runSpecialist("brain",     brain,             scanInstruction,             2200, 18_000),
+    runSpecialist("macro",     roleProvider("macro"), MACRO_PROMPT(macroText), 600,  15_000),
+    runSpecialist("sentiment", sentimentProvider, SENTIMENT_PROMPT(symbolsCsv), 600, 15_000,
+      sentimentProvider?.id === "grok" ? GROK_SEARCH_BODY : undefined),
   ]);
   if (!technical.trim()) return []; // no draft to synthesize
 
-  // CEO (Opus) fuses everything into the final cards.
-  try {
-    const ceoModel = process.env.HYBRID_ORCH_MODEL ?? "claude-opus-4-8";
-    const o = await anthropicChat(
-      { model: ceoModel, system: ZION_FOUNDATION, user: buildCeoPrompt(indicatorsText, macro, sentiment, technical), maxTokens: 2200, timeoutMs: 25_000, cacheSystem: true },
-      anthropicKey,
-    );
-    recordEvent("zion_analysis", { meta: { op: "hybrid_ceo", model: o.model, source: "hybrid", ...o.usage } });
-    return parseZionStream(o.text).cards;
-  } catch {
-    return [];
+  // CEO fuses everything into the final cards. Opus is the primary synthesizer,
+  // but it's a SINGLE point of failure — an Opus timeout/error would waste all
+  // three specialist calls and return nothing. So on failure we fall back to
+  // Sonnet (same key, always has credits when Anthropic is up) for the exact
+  // same synthesis (P0.3). Only if BOTH fail do we give up.
+  const ceoPrompt = buildCeoPrompt(indicatorsText, macro, sentiment, technical);
+  const primaryModel  = process.env.HYBRID_ORCH_MODEL ?? "claude-opus-4-8";
+  const fallbackModel = process.env.HYBRID_ORCH_FALLBACK_MODEL ?? modelChain()[0];
+  for (const [model, role] of [[primaryModel, "hybrid_ceo"], [fallbackModel, "hybrid_ceo_fallback"]] as const) {
+    try {
+      const o = await anthropicChat(
+        { model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200, timeoutMs: 25_000, cacheSystem: true },
+        anthropicKey,
+      );
+      recordEvent("zion_analysis", { meta: { op: role, model: o.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...o.usage } });
+      return parseZionStream(o.text).cards;
+    } catch {
+      if (model === fallbackModel) return []; // both CEO attempts failed
+    }
   }
+  return [];
 }
 
 const STABLES = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD", "USDE", "PYUSD"]);
@@ -325,11 +348,17 @@ export interface ResolveResult { checked: number; resolved: number; }
 const BINANCE_DATA = "https://data-api.binance.vision";
 interface Kline { t: number; high: number; low: number; close: number; }
 
-/** Hourly candles for [startMs, endMs] from Binance's non-geoblocked mirror.
+// 5-minute candles (not 1h) for higher intra-bar fidelity in resolution — a
+// target hit at :05 and a stop at :45 of the same hour are now distinguished
+// (was a false stop on the 1h bar). At 5m, limit=1000 covers ~83h from
+// startMs, which spans the 72h suggestion horizon. Zero extra token cost.
+const RESOLVE_INTERVAL = process.env.BACKTEST_RESOLVE_INTERVAL ?? "5m";
+
+/** Candles for [startMs, endMs] from Binance's non-geoblocked mirror.
  *  Empty array on any failure — the caller falls back to a spot check. */
 async function fetchKlines(symbol: string, startMs: number, endMs: number): Promise<Kline[]> {
   try {
-    const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=1h`
+    const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=${RESOLVE_INTERVAL}`
       + `&startTime=${Math.floor(startMs)}&endTime=${Math.ceil(endMs)}&limit=1000`;
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return [];
@@ -365,10 +394,12 @@ function resolveOne(r: ZionSuggestionRow, klines: Kline[], spot: number | undefi
       if (hitStop   && sp != null) return { status: "hit_stop",   outcomePct: pct(sp), price: sp };
       if (hitTarget && tp != null) return { status: "hit_target", outcomePct: pct(tp), price: tp };
     }
+    // Horizon elapsed, NO level touched → "expired" (a real outcome_pct at the
+    // close, but NOT a target/stop hit). Kept separate from wins/losses so the
+    // win-rate isn't inflated by trades that merely drifted (Kimi's point).
     if (nowMs >= horizonMs) {
       const close = window[window.length - 1].close;
-      const op = pct(close);
-      return { status: op > 0.5 ? "win" : op < -0.5 ? "loss" : "neutral", outcomePct: op, price: close };
+      return { status: "expired", outcomePct: pct(close), price: close };
     }
     return null; // in-flight: no level touched yet, horizon not elapsed
   }
@@ -377,10 +408,7 @@ function resolveOne(r: ZionSuggestionRow, klines: Kline[], spot: number | undefi
   if (spot == null || spot <= 0) return null;
   if (tp != null && (dir > 0 ? spot >= tp : spot <= tp)) return { status: "hit_target", outcomePct: pct(tp), price: tp };
   if (sp != null && (dir > 0 ? spot <= sp : spot >= sp)) return { status: "hit_stop",   outcomePct: pct(sp), price: sp };
-  if (nowMs >= horizonMs) {
-    const op = pct(spot);
-    return { status: op > 0.5 ? "win" : op < -0.5 ? "loss" : "neutral", outcomePct: op, price: spot };
-  }
+  if (nowMs >= horizonMs) return { status: "expired", outcomePct: pct(spot), price: spot };
   return null;
 }
 
@@ -431,38 +459,51 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
   return { checked: open.length, resolved };
 }
 
+// Round-trip execution cost subtracted from gross expectancy so the reported
+// edge is NET of fees + slippage (Gemini/DeepSeek). Default ≈ 0.1% taker × 2
+// legs = 0.2%. Override with BACKTEST_COST_PCT.
+const ROUND_TRIP_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100); // ≥100 to trust a comparison
+
 export interface BacktestStats {
   total:       number;
   open:        number;
-  resolved:    number;
-  wins:        number;   // hit_target or win
-  losses:      number;   // hit_stop or loss
-  neutral:     number;
-  winRate:     number | null;   // wins / (wins + losses)
-  avgOutcome:  number | null;   // mean directional outcome_pct of resolved
+  resolved:    number;   // decided (target/stop) + expired
+  wins:        number;   // hit_target (+ legacy "win")
+  losses:      number;   // hit_stop (+ legacy "loss")
+  expired:     number;   // horizon elapsed, no level touched
+  winRate:     number | null;   // wins / (wins + losses) — decided only
+  avgOutcome:  number | null;   // GROSS mean outcome_pct over all resolved
+  expectancyNet: number | null; // NET of round-trip cost — THE headline
+  signalRate:  number | null;   // decided / (decided + expired)
+  sufficientSample: boolean;    // decided >= MIN_SAMPLE (else it's noise)
 }
 
-/** Aggregate win-rate + expectancy across resolved suggestions. */
+/** Aggregate win-rate + NET expectancy across resolved suggestions. */
 export async function getBacktestStats(): Promise<BacktestStats> {
-  const empty: BacktestStats = { total: 0, open: 0, resolved: 0, wins: 0, losses: 0, neutral: 0, winRate: null, avgOutcome: null };
+  const empty: BacktestStats = { total: 0, open: 0, resolved: 0, wins: 0, losses: 0, expired: 0, winRate: null, avgOutcome: null, expectancyNet: null, signalRate: null, sufficientSample: false };
   const db = getSupabaseAdmin();
   if (!db) return empty;
   const { data } = await db.from("zion_suggestions").select("status, outcome_pct");
   if (!data) return empty;
 
-  let open = 0, wins = 0, losses = 0, neutral = 0, sum = 0, resolvedCount = 0;
+  let open = 0, wins = 0, losses = 0, expired = 0, sum = 0, resolvedCount = 0;
   for (const r of data) {
     if (r.status === "open") { open++; continue; }
     resolvedCount++;
     if (typeof r.outcome_pct === "number") sum += r.outcome_pct;
-    if (r.status === "win" || r.status === "hit_target") wins++;
-    else if (r.status === "loss" || r.status === "hit_stop") losses++;
-    else neutral++;
+    if      (r.status === "hit_target" || r.status === "win")  wins++;
+    else if (r.status === "hit_stop"   || r.status === "loss") losses++;
+    else expired++; // "expired" / legacy "neutral"
   }
   const decided = wins + losses;
+  const gross = resolvedCount > 0 ? sum / resolvedCount : null;
   return {
-    total: data.length, open, resolved: resolvedCount, wins, losses, neutral,
-    winRate: decided > 0 ? wins / decided : null,
-    avgOutcome: resolvedCount > 0 ? sum / resolvedCount : null,
+    total: data.length, open, resolved: resolvedCount, wins, losses, expired,
+    winRate:    decided > 0 ? wins / decided : null,
+    avgOutcome: gross,
+    expectancyNet: gross === null ? null : gross - ROUND_TRIP_COST_PCT,
+    signalRate: resolvedCount > 0 ? decided / resolvedCount : null,
+    sufficientSample: decided >= MIN_SAMPLE,
   };
 }

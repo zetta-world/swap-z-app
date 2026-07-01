@@ -4,6 +4,12 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+// Round-trip execution cost (taker fee + slippage, both legs) netted out of
+// expectancy so the panel shows the edge a user actually keeps, not the gross
+// paper edge (P0.1). Mirrors BACKTEST_COST_PCT in backtest.ts. Default 0.2%.
+const ROUND_TRIP_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
+
 /** Shadow-Flywheel stats for the admin Backtest panel: win-rate, expectancy,
  *  breakdown by regime, and the most recent suggestions. */
 export async function GET(): Promise<NextResponse> {
@@ -43,14 +49,21 @@ export async function GET(): Promise<NextResponse> {
     if (win) byRegime[rg].wins++; else if (loss) byRegime[rg].losses++;
   }
   const decided = wins + losses;
+  const gross = resolved > 0 ? sum / resolved : null;
 
   return NextResponse.json({
     total: (all ?? []).length, open, resolved, wins, losses, neutral,
+    expired: neutral, // alias: horizon-elapsed / no-touch (kept `neutral` for back-compat)
     winRate:    decided  > 0 ? wins / decided : null,
     // Expectancy = mean directional outcome per resolved trade — THE headline:
     // it bakes in both how often ZION is right AND how big wins are vs losses.
-    expectancy: resolved > 0 ? sum / resolved : null,
-    avgOutcome: resolved > 0 ? sum / resolved : null, // kept for back-compat
+    expectancy: gross,
+    // NET of round-trip fees + slippage — what the user actually keeps (P0.1).
+    expectancyNet: gross === null ? null : gross - ROUND_TRIP_COST_PCT,
+    // Only trust the numbers once the decided sample clears the noise floor.
+    sufficientSample: decided >= MIN_SAMPLE,
+    signalRate: resolved > 0 ? decided / resolved : null, // decided / all resolved
+    avgOutcome: gross, // kept for back-compat
     avgWin:     wins   > 0 ? winSum  / wins   : null,
     avgLoss:    losses > 0 ? lossSum / losses : null,  // negative
     // Profit factor = gross gains / gross losses. >1 = net profitable.

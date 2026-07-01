@@ -30,17 +30,17 @@
 ### P0 — barato + muda a validade da medição
 | ID | Item | Por quê | Fonte | Status |
 |----|------|---------|-------|--------|
-| P0.1 | **Expectancy LÍQUIDA** (subtrair fee taker + slippage estimado do `outcome_pct`) | Sem descontar custo, o edge do backtest é inflado vs realidade. A #1. | Gemini, DeepSeek | 🔴 |
-| P0.2 | **Grok cego** — ligar live-search nativo do X OU tirar o Grok da Ferrari até o pipeline existir | Especialista sem dado real do X adiciona ruído que o CEO filtra | Kimi, DeepSeek | 🔴 |
-| P0.3 | **Fallback do CEO** — se Opus falhar, Sonnet (ou vencedor do torneio) assume a síntese | Opus é ponto único de falha; sem fallback, todo o Agente B vira lixo no timeout | Gemini, DeepSeek, Kimi | 🔴 |
+| P0.1 | **Expectancy LÍQUIDA** (subtrair fee taker + slippage estimado do `outcome_pct`) | Sem descontar custo, o edge do backtest é inflado vs realidade. A #1. | Gemini, DeepSeek | 🟢 `ROUND_TRIP_COST_PCT` (env `BACKTEST_COST_PCT`, def 0.2%) em `getBacktestStats` + rota admin + painel mostra NET (gross ao lado) |
+| P0.2 | **Grok cego** — ligar live-search nativo do X OU tirar o Grok da Ferrari até o pipeline existir | Especialista sem dado real do X adiciona ruído que o CEO filtra | Kimi, DeepSeek | 🟢 `GROK_SEARCH_BODY` (`search_parameters` X+news) passado via `extraBody` quando o assento sentimento é Grok |
+| P0.3 | **Fallback do CEO** — se Opus falhar, Sonnet (ou vencedor do torneio) assume a síntese | Opus é ponto único de falha; sem fallback, todo o Agente B vira lixo no timeout | Gemini, DeepSeek, Kimi | 🟢 loop primário Opus → fallback Sonnet (`HYBRID_ORCH_FALLBACK_MODEL`) em `runHybridScan`; só desiste se ambos falharem |
 
 ### P1 — barato, honestidade estatística
 | ID | Item | Por quê | Fonte | Status |
 |----|------|---------|-------|--------|
-| P1.4 | **Resolução em 5min** (não 1h) no replay de velas | 1h esconde ordem intra-barra (target :05, stop :45 → marca stop injusto). 5min cabe em 1 request, custo zero | Gemini, Kimi, DeepSeek | 🔴 |
-| P1.5 | **Amostra mínima ≥100** (não 30) pra comparação; ≥300 pra decisão final | 30 é ruído estatístico (erro-padrão ~1.5% com σ 8%) | Gemini, DeepSeek, Kimi | 🔴 |
-| P1.6 | **Separar `Resolved` vs `Expired`** na resolução | "win direcional" por close infla win-rate *(nuance: expectancy já é justa; só o win-rate infla)* | Kimi | 🔴 |
-| P1.7 | **Version stamping** — gravar versão do prompt (`ZION_FOUNDATION_vX`) e modelo com data em `zion_suggestions` | Depurar variação de performance ao longo do tempo | DeepSeek | 🔴 |
+| P1.4 | **Resolução em 5min** (não 1h) no replay de velas | 1h esconde ordem intra-barra (target :05, stop :45 → marca stop injusto). 5min cabe em 1 request, custo zero | Gemini, Kimi, DeepSeek | 🟢 `RESOLVE_INTERVAL="5m"` (env `BACKTEST_RESOLVE_INTERVAL`), limit=1000 ≈83h cobre horizonte 72h |
+| P1.5 | **Amostra mínima ≥100** (não 30) pra comparação; ≥300 pra decisão final | 30 é ruído estatístico (erro-padrão ~1.5% com σ 8%) | Gemini, DeepSeek, Kimi | 🟢 `MIN_SAMPLE=100` (env `BACKTEST_MIN_SAMPLE`) → `sufficientSample`; painel mostra ⚠ AMOSTRA PEQUENA |
+| P1.6 | **Separar `Resolved` vs `Expired`** na resolução | "win direcional" por close infla win-rate *(nuance: expectancy já é justa; só o win-rate infla)* | Kimi | 🟢 `resolveOne` retorna status `expired` (não win/loss) no fim do horizonte; win-rate = só decididos, `signalRate` = decididos/resolvidos |
+| P1.7 | **Version stamping** — gravar versão do prompt (`ZION_FOUNDATION_vX`) e modelo com data em `zion_suggestions` | Depurar variação de performance ao longo do tempo | DeepSeek | 🟢 `ZION_FOUNDATION_VERSION="ZION_FOUNDATION_v1"` em todos os metas de `recordEvent` (`promptVersion`) |
 
 ### P2 — maior, alto valor (depois dos P0/P1)
 | ID | Item | Por quê | Fonte | Status |
@@ -66,11 +66,24 @@
 
 ---
 
-## 2. O que vou implementar NESTA rodada
+## 2. O que foi implementado NESTA rodada ✅
 
-**P0.1, P0.2, P0.3 + P1.4, P1.5, P1.6, P1.7** — todos de baixo risco, deixam o
-flywheel **honesto de verdade** antes de acumular dados. Marcar cada um 🟢 aqui
-conforme entregue.
+**P0.1, P0.2, P0.3 + P1.4, P1.5, P1.6, P1.7 — TODOS 🟢 entregues.** O flywheel
+agora é **honesto de verdade** antes de acumular dados: expectancy líquida de
+custo, Grok vendo o X real, CEO com fallback, resolução 5min, amostra ≥100,
+expired separado de win/loss, e cada evento carimbado com a versão do prompt.
+`npx tsc --noEmit` limpo.
+
+**Arquivos tocados:**
+- `src/lib/zion/foundation.ts` — `ZION_FOUNDATION_VERSION`
+- `src/lib/zion/backtest.ts` — cost/sample consts, `expired`, `expectancyNet`,
+  `signalRate`, `sufficientSample`, `GROK_SEARCH_BODY`, fallback do CEO, stamping
+- `src/lib/ai/provider.ts` — `extraBody` no `ChatRequest` + spread no fetch
+- `src/app/admin/api/backtest/route.ts` — `expectancyNet`/`expired`/`sufficientSample`
+- `src/components/admin/panels/BacktestPanel.tsx` — headline NET + ⚠ amostra pequena
 
 **Deixar pra próxima rodada:** P2 (portfólio, on-chain, replay, circuit breaker,
-budget cap) e Z7 (data-gated).
+budget cap) e Z7 (data-gated pós-11/07).
+
+> ⚠️ **Pré-11/07 (antes de ligar `HYBRID_B_ENABLED`):** confirmar preço real do
+> Opus 4.8 e alinhar `ai-cost.ts` (doc diz $5/$25, código tem tier $15/$75).

@@ -37,6 +37,9 @@ export interface ChatRequest {
   maxTokens:   number;
   timeoutMs?:  number;   // default 40s
   cacheSystem?: boolean; // Anthropic prompt caching on the system block
+  /** Vendor-specific extra body fields for OpenAI-compat calls — e.g. xAI's
+   *  `search_parameters` to enable Grok's native live X/news search. */
+  extraBody?:  Record<string, unknown>;
 }
 
 const DEFAULT_TIMEOUT = 40_000;
@@ -84,6 +87,7 @@ export async function openaiCompatChat(
           { role: "system", content: req.system },
           { role: "user",   content: req.user },
         ],
+        ...(req.extraBody ?? {}),
       }),
       signal: ctrl.signal,
     });

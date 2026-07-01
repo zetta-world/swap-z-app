@@ -11,8 +11,11 @@ type Recent = {
 };
 type BT = {
   total: number; open: number; resolved: number; wins: number; losses: number; neutral: number;
+  expired?: number;
   winRate: number | null; avgOutcome: number | null;
-  expectancy: number | null; avgWin: number | null; avgLoss: number | null;
+  expectancy: number | null; expectancyNet?: number | null;
+  sufficientSample?: boolean; signalRate?: number | null;
+  avgWin: number | null; avgLoss: number | null;
   profitFactor: number | null; avgRR: number | null;
   byRegime: Record<string, { wins: number; losses: number }>;
   recent: Recent[];
@@ -71,14 +74,34 @@ export default function BacktestPanel() {
 
       {data && tab === "stats" && (
         <div>
-          {/* Headline: EXPECTANCY — the true edge (bakes in win-rate × size of
-              wins vs losses). A 50% win-rate with R:R<1 is still negative. */}
-          <div className="adm-stat" style={{ padding: "6px 0" }}>
-            <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>EXPECTANCY / TRADE</span>
-            <span style={{ fontSize: 18, color: data.expectancy == null ? "var(--adm-ink-3)" : data.expectancy >= 0 ? "var(--adm-green)" : "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>
-              {data.expectancy == null ? "—" : `${data.expectancy >= 0 ? "+" : ""}${data.expectancy.toFixed(2)}%`}
-            </span>
-          </div>
+          {/* Headline: NET EXPECTANCY — the true edge AFTER fees + slippage
+              (bakes in win-rate × size of wins vs losses, minus round-trip
+              cost). A 50% win-rate with R:R<1, or a thin gross edge eaten by
+              fees, is still negative. Gross shown beside it for reference. */}
+          {(() => {
+            const net = data.expectancyNet ?? data.expectancy;
+            return (
+              <div className="adm-stat" style={{ padding: "6px 0" }}>
+                <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>
+                  NET EXPECTANCY / TRADE
+                  {data.expectancy != null && data.expectancyNet != null && (
+                    <span style={{ color: "var(--adm-ink-3)", opacity: 0.7 }}>{"  "}(gross {data.expectancy >= 0 ? "+" : ""}{data.expectancy.toFixed(2)}%)</span>
+                  )}
+                </span>
+                <span style={{ fontSize: 18, color: net == null ? "var(--adm-ink-3)" : net >= 0 ? "var(--adm-green)" : "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>
+                  {net == null ? "—" : `${net >= 0 ? "+" : ""}${net.toFixed(2)}%`}
+                </span>
+              </div>
+            );
+          })()}
+          {/* Sample-size honesty: below the noise floor, the edge isn't
+              trustworthy yet — flag it instead of letting a lucky 12-trade run
+              read as signal (P1.5). */}
+          {data.sufficientSample === false && (
+            <div style={{ fontSize: 8, color: "var(--adm-gold)", letterSpacing: "0.04em", marginBottom: 4 }}>
+              ⚠ AMOSTRA PEQUENA — {data.wins + data.losses} trades decididos, ainda ruído estatístico
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, margin: "6px 0 4px" }}>
             <Mini label="AVG R:R"        value={data.avgRR == null ? "—" : data.avgRR.toFixed(2)}
                   color={data.avgRR == null ? "var(--adm-ink-3)" : data.avgRR >= 1.5 ? "var(--adm-green)" : data.avgRR >= 1 ? "var(--adm-gold)" : "var(--adm-red)"} />
@@ -99,7 +122,7 @@ export default function BacktestPanel() {
             <tbody>
               <tr><td style={{ color: "var(--adm-green)" }}>wins</td><td>{data.wins}</td>
                   <td style={{ color: "var(--adm-red)" }}>losses</td><td>{data.losses}</td></tr>
-              <tr><td style={{ color: "var(--adm-gold)" }}>neutral</td><td>{data.neutral}</td>
+              <tr><td style={{ color: "var(--adm-gold)" }}>expired</td><td>{data.expired ?? data.neutral}</td>
                   <td style={{ color: "var(--adm-ink-3)" }}>open</td><td>{data.open}</td></tr>
             </tbody>
           </table>
