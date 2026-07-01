@@ -12,6 +12,7 @@
 
 import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
 import { roleProvider, type ProviderConfig } from "@/lib/ai/registry";
+import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
@@ -109,6 +110,9 @@ export async function runBacktestScanForProvider(
   provider: ProviderConfig,
 ): Promise<ActionCard[]> {
   if (!provider.apiKey) return [];
+  // Circuit breaker: skip a provider that's tripped (broken key / dead endpoint)
+  // instead of burning a call + firing an alert every tick (P2.11).
+  if (await isTripped(provider.id)) return [];
   const instruction = await buildScanInstruction(marketData);
   if (!instruction) return [];
   try {
@@ -116,9 +120,11 @@ export async function runBacktestScanForProvider(
       { model: provider.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000 },
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
+    await recordResult(provider.id, provider.label, true);
     recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: `backtest_${provider.id}`, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return parseZionStream(r.text).cards;
   } catch {
+    await recordResult(provider.id, provider.label, false);
     return [];
   }
 }
@@ -127,14 +133,16 @@ export async function runBacktestScanForProvider(
  *  failure. Logs cost under source "hybrid" with the role in `op`. */
 async function runSpecialist(role: string, provider: ProviderConfig | null, user: string, maxTokens: number, timeoutMs: number, extraBody?: Record<string, unknown>): Promise<string> {
   if (!provider?.apiKey) return "";
+  if (await isTripped(provider.id)) return ""; // breaker open — degrade to "(none)" (P2.11)
   try {
     const r = await openaiCompatChat(
       { model: provider.model, system: ZION_FOUNDATION, user, maxTokens, timeoutMs, extraBody },
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
+    await recordResult(provider.id, provider.label, true);
     recordEvent("zion_analysis", { meta: { op: `hybrid_${role}`, model: r.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return r.text;
-  } catch { return ""; }
+  } catch { await recordResult(provider.id, provider.label, false); return ""; }
 }
 
 /** xAI live-search body — turns Grok from a blind text model into a real-time

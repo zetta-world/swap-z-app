@@ -7,7 +7,7 @@
 import {
   ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3,
   Shield, Vote, Wallet, Settings, Activity, Banknote, CreditCard,
-  Handshake, Users, Gem, Info, History, Building2, LayoutDashboard,
+  Handshake, Users, Gem, Info, History, Building2, LayoutDashboard, Crown,
 } from "lucide-react";
 import { type MessageKey } from "@/lib/i18n";
 
@@ -41,7 +41,11 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/launchpad", labelKey: "nav.launchpad",  icon: Rocket,          group: "build" },
   { href: "/governance", labelKey: "nav.governance", icon: Vote,           group: "build" },
   { href: "/about",     labelKey: "nav.about",      icon: Info,            group: "build" },
-  { href: "/pricing",   labelKey: "nav.pricing",    icon: CreditCard,      group: "build", badgeKey: "nav.badgeNew", badgeTone: "new" },
+  // Two distinct plan surfaces — kept as SEPARATE nav entries so users see the
+  // launch offer (NFT, one-time, the gods) apart from the recurring monthly
+  // offer (the warriors, +30%). /plans was previously orphaned (no nav link).
+  { href: "/pricing",   labelKey: "nav.pricing",    icon: Crown,           group: "build", badgeKey: "nav.badgeNew", badgeTone: "new" },
+  { href: "/plans",     labelKey: "nav.plans",      icon: CreditCard,      group: "build" },
   { href: "/enterprise", labelKey: "nav.enterprise", icon: Building2,       group: "build" },
 
   { href: "/dashboard", labelKey: "nav.dashboard",  icon: LayoutDashboard, group: "manage", badgeKey: "nav.badgeNew", badgeTone: "new" },

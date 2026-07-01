@@ -33,6 +33,20 @@
 | C7 | Registrar 2 módulos novos (`tournament`, `ai-controls`) em `modules.ts` + `DashboardClient` | 🟢 |
 | C8 | FINANCE deixar EXPLÍCITO que o gasto é **estimativa** (label "≈ EST.") | 🟢 |
 
+## 1b. Rodada seguinte — "deixar rodando liso" (não depende de dados)
+
+| ID | Item | Status |
+|----|------|--------|
+| C9 | **Separar nav: Planos de Lançamento vs Planos Mensais** — `/plans` (guerreiros, mensal) estava ÓRFÃO no menu; só `/pricing` (deuses, NFT) aparecia. Agora são 2 entradas distintas (ícone 👑 lançamento, 💳 mensal) em 4 idiomas | 🟢 `nav-items.ts` + `messages.ts` |
+| C10 | **Circuit breaker por provedor** (P2.11) — chave morta (Grok/Kimi) é pulada após N falhas em vez de ser chamada e alertar todo tick | 🟢 `circuit.ts` |
+| C11 | **Budget auto-kill** (P2.12) — 24h > teto → pausa o torneio sozinho + alerta | 🟢 `watchdog.ts` (`ALERT_AI_KILL_USD` def $30) |
+
+> **Deferido (depende de dados de teste ou do Agent B ligado):** P2.8 risco de
+> portfólio (precisa posições reais), P2.9 on-chain na Ferrari (precisa Agent B
+> + feed `Trade[]` por símbolo), P2.10 replay histórico (gasta token + é coleta
+> de dados), Z7 calibração (precisa ledger). Auditoria completa: 46 itens DONE,
+> ~14 pendentes (a maioria data-gated).
+
 ## 2. Pendente / do lado do CEO (não é código)
 
 - **Corrigir ou remover `XAI_API_KEY` e `KIMI_API_KEY`** — estão sendo rejeitadas.

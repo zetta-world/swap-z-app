@@ -45,11 +45,11 @@
 ### P2 — maior, alto valor (depois dos P0/P1)
 | ID | Item | Por quê | Fonte | Status |
 |----|------|---------|-------|--------|
-| P2.8 | **Risco de PORTFÓLIO** (correlação + beta agregado vs BTC + concentração) além do `price-guard` por-trade | 3 longs correlacionados passam no cap individual mas a carteira fica 1.5x beta BTC | Gemini, DeepSeek, Kimi | 🔴 |
-| P2.9 | **Especialista on-chain na Ferrari** — plugar o E4 (smart-money/fluxo) como voz do CEO | Pra uma DEX, fluxo on-chain é sinal-chave; hoje ninguém olha a blockchain na Ferrari | Gemini, DeepSeek, Kimi | 🔴 |
-| P2.10 | **Replay histórico (walk-forward)** — rodar os agentes sobre 3-6 meses de klines passados | Flywheel é forward-only (semanas); replay dá baseline rápido + detecta overfit | Kimi, DeepSeek, GPT | 🔴 |
-| P2.11 | **Circuit breaker de provedor** — após N falhas, remove o modelo da orquestração + alerta | Resiliência: DeepSeek/Kimi têm outages; hoje só degrada silencioso | DeepSeek, Kimi | 🔴 |
-| P2.12 | **Budget cap com auto-kill** — desabilitar agente de baixa prioridade se passar do teto $/dia | Hoje o alerta existe mas não corta | Gemini, DeepSeek, Kimi | 🔴 |
+| P2.8 | **Risco de PORTFÓLIO** (correlação + beta agregado vs BTC + concentração) além do `price-guard` por-trade | 3 longs correlacionados passam no cap individual mas a carteira fica 1.5x beta BTC | Gemini, DeepSeek, Kimi | ⏸️ depende de posições reais (dados) |
+| P2.9 | **Especialista on-chain na Ferrari** — plugar o E4 (smart-money/fluxo) como voz do CEO | Pra uma DEX, fluxo on-chain é sinal-chave; hoje ninguém olha a blockchain na Ferrari | Gemini, DeepSeek, Kimi | ⏸️ deferido p/ quando Agent B ligar (11/07). `analyzeSmartMoney` precisa de `Trade[]` por símbolo — integração de dados, não 1-linha; zero valor com Agent B OFF |
+| P2.10 | **Replay histórico (walk-forward)** — rodar os agentes sobre 3-6 meses de klines passados | Flywheel é forward-only (semanas); replay dá baseline rápido + detecta overfit | Kimi, DeepSeek, GPT | ⏸️ gasta token (Anthropic sem crédito) + é coleta de dados |
+| P2.11 | **Circuit breaker de provedor** — após N falhas, remove o modelo da orquestração + alerta | Resiliência: DeepSeek/Kimi têm outages; hoje só degrada silencioso | DeepSeek, Kimi | 🟢 `circuit.ts` (`isTripped`/`recordResult`, admin_kv `cb:<id>`, `AI_CB_THRESHOLD`/`AI_CB_COOLDOWN_MIN`); torneio + specialists pulam provedor tripado |
+| P2.12 | **Budget cap com auto-kill** — desabilitar agente de baixa prioridade se passar do teto $/dia | Hoje o alerta existe mas não corta | Gemini, DeepSeek, Kimi | 🟢 watchdog: `ALERT_AI_KILL_USD` (def $30) auto-liga `pause_tournament` + alerta; CEO reabre no painel |
 
 ### Planejado / data-gated
 | ID | Item | Status |

@@ -14,7 +14,8 @@ import { getFlywheelGates } from "@/lib/admin/gates";
  */
 const ERROR_SPIKE  = Number(process.env.ALERT_ERROR_SPIKE   ?? 10);  // errors / 10min
 const SEC_FLOOD    = Number(process.env.ALERT_SEC_FLOOD     ?? 5);   // high-sev / 10min
-const AI_BUDGET    = Number(process.env.ALERT_AI_BUDGET_USD ?? 20);  // $ / 24h
+const AI_BUDGET    = Number(process.env.ALERT_AI_BUDGET_USD ?? 20);  // $ / 24h → alert only
+const AI_KILL      = Number(process.env.ALERT_AI_KILL_USD   ?? 30);  // $ / 24h → auto-pause tournament (0 = off)
 const LARGE_OP     = Number(process.env.ALERT_LARGE_OP_USD  ?? 5000);// $ single op
 const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75, radar: 5 };
 
@@ -87,6 +88,20 @@ export async function runAlertWatchdog(): Promise<void> {
     }
     if (aiCost > AI_BUDGET && await dedupOk("ai_budget", 86_400_000)) {
       notifyTelegram(`💸 <b>AI cost</b> in 24h is $${aiCost.toFixed(2)} — over the $${AI_BUDGET} budget.`);
+    }
+    // Budget cap with AUTO-KILL (P2.12). The alert above is advisory; this is
+    // the circuit that actually cuts spend. If the 24h estimate blows past the
+    // hard cap, auto-pause the tournament (the biggest non-Anthropic spender)
+    // by flipping its admin_kv gate — the same switch the AI Controls panel
+    // drives — so a runaway loop can't drain the budget between operator
+    // check-ins. The CEO re-enables it in the panel. Set ALERT_AI_KILL_USD=0
+    // to disable. Never auto-touches Agent A / Agent B — only the tournament.
+    if (AI_KILL > 0 && aiCost > AI_KILL) {
+      const { data: gate } = await db.from("admin_kv").select("value").eq("key", "pause_tournament").maybeSingle();
+      if (gate?.value !== "true") {
+        await db.from("admin_kv").upsert({ key: "pause_tournament", value: "true", updated_at: new Date().toISOString() }, { onConflict: "key" });
+        notifyTelegram(`🛑 <b>AI budget KILL</b> — 24h estimate $${aiCost.toFixed(2)} over the $${AI_KILL} hard cap. Tournament AUTO-PAUSED. Re-enable in AI Controls when ready.`);
+      }
     }
 
     // 5. Large operations
