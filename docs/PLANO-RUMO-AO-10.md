@@ -23,7 +23,7 @@
 |----|------|--------|
 | R2.1 | Security headers no `next.config` (CSP, HSTS, X-Frame-Options, Referrer-Policy) | 🟢 **JÁ EXISTIA** — CSP completa + HSTS preload + COOP/COEP + Permissions-Policy (a auditoria subestimou; nota de segurança revisada pra cima) |
 | R2.2 | Dependabot + `npm audit` no CI | 🟢 `.github/dependabot.yml` (semanal, agrupado) + step `npm audit --audit-level=high` (warn, não bloqueia) |
-| R2.3 | RLS: fechar gap + documentar default-deny | 🟢 código: `0014_rls_rate_limits.sql` (única tabela sem RLS era `rate_limits`). ⚠️ **aplicar no banco vivo**: MCP falhou 2x (stream de permissão) — rodar o SQL de 1 linha no editor do Supabase |
+| R2.3 | RLS: fechar gap + documentar default-deny | 🟢 aplicado no banco vivo em 02/07 e VERIFICADO: 13/13 tabelas com `rowsecurity=true` (migration `0014` no repo) |
 | R2.4 | Filtro por agente (source) no painel BACKTEST | 🟢 `?source=` na rota (whitelist regex) + chips ALL/A·ZION/B·FERRARI/RADAR/modelos no painel |
 
 ## RODADA 3 — docs/qualidade

@@ -18,6 +18,7 @@
 | `NFT-BRIEFING.md` | Supply/preços/decisões da coleção (aguarda §7 do founder) |
 | `TESTE-DINHEIRO-REAL.md` | Protocolo do teste com dinheiro real (pós-11/07) |
 | `GOLDEN-SET.md` | Cenários de avaliação de prompt (executar pós-crédito) |
+| `ANALISE-DADOS-01.md` | Baseline da 1ª leva do flywheel (28/06→01/07) + hipóteses H1-H4 |
 
 ## 📚 Históricos — contexto, não atualizar
 
