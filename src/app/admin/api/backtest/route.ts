@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -11,19 +11,27 @@ const ROUND_TRIP_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
 const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
 
 /** Shadow-Flywheel stats for the admin Backtest panel: win-rate, expectancy,
- *  breakdown by regime, and the most recent suggestions. */
-export async function GET(): Promise<NextResponse> {
+ *  breakdown by regime, and the most recent suggestions. Optional `?source=`
+ *  filter (R2.4) so the headline can be read PER AGENT (self_scan /
+ *  hybrid_scan / <provider>_scan / radar) instead of everything blended. */
+export async function GET(req: NextRequest): Promise<NextResponse> {
   await requireAdmin();
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
-  const [{ data: all }, { data: recent }] = await Promise.all([
-    db.from("zion_suggestions").select("status, outcome_pct, regime, entry_price, target_price, stop_price"),
-    db.from("zion_suggestions")
-      .select("symbol, side, status, outcome_pct, probability, regime, created_at")
-      .order("created_at", { ascending: false })
-      .limit(40),
-  ]);
+  // Whitelist shape (letters/digits/underscore, short) — never pass raw user
+  // input into a filter, even behind requireAdmin.
+  const rawSource = req.nextUrl.searchParams.get("source") ?? "";
+  const source = /^[a-z0-9_]{1,32}$/.test(rawSource) ? rawSource : null;
+
+  let allQ = db.from("zion_suggestions").select("status, outcome_pct, regime, entry_price, target_price, stop_price");
+  let recentQ = db.from("zion_suggestions")
+    .select("symbol, side, status, outcome_pct, probability, regime, created_at")
+    .order("created_at", { ascending: false })
+    .limit(40);
+  if (source) { allQ = allQ.eq("source", source); recentQ = recentQ.eq("source", source); }
+
+  const [{ data: all }, { data: recent }] = await Promise.all([allQ, recentQ]);
 
   let open = 0, wins = 0, losses = 0, neutral = 0, resolved = 0, sum = 0;
   let winSum = 0, lossSum = 0;          // for avg win / avg loss + profit factor
@@ -71,6 +79,7 @@ export async function GET(): Promise<NextResponse> {
     avgRR:      rrCount > 0 ? rrSum / rrCount : null,
     byRegime,
     recent: recent ?? [],
+    source, // null = all agents blended
     fetchedAt: new Date().toISOString(),
   });
 }

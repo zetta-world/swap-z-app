@@ -37,21 +37,35 @@ function statusColor(s: string): string {
   return "var(--adm-gold)"; // neutral / expired
 }
 
+// Per-agent filter (R2.4): read the SAME headline for one agent instead of
+// everything blended. Values mirror the `source` column in zion_suggestions.
+const SOURCES: { value: string; label: string }[] = [
+  { value: "",            label: "ALL" },
+  { value: "self_scan",   label: "A·ZION" },
+  { value: "hybrid_scan", label: "B·FERRARI" },
+  { value: "radar",       label: "RADAR" },
+  { value: "mistral_scan",  label: "MISTRAL" },
+  { value: "deepseek_scan", label: "DEEPSEEK" },
+  { value: "kimi_scan",     label: "KIMI" },
+  { value: "grok_scan",     label: "GROK" },
+];
+
 export default function BacktestPanel() {
   const [data, setData] = useState<BT | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"stats" | "feed">("stats");
+  const [source, setSource] = useState("");
   const realtime = useAdminRealtime();
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/admin/api/backtest");
+      const res = await fetch(`/admin/api/backtest${source ? `?source=${source}` : ""}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.status);
       setData(json); setError(null);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
-  }, []);
+  }, [source]);
 
   useEffect(() => {
     load();
@@ -61,10 +75,21 @@ export default function BacktestPanel() {
 
   return (
     <TerminalPanel id="backtest" title="BACKTEST" subtitle="ZION win-rate · expectancy" icon="◇" source="supabase/zion_suggestions">
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
         {(["stats", "feed"] as const).map((t) => (
           <button key={t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
             {t.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      {/* Agent filter — same stats, one agent at a time (R2.4). */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
+        {SOURCES.map((s) => (
+          <button key={s.value}
+            className={`adm-toggle ${source === s.value ? "active" : ""}`}
+            style={{ fontSize: 8, padding: "2px 6px" }}
+            onClick={() => { setSource(s.value); setLoading(true); }}>
+            {s.label}
           </button>
         ))}
       </div>

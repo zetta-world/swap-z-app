@@ -31,3 +31,9 @@ jobs:
         run: npm run type-check
       - name: Unit tests
         run: npm test
+      # Advisory scan — WARNS (doesn't block) so a new upstream advisory with
+      # no fix released yet can't freeze deploys; the step turns yellow and
+      # the operator triages. Dependabot opens the fix PR when one exists.
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high
+        continue-on-error: true

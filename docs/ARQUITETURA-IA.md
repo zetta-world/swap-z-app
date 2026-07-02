@@ -345,3 +345,50 @@ vão pro modelo. O modelo devolve **ACTION CARDS** em blocos `[[ACTION]]{json}[[
 
 **Resumo:** o LLM recebe um retrato numérico rico e devolve uma tese + níveis; o
 CÓDIGO calcula os indicadores, o score, e faz TODA a matemática de risco/execução.
+
+---
+
+## Anexo B — Diagrama da arquitetura (R3.2)
+
+```mermaid
+flowchart TD
+    subgraph CRON["cron-job.org (agendador único)"]
+        C1["/api/radar · 1min"]
+        C2["/api/zion/backtest · 30min"]
+        C3["/api/autopilot/cron · 5min"]
+    end
+
+    subgraph GATES["admin_kv (painel AI CONTROLS)"]
+        G1["pause_backtest / pause_agent_a / pause_agent_b / pause_tournament"]
+        G2["circuit breaker cb:&lt;provider&gt;"]
+        G3["lock:backtest_tick (anti-double-fire)"]
+    end
+
+    C1 -->|"preço moveu ≥1.5%?"| RADAR["Radar T3 — lê mercado SEM token"]
+    RADAR -->|"trigger"| BRAIN["hybridBrain (DeepSeek/Mistral)"]
+
+    C2 --> LOCK{G3 lock ok?}
+    LOCK -->|"sim"| IND["market-indicators (RSI/MACD/ATR/ADX/regime/score)"]
+    IND --> A["AGENT A · ZION\nSonnet sozinho (self_scan)"]
+    IND --> B["AGENT B · FERRARI (hybrid_scan)"]
+    IND --> T["TORNEIO — cada modelo cru\n(mistral_scan, deepseek_scan, …)"]
+
+    subgraph FERRARI["Agent B — orquestração"]
+        MACRO["Kimi · macro"] --> CEO["Opus 4.8 · CEO\n(fallback: Sonnet)"]
+        SENT["Grok · sentimento\n(live-search X+news)"] --> CEO
+        TECH["DeepSeek · draft técnico"] --> CEO
+    end
+    B --> FERRARI
+
+    A -->|"JSON schema forçado"| CARDS["extractCards → extractSuggestion\n(guarda de escala + geometria R:R)"]
+    CEO -->|"JSON schema forçado"| CARDS
+    T -->|"parser tolerante"| CARDS
+
+    CARDS --> LEDGER[("zion_suggestions\nsource = quem gerou")]
+    LEDGER --> RESOLVE["resolveOpenSuggestions\nvelas 5min · first-touch · stop-first\nexpired ≠ win/loss"]
+    RESOLVE --> STATS["expectancy LÍQUIDA · win-rate · signalRate"]
+    STATS --> PANEL["Painéis BACKTEST (filtro por agente) + TOURNAMENT (ranking)"]
+
+    C3 --> WD["watchdog — alertas Telegram\nbudget auto-kill (pausa torneio)"]
+    GATES -.->|"lidos a cada tick"| C2
+```

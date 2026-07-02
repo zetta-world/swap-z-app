@@ -21,19 +21,19 @@
 
 | ID | Item | Status |
 |----|------|--------|
-| R2.1 | Security headers no `next.config` (CSP, HSTS, X-Frame-Options, Referrer-Policy) | 🔴 |
-| R2.2 | Dependabot + `npm audit` no CI | 🔴 |
-| R2.3 | Policies RLS explícitas (migration documentando o default-deny intencional) | 🔴 |
-| R2.4 | Filtro por agente (source) no painel BACKTEST | 🔴 |
+| R2.1 | Security headers no `next.config` (CSP, HSTS, X-Frame-Options, Referrer-Policy) | 🟢 **JÁ EXISTIA** — CSP completa + HSTS preload + COOP/COEP + Permissions-Policy (a auditoria subestimou; nota de segurança revisada pra cima) |
+| R2.2 | Dependabot + `npm audit` no CI | 🟢 `.github/dependabot.yml` (semanal, agrupado) + step `npm audit --audit-level=high` (warn, não bloqueia) |
+| R2.3 | RLS: fechar gap + documentar default-deny | 🟢 código: `0014_rls_rate_limits.sql` (única tabela sem RLS era `rate_limits`). ⚠️ **aplicar no banco vivo**: MCP falhou 2x (stream de permissão) — rodar o SQL de 1 linha no editor do Supabase |
+| R2.4 | Filtro por agente (source) no painel BACKTEST | 🟢 `?source=` na rota (whitelist regex) + chips ALL/A·ZION/B·FERRARI/RADAR/modelos no painel |
 
 ## RODADA 3 — docs/qualidade
 
 | ID | Item | Status |
 |----|------|--------|
-| R3.1 | `CLAUDE.md` na raiz (mapa do repo p/ qualquer dev/IA futuro) | 🔴 |
-| R3.2 | Poda/arquivamento de docs obsoletos + diagrama Mermaid no ARQUITETURA-IA | 🔴 |
-| R3.3 | Golden set de avaliação de prompts (~20 cenários; rodar a cada mudança de prompt) | 🔴 |
-| R3.4 | Polimento mobile dos painéis admin | 🔴 |
+| R3.1 | `CLAUDE.md` na raiz (mapa do repo p/ qualquer dev/IA futuro) | 🟢 |
+| R3.2 | Poda/arquivamento de docs obsoletos + diagrama Mermaid no ARQUITETURA-IA | 🟢 `docs/README.md` (índice vivos × históricos) + Anexo B (diagrama) |
+| R3.3 | Golden set de avaliação de prompts (~20 cenários; rodar a cada mudança de prompt) | 🟢 `docs/GOLDEN-SET.md` (20 cenários + propriedades checáveis) · execução ⏸️ pós-crédito (~$0.15) |
+| R3.4 | Polimento mobile dos painéis admin | ⏸️ preciso de prints do CEO dos painéis que quebram no celular — mudar CSS às cegas sem verificação visual é risco, não melhoria |
 
 ## Fora de código (o resto do caminho até 10)
 - ⏸️ Dados 11/07+: Z7 calibração, P2.8 portfólio, P2.10 replay, decisão A/B/torneio.

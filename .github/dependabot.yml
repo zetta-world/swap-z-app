@@ -1,0 +1,19 @@
+# R2.2 — automated dependency updates. Weekly, grouped, low-noise:
+# security updates arrive as soon as an advisory drops; version bumps come
+# once a week in grouped PRs so the solo operator isn't flooded.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
