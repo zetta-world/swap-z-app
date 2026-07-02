@@ -150,7 +150,7 @@ function WarriorCard({ plan, solUsd, features, model, t, highlighted }: {
   t: (k: MessageKey) => string; highlighted?: boolean;
 }) {
   const a = ACCENT[ACCENT_BY_TIER[plan.tier]];
-  const monthlyUsd = normalMonthlyUsd(plan.usdTarget);
+  const monthlyUsd = normalMonthlyUsd(plan);
   const monthlySol = solUsd ? usdToSol(monthlyUsd, solUsd) : null;
 
   return (
@@ -190,7 +190,7 @@ function WarriorCard({ plan, solUsd, features, model, t, highlighted }: {
 
         {/* Monthly price (USD-pegged) */}
         <div className="mt-3 text-center">
-          <span className="font-display font-extrabold text-2xl text-ink">${monthlyUsd.toFixed(2)}</span>
+          <span className="font-display font-extrabold text-2xl text-ink">${monthlyUsd % 1 === 0 ? monthlyUsd.toLocaleString("en-US") : monthlyUsd.toFixed(2)}</span>
           <span className="font-mono text-[11px] text-ink-3">/mês</span>
           <div className="font-mono text-[10px] text-ink-4 mt-0.5">
             {monthlySol && monthlySol > 0 ? `≈ ${monthlySol.toFixed(monthlySol < 1 ? 3 : 2)} SOL/mês` : "pago em SOL"}
