@@ -25,7 +25,7 @@
     "@radix-ui/react-tabs": "^1.1.1",
     "@radix-ui/react-toggle-group": "^1.1.0",
     "@radix-ui/react-tooltip": "^1.1.4",
-    "@react-three/fiber": "^8.17.10",
+    "@react-three/fiber": "^9.6.1",
     "@solana/spl-token": "^0.4.14",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.29",
