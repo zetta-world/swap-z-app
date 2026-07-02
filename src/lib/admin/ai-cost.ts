@@ -24,7 +24,9 @@ function tier(input: number, output: number): ModelPrice {
 
 // Keyed by a substring of the model id so version suffixes still match.
 const PRICES: Array<[RegExp, ModelPrice]> = [
-  [/opus/i,            tier(15, 75)],
+  // Opus 4.5+ is $5/$25 per MTok (official API pricing). The old tier(15, 75)
+  // was Opus 4.1-era pricing and inflated the FINANCE estimate 3x.
+  [/opus/i,            tier(5, 25)],
   [/sonnet/i,          tier(3, 15)],
   [/haiku/i,           tier(1, 5)],
   // Open/hosted models in the A/B (approximate public rates — the authoritative

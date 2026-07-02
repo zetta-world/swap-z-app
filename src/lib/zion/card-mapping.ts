@@ -93,9 +93,13 @@ export function parsePrice(raw: string): number {
   } else if (lastComma !== -1 || lastDot !== -1) {
     const sep   = lastComma !== -1 ? "," : ".";
     const parts = s.split(sep);
+    // A thousands lead group is 1-999 with NO leading zero. "0.816"/"0,816"
+    // is a sub-$1 price (DOT!), never "0 thousand 816" — without this check,
+    // any price under $1 with exactly 3 decimals parsed 1000x too big (caught
+    // by the unit tests; likely the true culprit of the DOT 816-vs-0.816 row).
     const looksLikeThousands =
       parts.length > 1 &&
-      parts[0].length >= 1 && parts[0].length <= 3 &&
+      /^[1-9]\d{0,2}$/.test(parts[0]) &&
       parts.slice(1).every((p) => p.length === 3);
     normalized = looksLikeThousands ? parts.join("") : s.replace(sep, ".");
   } else {

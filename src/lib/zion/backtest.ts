@@ -131,12 +131,12 @@ export async function runBacktestScanForProvider(
 
 /** Run one specialist (OpenAI-compatible). Returns "" if no provider or on
  *  failure. Logs cost under source "hybrid" with the role in `op`. */
-async function runSpecialist(role: string, provider: ProviderConfig | null, user: string, maxTokens: number, timeoutMs: number, extraBody?: Record<string, unknown>): Promise<string> {
+async function runSpecialist(role: string, provider: ProviderConfig | null, user: string, maxTokens: number, timeoutMs: number, extraBody?: Record<string, unknown>, system: string = ZION_FOUNDATION): Promise<string> {
   if (!provider?.apiKey) return "";
   if (await isTripped(provider.id)) return ""; // breaker open — degrade to "(none)" (P2.11)
   try {
     const r = await openaiCompatChat(
-      { model: provider.model, system: ZION_FOUNDATION, user, maxTokens, timeoutMs, extraBody },
+      { model: provider.model, system, user, maxTokens, timeoutMs, extraBody },
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
     await recordResult(provider.id, provider.label, true);
@@ -154,6 +154,18 @@ async function runSpecialist(role: string, provider: ProviderConfig | null, user
 const GROK_SEARCH_BODY: Record<string, unknown> = {
   search_parameters: { mode: "auto", sources: [{ type: "x" }, { type: "news" }] },
 };
+
+/** Slim system prompt for the macro/sentiment seats (M3). These specialists
+ *  write short PROSE reports — they never emit action cards — so shipping them
+ *  the full ~4k-token ZION_FOUNDATION (identity + card schema + mode playbooks)
+ *  every call was pure waste on non-cached OpenAI-compat endpoints, and diluted
+ *  their focus. The brain and the CEO keep the foundation (they produce cards). */
+const SPECIALIST_SYSTEM = [
+  "You are a specialist analyst on the trading desk of Z-SWAP's advisory AI.",
+  "You write short, factual, machine-readable briefs for the desk's decision-",
+  "maker. No trade calls, no action cards, no disclaimers — just your read.",
+  "Machine-format every number (dot decimal, no thousands separators).",
+].join("\n");
 
 const MACRO_PROMPT = (macroText: string) => [
   "You are the MACRO analyst on ZION's desk. From the macro context below, give a",
@@ -226,9 +238,9 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
   // tape instead of hallucinating a mood (P0.2).
   const [technical, macro, sentiment] = await Promise.all([
     runSpecialist("brain",     brain,             scanInstruction,             2200, 18_000),
-    runSpecialist("macro",     roleProvider("macro"), MACRO_PROMPT(macroText), 600,  15_000),
+    runSpecialist("macro",     roleProvider("macro"), MACRO_PROMPT(macroText), 600,  15_000, undefined, SPECIALIST_SYSTEM),
     runSpecialist("sentiment", sentimentProvider, SENTIMENT_PROMPT(symbolsCsv), 600, 15_000,
-      sentimentProvider?.id === "grok" ? GROK_SEARCH_BODY : undefined),
+      sentimentProvider?.id === "grok" ? GROK_SEARCH_BODY : undefined, SPECIALIST_SYSTEM),
   ]);
   if (!technical.trim()) return []; // no draft to synthesize
 
@@ -385,7 +397,7 @@ interface Verdict { status: string; outcomePct: number; price: number; }
  * pessimistic convention — never over-credit a win we can't prove). Falls back
  * to a single current-spot check when candles aren't available.
  */
-function resolveOne(r: ZionSuggestionRow, klines: Kline[], spot: number | undefined, nowMs: number): Verdict | null {
+export function resolveOne(r: ZionSuggestionRow, klines: Kline[], spot: number | undefined, nowMs: number): Verdict | null {
   const dir = r.side === "buy" ? 1 : -1;
   const createdMs = Date.parse(r.created_at);
   const horizonMs = createdMs + r.horizon_hours * 3_600_000;

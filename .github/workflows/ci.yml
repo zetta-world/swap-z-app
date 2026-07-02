@@ -1,0 +1,33 @@
+name: CI
+
+# Every push and PR runs lint + type-check + unit tests. This is the safety
+# net the repo never had: the money-math (parsePrice / extractSuggestion /
+# resolveOne / estimateCost) is covered by unit tests, and a regression in any
+# of them now fails the build instead of silently corrupting the flywheel.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type-check
+        run: npm run type-check
+      - name: Unit tests
+        run: npm test

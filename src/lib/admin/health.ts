@@ -58,7 +58,18 @@ async function pingOpenAICompat(label: string, baseUrl: string, apiKey: string):
     const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` }, signal: ctrl.signal, cache: "no-store",
     });
-    if (res.status === 401 || res.status === 403) return { name: label, ok: false, latencyMs: Date.now() - start, note: "auth rejected — check key" };
+    if (res.status === 401 || res.status === 403) {
+      // 401/403 is AMBIGUOUS: xAI (and some others) return 403 when the team
+      // simply has NO CREDITS, with the reason in the body. Blindly saying
+      // "check key" sent the operator hunting a key problem that was actually
+      // a billing problem. Read the body and classify before labelling.
+      const body = (await res.text().catch(() => "")).slice(0, 300);
+      const noCredit = /credit|billing|balance|insufficient|quota|payment/i.test(body);
+      const note = noCredit
+        ? `no credits / billing (${res.status}) — top up the provider console`
+        : `auth rejected (${res.status}) — check key${body ? `: ${body.slice(0, 120)}` : ""}`;
+      return { name: label, ok: false, latencyMs: Date.now() - start, note };
+    }
     return { name: label, ok: res.ok, latencyMs: Date.now() - start };
   } catch {
     return { name: label, ok: false, latencyMs: null };
