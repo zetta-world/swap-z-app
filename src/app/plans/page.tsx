@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import NormalPlansView from "@/components/pricing/NormalPlansView";
 
 export const metadata: Metadata = {
-  title: "Planos · Z-SWAP",
+  title: "A Hird · Z-SWAP",
   description:
-    "Planos de assinatura mensal Z-SWAP — os guerreiros (Drengr / Berserkr / Einherjar) que servem aos deuses. Acesso premium recorrente sem NFT. Preço em USD, pago em SOL.",
+    "A Hird — o bando juramentado que serve aos deuses. Assinatura mensal Z-SWAP (Drengr / Berserkr / Einherjar), premium recorrente sem NFT. Preço em USD, pago em SOL.",
   openGraph: {
-    title: "Z-SWAP — planos de assinatura mensal",
+    title: "Z-SWAP — A Hird · assinatura mensal",
     description:
-      "Acesso premium recorrente. Os guerreiros que servem aos deuses. Preço fixo em USD, pago em SOL na cotação.",
+      "Os juramentados que servem aos deuses do Panteão. Premium recorrente, preço fixo em USD, pago em SOL na cotação.",
   },
 };
 
