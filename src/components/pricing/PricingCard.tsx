@@ -122,15 +122,19 @@ export default function PricingCard({ tier, onMint, admin }: {
       )}
 
       <div className="flex flex-col h-full rounded-[15px] bg-bg-1/90 backdrop-blur-sm p-4 sm:p-5">
-        {/* NFT artwork hero — 3:4, halo in the tier accent */}
-        <div className={cn("relative aspect-[3/4] rounded-xl overflow-hidden", a.haloIdle)}>
+        {/* NFT artwork hero — 3:4 frame, halo in the tier accent. object-CONTAIN,
+            not cover: the PILOT art is 2:3, and cover was cropping the "Z-SWAP"
+            header + serial footer off the card. The arts have near-black edges,
+            so the letterbox over the dark backdrop is invisible; pro/trader are
+            exactly 3:4 and still fill edge-to-edge. */}
+        <div className={cn("relative aspect-[3/4] rounded-xl overflow-hidden bg-[#07060b]", a.haloIdle)}>
           <Image
             src={tier.art}
             alt={`${t(tier.nameKey)} — ${t("pricing.eyebrow")}`}
             fill
             priority
             sizes="(min-width: 768px) 30vw, calc(100vw - 4rem)"
-            className="object-cover"
+            className="object-contain"
           />
         </div>
 

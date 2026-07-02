@@ -21,9 +21,9 @@ const TIER_EMBLEM: Partial<Record<PaidTier, string>> = {
 };
 
 const SIZES = {
-  sm: { box: "w-7 h-7", radius: "rounded-lg", z: "text-[13px]", blur: "opacity-30", px: 28 },
-  md: { box: "w-8 h-8", radius: "rounded-lg", z: "text-sm",     blur: "opacity-25", px: 32 },
-  lg: { box: "w-9 h-9", radius: "rounded-xl", z: "text-lg",     blur: "opacity-20", px: 36 },
+  sm: { box: "w-7 h-7",   radius: "rounded-lg", z: "text-[13px]", blur: "opacity-30", px: 28 },
+  md: { box: "w-9 h-9",   radius: "rounded-lg", z: "text-sm",     blur: "opacity-25", px: 36 },
+  lg: { box: "w-10 h-10", radius: "rounded-xl", z: "text-lg",     blur: "opacity-20", px: 40 },
 } as const;
 
 export default function BrandMark({ size = "lg" }: { size?: keyof typeof SIZES }) {
