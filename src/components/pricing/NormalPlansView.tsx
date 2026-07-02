@@ -169,10 +169,14 @@ function WarriorCard({ plan, solUsd, features, model, t, highlighted }: {
         {/* Rune medallion hero — becomes the artwork slot in Fase B */}
         <div className="relative mx-auto mt-1 mb-4">
           <div className={cn("relative w-24 h-24 rounded-full p-px", a.frame, a.halo)}>
-            <div className="w-full h-full rounded-full bg-bg-2/95 flex items-center justify-center">
-              <span className={cn("font-display font-extrabold text-4xl leading-none select-none", a.runeColor)}>
-                {plan.warriorRune}
-              </span>
+            <div className="relative w-full h-full rounded-full bg-bg-2/95 overflow-hidden flex items-center justify-center">
+              {plan.avatar ? (
+                <Image src={plan.avatar} alt={plan.warrior} fill sizes="96px" className="object-cover" />
+              ) : (
+                <span className={cn("font-display font-extrabold text-4xl leading-none select-none", a.runeColor)}>
+                  {plan.warriorRune}
+                </span>
+              )}
             </div>
           </div>
           {/* Seal: the REAL crest of the god this warrior serves */}
