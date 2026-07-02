@@ -30,8 +30,39 @@
 
 ## H8 — Prompts para as artes dos guerreiros (Fase B)
 
-Mesmo formato dos cards dos deuses: retrato 3:4 (1024×1536), moldura ornamental
-dourada com runas, fundo cósmico escuro, título embaixo, "Z-SWAP ACCESS" no topo.
+**Formato decidido (03/07): RETRATO CIRCULAR estilo foto de perfil** para o
+medalhão do card (campo `avatar` em `plans.ts` já suporta — troca instantânea).
+Spec: **1:1 (1024×1024)**, busto centralizado ocupando ~70%, tudo importante
+dentro do círculo central (a borda vira crop), SEM texto/moldura (o CSS já põe
+o anel + aura), fundo escuro com aura na cor do tier. Salvar em
+`public/warriors/{drengr,berserkr,einherjar}.jpg`.
+
+1. **DRENGR:** "Circular profile portrait, head and shoulders bust of a noble
+   Norse warrior of honor, braided beard, round shield on his back, calm
+   disciplined gaze, golden and amber palette, soft golden aura radiating
+   behind him, subtle ᚠ rune glow on his pauldron, dark background, centered
+   composition safe for circle crop, no text, no frame, dark fantasy realism,
+   1:1"
+2. **BERSERKR:** "Circular profile portrait, head and shoulders bust of a
+   fierce Norse berserker wrapped in bear pelt hood, war paint, teeth bared in
+   battle cry, violet lightning crackling around him, purple and gold palette,
+   storm aura behind him, subtle ᚦ rune glow on his chest, dark background,
+   centered composition safe for circle crop, no text, no frame, dark fantasy
+   realism, 1:1"
+3. **EINHERJAR:** "Circular profile portrait, head and shoulders bust of an
+   ethereal chosen warrior of Valhalla, translucent glowing armor, spectral
+   light rising from his shoulders like wings, a black raven perched beside
+   his head, prismatic cyan-violet-gold palette, cosmic aura behind him,
+   subtle ᛖ rune glow on his gorget, dark background, centered composition
+   safe for circle crop, no text, no frame, dark fantasy realism, 1:1"
+4. **(bônus) THRALL:** "Circular profile portrait, head and shoulders bust of
+   a humble young Norse farmhand in rough wool tunic, determined hopeful gaze,
+   muted grey and iron palette with a faint cold glow, subtle ᚦ rune on a
+   leather cord necklace, dark background, centered composition safe for
+   circle crop, no text, no frame, dark fantasy realism, 1:1"
+
+Antigo formato "card completo 3:4" descartado — gerava arte de NFT card, não
+de medalhão (feedback do CEO).
 
 1. **DRENGR (serve Freyr — dourado/âmbar):** "Ornate fantasy trading card, golden
    Norse warrior of honor DRENGR kneeling with round shield and axe, amber and
