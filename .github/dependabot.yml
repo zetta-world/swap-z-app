@@ -1,6 +1,9 @@
-# R2.2 — automated dependency updates. Weekly, grouped, low-noise:
-# security updates arrive as soon as an advisory drops; version bumps come
-# once a week in grouped PRs so the solo operator isn't flooded.
+# R2.2 — automated dependency updates, recalibrated after the first wave:
+# npm VERSION bumps are disabled (open-pull-requests-limit: 0) — the first
+# batch was 5 PRs of churn incl. React-19-gated majors and a broken lockfile
+# group; pre-launch that's noise, not safety. SECURITY updates still arrive
+# automatically (Dependabot security PRs ignore this limit), and the CI
+# `npm audit` step keeps advisories visible on every push.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -8,10 +11,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
-    groups:
-      minor-and-patch:
-        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 0
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
