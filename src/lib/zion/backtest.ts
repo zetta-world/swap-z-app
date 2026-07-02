@@ -50,10 +50,13 @@ async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise
     "stopLoss, and probability (your HONEST confidence 0-100). Use the regime,",
     "trajectory and 1Y-cycle context to choose direction and targets.",
     "",
-    "OUTPUT FORMAT — REQUIRED. Emit each card as a [[ACTION]] ... [[/ACTION]]",
-    "block with valid JSON inside (the standard card schema). Keep prose to an",
-    "absolute minimum — your value here is the cards, not commentary. A response",
-    "with no [[ACTION]] blocks is a failed run.",
+    "OUTPUT FORMAT — REQUIRED. Respond with a SINGLE JSON object and NOTHING",
+    "else — no prose, no markdown fences:",
+    '{"cards": [{"kind": "buy_limit"|"sell_safe", "title": "...", "summary": "...",',
+    '"chain": "...", "from": {"symbol": "...", "address": ""}, "to": {"symbol": "...",',
+    '"address": ""}, "entryPrice": "...", "exits": [{"label": "TP1", "price": "...",',
+    '"profitPct": "..."}], "stopLoss": "...", "probability": "..."}]}',
+    "A response whose cards array is empty is a failed run.",
     "",
     "RISK DISCIPLINE — this sets your LEVELS, it is NOT a reason to skip. For",
     "every symbol you have a lean on, CONSTRUCT the target and stop so that",
@@ -72,6 +75,62 @@ async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise
   ].join("\n");
 }
 
+/** JSON schema for a flywheel scan (R1.1). On Anthropic paths (Agent A + CEO)
+ *  this is ENFORCED via structured outputs — a malformed card can't exist.
+ *  Field types mirror ActionCard (prices as strings, machine-format). */
+export const SCAN_CARDS_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["cards"],
+  properties: {
+    cards: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "title", "summary", "chain", "from", "to", "entryPrice", "exits", "stopLoss", "probability"],
+        properties: {
+          kind:    { type: "string", enum: ["buy_limit", "sell_safe"] },
+          title:   { type: "string" },
+          summary: { type: "string" },
+          chain:   { type: "string" },
+          from:    { type: "object", additionalProperties: false, required: ["symbol", "address"], properties: { symbol: { type: "string" }, address: { type: "string" } } },
+          to:      { type: "object", additionalProperties: false, required: ["symbol", "address"], properties: { symbol: { type: "string" }, address: { type: "string" } } },
+          entryPrice: { type: "string" },
+          exits: {
+            type: "array",
+            items: { type: "object", additionalProperties: false, required: ["label", "price", "profitPct"], properties: { label: { type: "string" }, price: { type: "string" }, profitPct: { type: "string" } } },
+          },
+          stopLoss:    { type: "string" },
+          probability: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+/** Tolerant card extraction (R1.1): pure JSON first (the new contract), then
+ *  JSON embedded in prose (compat providers that can't resist narrating), then
+ *  the legacy [[ACTION]] block format. Never throws. */
+export function extractCards(text: string): ActionCard[] {
+  const tryParse = (s: string): ActionCard[] | null => {
+    try {
+      const o = JSON.parse(s) as { cards?: unknown };
+      if (o && Array.isArray(o.cards)) return o.cards.filter((c): c is ActionCard => !!c && typeof c === "object");
+    } catch { /* fall through */ }
+    return null;
+  };
+  const trimmed = text.trim();
+  const direct = tryParse(trimmed);
+  if (direct) return direct;
+  const start = trimmed.indexOf("{"), end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    const embedded = tryParse(trimmed.slice(start, end + 1));
+    if (embedded) return embedded;
+  }
+  return parseZionStream(text).cards;
+}
+
 export async function runBacktestScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return [];
@@ -87,11 +146,11 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
     // foundation via cacheSystem. Goes through the provider seam so the hybrid
     // branch can swap this model without touching the flywheel logic.
     const r = await anthropicChat(
-      { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, cacheSystem: true },
+      { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, cacheSystem: true, jsonSchema: SCAN_CARDS_SCHEMA },
       apiKey,
     );
     recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: "backtest", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
-    return parseZionStream(r.text).cards;
+    return extractCards(r.text);
   } catch {
     return [];
   }
@@ -122,7 +181,7 @@ export async function runBacktestScanForProvider(
     );
     await recordResult(provider.id, provider.label, true);
     recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: `backtest_${provider.id}`, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
-    return parseZionStream(r.text).cards;
+    return extractCards(r.text);
   } catch {
     await recordResult(provider.id, provider.label, false);
     return [];
@@ -193,7 +252,7 @@ function buildCeoPrompt(indicatorsText: string, macro: string, sentiment: string
     "  • Confirm strong setups; refine entry/target/stop (reward:risk >= 1.5, target",
     "    never within 0.3% of entry, use the real current price); DROP the weak ones",
     "    or ones fighting the macro/sentiment. Quality over coverage.",
-    "Output ONLY the final cards as [[ACTION]] ... [[/ACTION]] JSON blocks. Machine-format numbers.",
+    'Output ONLY a single JSON object {"cards": [...]} using the same card schema as the technical draft. No prose. Machine-format numbers.',
     "",
     "<technical_draft>", technical || "(none)", "</technical_draft>",
     "",
@@ -255,11 +314,11 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
   for (const [model, role] of [[primaryModel, "hybrid_ceo"], [fallbackModel, "hybrid_ceo_fallback"]] as const) {
     try {
       const o = await anthropicChat(
-        { model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200, timeoutMs: 25_000, cacheSystem: true },
+        { model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200, timeoutMs: 25_000, cacheSystem: true, jsonSchema: SCAN_CARDS_SCHEMA },
         anthropicKey,
       );
       recordEvent("zion_analysis", { meta: { op: role, model: o.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...o.usage } });
-      return parseZionStream(o.text).cards;
+      return extractCards(o.text);
     } catch {
       if (model === fallbackModel) return []; // both CEO attempts failed
     }

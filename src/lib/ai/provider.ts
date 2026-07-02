@@ -40,6 +40,12 @@ export interface ChatRequest {
   /** Vendor-specific extra body fields for OpenAI-compat calls — e.g. xAI's
    *  `search_parameters` to enable Grok's native live X/news search. */
   extraBody?:  Record<string, unknown>;
+  /** Anthropic structured outputs (R1.1): when set, the response is FORCED to
+   *  validate against this JSON schema via `output_config.format` — a
+   *  malformed card becomes impossible by construction. Anthropic-only; the
+   *  OpenAI-compat path uses prompt + tolerant parsing instead (provider
+   *  support for schema enforcement varies too much to hard-require it). */
+  jsonSchema?: Record<string, unknown>;
 }
 
 const DEFAULT_TIMEOUT = 40_000;
@@ -47,14 +53,20 @@ const DEFAULT_TIMEOUT = 40_000;
 /** Anthropic (native SDK). maxRetries:0 — callers own their own fallback (N1). */
 export async function anthropicChat(req: ChatRequest, apiKey: string): Promise<ChatResult> {
   const client = new Anthropic({ apiKey, maxRetries: 0, timeout: req.timeoutMs ?? DEFAULT_TIMEOUT });
-  const msg = await client.messages.create({
+  const params = {
     model:      req.model,
     max_tokens: req.maxTokens,
     system: req.cacheSystem
       ? [{ type: "text" as const, text: req.system, cache_control: { type: "ephemeral" as const } }]
       : req.system,
     messages: [{ role: "user" as const, content: req.user }],
-  });
+  };
+  if (req.jsonSchema) {
+    // Structured outputs — GA on the API; typed loosely here so an older SDK's
+    // param type doesn't block the (pass-through) field.
+    (params as Record<string, unknown>).output_config = { format: { type: "json_schema", schema: req.jsonSchema } };
+  }
+  const msg = await client.messages.create(params);
   const u = msg.usage;
   const text = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
   return {

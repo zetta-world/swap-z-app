@@ -104,6 +104,15 @@ manual). NÃO reativar sem desligar o cron-job.org — daria tick duplicado.
 
 ---
 
+## 3b. Erros de cliente (telemetria)
+
+Crashes de browser (`window.onerror` / `unhandledrejection`) são enviados a
+`/api/telemetry/error` (5/min/IP, máx 5 por page-load, campos whitelisted) e
+caem em `platform_events` como `error` com `meta.source = "client"` — visíveis
+no painel LOGS & SECURITY e cobertos pelo alerta de error-spike do watchdog.
+**Upgrade opcional:** instalar `@sentry/nextjs` + DSN quando quiser stack
+traces agrupados/sourcemaps; o reporter atual é deliberadamente leve (zero deps).
+
 ## 4. Comandos úteis
 
 ```bash

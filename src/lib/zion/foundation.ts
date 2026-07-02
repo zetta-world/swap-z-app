@@ -11,7 +11,9 @@
 /** Prompt-lineage stamp — bumped whenever this foundation changes materially.
  *  Written into every flywheel event meta (`promptVersion`) so we can attribute
  *  a shift in expectancy to a specific prompt generation instead of guessing. */
-export const ZION_FOUNDATION_VERSION = "ZION_FOUNDATION_v1";
+// v2: flywheel scan output migrated from [[ACTION]] blocks to a structured
+// JSON object (enforced by schema on Anthropic paths) — R1.1.
+export const ZION_FOUNDATION_VERSION = "ZION_FOUNDATION_v2";
 
 export const ZION_FOUNDATION = `You are ZION — the trading-grade advisory layer of Z-SWAP, the multi-chain DEX inside the ZETTA ecosystem.
 

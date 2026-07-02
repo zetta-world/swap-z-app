@@ -38,7 +38,7 @@ const BINANCE_DATA = "https://data-api.binance.vision";
 
 // ─── Candle type + fetch ────────────────────────────────────────────────
 
-interface Candle {
+export interface Candle {
   high:   number;
   low:    number;
   close:  number;
@@ -65,7 +65,7 @@ async function fetchCandles(symbol: string, interval: string, limit: number, rev
 
 // ─── Pure math: EMA, RSI, MACD ──────────────────────────────────────────
 
-function calcEMA(closes: number[], period: number): number[] {
+export function calcEMA(closes: number[], period: number): number[] {
   if (closes.length < period) return [];
   const k = 2 / (period + 1);
   const out: number[] = [];
@@ -98,7 +98,7 @@ function calcRSIArray(closes: number[], period = 14): number[] {
   return result;
 }
 
-function calcRSI(closes: number[], period = 14): number | null {
+export function calcRSI(closes: number[], period = 14): number | null {
   const arr = calcRSIArray(closes, period);
   return arr.length > 0 ? arr[arr.length - 1] : null;
 }
@@ -110,7 +110,7 @@ interface MACDResult {
   histPrev:  number | null; // previous bar's histogram — shows momentum direction
 }
 
-function calcMACD(closes: number[], fast = 12, slow = 26, sig = 9): MACDResult | null {
+export function calcMACD(closes: number[], fast = 12, slow = 26, sig = 9): MACDResult | null {
   if (closes.length < slow + sig + 2) return null;
   const fastEma = calcEMA(closes, fast);
   const slowEma = calcEMA(closes, slow);
@@ -148,7 +148,7 @@ function trueRanges(candles: Candle[]): number[] {
   return tr;
 }
 
-function calcATR(candles: Candle[], period = 14): number | null {
+export function calcATR(candles: Candle[], period = 14): number | null {
   if (candles.length < period + 2) return null;
   const tr = trueRanges(candles);
   if (tr.length < period) return null;
@@ -169,7 +169,7 @@ interface ADXResult {
   minusDI: number;
 }
 
-function calcADX(candles: Candle[], period = 14): ADXResult | null {
+export function calcADX(candles: Candle[], period = 14): ADXResult | null {
   if (candles.length < period * 2 + 2) return null;
   const len = candles.length;
   const tr: number[] = [];

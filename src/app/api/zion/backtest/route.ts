@@ -6,6 +6,7 @@ import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestSc
 import { configuredProviders } from "@/lib/ai/registry";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,31 @@ function scanSlice(): string[] {
   return Array.from({ length: SCAN_WINDOW }, (_, i) => MAJORS[(start + i) % MAJORS.length]);
 }
 
+// Tick idempotency lock (R1.3). cron-job.org reports a false "timeout" at 30s
+// and can RETRY the call — without a lock the retry runs the whole scan again
+// (double token spend, duplicate suggestions). Lock TTL 3min in admin_kv;
+// pinger retries are sequential (~30s apart), so read-then-write is enough —
+// this is duplicate suppression, not a distributed mutex. Fails OPEN (no DB =
+// run anyway) so the lock can never take the flywheel down.
+const TICK_LOCK_MS = 3 * 60_000;
+async function acquireTickLock(): Promise<boolean> {
+  const db = getSupabaseAdmin();
+  if (!db) return true;
+  const key = "lock:backtest_tick";
+  try {
+    const { data } = await db.from("admin_kv").select("value").eq("key", key).maybeSingle();
+    if (data?.value) {
+      const last = Date.parse(data.value);
+      if (Number.isFinite(last) && Date.now() - last < TICK_LOCK_MS) return false;
+    }
+    await db.from("admin_kv").upsert(
+      { key, value: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+    return true;
+  } catch { return true; }
+}
+
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
@@ -54,6 +80,11 @@ export async function POST(req: NextRequest) {
 
   // Operator on/off gates (admin_kv). Read once, honored per-stage below.
   const gates = await getFlywheelGates();
+
+  // Duplicate-tick suppression: a pinger retry within 3min is the SAME tick.
+  if (!(await acquireTickLock())) {
+    return NextResponse.json({ ok: true, queued: false, skipped: "duplicate_tick" });
+  }
 
   // The heavy work (market indicators + LLM scan + path-replay resolve) takes
   // ~30-45s — longer than external cron pingers wait (cron-job.org caps at

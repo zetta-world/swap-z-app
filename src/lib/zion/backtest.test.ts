@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractSuggestion, resolveOne } from "@/lib/zion/backtest";
+import { extractSuggestion, resolveOne, extractCards } from "@/lib/zion/backtest";
 import type { ActionCard } from "@/lib/zion/parse";
 import type { ZionSuggestionRow } from "@/lib/supabase/types";
 
@@ -131,5 +131,34 @@ describe("resolveOne — first-touch replay", () => {
     expect(inflight).toBeNull();
     const expired = resolveOne(row({}), [], 101, T0 + 73 * H);
     expect(expired?.status).toBe("expired");
+  });
+});
+
+// ─── extractCards — triple-fallback output parsing (R1.1) ────────────────────
+
+describe("extractCards", () => {
+  const cardJson = { kind: "buy_limit", title: "t", summary: "s", chain: "solana", from: { symbol: "USDT", address: "" }, to: { symbol: "SOL", address: "" }, entryPrice: "100", exits: [{ label: "TP1", price: "103", profitPct: "3" }], stopLoss: "98", probability: "70" };
+
+  it("parses the new pure-JSON contract", () => {
+    const cards = extractCards(JSON.stringify({ cards: [cardJson] }));
+    expect(cards).toHaveLength(1);
+    expect(cards[0].kind).toBe("buy_limit");
+  });
+
+  it("recovers JSON embedded in prose (chatty compat providers)", () => {
+    const text = `Here is my analysis:\n${JSON.stringify({ cards: [cardJson, cardJson] })}\nHope this helps!`;
+    expect(extractCards(text)).toHaveLength(2);
+  });
+
+  it("still understands the legacy [[ACTION]] block format", () => {
+    const text = `prose before\n[[ACTION]]${JSON.stringify(cardJson)}[[/ACTION]]\nprose after`;
+    const cards = extractCards(text);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].to?.symbol).toBe("SOL");
+  });
+
+  it("returns an empty array for a valid-but-empty response and for garbage", () => {
+    expect(extractCards('{"cards": []}')).toHaveLength(0);
+    expect(extractCards("no cards here at all")).toHaveLength(0);
   });
 });
