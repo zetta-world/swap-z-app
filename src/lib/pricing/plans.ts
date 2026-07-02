@@ -37,23 +37,26 @@ export interface PlanTier {
   warriorDesc:   string;
   warriorRune:   string;  // the warrior's own rune monogram (medallion hero)
   crest:         string;  // crest image of the god SERVED (public/tiers/*)
+  monthlyUsd:    number;  // AUTHORITATIVE Hird monthly price (clean anchor,
+                          // CEO-set) — the /36 × premium formula is only the
+                          // baseline used to derive these
 }
 
 export const PLAN_TIERS: PlanTier[] = [
   {
     tier: "pro", usdTarget: Math.round(1.5 * SOL_USD_REF), supply: 1500, dailyAnalyses: 10,
     god: "Freyr", rune: "ᚠ", epithet: "Prosperity", solRef: 1.5, card: "/nft/pro.jpg",
-    warrior: "Drengr", warriorDesc: "guerreiro de honra", warriorRune: "ᛞ", crest: "/tiers/freyr.png",
+    warrior: "Drengr", warriorDesc: "guerreiro de honra", warriorRune: "ᛞ", crest: "/tiers/freyr.png", monthlyUsd: 7.90,
   },
   {
     tier: "trader", usdTarget: Math.round(4 * SOL_USD_REF), supply: 500, dailyAnalyses: 25,
     god: "Thor", rune: "ᚦ", epithet: "Thunder Strike", solRef: 4, card: "/nft/trader.png",
-    warrior: "Berserkr", warriorDesc: "guerreiro feroz", warriorRune: "ᛒ", crest: "/tiers/thor.png",
+    warrior: "Berserkr", warriorDesc: "guerreiro feroz", warriorRune: "ᛒ", crest: "/tiers/thor.png", monthlyUsd: 20.90,
   },
   {
     tier: "pilot", usdTarget: Math.round(30 * SOL_USD_REF), supply: 50, dailyAnalyses: 30,
     god: "Odin", rune: "ᚨ", epithet: "Allfather", solRef: 30, card: "/nft/pilot.jpg",
-    warrior: "Einherjar", warriorDesc: "escolhido de Valhalla", warriorRune: "ᛖ", crest: "/tiers/pilot.png",
+    warrior: "Einherjar", warriorDesc: "escolhido de Valhalla", warriorRune: "ᛖ", crest: "/tiers/pilot.png", monthlyUsd: 159,
   },
 ];
 
@@ -62,9 +65,10 @@ export function usdToSol(usd: number, solUsd: number): number {
   return solUsd > 0 ? usd / solUsd : 0;
 }
 
-/** Monthly recurring price (USD) for the normal/warrior plan of a tier.
- *  Launch NFT is one-time for 3 years; normal is monthly at +30%. Amortizes
- *  the launch USD target over 36 months as the baseline, then applies +30%. */
-export function normalMonthlyUsd(usdTarget: number): number {
-  return (usdTarget / 36) * NORMAL_PREMIUM;
+/** Monthly recurring price (USD) for the Hird plan of a tier. The explicit
+ *  `monthlyUsd` anchor wins (clean price points the CEO set: 7.90 / 20.90 /
+ *  159); the launch-target/36 × premium formula is the fallback baseline for
+ *  any future tier that hasn't been anchored yet. */
+export function normalMonthlyUsd(plan: Pick<PlanTier, "usdTarget" | "monthlyUsd">): number {
+  return plan.monthlyUsd ?? (plan.usdTarget / 36) * NORMAL_PREMIUM;
 }

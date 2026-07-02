@@ -26,7 +26,7 @@
 | H7 | Metadata das páginas `/plans` e `/pricing` atualizadas | 🟢 |
 | H8 | **Fase B** — prompts prontos p/ CEO gerar as artes dos guerreiros (mesma linha visual dos deuses); layout já reserva o slot | 🟢 prompts abaixo · ⏸️ geração pelo CEO |
 
-**Fora de escopo (decisão pendente do CEO):** arredondar preços ($7.90/$20.90/$159).
+**Preços (decidido pelo CEO em 03/07):** âncoras limpas **$7.90 / $20.90 / $159** — campo `monthlyUsd` autoritativo em `plans.ts` (a fórmula /36×1.3 vira só baseline p/ tiers futuros).
 
 ## H8 — Prompts para as artes dos guerreiros (Fase B)
 
