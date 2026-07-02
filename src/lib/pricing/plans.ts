@@ -40,6 +40,8 @@ export interface PlanTier {
   monthlyUsd:    number;  // AUTHORITATIVE Hird monthly price (clean anchor,
                           // CEO-set) — the /36 × premium formula is only the
                           // baseline used to derive these
+  avatar?:       string;  // circular profile portrait for the medallion
+                          // (public/warriors/*.jpg, 1:1) — rune shows until set
 }
 
 export const PLAN_TIERS: PlanTier[] = [
