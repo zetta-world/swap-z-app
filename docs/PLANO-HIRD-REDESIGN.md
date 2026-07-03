@@ -24,7 +24,7 @@
 | H5 | Card THRALL no lugar da caixa "Free" genérica | 🟢 runa ᚦ + "todo guerreiro começa em algum lugar" |
 | H6 | Header da página: eyebrow "A HIRD · JURAMENTADOS AOS DEUSES" + título novo | 🟢 |
 | H7 | Metadata das páginas `/plans` e `/pricing` atualizadas | 🟢 |
-| H8 | **Fase B** — prompts prontos p/ CEO gerar as artes dos guerreiros (mesma linha visual dos deuses); layout já reserva o slot | 🟢 prompts abaixo · ⏸️ geração pelo CEO |
+| H8 | **Fase B** — artes dos guerreiros | 🟢 **CONCLUÍDA 03/07**: CEO gerou os 4 retratos circulares (Drengr/Berserkr/Einherjar/Thrall), instalados em `public/warriors/` com circle-fit crop e ligados via `avatar` (medalhões) + card do Thrall |
 
 **Preços (decidido pelo CEO em 03/07):** âncoras limpas **$7.90 / $20.90 / $159** — campo `monthlyUsd` autoritativo em `plans.ts` (a fórmula /36×1.3 vira só baseline p/ tiers futuros).
 

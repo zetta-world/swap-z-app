@@ -122,7 +122,9 @@ export default function NormalPlansView() {
       {/* THRALL — free tier, canonical Rígsþula ladder (Thrall → the Hird → the gods) */}
       <div className="rounded-2xl border border-white/8 bg-bg-1/40 p-4 sm:p-5 max-w-3xl mx-auto">
         <div className="flex items-center justify-center gap-3">
-          <span className="w-9 h-9 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center font-display font-extrabold text-base text-ink-3">ᚦ</span>
+          <span className="relative w-12 h-12 rounded-full border border-white/15 overflow-hidden flex-shrink-0">
+            <Image src="/warriors/thrall.jpg" alt="Thrall" fill sizes="48px" className="object-cover" />
+          </span>
           <div className="text-left">
             <div className="font-display font-bold text-sm tracking-[0.18em] uppercase text-ink">Thrall <span className="font-mono text-[10px] tracking-normal normal-case text-ink-3">· sem juramento · sempre grátis</span></div>
             <p className="font-sans text-[12px] text-ink-2 leading-relaxed mt-0.5">

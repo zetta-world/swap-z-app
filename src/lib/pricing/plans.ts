@@ -48,17 +48,17 @@ export const PLAN_TIERS: PlanTier[] = [
   {
     tier: "pro", usdTarget: Math.round(1.5 * SOL_USD_REF), supply: 1500, dailyAnalyses: 10,
     god: "Freyr", rune: "ᚠ", epithet: "Prosperity", solRef: 1.5, card: "/nft/pro.jpg",
-    warrior: "Drengr", warriorDesc: "guerreiro de honra", warriorRune: "ᛞ", crest: "/tiers/freyr.png", monthlyUsd: 7.90,
+    warrior: "Drengr", warriorDesc: "guerreiro de honra", warriorRune: "ᛞ", crest: "/tiers/freyr.png", monthlyUsd: 7.90, avatar: "/warriors/drengr.jpg",
   },
   {
     tier: "trader", usdTarget: Math.round(4 * SOL_USD_REF), supply: 500, dailyAnalyses: 25,
     god: "Thor", rune: "ᚦ", epithet: "Thunder Strike", solRef: 4, card: "/nft/trader.png",
-    warrior: "Berserkr", warriorDesc: "guerreiro feroz", warriorRune: "ᛒ", crest: "/tiers/thor.png", monthlyUsd: 20.90,
+    warrior: "Berserkr", warriorDesc: "guerreiro feroz", warriorRune: "ᛒ", crest: "/tiers/thor.png", monthlyUsd: 20.90, avatar: "/warriors/berserkr.jpg",
   },
   {
     tier: "pilot", usdTarget: Math.round(30 * SOL_USD_REF), supply: 50, dailyAnalyses: 30,
     god: "Odin", rune: "ᚨ", epithet: "Allfather", solRef: 30, card: "/nft/pilot.jpg",
-    warrior: "Einherjar", warriorDesc: "escolhido de Valhalla", warriorRune: "ᛖ", crest: "/tiers/pilot.png", monthlyUsd: 159,
+    warrior: "Einherjar", warriorDesc: "escolhido de Valhalla", warriorRune: "ᛖ", crest: "/tiers/pilot.png", monthlyUsd: 159, avatar: "/warriors/einherjar.jpg",
   },
 ];
 
