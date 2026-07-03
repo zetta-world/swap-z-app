@@ -19,6 +19,7 @@
 | `TESTE-DINHEIRO-REAL.md` | Protocolo do teste com dinheiro real (pós-11/07) |
 | `GOLDEN-SET.md` | Cenários de avaliação de prompt (executar pós-crédito) |
 | `ANALISE-DADOS-01.md` | Baseline da 1ª leva do flywheel (28/06→01/07) + hipóteses H1-H4 |
+| `ANALISE-DADOS-02.md` | Maturação da safra 01: Agent A net POSITIVO + a lição da inversão (H1/H2 teriam sido overfit) |
 
 ## 📚 Históricos — contexto, não atualizar
 
