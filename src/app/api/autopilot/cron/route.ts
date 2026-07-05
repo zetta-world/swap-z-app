@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import {
   listRunnableSessions, decryptSessionCreds, patchSession, recordRuns, utcDayKey,
-  tryLockSession, releaseLock,
+  tryLockSession, releaseLock, bumpSessionTrades,
 } from "@/lib/autopilot/sessions";
 import { runAutopilotCexScan } from "@/lib/autopilot/scan";
 import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
@@ -322,6 +322,14 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
       if (fired >= MAX_ORDERS_PER_RUN || remainingTrades <= 0) break outer;
       if (frozenUntil === today) break outer;
 
+      // A3 (money-path audit): multi-venue cards (cross-CEX arb) pin each leg
+      // to a specific exchange. A background session runs ONE venue — firing a
+      // pinned leg here would execute at another market's price. Skip it.
+      if (intent.exchange && intent.exchange !== s.exchange_id) {
+        pushRow(intent, "rejected", card.kind, { reason: `leg pinned to ${intent.exchange}; session venue is ${s.exchange_id}` });
+        continue;
+      }
+
       const base = intent.symbol.split("/")[0].toUpperCase();
       if (!s.allowed_symbols.includes(intent.symbol.split("/")[0])) {
         pushRow(intent, "rejected", card.kind, { reason: "symbol not allowed" });
@@ -401,8 +409,11 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
 
   if (frozenUntil === today) alertIfNewlyFrozen(); // a sell may have tripped it mid-run
   await recordRuns(runRows);
+  // A4 (money-path audit): bump the daily counter RELATIVELY via the same
+  // atomic RPC the browser uses. An absolute write here would overwrite (and
+  // lose) any browser fire that landed while this run was in flight.
+  if (fired > 0) await bumpSessionTrades(s.wallet_address, s.exchange_id, fired);
   await patchSession(s.id, {
-    trades_today: tradesToday + fired,
     last_scan_at: nowIso,
     last_error:   null,
   });

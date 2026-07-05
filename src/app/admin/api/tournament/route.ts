@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
 
 export const dynamic = "force-dynamic";
 
@@ -42,10 +43,14 @@ export async function GET(): Promise<NextResponse> {
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
-  const { data } = await db
-    .from("zion_suggestions")
-    .select("source, status, outcome_pct, entry_price, target_price, stop_price");
-  const rows = data ?? [];
+  // Paginated full read (A1): PostgREST caps a plain select at 1000 rows with
+  // no error — a truncated ledger would rank the agents on stale data.
+  type TourRow = { source: string | null; status: string; outcome_pct: number | null; entry_price: number | null; target_price: number | null; stop_price: number | null };
+  const rows = await selectAllRows<TourRow>((from, to) =>
+    db.from("zion_suggestions")
+      .select("source, status, outcome_pct, entry_price, target_price, stop_price")
+      .order("created_at", { ascending: true }).range(from, to),
+  );
 
   const by = new Map<string, Agg>();
   const get = (source: string): Agg => {
