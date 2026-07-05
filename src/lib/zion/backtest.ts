@@ -14,6 +14,7 @@ import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
 import { roleProvider, type ProviderConfig } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
@@ -563,8 +564,12 @@ export async function getBacktestStats(): Promise<BacktestStats> {
   const empty: BacktestStats = { total: 0, open: 0, resolved: 0, wins: 0, losses: 0, expired: 0, winRate: null, avgOutcome: null, expectancyNet: null, signalRate: null, sufficientSample: false };
   const db = getSupabaseAdmin();
   if (!db) return empty;
-  const { data } = await db.from("zion_suggestions").select("status, outcome_pct");
-  if (!data) return empty;
+  // Paginated read (A1): PostgREST silently caps a plain select at 1000 rows —
+  // past that, these stats would freeze on an arbitrary subset of the ledger.
+  const data = await selectAllRows<{ status: string; outcome_pct: number | null }>((from, to) =>
+    db.from("zion_suggestions").select("status, outcome_pct")
+      .order("created_at", { ascending: true }).range(from, to),
+  );
 
   let open = 0, wins = 0, losses = 0, expired = 0, sum = 0, resolvedCount = 0;
   for (const r of data) {

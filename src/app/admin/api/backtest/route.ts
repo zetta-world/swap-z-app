@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
 
 export const dynamic = "force-dynamic";
 
@@ -24,14 +25,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const rawSource = req.nextUrl.searchParams.get("source") ?? "";
   const source = /^[a-z0-9_]{1,32}$/.test(rawSource) ? rawSource : null;
 
-  let allQ = db.from("zion_suggestions").select("status, outcome_pct, regime, entry_price, target_price, stop_price");
+  // Paginated full read (A1): PostgREST caps a plain select at 1000 rows with
+  // no error — the headline stats must aggregate the WHOLE ledger.
+  type StatRow = { status: string; outcome_pct: number | null; regime: string | null; entry_price: number | null; target_price: number | null; stop_price: number | null };
+  const allP = selectAllRows<StatRow>((from, to) => {
+    let q = db.from("zion_suggestions")
+      .select("status, outcome_pct, regime, entry_price, target_price, stop_price")
+      .order("created_at", { ascending: true }).range(from, to);
+    if (source) q = q.eq("source", source);
+    return q;
+  });
   let recentQ = db.from("zion_suggestions")
     .select("symbol, side, status, outcome_pct, probability, regime, created_at")
     .order("created_at", { ascending: false })
     .limit(40);
-  if (source) { allQ = allQ.eq("source", source); recentQ = recentQ.eq("source", source); }
+  if (source) recentQ = recentQ.eq("source", source);
 
-  const [{ data: all }, { data: recent }] = await Promise.all([allQ, recentQ]);
+  const [all, { data: recent }] = await Promise.all([allP, recentQ]);
 
   let open = 0, wins = 0, losses = 0, neutral = 0, resolved = 0, sum = 0;
   let winSum = 0, lossSum = 0;          // for avg win / avg loss + profit factor

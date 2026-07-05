@@ -120,10 +120,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_amount" }, { status: 400 });
   }
 
-  // USD ceiling. For currencies we know about we estimate via the rough
-  // table; for unknown ones we treat the amount as USD which is the
-  // most conservative possible interpretation.
-  const roughUsd = (ROUGH_USD_PRICE[currency] ?? 1) * body.amount;
+  // USD ceiling. A6 (money-path audit): the static table drifts — BTC pinned
+  // at $80k understates the real USD moved when the market runs. Prefer a
+  // FRESH reference price; fall back to the table (then to amount-as-USD) so
+  // a pricing outage never blocks a legitimate manual withdrawal. The
+  // autopilot cap below stays fail-closed. One lookup, shared with that check.
+  const freshUnitUsd = STABLE_CCY.has(currency)
+    ? 1
+    : await getReferencePriceUsd(currency).catch(() => null);
+  const roughUsd = (freshUnitUsd ?? ROUGH_USD_PRICE[currency] ?? 1) * body.amount;
   if (roughUsd > HARD_WITHDRAWAL_CEILING_USD) {
     logSecurity("withdraw_ceiling_block", { currency, roughUsd: Math.round(roughUsd) }, "high");
     return NextResponse.json(
@@ -139,9 +144,7 @@ export async function POST(req: NextRequest) {
   // server-side, where it can't be bypassed. Fail-safe: reject if we can't
   // price a non-stable currency for an autopilot withdrawal.
   if (body.autopilot === true) {
-    const unitUsd = STABLE_CCY.has(currency)
-      ? 1
-      : (await getReferencePriceUsd(currency)) ?? ROUGH_USD_PRICE[currency] ?? null;
+    const unitUsd = freshUnitUsd ?? ROUGH_USD_PRICE[currency] ?? null;
     if (unitUsd === null) {
       return NextResponse.json(
         { ok: false, error: "unpriceable_currency", detail: `Cannot price ${currency} for the per-rebalance cap check.` },

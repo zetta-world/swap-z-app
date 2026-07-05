@@ -36,3 +36,26 @@ por teste. É exatamente o motivo de o M1 ser a melhoria nº 1.
 - **M6:** cache multipliers do código (1.25×/2×/0.1×) estão CORRETOS, só o
   input/output do Opus muda. Impacto: estimativas do FINANCE ficam 3x menores
   para Opus — margens dos planos ficam MELHORES que o calculado.
+
+---
+
+## Auditoria linha-a-linha do caminho do dinheiro (2026-07-05)
+
+> **Origem:** leitura integral (2.888 linhas) de `price-guard`, `card-mapping`,
+> `backtest`, rotas `cex/order`/`cex/withdraw`/`autopilot/cron`, `cex/server`,
+> `positions-server` + RPCs e `costBasis`. Nenhum achado é caminho de perda
+> direta de fundos — são pontos de honestidade de medição e contabilidade.
+> Confirmado sólido: fail-closed sem refPrice, freeze atômico no SQL (RPC 0009),
+> stop-first pessimista testado, scale/geometry gates, sell só do que o bot
+> comprou, spot-only em background, locks TTL, creds efêmeras.
+
+| ID | Achado | Detalhe | Status |
+|----|--------|---------|--------|
+| A1 | **Stats do flywheel truncavam em 1000 linhas** | PostgREST capa QUALQUER select em 1000 linhas sem erro. `getBacktestStats`, o painel BACKTEST e o TOURNAMENT liam o ledger num select só — ao cruzar 1000 sugestões (semanas de torneio pós-11/07), as métricas congelariam num subconjunto arbitrário. Fere o pilar do flywheel honesto | 🟢 `selectAllRows` (`lib/supabase/paginate.ts`: paginação com ordem estável + teto de segurança 100k) nos 3 pontos + 4 testes |
+| A3 | Cron ignorava `intent.exchange` | Perna de arb cross-CEX pinada em outro venue dispararia no venue da sessão, a preço de outro mercado (latente: o scan de background não emite arb hoje) | 🟢 perna pinada em venue ≠ sessão é rejeitada com reason no run-log |
+| A4 | Race no `trades_today` | Cron gravava valor ABSOLUTO no fim do run; um fire do browser durante o run era sobrescrito → cap diário furável em 1-2 trades | 🟢 cron usa o mesmo RPC atômico `bump_session_trades` do browser |
+| A6 | Teto manual do saque com tabela estática | BTC fixado em $80k subestima o USD real movido quando o mercado sobe | 🟢 preço fresco com fallback pra tabela (fail-open no manual; cap do autopilot continua fail-closed) — 1 lookup compartilhado |
+| A2 | **Limit buy não-preenchida vira posição aberta na hora** | `recordServerEntry` roda no fire com fallback `filled=intent.amount`; exits têm settle-loop, entries NÃO → posição fantasma se a ordem nunca preencher (exposição inflada = direção segura, mas contabilidade suja e "sells" de moeda não-detida no run-log) | 🔴 requer design: coluna `entry_order_id` + entry-settle simétrico ao `settleArmedExits` (migração pequena). De propósito NÃO corrigido às pressas — mexe na contabilidade de posição. Decidir antes de 11/07 se o teste usará `buy_limit` em background |
+| A5 | Fee não-stable ignorada no P&L realizado | `realizedFromSell` só desconta fee em stable; fee em BNB/base superestima o P&L → loss-stop conta perdas a menor | 🔴 pendente: precificar a fee via refPrices/`order.average` quando a moeda da fee for a base |
+| A7 | `parsePrice("7.320")` → 7320 | Preço 1-999 com exatamente 3 decimais terminando em zero é lido como milhar. TODOS os desdobramentos são fail-safe (scale gate rejeita, buy vira poeira, sell nunca preenche) — mas descarta cobertura silenciosamente | 🔴 opcional: no scale gate do `extractSuggestion`, re-testar `entry/1000` antes de descartar o card |
+| A8 | Guard de notional é opt-in (`body.autopilot`) | Ordem MANUAL market buy não tem teto de notional server-side (hard ceiling só binds com price presente) | ✅ decisão consciente já documentada no código (usuário presente, creds próprias) — sem ação |
