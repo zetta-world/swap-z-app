@@ -13,6 +13,7 @@ import WhitelistPanel         from "./panels/WhitelistPanel";
 import PlatformEventsPanel    from "./panels/PlatformEventsPanel";
 import BacktestPanel          from "./panels/BacktestPanel";
 import TournamentPanel        from "./panels/TournamentPanel";
+import TrafficPanel           from "./panels/TrafficPanel";
 import AiControlsPanel        from "./panels/AiControlsPanel";
 import OperationsPanel        from "./panels/OperationsPanel";
 import OperationsLedgerPanel  from "./panels/OperationsLedgerPanel";
@@ -38,6 +39,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "users-explorer":     <UsersPanel />,
   "backtest":           <BacktestPanel />,
   "tournament":         <TournamentPanel />,
+  "traffic":            <TrafficPanel />,
   "ai-controls":        <AiControlsPanel />,
   "cex-sessions":       <CexSessionsPanel />,
   "market-volume":      <MarketVolumePanel />,

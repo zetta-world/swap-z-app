@@ -12,6 +12,7 @@ export type ModuleId =
   | "finance"
   | "backtest"
   | "tournament"
+  | "traffic"
   | "ai-controls"
   | "cex-sessions"
   | "market-volume"
@@ -226,6 +227,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "users",
     defaultEnabled: true,
     defaultOrder: 13,
+  },
+  {
+    id: "traffic",
+    title: "MIDGARD",
+    subtitle: "acessos no mapa · dia/semana/mês · origem",
+    icon: "🌍",
+    category: "growth",
+    defaultEnabled: true,
+    defaultOrder: 14,
   },
   {
     id: "growth",
