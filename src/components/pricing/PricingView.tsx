@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   Sparkles, X, Mail, ArrowRight, CheckCircle2, Loader2, Check, Crown,
@@ -42,7 +44,6 @@ const TIERS: TierConfig[] = [
   },
 ];
 
-const FREE_FEATURES: MessageKey[] = ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionSonnet"];
 
 const FAQ: { q: MessageKey; a: MessageKey }[] = [
   { q: "pricing.faq1Q", a: "pricing.faq1A" },
@@ -163,51 +164,17 @@ export default function PricingView() {
           ))}
         </div>
 
-        {/* Free tier — simpler, no artwork */}
-        <div className="mt-5 md:mt-8 rounded-2xl border border-white/8 bg-bg-1/40 backdrop-blur-sm p-4 sm:p-5 max-w-3xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="sm:w-44 flex-shrink-0">
-              <div className="font-display font-bold text-sm text-ink tracking-wide">{t("pricing.tierFreeName")}</div>
-              <div className="font-display font-extrabold text-xl text-ink mt-1">{t("pricing.tierFreePrice")}</div>
-              <div className="font-mono text-[10px] text-ink-3 mt-1">
-                {t("pricing.tierFreeModel")} · {t("pricing.tierFreeCap")}
-              </div>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-sans text-[12px] text-ink-2 leading-relaxed mb-2">{t("pricing.freeTagline")}</p>
-              <ul className="space-y-1.5">
-                {FREE_FEATURES.map((f) => (
-                  <li key={f} className="flex items-start gap-2">
-                    <Check className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-ink-3" />
-                    <span className="font-sans text-[12px] text-ink-2 leading-snug">{t(f)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="sm:w-36 flex-shrink-0">
-              {isAdmin ? (
-                currentTier === "free" ? (
-                  <div className="w-full text-center rounded-lg border border-green/40 bg-green/[0.08] py-2.5 font-mono text-[10px] tracking-widest uppercase text-green">
-                    {t("pricing.adminActive")}
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => selectTier("free")}
-                    disabled={selecting === "free"}
-                    className="w-full text-center rounded-lg border border-white/15 bg-white/[0.04] hover:bg-white/[0.08] py-2.5 font-mono text-[10px] tracking-widest uppercase text-ink-2 disabled:opacity-60"
-                  >
-                    {selecting === "free" ? "…" : t("pricing.adminUse")}
-                  </button>
-                )
-              ) : (
-                <div className="w-full text-center rounded-lg border border-white/8 bg-white/[0.02] py-2.5 font-mono text-[10px] tracking-widest uppercase text-ink-3">
-                  {t("pricing.tierFreeCta")}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        {/* The Pantheon is gods-only — free starts as THRALL, over on the Hird
+            page. A slim pointer keeps the funnel without a clashing card. */}
+        <Link href="/plans" className="mt-5 md:mt-8 max-w-3xl mx-auto flex items-center justify-center gap-3 rounded-xl border border-white/8 bg-bg-1/40 px-4 py-3 hover:bg-white/[0.04] transition-colors">
+          <span className="relative w-9 h-9 rounded-full border border-white/15 overflow-hidden flex-shrink-0">
+            <Image src="/warriors/thrall.jpg" alt="Thrall" fill sizes="36px" className="object-cover" />
+          </span>
+          <p className="font-sans text-[12px] text-ink-2 leading-snug">
+            Sem plano? Comece como <b className="text-ink">Thrall</b> — grátis, sem juramento.
+            <span className="text-cyan whitespace-nowrap"> Ver a Hird e o plano grátis →</span>
+          </p>
+        </Link>
       </div>
 
       {/* Two layers explainer */}
