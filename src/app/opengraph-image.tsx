@@ -46,6 +46,10 @@ const BG_1   = "#0A0E1B";
 const BG_2   = "#11162A";
 
 export default async function OG() {
+  // The real Yggdrasil Z emblem, embedded so the link preview carries the
+  // actual brand instead of a lookalike text tile. Satori accepts the raw
+  // ArrayBuffer as an <img> src.
+  const logo = await fetch(new URL("./og-logo.png", import.meta.url)).then((r) => r.arrayBuffer());
   return new ImageResponse(
     (
       <div
@@ -87,7 +91,7 @@ export default async function OG() {
         />
 
         {/* ── Sidebar ─────────────────────────────────────── */}
-        <Sidebar />
+        <Sidebar logo={logo} />
 
         {/* ── Main canvas ─────────────────────────────────── */}
         <div
@@ -166,7 +170,7 @@ export default async function OG() {
 
 // ─── Sub-components ────────────────────────────────────────────────────
 
-function Sidebar() {
+function Sidebar({ logo }: { logo: ArrayBuffer }) {
   // Pure CSS pictograms — satori can't load emoji fonts so the previous
   // ⇄/💳/🌉 etc. rendered as empty tofu boxes. These are drawn from div
   // primitives so they're always present at the same visual weight as
@@ -195,22 +199,8 @@ function Sidebar() {
     >
       {/* Brand */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 10,
-            background: `linear-gradient(135deg, ${CYAN}, ${VIOLET})`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 22,
-            fontWeight: 900,
-            color: BG,
-          }}
-        >
-          Z
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text */}
+        <img src={logo as unknown as string} width={40} height={40} style={{ objectFit: "contain" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: INK, letterSpacing: 0.5 }}>
             Z-SWAP
