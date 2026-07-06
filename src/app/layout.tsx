@@ -25,12 +25,15 @@ const dmMono = DM_Mono({
 });
 
 // metadataBase: where Next.js resolves relative OG image paths from.
-// We prefer the explicit env override (set this on Vercel for the
-// canonical custom domain), then fall back to the Vercel-provided URL
-// (auto-set per deployment), then the canonical zettaword domain.
+// ⚠️ NEVER use VERCEL_URL here: that's the per-deployment UNIQUE url
+// (swap-z-app-<hash>.vercel.app), which Vercel protects behind auth — link
+// scrapers (WhatsApp/Telegram/Twitter) got a 401 on og:image and showed NO
+// preview at all. Use the PUBLIC production alias instead: explicit env
+// override first, then Vercel's production-domain system var, then the
+// hardcoded public alias.
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ??
-  (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : null) ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null) ??
   "https://swap-z-app.vercel.app";
 
 const TITLE       = "Z-SWAP — The Liquidity Nexus";
