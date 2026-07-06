@@ -82,3 +82,12 @@ de medalhão (feedback do CEO).
 
 Quando gerar: salvar em `public/warriors/{drengr,berserkr,einherjar}.jpg` e me
 avisar — o slot do medalhão vira hero de arte com troca de arquivo.
+
+## Notas de produto (04/07)
+- Card Free REMOVIDO do Panteão (página é só dos deuses); no lugar, um pointer
+  discreto pro Thrall na Hird — funil mantido.
+- **Logo padrão da plataforma** (decisão do CEO): a UI normal usa a logo padrão
+  quando o plano ativo é mensal (Hird) ou quando não há plano; brasões dos
+  deuses ficam EXCLUSIVOS de holder do Panteão (Founder). ⚠️ Técnico: hoje o
+  BrandMark chaveia por tier — quando a assinatura Hird nascer, gravar a ORIGEM
+  (nft|monthly) no tier_cache e condicionar o brasão a origem=nft.
