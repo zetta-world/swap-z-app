@@ -58,11 +58,11 @@ export default function BrandMark({ size = "lg" }: { size?: keyof typeof SIZES }
   // exclusive. Prismatic halo behind, emblem over the dark tile.
   return (
     <div className={cn("relative flex-shrink-0", s.box)}>
-      <div aria-hidden className={cn("absolute inset-0 blur-md", s.radius, s.blur)}
+      {/* No solid tile — the emblem floats on the bar (the old #05060C box read
+          as a black square against the navy topbar). Soft prismatic halo only. */}
+      <div aria-hidden className={cn("absolute inset-1 rounded-full blur-md opacity-45")}
            style={{ background: "linear-gradient(135deg,#00E8FF,#9F5FFF,#F5A623)" }} />
-      <div className={cn("relative bg-[#05060C] flex items-center justify-center overflow-hidden", s.box, s.radius)}>
-        <Image src="/brand/yggdrasil-z-transparent.png" alt="Z-SWAP" width={s.px} height={s.px} priority className={cn("object-contain", s.box)} />
-      </div>
+      <Image src="/brand/yggdrasil-z-transparent.png" alt="Z-SWAP" width={s.px} height={s.px} priority className={cn("relative object-contain drop-shadow-[0_0_6px_rgba(159,95,255,0.5)]", s.box)} />
     </div>
   );
 }
