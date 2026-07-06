@@ -14,13 +14,16 @@ export default function Beacon() {
 
   useEffect(() => {
     if (pathname === lastSent.current) return;
+    // document.referrer only carries the EXTERNAL origin on the first view of
+    // the session — later SPA navigations are internal noise, so send it once.
+    const isFirstView = lastSent.current === null;
     lastSent.current = pathname;
 
     try {
       fetch("/api/beacon", {
         method:    "POST",
         headers:   { "content-type": "application/json" },
-        body:      JSON.stringify({ path: pathname }),
+        body:      JSON.stringify({ path: pathname, ref: isFirstView && document.referrer ? document.referrer : undefined }),
         keepalive: true,
       }).catch(() => undefined);
     } catch {
