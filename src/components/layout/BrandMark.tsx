@@ -52,12 +52,16 @@ export default function BrandMark({ size = "lg" }: { size?: keyof typeof SIZES }
     );
   }
 
-  // Default cyan "Z" tile
+  // Default platform mark — the Yggdrasil Z (world tree entwining the Z, the
+  // three orbs = the connected chains). Shown when no paid-tier crest applies:
+  // no plan, or (future) Hird monthly subscribers — god crests stay Founder-
+  // exclusive. Prismatic halo behind, emblem over the dark tile.
   return (
     <div className={cn("relative flex-shrink-0", s.box)}>
-      <div aria-hidden className={cn("absolute inset-0 bg-grad-cyan blur-md", s.radius, s.blur)} />
-      <div className={cn("relative bg-grad-cyan flex items-center justify-center", s.box, s.radius)}>
-        <span className={cn("font-display font-extrabold text-bg leading-none", s.z)}>Z</span>
+      <div aria-hidden className={cn("absolute inset-0 blur-md", s.radius, s.blur)}
+           style={{ background: "linear-gradient(135deg,#00E8FF,#9F5FFF,#F5A623)" }} />
+      <div className={cn("relative bg-[#05060C] flex items-center justify-center overflow-hidden", s.box, s.radius)}>
+        <Image src="/brand/yggdrasil-z-transparent.png" alt="Z-SWAP" width={s.px} height={s.px} priority className={cn("object-contain", s.box)} />
       </div>
     </div>
   );
