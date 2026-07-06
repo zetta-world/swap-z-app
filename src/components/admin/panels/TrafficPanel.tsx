@@ -70,11 +70,19 @@ export default function TrafficPanel() {
 
       {data && tab === "mapa" && (
         <div>
-          <div style={{ overflowX: "auto" }}>
-            <svg viewBox={`0 0 ${VB_W} ${VB_H}`} style={{ width: "100%", minWidth: 480, display: "block" }} role="img" aria-label="Mapa de acessos">
-              {/* land grid */}
+          <div>
+            <svg viewBox={`0 0 ${VB_W} ${VB_H}`} style={{ width: "100%", display: "block" }} role="img" aria-label="Mapa de acessos">
+              {/* ocean backdrop — frames the map against the dark panel */}
+              <defs>
+                <radialGradient id="mid-ocean" cx="50%" cy="42%" r="75%">
+                  <stop offset="0%" stopColor="#10233c" stopOpacity="0.85" />
+                  <stop offset="100%" stopColor="#070d18" stopOpacity="0.9" />
+                </radialGradient>
+              </defs>
+              <rect x="0" y="0" width={VB_W} height={VB_H} rx="10" fill="url(#mid-ocean)" stroke="rgba(120,160,200,0.14)" />
+              {/* land grid — ice-cyan dots, bright enough to read on the dark ocean */}
               {WORLD_DOTS.map(([lo, la], i) => (
-                <circle key={i} cx={px(lo / 10)} cy={py(la / 10)} r={1.1} fill="var(--adm-ink-4)" opacity={0.55} />
+                <circle key={i} cx={px(lo / 10)} cy={py(la / 10)} r={1.25} fill="#9fc3dc" opacity={0.8} />
               ))}
               {/* access dots — size by views, glow pulse */}
               {data.cities.map((c, i) => {
