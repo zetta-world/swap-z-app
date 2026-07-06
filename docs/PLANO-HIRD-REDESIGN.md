@@ -91,3 +91,8 @@ avisar — o slot do medalhão vira hero de arte com troca de arquivo.
   deuses ficam EXCLUSIVOS de holder do Panteão (Founder). ⚠️ Técnico: hoje o
   BrandMark chaveia por tier — quando a assinatura Hird nascer, gravar a ORIGEM
   (nft|monthly) no tier_cache e condicionar o brasão a origem=nft.
+- **Logo padrão ESCOLHIDA (04/07): Yggdrasil Z** (conceito B) — árvore dos
+  mundos entrelaçando o Z, 3 orbes ciano/violeta/dourado = as chains.
+  Instalada: `public/brand/yggdrasil-z*.png` (512, + versão transparente por
+  luminance-key), BrandMark default, favicon `src/app/icon.png` (192) e
+  `apple-icon.png` (180) — os ícones dinâmicos .tsx foram removidos.
