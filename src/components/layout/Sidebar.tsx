@@ -28,7 +28,7 @@ export default function Sidebar() {
       initial={false}
       animate={{ width: w }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-      className="god-card hidden lg:flex flex-col fixed left-0 top-0 bottom-0 z-40 glass-pane border-r border-white/5 overflow-hidden"
+      className="god-card hidden lg:flex flex-col !fixed left-0 top-0 bottom-0 z-40 glass-pane border-r border-white/5 overflow-hidden"
     >
       {/* Logo */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-white/5 flex-shrink-0">
