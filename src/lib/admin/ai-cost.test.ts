@@ -11,7 +11,7 @@ describe("ai-cost — model-aware estimation", () => {
   it("matches models by substring regardless of version suffix", () => {
     expect(priceForModel("claude-sonnet-4-6").input).toBe(3);
     expect(priceForModel("claude-haiku-4-5-20251001").input).toBe(1);
-    expect(priceForModel("kimi-k2-0711-preview").input).toBe(0.6);
+    expect(priceForModel("kimi-k2.6").input).toBe(0.6);
     expect(priceForModel("mistral-large-latest").input).toBe(2);
   });
 

@@ -39,7 +39,7 @@ export function allProviders(): Record<string, ProviderConfig> {
       id: "kimi", label: "Kimi (Moonshot)", origin: "china",
       apiKey:  process.env.KIMI_API_KEY,
       baseUrl: process.env.KIMI_BASE_URL ?? "https://api.moonshot.ai/v1",
-      model:   process.env.KIMI_MODEL   ?? "kimi-k2-0711-preview",
+      model:   process.env.KIMI_MODEL   ?? "kimi-k2.6",
       signup:  "https://platform.moonshot.ai",
     },
     mistral: {
