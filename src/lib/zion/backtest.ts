@@ -18,7 +18,7 @@ import { selectAllRows } from "@/lib/supabase/paginate";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
-import { recordEvent } from "@/lib/admin/track";
+import { recordEvent, logError } from "@/lib/admin/track";
 import { modelChain } from "@/lib/zion/model";
 import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
 import { formatIndicatorsForPrompt, type SymbolIndicators, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
@@ -183,8 +183,12 @@ export async function runBacktestScanForProvider(
     await recordResult(provider.id, provider.label, true);
     recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: `backtest_${provider.id}`, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return extractCards(r.text);
-  } catch {
-    await recordResult(provider.id, provider.label, false);
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    await recordResult(provider.id, provider.label, false, reason);
+    // Log the reason so a repeatedly-failing provider is diagnosable (bad key /
+    // no credit / dead model) from the admin Logs panel, not just "N failures".
+    logError(`backtest_scan:${provider.id}`, reason, { model: provider.model, source: `backtest_${provider.id}` });
     return [];
   }
 }
@@ -202,7 +206,12 @@ async function runSpecialist(role: string, provider: ProviderConfig | null, user
     await recordResult(provider.id, provider.label, true);
     recordEvent("zion_analysis", { meta: { op: `hybrid_${role}`, model: r.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return r.text;
-  } catch { await recordResult(provider.id, provider.label, false); return ""; }
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    await recordResult(provider.id, provider.label, false, reason);
+    logError(`hybrid_${role}:${provider.id}`, reason, { model: provider.model, source: "hybrid" });
+    return "";
+  }
 }
 
 /** xAI live-search body — turns Grok from a blind text model into a real-time

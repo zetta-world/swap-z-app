@@ -50,8 +50,9 @@ export async function isTripped(id: string): Promise<boolean> {
 }
 
 /** Record the outcome of one call. Success resets; the Nth consecutive failure
- *  trips the breaker and pages once. */
-export async function recordResult(id: string, label: string, ok: boolean): Promise<void> {
+ *  trips the breaker and pages once. `reason` (the upstream error) is appended
+ *  to the trip alert so the operator knows WHY — key vs credit vs model. */
+export async function recordResult(id: string, label: string, ok: boolean, reason?: string): Promise<void> {
   const s = await read(id);
   if (ok) {
     if (s.fails !== 0 || s.trippedUntil != null) await write(id, { fails: 0, trippedUntil: null });
@@ -61,7 +62,8 @@ export async function recordResult(id: string, label: string, ok: boolean): Prom
   const alreadyTripped = s.trippedUntil != null && Date.now() < s.trippedUntil;
   if (fails >= THRESHOLD && !alreadyTripped) {
     await write(id, { fails, trippedUntil: Date.now() + COOLDOWN_MS });
-    notifyTelegram(`🔌 <b>Circuit breaker</b> — ${label} tripped after ${fails} straight failures. Skipping for ${Math.round(COOLDOWN_MS / 60_000)}min. Fix the key or it'll keep re-tripping.`);
+    const why = reason ? `\nLast error: ${reason.slice(0, 160)}` : "";
+    notifyTelegram(`🔌 <b>Circuit breaker</b> — ${label} tripped after ${fails} straight failures. Skipping for ${Math.round(COOLDOWN_MS / 60_000)}min. Fix the key or it'll keep re-tripping.${why}`);
   } else {
     await write(id, { fails, trippedUntil: s.trippedUntil });
   }
