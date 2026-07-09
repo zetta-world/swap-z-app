@@ -103,7 +103,14 @@ export async function openaiCompatChat(
       }),
       signal: ctrl.signal,
     });
-    if (!res.ok) throw new Error(`upstream ${res.status}`);
+    if (!res.ok) {
+      // Surface WHY it failed (401 bad key vs 402 no credit vs 404 dead model):
+      // the status alone can't tell the operator whether to fix the key or top
+      // up credits. Body is best-effort + truncated; provider error bodies never
+      // echo the Authorization header, so this carries no secret.
+      const detail = await res.text().catch(() => "");
+      throw new Error(`upstream ${res.status}${detail ? `: ${detail.replace(/\s+/g, " ").slice(0, 180).trim()}` : ""}`);
+    }
     const data = await res.json() as {
       choices?: Array<{ message?: { content?: string } }>;
       usage?:   { prompt_tokens?: number; completion_tokens?: number };
