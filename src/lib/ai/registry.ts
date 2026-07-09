@@ -22,6 +22,8 @@ export interface ProviderConfig {
   apiKey:  string | undefined; // from env — undefined = not configured
   baseUrl: string;
   model:   string;
+  temperature?: number;        // sampling temp override; some models pin it
+                               // (kimi-k2.6 only accepts 1). undefined = 0.6.
   signup:  string;             // where to get the API key
 }
 
@@ -40,6 +42,8 @@ export function allProviders(): Record<string, ProviderConfig> {
       apiKey:  process.env.KIMI_API_KEY,
       baseUrl: process.env.KIMI_BASE_URL ?? "https://api.moonshot.ai/v1",
       model:   process.env.KIMI_MODEL   ?? "kimi-k2.6",
+      // kimi-k2.6 rejects any temperature != 1 with a 400 (invalid_request).
+      temperature: Number(process.env.KIMI_TEMPERATURE ?? 1),
       signup:  "https://platform.moonshot.ai",
     },
     mistral: {
@@ -161,7 +165,7 @@ export async function callGeoModel(req: {
   const p = providerForCountry(req.country);
   if (!p?.apiKey) return null;
   const r = await openaiCompatChat(
-    { model: p.model, system: req.system, user: req.user, maxTokens: req.maxTokens, timeoutMs: req.timeoutMs },
+    { model: p.model, system: req.system, user: req.user, maxTokens: req.maxTokens, timeoutMs: req.timeoutMs, temperature: p.temperature },
     { apiKey: p.apiKey, baseUrl: p.baseUrl },
   );
   return { ...r, providerId: p.id, origin: p.origin };

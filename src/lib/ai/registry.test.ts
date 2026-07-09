@@ -1,0 +1,20 @@
+import { describe, it, expect } from "vitest";
+import { allProviders } from "@/lib/ai/registry";
+
+describe("registry — provider sampling temperature", () => {
+  // kimi-k2.6 returns 400 "invalid temperature: only 1 is allowed for this
+  // model" for any temperature != 1. This pin is the fix; a regression here
+  // silently kills Kimi in the tournament again.
+  it("pins Kimi to temperature 1", () => {
+    expect(allProviders().kimi.temperature).toBe(1);
+  });
+
+  // Every other provider leaves temperature undefined so openaiCompatChat
+  // applies its 0.6 default — changing that would shift their behaviour.
+  it("leaves the other providers on the default (undefined)", () => {
+    const p = allProviders();
+    for (const id of ["deepseek", "mistral", "llama"]) {
+      expect(p[id]?.temperature).toBeUndefined();
+    }
+  });
+});
