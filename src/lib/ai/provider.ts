@@ -36,6 +36,8 @@ export interface ChatRequest {
   user:        string;
   maxTokens:   number;
   timeoutMs?:  number;   // default 40s
+  temperature?: number;  // OpenAI-compat sampling temp (default 0.6). Some
+                         // models pin it — e.g. kimi-k2.6 only accepts 1.
   cacheSystem?: boolean; // Anthropic prompt caching on the system block
   /** Vendor-specific extra body fields for OpenAI-compat calls — e.g. xAI's
    *  `search_parameters` to enable Grok's native live X/news search. */
@@ -94,7 +96,7 @@ export async function openaiCompatChat(
       body: JSON.stringify({
         model:       req.model,
         max_tokens:  req.maxTokens,
-        temperature: 0.6,
+        temperature: req.temperature ?? 0.6,
         messages: [
           { role: "system", content: req.system },
           { role: "user",   content: req.user },

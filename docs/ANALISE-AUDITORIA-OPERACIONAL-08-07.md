@@ -86,6 +86,32 @@ Pequeno, cirúrgico, só adiciona logging (não muda caminho de sucesso nem flux
 
 Resultado: da próxima falha de qualquer provedor, o **porquê** fica registrado.
 
+## ATUALIZAÇÃO 09/07 — o patch de observabilidade achou a causa REAL (não era a chave)
+
+Assim que o log de erro entrou no ar (08:23), o próximo tick revelou:
+
+- **09:00:49** — `upstream 400: invalid temperature: only 1 is allowed for this
+  model` (kimi-k2.6). Ou seja: **a chave AUTENTICOU** — a chamada morria no
+  parâmetro `temperature: 0.6` que o `openaiCompatChat` mandava fixo. O
+  kimi-k2.6 (modelo de raciocínio) só aceita `temperature: 1`. Toda chamada
+  batia 400 **antes de ser cobrada** → explica o consumo $0 com saldo $10.
+
+**Correção honesta do diagnóstico:** ontem (pré-patch, sem dados) eu atribuí a
+falha à chave/créditos. Estava errado — o bloqueio real sempre foi um **bug de
+código nosso** (temperature). O log expôs isso em 1 tick. Lição: o breaker só
+dizia "N falhas"; sem o motivo, um chute vira verdade. Por isso o patch.
+
+**Fix (PR desta rodada):** `ProviderConfig.temperature` opcional (default 0.6 via
+`openaiCompatChat`), Kimi fixado em `1` (env `KIMI_TEMPERATURE`), threaded nos 3
+call sites (torneio, hybrid, geo). Teste `registry.test.ts` trava a temp do Kimi.
+52/52 testes.
+
+⚠️ **Sinal secundário a vigiar:** às 09:15 um probe de health acusou `401
+Incorrect API key`. A chave que rodou às 09:00 autenticou; o CEO trocou a chave
+logo depois (redeploy 09:15:27). Então o próximo tick com o fix da temperature
+dirá se a chave NOVA também autentica: se `kimi_scan` aparecer, resolvido; se
+voltar `401`, a chave nova está errada (talvez a antiga já estivesse certa).
+
 ## Pendências (registradas, NÃO implementadas)
 
 - ⏸️ Kimi: aguardando CEO validar conta/chave Moonshot (fora do código).
