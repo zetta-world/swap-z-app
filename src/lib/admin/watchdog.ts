@@ -3,6 +3,7 @@ import { notifyTelegram } from "@/lib/admin/track";
 import { getCronHeartbeats, pingAnthropic, pingAiProviders } from "@/lib/admin/health";
 import { estimateCost } from "@/lib/admin/ai-cost";
 import { getFlywheelGates } from "@/lib/admin/gates";
+import { selectAllRows } from "@/lib/supabase/paginate";
 
 /**
  * Alert watchdog — the platform's autonomous monitor. Runs every cron tick
@@ -153,17 +154,68 @@ export async function runAlertWatchdog(): Promise<void> {
   } catch { /* watchdog must never break the cron */ }
 }
 
+// Round-trip execution cost netted out of expectancy — mirrors backtest.ts /
+// the admin panel so the digest shows the SAME net edge, not a rosier gross.
+const DIGEST_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const DIGEST_MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
+
+type SuggRow = { status: string; outcome_pct: number | null; source: string | null };
+
+/** Per-agent flywheel leaderboard (self_scan / tournament / radar), formatted
+ *  for Telegram: decided count, win-rate and NET expectancy per source, worst
+ *  agents flagged so the CEO reads the tournament from his pocket. Sub-sample
+ *  agents (<MIN_SAMPLE decided) carry a ⚠ so a lucky small streak isn't read
+ *  as skill. Paginated — the ledger is past 1000 rows (A1). */
+async function flywheelDigestBlock(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>): Promise<string> {
+  const rows = await selectAllRows<SuggRow>((from, to) =>
+    db.from("zion_suggestions")
+      .select("status, outcome_pct, source")
+      .order("created_at", { ascending: true }).range(from, to));
+  if (rows.length === 0) return "";
+
+  type Agg = { decided: number; wins: number; resolved: number; sum: number };
+  const by = new Map<string, Agg>();
+  for (const r of rows) {
+    const src = (r.source ?? "—").replace(/_scan$/, "");
+    const a = by.get(src) ?? { decided: 0, wins: 0, resolved: 0, sum: 0 };
+    const win  = r.status === "win"  || r.status === "hit_target";
+    const loss = r.status === "loss" || r.status === "hit_stop";
+    if (r.status !== "open") { a.resolved++; a.sum += Number(r.outcome_pct) || 0; }
+    if (win)  { a.decided++; a.wins++; }
+    else if (loss) a.decided++;
+    by.set(src, a);
+  }
+
+  const lines = [...by.entries()]
+    .filter(([, a]) => a.resolved > 0)
+    .map(([src, a]) => ({
+      src,
+      decided: a.decided,
+      win: a.decided > 0 ? Math.round((a.wins / a.decided) * 100) : 0,
+      net: a.sum / a.resolved - DIGEST_COST_PCT,
+    }))
+    .sort((x, y) => y.net - x.net)
+    .map((l) =>
+      ` ${l.net >= 0 ? "🟢" : "🔴"} ${l.src}: ${l.decided}d · ${l.win}% · ` +
+      `${l.net >= 0 ? "+" : ""}${l.net.toFixed(2)}%${l.decided < DIGEST_MIN_SAMPLE ? " ⚠" : ""}`);
+  if (lines.length === 0) return "";
+
+  const gates = await getFlywheelGates();
+  const state = gates.pause_backtest ? "⏸ pausado" : "▶ rodando";
+  return `\n🏁 <b>Flywheel</b> ${state} — agente: decididos·win·líq.\n${lines.join("\n")}\n<i>⚠ = abaixo de ${DIGEST_MIN_SAMPLE} decididos (sub-amostra)</i>`;
+}
+
 async function sendDailyDigest(): Promise<void> {
   const db = getSupabaseAdmin();
   if (!db) return;
   const ago24h = new Date(Date.now() - 86_400_000).toISOString();
-  const [{ count: users }, { count: active24h }, { data: ops }, { data: sess }, { data: sugg }, { data: positions }] = await Promise.all([
+  const [{ count: users }, { count: active24h }, { data: ops }, { data: sess }, { data: positions }, flywheel] = await Promise.all([
     db.from("users").select("*", { count: "exact", head: true }),
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago24h),
     db.from("operations").select("volume_usd, pnl_usd, created_at"),
     db.from("autopilot_sessions").select("pnl_today, is_active"),
-    db.from("zion_suggestions").select("status"),
     db.from("autopilot_positions").select("cost_usd").neq("status", "closed"),
+    flywheelDigestBlock(db),
   ]);
 
   let vol24 = 0, pnlAll = 0;
@@ -172,9 +224,6 @@ async function sendDailyDigest(): Promise<void> {
   for (const s of sess ?? []) { apPnl += Number(s.pnl_today) || 0; if (s.is_active) apActive++; }
   let exposure = 0;
   for (const p of positions ?? []) exposure += Number(p.cost_usd) || 0;
-  let wins = 0, losses = 0;
-  for (const s of sugg ?? []) { if (s.status === "win" || s.status === "hit_target") wins++; else if (s.status === "loss" || s.status === "hit_stop") losses++; }
-  const wr = wins + losses > 0 ? `${((wins / (wins + losses)) * 100).toFixed(0)}%` : "—";
   const m = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
   notifyTelegram(
@@ -182,7 +231,7 @@ async function sendDailyDigest(): Promise<void> {
     `👥 Users: ${users ?? 0} (${active24h ?? 0} active 24h)\n` +
     `📊 Volume 24h: ${m(vol24)}\n` +
     `💰 Realized P&L (all): ${pnlAll >= 0 ? "+" : ""}${m(pnlAll)}\n` +
-    `🤖 Autopilot: ${apActive} active · today ${apPnl >= 0 ? "+" : ""}${m(apPnl)} · exposure ${m(exposure)}\n` +
-    `🎯 ZION win-rate: ${wr}`,
+    `🤖 Autopilot: ${apActive} active · today ${apPnl >= 0 ? "+" : ""}${m(apPnl)} · exposure ${m(exposure)}` +
+    flywheel,
   );
 }
