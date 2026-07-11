@@ -177,7 +177,7 @@ export async function runBacktestScanForProvider(
   if (!instruction) return [];
   try {
     const r = await openaiCompatChat(
-      { model: provider.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: provider.timeoutMs ?? 40_000, temperature: provider.temperature },
+      { model: provider.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: provider.timeoutMs ?? 40_000, temperature: provider.temperature, extraBody: provider.extraBody },
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
     await recordResult(provider.id, provider.label, true);
@@ -200,7 +200,8 @@ async function runSpecialist(role: string, provider: ProviderConfig | null, user
   if (await isTripped(provider.id)) return ""; // breaker open — degrade to "(none)" (P2.11)
   try {
     const r = await openaiCompatChat(
-      { model: provider.model, system, user, maxTokens, timeoutMs: provider.timeoutMs ?? timeoutMs, temperature: provider.temperature },
+      { model: provider.model, system, user, maxTokens, timeoutMs: provider.timeoutMs ?? timeoutMs, temperature: provider.temperature,
+        extraBody: { ...(provider.extraBody ?? {}), ...(extraBody ?? {}) } },
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
     await recordResult(provider.id, provider.label, true);

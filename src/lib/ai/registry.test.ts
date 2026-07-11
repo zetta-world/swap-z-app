@@ -9,6 +9,13 @@ describe("registry — provider sampling temperature", () => {
     expect(allProviders().kimi.temperature).toBe(1);
   });
 
+  // kimi-k2.6 ships thinking ON (slow reasoning trace). We disable it for the
+  // fast "instant" path — the exact Moonshot-native param. A regression here
+  // brings back the 50s timeouts that kept Kimi out of the tournament.
+  it("disables Kimi's thinking trace (instant mode)", () => {
+    expect(allProviders().kimi.extraBody).toEqual({ thinking: { type: "disabled" } });
+  });
+
   // Every other provider leaves temperature undefined so openaiCompatChat
   // applies its 0.6 default — changing that would shift their behaviour.
   it("leaves the other providers on the default (undefined)", () => {
