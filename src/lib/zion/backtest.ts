@@ -51,6 +51,21 @@ async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise
     "stopLoss, and probability (your HONEST confidence 0-100). Use the regime,",
     "trajectory and 1Y-cycle context to choose direction and targets.",
     "",
+    "TREND DISCIPLINE — direction is where the edge is won or lost. The regime",
+    "and trajectory are your PRIOR. A WITH-trend card (long in an uptrend, short",
+    "in a downtrend) is high-probability. A COUNTER-trend card (shorting a",
+    "confirmed uptrend, or buying a confirmed downtrend) is LOW-probability and",
+    "needs EXPLICIT reversal evidence in the indicators — momentum divergence, a",
+    "broken structure, exhaustion. NEVER emit a counter-trend card just to fill",
+    "coverage. When a symbol is clearly trending and you see no reversal signal,",
+    "take the WITH-trend side or skip it: a low-conviction counter-trend bet is",
+    "worse than no card. (This is symmetric — it favors shorts in a downtrend as",
+    "much as longs in an uptrend; it is trend-respect, not a directional bias.)",
+    "",
+    "BRACKET REALISM — for this horizon a take-profit sits within a few % up to",
+    "~15% of entry; it is NEVER a multiple of the price. If your target lands",
+    ">20% from entry you mis-formatted a number — re-derive it.",
+    "",
     "OUTPUT FORMAT — REQUIRED. Respond with a SINGLE JSON object and NOTHING",
     "else — no prose, no markdown fences:",
     '{"cards": [{"kind": "buy_limit"|"sell_safe", "title": "...", "summary": "...",',
@@ -339,6 +354,13 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
 
 const STABLES = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD", "USDE", "PYUSD"]);
 const TRADEABLE_KINDS = new Set(["swap", "buy_limit", "sell_safe", "sell_medium", "sell_aggressive"]);
+// Upper bound on a take-profit's distance from entry. A 72h swing target on a
+// major that sits a MULTIPLE of the price away (Grok emitted 500%+ targets — a
+// number-format corruption that slipped past the "entry within 25%" scale gate
+// because the ENTRY was fine, only the target was garbage) is not a tradeable
+// setup: it never hits target, always resolves as a stop/expire loss, and
+// silently poisons the win-rate. Reject it.
+const MAX_TARGET_PCT = Number(process.env.BACKTEST_MAX_TARGET_PCT ?? 30);
 
 type NewSuggestion = Partial<ZionSuggestionRow> & { symbol: string; kind: string; side: "buy" | "sell"; ref_price: number };
 
@@ -402,7 +424,7 @@ export function extractSuggestion(
     const reward = (target - entry) * dir;
     const risk   = (entry - stop) * dir;
     const targetPct = (Math.abs(target - entry) / entry) * 100;
-    if (!(reward > 0) || !(risk > 0) || targetPct < 0.15 || reward / risk < 1) return null;
+    if (!(reward > 0) || !(risk > 0) || targetPct < 0.15 || targetPct > MAX_TARGET_PCT || reward / risk < 1) return null;
   }
 
   return {
