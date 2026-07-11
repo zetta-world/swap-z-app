@@ -21,12 +21,12 @@ const MIN_CASH_USD = Number(process.env.PAPER_MIN_CASH_USD  ?? 25);   // floor t
 
 /** The flywheel sources that get their own paper wallet — the tournament, at
  *  the portfolio level. */
-export const PAPER_SOURCES = ["self_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan", "radar"] as const;
+export const PAPER_SOURCES = ["self_scan", "hybrid_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan", "radar"] as const;
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 
 const LABELS: Record<string, string> = {
-  self_scan: "Claude (self)", mistral_scan: "Mistral", grok_scan: "Grok",
-  deepseek_scan: "DeepSeek", kimi_scan: "Kimi", radar: "Radar",
+  self_scan: "Claude (self)", hybrid_scan: "Ferrari (hybrid)", mistral_scan: "Mistral",
+  grok_scan: "Grok", deepseek_scan: "DeepSeek", kimi_scan: "Kimi", radar: "Radar",
 };
 
 // ── Pure helpers (unit-tested — no DB, no network) ────────────────────────

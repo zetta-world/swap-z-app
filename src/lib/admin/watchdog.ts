@@ -205,17 +205,37 @@ async function flywheelDigestBlock(db: NonNullable<ReturnType<typeof getSupabase
   return `\n🏁 <b>Flywheel</b> ${state} — agente: decididos·win·líq.\n${lines.join("\n")}\n<i>⚠ = abaixo de ${DIGEST_MIN_SAMPLE} decididos (sub-amostra)</i>`;
 }
 
+/** Paper-trading leaderboard for the digest: per-agent book equity (starting +
+ *  realized P&L) and win-rate, best-first. Realized-only (no live price fetch —
+ *  keeps the digest cheap). Empty string until any wallet has traded. */
+async function paperDigestBlock(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>): Promise<string> {
+  const { data: accts } = await db.from("paper_accounts").select("label, starting_usd, realized_pnl_usd, wins, losses");
+  if (!accts?.length) return "";
+  const rows = accts
+    .map((a) => {
+      const start = Number(a.starting_usd), pnl = Number(a.realized_pnl_usd);
+      const decided = Number(a.wins) + Number(a.losses);
+      return { label: a.label, equity: start + pnl, ret: start > 0 ? (pnl / start) * 100 : 0, decided, win: decided > 0 ? Math.round((Number(a.wins) / decided) * 100) : 0 };
+    })
+    .filter((r) => r.decided > 0)                 // only agents that actually closed a trade
+    .sort((x, y) => y.equity - x.equity);
+  if (rows.length === 0) return "";
+  const line = rows.map((r) => ` ${r.ret >= 0 ? "🟢" : "🔴"} ${r.label}: $${Math.round(r.equity).toLocaleString()} (${r.ret >= 0 ? "+" : ""}${r.ret.toFixed(1)}% · ${r.win}%)`).join("\n");
+  return `\n📈 <b>Paper · Gate.io</b> (patrimônio · retorno · win)\n${line}`;
+}
+
 async function sendDailyDigest(): Promise<void> {
   const db = getSupabaseAdmin();
   if (!db) return;
   const ago24h = new Date(Date.now() - 86_400_000).toISOString();
-  const [{ count: users }, { count: active24h }, { data: ops }, { data: sess }, { data: positions }, flywheel] = await Promise.all([
+  const [{ count: users }, { count: active24h }, { data: ops }, { data: sess }, { data: positions }, flywheel, paper] = await Promise.all([
     db.from("users").select("*", { count: "exact", head: true }),
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago24h),
     db.from("operations").select("volume_usd, pnl_usd, created_at"),
     db.from("autopilot_sessions").select("pnl_today, is_active"),
     db.from("autopilot_positions").select("cost_usd").neq("status", "closed"),
     flywheelDigestBlock(db),
+    paperDigestBlock(db),
   ]);
 
   let vol24 = 0, pnlAll = 0;
@@ -232,6 +252,6 @@ async function sendDailyDigest(): Promise<void> {
     `📊 Volume 24h: ${m(vol24)}\n` +
     `💰 Realized P&L (all): ${pnlAll >= 0 ? "+" : ""}${m(pnlAll)}\n` +
     `🤖 Autopilot: ${apActive} active · today ${apPnl >= 0 ? "+" : ""}${m(apPnl)} · exposure ${m(exposure)}` +
-    flywheel,
+    flywheel + paper,
   );
 }

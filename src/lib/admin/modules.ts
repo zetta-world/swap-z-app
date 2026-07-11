@@ -12,6 +12,7 @@ export type ModuleId =
   | "finance"
   | "backtest"
   | "tournament"
+  | "paper"
   | "traffic"
   | "ai-controls"
   | "cex-sessions"
@@ -116,6 +117,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "TOURNAMENT",
     subtitle: "agents & models ranked by net expectancy",
     icon: "♛",
+    category: "dashboard",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
+    id: "paper",
+    title: "PAPER · GATE.IO",
+    subtitle: "simulação autônoma · patrimônio por agente",
+    icon: "📈",
     category: "dashboard",
     defaultEnabled: true,
     defaultOrder: 5,
