@@ -26,6 +26,9 @@ export interface ProviderConfig {
                                // (kimi-k2.6 only accepts 1). undefined = 0.6.
   timeoutMs?: number;          // per-provider call timeout; slow reasoning
                                // models (kimi-k2.6) need more than the 40s default.
+  extraBody?: Record<string, unknown>; // vendor-specific request-body fields —
+                               // e.g. Kimi's { thinking: { type: "disabled" } }
+                               // to skip its slow chain-of-thought.
   signup:  string;             // where to get the API key
 }
 
@@ -46,9 +49,14 @@ export function allProviders(): Record<string, ProviderConfig> {
       model:   process.env.KIMI_MODEL   ?? "kimi-k2.6",
       // kimi-k2.6 rejects any temperature != 1 with a 400 (invalid_request).
       temperature: Number(process.env.KIMI_TEMPERATURE ?? 1),
-      // kimi-k2.6 is a slow reasoner — it times out on the 40s default even at
-      // Tier1. Give it more room (still inside the 60s cron budget).
-      timeoutMs: Number(process.env.KIMI_TIMEOUT_MS ?? 50_000),
+      // kimi-k2.6 ships with "thinking" ON by default — it emits a long internal
+      // reasoning trace that blew past even a 50s timeout. We don't need the
+      // trace (we only want the cards), so disable it → instant mode (~3-8s).
+      // NB: do NOT also send reasoning_effort — Moonshot 400s if both are sent.
+      extraBody: { thinking: { type: "disabled" } },
+      // With thinking off it answers fast; keep a tight timeout so a hang fails
+      // quickly instead of dragging the whole 60s tick.
+      timeoutMs: Number(process.env.KIMI_TIMEOUT_MS ?? 25_000),
       signup:  "https://platform.moonshot.ai",
     },
     mistral: {
