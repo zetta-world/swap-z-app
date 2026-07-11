@@ -124,6 +124,42 @@ export type ZionSuggestionRow = {
   resolved_at:    string | null;
 };
 
+export type PaperAccountRow = {
+  id:               string;
+  source:           string;
+  label:            string;
+  exchange:         string;
+  starting_usd:     number;
+  cash_usd:         number;
+  realized_pnl_usd: number;
+  wins:             number;
+  losses:           number;
+  created_at:       string;
+  updated_at:       string;
+};
+
+export type PaperPositionRow = {
+  id:            string;
+  account_id:    string;
+  suggestion_id: string;
+  source:        string;
+  symbol:        string;
+  side:          "buy" | "sell";
+  qty:           number;
+  entry_price:   number;
+  cost_usd:      number;
+  target_price:  number | null;
+  stop_price:    number | null;
+  horizon_hours: number;
+  status:        string;
+  exit_price:    number | null;
+  exit_reason:   string | null;
+  pnl_usd:       number | null;
+  pnl_pct:       number | null;
+  opened_at:     string;
+  closed_at:     string | null;
+};
+
 export type OperationRow = {
   id:             string;
   wallet_address: string | null;
@@ -214,6 +250,21 @@ export interface Database {
           base: string; pair: string; entry_price: number; base_amount: number; cost_usd: number;
         };
         Update: Partial<AutopilotPositionRow>;
+        Relationships: [];
+      };
+      paper_accounts: {
+        Row: PaperAccountRow;
+        Insert: Partial<PaperAccountRow> & { source: string; label: string };
+        Update: Partial<PaperAccountRow>;
+        Relationships: [];
+      };
+      paper_positions: {
+        Row: PaperPositionRow;
+        Insert: Partial<PaperPositionRow> & {
+          account_id: string; suggestion_id: string; source: string; symbol: string;
+          side: "buy" | "sell"; qty: number; entry_price: number; cost_usd: number;
+        };
+        Update: Partial<PaperPositionRow>;
         Relationships: [];
       };
     };
