@@ -46,6 +46,18 @@ describe("extractSuggestion — money-in gate", () => {
     expect(r).toBeNull();
   });
 
+  it("rejects an absurdly-far target (Grok's 500%+ number corruption)", () => {
+    // entry ~100 (in-scale), but target 600 = 500% away → un-hittable garbage
+    const r = extractSuggestion(card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "500", price:"600" }], stopLoss: "98" }), refs, regimes);
+    expect(r).toBeNull();
+  });
+
+  it("keeps a realistic ~10% target (just under the cap)", () => {
+    const r = extractSuggestion(card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "10", price:"110" }], stopLoss: "96" }), refs, regimes);
+    expect(r).not.toBeNull();
+    expect(r!.target_price).toBe(110);
+  });
+
   it("rejects target on the wrong side of entry", () => {
     // buy with target BELOW entry
     const r = extractSuggestion(card({ exits: [{ label: "TP1", profitPct: "3", price:"97" }], stopLoss: "94" }), refs, regimes);
