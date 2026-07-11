@@ -56,9 +56,10 @@ export function allProviders(): Record<string, ProviderConfig> {
       // trace (we only want the cards), so disable it → instant mode (~3-8s).
       // NB: do NOT also send reasoning_effort — Moonshot 400s if both are sent.
       extraBody: { thinking: { type: "disabled" } },
-      // With thinking off it answers fast; keep a tight timeout so a hang fails
-      // quickly instead of dragging the whole 60s tick.
-      timeoutMs: Number(process.env.KIMI_TIMEOUT_MS ?? 25_000),
+      // Instant mode is usually fast (<10s), but Moonshot latency varies and the
+      // occasional slow tick was aborting at 25s. 35s catches those (rarely
+      // engaged, so little tick-drag) while still leaving room in the 60s budget.
+      timeoutMs: Number(process.env.KIMI_TIMEOUT_MS ?? 35_000),
       signup:  "https://platform.moonshot.ai",
     },
     mistral: {
