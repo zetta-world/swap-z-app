@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sizePosition, canEnter, computeExit } from "@/lib/paper/engine";
+import { sizePosition, canEnter, computeExit, computeExitPath, convictionFactor } from "@/lib/paper/engine";
 
 describe("paper engine — position sizing", () => {
   it("deploys 5% of starting capital, capped by available cash", () => {
@@ -67,5 +67,46 @@ describe("paper engine — exit + P&L (net of cost, stop-first)", () => {
     const v = computeExit(short, 89, t0 + 3_600_000)!;
     expect(v.reason).toBe("target");
     expect(v.pnlUsd).toBeGreaterThan(0);
+  });
+});
+
+describe("paper engine — conviction sizing (F3)", () => {
+  it("scales the multiplier by probability, clamped to [0.5, 1.5]", () => {
+    expect(convictionFactor(50)).toBeCloseTo(1.0);
+    expect(convictionFactor(70)).toBeCloseTo(1.2);
+    expect(convictionFactor(30)).toBeCloseTo(0.8);
+    expect(convictionFactor(200)).toBe(1.5);   // clamp
+    expect(convictionFactor(0)).toBe(0.5);     // clamp
+    expect(convictionFactor(null)).toBeCloseTo(1.0); // neutral default
+  });
+  it("a high-conviction signal deploys more capital", () => {
+    expect(sizePosition(1000, 1000, 1.4)).toBeCloseTo(70); // 5% × 1.4
+    expect(sizePosition(1000, 1000, 0.8)).toBeCloseTo(40); // 5% × 0.8
+  });
+});
+
+describe("paper engine — path-aware exit (F3)", () => {
+  const base = { side: "buy", entry_price: 100, cost_usd: 50, target_price: 110, stop_price: 95, opened_at: "2026-07-01T00:00:00Z", horizon_hours: 72 };
+  const t0 = Date.parse("2026-07-01T00:00:00Z");
+  const candle = (min: number, high: number, low: number, close: number) => ({ t: t0 + min * 60_000, high, low, close });
+
+  it("books the target when an intra-window candle wicks through it", () => {
+    // spot is back at 102 now, but a candle at :20 wicked to 111 → target hit
+    const v = computeExitPath(base, [candle(10, 105, 99, 104), candle(20, 111, 103, 106)], 102, t0 + 3_600_000)!;
+    expect(v.reason).toBe("target");
+  });
+
+  it("stop-first when one candle straddles both levels", () => {
+    const v = computeExitPath(base, [candle(10, 112, 94, 100)], 100, t0 + 3_600_000)!;
+    expect(v.reason).toBe("stop");
+  });
+
+  it("falls back to the spot check when no candles are available", () => {
+    const v = computeExitPath(base, [], 111, t0 + 3_600_000)!;
+    expect(v.reason).toBe("target");
+  });
+
+  it("stays in-flight when no candle touched a level and horizon is open", () => {
+    expect(computeExitPath(base, [candle(10, 104, 98, 101)], 101, t0 + 3_600_000)).toBeNull();
   });
 });

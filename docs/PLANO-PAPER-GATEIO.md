@@ -37,8 +37,12 @@ mesmo capital inicial → curva de patrimônio real por agente.
 | F1.2 | Engine `src/lib/paper/engine.ts`: `openPaperPositions()` (lê sinais novos, size por caixa×risco, fill no preço vivo Gate.io, debita caixa) + `resolvePaperPositions()` (target/stop vs preço vivo, realiza P&L, credita caixa). Custo round-trip via `BACKTEST_COST_PCT`. | 🟢 |
 | F1.3 | Testes vitest do engine (fill, target, stop, expiração, contabilidade da caixa). | 🟢 11 testes (63 total) |
 | F1.4 | Wire no cron de backtest (`waitUntil`, após resolve) atrás de `pause_paper`. Seed das 6 contas por agente ($1000 cada). | 🟢 **começa PAUSADO** (`pause_paper=true`) até o CEO liberar |
-| F2 | Painel admin: curva de patrimônio + posições abertas por agente; linha no digest Telegram. | 🔴 |
-| F3 | Tuning: sizing, slippage/fees, múltiplas contas, ledger `operations`. | 🔴 |
+| F2 | Painel admin `PAPER · GATE.IO`: patrimônio por agente marcado ao preço vivo (realizado + não-realizado), retorno%, win, livro aberto; + linha no digest Telegram. | 🟢 PR #113 |
+| F3 | Tuning: **saída path-aware** via candles 5m da Gate.io (`gateioKlines`/`computeExitPath`, stop-first) + **sizing por convicção** (`convictionFactor`, probabilidade→0.5–1.5×). Custo round-trip = modelo de fee/slippage. | 🟢 |
+
+## Achados da verificação (11/07)
+- **Kimi (flywheel):** 0 sinais — timeout de 40s mesmo no Tier1 (`kimi-k2.6` é lento). Fix: `KIMI_TIMEOUT_MS=50000` por provedor. Se persistir >50s, o modelo não cabe no cron de 60s → dropar ou dar cron dedicado.
+- **Ferrari (Agente B / hybrid_scan):** dormente de propósito (`HYBRID_B_ENABLED!=true`, backtest.ts:293). Carteira paper criada; acorda quando o CEO setar a env + créditos Anthropic.
 
 ## Reaproveitado (não recriar)
 - Gate.io: ccxt `gateio` + `fetchGateIo` (`cex-spot.ts:223`) + metadata.

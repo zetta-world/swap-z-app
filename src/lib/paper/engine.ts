@@ -34,9 +34,17 @@ const LABELS: Record<string, string> = {
 /** Capital to deploy on one signal: a fixed slice of STARTING capital, capped
  *  by cash actually available. Returns 0 when out of capital (below the floor)
  *  — that "ran out of money" state is exactly the portfolio insight we want. */
-export function sizePosition(cashAvail: number, startingUsd: number): number {
-  const size = Math.min(cashAvail, startingUsd * POSITION_PCT);
+export function sizePosition(cashAvail: number, startingUsd: number, conviction = 1): number {
+  const size = Math.min(cashAvail, startingUsd * POSITION_PCT * conviction);
   return size >= MIN_CASH_USD ? size : 0;
+}
+
+/** Map a signal's stated probability (0-100) to a sizing multiplier in
+ *  [0.5, 1.5]: a 50%-conviction signal sizes normally, a 70% one 1.2×, a
+ *  30% one 0.8× — conviction-weighted bets (F3). Missing prob → neutral 1×. */
+export function convictionFactor(probability: number | null): number {
+  const p = probability == null ? 50 : probability;
+  return Math.max(0.5, Math.min(1.5, 0.5 + p / 100));
 }
 
 /** A trade can only be ENTERED if the live fill sits on the correct side of the
@@ -78,7 +86,55 @@ export function computeExit(
   return { exit, reason, netPct, pnlUsd, win };
 }
 
+interface Candle { t: number; high: number; low: number; close: number; }
+
+/** Path-aware exit (F3): replay Gate.io candles since the position opened; the
+ *  FIRST target/stop touched in time wins (stop-first when one candle straddles
+ *  both — the honest pessimistic convention). Horizon elapsed with no touch →
+ *  expired at the last close. Falls back to the coarse spot check when no
+ *  candles are available. Much fairer than a single end-of-tick spot read. */
+export function computeExitPath(
+  pos: { side: string; entry_price: number; cost_usd: number; target_price: number | null; stop_price: number | null; opened_at: string; horizon_hours: number },
+  candles: Candle[], curSpot: number | undefined, nowMs: number,
+): ExitVerdict | null {
+  const dir = pos.side === "buy" ? 1 : -1;
+  const openedMs = Date.parse(pos.opened_at);
+  const horizonMs = openedMs + pos.horizon_hours * 3_600_000;
+  const mk = (exit: number, reason: ExitVerdict["reason"]): ExitVerdict => {
+    const grossPct = ((exit - pos.entry_price) / pos.entry_price) * dir * 100;
+    const netPct = grossPct - COST_PCT;
+    return { exit, reason, netPct, pnlUsd: pos.cost_usd * (netPct / 100), win: reason === "target" || (reason === "expired" && netPct > 0) };
+  };
+  const window = candles.filter((c) => c.t >= openedMs && c.t <= Math.min(nowMs, horizonMs));
+  if (window.length > 0) {
+    for (const c of window) {
+      const hitStop   = pos.stop_price   != null && (dir > 0 ? c.low  <= pos.stop_price   : c.high >= pos.stop_price);
+      const hitTarget = pos.target_price != null && (dir > 0 ? c.high >= pos.target_price : c.low  <= pos.target_price);
+      if (hitStop)   return mk(pos.stop_price!,   "stop");
+      if (hitTarget) return mk(pos.target_price!, "target");
+    }
+    if (nowMs >= horizonMs) return mk(window[window.length - 1].close, "expired");
+    return null;
+  }
+  return curSpot == null ? null : computeExit(pos, curSpot, nowMs);
+}
+
 // ── Gate.io live spot (public, no key) ────────────────────────────────────
+
+/** Gate.io 5-minute candlesticks for [fromMs, toMs]. Row shape (v4):
+ *  [t(sec), quoteVol, close, high, low, open, …]. Best-effort → [] on failure. */
+export async function gateioKlines(symbol: string, fromMs: number, toMs: number): Promise<Candle[]> {
+  try {
+    const url = `https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${symbol.toUpperCase()}_USDT&interval=5m`
+      + `&from=${Math.floor(fromMs / 1000)}&to=${Math.ceil(toMs / 1000)}`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return [];
+    const rows = await res.json() as string[][];
+    return rows
+      .map((r) => ({ t: Number(r[0]) * 1000, close: parseFloat(r[2]), high: parseFloat(r[3]), low: parseFloat(r[4]) }))
+      .filter((c) => Number.isFinite(c.high) && Number.isFinite(c.low) && c.high > 0);
+  } catch { return []; }
+}
 
 /** One call to Gate.io's public tickers; returns base→USDT last price for the
  *  wanted symbols. Best-effort: a symbol missing from the map simply won't be
@@ -133,7 +189,7 @@ export async function openPaperPositions(): Promise<number> {
   const accBySource = new Map<string, PaperAccount>(accounts.map((a) => [a.source, a as PaperAccount]));
 
   const { data: sugg } = await db.from("zion_suggestions")
-    .select("id, symbol, side, target_price, stop_price, horizon_hours, source, status, created_at")
+    .select("id, symbol, side, target_price, stop_price, probability, horizon_hours, source, status, created_at")
     .in("source", PAPER_SOURCES as unknown as string[])
     .eq("status", "open")
     .not("target_price", "is", null)
@@ -161,7 +217,7 @@ export async function openPaperPositions(): Promise<number> {
     const fill = px.get(s.symbol.toUpperCase());
     if (fill == null || !canEnter(s.side, fill, s.target_price, s.stop_price)) continue;
     const cashAvail = Number(acc.cash_usd) - (spent.get(acc.id) ?? 0);
-    const size = sizePosition(cashAvail, Number(acc.starting_usd));
+    const size = sizePosition(cashAvail, Number(acc.starting_usd), convictionFactor(s.probability));
     if (size <= 0) continue; // out of capital
     inserts.push({
       account_id: acc.id, suggestion_id: s.id, source: s.source, symbol: s.symbol, side: s.side,
@@ -190,16 +246,23 @@ export async function resolvePaperPositions(): Promise<number> {
     .select("id, account_id, symbol, side, entry_price, cost_usd, target_price, stop_price, horizon_hours, opened_at")
     .eq("status", "open").limit(1000);
   if (!openFull?.length) return 0;
-  const prices = await gateioSpot([...new Set(openFull.map((p) => p.symbol))]);
-
+  const symbols = [...new Set(openFull.map((p) => p.symbol))];
   const nowMs = Date.now();
+
+  // Path-aware (F3): one Gate.io candle fetch per symbol, from that symbol's
+  // oldest open position to now, reused across its positions. Spot is fallback.
+  const candlesBySymbol = new Map<string, Candle[]>();
+  await Promise.all(symbols.map(async (sym) => {
+    const earliest = Math.min(...openFull.filter((p) => p.symbol === sym).map((p) => Date.parse(p.opened_at)));
+    candlesBySymbol.set(sym, await gateioKlines(sym, earliest, nowMs));
+  }));
+  const prices = await gateioSpot(symbols);
+
   const delta = new Map<string, { cash: number; pnl: number; wins: number; losses: number }>();
   let closed = 0;
 
   for (const p of openFull) {
-    const cur = prices.get(p.symbol.toUpperCase());
-    if (cur == null) continue;
-    const v = computeExit(p, cur, nowMs);
+    const v = computeExitPath(p, candlesBySymbol.get(p.symbol) ?? [], prices.get(p.symbol.toUpperCase()), nowMs);
     if (!v) continue;
     try {
       await db.from("paper_positions").update({
