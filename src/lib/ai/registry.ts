@@ -24,6 +24,8 @@ export interface ProviderConfig {
   model:   string;
   temperature?: number;        // sampling temp override; some models pin it
                                // (kimi-k2.6 only accepts 1). undefined = 0.6.
+  timeoutMs?: number;          // per-provider call timeout; slow reasoning
+                               // models (kimi-k2.6) need more than the 40s default.
   signup:  string;             // where to get the API key
 }
 
@@ -44,6 +46,9 @@ export function allProviders(): Record<string, ProviderConfig> {
       model:   process.env.KIMI_MODEL   ?? "kimi-k2.6",
       // kimi-k2.6 rejects any temperature != 1 with a 400 (invalid_request).
       temperature: Number(process.env.KIMI_TEMPERATURE ?? 1),
+      // kimi-k2.6 is a slow reasoner — it times out on the 40s default even at
+      // Tier1. Give it more room (still inside the 60s cron budget).
+      timeoutMs: Number(process.env.KIMI_TIMEOUT_MS ?? 50_000),
       signup:  "https://platform.moonshot.ai",
     },
     mistral: {
