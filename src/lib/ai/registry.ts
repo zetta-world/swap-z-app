@@ -47,8 +47,10 @@ export function allProviders(): Record<string, ProviderConfig> {
       apiKey:  process.env.KIMI_API_KEY,
       baseUrl: process.env.KIMI_BASE_URL ?? "https://api.moonshot.ai/v1",
       model:   process.env.KIMI_MODEL   ?? "kimi-k2.6",
-      // kimi-k2.6 rejects any temperature != 1 with a 400 (invalid_request).
-      temperature: Number(process.env.KIMI_TEMPERATURE ?? 1),
+      // kimi-k2.6 pins the allowed temperature to the reasoning MODE: thinking-ON
+      // demands 1, thinking-OFF (instant, below) demands 0.6 — sending the wrong
+      // one 400s. We run instant, so 0.6.
+      temperature: Number(process.env.KIMI_TEMPERATURE ?? 0.6),
       // kimi-k2.6 ships with "thinking" ON by default — it emits a long internal
       // reasoning trace that blew past even a 50s timeout. We don't need the
       // trace (we only want the cards), so disable it → instant mode (~3-8s).

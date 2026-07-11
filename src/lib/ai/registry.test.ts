@@ -5,8 +5,10 @@ describe("registry — provider sampling temperature", () => {
   // kimi-k2.6 returns 400 "invalid temperature: only 1 is allowed for this
   // model" for any temperature != 1. This pin is the fix; a regression here
   // silently kills Kimi in the tournament again.
-  it("pins Kimi to temperature 1", () => {
-    expect(allProviders().kimi.temperature).toBe(1);
+  // In instant mode (thinking disabled) kimi-k2.6 requires temperature 0.6 —
+  // sending 1 (the thinking-mode value) 400s. Locked so the two never drift apart.
+  it("sets Kimi to temperature 0.6 (instant mode)", () => {
+    expect(allProviders().kimi.temperature).toBe(0.6);
   });
 
   // kimi-k2.6 ships thinking ON (slow reasoning trace). We disable it for the
