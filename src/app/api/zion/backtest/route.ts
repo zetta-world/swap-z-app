@@ -6,6 +6,7 @@ import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestSc
 import { configuredProviders } from "@/lib/ai/registry";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
+import { runPaperAgent } from "@/lib/paper/engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -118,6 +119,12 @@ export async function POST(req: NextRequest) {
     // Resolve runs regardless of the scan gates — outcomes are independent of
     // the scan, and closing open trades costs nothing.
     try { await resolveOpenSuggestions(); } catch { /* best-effort */ }
+
+    // Paper-trading agent (Gate.io simulation): executes the flywheel's signals
+    // as simulated trades vs the live Gate.io price. Isolated from the real
+    // money path, spends no tokens. Gated independently; default OFF until the
+    // operator enables `pause_paper=false` in admin_kv.
+    if (!gates.pause_paper) { try { await runPaperAgent(); } catch { /* best-effort */ } }
   })());
 
   return NextResponse.json({ ok: true, queued: true, paused: gates.pause_backtest });
