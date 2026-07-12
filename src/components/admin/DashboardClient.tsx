@@ -16,6 +16,7 @@ import TournamentPanel        from "./panels/TournamentPanel";
 import PaperPanel             from "./panels/PaperPanel";
 import TrafficPanel           from "./panels/TrafficPanel";
 import AiControlsPanel        from "./panels/AiControlsPanel";
+import AdminAccessPanel       from "./panels/AdminAccessPanel";
 import OperationsPanel        from "./panels/OperationsPanel";
 import OperationsLedgerPanel  from "./panels/OperationsLedgerPanel";
 import LogsSecurityPanel      from "./panels/LogsSecurityPanel";
@@ -43,6 +44,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "paper":              <PaperPanel />,
   "traffic":            <TrafficPanel />,
   "ai-controls":        <AiControlsPanel />,
+  "admin-access":       <AdminAccessPanel />,
   "cex-sessions":       <CexSessionsPanel />,
   "market-volume":      <MarketVolumePanel />,
   "tier-control":       <TierControlPanel />,

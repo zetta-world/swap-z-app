@@ -8,12 +8,14 @@ import { logSecurity } from "@/lib/admin/track";
  * Handler. Returns the verified wallet address or throws notFound() (404),
  * never 403, so the panel's existence is never revealed to outsiders.
  *
- * Access logic (either condition grants entry):
+ * Access logic (ANY condition grants entry):
  *  1. Wallet address is in the ADMIN_WALLETS env var (comma-separated).
- *  2. The wallet has a tier_cache row with source = 'admin'.
+ *  2. The wallet has a row in `platform_admins` (grant/revoke from the panel).
+ *  3. Legacy: the wallet has a tier_cache row with source = 'admin' (kept so
+ *     wallets seeded before platform_admins existed are never locked out).
  *
- * Both checks happen in this function; the middleware pre-screens with (1)
- * only to avoid a DB round-trip on every request.
+ * The middleware pre-screens with (1) only to avoid a DB round-trip on every
+ * request.
  */
 export async function requireAdmin(): Promise<{ wallet: string }> {
   const session = await getSession();
@@ -23,10 +25,18 @@ export async function requireAdmin(): Promise<{ wallet: string }> {
 
   if (isEnvAdmin(wallet)) return { wallet };
 
-  // Fallback: tier_cache.source = 'admin' (for wallets seeded in migrations)
   const db = getSupabaseAdmin();
   if (!db) notFound();
 
+  // Dedicated admin grants (the panel writes here).
+  const { data: pa } = await db
+    .from("platform_admins")
+    .select("wallet_address")
+    .eq("wallet_address", wallet)
+    .maybeSingle();
+  if (pa) return { wallet };
+
+  // Legacy fallback: tier_cache.source = 'admin' (pre-platform_admins grants).
   const { data } = await db
     .from("tier_cache")
     .select("source")
@@ -48,6 +58,13 @@ export function isEnvAdmin(wallet: string): boolean {
   if (!raw.trim()) return false;
   const set = new Set(raw.split(",").map((w) => w.trim().toLowerCase()));
   return set.has(wallet.toLowerCase());
+}
+
+/** The env-configured admin wallets (lower-cased). These are baked into the
+ *  deployment — the panel shows them read-only (can't be revoked from the UI). */
+export function envAdminWallets(): string[] {
+  const raw = process.env.ADMIN_WALLETS ?? "";
+  return raw.split(",").map((w) => w.trim().toLowerCase()).filter(Boolean);
 }
 
 /**

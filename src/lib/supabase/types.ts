@@ -201,6 +201,13 @@ export type MarketBrainRow = {
   updated_at:   string;
 };
 
+export type PlatformAdminRow = {
+  wallet_address: string;
+  granted_by:     string | null;
+  note:           string | null;
+  granted_at:     string;
+};
+
 export type AdminAuditLogRow = {
   id:           string;
   actor_wallet: string;
@@ -219,6 +226,7 @@ export interface Database {
       admin_audit_log: { Row: AdminAuditLogRow; Insert: Omit<AdminAuditLogRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
       platform_events: { Row: PlatformEventRow; Insert: Omit<PlatformEventRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
       admin_kv: { Row: AdminKvRow; Insert: AdminKvRow; Update: Partial<AdminKvRow>; Relationships: [] };
+      platform_admins: { Row: PlatformAdminRow; Insert: Partial<PlatformAdminRow> & { wallet_address: string }; Update: Partial<PlatformAdminRow>; Relationships: [] };
       market_brain: { Row: MarketBrainRow; Insert: Partial<MarketBrainRow> & { symbol: string }; Update: Partial<MarketBrainRow>; Relationships: [] };
       operations: { Row: OperationRow; Insert: Partial<OperationRow> & { kind: string; status: string }; Update: Partial<OperationRow>; Relationships: [] };
       zion_suggestions: {
