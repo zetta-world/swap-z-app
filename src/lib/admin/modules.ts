@@ -15,6 +15,7 @@ export type ModuleId =
   | "paper"
   | "traffic"
   | "ai-controls"
+  | "admin-access"
   | "cex-sessions"
   | "market-volume"
   | "audit-log"
@@ -183,6 +184,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "controls",
     defaultEnabled: true,
     defaultOrder: 8,
+  },
+  {
+    id: "admin-access",
+    title: "ADMIN ACCESS",
+    subtitle: "conceder · revogar acesso ao painel",
+    icon: "🛡",
+    category: "controls",
+    defaultEnabled: true,
+    defaultOrder: 6,
   },
   {
     id: "ai-controls",
