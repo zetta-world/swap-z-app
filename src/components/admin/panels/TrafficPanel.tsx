@@ -23,7 +23,17 @@ type TR = {
   byPath: Array<{ key: string; views: number }>;
   byReferrer: Array<{ key: string; views: number }>;
   byDevice: Array<{ device: string; views: number }>;
+  visitors: Array<{ cid: string; kind: "voce" | "bot" | "humano"; browser: string; os: string; device: string; city: string; country: string; pageViews: number; dwellSec: number; lastSeen: string }>;
+  visitorSummary: { voce: number; humano: number; bot: number };
+  stickiest: Array<{ path: string; avgSec: number; samples: number }>;
 };
+
+const KIND_META: Record<"voce" | "humano" | "bot", { label: string; color: string }> = {
+  voce:   { label: "VOCÊ",    color: "var(--adm-cyan)" },
+  humano: { label: "humano",  color: "var(--adm-green)" },
+  bot:    { label: "bot",     color: "var(--adm-ink-4)" },
+};
+const dur = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m${s % 60}s` : `${s}s`);
 
 // Equirectangular projection into the SVG viewBox (lon -180..180, lat 84..-58
 // — same window the land grid was generated with).
@@ -35,7 +45,7 @@ export default function TrafficPanel() {
   const [data, setData] = useState<TR | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"mapa" | "dias" | "origem">("mapa");
+  const [tab, setTab] = useState<"mapa" | "dias" | "origem" | "visitantes">("mapa");
   const realtime = useAdminRealtime();
 
   const load = useCallback(async () => {
@@ -58,7 +68,7 @@ export default function TrafficPanel() {
   return (
     <TerminalPanel id="traffic" title="MIDGARD" subtitle="acessos · mapa · dia/semana/mês" icon="🌍" source="supabase/platform_events">
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {(["mapa", "dias", "origem"] as const).map((v) => (
+        {(["mapa", "dias", "origem", "visitantes"] as const).map((v) => (
           <button key={v} className={`adm-toggle ${tab === v ? "active" : ""}`} onClick={() => setTab(v)}>
             {v.toUpperCase()}
           </button>
@@ -206,6 +216,47 @@ export default function TrafficPanel() {
             <tbody>
               {data.byDevice.map((d) => (
                 <tr key={d.device}><td style={{ color: "var(--adm-ink-2)" }}>{d.device}</td><td>{d.views}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {data && tab === "visitantes" && (
+        <div className="adm-scroll" style={{ maxHeight: 340 }}>
+          {/* joio do trigo — quem é quem */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            {(["voce", "humano", "bot"] as const).map((k) => (
+              <div key={k} style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "5px 7px" }}>
+                <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.06em" }}>{KIND_META[k].label.toUpperCase()}</div>
+                <div style={{ fontSize: 15, color: KIND_META[k].color }}>{data.visitorSummary[k]}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="adm-category">Visitantes · navegador · tempo</div>
+          <table className="adm-table">
+            <thead><tr><th>QUEM</th><th>NAV/SO</th><th>LOCAL</th><th>PÁG</th><th>TEMPO</th></tr></thead>
+            <tbody>
+              {data.visitors.length === 0 && <tr><td colSpan={5} style={{ color: "var(--adm-ink-3)" }}>sem visitantes rastreados ainda</td></tr>}
+              {data.visitors.map((v) => (
+                <tr key={v.cid}>
+                  <td style={{ color: KIND_META[v.kind].color, fontSize: 9 }}>{KIND_META[v.kind].label}</td>
+                  <td style={{ fontSize: 9, color: "var(--adm-ink-2)" }}>{v.browser}·{v.os}</td>
+                  <td style={{ fontSize: 9, color: "var(--adm-ink-3)" }}>{v.city !== "?" ? `${v.city}` : v.country}</td>
+                  <td>{v.pageViews}</td>
+                  <td style={{ color: "var(--adm-gold)" }}>{v.dwellSec > 0 ? dur(v.dwellSec) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="adm-category" style={{ marginTop: 10 }}>Páginas que mais prendem (tempo médio)</div>
+          <table className="adm-table">
+            <tbody>
+              {data.stickiest.length === 0 && <tr><td style={{ color: "var(--adm-ink-3)" }}>coletando tempo de página…</td></tr>}
+              {data.stickiest.map((s) => (
+                <tr key={s.path}><td style={{ color: "var(--adm-ink)", fontFamily: "monospace" }}>{s.path}</td><td style={{ color: "var(--adm-gold)" }}>{dur(s.avgSec)}</td><td style={{ color: "var(--adm-ink-4)" }}>{s.samples}×</td></tr>
               ))}
             </tbody>
           </table>
