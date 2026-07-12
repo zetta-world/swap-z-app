@@ -38,18 +38,32 @@ type Agg = {
   curvePts: Array<{ t: number; net: number }>; // resolved trades for the equity curve
 };
 
-/** Compound an equity curve (index 100) from resolved trades in resolution
- *  order, then downsample to at most `maxPts` for a lean sparkline payload. */
-function equityCurve(pts: Array<{ t: number; net: number }>, maxPts = 40): number[] {
-  if (pts.length === 0) return [];
-  const sorted = [...pts].sort((a, b) => a.t - b.t);
-  const eq: number[] = []; let e = 100;
-  for (const p of sorted) { e *= 1 + p.net / 100; eq.push(e); }
+function downsample(eq: number[], maxPts: number): number[] {
   if (eq.length <= maxPts) return eq.map((v) => Math.round(v * 10) / 10);
   const step = (eq.length - 1) / (maxPts - 1);
   const out: number[] = [];
   for (let i = 0; i < maxPts; i++) out.push(Math.round(eq[Math.round(i * step)] * 10) / 10);
   return out;
+}
+
+/** Compound an equity curve (index 100) from resolved trades in resolution
+ *  order (each trade's NET return), then downsample for a lean sparkline. */
+function equityCurve(pts: Array<{ t: number; net: number }>, maxPts = 40): number[] {
+  if (pts.length === 0) return [];
+  const sorted = [...pts].sort((a, b) => a.t - b.t);
+  const eq: number[] = []; let e = 100;
+  for (const p of sorted) { e *= 1 + p.net / 100; eq.push(e); }
+  return downsample(eq, maxPts);
+}
+
+/** Realized equity curve for a PAPER wallet: index 100 = starting capital,
+ *  running cumulative realized P&L over its closed positions (in close order). */
+function paperCurve(startingUsd: number, pts: Array<{ t: number; pnl: number }>, maxPts = 40): number[] {
+  if (pts.length === 0 || !(startingUsd > 0)) return [];
+  const sorted = [...pts].sort((a, b) => a.t - b.t);
+  const eq: number[] = []; let cash = startingUsd;
+  for (const p of sorted) { cash += p.pnl; eq.push((cash / startingUsd) * 100); }
+  return downsample(eq, maxPts);
 }
 
 /** Tournament ranking: every logging source (Agent A / Agent B / each raw
@@ -68,6 +82,20 @@ export async function GET(): Promise<NextResponse> {
       .select("source, status, outcome_pct, probability, entry_price, target_price, stop_price, created_at, resolved_at")
       .order("created_at", { ascending: true }).range(from, to),
   );
+
+  // Paper wallets (Gate.io sim) — realized equity curve per source, shown beside
+  // the flywheel curve once a wallet has matured (enough closed positions).
+  const [{ data: paperClosedRows }, { data: paperAccts }] = await Promise.all([
+    db.from("paper_positions").select("source, pnl_usd, closed_at").eq("status", "closed").order("closed_at", { ascending: true }).limit(5000),
+    db.from("paper_accounts").select("source, starting_usd"),
+  ]);
+  const startingBy = new Map<string, number>((paperAccts ?? []).map((a) => [a.source, Number(a.starting_usd) || 1000]));
+  const paperPtsBy = new Map<string, Array<{ t: number; pnl: number }>>();
+  for (const r of paperClosedRows ?? []) {
+    const arr = paperPtsBy.get(r.source) ?? [];
+    arr.push({ t: Date.parse(r.closed_at ?? ""), pnl: Number(r.pnl_usd) || 0 });
+    paperPtsBy.set(r.source, arr);
+  }
 
   const by = new Map<string, Agg>();
   const get = (source: string): Agg => {
@@ -120,7 +148,9 @@ export async function GET(): Promise<NextResponse> {
       // (better than it claims), − = over-confident (worse than it claims).
       calibration:   winRate != null && avgConfidence != null ? winRate * 100 - avgConfidence : null,
       form:          a.form.slice(-12),                       // recent W/L streak
-      curve:         equityCurve(a.curvePts),                 // compounded equity (index 100)
+      curve:         equityCurve(a.curvePts),                 // flywheel signal-edge curve (index 100)
+      paperCurve:    paperCurve(startingBy.get(a.source) ?? 1000, paperPtsBy.get(a.source) ?? []),
+      paperClosed:   (paperPtsBy.get(a.source) ?? []).length, // "matured" gate on the client
       sufficientSample: decided >= MIN_SAMPLE,
       sampleProgress: Math.min(1, decided / MIN_SAMPLE),
     };
