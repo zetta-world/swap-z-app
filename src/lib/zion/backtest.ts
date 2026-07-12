@@ -230,16 +230,6 @@ async function runSpecialist(role: string, provider: ProviderConfig | null, user
   }
 }
 
-/** xAI live-search body — turns Grok from a blind text model into a real-time
- *  X/news reader for the SENTIMENT seat. Only attached when the sentiment
- *  provider is actually Grok; other providers ignore/reject unknown fields, so
- *  we gate it. `mode:"auto"` lets Grok decide when to search; sources scope it
- *  to X + news (the crowd + the tape), which is exactly the sentiment desk's
- *  job. Without this, the Grok seat adds noise the CEO has to filter (P0.2). */
-const GROK_SEARCH_BODY: Record<string, unknown> = {
-  search_parameters: { mode: "auto", sources: [{ type: "x" }, { type: "news" }] },
-};
-
 /** Slim system prompt for the macro/sentiment seats (M3). These specialists
  *  write short PROSE reports — they never emit action cards — so shipping them
  *  the full ~4k-token ZION_FOUNDATION (identity + card schema + mode playbooks)
@@ -324,8 +314,13 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
   const [technical, macro, sentiment] = await Promise.all([
     runSpecialist("brain",     brain,             scanInstruction,             2200, 18_000),
     runSpecialist("macro",     roleProvider("macro"), MACRO_PROMPT(macroText), 600,  15_000, undefined, SPECIALIST_SYSTEM),
-    runSpecialist("sentiment", sentimentProvider, SENTIMENT_PROMPT(symbolsCsv), 600, 15_000,
-      sentimentProvider?.id === "grok" ? GROK_SEARCH_BODY : undefined, SPECIALIST_SYSTEM),
+    // Grok's live-search body is GONE: xAI retired the search_parameters Live
+    // Search API on 2026-01-12 (every call 410'd "Live search is deprecated"),
+    // in favour of the Agent Tools API — but that lives on the /v1/responses
+    // endpoint (input[] + tools:[{type:"web_search"}]), a different shape than
+    // our chat/completions seam. So the sentiment seat runs Grok plain for now;
+    // restoring live search is a separate Responses-API path (see docs note).
+    runSpecialist("sentiment", sentimentProvider, SENTIMENT_PROMPT(symbolsCsv), 600, 15_000, undefined, SPECIALIST_SYSTEM),
   ]);
   if (!technical.trim()) return []; // no draft to synthesize
 
