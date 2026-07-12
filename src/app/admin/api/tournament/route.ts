@@ -35,7 +35,22 @@ type Agg = {
   rrSum: number; rrCount: number;
   probSum: number; probCount: number;   // stated-confidence calibration
   form: string[];                        // recent decided outcomes ("W"/"L")
+  curvePts: Array<{ t: number; net: number }>; // resolved trades for the equity curve
 };
+
+/** Compound an equity curve (index 100) from resolved trades in resolution
+ *  order, then downsample to at most `maxPts` for a lean sparkline payload. */
+function equityCurve(pts: Array<{ t: number; net: number }>, maxPts = 40): number[] {
+  if (pts.length === 0) return [];
+  const sorted = [...pts].sort((a, b) => a.t - b.t);
+  const eq: number[] = []; let e = 100;
+  for (const p of sorted) { e *= 1 + p.net / 100; eq.push(e); }
+  if (eq.length <= maxPts) return eq.map((v) => Math.round(v * 10) / 10);
+  const step = (eq.length - 1) / (maxPts - 1);
+  const out: number[] = [];
+  for (let i = 0; i < maxPts; i++) out.push(Math.round(eq[Math.round(i * step)] * 10) / 10);
+  return out;
+}
 
 /** Tournament ranking: every logging source (Agent A / Agent B / each raw
  *  tournament model / radar) scored head-to-head on the SAME market, ranked by
@@ -47,10 +62,10 @@ export async function GET(): Promise<NextResponse> {
 
   // Paginated full read (A1): PostgREST caps a plain select at 1000 rows with
   // no error — a truncated ledger would rank the agents on stale data.
-  type TourRow = { source: string | null; status: string; outcome_pct: number | null; probability: number | null; entry_price: number | null; target_price: number | null; stop_price: number | null };
+  type TourRow = { source: string | null; status: string; outcome_pct: number | null; probability: number | null; entry_price: number | null; target_price: number | null; stop_price: number | null; created_at: string; resolved_at: string | null };
   const rows = await selectAllRows<TourRow>((from, to) =>
     db.from("zion_suggestions")
-      .select("source, status, outcome_pct, probability, entry_price, target_price, stop_price")
+      .select("source, status, outcome_pct, probability, entry_price, target_price, stop_price, created_at, resolved_at")
       .order("created_at", { ascending: true }).range(from, to),
   );
 
@@ -59,7 +74,7 @@ export async function GET(): Promise<NextResponse> {
     let a = by.get(source);
     if (!a) {
       const { name, kind } = labelFor(source);
-      a = { source, name, kind, total: 0, open: 0, resolved: 0, wins: 0, losses: 0, expired: 0, sum: 0, winSum: 0, lossSum: 0, rrSum: 0, rrCount: 0, probSum: 0, probCount: 0, form: [] };
+      a = { source, name, kind, total: 0, open: 0, resolved: 0, wins: 0, losses: 0, expired: 0, sum: 0, winSum: 0, lossSum: 0, rrSum: 0, rrCount: 0, probSum: 0, probCount: 0, form: [], curvePts: [] };
       by.set(source, a);
     }
     return a;
@@ -77,6 +92,8 @@ export async function GET(): Promise<NextResponse> {
     a.resolved++;
     const oc = typeof r.outcome_pct === "number" ? r.outcome_pct : 0;
     a.sum += oc;
+    // Equity-curve point: this trade's NET return, at its resolution time.
+    a.curvePts.push({ t: Date.parse(r.resolved_at ?? r.created_at), net: oc - ROUND_TRIP_COST_PCT });
     if (r.status === "win" || r.status === "hit_target")      { a.wins++;   a.winSum  += oc; a.form.push("W"); }
     else if (r.status === "loss" || r.status === "hit_stop")  { a.losses++; a.lossSum += oc; a.form.push("L"); }
     else a.expired++;
@@ -103,6 +120,7 @@ export async function GET(): Promise<NextResponse> {
       // (better than it claims), − = over-confident (worse than it claims).
       calibration:   winRate != null && avgConfidence != null ? winRate * 100 - avgConfidence : null,
       form:          a.form.slice(-12),                       // recent W/L streak
+      curve:         equityCurve(a.curvePts),                 // compounded equity (index 100)
       sufficientSample: decided >= MIN_SAMPLE,
       sampleProgress: Math.min(1, decided / MIN_SAMPLE),
     };

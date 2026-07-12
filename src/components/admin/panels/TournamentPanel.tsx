@@ -14,6 +14,7 @@ type Agent = {
   profitFactor: number | null; avgRR: number | null;
   avgConfidence: number | null; calibration: number | null;
   form: string[]; sampleProgress: number;
+  curve: number[];
   sufficientSample: boolean;
 };
 type TT = { agents: Agent[]; minSample: number; fetchedAt: string };
@@ -33,6 +34,24 @@ function Metric({ label, value, color }: { label: string; value: string; color?:
       <div style={{ fontSize: 11, color: color ?? "var(--adm-ink)", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{value}</div>
       <div style={{ fontSize: 7, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>{label}</div>
     </div>
+  );
+}
+
+function Sparkline({ curve, h = 22 }: { curve: number[]; h?: number }) {
+  if (!curve || curve.length < 2) return null;
+  const w = 100; // viewBox width; SVG scales to container
+  const min = Math.min(100, ...curve), max = Math.max(100, ...curve);
+  const range = max - min || 1;
+  const x = (i: number) => (i / (curve.length - 1)) * w;
+  const y = (v: number) => h - ((v - min) / range) * (h - 2) - 1;
+  const pts = curve.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const up = curve[curve.length - 1] >= 100;
+  const color = up ? "var(--adm-green)" : "var(--adm-red)";
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: "100%", height: h, display: "block" }} role="img" aria-label="curva de patrimônio">
+      <line x1={0} y1={y(100)} x2={w} y2={y(100)} stroke="var(--adm-border)" strokeDasharray="2 2" strokeWidth={0.5} vectorEffect="non-scaling-stroke" />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.3} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -108,6 +127,15 @@ export default function TournamentPanel() {
                 <Metric label="GANHO MÉD" value={pct(champ.avgWin)} color="var(--adm-green)" />
                 <Metric label="PERDA MÉD" value={pct(champ.avgLoss)} color="var(--adm-red)" />
               </div>
+              {champ.curve.length > 1 && (
+                <div style={{ marginTop: 8 }}>
+                  <Sparkline curve={champ.curve} h={34} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2 }}>
+                    <span>curva de patrimônio · base 100</span>
+                    <span style={{ color: netColor(champ.curve[champ.curve.length - 1] - 100) }}>→ {champ.curve[champ.curve.length - 1].toFixed(0)}</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -167,6 +195,13 @@ export default function TournamentPanel() {
                     {decided}/{data.minSample} {a.sufficientSample ? "✓ confiável" : "amostra"} · {a.open} abertos · {a.expired} exp
                   </span>
                 </div>
+
+                {a.curve.length > 1 && (
+                  <div style={{ marginLeft: 32, marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ flex: 1 }}><Sparkline curve={a.curve} h={18} /></div>
+                    <span style={{ fontSize: 7, color: netColor(a.curve[a.curve.length - 1] - 100), flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>→{a.curve[a.curve.length - 1].toFixed(0)}</span>
+                  </div>
+                )}
               </div>
             );
           })}
