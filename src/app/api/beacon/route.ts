@@ -19,6 +19,26 @@ export const dynamic  = "force-dynamic";
  * storing the IP in the clear), the device class, and the external referrer.
  * LGPD posture: no raw IP persisted, no new cookies, geo is city-granular.
  */
+/** Coarse UA classification (no external lib) — enough to separate joio do
+ *  trigo: is this a bot, which browser, which OS. */
+function classifyUA(ua: string): { bot: boolean; browser: string; os: string } {
+  const bot = /bot|crawl|spider|slurp|bingpreview|facebookexternalhit|whatsapp|telegram|twitterbot|discord|headless|lighthouse|python-requests|axios|curl|wget|monitor|uptime|pingdom|ahrefs|semrush|dataprovider|scan|preview/i.test(ua);
+  const browser =
+    /edg\//i.test(ua) ? "Edge" :
+    /opr\/|opera/i.test(ua) ? "Opera" :
+    /samsungbrowser/i.test(ua) ? "Samsung" :
+    /firefox|fxios/i.test(ua) ? "Firefox" :
+    /chrome|crios/i.test(ua) ? "Chrome" :          // Brave reports as Chrome
+    /safari/i.test(ua) ? "Safari" : "outro";
+  const os =
+    /iphone|ipad|ipod/i.test(ua) ? "iOS" :
+    /android/i.test(ua) ? "Android" :
+    /windows/i.test(ua) ? "Windows" :
+    /mac os x|macintosh/i.test(ua) ? "macOS" :
+    /linux/i.test(ua) ? "Linux" : "outro";
+  return { bot, browser, os };
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json().catch(() => null);
@@ -41,6 +61,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
     const ua = h.get("user-agent") ?? "";
     const cid = createHash("sha256").update(`${ip}|${ua}`).digest("hex").slice(0, 16);
+
+    // Dwell ping: the client sends how long it stayed on a page when leaving.
+    // Recorded as its own lightweight event so we can answer "which page holds
+    // the visitor longest" without a second page_view row.
+    const dwellMs = num(typeof body?.dwellMs === "number" ? String(body.dwellMs) : null);
+    if (dwellMs != null && dwellMs > 0) {
+      recordEvent("dwell", { path, meta: { cid, ms: Math.min(dwellMs, 1_800_000) } });
+      return new NextResponse(null, { status: 204 });
+    }
+
+    const { bot, browser, os } = classifyUA(ua);
 
     // External referrer only (same-site navigation is noise).
     const rawRef = typeof body?.ref === "string" ? body.ref.slice(0, 300) : "";
@@ -65,6 +96,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         lat:     num(h.get("x-vercel-ip-latitude")),
         lon:     num(h.get("x-vercel-ip-longitude")),
         device:  /mobile|android|iphone|ipad/i.test(ua) ? "mobile" : "desktop",
+        bot, browser, os,
         referrer,
       },
     });

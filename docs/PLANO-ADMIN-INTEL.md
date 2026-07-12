@@ -55,5 +55,12 @@ privacidade (precisa constar na política, implicações legais). Escolha do CEO
 - **B:** guardar IP cru — dá o IP exato, mas assume as implicações de LGPD.
 - **C:** IP mascarado (ex.: `189.40.x.x`) — meio-termo, geo sem identificar.
 
-## Ordem sugerida
-T1 (controle admin) → T2 (users) → T3 (growth). T1/T2 não dependem da decisão de IP.
+## Status
+- **T1 — controle admin** 🟢 FEITO (PR #120)
+- **T2 — users raio-x** 🟢 FEITO (PR #121)
+- **T3 — growth joio×trigo** 🟢 FEITO: beacon classifica bot/navegador/SO +
+  dwell (tempo por página); traffic API agrega visitantes por cid (você/humano/
+  bot via wallet admin) + páginas que mais prendem; aba **VISITANTES** no MIDGARD.
+  Decisão IP: hash (sem IP cru).
+- **F3.2 — cliques (heatmap)** 🔴 pendente: stream de eventos `click` + mapa de
+  calor. Feature própria (volume alto) — fazer quando o CEO pedir.
