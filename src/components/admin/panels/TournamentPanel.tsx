@@ -15,8 +15,11 @@ type Agent = {
   avgConfidence: number | null; calibration: number | null;
   form: string[]; sampleProgress: number;
   curve: number[];
+  paperCurve: number[]; paperClosed: number;
   sufficientSample: boolean;
 };
+
+const PAPER_MATURE = 8; // closed paper positions before the paper curve is worth showing
 type TT = { agents: Agent[]; minSample: number; fetchedAt: string };
 
 const MEDAL = ["🥇", "🥈", "🥉"];
@@ -52,6 +55,27 @@ function Sparkline({ curve, h = 22 }: { curve: number[]; h?: number }) {
       <line x1={0} y1={y(100)} x2={w} y2={y(100)} stroke="var(--adm-border)" strokeDasharray="2 2" strokeWidth={0.5} vectorEffect="non-scaling-stroke" />
       <polyline points={pts} fill="none" stroke={color} strokeWidth={1.3} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+function CurveLabel({ curve, label }: { curve: number[]; label: string }) {
+  const last = curve[curve.length - 1] ?? 100;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2 }}>
+      <span>{label}</span>
+      <span style={{ color: netColor(last - 100) }}>→{last.toFixed(0)}</span>
+    </div>
+  );
+}
+
+/** The flywheel signal-edge curve, with the PAPER (Gate.io) curve beside it
+ *  once the wallet has matured (enough closed positions). */
+function CurveBlock({ curve, paper, matured, h }: { curve: number[]; paper: number[]; matured: boolean; h: number }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: matured ? "1fr 1fr" : "1fr", gap: 8, marginTop: 6 }}>
+      <div><Sparkline curve={curve} h={h} /><CurveLabel curve={curve} label="sinal · flywheel" /></div>
+      {matured && <div><Sparkline curve={paper} h={h} /><CurveLabel curve={paper} label="paper · gate.io" /></div>}
+    </div>
   );
 }
 
@@ -128,13 +152,7 @@ export default function TournamentPanel() {
                 <Metric label="PERDA MÉD" value={pct(champ.avgLoss)} color="var(--adm-red)" />
               </div>
               {champ.curve.length > 1 && (
-                <div style={{ marginTop: 8 }}>
-                  <Sparkline curve={champ.curve} h={34} />
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2 }}>
-                    <span>curva de patrimônio · base 100</span>
-                    <span style={{ color: netColor(champ.curve[champ.curve.length - 1] - 100) }}>→ {champ.curve[champ.curve.length - 1].toFixed(0)}</span>
-                  </div>
-                </div>
+                <CurveBlock curve={champ.curve} paper={champ.paperCurve} matured={champ.paperClosed >= PAPER_MATURE} h={34} />
               )}
             </div>
           )}
@@ -197,9 +215,8 @@ export default function TournamentPanel() {
                 </div>
 
                 {a.curve.length > 1 && (
-                  <div style={{ marginLeft: 32, marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ flex: 1 }}><Sparkline curve={a.curve} h={18} /></div>
-                    <span style={{ fontSize: 7, color: netColor(a.curve[a.curve.length - 1] - 100), flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>→{a.curve[a.curve.length - 1].toFixed(0)}</span>
+                  <div style={{ marginLeft: 32 }}>
+                    <CurveBlock curve={a.curve} paper={a.paperCurve} matured={a.paperClosed >= PAPER_MATURE} h={18} />
                   </div>
                 )}
               </div>
