@@ -4,10 +4,12 @@ import {
   listRunnableSessions, decryptSessionCreds, patchSession, recordRuns, utcDayKey,
   tryLockSession, releaseLock, bumpSessionTrades,
 } from "@/lib/autopilot/sessions";
-import { runAutopilotCexScan } from "@/lib/autopilot/scan";
+import { runAutopilotCexScan, formatRegimeContext } from "@/lib/autopilot/scan";
 import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
 import { fetchCexBalance, placeCexOrder, fetchCexOrderStatus } from "@/lib/cex/server";
 import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
+import { getMarketIndicators } from "@/lib/api/market-indicators";
+import { trendGate } from "@/lib/zion/sniper";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
@@ -263,6 +265,12 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   // ── 7. Open positions + reference prices (guard + position context + cap) ──
   const refPrices     = await getCexSpotPrices(s.allowed_symbols);
   const openPositions = await getOpenServerPositions(s.id);
+  // D3 Executor: ADX trend regime per symbol — feeds the scan's context AND
+  // the hard entry gate below. Fail-closed: if the fetch fails, the map stays
+  // empty and every BUY is rejected (exits are never gated).
+  const marketInd = await getMarketIndicators(s.allowed_symbols).catch(() => null);
+  const regimeBy = new Map<string, string>();
+  for (const ind of marketInd?.indicators ?? []) if (ind.regime) regimeBy.set(ind.symbol.toUpperCase(), ind.regime);
   let   exposureUsd   = openPositions.reduce((sum, p) => sum + Number(p.cost_usd || 0), 0);
   const maxExposureUsd = RISK_EXPOSURE_USD[s.risk_mode] ?? 200;
   const ownedBases    = new Set(openPositions.map((p) => p.base.toUpperCase()));
@@ -276,6 +284,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     allowedSymbols: s.allowed_symbols,
     balanceContext,
     openPositionsContext: buildPositionsContext(openPositions, refPrices),
+    remainingTradesToday: Math.max(0, s.max_trades_per_day - tradesToday),
+    regimeContext:  marketInd ? formatRegimeContext(marketInd.indicators) : "",
     lang:           s.lang,
   });
 
@@ -376,8 +386,18 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         continue;
       }
 
-      // ── BUY: enforce the total-exposure cap (A4 server side), then fire and
-      //    record the entry server-side (A5). ──
+      // ── BUY: D3 trend gate FIRST — entries only WITH a confirmed uptrend
+      //    (evidence: with-trend won 70-92% in bull AND bear windows; the
+      //    model's own confidence is inverted). Fail-closed: no regime data =
+      //    no entry. Exits (sells) are never gated. ──
+      const regime = regimeBy.get(base) ?? null;
+      if (!trendGate("buy", regime)) {
+        pushRow(intent, "rejected", card.kind, { reason: `trend gate: regime ${regime ?? "unavailable"} (entries need TRENDING_UP)` });
+        continue;
+      }
+
+      // ── then the total-exposure cap (A4 server side), fire, and record the
+      //    entry server-side (A5). ──
       const buyNotional = guard.realNotionalUsd ?? intent.notionalUsd;
       if (exposureUsd + buyNotional > maxExposureUsd) {
         pushRow(intent, "rejected", card.kind, { reason: `total exposure cap $${maxExposureUsd} would be exceeded` });
