@@ -12,7 +12,7 @@
 |------|-----------------|---------|---------|--------|
 | **D1 Sniper 🎯** | Swing direcional (buy/sell com bracket) | Evento de preço (radar) | LLM barato + gates trend/R:R/orçamento | 🟢 F1 entregue (PR #128), ⏸️ pausado |
 | **D2 Arbiter ⚖️** | Arbitragem cross-CEX (spread entre exchanges) | Spread > custos (aritmética, 1min) | **NENHUM LLM** — detecção é matemática pura; IA não agrega em aritmética | 🟢 F1 nesta entrega, ⏸️ pausado |
-| **D3 Executor 🤖** | Autopilot CEX (dinheiro REAL do usuário) | Sessão armada + scan | Sonnet (existente) — falta portar a disciplina sniper (recusa válida, trend gate, orçamento = limites da sessão) | 🔴 próximo — caminho de dinheiro, PR dedicada com cuidado |
+| **D3 Executor 🤖** | Autopilot CEX (dinheiro REAL do usuário) | Sessão armada + scan | Sonnet + disciplina sniper portada: regime ADX no payload, orçamento visível (`trades_remaining_today`), e **gate duro em código** — BUY só em `TRENDING_UP`, fail-closed sem regime; exits nunca gateados | 🟢 F1 entregue — dormente (0 sessões armadas), ativa no launch |
 | **D4 Advisor 🧭** | ZION user-facing (chat/análise de portfólio) | Pergunta do usuário | Sonnet + modos existentes | ⏸️ polir quando houver usuários (métrica = satisfação, não P&L) |
 | — Radar 📡 | Não é desk: é o SENSOR da mesa (detecção grátis de eventos) | — | — | 🟢 rodando (detecção); brain-wake pausado |
 
@@ -44,7 +44,7 @@ carrega buffer e o F2 valida contra orderbook antes de qualquer conversa real.
 - Probabilidade declarada por LLM é logada, NUNCA é filtro (invertida, provado).
 
 ## Fases
-- F1 D2 Arbiter: detector puro + wire no radar + gate `pause_arbiter` + carteira paper + testes — 🟢 esta PR
+- F1 D2 Arbiter: detector puro + wire no radar + gate `pause_arbiter` + carteira paper + testes — 🟢 PR #129 · **LIGADO 14/07** (zero token)
 - F2 D2: validação com orderbook (depth real) se o paper der positivo — 🔴
-- F1 D3 Executor: portar disciplina sniper pro `runAutopilotCexScan` (prompt + gates duros em `mapCardToCexIntents`) — 🔴 próxima PR (money path)
+- F1 D3 Executor: disciplina sniper no autopilot — regime no payload + prompt de escassez + gate duro BUY-só-em-uptrend no cron — 🟢 (dormente até sessões armarem; todas as mudanças só REDUZEM risco)
 - F1 D4 Advisor: revisão dos mode-prompts com as lições (sem cobertura forçada) — 🔴 depois
