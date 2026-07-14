@@ -51,6 +51,21 @@ describe("arbiter — pure spread detector", () => {
     expect(ton.suspect).toBe(false);
   });
 
+  it("drops a stale-quote outlier via the cross-venue median (3+ venues)", () => {
+    const arbs = findArbs(matrix({
+      // mexc is a corpse at ~-78% of the median → dropped; the sane pair
+      // (binance/okx, 0.18% gross) is below the floor → nothing books.
+      MATIC: { mexc: 0.0835, binance: 0.3794, okx: 0.3801 },
+      // outlier dropped, but the remaining sane pair still clears the floor
+      SOL: { a: 100, b: 101, c: 250 },
+    }), 0.4, 0.15, 3, 2);
+    expect(arbs.find((a) => a.symbol === "MATIC")).toBeUndefined();
+    const sol = arbs.find((a) => a.symbol === "SOL")!;
+    expect(sol.buyVenue).toBe("a");
+    expect(sol.sellVenue).toBe("b");
+    expect(sol.suspect).toBe(false);
+  });
+
   it("fails closed: single venue, equal venues, or junk prices book nothing", () => {
     expect(findArbs(matrix({ SOL: { binance: 100 } }))).toHaveLength(0);          // 1 venue
     expect(findArbs(matrix({ SOL: { binance: 100, okx: 100 } }))).toHaveLength(0); // no spread

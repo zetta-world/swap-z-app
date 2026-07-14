@@ -25,6 +25,12 @@ const MIN_NET_PCT  = Number(process.env.ARB_MIN_NET_PCT  ?? 0.15); // floor to a
 // venue's old listing is stale/dead), not free money. Above this, it's a data
 // error: flag as suspect, never book.
 const MAX_GROSS_PCT = Number(process.env.ARB_MAX_GROSS_PCT ?? 3);
+// Median outlier filter: with 3+ venues quoting a symbol, a venue whose price
+// deviates more than this % from the cross-venue MEDIAN is a stale/dead quote
+// (the MATIC→POL corpse pattern) and is dropped BEFORE pairing — so a corpse
+// can't even form a "suspect" pair. With only 2 venues we can't tell which is
+// stale; the gross ceiling still catches those.
+const OUTLIER_PCT = Number(process.env.ARB_OUTLIER_PCT ?? 2);
 // Venues excluded from the ARB matrix (still fine elsewhere). Coinbase quotes
 // BASE-USD, not USDT — the USD/USDT basis masquerades as spread.
 const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase").split(",").map((s) => s.trim()).filter(Boolean);
@@ -48,17 +54,23 @@ export function findArbs(
   costPct = COST_PCT,
   minNetPct = MIN_NET_PCT,
   maxGrossPct = MAX_GROSS_PCT,
+  outlierPct = OUTLIER_PCT,
 ): ArbOpportunity[] {
   const out: ArbOpportunity[] = [];
   for (const [symbol, venues] of spot) {
     if (venues.size < 2) continue;
-    let lo: { v: string; p: number } | null = null, hi: { v: string; p: number } | null = null;
-    for (const [v, { priceUsd }] of venues) {
-      if (!(priceUsd > 0)) continue;
-      if (!lo || priceUsd < lo.p) lo = { v, p: priceUsd };
-      if (!hi || priceUsd > hi.p) hi = { v, p: priceUsd };
+    let quotes: Array<{ v: string; p: number }> = [];
+    for (const [v, { priceUsd }] of venues) if (priceUsd > 0) quotes.push({ v, p: priceUsd });
+    // Median outlier drop (3+ venues): stale/dead listings can't form pairs.
+    if (quotes.length >= 3) {
+      const sorted = [...quotes].map((q) => q.p).sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      quotes = quotes.filter((q) => Math.abs(q.p / median - 1) * 100 <= outlierPct);
     }
-    if (!lo || !hi || lo.v === hi.v) continue;
+    if (quotes.length < 2) continue;
+    let lo = quotes[0], hi = quotes[0];
+    for (const q of quotes) { if (q.p < lo.p) lo = q; if (q.p > hi.p) hi = q; }
+    if (lo.v === hi.v) continue;
     const spreadPct = ((hi.p - lo.p) / lo.p) * 100;
     const netPct = spreadPct - costPct;
     if (netPct >= minNetPct) {
