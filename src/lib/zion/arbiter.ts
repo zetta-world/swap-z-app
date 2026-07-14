@@ -19,6 +19,15 @@ import { recordEvent } from "@/lib/admin/track";
 
 const COST_PCT     = Number(process.env.ARB_COST_PCT     ?? 0.4);  // 2 taker legs + slippage buffer
 const MIN_NET_PCT  = Number(process.env.ARB_MIN_NET_PCT  ?? 0.15); // floor to act
+// "Too good to be true" ceiling. A real cross-CEX spread on a liquid major is
+// never triple digits — first live hour caught MATIC at +353% and RNDR at
+// +375%, which were TICKER-MIGRATION corpses (MATIC→POL, RNDR→RENDER: one
+// venue's old listing is stale/dead), not free money. Above this, it's a data
+// error: flag as suspect, never book.
+const MAX_GROSS_PCT = Number(process.env.ARB_MAX_GROSS_PCT ?? 3);
+// Venues excluded from the ARB matrix (still fine elsewhere). Coinbase quotes
+// BASE-USD, not USDT — the USD/USDT basis masquerades as spread.
+const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase").split(",").map((s) => s.trim()).filter(Boolean);
 const DAILY_CAP    = Number(process.env.ARB_DAILY_CAP    ?? 20);   // round-trips per UTC day
 const COOLDOWN_MIN = Number(process.env.ARB_COOLDOWN_MIN ?? 30);   // per-symbol re-entry wait
 const SIZE_USD     = Number(process.env.ARB_SIZE_USD     ?? 50);   // per round-trip
@@ -27,6 +36,9 @@ export interface ArbOpportunity {
   symbol: string; buyVenue: string; sellVenue: string;
   buyPrice: number; sellPrice: number;
   spreadPct: number; netPct: number;
+  /** spread above the sanity ceiling → data anomaly (stale/dead listing), not
+   *  a trade. Logged for visibility, never booked. */
+  suspect: boolean;
 }
 
 /** Pure detector: scan the venue matrix for spreads whose NET (after costs)
@@ -35,6 +47,7 @@ export function findArbs(
   spot: Map<string, Map<string, { priceUsd: number }>>,
   costPct = COST_PCT,
   minNetPct = MIN_NET_PCT,
+  maxGrossPct = MAX_GROSS_PCT,
 ): ArbOpportunity[] {
   const out: ArbOpportunity[] = [];
   for (const [symbol, venues] of spot) {
@@ -49,7 +62,7 @@ export function findArbs(
     const spreadPct = ((hi.p - lo.p) / lo.p) * 100;
     const netPct = spreadPct - costPct;
     if (netPct >= minNetPct) {
-      out.push({ symbol, buyVenue: lo.v, sellVenue: hi.v, buyPrice: lo.p, sellPrice: hi.p, spreadPct, netPct });
+      out.push({ symbol, buyVenue: lo.v, sellVenue: hi.v, buyPrice: lo.p, sellPrice: hi.p, spreadPct, netPct, suspect: spreadPct > maxGrossPct });
     }
   }
   return out.sort((a, b) => b.netPct - a.netPct);
@@ -64,8 +77,21 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
   if (!db) return { detected: 0, booked: 0, skipped: "db" };
 
   const spot = await getMultiExchangeSpot([...CEX_TRACKED_SYMBOLS]);
-  const arbs = findArbs(spot as Map<string, Map<string, { priceUsd: number }>>);
-  if (arbs.length === 0) return { detected: 0, booked: 0, skipped: null };
+  const matrix = spot as unknown as Map<string, Map<string, { priceUsd: number }>>;
+  // Strip venues whose quote asset isn't USDT (USD basis reads as fake spread).
+  for (const venues of matrix.values()) for (const v of EXCLUDE_VENUES) venues.delete(v);
+  const all = findArbs(matrix);
+
+  // Data anomalies (spread over the sanity ceiling — stale/migrated listings):
+  // surface them in the admin feed, never book them.
+  for (const a of all.filter((x) => x.suspect)) {
+    recordEvent("arb_data_anomaly", { meta: {
+      symbol: a.symbol, buy: a.buyVenue, sell: a.sellVenue,
+      spreadPct: Math.round(a.spreadPct * 100) / 100,
+    } });
+  }
+  const arbs = all.filter((x) => !x.suspect);
+  if (arbs.length === 0) return { detected: all.length, booked: 0, skipped: null };
 
   // Wallet (seeded in admin_kv setup; upsert keeps this idempotent).
   await db.from("paper_accounts").upsert(

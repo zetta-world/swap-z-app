@@ -40,6 +40,17 @@ describe("arbiter — pure spread detector", () => {
     expect(arbs.map((a) => a.symbol)).toEqual(["B", "A"]);
   });
 
+  it("flags too-good-to-be-true spreads as suspect (the MATIC→POL / RNDR→RENDER stale-listing trap)", () => {
+    const arbs = findArbs(matrix({
+      MATIC: { coinbase: 0.0835, binance: 0.3794 }, // +354% "spread" = dead listing
+      TON:   { binance: 1.585, okx: 1.60 },          // 0.95% gross → real candidate
+    }), 0.4, 0.15, 3);
+    const matic = arbs.find((a) => a.symbol === "MATIC")!;
+    const ton   = arbs.find((a) => a.symbol === "TON")!;
+    expect(matic.suspect).toBe(true);   // detected but NEVER booked
+    expect(ton.suspect).toBe(false);
+  });
+
   it("fails closed: single venue, equal venues, or junk prices book nothing", () => {
     expect(findArbs(matrix({ SOL: { binance: 100 } }))).toHaveLength(0);          // 1 venue
     expect(findArbs(matrix({ SOL: { binance: 100, okx: 100 } }))).toHaveLength(0); // no spread
