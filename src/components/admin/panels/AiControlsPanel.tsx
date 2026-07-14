@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
-type GateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_radar" | "pause_sniper" | "pause_paper";
+type GateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_radar" | "pause_sniper" | "pause_arbiter" | "pause_paper";
 
 type Breaker = {
   id: string; label: string; configured: boolean;
@@ -17,13 +17,14 @@ const GATES: { key: GateKey; label: string; desc: string; master?: boolean }[] =
   { key: "pause_tournament", label: "TORNEIO (MODELOS)", desc: "Pausa Mistral/DeepSeek/Kimi/Llama/Grok. É o que gasta nos provedores diretos." },
   { key: "pause_radar",      label: "RADAR (BRAIN)",     desc: "Pausa o acorde do modelo nos gatilhos de preço. Detecção (grátis) continua." },
   { key: "pause_sniper",     label: "SNIPER 🎯",         desc: "Agente event-driven com orçamento mensal e gates objetivos. Só gasta quando um gatilho dispara." },
+  { key: "pause_arbiter",    label: "ARBITER ⚖️",        desc: "Detector de arbitragem cross-CEX. ZERO IA (aritmética pura) — só dados públicos, opera no paper." },
   { key: "pause_paper",      label: "PAPER · GATE.IO",   desc: "Pausa o agente de simulação. Zero token — pausar só congela o experimento." },
 ];
 
 export default function AiControlsPanel() {
   const [gates, setGates] = useState<Record<GateKey, boolean>>({
     pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false,
-    pause_radar: false, pause_sniper: false, pause_paper: false,
+    pause_radar: false, pause_sniper: false, pause_arbiter: false, pause_paper: false,
   });
   const [loading, setLoading]   = useState(true);
   const [mutating, setMutating] = useState<GateKey | null>(null);
@@ -45,6 +46,7 @@ export default function AiControlsPanel() {
         pause_tournament: !!s.pause_tournament,
         pause_radar:      !!s.pause_radar,
         pause_sniper:     !!s.pause_sniper,
+        pause_arbiter:    !!s.pause_arbiter,
         pause_paper:      !!s.pause_paper,
       });
       if (json.note) setNote(json.note);

@@ -9,6 +9,7 @@ import { recordEvent } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { runSniperScan } from "@/lib/zion/sniper";
+import { runArbiterScan } from "@/lib/zion/arbiter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,14 @@ export async function POST(req: NextRequest) {
   let triggers: Awaited<ReturnType<typeof detectTriggers>> = [];
   try { triggers = await detectTriggers(); } catch { /* best-effort */ }
 
+  const gates = await getFlywheelGates();
+
+  // ARBITER desk — zero-LLM cross-CEX spread detector, every tick (spreads
+  // don't wait for a single-venue price trigger). Public data only.
+  if (!gates.pause_arbiter) {
+    waitUntil(runArbiterScan().then(() => undefined).catch(() => undefined));
+  }
+
   if (triggers.length > 0) {
     recordEvent("radar_trigger", { meta: {
       count:   triggers.length,
@@ -56,7 +65,6 @@ export async function POST(req: NextRequest) {
     //   · sniper  — budgeted + objectively gated (docs/PLANO-AGENTE-SNIPER.md)
     // Each has its own pause gate; detection + heartbeat above always run, so
     // the watchdog stays quiet when both are paused.
-    const gates = await getFlywheelGates();
     const radarBrain = gates.pause_radar ? null : hybridBrain();
     const sniperOn = !gates.pause_sniper;
     if (radarBrain || sniperOn) {
