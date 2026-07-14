@@ -8,6 +8,7 @@ import { hybridBrain } from "@/lib/ai/registry";
 import { recordEvent } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
+import { runSniperScan } from "@/lib/zion/sniper";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,20 +49,30 @@ export async function POST(req: NextRequest) {
       symbols: triggers.map((t) => `${t.symbol} ${t.movePct > 0 ? "+" : ""}${t.movePct}%`),
     } });
 
-    // Wake the cheap brain ONLY on the triggered symbols — in the background so
-    // the cron pinger gets an instant reply. Dormant if no cheap key is set,
-    // and skipped entirely when the operator paused radar spend (pause_radar) —
-    // detection + heartbeat above stay on, so the watchdog stays quiet.
+    // Wake the trigger-driven policies ONLY on the triggered symbols — in the
+    // background so the cron pinger gets an instant reply. Two independent
+    // policies ride the SAME trigger (a natural A/B):
+    //   · radar   — the original "analyze and log" wake (control group)
+    //   · sniper  — budgeted + objectively gated (docs/PLANO-AGENTE-SNIPER.md)
+    // Each has its own pause gate; detection + heartbeat above always run, so
+    // the watchdog stays quiet when both are paused.
     const gates = await getFlywheelGates();
-    const brain = gates.pause_radar ? null : hybridBrain();
-    if (brain) {
+    const radarBrain = gates.pause_radar ? null : hybridBrain();
+    const sniperOn = !gates.pause_sniper;
+    if (radarBrain || sniperOn) {
       const symbols = triggers.map((t) => t.symbol);
       waitUntil((async () => {
-        try {
-          const marketData = await getMarketIndicators(symbols);
-          const cards = await runBacktestScanForProvider(marketData, brain);
-          if (cards.length) await logSuggestions(cards, marketData.indicators, "radar");
-        } catch { /* best-effort: next trigger retries */ }
+        let marketData;
+        try { marketData = await getMarketIndicators(symbols); } catch { return; }
+        if (radarBrain) {
+          try {
+            const cards = await runBacktestScanForProvider(marketData, radarBrain);
+            if (cards.length) await logSuggestions(cards, marketData.indicators, "radar");
+          } catch { /* best-effort: next trigger retries */ }
+        }
+        if (sniperOn) {
+          try { await runSniperScan(marketData, triggers); } catch { /* best-effort */ }
+        }
       })());
     }
   }
