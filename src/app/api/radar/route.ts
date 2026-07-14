@@ -7,6 +7,7 @@ import { runBacktestScanForProvider, logSuggestions } from "@/lib/zion/backtest"
 import { hybridBrain } from "@/lib/ai/registry";
 import { recordEvent } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
+import { getFlywheelGates } from "@/lib/admin/gates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,8 +49,11 @@ export async function POST(req: NextRequest) {
     } });
 
     // Wake the cheap brain ONLY on the triggered symbols — in the background so
-    // the cron pinger gets an instant reply. Dormant if no cheap key is set.
-    const brain = hybridBrain();
+    // the cron pinger gets an instant reply. Dormant if no cheap key is set,
+    // and skipped entirely when the operator paused radar spend (pause_radar) —
+    // detection + heartbeat above stay on, so the watchdog stays quiet.
+    const gates = await getFlywheelGates();
+    const brain = gates.pause_radar ? null : hybridBrain();
     if (brain) {
       const symbols = triggers.map((t) => t.symbol);
       waitUntil((async () => {

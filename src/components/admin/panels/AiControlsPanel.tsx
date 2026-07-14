@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
-type GateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament";
+type GateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_radar" | "pause_paper";
 
 type Breaker = {
   id: string; label: string; configured: boolean;
@@ -15,11 +15,14 @@ const GATES: { key: GateKey; label: string; desc: string; master?: boolean }[] =
   { key: "pause_agent_a",    label: "AGENT A · ZION",    desc: "Pausa o Agent A (Sonnet sozinho)." },
   { key: "pause_agent_b",    label: "AGENT B · FERRARI", desc: "Pausa o Agent B híbrido (Opus CEO). Também exige HYBRID_B_ENABLED." },
   { key: "pause_tournament", label: "TORNEIO (MODELOS)", desc: "Pausa Mistral/DeepSeek/Kimi/Llama/Grok. É o que gasta nos provedores diretos." },
+  { key: "pause_radar",      label: "RADAR (BRAIN)",     desc: "Pausa o acorde do modelo nos gatilhos de preço. Detecção (grátis) continua." },
+  { key: "pause_paper",      label: "PAPER · GATE.IO",   desc: "Pausa o agente de simulação. Zero token — pausar só congela o experimento." },
 ];
 
 export default function AiControlsPanel() {
   const [gates, setGates] = useState<Record<GateKey, boolean>>({
     pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false,
+    pause_radar: false, pause_paper: false,
   });
   const [loading, setLoading]   = useState(true);
   const [mutating, setMutating] = useState<GateKey | null>(null);
@@ -39,6 +42,8 @@ export default function AiControlsPanel() {
         pause_agent_a:    !!s.pause_agent_a,
         pause_agent_b:    !!s.pause_agent_b,
         pause_tournament: !!s.pause_tournament,
+        pause_radar:      !!s.pause_radar,
+        pause_paper:      !!s.pause_paper,
       });
       if (json.note) setNote(json.note);
     } catch (e) { setErr(String(e)); } finally { setLoading(false); }

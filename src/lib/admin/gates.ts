@@ -14,19 +14,23 @@
  *   pause_paper      — skip the Gate.io paper-trading agent (simulated execution
  *                      of the flywheel's signals). Independent of the scans; it
  *                      spends NO tokens (public price only).
+ *   pause_radar      — skip the radar's LLM brain-wake on price triggers (the
+ *                      only radar stage that spends tokens). Trigger DETECTION
+ *                      and the cron heartbeat keep running — they're free and
+ *                      the watchdog would page "cron stalled" otherwise.
  *
  * Everything defaults to running (all gates false) — a missing/empty admin_kv
  * never accidentally pauses the flywheel.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type FlywheelGateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_paper";
-export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = ["pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament", "pause_paper"];
+export type FlywheelGateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_paper" | "pause_radar";
+export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = ["pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament", "pause_paper", "pause_radar"];
 
 export type FlywheelGates = Record<FlywheelGateKey, boolean>;
 
 export async function getFlywheelGates(): Promise<FlywheelGates> {
-  const gates: FlywheelGates = { pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false, pause_paper: false };
+  const gates: FlywheelGates = { pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false, pause_paper: false, pause_radar: false };
   const db = getSupabaseAdmin();
   if (!db) return gates;
   try {
