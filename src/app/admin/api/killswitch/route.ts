@@ -11,11 +11,11 @@ type SwitchKey =
   // getFlywheelGates). Same admin_kv "true"/"false" convention as the platform
   // kill-switches, so this one route serves both panels.
   | "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament"
-  | "pause_paper" | "pause_radar";
+  | "pause_paper" | "pause_radar" | "pause_sniper";
 const VALID_KEYS: SwitchKey[] = [
   "disable_swap", "disable_cex", "maintenance_mode",
   "pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament",
-  "pause_paper", "pause_radar",
+  "pause_paper", "pause_radar", "pause_sniper",
 ];
 
 /**

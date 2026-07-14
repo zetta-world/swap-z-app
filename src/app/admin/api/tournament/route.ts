@@ -17,6 +17,7 @@ const AGENTS: Record<string, { name: string; kind: string }> = {
   self_scan:     { name: "Agent A · ZION (Sonnet)",   kind: "agent" },
   hybrid_scan:   { name: "Agent B · Ferrari (Opus CEO)", kind: "agent" },
   radar:         { name: "Radar T3 (trigger wake)",   kind: "agent" },
+  sniper:        { name: "Sniper 🎯 (evento + gates)", kind: "agent" },
   deepseek_scan: { name: "DeepSeek",                   kind: "model" },
   kimi_scan:     { name: "Kimi (Moonshot)",           kind: "model" },
   mistral_scan:  { name: "Mistral",                    kind: "model" },

@@ -18,19 +18,22 @@
  *                      only radar stage that spends tokens). Trigger DETECTION
  *                      and the cron heartbeat keep running — they're free and
  *                      the watchdog would page "cron stalled" otherwise.
+ *   pause_sniper     — skip the SNIPER agent (event-driven, budgeted,
+ *                      objective-gated — docs/PLANO-AGENTE-SNIPER.md). Rides
+ *                      the same radar triggers as its control group.
  *
  * Everything defaults to running (all gates false) — a missing/empty admin_kv
  * never accidentally pauses the flywheel.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type FlywheelGateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_paper" | "pause_radar";
-export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = ["pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament", "pause_paper", "pause_radar"];
+export type FlywheelGateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_paper" | "pause_radar" | "pause_sniper";
+export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = ["pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament", "pause_paper", "pause_radar", "pause_sniper"];
 
 export type FlywheelGates = Record<FlywheelGateKey, boolean>;
 
 export async function getFlywheelGates(): Promise<FlywheelGates> {
-  const gates: FlywheelGates = { pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false, pause_paper: false, pause_radar: false };
+  const gates: FlywheelGates = { pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false, pause_paper: false, pause_radar: false, pause_sniper: false };
   const db = getSupabaseAdmin();
   if (!db) return gates;
   try {
