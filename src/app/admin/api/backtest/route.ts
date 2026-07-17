@@ -28,15 +28,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // Paginated full read (A1): PostgREST caps a plain select at 1000 rows with
   // no error — the headline stats must aggregate the WHOLE ledger.
   type StatRow = { status: string; outcome_pct: number | null; regime: string | null; entry_price: number | null; target_price: number | null; stop_price: number | null };
+  // Live round only — archived test rounds stay in the DB but never in stats
+  // (docs/PLANO-ARQUIVO-RODADAS.md).
   const allP = selectAllRows<StatRow>((from, to) => {
     let q = db.from("zion_suggestions")
       .select("status, outcome_pct, regime, entry_price, target_price, stop_price")
+      .is("archived_at", null)
       .order("created_at", { ascending: true }).range(from, to);
     if (source) q = q.eq("source", source);
     return q;
   });
   let recentQ = db.from("zion_suggestions")
     .select("symbol, side, status, outcome_pct, probability, regime, created_at")
+    .is("archived_at", null)
     .order("created_at", { ascending: false })
     .limit(40);
   if (source) recentQ = recentQ.eq("source", source);

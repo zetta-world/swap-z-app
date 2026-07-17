@@ -170,6 +170,7 @@ async function flywheelDigestBlock(db: NonNullable<ReturnType<typeof getSupabase
   const rows = await selectAllRows<SuggRow>((from, to) =>
     db.from("zion_suggestions")
       .select("status, outcome_pct, source")
+      .is("archived_at", null) // live round only (docs/PLANO-ARQUIVO-RODADAS.md)
       .order("created_at", { ascending: true }).range(from, to));
   if (rows.length === 0) return "";
 

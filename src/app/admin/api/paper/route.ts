@@ -33,10 +33,10 @@ export async function GET(): Promise<NextResponse> {
     db.from("paper_accounts").select("*"),
     selectAllRows<{ account_id: string; source: string; symbol: string; side: string; cost_usd: number; entry_price: number }>(
       (from, to) => db.from("paper_positions").select("account_id, source, symbol, side, cost_usd, entry_price")
-        .eq("status", "open").order("opened_at", { ascending: true }).range(from, to)),
+        .eq("status", "open").is("archived_at", null).order("opened_at", { ascending: true }).range(from, to)),
     selectAllRows<{ account_id: string; pnl_usd: number | null; closed_at: string | null }>(
       (from, to) => db.from("paper_positions").select("account_id, pnl_usd, closed_at")
-        .eq("status", "closed").order("closed_at", { ascending: true }).range(from, to)),
+        .eq("status", "closed").is("archived_at", null).order("closed_at", { ascending: true }).range(from, to)),
   ]);
   if (!accounts) return NextResponse.json({ error: "no_accounts" }, { status: 500 });
 

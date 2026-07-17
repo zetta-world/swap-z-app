@@ -81,13 +81,14 @@ export async function GET(): Promise<NextResponse> {
   const rows = await selectAllRows<TourRow>((from, to) =>
     db.from("zion_suggestions")
       .select("source, status, outcome_pct, probability, entry_price, target_price, stop_price, created_at, resolved_at")
+      .is("archived_at", null) // live round only (docs/PLANO-ARQUIVO-RODADAS.md)
       .order("created_at", { ascending: true }).range(from, to),
   );
 
   // Paper wallets (Gate.io sim) — realized equity curve per source, shown beside
   // the flywheel curve once a wallet has matured (enough closed positions).
   const [{ data: paperClosedRows }, { data: paperAccts }] = await Promise.all([
-    db.from("paper_positions").select("source, pnl_usd, closed_at").eq("status", "closed").order("closed_at", { ascending: true }).limit(5000),
+    db.from("paper_positions").select("source, pnl_usd, closed_at").eq("status", "closed").is("archived_at", null).order("closed_at", { ascending: true }).limit(5000),
     db.from("paper_accounts").select("source, starting_usd"),
   ]);
   const startingBy = new Map<string, number>((paperAccts ?? []).map((a) => [a.source, Number(a.starting_usd) || 1000]));
