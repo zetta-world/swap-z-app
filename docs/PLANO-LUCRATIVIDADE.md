@@ -1,4 +1,4 @@
-# Caminho pra lucratividade dos agentes — 🟡 (alavanca 1 no ar, 17/07)
+# Caminho pra lucratividade dos agentes — 🟡 (alavancas 1+2 no ar, 17/07)
 
 > Pergunta do CEO: "o que precisamos fazer para tornar os agentes
 > lucrativos?" Respondido com os dados da rodada 1 (4.026 sugestões
@@ -24,7 +24,7 @@
 | # | Alavanca | Mecanismo | Status |
 |---|----------|-----------|--------|
 | 1 | **Filtro de regime objetivo** | Gate mecânico no `extractSuggestion` (funil de TODOS os agentes): símbolo `RANGING` (ADX<20) não emite nada; card contra tendência CONFIRMADA (`TRENDING_UP`+sell / `TRENDING_DOWN`+buy, ADX≥25) é rejeitado; `TRANSITIONING` e regime ausente passam (best-effort). Prompt avisa o modelo pra não gastar cobertura nesses símbolos. `BACKTEST_REGIME_FILTER=off` desliga. | 🟢 17/07 |
-| 2 | **Seletividade por evidência, não volume** | Derrubar a pressão de cobertura no prompt (menos cards, melhores); gate objetivo: RR planejado ≥2 e alinhamento com regime. Ignorar probability (item 2 acima). | ⏸️ |
+| 2 | **Seletividade por evidência, não volume** | Prompt: "emitir só com evidência real; cards vazios = resposta válida" (a pressão de cobertura — "cover as many as you can", "empty = failed run" — morreu). Gate objetivo: RR planejado ≥2 (`BACKTEST_MIN_RR`) — sub-2 não paga o custo de 0.2% round-trip. Probability segue só logada pra calibração, nunca gate (é anti-calibrada). | 🟢 17/07 |
 | 3 | **Torneio como fábrica de corte** | Rodada 2 mede; quem fechar amostra mínima com expectancy líquida negativa é pausado na rodada 3. Capital (de papel) concentra no campeão. | ⏸️ aguarda amostra |
 | 4 | **Escalar o market-neutral** | Arbiter: mais venues/pares; Sniper (listagens) entra em cena. Livro neutro paga o aluguel enquanto o direcional aprende. | ⏸️ |
 

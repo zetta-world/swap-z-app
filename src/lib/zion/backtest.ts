@@ -42,8 +42,12 @@ async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise
     "make here is logged and scored later against real price action, so honesty",
     "and coverage matter — this is how we prove your edge.",
     "",
-    "For EACH symbol in the market data below, decide your directional bias NOW",
-    "and emit ONE ACTION CARD:",
+    "Review EVERY symbol in the market data below, but emit an ACTION CARD only",
+    "for the ones where the indicators give you REAL EVIDENCE of a directional",
+    "edge — confluence, not a coin-flip lean. Quality over coverage: five cards",
+    "you'd defend beat twenty you wouldn't. Skipping a symbol is a decision,",
+    "not a failure, and an EMPTY cards array is a valid answer when nothing",
+    "qualifies (no-trade IS a position).",
     "  • bullish → kind \"buy_limit\" (side buy)",
     "  • bearish → kind \"sell_safe\" (side sell)",
     "Each card MUST include: from/to (USDT and the asset), entryPrice (use the",
@@ -74,16 +78,15 @@ async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise
     '"chain": "...", "from": {"symbol": "...", "address": ""}, "to": {"symbol": "...",',
     '"address": ""}, "entryPrice": "...", "exits": [{"label": "TP1", "price": "...",',
     '"profitPct": "..."}], "stopLoss": "...", "probability": "..."}]}',
-    "A response whose cards array is empty is a failed run.",
+    'When nothing qualifies, respond {"cards": []} — an honest empty scan.',
     "",
-    "RISK DISCIPLINE — this sets your LEVELS, it is NOT a reason to skip. For",
-    "every symbol you have a lean on, CONSTRUCT the target and stop so that",
-    "reward:risk >= 1.5 — i.e. |target-entry| >= 1.5 * |entry-stop|. Put the",
-    "stop just beyond recent volatility/structure, then place the target far",
-    "enough to satisfy the ratio (never within 0.3% of entry). You always have",
-    "this freedom, so you should almost always be able to emit a card.",
-    "Skip a symbol ONLY if you genuinely have no directional lean at all.",
-    "Cover as many symbols as you can — coverage is the point of backtest mode.",
+    "RISK DISCIPLINE — every card you DO emit must carry reward:risk >= 2 —",
+    "i.e. |target-entry| >= 2 * |entry-stop|. Put the stop just beyond recent",
+    "volatility/structure, then place the target far enough to satisfy the",
+    "ratio (never within 0.3% of entry). If you cannot construct a >=2 bracket",
+    "that the indicators genuinely support, the setup does not qualify — skip",
+    "it. The ledger gate rejects anything below 2, so a weaker card only",
+    "wastes your output.",
     "Machine-format every number (dot decimal, no separators, no symbols).",
     "",
     "<market>",
@@ -365,6 +368,11 @@ const MAX_TARGET_PCT = Number(process.env.BACKTEST_MAX_TARGET_PCT ?? 30);
 // −1.54 in chop). Set BACKTEST_REGIME_FILTER=off to disable.
 const REGIME_FILTER_ON = (process.env.BACKTEST_REGIME_FILTER ?? "on") !== "off";
 
+// Minimum planned reward:risk (alavanca 2). Round 1's gross expectancy was
+// −0.4%/trade on a 0.2% round-trip cost — sub-2 brackets can't pay the toll
+// even at decent win rates. The prompt demands >=2; this enforces it.
+const MIN_RR = Number(process.env.BACKTEST_MIN_RR ?? 2);
+
 type NewSuggestion = Partial<ZionSuggestionRow> & { symbol: string; kind: string; side: "buy" | "sell"; ref_price: number };
 
 /** Turn a card into a ledger row, or null when it isn't a trackable directional trade. */
@@ -432,7 +440,8 @@ export function extractSuggestion(
   //   · target on the WRONG side of entry (reward <= 0),
   //   · stop on the wrong side (risk <= 0),
   //   · target essentially AT entry (the AVAX 6.288→6.2873 "0.01%" bug),
-  //   · reward:risk below 1 (stop wider than target = negative-EV by design).
+  //   · reward:risk below MIN_RR (a sub-2 bracket can't pay the round-trip
+  //     cost — alavanca 2 of PLANO-LUCRATIVIDADE).
   // A directional call without explicit target/stop still passes (it resolves
   // at horizon), so coverage isn't hurt — only losing-by-construction cards die.
   if (entry && entry > 0 && target && stop) {
@@ -440,7 +449,7 @@ export function extractSuggestion(
     const reward = (target - entry) * dir;
     const risk   = (entry - stop) * dir;
     const targetPct = (Math.abs(target - entry) / entry) * 100;
-    if (!(reward > 0) || !(risk > 0) || targetPct < 0.15 || targetPct > MAX_TARGET_PCT || reward / risk < 1) return null;
+    if (!(reward > 0) || !(risk > 0) || targetPct < 0.15 || targetPct > MAX_TARGET_PCT || reward / risk < MIN_RR) return null;
   }
 
   return {
