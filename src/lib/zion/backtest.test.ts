@@ -65,11 +65,38 @@ describe("extractSuggestion — money-in gate", () => {
   });
 
   it("maps swap direction: stable→asset = buy, asset→stable = sell", () => {
-    const buy = extractSuggestion(card({ kind: "swap", from: { symbol: "USDT", address: "" }, to: { symbol: "SOL", address: "" }, entryPrice: "", exits: undefined, stopLoss: "" }), refs, regimes);
+    // No regime read here — direction mapping is what's under test, and a
+    // sell against SOL's TRENDING_UP would (correctly) die at the regime gate.
+    const noRegime = new Map<string, string>();
+    const buy = extractSuggestion(card({ kind: "swap", from: { symbol: "USDT", address: "" }, to: { symbol: "SOL", address: "" }, entryPrice: "", exits: undefined, stopLoss: "" }), refs, noRegime);
     expect(buy?.side).toBe("buy");
-    const sell = extractSuggestion(card({ kind: "swap", from: { symbol: "SOL", address: "" }, to: { symbol: "USDT", address: "" }, entryPrice: "", exits: undefined, stopLoss: "" }), refs, regimes);
+    const sell = extractSuggestion(card({ kind: "swap", from: { symbol: "SOL", address: "" }, to: { symbol: "USDT", address: "" }, entryPrice: "", exits: undefined, stopLoss: "" }), refs, noRegime);
     expect(sell?.side).toBe("sell");
     expect(sell?.symbol).toBe("SOL");
+  });
+
+  it("regime gate: rejects any card on a RANGING symbol (chop pays to play)", () => {
+    const chop = new Map([["SOL", "RANGING"]]);
+    expect(extractSuggestion(card({}), refs, chop)).toBeNull();
+    const sell = card({ kind: "sell_safe", from: { symbol: "SOL", address: "" }, to: { symbol: "USDT", address: "" }, exits: [{ label: "TP1", profitPct: "3", price: "97" }], stopLoss: "102" });
+    expect(extractSuggestion(sell, refs, chop)).toBeNull();
+  });
+
+  it("regime gate: rejects counter-trend, keeps with-trend (symmetric)", () => {
+    const sell = card({ kind: "sell_safe", from: { symbol: "SOL", address: "" }, to: { symbol: "USDT", address: "" }, exits: [{ label: "TP1", profitPct: "3", price: "97" }], stopLoss: "102" });
+    // Confirmed uptrend: sell dies, buy lives.
+    expect(extractSuggestion(sell, refs, regimes)).toBeNull();
+    expect(extractSuggestion(card({}), refs, regimes)).not.toBeNull();
+    // Confirmed downtrend: buy dies, sell lives.
+    const down = new Map([["SOL", "TRENDING_DOWN"]]);
+    expect(extractSuggestion(card({}), refs, down)).toBeNull();
+    expect(extractSuggestion(sell, refs, down)).not.toBeNull();
+  });
+
+  it("regime gate: TRANSITIONING and missing regime pass both sides", () => {
+    const trans = new Map([["SOL", "TRANSITIONING"]]);
+    expect(extractSuggestion(card({}), refs, trans)).not.toBeNull();
+    expect(extractSuggestion(card({}), refs, new Map())).not.toBeNull();
   });
 
   it("skips a symbol with no real reference price (never trusts the card's own price)", () => {
