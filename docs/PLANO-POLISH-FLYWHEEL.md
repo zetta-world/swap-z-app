@@ -48,7 +48,41 @@ a antiga quando cada agente somar ~50-100 decididos pós-deploy. Se o volume de
 shorts contra-tendência cair e a exp. líquida de Grok/Claude subir sem derrubar
 o Mistral → cirurgia validada. Se não → reverter (é só o prompt do backtest).
 
+## Medição da coorte (17/07 — 🟡 confundida pelo regime, mas mecânica validada)
+
+**O regime VIROU no meio do experimento** (bull → bear após ~11/07): no radar
+(grupo de CONTROLE, prompt intocado) buy win caiu 67%→25% e sell win subiu
+14%→46%. Logo, before/after cru não mede a cirurgia — mede o mercado.
+
+Coorte nova (≥300 decididos/agente; corte 11/07 17:15 UTC):
+
+| Agente | buy dec/win (old→new) | sell dec/win (old→new) | Exp. líq. (old→new) |
+|--------|----------------------|------------------------|--------------------:|
+| Grok | 176/46% → 135/6% | 179/**4%** → 320/**35%** | −0.59 → −0.79 |
+| Mistral | 156/53% → 105/21% | 118/9% → 242/26% | +0.08 → −0.95 |
+| Claude (self) | 133/46% → 113/23% | 217/18% → 279/29% | −0.67 → −1.00 |
+| radar (controle) | 66/67% → 59/25% | 14/14% → 24/46% | **+2.13 → −1.54** |
+
+Leitura honesta:
+1. **A mecânica da cirurgia funciona.** O mix de direção agora SEGUE o regime
+   (todos os agentes migraram pra sell no bear — sell share 43-50% → ~70%) e o
+   sell win% saltou de 2-9% pra 26-35%. Era exatamente o comportamento
+   simétrico prometido: no bull favorecia buy, no bear favorece sell.
+2. **Bracket clamp validado:** alvo médio do Grok 259% → **2.8%** (máx 13.3%).
+   O lixo de dado morreu.
+3. **Diff-in-diff vs controle:** radar (sem cirurgia) piorou **−3.7 pts**;
+   os agentes operados pioraram −0.2 a −1.0. Relativo ao mercado, a cirurgia
+   segurou os agentes — não os derrubou.
+4. **MAS ninguém é lucrativo no regime novo** (todos −0.8 a −1.2 líquido).
+   As compras contra-tendência remanescentes (win 6-23%) ainda vazam. O edge
+   dos agentes era, em grande parte, o bull market.
+
+Decisão: **manter a cirurgia** (não reverter — o controle prova que a queda é
+regime, não o prompt) e seguir medindo. NÃO promover pro ZION ao vivo até ver
+uma coorte com expectancy líquida positiva em regime adverso.
+
 ## Pendências
-- ⏳ Medir coorte pós-deploy (Grok/Claude/Mistral) daqui a ~1-2 dias.
-- ⏸️ Se a tendência-disciplina ajudar, considerar levá-la (com cautela) pro
-  prompt do ZION ao vivo.
+- 🟢 Medir coorte pós-deploy — feito 17/07 (acima).
+- ⏳ Re-medir quando o regime virar de novo (a prova final da simetria).
+- ⏸️ Promoção pro prompt do ZION ao vivo — bloqueada até expectancy líquida
+  positiva fora do bull.
