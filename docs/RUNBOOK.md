@@ -46,6 +46,7 @@ Sem chave = provedor simplesmente ausente (dormente, sem erro).
 | `BACKTEST_MIN_SAMPLE` | Amostra mínima confiável | `100` |
 | `BACKTEST_RESOLVE_INTERVAL` | Velas da resolução | `5m` |
 | `BACKTEST_REGIME_FILTER` | Gate de regime no ledger (RANGING = nada; contra-tendência confirmada = rejeita). `off` desliga | on |
+| `BACKTEST_MIN_RR` | Reward:risk mínimo do bracket no ledger | `2` |
 | `RADAR_TRIGGER_PCT` | Gatilho do radar T3 | `1.5` (%) |
 | `TIER_GATES_ENABLED` | Gate de tier no ZION user-facing (M7 — ligar pré-marketing) | off |
 

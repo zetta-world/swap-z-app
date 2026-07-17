@@ -8,7 +8,7 @@ function card(over: Partial<ActionCard>): ActionCard {
   return {
     kind: "buy_limit", title: "t", summary: "s", chain: "solana",
     from: { symbol: "USDT", address: "" }, to: { symbol: "SOL", address: "" },
-    entryPrice: "100", exits: [{ label: "TP1", profitPct: "3", price:"103" }], stopLoss: "98", probability: "70",
+    entryPrice: "100", exits: [{ label: "TP1", profitPct: "3", price:"103" }], stopLoss: "98.5", probability: "70",
     ...over,
   } as ActionCard;
 }
@@ -25,7 +25,7 @@ describe("extractSuggestion — money-in gate", () => {
     expect(r!.ref_price).toBe(100);
     expect(r!.entry_price).toBe(100);
     expect(r!.target_price).toBe(103);
-    expect(r!.stop_price).toBe(98);
+    expect(r!.stop_price).toBe(98.5);
     expect(r!.regime).toBe("TRENDING_UP");
   });
 
@@ -38,6 +38,12 @@ describe("extractSuggestion — money-in gate", () => {
   it("rejects reward:risk < 1 (negative EV by construction)", () => {
     // reward = 1, risk = 3 → R:R 0.33
     const r = extractSuggestion(card({ exits: [{ label: "TP1", profitPct: "3", price:"101" }], stopLoss: "97" }), refs, regimes);
+    expect(r).toBeNull();
+  });
+
+  it("rejects reward:risk below 2 — a sub-2 bracket can't pay the round-trip cost", () => {
+    // reward = 3, risk = 2 → R:R 1.5: fine geometry, insufficient edge.
+    const r = extractSuggestion(card({ exits: [{ label: "TP1", profitPct: "3", price:"103" }], stopLoss: "98" }), refs, regimes);
     expect(r).toBeNull();
   });
 
@@ -78,12 +84,12 @@ describe("extractSuggestion — money-in gate", () => {
   it("regime gate: rejects any card on a RANGING symbol (chop pays to play)", () => {
     const chop = new Map([["SOL", "RANGING"]]);
     expect(extractSuggestion(card({}), refs, chop)).toBeNull();
-    const sell = card({ kind: "sell_safe", from: { symbol: "SOL", address: "" }, to: { symbol: "USDT", address: "" }, exits: [{ label: "TP1", profitPct: "3", price: "97" }], stopLoss: "102" });
+    const sell = card({ kind: "sell_safe", from: { symbol: "SOL", address: "" }, to: { symbol: "USDT", address: "" }, exits: [{ label: "TP1", profitPct: "3", price: "97" }], stopLoss: "101.5" });
     expect(extractSuggestion(sell, refs, chop)).toBeNull();
   });
 
   it("regime gate: rejects counter-trend, keeps with-trend (symmetric)", () => {
-    const sell = card({ kind: "sell_safe", from: { symbol: "SOL", address: "" }, to: { symbol: "USDT", address: "" }, exits: [{ label: "TP1", profitPct: "3", price: "97" }], stopLoss: "102" });
+    const sell = card({ kind: "sell_safe", from: { symbol: "SOL", address: "" }, to: { symbol: "USDT", address: "" }, exits: [{ label: "TP1", profitPct: "3", price: "97" }], stopLoss: "101.5" });
     // Confirmed uptrend: sell dies, buy lives.
     expect(extractSuggestion(sell, refs, regimes)).toBeNull();
     expect(extractSuggestion(card({}), refs, regimes)).not.toBeNull();
