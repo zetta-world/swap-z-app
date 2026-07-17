@@ -23,19 +23,21 @@
  *                      the same radar triggers as its control group.
  *   pause_arbiter    — skip the ARBITER desk (cross-CEX spread detector —
  *                      zero-LLM, paper-booked; docs/PLANO-MESA-AGENTES.md).
+ *   pause_oracle     — skip the ORÁCULO thesis desk (daily, context-driven,
+ *                      multi-model; docs/PLANO-ORACULO-ANALISTA.md).
  *
  * Everything defaults to running (all gates false) — a missing/empty admin_kv
  * never accidentally pauses the flywheel.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type FlywheelGateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_paper" | "pause_radar" | "pause_sniper" | "pause_arbiter";
-export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = ["pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament", "pause_paper", "pause_radar", "pause_sniper", "pause_arbiter"];
+export type FlywheelGateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_paper" | "pause_radar" | "pause_sniper" | "pause_arbiter" | "pause_oracle";
+export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = ["pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament", "pause_paper", "pause_radar", "pause_sniper", "pause_arbiter", "pause_oracle"];
 
 export type FlywheelGates = Record<FlywheelGateKey, boolean>;
 
 export async function getFlywheelGates(): Promise<FlywheelGates> {
-  const gates: FlywheelGates = { pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false, pause_paper: false, pause_radar: false, pause_sniper: false, pause_arbiter: false };
+  const gates: FlywheelGates = { pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false, pause_paper: false, pause_radar: false, pause_sniper: false, pause_arbiter: false, pause_oracle: false };
   const db = getSupabaseAdmin();
   if (!db) return gates;
   try {

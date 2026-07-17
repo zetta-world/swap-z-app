@@ -7,6 +7,7 @@ import { configuredProviders } from "@/lib/ai/registry";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
+import { runOracleScan } from "@/lib/zion/oracle";
 import { runPaperAgent } from "@/lib/paper/engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -117,6 +118,22 @@ export async function POST(req: NextRequest) {
         if (hybridCards.length) await logSuggestions(hybridCards, marketData.indicators, "hybrid_scan");
         for (let i = 0; i < providers.length; i++) {
           if (providerCards[i]?.length) await logSuggestions(providerCards[i], marketData.indicators, `${providers[i].id}_scan`);
+        }
+
+        // ORÁCULO thesis desk (daily, not per-tick — PLANO-ORACULO-ANALISTA).
+        // The admin_kv day-claim makes the 30-min cron behave as a 1×/day
+        // trigger and shields against cron-retry double-runs: claim first,
+        // then spend.
+        if (!gates.pause_oracle) {
+          const today = new Date().toISOString().slice(0, 10);
+          const db = getSupabaseAdmin();
+          if (db) {
+            const { data: last } = await db.from("admin_kv").select("value").eq("key", "oracle:last_day").maybeSingle();
+            if (last?.value !== today) {
+              await db.from("admin_kv").upsert({ key: "oracle:last_day", value: today, updated_at: new Date().toISOString() }, { onConflict: "key" });
+              try { await runOracleScan(marketData); } catch { /* best-effort: tomorrow retries */ }
+            }
+          }
         }
       } catch { /* best-effort: next tick retries */ }
     }

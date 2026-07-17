@@ -50,6 +50,10 @@ Sem chave = provedor simplesmente ausente (dormente, sem erro).
 | `ARB_DAILY_CAP` | Round-trips/dia do arbiter (universo ~55 símbolos) | `40` |
 | `TOURNAMENT_CULL` | Corte automático de agente no vermelho com amostra (`culled:<source>` no admin_kv; apagar a chave = anistia) | on |
 | `PAPER_CHAMPION_MULT` | Multiplicador de posição do campeão no paper | `2` |
+| `ORACLE_HORIZON_H` | Horizonte das teses do Oráculo | `240` (10d) |
+| `ORACLE_MIN_STOP_PCT` | Stop mínimo da tese (fora do ruído diário) | `4` (%) |
+| `ORACLE_MIN_RR` | RR mínimo do perfil tese | `1.5` |
+| `ORACLE_MAX_OPEN` | Teses abertas simultâneas por modelo | `3` |
 | `SNIPER_MIN_RR` | RR mínimo do sniper (alinhado ao ledger) | `2` |
 | `RADAR_TRIGGER_PCT` | Gatilho do radar T3 | `1.5` (%) |
 | `TIER_GATES_ENABLED` | Gate de tier no ZION user-facing (M7 — ligar pré-marketing) | off |

@@ -375,11 +375,20 @@ const MIN_RR = Number(process.env.BACKTEST_MIN_RR ?? 2);
 
 type NewSuggestion = Partial<ZionSuggestionRow> & { symbol: string; kind: string; side: "buy" | "sell"; ref_price: number };
 
+/** Per-profile overrides for the funnel gates. Defaults reproduce the scanner
+ *  profile exactly; the Oráculo thesis desk passes its own
+ *  (docs/PLANO-ORACULO-ANALISTA.md): no regime filter (a reversal thesis WITH
+ *  declared invalidation is its reason to exist), RR ≥1.5 with a stop parked
+ *  OUTSIDE the noise band (minStopPct — a thesis stop, not a stroll stop),
+ *  and a full bracket is mandatory. */
+export interface ExtractOpts { minRR?: number; regimeFilter?: boolean; minStopPct?: number }
+
 /** Turn a card into a ledger row, or null when it isn't a trackable directional trade. */
 export function extractSuggestion(
   card: ActionCard,
   refPriceBySymbol: Map<string, number>,
   regimeBySymbol: Map<string, string>,
+  opts?: ExtractOpts,
 ): NewSuggestion | null {
   if (!TRADEABLE_KINDS.has(card.kind)) return null;
 
@@ -414,7 +423,7 @@ export function extractSuggestion(
   // confirmed trend to contradict. A symbol with no regime read also passes:
   // an indicators hiccup must not starve the flywheel (best-effort, not the
   // money path).
-  if (REGIME_FILTER_ON) {
+  if (opts?.regimeFilter ?? REGIME_FILTER_ON) {
     const regime = regimeBySymbol.get(base);
     if (regime === "RANGING") return null;
     if (regime === "TRENDING_UP" && side === "sell") return null;
@@ -444,12 +453,19 @@ export function extractSuggestion(
   //     cost — alavanca 2 of PLANO-LUCRATIVIDADE).
   // A directional call without explicit target/stop still passes (it resolves
   // at horizon), so coverage isn't hurt — only losing-by-construction cards die.
+  // Thesis profile: a full bracket is mandatory and the stop must sit outside
+  // the noise band — a 240h thesis with a 2% stop dies of weather, not of
+  // being wrong.
+  if (opts?.minStopPct != null) {
+    if (!entry || !target || !stop) return null;
+    if ((Math.abs(entry - stop) / entry) * 100 < opts.minStopPct) return null;
+  }
   if (entry && entry > 0 && target && stop) {
     const dir = side === "buy" ? 1 : -1;
     const reward = (target - entry) * dir;
     const risk   = (entry - stop) * dir;
     const targetPct = (Math.abs(target - entry) / entry) * 100;
-    if (!(reward > 0) || !(risk > 0) || targetPct < 0.15 || targetPct > MAX_TARGET_PCT || reward / risk < MIN_RR) return null;
+    if (!(reward > 0) || !(risk > 0) || targetPct < 0.15 || targetPct > MAX_TARGET_PCT || reward / risk < (opts?.minRR ?? MIN_RR)) return null;
   }
 
   return {
@@ -491,11 +507,24 @@ interface Kline { t: number; high: number; low: number; close: number; }
 // startMs, which spans the 72h suggestion horizon. Zero extra token cost.
 const RESOLVE_INTERVAL = process.env.BACKTEST_RESOLVE_INTERVAL ?? "5m";
 
+/** Candle interval for a replay span. 1000 candles must COVER the span or
+ *  touches beyond candle #1000 become invisible (the window is non-empty, so
+ *  the spot fallback never fires). 5m×1000 ≈ 83h fits the 72h scanner
+ *  horizon; the Oráculo's 240h theses need 15m (≈250h); anything longer
+ *  degrades to 1h. Coarser candles keep the stop-first pessimism — we only
+ *  lose intra-candle ordering fidelity, never a touch. */
+function intervalForSpan(spanMs: number): string {
+  const h = spanMs / 3_600_000;
+  if (h <= 80) return RESOLVE_INTERVAL;
+  if (h <= 245) return "15m";
+  return "1h";
+}
+
 /** Candles for [startMs, endMs] from Binance's non-geoblocked mirror.
  *  Empty array on any failure — the caller falls back to a spot check. */
-async function fetchKlines(symbol: string, startMs: number, endMs: number): Promise<Kline[]> {
+async function fetchKlines(symbol: string, startMs: number, endMs: number, interval = RESOLVE_INTERVAL): Promise<Kline[]> {
   try {
-    const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=${RESOLVE_INTERVAL}`
+    const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=${interval}`
       + `&startTime=${Math.floor(startMs)}&endTime=${Math.ceil(endMs)}&limit=1000`;
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return [];
@@ -575,7 +604,7 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
   const klinesBySymbol = new Map<string, Kline[]>();
   await Promise.all(symbols.map(async (sym) => {
     const earliest = Math.min(...open.filter((r) => r.symbol === sym).map((r) => Date.parse(r.created_at)));
-    klinesBySymbol.set(sym, await fetchKlines(sym, earliest, nowMs));
+    klinesBySymbol.set(sym, await fetchKlines(sym, earliest, nowMs, intervalForSpan(nowMs - earliest)));
   }));
   const spot = await getCexSpotPrices(symbols).catch(() => new Map());
 
