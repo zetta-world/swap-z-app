@@ -6,6 +6,7 @@ import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestSc
 import { configuredProviders } from "@/lib/ai/registry";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
+import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
 import { runPaperAgent } from "@/lib/paper/engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -104,10 +105,13 @@ export async function POST(req: NextRequest) {
         // key are simply absent — stays single-model (Claude) until you add keys.
         // Each stage is individually gate-able from the admin panel.
         const providers = configuredProviders();
+        // Tournament cull (alavanca 3): an agent judged on the live round's
+        // minimum sample with negative net expectancy stops earning spend.
+        const culled = await getCulledSources();
         const [claudeCards, hybridCards, ...providerCards] = await Promise.all([
-          gates.pause_agent_a ? Promise.resolve([]) : runBacktestScan(marketData),   // Agent A — Sonnet (self_scan)
-          gates.pause_agent_b ? Promise.resolve([]) : runHybridScan(marketData),      // Agent B — Ferrari (hybrid_scan)
-          ...providers.map((p) => gates.pause_tournament ? Promise.resolve([]) : runBacktestScanForProvider(marketData, p)),
+          gates.pause_agent_a || culled.has("self_scan")   ? Promise.resolve([]) : runBacktestScan(marketData),   // Agent A — Sonnet (self_scan)
+          gates.pause_agent_b || culled.has("hybrid_scan") ? Promise.resolve([]) : runHybridScan(marketData),      // Agent B — Ferrari (hybrid_scan)
+          ...providers.map((p) => gates.pause_tournament || culled.has(`${p.id}_scan`) ? Promise.resolve([]) : runBacktestScanForProvider(marketData, p)),
         ]);
         if (claudeCards.length) await logSuggestions(claudeCards, marketData.indicators, "self_scan");
         if (hybridCards.length) await logSuggestions(hybridCards, marketData.indicators, "hybrid_scan");
@@ -119,6 +123,10 @@ export async function POST(req: NextRequest) {
     // Resolve runs regardless of the scan gates — outcomes are independent of
     // the scan, and closing open trades costs nothing.
     try { await resolveOpenSuggestions(); } catch { /* best-effort */ }
+
+    // Cull verdicts AFTER resolution so they judge the freshest ledger. Free
+    // (one paginated read), idempotent, and gated by TOURNAMENT_CULL.
+    try { await runTournamentCull(); } catch { /* best-effort */ }
 
     // Paper-trading agent (Gate.io simulation): executes the flywheel's signals
     // as simulated trades vs the live Gate.io price. Isolated from the real

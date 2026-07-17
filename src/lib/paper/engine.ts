@@ -18,6 +18,10 @@ const COST_PCT     = Number(process.env.BACKTEST_COST_PCT   ?? 0.2);
 const POSITION_PCT = Number(process.env.PAPER_POSITION_PCT  ?? 0.05); // deploy 5% of starting capital per signal
 const STARTING_USD = Number(process.env.PAPER_STARTING_USD  ?? 1000);
 const MIN_CASH_USD = Number(process.env.PAPER_MIN_CASH_USD  ?? 25);   // floor to open a position (out-of-capital below this)
+// Champion sizing (alavanca 3): the tournament's current champion (set by the
+// cull engine in admin_kv) deploys a bigger slice per signal — paper capital
+// concentrates on what is PROVEN to work at the minimum sample.
+const CHAMPION_MULT = Number(process.env.PAPER_CHAMPION_MULT ?? 2);
 
 /** The flywheel sources that get their own paper wallet — the tournament, at
  *  the portfolio level. */
@@ -202,6 +206,13 @@ export async function openPaperPositions(): Promise<number> {
   const { data: held } = await db.from("paper_positions").select("account_id, suggestion_id");
   const taken = new Set((held ?? []).map((h) => `${h.account_id}:${h.suggestion_id}`));
 
+  // Current champion (cull engine, alavanca 3) — best-effort, null when unset.
+  let champion: string | null = null;
+  try {
+    const { data: champ } = await db.from("admin_kv").select("value").eq("key", "tournament_champion").maybeSingle();
+    champion = champ?.value || null;
+  } catch { /* no champion on a KV hiccup */ }
+
   const px = await gateioSpot([...new Set(sugg.map((s) => s.symbol))]);
   const spent = new Map<string, number>(); // account_id → cash deployed this tick
   type PaperInsert = {
@@ -218,7 +229,8 @@ export async function openPaperPositions(): Promise<number> {
     const fill = px.get(s.symbol.toUpperCase());
     if (fill == null || !canEnter(s.side, fill, s.target_price, s.stop_price)) continue;
     const cashAvail = Number(acc.cash_usd) - (spent.get(acc.id) ?? 0);
-    const size = sizePosition(cashAvail, Number(acc.starting_usd), convictionFactor(s.probability));
+    const champMult = s.source === champion ? CHAMPION_MULT : 1;
+    const size = sizePosition(cashAvail, Number(acc.starting_usd), convictionFactor(s.probability) * champMult);
     if (size <= 0) continue; // out of capital
     inserts.push({
       account_id: acc.id, suggestion_id: s.id, source: s.source, symbol: s.symbol, side: s.side,

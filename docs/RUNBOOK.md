@@ -48,6 +48,8 @@ Sem chave = provedor simplesmente ausente (dormente, sem erro).
 | `BACKTEST_REGIME_FILTER` | Gate de regime no ledger (RANGING = nada; contra-tendência confirmada = rejeita). `off` desliga | on |
 | `BACKTEST_MIN_RR` | Reward:risk mínimo do bracket no ledger | `2` |
 | `ARB_DAILY_CAP` | Round-trips/dia do arbiter (universo ~55 símbolos) | `40` |
+| `TOURNAMENT_CULL` | Corte automático de agente no vermelho com amostra (`culled:<source>` no admin_kv; apagar a chave = anistia) | on |
+| `PAPER_CHAMPION_MULT` | Multiplicador de posição do campeão no paper | `2` |
 | `SNIPER_MIN_RR` | RR mínimo do sniper (alinhado ao ledger) | `2` |
 | `RADAR_TRIGGER_PCT` | Gatilho do radar T3 | `1.5` (%) |
 | `TIER_GATES_ENABLED` | Gate de tier no ZION user-facing (M7 — ligar pré-marketing) | off |
