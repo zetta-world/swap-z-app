@@ -24,6 +24,13 @@ export const CEX_TRACKED_SYMBOLS = [
   "ARB", "OP", "ATOM", "ADA", "DOGE", "PEPE", "WIF", "DOT", "LDO",
   "TON", "TRX", "XRP", "NEAR", "SUI", "APT", "SHIB", "INJ", "RNDR",
   "FET", "TAO", "GRT",
+  // Alavanca 4 (PLANO-LUCRATIVIDADE): wider market-neutral universe — liquid
+  // majors quoted USDT on most tracked venues. POL/RENDER are the LIVE
+  // successor tickers of MATIC/RNDR (whose stale listings the arbiter's
+  // median filter already drops).
+  "LTC", "BCH", "XLM", "ETC", "FIL", "ICP", "HBAR", "ALGO", "VET",
+  "SAND", "MANA", "IMX", "STX", "RUNE", "SEI", "TIA", "JUP", "WLD",
+  "PYTH", "BONK", "FLOKI", "CRV", "MKR", "ENA", "ONDO", "POL", "RENDER",
 ] as const;
 
 // Kraken uses a different ticker naming. Map our symbol → Kraken pair.
@@ -33,6 +40,11 @@ const KRAKEN_PAIR: Record<string, string> = {
   AAVE: "AAVEUSDT", ARB: "ARBUSDT", OP: "OPUSDT", ATOM: "ATOMUSDT",
   ADA: "ADAUSDT", DOGE: "DOGEUSDT", DOT: "DOTUSDT", LDO: "LDOUSDT",
   XRP: "XRPUSDT", NEAR: "NEARUSDT", SUI: "SUIUSDT", APT: "APTUSDT",
+  LTC: "LTCUSDT", BCH: "BCHUSDT", XLM: "XLMUSDT", ETC: "ETCUSDT",
+  FIL: "FILUSDT", ICP: "ICPUSDT", ALGO: "ALGOUSDT", SAND: "SANDUSDT",
+  MANA: "MANAUSDT", IMX: "IMXUSDT", STX: "STXUSDT", RUNE: "RUNEUSDT",
+  SEI: "SEIUSDT", TIA: "TIAUSDT", CRV: "CRVUSDT", MKR: "MKRUSDT",
+  ENA: "ENAUSDT", ONDO: "ONDOUSDT", POL: "POLUSDT", RENDER: "RENDERUSDT",
 };
 
 export interface CexSpotPrice {
@@ -160,24 +172,32 @@ function setEntry(map: MultiSpotMap, base: string, source: CexSpotSource, priceU
   map.set(base, row);
 }
 
-export async function getMultiExchangeSpot(symbols: string[]): Promise<MultiSpotMap> {
+export async function getMultiExchangeSpot(
+  symbols: string[],
+  opts?: { skipVenues?: CexSpotSource[] },
+): Promise<MultiSpotMap> {
   const wanted = [...new Set(symbols.map((s) => s.toUpperCase()))]
     .filter((s) => (CEX_TRACKED_SYMBOLS as readonly string[]).includes(s));
   if (wanted.length === 0) return new Map();
 
   const out: MultiSpotMap = new Map();
   const wantedSet = new Set(wanted);
+  // skipVenues: callers that discard a venue anyway (the arbiter drops
+  // coinbase's USD-quoted prices) skip its fetch entirely — coinbase and mexc
+  // are per-symbol adapters, so with a ~55-symbol universe on a 1-min tick
+  // that's real request volume, not a micro-optimization.
+  const skip = new Set(opts?.skipVenues ?? []);
 
   // Fire all sources in parallel. Each adapter handles its own failures
   // and contributes whatever it managed to fetch.
   await Promise.all([
-    fetchBinance(wanted, out),
-    fetchCoinbase(wanted, out),
-    fetchGateIo(wantedSet, out),
-    fetchOkx(wantedSet, out),
-    fetchBybit(wantedSet, out),
-    fetchKrakenMulti(wanted, out),
-    fetchMexc(wanted, out),
+    skip.has("binance")  ? null : fetchBinance(wanted, out),
+    skip.has("coinbase") ? null : fetchCoinbase(wanted, out),
+    skip.has("gateio")   ? null : fetchGateIo(wantedSet, out),
+    skip.has("okx")      ? null : fetchOkx(wantedSet, out),
+    skip.has("bybit")    ? null : fetchBybit(wantedSet, out),
+    skip.has("kraken")   ? null : fetchKrakenMulti(wanted, out),
+    skip.has("mexc")     ? null : fetchMexc(wanted, out),
   ]);
 
   return out;
