@@ -1,4 +1,4 @@
-# Caminho pra lucratividade dos agentes — 🟡 (alavancas 1+2 no ar, 17/07)
+# Caminho pra lucratividade dos agentes — 🟡 (alavancas 1+2+4 no ar, 17/07)
 
 > Pergunta do CEO: "o que precisamos fazer para tornar os agentes
 > lucrativos?" Respondido com os dados da rodada 1 (4.026 sugestões
@@ -26,7 +26,7 @@
 | 1 | **Filtro de regime objetivo** | Gate mecânico no `extractSuggestion` (funil de TODOS os agentes): símbolo `RANGING` (ADX<20) não emite nada; card contra tendência CONFIRMADA (`TRENDING_UP`+sell / `TRENDING_DOWN`+buy, ADX≥25) é rejeitado; `TRANSITIONING` e regime ausente passam (best-effort). Prompt avisa o modelo pra não gastar cobertura nesses símbolos. `BACKTEST_REGIME_FILTER=off` desliga. | 🟢 17/07 |
 | 2 | **Seletividade por evidência, não volume** | Prompt: "emitir só com evidência real; cards vazios = resposta válida" (a pressão de cobertura — "cover as many as you can", "empty = failed run" — morreu). Gate objetivo: RR planejado ≥2 (`BACKTEST_MIN_RR`) — sub-2 não paga o custo de 0.2% round-trip. Probability segue só logada pra calibração, nunca gate (é anti-calibrada). | 🟢 17/07 |
 | 3 | **Torneio como fábrica de corte** | Rodada 2 mede; quem fechar amostra mínima com expectancy líquida negativa é pausado na rodada 3. Capital (de papel) concentra no campeão. | ⏸️ aguarda amostra |
-| 4 | **Escalar o market-neutral** | Arbiter: mais venues/pares; Sniper (listagens) entra em cena. Livro neutro paga o aluguel enquanto o direcional aprende. | ⏸️ |
+| 4 | **Escalar o market-neutral** | Universo do arbiter 30 → ~55 símbolos (majors USDT multi-venue; POL/RENDER = tickers vivos dos cadáveres MATIC/RNDR), cap diário 20 → 40 (`ARB_DAILY_CAP`), coinbase pulada no FETCH (não só descartada — ~55 req/min a menos). Sniper já estava em cena (event-driven, despausado 17/07 08:32; espera gatilho ≥1.5%) — RR mínimo alinhado ao ledger (1.5 → 2). | 🟢 17/07 |
 
 ## O que NÃO fazer
 

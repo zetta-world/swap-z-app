@@ -14,7 +14,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS } from "@/lib/api/cex-spot";
+import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
 import { recordEvent } from "@/lib/admin/track";
 
 const COST_PCT     = Number(process.env.ARB_COST_PCT     ?? 0.4);  // 2 taker legs + slippage buffer
@@ -34,7 +34,10 @@ const OUTLIER_PCT = Number(process.env.ARB_OUTLIER_PCT ?? 2);
 // Venues excluded from the ARB matrix (still fine elsewhere). Coinbase quotes
 // BASE-USD, not USDT — the USD/USDT basis masquerades as spread.
 const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase").split(",").map((s) => s.trim()).filter(Boolean);
-const DAILY_CAP    = Number(process.env.ARB_DAILY_CAP    ?? 20);   // round-trips per UTC day
+// Alavanca 4: the universe nearly doubled (30 → ~55 symbols), so the book
+// scales with it. The per-symbol cooldown still guards against churning one
+// pair; the cap only bounds the aggregate.
+const DAILY_CAP    = Number(process.env.ARB_DAILY_CAP    ?? 40);   // round-trips per UTC day
 const COOLDOWN_MIN = Number(process.env.ARB_COOLDOWN_MIN ?? 30);   // per-symbol re-entry wait
 const SIZE_USD     = Number(process.env.ARB_SIZE_USD     ?? 50);   // per round-trip
 
@@ -88,9 +91,11 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
   const db = getSupabaseAdmin();
   if (!db) return { detected: 0, booked: 0, skipped: "db" };
 
-  const spot = await getMultiExchangeSpot([...CEX_TRACKED_SYMBOLS]);
+  // Excluded venues (USD-quoted coinbase) are skipped at FETCH time — no point
+  // paying ~55 per-symbol requests a minute for prices we'd delete.
+  const spot = await getMultiExchangeSpot([...CEX_TRACKED_SYMBOLS], { skipVenues: EXCLUDE_VENUES as CexSpotSource[] });
   const matrix = spot as unknown as Map<string, Map<string, { priceUsd: number }>>;
-  // Strip venues whose quote asset isn't USDT (USD basis reads as fake spread).
+  // Belt-and-braces: also strip in case a custom EXCLUDE_VENUES name slips past the fetch skip.
   for (const venues of matrix.values()) for (const v of EXCLUDE_VENUES) venues.delete(v);
   const all = findArbs(matrix);
 

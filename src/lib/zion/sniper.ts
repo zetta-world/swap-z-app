@@ -27,7 +27,9 @@ import { formatIndicatorsForPrompt, type MarketIndicatorsResult } from "@/lib/ap
 import type { RadarTrigger } from "@/lib/zion/radar";
 
 const MONTHLY_BUDGET = Number(process.env.SNIPER_MONTHLY_BUDGET ?? 30); // ≈ Trader plan, ~1/day
-const MIN_RR         = Number(process.env.SNIPER_MIN_RR ?? 1.5);
+// Aligned with the ledger's BACKTEST_MIN_RR (alavanca 2): the funnel rejects
+// sub-2 brackets anyway, so advertising 1.5 to the model just wastes cards.
+const MIN_RR         = Number(process.env.SNIPER_MIN_RR ?? 2);
 const MAX_CARDS      = 2; // per wake — a sniper doesn't spray
 
 // ── Pure gates (unit-tested; objective by design — never the model's word) ──

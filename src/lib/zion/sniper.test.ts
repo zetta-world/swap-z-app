@@ -22,7 +22,7 @@ describe("sniper — trend gate (with-trend only, both directions)", () => {
 describe("sniper — R:R gate (full bracket, >= 1.5)", () => {
   it("accepts a clean 2:1 long and rejects a 1.2:1", () => {
     expect(rrGate("buy", 100, 110, 95)).toBe(true);   // reward 10 / risk 5 = 2
-    expect(rrGate("buy", 100, 106, 95)).toBe(false);  // 6/5 = 1.2 < 1.5
+    expect(rrGate("buy", 100, 106, 95)).toBe(false);  // 6/5 = 1.2 < 2
   });
   it("prices a short symmetrically", () => {
     expect(rrGate("sell", 100, 90, 105)).toBe(true);  // reward 10 / risk 5 = 2
