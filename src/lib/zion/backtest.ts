@@ -595,6 +595,7 @@ export async function getBacktestStats(): Promise<BacktestStats> {
   // past that, these stats would freeze on an arbitrary subset of the ledger.
   const data = await selectAllRows<{ status: string; outcome_pct: number | null }>((from, to) =>
     db.from("zion_suggestions").select("status, outcome_pct")
+      .is("archived_at", null) // live round only (docs/PLANO-ARQUIVO-RODADAS.md)
       .order("created_at", { ascending: true }).range(from, to),
   );
 
