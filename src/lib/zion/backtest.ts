@@ -61,6 +61,8 @@ async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise
     "take the WITH-trend side or skip it: a low-conviction counter-trend bet is",
     "worse than no card. (This is symmetric — it favors shorts in a downtrend as",
     "much as longs in an uptrend; it is trend-respect, not a directional bias.)",
+    "The ledger gate enforces this mechanically: cards on RANGING symbols and",
+    "cards against a confirmed trend are DROPPED — don't waste coverage on them.",
     "",
     "BRACKET REALISM — for this horizon a take-profit sits within a few % up to",
     "~15% of entry; it is NEVER a multiple of the price. If your target lands",
@@ -357,6 +359,12 @@ const TRADEABLE_KINDS = new Set(["swap", "buy_limit", "sell_safe", "sell_medium"
 // silently poisons the win-rate. Reject it.
 const MAX_TARGET_PCT = Number(process.env.BACKTEST_MAX_TARGET_PCT ?? 30);
 
+// Regime filter (docs/PLANO-LUCRATIVIDADE.md, alavanca 1). Round 1 proved the
+// prompt-only trend discipline still leaks counter-trend entries (win 6-23%)
+// and that trading the chop pays to play (control book: +2.13 in trend →
+// −1.54 in chop). Set BACKTEST_REGIME_FILTER=off to disable.
+const REGIME_FILTER_ON = (process.env.BACKTEST_REGIME_FILTER ?? "on") !== "off";
+
 type NewSuggestion = Partial<ZionSuggestionRow> & { symbol: string; kind: string; side: "buy" | "sell"; ref_price: number };
 
 /** Turn a card into a ledger row, or null when it isn't a trackable directional trade. */
@@ -391,6 +399,19 @@ export function extractSuggestion(
   // If we couldn't price the symbol this run, skip it rather than log garbage.
   const refPrice = refPriceBySymbol.get(base);
   if (!refPrice || !(refPrice > 0)) return null;
+
+  // Regime gate: RANGING emits nothing either side (not trading IS a
+  // position); a card AGAINST a CONFIRMED trend dies mechanically instead of
+  // by prompt goodwill. TRANSITIONING passes both sides — there is no
+  // confirmed trend to contradict. A symbol with no regime read also passes:
+  // an indicators hiccup must not starve the flywheel (best-effort, not the
+  // money path).
+  if (REGIME_FILTER_ON) {
+    const regime = regimeBySymbol.get(base);
+    if (regime === "RANGING") return null;
+    if (regime === "TRENDING_UP" && side === "sell") return null;
+    if (regime === "TRENDING_DOWN" && side === "buy") return null;
+  }
 
   const entry = parsePrice(card.entryPrice ?? card.triggerPrice ?? "") || null;
   const target = card.exits && card.exits[0] ? (parsePrice(card.exits[0].price) || null) : null;
