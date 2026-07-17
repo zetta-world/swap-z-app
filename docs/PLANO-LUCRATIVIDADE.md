@@ -1,4 +1,4 @@
-# Caminho pra lucratividade dos agentes — 🟡 (alavancas 1+2+4 no ar, 17/07)
+# Caminho pra lucratividade dos agentes — 🟢 (as 4 alavancas no ar, 17/07)
 
 > Pergunta do CEO: "o que precisamos fazer para tornar os agentes
 > lucrativos?" Respondido com os dados da rodada 1 (4.026 sugestões
@@ -25,7 +25,7 @@
 |---|----------|-----------|--------|
 | 1 | **Filtro de regime objetivo** | Gate mecânico no `extractSuggestion` (funil de TODOS os agentes): símbolo `RANGING` (ADX<20) não emite nada; card contra tendência CONFIRMADA (`TRENDING_UP`+sell / `TRENDING_DOWN`+buy, ADX≥25) é rejeitado; `TRANSITIONING` e regime ausente passam (best-effort). Prompt avisa o modelo pra não gastar cobertura nesses símbolos. `BACKTEST_REGIME_FILTER=off` desliga. | 🟢 17/07 |
 | 2 | **Seletividade por evidência, não volume** | Prompt: "emitir só com evidência real; cards vazios = resposta válida" (a pressão de cobertura — "cover as many as you can", "empty = failed run" — morreu). Gate objetivo: RR planejado ≥2 (`BACKTEST_MIN_RR`) — sub-2 não paga o custo de 0.2% round-trip. Probability segue só logada pra calibração, nunca gate (é anti-calibrada). | 🟢 17/07 |
-| 3 | **Torneio como fábrica de corte** | Rodada 2 mede; quem fechar amostra mínima com expectancy líquida negativa é pausado na rodada 3. Capital (de papel) concentra no campeão. | ⏸️ aguarda amostra |
+| 3 | **Torneio como fábrica de corte** | Motor automático (`src/lib/zion/cull.ts`, roda no cron após a resolução): agente que fecha `BACKTEST_MIN_SAMPLE` decididos NA RODADA VIVA com expectancy líquida <0 ganha `culled:<source>` no admin_kv e o cron para de gastar token nele; o melhor positivo (mesma barra) vira `tournament_champion` e o paper engine dimensiona 2× (`PAPER_CHAMPION_MULT`). Radar/sniper fora do corte (controle event-driven / orçamento próprio). Anistia = arquivar a rodada ou apagar a chave. `TOURNAMENT_CULL=off` desliga. **Armado — dispara sozinho quando a rodada 2 fechar amostra.** | 🟢 17/07 |
 | 4 | **Escalar o market-neutral** | Universo do arbiter 30 → ~55 símbolos (majors USDT multi-venue; POL/RENDER = tickers vivos dos cadáveres MATIC/RNDR), cap diário 20 → 40 (`ARB_DAILY_CAP`), coinbase pulada no FETCH (não só descartada — ~55 req/min a menos). Sniper já estava em cena (event-driven, despausado 17/07 08:32; espera gatilho ≥1.5%) — RR mínimo alinhado ao ledger (1.5 → 2). | 🟢 17/07 |
 
 ## O que NÃO fazer
