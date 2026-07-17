@@ -25,13 +25,18 @@ const CHAMPION_MULT = Number(process.env.PAPER_CHAMPION_MULT ?? 2);
 
 /** The flywheel sources that get their own paper wallet — the tournament, at
  *  the portfolio level. */
-export const PAPER_SOURCES = ["self_scan", "hybrid_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan", "radar", "sniper"] as const;
+export const PAPER_SOURCES = [
+  "self_scan", "hybrid_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan", "radar", "sniper",
+  "oracle_self", "oracle_mistral", "oracle_grok", "oracle_deepseek", "oracle_kimi",
+] as const;
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 
 const LABELS: Record<string, string> = {
   self_scan: "Claude (self)", hybrid_scan: "Ferrari (hybrid)", mistral_scan: "Mistral",
   grok_scan: "Grok", deepseek_scan: "DeepSeek", kimi_scan: "Kimi", radar: "Radar",
   sniper: "Sniper 🎯",
+  oracle_self: "Oráculo Claude 🔮", oracle_mistral: "Oráculo Mistral 🔮", oracle_grok: "Oráculo Grok 🔮",
+  oracle_deepseek: "Oráculo DeepSeek 🔮", oracle_kimi: "Oráculo Kimi 🔮",
 };
 
 // ── Pure helpers (unit-tested — no DB, no network) ────────────────────────

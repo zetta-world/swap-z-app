@@ -1,4 +1,4 @@
-# ORÁCULO — de bot de day trade pra analista de teses — 🔴 (plano, 17/07)
+# ORÁCULO — de bot de day trade pra analista de teses — 🟡 (F1 no ar, 17/07)
 
 > Gatilho: teoria do CEO, confirmada pelos dados — "estamos usando as IAs mais
 > avançadas do mercado e fazendo análise igual bot de day trader." Este plano
@@ -93,15 +93,33 @@ gates de dinheiro real (nada aqui toca ordem real).
 
 ## Fases
 
-- 🔴 **F1** — Oráculo diário: prompt de tese + inputs disponíveis (macro,
-  funding, F&G, HTF) + gates de perfil tese + cron 1×/dia + painel herda.
+- 🟢 **F1** (17/07) — `src/lib/zion/oracle.ts`: pergunta de tese multi-modelo
+  (Claude `oracle_self` + todo provider configurado `oracle_<id>` — decisão do
+  CEO: cada modelo compete JÁ no formato analista, F3 antecipada), inputs
+  macro + funding (Bybit linear) + Fear&Greed (alternative.me) + HTF; gates de
+  perfil tese no funil (`ExtractOpts`: RR≥1.5, sem filtro de regime, stop≥4%,
+  bracket obrigatório) + gate de invalidação ("Invalida se:" no summary);
+  máx 3 teses abertas/modelo; roda 1×/dia via claim de dia no admin_kv dentro
+  do cron de 30min (sem cron novo no cron-job.org); resolução com velas
+  adaptativas ao horizonte (5m ≤80h · 15m ≤245h · 1h além); carteiras de
+  papel `oracle_*` no torneio.
 - ⏸️ **F2** — feed de notícias/eventos + wake por evento informacional.
-- ⏸️ **F3** — decisão: se Oráculo > baseline com amostra, migrar os scanners
-  perdedores pro formato analista (cada modelo vira um Oráculo concorrente no
-  torneio); se não, manter só como mesa experimental.
+- 🟢 **F3 (antecipada pro F1)** — multi-modelo desde o dia 1, por decisão do
+  CEO (17/07): "melhor executar o plano agora para os agentes rodar com essa
+  melhora". Os scanners formato-bot foram PAUSADOS (pause_agent_a/b +
+  pause_tournament) — queimar token num formato já medido é desperdício.
+
+## Separação rodada-bot × rodada-analista (pedido explícito do CEO)
+
+- Ordens ANTIGAS (formato bot): sources `*_scan`, na rodada viva, com 73
+  abertas maturando — os scanners estão pausados mas a RESOLUÇÃO continua
+  (é grátis) e fecha tudo dentro da janela de 72h. Esse é o baseline final.
+- Ordens NOVAS (formato analista): sources `oracle_*` — painéis, torneio,
+  digest e paper separam por source automaticamente. Nenhuma linha se mistura.
 
 ## Pendências
 
-- ⏳ Rodada 2 maturar (73 abertas) — o baseline precisa do placar justo.
-- 🔴 Implementar F1 (após aprovação deste plano).
-- ⏸️ Escolher fonte de notícias da F2 (grátis primeiro).
+- ⏳ Baseline: 73 abertas do formato bot fecham até ~20/07 (janela 72h).
+- ⏳ Primeira leva de teses: próximo tick do cron (claim diário).
+- ⏸️ Fonte de notícias da F2 (grátis primeiro).
+- ⏸️ Julgar Oráculo vs baseline com ≥30 teses decididas.
