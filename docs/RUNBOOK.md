@@ -54,6 +54,11 @@ Sem chave = provedor simplesmente ausente (dormente, sem erro).
 | `ORACLE_MIN_STOP_PCT` | Stop mínimo da tese (fora do ruído diário) | `4` (%) |
 | `ORACLE_MIN_RR` | RR mínimo do perfil tese | `1.5` |
 | `ORACLE_MAX_OPEN` | Teses abertas simultâneas por modelo | `3` |
+| `ARB2_STARTING_USD` | Saldo inicial da simulação do Arbiter 2.0 (cenário real) | `300` |
+| `ARB2_SIZE_USD` | Tamanho por perna (ciclo trava 2×) | `50` |
+| `ARB2_COST_PCT` | Custo do ciclo completo (4 pernas + basis) | `0.45` (%) |
+| `ARB2_EXIT_SPREAD_PCT` | Spread de convergência (fecha o hedge) | `0.05` (%) |
+| `ARB2_MAX_HOLD_H` | Timeout do hedge | `48` (h) |
 | `SNIPER_MIN_RR` | RR mínimo do sniper (alinhado ao ledger) | `2` |
 | `RADAR_TRIGGER_PCT` | Gatilho do radar T3 | `1.5` (%) |
 | `TIER_GATES_ENABLED` | Gate de tier no ZION user-facing (M7 — ligar pré-marketing) | off |

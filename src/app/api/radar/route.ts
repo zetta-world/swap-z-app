@@ -10,6 +10,7 @@ import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { runSniperScan } from "@/lib/zion/sniper";
 import { runArbiterScan } from "@/lib/zion/arbiter";
+import { runArbiter2Scan } from "@/lib/zion/arbiter2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,11 @@ export async function POST(req: NextRequest) {
   // don't wait for a single-venue price trigger). Public data only.
   if (!gates.pause_arbiter) {
     waitUntil(runArbiterScan().then(() => undefined).catch(() => undefined));
+  }
+  // ARBITER 2.0 — spot+perp hedged variant, same tick, own wallet/gate
+  // (docs/PLANO-ARBITER-REAL.md). Resolves its own hedges by convergence.
+  if (!gates.pause_arbiter2) {
+    waitUntil(runArbiter2Scan().then(() => undefined).catch(() => undefined));
   }
 
   if (triggers.length > 0) {
