@@ -50,7 +50,9 @@ export async function GET(): Promise<NextResponse> {
     openCount.set(p.account_id, (openCount.get(p.account_id) ?? 0) + 1);
     exposure.set(p.account_id, (exposure.get(p.account_id) ?? 0) + Number(p.cost_usd));
     const cur = prices.get(p.symbol.toUpperCase());
-    const u = cur == null ? 0 : Number(p.cost_usd) * (((cur - Number(p.entry_price)) / Number(p.entry_price)) * (p.side === "buy" ? 1 : -1));
+    // arbiter2 cycles are hedged (long spot + short perp): directional MTM is
+    // ~zero by construction — showing spot drift would invent P&L.
+    const u = p.source === "arbiter2" || cur == null ? 0 : Number(p.cost_usd) * (((cur - Number(p.entry_price)) / Number(p.entry_price)) * (p.side === "buy" ? 1 : -1));
     unreal.set(p.account_id, (unreal.get(p.account_id) ?? 0) + u);
     const book = openBook.get(p.account_id) ?? []; book.push({ symbol: p.symbol, side: p.side, costUsd: Number(p.cost_usd), unrealized: u }); openBook.set(p.account_id, book);
   }

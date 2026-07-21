@@ -260,9 +260,12 @@ export async function openPaperPositions(): Promise<number> {
 export async function resolvePaperPositions(): Promise<number> {
   const db = getSupabaseAdmin();
   if (!db) return 0;
+  // arbiter2's open rows are HEDGED spot+perp cycles that close by spread
+  // CONVERGENCE (its own scan does that) — resolving them here by target/
+  // stop/horizon would book directional P&L a hedge doesn't have.
   const { data: openFull } = await db.from("paper_positions")
     .select("id, account_id, symbol, side, entry_price, cost_usd, target_price, stop_price, horizon_hours, opened_at")
-    .eq("status", "open").limit(1000);
+    .eq("status", "open").neq("source", "arbiter2").limit(1000);
   if (!openFull?.length) return 0;
   const symbols = [...new Set(openFull.map((p) => p.symbol))];
   const nowMs = Date.now();
