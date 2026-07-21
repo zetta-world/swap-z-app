@@ -5,6 +5,7 @@ import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type OpenPos = { symbol: string; side: string; costUsd: number; unrealized: number };
+type RecentTrade = { symbol: string; side: string; pnlUsd: number; pnlPct: number | null; route: string | null; closedAt: string | null };
 type Row = {
   source: string; label: string;
   startingUsd: number; cashUsd: number; equity: number;
@@ -12,7 +13,7 @@ type Row = {
   wins: number; losses: number; winRate: number | null;
   avgWin: number | null; avgLoss: number | null; profitFactor: number | null;
   best: number | null; worst: number | null; closedTrades: number;
-  openPositions: number; exposure: number; openBook: OpenPos[]; curve: number[];
+  openPositions: number; exposure: number; openBook: OpenPos[]; recentTrades: RecentTrade[]; curve: number[];
 };
 type PR = { rows: Row[]; totals: { startingUsd: number; equity: number; realizedPnl: number; openPositions: number; exposure: number; closedTrades: number }; fetchedAt: string };
 
@@ -127,7 +128,7 @@ export default function PaperPanel() {
                             </div>
                           )}
                           {r.openBook.length > 0 && (
-                            <div>
+                            <div style={{ marginBottom: (r.recentTrades ?? []).length ? 8 : 0 }}>
                               <div style={{ fontSize: 7, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 3 }}>LIVRO ABERTO</div>
                               {r.openBook.map((p, j) => (
                                 <div key={j} style={{ display: "flex", gap: 6, fontSize: 8, padding: "1px 0", alignItems: "center" }}>
@@ -135,6 +136,20 @@ export default function PaperPanel() {
                                   <span style={{ color: "var(--adm-ink-2)", flex: 1, fontFamily: "monospace" }}>{p.symbol}</span>
                                   <span style={{ color: "var(--adm-ink-4)" }}>{usd(p.costUsd)}</span>
                                   <span style={{ color: col(p.unrealized), width: 42, textAlign: "right" }}>{usdc(p.unrealized)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {(r.recentTrades ?? []).length > 0 && (
+                            <div>
+                              <div style={{ fontSize: 7, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 3 }}>ÚLTIMAS ORDENS</div>
+                              {r.recentTrades.map((t, j) => (
+                                <div key={j} style={{ display: "flex", gap: 6, fontSize: 8, padding: "1px 0", alignItems: "center" }}>
+                                  <span style={{ color: t.side === "buy" ? "var(--adm-green)" : "var(--adm-red)", width: 26 }}>{t.side}</span>
+                                  <span style={{ color: "var(--adm-ink-2)", fontFamily: "monospace", width: 44 }}>{t.symbol}</span>
+                                  <span style={{ color: "var(--adm-ink-4)", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.route ?? "—"}</span>
+                                  <span style={{ color: t.pnlPct == null ? "var(--adm-ink-4)" : col(t.pnlPct), width: 46, textAlign: "right" }}>{t.pnlPct == null ? "—" : pctS(t.pnlPct, 2)}</span>
+                                  <span style={{ color: col(t.pnlUsd), width: 46, textAlign: "right" }}>{`${t.pnlUsd >= 0 ? "+" : "−"}$${Math.abs(t.pnlUsd).toFixed(2)}`}</span>
                                 </div>
                               ))}
                             </div>

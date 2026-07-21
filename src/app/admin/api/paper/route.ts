@@ -34,8 +34,8 @@ export async function GET(): Promise<NextResponse> {
     selectAllRows<{ account_id: string; source: string; symbol: string; side: string; cost_usd: number; entry_price: number }>(
       (from, to) => db.from("paper_positions").select("account_id, source, symbol, side, cost_usd, entry_price")
         .eq("status", "open").is("archived_at", null).order("opened_at", { ascending: true }).range(from, to)),
-    selectAllRows<{ account_id: string; pnl_usd: number | null; closed_at: string | null }>(
-      (from, to) => db.from("paper_positions").select("account_id, pnl_usd, closed_at")
+    selectAllRows<{ account_id: string; symbol: string; side: string; pnl_usd: number | null; pnl_pct: number | null; exit_reason: string | null; closed_at: string | null }>(
+      (from, to) => db.from("paper_positions").select("account_id, symbol, side, pnl_usd, pnl_pct, exit_reason, closed_at")
         .eq("status", "closed").is("archived_at", null).order("closed_at", { ascending: true }).range(from, to)),
   ]);
   if (!accounts) return NextResponse.json({ error: "no_accounts" }, { status: 500 });
@@ -55,13 +55,18 @@ export async function GET(): Promise<NextResponse> {
     const book = openBook.get(p.account_id) ?? []; book.push({ symbol: p.symbol, side: p.side, costUsd: Number(p.cost_usd), unrealized: u }); openBook.set(p.account_id, book);
   }
 
-  // Closed-trade stats + curve points per account.
-  type Closed = { pnls: number[]; pts: Array<{ t: number; pnl: number }> };
+  // Closed-trade stats + curve points + recent fills per account. The recent
+  // list is what makes the arbiter legible: its round-trips open and close in
+  // the same instant, so the "open book" is (correctly) always empty — the
+  // executed orders live here, route included (exit_reason "arb binance→okx").
+  type RecentTrade = { symbol: string; side: string; pnlUsd: number; pnlPct: number | null; route: string | null; closedAt: string | null };
+  type Closed = { pnls: number[]; pts: Array<{ t: number; pnl: number }>; recent: RecentTrade[] };
   const closedBy = new Map<string, Closed>();
   for (const c of closed) {
-    const cb = closedBy.get(c.account_id) ?? { pnls: [], pts: [] };
+    const cb = closedBy.get(c.account_id) ?? { pnls: [], pts: [], recent: [] };
     const pnl = Number(c.pnl_usd) || 0;
     cb.pnls.push(pnl); cb.pts.push({ t: Date.parse(c.closed_at ?? ""), pnl });
+    cb.recent.push({ symbol: c.symbol, side: c.side, pnlUsd: pnl, pnlPct: c.pnl_pct == null ? null : Number(c.pnl_pct), route: c.exit_reason, closedAt: c.closed_at });
     closedBy.set(c.account_id, cb);
   }
 
@@ -71,7 +76,7 @@ export async function GET(): Promise<NextResponse> {
     const unrealized = unreal.get(a.id) ?? 0;
     const equity = starting + realized + unrealized;
     const decided = Number(a.wins) + Number(a.losses);
-    const cb = closedBy.get(a.id) ?? { pnls: [], pts: [] };
+    const cb = closedBy.get(a.id) ?? { pnls: [], pts: [], recent: [] };
     const wins = cb.pnls.filter((p) => p > 0), losses = cb.pnls.filter((p) => p < 0);
     const sumWin = wins.reduce((s, p) => s + p, 0), sumLoss = losses.reduce((s, p) => s + p, 0);
     return {
@@ -90,6 +95,7 @@ export async function GET(): Promise<NextResponse> {
       openPositions: openCount.get(a.id) ?? 0,
       exposure: exposure.get(a.id) ?? 0,
       openBook: (openBook.get(a.id) ?? []).sort((x, y) => y.costUsd - x.costUsd).slice(0, 6),
+      recentTrades: cb.recent.slice(-8).reverse(), // newest first
       curve: equityCurve(starting, cb.pts),
     };
   }).sort((x, y) => y.equity - x.equity);
