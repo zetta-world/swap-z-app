@@ -23,6 +23,19 @@ const AGENTS: Record<string, { name: string; kind: string }> = {
   mistral_scan:  { name: "Mistral",                    kind: "model" },
   llama_scan:    { name: "Llama (Meta)",               kind: "model" },
   grok_scan:     { name: "Grok (xAI)",                 kind: "model" },
+  oracle_self:     { name: "Oráculo Claude 🔮",   kind: "oracle" },
+  oracle_mistral:  { name: "Oráculo Mistral 🔮",  kind: "oracle" },
+  oracle_grok:     { name: "Oráculo Grok 🔮",     kind: "oracle" },
+  oracle_deepseek: { name: "Oráculo DeepSeek 🔮", kind: "oracle" },
+  oracle_kimi:     { name: "Oráculo Kimi 🔮",     kind: "oracle" },
+};
+
+// Zero-LLM desks: no zion_suggestions rows — their whole ledger IS the paper
+// book, so their tournament line is built from closed paper positions
+// (pnl_pct is already NET of the desk's own cost model).
+const DESKS: Record<string, { name: string; kind: string }> = {
+  arbiter:  { name: "Arbiter ⚖️ (spot)",        kind: "desk" },
+  arbiter2: { name: "Arbiter 2.0 ⚡ (futuros)", kind: "desk" },
 };
 function labelFor(source: string): { name: string; kind: string } {
   return AGENTS[source] ?? { name: source, kind: "other" };
@@ -87,9 +100,10 @@ export async function GET(): Promise<NextResponse> {
 
   // Paper wallets (Gate.io sim) — realized equity curve per source, shown beside
   // the flywheel curve once a wallet has matured (enough closed positions).
-  const [{ data: paperClosedRows }, { data: paperAccts }] = await Promise.all([
-    db.from("paper_positions").select("source, pnl_usd, closed_at").eq("status", "closed").is("archived_at", null).order("closed_at", { ascending: true }).limit(5000),
+  const [{ data: paperClosedRows }, { data: paperAccts }, { data: deskOpenRows }] = await Promise.all([
+    db.from("paper_positions").select("source, pnl_usd, pnl_pct, closed_at").eq("status", "closed").is("archived_at", null).order("closed_at", { ascending: true }).limit(5000),
     db.from("paper_accounts").select("source, starting_usd"),
+    db.from("paper_positions").select("source").eq("status", "open").in("source", Object.keys(DESKS)),
   ]);
   const startingBy = new Map<string, number>((paperAccts ?? []).map((a) => [a.source, Number(a.starting_usd) || 1000]));
   const paperPtsBy = new Map<string, Array<{ t: number; pnl: number }>>();
@@ -157,6 +171,36 @@ export async function GET(): Promise<NextResponse> {
       sampleProgress: Math.min(1, decided / MIN_SAMPLE),
     };
   });
+
+  // Desk rows (arbiter/arbiter2): built from the paper book itself.
+  const deskOpenBy = new Map<string, number>();
+  for (const r of deskOpenRows ?? []) deskOpenBy.set(r.source, (deskOpenBy.get(r.source) ?? 0) + 1);
+  for (const [source, meta] of Object.entries(DESKS)) {
+    const closedRows = (paperClosedRows ?? []).filter((r) => r.source === source && r.pnl_pct != null);
+    const open = deskOpenBy.get(source) ?? 0;
+    if (closedRows.length === 0 && open === 0) continue; // desk never traded — no row
+    const pcts = closedRows.map((r) => Number(r.pnl_pct));
+    const wins = pcts.filter((p) => p > 0), losses = pcts.filter((p) => p <= 0);
+    const decided = pcts.length;
+    const net = decided > 0 ? pcts.reduce((s, p) => s + p, 0) / decided : null;
+    agents.push({
+      source, name: meta.name, kind: meta.kind,
+      total: decided + open, open, resolved: decided,
+      wins: wins.length, losses: losses.length, expired: 0,
+      winRate: decided > 0 ? wins.length / decided : null,
+      expectancy: net, expectancyNet: net, // paper pnl_pct is already net of the desk's cost model
+      avgWin:  wins.length   ? wins.reduce((s, p) => s + p, 0) / wins.length     : null,
+      avgLoss: losses.length ? losses.reduce((s, p) => s + p, 0) / losses.length : null,
+      profitFactor: losses.length ? wins.reduce((s, p) => s + p, 0) / Math.abs(losses.reduce((s, p) => s + p, 0)) : null,
+      avgRR: null, avgConfidence: null, calibration: null,
+      form: closedRows.slice(-12).map((r) => (Number(r.pnl_pct) > 0 ? "W" : "L")),
+      curve: equityCurve(closedRows.map((r) => ({ t: Date.parse(r.closed_at ?? ""), net: Number(r.pnl_pct) }))),
+      paperCurve: paperCurve(startingBy.get(source) ?? 1000, paperPtsBy.get(source) ?? []),
+      paperClosed: (paperPtsBy.get(source) ?? []).length,
+      sufficientSample: decided >= MIN_SAMPLE,
+      sampleProgress: Math.min(1, decided / MIN_SAMPLE),
+    });
+  }
 
   // Rank by NET expectancy (nulls last), then by decided-sample as tiebreak so
   // a well-tested agent outranks a lucky one-shot with the same headline.
