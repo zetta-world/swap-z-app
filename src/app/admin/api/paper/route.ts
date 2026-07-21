@@ -100,7 +100,10 @@ export async function GET(): Promise<NextResponse> {
       recentTrades: cb.recent.slice(-8).reverse(), // newest first
       curve: equityCurve(starting, cb.pts),
     };
-  }).sort((x, y) => y.equity - x.equity);
+  // Rank by RETURN %, not absolute equity — wallets start with different
+  // capital (arbiter2 seeds at the real-deposit $300 vs $1000 elsewhere), and
+  // absolute equity would pin a smaller-seeded desk to the bottom forever.
+  }).sort((x, y) => y.returnPct - x.returnPct || y.equity - x.equity);
 
   const totals = {
     startingUsd:   rows.reduce((s, r) => s + r.startingUsd, 0),
