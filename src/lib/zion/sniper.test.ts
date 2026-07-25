@@ -1,5 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { trendGate, rrGate, budgetLeft } from "@/lib/zion/sniper";
+import { trendGate, rrGate, budgetLeft, stopFloorGate } from "@/lib/zion/sniper";
+
+describe("stopFloorGate — the noise-out fix (auditoria 25/07)", () => {
+  it("rejects a stop inside the volatility band", () => {
+    // ATR 1.2% → floor 1.8%; a 1.0% stop is noise bait.
+    expect(stopFloorGate(100, 99, 1.2)).toBe(false);
+    // 2.0% stop clears the 1.8% floor.
+    expect(stopFloorGate(100, 98, 1.2)).toBe(true);
+  });
+  it("flat 1.2% floor applies even with no ATR read", () => {
+    expect(stopFloorGate(100, 99.4, null)).toBe(false);  // 0.6% — the old losing pattern
+    expect(stopFloorGate(100, 98.7, null)).toBe(true);   // 1.3%
+  });
+  it("fails closed on junk inputs", () => {
+    expect(stopFloorGate(null, 98, 1)).toBe(false);
+    expect(stopFloorGate(100, null, 1)).toBe(false);
+  });
+});
 
 describe("sniper — trend gate (with-trend only, both directions)", () => {
   it("allows a buy only in a confirmed uptrend", () => {

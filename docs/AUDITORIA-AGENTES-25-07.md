@@ -98,9 +98,10 @@ calibração REALIZADA (flywheel), nunca pela declarada.
 
 ## Ordem de execução recomendada
 
-1. Oráculo: memória + cooldown + trava de concentração (maior impacto,
-   custo baixo — a mesa está sangrando −5,9%/tese em desenho corrigível).
-2. Sniper: piso de stop por ATR + cooldown (leva o −0,22 pra positivo se o
-   diagnóstico do noise-out estiver certo).
-3. Paper: neutralizar convictionFactor.
-4. F2-orderbook (mesas → real) e F2-notícias (Oráculo → reversões).
+1. 🟢 (25/07) Oráculo: memória de mesa no prompt (`<your_desk_memory>` com
+   abertas + resolvidas de 7d por modelo), cooldown de 7d por símbolo
+   pós-stop, máx 1 tese/símbolo/modelo, teto de 2 teses/símbolo na mesa.
+2. 🟢 (25/07) Sniper: `stopFloorGate` — stop ≥ max(1,5×ATR-1h, 1,2%) — no
+   gate E no prompt; cooldown de 12h por símbolo.
+3. 🟢 (25/07) Paper: `convictionFactor` neutralizado (1× flat).
+4. 🔴 F2-orderbook (mesas → real) e F2-notícias (Oráculo → reversões).
