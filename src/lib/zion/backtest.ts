@@ -23,6 +23,8 @@ import { modelChain } from "@/lib/zion/model";
 import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
 import { formatIndicatorsForPrompt, type SymbolIndicators, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { getMacroContext } from "@/lib/api/macro";
+import { fetchFundingContext, fetchFearGreed } from "@/lib/api/market-context";
+import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
 import type { ZionSuggestionRow } from "@/lib/supabase/types";
 
 /**
@@ -32,8 +34,10 @@ import type { ZionSuggestionRow } from "@/lib/supabase/types";
  * with a steady stream of predictions to measure. Non-streaming, one call.
  */
 /** Build the backtest scan instruction (shared by every model in the A/B).
+ *  `extras` (25/07): positioning/sentiment context + the agent's own
+ *  Auto-Retro lessons — the same side-monitor the Oráculo reads.
  *  Returns null when there are no usable indicators this tick. */
-async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise<string | null> {
+async function buildScanInstruction(marketData: MarketIndicatorsResult, extras = ""): Promise<string | null> {
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
   if (!indicatorsText) return null;
   const macroText = await getMacroContext().catch(() => "");
@@ -93,7 +97,19 @@ async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise
     macroText ? `${macroText}\n` : "",
     indicatorsText,
     "</market>",
+    extras ? `\n${extras}` : "",
   ].join("\n");
+}
+
+/** Positioning/sentiment context + the agent's own lessons, as one extras
+ *  block for the scan prompt. Best-effort everywhere. */
+async function scanExtras(source: string): Promise<string> {
+  const [funding, fng, lessons] = await Promise.all([
+    fetchFundingContext(),
+    fetchFearGreed(),
+    getActiveLessons([source]),
+  ]);
+  return [funding, fng, lessonsBlock(lessons.get(source))].filter(Boolean).join("\n");
 }
 
 /** JSON schema for a flywheel scan (R1.1). On Anthropic paths (Agent A + CEO)
@@ -155,7 +171,7 @@ export function extractCards(text: string): ActionCard[] {
 export async function runBacktestScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return [];
-  const instruction = await buildScanInstruction(marketData);
+  const instruction = await buildScanInstruction(marketData, await scanExtras("self_scan"));
   if (!instruction) return [];
 
   try {
@@ -193,7 +209,7 @@ export async function runBacktestScanForProvider(
   // Circuit breaker: skip a provider that's tripped (broken key / dead endpoint)
   // instead of burning a call + firing an alert every tick (P2.11).
   if (await isTripped(provider.id)) return [];
-  const instruction = await buildScanInstruction(marketData);
+  const instruction = await buildScanInstruction(marketData, await scanExtras(`${provider.id}_scan`));
   if (!instruction) return [];
   try {
     const r = await openaiCompatChat(
@@ -308,7 +324,12 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
   if (!indicatorsText) return [];
   const macroText = await getMacroContext().catch(() => "");
-  const scanInstruction = await buildScanInstruction(marketData);
+  // Context to the technical seat; the agent's OWN lessons go to the CEO —
+  // the seat that actually signs the cards.
+  const [funding, fng, hybridLessons] = await Promise.all([
+    fetchFundingContext(), fetchFearGreed(), getActiveLessons(["hybrid_scan"]),
+  ]);
+  const scanInstruction = await buildScanInstruction(marketData, [funding, fng].filter(Boolean).join("\n"));
   if (!scanInstruction) return [];
   const symbolsCsv = marketData.indicators.map((i) => i.symbol).join(", ");
   const sentimentProvider = roleProvider("sentiment");
@@ -334,7 +355,8 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
   // three specialist calls and return nothing. So on failure we fall back to
   // Sonnet (same key, always has credits when Anthropic is up) for the exact
   // same synthesis (P0.3). Only if BOTH fail do we give up.
-  const ceoPrompt = buildCeoPrompt(indicatorsText, macro, sentiment, technical);
+  const lessonsTxt = lessonsBlock(hybridLessons.get("hybrid_scan"));
+  const ceoPrompt = buildCeoPrompt(indicatorsText, macro, sentiment, technical) + (lessonsTxt ? `\n\n${lessonsTxt}` : "");
   const primaryModel  = process.env.HYBRID_ORCH_MODEL ?? "claude-opus-4-8";
   const fallbackModel = process.env.HYBRID_ORCH_FALLBACK_MODEL ?? modelChain()[0];
   for (const [model, role] of [[primaryModel, "hybrid_ceo"], [fallbackModel, "hybrid_ceo_fallback"]] as const) {

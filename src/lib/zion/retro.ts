@@ -124,10 +124,12 @@ function retroPrompt(source: string, trades: TradeRow[]): string {
 }
 
 /** Sources that reflect, and which brain does the reflecting (the SAME brain
- *  that made the decisions — self-evaluation, not peer review). */
+ *  that made the decisions — self-evaluation, not peer review). Covers the
+ *  oracles, the event agents AND the scanners (relit 25/07 with lessons). */
 function brainFor(source: string): { kind: "anthropic" } | { kind: "compat"; providerId: string } | null {
-  if (source === "oracle_self" || source === "self_scan") return { kind: "anthropic" };
+  if (source === "oracle_self" || source === "self_scan" || source === "hybrid_scan") return { kind: "anthropic" };
   if (source.startsWith("oracle_")) return { kind: "compat", providerId: source.slice("oracle_".length) };
+  if (source.endsWith("_scan")) return { kind: "compat", providerId: source.slice(0, -"_scan".length) };
   if (source === "sniper" || source === "radar") {
     const brain = hybridBrain();
     return brain ? { kind: "compat", providerId: brain.id } : null;
