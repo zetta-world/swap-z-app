@@ -39,7 +39,14 @@ export function allProviders(): Record<string, ProviderConfig> {
       id: "deepseek", label: "DeepSeek", origin: "china",
       apiKey:  process.env.DEEPSEEK_API_KEY,
       baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-      model:   process.env.DEEPSEEK_MODEL   ?? "deepseek-chat",
+      // "deepseek-chat" was RETIRED (25/07: every call 400'd "The supported API
+      // model names are deepseek-v4-pro or deepseek-v4-flash" → the breaker
+      // re-tripped hourly all day). We take the -pro flagship because this
+      // provider holds the "brain" seat (technical/quant reasoning) and both
+      // heavy paths (backtest scan, oracle) budget 40s. If latency bites — the
+      // hybrid brain seat only allows 18s — swap with ONE env var, no deploy:
+      // DEEPSEEK_MODEL=deepseek-v4-flash.
+      model:   process.env.DEEPSEEK_MODEL   ?? "deepseek-v4-pro",
       signup:  "https://platform.deepseek.com",
     },
     kimi: {

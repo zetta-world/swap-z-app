@@ -39,6 +39,13 @@ Cada provedor: `<X>_API_KEY` (liga), `<X>_BASE_URL`, `<X>_MODEL` (opcionais).
 `DEEPSEEK_*` · `KIMI_*` · `MISTRAL_*` · `LLAMA_*` · `XAI_*` (Grok).
 Sem chave = provedor simplesmente ausente (dormente, sem erro).
 
+**Modelo aposentado = breaker re-tripando de hora em hora.** O alerta do
+breaker classifica a causa (modelo inválido / auth / cota / upstream) — se
+disser "MODELO INVÁLIDO", troque o `<X>_MODEL` no painel da Vercel, sem
+deploy. Defaults atuais: `deepseek-v4-pro` (25/07: `deepseek-chat` foi
+aposentado; `deepseek-v4-flash` é o swap rápido/barato) · `kimi-k2.6` ·
+`mistral-large-latest` · `grok-4.3`.
+
 ### Flywheel / medição
 | Var | O que é | Default |
 |-----|---------|---------|
