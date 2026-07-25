@@ -31,6 +31,13 @@ const MONTHLY_BUDGET = Number(process.env.SNIPER_MONTHLY_BUDGET ?? 30); // ≈ T
 // sub-2 brackets anyway, so advertising 1.5 to the model just wastes cards.
 const MIN_RR         = Number(process.env.SNIPER_MIN_RR ?? 2);
 const MAX_CARDS      = 2; // per wake — a sniper doesn't spray
+// Stop floor (auditoria 25/07): every sniper LOSS had a 0.56-1.45% stop —
+// inside intraday noise, so the RR>=2 gate was met by TIGHTENING the stop
+// and noise (not the thesis) killed the trade. The stop must clear the
+// volatility band; if RR>=2 can't be built from an honest stop, no trade.
+const MIN_STOP_ATR   = Number(process.env.SNIPER_MIN_STOP_ATR ?? 1.5); // × 1h ATR%
+const MIN_STOP_PCT   = Number(process.env.SNIPER_MIN_STOP_PCT ?? 1.2);
+const COOLDOWN_H     = Number(process.env.SNIPER_COOLDOWN_H   ?? 12);  // per-symbol re-fire wait
 
 // ── Pure gates (unit-tested; objective by design — never the model's word) ──
 
@@ -62,6 +69,22 @@ export function budgetLeft(usedThisMonth: number, budget = MONTHLY_BUDGET): numb
   return Math.max(0, budget - Math.max(0, usedThisMonth));
 }
 
+/** Stop must sit OUTSIDE the volatility band: at least MIN_STOP_ATR × the
+ *  symbol's 1h ATR%, never under MIN_STOP_PCT. No ATR read → the flat floor
+ *  still applies (a stop can never be "cheap" just because data is missing). */
+export function stopFloorGate(
+  entry: number | null | undefined,
+  stop: number | null | undefined,
+  atrPct: number | null | undefined,
+  minAtrMult = MIN_STOP_ATR,
+  minStopPct = MIN_STOP_PCT,
+): boolean {
+  if (entry == null || stop == null || !(entry > 0)) return false;
+  const stopPct = (Math.abs(entry - stop) / entry) * 100;
+  const floor = Math.max(atrPct != null && atrPct > 0 ? atrPct * minAtrMult : 0, minStopPct);
+  return stopPct >= floor;
+}
+
 // ── The wake ────────────────────────────────────────────────────────────────
 
 function sniperInstruction(marketData: MarketIndicatorsResult, triggers: RadarTrigger[]): string {
@@ -77,6 +100,10 @@ function sniperInstruction(marketData: MarketIndicatorsResult, triggers: RadarTr
     "  · Every card needs entryPrice (current price), ONE take-profit rung and a",
     `    stopLoss with reward:risk >= ${MIN_RR} — target realistic for ~72h (never`,
     "    a multiple of the price), stop just beyond structure.",
+    `  · STOP FLOOR: the stop must sit at least max(${MIN_STOP_ATR}×ATR, ${MIN_STOP_PCT}%) from entry —`,
+    "    a tighter stop dies of NOISE, not of being wrong, and the ledger gate",
+    `    rejects it. Build RR >= ${MIN_RR} from that honest stop by choosing the`,
+    "    target; if the move doesn't support it, skip the symbol.",
     "  · probability = your honest confidence (it is logged, not obeyed).",
     "",
     "OUTPUT — a SINGLE JSON object, nothing else:",
@@ -132,19 +159,31 @@ export async function runSniperScan(marketData: MarketIndicatorsResult, triggers
   }
 
   // ③ Objective gates on top of the ledger's own sanity gates.
-  const refBy = new Map<string, number>(), regimeBy = new Map<string, string>();
+  const refBy = new Map<string, number>(), regimeBy = new Map<string, string>(), atrBy = new Map<string, number>();
   for (const ind of marketData.indicators) {
     const sym = ind.symbol.toUpperCase();
     if (ind.price != null && ind.price > 0) refBy.set(sym, ind.price);
     if (ind.regime) regimeBy.set(sym, ind.regime);
+    if (ind.atrPct != null && ind.atrPct > 0) atrBy.set(sym, ind.atrPct);
   }
+
+  // Per-symbol cooldown (auditoria 25/07: two ARB shots the same day). One
+  // trigger, one shot — re-firing inside the window is chasing, not sniping.
+  const cooldownCut = new Date(Date.now() - COOLDOWN_H * 3_600_000).toISOString();
+  const { data: recentShots } = await db.from("zion_suggestions")
+    .select("symbol").eq("source", "sniper").gte("created_at", cooldownCut);
+  const cooling = new Set((recentShots ?? []).map((r) => r.symbol));
+
   const rows = [];
   for (const card of cards.slice(0, MAX_CARDS)) {
     const s = extractSuggestion(card, refBy, regimeBy); // scale/geometry/clamp gates
     if (!s) continue;
+    if (cooling.has(s.symbol)) continue;
     if (!trendGate(s.side, regimeBy.get(s.symbol))) continue;
     if (!rrGate(s.side, s.entry_price, s.target_price, s.stop_price)) continue;
+    if (!stopFloorGate(s.entry_price, s.stop_price, atrBy.get(s.symbol))) continue;
     rows.push({ ...s, source: "sniper" });
+    cooling.add(s.symbol);
     if (rows.length >= left) break; // never overshoot the month's budget
   }
 

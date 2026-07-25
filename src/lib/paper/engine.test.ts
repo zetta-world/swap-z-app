@@ -72,12 +72,14 @@ describe("paper engine — exit + P&L (net of cost, stop-first)", () => {
 
 describe("paper engine — conviction sizing (F3)", () => {
   it("scales the multiplier by probability, clamped to [0.5, 1.5]", () => {
-    expect(convictionFactor(50)).toBeCloseTo(1.0);
-    expect(convictionFactor(70)).toBeCloseTo(1.2);
-    expect(convictionFactor(30)).toBeCloseTo(0.8);
-    expect(convictionFactor(200)).toBe(1.5);   // clamp
-    expect(convictionFactor(0)).toBe(0.5);     // clamp
-    expect(convictionFactor(null)).toBeCloseTo(1.0); // neutral default
+    // Neutralized (auditoria 25/07): stated probability is anti-calibrated,
+    // so sizing is flat regardless of the model's self-reported confidence.
+    expect(convictionFactor(50)).toBe(1);
+    expect(convictionFactor(70)).toBe(1);
+    expect(convictionFactor(30)).toBe(1);
+    expect(convictionFactor(200)).toBe(1);
+    expect(convictionFactor(0)).toBe(1);
+    expect(convictionFactor(null)).toBe(1);
   });
   it("a high-conviction signal deploys more capital", () => {
     expect(sizePosition(1000, 1000, 1.4)).toBeCloseTo(70); // 5% × 1.4

@@ -49,12 +49,13 @@ export function sizePosition(cashAvail: number, startingUsd: number, conviction 
   return size >= MIN_CASH_USD ? size : 0;
 }
 
-/** Map a signal's stated probability (0-100) to a sizing multiplier in
- *  [0.5, 1.5]: a 50%-conviction signal sizes normally, a 70% one 1.2×, a
- *  30% one 0.8× — conviction-weighted bets (F3). Missing prob → neutral 1×. */
-export function convictionFactor(probability: number | null): number {
-  const p = probability == null ? 50 : probability;
-  return Math.max(0.5, Math.min(1.5, 0.5 + p / 100));
+/** NEUTRALIZED (auditoria 25/07): this used to size bets UP with the model's
+ *  stated probability — which the flywheel proved ANTI-calibrated (win 32.7%
+ *  below 60 conf → 0% above 80), so it bet the most exactly where the model
+ *  was most wrong. Flat 1× until we can size by MEASURED per-agent
+ *  calibration from the ledger — never by self-reported confidence. */
+export function convictionFactor(_probability: number | null): number {
+  return 1;
 }
 
 /** A trade can only be ENTERED if the live fill sits on the correct side of the

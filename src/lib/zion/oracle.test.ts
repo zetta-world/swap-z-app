@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { invalidationGate } from "@/lib/zion/oracle";
+import { invalidationGate, symbolAllowed } from "@/lib/zion/oracle";
 import { extractSuggestion } from "@/lib/zion/backtest";
 import type { ActionCard } from "@/lib/zion/parse";
 
@@ -40,6 +40,18 @@ describe("Oráculo — thesis profile gates", () => {
   it("rejects a thesis without a full bracket (thesis = knows where it's wrong)", () => {
     expect(extractSuggestion(thesis({ stopLoss: "" }), refs, new Map(), THESIS)).toBeNull();
     expect(extractSuggestion(thesis({ exits: undefined }), refs, new Map(), THESIS)).toBeNull();
+  });
+
+  it("symbolAllowed: post-stop cooldown blocks the re-buy (the ARB lesson)", () => {
+    const ctx = { cooldown: new Set(["ARB"]), ownOpen: new Set<string>(), deskOpenCount: 0 };
+    expect(symbolAllowed("ARB", ctx)).toBe(false);
+    expect(symbolAllowed("ETH", ctx)).toBe(true);
+  });
+
+  it("symbolAllowed: one thesis per symbol per model, desk-wide cap of 2", () => {
+    expect(symbolAllowed("UNI", { cooldown: new Set(), ownOpen: new Set(["UNI"]), deskOpenCount: 1 })).toBe(false);
+    expect(symbolAllowed("UNI", { cooldown: new Set(), ownOpen: new Set(), deskOpenCount: 2 }, 2)).toBe(false);
+    expect(symbolAllowed("UNI", { cooldown: new Set(), ownOpen: new Set(), deskOpenCount: 1 }, 2)).toBe(true);
   });
 
   it("accepts RR 1.5 in thesis profile (scanner floor of 2 doesn't apply)", () => {

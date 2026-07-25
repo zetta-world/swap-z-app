@@ -54,6 +54,11 @@ Sem chave = provedor simplesmente ausente (dormente, sem erro).
 | `ORACLE_MIN_STOP_PCT` | Stop mínimo da tese (fora do ruído diário) | `4` (%) |
 | `ORACLE_MIN_RR` | RR mínimo do perfil tese | `1.5` |
 | `ORACLE_MAX_OPEN` | Teses abertas simultâneas por modelo | `3` |
+| `ORACLE_STOP_COOLDOWN_D` | Dias de cooldown por símbolo após stop (por modelo) | `7` |
+| `ORACLE_MAX_PER_SYMBOL` | Teses abertas por símbolo na mesa inteira | `2` |
+| `SNIPER_MIN_STOP_ATR` | Piso do stop do sniper em múltiplos do ATR 1h | `1.5` |
+| `SNIPER_MIN_STOP_PCT` | Piso absoluto do stop do sniper | `1.2` (%) |
+| `SNIPER_COOLDOWN_H` | Cooldown por símbolo do sniper | `12` (h) |
 | `ARB2_STARTING_USD` | Saldo inicial da simulação do Arbiter 2.0 (cenário real) | `300` |
 | `ARB2_SIZE_USD` | Tamanho por perna (ciclo trava 2×) | `50` |
 | `ARB2_COST_PCT` | Custo do ciclo completo (4 pernas + basis) | `0.45` (%) |
