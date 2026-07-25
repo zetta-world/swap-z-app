@@ -17,6 +17,29 @@ const COOLDOWN_MS = Number(process.env.AI_CB_COOLDOWN_MIN ?? 60) * 60_000; // sk
 
 interface CBState { fails: number; trippedUntil: number | null }
 
+/** Turn the upstream error into the ACTION the operator must take. The old
+ *  blanket "fix the key" sent the CEO hunting a credential problem when
+ *  DeepSeek had merely RETIRED the model name we pinned (25/07) — a config
+ *  fix, not an auth one. Order matters: an invalid-model 400 often also
+ *  carries the word "key" in provider prose, so match the model case first. */
+export function diagnoseFailure(reason?: string): string {
+  const r = (reason ?? "").toLowerCase();
+  if (!r) return "Sem detalhe do upstream — ver Logs no painel.";
+  if (/model|modelo/.test(r) && /(not (found|supported)|invalid|unsupported|supported api model|deprecat|retir)/.test(r)) {
+    return "MODELO INVÁLIDO/APOSENTADO → troque <PROVEDOR>_MODEL na Vercel (sem deploy). Não é a chave.";
+  }
+  if (/\b(401|403)\b|unauthorized|forbidden|invalid api key|authentication/.test(r)) {
+    return "AUTH → chave inválida/revogada. Gere outra no provedor.";
+  }
+  if (/\b429\b|rate limit|quota|insufficient|balance|credit/.test(r)) {
+    return "COTA/CRÉDITO → sem saldo ou rate limit. Recarregue ou baixe a frequência.";
+  }
+  if (/\b(5\d{2})\b|timeout|timed out|abort|econnreset|fetch failed/.test(r)) {
+    return "UPSTREAM instável/lento → costuma passar sozinho; se persistir, troque o modelo por um mais rápido.";
+  }
+  return "Causa não classificada — ver Logs no painel.";
+}
+
 function keyFor(id: string): string { return `cb:${id}`; }
 
 async function read(id: string): Promise<CBState> {
@@ -63,7 +86,7 @@ export async function recordResult(id: string, label: string, ok: boolean, reaso
   if (fails >= THRESHOLD && !alreadyTripped) {
     await write(id, { fails, trippedUntil: Date.now() + COOLDOWN_MS });
     const why = reason ? `\nLast error: ${reason.slice(0, 160)}` : "";
-    notifyTelegram(`🔌 <b>Circuit breaker</b> — ${label} tripped after ${fails} straight failures. Skipping for ${Math.round(COOLDOWN_MS / 60_000)}min. Fix the key or it'll keep re-tripping.${why}`);
+    notifyTelegram(`🔌 <b>Circuit breaker</b> — ${label} tripped after ${fails} straight failures. Skipping for ${Math.round(COOLDOWN_MS / 60_000)}min.\n➡️ ${diagnoseFailure(reason)}${why}`);
   } else {
     await write(id, { fails, trippedUntil: s.trippedUntil });
   }
