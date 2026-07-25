@@ -24,6 +24,7 @@ import { modelChain } from "@/lib/zion/model";
 import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
 import { extractCards, extractSuggestion, SCAN_CARDS_SCHEMA } from "@/lib/zion/backtest";
 import { getMacroContext } from "@/lib/api/macro";
+import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
 import { formatIndicatorsForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import type { ActionCard } from "@/lib/zion/parse";
 
@@ -234,10 +235,15 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
     runs.push({ source: `oracle_${p.id}`, exec: (instruction) => runOracleForProvider(instruction, p) });
   }
 
+  // Auto-Retro lessons: each model's own distilled reflections ride along
+  // with its desk memory (context, never permission).
+  const lessons = await getActiveLessons(runs.map((r) => r.source));
+
   let logged = 0;
   await Promise.all(runs.map(async ({ source, exec }) => {
-    // Each model gets ITS OWN memory block — the amnesia fix is per-desk.
-    const instruction = buildThesisInstruction(marketData, macro, funding, fng, memoryFor(source));
+    // Each model gets ITS OWN memory + lessons block — reflection is per-desk.
+    const memory = [memoryFor(source), lessonsBlock(lessons.get(source))].filter(Boolean).join("\n\n");
+    const instruction = buildThesisInstruction(marketData, macro, funding, fng, memory);
     if (!instruction) return;
     const cards = await exec(instruction).catch(() => [] as ActionCard[]);
     const room = Math.max(0, MAX_OPEN - (openBy.get(source) ?? 0));

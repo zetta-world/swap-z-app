@@ -24,6 +24,7 @@ import { recordEvent, logError } from "@/lib/admin/track";
 import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
 import { extractCards, extractSuggestion } from "@/lib/zion/backtest";
 import { formatIndicatorsForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
+import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
 import type { RadarTrigger } from "@/lib/zion/radar";
 
 const MONTHLY_BUDGET = Number(process.env.SNIPER_MONTHLY_BUDGET ?? 30); // ≈ Trader plan, ~1/day
@@ -87,7 +88,7 @@ export function stopFloorGate(
 
 // ── The wake ────────────────────────────────────────────────────────────────
 
-function sniperInstruction(marketData: MarketIndicatorsResult, triggers: RadarTrigger[]): string {
+function sniperInstruction(marketData: MarketIndicatorsResult, triggers: RadarTrigger[], lessons: string): string {
   const trig = triggers.map((t) => `${t.symbol} ${t.movePct > 0 ? "+" : ""}${t.movePct}%`).join(", ");
   return [
     "You are ZION's SNIPER desk. A price event just fired: " + trig + ".",
@@ -116,6 +117,7 @@ function sniperInstruction(marketData: MarketIndicatorsResult, triggers: RadarTr
     "<market>",
     formatIndicatorsForPrompt(marketData).trim(),
     "</market>",
+    lessons ? `\n${lessons}` : "",
   ].join("\n");
 }
 
@@ -141,10 +143,13 @@ export async function runSniperScan(marketData: MarketIndicatorsResult, triggers
   if (!brain?.apiKey) return { fired: 0, passed: 0, skipped: "no_brain" };
   if (await isTripped(brain.id)) return { fired: 0, passed: 0, skipped: "breaker" };
 
+  // Auto-Retro lessons (context, never permission).
+  const lessons = await getActiveLessons(["sniper"]);
+
   let cards;
   try {
     const r = await openaiCompatChat(
-      { model: brain.model, system: ZION_FOUNDATION, user: sniperInstruction(marketData, triggers),
+      { model: brain.model, system: ZION_FOUNDATION, user: sniperInstruction(marketData, triggers, lessonsBlock(lessons.get("sniper"))),
         maxTokens: 1200, timeoutMs: brain.timeoutMs ?? 30_000, temperature: brain.temperature, extraBody: brain.extraBody },
       { apiKey: brain.apiKey, baseUrl: brain.baseUrl },
     );
