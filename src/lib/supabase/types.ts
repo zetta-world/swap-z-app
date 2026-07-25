@@ -160,6 +160,16 @@ export type PaperPositionRow = {
   closed_at:     string | null;
 };
 
+/** Auto-Retro lesson ledger (migration 0018) — one row per reflection; the
+ *  ACTIVE lessons for an agent are its newest row. */
+export type AgentLessonsRow = {
+  id:            string;
+  source:        string;
+  lessons:       string[];
+  decided_count: number;
+  created_at:    string;
+};
+
 export type OperationRow = {
   id:             string;
   wallet_address: string | null;
@@ -273,6 +283,12 @@ export interface Database {
           side: "buy" | "sell"; qty: number; entry_price: number; cost_usd: number;
         };
         Update: Partial<PaperPositionRow>;
+        Relationships: [];
+      };
+      agent_lessons: {
+        Row: AgentLessonsRow;
+        Insert: Partial<AgentLessonsRow> & { source: string; lessons: string[]; decided_count: number };
+        Update: never;
         Relationships: [];
       };
     };

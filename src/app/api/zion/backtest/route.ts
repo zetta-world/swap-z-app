@@ -8,6 +8,7 @@ import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
 import { runOracleScan } from "@/lib/zion/oracle";
+import { runRetroSweep } from "@/lib/zion/retro";
 import { runPaperAgent } from "@/lib/paper/engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -144,6 +145,10 @@ export async function POST(req: NextRequest) {
     // Cull verdicts AFTER resolution so they judge the freshest ledger. Free
     // (one paginated read), idempotent, and gated by TOURNAMENT_CULL.
     try { await runTournamentCull(); } catch { /* best-effort */ }
+
+    // Auto-Retro AFTER cull: agents that crossed RETRO_EVERY_N decided since
+    // their last reflection review their own record (PLANO-ANALISTA-PROFUNDO).
+    try { await runRetroSweep(); } catch { /* best-effort */ }
 
     // Paper-trading agent (Gate.io simulation): executes the flywheel's signals
     // as simulated trades vs the live Gate.io price. Isolated from the real

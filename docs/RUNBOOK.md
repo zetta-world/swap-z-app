@@ -59,6 +59,8 @@ Sem chave = provedor simplesmente ausente (dormente, sem erro).
 | `SNIPER_MIN_STOP_ATR` | Piso do stop do sniper em múltiplos do ATR 1h | `1.5` |
 | `SNIPER_MIN_STOP_PCT` | Piso absoluto do stop do sniper | `1.2` (%) |
 | `SNIPER_COOLDOWN_H` | Cooldown por símbolo do sniper | `12` (h) |
+| `AGENT_RETRO` | Auto-Retro (agente reflete sobre os próprios trades a cada N decididos; `off` desliga) | on |
+| `RETRO_EVERY_N` | Decididos entre reflexões | `10` |
 | `ARB2_STARTING_USD` | Saldo inicial da simulação do Arbiter 2.0 (cenário real) | `300` |
 | `ARB2_SIZE_USD` | Tamanho por perna (ciclo trava 2×) | `50` |
 | `ARB2_COST_PCT` | Custo do ciclo completo (4 pernas + basis) | `0.45` (%) |
