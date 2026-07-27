@@ -50,22 +50,34 @@ const SOURCES: { value: string; label: string }[] = [
   { value: "grok_scan",     label: "GROK" },
 ];
 
+const PERIODS: { label: string; days: number | null }[] = [
+  { label: "24H", days: 1 },
+  { label: "7D",  days: 7 },
+  { label: "30D", days: 30 },
+  { label: "TUDO", days: null },
+];
+
 export default function BacktestPanel() {
   const [data, setData] = useState<BT | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"stats" | "feed">("stats");
   const [source, setSource] = useState("");
+  // Default 7d — a lifetime headline can't show whether the last fix worked.
+  const [days, setDays] = useState<number | null>(7);
   const realtime = useAdminRealtime();
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/admin/api/backtest${source ? `?source=${source}` : ""}`);
+      const qs = new URLSearchParams();
+      if (source) qs.set("source", source);
+      if (days) qs.set("days", String(days));
+      const res = await fetch(`/admin/api/backtest${qs.toString() ? `?${qs}` : ""}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.status);
       setData(json); setError(null);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
-  }, [source]);
+  }, [source, days]);
 
   useEffect(() => {
     load();
@@ -81,6 +93,19 @@ export default function BacktestPanel() {
             {t.toUpperCase()}
           </button>
         ))}
+      </div>
+      {/* Janela de tempo (27/07) — a rodada viva acumula ERAS de config; sem
+          recorte, uma correção nova some na média da era anterior. */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {PERIODS.map((p) => (
+          <button key={p.label}
+            className={`adm-toggle ${days === p.days ? "active" : ""}`}
+            style={{ fontSize: 8, padding: "2px 6px" }}
+            onClick={() => { setDays(p.days); setLoading(true); }}>
+            {p.label}
+          </button>
+        ))}
+        <span style={{ fontSize: 7, color: "var(--adm-ink-4)" }}>por data do CARD</span>
       </div>
       {/* Agent filter — same stats, one agent at a time (R2.4). */}
       <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
