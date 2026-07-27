@@ -110,12 +110,13 @@ export async function POST(req: NextRequest) {
         // Tournament cull (alavanca 3): an agent judged on the live round's
         // minimum sample with negative net expectancy stops earning spend.
         const culled = await getCulledSources();
-        const [claudeCards, hybridCards, ...providerCards] = await Promise.all([
-          gates.pause_agent_a || culled.has("self_scan")   ? Promise.resolve([]) : runBacktestScan(marketData),   // Agent A — Sonnet (self_scan)
+        // Agent A (Claude self_scan) RETIRED 27/07 — measured inside ~1pt of
+        // the free brains while being the biggest Anthropic line. Its stage is
+        // gone; `pause_agent_a` stays only to keep old runbooks truthful.
+        const [hybridCards, ...providerCards] = await Promise.all([
           gates.pause_agent_b || culled.has("hybrid_scan") ? Promise.resolve([]) : runHybridScan(marketData),      // Agent B — Ferrari (hybrid_scan)
           ...providers.map((p) => gates.pause_tournament || culled.has(`${p.id}_scan`) ? Promise.resolve([]) : runBacktestScanForProvider(marketData, p)),
         ]);
-        if (claudeCards.length) await logSuggestions(claudeCards, marketData.indicators, "self_scan");
         if (hybridCards.length) await logSuggestions(hybridCards, marketData.indicators, "hybrid_scan");
         for (let i = 0; i < providers.length; i++) {
           if (providerCards[i]?.length) await logSuggestions(providerCards[i], marketData.indicators, `${providers[i].id}_scan`);

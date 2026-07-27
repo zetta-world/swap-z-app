@@ -105,16 +105,25 @@ export function configuredProviders(): ProviderConfig[] {
  * Ferrari roles — each specialist in its strongest area. Preference order per
  * role; each overridable via HYBRID_<ROLE> (e.g. HYBRID_BRAIN=mistral). Returns
  * the first CONFIGURED provider for the role, or null.
- *   • brain     — technical / quant reasoning (DeepSeek → Mistral)
- *   • macro     — big-context macro digest (Kimi → DeepSeek)
+ *   • brain     — technical / quant reasoning (Mistral → Kimi)
+ *   • macro     — big-context macro digest (Kimi → Mistral)
  *   • sentiment — X / social sentiment, native to Grok (Grok → Mistral)
- * The CEO (synthesis) is Claude Opus, resolved separately in backtest.ts.
+ *   • ceo       — final synthesis (DeepSeek → Kimi → Mistral)
+ *
+ * 27/07: Anthropic left this desk entirely. The flywheel measured every
+ * brain within ~1pt of every other, so an Opus CEO bought nothing and cost
+ * $17.50 across the three days it ran — 70% of July's whole Anthropic bill.
+ * DeepSeek takes the CEO seat, and `brain` moves off DeepSeek to Mistral so
+ * the drafter and the synthesizer stay DIFFERENT models (a CEO reviewing its
+ * own draft is a rubber stamp, not a second opinion). Mistral is also the
+ * free tier, so the draft seat now costs nothing.
  */
-export type HybridRole = "brain" | "macro" | "sentiment";
+export type HybridRole = "brain" | "macro" | "sentiment" | "ceo";
 const ROLE_PREFERENCE: Record<HybridRole, string[]> = {
-  brain:     ["deepseek", "mistral"],
-  macro:     ["kimi", "deepseek"],
+  brain:     ["mistral", "kimi"],
+  macro:     ["kimi", "mistral"],
   sentiment: ["grok", "mistral"],
+  ceo:       ["deepseek", "kimi", "mistral"],
 };
 
 export function roleProvider(role: HybridRole): ProviderConfig | null {

@@ -29,9 +29,10 @@
 | `ANTHROPIC_API_KEY` | Chave única (Sonnet + Opus) | toda análise ZION off |
 | `ZION_MODEL` | Modelo primário do ZION | `claude-sonnet-4-6` |
 | `ZION_FALLBACK_MODEL` | Fallback N1 | `claude-haiku-4-5-20251001` |
-| `HYBRID_ORCH_MODEL` | CEO da Ferrari | `claude-opus-4-8` |
-| `HYBRID_ORCH_FALLBACK_MODEL` | Fallback do CEO | `ZION_MODEL` |
-| `HYBRID_B_ENABLED` | Master do Agent B (`true` liga) | **off** (ligar pós-11/07) |
+| ~~`HYBRID_ORCH_MODEL`~~ · ~~`HYBRID_ORCH_FALLBACK_MODEL`~~ | **Obsoletas em 27/07** — o CEO da Ferrari saiu da Anthropic; use `HYBRID_CEO` | — |
+| `HYBRID_B_ENABLED` | Master do Agent B (`false` desliga) | **on** (27/07: sem Anthropic, ficou barato) |
+| `HYBRID_CEO` | Força o provedor do assento CEO do Agent B | `deepseek` (chain: deepseek→kimi→mistral) |
+| `HYBRID_BRAIN` | Força o assento técnico (rascunho) | `mistral` (chain: mistral→kimi) |
 | `NARRATIVES_MODEL` | Clustering de narrativas | — |
 
 ### IA — provedores diretos (torneio + especialistas)

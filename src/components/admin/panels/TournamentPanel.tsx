@@ -24,7 +24,8 @@ const PAPER_MATURE = 8;
 const MEDAL = ["🥇", "🥈", "🥉"];
 const kindColor = (kind: string) =>
   kind === "agent" ? "var(--adm-gold)" : kind === "model" ? "var(--adm-cyan)"
-  : kind === "desk" ? "var(--adm-green)" : kind === "oracle" ? "var(--adm-purple, #b48cff)" : "var(--adm-ink-3)";
+  : kind === "desk" ? "var(--adm-green)" : kind === "oracle" ? "var(--adm-purple, #b48cff)"
+  : kind === "retired" ? "var(--adm-ink-4)" : "var(--adm-ink-3)";
 const pct = (n: number | null, d = 2) => (n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(d)}%`);
 const netColor = (n: number | null) => (n == null ? "var(--adm-ink-3)" : n >= 0 ? "var(--adm-green)" : "var(--adm-red)");
 

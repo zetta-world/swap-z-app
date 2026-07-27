@@ -11,7 +11,7 @@
  */
 
 import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
-import { roleProvider, type ProviderConfig } from "@/lib/ai/registry";
+import { roleProvider, configuredProviders, type ProviderConfig } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
@@ -172,6 +172,14 @@ export function extractCards(text: string): ActionCard[] {
   return parseZionStream(text).cards;
 }
 
+/**
+ * AGENT A — RETIRED 27/07 (CEO decision). Claude scanned every 30min under
+ * `self_scan`; the flywheel measured it inside ~1pt of the free/cheap brains
+ * (its whole edge over Kimi or Mistral was noise), while being the single
+ * biggest recurring line on the Anthropic invoice. The desk keeps the cheap
+ * brains and this seat is gone. Kept as dead code ONLY as long as the ledger
+ * still carries `self_scan` history — the caller no longer invokes it.
+ */
 export async function runBacktestScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return [];
@@ -312,24 +320,29 @@ function buildCeoPrompt(indicatorsText: string, macro: string, sentiment: string
 
 /**
  * AGENT B — the TRUE Ferrari: each model in its strongest area, fused by a CEO.
+ *   • Mistral  → TECHNICAL/quant brain (the draft)   [roleProvider("brain")]
  *   • Kimi     → MACRO digest (big context)
  *   • Grok     → SENTIMENT (native to X)
- *   • DeepSeek → TECHNICAL/quant brain (the draft)   [roleProvider("brain")]
- *   • Opus     → CEO that SYNTHESIZES all into the final cards
- * The three specialists run in PARALLEL; Opus then fuses them. Every stage logs
- * cost under source "hybrid"; the caller logs the final suggestions as
- * "hybrid_scan". Needs the brain key + ANTHROPIC_API_KEY with live credits
- * (Opus/CEO) — dormant until both exist (wakes itself after the 11/07 top-up).
- * Missing specialist keys degrade gracefully (that report is just "(none)").
+ *   • DeepSeek → CEO that SYNTHESIZES all into the final cards
+ * The three specialists run in PARALLEL; the CEO then fuses them. Every stage
+ * logs cost under source "hybrid"; the caller logs the final suggestions as
+ * "hybrid_scan". Missing specialist keys degrade gracefully (that report is
+ * just "(none)").
+ *
+ * 27/07 — ANTHROPIC REMOVED from this desk (CEO decision). The flywheel had
+ * measured every brain within ~1pt of every other, so the Opus CEO bought no
+ * edge while costing $17.50 over the three days it ran (70% of July's entire
+ * Anthropic bill). DeepSeek now holds the CEO seat and the desk is
+ * Anthropic-free end to end; with the expensive seat gone, the HYBRID_B_ENABLED
+ * gate that existed to protect Opus credits now defaults to ON.
  */
 export async function runHybridScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
-  // Master switch — OFF by default so Agent B doesn't spend on the specialists
-  // while the CEO (Opus) has no credits. Flip HYBRID_B_ENABLED=true after the
-  // 11/07 Anthropic top-up to wake the full Ferrari.
-  if (process.env.HYBRID_B_ENABLED !== "true") return [];
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  // Master switch — defaults ON now that no seat bills Anthropic prices.
+  // HYBRID_B_ENABLED=false still parks the desk without a deploy.
+  if ((process.env.HYBRID_B_ENABLED ?? "true") === "false") return [];
   const brain = roleProvider("brain");
-  if (!anthropicKey || !brain?.apiKey) return [];
+  const ceo = roleProvider("ceo");
+  if (!brain?.apiKey || !ceo?.apiKey) return [];
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
   if (!indicatorsText) return [];
   const macroText = await getMacroContext().catch(() => "");
@@ -359,26 +372,29 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
   ]);
   if (!technical.trim()) return []; // no draft to synthesize
 
-  // CEO fuses everything into the final cards. Opus is the primary synthesizer,
-  // but it's a SINGLE point of failure — an Opus timeout/error would waste all
-  // three specialist calls and return nothing. So on failure we fall back to
-  // Sonnet (same key, always has credits when Anthropic is up) for the exact
-  // same synthesis (P0.3). Only if BOTH fail do we give up.
+  // CEO fuses everything into the final cards. It's a SINGLE point of failure —
+  // one timeout would waste all three specialist calls — so on failure we retry
+  // the SAME synthesis on the next provider in the ceo chain (P0.3). Only if
+  // both attempts fail do we give up.
   const lessonsTxt = lessonsBlock(hybridLessons.get("hybrid_scan"));
   const ceoPrompt = buildCeoPrompt(indicatorsText, macro, sentiment, technical) + (lessonsTxt ? `\n\n${lessonsTxt}` : "");
-  const primaryModel  = process.env.HYBRID_ORCH_MODEL ?? "claude-opus-4-8";
-  const fallbackModel = process.env.HYBRID_ORCH_FALLBACK_MODEL ?? modelChain()[0];
-  for (const [model, role] of [[primaryModel, "hybrid_ceo"], [fallbackModel, "hybrid_ceo_fallback"]] as const) {
+  const ceoFallback = configuredProviders().find((p) => p.id !== ceo.id && p.id !== brain.id) ?? null;
+  for (const [provider, role] of [[ceo, "hybrid_ceo"], [ceoFallback, "hybrid_ceo_fallback"]] as const) {
+    if (!provider?.apiKey) continue;
+    if (await isTripped(provider.id)) continue;
     try {
-      const o = await anthropicChat(
-        // No cacheSystem — same 5min-TTL vs 30min-tick mismatch as Agent A.
-        { model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200, timeoutMs: 25_000, jsonSchema: SCAN_CARDS_SCHEMA },
-        anthropicKey,
+      const o = await openaiCompatChat(
+        { model: provider.model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200,
+          timeoutMs: provider.timeoutMs ?? 25_000, temperature: provider.temperature, extraBody: provider.extraBody },
+        { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
       );
+      await recordResult(provider.id, provider.label, true);
       recordEvent("zion_analysis", { meta: { op: role, model: o.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...o.usage } });
       return extractCards(o.text);
-    } catch {
-      if (model === fallbackModel) return []; // both CEO attempts failed
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      await recordResult(provider.id, provider.label, false, reason);
+      logError(`hybrid_ceo:${provider.id}`, reason, { model: provider.model, source: "hybrid" });
     }
   }
   return [];

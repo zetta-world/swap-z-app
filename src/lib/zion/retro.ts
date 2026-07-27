@@ -16,7 +16,7 @@
  * shows it and AGENT_RETRO=off turns the whole thing off.
  */
 import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
-import { configuredProviders, hybridBrain } from "@/lib/ai/registry";
+import { configuredProviders, hybridBrain, roleProvider } from "@/lib/ai/registry";
 import { isTripped } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { modelChain } from "@/lib/zion/model";
@@ -131,7 +131,14 @@ function retroPrompt(source: string, trades: TradeRow[]): string {
  *  that made the decisions — self-evaluation, not peer review). Covers the
  *  oracles, the event agents AND the scanners (relit 25/07 with lessons). */
 function brainFor(source: string): { kind: "anthropic" } | { kind: "compat"; providerId: string } | null {
-  if (source === "oracle_self" || source === "self_scan" || source === "hybrid_scan") return { kind: "anthropic" };
+  if (source === "oracle_self") return { kind: "anthropic" };
+  // Agent B's CEO seat is DeepSeek since 27/07 — the seat that signs the cards
+  // is the seat that reflects on them. (self_scan is retired: no new trades to
+  // reflect on, so it simply never crosses the threshold again.)
+  if (source === "hybrid_scan") {
+    const ceo = roleProvider("ceo");
+    return ceo ? { kind: "compat", providerId: ceo.id } : null;
+  }
   if (source.startsWith("oracle_")) return { kind: "compat", providerId: source.slice("oracle_".length) };
   if (source.endsWith("_scan")) return { kind: "compat", providerId: source.slice(0, -"_scan".length) };
   if (source === "sniper" || source === "radar") {
