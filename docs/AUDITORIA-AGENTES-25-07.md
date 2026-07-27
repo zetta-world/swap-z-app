@@ -105,3 +105,36 @@ calibração REALIZADA (flywheel), nunca pela declarada.
    gate E no prompt; cooldown de 12h por símbolo.
 3. 🟢 (25/07) Paper: `convictionFactor` neutralizado (1× flat).
 4. 🔴 F2-orderbook (mesas → real) e F2-notícias (Oráculo → reversões).
+
+## Adendo — coorte do fim de semana (medida 27/07 09:01)
+
+Os scanners rodaram 25-27/07 com Auto-Retro + lições + contexto. **O placar
+bruto melhorou em todos** (DeepSeek −1,75→+0,60 · Kimi −1,39→+0,01 ·
+Mistral −0,71→+0,12 · Grok −1,10→−0,29) — e é ARMADILHA DE REGIME:
+
+| Coorte | buy win | sell win |
+|---|---:|---:|
+| pré (rodada 2) | 26% | 7% |
+| fim de semana | **77%** (23W/7L) | **4%** (1W/27L) |
+
+Compra ganhando 77% e venda perdendo 96% = rali, não disciplina (o espelho
+exato do bear de 17/07). Agravante: 73 compras abertas vs 10 vendas — o
+placar é uma aposta comprada em aberto. **Veredito: sem mérito provado;
+scanners desligados de novo em 27/07 09:10.**
+
+O que a coorte PROVOU de verdade:
+1. **A Auto-Retro gera diagnóstico real.** Três modelos redescobriram,
+   sozinhos, as conclusões desta auditoria — Claude: "stops abaixo de 1% em
+   TRENDING_DOWN são clipados quase instantaneamente (DOGE 0,4%, SOL 0,8%,
+   BNB 0,3%, XRP 0,7%, todos em <7h)"; Claude: "entradas duplicadas no mesmo
+   ativo multiplicaram perdas — máx 1 por ativo"; Kimi: "cooldown de 48h por
+   ativo após stop". Sem acesso a este documento.
+2. **O vício do stop apertado seguia vivo nos scanners** (stop médio
+   2,02% → **1,72%**, RR 2,58): a correção de 25/07 só cobriu o Sniper.
+   Corrigido em 27/07 — piso `max(1,5×ATR, 1,2%)` no funil dos scanners,
+   exatamente a lição que eles mesmos escreveram.
+3. **Lição pode estar ERRADA** (Mistral, 25/07: "apertar stops para ≤0,5%" —
+   o oposto da verdade; substituída na reflexão seguinte). Prova por que
+   "lição é contexto, nunca permissão" e por que gate é código.
+4. **Defeito corrigido**: o teto de 220 chars cortava a lição no meio da
+   receita ("...require a s"). Agora 400.

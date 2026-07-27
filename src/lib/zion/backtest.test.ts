@@ -99,6 +99,21 @@ describe("extractSuggestion — money-in gate", () => {
     expect(extractSuggestion(sell, refs, down)).not.toBeNull();
   });
 
+  it("stop floor: rejects a stop inside the symbol's noise band (the agents' own lesson)", () => {
+    const atr = new Map([["SOL", 1.4]]); // floor = 1.5 × 1.4 = 2.1%
+    // 1.5% stop with a 4% target: RR 2.6 passes, but the stop is noise bait.
+    const tight = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "4", price: "104" }], stopLoss: "98.5" });
+    expect(extractSuggestion(tight, refs, regimes, { atrPctBySymbol: atr })).toBeNull();
+    // Same card with an honest 2.5% stop and a target that keeps RR >= 2.
+    const honest = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "6", price: "106" }], stopLoss: "97.5" });
+    expect(extractSuggestion(honest, refs, regimes, { atrPctBySymbol: atr })).not.toBeNull();
+  });
+
+  it("stop floor: flat 1.2% applies when the symbol has no ATR read", () => {
+    const sub = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "3", price: "103" }], stopLoss: "99" }); // 1% stop
+    expect(extractSuggestion(sub, refs, regimes)).toBeNull();
+  });
+
   it("regime gate: TRANSITIONING and missing regime pass both sides", () => {
     const trans = new Map([["SOL", "TRANSITIONING"]]);
     expect(extractSuggestion(card({}), refs, trans)).not.toBeNull();

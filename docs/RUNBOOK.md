@@ -68,6 +68,9 @@ aposentado; `deepseek-v4-flash` é o swap rápido/barato) · `kimi-k2.6` ·
 | `SNIPER_COOLDOWN_H` | Cooldown por símbolo do sniper | `12` (h) |
 | `AGENT_RETRO` | Auto-Retro (agente reflete sobre os próprios trades a cada N decididos; `off` desliga) | on |
 | `RETRO_EVERY_N` | Decididos entre reflexões | `10` |
+| `RETRO_LESSON_CHARS` | Tamanho máx. da lição (220 cortava a receita no meio) | `400` |
+| `BACKTEST_MIN_STOP_ATR` | Piso do stop dos scanners em múltiplos do ATR 1h | `1.5` |
+| `BACKTEST_MIN_STOP_PCT` | Piso absoluto do stop dos scanners | `1.2` (%) |
 | `ARB2_STARTING_USD` | Saldo inicial da simulação do Arbiter 2.0 (cenário real) | `300` |
 | `ARB2_SIZE_USD` | Tamanho por perna (ciclo trava 2×) | `50` |
 | `ARB2_COST_PCT` | Custo do ciclo completo (4 pernas + basis) | `0.45` (%) |

@@ -181,7 +181,7 @@ export async function runSniperScan(marketData: MarketIndicatorsResult, triggers
 
   const rows = [];
   for (const card of cards.slice(0, MAX_CARDS)) {
-    const s = extractSuggestion(card, refBy, regimeBy); // scale/geometry/clamp gates
+    const s = extractSuggestion(card, refBy, regimeBy, { atrPctBySymbol: atrBy }); // scale/geometry/clamp/stop-floor gates
     if (!s) continue;
     if (cooling.has(s.symbol)) continue;
     if (!trendGate(s.side, regimeBy.get(s.symbol))) continue;
