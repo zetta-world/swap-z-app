@@ -193,7 +193,9 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
   if (claudeKey) {
     runs.push({ source: "oracle_self", exec: async (instruction) => {
       const r = await anthropicChat(
-        { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, cacheSystem: true, jsonSchema: SCAN_CARDS_SCHEMA },
+        // No cacheSystem: this desk wakes ONCE A DAY — a 5min cache never
+        // survives to be read, it only adds the 1.25× write premium.
+        { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, jsonSchema: SCAN_CARDS_SCHEMA },
         claudeKey,
       );
       recordEvent("zion_analysis", { meta: { op: "oracle", model: r.model, source: "oracle_self", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });

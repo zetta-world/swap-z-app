@@ -187,7 +187,12 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
     // foundation via cacheSystem. Goes through the provider seam so the hybrid
     // branch can swap this model without touching the flywheel logic.
     const r = await anthropicChat(
-      { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, cacheSystem: true, jsonSchema: SCAN_CARDS_SCHEMA },
+      // NO cacheSystem (27/07): Anthropic's cache TTL is 5min and this runs
+      // every 30min, so every write expired before the next call could read
+      // it. July's invoice: 2,389,090 cache-WRITE tokens against 9,432
+      // cache-READ — a 0.39% hit rate on which we paid the 1.25× write
+      // premium (~$2.38 for nothing). Plain input bills at 1.0×.
+      { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, jsonSchema: SCAN_CARDS_SCHEMA },
       apiKey,
     );
     recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: "backtest", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
@@ -366,7 +371,8 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
   for (const [model, role] of [[primaryModel, "hybrid_ceo"], [fallbackModel, "hybrid_ceo_fallback"]] as const) {
     try {
       const o = await anthropicChat(
-        { model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200, timeoutMs: 25_000, cacheSystem: true, jsonSchema: SCAN_CARDS_SCHEMA },
+        // No cacheSystem — same 5min-TTL vs 30min-tick mismatch as Agent A.
+        { model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200, timeoutMs: 25_000, jsonSchema: SCAN_CARDS_SCHEMA },
         anthropicKey,
       );
       recordEvent("zion_analysis", { meta: { op: role, model: o.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...o.usage } });
