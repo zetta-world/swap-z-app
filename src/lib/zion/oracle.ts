@@ -153,7 +153,15 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
   const openBy = new Map<string, number>();
   const ownOpenBy = new Map<string, Set<string>>();
   const deskOpenBySym = new Map<string, number>();
-  const cooldownBy = new Map<string, Set<string>>();
+  // DESK-WIDE cooldown (27/07). The per-model version shipped 25/07 had a
+  // hole the data found immediately: 5 of the desk's first 6 losses were the
+  // SAME ARB long, bought by three different models — Kimi entered it two
+  // days after DeepSeek and Mistral were already stopped there, because Kimi
+  // itself had never been stopped on ARB. A stop is evidence about the
+  // SYMBOL, not about the model that took it, so one stop now blocks the
+  // symbol for the whole desk. (Kimi's own Auto-Retro asked for exactly this:
+  // "impose a 48h asset-specific cooling-off period after any stop-out".)
+  const deskCooldown = new Set<string>();
   const memoryBy = new Map<string, string[]>();
   for (const r of histRows ?? []) {
     const mem = memoryBy.get(r.source) ?? [];
@@ -165,22 +173,26 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
     } else {
       const out = typeof r.outcome_pct === "number" ? `${r.outcome_pct > 0 ? "+" : ""}${r.outcome_pct.toFixed(1)}%` : "?";
       mem.push(`${r.status.toUpperCase()}: ${r.side} ${r.symbol} → ${out} (resolved ${r.resolved_at?.slice(0, 10)}).`);
-      if (r.status === "hit_stop") {
-        (cooldownBy.get(r.source) ?? cooldownBy.set(r.source, new Set()).get(r.source)!).add(r.symbol);
-      }
+      if (r.status === "hit_stop") deskCooldown.add(r.symbol);
     }
     memoryBy.set(r.source, mem);
   }
+  const cooled = [...deskCooldown];
   const memoryFor = (source: string): string => {
     const mem = memoryBy.get(source) ?? [];
-    const cooled = [...(cooldownBy.get(source) ?? [])];
     const lines = [
       "Your desk's record (last 7 days). An INVALIDATED thesis stays dead unless",
       "the world produced NEW evidence — re-buying the same falling knife the",
       "day after a stop is how this desk lost money before you.",
       ...mem,
     ];
-    if (cooled.length) lines.push(`On your post-stop cooldown (${STOP_COOLDOWN_D}d) — the ledger REJECTS new theses on: ${cooled.join(", ")}.`);
+    if (cooled.length) {
+      lines.push(
+        `DESK COOLDOWN (${STOP_COOLDOWN_D}d) — a stop by ANY analyst on this desk,`,
+        "not just you, blocks the symbol for everyone: the stop is evidence about",
+        "the SYMBOL. The ledger REJECTS new theses on: " + cooled.join(", ") + ".",
+      );
+    }
     return mem.length || cooled.length ? lines.join("\n") : "";
   };
 
@@ -209,7 +221,6 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
     if (!instruction) return;
     const cards = await exec(instruction).catch(() => [] as ActionCard[]);
     const room = Math.max(0, MAX_OPEN - (openBy.get(source) ?? 0));
-    const cooldown = cooldownBy.get(source) ?? new Set<string>();
     const ownOpen = ownOpenBy.get(source) ?? new Set<string>();
     const rows = [];
     for (const card of cards.slice(0, MAX_THESES)) {
@@ -217,7 +228,7 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
       if (!invalidationGate(card.summary)) continue; // no invalidation, no trade
       const s = extractSuggestion(card, refBy, regimeBy, THESIS_OPTS);
       if (!s) continue;
-      if (!symbolAllowed(s.symbol, { cooldown, ownOpen, deskOpenCount: deskOpenBySym.get(s.symbol) ?? 0 })) continue;
+      if (!symbolAllowed(s.symbol, { cooldown: deskCooldown, ownOpen, deskOpenCount: deskOpenBySym.get(s.symbol) ?? 0 })) continue;
       rows.push({ ...s, source, horizon_hours: HORIZON_H });
       ownOpen.add(s.symbol);
       deskOpenBySym.set(s.symbol, (deskOpenBySym.get(s.symbol) ?? 0) + 1);
