@@ -43,6 +43,10 @@ describe("Oráculo — thesis profile gates", () => {
   });
 
   it("symbolAllowed: post-stop cooldown blocks the re-buy (the ARB lesson)", () => {
+    // The cooldown set is now DESK-WIDE: a stop taken by ANY analyst blocks
+    // the symbol for every analyst. 5 of the desk's first 6 losses were the
+    // same ARB long bought by three different models, each of which had a
+    // clean personal record on ARB.
     const ctx = { cooldown: new Set(["ARB"]), ownOpen: new Set<string>(), deskOpenCount: 0 };
     expect(symbolAllowed("ARB", ctx)).toBe(false);
     expect(symbolAllowed("ETH", ctx)).toBe(true);
