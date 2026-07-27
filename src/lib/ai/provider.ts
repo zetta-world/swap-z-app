@@ -115,14 +115,26 @@ export async function openaiCompatChat(
     }
     const data = await res.json() as {
       choices?: Array<{ message?: { content?: string } }>;
-      usage?:   { prompt_tokens?: number; completion_tokens?: number };
+      // completion_tokens_details.reasoning_tokens: xAI (and other reasoning
+// models) bill an internal trace SEPARATELY from the completion. The
+      // July invoice showed 359.2K reasoning tokens ($0.90) against 140K
+      // completion tokens ($0.35) — 72% of Grok's output cost was invisible
+      // to our own accounting because we only read completion_tokens.
+      usage?: {
+        prompt_tokens?: number; completion_tokens?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      };
     };
     return {
       text:  data.choices?.[0]?.message?.content ?? "",
       model: req.model,
       usage: {
-        inTokens:         data.usage?.prompt_tokens ?? 0,
-        outTokens:        data.usage?.completion_tokens ?? 0,
+        inTokens:  data.usage?.prompt_tokens ?? 0,
+        // Some providers report completion_tokens EXCLUDING the reasoning
+        // trace they bill for; when the detail is present and not already
+        // included, add it so FINANCE stops under-reporting the real bill.
+        outTokens: (data.usage?.completion_tokens ?? 0)
+          + (data.usage?.completion_tokens_details?.reasoning_tokens ?? 0),
         cachedTokens:     0,
         cacheWriteTokens: 0,
       },
