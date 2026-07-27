@@ -448,6 +448,9 @@ type NewSuggestion = Partial<ZionSuggestionRow> & { symbol: string; kind: string
 export interface ExtractOpts {
   minRR?: number; regimeFilter?: boolean; minStopPct?: number;
   atrPctBySymbol?: Map<string, number>; minStopAtr?: number;
+  /** `false` exempts a caller from the volatility stop floor entirely. Exists
+   *  for ONE reason: the control group must never receive the treatment. */
+  stopFloor?: boolean;
 }
 
 /** Turn a card into a ledger row, or null when it isn't a trackable directional trade. */
@@ -531,7 +534,7 @@ export function extractSuggestion(
   // Volatility-aware stop floor: a stop inside the symbol's own noise band is
   // a coin flip against the tape, not a thesis. Only applies when the card
   // carries a stop (a bracket-less directional call still resolves at horizon).
-  if (entry && entry > 0 && stop) {
+  if ((opts?.stopFloor ?? true) && entry && entry > 0 && stop) {
     const atrPct = opts?.atrPctBySymbol?.get(base);
     const floor = Math.max(
       atrPct != null && atrPct > 0 ? atrPct * (opts?.minStopAtr ?? MIN_STOP_ATR) : 0,
@@ -568,8 +571,16 @@ export async function logSuggestions(cards: ActionCard[], indicators: SymbolIndi
     if (ind.regime) regimeBy.set(sym, ind.regime);
     if (ind.atrPct != null && ind.atrPct > 0) atrBy.set(sym, ind.atrPct);
   }
+  // The radar is the flywheel's CONTROL group — the untouched ruler every
+  // experiment is measured against (its prompt hasn't changed since the
+  // beginning, which is how we caught that the 17/07 collapse and the 26/07
+  // rally were both regime, not skill). A control that receives the treatment
+  // is not a control, so it is deliberately EXEMPT from the stop floor: while
+  // the treated agents are measured with it, the radar keeps producing the
+  // pre-treatment baseline. Do not "fix" this to make the radar look better.
+  const isControl = source === "radar";
   const rows = cards
-    .map((c) => extractSuggestion(c, refBy, regimeBy, { atrPctBySymbol: atrBy }))
+    .map((c) => extractSuggestion(c, refBy, regimeBy, isControl ? { stopFloor: false } : { atrPctBySymbol: atrBy }))
     .filter((r): r is NewSuggestion => r !== null)
     .map((r) => ({ ...r, source }));
   if (rows.length === 0) return 0;

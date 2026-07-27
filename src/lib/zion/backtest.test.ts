@@ -114,6 +114,14 @@ describe("extractSuggestion — money-in gate", () => {
     expect(extractSuggestion(sub, refs, regimes)).toBeNull();
   });
 
+  it("stop floor: the CONTROL group is exempt (a treated control is no control)", () => {
+    const sub = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "3", price: "103" }], stopLoss: "99" });
+    expect(extractSuggestion(sub, refs, regimes, { stopFloor: false })).not.toBeNull();
+    // Exemption is ONLY the floor — every other money gate still applies.
+    const badRR = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "1", price: "101" }], stopLoss: "97" });
+    expect(extractSuggestion(badRR, refs, regimes, { stopFloor: false })).toBeNull();
+  });
+
   it("regime gate: TRANSITIONING and missing regime pass both sides", () => {
     const trans = new Map([["SOL", "TRANSITIONING"]]);
     expect(extractSuggestion(card({}), refs, trans)).not.toBeNull();
