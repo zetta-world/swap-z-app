@@ -27,7 +27,8 @@ const COST_PCT   = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
 
 /** Scan agents subject to the cull. Radar and sniper stay out: they are the
  *  event-driven control group / scarcity-budgeted desk, not 30-min spenders. */
-export const CULL_SOURCES = ["self_scan", "hybrid_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan"] as const;
+// self_scan (Agent A) retired 27/07 — no longer runs, so it can't be culled.
+export const CULL_SOURCES = ["hybrid_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan"] as const;
 
 export interface SourceStat { source: string; decided: number; resolved: number; expectancyNet: number | null }
 

@@ -41,7 +41,7 @@ function statusColor(s: string): string {
 // everything blended. Values mirror the `source` column in zion_suggestions.
 const SOURCES: { value: string; label: string }[] = [
   { value: "",            label: "ALL" },
-  { value: "self_scan",   label: "A·ZION" },
+  { value: "self_scan",   label: "A·ZION†" },   // † aposentado 27/07 (histórico)
   { value: "hybrid_scan", label: "B·FERRARI" },
   { value: "radar",       label: "RADAR" },
   { value: "mistral_scan",  label: "MISTRAL" },

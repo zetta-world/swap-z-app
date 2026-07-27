@@ -14,8 +14,8 @@ const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
 // source (how the suggestion was logged) → human agent name + kind. Keeps the
 // ranking readable instead of showing raw "mistral_scan" strings.
 const AGENTS: Record<string, { name: string; kind: string }> = {
-  self_scan:     { name: "Agent A · ZION (Sonnet)",   kind: "agent" },
-  hybrid_scan:   { name: "Agent B · Ferrari (Opus CEO)", kind: "agent" },
+  self_scan:     { name: "Agent A · ZION (aposentado)", kind: "retired" },
+  hybrid_scan:   { name: "Agent B · Ferrari (DeepSeek CEO)", kind: "agent" },
   radar:         { name: "Radar T3 (trigger wake)",   kind: "agent" },
   sniper:        { name: "Sniper 🎯 (evento + gates)", kind: "agent" },
   deepseek_scan: { name: "DeepSeek",                   kind: "model" },
