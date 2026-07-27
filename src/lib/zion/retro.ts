@@ -131,7 +131,9 @@ function retroPrompt(source: string, trades: TradeRow[]): string {
  *  that made the decisions — self-evaluation, not peer review). Covers the
  *  oracles, the event agents AND the scanners (relit 25/07 with lessons). */
 function brainFor(source: string): { kind: "anthropic" } | { kind: "compat"; providerId: string } | null {
-  if (source === "oracle_self") return { kind: "anthropic" };
+  // No Anthropic seat remains in the flywheel (27/07): Agent A retired,
+  // Agent B's CEO is DeepSeek, oracle_self retired. The branch stays because
+  // the kind is still modelled — it simply has no source routed to it today.
   // Agent B's CEO seat is DeepSeek since 27/07 — the seat that signs the cards
   // is the seat that reflects on them. (self_scan is retired: no new trades to
   // reflect on, so it simply never crosses the threshold again.)

@@ -15,14 +15,13 @@
  * against the paused scanner baseline. Same card schema, same ledger, same
  * resolution/panels/cull — the flywheel doesn't know it's a new species.
  */
-import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
+import { openaiCompatChat } from "@/lib/ai/provider";
 import { configuredProviders, type ProviderConfig } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { recordEvent, logError } from "@/lib/admin/track";
-import { modelChain } from "@/lib/zion/model";
 import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
-import { extractCards, extractSuggestion, SCAN_CARDS_SCHEMA } from "@/lib/zion/backtest";
+import { extractCards, extractSuggestion } from "@/lib/zion/backtest";
 import { getMacroContext } from "@/lib/api/macro";
 import { fetchFundingContext, fetchFearGreed } from "@/lib/api/market-context";
 import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
@@ -188,20 +187,12 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
   // Bail early when there are no usable indicators this tick.
   if (!buildThesisInstruction(marketData, macro, funding, fng, "")) return { sources: 0, logged: 0 };
 
-  const claudeKey = process.env.ANTHROPIC_API_KEY;
+  // oracle_self (Claude) RETIRED 27/07 — with Agent A gone and Agent B off
+  // Anthropic, this desk was the last Anthropic seat in the flywheel, and the
+  // thesis cohort showed no separation between the expensive brain and the
+  // cheap ones. Its 3 open theses still resolve (resolution is free and
+  // source-agnostic), so the data it already produced is not lost.
   const runs: Array<{ source: string; exec: (instruction: string) => Promise<ActionCard[]> }> = [];
-  if (claudeKey) {
-    runs.push({ source: "oracle_self", exec: async (instruction) => {
-      const r = await anthropicChat(
-        // No cacheSystem: this desk wakes ONCE A DAY — a 5min cache never
-        // survives to be read, it only adds the 1.25× write premium.
-        { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, jsonSchema: SCAN_CARDS_SCHEMA },
-        claudeKey,
-      );
-      recordEvent("zion_analysis", { meta: { op: "oracle", model: r.model, source: "oracle_self", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
-      return extractCards(r.text);
-    } });
-  }
   for (const p of configuredProviders()) {
     runs.push({ source: `oracle_${p.id}`, exec: (instruction) => runOracleForProvider(instruction, p) });
   }
