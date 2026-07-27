@@ -91,6 +91,10 @@ async function buildScanInstruction(marketData: MarketIndicatorsResult, extras =
     "that the indicators genuinely support, the setup does not qualify — skip",
     "it. The ledger gate rejects anything below 2, so a weaker card only",
     "wastes your output.",
+    `STOP FLOOR — the stop must sit at least max(${MIN_STOP_ATR}×ATR, ${MIN_STOP_PCT}%) from entry.`,
+    "Build the RR ratio by choosing the TARGET, never by tightening the stop:",
+    "a stop inside the symbol's noise band dies of weather, not of being wrong,",
+    "and the ledger gate rejects it. If the move can't support both, skip it.",
     "Machine-format every number (dot decimal, no separators, no symbols).",
     "",
     "<market>",
@@ -395,6 +399,16 @@ const REGIME_FILTER_ON = (process.env.BACKTEST_REGIME_FILTER ?? "on") !== "off";
 // even at decent win rates. The prompt demands >=2; this enforces it.
 const MIN_RR = Number(process.env.BACKTEST_MIN_RR ?? 2);
 
+// Stop floor for the SCANNER profile (27/07). The weekend cohort exposed the
+// vice the RR>=2 gate creates: average stop shrank 2.02% → 1.72% because the
+// cheapest way to hit the ratio is TIGHTENING the stop, and a stop inside the
+// noise band dies of weather. The agents diagnosed it themselves in their
+// Auto-Retro ("stops under 1% are getting clipped almost instantly — DOGE
+// 0.4%, SOL 0.8%, BNB 0.3%, XRP 0.7%, all stopped in under 7h"), so the
+// funnel now enforces what they wrote: RR must be built from an honest stop.
+const MIN_STOP_ATR = Number(process.env.BACKTEST_MIN_STOP_ATR ?? 1.5); // × 1h ATR%
+const MIN_STOP_PCT = Number(process.env.BACKTEST_MIN_STOP_PCT ?? 1.2);
+
 type NewSuggestion = Partial<ZionSuggestionRow> & { symbol: string; kind: string; side: "buy" | "sell"; ref_price: number };
 
 /** Per-profile overrides for the funnel gates. Defaults reproduce the scanner
@@ -402,8 +416,17 @@ type NewSuggestion = Partial<ZionSuggestionRow> & { symbol: string; kind: string
  *  (docs/PLANO-ORACULO-ANALISTA.md): no regime filter (a reversal thesis WITH
  *  declared invalidation is its reason to exist), RR ≥1.5 with a stop parked
  *  OUTSIDE the noise band (minStopPct — a thesis stop, not a stroll stop),
- *  and a full bracket is mandatory. */
-export interface ExtractOpts { minRR?: number; regimeFilter?: boolean; minStopPct?: number }
+ *  and a full bracket is mandatory.
+ *
+ *  `atrPctBySymbol` + `minStopAtr` add the volatility-aware floor: the stop
+ *  must clear max(minStopAtr × ATR%, minStopPct). Both floors combine (the
+ *  strictest wins); callers that pass no ATR map simply get the flat floor.
+ *  The Oráculo deliberately stays on its flat 4% for now — its cohort is
+ *  mid-measurement and must not change shape under it. */
+export interface ExtractOpts {
+  minRR?: number; regimeFilter?: boolean; minStopPct?: number;
+  atrPctBySymbol?: Map<string, number>; minStopAtr?: number;
+}
 
 /** Turn a card into a ledger row, or null when it isn't a trackable directional trade. */
 export function extractSuggestion(
@@ -482,6 +505,18 @@ export function extractSuggestion(
     if (!entry || !target || !stop) return null;
     if ((Math.abs(entry - stop) / entry) * 100 < opts.minStopPct) return null;
   }
+
+  // Volatility-aware stop floor: a stop inside the symbol's own noise band is
+  // a coin flip against the tape, not a thesis. Only applies when the card
+  // carries a stop (a bracket-less directional call still resolves at horizon).
+  if (entry && entry > 0 && stop) {
+    const atrPct = opts?.atrPctBySymbol?.get(base);
+    const floor = Math.max(
+      atrPct != null && atrPct > 0 ? atrPct * (opts?.minStopAtr ?? MIN_STOP_ATR) : 0,
+      opts?.minStopPct ?? MIN_STOP_PCT,
+    );
+    if ((Math.abs(entry - stop) / entry) * 100 < floor) return null;
+  }
   if (entry && entry > 0 && target && stop) {
     const dir = side === "buy" ? 1 : -1;
     const reward = (target - entry) * dir;
@@ -504,13 +539,15 @@ export async function logSuggestions(cards: ActionCard[], indicators: SymbolIndi
   if (!db || cards.length === 0) return 0;
   const refBy = new Map<string, number>();
   const regimeBy = new Map<string, string>();
+  const atrBy = new Map<string, number>();
   for (const ind of indicators) {
     const sym = ind.symbol.toUpperCase();
     if (ind.price != null && ind.price > 0) refBy.set(sym, ind.price);
     if (ind.regime) regimeBy.set(sym, ind.regime);
+    if (ind.atrPct != null && ind.atrPct > 0) atrBy.set(sym, ind.atrPct);
   }
   const rows = cards
-    .map((c) => extractSuggestion(c, refBy, regimeBy))
+    .map((c) => extractSuggestion(c, refBy, regimeBy, { atrPctBySymbol: atrBy }))
     .filter((r): r is NewSuggestion => r !== null)
     .map((r) => ({ ...r, source }));
   if (rows.length === 0) return 0;

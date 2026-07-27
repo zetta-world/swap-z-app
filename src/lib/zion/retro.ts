@@ -25,7 +25,11 @@ import { recordEvent, logError } from "@/lib/admin/track";
 const RETRO_ON      = (process.env.AGENT_RETRO ?? "on") !== "off";
 const RETRO_EVERY_N = Number(process.env.RETRO_EVERY_N ?? 10);
 const MAX_LESSONS   = 3;
-const MAX_LESSON_CHARS = 220;
+// 220 chopped the lessons mid-prescription — the first retro round produced
+// "...until a higher-conviction filter is a", "...require a s". The diagnosis
+// survived the cut, the ACTION didn't, which is the half that matters. 400
+// fits a complete finding+prescription while still forbidding essays.
+const MAX_LESSON_CHARS = Number(process.env.RETRO_LESSON_CHARS ?? 400);
 const MAX_TRADES_REVIEWED = 20;
 
 // ── Pure helpers (unit-tested) ──────────────────────────────────────────────
