@@ -42,6 +42,13 @@ function Sparkline({ curve, h = 20 }: { curve: number[]; h?: number }) {
   );
 }
 
+const PERIODS: { label: string; days: number | null }[] = [
+  { label: "24H", days: 1 },
+  { label: "7D",  days: 7 },
+  { label: "30D", days: 30 },
+  { label: "TUDO", days: null },
+];
+
 function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div>
@@ -56,16 +63,19 @@ export default function TournamentPanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
+  // Default 7d: the live round mixes config eras, and a lifetime average
+  // buries whether the last fix worked. TUDO stays one tap away.
+  const [days, setDays] = useState<number | null>(7);
   const realtime = useAdminRealtime();
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/admin/api/tournament");
+      const res = await fetch(`/admin/api/tournament${days ? `?days=${days}` : ""}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.status);
       setData(json); setError(null);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
-  }, []);
+  }, [days]);
 
   useEffect(() => {
     load();
@@ -80,6 +90,21 @@ export default function TournamentPanel() {
     <TerminalPanel id="tournament" title="TOURNAMENT" subtitle="ranking por expectancy líquida · toque na linha p/ detalhes" icon="♛" source="supabase/zion_suggestions">
       {loading && <div className="adm-shimmer" style={{ height: 120 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+
+      {/* Janela de tempo — sem isso, a era nova fica diluída na antiga. */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {PERIODS.map((p) => (
+          <button key={p.label}
+            className={`adm-toggle ${days === p.days ? "active" : ""}`}
+            style={{ fontSize: 8, padding: "2px 6px" }}
+            onClick={() => { setDays(p.days); setLoading(true); }}>
+            {p.label}
+          </button>
+        ))}
+        <span style={{ fontSize: 7, color: "var(--adm-ink-4)" }}>
+          por data do CARD (a config que o gerou)
+        </span>
+      </div>
 
       {data && (
         <div>

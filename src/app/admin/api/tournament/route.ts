@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
@@ -83,25 +83,35 @@ function paperCurve(startingUsd: number, pts: Array<{ t: number; pnl: number }>,
 /** Tournament ranking: every logging source (Agent A / Agent B / each raw
  *  tournament model / radar) scored head-to-head on the SAME market, ranked by
  *  NET expectancy. This is the leaderboard that decides which brain wins. */
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   await requireAdmin();
+  // Time window (27/07) — see the note in admin/api/backtest: the live round
+  // holds several config eras, and a lifetime average hides whether a fix
+  // worked. Suggestions cut by created_at (the config that produced the
+  // card); desk cycles by closed_at (they open and close in the same tick).
+  const rawDays = Number(req.nextUrl.searchParams.get("days") ?? "");
+  const days = Number.isFinite(rawDays) && rawDays > 0 && rawDays <= 3650 ? rawDays : null;
+  const since = days ? new Date(Date.now() - days * 86_400_000).toISOString() : null;
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
   // Paginated full read (A1): PostgREST caps a plain select at 1000 rows with
   // no error — a truncated ledger would rank the agents on stale data.
   type TourRow = { source: string | null; status: string; outcome_pct: number | null; probability: number | null; entry_price: number | null; target_price: number | null; stop_price: number | null; created_at: string; resolved_at: string | null };
-  const rows = await selectAllRows<TourRow>((from, to) =>
-    db.from("zion_suggestions")
+  const rows = await selectAllRows<TourRow>((from, to) => {
+    let q = db.from("zion_suggestions")
       .select("source, status, outcome_pct, probability, entry_price, target_price, stop_price, created_at, resolved_at")
       .is("archived_at", null) // live round only (docs/PLANO-ARQUIVO-RODADAS.md)
-      .order("created_at", { ascending: true }).range(from, to),
-  );
+      .order("created_at", { ascending: true }).range(from, to);
+    if (since) q = q.gte("created_at", since);
+    return q;
+  });
 
   // Paper wallets (Gate.io sim) — realized equity curve per source, shown beside
   // the flywheel curve once a wallet has matured (enough closed positions).
+  const paperClosedQ = db.from("paper_positions").select("source, pnl_usd, pnl_pct, closed_at").eq("status", "closed").is("archived_at", null).order("closed_at", { ascending: true }).limit(5000);
   const [{ data: paperClosedRows }, { data: paperAccts }, { data: deskOpenRows }] = await Promise.all([
-    db.from("paper_positions").select("source, pnl_usd, pnl_pct, closed_at").eq("status", "closed").is("archived_at", null).order("closed_at", { ascending: true }).limit(5000),
+    since ? paperClosedQ.gte("closed_at", since) : paperClosedQ,
     db.from("paper_accounts").select("source, starting_usd"),
     db.from("paper_positions").select("source").eq("status", "open").in("source", Object.keys(DESKS)),
   ]);
@@ -213,5 +223,5 @@ export async function GET(): Promise<NextResponse> {
     return (y.wins + y.losses) - (x.wins + x.losses);
   });
 
-  return NextResponse.json({ agents, minSample: MIN_SAMPLE, fetchedAt: new Date().toISOString() });
+  return NextResponse.json({ agents, minSample: MIN_SAMPLE, windowDays: days, fetchedAt: new Date().toISOString() });
 }

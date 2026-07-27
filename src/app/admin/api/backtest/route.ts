@@ -28,6 +28,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // Paginated full read (A1): PostgREST caps a plain select at 1000 rows with
   // no error — the headline stats must aggregate the WHOLE ledger.
   type StatRow = { status: string; outcome_pct: number | null; regime: string | null; entry_price: number | null; target_price: number | null; stop_price: number | null };
+  // Time window (27/07): the live round accumulates CONFIG ERAS — a headline
+  // averaged over everything can never show that a fix worked, which is
+  // exactly what the CEO hit ("se você não me fala, eu não saberia olhando
+  // pro painel"). Filtering by created_at is the honest cut: a card belongs
+  // to the config that PRODUCED it, not to the day it happened to resolve.
+  const rawDays = Number(req.nextUrl.searchParams.get("days") ?? "");
+  const days = Number.isFinite(rawDays) && rawDays > 0 && rawDays <= 3650 ? rawDays : null;
+  const since = days ? new Date(Date.now() - days * 86_400_000).toISOString() : null;
+
   // Live round only — archived test rounds stay in the DB but never in stats
   // (docs/PLANO-ARQUIVO-RODADAS.md).
   const allP = selectAllRows<StatRow>((from, to) => {
@@ -36,6 +45,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .is("archived_at", null)
       .order("created_at", { ascending: true }).range(from, to);
     if (source) q = q.eq("source", source);
+    if (since) q = q.gte("created_at", since);
     return q;
   });
   let recentQ = db.from("zion_suggestions")
@@ -43,6 +53,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .is("archived_at", null)
     .order("created_at", { ascending: false })
     .limit(40);
+  if (since) recentQ = recentQ.gte("created_at", since);
   if (source) recentQ = recentQ.eq("source", source);
 
   const [all, { data: recent }] = await Promise.all([allP, recentQ]);
