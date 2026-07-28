@@ -55,12 +55,22 @@ Simulação honesta, já na realidade dos **$300 de saldo** (decisão CEO):
   o motor de paper comum NÃO resolve essas posições (o 2.0 fecha as
   próprias, por convergência — não por alvo/stop).
 
-## F2 — validador de orderbook (pré-requisito do real) — 🔴
+## F2 — validador de orderbook (pré-requisito do real) — 🟡 (28/07: implementado, coleta pendente)
 
 Antes de qualquer depósito: conferir cada oportunidade contra o LIVRO real
-(bid/ask com profundidade) nas rotas/moedas medidas, registrando o
-preenchimento realista ao lado do teórico por ~1 semana. Saída: "o 0,30%
-teórico vira X% real e aguenta $Y por ordem".
+(bid/ask com profundidade), registrando o preenchimento realista ao lado do
+teórico. Saída: "o 0,30% teórico vira X% real e aguenta $Y por ordem".
+
+**Implementado (28/07):** `src/lib/zion/arb-realism.ts` (matemática de
+caminhada no livro, unit-testada — livro raso vira perda real, provado) +
+`src/lib/api/cex-orderbook.ts` (profundidade pública de binance/gateio/okx/
+bybit/mexc) + gancho no arbiter que, com `ARB_ORDERBOOK_CHECK=on`, caminha a
+profundidade real da melhor oportunidade por tick e loga `arb_realism`
+(net teórico vs realista, slippage, se encheu). **Pendente:** ligar a env em
+prod e coletar ~1 semana (o fetch ao vivo é só-prod — o proxy do sandbox
+bloqueia as CEX, então a matemática está testada mas o fetch não foi
+exercitado daqui). Depois: ler os `arb_realism` no admin e decidir tamanho
+real por moeda/rota.
 
 ## 💰 FEATURE GUARDADA: Funding Farming (renda neutra ~5-15% a.a.) — ⏸️
 

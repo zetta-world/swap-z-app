@@ -15,6 +15,8 @@
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
+import { fetchOrderbook } from "@/lib/api/cex-orderbook";
+import { assessRealism } from "@/lib/zion/arb-realism";
 import { recordEvent } from "@/lib/admin/track";
 
 const COST_PCT     = Number(process.env.ARB_COST_PCT     ?? 0.4);  // 2 taker legs + slippage buffer
@@ -37,7 +39,13 @@ const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase").split(",")
 // Alavanca 4: the universe nearly doubled (30 → ~55 symbols), so the book
 // scales with it. The per-symbol cooldown still guards against churning one
 // pair; the cap only bounds the aggregate.
-const DAILY_CAP    = Number(process.env.ARB_DAILY_CAP    ?? 40);   // round-trips per UTC day
+// Paper-measurement cap. 28/07: the desk hit the old 40/day by ~02:00 UTC and
+// sat idle 17h — it was CAPPING OUR OWN SAMPLE, making the measured +6.67%
+// an UNDERSTATEMENT of the real opportunity. Loosened for the paper phase so
+// the true daily edge is visible; tighten again (env) for real money, where a
+// cap is anti-churn safety, not a measurement limit. Per-symbol cooldown
+// (COOLDOWN_MIN) still prevents churning one pair.
+const DAILY_CAP    = Number(process.env.ARB_DAILY_CAP    ?? 240);  // round-trips per UTC day
 const COOLDOWN_MIN = Number(process.env.ARB_COOLDOWN_MIN ?? 30);   // per-symbol re-entry wait
 const SIZE_USD     = Number(process.env.ARB_SIZE_USD     ?? 50);   // per round-trip
 
@@ -85,6 +93,22 @@ export function findArbs(
 
 export interface ArbiterResult { detected: number; booked: number; skipped: string | null }
 
+/** F2: fetch real depth for one opportunity and log how much of the paper
+ *  spread survives real fills. Best-effort — logs `arb_realism` or nothing. */
+async function assessArbRealism(a: ArbOpportunity): Promise<void> {
+  const [buyBook, sellBook] = await Promise.all([
+    fetchOrderbook(a.buyVenue as CexSpotSource, a.symbol),   // buy on cheap venue → its asks
+    fetchOrderbook(a.sellVenue as CexSpotSource, a.symbol),  // sell on rich venue → its bids
+  ]);
+  if (!buyBook?.asks.length || !sellBook?.bids.length) return;
+  const r = assessRealism(buyBook.asks, sellBook.bids, SIZE_USD, a.spreadPct, COST_PCT);
+  recordEvent("arb_realism", { meta: {
+    symbol: a.symbol, buy: a.buyVenue, sell: a.sellVenue, sizeUsd: SIZE_USD,
+    theoreticalNet: r.theoreticalNetPct, realisticNet: r.realisticNetPct,
+    slippage: r.slippagePct, fullyFilled: r.fullyFilled,
+  } });
+}
+
 /** One arbiter tick: detect → cooldown/daily-cap gates → book instant paper
  *  round-trips into the 'arbiter' wallet. Zero LLM calls, best-effort. */
 export async function runArbiterScan(): Promise<ArbiterResult> {
@@ -109,6 +133,16 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
   }
   const arbs = all.filter((x) => !x.suspect);
   if (arbs.length === 0) return { detected: all.length, booked: 0, skipped: null };
+
+  // F2 realism (docs/PLANO-ARBITER-REAL.md): the paper spread assumes both legs
+  // fill at the top of book. When ARB_ORDERBOOK_CHECK is on, walk the REAL
+  // depth of the top opportunity and log theoretical-vs-realistic net — the
+  // bridge to real money. Best-effort, top-1/tick (2 fetches), never blocks
+  // booking. (Live fetch is prod-only; the walk math is unit-tested.)
+  if (process.env.ARB_ORDERBOOK_CHECK === "on") {
+    const top = arbs[0];
+    void assessArbRealism(top).catch(() => undefined);
+  }
 
   // Wallet (seeded in admin_kv setup; upsert keeps this idempotent).
   await db.from("paper_accounts").upsert(

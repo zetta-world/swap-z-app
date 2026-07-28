@@ -30,7 +30,10 @@ const EXIT_SPREAD    = Number(process.env.ARB2_EXIT_SPREAD_PCT ?? 0.05); // conv
 const MAX_HOLD_H     = Number(process.env.ARB2_MAX_HOLD_H      ?? 48);
 const SIZE_USD       = Number(process.env.ARB2_SIZE_USD        ?? 50);   // per leg; cycle locks 2×
 const STARTING_USD   = Number(process.env.ARB2_STARTING_USD    ?? 300);  // the CEO's real-seed scenario
-const DAILY_CAP      = Number(process.env.ARB2_DAILY_CAP       ?? 20);
+// Loosened 28/07 (was 20) — it was capping its own paper sample by 02:00 UTC.
+// Still bounded by capital: each cycle locks 2×SIZE, so ~3 hedges ride at once
+// regardless. Tighten via env for real money.
+const DAILY_CAP      = Number(process.env.ARB2_DAILY_CAP       ?? 120);
 const COOLDOWN_MIN   = Number(process.env.ARB2_COOLDOWN_MIN    ?? 30);
 const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase").split(",").map((s) => s.trim()).filter(Boolean);
 

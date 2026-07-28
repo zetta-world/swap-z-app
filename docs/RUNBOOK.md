@@ -58,7 +58,8 @@ aposentado; `deepseek-v4-flash` é o swap rápido/barato) · `kimi-k2.6` ·
 | `BACKTEST_RESOLVE_INTERVAL` | Velas da resolução | `5m` |
 | `BACKTEST_REGIME_FILTER` | Gate de regime no ledger (RANGING = nada; contra-tendência confirmada = rejeita). `off` desliga | on |
 | `BACKTEST_MIN_RR` | Reward:risk mínimo do bracket no ledger | `2` |
-| `ARB_DAILY_CAP` | Round-trips/dia do arbiter (universo ~55 símbolos) | `40` |
+| `ARB_DAILY_CAP` / `ARB2_DAILY_CAP` | Round-trips/dia (soltos p/ medir edge no papel; apertar p/ dinheiro real) | `240` / `120` |
+| `ARB_ORDERBOOK_CHECK` | `on` liga a F2: caminha a profundidade real do orderbook da melhor oportunidade e loga `arb_realism` (net teórico vs realista) | off |
 | `TOURNAMENT_CULL` | Corte automático de agente no vermelho com amostra (`culled:<source>` no admin_kv; apagar a chave = anistia) | on |
 | `PAPER_CHAMPION_MULT` | Multiplicador de posição do campeão no paper | `2` |
 | `ORACLE_HORIZON_H` | Horizonte das teses do Oráculo | `240` (10d) |
