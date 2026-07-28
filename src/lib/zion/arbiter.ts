@@ -93,6 +93,15 @@ export function findArbs(
 
 export interface ArbiterResult { detected: number; booked: number; skipped: string | null }
 
+/** Runtime toggle from admin_kv (true/false). Best-effort — false on any
+ *  hiccup so a KV blip never turns a feature silently on. */
+async function kvFlag(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>, key: string): Promise<boolean> {
+  try {
+    const { data } = await db.from("admin_kv").select("value").eq("key", key).maybeSingle();
+    return data?.value === "true";
+  } catch { return false; }
+}
+
 /** F2: fetch real depth for one opportunity and log how much of the paper
  *  spread survives real fills. Best-effort — logs `arb_realism` or nothing. */
 async function assessArbRealism(a: ArbOpportunity): Promise<void> {
@@ -135,13 +144,13 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
   if (arbs.length === 0) return { detected: all.length, booked: 0, skipped: null };
 
   // F2 realism (docs/PLANO-ARBITER-REAL.md): the paper spread assumes both legs
-  // fill at the top of book. When ARB_ORDERBOOK_CHECK is on, walk the REAL
-  // depth of the top opportunity and log theoretical-vs-realistic net — the
-  // bridge to real money. Best-effort, top-1/tick (2 fetches), never blocks
-  // booking. (Live fetch is prod-only; the walk math is unit-tested.)
-  if (process.env.ARB_ORDERBOOK_CHECK === "on") {
-    const top = arbs[0];
-    void assessArbRealism(top).catch(() => undefined);
+  // fill at the top of book. When enabled, walk the REAL depth of the top
+  // opportunity and log theoretical-vs-realistic net — the bridge to real
+  // money. Best-effort, top-1/tick (2 fetches), never blocks booking. Toggle
+  // via env ARB_ORDERBOOK_CHECK=on OR the admin_kv flag `arb_orderbook_check`
+  // (runtime, no redeploy). (Live fetch is prod-only; the walk math is tested.)
+  if (process.env.ARB_ORDERBOOK_CHECK === "on" || await kvFlag(db, "arb_orderbook_check")) {
+    void assessArbRealism(arbs[0]).catch(() => undefined);
   }
 
   // Wallet (seeded in admin_kv setup; upsert keeps this idempotent).
