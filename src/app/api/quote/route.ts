@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { recordEvent } from "@/lib/admin/track";
 import { isValidChain, validateAddress, validateAmount } from "@/lib/validate";
 import {
@@ -20,8 +20,18 @@ import type { ChainId } from "@/lib/chains";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const RL_LIST  = { windowMs: 60_000, max: 30 };   // multi-quote list (heavier)
-const RL_FIRM  = { windowMs: 60_000, max: 20 };   // firm quote per source
+// Cross-instance DURABLE limit (pentest 28/07). This route is unauthenticated
+// and every call hits a PAID upstream (0x /quote + LiFi) with Cache-Control
+// no-store, so nothing absorbs a flood. The old in-memory limiter is
+// per-Vercel-instance module state, so the effective ceiling was max ×
+// live-instances — under load Vercel fans out and an attacker burns the
+// owner's 0x/LiFi quota (a real bill) and exhausts it for legitimate users.
+// The durable limiter enforces ONE deployment-wide per-IP budget (fails open
+// to in-memory only if the DB is down). Limits are per IP/min; a debounced UI
+// stays well under them. NOTE: this bounds per-IP abuse, NOT a distributed
+// (many-IP) flood — that needs an upstream spend cap + WAF (see report).
+const RL_LIST  = { windowMs: 60_000, max: 40 };   // multi-quote list (heavier)
+const RL_FIRM  = { windowMs: 60_000, max: 25 };   // firm quote per source
 
 /**
  * /api/quote — unified quote router.
@@ -53,7 +63,7 @@ export async function GET(req: NextRequest) {
   const mode   = params.get("mode") === "quote" ? "quote" : "list";
 
   // ─── Rate limit ─────────────────────────────────────────────────────
-  const rl = rateLimit(`q:${mode}:${getClientId(req.headers)}`, mode === "quote" ? RL_FIRM : RL_LIST);
+  const rl = await rateLimitDurable(`q:${mode}:${getClientId(req.headers)}`, mode === "quote" ? RL_FIRM : RL_LIST);
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate_limited", retryAfter: rl.retryAfter },

@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useWalletAuth } from "@/lib/auth/client";
 import type { CexId, CexCredentials } from "@/lib/cex/types";
 import { useT } from "@/lib/i18n";
+import { richText } from "@/lib/i18n/rich-text";
 import { useConfirm } from "@/components/ui/ConfirmModal";
 import { cn } from "@/lib/cn";
 
@@ -258,7 +259,7 @@ export default function BackgroundAutopilotPanel({
               <div className="space-y-2.5">
                 <p
                   className="font-mono text-[10px] text-ink-3 leading-relaxed [&_b]:text-ink-2"
-                  dangerouslySetInnerHTML={{ __html: t("bgAutopilot.keepsRunning") }}
+                  dangerouslySetInnerHTML={richText(t("bgAutopilot.keepsRunning"))}
                 />
 
                 {/* Security consent */}
@@ -267,9 +268,9 @@ export default function BackgroundAutopilotPanel({
                     <Shield className="w-3 h-3" /> {t("bgAutopilot.securityHeading")}
                   </div>
                   <ul className="font-mono text-[9px] text-ink-3 leading-relaxed space-y-1 list-disc pl-3.5 [&_b]:text-ink-2">
-                    <li dangerouslySetInnerHTML={{ __html: t("bgAutopilot.securityBullet1") }} />
-                    <li dangerouslySetInnerHTML={{ __html: t("bgAutopilot.securityBullet2") }} />
-                    <li dangerouslySetInnerHTML={{ __html: t("bgAutopilot.securityBullet3") }} />
+                    <li dangerouslySetInnerHTML={richText(t("bgAutopilot.securityBullet1"))} />
+                    <li dangerouslySetInnerHTML={richText(t("bgAutopilot.securityBullet2"))} />
+                    <li dangerouslySetInnerHTML={richText(t("bgAutopilot.securityBullet3"))} />
                     <li>{t("bgAutopilot.securityBullet4")}</li>
                   </ul>
                 </div>
