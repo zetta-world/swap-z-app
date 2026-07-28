@@ -3,7 +3,13 @@ import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { checkSwapTarget, checkSwapSpender } from "@/lib/swap/trusted-targets";
+import { recordEvent } from "@/lib/admin/track";
+import { fetchZeroXQuote, ZEROX_CHAIN_IDS, ZEROX_NATIVE, isZeroXSupported } from "@/lib/api/zerox";
+import { fetchLiFiQuote, LIFI_CHAIN_IDS, LIFI_NATIVE, isLiFiSupported } from "@/lib/api/lifi";
+import { findToken } from "@/lib/tokens";
+import type { ChainId } from "@/lib/chains";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
@@ -79,4 +85,60 @@ export async function GET(): Promise<NextResponse> {
     note: "Verifique cada endereço no explorer antes de fixar. Cole envTargets/envSpenders na Vercel e faça redeploy.",
     fetchedAt: new Date().toISOString(),
   });
+}
+
+/**
+ * POST — AUTO-POPULATE. A firm quote is just an API call: no funds, no gas, no
+ * signature. So instead of the owner manually swapping on every chain, this
+ * fires one firm USDC→native quote per supported chain with a burner taker
+ * (an ERC-20 sell forces an allowance so 0x returns the spender), records the
+ * real target/spender via the same swap_intent event, and the GET above then
+ * shows them. One admin tap replaces N manual swaps and costs $0.
+ */
+const BURNER = "0x000000000000000000000000000000000000dEaD";
+const PROBE_CHAINS: ChainId[] = ["ethereum", "bsc", "polygon", "base", "arbitrum", "optimism", "avalanche"];
+
+export async function POST(): Promise<NextResponse> {
+  await requireAdmin();
+  const zeroXKey = process.env.ZEROX_API_KEY;
+  const lifiKey  = process.env.LIFI_API_KEY;
+  const probed: string[] = [];
+  const errors: string[] = [];
+
+  for (const chain of PROBE_CHAINS) {
+    const usdc = findToken(chain, "USDC");
+    if (!usdc || usdc.address === "native") { errors.push(`${chain}: sem USDC no registro`); continue; }
+    const sellAmount = (100n * 10n ** BigInt(usdc.decimals)).toString(); // 100 USDC
+
+    // 0x — same-chain USDC → native. Forces an allowance → captures spender.
+    if (zeroXKey && isZeroXSupported(chain) && ZEROX_CHAIN_IDS[chain]) {
+      try {
+        const q = await fetchZeroXQuote(
+          { chainId: ZEROX_CHAIN_IDS[chain]!, sellToken: usdc.address, buyToken: ZEROX_NATIVE, sellAmount, taker: BURNER, slippageBps: 50 },
+          zeroXKey,
+        );
+        recordEvent("swap_intent", { wallet: BURNER, meta: {
+          source: "0x", fromChain: chain, toChain: chain, probe: true,
+          chainId: ZEROX_CHAIN_IDS[chain], target: q.transaction?.to, spender: q.issues?.allowance?.spender,
+        } });
+        probed.push(`0x:${chain}`);
+      } catch (e) { errors.push(`0x:${chain}: ${e instanceof Error ? e.message.slice(0, 60) : "erro"}`); }
+    }
+
+    // LiFi — same-chain USDC → native.
+    if (isLiFiSupported(chain) && LIFI_CHAIN_IDS[chain]) {
+      try {
+        const q = await fetchLiFiQuote(
+          { fromChainId: LIFI_CHAIN_IDS[chain]!, toChainId: LIFI_CHAIN_IDS[chain]!, fromToken: usdc.address, toToken: LIFI_NATIVE, fromAmount: sellAmount, fromAddress: BURNER, toAddress: BURNER, slippageBps: 50 },
+          lifiKey,
+        );
+        recordEvent("swap_intent", { wallet: BURNER, meta: {
+          source: "lifi", fromChain: chain, toChain: chain, probe: true,
+          chainId: LIFI_CHAIN_IDS[chain], target: q.transactionRequest?.to, spender: q.estimate?.approvalAddress,
+        } });
+        probed.push(`lifi:${chain}`);
+      } catch (e) { errors.push(`lifi:${chain}: ${e instanceof Error ? e.message.slice(0, 60) : "erro"}`); }
+    }
+  }
+  return NextResponse.json({ ok: true, probed, errors, note: "Recarregue o painel — os endereços observados aparecem na tabela." });
 }
