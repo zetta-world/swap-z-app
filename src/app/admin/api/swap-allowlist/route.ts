@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { checkSwapTarget, checkSwapSpender } from "@/lib/swap/trusted-targets";
 import { recordEvent } from "@/lib/admin/track";
-import { fetchZeroXQuote, ZEROX_CHAIN_IDS, ZEROX_NATIVE, isZeroXSupported } from "@/lib/api/zerox";
+import { fetchZeroXPrice, ZEROX_CHAIN_IDS, ZEROX_NATIVE, isZeroXSupported } from "@/lib/api/zerox";
 import { fetchLiFiQuote, LIFI_CHAIN_IDS, LIFI_NATIVE, isLiFiSupported } from "@/lib/api/lifi";
 import { findToken } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
@@ -27,7 +27,9 @@ const CHAIN_NAME: Record<number, string> = {
   10: "optimism", 43114: "avalanche", 56: "bsc",
 };
 
-type EvtRow = { metadata: { meta?: { chainId?: number; source?: string; target?: string; spender?: string } } | null; created_at: string };
+// recordEvent stores the `meta` object FLAT in `metadata` (not nested under
+// metadata.meta) — confirmed against the live rows.
+type EvtRow = { metadata: { chainId?: number; source?: string; target?: string; spender?: string } | null; created_at: string };
 
 interface Obs { chainId: number; role: "target" | "spender"; address: string; source: string; count: number; first: string; last: string; enforced: boolean }
 
@@ -49,7 +51,7 @@ export async function GET(): Promise<NextResponse> {
   const agg = new Map<string, Obs>();
   const addr = (v: unknown) => (typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v) ? v.toLowerCase() : null);
   for (const r of rows) {
-    const m = r.metadata?.meta;
+    const m = r.metadata;
     if (!m || typeof m.chainId !== "number") continue;
     for (const role of ["target", "spender"] as const) {
       const a = addr(m[role]);
@@ -110,16 +112,22 @@ export async function POST(): Promise<NextResponse> {
     if (!usdc || usdc.address === "native") { errors.push(`${chain}: sem USDC no registro`); continue; }
     const sellAmount = (100n * 10n ** BigInt(usdc.decimals)).toString(); // 100 USDC
 
-    // 0x — same-chain USDC → native. Forces an allowance → captures spender.
+    // 0x — use /price (indicative): it returns the AllowanceHolder spender
+    // WITHOUT the balance validation that /quote does (a burner has no USDC, so
+    // /quote 400s — that was the "7 falharam"). In the AllowanceHolder flow the
+    // swap tx `to` and the approval spender are the SAME contract, so we record
+    // the spender as both (the owner still verifies on the explorer before
+    // pinning). Selling an ERC-20 (USDC) forces issues.allowance to be present.
     if (zeroXKey && isZeroXSupported(chain) && ZEROX_CHAIN_IDS[chain]) {
       try {
-        const q = await fetchZeroXQuote(
+        const p = await fetchZeroXPrice(
           { chainId: ZEROX_CHAIN_IDS[chain]!, sellToken: usdc.address, buyToken: ZEROX_NATIVE, sellAmount, taker: BURNER, slippageBps: 50 },
           zeroXKey,
         );
+        const spender = p.issues?.allowance?.spender;
         recordEvent("swap_intent", { wallet: BURNER, meta: {
           source: "0x", fromChain: chain, toChain: chain, probe: true,
-          chainId: ZEROX_CHAIN_IDS[chain], target: q.transaction?.to, spender: q.issues?.allowance?.spender,
+          chainId: ZEROX_CHAIN_IDS[chain], target: spender, spender,
         } });
         probed.push(`0x:${chain}`);
       } catch (e) { errors.push(`0x:${chain}: ${e instanceof Error ? e.message.slice(0, 60) : "erro"}`); }
