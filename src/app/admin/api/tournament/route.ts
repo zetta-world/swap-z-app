@@ -223,5 +223,37 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return (y.wins + y.losses) - (x.wins + x.losses);
   });
 
-  return NextResponse.json({ agents, minSample: MIN_SAMPLE, windowDays: days, fetchedAt: new Date().toISOString() });
+  // ── 🪦 GRAVEYARD ──────────────────────────────────────────────────────────
+  // The directional experiment is over (28/07): every LLM, both formats, all
+  // regimes — no edge. The agents were archived so the new round is the
+  // market-neutral desks only. Here lie the dead, with the epitaph of their
+  // WHOLE lived record (all archived suggestions), honestly.
+  const CAUSE: Record<string, string> = {
+    self_scan: "sem edge direcional", hybrid_scan: "3 cérebros, mesma sorte",
+    mistral_scan: "sem edge", grok_scan: "afogado em shorts", deepseek_scan: "sem edge",
+    kimi_scan: "sem edge", llama_scan: "sem edge", radar: "o controle honesto",
+    sniper: "morreu no zero", oracle_self: "a tese não salvou", oracle_mistral: "a tese não salvou",
+    oracle_grok: "a tese não salvou", oracle_deepseek: "a tese não salvou", oracle_kimi: "a tese não salvou",
+  };
+  const gy = await selectAllRows<{ source: string | null; status: string; outcome_pct: number | null }>((from, to) =>
+    db.from("zion_suggestions").select("source, status, outcome_pct")
+      .not("archived_at", "is", null)
+      .order("created_at", { ascending: true }).range(from, to),
+  );
+  const gAgg = new Map<string, { decided: number; sum: number; resolved: number }>();
+  for (const r of gy) {
+    if (!r.source || !(r.source in CAUSE)) continue;
+    const a = gAgg.get(r.source) ?? { decided: 0, sum: 0, resolved: 0 };
+    if (r.status !== "open") { a.resolved++; a.sum += Number(r.outcome_pct) || 0; }
+    if (["hit_target", "hit_stop", "win", "loss"].includes(r.status)) a.decided++;
+    gAgg.set(r.source, a);
+  }
+  const graveyard = [...gAgg.entries()].map(([source, a]) => ({
+    name: (AGENTS[source]?.name ?? source).replace(" (aposentado)", ""),
+    decided: a.decided,
+    net: a.resolved > 0 ? Math.round((a.sum / a.resolved - ROUND_TRIP_COST_PCT) * 100) / 100 : null,
+    cause: CAUSE[source],
+  })).filter((g) => g.decided > 0).sort((x, y) => (x.net ?? 0) - (y.net ?? 0));
+
+  return NextResponse.json({ agents, graveyard, minSample: MIN_SAMPLE, windowDays: days, fetchedAt: new Date().toISOString() });
 }

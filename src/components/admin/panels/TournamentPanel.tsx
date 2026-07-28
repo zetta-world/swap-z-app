@@ -18,7 +18,8 @@ type Agent = {
   paperCurve: number[]; paperClosed: number;
   sufficientSample: boolean;
 };
-type TT = { agents: Agent[]; minSample: number; fetchedAt: string };
+type Grave = { name: string; decided: number; net: number | null; cause: string };
+type TT = { agents: Agent[]; graveyard?: Grave[]; minSample: number; fetchedAt: string };
 
 const PAPER_MATURE = 8;
 const MEDAL = ["🥇", "🥈", "🥉"];
@@ -179,6 +180,27 @@ export default function TournamentPanel() {
                   <span style={{ color: "var(--adm-ink-3)", flexShrink: 0 }}>{a.open} abertos · {a.total} total</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {(data.graveyard?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 10, borderTop: "1px dashed var(--adm-border)" }}>
+              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 6 }}>
+                🪦 CEMITÉRIO — agentes direcionais aposentados (rodada arquivada)
+              </div>
+              {data.graveyard!.map((g, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, fontSize: 9, padding: "3px 0", alignItems: "center", opacity: 0.72 }}>
+                  <span style={{ flexShrink: 0 }}>✝️</span>
+                  <span style={{ color: "var(--adm-ink-3)", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: "line-through", textDecorationColor: "var(--adm-ink-4)" }}>
+                    {g.name}
+                  </span>
+                  <span style={{ color: "var(--adm-ink-4)", fontStyle: "italic", flexShrink: 0 }}>“{g.cause}”</span>
+                  <span style={{ color: netColor(g.net), flexShrink: 0, width: 52, textAlign: "right" }}>{pct(g.net)}</span>
+                </div>
+              ))}
+              <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 6, fontStyle: "italic" }}>
+                requiescant in pace · o veredito: IA não prevê direção em cripto. O edge vive nas mesas market-neutral.
+              </div>
             </div>
           )}
         </div>
