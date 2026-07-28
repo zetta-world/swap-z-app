@@ -20,6 +20,7 @@
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Alertas Odin | alertas mudos |
 | `AUTOPILOT_ENC_KEY` | Cripto das credenciais CEX server-side | autopilot background off |
 | `LIFI_API_KEY`, `ZEROX_API_KEY`, `TRANSAK_*` | Agregadores/on-ramp | fallbacks/feature off |
+| `QUOTE_GLOBAL_MAX` | Teto GLOBAL de chamadas ao upstream pago (0x/LiFi) por min — backstop de flood distribuído no `/api/quote`; abaixar se ligar WAF/alerta | `3000`/min |
 | `ZSWAP_COLLECTION_ADDRESS` | Coleção NFT (launch) | mint gate off |
 | `NEXT_PUBLIC_SITE_URL`, `BASE_URL`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` | Site/SEO/wallets | — |
 

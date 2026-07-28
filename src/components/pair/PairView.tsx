@@ -491,8 +491,8 @@ function AddressPanel({
     <div className="rounded-xl border border-white/5 bg-bg-1/30 divide-y divide-white/[0.04]">
       <AddrRow label="Token" value={baseAddress} symbol={baseSymbol} explorer={explorer ? `${explorer}/address/${baseAddress}` : undefined} onCopy={copy} />
       <AddrRow label="Pair"  value={pairAddress} symbol="contract" explorer={explorer ? `${explorer}/address/${pairAddress}` : undefined} onCopy={copy} />
-      {externalUrl && (
-        <a href={externalUrl} target="_blank" rel="noopener noreferrer"
+      {safeExternalUrl(externalUrl) && (
+        <a href={safeExternalUrl(externalUrl)} target="_blank" rel="noopener noreferrer"
            className="flex items-center gap-2 px-3.5 py-3 font-mono text-[11px] text-cyan/80 hover:text-cyan hover:bg-cyan/[0.04] transition-colors">
           <ExternalLink className="w-3 h-3" /> Open on DexScreener
         </a>

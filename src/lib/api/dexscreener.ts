@@ -42,7 +42,7 @@ export interface PairDetail {
   socials:     { type: string; url: string }[];
 }
 
-function pairToDetail(p: DSPair): PairDetail {
+export function pairToDetail(p: DSPair): PairDetail {
   return {
     chainId:     p.chainId ?? "",
     dex:         p.dexId ?? "—",

@@ -32,6 +32,9 @@ export const dynamic = "force-dynamic";
 // (many-IP) flood — that needs an upstream spend cap + WAF (see report).
 const RL_LIST  = { windowMs: 60_000, max: 40 };   // multi-quote list (heavier)
 const RL_FIRM  = { windowMs: 60_000, max: 25 };   // firm quote per source
+// Deployment-wide ceiling on paid-upstream (0x/LiFi) calls per minute — the
+// distributed-flood backstop the per-IP limit can't provide. See below.
+const QUOTE_GLOBAL_MAX = Number(process.env.QUOTE_GLOBAL_MAX ?? 3000);
 
 /**
  * /api/quote — unified quote router.
@@ -63,11 +66,27 @@ export async function GET(req: NextRequest) {
   const mode   = params.get("mode") === "quote" ? "quote" : "list";
 
   // ─── Rate limit ─────────────────────────────────────────────────────
+  // (1) Per-IP durable budget — bounds a single attacker across instances.
   const rl = await rateLimitDurable(`q:${mode}:${getClientId(req.headers)}`, mode === "quote" ? RL_FIRM : RL_LIST);
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate_limited", retryAfter: rl.retryAfter },
       { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
+  }
+  // (2) GLOBAL upstream budget (pentest 28/07) — a per-IP limit can't stop a
+  // DISTRIBUTED (many-IP / botnet) flood from running up the owner's paid
+  // 0x/LiFi bill. This is ONE deployment-wide ceiling on total upstream calls
+  // per minute; past it we return 503 WITHOUT touching the upstream, so the
+  // worst-case bill is capped instead of unbounded. Default 3000/min is far
+  // above any single-app legitimate need (≈50 quotes/s) and only trips on
+  // egregious abuse; tune down with QUOTE_GLOBAL_MAX if you add a WAF/alerting.
+  // Fails OPEN (skips the check) if the DB is down — never blocks legit trading.
+  const gb = await rateLimitDurable("q:global", { windowMs: 60_000, max: QUOTE_GLOBAL_MAX });
+  if (!gb.ok) {
+    return NextResponse.json(
+      { error: "quote_budget_exceeded", retryAfter: gb.retryAfter },
+      { status: 503, headers: { "Retry-After": String(gb.retryAfter), "Cache-Control": "no-store" } },
     );
   }
 
