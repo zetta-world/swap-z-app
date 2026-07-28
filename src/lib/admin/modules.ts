@@ -24,6 +24,7 @@ export type ModuleId =
   | "users-explorer"
   | "tier-control"
   | "whitelist"
+  | "swap-allowlist"
   | "kill-switches"
   | "platform-events";
 
@@ -175,6 +176,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "controls",
     defaultEnabled: true,
     defaultOrder: 7,
+  },
+  {
+    id: "swap-allowlist",
+    title: "SWAP ALLOWLIST",
+    subtitle: "observe router/spender · anti-drain",
+    icon: "⛨",
+    category: "controls",
+    defaultEnabled: true,
+    defaultOrder: 8,
   },
   {
     id: "kill-switches",

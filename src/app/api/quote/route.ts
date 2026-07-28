@@ -192,7 +192,14 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({ error: "0x_unavailable" }, { status: 400 });
         }
         const q = await fetchZeroXQuote(zxArgs, zeroXKey);
-        recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain, toChain, sellToken, buyToken } });
+        // Observe mode (pentest 28/07): record the ACTUAL router `to` + approval
+        // spender 0x returns, so the admin allow-list panel can show verified
+        // canonical addresses to pin (no hand-typing). Firm path only = exactly
+        // what ExecuteSwap signs.
+        recordEvent("swap_intent", { wallet: taker, meta: {
+          source, fromChain, toChain, sellToken, buyToken,
+          chainId: zxArgs.chainId, target: q.transaction?.to, spender: q.issues?.allowance?.spender,
+        } });
         return NextResponse.json(
           { ok: true, mode, source, result: q, normalized: normalizeZeroX(q, zxArgs.chainId, true) },
           { headers: { "Cache-Control": "no-store" } },
@@ -203,7 +210,10 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({ error: "lifi_unsupported_chain" }, { status: 400 });
         }
         const q = await fetchLiFiQuote(lfArgs, lifiKey);
-        recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain, toChain, sellToken, buyToken, crossChain: true } });
+        recordEvent("swap_intent", { wallet: taker, meta: {
+          source, fromChain, toChain, sellToken, buyToken, crossChain: true,
+          chainId: lfArgs.fromChainId, target: q.transactionRequest?.to, spender: q.estimate?.approvalAddress,
+        } });
         return NextResponse.json(
           { ok: true, mode, source, result: q, normalized: normalizeLiFi(q) },
           { headers: { "Cache-Control": "no-store" } },

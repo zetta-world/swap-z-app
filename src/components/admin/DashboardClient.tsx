@@ -10,6 +10,7 @@ import TierControlPanel   from "./panels/TierControlPanel";
 import AuditLogPanel      from "./panels/AuditLogPanel";
 import KillSwitchesPanel  from "./panels/KillSwitchesPanel";
 import WhitelistPanel         from "./panels/WhitelistPanel";
+import SwapAllowlistPanel     from "./panels/SwapAllowlistPanel";
 import PlatformEventsPanel    from "./panels/PlatformEventsPanel";
 import BacktestPanel          from "./panels/BacktestPanel";
 import TournamentPanel        from "./panels/TournamentPanel";
@@ -53,6 +54,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "system-health":      <SystemHealthPanel />,
   "kill-switches":      <KillSwitchesPanel />,
   "whitelist":          <WhitelistPanel />,
+  "swap-allowlist":     <SwapAllowlistPanel />,
   "platform-events":    <PlatformEventsPanel />,
 };
 
