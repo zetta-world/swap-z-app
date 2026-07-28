@@ -1,5 +1,6 @@
 // DexScreener API — free, no key
 // https://docs.dexscreener.com/api/reference
+import { safeExternalUrl } from "@/lib/safe-url";
 
 interface DSPair {
   chainId?:    string;
@@ -86,10 +87,14 @@ function pairToDetail(p: DSPair): PairDetail {
     marketCap:     Number(p.marketCap)   || 0,
     pairCreatedAt: Number(p.pairCreatedAt) || 0,
     imageUrl:      p.info?.imageUrl,
-    websites:      (p.info?.websites ?? []).map((w) => w.url ?? "").filter(Boolean),
+    // XSS boundary (pentest 28/07): these URLs are attacker-controlled token
+    // metadata rendered as <a href>. Drop any non-http(s) scheme HERE so a
+    // javascript: payload never reaches a render sink. Also re-guarded at the
+    // sink (PairView) as defense-in-depth.
+    websites:      (p.info?.websites ?? []).map((w) => safeExternalUrl(w.url)).filter((u): u is string => !!u),
     socials:       (p.info?.socials  ?? [])
-      .map((s) => ({ type: s.type ?? "", url: s.url ?? "" }))
-      .filter((s) => s.url),
+      .map((s) => ({ type: s.type ?? "", url: safeExternalUrl(s.url) }))
+      .filter((s): s is { type: string; url: string } => !!s.url),
   };
 }
 
