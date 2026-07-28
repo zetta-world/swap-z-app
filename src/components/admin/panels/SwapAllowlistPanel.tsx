@@ -26,20 +26,37 @@ function Copyable({ label, value }: { label: string; value: string }) {
 export default function SwapAllowlistPanel() {
   const [data, setData] = useState<Resp | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const [probeMsg, setProbeMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/admin/api/swap-allowlist")
-      .then((r) => r.json())
-      .then((j) => { setData(j); setLoaded(true); })
-      .catch(() => setLoaded(true));
-  }, []);
+  const reload = () => fetch("/admin/api/swap-allowlist").then((r) => r.json()).then((j) => { setData(j); setLoaded(true); }).catch(() => setLoaded(true));
+  useEffect(() => { reload(); }, []);
+
+  const autoPopulate = async () => {
+    setProbing(true); setProbeMsg(null);
+    try {
+      const r = await fetch("/admin/api/swap-allowlist", { method: "POST" });
+      const j = await r.json();
+      setProbeMsg(`✓ ${(j.probed ?? []).length} redes coletadas${(j.errors ?? []).length ? ` · ${j.errors.length} falharam` : ""}`);
+      await reload();
+    } catch { setProbeMsg("falha ao coletar — tente de novo"); }
+    finally { setProbing(false); }
+  };
 
   const enforcing = data?.enforcing.targets || data?.enforcing.spenders;
 
   return (
     <TerminalPanel id="swap-allowlist" title="SWAP ALLOWLIST" subtitle="observe → verifique → fixe (anti-dreno)" icon="⛨" source="platform_events/swap_intent">
-      <div style={{ fontSize: 9, color: enforcing ? "var(--adm-green)" : "var(--adm-amber)", marginBottom: 10, letterSpacing: "0.06em" }}>
+      <div style={{ fontSize: 9, color: enforcing ? "var(--adm-green)" : "var(--adm-amber)", marginBottom: 8, letterSpacing: "0.06em" }}>
         {enforcing ? "✓ ENFORCING — envs de allowlist ativas (swaps fora da lista são bloqueados)" : "⚠ OBSERVANDO — allowlist DESLIGADA. Colete, verifique no explorer e cole as envs abaixo na Vercel + redeploy."}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <button onClick={autoPopulate} disabled={probing}
+          style={{ fontSize: 9, letterSpacing: "0.05em", padding: "5px 10px", borderRadius: 3, cursor: probing ? "wait" : "pointer",
+            color: "var(--adm-cyan)", background: "rgba(0 229 255 / 0.06)", border: "1px solid rgba(0 229 255 / 0.25)" }}>
+          {probing ? "coletando…" : "⚡ popular automaticamente (grátis · sem swap)"}
+        </button>
+        {probeMsg && <span style={{ fontSize: 8, color: "var(--adm-ink-3)" }}>{probeMsg}</span>}
       </div>
       {!loaded && <div className="adm-shimmer" style={{ height: 60 }} />}
       {loaded && data && (
