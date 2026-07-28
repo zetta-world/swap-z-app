@@ -18,6 +18,24 @@ import { CHAIN_BY_ID } from "@/lib/chains";
 import type { ZxQuoteResponse } from "@/lib/api/zerox";
 import { ZEROX_CHAIN_IDS } from "@/lib/api/zerox";
 import { LIFI_CHAIN_IDS } from "@/lib/api/lifi";
+import { checkSwapTarget, checkSwapSpender } from "@/lib/swap/trusted-targets";
+
+// Bound the 0x approval to the exact sell amount by default (blast-radius:
+// only this swap, not the wallet's whole token balance forever). Matches what
+// the LiFi path already does. Set NEXT_PUBLIC_ZEROX_INFINITE_APPROVAL=true to
+// restore the old persistent-approval UX after pinning a spender allow-list.
+const ZEROX_INFINITE_APPROVAL = process.env.NEXT_PUBLIC_ZEROX_INFINITE_APPROVAL === "true";
+// Abort a swap whose spender/target isn't allow-listed — but ONLY when the
+// owner has configured a list for this chain (checkSwap*.configured). Default
+// (no env) = no-op, so live swaps are unchanged. Throws to stop signing.
+function assertTrusted(chainId: number, to: string | null | undefined, spender: string | null | undefined) {
+  const tgt = checkSwapTarget(chainId, to);
+  if (tgt.configured && !tgt.ok) throw new Error(`untrusted swap target — ${tgt.reason}`);
+  if (spender != null) {
+    const sp = checkSwapSpender(chainId, spender);
+    if (sp.configured && !sp.ok) throw new Error(`untrusted approval spender — ${sp.reason}`);
+  }
+}
 import type { LfQuote } from "@/lib/api/lifi";
 import type { JupQuote, JupSwapResponse } from "@/lib/api/jupiter";
 import type { QuoteSource } from "@/lib/api/quote-types";
@@ -355,12 +373,15 @@ export default function ExecuteSwap({
         // One-time ERC-20 approval of the 0x AllowanceHolder spender.
         // MaxUint256 so the user never sees this step again for this token.
         if (q.issues?.allowance && fromToken.address !== "native") {
+          // Spender comes from the quote response — verify it before approving
+          // (no-op unless an allow-list is configured for this chain).
+          assertTrusted(targetChainId, undefined, q.issues.allowance.spender);
           setPhase("approving");
           const approveHash = await writeContractAsync({
             address:      fromToken.address as Hex,
             abi:          erc20Abi,
             functionName: "approve",
-            args:         [q.issues.allowance.spender as Hex, 2n ** 256n - 1n],
+            args:         [q.issues.allowance.spender as Hex, ZEROX_INFINITE_APPROVAL ? 2n ** 256n - 1n : BigInt(sellAmount)],
             chainId:      targetChainId,
           });
           if (publicClient) await publicClient.waitForTransactionReceipt({ hash: approveHash });
@@ -380,6 +401,7 @@ export default function ExecuteSwap({
         }
 
         // AllowanceHolder = a single plain transaction. No EIP-712 signature.
+        assertTrusted(targetChainId, q.transaction.to, undefined);
         setPhase("needs_tx_signature");
         const hash = await sendTransactionAsync({
           to:      q.transaction.to as Hex,
@@ -419,6 +441,7 @@ export default function ExecuteSwap({
           args:         [address as Hex, lfQuote.estimate.approvalAddress as Hex],
         });
         if (allowance < BigInt(sellAmount)) {
+          assertTrusted(targetChainId, undefined, lfQuote.estimate.approvalAddress);
           setPhase("approving");
           const approveHash = await writeContractAsync({
             address:      fromToken.address as Hex,
@@ -430,6 +453,7 @@ export default function ExecuteSwap({
           await publicClient.waitForTransactionReceipt({ hash: approveHash });
         }
       }
+      assertTrusted(targetChainId, tx.to, undefined);
       setPhase("needs_tx_signature");
       const hash = await sendTransactionAsync({
         to:      tx.to as Hex,
