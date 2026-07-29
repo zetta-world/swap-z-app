@@ -130,7 +130,12 @@ export async function POST(): Promise<NextResponse> {
           chainId: ZEROX_CHAIN_IDS[chain], target: spender, spender,
         } });
         probed.push(`0x:${chain}`);
-      } catch (e) { errors.push(`0x:${chain}: ${e instanceof Error ? e.message.slice(0, 60) : "erro"}`); }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "erro";
+        errors.push(`0x:${chain}: ${msg.slice(0, 80)}`);
+        // Log the exact 0x failure so it's diagnosable without another tap.
+        recordEvent("swap_probe_error", { meta: { source: "0x", chain, msg: msg.slice(0, 200) } });
+      }
     }
 
     // LiFi — same-chain USDC → native.
