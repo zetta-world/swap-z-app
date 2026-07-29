@@ -97,7 +97,12 @@ export async function GET(): Promise<NextResponse> {
  * real target/spender via the same swap_intent event, and the GET above then
  * shows them. One admin tap replaces N manual swaps and costs $0.
  */
-const BURNER = "0x000000000000000000000000000000000000dEaD";
+// 0x v2 validates the taker's EIP-55 checksum and rejects the 0x…dEaD burn
+// address ("Invalid ethereum user address"). Use a real, valid checksummed EOA
+// — vitalik.eth, the canonical read-only test taker in 0x's own examples. No
+// funds move and nothing is signed; it's only used to fetch an indicative
+// quote. (LiFi accepted the burn address; 0x is stricter.)
+const BURNER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 const PROBE_CHAINS: ChainId[] = ["ethereum", "bsc", "polygon", "base", "arbitrum", "optimism", "avalanche"];
 
 export async function POST(): Promise<NextResponse> {
@@ -119,6 +124,8 @@ export async function POST(): Promise<NextResponse> {
     // the spender as both (the owner still verifies on the explorer before
     // pinning). Selling an ERC-20 (USDC) forces issues.allowance to be present.
     if (zeroXKey && isZeroXSupported(chain) && ZEROX_CHAIN_IDS[chain]) {
+      // Space out 0x calls — the free tier 429s on a tight 7-chain burst.
+      await new Promise((r) => setTimeout(r, 350));
       try {
         const p = await fetchZeroXPrice(
           { chainId: ZEROX_CHAIN_IDS[chain]!, sellToken: usdc.address, buyToken: ZEROX_NATIVE, sellAmount, taker: BURNER, slippageBps: 50 },
