@@ -19,10 +19,12 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
-import { selectPlaybook, isPlan, type StrategyDecision } from "@/lib/zion/strategist";
+import { selectPlaybook, isPlan, type StrategyDecision, type StrategyPlan } from "@/lib/zion/strategist";
+import { runStrategistAi, STRAT_AI } from "@/lib/zion/strategist-ai";
 
 /** A mesa mecânica — determinística, zero-LLM. É o CONTROLE do experimento. */
 export const STRAT_MECH = "strat_mech";
+export { STRAT_AI };
 
 export interface RagnarokRun {
   scanned: number;
@@ -79,4 +81,42 @@ export async function runStrategistScan(
     out.logged = rows.length;
   } catch { /* best-effort: o próximo tick tenta de novo */ }
   return out;
+}
+
+/** Grava um conjunto de planos já decididos sob um `source`. Compartilhado
+ *  pelas duas mesas para que a linha do ledger seja idêntica em forma — a
+ *  comparação mecânico vs IA só é honesta se a única diferença for QUEM decidiu. */
+async function persist(plans: StrategyPlan[], indicators: SymbolIndicators[], source: string): Promise<number> {
+  if (plans.length === 0) return 0;
+  const db = getSupabaseAdmin();
+  if (!db) return 0;
+  const rows = plans.map((p) => ({
+    symbol: p.symbol, kind: p.playbook, side: "buy" as const,
+    ref_price: p.entry, entry_price: p.entry,
+    target_price: p.target, stop_price: p.stop,
+    probability: null,
+    regime: indicators.find((i) => i.symbol === p.symbol)?.regime ?? null,
+    horizon_hours: p.horizonHours, source,
+  }));
+  try { await db.from("zion_suggestions").insert(rows); return rows.length; }
+  catch { return 0; }
+}
+
+export interface RagnarokAiRun {
+  proposed: number; accepted: number; adjusted: number; vetoed: number; logged: number;
+}
+
+/**
+ * A MESA DE IA (S4). Recebe os mesmos indicadores do ferreiro mecânico, deixa o
+ * modelo aceitar/vetar/ajustar cada plano, e grava sob `strat_ai`.
+ *
+ * As duas mesas veem O MESMO mercado no MESMO tick e escrevem em ledgers
+ * separados — é isso que torna a comparação limpa. Se a IA vale alguma coisa
+ * nesta pergunta, a carteira dela cresce mais que a do VÖLUNDR; se não vale,
+ * fica atrás de um bot determinístico e a resposta também é clara.
+ */
+export async function runStrategistAiScan(indicators: SymbolIndicators[]): Promise<RagnarokAiRun> {
+  const r = await runStrategistAi(indicators);
+  const logged = await persist(r.plans, indicators, STRAT_AI);
+  return { proposed: r.proposed, accepted: r.accepted, adjusted: r.adjusted, vetoed: r.vetoed, logged };
 }

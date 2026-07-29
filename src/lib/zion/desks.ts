@@ -97,6 +97,14 @@ export const DESKS: Desk[] = [
     tests: "escolher o playbook do momento (range/pullback/reversão) sem IA — o CONTROLE",
   },
 
+  {
+    source: "strat_ai", name: "MÍMIR", sigil: "ᛘ",
+    who: "a cabeça sábia no poço: aconselha o ferreiro — aceita, veta ou corrige",
+    style: "swing", venue: "cex", direction: "long_only", brain: "llm",
+    model: "papel brain (Mistral)", horizonHours: 48, scoreboard: "paper", status: "live",
+    tests: "a IA escolhe a estratégia do momento melhor que o bot determinístico?",
+  },
+
   // ── Vigia sem IA (grupo de controle histórico) ──
   {
     source: "radar", name: "HEIMDALL", sigil: "ᚻ",

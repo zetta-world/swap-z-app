@@ -8,7 +8,7 @@ import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
 import { runOracleScan } from "@/lib/zion/oracle";
-import { runStrategistScan } from "@/lib/zion/ragnarok";
+import { runStrategistScan, runStrategistAiScan } from "@/lib/zion/ragnarok";
 import { runRetroSweep } from "@/lib/zion/retro";
 import { runPaperAgent } from "@/lib/paper/engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -111,6 +111,14 @@ export async function POST(req: NextRequest) {
         // é grátis e não pode ficar refém de uma falha de LLM lá embaixo.
         if (!gates.pause_ragnarok) {
           try { await runStrategistScan(marketData.indicators); } catch { /* best-effort */ }
+        }
+        // A MESA DE IA (MÍMIR) — mesmo mercado, mesmo tick, ledger separado.
+        // Gate próprio porque esta gasta token e a mecânica não: cortar custo
+        // não pode calar o controle junto. É desta comparação que sai a resposta
+        // à tese do dono — a IA escolhe a estratégia do momento melhor que um
+        // bot determinístico?
+        if (!gates.pause_ragnarok_ai) {
+          try { await runStrategistAiScan(marketData.indicators); } catch { /* best-effort */ }
         }
 
         // A/B: run Claude AND every configured direct provider (DeepSeek / Kimi /

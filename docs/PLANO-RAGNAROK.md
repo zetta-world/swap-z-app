@@ -73,7 +73,15 @@ painel Paper já leem por source.
   ficar refém de falha de LLM). `strat_mech` entrou em `PAPER_SOURCES` e no
   torneio. 🟢
 - [ ] **S3 — DEX**: rodar o seletor sobre pares DEX via `getDexSymbolIndicators`. 🔴
-- [ ] **S4 — camada IA**: `strat_ai` aceita/veta/ajusta a sugestão mecânica. 🔴
+- [x] **S4 — camada IA**: `strategist-ai.ts` — **MÍMIR** (`strat_ai`). A IA NÃO é
+  perguntada "pra onde vai o preço?"; recebe o retrato técnico + o plano do
+  ferreiro e responde uma pergunta de OFÍCIO: é o playbook certo pra este
+  momento e a geometria está bem posta? Pode **aceitar / vetar / ajustar**.
+  Duas travas em código (não no prompt): todo ajuste volta pelo
+  `buildLongBracket` (mesmo portão do mecânico) e long-only é estrutural —
+  não existe campo pra short e o bracket reprova stop acima da entrada.
+  Âncora de escala de 10% mata o deslize de casa decimal. 17 testes. Gate
+  `pause_ragnarok_ai` separado do mecânico: cortar custo não cala o controle. 🟢
 - [ ] **S5 — painel**: card "Ragnarök" — carteira USDT por playbook, mech vs IA. 🔴
 
 ## S6 — A FROTA: nomes vikings + separação por estilo (29/07) 🟢
