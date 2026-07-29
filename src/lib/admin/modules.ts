@@ -12,6 +12,7 @@ export type ModuleId =
   | "finance"
   | "backtest"
   | "tournament"
+  | "ragnarok"
   | "paper"
   | "traffic"
   | "ai-controls"
@@ -119,6 +120,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "TOURNAMENT",
     subtitle: "agents & models ranked by net expectancy",
     icon: "♛",
+    category: "dashboard",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
+    id: "ragnarok",
+    title: "RAGNARÖK",
+    subtitle: "acumulação de USDT · mecânico vs IA · qual estratégia paga",
+    icon: "ᚱ",
     category: "dashboard",
     defaultEnabled: true,
     defaultOrder: 5,

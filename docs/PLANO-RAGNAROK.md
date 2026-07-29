@@ -72,7 +72,16 @@ painel Paper já leem por source.
   Roda no tick logo após os indicadores, com try próprio (é grátis, não pode
   ficar refém de falha de LLM). `strat_mech` entrou em `PAPER_SOURCES` e no
   torneio. 🟢
-- [ ] **S3 — DEX**: rodar o seletor sobre pares DEX via `getDexSymbolIndicators`. 🔴
+- [ ] **S3 — DEX**: 🔴 **maior do que parecia** — descoberto em 29/07 que toda a
+  camada de resolução é CEX-shaped: `resolveOpenSuggestions` precifica por
+  klines da Binance e o `paper/engine` preenche com `gateioSpot`. Um token
+  só-DEX **nunca preencheria nem resolveria** — ficaria aberto para sempre,
+  poluindo o ledger. **É por isso que DEX nunca foi testado**: não faltou
+  vontade, faltou encanamento. Exige (a) migration com `chain`/`pool_address`
+  em `zion_suggestions`, (b) resolver por `getOHLCV` do pool quando houver
+  pool, (c) fill do paper pelo mesmo preço. Fazer com o encanamento certo, não
+  com gambiarra — uma mesa que loga sugestão que nunca resolve é pior que
+  nenhuma mesa.
 - [x] **S4 — camada IA**: `strategist-ai.ts` — **MÍMIR** (`strat_ai`). A IA NÃO é
   perguntada "pra onde vai o preço?"; recebe o retrato técnico + o plano do
   ferreiro e responde uma pergunta de OFÍCIO: é o playbook certo pra este
@@ -82,7 +91,11 @@ painel Paper já leem por source.
   não existe campo pra short e o bracket reprova stop acima da entrada.
   Âncora de escala de 10% mata o deslize de casa decimal. 17 testes. Gate
   `pause_ragnarok_ai` separado do mecânico: cortar custo não cala o controle. 🟢
-- [ ] **S5 — painel**: card "Ragnarök" — carteira USDT por playbook, mech vs IA. 🔴
+- [x] **S5 — painel**: `RagnarokPanel` + `/admin/api/ragnarok`. Mostra, nesta
+  ordem: **USDT acumulado por mesa** (a régua do mandato — vem primeiro),
+  **qual playbook paga** (range vs pullback vs reversão) e **o duelo**
+  mecânico vs IA no mesmo mercado, com o cruzamento mesa × playbook para ver
+  se a IA muda a ESCOLHA de estratégia, não só os níveis. 🟢
 
 ## S6 — A FROTA: nomes vikings + separação por estilo (29/07) 🟢
 
