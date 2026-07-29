@@ -28,6 +28,7 @@ export default function SwapAllowlistPanel() {
   const [loaded, setLoaded] = useState(false);
   const [probing, setProbing] = useState(false);
   const [probeMsg, setProbeMsg] = useState<string | null>(null);
+  const [probeErrs, setProbeErrs] = useState<string[]>([]);
 
   const reload = () => fetch("/admin/api/swap-allowlist").then((r) => r.json()).then((j) => { setData(j); setLoaded(true); }).catch(() => setLoaded(true));
   useEffect(() => { reload(); }, []);
@@ -37,7 +38,8 @@ export default function SwapAllowlistPanel() {
     try {
       const r = await fetch("/admin/api/swap-allowlist", { method: "POST" });
       const j = await r.json();
-      setProbeMsg(`✓ ${(j.probed ?? []).length} redes coletadas${(j.errors ?? []).length ? ` · ${j.errors.length} falharam` : ""}`);
+      setProbeMsg(`✓ ${(j.probed ?? []).length} coletadas${(j.errors ?? []).length ? ` · ${j.errors.length} falharam` : ""}`);
+      setProbeErrs(j.errors ?? []);
       await reload();
     } catch { setProbeMsg("falha ao coletar — tente de novo"); }
     finally { setProbing(false); }
@@ -58,6 +60,11 @@ export default function SwapAllowlistPanel() {
         </button>
         {probeMsg && <span style={{ fontSize: 8, color: "var(--adm-ink-3)" }}>{probeMsg}</span>}
       </div>
+      {probeErrs.length > 0 && (
+        <div style={{ marginBottom: 10, fontSize: 8, color: "var(--adm-ink-4)", fontFamily: "monospace", lineHeight: 1.5 }}>
+          {probeErrs.slice(0, 8).map((e, i) => <div key={i} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>· {e}</div>)}
+        </div>
+      )}
       {!loaded && <div className="adm-shimmer" style={{ height: 60 }} />}
       {loaded && data && (
         <div>
