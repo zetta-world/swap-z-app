@@ -23,8 +23,6 @@ export const LIFI_CHAIN_IDS: Partial<Record<ChainId, number>> = {
   arbitrum:  42161,
   optimism:  10,
   avalanche: 43114,
-  linea:     59144,
-  zksync:    324,
   // Solana — LiFi's synthetic chain id for mainnet-beta. Same-chain Solana
   // quotes route through Jupiter (better depth); LiFi handles SOL↔EVM bridges.
   solana:    1151111081099710,

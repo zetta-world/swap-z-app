@@ -91,10 +91,8 @@ export const DEFAULT_TOKENS: Token[] = [
   { symbol: "USDC",  name: "USD Coin",      chain: "avalanche", address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", decimals: 6, logo: L.USDC,  color: "#2775CA", priceUsd: 1.00, riskScore: 3, tags: ["stablecoin"] },
 
   // ─── zkSync ───────────────────────────────────────────────────────────
-  { symbol: "ETH",   name: "Ethereum",      chain: "zksync",   address: "native", decimals: 18, logo: L.ETH,   color: "#627EEA", priceUsd: 2600, riskScore: 4, tags: ["native"] },
 
   // ─── Linea ────────────────────────────────────────────────────────────
-  { symbol: "ETH",   name: "Ethereum",      chain: "linea",    address: "native", decimals: 18, logo: L.ETH,   color: "#627EEA", priceUsd: 2600, riskScore: 4, tags: ["native"] },
 
   // ─── Solana ───────────────────────────────────────────────────────────
   { symbol: "SOL",   name: "Solana",        chain: "solana",   address: "native", decimals: 9,  logo: L.SOL,   color: "#14F195", priceUsd: 175,   riskScore: 5,  tags: ["native"] },

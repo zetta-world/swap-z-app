@@ -37,8 +37,6 @@ const GECKO_NETWORK: Record<string, string> = {
   arbitrum:  "arbitrum",
   optimism:  "optimism",
   avalanche: "avax",
-  zksync:    "zksync",
-  linea:     "linea",
   solana:    "solana",
 };
 
@@ -51,8 +49,6 @@ const COINGECKO_NATIVE_ID: Record<string, string> = {
   arbitrum:  "ethereum",
   optimism:  "ethereum",
   avalanche: "avalanche-2",
-  zksync:    "ethereum",
-  linea:     "ethereum",
   solana:    "solana",
 };
 

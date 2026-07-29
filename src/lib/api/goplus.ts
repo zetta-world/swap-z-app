@@ -9,8 +9,6 @@ const CHAIN_IDS: Record<string, string> = {
   arbitrum:  "42161",
   optimism:  "10",
   avalanche: "43114",
-  zksync:    "324",
-  linea:     "59144",
 };
 
 export interface GoPlusTokenSecurity {

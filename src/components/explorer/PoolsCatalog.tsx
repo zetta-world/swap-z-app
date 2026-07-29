@@ -391,7 +391,7 @@ function networkToChain(network: string): ChainId | null {
   const m: Record<string, ChainId> = {
     eth: "ethereum", bsc: "bsc", polygon_pos: "polygon", base: "base",
     arbitrum: "arbitrum", optimism: "optimism", avax: "avalanche",
-    zksync: "zksync", linea: "linea", solana: "solana",
+    solana: "solana",
   };
   return m[network] ?? null;
 }
@@ -401,7 +401,7 @@ function internalChainToDsSlug(chain: ChainId | null): string | null {
   const m: Record<string, string> = {
     ethereum: "ethereum", bsc: "bsc", polygon: "polygon", base: "base",
     arbitrum: "arbitrum", optimism: "optimism", avalanche: "avalanche",
-    linea: "linea", zksync: "zksync", solana: "solana",
+    solana: "solana",
   };
   return m[chain] ?? null;
 }

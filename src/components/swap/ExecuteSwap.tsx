@@ -11,6 +11,7 @@ import {
 } from "wagmi";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
+import { verifyJupiterTransaction, guardEnabled } from "@/lib/swap/solana-guard";
 import { erc20Abi, type Hex } from "viem";
 import type { Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
@@ -313,6 +314,23 @@ export default function ExecuteSwap({
         setPhase("needs_tx_signature");
         const swapTxBytes = Buffer.from(jupResult.swap.swapTransaction, "base64");
         const tx = VersionedTransaction.deserialize(swapTxBytes);
+
+        // GUARD (29/07): em Solana a carteira assina o PACOTE INTEIRO de
+        // instruções que a Jupiter montou — não há `to` nem spender pra fixar
+        // numa allowlist como no EVM. Uma instrução a mais escondida no blob
+        // (SetAuthority, CloseAccount) seria autorizada junto com o swap.
+        // Então verificamos QUEM a transação invoca antes de assinar, e
+        // recusamos qualquer programa fora do conjunto de um swap legítimo.
+        // Fail-closed: transação ilegível também é recusada.
+        if (guardEnabled()) {
+          const verdict = verifyJupiterTransaction(tx);
+          if (!verdict.ok) {
+            setError(verdict.reason ?? "Transação recusada pela verificação de segurança.");
+            setPhase("tx_failed");
+            return;
+          }
+        }
+
         const signed = await sol.signTransaction(tx);
         const sig = await solConn.sendRawTransaction(signed.serialize(), {
           skipPreflight: false,
@@ -833,7 +851,6 @@ function explorerForChain(chain: ChainId): string {
     arbitrum:  "https://arbiscan.io",
     optimism:  "https://optimistic.etherscan.io",
     avalanche: "https://snowtrace.io",
-    linea:     "https://lineascan.build",
   };
   return map[chain] ?? "https://etherscan.io";
 }

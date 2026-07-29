@@ -10,8 +10,6 @@ export type ChainId =
   | "arbitrum"
   | "optimism"
   | "avalanche"
-  | "zksync"
-  | "linea"
   | "solana";
 
 export interface Chain {
@@ -143,28 +141,6 @@ export const CHAINS: Chain[] = [
     nativeToken: "AVAX",
     explorer: "https://snowtrace.io",
     logo: NL.avalanche,
-  },
-  {
-    id: "zksync",
-    name: "zkSync Era",
-    short: "ZK",
-    evm: true,
-    chainId: 324,
-    color: "#8C8DFC",
-    gradient: "linear-gradient(135deg,#8C8DFC,#5253B5)",
-    nativeToken: "ETH",
-    explorer: "https://explorer.zksync.io",
-  },
-  {
-    id: "linea",
-    name: "Linea",
-    short: "LIN",
-    evm: true,
-    chainId: 59144,
-    color: "#61DFFF",
-    gradient: "linear-gradient(135deg,#61DFFF,#2A95B0)",
-    nativeToken: "ETH",
-    explorer: "https://lineascan.build",
   },
   {
     id: "solana",
