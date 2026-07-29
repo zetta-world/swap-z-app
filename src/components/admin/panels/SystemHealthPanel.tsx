@@ -6,7 +6,16 @@ import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Cron = { name: string; last: string | null; ageMin: number | null; stale: boolean };
 type Dep  = { name: string; ok: boolean; latencyMs: number | null; note?: string };
-type Health = { ok: boolean; crons: Cron[]; deps: Dep[] };
+type Ext = {
+  id: string; name: string; purpose: string; breaks: string;
+  impact: "critical" | "degraded" | "cosmetic";
+  ok: boolean; latencyMs: number | null; note?: string;
+};
+type Health = { ok: boolean; crons: Cron[]; deps: Dep[]; external?: Ext[]; verdict?: string };
+
+const IMPACT_LABEL: Record<string, string> = {
+  critical: "CRÍTICA", degraded: "DEGRADA", cosmetic: "COSMÉTICA",
+};
 
 function dot(ok: boolean): string { return ok ? "var(--adm-green)" : "var(--adm-red)"; }
 
@@ -42,7 +51,7 @@ export default function SystemHealthPanel() {
     <TerminalPanel
       id="system-health"
       title="SYSTEM HEALTH"
-      subtitle="crons · dependencies · uptime"
+      subtitle="crons · dependências externas · uptime"
       icon="♥"
       source="heartbeats + live pings"
     >
@@ -57,6 +66,51 @@ export default function SystemHealthPanel() {
               {data.ok ? "ALL SYSTEMS OPERATIONAL" : "ATTENTION NEEDED"}
             </span>
           </div>
+
+          {/* CAMINHO DO DINHEIRO — vem PRIMEIRO de propósito. É a seção que
+              faltava quando a Jupiter desligou o endpoint e ninguém viu. */}
+          {data.external && data.external.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div className="adm-category">Dependências externas · caminho do dinheiro</div>
+              {data.verdict && (
+                <div style={{ fontSize: 9, color: data.verdict.startsWith("🟢") ? "var(--adm-green)" : "var(--adm-red)", margin: "3px 0 6px" }}>
+                  {data.verdict}
+                </div>
+              )}
+              {[...data.external]
+                // Quebrado primeiro, e dentro disso o mais crítico no topo —
+                // numa emergência ninguém deve rolar a tela pra achar o problema.
+                .sort((a, b) => Number(a.ok) - Number(b.ok)
+                  || (a.impact === "critical" ? -1 : 1) - (b.impact === "critical" ? -1 : 1))
+                .map((d) => (
+                <div key={d.id} style={{
+                  padding: "5px 7px", marginBottom: 4, borderRadius: 3,
+                  background: d.ok ? "transparent" : "rgba(255 60 60 / 0.06)",
+                  borderLeft: `2px solid ${d.ok ? "var(--adm-border)" : "var(--adm-red)"}`,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: dot(d.ok), flexShrink: 0 }} />
+                    <span style={{ fontSize: 10, color: "var(--adm-ink-2)", flex: 1, fontFamily: "monospace" }}>{d.name}</span>
+                    <span style={{ fontSize: 7, color: d.impact === "critical" ? "var(--adm-red)" : "var(--adm-ink-4)", letterSpacing: "0.06em" }}>
+                      {IMPACT_LABEL[d.impact]}
+                    </span>
+                    <span style={{ fontSize: 9, color: "var(--adm-ink-3)", fontVariantNumeric: "tabular-nums", width: 52, textAlign: "right" }}>
+                      {d.latencyMs != null ? `${d.latencyMs}ms` : "—"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 14 }}>{d.purpose}</div>
+                  {/* "O QUE QUEBRA" só aparece quando ESTÁ quebrado: às 3 da
+                      manhã o que importa é a consequência, não o catálogo. */}
+                  {!d.ok && (
+                    <div style={{ fontSize: 8, color: "var(--adm-red)", marginTop: 2, paddingLeft: 14 }}>
+                      ⚠ {d.breaks}
+                      {d.note && <span style={{ color: "var(--adm-ink-4)" }}> · {d.note}</span>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="adm-category">Crons</div>
           {data.crons.map((c) => (

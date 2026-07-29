@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { notifyTelegram } from "@/lib/admin/track";
-import { getCronHeartbeats, pingAnthropic, pingAiProviders } from "@/lib/admin/health";
+import { getCronHeartbeats, pingAiProviders } from "@/lib/admin/health";
+import { checkExternalDeps } from "@/lib/admin/deps";
 import { estimateCost } from "@/lib/admin/ai-cost";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { selectAllRows } from "@/lib/supabase/paginate";
@@ -37,13 +38,6 @@ async function dedupOk(key: string, windowMs: number): Promise<boolean> {
   } catch { return true; }
 }
 
-async function pingOk(url: string): Promise<boolean> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 4000);
-  try { const r = await fetch(url, { signal: ctrl.signal, cache: "no-store" }); return r.ok; }
-  catch { return false; }
-  finally { clearTimeout(t); }
-}
 
 export async function runAlertWatchdog(): Promise<void> {
   const db = getSupabaseAdmin();
@@ -112,23 +106,31 @@ export async function runAlertWatchdog(): Promise<void> {
       notifyTelegram(`🐋 <b>Large operation</b> — ${ops.length} trade(s) over $${LARGE_OP} in 10 min. Top: ${top.pair ?? "?"} $${Math.round(Number(top.volume_usd)).toLocaleString()}.`);
     }
 
-    // 6. Dependency down
-    // data-api.binance.vision: Binance public mirror that is NOT geo-blocked
-    // from US serverless IPs (api.binance.com returns 451 from Vercel iad1,
-    // which used to fire a permanent false "Binance down" alert).
-    const deps: Array<[string, string]> = [["Binance", "https://data-api.binance.vision/api/v3/ping"], ["CoinGecko", "https://api.coingecko.com/api/v3/ping"]];
-    for (const [name, url] of deps) {
-      if (!(await pingOk(url)) && await dedupOk(`dep_${name}`, 1_800_000)) {
-        notifyTelegram(`🌐 <b>Dependency down</b> — ${name} not responding.`);
+    // 6. DEPENDÊNCIAS EXTERNAS — o caminho do dinheiro (29/07).
+    //
+    // Antes aqui só havia dois pings genéricos (Binance, CoinGecko), e nenhum
+    // deles tocava no que EXECUTA swap. Foi assim que a Jupiter desligar o
+    // `quote-api.jup.ag` passou dias invisível: o código estava perfeito, o
+    // host é que tinha morrido — e nada no repositório poderia denunciar isso.
+    //
+    // Agora cada dependência é exercitada com chamada REAL e o alerta diz O QUE
+    // QUEBRA, não só o nome. Às 3 da manhã "GeckoTerminal down" não ajuda;
+    // "FREYJA e ULLR pararam de operar" manda agir.
+    const external = await checkExternalDeps();
+    for (const d of external) {
+      if (d.ok) continue;
+      // Cosmética não acorda ninguém — alarme que toca à toa vira alarme que
+      // ninguém olha, e aí o alarme de verdade também é ignorado.
+      if (d.impact === "cosmetic") continue;
+      // Crítico repete a cada 30min; degradado a cada 6h.
+      const window = d.impact === "critical" ? 1_800_000 : 21_600_000;
+      if (await dedupOk(`dep_${d.id}`, window)) {
+        const icon = d.impact === "critical" ? "🔴" : "🟡";
+        notifyTelegram(
+          `${icon} <b>${d.name} fora do ar</b>${d.note ? ` — ${d.note}` : ""}\n` +
+          `<b>O que quebra:</b> ${d.breaks}`,
+        );
       }
-    }
-    // Anthropic is the brain — a real outage stops every ZION analysis, so it
-    // gets its own authenticated check (the generic pingOk can't send the key).
-    // Only alert when the key IS present but the API failed (not when the env
-    // simply lacks the key).
-    const ant = await pingAnthropic();
-    if (!ant.ok && ant.note !== "no ANTHROPIC_API_KEY in this env" && await dedupOk("dep_Anthropic", 1_800_000)) {
-      notifyTelegram(`🧠 <b>Anthropic down</b> — ${ant.note ?? "API not responding"}. ZION analyses will fail until it recovers.`);
     }
     // The rest of the Ferrari's model stack (DeepSeek / Kimi / Mistral / Grok /
     // …) — alert per provider so a dead model doesn't silently skew the A/B.
