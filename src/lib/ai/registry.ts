@@ -107,7 +107,7 @@ export function configuredProviders(): ProviderConfig[] {
  * the first CONFIGURED provider for the role, or null.
  *   • brain     — technical / quant reasoning (Mistral → Kimi)
  *   • macro     — big-context macro digest (Kimi → Mistral)
- *   • sentiment — X / social sentiment, native to Grok (Grok → Mistral)
+ *   • sentiment — leitura de sentimento (Mistral → Kimi)
  *   • ceo       — final synthesis (DeepSeek → Kimi → Mistral)
  *
  * 27/07: Anthropic left this desk entirely. The flywheel measured every
@@ -122,7 +122,13 @@ export type HybridRole = "brain" | "macro" | "sentiment" | "ceo";
 const ROLE_PREFERENCE: Record<HybridRole, string[]> = {
   brain:     ["mistral", "kimi"],
   macro:     ["kimi", "mistral"],
-  sentiment: ["grok", "mistral"],
+  // 29/07 — Grok SAI do assento de sentimento. A xAI aposentou o Live Search
+  // (ver a nota em backtest.ts), então o X deixou de alimentar o modelo: o
+  // assento rodava "Grok pelado", ou seja, um analista de sentimento SEM
+  // acesso à rede social que era a razão inteira de ele estar aqui. Pagar o
+  // prêmio do xAI por sentimento sem fonte é tiro no pé. Mistral assume; Grok
+  // segue no torneio de scanner, onde compete pelo mesmo insumo que os outros.
+  sentiment: ["mistral", "kimi"],
   ceo:       ["deepseek", "kimi", "mistral"],
 };
 

@@ -14,6 +14,10 @@ type Agent = {
   profitFactor: number | null; avgRR: number | null;
   avgConfidence: number | null; calibration: number | null;
   form: string[]; sampleProgress: number;
+  // Ficha da mesa (src/lib/zion/desks.ts) — COMO opera, ONDE, com que cérebro.
+  style: string | null; venue: string | null; direction: string | null;
+  brain: string | null; model: string | null; tests: string | null;
+  who: string | null; horizonHours: number | null; status: string | null;
   curve: number[];
   paperCurve: number[]; paperClosed: number;
   sufficientSample: boolean;
@@ -22,6 +26,20 @@ type Fallen = { name: string; decided: number; net: number | null; cause: string
 type TT = { agents: Agent[]; valhalla?: Fallen[]; graveyard?: Fallen[]; minSample: number; fetchedAt: string };
 
 const PAPER_MATURE = 8;
+// A separação que faltava: day trade e swing não se medem com a mesma régua,
+// então o ranking passa a ser POR ESTILO em vez de uma tabela só.
+const STYLE_ORDER = ["scalp", "day", "swing", "position", "event"] as const;
+const STYLE_LABEL: Record<string, string> = {
+  scalp: "SCALP · ciclos de minutos", day: "DAY TRADE · fecha no dia",
+  swing: "SWING · dias", position: "POSIÇÃO · semanas", event: "EVENTO · só com gatilho",
+};
+const DIR_LABEL: Record<string, string> = {
+  long_only: "long-only · acumula USDT", long_short: "long+short · direcional",
+  market_neutral: "market-neutral · hedgeada",
+};
+const DIR_COLOR: Record<string, string> = {
+  long_only: "var(--adm-gold)", market_neutral: "var(--adm-green)", long_short: "var(--adm-ink-3)",
+};
 const MEDAL = ["🥇", "🥈", "🥉"];
 const kindColor = (kind: string) =>
   kind === "agent" ? "var(--adm-gold)" : kind === "model" ? "var(--adm-cyan)"
@@ -117,10 +135,24 @@ export default function TournamentPanel() {
             </div>
           )}
 
+          {/* "outros" fecha a conta: uma mesa sem ficha no registro não pode
+              sumir da tela só por não estar catalogada. */}
+          {[...STYLE_ORDER, "outros"].map((style) => {
+          const group = style === "outros"
+            ? ranked.filter((a) => !a.style || !STYLE_ORDER.includes(a.style as typeof STYLE_ORDER[number]))
+            : ranked.filter((a) => a.style === style);
+          if (group.length === 0) return null;
+          const dir = group[0]?.direction ?? "";
+          return (
+          <div key={style} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 8, letterSpacing: "0.1em", color: "var(--adm-ink-4)", marginBottom: 3, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ color: "var(--adm-cyan)" }}>{STYLE_LABEL[style] ?? "SEM FICHA · registrar em desks.ts"}</span>
+              <span style={{ color: DIR_COLOR[dir] ?? "var(--adm-ink-4)" }}>{DIR_LABEL[dir] ?? ""}</span>
+            </div>
           <table className="adm-table">
             <thead><tr><th style={{ width: 26 }}></th><th>AGENTE</th><th>LÍQ./TRADE</th><th>WR</th><th>PF</th><th>DEC</th></tr></thead>
             <tbody>
-              {ranked.map((a, i) => {
+              {group.map((a, i) => {
                 const decided = a.wins + a.losses;
                 const isOpen = open === a.source;
                 return (
@@ -138,6 +170,17 @@ export default function TournamentPanel() {
                     {isOpen && (
                       <tr>
                         <td colSpan={6} style={{ padding: "8px 4px 10px", background: "var(--adm-bg-raise)" }}>
+                          {(a.who || a.tests) && (
+                            <div style={{ marginBottom: 8, padding: "6px 8px", background: "rgba(255 255 255 / 0.02)", borderLeft: "2px solid var(--adm-gold)", borderRadius: 2 }}>
+                              {a.who && <div style={{ fontSize: 9, color: "var(--adm-ink-2)", fontStyle: "italic" }}>{a.who}</div>}
+                              {a.tests && <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 3 }}>TESTA: {a.tests}</div>}
+                              <div style={{ fontSize: 8, color: "var(--adm-ink-3)", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                <span>praça: {a.venue === "cex" ? "CEX" : a.venue === "dex" ? "DEX" : a.venue === "both" ? "CEX+DEX" : "—"}</span>
+                                <span>cérebro: {a.brain === "none" ? "mecânico (sem IA)" : a.model ?? "IA"}</span>
+                                {a.horizonHours != null && <span>horizonte: {a.horizonHours}h</span>}
+                              </div>
+                            </div>
+                          )}
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 8 }}>
                             <Stat label="GANHO MÉD" value={pct(a.avgWin)} color="var(--adm-green)" />
                             <Stat label="PERDA MÉD" value={pct(a.avgLoss)} color="var(--adm-red)" />
@@ -171,6 +214,9 @@ export default function TournamentPanel() {
               })}
             </tbody>
           </table>
+          </div>
+          );
+          })}
 
           {waiting.length > 0 && (
             <div style={{ marginTop: 10 }}>

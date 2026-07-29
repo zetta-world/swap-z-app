@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
+import { DESKS as DESK_LIST, deskFor, type Desk } from "@/lib/zion/desks";
 
 export const dynamic = "force-dynamic";
 
@@ -11,36 +12,39 @@ export const dynamic = "force-dynamic";
 const ROUND_TRIP_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
 const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
 
-// source (how the suggestion was logged) → human agent name + kind. Keeps the
-// ranking readable instead of showing raw "mistral_scan" strings.
-const AGENTS: Record<string, { name: string; kind: string }> = {
-  self_scan:     { name: "Agent A · ZION (aposentado)", kind: "retired" },
-  hybrid_scan:   { name: "Agent B · Ferrari (DeepSeek CEO)", kind: "agent" },
-  radar:         { name: "Radar T3 (trigger wake)",   kind: "agent" },
-  sniper:        { name: "Sniper 🎯 (evento + gates)", kind: "agent" },
-  deepseek_scan: { name: "DeepSeek",                   kind: "model" },
-  kimi_scan:     { name: "Kimi (Moonshot)",           kind: "model" },
-  mistral_scan:  { name: "Mistral",                    kind: "model" },
-  llama_scan:    { name: "Llama (Meta)",               kind: "model" },
-  grok_scan:     { name: "Grok (xAI)",                 kind: "model" },
-  oracle_self:     { name: "Oráculo Claude 🔮",   kind: "oracle" },
-  oracle_mistral:  { name: "Oráculo Mistral 🔮",  kind: "oracle" },
-  oracle_grok:     { name: "Oráculo Grok 🔮",     kind: "oracle" },
-  oracle_deepseek: { name: "Oráculo DeepSeek 🔮", kind: "oracle" },
-  oracle_kimi:     { name: "Oráculo Kimi 🔮",     kind: "oracle" },
-  // Ragnarök — mesa long-only de acumulação (PLANO-RAGNAROK.md).
-  strat_mech:      { name: "Ragnarök ᚱ mecânico (long-only)", kind: "strat" },
-};
+// Nomes e taxonomia vêm do REGISTRO DE MESAS (src/lib/zion/desks.ts) — fonte
+// única. Antes cada painel tinha a sua própria tabelinha de nomes e elas
+// divergiam; agora renomear uma mesa é editar UM arquivo.
+function kindOf(d: Desk): string {
+  if (d.direction === "market_neutral") return "desk";
+  if (d.brain === "none") return "strat";
+  if (d.source.startsWith("oracle_")) return "oracle";
+  if (d.status === "valhalla") return "retired";
+  return d.source === "hybrid_scan" ? "agent" : "model";
+}
 
 // Zero-LLM desks: no zion_suggestions rows — their whole ledger IS the paper
 // book, so their tournament line is built from closed paper positions
 // (pnl_pct is already NET of the desk's own cost model).
-const DESKS: Record<string, { name: string; kind: string }> = {
-  arbiter:  { name: "Arbiter ⚖️ (spot)",        kind: "desk" },
-  arbiter2: { name: "Arbiter 2.0 ⚡ (futuros)", kind: "desk" },
-};
+const NEUTRAL_DESKS = DESK_LIST.filter((d) => d.direction === "market_neutral");
+
+/** A ficha da mesa que vai junto de cada linha: COMO opera, ONDE, com que
+ *  cérebro e o que está testando. É isso que permite ao painel parar de
+ *  comparar day trade com swing na mesma régua. */
+function taxonomy(source: string) {
+  const d = deskFor(source);
+  return {
+    style: d?.style ?? null, venue: d?.venue ?? null,
+    direction: d?.direction ?? null, brain: d?.brain ?? null,
+    model: d?.model ?? null, tests: d?.tests ?? null,
+    who: d?.who ?? null, horizonHours: d?.horizonHours ?? null,
+    status: d?.status ?? null,
+  };
+}
+
 function labelFor(source: string): { name: string; kind: string } {
-  return AGENTS[source] ?? { name: source, kind: "other" };
+  const d = deskFor(source);
+  return d ? { name: `${d.sigil} ${d.name}`, kind: kindOf(d) } : { name: source, kind: "other" };
 }
 
 type Agg = {
@@ -115,7 +119,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const [{ data: paperClosedRows }, { data: paperAccts }, { data: deskOpenRows }] = await Promise.all([
     since ? paperClosedQ.gte("closed_at", since) : paperClosedQ,
     db.from("paper_accounts").select("source, starting_usd"),
-    db.from("paper_positions").select("source").eq("status", "open").in("source", Object.keys(DESKS)),
+    db.from("paper_positions").select("source").eq("status", "open").in("source", DESK_LIST.filter((d) => d.direction === "market_neutral").map((d) => d.source)),
   ]);
   const startingBy = new Map<string, number>((paperAccts ?? []).map((a) => [a.source, Number(a.starting_usd) || 1000]));
   const paperPtsBy = new Map<string, Array<{ t: number; pnl: number }>>();
@@ -181,13 +185,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       paperClosed:   (paperPtsBy.get(a.source) ?? []).length, // "matured" gate on the client
       sufficientSample: decided >= MIN_SAMPLE,
       sampleProgress: Math.min(1, decided / MIN_SAMPLE),
+      ...taxonomy(a.source),
     };
   });
 
   // Desk rows (arbiter/arbiter2): built from the paper book itself.
   const deskOpenBy = new Map<string, number>();
   for (const r of deskOpenRows ?? []) deskOpenBy.set(r.source, (deskOpenBy.get(r.source) ?? 0) + 1);
-  for (const [source, meta] of Object.entries(DESKS)) {
+  for (const d of NEUTRAL_DESKS) {
+    const source = d.source;
+    const meta = { name: `${d.sigil} ${d.name}`, kind: "desk" };
     const closedRows = (paperClosedRows ?? []).filter((r) => r.source === source && r.pnl_pct != null);
     const open = deskOpenBy.get(source) ?? 0;
     if (closedRows.length === 0 && open === 0) continue; // desk never traded — no row
@@ -211,6 +218,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       paperClosed: (paperPtsBy.get(source) ?? []).length,
       sufficientSample: decided >= MIN_SAMPLE,
       sampleProgress: Math.min(1, decided / MIN_SAMPLE),
+      ...taxonomy(source),
     });
   }
 
@@ -251,7 +259,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     gAgg.set(r.source, a);
   }
   const valhalla = [...gAgg.entries()].map(([source, a]) => ({
-    name: (AGENTS[source]?.name ?? source).replace(" (aposentado)", ""),
+    name: labelFor(source).name,
     decided: a.decided,
     net: a.resolved > 0 ? Math.round((a.sum / a.resolved - ROUND_TRIP_COST_PCT) * 100) / 100 : null,
     cause: CAUSE[source],

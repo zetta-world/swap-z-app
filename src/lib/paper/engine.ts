@@ -11,6 +11,7 @@
  * paper_accounts / paper_positions; zion_suggestions is only ever SELECTed.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { DESKS as DESK_LIST } from "@/lib/zion/desks";
 
 // Round-trip execution cost (fees + slippage, both legs) — mirrors the flywheel
 // so paper P&L is net, not gross. Default 0.2%.
@@ -34,14 +35,11 @@ export const PAPER_SOURCES = [
 ] as const;
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 
-const LABELS: Record<string, string> = {
-  self_scan: "Claude (self)", hybrid_scan: "Ferrari (hybrid)", mistral_scan: "Mistral",
-  grok_scan: "Grok", deepseek_scan: "DeepSeek", kimi_scan: "Kimi", radar: "Radar",
-  sniper: "Sniper 🎯",
-  oracle_self: "Oráculo Claude 🔮", oracle_mistral: "Oráculo Mistral 🔮", oracle_grok: "Oráculo Grok 🔮",
-  oracle_deepseek: "Oráculo DeepSeek 🔮", oracle_kimi: "Oráculo Kimi 🔮",
-  strat_mech: "Ragnarök ᚱ mecânico",
-};
+// Rótulos vêm do registro de mesas (src/lib/zion/desks.ts) — fonte única de
+// nomes. A carteira mostra o mesmo nome que o torneio, sempre.
+const LABELS: Record<string, string> = Object.fromEntries(
+  DESK_LIST.map((d) => [d.source, `${d.sigil} ${d.name}`]),
+);
 
 // ── Pure helpers (unit-tested — no DB, no network) ────────────────────────
 

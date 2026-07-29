@@ -76,6 +76,49 @@ painel Paper já leem por source.
 - [ ] **S4 — camada IA**: `strat_ai` aceita/veta/ajusta a sugestão mecânica. 🔴
 - [ ] **S5 — painel**: card "Ragnarök" — carteira USDT por playbook, mech vs IA. 🔴
 
+## S6 — A FROTA: nomes vikings + separação por estilo (29/07) 🟢
+
+`src/lib/zion/desks.ts` é agora a FONTE ÚNICA de quem é cada mesa: nome viking,
+runa, estilo (scalp/day/swing/posição/evento), praça (CEX/DEX), direção
+(long-only / long+short / market-neutral), cérebro (mecânico ou modelo),
+horizonte e **a pergunta que a mesa existe para responder**. Torneio e carteira
+paper leem daqui — renomear uma mesa é editar UM arquivo.
+
+O torneio deixou de ser uma tabela só: agora **agrupa por estilo**, porque
+julgar day trade com a régua de swing é cronometrar maratonista nos 100m.
+
+| source | nome | estilo | direção | cérebro |
+|---|---|---|---|---|
+| arbiter | ᛉ RATATOSKR | scalp | market-neutral | mecânico |
+| arbiter2 | ᛇ JÖRMUNGANDR | scalp | market-neutral | mecânico |
+| strat_mech | ᚹ VÖLUNDR | swing | long-only | mecânico |
+| radar | ᚻ HEIMDALL | evento | long+short | mecânico |
+| sniper | ᚢ ULLR | evento | long+short | IA |
+| hybrid_scan | ᚬ ODIN | swing | long+short | DeepSeek (CEO) |
+| deepseek_scan | ᚺ HUGINN | swing | long+short | DeepSeek |
+| kimi_scan | ᛗ MUNINN | swing | long+short | Kimi |
+| mistral_scan | ᚷ GERI | swing | long+short | Mistral |
+| llama_scan | ᚠ FREKI | swing | long+short | Llama |
+| grok_scan | ᛊ SLEIPNIR | swing | long+short | Grok |
+| oracle_* | ᚦ VÖLVA · <modelo> | posição | long+short | IA |
+| self_scan | ᛏ TÝR | swing | — | Anthropic (encerrado) |
+| oracle_self | ᛋ SAGA | posição | — | Anthropic (encerrado) |
+
+A casa de Odin dá nome ao torneio de modelos: os corvos (Huginn/Muninn), os
+lobos (Geri/Freki) e o corcel (Sleipnir) competem servindo ao mesmo trono.
+
+### Correções de custo/sinal na mesma leva
+
+- **Anthropic REMOVIDO de vez**: `runBacktestScan` era código morto lendo
+  `ANTHROPIC_API_KEY`. Enquanto existisse uma função pronta, um religamento
+  distraído trazia a fatura de volta. Apagada + import removido.
+- **Grok sai do assento de sentimento**: a xAI aposentou o Live Search, então o
+  assento rodava "Grok pelado" — analista de sentimento SEM acesso ao X, que era
+  a razão inteira de ele estar ali. Mistral assume. Grok segue no torneio de
+  scanner, onde disputa com o mesmo insumo dos outros.
+- **`pause_ragnarok`**: gate próprio para a mesa nova (desligar sem derrubar o
+  resto do tick).
+
 ## Honestidade (cicatrizes a preservar)
 
 - Métrica primária = **USDT na carteira** (paper), não win-rate. Win-rate é
