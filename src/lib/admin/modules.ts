@@ -13,6 +13,7 @@ export type ModuleId =
   | "backtest"
   | "tournament"
   | "ragnarok"
+  | "swap-guard"
   | "paper"
   | "traffic"
   | "ai-controls"
@@ -129,6 +130,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "RAGNARÖK",
     subtitle: "acumulação de USDT · mecânico vs IA · qual estratégia paga",
     icon: "ᚱ",
+    category: "dashboard",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
+    id: "swap-guard",
+    title: "SOLANA GUARD",
+    subtitle: "verificação de assinatura · Jupiter",
+    icon: "⛨",
     category: "dashboard",
     defaultEnabled: true,
     defaultOrder: 5,

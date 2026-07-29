@@ -116,14 +116,36 @@ export function verifyJupiterTransaction(tx: VersionedTransaction): GuardVerdict
 }
 
 /**
- * Escotilha de emergência. Se a Jupiter mudar de programa (uma v7, por
- * exemplo), o guard passa a recusar swaps legítimos — e o dono precisa
- * conseguir destravar sem esperar deploy.
+ * MODO DE OPERAÇÃO DO GUARD.
  *
- * Só desliga com o valor exato "off", e é `NEXT_PUBLIC_` porque a checagem roda
- * no cliente, junto da assinatura. Desligar reabre o vetor: é interruptor de
- * incidente, não configuração de rotina.
+ *   shadow  (PADRÃO) — verifica e REPORTA, mas deixa passar.
+ *   enforce          — verifica e BLOQUEIA.
+ *   off              — não verifica nada.
+ *
+ * POR QUE O PADRÃO É SHADOW E NÃO ENFORCE:
+ *
+ * A lista de programas permitidos foi derivada de como um swap do Jupiter
+ * DEVERIA ser montado — não de transações reais observadas em produção. E há
+ * uma incerteza concreta: em transações versionadas o `programIdIndex` indexa a
+ * lista MESCLADA (chaves estáticas + endereços vindos de Address Lookup
+ * Tables), e a Jupiter usa ALTs pesadamente para caber rotas complexas. Se
+ * algum program ID legítimo chegar por ALT, `extractProgramIds` devolve null e
+ * o modo enforce recusaria um swap perfeitamente honesto.
+ *
+ * Bloquear com base numa suposição não verificada troca um risco hipotético de
+ * segurança por uma quebra CERTA de produto. Então repete-se aqui o mesmo
+ * caminho que a allowlist de swap já seguiu: OBSERVAR primeiro, com telemetria,
+ * e só apertar depois que os dados reais mostrarem que o guard aprova o que
+ * deve aprovar. Ver docs/RUNBOOK.md.
  */
-export function guardEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_SOLANA_TX_GUARD !== "off";
+export type GuardMode = "off" | "shadow" | "enforce";
+
+export function guardMode(): GuardMode {
+  const v = process.env.NEXT_PUBLIC_SOLANA_TX_GUARD;
+  return v === "off" || v === "enforce" ? v : "shadow";
+}
+
+/** Só o modo `enforce` impede a assinatura. */
+export function shouldBlock(mode: GuardMode, verdict: GuardVerdict): boolean {
+  return mode === "enforce" && !verdict.ok;
 }

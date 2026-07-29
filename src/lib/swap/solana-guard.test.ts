@@ -3,6 +3,7 @@ import { PublicKey } from "@solana/web3.js";
 import type { VersionedTransaction } from "@solana/web3.js";
 import {
   verifyJupiterTransaction, extractProgramIds, JUPITER_ALLOWED_PROGRAMS,
+  shouldBlock, type GuardVerdict,
 } from "@/lib/swap/solana-guard";
 
 const JUPITER = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
@@ -98,5 +99,28 @@ describe("verifyJupiterTransaction — o que pode ser assinado", () => {
     const v = verifyJupiterTransaction(tx([COMPUTE, JUPITER]));
     expect(v.programs).toContain(JUPITER);
     expect(v.programs).toContain(COMPUTE);
+  });
+});
+
+describe("shouldBlock — só enforce impede a assinatura", () => {
+  const bad: GuardVerdict = { ok: false, programs: [], unknownPrograms: [UNKNOWN_PROGRAM], reason: "x" };
+  const good: GuardVerdict = { ok: true, programs: [JUPITER], unknownPrograms: [] };
+
+  it("shadow NÃO bloqueia, mesmo com veredito ruim", () => {
+    // É o ponto do modo observação: o guard aprende com tráfego real antes de
+    // ter poder de veto. Bloquear por suposição quebraria swap legítimo.
+    expect(shouldBlock("shadow", bad)).toBe(false);
+  });
+
+  it("off NÃO bloqueia", () => {
+    expect(shouldBlock("off", bad)).toBe(false);
+  });
+
+  it("enforce bloqueia veredito ruim", () => {
+    expect(shouldBlock("enforce", bad)).toBe(true);
+  });
+
+  it("enforce deixa passar veredito bom", () => {
+    expect(shouldBlock("enforce", good)).toBe(false);
   });
 });
