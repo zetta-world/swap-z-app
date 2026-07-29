@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { JUPITER_ALLOWED_PROGRAMS } from "@/lib/swap/solana-guard";
+import { JUPITER_ALLOWED_PROGRAMS, verifyJupiterTransaction, extractProgramIds } from "@/lib/swap/solana-guard";
+import { fetchJupiterQuote, fetchJupiterSwap, JUPITER_SOL_MINT } from "@/lib/api/jupiter";
+import { VersionedTransaction, PublicKey } from "@solana/web3.js";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +83,83 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       : refusalRate! > 0.5 ? "⚠ MAIORIA RECUSADA — provável mudança da Jupiter, NÃO ataque. Verifique o programa abaixo e adicione à lista."
       : refusalRate! > 0.05 ? "recusas acima do esperado — investigar"
       : "saudável",
+    fetchedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * POST — SONDA DE VERIFICAÇÃO.
+ *
+ * O problema que isto resolve: o guard só ganha confiança vendo transações
+ * REAIS da Jupiter, mas esperar tráfego orgânico de uma plataforma que ainda
+ * não lançou é esperar para sempre. E a dúvida central — se algum program ID
+ * legítimo chega por Address Lookup Table, o que faria o guard recusar swap
+ * honesto — não se responde por leitura de código.
+ *
+ * Uma cotação + montagem de transação é só chamada de API: sem fundos, sem
+ * assinatura, sem gás, sem nada on-chain. Então dá pra pedir à Jupiter a
+ * transação de verdade, decodificar e rodar o guard em cima — a mesma jogada
+ * que resolveu o auto-populate da allowlist de EVM.
+ *
+ * Roda no SERVIDOR de propósito: é ele que alcança a Jupiter.
+ */
+const PROBE_TAKER = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"; // conta conhecida, só leitura
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+export async function POST(): Promise<NextResponse> {
+  await requireAdmin();
+  const probes: Array<Record<string, unknown>> = [];
+
+  // Dois pares: SOL→USDC (envolve wrap/unwrap de SOL, o caminho com MAIS
+  // instruções de topo) e USDC→SOL (o inverso, que cria conta associada).
+  // Se algum formato quebrar o guard, é num destes dois que aparece.
+  const cases = [
+    { label: "SOL→USDC", inputMint: JUPITER_SOL_MINT, outputMint: USDC_MINT, amount: "100000000" },
+    { label: "USDC→SOL", inputMint: USDC_MINT, outputMint: JUPITER_SOL_MINT, amount: "10000000" },
+  ];
+
+  for (const c of cases) {
+    try {
+      const quote = await fetchJupiterQuote({
+        inputMint: c.inputMint, outputMint: c.outputMint, amount: c.amount, slippageBps: 50,
+      });
+      const swap = await fetchJupiterSwap({ quoteResponse: quote, userPublicKey: PROBE_TAKER });
+      const tx = VersionedTransaction.deserialize(Buffer.from(swap.swapTransaction, "base64"));
+      const verdict = verifyJupiterTransaction(tx);
+      const programs = extractProgramIds(tx);
+
+      // A pergunta que motivou a sonda: quantas contas vêm de ALT? Se o guard
+      // aprovou E existem ALTs, está provado que os program IDs de topo ficam
+      // nas chaves estáticas — que era exatamente a incerteza.
+      const msg = tx.message as unknown as {
+        addressTableLookups?: unknown[]; staticAccountKeys?: PublicKey[];
+      };
+      probes.push({
+        case: c.label,
+        guardOk: verdict.ok,
+        reason: verdict.reason ?? null,
+        programs: programs ?? [],
+        unknownPrograms: verdict.unknownPrograms,
+        instructionCount: (tx.message as unknown as { compiledInstructions: unknown[] }).compiledInstructions.length,
+        staticKeys: msg.staticAccountKeys?.length ?? 0,
+        addressLookupTables: msg.addressTableLookups?.length ?? 0,
+      });
+    } catch (e) {
+      probes.push({ case: c.label, error: e instanceof Error ? e.message.slice(0, 200) : "erro" });
+    }
+  }
+
+  const ran = probes.filter((p) => !p.error);
+  const allOk = ran.length > 0 && ran.every((p) => p.guardOk === true);
+  const usedAlts = ran.some((p) => Number(p.addressLookupTables) > 0);
+
+  return NextResponse.json({
+    probes,
+    verdict:
+      ran.length === 0 ? "não foi possível falar com a Jupiter — tente de novo"
+      : allOk && usedAlts ? "✅ GUARD VALIDADO — aprovou transações reais que USAM lookup tables. A dúvida do ALT está respondida: os program IDs de topo ficam nas chaves estáticas. Pode passar para enforce."
+      : allOk ? "✅ guard aprovou as transações reais (nenhuma usou lookup table nesta amostra — repita mais tarde, com rota mais complexa, antes de apertar)"
+      : "⚠ o guard RECUSOU uma transação legítima. NÃO ative o enforce. Veja `unknownPrograms`/`reason` abaixo — se houver programa novo, adicione à lista; se disser que não foi possível verificar, é o caso do ALT e o guard precisa de ajuste.",
     fetchedAt: new Date().toISOString(),
   });
 }

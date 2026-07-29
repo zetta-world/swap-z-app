@@ -4,6 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
 type Unknown = { program: string; count: number; lastSeen: string; symbols: string[]; likelyJupiterChange: boolean };
+type Probe = {
+  case: string; guardOk?: boolean; reason?: string | null; error?: string;
+  programs?: string[]; unknownPrograms?: string[];
+  instructionCount?: number; staticKeys?: number; addressLookupTables?: number;
+};
+type ProbeResp = { probes: Probe[]; verdict: string };
 type GR = {
   mode: string; hours: number;
   passed: number; refused: number; blocked: number; total: number;
@@ -25,6 +31,19 @@ export default function SwapGuardPanel() {
   const [hours, setHours] = useState(24);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [probe, setProbe] = useState<ProbeResp | null>(null);
+
+  // A sonda responde, em segundos, a pergunta que tráfego orgânico levaria
+  // semanas pra responder — e que uma plataforma não lançada nunca responderia.
+  const runProbe = async () => {
+    setProbing(true);
+    try {
+      const res = await fetch("/admin/api/swap-guard", { method: "POST" });
+      setProbe(await res.json());
+    } catch { setProbe({ probes: [], verdict: "falha ao rodar a sonda — tente de novo" }); }
+    finally { setProbing(false); }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +71,37 @@ export default function SwapGuardPanel() {
             style={{ fontSize: 8, padding: "2px 6px" }}
             onClick={() => { setHours(p.h); setLoading(true); }}>{p.label}</button>
         ))}
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <button onClick={runProbe} disabled={probing}
+          style={{ fontSize: 9, letterSpacing: "0.05em", padding: "5px 10px", borderRadius: 3,
+            cursor: probing ? "wait" : "pointer", color: "var(--adm-cyan)",
+            background: "rgba(0 229 255 / 0.06)", border: "1px solid rgba(0 229 255 / 0.25)" }}>
+          {probing ? "verificando…" : "⚡ testar contra a Jupiter real (grátis · sem swap)"}
+        </button>
+        {probe && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 9, padding: "6px 8px", borderRadius: 3, lineHeight: 1.5,
+              color: probe.verdict.startsWith("✅") ? "var(--adm-green)" : "var(--adm-amber)",
+              background: "var(--adm-bg-raise)" }}>
+              {probe.verdict}
+            </div>
+            {probe.probes.map((p, i) => (
+              <div key={i} style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 4, fontFamily: "monospace" }}>
+                <span style={{ color: p.error ? "var(--adm-red)" : p.guardOk ? "var(--adm-green)" : "var(--adm-red)" }}>
+                  {p.case}: {p.error ? `erro — ${p.error}` : p.guardOk ? "APROVADO" : `RECUSADO — ${p.reason ?? ""}`}
+                </span>
+                {!p.error && (
+                  <div>· {p.instructionCount} instruções · {p.staticKeys} chaves estáticas · {p.addressLookupTables} lookup tables</div>
+                )}
+                {!!p.unknownPrograms?.length && (
+                  <div style={{ color: "var(--adm-amber)", wordBreak: "break-all" }}>· desconhecido: {p.unknownPrograms.join(", ")}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {data && m && (
