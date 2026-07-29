@@ -11,6 +11,7 @@
  * paper_accounts / paper_positions; zion_suggestions is only ever SELECTed.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { DESKS as DESK_LIST } from "@/lib/zion/desks";
 
 // Round-trip execution cost (fees + slippage, both legs) — mirrors the flywheel
 // so paper P&L is net, not gross. Default 0.2%.
@@ -28,16 +29,17 @@ const CHAMPION_MULT = Number(process.env.PAPER_CHAMPION_MULT ?? 2);
 export const PAPER_SOURCES = [
   "self_scan", "hybrid_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan", "radar", "sniper",
   "oracle_self", "oracle_mistral", "oracle_grok", "oracle_deepseek", "oracle_kimi",
+  // Ragnarök (PLANO-RAGNAROK): mesa long-only de acumulação de USDT. A carteira
+  // paper É a métrica deste experimento — não o win-rate, mas quanto USDT sobra.
+  "strat_mech",
 ] as const;
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 
-const LABELS: Record<string, string> = {
-  self_scan: "Claude (self)", hybrid_scan: "Ferrari (hybrid)", mistral_scan: "Mistral",
-  grok_scan: "Grok", deepseek_scan: "DeepSeek", kimi_scan: "Kimi", radar: "Radar",
-  sniper: "Sniper 🎯",
-  oracle_self: "Oráculo Claude 🔮", oracle_mistral: "Oráculo Mistral 🔮", oracle_grok: "Oráculo Grok 🔮",
-  oracle_deepseek: "Oráculo DeepSeek 🔮", oracle_kimi: "Oráculo Kimi 🔮",
-};
+// Rótulos vêm do registro de mesas (src/lib/zion/desks.ts) — fonte única de
+// nomes. A carteira mostra o mesmo nome que o torneio, sempre.
+const LABELS: Record<string, string> = Object.fromEntries(
+  DESK_LIST.map((d) => [d.source, `${d.sigil} ${d.name}`]),
+);
 
 // ── Pure helpers (unit-tested — no DB, no network) ────────────────────────
 

@@ -10,7 +10,7 @@
  * Server-only. Best-effort: a DB hiccup never breaks the caller.
  */
 
-import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
+import { openaiCompatChat } from "@/lib/ai/provider";
 import { roleProvider, configuredProviders, type ProviderConfig } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -173,42 +173,18 @@ export function extractCards(text: string): ActionCard[] {
 }
 
 /**
- * AGENT A — RETIRED 27/07 (CEO decision). Claude scanned every 30min under
- * `self_scan`; the flywheel measured it inside ~1pt of the free/cheap brains
- * (its whole edge over Kimi or Mistral was noise), while being the single
- * biggest recurring line on the Anthropic invoice. The desk keeps the cheap
- * brains and this seat is gone. Kept as dead code ONLY as long as the ledger
- * still carries `self_scan` history — the caller no longer invokes it.
+ * AGENT A — APOSENTADO 27/07, e o CÓDIGO REMOVIDO em 29/07.
+ *
+ * Claude escaneava a cada 30min sob `self_scan`. O flywheel mediu esse assento
+ * dentro de ~1pt dos cérebros gratuitos (a vantagem inteira era ruído), sendo
+ * ao mesmo tempo a maior linha recorrente da fatura Anthropic.
+ *
+ * A função `runBacktestScan` vivia aqui como código morto "por precaução". Foi
+ * apagada: enquanto existisse uma função pronta lendo ANTHROPIC_API_KEY, um
+ * religamento distraído bastava para a fatura voltar. Sem assento Anthropic no
+ * flywheel, o caminho tem que ser estruturalmente inexistente, não apenas
+ * desativado. O histórico de `self_scan` segue no ledger e em Valhalla.
  */
-export async function runBacktestScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return [];
-  const instruction = await buildScanInstruction(marketData, await scanExtras("self_scan"));
-  if (!instruction) return [];
-
-  try {
-    // 504 guard. The backtest scan is heavy and runs inside a 60s Vercel
-    // function. A single attempt at 40s fits the budget (indicators ~3s + LLM
-    // ≤40s + resolve ~5s); stacking the N1 fallback chain would risk two
-    // timeouts = >60s. Best-effort — the next 30-min tick retries. (The real-
-    // money autopilot keeps the full fallback chain.) Prompt caching on the
-    // foundation via cacheSystem. Goes through the provider seam so the hybrid
-    // branch can swap this model without touching the flywheel logic.
-    const r = await anthropicChat(
-      // NO cacheSystem (27/07): Anthropic's cache TTL is 5min and this runs
-      // every 30min, so every write expired before the next call could read
-      // it. July's invoice: 2,389,090 cache-WRITE tokens against 9,432
-      // cache-READ — a 0.39% hit rate on which we paid the 1.25× write
-      // premium (~$2.38 for nothing). Plain input bills at 1.0×.
-      { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, jsonSchema: SCAN_CARDS_SCHEMA },
-      apiKey,
-    );
-    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: "backtest", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
-    return extractCards(r.text);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * A/B variant — runs the SAME backtest scan through one configured direct

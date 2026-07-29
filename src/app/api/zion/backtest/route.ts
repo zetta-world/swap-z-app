@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
-import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan, runBacktestScanForProvider, runHybridScan } from "@/lib/zion/backtest";
+import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScanForProvider, runHybridScan } from "@/lib/zion/backtest";
 import { configuredProviders } from "@/lib/ai/registry";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
 import { runOracleScan } from "@/lib/zion/oracle";
+import { runStrategistScan } from "@/lib/zion/ragnarok";
 import { runRetroSweep } from "@/lib/zion/retro";
 import { runPaperAgent } from "@/lib/paper/engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -101,6 +102,17 @@ export async function POST(req: NextRequest) {
     if (!gates.pause_backtest) {
       try {
         const marketData = await getMarketIndicators(scanSlice());
+
+        // RAGNARÖK (docs/PLANO-RAGNAROK.md): a mesa mecânica long-only escolhe
+        // o playbook do momento (range / pullback / reversão) sobre a MESMA
+        // fatia de mercado que os scanners veem. Zero token: código puro e
+        // determinístico — o controle honesto contra o qual a camada de IA vai
+        // ser medida. Roda ANTES dos scanners e com try próprio de propósito:
+        // é grátis e não pode ficar refém de uma falha de LLM lá embaixo.
+        if (!gates.pause_ragnarok) {
+          try { await runStrategistScan(marketData.indicators); } catch { /* best-effort */ }
+        }
+
         // A/B: run Claude AND every configured direct provider (DeepSeek / Kimi /
         // Mistral / Llama) on the SAME market data, in parallel, each logged under
         // its own source so expectancy compares head-to-head. Providers with no
