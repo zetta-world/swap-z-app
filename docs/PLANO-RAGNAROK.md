@@ -1,6 +1,6 @@
 # PLANO-RAGNAROK — o retorno dos guerreiros de Valhalla
 
-> Status geral: 🟡 em construção
+> Status geral: 🟢 frota no ar — medindo
 > Origem: veredito anterior ("IA não prevê direção em cripto") era **verdadeiro
 > mas estreito**. Testamos só o formato scanner (bracket long/short) + oráculo,
 > só em CEX, com métrica de acerto-de-previsão. Nunca testamos **seleção de
@@ -147,6 +147,39 @@ lobos (Geri/Freki) e o corcel (Sleipnir) competem servindo ao mesmo trono.
   scanner, onde disputa com o mesmo insumo dos outros.
 - **`pause_ragnarok`**: gate próprio para a mesa nova (desligar sem derrubar o
   resto do tick).
+
+## S7 — ULLR reescrito + sniper antigo aposentado (29/07) 🟢
+
+O sniper antigo caçava os 14 majors por gatilho de preço e **podia emitir
+short** — não era o mandato pedido ("token recém-lançado com chance de pump;
+comprar e realizar lucro em USDT"). Foi para Valhalla como **VEÐRFÖLNIR**, e
+está desligado por DEFAULT (`SNIPER_LEGACY=on` religa) — apagar o assento não
+bastava, ele seguiria gastando token num mandato já sabidamente errado.
+
+**ULLR** (`ullr_launch`) é a mesa nova: caça pool recém-nascido em DEX,
+long-only, alvo modesto (realizar > segurar esperando o topo), munição diária
+contada.
+
+**Por que ULLR NÃO usa o seletor de playbook nem LLM:** um token com horas de
+vida não tem estrutura para ler — não existe RSI de 14 períodos, EMA50, nem
+suporte testado três vezes. Rodar indicador de 50 períodos num pool de 40
+minutos é ler folha de chá. O que existe num lançamento é idade, liquidez,
+fluxo e assimetria — e isso se lê com regra, não com modelo. 15 testes.
+
+## O desenho do experimento
+
+Cinco mesas, **um seletor**, **uma variável isolada por mesa** — é isso que
+torna o resultado legível em vez de "cinco linhas parecidas":
+
+| mesa | isola | praça | cérebro | relógio |
+|---|---|---|---|---|
+| ᚹ VÖLUNDR | **controle** | CEX | mecânico | 48h |
+| ᛘ MÍMIR | o **cérebro** | CEX | IA | 48h |
+| ᚨ FREYJA | a **praça** | DEX | mecânico | 48h |
+| ᛋ SKAÐI | o **relógio** | CEX | mecânico | 8h |
+| ᚢ ULLR | o **terreno** | DEX | regra | 12h |
+
+Todas long-only, todas medidas pela mesma régua: **USDT acumulado na carteira**.
 
 ## Honestidade (cicatrizes a preservar)
 

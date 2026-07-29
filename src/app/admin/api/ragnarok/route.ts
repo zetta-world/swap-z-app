@@ -5,6 +5,7 @@ import { selectAllRows } from "@/lib/supabase/paginate";
 import { deskFor } from "@/lib/zion/desks";
 import { STRAT_MECH, STRAT_AI, STRAT_DAY } from "@/lib/zion/ragnarok";
 import { STRAT_DEX } from "@/lib/zion/ragnarok-dex";
+import { ULLR } from "@/lib/zion/ullr";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ const COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
 // As quatro mesas do Ragnarök. Cada uma isola UMA variável contra o mesmo
 // seletor: MECH é o controle, AI troca o cérebro, DEX troca a praça, DAY troca
 // o relógio. Só uma variável por mesa — é o que torna o resultado legível.
-const SOURCES = [STRAT_MECH, STRAT_AI, STRAT_DEX, STRAT_DAY];
+const SOURCES = [STRAT_MECH, STRAT_AI, STRAT_DEX, STRAT_DAY, ULLR];
 
 type SugRow = { source: string; kind: string; status: string; outcome_pct: number | null; created_at: string };
 type PosRow = { source: string; pnl_usd: number | null; pnl_pct: number | null; status: string; closed_at: string | null };
@@ -133,6 +134,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     [STRAT_AI]:   "troca o CÉREBRO (IA decide)",
     [STRAT_DEX]:  "troca a PRAÇA (on-chain)",
     [STRAT_DAY]:  "troca o RELÓGIO (8h)",
+    [ULLR]:       "outro TERRENO: lançamento on-chain (sem estrutura pra ler)",
   };
   const desks = SOURCES.map((source) => {
     const d = deskFor(source);

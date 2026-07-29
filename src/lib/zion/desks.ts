@@ -129,13 +129,23 @@ export const DESKS: Desk[] = [
     tests: "o CONTROLE puro — gatilho de preço sem tratamento nenhum",
   },
 
-  // ── Caçador de evento ──
+  // ── O arqueiro: caça lançamento on-chain ──
   {
-    source: "sniper", name: "ULLR", sigil: "ᚢ",
-    who: "o arqueiro: uma flecha, um alvo, munição contada",
+    source: "ullr_launch", name: "ULLR", sigil: "ᚢ",
+    who: "o arqueiro: caça pool recém-nascido, uma flecha por alvo, munição contada",
+    style: "event", venue: "dex", direction: "long_only", brain: "none",
+    horizonHours: 12, scoreboard: "paper", status: "live",
+    tests: "token recém-lançado com chance de pump — comprar e REALIZAR em USDT",
+  },
+  {
+    // O sniper ANTIGO. Caçava os 14 majors por gatilho de preço e podia emitir
+    // short — não era o arqueiro de lançamento que o mandato pedia. Substituído
+    // por `ullr_launch`; a história fica, o assento não.
+    source: "sniper", name: "VEÐRFÖLNIR", sigil: "ᚡ",
+    who: "o falcão entre os olhos da águia — vigiava os majors, não os nascimentos",
     style: "event", venue: "cex", direction: "long_short", brain: "llm",
     horizonHours: 72, scoreboard: "both", status: "valhalla",
-    tests: "disparo por evento com orçamento escasso — comprar o pump e realizar em USDT",
+    tests: "disparo por gatilho de preço nos majors — encerrado: mandato errado",
   },
 
   // ── A casa de Odin: o torneio de cérebros (formato scanner) ──

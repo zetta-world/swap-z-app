@@ -32,7 +32,7 @@ export const PAPER_SOURCES = [
   "oracle_self", "oracle_mistral", "oracle_grok", "oracle_deepseek", "oracle_kimi",
   // Ragnarök (PLANO-RAGNAROK): mesa long-only de acumulação de USDT. A carteira
   // paper É a métrica deste experimento — não o win-rate, mas quanto USDT sobra.
-  "strat_mech", "strat_ai", "strat_dex", "strat_day",
+  "strat_mech", "strat_ai", "strat_dex", "strat_day", "ullr_launch",
 ] as const;
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 

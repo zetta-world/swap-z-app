@@ -72,7 +72,15 @@ export async function POST(req: NextRequest) {
     // Each has its own pause gate; detection + heartbeat above always run, so
     // the watchdog stays quiet when both are paused.
     const radarBrain = gates.pause_radar ? null : hybridBrain();
-    const sniperOn = !gates.pause_sniper;
+    // SNIPER ANTIGO (VEÐRFÖLNIR) APOSENTADO 29/07 — mandato errado. Ele caçava
+    // os 14 majors por gatilho de preço e podia emitir SHORT; o mandato pedido
+    // era outro: token recém-lançado, long-only, realizando em USDT. Quem faz
+    // isso agora é ULLR (src/lib/zion/ullr.ts), on-chain e sem LLM.
+    //
+    // Desligado por DEFAULT (e não só apagado) para não seguir gastando token
+    // num mandato que já sabemos estar errado. `SNIPER_LEGACY=on` religa, caso
+    // se queira comparar o histórico — mas o assento não volta sozinho.
+    const sniperOn = !gates.pause_sniper && process.env.SNIPER_LEGACY === "on";
     if (radarBrain || sniperOn) {
       const symbols = triggers.map((t) => t.symbol);
       waitUntil((async () => {

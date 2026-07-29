@@ -10,6 +10,7 @@ import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
 import { runOracleScan } from "@/lib/zion/oracle";
 import { runStrategistScan, runStrategistAiScan, runDayScan } from "@/lib/zion/ragnarok";
 import { runDexScan } from "@/lib/zion/ragnarok-dex";
+import { runUllrScan } from "@/lib/zion/ullr";
 import { runRetroSweep } from "@/lib/zion/retro";
 import { runPaperAgent } from "@/lib/paper/engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -130,6 +131,13 @@ export async function POST(req: NextRequest) {
         // uma sugestão on-chain finalmente preenche e resolve.
         if (!gates.pause_ragnarok_dex) {
           try { await runDexScan(); } catch { /* best-effort */ }
+        }
+        // ULLR — o arqueiro dos lançamentos. Sem LLM: num pool com horas de
+        // vida não existe estrutura pra ler (RSI de 14 períodos, EMA50, suporte
+        // testado três vezes — nada disso existe). O que existe é idade,
+        // liquidez e fluxo, e isso se lê com regra, não com modelo.
+        if (!gates.pause_ullr) {
+          try { await runUllrScan(); } catch { /* best-effort */ }
         }
 
         // A/B: run Claude AND every configured direct provider (DeepSeek / Kimi /

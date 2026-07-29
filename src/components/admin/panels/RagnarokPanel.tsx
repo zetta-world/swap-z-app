@@ -19,6 +19,7 @@ const PLAYBOOK_LABEL: Record<string, string> = {
   range_reversion: "RANGE · compra o suporte",
   trend_pullback: "PULLBACK · compra o recuo",
   capitulation_reversal: "REVERSÃO · exaustão no fundo",
+  launch_shot: "LANÇAMENTO · pool recém-nascido",
 };
 const col = (n: number) => (n >= 0 ? "var(--adm-green)" : "var(--adm-red)");
 const pct = (n: number | null, d = 2) => (n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(d)}%`);
