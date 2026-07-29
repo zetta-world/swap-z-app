@@ -16,6 +16,7 @@ import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
+import { getOHLCV } from "@/lib/api/geckoterminal";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import { recordEvent, logError } from "@/lib/admin/track";
@@ -647,6 +648,29 @@ export function resolveOne(r: ZionSuggestionRow, klines: Kline[], spot: number |
 }
 
 /**
+ * Candles de um POOL on-chain (0019/S3), no mesmo formato do klines da Binance,
+ * para que `resolveOne` não precise saber de onde veio o preço.
+ *
+ * Sem isto, uma sugestão de token só-DEX ficaria "open" para sempre: o resolver
+ * inteiro indexa preço por SÍMBOLO contra a Binance, e um token on-chain não
+ * tem par lá. Best-effort → [] (a linha simplesmente não resolve neste tick).
+ */
+async function fetchPoolKlines(chain: string, pool: string, spanMs: number): Promise<Kline[]> {
+  // Mesma lógica de granularidade do caminho CEX: janela curta pede vela fina.
+  const tf = spanMs <= 12 * 3_600_000 ? "5m" : spanMs <= 3 * 86_400_000 ? "1h" : "4h";
+  try {
+    const rows = await getOHLCV(chain, pool, tf, 300, "base");
+    return rows
+      // GeckoTerminal devolve `time` em SEGUNDOS; o replay do resolver trabalha
+      // em milissegundos. Sem a conversão, toda vela cairia em 1970 e a janela
+      // do replay ficaria vazia — a linha nunca resolveria.
+      .map((c) => ({ t: c.time * 1000, high: c.high, low: c.low, close: c.close }))
+      .filter((c) => Number.isFinite(c.high) && Number.isFinite(c.low) && c.high > 0)
+      .sort((a, b) => a.t - b.t);
+  } catch { return []; }
+}
+
+/**
  * Resolve open suggestions by REPLAYING the price path (hourly candles) since
  * each was logged — first target/stop touch wins; horizon elapsed → directional
  * win/loss/neutral. One klines fetch per symbol (parallel), reused across that
@@ -665,20 +689,37 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
   if (!open || open.length === 0) return { checked: 0, resolved: 0 };
 
   const nowMs = Date.now();
-  const symbols = [...new Set(open.map((r) => r.symbol))];
+  // Linhas de POOL (S3) buscam candle on-chain; as demais seguem pelo caminho
+  // CEX de sempre. A chave do cache é o pool, não o símbolo — dois pools do
+  // mesmo token são preços diferentes e não podem se misturar.
+  const dexRows = open.filter((r) => r.pool_address && r.chain);
+  const cexRows = open.filter((r) => !(r.pool_address && r.chain));
 
-  // One candle fetch per symbol, in parallel, covering that symbol's oldest
-  // open suggestion → now. Spot map is the per-symbol fallback.
+  const symbols = [...new Set(cexRows.map((r) => r.symbol))];
   const klinesBySymbol = new Map<string, Kline[]>();
-  await Promise.all(symbols.map(async (sym) => {
-    const earliest = Math.min(...open.filter((r) => r.symbol === sym).map((r) => Date.parse(r.created_at)));
-    klinesBySymbol.set(sym, await fetchKlines(sym, earliest, nowMs, intervalForSpan(nowMs - earliest)));
-  }));
-  const spot = await getCexSpotPrices(symbols).catch(() => new Map());
+  const klinesByPool = new Map<string, Kline[]>();
+  await Promise.all([
+    ...symbols.map(async (sym) => {
+      const earliest = Math.min(...cexRows.filter((r) => r.symbol === sym).map((r) => Date.parse(r.created_at)));
+      klinesBySymbol.set(sym, await fetchKlines(sym, earliest, nowMs, intervalForSpan(nowMs - earliest)));
+    }),
+    ...[...new Set(dexRows.map((r) => `${r.chain}|${r.pool_address}`))].map(async (key) => {
+      const [chain, pool] = key.split("|");
+      const earliest = Math.min(...dexRows.filter((r) => `${r.chain}|${r.pool_address}` === key).map((r) => Date.parse(r.created_at)));
+      klinesByPool.set(key, await fetchPoolKlines(chain, pool, nowMs - earliest));
+    }),
+  ]);
+  const spot = symbols.length ? await getCexSpotPrices(symbols).catch(() => new Map()) : new Map();
 
   let resolved = 0;
   for (const r of open) {
-    const verdict = resolveOne(r, klinesBySymbol.get(r.symbol) ?? [], spot.get(r.symbol)?.priceUsd, nowMs);
+    const onChain = r.pool_address && r.chain;
+    const candles = onChain
+      ? klinesByPool.get(`${r.chain}|${r.pool_address}`) ?? []
+      : klinesBySymbol.get(r.symbol) ?? [];
+    // Sem spot fallback on-chain: o último close do pool já É o preço corrente,
+    // e inventar um spot de CEX para um token que não está lá seria mentira.
+    const verdict = resolveOne(r, candles, onChain ? candles[candles.length - 1]?.close : spot.get(r.symbol)?.priceUsd, nowMs);
     if (!verdict) continue;
     try {
       await db.from("zion_suggestions").update({

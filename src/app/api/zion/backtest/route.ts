@@ -8,7 +8,9 @@ import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
 import { runOracleScan } from "@/lib/zion/oracle";
-import { runStrategistScan } from "@/lib/zion/ragnarok";
+import { runStrategistScan, runStrategistAiScan, runDayScan } from "@/lib/zion/ragnarok";
+import { runDexScan } from "@/lib/zion/ragnarok-dex";
+import { runUllrScan } from "@/lib/zion/ullr";
 import { runRetroSweep } from "@/lib/zion/retro";
 import { runPaperAgent } from "@/lib/paper/engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -111,6 +113,31 @@ export async function POST(req: NextRequest) {
         // é grátis e não pode ficar refém de uma falha de LLM lá embaixo.
         if (!gates.pause_ragnarok) {
           try { await runStrategistScan(marketData.indicators); } catch { /* best-effort */ }
+          // SKAÐI — o MESMO plano com relógio de 8h em vez de 48h. Rodar as
+          // duas isola a variável HORIZONTE: se render diferente, o achado é
+          // sobre o tempo de exposição, não sobre a estratégia.
+          try { await runDayScan(marketData.indicators); } catch { /* best-effort */ }
+        }
+        // A MESA DE IA (MÍMIR) — mesmo mercado, mesmo tick, ledger separado.
+        // Gate próprio porque esta gasta token e a mecânica não: cortar custo
+        // não pode calar o controle junto. É desta comparação que sai a resposta
+        // à tese do dono — a IA escolhe a estratégia do momento melhor que um
+        // bot determinístico?
+        if (!gates.pause_ragnarok_ai) {
+          try { await runStrategistAiScan(marketData.indicators); } catch { /* best-effort */ }
+        }
+        // FREYJA — a mesa DEX (S3). Mesmo seletor, praça diferente: agora que
+        // o resolver e a carteira sabem precificar por pool (migration 0019),
+        // uma sugestão on-chain finalmente preenche e resolve.
+        if (!gates.pause_ragnarok_dex) {
+          try { await runDexScan(); } catch { /* best-effort */ }
+        }
+        // ULLR — o arqueiro dos lançamentos. Sem LLM: num pool com horas de
+        // vida não existe estrutura pra ler (RSI de 14 períodos, EMA50, suporte
+        // testado três vezes — nada disso existe). O que existe é idade,
+        // liquidez e fluxo, e isso se lê com regra, não com modelo.
+        if (!gates.pause_ullr) {
+          try { await runUllrScan(); } catch { /* best-effort */ }
         }
 
         // A/B: run Claude AND every configured direct provider (DeepSeek / Kimi /

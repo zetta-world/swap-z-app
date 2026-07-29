@@ -2,21 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, logAdminAction } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
+import { FLYWHEEL_GATE_KEYS } from "@/lib/admin/gates";
 
 export const dynamic = "force-dynamic";
 
-type SwitchKey =
-  | "disable_swap" | "disable_cex" | "maintenance_mode"
-  // AI flywheel on/off gates (read by the backtest cron + watchdog via
-  // getFlywheelGates). Same admin_kv "true"/"false" convention as the platform
-  // kill-switches, so this one route serves both panels.
-  | "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament"
-  | "pause_paper" | "pause_radar" | "pause_sniper" | "pause_arbiter";
-const VALID_KEYS: SwitchKey[] = [
-  "disable_swap", "disable_cex", "maintenance_mode",
-  "pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament",
-  "pause_paper", "pause_radar", "pause_sniper", "pause_arbiter",
-];
+const PLATFORM_KEYS = ["disable_swap", "disable_cex", "maintenance_mode"] as const;
+
+/**
+ * Chaves aceitas = kill-switches da plataforma + TODOS os gates do flywheel,
+ * derivados de `FLYWHEEL_GATE_KEYS`.
+ *
+ * Antes esta lista era digitada à mão e já tinha ficado para trás: `pause_oracle`
+ * e `pause_arbiter2` existiam no cron mas NÃO eram desligáveis pelo painel — uma
+ * mesa que só se apaga por deploy não tem kill-switch de verdade. Derivar da
+ * fonte única faz uma mesa nova nascer controlável, sem ninguém lembrar de
+ * atualizar dois arquivos.
+ */
+const VALID_KEYS: string[] = [...PLATFORM_KEYS, ...FLYWHEEL_GATE_KEYS];
+type SwitchKey = string;
 
 /**
  * Kill-switches stored in a simple key-value table. The app checks these at

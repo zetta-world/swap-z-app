@@ -12,6 +12,7 @@
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { DESKS as DESK_LIST } from "@/lib/zion/desks";
+import { getOHLCV } from "@/lib/api/geckoterminal";
 
 // Round-trip execution cost (fees + slippage, both legs) — mirrors the flywheel
 // so paper P&L is net, not gross. Default 0.2%.
@@ -31,7 +32,7 @@ export const PAPER_SOURCES = [
   "oracle_self", "oracle_mistral", "oracle_grok", "oracle_deepseek", "oracle_kimi",
   // Ragnarök (PLANO-RAGNAROK): mesa long-only de acumulação de USDT. A carteira
   // paper É a métrica deste experimento — não o win-rate, mas quanto USDT sobra.
-  "strat_mech",
+  "strat_mech", "strat_ai", "strat_dex", "strat_day", "ullr_launch",
 ] as const;
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 
@@ -172,6 +173,21 @@ export async function gateioSpot(symbols: string[]): Promise<Map<string, number>
   return out;
 }
 
+/** Candles de um pool on-chain (S3), normalizados para o formato do Gate.io.
+ *  GeckoTerminal devolve `time` em SEGUNDOS — converter é obrigatório, senão
+ *  toda vela cai em 1970 e a janela de replay sai vazia. */
+export async function poolKlines(chain: string, pool: string, fromMs: number, toMs: number): Promise<Candle[]> {
+  const span = toMs - fromMs;
+  const tf = span <= 12 * 3_600_000 ? "5m" : span <= 3 * 86_400_000 ? "1h" : "4h";
+  try {
+    const rows = await getOHLCV(chain, pool, tf, 300, "base");
+    return rows
+      .map((c) => ({ t: c.time * 1000, close: c.close, high: c.high, low: c.low }))
+      .filter((c) => Number.isFinite(c.high) && c.high > 0)
+      .sort((a, b) => a.t - b.t);
+  } catch { return []; }
+}
+
 // ── DB orchestration ──────────────────────────────────────────────────────
 
 type Db = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
@@ -202,7 +218,7 @@ export async function openPaperPositions(): Promise<number> {
   const accBySource = new Map<string, PaperAccount>(accounts.map((a) => [a.source, a as PaperAccount]));
 
   const { data: sugg } = await db.from("zion_suggestions")
-    .select("id, symbol, side, target_price, stop_price, probability, horizon_hours, source, status, created_at")
+    .select("id, symbol, side, target_price, stop_price, probability, horizon_hours, source, status, created_at, chain, pool_address")
     .in("source", PAPER_SOURCES as unknown as string[])
     .eq("status", "open")
     .not("target_price", "is", null)
@@ -221,12 +237,24 @@ export async function openPaperPositions(): Promise<number> {
     champion = champ?.value || null;
   } catch { /* no champion on a KV hiccup */ }
 
-  const px = await gateioSpot([...new Set(sugg.map((s) => s.symbol))]);
+  // Preço de entrada: CEX pelo ticker do Gate.io, DEX pelo último close do
+  // pool. Sem isto, uma sugestão on-chain nunca preencheria — `gateioSpot` não
+  // conhece um token que só existe em DEX, e a posição jamais abriria.
+  const cexSugg = sugg.filter((s) => !(s.chain && s.pool_address));
+  const px = cexSugg.length ? await gateioSpot([...new Set(cexSugg.map((s) => s.symbol))]) : new Map<string, number>();
+  const poolPx = new Map<string, number>();
+  await Promise.all([...new Set(sugg.filter((s) => s.chain && s.pool_address).map((s) => `${s.chain}|${s.pool_address}`))]
+    .map(async (key) => {
+      const [chain, pool] = key.split("|");
+      const c = await poolKlines(chain, pool, Date.now() - 3_600_000, Date.now());
+      if (c.length) poolPx.set(key, c[c.length - 1].close);
+    }));
   const spent = new Map<string, number>(); // account_id → cash deployed this tick
   type PaperInsert = {
     account_id: string; suggestion_id: string; source: string; symbol: string;
     side: "buy" | "sell"; qty: number; entry_price: number; cost_usd: number;
     target_price: number | null; stop_price: number | null; horizon_hours: number;
+    chain: string | null; pool_address: string | null;
   };
   const inserts: PaperInsert[] = [];
 
@@ -234,7 +262,8 @@ export async function openPaperPositions(): Promise<number> {
     const acc = accBySource.get(s.source);
     if (!acc) continue;
     if (taken.has(`${acc.id}:${s.id}`)) continue;
-    const fill = px.get(s.symbol.toUpperCase());
+    const onChain = s.chain && s.pool_address;
+    const fill = onChain ? poolPx.get(`${s.chain}|${s.pool_address}`) : px.get(s.symbol.toUpperCase());
     if (fill == null || !canEnter(s.side, fill, s.target_price, s.stop_price)) continue;
     const cashAvail = Number(acc.cash_usd) - (spent.get(acc.id) ?? 0);
     const champMult = s.source === champion ? CHAMPION_MULT : 1;
@@ -244,6 +273,7 @@ export async function openPaperPositions(): Promise<number> {
       account_id: acc.id, suggestion_id: s.id, source: s.source, symbol: s.symbol, side: s.side,
       qty: size / fill, entry_price: fill, cost_usd: size,
       target_price: s.target_price, stop_price: s.stop_price, horizon_hours: s.horizon_hours ?? 72,
+      chain: s.chain ?? null, pool_address: s.pool_address ?? null,
     });
     spent.set(acc.id, (spent.get(acc.id) ?? 0) + size);
     taken.add(`${acc.id}:${s.id}`);
@@ -267,26 +297,40 @@ export async function resolvePaperPositions(): Promise<number> {
   // CONVERGENCE (its own scan does that) — resolving them here by target/
   // stop/horizon would book directional P&L a hedge doesn't have.
   const { data: openFull } = await db.from("paper_positions")
-    .select("id, account_id, symbol, side, entry_price, cost_usd, target_price, stop_price, horizon_hours, opened_at")
+    .select("id, account_id, symbol, side, entry_price, cost_usd, target_price, stop_price, horizon_hours, opened_at, chain, pool_address")
     .eq("status", "open").neq("source", "arbiter2").limit(1000);
   if (!openFull?.length) return 0;
-  const symbols = [...new Set(openFull.map((p) => p.symbol))];
+  // Mesma separação da abertura: pool tem preço próprio, símbolo tem o do
+  // Gate.io. A chave é o pool — dois pools do mesmo token são preços distintos.
+  const cexPos = openFull.filter((p) => !(p.chain && p.pool_address));
+  const symbols = [...new Set(cexPos.map((p) => p.symbol))];
   const nowMs = Date.now();
 
   // Path-aware (F3): one Gate.io candle fetch per symbol, from that symbol's
   // oldest open position to now, reused across its positions. Spot is fallback.
   const candlesBySymbol = new Map<string, Candle[]>();
-  await Promise.all(symbols.map(async (sym) => {
-    const earliest = Math.min(...openFull.filter((p) => p.symbol === sym).map((p) => Date.parse(p.opened_at)));
-    candlesBySymbol.set(sym, await gateioKlines(sym, earliest, nowMs));
-  }));
-  const prices = await gateioSpot(symbols);
+  const candlesByPool = new Map<string, Candle[]>();
+  await Promise.all([
+    ...symbols.map(async (sym) => {
+      const earliest = Math.min(...cexPos.filter((p) => p.symbol === sym).map((p) => Date.parse(p.opened_at)));
+      candlesBySymbol.set(sym, await gateioKlines(sym, earliest, nowMs));
+    }),
+    ...[...new Set(openFull.filter((p) => p.chain && p.pool_address).map((p) => `${p.chain}|${p.pool_address}`))]
+      .map(async (key) => {
+        const [chain, pool] = key.split("|");
+        const earliest = Math.min(...openFull.filter((p) => `${p.chain}|${p.pool_address}` === key).map((p) => Date.parse(p.opened_at)));
+        candlesByPool.set(key, await poolKlines(chain, pool, earliest, nowMs));
+      }),
+  ]);
+  const prices = symbols.length ? await gateioSpot(symbols) : new Map<string, number>();
 
   const delta = new Map<string, { cash: number; pnl: number; wins: number; losses: number }>();
   let closed = 0;
 
   for (const p of openFull) {
-    const v = computeExitPath(p, candlesBySymbol.get(p.symbol) ?? [], prices.get(p.symbol.toUpperCase()), nowMs);
+    const onChain = p.chain && p.pool_address;
+    const candles = onChain ? candlesByPool.get(`${p.chain}|${p.pool_address}`) ?? [] : candlesBySymbol.get(p.symbol) ?? [];
+    const v = computeExitPath(p, candles, onChain ? candles[candles.length - 1]?.close : prices.get(p.symbol.toUpperCase()), nowMs);
     if (!v) continue;
     try {
       await db.from("paper_positions").update({

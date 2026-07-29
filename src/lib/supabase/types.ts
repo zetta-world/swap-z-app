@@ -122,6 +122,10 @@ export type ZionSuggestionRow = {
   resolved_price: number | null;
   created_at:     string;
   resolved_at:    string | null;
+  /** Origem DEX (0019): quando presentes, o preço vem do pool via
+   *  GeckoTerminal em vez de klines da Binance. Nulos = linha de CEX. */
+  chain:          string | null;
+  pool_address:   string | null;
 };
 
 export type PaperAccountRow = {
@@ -158,6 +162,9 @@ export type PaperPositionRow = {
   pnl_pct:       number | null;
   opened_at:     string;
   closed_at:     string | null;
+  /** Origem DEX (0019) — herdado da suggestion; define de onde vem o candle. */
+  chain:         string | null;
+  pool_address:  string | null;
 };
 
 /** Auto-Retro lesson ledger (migration 0018) — one row per reflection; the

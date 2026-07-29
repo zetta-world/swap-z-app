@@ -1,6 +1,6 @@
 # PLANO-RAGNAROK — o retorno dos guerreiros de Valhalla
 
-> Status geral: 🟡 em construção
+> Status geral: 🟢 frota no ar — medindo
 > Origem: veredito anterior ("IA não prevê direção em cripto") era **verdadeiro
 > mas estreito**. Testamos só o formato scanner (bracket long/short) + oráculo,
 > só em CEX, com métrica de acerto-de-previsão. Nunca testamos **seleção de
@@ -72,9 +72,38 @@ painel Paper já leem por source.
   Roda no tick logo após os indicadores, com try próprio (é grátis, não pode
   ficar refém de falha de LLM). `strat_mech` entrou em `PAPER_SOURCES` e no
   torneio. 🟢
-- [ ] **S3 — DEX**: rodar o seletor sobre pares DEX via `getDexSymbolIndicators`. 🔴
-- [ ] **S4 — camada IA**: `strat_ai` aceita/veta/ajusta a sugestão mecânica. 🔴
-- [ ] **S5 — painel**: card "Ragnarök" — carteira USDT por playbook, mech vs IA. 🔴
+- [x] **S3 — DEX + encanamento** 🟢 (migration `0019_dex_desks.sql`)
+  O achado: toda a resolução era CEX-shaped (`resolveOpenSuggestions` por klines
+  da Binance, `paper/engine` por `gateioSpot`, ambos indexados por SÍMBOLO). Um
+  token só-DEX **nunca preencheria nem resolveria**. Não faltou vontade de
+  testar DEX — faltava saber ONDE buscar o preço.
+  - `chain` + `pool_address` em `zion_suggestions` e `paper_positions`
+  - resolver e carteira precificam por POOL (GeckoTerminal OHLCV) quando as
+    colunas estão preenchidas; nulas = caminho CEX de sempre. Cache indexado
+    pelo POOL, não pelo símbolo (dois pools do mesmo token são preços distintos)
+  - `time` do GeckoTerminal vem em SEGUNDOS — sem converter, toda vela cairia em
+    1970 e a janela de replay sairia vazia
+  - **FREYJA** (`strat_dex`): mesmo `selectPlaybook` do ferreiro, outra praça.
+    Gate de liquidez ANTES da análise técnica (TVL, volume e faixa de giro que
+    corta pool parado e cheiro de wash) — indicador bonito em pool seco continua
+    sendo dinheiro preso. 7 testes.
+- [x] **S3b — day trade** 🟢 **SKAÐI** (`strat_day`): MESMO seletor, relógio de
+  8h em vez de 48h. Só o horizonte muda, de propósito — assim um resultado
+  diferente é atribuível ao TEMPO DE EXPOSIÇÃO, não à estratégia.
+- [x] **S4 — camada IA**: `strategist-ai.ts` — **MÍMIR** (`strat_ai`). A IA NÃO é
+  perguntada "pra onde vai o preço?"; recebe o retrato técnico + o plano do
+  ferreiro e responde uma pergunta de OFÍCIO: é o playbook certo pra este
+  momento e a geometria está bem posta? Pode **aceitar / vetar / ajustar**.
+  Duas travas em código (não no prompt): todo ajuste volta pelo
+  `buildLongBracket` (mesmo portão do mecânico) e long-only é estrutural —
+  não existe campo pra short e o bracket reprova stop acima da entrada.
+  Âncora de escala de 10% mata o deslize de casa decimal. 17 testes. Gate
+  `pause_ragnarok_ai` separado do mecânico: cortar custo não cala o controle. 🟢
+- [x] **S5 — painel**: `RagnarokPanel` + `/admin/api/ragnarok`. Mostra, nesta
+  ordem: **USDT acumulado por mesa** (a régua do mandato — vem primeiro),
+  **qual playbook paga** (range vs pullback vs reversão) e **o duelo**
+  mecânico vs IA no mesmo mercado, com o cruzamento mesa × playbook para ver
+  se a IA muda a ESCOLHA de estratégia, não só os níveis. 🟢
 
 ## S6 — A FROTA: nomes vikings + separação por estilo (29/07) 🟢
 
@@ -118,6 +147,39 @@ lobos (Geri/Freki) e o corcel (Sleipnir) competem servindo ao mesmo trono.
   scanner, onde disputa com o mesmo insumo dos outros.
 - **`pause_ragnarok`**: gate próprio para a mesa nova (desligar sem derrubar o
   resto do tick).
+
+## S7 — ULLR reescrito + sniper antigo aposentado (29/07) 🟢
+
+O sniper antigo caçava os 14 majors por gatilho de preço e **podia emitir
+short** — não era o mandato pedido ("token recém-lançado com chance de pump;
+comprar e realizar lucro em USDT"). Foi para Valhalla como **VEÐRFÖLNIR**, e
+está desligado por DEFAULT (`SNIPER_LEGACY=on` religa) — apagar o assento não
+bastava, ele seguiria gastando token num mandato já sabidamente errado.
+
+**ULLR** (`ullr_launch`) é a mesa nova: caça pool recém-nascido em DEX,
+long-only, alvo modesto (realizar > segurar esperando o topo), munição diária
+contada.
+
+**Por que ULLR NÃO usa o seletor de playbook nem LLM:** um token com horas de
+vida não tem estrutura para ler — não existe RSI de 14 períodos, EMA50, nem
+suporte testado três vezes. Rodar indicador de 50 períodos num pool de 40
+minutos é ler folha de chá. O que existe num lançamento é idade, liquidez,
+fluxo e assimetria — e isso se lê com regra, não com modelo. 15 testes.
+
+## O desenho do experimento
+
+Cinco mesas, **um seletor**, **uma variável isolada por mesa** — é isso que
+torna o resultado legível em vez de "cinco linhas parecidas":
+
+| mesa | isola | praça | cérebro | relógio |
+|---|---|---|---|---|
+| ᚹ VÖLUNDR | **controle** | CEX | mecânico | 48h |
+| ᛘ MÍMIR | o **cérebro** | CEX | IA | 48h |
+| ᚨ FREYJA | a **praça** | DEX | mecânico | 48h |
+| ᛋ SKAÐI | o **relógio** | CEX | mecânico | 8h |
+| ᚢ ULLR | o **terreno** | DEX | regra | 12h |
+
+Todas long-only, todas medidas pela mesma régua: **USDT acumulado na carteira**.
 
 ## Honestidade (cicatrizes a preservar)
 

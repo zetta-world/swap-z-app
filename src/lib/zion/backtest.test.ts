@@ -153,6 +153,7 @@ function row(over: Partial<ZionSuggestionRow>): ZionSuggestionRow {
     regime: null, source: "test", horizon_hours: 72, status: "open",
     outcome_pct: null, resolved_price: null,
     created_at: new Date(T0).toISOString(), resolved_at: null,
+    chain: null, pool_address: null,
     ...over,
   };
 }

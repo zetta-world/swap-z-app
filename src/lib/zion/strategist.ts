@@ -30,9 +30,13 @@ export type Playbook =
   | "capitulation_reversal"  // TRENDING_DOWN + divergência de exaustão perto do fundo
   | "stand_aside";           // não operar É uma posição
 
+/** Um playbook que REALMENTE opera. Um plano nunca pode ser `stand_aside` —
+ *  o tipo garante isso, em vez de deixar para uma checagem em runtime. */
+export type ActivePlaybook = Exclude<Playbook, "stand_aside">;
+
 export interface StrategyPlan {
   symbol: string;
-  playbook: Playbook;
+  playbook: ActivePlaybook;
   /** Sempre "buy" — este agente só acumula USDT comprando barato. */
   side: "buy";
   entry: number;
@@ -87,7 +91,7 @@ export function stopFloorPct(atrPct: number | null): number {
  */
 export function buildLongBracket(
   symbol: string,
-  playbook: Exclude<Playbook, "stand_aside">,
+  playbook: ActivePlaybook,
   entry: number,
   target: number,
   stop: number,

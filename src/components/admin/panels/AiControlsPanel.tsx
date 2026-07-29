@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
-type GateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_radar" | "pause_sniper" | "pause_arbiter" | "pause_paper";
+// Espelha FLYWHEEL_GATE_KEYS (src/lib/admin/gates.ts). Um gate que existe no
+// cron mas não aparece aqui é uma mesa que só se desliga por deploy — foi o que
+// aconteceu com oracle/arbiter2, agora corrigido.
+type GateKey =
+  | "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament"
+  | "pause_radar" | "pause_sniper" | "pause_arbiter" | "pause_paper"
+  | "pause_oracle" | "pause_arbiter2"
+  | "pause_ragnarok" | "pause_ragnarok_ai" | "pause_ragnarok_dex" | "pause_ullr";
 
 type Breaker = {
   id: string; label: string; configured: boolean;
@@ -16,15 +23,23 @@ const GATES: { key: GateKey; label: string; desc: string; master?: boolean }[] =
   { key: "pause_agent_b",    label: "AGENT B · FERRARI", desc: "Pausa o Agent B híbrido (Opus CEO). Também exige HYBRID_B_ENABLED." },
   { key: "pause_tournament", label: "TORNEIO (MODELOS)", desc: "Pausa Mistral/DeepSeek/Kimi/Llama/Grok. É o que gasta nos provedores diretos." },
   { key: "pause_radar",      label: "RADAR (BRAIN)",     desc: "Pausa o acorde do modelo nos gatilhos de preço. Detecção (grátis) continua." },
-  { key: "pause_sniper",     label: "SNIPER 🎯",         desc: "Agente event-driven com orçamento mensal e gates objetivos. Só gasta quando um gatilho dispara." },
-  { key: "pause_arbiter",    label: "ARBITER ⚖️",        desc: "Detector de arbitragem cross-CEX. ZERO IA (aritmética pura) — só dados públicos, opera no paper." },
-  { key: "pause_paper",      label: "PAPER · GATE.IO",   desc: "Pausa o agente de simulação. Zero token — pausar só congela o experimento." },
+  { key: "pause_sniper",     label: "SNIPER ANTIGO",     desc: "VEÐRFÖLNIR (aposentado). Já desligado por default — só religa com SNIPER_LEGACY=on." },
+  { key: "pause_oracle",     label: "VÖLVA 🔮 (ORÁCULO)", desc: "Mesa de tese diária, multi-modelo. Gasta 1×/dia." },
+  { key: "pause_arbiter",    label: "ᛉ RATATOSKR",       desc: "Arbitragem spot cross-CEX. ZERO IA (aritmética pura) — dados públicos, opera no paper." },
+  { key: "pause_arbiter2",   label: "ᛇ JÖRMUNGANDR",     desc: "Spot+perp hedgeada (funding + convergência). ZERO IA." },
+  { key: "pause_ragnarok",   label: "ᚹ VÖLUNDR + ᛋ SKAÐI", desc: "Mesas mecânicas long-only (swing 48h + day 8h). ZERO token — é o CONTROLE do experimento." },
+  { key: "pause_ragnarok_ai", label: "ᛘ MÍMIR (IA)",     desc: "A mesa de IA que aceita/veta/ajusta o plano do ferreiro. ESTA gasta token." },
+  { key: "pause_ragnarok_dex", label: "ᚨ FREYJA (DEX)",  desc: "Mesma estratégia, praça on-chain (GeckoTerminal). ZERO token." },
+  { key: "pause_ullr",       label: "ᚢ ULLR (LANÇAMENTO)", desc: "Arqueiro de pool recém-nascido. Long-only, munição diária contada. ZERO token." },
+  { key: "pause_paper",      label: "PAPER · GATE.IO",   desc: "Pausa o agente de simulação. Zero token — pausar só congela o experimento (e a carteira de USDT para de encher)." },
 ];
 
 export default function AiControlsPanel() {
   const [gates, setGates] = useState<Record<GateKey, boolean>>({
     pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false,
     pause_radar: false, pause_sniper: false, pause_arbiter: false, pause_paper: false,
+    pause_oracle: false, pause_arbiter2: false,
+    pause_ragnarok: false, pause_ragnarok_ai: false, pause_ragnarok_dex: false, pause_ullr: false,
   });
   const [loading, setLoading]   = useState(true);
   const [mutating, setMutating] = useState<GateKey | null>(null);
@@ -48,6 +63,12 @@ export default function AiControlsPanel() {
         pause_sniper:     !!s.pause_sniper,
         pause_arbiter:    !!s.pause_arbiter,
         pause_paper:      !!s.pause_paper,
+        pause_oracle:     !!s.pause_oracle,
+        pause_arbiter2:   !!s.pause_arbiter2,
+        pause_ragnarok:     !!s.pause_ragnarok,
+        pause_ragnarok_ai:  !!s.pause_ragnarok_ai,
+        pause_ragnarok_dex: !!s.pause_ragnarok_dex,
+        pause_ullr:         !!s.pause_ullr,
       });
       if (json.note) setNote(json.note);
     } catch (e) { setErr(String(e)); } finally { setLoading(false); }

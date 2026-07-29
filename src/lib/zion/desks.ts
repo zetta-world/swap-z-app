@@ -97,6 +97,29 @@ export const DESKS: Desk[] = [
     tests: "escolher o playbook do momento (range/pullback/reversão) sem IA — o CONTROLE",
   },
 
+  {
+    source: "strat_ai", name: "MÍMIR", sigil: "ᛘ",
+    who: "a cabeça sábia no poço: aconselha o ferreiro — aceita, veta ou corrige",
+    style: "swing", venue: "cex", direction: "long_only", brain: "llm",
+    model: "papel brain (Mistral)", horizonHours: 48, scoreboard: "paper", status: "live",
+    tests: "a IA escolhe a estratégia do momento melhor que o bot determinístico?",
+  },
+
+  {
+    source: "strat_dex", name: "FREYJA", sigil: "ᚨ",
+    who: "a senhora da abundância — colhe on-chain, onde o ZION também olha",
+    style: "swing", venue: "dex", direction: "long_only", brain: "none",
+    horizonHours: 48, scoreboard: "paper", status: "live",
+    tests: "a MESMA estratégia paga na DEX como na CEX? (a praça muda o resultado?)",
+  },
+  {
+    source: "strat_day", name: "SKAÐI", sigil: "ᛋ",
+    who: "a caçadora dos esquis: entra e sai no mesmo dia, sem dormir posicionada",
+    style: "day", venue: "cex", direction: "long_only", brain: "none",
+    horizonHours: 8, scoreboard: "paper", status: "live",
+    tests: "o mesmo playbook em horizonte intradiário — day trade vs swing",
+  },
+
   // ── Vigia sem IA (grupo de controle histórico) ──
   {
     source: "radar", name: "HEIMDALL", sigil: "ᚻ",
@@ -106,13 +129,23 @@ export const DESKS: Desk[] = [
     tests: "o CONTROLE puro — gatilho de preço sem tratamento nenhum",
   },
 
-  // ── Caçador de evento ──
+  // ── O arqueiro: caça lançamento on-chain ──
   {
-    source: "sniper", name: "ULLR", sigil: "ᚢ",
-    who: "o arqueiro: uma flecha, um alvo, munição contada",
+    source: "ullr_launch", name: "ULLR", sigil: "ᚢ",
+    who: "o arqueiro: caça pool recém-nascido, uma flecha por alvo, munição contada",
+    style: "event", venue: "dex", direction: "long_only", brain: "none",
+    horizonHours: 12, scoreboard: "paper", status: "live",
+    tests: "token recém-lançado com chance de pump — comprar e REALIZAR em USDT",
+  },
+  {
+    // O sniper ANTIGO. Caçava os 14 majors por gatilho de preço e podia emitir
+    // short — não era o arqueiro de lançamento que o mandato pedia. Substituído
+    // por `ullr_launch`; a história fica, o assento não.
+    source: "sniper", name: "VEÐRFÖLNIR", sigil: "ᚡ",
+    who: "o falcão entre os olhos da águia — vigiava os majors, não os nascimentos",
     style: "event", venue: "cex", direction: "long_short", brain: "llm",
     horizonHours: 72, scoreboard: "both", status: "valhalla",
-    tests: "disparo por evento com orçamento escasso — comprar o pump e realizar em USDT",
+    tests: "disparo por gatilho de preço nos majors — encerrado: mandato errado",
   },
 
   // ── A casa de Odin: o torneio de cérebros (formato scanner) ──
