@@ -223,17 +223,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return (y.wins + y.losses) - (x.wins + x.losses);
   });
 
-  // ── 🪦 GRAVEYARD ──────────────────────────────────────────────────────────
-  // The directional experiment is over (28/07): every LLM, both formats, all
-  // regimes — no edge. The agents were archived so the new round is the
-  // market-neutral desks only. Here lie the dead, with the epitaph of their
-  // WHOLE lived record (all archived suggestions), honestly.
+  // ── ⚔️ VALHALLA ───────────────────────────────────────────────────────────
+  // A rodada direcional (bracket long/short) foi arquivada em 28/07. Os
+  // guerreiros NÃO estão mortos — caíram em batalha e descansam em Valhalla,
+  // esperando Ragnarök (a próxima rodada, com um mandato diferente). A epígrafe
+  // é o registro HONESTO da vida inteira deles (todas as suggestions arquivadas).
   const CAUSE: Record<string, string> = {
-    self_scan: "sem edge direcional", hybrid_scan: "3 cérebros, mesma sorte",
-    mistral_scan: "sem edge", grok_scan: "afogado em shorts", deepseek_scan: "sem edge",
-    kimi_scan: "sem edge", llama_scan: "sem edge", radar: "o controle honesto",
-    sniper: "morreu no zero", oracle_self: "a tese não salvou", oracle_mistral: "a tese não salvou",
-    oracle_grok: "a tese não salvou", oracle_deepseek: "a tese não salvou", oracle_kimi: "a tese não salvou",
+    self_scan: "tombou sem edge direcional", hybrid_scan: "três cérebros, um destino",
+    mistral_scan: "sangrou em campo aberto", grok_scan: "afogado em shorts", deepseek_scan: "sangrou em campo aberto",
+    kimi_scan: "sangrou em campo aberto", llama_scan: "sangrou em campo aberto", radar: "o escaldo honesto",
+    sniper: "caiu com a lâmina no zero", oracle_self: "a saga não o salvou", oracle_mistral: "a saga não o salvou",
+    oracle_grok: "a saga não o salvou", oracle_deepseek: "a saga não o salvou", oracle_kimi: "a saga não o salvou",
   };
   const gy = await selectAllRows<{ source: string | null; status: string; outcome_pct: number | null }>((from, to) =>
     db.from("zion_suggestions").select("source, status, outcome_pct")
@@ -248,12 +248,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (["hit_target", "hit_stop", "win", "loss"].includes(r.status)) a.decided++;
     gAgg.set(r.source, a);
   }
-  const graveyard = [...gAgg.entries()].map(([source, a]) => ({
+  const valhalla = [...gAgg.entries()].map(([source, a]) => ({
     name: (AGENTS[source]?.name ?? source).replace(" (aposentado)", ""),
     decided: a.decided,
     net: a.resolved > 0 ? Math.round((a.sum / a.resolved - ROUND_TRIP_COST_PCT) * 100) / 100 : null,
     cause: CAUSE[source],
   })).filter((g) => g.decided > 0).sort((x, y) => (x.net ?? 0) - (y.net ?? 0));
 
-  return NextResponse.json({ agents, graveyard, minSample: MIN_SAMPLE, windowDays: days, fetchedAt: new Date().toISOString() });
+  // `graveyard` kept as an alias for older clients; `valhalla` is canonical.
+  return NextResponse.json({ agents, valhalla, graveyard: valhalla, minSample: MIN_SAMPLE, windowDays: days, fetchedAt: new Date().toISOString() });
 }

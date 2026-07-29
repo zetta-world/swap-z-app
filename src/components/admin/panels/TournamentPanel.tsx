@@ -18,8 +18,8 @@ type Agent = {
   paperCurve: number[]; paperClosed: number;
   sufficientSample: boolean;
 };
-type Grave = { name: string; decided: number; net: number | null; cause: string };
-type TT = { agents: Agent[]; graveyard?: Grave[]; minSample: number; fetchedAt: string };
+type Fallen = { name: string; decided: number; net: number | null; cause: string };
+type TT = { agents: Agent[]; valhalla?: Fallen[]; graveyard?: Fallen[]; minSample: number; fetchedAt: string };
 
 const PAPER_MATURE = 8;
 const MEDAL = ["🥇", "🥈", "🥉"];
@@ -183,15 +183,15 @@ export default function TournamentPanel() {
             </div>
           )}
 
-          {(data.graveyard?.length ?? 0) > 0 && (
-            <div style={{ marginTop: 14, paddingTop: 10, borderTop: "1px dashed var(--adm-border)" }}>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 6 }}>
-                🪦 CEMITÉRIO — agentes direcionais aposentados (rodada arquivada)
+          {((data.valhalla ?? data.graveyard)?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 10, borderTop: "1px solid var(--adm-gold-dim, rgba(212 175 55 / 0.25))" }}>
+              <div style={{ fontSize: 8, color: "var(--adm-gold)", letterSpacing: "0.12em", marginBottom: 6 }}>
+                ᚠ VALHALLA ᚱ — guerreiros direcionais que tombaram (rodada arquivada · aguardam Ragnarök)
               </div>
-              {data.graveyard!.map((g, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, fontSize: 9, padding: "3px 0", alignItems: "center", opacity: 0.72 }}>
-                  <span style={{ flexShrink: 0 }}>✝️</span>
-                  <span style={{ color: "var(--adm-ink-3)", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: "line-through", textDecorationColor: "var(--adm-ink-4)" }}>
+              {(data.valhalla ?? data.graveyard)!.map((g, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, fontSize: 9, padding: "3px 0", alignItems: "center" }}>
+                  <span style={{ flexShrink: 0, color: "var(--adm-gold)" }}>⚔︎</span>
+                  <span style={{ color: "var(--adm-ink-2)", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {g.name}
                   </span>
                   <span style={{ color: "var(--adm-ink-4)", fontStyle: "italic", flexShrink: 0 }}>“{g.cause}”</span>
@@ -199,7 +199,7 @@ export default function TournamentPanel() {
                 </div>
               ))}
               <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 6, fontStyle: "italic" }}>
-                requiescant in pace · o veredito: IA não prevê direção em cripto. O edge vive nas mesas market-neutral.
+                ᚼ não morreram — festejam em Valhalla à espera de novo mandato. O veredito foi sobre <b>prever direção</b>; a próxima saga é <b>escolher a estratégia do momento</b>.
               </div>
             </div>
           )}
