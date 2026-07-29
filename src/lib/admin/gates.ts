@@ -34,19 +34,22 @@
  *   pause_ragnarok_ai — skip a mesa de IA do Ragnarök (MÍMIR). Gate SEPARADO do
  *                      mecânico: a mesa de IA gasta token, a mecânica não, então
  *                      um corte de custo não pode calar o controle junto.
+ *   pause_ragnarok_dex — skip a mesa DEX (FREYJA). Gate próprio: ela depende da
+ *                      GeckoTerminal, e uma API de terceiro instável não pode
+ *                      obrigar a desligar as mesas de CEX junto.
  *
  * Everything defaults to running (all gates false) — a missing/empty admin_kv
  * never accidentally pauses the flywheel.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type FlywheelGateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_paper" | "pause_radar" | "pause_sniper" | "pause_arbiter" | "pause_oracle" | "pause_arbiter2" | "pause_ragnarok" | "pause_ragnarok_ai";
-export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = ["pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament", "pause_paper", "pause_radar", "pause_sniper", "pause_arbiter", "pause_oracle", "pause_arbiter2", "pause_ragnarok", "pause_ragnarok_ai"];
+export type FlywheelGateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_paper" | "pause_radar" | "pause_sniper" | "pause_arbiter" | "pause_oracle" | "pause_arbiter2" | "pause_ragnarok" | "pause_ragnarok_ai" | "pause_ragnarok_dex";
+export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = ["pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament", "pause_paper", "pause_radar", "pause_sniper", "pause_arbiter", "pause_oracle", "pause_arbiter2", "pause_ragnarok", "pause_ragnarok_ai", "pause_ragnarok_dex"];
 
 export type FlywheelGates = Record<FlywheelGateKey, boolean>;
 
 export async function getFlywheelGates(): Promise<FlywheelGates> {
-  const gates: FlywheelGates = { pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false, pause_paper: false, pause_radar: false, pause_sniper: false, pause_arbiter: false, pause_oracle: false, pause_arbiter2: false, pause_ragnarok: false, pause_ragnarok_ai: false };
+  const gates: FlywheelGates = { pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false, pause_paper: false, pause_radar: false, pause_sniper: false, pause_arbiter: false, pause_oracle: false, pause_arbiter2: false, pause_ragnarok: false, pause_ragnarok_ai: false, pause_ragnarok_dex: false };
   const db = getSupabaseAdmin();
   if (!db) return gates;
   try {

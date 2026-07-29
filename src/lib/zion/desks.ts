@@ -105,6 +105,21 @@ export const DESKS: Desk[] = [
     tests: "a IA escolhe a estratégia do momento melhor que o bot determinístico?",
   },
 
+  {
+    source: "strat_dex", name: "FREYJA", sigil: "ᚨ",
+    who: "a senhora da abundância — colhe on-chain, onde o ZION também olha",
+    style: "swing", venue: "dex", direction: "long_only", brain: "none",
+    horizonHours: 48, scoreboard: "paper", status: "live",
+    tests: "a MESMA estratégia paga na DEX como na CEX? (a praça muda o resultado?)",
+  },
+  {
+    source: "strat_day", name: "SKAÐI", sigil: "ᛋ",
+    who: "a caçadora dos esquis: entra e sai no mesmo dia, sem dormir posicionada",
+    style: "day", venue: "cex", direction: "long_only", brain: "none",
+    horizonHours: 8, scoreboard: "paper", status: "live",
+    tests: "o mesmo playbook em horizonte intradiário — day trade vs swing",
+  },
+
   // ── Vigia sem IA (grupo de controle histórico) ──
   {
     source: "radar", name: "HEIMDALL", sigil: "ᚻ",

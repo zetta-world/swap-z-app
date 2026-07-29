@@ -12,7 +12,7 @@ type Row = {
   playbook: string; trades: number; open: number; decided: number;
   wins: number; losses: number; winRate: number | null; netPerTrade: number | null;
 };
-type Desk = { source: string; name: string; brain: string | null; trades: number; open: number; decided: number; winRate: number | null; netPerTrade: number | null; byPlaybook: Row[] };
+type Desk = { source: string; name: string; brain: string | null; venue: string | null; variable: string | null; trades: number; open: number; decided: number; winRate: number | null; netPerTrade: number | null; byPlaybook: Row[] };
 type RG = { wallets: Wallet[]; playbooks: Row[]; desks: Desk[]; note: string };
 
 const PLAYBOOK_LABEL: Record<string, string> = {
@@ -115,7 +115,7 @@ export default function RagnarokPanel() {
 
           {/* MECÂNICO vs IA — o duelo do experimento. */}
           <div style={{ fontSize: 8, letterSpacing: "0.1em", color: "var(--adm-cyan)", margin: "12px 0 4px" }}>
-            ⚔︎ O DUELO — o bot determinístico vs a IA, mesmo mercado
+            ⚔︎ O DUELO — uma variável por mesa, mesmo seletor
           </div>
           {data.desks.map((d) => (
             <div key={d.source} style={{ marginBottom: 6 }}>
@@ -124,6 +124,9 @@ export default function RagnarokPanel() {
                 <span style={{ color: d.netPerTrade == null ? "var(--adm-ink-3)" : col(d.netPerTrade), fontVariantNumeric: "tabular-nums" }}>{pct(d.netPerTrade)}</span>
                 <span style={{ color: "var(--adm-ink-4)", width: 60, textAlign: "right" }}>{d.decided} dec.</span>
               </div>
+              {d.variable && (
+                <div style={{ fontSize: 7, color: "var(--adm-ink-4)", paddingLeft: 8 }}>{d.variable}</div>
+              )}
               {d.byPlaybook.length > 0 && (
                 <div style={{ fontSize: 7, color: "var(--adm-ink-4)", paddingLeft: 8, marginTop: 1 }}>
                   {d.byPlaybook.map((p) => `${(PLAYBOOK_LABEL[p.playbook] ?? p.playbook).split(" ")[0]} ${p.trades}×`).join(" · ")}

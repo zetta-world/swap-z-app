@@ -72,16 +72,24 @@ painel Paper já leem por source.
   Roda no tick logo após os indicadores, com try próprio (é grátis, não pode
   ficar refém de falha de LLM). `strat_mech` entrou em `PAPER_SOURCES` e no
   torneio. 🟢
-- [ ] **S3 — DEX**: 🔴 **maior do que parecia** — descoberto em 29/07 que toda a
-  camada de resolução é CEX-shaped: `resolveOpenSuggestions` precifica por
-  klines da Binance e o `paper/engine` preenche com `gateioSpot`. Um token
-  só-DEX **nunca preencheria nem resolveria** — ficaria aberto para sempre,
-  poluindo o ledger. **É por isso que DEX nunca foi testado**: não faltou
-  vontade, faltou encanamento. Exige (a) migration com `chain`/`pool_address`
-  em `zion_suggestions`, (b) resolver por `getOHLCV` do pool quando houver
-  pool, (c) fill do paper pelo mesmo preço. Fazer com o encanamento certo, não
-  com gambiarra — uma mesa que loga sugestão que nunca resolve é pior que
-  nenhuma mesa.
+- [x] **S3 — DEX + encanamento** 🟢 (migration `0019_dex_desks.sql`)
+  O achado: toda a resolução era CEX-shaped (`resolveOpenSuggestions` por klines
+  da Binance, `paper/engine` por `gateioSpot`, ambos indexados por SÍMBOLO). Um
+  token só-DEX **nunca preencheria nem resolveria**. Não faltou vontade de
+  testar DEX — faltava saber ONDE buscar o preço.
+  - `chain` + `pool_address` em `zion_suggestions` e `paper_positions`
+  - resolver e carteira precificam por POOL (GeckoTerminal OHLCV) quando as
+    colunas estão preenchidas; nulas = caminho CEX de sempre. Cache indexado
+    pelo POOL, não pelo símbolo (dois pools do mesmo token são preços distintos)
+  - `time` do GeckoTerminal vem em SEGUNDOS — sem converter, toda vela cairia em
+    1970 e a janela de replay sairia vazia
+  - **FREYJA** (`strat_dex`): mesmo `selectPlaybook` do ferreiro, outra praça.
+    Gate de liquidez ANTES da análise técnica (TVL, volume e faixa de giro que
+    corta pool parado e cheiro de wash) — indicador bonito em pool seco continua
+    sendo dinheiro preso. 7 testes.
+- [x] **S3b — day trade** 🟢 **SKAÐI** (`strat_day`): MESMO seletor, relógio de
+  8h em vez de 48h. Só o horizonte muda, de propósito — assim um resultado
+  diferente é atribuível ao TEMPO DE EXPOSIÇÃO, não à estratégia.
 - [x] **S4 — camada IA**: `strategist-ai.ts` — **MÍMIR** (`strat_ai`). A IA NÃO é
   perguntada "pra onde vai o preço?"; recebe o retrato técnico + o plano do
   ferreiro e responde uma pergunta de OFÍCIO: é o playbook certo pra este

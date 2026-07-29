@@ -3,7 +3,8 @@ import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { deskFor } from "@/lib/zion/desks";
-import { STRAT_MECH, STRAT_AI } from "@/lib/zion/ragnarok";
+import { STRAT_MECH, STRAT_AI, STRAT_DAY } from "@/lib/zion/ragnarok";
+import { STRAT_DEX } from "@/lib/zion/ragnarok-dex";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,10 @@ export const dynamic = "force-dynamic";
  */
 
 const COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
-const SOURCES = [STRAT_MECH, STRAT_AI];
+// As quatro mesas do Ragnarök. Cada uma isola UMA variável contra o mesmo
+// seletor: MECH é o controle, AI troca o cérebro, DEX troca a praça, DAY troca
+// o relógio. Só uma variável por mesa — é o que torna o resultado legível.
+const SOURCES = [STRAT_MECH, STRAT_AI, STRAT_DEX, STRAT_DAY];
 
 type SugRow = { source: string; kind: string; status: string; outcome_pct: number | null; created_at: string };
 type PosRow = { source: string; pnl_usd: number | null; pnl_pct: number | null; status: string; closed_at: string | null };
@@ -122,12 +126,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .map(([playbook, b]) => ({ playbook, ...summarize(b) }))
     .sort((x, y) => (y.netPerTrade ?? -99) - (x.netPerTrade ?? -99));
 
+  // Cada mesa declara qual variável ela isola — o painel mostra isso ao lado do
+  // número, senão a comparação vira "quatro linhas parecidas".
+  const VARIABLE: Record<string, string> = {
+    [STRAT_MECH]: "controle · sem IA, CEX, 48h",
+    [STRAT_AI]:   "troca o CÉREBRO (IA decide)",
+    [STRAT_DEX]:  "troca a PRAÇA (on-chain)",
+    [STRAT_DAY]:  "troca o RELÓGIO (8h)",
+  };
   const desks = SOURCES.map((source) => {
     const d = deskFor(source);
     return {
       source,
       name: d ? `${d.sigil} ${d.name}` : source,
       brain: d?.brain ?? null,
+      venue: d?.venue ?? null,
+      variable: VARIABLE[source] ?? null,
       ...summarize(byDesk.get(source) ?? empty()),
       byPlaybook: [...cross.entries()]
         .filter(([k]) => k.startsWith(`${source}|`))

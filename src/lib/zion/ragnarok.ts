@@ -24,6 +24,12 @@ import { runStrategistAi, STRAT_AI } from "@/lib/zion/strategist-ai";
 
 /** A mesa mecânica — determinística, zero-LLM. É o CONTROLE do experimento. */
 export const STRAT_MECH = "strat_mech";
+/** A mesa intradiária: MESMO seletor, horizonte curto. A diferença entre day
+ *  trade e swing aqui é só o relógio — de propósito, para isolar a variável.
+ *  Se o mesmo playbook rende diferente em 8h e em 48h, o achado é sobre o
+ *  HORIZONTE, não sobre a estratégia. */
+export const STRAT_DAY = "strat_day";
+export const DAY_HORIZON_HOURS = Number(process.env.RAGNAROK_DAY_HORIZON ?? 8);
 export { STRAT_AI };
 
 export interface RagnarokRun {
@@ -43,6 +49,7 @@ export interface RagnarokRun {
 export async function runStrategistScan(
   indicators: SymbolIndicators[],
   source: string = STRAT_MECH,
+  horizonOverride?: number,
 ): Promise<RagnarokRun> {
   const decisions: StrategyDecision[] = indicators.map(selectPlaybook);
   const plans = decisions.filter(isPlan);
@@ -72,7 +79,7 @@ export async function runStrategistScan(
     stop_price: p.stop,
     probability: null,          // sem auto-relato: a confiança declarada provou-se anti-calibrada
     regime: indicators.find((i) => i.symbol === p.symbol)?.regime ?? null,
-    horizon_hours: p.horizonHours,
+    horizon_hours: horizonOverride ?? p.horizonHours,
     source,
   }));
 
@@ -119,4 +126,9 @@ export async function runStrategistAiScan(indicators: SymbolIndicators[]): Promi
   const r = await runStrategistAi(indicators);
   const logged = await persist(r.plans, indicators, STRAT_AI);
   return { proposed: r.proposed, accepted: r.accepted, adjusted: r.adjusted, vetoed: r.vetoed, logged };
+}
+
+/** Tick da mesa intradiária (SKAÐI): mesmos planos, relógio curto. */
+export async function runDayScan(indicators: SymbolIndicators[]): Promise<RagnarokRun> {
+  return runStrategistScan(indicators, STRAT_DAY, DAY_HORIZON_HOURS);
 }
