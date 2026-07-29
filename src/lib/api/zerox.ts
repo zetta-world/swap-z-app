@@ -37,8 +37,6 @@ export const ZEROX_CHAIN_IDS: Partial<Record<ChainId, number>> = {
   arbitrum:  42161,
   optimism:  10,
   avalanche: 43114,
-  linea:     59144,
-  // zksync supported on 0x but uses different API path
 };
 
 // Special address 0x uses to represent the chain's native currency

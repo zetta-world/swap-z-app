@@ -207,8 +207,6 @@ function txUrl(chain: string, txHash: string): string {
     arbitrum:  "https://arbiscan.io/tx/",
     optimism:  "https://optimistic.etherscan.io/tx/",
     avalanche: "https://snowtrace.io/tx/",
-    linea:     "https://lineascan.build/tx/",
-    zksync:    "https://explorer.zksync.io/tx/",
     solana:    "https://solscan.io/tx/",
   };
   return (map[chain] ?? "https://etherscan.io/tx/") + txHash;

@@ -595,8 +595,6 @@ function chainSlugToInternal(slug: string): ChainId | null {
     arbitrum: "arbitrum",
     optimism: "optimism",
     avalanche:"avalanche",
-    linea:    "linea",
-    zksync:   "zksync",
     solana:   "solana",
   };
   return map[slug] ?? null;

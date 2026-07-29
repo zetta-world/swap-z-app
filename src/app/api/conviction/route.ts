@@ -14,7 +14,7 @@ const RL_OPTS = { windowMs: 60_000, max: 60 };
 const DS_CHAIN_ALIAS: Record<string, string> = {
   ethereum: "ethereum", bsc: "bsc", polygon: "polygon", base: "base",
   arbitrum: "arbitrum", optimism: "optimism", avalanche: "avalanche",
-  linea: "linea", zksync: "zksync", solana: "solana",
+  solana: "solana",
 };
 
 /**

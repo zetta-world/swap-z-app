@@ -21,8 +21,6 @@ const DS_CHAIN_ALIAS: Record<string, string> = {
   arbitrum: "arbitrum",
   optimism: "optimism",
   avalanche:"avalanche",
-  linea:    "linea",
-  zksync:   "zksync",
   solana:   "solana",
 };
 

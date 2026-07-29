@@ -25,7 +25,6 @@ async function fetchPools(chain: ChainId | "all"): Promise<PoolSummary[]> {
 const CHAIN_COLOR: Record<string, string> = {
   eth: "#627EEA", bsc: "#F3BA2F", polygon_pos: "#8247E5", base: "#0052FF",
   arbitrum: "#28A0F0", optimism: "#FF0420", solana: "#14F195", avax: "#E84142",
-  zksync: "#8C8DFC", linea: "#61DFFF",
 };
 
 const DEX_COLOR: Record<string, string> = {

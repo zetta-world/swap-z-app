@@ -9,8 +9,6 @@ const NETWORK_IDS: Record<string, string> = {
   arbitrum:  "arbitrum",
   optimism:  "optimism",
   avalanche: "avax",
-  zksync:    "zksync",
-  linea:     "linea",
   solana:    "solana",
 };
 
