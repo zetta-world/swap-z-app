@@ -28,6 +28,9 @@ const CHAMPION_MULT = Number(process.env.PAPER_CHAMPION_MULT ?? 2);
 export const PAPER_SOURCES = [
   "self_scan", "hybrid_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan", "radar", "sniper",
   "oracle_self", "oracle_mistral", "oracle_grok", "oracle_deepseek", "oracle_kimi",
+  // Ragnarök (PLANO-RAGNAROK): mesa long-only de acumulação de USDT. A carteira
+  // paper É a métrica deste experimento — não o win-rate, mas quanto USDT sobra.
+  "strat_mech",
 ] as const;
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 
@@ -37,6 +40,7 @@ const LABELS: Record<string, string> = {
   sniper: "Sniper 🎯",
   oracle_self: "Oráculo Claude 🔮", oracle_mistral: "Oráculo Mistral 🔮", oracle_grok: "Oráculo Grok 🔮",
   oracle_deepseek: "Oráculo DeepSeek 🔮", oracle_kimi: "Oráculo Kimi 🔮",
+  strat_mech: "Ragnarök ᚱ mecânico",
 };
 
 // ── Pure helpers (unit-tested — no DB, no network) ────────────────────────

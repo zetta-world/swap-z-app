@@ -28,6 +28,8 @@ const AGENTS: Record<string, { name: string; kind: string }> = {
   oracle_grok:     { name: "Oráculo Grok 🔮",     kind: "oracle" },
   oracle_deepseek: { name: "Oráculo DeepSeek 🔮", kind: "oracle" },
   oracle_kimi:     { name: "Oráculo Kimi 🔮",     kind: "oracle" },
+  // Ragnarök — mesa long-only de acumulação (PLANO-RAGNAROK.md).
+  strat_mech:      { name: "Ragnarök ᚱ mecânico (long-only)", kind: "strat" },
 };
 
 // Zero-LLM desks: no zion_suggestions rows — their whole ledger IS the paper
