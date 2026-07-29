@@ -11,7 +11,7 @@ import {
 } from "wagmi";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
-import { verifyJupiterTransaction, guardEnabled } from "@/lib/swap/solana-guard";
+import { verifyJupiterTransaction, guardMode, shouldBlock } from "@/lib/swap/solana-guard";
 import { erc20Abi, type Hex } from "viem";
 import type { Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
@@ -319,13 +319,30 @@ export default function ExecuteSwap({
         // instruções que a Jupiter montou — não há `to` nem spender pra fixar
         // numa allowlist como no EVM. Uma instrução a mais escondida no blob
         // (SetAuthority, CloseAccount) seria autorizada junto com o swap.
-        // Então verificamos QUEM a transação invoca antes de assinar, e
-        // recusamos qualquer programa fora do conjunto de um swap legítimo.
-        // Fail-closed: transação ilegível também é recusada.
-        if (guardEnabled()) {
+        // Então verificamos QUEM a transação invoca antes de assinar.
+        //
+        // Padrão SHADOW: observa e reporta, mas NÃO bloqueia — a lista de
+        // programas ainda não foi confirmada contra tráfego real, e bloquear
+        // por suposição trocaria um risco hipotético por uma quebra certa.
+        // Vira `enforce` depois que a telemetria mostrar aprovação consistente.
+        const gMode = guardMode();
+        if (gMode !== "off") {
           const verdict = verifyJupiterTransaction(tx);
-          if (!verdict.ok) {
-            setError(verdict.reason ?? "Transação recusada pela verificação de segurança.");
+          const blocked = shouldBlock(gMode, verdict);
+          // Fire-and-forget: telemetria nunca atrasa nem quebra o swap.
+          void fetch("/api/swap-guard", {
+            method: "POST", headers: { "content-type": "application/json" }, keepalive: true,
+            body: JSON.stringify({
+              ok: verdict.ok, mode: gMode, blocked,
+              unknownPrograms: verdict.unknownPrograms, programs: verdict.programs,
+              symbol: fromToken.symbol,
+            }),
+          }).catch(() => {});
+          if (blocked) {
+            // Sem "tente de novo": a Jupiter devolveria a mesma transação e o
+            // guard recusaria igual. Mandar o usuário reclicar em círculo é
+            // pior que dizer a verdade.
+            setError(tImp("swap.solGuardBlocked"));
             setPhase("tx_failed");
             return;
           }
@@ -655,7 +672,7 @@ export default function ExecuteSwap({
                     {t("swap.executeSignAndSend")}
                   </button>
                 )}
-                {phase === "tx_failed" && (zxQuote || lfQuote || jupResult) && (
+                {phase === "tx_failed" && (zxQuote || lfQuote || jupResult) && error !== tImp("swap.solGuardBlocked") && (
                   <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
                     {t("swap.executeRetry")}
                   </button>
