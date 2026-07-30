@@ -6,6 +6,7 @@ import TerminalPanel from "../TerminalPanel";
 type Finding = {
   id: string; name: string; category: string; severity: string;
   pass: boolean; detail: string; whyRuntime: string; inconclusive?: boolean;
+  durationMs?: number; calls?: number;
 };
 type Report = {
   findings: Finding[];
@@ -13,6 +14,7 @@ type Report = {
   passed: number; failed: number; inconclusive: number;
   blocking: Finding[];
   verdict: string; ranAt: string;
+  totalMs: number; totalCalls: number;
 };
 
 const SEV_COLOR: Record<string, string> = {
@@ -88,6 +90,14 @@ export default function AuditBenchPanel() {
             </span>
           </div>
 
+          {/* O RECIBO. "Rodou rápido demais pra ter testado algo" é desconfiança
+              legítima — a resposta honesta é o cronômetro, não pedir confiança. */}
+          <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.6 }}>
+            {(report.totalMs / 1000).toFixed(1)}s de parede · {report.totalCalls} chamadas reais
+            (rede + banco) · verificações rodam em PARALELO, por isso o total é menor
+            que a soma das partes — abra cada linha para ver o tempo dela.
+          </div>
+
           <div style={{
             fontSize: 9, padding: "6px 8px", borderRadius: 3, marginBottom: 8, lineHeight: 1.5,
             color: report.verdict.startsWith("🟢") ? "var(--adm-green)" : report.verdict.startsWith("🟡") ? "var(--adm-amber)" : "var(--adm-red)",
@@ -119,9 +129,14 @@ export default function AuditBenchPanel() {
                   </div>
                 )}
                 {isOpen && (
-                  <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 3, paddingLeft: 17, fontStyle: "italic", lineHeight: 1.5 }}>
-                    por que só em execução: {f.whyRuntime}
-                  </div>
+                  <>
+                    <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 3, paddingLeft: 17, fontStyle: "italic", lineHeight: 1.5 }}>
+                      por que só em execução: {f.whyRuntime}
+                    </div>
+                    <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 17, fontFamily: "monospace" }}>
+                      {f.durationMs ?? 0}ms · {f.calls ?? 0} chamada(s){(f.calls ?? 0) === 0 ? " — só leitura de ambiente/memória" : ""}
+                    </div>
+                  </>
                 )}
               </div>
             );

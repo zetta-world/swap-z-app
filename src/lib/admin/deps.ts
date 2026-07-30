@@ -46,6 +46,13 @@ export interface DepStatus {
   latencyMs: number | null;
   /** Diagnóstico legível: status HTTP, ou a causa raiz da falha de conexão. */
   note?: string;
+  /** HTTP 451 — o fornecedor recusa o IP da região onde o app roda.
+   *
+   *  Isto NÃO é incidente: é uma condição PERMANENTE da infraestrutura (a
+   *  Binance bloqueia IP de datacenter americano, e a Vercel roda nos EUA).
+   *  Tratar como queda faria o painel ficar amarelo para sempre — e um alarme
+   *  que nunca apaga treina o operador a ignorar todos os outros. */
+  geoBlocked?: boolean;
 }
 
 const TIMEOUT_MS = 6000;
@@ -164,9 +171,12 @@ async function checkOne(dep: ExternalDep): Promise<DepStatus> {
     if (res.ok) return { ...base, ok: true, latencyMs };
     // 429 é instabilidade momentânea, não morte — vale distinguir para não
     // acordar ninguém por um rate limit passageiro.
+    if (res.status === 451) {
+      return { ...base, ok: false, geoBlocked: true, latencyMs,
+        note: "bloqueio geográfico (451) — permanente para a região do deploy, não é queda" };
+    }
     const note =
       res.status === 429 ? "rate limit (429) — momentâneo"
-      : res.status === 451 ? "bloqueio geográfico (451) — indisponível desta região"
       : res.status === 401 || res.status === 403 ? `autenticação recusada (${res.status}) — chave ou cota`
       : `HTTP ${res.status}`;
     return { ...base, ok: false, latencyMs, note };
@@ -186,16 +196,21 @@ export async function checkExternalDeps(): Promise<DepStatus[]> {
 
 /** Resumo pronto para alerta: só o que realmente merece acordar alguém. */
 export function summarizeDeps(deps: DepStatus[]): {
-  criticalDown: DepStatus[]; degradedDown: DepStatus[]; verdict: string;
+  criticalDown: DepStatus[]; degradedDown: DepStatus[]; geoBlocked: DepStatus[]; verdict: string;
 } {
-  const down = deps.filter((d) => !d.ok);
+  // Geobloqueio sai da conta de incidente: é condição fixa da região, não
+  // evento. Continua VISÍVEL (o operador precisa saber que aquele sinal não
+  // chega), mas não pinta o painel nem dispara alerta.
+  const geoBlocked = deps.filter((d) => d.geoBlocked);
+  const down = deps.filter((d) => !d.ok && !d.geoBlocked);
   const criticalDown = down.filter((d) => d.impact === "critical");
   const degradedDown = down.filter((d) => d.impact === "degraded");
+  const geoNote = geoBlocked.length > 0 ? ` (${geoBlocked.map((d) => d.name).join(", ")}: bloqueio regional permanente)` : "";
   const verdict =
     criticalDown.length > 0
       ? `🔴 ${criticalDown.length} dependência(s) CRÍTICA(s) fora: ${criticalDown.map((d) => d.name).join(", ")}`
       : degradedDown.length > 0
         ? `🟡 degradado — ${degradedDown.map((d) => d.name).join(", ")}`
-        : "🟢 todas as dependências externas respondendo";
-  return { criticalDown, degradedDown, verdict };
+        : `🟢 todas as dependências externas respondendo${geoNote}`;
+  return { criticalDown, degradedDown, geoBlocked, verdict };
 }

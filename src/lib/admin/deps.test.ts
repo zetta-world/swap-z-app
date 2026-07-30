@@ -33,6 +33,36 @@ describe("catálogo de dependências", () => {
   });
 });
 
+describe("geobloqueio (451) não é incidente", () => {
+  it("451 sai da conta de queda — senão o painel fica amarelo pra sempre", () => {
+    // A Binance recusa IP de datacenter americano e a Vercel roda nos EUA.
+    // É condição PERMANENTE da região, não evento. Um alarme que nunca apaga
+    // treina o operador a ignorar todos os outros.
+    const r = summarizeDeps([
+      dep({ id: "fut", name: "Binance Futuros", ok: false, geoBlocked: true, impact: "degraded" }),
+    ]);
+    expect(r.degradedDown).toHaveLength(0);
+    expect(r.criticalDown).toHaveLength(0);
+    expect(r.geoBlocked).toHaveLength(1);
+    expect(r.verdict).toContain("🟢");
+  });
+
+  it("mas continua VISÍVEL no veredito — o sinal realmente não chega", () => {
+    const r = summarizeDeps([dep({ name: "Binance Futuros", ok: false, geoBlocked: true, impact: "degraded" })]);
+    expect(r.verdict).toContain("Binance Futuros");
+    expect(r.verdict).toContain("regional");
+  });
+
+  it("geobloqueio não mascara uma queda real que aconteça junto", () => {
+    const r = summarizeDeps([
+      dep({ id: "fut", ok: false, geoBlocked: true, impact: "degraded" }),
+      dep({ id: "jup", name: "Jupiter", ok: false, impact: "critical" }),
+    ]);
+    expect(r.verdict).toContain("🔴");
+    expect(r.criticalDown).toHaveLength(1);
+  });
+});
+
 describe("summarizeDeps — o que merece acordar alguém", () => {
   it("tudo no ar → verde", () => {
     const r = summarizeDeps([dep({}), dep({ id: "y", impact: "degraded" })]);
