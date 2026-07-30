@@ -16,6 +16,7 @@ import BacktestPanel          from "./panels/BacktestPanel";
 import TournamentPanel        from "./panels/TournamentPanel";
 import RagnarokPanel          from "./panels/RagnarokPanel";
 import SwapGuardPanel         from "./panels/SwapGuardPanel";
+import AuditBenchPanel        from "./panels/AuditBenchPanel";
 import PaperPanel             from "./panels/PaperPanel";
 import TrafficPanel           from "./panels/TrafficPanel";
 import AiControlsPanel        from "./panels/AiControlsPanel";
@@ -46,6 +47,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "tournament":         <TournamentPanel />,
   "ragnarok":           <RagnarokPanel />,
   "swap-guard":         <SwapGuardPanel />,
+  "audit-bench":        <AuditBenchPanel />,
   "paper":              <PaperPanel />,
   "traffic":            <TrafficPanel />,
   "ai-controls":        <AiControlsPanel />,

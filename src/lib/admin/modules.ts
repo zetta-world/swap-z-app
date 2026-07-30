@@ -14,6 +14,7 @@ export type ModuleId =
   | "tournament"
   | "ragnarok"
   | "swap-guard"
+  | "audit-bench"
   | "paper"
   | "traffic"
   | "ai-controls"
@@ -139,6 +140,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "SOLANA GUARD",
     subtitle: "verificação de assinatura · Jupiter",
     icon: "⛨",
+    category: "dashboard",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
+    id: "audit-bench",
+    title: "BANCADA DE AUDITORIA",
+    subtitle: "o que só o sistema vivo responde",
+    icon: "⚖",
     category: "dashboard",
     defaultEnabled: true,
     defaultOrder: 5,
