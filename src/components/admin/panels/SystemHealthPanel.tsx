@@ -9,7 +9,7 @@ type Dep  = { name: string; ok: boolean; latencyMs: number | null; note?: string
 type Ext = {
   id: string; name: string; purpose: string; breaks: string;
   impact: "critical" | "degraded" | "cosmetic";
-  ok: boolean; latencyMs: number | null; note?: string;
+  ok: boolean; latencyMs: number | null; note?: string; geoBlocked?: boolean;
 };
 type Health = { ok: boolean; crons: Cron[]; deps: Dep[]; external?: Ext[]; verdict?: string };
 
@@ -85,14 +85,17 @@ export default function SystemHealthPanel() {
                 .map((d) => (
                 <div key={d.id} style={{
                   padding: "5px 7px", marginBottom: 4, borderRadius: 3,
-                  background: d.ok ? "transparent" : "rgba(255 60 60 / 0.06)",
-                  borderLeft: `2px solid ${d.ok ? "var(--adm-border)" : "var(--adm-red)"}`,
+                  // Geobloqueado não é vermelho: é uma condição fixa da região,
+                  // e pintar de alarme treinaria o olho a ignorar o painel.
+                  background: d.ok || d.geoBlocked ? "transparent" : "rgba(255 60 60 / 0.06)",
+                  borderLeft: `2px solid ${d.ok ? "var(--adm-border)" : d.geoBlocked ? "var(--adm-ink-4)" : "var(--adm-red)"}`,
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: dot(d.ok), flexShrink: 0 }} />
+                    <span style={{ width: 7, height: 7, borderRadius: "50%",
+                      background: d.geoBlocked ? "var(--adm-ink-4)" : dot(d.ok), flexShrink: 0 }} />
                     <span style={{ fontSize: 10, color: "var(--adm-ink-2)", flex: 1, fontFamily: "monospace" }}>{d.name}</span>
-                    <span style={{ fontSize: 7, color: d.impact === "critical" ? "var(--adm-red)" : "var(--adm-ink-4)", letterSpacing: "0.06em" }}>
-                      {IMPACT_LABEL[d.impact]}
+                    <span style={{ fontSize: 7, color: d.geoBlocked ? "var(--adm-ink-4)" : d.impact === "critical" ? "var(--adm-red)" : "var(--adm-ink-4)", letterSpacing: "0.06em" }}>
+                      {d.geoBlocked ? "REGIÃO" : IMPACT_LABEL[d.impact]}
                     </span>
                     <span style={{ fontSize: 9, color: "var(--adm-ink-3)", fontVariantNumeric: "tabular-nums", width: 52, textAlign: "right" }}>
                       {d.latencyMs != null ? `${d.latencyMs}ms` : "—"}
@@ -101,7 +104,12 @@ export default function SystemHealthPanel() {
                   <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 14 }}>{d.purpose}</div>
                   {/* "O QUE QUEBRA" só aparece quando ESTÁ quebrado: às 3 da
                       manhã o que importa é a consequência, não o catálogo. */}
-                  {!d.ok && (
+                  {!d.ok && d.geoBlocked && (
+                    <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 14 }}>
+                      {d.note} · efeito permanente: {d.breaks}
+                    </div>
+                  )}
+                  {!d.ok && !d.geoBlocked && (
                     <div style={{ fontSize: 8, color: "var(--adm-red)", marginTop: 2, paddingLeft: 14 }}>
                       ⚠ {d.breaks}
                       {d.note && <span style={{ color: "var(--adm-ink-4)" }}> · {d.note}</span>}

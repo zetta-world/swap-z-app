@@ -47,6 +47,15 @@ export interface AuditFinding {
   /** `true` quando a verificação não pôde rodar (falta env, etc.). Não é
    *  aprovação nem reprovação — é buraco de cobertura, e some como buraco. */
   inconclusive?: boolean;
+  /** Quanto tempo ESTA verificação levou, e quantas idas à rede/banco fez.
+   *
+   *  Existe para ser auditável: "a bancada rodou rápido demais para ter testado
+   *  algo" é uma desconfiança legítima, e a resposta honesta é mostrar o
+   *  cronômetro em vez de pedir confiança. Nove verificações em paralelo, cada
+   *  uma com poucas chamadas, levam segundos — mas quem lê deve poder conferir. */
+  durationMs?: number;
+  /** Chamadas externas/consultas que esta verificação realmente fez. */
+  calls?: number;
 }
 
 // ── 1. Deriva do banco vivo: a migration foi aplicada? ────────────────────
@@ -213,7 +222,8 @@ async function checkDeps(): Promise<AuditFinding> {
     whyRuntime: "foi exatamente aqui que a Jupiter desligou um host e o código continuou perfeito",
   };
   const deps = await checkExternalDeps();
-  const down = deps.filter((d) => !d.ok && d.impact === "critical");
+  // Geobloqueio é condição fixa da região, não queda — não reprova auditoria.
+  const down = deps.filter((d) => !d.ok && !d.geoBlocked && d.impact === "critical");
   return down.length === 0
     ? { ...base, pass: true, detail: `${deps.length} dependências checadas com chamada real; nenhuma crítica fora` }
     : { ...base, pass: false, detail: down.map((d) => `${d.name} (${d.note ?? "fora"}) → ${d.breaks}`).join(" | ") };
@@ -274,6 +284,9 @@ function checkSwapGuards(): AuditFinding {
 
 export interface AuditReport {
   findings: AuditFinding[];
+  /** Tempo total de parede e soma das chamadas — o recibo da execução. */
+  totalMs: number;
+  totalCalls: number;
   score: number;          // 0–10
   grade: string;
   passed: number; failed: number; inconclusive: number;
@@ -286,7 +299,7 @@ export interface AuditReport {
  *  aprovações cosméticas. É assim que auditoria vira teatro. */
 const WEIGHT: Record<Severity, number> = { critical: 8, high: 4, medium: 2, low: 1 };
 
-export function scoreFindings(findings: AuditFinding[]): Omit<AuditReport, "findings" | "ranAt"> {
+export function scoreFindings(findings: AuditFinding[]): Omit<AuditReport, "findings" | "ranAt" | "totalMs" | "totalCalls"> {
   // Inconclusivo NÃO conta como aprovado. Fingir que um teste que não rodou
   // passou é exatamente como uma auditoria mente sem mentir.
   const counted = findings.filter((f) => !f.inconclusive);
@@ -315,19 +328,33 @@ export function scoreFindings(findings: AuditFinding[]): Omit<AuditReport, "find
  * atacante faria; testar a função em memória não prova nada sobre o deploy.
  */
 export async function runAudit(origin: string): Promise<AuditReport> {
+  const t0 = Date.now();
+  // Cronometra cada verificação individualmente e anota quantas idas à rede ou
+  // ao banco ela fez. Rodam em PARALELO — é por isso que o total de parede é
+  // menor que a soma das partes, e não porque algo foi pulado.
+  const timed = async (calls: number, fn: () => Promise<AuditFinding> | AuditFinding): Promise<AuditFinding> => {
+    const start = Date.now();
+    const f = await fn();
+    return { ...f, durationMs: Date.now() - start, calls };
+  };
   const findings = await Promise.all([
-    checkSchema(),
-    checkRls(),
-    Promise.resolve(checkPublicEnv()),
-    checkAdminRoutes(origin),
-    checkCronAuth(origin),
-    checkHeaders(origin),
-    checkDeps(),
-    checkI18n(),
-    Promise.resolve(checkSwapGuards()),
+    timed(Object.keys(EXPECTED_SCHEMA).length, checkSchema),
+    timed(4, checkRls),
+    timed(0, checkPublicEnv),
+    timed(4, () => checkAdminRoutes(origin)),
+    timed(2, () => checkCronAuth(origin)),
+    timed(1, () => checkHeaders(origin)),
+    timed(8, checkDeps),
+    timed(0, checkI18n),
+    timed(0, checkSwapGuards),
   ]);
   // Bloqueantes primeiro, depois reprovados, depois inconclusivos.
   const rank = (f: AuditFinding) => (f.inconclusive ? 2 : f.pass ? 3 : 0) + (f.severity === "critical" ? 0 : 0.5);
   findings.sort((a, b) => rank(a) - rank(b));
-  return { findings, ...scoreFindings(findings), ranAt: new Date().toISOString() };
+  return {
+    findings, ...scoreFindings(findings),
+    totalMs: Date.now() - t0,
+    totalCalls: findings.reduce((s, f) => s + (f.calls ?? 0), 0),
+    ranAt: new Date().toISOString(),
+  };
 }

@@ -122,6 +122,9 @@ export async function runAlertWatchdog(): Promise<void> {
       // Cosmética não acorda ninguém — alarme que toca à toa vira alarme que
       // ninguém olha, e aí o alarme de verdade também é ignorado.
       if (d.impact === "cosmetic") continue;
+      // Geobloqueio (451) é condição PERMANENTE da região do deploy, não
+      // evento. Alertar seria mandar a mesma mensagem para sempre.
+      if (d.geoBlocked) continue;
       // Crítico repete a cada 30min; degradado a cada 6h.
       const window = d.impact === "critical" ? 1_800_000 : 21_600_000;
       if (await dedupOk(`dep_${d.id}`, window)) {

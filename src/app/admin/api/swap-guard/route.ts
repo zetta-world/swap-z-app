@@ -39,12 +39,32 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const rows = (data ?? []) as Row[];
   let passed = 0, refused = 0, blocked = 0;
   const byProgram = new Map<string, { count: number; lastSeen: string; symbols: Set<string> }>();
-  let mode = "shadow";
+
+  // MODO CONFIGURADO — lido do ambiente do SERVIDOR, agora mesmo.
+  //
+  // Antes o modo era deduzido da telemetria, e sem tráfego Solana não existe
+  // telemetria: o painel caía no default e dizia "OBSERVANDO" enquanto a
+  // configuração real era "enforce". Um painel que mente sobre o próprio estado
+  // é pior que painel nenhum.
+  const configuredMode =
+    process.env.NEXT_PUBLIC_SOLANA_TX_GUARD === "enforce" ? "enforce"
+    : process.env.NEXT_PUBLIC_SOLANA_TX_GUARD === "off" ? "off"
+    : "shadow";
+
+  // MODO EFETIVO — o que o navegador REALMENTE está usando.
+  //
+  // Aqui vive uma armadilha do Next.js: `NEXT_PUBLIC_*` é embutida no bundle no
+  // momento do BUILD. Mudar a variável na Vercel altera o ambiente do servidor
+  // NA HORA, mas o JavaScript que roda no navegador continua com o valor antigo
+  // até haver REDEPLOY. Ou seja: o servidor pode dizer "enforce" enquanto os
+  // usuários seguem em "shadow". A única testemunha do que o bundle usa é a
+  // telemetria, que é reportada pelo próprio cliente.
+  let observedMode: string | null = null;
 
   for (const r of rows) {
     const m = r.metadata;
     if (!m) continue;
-    if (typeof m.mode === "string") mode = m.mode; // o mais recente vence
+    if (typeof m.mode === "string" && observedMode === null) observedMode = m.mode; // rows vêm do mais recente
     if (m.ok) { passed++; continue; }
     refused++;
     if (m.blocked) blocked++;
@@ -71,15 +91,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }))
     .sort((a, b) => b.count - a.count);
 
+  // Divergência = redeploy pendente. É o diagnóstico que o dono precisa ver,
+  // e não dá pra inferir de outro jeito.
+  const staleBundle = observedMode !== null && observedMode !== configuredMode;
+
   return NextResponse.json({
-    mode, hours,
+    mode: configuredMode,
+    configuredMode, observedMode, staleBundle,
+    hours,
     passed, refused, blocked, total, refusalRate,
     unknown,
     allowedPrograms: JUPITER_ALLOWED_PROGRAMS,
     // Veredito pronto: o painel não deve exigir que alguém faça a conta na hora
     // de um incidente.
     verdict:
-      total === 0 ? "sem tráfego Solana nesta janela"
+      staleBundle ? `⚠ CONFIGURADO como "${configuredMode}" mas o bundle em produção ainda usa "${observedMode}" — falta REDEPLOY (NEXT_PUBLIC_* é fixada no build)`
+      : total === 0 ? `configurado como "${configuredMode}" · sem tráfego Solana nesta janela para confirmar o que o bundle usa`
       : refusalRate! > 0.5 ? "⚠ MAIORIA RECUSADA — provável mudança da Jupiter, NÃO ataque. Verifique o programa abaixo e adicione à lista."
       : refusalRate! > 0.05 ? "recusas acima do esperado — investigar"
       : "saudável",
