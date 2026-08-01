@@ -25,6 +25,7 @@ import { cn } from "@/lib/cn";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
 import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 import { useTier } from "@/lib/tier/client";
+import { FEATURE_TIER } from "@/lib/tier/types";
 
 const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "trading",      labelKey: "zion.tabTrading",      taglineKey: "zion.taglineTrading",      Icon: TrendingUp },
@@ -40,7 +41,11 @@ export default function ZionDrawer() {
   const { zionOpen, setZion, lang } = useUI();
   const { active: tierActive, tier: activeTier } = useTierAccent();
   const { satisfies, authenticated } = useTier();
-  const tierLocked = !satisfies("pro");
+  // Lê a MATRIZ, não um literal. Com `"pro"` digitado aqui, a interface
+  // continuaria trancando o usuário Free depois de o servidor passar a
+  // liberá-lo — e a página de preços seguiria prometendo 5 análises/dia que
+  // ninguém conseguiria pedir. A separação entre planos no ZION é por COTA.
+  const tierLocked = !satisfies(FEATURE_TIER.zionAdvisory);
   const { fromToken, toToken, fromChain, amountIn } = useSwap();
   const t = useT();
 

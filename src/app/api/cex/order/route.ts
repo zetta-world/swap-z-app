@@ -5,6 +5,7 @@ import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-g
 import { logSecurity, logError } from "@/lib/admin/track";
 import { recordEvent } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
+import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
 import {
   type CexId, type CexCredentials, type CexOrderResponse, type CexOrderSide, type CexOrderType,
   SUPPORTED_CEX_IDS, CEX_META,
@@ -76,6 +77,15 @@ export async function POST(req: NextRequest) {
       { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
     );
   }
+
+  // GATE DE PLANO (auditoria 01/08). `FEATURE_TIER.cexAutopilot = "pro"` estava
+  // declarado desde sempre e NUNCA era verificado no servidor: o controle vivia
+  // só no `TierGate`, componente de cliente que ESCONDE a interface. Esconder
+  // botão não é controle de acesso — um `curl` nesta rota entregava igual, e a
+  // rota nem precisava ser descoberta, porque o código dela vai no bundle.
+  // Dormente com TIER_GATES_ENABLED=false, igual à UI.
+  const gate = await checkFeatureTier("cexAutopilot");
+  if (gate) return denialResponse(gate);
 
   let body: OrderRequestBody;
   try {

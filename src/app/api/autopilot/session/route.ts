@@ -7,6 +7,7 @@ import {
 } from "@/lib/autopilot/sessions";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { SUPPORTED_CEX_IDS, type CexId } from "@/lib/cex/types";
+import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,14 @@ export async function POST(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
   }
+
+  // GATE DE PLANO no ARMAR (auditoria 01/08). `cexAutopilot: "pro"` era
+  // declarado e nunca checado no servidor — só o `TierGate` do cliente escondia
+  // o painel. Vai só no POST de propósito: DESARMAR e LER estado seguem abertos
+  // a quem já tem sessão, porque trancar a saída de um autopilot já armado
+  // seria transformar um problema de cobrança em risco de dinheiro do usuário.
+  const gate = await checkFeatureTier("cexAutopilot");
+  if (gate) return denialResponse(gate);
 
   let body: ArmBody;
   try { body = await req.json() as ArmBody; }

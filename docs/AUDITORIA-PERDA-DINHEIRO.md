@@ -31,7 +31,7 @@ final.
 | 5 | Registro de tokens se declara lista de demo | cliente | 🔴 documentado, não corrigido |
 | 6 | "Escudo MEV" e "modo privacidade" sem implementação | cliente | 🟢 corrigido |
 | 7 | Teto de gasto: 3 furos (ver abaixo) | plataforma | 🟢 corrigido |
-| 8 | Bypass de tier/paywall | plataforma | ⏸️ não verificado |
+| 8 | Plano/paywall: matriz declarada e não aplicada | ambos | 🟢 corrigido |
 
 ---
 
@@ -162,6 +162,73 @@ derruba o produto quando ela própria falha não é proteção.
 
 ---
 
+## 8 · Plano e paywall (01/08)
+
+`FEATURE_TIER` se descreve, no próprio comentário, como *"the single source of
+truth for which gate a surface sits behind. UI and API both read from here"*.
+A UI lia. A API não.
+
+**8a · Três das quatro entradas nunca eram verificadas no servidor.** Só
+`zionAdvisory` tinha um `if`. `cexAutopilot: "pro"` não era consultado por
+`/api/cex/order` nem por `/api/autopilot/session`; o controle existia apenas no
+`TierGate`, componente de **cliente** que **esconde a interface**.
+
+Esconder botão não é controle de acesso. Um `curl` na rota entregava igual — e a
+rota nem precisava ser descoberta, porque o código dela vai no bundle.
+
+**8b · A cota diária não existia.** `TIER_DAILY_ANALYSES` (free 5 · pro 10 ·
+trader 25 · pilot 30) trazia escrito *"Source of truth for the ENFORCEMENT
+LAYER"*. A camada de aplicação nunca foi construída: **nada contava nada**. O
+assinante do plano mais barato consumia sem limite o recurso mais caro da
+plataforma — exatamente a conta que a assinatura deveria pagar. Com receita de
+assinatura e taxa de no máximo 0,5%, o plano **é** o produto.
+
+**8c · O furo mais sério era CONTRA O CLIENTE.** A página de preços anuncia, em
+quatro idiomas, *"Free — 5 / day (ZION)"*. `TIER_DAILY_ANALYSES` concorda:
+`free: 5`. Mas o gate exigia `"pro"`, então o usuário Free recebia **402: zero
+análises, não cinco**.
+
+Duas fontes diziam cinco, uma dizia nenhuma — e a que dizia nenhuma era a que
+valia. Prometer na vitrine e negar na porta é o tipo de defeito que teste nenhum
+pega, porque **cada lado, isolado, está coerente**. Só a comparação entre eles
+denuncia.
+
+Corrigido na direção da promessa publicada: quem separa os planos no ZION é a
+**cota**, não o portão. O portão continua exigindo sessão — cota por carteira sem
+carteira não vincula ninguém, e seria o mesmo que não ter cota.
+
+**O que ficou** (`src/lib/tier/enforce.ts`):
+
+- `checkFeatureTier(feature)` — mesma matriz que desenha a UI decide a resposta
+  HTTP. Superfície nova fica protegida por **declarar a chave**, não por alguém
+  lembrar de escrever o `if`.
+- `consumeAnalysisQuota(wallet, tier)` — cota por **carteira** e por **dia**.
+  Nunca por IP: por IP fura trocando de rede e ainda pune um escritório atrás de
+  um NAT.
+- Recusas com semântica correta: `401` sem sessão (o problema é entrar), `402`
+  plano insuficiente (o problema é pagar), `429 + Retry-After` cota esgotada —
+  cobrar upgrade de quem já pagou e só usou o dia seria vender duas vezes.
+- Falha **aberta** se o banco cair, como os tetos de gasto.
+- `ZionDrawer` deixou de digitar `"pro"` e passou a ler a matriz — senão a
+  interface seguiria trancando o Free depois de o servidor liberá-lo.
+- Teste travando `PLAN_TIERS[].dailyAnalyses` à `TIER_DAILY_ANALYSES`: se a
+  vitrine e a porta divergirem de novo, o CI reprova.
+
+⚠️ **Mudança de comportamento em produção.** O autopilot CEX agora **recusa de
+verdade** abaixo de `pro` (`POST` de armar e de ordem; desarmar e ler estado
+seguem abertos — trancar a saída de um autopilot já armado transformaria um
+problema de cobrança em risco de dinheiro do usuário). Vale o mesmo interruptor
+de sempre: `TIER_GATES_ENABLED=false` abre tudo.
+
+**Ainda aberto:** `arbScanner: "trader"` e `prioritySupport: "trader"` não
+correspondem a nenhuma superfície no código — são entradas mortas na matriz. O
+feed de arbitragem cross-CEX é vendido no card do plano Trader e hoje entra pelo
+`op=arbitrage` do ZION, sob a regra do ZION. Decidir se ele deve exigir `trader`
+é decisão de produto, não de código.
+
+---
+
 ## Próximos
 
-8. **Bypass de tier/paywall** — não verificado.
+A fila de perda de dinheiro está fechada. O que sobra é dívida conhecida:
+o registro de tokens (#5) e a proteção MEV real em Solana (bundle Jito, #6).
