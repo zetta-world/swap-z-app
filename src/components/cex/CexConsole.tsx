@@ -16,14 +16,13 @@ import { CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials } from "@/
 import { useCexVault } from "@/lib/cex/vault";
 import { useT } from "@/lib/i18n";
 import CexTradePanel from "./CexTradePanel";
-import WalletCexBridge from "./WalletCexBridge";
 import CexOpenOrdersPanel from "./CexOpenOrdersPanel";
 import ZionCexAutopilot from "./ZionCexAutopilot";
 import { cn } from "@/lib/cn";
 
 const AUTO_LOCK_MS = 10 * 60 * 1000; // 10 minutes idle → re-lock
 
-type ConsoleTab = "trade" | "orders" | "balance" | "zion";
+type ConsoleTab = "trade" | "orders" | "zion";
 
 const TABS: Array<{
   id:       ConsoleTab;
@@ -32,7 +31,6 @@ const TABS: Array<{
 }> = [
   { id: "trade",   labelKey: "cex.tabTrade",   Icon: ArrowDownUp  },
   { id: "orders",  labelKey: "cex.tabOrders",  Icon: ListOrdered  },
-  { id: "balance", labelKey: "cex.tabBalance", Icon: Wallet       },
   { id: "zion",    labelKey: "cex.tabZion",    Icon: Bot          },
 ];
 
@@ -359,13 +357,6 @@ export default function CexConsole() {
               {activeTab === "orders" && (
                 <CexOpenOrdersPanel
                   key={`orders-${selectedId}`}
-                  exchangeId={selectedId}
-                  credentials={activeCreds}
-                />
-              )}
-              {activeTab === "balance" && (
-                <WalletCexBridge
-                  key={`bridge-${selectedId}`}
                   exchangeId={selectedId}
                   credentials={activeCreds}
                 />

@@ -471,14 +471,6 @@ export interface CexWithdrawalReceipt {
   timestamp?: number;
 }
 
-/**
- * Place a withdrawal from the CEX to an on-chain address. This is the
- * "money leaves the building" operation — every guard rail we have
- * lives in the route layer (notional cap, address whitelist check,
- * 2FA passthrough). This function itself does no policy, just the
- * mechanical ccxt call. Treat it like placeCexOrder: never call it
- * from anywhere except the dedicated /api/cex/withdraw route.
- */
 /** Spot markets available on the exchange. Sorted by symbol. */
 export interface CexMarket {
   symbol: string;
@@ -503,55 +495,14 @@ export async function fetchCexMarkets(
     .sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
 
-export async function withdrawFromCex(
-  id: CexId,
-  creds: CexCredentials,
-  req: CexWithdrawalRequest,
-): Promise<CexWithdrawalReceipt> {
-  if (req.amount <= 0 || !Number.isFinite(req.amount)) {
-    throw new Error("Invalid amount.");
-  }
-  if (!/^[A-Za-z0-9_-]{2,20}$/.test(req.currency)) {
-    throw new Error("Invalid currency.");
-  }
-  if (typeof req.address !== "string" || req.address.length < 20 || req.address.length > 200) {
-    throw new Error("Invalid destination address.");
-  }
-  const exchange = instantiate(id, creds);
-  await syncTimeIfNeeded(exchange);
-
-  const params: Record<string, unknown> = {};
-  if (req.network)       params.network = req.network;
-  if (req.twoFactorCode) params.twoFactorCode = req.twoFactorCode;
-
-  const raw = await exchange.withdraw(
-    req.currency,
-    req.amount,
-    req.address,
-    req.tag,
-    params,
-  ) as unknown as {
-    id?:        string;
-    amount?:    number;
-    address?:   string;
-    network?:   string;
-    status?:    string;
-    fee?:       { cost?: number; currency?: string };
-    txid?:      string;
-    timestamp?: number;
-  };
-
-  return {
-    id:        String(raw.id ?? ""),
-    currency:  req.currency,
-    amount:    typeof raw.amount === "number" ? raw.amount : req.amount,
-    address:   raw.address ?? req.address,
-    network:   raw.network ?? req.network,
-    status:    String(raw.status ?? "pending"),
-    fee:       raw.fee && typeof raw.fee.cost === "number"
-                 ? { cost: raw.fee.cost, currency: String(raw.fee.currency ?? req.currency) }
-                 : undefined,
-    txid:      raw.txid,
-    timestamp: typeof raw.timestamp === "number" ? raw.timestamp : undefined,
-  };
-}
+// SAQUE CEX REMOVIDO (30/07). `withdrawFromCex` vivia aqui.
+//
+// Para o recurso funcionar, o usuário precisava habilitar a permissão de SAQUE
+// na chave de API entregue à plataforma — exatamente o que todo guia de
+// segurança manda nunca fazer. As defesas que existiam (teto de $50k, 3/min,
+// log, alerta) limitavam o RAIO DE EXPLOSÃO, não a exposição: com o servidor
+// comprometido, o atacante teria chaves com poder de saque de TODOS os
+// usuários, e o teto seria aplicado pelo código que ele controla.
+//
+// O usuário saca pela própria corretora. A plataforma pede chave apenas com
+// leitura e negociação — e agora não tem como usar mais que isso.
