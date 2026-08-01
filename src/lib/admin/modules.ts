@@ -16,6 +16,8 @@ export type ModuleId =
   | "swap-guard"
   | "audit-bench"
   | "launch-gate"
+  | "margin"
+  | "ai-cost"
   | "paper"
   | "traffic"
   | "ai-controls"
@@ -48,7 +50,18 @@ export type ModuleId =
  *   bench     — verificação da própria plataforma: auditoria, sondas de
  *               ataque, guard de assinatura, saúde de dependência.
  */
-export type ModuleCategory = "command" | "dashboard" | "lab" | "bench" | "growth" | "finance" | "users" | "controls" | "logs" | "system";
+export type ModuleCategory =
+  | "command"     // e aí?
+  | "receita"     // estamos ganhando?
+  | "custos"      // estamos gastando quanto?
+  | "margem"      // estamos lucrando?
+  | "operacao"    // o que roda AGORA com dinheiro real
+  | "crescimento" // estamos crescendo?
+  | "mercado"     // como está o mercado LÁ FORA (dado de terceiro)
+  | "lab"         // o experimento funciona? (tudo simulado)
+  | "bench"       // a plataforma está sã?
+  | "controls"    // o que eu ligo/desligo
+  | "logs";       // o que aconteceu
 
 export type ModuleDef = {
   id:             ModuleId;
@@ -85,7 +98,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "WALLETS",
     subtitle: "signups · active · chain split",
     icon: "◈",
-    category: "dashboard",
+    category: "crescimento",
     defaultEnabled: true,
     defaultOrder: 0,
   },
@@ -94,7 +107,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "TIER MATRIX",
     subtitle: "distribution across free / pro / trader / pilot",
     icon: "⊕",
-    category: "dashboard",
+    category: "receita",
     defaultEnabled: true,
     defaultOrder: 1,
   },
@@ -103,7 +116,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "AUTOPILOT",
     subtitle: "sessions · runs · pnl today",
     icon: "⊛",
-    category: "dashboard",
+    category: "operacao",
     defaultEnabled: true,
     defaultOrder: 2,
   },
@@ -112,7 +125,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "LIVE OPS",
     subtitle: "open positions · autopilot run feed",
     icon: "⊠",
-    category: "dashboard",
+    category: "operacao",
     defaultEnabled: true,
     defaultOrder: 3,
   },
@@ -121,7 +134,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "OPERATIONS",
     subtitle: "every client trade · volume · realized P&L",
     icon: "≣",
-    category: "dashboard",
+    category: "receita",
     defaultEnabled: true,
     defaultOrder: 4,
   },
@@ -171,6 +184,24 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     defaultOrder: 5,
   },
   {
+    id: "ai-cost",
+    title: "CUSTO DE IA",
+    subtitle: "gasto por modelo · projeção do mês",
+    icon: "💸",
+    category: "custos",
+    defaultEnabled: true,
+    defaultOrder: 1,
+  },
+  {
+    id: "margin",
+    title: "MARGEM",
+    subtitle: "receita − custos · a conta que decide se a empresa vive",
+    icon: "📊",
+    category: "margem",
+    defaultEnabled: true,
+    defaultOrder: 1,
+  },
+  {
     id: "launch-gate",
     title: "BARRA DE LANÇAMENTO",
     subtitle: "critério pré-registrado · 5 de 5 ou não vai",
@@ -193,7 +224,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "CEX SESSIONS",
     subtitle: "active autopilot per exchange",
     icon: "⊞",
-    category: "dashboard",
+    category: "operacao",
     defaultEnabled: true,
     defaultOrder: 5,
   },
@@ -202,7 +233,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "MARKET",
     subtitle: "24h DEX volume · trending pairs",
     icon: "⋈",
-    category: "dashboard",
+    category: "mercado",
     defaultEnabled: true,
     defaultOrder: 4,
   },
@@ -211,7 +242,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "PLATFORM EVENTS",
     subtitle: "page views · swap intents · errors",
     icon: "◉",
-    category: "dashboard",
+    category: "logs",
     defaultEnabled: false,
     defaultOrder: 5,
   },
@@ -301,7 +332,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "FINANCE",
     subtitle: "AI cost · volume · revenue · CSV",
     icon: "$",
-    category: "finance",
+    category: "receita",
     defaultEnabled: true,
     defaultOrder: 12,
   },
@@ -310,7 +341,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "USERS",
     subtitle: "leaderboard · per-wallet drill-down",
     icon: "◭",
-    category: "users",
+    category: "crescimento",
     defaultEnabled: true,
     defaultOrder: 13,
   },
@@ -319,7 +350,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "MIDGARD",
     subtitle: "acessos no mapa · dia/semana/mês · origem",
     icon: "🌍",
-    category: "growth",
+    category: "crescimento",
     defaultEnabled: true,
     defaultOrder: 14,
   },
@@ -328,7 +359,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "GROWTH",
     subtitle: "funnel · active users · signups",
     icon: "↗",
-    category: "growth",
+    category: "crescimento",
     defaultEnabled: true,
     defaultOrder: 14,
   },
