@@ -364,6 +364,10 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         try {
           const { order } = await placeCexOrder(exchange, creds, { symbol: intent.symbol, side: "sell", type: intent.type, amount: intent.amount, price: intent.price });
           fired++; remainingTrades--;
+          // Conta a ordem NA HORA (ver a nota em "contador incremental" no fim
+          // desta função): a ordem já existe na corretora, então o limite diário
+          // do usuário precisa registrá-la antes de qualquer coisa poder falhar.
+          await bumpSessionTrades(s.wallet_address, s.exchange_id, 1);
           if (intent.type === "market") {
             const realized = realizedFromSell(order, pos);
             if (realized !== null) {
@@ -406,6 +410,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
       try {
         const { order } = await placeCexOrder(exchange, creds, { symbol: intent.symbol, side: "buy", type: intent.type, amount: intent.amount, price: intent.price });
         fired++; remainingTrades--;
+        await bumpSessionTrades(s.wallet_address, s.exchange_id, 1);
         // Record the entry with REAL fill data (fall back to the limit price).
         const fillPrice = Number(order.average) > 0 ? Number(order.average) : (intent.price && intent.price > 0 ? intent.price : (refPrice ?? 0));
         const filledQty = Number(order.filled)  > 0 ? Number(order.filled)  : intent.amount;
@@ -429,10 +434,22 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
 
   if (frozenUntil === today) alertIfNewlyFrozen(); // a sell may have tripped it mid-run
   await recordRuns(runRows);
-  // A4 (money-path audit): bump the daily counter RELATIVELY via the same
-  // atomic RPC the browser uses. An absolute write here would overwrite (and
-  // lose) any browser fire that landed while this run was in flight.
-  if (fired > 0) await bumpSessionTrades(s.wallet_address, s.exchange_id, fired);
+  // CONTADOR INCREMENTAL (auditoria de dinheiro, 30/07).
+  //
+  // Antes o contador diário era somado UMA vez, aqui no fim da execução. O
+  // limite dentro de uma mesma passada era respeitado (remainingTrades vive em
+  // memória), mas se a função morresse depois de disparar e antes desta linha
+  // — timeout do serverless no meio de chamadas de corretora, que levam
+  // segundos cada — as ordens JÁ EXISTIAM na corretora e o contador nunca as
+  // via. A passada seguinte lia o número velho e liberava a cota diária
+  // inteira de novo.
+  //
+  // O limite de trades por dia é o que o usuário usa para limitar a própria
+  // exposição. Ele não pode depender da função chegar viva até o fim.
+  //
+  // Agora cada ordem é contada logo após existir. O RPC é relativo e atômico
+  // (o mesmo que o navegador usa), então somas concorrentes não se perdem — e
+  // pagar uma ida ao banco por ordem executada é barato no caminho do dinheiro.
   await patchSession(s.id, {
     last_scan_at: nowIso,
     last_error:   null,
