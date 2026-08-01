@@ -4,7 +4,7 @@ import { normalizeEvmAddress } from "@/lib/auth/siwe";
 import { normalizeSolanaAddress } from "@/lib/auth/siws";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { isSessionConfigured } from "@/lib/auth/session";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: NextRequest) {
   const clientId = getClientId(req.headers);
-  const rl = rateLimit(`auth-nonce:${clientId}`, { windowMs: 60_000, max: 20 });
+  const rl = await rateLimitDurable(`auth-nonce:${clientId}`, { windowMs: 60_000, max: 20 });
   if (!rl.ok) {
     return json({ ok: false, error: "rate_limited" }, 429, { "Retry-After": String(rl.retryAfter) });
   }

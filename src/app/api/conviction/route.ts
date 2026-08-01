@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { validateAddress } from "@/lib/validate";
 import { getPairDetail } from "@/lib/api/dexscreener";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
@@ -29,7 +29,7 @@ const DS_CHAIN_ALIAS: Record<string, string> = {
  * breakdown that contributed.
  */
 export async function GET(req: NextRequest) {
-  const rl = rateLimit(`conv:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`conv:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },

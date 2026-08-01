@@ -86,8 +86,8 @@ function parseQuery(raw: string): ParsedTok[] {
 const RL_OPTS = { windowMs: 60_000, max: 90 };
 
 export async function GET(req: NextRequest) {
-  const { rateLimit, getClientId } = await import("@/lib/rate-limit");
-  const rl = rateLimit(`prices:${getClientId(req.headers)}`, RL_OPTS);
+  const { rateLimitDurable, getClientId } = await import("@/lib/rate-limit");
+  const rl = await rateLimitDurable(`prices:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { ok: false, error: "rate_limited" },

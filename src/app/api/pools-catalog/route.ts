@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { isValidChain } from "@/lib/validate";
 import {
   getPoolsPage, searchPools, type PoolSummary,
@@ -30,7 +30,7 @@ interface CatalogResponse {
  * queries on the same page+chain don't re-hit GeckoTerminal.
  */
 export async function GET(req: NextRequest) {
-  const rl = rateLimit(`pools-catalog:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`pools-catalog:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },

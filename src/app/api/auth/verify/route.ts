@@ -4,7 +4,7 @@ import { verifySolanaSignature, normalizeSolanaAddress } from "@/lib/auth/siws";
 import { issueSession, setSessionCookie, isSessionConfigured } from "@/lib/auth/session";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { WalletChain } from "@/lib/supabase/types";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   const clientId = getClientId(req.headers);
-  const rl = rateLimit(`auth-verify:${clientId}`, { windowMs: 60_000, max: 20 });
+  const rl = await rateLimitDurable(`auth-verify:${clientId}`, { windowMs: 60_000, max: 20 });
   if (!rl.ok) {
     return json({ ok: false, error: "rate_limited" }, 429, { "Retry-After": String(rl.retryAfter) });
   }

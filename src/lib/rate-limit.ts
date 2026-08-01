@@ -28,6 +28,29 @@ export interface RateLimitResult {
   retryAfter: number;          // seconds until reset (only useful when !ok)
 }
 
+/**
+ * Limitador EM MEMÓRIA — contador por INSTÂNCIA.
+ *
+ * ⚠ CICATRIZ (30/07): a bancada de auditoria provou em produção que este
+ * limitador NÃO segura em serverless. Rajada de 105 requisições contra
+ * `/api/prices`, cujo teto era 90/min, passou INTEIRA sem um único 429 — porque
+ * cada instância da função tem o próprio `BUCKETS` e o contador se dilui entre
+ * elas. O limite existia no código e não protegia nada.
+ *
+ * QUANDO USAR ESTE (e não o durável):
+ *   · a rota escreve só no NOSSO banco (não queima cota de terceiro),
+ *   · e o abuso não custa dinheiro nem credencial.
+ *   Ex.: /api/trades, /api/operations/record, /api/security/csp-report — aqui
+ *   ele vale como defesa em profundidade barata, e o custo de uma ida extra ao
+ *   banco por requisição não se justifica.
+ *
+ * QUANDO USAR `rateLimitDurable`:
+ *   · cota paga de terceiro (agregador, GeckoTerminal, CEX),
+ *   · credencial ou força bruta de autenticação,
+ *   · qualquer caminho de dinheiro.
+ *   Ali o contador PRECISA ser compartilhado, senão o teto real vira
+ *   `max × número de instâncias` — que é um número que ninguém escolheu.
+ */
 export function rateLimit(id: string, opts: RateLimitOptions = {}): RateLimitResult {
   const windowMs = opts.windowMs ?? 60_000;
   const max      = opts.max      ?? 12;

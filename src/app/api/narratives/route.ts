@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { getTrendingPools, getTopPools, type PoolSummary } from "@/lib/api/geckoterminal";
 import { getTrending, type TrendingPair } from "@/lib/api/dexscreener";
 import { ZION_NARRATIVE_SYSTEM } from "@/lib/zion/narrative-prompt";
@@ -70,7 +70,7 @@ interface NarrativeResponse {
  * is the only paid leg of this route.
  */
 export async function GET(req: NextRequest) {
-  const rl = rateLimit(`narr:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`narr:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },
