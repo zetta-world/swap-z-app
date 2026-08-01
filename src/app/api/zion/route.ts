@@ -22,6 +22,7 @@ import { getTierForWallet } from "@/lib/tier/check";
 import { gatesEnabled } from "@/lib/tier/flags";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
+import { consumeAnalysisQuota, denialResponse } from "@/lib/tier/enforce";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,21 +113,33 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // ─── 1b. Tier gate (dormant unless TIER_GATES_ENABLED=true) ───────────
-  // ZION advisory sits behind the "pro" tier. While gates are dormant this
-  // block is a no-op — the live ZION stays fully open. When enabled, a wallet
-  // below pro (or no session) gets a 402 pointing at /pricing. We never crash
-  // when Supabase/Helius are unconfigured: getTierForWallet falls back to free.
+  // ─── 1b. Plano + COTA (auditoria 01/08) ───────────────────────────────
+  //
+  // Antes este bloco exigia "pro" e parava aí. Dois problemas:
+  //
+  //  · CONTRA O CLIENTE — a página de preços anuncia "Free: 5 / day (ZION)" e
+  //    a tabela `TIER_DAILY_ANALYSES` concorda (`free: 5`). O gate exigindo
+  //    "pro" entregava ZERO. Agora quem separa os planos aqui é a COTA, que é o
+  //    que a vitrine sempre prometeu.
+  //  · CONTRA A PLATAFORMA — `TIER_DAILY_ANALYSES` se dizia "source of truth
+  //    for the ENFORCEMENT LAYER" e a camada não existia: nada contava nada. O
+  //    assinante do plano mais barato consumia SEM LIMITE o recurso mais caro,
+  //    que é exatamente a conta que a assinatura paga.
+  //
+  // A SESSÃO CONTINUA OBRIGATÓRIA. Sem carteira não há a quem debitar a cota, e
+  // uma cota que não vincula a ninguém é o mesmo que não ter cota.
   if (gatesEnabled()) {
-    const required = FEATURE_TIER.zionAdvisory; // "pro"
     const session = await getSession();
-    const tier = session ? (await getTierForWallet(session.sub, session.chain)).tier : "free";
+    if (!session) return denialResponse({ kind: "unauthenticated" });
+    // Nunca derruba por infra: getTierForWallet cai para "free" se Supabase ou
+    // Helius estiverem indisponíveis.
+    const { tier } = await getTierForWallet(session.sub, session.chain);
+    const required = FEATURE_TIER.zionAdvisory;
     if (!tierSatisfies(tier, required)) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "tier_required", requiredTier: required, upgradeUrl: "/pricing" }),
-        { status: 402, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
-      );
+      return denialResponse({ kind: "tier_required", required, have: tier });
     }
+    const denial = await consumeAnalysisQuota(session.sub, tier);
+    if (denial) return denialResponse(denial);
   }
 
   // ─── 2. Input validation ─────────────────────────────────────────────
