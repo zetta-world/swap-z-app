@@ -131,35 +131,43 @@ async function checkErrorLeak(origin: string): Promise<AuditFinding> {
 }
 
 /**
- * RATE LIMIT.
+ * RATE LIMIT — com FURO DE CACHE, que é como o ataque real acontece.
  *
- * Dispara uma rajada CURTA e vê se aparece 429. Sem limite, a superfície de
- * custo fica aberta: um script pode queimar cota de agregador e de IA por conta
- * da plataforma. Volume propositalmente pequeno — não é para machucar.
+ * A primeira versão desta sonda disparava 12 requisições IDÊNTICAS e concluía
+ * nada: a resposta é cacheável na CDN (`s-maxage`), então as 12 foram servidas
+ * pela borda e NUNCA chegaram na origem. O limitador sequer rodou — a sonda
+ * testou o cache, não a defesa.
+ *
+ * O comentário do próprio `/api/prices` já dizia como se contorna: "a malicious
+ * caller can sidestep the cache by adding a unique query". É exatamente isso
+ * que um atacante faz para queimar cota de agregador — então é exatamente isso
+ * que a sonda precisa fazer, senão está medindo o adversário errado.
+ *
+ * Cada requisição leva um parâmetro único: passa pela borda, chega na origem,
+ * e o limitador é de fato exercitado.
  */
 async function checkRateLimit(origin: string): Promise<AuditFinding> {
   const base = {
-    id: "rate_limit", name: "Rotas públicas têm limite de requisição",
+    id: "rate_limit", name: "Rotas públicas limitam requisição mesmo furando o cache",
     category: "segurança" as const, severity: "high" as const,
-    whyRuntime: "limite em memória parece funcionar num processo só e evapora em serverless — só a produção real prova",
+    whyRuntime: "limite em memória parece funcionar num processo só e evapora em serverless; e a CDN pode esconder que ele nunca rodou",
   };
-  const path = "/api/prices?symbols=BTC";
-  const N = 12;
+  const N = 25;
   let got429 = false;
-  let ok = 0;
+  let ok = 0, sent = 0;
   for (let i = 0; i < N; i++) {
-    const res = await req(`${origin}${path}`);
+    // `_cb` = cache-buster: torna cada URL única, do mesmo jeito que um script
+    // hostil faria para chegar na origem a cada tentativa.
+    const res = await req(`${origin}/api/prices?symbols=BTC&_cb=${Date.now()}_${i}`);
+    sent++;
     if (!res) continue;
     if (res.status === 429) { got429 = true; break; }
     if (res.ok) ok++;
   }
-  // Sem 429 numa rajada curta NÃO prova ausência de limite (o teto pode ser
-  // mais alto). Então isto é inconclusivo, não reprovação — a bancada não pode
-  // inventar falha do mesmo jeito que não pode inventar aprovação.
   return got429
-    ? { ...base, pass: true, detail: `429 apareceu na rajada de ${N} — limite ativo` }
+    ? { ...base, pass: true, detail: `429 na requisição ${sent} de ${N} furando o cache — limitador ativo na origem` }
     : { ...base, pass: false, inconclusive: true,
-        detail: `${ok}/${N} passaram sem 429 — teto pode ser mais alto que a rajada; não conclui` };
+        detail: `${ok}/${sent} passaram sem 429 mesmo furando o cache — teto acima de ${sent}/min; aumente a rajada para concluir` };
 }
 
 /**
@@ -249,15 +257,28 @@ async function checkNonceFreshness(origin: string): Promise<AuditFinding> {
     category: "segurança" as const, severity: "high" as const,
     whyRuntime: "nonce previsível/reutilizado só aparece pedindo dois de verdade e comparando",
   };
+  // A rota exige `address` + `chain`; sem eles devolve 400 e a sonda antiga
+  // concluía "não respondeu como esperado" — culpando o endpoint por um erro
+  // que era dela. Endereço com checksum EIP-55 válido, só leitura.
+  const q = "?chain=evm&address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
   const grab = async (): Promise<string | null> => {
-    const res = await req(`${origin}/api/auth/nonce`);
+    const res = await req(`${origin}/api/auth/nonce${q}`);
     if (!res || !res.ok) return null;
     const txt = await res.text().catch(() => "");
-    try { const j = JSON.parse(txt); return j.nonce ?? j.value ?? txt.slice(0, 80); }
-    catch { return txt.slice(0, 80); }
+    try {
+      const j = JSON.parse(txt);
+      // `ok:false` é resposta VÁLIDA de erro (auth não configurada, rate
+      // limit): não é nonce, e tratar como se fosse compararia mensagens de
+      // erro entre si e "passaria" sem ter testado nada.
+      if (j?.ok === false || !j?.nonce) return null;
+      return String(j.nonce);
+    } catch { return null; }
   };
   const [a, b] = [await grab(), await grab()];
-  if (!a || !b) return { ...base, pass: false, inconclusive: true, detail: "endpoint de nonce não respondeu como esperado" };
+  if (!a || !b) {
+    return { ...base, pass: false, inconclusive: true,
+      detail: "endpoint de nonce não devolveu nonce (auth pode estar desconfigurada neste ambiente, ou o rate limit da própria rota barrou)" };
+  }
   return a !== b
     ? { ...base, pass: true, detail: `dois pedidos → dois nonces distintos (${a.length} chars)` }
     : { ...base, pass: false, detail: "🚨 o MESMO nonce foi devolvido duas vezes — assinatura capturada vale para sempre" };
@@ -282,7 +303,7 @@ export async function runAttackSuite(origin: string): Promise<AuditFinding[]> {
   return Promise.all([
     timed(8, () => checkReflection(origin)),
     timed(4, () => checkErrorLeak(origin)),
-    timed(12, () => checkRateLimit(origin)),
+    timed(25, () => checkRateLimit(origin)),
     timed(1, () => checkCors(origin)),
     timed(5, () => checkOpenRedirect(origin)),
     timed(2, () => checkHttpMethods(origin)),
