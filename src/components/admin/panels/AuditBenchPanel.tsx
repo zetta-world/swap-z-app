@@ -66,7 +66,9 @@ export default function AuditBenchPanel() {
       <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 8 }}>
         Verifica o que leitura de código não alcança: migration aplicada, RLS valendo na
         instância, rota de admin exposta, segredo em variável pública, endpoint de terceiro
-        desligado. Só leitura — não escreve, não gasta token, não move fundo.
+        desligado. Inclui sondas de ATAQUE disparadas de fora contra a própria produção —
+        reflexão de entrada, vazamento em erro, CORS, redirect aberto, rate limit, nonce.
+        Só leitura, cargas inertes, volume mínimo: não escreve, não gasta token, não move fundo.
       </div>
 
       <button onClick={run} disabled={running}
