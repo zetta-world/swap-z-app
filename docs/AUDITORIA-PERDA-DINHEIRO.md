@@ -30,7 +30,7 @@ final.
 | 4 | Selo de segurança do token era constante digitada à mão | cliente | 🟢 corrigido |
 | 5 | Registro de tokens se declara lista de demo | cliente | 🔴 documentado, não corrigido |
 | 6 | "Escudo MEV" e "modo privacidade" sem implementação | cliente | 🟢 corrigido |
-| 7 | Sem teto de gasto por chamada de agregador | plataforma | 🟡 próximo |
+| 7 | Teto de gasto: 3 furos (ver abaixo) | plataforma | 🟢 corrigido |
 | 8 | Bypass de tier/paywall | plataforma | ⏸️ não verificado |
 
 ---
@@ -113,7 +113,55 @@ todos os selos verdes.
 
 ---
 
+## 7 · Teto de gasto (01/08)
+
+A hipótese de entrada estava **errada** e vale registrar: eu esperava encontrar
+`/api/quote` sem teto nenhum. Não é o caso — o pentest de 28/07 já tinha posto
+limite por IP **e** um teto global por minuto. O que a varredura achou foram
+três outros furos, dois deles mais graves que o suposto.
+
+**7a · O maior gastador não tinha gate.** O `/api/zion` — o caminho voltado ao
+usuário, LLM por chamada — era o único consumidor de token sem kill-switch. O
+disjuntor de custo podia pausar as sete mesas internas e o gasto seguir correndo
+pela porta da frente. Agora existe `pause_zion`, e o `/api/zion` também ganhou
+**teto diário próprio** (`ZION_DAILY_MAX`, padrão 20 mil chamadas/dia): o
+disjuntor do watchdog é reativo — mede as últimas 24h e corta na conferência
+seguinte —, e entre uma conferência e outra cabe uma conta inteira.
+
+**7b · A lista do disjuntor estava incompleta pela terceira vez.** Mesmo depois
+do conserto de 30/07 ela era digitada à mão dentro do watchdog, e faltavam
+`pause_agent_a`, `pause_radar` e `pause_sniper`.
+
+A causa não era distração — era **a mesma verdade escrita em lugares
+diferentes**. Três bugs saíram dessa duplicação: (1) `pause_oracle` e
+`pause_arbiter2` existiam no cron mas não apareciam no painel, mesas que só se
+apagavam por deploy; (2) o disjuntor pausando só uma chave já desligada; (3) a
+lista incompleta de agora.
+
+A correção é estrutural, não pontual: `src/lib/admin/gate-keys.ts` — módulo
+**puro**, sem import de servidor, para que o painel (client), o cron e o
+watchdog derivem todos da mesma fonte. A classificação `GATE_SPENDS_TOKENS` mora
+ao lado da definição do gate; a lista de corte é derivada dela; o `Record` é
+total, então **gate novo sem classificação não compila**; e `gates.test.ts` cobra
+a decisão explícita. O painel passou a exibir em vermelho qualquer gate sem
+cartão, em vez de escondê-lo.
+
+Nota sobre o que **não** entra no corte: as mesas mecânicas (RATATOSKR,
+JÖRMUNGANDR, VÖLUNDR, FREYJA, ULLR, paper). Desligá-las não economizaria nada e
+calaria o **grupo de controle** que dá sentido à comparação com as mesas de IA —
+o experimento perderia o eixo justo exatamente quando o dinheiro aperta, que é
+quando ele mais importa.
+
+**7c · O teto do `/api/quote` era de disponibilidade, não de conta.** 3000/min
+são 4,32 **milhões** de chamadas por dia, e uma enchente que fique logo abaixo do
+limite nunca o dispara — ela só factura, indefinidamente. Um teto de conta
+precisa de janela do tamanho da conta: `QUOTE_DAILY_MAX`, padrão 250 mil/dia.
+
+Os três novos tetos **falham abertos** se o banco estiver fora. Uma proteção que
+derruba o produto quando ela própria falha não é proteção.
+
+---
+
 ## Próximos
 
-7. **Teto de gasto por chamada de agregador** — sem limite de custo em 0x/LiFi.
 8. **Bypass de tier/paywall** — não verificado.

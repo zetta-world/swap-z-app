@@ -20,6 +20,7 @@ import { isValidChain, validateAddress, validateAmount, sanitizePromptText } fro
 import { getSession } from "@/lib/auth/session";
 import { getTierForWallet } from "@/lib/tier/check";
 import { gatesEnabled } from "@/lib/tier/flags";
+import { getFlywheelGates } from "@/lib/admin/gates";
 import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
 
 export const runtime = "nodejs";
@@ -36,6 +37,21 @@ const LEGACY_MODE_MAP: Record<string, ZionOp> = {
 
 // Rate limit: 8 requests per 60s per IP.
 const RL_OPTS = { windowMs: 60_000, max: 8 };
+
+// TETO DIÁRIO DE CHAMADAS, VALENDO PARA O DEPLOY INTEIRO (auditoria 01/08).
+//
+// O limite por IP acima não segura enchente distribuída: 500 IPs a 8/min cada
+// ficam para sempre dentro da regra e gastam token sem teto. E este é o caminho
+// mais caro da plataforma — LLM por chamada, não uma cotação de agregador.
+//
+// O disjuntor do watchdog é REATIVO: ele mede o custo das últimas 24h e só corta
+// na conferência seguinte. Entre uma conferência e outra cabe uma conta inteira.
+// Este teto é o freio que age ANTES, sem depender de o watchdog rodar.
+//
+// Escolhido bem acima de qualquer uso legítimo de um app deste tamanho e
+// ajustável sem redeploy pela env. Falha ABERTO se o banco estiver fora — nunca
+// derruba o produto por causa da própria proteção.
+const ZION_DAILY_MAX = Number(process.env.ZION_DAILY_MAX ?? 20_000);
 
 /**
  * /api/zion — streaming Claude Sonnet 4.6 advisory.
@@ -70,6 +86,29 @@ export async function GET(req: NextRequest) {
           "X-RateLimit-Reset":     String(Math.floor(rl.resetAt / 1000)),
         },
       },
+    );
+  }
+
+  // ─── 1a-bis. Kill-switch e teto diário de gasto (auditoria 01/08) ─────
+  //
+  // Este era o MAIOR gastador de token da plataforma e o ÚNICO caminho sem
+  // gate: o disjuntor de custo podia pausar as sete mesas internas e o gasto
+  // continuar correndo pela porta da frente. Agora ele fecha aqui também.
+  const zionGates = await getFlywheelGates();
+  if (zionGates.pause_zion) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "zion_paused",
+        message: "O ZION está temporariamente desligado por controle de custo. As cotações e o swap seguem funcionando." }),
+      { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Retry-After": "3600" } },
+    );
+  }
+  const daily = await rateLimitDurable("zion:global:day", { windowMs: 86_400_000, max: ZION_DAILY_MAX });
+  if (!daily.ok) {
+    logSecurity("rate_limited", { route: "zion", scope: "daily_global" }, "med");
+    return new Response(
+      JSON.stringify({ ok: false, error: "zion_daily_budget",
+        message: "O ZION atingiu o teto diário de uso da plataforma. As cotações e o swap seguem funcionando." }),
+      { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Retry-After": String(daily.retryAfter) } },
     );
   }
 

@@ -3,7 +3,7 @@ import { notifyTelegram } from "@/lib/admin/track";
 import { getCronHeartbeats, pingAiProviders } from "@/lib/admin/health";
 import { checkExternalDeps } from "@/lib/admin/deps";
 import { estimateCost } from "@/lib/admin/ai-cost";
-import { getFlywheelGates } from "@/lib/admin/gates";
+import { getFlywheelGates, TOKEN_SPENDING_GATES } from "@/lib/admin/gates";
 import { selectAllRows } from "@/lib/supabase/paginate";
 
 /**
@@ -99,8 +99,19 @@ export async function runAlertWatchdog(): Promise<void> {
     // Agora ele desliga TODOS os consumidores de token conhecidos e só avisa
     // sobre os que realmente mudou de estado — senão o alerta viraria ruído
     // diário sobre gates que já estavam fechados.
+    //
+    // ⚠ SEGUNDA CORREÇÃO 01/08 — A LISTA AINDA ESTAVA INCOMPLETA.
+    //
+    // Mesmo depois do conserto de 30/07 ela era digitada à mão aqui, e faltavam
+    // `pause_agent_a`, `pause_radar` e `pause_sniper` — três mesas que gastam
+    // token. Faltava também o maior gastador de todos: o `/api/zion` do
+    // USUÁRIO, que nem gate tinha. O disjuntor podia pausar sete mesas internas
+    // e o gasto seguir correndo pela porta da frente.
+    //
+    // A lista agora é DERIVADA de `GATE_SPENDS_TOKENS`, que mora ao lado da
+    // definição dos gates. Mesa nova sem classificação não compila.
     if (AI_KILL > 0 && aiCost > AI_KILL) {
-      const spenders = ["pause_tournament", "pause_agent_b", "pause_oracle", "pause_ragnarok_ai"];
+      const spenders: string[] = TOKEN_SPENDING_GATES;
       const { data: gates } = await db.from("admin_kv").select("key, value").in("key", spenders);
       const already = new Set((gates ?? []).filter((g) => g.value === "true").map((g) => g.key));
       const toKill = spenders.filter((k) => !already.has(k));
