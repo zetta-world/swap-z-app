@@ -18,6 +18,7 @@ import { useT } from "@/lib/i18n";
 import { CHAIN_BY_ID } from "@/lib/chains";
 import { formatUsd, formatAmount, parseDecimalInput } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { assessImpact } from "@/lib/swap/impact-guard";
 import type { Token } from "@/lib/tokens";
 import { useQuotes } from "@/lib/hooks/useQuotes";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
@@ -158,8 +159,18 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromToken?.address, toToken?.address, fromChain, sellAmountBase, recipient]);
 
-  const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker);
-  const cantReason   = !fromToken || !toToken
+  // GUARDA DE IMPACTO (auditoria 30/07): antes o impacto era só COLORIDO —
+  // vermelho acima de 2% e o swap seguia com um clique. Texto vermelho não é
+  // proteção. Um impacto catastrófico quase sempre é valor digitado errado ou
+  // token sem liquidez, não intenção, e a plataforma sabia o número ANTES de
+  // deixar acontecer.
+  const impact = assessImpact(display?.priceImpact ?? null, display?.inUsd ?? null);
+
+  const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker)
+    && impact.level !== "block";
+  const cantReason   = impact.level === "block"
+    ? impact.message
+    : !fromToken || !toToken
     ? t("swap.pickTokens")
     : !fromTaker
       ? (fromChain === "solana" ? t("swap.connectSolana") : t("swap.connectWallet"))
@@ -320,6 +331,17 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
           {/* Stats + Route */}
           {display && selectedQuote && (
             <div className="space-y-2.5">
+              {impact.level !== "ok" && (
+                <div className={cn(
+                  "rounded-md px-3 py-2 font-mono text-[10px] leading-relaxed border",
+                  impact.level === "block"
+                    ? "border-red/30 bg-red/[0.06] text-red"
+                    : "border-gold/30 bg-gold/[0.06] text-gold",
+                )}>
+                  {impact.level === "block" ? "⛔ " : "⚠ "}{impact.message}
+                </div>
+              )}
+
               <TxDetailsStrip
                 priceImpact={display.priceImpact}
                 gasUsd={selectedQuote.gasUsd}
