@@ -26,6 +26,7 @@
  */
 
 import type { AuditFinding } from "@/lib/admin/audit";
+import { generateReflectionPayloads, judgeResponseLeaks } from "@/lib/admin/audit-ai";
 
 const TIMEOUT_MS = 8000;
 
@@ -62,9 +63,13 @@ async function checkReflection(origin: string): Promise<AuditFinding> {
     whyRuntime: "só a resposta REAL mostra se o framework escapou; o código-fonte não prova o que foi renderizado",
   };
   const targets = ["/", "/swap", "/pools", "/pair"];
+  // A IA AMPLIA a lista de cargas; as fixas continuam sempre presentes para
+  // que duas execuções da bancada sigam comparáveis.
+  const batch = await generateReflectionPayloads(MARKER, XSS_PROBES);
+  const used = batch.payloads.slice(0, 6);
   const hits: string[] = [];
   for (const path of targets) {
-    for (const payload of XSS_PROBES.slice(0, 2)) {
+    for (const payload of used) {
       const res = await req(`${origin}${path}?q=${encodeURIComponent(payload)}&search=${encodeURIComponent(payload)}`);
       if (!res || !res.ok) continue;
       const body = (await res.text().catch(() => "")).slice(0, 400_000);
@@ -73,9 +78,12 @@ async function checkReflection(origin: string): Promise<AuditFinding> {
       if (body.includes(payload)) hits.push(`${path} refletiu "${payload}" cru`);
     }
   }
+  const origem = batch.source === "ia"
+    ? `cargas ampliadas por IA (${batch.model ?? "modelo"}${batch.rejected ? `, ${batch.rejected} recusadas na sanitização` : ""})`
+    : `cargas fixas${batch.note ? ` (${batch.note})` : ""}`;
   return hits.length === 0
-    ? { ...base, pass: true, detail: `${targets.length} rotas × ${2} cargas — nenhuma reflexão crua` }
-    : { ...base, pass: false, detail: `🚨 ${hits.join(" | ")}` };
+    ? { ...base, pass: true, detail: `${targets.length} rotas × ${used.length} cargas — nenhuma reflexão crua · ${origem}` }
+    : { ...base, pass: false, detail: `🚨 ${hits.join(" | ")} · ${origem}` };
 }
 
 /**
@@ -99,16 +107,27 @@ async function checkErrorLeak(origin: string): Promise<AuditFinding> {
   ];
   const leakPatterns = /(at\s+\w+\s+\(\/|node_modules\/|PostgrestError|pg_|syntax error at or near|SUPABASE_|SERVICE_ROLE|ANTHROPIC_API|sk-[A-Za-z0-9]{10})/i;
   const leaks: string[] = [];
+  const clean: Array<{ path: string; body: string }> = [];
   for (const p of probes) {
     const res = await req(`${origin}${p}`);
     if (!res) continue;
     const body = (await res.text().catch(() => "")).slice(0, 20_000);
     const m = leakPatterns.exec(body);
     if (m) leaks.push(`${p.split("?")[0]} → vazou "${m[0].slice(0, 40)}"`);
+    else clean.push({ path: p.split("?")[0], body });
   }
-  return leaks.length === 0
-    ? { ...base, pass: true, detail: `${probes.length} entradas malformadas — nenhuma resposta vazou interno` }
-    : { ...base, pass: false, detail: `🚨 ${leaks.join(" | ")}` };
+  // A regex pega o que foi PREVISTO. O modelo relê o que passou e pode apontar
+  // vazamento que ninguém pensou em listar — que é justamente a classe que
+  // escapa. Só ACRESCENTA suspeita: nunca revoga o veredito determinístico.
+  const judged = await judgeResponseLeaks(clean.map((c) => c.body));
+  const aiLeaks = judged
+    .filter((j) => clean[j.index])
+    .map((j) => `${clean[j.index].path} → [IA] ${j.what.slice(0, 80)}`);
+
+  const all = [...leaks, ...aiLeaks];
+  return all.length === 0
+    ? { ...base, pass: true, detail: `${probes.length} entradas malformadas — nada vazou (regex + segunda leitura por IA)` }
+    : { ...base, pass: false, detail: `🚨 ${all.join(" | ")}` };
 }
 
 /**

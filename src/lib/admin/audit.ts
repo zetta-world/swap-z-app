@@ -31,6 +31,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { checkExternalDeps } from "@/lib/admin/deps";
 import { runAttackSuite } from "@/lib/admin/attack";
+import { checkEvmAllowlistDrift } from "@/lib/admin/evm-probe";
 
 export type Severity = "critical" | "high" | "medium" | "low";
 export type AuditCategory = "dados" | "segurança" | "integração" | "config" | "i18n";
@@ -348,6 +349,7 @@ export async function runAudit(origin: string): Promise<AuditReport> {
     timed(8, checkDeps),
     timed(0, checkI18n),
     timed(0, checkSwapGuards),
+    timed(8, checkEvmAllowlistDrift),
   ]);
 
   // BANCADA DE ATAQUE — as sondas que só rodam de fora, contra a produção.
