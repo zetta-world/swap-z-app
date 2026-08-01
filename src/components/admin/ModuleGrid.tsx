@@ -6,10 +6,16 @@ import { MODULE_BY_ID, MODULE_REGISTRY, type ModuleId, type ModuleCategory } fro
 
 type PanelMap = Partial<Record<ModuleId, React.ReactNode>>;
 
+// A ordem importa: DASHBOARD (dinheiro real) vem antes de LAB (simulado), e os
+// dois nunca compartilham aba. Ver a nota em lib/admin/modules.ts — misturar
+// patrimônio de agente com volume de usuário na mesma tela é como colar a
+// planilha de projeção na de faturamento.
 const CATEGORIES: { id: ModuleCategory | "all"; label: string }[] = [
   { id: "all",       label: "ALL" },
   { id: "command",   label: "COMMAND" },
   { id: "dashboard", label: "DASHBOARD" },
+  { id: "lab",       label: "LAB · SIMULADO" },
+  { id: "bench",     label: "BANCADA" },
   { id: "growth",    label: "GROWTH" },
   { id: "finance",   label: "FINANCE" },
   { id: "users",     label: "USERS" },
@@ -54,6 +60,20 @@ export default function ModuleGrid({ panels }: { panels: PanelMap }) {
           {visible.length} panel{visible.length !== 1 ? "s" : ""} visible
         </span>
       </div>
+
+      {/* Faixa de contexto: o custo de confundir simulado com real é alto o
+          bastante para valer um lembrete fixo, não uma convenção mental. */}
+      {(cat === "lab" || cat === "bench") && (
+        <div style={{
+          fontSize: 8, lineHeight: 1.6, padding: "6px 9px", marginBottom: 8, borderRadius: 3,
+          color: "var(--adm-ink-3)", background: "var(--adm-bg-raise)",
+          borderLeft: `2px solid ${cat === "lab" ? "var(--adm-gold)" : "var(--adm-cyan)"}`,
+        }}>
+          {cat === "lab"
+            ? "LABORATÓRIO — todo valor aqui é USDT SIMULADO de carteira paper. Nada nesta aba é receita, volume de usuário ou dinheiro real."
+            : "BANCADA — verificação da própria plataforma (auditoria, sondas de ataque, saúde de dependências). Não é dado de negócio."}
+        </div>
+      )}
 
       {/* Panel grid */}
       {visible.length > 0 && (

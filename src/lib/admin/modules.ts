@@ -15,6 +15,7 @@ export type ModuleId =
   | "ragnarok"
   | "swap-guard"
   | "audit-bench"
+  | "launch-gate"
   | "paper"
   | "traffic"
   | "ai-controls"
@@ -31,7 +32,23 @@ export type ModuleId =
   | "kill-switches"
   | "platform-events";
 
-export type ModuleCategory = "command" | "dashboard" | "growth" | "finance" | "users" | "controls" | "logs" | "system";
+/**
+ * Categorias do painel.
+ *
+ * A separação entre `dashboard`, `lab` e `bench` NÃO é organização cosmética —
+ * é higiene de dado. Antes, patrimônio simulado de agente ficava lado a lado
+ * com volume real de usuário na mesma aba, e num relance de olho os dois viram
+ * "os números da plataforma". Misturar experimento com produção é como uma
+ * planilha de projeção colada na de faturamento: alguém, algum dia, soma as
+ * duas.
+ *
+ *   dashboard — DINHEIRO E USUÁRIO REAIS. Nada simulado entra aqui.
+ *   lab       — experimento: flywheel, mesas paper, torneio, backtest, barra
+ *               de lançamento. Tudo aqui é USDT de mentira.
+ *   bench     — verificação da própria plataforma: auditoria, sondas de
+ *               ataque, guard de assinatura, saúde de dependência.
+ */
+export type ModuleCategory = "command" | "dashboard" | "lab" | "bench" | "growth" | "finance" | "users" | "controls" | "logs" | "system";
 
 export type ModuleDef = {
   id:             ModuleId;
@@ -113,7 +130,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "BACKTEST",
     subtitle: "ZION win-rate · expectancy · suggestions",
     icon: "◇",
-    category: "dashboard",
+    category: "lab",
     defaultEnabled: true,
     defaultOrder: 5,
   },
@@ -122,7 +139,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "TOURNAMENT",
     subtitle: "agents & models ranked by net expectancy",
     icon: "♛",
-    category: "dashboard",
+    category: "lab",
     defaultEnabled: true,
     defaultOrder: 5,
   },
@@ -131,7 +148,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "RAGNARÖK",
     subtitle: "acumulação de USDT · mecânico vs IA · qual estratégia paga",
     icon: "ᚱ",
-    category: "dashboard",
+    category: "lab",
     defaultEnabled: true,
     defaultOrder: 5,
   },
@@ -140,7 +157,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "SOLANA GUARD",
     subtitle: "verificação de assinatura · Jupiter",
     icon: "⛨",
-    category: "dashboard",
+    category: "bench",
     defaultEnabled: true,
     defaultOrder: 5,
   },
@@ -149,16 +166,25 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "BANCADA DE AUDITORIA",
     subtitle: "o que só o sistema vivo responde",
     icon: "⚖",
-    category: "dashboard",
+    category: "bench",
     defaultEnabled: true,
     defaultOrder: 5,
+  },
+  {
+    id: "launch-gate",
+    title: "BARRA DE LANÇAMENTO",
+    subtitle: "critério pré-registrado · 5 de 5 ou não vai",
+    icon: "🚦",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 4,
   },
   {
     id: "paper",
     title: "PAPER · GATE.IO",
     subtitle: "simulação autônoma · patrimônio por agente",
     icon: "📈",
-    category: "dashboard",
+    category: "lab",
     defaultEnabled: true,
     defaultOrder: 5,
   },
@@ -212,7 +238,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "SWAP ALLOWLIST",
     subtitle: "observe router/spender · anti-drain",
     icon: "⛨",
-    category: "controls",
+    category: "bench",
     defaultEnabled: true,
     defaultOrder: 8,
   },
@@ -266,7 +292,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "SYSTEM HEALTH",
     subtitle: "crons · dependencies · uptime",
     icon: "♥",
-    category: "system",
+    category: "bench",
     defaultEnabled: true,
     defaultOrder: 11,
   },
