@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
-// Espelha FLYWHEEL_GATE_KEYS (src/lib/admin/gates.ts). Um gate que existe no
-// cron mas não aparece aqui é uma mesa que só se desliga por deploy — foi o que
-// aconteceu com oracle/arbiter2, agora corrigido.
-type GateKey =
-  | "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament"
-  | "pause_radar" | "pause_sniper" | "pause_arbiter" | "pause_paper"
-  | "pause_oracle" | "pause_arbiter2"
-  | "pause_ragnarok" | "pause_ragnarok_ai" | "pause_ragnarok_dex" | "pause_ullr";
+// A lista de gates NÃO é redigitada aqui (auditoria 01/08). Ela vem de
+// `gate-keys.ts` — módulo puro, sem import de servidor, justamente para que o
+// painel possa derivar da mesma fonte que o cron e o watchdog. Espelhar à mão
+// já custou três bugs: oracle/arbiter2 invisíveis no painel, e duas versões da
+// lista do disjuntor de custo com mesas faltando.
+import { FLYWHEEL_GATE_KEYS, type FlywheelGateKey } from "@/lib/admin/gate-keys";
+
+type GateKey = FlywheelGateKey;
 
 type Breaker = {
   id: string; label: string; configured: boolean;
@@ -32,15 +32,18 @@ const GATES: { key: GateKey; label: string; desc: string; master?: boolean }[] =
   { key: "pause_ragnarok_dex", label: "ᚨ FREYJA (DEX)",  desc: "Mesma estratégia, praça on-chain (GeckoTerminal). ZERO token." },
   { key: "pause_ullr",       label: "ᚢ ULLR (LANÇAMENTO)", desc: "Arqueiro de pool recém-nascido. Long-only, munição diária contada. ZERO token." },
   { key: "pause_paper",      label: "PAPER · GATE.IO",   desc: "Pausa o agente de simulação. Zero token — pausar só congela o experimento (e a carteira de USDT para de encher)." },
+  { key: "pause_zion",       label: "⚡ ZION (USUÁRIO)",  desc: "Desliga o ZION do PRODUTO, não uma mesa. Era o maior gastador de token e o único sem gate. Último recurso: degrada o que o usuário vê. Cotação e swap seguem funcionando." },
 ];
 
+// Um gate sem cartão aqui é uma mesa que só se desliga por deploy. O painel
+// avisa em vez de esconder — silêncio foi exatamente como oracle/arbiter2
+// passaram despercebidos.
+const UNLISTED_GATES = FLYWHEEL_GATE_KEYS.filter((k) => !GATES.some((g) => g.key === k));
+
 export default function AiControlsPanel() {
-  const [gates, setGates] = useState<Record<GateKey, boolean>>({
-    pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false,
-    pause_radar: false, pause_sniper: false, pause_arbiter: false, pause_paper: false,
-    pause_oracle: false, pause_arbiter2: false,
-    pause_ragnarok: false, pause_ragnarok_ai: false, pause_ragnarok_dex: false, pause_ullr: false,
-  });
+  const [gates, setGates] = useState<Record<GateKey, boolean>>(
+    () => Object.fromEntries(FLYWHEEL_GATE_KEYS.map((k) => [k, false])) as Record<GateKey, boolean>,
+  );
   const [loading, setLoading]   = useState(true);
   const [mutating, setMutating] = useState<GateKey | null>(null);
   const [err, setErr]           = useState<string | null>(null);
@@ -54,22 +57,9 @@ export default function AiControlsPanel() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.status);
       const s = json.switches ?? {};
-      setGates({
-        pause_backtest:   !!s.pause_backtest,
-        pause_agent_a:    !!s.pause_agent_a,
-        pause_agent_b:    !!s.pause_agent_b,
-        pause_tournament: !!s.pause_tournament,
-        pause_radar:      !!s.pause_radar,
-        pause_sniper:     !!s.pause_sniper,
-        pause_arbiter:    !!s.pause_arbiter,
-        pause_paper:      !!s.pause_paper,
-        pause_oracle:     !!s.pause_oracle,
-        pause_arbiter2:   !!s.pause_arbiter2,
-        pause_ragnarok:     !!s.pause_ragnarok,
-        pause_ragnarok_ai:  !!s.pause_ragnarok_ai,
-        pause_ragnarok_dex: !!s.pause_ragnarok_dex,
-        pause_ullr:         !!s.pause_ullr,
-      });
+      setGates(
+        Object.fromEntries(FLYWHEEL_GATE_KEYS.map((k) => [k, !!s[k]])) as Record<GateKey, boolean>,
+      );
       if (json.note) setNote(json.note);
     } catch (e) { setErr(String(e)); } finally { setLoading(false); }
     // Circuit-breaker states — best-effort, never blocks the toggles.
@@ -116,6 +106,11 @@ export default function AiControlsPanel() {
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
       {err  && <div style={{ color: "var(--adm-red)", fontSize: 10, marginBottom: 8 }}>{err}</div>}
       {note && <div style={{ color: "var(--adm-amber)", fontSize: 9, marginBottom: 10 }}>⚠ {note}</div>}
+      {UNLISTED_GATES.length > 0 && (
+        <div style={{ color: "var(--adm-red)", fontSize: 9, marginBottom: 10 }}>
+          ⚠ Gate sem cartão neste painel — só se desliga por deploy: {UNLISTED_GATES.join(", ")}
+        </div>
+      )}
 
       {!loading && GATES.map(({ key, label, desc, master }) => {
         const paused = gates[key];

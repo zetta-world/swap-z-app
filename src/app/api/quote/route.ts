@@ -35,6 +35,12 @@ const RL_FIRM  = { windowMs: 60_000, max: 25 };   // firm quote per source
 // Deployment-wide ceiling on paid-upstream (0x/LiFi) calls per minute — the
 // distributed-flood backstop the per-IP limit can't provide. See below.
 const QUOTE_GLOBAL_MAX = Number(process.env.QUOTE_GLOBAL_MAX ?? 3000);
+// TETO DIÁRIO (auditoria 01/08). O teto por minuto acima é backstop de
+// DISPONIBILIDADE, não de GASTO: 3000/min sustentados são 4,32 MILHÕES de
+// chamadas por dia, e uma enchente que fique logo abaixo do limite nunca o
+// dispara — ela só factura, indefinidamente. Um teto de conta precisa de
+// janela do tamanho da conta. Também falha ABERTO se o banco estiver fora.
+const QUOTE_DAILY_MAX = Number(process.env.QUOTE_DAILY_MAX ?? 250_000);
 
 /**
  * /api/quote — unified quote router.
@@ -87,6 +93,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       { error: "quote_budget_exceeded", retryAfter: gb.retryAfter },
       { status: 503, headers: { "Retry-After": String(gb.retryAfter), "Cache-Control": "no-store" } },
+    );
+  }
+  // (3) TETO DIÁRIO — o que (2) não faz. Ver comentário em QUOTE_DAILY_MAX:
+  // uma enchente logo abaixo de 3000/min passa por (2) para sempre.
+  const gd = await rateLimitDurable("q:global:day", { windowMs: 86_400_000, max: QUOTE_DAILY_MAX });
+  if (!gd.ok) {
+    return NextResponse.json(
+      { error: "quote_daily_budget_exceeded", retryAfter: gd.retryAfter },
+      { status: 503, headers: { "Retry-After": String(gd.retryAfter), "Cache-Control": "no-store" } },
     );
   }
 
