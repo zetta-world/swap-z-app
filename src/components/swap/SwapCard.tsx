@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAccount } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
 import Link from "next/link";
-import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame, Banknote } from "lucide-react";
+import { ArrowDownUp, Settings2, Shield, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame, Banknote } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
 import QuoteComparison from "./QuoteComparison";
@@ -19,6 +19,7 @@ import { CHAIN_BY_ID } from "@/lib/chains";
 import { formatUsd, formatAmount, parseDecimalInput } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { assessImpact } from "@/lib/swap/impact-guard";
+import { assessMevExposure, mevAdvice } from "@/lib/swap/mev-guard";
 import { assessTokenSafety, isNativeToken, nativeSafety, type TokenSafety } from "@/lib/swap/token-safety";
 import type { Token } from "@/lib/tokens";
 import { useQuotes } from "@/lib/hooks/useQuotes";
@@ -38,9 +39,9 @@ interface SwapCardProps {
 export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   const {
     fromChain, toChain,
-    fromToken, toToken, amountIn, slippageBps, mevProtect, privacyMode,
+    fromToken, toToken, amountIn, slippageBps, mevWarn,
     mode, recipient, executeOpen, selectedSource,
-    setFromToken, setToToken, setAmountIn, setSlippage, setMev, setPrivacy, flipPair,
+    setFromToken, setToToken, setAmountIn, setSlippage, setMevWarn, flipPair,
     setMode, setRecipient, setExecuteOpen, setSelectedSource,
   } = useSwap();
   const { toggleZion } = useUI();
@@ -199,6 +200,12 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   // deixar acontecer.
   const impact = assessImpact(display?.priceImpact ?? null, display?.inUsd ?? null);
 
+  // EXPOSIÇÃO A MEV (auditoria 01/08): o escudo verde afirmava "mempool
+  // privado · anti-sandwich" e não havia UMA LINHA por trás disso. O que dá
+  // para dizer com honestidade é o TETO do roubo — notional × slippage — e é
+  // isso que aparece aqui, em dólar.
+  const mev = assessMevExposure({ chain: fromChain, notionalUsd: display?.inUsd ?? null, slippageBps });
+
   const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker)
     && impact.level !== "block"
     && !safety?.blocks;
@@ -259,13 +266,14 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
               <RiskBadge risk={risk} />
             </div>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setMev(!mevProtect)} aria-pressed={mevProtect} title={t("swap.mevProtection")}
-                className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", mevProtect ? "text-green bg-green/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
+              {/* Este botão era um ESCUDO VERDE afirmando proteção contra
+                  sanduíche. A proteção não existia (ver mev-guard.ts). Agora
+                  ele liga/desliga o AVISO de exposição — que é o que a
+                  plataforma de fato faz — e por isso não é mais verde: verde
+                  comunica "você está protegido", e o usuário não está. */}
+              <button type="button" onClick={() => setMevWarn(!mevWarn)} aria-pressed={mevWarn} title={t("swap.mevWarnToggle")}
+                className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", mevWarn ? "text-cyan bg-cyan/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
                 <Shield className="w-3.5 h-3.5" />
-              </button>
-              <button type="button" onClick={() => setPrivacy(!privacyMode)} aria-pressed={privacyMode} title={t("swap.privacyMode")}
-                className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", privacyMode ? "text-gold bg-gold/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
-                <EyeOff className="w-3.5 h-3.5" />
               </button>
               <button type="button" onClick={() => setShowSettings((s) => !s)} title={t("swap.settings")}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-3 hover:text-ink-2 hover:bg-white/5 transition-colors">
@@ -387,6 +395,18 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
                     : "border-gold/30 bg-gold/[0.06] text-gold",
                 )}>
                   {impact.level === "block" ? "⛔ " : "⚠ "}{impact.message}
+                </div>
+              )}
+
+              {mevWarn && mev.level !== "ok" && (
+                <div className={cn(
+                  "rounded-md px-3 py-2 font-mono text-[10px] leading-relaxed border",
+                  mev.level === "high"
+                    ? "border-gold/30 bg-gold/[0.06] text-gold"
+                    : "border-white/10 bg-white/[0.03] text-ink-3",
+                )}>
+                  ⚠ {mev.message}
+                  <div className="mt-1 text-ink-4">{mevAdvice(fromChain)}</div>
                 </div>
               )}
 
