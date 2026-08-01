@@ -69,10 +69,32 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return q;
   });
 
-  const [{ data: positions }, { data: accounts }] = await Promise.all([
+  // A IA realmente decidiu? Sem isto, um MÍMIR degradado (sem chave, breaker
+  // aberto) grava plano do ferreiro sob o próprio nome e o duelo vira VÖLUNDR
+  // contra VÖLUNDR — com os dois números batendo e ninguém desconfiando.
+  const since24h = new Date(Date.now() - 86_400_000).toISOString();
+  const [{ data: positions }, { data: accounts }, { data: aiTicks }] = await Promise.all([
     db.from("paper_positions").select("source, pnl_usd, pnl_pct, status, closed_at").in("source", SOURCES).is("archived_at", null).limit(5000),
     db.from("paper_accounts").select("source, starting_usd, cash_usd, realized_pnl_usd, wins, losses").in("source", SOURCES),
+    db.from("platform_events").select("metadata, created_at").eq("event_type", "strat_ai_tick")
+      .gte("created_at", since24h).order("created_at", { ascending: false }).limit(500),
   ]);
+
+  const ticks = (aiTicks ?? []) as Array<{ metadata: { brainRan?: boolean; fallbackReason?: string | null } | null }>;
+  const ranCount = ticks.filter((t) => t.metadata?.brainRan === true).length;
+  const lastFallback = ticks.find((t) => t.metadata?.brainRan === false)?.metadata?.fallbackReason ?? null;
+  const brainHealth = {
+    ticks24h: ticks.length,
+    ranCount,
+    // Um MÍMIR que nunca decidiu não é uma mesa de IA — é o controle duplicado.
+    contaminated: ticks.length > 0 && ranCount === 0,
+    lastFallback,
+    note: ticks.length === 0
+      ? "sem tick registrado nas últimas 24h"
+      : ranCount === ticks.length
+        ? `IA decidiu em ${ranCount}/${ticks.length} ticks`
+        : `⚠ IA decidiu em apenas ${ranCount}/${ticks.length} ticks — nos demais o MÍMIR gravou o plano do FERREIRO sob o próprio nome${lastFallback ? ` (${lastFallback})` : ""}`,
+  };
 
   // ── Por PLAYBOOK (qual estratégia paga?) — mecânico e IA somados, porque a
   //    pergunta aqui é sobre a ESTRATÉGIA, não sobre quem a escolheu.
@@ -153,7 +175,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   });
 
   return NextResponse.json({
-    wallets, playbooks, desks,
+    wallets, playbooks, desks, brainHealth,
     windowDays: days,
     note: "A régua é USDT acumulado. Win-rate é secundário — o mandato é aumentar a quantidade de USDT.",
     fetchedAt: new Date().toISOString(),

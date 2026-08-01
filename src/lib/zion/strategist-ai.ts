@@ -163,6 +163,21 @@ export interface AiScanResult {
   adjusted: number;
   vetoed: number;
   plans: StrategyPlan[];
+  /**
+   * A IA REALMENTE decidiu neste tick?
+   *
+   * Sem isto, a degradação é INVISÍVEL e destrói o experimento em silêncio: sem
+   * chave (ou com o breaker aberto), esta mesa grava os planos do ferreiro sob
+   * o próprio nome, e o "duelo" vira VÖLUNDR contra VÖLUNDR-com-outro-nome. Os
+   * dois números batem, ninguém desconfia, e a conclusão sobre IA sai de um
+   * experimento onde IA nenhuma participou.
+   *
+   * `accepted` sozinho não distingue "a IA olhou e aprovou tudo" de "a IA nunca
+   * rodou" — por isso a flag existe separada.
+   */
+  brainRan: boolean;
+  /** Por que não rodou, quando não rodou. */
+  fallbackReason?: string;
 }
 
 /**
@@ -174,14 +189,22 @@ export interface AiScanResult {
  */
 export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<AiScanResult> {
   const mech = indicators.map(selectPlaybook).filter(isPlan);
-  const out: AiScanResult = { proposed: mech.length, accepted: 0, adjusted: 0, vetoed: 0, plans: [] };
+  const out: AiScanResult = { proposed: mech.length, accepted: 0, adjusted: 0, vetoed: 0, plans: [], brainRan: false };
   if (mech.length === 0) return out;
 
   const provider = roleProvider("brain");
-  if (!provider?.apiKey) { out.plans = mech; out.accepted = mech.length; return out; }
+  if (!provider?.apiKey) {
+    out.plans = mech; out.accepted = mech.length;
+    out.fallbackReason = "nenhum provedor com chave no papel `brain`";
+    return out;
+  }
   // Breaker aberto (chave quebrada / endpoint morto): não queima chamada nem
   // dispara alerta a cada tick — a mesa opera com o plano do ferreiro.
-  if (await isTripped(provider.id)) { out.plans = mech; out.accepted = mech.length; return out; }
+  if (await isTripped(provider.id)) {
+    out.plans = mech; out.accepted = mech.length;
+    out.fallbackReason = `breaker aberto em ${provider.label}`;
+    return out;
+  }
 
   const bySymbol = new Map(indicators.map((i) => [i.symbol.toUpperCase(), i]));
   const user = [
@@ -202,13 +225,16 @@ export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<A
     );
     await recordResult(provider.id, provider.label, true);
     verdicts = parseVerdicts(r.text);
+    out.brainRan = true;
     recordEvent("zion_analysis", { meta: { op: "strat_ai", model: r.model, source: STRAT_AI, ...r.usage } });
   } catch (e) {
     await recordResult(provider.id, provider.label, false, e instanceof Error ? e.message : String(e));
     // LLM fora do ar: a mesa de IA opera com o plano mecânico do dia. Isso é
     // registrado no evento acima só quando a chamada volta — um tick sem
     // veredito simplesmente segue o ferreiro.
-    out.plans = mech; out.accepted = mech.length; return out;
+    out.plans = mech; out.accepted = mech.length;
+    out.fallbackReason = `${provider.label} indisponível`;
+    return out;
   }
 
   const byVerdict = new Map(verdicts.map((v) => [v.symbol.toUpperCase(), v]));

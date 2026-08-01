@@ -18,6 +18,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { recordEvent } from "@/lib/admin/track";
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
 import { selectPlaybook, isPlan, type StrategyDecision, type StrategyPlan } from "@/lib/zion/strategist";
 import { runStrategistAi, STRAT_AI } from "@/lib/zion/strategist-ai";
@@ -111,6 +112,7 @@ async function persist(plans: StrategyPlan[], indicators: SymbolIndicators[], so
 
 export interface RagnarokAiRun {
   proposed: number; accepted: number; adjusted: number; vetoed: number; logged: number;
+  brainRan: boolean; fallbackReason?: string;
 }
 
 /**
@@ -125,7 +127,16 @@ export interface RagnarokAiRun {
 export async function runStrategistAiScan(indicators: SymbolIndicators[]): Promise<RagnarokAiRun> {
   const r = await runStrategistAi(indicators);
   const logged = await persist(r.plans, indicators, STRAT_AI);
-  return { proposed: r.proposed, accepted: r.accepted, adjusted: r.adjusted, vetoed: r.vetoed, logged };
+  // Registra SEMPRE se a IA decidiu. Um tick em que ela não rodou grava plano
+  // mecânico sob o nome dela — e sem este evento a contaminação do experimento
+  // seria invisível para sempre.
+  recordEvent("strat_ai_tick", {
+    meta: { brainRan: r.brainRan, fallbackReason: r.fallbackReason ?? null, proposed: r.proposed, logged },
+  });
+  return {
+    proposed: r.proposed, accepted: r.accepted, adjusted: r.adjusted, vetoed: r.vetoed, logged,
+    brainRan: r.brainRan, fallbackReason: r.fallbackReason,
+  };
 }
 
 /** Tick da mesa intradiária (SKAÐI): mesmos planos, relógio curto. */
