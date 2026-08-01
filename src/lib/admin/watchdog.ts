@@ -84,18 +84,35 @@ export async function runAlertWatchdog(): Promise<void> {
     if (aiCost > AI_BUDGET && await dedupOk("ai_budget", 86_400_000)) {
       notifyTelegram(`💸 <b>AI cost</b> in 24h is $${aiCost.toFixed(2)} — over the $${AI_BUDGET} budget.`);
     }
-    // Budget cap with AUTO-KILL (P2.12). The alert above is advisory; this is
-    // the circuit that actually cuts spend. If the 24h estimate blows past the
-    // hard cap, auto-pause the tournament (the biggest non-Anthropic spender)
-    // by flipping its admin_kv gate — the same switch the AI Controls panel
-    // drives — so a runaway loop can't drain the budget between operator
-    // check-ins. The CEO re-enables it in the panel. Set ALERT_AI_KILL_USD=0
-    // to disable. Never auto-touches Agent A / Agent B — only the tournament.
+    // Budget cap with AUTO-KILL (P2.12). O alerta acima é aviso; ISTO é o
+    // circuito que corta o gasto de verdade quando um laço em fuga aparece
+    // entre duas conferências do operador.
+    //
+    // ⚠ CORREÇÃO 30/07 — O DISJUNTOR ESTAVA DESARMADO NA PRÁTICA.
+    //
+    // Ele pausava SÓ `pause_tournament`. Quando o torneio foi pausado por
+    // decisão de custo, o disjuntor passou a disparar contra uma chave que já
+    // estava desligada: acionava, mandava o alerta e NÃO cortava gasto nenhum.
+    // Pior, as mesas que gastam token hoje — MÍMIR e a VÖLVA — nasceram depois
+    // dele e nunca estiveram na lista.
+    //
+    // Agora ele desliga TODOS os consumidores de token conhecidos e só avisa
+    // sobre os que realmente mudou de estado — senão o alerta viraria ruído
+    // diário sobre gates que já estavam fechados.
     if (AI_KILL > 0 && aiCost > AI_KILL) {
-      const { data: gate } = await db.from("admin_kv").select("value").eq("key", "pause_tournament").maybeSingle();
-      if (gate?.value !== "true") {
-        await db.from("admin_kv").upsert({ key: "pause_tournament", value: "true", updated_at: new Date().toISOString() }, { onConflict: "key" });
-        notifyTelegram(`🛑 <b>AI budget KILL</b> — 24h estimate $${aiCost.toFixed(2)} over the $${AI_KILL} hard cap. Tournament AUTO-PAUSED. Re-enable in AI Controls when ready.`);
+      const spenders = ["pause_tournament", "pause_agent_b", "pause_oracle", "pause_ragnarok_ai"];
+      const { data: gates } = await db.from("admin_kv").select("key, value").in("key", spenders);
+      const already = new Set((gates ?? []).filter((g) => g.value === "true").map((g) => g.key));
+      const toKill = spenders.filter((k) => !already.has(k));
+      if (toKill.length > 0) {
+        await db.from("admin_kv").upsert(
+          toKill.map((key) => ({ key, value: "true", updated_at: new Date().toISOString() })),
+          { onConflict: "key" },
+        );
+        notifyTelegram(
+          `🛑 <b>AI budget KILL</b> — 24h em $${aiCost.toFixed(2)}, acima do teto de $${AI_KILL}. `
+          + `PAUSADO: ${toKill.join(", ")}. Religue em AI Controls quando quiser.`,
+        );
       }
     }
 
