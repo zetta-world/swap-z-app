@@ -131,43 +131,66 @@ async function checkErrorLeak(origin: string): Promise<AuditFinding> {
 }
 
 /**
- * RATE LIMIT — com FURO DE CACHE, que é como o ataque real acontece.
+ * RATE LIMIT — fura o cache E excede o teto conhecido.
  *
- * A primeira versão desta sonda disparava 12 requisições IDÊNTICAS e concluía
- * nada: a resposta é cacheável na CDN (`s-maxage`), então as 12 foram servidas
- * pela borda e NUNCA chegaram na origem. O limitador sequer rodou — a sonda
- * testou o cache, não a defesa.
+ * Duas correções, cada uma vinda de um resultado inconclusivo:
  *
- * O comentário do próprio `/api/prices` já dizia como se contorna: "a malicious
- * caller can sidestep the cache by adding a unique query". É exatamente isso
- * que um atacante faz para queimar cota de agregador — então é exatamente isso
- * que a sonda precisa fazer, senão está medindo o adversário errado.
+ *  1. As primeiras 12 requisições eram IDÊNTICAS: a CDN servia todas na borda e
+ *     o limitador nunca rodava. A sonda testava o cache, não a defesa.
+ *  2. Depois de furar o cache, 25 requisições ainda passaram — porque o teto de
+ *     `/api/prices` é 90/min. Uma rajada menor que o teto não prova nada; ela
+ *     só descobre que 25 < 90.
  *
- * Cada requisição leva um parâmetro único: passa pela borda, chega na origem,
- * e o limitador é de fato exercitado.
+ * Agora dispara em LOTES PARALELOS até exceder o teto. E tem uma propriedade
+ * que importa: a sonda é AUTO-LIMITADA quando a defesa funciona — ela para no
+ * primeiro 429. O volume cheio só sai se realmente não houver limite, que é
+ * exatamente o caso em que se quer saber.
+ *
+ * A HIPÓTESE QUE ELA PRECISA DISTINGUIR: `/api/prices` usa o limitador EM
+ * MEMÓRIA, não o durável. Em serverless cada instância tem o próprio contador,
+ * então o teto efetivo é 90 × instâncias — e o limite "existe" no código sem
+ * proteger de verdade. Passar do teto sem 429 é forte indício disso, e o
+ * relatório diz isso em vez de dar um "não sei" mudo.
  */
+const RL_KNOWN_MAX = Number(process.env.AUDIT_RL_KNOWN_MAX ?? 90);
+
 async function checkRateLimit(origin: string): Promise<AuditFinding> {
   const base = {
-    id: "rate_limit", name: "Rotas públicas limitam requisição mesmo furando o cache",
+    id: "rate_limit", name: "Limite de requisição é REALMENTE aplicado na origem",
     category: "segurança" as const, severity: "high" as const,
-    whyRuntime: "limite em memória parece funcionar num processo só e evapora em serverless; e a CDN pode esconder que ele nunca rodou",
+    whyRuntime: "limitador em memória parece funcionar num processo só e se dilui entre instâncias serverless; só a produção real revela",
   };
-  const N = 25;
-  let got429 = false;
-  let ok = 0, sent = 0;
-  for (let i = 0; i < N; i++) {
-    // `_cb` = cache-buster: torna cada URL única, do mesmo jeito que um script
-    // hostil faria para chegar na origem a cada tentativa.
-    const res = await req(`${origin}/api/prices?symbols=BTC&_cb=${Date.now()}_${i}`);
-    sent++;
-    if (!res) continue;
-    if (res.status === 429) { got429 = true; break; }
-    if (res.ok) ok++;
+  const total = RL_KNOWN_MAX + 15;   // o bastante para cruzar o teto
+  const batch = 10;
+  let sent = 0, ok = 0;
+  let trippedAt: number | null = null;
+
+  for (let i = 0; i < total && trippedAt === null; i += batch) {
+    const n = Math.min(batch, total - i);
+    const results = await Promise.all(
+      Array.from({ length: n }, (_, k) =>
+        req(`${origin}/api/prices?symbols=BTC&_cb=${Date.now()}_${i + k}`)),
+    );
+    for (let k = 0; k < results.length; k++) {
+      const res = results[k];
+      sent++;
+      if (!res) continue;
+      if (res.status === 429) { trippedAt = i + k + 1; break; }
+      if (res.ok) ok++;
+    }
   }
-  return got429
-    ? { ...base, pass: true, detail: `429 na requisição ${sent} de ${N} furando o cache — limitador ativo na origem` }
-    : { ...base, pass: false, inconclusive: true,
-        detail: `${ok}/${sent} passaram sem 429 mesmo furando o cache — teto acima de ${sent}/min; aumente a rajada para concluir` };
+
+  if (trippedAt !== null) {
+    return { ...base, pass: true,
+      detail: `429 na requisição ~${trippedAt} (teto configurado: ${RL_KNOWN_MAX}/min) — limitador aplicado na origem` };
+  }
+  // Passou do teto sem 429: ou não há aplicação, ou o contador em memória se
+  // diluiu entre instâncias. Os dois são problema; o segundo é o mais provável
+  // e o mais fácil de não perceber.
+  return { ...base, pass: false,
+    detail: `🚨 ${ok}/${sent} passaram SEM 429, acima do teto de ${RL_KNOWN_MAX}/min mesmo furando o cache — `
+      + "o limitador em memória provavelmente se dilui entre instâncias serverless (cada uma com contador próprio). "
+      + "Trocar por rateLimitDurable nesta rota." };
 }
 
 /**
@@ -303,7 +326,7 @@ export async function runAttackSuite(origin: string): Promise<AuditFinding[]> {
   return Promise.all([
     timed(8, () => checkReflection(origin)),
     timed(4, () => checkErrorLeak(origin)),
-    timed(25, () => checkRateLimit(origin)),
+    timed(RL_KNOWN_MAX + 15, () => checkRateLimit(origin)),
     timed(1, () => checkCors(origin)),
     timed(5, () => checkOpenRedirect(origin)),
     timed(2, () => checkHttpMethods(origin)),
