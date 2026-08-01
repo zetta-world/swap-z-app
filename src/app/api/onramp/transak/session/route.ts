@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import {
   createTransakWidgetUrl,
   TransakConfigError,
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "method_not_allowed" }, { status: 405 });
   }
 
-  const rl = rateLimit(`transak_session:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`transak_session:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },

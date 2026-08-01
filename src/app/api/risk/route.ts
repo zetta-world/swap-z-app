@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
 import { getHoneypot, isHoneypotSupported, type HoneypotResponse } from "@/lib/api/honeypot";
 import { getTokenInfo, type TokenInfo } from "@/lib/api/geckoterminal";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { isValidChain, validateAddress } from "@/lib/validate";
 
 export const runtime = "nodejs";
@@ -18,7 +18,7 @@ const RL_OPTS = { windowMs: 60_000, max: 30 };
  */
 export async function GET(req: NextRequest) {
   // Rate limit
-  const rl = rateLimit(`risk:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`risk:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate_limited", retryAfter: rl.retryAfter },

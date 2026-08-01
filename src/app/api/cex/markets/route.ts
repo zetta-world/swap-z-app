@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { fetchCexMarkets } from "@/lib/cex/server";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import { type CexId, SUPPORTED_CEX_IDS } from "@/lib/cex/types";
@@ -17,7 +17,7 @@ const RL_OPTS = { windowMs: 60_000, max: 20 };
  * pair selector are instant (Vercel edge cache).
  */
 export async function POST(req: NextRequest) {
-  const rl = rateLimit(`cex_markets:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`cex_markets:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { validateAddress } from "@/lib/validate";
 import { getPairDetail, type PairDetail } from "@/lib/api/dexscreener";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
@@ -64,7 +64,7 @@ export interface PairApiResponse {
  * /api/ohlcv to keep payloads light and cache strategies decoupled.
  */
 export async function GET(req: NextRequest) {
-  const rl = rateLimit(`pair:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`pair:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },

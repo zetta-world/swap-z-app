@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTrending } from "@/lib/api/dexscreener";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const revalidate = 60;
@@ -12,7 +12,7 @@ export const revalidate = 60;
 const RL_OPTS = { windowMs: 60_000, max: 60 };
 
 export async function GET(req: NextRequest) {
-  const rl = rateLimit(`trending:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`trending:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { pairs: [], error: "rate_limited" },

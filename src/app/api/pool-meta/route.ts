@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPoolMeta } from "@/lib/api/geckoterminal";
 import { isValidChain, validateAddress } from "@/lib/validate";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -13,7 +13,7 @@ const RL_OPTS = { windowMs: 60_000, max: 60 };
  * to determine which side of the pool's price to display on the chart.
  */
 export async function GET(req: NextRequest) {
-  const rl = rateLimit(`pmeta:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`pmeta:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { meta: null, error: "rate_limited", retryAfter: rl.retryAfter },

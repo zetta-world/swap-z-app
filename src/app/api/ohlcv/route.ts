@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOHLCV, type Timeframe, type PriceToken } from "@/lib/api/geckoterminal";
 import { isValidChain, validateAddress } from "@/lib/validate";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -18,7 +18,7 @@ const VALID_TOKENS = new Set<PriceToken>(["base", "quote"]);
  * is actually the pool's quote token (e.g. BNB on a USDT/BNB pool).
  */
 export async function GET(req: NextRequest) {
-  const rl = rateLimit(`ohlcv:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`ohlcv:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { candles: [], error: "rate_limited", retryAfter: rl.retryAfter },
