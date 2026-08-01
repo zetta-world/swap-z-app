@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
-type Obs = { chain: string; chainId: number; role: "target" | "spender"; address: string; source: string; count: number; enforced: boolean };
+type Obs = { chain: string; chainId: number; role: "target" | "spender"; address: string; source: string; count: number; realCount: number; enforced: boolean };
 type Resp = { observed: Obs[]; envTargets: string; envSpenders: string; enforcing: { targets: boolean; spenders: boolean }; note: string };
 
 function Copyable({ label, value }: { label: string; value: string }) {
@@ -79,7 +79,7 @@ export default function SwapAllowlistPanel() {
             <table className="adm-table" style={{ width: "100%", marginTop: 8, fontSize: 9 }}>
               <thead><tr>
                 <th style={{ textAlign: "left" }}>CHAIN</th><th style={{ textAlign: "left" }}>PAPEL</th>
-                <th style={{ textAlign: "left" }}>ENDEREÇO</th><th>FONTE</th><th>VISTO</th>
+                <th style={{ textAlign: "left" }}>ENDEREÇO</th><th>FONTE</th><th>SONDA</th><th>REAL</th>
               </tr></thead>
               <tbody>
                 {data.observed.map((o, i) => (
@@ -88,14 +88,17 @@ export default function SwapAllowlistPanel() {
                     <td style={{ color: o.role === "spender" ? "var(--adm-amber)" : "var(--adm-cyan)" }}>{o.role}</td>
                     <td style={{ fontFamily: "monospace", color: "var(--adm-ink-2)" }}>{o.address.slice(0, 10)}…{o.address.slice(-6)}</td>
                     <td style={{ textAlign: "center", color: "var(--adm-ink-3)" }}>{o.source}</td>
-                    <td style={{ textAlign: "center", color: o.count > 20 ? "var(--adm-green)" : "var(--adm-ink-3)" }}>{o.count}×</td>
+                    <td style={{ textAlign: "center", color: "var(--adm-ink-4)" }}>{o.count - o.realCount}×</td>
+                    {/* REAL é a única evidência independente: sonda confirmando
+                        sonda é a ferramenta dando razão a si mesma. */}
+                    <td style={{ textAlign: "center", color: o.realCount > 20 ? "var(--adm-green)" : o.realCount > 0 ? "var(--adm-ink-2)" : "var(--adm-amber)" }}>{o.realCount}×</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
           <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8 }}>
-            Endereço com muitas ocorrências (verde) ao longo de dias = provavelmente canônico. Confirme cada um no explorer antes de fixar.
+            Só a coluna REAL (swaps de usuário) é evidência independente — SONDA é a própria ferramenta se autoconfirmando. Confirme cada endereço no explorer antes de fixar.
           </div>
         </div>
       )}

@@ -29,9 +29,20 @@ const CHAIN_NAME: Record<number, string> = {
 
 // recordEvent stores the `meta` object FLAT in `metadata` (not nested under
 // metadata.meta) — confirmed against the live rows.
-type EvtRow = { metadata: { chainId?: number; source?: string; target?: string; spender?: string } | null; created_at: string };
+type EvtRow = { metadata: { chainId?: number; source?: string; target?: string; spender?: string; probe?: boolean } | null; created_at: string };
 
-interface Obs { chainId: number; role: "target" | "spender"; address: string; source: string; count: number; first: string; last: string; enforced: boolean }
+interface Obs {
+  chainId: number; role: "target" | "spender"; address: string; source: string;
+  /** Total observado (sondas + tráfego real). */
+  count: number;
+  /** Só as observações vindas de SWAP REAL de usuário.
+   *
+   *  Separado porque o painel apresenta "visto N×" como evidência de que o
+   *  endereço é canônico — e uma contagem inflada pelas próprias sondas do
+   *  auto-populate seria evidência circular: o sistema confirmando a si mesmo. */
+  realCount: number;
+  first: string; last: string; enforced: boolean;
+}
 
 export async function GET(): Promise<NextResponse> {
   await requireAdmin();
@@ -57,10 +68,12 @@ export async function GET(): Promise<NextResponse> {
       const a = addr(m[role]);
       if (!a) continue;
       const k = key(m.chainId, role, a);
+      const isProbe = m.probe === true;
       const cur = agg.get(k);
-      if (cur) { cur.count++; if (r.created_at < cur.first) cur.first = r.created_at; }
+      if (cur) { cur.count++; if (!isProbe) cur.realCount++; if (r.created_at < cur.first) cur.first = r.created_at; }
       else agg.set(k, {
-        chainId: m.chainId, role, address: a, source: m.source ?? "?", count: 1,
+        chainId: m.chainId, role, address: a, source: m.source ?? "?",
+        count: 1, realCount: isProbe ? 0 : 1,
         first: r.created_at, last: r.created_at,
         enforced: role === "target" ? checkSwapTarget(m.chainId, a).configured : checkSwapSpender(m.chainId, a).configured,
       });
@@ -84,7 +97,9 @@ export async function GET(): Promise<NextResponse> {
       targets:  !!process.env.NEXT_PUBLIC_ALLOWED_SWAP_TARGETS,
       spenders: !!process.env.NEXT_PUBLIC_ALLOWED_SWAP_SPENDERS,
     },
-    note: "Verifique cada endereço no explorer antes de fixar. Cole envTargets/envSpenders na Vercel e faça redeploy.",
+    note: "Verifique cada endereço no explorer antes de fixar. Cole envTargets/envSpenders na Vercel e faça redeploy. "
+      + "ATENÇÃO: 'visto N×' conta TAMBÉM as sondas do auto-populate — confirmação vinda da própria ferramenta é circular. "
+      + "Use a coluna REAL (swaps de usuário) como evidência independente.",
     fetchedAt: new Date().toISOString(),
   });
 }

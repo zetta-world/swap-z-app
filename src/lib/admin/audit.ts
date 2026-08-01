@@ -30,6 +30,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { checkExternalDeps } from "@/lib/admin/deps";
+import { runAttackSuite } from "@/lib/admin/attack";
 
 export type Severity = "critical" | "high" | "medium" | "low";
 export type AuditCategory = "dados" | "segurança" | "integração" | "config" | "i18n";
@@ -337,7 +338,7 @@ export async function runAudit(origin: string): Promise<AuditReport> {
     const f = await fn();
     return { ...f, durationMs: Date.now() - start, calls };
   };
-  const findings = await Promise.all([
+  const findings: AuditFinding[] = await Promise.all([
     timed(Object.keys(EXPECTED_SCHEMA).length, checkSchema),
     timed(4, checkRls),
     timed(0, checkPublicEnv),
@@ -348,6 +349,13 @@ export async function runAudit(origin: string): Promise<AuditReport> {
     timed(0, checkI18n),
     timed(0, checkSwapGuards),
   ]);
+
+  // BANCADA DE ATAQUE — as sondas que só rodam de fora, contra a produção.
+  // Eram justamente os testes que ficavam como "não consegui verificar" na
+  // auditoria feita do ambiente de desenvolvimento, e "não verificado" com o
+  // tempo é lido como "está tudo bem".
+  const attacks = await runAttackSuite(origin);
+  findings.push(...attacks);
   // Bloqueantes primeiro, depois reprovados, depois inconclusivos.
   const rank = (f: AuditFinding) => (f.inconclusive ? 2 : f.pass ? 3 : 0) + (f.severity === "critical" ? 0 : 0.5);
   findings.sort((a, b) => rank(a) - rank(b));
