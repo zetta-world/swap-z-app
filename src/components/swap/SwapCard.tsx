@@ -19,6 +19,7 @@ import { CHAIN_BY_ID } from "@/lib/chains";
 import { formatUsd, formatAmount, parseDecimalInput } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { assessImpact } from "@/lib/swap/impact-guard";
+import { assessTokenSafety, isNativeToken, nativeSafety, type TokenSafety } from "@/lib/swap/token-safety";
 import type { Token } from "@/lib/tokens";
 import { useQuotes } from "@/lib/hooks/useQuotes";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
@@ -146,12 +147,44 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     return { sellDec, buyDec, minDec, rate, inUsd, outUsd, priceImpact };
   }, [selectedQuote, sellAmountBase, fromToken, toToken, fromLivePrice, toLivePrice]);
 
-  // ─── Aurora risk ────────────────────────────────────────────────────
+  // ─── Aurora risk (cor de fundo) ─────────────────────────────────────
+  // Segue vindo do `riskScore` do registro: é só ESTÉTICA da tela, e o campo
+  // nunca prometeu mais que isso. O que era mentira é o SELO de segurança —
+  // ver abaixo.
   const risk = useMemo(() => {
     const a = fromToken?.riskScore ?? 0;
     const b = toToken?.riskScore ?? 0;
     return riskFromScore(Math.max(a, b));
   }, [fromToken, toToken]);
+
+  // ─── SEGURANÇA DO TOKEN — verificação REAL (auditoria 30/07) ─────────
+  //
+  // Antes, o indicador de risco do card vinha de `token.riskScore`, um número
+  // DIGITADO À MÃO no registro. Enquanto isso a plataforma já tinha checagem de
+  // verdade (GoPlus + Honeypot.is) usada só num scanner do explorer — o caminho
+  // do dinheiro, onde a informação decide algo, não consultava nada.
+  //
+  // Agora consulta. E o estado "não verificado" é VISUALMENTE distinto de
+  // "seguro": ausência de checagem não pode render como segurança.
+  const [safety, setSafety] = useState<TokenSafety | null>(null);
+  useEffect(() => {
+    const addr = toToken?.address;
+    if (!toToken || !addr) { setSafety(null); return; }
+    if (isNativeToken(addr)) { setSafety(nativeSafety()); return; }
+    let cancelled = false;
+    setSafety(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/risk?chain=${toToken.chain}&address=${addr}`);
+        const json = res.ok ? await res.json() : null;
+        if (!cancelled) setSafety(assessTokenSafety(json));
+      } catch {
+        // Falha de rede vira "não verificado", nunca "seguro".
+        if (!cancelled) setSafety(assessTokenSafety(null));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [toToken?.address, toToken?.chain, toToken]);
 
   // Reset modal when key inputs change
   useEffect(() => {
@@ -167,8 +200,11 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   const impact = assessImpact(display?.priceImpact ?? null, display?.inUsd ?? null);
 
   const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker)
-    && impact.level !== "block";
-  const cantReason   = impact.level === "block"
+    && impact.level !== "block"
+    && !safety?.blocks;
+  const cantReason   = safety?.blocks
+    ? safety.message
+    : impact.level === "block"
     ? impact.message
     : !fromToken || !toToken
     ? t("swap.pickTokens")
@@ -331,6 +367,18 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
           {/* Stats + Route */}
           {display && selectedQuote && (
             <div className="space-y-2.5">
+              {safety && safety.level !== "safe" && (
+                <div className={cn(
+                  "rounded-md px-3 py-2 font-mono text-[10px] leading-relaxed border",
+                  safety.level === "danger" ? "border-red/30 bg-red/[0.06] text-red"
+                    : safety.level === "risky" ? "border-gold/30 bg-gold/[0.06] text-gold"
+                    : "border-white/10 bg-white/[0.03] text-ink-3",
+                )}>
+                  {safety.level === "danger" ? "⛔ " : safety.level === "unverified" ? "◌ " : "⚠ "}
+                  {safety.message}
+                </div>
+              )}
+
               {impact.level !== "ok" && (
                 <div className={cn(
                   "rounded-md px-3 py-2 font-mono text-[10px] leading-relaxed border",
