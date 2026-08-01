@@ -11,17 +11,21 @@ type PanelMap = Partial<Record<ModuleId, React.ReactNode>>;
 // patrimônio de agente com volume de usuário na mesma tela é como colar a
 // planilha de projeção na de faturamento.
 const CATEGORIES: { id: ModuleCategory | "all"; label: string }[] = [
-  { id: "all",       label: "ALL" },
-  { id: "command",   label: "COMMAND" },
-  { id: "dashboard", label: "DASHBOARD" },
-  { id: "lab",       label: "LAB · SIMULADO" },
-  { id: "bench",     label: "BANCADA" },
-  { id: "growth",    label: "GROWTH" },
-  { id: "finance",   label: "FINANCE" },
-  { id: "users",     label: "USERS" },
-  { id: "system",    label: "SYSTEM" },
-  { id: "controls",  label: "CONTROLS" },
-  { id: "logs",      label: "LOGS" },
+  { id: "all",         label: "ALL" },
+  { id: "command",     label: "COMMAND" },
+  // O dinheiro, em três perguntas separadas. Antes as três moravam num card só
+  // com sub-abas — o que é o sintoma de que eram três coisas desde sempre.
+  { id: "receita",     label: "💰 RECEITA" },
+  { id: "custos",      label: "💸 CUSTOS" },
+  { id: "margem",      label: "📊 MARGEM" },
+  { id: "operacao",    label: "OPERAÇÃO" },
+  { id: "crescimento", label: "CRESCIMENTO" },
+  // Dado de TERCEIRO, não nosso. Ficava junto dos nossos KPIs.
+  { id: "mercado",     label: "MERCADO" },
+  { id: "lab",         label: "🧪 LAB · SIMULADO" },
+  { id: "bench",       label: "⚖ BANCADA" },
+  { id: "controls",    label: "CONTROLES" },
+  { id: "logs",        label: "LOGS" },
 ];
 
 export default function ModuleGrid({ panels }: { panels: PanelMap }) {
@@ -63,15 +67,17 @@ export default function ModuleGrid({ panels }: { panels: PanelMap }) {
 
       {/* Faixa de contexto: o custo de confundir simulado com real é alto o
           bastante para valer um lembrete fixo, não uma convenção mental. */}
-      {(cat === "lab" || cat === "bench") && (
+      {(cat === "lab" || cat === "bench" || cat === "mercado") && (
         <div style={{
           fontSize: 8, lineHeight: 1.6, padding: "6px 9px", marginBottom: 8, borderRadius: 3,
           color: "var(--adm-ink-3)", background: "var(--adm-bg-raise)",
-          borderLeft: `2px solid ${cat === "lab" ? "var(--adm-gold)" : "var(--adm-cyan)"}`,
+          borderLeft: `2px solid ${cat === "lab" ? "var(--adm-gold)" : cat === "mercado" ? "var(--adm-ink-3)" : "var(--adm-cyan)"}`,
         }}>
           {cat === "lab"
             ? "LABORATÓRIO — todo valor aqui é USDT SIMULADO de carteira paper. Nada nesta aba é receita, volume de usuário ou dinheiro real."
-            : "BANCADA — verificação da própria plataforma (auditoria, sondas de ataque, saúde de dependências). Não é dado de negócio."}
+            : cat === "mercado"
+              ? "MERCADO — dado de TERCEIROS sobre o mercado lá fora. Não é volume nosso nem atividade dos nossos usuários."
+              : "BANCADA — verificação da própria plataforma (auditoria, sondas de ataque, saúde de dependências). Não é dado de negócio."}
         </div>
       )}
 

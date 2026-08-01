@@ -18,6 +18,8 @@ import RagnarokPanel          from "./panels/RagnarokPanel";
 import SwapGuardPanel         from "./panels/SwapGuardPanel";
 import AuditBenchPanel        from "./panels/AuditBenchPanel";
 import LaunchGatePanel        from "./panels/LaunchGatePanel";
+import MarginPanel            from "./panels/MarginPanel";
+import AiCostPanel            from "./panels/AiCostPanel";
 import PaperPanel             from "./panels/PaperPanel";
 import TrafficPanel           from "./panels/TrafficPanel";
 import AiControlsPanel        from "./panels/AiControlsPanel";
@@ -50,6 +52,8 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "swap-guard":         <SwapGuardPanel />,
   "audit-bench":        <AuditBenchPanel />,
   "launch-gate":        <LaunchGatePanel />,
+  "margin":             <MarginPanel />,
+  "ai-cost":            <AiCostPanel />,
   "paper":              <PaperPanel />,
   "traffic":            <TrafficPanel />,
   "ai-controls":        <AiControlsPanel />,
