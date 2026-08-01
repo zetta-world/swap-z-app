@@ -13,7 +13,8 @@ type Row = {
   wins: number; losses: number; winRate: number | null; netPerTrade: number | null;
 };
 type Desk = { source: string; name: string; brain: string | null; venue: string | null; variable: string | null; trades: number; open: number; decided: number; winRate: number | null; netPerTrade: number | null; byPlaybook: Row[] };
-type RG = { wallets: Wallet[]; playbooks: Row[]; desks: Desk[]; note: string };
+type BrainHealth = { ticks24h: number; ranCount: number; contaminated: boolean; lastFallback: string | null; note: string };
+type RG = { wallets: Wallet[]; playbooks: Row[]; desks: Desk[]; note: string; brainHealth?: BrainHealth };
 
 const PLAYBOOK_LABEL: Record<string, string> = {
   range_reversion: "RANGE · compra o suporte",
@@ -112,6 +113,23 @@ export default function RagnarokPanel() {
                 ))}
               </tbody>
             </table>
+          )}
+
+          {/* SAÚDE DO CÉREBRO — vem ANTES do duelo de propósito: se a IA não
+              decidiu, o duelo abaixo não significa nada e isso precisa ser lido
+              primeiro, não descoberto depois. */}
+          {data.brainHealth && data.brainHealth.ticks24h > 0 && (
+            <div style={{
+              fontSize: 8, lineHeight: 1.5, padding: "5px 8px", borderRadius: 3, marginTop: 12,
+              color: data.brainHealth.contaminated ? "var(--adm-red)"
+                : data.brainHealth.ranCount === data.brainHealth.ticks24h ? "var(--adm-ink-4)" : "var(--adm-amber)",
+              background: data.brainHealth.contaminated ? "rgba(255 60 60 / 0.07)" : "transparent",
+              borderLeft: `2px solid ${data.brainHealth.contaminated ? "var(--adm-red)" : "var(--adm-border)"}`,
+            }}>
+              {data.brainHealth.contaminated
+                ? `🚨 EXPERIMENTO CONTAMINADO — a IA não decidiu em NENHUM tick nas últimas 24h. O MÍMIR está gravando o plano do VÖLUNDR sob o próprio nome, então o duelo abaixo compara o ferreiro com ele mesmo.${data.brainHealth.lastFallback ? ` Causa: ${data.brainHealth.lastFallback}.` : ""}`
+                : data.brainHealth.note}
+            </div>
           )}
 
           {/* MECÂNICO vs IA — o duelo do experimento. */}
