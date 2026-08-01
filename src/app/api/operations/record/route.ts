@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSession } from "@/lib/auth/session";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -29,6 +30,18 @@ interface Body {
  * POST /api/operations/record — the browser syncs each completed operation
  * here (idempotent on `ref`). Analytics-grade capture for ZION learning, NOT
  * an execution path: it places nothing, moves nothing. Best-effort.
+ *
+ * ⚠ CORREÇÃO 30/07 — ATRIBUIÇÃO VINHA DO CLIENTE.
+ *
+ * A carteira era lida de `body.wallet`, sem checar sessão, justificada por
+ * "isto é analytics, não auth". Só que esta tabela alimenta o painel RECEITA e
+ * o livro de operações: qualquer um podia inflar o volume da plataforma ou
+ * atribuir um trade forjado à carteira de outra pessoa. Não move fundo — mas
+ * corrompe exatamente os números que passamos a sessão inteira tornando
+ * honestos, e um número forjável tem valor zero para decidir qualquer coisa.
+ *
+ * Agora a carteira vem da SESSÃO. Sem sessão, o registro entra ANÔNIMO em vez
+ * de aceitar a alegação do cliente: perde-se atribuição, não integridade.
  */
 export async function POST(req: NextRequest) {
   const rl = rateLimit(`ops_record:${getClientId(req.headers)}`, RL_OPTS);
@@ -41,6 +54,10 @@ export async function POST(req: NextRequest) {
   if (!body.kind || !body.status) {
     return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
   }
+
+  // A carteira NUNCA vem do corpo: quem diz quem você é é o cookie assinado.
+  const session = await getSession();
+  const sessionWallet = session?.sub ?? null;
 
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ ok: false, error: "db_unavailable" }, { status: 503 });
@@ -62,7 +79,7 @@ export async function POST(req: NextRequest) {
   try {
     await db.from("operations").upsert({
       ref:            str(body.ref, 120),
-      wallet_address: str(body.wallet, 80),
+      wallet_address: sessionWallet,   // ignora body.wallet de propósito
       kind:           str(body.kind, 40)!,
       chain:          str(body.chain, 40),
       pair:           str(body.pair, 40),
