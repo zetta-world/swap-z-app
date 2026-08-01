@@ -319,7 +319,7 @@ export function scoreFindings(findings: AuditFinding[]): Omit<AuditReport, "find
       ? `🔴 ${blocking.length} item(ns) bloqueante(s) — NÃO está pronta para produção`
       : inconclusive > 0
         ? `🟡 nada bloqueante, mas ${inconclusive} verificação(ões) não pôde(puderam) rodar — cobertura incompleta, não aprovação`
-        : "🟢 nenhum bloqueante e cobertura completa";
+        : "🟢 nenhum bloqueante · TODOS os testes DESTA LISTA passaram (a lista não cobre lógica de negócio, carga, nem corrida entre crons)";
 
   return { score, grade, passed: counted.filter((f) => f.pass).length, failed, inconclusive, blocking, verdict };
 }

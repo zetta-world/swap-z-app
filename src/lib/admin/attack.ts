@@ -49,6 +49,47 @@ const XSS_PROBES = [
   `javascript:${MARKER}`,
 ];
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DETECTORES — predicados PUROS, extraídos para poderem ser postos à prova.
+//
+// Enquanto a lógica de detecção vivia dentro de cada checagem, ela era
+// inauditável: se um detector tivesse um bug que o fizesse sempre devolver
+// "está limpo", TODAS as verificações passariam e nada acusaria. Uma suíte sem
+// nenhum caso que DEVE falhar não prova que detecta — prova só que roda.
+//
+// Separados assim, o `selfTest()` no fim deste arquivo consegue apontá-los
+// contra entradas sabidamente vulneráveis e exigir que reprovem.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** O corpo devolveu a carga LITERAL? (escapada não conta — é a defesa funcionando) */
+export function detectsReflection(body: string, payload: string): boolean {
+  return body.includes(payload);
+}
+
+const LEAK_PATTERNS = /(at\s+\w+\s+\(\/|node_modules\/|PostgrestError|pg_|syntax error at or near|SUPABASE_|SERVICE_ROLE|ANTHROPIC_API|sk-[A-Za-z0-9]{10})/i;
+
+/** A resposta vaza interno (stack, driver, nome de env)? Devolve o trecho. */
+export function detectsErrorLeak(body: string): string | null {
+  const m = LEAK_PATTERNS.exec(body);
+  return m ? m[0] : null;
+}
+
+/** CORS perigoso = origem arbitrária refletida (ou `*`) COM credenciais. */
+export function detectsDangerousCors(allowOrigin: string | null, allowCreds: string | null, evilOrigin: string): boolean {
+  const reflected = allowOrigin === evilOrigin || allowOrigin === "*";
+  return reflected && allowCreds === "true";
+}
+
+/** O Location aponta para fora do domínio? */
+export function detectsOpenRedirect(location: string | null, evilPrefix: string): boolean {
+  return !!location && location.startsWith(evilPrefix);
+}
+
+/** Método perigoso aceito (TRACE/TRACK respondendo < 400). */
+export function detectsDangerousMethod(status: number): boolean {
+  return status < 400;
+}
+
 /**
  * REFLEXÃO DE ENTRADA (superfície de XSS).
  *
@@ -75,7 +116,7 @@ async function checkReflection(origin: string): Promise<AuditFinding> {
       const body = (await res.text().catch(() => "")).slice(0, 400_000);
       // Só acusa quando o payload volta LITERAL. A forma escapada contendo o
       // marcador é justamente a prova de que a defesa funcionou.
-      if (body.includes(payload)) hits.push(`${path} refletiu "${payload}" cru`);
+      if (detectsReflection(body, payload)) hits.push(`${path} refletiu "${payload}" cru`);
     }
   }
   const origem = batch.source === "ia"
@@ -105,15 +146,14 @@ async function checkErrorLeak(origin: string): Promise<AuditFinding> {
     "/api/pools?limit=-99999999",
     "/api/quote?mode=quote&source=%00&fromChain=x",
   ];
-  const leakPatterns = /(at\s+\w+\s+\(\/|node_modules\/|PostgrestError|pg_|syntax error at or near|SUPABASE_|SERVICE_ROLE|ANTHROPIC_API|sk-[A-Za-z0-9]{10})/i;
   const leaks: string[] = [];
   const clean: Array<{ path: string; body: string }> = [];
   for (const p of probes) {
     const res = await req(`${origin}${p}`);
     if (!res) continue;
     const body = (await res.text().catch(() => "")).slice(0, 20_000);
-    const m = leakPatterns.exec(body);
-    if (m) leaks.push(`${p.split("?")[0]} → vazou "${m[0].slice(0, 40)}"`);
+    const leak = detectsErrorLeak(body);
+    if (leak) leaks.push(`${p.split("?")[0]} → vazou "${leak.slice(0, 40)}"`);
     else clean.push({ path: p.split("?")[0], body });
   }
   // A regex pega o que foi PREVISTO. O modelo relê o que passou e pode apontar
@@ -211,8 +251,7 @@ async function checkCors(origin: string): Promise<AuditFinding> {
   if (!res) return { ...base, pass: false, inconclusive: true, detail: "sem resposta" };
   const allow = res.headers.get("access-control-allow-origin");
   const creds = res.headers.get("access-control-allow-credentials");
-  const reflected = allow === evil || allow === "*";
-  const dangerous = reflected && creds === "true";
+  const dangerous = detectsDangerousCors(allow, creds, evil);
   return dangerous
     ? { ...base, pass: false, detail: `🚨 devolve ACAO=${allow} com credenciais — qualquer site age como o usuário` }
     : { ...base, pass: true, detail: `ACAO=${allow ?? "ausente"} · credenciais=${creds ?? "não"} — sem combinação perigosa` };
@@ -237,7 +276,7 @@ async function checkOpenRedirect(origin: string): Promise<AuditFinding> {
     const res = await req(`${origin}/?${p}=${encodeURIComponent(evil)}`);
     if (!res) continue;
     const loc = res.headers.get("location");
-    if (loc && loc.startsWith("https://evil.example.com")) bad.push(`?${p}= redirecionou para fora`);
+    if (detectsOpenRedirect(loc, "https://evil.example.com")) bad.push(`?${p}= redirecionou para fora`);
   }
   return bad.length === 0
     ? { ...base, pass: true, detail: `${params.length} parâmetros de redirect testados — nenhum saiu do domínio` }
@@ -259,7 +298,7 @@ async function checkHttpMethods(origin: string): Promise<AuditFinding> {
   const bad: string[] = [];
   for (const method of ["TRACE", "TRACK"]) {
     const res = await req(origin, { method });
-    if (res && res.status < 400) bad.push(`${method} → ${res.status}`);
+    if (res && detectsDangerousMethod(res.status)) bad.push(`${method} → ${res.status}`);
   }
   return bad.length === 0
     ? { ...base, pass: true, detail: "TRACE e TRACK recusados" }
@@ -307,6 +346,141 @@ async function checkNonceFreshness(origin: string): Promise<AuditFinding> {
     : { ...base, pass: false, detail: "🚨 o MESMO nonce foi devolvido duas vezes — assinatura capturada vale para sempre" };
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CANÁRIO — o teste do testador.
+//
+// Uma bancada sem nenhum caso que DEVE falhar não prova que detecta nada. Se um
+// detector tivesse um bug que o fizesse sempre devolver "limpo", os 17 checks
+// ficariam verdes e a nota 10 seria ficção — e nada, em lugar nenhum, acusaria.
+//
+// Aqui cada detector é apontado contra um alvo SABIDAMENTE vulnerável e contra
+// um sabidamente são. Ele precisa acertar os dois: reprovar o vulnerável (senão
+// está cego) e aprovar o são (senão é alarmista e vira ruído).
+//
+// Roda em MEMÓRIA, sem rede: nenhum endpoint vulnerável é publicado para isso.
+// Alvo de teste vulnerável em produção seria trocar um problema por outro.
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface CanaryCase { name: string; detected: boolean; expected: boolean }
+
+function runCanaryCases(): CanaryCase[] {
+  const evil = "https://evil.example.com";
+  return [
+    // ── deve DETECTAR (alvo vulnerável) ──
+    { name: "reflexão crua", expected: true,
+      detected: detectsReflection(`<div><${MARKER}></div>`, `<${MARKER}>`) },
+    { name: "stack trace vazado", expected: true,
+      detected: detectsErrorLeak("Error\n    at handler (/var/task/node_modules/pg/lib.js:12)") !== null },
+    { name: "nome de segredo vazado", expected: true,
+      detected: detectsErrorLeak("missing SUPABASE_SERVICE_ROLE_KEY") !== null },
+    { name: "CORS refletido com credenciais", expected: true,
+      detected: detectsDangerousCors(evil, "true", evil) },
+    { name: "CORS wildcard com credenciais", expected: true,
+      detected: detectsDangerousCors("*", "true", evil) },
+    { name: "redirect para domínio externo", expected: true,
+      detected: detectsOpenRedirect(`${evil}/pwn`, evil) },
+    { name: "TRACE aceito", expected: true,
+      detected: detectsDangerousMethod(200) },
+
+    // ── NÃO deve detectar (alvo são) — senão vira alarme falso, e alarme
+    //    falso treina o operador a ignorar o alarme verdadeiro ──
+    { name: "carga escapada (defesa OK)", expected: false,
+      detected: detectsReflection(`<div>&lt;${MARKER}&gt;</div>`, `<${MARKER}>`) },
+    { name: "erro genérico sem interno", expected: false,
+      detected: detectsErrorLeak('{"ok":false,"error":"invalid_chain"}') !== null },
+    { name: "CORS sem credenciais", expected: false,
+      detected: detectsDangerousCors(evil, null, evil) },
+    { name: "redirect interno", expected: false,
+      detected: detectsOpenRedirect("/dashboard", evil) },
+    { name: "TRACE recusado", expected: false,
+      detected: detectsDangerousMethod(405) },
+  ];
+}
+
+/**
+ * Verificação de sanidade da PRÓPRIA bancada. Quando reprova, a nota do
+ * relatório perde o sentido — e por isso ela é CRÍTICA: um detector cego
+ * transforma todo verde da tela em ficção.
+ */
+export function selfTest(): AuditFinding {
+  const base = {
+    id: "bench_selftest", name: "A bancada consegue detectar (controle negativo)",
+    category: "segurança" as const, severity: "critical" as const,
+    whyRuntime: "sem caso que DEVE falhar, uma suíte não prova que detecta — prova só que roda",
+  };
+  const cases = runCanaryCases();
+  const blind = cases.filter((c) => c.expected && !c.detected).map((c) => c.name);
+  const noisy = cases.filter((c) => !c.expected && c.detected).map((c) => c.name);
+
+  if (blind.length > 0) {
+    return { ...base, pass: false,
+      detail: `🚨 BANCADA CEGA — não detectou alvo vulnerável: ${blind.join(", ")}. `
+        + "Enquanto isso não for corrigido, TODO verde deste relatório é ficção." };
+  }
+  if (noisy.length > 0) {
+    return { ...base, pass: false,
+      detail: `⚠ falso positivo em alvo são: ${noisy.join(", ")} — alarme falso treina a ignorar o alarme verdadeiro` };
+  }
+  return { ...base, pass: true,
+    detail: `${cases.length} canários: ${cases.filter((c) => c.expected).length} vulneráveis detectados, `
+      + `${cases.filter((c) => !c.expected).length} sãos aprovados` };
+}
+
+
+/**
+ * ATRIBUIÇÃO FORJADA (classe IDOR).
+ *
+ * O buraco que motivou esta sonda: `/api/operations/record` lia a carteira do
+ * CORPO da requisição, sem sessão, justificado por "isto é analytics, não
+ * auth". Mas a tabela alimenta o painel de receita — qualquer um podia inflar
+ * o volume da plataforma ou pendurar um trade forjado na carteira alheia.
+ *
+ * Nenhum dos 17 checks anteriores olhava para isso: todos testavam ACESSO
+ * (consigo entrar?) e nenhum testava ATRIBUIÇÃO (consigo dizer que sou outro?).
+ * É a classe de falha mais comum em API e estava inteira fora da bancada.
+ *
+ * A sonda envia um registro com carteira alheia declarada e SEM sessão. Aceitar
+ * com atribuição é falha; recusar ou gravar anônimo é o comportamento correto.
+ */
+async function checkForgedAttribution(origin: string): Promise<AuditFinding> {
+  const base = {
+    id: "forged_attribution", name: "Não aceita atribuição de identidade vinda do cliente",
+    category: "segurança" as const, severity: "critical" as const,
+    whyRuntime: "só a requisição real revela se o servidor confia no corpo ou no cookie assinado",
+  };
+  const victim = "0x000000000000000000000000000000000000dEaD";
+  const ref = `audit-canary-${Date.now()}`;
+  const res = await req(`${origin}/api/operations/record`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    // Sem cookie de sessão: a única identidade aqui é a ALEGADA no corpo.
+    body: JSON.stringify({ kind: "dex_swap", status: "confirmed", wallet: victim, ref, volumeUsd: 0 }),
+  });
+  if (!res) return { ...base, pass: false, inconclusive: true, detail: "rota não respondeu" };
+
+  // 401/403 = recusou. 2xx = aceitou, e aí só o banco diz se atribuiu.
+  if (res.status === 401 || res.status === 403) {
+    return { ...base, pass: true, detail: `recusou registro sem sessão (${res.status})` };
+  }
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+  const db = getSupabaseAdmin();
+  if (!db) return { ...base, pass: false, inconclusive: true, detail: "sem banco para conferir a atribuição" };
+
+  const { data } = await db.from("operations").select("wallet_address").eq("ref", ref).maybeSingle();
+  if (!data) {
+    return { ...base, pass: true, detail: "registro sem sessão não foi persistido" };
+  }
+  const attributed = (data as { wallet_address: string | null }).wallet_address;
+  // Limpa o canário: a bancada não pode sujar a tabela que ela audita.
+  await db.from("operations").delete().eq("ref", ref);
+
+  return attributed === victim
+    ? { ...base, pass: false,
+        detail: `🚨 gravou atribuído a ${victim.slice(0, 10)}… SEM sessão — dá para inflar volume e pendurar trade em carteira alheia` }
+    : { ...base, pass: true, detail: `gravou como ${attributed ?? "anônimo"}, ignorando a carteira alegada no corpo` };
+}
+
 /** Roda a bancada de ataque inteira em paralelo. */
 export async function runAttackSuite(origin: string): Promise<AuditFinding[]> {
   const timed = async (calls: number, fn: () => Promise<AuditFinding>): Promise<AuditFinding> => {
@@ -324,6 +498,8 @@ export async function runAttackSuite(origin: string): Promise<AuditFinding[]> {
     }
   };
   return Promise.all([
+    // O canário PRIMEIRO: se a bancada estiver cega, o resto não vale nada.
+    timed(0, async () => selfTest()),
     timed(8, () => checkReflection(origin)),
     timed(4, () => checkErrorLeak(origin)),
     timed(RL_KNOWN_MAX + 15, () => checkRateLimit(origin)),
@@ -331,5 +507,6 @@ export async function runAttackSuite(origin: string): Promise<AuditFinding[]> {
     timed(5, () => checkOpenRedirect(origin)),
     timed(2, () => checkHttpMethods(origin)),
     timed(2, () => checkNonceFreshness(origin)),
+    timed(3, () => checkForgedAttribution(origin)),
   ]);
 }

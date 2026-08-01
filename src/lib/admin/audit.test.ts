@@ -53,6 +53,9 @@ describe("scoreFindings — a nota tem que ser difícil de falsificar", () => {
   it("sem bloqueante e sem buraco → verde", () => {
     const r = scoreFindings([f({ severity: "high" }), f({ id: "z", severity: "critical" })]);
     expect(r.verdict).toContain("🟢");
+    // A frase NÃO pode prometer cobertura de risco — só de lista.
+    expect(r.verdict).toContain("DESTA LISTA");
+    expect(r.verdict).not.toContain("cobertura completa");
   });
 
   it("um inconclusivo impede o verde mesmo com todo o resto passando", () => {
