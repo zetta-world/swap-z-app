@@ -561,8 +561,14 @@ export async function logSuggestions(cards: ActionCard[], indicators: SymbolIndi
     .filter((r): r is NewSuggestion => r !== null)
     .map((r) => ({ ...r, source }));
   if (rows.length === 0) return 0;
-  try { await db.from("zion_suggestions").insert(rows); return rows.length; }
-  catch { return 0; }
+  // O cliente do Supabase NÃO lança em erro de banco: resolve com
+  // `{ error }`. Um `try/catch` aqui nunca dispararia, e a contagem devolvida
+  // seria uma MENTIRA — linhas "gravadas" que não existem. Foi essa mesma
+  // suposição que fez as carteiras de paper vazarem capital (ver
+  // `paper/engine.ts`). Aqui o estrago é de medição, não de dinheiro, mas uma
+  // mesa que relata trades inexistentes envenena o experimento igual.
+  const { error } = await db.from("zion_suggestions").insert(rows);
+  return error ? 0 : rows.length;
 }
 
 export interface ResolveResult { checked: number; resolved: number; }

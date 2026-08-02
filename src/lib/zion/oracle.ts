@@ -234,8 +234,14 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
       deskOpenBySym.set(s.symbol, (deskOpenBySym.get(s.symbol) ?? 0) + 1);
     }
     if (rows.length === 0) return;
-    try { await db.from("zion_suggestions").insert(rows); logged += rows.length; }
-    catch { /* best-effort — tomorrow retries */ }
+    // O cliente do Supabase NÃO lança em erro de banco: resolve com
+    // `{ error }`. Um `try/catch` aqui nunca dispararia, e a contagem devolvida
+    // seria uma MENTIRA — linhas "gravadas" que não existem. Foi essa mesma
+    // suposição que fez as carteiras de paper vazarem capital (ver
+    // `paper/engine.ts`). Aqui o estrago é de medição, não de dinheiro, mas uma
+    // mesa que relata trades inexistentes envenena o experimento igual.
+    const { error } = await db.from("zion_suggestions").insert(rows);
+    if (!error) logged += rows.length;
   }));
 
   return { sources: runs.length, logged };
