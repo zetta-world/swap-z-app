@@ -282,6 +282,102 @@ function checkSwapGuards(): AuditFinding {
     : { ...base, pass: false, detail: gaps.join(" | ") };
 }
 
+// ── 10. O BUNDLE DO NAVEGADOR CONFERE COM O AMBIENTE DO SERVIDOR? ─────────
+//
+// A falha que este teste existe para pegar JÁ ACONTECEU (30/07): o painel do
+// guard de swap mostrava "BLOQUEANDO" e a telemetria mostrava "OBSERVANDO", ao
+// mesmo tempo, sem ninguém mentir.
+//
+// A causa é uma propriedade do Next.js que não aparece em leitura de código:
+// variável `NEXT_PUBLIC_*` é ASSADA NO BUILD. Salvar o valor novo na Vercel
+// muda o que o SERVIDOR lê na hora — e não muda NADA no JavaScript que o
+// navegador já baixou, até sair um build novo. Os dois lados passam a discordar
+// em silêncio, e cada um, sozinho, está dizendo a verdade.
+//
+// Isso importa porque as travas do caminho do dinheiro moram justamente nessas
+// variáveis: o guard de Solana, as allowlists de swap, os limiares de impacto e
+// o envio por bundle privado. Um operador que liga a trava na Vercel, esquece o
+// redeploy e vê o painel verde acredita estar protegido sem estar — a mesma
+// família de defeito do escudo de MEV que não protegia nada.
+//
+// Só o NAVEGADOR sabe o que foi assado. Por isso o painel envia o que ele
+// enxerga e o servidor compara com o que ele próprio lê. Sem esse envio a
+// verificação fica INCONCLUSIVA, nunca aprovada — ausência de conferência não
+// pode renderizar como sincronia.
+
+/** As `NEXT_PUBLIC_*` que decidem alguma coisa no caminho do dinheiro. */
+export const MONEY_PATH_PUBLIC_ENV = [
+  "NEXT_PUBLIC_SOLANA_TX_GUARD",
+  "NEXT_PUBLIC_SOLANA_JITO",
+  "NEXT_PUBLIC_ALLOWED_SWAP_TARGETS",
+  "NEXT_PUBLIC_ALLOWED_SWAP_SPENDERS",
+  "NEXT_PUBLIC_IMPACT_WARN_PCT",
+  "NEXT_PUBLIC_IMPACT_BLOCK_PCT",
+] as const;
+
+/** Normaliza para comparar: ausente e string vazia são a mesma coisa aqui. */
+function envNorm(v: string | undefined | null): string {
+  return (v ?? "").trim();
+}
+
+export function checkBundleSync(fromBrowser?: Record<string, string | null>): AuditFinding {
+  const base = {
+    id: "bundle_env_sync", name: "O bundle do navegador tem as MESMAS travas que o servidor",
+    category: "config" as const, severity: "critical" as const,
+    whyRuntime: "NEXT_PUBLIC_* é assada no BUILD: servidor e navegador podem discordar em silêncio até o próximo deploy, e nenhum dos dois está mentindo",
+  };
+  if (!fromBrowser) {
+    return {
+      ...base, pass: false, inconclusive: true,
+      detail: "o painel não enviou o que o navegador enxerga — sem isso não dá para saber se o build está em dia",
+    };
+  }
+  const drift: string[] = [];
+  const agree: string[] = [];
+  for (const k of MONEY_PATH_PUBLIC_ENV) {
+    const server = envNorm(process.env[k]);
+    const client = envNorm(fromBrowser[k]);
+    if (server === client) { agree.push(`${k.replace("NEXT_PUBLIC_", "")}=${server || "(vazio)"}`); continue; }
+    drift.push(`${k}: servidor="${server || "(vazio)"}" mas navegador="${client || "(vazio)"}"`);
+  }
+  return drift.length === 0
+    ? { ...base, pass: true, detail: `build em dia — ${agree.join(" · ")}` }
+    : {
+        ...base, pass: false,
+        detail: `BUILD DESATUALIZADO (falta redeploy): ${drift.join(" | ")}`,
+      };
+}
+
+// ── 11. Postura das travas que NÃO são NEXT_PUBLIC_ ───────────────────────
+//
+// Gates de plano, cota diária e tetos de gasto vivem em variável de servidor,
+// então não sofrem do problema acima — mas continuam sendo config de deploy que
+// leitura de código não revela. Um `TIER_GATES_ENABLED=false` esquecido depois
+// de um teste abre a plataforma inteira sem nada quebrar.
+function checkRevenueGuards(): AuditFinding {
+  const base = {
+    id: "revenue_guards", name: "Gates de plano e tetos de gasto valendo",
+    category: "config" as const, severity: "high" as const,
+    whyRuntime: "o código dos gates existe sempre; se estão VALENDO depende de variável do deploy, e um 'false' esquecido não quebra nada",
+  };
+  const gaps: string[] = [];
+  const ok: string[] = [];
+  if (process.env.TIER_GATES_ENABLED === "false") {
+    gaps.push("TIER_GATES_ENABLED=false — plano, cota e paywall TODOS abertos");
+  } else {
+    ok.push("gates de plano ligados");
+  }
+  const zionCap = Number(process.env.ZION_DAILY_MAX ?? 20_000);
+  const quoteCap = Number(process.env.QUOTE_DAILY_MAX ?? 250_000);
+  if (!Number.isFinite(zionCap) || zionCap <= 0) gaps.push("ZION_DAILY_MAX inválido");
+  else ok.push(`teto ZION ${zionCap.toLocaleString("pt-BR")}/dia`);
+  if (!Number.isFinite(quoteCap) || quoteCap <= 0) gaps.push("QUOTE_DAILY_MAX inválido");
+  else ok.push(`teto cotação ${quoteCap.toLocaleString("pt-BR")}/dia`);
+  return gaps.length === 0
+    ? { ...base, pass: true, detail: ok.join(" · ") }
+    : { ...base, pass: false, detail: gaps.join(" | ") };
+}
+
 // ── O corredor ────────────────────────────────────────────────────────────
 
 export interface AuditReport {
@@ -329,7 +425,7 @@ export function scoreFindings(findings: AuditFinding[]): Omit<AuditReport, "find
  * verificações de rota precisam bater no servidor de VERDADE, de fora, como um
  * atacante faria; testar a função em memória não prova nada sobre o deploy.
  */
-export async function runAudit(origin: string): Promise<AuditReport> {
+export async function runAudit(origin: string, browserEnv?: Record<string, string | null>): Promise<AuditReport> {
   const t0 = Date.now();
   // Cronometra cada verificação individualmente e anota quantas idas à rede ou
   // ao banco ela fez. Rodam em PARALELO — é por isso que o total de parede é
@@ -350,6 +446,8 @@ export async function runAudit(origin: string): Promise<AuditReport> {
     timed(0, checkI18n),
     timed(0, checkSwapGuards),
     timed(8, checkEvmAllowlistDrift),
+    timed(0, () => checkBundleSync(browserEnv)),
+    timed(0, checkRevenueGuards),
   ]);
 
   // BANCADA DE ATAQUE — as sondas que só rodam de fora, contra a produção.

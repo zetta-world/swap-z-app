@@ -43,7 +43,28 @@ export default function AuditBenchPanel() {
   const run = async () => {
     setRunning(true); setErr(null);
     try {
-      const res = await fetch("/admin/api/audit-bench", { method: "POST" });
+      // O que o NAVEGADOR realmente recebeu, assado no build. Precisa ser
+      // escrito literal, uma chave por linha: o Next.js substitui
+      // `process.env.NEXT_PUBLIC_X` por texto na hora de compilar, e uma leitura
+      // dinâmica (`process.env[k]`) não é substituída — viria vazia e a bancada
+      // acusaria uma dessincronia que não existe.
+      //
+      // O servidor compara isto com o que ele próprio lê. Divergência = build
+      // desatualizado, que é invisível de qualquer outra forma: cada lado,
+      // sozinho, está dizendo a verdade.
+      const browserEnv = {
+        NEXT_PUBLIC_SOLANA_TX_GUARD:       process.env.NEXT_PUBLIC_SOLANA_TX_GUARD ?? null,
+        NEXT_PUBLIC_SOLANA_JITO:           process.env.NEXT_PUBLIC_SOLANA_JITO ?? null,
+        NEXT_PUBLIC_ALLOWED_SWAP_TARGETS:  process.env.NEXT_PUBLIC_ALLOWED_SWAP_TARGETS ?? null,
+        NEXT_PUBLIC_ALLOWED_SWAP_SPENDERS: process.env.NEXT_PUBLIC_ALLOWED_SWAP_SPENDERS ?? null,
+        NEXT_PUBLIC_IMPACT_WARN_PCT:       process.env.NEXT_PUBLIC_IMPACT_WARN_PCT ?? null,
+        NEXT_PUBLIC_IMPACT_BLOCK_PCT:      process.env.NEXT_PUBLIC_IMPACT_BLOCK_PCT ?? null,
+      };
+      const res = await fetch("/admin/api/audit-bench", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ browserEnv }),
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json.detail ?? json.error ?? res.status);
       setReport(json);
