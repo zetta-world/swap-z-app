@@ -23,10 +23,12 @@
  * deixa o usuário aceitar o que não aceitaria se visse o valor.
  */
 
+import { envNumber } from "@/lib/env-number";
+
 /** Acima disto, exige confirmação explícita do valor perdido. */
-export const IMPACT_WARN_PCT = Number(process.env.NEXT_PUBLIC_IMPACT_WARN_PCT ?? 2);
+export const IMPACT_WARN_PCT = envNumber(process.env.NEXT_PUBLIC_IMPACT_WARN_PCT, 2, { positive: true });
 /** Acima disto, recusa: é quase sempre erro, não intenção. */
-export const IMPACT_BLOCK_PCT = Number(process.env.NEXT_PUBLIC_IMPACT_BLOCK_PCT ?? 15);
+export const IMPACT_BLOCK_PCT = envNumber(process.env.NEXT_PUBLIC_IMPACT_BLOCK_PCT, 15, { positive: true });
 
 export type ImpactLevel = "ok" | "warn" | "block";
 

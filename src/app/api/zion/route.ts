@@ -24,6 +24,7 @@ import { getFlywheelGates } from "@/lib/admin/gates";
 import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
 import { consumeAnalysisQuota, denialResponse } from "@/lib/tier/enforce";
 import { featureForOp } from "@/lib/zion/op-tier";
+import { envNumber } from "@/lib/env-number";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ const RL_OPTS = { windowMs: 60_000, max: 8 };
 // Escolhido bem acima de qualquer uso legítimo de um app deste tamanho e
 // ajustável sem redeploy pela env. Falha ABERTO se o banco estiver fora — nunca
 // derruba o produto por causa da própria proteção.
-const ZION_DAILY_MAX = Number(process.env.ZION_DAILY_MAX ?? 20_000);
+const ZION_DAILY_MAX = envNumber(process.env.ZION_DAILY_MAX, 20_000, { positive: true });
 
 /**
  * /api/zion — streaming Claude Sonnet 4.6 advisory.

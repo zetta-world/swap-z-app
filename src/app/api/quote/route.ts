@@ -16,6 +16,7 @@ import {
   rankQuotes, type NormalizedQuote,
 } from "@/lib/api/quote-types";
 import type { ChainId } from "@/lib/chains";
+import { envNumber } from "@/lib/env-number";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,13 +35,13 @@ const RL_LIST  = { windowMs: 60_000, max: 40 };   // multi-quote list (heavier)
 const RL_FIRM  = { windowMs: 60_000, max: 25 };   // firm quote per source
 // Deployment-wide ceiling on paid-upstream (0x/LiFi) calls per minute — the
 // distributed-flood backstop the per-IP limit can't provide. See below.
-const QUOTE_GLOBAL_MAX = Number(process.env.QUOTE_GLOBAL_MAX ?? 3000);
+const QUOTE_GLOBAL_MAX = envNumber(process.env.QUOTE_GLOBAL_MAX, 3000, { positive: true });
 // TETO DIÁRIO (auditoria 01/08). O teto por minuto acima é backstop de
 // DISPONIBILIDADE, não de GASTO: 3000/min sustentados são 4,32 MILHÕES de
 // chamadas por dia, e uma enchente que fique logo abaixo do limite nunca o
 // dispara — ela só factura, indefinidamente. Um teto de conta precisa de
 // janela do tamanho da conta. Também falha ABERTO se o banco estiver fora.
-const QUOTE_DAILY_MAX = Number(process.env.QUOTE_DAILY_MAX ?? 250_000);
+const QUOTE_DAILY_MAX = envNumber(process.env.QUOTE_DAILY_MAX, 250_000, { positive: true });
 
 /**
  * /api/quote — unified quote router.

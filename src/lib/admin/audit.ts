@@ -32,6 +32,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { checkExternalDeps } from "@/lib/admin/deps";
 import { runAttackSuite } from "@/lib/admin/attack";
 import { checkEvmAllowlistDrift } from "@/lib/admin/evm-probe";
+import { envNumber } from "@/lib/env-number";
 
 export type Severity = "critical" | "high" | "medium" | "low";
 export type AuditCategory = "dados" | "segurança" | "integração" | "config" | "i18n";
@@ -320,6 +321,26 @@ function envNorm(v: string | undefined | null): string {
   return (v ?? "").trim();
 }
 
+/**
+ * Como o valor aparece no relatório.
+ *
+ * As allowlists de swap são listas gigantes de endereço por chain — despejadas
+ * inteiras, elas enterravam a informação útil ("SOLANA_JITO=on") sob dez linhas
+ * de hexadecimal, e num celular isso torna a linha ilegível. Um relatório que
+ * ninguém consegue ler não é evidência, é volume.
+ *
+ * Valor longo vira resumo com o TAMANHO à vista — quem precisa do conteúdo
+ * abre a variável na Vercel; quem precisa saber se está configurada e se os
+ * dois lados batem tem isso aqui. A COMPARAÇÃO continua sendo feita no valor
+ * inteiro; só a exibição encurta.
+ */
+function envShow(v: string): string {
+  if (v === "") return "(vazio)";
+  if (v.length <= 32) return v;
+  const chains = v.split(";").length;
+  return `configurada (${chains} chain${chains > 1 ? "s" : ""}, ${v.length} caracteres)`;
+}
+
 export function checkBundleSync(fromBrowser?: Record<string, string | null>): AuditFinding {
   const base = {
     id: "bundle_env_sync", name: "O bundle do navegador tem as MESMAS travas que o servidor",
@@ -337,8 +358,8 @@ export function checkBundleSync(fromBrowser?: Record<string, string | null>): Au
   for (const k of MONEY_PATH_PUBLIC_ENV) {
     const server = envNorm(process.env[k]);
     const client = envNorm(fromBrowser[k]);
-    if (server === client) { agree.push(`${k.replace("NEXT_PUBLIC_", "")}=${server || "(vazio)"}`); continue; }
-    drift.push(`${k}: servidor="${server || "(vazio)"}" mas navegador="${client || "(vazio)"}"`);
+    if (server === client) { agree.push(`${k.replace("NEXT_PUBLIC_", "")}=${envShow(server)}`); continue; }
+    drift.push(`${k}: servidor=${envShow(server)} mas navegador=${envShow(client)}`);
   }
   return drift.length === 0
     ? { ...base, pass: true, detail: `build em dia — ${agree.join(" · ")}` }
@@ -367,8 +388,8 @@ function checkRevenueGuards(): AuditFinding {
   } else {
     ok.push("gates de plano ligados");
   }
-  const zionCap = Number(process.env.ZION_DAILY_MAX ?? 20_000);
-  const quoteCap = Number(process.env.QUOTE_DAILY_MAX ?? 250_000);
+  const zionCap = envNumber(process.env.ZION_DAILY_MAX, 20_000, { positive: true });
+  const quoteCap = envNumber(process.env.QUOTE_DAILY_MAX, 250_000, { positive: true });
   if (!Number.isFinite(zionCap) || zionCap <= 0) gaps.push("ZION_DAILY_MAX inválido");
   else ok.push(`teto ZION ${zionCap.toLocaleString("pt-BR")}/dia`);
   if (!Number.isFinite(quoteCap) || quoteCap <= 0) gaps.push("QUOTE_DAILY_MAX inválido");
