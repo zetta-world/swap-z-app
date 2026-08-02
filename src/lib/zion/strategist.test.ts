@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  selectPlaybook, selectPlans, buildLongBracket, stopFloorPct, isPlan,
+  selectPlaybook, selectPlans, buildLongBracket, stopFloorPct, isPlan, playbooksFor,
   type StrategyDecision,
 } from "@/lib/zion/strategist";
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
@@ -180,9 +180,28 @@ describe("invariantes do mandato", () => {
     }
   });
 
-  it("fica fora em regime indefinido (não trair a disciplina por volume)", () => {
-    const d = selectPlaybook(ind({ regime: "TRANSITIONING" }));
-    expect(reason(d)).toContain("transição");
+  it("em regime indefinido só opera o setup que É SOBRE a transição", () => {
+    // MUDANÇA DE REGRA (01/08). Antes o TRANSITIONING era descarte automático —
+    // conservadorismo da v1. Agora um único playbook opera ali: o rompimento de
+    // canal, que por definição é o momento em que uma faixa vira tendência.
+    //
+    // A disciplina continua: sem volume acima da média, fica de fora. Trocar o
+    // descarte automático por "opera com prova" é diferente de afrouxar — o que
+    // seria afrouxar é deixar o pivô e a absorção entrarem aqui só para ter
+    // volume de trades, e por isso eles seguem restritos ao RANGING.
+    const semVolume = selectPlaybook(ind({ regime: "TRANSITIONING", relVol: 1.0 }));
+    expect(isPlan(semVolume)).toBe(false);
+    expect(reason(semVolume)).toContain("volume");
+  });
+
+  it("no TRANSITIONING, os playbooks de mean-reversion NÃO entram", () => {
+    // Pivô, divergência e absorção vivem de o preço voltar à média — e em
+    // transição não existe média para voltar. Deixá-los aqui seria trair a
+    // disciplina por volume de trades.
+    const ids = playbooksFor("TRANSITIONING").map((p) => p.id);
+    expect(ids).not.toContain("pivot_reversion");
+    expect(ids).not.toContain("divergence_reversal");
+    expect(ids).not.toContain("absorption");
   });
 
   it("sem preço não há trade (fail-closed)", () => {
