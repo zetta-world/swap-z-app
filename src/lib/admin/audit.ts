@@ -33,6 +33,7 @@ import { checkExternalDeps } from "@/lib/admin/deps";
 import { runAttackSuite } from "@/lib/admin/attack";
 import { checkEvmAllowlistDrift } from "@/lib/admin/evm-probe";
 import { envNumber } from "@/lib/env-number";
+import { reconcileWallets, significantDrifts, starvedWallets } from "@/lib/paper/reconcile";
 
 export type Severity = "critical" | "high" | "medium" | "low";
 export type AuditCategory = "dados" | "segurança" | "integração" | "config" | "i18n";
@@ -399,6 +400,46 @@ function checkRevenueGuards(): AuditFinding {
     : { ...base, pass: false, detail: gaps.join(" | ") };
 }
 
+// ── 12. AS CARTEIRAS DE PAPEL BATEM COM OS PRÓPRIOS TRADES? ───────────────
+//
+// Achado de 01/08: QUATORZE das vinte carteiras haviam perdido de US$450 a
+// US$1.000 de capital fantasma — Grok e Mistral em $0,00 — e nada disso
+// aparecia em lugar nenhum.
+//
+// O painel mostra `patrimônio = inicial + realizado + não-realizado`, que
+// continuava bonito. Mas quem decide se uma mesa consegue ABRIR posição é o
+// `cash_usd`, e é ele que estava vazio. Sem caixa, `sizePosition` devolve zero e
+// a mesa para de operar SEM ERRO: fica quieta e passa por "não apareceu setup".
+//
+// Foi assim que o experimento colheu amostras de 4 e 10 trades achando que era
+// disciplina, quando era falta de dinheiro. Nenhuma leitura de código encontra
+// isso — só a aritmética contra o banco vivo.
+async function checkWalletDrift(): Promise<AuditFinding> {
+  const base = {
+    id: "paper_wallet_drift", name: "Carteiras de paper batem com os próprios trades",
+    category: "dados" as const, severity: "high" as const,
+    whyRuntime: "é aritmética contra o ledger vivo; o código do débito e do crédito está correto lido isoladamente, e mesmo assim o caixa foge",
+  };
+  const all = await reconcileWallets();
+  if (all.length === 0) {
+    return { ...base, pass: false, inconclusive: true, detail: "sem carteiras para reconciliar (banco fora?)" };
+  }
+  const drift = significantDrifts(all);
+  const starved = starvedWallets(all).filter((w) => Math.abs(w.driftUsd) > 0.5);
+  if (drift.length === 0) {
+    return { ...base, pass: true, detail: `${all.length} carteiras reconciliadas — caixa bate com os trades em todas` };
+  }
+  const pior = drift.slice(0, 4)
+    .map((d) => `${d.label}: caixa $${d.cashUsd.toFixed(2)} vs esperado $${d.expectedUsd.toFixed(2)} (${d.driftUsd > 0 ? "+" : ""}${d.driftUsd.toFixed(2)})`)
+    .join(" | ");
+  return {
+    ...base, pass: false,
+    detail: `${drift.length} de ${all.length} carteiras com caixa fora da conta`
+      + (starved.length ? ` · ${starved.length} SEM CAIXA para abrir posição (param de operar em silêncio)` : "")
+      + ` — ${pior}`,
+  };
+}
+
 // ── O corredor ────────────────────────────────────────────────────────────
 
 export interface AuditReport {
@@ -469,6 +510,7 @@ export async function runAudit(origin: string, browserEnv?: Record<string, strin
     timed(8, checkEvmAllowlistDrift),
     timed(0, () => checkBundleSync(browserEnv)),
     timed(0, checkRevenueGuards),
+    timed(2, checkWalletDrift),
   ]);
 
   // BANCADA DE ATAQUE — as sondas que só rodam de fora, contra a produção.
