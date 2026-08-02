@@ -38,7 +38,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const report = await runAudit(origin);
+  // O painel manda o que o NAVEGADOR enxerga das `NEXT_PUBLIC_*`. Só ele sabe:
+  // essas variáveis são assadas no build, então o servidor lendo `process.env`
+  // vê o valor de AGORA e o navegador vê o valor do último deploy. Sem esse
+  // envio a verificação de sincronia fica inconclusiva, nunca aprovada.
+  const body = await req.json().catch(() => null) as { browserEnv?: Record<string, string | null> } | null;
+  const browserEnv = body?.browserEnv && typeof body.browserEnv === "object" ? body.browserEnv : undefined;
+
+  const report = await runAudit(origin, browserEnv);
 
   // Fica no ledger de eventos: a série histórica mostra se a nota melhora ou
   // apodrece, e um relatório que só existe na tela não serve de prova.
