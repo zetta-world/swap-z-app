@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { sampleLabel, shouldTint, NOISE_THRESHOLD } from "@/lib/admin/sample";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
@@ -108,7 +109,7 @@ export default function TournamentPanel() {
   const waiting = (data?.agents ?? []).filter((a) => a.resolved === 0);
 
   return (
-    <TerminalPanel id="tournament" title="TOURNAMENT" subtitle="ranking por expectancy líquida · toque na linha p/ detalhes" icon="♛" source="supabase/zion_suggestions">
+    <TerminalPanel id="tournament" title="TOURNAMENT" subtitle="① COMPARA mesas — unidade: % líquido POR TRADE" icon="♛" source="supabase/zion_suggestions">
       {loading && <div className="adm-shimmer" style={{ height: 120 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
 
@@ -242,11 +243,26 @@ export default function TournamentPanel() {
                     {g.name}
                   </span>
                   <span style={{ color: "var(--adm-ink-4)", fontStyle: "italic", flexShrink: 0 }}>“{g.cause}”</span>
-                  <span style={{ color: netColor(g.net), flexShrink: 0, width: 52, textAlign: "right" }}>{pct(g.net)}</span>
+                  {/* A AMOSTRA AO LADO DO NÚMERO (01/08). Antes estes cinco
+                      apareciam com o mesmo peso visual — e por trás deles havia
+                      3, 5, 2, 14 e 268 trades. SAGA "lucrou" com UM trade certo;
+                      VÖLVA·Kimi aparece no positivo com ZERO ganhos. Sem o `n`,
+                      ruído tem a mesma cara de resultado. */}
+                  <span style={{ color: "var(--adm-ink-4)", flexShrink: 0, width: 74, textAlign: "right", fontSize: 8 }}>
+                    {sampleLabel(g.decided)}
+                  </span>
+                  <span style={{
+                    // Abaixo do limiar o número sai em CINZA: continua legível,
+                    // mas sem a autoridade que a cor empresta. Pintar de verde um
+                    // +1,19% vindo de três trades é o mesmo erro do selo de
+                    // segurança que era constante — confiança sem garantia.
+                    color: shouldTint(g.decided) ? netColor(g.net) : "var(--adm-ink-4)",
+                    flexShrink: 0, width: 52, textAlign: "right",
+                  }}>{pct(g.net)}</span>
                 </div>
               ))}
               <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 6, fontStyle: "italic" }}>
-                ᚼ não morreram — festejam em Valhalla à espera de novo mandato. O veredito foi sobre <b>prever direção</b>; a próxima saga é <b>escolher a estratégia do momento</b>.
+                ᚼ não morreram — festejam em Valhalla à espera de novo mandato. O veredito foi sobre <b>prever direção</b>; a próxima saga é <b>escolher a estratégia do momento</b>. Abaixo de {NOISE_THRESHOLD} decididos o número sai em cinza: é <b>ruído</b>, não resultado.
               </div>
             </div>
           )}

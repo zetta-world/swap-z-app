@@ -19,15 +19,18 @@
  * (4, 10, 10 trades) é isso: as mesas não estavam paradas por disciplina,
  * estavam sem dinheiro.
  *
- * ⚠️ A CAUSA RAIZ NÃO ESTÁ PROVADA. O débito (`bookPaperFills`) e o crédito
- * (`resolvePaperPositions`) estão corretos lidos isoladamente. As carteiras que
- * NÃO vazaram são exatamente as que nunca operaram (FREYJA, ULLR, oracle_grok)
- * ou as que têm contabilidade PRÓPRIA, fora deste motor (arbiter, arbiter2) —
- * o que aponta para o motor, mas apontar não é provar.
+ * CAUSA RAIZ (encontrada e corrigida no mesmo dia — ver `paper/engine.ts`):
+ * dois bugs se compondo. O conjunto de dedup vinha truncado em 1.000 linhas
+ * pelo limite padrão do PostgREST, então as mesas tentavam reabrir posições que
+ * já tinham; e o `insert` era embrulhado num `try/catch` que NUNCA disparava,
+ * porque o cliente do Supabase resolve com `{ error }` em vez de lançar. A
+ * violação de UNIQUE voltava calada e o caixa era debitado por posições que não
+ * existiam. O MÍMIR estava com exatamente $950 a menos: dezenove lotes de $50.
  *
- * Por isso este módulo NÃO tenta consertar a causa: ele MEDE o desvio e o
- * expõe. Enquanto a causa não for encontrada, o mínimo é que a próxima fuga
- * apareça no mesmo dia, em vez de ser descoberta por acaso semanas depois,
+ * ESTE MÓDULO CONTINUA VALENDO, e é por isso que ele não foi apagado com o
+ * conserto. Ele não depende de saber QUAL bug causa a fuga — só afirma que o
+ * caixa tem de bater com os trades. Qualquer causa nova, ainda não imaginada,
+ * aparece aqui no mesmo dia, em vez de ser descoberta por acaso semanas depois,
  * quando a amostra do experimento já foi comprometida.
  */
 
