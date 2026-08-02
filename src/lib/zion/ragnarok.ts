@@ -106,8 +106,14 @@ async function persist(plans: StrategyPlan[], indicators: SymbolIndicators[], so
     regime: indicators.find((i) => i.symbol === p.symbol)?.regime ?? null,
     horizon_hours: p.horizonHours, source,
   }));
-  try { await db.from("zion_suggestions").insert(rows); return rows.length; }
-  catch { return 0; }
+  // O cliente do Supabase NÃO lança em erro de banco: resolve com
+  // `{ error }`. Um `try/catch` aqui nunca dispararia, e a contagem devolvida
+  // seria uma MENTIRA — linhas "gravadas" que não existem. Foi essa mesma
+  // suposição que fez as carteiras de paper vazarem capital (ver
+  // `paper/engine.ts`). Aqui o estrago é de medição, não de dinheiro, mas uma
+  // mesa que relata trades inexistentes envenena o experimento igual.
+  const { error } = await db.from("zion_suggestions").insert(rows);
+  return error ? 0 : rows.length;
 }
 
 export interface RagnarokAiRun {

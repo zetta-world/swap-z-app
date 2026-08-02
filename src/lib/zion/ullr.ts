@@ -169,7 +169,13 @@ export async function runUllrScan(): Promise<UllrRun> {
     horizon_hours: HORIZON_HOURS, source: ULLR,
     chain: s.chain, pool_address: s.pool,
   }));
-  try { await db.from("zion_suggestions").insert(rows); out.fired = rows.length; }
-  catch { /* best-effort */ }
+  // O cliente do Supabase NÃO lança em erro de banco: resolve com
+  // `{ error }`. Um `try/catch` aqui nunca dispararia, e a contagem devolvida
+  // seria uma MENTIRA — linhas "gravadas" que não existem. Foi essa mesma
+  // suposição que fez as carteiras de paper vazarem capital (ver
+  // `paper/engine.ts`). Aqui o estrago é de medição, não de dinheiro, mas uma
+  // mesa que relata trades inexistentes envenena o experimento igual.
+  const { error } = await db.from("zion_suggestions").insert(rows);
+  out.fired = error ? 0 : rows.length;
   return out;
 }

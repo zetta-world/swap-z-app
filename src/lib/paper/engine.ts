@@ -11,6 +11,7 @@
  * paper_accounts / paper_positions; zion_suggestions is only ever SELECTed.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
 import { DESKS as DESK_LIST } from "@/lib/zion/desks";
 import { getOHLCV } from "@/lib/api/geckoterminal";
 
@@ -227,8 +228,22 @@ export async function openPaperPositions(): Promise<number> {
     .limit(500);
   if (!sugg?.length) return 0;
 
-  const { data: held } = await db.from("paper_positions").select("account_id, suggestion_id");
-  const taken = new Set((held ?? []).map((h) => `${h.account_id}:${h.suggestion_id}`));
+  // ⚠️ PAGINADO — SEM ISTO O CAPITAL VAZAVA (causa raiz, achada em 01/08).
+  //
+  // Este `select` não tinha `.limit()`, e o PostgREST devolve no máximo 1.000
+  // linhas por padrão. A tabela passou de 2.700 posições, então o conjunto de
+  // "já peguei esta sugestão" vinha TRUNCADO: milhares de pares
+  // (conta, sugestão) sumiam da memória e as mesas tentavam reabrir posições
+  // que já tinham.
+  //
+  // Como existe `UNIQUE (account_id, suggestion_id)`, a reinserção violava a
+  // constraint — e o insert é EM LOTE, então UMA duplicata matava o lote
+  // inteiro, levando junto as posições novas e legítimas. Daí as amostras
+  // minúsculas. A segunda metade do estrago está no débito, logo abaixo.
+  const held = await selectAllRows<{ account_id: string; suggestion_id: string }>(
+    (from, to) => db.from("paper_positions").select("account_id, suggestion_id").range(from, to),
+  );
+  const taken = new Set(held.map((h) => `${h.account_id}:${h.suggestion_id}`));
 
   // Current champion (cull engine, alavanca 3) — best-effort, null when unset.
   let champion: string | null = null;
@@ -280,12 +295,47 @@ export async function openPaperPositions(): Promise<number> {
   }
 
   if (inserts.length === 0) return 0;
-  try { await db.from("paper_positions").insert(inserts); } catch { return 0; }
-  for (const [accId, cash] of spent) {
-    const acc = accounts.find((a) => a.id === accId)!;
+
+  // ⚠️ A OUTRA METADE DA CAUSA RAIZ (01/08).
+  //
+  // Isto era `try { await db.insert(inserts); } catch { return 0; }` — e o
+  // `catch` NUNCA disparava. O cliente do Supabase não lança em erro de banco:
+  // ele RESOLVE com `{ data: null, error }`. Uma violação de UNIQUE devolvia
+  // erro silencioso, a promessa resolvia normalmente, e a execução seguia
+  // direto para o laço de débito abaixo — que descontava o caixa de posições
+  // QUE NUNCA FORAM CRIADAS.
+  //
+  // Foi assim que catorze carteiras perderam de US$450 a US$1.000, e o MÍMIR
+  // ficou com exatamente $950 a menos: dezenove lotes debitados sem uma única
+  // linha gravada. Nada disso levantava exceção, então nada aparecia em log.
+  //
+  // Duas mudanças fecham o buraco:
+  //
+  //  1. `ignoreDuplicates` — uma duplicata deixa de matar o lote inteiro. As
+  //     posições novas entram; as repetidas são puladas em silêncio, que é o
+  //     comportamento correto para um seed idempotente.
+  //  2. `.select()` faz o insert DEVOLVER as linhas realmente gravadas, e o
+  //     débito passa a ser calculado a partir DELAS. O caixa não pode mais
+  //     divergir das posições: ele é derivado do que o banco confirmou, não do
+  //     que a aplicação pretendia.
+  const { data: created, error: insErr } = await db
+    .from("paper_positions")
+    .upsert(inserts, { onConflict: "account_id,suggestion_id", ignoreDuplicates: true })
+    .select("account_id, cost_usd");
+  if (insErr || !created?.length) return 0;
+
+  // Débito derivado do que FOI GRAVADO — não do que se tentou gravar.
+  const debited = new Map<string, number>();
+  for (const row of created) {
+    const id = String(row.account_id);
+    debited.set(id, (debited.get(id) ?? 0) + Number(row.cost_usd ?? 0));
+  }
+  for (const [accId, cash] of debited) {
+    const acc = accounts.find((a) => a.id === accId);
+    if (!acc) continue;
     await db.from("paper_accounts").update({ cash_usd: Number(acc.cash_usd) - cash, updated_at: new Date().toISOString() }).eq("id", accId);
   }
-  return inserts.length;
+  return created.length;
 }
 
 /** Resolve open positions against the live Gate.io price: close on target/stop

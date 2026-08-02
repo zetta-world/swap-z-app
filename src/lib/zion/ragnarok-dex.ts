@@ -123,8 +123,14 @@ export async function runDexScan(): Promise<DexRun> {
     horizon_hours: plan.horizonHours, source: STRAT_DEX,
     chain: c.chain, pool_address: c.pool,
   }));
-  try { await db.from("zion_suggestions").insert(rows); out.logged = rows.length; }
-  catch { /* best-effort: o próximo tick tenta de novo */ }
+  // O cliente do Supabase NÃO lança em erro de banco: resolve com
+  // `{ error }`. Um `try/catch` aqui nunca dispararia, e a contagem devolvida
+  // seria uma MENTIRA — linhas "gravadas" que não existem. Foi essa mesma
+  // suposição que fez as carteiras de paper vazarem capital (ver
+  // `paper/engine.ts`). Aqui o estrago é de medição, não de dinheiro, mas uma
+  // mesa que relata trades inexistentes envenena o experimento igual.
+  const { error } = await db.from("zion_suggestions").insert(rows);
+  out.logged = error ? 0 : rows.length;
   return out;
 }
 
