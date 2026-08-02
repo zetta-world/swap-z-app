@@ -1,267 +1,107 @@
 /**
- * RAGNARÖK — o seletor de estratégia (docs/PLANO-RAGNAROK.md).
+ * RAGNARÖK — o seletor de estratégia (docs/PLANO-RAGNAROK.md,
+ * docs/PLANO-ESCOLA-DE-TRADERS.md).
  *
  * O experimento anterior (rodada direcional, arquivada em Valhalla) testou UMA
  * pergunta: "a IA acerta a próxima direção?". A resposta foi não. Mas nunca
  * testou a pergunta do dono: "a IA escolhe a ESTRATÉGIA que melhor se adequa ao
- * momento?" — range, pullback, suporte/resistência.
+ * momento?".
  *
  * Duas diferenças de fundo em relação ao scanner antigo:
  *
- *  1. LONG-ONLY. O objetivo é ACUMULAR USDT: comprar um token barato e vender
- *     mais caro. Nada de short. `side` é sempre "buy", por construção.
+ *  1. LONG-ONLY. O objetivo é ACUMULAR USDT: comprar barato e vender mais caro.
+ *     Nada de short — `side` é sempre "buy", por construção do bracket.
  *
  *  2. RANGE É ALVO, NÃO LIXO. O funil antigo (`extractSuggestion`) rejeitava
- *     `regime === "RANGING"` — literalmente descartava o mercado lateral, que é
- *     onde mean-reversion vive. Aqui o RANGING é o playbook principal.
+ *     `regime === "RANGING"` — descartava o mercado lateral, que é onde
+ *     mean-reversion vive.
  *
- * Este módulo é PURO: sem I/O, sem LLM, sem DB. É o "bot mecânico" — o controle
- * honesto do experimento. Se um bot determinístico não lucra seguindo estas
- * regras, o problema é a estratégia, não a inteligência. A camada de IA (S4)
- * entra depois, por cima, podendo aceitar/vetar/ajustar o que sai daqui.
+ * ⚠️ MUDANÇA DE 01/08 — DE TRÊS PLAYBOOKS PARA DEZ.
+ *
+ * Este seletor nasceu com três estratégias, que eram literalmente as que o dono
+ * citou como EXEMPLO. Com três opções, a mesa de IA não estava sendo testada —
+ * estava sendo enfeitada, porque escolher entre três mal chega a ser escolher.
+ *
+ * As estratégias saíram daqui para `playbooks.ts`, onde cada uma declara em que
+ * regime vale, quando falha e de que dado depende. Este arquivo virou só o
+ * ESCOLHEDOR — e é essa separação que torna o duelo limpo: o mecânico e a IA
+ * recebem o MESMO cardápio de candidatos, e o que muda entre eles é só quem
+ * escolhe.
+ *
+ * Continua PURO: sem I/O, sem LLM, sem DB.
  */
 
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
+import { candidateAttempts } from "@/lib/zion/playbooks";
+import { isPlan, type StrategyDecision, type StrategyPlan } from "@/lib/zion/bracket";
 
-/** Os playbooks LONG que o seletor sabe operar. */
-export type Playbook =
-  | "range_reversion"        // RANGING: compra no suporte, vende na resistência
-  | "trend_pullback"         // TRENDING_UP: compra o recuo, monta na continuação
-  | "capitulation_reversal"  // TRENDING_DOWN + divergência de exaustão perto do fundo
-  | "stand_aside";           // não operar É uma posição
-
-/** Um playbook que REALMENTE opera. Um plano nunca pode ser `stand_aside` —
- *  o tipo garante isso, em vez de deixar para uma checagem em runtime. */
-export type ActivePlaybook = Exclude<Playbook, "stand_aside">;
-
-export interface StrategyPlan {
-  symbol: string;
-  playbook: ActivePlaybook;
-  /** Sempre "buy" — este agente só acumula USDT comprando barato. */
-  side: "buy";
-  entry: number;
-  target: number;
-  stop: number;
-  /** reward/risk planejado do bracket. */
-  rr: number;
-  /** stop em % da entrada — usado pelo piso de volatilidade. */
-  stopPct: number;
-  /** Horizonte em horas: o range respira mais rápido que a tendência. */
-  horizonHours: number;
-  /** Por que ESTE playbook, em uma linha (vai para o log/painel). */
-  rationale: string;
-}
-
-/** Motivo pelo qual o seletor ficou de fora — diagnóstico, não erro. */
-export interface StandAside {
-  symbol: string;
-  playbook: "stand_aside";
-  reason: string;
-}
-
-export type StrategyDecision = StrategyPlan | StandAside;
-
-export function isPlan(d: StrategyDecision): d is StrategyPlan {
-  return d.playbook !== "stand_aside";
-}
-
-// ── Parâmetros (mesmas cicatrizes do flywheel) ────────────────────────────
-//
-// O stop TEM que ficar fora da banda de ruído do próprio símbolo, senão morre
-// de clima em vez de morrer de estar errado — foi a lição que os agentes
-// escreveram sozinhos no Auto-Retro ("stops under 1% are getting clipped almost
-// instantly"). ATR floor + piso absoluto, o mais rígido vence.
-export const MIN_STOP_ATR = Number(process.env.RAGNAROK_MIN_STOP_ATR ?? 1.5);
-export const MIN_STOP_PCT = Number(process.env.RAGNAROK_MIN_STOP_PCT ?? 1.2);
-/** RR mínimo. Abaixo disso o bracket não paga o custo de ida-e-volta. */
-export const MIN_RR = Number(process.env.RAGNAROK_MIN_RR ?? 1.8);
-/** Alvo absurdo = card corrompido (o bug dos alvos de 500% do Grok). */
-export const MAX_TARGET_PCT = Number(process.env.RAGNAROK_MAX_TARGET_PCT ?? 30);
-
-/** Piso de stop para um símbolo: max(ATR% × mult, piso absoluto). */
-export function stopFloorPct(atrPct: number | null): number {
-  const fromAtr = atrPct != null && atrPct > 0 ? atrPct * MIN_STOP_ATR : 0;
-  return Math.max(fromAtr, MIN_STOP_PCT);
-}
+// Reexportado para não quebrar quem já importava daqui (ragnarok.ts,
+// ragnarok-dex.ts, strategist-ai.ts, testes).
+export {
+  isPlan, buildLongBracket, stopFloorPct, atrAbs,
+  MIN_STOP_ATR, MIN_STOP_PCT, MIN_RR, MAX_TARGET_PCT,
+} from "@/lib/zion/bracket";
+export type {
+  Playbook, ActivePlaybook, StrategyPlan, StandAside, StrategyDecision,
+} from "@/lib/zion/bracket";
+export { PLAYBOOKS, PLAYBOOK_GAPS, playbooksFor, candidatePlans, candidateAttempts } from "@/lib/zion/playbooks";
+export type { PlaybookDef, PlaybookAttempt, PlaybookGap } from "@/lib/zion/playbooks";
 
 /**
- * Valida a geometria de um bracket LONG e devolve o plano, ou null se o setup
- * for inoperável. Um bracket só é tradeável quando:
- *   stop < entrada < alvo, RR >= MIN_RR, alvo dentro da escala, stop fora do ruído.
- */
-export function buildLongBracket(
-  symbol: string,
-  playbook: ActivePlaybook,
-  entry: number,
-  target: number,
-  stop: number,
-  atrPct: number | null,
-  horizonHours: number,
-  rationale: string,
-): StrategyPlan | null {
-  if (!(entry > 0) || !(target > 0) || !(stop > 0)) return null;
-  // Long: o stop fica ABAIXO da entrada e o alvo ACIMA. Sem exceção — é isso
-  // que torna o agente long-only por construção, não por boa vontade do prompt.
-  if (!(stop < entry) || !(target > entry)) return null;
-
-  const reward = target - entry;
-  const risk = entry - stop;
-  if (!(reward > 0) || !(risk > 0)) return null;
-
-  const stopPct = (risk / entry) * 100;
-  const targetPct = (reward / entry) * 100;
-  if (stopPct < stopFloorPct(atrPct)) return null;   // dentro do ruído → morre de clima
-  if (targetPct < 0.15 || targetPct > MAX_TARGET_PCT) return null;
-
-  const rr = reward / risk;
-  if (rr < MIN_RR) return null;
-
-  return { symbol, playbook, side: "buy", entry, target, stop, rr, stopPct, horizonHours, rationale };
-}
-
-// ── Os playbooks ──────────────────────────────────────────────────────────
-
-/**
- * RANGE REVERSION — o unlock. Em mercado lateral (ADX baixo) o preço oscila
- * entre suporte e resistência: compra-se perto do suporte e realiza-se perto da
- * resistência. O funil antigo jogava este regime fora inteiro.
+ * O que o seletor viu, não só o que ele escolheu.
  *
- * Só compra na METADE DE BAIXO do range (perto do suporte). Comprar no meio ou
- * no topo do range é comprar caro — o oposto de acumular USDT.
+ * `candidates` existe porque medir apenas o plano escolhido não distingue um
+ * agente que escolhe mal entre bons candidatos de um que escolhe bem entre
+ * ruins. O caminho não tomado é metade da informação.
  */
-function rangeReversion(ind: SymbolIndicators): StrategyDecision {
-  const { symbol, price } = ind;
-  if (price == null || !(price > 0)) return { symbol, playbook: "stand_aside", reason: "sem preço" };
-
-  const support = ind.supports[0];      // suporte mais próximo ABAIXO do preço
-  const resistance = ind.resistances[0]; // resistência mais próxima ACIMA
-  if (support == null || resistance == null) {
-    return { symbol, playbook: "stand_aside", reason: "range sem S/R definido" };
-  }
-  if (!(resistance > support)) {
-    return { symbol, playbook: "stand_aside", reason: "S/R degenerado" };
-  }
-
-  // Onde o preço está DENTRO do range: 0 = no suporte, 1 = na resistência.
-  const posInRange = (price - support) / (resistance - support);
-  if (posInRange > 0.5) {
-    return { symbol, playbook: "stand_aside", reason: `caro no range (${(posInRange * 100).toFixed(0)}% do canal)` };
-  }
-
-  // Entra a mercado (já está barato), realiza um pouco ANTES da resistência —
-  // a fila de venda se forma no nível, não em cima dele.
-  //
-  // Stop um ATR INTEIRO abaixo do suporte, não meio: um pavio furando o suporte
-  // é ruído, um fechamento um ATR abaixo é quebra de range de verdade. Meio ATR
-  // punha o stop dentro da própria banda de ruído do símbolo — reprovado pelo
-  // piso de volatilidade, que é a cicatriz que os agentes escreveram sozinhos
-  // no Auto-Retro. Comprar no suporte já dá RR de sobra; não precisa apertar.
-  const atrAbs = ind.atr14 != null && ind.atr14 > 0 ? ind.atr14 : price * 0.01;
-  const target = resistance - (resistance - support) * 0.15;
-  const stop = support - atrAbs;
-
-  return buildLongBracket(
-    symbol, "range_reversion", price, target, stop, ind.atrPct, 48,
-    `lateral (ADX ${ind.adx?.toFixed(0) ?? "?"}) a ${(posInRange * 100).toFixed(0)}% do canal — compra no suporte, realiza na resistência`,
-  ) ?? { symbol, playbook: "stand_aside", reason: "bracket de range reprovado (RR/stop)" };
+export interface SelectionResult {
+  decision: StrategyDecision;
+  candidates: StrategyPlan[];
 }
-
-/**
- * TREND PULLBACK — em alta confirmada, não se compra o rompimento (caro):
- * espera-se o recuo até a EMA20 / suporte e compra-se ali, a favor da maré.
- * Se o preço está esticado muito acima da EMA20, fica de fora e espera o recuo.
- */
-function trendPullback(ind: SymbolIndicators): StrategyDecision {
-  const { symbol, price } = ind;
-  if (price == null || !(price > 0)) return { symbol, playbook: "stand_aside", reason: "sem preço" };
-  if (ind.ema20 == null || !(ind.ema20 > 0)) {
-    return { symbol, playbook: "stand_aside", reason: "sem EMA20" };
-  }
-
-  // Esticado = comprar no topo do impulso. O recuo é o desconto; sem ele, fora.
-  const stretchPct = ((price - ind.ema20) / ind.ema20) * 100;
-  const atrPct = ind.atrPct ?? 1;
-  if (stretchPct > atrPct * 1.5) {
-    return { symbol, playbook: "stand_aside", reason: `esticado ${stretchPct.toFixed(1)}% acima da EMA20 — espera o pullback` };
-  }
-
-  const atrAbs = ind.atr14 != null && ind.atr14 > 0 ? ind.atr14 : price * 0.01;
-  // Stop abaixo da estrutura: um ATR abaixo do suporte mais próximo (mesma
-  // lógica do range — pavio é ruído, ATR inteiro é quebra), ou 1.5 ATR quando
-  // não há suporte mapeado.
-  const structural = ind.supports[0];
-  const stop = structural != null && structural < price
-    ? structural - atrAbs
-    : price - atrAbs * 1.5;
-  // Alvo: a resistência acima quando existe. Sem resistência no caminho, o
-  // movimento medido tem espaço pra correr — 4 ATR. (A 3 ATR o playbook era
-  // praticamente natimorto: contra um stop estrutural honesto o RR quase nunca
-  // alcançava o mínimo, então ele nunca operaria caminho limpo, que é
-  // justamente a melhor situação de uma tendência.)
-  const target = ind.resistances[0] != null && ind.resistances[0] > price
-    ? ind.resistances[0]
-    : price + atrAbs * 4;
-
-  return buildLongBracket(
-    symbol, "trend_pullback", price, target, stop, ind.atrPct, 72,
-    `alta confirmada (ADX ${ind.adx?.toFixed(0) ?? "?"}, ${ind.alignment}) com preço a ${stretchPct.toFixed(1)}% da EMA20 — compra o recuo`,
-  ) ?? { symbol, playbook: "stand_aside", reason: "bracket de pullback reprovado (RR/stop)" };
-}
-
-/**
- * CAPITULATION REVERSAL — o único long permitido em tendência de BAIXA, e com
- * trava dupla: exige divergência de alta no RSI (vendedor perdendo força) E
- * preço no terço inferior do range de 1 ano. Sem as duas, comprar downtrend é
- * "faca caindo" — foi assim que a rodada antiga sangrou.
- */
-function capitulationReversal(ind: SymbolIndicators): StrategyDecision {
-  const { symbol, price } = ind;
-  if (price == null || !(price > 0)) return { symbol, playbook: "stand_aside", reason: "sem preço" };
-  if (ind.divergence !== "bullish_rsi") {
-    return { symbol, playbook: "stand_aside", reason: "queda sem divergência de exaustão — faca caindo" };
-  }
-  if (ind.rangePct == null || ind.rangePct > 33) {
-    return { symbol, playbook: "stand_aside", reason: "queda longe do fundo do ciclo" };
-  }
-
-  const atrAbs = ind.atr14 != null && ind.atr14 > 0 ? ind.atr14 : price * 0.01;
-  const stop = price - atrAbs * 2;             // reversão precisa de folga
-  const target = ind.resistances[0] != null && ind.resistances[0] > price
-    ? ind.resistances[0]
-    : price + atrAbs * 4;
-
-  return buildLongBracket(
-    symbol, "capitulation_reversal", price, target, stop, ind.atrPct, 96,
-    `divergência de alta a ${ind.rangePct.toFixed(0)}% do range de 1 ano — vendedor sem força`,
-  ) ?? { symbol, playbook: "stand_aside", reason: "bracket de reversão reprovado (RR/stop)" };
-}
-
-// ── O seletor ─────────────────────────────────────────────────────────────
 
 /**
  * O CÉREBRO MECÂNICO: dado o retrato técnico de um símbolo, escolhe o playbook
- * que se adequa ao momento e devolve o bracket long — ou o motivo de ficar
- * fora. É determinístico de propósito: é o controle contra o qual a camada de
- * IA (S4) vai ser medida.
+ * do momento e devolve o bracket long — ou o motivo de ficar fora.
+ *
+ * A regra de escolha é a PRIORIDADE DECLARADA na biblioteca, que é um palpite
+ * clássico (setup mais específico vence o mais genérico), não um fato medido.
+ * Está assim de propósito enquanto não existe histórico por playbook — e é
+ * justamente esse histórico, alimentado por `candidates`, que vai substituí-la.
+ *
+ * Determinístico de propósito: é o controle contra o qual a mesa de IA é medida.
  */
-export function selectPlaybook(ind: SymbolIndicators): StrategyDecision {
+export function selectWithCandidates(ind: SymbolIndicators): SelectionResult {
   const { symbol } = ind;
   if (ind.price == null || !(ind.price > 0)) {
-    return { symbol, playbook: "stand_aside", reason: "sem preço" };
+    return { decision: { symbol, playbook: "stand_aside", reason: "sem preço" }, candidates: [] };
   }
+  const attempts = candidateAttempts(ind);
+  const candidates = attempts.map((a) => a.plan).filter((p): p is StrategyPlan => p !== null);
+  if (candidates.length === 0) {
+    // Nenhum playbook do regime encontrou condições. Isso é DISCIPLINA, não
+    // falha: trader experiente passa a maior parte do tempo fora do mercado.
+    //
+    // Mas ficar de fora SEM MOTIVO é indistinguível de estar quebrado, então o
+    // motivo vem do playbook de MAIOR prioridade do regime — o que mais tinha
+    // chance de operar. Quando não há playbook nenhum para o regime, o próprio
+    // regime é a resposta.
+    const first = attempts[0];
+    return {
+      decision: {
+        symbol, playbook: "stand_aside",
+        reason: first
+          ? `${first.def.label}: ${first.reason}`
+          : `regime indefinido (transição) — nenhum playbook opera aqui`,
+      },
+      candidates: [],
+    };
+  }
+  return { decision: candidates[0], candidates };
+}
 
-  switch (ind.regime) {
-    case "RANGING":
-      return rangeReversion(ind);
-    case "TRENDING_UP":
-      return trendPullback(ind);
-    case "TRENDING_DOWN":
-      return capitulationReversal(ind);
-    default:
-      // TRANSITIONING: o regime ainda não se decidiu. Na v1 ficamos fora — não
-      // trair a disciplina só pra ter volume de trades.
-      return { symbol, playbook: "stand_aside", reason: "regime indefinido (transição)" };
-  }
+/** A forma antiga, para quem só quer a decisão. */
+export function selectPlaybook(ind: SymbolIndicators): StrategyDecision {
+  return selectWithCandidates(ind).decision;
 }
 
 /** Roda o seletor sobre uma carteira de símbolos, devolvendo só os planos. */
