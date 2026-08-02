@@ -12,8 +12,11 @@ import {
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { verifyJupiterTransaction, guardMode, shouldBlock } from "@/lib/swap/solana-guard";
+import { assessMevExposure } from "@/lib/swap/mev-guard";
+import { decideTip, sendViaJito, sendNarrative, type JitoSendResult } from "@/lib/swap/jito";
 import { erc20Abi, type Hex } from "viem";
-import type { Token } from "@/lib/tokens";
+import { findToken, type Token } from "@/lib/tokens";
+import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import type { ChainId } from "@/lib/chains";
 import { CHAIN_BY_ID } from "@/lib/chains";
 import type { ZxQuoteResponse } from "@/lib/api/zerox";
@@ -96,11 +99,24 @@ export default function ExecuteSwap({
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<Hex | null>(null);
   const [solSig, setSolSig] = useState<string | null>(null);
+  /** Como a transação Solana saiu de fato — bundle privado ou RPC público. */
+  const [sendNote, setSendNote] = useState<string | null>(null);
   const historyId = useRef<string | null>(null);
   // Guards the firm-quote fetch so it runs once per unique param set per open —
   // not on every currentChainId / publicClient / token-object identity change.
   const fetchKeyRef = useRef("");
   const { push: pushHistory, update: updateHistory } = useTxHistory();
+
+  // Preço vivo para dimensionar a gorjeta do bundle privado (Solana). O SOL
+  // entra na mesma chamada em lote — a gorjeta é cotada em lamports e sem o
+  // preço dele não dá para saber se ela custa mais que o roubo que evita.
+  const solToken = useMemo(() => findToken("solana", "SOL"), []);
+  const { prices: livePrices } = useTokenPrices([fromToken, solToken]);
+  const solUsd = solToken ? livePrices[tokenPriceKey(solToken)] ?? null : null;
+  const fromUsd = livePrices[tokenPriceKey(fromToken)] ?? fromToken.priceUsd ?? null;
+  const notionalUsd = fromUsd != null
+    ? (Number(sellAmount) / Math.pow(10, fromToken.decimals)) * fromUsd
+    : null;
 
   const isCrossChain = fromChain !== toChain;
   const isJupiter    = source === "jupiter";
@@ -349,10 +365,38 @@ export default function ExecuteSwap({
         }
 
         const signed = await sol.signTransaction(tx);
-        const sig = await solConn.sendRawTransaction(signed.serialize(), {
-          skipPreflight: false,
-          maxRetries:    3,
-        });
+
+        // ─── ENVIO PRIVADO (auditoria 01/08) ───────────────────────────
+        //
+        // Solana é a ÚNICA rede em que a proteção contra reordenação depende de
+        // nós: aqui quem transmite somos nós, não a carteira do usuário. O
+        // `mev-guard` deixou essa dívida registrada; isto a paga.
+        //
+        // A gorjeta sai de uma fração da EXPOSIÇÃO calculada (notional ×
+        // slippage) e nunca pode custar mais que o roubo que evita — pagar
+        // $0,30 para proteger $0,50 seria mudar o prejuízo de lugar.
+        //
+        // FALLBACK OBRIGATÓRIO: se o block engine falhar, segue pelo RPC
+        // normal. Um swap que não executa é pior que um swap sem bundle — e a
+        // tela dirá qual dos dois aconteceu, em vez de exibir escudo que não
+        // houve.
+        const exposureUsd = assessMevExposure({
+          chain: "solana", notionalUsd: notionalUsd ?? null, slippageBps,
+        }).stealableUsd;
+        const tip = decideTip(exposureUsd, solUsd);
+        let sig: string | null = null;
+        let sent: JitoSendResult = { signature: null, usedJito: false };
+        if (tip.useJito) {
+          sent = await sendViaJito(Buffer.from(signed.serialize()).toString("base64"));
+          sig = sent.signature;
+        }
+        if (!sig) {
+          sig = await solConn.sendRawTransaction(signed.serialize(), {
+            skipPreflight: false,
+            maxRetries:    3,
+          });
+        }
+        setSendNote(tip.useJito ? sendNarrative(sent, tip.tipLamports) : null);
         setSolSig(sig);
         setPhase("tx_pending");
         historyId.current = pushHistory({
@@ -654,6 +698,16 @@ export default function ExecuteSwap({
                 source={source}
                 t={t}
               />
+
+              {/* COMO a transação saiu de fato. Existe porque o "escudo MEV"
+                  antigo afirmava proteção sem nada por trás: sucesso do swap
+                  não autoriza a tela a dizer que houve bundle privado. Quando
+                  o Jito falha e o RPC público salva a execução, isto diz. */}
+              {sendNote && (
+                <div className="mt-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-[10px] leading-relaxed text-ink-3">
+                  {sendNote}
+                </div>
+              )}
 
               {/* CTA */}
               <div className="flex gap-2 pt-3">

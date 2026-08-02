@@ -23,6 +23,7 @@ import { gatesEnabled } from "@/lib/tier/flags";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
 import { consumeAnalysisQuota, denialResponse } from "@/lib/tier/enforce";
+import { featureForOp } from "@/lib/zion/op-tier";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -128,24 +129,14 @@ export async function GET(req: NextRequest) {
   //
   // A SESSÃO CONTINUA OBRIGATÓRIA. Sem carteira não há a quem debitar a cota, e
   // uma cota que não vincula a ninguém é o mesmo que não ter cota.
-  if (gatesEnabled()) {
-    const session = await getSession();
-    if (!session) return denialResponse({ kind: "unauthenticated" });
-    // Nunca derruba por infra: getTierForWallet cai para "free" se Supabase ou
-    // Helius estiverem indisponíveis.
-    const { tier } = await getTierForWallet(session.sub, session.chain);
-    const required = FEATURE_TIER.zionAdvisory;
-    if (!tierSatisfies(tier, required)) {
-      return denialResponse({ kind: "tier_required", required, have: tier });
-    }
-    const denial = await consumeAnalysisQuota(session.sub, tier);
-    if (denial) return denialResponse(denial);
-  }
-
   // ─── 2. Input validation ─────────────────────────────────────────────
   const p = req.nextUrl.searchParams;
 
-  // Pick op (new) or fall back to legacy mode mapping
+  // Pick op (new) or fall back to legacy mode mapping.
+  //
+  // Isto roda ANTES do gate de propósito: a operação decide QUAL feature está
+  // sendo pedida, e uma recusa não pode acontecer depois de a cota já ter sido
+  // debitada — cobrar uma análise de quem levou 402 seria cobrar pelo "não".
   const opRaw   = p.get("op");
   const modeRaw = p.get("mode") || "";
   let op: ZionOp;
@@ -155,6 +146,20 @@ export async function GET(req: NextRequest) {
     op = LEGACY_MODE_MAP[modeRaw];
   } else {
     op = "trading";
+  }
+
+  if (gatesEnabled()) {
+    const session = await getSession();
+    if (!session) return denialResponse({ kind: "unauthenticated" });
+    // Nunca derruba por infra: getTierForWallet cai para "free" se Supabase ou
+    // Helius estiverem indisponíveis.
+    const { tier } = await getTierForWallet(session.sub, session.chain);
+    const required = FEATURE_TIER[featureForOp(op)] ?? "free";
+    if (!tierSatisfies(tier, required)) {
+      return denialResponse({ kind: "tier_required", required, have: tier });
+    }
+    const denial = await consumeAnalysisQuota(session.sub, tier);
+    if (denial) return denialResponse(denial);
   }
 
   const chainRaw = p.get("chain") || "ethereum";

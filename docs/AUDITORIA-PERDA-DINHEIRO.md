@@ -28,7 +28,7 @@ final.
 | 2 | Impacto de preço só colorido, nunca bloqueante | cliente | 🟢 corrigido |
 | 3 | `trades_today` do autopilot contado só no fim da execução | cliente | 🟢 corrigido |
 | 4 | Selo de segurança do token era constante digitada à mão | cliente | 🟢 corrigido |
-| 5 | Registro de tokens se declara lista de demo | cliente | 🔴 documentado, não corrigido |
+| 5 | Registro de tokens se declara lista de demo | cliente | 🟢 corrigido |
 | 6 | "Escudo MEV" e "modo privacidade" sem implementação | cliente | 🟢 corrigido |
 | 7 | Teto de gasto: 3 furos (ver abaixo) | plataforma | 🟢 corrigido |
 | 8 | Plano/paywall: matriz declarada e não aplicada | ambos | 🟢 corrigido |
@@ -91,25 +91,26 @@ O toggle deixou de ser verde. Verde comunica *"você está protegido"*, e o usu�
 não está: ele está **informado**, que é outra coisa. O `privacyMode` foi removido
 inteiro — não havia nada honesto em que transformá-lo.
 
-**O que continua faltando (dívida real, não corrigida).** Proteção de verdade.
-Em EVM ela depende do RPC da carteira e o site não tem como forçar — por isso a
-tela agora **instrui** (Flashbots Protect, MEV Blocker) em vez de fingir. Em
-Solana somos nós que transmitimos, então bundle Jito **é** implementável e não
-está implementado. Enquanto não estiver, a defesa que funciona é tolerância curta.
+**Proteção de verdade.** Em EVM ela depende do RPC da carteira e o site não tem
+como forçar — por isso a tela **instrui** (Flashbots Protect, MEV Blocker) em vez
+de fingir. Em Solana somos nós que transmitimos: o bundle Jito ficou como dívida
+e foi **pago na segunda rodada** — ver "Dívidas fechadas" adiante.
 
 ---
 
-## 5 · Registro de tokens (30/07) — aberto
+## 5 · Registro de tokens (30/07)
 
-`src/lib/tokens.ts` traz 36 tokens e um comentário que se autodenuncia:
+`src/lib/tokens.ts` trazia 35 tokens e um comentário que se autodenunciava:
 
 > *"Curated default token list for the demo. In production, this is fetched from
 > CoinGecko / TrustWallet token lists"*
 
-Nunca foi feito. Os endereços nunca foram validados contra fonte externa. O
-`token-safety` novo não cobre isso: ele checa se o token **é golpe**, não se é o
+Nunca foi feito. Os endereços nunca tinham sido validados contra fonte externa. E
+o `token-safety` não cobre isso: ele checa se o token **é golpe**, não se é o
 token **certo**. Um endereço errado ali manda dinheiro para o contrato errado com
-todos os selos verdes.
+todos os selos verdes acesos.
+
+Corrigido na segunda rodada — ver "Dívidas fechadas" adiante.
 
 ---
 
@@ -220,15 +221,93 @@ seguem abertos — trancar a saída de um autopilot já armado transformaria um
 problema de cobrança em risco de dinheiro do usuário). Vale o mesmo interruptor
 de sempre: `TIER_GATES_ENABLED=false` abre tudo.
 
-**Ainda aberto:** `arbScanner: "trader"` e `prioritySupport: "trader"` não
-correspondem a nenhuma superfície no código — são entradas mortas na matriz. O
-feed de arbitragem cross-CEX é vendido no card do plano Trader e hoje entra pelo
-`op=arbitrage` do ZION, sob a regra do ZION. Decidir se ele deve exigir `trader`
-é decisão de produto, não de código.
+**`arbScanner` e `prioritySupport`** não correspondiam a superfície nenhuma —
+entradas mortas na matriz. O primeiro foi resolvido na segunda rodada (ver
+adiante); o segundo continua sem porta de código, e está certo assim: é promessa
+de atendimento humano.
+
+---
+
+## Dívidas fechadas (01/08, segunda rodada)
+
+### 5 · Registro de tokens — conferido de verdade
+
+Os 35 tokens foram comparados, um a um, com a TrustWallet: **23 dos 25 contratos
+verificados em símbolo E decimais, ZERO divergências.**
+
+Os dois restantes ficam marcados `not_found`, nunca "verificado": `bsc:ZETTA` é
+token nosso (fonte de terceiro não teria) e `base:cbBTC` é recente demais para a
+lista deles. O endereço do cbBTC é o canônico e passa no checksum; ausência na
+lista de um terceiro não é evidência de erro, e arredondar isso para "ok" seria
+o mesmo defeito que a auditoria inteira persegue.
+
+Escolha técnica que importa: usei o caminho **por ativo**
+(`assets/<endereço>/info.json`), não o `tokenlist.json`. A tokenlist é esparsa —
+arbitrum tem 6 entradas — e tratar "ausente" como "errado" teria produzido
+alarme falso em 9 dos 25. A consulta usa o endereço em EIP-55 calculado na hora;
+sem isso um endereço guardado em minúsculas daria 404 e seria acusado quando o
+problema era a caixa das letras. (Foi o caso do ZETTA, agora normalizado.)
+
+O que roda **sem rede**, em todo push (`src/lib/tokens.test.ts`):
+
+- **EIP-55 em todo endereço EVM** — a defesa contra o erro que realmente
+  acontece, que é digitar um caractere errado. Um dígito trocado quase nunca
+  sobrevive ao checksum. Isso converte "digitado à mão" em "à prova de typo".
+- **Forma canônica obrigatória** — guardar em minúsculas não é inseguro, mas
+  apaga a evidência: quem lê o arquivo depois não distingue conferido de recém-
+  digitado.
+- **Cobertura do manifesto** — token novo entra já conferido, ou o CI reprova.
+- **Decimais batendo** — o campo que mais dói errado: 6 casas trocadas por 18
+  transformam $1 em $1.000.000.000.000 no notional, e a guarda de impacto, que
+  lê justamente esse número, aprovaria feliz.
+
+Reconferir: `node scripts/verify-tokens.mjs --write`. Se a fonte discordar, o
+script sai com erro em vez de gravar um "ok" que não existe.
+
+### 6 (continuação) · Bundle privado em Solana
+
+Solana é a única rede em que a proteção depende de nós — ali quem transmite
+somos nós, não a carteira. `src/lib/swap/jito.ts` entrega a transação ao block
+engine da Jito em vez do RPC público.
+
+Três decisões:
+
+1. **A gorjeta nunca custa mais que o roubo que evita.** Pagar $0,30 para
+   proteger $0,50 é mudar o prejuízo de lugar. O tip é 5% da exposição calculada
+   pelo `mev-guard`, com piso e teto — e abaixo de $25 de exposição a resposta é
+   NÃO usar Jito, porque não há o que proteger. É o mesmo limiar do aviso na
+   tela, de propósito: se discordassem, a interface avisaria de um risco que o
+   envio ignora.
+2. **Falha do Jito não quebra o swap.** Cai para o RPC normal. Um swap que não
+   executa é pior que um swap sem bundle — e a tela passa a dizer qual dos dois
+   aconteceu (`sendNarrative`), porque sucesso do swap não autoriza afirmar
+   proteção que não houve. Tem teste em cima disso.
+3. **Nasce desligado** (`NEXT_PUBLIC_SOLANA_JITO=on`). Mesma disciplina do
+   `solana-guard`: não consigo exercitar o block engine daqui, e ligar por
+   padrão um caminho de dinheiro que ninguém viu rodar é exatamente o erro que
+   esta auditoria existe para não repetir.
+
+### 8 (continuação) · `arbScanner` deixou de ser entrada morta
+
+`arbScanner: "trader"` estava na matriz sem corresponder a superfície nenhuma,
+enquanto o card do plano Trader vende *"Cross-CEX arbitrage feed"* — e o feed
+entrava pelo `op=arbitrage` sob a regra genérica do ZION. Ou seja: **qualquer
+plano com acesso ao ZION levava junto o que era vendido como exclusivo do
+Trader.** Vender como exclusivo e entregar a todos é o defeito da cota que não
+contava, na direção da receita.
+
+`src/lib/zion/op-tier.ts` (módulo puro, lido por rota e interface — a lição das
+três divergências dos gates) mapeia operação → feature. O gate agora roda
+**depois** de identificar a operação e **antes** de debitar a cota: cobrar uma
+análise de quem levou 402 seria cobrar pelo "não". A aba mostra cadeado em vez
+de sumir — esconder faria o usuário nunca saber que o recurso existe.
+
+**`prioritySupport: "trader"`** continua sem superfície, e está certo assim: é
+promessa de atendimento humano, não porta de código.
 
 ---
 
 ## Próximos
 
-A fila de perda de dinheiro está fechada. O que sobra é dívida conhecida:
-o registro de tokens (#5) e a proteção MEV real em Solana (bundle Jito, #6).
+Nada em aberto nesta fila. As três dívidas que ficaram registradas em 01/08
+foram fechadas na segunda rodada acima.

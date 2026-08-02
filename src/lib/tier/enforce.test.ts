@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { dailyQuota, quotaBucket, denialResponse } from "@/lib/tier/enforce";
 import { FEATURE_TIER, TIER_DAILY_ANALYSES, ALL_TIERS, tierSatisfies } from "@/lib/tier/types";
 import { PLAN_TIERS } from "@/lib/pricing/plans";
+import { OP_FEATURE, featureForOp } from "@/lib/zion/op-tier";
 
 /**
  * A MATRIZ QUE NINGUÉM CONSULTAVA.
@@ -99,6 +100,31 @@ describe("a vitrine e a porta têm de dizer a MESMA coisa", () => {
     // Quem separa os planos aqui é a COTA, não o portão.
     expect(FEATURE_TIER.zionAdvisory).toBe("free");
     expect(dailyQuota("free")).toBe(5);
+  });
+});
+
+describe("operação do ZION com exigência própria", () => {
+  it("a arbitragem exige o plano em que é VENDIDA", () => {
+    // O card do plano Trader vende "Cross-CEX arbitrage feed". A entrada
+    // `arbScanner: "trader"` existia na matriz e não correspondia a superfície
+    // nenhuma — o feed entrava pelo op=arbitrage sob a regra genérica do ZION,
+    // então qualquer plano com ZION levava junto o que era exclusivo do Trader.
+    expect(featureForOp("arbitrage")).toBe("arbScanner");
+    expect(FEATURE_TIER[featureForOp("arbitrage")]).toBe("trader");
+  });
+
+  it("operação sem exigência própria cai no gate geral do ZION", () => {
+    for (const op of ["trading", "pair", "ask", "sniper", "research"] as const) {
+      expect(featureForOp(op)).toBe("zionAdvisory");
+    }
+  });
+
+  it("toda chave apontada pelo mapa existe na matriz", () => {
+    // Um typo aqui abriria o recurso em vez de fechá-lo — `FEATURE_TIER[k]`
+    // viria `undefined` e nenhum plano seria exigido.
+    for (const k of Object.values(OP_FEATURE)) {
+      expect(FEATURE_TIER[k!], `feature "${k}" não existe em FEATURE_TIER`).toBeDefined();
+    }
   });
 });
 
