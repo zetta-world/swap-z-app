@@ -1,112 +1,133 @@
 import { describe, it, expect } from "vitest";
-import { parseVerdicts, applyVerdict, type AiVerdict } from "@/lib/zion/strategist-ai";
-import type { StrategyPlan } from "@/lib/zion/strategist";
+import { parseChoices, applyChoice, type AiChoice } from "@/lib/zion/strategist-ai";
+import type { StrategyPlan } from "@/lib/zion/bracket";
 
-const plan: StrategyPlan = {
-  symbol: "BTC", playbook: "range_reversion", side: "buy",
-  entry: 100, target: 112, stop: 95, rr: 2.4, stopPct: 5,
-  horizonHours: 48, rationale: "mecânico",
-};
+/**
+ * MÍMIR — a mesa que TESTA A TESE, e que antes não testava.
+ *
+ * A versão anterior recebia UM plano pronto e podia aceitar, vetar ou ajustar.
+ * Isso é revisão de risco: a estratégia já vinha decidida. Agora ela recebe o
+ * cardápio inteiro de candidatos validados e ESCOLHE qual — que é literalmente
+ * a pergunta do dono.
+ *
+ * Estes testes guardam as três travas. As duas primeiras impedem a IA de
+ * inventar setup ou geometria; a terceira é a que mais importa:
+ *
+ *   SEM CÉREBRO, SEM TRADE.
+ *
+ * Os quatro trades que MÍMIR tinha no ledger eram planos do VÖLUNDR gravados
+ * sob o nome dela, porque a versão antiga caía no plano mecânico quando o
+ * modelo não respondia. O "duelo" era VÖLUNDR contra VÖLUNDR-com-outro-nome —
+ * e a conclusão sobre IA teria saído de um experimento sem IA.
+ */
 
-const v = (o: Partial<AiVerdict>): AiVerdict =>
-  ({ symbol: "BTC", action: "accept", why: "", ...o }) as AiVerdict;
+function plan(over: Partial<StrategyPlan> = {}): StrategyPlan {
+  return {
+    symbol: "BTC", playbook: "range_reversion", side: "buy",
+    entry: 100, target: 112, stop: 94, rr: 2, stopPct: 6, horizonHours: 48,
+    rationale: "mecânico", ...over,
+  };
+}
 
-describe("parseVerdicts — o modelo nem sempre devolve JSON limpo", () => {
-  it("lê JSON direto", () => {
-    const r = parseVerdicts('{"verdicts":[{"symbol":"BTC","action":"veto","why":"caro"}]}');
-    expect(r).toHaveLength(1);
-    expect(r[0].action).toBe("veto");
+const menu = [
+  plan({ playbook: "range_reversion", target: 112, stop: 94 }),
+  plan({ playbook: "absorption", target: 110, stop: 93 }),
+];
+
+describe("parseChoices — o modelo não escolhe o formato da resposta", () => {
+  it("lê JSON puro", () => {
+    const c = parseChoices('{"choices":[{"symbol":"BTC","pick":"absorption","why":"ok"}]}');
+    expect(c).toHaveLength(1);
+    expect(c[0].pick).toBe("absorption");
   });
 
-  it("lê JSON dentro de cerca markdown", () => {
-    const r = parseVerdicts('```json\n{"verdicts":[{"symbol":"ETH","action":"accept","why":"ok"}]}\n```');
-    expect(r[0].symbol).toBe("ETH");
+  it("lê dentro de cerca de markdown", () => {
+    const c = parseChoices('```json\n{"choices":[{"symbol":"BTC","pick":"none","why":"x"}]}\n```');
+    expect(c[0].pick).toBe("none");
   });
 
-  it("lê JSON com prosa em volta", () => {
-    const r = parseVerdicts('Sure! Here you go:\n{"verdicts":[{"symbol":"SOL","action":"accept","why":"ok"}]}\nHope this helps.');
-    expect(r[0].symbol).toBe("SOL");
+  it("lê com prosa em volta", () => {
+    const c = parseChoices('Here you go: {"choices":[{"symbol":"ETH","pick":"absorption","why":"y"}]} hope it helps');
+    expect(c[0].symbol).toBe("ETH");
   });
 
-  it("descarta itens com action inválida em vez de aceitar lixo", () => {
-    const r = parseVerdicts('{"verdicts":[{"symbol":"BTC","action":"short","why":"x"},{"symbol":"ETH","action":"accept","why":"y"}]}');
-    expect(r).toHaveLength(1);
-    expect(r[0].symbol).toBe("ETH");
+  it("lixo devolve lista vazia, não explode", () => {
+    expect(parseChoices("desculpe, não posso ajudar")).toEqual([]);
+    expect(parseChoices("")).toEqual([]);
   });
 
-  it("devolve vazio em texto ilegível (nunca lança)", () => {
-    expect(parseVerdicts("desculpa, não consegui analisar")).toEqual([]);
-    expect(parseVerdicts("")).toEqual([]);
+  it("descarta item sem os campos obrigatórios", () => {
+    const c = parseChoices('{"choices":[{"symbol":"BTC"},{"symbol":"ETH","pick":"absorption","why":"z"}]}');
+    expect(c).toHaveLength(1);
   });
 });
 
-describe("applyVerdict — a IA propõe, o código dispõe", () => {
-  it("sem veredito, segue o plano mecânico", () => {
-    expect(applyVerdict(plan, undefined, 2)).toEqual(plan);
+describe("trava 1 — a IA escolhe ENTRE os candidatos, não inventa", () => {
+  it("escolhe um do cardápio", () => {
+    const r = applyChoice(menu, { symbol: "BTC", pick: "absorption", why: "fluxo entrando" }, 2);
+    expect(r?.playbook).toBe("absorption");
+    expect(r?.rationale).toContain("[IA]");
+    expect(r?.rationale).toContain("fluxo entrando");
   });
 
-  it("accept mantém o plano intacto", () => {
-    expect(applyVerdict(plan, v({ action: "accept" }), 2)).toEqual(plan);
+  it("DESCARTA playbook que não estava na mesa", () => {
+    // Sem esta trava, um "rompimento" alucinado onde não existe canal entraria
+    // no ledger, e o duelo deixaria de comparar a mesma coisa.
+    expect(applyChoice(menu, { symbol: "BTC", pick: "range_breakout", why: "inventei" }, 2)).toBeNull();
   });
 
-  it("veto mata o trade", () => {
-    expect(applyVerdict(plan, v({ action: "veto", why: "range esticado" }), 2)).toBeNull();
+  it("DESCARTA playbook inexistente", () => {
+    expect(applyChoice(menu, { symbol: "BTC", pick: "scalp_lunar", why: "?" }, 2)).toBeNull();
   });
 
-  it("adjust válido passa e registra a justificativa da IA", () => {
-    const r = applyVerdict(plan, v({ action: "adjust", entry: 99, target: 115, stop: 93, why: "suporte real é 94" }), 2);
+  it("'none' é resposta legítima — ficar de fora é posição", () => {
+    expect(applyChoice(menu, { symbol: "BTC", pick: "none", why: "nada claro" }, 2)).toBeNull();
+  });
+});
+
+describe("trava 2 — ajuste de níveis passa pelo MESMO portão do mecânico", () => {
+  it("aceita refinamento com geometria sã", () => {
+    const r = applyChoice(menu, { symbol: "BTC", pick: "range_reversion", entry: 100, target: 115, stop: 93, why: "melhor stop" }, 2);
     expect(r).not.toBeNull();
-    expect(r!.entry).toBe(99);
+    expect(r!.target).toBe(115);
     expect(r!.stop).toBe(93);
-    expect(r!.rationale).toContain("[IA]");
-    expect(r!.rationale).toContain("suporte real");
   });
 
-  it("REJEITA ajuste que inverte o bracket (short disfarçado)", () => {
-    // stop ACIMA da entrada = venda a descoberto. Não existe caminho pra isso.
-    expect(applyVerdict(plan, v({ action: "adjust", entry: 100, target: 90, stop: 105 }), 2)).toBeNull();
+  it("REJEITA stop acima da entrada — isso seria um short", () => {
+    expect(applyChoice(menu, { symbol: "BTC", pick: "range_reversion", entry: 100, target: 115, stop: 105, why: "x" }, 2)).toBeNull();
   });
 
-  it("REJEITA ajuste com stop dentro do ruído (a cicatriz do Auto-Retro)", () => {
-    // ATR 4% → piso 6%. Um stop de 1% morre de clima, não de estar errado.
-    expect(applyVerdict(plan, v({ action: "adjust", entry: 100, target: 130, stop: 99 }), 4)).toBeNull();
+  it("REJEITA RR abaixo do mínimo, mesmo com a IA insistindo", () => {
+    expect(applyChoice(menu, { symbol: "BTC", pick: "range_reversion", entry: 100, target: 102, stop: 94, why: "x" }, 2)).toBeNull();
   });
 
-  it("REJEITA ajuste com alvo absurdo (o bug dos 500% do Grok)", () => {
-    expect(applyVerdict(plan, v({ action: "adjust", entry: 100, target: 600, stop: 94 }), 2)).toBeNull();
+  it("REJEITA stop dentro do ruído (morre de clima)", () => {
+    // ATR 4% → piso 6%. Um stop de 1% não passa nem com alvo generoso.
+    expect(applyChoice(menu, { symbol: "BTC", pick: "range_reversion", entry: 100, target: 130, stop: 99, why: "x" }, 4)).toBeNull();
   });
 
-  it("REJEITA ajuste com RR abaixo do mínimo", () => {
-    expect(applyVerdict(plan, v({ action: "adjust", entry: 100, target: 104, stop: 96 }), 2)).toBeNull();
+  it("REJEITA deslize de casa decimal — a âncora de escala", () => {
+    // LINK a 7323 em vez de 7.32: geometria "coerente", ledger envenenado.
+    expect(applyChoice(menu, { symbol: "BTC", pick: "range_reversion", entry: 7323, target: 8000, stop: 7000, why: "x" }, 2)).toBeNull();
   });
 
-  it("REJEITA entrada deslocada de escala (o deslize de casa decimal)", () => {
-    // LINK a 7323 em vez de 7.32: a geometria fica coerente entre si e passaria
-    // no RR, mas resolveria contra um nível de fantasia.
-    expect(applyVerdict(plan, v({ action: "adjust", entry: 10_000, target: 11_500, stop: 9_400 }), 2)).toBeNull();
+  it("níveis parciais são ignorados — usa o candidato como veio", () => {
+    // Metade de um ajuste não é um ajuste. Sem isto, um `target` solto seria
+    // combinado com o stop antigo e produziria uma geometria que ninguém pediu.
+    const r = applyChoice(menu, { symbol: "BTC", pick: "range_reversion", target: 999, why: "x" } as AiChoice, 2);
+    expect(r?.target).toBe(112);
+  });
+});
+
+describe("trava 3 — sem escolha, a mesa fica MUDA", () => {
+  it("sem veredito para o símbolo, NÃO herda o plano do mecânico", () => {
+    // Este é o teste que impede a contaminação de voltar. A versão anterior
+    // devolvia o plano do ferreiro aqui, e foi assim que MÍMIR acumulou quatro
+    // trades num experimento onde IA nenhuma participou.
+    expect(applyChoice(menu, undefined, 2)).toBeNull();
   });
 
-  it("REJEITA adjust sem os níveis (a IA disse 'ajusta' e não ajustou)", () => {
-    expect(applyVerdict(plan, v({ action: "adjust" }), 2)).toBeNull();
-  });
-
-  it("aceita troca de playbook mantendo a geometria válida", () => {
-    const r = applyVerdict(plan, v({ action: "adjust", entry: 100, target: 115, stop: 93, playbook: "trend_pullback", why: "é pullback, não range" }), 2);
-    expect(r!.playbook).toBe("trend_pullback");
-  });
-
-  it("todo plano que sobrevive continua long-only", () => {
-    const casos: AiVerdict[] = [
-      v({ action: "accept" }),
-      v({ action: "adjust", entry: 99, target: 115, stop: 93 }),
-      v({ action: "adjust", entry: 101, target: 120, stop: 94, playbook: "capitulation_reversal" }),
-    ];
-    for (const c of casos) {
-      const r = applyVerdict(plan, c, 2);
-      if (!r) continue;
-      expect(r.side).toBe("buy");
-      expect(r.stop).toBeLessThan(r.entry);
-      expect(r.target).toBeGreaterThan(r.entry);
-    }
+  it("cardápio vazio não vira trade", () => {
+    expect(applyChoice([], { symbol: "BTC", pick: "range_reversion", why: "x" }, 2)).toBeNull();
   });
 });

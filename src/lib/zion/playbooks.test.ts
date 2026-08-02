@@ -31,13 +31,16 @@ function ind(over: Partial<SymbolIndicators> = {}): SymbolIndicators {
   const coerente = { atrPct: price > 0 ? (atr14 / price) * 100 : null };
   return {
     symbol: "TEST", price: 100, rsi14: 50, ema20: 100, ema50: 100, macd: null,
-    atr14: 2, atrPct: 2, adx: 15, regime: "RANGING",
+    atr14: 2, adx: 15, regime: "RANGING",
     trend: "neutral", htf4h: null, htf1d: null, htf1w: null, alignment: "mixed",
     obv: null, obvTrend: null, confidenceScore: null,
     relVol: null, divergence: null, supports: [], resistances: [], pivotLevels: null,
     rsiTrajectory: [], yearHigh: null, yearLow: null, rangePct: null, distFromYearHighPct: null,
     ...coerente,
     ...over,
+    // O ATR coerente vence um `atrPct` solto vindo do override, a menos que o
+    // teste sobrescreva os DOIS de propósito (caso do preço andando).
+    atrPct: over.atrPct ?? coerente.atrPct,
   };
 }
 
