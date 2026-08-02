@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { DESKS } from "@/lib/zion/desks";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
@@ -37,17 +38,30 @@ function statusColor(s: string): string {
   return "var(--adm-gold)"; // neutral / expired
 }
 
-// Per-agent filter (R2.4): read the SAME headline for one agent instead of
-// everything blended. Values mirror the `source` column in zion_suggestions.
+// Filtro por mesa — ler a MESMA manchete de uma mesa só, em vez de tudo
+// misturado. Os valores espelham a coluna `source` de `zion_suggestions`.
+//
+// ⚠️ CORREÇÃO 01/08 — ESTA LISTA ERA SÓ DE MORTOS.
+//
+// Ela estava escrita à mão com `A·ZION†`, `B·FERRARI`, `MISTRAL`, `DEEPSEEK`,
+// `KIMI` e `GROK` — TODOS aposentados em 28/07. Nenhuma das mesas vivas
+// (VÖLUNDR, SKAÐI, MÍMIR, FREYJA, ULLR) aparecia. Enquanto isso o número no
+// topo do painel já era das mesas novas: manchete de hoje, filtro de um mês
+// atrás. O dono abriu o painel, viu os dois juntos e não conseguiu dizer o que
+// estava sendo medido — com razão.
+//
+// Agora sai de `DESKS`, a mesma fonte que o cron e o Ragnarök usam. Mesa nova
+// aparece aqui sozinha; mesa aposentada migra para o grupo de arquivo sem
+// ninguém precisar lembrar de editar dois arquivos.
+const LIVE_SOURCES = DESKS.filter((d) => d.status === "live")
+  .map((d) => ({ value: d.source, label: `${d.sigil} ${d.name}` }));
+const ARCHIVED_SOURCES = DESKS.filter((d) => d.status === "valhalla")
+  .map((d) => ({ value: d.source, label: `${d.name}†` }));
+
 const SOURCES: { value: string; label: string }[] = [
-  { value: "",            label: "ALL" },
-  { value: "self_scan",   label: "A·ZION†" },   // † aposentado 27/07 (histórico)
-  { value: "hybrid_scan", label: "B·FERRARI" },
-  { value: "radar",       label: "RADAR" },
-  { value: "mistral_scan",  label: "MISTRAL" },
-  { value: "deepseek_scan", label: "DEEPSEEK" },
-  { value: "kimi_scan",     label: "KIMI" },
-  { value: "grok_scan",     label: "GROK" },
+  { value: "", label: "ALL" },
+  ...LIVE_SOURCES,
+  ...ARCHIVED_SOURCES,
 ];
 
 const PERIODS: { label: string; days: number | null }[] = [

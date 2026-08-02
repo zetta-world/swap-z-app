@@ -47,7 +47,19 @@ export default function RagnarokPanel() {
   useEffect(() => { load(); const t = setInterval(load, 180_000); return () => clearInterval(t); }, [load]);
 
   return (
-    <TerminalPanel id="ragnarok" title="RAGNARÖK" subtitle="acumulação de USDT · mecânico vs IA · qual estratégia paga" icon="ᚱ" source="zion_suggestions/strat_*">
+    /* TRÊS PAINÉIS, AS MESMAS CINCO MESAS — e três números diferentes.
+     *
+     * O dono abriu isto e disse que não sabia o que estava sendo medido. Ele
+     * estava certo: o TOURNAMENT mostra `MÍMIR −1,70%`, aqui aparece
+     * `MÍMIR $999 (−0,1%)`, e o PAPER repete o segundo. Os três estão CERTOS e
+     * medem coisas diferentes — % por trade, USDT acumulado, patrimônio — e
+     * nada na tela dizia isso.
+     *
+     * Empilhei painel novo sem aposentar o velho. A numeração ①②③ nos
+     * subtítulos existe para que a diferença apareça ANTES do número: dois
+     * valores que não batem só assustam quando ninguém disse que eles medem
+     * coisas distintas. */
+    <TerminalPanel id="ragnarok" title="RAGNARÖK" subtitle="② A FICHA do Setor A — unidade: USDT acumulado na carteira" icon="ᚱ" source="zion_suggestions/strat_*">
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
       {error && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
 

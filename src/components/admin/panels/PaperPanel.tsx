@@ -72,7 +72,7 @@ export default function PaperPanel() {
   const totalRet = data && data.totals.startingUsd > 0 ? (data.totals.equity / data.totals.startingUsd - 1) * 100 : 0;
 
   return (
-    <TerminalPanel id="paper" title="PAPER · GATE.IO" subtitle="$1000/agente · toque na linha p/ detalhes" icon="📈" source="supabase/paper_accounts">
+    <TerminalPanel id="paper" title="PAPER · GATE.IO" subtitle="③ SÓ AS CARTEIRAS, sem ranking — unidade: patrimônio em USDT" icon="📈" source="supabase/paper_accounts">
       {loading && <div className="adm-shimmer" style={{ height: 140 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
 
