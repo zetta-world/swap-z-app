@@ -48,6 +48,24 @@ describe("quem gasta token está na lista de corte", () => {
   });
 });
 
+describe("o corte não pode derrubar o GRUPO DE CONTROLE", () => {
+  it("o master do tick NÃO entra no corte automático", () => {
+    // `pause_backtest` envolve o tick inteiro — VÖLUNDR, SKAÐI, FREYJA e ULLR
+    // rodam DENTRO dele. Fechá-lo por custo calaria as mesas mecânicas junto,
+    // que é o oposto da regra desta suíte. E não economizaria nada: todo
+    // caminho que gasta token ali dentro já tem gate próprio.
+    expect(TOKEN_SPENDING_GATES).not.toContain("pause_backtest");
+  });
+
+  it("os gates de IA DE DENTRO do tick cobrem o gasto sozinhos", () => {
+    // Esta é a razão de o master poder ficar de fora sem abrir buraco.
+    for (const k of ["pause_agent_a", "pause_agent_b", "pause_tournament",
+                     "pause_oracle", "pause_ragnarok_ai"] as const) {
+      expect(TOKEN_SPENDING_GATES, `"${k}" precisa estar no corte`).toContain(k);
+    }
+  });
+});
+
 describe("quem NÃO gasta token fica de fora", () => {
   it("mesas mecânicas não são cortadas por custo", () => {
     // Cortá-las não economizaria nada e calaria o GRUPO DE CONTROLE que dá

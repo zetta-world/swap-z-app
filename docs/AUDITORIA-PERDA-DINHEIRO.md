@@ -153,6 +153,19 @@ calaria o **grupo de controle** que dá sentido à comparação com as mesas de 
 o experimento perderia o eixo justo exatamente quando o dinheiro aperta, que é
 quando ele mais importa.
 
+⚠ **E eu violei essa regra na linha seguinte.** Classifiquei `pause_backtest`
+como gastador — "master das varreduras", parecia óbvio. Só que ele envolve o
+tick **inteiro**: VÖLUNDR, SKAÐI, FREYJA e ULLR rodam dentro dele. O disjuntor
+fecharia o master e levaria o grupo de controle junto.
+
+E não economizava nada em troca: **todo** caminho que gasta token dentro daquele
+cron já tem gate próprio (`pause_agent_a`, `pause_agent_b`, `pause_tournament`,
+`pause_oracle`, `pause_ragnarok_ai`). Fechar esses corta o gasto por inteiro e
+deixa as mesas mecânicas trabalhando. Corrigido no mesmo dia, com dois testes:
+um proibindo o master no corte automático, outro exigindo que os cinco gates de
+IA de dentro do tick estejam lá — porque é isso que permite o master ficar de
+fora sem abrir buraco. O master segue desligável **à mão** pelo painel.
+
 **7c · O teto do `/api/quote` era de disponibilidade, não de conta.** 3000/min
 são 4,32 **milhões** de chamadas por dia, e uma enchente que fique logo abaixo do
 limite nunca o dispara — ela só factura, indefinidamente. Um teto de conta
