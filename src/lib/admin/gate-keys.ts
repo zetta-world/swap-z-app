@@ -49,13 +49,31 @@ export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = [
  * lista. Gate novo sem entrada aqui não compila (o `Record` é total), e
  * `gates.test.ts` cobra a classificação explícita.
  *
- * `false` significa "mesa mecânica / dado público": desligá-la num corte de
- * custo não economizaria nada e ainda calaria o GRUPO DE CONTROLE que dá
- * sentido à comparação com as mesas de IA — o experimento perderia o eixo justo
- * exatamente quando o dinheiro aperta, que é quando ele mais importa.
+ * `false` significa "fechar este gate não é a ferramenta certa para cortar
+ * custo". Nas mesas mecânicas porque não há custo nenhum a cortar — e desligar
+ * calaria o GRUPO DE CONTROLE que dá sentido à comparação com as mesas de IA,
+ * fazendo o experimento perder o eixo justo exatamente quando o dinheiro
+ * aperta, que é quando ele mais importa.
+ *
+ * ⚠ CORREÇÃO 01/08 (mesmo dia) — `pause_backtest` ESTAVA `true` E ISSO ESTAVA
+ * ERRADO.
+ *
+ * Ele é o master das varreduras, então "gasta token" parecia óbvio. Mas ele
+ * envolve o tick INTEIRO: dentro dele rodam VÖLUNDR, SKAÐI, FREYJA e ULLR, que
+ * são justamente as mesas mecânicas. Fechá-lo num corte de custo derrubaria o
+ * grupo de controle junto — exatamente o que o parágrafo acima proíbe. Eu
+ * escrevi a regra e violei na linha seguinte.
+ *
+ * E não custava nada em economia: TODO caminho que gasta token dentro daquele
+ * cron já tem gate próprio — `pause_agent_a`, `pause_agent_b`,
+ * `pause_tournament`, `pause_oracle`, `pause_ragnarok_ai`. Fechar esses corta o
+ * gasto por inteiro e deixa as mesas mecânicas trabalhando.
+ *
+ * Continua desligável À MÃO pelo painel quando o operador quiser parar tudo. O
+ * que ele não é: ferramenta de corte AUTOMÁTICO de custo.
  */
 export const GATE_SPENDS_TOKENS: Record<FlywheelGateKey, boolean> = {
-  pause_backtest:     true,   // master das varreduras
+  pause_backtest:     false,  // master do tick — fechá-lo levaria o CONTROLE junto
   pause_agent_a:      true,   // ZION self_scan
   pause_agent_b:      true,   // Ferrari híbrido
   pause_tournament:   true,   // stack multi-provedor
