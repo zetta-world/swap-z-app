@@ -1,30 +1,46 @@
 /**
- * RAGNARÖK S4 — a camada de IA do seletor de estratégia.
+ * MÍMIR — a mesa de IA do Ragnarök. A pergunta do experimento, e só ela.
  *
- * ESTA é a pergunta do experimento, na formulação do dono:
+ * Na formulação do dono:
  *
  *   "A questão não é IA adivinhar a direção do mercado, é IA analisar o mercado
- *    e seguir a estratégia que melhor se adequa àquele momento — stop, range,
+ *    e seguir a ESTRATÉGIA que melhor se adequa àquele momento — stop, range,
  *    pullback, suporte/resistência."
  *
- * Então a IA aqui NÃO é perguntada "pra onde vai o preço?". Ela recebe o
- * retrato técnico + o plano que o ferreiro mecânico (VÖLUNDR) montou, e responde
- * uma pergunta de OFÍCIO: este é o playbook certo para este momento, e a
- * geometria está bem colocada? Pode ACEITAR, VETAR ou AJUSTAR.
+ * ⚠️ REESCRITA DE 01/08 — ANTES ISTO NÃO TESTAVA A TESE.
  *
- * DUAS TRAVAS QUE NÃO DEPENDEM DE BOA VONTADE DO PROMPT:
+ * A versão anterior recebia UM plano pronto do ferreiro mecânico e podia
+ * aceitar, vetar ou ajustar. Isso é revisão de risco, não escolha de
+ * estratégia: a estratégia já vinha decidida, e a IA no máximo mexia nos
+ * números. Com três playbooks no repertório, nem escolha havia.
  *
- *  1. Tudo que a IA devolve passa PELA MESMA validação mecânica
- *     (`buildLongBracket`). Se ela inventar um alvo de 500% (o bug do Grok) ou
- *     apertar o stop pra dentro do ruído, o plano morre em código. O prompt
+ * Agora a IA recebe TODOS OS CANDIDATOS que a biblioteca validou para aquele
+ * símbolo naquele tick — cada um com playbook, geometria e RR — e faz o que o
+ * dono descreveu: ESCOLHE QUAL. Ou nenhum, que é resposta legítima e a que um
+ * trader experiente dá na maior parte do tempo.
+ *
+ * O mecânico escolhe do MESMO cardápio, por prioridade fixa. O que difere entre
+ * as duas mesas é só o escolhedor — e é isso que torna o duelo interpretável.
+ *
+ * TRÊS TRAVAS QUE NÃO DEPENDEM DE BOA VONTADE DO PROMPT:
+ *
+ *  1. A IA SÓ ESCOLHE ENTRE OS CANDIDATOS. Não inventa setup. Se ela responder
+ *     um playbook que a biblioteca não validou para aquele símbolo, a escolha é
+ *     descartada. Sem isso, ela poderia alucinar um "rompimento" onde não há
+ *     canal e o duelo deixaria de comparar a mesma coisa.
+ *
+ *  2. AJUSTE DE NÍVEIS VOLTA PELO MESMO PORTÃO. Se ela refinar entrada/alvo/stop,
+ *     o resultado passa por `buildLongBracket` igual ao do mecânico. O prompt
  *     pede; o código exige.
  *
- *  2. Long-only por construção. A IA não tem como emitir short: não existe
- *     campo pra isso, e o bracket é reprovado se o stop não ficar abaixo da
- *     entrada. Acumular USDT é comprar barato e realizar — só isso.
+ *  3. SEM CÉREBRO, SEM TRADE. Se o provedor não responder, esta mesa não grava
+ *     NADA. A versão anterior gravava os planos do ferreiro sob o nome da IA —
+ *     e foi exatamente o que aconteceu: os 4 trades que MÍMIR tinha no ledger
+ *     eram do VÖLUNDR com outro nome, num experimento onde IA nenhuma
+ *     participou. Uma mesa que não pensou não deve produzir trade; silêncio é
+ *     honesto, ledger contaminado não é.
  *
- * Sem assento Anthropic (custo). Roda pelo seam OpenAI-compat, no papel
- * `brain` do registry.
+ * Sem assento Anthropic (custo). Roda pelo seam OpenAI-compat, papel `brain`.
  */
 
 import { openaiCompatChat } from "@/lib/ai/provider";
@@ -32,84 +48,96 @@ import { roleProvider } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { recordEvent } from "@/lib/admin/track";
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
-import {
-  selectPlaybook, isPlan, buildLongBracket,
-  type StrategyPlan, type ActivePlaybook,
-} from "@/lib/zion/strategist";
+import { candidateAttempts, PLAYBOOKS } from "@/lib/zion/playbooks";
+import { buildLongBracket, type StrategyPlan } from "@/lib/zion/bracket";
 
 /** A mesa de IA — o par experimental do VÖLUNDR mecânico. */
 export const STRAT_AI = "strat_ai";
 
-/** O veredito da IA sobre um plano mecânico. */
-export interface AiVerdict {
+/** A escolha da IA para um símbolo. */
+export interface AiChoice {
   symbol: string;
-  action: "accept" | "veto" | "adjust";
-  /** Preenchidos só quando `adjust`. */
+  /** Id de um playbook candidato, ou "none" para ficar de fora. */
+  pick: string;
+  /** Refinamento opcional dos níveis. Se vier, passa pelo bracket de novo. */
   entry?: number;
   target?: number;
   stop?: number;
-  /** Playbook alternativo, quando a IA discorda da leitura de regime. */
-  playbook?: ActivePlaybook;
-  /** Uma linha de justificativa — vira registro no evento. */
+  /** Uma linha de justificativa — vira registro no evento e no painel. */
   why: string;
 }
 
+/**
+ * O cardápio vira texto para o modelo. A biblioteca é a fonte: quando um
+ * playbook novo entra, ele aparece aqui sozinho — sem isso o prompt envelhece
+ * calado, que foi como a versão anterior ficou listando três estratégias muito
+ * depois de existirem outras.
+ */
+function playbookGlossary(): string {
+  return PLAYBOOKS.map((p) => `  • ${p.id} — ${p.thesis}. FALHA QUANDO: ${p.failsWhen}`).join("\n");
+}
+
 const SYSTEM = [
-  "You are the risk officer of a LONG-ONLY spot accumulation desk.",
+  "You are the head trader of a LONG-ONLY spot accumulation desk.",
   "The desk's ONLY goal is to grow its USDT balance: buy a token cheap, sell it higher, bank USDT.",
   "You NEVER short, never use leverage, never hold through a thesis break.",
   "",
-  "You are NOT asked to predict direction. You are asked a CRAFT question:",
-  "given this market's structure, is the proposed playbook the right one for THIS",
-  "moment, and is the geometry (entry / target / stop) placed where a disciplined",
-  "trader would place it?",
+  "You are NOT asked to predict direction. You are asked the craft question that",
+  "separates an experienced trader from a bot: given this market's structure RIGHT NOW,",
+  "WHICH of the pre-validated setups is the right one to take — if any?",
   "",
-  "The playbooks:",
-  "  • range_reversion — choppy/ranging market: buy near support, sell near resistance.",
-  "  • trend_pullback — confirmed uptrend: buy the pullback, never the extended breakout.",
-  "  • capitulation_reversal — downtrend, ONLY with exhaustion divergence near a cycle low.",
+  "The full playbook library:",
+  playbookGlossary(),
+  "",
+  "For each symbol you receive the market portrait and the CANDIDATE setups that",
+  "already passed mechanical validation (geometry, risk/reward, volatility floor).",
+  "Your job is to pick ONE of those candidates, or none.",
   "",
   "Answer with STRICT JSON, no prose, no markdown fence:",
-  '{"verdicts":[{"symbol":"BTC","action":"accept|veto|adjust","entry":0,"target":0,"stop":0,"playbook":"range_reversion","why":"one short line"}]}',
+  '{"choices":[{"symbol":"BTC","pick":"range_reversion","entry":0,"target":0,"stop":0,"why":"one short line"}]}',
   "",
   "Rules:",
-  "  • accept — the plan is sound as-is. Omit entry/target/stop.",
-  "  • veto   — this is not a setup worth risking USDT on. Say why in one line.",
-  "  • adjust — same idea, better levels. You MUST give entry, target and stop.",
-  "  • On adjust: stop BELOW entry, target ABOVE entry. Anything else is discarded.",
-  "  • Prefer veto over a marginal trade. Not trading IS a position.",
+  "  • pick MUST be one of the candidate playbook ids listed for that symbol, or \"none\".",
+  "    Anything else is discarded — you cannot invent a setup that was not offered.",
+  "  • \"none\" is a real answer. An experienced trader is flat most of the time.",
+  "    Prefer none over a marginal trade.",
+  "  • entry/target/stop are OPTIONAL. Omit them to take the candidate as-is.",
+  "    If you give them: stop BELOW entry, target ABOVE entry, entry near the live price.",
+  "  • Judge the MOMENT, not the average case: the same setup that pays in a quiet",
+  "    range is a trap when a trend is starting. Use the FALHA QUANDO lines.",
   "  • Be terse. One line per symbol.",
 ].join("\n");
 
-/** Retrato compacto do símbolo — só o que importa para a decisão de ofício. */
-function describe(ind: SymbolIndicators, plan: StrategyPlan): string {
+/** Retrato do símbolo + o cardápio de candidatos daquele tick. */
+function describe(ind: SymbolIndicators, candidates: StrategyPlan[]): string {
   const f = (n: number | null | undefined) => (n == null ? "n/a" : n < 1 ? n.toFixed(6) : n.toFixed(4));
   const parts = [
     `${ind.symbol}: price=${f(ind.price)} regime=${ind.regime} ADX=${ind.adx?.toFixed(0) ?? "n/a"}`,
     `RSI=${ind.rsi14?.toFixed(1) ?? "n/a"}${ind.rsiTrajectory.length >= 2 ? ` (path ${ind.rsiTrajectory.join("→")})` : ""}`,
-    `EMA20=${f(ind.ema20)} EMA50=${f(ind.ema50)} ATR%=${ind.atrPct?.toFixed(2) ?? "n/a"}`,
+    `EMA20=${f(ind.ema20)} EMA50=${f(ind.ema50)} ATR%=${ind.atrPct?.toFixed(2) ?? "n/a"} relVol=${ind.relVol?.toFixed(2) ?? "n/a"} OBV=${ind.obvTrend ?? "n/a"}`,
     `MTF: 4h=${ind.htf4h?.trend ?? "n/a"} 1D=${ind.htf1d?.trend ?? "n/a"} align=${ind.alignment}`,
   ];
   if (ind.supports.length) parts.push(`supports=${ind.supports.map(f).join("/")}`);
   if (ind.resistances.length) parts.push(`resistances=${ind.resistances.map(f).join("/")}`);
   if (ind.rangePct != null) parts.push(`1Y-range=${ind.rangePct.toFixed(0)}%`);
   if (ind.divergence) parts.push(`divergence=${ind.divergence}`);
-  parts.push(
-    `PROPOSED[${plan.playbook}]: entry=${f(plan.entry)} target=${f(plan.target)} stop=${f(plan.stop)} RR=${plan.rr.toFixed(2)} stop%=${plan.stopPct.toFixed(2)}`,
-  );
+  const menu = candidates
+    .map((c) => `${c.playbook}(entry=${f(c.entry)} target=${f(c.target)} stop=${f(c.stop)} RR=${c.rr.toFixed(2)})`)
+    .join(" , ");
+  parts.push(`CANDIDATES: ${menu}`);
   return parts.join(" | ");
 }
 
-/** Extrai o JSON do veredito com tolerância a cerca de markdown / prosa em volta. */
-export function parseVerdicts(text: string): AiVerdict[] {
-  const tryParse = (s: string): AiVerdict[] | null => {
+/** Extrai o JSON com tolerância a cerca de markdown / prosa em volta. */
+export function parseChoices(text: string): AiChoice[] {
+  const tryParse = (s: string): AiChoice[] | null => {
     try {
-      const o = JSON.parse(s) as { verdicts?: unknown };
-      if (!Array.isArray(o.verdicts)) return null;
-      return o.verdicts.filter((v): v is AiVerdict =>
-        !!v && typeof v === "object"
-        && typeof (v as AiVerdict).symbol === "string"
-        && ["accept", "veto", "adjust"].includes((v as AiVerdict).action),
+      const o = JSON.parse(s) as { choices?: unknown };
+      if (!Array.isArray(o.choices)) return null;
+      return o.choices.filter((c): c is AiChoice =>
+        !!c && typeof c === "object"
+        && typeof (c as AiChoice).symbol === "string"
+        && typeof (c as AiChoice).pick === "string",
       );
     } catch { return null; }
   };
@@ -123,57 +151,66 @@ export function parseVerdicts(text: string): AiVerdict[] {
 }
 
 /**
- * Aplica um veredito ao plano mecânico e devolve o plano FINAL da mesa de IA —
- * ou null quando ela vetou (ou quando o ajuste que ela pediu é inoperável).
+ * Aplica a escolha da IA ao cardápio e devolve o plano final — ou null quando
+ * ela ficou de fora, escolheu algo que não estava na mesa, ou pediu um
+ * refinamento inoperável.
  *
- * Pura: sem I/O, testável. É aqui que mora a trava — o ajuste da IA volta pelo
- * `buildLongBracket`, o mesmo portão do mecânico. Nada entra no ledger sem
- * passar por ele.
+ * Pura: sem I/O, testável. É aqui que moram as travas 1 e 2.
  */
-export function applyVerdict(
-  plan: StrategyPlan,
-  verdict: AiVerdict | undefined,
+export function applyChoice(
+  candidates: StrategyPlan[],
+  choice: AiChoice | undefined,
   atrPct: number | null,
 ): StrategyPlan | null {
-  if (!verdict) return plan;               // sem veredito → segue o mecânico
-  if (verdict.action === "veto") return null;
-  if (verdict.action === "accept") return plan;
+  if (!candidates.length) return null;
+  // Sem escolha para este símbolo, a mesa fica de fora. NÃO cai no plano do
+  // mecânico: herdar a decisão dele é exatamente a contaminação que esta
+  // reescrita existe para acabar.
+  if (!choice) return null;
+  if (choice.pick === "none") return null;
 
-  const entry = Number(verdict.entry);
-  const target = Number(verdict.target);
-  const stop = Number(verdict.stop);
-  if (!Number.isFinite(entry) || !Number.isFinite(target) || !Number.isFinite(stop)) return null;
+  const chosen = candidates.find((c) => c.playbook === choice.pick);
+  // Escolheu algo que não estava no cardápio: descarta. A IA opta entre setups
+  // validados; ela não inventa. Sem esta trava, um "rompimento" alucinado onde
+  // não há canal entraria no ledger e o duelo deixaria de comparar a mesma coisa.
+  if (!chosen) return null;
 
+  const wantsAdjust = [choice.entry, choice.target, choice.stop].every(
+    (n) => n != null && Number.isFinite(Number(n)),
+  );
+  if (!wantsAdjust) return { ...chosen, rationale: `[IA] ${choice.why || "escolheu este playbook"}` };
+
+  const entry = Number(choice.entry);
+  const target = Number(choice.target);
+  const stop = Number(choice.stop);
   // Âncora de escala: a entrada ajustada tem que morar perto do preço real.
   // Sem isso, um deslize de casa decimal (LINK a 7323 em vez de 7.32) entra no
-  // ledger com a geometria "coerente" e envenena a medição inteira.
-  if (Math.abs(entry / plan.entry - 1) > 0.1) return null;
+  // ledger com geometria "coerente" e envenena a medição inteira.
+  if (Math.abs(entry / chosen.entry - 1) > 0.1) return null;
 
   return buildLongBracket(
-    plan.symbol,
-    verdict.playbook ?? plan.playbook,
-    entry, target, stop, atrPct, plan.horizonHours,
-    `[IA] ${verdict.why || "ajustado pela mesa"}`,
+    chosen.symbol, chosen.playbook, entry, target, stop, atrPct, chosen.horizonHours,
+    `[IA] ${choice.why || "ajustou os níveis"}`,
   );
 }
 
 export interface AiScanResult {
-  proposed: number;   // planos que o mecânico ofereceu
-  accepted: number;
+  /** Símbolos que tinham pelo menos um candidato para escolher. */
+  offered: number;
+  /** Total de candidatos apresentados (soma de todos os símbolos). */
+  candidates: number;
+  picked: number;
   adjusted: number;
-  vetoed: number;
+  /** Escolheu ficar de fora, ou a escolha foi descartada pelas travas. */
+  passed: number;
   plans: StrategyPlan[];
   /**
    * A IA REALMENTE decidiu neste tick?
    *
-   * Sem isto, a degradação é INVISÍVEL e destrói o experimento em silêncio: sem
-   * chave (ou com o breaker aberto), esta mesa grava os planos do ferreiro sob
-   * o próprio nome, e o "duelo" vira VÖLUNDR contra VÖLUNDR-com-outro-nome. Os
-   * dois números batem, ninguém desconfia, e a conclusão sobre IA sai de um
-   * experimento onde IA nenhuma participou.
-   *
-   * `accepted` sozinho não distingue "a IA olhou e aprovou tudo" de "a IA nunca
-   * rodou" — por isso a flag existe separada.
+   * Quando `false`, `plans` vem VAZIO — a mesa não grava nada. Antes ela
+   * gravava os planos do ferreiro sob o próprio nome, e os quatro trades que
+   * MÍMIR tinha no ledger vieram daí: um "duelo" de VÖLUNDR contra
+   * VÖLUNDR-com-outro-nome, com IA nenhuma envolvida.
    */
   brainRan: boolean;
   /** Por que não rodou, quando não rodou. */
@@ -181,68 +218,68 @@ export interface AiScanResult {
 }
 
 /**
- * Roda a mesa de IA sobre os planos do mecânico. Best-effort em tudo: sem
- * provider, sem chave, breaker aberto ou resposta ilegível → devolve os planos
- * MECÂNICOS intactos, para a mesa nunca ficar muda por causa de um LLM. (A
- * separação entre as duas mesas continua honesta porque cada uma grava no seu
- * próprio `source`.)
+ * Roda a mesa de IA. Best-effort em tudo — sem provedor, sem chave, breaker
+ * aberto ou resposta ilegível, a mesa fica MUDA no tick. Ficar muda é o
+ * comportamento correto: um agente que não pensou não tem o que registrar.
  */
 export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<AiScanResult> {
-  const mech = indicators.map(selectPlaybook).filter(isPlan);
-  const out: AiScanResult = { proposed: mech.length, accepted: 0, adjusted: 0, vetoed: 0, plans: [], brainRan: false };
-  if (mech.length === 0) return out;
+  const menus = indicators
+    .map((ind) => ({
+      ind,
+      candidates: candidateAttempts(ind)
+        .map((a) => a.plan)
+        .filter((p): p is StrategyPlan => p !== null),
+    }))
+    .filter((m) => m.candidates.length > 0);
+
+  const out: AiScanResult = {
+    offered: menus.length,
+    candidates: menus.reduce((n, m) => n + m.candidates.length, 0),
+    picked: 0, adjusted: 0, passed: 0, plans: [], brainRan: false,
+  };
+  if (menus.length === 0) return out;
 
   const provider = roleProvider("brain");
   if (!provider?.apiKey) {
-    out.plans = mech; out.accepted = mech.length;
     out.fallbackReason = "nenhum provedor com chave no papel `brain`";
     return out;
   }
   // Breaker aberto (chave quebrada / endpoint morto): não queima chamada nem
-  // dispara alerta a cada tick — a mesa opera com o plano do ferreiro.
+  // dispara alerta a cada tick.
   if (await isTripped(provider.id)) {
-    out.plans = mech; out.accepted = mech.length;
     out.fallbackReason = `breaker aberto em ${provider.label}`;
     return out;
   }
 
-  const bySymbol = new Map(indicators.map((i) => [i.symbol.toUpperCase(), i]));
   const user = [
-    "Review each proposed LONG accumulation setup. Reply with the JSON verdict object only.",
+    "Pick the right setup for each symbol, or none. Reply with the JSON object only.",
     "",
-    ...mech.map((p) => {
-      const ind = bySymbol.get(p.symbol.toUpperCase());
-      return ind ? describe(ind, p) : "";
-    }).filter(Boolean),
+    ...menus.map((m) => describe(m.ind, m.candidates)),
   ].join("\n");
 
-  let verdicts: AiVerdict[] = [];
+  let choices: AiChoice[] = [];
   try {
     const r = await openaiCompatChat(
-      { model: provider.model, system: SYSTEM, user, maxTokens: 900,
+      { model: provider.model, system: SYSTEM, user, maxTokens: 1100,
         timeoutMs: provider.timeoutMs ?? 30_000, temperature: provider.temperature },
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
     await recordResult(provider.id, provider.label, true);
-    verdicts = parseVerdicts(r.text);
+    choices = parseChoices(r.text);
     out.brainRan = true;
     recordEvent("zion_analysis", { meta: { op: "strat_ai", model: r.model, source: STRAT_AI, ...r.usage } });
   } catch (e) {
     await recordResult(provider.id, provider.label, false, e instanceof Error ? e.message : String(e));
-    // LLM fora do ar: a mesa de IA opera com o plano mecânico do dia. Isso é
-    // registrado no evento acima só quando a chamada volta — um tick sem
-    // veredito simplesmente segue o ferreiro.
-    out.plans = mech; out.accepted = mech.length;
     out.fallbackReason = `${provider.label} indisponível`;
     return out;
   }
 
-  const byVerdict = new Map(verdicts.map((v) => [v.symbol.toUpperCase(), v]));
-  for (const plan of mech) {
-    const v = byVerdict.get(plan.symbol.toUpperCase());
-    const final = applyVerdict(plan, v, bySymbol.get(plan.symbol.toUpperCase())?.atrPct ?? null);
-    if (!final) { out.vetoed++; continue; }
-    if (v?.action === "adjust") out.adjusted++; else out.accepted++;
+  const byChoice = new Map(choices.map((c) => [c.symbol.toUpperCase(), c]));
+  for (const m of menus) {
+    const c = byChoice.get(m.ind.symbol.toUpperCase());
+    const final = applyChoice(m.candidates, c, m.ind.atrPct);
+    if (!final) { out.passed++; continue; }
+    if (c?.entry != null) out.adjusted++; else out.picked++;
     out.plans.push(final);
   }
   return out;

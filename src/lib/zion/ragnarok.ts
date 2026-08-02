@@ -111,13 +111,23 @@ async function persist(plans: StrategyPlan[], indicators: SymbolIndicators[], so
 }
 
 export interface RagnarokAiRun {
-  proposed: number; accepted: number; adjusted: number; vetoed: number; logged: number;
+  /** Símbolos com pelo menos um candidato para escolher. */
+  offered: number;
+  /** Total de candidatos apresentados — o tamanho do cardápio. */
+  candidates: number;
+  picked: number; adjusted: number; passed: number; logged: number;
   brainRan: boolean; fallbackReason?: string;
 }
 
 /**
- * A MESA DE IA (S4). Recebe os mesmos indicadores do ferreiro mecânico, deixa o
- * modelo aceitar/vetar/ajustar cada plano, e grava sob `strat_ai`.
+ * A MESA DE IA (MÍMIR). Recebe os mesmos indicadores do ferreiro mecânico e o
+ * MESMO cardápio de candidatos da biblioteca, e ESCOLHE qual playbook operar —
+ * ou nenhum. Grava sob `strat_ai`.
+ *
+ * Quando o cérebro não roda, `plans` vem vazio e nada é gravado: uma mesa que
+ * não pensou não produz trade. A versão anterior gravava o plano do ferreiro
+ * sob o nome da IA, e foi assim que MÍMIR acumulou quatro trades num
+ * experimento onde IA nenhuma participou.
  *
  * As duas mesas veem O MESMO mercado no MESMO tick e escrevem em ledgers
  * separados — é isso que torna a comparação limpa. Se a IA vale alguma coisa
@@ -131,10 +141,14 @@ export async function runStrategistAiScan(indicators: SymbolIndicators[]): Promi
   // mecânico sob o nome dela — e sem este evento a contaminação do experimento
   // seria invisível para sempre.
   recordEvent("strat_ai_tick", {
-    meta: { brainRan: r.brainRan, fallbackReason: r.fallbackReason ?? null, proposed: r.proposed, logged },
+    meta: {
+      brainRan: r.brainRan, fallbackReason: r.fallbackReason ?? null,
+      offered: r.offered, candidates: r.candidates, logged,
+    },
   });
   return {
-    proposed: r.proposed, accepted: r.accepted, adjusted: r.adjusted, vetoed: r.vetoed, logged,
+    offered: r.offered, candidates: r.candidates,
+    picked: r.picked, adjusted: r.adjusted, passed: r.passed, logged,
     brainRan: r.brainRan, fallbackReason: r.fallbackReason,
   };
 }
