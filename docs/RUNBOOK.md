@@ -23,6 +23,7 @@
 | `QUOTE_GLOBAL_MAX` | Teto GLOBAL de chamadas ao upstream pago (0x/LiFi) por min — backstop de flood distribuído no `/api/quote`; abaixar se ligar WAF/alerta | `3000`/min |
 | `QUOTE_DAILY_MAX` | Teto GLOBAL **por dia** do `/api/quote`. O teto por minuto é backstop de disponibilidade, não de conta: 3000/min sustentados são 4,32 M de chamadas/dia e uma enchente logo abaixo do limite nunca dispara. Falha ABERTO se o banco cair | `250000`/dia |
 | `ZION_DAILY_MAX` | Teto GLOBAL **por dia** do `/api/zion` — o caminho mais caro (LLM por chamada). O disjuntor do watchdog é reativo (mede 24h e corta na conferência seguinte); este freia antes. Falha ABERTO | `20000`/dia |
+| `NEXT_PUBLIC_SOLANA_JITO` | `on` envia os swaps de Solana por **bundle privado** (block engine da Jito) em vez do RPC público, com gorjeta dimensionada em 5% da exposição a MEV. **Nasce desligado**: o caminho nunca foi exercitado contra o engine real. Falha do Jito cai para o RPC normal e a tela diz qual caminho foi usado | off |
 | `NEXT_PUBLIC_ALLOWED_SWAP_TARGETS` / `NEXT_PUBLIC_ALLOWED_SWAP_SPENDERS` | Allowlist de router/spender por chain (`1:0xA,0xB;137:0xC`). **Popular com endereços VERIFICADOS** do 0x/LiFi → vira bloqueio de dreno. Vazio = desligado (não quebra swap) | vazio |
 | `NEXT_PUBLIC_ZEROX_INFINITE_APPROVAL` | `true` restaura a aprovação infinita do 0x (UX antiga). Default agora aprova só o valor do swap | off (aprova exato) |
 | `ZSWAP_COLLECTION_ADDRESS` | Coleção NFT (launch) | mint gate off |

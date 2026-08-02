@@ -26,6 +26,7 @@ import { useTierAccent } from "@/components/tier/TierAccentProvider";
 import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 import { useTier } from "@/lib/tier/client";
 import { FEATURE_TIER } from "@/lib/tier/types";
+import { OP_FEATURE } from "@/lib/zion/op-tier";
 
 const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "trading",      labelKey: "zion.tabTrading",      taglineKey: "zion.taglineTrading",      Icon: TrendingUp },
@@ -339,18 +340,31 @@ export default function ZionDrawer() {
                 {OPS.map((o) => {
                   const active = op === o.id;
                   const Icon = o.Icon;
+                  // Operação com exigência PRÓPRIA de plano (hoje só a
+                  // arbitragem, vendida no card Trader). A aba mostra o cadeado
+                  // em vez de sumir: esconder faria o usuário nunca saber que o
+                  // recurso existe, e o servidor recusa de qualquer jeito — a
+                  // diferença é ele descobrir agora ou depois de clicar.
+                  const opFeature = OP_FEATURE[o.id];
+                  const locked = !!opFeature && !satisfies(FEATURE_TIER[opFeature]);
                   return (
                     <button
                       key={o.id}
-                      onClick={() => handleModeChange(o.id)}
+                      onClick={() => { if (!locked) handleModeChange(o.id); }}
+                      disabled={locked}
+                      title={locked ? t("zion.opNeedsTier", { tier: FEATURE_TIER[opFeature!] }) : undefined}
                       className={cn(
                         "relative flex-none flex flex-col items-center justify-center gap-0.5 px-2.5 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all min-w-0",
-                        active
-                          ? "bg-gold/15 text-gold border border-gold/30"
-                          : "text-ink-3 hover:text-ink-2 border border-transparent",
+                        locked
+                          ? "text-ink-4 border border-transparent opacity-50 cursor-not-allowed"
+                          : active
+                            ? "bg-gold/15 text-gold border border-gold/30"
+                            : "text-ink-3 hover:text-ink-2 border border-transparent",
                       )}
                     >
-                      <Icon className="w-3 h-3 flex-shrink-0" />
+                      {locked
+                        ? <Lock className="w-3 h-3 flex-shrink-0" />
+                        : <Icon className="w-3 h-3 flex-shrink-0" />}
                       <span className="whitespace-nowrap">{t(o.labelKey)}</span>
                     </button>
                   );

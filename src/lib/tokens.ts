@@ -15,9 +15,37 @@ export interface Token {
 }
 
 /**
- * Curated default token list for the demo.
- * In production, this is fetched from CoinGecko / TrustWallet token lists,
- * but for the cinematic demo we ship a hand-picked top universe.
+ * Universo padrão de tokens.
+ *
+ * ⚠ ISTO AQUI DIZIA (auditoria 01/08):
+ *
+ *     "Curated default token list for the demo. In production, this is fetched
+ *      from CoinGecko / TrustWallet token lists"
+ *
+ * E nunca foi. Os endereços eram digitados à mão, sem conferência contra fonte
+ * nenhuma — enquanto a plataforma já movia dinheiro por eles. O `token-safety`
+ * não cobria a falha: ele pergunta se o token é GOLPE, não se é o token CERTO.
+ * Endereço errado manda dinheiro para o contrato errado com todos os selos
+ * verdes acesos.
+ *
+ * AGORA:
+ *
+ *  · `scripts/verify-tokens.mjs` confere símbolo e decimais de cada contrato
+ *    contra a TrustWallet e grava o resultado em `tokens-verified.json` — que é
+ *    REGISTRO do que foi conferido, não selo de segurança.
+ *  · `tokens.test.ts` roda em todo push, sem rede: EIP-55 em todo endereço EVM
+ *    (um dígito trocado quase nunca sobrevive ao checksum), base58 nos de
+ *    Solana, e cobertura obrigatória do manifesto — token novo entra conferido
+ *    ou o CI reprova.
+ *
+ * Estado na última conferência: 23 dos 25 contratos verificados, ZERO
+ * divergências. Os dois restantes ficam marcados `not_found` de propósito —
+ * ZETTA é token nosso e cbBTC é recente demais para a lista de terceiro.
+ * "Não encontrado" fica escrito como não encontrado; nunca vira "verificado".
+ *
+ * Para adicionar um token: inclua aqui e rode `node scripts/verify-tokens.mjs
+ * --write`. Se a fonte discordar, o script sai com erro em vez de gravar um
+ * "ok" que não existe.
  */
 
 // Shared logo URLs keyed by canonical symbol
@@ -57,7 +85,7 @@ export const DEFAULT_TOKENS: Token[] = [
 
   // ─── BSC ──────────────────────────────────────────────────────────────
   { symbol: "BNB",   name: "BNB",           chain: "bsc",      address: "native", decimals: 18, logo: L.BNB,   color: "#F3BA2F", priceUsd: 680,   riskScore: 5,  tags: ["native"] },
-  { symbol: "ZETTA", name: "ZETTA Token",   chain: "bsc",      address: "0x8aacc38933007ec530c552007e210b4667749df1", decimals: 18, color: "#00E8FF", priceUsd: 0.0084, riskScore: 8, tags: ["defi"] },
+  { symbol: "ZETTA", name: "ZETTA Token",   chain: "bsc",      address: "0x8AaCC38933007eC530c552007E210B4667749DF1", decimals: 18, color: "#00E8FF", priceUsd: 0.0084, riskScore: 8, tags: ["defi"] },
   { symbol: "USDT",  name: "Tether USD",    chain: "bsc",      address: "0x55d398326f99059fF775485246999027B3197955", decimals: 18, logo: L.USDT,  color: "#26A17B", priceUsd: 1.00,  riskScore: 5,  tags: ["stablecoin"] },
   { symbol: "USDC",  name: "USD Coin",      chain: "bsc",      address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", decimals: 18, logo: L.USDC,  color: "#2775CA", priceUsd: 1.00,  riskScore: 4,  tags: ["stablecoin"] },
   { symbol: "BUSD",  name: "Binance USD",   chain: "bsc",      address: "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56", decimals: 18, logo: L.BUSD,  color: "#F0B90B", priceUsd: 1.00,  riskScore: 5,  tags: ["stablecoin"] },
