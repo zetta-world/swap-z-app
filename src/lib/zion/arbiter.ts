@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
 import { fetchOrderbook } from "@/lib/api/cex-orderbook";
-import { assessRealism } from "@/lib/zion/arb-realism";
+import { assessRealism, realismGate, type RealismGate } from "@/lib/zion/arb-realism";
 import { recordEvent } from "@/lib/admin/track";
 
 const COST_PCT     = Number(process.env.ARB_COST_PCT     ?? 0.4);  // 2 taker legs + slippage buffer
@@ -87,6 +87,14 @@ const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase").split(",")
 const DAILY_CAP    = Number(process.env.ARB_DAILY_CAP    ?? 240);  // round-trips per UTC day
 const COOLDOWN_MIN = Number(process.env.ARB_COOLDOWN_MIN ?? 30);   // per-symbol re-entry wait
 const SIZE_USD     = Number(process.env.ARB_SIZE_USD     ?? 50);   // per round-trip
+/**
+ * Quantos livros ler por tick. Cada checagem são 2 chamadas de orderbook.
+ *
+ * Estourar o teto REPROVA o resto do tick, nunca libera: um limite de custo que
+ * vira permissão ao acabar é uma porta dos fundos, e seria usada justamente nos
+ * ticks mais movimentados — os que mais precisam da validação.
+ */
+const REALISM_MAX_CHECKS = Number(process.env.ARB_REALISM_MAX_CHECKS ?? 6);
 
 export interface ArbOpportunity {
   symbol: string; buyVenue: string; sellVenue: string;
@@ -164,21 +172,32 @@ async function kvFlag(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>, key:
   } catch { return false; }
 }
 
-/** F2: fetch real depth for one opportunity and log how much of the paper
- *  spread survives real fills. Best-effort — logs `arb_realism` or nothing. */
-async function assessArbRealism(a: ArbOpportunity): Promise<void> {
+/**
+ * O portão de profundidade, exportado para a mesa 2.0 usar o MESMO caminho.
+ *
+ * Duplicar a leitura de livro nas duas mesas seria repetir o erro que
+ * `gate-keys.ts` documenta: a mesma verdade escrita em lugares diferentes
+ * diverge, e quem diverge em silêncio é sempre a cópia que ninguém revisou.
+ */
+export async function gateOrderbook(
+  a: ArbOpportunity, costPct: number, minNetPct: number, sizeUsd: number, source: string,
+): Promise<RealismGate> {
   const [buyBook, sellBook] = await Promise.all([
-    fetchOrderbook(a.buyVenue as CexSpotSource, a.symbol),   // buy on cheap venue → its asks
-    fetchOrderbook(a.sellVenue as CexSpotSource, a.symbol),  // sell on rich venue → its bids
-  ]);
-  if (!buyBook?.asks.length || !sellBook?.bids.length) return;
-  const r = assessRealism(buyBook.asks, sellBook.bids, SIZE_USD, a.spreadPct, COST_PCT);
+    fetchOrderbook(a.buyVenue as CexSpotSource, a.symbol),
+    fetchOrderbook(a.sellVenue as CexSpotSource, a.symbol),
+  ]).catch(() => [null, null] as const);
+  if (!buyBook?.asks.length || !sellBook?.bids.length) return realismGate(null, minNetPct);
+  const r = assessRealism(buyBook.asks, sellBook.bids, sizeUsd, a.spreadPct, costPct);
+  const gate = realismGate(r, minNetPct);
   recordEvent("arb_realism", { meta: {
-    symbol: a.symbol, buy: a.buyVenue, sell: a.sellVenue, sizeUsd: SIZE_USD,
+    source, symbol: a.symbol, buy: a.buyVenue, sell: a.sellVenue, sizeUsd,
     theoreticalNet: r.theoreticalNetPct, realisticNet: r.realisticNetPct,
     slippage: r.slippagePct, fullyFilled: r.fullyFilled,
+    booked: gate.book, gateReason: gate.reason,
   } });
+  return gate;
 }
+
 
 /** One arbiter tick: detect → cooldown/daily-cap gates → book instant paper
  *  round-trips into the 'arbiter' wallet. Zero LLM calls, best-effort. */
@@ -226,14 +245,28 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
   const arbs = all.filter((x) => !x.suspect);
   if (arbs.length === 0) return { detected: all.length, booked: 0, skipped: null };
 
-  // F2 realism (docs/PLANO-ARBITER-REAL.md): the paper spread assumes both legs
-  // fill at the top of book. When enabled, walk the REAL depth of the top
-  // opportunity and log theoretical-vs-realistic net — the bridge to real
-  // money. Best-effort, top-1/tick (2 fetches), never blocks booking. Toggle
-  // via env ARB_ORDERBOOK_CHECK=on OR the admin_kv flag `arb_orderbook_check`
-  // (runtime, no redeploy). (Live fetch is prod-only; the walk math is tested.)
-  if (process.env.ARB_ORDERBOOK_CHECK === "on" || await kvFlag(db, "arb_orderbook_check")) {
-    void assessArbRealism(arbs[0]).catch(() => undefined);
+  /**
+   * F2 — A VALIDAÇÃO DE ORDERBOOK, AGORA COMO PORTÃO (03/08).
+   *
+   * O spread do topo do livro é o preço de UMA unidade. A mesa quer operar $50,
+   * e para isso ela ANDA o livro: paga subindo os asks na venue barata e vende
+   * descendo os bids na cara. A profundidade come o spread, e o quanto ela come
+   * só se sabe lendo o livro.
+   *
+   * Isto rodava desde 28/07 e só registrava — 4.085 medições dizendo que o
+   * líquido real era −0.629% enquanto o ledger anotava +0.451%. Agora o veredito
+   * VETA a abertura.
+   *
+   * Ligado por default a partir de agora. Era opcional enquanto era observação;
+   * como portão, desligá-lo é voltar a abrir posição no preço de topo, que é o
+   * defeito inteiro. Continua desligável (`ARB_ORDERBOOK_CHECK=off`) para quem
+   * precisar rodar sem rede, mas aí a mesa anuncia que está cega.
+   */
+  const checarLivro = process.env.ARB_ORDERBOOK_CHECK !== "off";
+  if (!checarLivro) {
+    recordEvent("arb_realism_disabled", { meta: {
+      why: "ARB_ORDERBOOK_CHECK=off — abrindo no preço de topo, sem validar profundidade",
+    } });
   }
 
   // Wallet (seeded in admin_kv setup; upsert keeps this idempotent).
@@ -255,11 +288,29 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
   const cooldownCut = Date.now() - COOLDOWN_MIN * 60_000;
   const cooling = new Set(today.filter((r) => Date.parse(r.opened_at) > cooldownCut).map((r) => r.symbol));
 
-  let booked = 0, pnlSum = 0;
+  let booked = 0, pnlSum = 0, vetados = 0, checados = 0;
   const room = DAILY_CAP - today.length;
   for (const a of arbs) {
     if (booked >= room) break;
     if (cooling.has(a.symbol)) continue;
+
+    // O PORTÃO, antes do insert. Custa 2 chamadas por candidato, então tem
+    // teto por tick — e estourar o teto REPROVA em vez de liberar. Liberar ao
+    // fim do orçamento transformaria um limite de custo em porta dos fundos,
+    // e a porta dos fundos seria usada exatamente nos ticks mais movimentados.
+    if (checarLivro) {
+      if (checados >= REALISM_MAX_CHECKS) {
+        recordEvent("arb_realism_budget", { meta: {
+          symbol: a.symbol, checked: checados,
+          why: "teto de checagens do tick — não abre sem validar profundidade",
+        } });
+        break;
+      }
+      checados++;
+      const gate = await gateOrderbook(a, COST_PCT, MIN_NET_PCT, SIZE_USD, "arbiter");
+      if (!gate.book) { vetados++; continue; }
+    }
+
     const pnl = SIZE_USD * (a.netPct / 100);
     const now = new Date().toISOString();
     const { error } = await db.from("paper_positions").insert({
@@ -287,5 +338,10 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
       updated_at: new Date().toISOString(),
     }).eq("id", acc.id);
   }
-  return { detected: arbs.length, booked, skipped: null };
+  // `vetados` viaja no retorno: uma mesa que detecta 20 e abre 0 precisa dizer
+  // POR QUE abriu 0. "detected: 20, booked: 0" sozinho parece bug do insert.
+  return {
+    detected: arbs.length, booked,
+    skipped: vetados > 0 ? `${vetados} vetado(s) pela profundidade do livro` : null,
+  };
 }

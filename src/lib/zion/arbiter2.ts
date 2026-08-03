@@ -19,7 +19,7 @@
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
-import { findArbs, spreadWindow } from "@/lib/zion/arbiter";
+import { findArbs, spreadWindow, gateOrderbook } from "@/lib/zion/arbiter";
 import { recordEvent } from "@/lib/admin/track";
 
 // Full-cycle cost: spot taker in/out (~0.2%) + perp taker in/out (~0.11%) +
@@ -165,11 +165,16 @@ export async function runArbiter2Scan(opts: { leveraged?: boolean } = {}): Promi
   // operador tem de poder calar SÓ ela sem derrubar o original — que é o
   // controle sem alavanca desta comparação.
   const perfis = leveraged ? ARBITER2_PROFILES : ARBITER2_PROFILES.filter((p) => p.leverage === 1);
+  // O motivo de cada perfil sobe junto. Sem isso, o tick agregado diria
+  // "opened: 0" sem dizer se foi falta de oportunidade ou veto de profundidade —
+  // e são conclusões opostas sobre a estratégia.
+  const motivos: string[] = [];
   for (const profile of perfis) {
     const r = await runArbiter2Profile(profile);
     closed += r.closed; opened += r.opened;
+    if (r.skipped) motivos.push(`${profile.source}: ${r.skipped}`);
   }
-  return { closed, opened, skipped: null };
+  return { closed, opened, skipped: motivos.length > 0 ? motivos.join(" · ") : null };
 }
 
 export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbiter2Result> {
@@ -292,12 +297,27 @@ export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbi
   const cooldownCut = nowMs - COOLDOWN_MIN * 60_000;
   const cooling = new Set((today ?? []).filter((r) => Date.parse(r.opened_at) > cooldownCut).map((r) => r.symbol));
 
+  // Mesmo portão da mesa spot, mesmo caminho de código. Ver `gateOrderbook`.
+  const checarLivro = process.env.ARB_ORDERBOOK_CHECK !== "off";
+  const REALISM_MAX_CHECKS = Number(process.env.ARB_REALISM_MAX_CHECKS ?? 6);
+  let checados = 0, vetados = 0;
   let opened = 0;
   let cashAvail = Number(acc.cash_usd) + cashDelta;
   let room = Math.max(0, DAILY_CAP - (today ?? []).length);
   for (const a of arbs) {
     if (room <= 0 || cashAvail < marginPerCycle) break;
     if (cooling.has(a.symbol) || openSymbols.has(a.symbol)) continue;
+
+    // O PORTÃO DE PROFUNDIDADE. Vale aqui tanto quanto na mesa spot: a perna
+    // comprada anda o livro igual. A medição de 4.085 amostras dizia −0.629% de
+    // líquido real onde o topo prometia +0.451%, e esta mesa abria em cima do
+    // topo. Livro ilegível REPROVA — não medido não é aprovado.
+    if (checarLivro) {
+      if (checados >= REALISM_MAX_CHECKS) break;
+      checados++;
+      const gate = await gateOrderbook(a, COST_PCT, MIN_NET_PCT, SIZE_USD, profile.source);
+      if (!gate.book) { vetados++; continue; }
+    }
     const { error } = await db.from("paper_positions").insert({
       account_id: acc.id, suggestion_id: randomUUID(), source: profile.source,
       symbol: a.symbol, side: "buy", qty: SIZE_USD / a.buyPrice,
@@ -322,5 +342,5 @@ export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbi
       updated_at: new Date(nowMs).toISOString(),
     }).eq("id", acc.id);
   }
-  return { closed, opened, skipped: null };
+  return { closed, opened, skipped: vetados > 0 ? `${vetados} vetado(s) pela profundidade` : null };
 }
