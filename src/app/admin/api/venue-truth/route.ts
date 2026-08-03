@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin/require";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
 import { measureVenues, measureSymbols, truthVerdict, type VenueQuote } from "@/lib/zion/venue-truth";
 import { spreadWindow } from "@/lib/zion/arbiter";
+import { recordEvent } from "@/lib/admin/track";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -51,6 +52,29 @@ export async function GET(): Promise<NextResponse> {
   // regra de MIN_VENUES é a razão de as mesas terem emudecido — e essa é uma
   // explicação diferente de "o spread não existe".
   const comQuorum = [...bySymbol.values()].filter((q) => q.filter((x) => x.priceUsd > 0).length >= 3).length;
+
+  /**
+   * ⚠️ A MEDIÇÃO PRECISA DEIXAR RASTRO (03/08).
+   *
+   * Esta rota lia os preços ao vivo, devolvia o veredito para a tela, e não
+   * gravava nada. O dono rodou o teste e me pediu para olhar o resultado — e eu
+   * não tinha o que olhar: a medição existiu, foi correta, e evaporou.
+   *
+   * É o mesmo defeito da sonda de orderbook em outra forma. Lá o número ia para
+   * um feed que ninguém agregava; aqui não ia para lugar nenhum. Uma medição que
+   * não pode ser comparada com a de ontem não responde a única pergunta que
+   * importa numa série temporal: mudou?
+   */
+  recordEvent("venue_truth", { meta: {
+    biggestDispersionPct: stats[0]?.dispersionPct ?? null,
+    floorPct: janela.floorPct,
+    gapsAboveFloor: gaps.filter((g) => g.gapPct >= janela.floorPct).length,
+    worstSymbol: gaps[0]?.symbol ?? null,
+    worstGapPct: gaps[0]?.gapPct ?? null,
+    symbolsWithQuorum: comQuorum,
+    symbolsTotal: bySymbol.size,
+    noisiestVenue: stats[0]?.venue ?? null,
+  } });
 
   return NextResponse.json({
     verdict: truthVerdict(stats, janela.floorPct, gaps),
