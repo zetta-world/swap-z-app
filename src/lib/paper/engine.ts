@@ -36,6 +36,9 @@ export const PAPER_SOURCES = [
   "strat_mech", "strat_ai", "strat_dex", "strat_day", "ullr_launch",
   // URÐR: a mesa que obedece ao histórico medido. Terceiro braço do duelo.
   "strat_record",
+  // Os gêmeos alavancados do JÖRMUNGANDR — margem menor por ciclo, e o risco
+  // de liquidação que a alavancagem cria.
+  "arbiter2_3x", "arbiter2_5x",
 ] as const;
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 

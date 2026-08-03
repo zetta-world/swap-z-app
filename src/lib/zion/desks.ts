@@ -154,6 +154,37 @@ export const DESKS: Desk[] = [
 
   // ── Mesa mecânica long-only (Ragnarök S1/S2) ──
   {
+    source: "arbiter2_3x", name: "NÍÐHÖGGR", sigil: "ᚼ",
+    who: "o dragão que rói a raiz — mesma arbitragem, margem 3× menor por ciclo",
+    style: "scalp", venue: "cex", direction: "market_neutral", brain: "none",
+    horizonHours: null, scoreboard: "paper", status: "live",
+    tests: "alavancar 3× a arbitragem hedgeada paga o risco de liquidação que ela cria?",
+    sector: "B_neutro",
+    sheet: {
+      sees: "a mesma matriz de spread spot/perp que o JÖRMUNGANDR",
+      decides: "abre o mesmo ciclo, postando 1/3 da margem na perna vendida",
+      rule: "aritmética pura; liquidação SIMULADA quando o preço sobe ~33% contra o short",
+      comparedTo: "JÖRMUNGANDR (sem alavanca) e FÁFNIR (5×)",
+      retireWhen: "render menos que o JÖRMUNGANDR por USDT arriscado, ou uma liquidação apagar o ganho de semanas",
+    },
+  },
+  {
+    source: "arbiter2_5x", name: "FÁFNIR", sigil: "ᚠ",
+    who: "o dragão que virou dragão de tanto guardar ouro — 5× de margem, 5× de sede",
+    style: "scalp", venue: "cex", direction: "market_neutral", brain: "none",
+    horizonHours: null, scoreboard: "paper", status: "live",
+    tests: "onde a alavancagem deixa de compensar — 5× é ganância ou eficiência?",
+    sector: "B_neutro",
+    sheet: {
+      sees: "a mesma matriz de spread spot/perp que o JÖRMUNGANDR",
+      decides: "abre o mesmo ciclo, postando 1/5 da margem na perna vendida",
+      rule: "aritmética pura; liquidação SIMULADA quando o preço sobe ~20% contra o short",
+      comparedTo: "JÖRMUNGANDR (sem alavanca) e NÍÐHÖGGR (3×)",
+      retireWhen: "render menos que o NÍÐHÖGGR por USDT arriscado — aí a alavanca extra só compra risco",
+    },
+  },
+
+  {
     source: "strat_mech", name: "VÖLUNDR", sigil: "ᚹ",
     who: "o ferreiro-mestre: nada de adivinhação, só a forja das regras",
     style: "swing", venue: "cex", direction: "long_only", brain: "none",

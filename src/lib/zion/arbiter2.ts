@@ -37,6 +37,84 @@ const DAILY_CAP      = Number(process.env.ARB2_DAILY_CAP       ?? 120);
 const COOLDOWN_MIN   = Number(process.env.ARB2_COOLDOWN_MIN    ?? 30);
 const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase").split(",").map((s) => s.trim()).filter(Boolean);
 
+/**
+ * OS GÊMEOS ALAVANCADOS (03/08).
+ *
+ * O JÖRMUNGANDR original trava 2×SIZE por ciclo, sem alavancagem. Os gêmeos
+ * rodam o MESMO motor com margem reduzida: a perna de perp posta `SIZE/L` em
+ * vez de `SIZE`, então o mesmo capital sustenta L vezes mais ciclos.
+ *
+ * ⚠️ ALAVANCAGEM NÃO É "MAIS DO MESMO". Ela muda a natureza do risco.
+ *
+ * A posição é delta-neutra: o que o spot ganha, o perp perde, e vice-versa. Sem
+ * alavancagem isso é seguro por construção — um lado sempre cobre o outro.
+ *
+ * COM alavancagem deixa de ser. Se o preço dispara, a perna VENDIDA no perp é
+ * liquidada ANTES de o ganho do spot ser realizado: a margem vira zero, a
+ * proteção some, e sobra uma posição comprada no spot que ninguém pediu. A
+ * distância até isso é ~1/L: a 3× um salto de 33%, a 5× um salto de 20%. Em
+ * cripto, 20% num movimento acontece.
+ *
+ * Por isso a liquidação é SIMULADA aqui (`liquidationHit`) em vez de ignorada.
+ * Um backtest de arbitragem alavancada que não modela liquidação produz uma
+ * curva linda e mente com convicção — o lucro aparece e o evento que apagaria a
+ * conta simplesmente não é contado.
+ */
+export interface Arbiter2Profile {
+  source: string;
+  label: string;
+  /** 1 = sem alavancagem (o JÖRMUNGANDR original). */
+  leverage: number;
+  startingUsd: number;
+}
+
+export const ARBITER2_PROFILES: Arbiter2Profile[] = [
+  { source: "arbiter2",    label: "ᛇ JÖRMUNGANDR",       leverage: 1, startingUsd: STARTING_USD },
+  { source: "arbiter2_3x", label: "ᚼ NÍÐHÖGGR (3×)",     leverage: 3, startingUsd: STARTING_USD },
+  { source: "arbiter2_5x", label: "ᚠ FÁFNIR (5×)",       leverage: 5, startingUsd: STARTING_USD },
+];
+
+/**
+ * Fração de MANUTENÇÃO da margem. Abaixo dela a corretora liquida.
+ *
+ * 0.5% é o padrão de mercado para pares líquidos; deixa o gatilho um pouco
+ * ANTES de 1/L, que é o comportamento real — ninguém é liquidado exatamente no
+ * ponto teórico, é sempre um pouco antes.
+ */
+export const MAINTENANCE_PCT = Number(process.env.ARB2_MAINTENANCE_PCT ?? 0.5);
+
+/**
+ * O movimento adverso, em %, que zera a margem da perna vendida.
+ *
+ * Sem alavancagem devolve `Infinity`: não há liquidação possível, e é por isso
+ * que o gêmeo original é qualitativamente outra coisa, não só uma versão menor.
+ */
+export function liquidationDistancePct(leverage: number, maintenancePct = MAINTENANCE_PCT): number {
+  if (!(leverage > 1)) return Infinity;
+  return 100 / leverage - maintenancePct;
+}
+
+/**
+ * A perna vendida foi liquidada?
+ *
+ * `adverseMovePct` é quanto o preço SUBIU contra o short desde a entrada.
+ */
+export function liquidationHit(adverseMovePct: number, leverage: number): boolean {
+  return adverseMovePct >= liquidationDistancePct(leverage);
+}
+
+/**
+ * O que se perde quando a liquidação bate: a MARGEM INTEIRA da perna de perp.
+ *
+ * O spot continua valendo — mas comprado e desprotegido, que é outro trade, não
+ * este. O ciclo é encerrado com a perda da margem, e não com a média do que o
+ * spot fez depois: contabilizar o "salvamento" do spot seria assumir que
+ * alguém estava olhando na hora para reagir.
+ */
+export function liquidationLossUsd(sizeUsd: number, leverage: number): number {
+  return -(sizeUsd / leverage);
+}
+
 // ── Pure math (unit-tested) ─────────────────────────────────────────────────
 
 /** P&L of one hedged cycle: the spread narrowed from entry to exit (in %),
@@ -79,7 +157,22 @@ export interface Arbiter2Result { closed: number; opened: number; skipped: strin
 
 const ROUTE_RE = /^arb2 (\w+)→(\w+)/;
 
-export async function runArbiter2Scan(): Promise<Arbiter2Result> {
+/** Roda TODOS os perfis: o original e os dois gêmeos alavancados. */
+export async function runArbiter2Scan(opts: { leveraged?: boolean } = {}): Promise<Arbiter2Result> {
+  const { leveraged = true } = opts;
+  let closed = 0, opened = 0;
+  // Gate próprio para os gêmeos: alavancagem é risco de outra natureza, e o
+  // operador tem de poder calar SÓ ela sem derrubar o original — que é o
+  // controle sem alavanca desta comparação.
+  const perfis = leveraged ? ARBITER2_PROFILES : ARBITER2_PROFILES.filter((p) => p.leverage === 1);
+  for (const profile of perfis) {
+    const r = await runArbiter2Profile(profile);
+    closed += r.closed; opened += r.opened;
+  }
+  return { closed, opened, skipped: null };
+}
+
+export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbiter2Result> {
   const db = getSupabaseAdmin();
   if (!db) return { closed: 0, opened: 0, skipped: "db" };
 
@@ -89,11 +182,11 @@ export async function runArbiter2Scan(): Promise<Arbiter2Result> {
 
   // Wallet (idempotent seed at the CEO's $300 real-deposit scenario).
   await db.from("paper_accounts").upsert(
-    { source: "arbiter2", label: "Arbiter 2.0 ⚡ (futuros)", exchange: "multi-cex", starting_usd: STARTING_USD, cash_usd: STARTING_USD },
+    { source: profile.source, label: profile.label, exchange: "multi-cex", starting_usd: profile.startingUsd, cash_usd: profile.startingUsd },
     { onConflict: "source", ignoreDuplicates: true },
   );
   const { data: acc } = await db.from("paper_accounts")
-    .select("id, cash_usd, realized_pnl_usd, wins, losses").eq("source", "arbiter2").maybeSingle();
+    .select("id, cash_usd, realized_pnl_usd, wins, losses").eq("source", profile.source).maybeSingle();
   if (!acc) return { closed: 0, opened: 0, skipped: "no_account" };
 
   // ① Resolve open hedges FIRST — freed capital can re-enter this same tick.
@@ -115,10 +208,41 @@ export async function runArbiter2Scan(): Promise<Arbiter2Result> {
 
     const exitSpread = ((sellNow - buyNow) / buyNow) * 100;
     const heldH = (nowMs - Date.parse(p.opened_at)) / 3_600_000;
+
+    // ⚠️ LIQUIDAÇÃO DA PERNA VENDIDA — só existe com alavancagem.
+    //
+    // O preço subiu contra o short. Sem alavancagem isso é irrelevante (o spot
+    // cobre), mas alavancado a margem acaba antes: a proteção some e sobra uma
+    // compra de spot desprotegida, que é outro trade. Encerra com a perda da
+    // margem, sem contabilizar o "salvamento" do spot — assumir que alguém
+    // estava olhando para reagir seria inventar um operador que não existe.
+    const adverseMovePct = ((sellNow - Number(p.target_price)) / Number(p.target_price)) * 100;
+    if (liquidationHit(adverseMovePct, profile.leverage)) {
+      const perda = liquidationLossUsd(SIZE_USD, profile.leverage);
+      const { error: liqErr } = await db.from("paper_positions").update({
+        status: "closed", exit_price: sellNow, exit_reason: `${p.exit_reason} LIQUIDADO`,
+        pnl_usd: perda, pnl_pct: (perda / Number(p.cost_usd)) * 100,
+        closed_at: new Date(nowMs).toISOString(),
+      }).eq("id", p.id);
+      if (liqErr) continue;
+      closed++; cashDelta += Number(p.cost_usd) + perda; pnlDelta += perda; losses++;
+      recordEvent("arb2_liquidation", { meta: {
+        source: profile.source, symbol: p.symbol, leverage: profile.leverage,
+        adverse_move_pct: Math.round(adverseMovePct * 100) / 100,
+        liq_distance_pct: Math.round(liquidationDistancePct(profile.leverage) * 100) / 100,
+        loss_usd: Math.round(perda * 100) / 100,
+      } });
+      continue;
+    }
+
     const converged = exitSpread <= EXIT_SPREAD;
     if (!converged && heldH < MAX_HOLD_H) continue;
 
-    const size = Number(p.cost_usd) / 2;
+    // NOTIONAL, não margem. Com alavancagem o `cost_usd` guardado é a MARGEM
+    // do ciclo, e usar metade dela como tamanho subestimaria o spread capturado
+    // e o funding — o gêmeo alavancado apareceria menos lucrativo do que é,
+    // escondendo justamente o risco que ele carrega em troca.
+    const size = SIZE_USD;
     const entrySpread = ((Number(p.target_price) - Number(p.entry_price)) / Number(p.entry_price)) * 100;
     const fund = fundingAccrued(funding.get(p.symbol) ?? 0, heldH, size);
     const pnl = cycleProfit(entrySpread, exitSpread, size, COST_PCT, fund);
@@ -138,8 +262,12 @@ export async function runArbiter2Scan(): Promise<Arbiter2Result> {
     } });
   }
 
-  // ② New entries under the REAL capital constraint: cash after this tick's
-  // closes, 2×size locked per cycle, daily cap, per-symbol cooldown.
+  // ② Entradas sob a restrição REAL de capital.
+  //
+  // A MARGEM por ciclo depende da alavancagem: a perna de spot é comprada
+  // inteira (não dá para alavancar spot aqui), e a de perp posta `SIZE/L`. Com
+  // L=1 volta a ser 2×SIZE, exatamente como o original.
+  const marginPerCycle = SIZE_USD + SIZE_USD / profile.leverage;
   const all = findArbs(matrix, COST_PCT, MIN_NET_PCT);
   const arbs = all.filter((x) => !x.suspect);
   const openSymbols = new Set((openPos ?? []).map((p) => p.symbol));
@@ -154,18 +282,18 @@ export async function runArbiter2Scan(): Promise<Arbiter2Result> {
   let cashAvail = Number(acc.cash_usd) + cashDelta;
   let room = Math.max(0, DAILY_CAP - (today ?? []).length);
   for (const a of arbs) {
-    if (room <= 0 || cashAvail < 2 * SIZE_USD) break;
+    if (room <= 0 || cashAvail < marginPerCycle) break;
     if (cooling.has(a.symbol) || openSymbols.has(a.symbol)) continue;
     const { error } = await db.from("paper_positions").insert({
-      account_id: acc.id, suggestion_id: randomUUID(), source: "arbiter2",
+      account_id: acc.id, suggestion_id: randomUUID(), source: profile.source,
       symbol: a.symbol, side: "buy", qty: SIZE_USD / a.buyPrice,
-      entry_price: a.buyPrice, cost_usd: 2 * SIZE_USD,
+      entry_price: a.buyPrice, cost_usd: marginPerCycle,
       target_price: a.sellPrice, stop_price: null, horizon_hours: MAX_HOLD_H,
       status: "open", exit_reason: `arb2 ${a.buyVenue}→${a.sellVenue}`,
       opened_at: new Date(nowMs).toISOString(),
     });
     if (error) continue;
-    opened++; room--; cashAvail -= 2 * SIZE_USD; cooling.add(a.symbol); openSymbols.add(a.symbol);
+    opened++; room--; cashAvail -= marginPerCycle; cooling.add(a.symbol); openSymbols.add(a.symbol);
     recordEvent("arb2_open", { meta: {
       symbol: a.symbol, route: `${a.buyVenue}→${a.sellVenue}`,
       spread: Math.round(a.spreadPct * 100) / 100, net: Math.round(a.netPct * 100) / 100,
@@ -174,7 +302,7 @@ export async function runArbiter2Scan(): Promise<Arbiter2Result> {
 
   if (closed > 0 || opened > 0) {
     await db.from("paper_accounts").update({
-      cash_usd: Number(acc.cash_usd) + cashDelta - opened * 2 * SIZE_USD,
+      cash_usd: Number(acc.cash_usd) + cashDelta - opened * marginPerCycle,
       realized_pnl_usd: Number(acc.realized_pnl_usd) + pnlDelta,
       wins: Number(acc.wins) + wins, losses: Number(acc.losses) + losses,
       updated_at: new Date(nowMs).toISOString(),

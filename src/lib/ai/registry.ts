@@ -120,7 +120,7 @@ export function configuredProviders(): ProviderConfig[] {
  */
 export type HybridRole = "brain" | "macro" | "sentiment" | "ceo";
 const ROLE_PREFERENCE: Record<HybridRole, string[]> = {
-  brain:     ["mistral", "kimi"],
+  brain:     ["mistral", "deepseek", "kimi", "grok"],
   macro:     ["kimi", "mistral"],
   // 29/07 — Grok SAI do assento de sentimento. A xAI aposentou o Live Search
   // (ver a nota em backtest.ts), então o X deixou de alimentar o modelo: o
@@ -133,11 +133,31 @@ const ROLE_PREFERENCE: Record<HybridRole, string[]> = {
 };
 
 export function roleProvider(role: HybridRole): ProviderConfig | null {
+  return roleProviderChain(role)[0] ?? null;
+}
+
+/**
+ * TODOS os provedores do papel, na ordem de preferência — a cadeia de reserva.
+ *
+ * POR QUE ISTO EXISTE (03/08): o `roleProvider` devolvia UM provedor, e quem
+ * chamava não tinha para onde ir se a chamada falhasse. O ledger registrou
+ * "Mistral indisponível" e o MÍMIR perdeu o tick inteiro — sem decidir, sem
+ * gravar, sem par para o VÖLUNDR daquele ciclo.
+ *
+ * Isso não é só um trade perdido: é AMOSTRA perdida de um lado só do duelo. O
+ * controle continua acumulando enquanto a mesa de IA fica para trás, e a
+ * comparação vai ficando torta sem ninguém notar — porque os dois números
+ * continuam existindo, só que medindo janelas diferentes.
+ *
+ * Agora o chamador recebe a fila inteira e tenta o próximo quando um falha. O
+ * disjuntor (`isTripped`) segue valendo por provedor, então um que esteja em
+ * cooldown é pulado sem queimar chamada.
+ */
+export function roleProviderChain(role: HybridRole): ProviderConfig[] {
   const all = allProviders();
   const forced = process.env[`HYBRID_${role.toUpperCase()}`];
-  if (forced && all[forced]?.apiKey) return all[forced];
-  for (const id of ROLE_PREFERENCE[role]) if (all[id]?.apiKey) return all[id];
-  return null;
+  const ids = forced ? [forced, ...ROLE_PREFERENCE[role].filter((x) => x !== forced)] : ROLE_PREFERENCE[role];
+  return ids.map((id) => all[id]).filter((p): p is ProviderConfig => !!p?.apiKey);
 }
 
 /** The technical brain (kept for the radar's cheap wake). */

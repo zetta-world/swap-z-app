@@ -200,6 +200,23 @@ export function rankByRecord<T extends { playbook: string }>(
     return { candidate: c, measuredNet: null, unknown: true };
   });
 
+  // ⚠️ CORREÇÃO 03/08 — SEM NENHUMA MEDIÇÃO, A MESA NÃO OPERA.
+  //
+  // A primeira rodada do backtest voltou com TODOS os nove playbooks abaixo do
+  // limiar (o maior tinha n=20). Nesse cenário a regra 2 sozinha entregava
+  // todos os candidatos como DESCONHECIDO, na ordem declarada — ou seja, URÐR
+  // escolheria exatamente o mesmo que o VÖLUNDR, tick após tick.
+  //
+  // Seria a contaminação do MÍMIR de novo, com outro nome: um "terceiro braço"
+  // gravando trades idênticos ao controle e engordando o ledger com a mesma
+  // decisão contada duas vezes. Dois números batendo perfeitamente pareceriam
+  // confirmação quando seriam tautologia.
+  //
+  // A mesa existe para testar "seguir a evidência". Sem UMA evidência sequer,
+  // ela não tem tese — e a resposta honesta é ficar de fora até o backtest
+  // acumular amostra.
+  if (scored.every((s) => s.unknown)) return [];
+
   const positivos = scored
     .filter((s) => !s.unknown && (s.measuredNet ?? 0) > 0)
     .sort((a, b) => (b.measuredNet ?? 0) - (a.measuredNet ?? 0));

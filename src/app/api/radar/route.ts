@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   // ARBITER 2.0 — spot+perp hedged variant, same tick, own wallet/gate
   // (docs/PLANO-ARBITER-REAL.md). Resolves its own hedges by convergence.
   if (!gates.pause_arbiter2) {
-    waitUntil(runArbiter2Scan().then(() => undefined).catch(() => undefined));
+    waitUntil(runArbiter2Scan({ leveraged: !gates.pause_arbiter2_lev }).then(() => undefined).catch(() => undefined));
   }
 
   if (triggers.length > 0) {
