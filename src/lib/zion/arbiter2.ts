@@ -19,7 +19,7 @@
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
-import { findArbs } from "@/lib/zion/arbiter";
+import { findArbs, spreadWindow } from "@/lib/zion/arbiter";
 import { recordEvent } from "@/lib/admin/track";
 
 // Full-cycle cost: spot taker in/out (~0.2%) + perp taker in/out (~0.11%) +
@@ -268,7 +268,21 @@ export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbi
   // inteira (não dá para alavancar spot aqui), e a de perp posta `SIZE/L`. Com
   // L=1 volta a ser 2×SIZE, exatamente como o original.
   const marginPerCycle = SIZE_USD + SIZE_USD / profile.leverage;
+  // A janela é calculada com o custo DESTA mesa (0.45 nas quatro pernas), não
+  // com o da mesa spot. Herdar o número do vizinho faria a tela dizer uma coisa
+  // e a mesa fazer outra.
+  const janela = spreadWindow(COST_PCT, MIN_NET_PCT);
   const all = findArbs(matrix, COST_PCT, MIN_NET_PCT);
+  if (janela.empty && (openPos ?? []).length === 0) {
+    // Só anuncia quando não há mais nada em aberto: enquanto houver ciclo vivo,
+    // a mesa ainda tem trabalho e "parada" seria mentira.
+    recordEvent("arb2_window_empty", { meta: {
+      source: profile.source,
+      floor_pct: Math.round(janela.floorPct * 100) / 100,
+      ceil_pct: Math.round(janela.ceilPct * 100) / 100,
+      over_ceiling: all.filter((x) => x.suspect).length,
+    } });
+  }
   const arbs = all.filter((x) => !x.suspect);
   const openSymbols = new Set((openPos ?? []).map((p) => p.symbol));
 

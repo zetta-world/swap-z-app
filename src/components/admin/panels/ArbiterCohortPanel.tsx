@@ -29,6 +29,21 @@ type Data = {
   venues: Array<{ venue: string; compras: number; vendas: number; total: number }>;
   ranAt: string;
 };
+type VenueStat = {
+  venue: string; symbols: number; biasPct: number; dispersionPct: number;
+  worstPct: number; verdict: "estável" | "cara" | "barata" | "ruidosa";
+};
+type Truth = {
+  verdict: string; stats: VenueStat[];
+  window: { floorPct: number; ceilPct: number; empty: boolean };
+  symbolsTotal: number; symbolsWithQuorum: number;
+  biggestDispersionPct: number | null; tookMs: number;
+};
+
+const VER_COR: Record<VenueStat["verdict"], string> = {
+  ruidosa: "var(--adm-red)", cara: "var(--adm-amber)",
+  barata: "var(--adm-amber)", estável: "var(--adm-green)",
+};
 
 const COR: Record<Flag["level"], string> = {
   fatal: "var(--adm-red)", aviso: "var(--adm-amber)", ok: "var(--adm-ink-3)",
@@ -39,6 +54,8 @@ export default function ArbiterCohortPanel() {
   const [d, setD] = useState<Data | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [truth, setTruth] = useState<Truth | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -50,6 +67,16 @@ export default function ArbiterCohortPanel() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Não roda sozinha: são ~55 símbolos × N venues de chamada real. Uma medição
+  // cara que dispara a cada abertura do painel vira custo invisível.
+  async function conferir() {
+    setChecking(true);
+    try {
+      const res = await fetch("/admin/api/venue-truth");
+      if (res.ok) setTruth(await res.json());
+    } catch { /* mantém o estado anterior */ } finally { setChecking(false); }
+  }
 
   return (
     <TerminalPanel
@@ -135,6 +162,58 @@ export default function ArbiterCohortPanel() {
               ))}
             </div>
           )}
+
+          {/* A CONFERÊNCIA AO VIVO — "abre as duas corretoras e olha", com número.
+              O ledger diz o que aconteceu; isto diz o que ESTÁ acontecendo nas
+              mesmas cotações que a mesa usaria para abrir um ciclo agora. */}
+          <div style={{ marginTop: 12, borderTop: "1px solid var(--adm-border)", paddingTop: 8 }}>
+            <button className="adm-btn" onClick={conferir} disabled={checking}>
+              {checking ? "lendo as corretoras…" : "⚖ conferir os preços AO VIVO"}
+            </button>
+
+            {truth && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{
+                  fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-2)",
+                  border: "1px solid var(--adm-border)", borderRadius: 4, padding: "6px 8px",
+                }}>
+                  {truth.verdict}
+                </div>
+
+                {/* Os dois números que respondem tudo: o maior desvio que existe
+                    de verdade, contra o que a mesa exige para abrir. */}
+                {truth.biggestDispersionPct != null && (
+                  <div style={{ fontSize: 9, marginTop: 6, color: "var(--adm-ink-3)" }}>
+                    maior desvio real medido:{" "}
+                    <b style={{ color: "var(--adm-cyan)" }}>{truth.biggestDispersionPct.toFixed(3)}%</b>
+                    {" · "}a mesa exige{" "}
+                    <b style={{ color: "var(--adm-amber)" }}>{truth.window.floorPct.toFixed(2)}%</b> para abrir
+                    {truth.biggestDispersionPct < truth.window.floorPct && (
+                      <span style={{ color: "var(--adm-red)" }}> — não existe spread que pague o custo</span>
+                    )}
+                  </div>
+                )}
+
+                {truth.stats.map((s) => (
+                  <div key={s.venue} style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.7 }}>
+                    · {s.venue}: desvio {s.dispersionPct.toFixed(3)}% · viés{" "}
+                    {s.biasPct >= 0 ? "+" : ""}{s.biasPct.toFixed(3)}% · pior {s.worstPct.toFixed(2)}%{" "}
+                    <span style={{ color: VER_COR[s.verdict] }}>[{s.verdict}]</span>
+                  </div>
+                ))}
+
+                <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 4, fontStyle: "italic", lineHeight: 1.6 }}>
+                  {truth.symbolsWithQuorum} de {truth.symbolsTotal} símbolos têm as 3 cotações que a
+                  regra nova exige. Desvio COM sinal é praça com preço próprio; desvio SEM sinal é
+                  feed oscilando — e um par isolado nunca separa os dois, só a mediana de três.
+                  {truth.window.empty && (
+                    <> A janela de disparo está VAZIA (piso {truth.window.floorPct.toFixed(2)}% &gt; teto{" "}
+                    {truth.window.ceilPct.toFixed(2)}%): as mesas não abrem ciclo novo, de propósito.</>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div style={{ marginTop: 8, fontSize: 7, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
             Portão de entrada: {d.gatePct.toFixed(2)}% (custo + líquido mínimo){" "}

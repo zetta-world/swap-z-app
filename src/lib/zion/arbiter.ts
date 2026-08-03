@@ -21,12 +21,51 @@ import { recordEvent } from "@/lib/admin/track";
 
 const COST_PCT     = Number(process.env.ARB_COST_PCT     ?? 0.4);  // 2 taker legs + slippage buffer
 const MIN_NET_PCT  = Number(process.env.ARB_MIN_NET_PCT  ?? 0.15); // floor to act
-// "Too good to be true" ceiling. A real cross-CEX spread on a liquid major is
-// never triple digits — first live hour caught MATIC at +353% and RNDR at
-// +375%, which were TICKER-MIGRATION corpses (MATIC→POL, RNDR→RENDER: one
-// venue's old listing is stale/dead), not free money. Above this, it's a data
-// error: flag as suspect, never book.
-const MAX_GROSS_PCT = Number(process.env.ARB_MAX_GROSS_PCT ?? 3);
+/**
+ * "Too good to be true" ceiling.
+ *
+ * ⚠️ BAIXADO DE 3% PARA 0.30% EM 03/08, e a mudança é grande.
+ *
+ * A primeira versão nasceu para matar cadáver de migração de ticker: MATIC a
+ * +353% e RNDR a +375% (MATIC→POL, RNDR→RENDER — a listagem velha de uma venue
+ * fica parada). Contra aquilo, 3% funcionou.
+ *
+ * A auditoria da coorte mostrou que o teto de 3% deixa passar a mesma doença em
+ * dose menor. Os 661 ciclos das três mesas entraram com spread MÉDIO de 0.72% e
+ * fecharam com 100% de convergência em ~18 minutos, ZERO perdas. Uma venue
+ * aparecia em 90% das pernas, nos DOIS sentidos — a assinatura de preço
+ * oscilando em volta dos outros, não de praça mais barata.
+ *
+ * Spread real entre CEXes grandes num ativo líquido vive na casa de 0.01% a
+ * 0.05%; deslocamento genuíno em pico de volatilidade chega a uns 0.2–0.3% e
+ * dura segundos. Acima disso, em 2026, é quase sempre o feed, não o mercado.
+ *
+ * ⚠️ CONSEQUÊNCIA QUE PRECISA SER DITA EM VOZ ALTA: com o custo de ida-e-volta
+ * em 0.40–0.45% e o líquido mínimo em 0.15%, o PISO para disparar é ~0.60% —
+ * acima deste teto. A janela de disparo fica VAZIA, e as mesas param de abrir.
+ *
+ * Isso não é um efeito colateral, é o resultado. Se o único spread que paga o
+ * custo é grande demais para ser real, então a estratégia não tem trade — e é
+ * melhor descobrir isso num ledger de papel do que com dinheiro. `spreadWindow`
+ * calcula essa janela e as mesas anunciam quando ela está vazia, em vez de
+ * simplesmente emudecer (mesa que emudece sozinha é como o vazamento de caixa
+ * passou três semanas despercebido).
+ */
+const MAX_GROSS_PCT = Number(process.env.ARB_MAX_GROSS_PCT ?? 0.3);
+/**
+ * Quantas venues precisam cotar o símbolo para ele ser operável.
+ *
+ * O filtro de mediana já existia e só rodava com 3+ cotações — abaixo disso o
+ * próprio comentário admitia "não dá para saber qual está parada". Só que o
+ * código seguia operando com 2 assim mesmo, protegido apenas pelo teto bruto.
+ * Era o buraco por onde os 0.7% entravam: com duas venues discordando, a mesa
+ * chutava que a barata era a certa.
+ *
+ * Com três, a mediana é uma testemunha independente: a que se afasta dela é a
+ * errada, e sai antes de formar par. Símbolo com menos de três cotações passa a
+ * ser INOPERÁVEL em vez de operável às cegas.
+ */
+const MIN_VENUES = Number(process.env.ARB_MIN_VENUES ?? 3);
 // Median outlier filter: with 3+ venues quoting a symbol, a venue whose price
 // deviates more than this % from the cross-venue MEDIAN is a stale/dead quote
 // (the MATIC→POL corpse pattern) and is dropped BEFORE pairing — so a corpse
@@ -58,27 +97,50 @@ export interface ArbOpportunity {
   suspect: boolean;
 }
 
+/**
+ * A JANELA DE DISPARO: entre o piso que paga o custo e o teto do que é crível.
+ *
+ * Existe para que "a mesa parou de operar" nunca seja uma descoberta. Quando o
+ * piso passa o teto a janela está vazia, e isso é uma AFIRMAÇÃO sobre a
+ * estratégia — "o único spread que pagaria o custo é grande demais para ser
+ * real" — não um silêncio a ser interpretado.
+ */
+export function spreadWindow(
+  costPct = COST_PCT, minNetPct = MIN_NET_PCT, maxGrossPct = MAX_GROSS_PCT,
+): { floorPct: number; ceilPct: number; empty: boolean } {
+  const floorPct = costPct + minNetPct;
+  return { floorPct, ceilPct: maxGrossPct, empty: floorPct > maxGrossPct };
+}
+
 /** Pure detector: scan the venue matrix for spreads whose NET (after costs)
- *  clears the floor. Needs ≥2 venues quoting the symbol; fail-closed on junk. */
+ *  clears the floor. Needs ≥MIN_VENUES quoting the symbol; fail-closed on junk. */
 export function findArbs(
   spot: Map<string, Map<string, { priceUsd: number }>>,
   costPct = COST_PCT,
   minNetPct = MIN_NET_PCT,
   maxGrossPct = MAX_GROSS_PCT,
   outlierPct = OUTLIER_PCT,
+  minVenues = MIN_VENUES,
 ): ArbOpportunity[] {
   const out: ArbOpportunity[] = [];
   for (const [symbol, venues] of spot) {
-    if (venues.size < 2) continue;
+    // TRÊS TESTEMUNHAS, não duas. Com duas cotações discordando não há como
+    // saber qual está parada, e a mesa chutava que a barata era a certa — foi
+    // por aí que os spreads de 0.7% entraram por três semanas.
+    if (venues.size < minVenues) continue;
     let quotes: Array<{ v: string; p: number }> = [];
     for (const [v, { priceUsd }] of venues) if (priceUsd > 0) quotes.push({ v, p: priceUsd });
-    // Median outlier drop (3+ venues): stale/dead listings can't form pairs.
+    // Median outlier drop: a mediana é a testemunha independente, e quem se
+    // afasta dela sai ANTES de formar par.
     if (quotes.length >= 3) {
       const sorted = [...quotes].map((q) => q.p).sort((a, b) => a - b);
       const median = sorted[Math.floor(sorted.length / 2)];
       quotes = quotes.filter((q) => Math.abs(q.p / median - 1) * 100 <= outlierPct);
     }
-    if (quotes.length < 2) continue;
+    // Depois do corte ainda precisa sobrar o quórum: dois sobreviventes de uma
+    // matriz de três significa que UM já foi reprovado, e operar no que restou
+    // seria voltar ao caso de duas testemunhas pela porta dos fundos.
+    if (quotes.length < minVenues) continue;
     let lo = quotes[0], hi = quotes[0];
     for (const q of quotes) { if (q.p < lo.p) lo = q; if (q.p > hi.p) hi = q; }
     if (lo.v === hi.v) continue;
@@ -131,6 +193,27 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
   // Belt-and-braces: also strip in case a custom EXCLUDE_VENUES name slips past the fetch skip.
   for (const venues of matrix.values()) for (const v of EXCLUDE_VENUES) venues.delete(v);
   const all = findArbs(matrix);
+
+  /**
+   * MESA QUE PARA TEM QUE DIZER QUE PAROU.
+   *
+   * Com o teto em 0.30% e o piso em ~0.55%, a janela está vazia e nenhum
+   * spread pode ser aberto. Sem esta linha, o painel mostraria "0 detectados"
+   * indefinidamente e alguém concluiria "não apareceu oportunidade" — que foi
+   * exatamente como o vazamento de caixa passou três semanas despercebido.
+   *
+   * A janela vazia é uma AFIRMAÇÃO: o único spread que pagaria o custo é
+   * grande demais para ser real. Ela é a conclusão da auditoria, não um bug.
+   */
+  const janela = spreadWindow();
+  if (janela.empty) {
+    recordEvent("arb_window_empty", { meta: {
+      floor_pct: Math.round(janela.floorPct * 100) / 100,
+      ceil_pct: Math.round(janela.ceilPct * 100) / 100,
+      detected_over_ceiling: all.filter((x) => x.suspect).length,
+      why: "piso de custo acima do teto de credibilidade — estratégia sem trade neste custo",
+    } });
+  }
 
   // Data anomalies (spread over the sanity ceiling — stale/migrated listings):
   // surface them in the admin feed, never book them.
