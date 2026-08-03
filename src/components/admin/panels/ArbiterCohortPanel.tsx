@@ -49,6 +49,7 @@ const COR: Record<Flag["level"], string> = {
   fatal: "var(--adm-red)", aviso: "var(--adm-amber)", ok: "var(--adm-ink-3)",
 };
 const ICONE: Record<Flag["level"], string> = { fatal: "✕", aviso: "⚠", ok: "·" };
+const usdSigned = (n: number) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}`;
 
 export default function ArbiterCohortPanel() {
   const [d, setD] = useState<Data | null>(null);
@@ -56,6 +57,8 @@ export default function ArbiterCohortPanel() {
   const [loading, setLoading] = useState(true);
   const [truth, setTruth] = useState<Truth | null>(null);
   const [checking, setChecking] = useState(false);
+  const [zeroing, setZeroing] = useState(false);
+  const [zeroed, setZeroed] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -67,6 +70,27 @@ export default function ArbiterCohortPanel() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // O motivo viaja com a ação, montado a partir do que ESTA medição achou.
+  // Um texto fixo diria a mesma coisa daqui a um ano, quando o motivo for outro.
+  async function zerar() {
+    if (!d) return;
+    setZeroing(true);
+    const motivo = "auditoria da coorte: ciclos sem uma perda sequer, spread de entrada colado no "
+      + "portão e uma venue nos dois lados das pernas — o lucro era ruído de feed, não mercado. "
+      + `Marcas fatais: ${d.flags.filter((f) => f.level === "fatal").map((f) => f.id).join(", ")}.`;
+    try {
+      const res = await fetch("/admin/api/paper-reset", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sources: d.desks.map((k) => k.source), reason: motivo }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setZeroed(`${usdSigned(json.totalRemovedUsd)} retirados · posições arquivadas, motivo gravado`);
+        await load();
+      }
+    } catch { /* mantém o estado; nada foi perdido */ } finally { setZeroing(false); }
+  }
 
   // Não roda sozinha: são ~55 símbolos × N venues de chamada real. Uma medição
   // cara que dispara a cada abertura do painel vira custo invisível.
@@ -214,6 +238,35 @@ export default function ArbiterCohortPanel() {
               </div>
             )}
           </div>
+
+          {/* ZERAR. Só aparece enquanto houver resultado a tirar, e só quando a
+              coorte foi REPROVADA — um botão de zerar sempre visível é um
+              convite a apagar resultado ruim que era verdadeiro. */}
+          {!d.readable && d.desks.some((k) => k.realizedUsd !== 0) && !zeroed && (
+            <div style={{
+              marginTop: 10, border: "1px solid var(--adm-amber)", borderRadius: 4,
+              padding: "7px 9px", fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-3)",
+            }}>
+              <div style={{ color: "var(--adm-amber)", fontWeight: 700, letterSpacing: "0.08em" }}>
+                ⌫ TIRAR {usdSigned(d.desks.reduce((s, k) => s + k.realizedUsd, 0))} DO LEDGER
+              </div>
+              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", margin: "3px 0" }}>
+                Enquanto este lucro estiver no ledger, toda soma do laboratório está inflada e as
+                comparações entre mesas — a única coisa que este laboratório produz — ficam medidas
+                contra um número falso. As posições são <b>arquivadas, não apagadas</b>: a evidência
+                do defeito é o próprio registro, e apagá-la deixaria só a minha palavra de que ele
+                existiu. Fica gravado o motivo.
+              </div>
+              <button className="adm-btn" onClick={zerar} disabled={zeroing}>
+                {zeroing ? "arquivando…" : "⌫ zerar os ledgers de arbitragem"}
+              </button>
+            </div>
+          )}
+          {zeroed && (
+            <div style={{ marginTop: 10, fontSize: 9, color: "var(--adm-green)", lineHeight: 1.6 }}>
+              ✓ {zeroed}
+            </div>
+          )}
 
           <div style={{ marginTop: 8, fontSize: 7, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
             Portão de entrada: {d.gatePct.toFixed(2)}% (custo + líquido mínimo){" "}
