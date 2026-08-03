@@ -119,9 +119,26 @@ export default function RagnarokPanel() {
                 {data.playbooks.map((p) => (
                   <tr key={p.playbook}>
                     <td style={{ color: "var(--adm-ink-2)" }}>{PLAYBOOK_LABEL[p.playbook] ?? p.playbook}</td>
-                    <td style={{ color: p.netPerTrade == null ? "var(--adm-ink-3)" : col(p.netPerTrade), fontVariantNumeric: "tabular-nums" }}>{pct(p.netPerTrade)}</td>
+                    {/* ⚠️ AMOSTRA ZERO NÃO VIRA NÚMERO (04/08).
+                        O dono olhou o painel e viu "agentes verdes": PULLBACK
+                        +1.29%, pivot_reversion +0.29%, RANGE +0.09%. Os dois
+                        últimos tinham DEC=0 — o percentual vinha de duas
+                        EXPIRADAS, trades que venceram o horizonte sem tocar
+                        nada. Verde pintado ao lado de um zero é o defeito do
+                        Valhalla de volta, na tela seguinte. */}
+                    <td style={{
+                      color: p.decided === 0 ? "var(--adm-ink-4)"
+                        : p.netPerTrade == null ? "var(--adm-ink-3)"
+                        : shouldTint(p.decided) ? col(p.netPerTrade) : "var(--adm-ink-4)",
+                      fontVariantNumeric: "tabular-nums",
+                    }}>
+                      {p.decided === 0 ? "—" : pct(p.netPerTrade)}
+                    </td>
                     <td>{p.winRate == null ? "—" : `${(p.winRate * 100).toFixed(0)}%`}</td>
-                    <td style={{ textAlign: "center" }}>{p.decided}</td>
+                    <td style={{
+                      textAlign: "center",
+                      color: p.decided === 0 ? "var(--adm-red)" : "var(--adm-ink-2)",
+                    }}>{p.decided}</td>
                     <td style={{ textAlign: "center", color: "var(--adm-ink-3)" }}>{p.open}</td>
                   </tr>
                 ))}

@@ -84,20 +84,56 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .gte("created_at", since24h).order("created_at", { ascending: false }).limit(500),
   ]);
 
-  const ticks = (aiTicks ?? []) as Array<{ metadata: { brainRan?: boolean; fallbackReason?: string | null } | null }>;
+  const ticks = (aiTicks ?? []) as Array<{ metadata: { brainRan?: boolean; fallbackReason?: string | null; candidates?: number; logged?: number } | null }>;
   const ranCount = ticks.filter((t) => t.metadata?.brainRan === true).length;
   const lastFallback = ticks.find((t) => t.metadata?.brainRan === false)?.metadata?.fallbackReason ?? null;
+
+  /**
+   * ⚠️ ESTE AVISO ESTAVA MENTINDO (04/08), e mentindo do jeito mais caro.
+   *
+   * Ele dizia: "IA decidiu em apenas 2/48 ticks — nos demais o MÍMIR gravou o
+   * plano do FERREIRO sob o próprio nome". Isso descrevia a contaminação REAL
+   * de julho, corrigida desde então. O texto ficou.
+   *
+   * Os dados de hoje: 101 ticks, 8 com cérebro, 8 com candidato, e ZERO ticks
+   * que gravaram sem o cérebro ter rodado. A trava funciona. O MÍMIR não está
+   * contaminado — ele está SEM SETUP, que é outra coisa inteiramente e leva a
+   * outra decisão.
+   *
+   * Um aviso que descreve um bug corrigido como se fosse atual é pior que
+   * nenhum aviso: ele ensina o operador a desconfiar de dado bom, e a próxima
+   * contaminação de verdade chega num painel que já vinha gritando.
+   *
+   * A distinção que importa: o cérebro não rodou porque NÃO HAVIA CANDIDATO
+   * (correto — nada a julgar), ou porque falhou (aí sim, `lastFallback` diz).
+   */
+  const semCandidato = ticks.filter((t) => Number(t.metadata?.candidates ?? 0) === 0).length;
+  const gravouSemCerebro = ticks.filter(
+    (t) => t.metadata?.brainRan !== true && Number(t.metadata?.logged ?? 0) > 0,
+  ).length;
+
   const brainHealth = {
     ticks24h: ticks.length,
     ranCount,
-    // Um MÍMIR que nunca decidiu não é uma mesa de IA — é o controle duplicado.
-    contaminated: ticks.length > 0 && ranCount === 0,
+    ticksWithoutCandidates: semCandidato,
+    /**
+     * Contaminação é gravar SEM ter pensado — não é deixar de pensar.
+     *
+     * A versão anterior marcava contaminado sempre que `ranCount === 0`, o que
+     * acusa uma mesa que passou o dia sem setup. Ela estaria certa em não
+     * operar, e apareceria como fraude.
+     */
+    contaminated: gravouSemCerebro > 0,
+    contaminatedTicks: gravouSemCerebro,
     lastFallback,
     note: ticks.length === 0
       ? "sem tick registrado nas últimas 24h"
-      : ranCount === ticks.length
-        ? `IA decidiu em ${ranCount}/${ticks.length} ticks`
-        : `⚠ IA decidiu em apenas ${ranCount}/${ticks.length} ticks — nos demais o MÍMIR gravou o plano do FERREIRO sob o próprio nome${lastFallback ? ` (${lastFallback})` : ""}`,
+      : gravouSemCerebro > 0
+        ? `⚠ CONTAMINAÇÃO: ${gravouSemCerebro} tick(s) gravaram plano sem a IA ter decidido`
+        : ranCount === ticks.length
+          ? `IA decidiu em ${ranCount}/${ticks.length} ticks`
+          : `IA decidiu em ${ranCount}/${ticks.length} ticks · em ${semCandidato} não havia candidato para julgar `
+            + `(a mesa corretamente não gravou nada)${lastFallback ? ` · última falha: ${lastFallback}` : ""}`,
   };
 
   // ── Por PLAYBOOK (qual estratégia paga?) — mecânico e IA somados, porque a
