@@ -5,6 +5,7 @@ import {
   type TimedCandle, type BacktestResult,
 } from "@/lib/zion/playbook-backtest";
 import type { MarketRegime } from "@/lib/api/market-indicators";
+import { computeExitPath } from "@/lib/paper/engine";
 
 /**
  * O BACKTEST QUE SUBSTITUI O PALPITE.
@@ -251,7 +252,8 @@ describe("mergeResults — juntar símbolos sem falsear a média", () => {
 describe("diagnóstico — por que o número é o que é", () => {
   const t = (over: Partial<Outcome> = {}): Outcome => ({
     regime: "RANGING", netPct: 0, reason: "expired", win: false,
-    mfePct: 0, maePct: 0, targetPct: 4, stopPct: 2, plannedRr: 2, straddled: false, ...over,
+    mfePct: 0, maePct: 0, targetPct: 4, stopPct: 2, plannedRr: 2, straddled: false,
+    inverseNetPct: 0, inverseReason: "expired", ...over,
   });
 
   it("RR realizado é o que o mercado PAGOU, não o que o bracket prometeu", () => {
@@ -374,6 +376,77 @@ describe("controle negativo — mercado sem vantagem não pode virar lucro", () 
       if (outcome.reason === "target") {
         expect(outcome.netPct).toBeLessThan(outcome.targetPct);
       }
+    }
+  });
+});
+
+/**
+ * "SE EU COMPRAR QUANDO ELE DIZ QUE TÁ RUIM, VOU LUCRAR" — medindo a piada.
+ *
+ * O dono brincou que a mesa só acerta a entrada errada, e que fazer o contrário
+ * daria lucro. A brincadeira tem aritmética: expectância consistentemente
+ * negativa tem um espelho positivo, menos o custo pago duas vezes.
+ *
+ * O QUE TORNA A MEDIÇÃO DELICADA: inverter o SINAL do resultado seria batota.
+ *
+ * Quando uma vela cruza alvo E stop, a convenção pessimista faz o long registrar
+ * o STOP. Se o espelho fosse `−netPct`, essa mesma vela viraria um ALVO batido
+ * no short: o pessimismo do original viraria otimismo na tradução, e o inverso
+ * apareceria melhor do que é justamente nas velas mais violentas — que são as
+ * que mais importam.
+ *
+ * Por isso o espelho é uma posição vendida DE VERDADE, resolvida pelo mesmo
+ * motor. O short também perde o straddle.
+ */
+describe("o espelho — e por que ele não é só trocar o sinal", () => {
+  it("numa vela que cruza os DOIS lados, long e short perdem", () => {
+    // Esta é a propriedade inteira. Uma vela que varre alvo e stop é ambígua:
+    // ninguém sabe qual foi tocado primeiro. A convenção honesta pune os dois
+    // lados — e é o que impede o espelho de virar uma máquina de lucro.
+    const c = (t: number, high: number, low: number, close: number) => ({ t, high, low, close, volume: 1 });
+    const violenta = [c(1, 112, 88, 100)];   // varre +12% e −12%
+
+    const long = { side: "buy", entry_price: 100, cost_usd: 100, target_price: 110, stop_price: 90, opened_at: new Date(0).toISOString(), horizon_hours: 48 };
+    const short = { ...long, side: "sell", target_price: 90, stop_price: 110 };
+
+    const vLong = computeExitPath(long, violenta, undefined, 3_600_000)!;
+    const vShort = computeExitPath(short, violenta, undefined, 3_600_000)!;
+
+    expect(vLong.reason).toBe("stop");
+    expect(vShort.reason).toBe("stop");
+    // Os dois no vermelho: o espelho NÃO recupera o que o original perdeu.
+    expect(vLong.netPct).toBeLessThan(0);
+    expect(vShort.netPct).toBeLessThan(0);
+  });
+
+  it("num movimento LIMPO contra o long, o espelho ganha de verdade", () => {
+    // Sem ambiguidade não há pessimismo a aplicar, e a simetria vale: o que o
+    // long perde no stop, o short ganha no alvo — menos o custo, dos dois lados.
+    const c = (t: number, high: number, low: number, close: number) => ({ t, high, low, close, volume: 1 });
+    const queda = [c(1, 101, 89, 90)];
+
+    const long = { side: "buy", entry_price: 100, cost_usd: 100, target_price: 110, stop_price: 90, opened_at: new Date(0).toISOString(), horizon_hours: 48 };
+    const short = { ...long, side: "sell", target_price: 90, stop_price: 110 };
+
+    const vLong = computeExitPath(long, queda, undefined, 3_600_000)!;
+    const vShort = computeExitPath(short, queda, undefined, 3_600_000)!;
+
+    expect(vLong.reason).toBe("stop");
+    expect(vShort.reason).toBe("target");
+    // A soma dos dois é NEGATIVA: é o custo de ida-e-volta, pago duas vezes.
+    // Nenhum par long+short espelhado soma zero — e é por isso que "fazer o
+    // contrário" não é lucro garantido nem quando a mesa erra sempre.
+    expect(vLong.netPct + vShort.netPct).toBeLessThan(0);
+  });
+
+  it("o backtest registra o espelho de cada trade", () => {
+    const r = backtestPlaybooks("S", walk(2600, 0, 0.007, 3));
+    const todos = r.outcomes ?? [];
+    expect(todos.length).toBeGreaterThan(0);
+    for (const { outcome } of todos) {
+      expect(Number.isFinite(outcome.inverseNetPct)).toBe(true);
+      // O espelho nunca é o simétrico exato — o custo aparece nos dois lados.
+      expect(outcome.inverseNetPct).not.toBeCloseTo(-outcome.netPct, 6);
     }
   });
 });
