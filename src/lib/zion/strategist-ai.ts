@@ -50,6 +50,7 @@ import { recordEvent } from "@/lib/admin/track";
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
 import { candidateAttempts, PLAYBOOKS } from "@/lib/zion/playbooks";
 import { buildLongBracket, type StrategyPlan } from "@/lib/zion/bracket";
+import { loadPlaybookRecord, formatRecord, isStale, type PlaybookRecord } from "@/lib/zion/playbook-record";
 
 /** A mesa de IA — o par experimental do VÖLUNDR mecânico. */
 export const STRAT_AI = "strat_ai";
@@ -105,11 +106,16 @@ const SYSTEM = [
   "    If you give them: stop BELOW entry, target ABOVE entry, entry near the live price.",
   "  • Judge the MOMENT, not the average case: the same setup that pays in a quiet",
   "    range is a trap when a trend is starting. Use the FALHA QUANDO lines.",
+  "  • Some candidates carry a measured TRACK RECORD in brackets. Weigh it, but:",
+  "      – a record marked DESCONHECIDO means we have no evidence, NOT that the",
+  "        setup is bad and NOT that it is neutral. Judge it on structure alone.",
+  "      – the record is a backtest over a SHORT window. It is evidence, never proof.",
+  "        A strong structure today outranks a weak record from a different market.",
   "  • Be terse. One line per symbol.",
 ].join("\n");
 
-/** Retrato do símbolo + o cardápio de candidatos daquele tick. */
-function describe(ind: SymbolIndicators, candidates: StrategyPlan[]): string {
+/** Retrato do símbolo + o cardápio de candidatos, cada um com seu HISTÓRICO. */
+function describe(ind: SymbolIndicators, candidates: StrategyPlan[], record: PlaybookRecord | null): string {
   const f = (n: number | null | undefined) => (n == null ? "n/a" : n < 1 ? n.toFixed(6) : n.toFixed(4));
   const parts = [
     `${ind.symbol}: price=${f(ind.price)} regime=${ind.regime} ADX=${ind.adx?.toFixed(0) ?? "n/a"}`,
@@ -121,8 +127,16 @@ function describe(ind: SymbolIndicators, candidates: StrategyPlan[]): string {
   if (ind.resistances.length) parts.push(`resistances=${ind.resistances.map(f).join("/")}`);
   if (ind.rangePct != null) parts.push(`1Y-range=${ind.rangePct.toFixed(0)}%`);
   if (ind.divergence) parts.push(`divergence=${ind.divergence}`);
+  // Cada candidato vem com o que a MEDIÇÃO diz sobre ele — de preferência no
+  // regime atual, que é o terreno em jogo. Amostra pequena chega como AUSÊNCIA
+  // declarada, nunca como número: um modelo que recebe "+2,1%" trata aquilo
+  // como fato mesmo quando vem de três trades, e não tem como desconfiar.
   const menu = candidates
-    .map((c) => `${c.playbook}(entry=${f(c.entry)} target=${f(c.target)} stop=${f(c.stop)} RR=${c.rr.toFixed(2)})`)
+    .map((c) => {
+      const geo = `${c.playbook}(entry=${f(c.entry)} target=${f(c.target)} stop=${f(c.stop)} RR=${c.rr.toFixed(2)})`;
+      const hist = record ? formatRecord(record.entries.find((e) => e.playbook === c.playbook), ind.regime) : null;
+      return hist ? `${geo} [${hist}]` : geo;
+    })
     .join(" , ");
   parts.push(`CANDIDATES: ${menu}`);
   return parts.join(" | ");
@@ -215,6 +229,14 @@ export interface AiScanResult {
   brainRan: boolean;
   /** Por que não rodou, quando não rodou. */
   fallbackReason?: string;
+  /**
+   * A IA decidiu COM histórico medido, ou às cegas?
+   *
+   * Sem esta flag, duas rodadas com significados diferentes ficariam
+   * indistinguíveis no ledger — e a conclusão sobre a tese sairia de uma mistura
+   * de trades informados e trades no escuro.
+   */
+  usedRecord: boolean;
 }
 
 /**
@@ -235,7 +257,7 @@ export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<A
   const out: AiScanResult = {
     offered: menus.length,
     candidates: menus.reduce((n, m) => n + m.candidates.length, 0),
-    picked: 0, adjusted: 0, passed: 0, plans: [], brainRan: false,
+    picked: 0, adjusted: 0, passed: 0, plans: [], brainRan: false, usedRecord: false,
   };
   if (menus.length === 0) return out;
 
@@ -251,10 +273,19 @@ export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<A
     return out;
   }
 
+  // O HISTÓRICO MEDIDO, quando existe e não está velho. Um registro antigo é
+  // pior que nenhum: descreve um mercado que já passou e chega com a mesma
+  // autoridade de um recente.
+  let record = await loadPlaybookRecord();
+  if (record && isStale(record, Date.now())) record = null;
+
   const user = [
     "Pick the right setup for each symbol, or none. Reply with the JSON object only.",
+    record
+      ? `Track records below come from a backtest over ~${record.windowDays} days. Evidence, not proof.`
+      : "No measured track record is available — judge on structure alone.",
     "",
-    ...menus.map((m) => describe(m.ind, m.candidates)),
+    ...menus.map((m) => describe(m.ind, m.candidates, record)),
   ].join("\n");
 
   let choices: AiChoice[] = [];
@@ -267,6 +298,7 @@ export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<A
     await recordResult(provider.id, provider.label, true);
     choices = parseChoices(r.text);
     out.brainRan = true;
+    out.usedRecord = record !== null;
     recordEvent("zion_analysis", { meta: { op: "strat_ai", model: r.model, source: STRAT_AI, ...r.usage } });
   } catch (e) {
     await recordResult(provider.id, provider.label, false, e instanceof Error ? e.message : String(e));
