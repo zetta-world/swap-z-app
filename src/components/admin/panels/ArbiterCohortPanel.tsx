@@ -23,10 +23,14 @@ type Desk = {
   cycles: number; losses: number; realizedUsd: number; avgPnlUsd: number;
   marginPerCycleUsd: number; hoursLive: number; cashUsd: number | null;
 };
+type SymbolRealism = {
+  symbol: string; samples: number; positive: number; passesGate: number;
+  avgRealisticPct: number; avgSlippagePct: number;
+};
 type Realism = {
   samples: number; withDepth: number;
   avgTheoreticalPct: number; avgRealisticPct: number; avgSlippagePct: number;
-  survivors: number; symbols: number;
+  survivors: number; symbols: number; passesGate: number; bySymbol: SymbolRealism[];
 };
 type Data = {
   desks: Desk[]; flags: Flag[]; readable: boolean; realism: Realism | null;
@@ -164,11 +168,51 @@ export default function ArbiterCohortPanel() {
                 </b>
                 {" · "}profundidade comeu <b>{d.realism.avgSlippagePct.toFixed(3)}%</b>
               </div>
-              <div style={{ color: d.realism.survivors === 0 ? "var(--adm-red)" : "var(--adm-ink-3)" }}>
-                sobreviveram à profundidade: <b>{d.realism.survivors}</b> de{" "}
-                {d.realism.samples.toLocaleString("pt-BR")}
-                {" "}({((d.realism.survivors / d.realism.samples) * 100).toFixed(1)}%)
+              <div style={{ color: "var(--adm-ink-3)" }}>
+                positivas: <b>{d.realism.survivors}</b> de {d.realism.samples.toLocaleString("pt-BR")}
+                {" · "}
+                <span style={{ color: d.realism.passesGate === 0 ? "var(--adm-red)" : "var(--adm-amber)" }}>
+                  passariam do mínimo da mesa: <b>{d.realism.passesGate}</b>
+                </span>
               </div>
+              {/* "Positiva" e "operável" não são a mesma coisa. Das 17 positivas,
+                  16 ficaram entre +0.016% e +0.021% — zero dentro do
+                  arredondamento, menos de um centavo num ciclo de $50. */}
+
+              {d.realism.bySymbol.length > 0 && (
+                <div style={{ marginTop: 5 }}>
+                  <div style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>
+                    por símbolo, do livro mais FUNDO para o mais raso:
+                  </div>
+                  <table className="adm-table" style={{ fontSize: 8 }}>
+                    <thead><tr><th>SÍMBOLO</th><th>MEDIÇÕES</th><th>POSITIVAS</th><th>PASSAM</th><th>SLIPPAGE</th></tr></thead>
+                    <tbody>
+                      {d.realism.bySymbol.map((s) => (
+                        <tr key={s.symbol}>
+                          <td style={{ color: "var(--adm-ink-2)" }}>{s.symbol}</td>
+                          <td style={{ fontVariantNumeric: "tabular-nums" }}>{s.samples.toLocaleString("pt-BR")}</td>
+                          <td style={{ fontVariantNumeric: "tabular-nums" }}>{s.positive}</td>
+                          <td style={{
+                            fontVariantNumeric: "tabular-nums",
+                            color: s.passesGate > 0 ? "var(--adm-amber)" : "var(--adm-ink-4)",
+                          }}>{s.passesGate}</td>
+                          <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--adm-red)" }}>
+                            {s.avgSlippagePct.toFixed(3)}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: 8, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
+                    Ordenado pela PROFUNDIDADE, não pelo volume — ordenar por volume repetiria
+                    na tela o mesmo viés que a mesa tinha na seleção. O símbolo MAIS operado
+                    (MANA, 298 ciclos) é o de pior livro e teve ZERO positivas; o único com
+                    alguma sobrevivência é o de melhor livro. A mesa buscava o maior spread
+                    aparente, e spread aparente grande é sintoma de livro FINO — ela rodava um
+                    detector de iliquidez e chamava de arbitragem.
+                  </div>
+                </div>
+              )}
               <div style={{ fontSize: 8, color: "var(--adm-ink-4)", fontStyle: "italic", marginTop: 3 }}>
                 O spread do topo é o preço de UMA unidade. Operar ${'{'}50{'}'} exige andar o livro — pagar
                 subindo os asks e vender descendo os bids. Esta sonda existia desde 28/07 e só

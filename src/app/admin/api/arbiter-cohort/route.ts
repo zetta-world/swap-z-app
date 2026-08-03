@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { ARBITER2_PROFILES } from "@/lib/zion/arbiter2";
-import { auditCohort, cohortReadable, type CohortDesk, type Leg } from "@/lib/zion/arbiter-cohort";
+import { auditCohort, cohortReadable, realismBySymbol, type CohortDesk, type Leg } from "@/lib/zion/arbiter-cohort";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +113,15 @@ export async function GET(): Promise<NextResponse> {
     // O número que responde tudo: quantas sobreviveram à profundidade.
     survivors: amostras.filter((x) => x.real > 0).length,
     symbols: new Set(amostras.map((x) => x.symbol)).size,
+    // Quantas passariam do mínimo da mesa, não só "positivas". Das 17
+    // positivas, 16 estavam entre +0.016% e +0.021% — zero dentro do
+    // arredondamento. Contar essas como sobreviventes seria repetir, na
+    // verificação, o mesmo otimismo que ela existe para pegar.
+    passesGate: amostras.filter((x) => x.real >= MIN_NET_PCT).length,
+    bySymbol: realismBySymbol(
+      amostras.map((x) => ({ symbol: x.symbol, realisticNet: x.real, slippage: x.slippage })),
+      MIN_NET_PCT,
+    ).slice(0, 8),
   };
 
   const gatePct = COST_PCT + MIN_NET_PCT;
