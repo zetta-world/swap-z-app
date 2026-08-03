@@ -96,6 +96,36 @@ export function formatRecord(
 }
 
 /** Grava o resultado do backtest para as mesas lerem. Best-effort. */
+/**
+ * ⚠️ O HISTÓRICO DE MEDIÇÕES — o que faltava, e custou uma conclusão errada.
+ *
+ * Em 03/08 o backtest rodou às 13:24 e devolveu `pivot_reversion` com n=83 e
+ * +0.202% líquido: o PRIMEIRO playbook positivo da biblioteca. Seis horas
+ * depois, o MESMO backtest, na mesma janela de 174 dias rolando, devolveu n=92
+ * e −0.069%.
+ *
+ * Nove trades novos — menos de 10% da amostra — inverteram o veredito. Eles
+ * mediam −2.568% cada.
+ *
+ * Guardar só a ÚLTIMA medição faz cada rodada parecer um fato. Duas rodadas
+ * lado a lado mostram o que ela é: um número que ainda não parou de se mexer.
+ * A diferença não é acadêmica — a URÐR estava a um candidato de operar aquele
+ * +0.202%, e teria colocado dinheiro em cima de ruído com a bênção de um
+ * "histórico medido".
+ *
+ * Guardamos as últimas `HISTORY_MAX` rodadas. Não é auditoria completa: é o
+ * mínimo para responder "este número é estável ou está balançando?".
+ */
+const HISTORY_KEY = "playbook_record:history";
+const HISTORY_MAX = 12;
+
+export interface RecordSnapshot {
+  measuredAt: string;
+  windowDays: number;
+  /** playbook → { decided, netPerTrade } no instante da medição. */
+  byPlaybook: Record<string, { decided: number; netPerTrade: number | null }>;
+}
+
 export async function savePlaybookRecord(record: PlaybookRecord): Promise<boolean> {
   const db = getSupabaseAdmin();
   if (!db) return false;
@@ -104,8 +134,71 @@ export async function savePlaybookRecord(record: PlaybookRecord): Promise<boolea
       { key: RECORD_KEY, value: JSON.stringify(record), updated_at: new Date().toISOString() },
       { onConflict: "key" },
     );
-    return !error;
+    if (error) return false;
+
+    // O histórico é best-effort e SEPARADO: se ele falhar, a medição atual
+    // continua valendo. O contrário não — sem a medição atual não há o que
+    // historiar.
+    const anterior = await loadHistory();
+    const snap: RecordSnapshot = {
+      measuredAt: record.measuredAt, windowDays: record.windowDays,
+      byPlaybook: Object.fromEntries(record.entries.map((e) => [
+        e.playbook, { decided: e.decided, netPerTrade: e.netPerTrade },
+      ])),
+    };
+    const proximo = [snap, ...anterior].slice(0, HISTORY_MAX);
+    await db.from("admin_kv").upsert(
+      { key: HISTORY_KEY, value: JSON.stringify(proximo), updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+    return true;
   } catch { return false; }
+}
+
+/** As últimas rodadas, da mais nova para a mais velha. */
+export async function loadHistory(): Promise<RecordSnapshot[]> {
+  const db = getSupabaseAdmin();
+  if (!db) return [];
+  try {
+    const { data } = await db.from("admin_kv").select("value").eq("key", HISTORY_KEY).maybeSingle();
+    if (!data?.value) return [];
+    const parsed = JSON.parse(String(data.value)) as RecordSnapshot[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+/**
+ * ESTE NÚMERO PAROU DE SE MEXER?
+ *
+ * A regra é o sinal: um playbook cujo líquido trocou de sinal entre rodadas
+ * recentes não tem veredito, tem oscilação. `pivot_reversion` passou de +0.202%
+ * para −0.069% em seis horas e continuaria sendo exibido como "medido" — com
+ * amostra acima do limiar e tudo.
+ *
+ * Amostra grande e sinal instável é a combinação mais perigosa que existe aqui:
+ * ela passa em todos os filtros de tamanho e mesmo assim não significa nada.
+ *
+ * Com menos de `minRuns` rodadas a resposta é `false` — não estável, porque
+ * ainda não dá para saber. Ausência de evidência não vira estabilidade.
+ */
+export function isStableSign(
+  playbook: string, history: RecordSnapshot[], minRuns = 3,
+): boolean {
+  const vistos = history
+    .map((h) => h.byPlaybook[playbook]?.netPerTrade)
+    .filter((v): v is number => v != null);
+  if (vistos.length < minRuns) return false;
+  const recentes = vistos.slice(0, minRuns);
+  return recentes.every((v) => v > 0) || recentes.every((v) => v < 0);
+}
+
+/** Quanto o líquido oscilou entre as rodadas guardadas — o tamanho do balanço. */
+export function swingPct(playbook: string, history: RecordSnapshot[]): number | null {
+  const vistos = history
+    .map((h) => h.byPlaybook[playbook]?.netPerTrade)
+    .filter((v): v is number => v != null);
+  if (vistos.length < 2) return null;
+  return Math.max(...vistos) - Math.min(...vistos);
 }
 
 /**
@@ -179,6 +272,21 @@ export function rankByRecord<T extends { playbook: string }>(
   record: PlaybookRecord | null,
   regime: MarketRegime,
   threshold = NOISE_THRESHOLD,
+  /**
+   * ⚠️ ESTABILIDADE, além de amostra (03/08 — segunda correção do mesmo dia).
+   *
+   * A primeira versão exigia só `decided >= threshold`. Isso teria feito a URÐR
+   * apostar no `pivot_reversion` a +0.202% às 13:24 — número que às 19:45, na
+   * mesma janela rolada por seis horas, já era −0.069%.
+   *
+   * Ela passava em TODOS os filtros: amostra de 83, acima do limiar de 30,
+   * regime coerente, sinal positivo. E era ruído.
+   *
+   * Amostra grande com sinal instável é a combinação mais perigosa aqui, porque
+   * é a única que atravessa todas as defesas de tamanho. Sem o histórico, não há
+   * como distinguir "medido" de "medido uma vez".
+   */
+  history: RecordSnapshot[] = [],
 ): RankedCandidate<T>[] {
   // SEM REGISTRO, URÐR NÃO OPERA — e isso é deliberado.
   //
@@ -191,10 +299,14 @@ export function rankByRecord<T extends { playbook: string }>(
   const scored = candidates.map((c) => {
     const entry = record.entries.find((e) => e.playbook === c.playbook);
     const here = entry?.byRegime[regime];
-    if (here && here.decided >= threshold) {
+    // AMOSTRA E ESTABILIDADE, nesta ordem. Amostra grande sem estabilidade é
+    // um número que ainda está se mexendo — e tratá-lo como medido é o erro que
+    // custou a conclusão de ontem.
+    const estavel = isStableSign(c.playbook, history);
+    if (here && here.decided >= threshold && estavel) {
       return { candidate: c, measuredNet: here.netPerTrade, unknown: false };
     }
-    if (entry && entry.decided >= threshold && entry.netPerTrade != null) {
+    if (entry && entry.decided >= threshold && entry.netPerTrade != null && estavel) {
       return { candidate: c, measuredNet: entry.netPerTrade, unknown: false };
     }
     return { candidate: c, measuredNet: null, unknown: true };

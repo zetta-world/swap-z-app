@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  formatRecord, isStale, rankByRecord, RECORD_STALE_DAYS,
+  formatRecord, isStale, rankByRecord, RECORD_STALE_DAYS, isStableSign, swingPct,
   type PlaybookRecordEntry, type PlaybookRecord,
 } from "@/lib/zion/playbook-record";
 import { NOISE_THRESHOLD } from "@/lib/admin/sample";
@@ -120,6 +120,19 @@ describe("URÐR — obedecer ao que já aconteceu", () => {
     playbook, decided: n, netPerTrade: net,
     byRegime: { RANGING: { decided: n, netPerTrade: net } },
   });
+  /**
+   * Histórico com SINAL ESTÁVEL para os playbooks citados.
+   *
+   * Passou a ser obrigatório em 03/08: amostra acima do limiar deixou de bastar
+   * depois que `pivot_reversion` foi de +0.202% a −0.069% em seis horas com
+   * n=83. Estes testes medem a ORDENAÇÃO, então dão a estabilidade de graça —
+   * o teste de estabilidade em si vive no bloco seguinte.
+   */
+  const estavel = (...nets: Array<[string, number]>) =>
+    [0, 1, 2].map((k) => ({
+      measuredAt: `2026-08-0${3 - k}T12:00:00Z`, windowDays: 32,
+      byPlaybook: Object.fromEntries(nets.map(([pb, v]) => [pb, { decided: 100, netPerTrade: v }])),
+    }));
 
   it("SEM registro, a mesa NÃO opera", () => {
     // Se caísse na ordem declarada viraria um VÖLUNDR com outro nome, e o
@@ -132,7 +145,7 @@ describe("URÐR — obedecer ao que já aconteceu", () => {
     const r = rankByRecord(
       [c("range_reversion"), c("absorption")],
       rec([medido("range_reversion", 0.5), medido("absorption", 3.2)]),
-      "RANGING",
+      "RANGING", undefined, estavel(["range_reversion", 0.5], ["absorption", 3.2]),
     );
     expect(r.map((x) => x.candidate.playbook)).toEqual(["absorption", "range_reversion"]);
   });
@@ -141,7 +154,7 @@ describe("URÐR — obedecer ao que já aconteceu", () => {
     const r = rankByRecord(
       [c("range_reversion"), c("absorption")],
       rec([medido("range_reversion", -1.4), medido("absorption", 2.0)]),
-      "RANGING",
+      "RANGING", undefined, estavel(["range_reversion", -1.4], ["absorption", 2.0]),
     );
     expect(r.map((x) => x.candidate.playbook)).toEqual(["absorption"]);
   });
@@ -173,11 +186,28 @@ describe("URÐR — obedecer ao que já aconteceu", () => {
     expect(r).toEqual([]);
   });
 
-  it("com UMA medição já opera — a evidência parcial ainda diferencia", () => {
+  it("uma medição SOZINHA não basta — foi o erro de 03/08", () => {
+    // ⚠️ ESTE TESTE AFIRMAVA O CONTRÁRIO ATÉ HOJE, e o contrário estava errado.
+    //
+    // "Com uma medição já opera" parecia razoável: a evidência parcial ainda
+    // diferencia. Só que uma medição não distingue evidência de oscilação —
+    // `pivot_reversion` mediu +0.202% com n=83 às 13:24 e −0.069% às 19:45.
+    //
+    // Sem histórico, tudo é DESCONHECIDO, e a mesa fica de fora. É a mesma
+    // disciplina de "sem registro não opera", um degrau acima.
     const r = rankByRecord(
       [c("range_reversion"), c("absorption")],
       rec([medido("absorption", 2.0)]),
       "RANGING",
+    );
+    expect(r).toEqual([]);
+  });
+
+  it("com histórico ESTÁVEL, a mesma medição passa a valer", () => {
+    const r = rankByRecord(
+      [c("range_reversion"), c("absorption")],
+      rec([medido("absorption", 2.0)]),
+      "RANGING", undefined, estavel(["absorption", 2.0]),
     );
     expect(r.length).toBe(2);
     expect(r[0].candidate.playbook).toBe("absorption");
@@ -189,7 +219,7 @@ describe("URÐR — obedecer ao que já aconteceu", () => {
     const r = rankByRecord(
       [c("range_reversion"), c("absorption"), c("pivot_reversion")],
       rec([medido("absorption", 2.0)]),
-      "RANGING",
+      "RANGING", undefined, estavel(["absorption", 2.0]),
     );
     expect(r.map((x) => x.candidate.playbook)).toEqual(["absorption", "range_reversion", "pivot_reversion"]);
     expect(r[1].unknown).toBe(true);
@@ -205,8 +235,12 @@ describe("URÐR — obedecer ao que já aconteceu", () => {
         medido("range_reversion", 2.0),
         { playbook: "absorption", decided: 3, netPerTrade: 9.9, byRegime: {} },
       ]),
-      "RANGING",
+      "RANGING", undefined, estavel(["range_reversion", 2.0], ["absorption", 9.9]),
     );
+    // Repare: o histórico do `absorption` é ESTÁVEL e ainda assim ele sai como
+    // desconhecido. Estabilidade não substitui amostra — as duas condições são
+    // exigidas juntas, e é isso que impede "consistentemente medido em 3 trades"
+    // de virar evidência.
     const raso = r.find((x) => x.candidate.playbook === "absorption")!;
     expect(raso.unknown).toBe(true);
     expect(raso.measuredNet).toBeNull();
@@ -225,5 +259,80 @@ describe("URÐR — obedecer ao que já aconteceu", () => {
       "TRENDING_DOWN",
     );
     expect(r).toEqual([]);   // −2% no regime atual → excluída
+  });
+});
+
+/**
+ * O NÚMERO QUE AINDA NÃO PAROU DE SE MEXER.
+ *
+ * 03/08, 13:24 — o backtest devolveu `pivot_reversion` com n=83 e +0.202%: o
+ * primeiro playbook positivo da biblioteca, amostra bem acima do limiar de 30,
+ * regime coerente (100% em lateral).
+ *
+ * 03/08, 19:45 — o MESMO backtest, na mesma janela de 174 dias rolando, devolveu
+ * n=92 e −0.069%. Os nove trades novos mediam −2.568% cada.
+ *
+ * Nove observações, menos de 10% da amostra, inverteram o veredito. A URÐR
+ * estava a um candidato de apostar naquele +0.202% com a bênção de um
+ * "histórico medido".
+ *
+ * Amostra grande com sinal instável é a combinação mais perigosa deste
+ * laboratório: é a única que atravessa todos os filtros de tamanho.
+ */
+describe("estabilidade do sinal — amostra grande não basta", () => {
+  const snap = (at: string, net: number, decided = 90) => ({
+    measuredAt: at, windowDays: 174,
+    byPlaybook: { pivot_reversion: { decided, netPerTrade: net } },
+  });
+
+  it("o caso real: +0.202% virando −0.069% NÃO é estável", () => {
+    expect(isStableSign("pivot_reversion", [
+      snap("2026-08-03T19:45:00Z", -0.069, 92),
+      snap("2026-08-03T13:24:00Z", 0.202, 83),
+      snap("2026-08-02T13:00:00Z", -0.230, 143),
+    ])).toBe(false);
+  });
+
+  it("sinal consistente em três rodadas é estável", () => {
+    expect(isStableSign("pivot_reversion", [
+      snap("2026-08-03T19:45:00Z", 0.31), snap("2026-08-03T13:24:00Z", 0.22), snap("2026-08-02T13:00:00Z", 0.18),
+    ])).toBe(true);
+  });
+
+  it("negativo consistente também é estável — estabilidade não é sinônimo de bom", () => {
+    // Um playbook consistentemente ruim É uma conclusão, e das úteis: dá para
+    // parar de tentá-lo. Confundir estável com positivo perderia isso.
+    expect(isStableSign("pivot_reversion", [
+      snap("c", -1.2), snap("b", -1.4), snap("a", -1.1),
+    ])).toBe(true);
+  });
+
+  it("UMA rodada não é estabilidade — ausência de evidência não vira evidência", () => {
+    expect(isStableSign("pivot_reversion", [snap("a", 0.5)])).toBe(false);
+    expect(isStableSign("pivot_reversion", [])).toBe(false);
+  });
+
+  it("mede o tamanho do balanço entre rodadas", () => {
+    const h = [snap("c", -0.069), snap("b", 0.202), snap("a", -0.230)];
+    expect(swingPct("pivot_reversion", h)).toBeCloseTo(0.432, 3);
+  });
+
+  it("a URÐR NÃO opera um número instável, por maior que seja a amostra", () => {
+    // 92 trades, muito acima do limiar de 30, positivo na última medição — e
+    // ainda assim recusado, porque o sinal trocou. Este teste é o que impede o
+    // erro de ontem de virar dinheiro amanhã.
+    const record = {
+      entries: [{ playbook: "pivot_reversion", decided: 92, netPerTrade: 0.202,
+                  byRegime: { RANGING: { decided: 92, netPerTrade: 0.202 } } }],
+      windowDays: 174, measuredAt: new Date().toISOString(),
+    };
+    const instavel = [snap("c", -0.069), snap("b", 0.202), snap("a", -0.230)];
+    const candidatos = [{ playbook: "pivot_reversion" as const }];
+
+    expect(rankByRecord(candidatos, record, "RANGING", 30, instavel)).toEqual([]);
+
+    // O mesmo registro, com histórico estável, É operado.
+    const estavel = [snap("c", 0.31), snap("b", 0.22), snap("a", 0.18)];
+    expect(rankByRecord(candidatos, record, "RANGING", 30, estavel)).toHaveLength(1);
   });
 });

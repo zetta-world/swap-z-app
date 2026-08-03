@@ -165,6 +165,29 @@ export interface ArbiterResult { detected: number; booked: number; skipped: stri
 
 /** Runtime toggle from admin_kv (true/false). Best-effort — false on any
  *  hiccup so a KV blip never turns a feature silently on. */
+/**
+ * Este aviso já foi dado na última hora?
+ *
+ * Guarda o instante em `admin_kv` e devolve `true` no máximo uma vez por
+ * janela. Falha ABERTA (anuncia) quando o KV não responde: perder um aviso é
+ * pior que repeti-lo, e o caso de erro não pode virar silêncio.
+ */
+export async function deveAnunciar(
+  db: NonNullable<ReturnType<typeof getSupabaseAdmin>>, chave: string, minutos = 60,
+): Promise<boolean> {
+  const k = `announce:${chave}`;
+  try {
+    const { data } = await db.from("admin_kv").select("value").eq("key", k).maybeSingle();
+    const ultimo = data?.value ? Date.parse(String(data.value)) : 0;
+    if (Number.isFinite(ultimo) && Date.now() - ultimo < minutos * 60_000) return false;
+    await db.from("admin_kv").upsert(
+      { key: k, value: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+    return true;
+  } catch { return true; }
+}
+
 async function kvFlag(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>, key: string): Promise<boolean> {
   try {
     const { data } = await db.from("admin_kv").select("value").eq("key", key).maybeSingle();
@@ -224,8 +247,19 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
    * A janela vazia é uma AFIRMAÇÃO: o único spread que pagaria o custo é
    * grande demais para ser real. Ela é a conclusão da auditoria, não um bug.
    */
+  /**
+   * ⚠️ UMA VEZ POR HORA, NÃO POR TICK (03/08).
+   *
+   * A primeira versão anunciava a janela vazia a cada tick, em cada mesa: 2.266
+   * eventos em poucas horas. A intenção estava certa — mesa que para tem que
+   * dizer que parou — e a execução transformou a informação em ruído, que é o
+   * mesmo que silêncio com custo de armazenamento.
+   *
+   * O estado "janela vazia" não muda de minuto em minuto. Anunciar de hora em
+   * hora preserva o sinal e devolve o feed de eventos a quem precisa dele.
+   */
   const janela = spreadWindow();
-  if (janela.empty) {
+  if (janela.empty && await deveAnunciar(db, "arb_window_empty")) {
     recordEvent("arb_window_empty", { meta: {
       floor_pct: Math.round(janela.floorPct * 100) / 100,
       ceil_pct: Math.round(janela.ceilPct * 100) / 100,

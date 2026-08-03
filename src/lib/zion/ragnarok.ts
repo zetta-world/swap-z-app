@@ -24,7 +24,7 @@ import { selectPlaybook, isPlan, type StrategyDecision, type StrategyPlan } from
 import { buildLongBracket } from "@/lib/zion/bracket";
 import { runStrategistAi, STRAT_AI } from "@/lib/zion/strategist-ai";
 import { candidateAttempts } from "@/lib/zion/playbooks";
-import { loadPlaybookRecord, rankByRecord, isStale } from "@/lib/zion/playbook-record";
+import { loadPlaybookRecord, loadHistory, rankByRecord, isStale } from "@/lib/zion/playbook-record";
 
 /** A mesa mecânica — determinística, zero-LLM. É o CONTROLE do experimento. */
 export const STRAT_MECH = "strat_mech";
@@ -238,6 +238,10 @@ export async function runRecordScan(indicators: SymbolIndicators[]): Promise<Rag
   const out: RagnarokRecordRun = { offered: 0, taken: 0, logged: 0, vetoedByRecord: 0, hadRecord: false };
 
   let record = await loadPlaybookRecord();
+  // O HISTÓRICO, não só a última medição. Sem ele a URÐR teria operado o
+  // `pivot_reversion` a +0.202% às 13:24 de 03/08 — número que às 19:45, na
+  // mesma janela rolada por seis horas, já era −0.069%.
+  const history = await loadHistory();
   if (record && isStale(record, Date.now())) record = null;
   if (!record) {
     out.reason = "sem histórico medido — rode o backtest por playbook primeiro";
@@ -253,7 +257,7 @@ export async function runRecordScan(indicators: SymbolIndicators[]): Promise<Rag
     if (candidates.length === 0) continue;
     out.offered++;
 
-    const ranked = rankByRecord(candidates, record, ind.regime);
+    const ranked = rankByRecord(candidates, record, ind.regime, undefined, history);
     // Lista vazia = TODOS os candidatos mediram negativo neste regime. Ficar de
     // fora É a decisão, e é a disciplina que a evidência compra: o VÖLUNDR
     // tomaria o primeiro da lista de qualquer jeito.

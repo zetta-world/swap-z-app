@@ -19,7 +19,7 @@
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
-import { findArbs, spreadWindow, gateOrderbook } from "@/lib/zion/arbiter";
+import { findArbs, spreadWindow, gateOrderbook, deveAnunciar } from "@/lib/zion/arbiter";
 import { recordEvent } from "@/lib/admin/track";
 
 // Full-cycle cost: spot taker in/out (~0.2%) + perp taker in/out (~0.11%) +
@@ -294,7 +294,10 @@ export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbi
   // e a mesa fazer outra.
   const janela = spreadWindow(COST_PCT, MIN_NET_PCT);
   const all = findArbs(matrix, COST_PCT, MIN_NET_PCT);
-  if (janela.empty && (openPos ?? []).length === 0) {
+  // Mesma regra da mesa spot: uma vez por hora, não por tick. A `source` entra
+  // na chave para que as três mesas não calem umas às outras.
+  if (janela.empty && (openPos ?? []).length === 0
+      && await deveAnunciar(db, `arb2_window_empty:${profile.source}`)) {
     // Só anuncia quando não há mais nada em aberto: enquanto houver ciclo vivo,
     // a mesa ainda tem trabalho e "parada" seria mentira.
     recordEvent("arb2_window_empty", { meta: {
