@@ -208,6 +208,9 @@ export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbi
    * o não-arquivado") escrita em N lugares, e o lugar esquecido é justamente o
    * que credita dinheiro.
    */
+  // leitura-limitada: as abertas de UMA carteira, e o capital limita quantas
+  // existem ao mesmo tempo (margem por ciclo × posições ≤ $300). Dezenas, não
+  // milhares.
   const { data: openPos } = await db.from("paper_positions")
     .select("id, symbol, entry_price, target_price, cost_usd, exit_reason, opened_at")
     .eq("account_id", acc.id).eq("status", "open").is("archived_at", null);
@@ -305,6 +308,11 @@ export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbi
   const openSymbols = new Set((openPos ?? []).map((p) => p.symbol));
 
   const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+  // leitura-limitada: UM dia de UMA carteira. O teto diário da própria mesa
+  // (DAILY_CAP) mantém isto na casa das centenas de linhas — bem abaixo do
+  // corte do PostgREST — e o número serve justamente para fazer o teto valer.
+  // inclui-arquivadas: o teto conta o que foi ABERTO hoje. Arquivar uma posição
+  // tira ela da medição, não desfaz o fato de a mesa ter operado.
   const { data: today } = await db.from("paper_positions")
     .select("symbol, opened_at").eq("account_id", acc.id).gte("opened_at", dayStart.toISOString());
   const cooldownCut = nowMs - COOLDOWN_MIN * 60_000;

@@ -223,6 +223,12 @@ export async function openPaperPositions(): Promise<number> {
   if (!accounts?.length) return 0;
   const accBySource = new Map<string, PaperAccount>(accounts.map((a) => [a.source, a as PaperAccount]));
 
+  // leitura-limitada: as 500 sugestões abertas MAIS ANTIGAS por tick. É um
+  // recorte deliberado — a fila é processada por ordem de chegada e o que
+  // sobrar entra no tick seguinte, então nada é perdido, só adiado. O teto
+  // existe para o tick caber no tempo do cron.
+  // inclui-arquivadas: `status = open` já exclui o que foi resolvido; sugestão
+  // arquivada com status aberto não existe (o arquivamento fecha antes).
   const { data: sugg } = await db.from("zion_suggestions")
     .select("id, symbol, side, target_price, stop_price, probability, horizon_hours, source, status, created_at, chain, pool_address")
     .in("source", PAPER_SOURCES as unknown as string[])
@@ -246,7 +252,12 @@ export async function openPaperPositions(): Promise<number> {
   // inteiro, levando junto as posições novas e legítimas. Daí as amostras
   // minúsculas. A segunda metade do estrago está no débito, logo abaixo.
   const held = await selectAllRows<{ account_id: string; suggestion_id: string }>(
-    (from, to) => db.from("paper_positions").select("account_id, suggestion_id").range(from, to),
+    // inclui-arquivadas: o dedup protege a chave UNIQUE (account, suggestion),
+    // que não conhece arquivamento. Filtrar aqui faria a mesa TENTAR reabrir
+    // uma posição arquivada; o upsert ignoraria em silêncio e o trabalho seria
+    // desperdiçado a cada tick, para sempre.
+    (from, to) => db.from("paper_positions").select("account_id, suggestion_id")
+      .order("id", { ascending: true }).range(from, to),
   );
   const taken = new Set(held.map((h) => `${h.account_id}:${h.suggestion_id}`));
 
@@ -357,10 +368,21 @@ export async function resolvePaperPositions(): Promise<number> {
   // exatamente o que aconteceu com o Arbiter 2.0 no minuto seguinte ao
   // zeramento. Todo leitor do ledger filtra arquivadas; os que creditam dinheiro
   // são os que menos podem esquecer.
-  const { data: openFull } = await db.from("paper_positions")
+  // ⚠️ PAGINADO. Truncar AQUI é o pior caso possível: a posição que ficar de
+  // fora nunca é resolvida, fica aberta para sempre, e o capital dela some do
+  // caixa disponível sem virar resultado nenhum. `.limit(1000)` dava a
+  // impressão de teto — e o teto do PostgREST é o mesmo 1.000, então o limite
+  // nunca chegava a valer.
+  const openFull = await selectAllRows<{
+    id: string; account_id: string; symbol: string; side: string;
+    entry_price: number; cost_usd: number; target_price: number | null;
+    stop_price: number | null; horizon_hours: number; opened_at: string;
+    chain: string | null; pool_address: string | null;
+  }>((from, to) => db.from("paper_positions")
     .select("id, account_id, symbol, side, entry_price, cost_usd, target_price, stop_price, horizon_hours, opened_at, chain, pool_address")
-    .eq("status", "open").neq("source", "arbiter2").is("archived_at", null).limit(1000);
-  if (!openFull?.length) return 0;
+    .eq("status", "open").neq("source", "arbiter2").is("archived_at", null)
+    .order("id", { ascending: true }).range(from, to));
+  if (!openFull.length) return 0;
   // Mesma separação da abertura: pool tem preço próprio, símbolo tem o do
   // Gate.io. A chave é o pool — dois pools do mesmo token são preços distintos.
   const cexPos = openFull.filter((p) => !(p.chain && p.pool_address));

@@ -280,6 +280,11 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
 
   // Gates: per-symbol cooldown + daily cap (both from today's book — one query).
   const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+  // leitura-limitada: UM dia de UMA carteira. O teto diário da própria mesa
+  // (DAILY_CAP) mantém isto na casa das centenas de linhas — bem abaixo do
+  // corte do PostgREST — e o número serve justamente para fazer o teto valer.
+  // inclui-arquivadas: o teto conta o que foi ABERTO hoje. Arquivar uma posição
+  // tira ela da medição, não desfaz o fato de a mesa ter operado.
   const { data: recent } = await db.from("paper_positions")
     .select("symbol, opened_at").eq("account_id", acc.id)
     .gte("opened_at", dayStart.toISOString());

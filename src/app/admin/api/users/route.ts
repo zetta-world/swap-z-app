@@ -81,6 +81,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     db.from("operations").select("wallet_address, volume_usd, pnl_usd, created_at").not("wallet_address", "is", null).order("created_at", { ascending: false }).limit(5000),
     db.from("tier_cache").select("wallet_address, tier"),
     db.from("users").select("wallet_address, created_at"),
+    // leitura-limitada: amostra de carteiras vistas em page_view, para cruzar
+    // com tier na tela. Não é a contagem oficial de usuários.
     db.from("platform_events").select("wallet_address").eq("event_type", "page_view").not("wallet_address", "is", null).limit(5000),
     db.from("autopilot_sessions").select("wallet_address, is_active"),
   ]);

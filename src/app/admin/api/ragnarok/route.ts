@@ -74,8 +74,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // contra VÖLUNDR — com os dois números batendo e ninguém desconfiando.
   const since24h = new Date(Date.now() - 86_400_000).toISOString();
   const [{ data: positions }, { data: accounts }, { data: aiTicks }] = await Promise.all([
+    // leitura-limitada: a curva das mesas do Ragnarök na tela. O veredito que
+    // DECIDE (corte, campeão) vive em `cull.ts` e lê paginado.
     db.from("paper_positions").select("source, pnl_usd, pnl_pct, status, closed_at").in("source", SOURCES).is("archived_at", null).limit(5000),
     db.from("paper_accounts").select("source, starting_usd, cash_usd, realized_pnl_usd, wins, losses").in("source", SOURCES),
+    // leitura-limitada: os últimos 500 ticks de 24h — mais que suficiente para
+    // a taxa de acerto do cérebro na tela (o cron roda 48× por dia).
     db.from("platform_events").select("metadata, created_at").eq("event_type", "strat_ai_tick")
       .gte("created_at", since24h).order("created_at", { ascending: false }).limit(500),
   ]);

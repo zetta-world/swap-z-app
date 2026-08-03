@@ -48,6 +48,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (since) q = q.gte("created_at", since);
     return q;
   });
+  // leitura-limitada: as 40 sugestões mais recentes para a lista da tela. As
+  // métricas agregadas do painel vêm de outra consulta, não desta.
   let recentQ = db.from("zion_suggestions")
     .select("symbol, side, status, outcome_pct, probability, regime, created_at")
     .is("archived_at", null)

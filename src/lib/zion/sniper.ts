@@ -175,6 +175,10 @@ export async function runSniperScan(marketData: MarketIndicatorsResult, triggers
   // Per-symbol cooldown (auditoria 25/07: two ARB shots the same day). One
   // trigger, one shot — re-firing inside the window is chasing, not sniping.
   const cooldownCut = new Date(Date.now() - COOLDOWN_H * 3_600_000).toISOString();
+  // leitura-limitada: a janela de cooldown de UMA mesa — minutos, não meses.
+  // O teto de disparos do sniper mantém isto na casa das dezenas.
+  // inclui-arquivadas: o cooldown conta o que foi DISPARADO; arquivar tira da
+  // medição, não desfaz o disparo.
   const { data: recentShots } = await db.from("zion_suggestions")
     .select("symbol").eq("source", "sniper").gte("created_at", cooldownCut);
   const cooling = new Set((recentShots ?? []).map((r) => r.symbol));

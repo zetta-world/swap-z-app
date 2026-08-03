@@ -115,10 +115,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // Paper wallets (Gate.io sim) — realized equity curve per source, shown beside
   // the flywheel curve once a wallet has matured (enough closed positions).
+  // leitura-limitada: o torneio mostra a curva das mesas na tela. O ranking
+  // que DECIDE corte de agente vive em `cull.ts`, que lê paginado.
   const paperClosedQ = db.from("paper_positions").select("source, pnl_usd, pnl_pct, closed_at").eq("status", "closed").is("archived_at", null).order("closed_at", { ascending: true }).limit(5000);
   const [{ data: paperClosedRows }, { data: paperAccts }, { data: deskOpenRows }] = await Promise.all([
     since ? paperClosedQ.gte("closed_at", since) : paperClosedQ,
     db.from("paper_accounts").select("source, starting_usd"),
+    // leitura-limitada: só a contagem de abertas por mesa para o rodapé.
+    // inclui-arquivadas: irrelevante aqui — uma posição arquivada E aberta não
+    // deveria existir, e se existir, aparecer no contador é o comportamento
+    // desejado (é sintoma, não ruído).
     db.from("paper_positions").select("source").eq("status", "open").in("source", DESK_LIST.filter((d) => d.direction === "market_neutral").map((d) => d.source)),
   ]);
   const startingBy = new Map<string, number>((paperAccts ?? []).map((a) => [a.source, Number(a.starting_usd) || 1000]));

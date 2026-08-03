@@ -29,6 +29,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const hours = Number.isFinite(rawHours) && rawHours > 0 && rawHours <= 720 ? rawHours : 24;
   const since = new Date(Date.now() - hours * 3_600_000).toISOString();
 
+  // leitura-limitada: janela recente do guarda de swap, para a tela. Um
+  // incidente antigo não muda a decisão de agora.
   const { data } = await db.from("platform_events")
     .select("metadata, created_at")
     .eq("event_type", "swap_guard")

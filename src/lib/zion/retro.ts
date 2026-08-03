@@ -162,6 +162,9 @@ export async function runRetroSweep(): Promise<RetroResult> {
   if (!db) return none;
 
   // Decided counts per source (live round), for the LLM agents only.
+  // leitura-limitada: o Auto-Retro reflete sobre as decisões RECENTES; a
+  // ordenação por `resolved_at` desc garante que o recorte pega as últimas, e
+  // uma lição tirada de trade de três meses atrás descreve outro mercado.
   const { data: decided } = await db.from("zion_suggestions")
     .select("source, status, outcome_pct, symbol, side, entry_price, target_price, stop_price, regime, created_at, resolved_at")
     .is("archived_at", null)

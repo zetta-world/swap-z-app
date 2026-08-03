@@ -19,6 +19,7 @@ import { openaiCompatChat } from "@/lib/ai/provider";
 import { configuredProviders, type ProviderConfig } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
 import { recordEvent, logError } from "@/lib/admin/track";
 import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
 import { extractCards, extractSuggestion } from "@/lib/zion/backtest";
@@ -146,10 +147,16 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
   // symbol locks: post-stop cooldown, one-thesis-per-symbol-per-model,
   // desk-wide concentration cap.
   const since = new Date(Date.now() - STOP_COOLDOWN_D * 86_400_000).toISOString();
-  const { data: histRows } = await db.from("zion_suggestions")
-    .select("source, symbol, side, status, outcome_pct, created_at, resolved_at")
-    .like("source", "oracle%")
-    .or(`status.eq.open,resolved_at.gte.${since}`);
+  // ⚠️ PAGINADO: alimenta o retrato que o Oráculo lê antes de decidir. Truncado,
+  // ele decide com metade da própria história e não tem como saber disso.
+  // inclui-arquivadas: o histórico de acerto da mesa É o dado; filtrar
+  // arquivadas apagaria justamente as rodadas antigas que dão base à conta.
+  const histRows = await selectAllRows<{ source: string; symbol: string; side: string; status: string; outcome_pct: number | null; created_at: string; resolved_at: string | null }>(
+    (from, to) => db.from("zion_suggestions")
+      .select("source, symbol, side, status, outcome_pct, created_at, resolved_at")
+      .like("source", "oracle%")
+      .or(`status.eq.open,resolved_at.gte.${since}`)
+      .order("id", { ascending: true }).range(from, to));
   const openBy = new Map<string, number>();
   const ownOpenBy = new Map<string, Set<string>>();
   const deskOpenBySym = new Map<string, number>();
