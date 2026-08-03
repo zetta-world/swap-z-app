@@ -292,6 +292,41 @@ export function realismBySymbol(
     .sort((x, y) => x.avgSlippagePct - y.avgSlippagePct);
 }
 
+/**
+ * OS SÍMBOLOS QUE O LIVRO JÁ CONDENOU — derivados, não digitados.
+ *
+ * O dono pediu: "se a MANA é tão ruim, mata ela da leitura". Está certo, e a
+ * evidência é forte: 2.122 medições de profundidade, ZERO positivas, slippage
+ * médio de 1.255% — o pior da lista inteira. E era o símbolo MAIS operado das
+ * mesas, 298 ciclos.
+ *
+ * Mas matar "a MANA" à mão erraria o alvo por baixo. O problema não é aquele
+ * ticker: é a CLASSE dele. RUNE (1.134%), SAND (0.874%), IMX (0.865%) têm a
+ * mesma doença e zero positivas também. Uma lista escrita à mão pegaria a que
+ * incomodou e deixaria as três irmãs, e envelheceria no dia em que uma quarta
+ * aparecesse.
+ *
+ * Então a lista sai da MEDIÇÃO: símbolo com amostra suficiente cujo slippage
+ * médio come mais que o spread que a mesa exige nunca será operável — o livro
+ * cobra mais caro que a oportunidade paga, por definição.
+ *
+ * Um símbolo sai da lista sozinho se o livro dele melhorar. Nenhum humano
+ * precisa lembrar de revisar.
+ */
+export function deriveThinBookDenylist(
+  rows: Array<{ symbol: string; realisticNet: number; slippage: number }>,
+  floorPct: number,
+  minSamples = 30,
+): Array<{ symbol: string; samples: number; avgSlippagePct: number; positives: number }> {
+  return realismBySymbol(rows, floorPct)
+    .filter((s) => s.samples >= minSamples && s.avgSlippagePct > floorPct)
+    .map((s) => ({
+      symbol: s.symbol, samples: s.samples,
+      avgSlippagePct: s.avgSlippagePct, positives: s.positive,
+    }))
+    .sort((a, b) => b.avgSlippagePct - a.avgSlippagePct);
+}
+
 /** Todas as marcas de uma coorte, pior primeiro. */
 export function auditCohort(
   desks: CohortDesk[], legs: Leg[], minSpreadPct: number, gatePct: number, liquidations: number,

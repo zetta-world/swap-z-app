@@ -19,7 +19,7 @@
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
-import { findArbs, spreadWindow, gateOrderbook, deveAnunciar } from "@/lib/zion/arbiter";
+import { findArbs, spreadWindow, gateOrderbook, deveAnunciar, thinBookSymbols } from "@/lib/zion/arbiter";
 import { recordEvent } from "@/lib/admin/track";
 
 // Full-cycle cost: spot taker in/out (~0.2%) + perp taker in/out (~0.11%) +
@@ -293,6 +293,9 @@ export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbi
   // com o da mesa spot. Herdar o número do vizinho faria a tela dizer uma coisa
   // e a mesa fazer outra.
   const janela = spreadWindow(COST_PCT, MIN_NET_PCT);
+  // Fora os que o livro já condenou: spread grande em livro fino não é
+  // oportunidade, é o próprio sintoma da iliquidez que impede executá-lo.
+  for (const s of await thinBookSymbols(db)) matrix.delete(s);
   const all = findArbs(matrix, COST_PCT, MIN_NET_PCT);
   // Mesma regra da mesa spot: uma vez por hora, não por tick. A `source` entra
   // na chave para que as três mesas não calem umas às outras.

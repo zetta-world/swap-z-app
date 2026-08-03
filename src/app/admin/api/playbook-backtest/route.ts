@@ -114,6 +114,7 @@ export async function POST(): Promise<NextResponse> {
       netPerTrade: s.netPerTrade, byRegime: s.byRegime,
     })),
     windowDays,
+    marketPct,
     measuredAt: new Date().toISOString(),
   });
 

@@ -56,6 +56,8 @@ export interface PlaybookRecordEntry {
 }
 
 export interface PlaybookRecord {
+  /** O comprar-e-segurar mediano da janela — o denominador do veredito. */
+  marketPct?: number | null;
   entries: PlaybookRecordEntry[];
   /** Janela testada, em dias. Vai junto porque um número sem janela mente. */
   windowDays: number;
@@ -122,6 +124,14 @@ const HISTORY_MAX = 12;
 export interface RecordSnapshot {
   measuredAt: string;
   windowDays: number;
+  /**
+   * O que o MERCADO fez na mesma janela (mediana de comprar-e-segurar).
+   *
+   * Sem isto guardado, "estamos perdendo num mercado bom" é uma impressão. Com
+   * ele, é uma conta: a expectância da biblioteca ao lado do que bastaria fazer
+   * sem estratégia nenhuma.
+   */
+  marketPct?: number | null;
   /** playbook → { decided, netPerTrade } no instante da medição. */
   byPlaybook: Record<string, { decided: number; netPerTrade: number | null }>;
 }
@@ -142,6 +152,7 @@ export async function savePlaybookRecord(record: PlaybookRecord): Promise<boolea
     const anterior = await loadHistory();
     const snap: RecordSnapshot = {
       measuredAt: record.measuredAt, windowDays: record.windowDays,
+      marketPct: record.marketPct ?? null,
       byPlaybook: Object.fromEntries(record.entries.map((e) => [
         e.playbook, { decided: e.decided, netPerTrade: e.netPerTrade },
       ])),
