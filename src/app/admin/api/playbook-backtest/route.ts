@@ -70,6 +70,21 @@ export async function POST(req: Request): Promise<NextResponse> {
   const backDays = Math.max(0, Number(new URL(req.url).searchParams.get("backDays") ?? 0));
   const endAtMs = backDays > 0 ? Date.now() - backDays * 86_400_000 : undefined;
 
+  /**
+   * A REFERÊNCIA DO MAR: o diário do BTC na mesma janela.
+   *
+   * Buscado UMA vez e passado a todos os símbolos — o clima é propriedade do
+   * mercado, não do peixe. Sem ele o backtest marca tudo como "misto", que é a
+   * resposta honesta para "não medi".
+   *
+   * O BTC não é o mercado inteiro (na janela de 12 meses ele subiu 20% enquanto
+   * OP caía 33%), e por isso ele serve de REFERÊNCIA e não de veredito: o filtro
+   * ao vivo usa amplitude cross-símbolo, que é mais fiel. Aqui vale a
+   * aproximação porque a alternativa seria recalcular amplitude a cada barra de
+   * cada símbolo, e o teto da rota é 60s.
+   */
+  const marketRef = await fetchTimedCandles("BTC", "1d", 400, 3600, endAtMs);
+
   const results = await Promise.all(SYMBOLS.map(async (symbol) => {
     const [c1h, c4h, c1d, c1w] = await Promise.all([
       fetchTimedCandles(symbol, "1h", BARS_1H, 3600, endAtMs),
@@ -79,7 +94,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     ]);
     if (c1h.length < WARMUP_BARS + 20) return null;
     try {
-      return backtestPlaybooks(symbol, c1h, c4h, c1d, c1w);
+      return backtestPlaybooks(symbol, c1h, c4h, c1d, c1w, undefined, marketRef);
     } catch { return null; }
   }));
 

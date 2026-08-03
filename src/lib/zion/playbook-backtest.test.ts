@@ -253,7 +253,7 @@ describe("diagnóstico — por que o número é o que é", () => {
   const t = (over: Partial<Outcome> = {}): Outcome => ({
     regime: "RANGING", netPct: 0, reason: "expired", win: false,
     mfePct: 0, maePct: 0, targetPct: 4, stopPct: 2, plannedRr: 2, straddled: false,
-    inverseNetPct: 0, inverseReason: "expired", ...over,
+    inverseNetPct: 0, inverseReason: "expired", weather: "misto", ...over,
   });
 
   it("RR realizado é o que o mercado PAGOU, não o que o bracket prometeu", () => {

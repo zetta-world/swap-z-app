@@ -25,6 +25,7 @@ import { buildLongBracket } from "@/lib/zion/bracket";
 import { runStrategistAi, STRAT_AI } from "@/lib/zion/strategist-ai";
 import { candidateAttempts } from "@/lib/zion/playbooks";
 import { loadPlaybookRecord, loadHistory, rankByRecord, isStale } from "@/lib/zion/playbook-record";
+import { breadth, weatherFromBreadth, shouldTrade, weatherNote, type Weather } from "@/lib/zion/weather";
 
 /** A mesa mecânica — determinística, zero-LLM. É o CONTROLE do experimento. */
 export const STRAT_MECH = "strat_mech";
@@ -50,11 +51,56 @@ export interface RagnarokRun {
  * os planos no ledger. Best-effort: uma falha de DB nunca derruba o tick do
  * cron (mesma regra do resto do flywheel).
  */
+/**
+ * O CLIMA a partir dos símbolos que a mesa acabou de analisar.
+ *
+ * Amplitude, não referência única: na janela de 12 meses o BTC subiu 20%
+ * enquanto OP caía 33%. Uma referência só teria declarado aquele mercado
+ * favorável para TODOS, quando metade estava caindo.
+ */
+export function readWeather(indicators: SymbolIndicators[]): { weather: Weather; breadthPct: number | null } {
+  const acima = indicators
+    .filter((i) => i.price != null && i.ema50 != null)
+    .map((i) => (i.price as number) > (i.ema50 as number));
+  const b = breadth(acima);
+  return { weather: weatherFromBreadth(b), breadthPct: b };
+}
+
 export async function runStrategistScan(
   indicators: SymbolIndicators[],
   source: string = STRAT_MECH,
   horizonOverride?: number,
+  /**
+   * ⚠️ O FILTRO DE REGIME (04/08) — e por que o VÖLUNDR fica FORA dele.
+   *
+   * As três janelas mostraram que a mesma biblioteca rende −0.132%/trade num
+   * mercado neutro e −0.619% num de queda, com três playbooks positivos só na
+   * janela neutra. Nenhum ficou positivo nas DUAS janelas de queda.
+   *
+   * Então em mar contra a mesa fica de fora. Mas alguém precisa continuar
+   * operando SEM o filtro, senão nunca saberemos se ele pagou: um filtro que
+   * silencia todas as mesas produz um laboratório sem grupo de controle e uma
+   * conclusão impossível de verificar.
+   *
+   * O VÖLUNDR é o controle desta comparação, como já era o da seleção de
+   * playbook. As demais obedecem ao clima. Em 30 dias a diferença entre eles É
+   * o valor do filtro — medido, não argumentado.
+   */
+  applyWeatherFilter = false,
 ): Promise<RagnarokRun> {
+  const clima = readWeather(indicators);
+  if (applyWeatherFilter && !shouldTrade(clima.weather)) {
+    recordEvent("weather_standaside", { meta: {
+      source, weather: clima.weather,
+      breadth_pct: clima.breadthPct == null ? null : Math.round(clima.breadthPct * 100),
+      note: weatherNote(clima.weather, clima.breadthPct),
+    } });
+    return {
+      scanned: indicators.length, logged: 0, byPlaybook: {},
+      standAside: indicators.map((i) => ({ symbol: i.symbol, reason: weatherNote(clima.weather, clima.breadthPct) })),
+    };
+  }
+
   const decisions: StrategyDecision[] = indicators.map(selectPlaybook);
   const todos = decisions.filter(isPlan);
 
@@ -282,5 +328,6 @@ export async function runRecordScan(indicators: SymbolIndicators[]): Promise<Rag
 
 /** Tick da mesa intradiária (SKAÐI): mesmos planos, relógio curto. */
 export async function runDayScan(indicators: SymbolIndicators[]): Promise<RagnarokRun> {
-  return runStrategistScan(indicators, STRAT_DAY, DAY_HORIZON_HOURS);
+  // A SKAÐI obedece ao clima; o VÖLUNDR não. É essa diferença que mede o filtro.
+  return runStrategistScan(indicators, STRAT_DAY, DAY_HORIZON_HOURS, true);
 }
