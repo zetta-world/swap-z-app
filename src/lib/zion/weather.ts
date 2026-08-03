@@ -116,23 +116,47 @@ export function weatherFromCandles(candles: Candle[], period = 50): Weather {
 /**
  * A MESA DEVE OPERAR NESTE CLIMA?
  *
- * ⚠️ ESTE É O ÚNICO PONTO DO MÓDULO QUE MUDA COMPORTAMENTO, e ele é deliberadamente
- * tímido.
+ * ⚠️⚠️ A MEDIÇÃO DERRUBOU A HIPÓTESE. O PORTÃO ESTÁ DESLIGADO (04/08).
  *
- * Nas duas janelas de queda medidas, NENHUM playbook ficou positivo com amostra
- * nas duas — o único que apareceu (`support_accumulation`, +0.05%) foi positivo
- * numa e negativo na outra. Não há evidência de que alguma estratégia long-only
- * da biblioteca pague em mercado adverso.
+ * Este módulo nasceu de uma comparação ENTRE janelas: a biblioteca rendia
+ * −0.132%/trade num mercado neutro e −0.619% num de queda, então "não opere em
+ * mar contra" parecia óbvio.
  *
- * Então em clima adverso a mesa fica de fora. Não é pessimismo: é a aplicação
- * da mesma regra que já governa a URÐR — não operar o que não tem evidência de
- * pagar.
+ * O `byWeather` mediu a mesma coisa DENTRO da janela — mesmos símbolos, mesmo
+ * período, só o clima variando — e disse o oposto:
  *
- * Em clima MISTO ela opera. Foi nele que os três positivos apareceram, e barrar
- * o misto seria calar a mesa quase sempre — cripto raramente tem 55% dos majors
- * em alta ao mesmo tempo.
+ *   playbook                 misto            adverso
+ *   pivot_reversion    −0.098% (n=44)   +0.328% (n=43)   ← o maior da amostra
+ *   trend_pullback     −1.754% (n=19)   −0.111% (n=26)
+ *   capitulation       −2.784%  (n=4)   −1.068%  (n=6)
+ *   ...
+ *   PONDERADO          −0.764% (183)    −0.351% (164)
+ *
+ * ADVERSO foi melhor em SETE de nove playbooks, e por margem larga no agregado.
+ * O portão bloquearia exatamente a metade que rende mais.
+ *
+ * POR QUE A PRIMEIRA LEITURA ENGANOU, e a lição vale mais que o resultado:
+ *
+ * Comparar ENTRE janelas muda tudo de uma vez — outros símbolos se movem, a
+ * volatilidade é outra, a dispersão é outra. Atribuí a diferença a UMA variável
+ * porque era a que eu estava olhando. A comparação DENTRO da janela isola de
+ * verdade, e é a única das duas que responde à pergunta.
+ *
+ * ⚠️ E O ESTADO QUE O PORTÃO MAIS LIBERARIA NUNCA FOI TESTADO: "favorável"
+ * apareceu em TRÊS trades no total. Numa janela que caiu 17.5%, o BTC quase
+ * nunca esteve acima de uma média longa em alta. Um portão calibrado num estado
+ * sem amostra é chute com aparência de regra.
+ *
+ * O clima continua sendo MEDIDO e gravado — ele pode significar alguma coisa
+ * numa janela de alta, e aí a resposta virá do `byWeather`, não daqui. O que
+ * não continua é o portão decidindo com base numa hipótese que a medição negou.
+ *
+ * Religar exige `WEATHER_GATE=on` E um `byWeather` que sustente.
  */
+export const WEATHER_GATE_ON = process.env.WEATHER_GATE === "on";
+
 export function shouldTrade(w: Weather): boolean {
+  if (!WEATHER_GATE_ON) return true;
   return w !== "adverso";
 }
 
