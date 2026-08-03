@@ -157,6 +157,32 @@ describe("URÐR — obedecer ao que já aconteceu", () => {
     expect(r).toEqual([]);
   });
 
+  it("TODOS desconhecidos → NÃO opera. Senão vira um VÖLUNDR com outro nome", () => {
+    // O CASO REAL da primeira rodada: os nove playbooks voltaram abaixo do
+    // limiar (o maior tinha n=20). Sem esta trava, URÐR escolheria exatamente
+    // o mesmo que o controle, tick após tick — e dois números batendo
+    // perfeitamente pareceriam confirmação quando seriam tautologia.
+    const r = rankByRecord(
+      [c("range_reversion"), c("absorption")],
+      rec([
+        { playbook: "range_reversion", decided: 20, netPerTrade: -0.4, byRegime: {} },
+        { playbook: "absorption", decided: 3, netPerTrade: 1.31, byRegime: {} },
+      ]),
+      "RANGING",
+    );
+    expect(r).toEqual([]);
+  });
+
+  it("com UMA medição já opera — a evidência parcial ainda diferencia", () => {
+    const r = rankByRecord(
+      [c("range_reversion"), c("absorption")],
+      rec([medido("absorption", 2.0)]),
+      "RANGING",
+    );
+    expect(r.length).toBe(2);
+    expect(r[0].candidate.playbook).toBe("absorption");
+  });
+
   it("DESCONHECIDO não é ruim — entra depois dos medidos, na ordem declarada", () => {
     // Excluir o não-medido o impediria para sempre de acumular amostra, e a
     // mesa nunca aprenderia nada novo.
@@ -171,13 +197,21 @@ describe("URÐR — obedecer ao que já aconteceu", () => {
   });
 
   it("amostra rasa conta como DESCONHECIDO, não como medido", () => {
+    // Acompanhado de um candidato MEDIDO, senão a mesa fica de fora inteira
+    // (regra nova) e não daria para observar a classificação.
     const r = rankByRecord(
-      [c("absorption")],
-      rec([{ playbook: "absorption", decided: 3, netPerTrade: 9.9, byRegime: {} }]),
+      [c("range_reversion"), c("absorption")],
+      rec([
+        medido("range_reversion", 2.0),
+        { playbook: "absorption", decided: 3, netPerTrade: 9.9, byRegime: {} },
+      ]),
       "RANGING",
     );
-    expect(r[0].unknown).toBe(true);
-    expect(r[0].measuredNet).toBeNull();
+    const raso = r.find((x) => x.candidate.playbook === "absorption")!;
+    expect(raso.unknown).toBe(true);
+    expect(raso.measuredNet).toBeNull();
+    // E o 9.9 de três trades JAMAIS ordena à frente do medido de verdade.
+    expect(r[0].candidate.playbook).toBe("range_reversion");
   });
 
   it("o histórico do REGIME manda sobre o geral", () => {

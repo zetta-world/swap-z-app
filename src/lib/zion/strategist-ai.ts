@@ -44,7 +44,7 @@
  */
 
 import { openaiCompatChat } from "@/lib/ai/provider";
-import { roleProvider } from "@/lib/ai/registry";
+import { roleProviderChain } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { recordEvent } from "@/lib/admin/track";
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
@@ -237,6 +237,10 @@ export interface AiScanResult {
    * de trades informados e trades no escuro.
    */
   usedRecord: boolean;
+  /** Qual provedor realmente respondeu. */
+  brainProvider?: string;
+  /** Quem falhou antes dele, quando houve queda para a reserva. */
+  fellBackFrom?: string;
 }
 
 /**
@@ -261,15 +265,16 @@ export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<A
   };
   if (menus.length === 0) return out;
 
-  const provider = roleProvider("brain");
-  if (!provider?.apiKey) {
+  // A CADEIA DE RESERVA: Mistral → DeepSeek → Kimi → Grok.
+  //
+  // Antes isto era UM provedor, e um "Mistral indisponível" custava o tick
+  // inteiro. Não é só um trade perdido: é AMOSTRA perdida de um lado só do
+  // duelo — o VÖLUNDR continua acumulando enquanto o MÍMIR fica para trás, e a
+  // comparação vai ficando torta sem ninguém notar, porque os dois números
+  // continuam existindo e passam a medir janelas diferentes.
+  const chain = roleProviderChain("brain");
+  if (chain.length === 0) {
     out.fallbackReason = "nenhum provedor com chave no papel `brain`";
-    return out;
-  }
-  // Breaker aberto (chave quebrada / endpoint morto): não queima chamada nem
-  // dispara alerta a cada tick.
-  if (await isTripped(provider.id)) {
-    out.fallbackReason = `breaker aberto em ${provider.label}`;
     return out;
   }
 
@@ -289,20 +294,35 @@ export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<A
   ].join("\n");
 
   let choices: AiChoice[] = [];
-  try {
-    const r = await openaiCompatChat(
-      { model: provider.model, system: SYSTEM, user, maxTokens: 1100,
-        timeoutMs: provider.timeoutMs ?? 30_000, temperature: provider.temperature },
-      { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
-    );
-    await recordResult(provider.id, provider.label, true);
-    choices = parseChoices(r.text);
-    out.brainRan = true;
-    out.usedRecord = record !== null;
-    recordEvent("zion_analysis", { meta: { op: "strat_ai", model: r.model, source: STRAT_AI, ...r.usage } });
-  } catch (e) {
-    await recordResult(provider.id, provider.label, false, e instanceof Error ? e.message : String(e));
-    out.fallbackReason = `${provider.label} indisponível`;
+  const tentados: string[] = [];
+  for (const provider of chain) {
+    // Breaker aberto (chave quebrada / endpoint morto): pula sem queimar
+    // chamada e SEGUE para o próximo da fila, em vez de desistir do tick.
+    if (await isTripped(provider.id)) { tentados.push(`${provider.label}(breaker)`); continue; }
+    try {
+      const r = await openaiCompatChat(
+        { model: provider.model, system: SYSTEM, user, maxTokens: 1100,
+          timeoutMs: provider.timeoutMs ?? 30_000, temperature: provider.temperature },
+        { apiKey: provider.apiKey!, baseUrl: provider.baseUrl },
+      );
+      await recordResult(provider.id, provider.label, true);
+      choices = parseChoices(r.text);
+      out.brainRan = true;
+      out.usedRecord = record !== null;
+      out.brainProvider = provider.label;
+      // Quem respondeu fica REGISTRADO. Se a reserva atender com frequência, a
+      // mesa está sendo decidida por um modelo diferente do que o painel
+      // anuncia — e isso muda o que o experimento está medindo.
+      if (tentados.length > 0) out.fellBackFrom = tentados.join(" → ");
+      recordEvent("zion_analysis", { meta: { op: "strat_ai", model: r.model, source: STRAT_AI, provider: provider.id, ...r.usage } });
+      break;
+    } catch (e) {
+      await recordResult(provider.id, provider.label, false, e instanceof Error ? e.message : String(e));
+      tentados.push(provider.label);
+    }
+  }
+  if (!out.brainRan) {
+    out.fallbackReason = `toda a cadeia falhou: ${tentados.join(" → ")}`;
     return out;
   }
 
