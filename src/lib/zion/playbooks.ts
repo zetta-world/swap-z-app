@@ -36,7 +36,8 @@
 
 import type { SymbolIndicators, MarketRegime } from "@/lib/api/market-indicators";
 import {
-  buildLongBracket, atrAbs, floorAwareStop, type ActivePlaybook, type StrategyPlan,
+  buildLongBracket, atrAbs, floorAwareStop, DEFAULT_LIMITS,
+  type ActivePlaybook, type StrategyPlan, type BracketLimits,
 } from "@/lib/zion/bracket";
 
 export interface PlaybookDef {
@@ -66,7 +67,7 @@ export interface PlaybookDef {
    * entender por que a mesa ficou parada. Um `stand_aside` sem motivo é
    * indistinguível de um agente quebrado.
    */
-  plan(ind: SymbolIndicators): StrategyPlan | string;
+  plan(ind: SymbolIndicators, limits?: BracketLimits): StrategyPlan | string;
 }
 
 /**
@@ -115,7 +116,7 @@ const rangeReversion: PlaybookDef = {
   priority: 1,
   thesis: "sem tendência, o preço volta à média: compra no suporte, realiza na resistência",
   failsWhen: "o range quebra — uma tendência nascendo transforma cada compra no suporte em faca caindo",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     const support = ind.supports[0];
@@ -133,6 +134,7 @@ const rangeReversion: PlaybookDef = {
     return buildLongBracket(
       symbol, "range_reversion", price, target, stop, ind.atrPct, 48,
       `lateral (ADX ${ind.adx?.toFixed(0) ?? "?"}) a ${(pos * 100).toFixed(0)}% do canal — compra no suporte`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -152,7 +154,7 @@ const rangeBreakout: PlaybookDef = {
   priority: 2,
   thesis: "rompimento da resistência com volume acima da média projeta a altura da faixa",
   failsWhen: "volume fraco — aí é rompimento falso, e o preço volta pra dentro pegando quem comprou o topo",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     if (vol(ind) < 1.5) return `volume ${vol(ind).toFixed(1)}× — rompimento sem volume é falso`;
@@ -175,6 +177,7 @@ const rangeBreakout: PlaybookDef = {
     return buildLongBracket(
       symbol, "range_breakout", price, target, stop, ind.atrPct, 36,
       `rompendo o topo do canal com volume ${vol(ind).toFixed(1)}× a média — projeção da faixa`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -193,7 +196,7 @@ const pivotReversion: PlaybookDef = {
   priority: 3,
   thesis: "preço no suporte do pivô diário tende a buscar o ponto pivô de volta",
   failsWhen: "dia de tendência forte — aí o preço atravessa S1 e S2 sem olhar para trás",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     const p = ind.pivotLevels;
@@ -208,6 +211,7 @@ const pivotReversion: PlaybookDef = {
     return buildLongBracket(
       symbol, "pivot_reversion", price, target, stop, ind.atrPct, 12,
       `abaixo do pivô diário (${p.pp.toFixed(4)}), acima do S2 — busca a volta ao pivô`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -226,7 +230,7 @@ const trendPullback: PlaybookDef = {
   priority: 1,
   thesis: "em alta, o recuo até a média é o desconto — compra a favor da maré",
   failsWhen: "a tendência está acabando; aí o 'recuo' vira o começo da reversão",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     if (ind.ema20 == null || !(ind.ema20 > 0)) return "sem EMA20";
@@ -247,6 +251,7 @@ const trendPullback: PlaybookDef = {
     return buildLongBracket(
       symbol, "trend_pullback", price, target, stop, ind.atrPct, 72,
       `alta confirmada (ADX ${ind.adx?.toFixed(0) ?? "?"}, ${ind.alignment}) a ${stretchPct.toFixed(1)}% da EMA20 — compra o recuo`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -266,7 +271,7 @@ const trendContinuation: PlaybookDef = {
   priority: 2,
   thesis: "consolidação com volume secando no meio da alta antecede a perna seguinte",
   failsWhen: "o volume some porque o interesse acabou, não porque está descansando",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     if (ind.ema20 == null || ind.ema50 == null) return "sem médias";
@@ -286,6 +291,7 @@ const trendContinuation: PlaybookDef = {
     return buildLongBracket(
       symbol, "trend_continuation", price, target, stop, ind.atrPct, 48,
       `bandeira acima da EMA20 com volume ${vol(ind).toFixed(1)}× (secando) — continuação da perna`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -305,7 +311,7 @@ const breakoutRetest: PlaybookDef = {
   priority: 3,
   thesis: "nível rompido vira suporte; o reteste por cima é a entrada com stop curto",
   failsWhen: "o reteste não segura — aí o rompimento era falso e o nível volta a ser teto",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     const level = ind.supports[0];
@@ -323,6 +329,7 @@ const breakoutRetest: PlaybookDef = {
     return buildLongBracket(
       symbol, "breakout_retest", price, target, stop, ind.atrPct, 48,
       `reteste do nível ${level.toFixed(4)} por cima, fluxo ${ind.obvTrend ?? "?"} — teto virou chão`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -342,7 +349,7 @@ const capitulationReversal: PlaybookDef = {
   priority: 1,
   thesis: "queda com divergência de alta perto do fundo do ciclo: o vendedor ficou sem força",
   failsWhen: "sempre que a queda tinha razão de ser — divergência não é fundo, é sinal de fadiga",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     if (ind.divergence !== "bullish_rsi") return "queda sem divergência de exaustão — faca caindo";
@@ -357,6 +364,7 @@ const capitulationReversal: PlaybookDef = {
     return buildLongBracket(
       symbol, "capitulation_reversal", price, target, stop, ind.atrPct, 96,
       `divergência de alta a ${ind.rangePct.toFixed(0)}% do range de 1 ano — vendedor sem força`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -376,7 +384,7 @@ const divergenceReversal: PlaybookDef = {
   priority: 4,
   thesis: "divergência de alta marca o fim da perna de baixa; alvo é a volta à média",
   failsWhen: "divergência em tendência forte só antecipa uma pausa, não uma virada",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     if (ind.divergence !== "bullish_rsi") return "sem divergência de alta";
@@ -392,6 +400,7 @@ const divergenceReversal: PlaybookDef = {
     return buildLongBracket(
       symbol, "divergence_reversal", price, ind.ema20, stop, ind.atrPct, 36,
       `divergência de alta com RSI virando (${ind.rsiTrajectory.join("→")}) — alvo é a EMA20`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -413,7 +422,7 @@ const absorption: PlaybookDef = {
   priority: 5,
   thesis: "volume alto com preço parado e OBV subindo: comprador absorvendo a oferta",
   failsWhen: "o mesmo desenho aparece na distribuição — se o OBV estiver mentindo, compra-se de quem sai",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     if (vol(ind) < 1.4) return `volume ${vol(ind).toFixed(1)}× — absorção exige volume acima da média`;
@@ -431,6 +440,7 @@ const absorption: PlaybookDef = {
     return buildLongBracket(
       symbol, "absorption", price, target, stop, ind.atrPct, 48,
       `volume ${vol(ind).toFixed(1)}× com OBV subindo e ATR ${ind.atrPct.toFixed(1)}% — absorção`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -447,7 +457,7 @@ const supportAccumulation: PlaybookDef = {
   priority: 6,
   thesis: "preço no suporte com fluxo comprador líquido: acumula antes do movimento",
   failsWhen: "o suporte não é suporte, só o último lugar onde o preço parou de cair",
-  plan(ind) {
+  plan(ind, limits) {
     const { symbol, price } = ind;
     if (price == null || !(price > 0)) return "sem preço";
     if (ind.obvTrend !== "rising") return `fluxo ${ind.obvTrend ?? "desconhecido"} — sem comprador líquido`;
@@ -467,6 +477,7 @@ const supportAccumulation: PlaybookDef = {
     return buildLongBracket(
       symbol, "support_accumulation", price, target, stop, ind.atrPct, 60,
       `a menos de 1 ATR do suporte ${support.toFixed(4)} com OBV subindo — acumulação`,
+      limits,
     ) ?? BRACKET_REJECTED;
   },
 };
@@ -515,12 +526,12 @@ export interface PlaybookAttempt {
  * É desta lista que sai o diagnóstico do painel. Sem ela, uma mesa parada é
  * indistinguível de uma mesa quebrada: as duas simplesmente não produzem trade.
  */
-export function candidateAttempts(ind: SymbolIndicators): PlaybookAttempt[] {
+export function candidateAttempts(ind: SymbolIndicators, limits: BracketLimits = DEFAULT_LIMITS): PlaybookAttempt[] {
   if (ind.price == null || !(ind.price > 0)) {
     return playbooksFor(ind.regime).map((def) => ({ def, plan: null, reason: "sem preço" }));
   }
   return playbooksFor(ind.regime).map((def) => {
-    const r = def.plan(ind);
+    const r = def.plan(ind, limits);
     return typeof r === "string"
       ? { def, plan: null, reason: r }
       : { def, plan: r, reason: null };

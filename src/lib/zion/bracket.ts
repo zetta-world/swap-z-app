@@ -147,9 +147,9 @@ export function targetReachable(
 }
 
 /** Piso de stop para um símbolo: max(ATR% × mult, piso absoluto). */
-export function stopFloorPct(atrPct: number | null): number {
-  const fromAtr = atrPct != null && atrPct > 0 ? atrPct * MIN_STOP_ATR : 0;
-  return Math.max(fromAtr, MIN_STOP_PCT);
+export function stopFloorPct(atrPct: number | null, limits: BracketLimits = DEFAULT_LIMITS): number {
+  const fromAtr = atrPct != null && atrPct > 0 ? atrPct * limits.minStopAtr : 0;
+  return Math.max(fromAtr, limits.minStopPct);
 }
 
 /** ATR em valor absoluto, com queda para 1% do preço quando falta o indicador. */
@@ -186,6 +186,40 @@ export function floorAwareStop(entry: number, structural: number, atr: number): 
  * for inoperável. Um bracket só é tradeável quando:
  *   stop < entrada < alvo, RR >= MIN_RR, alvo dentro da escala, stop fora do ruído.
  */
+/**
+ * OS NÍVEIS DE CAUTELA, EM UM LUGAR SÓ — para poderem ser MEDIDOS.
+ *
+ * ⚠️ POR QUE ISTO VIROU PARÂMETRO (03/08).
+ *
+ * O dono disse: "focamos tanto em ser conservador que os níveis de pessimista e
+ * otimista não estão bem calibrados". A frase é uma hipótese, e até agora não
+ * havia como testá-la — cada trava era uma constante de módulo lida do ambiente
+ * na importação, então mudar uma exigia deploy e comparar duas exigia memória.
+ *
+ * Discutir calibragem sem poder variar o parâmetro é chute com vocabulário
+ * técnico. Com isto, o backtest roda a MESMA janela com níveis diferentes e a
+ * pergunta passa a ter resposta em número: qual cautela custa caro, e qual está
+ * pagando por si.
+ *
+ * Os valores de fábrica continuam os mesmos. Isto não afrouxa nada — só torna o
+ * afrouxamento mensurável antes de ser adotado.
+ */
+export interface BracketLimits {
+  minRr: number;
+  minStopAtr: number;
+  minStopPct: number;
+  maxTargetPct: number;
+  maxTargetAtrMult: number;
+}
+
+export const DEFAULT_LIMITS: BracketLimits = {
+  minRr: MIN_RR,
+  minStopAtr: MIN_STOP_ATR,
+  minStopPct: MIN_STOP_PCT,
+  maxTargetPct: MAX_TARGET_PCT,
+  maxTargetAtrMult: MAX_TARGET_ATR_MULT,
+};
+
 export function buildLongBracket(
   symbol: string,
   playbook: ActivePlaybook,
@@ -195,6 +229,7 @@ export function buildLongBracket(
   atrPct: number | null,
   horizonHours: number,
   rationale: string,
+  limits: BracketLimits = DEFAULT_LIMITS,
 ): StrategyPlan | null {
   if (!(entry > 0) || !(target > 0) || !(stop > 0)) return null;
   // Long: o stop fica ABAIXO da entrada e o alvo ACIMA. Sem exceção — é isso
@@ -207,17 +242,17 @@ export function buildLongBracket(
 
   const stopPct = (risk / entry) * 100;
   const targetPct = (reward / entry) * 100;
-  if (stopPct < stopFloorPct(atrPct)) return null;   // dentro do ruído → morre de clima
-  if (targetPct < 0.15 || targetPct > MAX_TARGET_PCT) return null;
+  if (stopPct < stopFloorPct(atrPct, limits)) return null;   // dentro do ruído → morre de clima
+  if (targetPct < 0.15 || targetPct > limits.maxTargetPct) return null;
 
   // ALVO FORA DE ALCANCE NO HORIZONTE. O par que faltava: o piso de stop
   // garantia que o stop não morresse de ruído, e NADA garantia que o alvo
   // pudesse ser alcançado. Um bracket com o lado que mata acessível e o lado
   // que paga inacessível perde por construção, não por a tese estar errada.
-  if (!targetReachable(targetPct, atrPct, horizonHours)) return null;
+  if (!targetReachable(targetPct, atrPct, horizonHours, limits.maxTargetAtrMult)) return null;
 
   const rr = reward / risk;
-  if (rr < MIN_RR) return null;
+  if (rr < limits.minRr) return null;
 
   return { symbol, playbook, side: "buy", entry, target, stop, rr, stopPct, horizonHours, rationale };
 }

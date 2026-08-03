@@ -13,6 +13,7 @@ export type ModuleId =
   | "backtest"
   | "playbook-backtest"
   | "arbiter-cohort"
+  | "calibration"
   | "tournament"
   | "ragnarok"
   | "swap-guard"
@@ -157,6 +158,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 5,
+  },
+  {
+    id: "calibration",
+    title: "CALIBRAGEM",
+    subtitle: "a mesma janela com travas diferentes — qual cautela custa caro",
+    icon: "🎚",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 6,
   },
   {
     id: "backtest",

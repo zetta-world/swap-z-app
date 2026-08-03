@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { ARBITER2_PROFILES } from "@/lib/zion/arbiter2";
-import { auditCohort, cohortReadable, realismBySymbol, type CohortDesk, type Leg } from "@/lib/zion/arbiter-cohort";
+import { auditCohort, cohortReadable, realismBySymbol, deriveThinBookDenylist, type CohortDesk, type Leg } from "@/lib/zion/arbiter-cohort";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +128,26 @@ export async function GET(): Promise<NextResponse> {
   };
 
   const gatePct = COST_PCT + MIN_NET_PCT;
+
+  /**
+   * A DENYLIST, DERIVADA DA MEDIÇÃO (03/08).
+   *
+   * O dono pediu para matar a MANA da leitura, e a evidência apoia: 2.122
+   * medições de profundidade, zero positivas, slippage médio de 1.255%. Mas
+   * matar o ticker à mão erraria por baixo — RUNE, SAND e IMX têm a mesma
+   * doença. A lista sai do dado e se atualiza sozinha.
+   */
+  const denylist = deriveThinBookDenylist(
+    amostras.map((x) => ({ symbol: x.symbol, realisticNet: x.real, slippage: x.slippage })),
+    gatePct,
+  );
+  if (denylist.length > 0) {
+    await db.from("admin_kv").upsert({
+      key: "arb_denylist",
+      value: JSON.stringify(denylist.map((d) => d.symbol)),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "key" });
+  }
   const flags = auditCohort(desks, legs, Number.isFinite(minSpreadPct) ? minSpreadPct : 0, gatePct, liquidations);
 
   // As pernas por venue viajam junto: a marca diz QUE há concentração, e o
@@ -141,7 +161,7 @@ export async function GET(): Promise<NextResponse> {
   }
 
   return NextResponse.json({
-    desks, flags, realism,
+    desks, flags, realism, denylist,
     readable: cohortReadable(flags),
     gatePct, minSpreadPct: Number.isFinite(minSpreadPct) ? minSpreadPct : null,
     liquidations, legs: legs.length,

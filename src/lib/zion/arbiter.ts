@@ -202,6 +202,25 @@ async function kvFlag(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>, key:
  * `gate-keys.ts` documenta: a mesma verdade escrita em lugares diferentes
  * diverge, e quem diverge em silêncio é sempre a cópia que ninguém revisou.
  */
+/**
+ * Os símbolos que a profundidade medida já condenou.
+ *
+ * Lida do KV a cada tick, não de uma constante: a lista é DERIVADA das 4.085
+ * medições de orderbook e se atualiza sozinha quando o livro de um símbolo
+ * melhora ou piora. Falha VAZIA — sem a lista a mesa opera tudo, e o portão de
+ * profundidade continua barrando na hora de abrir.
+ */
+export async function thinBookSymbols(
+  db: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+): Promise<Set<string>> {
+  try {
+    const { data } = await db.from("admin_kv").select("value").eq("key", "arb_denylist").maybeSingle();
+    if (!data?.value) return new Set();
+    const arr = JSON.parse(String(data.value)) as string[];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch { return new Set(); }
+}
+
 export async function gateOrderbook(
   a: ArbOpportunity, costPct: number, minNetPct: number, sizeUsd: number, source: string,
 ): Promise<RealismGate> {
@@ -234,6 +253,9 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
   const matrix = spot as unknown as Map<string, Map<string, { priceUsd: number }>>;
   // Belt-and-braces: also strip in case a custom EXCLUDE_VENUES name slips past the fetch skip.
   for (const venues of matrix.values()) for (const v of EXCLUDE_VENUES) venues.delete(v);
+  // Fora os que o livro já condenou: spread grande em livro fino não é
+  // oportunidade, é o próprio sintoma da iliquidez que impede executá-lo.
+  for (const s of await thinBookSymbols(db)) matrix.delete(s);
   const all = findArbs(matrix);
 
   /**

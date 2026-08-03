@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   flagNeverLoses, flagGateTruncated, flagVenueDominance, flagTailUnsampled,
-  flagLeverageIsDenominator, auditCohort, cohortReadable, realismBySymbol,
+  flagLeverageIsDenominator, auditCohort, cohortReadable, realismBySymbol, deriveThinBookDenylist,
   type CohortDesk, type Leg,
 } from "@/lib/zion/arbiter-cohort";
 
@@ -236,5 +236,55 @@ describe("as 17 sobreviventes, olhadas de perto", () => {
   it("sem amostra devolve lista vazia, não linha zerada", () => {
     // Linha com zeros na tela seria lida como "medimos e deu zero".
     expect(realismBySymbol([], 0.15)).toEqual([]);
+  });
+});
+
+/**
+ * A DENYLIST DERIVADA — "se a MANA é tão ruim, mata ela da leitura".
+ *
+ * O pedido do dono está certo e a evidência é forte: 2.122 medições de
+ * profundidade na MANA, ZERO positivas, slippage médio de 1.255%.
+ *
+ * Mas matar "a MANA" à mão erraria por baixo. O problema não é aquele ticker, é
+ * a CLASSE: RUNE (1.134%), SAND (0.874%) e IMX (0.865%) têm a mesma doença e
+ * zero positivas também. Uma lista escrita à mão pegaria a que incomodou,
+ * deixaria as três irmãs, e envelheceria na quarta.
+ */
+describe("os símbolos que o livro condena, derivados do dado", () => {
+  const m = (symbol: string, slippage: number, n: number, net = -0.6) =>
+    Array.from({ length: n }, () => ({ symbol, realisticNet: net, slippage }));
+
+  it("pega a MANA E as irmãs dela, não só a que incomodou", () => {
+    const lista = deriveThinBookDenylist(
+      [...m("MANA", 1.255, 100), ...m("RUNE", 1.134, 80), ...m("SAND", 0.874, 60), ...m("BTC", 0.05, 100, 0.1)],
+      0.6,
+    );
+    expect(lista.map((d) => d.symbol)).toEqual(["MANA", "RUNE", "SAND"]);
+    expect(lista.some((d) => d.symbol === "BTC")).toBe(false);
+  });
+
+  it("o critério é o slippage comer mais que o spread exigido", () => {
+    // Não é "o pior da lista": é "o livro cobra mais caro que a oportunidade
+    // paga". Um símbolo cujo slippage cabe no piso continua operável, mesmo
+    // sendo o pior de todos.
+    expect(deriveThinBookDenylist(m("X", 0.3, 100), 0.6)).toEqual([]);
+    expect(deriveThinBookDenylist(m("X", 0.7, 100), 0.6)).toHaveLength(1);
+  });
+
+  it("amostra pequena NÃO condena — nem para o lado ruim", () => {
+    // Condenar um símbolo com 5 medições seria o mesmo erro do Valhalla com o
+    // sinal trocado: ruído virando veredito.
+    expect(deriveThinBookDenylist(m("X", 2.0, 5), 0.6)).toEqual([]);
+  });
+
+  it("um símbolo SAI da lista sozinho se o livro dele melhorar", () => {
+    // Nenhum humano precisa lembrar de revisar. É a diferença entre uma lista
+    // derivada e uma lista digitada.
+    expect(deriveThinBookDenylist(m("MANA", 0.2, 100), 0.6)).toEqual([]);
+  });
+
+  it("ordena pelo pior livro primeiro", () => {
+    const lista = deriveThinBookDenylist([...m("A", 0.9, 50), ...m("B", 1.4, 50)], 0.6);
+    expect(lista[0].symbol).toBe("B");
   });
 });

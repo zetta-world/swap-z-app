@@ -42,7 +42,7 @@
 import { computeIndicators, type Candle, type SymbolIndicators, type MarketRegime } from "@/lib/api/market-indicators";
 import { computeExitPath } from "@/lib/paper/engine";
 import { candidateAttempts } from "@/lib/zion/playbooks";
-import type { ActivePlaybook } from "@/lib/zion/bracket";
+import { DEFAULT_LIMITS, type ActivePlaybook, type BracketLimits } from "@/lib/zion/bracket";
 
 /** Candle com tempo — o que a resolução precisa. */
 export interface TimedCandle extends Candle { t: number }
@@ -374,6 +374,14 @@ export function backtestPlaybooks(
   c4h: Candle[] = [],
   c1d: Candle[] = [],
   c1w: Candle[] = [],
+  /**
+   * Os níveis de cautela a usar NESTA rodada.
+   *
+   * Existe para a varredura de calibragem: a mesma janela, os mesmos dados, e
+   * só a trava mudando. Sem isto, "está conservador demais?" só podia ser
+   * respondido com opinião.
+   */
+  limits: BracketLimits = DEFAULT_LIMITS,
 ): BacktestResult {
   const outcomes = new Map<ActivePlaybook, Outcome[]>();
   const open = new Map<ActivePlaybook, OpenTrade>();
@@ -423,7 +431,7 @@ export function backtestPlaybooks(
     } catch { continue; }
 
     // 3) TODOS os candidatos daquela barra — não só o que seria escolhido.
-    for (const att of candidateAttempts(ind)) {
+    for (const att of candidateAttempts(ind, limits)) {
       if (!att.plan) continue;
       // COOLDOWN: o mesmo setup persiste por várias barras. Sem isto, um único
       // movimento vira dezenas de "trades" quase idênticos e infla a amostra
