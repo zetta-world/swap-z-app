@@ -40,6 +40,7 @@ type Stat = {
 type Report = {
   symbols: string[]; symbolsFailed: string[];
   windowDays: number; warmupBars: number; barsTested: number; noiseThreshold: number;
+  backDays: number; endedAt: string | null; savedForDesks: boolean;
   marketPct: number | null;
   perSymbol: Array<{ symbol: string; buyHoldPct: number | null }>;
   stats: Stat[];
@@ -60,10 +61,10 @@ export default function PlaybookBacktestPanel() {
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
-  const run = async () => {
+  const run = async (backDays = 0) => {
     setRunning(true); setErr(null);
     try {
-      const res = await fetch("/admin/api/playbook-backtest", { method: "POST" });
+      const res = await fetch(`/admin/api/playbook-backtest?backDays=${backDays}`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.detail ?? json.error ?? res.status);
       setData(json);
@@ -83,9 +84,20 @@ export default function PlaybookBacktestPanel() {
         acerta a ordem: ele seguiria um palpite para sempre.
       </div>
 
-      <button className="adm-btn" onClick={run} disabled={running}>
-        {running ? "medindo…" : "⚖ rodar backtest por playbook"}
-      </button>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button className="adm-btn" onClick={() => run(0)} disabled={running}>
+          {running ? "medindo…" : "⚖ rodar backtest por playbook"}
+        </button>
+        {/* A MESMA biblioteca numa ESTAÇÃO diferente. A janela padrão terminou
+            num mercado que caiu 18.49% na mediana — medir estratégia comprada
+            só aí responde "ela ganha em bear?", que não é a pergunta. */}
+        <button className="adm-btn" onClick={() => run(180)} disabled={running}>
+          ⏮ 6 meses ANTES
+        </button>
+        <button className="adm-btn" onClick={() => run(360)} disabled={running}>
+          ⏮ 12 meses ANTES
+        </button>
+      </div>
 
       {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 8 }}>{err}</div>}
 
@@ -97,6 +109,14 @@ export default function PlaybookBacktestPanel() {
             fontSize: 9, color: "var(--adm-amber)", lineHeight: 1.6,
             border: "1px solid var(--adm-border)", borderRadius: 4, padding: "6px 8px", marginBottom: 10,
           }}>
+            {data.backDays > 0 && (
+              <div style={{ color: "var(--adm-cyan)", marginBottom: 3 }}>
+                ⏮ JANELA HISTÓRICA — terminou em{" "}
+                {data.endedAt ? new Date(data.endedAt).toLocaleDateString("pt-BR") : "—"}
+                {" "}({data.backDays} dias atrás). Este resultado NÃO reprograma as mesas:
+                elas operam hoje, e a evidência que as guia tem de ser da estação atual.
+              </div>
+            )}
             ⏳ janela de <b>~{data.windowDays} dias</b> por símbolo ({data.symbols.length} símbolos ·{" "}
             {data.barsTested.toLocaleString("pt-BR")} barras). O que estiver abaixo de{" "}
             {data.noiseThreshold} trades sai em cinza — inclusive por regime.
