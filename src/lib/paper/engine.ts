@@ -351,9 +351,15 @@ export async function resolvePaperPositions(): Promise<number> {
   // arbiter2's open rows are HEDGED spot+perp cycles that close by spread
   // CONVERGENCE (its own scan does that) — resolving them here by target/
   // stop/horizon would book directional P&L a hedge doesn't have.
+  // ⚠️ `archived_at is null` (03/08): este é o caminho que CREDITA caixa ao
+  // fechar. Sem o filtro, uma posição já retirada da medição volta a ser
+  // resolvida e devolve `custo + P&L` a uma carteira que já foi acertada — foi
+  // exatamente o que aconteceu com o Arbiter 2.0 no minuto seguinte ao
+  // zeramento. Todo leitor do ledger filtra arquivadas; os que creditam dinheiro
+  // são os que menos podem esquecer.
   const { data: openFull } = await db.from("paper_positions")
     .select("id, account_id, symbol, side, entry_price, cost_usd, target_price, stop_price, horizon_hours, opened_at, chain, pool_address")
-    .eq("status", "open").neq("source", "arbiter2").limit(1000);
+    .eq("status", "open").neq("source", "arbiter2").is("archived_at", null).limit(1000);
   if (!openFull?.length) return 0;
   // Mesma separação da abertura: pool tem preço próprio, símbolo tem o do
   // Gate.io. A chave é o pool — dois pools do mesmo token são preços distintos.

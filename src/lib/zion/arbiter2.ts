@@ -195,9 +195,22 @@ export async function runArbiter2Profile(profile: Arbiter2Profile): Promise<Arbi
   if (!acc) return { closed: 0, opened: 0, skipped: "no_account" };
 
   // ① Resolve open hedges FIRST — freed capital can re-enter this same tick.
+  /**
+   * ⚠️ `archived_at is null` FALTAVA AQUI (03/08).
+   *
+   * Todo leitor do ledger filtra posições arquivadas; este não filtrava. Ficou
+   * invisível enquanto nada era arquivado — e apareceu no minuto seguinte ao
+   * zeramento: a mesa encontrou uma posição que já tinha sido tirada da
+   * medição, fechou-a, e devolveu `custo + P&L` ao caixa. Cem dólares e dezenove
+   * centavos que a conta não devia.
+   *
+   * É o mesmo defeito de sempre em roupa nova: a mesma verdade ("o que conta é
+   * o não-arquivado") escrita em N lugares, e o lugar esquecido é justamente o
+   * que credita dinheiro.
+   */
   const { data: openPos } = await db.from("paper_positions")
     .select("id, symbol, entry_price, target_price, cost_usd, exit_reason, opened_at")
-    .eq("account_id", acc.id).eq("status", "open");
+    .eq("account_id", acc.id).eq("status", "open").is("archived_at", null);
   const nowMs = Date.now();
   let closed = 0, cashDelta = 0, pnlDelta = 0, wins = 0, losses = 0;
   const funding = await fetchFundingRates([...new Set((openPos ?? []).map((p) => p.symbol))]);

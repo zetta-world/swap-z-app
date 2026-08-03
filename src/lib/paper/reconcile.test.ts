@@ -189,3 +189,50 @@ describe("o reparo do rombo", () => {
     expect(plano[0].label).toBe("Radar");
   });
 });
+
+/**
+ * A LEITURA TRUNCADA — o erro que fez a verificação INVENTAR os números.
+ *
+ * O reparo de 03/08 pagou US$ 1.429,09 que ninguém devia. O VÖLUNDR estava com
+ * US$ 843,74, que era o valor exatamente correto, e recebeu US$ 156,26 para
+ * "consertar" um déficit que não existia.
+ *
+ * A causa: `reconcileWallets` pedia `.limit(20000)` e achava que isso bastava.
+ * Não basta — `limit` é um pedido do cliente, e o PostgREST tem teto PRÓPRIO no
+ * servidor. Com ~2.100 posições vivas, voltaram ~1.000, sem erro e sem ordem
+ * definida. As carteiras cujas posições ficaram de fora apareceram com ZERO
+ * posições, logo `esperado = capital inicial`, logo um déficit fantasma.
+ *
+ * O agravante: o cabeçalho deste arquivo documenta essa mesma armadilha como
+ * causa raiz do vazamento original, e `selectAllRows` existe no repositório
+ * exatamente para ela.
+ *
+ * Estes testes cobram a PROPRIEDADE que a paginação garante, em vez de cobrar a
+ * chamada — um teste que só verificasse "chamou selectAllRows" passaria com
+ * qualquer paginação quebrada.
+ */
+describe("posição não lida não pode virar déficit", () => {
+  it("carteira com posições ABERTAS não aparece devendo quando elas são contadas", () => {
+    // O caso do VÖLUNDR: caixa 843.74, três posições abertas de 50 e −6.26 de
+    // realizado. Contando tudo, o desvio é ZERO e não há reparo a fazer.
+    const d = computeDrift(w({ source: "strat_mech", label: "VÖLUNDR", cashUsd: 843.74 }), 150, -6.26);
+    expect(d.driftUsd).toBeCloseTo(0, 2);
+    expect(planRepair([d])).toHaveLength(0);
+  });
+
+  it("as MESMAS posições, não lidas, produzem um déficit fantasma de $156.26", () => {
+    // Este é o número que o reparo pagou. O teste existe para que a forma do
+    // erro fique registrada: não é ruído, é a leitura truncada virando dinheiro.
+    const cego = computeDrift(w({ source: "strat_mech", label: "VÖLUNDR", cashUsd: 843.74 }), 0, 0);
+    expect(cego.driftUsd).toBeCloseTo(-156.26, 2);
+    expect(planRepair([cego])[0].deltaUsd).toBeCloseTo(156.26, 2);
+  });
+
+  it("o custo ABERTO é o que mais dói quando some da leitura", () => {
+    // P&L realizado some e erra por pouco; custo aberto some e erra pelo
+    // tamanho da posição inteira, que é sempre a maior parcela.
+    const semPnl   = computeDrift(w({ cashUsd: 800 }), 150, 0);
+    const semCusto = computeDrift(w({ cashUsd: 800 }), 0, -6.26);
+    expect(Math.abs(semCusto.driftUsd)).toBeGreaterThan(Math.abs(semPnl.driftUsd));
+  });
+});
