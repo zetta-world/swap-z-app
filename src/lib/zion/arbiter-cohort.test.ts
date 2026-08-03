@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   flagNeverLoses, flagGateTruncated, flagVenueDominance, flagTailUnsampled,
-  flagLeverageIsDenominator, auditCohort, cohortReadable,
+  flagLeverageIsDenominator, auditCohort, cohortReadable, realismBySymbol,
   type CohortDesk, type Leg,
 } from "@/lib/zion/arbiter-cohort";
 
@@ -166,5 +166,75 @@ describe("o veredito da coorte", () => {
     ];
     const flags = auditCohort(sã, legs([["a", "b", 20], ["b", "a", 20], ["c", "d", 20], ["d", "c", 20]]), 1.4, 0.6, 2);
     expect(cohortReadable(flags)).toBe(true);
+  });
+});
+
+/**
+ * AS 17 SOBREVIVENTES — e o que elas eram de verdade.
+ *
+ * Das 4.085 medições de orderbook, 17 deram líquido real positivo. Fui olhar
+ * quais: TODAS eram GRT, e dezesseis estavam entre +0.016% e +0.021% — zero
+ * dentro do arredondamento, menos de um centavo num ciclo de $50. Só UMA
+ * passaria do mínimo de 0.15% que a mesa exige.
+ *
+ * "Positiva" e "operável" não são a mesma coisa, e contar as 17 como
+ * sobreviventes repetiria, dentro da verificação, exatamente o otimismo que ela
+ * existe para pegar.
+ *
+ * O achado maior está na comparação entre símbolos:
+ *
+ *   GRT    145 medições ·  17 positivas · slippage 0.379%
+ *   MANA 2.122 medições ·   0 positivas · slippage 1.255%
+ *
+ * MANA era o símbolo MAIS operado (298 ciclos) e é o de pior profundidade;
+ * GRT é o único com sobrevivência e é o de melhor. A seleção da mesa era
+ * ANTI-CORRELACIONADA com a viabilidade: ela buscava o maior spread aparente,
+ * e spread aparente grande é sintoma de livro FINO — é o livro fino que produz
+ * a cotação descolada. Era um detector de iliquidez chamado de arbitragem.
+ */
+describe("as 17 sobreviventes, olhadas de perto", () => {
+  const m = (symbol: string, realisticNet: number, slippage: number) => ({ symbol, realisticNet, slippage });
+
+  it("separa POSITIVA de OPERÁVEL — 16 das 17 não passariam do mínimo", () => {
+    const rows = [
+      m("GRT", 0.189, 0.511),                                  // a única de verdade
+      ...Array.from({ length: 16 }, () => m("GRT", 0.019, 0.14)), // zero com enfeite
+    ];
+    const [grt] = realismBySymbol(rows, 0.15);
+    expect(grt.positive).toBe(17);
+    expect(grt.passesGate).toBe(1);
+  });
+
+  it("ordena pela PROFUNDIDADE, não pelo volume", () => {
+    // Ordenar por amostra repetiria na tela o mesmo viés que a mesa tinha na
+    // seleção: MANA apareceria primeiro por ser a mais operada, quando é
+    // justamente a pior.
+    const rows = [
+      ...Array.from({ length: 2122 }, () => m("MANA", -0.705, 1.255)),
+      ...Array.from({ length: 145 }, () => m("GRT", -0.163, 0.379)),
+    ];
+    expect(realismBySymbol(rows, 0.15)[0].symbol).toBe("GRT");
+  });
+
+  it("o símbolo mais operado é o de pior livro e ZERO positivas", () => {
+    // O diagnóstico só aparece com as duas colunas lado a lado. Separadas,
+    // "MANA foi a mais operada" e "MANA tem o pior livro" são dois fatos soltos.
+    const rows = [
+      ...Array.from({ length: 100 }, () => m("MANA", -0.705, 1.255)),
+      ...Array.from({ length: 10 }, () => m("GRT", 0.02, 0.379)),
+    ];
+    const porSimbolo = realismBySymbol(rows, 0.15);
+    const mana = porSimbolo.find((s) => s.symbol === "MANA")!;
+    expect(mana.positive).toBe(0);
+    expect(mana.avgSlippagePct).toBeGreaterThan(porSimbolo[0].avgSlippagePct);
+  });
+
+  it("medição inválida não entra na conta", () => {
+    expect(realismBySymbol([m("X", NaN, 1)], 0.15)).toEqual([]);
+  });
+
+  it("sem amostra devolve lista vazia, não linha zerada", () => {
+    // Linha com zeros na tela seria lida como "medimos e deu zero".
+    expect(realismBySymbol([], 0.15)).toEqual([]);
   });
 });

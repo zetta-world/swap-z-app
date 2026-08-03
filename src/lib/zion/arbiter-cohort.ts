@@ -228,6 +228,70 @@ export function flagLeverageIsDenominator(desks: CohortDesk[], tolerance = 0.35)
   };
 }
 
+/**
+ * A PROFUNDIDADE POR SÍMBOLO — e a descoberta que fecha o caso.
+ *
+ * As 4.085 medições de orderbook tinham 17 resultados positivos. Olhando quais:
+ * TODOS os 17 eram GRT, e dezesseis deles estavam entre +0.016% e +0.021% —
+ * ou seja, zero dentro do arredondamento (num ciclo de $50, menos de um centavo).
+ * Só UM em 4.085 passaria do mínimo de 0.15% que a mesa exige. Um, em seis dias,
+ * valendo nove centavos.
+ *
+ * Mas o achado que importa é outro, e está na comparação:
+ *
+ *   GRT    145 medições ·  17 positivas · slippage médio 0.379%
+ *   MANA 2.122 medições ·   0 positivas · slippage médio 1.255%
+ *   RUNE   561 medições ·   0 positivas · slippage médio 1.134%
+ *
+ * MANA era o símbolo MAIS operado das mesas — 298 ciclos — e é o de pior
+ * profundidade da lista inteira. GRT é o único com alguma sobrevivência, e é o
+ * de melhor profundidade.
+ *
+ * A seleção da mesa era ANTI-CORRELACIONADA com a viabilidade real. Ela buscava
+ * o maior spread aparente, e spread aparente grande é sintoma de LIVRO FINO —
+ * é justamente o livro fino que produz a cotação descolada. A mesa estava
+ * rodando um detector de iliquidez e chamando de arbitragem.
+ *
+ * Por isso esta tabela existe, e por isso ela mostra as duas colunas juntas:
+ * separadas, "MANA foi a mais operada" e "MANA tem a pior profundidade" são dois
+ * fatos. Lado a lado, são o diagnóstico.
+ */
+export interface SymbolRealism {
+  symbol: string;
+  samples: number;
+  positive: number;
+  /** Quantas passariam do mínimo líquido da mesa — o número que importa. */
+  passesGate: number;
+  avgRealisticPct: number;
+  avgSlippagePct: number;
+}
+
+export function realismBySymbol(
+  rows: Array<{ symbol: string; realisticNet: number; slippage: number }>,
+  minNetPct: number,
+): SymbolRealism[] {
+  const by = new Map<string, { n: number; pos: number; gate: number; real: number; slip: number }>();
+  for (const r of rows) {
+    if (!Number.isFinite(r.realisticNet)) continue;
+    const a = by.get(r.symbol) ?? { n: 0, pos: 0, gate: 0, real: 0, slip: 0 };
+    a.n++;
+    if (r.realisticNet > 0) a.pos++;
+    if (r.realisticNet >= minNetPct) a.gate++;
+    a.real += r.realisticNet;
+    a.slip += Number.isFinite(r.slippage) ? r.slippage : 0;
+    by.set(r.symbol, a);
+  }
+  return [...by.entries()]
+    .map(([symbol, a]) => ({
+      symbol, samples: a.n, positive: a.pos, passesGate: a.gate,
+      avgRealisticPct: a.real / a.n, avgSlippagePct: a.slip / a.n,
+    }))
+    // Ordena pela PROFUNDIDADE, não pela amostra: o que decide se um símbolo é
+    // operável é quanto o livro come, e ordenar por volume repetiria na tela o
+    // mesmo viés que a mesa tinha na seleção.
+    .sort((x, y) => x.avgSlippagePct - y.avgSlippagePct);
+}
+
 /** Todas as marcas de uma coorte, pior primeiro. */
 export function auditCohort(
   desks: CohortDesk[], legs: Leg[], minSpreadPct: number, gatePct: number, liquidations: number,
