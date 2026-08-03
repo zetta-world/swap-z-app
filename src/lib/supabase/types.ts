@@ -165,6 +165,15 @@ export type PaperPositionRow = {
   /** Origem DEX (0019) — herdado da suggestion; define de onde vem o candle. */
   chain:         string | null;
   pool_address:  string | null;
+  /**
+   * Posição retirada da medição viva, sem ser apagada.
+   *
+   * A coluna existe no banco desde o primeiro zeramento de ledger e TODA
+   * leitura já filtrava por ela (`.is("archived_at", null)`) — só a declaração
+   * de tipo estava faltando, o que só apareceu quando alguém foi ESCREVER nela.
+   * Ler campo não declarado passa batido; escrever não compila.
+   */
+  archived_at:   string | null;
 };
 
 /** Auto-Retro lesson ledger (migration 0018) — one row per reflection; the
