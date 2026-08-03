@@ -39,6 +39,10 @@
  *                      obrigar a desligar as mesas de CEX junto.
  *   pause_ullr       — skip o arqueiro (ULLR, lançamentos on-chain). Terreno de
  *                      risco mais alto: gate próprio para poder calar SÓ ele.
+ *   pause_urdr       — skip a URÐR, a Norna do passado: mesa MECÂNICA que escolhe
+ *                      pelo histórico medido em vez da prioridade declarada. É o
+ *                      terceiro braço do duelo — sem ela, "IA com evidência" e
+ *                      "regra sem evidência" ficam confundidas numa comparação só.
  *   pause_zion       — desliga o `/api/zion` VOLTADO AO USUÁRIO (auditoria
  *                      01/08). Era o maior gastador de token da plataforma e o
  *                      ÚNICO sem gate: o disjuntor de custo podia pausar as sete

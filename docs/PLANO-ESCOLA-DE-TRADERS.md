@@ -331,7 +331,7 @@ adequada, e escolher sem saber o que funcionou não é analisar, é adivinhar.
 Mas o custo é real e não dá para esconder: **se o MÍMIR ganhar, não saberemos de
 imediato se venceu a IA ou o histórico.**
 
-### 🔴 A terceira mesa — próximo passo, não feito
+### 🟢 A terceira mesa — FEITA (03/08): ᚢᚱ URÐR
 
 A resposta para isso é uma mesa mecânica ORDENADA PELO HISTÓRICO MEDIDO. Com ela
 o experimento volta a ter uma variável por comparação:
@@ -342,8 +342,30 @@ o experimento volta a ter uma variável por comparação:
 | mesa-histórico × MÍMIR | quanto vale o JULGAMENTO da IA sobre a evidência |
 | VÖLUNDR × MÍMIR | o efeito combinado (o que se mede hoje) |
 
-Está registrada aqui em vez de implementada porque prefiro deixar a lacuna
-escrita a fingir que o experimento continua com uma variável só. O ledger já
-grava `usedRecord` por tick, então os trades feitos com e sem histórico ficam
-distinguíveis desde já — sem isso, as duas rodadas se misturariam e a conclusão
-sairia de uma sopa.
+**URÐR**, a Norna do passado — "aquilo que já se tornou". Mecânica como o
+VÖLUNDR, recebe o MESMO cardápio, e a única coisa que muda é o critério de
+ordenação: ela obedece ao líquido MEDIDO em vez da prioridade declarada.
+
+As três regras, e a terceira é a que dá sentido à mesa:
+
+1. Com amostra no regime, ordena pelo melhor líquido medido.
+2. Sem amostra, o playbook é DESCONHECIDO — não é ruim. Vai depois dos medidos,
+   na ordem declarada. Excluí-lo o impediria para sempre de acumular amostra, e
+   a mesa nunca aprenderia nada novo.
+3. **Medido NEGATIVO é excluído, e se TODOS forem, a mesa fica de fora.** É a
+   disciplina que a evidência compra, e é o comportamento que a distingue do
+   VÖLUNDR — que tomaria o primeiro da lista de qualquer jeito.
+
+**Sem registro, URÐR não opera.** Cair na ordem declarada a transformaria num
+VÖLUNDR com outro nome, enchendo o ledger de trades idênticos aos do controle
+sob a bandeira de um terceiro braço — exatamente a contaminação que o MÍMIR
+sofreu por semanas e que só apareceu porque alguém foi olhar.
+
+Gate próprio (`pause_urdr`), cartão no painel de controles, e `usedRecord` já
+gravado por tick no MÍMIR — então os trades feitos com e sem histórico ficam
+distinguíveis dos dois lados.
+
+**O que ainda não existe:** URÐR nasceu hoje e o registro só é gravado quando
+alguém roda o backtest pelo painel. Até a primeira rodada ela fica muda, de
+propósito. E, como todas as outras, precisa de 100 decididos para sair do
+cinza.

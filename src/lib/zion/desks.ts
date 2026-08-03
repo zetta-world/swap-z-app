@@ -186,6 +186,21 @@ export const DESKS: Desk[] = [
   },
 
   {
+    source: "strat_record", name: "URÐR", sigil: "ᚢᚱ",
+    who: "a Norna do passado: não julga o gráfico, obedece ao que já aconteceu",
+    style: "swing", venue: "cex", direction: "long_only", brain: "none",
+    horizonHours: 48, scoreboard: "paper", status: "live",
+    tests: "quanto vale a EVIDÊNCIA sozinha — sem IA, só o histórico medido mandando",
+    sector: "A_direcional",
+    sheet: {
+      sees: "o mesmo cardápio de candidatos do VÖLUNDR, mais o histórico medido de cada um",
+      decides: "toma o playbook com melhor líquido MEDIDO no regime atual — ou nenhum",
+      rule: "obedece ao registro: descarta o que mediu negativo e fica de fora se todos forem",
+      comparedTo: "VÖLUNDR (isola a evidência) e MÍMIR (isola o julgamento da IA sobre ela)",
+      retireWhen: "não bater o VÖLUNDR com 100+ decididos — aí a evidência não vale o que custa",
+    },
+  },
+  {
     source: "strat_dex", name: "FREYJA", sigil: "ᚨ",
     who: "a senhora da abundância — colhe on-chain, onde o ZION também olha",
     style: "swing", venue: "dex", direction: "long_only", brain: "none",

@@ -22,6 +22,8 @@ import { recordEvent } from "@/lib/admin/track";
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
 import { selectPlaybook, isPlan, type StrategyDecision, type StrategyPlan } from "@/lib/zion/strategist";
 import { runStrategistAi, STRAT_AI } from "@/lib/zion/strategist-ai";
+import { candidateAttempts } from "@/lib/zion/playbooks";
+import { loadPlaybookRecord, rankByRecord, isStale } from "@/lib/zion/playbook-record";
 
 /** A mesa mecânica — determinística, zero-LLM. É o CONTROLE do experimento. */
 export const STRAT_MECH = "strat_mech";
@@ -160,6 +162,79 @@ export async function runStrategistAiScan(indicators: SymbolIndicators[]): Promi
     picked: r.picked, adjusted: r.adjusted, passed: r.passed, logged,
     brainRan: r.brainRan, fallbackReason: r.fallbackReason, usedRecord: r.usedRecord,
   };
+}
+
+/** ᚢᚱ URÐR — a mesa que obedece ao histórico medido. */
+export const STRAT_RECORD = "strat_record";
+
+export interface RagnarokRecordRun {
+  offered: number; taken: number; logged: number;
+  /** Descartados por terem líquido MEDIDO negativo no regime atual. */
+  vetoedByRecord: number;
+  /** Havia registro para consultar? Sem ele, a mesa não opera. */
+  hadRecord: boolean;
+  reason?: string;
+}
+
+/**
+ * O TICK DA URÐR — a terceira mesa, e o motivo de ela existir.
+ *
+ * Quando o MÍMIR passou a receber o histórico, o duelo ganhou uma segunda
+ * variável: virou "IA COM evidência" contra "regra fixa SEM evidência". Se o
+ * MÍMIR ganhasse, não daria para saber se venceu a IA ou o histórico.
+ *
+ * URÐR é mecânica como o VÖLUNDR e recebe o MESMO cardápio — o que muda é só o
+ * critério de ordenação: ela obedece ao líquido medido em vez da prioridade
+ * declarada. Com ela, cada par isola uma coisa:
+ *
+ *   VÖLUNDR × URÐR   → quanto vale a EVIDÊNCIA sozinha
+ *   URÐR × MÍMIR     → quanto vale o JULGAMENTO da IA sobre a evidência
+ *
+ * SEM REGISTRO, ELA NÃO OPERA — e isso é deliberado. Cair na ordem declarada a
+ * transformaria num VÖLUNDR com outro nome, enchendo o ledger de trades
+ * idênticos aos do controle sob a bandeira de um terceiro braço. Foi exatamente
+ * a contaminação que o MÍMIR sofreu por semanas.
+ */
+export async function runRecordScan(indicators: SymbolIndicators[]): Promise<RagnarokRecordRun> {
+  const out: RagnarokRecordRun = { offered: 0, taken: 0, logged: 0, vetoedByRecord: 0, hadRecord: false };
+
+  let record = await loadPlaybookRecord();
+  if (record && isStale(record, Date.now())) record = null;
+  if (!record) {
+    out.reason = "sem histórico medido — rode o backtest por playbook primeiro";
+    return out;
+  }
+  out.hadRecord = true;
+
+  const plans: StrategyPlan[] = [];
+  for (const ind of indicators) {
+    const candidates = candidateAttempts(ind)
+      .map((a) => a.plan)
+      .filter((p): p is StrategyPlan => p !== null);
+    if (candidates.length === 0) continue;
+    out.offered++;
+
+    const ranked = rankByRecord(candidates, record, ind.regime);
+    // Lista vazia = TODOS os candidatos mediram negativo neste regime. Ficar de
+    // fora É a decisão, e é a disciplina que a evidência compra: o VÖLUNDR
+    // tomaria o primeiro da lista de qualquer jeito.
+    if (ranked.length === 0) { out.vetoedByRecord++; continue; }
+
+    const escolhido = ranked[0];
+    plans.push({
+      ...escolhido.candidate,
+      rationale: escolhido.unknown
+        ? `[URÐR] sem histórico neste regime — seguiu a ordem declarada`
+        : `[URÐR] melhor líquido medido no regime: ${escolhido.measuredNet!.toFixed(2)}%/trade`,
+    });
+    out.taken++;
+  }
+
+  out.logged = await persist(plans, indicators, STRAT_RECORD);
+  recordEvent("strat_record_tick", {
+    meta: { hadRecord: out.hadRecord, offered: out.offered, taken: out.taken, vetoedByRecord: out.vetoedByRecord, logged: out.logged },
+  });
+  return out;
 }
 
 /** Tick da mesa intradiária (SKAÐI): mesmos planos, relógio curto. */

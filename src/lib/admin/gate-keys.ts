@@ -26,14 +26,15 @@ export type FlywheelGateKey =
   | "pause_paper" | "pause_radar" | "pause_sniper" | "pause_arbiter"
   | "pause_oracle" | "pause_arbiter2"
   | "pause_ragnarok" | "pause_ragnarok_ai" | "pause_ragnarok_dex" | "pause_ullr"
-  | "pause_zion";
+  | "pause_zion"
+  | "pause_urdr";
 
 export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = [
   "pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament",
   "pause_paper", "pause_radar", "pause_sniper", "pause_arbiter",
   "pause_oracle", "pause_arbiter2",
   "pause_ragnarok", "pause_ragnarok_ai", "pause_ragnarok_dex", "pause_ullr",
-  "pause_zion",
+  "pause_zion", "pause_urdr",
 ];
 
 /**
@@ -88,6 +89,7 @@ export const GATE_SPENDS_TOKENS: Record<FlywheelGateKey, boolean> = {
   pause_ragnarok:     false,  // VÖLUNDR — seletor mecânico
   pause_ragnarok_dex: false,  // FREYJA — mesmo seletor mecânico, praça DEX
   pause_ullr:         false,  // ULLR — regra de idade/liquidez/fluxo, sem LLM
+  pause_urdr:         false,  // URÐR — obedece ao histórico medido, zero LLM
 };
 
 /** Os gates que o disjuntor de custo deve fechar. Derivado, nunca digitado. */

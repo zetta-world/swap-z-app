@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  formatRecord, isStale, RECORD_STALE_DAYS, type PlaybookRecordEntry, type PlaybookRecord,
+  formatRecord, isStale, rankByRecord, RECORD_STALE_DAYS,
+  type PlaybookRecordEntry, type PlaybookRecord,
 } from "@/lib/zion/playbook-record";
 import { NOISE_THRESHOLD } from "@/lib/admin/sample";
 
@@ -107,5 +108,88 @@ describe("histórico velho é pior que nenhum", () => {
 
   it("data ilegível conta como velho — fail-closed", () => {
     expect(isStale(rec("nunca"), now)).toBe(true);
+  });
+});
+
+describe("URÐR — obedecer ao que já aconteceu", () => {
+  const c = (playbook: string) => ({ playbook });
+  const rec = (entries: PlaybookRecordEntry[]): PlaybookRecord => ({
+    entries, windowDays: 32, measuredAt: new Date().toISOString(),
+  });
+  const medido = (playbook: string, net: number, n = 100): PlaybookRecordEntry => ({
+    playbook, decided: n, netPerTrade: net,
+    byRegime: { RANGING: { decided: n, netPerTrade: net } },
+  });
+
+  it("SEM registro, a mesa NÃO opera", () => {
+    // Se caísse na ordem declarada viraria um VÖLUNDR com outro nome, e o
+    // ledger encheria de trades idênticos aos do controle sob a bandeira de um
+    // terceiro braço. Foi a contaminação que o MÍMIR sofreu por semanas.
+    expect(rankByRecord([c("range_reversion")], null, "RANGING")).toEqual([]);
+  });
+
+  it("ordena pelo MELHOR líquido medido, não pela prioridade declarada", () => {
+    const r = rankByRecord(
+      [c("range_reversion"), c("absorption")],
+      rec([medido("range_reversion", 0.5), medido("absorption", 3.2)]),
+      "RANGING",
+    );
+    expect(r.map((x) => x.candidate.playbook)).toEqual(["absorption", "range_reversion"]);
+  });
+
+  it("EXCLUI o que mediu negativo — seguir a evidência é NÃO operar o que perde", () => {
+    const r = rankByRecord(
+      [c("range_reversion"), c("absorption")],
+      rec([medido("range_reversion", -1.4), medido("absorption", 2.0)]),
+      "RANGING",
+    );
+    expect(r.map((x) => x.candidate.playbook)).toEqual(["absorption"]);
+  });
+
+  it("TODOS negativos → a mesa fica de FORA. É a disciplina que a evidência compra", () => {
+    // Aqui mora a diferença entre URÐR e VÖLUNDR: o ferreiro tomaria o primeiro
+    // da lista de qualquer jeito.
+    const r = rankByRecord(
+      [c("range_reversion"), c("absorption")],
+      rec([medido("range_reversion", -1.4), medido("absorption", -0.2)]),
+      "RANGING",
+    );
+    expect(r).toEqual([]);
+  });
+
+  it("DESCONHECIDO não é ruim — entra depois dos medidos, na ordem declarada", () => {
+    // Excluir o não-medido o impediria para sempre de acumular amostra, e a
+    // mesa nunca aprenderia nada novo.
+    const r = rankByRecord(
+      [c("range_reversion"), c("absorption"), c("pivot_reversion")],
+      rec([medido("absorption", 2.0)]),
+      "RANGING",
+    );
+    expect(r.map((x) => x.candidate.playbook)).toEqual(["absorption", "range_reversion", "pivot_reversion"]);
+    expect(r[1].unknown).toBe(true);
+    expect(r[0].unknown).toBe(false);
+  });
+
+  it("amostra rasa conta como DESCONHECIDO, não como medido", () => {
+    const r = rankByRecord(
+      [c("absorption")],
+      rec([{ playbook: "absorption", decided: 3, netPerTrade: 9.9, byRegime: {} }]),
+      "RANGING",
+    );
+    expect(r[0].unknown).toBe(true);
+    expect(r[0].measuredNet).toBeNull();
+  });
+
+  it("o histórico do REGIME manda sobre o geral", () => {
+    // Boa em geral e péssima aqui: a mesa tem de obedecer ao terreno de agora.
+    const r = rankByRecord(
+      [c("range_reversion")],
+      rec([{
+        playbook: "range_reversion", decided: 200, netPerTrade: 5,
+        byRegime: { TRENDING_DOWN: { decided: 100, netPerTrade: -2 } },
+      }]),
+      "TRENDING_DOWN",
+    );
+    expect(r).toEqual([]);   // −2% no regime atual → excluída
   });
 });
