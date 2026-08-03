@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  backtestPlaybooks, summarize, mergeResults, WARMUP_BARS,
+  backtestPlaybooks, summarize, mergeResults, WARMUP_BARS, INDICATOR_WINDOW,
   type TimedCandle, type BacktestResult,
 } from "@/lib/zion/playbook-backtest";
 import type { MarketRegime } from "@/lib/api/market-indicators";
@@ -91,6 +91,36 @@ describe("cooldown — o mesmo evento não vira dez trades", () => {
     for (const s of r.stats) {
       expect(s.decided, `${s.playbook} inflado`).toBeLessThan(r.barsTested / 2);
     }
+  });
+});
+
+describe("janela de indicadores — custo constante e retrato recente", () => {
+  it("o retrato NUNCA olha mais que a janela para trás", () => {
+    // Sem este limite o custo por barra crescia com a posição dela
+    // (`calcSupportResistance` varre o array inteiro), e seis meses estourariam
+    // os 60s da rota — devolvendo menos símbolos EM SILÊNCIO, que é a pior
+    // forma de falhar.
+    expect(INDICATOR_WINDOW).toBeGreaterThan(0);
+    // Folgado para EMA50 convergir, ADX14, divergência (60 velas) e relVol (20).
+    expect(INDICATOR_WINDOW).toBeGreaterThan(50 * 4);
+  });
+
+  it("série LONGA roda, e roda em tempo de rota", () => {
+    // 4.400 barras ≈ 6 meses. Com a janela limitada isto é linear; sem ela
+    // seria quadrático e levaria minutos.
+    const t0 = Date.now();
+    const r = backtestPlaybooks("TEST", oscillate(4400));
+    const ms = Date.now() - t0;
+    expect(r.barsTested).toBe(4400 - WARMUP_BARS - 1);
+    // Margem generosa: o ponto é pegar uma REGRESSÃO para quadrático, não
+    // cravar desempenho de máquina.
+    expect(ms, `levou ${ms}ms — quadrático de novo?`).toBeLessThan(20_000);
+  });
+
+  it("a janela não impede o aquecimento de séries curtas", () => {
+    // Antes de `INDICATOR_WINDOW` barras existirem, o retrato usa o que há.
+    const r = backtestPlaybooks("TEST", oscillate(WARMUP_BARS + 40));
+    expect(r.barsTested).toBe(39);
   });
 });
 

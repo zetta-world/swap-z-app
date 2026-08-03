@@ -56,18 +56,42 @@ export interface Candle {
 export async function fetchTimedCandles(
   symbol: string, interval: string, limit: number, revalidate = 3600,
 ): Promise<Array<Candle & { t: number }>> {
-  try {
-    const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=${interval}&limit=${limit}`;
-    const res = await fetch(url, { next: { revalidate } });
-    if (!res.ok) return [];
-    const data = await res.json() as Array<[number, string, string, string, string, string, ...unknown[]]>;
-    // [0]=openTime, [2]=high, [3]=low, [4]=close, [5]=volume
-    return data.map((row) => ({
-      t: Number(row[0]),
-      high: parseFloat(row[2]), low: parseFloat(row[3]),
-      close: parseFloat(row[4]), volume: parseFloat(row[5]),
-    }));
-  } catch { return []; }
+  // A Binance devolve no máximo 1000 velas por chamada. Para janelas maiores é
+  // preciso PAGINAR PARA TRÁS: pede-se o bloco mais recente, olha-se o instante
+  // da primeira vela dele, e pede-se o bloco que termina um milissegundo antes.
+  //
+  // A ordem importa: paginar para FRENTE (startTime) exigiria saber a data de
+  // início, que depende de quantas velas existem — e um símbolo listado há dois
+  // meses devolveria uma janela silenciosamente mais curta que os outros. Indo
+  // para trás a partir de agora, cada símbolo entrega o que tem, e a diferença
+  // fica visível na contagem em vez de escondida.
+  const PAGE = 1000;
+  const out: Array<Candle & { t: number }> = [];
+  let endTime: number | undefined;
+
+  while (out.length < limit) {
+    const faltam = Math.min(PAGE, limit - out.length);
+    const params = new URLSearchParams({
+      symbol: `${symbol}USDT`, interval, limit: String(faltam),
+    });
+    if (endTime != null) params.set("endTime", String(endTime));
+    try {
+      const res = await fetch(`${BINANCE_DATA}/api/v3/klines?${params}`, { next: { revalidate } });
+      if (!res.ok) break;
+      const data = await res.json() as Array<[number, string, string, string, string, string, ...unknown[]]>;
+      if (!Array.isArray(data) || data.length === 0) break;   // fim do histórico
+      const page = data.map((row) => ({
+        t: Number(row[0]),
+        high: parseFloat(row[2]), low: parseFloat(row[3]),
+        close: parseFloat(row[4]), volume: parseFloat(row[5]),
+      }));
+      out.unshift(...page);
+      // Próximo bloco termina um ms antes da primeira vela deste.
+      endTime = page[0].t - 1;
+      if (data.length < faltam) break;                        // a fonte acabou
+    } catch { break; }
+  }
+  return out;
 }
 
 async function fetchCandles(symbol: string, interval: string, limit: number, revalidate: number): Promise<Candle[]> {
