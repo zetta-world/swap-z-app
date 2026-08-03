@@ -23,8 +23,13 @@ type Desk = {
   cycles: number; losses: number; realizedUsd: number; avgPnlUsd: number;
   marginPerCycleUsd: number; hoursLive: number; cashUsd: number | null;
 };
+type Realism = {
+  samples: number; withDepth: number;
+  avgTheoreticalPct: number; avgRealisticPct: number; avgSlippagePct: number;
+  survivors: number; symbols: number;
+};
 type Data = {
-  desks: Desk[]; flags: Flag[]; readable: boolean;
+  desks: Desk[]; flags: Flag[]; readable: boolean; realism: Realism | null;
   gatePct: number; minSpreadPct: number | null; liquidations: number; legs: number;
   venues: Array<{ venue: string; compras: number; vendas: number; total: number }>;
   ranAt: string;
@@ -52,6 +57,7 @@ const COR: Record<Flag["level"], string> = {
 };
 const ICONE: Record<Flag["level"], string> = { fatal: "✕", aviso: "⚠", ok: "·" };
 const usdSigned = (n: number) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}`;
+const pctS = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(3)}%`;
 
 export default function ArbiterCohortPanel() {
   const [d, setD] = useState<Data | null>(null);
@@ -135,6 +141,42 @@ export default function ArbiterCohortPanel() {
               </div>
             )}
           </div>
+
+          {/* A VALIDAÇÃO DE ORDERBOOK — o instrumento que já existia e ninguém lia.
+              Rodou 4.085 vezes desde 28/07 dizendo que o líquido REAL era
+              negativo, enquanto o ledger anotava positivo. Sobe para o painel
+              porque o defeito não foi falta de instrumento, foi falta de leitura. */}
+          {d.realism && (
+            <div style={{
+              border: "1px solid var(--adm-border)", borderRadius: 4,
+              padding: "7px 9px", marginBottom: 10, fontSize: 9, lineHeight: 1.7,
+            }}>
+              <div style={{ color: "var(--adm-ink-2)" }}>
+                📖 PROFUNDIDADE REAL DO LIVRO · {d.realism.samples.toLocaleString("pt-BR")} medições
+                {" "}em {d.realism.symbols} símbolos
+              </div>
+              <div style={{ color: "var(--adm-ink-3)" }}>
+                topo do livro prometia{" "}
+                <b style={{ color: "var(--adm-green)" }}>{pctS(d.realism.avgTheoreticalPct)}</b>
+                {" · "}andando o livro sobra{" "}
+                <b style={{ color: d.realism.avgRealisticPct >= 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
+                  {pctS(d.realism.avgRealisticPct)}
+                </b>
+                {" · "}profundidade comeu <b>{d.realism.avgSlippagePct.toFixed(3)}%</b>
+              </div>
+              <div style={{ color: d.realism.survivors === 0 ? "var(--adm-red)" : "var(--adm-ink-3)" }}>
+                sobreviveram à profundidade: <b>{d.realism.survivors}</b> de{" "}
+                {d.realism.samples.toLocaleString("pt-BR")}
+                {" "}({((d.realism.survivors / d.realism.samples) * 100).toFixed(1)}%)
+              </div>
+              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", fontStyle: "italic", marginTop: 3 }}>
+                O spread do topo é o preço de UMA unidade. Operar ${'{'}50{'}'} exige andar o livro — pagar
+                subindo os asks e vender descendo os bids. Esta sonda existia desde 28/07 e só
+                registrava: o comentário da chamada dizia &quot;never blocks booking&quot;. Agora ela VETA
+                a abertura, e livro que não pôde ser lido reprova.
+              </div>
+            </div>
+          )}
 
           {d.flags.map((f) => (
             <div key={f.id} style={{ borderTop: "1px solid var(--adm-border)", padding: "5px 0", fontSize: 9, lineHeight: 1.6 }}>

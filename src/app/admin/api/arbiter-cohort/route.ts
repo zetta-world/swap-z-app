@@ -78,6 +78,43 @@ export async function GET(): Promise<NextResponse> {
     } as CohortDesk & { cashUsd: number | null };
   });
 
+  /**
+   * O QUE A VALIDAÇÃO DE ORDERBOOK JÁ VINHA DIZENDO — e ninguém lia.
+   *
+   * A sonda de profundidade roda desde 28/07 e gravou 4.085 medições em
+   * `platform_events`. Todas com livro suficiente para os $50. Todas dizendo
+   * que o líquido real era NEGATIVO enquanto o ledger anotava positivo.
+   *
+   * A medição existia, estava certa, e foi para um feed de eventos que ninguém
+   * agrega. É o defeito mais caro desta semana inteira: não faltou instrumento,
+   * faltou alguém ler o instrumento. Por isso ele agora sobe para o painel
+   * junto do veredito, e não fica esperando ser procurado.
+   */
+  const { data: realismRows } = await db.from("platform_events")
+    .select("metadata").eq("event_type", "arb_realism")
+    .order("created_at", { ascending: false }).limit(5000);
+
+  const amostras = (realismRows ?? [])
+    .map((r) => (r as { metadata: Record<string, unknown> | null }).metadata)
+    .filter((m): m is Record<string, unknown> => !!m)
+    .map((m) => ({
+      teorico: Number(m.theoreticalNet), real: Number(m.realisticNet),
+      slippage: Number(m.slippage), cheio: m.fullyFilled === true,
+      symbol: String(m.symbol ?? ""),
+    }))
+    .filter((x) => Number.isFinite(x.real) && Number.isFinite(x.teorico));
+
+  const realism = amostras.length === 0 ? null : {
+    samples: amostras.length,
+    withDepth: amostras.filter((x) => x.cheio).length,
+    avgTheoreticalPct: amostras.reduce((s, x) => s + x.teorico, 0) / amostras.length,
+    avgRealisticPct: amostras.reduce((s, x) => s + x.real, 0) / amostras.length,
+    avgSlippagePct: amostras.reduce((s, x) => s + x.slippage, 0) / amostras.length,
+    // O número que responde tudo: quantas sobreviveram à profundidade.
+    survivors: amostras.filter((x) => x.real > 0).length,
+    symbols: new Set(amostras.map((x) => x.symbol)).size,
+  };
+
   const gatePct = COST_PCT + MIN_NET_PCT;
   const flags = auditCohort(desks, legs, Number.isFinite(minSpreadPct) ? minSpreadPct : 0, gatePct, liquidations);
 
@@ -92,7 +129,7 @@ export async function GET(): Promise<NextResponse> {
   }
 
   return NextResponse.json({
-    desks, flags,
+    desks, flags, realism,
     readable: cohortReadable(flags),
     gatePct, minSpreadPct: Number.isFinite(minSpreadPct) ? minSpreadPct : null,
     liquidations, legs: legs.length,

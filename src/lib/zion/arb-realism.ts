@@ -51,6 +51,53 @@ export interface Realism {
   fullyFilled:       boolean;  // both legs had enough depth for sizeUsd
 }
 
+/**
+ * O PORTÃO — o que faltava para a sonda valer alguma coisa.
+ *
+ * ⚠️ 03/08: ESTE MÓDULO ESTAVA CERTO E LIGADO A NADA.
+ *
+ * `assessRealism` rodou 4.085 vezes desde 28/07, sempre com profundidade
+ * suficiente para os $50, e o que ele mediu foi:
+ *
+ *   teórico médio (o que o paper contabilizava)  +0.451%
+ *   realista médio (andando o livro)             −0.629%
+ *   slippage médio                                1.081%
+ *   ainda positivos depois da profundidade       17 de 4.085  (0.4%)
+ *
+ * Ou seja: a validação de orderbook já provava, havia SEIS DIAS, que cada
+ * ciclo perdia 0.63% na vida real enquanto o ledger anotava +0.45%. A
+ * diferença era a profundidade comendo o spread inteiro e mais um pouco.
+ *
+ * E a mesa abria assim mesmo. O comentário da chamada dizia, textualmente,
+ * "never blocks booking" — a sonda foi construída como observação, a ponte
+ * para o dinheiro real, e a ponte nunca foi atravessada. Quatro mil medições
+ * corretas foram para um feed de eventos que ninguém agrega.
+ *
+ * Uma medição que não muda decisão nenhuma não é medição, é decoração. Este
+ * portão é o que transforma uma na outra.
+ *
+ * A regra do "não medido": livro que não pôde ser lido REPROVA. É a aplicação
+ * direta de `inconclusivo ≠ aprovado` — a alternativa seria abrir posição na
+ * ausência de evidência, que é exatamente o hábito que produziu os $304.
+ */
+export interface RealismGate { book: boolean; reason: string }
+
+export function realismGate(r: Realism | null, minNetPct: number): RealismGate {
+  if (!r) return { book: false, reason: "profundidade não lida — não medido não é aprovado" };
+  // Livro fino é uma resposta, não uma falha: significa que o preço de topo não
+  // existe no tamanho que a mesa quer operar. Abrir aqui seria comprar a cotação
+  // e não a liquidez.
+  if (!r.fullyFilled) return { book: false, reason: "livro sem profundidade para o tamanho" };
+  if (r.realisticNetPct < minNetPct) {
+    return {
+      book: false,
+      reason: `líquido real ${r.realisticNetPct.toFixed(3)}% abaixo do mínimo ${minNetPct.toFixed(2)}% `
+        + `(topo prometia ${r.theoreticalNetPct.toFixed(3)}%, profundidade comeu ${r.slippagePct.toFixed(3)}%)`,
+    };
+  }
+  return { book: true, reason: `líquido real ${r.realisticNetPct.toFixed(3)}% sobrevive à profundidade` };
+}
+
 /** Compare the paper (top-of-book) net against the depth-walked net. */
 export function assessRealism(
   buyAsks: Level[], sellBids: Level[], sizeUsd: number,
