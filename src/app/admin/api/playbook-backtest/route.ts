@@ -55,16 +55,27 @@ const SYMBOLS = ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "ARB", "OP", "ADA",
  */
 const BARS_1H = Number(process.env.PLAYBOOK_BT_BARS ?? 4400);
 
-export async function POST(): Promise<NextResponse> {
+export async function POST(req: Request): Promise<NextResponse> {
   await requireAdmin();
   const t0 = Date.now();
 
+  /**
+   * QUANTOS DIAS ATRÁS a janela TERMINA. 0 = até hoje.
+   *
+   * O mercado da janela padrão caiu 18.49% na mediana. Uma biblioteca long-only
+   * medida só aí responde "ela ganha em bear?", que não é a pergunta. Com o
+   * recuo dá para medir a MESMA biblioteca numa estação diferente — e só a
+   * comparação entre as duas separa "estratégia ruim" de "estação errada".
+   */
+  const backDays = Math.max(0, Number(new URL(req.url).searchParams.get("backDays") ?? 0));
+  const endAtMs = backDays > 0 ? Date.now() - backDays * 86_400_000 : undefined;
+
   const results = await Promise.all(SYMBOLS.map(async (symbol) => {
     const [c1h, c4h, c1d, c1w] = await Promise.all([
-      fetchTimedCandles(symbol, "1h", BARS_1H),
-      fetchTimedCandles(symbol, "4h", 1100),
-      fetchTimedCandles(symbol, "1d", 200),
-      fetchTimedCandles(symbol, "1w", 60),
+      fetchTimedCandles(symbol, "1h", BARS_1H, 3600, endAtMs),
+      fetchTimedCandles(symbol, "4h", 1100, 3600, endAtMs),
+      fetchTimedCandles(symbol, "1d", 200, 3600, endAtMs),
+      fetchTimedCandles(symbol, "1w", 60, 3600, endAtMs),
     ]);
     if (c1h.length < WARMUP_BARS + 20) return null;
     try {
@@ -108,7 +119,10 @@ export async function POST(): Promise<NextResponse> {
   // que não muda decisão nenhuma é decoração, que é o defeito que esta semana
   // inteira perseguiu. É a partir daqui que o MÍMIR escolhe sabendo o que
   // funcionou, em vez de escolher às cegas.
-  const saved = await savePlaybookRecord({
+  // Uma janela HISTÓRICA não substitui o registro que as mesas leem: elas
+  // operam hoje, e a evidência que as guia tem de ser da estação atual. Rodar
+  // um recuo para estudo não pode reprogramar a URÐR sem ninguém pedir.
+  const saved = backDays > 0 ? false : await savePlaybookRecord({
     entries: stats.map((s) => ({
       playbook: s.playbook, decided: s.decided,
       netPerTrade: s.netPerTrade, byRegime: s.byRegime,
@@ -124,6 +138,8 @@ export async function POST(): Promise<NextResponse> {
     symbols: ok.map((r) => r.symbol),
     symbolsFailed: SYMBOLS.filter((s) => !ok.some((r) => r.symbol === s)),
     windowDays,
+    backDays,
+    endedAt: endAtMs ? new Date(endAtMs).toISOString() : null,
     warmupBars: WARMUP_BARS,
     barsTested,
     marketPct,

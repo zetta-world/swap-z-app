@@ -55,6 +55,21 @@ export interface Candle {
  */
 export async function fetchTimedCandles(
   symbol: string, interval: string, limit: number, revalidate = 3600,
+  /**
+   * Onde a janela TERMINA, em ms. Omitido = agora.
+   *
+   * ⚠️ POR QUE ISTO EXISTE (03/08, quando o mercado finalmente foi medido).
+   *
+   * A janela de 174 dias que o backtest usava terminava sempre HOJE, e o
+   * comprar-e-segurar dela foi de −18.49% na mediana — com OP a −52%, ADA a
+   * −26%, ARB a −25%. A biblioteca é long-only. Testar estratégia comprada num
+   * mercado que caiu 18% responde uma pergunta que ninguém fez.
+   *
+   * Com este parâmetro dá para rodar a MESMA biblioteca numa janela que SUBIU,
+   * e aí a comparação passa a significar alguma coisa: o problema é a
+   * estratégia, ou é a estação?
+   */
+  endAtMs?: number,
 ): Promise<Array<Candle & { t: number }>> {
   // A Binance devolve no máximo 1000 velas por chamada. Para janelas maiores é
   // preciso PAGINAR PARA TRÁS: pede-se o bloco mais recente, olha-se o instante
@@ -67,7 +82,7 @@ export async function fetchTimedCandles(
   // fica visível na contagem em vez de escondida.
   const PAGE = 1000;
   const out: Array<Candle & { t: number }> = [];
-  let endTime: number | undefined;
+  let endTime: number | undefined = endAtMs;
 
   while (out.length < limit) {
     const faltam = Math.min(PAGE, limit - out.length);
