@@ -47,6 +47,74 @@ import type { ActivePlaybook } from "@/lib/zion/bracket";
 /** Candle com tempo — o que a resolução precisa. */
 export interface TimedCandle extends Candle { t: number }
 
+/**
+ * O registro de UM trade — com o caminho, não só o desfecho.
+ *
+ * ⚠️ POR QUE O CAMINHO (03/08, depois da primeira medição séria).
+ *
+ * A janela de 6 meses devolveu 419 trades e TODOS os nove playbooks negativos,
+ * o melhor em −0.21% — que é, quase exatamente, o custo de ida-e-volta. Ou
+ * seja: bruto ≈ zero, nenhuma vantagem. Esse número responde "paga?" com um
+ * não, e não responde NADA sobre o porquê. E sem o porquê não há conserto: dá
+ * só para trocar de estratégia no escuro até algum resultado parecer bom por
+ * sorte, que é como se produz um sistema que quebra com dinheiro real.
+ *
+ * As excursões respondem o porquê. Se o preço andava 60% do caminho até o alvo
+ * e voltava, o problema é o ALVO (longe demais), não a tese. Se os perdedores
+ * furavam o stop por um triz e depois recuperavam, o problema é o STOP (perto
+ * demais). São dois consertos opostos, e o desfecho sozinho não distingue os
+ * dois.
+ */
+export interface Outcome {
+  regime: MarketRegime;
+  netPct: number;
+  reason: "target" | "stop" | "expired";
+  win: boolean;
+  /** Excursão favorável máxima até o desfecho, em % da entrada. */
+  mfePct: number;
+  /** Excursão adversa máxima até o desfecho, em % da entrada (negativa). */
+  maePct: number;
+  /** Distância PLANEJADA até o alvo, em % da entrada. */
+  targetPct: number;
+  /** Distância PLANEJADA até o stop, em % da entrada. */
+  stopPct: number;
+  /** RR planejado no bracket (o que o validador exigiu ≥ MIN_RR). */
+  plannedRr: number;
+  /** A vela que resolveu tocou alvo E stop — a convenção stop-first decidiu. */
+  straddled: boolean;
+}
+
+/**
+ * O DIAGNÓSTICO — os números que dizem o que consertar.
+ *
+ * `netPerTrade` é o veredito. Isto aqui é a causa.
+ */
+export interface PlaybookDiag {
+  /** RR médio que o bracket PROMETEU (o validador exige ≥ 1.8). */
+  plannedRr: number;
+  /** RR que o mercado PAGOU: |ganho médio| / |perda média|. */
+  realizedRr: number | null;
+  avgWinPct: number | null;
+  avgLossPct: number | null;
+  /** Fração dos trades que venceram o horizonte sem tocar nada. */
+  expiredShare: number;
+  /**
+   * Mediana de (excursão favorável ÷ distância até o alvo).
+   *
+   * 1.0 = o preço chegou no alvo. 0.5 = andou metade do caminho e voltou —
+   * e aí o alvo estava no lugar errado, não a tese.
+   */
+  mfeToTarget: number | null;
+  /**
+   * Mediana de (excursão adversa ÷ distância até o stop) nos trades que NÃO
+   * stoparam. Perto de 1.0 significa que o stop está encostado no ruído: os
+   * sobreviventes passaram raspando, então os mortos morreram por pouco.
+   */
+  maeToStop: number | null;
+  /** Quantos desfechos vieram da convenção pessimista (vela cruzou os dois). */
+  straddles: number;
+}
+
 export interface PlaybookStat {
   playbook: ActivePlaybook;
   /** Trades que RESOLVERAM (alvo, stop ou horizonte). */
@@ -61,6 +129,8 @@ export interface PlaybookStat {
   winRate: number | null;
   /** Desempenho por regime — é aqui que mora a resposta útil. */
   byRegime: Partial<Record<MarketRegime, { decided: number; netPerTrade: number }>>;
+  /** Por que o número acima é o que é. `null` quando não houve trade. */
+  diag: PlaybookDiag | null;
 }
 
 export interface BacktestResult {
@@ -68,6 +138,17 @@ export interface BacktestResult {
   /** Barras efetivamente avaliadas (depois do aquecimento dos indicadores). */
   barsTested: number;
   stats: PlaybookStat[];
+  /**
+   * O que o SÍMBOLO fez na janela, em %.
+   *
+   * Sem isto o resultado é ilegível. "Todos os playbooks negativos" significa
+   * coisas opostas conforme o mercado tenha subido 80% (a biblioteca é ruim) ou
+   * caído 40% (mesas long-only perdendo MENOS que o mercado estariam, na
+   * verdade, protegendo). O veredito precisa do denominador do lado.
+   */
+  buyHoldPct: number | null;
+  /** Os trades crus, para o merge somar sem média-de-médias. */
+  outcomes?: Array<{ playbook: ActivePlaybook; outcome: Outcome }>;
 }
 
 /**
@@ -83,9 +164,35 @@ interface OpenTrade {
   playbook: ActivePlaybook;
   regime: MarketRegime;
   openedIdx: number;
+  plannedRr: number;
   pos: {
     side: string; entry_price: number; cost_usd: number;
     target_price: number; stop_price: number; opened_at: string; horizon_hours: number;
+  };
+}
+
+/**
+ * O caminho que o preço percorreu enquanto o trade esteve vivo.
+ *
+ * Vai até a barra que RESOLVEU, inclusive — e para ali. Continuar depois disso
+ * seria olhar o futuro de uma posição já fechada: o preço podia disparar uma
+ * hora depois do stop, e contar essa subida como "excursão favorável" faria o
+ * stop parecer errado por um movimento que o trade nunca viveu.
+ */
+function excursions(
+  entry: number, bars: Candle[], stop: number, target: number,
+): { mfePct: number; maePct: number; straddled: boolean } {
+  let hi = entry, lo = entry, straddled = false;
+  for (const c of bars) {
+    if (c.high > hi) hi = c.high;
+    if (c.low < lo) lo = c.low;
+    const hitStop = c.low <= stop, hitTarget = c.high >= target;
+    if (hitStop || hitTarget) { straddled = hitStop && hitTarget; break; }
+  }
+  return {
+    mfePct: ((hi - entry) / entry) * 100,
+    maePct: ((lo - entry) / entry) * 100,
+    straddled,
   };
 }
 
@@ -139,10 +246,47 @@ function sliceAt(
   ];
 }
 
+/** Mediana — resistente ao trade único e absurdo, que a média não é. */
+function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+/**
+ * O diagnóstico de um conjunto de trades. Separado de `summarize` para poder
+ * receber a lista JUNTA de vários símbolos — mediana de medianas não é mediana,
+ * então o merge precisa dos trades crus, não dos resumos.
+ */
+export function diagnose(outcomes: Outcome[]): PlaybookDiag | null {
+  if (outcomes.length === 0) return null;
+  const resolved = outcomes.filter((o) => o.reason !== "expired");
+  const wins = resolved.filter((o) => o.win).map((o) => o.netPct);
+  const losses = resolved.filter((o) => !o.win).map((o) => o.netPct);
+  const avgWin = wins.length ? wins.reduce((a, b) => a + b, 0) / wins.length : null;
+  const avgLoss = losses.length ? losses.reduce((a, b) => a + b, 0) / losses.length : null;
+  return {
+    plannedRr: outcomes.reduce((s, o) => s + o.plannedRr, 0) / outcomes.length,
+    // Só faz sentido com as duas pontas: sem uma perda sequer, dividir por zero
+    // devolveria "infinito", que na tela viraria a mentira mais otimista possível.
+    realizedRr: avgWin != null && avgLoss != null && avgLoss < 0 ? avgWin / -avgLoss : null,
+    avgWinPct: avgWin, avgLossPct: avgLoss,
+    expiredShare: outcomes.filter((o) => o.reason === "expired").length / outcomes.length,
+    mfeToTarget: median(outcomes.filter((o) => o.targetPct > 0).map((o) => o.mfePct / o.targetPct)),
+    // Nos que stoparam, a excursão adversa É o stop por definição — incluí-los
+    // faria a mediana valer 1.0 sempre e não diria nada.
+    maeToStop: median(
+      outcomes.filter((o) => o.reason !== "stop" && o.stopPct > 0).map((o) => -o.maePct / o.stopPct),
+    ),
+    straddles: outcomes.filter((o) => o.straddled).length,
+  };
+}
+
 /** Agrega os resultados de um playbook. Pura, para ser testável sozinha. */
 export function summarize(
   playbook: ActivePlaybook,
-  outcomes: Array<{ regime: MarketRegime; netPct: number; reason: "target" | "stop" | "expired"; win: boolean }>,
+  outcomes: Array<{ regime: MarketRegime; netPct: number; reason: "target" | "stop" | "expired"; win: boolean } & Partial<Outcome>>,
 ): PlaybookStat {
   const decided = outcomes.length;
   const expired = outcomes.filter((o) => o.reason === "expired").length;
@@ -172,6 +316,10 @@ export function summarize(
     // premiaria a indecisão.
     winRate: resolved.length > 0 ? wins / resolved.length : null,
     byRegime,
+    // Só diagnostica quando os trades trazem o caminho. Fixture antiga (sem as
+    // excursões) continua somando o veredito e devolve `null` aqui, em vez de
+    // inventar um zero que a tela leria como "andou nada".
+    diag: outcomes.every((o) => o.mfePct !== undefined) ? diagnose(outcomes as Outcome[]) : null,
   };
 }
 
@@ -191,7 +339,7 @@ export function backtestPlaybooks(
   c1d: Candle[] = [],
   c1w: Candle[] = [],
 ): BacktestResult {
-  const outcomes = new Map<ActivePlaybook, Array<{ regime: MarketRegime; netPct: number; reason: "target" | "stop" | "expired"; win: boolean }>>();
+  const outcomes = new Map<ActivePlaybook, Outcome[]>();
   const open = new Map<ActivePlaybook, OpenTrade>();
   let barsTested = 0;
 
@@ -204,8 +352,16 @@ export function backtestPlaybooks(
       const future = c1h.slice(tr.openedIdx + 1, i + 1);
       const v = computeExitPath(tr.pos, future, undefined, bar.t);
       if (!v) continue;
+      const e = tr.pos.entry_price;
+      const ex = excursions(e, future, tr.pos.stop_price, tr.pos.target_price);
       const list = outcomes.get(pb) ?? [];
-      list.push({ regime: tr.regime, netPct: v.netPct, reason: v.reason, win: v.win });
+      list.push({
+        regime: tr.regime, netPct: v.netPct, reason: v.reason, win: v.win,
+        ...ex,
+        targetPct: ((tr.pos.target_price - e) / e) * 100,
+        stopPct: ((e - tr.pos.stop_price) / e) * 100,
+        plannedRr: tr.plannedRr,
+      });
       outcomes.set(pb, list);
       open.delete(pb);
     }
@@ -228,6 +384,7 @@ export function backtestPlaybooks(
         playbook: att.plan.playbook,
         regime: ind.regime,
         openedIdx: i,
+        plannedRr: att.plan.rr,
         pos: {
           side: "buy", entry_price: att.plan.entry, cost_usd: 100,
           target_price: att.plan.target, stop_price: att.plan.stop,
@@ -245,11 +402,43 @@ export function backtestPlaybooks(
     .map(([pb, list]) => summarize(pb, list))
     .sort((a, b) => (b.netPerTrade ?? -Infinity) - (a.netPerTrade ?? -Infinity));
 
-  return { symbol, barsTested, stats };
+  // O denominador do veredito: o que o símbolo fez na MESMA janela em que os
+  // playbooks foram medidos — do fim do aquecimento até o fim da série, não da
+  // primeira barra baixada.
+  const first = c1h[WARMUP_BARS], last = c1h[c1h.length - 1];
+  const buyHoldPct = first && last && first.close > 0
+    ? ((last.close - first.close) / first.close) * 100
+    : null;
+
+  return {
+    symbol, barsTested, stats, buyHoldPct,
+    outcomes: [...outcomes.entries()].flatMap(([playbook, list]) => list.map((outcome) => ({ playbook, outcome }))),
+  };
 }
 
-/** Junta o resultado de vários símbolos num só painel por playbook. */
+/**
+ * Junta o resultado de vários símbolos num só painel por playbook.
+ *
+ * Quando os trades CRUS vêm junto (`outcomes`), o merge é feito neles e o
+ * diagnóstico sai correto — mediana de medianas não é mediana, e somar RR
+ * realizado por média ponderada daria um número que não corresponde a trade
+ * nenhum. Sem eles, cai no merge antigo, que só sabe somar o veredito.
+ */
 export function mergeResults(results: BacktestResult[]): PlaybookStat[] {
+  if (results.length > 0 && results.every((r) => r.outcomes)) {
+    const byPb = new Map<ActivePlaybook, Outcome[]>();
+    for (const r of results) {
+      for (const { playbook, outcome } of r.outcomes!) {
+        const list = byPb.get(playbook) ?? [];
+        list.push(outcome);
+        byPb.set(playbook, list);
+      }
+    }
+    return [...byPb.entries()]
+      .map(([pb, list]) => summarize(pb, list))
+      .sort((a, b) => (b.netPerTrade ?? -Infinity) - (a.netPerTrade ?? -Infinity));
+  }
+
   const byPb = new Map<ActivePlaybook, PlaybookStat[]>();
   for (const r of results) {
     for (const s of r.stats) {
@@ -280,6 +469,7 @@ export function mergeResults(results: BacktestResult[]): PlaybookStat[] {
       netPerTrade: net,
       winRate: decided - expired > 0 ? wins / (decided - expired) : null,
       byRegime,
+      diag: null,   // sem os trades crus não há diagnóstico honesto a dar
     };
   }).sort((a, b) => (b.netPerTrade ?? -Infinity) - (a.netPerTrade ?? -Infinity));
 }

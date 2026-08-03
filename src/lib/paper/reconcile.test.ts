@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  computeDrift, significantDrifts, starvedWallets, liveDrifts, retiredDrifts,
+  computeDrift, significantDrifts, starvedWallets, liveDrifts, retiredDrifts, planRepair,
   DRIFT_TOLERANCE_USD,
 } from "@/lib/paper/reconcile";
 
@@ -128,5 +128,64 @@ describe("o relatório", () => {
       computeDrift(w({ source: "ok", cashUsd: 1000 }), 0, 0),
     ];
     expect(significantDrifts(all).map((d) => d.source)).toEqual(["grave", "leve"]);
+  });
+});
+
+/**
+ * O REPARO — devolver o que o vazamento levou, sem virar encobridor dele.
+ *
+ * A correção do bug (01/08) parou a hemorragia e não devolveu nada: o Radar
+ * seguiu com $51 de $1.000, e nesse estado ele não abre posição nenhuma. Some
+ * do experimento em silêncio — que é o defeito que a reconciliação existe para
+ * pegar, agora do outro lado.
+ *
+ * A tentação óbvia é reparar dentro da própria verificação. Seria destruí-la:
+ * um vazamento NOVO seria zerado a cada rodada e o detector nunca mais acusaria
+ * nada. Estes testes guardam as três fronteiras que impedem isso.
+ */
+describe("o reparo do rombo", () => {
+  const drift = (over: Parameters<typeof computeDrift>[0], open = 0, pnl = 0) =>
+    computeDrift(over, open, pnl);
+
+  it("devolve o caixa ao valor que os TRADES justificam, não ao inicial", () => {
+    // Uma mesa que perdeu $200 operando tem que ficar com $800, não com $1.000.
+    // "Restaurar" para o inicial apagaria o resultado do experimento junto com
+    // o bug — e o resultado é a única coisa que este laboratório produz.
+    const d = drift(w({ source: "strat_record", label: "URÐR", cashUsd: 550 }), 0, -200);
+    const [p] = planRepair([d]);
+    expect(p.to).toBe(800);
+    expect(p.deltaUsd).toBe(250);
+  });
+
+  it("desconta o que está preso em posição aberta", () => {
+    const d = drift(w({ cashUsd: 400 }), 300, 0);
+    expect(planRepair([d])[0].to).toBe(700);
+  });
+
+  it("NÃO mexe em mesa aposentada — cicatriz não se repara", () => {
+    // VEÐRFÖLNIR está no Valhalla. Devolver capital a quem não opera só produz
+    // um número bonito que não significa nada.
+    const d = drift(w({ source: "sniper", label: "VEÐRFÖLNIR", cashUsd: 10 }));
+    expect(d.retired).toBe(true);
+    expect(planRepair([d])).toHaveLength(0);
+  });
+
+  it("NÃO mexe em caixa a MAIS — dinheiro que apareceu é outro bug", () => {
+    // E provavelmente pior. Tirar o excesso apagaria a única pista dele.
+    const d = drift(w({ cashUsd: 1500 }));
+    expect(d.driftUsd).toBe(500);
+    expect(planRepair([d])).toHaveLength(0);
+  });
+
+  it("ignora ruído de ponto flutuante", () => {
+    expect(planRepair([drift(w({ cashUsd: 1000 - DRIFT_TOLERANCE_USD / 2 }))])).toHaveLength(0);
+  });
+
+  it("pior primeiro — a mesa mais sangrada é a que sumiu do experimento", () => {
+    const plano = planRepair([
+      drift(w({ source: "strat_record", label: "URÐR", cashUsd: 900 })),
+      drift(w({ source: "radar", label: "Radar", cashUsd: 51 })),
+    ]);
+    expect(plano[0].label).toBe("Radar");
   });
 });

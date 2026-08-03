@@ -118,6 +118,39 @@ export function retiredDrifts(all: WalletDrift[], tolerance = DRIFT_TOLERANCE_US
   return significantDrifts(all, tolerance).filter((d) => d.retired);
 }
 
+export interface RepairEntry { source: string; label: string; from: number; to: number; deltaUsd: number }
+
+/**
+ * DEVOLVE às carteiras vivas o capital que o vazamento levou.
+ *
+ * ⚠️ POR QUE ISTO É UM BOTÃO, E NUNCA UM CONSERTO AUTOMÁTICO.
+ *
+ * O bug da origem foi corrigido (`paper/engine.ts`), mas correção não devolve
+ * dinheiro: o Radar ficou com $51 de $1.000, e com $51 ele não abre posição
+ * nenhuma. A mesa continua viva no papel e morta na prática — e some do
+ * experimento em silêncio, que é exatamente o defeito que a reconciliação
+ * existe para pegar.
+ *
+ * Reparar automaticamente dentro da própria verificação seria destruí-la. Um
+ * vazamento NOVO seria zerado a cada rodada e o detector nunca mais acusaria
+ * nada: ele passaria a esconder o que foi construído para revelar. Por isso o
+ * reparo é um ato do operador, deixa registro, e a bancada continua conferindo
+ * DEPOIS — se o desvio voltar a aparecer, é fuga nova, não a cicatriz velha.
+ *
+ * Só mexe em mesa VIVA e só quando falta dinheiro. Caixa a MAIS não é reparado:
+ * dinheiro que apareceu do nada é um bug diferente, provavelmente pior, e
+ * "corrigir" tirando o excesso apagaria a única pista dele.
+ */
+export function planRepair(all: WalletDrift[], tolerance = DRIFT_TOLERANCE_USD): RepairEntry[] {
+  return all
+    .filter((d) => !d.retired && d.driftUsd < -tolerance)
+    .map((d) => ({
+      source: d.source, label: d.label,
+      from: d.cashUsd, to: d.expectedUsd, deltaUsd: d.expectedUsd - d.cashUsd,
+    }))
+    .sort((a, b) => b.deltaUsd - a.deltaUsd);
+}
+
 /**
  * Lê o estado real e reconcilia. Best-effort: sem banco devolve lista vazia em
  * vez de derrubar quem chamou.
@@ -165,4 +198,54 @@ export async function reconcileWallets(minCashUsd = 25): Promise<WalletDrift[]> 
       minCashUsd,
     );
   });
+}
+
+/**
+ * Executa o reparo e registra o que fez.
+ *
+ * O registro não é burocracia: sem ele, um desvio que reaparecesse amanhã seria
+ * indistinguível do de hoje, e a pergunta que importa — "vazou DE NOVO?" — não
+ * teria resposta. Com ele, a bancada mostra "reparado em tal data" ao lado, e
+ * qualquer coisa nova aparece contra esse marco.
+ */
+export async function repairWallets(): Promise<{ repaired: RepairEntry[]; failed: string[] }> {
+  const db = getSupabaseAdmin();
+  if (!db) return { repaired: [], failed: [] };
+  const plan = planRepair(await reconcileWallets());
+  const repaired: RepairEntry[] = [], failed: string[] = [];
+
+  for (const e of plan) {
+    // Um `update` por carteira, e o erro é LIDO. O cliente do Supabase resolve
+    // com `{ error }` em vez de lançar — foi assim que o vazamento original
+    // passou calado, e repetir o mesmo padrão aqui seria cômico.
+    const { error } = await db.from("paper_accounts")
+      .update({ cash_usd: e.to }).eq("source", e.source);
+    if (error) failed.push(e.source); else repaired.push(e);
+  }
+
+  if (repaired.length > 0) {
+    const total = repaired.reduce((s, e) => s + e.deltaUsd, 0);
+    await db.from("admin_kv").upsert({
+      key: "paper_repair:last",
+      updated_at: new Date().toISOString(),
+      value: JSON.stringify({
+        at: new Date().toISOString(),
+        totalUsd: Math.round(total * 100) / 100,
+        entries: repaired.map((e) => ({ source: e.source, delta: Math.round(e.deltaUsd * 100) / 100 })),
+      }),
+    }, { onConflict: "key" });
+  }
+  return { repaired, failed };
+}
+
+/** O marco do último reparo, para a bancada distinguir cicatriz de ferida nova. */
+export async function lastRepair(): Promise<{ at: string; totalUsd: number } | null> {
+  const db = getSupabaseAdmin();
+  if (!db) return null;
+  const { data } = await db.from("admin_kv").select("value").eq("key", "paper_repair:last").maybeSingle();
+  if (!data?.value) return null;
+  try {
+    const p = JSON.parse(String((data as { value: string }).value)) as { at: string; totalUsd: number };
+    return p.at ? { at: p.at, totalUsd: Number(p.totalUsd) || 0 } : null;
+  } catch { return null; }
 }

@@ -24,15 +24,24 @@ import { sampleLabel, shouldTint } from "@/lib/admin/sample";
  */
 
 type Regime = "RANGING" | "TRENDING_UP" | "TRENDING_DOWN" | "TRANSITIONING";
+type Diag = {
+  plannedRr: number; realizedRr: number | null;
+  avgWinPct: number | null; avgLossPct: number | null;
+  expiredShare: number; mfeToTarget: number | null; maeToStop: number | null;
+  straddles: number;
+};
 type Stat = {
   playbook: string; label: string; thesis: string;
   decided: number; wins: number; losses: number; expired: number;
   netPerTrade: number | null; winRate: number | null;
   byRegime: Partial<Record<Regime, { decided: number; netPerTrade: number }>>;
+  diag: Diag | null;
 };
 type Report = {
   symbols: string[]; symbolsFailed: string[];
   windowDays: number; warmupBars: number; barsTested: number; noiseThreshold: number;
+  marketPct: number | null;
+  perSymbol: Array<{ symbol: string; buyHoldPct: number | null }>;
   stats: Stat[];
   silent: Array<{ playbook: string; label: string; reason: string }>;
   gaps: Array<{ id: string; label: string; blockedBy: string }>;
@@ -94,6 +103,29 @@ export default function PlaybookBacktestPanel() {
             {data.symbolsFailed.length > 0 && ` Sem dado: ${data.symbolsFailed.join(", ")}.`}
           </div>
 
+          {/* O DENOMINADOR. "Todos negativos" significa coisas OPOSTAS conforme
+              o mercado tenha subido ou caído na mesma janela — e sem esta linha
+              o operador julga a biblioteca contra um pano de fundo imaginado. */}
+          {data.marketPct != null && (
+            <div style={{
+              fontSize: 9, lineHeight: 1.6, marginBottom: 10,
+              border: "1px solid var(--adm-border)", borderRadius: 4, padding: "6px 8px",
+              color: "var(--adm-ink-3)",
+            }}>
+              📉 o MERCADO na mesma janela:{" "}
+              <b style={{ color: data.marketPct > 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
+                {pct(data.marketPct)}
+              </b>{" "}
+              (mediana de comprar-e-segurar nos {data.perSymbol.length} símbolos).{" "}
+              {data.marketPct < 0
+                ? "Em janela de queda, mesa long-only no vermelho pode estar perdendo MENOS que o mercado — compare, não julgue no vácuo."
+                : "Em janela de alta, playbook long-only negativo é resultado ruim de verdade: bastava comprar e segurar."}
+              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 3 }}>
+                {data.perSymbol.map((s) => `${s.symbol} ${s.buyHoldPct == null ? "—" : pct(s.buyHoldPct)}`).join(" · ")}
+              </div>
+            </div>
+          )}
+
           {data.stats.map((s) => (
             <div key={s.playbook} style={{ borderTop: "1px solid var(--adm-border)", padding: "5px 0" }}>
               <div
@@ -119,6 +151,44 @@ export default function PlaybookBacktestPanel() {
                     {s.wins} ganho(s) · {s.losses} perda(s) · {s.expired} expirada(s)
                     {s.winRate != null && ` · acerto ${(s.winRate * 100).toFixed(0)}% (expirada fora das duas pontas)`}
                   </div>
+                  {/* O DIAGNÓSTICO. `netPerTrade` diz SE paga; isto diz por quê —
+                      e sem o porquê só dá para trocar de estratégia no escuro até
+                      alguma parecer boa por sorte. */}
+                  {s.diag && (
+                    <div style={{
+                      borderLeft: "2px solid var(--adm-border)", paddingLeft: 6, margin: "4px 0",
+                    }}>
+                      <div>
+                        RR: o bracket prometeu <b>{s.diag.plannedRr.toFixed(2)}</b>, o mercado pagou{" "}
+                        <b style={{ color: (s.diag.realizedRr ?? 0) >= s.diag.plannedRr ? "var(--adm-green)" : "var(--adm-red)" }}>
+                          {s.diag.realizedRr?.toFixed(2) ?? "—"}
+                        </b>
+                        {s.diag.avgWinPct != null && s.diag.avgLossPct != null &&
+                          ` (ganho médio ${pct(s.diag.avgWinPct)} · perda média ${pct(s.diag.avgLossPct)})`}
+                      </div>
+                      {s.diag.mfeToTarget != null && (
+                        <div>
+                          o preço andou <b>{(s.diag.mfeToTarget * 100).toFixed(0)}%</b> do caminho até o alvo (mediana)
+                          {s.diag.mfeToTarget < 0.7 && (
+                            <span style={{ color: "var(--adm-amber)" }}> — alvo longe demais, não é a tese que falha</span>
+                          )}
+                        </div>
+                      )}
+                      {s.diag.maeToStop != null && (
+                        <div>
+                          quem sobreviveu chegou a <b>{(s.diag.maeToStop * 100).toFixed(0)}%</b> do stop
+                          {s.diag.maeToStop > 0.8 && (
+                            <span style={{ color: "var(--adm-amber)" }}> — stop encostado no ruído: os mortos morreram por pouco</span>
+                          )}
+                        </div>
+                      )}
+                      <div>
+                        {(s.diag.expiredShare * 100).toFixed(0)}% venceram o horizonte sem tocar nada
+                        {s.diag.straddles > 0 && ` · ${s.diag.straddles} desfecho(s) decidido(s) pela convenção stop-first`}
+                      </div>
+                    </div>
+                  )}
+
                   {/* POR REGIME é a resposta útil: uma estratégia raramente é boa
                       ou ruim em geral — ela é boa NUM terreno e péssima noutro. */}
                   {Object.entries(s.byRegime).map(([r, v]) => (

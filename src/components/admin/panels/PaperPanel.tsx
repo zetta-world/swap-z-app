@@ -16,6 +16,10 @@ type Row = {
   openPositions: number; exposure: number; openBook: OpenPos[]; recentTrades: RecentTrade[]; curve: number[];
 };
 type PR = { rows: Row[]; totals: { startingUsd: number; equity: number; realizedPnl: number; openPositions: number; exposure: number; closedTrades: number }; fetchedAt: string };
+type RepairState = {
+  plan: Array<{ source: string; label: string; from: number; to: number; deltaUsd: number }>;
+  last: { at: string; totalUsd: number } | null;
+};
 
 const MEDAL = ["🥇", "🥈", "🥉"];
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
@@ -52,6 +56,8 @@ export default function PaperPanel() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
   const realtime = useAdminRealtime();
+  const [repair, setRepair] = useState<RepairState | null>(null);
+  const [repairing, setRepairing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -62,11 +68,29 @@ export default function PaperPanel() {
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }, []);
 
+  // O plano de reparo é lido junto, mas NUNCA executado sozinho. Ver o
+  // cabeçalho de `paper/reconcile.ts`: reparo automático transformaria o
+  // detector de vazamento em encobridor de vazamento.
+  const loadRepair = useCallback(async () => {
+    try {
+      const res = await fetch("/admin/api/paper-repair");
+      if (res.ok) setRepair(await res.json());
+    } catch { /* seção some, o painel continua */ }
+  }, []);
+
   useEffect(() => {
-    load();
+    load(); loadRepair();
     const t = setInterval(load, realtime?.status === "live" ? 60_000 : 90_000);
     return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  }, [load, loadRepair, realtime?.status]);
+
+  async function runRepair() {
+    setRepairing(true);
+    try {
+      const res = await fetch("/admin/api/paper-repair", { method: "POST" });
+      if (res.ok) { await load(); await loadRepair(); }
+    } catch { /* estado antigo permanece */ } finally { setRepairing(false); }
+  }
 
   const rows = data?.rows ?? [];
   const totalRet = data && data.totals.startingUsd > 0 ? (data.totals.equity / data.totals.startingUsd - 1) * 100 : 0;
@@ -75,6 +99,40 @@ export default function PaperPanel() {
     <TerminalPanel id="paper" title="PAPER · GATE.IO" subtitle="③ SÓ AS CARTEIRAS, sem ranking — unidade: patrimônio em USDT" icon="📈" source="supabase/paper_accounts">
       {loading && <div className="adm-shimmer" style={{ height: 140 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+
+      {/* O ROMBO QUE SOBROU. O bug do débito-sem-posição foi corrigido em 01/08,
+          mas correção não devolve dinheiro: uma mesa com $51 de $1.000 não abre
+          posição nenhuma e some do experimento sem nada ficar vermelho. */}
+      {repair && repair.plan.length > 0 && (
+        <div style={{
+          border: "1px solid var(--adm-red)", borderRadius: 4, padding: "7px 9px", marginBottom: 10,
+          fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-3)",
+        }}>
+          <div style={{ color: "var(--adm-red)", fontWeight: 700, letterSpacing: "0.08em" }}>
+            ⚠ {repair.plan.length} CARTEIRA(S) VIVA(S) COM CAIXA A MENOS —{" "}
+            {usd(repair.plan.reduce((s, p) => s + p.deltaUsd, 0))} a devolver
+          </div>
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", margin: "3px 0" }}>
+            {repair.plan.slice(0, 6).map((p) => `${p.label}: ${usd(p.from)} → ${usd(p.to)}`).join(" · ")}
+            {repair.plan.length > 6 && ` · +${repair.plan.length - 6}`}
+          </div>
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>
+            O caixa é o que decide se a mesa consegue abrir posição — abaixo do piso ela
+            simplesmente para, sem erro e sem alerta. Isto devolve o capital ao valor que os
+            trades justificam. Não é automático de propósito: se fosse, um vazamento NOVO
+            seria zerado a cada rodada e o detector nunca mais acusaria nada.
+          </div>
+          <button className="adm-btn" style={{ marginTop: 6 }} onClick={runRepair} disabled={repairing}>
+            {repairing ? "devolvendo…" : "↺ devolver o capital às carteiras vivas"}
+          </button>
+        </div>
+      )}
+      {repair && repair.plan.length === 0 && repair.last && (
+        <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 8 }}>
+          ✓ caixa bate com os trades · último reparo {new Date(repair.last.at).toLocaleString("pt-BR")}{" "}
+          ({usd(repair.last.totalUsd)} devolvidos) — desvio que aparecer daqui pra frente é vazamento NOVO
+        </div>
+      )}
 
       {data && (
         <div>
