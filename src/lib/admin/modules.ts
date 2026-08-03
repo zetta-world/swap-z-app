@@ -12,6 +12,7 @@ export type ModuleId =
   | "finance"
   | "backtest"
   | "playbook-backtest"
+  | "arbiter-cohort"
   | "tournament"
   | "ragnarok"
   | "swap-guard"
@@ -147,6 +148,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 4,
+  },
+  {
+    id: "arbiter-cohort",
+    title: "COORTE DO ARBITER",
+    subtitle: "1× · 3× · 5× — a alavanca como única variável",
+    icon: "ᚼ",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 5,
   },
   {
     id: "backtest",
