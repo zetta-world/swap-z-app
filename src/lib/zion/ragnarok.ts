@@ -123,6 +123,8 @@ export interface RagnarokAiRun {
   candidates: number;
   picked: number; adjusted: number; passed: number; logged: number;
   brainRan: boolean; fallbackReason?: string;
+  /** Decidiu com histórico medido, ou às cegas? */
+  usedRecord: boolean;
 }
 
 /**
@@ -149,13 +151,14 @@ export async function runStrategistAiScan(indicators: SymbolIndicators[]): Promi
   recordEvent("strat_ai_tick", {
     meta: {
       brainRan: r.brainRan, fallbackReason: r.fallbackReason ?? null,
+      usedRecord: r.usedRecord,
       offered: r.offered, candidates: r.candidates, logged,
     },
   });
   return {
     offered: r.offered, candidates: r.candidates,
     picked: r.picked, adjusted: r.adjusted, passed: r.passed, logged,
-    brainRan: r.brainRan, fallbackReason: r.fallbackReason,
+    brainRan: r.brainRan, fallbackReason: r.fallbackReason, usedRecord: r.usedRecord,
   };
 }
 

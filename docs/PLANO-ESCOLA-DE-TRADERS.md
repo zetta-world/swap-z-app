@@ -291,3 +291,59 @@ O Setor A recomeçou do zero em 01/08. Com o vazamento corrigido as mesas voltam
 a operar de verdade, mas continuam precisando de **100 decididos cada** para
 sair do cinza na barra de lançamento. Nada do que está acima produz, hoje, um
 número em que se possa apostar dinheiro de gente.
+
+
+---
+
+## 9. O ciclo fechado — e o que ele custou ao experimento (03/08)
+
+O backtest por playbook passou a ser GRAVADO (`admin_kv:playbook_record`) e o
+MÍMIR passou a receber, junto de cada candidato, o que a medição diz sobre ele —
+de preferência no regime atual, que é o terreno em jogo.
+
+Até aqui a medição morria na tela. Informação que não muda decisão nenhuma é
+decoração, que é exatamente o defeito perseguido a semana inteira.
+
+### A trava que importa mais que o número
+
+**Amostra pequena não vira número no prompt.** Um modelo que recebe
+"absorção: +2,1%" trata aquilo como fato mesmo quando os +2,1% vêm de três
+trades — ele não tem como desconfiar, porque o número chegou com a mesma
+autoridade dos outros.
+
+Na tela, ruído com cara de resultado engana quem olha. No prompt, ele **move
+dinheiro**. Por isso abaixo do limiar o histórico é entregue como ausência
+explícita — `DESCONHECIDO`, com a instrução de que isso não significa neutro — e
+o número tentador não aparece em lugar nenhum.
+
+Histórico com mais de 30 dias é descartado: um registro antigo descreve um
+mercado que já passou e chega com a mesma autoridade de um recente.
+
+### ⚠️ O DUELO GANHOU UMA SEGUNDA VARIÁVEL
+
+O VÖLUNDR continua escolhendo pela prioridade declarada, sem histórico. O MÍMIR
+agora escolhe com ele. O duelo deixou de comparar *"IA vs regra fixa"* e passou
+a comparar **"IA COM evidência" contra "regra fixa SEM evidência"**.
+
+Isso é defensável: a tese é que a IA ANALISA o mercado e escolhe a estratégia
+adequada, e escolher sem saber o que funcionou não é analisar, é adivinhar.
+
+Mas o custo é real e não dá para esconder: **se o MÍMIR ganhar, não saberemos de
+imediato se venceu a IA ou o histórico.**
+
+### 🔴 A terceira mesa — próximo passo, não feito
+
+A resposta para isso é uma mesa mecânica ORDENADA PELO HISTÓRICO MEDIDO. Com ela
+o experimento volta a ter uma variável por comparação:
+
+| Comparação | Isola |
+|---|---|
+| VÖLUNDR × mesa-histórico | quanto vale a EVIDÊNCIA sozinha |
+| mesa-histórico × MÍMIR | quanto vale o JULGAMENTO da IA sobre a evidência |
+| VÖLUNDR × MÍMIR | o efeito combinado (o que se mede hoje) |
+
+Está registrada aqui em vez de implementada porque prefiro deixar a lacuna
+escrita a fingir que o experimento continua com uma variável só. O ledger já
+grava `usedRecord` por tick, então os trades feitos com e sem histórico ficam
+distinguíveis desde já — sem isso, as duas rodadas se misturariam e a conclusão
+sairia de uma sopa.

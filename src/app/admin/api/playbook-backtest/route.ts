@@ -4,6 +4,7 @@ import { fetchTimedCandles } from "@/lib/api/market-indicators";
 import { backtestPlaybooks, mergeResults, WARMUP_BARS } from "@/lib/zion/playbook-backtest";
 import { PLAYBOOKS, PLAYBOOK_GAPS } from "@/lib/zion/playbooks";
 import { NOISE_THRESHOLD } from "@/lib/admin/sample";
+import { savePlaybookRecord } from "@/lib/zion/playbook-record";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,11 +69,27 @@ export async function POST(): Promise<NextResponse> {
   }));
 
   const barsTested = ok.reduce((n, r) => n + r.barsTested, 0);
+  const windowDays = Math.round((BARS_1H - WARMUP_BARS) / 24);
+
+  // GRAVA para as mesas lerem. Até aqui a medição morria na tela — informação
+  // que não muda decisão nenhuma é decoração, que é o defeito que esta semana
+  // inteira perseguiu. É a partir daqui que o MÍMIR escolhe sabendo o que
+  // funcionou, em vez de escolher às cegas.
+  const saved = await savePlaybookRecord({
+    entries: stats.map((s) => ({
+      playbook: s.playbook, decided: s.decided,
+      netPerTrade: s.netPerTrade, byRegime: s.byRegime,
+    })),
+    windowDays,
+    measuredAt: new Date().toISOString(),
+  });
+
   return NextResponse.json({
+    savedForDesks: saved,
     ok: true,
     symbols: ok.map((r) => r.symbol),
     symbolsFailed: SYMBOLS.filter((s) => !ok.some((r) => r.symbol === s)),
-    windowDays: Math.round((BARS_1H - WARMUP_BARS) / 24),
+    windowDays,
     warmupBars: WARMUP_BARS,
     barsTested,
     noiseThreshold: NOISE_THRESHOLD,
