@@ -8,7 +8,7 @@ import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
 import { runOracleScan } from "@/lib/zion/oracle";
-import { runStrategistScan, runStrategistAiScan, runDayScan } from "@/lib/zion/ragnarok";
+import { runStrategistScan, runStrategistAiScan, runDayScan, runRecordScan } from "@/lib/zion/ragnarok";
 import { runDexScan } from "@/lib/zion/ragnarok-dex";
 import { runUllrScan } from "@/lib/zion/ullr";
 import { runRetroSweep } from "@/lib/zion/retro";
@@ -131,6 +131,12 @@ export async function POST(req: NextRequest) {
         // uma sugestão on-chain finalmente preenche e resolve.
         if (!gates.pause_ragnarok_dex) {
           try { await runDexScan(); } catch { /* best-effort */ }
+        }
+        // URÐR — o terceiro braço: mesma praça, mesmo cardápio, mas obedece ao
+        // HISTÓRICO MEDIDO em vez da prioridade declarada. Sem ela, uma vitória
+        // do MÍMIR não distinguiria o mérito da IA do mérito da evidência.
+        if (!gates.pause_urdr) {
+          try { await runRecordScan(marketData.indicators); } catch { /* best-effort */ }
         }
         // ULLR — o arqueiro dos lançamentos. Sem LLM: num pool com horas de
         // vida não existe estrutura pra ler (RSI de 14 períodos, EMA50, suporte

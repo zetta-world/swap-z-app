@@ -37,10 +37,8 @@
  * imediato se venceu a IA ou o histórico.
  *
  * A resposta para isso é uma TERCEIRA mesa — mecânica, ordenada pelo histórico
- * medido — que isola a contribuição da evidência. Está registrada como o
- * próximo passo em `docs/PLANO-ESCOLA-DE-TRADERS.md`, não implementada aqui.
- * Prefiro deixar a lacuna escrita a fingir que o experimento continua com uma
- * variável só.
+ * medido — e ela está no fim deste arquivo: URÐR, a Norna do passado. Com ela
+ * cada comparação volta a isolar uma coisa só (ver `rankByRecord`).
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -136,4 +134,78 @@ export function isStale(record: PlaybookRecord, nowMs: number, maxDays = RECORD_
   const t = Date.parse(record.measuredAt);
   if (!Number.isFinite(t)) return true;
   return (nowMs - t) / 86_400_000 > maxDays;
+}
+
+// ── URÐR — escolher pelo que JÁ ACONTECEU ─────────────────────────────────
+
+/**
+ * A ordenação da terceira mesa.
+ *
+ * POR QUE ELA EXISTE: quando o MÍMIR passou a receber o histórico, o duelo
+ * ganhou uma segunda variável. Ele deixou de comparar "IA vs regra fixa" e
+ * passou a comparar "IA COM evidência" contra "regra fixa SEM evidência" — e se
+ * o MÍMIR ganhasse, não daria para saber se venceu a IA ou o histórico.
+ *
+ * URÐR é a Norna do passado, "aquilo que já se tornou". Ela é MECÂNICA como o
+ * VÖLUNDR e escolhe SÓ pelo registro. Com ela, cada comparação isola uma coisa:
+ *
+ *   VÖLUNDR × URÐR   → quanto vale a EVIDÊNCIA sozinha
+ *   URÐR × MÍMIR     → quanto vale o JULGAMENTO da IA sobre a evidência
+ *   VÖLUNDR × MÍMIR  → o efeito combinado
+ *
+ * AS TRÊS REGRAS, e a terceira é a que dá sentido à mesa:
+ *
+ *  1. Com amostra suficiente NO REGIME, ordena pelo líquido medido, melhor
+ *     primeiro. É literalmente "faça o que funcionou aqui".
+ *  2. Sem amostra, o playbook é DESCONHECIDO — não é ruim. Vai depois dos
+ *     medidos-positivos, na ordem declarada. Excluí-lo impediria para sempre
+ *     que ele acumulasse amostra, e a mesa nunca aprenderia nada novo.
+ *  3. Medido NEGATIVO é EXCLUÍDO. Se a evidência diz que aquele setup perde
+ *     dinheiro naquele terreno, seguir a evidência é não operá-lo — e se todos
+ *     os candidatos forem assim, a mesa fica de FORA. É essa disciplina que a
+ *     evidência compra, e é o comportamento que a distingue do VÖLUNDR, que
+ *     tomaria o primeiro da lista de qualquer jeito.
+ */
+export interface RankedCandidate<T> {
+  candidate: T;
+  /** Líquido medido no regime, quando há amostra. */
+  measuredNet: number | null;
+  /** `true` quando não há amostra — desconhecido, não ruim. */
+  unknown: boolean;
+}
+
+export function rankByRecord<T extends { playbook: string }>(
+  candidates: T[],
+  record: PlaybookRecord | null,
+  regime: MarketRegime,
+  threshold = NOISE_THRESHOLD,
+): RankedCandidate<T>[] {
+  // SEM REGISTRO, URÐR NÃO OPERA — e isso é deliberado.
+  //
+  // Se ela caísse na ordem declarada, viraria um VÖLUNDR com outro nome, e o
+  // ledger encheria de trades idênticos aos do controle sob a bandeira de um
+  // terceiro braço. É exatamente a contaminação que o MÍMIR sofreu por semanas
+  // e que só apareceu porque alguém foi olhar.
+  if (!record) return [];
+
+  const scored = candidates.map((c) => {
+    const entry = record.entries.find((e) => e.playbook === c.playbook);
+    const here = entry?.byRegime[regime];
+    if (here && here.decided >= threshold) {
+      return { candidate: c, measuredNet: here.netPerTrade, unknown: false };
+    }
+    if (entry && entry.decided >= threshold && entry.netPerTrade != null) {
+      return { candidate: c, measuredNet: entry.netPerTrade, unknown: false };
+    }
+    return { candidate: c, measuredNet: null, unknown: true };
+  });
+
+  const positivos = scored
+    .filter((s) => !s.unknown && (s.measuredNet ?? 0) > 0)
+    .sort((a, b) => (b.measuredNet ?? 0) - (a.measuredNet ?? 0));
+  // Os desconhecidos mantêm a ordem em que chegaram, que já é a prioridade
+  // declarada da biblioteca.
+  const desconhecidos = scored.filter((s) => s.unknown);
+  // Os medidos-negativos simplesmente não entram.
+  return [...positivos, ...desconhecidos];
 }
