@@ -53,6 +53,23 @@ export interface PlaybookRecordEntry {
   decided: number;
   netPerTrade: number | null;
   byRegime: Partial<Record<MarketRegime, { decided: number; netPerTrade: number }>>;
+  /**
+   * ⚠️ POR CLIMA — e a razão de estar aqui é um erro meu, repetido.
+   *
+   * O filtro de regime foi construído com a quebra por clima medida no
+   * backtest... e mostrada só na tela. O dono rodou, pediu para eu conferir a
+   * quebra, e eu não tinha o que conferir: a medição existiu, foi correta, e
+   * evaporou no fim da requisição.
+   *
+   * É a TERCEIRA vez que este defeito aparece — a sonda de orderbook gravava
+   * num feed que ninguém agregava, a conferência de preço ao vivo não gravava
+   * nada, e agora esta. As duas primeiras viraram documento
+   * (`docs/LEITURA-SEGURA-DO-BANCO.md`), e mesmo assim repeti no dia seguinte.
+   *
+   * A regra que faltava é mais curta que o documento: NÚMERO QUE VAI DECIDIR
+   * ALGUMA COISA TEM QUE SER GRAVADO ANTES DE SER EXIBIDO.
+   */
+  byWeather?: Partial<Record<"favoravel" | "misto" | "adverso", { decided: number; netPerTrade: number }>>;
 }
 
 export interface PlaybookRecord {
@@ -132,8 +149,12 @@ export interface RecordSnapshot {
    * sem estratégia nenhuma.
    */
   marketPct?: number | null;
-  /** playbook → { decided, netPerTrade } no instante da medição. */
-  byPlaybook: Record<string, { decided: number; netPerTrade: number | null }>;
+  /** playbook → o que foi medido naquele instante, clima incluído. */
+  byPlaybook: Record<string, {
+    decided: number;
+    netPerTrade: number | null;
+    byWeather?: Partial<Record<"favoravel" | "misto" | "adverso", { decided: number; netPerTrade: number }>>;
+  }>;
 }
 
 export async function savePlaybookRecord(record: PlaybookRecord): Promise<boolean> {
@@ -154,7 +175,7 @@ export async function savePlaybookRecord(record: PlaybookRecord): Promise<boolea
       measuredAt: record.measuredAt, windowDays: record.windowDays,
       marketPct: record.marketPct ?? null,
       byPlaybook: Object.fromEntries(record.entries.map((e) => [
-        e.playbook, { decided: e.decided, netPerTrade: e.netPerTrade },
+        e.playbook, { decided: e.decided, netPerTrade: e.netPerTrade, byWeather: e.byWeather },
       ])),
     };
     const proximo = [snap, ...anterior].slice(0, HISTORY_MAX);

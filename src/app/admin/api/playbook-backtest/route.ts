@@ -141,6 +141,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     entries: stats.map((s) => ({
       playbook: s.playbook, decided: s.decided,
       netPerTrade: s.netPerTrade, byRegime: s.byRegime,
+      // O clima VAI JUNTO. Foi a medição que sustenta o filtro de regime, e
+      // exibi-la sem gravá-la tornaria o filtro inauditável no dia seguinte.
+      byWeather: s.diag?.byWeather,
     })),
     windowDays,
     marketPct,
