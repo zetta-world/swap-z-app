@@ -11,6 +11,7 @@ export type ModuleId =
   | "ops-ledger"
   | "finance"
   | "backtest"
+  | "playbook-backtest"
   | "tournament"
   | "ragnarok"
   | "swap-guard"
@@ -135,6 +136,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     subtitle: "every client trade · volume · realized P&L",
     icon: "≣",
     category: "receita",
+    defaultEnabled: true,
+    defaultOrder: 4,
+  },
+  {
+    id: "playbook-backtest",
+    title: "QUAL ESTRATÉGIA PAGA",
+    subtitle: "cada playbook medido isolado no histórico",
+    icon: "⚖",
+    category: "lab",
     defaultEnabled: true,
     defaultOrder: 4,
   },

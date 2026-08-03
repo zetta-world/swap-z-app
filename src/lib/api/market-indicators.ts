@@ -45,6 +45,31 @@ export interface Candle {
   volume: number;
 }
 
+/**
+ * Candles COM o instante de cada barra.
+ *
+ * O `Candle` do resto do módulo é só OHLCV — os indicadores não precisam de
+ * tempo, porque trabalham por posição no array. O BACKTEST precisa: para
+ * resolver um trade contra o caminho do preço é obrigatório saber QUANDO cada
+ * barra aconteceu, senão o horizonte não tem como vencer.
+ */
+export async function fetchTimedCandles(
+  symbol: string, interval: string, limit: number, revalidate = 3600,
+): Promise<Array<Candle & { t: number }>> {
+  try {
+    const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=${interval}&limit=${limit}`;
+    const res = await fetch(url, { next: { revalidate } });
+    if (!res.ok) return [];
+    const data = await res.json() as Array<[number, string, string, string, string, string, ...unknown[]]>;
+    // [0]=openTime, [2]=high, [3]=low, [4]=close, [5]=volume
+    return data.map((row) => ({
+      t: Number(row[0]),
+      high: parseFloat(row[2]), low: parseFloat(row[3]),
+      close: parseFloat(row[4]), volume: parseFloat(row[5]),
+    }));
+  } catch { return []; }
+}
+
 async function fetchCandles(symbol: string, interval: string, limit: number, revalidate: number): Promise<Candle[]> {
   try {
     const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=${interval}&limit=${limit}`;
