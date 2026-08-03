@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
-import { measureVenues, truthVerdict, type VenueQuote } from "@/lib/zion/venue-truth";
+import { measureVenues, measureSymbols, truthVerdict, type VenueQuote } from "@/lib/zion/venue-truth";
 import { spreadWindow } from "@/lib/zion/arbiter";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +41,10 @@ export async function GET(): Promise<NextResponse> {
   }
 
   const stats = measureVenues(bySymbol);
+  // POR SÍMBOLO, não só por venue. A média entre 57 símbolos é dominada pelos
+  // majors; a mesa selecionava a cauda (MANA, SAND, RUNE — altcoin de livro
+  // fino). Medir só a média responde a pergunta ao lado da que importa.
+  const gaps = measureSymbols(bySymbol);
   const janela = spreadWindow();
 
   // Quantos símbolos sequer têm quórum de 3 venues. Se forem poucos, a nova
@@ -49,8 +53,10 @@ export async function GET(): Promise<NextResponse> {
   const comQuorum = [...bySymbol.values()].filter((q) => q.filter((x) => x.priceUsd > 0).length >= 3).length;
 
   return NextResponse.json({
-    verdict: truthVerdict(stats, janela.floorPct),
+    verdict: truthVerdict(stats, janela.floorPct, gaps),
     stats,
+    gapsAboveFloor: gaps.filter((g) => g.gapPct >= janela.floorPct),
+    worstGaps: gaps.slice(0, 8),
     window: janela,
     symbolsTotal: bySymbol.size,
     symbolsWithQuorum: comQuorum,

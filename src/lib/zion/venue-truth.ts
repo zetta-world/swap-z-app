@@ -119,19 +119,91 @@ export function measureVenues(
 }
 
 /**
+ * O GAP DE UM SÍMBOLO — e por que medir só a média das venues era insuficiente.
+ *
+ * ⚠️ ESTA FUNÇÃO CONSERTA UM DEFEITO DA PRIMEIRA VERSÃO DESTE MÓDULO (03/08).
+ *
+ * `measureVenues` responde "esta corretora é confiável, no geral?" e devolveu,
+ * ao vivo, dispersão de 0.02% a 0.055% — todas estáveis. A leitura natural foi
+ * "não existe spread de 0.55% em lugar nenhum".
+ *
+ * Só que o ledger dizia outra coisa: 2.011 ciclos entraram com spread médio de
+ * 0.72%, e os símbolos eram MANA, SAND, RUNE, IMX, GRT, BONK, SHIB — altcoin de
+ * livro fino, nenhum major. MANA sozinha disparou em 144 horas DISTINTAS.
+ *
+ * Os dois números não se contradizem: a média entre 57 símbolos é dominada
+ * pelos majors, onde a dispersão é mesmo minúscula. A estratégia nunca operou o
+ * símbolo médio — ela SELECIONAVA a cauda, por construção, porque é a cauda que
+ * passa do portão.
+ *
+ * Medir a média de uma população quando a estratégia escolhe o extremo dela é
+ * erro de medição, e era meu. Uma verificação que responde a pergunta ao lado
+ * da que importa é pior que nenhuma: ela encerra o assunto.
+ */
+export interface SymbolGap {
+  symbol: string;
+  /** Maior distância entre duas cotações, em % — o que o detector veria. */
+  gapPct: number;
+  venues: number;
+  /** A venue que se afasta da mediana, e quanto. */
+  outlier: string;
+  outlierDeviationPct: number;
+}
+
+export function measureSymbols(
+  bySymbol: Map<string, VenueQuote[]>, minVenues = 3,
+): SymbolGap[] {
+  const out: SymbolGap[] = [];
+  for (const [symbol, quotes] of bySymbol) {
+    const validas = quotes.filter((q) => q.priceUsd > 0);
+    if (validas.length < minVenues) continue;
+    const med = median(validas.map((q) => q.priceUsd));
+    if (!(med > 0)) continue;
+    const lo = Math.min(...validas.map((q) => q.priceUsd));
+    const hi = Math.max(...validas.map((q) => q.priceUsd));
+    let pior = validas[0], piorDesvio = 0;
+    for (const q of validas) {
+      const d = Math.abs(q.priceUsd / med - 1) * 100;
+      if (d > piorDesvio) { piorDesvio = d; pior = q; }
+    }
+    out.push({
+      symbol, gapPct: ((hi - lo) / lo) * 100, venues: validas.length,
+      outlier: pior.venue, outlierDeviationPct: (pior.priceUsd / med - 1) * 100,
+    });
+  }
+  return out.sort((a, b) => b.gapPct - a.gapPct);
+}
+
+/**
  * A conclusão em uma frase — o que a medição diz sobre a estratégia.
  *
  * Existe porque uma tabela de desvios é evidência, não resposta. A pergunta do
  * dono foi "está indo bem mesmo ou é ilusão?", e uma tabela obriga cada leitor a
  * refazer o raciocínio sozinho — inclusive eu, daqui a duas semanas.
  */
-export function truthVerdict(stats: VenueStat[], floorPct: number): string {
+export function truthVerdict(stats: VenueStat[], floorPct: number, gaps: SymbolGap[] = []): string {
   if (stats.length === 0) return "sem cotações suficientes para medir — 3 venues por símbolo é o mínimo";
   const ruidosas = stats.filter((s) => s.verdict === "ruidosa");
   const maior = stats[0];
+
+  // OS SÍMBOLOS ANTES DA MÉDIA. A estratégia seleciona a cauda por construção —
+  // é a cauda que passa do portão. Dizer "a média está baixa" enquanto existem
+  // símbolos acima do piso encerraria o assunto pelo lado errado.
+  const acima = gaps.filter((g) => g.gapPct >= floorPct);
+  if (acima.length > 0) {
+    const top = acima.slice(0, 4)
+      .map((g) => `${g.symbol} ${g.gapPct.toFixed(2)}% (${g.outlier} ${g.outlierDeviationPct > 0 ? "+" : ""}${g.outlierDeviationPct.toFixed(2)}%)`)
+      .join(", ");
+    return `${acima.length} símbolo(s) COM gap acima do piso de ${floorPct.toFixed(2)}% agora: ${top}. `
+      + `A média entre venues é baixa (${maior.dispersionPct.toFixed(3)}%) e não descreve estes casos — `
+      + `a mesa nunca operou o símbolo médio, ela selecionava exatamente estes. Antes de chamar de oportunidade: `
+      + `livro fino cotado por poucas praças produz o mesmo número sem ser executável no tamanho.`;
+  }
+
   if (maior.dispersionPct < floorPct / 2) {
-    return `nenhuma venue se afasta o bastante da mediana para gerar o spread de ${floorPct.toFixed(2)}% que a mesa exige `
-      + `(o pior desvio médio é ${maior.dispersionPct.toFixed(3)}%). O spread que a mesa vinha capturando não estava no mercado.`;
+    return `nenhum símbolo tem gap acima do piso de ${floorPct.toFixed(2)}% neste instante, e nenhuma venue `
+      + `se afasta o bastante da mediana para gerar um (o pior desvio médio é ${maior.dispersionPct.toFixed(3)}%). `
+      + `Vale a ressalva: isto é UM instante — a mesa operava altcoin de livro fino, e é lá que o gap aparece.`;
   }
   if (ruidosas.length > 0) {
     return `${ruidosas.map((s) => s.venue).join(", ")} oscila(m) em volta da mediana sem viés consistente `
