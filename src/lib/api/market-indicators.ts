@@ -573,7 +573,16 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
  * Compute the full indicator set from raw candles of ANY source — Binance
  * klines (CEX symbols) or GeckoTerminal OHLCV (DEX pools, E1). Pure, no I/O.
  */
-function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], c1d: Candle[], c1w: Candle[]): SymbolIndicators {
+/**
+ * Exportada para o BACKTEST POR PLAYBOOK (03/08).
+ *
+ * Ela é PURA — só depende dos candles que recebe — e é justamente isso que
+ * permite reconstruir o retrato técnico em qualquer instante do passado: basta
+ * passar as séries CORTADAS naquele instante. Sem essa propriedade, medir
+ * estratégia no histórico exigiria reimplementar todos os indicadores, e duas
+ * implementações do mesmo indicador divergem em silêncio.
+ */
+export function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], c1d: Candle[], c1w: Candle[]): SymbolIndicators {
   const empty: SymbolIndicators = {
     symbol, price: null, rsi14: null, ema20: null, ema50: null, macd: null,
     atr14: null, atrPct: null, adx: null, regime: "TRANSITIONING",
