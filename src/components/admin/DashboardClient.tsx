@@ -17,6 +17,7 @@ import TournamentPanel        from "./panels/TournamentPanel";
 import RagnarokPanel          from "./panels/RagnarokPanel";
 import SwapGuardPanel         from "./panels/SwapGuardPanel";
 import AuditBenchPanel        from "./panels/AuditBenchPanel";
+import PlaybookBacktestPanel  from "./panels/PlaybookBacktestPanel";
 import LaunchGatePanel        from "./panels/LaunchGatePanel";
 import MarginPanel            from "./panels/MarginPanel";
 import AiCostPanel            from "./panels/AiCostPanel";
@@ -51,6 +52,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "ragnarok":           <RagnarokPanel />,
   "swap-guard":         <SwapGuardPanel />,
   "audit-bench":        <AuditBenchPanel />,
+  "playbook-backtest":  <PlaybookBacktestPanel />,
   "launch-gate":        <LaunchGatePanel />,
   "margin":             <MarginPanel />,
   "ai-cost":            <AiCostPanel />,
