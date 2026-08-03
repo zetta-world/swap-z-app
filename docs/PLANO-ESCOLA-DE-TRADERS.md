@@ -1,6 +1,6 @@
 # Plano — Escola de traders: reconstruir as mesas uma a uma
 
-Status: 🔴 proposto · 01/08
+Status: 🟡 em execução · 01/08 — biblioteca, MÍMIR, setores e fichas entregues; medição por playbook e painéis por setor em aberto
 
 Este plano nasce de uma crítica do dono ao laboratório, e a crítica está certa.
 Antes do plano, o diagnóstico — porque metade do problema é que os números na
@@ -233,3 +233,61 @@ experimento existe para descobrir isso — não para confirmar.
 O que ele promete é que, quando o número aparecer, dê para acreditar nele: com
 amostra à vista, controle honesto e cada mesa medida na régua que faz sentido
 para ela.
+
+
+---
+
+## 8. Execução — o que foi feito em 01/08
+
+| Item do plano | Estado |
+|---|---|
+| Biblioteca de estratégias (§3) | 🟢 10 playbooks + 4 buracos declarados |
+| MÍMIR escolhendo do cardápio (§5 nº1) | 🟢 reescrito — escolhe, não revisa |
+| VÖLUNDR como controle honesto (§5 nº2) | 🟢 mesmo cardápio, escolhedor fixo |
+| Setores A/B/C/D (§4) | 🟢 declarados em `desks.ts` |
+| Ficha de construção por mesa (§5) | 🟢 declarada e visível no painel |
+| Critério de aposentadoria (§5 nº4) | 🟢 obrigatório por teste em toda mesa viva |
+| Amostra < 30 em cinza (§6) | 🟢 `admin/sample.ts` |
+| Filtros do STATS pelas mesas vivas (§6) | 🟢 derivados de `DESKS` |
+| Uma mesa em UM lugar (§6) | 🟡 rotulado, não separado — ver abaixo |
+| **Backtest por playbook (§5 nº3)** | 🔴 **não feito** |
+| **Painel próprio por setor (§5 nº5)** | 🔴 **não feito** |
+
+### O que ficou aberto, e por quê
+
+**Backtest por playbook.** É o item mais valioso que sobrou, e o único que
+transforma a coluna `priority` da biblioteca — hoje um PALPITE declarado como
+tal — em fato medido. Enquanto ele não existir, o seletor mecânico escolhe pela
+ordem clássica, que pode estar errada em qualquer regime.
+
+**Painéis por setor.** Os três painéis continuam mostrando as mesmas mesas; o
+que mudou é que agora cada um declara sua unidade (① % por trade, ② USDT
+acumulado, ③ patrimônio). Isso resolve a confusão, não a duplicação. A separação
+de verdade exige mexer em três rotas e três componentes, e não cabia junto com o
+resto sem virar outra pilha de mudanças mal testadas — que é exatamente como o
+laboratório chegou ao estado que motivou este plano.
+
+### Dois achados que apareceram durante a execução
+
+**As mesas estavam famintas, não disciplinadas.** Quatorze das vinte carteiras
+de paper haviam perdido de US$450 a US$1.000 de capital fantasma; Grok e Mistral
+em $0,00. Sem caixa, `sizePosition` devolve zero e a mesa para de operar sem erro
+nenhum. Parte das amostras minúsculas era isso.
+
+Causa raiz: o dedup vinha truncado em 1.000 linhas pelo limite padrão do
+PostgREST, e o `insert` estava embrulhado num `try/catch` que nunca disparava —
+o cliente do Supabase resolve com `{ error }` em vez de lançar. A violação de
+UNIQUE voltava calada e o caixa era debitado por posições que não existiam. O
+MÍMIR estava com exatamente $950 a menos: dezenove lotes de $50.
+
+**O mesmo engano em mais seis lugares.** Os gravadores de sugestão reportavam
+`rows.length` como gravadas mesmo quando o insert falhava. Ali o estrago é de
+medição, não de dinheiro — mas uma mesa que relata trades inexistentes envenena
+o experimento igual.
+
+### O relógio
+
+O Setor A recomeçou do zero em 01/08. Com o vazamento corrigido as mesas voltam
+a operar de verdade, mas continuam precisando de **100 decididos cada** para
+sair do cinza na barra de lançamento. Nada do que está acima produz, hoje, um
+número em que se possa apostar dinheiro de gente.
