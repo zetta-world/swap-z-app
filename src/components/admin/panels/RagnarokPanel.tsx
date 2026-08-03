@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { deskFor } from "@/lib/zion/desks";
+import { sampleLabel, shouldTint } from "@/lib/admin/sample";
 import TerminalPanel from "../TerminalPanel";
 
 type Wallet = {
@@ -152,12 +154,38 @@ export default function RagnarokPanel() {
             <div key={d.source} style={{ marginBottom: 6 }}>
               <div style={{ display: "flex", gap: 8, fontSize: 9, alignItems: "baseline" }}>
                 <span style={{ color: d.brain === "none" ? "var(--adm-cyan)" : "var(--adm-gold)", flex: 1 }}>{d.name}</span>
-                <span style={{ color: d.netPerTrade == null ? "var(--adm-ink-3)" : col(d.netPerTrade), fontVariantNumeric: "tabular-nums" }}>{pct(d.netPerTrade)}</span>
-                <span style={{ color: "var(--adm-ink-4)", width: 60, textAlign: "right" }}>{d.decided} dec.</span>
+                {/* A COR É AUTORIDADE, E AUTORIDADE SE GANHA (01/08). Abaixo do
+                    limiar de amostra o número sai em cinza: continua legível,
+                    mas sem a tinta que empresta credibilidade. Foi assim que o
+                    Valhalla exibia +1,19% de TRÊS trades com a mesma cara de um
+                    resultado de 268. */}
+                <span style={{
+                  color: d.netPerTrade == null ? "var(--adm-ink-3)"
+                    : shouldTint(d.decided) ? col(d.netPerTrade) : "var(--adm-ink-4)",
+                  fontVariantNumeric: "tabular-nums",
+                }}>{pct(d.netPerTrade)}</span>
+                <span style={{ color: "var(--adm-ink-4)", width: 74, textAlign: "right", fontSize: 8 }}>{sampleLabel(d.decided)}</span>
               </div>
               {d.variable && (
                 <div style={{ fontSize: 7, color: "var(--adm-ink-4)", paddingLeft: 8 }}>{d.variable}</div>
               )}
+              {/* A FICHA DE CONSTRUÇÃO — "não sei como cada agente foi montado"
+                  era reclamação literal do dono, e ele tinha razão: a lógica de
+                  cada mesa morava espalhada em três arquivos e um comentário.
+                  Vem de `desks.ts`, a mesma fonte do cron — não é texto solto
+                  de painel, que envelheceria calado. */}
+              {(() => {
+                const sheet = deskFor(d.source)?.sheet;
+                if (!sheet) return null;
+                return (
+                  <div style={{ fontSize: 7, color: "var(--adm-ink-4)", paddingLeft: 8, lineHeight: 1.5, marginTop: 2 }}>
+                    <div>vê: {sheet.sees}</div>
+                    <div>decide: {sheet.decides} · regra: {sheet.rule}</div>
+                    {sheet.comparedTo && <div>lido contra: {sheet.comparedTo}</div>}
+                    <div style={{ color: "var(--adm-ink-3)" }}>aposenta se: {sheet.retireWhen}</div>
+                  </div>
+                );
+              })()}
               {d.byPlaybook.length > 0 && (
                 <div style={{ fontSize: 7, color: "var(--adm-ink-4)", paddingLeft: 8, marginTop: 1 }}>
                   {d.byPlaybook.map((p) => `${(PLAYBOOK_LABEL[p.playbook] ?? p.playbook).split(" ")[0]} ${p.trades}×`).join(" · ")}

@@ -46,6 +46,45 @@ export type DeskScoreboard =
 
 export type DeskStatus = "live" | "valhalla" | "planned";
 
+/**
+ * O SETOR da mesa — a régua pela qual ela é julgada.
+ *
+ * POR QUE ISTO EXISTE (crítica do dono, 01/08): "temos que separar bem tudo
+ * para testar corretamente dessa vez". Sem setor, o painel comparava um scalper
+ * market-neutral com um swing direcional na mesma tabela, e o ranking dizia
+ * qualquer coisa. Mesas com mandatos diferentes precisam de tabelas diferentes.
+ */
+export type DeskSector =
+  | "A_direcional"   // aposta direção: a TESE do dono está aqui
+  | "B_neutro"       // spread/funding: já paga hoje, zero IA — não mexer
+  | "C_lancamento"   // pool recém-nascido: terreno e risco próprios
+  | "D_arquivo";     // Valhalla — histórico, não compete
+
+/**
+ * A FICHA DE CONSTRUÇÃO — "não sei como cada agente novo foi montado".
+ *
+ * Era uma reclamação literal do dono, e ele tinha razão: a lógica de cada mesa
+ * morava espalhada em três arquivos e um comentário. Aqui ela vira declaração:
+ * o que a mesa VÊ, o que ela DECIDE, sob que REGRA, contra QUEM ela compete, e
+ * quando ela deve ser APOSENTADA.
+ *
+ * O campo que mais importa é o último. Uma mesa sem critério de aposentadoria
+ * vira estimação: continua rodando porque ninguém teve coragem de desligar, e o
+ * custo dela some no meio do resto.
+ */
+export interface DeskSheet {
+  /** Os dados que ela lê antes de decidir. */
+  sees: string;
+  /** A decisão que ela produz. */
+  decides: string;
+  /** A regra que rege a decisão. */
+  rule: string;
+  /** Contra quem o resultado dela é lido. `null` = não tem par. */
+  comparedTo: string | null;
+  /** Quando desligar. Sem isto, mesa ruim vira estimação. */
+  retireWhen: string;
+}
+
 export interface Desk {
   /** `source` no ledger/carteira — nunca muda (é chave de dados). */
   source: string;
@@ -67,6 +106,15 @@ export interface Desk {
   status: DeskStatus;
   /** A pergunta que esta mesa existe para responder. */
   tests: string;
+  /** Em que tabela ela é julgada. */
+  sector: DeskSector;
+  /**
+   * Como ela foi montada. Obrigatória nas mesas VIVAS — uma mesa em produção
+   * sem ficha é uma caixa-preta operando dinheiro simulado, e amanhã real.
+   * Opcional no arquivo: reconstruir a ficha de quem já foi aposentado seria
+   * arqueologia sem uso.
+   */
+  sheet?: DeskSheet;
 }
 
 // ── A frota ───────────────────────────────────────────────────────────────
@@ -79,6 +127,14 @@ export const DESKS: Desk[] = [
     style: "scalp", venue: "cex", direction: "market_neutral", brain: "none",
     horizonHours: null, scoreboard: "paper", status: "live",
     tests: "arbitragem spot entre corretoras — lucro do spread, sem apostar direção",
+    sector: "B_neutro",
+    sheet: {
+      sees: "preço spot do mesmo par em várias corretoras, ao vivo",
+      decides: "se o spread entre duas praças paga o custo de ida e volta",
+      rule: "aritmética pura — compra na barata, vende na cara, zero LLM",
+      comparedTo: "JÖRMUNGANDR (a outra forma de ser neutro)",
+      retireWhen: "o spread médio líquido ficar abaixo do custo por 30 dias seguidos",
+    },
   },
   {
     source: "arbiter2", name: "JÖRMUNGANDR", sigil: "ᛇ",
@@ -86,6 +142,14 @@ export const DESKS: Desk[] = [
     style: "scalp", venue: "cex", direction: "market_neutral", brain: "none",
     horizonHours: null, scoreboard: "paper", status: "live",
     tests: "base spot vs futuros (funding + convergência), posição hedgeada",
+    sector: "B_neutro",
+    sheet: {
+      sees: "base entre spot e perpétuo, mais a taxa de funding",
+      decides: "abrir par hedgeado quando a base paga o funding até convergir",
+      rule: "aritmética pura — a posição é travada, não aposta direção",
+      comparedTo: "RATATOSKR (spread simples, sem perna de futuros)",
+      retireWhen: "funding acumulado negativo em 30 dias, ou convergência falhando",
+    },
   },
 
   // ── Mesa mecânica long-only (Ragnarök S1/S2) ──
@@ -95,6 +159,14 @@ export const DESKS: Desk[] = [
     style: "swing", venue: "cex", direction: "long_only", brain: "none",
     horizonHours: 48, scoreboard: "paper", status: "live",
     tests: "escolher o playbook do momento (range/pullback/reversão) sem IA — o CONTROLE",
+    sector: "A_direcional",
+    sheet: {
+      sees: "retrato técnico do símbolo: regime, ADX, RSI, médias, ATR, S/R, volume, OBV",
+      decides: "QUAL dos 10 playbooks operar — ou nenhum",
+      rule: "prioridade declarada na biblioteca; determinístico, zero LLM",
+      comparedTo: "MÍMIR (mesmo cardápio, escolhedor diferente)",
+      retireWhen: "expectancy líquida negativa com 100+ decididos, ou perder do buy-and-hold",
+    },
   },
 
   {
@@ -103,6 +175,14 @@ export const DESKS: Desk[] = [
     style: "swing", venue: "cex", direction: "long_only", brain: "llm",
     model: "papel brain (Mistral)", horizonHours: 48, scoreboard: "paper", status: "live",
     tests: "a IA escolhe a estratégia do momento melhor que o bot determinístico?",
+    sector: "A_direcional",
+    sheet: {
+      sees: "o MESMO retrato do VÖLUNDR, mais o cardápio de candidatos já validados",
+      decides: "QUAL candidato tomar — ou nenhum; pode refinar os níveis",
+      rule: "o modelo escolhe; o bracket mecânico valida. Sem cérebro, não grava",
+      comparedTo: "VÖLUNDR (é ESTE o duelo — a tese do dono)",
+      retireWhen: "não bater o VÖLUNDR com 100+ decididos nos dois lados",
+    },
   },
 
   {
@@ -111,6 +191,14 @@ export const DESKS: Desk[] = [
     style: "swing", venue: "dex", direction: "long_only", brain: "none",
     horizonHours: 48, scoreboard: "paper", status: "live",
     tests: "a MESMA estratégia paga na DEX como na CEX? (a praça muda o resultado?)",
+    sector: "A_direcional",
+    sheet: {
+      sees: "o mesmo retrato, calculado sobre pools on-chain (GeckoTerminal)",
+      decides: "o mesmo playbook do VÖLUNDR, na praça DEX",
+      rule: "seletor idêntico ao mecânico — a variável isolada é a PRAÇA",
+      comparedTo: "VÖLUNDR (mesma estratégia, mercado diferente)",
+      retireWhen: "expectancy negativa com 100+ decididos, ou dado de pool sem confiabilidade",
+    },
   },
   {
     source: "strat_day", name: "SKAÐI", sigil: "ᛋ",
@@ -118,6 +206,14 @@ export const DESKS: Desk[] = [
     style: "day", venue: "cex", direction: "long_only", brain: "none",
     horizonHours: 8, scoreboard: "paper", status: "live",
     tests: "o mesmo playbook em horizonte intradiário — day trade vs swing",
+    sector: "A_direcional",
+    sheet: {
+      sees: "o mesmo retrato do VÖLUNDR",
+      decides: "o mesmo playbook, com horizonte de 8h em vez de 48h",
+      rule: "seletor idêntico ao mecânico — a variável isolada é o RELÓGIO",
+      comparedTo: "VÖLUNDR (mesma estratégia, prazo diferente)",
+      retireWhen: "expectancy negativa com 100+ decididos, ou perder do swing por margem clara",
+    },
   },
 
   // ── Vigia sem IA (grupo de controle histórico) ──
@@ -127,6 +223,14 @@ export const DESKS: Desk[] = [
     style: "event", venue: "cex", direction: "long_short", brain: "none",
     horizonHours: 72, scoreboard: "both", status: "live",
     tests: "o CONTROLE puro — gatilho de preço sem tratamento nenhum",
+    sector: "A_direcional",
+    sheet: {
+      sees: "movimento bruto de preço nos majors, sem tratamento",
+      decides: "registrar um sinal quando o gatilho dispara",
+      rule: "gatilho de preço puro — é o piso contra o qual todo o resto se mede",
+      comparedTo: "todas — é o CONTROLE de nível zero",
+      retireWhen: "nunca: um controle sem tratamento é a linha de base do experimento",
+    },
   },
 
   // ── O arqueiro: caça lançamento on-chain ──
@@ -136,6 +240,14 @@ export const DESKS: Desk[] = [
     style: "event", venue: "dex", direction: "long_only", brain: "none",
     horizonHours: 12, scoreboard: "paper", status: "live",
     tests: "token recém-lançado com chance de pump — comprar e REALIZAR em USDT",
+    sector: "C_lancamento",
+    sheet: {
+      sees: "idade do pool, liquidez travada e fluxo comprador de tokens recém-nascidos",
+      decides: "comprar uma flecha, com munição diária contada",
+      rule: "regra de idade/liquidez/fluxo; sem LLM (não há estrutura pra ler em pool de horas)",
+      comparedTo: null,
+      retireWhen: "munição diária consumida sem lucro líquido em 60 dias",
+    },
   },
   {
     // O sniper ANTIGO. Caçava os 14 majors por gatilho de preço e podia emitir
@@ -145,6 +257,7 @@ export const DESKS: Desk[] = [
     who: "o falcão entre os olhos da águia — vigiava os majors, não os nascimentos",
     style: "event", venue: "cex", direction: "long_short", brain: "llm",
     horizonHours: 72, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "disparo por gatilho de preço nos majors — encerrado: mandato errado",
   },
 
@@ -154,6 +267,7 @@ export const DESKS: Desk[] = [
     who: "o Pai de Todos: preside o conselho de modelos e assina a decisão",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "DeepSeek (CEO)", horizonHours: 72, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "um conselho multi-modelo decide melhor que um modelo só?",
   },
   {
@@ -161,6 +275,7 @@ export const DESKS: Desk[] = [
     who: "o corvo Pensamento — voa, observa e reporta a Odin",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "DeepSeek", horizonHours: 72, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "expectancy do modelo puro no formato scanner",
   },
   {
@@ -168,6 +283,7 @@ export const DESKS: Desk[] = [
     who: "o corvo Memória — o outro par de olhos do trono",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Kimi (Moonshot)", horizonHours: 72, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "expectancy do modelo puro no formato scanner",
   },
   {
@@ -175,6 +291,7 @@ export const DESKS: Desk[] = [
     who: "o lobo Faminto que come ao pé da mesa de Odin",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Mistral", horizonHours: 72, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "expectancy do modelo puro no formato scanner",
   },
   {
@@ -182,6 +299,7 @@ export const DESKS: Desk[] = [
     who: "o lobo Voraz, irmão de Geri",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Llama (Meta)", horizonHours: 72, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "expectancy do modelo puro no formato scanner",
   },
   {
@@ -189,6 +307,7 @@ export const DESKS: Desk[] = [
     who: "o corcel de oito patas — o mais veloz, ainda que hoje corra sem os olhos do X",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Grok (xAI)", horizonHours: 72, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "expectancy do modelo puro no formato scanner",
   },
 
@@ -198,6 +317,7 @@ export const DESKS: Desk[] = [
     who: "a vidente: lê a saga do mercado e declara a tese com invalidação",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "DeepSeek", horizonHours: 240, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "tese de analista (240h) bate o scanner de 30 minutos?",
   },
   {
@@ -205,6 +325,7 @@ export const DESKS: Desk[] = [
     who: "a vidente de Midgard",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "Mistral", horizonHours: 240, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "tese de analista (240h) bate o scanner de 30 minutos?",
   },
   {
@@ -212,6 +333,7 @@ export const DESKS: Desk[] = [
     who: "a vidente veloz",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "Grok (xAI)", horizonHours: 240, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "tese de analista (240h) bate o scanner de 30 minutos?",
   },
   {
@@ -219,6 +341,7 @@ export const DESKS: Desk[] = [
     who: "a vidente da memória longa",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "Kimi (Moonshot)", horizonHours: 240, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "tese de analista (240h) bate o scanner de 30 minutos?",
   },
 
@@ -228,6 +351,7 @@ export const DESKS: Desk[] = [
     who: "o deus que deu a mão para atar o lobo — aposentado por custo",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Anthropic (aposentado)", horizonHours: 72, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "assento Anthropic — encerrado: caro demais para o que entregava",
   },
   {
@@ -235,6 +359,7 @@ export const DESKS: Desk[] = [
     who: "a cronista de Odin — aposentada junto com o assento Anthropic",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "Anthropic (aposentado)", horizonHours: 240, scoreboard: "both", status: "valhalla",
+    sector: "D_arquivo",
     tests: "tese de analista no assento Anthropic — encerrado por custo",
   },
 ];
