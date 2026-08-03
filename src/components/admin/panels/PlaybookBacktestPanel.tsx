@@ -28,7 +28,7 @@ type Diag = {
   plannedRr: number; realizedRr: number | null;
   avgWinPct: number | null; avgLossPct: number | null;
   expiredShare: number; mfeToTarget: number | null; maeToStop: number | null;
-  straddles: number;
+  straddles: number; inverseNetPerTrade: number;
 };
 type Stat = {
   playbook: string; label: string; thesis: string;
@@ -182,6 +182,21 @@ export default function PlaybookBacktestPanel() {
                           )}
                         </div>
                       )}
+                      {/* "E SE EU FIZESSE O CONTRÁRIO?" — a pergunta do dono,
+                          medida. Não é −netPerTrade: é uma posição VENDIDA de
+                          verdade, com o bracket refletido, resolvida pelo mesmo
+                          motor e perdendo os mesmos straddles. */}
+                      <div>
+                        o mesmo setup ESPELHADO (vendido) daria{" "}
+                        <b style={{ color: s.diag.inverseNetPerTrade > 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
+                          {pct(s.diag.inverseNetPerTrade)}
+                        </b>
+                        {s.diag.inverseNetPerTrade < 0 && (s.netPerTrade ?? 0) < 0 && (
+                          <span style={{ color: "var(--adm-amber)" }}>
+                            {" "}— os DOIS lados perdem: o defeito não é a direção, é a geometria
+                          </span>
+                        )}
+                      </div>
                       <div>
                         {(s.diag.expiredShare * 100).toFixed(0)}% venceram o horizonte sem tocar nada
                         {s.diag.straddles > 0 && ` · ${s.diag.straddles} desfecho(s) decidido(s) pela convenção stop-first`}

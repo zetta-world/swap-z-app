@@ -82,6 +82,26 @@ export interface Outcome {
   plannedRr: number;
   /** A vela que resolveu tocou alvo E stop — a convenção stop-first decidiu. */
   straddled: boolean;
+  /**
+   * O MESMO SETUP, ESPELHADO — a hipótese do "compra quando ele diz que tá ruim".
+   *
+   * O dono brincou que se ele fizesse o contrário do que a mesa manda, lucraria.
+   * A brincadeira tem aritmética: se a expectância é consistentemente negativa,
+   * o espelho dela é positivo menos o custo pago duas vezes.
+   *
+   * ⚠️ MAS INVERTER O SINAL DO RESULTADO SERIA BATOTA, e de um jeito sutil.
+   *
+   * Quando uma vela cruza alvo E stop, a convenção pessimista faz o LONG
+   * registrar o stop. Se o espelho fosse só `−netPct`, essa mesma vela viraria
+   * um ALVO batido no short — a pessimista viraria otimista na tradução, e o
+   * inverso apareceria melhor do que é exatamente nas velas mais violentas.
+   *
+   * Por isso o espelho é uma posição DE VERDADE: bracket refletido em torno da
+   * entrada (stop acima, alvo abaixo), lado `sell`, resolvido pelo MESMO
+   * `computeExitPath` com a MESMA pessimismo. O short também perde o straddle.
+   */
+  inverseNetPct: number;
+  inverseReason: "target" | "stop" | "expired";
 }
 
 /**
@@ -113,6 +133,21 @@ export interface PlaybookDiag {
   maeToStop: number | null;
   /** Quantos desfechos vieram da convenção pessimista (vela cruzou os dois). */
   straddles: number;
+  /**
+   * O MESMO SETUP ESPELHADO — "e se eu fizesse o contrário?".
+   *
+   * Não é `−netPerTrade`: é uma posição vendida de verdade, com o bracket
+   * refletido, resolvida pelo mesmo motor e perdendo os mesmos straddles. A
+   * diferença entre este número e o simétrico do original É o custo da
+   * convenção pessimista, e ele aparece nas duas pontas em vez de sumir numa.
+   *
+   * ⚠️ ANTES DE COMEMORAR UM POSITIVO AQUI: inverter um long vira um SHORT, que
+   * não é a mesma coisa com o sinal trocado. Short paga funding, exige margem,
+   * pode ser liquidado e tem perda sem teto. E, o mais importante: num mercado
+   * que CAIU na janela, qualquer short lucra sem que isso seja vantagem —
+   * `buyHoldPct` está do lado justamente para essa leitura.
+   */
+  inverseNetPerTrade: number;
 }
 
 export interface PlaybookStat {
@@ -280,6 +315,7 @@ export function diagnose(outcomes: Outcome[]): PlaybookDiag | null {
       outcomes.filter((o) => o.reason !== "stop" && o.stopPct > 0).map((o) => -o.maePct / o.stopPct),
     ),
     straddles: outcomes.filter((o) => o.straddled).length,
+    inverseNetPerTrade: outcomes.reduce((s, o) => s + o.inverseNetPct, 0) / outcomes.length,
   };
 }
 
@@ -354,6 +390,15 @@ export function backtestPlaybooks(
       if (!v) continue;
       const e = tr.pos.entry_price;
       const ex = excursions(e, future, tr.pos.stop_price, tr.pos.target_price);
+
+      // O ESPELHO: mesma entrada, bracket refletido, lado vendido. Resolvido
+      // pelo mesmo motor e com a mesma convenção pessimista — o short também
+      // perde quando a vela cruza os dois lados.
+      const espelho = computeExitPath({
+        ...tr.pos, side: "sell",
+        stop_price: e + (e - tr.pos.stop_price),      // o stop do long vira o alvo
+        target_price: e - (tr.pos.target_price - e),  // e o alvo vira o stop
+      }, future, undefined, bar.t);
       const list = outcomes.get(pb) ?? [];
       list.push({
         regime: tr.regime, netPct: v.netPct, reason: v.reason, win: v.win,
@@ -361,6 +406,10 @@ export function backtestPlaybooks(
         targetPct: ((tr.pos.target_price - e) / e) * 100,
         stopPct: ((e - tr.pos.stop_price) / e) * 100,
         plannedRr: tr.plannedRr,
+        // Espelho ainda em aberto no fim da janela conta como expirado a zero —
+        // não inventa resultado para o lado que não fechou.
+        inverseNetPct: espelho?.netPct ?? 0,
+        inverseReason: espelho?.reason ?? "expired",
       });
       outcomes.set(pb, list);
       open.delete(pb);
