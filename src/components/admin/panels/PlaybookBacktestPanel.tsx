@@ -29,6 +29,7 @@ type Diag = {
   avgWinPct: number | null; avgLossPct: number | null;
   expiredShare: number; mfeToTarget: number | null; maeToStop: number | null;
   straddles: number; inverseNetPerTrade: number;
+  byWeather: Partial<Record<"favoravel" | "misto" | "adverso", { decided: number; netPerTrade: number }>>;
 };
 type Stat = {
   playbook: string; label: string; thesis: string;
@@ -221,6 +222,31 @@ export default function PlaybookBacktestPanel() {
                         {(s.diag.expiredShare * 100).toFixed(0)}% venceram o horizonte sem tocar nada
                         {s.diag.straddles > 0 && ` · ${s.diag.straddles} desfecho(s) decidido(s) pela convenção stop-first`}
                       </div>
+                    </div>
+                  )}
+
+                  {/* POR CLIMA DE MERCADO — a variável que as três janelas
+                      expuseram. `trend_continuation` foi a PIOR estratégia numa
+                      janela (−0.81%) e a MELHOR na outra (+0.16%, n=103): não é
+                      ruído, é tendência precisando de tendência. O regime do
+                      SÍMBOLO não explicava essa diferença; o do MAR explica. */}
+                  {s.diag && Object.keys(s.diag.byWeather).length > 0 && (
+                    <div style={{ margin: "4px 0", paddingLeft: 6, borderLeft: "2px solid var(--adm-border)" }}>
+                      <span style={{ color: "var(--adm-ink-3)" }}>por CLIMA do mercado:</span>
+                      {(["favoravel", "misto", "adverso"] as const).map((w) => {
+                        const v = s.diag!.byWeather[w];
+                        if (!v) return null;
+                        return (
+                          <div key={w}>
+                            mar {w === "favoravel" ? "a favor" : w === "adverso" ? "contra" : "misto"}:{" "}
+                            <b style={{ color: !shouldTint(v.decided, data.noiseThreshold) ? "var(--adm-ink-4)"
+                              : v.netPerTrade > 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
+                              {pct(v.netPerTrade)}
+                            </b>{" "}
+                            <span style={{ color: "var(--adm-ink-4)" }}>({sampleLabel(v.decided, data.noiseThreshold)})</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 

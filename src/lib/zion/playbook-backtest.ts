@@ -43,6 +43,7 @@ import { computeIndicators, type Candle, type SymbolIndicators, type MarketRegim
 import { computeExitPath } from "@/lib/paper/engine";
 import { candidateAttempts } from "@/lib/zion/playbooks";
 import { DEFAULT_LIMITS, type ActivePlaybook, type BracketLimits } from "@/lib/zion/bracket";
+import { weatherFromCandles, type Weather } from "@/lib/zion/weather";
 
 /** Candle com tempo — o que a resolução precisa. */
 export interface TimedCandle extends Candle { t: number }
@@ -102,6 +103,18 @@ export interface Outcome {
    */
   inverseNetPct: number;
   inverseReason: "target" | "stop" | "expired";
+  /**
+   * O CLIMA DO MERCADO no instante da ENTRADA.
+   *
+   * O regime que já era gravado é o do SÍMBOLO. Este é o do mar em volta — e a
+   * diferença entre os dois é a coisa que as três janelas de 174 dias
+   * mostraram: a mesma estratégia rende +0.16% num mercado neutro e −0.81% num
+   * de queda, sem que o regime do símbolo explique a diferença.
+   *
+   * Medido no momento de ABRIR, não de fechar: é ali que a decisão foi tomada,
+   * e é ali que o filtro atuaria.
+   */
+  weather: Weather;
 }
 
 /**
@@ -133,6 +146,15 @@ export interface PlaybookDiag {
   maeToStop: number | null;
   /** Quantos desfechos vieram da convenção pessimista (vela cruzou os dois). */
   straddles: number;
+  /**
+   * Desempenho POR CLIMA DE MERCADO — o que decide se o filtro de regime paga.
+   *
+   * Sem isto, o filtro seria mais um palpite com cara de método: dava para
+   * afirmar "não opere em mercado ruim" e nunca saber quanto isso valeu. Com
+   * isto, a pergunta vira aritmética — e o filtro pode ser DESLIGADO se o
+   * número não sustentar.
+   */
+  byWeather: Partial<Record<Weather, { decided: number; netPerTrade: number }>>;
   /**
    * O MESMO SETUP ESPELHADO — "e se eu fizesse o contrário?".
    *
@@ -200,6 +222,7 @@ interface OpenTrade {
   regime: MarketRegime;
   openedIdx: number;
   plannedRr: number;
+  weather: Weather;
   pos: {
     side: string; entry_price: number; cost_usd: number;
     target_price: number; stop_price: number; opened_at: string; horizon_hours: number;
@@ -315,6 +338,16 @@ export function diagnose(outcomes: Outcome[]): PlaybookDiag | null {
       outcomes.filter((o) => o.reason !== "stop" && o.stopPct > 0).map((o) => -o.maePct / o.stopPct),
     ),
     straddles: outcomes.filter((o) => o.straddled).length,
+    byWeather: Object.fromEntries(
+      (["favoravel", "misto", "adverso"] as Weather[]).flatMap((w) => {
+        const sub = outcomes.filter((o) => o.weather === w);
+        if (sub.length === 0) return [];
+        return [[w, {
+          decided: sub.length,
+          netPerTrade: sub.reduce((s, o) => s + o.netPct, 0) / sub.length,
+        }]];
+      }),
+    ),
     inverseNetPerTrade: outcomes.reduce((s, o) => s + o.inverseNetPct, 0) / outcomes.length,
   };
 }
@@ -382,6 +415,14 @@ export function backtestPlaybooks(
    * respondido com opinião.
    */
   limits: BracketLimits = DEFAULT_LIMITS,
+  /**
+   * A série de REFERÊNCIA do mercado (diária), para ler o clima a cada barra.
+   *
+   * Vem de fora porque o backtest roda um símbolo por vez e o clima é uma
+   * propriedade do MAR, não do peixe. Sem ela, o clima de toda barra é "misto"
+   * — que é a resposta honesta para "não medi", e não um veto silencioso.
+   */
+  marketRef: Candle[] = [],
 ): BacktestResult {
   const outcomes = new Map<ActivePlaybook, Outcome[]>();
   const open = new Map<ActivePlaybook, OpenTrade>();
@@ -414,6 +455,7 @@ export function backtestPlaybooks(
         targetPct: ((tr.pos.target_price - e) / e) * 100,
         stopPct: ((e - tr.pos.stop_price) / e) * 100,
         plannedRr: tr.plannedRr,
+        weather: tr.weather,
         // Espelho ainda em aberto no fim da janela conta como expirado a zero —
         // não inventa resultado para o lado que não fechou.
         inverseNetPct: espelho?.netPct ?? 0,
@@ -442,6 +484,11 @@ export function backtestPlaybooks(
         regime: ind.regime,
         openedIdx: i,
         plannedRr: att.plan.rr,
+        // O clima NA ENTRADA, com a referência cortada no mesmo instante — a
+        // mesma disciplina de não-lookahead do resto do motor.
+        weather: marketRef.length > 0
+          ? weatherFromCandles(marketRef.slice(0, Math.max(1, Math.floor((i + 1) / 24))))
+          : "misto",
         pos: {
           side: "buy", entry_price: att.plan.entry, cost_usd: 100,
           target_price: att.plan.target, stop_price: att.plan.stop,
