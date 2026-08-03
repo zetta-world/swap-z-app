@@ -19,14 +19,16 @@ export const maxDuration = 60;
  * qual playbook o seletor mecânico tenta primeiro e sempre foi um PALPITE —
  * a ordem clássica, declarada como chute no próprio código.
  *
- * ⚠️ O TETO DA JANELA É REAL E PRECISA APARECER NA TELA.
+ * ⚠️ A JANELA PRECISA APARECER NA TELA, JUNTO DO NÚMERO.
  *
- * A Binance devolve no máximo ~1000 candles de 1h por chamada, ou seja ~40
- * dias. Descontando o aquecimento dos indicadores sobram cerca de 32 dias de
- * teste por símbolo. Para os playbooks frequentes isso dá amostra; para os
- * raros (absorção, divergência) provavelmente NÃO dá — e um número de 4 trades
- * exibido como resposta seria o mesmo defeito do Valhalla, agora com a
- * autoridade de um "backtest".
+ * A primeira rodada usou 1.000 barras — o teto de UMA chamada da Binance — e
+ * devolveu 65 trades no total, com os nove playbooks abaixo do limiar. A tela
+ * disse "não sei", que era honesto e inútil. Agora `fetchTimedCandles` pagina
+ * para trás e a janela é ESCOLHIDA (~6 meses), não imposta.
+ *
+ * Isso muda a amostra, não a regra: o que continuar abaixo do limiar continua
+ * saindo em cinza. Seis meses não transformam um playbook raro em medido — só
+ * dão a ele a chance de aparecer.
  *
  * Por isso a resposta carrega `windowDays` e o `n` de cada playbook, e o painel
  * acinzenta o que estiver abaixo do limiar. Não é rodapé: é o que separa
@@ -37,7 +39,21 @@ export const maxDuration = 60;
 
 /** Um recorte, não o universo: o backtest é caro e 60s é o teto. */
 const SYMBOLS = ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "ARB", "OP", "ADA", "DOGE"];
-const BARS_1H = 1000;
+
+/**
+ * SEIS MESES (03/08). A primeira rodada usou 1.000 barras — o teto de UMA
+ * chamada da Binance — e voltou com os nove playbooks abaixo do limiar: 65
+ * trades no total, o maior com n=20. A tela disse "não sei", que era a resposta
+ * honesta e inútil.
+ *
+ * `fetchTimedCandles` agora pagina para trás, então a janela deixa de ser
+ * limitada pela API e passa a ser escolhida. 4.400 barras de 1h ≈ 6 meses.
+ *
+ * Com a janela de indicadores limitada (`INDICATOR_WINDOW`), o custo por barra
+ * virou constante — sem isso, seis meses estourariam os 60s da rota e ela
+ * devolveria menos símbolos em silêncio, que é a pior forma de falhar.
+ */
+const BARS_1H = Number(process.env.PLAYBOOK_BT_BARS ?? 4400);
 
 export async function POST(): Promise<NextResponse> {
   await requireAdmin();
@@ -46,7 +62,7 @@ export async function POST(): Promise<NextResponse> {
   const results = await Promise.all(SYMBOLS.map(async (symbol) => {
     const [c1h, c4h, c1d, c1w] = await Promise.all([
       fetchTimedCandles(symbol, "1h", BARS_1H),
-      fetchTimedCandles(symbol, "4h", 400),
+      fetchTimedCandles(symbol, "4h", 1100),
       fetchTimedCandles(symbol, "1d", 200),
       fetchTimedCandles(symbol, "1w", 60),
     ]);

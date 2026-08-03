@@ -90,21 +90,49 @@ interface OpenTrade {
 }
 
 /**
- * Corta as séries no instante da barra `i`.
+ * Quantas barras de história cada retrato enxerga.
+ *
+ * ⚠️ ISTO NÃO É SÓ OTIMIZAÇÃO (03/08, ao abrir a janela para 6 meses).
+ *
+ * A versão anterior passava a série INTEIRA até a barra `i` — e como
+ * `calcSupportResistance` varre o array todo procurando pivôs, o custo por
+ * barra crescia com a posição dela. Numa janela de 33 dias isso passava
+ * despercebido; em 6 meses (~4.400 barras) o backtest levaria uns dois minutos
+ * e estouraria o teto de 60s da rota, silenciosamente devolvendo menos símbolos.
+ *
+ * Mas o motivo principal não é custo, é CORREÇÃO. Um suporte formado quatro
+ * meses atrás não é o suporte que decide um trade de 48 horas. Com a série
+ * inteira, um pivô antigo e irrelevante competia com os recentes e às vezes
+ * vencia por estar mais perto do preço por acaso. A janela deslizante faz o
+ * retrato ver o que um trader veria: as últimas semanas.
+ *
+ * 400 barras ≈ 17 dias. Folgado para a EMA50 convergir (a memória dela é
+ * exponencial: além de ~8× o período a contribuição é irrelevante), para o
+ * ADX14, para a divergência (60 velas) e para o volume relativo (20).
+ *
+ * Efeito colateral honesto: os números mudam em relação à rodada anterior. Não
+ * é ruído — é o retrato deixando de olhar para trás demais.
+ */
+export const INDICATOR_WINDOW = 400;
+
+/**
+ * Corta as séries no instante da barra `i`, com janela LIMITADA.
  *
  * As séries de prazo maior são cortadas PROPORCIONALMENTE (4h a cada 4 barras
  * de 1h, 1d a cada 24, 1w a cada 168). Isso pressupõe que as quatro séries
  * terminam no mesmo instante e são contíguas — verdade quando vêm da mesma
- * coleta. É uma aproximação, e vale dizer: um desalinhamento aqui adiantaria
- * no máximo uma barra de prazo maior, o que muda um filtro de tendência, não a
- * geometria do trade.
+ * coleta. Um desalinhamento aqui adiantaria no máximo uma barra de prazo maior,
+ * o que muda um filtro de tendência, não a geometria do trade.
+ *
+ * As de prazo maior NÃO são limitadas pela janela: 200 velas diárias são oito
+ * meses, e é justamente de lá que saem o range de 1 ano e a estrutura de ciclo.
  */
 function sliceAt(
   i: number, c1h: Candle[], c4h: Candle[], c1d: Candle[], c1w: Candle[],
 ): [Candle[], Candle[], Candle[], Candle[]] {
   const n = i + 1;
   return [
-    c1h.slice(0, n),
+    c1h.slice(Math.max(0, n - INDICATOR_WINDOW), n),
     c4h.slice(0, Math.max(1, Math.floor(n / 4))),
     c1d.slice(0, Math.max(1, Math.floor(n / 24))),
     c1w.slice(0, Math.max(1, Math.floor(n / 168))),

@@ -89,8 +89,8 @@ export default function PlaybookBacktestPanel() {
             border: "1px solid var(--adm-border)", borderRadius: 4, padding: "6px 8px", marginBottom: 10,
           }}>
             ⏳ janela de <b>~{data.windowDays} dias</b> por símbolo ({data.symbols.length} símbolos ·{" "}
-            {data.barsTested.toLocaleString("pt-BR")} barras) — teto da API de candles, não escolha.
-            Playbook raro tende a ficar abaixo de {data.noiseThreshold} trades nesta janela, e sai em cinza.
+            {data.barsTested.toLocaleString("pt-BR")} barras). O que estiver abaixo de{" "}
+            {data.noiseThreshold} trades sai em cinza — inclusive por regime.
             {data.symbolsFailed.length > 0 && ` Sem dado: ${data.symbolsFailed.join(", ")}.`}
           </div>
 
