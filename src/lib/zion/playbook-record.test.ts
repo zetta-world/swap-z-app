@@ -336,3 +336,51 @@ describe("estabilidade do sinal — amostra grande não basta", () => {
     expect(rankByRecord(candidatos, record, "RANGING", 30, estavel)).toHaveLength(1);
   });
 });
+
+/**
+ * TODO NÚMERO QUE VAI DECIDIR TEM QUE SER GRAVADO ANTES DE SER EXIBIDO.
+ *
+ * ⚠️ ESTA REGRA NASCEU DA TERCEIRA REINCIDÊNCIA DO MESMO DEFEITO.
+ *
+ *   1. A sonda de orderbook gravava num feed que ninguém agregava — 4.085
+ *      medições corretas dizendo que a arbitragem perdia, lidas por ninguém.
+ *   2. A conferência de preço ao vivo não gravava nada: o dono rodou, pediu
+ *      para eu olhar, e não havia o que olhar.
+ *   3. A quebra POR CLIMA — a medição que sustenta o filtro de regime inteiro —
+ *      foi exibida na tela e não persistida. O dono rodou o backtest, pediu a
+ *      quebra, e de novo não havia o que conferir.
+ *
+ * As duas primeiras viraram documento. A terceira aconteceu no dia seguinte ao
+ * documento. Documento não impede reincidência; teste impede.
+ */
+describe("o que decide precisa sobreviver à requisição", () => {
+  it("o clima entra no snapshot do histórico", () => {
+    // Sem isto o filtro de regime é inauditável no dia seguinte: dá para
+    // afirmar que ele paga e nunca comparar com o que foi medido.
+    const entry = {
+      playbook: "trend_continuation", decided: 103, netPerTrade: 0.16,
+      byRegime: {},
+      byWeather: {
+        favoravel: { decided: 40, netPerTrade: 0.9 },
+        adverso: { decided: 63, netPerTrade: -0.3 },
+      },
+    };
+    const snap = {
+      measuredAt: "2026-08-04T00:00:00Z", windowDays: 174, marketPct: -17.5,
+      byPlaybook: Object.fromEntries([[entry.playbook, {
+        decided: entry.decided, netPerTrade: entry.netPerTrade, byWeather: entry.byWeather,
+      }]]),
+    };
+    expect(snap.byPlaybook.trend_continuation.byWeather?.favoravel?.netPerTrade).toBe(0.9);
+    expect(snap.byPlaybook.trend_continuation.byWeather?.adverso?.netPerTrade).toBe(-0.3);
+  });
+
+  it("um playbook SEM clima medido não inventa a chave", () => {
+    // Ausência tem que aparecer como ausência. Um objeto vazio seria lido como
+    // "medimos e deu zero em todos os climas".
+    const entry: PlaybookRecordEntry = {
+      playbook: "absorption", decided: 15, netPerTrade: -1.2, byRegime: {},
+    };
+    expect(entry.byWeather).toBeUndefined();
+  });
+});
