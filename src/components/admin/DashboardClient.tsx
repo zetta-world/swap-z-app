@@ -20,6 +20,7 @@ import AuditBenchPanel        from "./panels/AuditBenchPanel";
 import PlaybookBacktestPanel  from "./panels/PlaybookBacktestPanel";
 import ArbiterCohortPanel     from "./panels/ArbiterCohortPanel";
 import CalibrationPanel       from "./panels/CalibrationPanel";
+import WhatWorkedPanel        from "./panels/WhatWorkedPanel";
 import LaunchGatePanel        from "./panels/LaunchGatePanel";
 import MarginPanel            from "./panels/MarginPanel";
 import AiCostPanel            from "./panels/AiCostPanel";
@@ -57,6 +58,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "playbook-backtest":  <PlaybookBacktestPanel />,
   "arbiter-cohort":     <ArbiterCohortPanel />,
   "calibration":        <CalibrationPanel />,
+  "what-worked":        <WhatWorkedPanel />,
   "launch-gate":        <LaunchGatePanel />,
   "margin":             <MarginPanel />,
   "ai-cost":            <AiCostPanel />,

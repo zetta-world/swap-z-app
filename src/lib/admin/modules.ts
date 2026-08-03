@@ -14,6 +14,7 @@ export type ModuleId =
   | "playbook-backtest"
   | "arbiter-cohort"
   | "calibration"
+  | "what-worked"
   | "tournament"
   | "ragnarok"
   | "swap-guard"
@@ -167,6 +168,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 6,
+  },
+  {
+    id: "what-worked",
+    title: "O QUE TERIA DADO LUCRO",
+    subtitle: "estratégias canônicas na mesma janela — inclusive as que vendem",
+    icon: "🧭",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 7,
   },
   {
     id: "backtest",
