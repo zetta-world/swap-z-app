@@ -35,6 +35,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
 import { deskFor } from "@/lib/zion/desks";
 
 /** Quanto de desvio ainda é arredondamento de ponto flutuante, e não fuga. */
@@ -158,7 +159,7 @@ export function planRepair(all: WalletDrift[], tolerance = DRIFT_TOLERANCE_USD):
 export async function reconcileWallets(minCashUsd = 25): Promise<WalletDrift[]> {
   const db = getSupabaseAdmin();
   if (!db) return [];
-  const [{ data: accounts }, { data: positions }] = await Promise.all([
+  const [{ data: accounts }, positions] = await Promise.all([
     db.from("paper_accounts").select("id, source, label, starting_usd, cash_usd"),
     // ⚠️ SÓ AS NÃO-ARQUIVADAS (correção 03/08, achada pela própria bancada).
     //
@@ -172,8 +173,32 @@ export async function reconcileWallets(minCashUsd = 25): Promise<WalletDrift[]> 
     // repetir toda vez que um ledger for zerado. Alarme falso treina o operador
     // a ignorar o alarme verdadeiro — foi eu mesmo que escrevi isso, e violei na
     // linha seguinte.
-    db.from("paper_positions").select("account_id, status, cost_usd, pnl_usd")
-      .is("archived_at", null).limit(20000),
+    /**
+     * ⚠️ PAGINADO (03/08, segunda correção do mesmo dia — e a mais cara).
+     *
+     * A versão anterior pedia `.limit(20000)` e achava que isso bastava. NÃO
+     * BASTA: `limit` é um pedido do cliente, e o PostgREST tem um teto PRÓPRIO
+     * de linhas no servidor. Pedir 20.000 devolve as primeiras ~1.000, sem
+     * erro, sem aviso, e sem ordem definida.
+     *
+     * O estrago foi real e mensurável. Com ~2.100 posições vivas, a leitura
+     * voltou truncada; as carteiras cujas posições ficaram FORA da janela
+     * apareceram com zero posições, logo `esperado = capital inicial`, logo um
+     * déficit fantasma — e o reparo pagou US$ 1.429,09 que ninguém devia. O
+     * VÖLUNDR estava com US$ 843,74, que era exatamente o valor correto, e
+     * recebeu US$ 156,26 para "consertar".
+     *
+     * O que torna isto pior que um bug comum: o cabeçalho DESTE arquivo
+     * documenta essa mesma armadilha como causa raiz do vazamento original, e
+     * `selectAllRows` existe no repositório exatamente para ela. Eu escrevi a
+     * explicação e usei `limit` na linha seguinte, dentro do detector do
+     * problema. Uma verificação que lê dado truncado não é uma verificação
+     * frouxa — ela INVENTA os números que reporta.
+     */
+    selectAllRows<{ account_id: string; status: string; cost_usd: number | null; pnl_usd: number | null }>(
+      (from, to) => db.from("paper_positions").select("account_id, status, cost_usd, pnl_usd")
+        .is("archived_at", null).order("id", { ascending: true }).range(from, to),
+    ),
   ]);
   if (!accounts) return [];
 
