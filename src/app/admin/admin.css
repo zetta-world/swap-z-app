@@ -491,6 +491,59 @@
 }
 
 /* ── Toggle button ───────────────────────────────────────────────────────── */
+/**
+ * ⚠️ ESTA CLASSE NÃO EXISTIA (04/08).
+ *
+ * Sete botões em cinco painéis usam `adm-btn` — rodar backtest, varrer
+ * calibragem, conferir preços ao vivo, devolver capital, zerar ledger — e a
+ * regra nunca foi escrita. Eles renderizavam como `<button>` cru herdando a
+ * fonte do terminal: texto grande, sem borda, sem fundo, sem cursor.
+ *
+ * O dono descreveu exatamente o sintoma: "nem parece algo clicável". Ele
+ * passou dias achando que tinha rodado varreduras que nunca disparou, porque
+ * os três botões pareciam uma frase só.
+ *
+ * Um controle que não parece controle é pior que um controle escondido: o
+ * operador acha que agiu.
+ */
+.adm-btn {
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+  border: 1px solid var(--adm-border-hi);
+  background: rgba(255 255 255 / 0.03);
+  color: var(--adm-ink-2);
+  /* Cada botão é um bloco com respiro próprio. Sem isto, três deles em
+     sequência viram uma linha de texto contínua — foi o que aconteceu. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.adm-btn:hover:not(:disabled) {
+  color: var(--adm-ink);
+  border-color: var(--adm-cyan);
+  background: rgba(0 229 255 / 0.08);
+}
+
+.adm-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* Trabalho em curso tem que PARECER em curso: o operador precisa saber que
+   clicou, e que ainda não acabou. */
+.adm-btn:disabled {
+  cursor: wait;
+  opacity: 0.55;
+  border-style: dashed;
+}
+
 .adm-toggle {
   font-family: inherit;
   font-size: 9px;
