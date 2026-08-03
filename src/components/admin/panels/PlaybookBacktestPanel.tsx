@@ -93,10 +93,10 @@ export default function PlaybookBacktestPanel() {
             num mercado que caiu 18.49% na mediana — medir estratégia comprada
             só aí responde "ela ganha em bear?", que não é a pergunta. */}
         <button className="adm-btn" onClick={() => run(180)} disabled={running}>
-          ⏮ 6 meses ANTES
+          ⚖ BACKTEST · 6 meses atrás
         </button>
         <button className="adm-btn" onClick={() => run(360)} disabled={running}>
-          ⏮ 12 meses ANTES
+          ⚖ BACKTEST · 12 meses atrás
         </button>
       </div>
 

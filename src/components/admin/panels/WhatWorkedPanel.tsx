@@ -64,12 +64,23 @@ export default function WhatWorkedPanel() {
         nada extraía, nenhum ajuste na nossa biblioteca mudaria isso.
       </div>
 
+      {/* ⚠️ RÓTULOS DISTINTOS DO OUTRO PAINEL (04/08).
+          A primeira versão usava "⏮ 6 meses ANTES" e "⏮ 12 meses ANTES" — as
+          MESMAS palavras dos botões do backtest, dois painéis acima. O dono
+          rodou "nas 3 janelas" e o que disparou foi o backtest: dois painéis
+          diferentes, botões idênticos, nenhuma forma de saber qual foi clicado.
+          Botão que não diz o que faz é o mesmo defeito do `adm-btn` sem CSS,
+          num degrau acima. */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <button className="adm-btn" onClick={() => rodar(0)} disabled={rodando}>
-          {rodando ? "medindo…" : "🧭 o que teria dado lucro"}
+          {rodando ? "medindo…" : "🧭 O QUE FUNCIONOU · hoje"}
         </button>
-        <button className="adm-btn" onClick={() => rodar(180)} disabled={rodando}>⏮ 6 meses ANTES</button>
-        <button className="adm-btn" onClick={() => rodar(360)} disabled={rodando}>⏮ 12 meses ANTES</button>
+        <button className="adm-btn" onClick={() => rodar(180)} disabled={rodando}>
+          🧭 O QUE FUNCIONOU · 6 meses atrás
+        </button>
+        <button className="adm-btn" onClick={() => rodar(360)} disabled={rodando}>
+          🧭 O QUE FUNCIONOU · 12 meses atrás
+        </button>
       </div>
 
       {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 8 }}>{err}</div>}
