@@ -29,6 +29,7 @@
 
 import { getNewPoolsAcrossChains, type PoolSummary } from "@/lib/api/geckoterminal";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
 
 /** A mesa de lançamento — long-only, on-chain. */
 export const ULLR = "ullr_launch";
@@ -150,9 +151,19 @@ export async function runUllrScan(): Promise<UllrRun> {
 
   // Não repetir um pool já atirado — a mesma flecha duas vezes é só dobrar
   // aposta no mesmo lugar, não uma segunda oportunidade.
-  const { data: prior } = await db.from("zion_suggestions")
-    .select("pool_address").eq("source", ULLR).not("pool_address", "is", null).limit(1000);
-  const seen = new Set((prior ?? []).map((r) => r.pool_address));
+  // ⚠️ PAGINADO. Este conjunto é o que impede o ULLR de reentrar num pool que
+  // ele já operou, e truncá-lo tem a MESMA forma do vazamento de caixa de
+  // 01/08: o dedup vinha cortado em 1.000 linhas, a mesa reabria o que já
+  // tinha, e o prejuízo aparecia semanas depois em outro lugar.
+  // inclui-arquivadas: o dedup pergunta "já atirei neste pool?", e arquivar um
+  // disparo tira ele da MEDIÇÃO sem desfazer o fato. Filtrar aqui liberaria o
+  // arqueiro a repetir a mesma flecha depois de cada zeramento de ledger.
+  const prior = await selectAllRows<{ pool_address: string | null }>(
+    (from, to) => db.from("zion_suggestions")
+      .select("pool_address").eq("source", ULLR).not("pool_address", "is", null)
+      .order("id", { ascending: true }).range(from, to),
+  );
+  const seen = new Set(prior.map((r) => r.pool_address));
 
   // Mais líquido primeiro: a saída é o que decide se o acerto vira USDT.
   const picks = shots

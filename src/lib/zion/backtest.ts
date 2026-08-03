@@ -687,6 +687,10 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
   const db = getSupabaseAdmin();
   if (!db) return { checked: 0, resolved: 0 };
   const { data: open } = await db
+    // leitura-limitada: `limit` é PARÂMETRO desta função — o chamador escolhe o
+    // tamanho do lote por tick, e o que sobra é resolvido no tick seguinte.
+    // inclui-arquivadas: `status = open` já exclui resolvida; sugestão
+    // arquivada em aberto não existe (o arquivamento fecha antes).
     .from("zion_suggestions")
     .select("*")
     .eq("status", "open")

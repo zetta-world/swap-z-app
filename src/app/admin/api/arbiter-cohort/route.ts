@@ -90,6 +90,9 @@ export async function GET(): Promise<NextResponse> {
    * faltou alguém ler o instrumento. Por isso ele agora sobe para o painel
    * junto do veredito, e não fica esperando ser procurado.
    */
+  // leitura-limitada: as 5.000 medições de profundidade mais recentes. A
+  // amostra atual inteira cabe nisso, e o que importa é a taxa de sobrevivência,
+  // que não muda por incluir medições de meses atrás.
   const { data: realismRows } = await db.from("platform_events")
     .select("metadata").eq("event_type", "arb_realism")
     .order("created_at", { ascending: false }).limit(5000);

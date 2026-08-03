@@ -48,6 +48,9 @@ export async function runAlertWatchdog(): Promise<void> {
 
   try {
     const [errs, secs, aiRows, largeOps, heartbeats] = await Promise.all([
+      // leitura-limitada: janelas de 10 minutos e de 24h para os LIMIARES do
+      // watchdog. Se alguma delas passar de 1.000 linhas, o limiar já disparou
+      // muitas vezes antes — a conta exata deixou de importar.
       db.from("platform_events").select("created_at").eq("event_type", "error").gte("created_at", ago10m),
       db.from("platform_events").select("metadata").eq("event_type", "security").gte("created_at", ago10m),
       db.from("platform_events").select("metadata").eq("event_type", "zion_analysis").gte("created_at", ago24h),

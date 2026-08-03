@@ -29,6 +29,8 @@ export async function GET(): Promise<NextResponse> {
   const [{ data: aiRows }, { data: opsRows }, { data: tierRows }, sol] = await Promise.all([
     // All AI events — we bucket day/week/month/year/all in JS so the panel can
     // map spend over time. Tiny payload (metadata + ts) at current volume.
+    // leitura-limitada: uso do ZION para a tela de custo. O teto de gasto real
+    // é aplicado em `tier/enforce.ts` contra o banco, não a partir daqui.
     db.from("platform_events").select("metadata, created_at").eq("event_type", "zion_analysis").limit(100_000),
     db.from("operations").select("volume_usd, created_at"),
     db.from("tier_cache").select("tier"),

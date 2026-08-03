@@ -15,6 +15,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
 import { deskFor } from "@/lib/zion/desks";
 
 // ── Limiares. Mudar qualquer um exige registrar no doc: data, valor
@@ -170,12 +171,19 @@ export async function measureLaunchGate(): Promise<LaunchReport> {
     return { desks: [], anyPassed: false, verdict: "banco indisponível", measuredAt: new Date().toISOString() };
   }
 
-  const [{ data: accounts }, { data: positions }, { data: sug }] = await Promise.all([
+  const [{ data: accounts }, positions, sug] = await Promise.all([
     db.from("paper_accounts").select("source, starting_usd, realized_pnl_usd").in("source", GATED),
-    db.from("paper_positions").select("source, pnl_usd, status, closed_at, entry_price, exit_price, symbol")
-      .in("source", GATED).eq("status", "closed").order("closed_at", { ascending: true }).limit(5000),
-    db.from("zion_suggestions").select("source, regime, status, outcome_pct")
-      .in("source", GATED).is("archived_at", null).limit(5000),
+    // ⚠️ PAGINADO: este é o portão que decide se o produto pode ir ao ar. Uma
+    // leitura truncada aqui aprova o lançamento com metade da evidência — e o
+    // `.limit(5000)` nunca valeu, porque o teto do PostgREST chega antes.
+    selectAllRows<{ source: string; pnl_usd: number | null; status: string; closed_at: string | null; entry_price: number | null; exit_price: number | null; symbol: string }>(
+      (from, to) => db.from("paper_positions").select("source, pnl_usd, status, closed_at, entry_price, exit_price, symbol")
+        .in("source", GATED).eq("status", "closed").is("archived_at", null)
+        .order("closed_at", { ascending: true }).range(from, to)),
+    selectAllRows<{ source: string; regime: string | null; status: string; outcome_pct: number | null }>(
+      (from, to) => db.from("zion_suggestions").select("source, regime, status, outcome_pct")
+        .in("source", GATED).is("archived_at", null)
+        .order("id", { ascending: true }).range(from, to)),
   ]);
 
   const desks: DeskVerdict[] = [];

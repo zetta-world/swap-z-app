@@ -11,6 +11,8 @@ export async function GET(): Promise<NextResponse> {
   await requireAdmin();
   const db = getSupabaseAdmin();
   const recent = db
+    // leitura-limitada: os 40 alertas mais recentes para a tela. Alerta velho
+    // não muda decisão nenhuma — quem precisa do histórico completo usa o LOGS.
     ? (await db.from("platform_events").select("metadata, created_at").eq("event_type", "alert").order("created_at", { ascending: false }).limit(40)).data ?? []
     : [];
   return NextResponse.json({ configured: alertConfigured(), recent, fetchedAt: new Date().toISOString() });

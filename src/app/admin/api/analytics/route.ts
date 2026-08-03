@@ -22,6 +22,9 @@ export async function GET(): Promise<NextResponse> {
     { data: recent },
     { data: topPaths },
   ] = await Promise.all([
+    // leitura-limitada: contagens por tipo para o painel de tráfego. Recorte
+    // aceito de propósito — é uma tendência para o operador olhar, não um número
+    // que decide dinheiro. Se virar base de decisão, tem que paginar.
     db.from("platform_events").select("event_type").gte("created_at", ago24h),
     db.from("platform_events").select("event_type").gte("created_at", ago7d),
     db.from("platform_events").select("event_type").gte("created_at", ago30d),
@@ -29,6 +32,7 @@ export async function GET(): Promise<NextResponse> {
       .select("event_type, wallet_address, path, created_at")
       .order("created_at", { ascending: false })
       .limit(50),
+    // leitura-limitada: caminhos mais vistos em 7 dias, para o ranking da tela.
     db.from("platform_events")
       .select("path")
       .eq("event_type", "page_view")
