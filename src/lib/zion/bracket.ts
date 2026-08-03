@@ -82,6 +82,70 @@ export const MIN_RR = envNumber(process.env.RAGNAROK_MIN_RR, 1.8, { positive: tr
 /** Alvo absurdo = card corrompido (o bug dos alvos de 500% do Grok). */
 export const MAX_TARGET_PCT = envNumber(process.env.RAGNAROK_MAX_TARGET_PCT, 30, { positive: true });
 
+/**
+ * ⚠️ O ALVO CABE NO HORIZONTE? — a verificação que faltava (03/08).
+ *
+ * O DONO PERGUNTOU se nenhum agente estar positivo podia ser erro NOSSO. É, em
+ * parte, e este é o erro.
+ *
+ * Os 17 trades fechados das mesas: alvo médio +4.96%, stop médio −2.20%, ZERO
+ * alvos batidos, 12 stops. Não é azar de amostra pequena — é geometria.
+ *
+ * O alvo sempre veio da ESTRUTURA (a resistência, a altura da faixa, o pivô) e
+ * o horizonte sempre foi uma CONSTANTE do playbook (12h, 48h, 96h). Os dois
+ * nunca se falaram. Nada, em lugar nenhum, perguntava se o preço consegue
+ * ANDAR até aquele alvo no tempo dado.
+ *
+ * O caso concreto: ADA, alvo a +5.87%, horizonte de 8 horas na SKAÐI. Com ATR
+ * de 1h em ~0.5%, o movimento esperado em 8 horas é ~1.4%. O alvo pedia QUATRO
+ * VEZES isso — e o stop, a 2.2%, estava a 1.6× do esperado, ou seja, dentro do
+ * alcance do ruído normal.
+ *
+ * Um bracket assim perde por construção: o lado que mata é alcançável e o lado
+ * que paga não é. A taxa de acerto fica baixa independentemente de a TESE estar
+ * certa ou errada — e aí o experimento inteiro deixa de medir estratégia e passa
+ * a medir a própria geometria.
+ *
+ * A CONTA: movimento esperado ≈ ATR% × √horas (difusão). É aproximação — ATR é
+ * amplitude típica de barra, não desvio-padrão — e serve para separar "difícil"
+ * de "impossível", que é o que interessa aqui.
+ *
+ * O múltiplo é declarado como PALPITE, igual à coluna `priority` era. 2.0 quer
+ * dizer "aceito pedir o dobro do movimento típico". O backtest por playbook mede
+ * `mfe/alvo` empiricamente e é ele que deve substituir este número — quando
+ * houver amostra.
+ */
+export const MAX_TARGET_ATR_MULT = envNumber(process.env.RAGNAROK_MAX_TARGET_ATR_MULT, 2.0, { positive: true });
+
+/**
+ * O movimento que o símbolo tipicamente percorre no horizonte, em % do preço.
+ *
+ * Escala com a RAIZ do tempo, não com o tempo: preço não anda em linha reta,
+ * ele vagueia. Dobrar o horizonte não dobra o alcance — multiplica por ~1.41.
+ * Assumir escala linear faria um horizonte longo parecer capaz de alcançar
+ * qualquer alvo, que é o erro oposto e igualmente caro.
+ */
+export function expectedMovePct(atrPct: number, horizonHours: number): number {
+  if (!(atrPct > 0) || !(horizonHours > 0)) return 0;
+  return atrPct * Math.sqrt(horizonHours);
+}
+
+/**
+ * O alvo é alcançável no horizonte dado?
+ *
+ * Sem ATR devolve `true`: não medido não pode virar veto silencioso, e o piso de
+ * volatilidade (`stopFloorPct`) já barra o caso sem dado por outro caminho.
+ */
+export function targetReachable(
+  targetPct: number, atrPct: number | null, horizonHours: number,
+  maxMultiple = MAX_TARGET_ATR_MULT,
+): boolean {
+  if (atrPct == null || !(atrPct > 0)) return true;
+  const esperado = expectedMovePct(atrPct, horizonHours);
+  if (!(esperado > 0)) return true;
+  return targetPct <= esperado * maxMultiple;
+}
+
 /** Piso de stop para um símbolo: max(ATR% × mult, piso absoluto). */
 export function stopFloorPct(atrPct: number | null): number {
   const fromAtr = atrPct != null && atrPct > 0 ? atrPct * MIN_STOP_ATR : 0;
@@ -145,6 +209,12 @@ export function buildLongBracket(
   const targetPct = (reward / entry) * 100;
   if (stopPct < stopFloorPct(atrPct)) return null;   // dentro do ruído → morre de clima
   if (targetPct < 0.15 || targetPct > MAX_TARGET_PCT) return null;
+
+  // ALVO FORA DE ALCANCE NO HORIZONTE. O par que faltava: o piso de stop
+  // garantia que o stop não morresse de ruído, e NADA garantia que o alvo
+  // pudesse ser alcançado. Um bracket com o lado que mata acessível e o lado
+  // que paga inacessível perde por construção, não por a tese estar errada.
+  if (!targetReachable(targetPct, atrPct, horizonHours)) return null;
 
   const rr = reward / risk;
   if (rr < MIN_RR) return null;

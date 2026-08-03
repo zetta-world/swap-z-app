@@ -21,6 +21,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { recordEvent } from "@/lib/admin/track";
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
 import { selectPlaybook, isPlan, type StrategyDecision, type StrategyPlan } from "@/lib/zion/strategist";
+import { buildLongBracket } from "@/lib/zion/bracket";
 import { runStrategistAi, STRAT_AI } from "@/lib/zion/strategist-ai";
 import { candidateAttempts } from "@/lib/zion/playbooks";
 import { loadPlaybookRecord, rankByRecord, isStale } from "@/lib/zion/playbook-record";
@@ -55,7 +56,43 @@ export async function runStrategistScan(
   horizonOverride?: number,
 ): Promise<RagnarokRun> {
   const decisions: StrategyDecision[] = indicators.map(selectPlaybook);
-  const plans = decisions.filter(isPlan);
+  const todos = decisions.filter(isPlan);
+
+  /**
+   * ⚠️ O HORIZONTE ENCURTADO TEM QUE REVALIDAR A GEOMETRIA (03/08).
+   *
+   * A SKAÐI é a mesma seleção da VÖLUNDR com prazo de day-trade. Ela fazia isso
+   * trocando SÓ o campo `horizon_hours` na linha gravada — o alvo, calculado
+   * para um swing de 48h, ia junto intacto.
+   *
+   * O resultado apareceu no ledger e é constrangedor de tão claro: os trades da
+   * SKAÐI e da VÖLUNDR são IDÊNTICOS em entrada, alvo e stop. Só o relógio
+   * muda. ADA com alvo a +5.87% e oito horas para chegar lá, quando o movimento
+   * esperado em oito horas era ~1.4%.
+   *
+   * Isso não é uma mesa mais rápida, é a mesma mesa com um sexto do tempo para
+   * o mesmo destino. O lado que mata continuava alcançável e o lado que paga
+   * virou impossível — 17 trades fechados, ZERO alvos batidos, 12 stops.
+   *
+   * Agora o plano é RECONSTRUÍDO com o horizonte da mesa, e `buildLongBracket`
+   * julga de novo. O que não couber no prazo simplesmente não é operado por
+   * ela — que é o comportamento certo, e o que faltava.
+   */
+  const plans = horizonOverride == null ? todos : todos.flatMap((p) => {
+    const refeito = buildLongBracket(
+      p.symbol, p.playbook, p.entry, p.target, p.stop,
+      indicators.find((i) => i.symbol === p.symbol)?.atrPct ?? null,
+      horizonOverride, p.rationale,
+    );
+    return refeito ? [refeito] : [];
+  });
+  const foraDoPrazo = todos.length - plans.length;
+  if (foraDoPrazo > 0) {
+    recordEvent("ragnarok_horizon_reject", { meta: {
+      source, horizon_hours: horizonOverride, rejected: foraDoPrazo,
+      why: "alvo não alcançável no prazo desta mesa — o plano era de outro relógio",
+    } });
+  }
   const standAside = decisions
     .filter((d) => !isPlan(d))
     .map((d) => ({ symbol: d.symbol, reason: "reason" in d ? d.reason : "?" }));
@@ -82,7 +119,9 @@ export async function runStrategistScan(
     stop_price: p.stop,
     probability: null,          // sem auto-relato: a confiança declarada provou-se anti-calibrada
     regime: indicators.find((i) => i.symbol === p.symbol)?.regime ?? null,
-    horizon_hours: horizonOverride ?? p.horizonHours,
+    // O plano já foi reconstruído com o horizonte da mesa acima — este campo
+    // apenas reflete a geometria validada, em vez de sobrescrevê-la.
+    horizon_hours: p.horizonHours,
     source,
   }));
 
