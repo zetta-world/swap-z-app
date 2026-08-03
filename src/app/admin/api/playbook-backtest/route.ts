@@ -87,6 +87,23 @@ export async function POST(): Promise<NextResponse> {
   const barsTested = ok.reduce((n, r) => n + r.barsTested, 0);
   const windowDays = Math.round((BARS_1H - WARMUP_BARS) / 24);
 
+  /**
+   * O QUE O MERCADO FEZ NA MESMA JANELA — o denominador do veredito.
+   *
+   * A primeira rodada de 6 meses devolveu os nove playbooks negativos, e essa
+   * frase sozinha não significa nada: se o mercado subiu 80%, mesas long-only
+   * no vermelho são um fracasso; se caiu 40%, perder 0.2% por trade é um
+   * resultado DEFENSIVO e a leitura é o oposto. Sem esta linha, o operador
+   * julga a biblioteca contra um pano de fundo que ele está imaginando.
+   *
+   * Mediana entre os símbolos, não média: um único símbolo que triplicou
+   * arrastaria a média e descreveria um mercado que ninguém viveu.
+   */
+  const bh = ok.map((r) => r.buyHoldPct).filter((x): x is number => x != null).sort((a, b) => a - b);
+  const marketPct = bh.length
+    ? (bh.length % 2 ? bh[(bh.length - 1) / 2] : (bh[bh.length / 2 - 1] + bh[bh.length / 2]) / 2)
+    : null;
+
   // GRAVA para as mesas lerem. Até aqui a medição morria na tela — informação
   // que não muda decisão nenhuma é decoração, que é o defeito que esta semana
   // inteira perseguiu. É a partir daqui que o MÍMIR escolhe sabendo o que
@@ -108,6 +125,8 @@ export async function POST(): Promise<NextResponse> {
     windowDays,
     warmupBars: WARMUP_BARS,
     barsTested,
+    marketPct,
+    perSymbol: ok.map((r) => ({ symbol: r.symbol, buyHoldPct: r.buyHoldPct })),
     noiseThreshold: NOISE_THRESHOLD,
     stats: stats.map((s) => ({
       ...s,
