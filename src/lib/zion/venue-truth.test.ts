@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { measureVenues, classifyVenue, truthVerdict, type VenueQuote } from "@/lib/zion/venue-truth";
+import { measureVenues, measureSymbols, classifyVenue, truthVerdict, type VenueQuote } from "@/lib/zion/venue-truth";
 
 /**
  * A CONFERÊNCIA MANUAL, AUTOMATIZADA.
@@ -85,15 +85,17 @@ describe("medir contra a mediana", () => {
 });
 
 describe("o veredito em uma frase", () => {
-  it("diz explicitamente quando NENHUMA venue chega perto do spread exigido", () => {
-    // Este é o resultado que encerra a questão: se o maior desvio observado é
-    // 0.03% e a mesa exige 0.60%, o spread que ela capturava não existia.
+  it("diz que nenhum símbolo passa do piso — SEM afirmar que nunca passa", () => {
+    // A frase antiga era "o spread não estava no mercado", e ela encerrava o
+    // assunto. Estava errada por excesso: mede UM instante, e as mesas operavam
+    // altcoin de livro fino, onde o gap ia e voltava ao longo do dia.
     const m = new Map<string, VenueQuote[]>([
       ["BTC", [q("a", 100), q("b", 100.02), q("c", 99.98)]],
       ["ETH", [q("a", 100), q("b", 100.03), q("c", 99.97)]],
     ]);
-    const v = truthVerdict(measureVenues(m), 0.6);
-    expect(v).toContain("não estava no mercado");
+    const v = truthVerdict(measureVenues(m), 0.6, measureSymbols(m));
+    expect(v).toContain("nenhum símbolo");
+    expect(v).toContain("UM instante");
   });
 
   it("nomeia a venue ruidosa quando existe uma", () => {
@@ -107,5 +109,75 @@ describe("o veredito em uma frase", () => {
   it("sem amostra, diz que não mediu — não devolve frase tranquilizadora", () => {
     // "Inconclusivo" nunca pode sair parecido com "está tudo bem".
     expect(truthVerdict([], 0.6)).toContain("sem cotações suficientes");
+  });
+});
+
+/**
+ * O DEFEITO QUE A PRIMEIRA VERSÃO DESTE MÓDULO TINHA — e que ele mesmo escondia.
+ *
+ * `measureVenues` mediu ao vivo e devolveu dispersão de 0.02% a 0.055%, todas
+ * "estáveis". Concluí que não existia spread de 0.55% em lugar nenhum.
+ *
+ * O ledger dizia outra coisa: 2.011 ciclos entraram com spread médio de 0.72%,
+ * e os símbolos eram MANA, SAND, RUNE, IMX, GRT, BONK, SHIB — altcoin de livro
+ * fino, nenhum major. MANA sozinha disparou em 144 horas DISTINTAS: persistente,
+ * não um instante ruim.
+ *
+ * Os dois números não se contradizem. A média entre 57 símbolos é dominada
+ * pelos majors; a estratégia selecionava a CAUDA, por construção, porque é a
+ * cauda que passa do portão. Medir a média de uma população quando a estratégia
+ * escolhe o extremo dela responde a pergunta ao lado da que importa — e uma
+ * verificação assim é pior que nenhuma, porque encerra o assunto.
+ */
+describe("por símbolo — a cauda que a média esconde", () => {
+  // Uma carteira realista: muitos majors colados, uma altcoin descolada.
+  const mercado = () => new Map<string, VenueQuote[]>([
+    ["BTC",  [q("binance", 100), q("okx", 100.01), q("gateio", 100.02)]],
+    ["ETH",  [q("binance", 100), q("okx", 100.02), q("gateio", 99.99)]],
+    ["SOL",  [q("binance", 100), q("okx", 99.98), q("gateio", 100.01)]],
+    ["BNB",  [q("binance", 100), q("okx", 100.01), q("gateio", 99.99)]],
+    ["MANA", [q("binance", 100), q("okx", 100.02), q("gateio", 100.75)]],
+  ]);
+
+  it("a MÉDIA por venue não acusa nada — foi exatamente o que me enganou", () => {
+    // Uma altcoin descolada em cinco símbolos dilui para ~0.15% de dispersão.
+    const gateio = measureVenues(mercado()).find((s) => s.venue === "gateio")!;
+    expect(gateio.dispersionPct).toBeLessThan(0.3);
+  });
+
+  it("por SÍMBOLO, a mesma carteira mostra o gap na cara", () => {
+    const gaps = measureSymbols(mercado());
+    expect(gaps[0].symbol).toBe("MANA");
+    expect(gaps[0].gapPct).toBeGreaterThan(0.7);
+    expect(gaps[0].outlier).toBe("gateio");
+  });
+
+  it("o veredito NOMEIA os símbolos acima do piso em vez de dizer que está tudo bem", () => {
+    // A frase antiga ("nenhuma venue se afasta o bastante") era verdadeira e
+    // encerrava o assunto pelo lado errado.
+    const v = truthVerdict(measureVenues(mercado()), 0.55, measureSymbols(mercado()));
+    expect(v).toContain("MANA");
+    expect(v).toContain("acima do piso");
+    // E não deixa "existe gap" virar "existe oportunidade": livro fino produz o
+    // mesmo número sem ser executável no tamanho.
+    expect(v).toContain("executável");
+  });
+
+  it("sem símbolo acima do piso, o veredito ainda ressalva que é UM instante", () => {
+    // O gap dessas mesas aparecia em altcoin e ia e voltava. Uma leitura limpa
+    // agora não prova que ele não volta em dez minutos.
+    const calmo = new Map<string, VenueQuote[]>([
+      ["BTC", [q("a", 100), q("b", 100.01), q("c", 99.99)]],
+      ["ETH", [q("a", 100), q("b", 100.02), q("c", 99.98)]],
+    ]);
+    const v = truthVerdict(measureVenues(calmo), 0.55, measureSymbols(calmo));
+    expect(v).toContain("UM instante");
+  });
+
+  it("o gap é a maior distância entre DUAS cotações — o que o detector veria", () => {
+    // Não o desvio contra a mediana: o detector pareia o extremo baixo com o
+    // extremo alto, e é esse número que vira spread capturado.
+    const m = new Map<string, VenueQuote[]>([["X", [q("a", 100), q("b", 101), q("c", 100.5)]]]);
+    expect(measureSymbols(m)[0].gapPct).toBeCloseTo(1, 6);
   });
 });

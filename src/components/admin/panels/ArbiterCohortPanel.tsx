@@ -33,8 +33,10 @@ type VenueStat = {
   venue: string; symbols: number; biasPct: number; dispersionPct: number;
   worstPct: number; verdict: "estável" | "cara" | "barata" | "ruidosa";
 };
+type SymbolGap = { symbol: string; gapPct: number; venues: number; outlier: string; outlierDeviationPct: number };
 type Truth = {
   verdict: string; stats: VenueStat[];
+  gapsAboveFloor: SymbolGap[]; worstGaps: SymbolGap[];
   window: { floorPct: number; ceilPct: number; empty: boolean };
   symbolsTotal: number; symbolsWithQuorum: number;
   biggestDispersionPct: number | null; tookMs: number;
@@ -215,6 +217,29 @@ export default function ArbiterCohortPanel() {
                     {truth.biggestDispersionPct < truth.window.floorPct && (
                       <span style={{ color: "var(--adm-red)" }}> — não existe spread que pague o custo</span>
                     )}
+                  </div>
+                )}
+
+                {/* OS SÍMBOLOS, antes das venues. A mesa nunca operou o símbolo
+                    médio — ela selecionava a cauda, porque é a cauda que passa do
+                    portão. MANA sozinha disparou em 144 horas distintas. */}
+                {truth.worstGaps.length > 0 && (
+                  <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.7, margin: "6px 0" }}>
+                    <div style={{ color: "var(--adm-ink-3)" }}>
+                      maiores gaps POR SÍMBOLO agora
+                      {truth.gapsAboveFloor.length > 0
+                        ? ` — ${truth.gapsAboveFloor.length} acima do piso:`
+                        : " — nenhum acima do piso:"}
+                    </div>
+                    {truth.worstGaps.map((g) => (
+                      <div key={g.symbol}>
+                        · {g.symbol}:{" "}
+                        <span style={{ color: g.gapPct >= truth.window.floorPct ? "var(--adm-red)" : "var(--adm-ink-4)" }}>
+                          {g.gapPct.toFixed(3)}%
+                        </span>{" "}
+                        ({g.venues} venues · {g.outlier} {g.outlierDeviationPct > 0 ? "+" : ""}{g.outlierDeviationPct.toFixed(2)}%)
+                      </div>
+                    ))}
                   </div>
                 )}
 
