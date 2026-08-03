@@ -62,9 +62,22 @@ describe("o clima, em três estados", () => {
     expect(weatherFromBreadth(null)).toBe("misto");
   });
 
-  it("só o mar CONTRA para a mesa", () => {
+  it("⚠️ O PORTÃO ESTÁ DESLIGADO — a medição derrubou a hipótese", () => {
+    // O `byWeather` mediu clima DENTRO da mesma janela e disse o oposto do que
+    // a comparação entre janelas sugeria: adverso foi melhor em SETE de nove
+    // playbooks, e o ponderado deu −0.351% (adverso) contra −0.764% (misto).
+    // O portão bloquearia exatamente a metade que rende mais.
+    expect(shouldTrade("adverso")).toBe(true);
     expect(shouldTrade("favoravel")).toBe(true);
-    expect(shouldTrade("adverso")).toBe(false);
+    expect(shouldTrade("misto")).toBe(true);
+  });
+
+  it("o clima continua sendo LIDO, só não decide", () => {
+    // A medição vale — ela pode significar algo numa janela de alta, onde
+    // "favorável" teve TRÊS trades e portanto nunca foi testado. O que não vale
+    // é decidir com uma hipótese que o dado negou.
+    expect(weatherFromBreadth(0.1)).toBe("adverso");
+    expect(weatherFromBreadth(0.9)).toBe("favoravel");
   });
 });
 
