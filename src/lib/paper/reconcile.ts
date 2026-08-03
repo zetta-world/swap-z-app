@@ -35,6 +35,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { deskFor } from "@/lib/zion/desks";
 
 /** Quanto de desvio ainda é arredondamento de ponto flutuante, e não fuga. */
 export const DRIFT_TOLERANCE_USD = 0.5;
@@ -51,6 +52,19 @@ export interface WalletDrift {
   driftUsd: number;
   /** A mesa ainda consegue abrir posição, ou já está sem dinheiro? */
   starved: boolean;
+  /**
+   * A mesa está APOSENTADA?
+   *
+   * Distinção que a primeira versão não fazia, e sem ela a verificação ficaria
+   * vermelha para sempre: treze carteiras de mesas aposentadas carregam a
+   * cicatriz do vazamento antigo, já explicado e corrigido na origem. Elas não
+   * podem vazar mais — não operam.
+   *
+   * Vermelho permanente é a mesma armadilha do alarme falso: o operador aprende
+   * a ignorar. O desvio delas continua VISÍVEL (é a evidência histórica), mas
+   * não reprova, porque a pergunta da bancada é "está vazando AGORA?".
+   */
+  retired: boolean;
 }
 
 /**
@@ -72,6 +86,10 @@ export function computeDrift(
     // Sem caixa acima do piso, `sizePosition` devolve 0 e a mesa para de
     // operar sem dizer nada a ninguém.
     starved: a.cashUsd < minCashUsd,
+    // Mesa fora de `desks.ts` é tratada como VIVA: o desconhecido não ganha
+    // dispensa. Se apareceu uma carteira que ninguém declarou, ela merece
+    // atenção, não silêncio.
+    retired: deskFor(a.source)?.status === "valhalla",
   };
 }
 
@@ -88,6 +106,19 @@ export function starvedWallets(all: WalletDrift[]): WalletDrift[] {
 }
 
 /**
+ * O que REPROVA: só mesa viva. Uma aposentada não opera, então não vaza — o
+ * desvio dela é cicatriz, não ferida aberta.
+ */
+export function liveDrifts(all: WalletDrift[], tolerance = DRIFT_TOLERANCE_USD): WalletDrift[] {
+  return significantDrifts(all, tolerance).filter((d) => !d.retired);
+}
+
+/** O que aparece como CONTEXTO: a cicatriz do vazamento antigo. */
+export function retiredDrifts(all: WalletDrift[], tolerance = DRIFT_TOLERANCE_USD): WalletDrift[] {
+  return significantDrifts(all, tolerance).filter((d) => d.retired);
+}
+
+/**
  * Lê o estado real e reconcilia. Best-effort: sem banco devolve lista vazia em
  * vez de derrubar quem chamou.
  */
@@ -96,7 +127,20 @@ export async function reconcileWallets(minCashUsd = 25): Promise<WalletDrift[]> 
   if (!db) return [];
   const [{ data: accounts }, { data: positions }] = await Promise.all([
     db.from("paper_accounts").select("id, source, label, starting_usd, cash_usd"),
-    db.from("paper_positions").select("account_id, status, cost_usd, pnl_usd").limit(20000),
+    // ⚠️ SÓ AS NÃO-ARQUIVADAS (correção 03/08, achada pela própria bancada).
+    //
+    // A primeira versão somava o P&L de TODAS as posições, inclusive as
+    // arquivadas. Quando o Setor A foi zerado — caixa de volta a $1.000,
+    // `realized_pnl_usd` a zero, posições arquivadas — o P&L antigo continuava
+    // entrando na conta do "esperado", e as três mesas apareceram com desvio de
+    // +$3,72, +$3,75 e +$0,58: exatamente o espelho das perdas arquivadas.
+    //
+    // Ou seja: a verificação acusava fuga onde não havia, e num caso que vai se
+    // repetir toda vez que um ledger for zerado. Alarme falso treina o operador
+    // a ignorar o alarme verdadeiro — foi eu mesmo que escrevi isso, e violei na
+    // linha seguinte.
+    db.from("paper_positions").select("account_id, status, cost_usd, pnl_usd")
+      .is("archived_at", null).limit(20000),
   ]);
   if (!accounts) return [];
 

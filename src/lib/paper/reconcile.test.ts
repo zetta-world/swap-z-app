@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  computeDrift, significantDrifts, starvedWallets, DRIFT_TOLERANCE_USD,
+  computeDrift, significantDrifts, starvedWallets, liveDrifts, retiredDrifts,
+  DRIFT_TOLERANCE_USD,
 } from "@/lib/paper/reconcile";
 
 /**
@@ -79,6 +80,36 @@ describe("mesa faminta — o silêncio que parece disciplina", () => {
       computeDrift(w({ source: "b", cashUsd: 5 }), 0, 0, 25),
     ];
     expect(starvedWallets(all).map((d) => d.source)).toEqual(["b"]);
+  });
+});
+
+describe("mesa aposentada não reprova — cicatriz não é ferida", () => {
+  it("mesa VIVA com desvio reprova", () => {
+    const d = computeDrift(w({ source: "strat_mech" }), 0, 0);
+    expect(d.retired).toBe(false);
+  });
+
+  it("mesa em Valhalla é marcada como aposentada", () => {
+    // Treze carteiras carregam a cicatriz do vazamento antigo, já corrigido na
+    // origem. Elas não podem vazar mais — não operam. Deixar a verificação
+    // vermelha por causa delas treinaria o operador a ignorá-la, que é o oposto
+    // do motivo de ela existir.
+    expect(computeDrift(w({ source: "grok_scan" }), 0, 0).retired).toBe(true);
+  });
+
+  it("carteira que ninguém declarou é tratada como VIVA", () => {
+    // O desconhecido não ganha dispensa: se apareceu uma carteira que não está
+    // em `desks.ts`, ela merece atenção, não silêncio.
+    expect(computeDrift(w({ source: "fantasma_xyz" }), 0, 0).retired).toBe(false);
+  });
+
+  it("só as vivas entram no que reprova", () => {
+    const all = [
+      computeDrift(w({ source: "grok_scan", cashUsd: 0 }), 0, 0),      // aposentada
+      computeDrift(w({ source: "strat_ai", cashUsd: 0 }), 0, 0),       // viva
+    ];
+    expect(liveDrifts(all).map((d) => d.source)).toEqual(["strat_ai"]);
+    expect(retiredDrifts(all).map((d) => d.source)).toEqual(["grok_scan"]);
   });
 });
 

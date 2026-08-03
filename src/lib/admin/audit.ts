@@ -33,7 +33,7 @@ import { checkExternalDeps } from "@/lib/admin/deps";
 import { runAttackSuite } from "@/lib/admin/attack";
 import { checkEvmAllowlistDrift } from "@/lib/admin/evm-probe";
 import { envNumber } from "@/lib/env-number";
-import { reconcileWallets, significantDrifts, starvedWallets } from "@/lib/paper/reconcile";
+import { reconcileWallets, liveDrifts, retiredDrifts, starvedWallets } from "@/lib/paper/reconcile";
 
 export type Severity = "critical" | "high" | "medium" | "low";
 export type AuditCategory = "dados" | "segurança" | "integração" | "config" | "i18n";
@@ -424,19 +424,28 @@ async function checkWalletDrift(): Promise<AuditFinding> {
   if (all.length === 0) {
     return { ...base, pass: false, inconclusive: true, detail: "sem carteiras para reconciliar (banco fora?)" };
   }
-  const drift = significantDrifts(all);
-  const starved = starvedWallets(all).filter((w) => Math.abs(w.driftUsd) > 0.5);
-  if (drift.length === 0) {
-    return { ...base, pass: true, detail: `${all.length} carteiras reconciliadas — caixa bate com os trades em todas` };
+  // Só mesa VIVA reprova. As aposentadas carregam a cicatriz do vazamento
+  // antigo (já corrigido na origem) e não podem vazar mais — não operam. Deixar
+  // a verificação vermelha para sempre por causa delas treinaria o operador a
+  // ignorá-la, que é o oposto do motivo de ela existir.
+  const live = liveDrifts(all);
+  const scars = retiredDrifts(all);
+  const cicatriz = scars.length ? ` (${scars.length} mesa(s) aposentada(s) ainda mostram a cicatriz do vazamento antigo — histórico, não ferida aberta)` : "";
+  if (live.length === 0) {
+    return {
+      ...base, pass: true,
+      detail: `${all.length - scars.length} carteiras VIVAS reconciliadas — caixa bate com os trades em todas${cicatriz}`,
+    };
   }
-  const pior = drift.slice(0, 4)
+  const starved = starvedWallets(all).filter((w) => !w.retired && Math.abs(w.driftUsd) > 0.5);
+  const pior = live.slice(0, 4)
     .map((d) => `${d.label}: caixa $${d.cashUsd.toFixed(2)} vs esperado $${d.expectedUsd.toFixed(2)} (${d.driftUsd > 0 ? "+" : ""}${d.driftUsd.toFixed(2)})`)
     .join(" | ");
   return {
     ...base, pass: false,
-    detail: `${drift.length} de ${all.length} carteiras com caixa fora da conta`
+    detail: `${live.length} carteira(s) VIVA(S) com caixa fora da conta`
       + (starved.length ? ` · ${starved.length} SEM CAIXA para abrir posição (param de operar em silêncio)` : "")
-      + ` — ${pior}`,
+      + ` — ${pior}${cicatriz}`,
   };
 }
 
