@@ -65,12 +65,46 @@ export async function POST(req: Request): Promise<NextResponse> {
   const backDays = Math.max(0, Number(new URL(req.url).searchParams.get("backDays") ?? 0));
   const endAtMs = backDays > 0 ? Date.now() - backDays * 86_400_000 : undefined;
 
-  const series = await Promise.all(SYMBOLS.map(async (symbol) => ({
-    symbol,
-    candles: await fetchTimedCandles(symbol, "1d", BARS_1D, 3600, endAtMs),
-  })));
+  /**
+   * ⚠️ A FALHA TAMBÉM PRECISA DEIXAR RASTRO (04/08).
+   *
+   * O dono rodou a janela de 12 meses e NADA foi gravado. Sem um registro de
+   * falha, "rodou e deu erro" fica idêntico a "nunca clicou" — e eu passei a
+   * resposta seguinte adivinhando entre as duas.
+   *
+   * É a mesma família de tudo o que esta semana achou: ausência de rastro. Só
+   * que aqui é pior, porque o caso que some é justamente o que deu errado — a
+   * medição que funciona se anuncia, a que falha desaparece, e o histórico fica
+   * com um viés de sobrevivência embutido.
+   */
+  const falhou = (motivo: string, detalhe?: string) => {
+    recordEvent("what_worked_failed", { meta: {
+      backDays, windowDays: JANELA_DIAS, motivo, detalhe: detalhe ?? null,
+      tookMs: Date.now() - t0,
+    } });
+    return NextResponse.json({ error: motivo, detail: detalhe ?? null }, { status: 503 });
+  };
+
+  let series: Array<{ symbol: string; candles: Awaited<ReturnType<typeof fetchTimedCandles>> }>;
+  try {
+    series = await Promise.all(SYMBOLS.map(async (symbol) => ({
+      symbol,
+      candles: await fetchTimedCandles(symbol, "1d", BARS_1D, 3600, endAtMs),
+    })));
+  } catch (e) {
+    return falhou("falha ao buscar candles", String(e).slice(0, 200));
+  }
+
   const ok = series.filter((s) => s.candles.length >= WARMUP + 40);
-  if (ok.length === 0) return NextResponse.json({ error: "sem candles" }, { status: 503 });
+  if (ok.length === 0) {
+    // Diz QUANTAS velas cada símbolo trouxe. "Sem candles" sozinho não
+    // distingue "a API caiu" de "esta janela é anterior à listagem do símbolo",
+    // e são consertos completamente diferentes.
+    return falhou(
+      "nenhum símbolo com histórico suficiente nesta janela",
+      series.map((s) => `${s.symbol}:${s.candles.length}`).join(" "),
+    );
+  }
 
   // ── As estratégias, por símbolo, depois agregadas.
   //
