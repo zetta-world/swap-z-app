@@ -49,7 +49,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Fica no ledger de eventos: a série histórica mostra se a nota melhora ou
   // apodrece, e um relatório que só existe na tela não serve de prova.
-  recordEvent("audit_run", {
+  // AWAIT obrigatório: sem ele o insert perde a corrida contra o congelamento
+  // da função serverless e a auditoria some sem deixar rastro. Ver a nota em
+  // what-worked/route.ts e o comentário dentro de recordEvent.
+  await recordEvent("audit_run", {
     wallet,
     meta: {
       score: report.score, grade: report.grade,

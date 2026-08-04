@@ -97,7 +97,10 @@ export async function POST(): Promise<NextResponse> {
   });
 
   const base = linhas[0];
-  recordEvent("calibration_sweep", { meta: {
+  // AWAIT obrigatório: sem ele o insert perde a corrida contra o congelamento
+  // da função serverless e a varredura some sem deixar rastro. Ver a nota em
+  // what-worked/route.ts e o comentário dentro de recordEvent.
+  await recordEvent("calibration_sweep", { meta: {
     symbols: usaveis.length, bars: BARS_1H,
     baseNet: base.netPerTrade, baseTrades: base.trades,
     melhor: [...linhas].sort((a, b) => (b.netPerTrade ?? -9) - (a.netPerTrade ?? -9))[0]?.nome,
