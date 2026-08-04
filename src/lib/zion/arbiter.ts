@@ -94,19 +94,42 @@ const OUTLIER_PCT = Number(process.env.ARB_OUTLIER_PCT ?? 2);
  * Venues fora da matriz DAS MESAS (ainda usadas em outros lugares).
  *
  * · `coinbase` — cota BASE-USD, não USDT. A base USD/USDT se disfarça de spread.
- * · `kucoin` — ⚠️ ADICIONADA À CASA EM 04/08, MAS NÃO ÀS MESAS AINDA.
+ * · `kucoin` — ⚠️ MEDIDA E REPROVADA EM 04/08. FICA FORA.
  *
  *   O dono trouxe prints de um app de terceiros onde a Kucoin aparecia em quase
  *   toda linha de spread, e pediu que ela entrasse na MEDIÇÃO de dispersão. Ela
- *   entrou — em `/admin/api/venue-truth`, que é leitura pura.
+ *   entrou só em `/admin/api/venue-truth`, que é leitura pura — porque uma venue
+ *   nova muda quem é a ponta barata de cada par, e ponta barata é onde a mesa
+ *   compra.
  *
- *   Aqui não. Este é o caminho do dinheiro, e uma venue nova muda quem é a
- *   ponta barata de cada par. Mesma regra da mediana do corte de outlier: mede
- *   primeiro, troca depois, e a troca é decisão declarada.
+ *   A medição respondeu em uma rodada:
  *
- *   Para promovê-la basta tirá-la do `ARB_EXCLUDE_VENUES` — o que deve
- *   acontecer DEPOIS de o `venue-truth` dizer se ela aumenta o spread
- *   executável ou só o aparente.
+ *     ruído por venue     kucoin 0.601%  ·  gateio 0.044%  ·  binance 0.037%
+ *                         mexc   0.035%  ·  okx    0.027%
+ *
+ *   Catorze vezes a segunda colocada. E dos 32 símbolos com gap acima do piso
+ *   de 0.55%, TRINTA E UM eram a Kucoin (o outro era a mexc, no STX).
+ *
+ *   O que fecha o caso é o SINAL do desvio: de 19 gaps listados, 16 têm a
+ *   Kucoin ABAIXO de todo mundo — PYTH −2.98%, TAO −2.35%, ONDO −1.91%,
+ *   RENDER −1.33%, FET −1.29%. Venue genuinamente barata não fica barata em
+ *   dezesseis moedas ao mesmo tempo, na mesma hora. Isso é feed ATRASADO.
+ *
+ *   A confirmação veio de fora: às 13h a dispersão dela era 0.140%, às 21h era
+ *   0.601%. Quadruplicou junto com uma queda do mercado que o próprio estudo de
+ *   estratégias registrou (a mediana de comprar-e-segurar da janela foi de
+ *   −6.74% para −15.13% no mesmo intervalo). Feed que fica para trás quando o
+ *   preço anda é a definição de cotação parada.
+ *
+ *   ⚠️ E É EXATAMENTE O ACIDENTE QUE JÁ ACONTECEU AQUI. Se a Kucoin tivesse
+ *   entrado direto na matriz, a mesa estaria vendo 31 oportunidades de "comprar
+ *   barato na Kucoin" — todas falsas, todas na direção que perde. É a mesma
+ *   doença dos +34% da Gate.io, pega ANTES de tocar em dinheiro, e só porque
+ *   mediu-se antes de promover.
+ *
+ *   Para reconsiderar não basta tirar do `ARB_EXCLUDE_VENUES`: seria preciso o
+ *   `venue-truth` mostrar a dispersão dela na casa das outras (≤0.05%) por
+ *   várias leituras, em dias diferentes.
  */
 export const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase,kucoin").split(",").map((s) => s.trim()).filter(Boolean);
 // Alavanca 4: the universe nearly doubled (30 → ~55 symbols), so the book

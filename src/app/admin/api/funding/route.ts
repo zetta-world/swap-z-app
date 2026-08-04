@@ -233,14 +233,39 @@ const FONTES: Array<[string, (s: string, f: Falha[]) => Promise<FundingPoint[]>]
   ["binance", fetchBinanceFunding],
 ];
 
+/** Períodos necessários para o veredito ter amostra (MIN_DIAS × 3 por dia). */
+const PERIODOS_MINIMOS = MIN_DIAS * PERIODS_PER_DAY;
+
+/**
+ * ⚠️ "PRIMEIRA QUE RESPONDE" ERA A REGRA ERRADA (04/08).
+ *
+ * A versão anterior devolvia a primeira fonte com qualquer dado. A gate.io
+ * respondeu para 53 símbolos e o resultado parou ali — só que ela devolveu 90 a
+ * 180 pontos (30 a 60 dias), muito abaixo dos 174 dias pedidos, enquanto a okx
+ * pagina 3×100 e chegaria a ~100 dias.
+ *
+ * Ou seja: uma fonte com cobertura pior calou uma melhor, e o efeito não foi
+ * um dado faltando — foi 42 dos 53 símbolos caindo abaixo do mínimo de amostra
+ * e o veredito sendo calculado sobre 11.
+ *
+ * Agora: se a primeira fonte não cobre o mínimo, as outras são tentadas e fica
+ * a de MAIOR cobertura. "Respondeu" e "respondeu o suficiente" são coisas
+ * diferentes — é a mesma confusão entre ausência de erro e prova de sucesso que
+ * me fez escolher a Bybit horas atrás.
+ */
 async function fetchFunding(
   symbol: string, falhas: Falha[], usadas: Map<string, number>,
 ): Promise<FundingPoint[]> {
+  let melhor: FundingPoint[] = [];
+  let melhorNome = "";
   for (const [nome, fn] of FONTES) {
     const pts = await fn(symbol, falhas);
-    if (pts.length > 0) { usadas.set(nome, (usadas.get(nome) ?? 0) + 1); return pts; }
+    if (pts.length > melhor.length) { melhor = pts; melhorNome = nome; }
+    // Cobriu o mínimo — parar aqui poupa chamadas sem esconder cobertura.
+    if (melhor.length >= PERIODOS_MINIMOS) break;
   }
-  return [];
+  if (melhor.length > 0) usadas.set(melhorNome, (usadas.get(melhorNome) ?? 0) + 1);
+  return melhor;
 }
 
 export async function POST(): Promise<NextResponse> {
@@ -321,6 +346,12 @@ export async function POST(): Promise<NextResponse> {
     medianaLiquidaPct: median(comAmostra.map((s) => s.netPct)),
     medianaBrutaPct: median(comAmostra.map((s) => s.grossPct)),
     medianaAnualizadaPct: median(comAmostra.map((s) => s.annualizedPct)),
+    /** O que decide: um ano de funding menos UMA ida e volta. */
+    medianaLiquidaAnualPct: median(comAmostra.map((s) => s.netAnnualizedPct)),
+    /** A janela REAL entregue pela fonte, que não é a pedida. */
+    diasMedianos: median(comAmostra.map((s) => s.days)),
+    /** Quantos ficaram de fora por amostra curta — 42 de 53 na 1ª rodada. */
+    semAmostra: stats.length - comAmostra.length,
     positivosLiquidos: comAmostra.filter((s) => s.netPct > 0).length,
     robustos: comAmostra.filter((s) => s.netPct > 0 && s.negativeShare <= MAX_NEG_SHARE).length,
     medianaNegativeShare: median(comAmostra.map((s) => s.negativeShare)),
@@ -346,6 +377,8 @@ export async function POST(): Promise<NextResponse> {
       liq: Math.round(s.netPct * 100) / 100,
       bruto: Math.round(s.grossPct * 100) / 100,
       anual: Math.round(s.annualizedPct * 10) / 10,
+      liqAno: Math.round(s.netAnnualizedPct * 10) / 10,
+      periodos: s.periods,
       neg: Math.round(s.negativeShare * 100),
       tombo: Math.round(s.maxDrawdownPct * 100) / 100,
       equilibrioDias: s.breakEvenDays == null ? null : Math.round(s.breakEvenDays),

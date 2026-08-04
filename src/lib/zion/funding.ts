@@ -62,8 +62,36 @@ export interface FundingStats {
   annualizedPct: number;
   /** Soma simples do funding na janela, sem reinvestir. */
   grossPct: number;
-  /** O que sobra depois das 4 pernas. É este o número que decide. */
+  /**
+   * O que sobra na JANELA MEDIDA, depois das 4 pernas.
+   *
+   * ⚠️ ESTE NÚMERO DEPENDE DO TAMANHO DA JANELA, e eu o chamei de "o número que
+   * decide" sem perceber (04/08). Ver `netAnnualizedPct` abaixo.
+   */
   netPct: number;
+  /**
+   * ⚠️⚠️ O NÚMERO QUE DE FATO DECIDE — e o anterior não era (04/08).
+   *
+   * `netPct = grossPct − custo` compara um funding ACUMULADO NA JANELA com um
+   * custo que se paga UMA VEZ. Enquanto a janela fosse os 174 dias planejados,
+   * a comparação era honesta. Só que a fonte que respondeu (gate.io) devolveu
+   * 30 a 60 dias, e nessa janela curta o custo fixo de 0.45% esmaga um funding
+   * que ainda nem teve tempo de acumular.
+   *
+   * O resultado saiu "mediana líquida −0.22%", que lido como veredito significa
+   * "funding não paga" — quando o que ele realmente dizia era "trinta dias não
+   * pagam a entrada". São afirmações diferentes, e a segunda é quase uma
+   * tautologia: o ponto de equilíbrio mediano é 42 dias.
+   *
+   * Este campo é INDEPENDENTE DA JANELA: quanto sobra em um ano, com UMA
+   * entrada e UMA saída. É o que dá para comparar entre símbolos e com outras
+   * aplicações de capital.
+   *
+   * Continua sendo extrapolação — assume que o regime de funding se repete —
+   * e por isso o `negativeShare` segue mandando no veredito. Mas é a
+   * extrapolação certa, e a anterior era uma comparação errada.
+   */
+  netAnnualizedPct: number;
   /** Fração dos períodos em que o funding foi NEGATIVO (você paga). */
   negativeShare: number;
   /** Pior queda pico-a-vale da curva acumulada de funding. */
@@ -121,6 +149,9 @@ export function fundingStats(symbol: string, pontos: FundingPoint[], costPct = C
     annualizedPct: porDia * 365,
     grossPct: soma,
     netPct: soma - costPct,
+    // Um ano de funding menos UMA ida e volta. Não escala o custo com a janela,
+    // que era o erro do `netPct`.
+    netAnnualizedPct: porDia * 365 - costPct,
     negativeShare: negativos / n,
     maxDrawdownPct: maxDd,
     // Sem funding médio positivo não existe ponto de equilíbrio: a posição
@@ -176,25 +207,42 @@ export function fundingVerdict(
     };
   }
 
-  const positivos = comAmostra.filter((s) => s.netPct > 0);
+  /**
+   * ⚠️ O VEREDITO PASSA A USAR O LÍQUIDO ANUALIZADO (04/08).
+   *
+   * A versão anterior julgava pelo `netPct` da janela, e com a janela curta que
+   * a fonte devolveu isso respondia "trinta dias não pagam a entrada" enquanto
+   * parecia responder "funding não paga". Ver a nota em `netAnnualizedPct`.
+   *
+   * O `negativeShare` continua mandando: retorno anualizado bonito com metade
+   * dos períodos negativo é renda de regime, e regime vira.
+   */
+  const positivos = comAmostra.filter((s) => s.netAnnualizedPct > 0);
   const robustos = positivos.filter((s) => s.negativeShare <= maxNegativeShare);
-  const medianaLiquida = median(comAmostra.map((s) => s.netPct)) ?? 0;
+  const medianaAnual = median(comAmostra.map((s) => s.netAnnualizedPct)) ?? 0;
+  const diasMedianos = Math.round(median(comAmostra.map((s) => s.days)) ?? 0);
+
+  // A janela real entra em TODA frase. Foi omiti-la que deixou um número de 30
+  // dias ser lido como veredito sobre a estratégia.
+  const janela = `janela real de ${diasMedianos}d`;
 
   if (robustos.length === 0) {
     return {
       readable: true, positivos: positivos.length, total: comAmostra.length,
       verdict: positivos.length === 0
-        ? `nenhum dos ${comAmostra.length} símbolos pagou as 4 pernas na janela medida — `
-          + `mediana líquida ${medianaLiquida.toFixed(2)}%`
-        : `${positivos.length} de ${comAmostra.length} ficaram positivos, mas TODOS com funding negativo `
-          + `em mais de ${Math.round(maxNegativeShare * 100)}% dos períodos — é renda de regime, não de estrutura`,
+        ? `nenhum dos ${comAmostra.length} símbolos rende positivo no ano depois das 4 pernas — `
+          + `mediana ${medianaAnual.toFixed(2)}%/ano · ${janela}`
+        : `${positivos.length} de ${comAmostra.length} rendem positivo no ano, mas TODOS com funding `
+          + `negativo em mais de ${Math.round(maxNegativeShare * 100)}% dos períodos — `
+          + `é renda de regime, não de estrutura · ${janela}`,
     };
   }
 
   return {
     readable: true, positivos: positivos.length, total: comAmostra.length,
-    verdict: `${robustos.length} de ${comAmostra.length} símbolos pagaram as 4 pernas COM funding negativo `
-      + `em menos de ${Math.round(maxNegativeShare * 100)}% dos períodos · mediana líquida da janela `
-      + `${medianaLiquida.toFixed(2)}% · o anualizado NÃO é a medida, esta janela é`,
+    verdict: `${robustos.length} de ${comAmostra.length} rendem positivo no ano COM funding negativo `
+      + `em menos de ${Math.round(maxNegativeShare * 100)}% dos períodos · mediana `
+      + `${medianaAnual.toFixed(2)}%/ano depois das 4 pernas · ${janela} — `
+      + `é extrapolação, não medição de um ano`,
   };
 }
