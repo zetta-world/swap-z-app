@@ -111,13 +111,55 @@ export async function POST(req: Request): Promise<NextResponse> {
   // Média entre símbolos, não soma: a pergunta é "quanto renderia por moeda
   // operada", e somar dez faria uma carteira de dez vezes o tamanho parecer uma
   // estratégia melhor.
-  const porSimbolo = ok.map((s) => ({ symbol: s.symbol, results: runBenchmarks(s.candles, WARMUP) }));
-  const nomes = porSimbolo[0]?.results.map((r) => r.name) ?? [];
+  /**
+   * ⚠️ SÓ OS SÍMBOLOS QUE REALMENTE PRODUZIRAM LINHAS (04/08).
+   *
+   * `runBenchmarks` devolve `[]` quando a série é curta demais para os
+   * indicadores nascerem.
+   *
+   * HOJE isso não dispara: o filtro daqui exige `WARMUP + 40` velas e o de lá
+   * dentro exige `warmup + 20`, então o de fora é o mais rígido dos dois e nada
+   * passa aqui para voltar vazio. Não estou consertando um bug ativo — estou
+   * tirando do caminho um que só depende de alguém mexer num dos dois números
+   * sem olhar o outro, o que é justamente o tipo de coisa que esta semana
+   * inteira mostrou que acontece.
+   *
+   * Duas coisas quebrariam, e as duas em silêncio:
+   *
+   *  1. `nomes` saía de `porSimbolo[0]`. Se o PRIMEIRO símbolo fosse o vazio, a
+   *     lista de estratégias saía vazia inteira — a tela mostraria nada e o
+   *     evento gravaria `todas: []`, indistinguível de "nenhuma estratégia deu
+   *     lucro".
+   *
+   *  2. `perSymbol` casava `linhas[i]` com `porSimbolo[i].symbol`. `linhas` é
+   *     FILTRADA e `porSimbolo` não — um vazio no meio desloca todas as
+   *     etiquetas seguintes, e o resultado do SOL apareceria com o nome do BNB.
+   *
+   * O segundo é o defeito da semana inteira em miniatura: um número certo sob o
+   * rótulo errado, sem nada na tela avisando. Carrego o símbolo JUNTO com a
+   * linha em vez de reconstruir por índice, que é o único jeito de isso não
+   * poder voltar.
+   */
+  const porSimbolo = ok
+    .map((s) => ({ symbol: s.symbol, results: runBenchmarks(s.candles, WARMUP) }))
+    .filter((p) => p.results.length > 0);
+
+  if (porSimbolo.length === 0) {
+    return falhou(
+      "nenhum símbolo produziu resultado de estratégia",
+      ok.map((s) => `${s.symbol}:${s.candles.length}`).join(" "),
+    );
+  }
+
+  // Todos os nomes vistos em QUALQUER símbolo, não só no primeiro.
+  const nomes = [...new Set(porSimbolo.flatMap((p) => p.results.map((r) => r.name)))];
 
   const estrategias = nomes.map((nome) => {
+    // O símbolo viaja junto com a linha. Nada de reconstruir por índice.
     const linhas = porSimbolo
-      .map((p) => p.results.find((r) => r.name === nome))
-      .filter((r): r is NonNullable<typeof r> => !!r);
+      .map((p) => { const r = p.results.find((x) => x.name === nome); return r && { symbol: p.symbol, r }; })
+      .filter((x): x is { symbol: string; r: NonNullable<typeof x>["r"] } => !!x)
+      .map(({ symbol, r }) => ({ symbol, ...r }));
     const med = (f: (r: (typeof linhas)[number]) => number) =>
       linhas.reduce((s, r) => s + f(r), 0) / linhas.length;
     // Quantos símbolos deram positivo — mais informativo que a média sozinha.
@@ -135,7 +177,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       avgTrades: med((r) => r.trades),
       avgExposurePct: med((r) => r.exposurePct),
       avgMaxDrawdownPct: med((r) => r.maxDrawdownPct),
-      perSymbol: linhas.map((r, i) => ({ symbol: porSimbolo[i].symbol, totalPct: r.totalPct })),
+      perSymbol: linhas.map((r) => ({ symbol: r.symbol, totalPct: r.totalPct })),
     };
   }).sort((a, b) => b.medianTotalPct - a.medianTotalPct);
 
