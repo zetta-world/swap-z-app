@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin/require";
 import { fetchTimedCandles } from "@/lib/api/market-indicators";
 import { runBenchmarks, meanPairwiseCorrelation, effectiveSampleSize } from "@/lib/zion/benchmarks";
 import { recordEvent } from "@/lib/admin/track";
+import { median } from "@/lib/zion/stats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -172,7 +173,22 @@ export async function POST(req: Request): Promise<NextResponse> {
       what: linhas[0].what,
       usesShort: linhas[0].usesShort,
       avgTotalPct: med((r) => r.totalPct),
-      medianTotalPct: [...linhas.map((r) => r.totalPct)].sort((a, b) => a - b)[Math.floor(linhas.length / 2)],
+      /**
+       * ⚠️ ISTO ERA `s[Math.floor(n / 2)]`, QUE NÃO É MEDIANA (04/08).
+       *
+       * O backtest da biblioteca e esta rota mediam a mesma coisa — o mercado
+       * dos últimos 174 dias, mediana do comprar-e-segurar dos mesmos 10
+       * símbolos, no mesmo dia — e diziam −17.99% e −6.74%.
+       *
+       * A janela já tinha sido acertada. A diferença era a conta: com dez
+       * símbolos, `s[5]` é o SEXTO menor, o de cima do meio. Num mercado
+       * disperso a distância entre o 5º e o 6º passa fácil de 20 pontos, e o
+       * erro cai sempre PARA CIMA — todo número que esta rota já reportou
+       * estava inflado, e inflado do lado que engana.
+       *
+       * Agora vem do `median` compartilhado, o mesmo do backtest.
+       */
+      medianTotalPct: median(linhas.map((r) => r.totalPct)) ?? 0,
       symbolsPositive: positivos,
       symbols: linhas.length,
       avgTrades: med((r) => r.trades),
@@ -249,6 +265,20 @@ export async function POST(req: Request): Promise<NextResponse> {
       vende: e.usesShort,
       tombo: Math.round(e.avgMaxDrawdownPct * 10) / 10,
       exposicao: Math.round(e.avgExposurePct),
+      /**
+       * ⚠️ O POR-SÍMBOLO TAMBÉM, E NÃO É DETALHE (04/08).
+       *
+       * A discordância de onze pontos entre o backtest e esta rota levou uma
+       * hora para ser isolada porque só a MEDIANA era gravada. Com um agregado
+       * e nenhuma parcela, não dá para distinguir "a janela é outra" de "a
+       * conta é outra" de "os símbolos são outros" — e as três hipóteses
+       * estavam abertas ao mesmo tempo.
+       *
+       * Guardar as dez parcelas responde as três de uma consulta só. É a mesma
+       * lição do `byWeather`: o agregado sozinho não é auditável, e um número
+       * que não dá para conferir acaba conferido por adivinhação.
+       */
+      porSimbolo: e.perSymbol.map((p) => ({ s: p.symbol, pct: Math.round(p.totalPct * 100) / 100 })),
     })),
   } });
 
