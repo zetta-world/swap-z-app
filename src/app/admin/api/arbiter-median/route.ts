@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
-import { findArbs, dropOutliers, upperMiddle, trueMedian } from "@/lib/zion/arbiter";
+import { findArbs, dropOutliers, upperMiddle, trueMedian, EXCLUDE_VENUES } from "@/lib/zion/arbiter";
 import { recordEvent } from "@/lib/admin/track";
 
 export const runtime = "nodejs";
@@ -41,8 +41,7 @@ export const maxDuration = 60;
  * verdade depois que este número for lido.
  */
 
-const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase")
-  .split(",").map((s) => s.trim()).filter(Boolean);
+
 const OUTLIER_PCT = Number(process.env.ARB_OUTLIER_PCT ?? 2);
 const MIN_VENUES = Number(process.env.ARB_MIN_VENUES ?? 3);
 

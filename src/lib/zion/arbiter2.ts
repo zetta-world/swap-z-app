@@ -35,7 +35,9 @@ const STARTING_USD   = Number(process.env.ARB2_STARTING_USD    ?? 300);  // the 
 // regardless. Tighten via env for real money.
 const DAILY_CAP      = Number(process.env.ARB2_DAILY_CAP       ?? 120);
 const COOLDOWN_MIN   = Number(process.env.ARB2_COOLDOWN_MIN    ?? 30);
-const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase").split(",").map((s) => s.trim()).filter(Boolean);
+// Uma definição só — ver a nota em arbiter.ts. Três cópias deste literal quase
+// deixaram a Kucoin entrar na matriz desta mesa pela porta dos fundos.
+import { EXCLUDE_VENUES } from "@/lib/zion/arbiter";
 
 /**
  * OS GÊMEOS ALAVANCADOS (03/08).

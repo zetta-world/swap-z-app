@@ -25,7 +25,27 @@ export const maxDuration = 60;
  * para abrir um ciclo neste instante.
  */
 
-const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase")
+/**
+ * ⚠️ EXCLUSÃO PRÓPRIA, SEPARADA DA DO ARBITER (04/08).
+ *
+ * Esta rota MEDE; o arbiter OPERA. Até hoje as duas liam a mesma variável, o
+ * que estava certo enquanto a lista era idêntica — e deixou de estar no minuto
+ * em que a Kucoin entrou.
+ *
+ * O dono pediu a Kucoin "na medição de dispersão". Só que a matriz é
+ * compartilhada: incluí-la no fetch a colocaria também na matriz das MESAS, que
+ * é caminho de dinheiro, sem ninguém ter medido o que ela faz lá.
+ *
+ * É exatamente o caso da mediana do corte de outlier, ontem: a conta certa
+ * afrouxava um portão, e a resposta foi medir antes de trocar. Mesma regra
+ * aqui. A Kucoin entra AQUI (leitura pura, não abre posição) e continua fora do
+ * `ARB_EXCLUDE_VENUES` das mesas até este número existir.
+ *
+ * Só a coinbase segue excluída dos dois, e por motivo diferente: ela cota
+ * BASE-USD e não USDT, então a base USD/USDT se disfarça de spread. Isso não é
+ * cautela, é validade de medição — incluí-la mediria a moeda, não a venue.
+ */
+const EXCLUDE_VENUES = (process.env.VENUE_TRUTH_EXCLUDE ?? "coinbase")
   .split(",").map((s) => s.trim()).filter(Boolean);
 
 export async function GET(): Promise<NextResponse> {

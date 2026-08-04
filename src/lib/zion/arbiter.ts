@@ -90,9 +90,25 @@ const MIN_VENUES = Number(process.env.ARB_MIN_VENUES ?? 3);
 // can't even form a "suspect" pair. With only 2 venues we can't tell which is
 // stale; the gross ceiling still catches those.
 const OUTLIER_PCT = Number(process.env.ARB_OUTLIER_PCT ?? 2);
-// Venues excluded from the ARB matrix (still fine elsewhere). Coinbase quotes
-// BASE-USD, not USDT — the USD/USDT basis masquerades as spread.
-const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase").split(",").map((s) => s.trim()).filter(Boolean);
+/**
+ * Venues fora da matriz DAS MESAS (ainda usadas em outros lugares).
+ *
+ * · `coinbase` — cota BASE-USD, não USDT. A base USD/USDT se disfarça de spread.
+ * · `kucoin` — ⚠️ ADICIONADA À CASA EM 04/08, MAS NÃO ÀS MESAS AINDA.
+ *
+ *   O dono trouxe prints de um app de terceiros onde a Kucoin aparecia em quase
+ *   toda linha de spread, e pediu que ela entrasse na MEDIÇÃO de dispersão. Ela
+ *   entrou — em `/admin/api/venue-truth`, que é leitura pura.
+ *
+ *   Aqui não. Este é o caminho do dinheiro, e uma venue nova muda quem é a
+ *   ponta barata de cada par. Mesma regra da mediana do corte de outlier: mede
+ *   primeiro, troca depois, e a troca é decisão declarada.
+ *
+ *   Para promovê-la basta tirá-la do `ARB_EXCLUDE_VENUES` — o que deve
+ *   acontecer DEPOIS de o `venue-truth` dizer se ela aumenta o spread
+ *   executável ou só o aparente.
+ */
+export const EXCLUDE_VENUES = (process.env.ARB_EXCLUDE_VENUES ?? "coinbase,kucoin").split(",").map((s) => s.trim()).filter(Boolean);
 // Alavanca 4: the universe nearly doubled (30 → ~55 symbols), so the book
 // scales with it. The per-symbol cooldown still guards against churning one
 // pair; the cap only bounds the aggregate.
