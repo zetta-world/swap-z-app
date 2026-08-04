@@ -132,11 +132,24 @@ cada 8h (majors ~5-15% a.a.; memecoins lotadas de long, bem mais).
 3. 🔴 **REPROVADO.** Os dados chegaram e disseram não: −0,629% real contra
    +0,451% teórico, 17 de 4.085 amostras ainda positivas (0,4%). Não há o
    que promover ao real. Passos 4 e 5 ficam suspensos para o spot-spot.
-4. ⏸️ Funding farming em simulação — **agora é o próximo passo REAL da
-   família**, não um extra. É a única variante que não depende de
-   velocidade, e os dados de funding já entram no sistema
-   (`market-indicators.ts` chama `premiumIndex`, `market-context.ts` lê a
-   Bybit). Nunca foi medida como estratégia própria.
+4. 🟡 Funding farming — **agora é o próximo passo REAL da família**, não um
+   extra. É a única variante que não depende de velocidade.
+   **04/08: a MEDIÇÃO está no ar** (`src/lib/zion/funding.ts`, rota
+   `/admin/api/funding`, painel 🪙 FUNDING / BASIS). Lê o histórico
+   realizado da Binance para os ~57 símbolos rastreados, na mesma janela de
+   174 dias do resto do laboratório. Leitura pura — não abre posição.
+   **Pendente: rodar e ler o resultado.**
+
+   O que a conta inclui: funding realizado período a período + as 4 pernas
+   (`ARB2_COST_PCT`, 0,45%). O que ela NÃO inclui, declarado na tela e não
+   só no código: basis de entrada/saída, risco de liquidação da perna
+   vendida, custo de margem além do funding, risco de custódia.
+
+   Régua do veredito (limiares declarados como palpite, não medição):
+   abaixo de 60 dias é **inconclusivo**, nunca aprovado; o número que
+   decide é o **líquido da janela real**, não o anualizado; e positivo com
+   mais de 35% dos períodos negativos é **renda de regime, não de
+   estrutura** — reprova mesmo com média positiva.
 5. ⏸️ Real com capital de teste (~$300-1000, 3 venues, API keys SEM saque,
    caps + kill-switch + fail-closed — regras da casa pra dinheiro).
 

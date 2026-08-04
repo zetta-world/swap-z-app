@@ -15,6 +15,7 @@ export type ModuleId =
   | "arbiter-cohort"
   | "calibration"
   | "what-worked"
+  | "funding"
   | "tournament"
   | "ragnarok"
   | "swap-guard"
@@ -177,6 +178,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 7,
+  },
+  {
+    id: "funding",
+    title: "FUNDING / BASIS",
+    subtitle: "renda neutra spot+perp — a arbitragem que não depende de velocidade",
+    icon: "🪙",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8,
   },
   {
     id: "backtest",
