@@ -18,6 +18,7 @@ import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@
 import { fetchOrderbook } from "@/lib/api/cex-orderbook";
 import { assessRealism, realismGate, type RealismGate } from "@/lib/zion/arb-realism";
 import { recordEvent } from "@/lib/admin/track";
+import { median } from "@/lib/zion/stats";
 
 const COST_PCT     = Number(process.env.ARB_COST_PCT     ?? 0.4);  // 2 taker legs + slippage buffer
 const MIN_NET_PCT  = Number(process.env.ARB_MIN_NET_PCT  ?? 0.15); // floor to act
@@ -120,6 +121,75 @@ export function spreadWindow(
   return { floorPct, ceilPct: maxGrossPct, empty: floorPct > maxGrossPct };
 }
 
+/**
+ * A MEDIANA DO CORTE DE OUTLIER — e por que ela ainda é a fórmula errada.
+ *
+ * ⚠️ ACHADO EM 04/08, MEDIDO ANTES DE SER TROCADO.
+ *
+ * `s[Math.floor(n / 2)]` não é mediana com `n` par: é o de cima do meio. O
+ * mesmo defeito que inflava em 11 pontos o relatório do "o que teria
+ * funcionado" mora aqui — só que aqui ele decide dinheiro.
+ *
+ * NÃO é caso raro. São 6 venues na matriz (7 menos a coinbase), então 4 e 6
+ * cotações por símbolo são rotina, e nesses casos as duas fórmulas divergem.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * A DIREÇÃO DO ERRO, que é o motivo de isto não ter ido junto com o resto:
+ *
+ * O filtro aceita `m(1−k) <= q <= m(1+k)`. Uma mediana enviesada PARA CIMA
+ * desloca a faixa aceita para cima também. Consequência:
+ *
+ *   cotação BARATA  → mais chance de ser cortada
+ *   cotação CARA    → mais chance de ser mantida
+ *
+ * E `lo` — a ponta barata — é a venue onde a mesa COMPRA. Cortar as baratas
+ * sobe o `lo`, encolhe o spread e derruba símbolos por quórum. Ou seja: a
+ * fórmula errada vinha agindo como um freio.
+ *
+ * Trocar pela mediana correta AFROUXA o portão: baixa a faixa, devolve as
+ * cotações baratas que vinham sendo cortadas, aumenta os spreads detectados.
+ *
+ * E é exatamente a direção que já produziu prejuízo aqui uma vez. Os +34% da
+ * coorte eram variância do feed da Gate.io entrando como "venue barata" — a
+ * classe de coisa que este corte existe para matar. Consertar a conta e no
+ * mesmo movimento reabrir a porta seria trocar um erro de aritmética por um
+ * risco de dinheiro sem medir nenhum dos dois.
+ *
+ * Por isso `medianOf` é injetável e o padrão continua sendo o COMPORTAMENTO
+ * ATUAL. A rota `/admin/api/arbiter-median` roda as duas contas sobre a mesma
+ * matriz viva e diz, em número, o que muda. Só depois disso o padrão vira a
+ * mediana de verdade.
+ */
+
+/** A conta ERRADA — exportada com nome honesto, só para a medição comparar. */
+export function upperMiddle(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+}
+
+/** A conta CERTA, a mesma do backtest. */
+export function trueMedian(xs: number[]): number {
+  return median(xs) ?? 0;
+}
+
+/**
+ * ⚠️ O PADRÃO É `upperMiddle` DE PROPÓSITO — ver a nota acima. Isto NÃO é
+ * esquecimento: é o comportamento em produção, preservado até a medição dizer
+ * o que a troca faz com o dinheiro.
+ */
+export function dropOutliers(
+  quotes: Array<{ v: string; p: number }>,
+  outlierPct: number,
+  medianOf: (xs: number[]) => number = upperMiddle,
+): Array<{ v: string; p: number }> {
+  // Com menos de três não há testemunha independente para apontar o ímpar —
+  // o corte não roda, e o teto bruto é quem segura.
+  if (quotes.length < 3) return quotes;
+  const m = medianOf(quotes.map((q) => q.p));
+  if (!(m > 0)) return quotes;
+  return quotes.filter((q) => Math.abs(q.p / m - 1) * 100 <= outlierPct);
+}
+
 /** Pure detector: scan the venue matrix for spreads whose NET (after costs)
  *  clears the floor. Needs ≥MIN_VENUES quoting the symbol; fail-closed on junk. */
 export function findArbs(
@@ -129,6 +199,8 @@ export function findArbs(
   maxGrossPct = MAX_GROSS_PCT,
   outlierPct = OUTLIER_PCT,
   minVenues = MIN_VENUES,
+  /** Injetável só para a medição comparar as duas contas. Padrão = produção. */
+  medianOf: (xs: number[]) => number = upperMiddle,
 ): ArbOpportunity[] {
   const out: ArbOpportunity[] = [];
   for (const [symbol, venues] of spot) {
@@ -140,11 +212,7 @@ export function findArbs(
     for (const [v, { priceUsd }] of venues) if (priceUsd > 0) quotes.push({ v, p: priceUsd });
     // Median outlier drop: a mediana é a testemunha independente, e quem se
     // afasta dela sai ANTES de formar par.
-    if (quotes.length >= 3) {
-      const sorted = [...quotes].map((q) => q.p).sort((a, b) => a - b);
-      const median = sorted[Math.floor(sorted.length / 2)];
-      quotes = quotes.filter((q) => Math.abs(q.p / median - 1) * 100 <= outlierPct);
-    }
+    quotes = dropOutliers(quotes, outlierPct, medianOf);
     // Depois do corte ainda precisa sobrar o quórum: dois sobreviventes de uma
     // matriz de três significa que UM já foi reprovado, e operar no que restou
     // seria voltar ao caso de duas testemunhas pela porta dos fundos.

@@ -38,6 +38,23 @@ type Data = {
   venues: Array<{ venue: string; compras: number; vendas: number; total: number }>;
   ranAt: string;
 };
+/**
+ * O antes-e-depois da mediana do corte de outlier. Ver a nota em
+ * `arbiter.ts`: a conta em produção não é mediana com contagem par, e trocá-la
+ * AFROUXA o portão. Isto mede o quanto, antes de trocar.
+ */
+type MedianProbe = {
+  resumo: {
+    simbolos: number; simbolosComQuorum: number; contagemPar: number;
+    mudaramSobreviventes: number; ganharamQuorum: number; perderamQuorum: number;
+    cotacoesDevolvidas: number; cotacoesRemovidas: number;
+    oportunidadesAntes: number; oportunidadesDepois: number;
+    oportunidadesNovas: Array<{ symbol: string; buy: string; sell: string; spreadPct: number; netPct: number; suspect: boolean }>;
+    oportunidadesPerdidas: Array<{ symbol: string; buy: string; sell: string; spreadPct: number }>;
+  };
+  outlierPct: number; minVenues: number;
+};
+
 type VenueStat = {
   venue: string; symbols: number; biasPct: number; dispersionPct: number;
   worstPct: number; verdict: "estável" | "cara" | "barata" | "ruidosa";
@@ -71,6 +88,8 @@ export default function ArbiterCohortPanel() {
   const [checking, setChecking] = useState(false);
   const [zeroing, setZeroing] = useState(false);
   const [zeroed, setZeroed] = useState<string | null>(null);
+  const [med, setMed] = useState<MedianProbe | null>(null);
+  const [medRodando, setMedRodando] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -112,6 +131,16 @@ export default function ArbiterCohortPanel() {
       const res = await fetch("/admin/api/venue-truth");
       if (res.ok) setTruth(await res.json());
     } catch { /* mantém o estado anterior */ } finally { setChecking(false); }
+  }
+
+  // Leitura pura: não abre posição, não escreve em admin_kv, não muda o padrão
+  // do findArbs. Roda as DUAS fórmulas de mediana sobre a mesma matriz viva.
+  async function medirMediana() {
+    setMedRodando(true);
+    try {
+      const res = await fetch("/admin/api/arbiter-median", { method: "POST" });
+      if (res.ok) setMed(await res.json());
+    } catch { /* mantém o estado anterior */ } finally { setMedRodando(false); }
   }
 
   return (
@@ -282,6 +311,75 @@ export default function ArbiterCohortPanel() {
             <button className="adm-btn" onClick={conferir} disabled={checking}>
               {checking ? "lendo as corretoras…" : "⚖ conferir os preços AO VIVO"}
             </button>
+
+            {/* ANTES E DEPOIS DA MEDIANA — rótulo diferente do vizinho de
+                propósito. Dois botões com texto parecido no mesmo painel já
+                custaram dias aqui: o dono rodava um pensando que rodava o outro. */}
+            <button
+              className="adm-btn" onClick={medirMediana} disabled={medRodando}
+              style={{ marginTop: 6 }}
+            >
+              {medRodando ? "rodando as duas contas…" : "🧮 MEDIANA DO CORTE · antes e depois"}
+            </button>
+
+            {med && (
+              <div style={{
+                marginTop: 8, fontSize: 9, lineHeight: 1.7,
+                border: "1px solid var(--adm-border)", borderRadius: 4, padding: "7px 9px",
+              }}>
+                <div style={{ color: "var(--adm-ink-2)" }}>
+                  🧮 CORTE DE OUTLIER · a conta de hoje contra a mediana de verdade
+                </div>
+                <div style={{ color: "var(--adm-ink-4)", fontSize: 8, marginBottom: 4 }}>
+                  a fórmula em produção não é mediana quando a contagem de cotações é PAR.
+                  Trocá-la AFROUXA o portão — devolve cotações baratas, e barata é a ponta
+                  onde a mesa compra. Este número existe para a troca ser decisão, não descuido.
+                </div>
+                <div style={{ color: "var(--adm-ink-3)" }}>
+                  {med.resumo.simbolos} símbolos · <b>{med.resumo.contagemPar}</b> com contagem PAR
+                  {" "}(onde as duas contas podem divergir)
+                </div>
+                <div style={{ color: "var(--adm-ink-3)" }}>
+                  divergiram de fato:{" "}
+                  <b style={{ color: med.resumo.mudaramSobreviventes > 0 ? "var(--adm-amber)" : "var(--adm-green)" }}>
+                    {med.resumo.mudaramSobreviventes}
+                  </b>
+                  {" · "}cotações devolvidas: <b>{med.resumo.cotacoesDevolvidas}</b>
+                  {" · "}removidas: <b>{med.resumo.cotacoesRemovidas}</b>
+                </div>
+                <div style={{ color: "var(--adm-ink-3)" }}>
+                  quórum: <b style={{ color: "var(--adm-amber)" }}>+{med.resumo.ganharamQuorum}</b> ganham
+                  {" · "}<b>−{med.resumo.perderamQuorum}</b> perdem
+                </div>
+                <div style={{ color: "var(--adm-ink-2)", marginTop: 4 }}>
+                  oportunidades: <b>{med.resumo.oportunidadesAntes}</b> hoje →{" "}
+                  <b style={{
+                    color: med.resumo.oportunidadesDepois > med.resumo.oportunidadesAntes
+                      ? "var(--adm-amber)" : "var(--adm-green)",
+                  }}>
+                    {med.resumo.oportunidadesDepois}
+                  </b>{" "}com a mediana correta
+                </div>
+                {med.resumo.oportunidadesNovas.length > 0 && (
+                  <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 4 }}>
+                    <div style={{ color: "var(--adm-amber)" }}>
+                      as que a troca ABRIRIA — leia antes de decidir:
+                    </div>
+                    {med.resumo.oportunidadesNovas.slice(0, 8).map((o) => (
+                      <div key={`${o.symbol}:${o.buy}:${o.sell}`}>
+                        · {o.symbol}: compra {o.buy} → vende {o.sell}
+                        {" · "}spread {o.spreadPct.toFixed(3)}%
+                        {o.suspect && <span style={{ color: "var(--adm-red)" }}> · acima do teto crível</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 5 }}>
+                  leitura pura — nada foi aberto, nada foi alterado. O padrão continua
+                  sendo a conta antiga.
+                </div>
+              </div>
+            )}
 
             {truth && (
               <div style={{ marginTop: 8 }}>
