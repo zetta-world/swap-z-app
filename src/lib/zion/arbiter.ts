@@ -8,9 +8,26 @@
  * simulated INSTANT round-trip (buy the cheap venue, sell the rich one) into
  * the 'arbiter' paper wallet — realized P&L on the spot, equity curve for free.
  *
+ * ⚠️ "INSTANT" É LITERAL, E O DESENHO É O DOS DOIS BOLSOS (nota de 04/08).
+ *
+ * As duas pernas saem no MESMO tick, contra saldo que já existe dos dois lados
+ * — vender na cara e comprar na barata, sem transferir nada entre corretoras,
+ * com o estoque rebalanceando pelas rotas contrárias (o ledger mostra
+ * binance→gateio 38× e gateio→binance 26×, que é a assinatura disso).
+ *
+ * Foi decisão do CEO em 21/07 — `docs/PLANO-ARBITER-REAL.md`, "aula dos dois
+ * bolsos". NÃO é comprar numa venue e depois revender na outra: esse desenho
+ * foi descartado justamente por ter risco de perna e depender de transferência.
+ *
+ * Registro aqui porque eu mesmo descrevi errado ao dono em 04/08, lendo o
+ * cabeçalho do `arb-realism.ts`, que dizia a mesma coisa certa em linguagem
+ * sequencial. Duas frases ambíguas no lugar certo valem uma afirmação falsa.
+ *
  * Honest caveat baked into the numbers: paper arb assumes both legs fill at
- * the observed price (no leg risk, no depth). ARB_COST_PCT carries a buffer
- * for that, and F2 validates against real orderbooks before anything real.
+ * the observed TOP price (no depth). Isso é o que o F2 mede — e mediu: andando
+ * o livro de verdade, os +0.451% teóricos viram −0.629% reais. Note que essa
+ * conclusão INDEPENDE do desenho: os dois bolsos eliminam risco de preço entre
+ * pernas e transferência, não a profundidade do livro.
  */
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";

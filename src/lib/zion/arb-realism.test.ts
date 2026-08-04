@@ -108,3 +108,63 @@ describe("o portão de profundidade", () => {
     expect(g.reason).toContain("0.450");
   });
 });
+
+/**
+ * O DESENHO DOS DOIS BOLSOS, FIXADO EM TESTE (04/08).
+ *
+ * O cabeçalho deste módulo descrevia a conta certa em linguagem sequencial
+ * ("then sell the base you got"), e isso me levou a afirmar ao dono que a nossa
+ * simulação tinha risco de perna e que faltava inventário pré-posicionado — as
+ * duas falsas, com a decisão registrada havia semanas em PLANO-ARBITER-REAL.md.
+ *
+ * Comentário se conserta e volta a apodrecer. O que não volta é um teste que
+ * falha. Estes fixam a assinatura dos dois bolsos: quantidade casada nas duas
+ * pernas, nenhuma sobra de base, nada dependendo de ordem.
+ */
+describe("o desenho dos dois bolsos", () => {
+  const asks: Level[] = [[100, 1], [100.5, 10]];
+  const bids: Level[] = [[101, 1], [100.6, 10]];
+
+  it("vende EXATAMENTE o que comprou — quantidade casada, sem sobra de base", () => {
+    const buy = vwapBuy(asks, 500);
+    const sell = vwapSell(bids, buy.baseFilled);
+    // O que sai da perna vendida é a mesma quantidade que entrou na comprada.
+    // É isso que torna a posição neutra: nenhum estoque líquido é criado.
+    expect(sell.usdFilled).toBeGreaterThan(0);
+    expect(buy.baseFilled).toBeGreaterThan(0);
+    const sobra = buy.baseFilled - (sell.usdFilled / sell.avgPrice);
+    expect(Math.abs(sobra)).toBeLessThan(1e-9);
+  });
+
+  it("o P&L dos dois bolsos, calculado do zero, bate com o do assessRealism", () => {
+    /**
+     * A conta dos dois bolsos, feita aqui à mão sem usar o módulo:
+     *
+     *   já tenho BASE na venue cara e USDT na barata
+     *   → vendo X base na cara, andando os BIDS   → recebo sellVWAP × X
+     *   → compro X base na barata, andando os ASKS → pago   buyVWAP  × X
+     *   → sobra (sellVWAP − buyVWAP) × X, e fico neutro em base
+     *
+     * Sobre o capital empregado (buyVWAP × X), isso é exatamente
+     * (sellVWAP − buyVWAP) / buyVWAP — o mesmo `realisticSpreadPct`.
+     *
+     * É isto que sustenta a afirmação de que os −0.63% medidos NÃO são
+     * artefato de simular uma sequência: as duas execuções andam os mesmos
+     * livros pela mesma quantidade. O que os bolsos eliminam é risco de PREÇO
+     * entre as pernas e a transferência entre corretoras — nenhum dos dois
+     * entra nesta aritmética.
+     */
+    const SIZE = 500, COST = 0.4;
+    const compra = vwapBuy(asks, SIZE);
+    const venda = vwapSell(bids, compra.baseFilled);
+
+    const usdRecebido = venda.usdFilled;
+    const usdPago = compra.avgPrice * compra.baseFilled;
+    const doisBolsosPct = ((usdRecebido - usdPago) / usdPago) * 100 - COST;
+
+    const r = assessRealism(asks, bids, SIZE, 1.0, COST);
+    expect(doisBolsosPct).toBeCloseTo(r.realisticNetPct, 3);
+    // E o livro realmente comeu spread — senão o teste passaria por ser trivial.
+    expect(r.realisticNetPct).toBeLessThan(r.theoreticalNetPct);
+  });
+});

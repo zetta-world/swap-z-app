@@ -1,15 +1,50 @@
-# ARBITER — do papel ao dinheiro real — 🟡 (2.0 em simulação, 21/07)
+# ARBITER — do papel ao dinheiro real — 🔴 TESE REPROVADA (04/08)
 
-> Gatilho: CEO validou o conceito (aula do "dois bolsos": vender na cara +
-> comprar na barata com saldo dos dois lados captura o spread inteiro sem
-> transferir nada) e definiu o produto: o cliente chega SÓ com USDT — a
-> máquina se prepara sozinha. Este plano guarda o caminho completo pro real.
+> ⚠️ **LEIA ISTO ANTES DE QUALQUER NÚMERO ABAIXO.**
+>
+> O caminho pro real está **PARADO**, e não por falta de execução: a
+> estratégia foi medida e não paga. Três medições independentes, todas na
+> mesma direção:
+>
+> | medição | resultado |
+> |---|---|
+> | profundidade real do livro (4.085 amostras, F2) | **−0,629%** por ciclo, contra +0,451% que o ledger anotava |
+> | dispersão entre venues ao vivo (57 símbolos) | **0,052%** máximo — o custo de ida e volta é 0,40–0,45% |
+> | assinatura da coorte | Gate.io em 90% das pernas, nos DOIS sentidos = variância de feed, não praça barata |
+>
+> Os **+0,303%/trade** registrados abaixo eram artefato: o topo do livro
+> prometia um spread que a profundidade comia inteiro, e a sonda que já
+> media isso rodava havia seis dias sem ninguém ler. Os ledgers fictícios
+> foram zerados (motivo gravado); o portão de profundidade agora REPROVA
+> em vez de observar.
+>
+> **O que continua de pé:** o desenho dos "dois bolsos" (saldo dos dois
+> lados, pernas simultâneas, sem transferência) está certo e implementado
+> — inclusive na aritmética do F2. Ele elimina risco de perna e
+> transferência. O que ele não elimina é a profundidade do livro, e era a
+> profundidade que estava comendo tudo.
+>
+> **Próximo teste da família:** funding/basis (a feature guardada mais
+> abaixo). É a única forma de renda neutra que não depende de velocidade —
+> o funding é publicado e muda a cada 8h, não a cada milissegundo. Ainda
+> NÃO medida.
 
-## Fatos medidos (paper 1.0, rodada 2: 17-21/07)
+> Gatilho original: CEO validou o conceito (aula do "dois bolsos": vender na
+> cara + comprar na barata com saldo dos dois lados captura o spread inteiro
+> sem transferir nada) e definiu o produto: o cliente chega SÓ com USDT — a
+> máquina se prepara sozinha.
+
+## Fatos medidos (paper 1.0, rodada 2: 17-21/07) — ⚠️ REFUTADOS EM 04/08
+
+**Estes números não sobreviveram à validação de orderbook.** Ficam no
+registro porque apagá-los apagaria a cicatriz, e a cicatriz é o motivo de
+o portão de profundidade existir hoje.
 
 - 180 round-trips, 0 perdas, +$27,30 sobre entradas de $50 → +0,303%/trade
   líquido (custo 0,4% já descontado). Retorno sobre capital DE GIRO ≈ 54%
   em 3,5d; a escala vem de cobertura (moedas × venues), não do tamanho.
+  ⚠️ **"0 perdas" era a pista** — 180 ciclos sem uma única perda não é
+  estratégia boa, é medição contra o próprio feed.
 - **Gate.io é o hub** (154 dos 180 trades). Venues que importam: Gate.io,
   Binance, OKX, MEXC. Kraken/Bybit quase não geram rota.
 - Moedas: MANA (35), BONK (32), JUP (14), LDO (13), RUNE (10) = 58% do
@@ -87,12 +122,21 @@ cada 8h (majors ~5-15% a.a.; memecoins lotadas de long, bem mais).
 - Status: **guardada por decisão do CEO (21/07) — implementar após o
   Arbiter 2.0 provar o motor spot+perp na simulação.**
 
-## Caminho pro real (ordem de execução)
+## Caminho pro real (ordem de execução) — ⛔ PARADO NO PASSO 3
 
-1. 🟢 Arbiter 2.0 em simulação com $300 (este deploy).
-2. 🔴 F2 — validador de orderbook (spot 1.0 E basis do 2.0).
-3. ⏸️ ~1-2 semanas de dados: 1.0 (estoque) vs 2.0 (futuros) vs realismo F2.
-4. ⏸️ Funding farming em simulação.
+1. 🟢 Arbiter 2.0 em simulação com $300.
+2. 🟢 F2 — validador de orderbook. Implementado, ligado em prod, **e agora
+   REPROVANDO** (`realismGate`): livro não lido ou raso veta a abertura.
+   Antes era só observação — 4.085 medições corretas indo para um feed que
+   ninguém agregava enquanto a mesa abria assim mesmo.
+3. 🔴 **REPROVADO.** Os dados chegaram e disseram não: −0,629% real contra
+   +0,451% teórico, 17 de 4.085 amostras ainda positivas (0,4%). Não há o
+   que promover ao real. Passos 4 e 5 ficam suspensos para o spot-spot.
+4. ⏸️ Funding farming em simulação — **agora é o próximo passo REAL da
+   família**, não um extra. É a única variante que não depende de
+   velocidade, e os dados de funding já entram no sistema
+   (`market-indicators.ts` chama `premiumIndex`, `market-context.ts` lê a
+   Bybit). Nunca foi medida como estratégia própria.
 5. ⏸️ Real com capital de teste (~$300-1000, 3 venues, API keys SEM saque,
    caps + kill-switch + fail-closed — regras da casa pra dinheiro).
 
