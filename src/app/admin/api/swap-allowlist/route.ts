@@ -147,7 +147,7 @@ export async function POST(): Promise<NextResponse> {
           zeroXKey,
         );
         const spender = p.issues?.allowance?.spender;
-        recordEvent("swap_intent", { wallet: BURNER, meta: {
+        await recordEvent("swap_intent", { wallet: BURNER, meta: {
           source: "0x", fromChain: chain, toChain: chain, probe: true,
           chainId: ZEROX_CHAIN_IDS[chain], target: spender, spender,
         } });
@@ -156,7 +156,7 @@ export async function POST(): Promise<NextResponse> {
         const msg = e instanceof Error ? e.message : "erro";
         errors.push(`0x:${chain}: ${msg.slice(0, 80)}`);
         // Log the exact 0x failure so it's diagnosable without another tap.
-        recordEvent("swap_probe_error", { meta: { source: "0x", chain, msg: msg.slice(0, 200) } });
+        await recordEvent("swap_probe_error", { meta: { source: "0x", chain, msg: msg.slice(0, 200) } });
       }
     }
 
@@ -167,7 +167,7 @@ export async function POST(): Promise<NextResponse> {
           { fromChainId: LIFI_CHAIN_IDS[chain]!, toChainId: LIFI_CHAIN_IDS[chain]!, fromToken: usdc.address, toToken: LIFI_NATIVE, fromAmount: sellAmount, fromAddress: BURNER, toAddress: BURNER, slippageBps: 50 },
           lifiKey,
         );
-        recordEvent("swap_intent", { wallet: BURNER, meta: {
+        await recordEvent("swap_intent", { wallet: BURNER, meta: {
           source: "lifi", fromChain: chain, toChain: chain, probe: true,
           chainId: LIFI_CHAIN_IDS[chain], target: q.transactionRequest?.to, spender: q.estimate?.approvalAddress,
         } });

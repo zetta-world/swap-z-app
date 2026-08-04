@@ -77,8 +77,9 @@ export async function POST(req: Request): Promise<NextResponse> {
    * medição que funciona se anuncia, a que falha desaparece, e o histórico fica
    * com um viés de sobrevivência embutido.
    */
-  const falhou = (motivo: string, detalhe?: string) => {
-    recordEvent("what_worked_failed", { meta: {
+  const falhou = async (motivo: string, detalhe?: string) => {
+    // AWAIT — ver a nota grande no `recordEvent` de sucesso, mais abaixo.
+    await recordEvent("what_worked_failed", { meta: {
       backDays, windowDays: JANELA_DIAS, motivo, detalhe: detalhe ?? null,
       tookMs: Date.now() - t0,
     } });
@@ -92,7 +93,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       candles: await fetchTimedCandles(symbol, "1d", BARS_1D, 3600, endAtMs),
     })));
   } catch (e) {
-    return falhou("falha ao buscar candles", String(e).slice(0, 200));
+    return await falhou("falha ao buscar candles", String(e).slice(0, 200));
   }
 
   const ok = series.filter((s) => s.candles.length >= WARMUP + 40);
@@ -100,7 +101,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     // Diz QUANTAS velas cada símbolo trouxe. "Sem candles" sozinho não
     // distingue "a API caiu" de "esta janela é anterior à listagem do símbolo",
     // e são consertos completamente diferentes.
-    return falhou(
+    return await falhou(
       "nenhum símbolo com histórico suficiente nesta janela",
       series.map((s) => `${s.symbol}:${s.candles.length}`).join(" "),
     );
@@ -145,7 +146,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     .filter((p) => p.results.length > 0);
 
   if (porSimbolo.length === 0) {
-    return falhou(
+    return await falhou(
       "nenhum símbolo produziu resultado de estratégia",
       ok.map((s) => `${s.symbol}:${s.candles.length}`).join(" "),
     );
@@ -205,7 +206,37 @@ export async function POST(req: Request): Promise<NextResponse> {
    * As três anteriores foram esquecimento; esta foi pior, porque eu escolhi o
    * que guardar e escolhi o pedaço que confirma.
    */
-  recordEvent("what_worked", { meta: {
+  /**
+   * ⚠️⚠️ ESTE `await` É O CONSERTO INTEIRO. SEM ELE A MEDIÇÃO SOME (04/08).
+   *
+   * O dono rodou a janela de 12 meses DUAS vezes. Na segunda mandou o print: a
+   * tela mostrou tudo, correlação de 75%, cinco estratégias, 0.8s. E o banco não
+   * tinha uma linha — nem `what_worked`, nem `what_worked_failed`, que eu tinha
+   * acabado de adicionar justamente para esse caso.
+   *
+   * Não falhou. GRAVOU NO VAZIO.
+   *
+   * `recordEvent` é fire-and-forget por padrão, e o comentário DENTRO dele
+   * avisa, com todas as letras:
+   *
+   *   "Returns the insert promise so callers in a streaming/serverless context
+   *    can AWAIT it before the response closes — otherwise the function freezes
+   *    and the write is lost (this is why manual ZION analyses weren't being
+   *    logged)."
+   *
+   * Ou seja: este projeto JÁ perdeu dados exatamente assim uma vez, alguém
+   * escreveu o aviso no lugar certo, e eu escrevi a rota nova sem ler.
+   *
+   * Isso também explica por que era intermitente e por que eu não achava: numa
+   * corrida entre o `insert` e o congelamento da função, às vezes o insert
+   * ganha. As três rodadas de 00:16 gravaram; as de 360 não. Não havia nada de
+   * especial na janela de 12 meses — ela só perdeu a corrida duas vezes.
+   *
+   * E o efeito é o pior possível para o que esta semana vinha tentando
+   * consertar: o rastro que some é aleatório, então o histórico não fica só
+   * incompleto, fica ENVIESADO de um jeito que não dá para detectar de dentro.
+   */
+  await recordEvent("what_worked", { meta: {
     backDays, windowDays: JANELA_DIAS, symbols: ok.length,
     rho: rho == null ? null : Math.round(rho * 1000) / 1000,
     effectiveSymbols: Math.round(efetivo * 100) / 100,

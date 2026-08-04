@@ -65,7 +65,10 @@ export async function GET(): Promise<NextResponse> {
    * não pode ser comparada com a de ontem não responde a única pergunta que
    * importa numa série temporal: mudou?
    */
-  recordEvent("venue_truth", { meta: {
+  // AWAIT obrigatório: sem ele o insert perde a corrida contra o congelamento
+  // da função serverless e a medição some sem deixar rastro. Ver a nota em
+  // what-worked/route.ts e o comentário dentro de recordEvent.
+  await recordEvent("venue_truth", { meta: {
     biggestDispersionPct: stats[0]?.dispersionPct ?? null,
     floorPct: janela.floorPct,
     gapsAboveFloor: gaps.filter((g) => g.gapPct >= janela.floorPct).length,
