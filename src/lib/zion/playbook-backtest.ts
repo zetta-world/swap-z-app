@@ -44,6 +44,7 @@ import { computeExitPath } from "@/lib/paper/engine";
 import { candidateAttempts } from "@/lib/zion/playbooks";
 import { DEFAULT_LIMITS, type ActivePlaybook, type BracketLimits } from "@/lib/zion/bracket";
 import { weatherFromCandles, type Weather } from "@/lib/zion/weather";
+import { median } from "@/lib/zion/stats";
 
 /** Candle com tempo — o que a resolução precisa. */
 export interface TimedCandle extends Candle { t: number }
@@ -304,13 +305,6 @@ function sliceAt(
   ];
 }
 
-/** Mediana — resistente ao trade único e absurdo, que a média não é. */
-function median(xs: number[]): number | null {
-  if (xs.length === 0) return null;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
 
 /**
  * O diagnóstico de um conjunto de trades. Separado de `summarize` para poder
