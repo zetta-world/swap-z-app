@@ -107,12 +107,43 @@ describe("fundingVerdict", () => {
     expect(v.verdict).not.toContain("pagaram as 4 pernas COM");
   });
 
-  it("aprova só quando paga as pernas E o negativo é raro", () => {
+  it("aprova só quando rende positivo no ano E o negativo é raro", () => {
     const v = fundingVerdict([bom("BTC"), bom("ETH"), bom("SOL")], 60, 0.35);
     expect(v.readable).toBe(true);
-    expect(v.verdict).toContain("pagaram as 4 pernas");
-    // E ainda assim lembra que o anualizado não é a medida.
-    expect(v.verdict).toContain("anualizado NÃO é a medida");
+    expect(v.verdict).toContain("rendem positivo no ano");
+    // E ainda assim se declara extrapolação, em vez de posar de medição.
+    expect(v.verdict).toContain("é extrapolação");
+    // A JANELA REAL entra em toda frase — omiti-la foi o que deixou um número
+    // de 30 dias ser lido como veredito sobre a estratégia.
+    expect(v.verdict).toMatch(/janela real de \d+d/);
+  });
+
+  /**
+   * O CASO QUE MOTIVOU A TROCA (04/08).
+   *
+   * A fonte devolveu 30 dias em vez dos 174 pedidos. Com `netPct = bruto −
+   * custo`, isso comparava um funding acumulado em 30 dias com um custo que se
+   * paga UMA VEZ — e cuspia "mediana líquida −0.22%", que se lê como "funding
+   * não paga" quando o que dizia era "trinta dias não pagam a entrada".
+   */
+  it("janela curta NÃO reprova sozinha: o líquido ANUAL é o que julga", () => {
+    // 90 períodos = 30 dias a 0.012%/8h → 1.08% bruto contra 0.45% de custo.
+    const curto30 = fundingStats("VET", serie(90, 0.012), 0.45)!;
+    expect(Math.round(curto30.days)).toBe(30);
+    // Na janela, sobra pouco…
+    expect(curto30.netPct).toBeCloseTo(0.63, 2);
+    // …mas o que decide é o ano: 0.012 × 3 × 365 − 0.45.
+    expect(curto30.netAnnualizedPct).toBeCloseTo(0.012 * 3 * 365 - 0.45, 6);
+    expect(curto30.netAnnualizedPct).toBeGreaterThan(12);
+  });
+
+  it("o líquido ANUAL não depende do tamanho da janela; o da janela depende", () => {
+    const trintaDias = fundingStats("A", serie(90, 0.012), 0.45)!;
+    const cemDias = fundingStats("A", serie(300, 0.012), 0.45)!;
+    // Mesma taxa, janelas diferentes → mesmo anual…
+    expect(trintaDias.netAnnualizedPct).toBeCloseTo(cemDias.netAnnualizedPct, 6);
+    // …e líquidos de janela BEM diferentes. Era isto que estava julgando.
+    expect(cemDias.netPct).toBeGreaterThan(trintaDias.netPct + 2);
   });
 
   it("nenhum positivo: diz isso com a mediana, sem rodeio", () => {
