@@ -30,7 +30,7 @@ type Estrategia = {
 type Dados = {
   estrategias: Estrategia[];
   correlacao: { rho: number | null; symbols: number; effectiveSymbols: number; nota: string };
-  backDays: number; endedAt: string | null; symbols: string[];
+  backDays: number; windowDays: number; endedAt: string | null; symbols: string[];
   aviso: string; tookMs: number;
 };
 
@@ -98,7 +98,9 @@ export default function WhatWorkedPanel() {
 
           <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 8, fontStyle: "italic" }}>
             ⚠ {d.aviso}
-            {d.backDays > 0 && ` · janela terminou em ${d.endedAt ? new Date(d.endedAt).toLocaleDateString("pt-BR") : "—"}`}
+            {" · "}janela de ~{d.windowDays} dias, a MESMA do backtest — sem isso, comparar a nossa
+            biblioteca com estas estratégias atribuiria a elas uma diferença que veio do calendário
+            {d.backDays > 0 && `, terminando em ${d.endedAt ? new Date(d.endedAt).toLocaleDateString("pt-BR") : "—"}`}
           </div>
 
           <table className="adm-table">
