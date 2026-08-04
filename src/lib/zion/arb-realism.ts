@@ -8,8 +8,36 @@
  * the live orderbook fetch lives in cex-orderbook.ts and runs in prod.
  *
  * Model: buy `sizeUsd` of base on the cheap venue by walking its ASKS (paying
- * up the book), then sell the base you got on the rich venue by walking its
- * BIDS (down the book). realisticSpread = (sellVWAP − buyVWAP)/buyVWAP.
+ * up the book) and sell the SAME quantity on the rich venue by walking its BIDS
+ * (down the book), both legs at the same instant.
+ * realisticSpread = (sellVWAP − buyVWAP)/buyVWAP.
+ *
+ * ⚠️ É O MODELO DOS "DOIS BOLSOS", NÃO UMA SEQUÊNCIA (corrigido em 04/08).
+ *
+ * A redação anterior dizia "then sell the base you got" — matemática certa,
+ * linguagem errada. "Then" e "the base you got" descrevem comprar numa venue e
+ * DEPOIS revender o que chegou, que é o desenho que o CEO descartou em 21/07 e
+ * que este projeto nunca simulou.
+ *
+ * O desenho decidido (`docs/PLANO-ARBITER-REAL.md`, "aula dos dois bolsos") é:
+ * saldo dos DOIS lados, as duas pernas disparadas no mesmo instante, nada
+ * transferido entre corretoras, estoque rebalanceando pelas rotas contrárias.
+ *
+ * Custou caro: eu li este cabeçalho e afirmei ao dono que a nossa simulação
+ * tinha risco de perna e que faltava inventário pré-posicionado. As duas coisas
+ * falsas, e a decisão tinha semanas. Comentário que descreve certo em palavras
+ * erradas é pior que comentário ausente — o ausente faz alguém ir ler o código.
+ *
+ * ⚠️ E O QUE ISSO NÃO MUDA, que é o mais importante:
+ *
+ * A ARITMÉTICA DOS DOIS DESENHOS É IDÊNTICA. Nos dois casos anda-se o ASK da
+ * barata e o BID da cara, pela MESMA quantidade — `vwapSell` recebe exatamente
+ * `buy.baseFilled`. O que os dois bolsos eliminam é risco de PREÇO entre as
+ * pernas e a transferência; nenhum dos dois entra nesta conta.
+ *
+ * Logo os −0.629% realistas contra +0.451% teóricos NÃO são artefato de um
+ * modelo sequencial. Andar os dois livros é o que qualquer execução faz, com
+ * bolso ou sem. A profundidade come o spread nos dois desenhos igual.
  */
 
 /** [price, size] level. Asks sorted ascending, bids descending. */
