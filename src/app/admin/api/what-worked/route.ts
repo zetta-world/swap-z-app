@@ -33,9 +33,31 @@ export const maxDuration = 60;
  */
 
 const SYMBOLS = ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "ARB", "OP", "ADA", "DOGE"];
-/** Diárias: 174 dias de janela + folga para as médias nascerem. */
-const BARS_1D = Number(process.env.WHATWORKED_BARS ?? 320);
+
+/**
+ * ⚠️ A JANELA TEM QUE SER A MESMA DO BACKTEST (04/08) — e não era.
+ *
+ * O comentário no topo desta rota dizia "na MESMA janela em que a biblioteca
+ * foi medida". Era falso, e a diferença apareceu no número mais visível de
+ * todos: o backtest reportava o mercado a −17.99% e este estudo, no mesmo dia,
+ * a −47.86%.
+ *
+ * Não era discordância nenhuma — eram janelas diferentes. 320 barras diárias
+ * menos 60 de aquecimento medem 260 dias; o backtest mede 174 (4.400 barras de
+ * 1h menos 220). Oitenta e seis dias a mais, e nesses 86 dias o mercado caiu
+ * muito.
+ *
+ * Comparar "a nossa biblioteca" com "o que teria funcionado" em janelas
+ * distintas é o mesmo erro do filtro de clima: atribuir a uma variável uma
+ * diferença que veio de outra. Aqui teria sido pior, porque o resultado ia
+ * embasar uma decisão de produto.
+ *
+ * `WARMUP + 174` é derivado, não digitado — se o backtest mudar de janela,
+ * alguém precisa mudar aqui, e este comentário é o aviso.
+ */
+const JANELA_DIAS = Number(process.env.WHATWORKED_WINDOW_DAYS ?? 174);
 const WARMUP = 60;
+const BARS_1D = Number(process.env.WHATWORKED_BARS ?? (WARMUP + JANELA_DIAS));
 
 export async function POST(req: Request): Promise<NextResponse> {
   await requireAdmin();
@@ -108,7 +130,7 @@ export async function POST(req: Request): Promise<NextResponse> {
    * que guardar e escolhi o pedaço que confirma.
    */
   recordEvent("what_worked", { meta: {
-    backDays, symbols: ok.length,
+    backDays, windowDays: JANELA_DIAS, symbols: ok.length,
     rho: rho == null ? null : Math.round(rho * 1000) / 1000,
     effectiveSymbols: Math.round(efetivo * 100) / 100,
     // TODAS, para a comparação entre janelas ser possível depois.
@@ -136,6 +158,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           + "Toda amostra medida neste laboratório vale menos do que o número de trades sugere.",
     },
     backDays,
+    windowDays: JANELA_DIAS,
     endedAt: endAtMs ? new Date(endAtMs).toISOString() : null,
     symbols: ok.map((s) => s.symbol),
     aviso: "Parâmetros CLÁSSICOS (50, 20, 14), não escolhidos olhando estes dados. "
