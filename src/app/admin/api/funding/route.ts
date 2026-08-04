@@ -73,10 +73,96 @@ const MIN_DIAS = Number(process.env.FUNDING_MIN_DAYS ?? 60);
  * responde. A Binance fica como segunda tentativa, e o resultado de CADA fonte
  * é registrado — se o fapi voltar a funcionar, o número dirá.
  */
+/**
+ * ⚠️⚠️ SEGUNDA RODADA: OS DOIS PRIMEIROS HOSTS RECUSARAM (04/08).
+ *
+ * Com o status finalmente capturado, a resposta veio inequívoca:
+ *
+ *   bybit:403×57   binance:451×57
+ *
+ * 451 é "Unavailable For Legal Reasons" — bloqueio jurisdicional. Confirma a
+ * hipótese sobre o `fapi.binance.com` de forma direta, e confirma junto que o
+ * `getFundingAndOI` em market-indicators.ts devolve null desde sempre.
+ *
+ * O 403 da Bybit foi a surpresa: eu escolhi a Bybit ARGUMENTANDO evidência —
+ * "`api.bybit.com` já é chamado em produção por `fetchFundingContext`". O
+ * argumento tinha um buraco: `fetchFundingContext` faz `catch { return "" }`,
+ * então ele nunca provou que funciona. Ele prova que não quebra. Usei a
+ * ausência de erro como prova de sucesso, que é o mesmo raciocínio que deixou
+ * a sonda de orderbook seis dias sendo lida como "sem problema".
+ *
+ * A evidência que EU PODIA TER USADO estava do lado: a matriz de spot é
+ * montada com gate.io e okx e volta cheia — 57 símbolos, 53 com quórum, medido
+ * minutos antes. Esses dois hosts têm prova POSITIVA de resposta, não ausência
+ * de reclamação.
+ *
+ * Ordem agora: gate.io primeiro (host provado E `limit=1000` cobre 333 dias
+ * numa chamada), okx depois, e as duas recusadas por último — se o bloqueio
+ * mudar, o registro de status dirá.
+ */
 interface Falha { symbol: string; fonte: string; status: number | string }
 
 interface BinanceRow { fundingTime?: number; fundingRate?: string }
 interface BybitRow { fundingRateTimestamp?: string; fundingRate?: string }
+interface GateRow { t?: number; r?: string }
+interface OkxRow { fundingTime?: string; realizedRate?: string; fundingRate?: string }
+
+/**
+ * Gate.io — `limit` até 1000, ou seja 333 dias numa chamada só.
+ * Mesmo host de `fetchGateIo` em cex-spot.ts, que responde na matriz viva.
+ */
+async function fetchGateFunding(symbol: string, falhas: Falha[]): Promise<FundingPoint[]> {
+  const url = `https://api.gateio.ws/api/v4/futures/usdt/funding_rate`
+    + `?contract=${symbol}_USDT&limit=${Math.min(1000, LIMITE)}`;
+  try {
+    const res = await fetch(url, { next: { revalidate: 3600 } });
+    if (!res.ok) { falhas.push({ symbol, fonte: "gateio", status: res.status }); return []; }
+    const body = await res.json() as GateRow[];
+    if (!Array.isArray(body)) { falhas.push({ symbol, fonte: "gateio", status: "resposta não é lista" }); return []; }
+    return body
+      // `t` vem em SEGUNDOS aqui, ao contrário das outras fontes.
+      .map((r) => ({ t: Number(r.t ?? 0) * 1000, ratePct: parseFloat(r.r ?? "") * 100 }))
+      .filter((p) => p.t > 0 && Number.isFinite(p.ratePct))
+      .sort((a, b) => a.t - b.t);
+  } catch (e) {
+    falhas.push({ symbol, fonte: "gateio", status: String(e).slice(0, 60) });
+    return [];
+  }
+}
+
+/** OKX — `limit` máximo 100 por página; 3 páginas cobrem ~100 dias. */
+async function fetchOkxFunding(symbol: string, falhas: Falha[]): Promise<FundingPoint[]> {
+  const pontos: FundingPoint[] = [];
+  let after: number | undefined;
+  for (let pagina = 0; pagina < 3; pagina++) {
+    const params = new URLSearchParams({ instId: `${symbol}-USDT-SWAP`, limit: "100" });
+    if (after != null) params.set("after", String(after));
+    try {
+      const res = await fetch(`https://www.okx.com/api/v5/public/funding-rate-history?${params}`, {
+        next: { revalidate: 3600 },
+      });
+      if (!res.ok) { if (pagina === 0) falhas.push({ symbol, fonte: "okx", status: res.status }); break; }
+      const body = await res.json() as { data?: OkxRow[] };
+      const lista = body.data ?? [];
+      if (lista.length === 0) break;
+      const bloco = lista
+        .map((r) => ({
+          t: Number(r.fundingTime ?? 0),
+          // `realizedRate` é o que foi PAGO; `fundingRate` é a estimativa.
+          ratePct: parseFloat(r.realizedRate ?? r.fundingRate ?? "") * 100,
+        }))
+        .filter((p) => p.t > 0 && Number.isFinite(p.ratePct));
+      if (bloco.length === 0) break;
+      pontos.push(...bloco);
+      after = Math.min(...bloco.map((p) => p.t));
+      if (lista.length < 100) break;
+    } catch (e) {
+      if (pagina === 0) falhas.push({ symbol, fonte: "okx", status: String(e).slice(0, 60) });
+      break;
+    }
+  }
+  return pontos.sort((a, b) => a.t - b.t);
+}
 
 /** Bybit: histórico de funding realizado. `limit` máximo é 200 por chamada. */
 async function fetchBybitFunding(symbol: string, falhas: Falha[]): Promise<FundingPoint[]> {
@@ -133,13 +219,27 @@ async function fetchBinanceFunding(symbol: string, falhas: Falha[]): Promise<Fun
   }
 }
 
+/**
+ * Cascata por ordem de EVIDÊNCIA POSITIVA de resposta, não por preferência.
+ *
+ * gate.io e okx montam a matriz de spot viva todo minuto; sabemos que atendem.
+ * bybit e binance recusaram com 403 e 451 — ficam por último, e continuam sendo
+ * tentadas só para que o registro mostre se o bloqueio mudar.
+ */
+const FONTES: Array<[string, (s: string, f: Falha[]) => Promise<FundingPoint[]>]> = [
+  ["gateio", fetchGateFunding],
+  ["okx", fetchOkxFunding],
+  ["bybit", fetchBybitFunding],
+  ["binance", fetchBinanceFunding],
+];
+
 async function fetchFunding(
   symbol: string, falhas: Falha[], usadas: Map<string, number>,
 ): Promise<FundingPoint[]> {
-  const bybit = await fetchBybitFunding(symbol, falhas);
-  if (bybit.length > 0) { usadas.set("bybit", (usadas.get("bybit") ?? 0) + 1); return bybit; }
-  const binance = await fetchBinanceFunding(symbol, falhas);
-  if (binance.length > 0) { usadas.set("binance", (usadas.get("binance") ?? 0) + 1); return binance; }
+  for (const [nome, fn] of FONTES) {
+    const pts = await fn(symbol, falhas);
+    if (pts.length > 0) { usadas.set(nome, (usadas.get(nome) ?? 0) + 1); return pts; }
+  }
   return [];
 }
 

@@ -97,6 +97,34 @@ export async function GET(): Promise<NextResponse> {
     symbolsWithQuorum: comQuorum,
     symbolsTotal: bySymbol.size,
     noisiestVenue: stats[0]?.venue ?? null,
+    /**
+     * ⚠️ QUAIS SÍMBOLOS, E POR CULPA DE QUEM (04/08).
+     *
+     * A primeira rodada com a Kucoin passou `gapsAboveFloor` de 0 para 2 e o
+     * pior gap de 0.54% (RUNE) para 1.78% (MANA). O agregado dizia que algo
+     * mudou e não dizia O QUÊ — e sem os nomes eu não conseguia distinguir "a
+     * Kucoin abriu spread real" de "a Kucoin trouxe duas cotações paradas".
+     *
+     * São conclusões OPOSTAS: uma promove a venue, a outra a proíbe. É a mesma
+     * lição da mediana do what-worked, agora numa decisão de dinheiro.
+     */
+    acimaDoPiso: gaps
+      .filter((g) => g.gapPct >= janela.floorPct)
+      .slice(0, 20)
+      .map((g) => ({
+        s: g.symbol,
+        gap: Math.round(g.gapPct * 1000) / 1000,
+        venues: g.venues,
+        // Quem está fora da mediana, e quanto — é isto que separa praça barata
+        // de cotação parada.
+        fora: g.outlier,
+        desvio: Math.round(g.outlierDeviationPct * 1000) / 1000,
+      })),
+    /** As venues mais ruidosas, com o número — não só a campeã. */
+    ruido: stats.slice(0, 8).map((s) => ({
+      v: s.venue,
+      disp: Math.round(s.dispersionPct * 1000) / 1000,
+    })),
   } });
 
   return NextResponse.json({
