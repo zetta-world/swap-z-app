@@ -39,6 +39,9 @@ type Dados = {
     rho: number | null; apostasEfetivas: number;
   };
   veredito: { readable: boolean; verdict: string; positivos: number; total: number };
+  /** Quantos símbolos vieram de cada corretora. Ver a nota no route.ts. */
+  fontes: Record<string, number>;
+  falhasPorStatus: string | null;
   porSimbolo: Simbolo[];
   naoMedido: string[];
   aviso: string; tookMs: number;
@@ -114,6 +117,15 @@ export default function FundingPanel() {
               <b style={{ color: d.resumo.robustos > 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
                 {d.resumo.robustos}
               </b>
+            </div>
+            {/* DE ONDE VEIO O DADO. A primeira rodada falhou inteira porque o
+                host de futuros da Binance recusa IP de datacenter, e o evento
+                gravado não sabia dizer isso. Fonte na tela para "funcionou" e
+                "funcionou pela metade" não ficarem iguais. */}
+            <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>
+              fonte:{" "}
+              {Object.entries(d.fontes).map(([f, n]) => `${f} ${n}`).join(" · ") || "—"}
+              {d.falhasPorStatus && ` · recusas: ${d.falhasPorStatus}`}
             </div>
             {d.resumo.rho != null && (
               <div style={{ color: "var(--adm-amber)" }}>

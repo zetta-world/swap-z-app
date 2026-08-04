@@ -38,18 +38,109 @@ const LIMITE = Math.min(1000, JANELA_DIAS * PERIODS_PER_DAY);
 const MAX_NEG_SHARE = Number(process.env.FUNDING_MAX_NEG_SHARE ?? 0.35);
 const MIN_DIAS = Number(process.env.FUNDING_MIN_DAYS ?? 60);
 
-interface FundingRow { fundingTime?: number; fundingRate?: string }
+/**
+ * ⚠️⚠️ A PRIMEIRA VERSÃO FALHOU E NÃO SOUBE DIZER POR QUÊ (04/08).
+ *
+ * O dono rodou, voltou "nenhum símbolo retornou funding", e o evento gravado
+ * dizia exatamente isso e mais nada. `fetchFunding` engolia `!res.ok` num `[]`
+ * silencioso, então 57 símbolos falharam sem um único código de status.
+ *
+ * É a MESMA falta de rastro que esta semana já achou cinco vezes — e desta vez
+ * dentro do código que eu escrevi horas antes justamente para não ter isso. Eu
+ * gravei QUE falhou e esqueci de gravar O QUÊ, que é a única parte acionável.
+ *
+ * O tempo denunciava: 179ms para 57 símbolos é rejeição instantânea, não
+ * rede lenta nem limite de taxa.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * A CAUSA PROVÁVEL, e ela vale além desta rota.
+ *
+ * O repo usa `data-api.binance.vision` para candles (funciona — o 🧭 rodou),
+ * mas Futuros vive em OUTRO host, `fapi.binance.com`, que bloqueia IP de
+ * datacenter e jurisdição. Não é a mesma porta.
+ *
+ * ⚠️ E ISSO IMPLICA UM SEGUNDO PROBLEMA, MAIOR: `getFundingAndOI` em
+ * `market-indicators.ts` chama o mesmo `fapi.binance.com` e faz
+ * `if (!premRes.ok) return null` — silencioso. Se o host está bloqueado, esse
+ * instrumento devolve null desde sempre e ninguém soube. Outro medidor que não
+ * mede, como a sonda de orderbook que rodou seis dias sem ser lida.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * A CORREÇÃO: Bybit como fonte primária, e o motivo é evidência, não gosto.
+ *
+ * `api.bybit.com` já é chamado em produção por `fetchFundingContext`
+ * (market-context.ts), que alimenta os scanners vivos. Ou seja: sabemos que
+ * responde. A Binance fica como segunda tentativa, e o resultado de CADA fonte
+ * é registrado — se o fapi voltar a funcionar, o número dirá.
+ */
+interface Falha { symbol: string; fonte: string; status: number | string }
 
-async function fetchFunding(symbol: string): Promise<FundingPoint[]> {
+interface BinanceRow { fundingTime?: number; fundingRate?: string }
+interface BybitRow { fundingRateTimestamp?: string; fundingRate?: string }
+
+/** Bybit: histórico de funding realizado. `limit` máximo é 200 por chamada. */
+async function fetchBybitFunding(symbol: string, falhas: Falha[]): Promise<FundingPoint[]> {
+  const pontos: FundingPoint[] = [];
+  let endTime: number | undefined;
+  // 200 por página; 3 páginas cobrem ~200 dias, acima da janela de 174.
+  for (let pagina = 0; pagina < 3; pagina++) {
+    const params = new URLSearchParams({
+      category: "linear", symbol: `${symbol}USDT`, limit: "200",
+    });
+    if (endTime != null) params.set("endTime", String(endTime));
+    try {
+      const res = await fetch(`https://api.bybit.com/v5/market/funding/history?${params}`, {
+        next: { revalidate: 3600 },
+      });
+      if (!res.ok) { if (pagina === 0) falhas.push({ symbol, fonte: "bybit", status: res.status }); break; }
+      const body = await res.json() as { result?: { list?: BybitRow[] } };
+      const lista = body.result?.list ?? [];
+      if (lista.length === 0) break;
+      const bloco = lista
+        .map((r) => ({
+          t: Number(r.fundingRateTimestamp ?? 0),
+          ratePct: parseFloat(r.fundingRate ?? "") * 100,
+        }))
+        .filter((p) => p.t > 0 && Number.isFinite(p.ratePct));
+      if (bloco.length === 0) break;
+      pontos.push(...bloco);
+      // Próxima página termina um ms antes do ponto mais antigo desta.
+      endTime = Math.min(...bloco.map((p) => p.t)) - 1;
+      if (lista.length < 200) break;
+    } catch (e) {
+      if (pagina === 0) falhas.push({ symbol, fonte: "bybit", status: String(e).slice(0, 60) });
+      break;
+    }
+  }
+  return pontos.sort((a, b) => a.t - b.t);
+}
+
+/** Binance Futuros — segunda tentativa. Host separado, bloqueio separado. */
+async function fetchBinanceFunding(symbol: string, falhas: Falha[]): Promise<FundingPoint[]> {
   const url = `https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}USDT&limit=${LIMITE}`;
-  const res = await fetch(url, { next: { revalidate: 3600 } });
-  if (!res.ok) return [];
-  const body = await res.json() as FundingRow[];
-  if (!Array.isArray(body)) return [];
-  return body
-    .map((r) => ({ t: Number(r.fundingTime ?? 0), ratePct: parseFloat(r.fundingRate ?? "") * 100 }))
-    .filter((p) => p.t > 0 && Number.isFinite(p.ratePct))
-    .sort((a, b) => a.t - b.t);
+  try {
+    const res = await fetch(url, { next: { revalidate: 3600 } });
+    if (!res.ok) { falhas.push({ symbol, fonte: "binance", status: res.status }); return []; }
+    const body = await res.json() as BinanceRow[];
+    if (!Array.isArray(body)) { falhas.push({ symbol, fonte: "binance", status: "resposta não é lista" }); return []; }
+    return body
+      .map((r) => ({ t: Number(r.fundingTime ?? 0), ratePct: parseFloat(r.fundingRate ?? "") * 100 }))
+      .filter((p) => p.t > 0 && Number.isFinite(p.ratePct))
+      .sort((a, b) => a.t - b.t);
+  } catch (e) {
+    falhas.push({ symbol, fonte: "binance", status: String(e).slice(0, 60) });
+    return [];
+  }
+}
+
+async function fetchFunding(
+  symbol: string, falhas: Falha[], usadas: Map<string, number>,
+): Promise<FundingPoint[]> {
+  const bybit = await fetchBybitFunding(symbol, falhas);
+  if (bybit.length > 0) { usadas.set("bybit", (usadas.get("bybit") ?? 0) + 1); return bybit; }
+  const binance = await fetchBinanceFunding(symbol, falhas);
+  if (binance.length > 0) { usadas.set("binance", (usadas.get("binance") ?? 0) + 1); return binance; }
+  return [];
 }
 
 export async function POST(): Promise<NextResponse> {
@@ -67,21 +158,35 @@ export async function POST(): Promise<NextResponse> {
   // demais para os 60s da função; tudo de uma vez leva 429.
   const simbolos = [...CEX_TRACKED_SYMBOLS];
   const series = new Map<string, FundingPoint[]>();
+  const falhas: Falha[] = [];
+  const usadas = new Map<string, number>();
   try {
     const LOTE = 10;
     for (let i = 0; i < simbolos.length; i += LOTE) {
       const bloco = simbolos.slice(i, i + LOTE);
-      const res = await Promise.all(bloco.map(async (s) => [s, await fetchFunding(s)] as const));
+      const res = await Promise.all(
+        bloco.map(async (s) => [s, await fetchFunding(s, falhas, usadas)] as const),
+      );
       for (const [s, pts] of res) if (pts.length > 0) series.set(s, pts);
     }
   } catch (e) {
     return await falhou("falha ao buscar histórico de funding", String(e).slice(0, 200));
   }
 
+  /** Um resumo legível de POR QUE falhou — não só QUE falhou. */
+  const porStatus = (() => {
+    const c = new Map<string, number>();
+    for (const f of falhas) {
+      const k = `${f.fonte}:${f.status}`;
+      c.set(k, (c.get(k) ?? 0) + 1);
+    }
+    return [...c].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k}×${n}`).join(" ");
+  })();
+
   if (series.size === 0) {
     return await falhou(
       "nenhum símbolo retornou funding",
-      `tentados ${simbolos.length}; a fonte é fapi.binance.com/fapi/v1/fundingRate`,
+      `tentados ${simbolos.length} · ${porStatus || "sem status capturado"}`,
     );
   }
 
@@ -129,6 +234,10 @@ export async function POST(): Promise<NextResponse> {
     readable: veredito.readable,
     verdict: veredito.verdict,
     maxNegShare: MAX_NEG_SHARE, minDias: MIN_DIAS,
+    // Qual fonte respondeu, e o que a outra disse ao recusar. Sem isto,
+    // "funcionou" e "funcionou pela metade" ficam iguais no histórico.
+    fontes: Object.fromEntries(usadas),
+    falhasPorStatus: porStatus || null,
     // Por símbolo, como o what-worked passou a gravar: agregado sozinho não é
     // auditável, e número que não dá para conferir acaba conferido por chute.
     porSimbolo: stats.slice(0, 60).map((s) => ({
@@ -147,6 +256,8 @@ export async function POST(): Promise<NextResponse> {
   return NextResponse.json({
     resumo,
     veredito,
+    fontes: Object.fromEntries(usadas),
+    falhasPorStatus: porStatus || null,
     porSimbolo: stats,
     naoMedido: [
       "basis de entrada/saída (exige histórico de mark vs spot) — típico <0.05% nos dois sentidos",

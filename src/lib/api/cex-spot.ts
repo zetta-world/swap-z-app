@@ -162,7 +162,28 @@ export type CexSpotSource =
   | "okx"
   | "bybit"
   | "kraken"
-  | "mexc";
+  | "mexc"
+  /**
+   * ⚠️ ADICIONADA EM 04/08 A PEDIDO DO DONO, E COM UMA HIPÓTESE JUNTO.
+   *
+   * Ele trouxe prints de um app de terceiros (Coingapp) que mostra spreads
+   * entre corretoras, e a Kucoin aparecia em quase toda linha. Cinco das
+   * venues de lá — Kucoin, BitMEX, HitBTC, CEX.IO, Bitfinex — estavam fora do
+   * nosso radar, o que é uma lacuna real: a nossa dispersão de 0.052% foi
+   * medida numa matriz de seis, não de onze.
+   *
+   * A Kucoin entra primeiro porque é a mais presente nos prints e tem endpoint
+   * de todos os tickers numa chamada (as outras exigiriam adaptador por
+   * símbolo, que a ~55 símbolos por minuto é volume de requisição de verdade).
+   *
+   * HIPÓTESE DECLARADA ANTES DE MEDIR, para poder estar errada em público:
+   * venue menor tem feed mais ruidoso, e a auditoria da coorte já apontou a
+   * menor das nossas grandes — a Gate.io — como a fonte do ruído. Espero que a
+   * Kucoin aumente o spread APARENTE sem aumentar o EXECUTÁVEL. Se a dispersão
+   * subir mas o portão de profundidade continuar reprovando, a hipótese está
+   * certa. Se subir e o livro aguentar, eu estava errado e há mesa aqui.
+   */
+  | "kucoin";
 
 /** Pre-compute "BASE/USDT"-ish pair names that we expect to find on every CEX. */
 function setEntry(map: MultiSpotMap, base: string, source: CexSpotSource, priceUsd: number) {
@@ -198,6 +219,7 @@ export async function getMultiExchangeSpot(
     skip.has("bybit")    ? null : fetchBybit(wantedSet, out),
     skip.has("kraken")   ? null : fetchKrakenMulti(wanted, out),
     skip.has("mexc")     ? null : fetchMexc(wanted, out),
+    skip.has("kucoin")   ? null : fetchKucoin(wantedSet, out),
   ]);
 
   return out;
@@ -296,6 +318,33 @@ async function fetchBybit(wantedSet: Set<string>, out: MultiSpotMap): Promise<vo
     }
   } catch (err) {
     console.warn("[cex-spot/multi] bybit failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Kucoin — todos os tickers numa chamada, como OKX e Bybit.
+ *
+ * O par vem como "BTC-USDT" e o preço em `last`. A Kucoin devolve `last: null`
+ * para pares sem negócio recente; `setEntry` já descarta o que não é > 0, e
+ * isso é proposital — par parado é exatamente a cotação que vira spread falso.
+ */
+async function fetchKucoin(wantedSet: Set<string>, out: MultiSpotMap): Promise<void> {
+  try {
+    const res = await fetch("https://api.kucoin.com/api/v1/market/allTickers", {
+      next: { revalidate: 30 },
+    });
+    if (!res.ok) return;
+    const body = await res.json() as { data?: { ticker?: Array<{ symbol?: string; last?: string | null }> } };
+    const rows = body.data?.ticker ?? [];
+    for (const r of rows) {
+      const sym = r.symbol ?? "";
+      if (!sym.endsWith("-USDT")) continue;
+      const base = sym.replace(/-USDT$/, "").toUpperCase();
+      if (!wantedSet.has(base)) continue;
+      setEntry(out, base, "kucoin", parseFloat(r.last ?? ""));
+    }
+  } catch (err) {
+    console.warn("[cex-spot/multi] kucoin failed:", err instanceof Error ? err.message : err);
   }
 }
 
