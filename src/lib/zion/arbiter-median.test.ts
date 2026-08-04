@@ -105,17 +105,32 @@ describe("a direção do erro no corte", () => {
   });
 });
 
+/**
+ * O PADRÃO TROCOU — depois de medido, não antes (04/08).
+ *
+ * A rota `/admin/api/arbiter-median` rodou as duas contas sobre a matriz viva:
+ * 57 símbolos, 51 com contagem par, e ZERO divergências. Nenhuma cotação
+ * devolvida, nenhum quórum alterado, as mesmas 2 oportunidades.
+ *
+ * O motivo não é as fórmulas concordarem — é a tolerância de 2% ser ~40× a
+ * dispersão real medida (0.052%). Meio centésimo de ponto não empurra ninguém
+ * para fora de uma fronteira de 2%.
+ *
+ * Os testes abaixo passam a fixar a conta CORRETA como padrão, e os de cima
+ * continuam guardando a direção do erro — porque ela volta a importar no dia em
+ * que a dispersão abrir.
+ */
 describe("o padrão de produção", () => {
-  it("dropOutliers ainda usa a conta ANTIGA por padrão — trocar exige medir", () => {
-    const quatro = q([["binance", 100.5], ["okx", 101], ["bybit", 103], ["mexc", 104]]);
+  const quatro = q([["binance", 100.5], ["okx", 101], ["bybit", 103], ["mexc", 104]]);
+
+  it("dropOutliers usa a mediana CORRETA por padrão", () => {
     expect(dropOutliers(quatro, 2).map((x) => x.v))
-      .toEqual(dropOutliers(quatro, 2, upperMiddle).map((x) => x.v));
-    expect(dropOutliers(quatro, 2).map((x) => x.v)).not.toContain("binance");
+      .toEqual(dropOutliers(quatro, 2, trueMedian).map((x) => x.v));
+    // E portanto mantém a ponta barata que a conta antiga cortava.
+    expect(dropOutliers(quatro, 2).map((x) => x.v)).toContain("binance");
   });
 
-  it("findArbs também — o padrão injetado é o de-cima-do-meio", () => {
-    // Spread grande o bastante para virar oportunidade nas duas contas, mas com
-    // a ponta barata só sobrevivendo na correta.
+  it("findArbs também — e o padrão NÃO é mais o de-cima-do-meio", () => {
     const matriz = new Map([["FOO", new Map([
       ["binance", { priceUsd: 100.5 }],
       ["okx", { priceUsd: 101 }],
@@ -124,10 +139,36 @@ describe("o padrão de produção", () => {
     ])]]);
 
     const padrao = findArbs(matriz, 0.4, 0.15, 100, 2, 3);
-    const corrigido = findArbs(matriz, 0.4, 0.15, 100, 2, 3, trueMedian);
+    const antigo = findArbs(matriz, 0.4, 0.15, 100, 2, 3, upperMiddle);
 
-    expect(padrao[0].buyPrice).toBe(101);
-    expect(corrigido[0].buyPrice).toBe(100.5);
-    expect(corrigido[0].spreadPct).toBeGreaterThan(padrao[0].spreadPct);
+    expect(padrao[0].buyPrice).toBe(100.5);
+    expect(antigo[0].buyPrice).toBe(101);
+    expect(padrao[0].spreadPct).toBeGreaterThan(antigo[0].spreadPct);
+  });
+
+  /**
+   * A MEDIÇÃO, COMO TESTE: com a dispersão que o mercado realmente tem, as duas
+   * contas são indistinguíveis. É isto que tornou a troca segura, e é isto que
+   * deixa de valer se alguém apertar `ARB_OUTLIER_PCT` para perto da dispersão.
+   */
+  it("na dispersão REAL (~0.05%) as duas contas dão o mesmo — o portão está dormente", () => {
+    // Seis venues, espalhadas 0.05% — a foto que `venue_truth` mede todo dia.
+    const real = q([
+      ["binance", 100.000], ["okx", 100.010], ["bybit", 100.021],
+      ["kraken", 100.032], ["gateio", 100.043], ["mexc", 100.052],
+    ]);
+    expect(dropOutliers(real, 2, upperMiddle).map((x) => x.v))
+      .toEqual(dropOutliers(real, 2, trueMedian).map((x) => x.v));
+    // Ninguém é cortado: a tolerância é ~40× a dispersão.
+    expect(dropOutliers(real, 2)).toHaveLength(6);
+  });
+
+  it("o cadáver de ticker continua morrendo nas DUAS contas", () => {
+    // MATIC→POL: a listagem velha de uma venue fica parada, +353%.
+    const cadaver = q([
+      ["binance", 100.0], ["okx", 100.05], ["bybit", 100.06], ["mexc", 453.0],
+    ]);
+    expect(dropOutliers(cadaver, 2, upperMiddle).map((x) => x.v)).not.toContain("mexc");
+    expect(dropOutliers(cadaver, 2, trueMedian).map((x) => x.v)).not.toContain("mexc");
   });
 });

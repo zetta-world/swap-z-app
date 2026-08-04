@@ -155,10 +155,38 @@ export function spreadWindow(
  * mesmo movimento reabrir a porta seria trocar um erro de aritmética por um
  * risco de dinheiro sem medir nenhum dos dois.
  *
- * Por isso `medianOf` é injetável e o padrão continua sendo o COMPORTAMENTO
- * ATUAL. A rota `/admin/api/arbiter-median` roda as duas contas sobre a mesma
- * matriz viva e diz, em número, o que muda. Só depois disso o padrão vira a
- * mediana de verdade.
+ * ─────────────────────────────────────────────────────────────────────────
+ * ✅ MEDIDO. A TROCA É NEUTRA, E O PADRÃO VIROU A MEDIANA CORRETA (04/08).
+ *
+ * `/admin/api/arbiter-median` rodou as duas contas sobre a matriz viva:
+ *
+ *   57 símbolos · 51 com contagem PAR (onde as contas PODEM divergir)
+ *   divergiram de fato ............ 0
+ *   cotações devolvidas/removidas . 0 / 0
+ *   quórum ganho/perdido .......... 0 / 0
+ *   oportunidades ................. 2 antes, 2 depois
+ *
+ * Zero em tudo, em duas rodadas seguidas. E o motivo NÃO é que as fórmulas
+ * concordem — é que este portão está DORMENTE:
+ *
+ *   tolerância do corte ....... 2.000%
+ *   dispersão real medida ..... 0.052%   (`venue_truth`, a maior de 57 símbolos)
+ *
+ * A tolerância é ~40× a dispersão. A distância entre as duas medianas é, no
+ * máximo, metade do vão entre as duas cotações do meio — na casa de 0.03%. Não
+ * existe cotação perto o bastante da fronteira de 2% para que meio centésimo
+ * de ponto a empurre para fora.
+ *
+ * ⚠️ O QUE ISSO REVELA, e vale mais que o conserto: com o teto bruto em 0.30%,
+ * qualquer cotação afastada o suficiente para importar já produz um spread
+ * REPROVADO como incrível antes de chegar aqui. Entre 0.30% e 2% este filtro
+ * não tem o que fazer; acima de 2% ele pega o cadáver de ticker (MATIC→POL,
+ * +353%), que é para o que nasceu. Ele é uma segunda tranca, não a tranca.
+ *
+ * Fica declarado em vez de removido: tranca redundante em caminho de dinheiro
+ * é barata, e a medição acima é de UM instante de mercado, não de uma
+ * distribuição. Se a dispersão abrir, a mediana correta é justamente a que se
+ * quer ter — ela é a não-enviesada.
  */
 
 /** A conta ERRADA — exportada com nome honesto, só para a medição comparar. */
@@ -173,14 +201,13 @@ export function trueMedian(xs: number[]): number {
 }
 
 /**
- * ⚠️ O PADRÃO É `upperMiddle` DE PROPÓSITO — ver a nota acima. Isto NÃO é
- * esquecimento: é o comportamento em produção, preservado até a medição dizer
- * o que a troca faz com o dinheiro.
+ * O padrão é `trueMedian` desde 04/08 — medido antes de trocado, ver acima.
+ * `upperMiddle` continua exportada para a rota de medição poder comparar.
  */
 export function dropOutliers(
   quotes: Array<{ v: string; p: number }>,
   outlierPct: number,
-  medianOf: (xs: number[]) => number = upperMiddle,
+  medianOf: (xs: number[]) => number = trueMedian,
 ): Array<{ v: string; p: number }> {
   // Com menos de três não há testemunha independente para apontar o ímpar —
   // o corte não roda, e o teto bruto é quem segura.
@@ -200,7 +227,7 @@ export function findArbs(
   outlierPct = OUTLIER_PCT,
   minVenues = MIN_VENUES,
   /** Injetável só para a medição comparar as duas contas. Padrão = produção. */
-  medianOf: (xs: number[]) => number = upperMiddle,
+  medianOf: (xs: number[]) => number = trueMedian,
 ): ArbOpportunity[] {
   const out: ArbOpportunity[] = [];
   for (const [symbol, venues] of spot) {
