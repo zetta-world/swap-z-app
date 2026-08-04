@@ -87,12 +87,40 @@ export async function POST(req: Request): Promise<NextResponse> {
   const rho = meanPairwiseCorrelation(ok.map((s) => s.candles.map((c) => c.close)));
   const efetivo = effectiveSampleSize(ok.length, rho);
 
+  /**
+   * ⚠️ GRAVA TODAS AS ESTRATÉGIAS, NÃO SÓ A MELHOR (04/08).
+   *
+   * A primeira versão registrava `melhor: <nome>` por janela. As três primeiras
+   * rodadas voltaram assim:
+   *
+   *   hoje         média 50 comprado e VENDIDO    −0.47%
+   *   180d atrás   canal 20 comprado e VENDIDO   +54.39%
+   *   360d atrás   reversão à média (RSI)         −1.25%
+   *
+   * Três janelas, três vencedores DIFERENTES. Guardar só o campeão de cada uma
+   * é o viés de seleção em estado puro: sempre vai existir um melhor, e ele
+   * sempre vai parecer bom. A pergunta honesta é outra — existe UMA estratégia
+   * que se sustenta nas três? — e ela é impossível de responder com o que eu
+   * estava gravando.
+   *
+   * É a quarta vez nesta semana que persisto menos do que a análise precisa.
+   * As três anteriores foram esquecimento; esta foi pior, porque eu escolhi o
+   * que guardar e escolhi o pedaço que confirma.
+   */
   recordEvent("what_worked", { meta: {
     backDays, symbols: ok.length,
     rho: rho == null ? null : Math.round(rho * 1000) / 1000,
     effectiveSymbols: Math.round(efetivo * 100) / 100,
-    melhor: estrategias[0]?.name ?? null,
-    melhorMediana: estrategias[0] ? Math.round(estrategias[0].medianTotalPct * 100) / 100 : null,
+    // TODAS, para a comparação entre janelas ser possível depois.
+    todas: estrategias.map((e) => ({
+      nome: e.name,
+      mediana: Math.round(e.medianTotalPct * 100) / 100,
+      positivos: e.symbolsPositive,
+      simbolos: e.symbols,
+      vende: e.usesShort,
+      tombo: Math.round(e.avgMaxDrawdownPct * 10) / 10,
+      exposicao: Math.round(e.avgExposurePct),
+    })),
   } });
 
   return NextResponse.json({
