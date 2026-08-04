@@ -16,6 +16,7 @@ export type ModuleId =
   | "calibration"
   | "what-worked"
   | "funding"
+  | "ligas"
   | "tournament"
   | "ragnarok"
   | "swap-guard"
@@ -187,6 +188,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8,
+  },
+  {
+    id: "ligas",
+    title: "AS TRÊS LIGAS",
+    subtitle: "pedágio, futuros e postar o spread — onde a conta pode fechar",
+    icon: "🏟",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 9,
   },
   {
     id: "backtest",

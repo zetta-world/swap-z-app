@@ -159,3 +159,85 @@ Chave de API **sem permissão de retirada** · alavancagem 1x no short ·
 margem isolada · monitor de distância de liquidação com fechamento
 automático das duas pontas · caps por trade/dia · kill-switch admin_kv ·
 sem preço de referência = rejeita (fail-closed).
+
+---
+
+## 🏟 AS TRÊS LIGAS — 🟡 medindo (04/08)
+
+> Gatilho: o dono perguntou "como podemos fazer nosso arbiter concorrer nas
+> grandes ligas que lucram realmente com arbitragem". A curva de equilíbrio
+> sobre as 4.085 medições de livro respondeu de um jeito que ninguém tinha
+> testado.
+
+### A curva que mudou a pergunta
+
+| custo de ida e volta | quantas das 4.085 pagariam |
+|---|---|
+| 0,40% (o nosso) | 17 |
+| 0,10% | 137 |
+| 0,05% | 165 |
+| **0,00% — de graça** | **209** (5,1%) |
+
+**Com taxa ZERO, 95% continuam perdendo.** A mediana do bruto após andar o
+livro é **−0,238%** — negativo antes de qualquer taxa existir.
+
+Logo a barreira nunca foi taxa nem velocidade. O que come o spread é o
+**bid-ask, atravessado duas vezes**: slippage médio medido de 1,1% contra
+uma discordância entre venues de 0,05%. Não se atravessa dois spreads de
+meio ponto para capturar cinco centésimos — é aritmética, não competição.
+
+### O viés de seleção que escondia a resposta
+
+As 4.085 medições são de **oito altcoins rasas** (MANA 2.122, RUNE 561,
+SAND 576, IMX, VET, STX, JUP, GRT). **Zero em BTC, ETH ou SOL.**
+
+Porque a sonda só media a *melhor oportunidade aparente do tick* — e livro
+fino sempre ganha esse concurso, já que é ele que produz spread falso
+grande. Medimos exatamente onde não pode funcionar e nunca olhamos onde
+poderia.
+
+### As três medições que respondem
+
+| painel | pergunta | rota |
+|---|---|---|
+| 🔬 CENSO SPOT | nos majors o pedágio é menor que a discordância? | `/admin/api/depth-census` |
+| ⚡ CENSO PERP | o livro de futuros é mais estreito que o spot? | `/admin/api/perp-census` |
+| 📮 MESA MAKER | postar o spread em vez de atravessá-lo paga? | `/admin/api/maker-backtest` |
+
+Todas **leitura pura** — não abrem posição, não escrevem em `admin_kv`.
+
+**A métrica que decide é `borda = dispersão − pedágio`**, medida entre MIDs
+(não último preço — foi comparando últimos preços que a mesa achou 0,72%
+de borda que não existia). Borda negativa **antes da taxa** fecha a
+questão: não há tier VIP nem colocation que salve.
+
+Cada censo traz um grupo de **controle** com as rasas conhecidas, porque
+"0,03% de pedágio" só significa alguma coisa ao lado de "1,2%".
+
+### A mesa maker, e o perigo dela
+
+Simular ordem limitada é o jeito mais fácil que existe de fabricar lucro:
+basta assumir que a ordem encheu. Foi assim que os +34% nasceram. As regras
+de `src/lib/zion/maker.ts`:
+
+1. **Ordem só enche se o preço passou por ela** — mínima ≤ compra, máxima ≥
+   venda. Nada de "chegou perto".
+2. **Seleção adversa é contabilizada** — ser preenchido é informação ruim:
+   o preço veio até você porque estava andando contra.
+3. **Perna solta leva STOP** — encher um lado só transforma posição neutra
+   em aposta direcional. Era o que faltava, e é o que o dono pediu.
+
+O backtest varre a largura postada (0,02% a 0,50%, valores redondos e
+fixos) e grava a **curva inteira** — um número só seria um ponto escolhido
+por mim, que é o viés de seleção que esta semana já pegou uma vez.
+
+⚠️ **NÃO medido, e os três empurram para CIMA**: fila (você está atrás de
+outras ordens no mesmo preço), preenchimento parcial, impacto da própria
+ordem. Negativo com eles a favor é conclusão sólida; positivo é convite
+para medir com livro real, não mesa aprovada.
+
+### Estado
+
+🟡 As três medições estão no ar e **nunca foram rodadas**. Nenhuma mesa foi
+criada — a regra desta semana é medir antes de abrir posição, e ela pegou a
+Kucoin a tempo. Próximo passo: rodar os três botões e ler.
