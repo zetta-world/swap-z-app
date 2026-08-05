@@ -105,3 +105,74 @@ describe("coerência com o resto do sistema", () => {
     expect(new Set(DESKS.map((d) => d.source)).size).toBe(DESKS.length);
   });
 });
+
+/**
+ * CAPITAL E SUBTÍTULO — as duas colunas que a auditoria de 05/08 exigiu.
+ *
+ * ⚠️ DE ONDE VIERAM.
+ *
+ * As 23 mesas recebiam $1.000 (ou $300) independentemente do que a estratégia
+ * exige. Isso não é neutro: mesa sub-capitalizada rende NEGATIVO por custo
+ * fixo, e o resultado é lido como "a estratégia não presta". Funding com $1.000
+ * perde porque as quatro pernas custam 0,45% e o funding acumula 0,2% no
+ * período — provavelmente já matamos ideias boas assim.
+ *
+ * E o dono, olhando o painel: "se eu mostrar a um leigo ele não vai saber o que
+ * é o quê, qual mesa é, e o que mede o quê". MÍMIR e VÖLUNDR não dizem nada
+ * para quem não construiu o sistema.
+ */
+describe("capital declarado e subtítulo legível", () => {
+  it("TODA mesa declara o capital que a estratégia exige", () => {
+    const sem = DESKS.filter((d) => !(d.capitalRequiredUsd > 0));
+    expect(sem.map((d) => d.source)).toEqual([]);
+  });
+
+  /**
+   * O número sozinho vira constante que ninguém confere — foi assim que a
+   * coluna `priority` nasceu e sobreviveu meses sem ser medida.
+   */
+  it("o capital vem com o PORQUÊ, não sozinho", () => {
+    const semMotivo = DESKS.filter((d) => (d.capitalWhy ?? "").length < 25);
+    expect(semMotivo.map((d) => d.source)).toEqual([]);
+  });
+
+  it("TODA mesa tem subtítulo funcional — nome viking sozinho não comunica", () => {
+    const sem = DESKS.filter((d) => (d.subtitle ?? "").length < 10);
+    expect(sem.map((d) => d.source)).toEqual([]);
+  });
+
+  /**
+   * O subtítulo mostra o capital. Se ele disser $1.000 e o campo disser $5.000,
+   * a tela mente — e é exatamente o tipo de divergência silenciosa que fez o
+   * painel mostrar $20.842 onde havia $11.491.
+   */
+  it("o capital do subtítulo BATE com o capital declarado", () => {
+    const divergentes = DESKS.filter((d) => {
+      const m = d.subtitle.match(/\$([\d.]+)/);
+      if (!m) return false;                       // subtítulo sem valor é permitido
+      const noTexto = Number(m[1].replace(/\./g, ""));
+      return noTexto !== d.capitalRequiredUsd;
+    });
+    expect(divergentes.map((d) => `${d.source}: ${d.subtitle}`)).toEqual([]);
+  });
+
+  /**
+   * As mesas do DUELO precisam do MESMO capital, senão a comparação mede duas
+   * variáveis ao mesmo tempo. VÖLUNDR × MÍMIR isola o cérebro; se um tiver
+   * $5.000 e o outro $1.000, o resultado mede o capital.
+   */
+  it("as mesas do duelo direcional compartilham o mesmo capital", () => {
+    const duelo = DESKS.filter((d) => d.sector === "A_direcional" && d.status === "live");
+    const capitais = new Set(duelo.map((d) => d.capitalRequiredUsd));
+    expect([...capitais], `capitais divergentes: ${duelo.map((d) => `${d.name} $${d.capitalRequiredUsd}`).join(", ")}`)
+      .toHaveLength(1);
+  });
+
+  it("mesa arquivada declara que o capital dela é histórico, não alocação", () => {
+    const arquivo = DESKS.filter((d) => d.status === "valhalla");
+    expect(arquivo.length).toBeGreaterThan(0);
+    for (const d of arquivo) {
+      expect(d.capitalWhy, `${d.source}`).toMatch(/arquivad|histór/i);
+    }
+  });
+});

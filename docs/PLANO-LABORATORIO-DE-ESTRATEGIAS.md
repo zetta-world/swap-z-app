@@ -271,7 +271,7 @@ Agrupadas por família, com o capital que a literatura e o custo real exigem.
 Regra do dono, aplicada em todas: **revisar os setores antes, testar e revisar
 depois, só então seguir.**
 
-### FASE 0 — Fundação · 🔴
+### FASE 0 — Fundação · 🟢 CONCLUÍDA (05/08)
 *Nenhuma estratégia é medida nesta fase. Ela existe para as outras não nascerem tortas.*
 
 1. **Índice de docs reconstruído** — os 49 arquivos classificados em vivo /
@@ -288,8 +288,26 @@ depois, só então seguir.**
    `capitalRequiredUsd` e o motivo. Teste de guarda impede mesa sem declaração.
 4. **Casca do painel** — um lugar só, com abas por família. Nada empilhado.
 
-**Critério de conclusão:** migração aplicada, tabelas com RLS default-deny,
-teste de guarda passando, índice de docs batendo com `ls docs/`.
+**Entregue:**
+
+| item | estado |
+|---|---|
+| Índice de docs reconstruído e conferido mecanicamente | ✅ 51 arquivos, todos indexados |
+| Migração `0020_strategy_lab.sql` aplicada | ✅ `lab_strategies`, `lab_runs`, `lab_results`, `lab_capital_log` |
+| RLS default-deny nas quatro | ✅ verificado: `rls_on = true`, `policies = 0` |
+| Tipos no `Database` | ✅ nenhuma tabela nova acessada com `any` |
+| Registro das 26 estratégias | ✅ `src/lib/lab/registry.ts`, com capital e porquê |
+| Gravador com ciclo start → finish/fail | ✅ `src/lib/lab/store.ts` |
+| Capital declarado nas 24 mesas antigas | ✅ `desks.ts` ganhou `capitalRequiredUsd` + `capitalWhy` + `subtitle` |
+| Testes de guarda | ✅ 17 no registro, 6 nas mesas |
+| Painel com abas por família | ✅ `LabPanel.tsx`, primeiro da aba LAB |
+
+**Decisões do dono aplicadas:** mesa aposentada vira arquivo; nome viking
+com subtítulo funcional embaixo.
+
+**Três defeitos consertados junto** (achados na auditoria visual): o
+patrimônio que ignorava o caixa, o ✓ sem escopo, e o portão aprovando com
+amostra zero.
 
 ---
 
@@ -435,7 +453,7 @@ Traduzido em regra:
 
 | Fase | Status |
 |---|---|
-| 0 · Fundação | 🔴 não iniciada |
+| 0 · Fundação | 🟢 **concluída 05/08** |
 | 1 · Mesas existentes | 🔴 |
 | 2 · Filtro de regime | 🔴 |
 | 3 · Funding janela longa | 🔴 |

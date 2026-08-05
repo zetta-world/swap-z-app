@@ -94,6 +94,41 @@ export interface Desk {
   sigil: string;
   /** Quem é, em uma linha. */
   who: string;
+  /**
+   * ⚠️ O SUBTÍTULO FUNCIONAL — decisão do dono, 05/08.
+   *
+   * "se eu mostrar a um leigo ele não vai saber o que é o quê, qual mesa é, e
+   * o que mede o quê." MÍMIR, VÖLUNDR, SKAÐI não dizem nada para quem não
+   * construiu o sistema, e o painel inteiro é feito de nomes vikings.
+   *
+   * A decisão foi manter o nome de guerra COM subtítulo funcional embaixo —
+   * preserva a identidade e resolve a legibilidade. O formato é sempre o mesmo,
+   * e é o que a tela mostra:
+   *
+   *   MÍMIR
+   *   escolhe estratégia com IA · $1.000 · swing 48h
+   *
+   * Curto de propósito: cabe embaixo do nome sem quebrar linha no celular.
+   */
+  subtitle: string;
+  /**
+   * ⚠️ QUANTO ESTA ESTRATÉGIA PRECISA PARA SER MEDIDA — e o porquê do número.
+   *
+   * O defeito estrutural achado na auditoria de 05/08: as 23 mesas receberam
+   * $1.000 (ou $300) independentemente do que a estratégia exige. Funding
+   * precisa de $2.000 para as quatro pernas não dominarem; basis trimestral
+   * $5.000; arbitragem estatística $10.000; market making $50.000 e tier.
+   *
+   * Dar o mesmo capital a todas não é neutro — é medir errado por construção.
+   * Mesa sub-capitalizada não rende menos: rende NEGATIVO por custo fixo, e o
+   * resultado é lido como "a estratégia não presta". Provavelmente já matamos
+   * ideias boas assim.
+   *
+   * `capitalWhy` é obrigatório junto: número de capital sem justificativa vira
+   * constante que ninguém confere, que é como a coluna `priority` nasceu.
+   */
+  capitalRequiredUsd: number;
+  capitalWhy: string;
   style: DeskStyle;
   venue: DeskVenue;
   direction: DeskDirection;
@@ -123,6 +158,9 @@ export const DESKS: Desk[] = [
   // ── Mesas market-neutral: LUCRAM HOJE. Não mexer na lógica. ──
   {
     source: "arbiter", name: "RATATOSKR", sigil: "ᛉ",
+    subtitle: "arbitragem spot entre corretoras · $5.000 · sem direção",
+    capitalRequiredUsd: 5000, capitalWhy:
+      "os dois bolsos exigem estoque em CADA praça; com menos, o ticket de $50 vira fração grande do livro e o resultado mede a nossa ordem, não o mercado",
     who: "o esquilo que corre entre as praças levando a diferença de preço",
     style: "scalp", venue: "cex", direction: "market_neutral", brain: "none",
     horizonHours: null, scoreboard: "paper", status: "live",
@@ -138,6 +176,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "arbiter2", name: "JÖRMUNGANDR", sigil: "ᛇ",
+    subtitle: "spot comprado + perpétuo vendido · $2.000 · sem direção",
+    capitalRequiredUsd: 2000, capitalWhy:
+      "ciclo de 4 pernas a 0,45%: abaixo de $2.000 o custo fixo come o funding antes de ele acumular",
     who: "a serpente que morde o próprio rabo — spot e perpétuo travados",
     style: "scalp", venue: "cex", direction: "market_neutral", brain: "none",
     horizonHours: null, scoreboard: "paper", status: "live",
@@ -155,6 +196,9 @@ export const DESKS: Desk[] = [
   // ── Mesa mecânica long-only (Ragnarök S1/S2) ──
   {
     source: "arbiter2_3x", name: "NÍÐHÖGGR", sigil: "ᚼ",
+    subtitle: "o mesmo par, com 3× de alavanca · $2.000 · sem direção",
+    capitalRequiredUsd: 2000, capitalWhy:
+      "mesmo capital do JÖRMUNGANDR de propósito — a alavanca é a variável isolada, e mudar o capital junto invalidaria o duelo",
     who: "o dragão que rói a raiz — mesma arbitragem, margem 3× menor por ciclo",
     style: "scalp", venue: "cex", direction: "market_neutral", brain: "none",
     horizonHours: null, scoreboard: "paper", status: "live",
@@ -170,6 +214,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "arbiter2_5x", name: "FÁFNIR", sigil: "ᚠ",
+    subtitle: "o mesmo par, com 5× de alavanca · $2.000 · sem direção",
+    capitalRequiredUsd: 2000, capitalWhy:
+      "mesmo capital do JÖRMUNGANDR de propósito — a alavanca é a variável isolada",
     who: "o dragão que virou dragão de tanto guardar ouro — 5× de margem, 5× de sede",
     style: "scalp", venue: "cex", direction: "market_neutral", brain: "none",
     horizonHours: null, scoreboard: "paper", status: "live",
@@ -186,6 +233,9 @@ export const DESKS: Desk[] = [
 
   {
     source: "strat_mech", name: "VÖLUNDR", sigil: "ᚹ",
+    subtitle: "escolhe estratégia por regra · $5.000 · swing 48h",
+    capitalRequiredUsd: 5000, capitalWhy:
+      "5+ posições simultâneas de ~$500 sem que uma domine a carteira; com $1.000 duas posições já são 100% do capital",
     who: "o ferreiro-mestre: nada de adivinhação, só a forja das regras",
     style: "swing", venue: "cex", direction: "long_only", brain: "none",
     horizonHours: 48, scoreboard: "paper", status: "live",
@@ -202,6 +252,9 @@ export const DESKS: Desk[] = [
 
   {
     source: "strat_ai", name: "MÍMIR", sigil: "ᛘ",
+    subtitle: "escolhe estratégia com IA · $5.000 · swing 48h",
+    capitalRequiredUsd: 5000, capitalWhy:
+      "mesmo capital do VÖLUNDR — o cérebro é a variável isolada do duelo",
     who: "a cabeça sábia no poço: aconselha o ferreiro — aceita, veta ou corrige",
     style: "swing", venue: "cex", direction: "long_only", brain: "llm",
     model: "papel brain (Mistral)", horizonHours: 48, scoreboard: "paper", status: "live",
@@ -218,6 +271,9 @@ export const DESKS: Desk[] = [
 
   {
     source: "strat_record", name: "URÐR", sigil: "ᚢᚱ",
+    subtitle: "escolhe pelo histórico medido · $5.000 · swing 48h",
+    capitalRequiredUsd: 5000, capitalWhy:
+      "mesmo capital do VÖLUNDR — o critério de escolha é a variável isolada",
     who: "a Norna do passado: não julga o gráfico, obedece ao que já aconteceu",
     style: "swing", venue: "cex", direction: "long_only", brain: "none",
     horizonHours: 48, scoreboard: "paper", status: "live",
@@ -233,6 +289,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "strat_dex", name: "FREYJA", sigil: "ᚨ",
+    subtitle: "a mesma regra, na praça DEX · $5.000 · swing 48h",
+    capitalRequiredUsd: 5000, capitalWhy:
+      "mesmo capital do VÖLUNDR mais folga para gás; a praça é a variável isolada",
     who: "a senhora da abundância — colhe on-chain, onde o ZION também olha",
     style: "swing", venue: "dex", direction: "long_only", brain: "none",
     horizonHours: 48, scoreboard: "paper", status: "live",
@@ -248,6 +307,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "strat_day", name: "SKAÐI", sigil: "ᛋ",
+    subtitle: "a mesma regra, em 8h · $5.000 · day trade",
+    capitalRequiredUsd: 5000, capitalWhy:
+      "mesmo capital do VÖLUNDR — o relógio é a variável isolada",
     who: "a caçadora dos esquis: entra e sai no mesmo dia, sem dormir posicionada",
     style: "day", venue: "cex", direction: "long_only", brain: "none",
     horizonHours: 8, scoreboard: "paper", status: "live",
@@ -265,6 +327,9 @@ export const DESKS: Desk[] = [
   // ── Vigia sem IA (grupo de controle histórico) ──
   {
     source: "radar", name: "HEIMDALL", sigil: "ᚻ",
+    subtitle: "varre o mercado e dispara alerta · $5.000 · swing 72h",
+    capitalRequiredUsd: 5000, capitalWhy:
+      "mesma faixa das direcionais para o resultado ser comparável na mesma tabela",
     who: "o vigia da ponte: enxerga longe e só toca o corno quando algo se move",
     style: "event", venue: "cex", direction: "long_short", brain: "none",
     horizonHours: 72, scoreboard: "both", status: "live",
@@ -282,6 +347,9 @@ export const DESKS: Desk[] = [
   // ── O arqueiro: caça lançamento on-chain ──
   {
     source: "ullr_launch", name: "ULLR", sigil: "ᚢ",
+    subtitle: "compra pool recém-nascido · $1.000 · evento 12h",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "munição diária contada de propósito: capital alto em pool novo é risco de liquidez, não amostra maior",
     who: "o arqueiro: caça pool recém-nascido, uma flecha por alvo, munição contada",
     style: "event", venue: "dex", direction: "long_only", brain: "none",
     horizonHours: 12, scoreboard: "paper", status: "live",
@@ -300,6 +368,9 @@ export const DESKS: Desk[] = [
     // short — não era o arqueiro de lançamento que o mandato pedia. Substituído
     // por `ullr_launch`; a história fica, o assento não.
     source: "sniper", name: "VEÐRFÖLNIR", sigil: "ᚡ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "o falcão entre os olhos da águia — vigiava os majors, não os nascimentos",
     style: "event", venue: "cex", direction: "long_short", brain: "llm",
     horizonHours: 72, scoreboard: "both", status: "valhalla",
@@ -310,6 +381,9 @@ export const DESKS: Desk[] = [
   // ── A casa de Odin: o torneio de cérebros (formato scanner) ──
   {
     source: "hybrid_scan", name: "ODIN", sigil: "ᚬ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "o Pai de Todos: preside o conselho de modelos e assina a decisão",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "DeepSeek (CEO)", horizonHours: 72, scoreboard: "both", status: "valhalla",
@@ -318,6 +392,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "deepseek_scan", name: "HUGINN", sigil: "ᚺ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "o corvo Pensamento — voa, observa e reporta a Odin",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "DeepSeek", horizonHours: 72, scoreboard: "both", status: "valhalla",
@@ -326,6 +403,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "kimi_scan", name: "MUNINN", sigil: "ᛗ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "o corvo Memória — o outro par de olhos do trono",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Kimi (Moonshot)", horizonHours: 72, scoreboard: "both", status: "valhalla",
@@ -334,6 +414,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "mistral_scan", name: "GERI", sigil: "ᚷ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "o lobo Faminto que come ao pé da mesa de Odin",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Mistral", horizonHours: 72, scoreboard: "both", status: "valhalla",
@@ -342,6 +425,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "llama_scan", name: "FREKI", sigil: "ᚠ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "o lobo Voraz, irmão de Geri",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Llama (Meta)", horizonHours: 72, scoreboard: "both", status: "valhalla",
@@ -350,6 +436,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "grok_scan", name: "SLEIPNIR", sigil: "ᛊ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "o corcel de oito patas — o mais veloz, ainda que hoje corra sem os olhos do X",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Grok (xAI)", horizonHours: 72, scoreboard: "both", status: "valhalla",
@@ -360,6 +449,9 @@ export const DESKS: Desk[] = [
   // ── As videntes: formato analista (tese em prosa) ──
   {
     source: "oracle_deepseek", name: "VÖLVA · DeepSeek", sigil: "ᚦ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "a vidente: lê a saga do mercado e declara a tese com invalidação",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "DeepSeek", horizonHours: 240, scoreboard: "both", status: "valhalla",
@@ -368,6 +460,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "oracle_mistral", name: "VÖLVA · Mistral", sigil: "ᚦ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "a vidente de Midgard",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "Mistral", horizonHours: 240, scoreboard: "both", status: "valhalla",
@@ -376,6 +471,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "oracle_grok", name: "VÖLVA · Grok", sigil: "ᚦ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "a vidente veloz",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "Grok (xAI)", horizonHours: 240, scoreboard: "both", status: "valhalla",
@@ -384,6 +482,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "oracle_kimi", name: "VÖLVA · Kimi", sigil: "ᚦ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "a vidente da memória longa",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "Kimi (Moonshot)", horizonHours: 240, scoreboard: "both", status: "valhalla",
@@ -394,6 +495,9 @@ export const DESKS: Desk[] = [
   // ── Aposentados de vez (sem gasto, história preservada) ──
   {
     source: "self_scan", name: "TÝR", sigil: "ᛏ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "o deus que deu a mão para atar o lobo — aposentado por custo",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
     model: "Anthropic (aposentado)", horizonHours: 72, scoreboard: "both", status: "valhalla",
@@ -402,6 +506,9 @@ export const DESKS: Desk[] = [
   },
   {
     source: "oracle_self", name: "SAGA", sigil: "ᛋ",
+    subtitle: "mesa arquivada · rodada encerrada",
+    capitalRequiredUsd: 1000, capitalWhy:
+      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
     who: "a cronista de Odin — aposentada junto com o assento Anthropic",
     style: "position", venue: "cex", direction: "long_short", brain: "llm",
     model: "Anthropic (aposentado)", horizonHours: 240, scoreboard: "both", status: "valhalla",

@@ -243,6 +243,80 @@ export type AdminAuditLogRow = {
   created_at:   string;
 };
 
+/**
+ * ── LABORATÓRIO DE ESTRATÉGIAS (migração 0020) ────────────────────────────
+ *
+ * Uma linha por estratégia, uma por execução, uma por resultado. A separação
+ * entre `run` e `result` é o que permite gravar uma rodada que FALHOU: numa
+ * tabela só, execução sem resultado não teria onde existir, e "rodou e deu
+ * erro" voltaria a ser idêntico a "nunca clicou".
+ */
+export type LabStrategyRow = {
+  id:                   string;
+  slug:                 string;
+  name:                 string;
+  subtitle:             string;
+  family:               string;
+  capital_required_usd: number;
+  capital_why:          string;
+  status:               "verde" | "cinza" | "morta";
+  hypothesis:           string | null;
+  killed_why:           string | null;
+  created_at:           string;
+  updated_at:           string;
+};
+
+export type LabRunRow = {
+  id:             string;
+  strategy_id:    string;
+  /** Gravado no MOMENTO da rodada — não é lookup na estratégia. */
+  capital_usd:    number;
+  window_days:    number;
+  window_end:     string;
+  params:         Record<string, unknown>;
+  status:         "ok" | "falhou" | "rodando";
+  failure_reason: string | null;
+  /** O detalhe acionável. "Falhou" sem isto é a parte inútil do registro. */
+  failure_detail: string | null;
+  started_at:     string;
+  finished_at:    string | null;
+  took_ms:        number | null;
+};
+
+export type LabResultRow = {
+  id:                 string;
+  run_id:             string;
+  net_pct:            number | null;
+  /** Independe do tamanho da janela — o `net_pct` não. Os dois viajam juntos. */
+  net_annualized_pct: number | null;
+  gross_pct:          number | null;
+  cost_pct:           number | null;
+  /** Amostra é coluna de primeira classe, não metadado. */
+  sample_n:           number;
+  effective_n:        number | null;
+  correlation_rho:    number | null;
+  max_drawdown_pct:   number | null;
+  win_rate_pct:       number | null;
+  trades:             number | null;
+  exposure_pct:       number | null;
+  /** Comprar-e-segurar na MESMA janela — sem ele "+18%" não diz nada. */
+  benchmark_pct:      number | null;
+  verdict:            "verde" | "cinza" | "morta" | null;
+  verdict_text:       string | null;
+  per_symbol:         unknown[];
+  not_measured:       string[];
+  created_at:         string;
+};
+
+export type LabCapitalLogRow = {
+  id:          string;
+  strategy_id: string;
+  from_usd:    number | null;
+  to_usd:      number;
+  reason:      string;
+  changed_at:  string;
+};
+
 export interface Database {
   public: {
     Tables: {
@@ -252,6 +326,10 @@ export interface Database {
       admin_audit_log: { Row: AdminAuditLogRow; Insert: Omit<AdminAuditLogRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
       platform_events: { Row: PlatformEventRow; Insert: Omit<PlatformEventRow, "id" | "created_at"> & { id?: string; created_at?: string }; Update: never; Relationships: [] };
       admin_kv: { Row: AdminKvRow; Insert: AdminKvRow; Update: Partial<AdminKvRow>; Relationships: [] };
+      lab_strategies: { Row: LabStrategyRow; Insert: Partial<LabStrategyRow> & { slug: string; name: string; subtitle: string; family: string; capital_required_usd: number; capital_why: string }; Update: Partial<LabStrategyRow>; Relationships: [] };
+      lab_runs: { Row: LabRunRow; Insert: Partial<LabRunRow> & { strategy_id: string; capital_usd: number; window_days: number }; Update: Partial<LabRunRow>; Relationships: [] };
+      lab_results: { Row: LabResultRow; Insert: Partial<LabResultRow> & { run_id: string; sample_n: number }; Update: never; Relationships: [] };
+      lab_capital_log: { Row: LabCapitalLogRow; Insert: Partial<LabCapitalLogRow> & { strategy_id: string; to_usd: number; reason: string }; Update: never; Relationships: [] };
       platform_admins: { Row: PlatformAdminRow; Insert: Partial<PlatformAdminRow> & { wallet_address: string }; Update: Partial<PlatformAdminRow>; Relationships: [] };
       market_brain: { Row: MarketBrainRow; Insert: Partial<MarketBrainRow> & { symbol: string }; Update: Partial<MarketBrainRow>; Relationships: [] };
       operations: { Row: OperationRow; Insert: Partial<OperationRow> & { kind: string; status: string }; Update: Partial<OperationRow>; Relationships: [] };

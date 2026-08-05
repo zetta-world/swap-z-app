@@ -17,6 +17,7 @@ export type ModuleId =
   | "what-worked"
   | "funding"
   | "ligas"
+  | "lab"
   | "tournament"
   | "ragnarok"
   | "swap-guard"
@@ -188,6 +189,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8,
+  },
+  {
+    id: "lab",
+    title: "LABORATÓRIO DE ESTRATÉGIAS",
+    subtitle: "26 formas de lucro — capital exigido e o que já foi medido",
+    icon: "🔬",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 0,
   },
   {
     id: "ligas",
