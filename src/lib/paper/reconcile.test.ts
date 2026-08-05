@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeDrift, significantDrifts, starvedWallets, liveDrifts, retiredDrifts, planRepair,
+  realizedDrifts,
   DRIFT_TOLERANCE_USD,
 } from "@/lib/paper/reconcile";
 
@@ -234,5 +235,74 @@ describe("posição não lida não pode virar déficit", () => {
     const semPnl   = computeDrift(w({ cashUsd: 800 }), 150, 0);
     const semCusto = computeDrift(w({ cashUsd: 800 }), 0, -6.26);
     expect(Math.abs(semCusto.driftUsd)).toBeGreaterThan(Math.abs(semPnl.driftUsd));
+  });
+});
+
+/**
+ * O SEGUNDO INVARIANTE: a coluna `realized_pnl_usd` contra o P&L das posições.
+ *
+ * ⚠️ POR QUE ELE FALTAVA, e por que a falta era invisível.
+ *
+ * `computeDrift` sempre recebeu o P&L CALCULADO das posições não-arquivadas, e
+ * está certa nisso. Só que `paper_accounts.realized_pnl_usd` guarda a mesma
+ * grandeza denormalizada — e é ELA que o painel lê.
+ *
+ * A conferência de caixa nunca pegou a divergência porque ela usa o calculado,
+ * que estava correto. O defeito só existe quando se comparam as duas, e foi
+ * assim que o `radar` ficou com as 89 posições arquivadas (P&L calculado = 0) e
+ * a coluna em −$13,37: reset parcial, contador esquecido.
+ */
+describe("o contador de P&L contra as posições", () => {
+  const base = { source: "x", label: "X", startingUsd: 1000, cashUsd: 1000 };
+
+  it("as duas fontes concordando dá desvio ZERO", () => {
+    const d = computeDrift({ ...base, storedRealizedUsd: -5 }, 0, -5);
+    expect(d.realizedDriftUsd).toBe(0);
+    expect(realizedDrifts([d])).toEqual([]);
+  });
+
+  /**
+   * O caso REAL do radar, com os números dele: 89 posições arquivadas, então o
+   * P&L calculado é 0, e a coluna guardada ficou em −13,37.
+   */
+  it("o caso do radar: posições arquivadas, contador para trás", () => {
+    const d = computeDrift(
+      { source: "radar", label: "HEIMDALL", startingUsd: 1000, cashUsd: 1000, storedRealizedUsd: -13.37 },
+      0, 0,
+    );
+    expect(d.realizedDriftUsd).toBeCloseTo(-13.37, 2);
+    expect(d.computedRealizedUsd).toBe(0);
+    // ⚠️ E o desvio de CAIXA é zero — é por isso que a conferência antiga
+    // nunca acusou nada: 1000 = 1000 − 0 + 0.
+    expect(d.driftUsd).toBe(0);
+    expect(realizedDrifts([d])).toHaveLength(1);
+  });
+
+  it("quem não informa a coluna não é conferido — não vira falso positivo", () => {
+    const d = computeDrift(base, 0, -5);
+    expect(d.realizedDriftUsd).toBe(0);
+  });
+
+  /**
+   * Os dois desvios são sintomas DIFERENTES e não podem ser somados numa
+   * verificação só: caixa errado é dinheiro que apareceu ou sumiu; contador
+   * errado é a mesma verdade escrita duas vezes com valores distintos.
+   */
+  it("desvio de caixa e desvio de contador são independentes", () => {
+    // Caixa furado, contador certo.
+    const caixa = computeDrift({ ...base, cashUsd: 900, storedRealizedUsd: 0 }, 0, 0);
+    expect(Math.abs(caixa.driftUsd)).toBeGreaterThan(0.5);
+    expect(caixa.realizedDriftUsd).toBe(0);
+
+    // Caixa certo, contador furado.
+    const contador = computeDrift({ ...base, storedRealizedUsd: -13.37 }, 0, 0);
+    expect(contador.driftUsd).toBe(0);
+    expect(Math.abs(contador.realizedDriftUsd)).toBeGreaterThan(0.5);
+  });
+
+  it("ordena pelo pior desvio absoluto, não pelo sinal", () => {
+    const pequeno = computeDrift({ ...base, source: "a", storedRealizedUsd: 2 }, 0, 0);
+    const grande = computeDrift({ ...base, source: "b", storedRealizedUsd: -50 }, 0, 0);
+    expect(realizedDrifts([pequeno, grande])[0].source).toBe("b");
   });
 });

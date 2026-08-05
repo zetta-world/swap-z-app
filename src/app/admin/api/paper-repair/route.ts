@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
-import { reconcileWallets, planRepair, repairWallets, lastRepair } from "@/lib/paper/reconcile";
+import { reconcileWallets, planRepair, repairWallets, lastRepair, realizedDrifts } from "@/lib/paper/reconcile";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +29,23 @@ export async function GET(): Promise<NextResponse> {
     // Contexto: caixa a MAIS não entra no plano. Dinheiro que apareceu do nada
     // é outro bug, provavelmente pior, e tirar o excesso apagaria a pista.
     surplus: all.filter((d) => !d.retired && d.driftUsd > 0.5).map((d) => ({ source: d.source, driftUsd: d.driftUsd })),
+    /**
+     * ⚠️ O SEGUNDO INVARIANTE (05/08): o contador `realized_pnl_usd` contra o
+     * P&L calculado das posições vivas.
+     *
+     * Vai separado do `plan` de propósito. Desvio de CAIXA é dinheiro que
+     * apareceu ou sumiu; desvio de CONTADOR é a mesma verdade escrita duas
+     * vezes com valores diferentes — e é o segundo que faz duas telas mostrarem
+     * números distintos para a mesma carteira. Misturar os dois num botão só
+     * esconderia qual dos dois problemas foi consertado.
+     */
+    contadorDivergente: realizedDrifts(all).map((d) => ({
+      source: d.source, label: d.label,
+      guardado: d.storedRealizedUsd ?? null,
+      calculado: d.computedRealizedUsd,
+      driftUsd: d.realizedDriftUsd,
+      retired: d.retired,
+    })),
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
