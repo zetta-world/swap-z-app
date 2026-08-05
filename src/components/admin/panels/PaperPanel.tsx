@@ -15,7 +15,7 @@ type Row = {
   best: number | null; worst: number | null; closedTrades: number;
   openPositions: number; exposure: number; openBook: OpenPos[]; recentTrades: RecentTrade[]; curve: number[];
 };
-type PR = { rows: Row[]; totals: { startingUsd: number; equity: number; realizedPnl: number; openPositions: number; exposure: number; closedTrades: number }; fetchedAt: string };
+type PR = { rows: Row[]; totals: { startingUsd: number; equity: number; cashUsd: number; buracoUsd: number; comBuraco: number; realizedPnl: number; openPositions: number; exposure: number; closedTrades: number }; fetchedAt: string };
 type RepairState = {
   plan: Array<{ source: string; label: string; from: number; to: number; deltaUsd: number }>;
   last: { at: string; totalUsd: number } | null;
@@ -127,10 +127,31 @@ export default function PaperPanel() {
           </button>
         </div>
       )}
+      {/**
+        * ⚠️ O ESCOPO DO ✓ PRECISA ESTAR NA FRASE (05/08).
+        *
+        * Este aviso dizia "caixa bate com os trades", sem qualificador, acima de
+        * uma lista com as 23 carteiras. `planRepair` só olha as VIVAS — decisão
+        * de 04/08, para não recreditar as aposentadas e apagar a cicatriz do
+        * vazamento de julho. Então o ✓ era verdadeiro e a frase era falsa: dez
+        * carteiras logo abaixo tinham buraco, uma delas de $991.
+        *
+        * Afirmação sem escopo é a mesma família do "inconclusivo lido como
+        * aprovado". O escopo agora está na frase, e o buraco das aposentadas
+        * aparece do lado em vez de ficar implícito.
+        */}
       {repair && repair.plan.length === 0 && repair.last && (
-        <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 8 }}>
-          ✓ caixa bate com os trades · último reparo {new Date(repair.last.at).toLocaleString("pt-BR")}{" "}
-          ({usd(repair.last.totalUsd)} devolvidos) — desvio que aparecer daqui pra frente é vazamento NOVO
+        <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.6 }}>
+          ✓ caixa bate com os trades <b>nas carteiras VIVAS</b> · último reparo{" "}
+          {new Date(repair.last.at).toLocaleString("pt-BR")} ({usd(repair.last.totalUsd)} devolvidos)
+          — desvio que aparecer daqui pra frente é vazamento NOVO
+          {data && data.totals.comBuraco > 0 && (
+            <div style={{ color: "var(--adm-amber)", marginTop: 3 }}>
+              ⚠ {data.totals.comBuraco} carteiras APOSENTADAS seguem com{" "}
+              <b>{usd(data.totals.buracoUsd)}</b> de buraco — cicatriz preservada do vazamento de
+              julho, não desempenho. Recreditá-las apagaria o registro.
+            </div>
+          )}
         </div>
       )}
 
@@ -139,6 +160,11 @@ export default function PaperPanel() {
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
             {[
               { label: "PATRIMÔNIO", v: usd(data.totals.equity), sub: pctS(totalRet, 2), subColor: col(totalRet) },
+              // O caixa REAL ao lado do contábil. Antes só o contábil aparecia,
+              // e ele somava $9.350 a mais que a soma de `cash_usd`.
+              { label: "CAIXA REAL", v: usd(data.totals.cashUsd),
+                sub: data.totals.buracoUsd < -0.01 ? `buraco ${usd(data.totals.buracoUsd)}` : "bate",
+                subColor: data.totals.buracoUsd < -0.01 ? "var(--adm-amber)" : "var(--adm-green)" },
               { label: "REALIZADO", v: usdc(data.totals.realizedPnl), subColor: col(data.totals.realizedPnl) },
               { label: "ABERTAS", v: `${data.totals.openPositions}`, sub: `exp ${usd(data.totals.exposure)}` },
             ].map((t) => (

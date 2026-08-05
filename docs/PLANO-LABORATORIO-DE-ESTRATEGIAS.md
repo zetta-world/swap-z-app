@@ -13,18 +13,101 @@
 
 ---
 
-## ⚠️ PREMISSA QUE PRECISA SER CONFIRMADA ANTES DA FASE 2
+## ✅ PREMISSAS CONFIRMADAS PELO DONO (05/08)
 
-O dono escreveu *"todas vão seguir o caminho de dinheiro real"*. Estou lendo
-isso como **o caminho da casa**, o mesmo de `PLANO-ARBITER-REAL.md`:
+1. **Dinheiro real: NÃO agora.** *"agente apenas vai simular como se estivesse
+   usando as rotas que o dinheiro real vai recorrer."* Ou seja: as rotas, os
+   custos e as travas são as do dinheiro real; o capital é simulado.
+2. **Sem timidez com custódia ou licença.** *"nosso plano futuramente é obter
+   estas licenças... já podemos ter agora na plataforma e já testar tudo e ir
+   lançando cada parte conforme o projeto ganha estrutura."* Então nada é
+   descartado por regime regulatório — constrói-se, mede-se, e o lançamento
+   de cada parte espera a licença correspondente.
+3. **"Todas" = eu decido a ordem.** *"tem muita coisa que não entendo e como
+   você fez um estudo completo, você com certeza vai decidir certo... você
+   agora está proibido de ser preguiçoso."* A contrapartida: buscar no código,
+   nos docs, na internet, e consultar quando a dúvida for de negócio.
 
-> simulação com **capital realista** e **custo realista** → portão de
-> profundidade/realismo → só então dinheiro de verdade, com chave sem saque,
-> caps e kill-switch.
+---
 
-**Não** estou lendo como "abrir posição com dinheiro real agora". Se a leitura
-certa for a segunda, este plano muda inteiro — e a Fase 1 vira gestão de risco,
-não medição. Está declarado aqui para ser corrigido antes de custar tempo.
+## ⚠️ AUDITORIA VISUAL DO LABORATÓRIO — 11 prints, 05/08
+
+O dono mandou o painel inteiro: *"o desastre confuso visual que é, e que se eu
+mostrar a um leigo ele não vai saber o que é o que, qual mesa é, e o que mede o
+que... tenho uma forte suspeita que muitos números e informações não estão
+atualizados."*
+
+**A suspeita estava certa, e o problema é pior que desatualização.**
+
+### Três defeitos VERIFICADOS no código
+
+**1. O patrimônio exibido não é o caixa — e a diferença é de $9.350.**
+
+`paper/route.ts` calculava `equity = capital + realizado + não-realizado`,
+ignorando a coluna `cash_usd`. O painel mostrava:
+
+| carteira | exibido | `cash_usd` real |
+|---|---|---|
+| `oracle_mistral` | **$1.001** | **$9,80** |
+| `deepseek_scan` | **$998** | **$0,40** |
+| `grok_scan` | **$994** | **$0,00** |
+
+Total exibido: **PATRIMÔNIO $20.842**. Soma real de `cash_usd`: **≈$11.491**.
+
+O buraco nas aposentadas é **deliberado** — é a cicatriz preservada do
+vazamento de julho, e recreditá-las apagaria o registro. O defeito nunca foi
+o buraco: era a tela mostrar o valor contábil no lugar do caixa.
+
+**2. O ✓ verde de "caixa bate com os trades" não dizia de quais carteiras falava.**
+
+`planRepair` só olha as carteiras VIVAS — decisão correta de 04/08. Mas o aviso
+aparecia sem qualificador, acima de uma lista com as 23. Verdadeiro no escopo,
+falso na leitura.
+
+**3. O portão de lançamento aprovava expectancy com ZERO trades decididos.**
+
+No cartão da FREYJA, dois critérios lado a lado:
+
+```
+✗ Amostra ≥ 100 decididos ......... 0/100 decididos
+✓ Expectancy líquida positiva ..... +0.290% por trade, líquido
+```
+
+O critério de drawdown, no mesmo arquivo, sempre teve `pending: decided === 0`.
+O de expectancy só checava se o número era nulo — e um número vindo de posições
+não resolvidas passava. **Média de amostra vazia virando aprovação, num portão
+que decide lançamento.**
+
+O teste que existia usava `decided: 0` **junto com** `netExpectancy: null`, e
+por isso nunca exercitou o caso real.
+
+> Os três foram consertados em 05/08, com teste travando o terceiro.
+
+### Os defeitos de LEITURA — a parte que o leigo não entende
+
+| Problema | Por quê |
+|---|---|
+| **11 painéis empilhados numa aba só** | "LAB · SIMULADO (11)" é uma coluna infinita. Nenhuma hierarquia entre medir estratégia, medir mesa e medir mercado |
+| **Mesma carteira, números diferentes em painéis diferentes** | VÖLUNDR aparece como **$995** no PAPER e **$997** na BARRA DE LANÇAMENTO. Três fontes de verdade |
+| **Nomes vikings sem legenda** | MÍMIR, VÖLUNDR, SKAÐI, FREYJA, ULLR — não há como saber o que cada uma mede sem abrir o código |
+| **23 chips de filtro numa linha** | O BACKTEST tem uma fileira de 23 agentes; ninguém acha o que procura |
+| **Capital invisível** | Nenhum painel mostra com quanto a mesa opera — e é a variável que mais explica o resultado |
+| **Amostra escondida** | `n=0 · ruído` em cinza claro do lado de um número grande e colorido |
+| **Cicatrizes lidas como desempenho** | As mesas Valhalla aparecem em vermelho como se tivessem perdido operando |
+
+### O que isso muda no plano
+
+**A Fase 0 cresce.** Não dá para construir 26 mesas em cima de um painel que
+mostra $20.842 onde há $11.491 e aprova critério com amostra zero. Antes de
+qualquer estratégia nova:
+
+- **uma fonte de verdade por número** — se dois painéis mostram a mesma
+  carteira, leem da mesma rota;
+- **capital e amostra sempre visíveis** — são as duas colunas que decidem se o
+  número significa alguma coisa;
+- **hierarquia de navegação** — família → mesa → medição, não 26 painéis
+  empilhados;
+- **legenda de mesa** — quem é, o que mede, com quanto, desde quando.
 
 ---
 
