@@ -14,11 +14,17 @@ type Row = {
   avgWin: number | null; avgLoss: number | null; profitFactor: number | null;
   best: number | null; worst: number | null; closedTrades: number;
   openPositions: number; exposure: number; openBook: OpenPos[]; recentTrades: RecentTrade[]; curve: number[];
+  retired: boolean;
 };
 type PR = { rows: Row[]; totals: { startingUsd: number; equity: number; cashUsd: number; buracoUsd: number; comBuraco: number; realizedPnl: number; openPositions: number; exposure: number; closedTrades: number }; fetchedAt: string };
 type RepairState = {
   plan: Array<{ source: string; label: string; from: number; to: number; deltaUsd: number }>;
   last: { at: string; totalUsd: number } | null;
+  /** ⚠️ Contador `realized_pnl_usd` divergindo das posições — ver reconcile.ts. */
+  contadorDivergente?: Array<{
+    source: string; label: string; guardado: number | null;
+    calculado: number; driftUsd: number; retired: boolean;
+  }>;
 };
 
 const MEDAL = ["🥇", "🥈", "🥉"];
@@ -58,6 +64,15 @@ export default function PaperPanel() {
   const realtime = useAdminRealtime();
   const [repair, setRepair] = useState<RepairState | null>(null);
   const [repairing, setRepairing] = useState(false);
+  /**
+   * ⚠️ AS APOSENTADAS FICAM NO ARQUIVO — decisão do dono, 05/08.
+   *
+   * Elas ocupavam 10 das 23 linhas e apareciam em vermelho como se tivessem
+   * perdido operando, quando o buraco delas é a cicatriz PRESERVADA do
+   * vazamento de julho. O painel operacional mostra quem está VIVO; a cicatriz
+   * vira uma aba que se abre quando alguém quer ver o histórico.
+   */
+  const [verArquivo, setVerArquivo] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -92,7 +107,11 @@ export default function PaperPanel() {
     } catch { /* estado antigo permanece */ } finally { setRepairing(false); }
   }
 
-  const rows = data?.rows ?? [];
+  const todas = data?.rows ?? [];
+  // `retired` vem do registro de mesas — mesa fora do registro conta como VIVA,
+  // porque o desconhecido não ganha dispensa.
+  const arquivadas = todas.filter((r) => r.retired);
+  const rows = verArquivo ? arquivadas : todas.filter((r) => !r.retired);
   const totalRet = data && data.totals.startingUsd > 0 ? (data.totals.equity / data.totals.startingUsd - 1) * 100 : 0;
 
   return (
@@ -155,6 +174,37 @@ export default function PaperPanel() {
         </div>
       )}
 
+      {/**
+        * ⚠️ O CONTADOR DIVERGINDO DAS POSIÇÕES (05/08).
+        *
+        * Sintoma DIFERENTE do desvio de caixa, e por isso um bloco próprio:
+        * caixa errado é dinheiro que apareceu ou sumiu; contador errado é a
+        * mesma verdade escrita duas vezes com valores distintos — e é o
+        * segundo que faz duas telas mostrarem números diferentes para a mesma
+        * carteira. Misturar os dois esconderia qual foi consertado.
+        */}
+      {repair?.contadorDivergente && repair.contadorDivergente.length > 0 && (
+        <div style={{
+          border: "1px solid var(--adm-amber)", borderRadius: 4, padding: "7px 9px",
+          marginBottom: 10, fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-3)",
+        }}>
+          <div style={{ color: "var(--adm-amber)", fontWeight: 700, letterSpacing: "0.08em" }}>
+            ⚠ {repair.contadorDivergente.length} CARTEIRA(S) COM O CONTADOR DE P&amp;L FORA DAS POSIÇÕES
+          </div>
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", margin: "3px 0" }}>
+            {repair.contadorDivergente.slice(0, 6).map((c) => (
+              `${c.label}: coluna ${usdc(c.guardado)} vs posições ${usdc(c.calculado)}`
+            )).join(" · ")}
+          </div>
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>
+            A coluna <code>realized_pnl_usd</code> é o que o PAINEL lê; a soma das posições
+            vivas é o que a CONFERÊNCIA usa. Quando divergem, as duas telas contam histórias
+            diferentes da mesma carteira. Acontece num reset parcial: as posições são
+            arquivadas e o contador fica para trás.
+          </div>
+        </div>
+      )}
+
       {data && (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -175,6 +225,29 @@ export default function PaperPanel() {
               </div>
             ))}
           </div>
+
+          {/* ── ARQUIVO. Decisão do dono: "mesa aposentada vira arquivo".
+                 O painel operacional mostra quem está VIVO; a cicatriz do
+                 vazamento de julho vira histórico que se abre quando alguém
+                 quer ver, em vez de dez linhas vermelhas permanentes. */}
+          {arquivadas.length > 0 && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
+              <button
+                className="adm-btn" onClick={() => { setVerArquivo(!verArquivo); setOpen(null); }}
+                style={{ padding: "3px 8px", fontSize: 8.5 }}
+              >
+                {verArquivo
+                  ? `◀ voltar às ${todas.length - arquivadas.length} mesas VIVAS`
+                  : `🗄 ver o arquivo (${arquivadas.length} aposentadas)`}
+              </button>
+              {verArquivo && (
+                <span style={{ fontSize: 8, color: "var(--adm-amber)", lineHeight: 1.5 }}>
+                  cicatriz preservada do vazamento de julho — <b>não é desempenho</b>.
+                  Recreditá-las apagaria o registro.
+                </span>
+              )}
+            </div>
+          )}
 
           <table className="adm-table">
             <thead><tr><th style={{ width: 26 }}></th><th>CARTEIRA</th><th>EQUITY</th><th>RET</th><th>WR</th><th>AB</th></tr></thead>

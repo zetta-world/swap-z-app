@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
+import { deskFor } from "@/lib/zion/desks";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { gateioSpot } from "@/lib/paper/engine";
@@ -118,6 +119,15 @@ export async function GET(): Promise<NextResponse> {
     return {
       source: a.source, label: a.label,
       startingUsd: starting, cashUsd: cash, equity,
+      /**
+       * ⚠️ APOSENTADA? — decisão do dono, 05/08: "mesa aposentada vira arquivo".
+       *
+       * Elas ocupavam 10 das 23 linhas e apareciam em vermelho como se
+       * tivessem perdido operando, quando o buraco delas é a cicatriz
+       * PRESERVADA do vazamento de julho. Mesa fora do registro conta como
+       * VIVA: o desconhecido não ganha dispensa.
+       */
+      retired: deskFor(a.source)?.status === "valhalla",
       /** O caixa que os trades justificam, e o buraco entre ele e o real. */
       cashEsperadoUsd: cashEsperado,
       buracoUsd: Math.abs(buracoUsd) < 0.01 ? 0 : buracoUsd,

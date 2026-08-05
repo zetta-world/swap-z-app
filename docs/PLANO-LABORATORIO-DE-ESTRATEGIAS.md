@@ -311,7 +311,7 @@ amostra zero.
 
 ---
 
-### FASE 1 — As mesas que já existem · 🔴
+### FASE 1 — As mesas que já existem · 🟡 EM ANDAMENTO (05/08)
 *"Olhar fundo nelas e dar tudo que elas precisam."*
 
 1. **Recapitalizar** cada mesa viva com o capital que a estratégia exige (não $1.000 para todas).
@@ -326,8 +326,25 @@ amostra zero.
 6. **Dar janela a quem precisa** — horizonte de 8h para uma mesa de swing é
    medir a coisa errada.
 
-**Critério de conclusão:** ledger reconciliado com zero deficit não explicado;
-toda mesa com capital justificado; painel sem mesa fantasma.
+**Entregue nesta rodada:**
+
+| item | estado |
+|---|---|
+| Invariante novo: contador × posições | ✅ `realizedDrifts()` — pega o `radar` e a classe inteira |
+| Diagnóstico do `radar` | ✅ **reset parcial**: 89 posições arquivadas, contador em −$13,37 |
+| Arquivo separado das vivas no painel | ✅ botão "🗄 ver o arquivo (N aposentadas)" |
+| Aviso de contador divergente | ✅ bloco próprio, separado do desvio de caixa |
+| Recapitalização (plano + execução) | ✅ `recapitalize.ts` + rota, **exige motivo em 3 camadas** |
+
+**⚠️ Decisão de desenho registrada:** recapitalizar é **RESET**, não ajuste de
+coluna. Mudar `starting_usd` com trades antigos dentro reescreveria o retorno
+histórico — uma perda de 2% em $1.000 viraria 0,4% em $5.000 sem nenhum trade
+novo. Então arquiva a rodada (nunca apaga) e recomeça com o capital certo.
+
+**Pendente da Fase 1:**
+- rodar a recapitalização (é botão, não automático — o dono decide quando)
+- dar SHORT às direcionais (hoje são todas `long_only`)
+- aposentar ou justificar as 12 mesas com zero atividade
 
 ---
 
@@ -454,7 +471,7 @@ Traduzido em regra:
 | Fase | Status |
 |---|---|
 | 0 · Fundação | 🟢 **concluída 05/08** |
-| 1 · Mesas existentes | 🔴 |
+| 1 · Mesas existentes | 🟡 **em andamento** |
 | 2 · Filtro de regime | 🔴 |
 | 3 · Funding janela longa | 🔴 |
 | 4 · Rendimento integrado | 🔴 |

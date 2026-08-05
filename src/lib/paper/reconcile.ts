@@ -66,6 +66,16 @@ export interface WalletDrift {
    * não reprova, porque a pergunta da bancada é "está vazando AGORA?".
    */
   retired: boolean;
+  /**
+   * A coluna `realized_pnl_usd` menos o P&L calculado das posições vivas.
+   * Zero = as duas fontes concordam. Diferente de zero = contador velho, e o
+   * painel (que lê a coluna) está mostrando outra coisa que a conferência.
+   */
+  realizedDriftUsd: number;
+  /** O P&L que as posições não-arquivadas realmente somam. */
+  computedRealizedUsd: number;
+  /** O que a coluna denormalizada guarda. Ausente = não foi conferido. */
+  storedRealizedUsd?: number;
 }
 
 /**
@@ -75,7 +85,9 @@ export interface WalletDrift {
  * que apareceu ou sumiu sem trade.
  */
 export function computeDrift(
-  a: { source: string; label: string; startingUsd: number; cashUsd: number },
+  a: { source: string; label: string; startingUsd: number; cashUsd: number;
+       /** A coluna denormalizada. Opcional: quem não passa, não é conferido. */
+       storedRealizedUsd?: number },
   openCostUsd: number,
   realizedPnlUsd: number,
   minCashUsd = 25,
@@ -83,6 +95,28 @@ export function computeDrift(
   const expectedUsd = a.startingUsd - openCostUsd + realizedPnlUsd;
   return {
     ...a, expectedUsd,
+    /**
+     * ⚠️ O SEGUNDO INVARIANTE, que faltava (05/08).
+     *
+     * Esta função sempre recebeu o P&L CALCULADO das posições não-arquivadas —
+     * e está certa nisso. Só que `paper_accounts.realized_pnl_usd` guarda o
+     * mesmo número denormalizado, e é ELE que o painel lê.
+     *
+     * Duas fontes para a mesma grandeza, e elas divergiram: o `radar` tem as
+     * 89 posições arquivadas (logo, P&L calculado = 0) e a coluna guardada
+     * em −$13,37. Foi um reset parcial — arquivou as posições e restaurou o
+     * caixa, mas deixou o contador para trás.
+     *
+     * A conferência de caixa não pegava porque ela usa o calculado, que estava
+     * certo. O defeito só aparece quando se comparam as DUAS.
+     *
+     * É a mesma família da mediana com duas implementações e do patrimônio
+     * exibido sem o caixa: número derivado em dois lugares vira dois números.
+     */
+    realizedDriftUsd: a.storedRealizedUsd == null
+      ? 0
+      : Number((a.storedRealizedUsd - realizedPnlUsd).toFixed(2)),
+    computedRealizedUsd: realizedPnlUsd,
     driftUsd: a.cashUsd - expectedUsd,
     // Sem caixa acima do piso, `sizePosition` devolve 0 e a mesa para de
     // operar sem dizer nada a ninguém.
@@ -99,6 +133,20 @@ export function significantDrifts(all: WalletDrift[], tolerance = DRIFT_TOLERANC
   return all
     .filter((d) => Math.abs(d.driftUsd) > tolerance)
     .sort((x, y) => x.driftUsd - y.driftUsd);
+}
+
+/**
+ * Carteiras cujo CONTADOR de P&L discorda das posições.
+ *
+ * Separado do desvio de caixa de propósito: são sintomas diferentes. Caixa
+ * errado é dinheiro que apareceu ou sumiu; contador errado é a mesma verdade
+ * escrita duas vezes com valores diferentes — e é o segundo que faz duas telas
+ * mostrarem números distintos para a mesma carteira.
+ */
+export function realizedDrifts(all: WalletDrift[], tolerance = 0.01): WalletDrift[] {
+  return all
+    .filter((d) => Math.abs(d.realizedDriftUsd) > tolerance)
+    .sort((x, y) => Math.abs(y.realizedDriftUsd) - Math.abs(x.realizedDriftUsd));
 }
 
 /** Carteiras que já não conseguem abrir posição — silêncio por falta de caixa. */
@@ -160,7 +208,7 @@ export async function reconcileWallets(minCashUsd = 25): Promise<WalletDrift[]> 
   const db = getSupabaseAdmin();
   if (!db) return [];
   const [{ data: accounts }, positions] = await Promise.all([
-    db.from("paper_accounts").select("id, source, label, starting_usd, cash_usd"),
+    db.from("paper_accounts").select("id, source, label, starting_usd, cash_usd, realized_pnl_usd"),
     // ⚠️ SÓ AS NÃO-ARQUIVADAS (correção 03/08, achada pela própria bancada).
     //
     // A primeira versão somava o P&L de TODAS as posições, inclusive as
@@ -212,11 +260,12 @@ export async function reconcileWallets(minCashUsd = 25): Promise<WalletDrift[]> 
   }
 
   return accounts.map((a) => {
-    const row = a as { id: string; source: string; label: string | null; starting_usd: number; cash_usd: number };
+    const row = a as { id: string; source: string; label: string | null; starting_usd: number; cash_usd: number; realized_pnl_usd: number };
     return computeDrift(
       {
         source: row.source, label: row.label ?? row.source,
         startingUsd: Number(row.starting_usd), cashUsd: Number(row.cash_usd),
+        storedRealizedUsd: Number(row.realized_pnl_usd),
       },
       openBy.get(String(row.id)) ?? 0,
       pnlBy.get(String(row.id)) ?? 0,
