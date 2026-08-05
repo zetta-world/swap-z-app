@@ -125,21 +125,51 @@ export async function POST(): Promise<NextResponse> {
     };
   });
 
-  const melhor = [...porLargura].sort((a, b) => b.netPerCyclePct - a.netPerCyclePct)[0];
-  const algumPositivo = porLargura.some((l) => l.netPerCyclePct > 0);
+  /**
+   * ⚠️⚠️ LARGURA QUE NÃO HEDGEIA NÃO PODE SER "A MELHOR" (05/08).
+   *
+   * A primeira versão ordenava por líquido e anunciava o topo. Na primeira
+   * rodada real o topo foi ±0.20% com **hedge 0%** e cinco ciclos hedgeados em
+   * oitocentos — ou seja, a largura "vencedora" é aquela em que a mesa
+   * praticamente NÃO OPERA, e o +0.0013% é o resíduo de umas poucas pernas
+   * soltas desmontadas. Na largura de ±0.50% o líquido é exatamente 0.000%
+   * porque nada aconteceu.
+   *
+   * Anunciar isso como "melhor largura" seria coroar o não-fazer-nada. É a
+   * regra da casa que já custou caro em outro painel: amostra abaixo do limiar
+   * NUNCA vira número, e ranking sem piso de amostra elege sempre a linha mais
+   * vazia.
+   *
+   * O piso: uma largura só concorre se hedgeou pelo menos `MIN_HEDGED` vezes.
+   * Sem candidata, o veredito diz que a mesa não operou — que é diferente de
+   * "a mesa deu lucro".
+   */
+  const MIN_HEDGED = 30;
+  const candidatas = porLargura.filter((l) => l.hedged >= MIN_HEDGED);
+  const melhor = [...candidatas].sort((a, b) => b.netPerCyclePct - a.netPerCyclePct)[0];
+  const algumPositivo = candidatas.some((l) => l.netPerCyclePct > 0);
+  // As que "ganharam" só por não operar — nomeadas, para o zero não passar por lucro.
+  const vazias = porLargura.filter((l) => l.hedged < MIN_HEDGED && l.netPerCyclePct >= 0);
 
-  const veredito = algumPositivo
-    ? `melhor largura ${melhor.larguraPct}% → ${melhor.netPerCyclePct.toFixed(4)}%/ciclo `
-      + `(hedge ${(melhor.hedgeRate * 100).toFixed(0)}%, ${melhor.stops} stops). `
-      + "⚠️ SEM fila, SEM preenchimento parcial, SEM impacto — os três empurram para cima. "
-      + "Positivo aqui é convite para medir com livro real, não mesa aprovada."
-    : "NENHUMA largura ficou positiva, e a simulação já é otimista de propósito "
-      + "(sem fila, sem parcial, sem impacto). Com os três a favor e ainda negativo, "
-      + "a conclusão é sólida: a taxa maker não paga a seleção adversa nestas barras.";
+  const veredito = !melhor
+    ? `NENHUMA largura hedgeou ${MIN_HEDGED}+ vezes — a mesa não operou, e isso não é `
+      + "resultado. Larguras acima de ±0.10% quase não enchem os dois lados em 5 barras de 1m."
+    : algumPositivo
+      ? `melhor largura COM amostra: ±${melhor.larguraPct}% → ${melhor.netPerCyclePct.toFixed(4)}%/ciclo `
+        + `(${melhor.hedged} hedges, ${melhor.stops} stops). ⚠️ SEM fila, SEM parcial, SEM impacto — `
+        + "os três empurram para cima. Positivo aqui é convite para medir com livro real."
+      : `NENHUMA largura com amostra ficou positiva. A mais operada (±${porLargura[0].larguraPct}%) `
+        + `hedgeou ${porLargura[0].hedged}× e rendeu ${porLargura[0].netPerCyclePct.toFixed(4)}%/ciclo. `
+        + `${vazias.length > 0 ? `As larguras ≥±${vazias[0].larguraPct}% aparecem em zero ou positivo `
+          + "porque quase NÃO OPERAM — é o não-fazer-nada, não lucro. " : ""}`
+        + "E a simulação já é otimista de propósito: com fila, parcial e impacto a favor "
+        + "e ainda negativo, a conclusão é sólida — a taxa maker não paga a seleção adversa.";
 
   await recordEvent("maker_backtest", { meta: {
     barras: BARRAS, passo: PASSO, feePct: MAKER_FEE_PCT, simbolos: ok.length,
     verdict: veredito, algumPositivo,
+    minHedged: MIN_HEDGED,
+    comAmostra: candidatas.length,
     curva: porLargura.map((l) => ({
       larg: l.larguraPct,
       liq: Math.round(l.netPerCyclePct * 10000) / 10000,
@@ -153,6 +183,7 @@ export async function POST(): Promise<NextResponse> {
 
   return NextResponse.json({
     curva: porLargura, veredito, algumPositivo,
+    minHedged: MIN_HEDGED, comAmostra: candidatas.length,
     feePct: MAKER_FEE_PCT, barras: BARRAS, passo: PASSO,
     simbolos: ok.map((s) => s.symbol),
     naoMedido: [
