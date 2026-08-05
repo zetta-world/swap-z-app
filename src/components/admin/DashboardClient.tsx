@@ -23,6 +23,7 @@ import CalibrationPanel       from "./panels/CalibrationPanel";
 import WhatWorkedPanel        from "./panels/WhatWorkedPanel";
 import FundingPanel           from "./panels/FundingPanel";
 import LigasPanel             from "./panels/LigasPanel";
+import LabPanel               from "./panels/LabPanel";
 import LaunchGatePanel        from "./panels/LaunchGatePanel";
 import MarginPanel            from "./panels/MarginPanel";
 import AiCostPanel            from "./panels/AiCostPanel";
@@ -63,6 +64,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "what-worked":        <WhatWorkedPanel />,
   "funding":            <FundingPanel />,
   "ligas":              <LigasPanel />,
+  "lab":                <LabPanel />,
   "launch-gate":        <LaunchGatePanel />,
   "margin":             <MarginPanel />,
   "ai-cost":            <AiCostPanel />,
