@@ -50,6 +50,16 @@ type Maker = {
   curva: Curva[]; veredito: string; algumPositivo: boolean;
   feePct: number; barras: number; naoMedido: string[]; aviso: string; tookMs: number;
 };
+/** A sonda de venue nova: mede se o ADAPTADOR lê, não se há spread. */
+type Venues = {
+  resumo: { tentadas: number; funcionando: number; adaptadorQuebrado: number; naoResponderam: number };
+  linhas: Array<{
+    venue: string; ok: boolean; status: number | string; simbolos: number;
+    amostra: Array<{ s: string; p: number | null }>; diagnostico: string;
+  }>;
+  recusadas: Record<string, string>;
+  portao: string[];
+};
 
 const pct = (n: number | null | undefined, d = 3) =>
   n == null ? "—" : `${n > 0 ? "+" : ""}${n.toFixed(d)}%`;
@@ -58,19 +68,24 @@ export default function LigasPanel() {
   const [spot, setSpot] = useState<Censo | null>(null);
   const [perp, setPerp] = useState<Censo | null>(null);
   const [maker, setMaker] = useState<Maker | null>(null);
+  const [venues, setVenues] = useState<Venues | null>(null);
   const [rodando, setRodando] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  async function rodar(qual: "spot" | "perp" | "maker") {
+  async function rodar(qual: "spot" | "perp" | "maker" | "venues") {
     setRodando(qual); setErr(null);
-    const rota = qual === "spot" ? "depth-census" : qual === "perp" ? "perp-census" : "maker-backtest";
+    const rota = qual === "spot" ? "depth-census"
+      : qual === "perp" ? "perp-census"
+      : qual === "maker" ? "maker-backtest"
+      : "venue-probe";
     try {
       const res = await fetch(`/admin/api/${rota}`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.status);
       if (qual === "spot") setSpot(json);
       else if (qual === "perp") setPerp(json);
-      else setMaker(json);
+      else if (qual === "maker") setMaker(json);
+      else setVenues(json);
     } catch (e) { setErr(String(e)); } finally { setRodando(null); }
   }
 
@@ -159,6 +174,61 @@ export default function LigasPanel() {
       <button className="adm-btn" onClick={() => rodar("maker")} disabled={!!rodando} style={{ marginTop: 6 }}>
         {rodando === "maker" ? "simulando ordens limitadas…" : "📮 MESA MAKER · postar em vez de atravessar"}
       </button>
+
+      {/* A SONDA DE VENUE NOVA. Rótulo distinto dos outros três de propósito —
+          ela não mede spread, mede se o ADAPTADOR lê. */}
+      <button className="adm-btn" onClick={() => rodar("venues")} disabled={!!rodando} style={{ marginTop: 6 }}>
+        {rodando === "venues" ? "testando adaptadores…" : "🔌 VENUES NOVAS · o adaptador lê?"}
+      </button>
+
+      {venues && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 9, color: "var(--adm-ink-3)", lineHeight: 1.6 }}>
+            {venues.resumo.funcionando} de {venues.resumo.tentadas} adaptadores funcionam
+            {venues.resumo.adaptadorQuebrado > 0 && (
+              <span style={{ color: "var(--adm-red)" }}>
+                {" · "}{venues.resumo.adaptadorQuebrado} respondeu e eu li ERRADO
+              </span>
+            )}
+            {venues.resumo.naoResponderam > 0 && (
+              <span style={{ color: "var(--adm-amber)" }}>
+                {" · "}{venues.resumo.naoResponderam} não responderam
+              </span>
+            )}
+          </div>
+          <div style={{ overflowX: "auto", marginTop: 4 }}>
+            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+              <tbody>
+                {venues.linhas.map((l) => (
+                  <tr key={l.venue} style={{ borderTop: "1px solid var(--adm-border)" }}>
+                    <td style={{ padding: "2px 4px", color: "var(--adm-ink-2)" }}>{l.venue}</td>
+                    <td style={{ padding: "2px 4px", textAlign: "right", color: "var(--adm-ink-4)" }}>
+                      {String(l.status)}
+                    </td>
+                    <td style={{
+                      padding: "2px 4px", textAlign: "right",
+                      color: l.simbolos > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                    }}>
+                      <b>{l.simbolos}</b> símb
+                    </td>
+                    <td style={{ padding: "2px 4px", color: "var(--adm-ink-4)", fontSize: 8 }}>
+                      {l.amostra.map((a) => `${a.s} ${a.p}`).join(" · ") || l.diagnostico}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 5, lineHeight: 1.7 }}>
+            <div style={{ color: "var(--adm-amber)" }}>
+              ⚠️ recusadas, com motivo — nenhuma some em silêncio:
+            </div>
+            {Object.entries(venues.recusadas).map(([v, m]) => <div key={v}>· <b>{v}</b>: {m}</div>)}
+            <div style={{ marginTop: 4, color: "var(--adm-amber)" }}>portão para promover:</div>
+            {venues.portao.map((p) => <div key={p}>· {p}</div>)}
+          </div>
+        </div>
+      )}
 
       {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 6 }}>{err}</div>}
 
