@@ -4,6 +4,7 @@ import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@
 import { measureVenues, measureSymbols, truthVerdict, type VenueQuote } from "@/lib/zion/venue-truth";
 import { spreadWindow } from "@/lib/zion/arbiter";
 import { recordEvent } from "@/lib/admin/track";
+import { fetchObservedVenues } from "@/lib/api/cex-spot-extra";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -52,13 +53,41 @@ export async function GET(): Promise<NextResponse> {
   await requireAdmin();
   const t0 = Date.now();
 
-  const spot = await getMultiExchangeSpot([...CEX_TRACKED_SYMBOLS], { skipVenues: EXCLUDE_VENUES as CexSpotSource[] });
+  const simbolos = [...CEX_TRACKED_SYMBOLS];
+  const spot = await getMultiExchangeSpot(simbolos, { skipVenues: EXCLUDE_VENUES as CexSpotSource[] });
   const matrix = spot as unknown as Map<string, Map<string, { priceUsd: number }>>;
   for (const venues of matrix.values()) for (const v of EXCLUDE_VENUES) venues.delete(v);
 
   const bySymbol = new Map<string, VenueQuote[]>();
   for (const [symbol, venues] of matrix) {
     bySymbol.set(symbol, [...venues.entries()].map(([venue, { priceUsd }]) => ({ venue, priceUsd })));
+  }
+
+  /**
+   * ⚠️ AS VENUES EM OBSERVAÇÃO ENTRAM AQUI — e SÓ aqui (04/08).
+   *
+   * O dono tem conta em ~19 corretoras e quis somar todas. Elas entram na
+   * MEDIÇÃO, não na matriz das mesas: `ObservedVenue` é um tipo separado de
+   * `CexSpotSource` justamente para que nenhuma mesa possa enxergá-las por
+   * descuido.
+   *
+   * A Kucoin é o precedente inteiro. Ontem ela entrou e mediu 0.601% de ruído
+   * contra 0.037% da binance, com 31 dos 32 gaps acima do piso vindo dela e 16
+   * de 19 desvios negativos — feed atrasado, não praça barata. Se tivesse ido
+   * direto para a matriz, a mesa estaria vendo 31 oportunidades falsas.
+   *
+   * Venue nova é hipótese, não upgrade. Esta rota é onde a hipótese é testada.
+   */
+  const observadas = await fetchObservedVenues(simbolos);
+  for (const r of observadas) {
+    if (!r.ok || r.parsed === 0) continue;
+    for (const [symbol, priceUsd] of r.quotes) {
+      const linha = bySymbol.get(symbol);
+      if (linha) linha.push({ venue: r.venue, priceUsd });
+      // Símbolo que SÓ a venue observada cota não vira linha nova: com uma
+      // cotação só não há mediana, e um símbolo com uma testemunha entraria na
+      // conta como se tivesse dispersão zero.
+    }
   }
 
   const stats = measureVenues(bySymbol);
