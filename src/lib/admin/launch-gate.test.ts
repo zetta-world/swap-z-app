@@ -83,4 +83,49 @@ describe("evaluate — conjunção, e pendente nunca aprova", () => {
     expect(v.passed).toBe(false);
     expect(v.pending).toBeGreaterThan(0);
   });
+
+  /**
+   * ⚠️ O CASO QUE ESCAPOU, E POR QUE ESCAPOU (05/08).
+   *
+   * O teste acima usa `decided: 0` JUNTO com `netExpectancy: null`. Nunca
+   * exercitou a combinação que o painel produziu de verdade: zero decididos e
+   * uma expectancy NÃO-nula, vinda de posições não resolvidas.
+   *
+   * O dono viu antes de mim, no cartão da FREYJA:
+   *
+   *   ✗ Amostra ≥ 100 decididos ......... 0/100 decididos
+   *   ✓ Expectancy líquida positiva ..... +0.290% por trade, líquido
+   *
+   * Dois critérios no mesmo cartão, um dizendo que não há amostra e o outro
+   * aprovando uma média dessa amostra inexistente. O de drawdown, no mesmo
+   * arquivo, sempre teve a guarda `decided === 0`; o de expectancy não.
+   *
+   * Fixture com os números reais da FREYJA para não voltar.
+   */
+  it("expectancy com ZERO decididos fica PENDENTE, nunca aprova — o caso da FREYJA", () => {
+    const v = evaluate({
+      ...base, decided: 0, netExpectancy: 0.29,
+      buyHoldPct: null, regimes: new Set(["RANGING", "TRENDING_UP"]),
+    });
+    const c = v.criteria.find((x) => x.id === "net_positive")!;
+    expect(c.pass).toBe(false);
+    expect(c.pending).toBe(true);
+    expect(c.detail).toContain("amostra vazia");
+    expect(v.passed).toBe(false);
+  });
+
+  it("a mesma guarda do drawdown vale para a expectancy — simetria entre critérios", () => {
+    const zerada = evaluate({ ...base, decided: 0, netExpectancy: 5 });
+    const dd = zerada.criteria.find((x) => x.id === "drawdown")!;
+    const exp = zerada.criteria.find((x) => x.id === "net_positive")!;
+    // Um critério não pode julgar o que o outro declara não existir.
+    expect(dd.pending).toBe(exp.pending);
+  });
+
+  it("com amostra, a expectancy positiva volta a aprovar normalmente", () => {
+    const v = evaluate({ ...base, decided: MIN_DECIDED, netExpectancy: 0.29 });
+    const c = v.criteria.find((x) => x.id === "net_positive")!;
+    expect(c.pending).toBe(false);
+    expect(c.pass).toBe(true);
+  });
 });

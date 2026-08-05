@@ -76,14 +76,51 @@ export async function GET(): Promise<NextResponse> {
     const starting = Number(a.starting_usd);
     const realized = Number(a.realized_pnl_usd);
     const unrealized = unreal.get(a.id) ?? 0;
+    /**
+     * ⚠️⚠️ ESTE NÚMERO NÃO É O CAIXA, E A TELA DIZIA QUE ERA (05/08).
+     *
+     * `equity = capital + realizado + não-realizado` é a conta CONTÁBIL: o que
+     * a carteira DEVERIA ter se nada tivesse vazado. A coluna `cash_usd` é o
+     * que ela REALMENTE tem.
+     *
+     * Nas carteiras aposentadas as duas divergem brutalmente, e a tela mostrava
+     * só a primeira:
+     *
+     *   oracle_mistral   equity exibido $1.001   ·   cash_usd real  $9,80
+     *   deepseek_scan    equity exibido   $998   ·   cash_usd real  $0,40
+     *   grok_scan        equity exibido   $994   ·   cash_usd real  $0,00
+     *
+     * O total do painel dizia PATRIMÔNIO $20.842. A soma real de `cash_usd` nas
+     * 23 carteiras é ≈ $11.491. Nove mil e trezentos dólares de diferença, numa
+     * tela que trazia um ✓ verde dizendo "caixa bate com os trades".
+     *
+     * O ✓ não estava mentindo por si: ele vem de `planRepair`, que por decisão
+     * de 04/08 só olha as carteiras VIVAS. Nessas, bate mesmo. Só que ele era
+     * exibido acima de uma lista com as 23, e lido como afirmação sobre todas.
+     *
+     * As aposentadas estarem furadas é DELIBERADO — é a cicatriz preservada do
+     * vazamento de julho, e recreditá-las apagaria o registro. O defeito nunca
+     * foi o buraco: foi a tela mostrar o valor contábil no lugar do caixa e
+     * carimbar de "confere".
+     *
+     * Agora as duas viajam juntas, e o buraco é uma coluna.
+     */
     const equity = starting + realized + unrealized;
+    const cash = Number(a.cash_usd);
+    // O que os trades justificam ter em caixa AGORA (posições abertas travam
+    // capital, então elas saem da conta).
+    const cashEsperado = starting + realized;
+    const buracoUsd = cash - cashEsperado;
     const decided = Number(a.wins) + Number(a.losses);
     const cb = closedBy.get(a.id) ?? { pnls: [], pts: [], recent: [] };
     const wins = cb.pnls.filter((p) => p > 0), losses = cb.pnls.filter((p) => p < 0);
     const sumWin = wins.reduce((s, p) => s + p, 0), sumLoss = losses.reduce((s, p) => s + p, 0);
     return {
       source: a.source, label: a.label,
-      startingUsd: starting, cashUsd: Number(a.cash_usd), equity,
+      startingUsd: starting, cashUsd: cash, equity,
+      /** O caixa que os trades justificam, e o buraco entre ele e o real. */
+      cashEsperadoUsd: cashEsperado,
+      buracoUsd: Math.abs(buracoUsd) < 0.01 ? 0 : buracoUsd,
       realizedPnl: realized, unrealizedPnl: unrealized,
       returnPct: (equity / starting - 1) * 100,
       wins: Number(a.wins), losses: Number(a.losses),
@@ -108,6 +145,17 @@ export async function GET(): Promise<NextResponse> {
   const totals = {
     startingUsd:   rows.reduce((s, r) => s + r.startingUsd, 0),
     equity:        rows.reduce((s, r) => s + r.equity, 0),
+    /**
+     * ⚠️ O CAIXA REAL SOMADO, ao lado do contábil (05/08).
+     *
+     * `equity` somava $20.842 enquanto o caixa real somava ≈$11.491, e só o
+     * primeiro aparecia — sob um ✓ verde de "caixa bate". Um total que ignora a
+     * coluna do caixa não pode ser o único total de um painel de carteiras.
+     */
+    cashUsd:       rows.reduce((s, r) => s + r.cashUsd, 0),
+    buracoUsd:     rows.reduce((s, r) => s + r.buracoUsd, 0),
+    /** Quantas carteiras têm buraco — o número que resume a honestidade da tela. */
+    comBuraco:     rows.filter((r) => r.buracoUsd < -0.01).length,
     realizedPnl:   rows.reduce((s, r) => s + r.realizedPnl, 0),
     openPositions: rows.reduce((s, r) => s + r.openPositions, 0),
     exposure:      rows.reduce((s, r) => s + r.exposure, 0),

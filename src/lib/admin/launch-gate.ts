@@ -132,11 +132,35 @@ export function evaluate(input: {
       id: "net_positive",
       name: "Expectancy líquida positiva",
       why: "lucro bruto que a taxa come não é lucro",
-      pending: input.netExpectancy === null,
-      pass: input.netExpectancy !== null && input.netExpectancy > 0,
-      detail: input.netExpectancy === null
-        ? "sem trade resolvido"
-        : `${input.netExpectancy >= 0 ? "+" : ""}${input.netExpectancy.toFixed(3)}% por trade, líquido`,
+      /**
+       * ⚠️ O `decided === 0` FALTAVA AQUI, E O PORTÃO APROVAVA NO VAZIO (05/08).
+       *
+       * O critério de drawdown, quinze linhas acima, tem a guarda de amostra:
+       * `pending: input.decided === 0`. Este não tinha — só checava se o número
+       * era nulo.
+       *
+       * Resultado no painel, e o dono viu antes de mim: a FREYJA aparecia com
+       *
+       *   ✗ Amostra ≥ 100 decididos ......... 0/100 decididos
+       *   ✓ Expectancy líquida positiva ..... +0.290% por trade, líquido
+       *
+       * Um critério dizendo ZERO trades decididos e o de baixo dando VERDE numa
+       * média desses zero trades — no mesmo cartão, um do lado do outro.
+       *
+       * De onde saía o +0.290%: de posições não resolvidas, que entram no
+       * cálculo de expectancy mas não contam como decididas. Média de amostra
+       * vazia não é zero nem nulo, é indefinida — e aqui virava aprovação.
+       *
+       * É a regra da casa que mais custou caro: amostra abaixo do limiar NUNCA
+       * vira número, e ela vale em dobro num portão que decide lançamento.
+       */
+      pending: input.netExpectancy === null || input.decided === 0,
+      pass: input.netExpectancy !== null && input.decided > 0 && input.netExpectancy > 0,
+      detail: input.decided === 0
+        ? "sem trade decidido — média de amostra vazia não é resultado"
+        : input.netExpectancy === null
+          ? "sem trade resolvido"
+          : `${input.netExpectancy >= 0 ? "+" : ""}${input.netExpectancy.toFixed(3)}% por trade, líquido`,
     },
   ];
 
