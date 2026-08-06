@@ -341,10 +341,56 @@ coluna. Mudar `starting_usd` com trades antigos dentro reescreveria o retorno
 histórico — uma perda de 2% em $1.000 viraria 0,4% em $5.000 sem nenhum trade
 novo. Então arquiva a rodada (nunca apaga) e recomeça com o capital certo.
 
-**Pendente da Fase 1:**
+### As mesas paradas — diagnóstico, e ele inverte a conclusão óbvia
+
+A leitura fácil seria "12 mesas ociosas, aposenta". O dado diz outra coisa, e
+as três categorias exigem ações opostas:
+
+**1. URÐR está CORRETA em não operar.** 142 ticks, 15 com oferta, e nas 15
+`vetoedByRecord: 1`. A mesa cujo mandato é escolher pelo histórico MEDIDO
+recebeu candidatos e recusou todos — porque o histórico da biblioteca é
+negativo. **Ela é a única mesa fazendo o que deveria.** Aposentá-la seria
+desligar o único agente que se recusa a operar uma biblioteca que mede
+negativo.
+
+> ⚠️ Eu quase errei isto. Olhei UM tick, vi `offered: 0`, e ia reportar "a
+> mesa está desconectada". Com os 142 a resposta é o contrário. Um tick não
+> é uma amostra.
+
+**2. Três aposentadas estão sem caixa** (grok $0,00, deepseek $0,40,
+oracle_mistral $9,80 — piso de $25). Não operam mesmo; é a cicatriz.
+
+**3. FREYJA, ULLR e oracle_grok não emitem NADA.** Zero posições na
+existência inteira **e zero eventos de tick**. Não dá para saber se rodam e
+não acham nada, ou se não rodam. **Não se aposenta o que não se consegue
+diagnosticar** — elas precisam de evento de tick antes de qualquer veredito.
+
+### Pendente da Fase 1
+
 - rodar a recapitalização (é botão, não automático — o dono decide quando)
-- dar SHORT às direcionais (hoje são todas `long_only`)
-- aposentar ou justificar as 12 mesas com zero atividade
+- **SHORT: bloqueado pela medição.** Ver abaixo.
+- dar tick a FREYJA, ULLR e oracle_grok para poder julgá-las
+- mostrar no painel POR QUE uma mesa está em silêncio (a URÐR parece morta e
+  está trabalhando)
+
+### ⚠️ O SHORT ESTÁ BLOQUEADO POR FALTA DE MEDIÇÃO — e a descoberta é minha
+
+O motor de paper JÁ suporta venda ponta a ponta: `canEnter` valida os dois
+lados, `computeExit` usa `dir = side === "buy" ? 1 : -1`, e o P&L respeita o
+sinal. O bloqueio é só o `buildBracket`, que fixa `side: "buy"` e rejeita
+geometria invertida — de propósito e documentado.
+
+Antes de destravar, fui ler o resultado do **teste espelho** (`inverseNetPct`:
+para cada trade, a posição refletida resolvida contra as mesmas velas). É
+exatamente o número que responde "vale dar short a estas mesas?".
+
+**E não havia o que ler.** O espelho é calculado desde 03/08, aparece na tela
+do backtest, e nunca chegou à foto do `playbook_record`.
+
+Quarta vez que este defeito aparece — e desta vez ele quase me fez construir
+capacidade de venda por palpite, na semana em que a regra virou "mede antes de
+construir". Corrigido em 05/08; o short espera **uma rodada do backtest** para
+o espelho existir gravado.
 
 ---
 
