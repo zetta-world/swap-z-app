@@ -92,10 +92,22 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 5000,
     capitalWhy: "mesmo capital das mesas de tendência — o filtro é a variável isolada, "
       + "e ele é medido contra a MESMA estratégia sem filtro",
-    status: "cinza",
+    status: "morta",
     hypothesis: "direção paga, lateralidade mata. Mercado a −63% deu +27,7%; a +0,1% deu "
       + "+18,5%; a −15% SEM direção matou todas. ⚠️ Já levantei uma hipótese de regime antes "
       + "(o clima) e a minha própria medição derrubou — isto é candidato, não promessa.",
+    killedWhy: "MEDIDO em 06/08 pela quebra `byRegime`, DENTRO da janela, e a hipótese caiu "
+      + "invertida: RANGING (lateral) rende −0,446% com n=176, e TRENDING_UP rende −0,777% "
+      + "com n=135. A lateralidade é o MELHOR terreno desta biblioteca, não o pior — por 0,33 "
+      + "ponto, com amostra boa nos dois. Faz sentido depois de dito: cinco dos nove playbooks "
+      + "são reversão à média (range_reversion, pivot_reversion, support_accumulation, "
+      + "capitulation_reversal, absorption), e reversão precisa de faixa, não de tendência. "
+      + "Um filtro 'só opere com direção' bloquearia o terreno onde ela perde menos. "
+      + "⚠️ E não salvaria nada: filtrar para RANGING+TRANSITIONING melhora de −0,610% para "
+      + "−0,440% por trade e custa 41% dos trades — continua negativo. "
+      + "⚠️ O QUE ISTO NÃO REFUTA: os +27,7% do crash foram da MÉDIA MÓVEL 50, que é "
+      + "seguidora de tendência e obviamente precisa de tendência. São estratégias opostas; "
+      + "o regime certo para uma é o errado para a outra. Ver `trend_ma50_long_short`.",
   },
   {
     slug: "buy_and_hold",

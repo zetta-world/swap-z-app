@@ -447,7 +447,7 @@ o espelho existir gravado.
 
 ---
 
-### FASE 2 — Filtro de regime (V2) · 🔴
+### FASE 2 — Filtro de regime · 🔴 HIPÓTESE REFUTADA (06/08)
 *A prioridade nº 1 do dono, e a única coisa positiva que medimos.*
 
 Direção paga, lateralidade mata. Nas três janelas: mercado a −63% deu +27,7%,
@@ -458,9 +458,53 @@ de clima) e a minha própria medição derrubou. Isto é candidato, não promess
 e o teste tem que ser **dentro da janela**, não entre janelas, que foi o erro
 da primeira vez.
 
-**Critério de conclusão:** o filtro é medido contra a mesma estratégia sem
-filtro, na mesma janela, e a diferença é registrada com amostra. Se não
-sustentar, é desligado e o motivo é documentado — como foi o clima.
+### O resultado: a hipótese caiu INVERTIDA
+
+Nada foi construído. A quebra `byRegime` já era medida — **DENTRO da janela**,
+que era a exigência — e ela respondeu antes de existir código:
+
+| regime | n | líquido por trade |
+|---|---|---|
+| TRANSITIONING | 33 | −0,408% |
+| **RANGING** (lateral) | **176** | **−0,446%** |
+| **TRENDING_UP** (tendência) | **135** | **−0,777%** |
+| TRENDING_DOWN | 11 | −1,805% |
+
+**A lateralidade é o MELHOR terreno desta biblioteca, não o pior** — por 0,33
+ponto, com amostra boa nos dois lados.
+
+Faz sentido depois de dito: **cinco dos nove playbooks são reversão à média**
+(range_reversion, pivot_reversion, support_accumulation, capitulation_reversal,
+absorption), e reversão precisa de FAIXA, não de tendência. Um filtro "só opere
+com direção" bloquearia justamente o terreno onde ela perde menos.
+
+**E não salvaria nada:** filtrar para RANGING+TRANSITIONING melhora de −0,610%
+para −0,440% por trade e custa **41% dos trades**. Continua negativo.
+
+### ⚠️ O que isto NÃO refuta
+
+Os **+27,7%** do crash foram da **média móvel de 50**, que é seguidora de
+tendência e obviamente precisa de tendência. São estratégias **opostas** — o
+regime certo para uma é o errado para a outra. `trend_ma50_long_short` segue
+viva e ainda vai ser medida com capital próprio.
+
+### Segunda vez que uma hipótese de regime minha cai
+
+A primeira foi o filtro de clima, refutado em 04/08. A ressalva que eu tinha
+registrado — *"isto é candidato, não promessa"* — se provou necessária pela
+segunda vez.
+
+**A hipótese fica gravada ao lado do motivo da reprovação**, com teste
+exigindo as duas. Apagar a previsão deixaria só a conclusão, e conclusão sem a
+previsão que ela derrubou é exatamente o que permite reescrever a previsão
+depois do resultado.
+
+### E o defeito que apareceu no caminho (o quinto)
+
+`byRegime` está no tipo `PlaybookRecordEntry` desde sempre, o registro ATUAL o
+grava, e a **foto histórica o descartava** — junto com o espelho, consertado no
+dia anterior pelo mesmo motivo. Sem histórico não dá para saber se a diferença
+entre regimes é estável ou se é a foto de hoje. Corrigido.
 
 ---
 
@@ -571,7 +615,7 @@ Traduzido em regra:
 |---|---|
 | 0 · Fundação | 🟢 **concluída 05/08** |
 | 1 · Mesas existentes | 🟢 **concluída 06/08** |
-| 2 · Filtro de regime | 🔴 |
+| 2 · Filtro de regime | 🔴 **hipótese refutada 06/08** |
 | 3 · Funding janela longa | 🔴 |
 | 4 · Rendimento integrado | 🔴 |
 | 5 · Opção coberta | 🔴 |
