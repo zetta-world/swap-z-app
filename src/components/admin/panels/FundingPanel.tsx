@@ -25,6 +25,8 @@ import TerminalPanel from "../TerminalPanel";
 type Simbolo = {
   symbol: string; periods: number; days: number;
   meanPct: number; medianPct: number; annualizedPct: number;
+  /** ⚠️ O que decide, por símbolo: um ano menos UMA ida e volta. */
+  netAnnualizedPct: number;
   grossPct: number; netPct: number; negativeShare: number;
   maxDrawdownPct: number; breakEvenDays: number | null; worstNegativeStreak: number;
 };
@@ -34,11 +36,16 @@ type Dados = {
     simbolos: number; comAmostra: number; janelaDias: number; custoPct: number;
     medianaLiquidaPct: number | null; medianaBrutaPct: number | null;
     medianaAnualizadaPct: number | null;
-    positivosLiquidos: number; robustos: number;
+    /** ⚠️ A régua do veredito. Ver `fundingCounts` em funding.ts. */
+    positivosNoAno: number; robustos: number; minRobustos?: number;
+    /** Outra pergunta: pagou as 4 pernas DENTRO da janela entregue. */
+    pagaramNaJanela?: number;
     medianaNegativeShare: number | null; piorTomboPct: number | null;
     rho: number | null; apostasEfetivas: number;
     /** ⚠️ A janela entregue é a pedida? Ver a nota no route.ts. */
     paginacaoCortada?: boolean;
+    /** Curta porque a FONTE acabou — ação diferente de paginação cortada. */
+    fonteEsgotada?: boolean;
     janelaPedidaDias?: number;
     diasMedianos?: number | null;
     medianaLiquidaAnualPct?: number | null;
@@ -118,6 +125,24 @@ export default function FundingPanel() {
             </div>
           )}
 
+          {/* ⚠️ TETO DA FONTE ≠ CORTE NOSSO, e a ação é oposta (06/08).
+                 Paginação cortada se resolve rodando de novo. Fonte esgotada
+                 não se resolve: ou se aceita a janela, ou se troca de fonte.
+                 Chamar as duas de "janela curta" faria alguém clicar de novo
+                 por um ano que a fonte nunca vai entregar. */}
+          {d.resumo.fonteEsgotada && !d.resumo.paginacaoCortada && (
+            <div style={{
+              border: "1px solid var(--adm-amber)", borderRadius: 3, padding: "5px 7px",
+              marginBottom: 8, fontSize: 8.5, color: "var(--adm-amber)", lineHeight: 1.6,
+            }}>
+              ⚠️ A FONTE ESGOTOU, não fomos nós. A paginação rodou até o fim e o relógio
+              não estourou — o histórico público simplesmente termina em{" "}
+              <b>{Math.round(d.resumo.diasMedianos ?? 0)}d</b> dos{" "}
+              {d.resumo.janelaPedidaDias}d pedidos. <b>Rodar de novo não muda.</b> O que muda
+              é trocar de fonte, ou passar a acumular o funding aqui todo dia.
+            </div>
+          )}
+
           <div style={{ fontSize: 9, color: "var(--adm-ink-3)", lineHeight: 1.7, marginBottom: 8 }}>
             {d.resumo.comAmostra} símbolos com amostra
             {d.resumo.semAmostra != null && d.resumo.semAmostra > 0 && (
@@ -137,22 +162,50 @@ export default function FundingPanel() {
               </>
             )}
             {" · "}custo das 4 pernas {d.resumo.custoPct}%
-            <div>
-              mediana LÍQUIDA da janela:{" "}
+            {/* ⚠️ O NÚMERO QUE DECIDE, EM PRIMEIRO E EM CORPO MAIOR (06/08).
+                   Ele era calculado, gravado em `lab_results` e NÃO aparecia na
+                   tela: o destaque ia para o líquido da JANELA (+0,04%) e para
+                   o anualizado BRUTO (+1,6%), enquanto o veredito julgava por
+                   um terceiro número que ninguém via. Ver `netAnnualizedPct`. */}
+            <div style={{ fontSize: 11, marginTop: 4 }}>
+              LÍQUIDO POR ANO (o que decide):{" "}
               <b style={{
-                color: (d.resumo.medianaLiquidaPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                fontSize: 14,
+                color: (d.resumo.medianaLiquidaAnualPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
               }}>
-                {pct(d.resumo.medianaLiquidaPct)}
+                {pct(d.resumo.medianaLiquidaAnualPct, 2)}
               </b>
-              {" · "}bruta {pct(d.resumo.medianaBrutaPct)}
-              {" · "}anualizado (extrapolação) {pct(d.resumo.medianaAnualizadaPct, 1)}
+              <span style={{ color: "var(--adm-ink-4)" }}>
+                {" "}— mediana, um ano de funding menos UMA ida e volta
+              </span>
             </div>
             <div>
-              positivos no líquido: <b>{d.resumo.positivosLiquidos}</b>/{d.resumo.comAmostra}
+              na janela entregue: líquido {pct(d.resumo.medianaLiquidaPct)}
+              {" · "}bruto {pct(d.resumo.medianaBrutaPct)}
+              {" · "}anualizado BRUTO {pct(d.resumo.medianaAnualizadaPct, 1)}
+              <span style={{ color: "var(--adm-ink-4)" }}> (sem as pernas)</span>
+            </div>
+            {/* ⚠️ AS DUAS CONTAGENS TÊM RÉGUAS DIFERENTES, e até 06/08 apareciam
+                   com o mesmo nome. "23 de 50" no veredito contra "26/50" aqui
+                   embaixo eram netAnnualized × netPct-da-janela, sem rótulo. */}
+            <div>
+              positivos NO ANO: <b>{d.resumo.positivosNoAno}</b>/{d.resumo.comAmostra}
               {" · "}destes, com negativo raro:{" "}
-              <b style={{ color: d.resumo.robustos > 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
+              <b style={{
+                color: d.resumo.robustos >= (d.resumo.minRobustos ?? 10)
+                  ? "var(--adm-green)" : "var(--adm-amber)",
+              }}>
                 {d.resumo.robustos}
               </b>
+              <span style={{ color: "var(--adm-ink-4)" }}>
+                {" "}(piso {d.resumo.minRobustos ?? 10} — abaixo disso é um nome de sorte, não cesta)
+              </span>
+              {d.resumo.pagaramNaJanela != null && (
+                <div style={{ color: "var(--adm-ink-4)" }}>
+                  outra pergunta: <b>{d.resumo.pagaramNaJanela}</b> pagaram as 4 pernas DENTRO
+                  {" "}dos {Math.round(d.resumo.diasMedianos ?? 0)}d entregues
+                </div>
+              )}
             </div>
             {/* DE ONDE VEIO O DADO. A primeira rodada falhou inteira porque o
                 host de futuros da Binance recusa IP de datacenter, e o evento
@@ -177,9 +230,12 @@ export default function FundingPanel() {
               <thead>
                 <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "3px 5px" }}>SÍMBOLO</th>
-                  <th style={{ padding: "3px 5px" }}>LÍQUIDO</th>
+                  {/* A primeira coluna é a que o veredito usa. Antes a tabela
+                      abria com o líquido da JANELA e a coluna "ANUAL." era o
+                      anualizado BRUTO — nenhuma das duas era a régua. */}
+                  <th style={{ padding: "3px 5px" }}>LÍQ/ANO</th>
+                  <th style={{ padding: "3px 5px" }}>NA JANELA</th>
                   <th style={{ padding: "3px 5px" }}>BRUTO</th>
-                  <th style={{ padding: "3px 5px" }}>ANUAL.</th>
                   <th style={{ padding: "3px 5px" }}>% NEG</th>
                   <th style={{ padding: "3px 5px" }}>TOMBO</th>
                   <th style={{ padding: "3px 5px" }}>EQUIL.</th>
@@ -194,13 +250,13 @@ export default function FundingPanel() {
                     </td>
                     <td style={{
                       padding: "3px 5px",
-                      color: s.netPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                      color: s.netAnnualizedPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
                     }}>
-                      <b>{pct(s.netPct)}</b>
+                      <b>{pct(s.netAnnualizedPct, 1)}</b>
                     </td>
-                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-3)" }}>{pct(s.grossPct)}</td>
+                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-3)" }}>{pct(s.netPct)}</td>
                     <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>
-                      {pct(s.annualizedPct, 1)}
+                      {pct(s.grossPct)}
                     </td>
                     <td style={{
                       padding: "3px 5px",
@@ -228,8 +284,10 @@ export default function FundingPanel() {
             <div style={{ color: "var(--adm-amber)" }}>⚠️ NÃO está nesta conta:</div>
             {d.naoMedido.map((n) => <div key={n}>· {n}</div>)}
             <div style={{ marginTop: 4 }}>
-              LÍQUIDO = funding somado na janela menos as 4 pernas. EQUIL. = dias de funding
-              médio só para pagar as pernas. ANUAL. é EXTRAPOLAÇÃO da janela, não medição.
+              LÍQ/ANO = um ano de funding menos UMA ida e volta — é a régua do veredito, e
+              é EXTRAPOLAÇÃO da janela, não medição de um ano. NA JANELA = o que sobrou
+              dentro dos dias entregues, onde as pernas se pagam uma vez só e a janela curta
+              pesa contra. EQUIL. = dias de funding médio só para pagar as pernas.
               {" · "}{d.resumo.simbolos} símbolos lidos · {(d.tookMs / 1000).toFixed(1)}s
             </div>
           </div>
