@@ -144,6 +144,9 @@ export async function POST(req: Request): Promise<NextResponse> {
       // O clima VAI JUNTO. Foi a medição que sustenta o filtro de regime, e
       // exibi-la sem gravá-la tornaria o filtro inauditável no dia seguinte.
       byWeather: s.diag?.byWeather,
+      // ⚠️ O ESPELHO. Calculado desde 03/08 e nunca persistido — ver a nota em
+      // `playbook-record.ts`. É o número que decide o short.
+      inverseNetPerTrade: s.diag?.inverseNetPerTrade ?? null,
     })),
     windowDays,
     marketPct,

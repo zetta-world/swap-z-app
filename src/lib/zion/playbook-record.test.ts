@@ -384,3 +384,47 @@ describe("o que decide precisa sobreviver à requisição", () => {
     expect(entry.byWeather).toBeUndefined();
   });
 });
+
+/**
+ * O ESPELHO PERSISTE — a quarta vez que "número que decide não era gravado".
+ *
+ * ⚠️ COMO ISTO FOI DESCOBERTO (05/08).
+ *
+ * Ao começar a implementar o SHORT nas mesas direcionais, fui ler o resultado
+ * do espelho para decidir se valia a pena. Não havia o que ler:
+ * `inverseNetPerTrade` é calculado desde 03/08, aparece na tela do backtest, e
+ * nunca chegou à foto do `playbook_record`.
+ *
+ * Ou seja: eu estava a um passo de construir capacidade de venda por palpite,
+ * na semana em que a regra da casa virou "mede antes de construir".
+ *
+ * O espelho não é `−netPct`. É uma posição DE VERDADE, com o bracket refletido
+ * (o stop do long vira o alvo, o alvo vira o stop) resolvida contra as mesmas
+ * velas, com stop-first pessimista dos dois lados — porque uma vela que toca os
+ * dois lados registra o stop nas duas direções.
+ */
+describe("o espelho chega à foto gravada", () => {
+  it("a entrada do registro carrega o campo do espelho", () => {
+    const entry: PlaybookRecordEntry = {
+      playbook: "trend_pullback",
+      decided: 46,
+      netPerTrade: -0.85,
+      byRegime: {},
+      inverseNetPerTrade: 0.31,
+    };
+    expect(entry.inverseNetPerTrade).toBe(0.31);
+  });
+
+  /**
+   * Espelho AUSENTE não pode virar zero. Zero é uma afirmação — "inverter não
+   * muda nada" — e a ausência é outra coisa: "não foi medido". Confundir as
+   * duas é o mesmo erro do `n=0` virando aprovação no portão de lançamento.
+   */
+  it("espelho ausente fica indefinido, nunca zero", () => {
+    const entry: PlaybookRecordEntry = {
+      playbook: "x", decided: 10, netPerTrade: -0.5, byRegime: {},
+    };
+    expect(entry.inverseNetPerTrade).toBeUndefined();
+    expect(entry.inverseNetPerTrade ?? null).toBeNull();
+  });
+});

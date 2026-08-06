@@ -70,6 +70,27 @@ export interface PlaybookRecordEntry {
    * ALGUMA COISA TEM QUE SER GRAVADO ANTES DE SER EXIBIDO.
    */
   byWeather?: Partial<Record<"favoravel" | "misto" | "adverso", { decided: number; netPerTrade: number }>>;
+  /**
+   * ⚠️ O ESPELHO — o que a posição INVERTIDA teria rendido. E a razão de estar
+   * aqui é o MESMO defeito, pela quarta vez (05/08).
+   *
+   * `playbook-backtest.ts` calcula `inverseNetPerTrade` desde 03/08: para cada
+   * trade, monta a posição espelhada (o stop do long vira o alvo, o alvo vira o
+   * stop) e a resolve contra as mesmas velas. Não é `−netPct` — é uma posição
+   * DE VERDADE, com stop-first pessimista dos dois lados.
+   *
+   * É exatamente o número que responde "vale a pena dar short a estas mesas?".
+   * E ele ia para a tela e evaporava.
+   *
+   * Descobri isto ao começar a implementar o short: fui ler o resultado do
+   * espelho para decidir, e não havia o que ler. Estava prestes a construir
+   * capacidade de venda por palpite — na semana em que a regra da casa virou
+   * "mede antes de construir".
+   *
+   * A regra escrita quatro parágrafos acima, e violada de novo: NÚMERO QUE VAI
+   * DECIDIR ALGUMA COISA TEM QUE SER GRAVADO ANTES DE SER EXIBIDO.
+   */
+  inverseNetPerTrade?: number | null;
 }
 
 export interface PlaybookRecord {
@@ -175,7 +196,13 @@ export async function savePlaybookRecord(record: PlaybookRecord): Promise<boolea
       measuredAt: record.measuredAt, windowDays: record.windowDays,
       marketPct: record.marketPct ?? null,
       byPlaybook: Object.fromEntries(record.entries.map((e) => [
-        e.playbook, { decided: e.decided, netPerTrade: e.netPerTrade, byWeather: e.byWeather },
+        e.playbook,
+        {
+          decided: e.decided, netPerTrade: e.netPerTrade,
+          byWeather: e.byWeather,
+          // O espelho vai junto: é ele que decide se estas mesas ganham short.
+          inverseNetPerTrade: e.inverseNetPerTrade,
+        },
       ])),
     };
     const proximo = [snap, ...anterior].slice(0, HISTORY_MAX);
