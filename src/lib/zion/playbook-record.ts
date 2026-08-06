@@ -91,6 +91,26 @@ export interface PlaybookRecordEntry {
    * DECIDIR ALGUMA COISA TEM QUE SER GRAVADO ANTES DE SER EXIBIDO.
    */
   inverseNetPerTrade?: number | null;
+  /**
+   * ⚠️ O QUALIFICADOR DO ESPELHO — sem ele o número acima engana (06/08).
+   *
+   * Straddle é a vela que toca o alvo E o stop. A convenção pessimista da casa
+   * registra o STOP nos dois casos — no original e no espelho. Logo um straddle
+   * é perda dos DOIS lados, e a soma `long + espelho` fica pior que o custo
+   * puro por construção, não por o mercado ter decidido algo.
+   *
+   * A medição de 06/08 mostra o tamanho disso:
+   *
+   *   soma média long + espelho ...... −1,543%
+   *   custo puro esperado (2 × 0,2%) . −0,400%
+   *   excesso do straddle ............ −1,143%
+   *
+   * Ou seja: TRÊS QUARTOS do "os dois lados perdem" é a convenção, não o
+   * mercado. A conclusão sobre o short continua de pé (o melhor espelho é
+   * −0,427% com n=16, abaixo de qualquer limiar), mas ela precisa ser dita com
+   * essa ressalva — e ela só é verificável se o número for gravado.
+   */
+  straddles?: number | null;
 }
 
 export interface PlaybookRecord {
@@ -202,6 +222,7 @@ export async function savePlaybookRecord(record: PlaybookRecord): Promise<boolea
           byWeather: e.byWeather,
           // O espelho vai junto: é ele que decide se estas mesas ganham short.
           inverseNetPerTrade: e.inverseNetPerTrade,
+          straddles: e.straddles,
         },
       ])),
     };

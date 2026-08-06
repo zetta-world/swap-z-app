@@ -373,7 +373,50 @@ diagnosticar** — elas precisam de evento de tick antes de qualquer veredito.
 - mostrar no painel POR QUE uma mesa está em silêncio (a URÐR parece morta e
   está trabalhando)
 
-### ⚠️ O SHORT ESTÁ BLOQUEADO POR FALTA DE MEDIÇÃO — e a descoberta é minha
+### ✅ O SHORT FOI MEDIDO E REPROVADO (06/08)
+
+O dono rodou o backtest, o espelho passou a existir gravado, e a resposta é
+inequívoca — **os nove playbooks são negativos nos DOIS sentidos**:
+
+| playbook | n | long | espelho (short) |
+|---|---|---|---|
+| absorption | 16 | −0,963% | **−0,427%** |
+| range_reversion | 25 | −1,173% | −0,532% |
+| support_accumulation | 41 | −0,877% | −0,549% |
+| pivot_reversion | 87 | −0,151% | −0,792% |
+| trend_continuation | 53 | −0,905% | −0,821% |
+| breakout_retest | 43 | −0,305% | −0,844% |
+| range_breakout | 33 | −0,087% | −0,870% |
+| capitulation_reversal | 11 | −1,805% | −0,879% |
+| trend_pullback | 46 | −0,849% | **−1,058%** |
+
+**⚠️ A RESSALVA, e ela é grande o bastante para mudar o tom da conclusão.**
+
+A soma média `long + espelho` é **−1,543%**. Custo puro seria **−0,400%**
+(duas idas e voltas a 0,2%). Os **−1,143%** de excesso vêm da convenção de
+straddle: vela que toca alvo E stop registra o STOP nos dois lados, então um
+straddle é perda em dobro **por construção, não por decisão do mercado**.
+
+Ou seja: **três quartos do "os dois lados perdem" é a nossa convenção
+pessimista.** A frase honesta não é "vender perde" — é "vender não produz
+positivo convincente, e o teste não distingue bordas pequenas".
+
+**Mesmo assim a decisão se sustenta:** o melhor espelho é −0,427% com n=16
+(abaixo de qualquer limiar), e creditando de volta metade do excesso ainda
+não se chega a positivo com amostra. E a correlação long×espelho é **−0,18**
+— quase nula: a biblioteca **não tem viés de lado errado, ela tem custo maior
+que a borda**.
+
+> ⚠️ **O que isto NÃO mata:** os +45,9 pontos que a venda valeu no crash foram
+> medidos na **média móvel de 50**, não nesta biblioteca. São sinais
+> diferentes. O short segue vivo em `trend_ma50_long_short`, que é uma
+> estratégia do laboratório, não um playbook.
+
+Registrado como `playbook_short` com status **morta** e o motivo escrito.
+
+---
+
+### O histórico: como o short ficou bloqueado antes disso
 
 O motor de paper JÁ suporta venda ponta a ponta: `canEnter` valida os dois
 lados, `computeExit` usa `dir = side === "buy" ? 1 : -1`, e o P&L respeita o
