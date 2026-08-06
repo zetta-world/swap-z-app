@@ -200,6 +200,20 @@ export interface CustoFaixa {
   gasPct: number;
   /** Ida e volta: entrar e sair. As duas pernas, como no funding. */
   idaEVoltaPct: number;
+  /**
+   * ⚠️ A COTAÇÃO DEVOLVEU CUSTO NEGATIVO — entrar e sair PAGANDO você.
+   *
+   * Isso é impossível, e na rodada de 06/08 aconteceu: o restaking fechou com
+   * custo −0,40% em todas as cinco faixas, líquido (2,89%) MAIOR que o bruto
+   * (2,49%) e equilíbrio de −58 dias. A causa é o `priceUSD` dos dois lados da
+   * troca discordarem ~0,4% na fonte; a troca aparece como ganho.
+   *
+   * O custo é achatado em zero para a conta não ficar impossível, MAS a
+   * bandeira sobe — porque zero também é mentira, e um custo que não sabemos
+   * medir tem que reprovar a leitura, não enfeitá-la. É a mesma regra do
+   * `inconclusivo ≠ aprovado`.
+   */
+  precoIncoerente: boolean;
 }
 
 /**
@@ -214,13 +228,15 @@ export interface CustoFaixa {
 export function custoDaFaixa(
   faixaUsd: number, trocaPctUnitario: number, gasUsdUnitario: number,
 ): CustoFaixa {
-  const trocaPct = trocaPctUnitario * 2;
-  const gasPct = faixaUsd > 0 ? (gasUsdUnitario / faixaUsd) * 100 : 0;
+  const precoIncoerente = trocaPctUnitario < 0;
+  const trocaPct = Math.max(0, trocaPctUnitario) * 2;
+  const gasPct = faixaUsd > 0 ? Math.max(0, gasUsdUnitario / faixaUsd) * 100 : 0;
   return {
     faixaUsd,
     trocaPct: Number(trocaPct.toFixed(4)),
     gasPct: Number(gasPct.toFixed(4)),
     idaEVoltaPct: Number((trocaPct + gasPct).toFixed(4)),
+    precoIncoerente,
   };
 }
 
@@ -233,7 +249,14 @@ export function custoDaFaixa(
  * ao lado: um decide entrar, o outro decide ficar.
  */
 export function liquidoPrimeiroAnoPct(apyPct: number, idaEVoltaPct: number): number {
-  return Number((apyPct - idaEVoltaPct).toFixed(4));
+  /**
+   * ⚠️ O LÍQUIDO NUNCA PODE PASSAR DO BRUTO. Custo negativo já é achatado em
+   * `custoDaFaixa`, mas a trava fica aqui também de propósito: esta função é
+   * chamada de fora e a invariante é dela, não de quem a chama. Na rodada de
+   * 06/08 o restaking passou VERDE com líquido acima do bruto porque ninguém
+   * afirmava isso em lugar nenhum.
+   */
+  return Number((apyPct - Math.max(0, idaEVoltaPct)).toFixed(4));
 }
 
 /**
@@ -245,6 +268,12 @@ export function liquidoPrimeiroAnoPct(apyPct: number, idaEVoltaPct: number): num
  */
 export function equilibrioDias(apyPct: number, idaEVoltaPct: number): number | null {
   if (apyPct <= 0) return null;
+  /**
+   * ⚠️ CUSTO NEGATIVO TAMBÉM NÃO TEM EQUILÍBRIO. Sem esta linha a rodada de
+   * 06/08 imprimiu "equilíbrio −58 dias" — uma frase sem significado que
+   * ninguém questiona porque tem número e unidade.
+   */
+  if (idaEVoltaPct < 0) return null;
   return Number(((idaEVoltaPct / apyPct) * 365).toFixed(1));
 }
 
@@ -257,40 +286,85 @@ export interface VereditoRendimento {
 }
 
 /**
- * ⚠️ O PISO DE PISCINAS — a mesma trava do `MIN_ROBUSTOS` do funding.
+ * ⚠️⚠️ O MESMO PRODUTO EM N CADEIAS NÃO É N OBSERVAÇÕES (06/08).
  *
- * Uma piscina só não é uma estratégia: é uma taxa de um protocolo num dia. Se
- * a lista declarada achou uma, a resposta é INCONCLUSIVO — que não é
- * reprovado, e não é aprovado.
+ * A rodada de 06/08 anunciou "12 piscinas" no Tesouro tokenizado. Eram
+ * BUIDL contado SEIS vezes — Ethereum ×2, Polygon, Solana, Avalanche,
+ * Arbitrum — todas com o mesmo 3,5%. São ~5 produtos, não 12.
+ *
+ * No restaking foi pior: 3 piscinas, das quais duas eram o MESMO
+ * `ether.fi-stake` em duas cadeias com APY idêntico. Duas taxas distintas
+ * passando por um piso de três.
+ *
+ * É a lição do ρ do funding reaparecendo com outra roupa: lá 50 símbolos
+ * valiam 11,7 apostas independentes porque o funding é variável de
+ * posicionamento; aqui o mesmo emissor implantado em seis cadeias tem UMA taxa,
+ * definida pelo título que ele guarda, não pela cadeia onde o token mora.
+ *
+ * Um produto = emissor + ativo. Dentro dele fica a piscina de MAIOR depósito,
+ * porque é onde o capital de verdade está.
  */
-export const MIN_PISCINAS = 3;
+export function produtosDistintos(piscinas: PiscinaMedida[]): PiscinaMedida[] {
+  const porProduto = new Map<string, PiscinaMedida>();
+  for (const p of piscinas) {
+    const chave = `${p.projeto.toLowerCase()}|${p.simbolo.toUpperCase()}`;
+    const atual = porProduto.get(chave);
+    if (!atual || p.tvlUsd > atual.tvlUsd) porProduto.set(chave, p);
+  }
+  return [...porProduto.values()].sort((a, b) => b.tvlUsd - a.tvlUsd);
+}
+
+/**
+ * ⚠️ O PISO É DE PRODUTOS, NÃO DE PISCINAS — a mesma trava do `MIN_ROBUSTOS`.
+ *
+ * Um produto só não é uma estratégia: é a taxa de um emissor num dia. E contar
+ * implantações em vez de emissores derrota o piso sozinho — ver
+ * `produtosDistintos`.
+ */
+export const MIN_PRODUTOS = 3;
+
+export interface RessalvasRendimento {
+  /** Alguma faixa devolveu custo negativo? Ver `CustoFaixa.precoIncoerente`. */
+  precoIncoerente?: boolean;
+  /**
+   * A cotação trouxe `gasCosts`? Quando não traz, o gás vira ZERO em silêncio —
+   * e "gás barato" fica idêntico a "gás não lido". Ver a nota na rota.
+   */
+  gasLido?: boolean;
+}
 
 export function vereditoRendimento(
   piscinas: PiscinaMedida[],
   liquidoNaFaixaDeclaradaPct: number | null,
   faixaDeclaradaUsd: number,
-  minPiscinas = MIN_PISCINAS,
+  ressalvas: RessalvasRendimento = {},
+  minProdutos = MIN_PRODUTOS,
 ): VereditoRendimento {
-  if (piscinas.length === 0) {
+  const produtos = produtosDistintos(piscinas);
+  const n = produtos.length;
+  const quantos = `${n} produto${n === 1 ? "" : "s"}`
+    + (piscinas.length !== n ? ` (${piscinas.length} implantações)` : "");
+
+  if (n === 0) {
     return {
       readable: false, status: "cinza",
       verdict: "nenhuma piscina declarada foi encontrada na fonte — inconclusivo, "
         + "que não é o mesmo que reprovado. Ver a lista de não encontradas.",
     };
   }
-  if (piscinas.length < minPiscinas) {
+  if (n < minProdutos) {
     return {
       readable: false, status: "cinza",
-      verdict: `só ${piscinas.length} piscina(s) encontrada(s), abaixo do piso de `
-        + `${minPiscinas} — é a taxa de um protocolo num dia, não uma estratégia. `
-        + "INCONCLUSIVO.",
+      verdict: `só ${quantos} distinto(s), abaixo do piso de ${minProdutos} — é a taxa `
+        + "de um emissor num dia, não uma estratégia. O mesmo emissor em várias cadeias "
+        + "tem UMA taxa, não várias. INCONCLUSIVO.",
     };
   }
   if (liquidoNaFaixaDeclaradaPct == null) {
     return {
       readable: false, status: "cinza",
-      verdict: `${piscinas.length} piscinas encontradas, mas o custo de entrada não `
-        + "foi medido — sem ele o rendimento bruto não vira veredito.",
+      verdict: `${quantos}, mas o custo de entrada não foi medido — sem ele o rendimento `
+        + "bruto não vira veredito.",
     };
   }
 
@@ -301,24 +375,52 @@ export function vereditoRendimento(
    * linha que causou a discordância de onze pontos entre duas rotas e que fez
    * `stats.ts` existir. Com `n` par ela devolve o superior do meio, e o erro
    * tem SINAL: sempre para cima, sempre a favor do número bonito.
+   *
+   * ⚠️ E ELA CORRE SOBRE PRODUTOS, não piscinas: com BUIDL repetido seis vezes,
+   * a mediana de "12 piscinas" é a taxa da BlackRock com seis votos.
    */
-  const bruto = median(piscinas.map((p) => p.apyPct)) ?? 0;
-  const semMedia = piscinas.filter((p) => p.apyDe !== "media30d").length;
+  const bruto = median(produtos.map((p) => p.apyPct)) ?? 0;
+  const semMedia = produtos.filter((p) => p.apyDe !== "media30d").length;
   const ressalva = semMedia > 0
-    ? ` ⚠️ ${semMedia} de ${piscinas.length} sem média de 30 dias — APY à vista`
+    ? ` ⚠️ ${semMedia} de ${n} sem média de 30 dias — APY à vista`
     : "";
+
+  /**
+   * ⚠️ CUSTO QUE NÃO SABEMOS MEDIR REPROVA A LEITURA — não a enfeita.
+   *
+   * Custo negativo é impossível e foi achatado em zero. Zero também é mentira,
+   * e ele empurra o líquido PARA CIMA: seria o número bonito nascendo de uma
+   * falha de medição. Vira inconclusivo, como a amostra curta.
+   */
+  if (ressalvas.precoIncoerente) {
+    return {
+      readable: false, status: "cinza",
+      verdict: `${quantos}, mediana bruta ${bruto.toFixed(2)}%/ano — mas a cotação devolveu `
+        + "custo NEGATIVO em pelo menos uma faixa, o que é impossível: os dois lados da "
+        + "troca têm preços que discordam na fonte. O custo foi achatado em zero e por "
+        + `isso o líquido está inflado. INCONCLUSIVO até a cotação fechar.${ressalva}`,
+    };
+  }
+  if (ressalvas.gasLido === false) {
+    return {
+      readable: false, status: "cinza",
+      verdict: `${quantos}, mediana bruta ${bruto.toFixed(2)}%/ano — mas a cotação não trouxe `
+        + "custo de gás, então o que está na tabela é impacto e taxa SEM gás. 'Gás barato' e "
+        + `'gás não lido' dariam a mesma tela; este veredito existe para não darem.${ressalva}`,
+    };
+  }
 
   if (liquidoNaFaixaDeclaradaPct <= 0) {
     return {
       readable: true, status: "morta",
-      verdict: `${piscinas.length} piscinas, mediana bruta ${bruto.toFixed(2)}%/ano, e mesmo `
+      verdict: `${quantos}, mediana bruta ${bruto.toFixed(2)}%/ano, e mesmo `
         + `assim o 1º ano fecha em ${liquidoNaFaixaDeclaradaPct.toFixed(2)}% com $${faixaDeclaradaUsd.toLocaleString("pt-BR")} `
         + `— a entrada come tudo nessa faixa.${ressalva}`,
     };
   }
   return {
     readable: true, status: "verde",
-    verdict: `${piscinas.length} piscinas, mediana bruta ${bruto.toFixed(2)}%/ano · líquido do `
+    verdict: `${quantos}, mediana bruta ${bruto.toFixed(2)}%/ano · líquido do `
       + `1º ano ${liquidoNaFaixaDeclaradaPct.toFixed(2)}% com $${faixaDeclaradaUsd.toLocaleString("pt-BR")} `
       + `depois de entrar e sair.${ressalva}`,
   };

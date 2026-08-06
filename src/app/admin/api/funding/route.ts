@@ -120,6 +120,28 @@ const MIN_DIAS = Number(process.env.FUNDING_MIN_DAYS ?? 60);
 interface Falha { symbol: string; fonte: string; status: number | string }
 
 /**
+ * ⚠️⚠️ APERTAR O BOTÃO TEM QUE MEDIR (06/08).
+ *
+ * As buscas usavam `next: { revalidate: 3600 }`. O dono rodou o 🪙 às 10h21, e
+ * o resultado voltou IDÊNTICO ao das 01h34 — `1.1611632422330422`, os mesmos
+ * dezesseis dígitos, nove horas depois. O tempo denunciava junto: 8.107ms na
+ * primeira, 2.537ms na segunda.
+ *
+ * Funding paga a cada 8h. Em nove horas todo símbolo ganhou período novo, e a
+ * mediana de cinquenta mudar EXATAMENTE zero não acontece. Foi cache servido.
+ *
+ * O problema não é o cache — é que a linha em `lab_runs` ficou idêntica à de
+ * uma medição de verdade. Ele apertou o botão, não mediu nada, e não tinha como
+ * saber. É a mesma família de "dois estados com a mesma aparência" que esta
+ * semana já achou seis vezes.
+ *
+ * Medição roda a pedido, algumas vezes por semana. Pagar a rede é mais barato
+ * que uma leitura falsa — e `ultimoPontoEm`, abaixo, deixa visível quando dois
+ * resultados iguais são iguais de verdade.
+ */
+const SEM_CACHE = "no-store" as const;
+
+/**
  * A paginação foi interrompida por tempo em ALGUM símbolo?
  *
  * Módulo-escopo de propósito: o corte pode acontecer em qualquer símbolo e o
@@ -141,7 +163,7 @@ async function fetchGateFunding(symbol: string, falhas: Falha[]): Promise<Fundin
   const url = `https://api.gateio.ws/api/v4/futures/usdt/funding_rate`
     + `?contract=${symbol}_USDT&limit=${Math.min(1000, LIMITE)}`;
   try {
-    const res = await fetch(url, { next: { revalidate: 3600 } });
+    const res = await fetch(url, { cache: SEM_CACHE });
     if (!res.ok) { falhas.push({ symbol, fonte: "gateio", status: res.status }); return []; }
     const body = await res.json() as GateRow[];
     if (!Array.isArray(body)) { falhas.push({ symbol, fonte: "gateio", status: "resposta não é lista" }); return []; }
@@ -191,7 +213,7 @@ async function fetchOkxFunding(
     if (after != null) params.set("after", String(after));
     try {
       const res = await fetch(`https://www.okx.com/api/v5/public/funding-rate-history?${params}`, {
-        next: { revalidate: 3600 },
+        cache: SEM_CACHE,
       });
       if (!res.ok) { if (pagina === 0) falhas.push({ symbol, fonte: "okx", status: res.status }); break; }
       const body = await res.json() as { data?: OkxRow[] };
@@ -228,7 +250,7 @@ async function fetchBybitFunding(symbol: string, falhas: Falha[]): Promise<Fundi
     if (endTime != null) params.set("endTime", String(endTime));
     try {
       const res = await fetch(`https://api.bybit.com/v5/market/funding/history?${params}`, {
-        next: { revalidate: 3600 },
+        cache: SEM_CACHE,
       });
       if (!res.ok) { if (pagina === 0) falhas.push({ symbol, fonte: "bybit", status: res.status }); break; }
       const body = await res.json() as { result?: { list?: BybitRow[] } };
@@ -257,7 +279,7 @@ async function fetchBybitFunding(symbol: string, falhas: Falha[]): Promise<Fundi
 async function fetchBinanceFunding(symbol: string, falhas: Falha[]): Promise<FundingPoint[]> {
   const url = `https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}USDT&limit=${LIMITE}`;
   try {
-    const res = await fetch(url, { next: { revalidate: 3600 } });
+    const res = await fetch(url, { cache: SEM_CACHE });
     if (!res.ok) { falhas.push({ symbol, fonte: "binance", status: res.status }); return []; }
     const body = await res.json() as BinanceRow[];
     if (!Array.isArray(body)) { falhas.push({ symbol, fonte: "binance", status: "resposta não é lista" }); return []; }
@@ -454,6 +476,20 @@ export async function POST(): Promise<NextResponse> {
   const diasMedianos = median(comAmostra.map((s) => s.days));
 
   /**
+   * ⚠️ O ÚLTIMO PAGAMENTO QUE ENTROU NA CONTA.
+   *
+   * Duas rodadas com o mesmo `ultimoPontoEm` leram o MESMO dado — seja porque
+   * nada novo saiu ainda, seja porque algo entre nós e a fonte serviu cópia.
+   * Sem este campo, "medi de novo e deu igual" e "não medi nada" são a mesma
+   * linha no banco. Ver a nota em `SEM_CACHE`.
+   */
+  const ultimoPontoEm = (() => {
+    let t = 0;
+    for (const pts of series.values()) for (const p of pts) if (p.t > t) t = p.t;
+    return t > 0 ? new Date(t).toISOString() : null;
+  })();
+
+  /**
    * ⚠️⚠️ "EU CORTEI" E "A FONTE ACABOU" SÃO COISAS DIFERENTES (06/08).
    *
    * A rodada de 06/08 pediu 360 dias e recebeu 94, com `paginacaoCortada =
@@ -506,6 +542,8 @@ export async function POST(): Promise<NextResponse> {
     paginacaoCortada,
     /** A janela é curta porque a FONTE acabou, não porque nós cortamos. */
     fonteEsgotada,
+    /** Dois resultados com o mesmo carimbo leram o MESMO dado. */
+    ultimoPontoEm,
     janelaPedidaDias: JANELA_DIAS,
   };
 
