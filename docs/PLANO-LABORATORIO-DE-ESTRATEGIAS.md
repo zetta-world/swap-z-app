@@ -508,7 +508,7 @@ entre regimes é estável ou se é a foto de hoje. Corrigido.
 
 ---
 
-### FASE 3 — Funding com janela longa (C5, C6, C7) · 🔴
+### FASE 3 — Funding com janela longa · 🟡 PRONTA PARA RODAR (06/08)
 *A maior incerteza do mapa.*
 
 Nossa medição: **+1,4% ao ano** de mediana. A literatura vende **5–20%**.
@@ -520,8 +520,55 @@ O que muda em relação à medição de 04/08:
 - **basis de entrada e saída** medido, não declarado como "fora da conta"
 - comparação contra **sUSDe**, que empacota a mesma coisa
 
-**Critério de conclusão:** número com 360 dias de amostra e o basis dentro da
-conta. Se der 8%, vira produto; se der 1,4%, vira ruído documentado.
+### O defeito que travava tudo em 60 dias
+
+Antes de aumentar a janela, achei por que a de 174 nunca foi entregue. A
+cascata de fontes parava assim que juntava a amostra **mínima**:
+
+```
+if (melhor.length >= PERIODOS_MINIMOS) break;   // 60 dias
+```
+
+Eu tinha consertado a regra "primeira fonte que responde" em 04/08 e deixei a
+condição de parada apontando para o mínimo. **Mesmo defeito com outra roupa:**
+uma fonte curta calando as demais, agora com a justificativa de que "já deu o
+suficiente".
+
+Mínimo é o piso para o número VALER. Alvo é o que se pediu. A parada tem que
+olhar para o alvo.
+
+Junto disso, a okx paginava **3 páginas fixas** = 100 dias, escrito quando o
+alvo era 174 — número de página constante com janela variável pede 360 e
+recebe 100, em silêncio. Agora é derivado do alvo.
+
+### O que mudou
+
+| item | antes | agora |
+|---|---|---|
+| Janela | 174 dias | **360 dias** |
+| Parada da cascata | mínimo (60d) | **alvo (360d)** |
+| Páginas okx | 3 fixas | derivado do alvo, teto 15 |
+| Corte por tempo | invisível | **`paginacaoCortada` na tela, em vermelho** |
+| Janela entregue | não mostrada | **ao lado da pedida**, verde/âmbar |
+| Registro | `platform_events` solto | **`lab_runs` + `lab_results`** |
+
+O capital vai gravado no momento ($2.000, do registro), e a rodada abre com
+status `rodando` ANTES de buscar — se a função morrer, a linha fica dizendo que
+começou e não voltou, em vez de a rodada não existir.
+
+### Ainda NÃO medido, e declarado
+
+- **basis de entrada/saída** — exige histórico de mark contra spot alinhado;
+  típico <0,05% nos dois sentidos, então deixá-lo fora é neutro, não otimista
+- risco de liquidação da perna vendida
+- custo de margem além do funding, e custódia
+
+### Critério de conclusão
+
+Número com 360 dias entregues (não pedidos) e a janela real visível. Se der
+8%, vira produto para as três faixas; se der 1,4%, vira ruído documentado.
+
+**Pendente: o dono rodar o 🪙 MEDIR O FUNDING.**
 
 ---
 
@@ -616,7 +663,7 @@ Traduzido em regra:
 | 0 · Fundação | 🟢 **concluída 05/08** |
 | 1 · Mesas existentes | 🟢 **concluída 06/08** |
 | 2 · Filtro de regime | 🔴 **hipótese refutada 06/08** |
-| 3 · Funding janela longa | 🔴 |
+| 3 · Funding janela longa | 🟡 **pronta para rodar** |
 | 4 · Rendimento integrado | 🔴 |
 | 5 · Opção coberta | 🔴 |
 | 6 · DEX ↔ CEX | 🔴 |
