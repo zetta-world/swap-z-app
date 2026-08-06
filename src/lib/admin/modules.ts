@@ -16,6 +16,7 @@ export type ModuleId =
   | "calibration"
   | "what-worked"
   | "funding"
+  | "rendimento"
   | "ligas"
   | "lab"
   | "tournament"
@@ -189,6 +190,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8,
+  },
+  {
+    id: "rendimento",
+    title: "RENDIMENTO INTEGRADO",
+    subtitle: "C1–C4 — quanto sobra do APY depois do gás, por faixa de capital",
+    icon: "\u{1F3E6}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.5,
   },
   {
     id: "lab",
