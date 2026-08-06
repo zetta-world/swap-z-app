@@ -196,10 +196,84 @@ export interface FundingVerdict {
   total: number;
 }
 
+/**
+ * ⚠️⚠️ UMA CONTAGEM SÓ, PORQUE HAVIA DUAS COM O MESMO NOME (06/08).
+ *
+ * A rodada de 06/08 devolveu, na MESMA resposta e na MESMA tela:
+ *
+ *   veredito:  "23 de 50 rendem positivo no ano"      ← netAnnualizedPct
+ *   resumo:    "positivos no líquido: 26/50 · robustos 22"  ← netPct da janela
+ *
+ * Três números, duas réguas, nenhum rótulo dizendo qual era qual. O veredito
+ * julgava pelo líquido ANUALIZADO — que foi a correção de 04/08 — e o resumo
+ * logo abaixo continuou contando pelo líquido da JANELA, que é a régua que
+ * aquela correção aposentou. Numa janela de 94 dias as duas divergem por
+ * construção: o custo de 0,45% se paga uma vez no ano e três vezes no ano se
+ * você o cobrar de cada trimestre.
+ *
+ * É a cicatriz da mediana de onze pontos outra vez — duas implementações do
+ * mesmo conceito em arquivos diferentes, discordando em silêncio. A diferença é
+ * que ali eram duas rotas; aqui eram dois campos do mesmo JSON.
+ *
+ * Agora existe UMA função. Quem quiser a outra pergunta pede `pagaramNaJanela`,
+ * que tem nome próprio porque é uma pergunta própria: "este símbolo pagou a
+ * entrada dentro do que a fonte me deu?" — útil, e não é o veredito.
+ */
+export interface FundingCounts {
+  /** Os que passaram o mínimo de dias. Abaixo disso não vira número. */
+  comAmostra: FundingStats[];
+  /** Positivo NO ANO depois de UMA ida e volta. A régua que julga. */
+  positivosNoAno: number;
+  /** Destes, com funding negativo raro — renda de estrutura, não de regime. */
+  robustos: number;
+  /** Quantos pagaram as 4 pernas DENTRO da janela entregue. Outra pergunta. */
+  pagaramNaJanela: number;
+  medianaAnualPct: number;
+  diasMedianos: number;
+}
+
+export function fundingCounts(
+  stats: FundingStats[], minDays = 60, maxNegativeShare = 0.35,
+): FundingCounts {
+  const comAmostra = stats.filter((s) => s.days >= minDays);
+  const positivos = comAmostra.filter((s) => s.netAnnualizedPct > 0);
+  return {
+    comAmostra,
+    positivosNoAno: positivos.length,
+    robustos: positivos.filter((s) => s.negativeShare <= maxNegativeShare).length,
+    pagaramNaJanela: comAmostra.filter((s) => s.netPct > 0).length,
+    medianaAnualPct: median(comAmostra.map((s) => s.netAnnualizedPct)) ?? 0,
+    diasMedianos: Math.round(median(comAmostra.map((s) => s.days)) ?? 0),
+  };
+}
+
+/**
+ * ⚠️ QUANTOS SÍMBOLOS ROBUSTOS FAZEM UMA ESTRATÉGIA, e por que existe um piso.
+ *
+ * A rota marcava a rodada como VERDE com `robustos > 0`. Um símbolo em
+ * cinquenta bastaria — é a mesma família do portão de lançamento que aprovava
+ * com n=0: ausência de contra-exemplo tratada como prova.
+ *
+ * Funding não se opera num nome só: o que se compra é a CESTA dos que pagam. Um
+ * único símbolo robusto não é uma estratégia, é uma coincidência com nome.
+ *
+ * Dez é palpite declarado, não medição — do mesmo tipo que o limiar de 35% de
+ * períodos negativos. O raciocínio: com ρ baixo, dez nomes já são ~9 apostas
+ * quase independentes, e abaixo disso um nome sozinho manda no resultado.
+ *
+ * ⚠️ E ELE FOI ESCRITO DEPOIS DE VER O DADO (23 robustos em 06/08), então como
+ * teste desta rodada não vale nada — ela passaria com qualquer piso até 23. O
+ * valor dele é para as PRÓXIMAS, quando o número vier menor e a tentação de
+ * arredondar para cima existir.
+ */
+export const MIN_ROBUSTOS = Number(process.env.FUNDING_MIN_ROBUSTOS ?? 10);
+
 export function fundingVerdict(
   stats: FundingStats[], minDays = 60, maxNegativeShare = 0.35,
+  minRobustos = MIN_ROBUSTOS,
 ): FundingVerdict {
-  const comAmostra = stats.filter((s) => s.days >= minDays);
+  const c = fundingCounts(stats, minDays, maxNegativeShare);
+  const comAmostra = c.comAmostra;
   if (comAmostra.length === 0) {
     return {
       readable: false, positivos: 0, total: stats.length,
@@ -217,30 +291,42 @@ export function fundingVerdict(
    * O `negativeShare` continua mandando: retorno anualizado bonito com metade
    * dos períodos negativo é renda de regime, e regime vira.
    */
-  const positivos = comAmostra.filter((s) => s.netAnnualizedPct > 0);
-  const robustos = positivos.filter((s) => s.negativeShare <= maxNegativeShare);
-  const medianaAnual = median(comAmostra.map((s) => s.netAnnualizedPct)) ?? 0;
-  const diasMedianos = Math.round(median(comAmostra.map((s) => s.days)) ?? 0);
+  const { positivosNoAno, robustos, medianaAnualPct: medianaAnual, diasMedianos } = c;
 
   // A janela real entra em TODA frase. Foi omiti-la que deixou um número de 30
   // dias ser lido como veredito sobre a estratégia.
   const janela = `janela real de ${diasMedianos}d`;
 
-  if (robustos.length === 0) {
+  if (robustos === 0) {
     return {
-      readable: true, positivos: positivos.length, total: comAmostra.length,
-      verdict: positivos.length === 0
+      readable: true, positivos: positivosNoAno, total: comAmostra.length,
+      verdict: positivosNoAno === 0
         ? `nenhum dos ${comAmostra.length} símbolos rende positivo no ano depois das 4 pernas — `
           + `mediana ${medianaAnual.toFixed(2)}%/ano · ${janela}`
-        : `${positivos.length} de ${comAmostra.length} rendem positivo no ano, mas TODOS com funding `
+        : `${positivosNoAno} de ${comAmostra.length} rendem positivo no ano, mas TODOS com funding `
           + `negativo em mais de ${Math.round(maxNegativeShare * 100)}% dos períodos — `
           + `é renda de regime, não de estrutura · ${janela}`,
     };
   }
 
+  /**
+   * Poucos nomes robustos não reprovam a estratégia — reprovam a AMOSTRA dela.
+   * Dizer "inconclusivo" aqui é a mesma regra do resto do laboratório, e o
+   * número aparece do mesmo jeito para ninguém achar que ele foi escondido.
+   */
+  if (robustos < minRobustos) {
+    return {
+      readable: true, positivos: positivosNoAno, total: comAmostra.length,
+      verdict: `só ${robustos} de ${comAmostra.length} símbolos rendem positivo no ano com funding `
+        + `negativo raro — abaixo do piso de ${minRobustos} para isto ser uma cesta e não um `
+        + `nome de sorte. INCONCLUSIVO, que não é reprovado · mediana `
+        + `${medianaAnual.toFixed(2)}%/ano · ${janela}`,
+    };
+  }
+
   return {
-    readable: true, positivos: positivos.length, total: comAmostra.length,
-    verdict: `${robustos.length} de ${comAmostra.length} rendem positivo no ano COM funding negativo `
+    readable: true, positivos: positivosNoAno, total: comAmostra.length,
+    verdict: `${robustos} de ${comAmostra.length} rendem positivo no ano COM funding negativo `
       + `em menos de ${Math.round(maxNegativeShare * 100)}% dos períodos · mediana `
       + `${medianaAnual.toFixed(2)}%/ano depois das 4 pernas · ${janela} — `
       + `é extrapolação, não medição de um ano`,

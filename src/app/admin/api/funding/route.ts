@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { CEX_TRACKED_SYMBOLS } from "@/lib/api/cex-spot";
 import {
-  fundingStats, fundingVerdict, fundingCorrelation, COST_PCT, PERIODS_PER_DAY,
+  fundingStats, fundingVerdict, fundingCounts, fundingCorrelation,
+  COST_PCT, PERIODS_PER_DAY, MIN_ROBUSTOS,
   type FundingPoint, type FundingStats,
 } from "@/lib/zion/funding";
 import { effectiveSampleSize } from "@/lib/zion/benchmarks";
@@ -432,14 +433,45 @@ export async function POST(): Promise<NextResponse> {
   }
 
   const veredito = fundingVerdict(stats, MIN_DIAS, MAX_NEG_SHARE);
+  /**
+   * ⚠️ AS CONTAGENS VÊM DA MESMA FUNÇÃO QUE O VEREDITO (06/08).
+   *
+   * Antes o resumo refazia a conta aqui com `netPct` (janela) enquanto o
+   * veredito contava com `netAnnualizedPct` (ano) — e a tela mostrava os dois
+   * lado a lado, "23 de 50" em cima e "26/50 · robustos 22" embaixo, sem nada
+   * dizendo que eram réguas diferentes. Ver a nota em `fundingCounts`.
+   */
+  const contagem = fundingCounts(stats, MIN_DIAS, MAX_NEG_SHARE);
 
   // A correlação decide quanto vale a amostra. Funding é variável de
   // posicionamento: quando o mercado está comprado, tudo fica positivo junto.
-  const comAmostra = stats.filter((s) => s.days >= MIN_DIAS);
+  const comAmostra = contagem.comAmostra;
   const rho = fundingCorrelation(
     comAmostra.map((s) => series.get(s.symbol)!.map((p) => p.ratePct)),
   );
   const efetivo = effectiveSampleSize(comAmostra.length, rho);
+
+  const diasMedianos = median(comAmostra.map((s) => s.days));
+
+  /**
+   * ⚠️⚠️ "EU CORTEI" E "A FONTE ACABOU" SÃO COISAS DIFERENTES (06/08).
+   *
+   * A rodada de 06/08 pediu 360 dias e recebeu 94, com `paginacaoCortada =
+   * false`. Ou seja: o relógio não estourou, a paginação rodou até o fim, e
+   * mesmo assim a janela veio a um quarto do pedido — porque o histórico
+   * público de funding da okx termina ali. Quarenta símbolos diferentes pararam
+   * no MESMO 94º dia, que é assinatura de corte da fonte, não de contador nosso
+   * (o nosso cortaria em múltiplos de 100 períodos, e variaria por símbolo).
+   *
+   * A distinção importa porque as ações são opostas: paginação cortada se
+   * resolve rodando de novo ou pedindo menos símbolos; teto de fonte não se
+   * resolve — ou se aceita a janela, ou se troca de fonte. Registrar as duas
+   * como "janela curta" faria alguém clicar de novo por um ano inteiro que a
+   * fonte nunca vai entregar.
+   */
+  const fonteEsgotada = !paginacaoCortada
+    && diasMedianos != null
+    && diasMedianos < JANELA_DIAS * 0.9;
 
   const resumo = {
     simbolos: stats.length,
@@ -453,11 +485,15 @@ export async function POST(): Promise<NextResponse> {
     /** O que decide: um ano de funding menos UMA ida e volta. */
     medianaLiquidaAnualPct: median(comAmostra.map((s) => s.netAnnualizedPct)),
     /** A janela REAL entregue pela fonte, que não é a pedida. */
-    diasMedianos: median(comAmostra.map((s) => s.days)),
+    diasMedianos,
     /** Quantos ficaram de fora por amostra curta — 42 de 53 na 1ª rodada. */
     semAmostra: stats.length - comAmostra.length,
-    positivosLiquidos: comAmostra.filter((s) => s.netPct > 0).length,
-    robustos: comAmostra.filter((s) => s.netPct > 0 && s.negativeShare <= MAX_NEG_SHARE).length,
+    /** ⚠️ A régua do veredito: positivo NO ANO, uma ida e volta. */
+    positivosNoAno: contagem.positivosNoAno,
+    robustos: contagem.robustos,
+    minRobustos: MIN_ROBUSTOS,
+    /** Outra pergunta, com nome próprio: pagou as pernas DENTRO da janela. */
+    pagaramNaJanela: contagem.pagaramNaJanela,
     medianaNegativeShare: median(comAmostra.map((s) => s.negativeShare)),
     piorTomboPct: comAmostra.length ? Math.max(...comAmostra.map((s) => s.maxDrawdownPct)) : null,
     rho: rho == null ? null : Math.round(rho * 1000) / 1000,
@@ -468,6 +504,8 @@ export async function POST(): Promise<NextResponse> {
      * é a causa raiz que esta fase inteira ataca.
      */
     paginacaoCortada,
+    /** A janela é curta porque a FONTE acabou, não porque nós cortamos. */
+    fonteEsgotada,
     janelaPedidaDias: JANELA_DIAS,
   };
 
@@ -521,7 +559,16 @@ export async function POST(): Promise<NextResponse> {
         effectiveN: resumo.apostasEfetivas,
         correlationRho: resumo.rho,
         maxDrawdownPct: resumo.piorTomboPct,
-        verdict: veredito.readable && resumo.robustos > 0 ? "verde" : "cinza",
+        /**
+         * ⚠️ VERDE EXIGE UMA CESTA, NÃO UM NOME (06/08).
+         *
+         * Era `robustos > 0`: um símbolo em cinquenta marcaria a rodada como
+         * verde. Mesma família do portão de lançamento que aprovava com n=0 —
+         * ausência de contra-exemplo lida como prova. Ver `MIN_ROBUSTOS`.
+         */
+        verdict: veredito.readable
+          && resumo.robustos >= MIN_ROBUSTOS
+          && (resumo.medianaLiquidaAnualPct ?? 0) > 0 ? "verde" : "cinza",
         verdictText: veredito.verdict,
         perSymbol: stats.slice(0, 60).map((x) => ({
           s: x.symbol, dias: Math.round(x.days),
@@ -534,6 +581,10 @@ export async function POST(): Promise<NextResponse> {
           "custo de margem além do funding e risco de custódia",
           ...(paginacaoCortada
             ? ["⚠️ paginação CORTADA por tempo — a janela entregue é menor que a pedida"]
+            : []),
+          ...(fonteEsgotada
+            ? [`⚠️ a fonte esgotou em ~${Math.round(diasMedianos ?? 0)}d dos ${JANELA_DIAS}d `
+               + "pedidos — teto do histórico público, não corte nosso; rodar de novo não muda"]
             : []),
         ],
       }, Date.now() - t0);

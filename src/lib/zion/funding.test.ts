@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { fundingStats, fundingVerdict, PERIODS_PER_DAY } from "@/lib/zion/funding";
+import { fundingStats, fundingVerdict, fundingCounts, PERIODS_PER_DAY } from "@/lib/zion/funding";
 
 /** `n` períodos com a taxa dada, em % por 8h. */
 const serie = (n: number, ratePct: number | ((i: number) => number)) =>
@@ -108,7 +108,9 @@ describe("fundingVerdict", () => {
   });
 
   it("aprova só quando rende positivo no ano E o negativo é raro", () => {
-    const v = fundingVerdict([bom("BTC"), bom("ETH"), bom("SOL")], 60, 0.35);
+    // Piso de 3 explícito: aqui a variável isolada é "positivo + negativo raro",
+    // não o tamanho da cesta, que tem teste próprio logo abaixo.
+    const v = fundingVerdict([bom("BTC"), bom("ETH"), bom("SOL")], 60, 0.35, 3);
     expect(v.readable).toBe(true);
     expect(v.verdict).toContain("rendem positivo no ano");
     // E ainda assim se declara extrapolação, em vez de posar de medição.
@@ -151,5 +153,62 @@ describe("fundingVerdict", () => {
     const v = fundingVerdict([ruim], 60);
     expect(v.verdict).toContain("nenhum dos");
     expect(v.positivos).toBe(0);
+  });
+
+  /**
+   * ⚠️ UM NOME BOM NÃO É UMA ESTRATÉGIA (06/08).
+   *
+   * A rota marcava a rodada VERDE com `robustos > 0` — um símbolo em cinquenta
+   * bastava. É a mesma forma do portão de lançamento que aprovava com n=0:
+   * ausência de contra-exemplo lida como prova.
+   *
+   * Funding não se opera num nome só; o que se compra é a cesta dos que pagam.
+   */
+  it("um símbolo robusto não aprova a cesta — é INCONCLUSIVO, não reprovado", () => {
+    const v = fundingVerdict([bom("BTC")], 60, 0.35, 10);
+    expect(v.readable).toBe(true);
+    expect(v.verdict).toContain("INCONCLUSIVO");
+    expect(v.verdict).toContain("piso de 10");
+    // E o veredito NÃO pode virar aprovação por acidente de leitura.
+    expect(v.verdict).not.toContain("é extrapolação, não medição de um ano");
+    // O número aparece do mesmo jeito — reprovar escondendo a conta é pior.
+    expect(v.verdict).toMatch(/só 1 de 1/);
+  });
+});
+
+/**
+ * UMA CONTAGEM SÓ — a cicatriz de 06/08.
+ *
+ * A resposta trazia "23 de 50 rendem positivo no ano" no veredito e "26/50 ·
+ * robustos 22" no resumo, na mesma tela, sem rótulo dizendo que eram réguas
+ * diferentes (anual × janela). Duas implementações do mesmo conceito
+ * discordando em silêncio, que é exatamente a família da mediana de onze
+ * pontos.
+ */
+describe("fundingCounts — uma régua, com as outras perguntas nomeadas", () => {
+  it("o veredito e o resumo contam a MESMA coisa", () => {
+    const bom = (s: string) => fundingStats(s, serie(600, 0.012), 0.45)!;
+    const stats = [bom("A"), bom("B"), bom("C")];
+    const c = fundingCounts(stats, 60, 0.35);
+    const v = fundingVerdict(stats, 60, 0.35, 3);
+    expect(v.positivos).toBe(c.positivosNoAno);
+    expect(v.total).toBe(c.comAmostra.length);
+  });
+
+  /**
+   * O caso que fazia as duas divergirem: janela curta, funding bom. Positivo no
+   * ANO, negativo NA JANELA — as duas respostas estão certas, para perguntas
+   * diferentes, e é por isso que só uma pode se chamar "positivos".
+   */
+  it("janela curta separa 'positivo no ano' de 'pagou dentro da janela'", () => {
+    // 63 períodos = 21 dias a 0.006%/8h → 0.378% bruto contra 0.45% de custo.
+    const curtoBom = fundingStats("X", serie(63, 0.006), 0.45)!;
+    const c = fundingCounts([curtoBom], 7, 0.35);
+    expect(c.comAmostra).toHaveLength(1);
+    // No ano, paga: 0.006 × 3 × 365 = 6.57% contra 0.45% de custo.
+    expect(c.positivosNoAno).toBe(1);
+    // Na janela de 21 dias, ainda não pagou a entrada.
+    expect(curtoBom.netPct).toBeLessThan(0);
+    expect(c.pagaramNaJanela).toBe(0);
   });
 });

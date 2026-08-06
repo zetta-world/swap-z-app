@@ -178,10 +178,23 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 2000,
     capitalWhy: "o ciclo tem quatro pernas a 0,45%; abaixo de $2.000 o custo fixo come "
       + "o funding antes de ele acumular, e o resultado mede a taxa, não a estratégia",
-    status: "cinza",
+    status: "verde",
     hypothesis: "⚠️ A MAIOR INCERTEZA DO MAPA. Nossa medição de 04/08 deu mediana de "
       + "+1,4% ao ano em 53 símbolos; a literatura vende 5% a 20%. Uma das duas está "
-      + "errada e o desfecho muda o produto. Fonte limitada a 30-60 dias — remedir com 360.",
+      + "errada e o desfecho muda o produto. Fonte limitada a 30-60 dias — remedir com 360. "
+      + "⚠️ MEDIDO EM 06/08 E A DISCREPÂNCIA FICOU DE PÉ, agora com amostra que aguenta: "
+      + "50 símbolos com 94 dias medianos (era 11 símbolos com 30-60), líquido mediano de "
+      + "+1,16%/ano depois das 4 pernas — praticamente o mesmo +1,4% que a rodada ruim já "
+      + "dizia. Os 5-20% NÃO reproduzem. 23 dos 50 rendem positivo no ano com funding "
+      + "negativo em menos de 35% dos períodos, e a mediana DESSA cesta é +3,0%/ano, com "
+      + "teto em TAO +6,7%, NEAR +5,8% e CRV +5,7%. ρ=0,067: os 50 valem 11,7 apostas "
+      + "independentes, e a cauda ruim é funda — BONK −17,8%/ano, TRX −12,6%. "
+      + "⚠️ O SINAL MAIS FORTE ESTÁ NA JANELA, não na mediana: os 10 símbolos com 187 dias "
+      + "rendem +0,70%/ano, os 40 com 94 dias rendem +1,35%, e os 3 com só 30 dias rendem "
+      + "+7,90%. Janela mais longa, número menor, monotônico — que é exatamente o que a "
+      + "hipótese 'os 5-20% publicados são recorte de regime' prevê. Verde porque a renda "
+      + "existe e é selecionável; o teto é ~3%/ano na cesta, então ela compete com o Tesouro "
+      + "tokenizado (`tokenized_treasury`), não com a promessa de 20%.",
   },
   {
     slug: "quarterly_basis",

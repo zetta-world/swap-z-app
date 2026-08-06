@@ -508,8 +508,98 @@ entre regimes é estável ou se é a foto de hoje. Corrigido.
 
 ---
 
-### FASE 3 — Funding com janela longa · 🟡 PRONTA PARA RODAR (06/08)
-*A maior incerteza do mapa.*
+### FASE 3 — Funding com janela longa · 🟢 MEDIDA (06/08)
+*A maior incerteza do mapa — e ela ficou de pé.*
+
+## ⚖️ O VEREDITO
+
+**Os 5–20% publicados não reproduzem. O nosso +1,4% praticamente sim.**
+
+| | 04/08 (rodada ruim) | 06/08 (com a janela certa) |
+|---|---|---|
+| Símbolos com amostra | 11 de 53 | **50 de 53** |
+| Janela entregue | 30–60 dias | **94 dias (mediana)** |
+| Fonte | gate.io ×53 | **okx ×50**, gate.io ×3 |
+| Líquido mediano/ano | +1,42% (bruto) | **+1,16% (líquido)** |
+| Positivos no ano | 1 | **23 com negativo raro** |
+
+Vinte e três dos cinquenta rendem positivo no ano com funding negativo em menos
+de 35% dos períodos, e **a mediana dessa cesta é +3,0%/ano** — TAO +6,7%,
+NEAR +5,8%, CRV +5,7%. A cauda ruim é funda: BONK −17,8%, TRX −12,6%.
+ρ=0,067, então os 50 valem **11,7 apostas independentes** — correlação baixa,
+que é a boa notícia menos esperada da rodada.
+
+### O sinal mais forte não está na mediana, está na janela
+
+| janela entregue | n | mediana líquida/ano |
+|---|---|---|
+| 187 dias | 10 | **+0,70%** |
+| 94 dias | 40 | +1,35% |
+| 30 dias | 3 | **+7,90%** |
+
+Monotônico: **janela mais longa, número menor.** É exatamente o que a hipótese
+"os 5–20% publicados são recorte de regime" prevê, e é o oposto de "só falta
+mais dado para o número grande aparecer". Com n=10 no grupo longo não fecha
+nada sozinho — mas a direção é a que aponta contra nós, que é a única direção
+em que um sinal fraco ainda vale ser dito.
+
+### Conclusão de produto
+
+Funding é **renda real e selecionável, com teto de ~3%/ano na cesta.** Ela não
+compete com a promessa de 20%; compete com o **Tesouro tokenizado** (`tokenized_treasury`,
+prioridade nº 3 do dono, ainda não medido), que paga faixa parecida sem quatro
+pernas, sem perna vendida e sem risco de liquidação. A Fase 4 tem que medir os
+dois no mesmo pé antes de qualquer um virar produto.
+
+`funding_basis` passa a **VERDE** no registro.
+
+---
+
+## O que a rodada expôs de defeito nosso
+
+**1. A régua do veredito não estava na tela.** `netAnnualizedPct` era calculado,
+gravado em `lab_results` e **não renderizado**. O destaque ia para o líquido da
+JANELA (+0,04%) e para o anualizado BRUTO (+1,6%) — o número que julgava era um
+terceiro que ninguém via. Agora ele é o primeiro e o maior.
+
+**2. "Positivos" e "robustos" eram contados com duas réguas.** Na mesma resposta:
+
+```
+veredito:  "23 de 50 rendem positivo no ano"      ← netAnnualizedPct
+resumo:    "positivos no líquido: 26/50 · robustos 22"  ← netPct da janela
+```
+
+Três números, duas réguas, nenhum rótulo. O veredito já usava o anual — foi a
+correção de 04/08 — e o resumo logo abaixo continuou contando pela régua que
+aquela correção aposentou. Mesma família da mediana de onze pontos, agora
+dentro do mesmo JSON. Existe **uma** `fundingCounts` agora; a outra pergunta
+ganhou nome próprio (`pagaramNaJanela`).
+
+**3. VERDE aprovava com um símbolo.** Era `robustos > 0`. Um nome em cinquenta
+marcaria a rodada como verde — a mesma forma do portão de lançamento que
+aprovava com n=0. Piso de 10 declarado como palpite, **e escrito depois de ver o
+dado (23), então como teste desta rodada não vale nada** — vale para as próximas.
+
+**4. "Eu cortei" e "a fonte acabou" eram a mesma mensagem.** Pedimos 360 dias e
+recebemos 94 com `paginacaoCortada = false`: o relógio não estourou, a paginação
+rodou até o fim, o histórico público da okx simplesmente termina ali. Quarenta
+símbolos parando no **mesmo** 94º dia é assinatura de corte da fonte — o nosso
+cortaria em múltiplos de 100 períodos e variaria por símbolo. As ações são
+opostas: paginação cortada se resolve rodando de novo, teto de fonte não se
+resolve. `fonteEsgotada` agora é campo próprio, em âmbar, dizendo **"rodar de
+novo não muda"**.
+
+### O que isso implica para a Fase 4 em diante
+
+Um ano de funding **não existe para ser lido** — nem na okx, nem na gate.io, e
+binance (451) e bybit (403) seguem recusando nosso IP. Se quisermos janela
+longa, ela tem que ser **acumulada por nós**, dia a dia, numa tabela própria. É
+decisão de infraestrutura, não de medição, e está registrada aqui para não ser
+redescoberta clicando o botão pela quarta vez.
+
+---
+
+## O plano original desta fase, para conferência
 
 Nossa medição: **+1,4% ao ano** de mediana. A literatura vende **5–20%**.
 Uma das duas está errada e o desfecho muda o produto.
@@ -563,12 +653,21 @@ começou e não voltou, em vez de a rodada não existir.
 - risco de liquidação da perna vendida
 - custo de margem além do funding, e custódia
 
-### Critério de conclusão
+### Critério de conclusão — e como ele foi cumprido pela metade
 
-Número com 360 dias entregues (não pedidos) e a janela real visível. Se der
-8%, vira produto para as três faixas; se der 1,4%, vira ruído documentado.
+Era: *"número com 360 dias entregues (não pedidos) e a janela real visível. Se
+der 8%, vira produto para as três faixas; se der 1,4%, vira ruído documentado."*
 
-**Pendente: o dono rodar o 🪙 MEDIR O FUNDING.**
+**Os 360 dias não foram entregues e não podem ser** — a fonte tem teto de ~94
+dias. A janela real está visível, que era a outra metade e a que importava. O
+número deu +1,16%, ou seja o ramo "1,4%" do critério: **não é ruído** (23 nomes
+robustos, cesta a +3,0%/ano), mas também **não é o produto de 8%** que
+justificaria construir em cima dele antes de medir o Tesouro tokenizado.
+
+⚠️ O critério foi escrito assumindo que janela é coisa que se pede. Não é —
+é coisa que a fonte concede. Os próximos critérios de conclusão têm que
+declarar o que fazer quando a fonte não entrega, em vez de só quando o número
+sai diferente do esperado.
 
 ---
 
@@ -581,6 +680,19 @@ comem quanto disso, por faixa de capital.
 
 **Critério de conclusão:** tabela de rendimento LÍQUIDO por faixa de capital
 ($500 / $5k / $50k), com o gás dentro. É essa tabela que vira produto.
+
+⚠️ **A Fase 3 mudou o que esta fase decide.** O funding entregou +1,16%/ano de
+mediana e +3,0%/ano na cesta selecionada — faixa que **o Tesouro tokenizado
+cobre sem quatro pernas, sem perna vendida e sem risco de liquidação**. Então
+esta fase não mede só "quanto o gás come": ela mede se o carrego de funding tem
+alguma razão de existir no produto ao lado de uma alternativa mais simples com
+retorno parecido. As duas na mesma tabela, mesmo capital, mesma janela — senão
+a comparação mede duas coisas, que é a regra do duelo VÖLUNDR × MÍMIR.
+
+⚠️ **E a janela tem que ser acumulada, não pedida.** A Fase 3 provou que
+histórico longo de funding não existe para ler (okx ~94d, gate.io ~30d,
+binance 451, bybit 403). Se o produto precisa de um ano, o ano se constrói aqui,
+dia a dia, em tabela própria.
 
 ---
 
@@ -663,7 +775,7 @@ Traduzido em regra:
 | 0 · Fundação | 🟢 **concluída 05/08** |
 | 1 · Mesas existentes | 🟢 **concluída 06/08** |
 | 2 · Filtro de regime | 🔴 **hipótese refutada 06/08** |
-| 3 · Funding janela longa | 🟡 **pronta para rodar** |
+| 3 · Funding janela longa | 🟢 **medida 06/08** — +1,16%/ano, cesta a +3,0%; os 5–20% não reproduzem |
 | 4 · Rendimento integrado | 🔴 |
 | 5 · Opção coberta | 🔴 |
 | 6 · DEX ↔ CEX | 🔴 |
