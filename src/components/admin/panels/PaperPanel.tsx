@@ -27,6 +27,27 @@ type RepairState = {
   }>;
 };
 
+/**
+ * ⚠️ RECAPITALIZAÇÃO — o TERCEIRO bloco de dinheiro deste painel, e por isso
+ * o rótulo dele tem que dizer sozinho o que ele faz (06/08).
+ *
+ * Os outros dois já existiam: "devolver o capital às carteiras vivas" (reparo
+ * de vazamento) e o ✓ de conferência. Três controles que mexem em capital na
+ * mesma tela é exatamente o cenário em que o dono clicou num achando que era
+ * outro — aconteceu com os dois botões de backtest, e custou dias.
+ *
+ * Por isso: verbo diferente ("recapitalizar", não "devolver"), consequência
+ * dita na frente (ARQUIVA a rodada), e motivo escrito obrigatório antes de o
+ * botão sequer habilitar.
+ */
+type RecapState = {
+  plan: Array<{
+    source: string; label: string; fromUsd: number; toUsd: number;
+    deltaUsd: number; why: string; openPositions: number; closedPositions: number;
+  }>;
+  last: { at: string; reason: string; entries: Array<{ source: string; fromUsd: number; toUsd: number }> } | null;
+};
+
 const MEDAL = ["🥇", "🥈", "🥉"];
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const usdc = (n: number | null) => (n == null ? "—" : `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(0)}`);
@@ -73,6 +94,10 @@ export default function PaperPanel() {
    * vira uma aba que se abre quando alguém quer ver o histórico.
    */
   const [verArquivo, setVerArquivo] = useState(false);
+  const [recap, setRecap] = useState<RecapState | null>(null);
+  const [recapMotivo, setRecapMotivo] = useState("");
+  const [recapando, setRecapando] = useState(false);
+  const [recapErro, setRecapErro] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -93,11 +118,18 @@ export default function PaperPanel() {
     } catch { /* seção some, o painel continua */ }
   }, []);
 
+  const loadRecap = useCallback(async () => {
+    try {
+      const res = await fetch("/admin/api/paper-recap");
+      if (res.ok) setRecap(await res.json());
+    } catch { /* a seção some, o painel continua */ }
+  }, []);
+
   useEffect(() => {
-    load(); loadRepair();
+    load(); loadRepair(); loadRecap();
     const t = setInterval(load, realtime?.status === "live" ? 60_000 : 90_000);
     return () => clearInterval(t);
-  }, [load, loadRepair, realtime?.status]);
+  }, [load, loadRepair, loadRecap, realtime?.status]);
 
   async function runRepair() {
     setRepairing(true);
@@ -105,6 +137,23 @@ export default function PaperPanel() {
       const res = await fetch("/admin/api/paper-repair", { method: "POST" });
       if (res.ok) { await load(); await loadRepair(); }
     } catch { /* estado antigo permanece */ } finally { setRepairing(false); }
+  }
+
+  async function runRecap() {
+    setRecapando(true); setRecapErro(null);
+    try {
+      const res = await fetch("/admin/api/paper-recap", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sources: (recap?.plan ?? []).map((p) => p.source),
+          reason: recapMotivo,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.status);
+      setRecapMotivo("");
+      await load(); await loadRepair(); await loadRecap();
+    } catch (e) { setRecapErro(String(e)); } finally { setRecapando(false); }
   }
 
   const todas = data?.rows ?? [];
@@ -202,6 +251,105 @@ export default function PaperPanel() {
             diferentes da mesma carteira. Acontece num reset parcial: as posições são
             arquivadas e o contador fica para trás.
           </div>
+        </div>
+      )}
+
+      {/* ══ RECAPITALIZAÇÃO — dar a cada mesa o capital que a ESTRATÉGIA pede.
+              O bloco fica ACIMA da tabela porque muda o significado de tudo que
+              vem abaixo: os retornos exibidos passam a ser de uma rodada nova. */}
+      {recap && recap.plan.length > 0 && (
+        <div style={{
+          border: "1px solid var(--adm-cyan)", borderRadius: 4, padding: "8px 10px",
+          marginBottom: 10, fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-3)",
+        }}>
+          <div style={{ color: "var(--adm-cyan)", fontWeight: 700, letterSpacing: "0.08em" }}>
+            ⚖ {recap.plan.length} MESA(S) COM CAPITAL DIFERENTE DO QUE A ESTRATÉGIA PEDE
+          </div>
+
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", margin: "4px 0 6px" }}>
+            As 23 carteiras receberam $1.000 (ou $300) independentemente da estratégia. Isso
+            não é neutro: mesa sub-capitalizada não rende menos — <b>rende negativo por custo
+            fixo</b>, e o resultado é lido como &quot;a estratégia não presta&quot;.
+          </div>
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", fontSize: 8.5, borderCollapse: "collapse" }}>
+              <tbody>
+                {recap.plan.map((p) => (
+                  <tr key={p.source} style={{ borderTop: "1px solid var(--adm-border)" }}>
+                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-2)", whiteSpace: "nowrap" }}>
+                      {p.label}
+                    </td>
+                    <td style={{ padding: "3px 5px", textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                      {usd(p.fromUsd)} → <b style={{ color: "var(--adm-cyan)" }}>{usd(p.toUsd)}</b>
+                    </td>
+                    <td style={{ padding: "3px 5px", textAlign: "right", color: "var(--adm-ink-4)", whiteSpace: "nowrap" }}>
+                      {p.openPositions + p.closedPositions > 0
+                        ? `arquiva ${p.openPositions + p.closedPositions}`
+                        : "sem posição"}
+                    </td>
+                    {/* O PORQUÊ do número, vindo do registro. Capital sem
+                        justificativa vira constante que ninguém confere. */}
+                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)", fontSize: 7.5 }}>
+                      {p.why}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* ⚠️ A CONSEQUÊNCIA VEM ANTES DO BOTÃO, não depois. */}
+          <div style={{
+            border: "1px solid var(--adm-amber)", borderRadius: 3, padding: "5px 7px",
+            margin: "7px 0", fontSize: 8, color: "var(--adm-amber)", lineHeight: 1.6,
+          }}>
+            ⚠️ Isto <b>ARQUIVA a rodada atual</b> e recomeça a medição. Não é um ajuste de
+            coluna: somar a diferença em <code>starting_usd</code> reescreveria o retorno
+            histórico — uma perda de 2% em $1.000 viraria 0,4% em $5.000 sem nenhum trade
+            novo ter acontecido. O histórico continua consultável; o que não acontece é o
+            número velho ser recalculado com a régua nova.
+          </div>
+
+          <label style={{ display: "block", fontSize: 8, color: "var(--adm-ink-4)" }}>
+            motivo (obrigatório, mínimo 15 caracteres — sem ele, daqui a um mês ninguém sabe
+            se o degrau na curva foi decisão ou acidente)
+            <input
+              value={recapMotivo}
+              onChange={(e) => setRecapMotivo(e.target.value)}
+              placeholder="ex.: capital corrigido para o que cada estratégia exige (Fase 1)"
+              style={{
+                display: "block", width: "100%", marginTop: 3, padding: "4px 6px",
+                background: "transparent", border: "1px solid var(--adm-border)",
+                borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 9, fontFamily: "inherit",
+              }}
+            />
+          </label>
+
+          <button
+            className="adm-btn" style={{ marginTop: 6 }}
+            onClick={runRecap}
+            disabled={recapando || recapMotivo.trim().length < 15}
+          >
+            {recapando
+              ? "recapitalizando…"
+              : recapMotivo.trim().length < 15
+                ? `⚖ escreva o motivo (${recapMotivo.trim().length}/15)`
+                : `⚖ RECAPITALIZAR ${recap.plan.length} mesa(s) e arquivar a rodada`}
+          </button>
+          {recapErro && (
+            <div style={{ color: "var(--adm-red)", fontSize: 8, marginTop: 4 }}>{recapErro}</div>
+          )}
+        </div>
+      )}
+
+      {recap && recap.plan.length === 0 && (
+        <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.6 }}>
+          ✓ toda mesa viva está com o capital que a estratégia dela pede
+          {recap.last && (
+            <> · última recapitalização em {new Date(recap.last.at).toLocaleString("pt-BR")}
+              {" — "}<i>&quot;{recap.last.reason}&quot;</i></>
+          )}
         </div>
       )}
 
