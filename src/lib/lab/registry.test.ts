@@ -128,10 +128,45 @@ describe("os três estados, e o que cada um obriga", () => {
    * mapa — eu já levantei uma hipótese de regime antes (o clima) e a minha
    * própria medição derrubou. A ressalva tem que viajar com ela.
    */
-  it("o filtro de regime carrega a ressalva do clima refutado", () => {
+  /**
+   * ⚠️ ESTE TESTE MUDOU EM 06/08, E A MUDANÇA É O RESULTADO.
+   *
+   * Ele afirmava `status === "cinza"` — não medido. O filtro de regime era a
+   * prioridade nº 1 do dono e a hipótese mais frágil do mapa, e a ressalva
+   * registrada dizia "candidato, não promessa" porque eu já tinha levantado
+   * uma hipótese de regime antes (o clima) e a minha própria medição derrubou.
+   *
+   * Derrubou de novo, e desta vez INVERTIDA: RANGING rende −0,446% (n=176) e
+   * TRENDING_UP rende −0,777% (n=135). A lateralidade é o MELHOR terreno desta
+   * biblioteca, não o pior.
+   *
+   * A hipótese continua gravada ao lado do `killedWhy` de propósito: apagá-la
+   * deixaria só a conclusão, e a conclusão sem a previsão que ela derrubou é
+   * exatamente o que permite alguém reescrever a previsão depois do resultado.
+   */
+  it("o filtro de regime foi MEDIDO e reprovado — e a hipótese fica ao lado", () => {
     const s = BY_SLUG.get("regime_filter")!;
-    expect(s.status).toBe("cinza");
+    expect(s.status).toBe("morta");
+    // A previsão original permanece, para a refutação ser conferível.
     expect(s.hypothesis).toMatch(/candidato, não promessa/i);
+    expect(s.hypothesis).toMatch(/direção paga, lateralidade mata/i);
+    // E o motivo carrega os DOIS números com as DUAS amostras.
+    expect(s.killedWhy).toMatch(/RANGING/);
+    expect(s.killedWhy).toMatch(/n=176/);
+    expect(s.killedWhy).toMatch(/n=135/);
+  });
+
+  /**
+   * A refutação do regime NÃO mata a média móvel. São estratégias opostas —
+   * reversão à média precisa de faixa, seguidor de tendência precisa de
+   * tendência — e o `killedWhy` tem que dizer isso, senão daqui a um mês
+   * alguém lê "regime refutado" e desliga a coisa errada.
+   */
+  it("a reprovação do regime declara o que ela NÃO refuta", () => {
+    const s = BY_SLUG.get("regime_filter")!;
+    expect(s.killedWhy).toMatch(/NÃO REFUTA/i);
+    expect(s.killedWhy).toMatch(/trend_ma50_long_short/);
+    expect(BY_SLUG.get("trend_ma50_long_short")!.status).not.toBe("morta");
   });
 
   it("o funding carrega a discrepância de 1,4% contra 5-20%", () => {

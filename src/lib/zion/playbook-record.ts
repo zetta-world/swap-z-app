@@ -190,11 +190,28 @@ export interface RecordSnapshot {
    * sem estratégia nenhuma.
    */
   marketPct?: number | null;
-  /** playbook → o que foi medido naquele instante, clima incluído. */
+  /**
+   * playbook → o que foi medido naquele instante.
+   *
+   * ⚠️ `byRegime` FALTAVA AQUI, e foi a QUINTA vez desta família (06/08).
+   *
+   * `PlaybookRecordEntry` declara `byRegime` desde sempre, o registro ATUAL o
+   * grava, e a FOTO histórica o descartava — junto com o espelho, consertado
+   * ontem pelo mesmo motivo.
+   *
+   * Descobri ao começar a Fase 2 (o filtro de regime): fui comparar o
+   * desempenho por regime ao longo do tempo e só existia o instante. Sem
+   * histórico não dá para saber se a diferença entre regimes é estável ou se é
+   * a foto de hoje — e "estável" era exatamente a pergunta, porque a minha
+   * hipótese de clima já tinha caído uma vez por eu comparar coisa que variava.
+   */
   byPlaybook: Record<string, {
     decided: number;
     netPerTrade: number | null;
     byWeather?: Partial<Record<"favoravel" | "misto" | "adverso", { decided: number; netPerTrade: number }>>;
+    byRegime?: Partial<Record<MarketRegime, { decided: number; netPerTrade: number }>>;
+    inverseNetPerTrade?: number | null;
+    straddles?: number | null;
   }>;
 }
 
@@ -220,6 +237,9 @@ export async function savePlaybookRecord(record: PlaybookRecord): Promise<boolea
         {
           decided: e.decided, netPerTrade: e.netPerTrade,
           byWeather: e.byWeather,
+          // O REGIME vai junto — é a quebra que a Fase 2 mede, e sem histórico
+          // não dá para saber se a diferença entre regimes é estável.
+          byRegime: e.byRegime,
           // O espelho vai junto: é ele que decide se estas mesas ganham short.
           inverseNetPerTrade: e.inverseNetPerTrade,
           straddles: e.straddles,
