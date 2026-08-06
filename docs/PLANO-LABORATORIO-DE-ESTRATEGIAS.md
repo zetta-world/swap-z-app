@@ -776,11 +776,64 @@ que faríamos. Agora é a mais barata **por faixa**, e a cadeia aparece na linha
 curta silenciosa do funding reencarnada em outra rota, três dias depois de eu a
 consertar. Cadeias em paralelo agora.
 
-**Pendente: o dono rodar o 🏦 MEDIR O RENDIMENTO LÍQUIDO.**
+## A primeira rodada (06/08) — e o que ela quebrou
 
-⚠️ E a primeira rodada é também um teste de rede: `api.llama.fi` funcionar não
-prova que `yields.llama.fi` funciona. Se recusar, a tela diz o host e o código,
-em vez de "nenhum dado".
+`yields.llama.fi` respondeu de primeira; a dúvida do host caiu. Os dados de
+rendimento são reais e conferíveis (Lido 2,20%, BUIDL 3,51%, USDY 3,55%,
+OUSG 3,47%). **A resposta que a Fase 3 pediu apareceu:**
+
+| | líquido 1º ano | pernas | risco extra |
+|---|---|---|---|
+| **Empréstimo de stablecoin** | **+3,23%** | 3 tx de gás | — |
+| **Tesouro tokenizado** | **+3,10%** | 1 ida e volta | emissor |
+| **Funding / cash-and-carry** | **+1,16%** | **4 pernas** | liquidação da perna vendida |
+| Staking líquido | +1,88% | 1 ida e volta | fila de saque |
+
+O funding perde para a alternativa mais simples — exatamente o risco levantado
+ao fechar a Fase 3.
+
+### Quatro defeitos, e todos meus
+
+**1. Custo NEGATIVO no restaking.** −0,40% em todas as cinco faixas, líquido
+(2,89%) **maior que o bruto** (2,49%), equilíbrio de **−58 dias**, e veredito
+VERDE em cima disso. Entrar e sair não pode pagar você. A causa é o `priceUSD`
+dos dois lados da troca discordarem ~0,4% na fonte.
+→ custo achatado em zero **com bandeira**; zero também é mentira e empurra o
+líquido para cima, então a leitura vira INCONCLUSIVO. `equilibrioDias` devolve
+null com custo negativo. E `liquidoPrimeiroAnoPct` afirma a invariante
+"líquido ≤ bruto" na própria função, não em quem a chama.
+
+**2. Gás não lido é idêntico a gás barato.** O custo mal se mexeu entre $500 e
+$50.000 — o que se lê como *"o gás deixou de ser barreira"*, que seria a
+refutação da hipótese central desta fase. Só que `gasDaCotacao` devolve null
+quando `gasCosts` vem vazio, e o `gasUsd` virava **zero em silêncio**. As duas
+leituras davam a mesma tela e eu não tinha como separá-las.
+→ `cotacoesComGas`/`cotacoes` por cadeia, na tela; sem gás lido, INCONCLUSIVO.
+
+**3. Amostra inflada.** "12 piscinas" no Tesouro tokenizado eram **BUIDL contado
+seis vezes** (Ethereum ×2, Polygon, Solana, Avalanche, Arbitrum) com o mesmo
+3,5%. No restaking: 3 piscinas, das quais **duas eram o mesmo `ether.fi-stake`**
+em duas cadeias — duas taxas passando por um piso de três.
+→ `produtosDistintos` (emissor+ativo, ficando a de maior depósito). O piso, o
+`sample_n` e a **mediana** passam a correr sobre produtos. É a lição do ρ do
+funding com outra roupa: o mesmo emissor em seis cadeias tem UMA taxa.
+
+**4. A medição de funding foi um replay.** `1.1611632422330422` às 01h34 e
+`1.1611632422330422` às 10h21 — dezesseis dígitos idênticos, nove horas depois,
+numa fonte que paga a cada 8h. O `revalidate: 3600` serviu cache e a linha em
+`lab_runs` ficou igual à de uma medição de verdade. **O dono apertou o botão,
+não mediu nada, e não tinha como saber.**
+→ `no-store` nas buscas de funding, e `ultimoPontoEm` na tela: duas rodadas com
+o mesmo carimbo leram o mesmo dado.
+
+Três dos quatro são a mesma forma — **dois estados diferentes com a mesma
+aparência** — que é o padrão que esta semana já achou seis vezes. Desta vez
+dentro de código que escrevi no mesmo dia.
+
+**Pendente: rodar o 🏦 e o 🪙 de novo, agora com as travas.** As linhas de 06/08
+que estão no banco não devem ser lidas como medição: o restaking está inflado
+pelo custo negativo, e as amostras de Tesouro e restaking estão infladas por
+implantação.
 
 ⚠️ **A Fase 3 mudou o que esta fase decide.** O funding entregou +1,16%/ano de
 mediana e +3,0%/ano na cesta selecionada — faixa que **o Tesouro tokenizado

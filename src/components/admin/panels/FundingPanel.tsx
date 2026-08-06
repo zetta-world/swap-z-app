@@ -50,6 +50,8 @@ type Dados = {
     diasMedianos?: number | null;
     medianaLiquidaAnualPct?: number | null;
     semAmostra?: number;
+    /** Carimbo do último pagamento lido. Ver a nota `SEM_CACHE` no route.ts. */
+    ultimoPontoEm?: string | null;
   };
   veredito: { readable: boolean; verdict: string; positivos: number; total: number };
   /** Quantos símbolos vieram de cada corretora. Ver a nota no route.ts. */
@@ -211,6 +213,19 @@ export default function FundingPanel() {
                 host de futuros da Binance recusa IP de datacenter, e o evento
                 gravado não sabia dizer isso. Fonte na tela para "funcionou" e
                 "funcionou pela metade" não ficarem iguais. */}
+            {/* ⚠️ O CARIMBO DO ÚLTIMO PAGAMENTO LIDO (06/08).
+                   O dono rodou às 10h21 e recebeu, até o 16º dígito, o mesmo
+                   resultado das 01h34 — cache servido, nove horas depois, numa
+                   fonte que paga a cada 8h. Ele apertou o botão, não mediu
+                   nada, e não tinha como saber. Duas rodadas com o mesmo
+                   carimbo leram o MESMO dado. */}
+            {d.resumo.ultimoPontoEm && (
+              <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>
+                último pagamento lido:{" "}
+                <b>{new Date(d.resumo.ultimoPontoEm).toLocaleString("pt-BR")}</b>
+                {" "}— duas rodadas com este mesmo carimbo leram o mesmo dado
+              </div>
+            )}
             <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>
               fonte:{" "}
               {Object.entries(d.fontes).map(([f, n]) => `${f} ${n}`).join(" · ") || "—"}

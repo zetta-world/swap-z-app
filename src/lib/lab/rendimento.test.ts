@@ -11,8 +11,8 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  ALVOS, TVL_MINIMO_USD, MIN_PISCINAS,
-  escolherApy, casaAlvo, custoDaFaixa, liquidoPrimeiroAnoPct,
+  ALVOS, TVL_MINIMO_USD, MIN_PRODUTOS,
+  escolherApy, casaAlvo, custoDaFaixa, liquidoPrimeiroAnoPct, produtosDistintos,
   equilibrioDias, vereditoRendimento, type PiscinaMedida,
 } from "@/lib/lab/rendimento";
 import { BY_SLUG } from "@/lib/lab/registry";
@@ -180,12 +180,19 @@ describe("o líquido do 1º ano e o equilíbrio", () => {
   });
 });
 
+/**
+ * Uma piscina de teste.
+ *
+ * ⚠️ CADA UMA COM PROJETO PRÓPRIO — senão viram UM produto e o piso reprova.
+ * É exatamente a correção de 06/08: ver `produtosDistintos`.
+ */
+const p = (apy: number, de: PiscinaMedida["apyDe"] = "media30d"): PiscinaMedida => ({
+  slug: "stablecoin_lending", poolId: `x${apy}`, projeto: `protocolo-${apy}`,
+  cadeia: "Base", simbolo: "USDC", tvlUsd: 1e8,
+  apyPct: apy, apyDe: de, apyRecompensaPct: null,
+});
+
 describe("o veredito", () => {
-  const p = (apy: number, de: PiscinaMedida["apyDe"] = "media30d"): PiscinaMedida => ({
-    slug: "stablecoin_lending", poolId: `x${apy}`, projeto: "aave-v3",
-    cadeia: "Base", simbolo: "USDC", tvlUsd: 1e8,
-    apyPct: apy, apyDe: de, apyRecompensaPct: null,
-  });
 
   it("nenhuma piscina é INCONCLUSIVO, nunca reprovado", () => {
     const v = vereditoRendimento([], 3, 1000);
@@ -199,11 +206,11 @@ describe("o veredito", () => {
    * protocolo num dia. Aprovar com n=1 é a forma do portão de lançamento que
    * aprovava com n=0.
    */
-  it("abaixo do piso de piscinas é INCONCLUSIVO, com o número na frente", () => {
+  it("abaixo do piso de produtos é INCONCLUSIVO, com o número na frente", () => {
     const v = vereditoRendimento([p(5)], 3, 1000);
     expect(v.status).toBe("cinza");
     expect(v.verdict).toContain("INCONCLUSIVO");
-    expect(v.verdict).toContain(`piso de ${MIN_PISCINAS}`);
+    expect(v.verdict).toContain(`piso de ${MIN_PRODUTOS}`);
   });
 
   /**
@@ -258,5 +265,142 @@ describe("o veredito", () => {
   it("com todas em média de 30 dias NÃO há ressalva pendurada", () => {
     const v = vereditoRendimento([p(4), p(5), p(6)], 3, 1000);
     expect(v.verdict).not.toContain("sem média de 30 dias");
+  });
+});
+
+/**
+ * ⚠️⚠️ OS QUATRO DEFEITOS DA RODADA DE 06/08.
+ *
+ * O dono rodou o 🏦 e o resultado trouxe, de uma vez: custo negativo, líquido
+ * maior que bruto, equilíbrio de −58 dias, amostra inflada e um veredito VERDE
+ * em cima de tudo isso. Cada `it` abaixo é um deles, com o número que apareceu
+ * na tela.
+ */
+describe("custo negativo — a cotação que te PAGA para entrar e sair", () => {
+  /**
+   * O que apareceu: restaking com custo −0,40% em todas as cinco faixas. A
+   * causa é o `priceUSD` dos dois lados da troca discordarem ~0,4% na fonte.
+   */
+  it("custo negativo é achatado em zero E levanta a bandeira", () => {
+    const c = custoDaFaixa(2000, -0.2, 0);
+    expect(c.trocaPct).toBe(0);
+    expect(c.idaEVoltaPct).toBe(0);
+    expect(c.precoIncoerente).toBe(true);
+  });
+
+  it("custo normal NÃO levanta bandeira nenhuma", () => {
+    expect(custoDaFaixa(2000, 0.2, 5).precoIncoerente).toBe(false);
+  });
+
+  /**
+   * Achatar sozinho seria pior que o defeito: o líquido subiria por causa de
+   * uma FALHA DE MEDIÇÃO e a tela mostraria o número bonito. Tem que reprovar.
+   */
+  it("preço incoerente derruba o veredito para INCONCLUSIVO, não VERDE", () => {
+    const ps = [p(4), p(5), p(6)];
+    expect(vereditoRendimento(ps, 3.1, 1000).status).toBe("verde");
+    const v = vereditoRendimento(ps, 3.1, 1000, { precoIncoerente: true });
+    expect(v.status).toBe("cinza");
+    expect(v.readable).toBe(false);
+    expect(v.verdict).toContain("NEGATIVO");
+    expect(v.verdict).toContain("inflado");
+  });
+
+  it("o líquido NUNCA passa do bruto, nem chamado direto", () => {
+    expect(liquidoPrimeiroAnoPct(2.49, -0.4)).toBe(2.49);
+  });
+
+  /** "Equilíbrio −58 dias" é frase sem significado que passa por ter unidade. */
+  it("custo negativo não tem ponto de equilíbrio — null, não −58", () => {
+    expect(equilibrioDias(2.49, -0.4034)).toBeNull();
+  });
+});
+
+describe("gás não lido não pode parecer gás barato", () => {
+  /**
+   * `gasDaCotacao` devolve null quando `gasCosts` vem vazio, e o `gasUsd`
+   * virava zero em silêncio. O custo então mal se mexia entre $500 e $50.000 —
+   * que se lê como "o gás deixou de ser barreira", a hipótese central da fase.
+   * As duas leituras davam a MESMA tela.
+   */
+  it("sem gás lido o veredito é INCONCLUSIVO e diz por quê", () => {
+    const v = vereditoRendimento([p(4), p(5), p(6)], 3.1, 1000, { gasLido: false });
+    expect(v.status).toBe("cinza");
+    expect(v.verdict).toContain("não trouxe");
+    expect(v.verdict).toContain("SEM gás");
+  });
+
+  it("com gás lido segue o veredito normal", () => {
+    expect(vereditoRendimento([p(4), p(5), p(6)], 3.1, 1000, { gasLido: true }).status)
+      .toBe("verde");
+  });
+
+  /** Sem informação sobre gás (nenhuma cotação) não é o mesmo que "não veio". */
+  it("ausência de informação não reprova sozinha", () => {
+    expect(vereditoRendimento([p(4), p(5), p(6)], 3.1, 1000, {}).status).toBe("verde");
+  });
+});
+
+describe("o mesmo produto em N cadeias não é N observações", () => {
+  const buidl = (cadeia: string, tvl: number): PiscinaMedida => ({
+    slug: "tokenized_treasury", poolId: `b-${cadeia}`, projeto: "blackrock-buidl",
+    cadeia, simbolo: "BUIDL", tvlUsd: tvl, apyPct: 3.51, apyDe: "media30d",
+    apyRecompensaPct: null,
+  });
+
+  /**
+   * O que apareceu: "12 piscinas" no Tesouro tokenizado, das quais SEIS eram
+   * BUIDL em seis cadeias com o mesmo 3,5%.
+   */
+  it("BUIDL em seis cadeias é UM produto, e fica a de maior depósito", () => {
+    const seis = [
+      buidl("Ethereum", 964e6), buidl("Polygon", 13e6), buidl("Solana", 685e6),
+      buidl("Avalanche", 631e6), buidl("Arbitrum", 24e6), buidl("Ethereum", 224e6),
+    ];
+    const d = produtosDistintos(seis);
+    expect(d).toHaveLength(1);
+    expect(d[0].tvlUsd).toBe(964e6);
+  });
+
+  it("emissores diferentes continuam sendo produtos diferentes", () => {
+    expect(produtosDistintos([p(4), p(5), p(6)])).toHaveLength(3);
+  });
+
+  /**
+   * O caso real do restaking: 3 piscinas, das quais duas eram o MESMO
+   * `ether.fi-stake` em duas cadeias. Duas taxas passando por um piso de três.
+   */
+  it("o piso conta PRODUTOS, então 3 implantações de 2 emissores reprovam", () => {
+    const etherfi = (c: string, tvl: number): PiscinaMedida => ({
+      slug: "restaking", poolId: `e-${c}`, projeto: "ether.fi-stake", cadeia: c,
+      simbolo: "WEETH", tvlUsd: tvl, apyPct: 2.49, apyDe: "media30d", apyRecompensaPct: null,
+    });
+    const renzo: PiscinaMedida = {
+      slug: "restaking", poolId: "r", projeto: "renzo", cadeia: "Ethereum",
+      simbolo: "EZETH", tvlUsd: 88e6, apyPct: 2.13, apyDe: "media30d", apyRecompensaPct: null,
+    };
+    const tres = [etherfi("Ethereum", 3628e6), etherfi("Base", 34e6), renzo];
+
+    expect(tres).toHaveLength(3);
+    expect(produtosDistintos(tres)).toHaveLength(2);
+
+    const v = vereditoRendimento(tres, 2.89, 2000);
+    expect(v.status).toBe("cinza");
+    expect(v.verdict).toContain("INCONCLUSIVO");
+    // E a tela mostra as duas contagens, para ninguém achar que sumiu dado.
+    expect(v.verdict).toContain("3 implantações");
+  });
+
+  /**
+   * Com BUIDL repetido seis vezes, a mediana de "12 piscinas" é a taxa da
+   * BlackRock com seis votos. A mediana tem que correr sobre produtos.
+   */
+  it("a mediana não deixa um emissor votar seis vezes", () => {
+    const seis = Array.from({ length: 6 }, (_, i) => buidl(`C${i}`, 1e8 - i));
+    // Seis cópias de 3,51% mais dois emissores em 10% — a mediana de produtos
+    // é 10%, não 3,51%, porque são três produtos e não oito piscinas.
+    const v = vereditoRendimento([...seis, p(10), p(10.5)], 3, 1000);
+    expect(v.verdict).toContain("10.00%");
+    expect(v.verdict).not.toContain("3.51%");
   });
 });

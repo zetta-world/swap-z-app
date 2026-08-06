@@ -9,7 +9,7 @@ import { fetchLiFiQuote, LIFI_CHAIN_IDS, LIFI_NATIVE, type LfQuote } from "@/lib
 import { findToken } from "@/lib/tokens";
 import { median } from "@/lib/zion/stats";
 import {
-  ALVOS, FAIXAS_PADRAO, casaAlvo, escolherApy, custoDaFaixa,
+  ALVOS, FAIXAS_PADRAO, casaAlvo, escolherApy, custoDaFaixa, produtosDistintos,
   liquidoPrimeiroAnoPct, equilibrioDias, vereditoRendimento,
   type PiscinaMedida, type CustoFaixa,
 } from "@/lib/lab/rendimento";
@@ -58,6 +58,20 @@ interface CustoCadeia {
   usdPorGas: number;
   /** Custo percentual de UMA troca, por faixa de capital — MEDIDO. */
   trocaPctPorFaixa: Map<number, number>;
+  /**
+   * \u26a0\ufe0f\u26a0\ufe0f A COTA\u00c7\u00c3O TROUXE `gasCosts`? (06/08)
+   *
+   * `gasDaCotacao` devolve null quando o campo vem vazio, e a\u00ed o meu `gasUsd`
+   * virava ZERO em sil\u00eancio. O efeito na rodada de 06/08: o custo mal se mexeu
+   * entre $500 e $50.000, o que se l\u00ea como "o g\u00e1s deixou de ser barreira" \u2014 a
+   * hip\u00f3tese central desta fase, refutada. S\u00f3 que "g\u00e1s barato" e "g\u00e1s n\u00e3o lido"
+   * davam EXATAMENTE a mesma tela, e eu n\u00e3o tinha como separar as duas.
+   *
+   * \u00c9 o padr\u00e3o que esta semana j\u00e1 achou seis vezes \u2014 dois estados diferentes com
+   * a mesma apar\u00eancia \u2014 desta vez dentro do c\u00f3digo que escrevi no mesmo dia.
+   */
+  cotacoes: number;
+  cotacoesComGas: number;
   falha?: string;
 }
 
@@ -114,10 +128,13 @@ async function medirCadeia(
 ): Promise<CustoCadeia> {
   const usdc = findToken(cadeia, "USDC");
   const chainId = LIFI_CHAIN_IDS[cadeia];
-  const vazio: CustoCadeia = { cadeia, usdPorGas: 0, trocaPctPorFaixa: new Map() };
+  const vazio: CustoCadeia = {
+    cadeia, usdPorGas: 0, trocaPctPorFaixa: new Map(), cotacoes: 0, cotacoesComGas: 0,
+  };
   if (!usdc || chainId == null) return { ...vazio, falha: "sem USDC ou sem id na LI.FI" };
 
   let usdPorGas = 0;
+  let cotacoes = 0, cotacoesComGas = 0;
   const porFaixa = new Map<number, number>();
   const erros: string[] = [];
 
@@ -141,17 +158,21 @@ async function medirCadeia(
         fromAddress: ENDERECO_LEITURA,
         slippageBps: 50,
       }, process.env.LIFI_API_KEY);
+      cotacoes++;
       const custo = custoDaTroca(q);
       if (custo != null) porFaixa.set(faixa, custo);
       const g = gasDaCotacao(q);
-      // O preço por unidade é o mesmo em qualquer faixa; a primeira que vier serve.
-      if (g && usdPorGas === 0) usdPorGas = g.usd / g.unidades;
+      if (g) {
+        cotacoesComGas++;
+        // O preço por unidade é o mesmo em qualquer faixa; o primeiro serve.
+        if (usdPorGas === 0) usdPorGas = g.usd / g.unidades;
+      }
     } catch (e) {
       erros.push(`${faixa}:${String(e).slice(0, 40)}`);
     }
   }
   return {
-    cadeia, usdPorGas, trocaPctPorFaixa: porFaixa,
+    cadeia, usdPorGas, trocaPctPorFaixa: porFaixa, cotacoes, cotacoesComGas,
     falha: erros.length ? erros.join(" ") : undefined,
   };
 }
@@ -171,6 +192,12 @@ interface LinhaEstrategia {
   }>;
   apyBrutoMedianoPct: number | null;
   liquidoNaFaixaDeclaradaPct: number | null;
+  /** A cotação devolveu custo negativo em alguma faixa? Ver `custoDaFaixa`. */
+  precoIncoerente: boolean;
+  /** `gasCosts` veio nas cotações desta estratégia? null = não houve cotação. */
+  gasLido: boolean | null;
+  /** Produtos distintos (emissor+ativo), que é a amostra de verdade. */
+  produtos: number;
   veredito: ReturnType<typeof vereditoRendimento>;
 }
 
@@ -304,6 +331,7 @@ export async function POST(): Promise<NextResponse> {
       if (!melhor) {
         return {
           faixaUsd: f, trocaPct: 0, gasPct: 0, idaEVoltaPct: 0, cadeia: null,
+          precoIncoerente: false,
           apyBrutoPct: apyMediano, liquido1oAnoPct: null, equilibrioDias: null,
         };
       }
@@ -318,16 +346,33 @@ export async function POST(): Promise<NextResponse> {
     });
 
     const naDeclarada = linhasFaixa.find((l) => l.faixaUsd === capital)?.liquido1oAnoPct ?? null;
+
+    /**
+     * ⚠️ AS DUAS RESSALVAS QUE REPROVAM A LEITURA (06/08).
+     *
+     * `precoIncoerente`: alguma faixa devolveu custo NEGATIVO — impossível, e
+     * achatar em zero infla o líquido. `gasLido`: as cotações desta estratégia
+     * trouxeram `gasCosts`? Sem isso "gás barato" e "gás não lido" dão a mesma
+     * tela. Ver as notas em `CustoCadeia` e em `vereditoRendimento`.
+     */
+    const precoIncoerente = linhasFaixa.some((l) => l.precoIncoerente);
+    const usadas = [...new Set(linhasFaixa.map((l) => l.cadeia).filter(Boolean))] as ChainId[];
+    const gasLido = usadas.length === 0
+      ? undefined
+      : usadas.every((c) => (custos.get(c)?.cotacoesComGas ?? 0) > 0);
     linhas.push({
       slug: alvo.slug,
       nome: reg?.name ?? alvo.slug,
       capitalUsd: capital,
       piscinas: ps,
+      produtos: produtosDistintos(ps).length,
       naoEncontrados: naoAchados.get(alvo.slug) ?? [],
       faixas: linhasFaixa,
       apyBrutoMedianoPct: apyMediano,
       liquidoNaFaixaDeclaradaPct: naDeclarada,
-      veredito: vereditoRendimento(ps, naDeclarada, capital),
+      precoIncoerente,
+      gasLido: gasLido ?? null,
+      veredito: vereditoRendimento(ps, naDeclarada, capital, { precoIncoerente, gasLido }),
     });
   }
 
@@ -353,7 +398,9 @@ export async function POST(): Promise<NextResponse> {
           // Rendimento é contínuo: a janela é o ano que a conta projeta.
           windowDays: 365,
           params: {
-            fonte: hostUsado, faixas, piscinas: l.piscinas.length,
+            fonte: hostUsado, faixas,
+            piscinas: l.piscinas.length, produtos: l.produtos,
+            precoIncoerente: l.precoIncoerente, gasLido: l.gasLido,
             naoEncontrados: l.naoEncontrados,
           },
         });
@@ -361,8 +408,15 @@ export async function POST(): Promise<NextResponse> {
           netAnnualizedPct: l.liquidoNaFaixaDeclaradaPct,
           grossPct: l.apyBrutoMedianoPct,
           costPct: l.faixas.find((f) => f.faixaUsd === l.capitalUsd)?.idaEVoltaPct ?? null,
-          // A amostra é o número de PISCINAS — sem ela o APY é opinião.
-          sampleN: l.piscinas.length,
+          /**
+           * ⚠️ A AMOSTRA É DE PRODUTOS, NÃO DE IMPLANTAÇÕES (06/08).
+           *
+           * A rodada de 06/08 gravou `sample_n = 12` no Tesouro tokenizado.
+           * Eram BUIDL contado seis vezes, em seis cadeias, com o mesmo 3,5%:
+           * cinco produtos apresentados como doze observações. Ver
+           * `produtosDistintos`.
+           */
+          sampleN: l.produtos,
           verdict: l.veredito.status,
           verdictText: l.veredito.verdict,
           perSymbol: [
@@ -378,6 +432,18 @@ export async function POST(): Promise<NextResponse> {
           ],
           notMeasured: [
             ...naoMedido,
+            ...(l.precoIncoerente
+              ? ["⚠️ a cotação devolveu custo NEGATIVO em alguma faixa — os preços dos "
+                 + "dois lados da troca discordam na fonte; o custo foi achatado em zero"]
+              : []),
+            ...(l.gasLido === false
+              ? ["⚠️ a cotação NÃO trouxe custo de gás — o que está na tabela é impacto e "
+                 + "taxa, sem gás"]
+              : []),
+            ...(l.piscinas.length !== l.produtos
+              ? [`${l.piscinas.length} implantações correspondem a ${l.produtos} produtos `
+                 + "distintos — o mesmo emissor em várias cadeias tem UMA taxa"]
+              : []),
             ...(l.naoEncontrados.length
               ? [`⚠️ projetos declarados NÃO encontrados na fonte: ${l.naoEncontrados.join(", ")}`]
               : []),
@@ -399,8 +465,10 @@ export async function POST(): Promise<NextResponse> {
     cadeiasMedidas: [...custos.keys()],
     cadeiasComFalha: [...custos.values()].filter((c) => c.falha).map((c) => `${c.cadeia}:${c.falha}`),
     linhas: linhas.map((l) => ({
-      slug: l.slug, piscinas: l.piscinas.length, capital: l.capitalUsd,
+      slug: l.slug, piscinas: l.piscinas.length, produtos: l.produtos,
+      capital: l.capitalUsd,
       bruto: l.apyBrutoMedianoPct, liq: l.liquidoNaFaixaDeclaradaPct,
+      precoIncoerente: l.precoIncoerente, gasLido: l.gasLido,
       status: l.veredito.status, naoEncontrados: l.naoEncontrados,
     })),
     tookMs: Date.now() - t0,
@@ -415,6 +483,8 @@ export async function POST(): Promise<NextResponse> {
       cadeia: c.cadeia,
       usdPorGas: c.usdPorGas,
       faixasMedidas: c.trocaPctPorFaixa.size,
+      cotacoes: c.cotacoes,
+      cotacoesComGas: c.cotacoesComGas,
       falha: c.falha ?? null,
     })),
     linhas,

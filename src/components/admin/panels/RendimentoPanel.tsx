@@ -30,17 +30,25 @@ type Faixa = {
   faixaUsd: number; trocaPct: number; gasPct: number; idaEVoltaPct: number;
   /** A cadeia MAIS BARATA naquela faixa. Ver a nota `cadeiasDe` no route.ts. */
   cadeia: string | null;
+  /** A cotação devolveu custo NEGATIVO nesta faixa. Ver `custoDaFaixa`. */
+  precoIncoerente: boolean;
   apyBrutoPct: number | null; liquido1oAnoPct: number | null; equilibrioDias: number | null;
 };
 type Linha = {
   slug: string; nome: string; capitalUsd: number;
   piscinas: Piscina[]; naoEncontrados: string[]; faixas: Faixa[];
+  /** Emissor+ativo distintos. O mesmo produto em N cadeias é UM. */
+  produtos: number;
+  precoIncoerente: boolean; gasLido: boolean | null;
   apyBrutoMedianoPct: number | null; liquidoNaFaixaDeclaradaPct: number | null;
   veredito: { readable: boolean; verdict: string; status: "verde" | "cinza" | "morta" };
 };
 type Dados = {
   fonte: string; falhasPorHost: string | null; piscinasLidas: number; faixas: number[];
-  cadeias: Array<{ cadeia: string; usdPorGas: number; faixasMedidas: number; falha: string | null }>;
+  cadeias: Array<{
+    cadeia: string; usdPorGas: number; faixasMedidas: number;
+    cotacoes: number; cotacoesComGas: number; falha: string | null;
+  }>;
   linhas: Linha[]; naoMedido: string[]; aviso: string; tookMs: number;
 };
 
@@ -101,8 +109,14 @@ export default function RendimentoPanel() {
             )}
             <div>
               custo cotado em: {d.cadeias.map((c) => (
-                <span key={c.cadeia} style={{ color: c.falha ? "var(--adm-amber)" : "var(--adm-ink-4)" }}>
-                  {c.cadeia}{c.falha ? "⚠" : ""}{" "}
+                <span key={c.cadeia} style={{
+                  color: c.falha || c.cotacoesComGas === 0 ? "var(--adm-amber)" : "var(--adm-ink-4)",
+                }}>
+                  {/* Quantas cotações trouxeram `gasCosts`. Sem isto, gás não
+                      lido vira gás zero e ninguém vê. */}
+                  {c.cadeia} <span style={{ fontSize: 7 }}>
+                    (gás {c.cotacoesComGas}/{c.cotacoes})
+                  </span>{c.falha ? "⚠" : ""}{" "}
                 </span>
               ))}
               {d.cadeias.length === 0 && <span style={{ color: "var(--adm-red)" }}>nenhuma</span>}
@@ -126,7 +140,14 @@ export default function RendimentoPanel() {
                   <div style={{ fontSize: 11, color: "var(--adm-ink-2)" }}>
                     <b>{l.nome}</b>
                     <span style={{ fontSize: 8.5, color: "var(--adm-ink-4)" }}>
-                      {" "}· capital declarado {usd(l.capitalUsd)} · {l.piscinas.length} piscinas
+                      {/* ⚠️ PRODUTOS, NÃO IMPLANTAÇÕES. "12 piscinas" no Tesouro
+                          eram BUIDL contado seis vezes com o mesmo 3,5%. Ver
+                          `produtosDistintos`. */}
+                      {" "}· capital declarado {usd(l.capitalUsd)} · <b>{l.produtos}</b> produto
+                      {l.produtos === 1 ? "" : "s"}
+                      {l.piscinas.length !== l.produtos && (
+                        <span> ({l.piscinas.length} implantações)</span>
+                      )}
                     </span>
                   </div>
                   <div style={{ fontSize: 9, color: COR[l.veredito.status], whiteSpace: "nowrap" }}>
@@ -140,6 +161,32 @@ export default function RendimentoPanel() {
                 }}>
                   {l.veredito.verdict}
                 </div>
+
+                {/* ⚠️ AS DUAS RESSALVAS QUE INVALIDAM A TABELA VÊM ANTES DELA.
+                       Se elas aparecessem embaixo, alguém leria os números e
+                       decidiria antes de chegar no aviso — que é o mesmo motivo
+                       do "ARQUIVA a rodada" ficar acima do botão. */}
+                {l.precoIncoerente && (
+                  <div style={{
+                    border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
+                    marginTop: 7, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+                  }}>
+                    ⚠️ A COTAÇÃO DEVOLVEU CUSTO <b>NEGATIVO</b> em pelo menos uma faixa —
+                    entrar e sair te pagando, o que é impossível. Os dois lados da troca têm
+                    preços que discordam na fonte. O custo foi achatado em zero, então{" "}
+                    <b>o líquido abaixo está inflado</b> e a linha não vale como medição.
+                  </div>
+                )}
+                {l.gasLido === false && (
+                  <div style={{
+                    border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
+                    marginTop: 7, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+                  }}>
+                    ⚠️ A COTAÇÃO NÃO TROUXE CUSTO DE GÁS. O que está na tabela é impacto e
+                    taxa, <b>sem gás</b>. &quot;Gás barato&quot; e &quot;gás não lido&quot; dariam
+                    a mesma tela — este aviso existe para não darem.
+                  </div>
+                )}
 
                 {/* ⚠️ A TABELA É A PEÇA CENTRAL, não um enfeite embaixo de um
                        número grande. É ela que responde "serve para o peixe
@@ -191,8 +238,11 @@ export default function RendimentoPanel() {
                               }}>
                                 −{f.gasPct.toFixed(2)}%
                               </td>
-                              <td style={{ padding: "3px 5px", color: "var(--adm-ink-3)" }}>
-                                −{f.idaEVoltaPct.toFixed(2)}%
+                              <td style={{
+                                padding: "3px 5px",
+                                color: f.precoIncoerente ? "var(--adm-red)" : "var(--adm-ink-3)",
+                              }}>
+                                {f.precoIncoerente ? "⚠ 0,00%" : `−${f.idaEVoltaPct.toFixed(2)}%`}
                               </td>
                               <td style={{
                                 padding: "3px 5px",
