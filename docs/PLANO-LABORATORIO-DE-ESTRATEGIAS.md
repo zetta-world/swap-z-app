@@ -311,7 +311,7 @@ amostra zero.
 
 ---
 
-### FASE 1 — As mesas que já existem · 🟡 EM ANDAMENTO (05/08)
+### FASE 1 — As mesas que já existem · 🟢 CONCLUÍDA (06/08)
 *"Olhar fundo nelas e dar tudo que elas precisam."*
 
 1. **Recapitalizar** cada mesa viva com o capital que a estratégia exige (não $1.000 para todas).
@@ -365,13 +365,23 @@ existência inteira **e zero eventos de tick**. Não dá para saber se rodam e
 não acham nada, ou se não rodam. **Não se aposenta o que não se consegue
 diagnosticar** — elas precisam de evento de tick antes de qualquer veredito.
 
-### Pendente da Fase 1
+### Fase 1 — placar final
 
-- rodar a recapitalização (é botão, não automático — o dono decide quando)
-- **SHORT: bloqueado pela medição.** Ver abaixo.
-- dar tick a FREYJA, ULLR e oracle_grok para poder julgá-las
-- mostrar no painel POR QUE uma mesa está em silêncio (a URÐR parece morta e
-  está trabalhando)
+| item | estado |
+|---|---|
+| Invariante contador × posições (`realizedDrifts`) | ✅ pega o `radar` e a classe |
+| Arquivo separado das vivas | ✅ botão, com a cicatriz explicada |
+| Recapitalização — módulo, rota e **UI** | ✅ motivo em 4 camadas (UI, rota, módulo, banco) |
+| SHORT nos playbooks | ✅ **medido e REPROVADO** — 9 de 9 negativos nos dois lados |
+| Tick da FREYJA e do ULLR | ✅ rodavam e descartavam o diagnóstico |
+| Leitura do silêncio (`silence.ts`) | ✅ 5 estados, 10 testes |
+| `oracle_grok` | ✅ **não era caso** — é valhalla, silêncio esperado |
+
+**Único item que fica para o operador:** apertar o botão da recapitalização.
+Não é automático de propósito — ver a nota em `paper/recapitalize.ts`.
+
+**Pendente pequeno:** ligar o `silence.ts` no painel. Precisa que os ticks
+novos (`strat_dex_tick`, `ullr_tick`) acumulem antes de haver o que mostrar.
 
 ### ✅ O SHORT FOI MEDIDO E REPROVADO (06/08)
 
@@ -560,7 +570,7 @@ Traduzido em regra:
 | Fase | Status |
 |---|---|
 | 0 · Fundação | 🟢 **concluída 05/08** |
-| 1 · Mesas existentes | 🟡 **em andamento** |
+| 1 · Mesas existentes | 🟢 **concluída 06/08** |
 | 2 · Filtro de regime | 🔴 |
 | 3 · Funding janela longa | 🔴 |
 | 4 · Rendimento integrado | 🔴 |
