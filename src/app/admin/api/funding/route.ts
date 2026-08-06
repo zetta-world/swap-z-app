@@ -8,6 +8,9 @@ import {
 import { effectiveSampleSize } from "@/lib/zion/benchmarks";
 import { median } from "@/lib/zion/stats";
 import { recordEvent } from "@/lib/admin/track";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { startRun, finishRun, failRun } from "@/lib/lab/store";
+import { BY_SLUG } from "@/lib/lab/registry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,20 +22,33 @@ export const maxDuration = 60;
  * Ver a nota grande em `src/lib/zion/funding.ts` para a mecânica e, mais
  * importante, para a lista do que esta conta NÃO inclui.
  *
- * Fonte: histórico PÚBLICO de funding da Binance (`/fapi/v1/fundingRate`). É
- * dado realizado, não estimativa — cada ponto é um pagamento que aconteceu.
+ * Fonte: histórico PÚBLICO de funding, em cascata por EVIDÊNCIA de resposta —
+ * gate.io e okx primeiro (provados pela matriz de spot viva), bybit e binance
+ * por último (403 e 451 medidos em 04/08). É dado REALIZADO, não estimativa:
+ * cada ponto é um pagamento que aconteceu.
  *
  * ⚠️ LEITURA PURA. Não abre posição, não escreve em `admin_kv`, não altera
  * nenhuma mesa. Mesma regra do `🧭 O QUE FUNCIONOU`.
  *
- * ⚠️ NENHUM PARÂMETRO FOI ESCOLHIDO OLHANDO ESTES DADOS. A janela é a mesma
- * 174 dias do resto do laboratório, o custo é o `ARB2_COST_PCT` que já existia
+ * ⚠️ NENHUM PARÂMETRO FOI ESCOLHIDO OLHANDO ESTES DADOS. A janela é 360 dias
+ * (ver a nota em `JANELA_DIAS`), o custo é o `ARB2_COST_PCT` que já existia
  * (0.45%, quatro pernas), e o limiar de "renda de regime" é 35% dos períodos
  * negativos — declarado como palpite, não como medição.
  */
 
-/** A mesma janela do backtest e do estudo de estratégias. Comparável de propósito. */
-const JANELA_DIAS = Number(process.env.FUNDING_WINDOW_DAYS ?? 174);
+/**
+ * ⚠️ 360 DIAS NA FASE 3, e a mudança tem motivo (06/08).
+ *
+ * A janela de 174 existia para bater com o backtest da biblioteca. Aqui a
+ * pergunta é outra: a nossa medição deu mediana de +1,4% ao ano e a literatura
+ * vende 5% a 20%. É a maior incerteza do Mapa do Lucro, e o desfecho muda o
+ * produto — se der 8%, é renda vendável para as três faixas de cliente; se der
+ * 1,4%, é ruído documentado.
+ *
+ * Uma discrepância dessas não se resolve com dois meses de dado: funding é
+ * variável de REGIME, e sessenta dias podem ser um regime só.
+ */
+const JANELA_DIAS = Number(process.env.FUNDING_WINDOW_DAYS ?? 360);
 const LIMITE = Math.min(1000, JANELA_DIAS * PERIODS_PER_DAY);
 /** Palpite declarado: acima disso a renda depende de regime, não de estrutura. */
 const MAX_NEG_SHARE = Number(process.env.FUNDING_MAX_NEG_SHARE ?? 0.35);
@@ -102,6 +118,15 @@ const MIN_DIAS = Number(process.env.FUNDING_MIN_DAYS ?? 60);
  */
 interface Falha { symbol: string; fonte: string; status: number | string }
 
+/**
+ * A paginação foi interrompida por tempo em ALGUM símbolo?
+ *
+ * Módulo-escopo de propósito: o corte pode acontecer em qualquer símbolo e o
+ * resultado precisa dizer que a janela entregue não é a janela pedida. Uma
+ * janela curta silenciosa é a causa raiz que esta fase inteira ataca.
+ */
+let paginacaoCortada = false;
+
 interface BinanceRow { fundingTime?: number; fundingRate?: string }
 interface BybitRow { fundingRateTimestamp?: string; fundingRate?: string }
 interface GateRow { t?: number; r?: string }
@@ -131,10 +156,36 @@ async function fetchGateFunding(symbol: string, falhas: Falha[]): Promise<Fundin
 }
 
 /** OKX — `limit` máximo 100 por página; 3 páginas cobrem ~100 dias. */
-async function fetchOkxFunding(symbol: string, falhas: Falha[]): Promise<FundingPoint[]> {
+async function fetchOkxFunding(
+  symbol: string, falhas: Falha[], deadline?: number,
+): Promise<FundingPoint[]> {
   const pontos: FundingPoint[] = [];
   let after: number | undefined;
-  for (let pagina = 0; pagina < 3; pagina++) {
+  /**
+   * ⚠️ PROFUNDIDADE SUFICIENTE PARA O ALVO, não um 3 mágico (06/08).
+   *
+   * Eram 3 páginas fixas = 300 períodos = 100 dias, escrito quando o alvo era
+   * 174. Número de página não pode ser constante quando a janela é variável:
+   * mudar `JANELA_DIAS` sem mudar isto pediria 360 dias e receberia 100, em
+   * silêncio.
+   *
+   * O teto de 15 existe porque a função tem 60s: 57 símbolos × 15 páginas
+   * sequenciais não cabe, e estourar o tempo devolveria resultado PARCIAL sem
+   * dizer. O `deadline` abaixo é a segunda trava, e ela AVISA.
+   */
+  const maxPaginas = Math.min(15, Math.ceil(PERIODOS_ALVO / 100));
+  for (let pagina = 0; pagina < maxPaginas; pagina++) {
+    /**
+     * ⚠️ O TEMPO ACABANDO NÃO PODE VIRAR RESULTADO PARCIAL MUDO.
+     *
+     * Sem esta trava, a função estoura os 60s da Vercel no meio da paginação e
+     * o que sobra é uma janela curta apresentada como se fosse a pedida — que
+     * é exatamente o defeito que a Fase 3 existe para consertar, reintroduzido
+     * pela porta do timeout.
+     *
+     * `paginacaoCortada` sobe até o resultado e aparece na tela.
+     */
+    if (deadline != null && Date.now() > deadline) { paginacaoCortada = true; break; }
     const params = new URLSearchParams({ instId: `${symbol}-USDT-SWAP`, limit: "100" });
     if (after != null) params.set("after", String(after));
     try {
@@ -226,7 +277,7 @@ async function fetchBinanceFunding(symbol: string, falhas: Falha[]): Promise<Fun
  * bybit e binance recusaram com 403 e 451 — ficam por último, e continuam sendo
  * tentadas só para que o registro mostre se o bloqueio mudar.
  */
-const FONTES: Array<[string, (s: string, f: Falha[]) => Promise<FundingPoint[]>]> = [
+const FONTES: Array<[string, (s: string, f: Falha[], d?: number) => Promise<FundingPoint[]>]> = [
   ["gateio", fetchGateFunding],
   ["okx", fetchOkxFunding],
   ["bybit", fetchBybitFunding],
@@ -235,6 +286,24 @@ const FONTES: Array<[string, (s: string, f: Falha[]) => Promise<FundingPoint[]>]
 
 /** Períodos necessários para o veredito ter amostra (MIN_DIAS × 3 por dia). */
 const PERIODOS_MINIMOS = MIN_DIAS * PERIODS_PER_DAY;
+/**
+ * ⚠️ O ALVO, que é diferente do mínimo — e confundir os dois travava tudo em
+ * 60 dias (06/08).
+ *
+ * A cascata parava quando `melhor.length >= PERIODOS_MINIMOS`, ou seja assim
+ * que juntava a amostra MÍNIMA aceitável (60 dias). Com a gate.io devolvendo
+ * 180 pontos, ela batia o mínimo na primeira fonte e nenhuma outra era
+ * tentada — mesmo pedindo 174 dias, mesmo com a okx capaz de paginar mais.
+ *
+ * Consertei a regra "primeira que responde" em 04/08 e deixei a condição de
+ * parada apontando para o mínimo. O efeito foi o mesmo defeito com outra
+ * roupa: uma fonte curta calando as demais, agora com a justificativa de que
+ * "já deu o suficiente".
+ *
+ * Mínimo é o piso para o número VALER. Alvo é o que se pediu. São coisas
+ * diferentes e a parada tem que olhar para o alvo.
+ */
+const PERIODOS_ALVO = JANELA_DIAS * PERIODS_PER_DAY;
 
 /**
  * ⚠️ "PRIMEIRA QUE RESPONDE" ERA A REGRA ERRADA (04/08).
@@ -254,15 +323,16 @@ const PERIODOS_MINIMOS = MIN_DIAS * PERIODS_PER_DAY;
  * me fez escolher a Bybit horas atrás.
  */
 async function fetchFunding(
-  symbol: string, falhas: Falha[], usadas: Map<string, number>,
+  symbol: string, falhas: Falha[], usadas: Map<string, number>, deadline?: number,
 ): Promise<FundingPoint[]> {
   let melhor: FundingPoint[] = [];
   let melhorNome = "";
   for (const [nome, fn] of FONTES) {
-    const pts = await fn(symbol, falhas);
+    const pts = await fn(symbol, falhas, deadline);
     if (pts.length > melhor.length) { melhor = pts; melhorNome = nome; }
-    // Cobriu o mínimo — parar aqui poupa chamadas sem esconder cobertura.
-    if (melhor.length >= PERIODOS_MINIMOS) break;
+    // Cobriu o ALVO — aí sim parar poupa chamada sem esconder cobertura.
+    // Parar no MÍNIMO seria deixar uma fonte curta calar as demais.
+    if (melhor.length >= PERIODOS_ALVO) break;
   }
   if (melhor.length > 0) usadas.set(melhorNome, (usadas.get(melhorNome) ?? 0) + 1);
   return melhor;
@@ -276,6 +346,11 @@ export async function POST(): Promise<NextResponse> {
     await recordEvent("funding_study_failed", {
       meta: { motivo, detalhe: detalhe ?? null, windowDays: JANELA_DIAS, tookMs: Date.now() - t0 },
     });
+    // A rodada fecha como FALHOU com o detalhe acionável. Gravar QUE falhou sem
+    // gravar O QUÊ é gravar a parte inútil — custou uma rodada inteira em 04/08.
+    if (db && runId) {
+      try { await failRun(db, runId, motivo, detalhe ?? "", Date.now() - t0); } catch { /* idem */ }
+    }
     return NextResponse.json({ error: motivo, detail: detalhe ?? null }, { status: 503 });
   };
 
@@ -285,12 +360,41 @@ export async function POST(): Promise<NextResponse> {
   const series = new Map<string, FundingPoint[]>();
   const falhas: Falha[] = [];
   const usadas = new Map<string, number>();
+  // Estado de módulo: zerar por rodada, senão uma rodada anterior contamina.
+  paginacaoCortada = false;
+  // Margem de 12s para montar o resultado e gravar depois de parar de buscar.
+  const deadline = t0 + (maxDuration - 12) * 1000;
+
+  /**
+   * ⚠️ A RODADA ABRE NO LABORATÓRIO ANTES DE BUSCAR NADA (06/08).
+   *
+   * `lab_runs` nasce com status `rodando`. Se a função morrer no meio — timeout,
+   * exceção, deploy — a linha fica lá dizendo que começou e não voltou, em vez
+   * de a rodada simplesmente não existir.
+   *
+   * É a diferença entre "rodou e deu erro" e "nunca clicou", que esta semana
+   * confundiu seis vezes. E o capital vai gravado NO MOMENTO: se o exigido pela
+   * estratégia mudar amanhã, esta rodada continua dizendo com quanto foi feita.
+   */
+  const db = getSupabaseAdmin();
+  const capital = BY_SLUG.get("funding_basis")?.capitalRequiredUsd ?? 2000;
+  let runId: string | null = null;
+  if (db) {
+    try {
+      runId = await startRun(db, {
+        slug: "funding_basis",
+        capitalUsd: capital,
+        windowDays: JANELA_DIAS,
+        params: { simbolos: CEX_TRACKED_SYMBOLS.length, custoPct: COST_PCT, minDias: MIN_DIAS },
+      });
+    } catch { /* o laboratório é registro, não pré-requisito da medição */ }
+  }
   try {
     const LOTE = 10;
     for (let i = 0; i < simbolos.length; i += LOTE) {
       const bloco = simbolos.slice(i, i + LOTE);
       const res = await Promise.all(
-        bloco.map(async (s) => [s, await fetchFunding(s, falhas, usadas)] as const),
+        bloco.map(async (s) => [s, await fetchFunding(s, falhas, usadas, deadline)] as const),
       );
       for (const [s, pts] of res) if (pts.length > 0) series.set(s, pts);
     }
@@ -358,6 +462,13 @@ export async function POST(): Promise<NextResponse> {
     piorTomboPct: comAmostra.length ? Math.max(...comAmostra.map((s) => s.maxDrawdownPct)) : null,
     rho: rho == null ? null : Math.round(rho * 1000) / 1000,
     apostasEfetivas: Math.round(efetivo * 100) / 100,
+    /**
+     * ⚠️ A janela entregue é a pedida? Se a paginação foi cortada por tempo,
+     * NÃO — e o número abaixo vale menos do que parece. Janela curta silenciosa
+     * é a causa raiz que esta fase inteira ataca.
+     */
+    paginacaoCortada,
+    janelaPedidaDias: JANELA_DIAS,
   };
 
   await recordEvent("funding_study", { meta: {
@@ -385,6 +496,49 @@ export async function POST(): Promise<NextResponse> {
     })),
     tookMs: Date.now() - t0,
   } });
+
+  /**
+   * ⚠️ O RESULTADO FECHA A RODADA NO LABORATÓRIO (06/08).
+   *
+   * O que vai para `lab_results` é o que permite comparar esta medição com a de
+   * daqui a três meses — e é exatamente o que faltava quando a discrepância de
+   * onze pontos entre duas rotas levou uma hora para ser isolada.
+   *
+   * `netAnnualizedPct` é o campo que decide: o líquido da JANELA compara ganho
+   * acumulado com um custo pago UMA VEZ, e numa janela curta isso cospe "não
+   * paga" quando o que diz é "a janela é curta". Os dois vão gravados.
+   */
+  if (db && runId) {
+    try {
+      await finishRun(db, runId, {
+        netPct: resumo.medianaLiquidaPct,
+        netAnnualizedPct: resumo.medianaLiquidaAnualPct,
+        grossPct: resumo.medianaBrutaPct,
+        costPct: COST_PCT,
+        // A amostra é o número de símbolos que passaram o mínimo de dias — não
+        // os 53 que responderam, que seria inflar o `n` com quem não conta.
+        sampleN: resumo.comAmostra,
+        effectiveN: resumo.apostasEfetivas,
+        correlationRho: resumo.rho,
+        maxDrawdownPct: resumo.piorTomboPct,
+        verdict: veredito.readable && resumo.robustos > 0 ? "verde" : "cinza",
+        verdictText: veredito.verdict,
+        perSymbol: stats.slice(0, 60).map((x) => ({
+          s: x.symbol, dias: Math.round(x.days),
+          liqAno: Math.round(x.netAnnualizedPct * 10) / 10,
+          neg: Math.round(x.negativeShare * 100),
+        })),
+        notMeasured: [
+          "basis de entrada/saída — exige histórico de mark vs spot alinhado; típico <0,05% nos dois sentidos",
+          "risco de liquidação da perna vendida",
+          "custo de margem além do funding e risco de custódia",
+          ...(paginacaoCortada
+            ? ["⚠️ paginação CORTADA por tempo — a janela entregue é menor que a pedida"]
+            : []),
+        ],
+      }, Date.now() - t0);
+    } catch { /* o laboratório é registro, não pré-requisito da medição */ }
+  }
 
   return NextResponse.json({
     resumo,

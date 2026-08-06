@@ -37,6 +37,12 @@ type Dados = {
     positivosLiquidos: number; robustos: number;
     medianaNegativeShare: number | null; piorTomboPct: number | null;
     rho: number | null; apostasEfetivas: number;
+    /** ⚠️ A janela entregue é a pedida? Ver a nota no route.ts. */
+    paginacaoCortada?: boolean;
+    janelaPedidaDias?: number;
+    diasMedianos?: number | null;
+    medianaLiquidaAnualPct?: number | null;
+    semAmostra?: number;
   };
   veredito: { readable: boolean; verdict: string; positivos: number; total: number };
   /** Quantos símbolos vieram de cada corretora. Ver a nota no route.ts. */
@@ -98,9 +104,39 @@ export default function FundingPanel() {
             {d.veredito.verdict}
           </div>
 
+          {/* ⚠️ A JANELA ENTREGUE, não a pedida. Janela curta silenciosa foi a
+                 causa raiz da medição de 04/08 que deu 1,4% — a fonte devolveu
+                 30-60 dias enquanto a tela dizia 174. */}
+          {d.resumo.paginacaoCortada && (
+            <div style={{
+              border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
+              marginBottom: 8, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+            }}>
+              ⚠️ A PAGINAÇÃO FOI CORTADA POR TEMPO. A janela entregue é <b>menor</b> que os{" "}
+              {d.resumo.janelaPedidaDias} dias pedidos — o número abaixo vale menos do que
+              parece. Rodar de novo, ou reduzir a lista de símbolos.
+            </div>
+          )}
+
           <div style={{ fontSize: 9, color: "var(--adm-ink-3)", lineHeight: 1.7, marginBottom: 8 }}>
-            {d.resumo.comAmostra} símbolos com amostra · janela {d.resumo.janelaDias} dias ·
-            custo das 4 pernas {d.resumo.custoPct}%
+            {d.resumo.comAmostra} símbolos com amostra
+            {d.resumo.semAmostra != null && d.resumo.semAmostra > 0 && (
+              <span style={{ color: "var(--adm-amber)" }}>
+                {" "}(+{d.resumo.semAmostra} descartados por janela curta)
+              </span>
+            )}
+            {" · "}janela pedida <b>{d.resumo.janelaDias}d</b>
+            {d.resumo.diasMedianos != null && (
+              <>
+                {" · "}<b style={{
+                  color: d.resumo.diasMedianos >= d.resumo.janelaDias * 0.8
+                    ? "var(--adm-green)" : "var(--adm-amber)",
+                }}>
+                  entregue {Math.round(d.resumo.diasMedianos)}d
+                </b>
+              </>
+            )}
+            {" · "}custo das 4 pernas {d.resumo.custoPct}%
             <div>
               mediana LÍQUIDA da janela:{" "}
               <b style={{
