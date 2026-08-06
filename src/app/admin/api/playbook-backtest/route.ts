@@ -147,6 +147,9 @@ export async function POST(req: Request): Promise<NextResponse> {
       // ⚠️ O ESPELHO. Calculado desde 03/08 e nunca persistido — ver a nota em
       // `playbook-record.ts`. É o número que decide o short.
       inverseNetPerTrade: s.diag?.inverseNetPerTrade ?? null,
+      // O QUALIFICADOR do espelho: sem os straddles, "os dois lados perdem"
+      // não distingue mercado de convenção. Ver a nota em playbook-record.ts.
+      straddles: s.diag?.straddles ?? null,
     })),
     windowDays,
     marketPct,

@@ -208,6 +208,26 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "soma o rendimento do staking na perna comprada",
   },
 
+  {
+    slug: "playbook_short",
+    name: "Short na biblioteca de playbooks",
+    subtitle: "inverter os 9 playbooks estruturais · $5.000 · janela de 174 dias",
+    family: "direcional",
+    capitalRequiredUsd: 5000,
+    capitalWhy: "mesmo capital das mesas direcionais — inverter o lado é a variável isolada, "
+      + "e mudar o capital junto mediria duas coisas ao mesmo tempo",
+    status: "morta",
+    hypothesis: "se a biblioteca long perde num mercado que caiu, talvez o problema seja o "
+      + "LADO e não a estratégia — inverter cada trade viraria lucro",
+    killedWhy: "MEDIDO em 06/08 pelo teste espelho, e a hipótese caiu: os NOVE playbooks são "
+      + "negativos nos dois sentidos. Melhor espelho −0,427% (absorption, n=16, abaixo do "
+      + "limiar); pior −1,058%. ⚠️ Ressalva honesta: da soma média de −1,543% (long+espelho), "
+      + "−1,143 vêm da convenção de straddle (vela que toca os dois lados registra STOP nas "
+      + "duas direções), não do mercado. Mesmo creditando isso de volta, nenhum playbook "
+      + "chega a positivo convincente. Correlação long×espelho −0,18: quase nenhuma — a "
+      + "biblioteca não tem viés de lado, ela tem custo maior que a borda.",
+  },
+
   // ══ DIRECIONAL — as que faltam.
   {
     slug: "momentum_rotation",
