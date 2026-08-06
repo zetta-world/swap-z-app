@@ -671,7 +671,7 @@ sai diferente do esperado.
 
 ---
 
-### FASE 4 — Rendimento integrado (C1, C2, C3, C4) · 🔴
+### FASE 4 — Rendimento integrado (C1, C2, C3, C4) · 🟡 CONSTRUÍDA, PRONTA PARA RODAR
 *A coisa mais fácil com retorno real e positivo — resolve o peixe pequeno hoje.*
 
 Não exige achar borda nenhuma. Aave rende 3,5–9%; tesouro tokenizado 3,3–8%.
@@ -680,6 +680,107 @@ comem quanto disso, por faixa de capital.
 
 **Critério de conclusão:** tabela de rendimento LÍQUIDO por faixa de capital
 ($500 / $5k / $50k), com o gás dentro. É essa tabela que vira produto.
+
+## Verificação de estado — o que já existia (06/08)
+
+| setor | achado |
+|---|---|
+| Fonte de rendimento | **nada.** `defillama.ts` só busca volume agregado de DEX (`api.llama.fi/overview/dexs`). Nenhuma leitura de APY em lugar nenhum do repo. |
+| Custo de gás | **existe e é medido**: `li.quest/v1/quote` já roda em produção e devolve `gasCosts[].amountUSD` — gás real em dólar, por cadeia. |
+| Endereços de USDC | `src/lib/tokens.ts`, as 7 cadeias EVM + Solana |
+| Gravação | `lab_runs`/`lab_results` da Fase 0 servem sem mudança de schema |
+| Painel | `LabPanel` já lê `lastNetAnnualizedPct` — medição nova aparece sozinha |
+
+⚠️ **`api.llama.fi` funcionar NÃO prova que `yields.llama.fi` funciona.** Mesmo
+sobrenome, host diferente — é exatamente a distinção que me fez escolher a Bybit
+por evidência falsa (`fapi.binance.com` × `data-api.binance.vision`). A rota
+grava o status de CADA host e mostra na tela; se der 403, a primeira rodada diz
+qual, em vez de "nenhum dado".
+
+## As decisões desta fase, e por que cada uma
+
+**1. Piscinas DECLARADAS, nunca "as de maior APY".** Ordenar por rendimento
+seleciona token de fazenda e sobrevivente — as que quebraram não estão na lista
+para baixar a média. A lista fica em código, passa por PR, e o que ela não achou
+**aparece na tela** como não encontrado.
+
+**2. `apyBase` manda; `apyReward` aparece ao lado e NUNCA soma no titular.**
+Rendimento de recompensa é pago num token que pode cair 80% antes de você
+vender. É a mesma regra do "quando houver dúvida, o menor" que fez `grossPct`
+ser soma e não composição.
+
+**3. `apyMean30d` preferido, e a ausência dele não vira APY à vista em
+silêncio.** APY de piscina de empréstimo dispara com uma alavancada e volta em
+horas. Sem os 30 dias, a linha diz "à vista" na tela.
+
+**4. O custo de entrada é MEDIDO, não constante.** Cotação real da LI.FI de
+USDC → ativo alvo, em cada faixa de capital: o impacto e a taxa saem da resposta
+e o gás vem em dólar dentro da mesma cotação. Constante de gás seria eu
+inventando o número que a fase existe para descobrir.
+
+**5. Âncora em USDC, e para o C1 não há troca.** Quem entra em empréstimo de
+stablecoin já tem stablecoin — o custo dele é só gás de `approve` + `supply` +
+`withdraw`. O número de transações é constante DECLARADA e rotulada como
+estimativa; o preço de cada uma é medido.
+
+**6. As faixas incluem o capital declarado da estratégia.** $500 / capital
+declarado / $5.000 / $50.000. Sem isso o titular seria interpolação entre duas
+faixas medidas, e interpolação apresentada como medição é o defeito que esta
+empreitada inteira ataca.
+
+**7. `funding_basis` entra na MESMA tabela.** A Fase 3 entregou +3,0%/ano na
+cesta selecionada. Se o Tesouro tokenizado pagar isso sem quatro pernas, sem
+perna vendida e sem risco de liquidação, o carrego de funding perde a razão de
+existir no produto — e essa comparação só vale com o mesmo capital e a mesma
+conta de custo.
+
+### O que esta fase NÃO mede, declarado
+
+- risco de contrato (auditoria, tempo em pé, concentração de custódia)
+- risco de despegue do ativo (USDM, USDY e stETH já negociaram abaixo da paridade)
+- corte no staking e no restaking — o C4 empilha uma camada a mais
+- imposto, e ele é o maior custo isolado para o peixe pequeno em quase toda jurisdição
+- fila de saque: stETH e o Tesouro tokenizado têm resgate com prazo, e prazo é custo
+- ⚠️ **o custo de troca é cotado contra o token nativo**, o par mais líquido da
+  cadeia. Entrar em USDY, USDM ou weETH custa MAIS que isso — então o líquido
+  das três estratégias que exigem troca é **TETO, não medição**
+
+### O que foi construído
+
+| peça | onde |
+|---|---|
+| Fonte de APY, cascata com status por host | `src/lib/api/defillama-yields.ts` |
+| A conta (escolha do APY, custo por faixa, veredito) | `src/lib/lab/rendimento.ts` + 26 testes |
+| Rota que junta APY medido com custo medido | `src/app/admin/api/rendimento/route.ts` |
+| Painel 🏦 | `RendimentoPanel.tsx` + registro em `modules.ts` |
+
+Quatro estratégias, **quatro rodadas separadas** em `lab_runs`/`lab_results`,
+cada uma com o seu capital declarado. Uma rodada só com as quatro somadas seria
+a mistura que o dono proibiu, e impediria o painel de dizer qual delas vive.
+
+### Três defeitos meus que a revisão da própria entrega pegou
+
+**1. Escrevi `s[Math.floor(n/2)]` de novo.** A mesma linha que causou a
+discordância de onze pontos e que fez `stats.ts` existir. Com `n` par devolve o
+superior do meio, e o erro tem SINAL: sempre para cima. Trocado por `median`, e
+há teste com amostra PAR justamente para isso.
+
+**2. A cadeia escolhida era a da maior piscina — ou seja, a Ethereum.** Para o
+empréstimo de stablecoin isso faria o C1 fechar NEGATIVO em $500 e a fase
+concluir "não serve para o peixe pequeno", quando a resposta é **"serve, na
+Base"**. Seria matar um produto bom com uma escolha de roteamento que nem é a
+que faríamos. Agora é a mais barata **por faixa**, e a cadeia aparece na linha.
+
+**3. As cotações eram sequenciais: 28 chamadas em fila, ~42s numa função de
+60.** O `deadline` cortaria no meio e devolveria uma tabela parcial — a janela
+curta silenciosa do funding reencarnada em outra rota, três dias depois de eu a
+consertar. Cadeias em paralelo agora.
+
+**Pendente: o dono rodar o 🏦 MEDIR O RENDIMENTO LÍQUIDO.**
+
+⚠️ E a primeira rodada é também um teste de rede: `api.llama.fi` funcionar não
+prova que `yields.llama.fi` funciona. Se recusar, a tela diz o host e o código,
+em vez de "nenhum dado".
 
 ⚠️ **A Fase 3 mudou o que esta fase decide.** O funding entregou +1,16%/ano de
 mediana e +3,0%/ano na cesta selecionada — faixa que **o Tesouro tokenizado
@@ -776,7 +877,7 @@ Traduzido em regra:
 | 1 · Mesas existentes | 🟢 **concluída 06/08** |
 | 2 · Filtro de regime | 🔴 **hipótese refutada 06/08** |
 | 3 · Funding janela longa | 🟢 **medida 06/08** — +1,16%/ano, cesta a +3,0%; os 5–20% não reproduzem |
-| 4 · Rendimento integrado | 🔴 |
+| 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
 | 5 · Opção coberta | 🔴 |
 | 6 · DEX ↔ CEX | 🔴 |
 | 7 · Automação por API | 🔴 |

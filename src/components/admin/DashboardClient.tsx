@@ -22,6 +22,7 @@ import ArbiterCohortPanel     from "./panels/ArbiterCohortPanel";
 import CalibrationPanel       from "./panels/CalibrationPanel";
 import WhatWorkedPanel        from "./panels/WhatWorkedPanel";
 import FundingPanel           from "./panels/FundingPanel";
+import RendimentoPanel        from "./panels/RendimentoPanel";
 import LigasPanel             from "./panels/LigasPanel";
 import LabPanel               from "./panels/LabPanel";
 import LaunchGatePanel        from "./panels/LaunchGatePanel";
@@ -63,6 +64,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "calibration":        <CalibrationPanel />,
   "what-worked":        <WhatWorkedPanel />,
   "funding":            <FundingPanel />,
+  "rendimento":         <RendimentoPanel />,
   "ligas":              <LigasPanel />,
   "lab":                <LabPanel />,
   "launch-gate":        <LaunchGatePanel />,
