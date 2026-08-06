@@ -10,6 +10,7 @@ import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
 import { runOracleScan } from "@/lib/zion/oracle";
 import { runStrategistScan, runStrategistAiScan, runDayScan, runRecordScan } from "@/lib/zion/ragnarok";
 import { runDexScan } from "@/lib/zion/ragnarok-dex";
+import { recordEvent } from "@/lib/admin/track";
 import { runUllrScan } from "@/lib/zion/ullr";
 import { runRetroSweep } from "@/lib/zion/retro";
 import { runPaperAgent } from "@/lib/paper/engine";
@@ -129,21 +130,74 @@ export async function POST(req: NextRequest) {
         // FREYJA — a mesa DEX (S3). Mesmo seletor, praça diferente: agora que
         // o resolver e a carteira sabem precificar por pool (migration 0019),
         // uma sugestão on-chain finalmente preenche e resolve.
+        /**
+         * ⚠️ O TICK DA FREYJA — ela rodava e não deixava rastro (06/08).
+         *
+         * `runDexScan()` devolve `{ scanned, candidates, logged, skipped[] }`
+         * com o MOTIVO de cada símbolo descartado. Tudo isso era jogado fora na
+         * linha, e o `catch` engolia o erro sem uma palavra.
+         *
+         * Consequência: a FREYJA está `live` no registro, aparece no painel, no
+         * torneio e no portão de lançamento — e NUNCA abriu uma posição na
+         * existência inteira. Sem o tick não havia como distinguir "roda e não
+         * acha nada" de "quebra toda vez", e não se aposenta o que não se
+         * consegue diagnosticar.
+         */
         if (!gates.pause_ragnarok_dex) {
-          try { await runDexScan(); } catch { /* best-effort */ }
+          try {
+            const r = await runDexScan();
+            await recordEvent("strat_dex_tick", { meta: {
+              scanned: r.scanned, candidates: r.candidates, logged: r.logged,
+              // Os motivos, não só a contagem: "0 candidatos" não diz se a
+              // fonte caiu ou se o seletor recusou tudo.
+              skipped: r.skipped.slice(0, 12),
+            } });
+          } catch (e) {
+            await recordEvent("strat_dex_tick", {
+              meta: { erro: String(e).slice(0, 200) },
+            });
+          }
         }
         // URÐR — o terceiro braço: mesma praça, mesmo cardápio, mas obedece ao
         // HISTÓRICO MEDIDO em vez da prioridade declarada. Sem ela, uma vitória
         // do MÍMIR não distinguiria o mérito da IA do mérito da evidência.
+        /**
+         * ⚠️ A URÐR já grava o tick dela dentro de `runRecordScan`, e foi
+         * exatamente esse rastro que provou, em 06/08, que ela está CERTA em
+         * ficar calada: 142 ticks, 15 com oferta, e nas 15 `vetoedByRecord: 1`.
+         * A mesa cujo mandato é obedecer ao histórico medido recusou tudo
+         * porque o histórico é negativo.
+         *
+         * O `catch` mudo continua sendo um buraco: se ela QUEBRAR, o silêncio
+         * fica idêntico ao silêncio de quem recusou com razão.
+         */
         if (!gates.pause_urdr) {
-          try { await runRecordScan(marketData.indicators); } catch { /* best-effort */ }
+          try { await runRecordScan(marketData.indicators); }
+          catch (e) {
+            await recordEvent("strat_record_tick", { meta: { erro: String(e).slice(0, 200) } });
+          }
         }
         // ULLR — o arqueiro dos lançamentos. Sem LLM: num pool com horas de
         // vida não existe estrutura pra ler (RSI de 14 períodos, EMA50, suporte
         // testado três vezes — nada disso existe). O que existe é idade,
         // liquidez e fluxo, e isso se lê com regra, não com modelo.
+        /**
+         * ⚠️ O TICK DO ULLR — mesmo defeito, mesma consequência (06/08).
+         *
+         * `runUllrScan()` devolve `{ seen, eligible, fired, capped }`. O `capped`
+         * é o mais importante dos quatro: ele distingue "não achou pool" de
+         * "achou e a munição diária acabou", que são situações opostas e
+         * apareciam idênticas na tela — ou seja, não apareciam.
+         */
         if (!gates.pause_ullr) {
-          try { await runUllrScan(); } catch { /* best-effort */ }
+          try {
+            const r = await runUllrScan();
+            await recordEvent("ullr_tick", { meta: {
+              seen: r.seen, eligible: r.eligible, fired: r.fired, capped: r.capped,
+            } });
+          } catch (e) {
+            await recordEvent("ullr_tick", { meta: { erro: String(e).slice(0, 200) } });
+          }
         }
 
         // A/B: run Claude AND every configured direct provider (DeepSeek / Kimi /
