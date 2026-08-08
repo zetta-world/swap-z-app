@@ -398,7 +398,13 @@ export default function PaperPanel() {
           )}
 
           <table className="adm-table">
-            <thead><tr><th style={{ width: 26 }}></th><th>CARTEIRA</th><th>EQUITY</th><th>RET</th><th>WR</th><th>AB</th></tr></thead>
+            {/* ⚠️ FECHADOS É A AMOSTRA, e ela estava escondida atrás de um
+                clique (06/08). A tabela dá MEDALHA por retorno — 🥇🥈🥉 — e o
+                número de trades só aparecia ao expandir a linha. Uma mesa com 2
+                trades e +8% recebia a medalha de uma com 200 e +5%, e não havia
+                como ver isso sem clicar. Mesma forma do `avgTrades` no painel
+                do que funcionou, e do LÍQ/ANO fora de ordem no do funding. */}
+            <thead><tr><th style={{ width: 26 }}></th><th>CARTEIRA</th><th>EQUITY</th><th>RET</th><th>WR</th><th>FECH.</th><th>AB</th></tr></thead>
             <tbody>
               {rows.map((r, i) => {
                 const flat = r.closedTrades === 0 && r.openPositions === 0;
@@ -411,11 +417,17 @@ export default function PaperPanel() {
                       <td style={{ fontVariantNumeric: "tabular-nums" }}>{usd(r.equity)}</td>
                       <td style={{ color: flat ? "var(--adm-ink-4)" : col(r.returnPct) }}>{flat ? "—" : pctS(r.returnPct)}</td>
                       <td>{r.winRate == null ? "—" : `${r.winRate.toFixed(0)}%`}</td>
+                      {/* Abaixo de 10 fechados o retorno é anedota, e a medalha
+                          ao lado afirma o contrário. O âmbar desfaz. */}
+                      <td style={{
+                        fontVariantNumeric: "tabular-nums",
+                        color: r.closedTrades < 10 ? "var(--adm-amber)" : "var(--adm-ink-4)",
+                      }}>{r.closedTrades}{r.closedTrades < 10 ? " ⚠" : ""}</td>
                       <td style={{ color: "var(--adm-cyan)" }}>{r.openPositions} {isOpen ? "▲" : "▼"}</td>
                     </tr>
                     {isOpen && (
                       <tr>
-                        <td colSpan={6} style={{ padding: "8px 4px 10px", background: "var(--adm-bg-raise)" }}>
+                        <td colSpan={7} style={{ padding: "8px 4px 10px", background: "var(--adm-bg-raise)" }}>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 8 }}>
                             <Stat label="REALIZADO" value={usdc(r.realizedPnl)} color={col(r.realizedPnl)} />
                             <Stat label="N-REALIZADO" value={usdc(r.unrealizedPnl)} color={col(r.unrealizedPnl)} />
