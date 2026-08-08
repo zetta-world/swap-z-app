@@ -208,6 +208,55 @@ describe("o veredito compara contra a MELHOR PARTE, não contra a média", () =>
     });
     expect(v.status).toBe("morta");
     expect(v.verdict).toContain("concentrar");
+    // E o "piora" tem que trazer os DOIS tombos, senão é adjetivo sem conta.
+    expect(v.verdict).toContain("1.20");
+    expect(v.verdict).toContain("2.00");
+  });
+
+  /**
+   * ⚠️⚠️ A RODADA DE 08/08, E O DEFEITO QUE ELA EXPÔS.
+   *
+   * O veredito fechou MORTA dizendo "o tombo TAMBÉM não melhora, combinar perde
+   * nas duas pontas". Não perdia: EMPATAVA em zero — carteira 0,00 contra
+   * Tesouro 0,00.
+   *
+   * E o empate é ARTEFATO: retorno de piscina é `apy/365`, e APY positivo nunca
+   * gera dia negativo, então tombo é estruturalmente incapaz de ser diferente
+   * de zero para renda de piscina. Três dos quatro fluxos tinham tombo zero por
+   * construção.
+   *
+   * É a armadilha nº 2 entrando por outra porta: eu a bloqueei na coluna VOL e
+   * deixei passar pela coluna TOMBO.
+   */
+  it("dois tombos ZERO não são comparação — são duas não-medições", () => {
+    const v = vereditoCombinacao({
+      fluxos: 4, diasComuns: 95,
+      carteira: { ...carteira, tomboPct: 0 }, carteiraLiquidaPct: 2.66,
+      melhorParteNome: "Tesouro tokenizado", melhorParteLiquidaPct: 3.13,
+      melhorParteTomboPct: 0, rhoMedio: -0.004,
+    });
+    // NÃO pode ser morta: metade da balança nem sequer pesa.
+    expect(v.status).not.toBe("morta");
+    expect(v.status).toBe("cinza");
+    expect(v.verdict).toContain("ZERO por construção");
+    expect(v.verdict).toContain("FORA da série");
+    // A perda de retorno continua dita, com a conta na frente.
+    expect(v.verdict).toContain("0.47 ponto");
+    // E a frase que estava errada não pode voltar.
+    expect(v.verdict).not.toContain("perde nas duas pontas");
+  });
+
+  /** Empate com tombo REAL é outra coisa: aí houve comparação, e deu empate. */
+  it("empate com tombo real é empate declarado, não derrota", () => {
+    const v = vereditoCombinacao({
+      fluxos: 3, diasComuns: 90,
+      carteira: { ...carteira, tomboPct: 1.2 }, carteiraLiquidaPct: 2.0,
+      melhorParteNome: "x", melhorParteLiquidaPct: 3.0,
+      melhorParteTomboPct: 1.2, rhoMedio: 0.1,
+    });
+    expect(v.status).toBe("cinza");
+    expect(v.verdict).toContain("EMPATA");
+    expect(v.verdict).toContain("empate, não derrota");
   });
 
   it("render MAIS que a melhor parte é o único caminho para verde", () => {

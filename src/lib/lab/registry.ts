@@ -220,7 +220,7 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalWhy: "o capital é DIVIDIDO entre os fluxos, e cada fatia paga a própria "
       + "entrada; abaixo de $5.000 a divisão em quatro deixa cada perna pequena "
       + "demais e a medição vira um teste de custo fixo, não de diversificação",
-    status: "cinza",
+    status: "morta",
     hypothesis: "⚠️ HIPÓTESE MINHA, e é onde eu já errei duas vezes — o clima e o "
       + "filtro de regime, as duas levantadas por mim e derrubadas pela minha própria "
       + "medição, a segunda INVERTIDA. A tese: ρ=0,07 no funding mostrou que 50 nomes "
@@ -229,6 +229,23 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "⚠️ E a aritmética já diz que a carteira vai render MENOS que a melhor parte: "
       + "a média de 3,40% e 1,18% é 2,29%. O que ela pode ganhar é tombo — e trocar "
       + "retorno por sono é decisão do dono, não resultado de fórmula.",
+    killedWhy: "MEDIDA em 08/08 e a hipótese caiu no MELHOR cenário possível: correlação "
+      + "média de −0,004 (0%), quatro fluxos valendo 4,0 apostas independentes — "
+      + "diversificação perfeita, o máximo teórico. E a carteira perdeu assim mesmo: "
+      + "2,66%/ano contra 3,13% do Tesouro tokenizado sozinho, em 95 dias de interseção. "
+      + "⚠️ A PREMISSA ESTAVA CERTA, A CONCLUSÃO NÃO. A matriz confirmou que os motores são "
+      + "independentes (funding × crédito = −0,03; funding × juro soberano = −0,00). O erro "
+      + "foi concluir que independência bastaria: diversificação só paga quando NENHUMA "
+      + "parte domina, e o Tesouro domina — rende mais que todos e nunca tem dia negativo. "
+      + "Misturar funding (16% de dias negativos) só acrescenta oscilação. "
+      + "⚠️ O QUE ISTO NÃO REFUTA, e é a parte que importa: o tombo dos três fluxos de "
+      + "piscina é ZERO POR CONSTRUÇÃO — retorno de piscina é apy/365, e APY positivo nunca "
+      + "gera dia negativo. O risco que justificaria diversificar (emissor, despegue, fila "
+      + "de resgate) está inteiro FORA da série. Então isto reprova combinar PELO RETORNO, "
+      + "e não diz nada sobre risco. "
+      + "⚠️ O ÚNICO SINAL DE ESTRUTURA na matriz inteira foi funding × staking líquido = "
+      + "−0,24, os dois ETH-adjacentes. Aponta para um PAR, não para uma cesta de quatro — "
+      + "é o que sobrou de vivo desta hipótese.",
   },
   {
     slug: "quarterly_basis",
