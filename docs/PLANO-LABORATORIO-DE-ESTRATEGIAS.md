@@ -830,6 +830,56 @@ Três dos quatro são a mesma forma — **dois estados diferentes com a mesma
 aparência** — que é o padrão que esta semana já achou seis vezes. Desta vez
 dentro de código que escrevi no mesmo dia.
 
+## A segunda rodada (06/08) — as travas funcionaram
+
+| | antes | depois |
+|---|---|---|
+| restaking | VERDE, custo −0,40%, líquido 2,89% > bruto 2,49% | **CINZA — 2 produtos (3 implantações), INCONCLUSIVO** |
+| Tesouro tokenizado | 12 piscinas, `sample_n` 12 | **5 produtos**, mediana 3,51% → **3,47%** |
+| funding | `1.1611632422330422` (replay) | **`1.1769…`** — dado fresco |
+| gás | não se sabia se foi lido | **`gasLido: true` nas quatro** |
+
+⚠️ **A hipótese central da Fase 4 está REFUTADA por medição, não por falha de
+leitura.** O gás foi lido e é desprezível: com L2, entrar com $500 custa
+praticamente o mesmo que com $50.000. O custo fixo deixou de ser a barreira que
+eu supus — e o empréstimo de stablecoin fecha em **+3,40%/ano líquido** contra
+**+1,18%** do funding.
+
+### O que a correlação de 7% quer dizer, e ela é a linha mais importante da tela
+
+ρ=0,07 parece boa notícia e é uma armadilha: `50 / (1 + 49×0,07) = 11,3`.
+**Cinquenta nomes viraram doze apostas.** Dobrar para cem daria ~14, não 100 —
+correlação minúscula destrói diversificação quando N é grande. Os "23 robustos"
+são ~5,5 rendas independentes, e o tombo de 4,74% se comporta como carteira de
+doze.
+
+**Consequência de produto: adicionar moeda não é a alavanca.** A alavanca é
+janela maior, ou renda com motor diferente. O empréstimo de stablecoin paga por
+demanda de CRÉDITO, não por posicionamento — combinar os dois diversifica de
+verdade; o 51º perpétuo não faz nada.
+
+---
+
+## A varredura que o dono pediu: "está cometendo o mesmo erro em todas as mesas?"
+
+Sim. **Três painéis, a mesma forma** — a tabela afirma mérito e esconde o que
+sustentaria a afirmação.
+
+| painel | o que estava errado |
+|---|---|
+| **FUNDING** | ordenava por `netPct`, a régua **aposentada em 04/08**, enquanto a coluna que decide era a primeira e em negrito. E os 3 símbolos que o veredito EXCLUIU estavam na tabela: **VET +9,9%/ano em 30 dias** era o maior número da tela |
+| **O QUE FUNCIONOU** | `avgTrades` calculado na rota, tipado no painel, **nunca desenhado**. 2 trades e 200 trades indistinguíveis |
+| **CARTEIRAS PAPER** | dá **medalha 🥇🥈🥉** por retorno, e `closedTrades` só aparecia ao expandir a linha |
+
+Todos os três violavam a **regra nº 5 do próprio laboratório** — "AMOSTRA SEMPRE
+VISÍVEL" — escrita no cabeçalho do `LabPanel`. Ela existia em comentário, e
+comentário não reprova pull request.
+
+**A trava:** `src/app/admin/tabela-com-amostra.test.ts` lista as tabelas que
+ranqueiam e exige a coluna de amostra em cada uma, mais as duas metades
+específicas do funding (ordem pela régua certa, piso separando o ranking). A
+trava foi verificada por mutação: removi a coluna e ela reprovou.
+
 **Pendente: rodar o 🏦 e o 🪙 de novo, agora com as travas.** As linhas de 06/08
 que estão no banco não devem ser lidas como medição: o restaking está inflado
 pelo custo negativo, e as amostras de Tesouro e restaking estão infladas por

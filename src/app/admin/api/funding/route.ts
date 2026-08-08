@@ -445,7 +445,20 @@ export async function POST(): Promise<NextResponse> {
   const stats = [...series.entries()]
     .map(([s, pts]) => fundingStats(s, pts, COST_PCT))
     .filter((s): s is FundingStats => s != null)
-    .sort((a, b) => b.netPct - a.netPct);
+    /**
+     * ⚠️ ORDENADO PELA RÉGUA QUE JULGA, e até 06/08 não era.
+     *
+     * Ordenava por `netPct` — o líquido da JANELA — que é justamente a régua
+     * aposentada em 04/08 quando `netAnnualizedPct` virou o número que decide.
+     * O efeito na tela: a coluna LÍQ/ANO, primeira e em negrito, descia
+     * embaralhada (6,8 · 3,1 · 5,7 · 5,7 · 5,1…) enquanto a coluna cinza ao
+     * lado descia perfeita.
+     *
+     * Trocar a régua e esquecer a ordenação é o mesmo defeito de trocar o
+     * titular e esquecer as contagens do resumo, que esta mesma rota já teve.
+     * Ordem é afirmação: uma tabela ordenada diz "o de cima é o melhor".
+     */
+    .sort((a, b) => b.netAnnualizedPct - a.netAnnualizedPct);
 
   if (stats.length === 0) {
     return await falhou(
@@ -513,6 +526,8 @@ export async function POST(): Promise<NextResponse> {
     simbolos: stats.length,
     comAmostra: comAmostra.length,
     janelaDias: JANELA_DIAS,
+    /** O piso de dias. A tela precisa dele para separar quem entrou do resto. */
+    minDias: MIN_DIAS,
     custoPct: COST_PCT,
     // O número que decide: o LÍQUIDO mediano da janela real.
     medianaLiquidaPct: median(comAmostra.map((s) => s.netPct)),

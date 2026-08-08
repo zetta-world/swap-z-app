@@ -34,6 +34,8 @@ type Simbolo = {
 type Dados = {
   resumo: {
     simbolos: number; comAmostra: number; janelaDias: number; custoPct: number;
+    /** Piso de dias do veredito. Quem está abaixo NAO entra no ranking. */
+    minDias?: number;
     medianaLiquidaPct: number | null; medianaBrutaPct: number | null;
     medianaAnualizadaPct: number | null;
     /** ⚠️ A régua do veredito. Ver `fundingCounts` em funding.ts. */
@@ -79,6 +81,24 @@ export default function FundingPanel() {
       setD(json);
     } catch (e) { setErr(String(e)); } finally { setRodando(false); }
   }
+
+  /**
+   * ⚠️⚠️ O QUE O VEREDITO EXCLUIU NÃO PODE ENCABEÇAR A TABELA (06/08).
+   *
+   * A tabela mostrava TODOS os símbolos, inclusive os que o veredito jogou fora
+   * por janela curta. Na rodada de 06/08 isso pôs VET (+9,9%/ano, 30 dias) e
+   * RUNE (+7,9%, 30 dias) como os DOIS MAIORES números da tela — e o resumo,
+   * cinco linhas acima, dizia "+3 descartados por janela curta".
+   *
+   * Quem lê a tabela escolhe VET. É a cicatriz de "amostra abaixo do limiar
+   * nunca renderiza como número", agravada: o número descartado era o maior.
+   *
+   * Eles continuam visíveis, porque esconder dado é outro defeito — mas FORA do
+   * ranking, embaixo, e ditos como o que são.
+   */
+  const minDias = d?.resumo.minDias ?? 60;
+  const ranqueados = (d?.porSimbolo ?? []).filter((s) => s.days >= minDias);
+  const curtos = (d?.porSimbolo ?? []).filter((s) => s.days < minDias);
 
   return (
     <TerminalPanel
@@ -258,7 +278,7 @@ export default function FundingPanel() {
                 </tr>
               </thead>
               <tbody>
-                {d.porSimbolo.slice(0, 30).map((s) => (
+                {ranqueados.slice(0, 30).map((s) => (
                   <tr key={s.symbol} style={{ borderTop: "1px solid var(--adm-border)", textAlign: "right" }}>
                     <td style={{ textAlign: "left", padding: "3px 5px", color: "var(--adm-ink-2)" }}>
                       {s.symbol}
@@ -291,6 +311,32 @@ export default function FundingPanel() {
               </tbody>
             </table>
           </div>
+
+          {/* ⚠️ FORA DO VEREDITO, e dito. Ver a nota em `curtos`. */}
+          {curtos.length > 0 && (
+            <div style={{
+              border: "1px dashed var(--adm-amber)", borderRadius: 3,
+              padding: "6px 8px", marginTop: 8, fontSize: 8.5, lineHeight: 1.7,
+              color: "var(--adm-ink-4)",
+            }}>
+              <div style={{ color: "var(--adm-amber)" }}>
+                ⚠️ FORA DO VEREDITO — janela abaixo de {minDias}d, não entram no ranking
+                acima nem em nenhuma mediana
+              </div>
+              {curtos.map((s) => (
+                <div key={s.symbol}>
+                  · <b style={{ color: "var(--adm-ink-3)" }}>{s.symbol}</b>{" "}
+                  {pct(s.netAnnualizedPct, 1)}/ano em <b>{Math.round(s.days)}d</b>{" "}
+                  — {Math.round(s.negativeShare * 100)}% negativo
+                </div>
+              ))}
+              <div style={{ marginTop: 3 }}>
+                Trinta dias de funding anualizados viram um número grande com facilidade:
+                um regime bom de um mês vira &quot;+9,9% ao ano&quot;. É por isso que o piso
+                existe, e é por isso que eles não estão na tabela.
+              </div>
+            </div>
+          )}
 
           {/* O QUE NÃO FOI MEDIDO, na tela e não só no código. Omissão que só
               existe no comentário vira, semanas depois, um número que alguém

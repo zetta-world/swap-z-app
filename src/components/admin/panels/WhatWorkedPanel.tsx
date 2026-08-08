@@ -105,7 +105,14 @@ export default function WhatWorkedPanel() {
 
           <table className="adm-table">
             <thead><tr>
-              <th style={{ textAlign: "left" }}>ESTRATÉGIA</th><th>MEDIANA</th><th>SÍMBOLOS +</th><th>EXP.</th><th>TOMBO</th>
+              {/* ⚠️ TRADES É A AMOSTRA, E ELA FALTAVA (06/08).
+                  `avgTrades` era calculado na rota, chegava tipado até aqui e
+                  NÃO era desenhado — do mesmo jeito que `netAnnualizedPct` no
+                  painel de funding. Uma estratégia que disparou 2 trades e fez
+                  +40% ficava no topo desta lista, ao lado de uma com 200, sem
+                  jeito de distinguir. "Número sem n é opinião" é a regra nº 5
+                  do laboratório, quebrada pelo painel duas abas ao lado. */}
+              <th style={{ textAlign: "left" }}>ESTRATÉGIA</th><th>MEDIANA</th><th>TRADES</th><th>SÍMBOLOS +</th><th>EXP.</th><th>TOMBO</th>
             </tr></thead>
             <tbody>
               {d.estrategias.map((e) => {
@@ -126,6 +133,12 @@ export default function WhatWorkedPanel() {
                       fontVariantNumeric: "tabular-nums",
                       color: e.medianTotalPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
                     }}>{pct(e.medianTotalPct)}</td>
+                    {/* A AMOSTRA. Abaixo de 10 trades a mediana é anedota, e o
+                        âmbar diz isso sem precisar de legenda. */}
+                    <td style={{
+                      fontVariantNumeric: "tabular-nums",
+                      color: e.avgTrades < 10 ? "var(--adm-amber)" : "var(--adm-ink-4)",
+                    }}>{e.avgTrades.toFixed(0)}{e.avgTrades < 10 ? " ⚠" : ""}</td>
                     {/* O JUIZ. Mediana boa com poucos símbolos positivos é
                         bilhete premiado, não estratégia. */}
                     <td style={{
