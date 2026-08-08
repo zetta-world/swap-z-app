@@ -900,6 +900,92 @@ dia a dia, em tabela própria.
 
 ---
 
+### FASE 4.5 — Combinar as verdes · 🟡 EM CONSTRUÇÃO (08/08)
+*A única coisa que a correlação diz que funciona.*
+
+A Fase 4 respondeu mais do que se propôs a medir. **O gás não é a barreira** —
+foi lido (`gasLido: true`) e é desprezível com L2. **A correlação é.** ρ=0,07
+transforma 50 nomes em 12 apostas, e a conta é implacável: dobrar para 100
+moedas daria ~14. Adicionar o 51º perpétuo não faz nada.
+
+O que a correlação diz que FUNCIONA é combinar rendas com **motores
+diferentes**: funding paga por *posicionamento*, empréstimo de stablecoin paga
+por *demanda de crédito*, Tesouro tokenizado paga por *juro soberano*, staking
+paga por *emissão do protocolo*. Quatro causas, não quatro sabores da mesma.
+
+## Verificação de estado (08/08)
+
+| setor | achado |
+|---|---|
+| Série histórica de APY | **não existe no repo.** `/pools` dá só o instante. `yields.llama.fi/chart/{pool}` dá o histórico — MESMO host, que já respondeu em produção |
+| Série de funding | existe, 8h, via a cascata da Fase 3 |
+| Correlação | `pearson` e `meanPairwiseRateCorrelation` em `stats.ts` |
+| Portfólio / vol / drawdown de carteira | **nada** |
+
+⚠️ **`meanPairwiseRateCorrelation` alinha por POSIÇÃO, não por data**
+(`s.slice(s.length - menor)`). Serve para o funding, onde todas as séries estão
+na mesma grade de 8h e terminam juntas. Para combinar fontes com cadências e
+fins diferentes seria correlacionar segunda-feira de uma com quinta-feira da
+outra — número plausível, silenciosamente errado. Esta fase alinha **por data**.
+
+## As três armadilhas que esta fase existe para não cair
+
+**1. Diversificação NÃO aumenta retorno — ela reduz variância.** Uma carteira de
+3,40% e 1,18% rende ~2,3%: **menos que a melhor parte**. Se o painel mostrar
+"o Sharpe da carteira é melhor!", ele esconde que o dono ganharia menos. Os dois
+números vão lado a lado, e a escolha entre eles é do dono, não de uma fórmula.
+
+**2. O risco que decide NÃO está na série.** O retorno do empréstimo de
+stablecoin quase nunca é negativo — o risco dele é exploit de contrato e
+despegue, que a Fase 4 declarou como NÃO medido. Ranquear por volatilidade
+ordenaria as estratégias por **qual risco nós deixamos de medir**, premiando
+justamente a que esconde melhor. Vai dito em vermelho, não em rodapé.
+
+**3. Diversificar CUSTA, e o custo é medível.** Cada fluxo cobra a própria
+entrada. Dividir $1.000 em quatro fluxos paga quatro entradas de $250 — e o gás
+é fixo. A carteira combinada é medida **líquida do custo de entrada no capital
+dividido**, que é a lição da Fase 4 aplicada contra a tese desta fase.
+
+## Critério de conclusão
+
+Matriz de correlação entre os quatro fluxos, alinhada por data, e a carteira
+comparada contra **a melhor parte sozinha** em retorno absoluto E em tombo —
+com o custo da divisão dentro. Se a carteira não ganhar em nenhum dos dois, a
+combinação é reprovada e concentrar é o certo.
+
+⚠️ **O veredito tem TRÊS saídas, não duas.** Render menos com tombo menor não é
+verde nem morta: é **troca de retorno por sono**, e quem decide é o dono. Um
+selo ali seria uma fórmula tomando decisão de produto.
+
+## O que foi construído
+
+| peça | onde |
+|---|---|
+| Série histórica de APY (`/chart/{pool}`) | `defillama-yields.ts` |
+| Alinhamento por data, matriz, carteira líquida | `src/lib/lab/combinacao.ts` + **20 testes** |
+| Rota | `src/app/admin/api/combinacao/route.ts` |
+| Painel 🧬 | `CombinacaoPanel.tsx` + guarda de amostra |
+| Estratégia | `carteira_verde`, $5.000, capital DIVIDIDO |
+
+## ⚠️ Um quinto defeito achado ao construir: as verdes nunca foram promovidas
+
+A Fase 4 mediu `stablecoin_lending`, `tokenized_treasury` e `liquid_staking`
+como **verde** e gravou isso em `lab_results` — e o `registry.ts` continuou
+dizendo **cinza** nas três. No painel do laboratório, "medida e aprovada" estava
+**idêntica** a "nunca medida".
+
+É a mesma família das outras quatro: dois estados diferentes com a mesma
+aparência. E teria matado esta fase em silêncio — `verdesElegiveis()` lê o
+status do registro, então a carteira teria nascido com **um** fluxo e devolvido
+INCONCLUSIVO, sem ninguém entender por quê.
+
+As três foram promovidas com os números medidos dentro da hipótese, no mesmo
+formato dos fechamentos anteriores.
+
+**Pendente: o dono rodar o 🧬 MEDIR A CARTEIRA COMBINADA.**
+
+---
+
 ### FASE 5 — Venda de opção coberta (C8) · 🔴
 IV de 50–80% no BTC contra 15–20% do S&P é o prêmio mais gordo e
 estruturalmente persistente deste mercado. Nunca medimos.
@@ -981,6 +1067,7 @@ Traduzido em regra:
 | 2 · Filtro de regime | 🔴 **hipótese refutada 06/08** |
 | 3 · Funding janela longa | 🟢 **medida 06/08** — +1,16%/ano, cesta a +3,0%; os 5–20% não reproduzem |
 | 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
+| 4.5 · Combinar as verdes | 🟡 **construída 08/08** — falta o dono rodar o 🧬 |
 | 5 · Opção coberta | 🔴 |
 | 6 · DEX ↔ CEX | 🔴 |
 | 7 · Automação por API | 🔴 |

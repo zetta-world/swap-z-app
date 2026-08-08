@@ -131,9 +131,15 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 1000,
     capitalWhy: "sem mínimo de protocolo; $1.000 é o suficiente para o gás de entrada e "
       + "saída aparecer como fração real do rendimento, que é o que ninguém publica",
-    status: "cinza",
+    status: "verde",
     hypothesis: "3,5% a 9% ao ano segundo fontes públicas de 2026 — o que precisa ser "
-      + "medido é quanto o gás come disso por faixa de capital",
+      + "medido é quanto o gás come disso por faixa de capital. "
+      + "⚠️ MEDIDO EM 06/08 e a hipótese caiu pelo lado do CUSTO, não do rendimento: o "
+      + "gás não come nada. 5 produtos distintos, mediana bruta 3,56%/ano, líquido do 1º "
+      + "ano +3,40% com $1.000 — e o custo de ida e volta na Base é 0,0012%, ou seja "
+      + "$0,006 para as três transações. A faixa de $500 rende praticamente o mesmo que "
+      + "a de $50.000. É a MAIOR renda líquida medida no laboratório, e ganha do funding "
+      + "(+1,18%) com três pernas a menos e sem perna vendida.",
   },
   {
     slug: "tokenized_treasury",
@@ -143,8 +149,12 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 1000,
     capitalWhy: "mínimos de emissor giram nessa faixa; abaixo disso o custo de entrada "
       + "domina um rendimento que é de dígito único",
-    status: "cinza",
-    hypothesis: "3,3% a 8% ao ano — é o piso seguro do produto, não a estrela",
+    status: "verde",
+    hypothesis: "3,3% a 8% ao ano — é o piso seguro do produto, não a estrela. "
+      + "⚠️ MEDIDO EM 06/08 e confirmado no piso da faixa: 5 produtos distintos (BUIDL, "
+      + "USDY, OUSG, TBILL, USDO), mediana bruta 3,47%/ano, líquido do 1º ano +3,10% com "
+      + "$1.000 depois de uma ida e volta de 0,42%. Ficou como previsto — piso seguro, "
+      + "não estrela — e mesmo assim ganha do funding, que carrega perna vendida.",
   },
   {
     slug: "liquid_staking",
@@ -154,9 +164,14 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 1000,
     capitalWhy: "sem mínimo; o custo real é o gás de entrada e saída, e $1.000 é onde "
       + "ele deixa de ser proibitivo sem ainda ser desprezível",
-    status: "cinza",
+    status: "verde",
     hypothesis: "2,3% a 2,6% depois das taxas do provedor — abaixo do empréstimo de "
-      + "stablecoin no regime atual, o que é contraintuitivo e vale confirmar",
+      + "stablecoin no regime atual, o que é contraintuitivo e vale confirmar. "
+      + "⚠️ MEDIDO EM 06/08 e CONFIRMADO, inclusive na parte contraintuitiva: 4 produtos "
+      + "(Lido 2,20%, Rocket Pool 2,20%, cbETH 2,39%, sfrxETH 2,73%), mediana bruta "
+      + "2,30%/ano e líquido do 1º ano +1,88% — abaixo do empréstimo de stablecoin "
+      + "(+3,40%), como a hipótese previa. Validar a rede paga menos que emprestar para "
+      + "quem quer alavancar.",
   },
   {
     slug: "restaking",
@@ -195,6 +210,25 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "hipótese 'os 5-20% publicados são recorte de regime' prevê. Verde porque a renda "
       + "existe e é selecionável; o teto é ~3%/ano na cesta, então ela compete com o Tesouro "
       + "tokenizado (`tokenized_treasury`), não com a promessa de 20%.",
+  },
+  {
+    slug: "carteira_verde",
+    name: "Carteira das verdes",
+    subtitle: "as rendas aprovadas juntas · $5.000 · 365 dias",
+    family: "carrego",
+    capitalRequiredUsd: 5000,
+    capitalWhy: "o capital é DIVIDIDO entre os fluxos, e cada fatia paga a própria "
+      + "entrada; abaixo de $5.000 a divisão em quatro deixa cada perna pequena "
+      + "demais e a medição vira um teste de custo fixo, não de diversificação",
+    status: "cinza",
+    hypothesis: "⚠️ HIPÓTESE MINHA, e é onde eu já errei duas vezes — o clima e o "
+      + "filtro de regime, as duas levantadas por mim e derrubadas pela minha própria "
+      + "medição, a segunda INVERTIDA. A tese: ρ=0,07 no funding mostrou que 50 nomes "
+      + "valem 12 apostas, então adicionar moeda não é a alavanca; combinar rendas com "
+      + "MOTORES diferentes (posicionamento, crédito, juro soberano, emissão) seria. "
+      + "⚠️ E a aritmética já diz que a carteira vai render MENOS que a melhor parte: "
+      + "a média de 3,40% e 1,18% é 2,29%. O que ela pode ganhar é tombo — e trocar "
+      + "retorno por sono é decisão do dono, não resultado de fórmula.",
   },
   {
     slug: "quarterly_basis",

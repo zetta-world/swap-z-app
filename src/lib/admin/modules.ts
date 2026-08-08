@@ -17,6 +17,7 @@ export type ModuleId =
   | "what-worked"
   | "funding"
   | "rendimento"
+  | "combinacao"
   | "ligas"
   | "lab"
   | "tournament"
@@ -199,6 +200,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8.5,
+  },
+  {
+    id: "combinacao",
+    title: "COMBINAR AS VERDES",
+    subtitle: "as rendas aprovadas juntas — vale mais que concentrar na melhor?",
+    icon: "\u{1F9EC}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.6,
   },
   {
     id: "lab",
