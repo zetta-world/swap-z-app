@@ -223,11 +223,55 @@ export function vereditoCombinacao(args: {
 
   const rho = rhoMedio == null ? "—" : `${Math.round(rhoMedio * 100)}%`;
   const ganhaRetorno = carteiraLiquidaPct > melhorParteLiquidaPct;
-  const ganhaTombo = melhorParteTomboPct != null && carteira.tomboPct < melhorParteTomboPct;
+
+  /**
+   * ⚠️⚠️ QUANDO OS DOIS TOMBOS SÃO ZERO, NÃO HÁ COMPARAÇÃO — HÁ DUAS
+   * NÃO-MEDIÇÕES (08/08).
+   *
+   * A rodada de 08/08 fechou MORTA dizendo "o tombo TAMBÉM não melhora,
+   * combinar perde nas duas pontas". Não perdia: EMPATAVA em zero. Carteira
+   * 0,00 contra Tesouro 0,00.
+   *
+   * E o empate não é notícia boa nem ruim — é artefato. O retorno diário de
+   * uma piscina é `apy/365`, e APY positivo NUNCA gera dia negativo. Tombo é
+   * estruturalmente incapaz de ser diferente de zero para renda de piscina.
+   * Três dos quatro fluxos tinham tombo zero por construção.
+   *
+   * Isto é a armadilha nº 2 do topo deste arquivo entrando por outra porta: eu
+   * a bloqueei na coluna VOL e deixei passar pela coluna TOMBO. O risco que
+   * decide — emissor, despegue, fila de resgate — está inteiro fora da série, e
+   * um veredito que trata "0 contra 0" como derrota da diversificação está
+   * afirmando exatamente o que não mediu.
+   *
+   * Comparação só existe quando pelo menos um dos lados tem tombo de verdade.
+   */
+  const tomboComparavel = (melhorParteTomboPct ?? 0) > 0 || carteira.tomboPct > 0;
+  const ganhaTombo = tomboComparavel
+    && melhorParteTomboPct != null && carteira.tomboPct < melhorParteTomboPct;
+  const empataTombo = tomboComparavel
+    && melhorParteTomboPct != null && carteira.tomboPct === melhorParteTomboPct;
 
   const base = `${fluxos} fluxos · ${diasComuns} dias em comum · correlação média ${rho} · `
     + `carteira ${carteiraLiquidaPct.toFixed(2)}%/ano líquido contra `
     + `${melhorParteLiquidaPct.toFixed(2)}% de ${melhorParteNome} sozinha`;
+
+  /**
+   * Reprovada no retorno, e o outro prato da balança nem sequer pesa. Não é
+   * "morta" — é medida pela metade, e a metade que falta é a que justificaria
+   * diversificar.
+   */
+  if (!ganhaRetorno && !tomboComparavel) {
+    const perda = (melhorParteLiquidaPct - carteiraLiquidaPct).toFixed(2);
+    return {
+      readable: true, status: "cinza",
+      verdict: `${base} — combinar CUSTA ${perda} ponto de retorno. `
+        + "⚠️ E não compra nada que esta medição enxergue: os dois tombos são ZERO por "
+        + "construção, porque retorno de piscina é apy/365 e APY positivo nunca gera dia "
+        + "negativo. O risco que justificaria diversificar — emissor, despegue, fila de "
+        + "resgate — está inteiro FORA da série. Reprovada no que dá para medir; a decisão "
+        + "de risco continua sendo do dono, não deste número.",
+    };
+  }
 
   /**
    * ⚠️ O CASO QUE EU ESPERO, e ele NÃO é reprovação da diversificação.
@@ -237,10 +281,19 @@ export function vereditoCombinacao(args: {
    * tombo. Chamar isso de "morta" seria tão errado quanto chamar de "verde"
    * pelo Sharpe: são duas perguntas, e a resposta é uma tabela, não um selo.
    */
+  if (!ganhaRetorno && empataTombo) {
+    return {
+      readable: true, status: "cinza",
+      verdict: `${base} — e o tombo EMPATA em ${carteira.tomboPct.toFixed(2)} pontos. `
+        + "Combinar custa retorno e não devolve nada: concentrar é o certo pelo que se "
+        + "mediu, mas isto é empate, não derrota.",
+    };
+  }
   if (!ganhaRetorno && !ganhaTombo) {
     return {
       readable: true, status: "morta",
-      verdict: `${base} — e o tombo TAMBÉM não melhora. Combinar perde nas duas pontas: `
+      verdict: `${base} — e o tombo PIORA, de ${melhorParteTomboPct!.toFixed(2)} para `
+        + `${carteira.tomboPct.toFixed(2)} pontos. Combinar perde nas duas pontas: `
         + "concentrar na melhor parte é o certo.",
     };
   }

@@ -277,6 +277,19 @@ export default function CombinacaoPanel() {
           <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
             <div style={{ color: "var(--adm-amber)" }}>⚠️ NÃO está nesta conta:</div>
             {d.naoMedido.map((n) => <div key={n}>· {n}</div>)}
+            {/* ⚠️ POR QUE O NÚMERO NÃO BATE COM O DO 🏦, e é de propósito.
+                   Conferência de 08/08: o empréstimo aparece com 2,67% aqui e
+                   3,56% lá. As duas estão certas para perguntas diferentes, e
+                   sem esta nota parecem dois painéis se contradizendo — que é a
+                   família de defeito que esta semana já achou seis vezes. */}
+            <div style={{ marginTop: 4, color: "var(--adm-amber)" }}>
+              ⚠️ BRUTO aqui é a <b>média da série própria</b> daquela UMA piscina, ao longo
+              dos DIAS da última coluna. No 🏦 RENDIMENTO é a <b>mediana à vista</b> entre
+              vários produtos, hoje. Divergem por construção: o empréstimo deu 2,67% (média
+              de 1.273 dias da aave-v3 USDT) contra 3,56% (mediana de 5 produtos hoje).
+              Nenhum está errado — são perguntas diferentes, e só a da esquerda serve para
+              correlacionar.
+            </div>
             <div style={{ marginTop: 4 }}>
               A carteira é de PESO IGUAL e nunca rebalanceia. LÍQ/ANO desconta UMA ida e volta
               por fluxo, sobre a fatia dele — dividir em {r.fluxos} paga {r.fluxos} entradas.

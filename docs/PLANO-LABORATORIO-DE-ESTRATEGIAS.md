@@ -982,7 +982,73 @@ INCONCLUSIVO, sem ninguém entender por quê.
 As três foram promovidas com os números medidos dentro da hipótese, no mesmo
 formato dos fechamentos anteriores.
 
-**Pendente: o dono rodar o 🧬 MEDIR A CARTEIRA COMBINADA.**
+## A rodada (08/08) — a hipótese caiu, e caiu no melhor cenário possível
+
+```
+correlação média −0,004 (0%) · 4 fluxos = 4,0 apostas independentes
+carteira 2,66%/ano  ×  Tesouro tokenizado sozinho 3,13%/ano
+```
+
+**ρ=0 é diversificação perfeita** — quatro fluxos valendo quatro apostas, o
+máximo teórico. E a carteira perde mesmo assim.
+
+| fluxo | líq/ano | bruto (série) | entrada | tombo | % neg | dias |
+|---|---|---|---|---|---|---|
+| Tesouro tokenizado · USDY | **+3,13%** | 3,55% | −0,416% | 0,00 | 0% | 193 |
+| Funding · BTC | +2,93% | 3,38% | −0,450% | **0,07** | **16%** | 95 |
+| Empréstimo · aave-v3 USDT | +2,67% | 2,67% | −0,001% | 0,00 | 0% | 1273 |
+| Staking · lido stETH | +1,90% | 2,35% | −0,446% | 0,00 | 0% | 1529 |
+
+**A premissa estava certa; a conclusão, não.** A matriz confirma que os motores
+são independentes (funding × crédito = −0,03; funding × juro soberano = −0,00).
+Eu acertei que as causas são diferentes e errei ao concluir que isso ajudaria:
+**diversificação só paga quando nenhuma parte domina** — e o Tesouro domina,
+rendendo mais que todos com tombo zero. Misturar funding (16% de dias negativos)
+só acrescenta oscilação.
+
+Terceira hipótese minha derrubada pela própria medição, depois do clima e do
+filtro de regime.
+
+### O único sinal de estrutura na matriz inteira
+
+**funding × staking líquido = −0,24**, a única correlação não desprezível, e
+negativa. Os dois são ETH-adjacentes. Não salva a carteira, mas é a única
+evidência de estrutura a explorar — e aponta para um **par**, não para uma cesta
+de quatro.
+
+### ⚠️ E um defeito meu no veredito, achado pelo dono
+
+O texto dizia *"o tombo TAMBÉM não melhora. Combinar perde nas duas pontas"*.
+**Não perdia — empatava em zero.** Carteira 0,00 contra Tesouro 0,00.
+
+E o empate é **artefato**: retorno de piscina é `apy/365`, e APY positivo nunca
+gera dia negativo. **Tombo é estruturalmente incapaz de ser diferente de zero
+para renda de piscina** — três dos quatro fluxos tinham tombo zero por
+construção.
+
+É a armadilha nº 2 deste plano entrando por outra porta: eu a bloqueei na coluna
+VOL e deixei passar pela coluna TOMBO. Um veredito que trata "0 contra 0" como
+derrota da diversificação afirma exatamente o que não mediu.
+
+**Corrigido:** o veredito agora tem quatro saídas — ganha, empata com tombo
+real, piora com tombo real, e **comparação inválida** quando os dois tombos são
+zero por construção. Nesse caso a resposta é CINZA com a perda de retorno dita
+na frente (0,47 ponto) e o motivo escrito: *"o risco que justificaria
+diversificar — emissor, despegue, fila de resgate — está inteiro FORA da série".*
+
+### Conferência print × banco (08/08)
+
+Todos os campos batem: carteira `2.6596`, benchmark `3.1339`, ρ `−0.004`,
+`effective_n 4`, `sample_n 95`, e os quatro fluxos idênticos ao que a tela
+mostrou. O 🪙 (`1.1277` · `11.59` · `0.068`) e o 🏦 (`3.4063 / 3.2897 / 2.0641`)
+também.
+
+⚠️ **Uma divergência legítima que parecia contradição:** o empréstimo aparece com
+**2,67%** no 🧬 e **3,56%** no 🏦 — 89 pontos-base. São perguntas diferentes:
+aqui é a média da série própria de UMA piscina ao longo de 1.273 dias; lá é a
+mediana à vista entre 5 produtos, hoje. Nenhum está errado, e só o primeiro
+serve para correlacionar. A nota está na tela agora, porque sem ela os dois
+painéis pareciam se contradizer.
 
 ---
 
@@ -1067,7 +1133,7 @@ Traduzido em regra:
 | 2 · Filtro de regime | 🔴 **hipótese refutada 06/08** |
 | 3 · Funding janela longa | 🟢 **medida 06/08** — +1,16%/ano, cesta a +3,0%; os 5–20% não reproduzem |
 | 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
-| 4.5 · Combinar as verdes | 🟡 **construída 08/08** — falta o dono rodar o 🧬 |
+| 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
 | 5 · Opção coberta | 🔴 |
 | 6 · DEX ↔ CEX | 🔴 |
 | 7 · Automação por API | 🔴 |
