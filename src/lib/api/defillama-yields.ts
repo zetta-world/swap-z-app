@@ -125,3 +125,48 @@ export async function fetchLlamaYields(deadline?: number): Promise<YieldsFetch> 
 export function resumoFalhas(falhas: FalhaHost[]): string {
   return falhas.map((f) => `${new URL(f.host).host}:${f.status}`).join(" ");
 }
+
+/**
+ * ⚠️ HISTÓRICO DE UMA PISCINA — `/chart/{pool}`, o mesmo host de `/pools`.
+ *
+ * A distinção com a nota do topo deste arquivo importa e é a favor: ali o risco
+ * era `yields.llama.fi` ser um HOST diferente de `api.llama.fi`, com bloqueio
+ * próprio. Aqui é o MESMO host, caminho diferente — e `/pools` já respondeu em
+ * produção em 06/08. Evidência positiva de verdade, não ausência de erro.
+ *
+ * Ainda assim o status de cada piscina é registrado: uma piscina pode não ter
+ * histórico enquanto o host inteiro responde, e "sem histórico" não pode virar
+ * série vazia silenciosa.
+ */
+export interface PontoChart {
+  /** ISO 8601 vindo da fonte. Convertido para dia UTC por quem consome. */
+  timestamp?: string;
+  tvlUsd?: number;
+  apy?: number | null;
+  apyBase?: number | null;
+  apyReward?: number | null;
+}
+
+export interface ChartFetch {
+  poolId: string;
+  pontos: PontoChart[];
+  falha?: string;
+}
+
+export async function fetchPoolChart(poolId: string): Promise<ChartFetch> {
+  const url = `https://yields.llama.fi/chart/${encodeURIComponent(poolId)}`;
+  try {
+    // Mesma decisão do `/pools`: medição roda a pedido, e cache pode servir
+    // uma leitura falsa indistinguível de uma medição. Ver a nota `SEM_CACHE`
+    // na rota de funding.
+    const res = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!res.ok) return { poolId, pontos: [], falha: String(res.status) };
+    const body = await res.json() as { data?: PontoChart[] };
+    const pontos = body.data;
+    if (!Array.isArray(pontos)) return { poolId, pontos: [], falha: "resposta sem série" };
+    if (pontos.length === 0) return { poolId, pontos: [], falha: "série vazia" };
+    return { poolId, pontos };
+  } catch (e) {
+    return { poolId, pontos: [], falha: String(e).slice(0, 60) };
+  }
+}

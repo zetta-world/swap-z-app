@@ -61,6 +61,13 @@ const RANQUEIAM: Array<{ painel: string; amostra: string; porque: string }> = [
       + "forte que uma tabela faz, e sem os fechados ela premia sorte",
   },
   {
+    painel: "CombinacaoPanel",
+    amostra: "DIAS",
+    porque: "cada linha é um fluxo de renda ordenado por líquido/ano, e os fluxos têm "
+      + "históricos de tamanhos MUITO diferentes — funding vem da okx, APY vem da "
+      + "DefiLlama; sem os dias, um fluxo de 20 dias parece igual a um de 400",
+  },
+  {
     painel: "TournamentPanel",
     amostra: "DEC",
     porque: "ranking de agentes por líquido/trade; DEC é a amostra decidida",
