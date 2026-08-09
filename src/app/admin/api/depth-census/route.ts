@@ -35,6 +35,31 @@ export const maxDuration = 60;
 const MAJORS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "LINK", "AVAX", "LTC", "TRX", "DOT"];
 const CONTROLE = ["GRT", "MANA", "RUNE", "SAND", "IMX", "JUP"];
 
+/**
+ * ⚠️ OS QUE A MESA ACUSA DE ANOMALIA — medidos no livro para a acusação poder
+ * ser conferida (09/08).
+ *
+ * A leitura de 09/08 achou 71 `arb_data_anomaly` em 12h concentradas em oito
+ * símbolos, com spreads de 0,56% a 0,97% — vários ACIMA do piso de custo, ou
+ * seja, pagariam se fossem reais.
+ *
+ * IMX, JUP e GRT já estavam no controle, e a resposta veio de graça: a anomalia
+ * do JUP mandava COMPRAR na gate.io a 0,69%, e o livro diz que a gate.io é a
+ * CARA, com dispersão real de 0,035% — vinte vezes menor, em sentido oposto.
+ * É artefato de ÚLTIMO PREÇO: a matriz do arbiter lê último negócio, o censo lê
+ * bid/ask, e um último preço parado fica longe do livro.
+ *
+ * WIF e BONK eram os únicos acusados sem livro lido. Entram aqui para a próxima
+ * acusação já nascer conferível.
+ *
+ * ⚠️ E ENTRAM COMO LISTA DECLARADA, NÃO COMO "O QUE PARECEU SUSPEITO HOJE".
+ * Medir o que a mesa aponta seria reintroduzir exatamente o viés de seleção que
+ * este arquivo existe para corrigir — as 4.085 medições de oito altcoins rasas
+ * e ZERO de BTC. A lista é fixa e a medição é incondicional; se WIF e BONK
+ * pararem de dar anomalia, continuam sendo medidos.
+ */
+const ACUSADOS = ["WIF", "BONK"];
+
 /** Só as venues que a matriz viva prova que respondem, menos as excluídas. */
 const VENUES: CexSpotSource[] = (["binance", "okx", "gateio", "bybit", "mexc", "kraken"] as CexSpotSource[])
   .filter((v) => !EXCLUDE_VENUES.includes(v));
@@ -50,7 +75,7 @@ export async function POST(): Promise<NextResponse> {
     return NextResponse.json({ error: motivo, detail: detalhe ?? null }, { status: 503 });
   };
 
-  const simbolos = [...MAJORS, ...CONTROLE];
+  const simbolos = [...MAJORS, ...CONTROLE, ...ACUSADOS];
   const linhas: SymbolCensus[] = [];
   const semLivro: string[] = [];
 
@@ -83,6 +108,12 @@ export async function POST(): Promise<NextResponse> {
 
   const majors = linhas.filter((l) => MAJORS.includes(l.symbol));
   const controle = linhas.filter((l) => CONTROLE.includes(l.symbol));
+  /**
+   * ⚠️ GRUPO PRÓPRIO, e não misturado no controle. Os acusados entraram por um
+   * motivo diferente — a mesa disse que eles tinham spread grande — e somá-los
+   * ao controle mudaria o denominador de uma comparação que já existia.
+   */
+  const acusados = linhas.filter((l) => ACUSADOS.includes(l.symbol));
   const veredito = censusVerdict(majors);
 
   const resumoDe = (ls: SymbolCensus[]) => ({
@@ -93,7 +124,10 @@ export async function POST(): Promise<NextResponse> {
     positivos: ls.filter((l) => (l.edgeBeforeFeesPct ?? -1) > 0).length,
   });
 
-  const resumo = { majors: resumoDe(majors), controle: resumoDe(controle), semLivro };
+  const resumo = {
+    majors: resumoDe(majors), controle: resumoDe(controle),
+    acusados: resumoDe(acusados), semLivro,
+  };
 
   await recordEvent("depth_census", { meta: {
     ...resumo,
@@ -113,7 +147,7 @@ export async function POST(): Promise<NextResponse> {
 
   return NextResponse.json({
     resumo, veredito,
-    majors, controle, venues: VENUES,
+    majors, controle, acusados, venues: VENUES,
     aviso: "Leitura pura. `borda` = dispersão entre mids MENOS o pedágio de atravessar "
       + "meio bid-ask em cada ponta. Borda NEGATIVA antes da taxa fecha a questão: "
       + "não existe tier de taxa nem velocidade que salve.",

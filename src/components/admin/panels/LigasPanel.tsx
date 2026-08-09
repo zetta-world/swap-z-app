@@ -35,10 +35,12 @@ type Resumo = {
   medianaBorda: number | null; positivos: number;
 };
 type Censo = {
-  resumo: { majors: Resumo; controle: Resumo; semLivro: string[] };
+  resumo: { majors: Resumo; controle: Resumo; acusados?: Resumo; semLivro: string[] };
   veredito: { verdict: string; positivos: number; total: number };
   majors: Array<{ symbol: string; crossCostPct: number | null; dispersionPct: number | null; edgeBeforeFeesPct: number | null; cheapVenue: string | null; richVenue: string | null }>;
   controle: Censo["majors"];
+  /** Os que a mesa acusou de anomalia — grupo próprio. Ver a nota no route.ts. */
+  acusados?: Censo["majors"];
   naoMedido?: string[];
   aviso: string; tookMs: number;
 };
@@ -143,6 +145,16 @@ export default function LigasPanel() {
       </div>
       {tabela(d.majors, "MAJORS")}
       {d.controle.length > 0 && tabela(d.controle, "CONTROLE — as rasas, para o número dos majors ter contra o que ser lido")}
+      {/* ⚠️ OS ACUSADOS, com a acusação ao lado da medição (09/08).
+             A mesa marcou 71 anomalias em 12h com spreads de 0,56% a 0,97% —
+             vários acima do piso de custo. O livro do JUP respondeu: dispersão
+             de 0,035%, e a venue que a anomalia mandava COMPRAR é a CARA. Era
+             artefato de último preço. Estes ficam medidos para a próxima
+             acusação já nascer conferível. */}
+      {(d.acusados?.length ?? 0) > 0 && tabela(
+        d.acusados!,
+        "ACUSADOS — a mesa marcou anomalia neles; aqui está o LIVRO, para conferir a acusação",
+      )}
       {d.naoMedido && (
         <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 5, lineHeight: 1.6 }}>
           <span style={{ color: "var(--adm-amber)" }}>⚠️ não medido:</span>{" "}
@@ -166,7 +178,7 @@ export default function LigasPanel() {
       </div>
 
       <button className="adm-btn" onClick={() => rodar("spot")} disabled={!!rodando}>
-        {rodando === "spot" ? "lendo livros spot…" : "🔬 CENSO SPOT · majors + controle"}
+        {rodando === "spot" ? "lendo livros spot…" : "🔬 CENSO SPOT · majors + controle + acusados"}
       </button>
       <button className="adm-btn" onClick={() => rodar("perp")} disabled={!!rodando} style={{ marginTop: 6 }}>
         {rodando === "perp" ? "lendo livros de perp…" : "⚡ CENSO PERP · a mesa de futuros"}
