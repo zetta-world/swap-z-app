@@ -1268,7 +1268,56 @@ Tetos declarados **antes** de ver o resultado: +0%, +5%, +10%, +20%. Escolher
 olhando qual saiu melhor é fitar — o mesmo defeito da sonda de orderbook que só
 media a "melhor oportunidade aparente".
 
-**Pendente: o dono rodar o 🌪 de novo — agora ele devolve as duas metades.**
+## A rodada (09/08) — CINZA, e a margem fez o trabalho dela
+
+| teto | vantagem | ganhou | exercida | prêmio |
+|---|---|---|---|---|
+| **+5%** | **+0,62** | 77% | 33% | 3,75% |
+| +10% | +0,52 | 86% | 20% | 2,35% |
+| +0% | +0,50 | 70% | **52%** | 5,76% |
+| **+20%** | **+0,10** | **94%** | 7% | 0,86% |
+
+Vantagem de 0,62 contra margem de 1 → **INCONCLUSIVO**. Os quatro tetos deram
+positivo e nenhum passou a margem: a trava recusou aprovar por margem estreita
+com prêmio modelado, que é exatamente o que ela existe para fazer.
+
+### ⚠️ Meu palpite estava errado, e o erro é instrutivo
+
+Eu previ que **+20% seria o melhor teto**. É o **pior** (+0,10). Faz sentido
+depois de visto: a +20% o prêmio é 0,86% e o teto quase nunca morde (7%) — a
+estratégia vira quase igual a segurar, e a vantagem colapsa. O ponto ótimo é
+onde o prêmio ainda é gordo e o teto não morde demais.
+
+### O contraste que a fase existia para mostrar
+
+**+20% ganha em 94% das janelas e entrega +0,10. +0% ganha em 70% e entrega
++0,50.** A taxa de acerto e o resultado andam em **direções opostas**. Quem
+vendesse a estratégia mostraria os 94% — número verdadeiro apontando para o
+teto errado.
+
+### ⚠️ A ressalva que faltava na tela, e agora está lá
+
+**SEGURAR rendeu +0,86% por janela de 30 dias — ~10,5% ao ano.** Em 2,5 anos o
+BTC andou quase de lado, e **coberta ganha de segurar POR CONSTRUÇÃO em mercado
+lateral**: o teto quase não morde e o prêmio entra inteiro.
+
+Sem isso, `+0,62` é lido como constante da estratégia quando é condicional ao
+mercado que a janela pegou. Mesma família da janela curta do funding: o número
+está certo e a leitura, não.
+
+`regimeDaJanela` classifica pelo retorno anualizado de segurar (queda / lateral
+/ alta — limiares declarados, não medidos) e a ressalva entra em **toda** saída
+do veredito, inclusive nas que reprovam: um resultado negativo em mercado de
+alta também é condicional, e descartar a estratégia sem isso seria errar o
+motivo.
+
+### A cauda são DOIS episódios, não uma distribuição
+
+**32 das 40 piores janelas estão em dois meses:** 26 em janeiro de 2026 e 6 em
+fevereiro de 2024. Nelas a implícita estava em 38–42% e a realizada veio a
+**80–84%** — a volatilidade dobrou. Com 29 janelas independentes, isso são ~2
+eventos em ~29 oportunidades. O `−46,10` não é "a cauda da distribuição": é
+**janeiro de 2026**.
 
 ⚠️ A primeira rodada é também teste de rede: `www.deribit.com` nunca foi chamado
 por este repo, e não há segunda fonte gratuita de IV histórica. Se recusar, a
@@ -1349,7 +1398,7 @@ Traduzido em regra:
 | 3 · Funding janela longa | 🟢 **medida 06/08** — +1,16%/ano, cesta a +3,0%; os 5–20% não reproduzem |
 | 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
-| 5 · Opção coberta | 🟡 **5.1 medida · 5.2 construída 09/08** — falta rodar |
+| 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🔴 |
 | 7 · Automação por API | 🔴 |
 | 8 · Cinzas restantes | 🔴 |

@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import {
   normalCdf, precoCall, janelaCoberta, resumirCoberta, vereditoCoberta,
-  STRIKES, MARGEM_MINIMA_PCT,
+  STRIKES, MARGEM_MINIMA_PCT, regimeDaJanela,
 } from "@/lib/lab/coberta";
 
 describe("a normal acumulada", () => {
@@ -132,7 +132,7 @@ describe("o veredito — a maioria das janelas diz uma coisa e a média diz outr
       strikeFrac: 1.1, n: 200, cobertaMediaPct: 2.4, segurarMediaPct: 2.0,
       vantagemPct: 0.4, cobertaMedianaPct: 3, segurarMedianaPct: 1,
       fracaoGanhou: 0.8, fracaoExercida: 0.15, premioMedioPct: 3,
-      piorCobertaPct: -20, piorSegurarPct: -25,
+      piorCobertaPct: -20, piorSegurarPct: -25, segurarAnualPct: 24.3,
     };
     const v = vereditoCoberta([r]);
     expect(v.status).toBe("cinza");
@@ -146,7 +146,7 @@ describe("o veredito — a maioria das janelas diz uma coisa e a média diz outr
       strikeFrac: 1.1, n: 200, cobertaMediaPct: 4.5, segurarMediaPct: 2.0,
       vantagemPct: 2.5, cobertaMedianaPct: 4, segurarMedianaPct: 1,
       fracaoGanhou: 0.8, fracaoExercida: 0.15, premioMedioPct: 3,
-      piorCobertaPct: -20, piorSegurarPct: -25,
+      piorCobertaPct: -20, piorSegurarPct: -25, segurarAnualPct: 24.3,
     };
     const v = vereditoCoberta([r]);
     expect(v.status).toBe("verde");
@@ -158,7 +158,7 @@ describe("o veredito — a maioria das janelas diz uma coisa e a média diz outr
     const base = {
       n: 100, cobertaMedianaPct: 1, segurarMedianaPct: 1, fracaoGanhou: 0.5,
       fracaoExercida: 0.2, premioMedioPct: 3, piorCobertaPct: -10, piorSegurarPct: -10,
-      cobertaMediaPct: 1, segurarMediaPct: 1,
+      cobertaMediaPct: 1, segurarMediaPct: 1, segurarAnualPct: 12.2,
     };
     const v = vereditoCoberta([
       { ...base, strikeFrac: 1.0, vantagemPct: -2 },
@@ -172,5 +172,81 @@ describe("o veredito — a maioria das janelas diz uma coisa e a média diz outr
   it("sem janela nenhuma é inconclusivo, nunca reprovado", () => {
     expect(vereditoCoberta([]).status).toBe("cinza");
     expect(resumirCoberta([], 1.1)).toBeNull();
+  });
+});
+
+/**
+ * ⚠️ O REGIME DA JANELA — a ressalva que faltava na tela (09/08).
+ *
+ * A rodada de 09/08 deu vantagem POSITIVA nos quatro tetos, e o motivo não
+ * estava na estratégia: SEGURAR rendeu +0,86% por janela de 30 dias, ~10,5% ao
+ * ano. Em 2,5 anos o BTC andou quase de lado, e coberta ganha de segurar POR
+ * CONSTRUÇÃO em mercado lateral.
+ *
+ * Sem isso na tela, `+0,62` é lido como constante da estratégia quando é
+ * condicional ao mercado que a janela pegou. Mesma família da janela curta do
+ * funding: o número está certo e a leitura, não.
+ */
+describe("o resultado é condicional ao regime, e o veredito diz qual foi", () => {
+  it("classifica o regime pelo retorno de SEGURAR anualizado", () => {
+    expect(regimeDaJanela(-8)).toBe("queda");
+    expect(regimeDaJanela(10.5)).toBe("lateral");   // o caso real de 09/08
+    expect(regimeDaJanela(14.9)).toBe("lateral");
+    expect(regimeDaJanela(15)).toBe("alta");
+    expect(regimeDaJanela(80)).toBe("alta");
+  });
+
+  it("anualiza o retorno de segurar a partir da janela", () => {
+    const js = Array.from({ length: 10 }, (_, i) =>
+      janelaCoberta(`d${i}`, 100, 100.86, 0.5, 1.05, 30 / 365));
+    const r = resumirCoberta(js, 1.05, 30)!;
+    expect(r.segurarMediaPct).toBeCloseTo(0.86, 2);
+    // 0,86 × 365/30 ≈ 10,5 — o número exato da rodada de 09/08.
+    expect(r.segurarAnualPct).toBeCloseTo(10.5, 1);
+    expect(regimeDaJanela(r.segurarAnualPct)).toBe("lateral");
+  });
+
+  /**
+   * ⚠️ A RESSALVA ENTRA EM TODA SAÍDA, inclusive nas que reprovam. Um resultado
+   * negativo em mercado de ALTA também é condicional, e alguém lendo
+   * "reprovado" sem isso descartaria a estratégia pelo motivo errado.
+   */
+  it("a ressalva sai no INCONCLUSIVO, no MORTA e no VERDE", () => {
+    const base = {
+      strikeFrac: 1.05, n: 200, cobertaMedianaPct: 3, segurarMedianaPct: 1,
+      fracaoGanhou: 0.77, fracaoExercida: 0.33, premioMedioPct: 3.75,
+      piorCobertaPct: -20, piorSegurarPct: -25,
+      cobertaMediaPct: 1.48, segurarMediaPct: 0.86, segurarAnualPct: 10.5,
+    };
+    for (const vant of [-2, 0.62, 3]) {
+      const v = vereditoCoberta([{ ...base, vantagemPct: vant }]);
+      expect(v.verdict, `vantagem ${vant}`).toContain("CONDICIONAL AO REGIME");
+      expect(v.verdict).toContain("10.5%/ano");
+      expect(v.verdict).toContain("teto mordeu em 33%");
+    }
+  });
+
+  it("mercado LATERAL avisa que a coberta ganha por construção", () => {
+    const v = vereditoCoberta([{
+      strikeFrac: 1.05, n: 200, cobertaMedianaPct: 3, segurarMedianaPct: 1,
+      fracaoGanhou: 0.77, fracaoExercida: 0.33, premioMedioPct: 3.75,
+      piorCobertaPct: -20, piorSegurarPct: -25,
+      cobertaMediaPct: 1.48, segurarMediaPct: 0.86, vantagemPct: 0.62,
+      segurarAnualPct: 10.5,
+    }]);
+    expect(v.verdict).toContain("POR CONSTRUÇÃO");
+    expect(v.verdict).toContain("alta forte a mesma conta inverte");
+  });
+
+  it("mercado em ALTA diz que vantagem positiva ali vale mais", () => {
+    const v = vereditoCoberta([{
+      strikeFrac: 1.05, n: 200, cobertaMedianaPct: 3, segurarMedianaPct: 1,
+      fracaoGanhou: 0.6, fracaoExercida: 0.7, premioMedioPct: 3.75,
+      piorCobertaPct: -20, piorSegurarPct: -25,
+      cobertaMediaPct: 8, segurarMediaPct: 6, vantagemPct: 2,
+      segurarAnualPct: 73,
+    }]);
+    expect(v.verdict).toContain("regime mais duro");
+    expect(v.verdict).toContain("vale mais");
   });
 });

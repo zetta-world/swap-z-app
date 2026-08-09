@@ -158,7 +158,7 @@ export async function POST(): Promise<NextResponse> {
   }
 
   const cobertas = STRIKES
-    .map((k) => resumirCoberta(porStrike.get(k) ?? [], k))
+    .map((k) => resumirCoberta(porStrike.get(k) ?? [], k, JANELA_DIAS))
     .filter((r): r is NonNullable<typeof r> => r != null);
   const vereditoCob = vereditoCoberta(cobertas);
   const melhorCob = cobertas.length
@@ -228,6 +228,7 @@ export async function POST(): Promise<NextResponse> {
             coberta: c.cobertaMediaPct, segurar: c.segurarMediaPct,
             vantagem: c.vantagemPct, ganhou: Math.round(c.fracaoGanhou * 100),
             exercida: Math.round(c.fracaoExercida * 100), premio: c.premioMedioPct,
+            segurarAno: c.segurarAnualPct,
           })),
         ],
         notMeasured: naoMedido,
@@ -253,6 +254,8 @@ export async function POST(): Promise<NextResponse> {
     cobertaMelhorTeto: melhorCob ? Math.round((melhorCob.strikeFrac - 1) * 100) : null,
     cobertaVantagem: melhorCob?.vantagemPct ?? null,
     cobertaGanhouPct: melhorCob ? Math.round(melhorCob.fracaoGanhou * 100) : null,
+    /** O regime da janela — sem ele a vantagem é lida como constante. */
+    segurarAnualPct: melhorCob?.segurarAnualPct ?? null,
     dvolDe: dvol.primeiroDia ?? null, dvolAte: dvol.ultimoDia ?? null,
     falhas: falhas.join(" · ") || null,
     tookMs: Date.now() - t0,
