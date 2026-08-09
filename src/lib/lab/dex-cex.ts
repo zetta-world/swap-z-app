@@ -115,6 +115,31 @@ export function precoDex(
  */
 export const PARES_EXCLUIDOS = ["WBTC", "MATIC", "POL"] as const;
 
+/**
+ * ⚠️⚠️ O ATIVO NATIVO NÃO TEM ENDEREÇO, E A LI.FI QUER UM SENTINELA (09/08).
+ *
+ * `tokens.ts` guarda ETH, BNB e afins como `address: "native"` — uma marca da
+ * interface, não um endereço. A LI.FI espera
+ * `0x0000000000000000000000000000000000000000` para o nativo e devolve
+ * **404 "Could not find token"** para qualquer outra coisa.
+ *
+ * Na primeira rodada isso derrubou QUATRO dos sete pares — ETH em três cadeias
+ * e BNB — e a medição fechou INCONCLUSIVA por não bater o piso de quatro
+ * símbolos. O piso funcionou; o que faltava era o par chegar até ele.
+ *
+ * ⚠️ E O PIOR: eu já sabia. A rota do 🏦 importa `LIFI_NATIVE` e usa. Aqui eu
+ * escrevi `token.address` direto, num arquivo escrito no mesmo dia. Não foi
+ * desconhecimento — foi não reler o que eu mesmo tinha feito duas fases antes.
+ *
+ * Fica como função com nome para o próximo consumidor não repetir: o mapeamento
+ * é do DOMÍNIO (nossa marca → sentinela da LI.FI), não um detalhe de chamada.
+ */
+export const LIFI_NATIVO = "0x0000000000000000000000000000000000000000";
+
+export function enderecoLiFi(address: string): string {
+  return address === "native" ? LIFI_NATIVO : address;
+}
+
 export interface Sentido {
   /** "dex→cex" = compra no DEX, vende na CEX. */
   rota: "dex→cex" | "cex→dex";

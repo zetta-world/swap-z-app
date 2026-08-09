@@ -1424,7 +1424,55 @@ Aqui um par com poça quebrada é ruído de dado, não a cauda do negócio.
 **Par com livro raso não entra em nenhuma conta.** Preenchimento parcial dá
 preço médio melhor que o real: mente a favor. Vira contagem declarada.
 
-**Pendente: o dono rodar o ⛓ MEDIR A BORDA DEX ↔ CEX.**
+## A primeira rodada (09/08) — 3 pares, todos negativos, e um defeito meu
+
+```
+mediana da borda LÍQUIDA: −0,438%  ·  0 de 3 positivos
+CINZA — só 3 pares com livro completo, abaixo do piso de 4 → INCONCLUSIVO
+```
+
+| par | líquida | bruta | outro sentido |
+|---|---|---|---|
+| LINK @ethereum | −0,417% | −0,317% | −0,711% |
+| ARB @arbitrum | **−0,438%** | −0,338% | −0,574% |
+| OP @optimism | −0,529% | −0,429% | −0,601% |
+
+**Os dois sentidos são negativos em todos os três.** Nenhum par paga nas duas
+direções — a checagem de sanidade passou.
+
+### O número que explica tudo
+
+No LINK, onde o preço tem dígitos suficientes para ser lido:
+
+```
+ida e volta no DEX:  8,3656 → 8,2903  =  0,90%
+ida e volta na CEX:  8,3413 → 8,3391  =  0,03%
+```
+
+**A ida e volta no DEX custa ~30× a da CEX.** A taxa da poça mais o impacto de
+$5.000 são ordens de grandeza maiores que o bid-ask do livro. A janela de bloco
+existe e é irrelevante: o pedágio para atravessar a poça come qualquer dispersão
+que a lentidão do bloco possa criar.
+
+É a mesma forma do censo de profundidade — lá a dispersão de 0,05% morria contra
+1,1% de custo para atravessar dois bid-asks; aqui morre contra 0,90% de poça.
+
+### ⚠️ O defeito: quatro pares caíram por culpa minha
+
+ETH em três cadeias e BNB voltaram **`LiFi 404: Could not find token`**.
+
+`tokens.ts` guarda o ativo nativo como `address: "native"` — marca da interface,
+não endereço. A LI.FI espera `0x0000…0000`. Passei a string direto.
+
+**E eu já sabia:** a rota do 🏦 importa `LIFI_NATIVE` e usa. Aqui escrevi
+`token.address` num arquivo do MESMO DIA. Não foi desconhecimento — foi não
+reler o que eu mesmo tinha feito duas fases antes.
+
+O piso de símbolos funcionou (recusou concluir com 3 de 4), mas ele barrou uma
+amostra que só estava curta por bug. `enderecoLiFi` vira função com nome, no
+domínio, com três travas.
+
+**Pendente: rodar o ⛓ de novo — agora com os 7 pares.**
 
 ---
 
@@ -1493,7 +1541,7 @@ Traduzido em regra:
 | 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
-| 6 · DEX ↔ CEX | 🟡 **construída 09/08** — falta o dono rodar o ⛓ |
+| 6 · DEX ↔ CEX | 🟡 **1ª rodada 09/08** — 3 pares, todos negativos (mediana −0,44%); 4 caíram por bug, corrigido |
 | 7 · Automação por API | 🔴 |
 | 8 · Cinzas restantes | 🔴 |
 | 9 · Receita | 🔴 |
