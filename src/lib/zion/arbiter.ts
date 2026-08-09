@@ -441,12 +441,54 @@ export async function runArbiterScan(): Promise<ArbiterResult> {
     } });
   }
 
-  // Data anomalies (spread over the sanity ceiling — stale/migrated listings):
-  // surface them in the admin feed, never book them.
+  /**
+   * ⚠️⚠️ A ANOMALIA PRECISA DIZER POR QUE É ANOMALIA (09/08).
+   *
+   * A versão anterior gravava `symbol`, `buy`, `sell` e `spreadPct` — e parava
+   * aí. Na leitura de 09/08 o feed tinha 71 eventos em 12 horas, e nenhum deles
+   * respondia a pergunta que importa.
+   *
+   * O teto de credibilidade é `MAX_GROSS_PCT` (0,30%) e o piso de custo é
+   * `COST + MIN_NET` (0,60%). Uma anomalia de **0,69% está acima dos DOIS**:
+   * ela seria lucrativa SE FOSSE REAL. Na tela ela ficava idêntica a um
+   * cadáver de listagem migrada, que é o caso para o qual o teto foi criado.
+   *
+   * "Cotação podre" e "spread que pagaria, rejeitado por incredulidade" são
+   * coisas diferentes com ações opostas — uma se resolve tirando a venue, a
+   * outra pede ir ler o livro. Sem `acimaDoPiso` as duas eram o mesmo ponto
+   * amarelo. É a família de sempre: dois estados, uma aparência.
+   *
+   * `venues` entra junto porque o filtro de mediana só tem testemunha
+   * independente com 3+ cotações — com o mínimo, a suspeita vale menos.
+   *
+   * ⚠️ E O DEDUPE, que é o outro metade do conserto. `arb_window_empty` ganhou
+   * anúncio horário em 03/08 depois de 2.266 eventos virarem ruído. A anomalia
+   * ficou de fora do MESMO conserto, no MESMO arquivo, e repetiu o problema em
+   * escala menor: 71 eventos para 8 símbolos. Agora é uma vez por hora por
+   * PAR (símbolo+rota), que é a granularidade em que o estado realmente muda.
+   */
+  const janelaAnomalia = spreadWindow();
   for (const a of all.filter((x) => x.suspect)) {
+    const rota = `${a.symbol}:${a.buyVenue}>${a.sellVenue}`;
+    if (!await deveAnunciar(db, `arb_data_anomaly:${rota}`)) continue;
     recordEvent("arb_data_anomaly", { meta: {
       symbol: a.symbol, buy: a.buyVenue, sell: a.sellVenue,
       spreadPct: Math.round(a.spreadPct * 100) / 100,
+      // POR QUE foi rejeitada: o teto que a barrou.
+      ceilPct: Math.round(janelaAnomalia.ceilPct * 100) / 100,
+      floorPct: Math.round(janelaAnomalia.floorPct * 100) / 100,
+      /**
+       * ⚠️ O CAMPO QUE SEPARA AS DUAS LEITURAS. `true` = este spread pagaria o
+       * custo se fosse real, e foi descartado por incredulidade, não por
+       * inviabilidade. Merece livro lido, não venue removida.
+       */
+      acimaDoPiso: a.spreadPct > janelaAnomalia.floorPct,
+      // Quantas venues cotaram: com o mínimo, a mediana mal tem testemunha.
+      venues: (matrix.get(a.symbol)?.size ?? 0),
+      minVenues: MIN_VENUES,
+      why: a.spreadPct > janelaAnomalia.floorPct
+        ? "acima do teto de credibilidade E do piso de custo — pagaria se fosse real"
+        : "acima do teto de credibilidade, abaixo do piso de custo — não pagaria nem se fosse real",
     } });
   }
   const arbs = all.filter((x) => !x.suspect);
