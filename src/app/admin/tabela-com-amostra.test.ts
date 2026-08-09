@@ -75,6 +75,13 @@ const RANQUEIAM: Array<{ painel: string; amostra: string; porque: string }> = [
       + "histórico; sem ele a cauda vira uma lista de números sem procedência",
   },
   {
+    painel: "DexCexPanel",
+    amostra: "LIVRO",
+    porque: "cada linha é um par ordenado por borda líquida, e a coluna LIVRO diz se "
+      + "aquele par teve profundidade para o notional — sem ela, um par de livro raso "
+      + "aparece no topo com borda que só existe porque o preenchimento foi parcial",
+  },
+  {
     painel: "TournamentPanel",
     amostra: "DEC",
     porque: "ranking de agentes por líquido/trade; DEC é a amostra decidida",

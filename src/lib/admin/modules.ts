@@ -19,6 +19,7 @@ export type ModuleId =
   | "rendimento"
   | "combinacao"
   | "variancia"
+  | "dex-cex"
   | "ligas"
   | "lab"
   | "tournament"
@@ -219,6 +220,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8.7,
+  },
+  {
+    id: "dex-cex",
+    title: "DEX \u2194 CEX",
+    subtitle: "o atraso do bloco contra o preço vivo — a última arbitragem do mapa",
+    icon: "\u26d3",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.8,
   },
   {
     id: "lab",
