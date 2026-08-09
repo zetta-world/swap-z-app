@@ -32,8 +32,18 @@ type Resumo = {
   implicitaMediaPct: number; realizadaMediaPct: number;
   semFuturo: number; dvolDe: string | null; dvolAte: string | null; diasComPreco: number;
 };
+type Veredito = { readable: boolean; status: "verde" | "cinza" | "morta"; verdict: string };
+type PorTeto = {
+  strikeFrac: number; n: number;
+  cobertaMediaPct: number; segurarMediaPct: number; vantagemPct: number;
+  cobertaMedianaPct: number; segurarMedianaPct: number;
+  fracaoGanhou: number; fracaoExercida: number; premioMedioPct: number;
+  piorCobertaPct: number; piorSegurarPct: number;
+};
 type Dados = {
-  veredito: { readable: boolean; status: "verde" | "cinza" | "morta"; verdict: string };
+  veredito: Veredito;
+  /** ⚠️ FASE 5.2 — SIMULAÇÃO, prêmio de modelo. Ver `coberta.ts`. */
+  coberta?: { veredito: Veredito; porTeto: PorTeto[] };
   resumo: Resumo | null;
   /** As piores da série INTEIRA — é o que a tabela diz mostrar. */
   piores: Ponto[];
@@ -98,6 +108,102 @@ export default function VarianciaPanel() {
             {" — "}{d.veredito.verdict}
           </div>
 
+          {/* ⚠️ FASE 5.2 — A ESTRATÉGIA, ACIMA DO PRÊMIO.
+                 Prêmio positivo é condição NECESSÁRIA e não suficiente: quem
+                 decide é se travar a alta custa menos que o prêmio recebido. Por
+                 isso o veredito da coberta vem primeiro, e o do prêmio vira
+                 contexto logo abaixo. */}
+          {d.coberta && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{
+                border: `1px solid ${d.coberta.veredito.readable ? "var(--adm-border)" : "var(--adm-amber)"}`,
+                borderRadius: 4, padding: "7px 9px", fontSize: 10, lineHeight: 1.6,
+                color: d.coberta.veredito.readable ? "var(--adm-ink-2)" : "var(--adm-amber)",
+              }}>
+                <span style={{ color: COR[d.coberta.veredito.status] }}>
+                  ● CALL COBERTA — {d.coberta.veredito.status.toUpperCase()}
+                </span>
+                {" — "}{d.coberta.veredito.verdict}
+              </div>
+
+              {/* ⚠️ SIMULAÇÃO, EM VERMELHO. A 5.1 é medição; esta metade não é,
+                     e as duas aparecem na mesma tela. Sem este aviso, o número
+                     de modelo herda a credibilidade do número medido. */}
+              <div style={{
+                border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
+                marginTop: 6, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+              }}>
+                ⚠️ ESTA METADE É <b>SIMULAÇÃO</b>, não medição. O prêmio vem de Black-Scholes
+                com a implícita do dinheiro — não existe histórico gratuito de preço de opção.
+                O <b>sorriso</b> subestima o prêmio (conservador) e a <b>cauda</b> subestima o
+                risco (otimista): apontam para lados opostos e não se cancelam de forma
+                conhecida. Leia como ordem de grandeza. O que é <b>medido</b> é o retorno do
+                BTC e quantas vezes ele passou do teto.
+              </div>
+
+              {d.coberta.porTeto.length > 0 && (
+                <div style={{ overflowX: "auto", marginTop: 7 }}>
+                  <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
+                        <th style={{ textAlign: "left", padding: "3px 5px" }}>TETO</th>
+                        <th style={{ padding: "3px 5px" }}>COBERTA</th>
+                        <th style={{ padding: "3px 5px" }}>SEGURAR</th>
+                        <th style={{ padding: "3px 5px" }}>VANTAGEM</th>
+                        <th style={{ padding: "3px 5px" }}>GANHOU</th>
+                        <th style={{ padding: "3px 5px" }}>EXERCIDA</th>
+                        <th style={{ padding: "3px 5px" }}>PRÊMIO</th>
+                        <th style={{ padding: "3px 5px" }}>JANELAS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...d.coberta.porTeto]
+                        .sort((a, b) => b.vantagemPct - a.vantagemPct)
+                        .map((c) => (
+                          <tr key={c.strikeFrac} style={{ borderTop: "1px solid var(--adm-border)", textAlign: "right" }}>
+                            <td style={{ textAlign: "left", padding: "3px 5px", color: "var(--adm-ink-2)" }}>
+                              +{Math.round((c.strikeFrac - 1) * 100)}%
+                            </td>
+                            <td style={{ padding: "3px 5px", color: "var(--adm-ink-3)" }}>
+                              {pt(c.cobertaMediaPct)}%
+                            </td>
+                            <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>
+                              {pt(c.segurarMediaPct)}%
+                            </td>
+                            <td style={{
+                              padding: "3px 5px",
+                              color: c.vantagemPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                            }}>
+                              <b>{pt(c.vantagemPct)}</b>
+                            </td>
+                            {/* ⚠️ GANHOU EM ÂMBAR DE PROPÓSITO: é o número
+                                verdadeiro e enganoso desta fase. A coberta bate
+                                segurar na maioria das janelas e perde na média. */}
+                            <td style={{ padding: "3px 5px", color: "var(--adm-amber)" }}>
+                              {Math.round(c.fracaoGanhou * 100)}%
+                            </td>
+                            <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>
+                              {Math.round(c.fracaoExercida * 100)}%
+                            </td>
+                            <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>
+                              +{c.premioMedioPct.toFixed(2)}%
+                            </td>
+                            <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>{c.n}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", marginTop: 3, lineHeight: 1.6 }}>
+                    COBERTA = min(retorno da moeda, teto) + prêmio. <b>GANHOU</b> é a fração de
+                    janelas em que ela bateu segurar — e é o número que engana: ela ganha quase
+                    sempre e pode perder na MÉDIA, porque as poucas altas grandes pagam a conta
+                    inteira. Tetos declarados antes de ver o resultado.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ⚠️ A ARMADILHA Nº 3, FIXA E EM CIMA. Prêmio positivo NÃO é call
                  coberta aprovada, e a distância entre as duas é justamente o
                  que falta medir. */}
@@ -105,9 +211,9 @@ export default function VarianciaPanel() {
             border: "1px solid var(--adm-amber)", borderRadius: 3, padding: "5px 7px",
             marginBottom: 8, fontSize: 8.5, color: "var(--adm-amber)", lineHeight: 1.6,
           }}>
-            ⚠️ ISTO MEDE O PRÊMIO, NÃO A ESTRATÉGIA. Falta o custo de execução da opção
-            (DVOL é índice, não livro — não há preço histórico) e o <b>teto de alta</b> da
-            coberta, que trava o ganho da moeda e é metade da operação.
+            ⚠️ ABAIXO É O PRÊMIO (5.1), MEDIDO — não a estratégia. É o combustível da
+            coberta, e continua faltando o <b>custo de execução</b> da opção: DVOL é índice,
+            não livro, e não há preço histórico em fonte gratuita.
           </div>
 
           {r && (

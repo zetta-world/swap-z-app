@@ -1217,10 +1217,58 @@ Prêmio positivo **não é call coberta aprovada**. Faltam, e ficam declarados:
 Com prêmio de 5,7 pontos e cauda de −34,5, o espaço para custo de execução é
 estreito: **a 5.2 pode reprovar mesmo com a 5.1 verde.**
 
-## Fase 5.2 — o que falta
+## Fase 5.2 — construída (09/08) · ⚠️ SIMULAÇÃO, não medição
 
-Payoff da call coberta contra SEGURAR a moeda, na mesma janela, com o teto de
-alta cobrado e o custo de execução declarado como não medido.
+Payoff da call coberta contra **SEGURAR a moeda**, na mesma janela da 5.1, com
+o teto de alta cobrado.
+
+### ⚠️ A distinção que precede tudo
+
+A 5.1 é **medição**: DVOL real contra volatilidade realizada. A 5.2 **não é** —
+não existe histórico gratuito de preço de opção, então a call é precificada por
+Black-Scholes com a implícita observada. Preço de modelo não é preço de mercado,
+e a palavra SIMULAÇÃO aparece em vermelho na tela para o número modelado não
+herdar a credibilidade do número medido.
+
+**Para que lado cada erro do modelo aponta** — declarar "é modelo" sem dizer a
+direção é declarar metade:
+
+| erro | direção |
+|---|---|
+| **Sorriso** — usamos a implícita DO DINHEIRO para strikes FORA dele, e call fora costuma negociar mais caro | prêmio simulado MENOR que o de mercado → **conservador** para a coberta |
+| **Cauda** — Black-Scholes assume lognormal, e a cauda de alta do BTC é mais gorda | risco SUBESTIMADO → **otimista** para a coberta |
+
+Os dois apontam para lados opostos e não se cancelam de forma conhecida. Por
+isso existe `MARGEM_MINIMA_PCT = 1`: aprovar por 0,2 ponto seria afirmar
+precisão que a simulação não tem.
+
+⚠️ **O que É medido:** o retorno do BTC nas janelas (velas reais) e **quantas
+vezes ele passou do teto**. Esse é o lado da conta que mais decide, e não
+depende de modelo nenhum.
+
+### A conta, e por que ela é a definição
+
+```
+coberta = min(retorno da moeda, teto) + prêmio
+```
+
+Você TEM a moeda e VENDEU o direito de comprá-la ao teto. Abaixo do teto, fica
+com as duas coisas; acima, entrega ao teto e o ganho para ali. **Medir só o
+prêmio seria medir uma call DESCOBERTA e chamar de coberta** — exatamente o que
+a formulação do Mapa do Lucro convidava.
+
+### O número que engana, e ele é verdadeiro
+
+A coberta bate segurar na **maioria** das janelas — toda vez que a moeda não
+dispara. E pode perder na **média**, porque as poucas altas grandes pagam a
+conta inteira. A coluna GANHOU sai em âmbar por isso: é o número verdadeiro que
+vende a estratégia errada.
+
+Tetos declarados **antes** de ver o resultado: +0%, +5%, +10%, +20%. Escolher
+olhando qual saiu melhor é fitar — o mesmo defeito da sonda de orderbook que só
+media a "melhor oportunidade aparente".
+
+**Pendente: o dono rodar o 🌪 de novo — agora ele devolve as duas metades.**
 
 ⚠️ A primeira rodada é também teste de rede: `www.deribit.com` nunca foi chamado
 por este repo, e não há segunda fonte gratuita de IV histórica. Se recusar, a
@@ -1301,7 +1349,7 @@ Traduzido em regra:
 | 3 · Funding janela longa | 🟢 **medida 06/08** — +1,16%/ano, cesta a +3,0%; os 5–20% não reproduzem |
 | 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
-| 5 · Opção coberta | 🟡 **5.1 medida 09/08** — prêmio +5,7 pts (não 50–80); falta a 5.2 |
+| 5 · Opção coberta | 🟡 **5.1 medida · 5.2 construída 09/08** — falta rodar |
 | 6 · DEX ↔ CEX | 🔴 |
 | 7 · Automação por API | 🔴 |
 | 8 · Cinzas restantes | 🔴 |
