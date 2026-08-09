@@ -26,6 +26,8 @@ type Ponto = { dia: string; implicitaPct: number; realizadaPct: number; vrpPct: 
 type Resumo = {
   n: number; independentes: number; janelaDias: number; historicoDias: number;
   mediaPct: number; medianaPct: number; fracaoNegativa: number;
+  /** Quantas vezes a sangria COMEÇOU. Ver `contarEpisodios`. */
+  episodiosNegativos: number;
   piorPct: number; cauda5Pct: number;
   implicitaMediaPct: number; realizadaMediaPct: number;
   semFuturo: number; dvolDe: string | null; dvolAte: string | null; diasComPreco: number;
@@ -33,7 +35,10 @@ type Resumo = {
 type Dados = {
   veredito: { readable: boolean; status: "verde" | "cinza" | "morta"; verdict: string };
   resumo: Resumo | null;
-  pontos: Ponto[];
+  /** As piores da série INTEIRA — é o que a tabela diz mostrar. */
+  piores: Ponto[];
+  /** As recentes, separadas, para ver o regime de agora. */
+  recentes: Ponto[];
   falhas: string[] | null;
   naoMedido: string[];
   tookMs: number;
@@ -133,8 +138,20 @@ export default function VarianciaPanel() {
                 <div>
                   pior janela <b style={{ color: "var(--adm-red)" }}>{pt(r.piorPct)}</b>
                   {" · "}média das 5% piores <b style={{ color: "var(--adm-red)" }}>{pt(r.cauda5Pct)}</b>
-                  {" · "}<b>{Math.round(r.fracaoNegativa * 100)}%</b> das janelas deram prejuízo
-                  a quem vendeu
+                </div>
+                {/* ⚠️ FRAÇÃO E EPISÓDIO RESPONDEM PERGUNTAS DIFERENTES (09/08).
+                       A rodada deu 28% de janelas negativas, e as doze piores
+                       eram 21/05, 22/05 … 01/06 — consecutivas. Com janela de
+                       30 dias deslizando dia a dia, UM mês ruim aparece trinta
+                       vezes. A fração diz quanto tempo se esteve perdendo; o
+                       episódio diz quantas vezes começou, que é a pergunta de
+                       quem precisa aguentar o tranco. */}
+                <div style={{ color: "var(--adm-amber)" }}>
+                  <b>{Math.round(r.fracaoNegativa * 100)}%</b> das janelas deram prejuízo — mas
+                  em apenas <b>{r.episodiosNegativos}</b> episódio
+                  {r.episodiosNegativos === 1 ? "" : "s"} distinto
+                  {r.episodiosNegativos === 1 ? "" : "s"}. Com janela deslizante, um mês ruim
+                  aparece trinta vezes: a fração conta TEMPO, o episódio conta VEZES.
                 </div>
                 {/* A AMOSTRA: independentes, não diárias. Regra nº 5 da casa. */}
                 <div>
@@ -160,9 +177,13 @@ export default function VarianciaPanel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* As 30 PIORES, não as últimas: é a cauda que decide se dá
-                        para segurar a posição, e ela some numa lista cronológica. */}
-                    {[...d.pontos].sort((a, b) => a.vrpPct - b.vrpPct).slice(0, 30).map((p) => (
+                    {/* ⚠️ AS PIORES DA SÉRIE INTEIRA, e até 09/08 não eram.
+                           A rota mandava `slice(-180)` — recorte por RECÊNCIA —
+                           e isto ordenava ESSE recorte, anunciando "as 30
+                           piores". A pior que chegava aqui era −10,6 enquanto a
+                           pior real era −46,1. Numa fase cujo argumento é "a
+                           cauda decide", a tela escondia a cauda. */}
+                    {d.piores.slice(0, 30).map((p) => (
                       <tr key={p.dia} style={{ borderTop: "1px solid var(--adm-border)", textAlign: "right" }}>
                         <td style={{ textAlign: "left", padding: "3px 5px", color: "var(--adm-ink-3)" }}>
                           {p.dia}
@@ -184,8 +205,10 @@ export default function VarianciaPanel() {
                   </tbody>
                 </table>
                 <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", marginTop: 3 }}>
-                  as 30 PIORES janelas, não as últimas — numa lista cronológica a cauda some,
-                  e é ela que decide se dá para segurar a posição
+                  as 30 piores da série INTEIRA ({d.piores.length} guardadas), não as últimas —
+                  numa lista cronológica a cauda some, e é ela que decide se dá para segurar a
+                  posição. Datas seguidas aqui são o MESMO episódio visto por janelas
+                  sobrepostas, não eventos diferentes.
                 </div>
               </div>
             </>

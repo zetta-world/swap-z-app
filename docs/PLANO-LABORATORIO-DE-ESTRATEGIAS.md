@@ -1158,7 +1158,69 @@ chutado — um teste que passa por limiar arbitrário não prova o alinhamento,
 prova que o número é grande. Agora ele compara os dois lados e exige uma ordem
 de grandeza.
 
-**Pendente: o dono rodar o 🌪 MEDIR O PRÊMIO DE VARIÂNCIA.**
+## A rodada (09/08) — o prêmio existe, e é ~11% do que a hipótese sugeria
+
+```
+implícita média 50,4%  contra  realizada 44,7%
+prêmio médio +5,70 pontos · 29 janelas independentes · 870 diárias
+DVOL de 2024-02-21 a 2026-08-09 — a Deribit respondeu, sem recusa
+```
+
+**A hipótese do mapa cai na formulação, não no sinal.** A implícita É 50,4%,
+como o mapa dizia. Mas o prêmio é **5,7** — e o S&P (IV 18% / realizada 13%)
+entrega ~5. **A gordura era do denominador, não da borda.** O que se ganha é
+~11% do número nominal, e é praticamente o mesmo que o mercado tradicional paga.
+
+| | |
+|---|---|
+| mediana | **+9,40** |
+| média | **+5,70** |
+| pior janela | **−46,10** |
+| média das 5% piores | **−34,49** |
+| janelas negativas | 28,2% |
+
+A mediana está 3,7 acima da média — a cauda puxando. Formato clássico de vender
+seguro: ganha +9,4 quase sempre, perde −34,5 nas piores 5%. **Seis janelas boas
+pagam uma ruim.**
+
+### ⚠️ Dois defeitos meus, os dois escondendo o que a fase diz que decide
+
+**1. A tabela mentia no rótulo.** Ela dizia *"as 30 PIORES janelas, não as
+últimas"* — mas a rota guardava `slice(-120)`, recorte por RECÊNCIA, e o painel
+ordenava esse recorte. A pior armazenada era **−10,6**; a pior real, **−46,1**,
+nunca chegava à tela.
+
+Numa fase cujo argumento inteiro é *"a cauda é o que decide"*, eu construí a
+tela que esconde a cauda. Agora a rota devolve `piores` (as 40 piores da série
+INTEIRA) e `recentes` separadas, ditas.
+
+**2. Os 28% de janelas negativas enganam.** As doze piores armazenadas eram
+21/05, 22/05 … 01/06 — **consecutivas**. Com janela de 30 dias deslizando dia a
+dia, UM mês ruim aparece trinta vezes. Os 245 dias negativos são um punhado de
+episódios, não 245 eventos.
+
+Terceira aparição da inflação de amostra: primeiro o mesmo emissor em seis
+cadeias (Fase 4), depois o mesmo mês na AMOSTRA (5.1), agora o mesmo mês na
+FREQUÊNCIA. `contarEpisodios` sai ao lado da fração — uma responde *quanto
+tempo* se esteve perdendo, a outra *quantas vezes começou*, que é a pergunta de
+quem precisa aguentar o tranco.
+
+### O que isto NÃO decide
+
+Prêmio positivo **não é call coberta aprovada**. Faltam, e ficam declarados:
+
+- o **custo de execução** da opção — DVOL é índice, não livro, e não há preço
+  histórico em fonte gratuita;
+- o **teto de alta** da coberta, que trava o ganho da moeda e é metade da
+  operação.
+
+Com prêmio de 5,7 pontos e cauda de −34,5, o espaço para custo de execução é
+estreito: **a 5.2 pode reprovar mesmo com a 5.1 verde.**
+
+## Fase 5.2 — o que falta
+
+Payoff da call coberta contra SEGURAR a moeda, na mesma janela, com o teto de
+alta cobrado e o custo de execução declarado como não medido.
 
 ⚠️ A primeira rodada é também teste de rede: `www.deribit.com` nunca foi chamado
 por este repo, e não há segunda fonte gratuita de IV histórica. Se recusar, a
@@ -1239,7 +1301,7 @@ Traduzido em regra:
 | 3 · Funding janela longa | 🟢 **medida 06/08** — +1,16%/ano, cesta a +3,0%; os 5–20% não reproduzem |
 | 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
-| 5 · Opção coberta | 🟡 **5.1 construída 09/08** — falta o dono rodar o 🌪 |
+| 5 · Opção coberta | 🟡 **5.1 medida 09/08** — prêmio +5,7 pts (não 50–80); falta a 5.2 |
 | 6 · DEX ↔ CEX | 🔴 |
 | 7 · Automação por API | 🔴 |
 | 8 · Cinzas restantes | 🔴 |

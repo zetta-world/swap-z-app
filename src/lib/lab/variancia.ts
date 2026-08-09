@@ -107,6 +107,57 @@ export function construirVrp(
   return { pontos, semFuturo };
 }
 
+/**
+ * ⚠️⚠️ JANELA NEGATIVA NÃO É EPISÓDIO NEGATIVO (09/08).
+ *
+ * A rodada de 09/08 devolveu 28,2% de janelas negativas — 245 dias de 870. Soa
+ * como "quase um terço das vezes dá prejuízo", e não é isso.
+ *
+ * As doze piores janelas armazenadas eram 21/05, 22/05, 23/05 … 01/06:
+ * consecutivas. Com janela de 30 dias deslizando dia a dia, UM mês ruim aparece
+ * TRINTA vezes. Os 245 dias negativos são um punhado de episódios, não 245
+ * eventos.
+ *
+ * É a inflação de amostra da Fase 4 pela terceira vez — lá o mesmo emissor em
+ * seis cadeias, depois o mesmo mês contado trinta vezes na amostra, agora o
+ * mesmo mês contado trinta vezes na FREQUÊNCIA. A fração continua sendo
+ * reportada, porque ela responde "que parte do tempo o vendedor esteve
+ * perdendo"; o episódio responde "quantas vezes isso começou", que é a pergunta
+ * de quem precisa aguentar o tranco.
+ *
+ * Corridas consecutivas na série ORDENADA por dia. Um dia positivo no meio
+ * quebra o episódio de propósito: emendar por cima de uma trégua inventaria um
+ * evento contínuo que não houve.
+ */
+export function contarEpisodios(pontos: PontoVrp[], negativo = true): number {
+  const ordenados = [...pontos].sort((a, b) => a.dia.localeCompare(b.dia));
+  let episodios = 0, dentro = false;
+  for (const p of ordenados) {
+    const bate = negativo ? p.vrpPct < 0 : p.vrpPct >= 0;
+    if (bate && !dentro) episodios++;
+    dentro = bate;
+  }
+  return episodios;
+}
+
+/**
+ * As N piores janelas da série INTEIRA.
+ *
+ * ⚠️ EXISTE PORQUE A TELA MENTIA (09/08). A rota guardava `pontos.slice(-120)`
+ * — os últimos 120 dias — e o painel ordenava ESSE recorte por prêmio,
+ * anunciando "as 30 PIORES janelas, não as últimas". Eram as 30 piores DOS
+ * ÚLTIMOS 120: a pior armazenada era −10,6 e a pior de verdade, −46,1, nunca
+ * chegava à tela.
+ *
+ * Numa fase cujo argumento inteiro é "a cauda é o que decide", eu construí a
+ * tela que esconde a cauda. Recorte por recência com rótulo de recorte por
+ * severidade é a mesma família de "dois estados, uma aparência" — só que aqui o
+ * estado escondido é justamente o que o painel diz mostrar.
+ */
+export function pioresJanelas(pontos: PontoVrp[], n = 40): PontoVrp[] {
+  return [...pontos].sort((a, b) => a.vrpPct - b.vrpPct).slice(0, n);
+}
+
 export interface ResumoVrp {
   n: number;
   /** ⚠️ O QUE DECIDE. Ver a nota do topo: aqui a média manda, não a mediana. */
@@ -115,6 +166,12 @@ export interface ResumoVrp {
   medianaPct: number;
   /** Fração de janelas em que quem vendeu PERDEU. */
   fracaoNegativa: number;
+  /**
+   * ⚠️ QUANTAS VEZES A SANGRIA COMEÇOU — ver `contarEpisodios`. Com janelas
+   * sobrepostas, a fração conta o mesmo mês ruim trinta vezes; o episódio conta
+   * uma. As duas respondem perguntas diferentes e as duas saem.
+   */
+  episodiosNegativos: number;
   /** A pior janela — a cauda que decide se dá para segurar a posição. */
   piorPct: number;
   /** A média das 5% piores. Uma cauda só pode ser sorte; a cauda inteira, não. */
@@ -141,6 +198,7 @@ export function resumirVrp(pontos: PontoVrp[]): ResumoVrp | null {
     mediaPct: Number(media.toFixed(4)),
     medianaPct: Number(mediana.toFixed(4)),
     fracaoNegativa: vs.filter((v) => v < 0).length / n,
+    episodiosNegativos: contarEpisodios(pontos),
     piorPct: vs[0],
     cauda5Pct: Number((cauda.reduce((s, v) => s + v, 0) / cauda.length).toFixed(4)),
     implicitaMediaPct: Number((pontos.reduce((s, p) => s + p.implicitaPct, 0) / n).toFixed(2)),
@@ -199,7 +257,10 @@ export function vereditoVrp(r: ResumoVrp | null, janelaDias = 30): VereditoVrp {
     + ` · mediana ${r.medianaPct.toFixed(2)} (${assimetria > 0 ? "+" : ""}${assimetria.toFixed(2)} `
     + `de diferença — é a cauda puxando a média para baixo) · pior janela `
     + `${r.piorPct.toFixed(2)} · média das 5% piores ${r.cauda5Pct.toFixed(2)} · `
-    + `${Math.round(r.fracaoNegativa * 100)}% das janelas deram prejuízo a quem vendeu`;
+    + `${Math.round(r.fracaoNegativa * 100)}% das janelas deram prejuízo, mas em apenas `
+    + `${r.episodiosNegativos} EPISÓDIO${r.episodiosNegativos === 1 ? "" : "S"} distinto`
+    + `${r.episodiosNegativos === 1 ? "" : "s"} — com janela deslizante, um mês ruim aparece `
+    + "trinta vezes";
 
   if (r.mediaPct <= 0) {
     return {

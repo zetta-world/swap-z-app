@@ -15,7 +15,7 @@
 import { describe, it, expect } from "vitest";
 import {
   volRealizadaAnualPct, construirVrp, resumirVrp, vereditoVrp,
-  janelasIndependentes, MIN_JANELAS_INDEPENDENTES,
+  janelasIndependentes, contarEpisodios, pioresJanelas, MIN_JANELAS_INDEPENDENTES,
 } from "@/lib/lab/variancia";
 
 /** Série de preços com retorno diário constante em módulo, sinal alternado. */
@@ -207,5 +207,109 @@ describe("janelas sobrepostas não são amostra", () => {
     const v = vereditoVrp(null);
     expect(v.status).toBe("cinza");
     expect(v.verdict).toContain("inconclusivo");
+  });
+});
+
+/**
+ * OS DOIS DEFEITOS DA RODADA DE 09/08 — e os dois são meus.
+ *
+ * O dono rodou o 🌪. Vieram 870 janelas, prêmio médio +5,70 e a Deribit
+ * respondendo 2,5 anos de histórico. E vieram dois problemas na forma de
+ * apresentar, os dois na direção de esconder o que a fase diz que decide.
+ */
+describe("as PIORES da série inteira, não as piores do fim dela", () => {
+  const p = (dia: string, vrp: number) => ({
+    dia, implicitaPct: 50, realizadaPct: 50 - vrp, vrpPct: vrp,
+  });
+
+  /**
+   * ⚠️ A ROTA GUARDAVA `slice(-120)` E O PAINEL DIZIA "AS 30 PIORES".
+   *
+   * Eram as 30 piores DOS ÚLTIMOS 120. Na rodada de 09/08 a pior armazenada era
+   * −10,6 enquanto a pior real era −46,1: numa fase cujo argumento inteiro é
+   * "a cauda é o que decide", eu construí a tela que esconde a cauda.
+   */
+  it("a pior antiga entra na frente de todas as recentes", () => {
+    const serie = [
+      p("2024-03-01", -46.1),                                  // a cauda real
+      ...Array.from({ length: 200 }, (_, i) =>
+        p(`2026-0${1 + Math.floor(i / 90)}-${String((i % 28) + 1).padStart(2, "0")}`, -1 + i * 0.01)),
+    ];
+    const piores = pioresJanelas(serie, 40);
+    expect(piores[0].dia).toBe("2024-03-01");
+    expect(piores[0].vrpPct).toBe(-46.1);
+  });
+
+  it("devolve no máximo N, ordenadas da pior para a menos pior", () => {
+    const serie = Array.from({ length: 100 }, (_, i) => p(`d${i}`, i));
+    const piores = pioresJanelas(serie, 10);
+    expect(piores).toHaveLength(10);
+    expect(piores.map((x) => x.vrpPct)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it("não quebra com série menor que N", () => {
+    expect(pioresJanelas([p("d", -1)], 40)).toHaveLength(1);
+    expect(pioresJanelas([], 40)).toEqual([]);
+  });
+});
+
+describe("janela negativa não é episódio negativo", () => {
+  const p = (dia: string, vrp: number) => ({
+    dia, implicitaPct: 50, realizadaPct: 50 - vrp, vrpPct: vrp,
+  });
+
+  /**
+   * ⚠️ O FORMATO EXATO DA RODADA DE 09/08. As doze piores janelas eram 21/05,
+   * 22/05, 23/05 … 01/06 — consecutivas. Com janela de 30 dias deslizando dia a
+   * dia, UM mês ruim aparece TRINTA vezes, e a fração de 28% soa como "quase um
+   * terço das vezes dá prejuízo".
+   *
+   * É a inflação de amostra da Fase 4 pela terceira vez: primeiro o mesmo
+   * emissor em seis cadeias, depois o mesmo mês na AMOSTRA, agora o mesmo mês na
+   * FREQUÊNCIA.
+   */
+  it("doze dias seguidos negativos são UM episódio, não doze", () => {
+    const serie = [
+      ...Array.from({ length: 20 }, (_, i) => p(`2026-05-${String(i + 1).padStart(2, "0")}`, 5)),
+      ...Array.from({ length: 12 }, (_, i) => p(`2026-05-${String(i + 21).padStart(2, "0")}`, -8)),
+    ];
+    expect(contarEpisodios(serie)).toBe(1);
+    // E a fração continua dizendo o TEMPO — as duas saem, e são diferentes.
+    expect(resumirVrp(serie)!.fracaoNegativa).toBeCloseTo(12 / 32, 6);
+    expect(resumirVrp(serie)!.episodiosNegativos).toBe(1);
+  });
+
+  /** Um dia positivo no meio QUEBRA o episódio: emendar inventaria continuidade. */
+  it("uma trégua no meio separa dois episódios", () => {
+    const serie = [
+      p("2026-01-01", -5), p("2026-01-02", -5),
+      p("2026-01-03", 2),
+      p("2026-01-04", -5), p("2026-01-05", -5),
+    ];
+    expect(contarEpisodios(serie)).toBe(2);
+  });
+
+  it("conta na ordem do DIA, não na ordem em que os pontos chegaram", () => {
+    const serie = [
+      p("2026-01-05", -5), p("2026-01-01", -5),
+      p("2026-01-03", 2), p("2026-01-04", -5), p("2026-01-02", -5),
+    ];
+    // Ordenado: −5 −5 +2 −5 −5 → dois episódios. Fora de ordem daria outro número.
+    expect(contarEpisodios(serie)).toBe(2);
+  });
+
+  it("série toda positiva não tem episódio negativo", () => {
+    expect(contarEpisodios([p("a", 1), p("b", 2)])).toBe(0);
+  });
+
+  /** O veredito tem que carregar os DOIS números, senão a fração manda sozinha. */
+  it("o veredito diz a fração E os episódios", () => {
+    const serie = [
+      ...Array.from({ length: 280 }, (_, i) => p(`p${String(i).padStart(3, "0")}`, 8)),
+      ...Array.from({ length: 20 }, (_, i) => p(`q${String(i).padStart(3, "0")}`, -3)),
+    ];
+    const v = vereditoVrp(resumirVrp(serie), 30);
+    expect(v.verdict).toContain("EPISÓDIO");
+    expect(v.verdict).toContain("um mês ruim aparece trinta vezes");
   });
 });
