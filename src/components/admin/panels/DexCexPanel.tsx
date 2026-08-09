@@ -28,15 +28,21 @@ type Linha = {
   precoDexCompra: number; precoDexVenda: number;
   precoCexCompra: number; precoCexVenda: number;
   livroCompleto: boolean;
+  /** ⚠️ Ida e volta na mesma poça fecha coerente? Ver `idaEVoltaCoerente`. */
+  dexCoerente: boolean;
+  usdtPorUsdc: number;
 };
 type Dados = {
   veredito: { readable: boolean; status: "verde" | "cinza" | "morta"; verdict: string };
   resumo: {
-    pares: number; comLivroCompleto: number; notionalUsd: number; taxaCexPct: number;
+    pares: number; comLivroCompleto: number; incoerentes: number;
+    usdtPorUsdc: number; notionalUsd: number; taxaCexPct: number;
     medianaLiquidaPct: number | null; positivos: number; excluidos: string[];
   };
   linhas: Linha[];
   falhas: string[] | null;
+  /** ⚠️ Vazio = a rodada foi gravada no laboratório. */
+  falhasGravacao: string[] | null;
   naoMedido: string[];
   tookMs: number;
 };
@@ -96,6 +102,21 @@ export default function DexCexPanel() {
             {" — "}{d.veredito.verdict}
           </div>
 
+          {/* ⚠️⚠️ "APARECEU NA TELA" NÃO É "FOI GRAVADO" (09/08).
+                 A rodada de 09/08 passou `windowDays: 0` contra um
+                 `check (window_days > 0)`: o startRun estourou, o catch de
+                 best-effort engoliu, e a medição inteira existiu só no
+                 navegador. Best-effort sim, silencioso não. */}
+          {d.falhasGravacao && (
+            <div style={{
+              border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
+              marginBottom: 8, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+            }}>
+              ⚠️ ESTA RODADA <b>NÃO FOI GRAVADA</b> no laboratório: {d.falhasGravacao.join(" · ")}.
+              O que está na tela existe só aqui — não dá para comparar com as próximas.
+            </div>
+          )}
+
           {/* ⚠️ O AVISO DE MEV É FIXO, NÃO CONDICIONAL AO RESULTADO. Se ele só
                  aparecesse quando a borda é positiva, viraria ressalva de
                  ocasião — e é justamente no resultado bom que ele mais importa. */}
@@ -110,8 +131,21 @@ export default function DexCexPanel() {
 
           <div style={{ fontSize: 8.5, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
             notional <b style={{ color: "var(--adm-ink-3)" }}>{usd(r.notionalUsd)}</b> dos DOIS
-            lados · taxa de CEX {r.taxaCexPct}% · {r.comLivroCompleto} de {r.pares} pares com
-            livro fundo o bastante
+            lados · taxa de CEX {r.taxaCexPct}% · {r.comLivroCompleto} de {r.pares} pares
+            utilizáveis
+            {r.incoerentes > 0 && (
+              <span style={{ color: "var(--adm-red)" }}>
+                {" "}(−{r.incoerentes} por ida e volta incoerente)
+              </span>
+            )}
+            {/* ⚠️ AS DUAS MOEDAS. A CEX cota USDT, o DEX cota USDC — sem
+                converter, o basis dos dois stablecoins vira "borda". */}
+            <div style={{ color: "var(--adm-amber)" }}>
+              a CEX cota em <b>USDT</b> e o DEX em <b>USDC</b>: os preços da CEX foram
+              convertidos pela taxa <b>{r.usdtPorUsdc.toFixed(4)}</b> USDT/USDC da mesma venue.
+              Sem isso, o basis dos dois stablecoins entraria na conta como se fosse borda — e
+              ele é negócio próprio, igual ao WBTC que ficou fora.
+            </div>
             {r.medianaLiquidaPct != null && (
               <div style={{ fontSize: 11, color: "var(--adm-ink-3)", marginTop: 3 }}>
                 mediana da borda LÍQUIDA:{" "}
@@ -149,13 +183,18 @@ export default function DexCexPanel() {
                   <th style={{ padding: "3px 5px" }}>OUTRO SENTIDO</th>
                   <th style={{ padding: "3px 5px" }}>DEX C/V</th>
                   <th style={{ padding: "3px 5px" }}>CEX C/V</th>
+                  {/* ⚠️ Marca as DUAS condições: livro fundo E ida e volta
+                      coerente no DEX. Linha marcada não entra em conta nenhuma. */}
                   <th style={{ padding: "3px 5px" }}>LIVRO</th>
                 </tr>
               </thead>
               <tbody>
                 {d.linhas.map((l) => (
-                  <tr key={`${l.symbol}-${l.cadeia}`}
-                      style={{ borderTop: "1px solid var(--adm-border)", textAlign: "right" }}>
+                  <tr key={`${l.symbol}-${l.cadeia}`} style={{
+                    borderTop: "1px solid var(--adm-border)", textAlign: "right",
+                    // Linha fora da conta não pode parecer um resultado.
+                    opacity: l.dexCoerente && l.livroCompleto ? 1 : 0.45,
+                  }}>
                     <td style={{ textAlign: "left", padding: "3px 5px", color: "var(--adm-ink-2)" }}>
                       {l.symbol}
                       <span style={{ fontSize: 7.5, color: "var(--adm-ink-4)" }}> @{l.cadeia}</span>
@@ -184,9 +223,11 @@ export default function DexCexPanel() {
                         favor, e é o defeito que a mesa anterior teve. */}
                     <td style={{
                       padding: "3px 5px",
-                      color: l.livroCompleto ? "var(--adm-ink-4)" : "var(--adm-amber)",
+                      color: !l.dexCoerente
+                        ? "var(--adm-red)"
+                        : l.livroCompleto ? "var(--adm-ink-4)" : "var(--adm-amber)",
                     }}>
-                      {l.livroCompleto ? "ok" : "raso ⚠"}
+                      {!l.dexCoerente ? "incoerente ⚠" : l.livroCompleto ? "ok" : "raso ⚠"}
                     </td>
                   </tr>
                 ))}
@@ -196,7 +237,10 @@ export default function DexCexPanel() {
               Os dois lados medidos para o MESMO notional: o DEX por cotação real (taxa,
               impacto e gás dentro) e a CEX <b>andando o livro</b> — a mesma função que
               transformou +0,451% teóricos em −0,629% reais em 4.085 medições. Par com livro
-              raso não entra em nenhuma conta: preenchimento parcial mente a favor.
+              raso não entra em nenhuma conta: preenchimento parcial mente a favor. E par
+              marcado <b style={{ color: "var(--adm-red)" }}>incoerente</b> teve venda ACIMA da
+              compra na mesma poça — impossível com taxa e impacto, então a cotação está
+              inconsistente e a linha sai de todas as contas.
             </div>
           </div>
 

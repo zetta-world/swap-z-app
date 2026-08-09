@@ -140,6 +140,29 @@ export function enderecoLiFi(address: string): string {
   return address === "native" ? LIFI_NATIVO : address;
 }
 
+/**
+ * ⚠️⚠️ IDA E VOLTA NA MESMA POÇA NÃO PODE GANHAR DINHEIRO (09/08).
+ *
+ * Você paga taxa duas vezes e impacto duas vezes: `venda` tem que ser MENOR que
+ * `compra`, sempre. Vender mais caro do que se comprou, na mesma poça, no mesmo
+ * instante, é impossível.
+ *
+ * Na rodada de 09/08 duas linhas violaram isso — ETH em ethereum e arbitrum,
+ * com venda 1920,27 contra compra 1917,44 — e eram **exatamente as duas únicas
+ * positivas** da tabela (+0,377% e +0,359%). A borda vinha da cotação
+ * inconsistente, não do mercado.
+ *
+ * Eu construí a trava de "custo não pode ser negativo" na Fase 4 e não construí
+ * a equivalente aqui. É a mesma invariante com outro nome, e a segunda vez que
+ * a versão positiva-impossível passa por falta dela.
+ *
+ * A linha não é corrigida — é MARCADA e tirada de todas as contas. Achatar
+ * daria um número que parece medição.
+ */
+export function idaEVoltaCoerente(p: PrecoExecutavel): boolean {
+  return p.vendaMedio < p.compraMedio;
+}
+
 export interface Sentido {
   /** "dex→cex" = compra no DEX, vende na CEX. */
   rota: "dex→cex" | "cex→dex";
@@ -168,6 +191,32 @@ export function sentidos(dex: PrecoExecutavel, cex: PrecoExecutavel): Sentido[] 
   ];
 }
 
+/**
+ * ⚠️⚠️ OS DOIS LADOS COTAM EM MOEDAS DIFERENTES (09/08).
+ *
+ * A CEX devolve BASE/**USDT** (`cex-orderbook.ts`, todas as venues). O DEX cota
+ * contra **USDC**. Sem converter, a diferença entre USDT e USDC entra na conta
+ * como se fosse borda — e ela não é: é o basis de dois stablecoins, um negócio
+ * próprio com risco próprio (igual ao WBTC que ficou de fora).
+ *
+ * Na rodada de 09/08 o ETH aparecia a 1926,59 na CEX contra 1917–1920 no DEX:
+ * ~0,35% de gap sistemático no ativo mais líquido do mercado, que é implausível
+ * como ineficiência e plausível como basis de stablecoin.
+ *
+ * A conversão usa o par USDC/USDT da MESMA venue — mesma fonte, mesmo instante.
+ * Sem ela, esta fase mede o spread USDT/USDC e chama de arbitragem.
+ */
+export function converterCexParaUsdc(
+  p: PrecoExecutavel, usdtPorUsdc: number,
+): PrecoExecutavel {
+  // Preço em USDT ÷ (USDT por USDC) = preço em USDC.
+  return {
+    compraMedio: p.compraMedio / usdtPorUsdc,
+    vendaMedio: p.vendaMedio / usdtPorUsdc,
+    completo: p.completo,
+  };
+}
+
 export interface LinhaDexCex {
   symbol: string;
   cadeia: string;
@@ -185,6 +234,10 @@ export interface LinhaDexCex {
   precoCexVenda: number;
   /** O livro da CEX cobriu o notional inteiro? */
   livroCompleto: boolean;
+  /** ⚠️ A ida e volta no DEX fecha coerente? Ver `idaEVoltaCoerente`. */
+  dexCoerente: boolean;
+  /** A taxa USDT/USDC usada para pôr os dois lados na mesma moeda. */
+  usdtPorUsdc: number;
 }
 
 export function melhorSentido(ss: Sentido[]): Sentido {
@@ -206,16 +259,22 @@ export const MIN_SIMBOLOS = 4;
 export function vereditoDexCex(
   linhas: LinhaDexCex[], minSimbolos = MIN_SIMBOLOS,
 ): VereditoDexCex {
-  const usaveis = linhas.filter((l) => l.livroCompleto);
-  const parciais = linhas.length - usaveis.length;
+  /**
+   * ⚠️ DUAS CONDIÇÕES PARA A LINHA CONTAR, e as duas vêm de cicatriz:
+   * livro fundo o bastante (preenchimento parcial mente a favor) E ida e volta
+   * coerente no DEX (cotação que "ganha" sozinha não é mercado).
+   */
+  const usaveis = linhas.filter((l) => l.livroCompleto && l.dexCoerente);
+  const parciais = linhas.filter((l) => !l.livroCompleto).length;
+  const incoerentes = linhas.filter((l) => l.livroCompleto && !l.dexCoerente).length;
 
   if (usaveis.length === 0) {
     return {
       readable: false, status: "cinza",
       verdict: linhas.length === 0
         ? "nenhum par com cotação de DEX E livro de CEX — inconclusivo, que não é reprovado."
-        : `nenhum dos ${linhas.length} pares teve livro fundo o bastante para o notional — `
-          + "preenchimento parcial mente a favor, então nenhum vira número. INCONCLUSIVO.",
+        : `nenhum dos ${linhas.length} pares passou nas duas condições — livro fundo o `
+          + "bastante para o notional E ida e volta coerente no DEX. INCONCLUSIVO.",
     };
   }
   if (usaveis.length < minSimbolos) {
@@ -234,9 +293,14 @@ export function vereditoDexCex(
    */
   const mediana = median(usaveis.map((l) => l.liquidaPct)) ?? 0;
   const positivos = usaveis.filter((l) => l.liquidaPct > 0).length;
-  const ressalva = parciais > 0
-    ? ` ⚠️ ${parciais} par(es) fora por livro raso — não entraram em nenhuma conta.`
-    : "";
+  const ressalva = (parciais > 0
+    ? ` ⚠️ ${parciais} par(es) fora por livro raso.`
+    : "")
+    + (incoerentes > 0
+      ? ` ⚠️ ${incoerentes} par(es) fora por ida e volta INCOERENTE no DEX — a cotação `
+        + "de venda saiu acima da de compra na mesma poça, o que é impossível. "
+        + "Não entraram em nenhuma conta."
+      : "");
   const tetoMev = " ⚠️ Isto é TETO, não captura: MEV compete no mesmo bloco e chega "
     + "antes por construção.";
 

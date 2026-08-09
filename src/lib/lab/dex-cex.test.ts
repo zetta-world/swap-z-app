@@ -17,7 +17,7 @@ import { describe, it, expect } from "vitest";
 import {
   precoCex, precoDex, sentidos, melhorSentido, vereditoDexCex,
   TAXA_CEX_PCT, MIN_SIMBOLOS, PARES_EXCLUIDOS, enderecoLiFi, LIFI_NATIVO,
-  type LinhaDexCex,
+  idaEVoltaCoerente, converterCexParaUsdc, type LinhaDexCex,
 } from "@/lib/lab/dex-cex";
 
 /** Livro com N níveis de $1.000 cada, começando em `base`. */
@@ -125,13 +125,25 @@ describe("os dois sentidos são calculados separadamente", () => {
   });
 });
 
+/**
+ * Uma linha de teste.
+ *
+ * ⚠️ NO ESCOPO DO MÓDULO de propósito. Eu já defini um helper assim dentro de
+ * um `describe` e precisei levantá-lo depois, na Fase 5.1 — e repeti o mesmo
+ * erro aqui, no arquivo seguinte. Fica no topo para o próximo `describe` não
+ * tropeçar nele.
+ */
+const linha = (
+  symbol: string, liq: number, completo = true, coerente = true,
+): LinhaDexCex => ({
+  symbol, cadeia: "base", venueCex: "binance", notionalUsd: 5000,
+  melhorRota: "dex→cex", brutaPct: liq + TAXA_CEX_PCT, liquidaPct: liq,
+  outraRotaPct: -liq, precoDexCompra: 100, precoDexVenda: 99,
+  precoCexCompra: 101, precoCexVenda: 100.5, livroCompleto: completo,
+  dexCoerente: coerente, usdtPorUsdc: 1.0003,
+});
+
 describe("o veredito", () => {
-  const linha = (symbol: string, liq: number, completo = true): LinhaDexCex => ({
-    symbol, cadeia: "base", venueCex: "binance", notionalUsd: 5000,
-    melhorRota: "dex→cex", brutaPct: liq + TAXA_CEX_PCT, liquidaPct: liq,
-    outraRotaPct: -liq, precoDexCompra: 100, precoDexVenda: 99,
-    precoCexCompra: 101, precoCexVenda: 100.5, livroCompleto: completo,
-  });
 
   it("sem par nenhum é inconclusivo, nunca reprovado", () => {
     const v = vereditoDexCex([]);
@@ -147,7 +159,10 @@ describe("o veredito", () => {
   it("livro raso não vira número, e a contagem aparece", () => {
     const v = vereditoDexCex([linha("A", 5, false), linha("B", 5, false)]);
     expect(v.status).toBe("cinza");
-    expect(v.verdict).toContain("preenchimento parcial mente a favor");
+    // ⚠️ A frase mudou em 09/08: agora são DUAS condições (livro fundo E ida e
+    // volta coerente), então o texto cita as duas em vez de só a do livro.
+    expect(v.verdict).toContain("duas condições");
+    expect(v.verdict).toContain("livro fundo o bastante");
   });
 
   it("abaixo do piso de símbolos é INCONCLUSIVO", () => {
@@ -232,5 +247,91 @@ describe("o ativo nativo precisa do sentinela, não da nossa marca", () => {
    */
   it('nunca devolve a string "native"', () => {
     expect(enderecoLiFi("native")).not.toBe("native");
+  });
+});
+
+/**
+ * ⚠️⚠️ OS TRÊS DEFEITOS DA RODADA DE 09/08.
+ *
+ * O dono rodou o ⛓ com os 7 pares. Veredito MORTA, mediana −0,322% — a
+ * conclusão certa. E três problemas por baixo, todos meus.
+ */
+describe("ida e volta na mesma poça não pode ganhar dinheiro", () => {
+  /**
+   * O que apareceu: ETH em ethereum e arbitrum com venda 1920,27 contra compra
+   * 1917,44 — e eram EXATAMENTE as duas únicas positivas da tabela (+0,377% e
+   * +0,359%). A borda vinha da cotação inconsistente, não do mercado.
+   *
+   * Eu construí a trava de "custo não pode ser negativo" na Fase 4 e não
+   * construí a equivalente aqui. Mesma invariante, outro nome.
+   */
+  it("venda acima da compra na mesma poça é INCOERENTE", () => {
+    expect(idaEVoltaCoerente({ compraMedio: 1917.44, vendaMedio: 1920.27, completo: true }))
+      .toBe(false);
+    expect(idaEVoltaCoerente({ compraMedio: 1930.86, vendaMedio: 1919.48, completo: true }))
+      .toBe(true);
+  });
+
+  it("empate também é incoerente — taxa e impacto nunca são zero", () => {
+    expect(idaEVoltaCoerente({ compraMedio: 100, vendaMedio: 100, completo: true })).toBe(false);
+  });
+
+  /**
+   * A linha NÃO é corrigida: é marcada e tirada de todas as contas. Achatar
+   * daria um número com cara de medição.
+   */
+  it("par incoerente sai da conta e aparece na ressalva", () => {
+    const v = vereditoDexCex([
+      linha("A", -0.3), linha("B", -0.2), linha("C", -0.1), linha("D", -0.05),
+      linha("QUEBRADO", 0.38, true, false),
+    ]);
+    expect(v.status).toBe("morta");
+    expect(v.verdict).toContain("ida e volta INCOERENTE");
+    expect(v.verdict).toContain("1 par(es)");
+    // E o positivo quebrado NÃO conta como positivo.
+    expect(v.verdict).toContain("0 de 4");
+  });
+
+  it("todos incoerentes é INCONCLUSIVO, não reprovado", () => {
+    const v = vereditoDexCex([linha("A", 1, true, false), linha("B", 1, true, false)]);
+    expect(v.status).toBe("cinza");
+    expect(v.verdict).toContain("duas condições");
+  });
+});
+
+describe("os dois lados na MESMA moeda", () => {
+  /**
+   * ⚠️ A CEX devolve BASE/USDT (todas as venues) e o DEX cota contra USDC. Sem
+   * converter, o basis USDT/USDC entra na conta como se fosse borda.
+   *
+   * Na rodada de 09/08 o ETH aparecia a 1926,59 na CEX contra 1917–1920 no DEX:
+   * ~0,35% de gap sistemático no ativo mais líquido do mercado — implausível
+   * como ineficiência, plausível como basis de stablecoin.
+   */
+  it("converte o preço de USDT para USDC pela taxa da MESMA venue", () => {
+    const emUsdt = { compraMedio: 1926.59, vendaMedio: 1926.58, completo: true };
+    // USDT vale um pouco menos que USDC → preço em USDT é numericamente maior.
+    const emUsdc = converterCexParaUsdc(emUsdt, 1.0035);
+    expect(emUsdc.compraMedio).toBeLessThan(emUsdt.compraMedio);
+    expect(emUsdc.compraMedio).toBeCloseTo(1926.59 / 1.0035, 6);
+    // A conversão não inventa profundidade.
+    expect(emUsdc.completo).toBe(true);
+  });
+
+  it("paridade exata deixa o preço intacto", () => {
+    const p = { compraMedio: 100, vendaMedio: 99, completo: true };
+    const c = converterCexParaUsdc(p, 1);
+    expect(c.compraMedio).toBe(100);
+    expect(c.vendaMedio).toBe(99);
+  });
+
+  /**
+   * ⚠️ A conversão preserva a RELAÇÃO entre compra e venda — ela desloca os
+   * dois pelo mesmo fator, então não pode criar nem destruir spread.
+   */
+  it("não cria nem destrói spread — desloca os dois pelo mesmo fator", () => {
+    const p = { compraMedio: 100, vendaMedio: 99, completo: true };
+    const c = converterCexParaUsdc(p, 1.0035);
+    expect(c.compraMedio / c.vendaMedio).toBeCloseTo(p.compraMedio / p.vendaMedio, 12);
   });
 });

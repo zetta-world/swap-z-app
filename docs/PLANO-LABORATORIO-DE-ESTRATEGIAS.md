@@ -1472,7 +1472,68 @@ O piso de símbolos funcionou (recusou concluir com 3 de 4), mas ele barrou uma
 amostra que só estava curta por bug. `enderecoLiFi` vira função com nome, no
 domínio, com três travas.
 
-**Pendente: rodar o ⛓ de novo — agora com os 7 pares.**
+## A segunda rodada (09/08) — MORTA, e três defeitos meus por baixo
+
+```
+7 de 7 pares · mediana da borda líquida −0,322% · 2 de 7 positivos → MORTA
+```
+
+O veredito está certo. E três coisas estavam erradas por baixo dele.
+
+### 1. ⚠️ A medição inteira não foi gravada
+
+Passei `windowDays: 0` contra um `check (window_days > 0)`. O `startRun`
+estourou, o `catch` de best-effort engoliu, `runId` ficou nulo e o `finishRun`
+nunca rodou. **A rodada apareceu na tela e não existe no banco.**
+
+É o "best-effort que esconde falha" que esta sessão vem caçando — desta vez no
+código que escrevi no mesmo dia. E zero era errado no conceito, não só inválido:
+a medição é um instantâneo de HOJE, então a janela é 1.
+
+O best-effort continua (o laboratório não é pré-requisito da medição), mas a
+falha agora **aparece em vermelho na tela**: *"esta rodada NÃO foi gravada"*.
+
+### 2. ⚠️ As duas únicas linhas positivas eram impossíveis
+
+```
+ETH@ethereum   DEX compra 1917,4411   DEX venda 1920,2710   ← venda MAIOR
+ETH@arbitrum   DEX compra 1917,7721   DEX venda 1920,0760   ← venda MAIOR
+```
+
+**Ida e volta na mesma poça não pode ganhar dinheiro** — taxa duas vezes,
+impacto duas vezes. E as duas linhas quebradas eram exatamente as duas únicas
+positivas (+0,377% e +0,359%): a borda vinha da cotação inconsistente, não do
+mercado.
+
+Eu construí a trava de *"custo não pode ser negativo"* na Fase 4 e **não
+construí a equivalente aqui**. Mesma invariante, outro nome, segunda vez que uma
+versão positiva-impossível passa.
+
+`idaEVoltaCoerente` marca a linha e a tira de todas as contas — não corrige,
+porque achatar daria um número com cara de medição.
+
+### 3. ⚠️ Os dois lados cotavam em moedas diferentes
+
+A CEX devolve **BASE/USDT** (todas as venues, `cex-orderbook.ts`) e o DEX cota
+contra **USDC**. Sem converter, o basis USDT/USDC entra na conta como se fosse
+borda — e ele é negócio próprio com risco próprio, igual ao WBTC que ficou fora
+da lista por esse mesmo motivo.
+
+O sintoma estava visível: ETH a 1926,59 na CEX contra 1917–1920 no DEX, ~0,35%
+de gap sistemático **no ativo mais líquido do mercado** — implausível como
+ineficiência, plausível como basis de stablecoin.
+
+`converterCexParaUsdc` usa o par USDC/USDT da MESMA venue. E se ele não vier, a
+rodada **falha** em vez de assumir paridade: assumir 1,0 seria justamente o erro
+que a conversão existe para corrigir, com cara de conserto.
+
+### O que a conclusão sustenta
+
+**Mediana −0,322%, e as cinco linhas confiáveis todas negativas.** Removendo as
+duas quebradas fica ainda mais negativa. A Fase 6 reprova — mas reprovava com
+duas linhas de lixo no topo da tabela.
+
+**Pendente: rodar o ⛓ de novo, com os três consertos.**
 
 ---
 
@@ -1541,7 +1602,7 @@ Traduzido em regra:
 | 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
-| 6 · DEX ↔ CEX | 🟡 **1ª rodada 09/08** — 3 pares, todos negativos (mediana −0,44%); 4 caíram por bug, corrigido |
+| 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🔴 |
 | 8 · Cinzas restantes | 🔴 |
 | 9 · Receita | 🔴 |
