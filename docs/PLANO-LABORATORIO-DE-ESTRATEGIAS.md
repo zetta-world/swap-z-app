@@ -1325,12 +1325,106 @@ tela diz o status — e a fase fica "não medimos", não "não há prêmio".
 
 ---
 
-### FASE 6 — DEX ↔ CEX (C11) · 🔴
+### FASE 6 — DEX ↔ CEX (C11) · 🟡 EM CONSTRUÇÃO (09/08)
 O único terreno com vantagem estrutural: o tempo de bloco cria janela lenta
 por construção, e metade da infraestrutura já existe.
 
 ⚠️ **Aviso registrado:** MEV compete pesado e a resposta pode ser a mesma das
 outras arbitragens. Medir com o mesmo rigor: pedágio, profundidade, gás.
+
+## Verificação de estado (09/08)
+
+| peça | estado |
+|---|---|
+| Preço executável de CEX por tamanho | **existe e é provado**: `vwapBuy`/`vwapSell` em `arb-realism.ts` — o andador de livro que produziu as 4.085 medições que MATARAM o CEX↔CEX |
+| Livros de CEX | `fetchOrderbook`, 6 venues |
+| Preço executável de DEX | `fetchLiFiQuote` — cotação real para um tamanho real, com taxa, impacto e gás dentro |
+| Gás | dentro da cotação da LI.FI, em dólar |
+| Preço de DEX "de tela" | `dexscreener`, `geckoterminal` — ⚠️ **NÃO servem**, ver armadilha 2 |
+
+**A régua é a mesma dos dois lados, e é a que já reprovou a versão CEX↔CEX.**
+Isso não é detalhe: se eu medisse o DEX com régua nova, qualquer resultado
+positivo seria suspeito de vir da régua.
+
+## As armadilhas, escritas antes do código
+
+**1. ⚠️ MEV — somos os últimos da fila, por construção.** Quem vê a mesma
+diferença no mempool monta um pacote e entra antes. **Tudo que esta fase medir é
+TETO, não captura.** A borda existe; quem fica com ela é outra pergunta, e não é
+esta medição que responde.
+
+**2. ⚠️ PREÇO DE TELA DO DEX NÃO É PREÇO EXECUTÁVEL — e cair nisso seria repetir
+o defeito que já custou uma mesa.** `dexscreener` e `geckoterminal` dão o preço
+derivado da poça ou o último negócio. O preço que importa é a cotação para O
+NOSSO TAMANHO, com impacto dentro. Foi exatamente comparando preço de tela que a
+mesa achou 0,72% de borda que virou −0,629% real em 4.085 medições.
+
+**3. ⚠️ OS DOIS LADOS TÊM QUE SER MEDIDOS PARA O MESMO TAMANHO.** Cotar $5.000 no
+DEX (com impacto) contra o topo do livro da CEX (sem impacto) enviesaria contra
+o DEX; o contrário enviesaria a favor. Por isso o lado CEX anda o livro com
+`vwapBuy`/`vwapSell` no MESMO notional — a mesma função, o mesmo tamanho.
+
+**4. Transação que reverte custa gás e não entrega nada.** Perna on-chain pode
+falhar por slippage, por bloco cheio ou por MEV. Não dá para medir isso em
+cotação: fica declarado.
+
+**5. Dois bolsos, como já decidido.** Estoque dos dois lados, sem transferir —
+a decisão de semanas atrás para o arbiter. Ponte não entra na conta porque não
+entra na operação.
+
+**6. A janela de bloco é a vantagem E o risco.** A perna de CEX é instantânea, a
+de DEX espera um bloco. É nessa espera que a vantagem existe — e é nela que o
+preço se move contra.
+
+## Critério de conclusão
+
+Borda executável mediana, nos dois sentidos (comprar no DEX/vender na CEX e o
+inverso), depois de taxa de CEX, taxa de DEX, impacto e gás — com o mesmo
+notional dos dois lados. Se a borda mediana for negativa, a Fase 6 fecha como as
+outras arbitragens fecharam, e o "terreno com vantagem estrutural" cai.
+
+## O que foi construído
+
+| peça | onde |
+|---|---|
+| Preço executável dos DOIS lados, sentidos, veredito | `src/lib/lab/dex-cex.ts` + **17 testes** |
+| Rota | `src/app/admin/api/dex-cex/route.ts` |
+| Painel ⛓ | `DexCexPanel.tsx` + guarda de amostra |
+
+### Duas exclusões que o próprio repo justifica
+
+**WBTC fica fora.** É BTC *embrulhado*, não BTC — a diferença entre os dois é o
+basis de custódia do embrulhador, negócio próprio com risco próprio. Chamar de
+arbitragem mediria a taxa do custodiante e daria o nome errado.
+
+**MATIC/POL fica fora.** O repo **já tem a cicatriz**: o padrão "MATIC→POL" está
+documentado em `arbiter.ts` como a fonte de spreads falsos que o filtro de
+mediana existe para matar. Ticker em migração cota o cadáver de um lado e o vivo
+do outro.
+
+### As decisões que precisaram de nota
+
+**Ida e volta REAL, não espelhada.** A segunda cotação usa a QUANTIDADE que a
+primeira devolveu. Poça com liquidez assimétrica cobra diferente nos dois
+sentidos, e assumir simetria inventaria metade da medição — por isso as duas
+cotações do mesmo par são em série, mesmo com os pares em paralelo.
+
+**O gás entra no preço.** A cotação devolve tokens; o gás sai do bolso em moeda
+nativa, por fora. Quem entrou gastou `$N + gás`; quem sai recebe o valor *menos*
+o gás da segunda perna. Deixá-lo fora daria um preço executável que ninguém
+executa — a família de erro que a Fase 4 pegou com o custo fixo.
+
+**A taxa de CEX entra UMA vez por rota.** Há uma única perna de CEX em cada
+sentido; cobrar duas seria a conta de quatro pernas do funding aplicada onde há
+duas.
+
+**A mediana manda** — como no censo de profundidade, e ao contrário da Fase 5.
+Aqui um par com poça quebrada é ruído de dado, não a cauda do negócio.
+
+**Par com livro raso não entra em nenhuma conta.** Preenchimento parcial dá
+preço médio melhor que o real: mente a favor. Vira contagem declarada.
+
+**Pendente: o dono rodar o ⛓ MEDIR A BORDA DEX ↔ CEX.**
 
 ---
 
@@ -1399,7 +1493,7 @@ Traduzido em regra:
 | 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
-| 6 · DEX ↔ CEX | 🔴 |
+| 6 · DEX ↔ CEX | 🟡 **construída 09/08** — falta o dono rodar o ⛓ |
 | 7 · Automação por API | 🔴 |
 | 8 · Cinzas restantes | 🔴 |
 | 9 · Receita | 🔴 |
