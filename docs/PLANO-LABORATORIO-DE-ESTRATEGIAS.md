@@ -1761,8 +1761,86 @@ mutação.
 
 ---
 
-### FASE 8 — As cinzas restantes · 🔴
+### FASE 8 — As cinzas restantes · 🟡
 C9, C10, C12–C20. Cada uma com capital próprio e mesa própria.
+
+## Verificação de estado (09/08)
+
+Consulta ao banco, não à memória: das 28 estratégias do registro, **11 são as
+cinzas desta fase e todas têm ZERO rodadas** em `lab_runs`. Nada aqui foi
+medido nem pela metade.
+
+Dois achados de fora do escopo, registrados para não se perderem:
+
+- **`trend_ma50_long_short`, `trend_ma50_long_only` e `buy_and_hold` estão
+  VERDES com zero rodadas no `lab_runs`.** Elas foram medidas na Fase 1, mas
+  por outra mesa (o painel 🧭), fora deste livro-razão. O verde é real; o que
+  não existe é a parcela no ledger que o sustenta. Não é defeito de medição, é
+  de rastro — e vale arrumar antes que alguém audite o laboratório e não ache o
+  número.
+- **`dex_cex_arb` segue `cinza` no registro** embora a Fase 6 tenha concluído
+  MORTA. Isso está **certo**: a 2ª rodada corrigiu três defeitos e o veredito
+  espera reconfirmação. Status que anda na frente da rodada seria pior.
+
+## A triagem — e por que ela vem antes de medir
+
+Onze mesas não cabem numa entrega, e forçar as onze produziria oito medições
+fracas. Pior: algumas **não são mensuráveis com fonte que a gente alcance**, e
+fingir que são é o oposto do que este laboratório existe para fazer.
+
+| | mesa | dá para medir com o que temos? |
+|---|---|---|
+| C14 | LP em AMM clássico | **sim** — taxa da fonte de rendimento, perda impermanente calculada do preço |
+| C9 | Rotação por momento | sim — histórico de preço, mesma régua do 🧭 |
+| C10 | Grade (grid) | sim — histórico de preço + taxa de corretora |
+| C15 | Liquidez concentrada | **parcialmente** — a perda depende da FAIXA e da gestão dela; com fórmula de faixa cheia sai número errado com cara de certo |
+| C16 | Cofre de perp DEX | parcialmente — a fonte publica o rendimento do cofre, não o PnL dos traders que é a contraparte |
+| C17 | Cofre de opções | parcialmente — mesma limitação da 5.2: não há histórico gratuito de preço de opção |
+| C13 | Arbitragem de ponte | sim, mas caro — exige cotação pareada em duas cadeias por janela |
+| C12 | Liquidações | **não** — é jogo de latência; sem feed de evento e sem fila, qualquer número seria teatro |
+| C18 | Airdrop / pontos | **não** — retorno é retrospectivo e não repetível; medir o passado aqui não prevê nada |
+| C19 | Launchpad / IEO | **não** — sem fonte histórica de alocação e preço de estreia que eu alcance |
+| C20 | Mercado de votos | **não hoje** — depende de API de marketplace de suborno que não consegui alcançar daqui |
+
+**"Não mensurável" é um estado, não um adiamento.** Deixá-las cinza para sempre
+faria "ninguém mediu" parecer "mediu e não deu" — invariante nº 6.
+
+## O que foi construído (8.1) — C14, a família liquidez
+
+A pergunta desta mesa é a única que importa: **a taxa cobre o que a piscina te
+tira?** Toda interface publica o APR das taxas; nenhuma publica a perda
+impermanente, que é a outra metade da conta.
+
+- **A perda impermanente é CALCULADA, não estimada.** Para piscina 50/50 de
+  produto constante ela sai fechada da variação relativa dos dois preços. Isso
+  importa porque a fonte tem um campo `il7d` que **não consigo verificar daqui**
+  (a política de rede deste ambiente recusa `llama.fi`) e que não está
+  documentado no README do `yield-server`. Construir em cima dele seria assumir
+  contrato que ninguém assinou — o erro exato de 04/08.
+- **O sinal é a trava.** Estar na piscina não pode render MAIS que segurar por
+  efeito de preço: o ganho vem da taxa, que entra por fora. Perda impermanente
+  positiva é a versão desta família do "custo negativo" (nº 1) e do "ida e volta
+  que ganha" (nº 2) — e aqui teria a cara de *"ser contraparte paga sozinho"*.
+- **Grupo de controle embutido.** `USDC/USDT` está na lista declarada porque
+  dois dólares não divergem: a perda dele TEM que sair ≈0. Se sair grande, quem
+  está errado é a minha conta, não o mercado. Sem esse par, um erro de fórmula
+  ou de sinal sairia como descoberta. Ele fica **fora das medianas** — entraria
+  puxando o número para cima como se fosse mérito da estratégia.
+- **Dois testes no veredito, e o segundo é o que mata.** Líquido positivo só diz
+  que a mesa não perdeu dinheiro. Se ela não bater **segurar os mesmos ativos**,
+  a taxa foi paga com o patrimônio do próprio provedor (invariante nº 9). Há
+  teste para o caso que vende a mesa errada: positiva **e** pior que segurar.
+- **APY ausente não é taxa zero.** Piscina sem `apyBase` sai marcada e fica fora
+  do veredito; tratá-la como 0% faria a fonte calada virar "a taxa não cobre",
+  que é conclusão, não dado.
+- **Painel 💧 SER A CONTRAPARTE**, com LÍQUIDO e SEGURAR lado a lado — separar
+  as duas deixaria a primeira responder pela segunda.
+
+**Pendente: o dono rodar o 💧.**
+
+**Fica declarado como não medido:** o gás de entrar/sair (em $2.000 na Ethereum
+é material e pode virar o sinal), a taxa como foto de hoje aplicada à janela, e
+a perda ser de ponta a ponta — quem saiu no meio realizou outro número.
 
 ---
 
@@ -1820,7 +1898,7 @@ Traduzido em regra:
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
-| 8 · Cinzas restantes | 🔴 |
+| 8 · Cinzas restantes | 🟡 **8.1 construída 09/08** — C14 (LP em AMM) com perda impermanente calculada e grupo de controle; triagem das 11 feita. Falta o dono rodar o 💧 |
 | 9 · Receita | 🔴 |
 
 Atualizar este quadro a cada entrega — regra da casa.
