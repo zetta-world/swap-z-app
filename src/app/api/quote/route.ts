@@ -17,6 +17,7 @@ import {
 } from "@/lib/api/quote-types";
 import type { ChainId } from "@/lib/chains";
 import { envNumber } from "@/lib/env-number";
+import { checarKillSwitches } from "@/lib/admin/kill-switches";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,6 +105,32 @@ export async function GET(req: NextRequest) {
       { error: "quote_daily_budget_exceeded", retryAfter: gd.retryAfter },
       { status: 503, headers: { "Retry-After": String(gd.retryAfter), "Cache-Control": "no-store" } },
     );
+  }
+
+  /**
+   * ⚠️ KILL-SWITCH DO SWAP (Fase 7.3) — `disable_swap` e `maintenance_mode`
+   * eram clicáveis no painel e lidos por ninguém.
+   *
+   * ⚠️ SÓ EM `mode=quote`, de propósito. É a cotação FIRME, o payload assinável
+   * — sem ele não há transação para a carteira assinar, então este é o
+   * estrangulamento real do swap. Barrar `mode=list` junto derrubaria a
+   * comparação de preços, que é navegação, não movimento de dinheiro.
+   *
+   * ⚠️ E FALHA ABERTA: o usuário ainda assina na carteira, revisando. Derrubar
+   * o swap de todo mundo por um Postgres intermitente é o dano certo. A direção
+   * oposta à de `/api/cex/order` — e a razão está em `kill-switches.ts`.
+   *
+   * Vem DEPOIS dos limites de taxa: esta rota é aberta, e uma consulta ao banco
+   * antes do limitador seria um vetor de enchente barato.
+   */
+  if (mode === "quote") {
+    const kill = await checarKillSwitches(["disable_swap", "maintenance_mode"], "usuario_confirma");
+    if (kill.bloqueado) {
+      return NextResponse.json(
+        { error: "platform_disabled", detail: kill.motivo },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
   }
 
   // ─── Common validation ─────────────────────────────────────────────

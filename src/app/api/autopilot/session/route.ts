@@ -9,7 +9,8 @@ import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { SUPPORTED_CEX_IDS, type CexId } from "@/lib/cex/types";
 import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
 import { verificarChave, decidirArmar } from "@/lib/cex/permissoes";
-import { lerLiberacao } from "@/lib/autopilot/liberacao";
+import { podeAutomatizar } from "@/lib/autopilot/liberacao";
+import { checarKillSwitches } from "@/lib/admin/kill-switches";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,10 +75,20 @@ export async function POST(req: NextRequest) {
    * VEM ANTES DE LER O CORPO de propósito: fechado significa que a credencial
    * do cliente nem chega a ser tocada por esta rota.
    */
-  const liberacao = await lerLiberacao();
-  if (!liberacao.liberado) {
+  // Armar guarda a credencial no servidor para o cron comprar sozinho: é
+  // dinheiro que SAI. Falha de leitura bloqueia.
+  const kill = await checarKillSwitches(["disable_cex", "maintenance_mode"], "dinheiro_sai");
+  if (kill.bloqueado) {
     return NextResponse.json(
-      { ok: false, error: "automation_closed", causa: liberacao.causa },
+      { ok: false, error: "platform_disabled", detail: kill.motivo },
+      { status: 503 },
+    );
+  }
+
+  const permissaoAutomacao = await podeAutomatizar(session.sub);
+  if (!permissaoAutomacao.permitido) {
+    return NextResponse.json(
+      { ok: false, error: "automation_closed", causa: permissaoAutomacao.causa },
       { status: 403 },
     );
   }
@@ -214,10 +225,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_exchange" }, { status: 400 });
   }
 
-  const [status, runs, liberacao] = await Promise.all([
+  const [status, runs, automacao] = await Promise.all([
     getSessionStatus(session.sub, exchangeId),
     listRecentRuns(session.sub, 30),
-    lerLiberacao(),
+    podeAutomatizar(session.sub),
   ]);
   /**
    * ⚠️ O estado da trava vai no GET, não só no POST. Descobrir que a automação
@@ -227,8 +238,11 @@ export async function GET(req: NextRequest) {
    */
   return NextResponse.json({
     ok: true, status, runs,
-    automationClosed: !liberacao.liberado,
-    automationCausa:  liberacao.causa,
+    automationClosed: !automacao.permitido,
+    automationCausa:  automacao.causa,
+    // Piloto autorizado é um estado distinto de "aberto": a tela avisa que
+    // ESTA carteira roda com dinheiro real numa feature fechada para o resto.
+    automationPilot:  automacao.causa === "piloto_autorizado",
   });
 }
 

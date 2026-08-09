@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, logAdminAction } from "@/lib/admin/require";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { lerLiberacao, registrarLiberacao, MIN_MOTIVO } from "@/lib/autopilot/liberacao";
+import {
+  lerLiberacao, registrarLiberacao, MIN_MOTIVO,
+  lerPilotos, gravarPilotos, type Piloto,
+} from "@/lib/autopilot/liberacao";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +28,7 @@ export async function GET(): Promise<NextResponse> {
     ...(await lerLiberacao()),
     minMotivo: MIN_MOTIVO,
     verdes: await verdesDoLaboratorio(),
+    pilotos: await lerPilotos(),
   });
 }
 
@@ -61,8 +65,49 @@ async function verdesDoLaboratorio(): Promise<Array<{
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const { wallet: actor } = await requireAdmin();
 
-  const body = await req.json().catch(() => null) as { liberar?: unknown; motivo?: unknown } | null;
-  if (!body || typeof body.liberar !== "boolean") {
+  const body = await req.json().catch(() => null) as
+    { liberar?: unknown; motivo?: unknown; piloto?: unknown; remover?: unknown } | null;
+  if (!body) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+
+  /**
+   * ⚠️ AUTORIZAR UMA CARTEIRA PILOTO É ABRIR UM FURO NA TRAVA: ela vai negociar
+   * com DINHEIRO REAL numa feature fechada para todo o resto. Por isso custa
+   * nota escrita, igual a abrir a trava — e sai no log de auditoria com a nota.
+   */
+  if (typeof body.piloto === "string" || typeof body.remover === "string") {
+    const lista = await lerPilotos();
+    if (typeof body.remover === "string") {
+      const alvo = body.remover.toLowerCase();
+      const nova = lista.filter((p) => p.wallet !== alvo);
+      if (!await gravarPilotos(nova)) {
+        return NextResponse.json({ error: "db_indisponivel" }, { status: 503 });
+      }
+      await logAdminAction(actor, "autopilot.piloto.remover", alvo, {});
+      broadcastAdminRefresh("audit");
+      return NextResponse.json({ ok: true, pilotos: nova });
+    }
+    const wallet = (body.piloto as string).trim().toLowerCase();
+    const nota   = typeof body.motivo === "string" ? body.motivo.trim() : "";
+    if (wallet.length < 8) return NextResponse.json({ error: "carteira_invalida" }, { status: 400 });
+    if (nota.length < MIN_MOTIVO) {
+      return NextResponse.json({ error: "motivo_curto", minMotivo: MIN_MOTIVO }, { status: 400 });
+    }
+    // Reautorizar a mesma carteira ATUALIZA a nota em vez de duplicar a linha:
+    // duas entradas para a mesma carteira com notas diferentes seriam dois
+    // registros contando histórias diferentes sobre o mesmo poder.
+    const nova: Piloto[] = [
+      ...lista.filter((p) => p.wallet !== wallet),
+      { wallet, nota: nota.slice(0, 300), at: new Date().toISOString() },
+    ];
+    if (!await gravarPilotos(nova)) {
+      return NextResponse.json({ error: "db_indisponivel" }, { status: 503 });
+    }
+    await logAdminAction(actor, "autopilot.piloto.autorizar", wallet, { nota: nota.slice(0, 300) });
+    broadcastAdminRefresh("audit");
+    return NextResponse.json({ ok: true, pilotos: nova });
+  }
+
+  if (typeof body.liberar !== "boolean") {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
   const motivo = typeof body.motivo === "string" ? body.motivo : "";

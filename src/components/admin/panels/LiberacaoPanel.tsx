@@ -16,6 +16,7 @@ import TerminalPanel from "../TerminalPanel";
  */
 
 interface Verde { name: string; family: string; capitalUsd: number }
+interface Piloto { wallet: string; nota: string; at: string }
 interface Estado {
   liberado: boolean;
   causa:    "aberto" | "fechado_por_decisao" | "sem_registro" | "indisponivel";
@@ -23,6 +24,7 @@ interface Estado {
   desde:    string | null;
   minMotivo: number;
   verdes:   Verde[];
+  pilotos:  Piloto[];
 }
 
 const CAUSA_TEXTO: Record<Estado["causa"], string> = {
@@ -37,6 +39,8 @@ export default function LiberacaoPanel() {
   const [erro,   setErro]   = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
   const [busy,   setBusy]   = useState(false);
+  const [novoPiloto, setNovoPiloto] = useState("");
+  const [notaPiloto, setNotaPiloto] = useState("");
 
   const carregar = useCallback(async () => {
     try {
@@ -66,6 +70,21 @@ export default function LiberacaoPanel() {
 
   const min = data?.minMotivo ?? 15;
   const curto = motivo.trim().length < min;
+
+  const mexerPiloto = async (corpo: Record<string, string>) => {
+    setBusy(true);
+    try {
+      const res = await fetch("/admin/api/autopilot-liberacao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(corpo),
+      });
+      const b = await res.json() as { error?: string };
+      if (!res.ok) { setErro(b.error ?? `HTTP ${res.status}`); return; }
+      setNovoPiloto(""); setNotaPiloto("");
+      await carregar();
+    } finally { setBusy(false); }
+  };
 
   return (
     <TerminalPanel
@@ -169,6 +188,73 @@ export default function LiberacaoPanel() {
               </button>
             </>
           )}
+          {/* ─── PILOTOS: quem roda com a automação fechada ─────────────── */}
+          <div style={{ marginTop: 12, borderTop: "1px solid var(--adm-border)", paddingTop: 8 }}>
+            <div style={{ fontSize: 8.5, color: "var(--adm-ink-3)", marginBottom: 4 }}>
+              <b>CARTEIRAS PILOTO ({data.pilotos.length})</b> — rodam a automação mesmo
+              fechada, para teste com dinheiro real
+            </div>
+            {/* ⚠️ A CONSEQUÊNCIA VEM ANTES DA LISTA. */}
+            <div style={{
+              border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
+              margin: "5px 0", fontSize: 8, color: "var(--adm-red)", lineHeight: 1.6,
+            }}>
+              ⚠️ Isto é um <b>furo deliberado na trava</b>: a carteira listada negocia com
+              DINHEIRO REAL numa feature fechada para todo o resto. Um grant de admin
+              <b> não</b> entra aqui — quem recebeu admin para olhar métricas não vira
+              autorizado a rodar o robô por consequência. A carteira do
+              <code> ADMIN_WALLETS</code> (ambiente, exige redeploy) já é piloto e não
+              precisa ser listada.
+            </div>
+            {data.pilotos.length === 0 && (
+              <div style={{ fontSize: 8.5, color: "var(--adm-ink-4)", marginBottom: 5 }}>
+                nenhuma carteira autorizada além do <code>ADMIN_WALLETS</code>
+              </div>
+            )}
+            {data.pilotos.map((p) => (
+              <div key={p.wallet} style={{
+                display: "flex", alignItems: "baseline", gap: 6, fontSize: 8.5,
+                color: "var(--adm-ink-3)", marginBottom: 3,
+              }}>
+                <code style={{ color: "var(--adm-ink-2)" }}>{p.wallet.slice(0, 10)}…{p.wallet.slice(-6)}</code>
+                <i style={{ color: "var(--adm-ink-4)", flex: 1 }}>&quot;{p.nota}&quot;</i>
+                <button
+                  className="adm-btn" style={{ fontSize: 8, padding: "1px 5px" }}
+                  disabled={busy}
+                  onClick={() => void mexerPiloto({ remover: p.wallet })}
+                >revogar</button>
+              </div>
+            ))}
+            <input
+              value={novoPiloto}
+              onChange={(e) => setNovoPiloto(e.target.value)}
+              placeholder="0x… carteira a autorizar"
+              style={{
+                display: "block", width: "100%", marginTop: 5, padding: "4px 6px",
+                background: "transparent", border: "1px solid var(--adm-border)",
+                borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 9, fontFamily: "inherit",
+              }}
+            />
+            <input
+              value={notaPiloto}
+              onChange={(e) => setNotaPiloto(e.target.value)}
+              placeholder={`por que esta carteira (mínimo ${min} caracteres)`}
+              style={{
+                display: "block", width: "100%", marginTop: 3, padding: "4px 6px",
+                background: "transparent", border: "1px solid var(--adm-border)",
+                borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 9, fontFamily: "inherit",
+              }}
+            />
+            <button
+              className="adm-btn" style={{ marginTop: 5 }}
+              disabled={busy || novoPiloto.trim().length < 8 || notaPiloto.trim().length < min}
+              onClick={() => void mexerPiloto({ piloto: novoPiloto, motivo: notaPiloto })}
+            >
+              {notaPiloto.trim().length < min
+                ? `⚑ escreva a nota (${notaPiloto.trim().length}/${min})`
+                : "⚑ AUTORIZAR carteira piloto"}
+            </button>
+          </div>
         </>
       )}
     </TerminalPanel>

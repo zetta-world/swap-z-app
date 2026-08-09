@@ -37,9 +37,11 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isEnvAdmin } from "@/lib/admin/require";
 
 export const CHAVE_LIBERACAO = "autopilot_cex_liberado";
 export const CHAVE_MOTIVO    = "autopilot_cex_liberado:motivo";
+export const CHAVE_PILOTOS   = "autopilot_cex_pilotos";
 
 /**
  * Por que a automação está no estado em que está.
@@ -142,4 +144,97 @@ export async function registrarLiberacao(
     { onConflict: "key" },
   );
   return { ok: true };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * OS PILOTOS — quem roda a automação enquanto ela está FECHADA ao público.
+ *
+ * O dono: *"a carteira Admin ou uma carteira autorizada pelo painel de controle
+ * pode rodar a automação, assim podemos fazer testes futuramente com dinheiro
+ * real"*.
+ *
+ * ⚠️ ISTO É UM FURO DELIBERADO NA TRAVA, e é assim que tem que ser lido. Uma
+ * carteira nesta lista negocia com DINHEIRO REAL numa feature que está fechada
+ * para todo o resto do mundo. Por isso:
+ *
+ *   · a lista é EXPLÍCITA e separada — ninguém entra nela por consequência;
+ *   · entrar exige uma NOTA escrita, igual a abrir a trava;
+ *   · e `platform_admins` NÃO qualifica. Quem recebeu admin para OLHAR
+ *     métricas não pode virar, em silêncio, autorizado a rodar o robô de
+ *     dinheiro. Isso seria a invariante nº 14 outra vez: um controle cujo nome
+ *     ("admin") diz uma coisa e cujo efeito é outra.
+ *
+ * O `ADMIN_WALLETS` do ambiente é a exceção, e é exceção por um motivo
+ * concreto: é a carteira do dono, mora em variável de ambiente e mudar exige
+ * redeploy — não há como alguém ganhar esse poder com um clique.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+export interface Piloto {
+  wallet: string;
+  /** Por que esta carteira foi autorizada. Obrigatória — ver a nota acima. */
+  nota:   string;
+  at:     string;
+}
+
+/** Lê a lista de pilotos. Erro de leitura devolve lista VAZIA — fecha, não abre. */
+export async function lerPilotos(): Promise<Piloto[]> {
+  const db = getSupabaseAdmin();
+  if (!db) return [];
+  try {
+    const { data, error } = await db
+      .from("admin_kv").select("value").eq("key", CHAVE_PILOTOS).maybeSingle();
+    if (error || !data?.value) return [];
+    const bruto = JSON.parse(data.value) as unknown;
+    if (!Array.isArray(bruto)) return [];
+    return bruto
+      .filter((p): p is Piloto =>
+        !!p && typeof (p as Piloto).wallet === "string" && (p as Piloto).wallet.length > 0)
+      .map((p) => ({ wallet: p.wallet.toLowerCase(), nota: String(p.nota ?? ""), at: String(p.at ?? "") }));
+  } catch { return []; }
+}
+
+export async function gravarPilotos(lista: Piloto[]): Promise<boolean> {
+  const db = getSupabaseAdmin();
+  if (!db) return false;
+  await db.from("admin_kv").upsert(
+    { key: CHAVE_PILOTOS, value: JSON.stringify(lista.slice(0, 50)), updated_at: new Date().toISOString() },
+    { onConflict: "key" },
+  );
+  return true;
+}
+
+export type CausaAutomacao = CausaLiberacao | "piloto_autorizado";
+
+export interface VereditoAutomacao {
+  permitido: boolean;
+  causa:     CausaAutomacao;
+}
+
+/**
+ * ⚠️ A DECISÃO POR CARTEIRA, separada da leitura — mesma razão de
+ * `decidirArmar`: decisão sem teste é como o `readOnly` nasceu fixo.
+ *
+ * Recebe o estado já lido para o cron poder julgar N sessões com UMA ida ao
+ * banco. Chamar por sessão faria a trava custar uma consulta por cliente.
+ */
+export function decidirAutomacao(
+  wallet:    string,
+  liberacao: Liberacao,
+  pilotos:   Piloto[],
+): VereditoAutomacao {
+  if (liberacao.liberado) return { permitido: true, causa: "aberto" };
+
+  const w = (wallet ?? "").toLowerCase();
+  if (!w) return { permitido: false, causa: liberacao.causa };
+  // A carteira do dono (env) e as autorizadas explicitamente no painel.
+  if (isEnvAdmin(w) || pilotos.some((p) => p.wallet === w)) {
+    return { permitido: true, causa: "piloto_autorizado" };
+  }
+  return { permitido: false, causa: liberacao.causa };
+}
+
+/** Atalho para quem julga UMA carteira só (rotas de request). */
+export async function podeAutomatizar(wallet: string): Promise<VereditoAutomacao> {
+  const [liberacao, pilotos] = await Promise.all([lerLiberacao(), lerPilotos()]);
+  return decidirAutomacao(wallet, liberacao, pilotos);
 }

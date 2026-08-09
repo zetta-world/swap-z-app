@@ -14,7 +14,7 @@ import { checkRealNotional } from "@/lib/autopilot/price-guard";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { runAlertWatchdog } from "@/lib/admin/watchdog";
-import { lerLiberacao } from "@/lib/autopilot/liberacao";
+import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import {
   getOpenServerPositions, recordServerEntry, markServerExitArmed,
   closeServerPosition, reopenServerPosition, applySessionPnl,
@@ -143,52 +143,54 @@ export async function POST(req: NextRequest) {
   }
   await setCronHeartbeat("autopilot");
 
-  /**
-   * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2) — este worker era o ÚNICO caminho de
-   * dinheiro sem kill-switch. Dezessete mesas internas, que gastam só o nosso
-   * token, tinham gate cada uma; a automação que compra na corretora do
-   * cliente não tinha nenhum.
-   *
-   * ⚠️ FECHADO NÃO PODE SER SILENCIOSO (invariante nº 7). O heartbeat já foi
-   * batido acima — de propósito, senão o watchdog acusaria "cron parado" e a
-   * causa real ficaria escondida atrás de um alarme errado. E cada sessão
-   * armada ganha uma linha em `autopilot_runs` com o motivo, senão o cliente
-   * veria "ativo" na tela e nada acontecendo, sem explicação nenhuma.
-   */
-  const liberacao = await lerLiberacao();
-  if (!liberacao.liberado) {
-    let armadas: AutopilotSessionRow[] = [];
-    try { armadas = await listRunnableSessions(); } catch { /* o registro é best-effort */ }
-    await recordRuns(armadas.map((s) => ({
-      session_id:     s.id,
-      wallet_address: s.wallet_address,
-      exchange_id:    s.exchange_id,
-      status:         "skipped",
-      reason:         `automação de CEX fechada (${liberacao.causa})`,
-    })));
-    /**
-     * ⚠️ O WATCHDOG DA PLATAFORMA RODA SÓ DAQUI. Grep de `runAlertWatchdog`:
-     * uma chamada, neste arquivo. Um `return` cedo sem esta linha desligaria
-     * TODO o alerta — pico de erro, cron parado, orçamento de IA, saúde de
-     * dependência, digest diário — como efeito colateral de fechar a automação
-     * de CEX. Duas coisas sem relação nenhuma, acopladas por um early return.
-     */
-    await runAlertWatchdog();
-    return NextResponse.json({
-      ok: true, processed: 0, closed: true, causa: liberacao.causa,
-      summary: [],
-    });
-  }
-
-  let sessions: AutopilotSessionRow[];
+  let todas: AutopilotSessionRow[];
   try {
-    sessions = await listRunnableSessions();
+    todas = await listRunnableSessions();
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: "session_query_failed", detail: e instanceof Error ? e.message : String(e) },
       { status: 500 },
     );
   }
+
+  /**
+   * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2) — este worker era o ÚNICO caminho de
+   * dinheiro sem kill-switch. Dezessete mesas internas, que gastam só o nosso
+   * token, tinham gate cada uma; a automação que compra na corretora do
+   * cliente não tinha nenhum.
+   *
+   * ⚠️ FILTRA, não retorna cedo. Fechada ao público, a automação ainda roda
+   * para as carteiras PILOTO (o dono, e as autorizadas no painel) — é assim que
+   * se testa com dinheiro real antes de abrir. Um `return` aqui mataria o teste
+   * junto com o público.
+   *
+   * ⚠️ E UMA IDA AO BANCO SÓ, para as N sessões: `decidirAutomacao` é decisão
+   * pura, então o estado é lido uma vez e julgado por carteira. Chamar
+   * `podeAutomatizar` dentro do laço faria a trava custar uma consulta por
+   * cliente, a cada cinco minutos.
+   */
+  const [liberacao, pilotos] = await Promise.all([lerLiberacao(), lerPilotos()]);
+  const sessions: AutopilotSessionRow[] = [];
+  const barradas: Array<{ s: AutopilotSessionRow; causa: string }> = [];
+  for (const s of todas) {
+    const v = decidirAutomacao(s.wallet_address, liberacao, pilotos);
+    if (v.permitido) sessions.push(s);
+    else barradas.push({ s, causa: v.causa });
+  }
+
+  /**
+   * ⚠️ FECHADO NÃO PODE SER SILENCIOSO (invariante nº 7). Sem esta linha o
+   * cliente veria "ativo" na tela e nada acontecendo, sem explicação nenhuma.
+   * O heartbeat já foi batido lá em cima — de propósito, senão o watchdog
+   * acusaria "cron parado" e a causa real ficaria atrás de um alarme errado.
+   */
+  await recordRuns(barradas.map(({ s, causa }) => ({
+    session_id:     s.id,
+    wallet_address: s.wallet_address,
+    exchange_id:    s.exchange_id,
+    status:         "skipped",
+    reason:         `automação de CEX fechada (${causa})`,
+  })));
 
   const summary: Array<{ exchange: string; wallet: string; fired: number; skipped: string }> = [];
 
@@ -222,7 +224,7 @@ export async function POST(req: NextRequest) {
   // large ops, dependency health, daily digest. Runs every tick (~5 min).
   await runAlertWatchdog();
 
-  return NextResponse.json({ ok: true, processed: sessions.length, summary });
+  return NextResponse.json({ ok: true, processed: sessions.length, blocked: barradas.length, summary });
 }
 
 interface ProcessResult { fired: number; note: string; }

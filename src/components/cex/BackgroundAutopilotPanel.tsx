@@ -86,6 +86,12 @@ export default function BackgroundAutopilotPanel({
    * que NÃO vai disparar.
    */
   const [fechada, setFechada] = useState(false);
+  /**
+   * ⚠️ PILOTO: esta carteira roda a automação com a feature FECHADA para todo o
+   * resto — dinheiro real, em teste. Estado próprio, nunca colapsado em
+   * "aberto": quem está pilotando precisa saber que está pilotando.
+   */
+  const [piloto, setPiloto] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -94,12 +100,13 @@ export default function BackgroundAutopilotPanel({
       if (res.status === 503) { setBackend("unconfigured");  setStatus(null); return; }
       const body = await res.json() as {
         ok: boolean; status: SessionStatus | null; runs?: RunRow[];
-        automationClosed?: boolean;
+        automationClosed?: boolean; automationPilot?: boolean;
       };
       setBackend("ready");
       setStatus(body.status);
       setRuns(body.runs ?? []);
       setFechada(body.automationClosed === true);
+      setPiloto(body.automationPilot === true);
     } catch {
       setBackend("unconfigured");
     }
@@ -242,6 +249,17 @@ export default function BackgroundAutopilotPanel({
                 </div>
                 <p className="font-mono text-[9px] text-ink-3 leading-relaxed">
                   {isArmed ? t("bgAutopilot.closedArmedBody") : t("bgAutopilot.closedBody")}
+                </p>
+              </div>
+            )}
+
+            {piloto && (
+              <div className="rounded-md border border-purple-500/40 bg-purple-500/[0.07] p-2 space-y-1">
+                <div className="font-mono text-[9px] text-purple-300 tracking-widest uppercase inline-flex items-center gap-1">
+                  <ShieldAlert className="w-3 h-3" /> {t("bgAutopilot.pilotHeading")}
+                </div>
+                <p className="font-mono text-[9px] text-ink-3 leading-relaxed">
+                  {t("bgAutopilot.pilotBody")}
                 </p>
               </div>
             )}
