@@ -185,6 +185,43 @@ perguntada pelo servidor. E a prova tem que **gravar**, senão não é auditáve
 > caminho em que a credencial do cliente vai cifrada para o nosso servidor.
 > Quem colasse uma chave com permissão total não recebia aviso nenhum.
 
+## 15. O `return` cedo leva junto tudo que vinha depois
+
+Adicionar uma saída antecipada no meio de uma função **desliga em silêncio todo
+o resto dela** — inclusive o que não tem relação nenhuma com o motivo da saída.
+O risco cresce com a idade do arquivo: quanto mais tempo a função existe, mais
+coisas foram penduradas no fim dela por conveniência.
+
+**Como travar:** antes de escrever um `return` novo, leia o que vem DEPOIS dele
+até o fim da função e pergunte de cada linha: *"isto pode deixar de acontecer
+por causa deste motivo?"*. Se a resposta for não, a linha vai junto no caminho
+curto — e ganha teste, porque a próxima saída antecipada vai esquecer de novo.
+
+> **Cicatriz (09/08, Fase 7.2):** o `return` da automação fechada, escrito sem
+> esse cuidado, desligaria `runAlertWatchdog()` — pico de erro, cron parado,
+> orçamento de IA, saúde de dependência, digest diário. Ele é chamado de **um
+> lugar só em todo o código**, e por acaso é o fim deste cron. Fechar uma
+> feature de CEX teria calado o alerta da plataforma inteira, e o sintoma seria
+> a ausência de alarmes — que é indistinguível de "está tudo bem".
+
+## 16. Trava de liberação falha FECHADA; gate de mesa falha ABERTO
+
+O default na ausência de registro tem que seguir **o que está em jogo**, não o
+costume do arquivo ao lado. Mesa interna sem registro deve rodar (o pior caso é
+gastar token nosso). Liberação de recurso sem registro deve ficar fechada:
+ausência de decisão não é autorização — é a nº 6 aplicada a uma decisão em vez
+de a uma medição.
+
+E a causa de estar fechado viaja junto: *"fechado por decisão"* e *"fechado
+porque não consegui ler o banco"* pedem ações diferentes.
+
+> **Cicatriz (09/08, Fase 7.2):** `disable_cex`, `disable_swap` e
+> `maintenance_mode` existem no painel, gravam em `admin_kv`, entram no log de
+> auditoria — e **não são lidos por ninguém**. Um documento de auditoria chegou
+> a reportar *"✅ plataforma aberta"* lendo um interruptor que não controla
+> nada. Pior que a nº 14: aqui o operador vê a chave virar e acredita que
+> desligou.
+
 ---
 
 ## Como usar

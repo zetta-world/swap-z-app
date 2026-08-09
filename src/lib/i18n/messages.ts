@@ -761,6 +761,12 @@ const en = {
     keyNeverCheckedBody:  "This session was armed before withdraw-permission checking existed. Deactivate and activate again to have it checked.",
     keyCanWithdraw:       "Key can withdraw",
     keyCanWithdrawBody:   "The exchange reports withdraw permission on this key. Deactivate, create a trade-only key and activate again.",
+    // Release gate (Phase 7.2). Built, not yet open to the public.
+    closedToast:          "Background automation is not open yet",
+    closedHeading:        "Automation not released yet",
+    closedBody:           "This feature is built and tested, but it stays closed until a measured strategy justifies opening it. Nothing you do here will place orders.",
+    closedArmedBody:      "Your session is armed, but automation is closed on our side — no orders will be placed. Each cycle is logged as skipped with the reason.",
+    armedButClosed:       "armed · closed",
   },
   autopilot: {
     title:               "ZION Autopilot",
@@ -2387,6 +2393,12 @@ const pt: Schema = {
     keyNeverCheckedBody:  "Esta sessão foi armada antes de a checagem de permissão de saque existir. Desative e ative de novo para ela ser checada.",
     keyCanWithdraw:       "Chave pode sacar",
     keyCanWithdrawBody:   "A corretora informa permissão de saque nesta chave. Desative, crie uma chave só de negociação e ative de novo.",
+    // Trava de liberação (Fase 7.2). Pronta, ainda não aberta ao público.
+    closedToast:          "A automação em segundo plano ainda não está aberta",
+    closedHeading:        "Automação ainda não liberada",
+    closedBody:           "Este recurso está pronto e testado, mas fica fechado até uma estratégia medida justificar abrir. Nada aqui vai enviar ordens.",
+    closedArmedBody:      "Sua sessão está armada, mas a automação está fechada do nosso lado — nenhuma ordem será enviada. Cada ciclo fica registrado como pulado, com o motivo.",
+    armedButClosed:       "armada · fechada",
   },
   autopilot: {
     title:               "ZION Autopilot",
@@ -3995,6 +4007,12 @@ const es: Schema = {
     keyNeverCheckedBody:  "Esta sesión se activó antes de que existiera la comprobación de permiso de retiro. Desactiva y activa de nuevo para que se compruebe.",
     keyCanWithdraw:       "La clave puede retirar",
     keyCanWithdrawBody:   "El exchange informa permiso de retiro en esta clave. Desactiva, crea una clave solo de trading y activa de nuevo.",
+    // Traba de liberación (Fase 7.2). Lista, aún no abierta al público.
+    closedToast:          "La automatización en segundo plano aún no está abierta",
+    closedHeading:        "Automatización aún no liberada",
+    closedBody:           "Esta función está lista y probada, pero queda cerrada hasta que una estrategia medida justifique abrirla. Nada de lo que hagas aquí enviará órdenes.",
+    closedArmedBody:      "Tu sesión está armada, pero la automatización está cerrada de nuestro lado — no se enviará ninguna orden. Cada ciclo queda registrado como omitido, con el motivo.",
+    armedButClosed:       "armada · cerrada",
   },
   autopilot: {
     title:               "ZION Autopilot",
@@ -5603,6 +5621,12 @@ const zh: Schema = {
     keyNeverCheckedBody:  "这个会话是在提币权限检查存在之前激活的。停用后重新激活即可完成检查。",
     keyCanWithdraw:       "密钥可以提币",
     keyCanWithdrawBody:   "交易所报告这个密钥有提币权限。请停用，创建一个仅交易的密钥，然后重新激活。",
+    // 放行开关（第 7.2 阶段）。已就绪，尚未对公众开放。
+    closedToast:          "后台自动化尚未开放",
+    closedHeading:        "自动化尚未放行",
+    closedBody:           "该功能已完成并通过测试，但在有经过度量的策略足以支撑之前保持关闭。你在此处的操作不会下单。",
+    closedArmedBody:      "你的会话已激活，但自动化在我们这一侧是关闭的——不会下任何订单。每个周期都会以「跳过」记录，并附上原因。",
+    armedButClosed:       "已激活 · 已关闭",
   },
   autopilot: {
     title:               "ZION 自动驾驶",

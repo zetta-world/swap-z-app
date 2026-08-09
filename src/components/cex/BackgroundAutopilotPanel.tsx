@@ -78,16 +78,28 @@ export default function BackgroundAutopilotPanel({
    * aviso que dura 4 segundos é indistinguível de nenhum aviso.
    */
   const [recusa, setRecusa] = useState<string | null>(null);
+  /**
+   * ⚠️ A automação pode estar FECHADA no servidor (Fase 7.2) — o recurso existe
+   * mas ainda não foi liberado ao público. Vem do GET, não só do erro do POST:
+   * descobrir isso depois de apertar "ativar" seria esconder a informação
+   * atrás de uma falha, e uma sessão já armada de antes precisa dizer na tela
+   * que NÃO vai disparar.
+   */
+  const [fechada, setFechada] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch(`/api/autopilot/session?exchangeId=${exchangeId}`);
       if (res.status === 401) { setBackend("auth_required"); setStatus(null); return; }
       if (res.status === 503) { setBackend("unconfigured");  setStatus(null); return; }
-      const body = await res.json() as { ok: boolean; status: SessionStatus | null; runs?: RunRow[] };
+      const body = await res.json() as {
+        ok: boolean; status: SessionStatus | null; runs?: RunRow[];
+        automationClosed?: boolean;
+      };
       setBackend("ready");
       setStatus(body.status);
       setRuns(body.runs ?? []);
+      setFechada(body.automationClosed === true);
     } catch {
       setBackend("unconfigured");
     }
@@ -120,6 +132,7 @@ export default function BackgroundAutopilotPanel({
        * ⚠️ A chave que PODE SACAR não é "falha ao ativar" — é uma recusa nossa,
        * com causa e com conserto. Cai em bloco próprio, não no erro genérico.
        */
+      if (body.error === "automation_closed") { setFechada(true); toast.error(t("bgAutopilot.closedToast")); return; }
       if (body.error === "key_can_withdraw") {
         setRecusa(body.keyPermissionDetail ?? "");
         toast.error(t("bgAutopilot.keyRefusedToast"));
@@ -200,7 +213,11 @@ export default function BackgroundAutopilotPanel({
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          {isArmed
+          {/* ⚠️ Armado COM a automação fechada não é "ATIVO" em verde — não vai
+              disparar nada. Verde ali seria a tela mentindo o estado. */}
+          {isArmed && fechada
+            ? <span className="font-mono text-[9px] text-gold tracking-widest uppercase inline-flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> {t("bgAutopilot.armedButClosed")}</span>
+            : isArmed
             ? <span className="font-mono text-[9px] text-green tracking-widest uppercase inline-flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> {t("bgAutopilot.active")}</span>
             : <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{t("bgAutopilot.inactive")}</span>}
           {expanded ? <ChevronUp className="w-3.5 h-3.5 text-ink-4" /> : <ChevronDown className="w-3.5 h-3.5 text-ink-4" />}
@@ -215,6 +232,20 @@ export default function BackgroundAutopilotPanel({
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden space-y-2.5"
           >
+            {/* ⚠️ Automação fechada — vem ANTES de tudo, inclusive do estado
+                armado: uma sessão que não vai disparar precisa dizer isso antes
+                de mostrar contadores que vão ficar parados. */}
+            {fechada && (
+              <div className="rounded-md border border-gold/40 bg-gold/[0.06] p-2 space-y-1">
+                <div className="font-mono text-[9px] text-gold tracking-widest uppercase inline-flex items-center gap-1">
+                  <ShieldAlert className="w-3 h-3" /> {t("bgAutopilot.closedHeading")}
+                </div>
+                <p className="font-mono text-[9px] text-ink-3 leading-relaxed">
+                  {isArmed ? t("bgAutopilot.closedArmedBody") : t("bgAutopilot.closedBody")}
+                </p>
+              </div>
+            )}
+
             {/* Armed status */}
             {isArmed && status && (
               <div className="space-y-2">
@@ -342,7 +373,7 @@ export default function BackgroundAutopilotPanel({
                   <button
                     type="button"
                     onClick={arm}
-                    disabled={busy || allowedSymbols.length === 0}
+                    disabled={busy || fechada || allowedSymbols.length === 0}
                     className="w-full py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-500 font-display font-bold text-xs inline-flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
                   >
                     {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
