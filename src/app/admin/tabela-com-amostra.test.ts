@@ -82,6 +82,14 @@ const RANQUEIAM: Array<{ painel: string; amostra: string; porque: string }> = [
       + "aparece no topo com borda que só existe porque o preenchimento foi parcial",
   },
   {
+    painel: "LiquidezPanel",
+    amostra: "DIAS",
+    porque: "cada linha é uma piscina e as colunas LÍQUIDO/SEGURAR afirmam qual vale a "
+      + "pena; as janelas NÃO são iguais entre linhas (um ativo listado há pouco tem "
+      + "menos velas), e a taxa é proporcional aos dias — sem DIAS, uma piscina com "
+      + "meio ano de histórico parece comparável a uma com o ano inteiro",
+  },
+  {
     painel: "TournamentPanel",
     amostra: "DEC",
     porque: "ranking de agentes por líquido/trade; DEC é a amostra decidida",

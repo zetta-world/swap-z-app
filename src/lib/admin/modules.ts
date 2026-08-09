@@ -21,6 +21,7 @@ export type ModuleId =
   | "combinacao"
   | "variancia"
   | "dex-cex"
+  | "liquidez"
   | "ligas"
   | "lab"
   | "tournament"
@@ -242,6 +243,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8.8,
+  },
+  {
+    id: "liquidez",
+    title: "SER A CONTRAPARTE",
+    subtitle: "C14 — a taxa da piscina cobre a perda impermanente?",
+    icon: "\u{1F4A7}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.9,
   },
   {
     id: "lab",

@@ -1,0 +1,203 @@
+"use client";
+
+import { useCallback, useState } from "react";
+import TerminalPanel from "../TerminalPanel";
+
+/**
+ * SER A CONTRAPARTE — C14, a mesa de liquidez (Fase 8.1).
+ *
+ * ⚠️ O DESENHO SEGUE A REGRA DA CASA: veredito ANTES do número. Placar antes do
+ * veredito convida a ler retorno como aprovação — foi assim que os +34%
+ * duraram três semanas.
+ *
+ * ⚠️ E AS DUAS COLUNAS QUE DECIDEM FICAM LADO A LADO: LÍQUIDO e SEGURAR. A
+ * pergunta desta família não é "a piscina deu lucro?", é "a piscina bateu ter
+ * segurado?". Separar as duas na tela deixaria a primeira responder pela
+ * segunda.
+ */
+
+interface Piscina {
+  id: string; rotulo: string; porque: string; controle: boolean;
+  dias: number; razao: number;
+  ilPct: number; taxaPct: number; liquidoPct: number; segurarPct: number;
+  apyDe: "apyBase" | "apyMean30d" | "ausente"; apyAnualPct: number | null;
+}
+interface Dados {
+  janelaDias: number; minPiscinas: number; hostUsado: string;
+  falhas: string[]; naoCasadas: string[];
+  resumo: {
+    ilMedianoPct: number | null; taxaMedianaPct: number | null;
+    liquidoMedianoPct: number | null; segurarMedianoPct: number | null;
+    ganhouDeSegurar: number; medidas: number; semApy: number;
+  };
+  piscinas: Piscina[];
+  veredito: { status: "verde" | "cinza" | "morta"; texto: string };
+  naoMedido: string[];
+  tookMs: number;
+}
+
+const COR: Record<Dados["veredito"]["status"], string> = {
+  verde: "var(--adm-green)", cinza: "var(--adm-ink-3)", morta: "var(--adm-red)",
+};
+const ROTULO: Record<Dados["veredito"]["status"], string> = {
+  verde: "✓ VERDE", cinza: "◌ INCONCLUSIVA", morta: "✕ MORTA",
+};
+
+const pct = (n: number | null | undefined, casas = 2) =>
+  n == null || !Number.isFinite(n) ? "—" : `${n > 0 ? "+" : ""}${n.toFixed(casas)}%`;
+
+export default function LiquidezPanel() {
+  const [data,    setData]    = useState<Dados | null>(null);
+  const [erro,    setErro]    = useState<string | null>(null);
+  const [rodando, setRodando] = useState(false);
+
+  const medir = useCallback(async () => {
+    setRodando(true); setErro(null);
+    try {
+      const res = await fetch("/admin/api/liquidez", { method: "POST" });
+      const body = await res.json() as Dados & { error?: string; detail?: string };
+      if (!res.ok) { setErro(`${body.error ?? res.status}${body.detail ? ` — ${body.detail}` : ""}`); return; }
+      setData(body);
+    } catch (e) {
+      setErro(String(e).slice(0, 160));
+    } finally { setRodando(false); }
+  }, []);
+
+  return (
+    <TerminalPanel
+      id="liquidez"
+      title="SER A CONTRAPARTE"
+      subtitle="a taxa da piscina cobre a perda impermanente?"
+      icon="💧"
+      source="yields.llama.fi + data-api.binance.vision"
+    >
+      <button className="adm-btn" onClick={() => void medir()} disabled={rodando}>
+        {rodando ? "medindo…" : "💧 MEDIR LP EM AMM"}
+      </button>
+
+      {erro && (
+        <div style={{ color: "var(--adm-red)", fontSize: 9, marginTop: 8, lineHeight: 1.6 }}>
+          {erro}
+          {/* ⚠️ Fonte recusada NÃO é perda zero. A tela diz qual falhou. */}
+          <div style={{ color: "var(--adm-ink-4)", fontSize: 8, marginTop: 3 }}>
+            fonte recusada não é resultado — nada foi medido nesta tentativa
+          </div>
+        </div>
+      )}
+
+      {data && (
+        <div style={{ marginTop: 10 }}>
+          {/* ── VEREDITO PRIMEIRO ─────────────────────────────────────── */}
+          <div style={{
+            border: `1px solid ${COR[data.veredito.status]}`, borderRadius: 3,
+            padding: "6px 8px", marginBottom: 8,
+          }}>
+            <div style={{ color: COR[data.veredito.status], fontSize: 10, fontWeight: 700, letterSpacing: "0.1em" }}>
+              {ROTULO[data.veredito.status]}
+            </div>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 8.5, lineHeight: 1.6, marginTop: 3 }}>
+              {data.veredito.texto}
+            </div>
+          </div>
+
+          {/* ── AS DUAS RÉGUAS, LADO A LADO ───────────────────────────── */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+            <Bloco rotulo="LÍQUIDO (mediana)" valor={pct(data.resumo.liquidoMedianoPct)}
+                   cor={(data.resumo.liquidoMedianoPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)"} />
+            <Bloco rotulo="SEGURAR OS MESMOS" valor={pct(data.resumo.segurarMedianoPct)} cor="var(--adm-ink-2)" />
+            <Bloco rotulo="TAXA" valor={pct(data.resumo.taxaMedianaPct)} cor="var(--adm-ink-2)" />
+            <Bloco rotulo="PERDA IMPERM." valor={pct(data.resumo.ilMedianoPct)} cor="var(--adm-amber)" />
+            <Bloco rotulo="CAPITAL" valor="$2.000" cor="var(--adm-ink-3)" />
+            <Bloco rotulo="PISCINAS (n)" valor={`${data.resumo.medidas}/${data.minPiscinas}`} cor="var(--adm-ink-3)" />
+          </div>
+
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.6 }}>
+            janela de {data.janelaDias} dias · bateu segurar em {data.resumo.ganhouDeSegurar}/{data.resumo.medidas}
+            {data.resumo.semApy > 0 && <> · {data.resumo.semApy} sem taxa na fonte (fora do veredito)</>}
+            {data.hostUsado && <> · fonte: {data.hostUsado}</>}
+          </div>
+
+          <div style={{ overflowX: "auto" }}>
+            <table className="adm-table">
+              <thead>
+                <tr>
+                  <th>PISCINA</th>
+                  <th style={{ textAlign: "right" }}>DIAS</th>
+                  <th style={{ textAlign: "right" }}>TAXA</th>
+                  <th style={{ textAlign: "right" }}>PERDA</th>
+                  <th style={{ textAlign: "right" }}>LÍQUIDO</th>
+                  <th style={{ textAlign: "right" }}>SEGURAR</th>
+                  <th>APY DE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.piscinas.map((p) => (
+                  <tr key={p.id} style={{ opacity: p.apyDe === "ausente" ? 0.55 : 1 }}>
+                    <td>
+                      {p.rotulo}
+                      {p.controle && (
+                        <span style={{ color: "var(--adm-amber)", fontSize: 7.5 }}> · CONTROLE</span>
+                      )}
+                      <div style={{ color: "var(--adm-ink-4)", fontSize: 7.5 }}>{p.porque}</div>
+                    </td>
+                    <td style={{ textAlign: "right" }}>{p.dias}</td>
+                    <td style={{ textAlign: "right" }}>{p.apyDe === "ausente" ? "—" : pct(p.taxaPct)}</td>
+                    <td style={{ textAlign: "right", color: "var(--adm-amber)" }}>{pct(p.ilPct)}</td>
+                    <td style={{
+                      textAlign: "right", fontWeight: 700,
+                      color: p.apyDe === "ausente" ? "var(--adm-ink-4)"
+                        : p.liquidoPct > p.segurarPct ? "var(--adm-green)" : "var(--adm-red)",
+                    }}>
+                      {p.apyDe === "ausente" ? "—" : pct(p.liquidoPct)}
+                    </td>
+                    <td style={{ textAlign: "right" }}>{pct(p.segurarPct)}</td>
+                    <td style={{ color: p.apyDe === "ausente" ? "var(--adm-red)" : "var(--adm-ink-4)", fontSize: 8 }}>
+                      {p.apyDe === "ausente" ? "AUSENTE" : p.apyDe}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {data.naoCasadas.length > 0 && (
+            <div style={{ color: "var(--adm-amber)", fontSize: 8, marginTop: 6, lineHeight: 1.6 }}>
+              ⚠️ não encontradas na fonte: {data.naoCasadas.join(", ")} — entraram sem taxa e
+              ficaram fora do veredito
+            </div>
+          )}
+
+          {/* ── O QUE NÃO FOI MEDIDO, NA TELA ─────────────────────────── */}
+          <div style={{ marginTop: 8, borderTop: "1px solid var(--adm-border)", paddingTop: 6 }}>
+            <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>
+              O QUE ESTA MEDIÇÃO NÃO INCLUI
+            </div>
+            <ul style={{ margin: "3px 0 0", paddingLeft: 14 }}>
+              {data.naoMedido.map((n, i) => (
+                <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 8, lineHeight: 1.6 }}>{n}</li>
+              ))}
+            </ul>
+          </div>
+
+          {data.falhas.length > 0 && (
+            <div style={{ color: "var(--adm-ink-4)", fontSize: 7.5, marginTop: 5 }}>
+              recusas de fonte: {data.falhas.join(" · ")}
+            </div>
+          )}
+        </div>
+      )}
+    </TerminalPanel>
+  );
+}
+
+function Bloco({ rotulo, valor, cor }: { rotulo: string; valor: string; cor: string }) {
+  return (
+    <div style={{
+      border: "1px solid var(--adm-border)", borderRadius: 3,
+      padding: "4px 8px", minWidth: 92,
+    }}>
+      <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", letterSpacing: "0.1em" }}>{rotulo}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: cor }}>{valor}</div>
+    </div>
+  );
+}
