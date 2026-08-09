@@ -32,18 +32,41 @@ export async function GET(): Promise<NextResponse> {
   if (!db) return NextResponse.json({ error: "sem banco" }, { status: 503 });
 
   try {
+    /**
+     * ⚠️⚠️ ESPELHA SEMPRE, E ISTO É CORREÇÃO DE DEFEITO SISTÊMICO (09/08).
+     *
+     * A versão anterior sincronizava só quando a tabela estava VAZIA:
+     *
+     *     const rows = await readLab(db);
+     *     if (rows.length === 0) { await syncRegistry(db); … }
+     *
+     * Parecia otimização e era uma quebra da invariante que o cabeçalho deste
+     * arquivo declara: "código → banco, NUNCA o contrário". Com o guarda de
+     * lista vazia, o espelho travava na primeira vez e **mudança em estratégia
+     * existente nunca mais propagava**.
+     *
+     * O estrago, medido em 09/08: todas as 28 linhas de `lab_strategies` com o
+     * MESMO `updated_at` (08/08 20:36:27) — o instante em que `carteira_verde`
+     * nasceu e o `strategyId` disparou um sync de carona. Depois disso:
+     *
+     *  · `carteira_verde` seguiu CINZA no painel, com o registro dizendo MORTA;
+     *  · o `killedWhy` dela chegou ao banco com length ZERO — todo o texto da
+     *    refutação, invisível;
+     *  · e as três verdes da Fase 4 só apareceram porque pegaram carona nesse
+     *    sync acidental. Eu tinha diagnosticado aquilo como "esqueci de
+     *    promover", consertei o sintoma e deixei a causa de pé.
+     *
+     * É a família de sempre — dois estados com a mesma aparência — na sua forma
+     * mais cara: "reprovada com motivo escrito" e "nunca medida" ficam
+     * idênticas na tela, e o motivo escrito não existe para quem olha.
+     *
+     * Sincronizar é um upsert de ~28 linhas. O custo disso é menor que o de uma
+     * tela mentindo sobre o que foi decidido.
+     */
+    const { synced } = await syncRegistry(db);
     const rows = await readLab(db);
-    // Registro vazio no banco não é erro — é a primeira vez. Espelha e relê,
-    // para o painel nunca abrir vazio dizendo "nenhuma estratégia".
-    if (rows.length === 0) {
-      await syncRegistry(db);
-      return NextResponse.json({
-        familias: FAMILIES, estrategias: await readLab(db),
-        sincronizadoAgora: true,
-      }, { headers: { "Cache-Control": "no-store" } });
-    }
     return NextResponse.json({
-      familias: FAMILIES, estrategias: rows, sincronizadoAgora: false,
+      familias: FAMILIES, estrategias: rows, sincronizadoAgora: true, sincronizadas: synced,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: String(e).slice(0, 300) }, { status: 500 });
