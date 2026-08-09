@@ -11,7 +11,8 @@ import { findToken } from "@/lib/tokens";
 import { median } from "@/lib/zion/stats";
 import {
   precoCex, precoDex, sentidos, melhorSentido, vereditoDexCex,
-  TAXA_CEX_PCT, PARES_EXCLUIDOS, enderecoLiFi, type LinhaDexCex,
+  TAXA_CEX_PCT, PARES_EXCLUIDOS, enderecoLiFi, idaEVoltaCoerente,
+  converterCexParaUsdc, type LinhaDexCex,
 } from "@/lib/lab/dex-cex";
 import type { ChainId } from "@/lib/chains";
 
@@ -84,22 +85,67 @@ export async function POST(): Promise<NextResponse> {
   const db = getSupabaseAdmin();
 
   const capital = BY_SLUG.get("dex_cex_arb")?.capitalRequiredUsd ?? 5000;
+  const falhasGravacao: string[] = [];
   let runId: string | null = null;
   if (db) {
     try {
       runId = await startRun(db, {
-        slug: "dex_cex_arb", capitalUsd: capital, windowDays: 0,
+        /**
+         * ⚠️ 1, NÃO 0 (09/08). A tabela tem `check (window_days > 0)` e eu passei
+         * zero: o `startRun` estourou, o `catch` de best-effort engoliu, `runId`
+         * ficou nulo e a rodada INTEIRA não foi gravada — apareceu na tela e não
+         * existiu no banco. É o "best-effort que esconde falha" que esta sessão
+         * vem caçando, desta vez no código que escrevi no mesmo dia.
+         *
+         * E 1 é o número honesto: a medição é um instantâneo de HOJE, não de uma
+         * janela histórica. Zero não era só inválido — era errado no conceito.
+         */
+        slug: "dex_cex_arb", capitalUsd: capital, windowDays: 1,
         params: {
           notionalUsd: NOTIONAL_USD, taxaCexPct: TAXA_CEX_PCT,
           pares: PARES.map((p) => `${p.symbol}@${p.cadeia}`),
           excluidos: PARES_EXCLUIDOS,
         },
       });
-    } catch { /* o laboratório é registro, não pré-requisito da medição */ }
+    } catch (e) {
+      /**
+       * ⚠️ BEST-EFFORT SIM, SILENCIOSO NÃO. O laboratório continua não sendo
+       * pré-requisito da medição — mas "não gravou" precisa aparecer, senão a
+       * tela mostra número e o banco não tem nada, que foi o que aconteceu.
+       */
+      falhasGravacao.push(`laboratório: ${String(e).slice(0, 80)}`);
+    }
   }
 
   const linhas: LinhaDexCex[] = [];
   const falhas: string[] = [];
+
+  /**
+   * ⚠️⚠️ OS DOIS LADOS COTAM EM MOEDAS DIFERENTES (09/08).
+   *
+   * A CEX devolve BASE/USDT — todas as venues, ver `cex-orderbook.ts`. O DEX
+   * cota contra USDC. Sem converter, o basis USDT/USDC entra na conta como se
+   * fosse borda, e ele não é: é um negócio próprio com risco próprio, igual ao
+   * WBTC que ficou de fora da lista.
+   *
+   * O par USDC/USDT vem da MESMA venue, no mesmo instante. Se ele não vier, a
+   * rodada NÃO assume 1,0 — assumir paridade seria justamente o erro que a
+   * conversão existe para corrigir, com cara de conserto.
+   */
+  const livroStable = await fetchOrderbook("binance", "USDC");
+  const stable = livroStable?.asks.length && livroStable.bids.length
+    ? (Number(livroStable.asks[0][0]) + Number(livroStable.bids[0][0])) / 2
+    : null;
+  if (stable == null || !(stable > 0)) {
+    const motivo = "sem o par USDC/USDT não dá para pôr os dois lados na mesma moeda";
+    await recordEvent("dex_cex_study_failed", {
+      meta: { motivo, tookMs: Date.now() - t0 },
+    });
+    if (db && runId) {
+      try { await failRun(db, runId, motivo, "binance USDCUSDT", Date.now() - t0); } catch { /* idem */ }
+    }
+    return NextResponse.json({ error: motivo, detail: "binance USDCUSDT" }, { status: 503 });
+  }
 
   /**
    * ⚠️ PARES EM PARALELO, cotações do MESMO par em série.
@@ -154,8 +200,10 @@ export async function POST(): Promise<NextResponse> {
         falhas.push(`${symbol}@${venue}: sem livro`);
         return;
       }
-      const cex = precoCex(livro.asks, livro.bids, NOTIONAL_USD);
-      if (!cex) { falhas.push(`${symbol}@${venue}: livro não formou preço`); return; }
+      const cexUsdt = precoCex(livro.asks, livro.bids, NOTIONAL_USD);
+      if (!cexUsdt) { falhas.push(`${symbol}@${venue}: livro não formou preço`); return; }
+      // Os dois lados na MESMA moeda. Ver a nota em `converterCexParaUsdc`.
+      const cex = converterCexParaUsdc(cexUsdt, stable);
 
       const ss = sentidos(dex, cex);
       const melhor = melhorSentido(ss);
@@ -167,6 +215,8 @@ export async function POST(): Promise<NextResponse> {
         precoDexCompra: dex.compraMedio, precoDexVenda: dex.vendaMedio,
         precoCexCompra: cex.compraMedio, precoCexVenda: cex.vendaMedio,
         livroCompleto: cex.completo,
+        dexCoerente: idaEVoltaCoerente(dex),
+        usdtPorUsdc: stable,
       });
     } catch (e) {
       falhas.push(`${symbol}@${cadeia}: ${String(e).slice(0, 50)}`);
@@ -175,7 +225,7 @@ export async function POST(): Promise<NextResponse> {
 
   linhas.sort((a, b) => b.liquidaPct - a.liquidaPct);
   const veredito = vereditoDexCex(linhas);
-  const usaveis = linhas.filter((l) => l.livroCompleto);
+  const usaveis = linhas.filter((l) => l.livroCompleto && l.dexCoerente);
   const medianaLiquida = usaveis.length ? median(usaveis.map((l) => l.liquidaPct)) : null;
 
   const naoMedido = [
@@ -212,10 +262,13 @@ export async function POST(): Promise<NextResponse> {
         notMeasured: naoMedido,
       }, Date.now() - t0);
     } catch (e) {
+      falhasGravacao.push(`resultado: ${String(e).slice(0, 80)}`);
       try {
         await failRun(db, runId, "falha ao gravar a medição", String(e).slice(0, 200), Date.now() - t0);
       } catch { /* idem */ }
     }
+  } else if (db) {
+    falhasGravacao.push("a rodada não abriu no laboratório — resultado NÃO gravado");
   }
 
   await recordEvent("dex_cex_study", { meta: {
@@ -229,6 +282,8 @@ export async function POST(): Promise<NextResponse> {
     resumo: {
       pares: linhas.length,
       comLivroCompleto: usaveis.length,
+      incoerentes: linhas.filter((l) => l.livroCompleto && !l.dexCoerente).length,
+      usdtPorUsdc: stable,
       notionalUsd: NOTIONAL_USD,
       taxaCexPct: TAXA_CEX_PCT,
       medianaLiquidaPct: medianaLiquida,
@@ -237,6 +292,8 @@ export async function POST(): Promise<NextResponse> {
     },
     linhas,
     falhas: falhas.length ? falhas : null,
+    /** ⚠️ A rodada foi gravada no laboratório? Vazio = sim. */
+    falhasGravacao: falhasGravacao.length ? falhasGravacao : null,
     naoMedido,
     aviso: "Leitura pura. Os dois lados são medidos para o MESMO notional, com a régua "
       + "que reprovou a arbitragem CEX↔CEX. É TETO da borda, não captura.",
