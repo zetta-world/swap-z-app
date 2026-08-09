@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { placeCexOrder } from "@/lib/cex/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
-import { lerLiberacao } from "@/lib/autopilot/liberacao";
+import { podeAutomatizar } from "@/lib/autopilot/liberacao";
+import { checarKillSwitches } from "@/lib/admin/kill-switches";
+import { getSession } from "@/lib/auth/session";
 import { logSecurity, logError } from "@/lib/admin/track";
 import { recordEvent } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
@@ -88,6 +90,20 @@ export async function POST(req: NextRequest) {
   const gate = await checkFeatureTier("cexAutopilot");
   if (gate) return denialResponse(gate);
 
+  /**
+   * ⚠️ OS KILL-SWITCHES, agora lidos (Fase 7.3). Vale para ordem MANUAL também:
+   * `disable_cex` e `maintenance_mode` existem para parar o dinheiro, não para
+   * parar só o robô. Esta rota é dinheiro que SAI da conta do cliente, então
+   * falha de leitura BLOQUEIA — ver a nota em `kill-switches.ts`.
+   */
+  const kill = await checarKillSwitches(["disable_cex", "maintenance_mode"], "dinheiro_sai");
+  if (kill.bloqueado) {
+    return NextResponse.json(
+      { ok: false, error: "platform_disabled", detail: kill.motivo },
+      { status: 503 },
+    );
+  }
+
   let body: OrderRequestBody;
   try {
     body = await req.json() as OrderRequestBody;
@@ -168,10 +184,20 @@ export async function POST(req: NextRequest) {
      * ela. Não tem problema, e a distinção é deliberada — ordem MANUAL segue
      * aberta de propósito. O que a trava fecha é a automação, não o negociar.
      */
-    const liberacao = await lerLiberacao();
-    if (!liberacao.liberado) {
+    /**
+     * ⚠️ AQUI PRECISA DA CARTEIRA, e esta rota não tinha identidade nenhuma:
+     * ela recebe a credencial da corretora no corpo e nunca leu sessão. Sem
+     * ler a sessão, não há como distinguir o piloto autorizado do público — a
+     * trava viraria tudo-ou-nada justamente no canal do navegador.
+     *
+     * Ler a sessão AQUI, dentro do ramo de autopilot, mantém a ordem MANUAL
+     * exatamente como estava: sem exigir login, aberta de propósito.
+     */
+    const sessao = await getSession();
+    const automacao = await podeAutomatizar(sessao?.sub ?? "");
+    if (!automacao.permitido) {
       return NextResponse.json(
-        { ok: false, error: "automation_closed", causa: liberacao.causa },
+        { ok: false, error: "automation_closed", causa: automacao.causa },
         { status: 403 },
       );
     }

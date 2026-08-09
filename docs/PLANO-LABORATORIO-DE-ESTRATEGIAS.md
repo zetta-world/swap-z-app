@@ -1692,14 +1692,72 @@ feature de CEX. O sintoma seria a ausência de alarmes, que é indistinguível d
 A automação está **fechada por ausência de registro** — que é exatamente o
 pedido: pronta, não liberada. Abrir é um botão no painel, com justificativa.
 
-**Ainda em aberto (7.3):** `disable_swap` e `maintenance_mode` continuam sendo
-interruptores que não controlam nada. Não os liguei junto porque o que cada um
-deve bloquear é decisão de produto — `maintenance_mode` derruba o site inteiro?
-só o swap? — e escolher isso sozinho seria inventar o requisito. `disable_cex`
-ficou coberto na prática pela trava desta fase no caminho de automação.
-
 **E a pergunta de produto segue de pé:** três das quatro verdes são on-chain.
 Quando a automação for aberta, ela alcança hoje só a funding, a +1,13%/ano.
+
+## 7.3 — os pilotos, e os três interruptores mortos (09/08)
+
+O dono, sobre a trava: *"a trava continua sendo a resposta, porém a carteira
+Admin ou uma carteira autorizada pelo painel de controle pode rodar a automação,
+assim podemos fazer testes futuramente com dinheiro real"*. E sobre os
+interruptores: *"vc escolhe o mais seguro"*.
+
+### As carteiras piloto — um furo do tamanho declarado
+
+- **O cron FILTRA, não retorna cedo.** Fechada ao público, a automação continua
+  rodando para as carteiras piloto. A versão anterior matava o teste junto com o
+  público — e era o mesmo `return` que quase levou o watchdog (nº 15).
+- **Uma ida ao banco para N sessões.** `decidirAutomacao` é decisão pura, então
+  o cron lê o estado uma vez e julga por carteira. Chamar a versão assíncrona
+  dentro do laço faria a trava custar uma consulta por cliente a cada 5 min.
+- **`piloto_autorizado` é causa PRÓPRIA, não "aberto".** Colapsar as duas faria
+  a tela dizer ao piloto que a feature está liberada ao público. Ele precisa
+  saber que está pilotando: a tela mostra um bloco roxo dizendo que aquelas
+  ordens usam **fundos reais**.
+- **Entrar na lista custa nota escrita**, igual a abrir a trava, e sai no log de
+  auditoria com a nota.
+- **`platform_admins` NÃO qualifica** — e há teste de que o módulo nem consulta
+  a tabela. Quem recebeu admin para olhar métricas não pode virar, em silêncio,
+  autorizado a rodar o robô de dinheiro: seria a nº 14 de novo, um controle cujo
+  nome diz uma coisa e cujo efeito é outra. O `ADMIN_WALLETS` do ambiente é a
+  exceção declarada — é a carteira do dono e mudar exige redeploy, então ninguém
+  ganha esse poder com um clique.
+- **A rota de ordem não tinha identidade nenhuma.** Ela recebe a credencial no
+  corpo e nunca lia sessão; sem isso, não havia como distinguir piloto de
+  público no canal do navegador. A sessão passou a ser lida **dentro do ramo de
+  autopilot**, o que deixa a ordem MANUAL exatamente como estava: sem exigir
+  login, aberta de propósito.
+
+### Os três interruptores, e o que "mais seguro" significou
+
+`disable_swap`, `disable_cex` e `maintenance_mode` agora são **lidos**:
+
+| interruptor | onde passou a valer |
+|---|---|
+| `disable_cex` | ordem de corretora (**manual e autopilot**) e o armar |
+| `disable_swap` | `/api/quote` **só em `mode=quote`** — a cotação firme, o payload assinável |
+| `maintenance_mode` | os três caminhos acima |
+
+**A direção de falha é POR ROTA**, e essa foi a escolha:
+
+- **Ordem de corretora** — dinheiro SAI da conta do cliente. Leitura falhou →
+  **BLOQUEIA**. Um trade perdido durante uma queda de banco contra fundos
+  expostos durante um incidente não é escolha difícil; e a rota já opera sem as
+  próprias guardas (preço de referência, notional) quando o banco cai.
+- **Cotação de swap** — devolve uma transação que o usuário ainda **assina na
+  carteira**, revisando. Leitura falhou → **DEIXA PASSAR**. Derrubar o swap de
+  todo mundo por um Postgres intermitente é o dano certo.
+- `mode=list` **não** é barrado: comparar preço é navegação, não movimento de
+  dinheiro.
+- E a falha de leitura vira **evento de segurança** — senão *"ninguém desligou"*
+  e *"não consegui olhar"* ficariam idênticos.
+
+Isso não contraria a nº 16, é ela: o default segue o que está em jogo, e o que
+está em jogo muda de rota para rota. Há teste de que as duas decisões **divergem
+exatamente** no caso da leitura falha e são idênticas no resto — conferido por
+mutação.
+
+---
 
 ---
 
@@ -1761,7 +1819,7 @@ Traduzido em regra:
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
-| 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava de liberação nas 3 portas. Abre por botão, com justificativa |
+| 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
 | 8 · Cinzas restantes | 🔴 |
 | 9 · Receita | 🔴 |
 

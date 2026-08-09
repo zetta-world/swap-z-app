@@ -26,23 +26,37 @@ function semComentarios(codigo: string): string {
  * na hora da chamada, então não precisa ser recriado.
  */
 let resposta: { data: unknown; error: unknown } = { data: [], error: null };
+/**
+ * ⚠️ SEPARADA da `resposta` de propósito. `lerLiberacao` usa `.in()` e
+ * `lerPilotos` usa `.eq().maybeSingle()`; com um mock só, o teste "lista de
+ * pilotos ilegível" passava porque o método NEM EXISTIA e caía no `catch` — o
+ * resultado certo pelo motivo errado, que é o tipo de teste que continua verde
+ * depois de a proteção sumir.
+ */
+let respostaPilotos: { data: unknown; error: unknown } = { data: null, error: null };
 let dbNulo = false;
 const upserts: Array<Record<string, unknown>> = [];
 
 vi.mock("@/lib/supabase/server", () => ({
   getSupabaseAdmin: () => dbNulo ? null : ({
     from: () => ({
-      select: () => ({ in: async () => resposta }),
+      select: () => ({
+        in: async () => resposta,
+        eq: () => ({ maybeSingle: async () => respostaPilotos }),
+      }),
       upsert: async (linha: Record<string, unknown>) => { upserts.push(linha); return { error: null }; },
     }),
   }),
 }));
 
-const { lerLiberacao, registrarLiberacao, CHAVE_LIBERACAO, CHAVE_MOTIVO, MIN_MOTIVO } =
-  await import("@/lib/autopilot/liberacao");
+const {
+  lerLiberacao, registrarLiberacao, CHAVE_LIBERACAO, CHAVE_MOTIVO, MIN_MOTIVO,
+  lerPilotos, decidirAutomacao,
+} = await import("@/lib/autopilot/liberacao");
 
 beforeEach(() => {
   resposta = { data: [], error: null };
+  respostaPilotos = { data: null, error: null };
   dbNulo = false;
   upserts.length = 0;
 });
@@ -164,37 +178,43 @@ describe("a trava está nas TRÊS portas", () => {
   for (const [nome, caminho] of Object.entries(arquivos)) {
     it(`${nome} lê a liberação`, () => {
       const src = semComentarios(readFileSync(caminho, "utf8"));
-      expect(src, caminho).toContain("lerLiberacao(");
-      expect(src, caminho).toContain("liberado");
+      // Cada porta julga POR CARTEIRA — `podeAutomatizar` nas rotas de request,
+      // `decidirAutomacao` no cron (que julga N sessões com uma leitura só).
+      expect(src, caminho).toMatch(/podeAutomatizar\(|decidirAutomacao\(/);
     });
   }
 
   /**
    * ⚠️ ESTE TESTE EXISTE POR UM DEFEITO QUE EU QUASE ENVIEI.
    *
-   * `runAlertWatchdog()` é chamado de UM lugar só em todo o código: este cron.
-   * O `return` cedo da automação fechada, escrito sem cuidado, desligaria TODO
-   * o alerta da plataforma — pico de erro, cron parado, orçamento de IA, saúde
-   * de dependência, digest diário — como efeito colateral de fechar uma
-   * feature que não tem relação nenhuma com isso.
+   * `runAlertWatchdog()` é chamado de UM lugar só em todo o código: o fim deste
+   * cron. Na primeira versão eu fechei a automação com um `return` cedo, que
+   * teria desligado TODO o alerta da plataforma — pico de erro, cron parado,
+   * orçamento de IA, saúde de dependência, digest diário — como efeito
+   * colateral de fechar uma feature de CEX (invariante nº 15).
+   *
+   * A versão atual FILTRA em vez de retornar (os pilotos seguem rodando), então
+   * o risco mudou de forma mas não sumiu: a trava aqui é que não exista saída
+   * antecipada entre a decisão da trava e o watchdog.
    */
   it("fechar a automação NÃO desliga o watchdog da plataforma", () => {
     const src = semComentarios(readFileSync(arquivos.cron, "utf8"));
-    const iFecha = src.indexOf("if (!liberacao.liberado)");
-    const iRetorno = src.indexOf("return NextResponse.json({", iFecha);
-    const trecho = src.slice(iFecha, iRetorno);
-    expect(iFecha, "o cron não tem o caminho de fechado").toBeGreaterThan(-1);
-    expect(trecho, "o watchdog não roda no caminho fechado").toContain("runAlertWatchdog()");
+    const iDecide  = src.indexOf("decidirAutomacao(");
+    const iVigia   = src.indexOf("runAlertWatchdog()");
+    expect(iDecide, "o cron não julga a trava").toBeGreaterThan(-1);
+    expect(iVigia,  "o watchdog sumiu do cron").toBeGreaterThan(iDecide);
+    const meio = src.slice(iDecide, iVigia);
+    expect(meio, "há um return entre a trava e o watchdog").not.toMatch(/\breturn NextResponse\.json\(\{\s*ok: true/);
   });
 
   /**
-   * ⚠️ E o cron fechado tem que DEIXAR RASTRO (invariante nº 7). Sem isso o
-   * cliente vê "ativo" na tela e nada acontecendo, sem explicação.
+   * ⚠️ E as sessões BARRADAS têm que deixar rastro (invariante nº 7). Sem isso
+   * o cliente vê "ativo" na tela e nada acontecendo, sem explicação.
    */
-  it("o cron fechado grava o motivo em cada sessão armada", () => {
+  it("o cron grava o motivo em cada sessão barrada", () => {
     const src = semComentarios(readFileSync(arquivos.cron, "utf8"));
-    const iFecha = src.indexOf("if (!liberacao.liberado)");
-    const trecho = src.slice(iFecha, iFecha + 1200);
+    const iDecide = src.indexOf("decidirAutomacao(");
+    const trecho = src.slice(iDecide, iDecide + 1200);
     expect(trecho).toContain("recordRuns(");
     expect(trecho).toContain("skipped");
   });
@@ -206,8 +226,82 @@ describe("a trava está nas TRÊS portas", () => {
   it("na rota de ordem, a trava fica DENTRO do ramo de autopilot", () => {
     const src = semComentarios(readFileSync(arquivos.ordem, "utf8"));
     const iRamo = src.indexOf("if (body.autopilot === true)");
-    const iTrava = src.indexOf("lerLiberacao(");
+    const iTrava = src.indexOf("podeAutomatizar(");
     expect(iRamo).toBeGreaterThan(-1);
     expect(iTrava).toBeGreaterThan(iRamo);
+  });
+});
+
+/**
+ * ⚠️ O FURO DELIBERADO — as carteiras piloto.
+ *
+ * O dono pediu que a carteira admin, ou uma autorizada no painel, rode a
+ * automação com ela fechada, para teste com dinheiro real. Isso é um furo na
+ * trava, e o que estes testes protegem é que ele seja EXATAMENTE do tamanho
+ * pedido: nem menor (o piloto tem que passar), nem maior (mais ninguém passa).
+ */
+describe("os pilotos — o furo é do tamanho declarado", () => {
+  const fechada: Awaited<ReturnType<typeof lerLiberacao>> =
+    { liberado: false, causa: "sem_registro", motivo: null, desde: null };
+  const aberta: Awaited<ReturnType<typeof lerLiberacao>> =
+    { liberado: true, causa: "aberto", motivo: "medida", desde: "t" };
+  const piloto = (w: string) => ({ wallet: w.toLowerCase(), nota: "teste real", at: "t" });
+
+  it("fechada: quem não é piloto continua barrado, com a causa do fechamento", () => {
+    const v = decidirAutomacao("0xqualquer", fechada, []);
+    expect(v.permitido).toBe(false);
+    expect(v.causa).toBe("sem_registro");
+  });
+
+  it("fechada: o piloto passa, e a causa NÃO vira 'aberto'", () => {
+    const v = decidirAutomacao("0xAbC", fechada, [piloto("0xabc")]);
+    expect(v.permitido).toBe(true);
+    // ⚠️ Colapsar em "aberto" faria a tela dizer ao piloto que a feature está
+    // liberada ao público. Ele precisa saber que está pilotando.
+    expect(v.causa).toBe("piloto_autorizado");
+  });
+
+  it("a comparação de carteira ignora maiúsculas dos dois lados", () => {
+    expect(decidirAutomacao("0xABC", fechada, [piloto("0xabc")]).permitido).toBe(true);
+    expect(decidirAutomacao("0xabc", fechada, [piloto("0xABC")]).permitido).toBe(true);
+  });
+
+  /** Carteira vazia não pode casar com lixo na lista. */
+  it("carteira vazia nunca passa", () => {
+    expect(decidirAutomacao("", fechada, [{ wallet: "", nota: "", at: "" }]).permitido).toBe(false);
+  });
+
+  it("aberta ao público: passa por 'aberto', sem precisar de piloto", () => {
+    const v = decidirAutomacao("0xqualquer", aberta, []);
+    expect(v.permitido).toBe(true);
+    expect(v.causa).toBe("aberto");
+  });
+
+  /**
+   * ⚠️ `platform_admins` NÃO qualifica — e a trava disso é que o módulo não
+   * consulte a tabela. Quem recebeu admin para olhar métricas não pode virar,
+   * em silêncio, autorizado a rodar o robô de dinheiro (invariante nº 14).
+   */
+  it("não consulta platform_admins para decidir quem pilota", () => {
+    const src = semComentarios(readFileSync("src/lib/autopilot/liberacao.ts", "utf8"));
+    expect(src).not.toContain("platform_admins");
+  });
+
+  it("lista de pilotos ilegível não abre nada", async () => {
+    respostaPilotos = { data: null, error: { message: "boom" } };
+    expect(await lerPilotos()).toEqual([]);
+  });
+
+  it("JSON corrompido na lista não abre nada", async () => {
+    respostaPilotos = { data: { value: "{isto não é json" }, error: null };
+    expect(await lerPilotos()).toEqual([]);
+  });
+
+  /** E o caminho FELIZ, para o teste acima não ser verde por não achar nada. */
+  it("lê a lista quando ela está lá", async () => {
+    respostaPilotos = { data: { value: JSON.stringify([{ wallet: "0xABC", nota: "n", at: "t" }]) }, error: null };
+    const lista = await lerPilotos();
+    expect(lista).toHaveLength(1);
+    expect(lista[0].wallet).toBe("0xabc");   // normalizada para minúsculas
   });
 });

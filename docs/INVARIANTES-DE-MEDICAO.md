@@ -215,6 +215,18 @@ de a uma medição.
 E a causa de estar fechado viaja junto: *"fechado por decisão"* e *"fechado
 porque não consegui ler o banco"* pedem ações diferentes.
 
+**A direção pode mudar de ROTA para ROTA, e isso não contraria a regra — é a
+regra.** O que decide é a consequência, não o costume do arquivo ao lado:
+
+- **Ordem de corretora** — dinheiro SAI da conta. Falha de leitura **bloqueia**.
+  Um trade perdido contra fundos expostos não é escolha difícil, e a rota já
+  opera sem as próprias guardas quando o banco cai.
+- **Cotação de swap** — o usuário ainda assina na carteira, revisando. Falha de
+  leitura **deixa passar**. Derrubar o produto para todo mundo por um Postgres
+  intermitente é o dano certo; o cenário oposto exige uma conjunção rara.
+
+Quando a leitura falha, isso vira **evento**, nunca silêncio (nº 7).
+
 > **Cicatriz (09/08, Fase 7.2):** `disable_cex`, `disable_swap` e
 > `maintenance_mode` existem no painel, gravam em `admin_kv`, entram no log de
 > auditoria — e **não são lidos por ninguém**. Um documento de auditoria chegou

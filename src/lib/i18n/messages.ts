@@ -767,6 +767,8 @@ const en = {
     closedBody:           "This feature is built and tested, but it stays closed until a measured strategy justifies opening it. Nothing you do here will place orders.",
     closedArmedBody:      "Your session is armed, but automation is closed on our side — no orders will be placed. Each cycle is logged as skipped with the reason.",
     armedButClosed:       "armed · closed",
+    pilotHeading:         "Pilot wallet — real money",
+    pilotBody:            "This wallet is authorized to run the automation while it stays closed to everyone else. Orders placed here use REAL funds and are part of a controlled test.",
   },
   autopilot: {
     title:               "ZION Autopilot",
@@ -2399,6 +2401,8 @@ const pt: Schema = {
     closedBody:           "Este recurso está pronto e testado, mas fica fechado até uma estratégia medida justificar abrir. Nada aqui vai enviar ordens.",
     closedArmedBody:      "Sua sessão está armada, mas a automação está fechada do nosso lado — nenhuma ordem será enviada. Cada ciclo fica registrado como pulado, com o motivo.",
     armedButClosed:       "armada · fechada",
+    pilotHeading:         "Carteira piloto — dinheiro real",
+    pilotBody:            "Esta carteira está autorizada a rodar a automação enquanto ela segue fechada para todo o resto. As ordens daqui usam fundos REAIS e fazem parte de um teste controlado.",
   },
   autopilot: {
     title:               "ZION Autopilot",
@@ -4013,6 +4017,8 @@ const es: Schema = {
     closedBody:           "Esta función está lista y probada, pero queda cerrada hasta que una estrategia medida justifique abrirla. Nada de lo que hagas aquí enviará órdenes.",
     closedArmedBody:      "Tu sesión está armada, pero la automatización está cerrada de nuestro lado — no se enviará ninguna orden. Cada ciclo queda registrado como omitido, con el motivo.",
     armedButClosed:       "armada · cerrada",
+    pilotHeading:         "Cartera piloto — dinero real",
+    pilotBody:            "Esta cartera está autorizada a ejecutar la automatización mientras sigue cerrada para todos los demás. Las órdenes de aquí usan fondos REALES y forman parte de una prueba controlada.",
   },
   autopilot: {
     title:               "ZION Autopilot",
@@ -5627,6 +5633,8 @@ const zh: Schema = {
     closedBody:           "该功能已完成并通过测试，但在有经过度量的策略足以支撑之前保持关闭。你在此处的操作不会下单。",
     closedArmedBody:      "你的会话已激活，但自动化在我们这一侧是关闭的——不会下任何订单。每个周期都会以「跳过」记录，并附上原因。",
     armedButClosed:       "已激活 · 已关闭",
+    pilotHeading:         "试点钱包 — 真实资金",
+    pilotBody:            "该钱包获授权在自动化对其他所有人关闭期间运行。此处下的订单使用真实资金，属于受控测试的一部分。",
   },
   autopilot: {
     title:               "ZION 自动驾驶",
