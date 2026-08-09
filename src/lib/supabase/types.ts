@@ -61,6 +61,13 @@ export type AutopilotSessionRow = {
   last_error:          string | null;
   /** Advisory lock (A2): the cron holds this until `now()` passes it. */
   locked_until:        string | null;
+  /**
+   * Veredito da chave no momento do armar (0021). NULL = sessão anterior à
+   * verificação — ausência de medição, NÃO "segura".
+   */
+  key_permission:        "so_negocia" | "pode_sacar" | "nao_verificavel" | null;
+  key_permission_detail: string | null;
+  key_checked_at:        string | null;
   created_at:          string;
   updated_at:          string;
 };

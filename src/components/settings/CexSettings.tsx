@@ -112,7 +112,10 @@ export default function CexSettings() {
           apiKey:    cred.apiKey,
           apiSecret: cred.apiSecret,
           passphrase: CEX_META[id].needsPassphrase ? cred.passphrase : undefined,
-          readOnly:  true,
+          // ⚠️ Aqui havia `readOnly: true` FIXO — um controle que só existia
+          // como palavra. Quem prova que a chave não saca é o servidor, ao
+          // armar o autopilot (`@/lib/cex/permissoes.ts`). Ver a nota em
+          // `@/lib/cex/types.ts`.
         },
       };
       await saveCredentials(passphrase, next);

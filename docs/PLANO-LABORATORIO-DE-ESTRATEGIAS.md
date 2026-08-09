@@ -15,7 +15,7 @@
 
 ## ⚠️ ANTES DE COMEÇAR QUALQUER FASE
 
-Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 13 regras
+Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 14 regras
 que qualquer medição deste laboratório respeita, cada uma com a cicatriz que a
 gerou.
 
@@ -1553,11 +1553,85 @@ duas linhas de lixo no topo da tabela.
 
 ---
 
-### FASE 7 — Automação por API do cliente · 🔴
+### FASE 7 — Automação por API do cliente · 🟡
 *Maior salto de receita, sem custódia.*
 
 Chave com permissão de **negociar mas não sacar**. Depende de tudo que as
 fases 2–6 produzirem — automatizar estratégia não medida é vender ruído.
+
+## Verificação de estado (09/08) — e o que ela achou
+
+Regra da casa: antes de código, auditar o setor. A auditoria achou três coisas,
+duas delas ruins.
+
+**1. O controle central da fase existia só como palavra.**
+
+`CexSettings.tsx:115` gravava `readOnly: true` **fixo**, em toda chave salva.
+Quatro problemas na mesma linha:
+
+- era **fixo em `true`** — nenhuma chave jamais saía diferente;
+- o tipo dizia *"marked trade-only by the **user**"* — o usuário não marca nada;
+- o nome era `readOnly` e o significado pretendido era *trade-only*, que são
+  **coisas diferentes** (só-leitura não negocia; trade-only negocia e não saca);
+- e o campo **nunca era lido por ninguém**. Gate nenhum.
+
+Efeito prático: um cliente que colasse uma chave com permissão **total** recebia
+zero aviso, e ela ia para o servidor do mesmo jeito.
+
+**2. A divulgação estava certa — eu conferi antes de reclamar dela.**
+
+Suspeitei que a frase de `CexSettings` (*"chaves cifradas neste navegador; os
+servidores nunca as guardam"*) contradissesse o autopilot em segundo plano, que
+guarda `creds_cipher` em `autopilot_sessions`. **Fui olhar e estava errado**: a
+tela de armar tem bloco próprio — `securityBullet1`: *"suas chaves da corretora
+serão guardadas cifradas (AES-256) no servidor"*. Escopo correto, cada frase
+falando do seu caminho.
+
+**3. A pré-condição da própria fase enfraqueceu a fase.**
+
+*"Automatizar estratégia não medida é vender ruído"* — e das quatro verdes
+validadas, **três são on-chain** (querem carteira, não chave de corretora). A
+única automatizável por API de CEX é a funding, a **+1,13%/ano**: a mais fraca
+do mapa. Isto é decisão de produto e vai para o dono, não para o código.
+
+## O que foi construído (7.1) — a trava que faltava
+
+O item 1 é defeito em código já no ar, no caminho do dinheiro. Conserto
+independe da decisão de produto:
+
+- **`src/lib/cex/permissoes.ts`** — o servidor **pergunta à corretora** se a
+  chave pode sacar, antes de guardá-la. Leitura (`lerPermissao`) separada da
+  rede (`verificarChave`) e da decisão (`decidirArmar`), para cada parte ser
+  testável sozinha.
+- **Três respostas, não duas.** `so_negocia` · `pode_sacar` · `nao_verificavel`.
+  A terceira é a que costuma virar defeito: *não conseguimos verificar* **não é**
+  *está seguro* (invariante nº 6). Campo ausente na resposta devolve
+  `nao_verificavel` — nunca `so_negocia`.
+- **Quem expõe permissão é declarado, não inferido.** Binance, Bybit, OKX e
+  KuCoin têm endpoint; as outras seis saem marcadas. Assumir *"sem endpoint =
+  sem saque"* seria **inventar segurança**.
+- **`pode_sacar` RECUSA o armar** (400 `key_can_withdraw`), com a causa em termos
+  de dinheiro e com o conserto. `nao_verificavel` passa — bloquear inviabilizaria
+  seis das dez corretoras — **com aviso explícito**, nunca em silêncio.
+- **A verificação vem ANTES do `armSession`**, e há trava de teste lendo a ordem
+  na rota: aviso depois de a credencial já estar cifrada no banco não é controle,
+  é notificação.
+- **O veredito fica quadrado no banco** — `0021_permissao_de_chave.sql` grava
+  `key_permission`, `key_permission_detail` e `key_checked_at`. Sem isso o
+  veredito viveria só no toast do momento, e daqui a um mês ninguém saberia
+  dizer se a chave que está rodando sozinha foi **provada** incapaz de sacar ou
+  apenas **não pôde ser olhada**.
+- **`readOnly` foi removido** do tipo e do cliente, com a nota do porquê no
+  lugar — e uma trava que reprova se ele voltar. O cliente não tem como provar
+  nada sobre a própria chave.
+- **Quatro estados na tela**, nos 4 idiomas: verificada (verde, única) ·
+  não verificável · nunca checada (sessão anterior à trava) · pode sacar.
+  `NULL` no banco é *ausência de medição*, e a tela mostra assim.
+
+**Pendente da 7.2, e é decisão do dono:** com três das quatro verdes sendo
+on-chain, a automação por API de CEX vende a estratégia mais fraca do mapa.
+As alternativas — automação on-chain por carteira, ou segurar a fase até haver
+uma verde de CEX que justifique — mudam o que a 7.2 constrói.
 
 ---
 
@@ -1619,7 +1693,7 @@ Traduzido em regra:
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
-| 7 · Automação por API | 🔴 |
+| 7 · Automação por API | 🟡 **7.1 entregue 09/08** — chave verificada antes de ir para o servidor; `readOnly` fixo removido. 7.2 depende de decisão do dono |
 | 8 · Cinzas restantes | 🔴 |
 | 9 · Receita | 🔴 |
 
