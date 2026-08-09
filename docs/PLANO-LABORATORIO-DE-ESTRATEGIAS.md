@@ -13,6 +13,22 @@
 
 ---
 
+## ⚠️ ANTES DE COMEÇAR QUALQUER FASE
+
+Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 13 regras
+que qualquer medição deste laboratório respeita, cada uma com a cicatriz que a
+gerou.
+
+Ele nasceu em 09/08 porque a trava de *"custo não pode ser negativo"* da Fase 4
+não foi aplicada na Fase 6, onde o mesmo defeito voltou como *"ida e volta não
+pode ganhar"* — e passou. As notas de cada fase ficam viradas para o passado;
+aquela lista é a mesma coisa virada para a frente.
+
+**A pergunta a fazer para cada item: "esta invariante tem uma versão nesta
+fase?"** A nº 2 é a nº 1 com outro nome, e foi assim que ela escapou.
+
+---
+
 ## ✅ PREMISSAS CONFIRMADAS PELO DONO (05/08)
 
 1. **Dinheiro real: NÃO agora.** *"agente apenas vai simular como se estivesse
