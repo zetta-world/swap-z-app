@@ -8,6 +8,9 @@ import { fetchDvol } from "@/lib/api/deribit-dvol";
 import {
   construirVrp, resumirVrp, vereditoVrp, janelasIndependentes, pioresJanelas,
 } from "@/lib/lab/variancia";
+import {
+  STRIKES, janelaCoberta, resumirCoberta, vereditoCoberta, type JanelaCoberta,
+} from "@/lib/lab/coberta";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -119,11 +122,55 @@ export async function POST(): Promise<NextResponse> {
   const resumo = resumirVrp(pontos);
   const veredito = vereditoVrp(resumo, JANELA_DIAS);
 
+  /**
+   * ⚠️⚠️ FASE 5.2 — E ELA É SIMULAÇÃO, NÃO MEDIÇÃO.
+   *
+   * A 5.1 acima mede o prêmio com dado real (DVOL contra realizada). Aqui a
+   * call é precificada por Black-Scholes com a implícita observada, porque não
+   * existe histórico gratuito de preço de opção. Ver a nota de `coberta.ts`
+   * para a direção de cada erro do modelo.
+   *
+   * ⚠️ O QUE É MEDIDO: o retorno do BTC nas janelas (velas reais) e quantas
+   * vezes ele passou do teto. Esse é o lado da conta que mais decide, e ele não
+   * depende de modelo nenhum.
+   *
+   * A janela é a MESMA da 5.1 — mesmos dias, mesma duração — para as duas
+   * metades da fase falarem do mesmo período.
+   */
+  const anos = JANELA_DIAS / 365;
+  const diasPreco = [...spot.porDia.keys()].sort();
+  const iPreco = new Map(diasPreco.map((d, i) => [d, i]));
+  const porStrike = new Map<number, JanelaCoberta[]>(STRIKES.map((k) => [k, []]));
+
+  for (const p of pontos) {
+    const i = iPreco.get(p.dia);
+    if (i == null) continue;
+    const diaFinal = diasPreco[i + JANELA_DIAS];
+    if (diaFinal == null) continue;
+    const s0 = spot.porDia.get(p.dia)!;
+    const sT = spot.porDia.get(diaFinal)!;
+    for (const k of STRIKES) {
+      porStrike.get(k)!.push(
+        // A implícita do dia é a vol do modelo — a mesma que a 5.1 usou.
+        janelaCoberta(p.dia, s0, sT, p.implicitaPct / 100, k, anos),
+      );
+    }
+  }
+
+  const cobertas = STRIKES
+    .map((k) => resumirCoberta(porStrike.get(k) ?? [], k))
+    .filter((r): r is NonNullable<typeof r> => r != null);
+  const vereditoCob = vereditoCoberta(cobertas);
+  const melhorCob = cobertas.length
+    ? cobertas.reduce((a, b) => (b.vantagemPct > a.vantagemPct ? b : a))
+    : null;
+
   const naoMedido = [
     "⚠️ o CUSTO DE EXECUÇÃO da opção — spread do livro, taxa e rolagem. DVOL é "
       + "índice, não livro: não existe preço de opção histórico nesta fonte",
-    "⚠️ o TETO DE ALTA da coberta: vender call trava o ganho da moeda, e isso é "
-      + "metade da operação. Fica para a 5.2, e só se esta passar",
+    "⚠️ o PRÊMIO da 5.2 é de MODELO (Black-Scholes com a implícita do dinheiro), "
+      + "não de livro. O sorriso subestima o prêmio e a cauda subestima o risco, "
+      + "para lados opostos — leia como ordem de grandeza",
     "o strike — este número é o prêmio do índice de 30 dias, não de uma call "
       + "específica; strike fora do dinheiro cobra menos e trava menos",
     "risco de custódia e de margem na corretora de opções",
@@ -132,18 +179,29 @@ export async function POST(): Promise<NextResponse> {
   if (db && runId) {
     try {
       await finishRun(db, runId, {
-        // O prêmio de variância JÁ é uma taxa anualizada (pontos de vol ao ano).
-        netAnnualizedPct: resumo?.mediaPct ?? null,
-        grossPct: resumo?.implicitaMediaPct ?? null,
+        /**
+         * ⚠️ O TITULAR É A VANTAGEM DA COBERTA CONTRA SEGURAR, na janela de 30
+         * dias — é ela a estratégia. O prêmio de variância vira contexto.
+         */
+        netPct: melhorCob?.vantagemPct ?? null,
+        // Extrapolação declarada: a vantagem de 30 dias repetida 12,17 vezes.
+        netAnnualizedPct: melhorCob == null
+          ? null : Number((melhorCob.vantagemPct * (365 / JANELA_DIAS)).toFixed(4)),
+        grossPct: melhorCob?.premioMedioPct ?? null,
         // A "amostra" é a de janelas INDEPENDENTES — ver `janelasIndependentes`.
         sampleN: resumo ? janelasIndependentes(resumo.n, JANELA_DIAS) : 0,
         effectiveN: resumo ? janelasIndependentes(resumo.n, JANELA_DIAS) : null,
         maxDrawdownPct: resumo ? Math.abs(Math.min(0, resumo.piorPct)) : null,
-        // O denominador aqui é a volatilidade REALIZADA: é contra ela que a
-        // implícita tem que ganhar para o vendedor embolsar alguma coisa.
-        benchmarkPct: resumo?.realizadaMediaPct ?? null,
-        verdict: veredito.status,
-        verdictText: veredito.verdict,
+        // ⚠️ O DENOMINADOR É SEGURAR A MOEDA — a alternativa real de quem tem
+        // BTC. Comparar contra zero mediria meia operação.
+        benchmarkPct: melhorCob?.segurarMediaPct ?? null,
+        /**
+         * ⚠️ O VEREDITO DA ESTRATÉGIA É O DA COBERTA (5.2), não o do prêmio
+         * (5.1). Prêmio positivo é condição NECESSÁRIA e não suficiente: quem
+         * decide é se travar a alta custa menos que o prêmio recebido.
+         */
+        verdict: vereditoCob.status,
+        verdictText: `${vereditoCob.verdict} ⟨prêmio de variância: ${veredito.verdict}⟩`,
         /**
          * ⚠️ AS PIORES, NÃO AS ÚLTIMAS (09/08). Isto guardava `slice(-120)` —
          * recorte por RECÊNCIA — e o painel o exibia como "as 30 piores".
@@ -165,6 +223,12 @@ export async function POST(): Promise<NextResponse> {
             rv: Math.round(p.realizadaPct * 10) / 10,
             vrp: Math.round(p.vrpPct * 10) / 10,
           })),
+          ...cobertas.map((c) => ({
+            tipo: "coberta", teto: Math.round((c.strikeFrac - 1) * 100),
+            coberta: c.cobertaMediaPct, segurar: c.segurarMediaPct,
+            vantagem: c.vantagemPct, ganhou: Math.round(c.fracaoGanhou * 100),
+            exercida: Math.round(c.fracaoExercida * 100), premio: c.premioMedioPct,
+          })),
         ],
         notMeasured: naoMedido,
       }, Date.now() - t0);
@@ -185,6 +249,10 @@ export async function POST(): Promise<NextResponse> {
     implicitaMediaPct: resumo?.implicitaMediaPct ?? null,
     realizadaMediaPct: resumo?.realizadaMediaPct ?? null,
     semFuturo, status: veredito.status,
+    cobertaStatus: vereditoCob.status,
+    cobertaMelhorTeto: melhorCob ? Math.round((melhorCob.strikeFrac - 1) * 100) : null,
+    cobertaVantagem: melhorCob?.vantagemPct ?? null,
+    cobertaGanhouPct: melhorCob ? Math.round(melhorCob.fracaoGanhou * 100) : null,
     dvolDe: dvol.primeiroDia ?? null, dvolAte: dvol.ultimoDia ?? null,
     falhas: falhas.join(" · ") || null,
     tookMs: Date.now() - t0,
@@ -203,6 +271,8 @@ export async function POST(): Promise<NextResponse> {
       dvolAte: dvol.ultimoDia ?? null,
       diasComPreco: spot.porDia.size,
     },
+    /** ⚠️ FASE 5.2 — simulação. Ver `coberta.ts`. */
+    coberta: { veredito: vereditoCob, porTeto: cobertas },
     /** As piores da série INTEIRA — é o que a tabela diz mostrar. */
     piores: pioresJanelas(pontos, 40),
     /** E as recentes, separadas e ditas, para ver o regime de agora. */
