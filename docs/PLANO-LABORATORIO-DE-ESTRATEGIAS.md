@@ -1052,12 +1052,117 @@ painéis pareciam se contradizer.
 
 ---
 
-### FASE 5 — Venda de opção coberta (C8) · 🔴
-IV de 50–80% no BTC contra 15–20% do S&P é o prêmio mais gordo e
-estruturalmente persistente deste mercado. Nunca medimos.
+### FASE 5 — Venda de opção coberta (C8) · 🟡 EM CONSTRUÇÃO (09/08)
 
-**Critério de conclusão:** prêmio capturado menos o custo da perna exercida,
-com a cauda medida — não a média.
+## ⚠️ A HIPÓTESE DO MAPA ESTÁ MAL FORMULADA, E ISSO MUDA A FASE
+
+O registro diz: *"IV do BTC roda 50-80% ao ano contra 15-20% do S&P — é o
+prêmio mais gordo e estruturalmente persistente deste mercado"*.
+
+**Isso compara o PREÇO do seguro, não o lucro de vendê-lo.** Quem vende opção
+não ganha a IV: ganha **IV menos a volatilidade que de fato aconteceu** — o
+prêmio de risco de variância. Se o BTC tem IV de 60% e realiza 55%, o vendedor
+embolsa 5 pontos. O S&P com IV 18% e realizada 13% embolsa os mesmos 5.
+
+**A gordura é proporcional. A borda pode não ser maior — só está denominada num
+número maior.** É a mesma família de "bruto × líquido" que já derrubou o funding
+e o rendimento, agora na variável mais fácil de confundir do mapa.
+
+Por isso a Fase 5 começa medindo o **prêmio de risco de variância**, não o
+prêmio nominal. Sem VRP positivo e persistente, vender opção coberta é vender
+bilhete de loteria pelo preço justo — e nenhuma escolha de strike conserta isso.
+
+## Verificação de estado (09/08)
+
+| setor | achado |
+|---|---|
+| Qualquer coisa de opções | **nada no repo.** Zero linhas sobre strike, IV, grego ou expiração |
+| Volatilidade realizada | **não existe.** Há ATR em `market-indicators.ts`, que é outra coisa — amplitude média, não desvio de retornos |
+| Candles | `data-api.binance.vision`, provado em produção |
+| IV histórica | **DVOL da Deribit** (`public/get_volatility_index_data`), candles diários `[t, o, h, l, c]`. Host novo, reachability NÃO provada |
+
+## As cinco armadilhas, escritas antes do código
+
+**1. IV alta não é lucro.** Ver acima. O titular desta fase é o VRP, e a IV
+nominal aparece ao lado como contexto, nunca como resultado.
+
+**2. ⚠️ AQUI A MEDIANA MENTE — e é a inversão de tudo que fiz até hoje.**
+Venda de opção tem mediana positiva quase sempre: na maioria dos períodos o
+prêmio entra inteiro. A média é arrastada pelas poucas altas violentas. Em todo
+o resto do laboratório eu briguei PELA mediana contra a média; aqui **a mediana
+é a estatística que engana** e o que decide é a média com a cauda ao lado.
+Reportar mediana aqui seria repetir, invertido, o erro que `stats.ts` existe
+para impedir.
+
+**3. O denominador é SEGURAR A MOEDA, não zero.** Coberta quer dizer que você
+já tem o BTC. Se ele subiu 40% e a call travou em +10%, você não ganhou prêmio:
+perdeu 30 pontos contra ter ficado quieto. Medir "prêmio arrecadado" sem o
+teto de alta é medir meia operação.
+
+**4. DVOL(D) prevê D..D+30, NÃO D−30..D.** Comparar a implícita de hoje com a
+realizada dos últimos 30 dias é confrontar previsão com passado — dá um número
+plausível e mede outra coisa. O alinhamento é PARA A FRENTE, e os últimos 30
+dias da série não têm resposta ainda: saem da conta em vez de virar zero.
+
+**5. Não temos preço de opção histórico.** DVOL é índice, não livro. Então o
+custo de execução — spread da opção, taxa, rolagem — fica **NÃO medido**, e
+qualquer payoff de call que eu simule é SIMULAÇÃO, dita como tal, não medição.
+
+## Critério de conclusão
+
+**5.1 (esta entrega):** série de VRP = DVOL(D) − realizada(D..D+30), com média,
+cauda e fração de janelas negativas. Se o VRP mediano for ≈0, a hipótese do mapa
+cai e a fase termina aí — não há prêmio a colher, e escolher strike é decorar
+uma conta que já fecha em zero.
+
+**5.2 (só se 5.1 passar):** payoff da call coberta contra SEGURAR a moeda, na
+mesma janela, com o teto de alta cobrado.
+
+## O que foi construído (5.1)
+
+| peça | onde |
+|---|---|
+| Volatilidade realizada (desvio de retornos log, anualizado) | `src/lib/lab/variancia.ts` |
+| Alinhamento PARA A FRENTE, resumo com cauda, veredito | idem · **16 testes** |
+| DVOL histórico, com status por recusa | `src/lib/api/deribit-dvol.ts` |
+| Rota | `src/app/admin/api/variancia/route.ts` |
+| Painel 🌪 | `VarianciaPanel.tsx` + guarda de amostra |
+
+### Decisões que precisaram de nota
+
+**A volatilidade realizada não existia.** Havia ATR, que é **outra grandeza** —
+amplitude média verdadeira, quanto o preço anda dentro do dia. Volatilidade é o
+desvio dos RETORNOS, que é o que a opção precifica. Usar ATR daria um número com
+a mesma unidade e significado diferente: o pior tipo de substituição.
+
+**Sem média subtraída**, por convenção de precificação: o desvio é em torno de
+zero. Subtrair a média da janela embutiria a tendência do período na medida de
+risco e deixaria a comparação contra a implícita torta — para menos, sempre.
+
+**A amostra é de janelas INDEPENDENTES, não diárias.** Janelas de 30 dias se
+sobrepõem 29/30: 300 pontos são ~10 janelas. Contar 300 seria a inflação de
+amostra da Fase 4 outra vez — lá o mesmo emissor em seis cadeias, aqui o mesmo
+mês contado trinta vezes.
+
+**Fonte recusada não é prêmio zero.** Se a Deribit não responder, a rota FALHA
+com o status; ela não devolve "prêmio inexistente". As duas leituras são opostas
+e a segunda encerraria a fase por engano.
+
+**A tabela mostra as 30 PIORES janelas, não as últimas.** Numa lista cronológica
+a cauda some, e é ela que decide se dá para segurar a posição.
+
+⚠️ **Uma correção minha durante a construção:** o teste do alinhamento afirmava
+`realizada > 100`, um limiar que inventei sem calcular. O valor real é **53,4**
+para a frente contra **1,0** para trás. A premissa estava certa e o número
+chutado — um teste que passa por limiar arbitrário não prova o alinhamento,
+prova que o número é grande. Agora ele compara os dois lados e exige uma ordem
+de grandeza.
+
+**Pendente: o dono rodar o 🌪 MEDIR O PRÊMIO DE VARIÂNCIA.**
+
+⚠️ A primeira rodada é também teste de rede: `www.deribit.com` nunca foi chamado
+por este repo, e não há segunda fonte gratuita de IV histórica. Se recusar, a
+tela diz o status — e a fase fica "não medimos", não "não há prêmio".
 
 ---
 
@@ -1134,7 +1239,7 @@ Traduzido em regra:
 | 3 · Funding janela longa | 🟢 **medida 06/08** — +1,16%/ano, cesta a +3,0%; os 5–20% não reproduzem |
 | 4 · Rendimento integrado | 🟡 **construída 06/08** — falta o dono rodar o 🏦 |
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
-| 5 · Opção coberta | 🔴 |
+| 5 · Opção coberta | 🟡 **5.1 construída 09/08** — falta o dono rodar o 🌪 |
 | 6 · DEX ↔ CEX | 🔴 |
 | 7 · Automação por API | 🔴 |
 | 8 · Cinzas restantes | 🔴 |

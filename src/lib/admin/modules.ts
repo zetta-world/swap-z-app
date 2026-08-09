@@ -18,6 +18,7 @@ export type ModuleId =
   | "funding"
   | "rendimento"
   | "combinacao"
+  | "variancia"
   | "ligas"
   | "lab"
   | "tournament"
@@ -209,6 +210,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8.6,
+  },
+  {
+    id: "variancia",
+    title: "PRÊMIO DE VARIÂNCIA",
+    subtitle: "vender volatilidade paga? implícita menos a que de fato aconteceu",
+    icon: "\u{1F32A}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.7,
   },
   {
     id: "lab",

@@ -68,6 +68,13 @@ const RANQUEIAM: Array<{ painel: string; amostra: string; porque: string }> = [
       + "DefiLlama; sem os dias, um fluxo de 20 dias parece igual a um de 400",
   },
   {
+    painel: "VarianciaPanel",
+    amostra: "DIA",
+    porque: "a tabela lista as 30 PIORES janelas por prêmio — ordenação que afirma "
+      + "mérito ao contrário — e o dia é o que permite conferir cada uma contra o "
+      + "histórico; sem ele a cauda vira uma lista de números sem procedência",
+  },
+  {
     painel: "TournamentPanel",
     amostra: "DEC",
     porque: "ranking de agentes por líquido/trade; DEC é a amostra decidida",
