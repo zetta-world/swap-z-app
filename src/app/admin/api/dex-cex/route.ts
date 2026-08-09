@@ -11,7 +11,7 @@ import { findToken } from "@/lib/tokens";
 import { median } from "@/lib/zion/stats";
 import {
   precoCex, precoDex, sentidos, melhorSentido, vereditoDexCex,
-  TAXA_CEX_PCT, PARES_EXCLUIDOS, type LinhaDexCex,
+  TAXA_CEX_PCT, PARES_EXCLUIDOS, enderecoLiFi, type LinhaDexCex,
 } from "@/lib/lab/dex-cex";
 import type { ChainId } from "@/lib/chains";
 
@@ -124,7 +124,9 @@ export async function POST(): Promise<NextResponse> {
       const entrada = BigInt(Math.round(NOTIONAL_USD)) * 10n ** BigInt(usdc.decimals);
       const compra = await fetchLiFiQuote({
         fromChainId: chainId, toChainId: chainId,
-        fromToken: usdc.address, toToken: token.address,
+        // ⚠️ `enderecoLiFi`, não `.address` — ver a nota lá. "native" é marca
+        // nossa e a LI.FI devolve 404 para ela.
+        fromToken: enderecoLiFi(usdc.address), toToken: enderecoLiFi(token.address),
         fromAmount: entrada.toString(),
         fromAddress: ENDERECO_LEITURA, slippageBps: 50,
       }, process.env.LIFI_API_KEY);
@@ -136,7 +138,7 @@ export async function POST(): Promise<NextResponse> {
       const devolve = BigInt(Math.floor(tokens * 10 ** token.decimals));
       const venda = await fetchLiFiQuote({
         fromChainId: chainId, toChainId: chainId,
-        fromToken: token.address, toToken: usdc.address,
+        fromToken: enderecoLiFi(token.address), toToken: enderecoLiFi(usdc.address),
         fromAmount: devolve.toString(),
         fromAddress: ENDERECO_LEITURA, slippageBps: 50,
       }, process.env.LIFI_API_KEY);

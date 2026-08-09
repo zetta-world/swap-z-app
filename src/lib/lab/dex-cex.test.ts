@@ -16,7 +16,8 @@
 import { describe, it, expect } from "vitest";
 import {
   precoCex, precoDex, sentidos, melhorSentido, vereditoDexCex,
-  TAXA_CEX_PCT, MIN_SIMBOLOS, PARES_EXCLUIDOS, type LinhaDexCex,
+  TAXA_CEX_PCT, MIN_SIMBOLOS, PARES_EXCLUIDOS, enderecoLiFi, LIFI_NATIVO,
+  type LinhaDexCex,
 } from "@/lib/lab/dex-cex";
 
 /** Livro com N níveis de $1.000 cada, começando em `base`. */
@@ -195,5 +196,41 @@ describe("o veredito", () => {
       linha("QUEBRADO", 400),
     ]);
     expect(v.status).toBe("morta");
+  });
+});
+
+/**
+ * ⚠️ O ATIVO NATIVO — O DEFEITO DA PRIMEIRA RODADA (09/08).
+ *
+ * `tokens.ts` guarda ETH e BNB como `address: "native"` — marca da interface,
+ * não endereço. A LI.FI devolve 404 "Could not find token" para ela e espera
+ * `0x0000…0000`.
+ *
+ * Isso derrubou QUATRO dos sete pares (ETH em três cadeias e BNB) e a medição
+ * fechou INCONCLUSIVA por não bater o piso de quatro símbolos. O piso funcionou;
+ * faltou o par chegar até ele.
+ *
+ * ⚠️ E eu já sabia: a rota do 🏦 importa `LIFI_NATIVE` e usa. Aqui escrevi
+ * `token.address` direto, num arquivo do MESMO DIA. Não foi desconhecimento —
+ * foi não reler o que eu mesmo tinha feito duas fases antes.
+ */
+describe("o ativo nativo precisa do sentinela, não da nossa marca", () => {
+  it('traduz "native" para o endereço-zero que a LI.FI espera', () => {
+    expect(enderecoLiFi("native")).toBe(LIFI_NATIVO);
+    expect(LIFI_NATIVO).toMatch(/^0x0{40}$/);
+  });
+
+  it("endereço de verdade passa intacto", () => {
+    const usdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+    expect(enderecoLiFi(usdc)).toBe(usdc);
+  });
+
+  /**
+   * A marca literal é o que a LI.FI recusa. Se alguém a passar direto de novo,
+   * o par cai com 404 e some da amostra em silêncio — que foi exatamente o que
+   * aconteceu.
+   */
+  it('nunca devolve a string "native"', () => {
+    expect(enderecoLiFi("native")).not.toBe("native");
   });
 });
