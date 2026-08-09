@@ -6,7 +6,7 @@ import { startRun, finishRun, failRun } from "@/lib/lab/store";
 import { BY_SLUG } from "@/lib/lab/registry";
 import { fetchDvol } from "@/lib/api/deribit-dvol";
 import {
-  construirVrp, resumirVrp, vereditoVrp, janelasIndependentes,
+  construirVrp, resumirVrp, vereditoVrp, janelasIndependentes, pioresJanelas,
 } from "@/lib/lab/variancia";
 
 export const runtime = "nodejs";
@@ -144,12 +144,28 @@ export async function POST(): Promise<NextResponse> {
         benchmarkPct: resumo?.realizadaMediaPct ?? null,
         verdict: veredito.status,
         verdictText: veredito.verdict,
-        perSymbol: pontos.slice(-120).map((p) => ({
-          dia: p.dia,
-          iv: Math.round(p.implicitaPct * 10) / 10,
-          rv: Math.round(p.realizadaPct * 10) / 10,
-          vrp: Math.round(p.vrpPct * 10) / 10,
-        })),
+        /**
+         * ⚠️ AS PIORES, NÃO AS ÚLTIMAS (09/08). Isto guardava `slice(-120)` —
+         * recorte por RECÊNCIA — e o painel o exibia como "as 30 piores".
+         * A pior armazenada era −10,6 enquanto a pior real era −46,1: numa fase
+         * cujo argumento é "a cauda decide", o que ficava gravado escondia
+         * exatamente a cauda. As recentes continuam, marcadas, porque servem
+         * para ver o regime de agora.
+         */
+        perSymbol: [
+          ...pioresJanelas(pontos, 40).map((p) => ({
+            tipo: "pior", dia: p.dia,
+            iv: Math.round(p.implicitaPct * 10) / 10,
+            rv: Math.round(p.realizadaPct * 10) / 10,
+            vrp: Math.round(p.vrpPct * 10) / 10,
+          })),
+          ...pontos.slice(-60).map((p) => ({
+            tipo: "recente", dia: p.dia,
+            iv: Math.round(p.implicitaPct * 10) / 10,
+            rv: Math.round(p.realizadaPct * 10) / 10,
+            vrp: Math.round(p.vrpPct * 10) / 10,
+          })),
+        ],
         notMeasured: naoMedido,
       }, Date.now() - t0);
     } catch (e) {
@@ -165,6 +181,7 @@ export async function POST(): Promise<NextResponse> {
     mediaPct: resumo?.mediaPct ?? null, medianaPct: resumo?.medianaPct ?? null,
     piorPct: resumo?.piorPct ?? null, cauda5Pct: resumo?.cauda5Pct ?? null,
     fracaoNegativa: resumo?.fracaoNegativa ?? null,
+    episodiosNegativos: resumo?.episodiosNegativos ?? null,
     implicitaMediaPct: resumo?.implicitaMediaPct ?? null,
     realizadaMediaPct: resumo?.realizadaMediaPct ?? null,
     semFuturo, status: veredito.status,
@@ -186,7 +203,10 @@ export async function POST(): Promise<NextResponse> {
       dvolAte: dvol.ultimoDia ?? null,
       diasComPreco: spot.porDia.size,
     },
-    pontos: pontos.slice(-180),
+    /** As piores da série INTEIRA — é o que a tabela diz mostrar. */
+    piores: pioresJanelas(pontos, 40),
+    /** E as recentes, separadas e ditas, para ver o regime de agora. */
+    recentes: pontos.slice(-60),
     falhas: falhas.length ? falhas : null,
     naoMedido,
     aviso: "Leitura pura. Mede o PRÊMIO de vender volatilidade (implícita menos a "
