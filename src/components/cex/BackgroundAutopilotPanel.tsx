@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CloudCog, Shield, AlertTriangle, Loader2, Power, PowerOff,
+  CloudCog, Shield, ShieldCheck, ShieldAlert, AlertTriangle, Loader2, Power, PowerOff,
   CheckCircle2, Clock, ChevronDown, ChevronUp, LogIn,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,6 +25,13 @@ interface SessionStatus {
   last_scan_at:     string | null;
   last_error:       string | null;
   frozen_until_day: string | null;
+  /**
+   * ⚠️ TRÊS VALORES + NULL, e nenhum deles colapsa no outro (Fase 7).
+   * NULL = sessão armada antes da verificação existir. Isso NÃO é "segura":
+   * é ausência de medição, e a tela mostra assim.
+   */
+  key_permission?:        "so_negocia" | "pode_sacar" | "nao_verificavel" | null;
+  key_permission_detail?: string | null;
 }
 
 interface RunRow {
@@ -65,6 +72,12 @@ export default function BackgroundAutopilotPanel({
   const [busy,     setBusy]     = useState(false);
   const [showRuns, setShowRuns] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  /**
+   * ⚠️ A RECUSA FICA NA TELA, não some com o toast (Fase 7). Uma chave que pode
+   * sacar é o único motivo pelo qual nos recusamos a guardar a credencial — e um
+   * aviso que dura 4 segundos é indistinguível de nenhum aviso.
+   */
+  const [recusa, setRecusa] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -84,6 +97,7 @@ export default function BackgroundAutopilotPanel({
 
   const arm = useCallback(async () => {
     setBusy(true);
+    setRecusa(null);
     try {
       const res = await fetch("/api/autopilot/session", {
         method: "POST",
@@ -97,14 +111,29 @@ export default function BackgroundAutopilotPanel({
           passphrase: credentials.passphrase,
         }),
       });
-      const body = await res.json() as { ok: boolean; error?: string; autoFires?: boolean };
+      const body = await res.json() as {
+        ok: boolean; error?: string; autoFires?: boolean;
+        keyPermission?: string; keyPermissionDetail?: string;
+      };
       if (res.status === 401) { setBackend("auth_required"); return; }
+      /**
+       * ⚠️ A chave que PODE SACAR não é "falha ao ativar" — é uma recusa nossa,
+       * com causa e com conserto. Cai em bloco próprio, não no erro genérico.
+       */
+      if (body.error === "key_can_withdraw") {
+        setRecusa(body.keyPermissionDetail ?? "");
+        toast.error(t("bgAutopilot.keyRefusedToast"));
+        return;
+      }
       if (!res.ok || !body.ok) { toast.error(t("bgAutopilot.activateFail", { error: body.error ?? res.status })); return; }
       toast.success(
         body.autoFires
           ? t("bgAutopilot.activatedSpot")
           : t("bgAutopilot.activatedAnalysis", { marketType }),
       );
+      // Não verificável passa — mas o usuário sai daqui sabendo que passou sem
+      // prova. O aviso persistente fica no bloco de estado armado, abaixo.
+      if (body.keyPermission === "nao_verificavel") toast.warning(t("bgAutopilot.keyUnverifiedToast"));
       await refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("bgAutopilot.networkFail"));
@@ -215,6 +244,12 @@ export default function BackgroundAutopilotPanel({
                   )}
                 </div>
 
+                <KeyPermission
+                  veredito={status.key_permission ?? null}
+                  detalhe={status.key_permission_detail ?? null}
+                  t={t}
+                />
+
                 {runs.length > 0 && (
                   <div>
                     <button
@@ -275,6 +310,24 @@ export default function BackgroundAutopilotPanel({
                   </ul>
                 </div>
 
+                {/* Recusa: a chave pode sacar. Fica na tela até armar de novo. */}
+                {recusa !== null && (
+                  <div className="rounded-md border border-red/40 bg-red/[0.07] p-2 space-y-1">
+                    <div className="font-mono text-[9px] text-red tracking-widest uppercase inline-flex items-center gap-1">
+                      <ShieldAlert className="w-3 h-3" /> {t("bgAutopilot.keyRefusedHeading")}
+                    </div>
+                    <p className="font-mono text-[9px] text-ink-3 leading-relaxed">
+                      {t("bgAutopilot.keyRefusedBody")}
+                    </p>
+                    <p className="font-mono text-[9px] text-ink-2 leading-relaxed">
+                      {t("bgAutopilot.keyRefusedFix")}
+                    </p>
+                    {recusa && (
+                      <p className="font-mono text-[8px] text-ink-4 break-words">{recusa}</p>
+                    )}
+                  </div>
+                )}
+
                 {backend === "auth_required" ? (
                   <button
                     type="button"
@@ -309,6 +362,47 @@ export default function BackgroundAutopilotPanel({
         )}
       </AnimatePresence>
       {confirmModal}
+    </div>
+  );
+}
+
+/**
+ * ⚠️ O VEREDITO DA CHAVE NA TELA — quatro estados, nenhum silencioso.
+ *
+ * `so_negocia` é o único verde, e é verde porque a corretora PROVOU. Os outros
+ * três (não verificável, nunca verificada, pode sacar) saem em âmbar/vermelho:
+ * a diferença entre "provamos que não saca" e "não conseguimos olhar" é a
+ * própria razão deste bloco existir. Ver invariante nº 6.
+ */
+function KeyPermission({ veredito, detalhe, t }: {
+  veredito: "so_negocia" | "pode_sacar" | "nao_verificavel" | null;
+  detalhe:  string | null;
+  t: ReturnType<typeof useT>;
+}) {
+  const provada = veredito === "so_negocia";
+  const nunca   = veredito == null;
+  return (
+    <div className={cn(
+      "rounded-md border p-2 space-y-0.5",
+      provada ? "border-green/25 bg-green/[0.04]" : "border-gold/30 bg-gold/[0.05]",
+    )}>
+      <div className={cn(
+        "font-mono text-[9px] tracking-widest uppercase inline-flex items-center gap-1",
+        provada ? "text-green" : "text-gold",
+      )}>
+        {provada ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
+        {provada     ? t("bgAutopilot.keyProven")
+          : nunca    ? t("bgAutopilot.keyNeverChecked")
+          : veredito === "pode_sacar" ? t("bgAutopilot.keyCanWithdraw")
+          : t("bgAutopilot.keyUnverified")}
+      </div>
+      <p className="font-mono text-[9px] text-ink-3 leading-relaxed">
+        {provada     ? t("bgAutopilot.keyProvenBody")
+          : nunca    ? t("bgAutopilot.keyNeverCheckedBody")
+          : veredito === "pode_sacar" ? t("bgAutopilot.keyCanWithdrawBody")
+          : t("bgAutopilot.keyUnverifiedBody")}
+      </p>
+      {detalhe && <p className="font-mono text-[8px] text-ink-4 break-words">{detalhe}</p>}
     </div>
   );
 }

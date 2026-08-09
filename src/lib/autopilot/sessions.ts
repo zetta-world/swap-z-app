@@ -28,6 +28,13 @@ export interface ArmSessionInput {
   credentials:       CexCredentials;
   /** How long the session may run unattended before auto-expiring (hours). */
   ttlHours:          number;
+  /**
+   * ⚠️ O VEREDITO DA CHAVE, obrigatório (Fase 7). Não é opcional de propósito:
+   * opcional viraria "quem esqueceu de passar grava NULL", e NULL aqui significa
+   * "nunca verificada". Quem chama tem que ter perguntado à corretora antes.
+   */
+  keyPermission:       "so_negocia" | "pode_sacar" | "nao_verificavel";
+  keyPermissionDetail: string;
 }
 
 /**
@@ -60,6 +67,9 @@ export async function armSession(input: ArmSessionInput): Promise<string | null>
       allowed_symbols:     input.allowedSymbols,
       lang:                input.lang,
       creds_cipher:        credsCipher,
+      key_permission:        input.keyPermission,
+      key_permission_detail: input.keyPermissionDetail.slice(0, 300),
+      key_checked_at:        new Date().toISOString(),
       is_active:           true,
       expires_at:          expiresAt,
       // Reset counters on (re-)arm so a fresh session starts clean.

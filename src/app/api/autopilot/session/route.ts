@@ -8,6 +8,7 @@ import {
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { SUPPORTED_CEX_IDS, type CexId } from "@/lib/cex/types";
 import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
+import { verificarChave, decidirArmar } from "@/lib/cex/permissoes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,6 +96,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_api_secret" }, { status: 400 });
   }
 
+  /**
+   * ⚠️ PERGUNTAR À CORRETORA ANTES DE GUARDAR A CHAVE (Fase 7, 09/08).
+   *
+   * Armar significa guardar a credencial CIFRADA NO SERVIDOR para negociar com
+   * o navegador fechado. Isso só é aceitável com a chave incapaz de sacar — e
+   * até aqui esse controle era `readOnly: true` fixo no cliente, num campo que
+   * ninguém lia. Agora o servidor pergunta, e:
+   *
+   *   · `pode_sacar`     → RECUSA. Não guardamos.
+   *   · `nao_verificavel`→ guarda COM AVISO explícito na resposta.
+   *   · `so_negocia`     → segue limpo.
+   *
+   * VEM ANTES do `armSession` de propósito: um aviso depois de a credencial já
+   * estar gravada no banco não é um controle, é uma notificação.
+   */
+  const credentials = {
+    apiKey:     body.apiKey,
+    apiSecret:  body.apiSecret,
+    passphrase: body.passphrase,
+  };
+  const permissao = await verificarChave(exchangeId, credentials);
+  const decisao = decidirArmar(permissao);
+  if (!decisao.permitido) {
+    return NextResponse.json(
+      {
+        ok: false, error: "key_can_withdraw",
+        // `detail` é o texto do servidor (log/consumidor não-UI). A UI usa o
+        // ENUM + `keyPermissionDetail` e escreve a prosa nos 4 idiomas — prosa
+        // do servidor na tela seria português fixo para um app em quatro.
+        detail: decisao.motivo,
+        keyPermission:       permissao.veredito,
+        keyPermissionDetail: permissao.detalhe,
+      },
+      { status: 400 },
+    );
+  }
+
   try {
     const id = await armSession({
       walletAddress:    session.sub,
@@ -107,17 +145,20 @@ export async function POST(req: NextRequest) {
       allowedSymbols,
       lang,
       ttlHours,
-      credentials: {
-        apiKey:     body.apiKey,
-        apiSecret:  body.apiSecret,
-        passphrase: body.passphrase,
-      },
+      credentials,
+      keyPermission:       permissao.veredito,
+      keyPermissionDetail: permissao.detalhe,
     });
     return NextResponse.json({
       ok: true, id, exchangeId, marketType, riskMode,
       expiresInHours: ttlHours,
       // Honesty surface for the client: only spot auto-fires in background.
       autoFires: marketType === "spot",
+      // O veredito viaja junto — e `keyWarning` é null quando a chave foi
+      // PROVADA incapaz de sacar. Silêncio aqui é "verificado", não "não olhei".
+      keyPermission:       permissao.veredito,
+      keyPermissionDetail: permissao.detalhe,
+      keyWarning:          decisao.aviso,
     });
   } catch (e) {
     return NextResponse.json(

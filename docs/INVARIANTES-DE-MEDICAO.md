@@ -166,6 +166,25 @@ possível).
 **Como travar:** escreva a hipótese ANTES, deixe-a ao lado do resultado mesmo
 quando ela cai, e construa os testes contra a conclusão que te favorece.
 
+## 14. Controle que ninguém lê não é controle
+
+Um campo que declara uma garantia — "esta chave não saca", "este dado foi
+validado", "este limite foi checado" — só é controle se **alguém o lê e alguma
+coisa muda por causa dele**. Se nada muda, é comentário com sintaxe de código, e
+envelhece como comentário: fica na tela e no tipo depois de deixar de ser
+verdade.
+
+**Como travar:** quem declara a garantia tem que ser quem consegue **prová-la**.
+O cliente não prova nada sobre a própria chave — quem prova é a corretora,
+perguntada pelo servidor. E a prova tem que **gravar**, senão não é auditável.
+
+> **Cicatriz (09/08, Fase 7):** `readOnly: true` **fixo** em toda chave salva; o
+> tipo dizia *"marked by the user"* e o usuário não marcava nada; o nome dizia
+> `readOnly` e o significado era *trade-only* — coisas diferentes; e o campo
+> **nunca era lido por ninguém**. Quatro problemas numa linha, protegendo o
+> caminho em que a credencial do cliente vai cifrada para o nosso servidor.
+> Quem colasse uma chave com permissão total não recebia aviso nenhum.
+
 ---
 
 ## Como usar
