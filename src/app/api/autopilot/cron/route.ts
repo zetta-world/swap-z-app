@@ -14,6 +14,7 @@ import { checkRealNotional } from "@/lib/autopilot/price-guard";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { runAlertWatchdog } from "@/lib/admin/watchdog";
+import { lerLiberacao } from "@/lib/autopilot/liberacao";
 import {
   getOpenServerPositions, recordServerEntry, markServerExitArmed,
   closeServerPosition, reopenServerPosition, applySessionPnl,
@@ -141,6 +142,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   await setCronHeartbeat("autopilot");
+
+  /**
+   * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2) — este worker era o ÚNICO caminho de
+   * dinheiro sem kill-switch. Dezessete mesas internas, que gastam só o nosso
+   * token, tinham gate cada uma; a automação que compra na corretora do
+   * cliente não tinha nenhum.
+   *
+   * ⚠️ FECHADO NÃO PODE SER SILENCIOSO (invariante nº 7). O heartbeat já foi
+   * batido acima — de propósito, senão o watchdog acusaria "cron parado" e a
+   * causa real ficaria escondida atrás de um alarme errado. E cada sessão
+   * armada ganha uma linha em `autopilot_runs` com o motivo, senão o cliente
+   * veria "ativo" na tela e nada acontecendo, sem explicação nenhuma.
+   */
+  const liberacao = await lerLiberacao();
+  if (!liberacao.liberado) {
+    let armadas: AutopilotSessionRow[] = [];
+    try { armadas = await listRunnableSessions(); } catch { /* o registro é best-effort */ }
+    await recordRuns(armadas.map((s) => ({
+      session_id:     s.id,
+      wallet_address: s.wallet_address,
+      exchange_id:    s.exchange_id,
+      status:         "skipped",
+      reason:         `automação de CEX fechada (${liberacao.causa})`,
+    })));
+    /**
+     * ⚠️ O WATCHDOG DA PLATAFORMA RODA SÓ DAQUI. Grep de `runAlertWatchdog`:
+     * uma chamada, neste arquivo. Um `return` cedo sem esta linha desligaria
+     * TODO o alerta — pico de erro, cron parado, orçamento de IA, saúde de
+     * dependência, digest diário — como efeito colateral de fechar a automação
+     * de CEX. Duas coisas sem relação nenhuma, acopladas por um early return.
+     */
+    await runAlertWatchdog();
+    return NextResponse.json({
+      ok: true, processed: 0, closed: true, causa: liberacao.causa,
+      summary: [],
+    });
+  }
 
   let sessions: AutopilotSessionRow[];
   try {

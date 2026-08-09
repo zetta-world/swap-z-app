@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { placeCexOrder } from "@/lib/cex/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
+import { lerLiberacao } from "@/lib/autopilot/liberacao";
 import { logSecurity, logError } from "@/lib/admin/track";
 import { recordEvent } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
@@ -154,6 +155,26 @@ export async function POST(req: NextRequest) {
   // price and reject oversized buys (and any order over the hard ceiling).
   // Manual orders skip this — the user is present and accepted the trade.
   if (body.autopilot === true) {
+    /**
+     * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2), no canal do NAVEGADOR.
+     *
+     * Gatear só o cron deixaria a metade errada aberta: o piloto do navegador
+     * (`AutopilotPilot`) dispara sozinho por esta rota quando a contagem
+     * regressiva zera. "Fechado" com um dos dois canais operando seria meia
+     * verdade — o defeito que a Fase 6 chamou de "mesmo defeito com outro nome".
+     *
+     * ⚠️ E ISTO NÃO É CONTROLE DE SEGURANÇA, é controle de PRODUTO: a flag
+     * `autopilot` vem do cliente, então quem quiser pode chamar esta rota sem
+     * ela. Não tem problema, e a distinção é deliberada — ordem MANUAL segue
+     * aberta de propósito. O que a trava fecha é a automação, não o negociar.
+     */
+    const liberacao = await lerLiberacao();
+    if (!liberacao.liberado) {
+      return NextResponse.json(
+        { ok: false, error: "automation_closed", causa: liberacao.causa },
+        { status: 403 },
+      );
+    }
     const base = body.symbol.split(/[\/\-]/)[0];
     const refPrice = await getReferencePriceUsd(base);
     const cap = typeof body.maxNotionalUsd === "number" && body.maxNotionalUsd > 0

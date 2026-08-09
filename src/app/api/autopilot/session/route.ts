@@ -9,6 +9,7 @@ import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { SUPPORTED_CEX_IDS, type CexId } from "@/lib/cex/types";
 import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
 import { verificarChave, decidirArmar } from "@/lib/cex/permissoes";
+import { lerLiberacao } from "@/lib/autopilot/liberacao";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,6 +65,22 @@ export async function POST(req: NextRequest) {
   // seria transformar um problema de cobrança em risco de dinheiro do usuário.
   const gate = await checkFeatureTier("cexAutopilot");
   if (gate) return denialResponse(gate);
+
+  /**
+   * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2). A automação fica FECHADA até uma
+   * estratégia medida justificar abri-la — decisão do dono, registrada em
+   * `admin_kv` com a justificativa escrita.
+   *
+   * VEM ANTES DE LER O CORPO de propósito: fechado significa que a credencial
+   * do cliente nem chega a ser tocada por esta rota.
+   */
+  const liberacao = await lerLiberacao();
+  if (!liberacao.liberado) {
+    return NextResponse.json(
+      { ok: false, error: "automation_closed", causa: liberacao.causa },
+      { status: 403 },
+    );
+  }
 
   let body: ArmBody;
   try { body = await req.json() as ArmBody; }
@@ -197,11 +214,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_exchange" }, { status: 400 });
   }
 
-  const [status, runs] = await Promise.all([
+  const [status, runs, liberacao] = await Promise.all([
     getSessionStatus(session.sub, exchangeId),
     listRecentRuns(session.sub, 30),
+    lerLiberacao(),
   ]);
-  return NextResponse.json({ ok: true, status, runs });
+  /**
+   * ⚠️ O estado da trava vai no GET, não só no POST. Descobrir que a automação
+   * está fechada só depois de apertar "ativar" seria esconder a informação
+   * atrás de um erro — e uma sessão JÁ ARMADA de antes precisa dizer na tela
+   * que não vai disparar, senão o cliente lê "ativo" e espera trades.
+   */
+  return NextResponse.json({
+    ok: true, status, runs,
+    automationClosed: !liberacao.liberado,
+    automationCausa:  liberacao.causa,
+  });
 }
 
 function clampNum(v: unknown, min: number, max: number, fallback: number): number {

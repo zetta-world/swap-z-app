@@ -7,6 +7,7 @@ export type ModuleId =
   | "wallets-kpi"
   | "tier-dist"
   | "autopilot-activity"
+  | "autopilot-liberacao"
   | "live-ops"
   | "ops-ledger"
   | "finance"
@@ -130,6 +131,18 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "operacao",
     defaultEnabled: true,
     defaultOrder: 2,
+  },
+  {
+    id: "autopilot-liberacao",
+    title: "LIBERAÇÃO DA AUTOMAÇÃO",
+    subtitle: "autopilot de CEX · aberto ao público?",
+    icon: "🔒",
+    category: "operacao",
+    defaultEnabled: true,
+    // Logo depois do AUTOPILOT de propósito: quem olha a atividade tem que ver,
+    // na linha seguinte, se o canal está aberto — senão "zero runs" fica
+    // ambíguo entre "ninguém armou" e "está fechado".
+    defaultOrder: 2.1,
   },
   {
     id: "live-ops",

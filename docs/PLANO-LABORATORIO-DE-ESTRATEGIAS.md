@@ -15,7 +15,7 @@
 
 ## ⚠️ ANTES DE COMEÇAR QUALQUER FASE
 
-Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 14 regras
+Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 16 regras
 que qualquer medição deste laboratório respeita, cada uma com a cicatriz que a
 gerou.
 
@@ -1553,7 +1553,7 @@ duas linhas de lixo no topo da tabela.
 
 ---
 
-### FASE 7 — Automação por API do cliente · 🟡
+### FASE 7 — Automação por API do cliente · 🟢 pronta, FECHADA ao público
 *Maior salto de receita, sem custódia.*
 
 Chave com permissão de **negociar mas não sacar**. Depende de tudo que as
@@ -1628,10 +1628,78 @@ independe da decisão de produto:
   não verificável · nunca checada (sessão anterior à trava) · pode sacar.
   `NULL` no banco é *ausência de medição*, e a tela mostra assim.
 
-**Pendente da 7.2, e é decisão do dono:** com três das quatro verdes sendo
-on-chain, a automação por API de CEX vende a estratégia mais fraca do mapa.
-As alternativas — automação on-chain por carteira, ou segurar a fase até haver
-uma verde de CEX que justifique — mudam o que a 7.2 constrói.
+## 7.2 — a decisão do dono, e a trava que ela exigia (09/08)
+
+O dono: *"podemos deixar a fase pronta, porém só vamos liberar ao público
+quando tiver algo que realmente seja justificável"*.
+
+**A verificação de estado achou que a trava não existia.** Dois achados:
+
+**1. O worker que gasta o dinheiro REAL DO CLIENTE era o único caminho de
+dinheiro sem kill-switch.** Dezessete mesas internas — que gastam só o nosso
+token — tinham gate cada uma. `/api/autopilot/cron`, que compra na corretora do
+cliente com o navegador fechado, não tinha nenhum. Grep de `pause` no arquivo:
+**zero**.
+
+**2. Pior: três interruptores que não controlam nada.** `disable_cex`,
+`disable_swap` e `maintenance_mode` existem no painel, são clicáveis, gravam em
+`admin_kv`, entram no log de auditoria — e **não são lidos por ninguém**. Um
+documento nosso de auditoria chegou a reportar *"✅ plataforma aberta"* lendo um
+interruptor que não controla coisa nenhuma. É a invariante nº 14 outra vez, e
+mais cara: aqui o operador vê a chave virar e **acredita que desligou**.
+
+### O que foi construído
+
+- **`src/lib/autopilot/liberacao.ts`** — a trava, com o default INVERTIDO em
+  relação aos gates do flywheel. Lá, ausência = rodando (certo para mesa
+  interna). Aqui, ausência = **fechado**: ausência de decisão não é autorização
+  (invariante nº 16). Linha ausente, tabela ausente, banco fora do ar — tudo
+  fecha, e a **causa** viaja junto, porque *"fechado por decisão"* e *"fechado
+  porque não li o banco"* pedem ações diferentes.
+- **As três portas, não duas.** A automação sai por *armar sessão de fundo*,
+  *cron* e *rota de ordem usada pelo piloto do NAVEGADOR*. Fechar duas seria
+  "fechado" pela metade — a forma exata do defeito que a Fase 6 apanhou como *o
+  mesmo defeito com outro nome*. Há trava de teste nas três.
+- **Fechado não é silencioso** (invariante nº 7): o cron grava uma linha
+  `skipped` com o motivo em cada sessão armada, o GET informa o estado antes de
+  o usuário apertar qualquer coisa, e a tela do cliente diz *"armada · fechada"*
+  em âmbar — nunca "ATIVO" em verde sobre uma automação que não vai disparar.
+- **Ordem MANUAL segue aberta de propósito.** A trava fecha a automação, não o
+  negociar. E isso é controle de PRODUTO, não de segurança: a flag `autopilot`
+  vem do cliente.
+- **Abrir custa justificativa escrita** (mínimo 15 caracteres, o mesmo piso de
+  `lab_capital_log.reason`); **fechar não custa nada**. A assimetria é
+  deliberada: atrito na direção segura seria atrito no lugar errado,
+  exatamente quando se quer desligar rápido.
+- **Painel `🔒 LIBERAÇÃO DA AUTOMAÇÃO`**, logo abaixo do AUTOPILOT, com as
+  **verdes do laboratório ao lado do interruptor** — um botão sozinho depende da
+  memória de quem aperta. Com a ressalva na tela de que `lab_strategies.family`
+  é carrego/direcional/estrutura e **não** distingue corretora de on-chain:
+  inventar essa classificação por adivinhação de nome seria pior que mostrar
+  tudo e dizer a ressalva.
+
+### ⚠️ Um defeito que quase enviei, e virou invariante nº 15
+
+`runAlertWatchdog()` é chamado de **um lugar só em todo o código**: o fim deste
+cron. O `return` cedo da automação fechada, escrito sem cuidado, teria desligado
+**todo o alerta da plataforma** — pico de erro, cron parado, orçamento de IA,
+saúde de dependência, digest diário — como efeito colateral de fechar uma
+feature de CEX. O sintoma seria a ausência de alarmes, que é indistinguível de
+"está tudo bem". Tem teste, conferido por mutação.
+
+### Estado atual, e o que falta
+
+A automação está **fechada por ausência de registro** — que é exatamente o
+pedido: pronta, não liberada. Abrir é um botão no painel, com justificativa.
+
+**Ainda em aberto (7.3):** `disable_swap` e `maintenance_mode` continuam sendo
+interruptores que não controlam nada. Não os liguei junto porque o que cada um
+deve bloquear é decisão de produto — `maintenance_mode` derruba o site inteiro?
+só o swap? — e escolher isso sozinho seria inventar o requisito. `disable_cex`
+ficou coberto na prática pela trava desta fase no caminho de automação.
+
+**E a pergunta de produto segue de pé:** três das quatro verdes são on-chain.
+Quando a automação for aberta, ela alcança hoje só a funding, a +1,13%/ano.
 
 ---
 
@@ -1693,7 +1761,7 @@ Traduzido em regra:
 | 4.5 · Combinar as verdes | 🔴 **hipótese refutada 08/08** — ρ=0 e ainda assim concentrar ganha |
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
-| 7 · Automação por API | 🟡 **7.1 entregue 09/08** — chave verificada antes de ir para o servidor; `readOnly` fixo removido. 7.2 depende de decisão do dono |
+| 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava de liberação nas 3 portas. Abre por botão, com justificativa |
 | 8 · Cinzas restantes | 🔴 |
 | 9 · Receita | 🔴 |
 

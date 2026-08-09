@@ -68,7 +68,15 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   // source of truth (browser fires are published to it below) — so we use it
   // directly instead of local+server, avoiding any double count. With no
   // session, the local counter is authoritative.
-  const [serverDaily, setServerDaily] = useState<{ trades: number; frozenToday: boolean; hasSession: boolean }>({ trades: 0, frozenToday: false, hasSession: false });
+  /**
+   * ⚠️ `automationClosed` (Fase 7.2): a automação de CEX pode estar FECHADA no
+   * servidor — o recurso existe e ainda não foi liberado ao público. Sem ler
+   * isto aqui, a contagem regressiva rodaria até o fim para só então tomar 403
+   * na hora de disparar, e o usuário veria um código de erro no lugar de um
+   * motivo. Default `false` porque quem NÃO está autenticado não recebe a
+   * resposta — nesse caminho quem barra é o servidor, na rota da ordem.
+   */
+  const [serverDaily, setServerDaily] = useState<{ trades: number; frozenToday: boolean; hasSession: boolean; automationClosed: boolean }>({ trades: 0, frozenToday: false, hasSession: false, automationClosed: false });
   const refreshServerDaily = useRef<() => void>(() => {});
   useEffect(() => {
     let cancelled = false;
@@ -78,7 +86,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     };
     const load = async () => {
       if (!enabled || a.allowedExchanges.length === 0) {
-        if (!cancelled) setServerDaily({ trades: 0, frozenToday: false, hasSession: false });
+        if (!cancelled) setServerDaily({ trades: 0, frozenToday: false, hasSession: false, automationClosed: false });
         return;
       }
       try {
@@ -87,17 +95,22 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
           const res = await fetch(`/api/autopilot/session?exchangeId=${ex}`);
           if (!res.ok) return null;
           const body = await res.json().catch(() => null) as
-            { status?: { trades_today?: number; frozen_until_day?: string | null } | null } | null;
-          return body?.status ?? null;
+            { status?: { trades_today?: number; frozen_until_day?: string | null } | null;
+              automationClosed?: boolean } | null;
+          return { st: body?.status ?? null, fechada: body?.automationClosed === true };
         }));
         let trades = 0, frozenToday = false, hasSession = false;
-        for (const st of rows) {
+        // Uma corretora que responda "fechada" fecha o piloto inteiro: a trava
+        // é da plataforma, não por corretora.
+        const automationClosed = rows.some((r) => r?.fechada === true);
+        for (const row of rows) {
+          const st = row?.st;
           if (!st) continue;
           hasSession = true;
           if (typeof st.trades_today === "number") trades += st.trades_today;
           if (st.frozen_until_day === today) frozenToday = true;
         }
-        if (!cancelled) setServerDaily({ trades, frozenToday, hasSession });
+        if (!cancelled) setServerDaily({ trades, frozenToday, hasSession, automationClosed });
       } catch { /* network/auth issue → fall back to local-only caps */ }
     };
     refreshServerDaily.current = load;
@@ -130,6 +143,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
   // Pick the next card to act on whenever the deck changes.
   const nextCandidate = useMemo(() => {
     if (!enabled || a.frozenUntilDay || serverDaily.frozenToday) return null;
+    if (serverDaily.automationClosed) return null;   // automação fechada (Fase 7.2)
     // The daily cap counts LEGS not cards — a cross-CEX card costs 2
     // toward the cap. It's a COMBINED budget: local browser trades + the
     // background session's server-side trades_today (A1).
@@ -164,7 +178,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, enabled, a.frozenUntilDay, serverDaily.frozenToday, serverDaily.trades, serverDaily.hasSession, a.tradesToday, a.maxTradesPerDay, a.maxTradeUsd, a.maxOpenExposureUsd, openExposureUsd, a.allowedSymbols, a.allowedExchanges, vault.creds]);
+  }, [cards, enabled, a.frozenUntilDay, serverDaily.frozenToday, serverDaily.automationClosed, serverDaily.trades, serverDaily.hasSession, a.tradesToday, a.maxTradesPerDay, a.maxTradeUsd, a.maxOpenExposureUsd, openExposureUsd, a.allowedSymbols, a.allowedExchanges, vault.creds]);
 
   // Bring the next candidate into the active slot when we're idle.
   useEffect(() => {
@@ -256,6 +270,7 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     const fresh = useAutopilot.getState();
     if (!fresh.enabled)                                          return rejectAll("autopilot turned off during countdown");
     if (fresh.frozenUntilDay || serverDaily.frozenToday)         return rejectAll("autopilot frozen (daily stop)");
+    if (serverDaily.automationClosed)                            return rejectAll("CEX automation is closed — the feature is built but not released yet");
     const usedTradesFire = serverDaily.hasSession ? serverDaily.trades : fresh.tradesToday;
     if (usedTradesFire + intents.length > fresh.maxTradesPerDay)
                                                                  return rejectAll("daily trade cap would be exceeded (combined with background session)");
