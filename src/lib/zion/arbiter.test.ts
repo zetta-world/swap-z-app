@@ -159,3 +159,58 @@ describe("a janela entre o piso que paga e o teto do que é crível", () => {
     expect(spreadWindow(0.45, 0.15, 0.3).floorPct).toBeCloseTo(0.6, 6);
   });
 });
+
+/**
+ * O RASTRO DA ANOMALIA — "cotação podre" e "spread que pagaria" não são a
+ * mesma coisa.
+ *
+ * ⚠️ POR QUE ISTO VIROU TESTE (09/08).
+ *
+ * O dono mandou ler todas as medições. No feed havia 71 `arb_data_anomaly` em
+ * 12 horas, e nenhum respondia a pergunta que importa.
+ *
+ * O teto de credibilidade é `ARB_MAX_GROSS_PCT` (0,30%); o piso de custo é
+ * `COST + MIN_NET` (0,60%). As anomalias reais estavam entre 0,56% e 0,97% —
+ * ou seja, várias delas ACIMA DOS DOIS. Um spread de 0,69% pagaria o custo se
+ * fosse real, e estava sendo descartado por incredulidade, não por
+ * inviabilidade.
+ *
+ * As duas leituras pedem ações OPOSTAS: cotação podre se resolve tirando a
+ * venue; spread acima do piso pede ir ler o livro. Na tela as duas eram o mesmo
+ * ponto amarelo — a família de sempre, dois estados com uma aparência.
+ */
+describe("a janela diz o que rejeita cada anomalia", () => {
+  it("teto e piso são grandezas DIFERENTES, e a anomalia mora entre eles", () => {
+    const j = spreadWindow(0.45, 0.15, 0.3);
+    expect(j.ceilPct).toBe(0.3);
+    expect(j.floorPct).toBeCloseTo(0.6, 10);
+    // Com o piso acima do teto, nenhum spread é ao mesmo tempo crível e
+    // lucrativo — é a janela vazia que a mesa anuncia.
+    expect(j.empty).toBe(true);
+  });
+
+  /**
+   * Os dois casos reais medidos em 09/08, com os números que apareceram:
+   * JUP a 0,69% (acima do piso) e uma hipotética a 0,45% (entre teto e piso).
+   */
+  it("0,69% pagaria se fosse real; 0,45% não pagaria nem se fosse", () => {
+    const j = spreadWindow(0.45, 0.15, 0.3);
+    expect(0.69 > j.ceilPct, "as duas passam do teto").toBe(true);
+    expect(0.45 > j.ceilPct).toBe(true);
+    // E é o PISO que as separa.
+    expect(0.69 > j.floorPct).toBe(true);
+    expect(0.45 > j.floorPct).toBe(false);
+  });
+
+  /**
+   * A trava contra o número redigitado: se alguém mudar o custo por env e
+   * deixar um 0.6 escrito à mão em qualquer lugar, o veredito envelhece com
+   * cara de atual. É a mesma regra do cabeçalho da coorte.
+   */
+  it("o piso é DERIVADO do custo, não uma constante ao lado dele", () => {
+    expect(spreadWindow(0.80, 0.15, 0.3).floorPct).toBeCloseTo(0.95, 10);
+    expect(spreadWindow(0.10, 0.05, 0.3).floorPct).toBeCloseTo(0.15, 10);
+    // Custo baixo o bastante reabre a janela — e ela deixa de ser vazia.
+    expect(spreadWindow(0.10, 0.05, 0.3).empty).toBe(false);
+  });
+});
