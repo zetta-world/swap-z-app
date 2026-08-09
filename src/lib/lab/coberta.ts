@@ -129,6 +129,11 @@ export interface ResumoCoberta {
   premioMedioPct: number;
   piorCobertaPct: number;
   piorSegurarPct: number;
+  /**
+   * ⚠️ O RETORNO DE SEGURAR, ANUALIZADO — o que revela o regime da janela e
+   * torna o resultado legível. Ver `regimeDaJanela`.
+   */
+  segurarAnualPct: number;
 }
 
 function media(xs: number[]): number { return xs.reduce((s, x) => s + x, 0) / xs.length; }
@@ -138,7 +143,9 @@ function mediana(xs: number[]): number {
   return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
 }
 
-export function resumirCoberta(js: JanelaCoberta[], strikeFrac: number): ResumoCoberta | null {
+export function resumirCoberta(
+  js: JanelaCoberta[], strikeFrac: number, janelaDias = 30,
+): ResumoCoberta | null {
   if (js.length === 0) return null;
   const cob = js.map((j) => j.cobertaPct);
   const seg = js.map((j) => j.segurarPct);
@@ -155,8 +162,47 @@ export function resumirCoberta(js: JanelaCoberta[], strikeFrac: number): ResumoC
     premioMedioPct: Number(media(js.map((j) => j.premioPct)).toFixed(4)),
     piorCobertaPct: Math.min(...cob),
     piorSegurarPct: Math.min(...seg),
+    // Extrapolação declarada: o retorno da janela repetido 365/janelaDias vezes.
+    segurarAnualPct: Number((media(seg) * (365 / janelaDias)).toFixed(4)),
   };
 }
+
+/**
+ * ⚠️⚠️ O REGIME DA JANELA — a ressalva que faltava na tela (09/08).
+ *
+ * A rodada de 09/08 deu vantagem POSITIVA nos quatro tetos, e o motivo não está
+ * na estratégia: **SEGURAR rendeu +0,86% por janela de 30 dias**, ~10,5% ao
+ * ano. Em 2,5 anos o BTC andou quase de lado.
+ *
+ * Coberta ganha de segurar POR CONSTRUÇÃO em mercado lateral: o teto quase não
+ * morde e o prêmio entra inteiro. Num ciclo de alta forte a mesma conta inverte
+ * — o teto passa a morder na maioria das janelas e o prêmio não cobre o que
+ * ficou para trás.
+ *
+ * Sem isto na tela, `+0,62` é lido como constante da estratégia quando é
+ * condicional ao mercado que a janela pegou. É a mesma família da janela curta
+ * do funding: o número está certo e a leitura, não.
+ *
+ * ⚠️ OS LIMIARES SÃO PALPITE DECLARADO, como o de 35% de períodos negativos do
+ * funding. 15% ao ano separa "andou de lado" de "subiu"; abaixo de zero é
+ * queda. Não medi essas fronteiras — declarei.
+ */
+export type RegimeJanela = "queda" | "lateral" | "alta";
+
+export function regimeDaJanela(segurarAnualPct: number): RegimeJanela {
+  if (segurarAnualPct < 0) return "queda";
+  return segurarAnualPct < 15 ? "lateral" : "alta";
+}
+
+export const REGIME_TEXTO: Record<RegimeJanela, string> = {
+  queda: "mercado em QUEDA — a coberta amortece com o prêmio, mas não protege: "
+    + "o teto não morde e o prejuízo da moeda vem inteiro",
+  lateral: "mercado LATERAL — e é exatamente onde a coberta ganha POR CONSTRUÇÃO: "
+    + "o teto quase não morde e o prêmio entra inteiro. Num ciclo de alta forte a "
+    + "mesma conta inverte",
+  alta: "mercado em ALTA — o teto morde com frequência, e é o regime mais duro "
+    + "para a coberta. Vantagem positiva aqui vale mais que em mercado lateral",
+};
 
 export interface VereditoCoberta {
   readable: boolean;
@@ -208,11 +254,22 @@ export function vereditoCoberta(
     + `o teto mordeu em ${Math.round(melhor.fracaoExercida * 100)}% das vezes, e é nelas que a `
     + `conta se decide. Prêmio médio ${melhor.premioMedioPct.toFixed(2)}%`;
 
+  /**
+   * ⚠️ A RESSALVA DE REGIME ENTRA EM TODA SAÍDA, inclusive nas que reprovam.
+   * Um resultado negativo em mercado de alta também é condicional — e alguém
+   * lendo "reprovado" sem isso descartaria a estratégia pelo motivo errado.
+   */
+  const regime = regimeDaJanela(melhor.segurarAnualPct);
+  const ressalvaRegime = ` ⚠️ CONDICIONAL AO REGIME: nesta janela SEGURAR rendeu `
+    + `${melhor.segurarAnualPct.toFixed(1)}%/ano — ${REGIME_TEXTO[regime]}. `
+    + `O teto mordeu em ${Math.round(melhor.fracaoExercida * 100)}% das janelas; `
+    + "em outro regime essa fração muda, e com ela o resultado.";
+
   if (melhor.vantagemPct <= 0) {
     return {
       readable: true, status: "morta",
       verdict: `${base} — travar a alta custa MAIS que o prêmio recebido. ${contraste}. `
-        + "⚠️ SIMULAÇÃO: o prêmio é de modelo, não de livro.",
+        + `⚠️ SIMULAÇÃO: o prêmio é de modelo, não de livro.${ressalvaRegime}`,
     };
   }
   if (melhor.vantagemPct < margem) {
@@ -221,13 +278,13 @@ export function vereditoCoberta(
       verdict: `${base} — a vantagem é ${melhor.vantagemPct.toFixed(2)} ponto, abaixo da margem `
         + `de ${margem} exigida para um prêmio MODELADO. O sorriso subestima o prêmio e a cauda `
         + `subestima o risco, para lados opostos: aprovar aqui seria afirmar precisão que a `
-        + `simulação não tem. INCONCLUSIVO. ${contraste}`,
+        + `simulação não tem. INCONCLUSIVO. ${contraste}.${ressalvaRegime}`,
     };
   }
   return {
     readable: true, status: "verde",
     verdict: `${base} — a coberta bate segurar por ${melhor.vantagemPct.toFixed(2)} pontos. `
       + `${contraste}. ⚠️ SIMULAÇÃO: prêmio de Black-Scholes com a implícita do dinheiro, `
-      + "não preço de livro — e o custo de execução continua fora da conta.",
+      + `não preço de livro — e o custo de execução continua fora da conta.${ressalvaRegime}`,
   };
 }

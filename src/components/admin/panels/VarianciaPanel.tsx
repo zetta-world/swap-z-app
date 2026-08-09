@@ -39,6 +39,8 @@ type PorTeto = {
   cobertaMedianaPct: number; segurarMedianaPct: number;
   fracaoGanhou: number; fracaoExercida: number; premioMedioPct: number;
   piorCobertaPct: number; piorSegurarPct: number;
+  /** Retorno de SEGURAR anualizado — revela o regime da janela. */
+  segurarAnualPct: number;
 };
 type Dados = {
   veredito: Veredito;
@@ -126,6 +128,39 @@ export default function VarianciaPanel() {
                 {" — "}{d.coberta.veredito.verdict}
               </div>
 
+              {/* ⚠️⚠️ O REGIME DA JANELA, ANTES DA TABELA (09/08).
+                     A rodada deu vantagem POSITIVA nos quatro tetos, e o motivo
+                     não estava na estratégia: SEGURAR rendeu ~10,5%/ano — o BTC
+                     andou de lado por 2,5 anos, e coberta ganha POR CONSTRUÇÃO
+                     em mercado lateral. Sem isto, +0,62 é lido como constante
+                     da estratégia quando é condicional ao mercado que a janela
+                     pegou. Mesma família da janela curta do funding: o número
+                     está certo e a leitura, não. */}
+              {(() => {
+                const melhor = [...d.coberta!.porTeto]
+                  .sort((a, b) => b.vantagemPct - a.vantagemPct)[0];
+                if (!melhor) return null;
+                const lateral = melhor.segurarAnualPct >= 0 && melhor.segurarAnualPct < 15;
+                return (
+                  <div style={{
+                    border: `1px solid ${lateral ? "var(--adm-amber)" : "var(--adm-border)"}`,
+                    borderRadius: 3, padding: "5px 7px", marginTop: 6,
+                    fontSize: 8.5, lineHeight: 1.6,
+                    color: lateral ? "var(--adm-amber)" : "var(--adm-ink-3)",
+                  }}>
+                    ⚠️ CONDICIONAL AO REGIME. Nesta janela <b>SEGURAR rendeu{" "}
+                    {melhor.segurarAnualPct.toFixed(1)}%/ano</b>
+                    {melhor.segurarAnualPct < 0
+                      ? " — mercado em QUEDA: o teto não morde e o prejuízo da moeda vem inteiro."
+                      : lateral
+                        ? " — mercado LATERAL, e é exatamente onde a coberta ganha POR CONSTRUÇÃO: o teto quase não morde e o prêmio entra inteiro. Num ciclo de alta forte a mesma conta INVERTE."
+                        : " — mercado em ALTA, o regime mais duro para a coberta: vantagem positiva aqui vale mais que em mercado lateral."}
+                    {" "}O teto mordeu em <b>{Math.round(melhor.fracaoExercida * 100)}%</b> das
+                    janelas; em outro regime essa fração muda, e com ela o resultado.
+                  </div>
+                );
+              })()}
+
               {/* ⚠️ SIMULAÇÃO, EM VERMELHO. A 5.1 é medição; esta metade não é,
                      e as duas aparecem na mesma tela. Sem este aviso, o número
                      de modelo herda a credibilidade do número medido. */}
@@ -149,6 +184,8 @@ export default function VarianciaPanel() {
                         <th style={{ textAlign: "left", padding: "3px 5px" }}>TETO</th>
                         <th style={{ padding: "3px 5px" }}>COBERTA</th>
                         <th style={{ padding: "3px 5px" }}>SEGURAR</th>
+                        {/* O regime, na linha: sem ele a vantagem vira constante. */}
+                        <th style={{ padding: "3px 5px" }}>SEGURAR/ANO</th>
                         <th style={{ padding: "3px 5px" }}>VANTAGEM</th>
                         <th style={{ padding: "3px 5px" }}>GANHOU</th>
                         <th style={{ padding: "3px 5px" }}>EXERCIDA</th>
@@ -169,6 +206,12 @@ export default function VarianciaPanel() {
                             </td>
                             <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>
                               {pt(c.segurarMediaPct)}%
+                            </td>
+                            <td style={{
+                              padding: "3px 5px",
+                              color: c.segurarAnualPct < 15 ? "var(--adm-amber)" : "var(--adm-ink-4)",
+                            }}>
+                              {pt(c.segurarAnualPct, 1)}%
                             </td>
                             <td style={{
                               padding: "3px 5px",
