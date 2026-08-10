@@ -268,6 +268,9 @@ export async function POST(): Promise<NextResponse> {
    * semanas depois, um número que alguém leu como completo.
    */
   const naoMedido = [
+    "⚠️ cada número do cabeçalho é a mediana da SUA coluna, e cada uma pode vir "
+      + "de uma piscina diferente. NÃO se combinam: `taxa − perda` não dá a "
+      + "`vantagem`. A régua é a vantagem; as outras colunas são contexto",
     "⚠️ a TROCA para montar a cesta 50/50 NÃO entra — de propósito. Quem vai "
       + "SEGURAR metade em cada ativo paga a mesma troca na entrada e na saída, "
       + "então ela cancela entre os dois lados. O que entra é só o gás de piscina, "
@@ -348,6 +351,7 @@ export async function POST(): Promise<NextResponse> {
       gasMedianoPct: resumo.gasMedianoPct,
       semGas: resumo.semGas,
       incertezaTaxaPct: resumo.incertezaTaxaPct,
+      piscinaMediana: resumo.piscinaMediana,
       segurarMedianoPct: resumo.segurarMedianoPct,
       ganhouDeSegurar: resumo.ganhouDeSegurar,
       medidas: resumo.medidas.length,

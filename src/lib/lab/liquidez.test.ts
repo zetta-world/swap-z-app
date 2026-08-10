@@ -334,6 +334,41 @@ describe("o resumo e o veredito", () => {
   });
 });
 
+describe("as medianas são por COLUNA, e não se combinam", () => {
+  /**
+   * ⚠️ ACHADO DE 10/08, conferindo a rodada no BANCO.
+   *
+   * Com n ímpar cada mediana vem de uma piscina diferente: taxa 2,57% (ETH),
+   * perda −0,49% (BTC), vantagem +0,56% (LINK). A tela convidava a conferir
+   * `taxa − perda ≈ vantagem` — 2,08 contra 0,56. Não é conta errada: são três
+   * observações distintas apresentadas como se fossem uma linha.
+   */
+  it("aponta QUAL piscina é a mediana pela régua", () => {
+    const r = resumirLiquidez([
+      janela({ alvo: alvo({ id: "eth" }),  taxaPct: 2.57, ilPct: -7.70, vantagemPct: -5.33 }),
+      janela({ alvo: alvo({ id: "btc" }),  taxaPct: 3.80, ilPct: -0.49, vantagemPct:  3.29 }),
+      janela({ alvo: alvo({ id: "link" }), taxaPct: 0.75, ilPct: -0.19, vantagemPct:  0.56 }),
+    ]);
+    // Cada mediana vem de uma piscina diferente — é isso que a marca resolve.
+    expect(r.taxaMedianaPct).toBeCloseTo(2.57, 6);      // do eth
+    expect(r.ilMedianoPct).toBeCloseTo(-0.49, 6);       // do btc
+    expect(r.vantagemMedianaPct).toBeCloseTo(0.56, 6);  // do link
+    expect(r.piscinaMediana).toBe("link");
+  });
+
+  /**
+   * ⚠️ COM AMOSTRA PAR A MEDIANA NÃO É UMA LINHA. Apontar uma seria inventar
+   * uma observação que não existe.
+   */
+  it("amostra par não aponta piscina nenhuma", () => {
+    const r = resumirLiquidez([
+      janela({ alvo: alvo({ id: "a" }), vantagemPct: 1 }),
+      janela({ alvo: alvo({ id: "b" }), vantagemPct: 3 }),
+    ]);
+    expect(r.piscinaMediana).toBeNull();
+  });
+});
+
 describe("o gás — o custo que a piscina tem A MAIS que segurar", () => {
   /**
    * ⚠️ A TROCA PARA MONTAR A CESTA NÃO ENTRA, e isso é decisão, não omissão.

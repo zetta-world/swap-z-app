@@ -1968,7 +1968,38 @@ a parcela: unidades × dólares por unidade, mais a cotação que produziu o pre
 de gás; o total real é **432.000** (2×46.000 + 180.000 + 160.000). O código
 sempre calculou certo — quem estava errado era o texto.
 
-**Pendente: rodar o 💧 de novo.**
+## A conferência no BANCO (10/08) — e um defeito que só o banco mostrou
+
+O dono rodou de novo sem print. Fui ler `lab_runs`/`lab_results` direto, e as
+três rodadas pós-conserto saíram **estáveis**: vantagem 0,5567 · 0,5540 · 0,5547,
+taxa 2,566 · 2,568 · 2,569. A troca para `apyMean30d` estabilizou a entrada que
+oscilava 12× — o veredito reproduz.
+
+O texto gravado também confirma o conserto: *"dentro da faixa de ±3,36% … porque
+as DUAS estimativas de taxa da própria fonte discordam em até 3,36 pontos … O
+gás JÁ está na conta (0,01%)"*.
+
+**⚠️ MAS A ARITMÉTICA DO CABEÇALHO NÃO FECHA, E ISSO É DEFEITO MEU.**
+
+Com `n` ímpar, **cada mediana vem de uma piscina diferente**:
+
+| número | valor | vem de |
+|---|---|---|
+| TAXA | +2,57% | ETH/USDC |
+| PERDA | −0,49% | BTC/ETH |
+| **VANTAGEM** | **+0,56%** | LINK/ETH |
+
+A tela convida a conferir `taxa − perda ≈ vantagem` → **2,08 contra 0,56**. Não
+é conta errada: são **três observações distintas** apresentadas lado a lado como
+se formassem uma linha. É a invariante nº 4 numa forma que eu ainda não tinha
+visto — não é a amostra que está errada, é a *leitura* que o layout induz.
+
+**Conserto:** a linha mediana pela régua vem marcada com **▸** na tabela, e o
+cabeçalho passou a dizer, em âmbar, que as medianas são por coluna e **não se
+somam**. Com amostra PAR nenhuma linha é marcada — ali a mediana não é uma
+observação, e apontar uma seria inventar.
+
+**Pendente: rodar o 💧 de novo (a marca ▸ e o aviso são novos).**
 
 **Fica declarado como não medido:** o gás de entrar/sair (em $2.000 na Ethereum
 é material e pode virar o sinal), a taxa como foto de hoje aplicada à janela, e
@@ -2030,7 +2061,7 @@ Traduzido em regra:
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
-| 8 · Cinzas restantes | 🟡 **8.1.1 rodada 10/08** — EMPATE (+0,56%). O gás mediu 0,01% e derrubou a justificativa da faixa morta; ela virou MEDIDA (desacordo da fonte). Falta reconfirmar |
+| 8 · Cinzas restantes | 🟡 **8.1.1 · 3 rodadas estáveis 10/08** — EMPATE (+0,55%) dentro de faixa medida de ±3,4%. Cabeçalho passou a dizer que as medianas não se somam |
 | 9 · Receita | 🔴 |
 
 Atualizar este quadro a cada entrega — regra da casa.
