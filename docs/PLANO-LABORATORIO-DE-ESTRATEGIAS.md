@@ -2162,8 +2162,30 @@ operar mais"*, que é falso.
 desliga a cobrança inteira. Cobrar sem ter para onde mandar é pior que não
 cobrar — e o default do ambiente não configurado **não cobra do usuário**.
 
-**Pendente:** ligar os parâmetros nos três agregadores e medir a receita
-projetada por faixa de volume.
+## A carteira que recebe (11/08)
+
+O dono passou `0x904126D219dC6c1f7c019303EC743Ad45F473c1F`.
+
+- **Checksum EIP-55 conferido antes de gravar.** Um endereço com um caractere
+  trocado passa em quase toda validação e manda a taxa para um lugar que
+  ninguém controla — sem desfazer. Há teste, e ele reprova se um caractere
+  mudar.
+- **Mora no CÓDIGO, não no ambiente.** Endereço de recebimento não é segredo —
+  é público por construção, aparece em toda transação on-chain. O que ele
+  precisa é ser **conferível numa revisão**, e uma variável de ambiente
+  esconderia justamente isso de quem lê o PR. `SWAP_FEE_RECIPIENT` sobrescreve,
+  para trocar sem deploy.
+
+**⚠️ E A SOLANA FICA DESLIGADA — isto não é descuido.** A Jupiter não aceita
+endereço de carteira: o `platformFeeBps` exige um `feeAccount`, que é uma
+**conta de token** do lado Solana. Um endereço EVM ali não é "menos ideal", é
+**inválido** — a cotação seria recusada, ou pior, aceita apontando para lugar
+nenhum. Há teste exigindo que a carteira de EVM **não vaze** para o lado
+Solana.
+
+**Pendente:** a conta de token da Solana, para a taxa valer lá; e ligar os
+parâmetros nos três agregadores, medindo a receita projetada por faixa de
+volume.
 
 ---
 
@@ -2217,6 +2239,6 @@ Traduzido em regra:
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
 | 8 · Cinzas restantes | 🟡 **8.2 rodada 10/08** — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
-| 9 · Receita | 🟡 **9.1 — escada de taxas declarada 11/08** (1% free → 0,1% pilot). Achado: a taxa nunca foi pedida a nenhum agregador |
+| 9 · Receita | 🟡 **9.1 — escada + carteira EVM 11/08** (1% free → 0,1% pilot). Solana desligada: falta conta de token. Falta ligar nos agregadores |
 
 Atualizar este quadro a cada entrega — regra da casa.
