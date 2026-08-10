@@ -9,7 +9,8 @@
 import { describe, it, expect } from "vitest";
 import {
   perdaImpermanente, janelaPiscina, resumirLiquidez, vereditoLiquidez,
-  ALVOS, MIN_PISCINAS, MARGEM_MINIMA_PCT, type AlvoPiscina, type JanelaPiscina,
+  ALVOS, MIN_PISCINAS, MARGEM_MINIMA_PCT, custoGasPct, GAS_TOTAL_LP,
+  type AlvoPiscina, type JanelaPiscina,
 } from "@/lib/lab/liquidez";
 
 /** Helpers em escopo de MÓDULO — já escorreguei duas vezes prendendo em `describe`. */
@@ -21,7 +22,8 @@ const alvo = (over: Partial<AlvoPiscina> = {}): AlvoPiscina => ({
 const janela = (over: Partial<JanelaPiscina> = {}): JanelaPiscina => ({
   alvo: alvo(), dias: 90, razao: 1, ilPct: 0, taxaPct: 5,
   vantagemPct: 5, lpPct: 5, segurarPct: 0,
-  apyDe: "apyBase", apyAnualPct: 20, casada: null, ...over,
+  apyDe: "apyBase", apyAnualPct: 20, gasPct: 0, gasDe: "medido",
+  casada: null, ...over,
 });
 
 describe("perda impermanente — o sinal é a trava", () => {
@@ -69,7 +71,7 @@ describe("perda impermanente — o sinal é a trava", () => {
 describe("a janela de uma piscina", () => {
   const base = {
     alvo: alvo(), precoCotacaoIni: null, precoCotacaoFim: null,
-    apyBase: 20, apyMean30d: null, dias: 365,
+    apyBase: 20, apyMean30d: null, dias: 365, gasPct: 0,
   };
 
   it("preço parado: perda zero, e a vantagem é a taxa inteira", () => {
@@ -291,6 +293,68 @@ describe("o resumo e o veredito", () => {
     ]);
     expect(r.medidas).toHaveLength(2);
     expect(r.ilMedianoPct).toBeCloseTo(-2.5, 6);   // a de −90 NÃO entra
+  });
+});
+
+describe("o gás — o custo que a piscina tem A MAIS que segurar", () => {
+  /**
+   * ⚠️ A TROCA PARA MONTAR A CESTA NÃO ENTRA, e isso é decisão, não omissão.
+   * Quem vai SEGURAR 50/50 paga a mesma troca na entrada e na saída — cobrá-la
+   * só do lado da piscina compararia montagens diferentes (invariante nº 3).
+   * O que entra é só o gás de piscina, que quem segura não paga.
+   */
+  it("são duas aprovações, um depósito e um saque", () => {
+    expect(GAS_TOTAL_LP).toBe(46_000 * 2 + 180_000 + 160_000);
+  });
+
+  it("o custo cai quando o capital sobe — é custo FIXO em dólar", () => {
+    const caro   = custoGasPct(500,    0.00004)!;
+    const barato = custoGasPct(50_000, 0.00004)!;
+    expect(caro).toBeGreaterThan(barato * 50);
+    expect(barato).toBeGreaterThan(0);
+  });
+
+  /** ⚠️ Preço de gás ausente NÃO vira gás zero (cicatriz de 06/08). */
+  it("sem preço de gás devolve null, nunca zero", () => {
+    expect(custoGasPct(2_000, 0)).toBeNull();
+    expect(custoGasPct(2_000, NaN)).toBeNull();
+    expect(custoGasPct(0, 0.00004)).toBeNull();
+  });
+
+  it("a janela marca gás AUSENTE quando não recebe o número", () => {
+    const semGas = janelaPiscina({
+      alvo: alvo(), precoBaseIni: 1, precoBaseFim: 1,
+      precoCotacaoIni: null, precoCotacaoFim: null,
+      apyBase: 20, apyMean30d: null, dias: 365, gasPct: null,
+    })!;
+    expect(semGas.gasDe).toBe("ausente");
+    expect(semGas.gasPct).toBe(0);   // não contamina a conta, mas fica marcado
+  });
+
+  /**
+   * ⚠️ O GÁS TEM QUE DERRUBAR A VANTAGEM. Sem esta trava, um erro de sinal
+   * faria o custo PAGAR a mesa — a família do "custo não pode ser negativo".
+   */
+  it("o gás só piora a vantagem, nunca melhora", () => {
+    const comum = { alvo: alvo(), precoBaseIni: 2000, precoBaseFim: 2000,
+      precoCotacaoIni: null, precoCotacaoFim: null,
+      apyBase: 5, apyMean30d: null, dias: 365 };
+    const semGas = janelaPiscina({ ...comum, gasPct: 0 })!;
+    const comGas = janelaPiscina({ ...comum, gasPct: 2 })!;
+    expect(comGas.vantagemPct).toBeLessThan(semGas.vantagemPct);
+    expect(comGas.lpPct).toBeLessThan(semGas.lpPct);
+  });
+
+  /**
+   * ⚠️ O CASO QUE DECIDE C14: taxa que empata com a perda, e o gás vira o sinal.
+   * Foi exatamente a leitura da rodada de 10/08 — "empata antes do gás".
+   */
+  it("um empate antes do gás fica NEGATIVO depois dele", () => {
+    const comum = { alvo: alvo(), precoBaseIni: 2000, precoBaseFim: 2000,
+      precoCotacaoIni: null, precoCotacaoFim: null,
+      apyBase: 0.5, apyMean30d: null, dias: 365 };
+    expect(janelaPiscina({ ...comum, gasPct: 0 })!.vantagemPct).toBeGreaterThan(0);
+    expect(janelaPiscina({ ...comum, gasPct: 2 })!.vantagemPct).toBeLessThan(0);
   });
 });
 

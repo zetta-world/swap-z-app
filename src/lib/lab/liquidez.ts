@@ -110,6 +110,50 @@ export const MIN_PISCINAS = 3;
 export const MARGEM_MINIMA_PCT = 1;
 
 /**
+ * ⚠️ O GÁS DA PISCINA — e a decisão de enquadramento que decide o resultado.
+ *
+ * A pergunta desta mesa não é "quanto custa entrar numa piscina", é "a piscina
+ * bate SEGURAR os mesmos ativos". Então o que entra na conta é só o custo que a
+ * piscina tem **A MAIS** que segurar:
+ *
+ *   · A TROCA para montar a cesta 50/50 **NÃO ENTRA**. Quem vai segurar
+ *     metade ETH e metade USDC paga exatamente a mesma troca, na entrada e na
+ *     saída. Cobrá-la só de um lado seria comparar montagens diferentes —
+ *     invariante nº 3, os dois lados no mesmo tamanho. Ela cancela, e isto está
+ *     escrito aqui porque cancelamento silencioso vira, meses depois, "por que
+ *     a troca não está na conta?".
+ *
+ *   · O GÁS DE PISCINA **ENTRA**, porque quem só segura não paga nada disso:
+ *     duas aprovações (um token cada), o depósito e o saque.
+ *
+ * ⚠️ AS UNIDADES SÃO CONSTANTES DECLARADAS; o PREÇO delas é MEDIDO (sai dos
+ * `gasCosts` de uma cotação real, igual à Fase 4). Chutar o preço do gás seria
+ * inventar exatamente o número que decide o veredito.
+ */
+export const GAS_UNIDADES_LP = {
+  /** Autorizar o contrato a gastar o token. Padrão ERC-20, e são DOIS tokens. */
+  aprovar:   46_000,
+  /** `addLiquidity` num par tipo Uniswap v2. */
+  depositar: 180_000,
+  /** `removeLiquidity` do mesmo par. */
+  sacar:     160_000,
+} as const;
+
+export const GAS_TOTAL_LP =
+  GAS_UNIDADES_LP.aprovar * 2 + GAS_UNIDADES_LP.depositar + GAS_UNIDADES_LP.sacar;
+
+/**
+ * Gás da ida e volta da piscina, como % do capital.
+ *
+ * ⚠️ Nunca negativo, nunca "grátis por omissão". Preço de gás ausente é
+ * problema de quem chama — ver `gasDe` em `JanelaPiscina`.
+ */
+export function custoGasPct(capitalUsd: number, usdPorGas: number): number | null {
+  if (!(capitalUsd > 0) || !Number.isFinite(usdPorGas) || usdPorGas <= 0) return null;
+  return Number((((GAS_TOTAL_LP * usdPorGas) / capitalUsd) * 100).toFixed(4));
+}
+
+/**
  * PERDA IMPERMANENTE de uma piscina 50/50 de produto constante.
  *
  * `razao` é a variação RELATIVA dos dois preços no período:
@@ -163,6 +207,16 @@ export interface JanelaPiscina {
   /** De onde veio o APY — declarado, nunca inferido. */
   apyDe:       "apyBase" | "apyMean30d" | "ausente";
   apyAnualPct: number | null;
+  /** Gás da ida e volta da piscina, como % do capital. Zero só se MEDIDO zero. */
+  gasPct:      number;
+  /**
+   * ⚠️ "GÁS BARATO" E "GÁS NÃO LIDO" NÃO PODEM DAR A MESMA TELA.
+   *
+   * Cicatriz de 06/08, na Fase 4: `gasDaCotacao` devolvia null quando o campo
+   * vinha vazio e o custo virava ZERO em silêncio — o que se lia como "o gás
+   * deixou de ser barreira", que era exatamente a hipótese sob teste.
+   */
+  gasDe:       "medido" | "ausente";
   /**
    * ⚠️ QUAL PISCINA A FONTE CASOU — agregado sem parcela não é auditável. Na
    * rodada de 09/08 a taxa do WETH/USDC saiu +0,25%/ano, número implausível
@@ -193,6 +247,8 @@ export function janelaPiscina(input: {
   apyMean30d: number | null | undefined;
   dias:       number;
   casada?:    { symbol: string; tvlUsd: number | null } | null;
+  /** % do capital. `null` = não deu para medir — NÃO é zero. */
+  gasPct?:    number | null;
 }): JanelaPiscina | null {
   const { alvo, dias } = input;
   if (!(dias > 0)) return null;
@@ -248,14 +304,22 @@ export function janelaPiscina(input: {
    * ⚠️ MULTIPLICATIVO, NÃO SOMADO. A taxa incide sobre a posição que a perda já
    * encolheu, então `taxa + perda` é aproximação — e era ela que estava aqui.
    * Com o produto, `lpPct` e `segurarPct` ficam exatamente na mesma moeda.
+   *
+   * ⚠️ E O GÁS SAI NA ENTRADA, sobre o capital inicial: o que entra na piscina
+   * é `1 − gás`. O gás da SAÍDA é cobrado junto, ali na frente — simplificação
+   * declarada, que superestima o custo num mercado que caiu (paga-se a saída em
+   * dólares de hoje) e subestima num que subiu.
    */
-  const fatorVantagem = (1 + ilPct / 100) * (1 + taxaPct / 100);
+  const gasPct = Number.isFinite(input.gasPct as number) ? Number(input.gasPct) : 0;
+  const gasDe: JanelaPiscina["gasDe"] = Number.isFinite(input.gasPct as number) ? "medido" : "ausente";
+  const fatorVantagem = (1 - gasPct / 100) * (1 + ilPct / 100) * (1 + taxaPct / 100);
   const vantagemPct = (fatorVantagem - 1) * 100;
   const lpPct = ((1 + segurarPct / 100) * fatorVantagem - 1) * 100;
 
   return {
     alvo, dias, razao, ilPct, taxaPct,
     vantagemPct, lpPct, segurarPct, apyDe, apyAnualPct,
+    gasPct, gasDe,
     casada: input.casada ?? null,
   };
 }
@@ -274,6 +338,9 @@ export interface ResumoLiquidez {
   taxaMedianaPct:     number | null;
   vantagemMedianaPct: number | null;
   lpMedianoPct:       number | null;
+  gasMedianoPct:      number | null;
+  /** Quantas janelas entraram SEM preço de gás medido. */
+  semGas:             number;
   segurarMedianoPct:  number | null;
   /** Em quantas a piscina bateu segurar — ou seja, vantagem > 0. */
   ganhouDeSegurar:    number;
@@ -302,6 +369,8 @@ export function resumirLiquidez(janelas: JanelaPiscina[]): ResumoLiquidez {
     taxaMedianaPct:     med(medidas.map((j) => j.taxaPct)),
     vantagemMedianaPct: med(medidas.map((j) => j.vantagemPct)),
     lpMedianoPct:       med(medidas.map((j) => j.lpPct)),
+    gasMedianoPct:      med(medidas.map((j) => j.gasPct)),
+    semGas:             medidas.filter((j) => j.gasDe === "ausente").length,
     segurarMedianoPct:  med(medidas.map((j) => j.segurarPct)),
     ganhouDeSegurar:    medidas.filter((j) => j.vantagemPct > 0).length,
     semApy:             uteis.length - medidas.length,
@@ -339,6 +408,23 @@ export function vereditoLiquidez(
     };
   }
   const vantagem = r.vantagemMedianaPct ?? 0;
+
+  /**
+   * ⚠️ SEM O PREÇO DO GÁS NÃO HÁ VEREDITO NESTA MESA.
+   *
+   * O gás é da ordem da margem que decide (±1 ponto em $2.000), então medir sem
+   * ele e concluir seria decidir com a variável decisiva ausente. "Gás barato"
+   * e "gás não lido" davam a mesma tela na Fase 4, e custou uma rodada inteira.
+   */
+  if (r.semGas > 0) {
+    return {
+      status: "cinza",
+      texto: `${r.semGas} de ${r.medidas.length} piscina(s) entraram SEM preço de gás medido. `
+        + `O gás é da ordem da margem que decide esta mesa, então concluir sem ele seria `
+        + `decidir com a variável decisiva ausente. Sem o gás, a vantagem seria `
+        + `${vantagem.toFixed(2)}% — e ela só piora com ele.`,
+    };
+  }
 
   /**
    * ⚠️ A FAIXA MORTA VEM ANTES DOS DOIS LADOS. Sem ela, −0,01% em um ano vira

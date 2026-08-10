@@ -22,6 +22,7 @@ interface Piscina {
   ilPct: number; taxaPct: number;
   vantagemPct: number; lpPct: number; segurarPct: number;
   apyDe: "apyBase" | "apyMean30d" | "ausente"; apyAnualPct: number | null;
+  gasPct: number; gasDe: "medido" | "ausente";
   casada: { symbol: string; tvlUsd: number | null } | null;
 }
 interface Dados {
@@ -30,6 +31,7 @@ interface Dados {
   resumo: {
     ilMedianoPct: number | null; taxaMedianaPct: number | null;
     vantagemMedianaPct: number | null; lpMedianoPct: number | null;
+    gasMedianoPct: number | null; semGas: number;
     segurarMedianoPct: number | null;
     ganhouDeSegurar: number; medidas: number; semApy: number;
   };
@@ -114,6 +116,12 @@ export default function LiquidezPanel() {
             <Bloco rotulo="SEGURAR (absoluto)" valor={pct(data.resumo.segurarMedianoPct)} cor="var(--adm-ink-2)" />
             <Bloco rotulo="TAXA" valor={pct(data.resumo.taxaMedianaPct)} cor="var(--adm-ink-2)" />
             <Bloco rotulo="PERDA IMPERM." valor={pct(data.resumo.ilMedianoPct)} cor="var(--adm-amber)" />
+            {/* ⚠️ O gás é a SEGUNDA parcela do custo, e ela decide o sinal
+                nesta faixa de capital. Vermelho quando não foi medido — não
+                pode passar por "gás barato". */}
+            <Bloco rotulo={data.resumo.semGas > 0 ? "GÁS — NÃO MEDIDO" : "GÁS (ida e volta)"}
+                   valor={data.resumo.semGas > 0 ? "—" : pct(data.resumo.gasMedianoPct)}
+                   cor={data.resumo.semGas > 0 ? "var(--adm-red)" : "var(--adm-amber)"} />
             <Bloco rotulo="CAPITAL" valor="$2.000" cor="var(--adm-ink-3)" />
             <Bloco rotulo="PISCINAS (n)" valor={`${data.resumo.medidas}/${data.minPiscinas}`} cor="var(--adm-ink-3)" />
           </div>
@@ -132,6 +140,7 @@ export default function LiquidezPanel() {
                   <th style={{ textAlign: "right" }}>DIAS</th>
                   <th style={{ textAlign: "right" }}>TAXA</th>
                   <th style={{ textAlign: "right" }}>PERDA</th>
+                  <th style={{ textAlign: "right" }}>GÁS</th>
                   <th style={{ textAlign: "right" }}>PISCINA</th>
                   <th style={{ textAlign: "right" }}>SEGURAR</th>
                   <th style={{ textAlign: "right" }}>VANTAGEM</th>
@@ -151,6 +160,12 @@ export default function LiquidezPanel() {
                     <td style={{ textAlign: "right" }}>{p.dias}</td>
                     <td style={{ textAlign: "right" }}>{p.apyDe === "ausente" ? "—" : pct(p.taxaPct)}</td>
                     <td style={{ textAlign: "right", color: "var(--adm-amber)" }}>{pct(p.ilPct)}</td>
+                    <td style={{
+                      textAlign: "right",
+                      color: p.gasDe === "ausente" ? "var(--adm-red)" : "var(--adm-amber)",
+                    }}>
+                      {p.gasDe === "ausente" ? "n/medido" : `−${p.gasPct.toFixed(2)}%`}
+                    </td>
                     <td style={{ textAlign: "right" }}>
                       {p.apyDe === "ausente" ? "—" : pct(p.lpPct)}
                     </td>
