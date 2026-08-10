@@ -193,8 +193,10 @@ export async function POST(): Promise<NextResponse> {
   const naoMedido = [
     "⚠️ o GÁS de entrar e sair da piscina — depositar, sacar e coletar taxa. "
       + "Em $2.000 na Ethereum isso é material, e o sinal do veredito pode virar",
-    "⚠️ a taxa é a de HOJE aplicada à janela inteira (`apyBase` é foto, não série). "
-      + "Proporcional, sem compor — subestima a receita, que é o lado conservador",
+    "⚠️ a taxa vem da MÉDIA DE 30 DIAS da fonte, aplicada proporcionalmente à "
+      + "janela de um ano. Não é a série real do período — entre 09 e 10/08 a foto "
+      + "de 24h do ETH/USDC oscilou 12× (0,25% → 2,97%/ano), e é por isso que a "
+      + "média manda aqui. Sem compor: subestima, que é o lado conservador",
     "a perda impermanente é a de PONTA A PONTA. O caminho no meio da janela pode "
       + "ter sido muito pior, e quem saiu no meio realizou aquele número",
     "liquidez concentrada (v3) NÃO está aqui: a perda dela depende da faixa "

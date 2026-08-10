@@ -1878,7 +1878,36 @@ PR — virou `LINK/ETH`. Além disso, as medianas do cabeçalho descreviam
 conjuntos diferentes (a perda vinha de um grupo, a taxa de outro); agora todas
 saem da mesma amostra.
 
-**Pendente: rodar o 💧 de novo, com os quatro consertos.**
+## A segunda rodada (10/08) — o enquadramento fecha, e a mesa EMPATA
+
+Os quatro consertos entraram e a aritmética fecha entre as colunas, conferida
+linha a linha: ETH/USDC vantagem −4,54% e piscina −30,57% contra segurar
+−27,26%; LINK/ETH vantagem +0,38% e piscina −57,46% contra −57,62%. O absoluto
+é exatamente `segurar × vantagem` em todas as linhas. O controle segue em
+**0,00%** de perda. **Bateu segurar em 1/3** — contagem correta.
+
+**Mas o veredito saiu MORTA com vantagem mediana de −0,01% em UM ANO.** Isso é
+ruído lido como reprovação: um centésimo de ponto não distingue "a mesa perde"
+de "a mesa empata", e está inteiramente dentro do gás que a medição declara não
+incluir. Faltava **faixa morta** — a mesma `MARGEM_MINIMA_PCT` que a Fase 5.2 já
+tinha, e que eu não apliquei aqui.
+
+O valor não é chutado: ±1 ponto é a ordem do gás de entrar e sair de uma piscina
+com $2.000 na Ethereum. Margem menor que a omissão conhecida não é resultado.
+
+**E a taxa oscilou 12× em 24 horas.** ETH/USDC saiu **+0,25%/ano** em 09/08 e
+**+2,97%/ano** em 10/08 — não era piscina errada, era `apyBase` sendo uma FOTO
+do volume de ontem aplicada a uma janela de um ano. A Fase 4 já tinha decidido
+essa ordem (`escolherApy`: media30d > base) e eu escrevi o contrário aqui, sem
+justificar. Duas definições do mesmo conceito em dois arquivos — a régua tem que
+ser uma só. Agora a média de 30 dias manda.
+
+**Leitura honesta do que está medido:** a mesa **empata** com segurar, antes do
+gás. Com o gás, vira negativa. Não é aprovação nem reprovação — e a diferença
+entre as três leituras é justamente o que a faixa morta existe para preservar.
+
+**Pendente: rodar o 💧 de novo. E o passo seguinte (8.1.1) é pôr o GÁS na
+conta** — enquanto ele não entrar, esta mesa não sai da faixa cinza por mérito.
 
 **Fica declarado como não medido:** o gás de entrar/sair (em $2.000 na Ethereum
 é material e pode virar o sinal), a taxa como foto de hoje aplicada à janela, e
@@ -1940,7 +1969,7 @@ Traduzido em regra:
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
-| 8 · Cinzas restantes | 🟡 **8.1 rodada 09/08** — INCONCLUSIVA por amostra; o controle validou a conta e expôs um defeito de enquadramento (invariante nº 17). 4 consertos, falta reconfirmar |
+| 8 · Cinzas restantes | 🟡 **8.1 · 2ª rodada 10/08** — a mesa EMPATA com segurar (−0,01%/ano), dentro do gás não medido. Faixa morta e média de 30d entraram; falta o gás (8.1.1) |
 | 9 · Receita | 🔴 |
 
 Atualizar este quadro a cada entrega — regra da casa.

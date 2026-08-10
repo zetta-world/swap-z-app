@@ -92,6 +92,24 @@ export const ALVOS: AlvoPiscina[] = [
 export const MIN_PISCINAS = 3;
 
 /**
+ * ⚠️ FAIXA MORTA — abaixo disto o resultado é EMPATE, não veredito.
+ *
+ * A rodada de 10/08 fechou com vantagem mediana de **−0,01% em um ano** e saiu
+ * MORTA. Isso é ruído lido como reprovação: um centésimo de ponto não
+ * distingue "a mesa perde" de "a mesa empata".
+ *
+ * O valor não é chutado — ele é do TAMANHO DA OMISSÃO CONHECIDA. O gás de
+ * entrar e sair da piscina não está na conta, e em $2.000 na Ethereum ele custa
+ * na ordem de 1 a 3 pontos. Qualquer margem menor que isso está **dentro** do
+ * que a medição admite não ter medido, e chamar de resultado seria afirmar
+ * precisão que não existe.
+ *
+ * Mesma decisão que a `MARGEM_MINIMA_PCT` da opção coberta (Fase 5.2), pelo
+ * mesmo motivo: veredito exige margem maior que o erro declarado.
+ */
+export const MARGEM_MINIMA_PCT = 1;
+
+/**
  * PERDA IMPERMANENTE de uma piscina 50/50 de produto constante.
  *
  * `razao` é a variação RELATIVA dos dois preços no período:
@@ -189,13 +207,29 @@ export function janelaPiscina(input: {
 
   const ilPct = perdaImpermanente(razao) * 100;
 
+  /**
+   * ⚠️ A MÉDIA DE 30 DIAS VEM PRIMEIRO — e eu tinha invertido isso.
+   *
+   * A Fase 4 já havia decidido a ordem (`escolherApy` em `rendimento.ts`:
+   * media30d > base). Eu escrevi o contrário aqui sem justificar, e a segunda
+   * rodada mostrou o preço: a taxa do ETH/USDC saiu **+0,25%/ano** num dia e
+   * **+2,97%/ano** no dia seguinte. Doze vezes, em 24 horas.
+   *
+   * `apyBase` é uma FOTO do volume de ontem; aplicá-la a uma janela de um ano
+   * faz o resultado da mesa depender de que dia alguém apertou o botão. A média
+   * de 30 dias não resolve isso, mas reduz a oscilação de doze vezes para
+   * alguma coisa que se pode ler.
+   *
+   * Duas definições do mesmo conceito em dois arquivos foi o que produziu a
+   * divergência — a régua tem que ser uma só.
+   */
   const apyAnualPct =
-    Number.isFinite(input.apyBase as number) ? Number(input.apyBase)
-    : Number.isFinite(input.apyMean30d as number) ? Number(input.apyMean30d)
+    Number.isFinite(input.apyMean30d as number) ? Number(input.apyMean30d)
+    : Number.isFinite(input.apyBase as number) ? Number(input.apyBase)
     : null;
   const apyDe: JanelaPiscina["apyDe"] =
-    Number.isFinite(input.apyBase as number) ? "apyBase"
-    : Number.isFinite(input.apyMean30d as number) ? "apyMean30d"
+    Number.isFinite(input.apyMean30d as number) ? "apyMean30d"
+    : Number.isFinite(input.apyBase as number) ? "apyBase"
     : "ausente";
 
   /**
@@ -293,7 +327,9 @@ export interface Veredito {
  * contrário em mercado de ALTA: uma piscina que ganhou de segurar por 2 pontos
  * seria marcada MORTA só porque segurar rendeu 50%.
  */
-export function vereditoLiquidez(r: ResumoLiquidez, minPiscinas = MIN_PISCINAS): Veredito {
+export function vereditoLiquidez(
+  r: ResumoLiquidez, minPiscinas = MIN_PISCINAS, margem = MARGEM_MINIMA_PCT,
+): Veredito {
   if (r.medidas.length < minPiscinas) {
     return {
       status: "cinza",
@@ -303,6 +339,21 @@ export function vereditoLiquidez(r: ResumoLiquidez, minPiscinas = MIN_PISCINAS):
     };
   }
   const vantagem = r.vantagemMedianaPct ?? 0;
+
+  /**
+   * ⚠️ A FAIXA MORTA VEM ANTES DOS DOIS LADOS. Sem ela, −0,01% em um ano vira
+   * "MORTA" e +0,01% vira "VERDE" — dois vereditos opostos separados por dois
+   * centésimos de ponto, ambos dentro do gás que não medimos.
+   */
+  if (Math.abs(vantagem) < margem) {
+    return {
+      status: "cinza",
+      texto: `EMPATE: a mesa fica ${vantagem.toFixed(2)}% de segurar os mesmos ativos — `
+        + `dentro da faixa de ±${margem}% que a medição não consegue distinguir, porque o `
+        + `GÁS de entrar e sair não está na conta e custa dessa ordem em $2.000 na Ethereum. `
+        + `Com o gás, este empate vira negativo. Não é aprovação nem reprovação: é ruído.`,
+    };
+  }
 
   if (vantagem <= 0) {
     return {
