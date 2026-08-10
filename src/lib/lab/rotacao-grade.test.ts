@@ -12,7 +12,8 @@
 import { describe, it, expect } from "vitest";
 import {
   rodarRotacao, rodarGrade, vereditoRotacao, vereditoGrade,
-  MIN_REBALANCES, MIN_SIMBOLOS_GRADE, type PontoRotacao, type ResultadoGrade,
+  MIN_REBALANCES, MIN_SIMBOLOS_GRADE, perdeuParaOCaixa,
+  type PontoRotacao, type ResultadoGrade,
 } from "@/lib/lab/rotacao-grade";
 
 /** Helpers em escopo de MÓDULO — já escorreguei duas vezes prendendo em `describe`. */
@@ -100,9 +101,26 @@ describe("rotação por momento", () => {
     expect(v.texto).toContain("ABAIXO de não escolher nada");
   });
 
-  it("bater segurar todos deixa a mesa verde", () => {
+  it("bater segurar todos com LUCRO deixa a mesa verde", () => {
     const pontos = Array.from({ length: 10 }, () => ponto({ retornoPct: 4, segurarPct: 1 }));
     expect(vereditoRotacao(pontos).status).toBe("verde");
+  });
+
+  /**
+   * ⚠️ A RODADA DE 10/08, virada em teste. A rotação saiu VERDE perdendo 3,01%
+   * por período, porque segurar perdeu 5,47%. Pela régua declarada estava
+   * certo; para quem lê a tela estava absurdo.
+   *
+   * Faltava o TERCEIRO competidor: ficar em CAIXA, que sempre está disponível,
+   * não custa nada e bateu as duas com folga naquele ano.
+   */
+  it("bater o índice PERDENDO dinheiro não é verde — o caixa bateu os dois", () => {
+    const pontos = Array.from({ length: 9 }, () => ponto({ retornoPct: -3.01, segurarPct: -5.47 }));
+    const v = vereditoRotacao(pontos);
+    expect(v.status).toBe("cinza");
+    expect(v.texto).toContain("CAIXA");
+    // E não pode esconder que ela ganhou do índice — as duas coisas são verdade.
+    expect(v.texto).toContain("bateu segurar todos");
   });
 });
 
@@ -143,6 +161,33 @@ describe("grade", () => {
     expect(caro.totalPct).toBeLessThanOrEqual(barato.totalPct);
   });
 
+  /**
+   * ⚠️ AS PARCELAS TÊM QUE FECHAR COM O TOTAL — e na rodada de 10/08 não
+   * fechavam em nenhuma das dez linhas, porque `estoquePct` era algebricamente
+   * o próprio total disfarçado (`estoque − gasto + recebido`). As duas colunas
+   * saíam IDÊNTICAS na tela.
+   */
+  it("realizado + estoque === total, sempre", () => {
+    const casos = [
+      Array.from({ length: 400 }, (_, i) => 100 * (1 + 0.12 * Math.sin(i / 6))),  // oscila
+      [100, ...rampa(60, -0.03, 100)],                                            // despenca
+      rampa(200, 0.01),                                                           // só sobe
+      Array.from({ length: 100 }, () => 100),                                     // parado
+    ];
+    for (const closes of casos) {
+      const r = rodarGrade(closes)!;
+      expect(r.realizadoPct + r.estoquePct).toBeCloseTo(r.totalPct, 3);
+    }
+  });
+
+  /** E o estoque não pode ser uma cópia do total quando houve venda. */
+  it("com degraus fechados, estoque e total são números DIFERENTES", () => {
+    const onda = Array.from({ length: 400 }, (_, i) => 100 * (1 + 0.12 * Math.sin(i / 6)));
+    const r = rodarGrade(onda)!;
+    expect(r.realizadoPct).not.toBe(0);
+    expect(r.estoquePct).not.toBeCloseTo(r.totalPct, 6);
+  });
+
   it("série curta ou inválida devolve null em vez de inventar", () => {
     expect(rodarGrade([100])).toBeNull();
     expect(rodarGrade([0, 100])).toBeNull();
@@ -165,8 +210,29 @@ describe("grade", () => {
     expect(v.texto).toContain("não cobre o estoque preso");
   });
 
-  it("bater segurar deixa verde", () => {
+  it("bater segurar com LUCRO deixa verde", () => {
     const rs = Array.from({ length: 5 }, () => grade({ totalPct: 12, realizadoPct: 12, segurarPct: 3 }));
     expect(vereditoGrade(rs).status).toBe("verde");
+  });
+
+  /**
+   * ⚠️ O CASO MAIS ABSURDO DA RODADA DE 10/08: a grade saiu VERDE tendo
+   * perdido 54,11% do capital, porque segurar perdeu 64,55%.
+   */
+  it("perder metade do capital não é verde, por mais que o índice caia mais", () => {
+    const rs = Array.from({ length: 10 }, () => grade({
+      totalPct: -54.11, realizadoPct: 1.48, estoquePct: -55.59, segurarPct: -64.55, rompeu: "abaixo",
+    }));
+    const v = vereditoGrade(rs);
+    expect(v.status).toBe("cinza");
+    expect(v.texto).toContain("CAIXA");
+    expect(v.texto).toContain("PERDEU");
+  });
+
+  /** A regra do caixa é uma só, e vale para as duas mesas. */
+  it("o teste do caixa é o mesmo para as duas mesas", () => {
+    expect(perdeuParaOCaixa(-0.01)).toBe(true);
+    expect(perdeuParaOCaixa(0)).toBe(true);
+    expect(perdeuParaOCaixa(0.01)).toBe(false);
   });
 });

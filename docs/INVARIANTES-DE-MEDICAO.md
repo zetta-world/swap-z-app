@@ -255,6 +255,26 @@ confronto errado não ter como ser escrito.
 > O grupo de controle não pegou, e não tinha como: com os preços parados a
 > diferença e o nível coincidem. **Controle prova a conta, não o enquadramento.**
 
+## 18. O competidor não é só o índice — é também NÃO FAZER NADA
+
+Bater comprar-e-segurar é condição **necessária**, não suficiente. Ficar em
+**caixa** está sempre disponível, não custa nada e não aparece em nenhuma
+tabela — então uma mesa que perde dinheiro pode ganhar do índice e ser lida
+como aprovada.
+
+**Como travar:** retorno absoluto negativo **não pode ser verde**, por mais que
+ganhe do benchmark. Vira cinza, e a tela diz as três posições em ordem: a mesa,
+o índice e o caixa.
+
+> **Cicatriz (10/08, Fase 8.2):** a rotação saiu **VERDE perdendo 3,01% por
+> período** (segurar perdeu 5,47%), e a grade saiu **VERDE tendo perdido 54,11%
+> do capital** (segurar perdeu 64,55%). Pela régua declarada as duas estavam
+> certas. Para quem olha a tela, "✓ VERDE" sobre meio capital destruído é o
+> oposto do que a medição descobriu.
+>
+> Num ano em que os dez majors caíram, *"menos ruim que o índice"* não é uma
+> mesa que se opera — é uma constatação sobre o mercado.
+
 ---
 
 ## Como usar

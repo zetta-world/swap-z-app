@@ -139,10 +139,18 @@ export interface ResultadoGrade {
   /** Só o que os degraus capturaram — o número que as propagandas mostram. */
   realizadoPct: number;
   /**
-   * ⚠️ O QUE SOBROU NO ESTOQUE, marcado a mercado. É a metade que some das
-   * propagandas de grid: quando o preço fura a faixa por baixo, a grade fica
-   * COMPRADA no fundo e para de ganhar. Sem esta parcela, uma grade que
-   * arruinou o capital aparece como lucro constante.
+   * ⚠️ O PREJUÍZO NÃO REALIZADO do que sobrou no estoque — `valor de mercado
+   * MENOS o que foi pago por ele`. É a metade que some das propagandas de grid:
+   * quando o preço fura a faixa por baixo, a grade fica COMPRADA no fundo e
+   * para de ganhar.
+   *
+   * ⚠️ A PRIMEIRA VERSÃO ESTAVA ALGEBRICAMENTE ERRADA e ninguém percebeu na
+   * leitura: ela calculava `estoque − (1 − caixa)`, que se expande em
+   * `estoque − gasto + recebido` — ou seja, exatamente o TOTAL. Na rodada de
+   * 10/08 as duas colunas saíram IDÊNTICAS em todas as dez linhas, e
+   * `realizado + estoque` não fechava com o total em nenhuma.
+   *
+   * Agora `realizado + estoque === total`, e há teste exigindo isso.
    */
   estoquePct:   number;
   /** Quantos preenchimentos aconteceram — cada um paga taxa. */
@@ -179,7 +187,10 @@ export function rodarGrade(
 
   // Capital dividido igualmente entre os degraus de compra.
   const fatia = 1 / degraus;
-  let caixa = 1, base = 0, realizado = 0, fills = 0;
+  // ⚠️ `custoDaBase` é o que foi PAGO pelo estoque que ainda está na mão. Sem
+  // ele não há como separar o realizado do não realizado — e foi a falta dele
+  // que fez a coluna ESTOQUE virar uma cópia do TOTAL.
+  let caixa = 1, base = 0, custoDaBase = 0, realizado = 0, fills = 0;
   let furouAbaixo = false, furouAcima = false;
 
   for (let i = 1; i < closes.length; i++) {
@@ -191,17 +202,22 @@ export function rodarGrade(
     for (const n of niveis) {
       if (!n.cheio && p <= n.compra && caixa >= fatia) {
         const gasto = fatia;
+        const qtdComprada = (gasto / p) * (1 - custo);
         caixa -= gasto;
-        base  += (gasto / p) * (1 - custo);
+        base  += qtdComprada;
+        custoDaBase += gasto;
         n.cheio = true; fills++;
       } else if (n.cheio && p >= n.venda) {
         const qtd = fatia / n.compra;
         const vendeu = Math.min(base, qtd);
         if (vendeu > 0) {
           const recebe = vendeu * p * (1 - custo);
+          // Baixa proporcional do custo — média ponderada, sem escolher lote.
+          const custoBaixado = base > 0 ? custoDaBase * (vendeu / base) : 0;
           caixa += recebe;
-          realizado += recebe - (vendeu * n.compra);
+          realizado += recebe - custoBaixado;
           base -= vendeu;
+          custoDaBase -= custoBaixado;
           n.cheio = false; fills++;
         }
       }
@@ -211,11 +227,14 @@ export function rodarGrade(
   const pFim = closes[closes.length - 1];
   const estoque = base * pFim;
   const total = caixa + estoque - 1;
+  // ⚠️ Não realizado = valor de mercado − o que foi pago. Com isto,
+  // `realizado + naoRealizado === total`, e o teste cobra a identidade.
+  const naoRealizado = estoque - custoDaBase;
 
   return {
     totalPct:     Number((total * 100).toFixed(4)),
     realizadoPct: Number((realizado * 100).toFixed(4)),
-    estoquePct:   Number(((estoque - (1 - caixa)) * 100).toFixed(4)),
+    estoquePct:   Number((naoRealizado * 100).toFixed(4)),
     fills,
     rompeu: furouAbaixo && furouAcima ? "ambos" : furouAbaixo ? "abaixo" : furouAcima ? "acima" : "nao",
   };
@@ -239,6 +258,26 @@ export const MIN_SIMBOLOS_GRADE = 4;
 export type Status = "verde" | "cinza" | "morta";
 export interface Veredito { status: Status; texto: string }
 
+/**
+ * ⚠️ O TERCEIRO COMPETIDOR: NÃO FAZER NADA.
+ *
+ * A rodada de 10/08 marcou VERDE as duas mesas — a rotação perdendo 3,01% por
+ * período e a grade perdendo 54,11% do capital. Pela régua declarada estava
+ * certo: as duas bateram comprar-e-segurar, que perdeu mais. E pela leitura de
+ * quem olha a tela estava absurdo.
+ *
+ * O que faltava é que comprar-e-segurar NÃO é a única alternativa. Ficar em
+ * CAIXA sempre está disponível, não custa nada e, num ano em que todos os dez
+ * majors caíram, bateu as duas mesas com folga.
+ *
+ * Então: uma mesa com retorno absoluto negativo NÃO pode ser verde, por mais
+ * que ganhe do índice. Ela vira CINZA e a tela diz as três posições em ordem —
+ * senão "bateu o mercado" é lido como "funciona".
+ */
+export function perdeuParaOCaixa(absolutoPct: number): boolean {
+  return absolutoPct <= 0;
+}
+
 export function vereditoRotacao(
   pontos: PontoRotacao[], minRebalances = MIN_REBALANCES,
 ): Veredito {
@@ -259,6 +298,16 @@ export function vereditoRotacao(
       texto: `a rotação rende ${mesa.toFixed(2)}% por período contra ${segurar.toFixed(2)}% de `
         + `segurar todos com peso igual — ${vantagem.toFixed(2)} ponto(s) ABAIXO de não escolher nada. `
         + `Escolher os melhores não pagou o giro.`,
+    };
+  }
+  /** ⚠️ Bateu o índice, mas PERDEU DINHEIRO. Ver `perdeuParaOCaixa`. */
+  if (perdeuParaOCaixa(mesa)) {
+    return {
+      status: "cinza",
+      texto: `a rotação bateu segurar todos (+${vantagem.toFixed(2)} ponto(s)) — mas PERDEU `
+        + `${Math.abs(mesa).toFixed(2)}% por período, em ${pontos.length} rebalanceamentos. `
+        + `Os dois caminhos perderam; ficar em CAIXA bateu os dois. `
+        + `"Menos ruim que o índice" não é uma mesa que se opera.`,
     };
   }
   return {
@@ -297,6 +346,16 @@ export function vereditoGrade(
       texto: `a grade entrega ${total.toFixed(2)}% contra ${segurar.toFixed(2)}% de comprar e segurar. `
         + `O lucro dos degraus (${realizado.toFixed(2)}%) não cobre o estoque preso: `
         + `${romperam}/${rs.length} símbolo(s) romperam a faixa.`,
+    };
+  }
+  /** ⚠️ Bateu o índice, mas PERDEU DINHEIRO. Ver `perdeuParaOCaixa`. */
+  if (perdeuParaOCaixa(total)) {
+    return {
+      status: "cinza",
+      texto: `a grade perdeu ${Math.abs(total).toFixed(2)}% do capital — menos que os `
+        + `${Math.abs(segurar).toFixed(2)}% de segurar, mas ainda assim PERDEU. Os degraus `
+        + `renderam ${realizado.toFixed(2)}% e o estoque preso comeu o resto: `
+        + `${romperam}/${rs.length} romperam a faixa. Ficar em CAIXA bateu as duas alternativas.`,
     };
   }
   return {
