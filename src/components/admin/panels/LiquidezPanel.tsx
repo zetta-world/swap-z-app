@@ -32,6 +32,7 @@ interface Dados {
     ilMedianoPct: number | null; taxaMedianaPct: number | null;
     vantagemMedianaPct: number | null; lpMedianoPct: number | null;
     gasMedianoPct: number | null; semGas: number; incertezaTaxaPct: number | null;
+    piscinaMediana: string | null;
     segurarMedianoPct: number | null;
     ganhouDeSegurar: number; medidas: number; semApy: number;
   };
@@ -150,6 +151,17 @@ export default function LiquidezPanel() {
             </div>
           )}
 
+          {/* ⚠️ AS MEDIANAS SÃO POR COLUNA E NÃO SE COMBINAM. Cada uma pode
+              vir de uma piscina diferente — sem esta linha a tela convida a
+              conferir `taxa − perda ≈ vantagem`, que não fecha. */}
+          <div style={{ fontSize: 8, color: "var(--adm-amber)", marginBottom: 4, lineHeight: 1.6 }}>
+            ⚠️ cada número acima é a mediana da SUA coluna e pode vir de uma piscina
+            diferente — <b>não se somam</b>. A régua é a VANTAGEM; o resto é contexto
+            {data.resumo.piscinaMediana && (
+              <> · a mediana da régua é a linha marcada <b>▸</b> abaixo</>
+            )}
+          </div>
+
           <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.6 }}>
             janela de {data.janelaDias} dias · bateu segurar em {data.resumo.ganhouDeSegurar}/{data.resumo.medidas}
             {data.resumo.semApy > 0 && <> · {data.resumo.semApy} sem taxa na fonte (fora do veredito)</>}
@@ -175,6 +187,9 @@ export default function LiquidezPanel() {
                 {data.piscinas.map((p) => (
                   <tr key={p.id} style={{ opacity: p.apyDe === "ausente" ? 0.55 : 1 }}>
                     <td>
+                      {data.resumo.piscinaMediana === p.id && (
+                        <b style={{ color: "var(--adm-cyan, var(--adm-ink-2))" }}>▸ </b>
+                      )}
                       {p.rotulo}
                       {p.controle && (
                         <span style={{ color: "var(--adm-amber)", fontSize: 7.5 }}> · CONTROLE</span>

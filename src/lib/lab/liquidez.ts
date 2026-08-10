@@ -362,6 +362,19 @@ export interface ResumoLiquidez {
   incertezaTaxaPct:   number | null;
   /** Quantas janelas entraram SEM preço de gás medido. */
   semGas:             number;
+  /**
+   * ⚠️ QUAL PISCINA É A MEDIANA PELA RÉGUA (vantagem) — e por que isto existe.
+   *
+   * Cada número do cabeçalho é a mediana da SUA coluna, e com n ímpar cada uma
+   * vem de uma piscina DIFERENTE. Na rodada de 10/08: taxa 2,57% (do ETH/USDC),
+   * perda −0,49% (do BTC/ETH), vantagem +0,56% (do LINK/ETH). A tela convida a
+   * conferir `taxa − perda ≈ vantagem` e dá 2,08 contra 0,56 — não porque a
+   * conta esteja errada, mas porque são três observações distintas.
+   *
+   * `null` quando a amostra é par: aí a mediana não É uma linha, e apontar uma
+   * seria inventar. Ver invariante nº 4.
+   */
+  piscinaMediana:     string | null;
   segurarMedianoPct:  number | null;
   /** Em quantas a piscina bateu segurar — ou seja, vantagem > 0. */
   ganhouDeSegurar:    number;
@@ -402,6 +415,9 @@ export function resumirLiquidez(janelas: JanelaPiscina[]): ResumoLiquidez {
       : pior == null ? j.desacordoTaxaPct
       : Math.max(pior, j.desacordoTaxaPct), null),
     semGas:             medidas.filter((j) => j.gasDe === "ausente").length,
+    piscinaMediana: medidas.length % 2 === 1
+      ? [...medidas].sort((a, b) => a.vantagemPct - b.vantagemPct)[(medidas.length - 1) / 2].alvo.id
+      : null,
     segurarMedianoPct:  med(medidas.map((j) => j.segurarPct)),
     ganhouDeSegurar:    medidas.filter((j) => j.vantagemPct > 0).length,
     semApy:             uteis.length - medidas.length,
