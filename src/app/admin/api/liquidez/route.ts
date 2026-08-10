@@ -57,7 +57,9 @@ const ENDERECO_LEITURA = "0x0000000000000000000000000000000000000001";
  * silêncio, e "gás barato" ficava idêntico a "gás não lido" — exatamente o par
  * de estados que esta casa não deixa mais colapsar.
  */
-async function usdPorUnidadeDeGas(): Promise<{ usdPorGas: number | null; falha?: string }> {
+async function usdPorUnidadeDeGas(): Promise<{
+  usdPorGas: number | null; usdDaCotacao?: number; unidadesDaCotacao?: number; falha?: string;
+}> {
   try {
     const chainId = LIFI_CHAIN_IDS.ethereum;
     const usdc = findToken("ethereum", "USDC");
@@ -83,7 +85,7 @@ async function usdPorUnidadeDeGas(): Promise<{ usdPorGas: number | null; falha?:
     if (!(usd > 0) || !(unidades > 0)) {
       return { usdPorGas: null, falha: "lifi: cotação sem gasCosts" };
     }
-    return { usdPorGas: usd / unidades };
+    return { usdPorGas: usd / unidades, usdDaCotacao: usd, unidadesDaCotacao: unidades };
   } catch (e) {
     return { usdPorGas: null, falha: `lifi:${String(e).slice(0, 60)}` };
   }
@@ -183,6 +185,22 @@ export async function POST(): Promise<NextResponse> {
   // ⚠️ null aqui viaja como null até a janela, que marca `gasDe: "ausente"`.
   // Zero seria "gás grátis", que é uma afirmação e não um dado.
   const gasPct = gas.usdPorGas == null ? null : custoGasPct(CAPITAL_USD, gas.usdPorGas);
+
+  /**
+   * ⚠️ A PARCELA DO GÁS, PARA A TELA — agregado sem parcela não é auditável.
+   *
+   * Na rodada de 10/08 o gás saiu 0,01% (US$ 0,20 pela ida e volta INTEIRA na
+   * Ethereum), número que exige conferência e que não tinha como ser conferido:
+   * a tela mostrava só o percentual. Agora mostra a cotação que o produziu e o
+   * gwei implícito, que é a unidade em que se sabe se um gás é plausível.
+   */
+  const gasDetalhe = gas.usdPorGas == null ? null : {
+    usdPorGas: gas.usdPorGas,
+    usdTotal: Number((GAS_TOTAL_LP * gas.usdPorGas).toFixed(4)),
+    unidades: GAS_TOTAL_LP,
+    cotacaoUsd: gas.usdDaCotacao ?? null,
+    cotacaoUnidades: gas.unidadesDaCotacao ?? null,
+  };
 
   /**
    * ⚠️ FONTE RECUSADA NÃO É PERDA ZERO NEM TAXA ZERO. Sem preço não há como
@@ -329,11 +347,13 @@ export async function POST(): Promise<NextResponse> {
       lpMedianoPct: resumo.lpMedianoPct,
       gasMedianoPct: resumo.gasMedianoPct,
       semGas: resumo.semGas,
+      incertezaTaxaPct: resumo.incertezaTaxaPct,
       segurarMedianoPct: resumo.segurarMedianoPct,
       ganhouDeSegurar: resumo.ganhouDeSegurar,
       medidas: resumo.medidas.length,
       semApy: resumo.semApy,
     },
+    gasDetalhe,
     piscinas: janelas.map((j) => ({
       id: j.alvo.id, rotulo: j.alvo.rotulo, porque: j.alvo.porque,
       controle: j.alvo.controle === true,
@@ -341,7 +361,8 @@ export async function POST(): Promise<NextResponse> {
       ilPct: j.ilPct, taxaPct: j.taxaPct,
       vantagemPct: j.vantagemPct, lpPct: j.lpPct, segurarPct: j.segurarPct,
       apyDe: j.apyDe, apyAnualPct: j.apyAnualPct,
-      gasPct: j.gasPct, gasDe: j.gasDe, casada: j.casada,
+      gasPct: j.gasPct, gasDe: j.gasDe,
+      desacordoTaxaPct: j.desacordoTaxaPct, casada: j.casada,
     })),
     veredito,
     naoMedido,

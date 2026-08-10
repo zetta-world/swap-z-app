@@ -92,20 +92,24 @@ export const ALVOS: AlvoPiscina[] = [
 export const MIN_PISCINAS = 3;
 
 /**
- * ⚠️ FAIXA MORTA — abaixo disto o resultado é EMPATE, não veredito.
+ * ⚠️ PISO DA FAIXA MORTA — e ele é só o PISO, não a faixa.
  *
- * A rodada de 10/08 fechou com vantagem mediana de **−0,01% em um ano** e saiu
- * MORTA. Isso é ruído lido como reprovação: um centésimo de ponto não
- * distingue "a mesa perde" de "a mesa empata".
+ * A rodada de 10/08 (manhã) fechou com vantagem de −0,01% em um ano e saiu
+ * MORTA: ruído lido como reprovação. A faixa nasceu daí.
  *
- * O valor não é chutado — ele é do TAMANHO DA OMISSÃO CONHECIDA. O gás de
- * entrar e sair da piscina não está na conta, e em $2.000 na Ethereum ele custa
- * na ordem de 1 a 3 pontos. Qualquer margem menor que isso está **dentro** do
- * que a medição admite não ter medido, e chamar de resultado seria afirmar
- * precisão que não existe.
+ * ⚠️ MAS A JUSTIFICATIVA ORIGINAL CAIU, e isso importa registrar. Eu declarei
+ * ±1 ponto porque "o gás não está na conta e custa dessa ordem". Na rodada da
+ * tarde o gás ENTROU e mediu **0,01%** — a justificativa evaporou junto.
  *
- * Mesma decisão que a `MARGEM_MINIMA_PCT` da opção coberta (Fase 5.2), pelo
- * mesmo motivo: veredito exige margem maior que o erro declarado.
+ * O que não evaporou foi a incerteza; ela só mudou de lugar. Hoje quem manda é
+ * a TAXA: para a mesma piscina, as duas estimativas da própria fonte
+ * (`apyBase` e `apyMean30d`) chegaram a discordar em mais de 3 pontos. Por isso
+ * a faixa efetiva é `max(este piso, o desacordo MEDIDO da fonte)` — ver
+ * `vereditoLiquidez`.
+ *
+ * Este piso continua existindo para o resíduo que não tem barra de erro no
+ * dado: o modelo do gás (unidades declaradas, par v2 assumido) e a perda ser de
+ * ponta a ponta.
  */
 export const MARGEM_MINIMA_PCT = 1;
 
@@ -207,6 +211,12 @@ export interface JanelaPiscina {
   /** De onde veio o APY — declarado, nunca inferido. */
   apyDe:       "apyBase" | "apyMean30d" | "ausente";
   apyAnualPct: number | null;
+  /**
+   * ⚠️ O DESACORDO DA FONTE CONSIGO MESMA: |apyBase − apyMean30d|, quando as
+   * duas vêm. É a barra de erro da entrada mais frágil desta medição, e ela
+   * existe no dado — não precisa ser chutada. `null` = a fonte só deu uma.
+   */
+  desacordoTaxaPct: number | null;
   /** Gás da ida e volta da piscina, como % do capital. Zero só se MEDIDO zero. */
   gasPct:      number;
   /**
@@ -310,6 +320,11 @@ export function janelaPiscina(input: {
    * declarada, que superestima o custo num mercado que caiu (paga-se a saída em
    * dólares de hoje) e subestima num que subiu.
    */
+  const desacordoTaxaPct =
+    Number.isFinite(input.apyBase as number) && Number.isFinite(input.apyMean30d as number)
+      ? Number(Math.abs(Number(input.apyBase) - Number(input.apyMean30d)).toFixed(4))
+      : null;
+
   const gasPct = Number.isFinite(input.gasPct as number) ? Number(input.gasPct) : 0;
   const gasDe: JanelaPiscina["gasDe"] = Number.isFinite(input.gasPct as number) ? "medido" : "ausente";
   const fatorVantagem = (1 - gasPct / 100) * (1 + ilPct / 100) * (1 + taxaPct / 100);
@@ -319,7 +334,7 @@ export function janelaPiscina(input: {
   return {
     alvo, dias, razao, ilPct, taxaPct,
     vantagemPct, lpPct, segurarPct, apyDe, apyAnualPct,
-    gasPct, gasDe,
+    desacordoTaxaPct, gasPct, gasDe,
     casada: input.casada ?? null,
   };
 }
@@ -339,6 +354,12 @@ export interface ResumoLiquidez {
   vantagemMedianaPct: number | null;
   lpMedianoPct:       number | null;
   gasMedianoPct:      number | null;
+  /**
+   * ⚠️ O DESACORDO DA PRÓPRIA FONTE sobre a mesma taxa — `apyBase` contra
+   * `apyMean30d`. É a incerteza da entrada que mais pesa, e ela é MEDIDA, não
+   * declarada. Ver `vereditoLiquidez`.
+   */
+  incertezaTaxaPct:   number | null;
   /** Quantas janelas entraram SEM preço de gás medido. */
   semGas:             number;
   segurarMedianoPct:  number | null;
@@ -370,6 +391,16 @@ export function resumirLiquidez(janelas: JanelaPiscina[]): ResumoLiquidez {
     vantagemMedianaPct: med(medidas.map((j) => j.vantagemPct)),
     lpMedianoPct:       med(medidas.map((j) => j.lpPct)),
     gasMedianoPct:      med(medidas.map((j) => j.gasPct)),
+    /**
+     * ⚠️ O MÁXIMO, não a mediana. Escolher a mediana aqui seria pegar a
+     * estatística que favorece o veredito — a mediana é menor e alargaria menos
+     * a faixa morta. Se as duas estimativas da fonte para UMA piscina discordam
+     * em 3 pontos, não dá para afirmar uma vantagem de meio ponto em nenhuma.
+     */
+    incertezaTaxaPct:   medidas.reduce<number | null>((pior, j) =>
+      j.desacordoTaxaPct == null ? pior
+      : pior == null ? j.desacordoTaxaPct
+      : Math.max(pior, j.desacordoTaxaPct), null),
     semGas:             medidas.filter((j) => j.gasDe === "ausente").length,
     segurarMedianoPct:  med(medidas.map((j) => j.segurarPct)),
     ganhouDeSegurar:    medidas.filter((j) => j.vantagemPct > 0).length,
@@ -397,7 +428,7 @@ export interface Veredito {
  * seria marcada MORTA só porque segurar rendeu 50%.
  */
 export function vereditoLiquidez(
-  r: ResumoLiquidez, minPiscinas = MIN_PISCINAS, margem = MARGEM_MINIMA_PCT,
+  r: ResumoLiquidez, minPiscinas = MIN_PISCINAS, piso = MARGEM_MINIMA_PCT,
 ): Veredito {
   if (r.medidas.length < minPiscinas) {
     return {
@@ -428,16 +459,30 @@ export function vereditoLiquidez(
 
   /**
    * ⚠️ A FAIXA MORTA VEM ANTES DOS DOIS LADOS. Sem ela, −0,01% em um ano vira
-   * "MORTA" e +0,01% vira "VERDE" — dois vereditos opostos separados por dois
-   * centésimos de ponto, ambos dentro do gás que não medimos.
+   * "MORTA" e +0,01% vira "VERDE" — vereditos opostos separados por dois
+   * centésimos de ponto.
+   *
+   * ⚠️ E ELA É MEDIDA, NÃO DECLARADA. O texto antigo dizia "o GÁS não está na
+   * conta". Depois da 8.1.1 ele ESTÁ, e a frase virou mentira na tela enquanto
+   * uma coluna GÁS aparecia ao lado. Texto que descreve uma versão anterior da
+   * medição é pior que texto nenhum: é lido como leitura do que está ali.
+   *
+   * A incerteza não sumiu com o gás — mudou de lugar. Hoje quem manda é a taxa:
+   * as duas estimativas da PRÓPRIA fonte para a mesma piscina chegaram a
+   * discordar em mais de 3 pontos.
    */
+  const margem = Math.max(piso, r.incertezaTaxaPct ?? 0);
   if (Math.abs(vantagem) < margem) {
+    const porque = (r.incertezaTaxaPct ?? 0) > piso
+      ? `as DUAS estimativas de taxa da própria fonte discordam em até `
+        + `${(r.incertezaTaxaPct ?? 0).toFixed(2)} pontos para a mesma piscina`
+      : `o modelo de gás usa unidades declaradas e a perda é de ponta a ponta`;
     return {
       status: "cinza",
       texto: `EMPATE: a mesa fica ${vantagem.toFixed(2)}% de segurar os mesmos ativos — `
-        + `dentro da faixa de ±${margem}% que a medição não consegue distinguir, porque o `
-        + `GÁS de entrar e sair não está na conta e custa dessa ordem em $2.000 na Ethereum. `
-        + `Com o gás, este empate vira negativo. Não é aprovação nem reprovação: é ruído.`,
+        + `dentro da faixa de ±${margem.toFixed(2)}% que esta medição não consegue `
+        + `distinguir, porque ${porque}. Não é aprovação nem reprovação: é ruído. `
+        + `O gás JÁ está na conta (${(r.gasMedianoPct ?? 0).toFixed(2)}%).`,
     };
   }
 

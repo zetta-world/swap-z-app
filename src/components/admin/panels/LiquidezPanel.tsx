@@ -22,7 +22,7 @@ interface Piscina {
   ilPct: number; taxaPct: number;
   vantagemPct: number; lpPct: number; segurarPct: number;
   apyDe: "apyBase" | "apyMean30d" | "ausente"; apyAnualPct: number | null;
-  gasPct: number; gasDe: "medido" | "ausente";
+  gasPct: number; gasDe: "medido" | "ausente"; desacordoTaxaPct: number | null;
   casada: { symbol: string; tvlUsd: number | null } | null;
 }
 interface Dados {
@@ -31,10 +31,14 @@ interface Dados {
   resumo: {
     ilMedianoPct: number | null; taxaMedianaPct: number | null;
     vantagemMedianaPct: number | null; lpMedianoPct: number | null;
-    gasMedianoPct: number | null; semGas: number;
+    gasMedianoPct: number | null; semGas: number; incertezaTaxaPct: number | null;
     segurarMedianoPct: number | null;
     ganhouDeSegurar: number; medidas: number; semApy: number;
   };
+  gasDetalhe: {
+    usdPorGas: number; usdTotal: number; unidades: number;
+    cotacaoUsd: number | null; cotacaoUnidades: number | null;
+  } | null;
   piscinas: Piscina[];
   veredito: { status: "verde" | "cinza" | "morta"; texto: string };
   naoMedido: string[];
@@ -125,6 +129,26 @@ export default function LiquidezPanel() {
             <Bloco rotulo="CAPITAL" valor="$2.000" cor="var(--adm-ink-3)" />
             <Bloco rotulo="PISCINAS (n)" valor={`${data.resumo.medidas}/${data.minPiscinas}`} cor="var(--adm-ink-3)" />
           </div>
+
+          {/* ⚠️ A PARCELA DO GÁS, conferível. US$ 0,20 pela ida e volta na
+              Ethereum é número que exige conferência, e gwei é a unidade em
+              que se sabe se um gás é plausível. */}
+          {data.gasDetalhe && (
+            <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 4, lineHeight: 1.6 }}>
+              gás: {data.gasDetalhe.unidades.toLocaleString("pt-BR")} unidades ×{" "}
+              ${data.gasDetalhe.usdPorGas.toExponential(2)}/un = <b>${data.gasDetalhe.usdTotal.toFixed(2)}</b>
+              {data.gasDetalhe.cotacaoUnidades != null && data.gasDetalhe.cotacaoUsd != null && (
+                <> · da cotação: ${data.gasDetalhe.cotacaoUsd.toFixed(4)} por{" "}
+                  {data.gasDetalhe.cotacaoUnidades.toLocaleString("pt-BR")} un</>
+              )}
+            </div>
+          )}
+          {data.resumo.incertezaTaxaPct != null && (
+            <div style={{ fontSize: 8, color: "var(--adm-amber)", marginBottom: 4, lineHeight: 1.6 }}>
+              ⚠️ desacordo da fonte sobre a MESMA taxa (apyBase vs apyMean30d): até{" "}
+              {data.resumo.incertezaTaxaPct.toFixed(2)} pontos — é isso que define a faixa de empate
+            </div>
+          )}
 
           <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.6 }}>
             janela de {data.janelaDias} dias · bateu segurar em {data.resumo.ganhouDeSegurar}/{data.resumo.medidas}

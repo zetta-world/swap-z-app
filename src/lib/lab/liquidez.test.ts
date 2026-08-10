@@ -22,7 +22,7 @@ const alvo = (over: Partial<AlvoPiscina> = {}): AlvoPiscina => ({
 const janela = (over: Partial<JanelaPiscina> = {}): JanelaPiscina => ({
   alvo: alvo(), dias: 90, razao: 1, ilPct: 0, taxaPct: 5,
   vantagemPct: 5, lpPct: 5, segurarPct: 0,
-  apyDe: "apyBase", apyAnualPct: 20, gasPct: 0, gasDe: "medido",
+  apyDe: "apyBase", apyAnualPct: 20, desacordoTaxaPct: null, gasPct: 0, gasDe: "medido",
   casada: null, ...over,
 });
 
@@ -254,8 +254,46 @@ describe("o resumo e o veredito", () => {
     const v = vereditoLiquidez(r);
     expect(v.status).toBe("cinza");
     expect(v.texto).toContain("EMPATE");
-    // E diz POR QUE não dá para decidir — o gás, que não está na conta.
-    expect(v.texto).toContain("GÁS");
+    // E diz POR QUE não dá para decidir, com o número da faixa.
+    expect(v.texto).toContain("±1.00%");
+  });
+
+  /**
+   * ⚠️ A FAIXA CRESCE COM O DESACORDO DA FONTE, e é MEDIDA.
+   *
+   * A justificativa original do ±1 era "o gás não está na conta". Depois da
+   * 8.1.1 o gás entrou e mediu 0,01% — a justificativa evaporou. A incerteza
+   * não: mudou para a taxa, onde as duas estimativas da própria fonte para a
+   * MESMA piscina discordaram em mais de 3 pontos.
+   */
+  it("a faixa cresce com o desacordo MEDIDO da fonte", () => {
+    const r = resumirLiquidez([
+      janela({ vantagemPct: 0.56, desacordoTaxaPct: 3.4 }),
+      janela({ vantagemPct: 0.56, desacordoTaxaPct: 0.4 }),
+      janela({ vantagemPct: 0.56, desacordoTaxaPct: 0.1 }),
+    ]);
+    // O MÁXIMO, não a mediana: a mediana (0,4) deixaria +0,56% virar VERDE.
+    expect(r.incertezaTaxaPct).toBe(3.4);
+    const v = vereditoLiquidez(r);
+    expect(v.status).toBe("cinza");
+    expect(v.texto).toContain("±3.40%");
+    expect(v.texto).toContain("discordam");
+  });
+
+  /**
+   * ⚠️ E O TEXTO NÃO PODE DIZER QUE O GÁS ESTÁ FORA quando ele está dentro.
+   * Foi o defeito da tela de 10/08: a frase descrevia a versão anterior da
+   * medição enquanto uma coluna GÁS aparecia ao lado.
+   */
+  it("o texto do empate NÃO afirma que o gás está fora da conta", () => {
+    const r = resumirLiquidez([
+      janela({ vantagemPct: 0.1, gasPct: 0.01 }),
+      janela({ vantagemPct: 0.1, gasPct: 0.01 }),
+      janela({ vantagemPct: 0.1, gasPct: 0.01 }),
+    ]);
+    const t = vereditoLiquidez(r).texto;
+    expect(t).not.toContain("não está na conta");
+    expect(t).toContain("JÁ está na conta");
   });
 
   /**
