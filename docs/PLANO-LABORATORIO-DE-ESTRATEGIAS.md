@@ -2108,8 +2108,62 @@ caixa ganhou.
 
 ---
 
-### FASE 9 — Receita (C21, C22) · 🔴
+### FASE 9 — Receita (C21, C22) · 🟡
 Rebate de corretora e rev-share de protocolo. Não é trade, é dinheiro na mesa.
+
+## Verificação de estado (11/08) — três achados, e o primeiro decide a fase
+
+**1. ⚠️ A TAXA DE INTEGRADOR NUNCA FOI PEDIDA.** Os três agregadores suportam
+taxa de parceiro — 0x (`swapFeeBps`), LI.FI (`fee`) e Jupiter
+(`platformFeeBps`). **Nenhum recebia o parâmetro.** O `integratorKey` que
+existia na LI.FI é o header `x-lifi-api-key`: chave de API, não taxa — quase
+li um pelo outro e fui conferir o que ele faz com o valor.
+
+Ou seja: C21/C22 rendia **zero** não por falta de volume, mas por nunca ter
+sido pedido. O canal existe e estava desligado.
+
+**2. O volume real é ~$63.** Treze operações no `operations`, todas entre 13 e
+18 de junho: $58,77 de autopilot, $3,95 de spot, $0,00 de DEX. Com 1%, isso é
+$0,63. A pergunta útil não é "quanto rende" — é **"quanto rende por $1M
+roteado, e quanto falta rotear"**.
+
+**3. O livro mistura sonda com tráfego real.** As duas linhas de `dex_swap` vêm
+do banco de ataque (`attack.ts` posta `volumeUsd: 0` de propósito) e são
+indistinguíveis de swap de cliente no agregado. Medição de receita construída
+em cima disso contaria sonda como volume.
+
+## A escada de taxas (9.1) — decisão do dono, degraus meus
+
+O dono: *"cada Tier vai ter uma taxa, vamos pôr a taxa mais alta 1% que é a do
+Tier gratuito; o restante você escolhe por perfil de cada Tier"*.
+
+| plano | taxa | por quê |
+|---|---|---|
+| **free** | **1,00%** | teto declarado pelo dono — quem não assina paga o preço de lista |
+| **pro** | 0,50% | metade do teto: o primeiro passo tem que doer menos que assinar de novo |
+| **trader** | 0,25% | metade de novo — é o plano de quem opera com frequência |
+| **pilot** | 0,10% | o mais baixo do mapa: quem roda automação traz volume, e volume é o ativo |
+
+**⚠️ A LÓGICA É "QUEM PAGA MAIS ASSINATURA PAGA MENOS POR TRADE".** O produto é
+a assinatura; a taxa por operação existe para monetizar quem não assina e para
+fazer o upgrade se pagar sozinho. Taxa alta no plano caro seria cobrar duas
+vezes pela mesma coisa e empurrar o cliente de maior volume — o mais valioso —
+para outro agregador. Há teste exigindo que a escada seja **estritamente
+decrescente**.
+
+**⚠️ E O NÚMERO QUE DECIDE NÃO É A TAXA, É O EQUILÍBRIO.**
+`equilibrioMensalUsd` diz a partir de que volume mensal o upgrade se paga
+sozinho — de Free para Pro a $20/mês, são **$4.000/mês**. Sem esse número na
+tela a escada parece punição; com ele, é oferta. Upgrade que não baixa a taxa
+devolve `null`, não um número grande: número grande seria lido como *"é só
+operar mais"*, que é falso.
+
+**⚠️ SEM DESTINATÁRIO CONFIGURADO, TAXA ZERO.** `SWAP_FEE_RECIPIENT` ausente
+desliga a cobrança inteira. Cobrar sem ter para onde mandar é pior que não
+cobrar — e o default do ambiente não configurado **não cobra do usuário**.
+
+**Pendente:** ligar os parâmetros nos três agregadores e medir a receita
+projetada por faixa de volume.
 
 ---
 
@@ -2163,6 +2217,6 @@ Traduzido em regra:
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
 | 8 · Cinzas restantes | 🟡 **8.2 rodada 10/08** — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
-| 9 · Receita | 🔴 |
+| 9 · Receita | 🟡 **9.1 — escada de taxas declarada 11/08** (1% free → 0,1% pilot). Achado: a taxa nunca foi pedida a nenhum agregador |
 
 Atualizar este quadro a cada entrega — regra da casa.
