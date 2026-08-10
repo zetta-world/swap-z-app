@@ -1918,7 +1918,7 @@ porque cancelamento silencioso vira, meses depois, *"por que a troca não está 
 conta?"*.
 
 **O que entra é o custo que a piscina tem A MAIS que segurar**: duas aprovações,
-um depósito e um saque — `473.000` unidades no total.
+um depósito e um saque — `432.000` unidades no total.
 
 - **Unidades DECLARADAS, preço MEDIDO.** As unidades vêm da faixa típica dos
   contratos e passam por PR; os dólares por unidade saem dos `gasCosts` de uma
@@ -1935,8 +1935,40 @@ um depósito e um saque — `473.000` unidades no total.
   simplificação declarada, que superestima num mercado que caiu e subestima num
   que subiu.
 
-**Pendente: rodar o 💧.** Com o gás na conta, o empate de −0,01% deve virar
-negativo — e aí C14 fecha com veredito, não com faixa cinza.
+## A rodada com gás (10/08, tarde) — e o gás desmontou a própria justificativa
+
+Rodou. **INCONCLUSIVA · EMPATE**, vantagem **+0,56%**, e a tabela agora fecha
+nas duas direções. Mas a tela trouxe quatro coisas.
+
+**1. ⚠️ O TEXTO DO VEREDITO VIROU MENTIRA.** Ele dizia *"o GÁS de entrar e sair
+não está na conta"* — enquanto uma coluna **GÁS** aparecia dois centímetros ao
+lado, com o número. O texto descrevia a versão ANTERIOR da medição, e texto
+assim é pior que texto nenhum: é lido como leitura do que está na tela.
+
+**2. ⚠️ A JUSTIFICATIVA DA FAIXA MORTA CAIU JUNTO.** Eu declarei ±1 ponto
+*porque o gás custava dessa ordem e não estava na conta*. O gás entrou e mediu
+**0,01%** — US$ 0,20 pela ida e volta inteira. A justificativa evaporou.
+
+O que **não** evaporou foi a incerteza: ela mudou de lugar. Hoje quem manda é a
+TAXA — as duas estimativas da **própria fonte** para a MESMA piscina (`apyBase`
+e `apyMean30d`) chegaram a discordar em mais de 3 pontos. Então a faixa passou a
+ser `max(piso declarado, desacordo MEDIDO da fonte)`.
+
+⚠️ E o desacordo entra pelo **MÁXIMO, não pela mediana**. A mediana seria a
+estatística que favorece o veredito: ela alargaria menos a faixa e transformaria
+o +0,56% em VERDE. Escolher a estatística depois de ver o resultado é o que a
+invariante nº 12 proíbe — então a escolha é a conservadora, e ela mantém a mesa
+em CINZA.
+
+**3. O gás de 0,01% não era conferível.** US$ 0,20 pela ida e volta na Ethereum
+é número que exige conferência, e a tela mostrava só o percentual. Agora mostra
+a parcela: unidades × dólares por unidade, mais a cotação que produziu o preço.
+
+**4. Erro de aritmética meu, na prosa.** Este documento dizia `473.000` unidades
+de gás; o total real é **432.000** (2×46.000 + 180.000 + 160.000). O código
+sempre calculou certo — quem estava errado era o texto.
+
+**Pendente: rodar o 💧 de novo.**
 
 **Fica declarado como não medido:** o gás de entrar/sair (em $2.000 na Ethereum
 é material e pode virar o sinal), a taxa como foto de hoje aplicada à janela, e
@@ -1998,7 +2030,7 @@ Traduzido em regra:
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
-| 8 · Cinzas restantes | 🟡 **8.1.1 construída 10/08** — o gás entrou na conta (troca cancela entre os dois lados, só o gás de piscina conta). Falta rodar o 💧 |
+| 8 · Cinzas restantes | 🟡 **8.1.1 rodada 10/08** — EMPATE (+0,56%). O gás mediu 0,01% e derrubou a justificativa da faixa morta; ela virou MEDIDA (desacordo da fonte). Falta reconfirmar |
 | 9 · Receita | 🔴 |
 
 Atualizar este quadro a cada entrega — regra da casa.
