@@ -15,7 +15,7 @@
 
 ## ⚠️ ANTES DE COMEÇAR QUALQUER FASE
 
-Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 16 regras
+Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 17 regras
 que qualquer medição deste laboratório respeita, cada uma com a cicatriz que a
 gerou.
 
@@ -1836,7 +1836,49 @@ impermanente, que é a outra metade da conta.
 - **Painel 💧 SER A CONTRAPARTE**, com LÍQUIDO e SEGURAR lado a lado — separar
   as duas deixaria a primeira responder pela segunda.
 
-**Pendente: o dono rodar o 💧.**
+## A rodada (09/08) — o controle passou, o enquadramento não
+
+O dono rodou. **INCONCLUSIVA** por piso de amostra (2 piscinas com taxa, piso
+3), e a tela trouxe três coisas.
+
+**1. O grupo de controle funcionou.** `USDC/USDT` deu perda **0,00%** e vantagem
+**+0,04%** — só a taxa. A matemática da perda impermanente está certa, e ela
+bateu a curva no resto: o ETH caiu ~55% no ano e a perda saiu −7,39%,
+exatamente o que a fórmula prevê para essa divergência.
+
+**2. ⚠️ O DEFEITO — invariante nº 17, nova.** A tela pintou de VERDE duas
+piscinas que **perderam** para segurar, e escreveu *"bateu segurar em 2/2"*
+quando o certo era **0/2**.
+
+`taxa + perda` **já era** a comparação contra segurar, porque a perda
+impermanente é medida *em relação a ter segurado*. Eu comparei esse número
+contra o `segurar` — uma **diferença contra um nível** (invariante nº 3, forma
+nova). Alcance real: o veredito da tela não foi afetado (o primeiro portão,
+`vantagem ≤ 0`, era o teste correto), mas o contador, a cor da coluna e — o pior
+— o segundo portão **reprovavam ao contrário em mercado de ALTA**: uma piscina
+vencedora seria marcada MORTA só porque segurar rendeu mais que a vantagem dela.
+
+**O grupo de controle não pegou, e não tinha como:** com preços parados, a
+diferença e o nível coincidem. Controle prova a **conta**, não o
+**enquadramento**.
+
+**Consertos:** `liquidoPct` virou `vantagemPct` (o nome carrega o
+enquadramento), entrou `lpPct` **absoluto** ao lado de `segurarPct` para o
+confronto errado não ter como ser escrito, o segundo portão foi removido, e a
+conta virou multiplicativa — a taxa incide sobre a posição que a perda já
+encolheu. Regressão coberta nos dois sentidos (alta e queda), conferida por
+mutação.
+
+**3. Duas coisas menores, consertadas junto.** A taxa do WETH/USDC saiu
+**+0,25%/ano**, implausível para essa piscina — e não havia como saber *qual*
+piscina a fonte casou. Agora a tela mostra símbolo, TVL e o APY bruto de cada
+casamento. E `SOL/USDC` na Uniswap-v2 da Ethereum **não existe** (o SOL não é
+nativo lá): a medição excluiu certo e avisou, mas o alvo estava errado desde o
+PR — virou `LINK/ETH`. Além disso, as medianas do cabeçalho descreviam
+conjuntos diferentes (a perda vinha de um grupo, a taxa de outro); agora todas
+saem da mesma amostra.
+
+**Pendente: rodar o 💧 de novo, com os quatro consertos.**
 
 **Fica declarado como não medido:** o gás de entrar/sair (em $2.000 na Ethereum
 é material e pode virar o sinal), a taxa como foto de hoje aplicada à janela, e
@@ -1898,7 +1940,7 @@ Traduzido em regra:
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
-| 8 · Cinzas restantes | 🟡 **8.1 construída 09/08** — C14 (LP em AMM) com perda impermanente calculada e grupo de controle; triagem das 11 feita. Falta o dono rodar o 💧 |
+| 8 · Cinzas restantes | 🟡 **8.1 rodada 09/08** — INCONCLUSIVA por amostra; o controle validou a conta e expôs um defeito de enquadramento (invariante nº 17). 4 consertos, falta reconfirmar |
 | 9 · Receita | 🔴 |
 
 Atualizar este quadro a cada entrega — regra da casa.

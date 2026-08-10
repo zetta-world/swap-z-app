@@ -71,9 +71,14 @@ export const ALVOS: AlvoPiscina[] = [
     porque: "dois voláteis CORRELACIONADOS — a perda deve ser bem menor",
   },
   {
-    id: "sol_usdc", base: "SOL", cotacao: null, rotulo: "SOL / USDC",
-    llama: { project: "uniswap-v2", symbol: "SOL-USDC", chain: "Ethereum" },
-    porque: "volátil mais nervoso que o ETH — testa o outro extremo",
+    // ⚠️ AQUI ESTAVA `SOL / USDC` NA UNISWAP-V2 DA ETHEREUM, e essa piscina não
+    // existe — o SOL não é nativo lá. A rodada de 09/08 devolveu "não
+    // encontrada na fonte" e a excluiu corretamente do veredito, mas o alvo
+    // estava errado desde o PR. Declarar par sem conferir onde ele mora é a
+    // mesma preguiça que a invariante nº 12 cobra na escolha de parâmetro.
+    id: "link_eth", base: "LINK", cotacao: "ETH", rotulo: "LINK / ETH",
+    llama: { project: "uniswap-v2", symbol: "LINK-WETH", chain: "Ethereum" },
+    porque: "volátil mais nervoso que o ETH, e par ETH-referenciado de v2 antigo",
   },
   {
     id: "usdc_usdt", base: null, cotacao: null, rotulo: "USDC / USDT",
@@ -120,13 +125,33 @@ export interface JanelaPiscina {
   ilPct:       number;
   /** Taxa recebida no período, derivada do APY da fonte. */
   taxaPct:     number;
-  /** taxa + perda. O que a mesa entregou de fato. */
-  liquidoPct:  number;
-  /** Segurar 50/50 os mesmos ativos, na mesma janela. */
+  /**
+   * ⚠️ A VANTAGEM CONTRA SEGURAR — número RELATIVO, e o nome diz isso agora.
+   *
+   * Aqui existia `liquidoPct`, e o nome mentia. A perda impermanente já é
+   * medida EM RELAÇÃO a ter segurado, então taxa+perda nunca foi "o que a mesa
+   * rendeu": é "quanto a mesa ganhou ou perdeu de quem só segurou". Eu comparei
+   * esse número contra `segurarPct`, que é um NÍVEL — uma diferença contra um
+   * nível, invariante nº 3.
+   *
+   * Na rodada de 09/08 isso pintou de verde duas piscinas que PERDERAM para
+   * segurar, e escreveu "bateu segurar em 2/2" quando o certo era 0/2.
+   */
+  vantagemPct: number;
+  /** O retorno ABSOLUTO da posição na piscina. Comparável com `segurarPct`. */
+  lpPct:       number;
+  /** Segurar 50/50 os mesmos ativos, na mesma janela. Absoluto. */
   segurarPct:  number;
   /** De onde veio o APY — declarado, nunca inferido. */
   apyDe:       "apyBase" | "apyMean30d" | "ausente";
   apyAnualPct: number | null;
+  /**
+   * ⚠️ QUAL PISCINA A FONTE CASOU — agregado sem parcela não é auditável. Na
+   * rodada de 09/08 a taxa do WETH/USDC saiu +0,25%/ano, número implausível
+   * para essa piscina, e não havia como saber DE QUAL piscina ele veio sem
+   * abrir a fonte. Agora vai na tela.
+   */
+  casada:      { symbol: string; tvlUsd: number | null } | null;
 }
 
 /**
@@ -149,6 +174,7 @@ export function janelaPiscina(input: {
   apyBase:    number | null | undefined;
   apyMean30d: number | null | undefined;
   dias:       number;
+  casada?:    { symbol: string; tvlUsd: number | null } | null;
 }): JanelaPiscina | null {
   const { alvo, dias } = input;
   if (!(dias > 0)) return null;
@@ -184,10 +210,19 @@ export function janelaPiscina(input: {
   /** Segurar 50/50: metade em cada ativo, cada metade rendendo a sua variação. */
   const segurarPct = ((varBase + varCot) / 2 - 1) * 100;
 
+  /**
+   * ⚠️ MULTIPLICATIVO, NÃO SOMADO. A taxa incide sobre a posição que a perda já
+   * encolheu, então `taxa + perda` é aproximação — e era ela que estava aqui.
+   * Com o produto, `lpPct` e `segurarPct` ficam exatamente na mesma moeda.
+   */
+  const fatorVantagem = (1 + ilPct / 100) * (1 + taxaPct / 100);
+  const vantagemPct = (fatorVantagem - 1) * 100;
+  const lpPct = ((1 + segurarPct / 100) * fatorVantagem - 1) * 100;
+
   return {
     alvo, dias, razao, ilPct, taxaPct,
-    liquidoPct: taxaPct + ilPct,
-    segurarPct, apyDe, apyAnualPct,
+    vantagemPct, lpPct, segurarPct, apyDe, apyAnualPct,
+    casada: input.casada ?? null,
   };
 }
 
@@ -201,13 +236,14 @@ export interface ResumoLiquidez {
   janelas:        JanelaPiscina[];
   /** Só as que têm APY — as sem taxa não entram em conta nenhuma. */
   medidas:        JanelaPiscina[];
-  ilMedianoPct:      number | null;
-  taxaMedianaPct:    number | null;
-  liquidoMedianoPct: number | null;
-  segurarMedianoPct: number | null;
-  /** Em quantas a piscina bateu segurar. */
-  ganhouDeSegurar:   number;
-  semApy:            number;
+  ilMedianoPct:       number | null;
+  taxaMedianaPct:     number | null;
+  vantagemMedianaPct: number | null;
+  lpMedianoPct:       number | null;
+  segurarMedianoPct:  number | null;
+  /** Em quantas a piscina bateu segurar — ou seja, vantagem > 0. */
+  ganhouDeSegurar:    number;
+  semApy:             number;
 }
 
 export function resumirLiquidez(janelas: JanelaPiscina[]): ResumoLiquidez {
@@ -217,15 +253,24 @@ export function resumirLiquidez(janelas: JanelaPiscina[]): ResumoLiquidez {
   const uteis = janelas.filter((j) => !j.alvo.controle);
   const medidas = uteis.filter((j) => j.apyDe !== "ausente");
   const med = (xs: number[]) => (xs.length ? median(xs) : null);
+  /**
+   * ⚠️ TODAS AS MEDIANAS SOBRE A MESMA AMOSTRA (`medidas`).
+   *
+   * A perda impermanente antes vinha de `uteis` — que inclui piscina sem taxa —
+   * enquanto taxa e vantagem vinham de `medidas`. Os quatro números do
+   * cabeçalho descreviam conjuntos diferentes e a tela não dizia isso
+   * (invariante nº 4: amostra é o que SOBREVIVE aos filtros).
+   */
   return {
     janelas,
     medidas,
-    ilMedianoPct:      med(uteis.map((j) => j.ilPct)),
-    taxaMedianaPct:    med(medidas.map((j) => j.taxaPct)),
-    liquidoMedianoPct: med(medidas.map((j) => j.liquidoPct)),
-    segurarMedianoPct: med(medidas.map((j) => j.segurarPct)),
-    ganhouDeSegurar:   medidas.filter((j) => j.liquidoPct > j.segurarPct).length,
-    semApy:            uteis.length - medidas.length,
+    ilMedianoPct:       med(medidas.map((j) => j.ilPct)),
+    taxaMedianaPct:     med(medidas.map((j) => j.taxaPct)),
+    vantagemMedianaPct: med(medidas.map((j) => j.vantagemPct)),
+    lpMedianoPct:       med(medidas.map((j) => j.lpPct)),
+    segurarMedianoPct:  med(medidas.map((j) => j.segurarPct)),
+    ganhouDeSegurar:    medidas.filter((j) => j.vantagemPct > 0).length,
+    semApy:             uteis.length - medidas.length,
   };
 }
 
@@ -237,12 +282,16 @@ export interface Veredito {
 }
 
 /**
- * ⚠️ DOIS TESTES, E O SEGUNDO É O QUE MATA.
+ * ⚠️ UM TESTE SÓ, PORQUE ERAM DOIS E O SEGUNDO ESTAVA QUEBRADO.
  *
- * Líquido positivo só diz que a mesa não perdeu dinheiro. A pergunta é se ela
- * bate SEGURAR os mesmos ativos — se não bater, a taxa foi paga com o próprio
- * patrimônio do provedor, e a mesa destrói valor por mais bonito que seja o APR
- * na tela (invariante nº 9).
+ * A pergunta desta família é uma: **a mesa bate SEGURAR os mesmos ativos?**
+ * E `vantagemPct` já É essa resposta, porque a perda impermanente é medida em
+ * relação a segurar. Não existe segundo teste a fazer.
+ *
+ * O que havia aqui era `vantagem <= segurar → morta`, comparando uma diferença
+ * com um nível (invariante nº 3). Além de não significar nada, ele reprovava ao
+ * contrário em mercado de ALTA: uma piscina que ganhou de segurar por 2 pontos
+ * seria marcada MORTA só porque segurar rendeu 50%.
  */
 export function vereditoLiquidez(r: ResumoLiquidez, minPiscinas = MIN_PISCINAS): Veredito {
   if (r.medidas.length < minPiscinas) {
@@ -253,26 +302,23 @@ export function vereditoLiquidez(r: ResumoLiquidez, minPiscinas = MIN_PISCINAS):
         + (r.semApy > 0 ? ` ${r.semApy} ficaram de fora por a fonte não trazer o APY.` : ""),
     };
   }
-  const liquido = r.liquidoMedianoPct ?? 0;
-  const segurar = r.segurarMedianoPct ?? 0;
+  const vantagem = r.vantagemMedianaPct ?? 0;
 
-  if (liquido <= 0) {
+  if (vantagem <= 0) {
     return {
       status: "morta",
-      texto: `a taxa não cobre a perda impermanente: mediana ${liquido.toFixed(2)}% na janela `
-        + `(taxa ${(r.taxaMedianaPct ?? 0).toFixed(2)}%, perda ${(r.ilMedianoPct ?? 0).toFixed(2)}%).`,
-    };
-  }
-  if (liquido <= segurar) {
-    return {
-      status: "morta",
-      texto: `a mesa fica positiva (${liquido.toFixed(2)}%) mas PERDE de segurar os mesmos `
-        + `ativos (${segurar.toFixed(2)}%). A taxa foi paga com o próprio patrimônio do provedor.`,
+      texto: `a taxa não cobre a perda impermanente: a mesa fica ${vantagem.toFixed(2)}% `
+        + `ABAIXO de simplesmente segurar os mesmos ativos `
+        + `(taxa ${(r.taxaMedianaPct ?? 0).toFixed(2)}%, perda ${(r.ilMedianoPct ?? 0).toFixed(2)}%). `
+        + `Em números absolutos: ${(r.lpMedianoPct ?? 0).toFixed(2)}% na piscina contra `
+        + `${(r.segurarMedianoPct ?? 0).toFixed(2)}% segurando.`,
     };
   }
   return {
     status: "verde",
-    texto: `a taxa cobre a perda E bate segurar: ${liquido.toFixed(2)}% contra `
-      + `${segurar.toFixed(2)}% na mesma janela, em ${r.ganhouDeSegurar}/${r.medidas.length} piscinas.`,
+    texto: `a taxa cobre a perda e sobra: a mesa fica +${vantagem.toFixed(2)}% ACIMA de segurar `
+      + `os mesmos ativos, em ${r.ganhouDeSegurar}/${r.medidas.length} piscinas. `
+      + `Em absolutos: ${(r.lpMedianoPct ?? 0).toFixed(2)}% contra `
+      + `${(r.segurarMedianoPct ?? 0).toFixed(2)}%.`,
   };
 }

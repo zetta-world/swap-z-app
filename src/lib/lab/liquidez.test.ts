@@ -20,7 +20,8 @@ const alvo = (over: Partial<AlvoPiscina> = {}): AlvoPiscina => ({
 
 const janela = (over: Partial<JanelaPiscina> = {}): JanelaPiscina => ({
   alvo: alvo(), dias: 90, razao: 1, ilPct: 0, taxaPct: 5,
-  liquidoPct: 5, segurarPct: 0, apyDe: "apyBase", apyAnualPct: 20, ...over,
+  vantagemPct: 5, lpPct: 5, segurarPct: 0,
+  apyDe: "apyBase", apyAnualPct: 20, casada: null, ...over,
 });
 
 describe("perda impermanente — o sinal é a trava", () => {
@@ -75,20 +76,44 @@ describe("a janela de uma piscina", () => {
     const j = janelaPiscina({ ...base, precoBaseIni: 2000, precoBaseFim: 2000 })!;
     expect(j.ilPct).toBe(0);
     expect(j.taxaPct).toBeCloseTo(20, 6);
-    expect(j.liquidoPct).toBeCloseTo(20, 6);
+    expect(j.vantagemPct).toBeCloseTo(20, 6);
+    expect(j.lpPct).toBeCloseTo(20, 6);
     expect(j.segurarPct).toBeCloseTo(0, 6);
   });
 
   /**
-   * ⚠️ O CASO QUE VENDE A MESA ERRADA: o ativo dobra, a piscina fica positiva
-   * pela taxa — e MESMO ASSIM perde feio de ter segurado.
+   * ⚠️ ESTE TESTE ESTAVA ESCRITO AO CONTRÁRIO, E ERA O DEFEITO INTEIRO.
+   *
+   * Ele afirmava `liquidoPct < segurarPct` como se isso significasse "perde de
+   * segurar". Não significa: `vantagemPct` JÁ É a comparação contra segurar,
+   * porque a perda impermanente é medida em relação a ela. Comparar os dois era
+   * pôr uma diferença contra um nível (invariante nº 3).
+   *
+   * Com taxa de 20% e perda de 5,7%, a piscina GANHA de segurar em 14 pontos —
+   * o oposto do que o teste antigo afirmava, e ele passava.
    */
-  it("ativo dobra: a piscina fica positiva e ainda assim perde de segurar", () => {
+  it("ativo dobra: a taxa cobre a perda, e a mesa GANHA de segurar", () => {
     const j = janelaPiscina({ ...base, precoBaseIni: 2000, precoBaseFim: 4000 })!;
     expect(j.ilPct).toBeCloseTo(-5.72, 1);
-    expect(j.liquidoPct).toBeGreaterThan(0);        // taxa 20% − perda 5,7%
     expect(j.segurarPct).toBeCloseTo(50, 6);        // metade parada, metade dobrou
-    expect(j.liquidoPct).toBeLessThan(j.segurarPct);
+    expect(j.vantagemPct).toBeGreaterThan(0);       // taxa 20% cobre a perda 5,7%
+    // E o absoluto tem que bater o produto: segurar × vantagem.
+    expect(j.lpPct).toBeCloseTo(((1.5) * (1 + j.vantagemPct / 100) - 1) * 100, 6);
+    expect(j.lpPct).toBeGreaterThan(j.segurarPct);
+  });
+
+  /**
+   * ⚠️ O CASO DA RODADA DE 09/08, virado em teste: mercado de QUEDA, a taxa NÃO
+   * cobre a perda. A tela pintava isso de verde porque −7% "é maior que" −27%.
+   */
+  it("taxa minúscula em mercado de queda: PERDE de segurar, em absoluto também", () => {
+    const j = janelaPiscina({
+      ...base, precoBaseIni: 4000, precoBaseFim: 1800, apyBase: 0.25,
+    })!;
+    expect(j.segurarPct).toBeLessThan(0);
+    expect(j.vantagemPct).toBeLessThan(0);          // a taxa não cobriu a perda
+    // O que importa: o absoluto da piscina é PIOR que o de segurar.
+    expect(j.lpPct).toBeLessThan(j.segurarPct);
   });
 
   /** Dois voláteis que andam JUNTOS quase não têm perda — a razão fica em 1. */
@@ -141,12 +166,13 @@ describe("o resumo e o veredito", () => {
    */
   it("o par de controle fica fora das medianas", () => {
     const r = resumirLiquidez([
-      janela({ ilPct: -10, liquidoPct: -5 }),
-      janela({ ilPct: -8,  liquidoPct: -3 }),
-      janela({ alvo: alvo({ controle: true }), ilPct: 0, liquidoPct: 5 }),
+      janela({ ilPct: -10, vantagemPct: -5 }),
+      janela({ ilPct: -8,  vantagemPct: -3 }),
+      janela({ alvo: alvo({ controle: true }), ilPct: 0, vantagemPct: 5 }),
     ]);
     expect(r.medidas).toHaveLength(2);
     expect(r.ilMedianoPct).toBeLessThan(0);
+    expect(r.ganhouDeSegurar).toBe(0);   // vantagem negativa nas duas
     expect(r.janelas).toHaveLength(3);   // mas continua visível na tela
   });
 
@@ -157,37 +183,69 @@ describe("o resumo e o veredito", () => {
     expect(v.texto).toContain("inconclusivo não é reprovado");
   });
 
-  it("líquido negativo mata a mesa", () => {
+  it("vantagem negativa mata a mesa", () => {
     const r = resumirLiquidez([
-      janela({ taxaPct: 3, ilPct: -10, liquidoPct: -7, segurarPct: -20 }),
-      janela({ taxaPct: 3, ilPct: -9,  liquidoPct: -6, segurarPct: -20 }),
-      janela({ taxaPct: 3, ilPct: -11, liquidoPct: -8, segurarPct: -20 }),
+      janela({ taxaPct: 3, ilPct: -10, vantagemPct: -7, segurarPct: -20, lpPct: -25.6 }),
+      janela({ taxaPct: 3, ilPct: -9,  vantagemPct: -6, segurarPct: -20, lpPct: -24.8 }),
+      janela({ taxaPct: 3, ilPct: -11, vantagemPct: -8, segurarPct: -20, lpPct: -26.4 }),
     ]);
     expect(vereditoLiquidez(r).status).toBe("morta");
   });
 
   /**
-   * ⚠️ O TESTE QUE MATA. Positiva e ainda assim pior que segurar: a taxa foi
-   * paga com o patrimônio do próprio provedor.
+   * ⚠️ A REGRESSÃO DO DEFEITO DE 09/08, e é o teste mais importante do arquivo.
+   *
+   * Vantagem POSITIVA num mercado de ALTA forte: a mesa ganhou de segurar. O
+   * veredito antigo comparava a vantagem (+13) contra o nível de segurar (+42),
+   * concluía "perde de segurar" e marcava MORTA — reprovando ao contrário uma
+   * mesa que venceu. Mercado de alta era o cenário em que o defeito mentia para
+   * o lado caro.
    */
-  it("positiva mas abaixo de segurar TAMBÉM mata", () => {
+  it("vantagem positiva em mercado de ALTA continua VERDE", () => {
     const r = resumirLiquidez([
-      janela({ liquidoPct: 12, segurarPct: 40 }),
-      janela({ liquidoPct: 14, segurarPct: 45 }),
-      janela({ liquidoPct: 13, segurarPct: 42 }),
+      janela({ vantagemPct: 12, segurarPct: 40, lpPct: 56.8 }),
+      janela({ vantagemPct: 14, segurarPct: 45, lpPct: 65.3 }),
+      janela({ vantagemPct: 13, segurarPct: 42, lpPct: 60.5 }),
+    ]);
+    const v = vereditoLiquidez(r);
+    expect(v.status).toBe("verde");
+    expect(v.texto).toContain("ACIMA de segurar");
+  });
+
+  /** E o simétrico: vantagem negativa em mercado de QUEDA continua morta. */
+  it("vantagem negativa em mercado de QUEDA continua MORTA", () => {
+    const r = resumirLiquidez([
+      janela({ vantagemPct: -7.4, segurarPct: -27.4, lpPct: -32.6 }),
+      janela({ vantagemPct: -0.4, segurarPct: -50.1, lpPct: -50.3 }),
+      janela({ vantagemPct: -3.0, segurarPct: -20.0, lpPct: -22.4 }),
     ]);
     const v = vereditoLiquidez(r);
     expect(v.status).toBe("morta");
-    expect(v.texto).toContain("PERDE de segurar");
+    expect(v.texto).toContain("ABAIXO de simplesmente segurar");
   });
 
-  it("cobre a perda E bate segurar: verde", () => {
+  it("cobre a perda e sobra: verde", () => {
     const r = resumirLiquidez([
-      janela({ liquidoPct: 18, segurarPct: 5 }),
-      janela({ liquidoPct: 20, segurarPct: 6 }),
-      janela({ liquidoPct: 19, segurarPct: 4 }),
+      janela({ vantagemPct: 18, segurarPct: 5 }),
+      janela({ vantagemPct: 20, segurarPct: 6 }),
+      janela({ vantagemPct: 19, segurarPct: 4 }),
     ]);
     expect(vereditoLiquidez(r).status).toBe("verde");
+  });
+
+  /**
+   * ⚠️ TODAS AS MEDIANAS SOBRE A MESMA AMOSTRA. A perda vinha de um conjunto e
+   * a taxa de outro, e a tela mostrava os dois lado a lado como se fossem do
+   * mesmo grupo (invariante nº 4).
+   */
+  it("a perda mediana ignora piscina sem taxa, igual às outras medianas", () => {
+    const r = resumirLiquidez([
+      janela({ ilPct: -2, vantagemPct: 1 }),
+      janela({ ilPct: -3, vantagemPct: 1 }),
+      janela({ ilPct: -90, vantagemPct: 0, apyDe: "ausente", apyAnualPct: null }),
+    ]);
+    expect(r.medidas).toHaveLength(2);
+    expect(r.ilMedianoPct).toBeCloseTo(-2.5, 6);   // a de −90 NÃO entra
   });
 });
 

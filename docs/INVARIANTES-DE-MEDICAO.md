@@ -234,6 +234,27 @@ Quando a leitura falha, isso vira **evento**, nunca silêncio (nº 7).
 > nada. Pior que a nº 14: aqui o operador vê a chave virar e acredita que
 > desligou.
 
+## 17. Diferença não se compara com nível
+
+Um número que já É uma comparação — vantagem, excesso, alfa, perda relativa —
+não pode ser confrontado com o nível contra o qual ele foi medido. A conta tem
+duas leituras possíveis e uma delas passa despercebida porque *parece* certa.
+
+**Como travar:** o nome do campo carrega o enquadramento (`vantagemPct`, não
+`liquidoPct`), e a tela mostra os dois lados **absolutos** lado a lado, para o
+confronto errado não ter como ser escrito.
+
+> **Cicatriz (09/08, Fase 8.1):** a perda impermanente é medida *em relação a
+> ter segurado*, então `taxa + perda` já era a resposta de "bateu segurar?".
+> Comparei esse número contra o retorno de segurar, e a tela pintou de VERDE
+> duas piscinas que **perderam** para segurar, escrevendo *"bateu segurar em
+> 2/2"* quando o certo era **0/2**. Pior: em mercado de ALTA o mesmo defeito
+> reprovaria ao contrário — uma piscina vencedora marcada MORTA porque segurar
+> rendeu mais que a vantagem dela.
+>
+> O grupo de controle não pegou, e não tinha como: com os preços parados a
+> diferença e o nível coincidem. **Controle prova a conta, não o enquadramento.**
+
 ---
 
 ## Como usar
