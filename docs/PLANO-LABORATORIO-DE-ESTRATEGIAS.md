@@ -1906,8 +1906,37 @@ ser uma só. Agora a média de 30 dias manda.
 gás. Com o gás, vira negativa. Não é aprovação nem reprovação — e a diferença
 entre as três leituras é justamente o que a faixa morta existe para preservar.
 
-**Pendente: rodar o 💧 de novo. E o passo seguinte (8.1.1) é pôr o GÁS na
-conta** — enquanto ele não entrar, esta mesa não sai da faixa cinza por mérito.
+## 8.1.1 — o gás entra, e a decisão de enquadramento é o que decide
+
+**⚠️ A TROCA NÃO ENTRA, E ISSO É DECISÃO, NÃO OMISSÃO.**
+
+Montar a cesta 50/50 exige trocar metade do capital — mas **quem vai SEGURAR
+50/50 paga exatamente a mesma troca**, na entrada e na saída. Cobrá-la só do
+lado da piscina compararia montagens diferentes (invariante nº 3: os dois lados
+no mesmo tamanho). Ela cancela entre os dois lados, e está escrito no código
+porque cancelamento silencioso vira, meses depois, *"por que a troca não está na
+conta?"*.
+
+**O que entra é o custo que a piscina tem A MAIS que segurar**: duas aprovações,
+um depósito e um saque — `473.000` unidades no total.
+
+- **Unidades DECLARADAS, preço MEDIDO.** As unidades vêm da faixa típica dos
+  contratos e passam por PR; os dólares por unidade saem dos `gasCosts` de uma
+  cotação real da LI.FI, que traz custo e unidades na mesma resposta. Chutar o
+  preço do gás seria inventar exatamente o número que decide o veredito.
+- **Gás não medido ≠ gás zero.** Preço ausente devolve `null`, a janela sai
+  marcada `gasDe: "ausente"`, e o **veredito vira CINZA** — porque o gás é da
+  ordem da margem que decide esta mesa, e concluir sem ele seria decidir com a
+  variável decisiva ausente. Foi a cicatriz de 06/08 na Fase 4: *"gás barato"* e
+  *"gás não lido"* davam a mesma tela.
+- **O custo gravado no banco passou a ter as DUAS parcelas** — perda impermanente
+  **e** gás. Só a perda esconderia metade do que a mesa paga.
+- **O gás da saída é cobrado junto com o da entrada**, sobre o capital inicial:
+  simplificação declarada, que superestima num mercado que caiu e subestima num
+  que subiu.
+
+**Pendente: rodar o 💧.** Com o gás na conta, o empate de −0,01% deve virar
+negativo — e aí C14 fecha com veredito, não com faixa cinza.
 
 **Fica declarado como não medido:** o gás de entrar/sair (em $2.000 na Ethereum
 é material e pode virar o sinal), a taxa como foto de hoje aplicada à janela, e
@@ -1969,7 +1998,7 @@ Traduzido em regra:
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
-| 8 · Cinzas restantes | 🟡 **8.1 · 2ª rodada 10/08** — a mesa EMPATA com segurar (−0,01%/ano), dentro do gás não medido. Faixa morta e média de 30d entraram; falta o gás (8.1.1) |
+| 8 · Cinzas restantes | 🟡 **8.1.1 construída 10/08** — o gás entrou na conta (troca cancela entre os dois lados, só o gás de piscina conta). Falta rodar o 💧 |
 | 9 · Receita | 🔴 |
 
 Atualizar este quadro a cada entrega — regra da casa.

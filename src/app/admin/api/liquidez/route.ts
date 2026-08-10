@@ -4,8 +4,11 @@ import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { startRun, finishRun, failRun } from "@/lib/lab/store";
 import { fetchLlamaYields, type LlamaPool } from "@/lib/api/defillama-yields";
+import { fetchLiFiQuote, LIFI_NATIVE, LIFI_CHAIN_IDS } from "@/lib/api/lifi";
+import { findToken } from "@/lib/tokens";
 import {
   ALVOS, MIN_PISCINAS, janelaPiscina, resumirLiquidez, vereditoLiquidez,
+  custoGasPct, GAS_TOTAL_LP, GAS_UNIDADES_LP,
   type JanelaPiscina,
 } from "@/lib/lab/liquidez";
 
@@ -36,6 +39,55 @@ const BINANCE_DATA = "https://data-api.binance.vision";
  * fino.
  */
 const JANELA_DIAS = 365;
+
+/** O capital da mesa. Declarado no registro, repetido aqui porque o gás é % dele. */
+const CAPITAL_USD = 2_000;
+
+/** Endereço só de leitura — a LI.FI exige `fromAddress` para cotar. */
+const ENDERECO_LEITURA = "0x0000000000000000000000000000000000000001";
+
+/**
+ * DÓLARES POR UNIDADE DE GÁS, na Ethereum — MEDIDO, não chutado.
+ *
+ * ⚠️ Sai dos `gasCosts` de uma cotação REAL: a resposta traz o custo em dólar e
+ * o número de unidades juntos, então a divisão é uma medição, não uma
+ * estimativa. Mesma técnica da Fase 4.
+ *
+ * ⚠️ E DEVOLVE null QUANDO O CAMPO NÃO VEM. Na Fase 4 isso virava zero em
+ * silêncio, e "gás barato" ficava idêntico a "gás não lido" — exatamente o par
+ * de estados que esta casa não deixa mais colapsar.
+ */
+async function usdPorUnidadeDeGas(): Promise<{ usdPorGas: number | null; falha?: string }> {
+  try {
+    const chainId = LIFI_CHAIN_IDS.ethereum;
+    const usdc = findToken("ethereum", "USDC");
+    if (!usdc || chainId == null) {
+      return { usdPorGas: null, falha: "lifi: sem USDC ou sem id de cadeia" };
+    }
+    const bruto = BigInt(Math.round(CAPITAL_USD / 2)) * 10n ** BigInt(usdc.decimals);
+    const q = await fetchLiFiQuote({
+      fromChainId: chainId, toChainId: chainId,
+      fromToken: usdc.address, toToken: LIFI_NATIVE,
+      fromAmount: bruto.toString(),
+      fromAddress: ENDERECO_LEITURA,
+      slippageBps: 50,
+    }, process.env.LIFI_API_KEY);
+
+    let usd = 0, unidades = 0;
+    for (const c of q.estimate?.gasCosts ?? []) {
+      const u = parseFloat(c.amountUSD ?? "");
+      const n = parseFloat(c.estimate ?? c.limit ?? "");
+      if (Number.isFinite(u)) usd += u;
+      if (Number.isFinite(n)) unidades += n;
+    }
+    if (!(usd > 0) || !(unidades > 0)) {
+      return { usdPorGas: null, falha: "lifi: cotação sem gasCosts" };
+    }
+    return { usdPorGas: usd / unidades };
+  } catch (e) {
+    return { usdPorGas: null, falha: `lifi:${String(e).slice(0, 60)}` };
+  }
+}
 
 async function fechamentosDiarios(
   symbol: string, desdeMs: number, ateMs: number,
@@ -102,7 +154,7 @@ export async function POST(): Promise<NextResponse> {
     try {
       runId = await startRun(db, {
         slug: "amm_lp",
-        capitalUsd: 2_000,
+        capitalUsd: CAPITAL_USD,
         windowDays: JANELA_DIAS,
         params: { alvos: ALVOS.map((a) => a.id), minPiscinas: MIN_PISCINAS },
       });
@@ -115,8 +167,9 @@ export async function POST(): Promise<NextResponse> {
     ALVOS.flatMap((a) => [a.base, a.cotacao]).filter((s): s is string => !!s),
   )];
 
-  const [rendimentos, ...historicos] = await Promise.all([
+  const [rendimentos, gas, ...historicos] = await Promise.all([
     fetchLlamaYields(),
+    usdPorUnidadeDeGas(),
     ...simbolos.map((s) => fechamentosDiarios(s, desdeMs, ateMs)),
   ]);
 
@@ -124,7 +177,12 @@ export async function POST(): Promise<NextResponse> {
   const falhas = [
     ...rendimentos.falhas.map((f) => `${f.host}:${f.status}`),
     ...historicos.map((h) => h.falha).filter(Boolean) as string[],
+    ...(gas.falha ? [gas.falha] : []),
   ];
+
+  // ⚠️ null aqui viaja como null até a janela, que marca `gasDe: "ausente"`.
+  // Zero seria "gás grátis", que é uma afirmação e não um dado.
+  const gasPct = gas.usdPorGas == null ? null : custoGasPct(CAPITAL_USD, gas.usdPorGas);
 
   /**
    * ⚠️ FONTE RECUSADA NÃO É PERDA ZERO NEM TAXA ZERO. Sem preço não há como
@@ -179,6 +237,7 @@ export async function POST(): Promise<NextResponse> {
       casada: piscina
         ? { symbol: piscina.symbol ?? "?", tvlUsd: Number.isFinite(piscina.tvlUsd as number) ? Number(piscina.tvlUsd) : null }
         : null,
+      gasPct,
     });
     if (j) janelas.push(j);
   }
@@ -191,8 +250,17 @@ export async function POST(): Promise<NextResponse> {
    * semanas depois, um número que alguém leu como completo.
    */
   const naoMedido = [
-    "⚠️ o GÁS de entrar e sair da piscina — depositar, sacar e coletar taxa. "
-      + "Em $2.000 na Ethereum isso é material, e o sinal do veredito pode virar",
+    "⚠️ a TROCA para montar a cesta 50/50 NÃO entra — de propósito. Quem vai "
+      + "SEGURAR metade em cada ativo paga a mesma troca na entrada e na saída, "
+      + "então ela cancela entre os dois lados. O que entra é só o gás de piscina, "
+      + "que quem segura não paga",
+    `o GÁS usa unidades DECLARADAS (${GAS_TOTAL_LP.toLocaleString("pt-BR")} no total: `
+      + `2 aprovações de ${GAS_UNIDADES_LP.aprovar.toLocaleString("pt-BR")}, depósito de `
+      + `${GAS_UNIDADES_LP.depositar.toLocaleString("pt-BR")}, saque de `
+      + `${GAS_UNIDADES_LP.sacar.toLocaleString("pt-BR")}); o PREÇO delas é medido. `
+      + "Um par v3 ou uma piscina de 3 ativos gasta diferente",
+    "o gás da SAÍDA é cobrado junto com o da entrada, sobre o capital inicial — "
+      + "superestima num mercado que caiu, subestima num que subiu",
     "⚠️ a taxa vem da MÉDIA DE 30 DIAS da fonte, aplicada proporcionalmente à "
       + "janela de um ano. Não é a série real do período — entre 09 e 10/08 a foto "
       + "de 24h do ETH/USDC oscilou 12× (0,25% → 2,97%/ano), e é por isso que a "
@@ -220,10 +288,13 @@ export async function POST(): Promise<NextResponse> {
         netAnnualizedPct: resumo.vantagemMedianaPct == null ? null
           : Number((resumo.vantagemMedianaPct * (365 / JANELA_DIAS)).toFixed(4)),
         grossPct: resumo.taxaMedianaPct,
+      // ⚠️ O custo desta mesa tem DUAS parcelas: a perda impermanente e o gás.
+      // Só a perda aqui esconderia metade do que a mesa paga.
         // ⚠️ O "custo" desta mesa é a perda impermanente, e ela é NEGATIVA na
         // janela. Vai como número positivo porque a coluna é custo — inverter o
         // sinal aqui é o que a invariante nº 1 cobra.
-        costPct: resumo.ilMedianoPct == null ? null : Math.abs(resumo.ilMedianoPct),
+        costPct: resumo.ilMedianoPct == null ? null
+          : Number((Math.abs(resumo.ilMedianoPct) + (resumo.gasMedianoPct ?? 0)).toFixed(4)),
         sampleN: resumo.medidas.length,
         // ⚠️ O denominador é SEGURAR os mesmos ativos — a alternativa real.
         benchmarkPct: resumo.segurarMedianoPct,
@@ -239,6 +310,7 @@ export async function POST(): Promise<NextResponse> {
       veredito: veredito.status,
       vantagemMedianaPct: resumo.vantagemMedianaPct,
       ilMedianoPct: resumo.ilMedianoPct,
+      gasMedianoPct: resumo.gasMedianoPct,
       piscinas: resumo.medidas.length,
       tookMs: Date.now() - t0,
     },
@@ -255,6 +327,8 @@ export async function POST(): Promise<NextResponse> {
       taxaMedianaPct: resumo.taxaMedianaPct,
       vantagemMedianaPct: resumo.vantagemMedianaPct,
       lpMedianoPct: resumo.lpMedianoPct,
+      gasMedianoPct: resumo.gasMedianoPct,
+      semGas: resumo.semGas,
       segurarMedianoPct: resumo.segurarMedianoPct,
       ganhouDeSegurar: resumo.ganhouDeSegurar,
       medidas: resumo.medidas.length,
@@ -266,7 +340,8 @@ export async function POST(): Promise<NextResponse> {
       dias: j.dias, razao: j.razao,
       ilPct: j.ilPct, taxaPct: j.taxaPct,
       vantagemPct: j.vantagemPct, lpPct: j.lpPct, segurarPct: j.segurarPct,
-      apyDe: j.apyDe, apyAnualPct: j.apyAnualPct, casada: j.casada,
+      apyDe: j.apyDe, apyAnualPct: j.apyAnualPct,
+      gasPct: j.gasPct, gasDe: j.gasDe, casada: j.casada,
     })),
     veredito,
     naoMedido,
