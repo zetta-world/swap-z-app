@@ -30,16 +30,60 @@ function paineis(): Array<{ arquivo: string; src: string }> {
     .map((f) => ({ arquivo: f, src: readFileSync(join(dir, f), "utf8") }));
 }
 
-/** O texto dentro de um <button className="adm-btn"> … </button>. */
+/**
+ * O texto dentro de um <button className="adm-btn"> … </button>.
+ *
+ * ⚠️ O FECHAMENTO DA TAG É PROCURADO COM CONTADOR DE CHAVES, não com regex.
+ *
+ * A primeira versão usava `<button[^>]*adm-btn[^>]*>`, e `[^>]*` PARA no
+ * primeiro `>` — que numa arrow function (`onClick={() => …}`) é a seta. O
+ * resultado: o rótulo de todo botão com arrow saía como lixo do tipo
+ * `"void medir()} disabled= >"`.
+ *
+ * Isso tinha as duas caras do defeito. FALSO POSITIVO: dois painéis com a mesma
+ * forma de arrow produziam o mesmo lixo e eram acusados de rótulo repetido
+ * (10/08, ao criar o painel de rotação). E FALSO NEGATIVO, que é o pior: o
+ * rótulo VERDADEIRO desses botões nunca era lido, então uma duplicata real
+ * entre eles passaria batida — a trava estaria verde sem olhar nada.
+ */
 function rotulos(src: string): string[] {
   const out: string[] = [];
-  for (const m of src.matchAll(/<button[^>]*adm-btn[^>]*>([\s\S]*?)<\/button>/g)) {
-    const texto = m[1]
-      .replace(/\{[^}]*\}/g, " ")      // expressões JSX
-      .replace(/\{"[^"]*"\}/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (texto.length > 3) out.push(texto);
+  let i = 0;
+  while ((i = src.indexOf("<button", i)) !== -1) {
+    // Anda até o `>` que fecha a tag, ignorando os que estão dentro de `{...}`.
+    let j = i + 7, chaves = 0, fim = -1;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (c === "{") chaves++;
+      else if (c === "}") chaves--;
+      else if (c === ">" && chaves === 0) { fim = j; break; }
+    }
+    if (fim === -1) break;
+    const tag = src.slice(i, fim);
+    const corpoFim = src.indexOf("</button>", fim);
+    if (corpoFim === -1) break;
+    if (tag.includes("adm-btn")) {
+      const corpo = src.slice(fim + 1, corpoFim);
+      /**
+       * ⚠️ SEGUNDO CEGO, e maior que o primeiro: o rótulo deste repo quase
+       * nunca é texto solto — é `{ocupado ? "medindo…" : "🔁 MEDIR X"}`. A
+       * versão que só limpava `{...}` apagava JUSTAMENTE o rótulo e sobrava
+       * string vazia, então o botão saía da varredura inteiro.
+       *
+       * De 19 "rótulos" que a versão original contava, NENHUM era de botão com
+       * ternário — e é assim que quase todos os painéis escrevem. A trava
+       * existia sobre um conjunto que não incluía os casos de risco.
+       *
+       * Agora: cada literal de texto dentro do corpo é um rótulo candidato,
+       * inclusive o de estado ocupado. Se dois painéis dizem "medindo…", o
+       * operador olhando a tela ocupada realmente não sabe qual está rodando —
+       * que é exatamente o que este teste existe para impedir.
+       */
+      const literais = [...corpo.matchAll(/"([^"]{4,})"/g)].map((m) => m[1].trim());
+      const solto = corpo.replace(/\{[\s\S]*?\}/g, " ").replace(/\s+/g, " ").trim();
+      for (const t of [...literais, solto]) if (t.length > 3) out.push(t);
+    }
+    i = corpoFim + 9;
   }
   return out;
 }

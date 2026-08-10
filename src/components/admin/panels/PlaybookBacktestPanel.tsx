@@ -87,7 +87,7 @@ export default function PlaybookBacktestPanel() {
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <button className="adm-btn" onClick={() => run(0)} disabled={running}>
-          {running ? "medindo…" : "⚖ rodar backtest por playbook"}
+          {running ? "medindo playbooks…" : "⚖ rodar backtest por playbook"}
         </button>
         {/* A MESMA biblioteca numa ESTAÇÃO diferente. A janela padrão terminou
             num mercado que caiu 18.49% na mediana — medir estratégia comprada

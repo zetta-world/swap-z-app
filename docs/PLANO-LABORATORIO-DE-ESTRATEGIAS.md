@@ -2007,6 +2007,67 @@ a perda ser de ponta a ponta — quem saiu no meio realizou outro número.
 
 ---
 
+## 8.2 — C9 (rotação por momento) e C10 (grade), construídas (10/08)
+
+**Verificação de estado:** o painel 🧭 mede cinco canônicas — comprar e segurar,
+média 50 (com e sem venda), canal de Donchian e reversão por RSI. **Nem rotação
+nem grade estão lá.** As duas são genuinamente não medidas, e usam a régua de
+preço diário que já existe e já foi exercitada em três fases.
+
+### O que cada uma tem de característico — e como cada uma mente
+
+- **C9 mente por LOOKAHEAD.** Ordenar pelo retorno passado e aplicá-lo ao
+  próprio período faz qualquer ranking parecer genial. O sinal do dia vale para
+  o período SEGUINTE, e há teste com uma série que sobe forte e depois desaba:
+  uma rotação honesta compra o topo e come a queda.
+- **C10 mente por OMISSÃO DO ESTOQUE.** As propagandas mostram só os degraus que
+  fecharam. Quando o preço fura a faixa por baixo, a grade fica comprada no
+  fundo e para de ganhar — e é assim que ela perde dinheiro. O veredito julga o
+  **TOTAL** (realizado + estoque marcado a mercado), nunca o realizado. Na tela
+  os dois ficam lado a lado, com o realizado rotulado como *"o número das
+  propagandas"*.
+
+### Decisões que valem registrar
+
+- **O custo da rotação é por TROCA, não por rebalanceamento.** Uma carteira que
+  não muda não paga nada; cobrar taxa por evento inventaria custo onde não houve
+  giro. Há teste.
+- **O calendário é a INTERSEÇÃO dos símbolos.** Um ativo que só existe em metade
+  da janela entraria com retorno indefinido, e a falta viraria zero — que é
+  retorno, não ausência.
+- **A amostra da rotação são as DECISÕES** (12 rebalanceamentos num ano), não os
+  365 dias. Contar dias seria a invariante nº 5 outra vez.
+- **⚠️ VIÉS DE SOBREVIVÊNCIA, declarado na tela:** a lista é dos majors de HOJE.
+  As moedas que morreram não estão lá para baixar a média, e isso empurra os
+  DOIS resultados para cima. Nenhuma escolha de lista resolve isso.
+
+### O buscador de preço virou módulo
+
+`fetchFechamentosDiarios` estava copiado em duas rotas e esta seria a terceira.
+Com duas era defensável (*"o que se repete é o endereço, não uma verdade"*); com
+três deixa de ser, e virou `src/lib/api/binance-diario.ts`.
+
+### ⚠️ E uma trava da casa estava cega
+
+O guarda que impede dois painéis de terem o mesmo rótulo de botão usava
+`<button[^>]*adm-btn[^>]*>` — e `[^>]*` **para no primeiro `>`**, que numa arrow
+function (`onClick={() => …}`) é a seta. Pior: ele limpava `{...}` do corpo, e
+neste repo o rótulo quase sempre É `{ocupado ? "medindo…" : "🔁 MEDIR X"}`.
+
+Resultado: dos 19 "rótulos" que ele contava, **nenhum era de botão com
+ternário** — ou seja, a trava rodava verde sobre um conjunto que não incluía os
+casos de risco. Falso positivo ao criar este painel, e falso negativo o tempo
+todo.
+
+Consertado: o fechamento da tag é achado com contador de chaves, e cada literal
+do corpo é um rótulo candidato. O conserto **encontrou um duplicado real** —
+`"medindo…"` em quatro painéis, que deixava o operador sem saber qual estava
+rodando. Cada um ganhou o nome do que faz.
+
+**Pendente: rodar o 🔁.**
+
+---
+
 ### FASE 9 — Receita (C21, C22) · 🔴
 Rebate de corretora e rev-share de protocolo. Não é trade, é dinheiro na mesa.
 
@@ -2061,7 +2122,7 @@ Traduzido em regra:
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
-| 8 · Cinzas restantes | 🟡 **8.1.1 · 3 rodadas estáveis 10/08** — EMPATE (+0,55%) dentro de faixa medida de ±3,4%. Cabeçalho passou a dizer que as medianas não se somam |
+| 8 · Cinzas restantes | 🟡 **8.2 construída 10/08** — C9 e C10 no ar (C14 fechou em EMPATE). Falta o dono rodar o 🔁 |
 | 9 · Receita | 🔴 |
 
 Atualizar este quadro a cada entrega — regra da casa.

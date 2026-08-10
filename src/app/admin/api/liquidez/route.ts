@@ -6,6 +6,7 @@ import { startRun, finishRun, failRun } from "@/lib/lab/store";
 import { fetchLlamaYields, type LlamaPool } from "@/lib/api/defillama-yields";
 import { fetchLiFiQuote, LIFI_NATIVE, LIFI_CHAIN_IDS } from "@/lib/api/lifi";
 import { findToken } from "@/lib/tokens";
+import { fetchFechamentosDiarios } from "@/lib/api/binance-diario";
 import {
   ALVOS, MIN_PISCINAS, janelaPiscina, resumirLiquidez, vereditoLiquidez,
   custoGasPct, GAS_TOTAL_LP, GAS_UNIDADES_LP,
@@ -28,8 +29,6 @@ export const maxDuration = 60;
  */
 
 /** Fonte de fechamento diário — a mesma do estudo de variância. */
-const BINANCE_DATA = "https://data-api.binance.vision";
-
 /**
  * ⚠️ JANELA DECLARADA ANTES DA RODADA (invariante nº 12).
  *
@@ -91,30 +90,6 @@ async function usdPorUnidadeDeGas(): Promise<{
   }
 }
 
-async function fechamentosDiarios(
-  symbol: string, desdeMs: number, ateMs: number,
-): Promise<{ porDia: Map<string, number>; falha?: string }> {
-  const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=1d`
-    + `&startTime=${Math.floor(desdeMs)}&endTime=${Math.ceil(ateMs)}&limit=1000`;
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) return { porDia: new Map(), falha: `binance ${symbol}:${res.status}` };
-    const linhas = await res.json() as Array<[number, string, string, string, string, ...unknown[]]>;
-    if (!Array.isArray(linhas) || linhas.length === 0) {
-      return { porDia: new Map(), falha: `binance ${symbol}: sem velas` };
-    }
-    const porDia = new Map<string, number>();
-    for (const l of linhas) {
-      const t = Number(l[0]); const fecha = parseFloat(l[4]);
-      if (!(t > 0) || !Number.isFinite(fecha)) continue;
-      porDia.set(new Date(t).toISOString().slice(0, 10), fecha);
-    }
-    return { porDia };
-  } catch (e) {
-    return { porDia: new Map(), falha: `binance ${symbol}:${String(e).slice(0, 60)}` };
-  }
-}
-
 /**
  * Acha a piscina declarada na lista da fonte.
  *
@@ -172,7 +147,7 @@ export async function POST(): Promise<NextResponse> {
   const [rendimentos, gas, ...historicos] = await Promise.all([
     fetchLlamaYields(),
     usdPorUnidadeDeGas(),
-    ...simbolos.map((s) => fechamentosDiarios(s, desdeMs, ateMs)),
+    ...simbolos.map((s) => fetchFechamentosDiarios(s, desdeMs, ateMs)),
   ]);
 
   const porSimbolo = new Map(simbolos.map((s, i) => [s, historicos[i]]));
