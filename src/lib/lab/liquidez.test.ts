@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import {
   perdaImpermanente, janelaPiscina, resumirLiquidez, vereditoLiquidez,
-  ALVOS, MIN_PISCINAS, type AlvoPiscina, type JanelaPiscina,
+  ALVOS, MIN_PISCINAS, MARGEM_MINIMA_PCT, type AlvoPiscina, type JanelaPiscina,
 } from "@/lib/lab/liquidez";
 
 /** Helpers em escopo de MÓDULO — já escorreguei duas vezes prendendo em `describe`. */
@@ -72,7 +72,7 @@ describe("a janela de uma piscina", () => {
     apyBase: 20, apyMean30d: null, dias: 365,
   };
 
-  it("preço parado: perda zero, e o líquido é a taxa inteira", () => {
+  it("preço parado: perda zero, e a vantagem é a taxa inteira", () => {
     const j = janelaPiscina({ ...base, precoBaseIni: 2000, precoBaseFim: 2000 })!;
     expect(j.ilPct).toBe(0);
     expect(j.taxaPct).toBeCloseTo(20, 6);
@@ -145,12 +145,26 @@ describe("a janela de uma piscina", () => {
     expect(j.apyAnualPct).toBeNull();
   });
 
-  it("cai para apyMean30d só quando apyBase falta, e diz de onde veio", () => {
-    const j = janelaPiscina({
-      ...base, precoBaseIni: 1, precoBaseFim: 1, apyBase: null, apyMean30d: 7,
+  /**
+   * ⚠️ ESTE TESTE AFIRMAVA A ORDEM INVERTIDA, e a ordem invertida era o defeito.
+   *
+   * A Fase 4 já tinha decidido `media30d > base` (`escolherApy`). Aqui eu
+   * escrevi o contrário, e a rodada de 10/08 cobrou: a taxa do ETH/USDC saiu
+   * +0,25%/ano num dia e +2,97%/ano no seguinte — doze vezes em 24 horas,
+   * porque `apyBase` é foto do volume de ontem.
+   */
+  it("a MÉDIA DE 30 DIAS manda, e a foto de hoje é o segundo recurso", () => {
+    const comAsDuas = janelaPiscina({
+      ...base, precoBaseIni: 1, precoBaseFim: 1, apyBase: 99, apyMean30d: 7,
     })!;
-    expect(j.apyDe).toBe("apyMean30d");
-    expect(j.apyAnualPct).toBe(7);
+    expect(comAsDuas.apyDe).toBe("apyMean30d");
+    expect(comAsDuas.apyAnualPct).toBe(7);
+
+    const soFoto = janelaPiscina({
+      ...base, precoBaseIni: 1, precoBaseFim: 1, apyBase: 99, apyMean30d: null,
+    })!;
+    expect(soFoto.apyDe).toBe("apyBase");
+    expect(soFoto.apyAnualPct).toBe(99);
   });
 
   it("preço faltando devolve null em vez de inventar janela", () => {
@@ -222,6 +236,37 @@ describe("o resumo e o veredito", () => {
     const v = vereditoLiquidez(r);
     expect(v.status).toBe("morta");
     expect(v.texto).toContain("ABAIXO de simplesmente segurar");
+  });
+
+  /**
+   * ⚠️ A RODADA DE 10/08, virada em teste. Vantagem mediana de −0,01% EM UM ANO
+   * saiu MORTA. Um centésimo de ponto não distingue "perde" de "empata", e está
+   * inteiramente dentro do gás que a medição não inclui.
+   */
+  it("margem dentro do erro declarado é EMPATE, não reprovação", () => {
+    const r = resumirLiquidez([
+      janela({ vantagemPct: -0.01, segurarPct: -49.9, lpPct: -49.9 }),
+      janela({ vantagemPct: -4.54, segurarPct: -27.3, lpPct: -30.6 }),
+      janela({ vantagemPct: +0.38, segurarPct: -57.6, lpPct: -57.5 }),
+    ]);
+    const v = vereditoLiquidez(r);
+    expect(v.status).toBe("cinza");
+    expect(v.texto).toContain("EMPATE");
+    // E diz POR QUE não dá para decidir — o gás, que não está na conta.
+    expect(v.texto).toContain("GÁS");
+  });
+
+  /**
+   * ⚠️ A faixa morta é SIMÉTRICA. Se ela só existisse do lado negativo, ela
+   * viraria um amortecedor a favor da mesa — o oposto do que ela existe para
+   * fazer.
+   */
+  it("a faixa morta vale para os DOIS lados", () => {
+    const quaseVerde = resumirLiquidez([
+      janela({ vantagemPct: 0.5 }), janela({ vantagemPct: 0.5 }), janela({ vantagemPct: 0.5 }),
+    ]);
+    expect(vereditoLiquidez(quaseVerde).status).toBe("cinza");
+    expect(MARGEM_MINIMA_PCT).toBe(1);
   });
 
   it("cobre a perda e sobra: verde", () => {
