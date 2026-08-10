@@ -176,6 +176,9 @@ export async function POST(): Promise<NextResponse> {
       apyBase:    piscina?.apyBase,
       apyMean30d: piscina?.apyMean30d,
       dias,
+      casada: piscina
+        ? { symbol: piscina.symbol ?? "?", tvlUsd: Number.isFinite(piscina.tvlUsd as number) ? Number(piscina.tvlUsd) : null }
+        : null,
     });
     if (j) janelas.push(j);
   }
@@ -209,9 +212,11 @@ export async function POST(): Promise<NextResponse> {
   if (db && runId) {
     try {
       await finishRun(db, runId, {
-        netPct: resumo.liquidoMedianoPct,
-        netAnnualizedPct: resumo.liquidoMedianoPct == null ? null
-          : Number((resumo.liquidoMedianoPct * (365 / JANELA_DIAS)).toFixed(4)),
+        // ⚠️ O TITULAR É A VANTAGEM CONTRA SEGURAR, não o retorno da piscina.
+        // A pergunta desta mesa é se ela bate não fazer nada.
+        netPct: resumo.vantagemMedianaPct,
+        netAnnualizedPct: resumo.vantagemMedianaPct == null ? null
+          : Number((resumo.vantagemMedianaPct * (365 / JANELA_DIAS)).toFixed(4)),
         grossPct: resumo.taxaMedianaPct,
         // ⚠️ O "custo" desta mesa é a perda impermanente, e ela é NEGATIVA na
         // janela. Vai como número positivo porque a coluna é custo — inverter o
@@ -230,7 +235,7 @@ export async function POST(): Promise<NextResponse> {
   await recordEvent("liquidez_study", {
     meta: {
       veredito: veredito.status,
-      liquidoMedianoPct: resumo.liquidoMedianoPct,
+      vantagemMedianaPct: resumo.vantagemMedianaPct,
       ilMedianoPct: resumo.ilMedianoPct,
       piscinas: resumo.medidas.length,
       tookMs: Date.now() - t0,
@@ -246,7 +251,8 @@ export async function POST(): Promise<NextResponse> {
     resumo: {
       ilMedianoPct: resumo.ilMedianoPct,
       taxaMedianaPct: resumo.taxaMedianaPct,
-      liquidoMedianoPct: resumo.liquidoMedianoPct,
+      vantagemMedianaPct: resumo.vantagemMedianaPct,
+      lpMedianoPct: resumo.lpMedianoPct,
       segurarMedianoPct: resumo.segurarMedianoPct,
       ganhouDeSegurar: resumo.ganhouDeSegurar,
       medidas: resumo.medidas.length,
@@ -256,8 +262,9 @@ export async function POST(): Promise<NextResponse> {
       id: j.alvo.id, rotulo: j.alvo.rotulo, porque: j.alvo.porque,
       controle: j.alvo.controle === true,
       dias: j.dias, razao: j.razao,
-      ilPct: j.ilPct, taxaPct: j.taxaPct, liquidoPct: j.liquidoPct,
-      segurarPct: j.segurarPct, apyDe: j.apyDe, apyAnualPct: j.apyAnualPct,
+      ilPct: j.ilPct, taxaPct: j.taxaPct,
+      vantagemPct: j.vantagemPct, lpPct: j.lpPct, segurarPct: j.segurarPct,
+      apyDe: j.apyDe, apyAnualPct: j.apyAnualPct, casada: j.casada,
     })),
     veredito,
     naoMedido,

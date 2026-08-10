@@ -19,15 +19,18 @@ import TerminalPanel from "../TerminalPanel";
 interface Piscina {
   id: string; rotulo: string; porque: string; controle: boolean;
   dias: number; razao: number;
-  ilPct: number; taxaPct: number; liquidoPct: number; segurarPct: number;
+  ilPct: number; taxaPct: number;
+  vantagemPct: number; lpPct: number; segurarPct: number;
   apyDe: "apyBase" | "apyMean30d" | "ausente"; apyAnualPct: number | null;
+  casada: { symbol: string; tvlUsd: number | null } | null;
 }
 interface Dados {
   janelaDias: number; minPiscinas: number; hostUsado: string;
   falhas: string[]; naoCasadas: string[];
   resumo: {
     ilMedianoPct: number | null; taxaMedianaPct: number | null;
-    liquidoMedianoPct: number | null; segurarMedianoPct: number | null;
+    vantagemMedianaPct: number | null; lpMedianoPct: number | null;
+    segurarMedianoPct: number | null;
     ganhouDeSegurar: number; medidas: number; semApy: number;
   };
   piscinas: Piscina[];
@@ -102,9 +105,13 @@ export default function LiquidezPanel() {
 
           {/* ── AS DUAS RÉGUAS, LADO A LADO ───────────────────────────── */}
           <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-            <Bloco rotulo="LÍQUIDO (mediana)" valor={pct(data.resumo.liquidoMedianoPct)}
-                   cor={(data.resumo.liquidoMedianoPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)"} />
-            <Bloco rotulo="SEGURAR OS MESMOS" valor={pct(data.resumo.segurarMedianoPct)} cor="var(--adm-ink-2)" />
+            {/* ⚠️ A VANTAGEM É A RÉGUA, e o rótulo diz "contra segurar" para
+                ninguém a ler como retorno. Foi exatamente essa confusão que
+                pintou de verde, em 09/08, duas piscinas que perderam. */}
+            <Bloco rotulo="VANTAGEM vs SEGURAR" valor={pct(data.resumo.vantagemMedianaPct)}
+                   cor={(data.resumo.vantagemMedianaPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)"} />
+            <Bloco rotulo="PISCINA (absoluto)" valor={pct(data.resumo.lpMedianoPct)} cor="var(--adm-ink-2)" />
+            <Bloco rotulo="SEGURAR (absoluto)" valor={pct(data.resumo.segurarMedianoPct)} cor="var(--adm-ink-2)" />
             <Bloco rotulo="TAXA" valor={pct(data.resumo.taxaMedianaPct)} cor="var(--adm-ink-2)" />
             <Bloco rotulo="PERDA IMPERM." valor={pct(data.resumo.ilMedianoPct)} cor="var(--adm-amber)" />
             <Bloco rotulo="CAPITAL" valor="$2.000" cor="var(--adm-ink-3)" />
@@ -125,9 +132,10 @@ export default function LiquidezPanel() {
                   <th style={{ textAlign: "right" }}>DIAS</th>
                   <th style={{ textAlign: "right" }}>TAXA</th>
                   <th style={{ textAlign: "right" }}>PERDA</th>
-                  <th style={{ textAlign: "right" }}>LÍQUIDO</th>
+                  <th style={{ textAlign: "right" }}>PISCINA</th>
                   <th style={{ textAlign: "right" }}>SEGURAR</th>
-                  <th>APY DE</th>
+                  <th style={{ textAlign: "right" }}>VANTAGEM</th>
+                  <th>FONTE</th>
                 </tr>
               </thead>
               <tbody>
@@ -143,16 +151,30 @@ export default function LiquidezPanel() {
                     <td style={{ textAlign: "right" }}>{p.dias}</td>
                     <td style={{ textAlign: "right" }}>{p.apyDe === "ausente" ? "—" : pct(p.taxaPct)}</td>
                     <td style={{ textAlign: "right", color: "var(--adm-amber)" }}>{pct(p.ilPct)}</td>
+                    <td style={{ textAlign: "right" }}>
+                      {p.apyDe === "ausente" ? "—" : pct(p.lpPct)}
+                    </td>
+                    <td style={{ textAlign: "right" }}>{pct(p.segurarPct)}</td>
+                    {/* ⚠️ A COR MORA AQUI, na vantagem — a única coluna que
+                        responde "bateu segurar?". */}
                     <td style={{
                       textAlign: "right", fontWeight: 700,
                       color: p.apyDe === "ausente" ? "var(--adm-ink-4)"
-                        : p.liquidoPct > p.segurarPct ? "var(--adm-green)" : "var(--adm-red)",
+                        : p.vantagemPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
                     }}>
-                      {p.apyDe === "ausente" ? "—" : pct(p.liquidoPct)}
+                      {p.apyDe === "ausente" ? "—" : pct(p.vantagemPct)}
                     </td>
-                    <td style={{ textAlign: "right" }}>{pct(p.segurarPct)}</td>
                     <td style={{ color: p.apyDe === "ausente" ? "var(--adm-red)" : "var(--adm-ink-4)", fontSize: 8 }}>
                       {p.apyDe === "ausente" ? "AUSENTE" : p.apyDe}
+                      {/* ⚠️ QUAL piscina a fonte casou. Sem isto, uma taxa
+                          implausível não tem como ser conferida. */}
+                      {p.casada && (
+                        <div style={{ fontSize: 7 }}>
+                          {p.casada.symbol}
+                          {p.casada.tvlUsd != null && <> · ${(p.casada.tvlUsd / 1e6).toFixed(1)}M</>}
+                          {p.apyAnualPct != null && <> · {p.apyAnualPct.toFixed(2)}%/ano</>}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
