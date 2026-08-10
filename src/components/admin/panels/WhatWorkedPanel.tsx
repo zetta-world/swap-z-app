@@ -73,7 +73,7 @@ export default function WhatWorkedPanel() {
           num degrau acima. */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <button className="adm-btn" onClick={() => rodar(0)} disabled={rodando}>
-          {rodando ? "medindo…" : "🧭 O QUE FUNCIONOU · hoje"}
+          {rodando ? "medindo canônicas…" : "🧭 O QUE FUNCIONOU · hoje"}
         </button>
         <button className="adm-btn" onClick={() => rodar(180)} disabled={rodando}>
           🧭 O QUE FUNCIONOU · 6 meses atrás

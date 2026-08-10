@@ -82,7 +82,7 @@ export default function LiquidezPanel() {
       source="yields.llama.fi + data-api.binance.vision"
     >
       <button className="adm-btn" onClick={() => void medir()} disabled={rodando}>
-        {rodando ? "medindo…" : "💧 MEDIR LP EM AMM"}
+        {rodando ? "medindo LP…" : "💧 MEDIR LP EM AMM"}
       </button>
 
       {erro && (

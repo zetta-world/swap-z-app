@@ -90,6 +90,13 @@ const RANQUEIAM: Array<{ painel: string; amostra: string; porque: string }> = [
       + "meio ano de histórico parece comparável a uma com o ano inteiro",
   },
   {
+    painel: "RotacaoGradePanel",
+    amostra: "FILLS",
+    porque: "cada linha da grade é um símbolo com TOTAL colorido em verde/vermelho — cor é "
+      + "afirmação de mérito —, e FILLS é a amostra daquela linha: uma grade com 2 "
+      + "preenchimentos e outra com 200 não sustentam a mesma conclusão",
+  },
+  {
     painel: "TournamentPanel",
     amostra: "DEC",
     porque: "ranking de agentes por líquido/trade; DEC é a amostra decidida",

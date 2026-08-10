@@ -22,6 +22,7 @@ export type ModuleId =
   | "variancia"
   | "dex-cex"
   | "liquidez"
+  | "rotacao-grade"
   | "ligas"
   | "lab"
   | "tournament"
@@ -252,6 +253,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8.9,
+  },
+  {
+    id: "rotacao-grade",
+    title: "ROTAÇÃO E GRADE",
+    subtitle: "C9 e C10 — escolher os melhores paga? e a grade sobrevive à queda?",
+    icon: "\u{1F501}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 9.1,
   },
   {
     id: "lab",

@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { startRun, finishRun, failRun } from "@/lib/lab/store";
 import { BY_SLUG } from "@/lib/lab/registry";
 import { fetchDvol } from "@/lib/api/deribit-dvol";
+import { fetchFechamentosDiarios } from "@/lib/api/binance-diario";
 import {
   construirVrp, resumirVrp, vereditoVrp, janelasIndependentes, pioresJanelas,
 } from "@/lib/lab/variancia";
@@ -34,43 +35,6 @@ const JANELA_DIAS = 30;
 /** Histórico pedido. 1000 velas diárias é o teto de uma chamada da Binance. */
 const HISTORICO_DIAS = Number(process.env.VRP_HISTORICO_DIAS ?? 900);
 
-const BINANCE_DATA = "https://data-api.binance.vision";
-
-/**
- * Fechamentos DIÁRIOS.
- *
- * ⚠️ NÃO REUSA O `fetchKlines` DO BACKTEST DE PROPÓSITO — e a distinção importa
- * porque a regra da casa é o contrário.
- *
- * Aquele é privado, afinado para velas de 5m e tem a lógica de `intervalForSpan`
- * amarrada ao horizonte de sugestão. O que se repete aqui é o ENDEREÇO, não uma
- * verdade: são os mesmos parâmetros de um endpoint público com granularidade
- * diferente. Duplicação perigosa é a de CONTA (a mediana, a correlação); esta é
- * de chamada.
- */
-async function fetchFechamentosDiarios(
-  symbol: string, desdeMs: number, ateMs: number,
-): Promise<{ porDia: Map<string, number>; falha?: string }> {
-  const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=1d`
-    + `&startTime=${Math.floor(desdeMs)}&endTime=${Math.ceil(ateMs)}&limit=1000`;
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) return { porDia: new Map(), falha: `binance:${res.status}` };
-    const linhas = await res.json() as Array<[number, string, string, string, string, ...unknown[]]>;
-    if (!Array.isArray(linhas) || linhas.length === 0) {
-      return { porDia: new Map(), falha: "binance: sem velas" };
-    }
-    const porDia = new Map<string, number>();
-    for (const l of linhas) {
-      const t = Number(l[0]); const fecha = parseFloat(l[4]);
-      if (!(t > 0) || !Number.isFinite(fecha)) continue;
-      porDia.set(new Date(t).toISOString().slice(0, 10), fecha);
-    }
-    return { porDia };
-  } catch (e) {
-    return { porDia: new Map(), falha: `binance:${String(e).slice(0, 60)}` };
-  }
-}
 
 export async function POST(): Promise<NextResponse> {
   await requireAdmin();
