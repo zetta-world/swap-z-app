@@ -15,7 +15,7 @@
 
 ## ⚠️ ANTES DE COMEÇAR QUALQUER FASE
 
-Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 17 regras
+Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 18 regras
 que qualquer medição deste laboratório respeita, cada uma com a cicatriz que a
 gerou.
 
@@ -2064,7 +2064,47 @@ do corpo é um rótulo candidato. O conserto **encontrou um duplicado real** —
 `"medindo…"` em quatro painéis, que deixava o operador sem saber qual estava
 rodando. Cada um ganhou o nome do que faz.
 
-**Pendente: rodar o 🔁.**
+## A rodada (10/08) — as duas saíram VERDES, e as duas estavam erradas
+
+| mesa | veredito | mesa | segurar |
+|---|---|---|---|
+| C9 rotação | ✓ VERDE | **−3,01%/período** | −5,47% |
+| C10 grade | ✓ VERDE | **−54,11%** | −64,55% |
+
+**⚠️ VERDE COM PREJUÍZO — invariante nº 18, nova.**
+
+Pela régua declarada as duas estavam certas: bateram comprar-e-segurar. Para
+quem olha a tela, *"✓ VERDE"* sobre metade do capital destruído é o oposto do
+que a medição descobriu.
+
+O que faltava é o **terceiro competidor**: ficar em **CAIXA**. Ele está sempre
+disponível, não custa nada, e num ano em que os dez majors caíram ele bateu as
+duas mesas com folga. *"Menos ruim que o índice"* não é uma mesa que se opera —
+é uma constatação sobre o mercado.
+
+Agora: retorno absoluto negativo **não pode ser verde**. Vira cinza, e o texto
+diz as três posições em ordem, sem esconder que a mesa ganhou do índice — as
+duas coisas são verdade.
+
+**⚠️ E A COLUNA ESTOQUE ERA O TOTAL DISFARÇADO.**
+
+Na tabela, `ESTOQUE` e `TOTAL` saíram **idênticos nas dez linhas**, e
+`realizado + estoque` não fechava com o total em nenhuma: BTC dava −35,73 contra
+um total de −37,03.
+
+A causa é algébrica e passou pela leitura: eu calculava `estoque − (1 − caixa)`,
+que se expande em `estoque − gasto + recebido` — ou seja, **exatamente o total**.
+Faltava rastrear o **custo do estoque que ainda está na mão**. Com ele,
+`realizado + estoque === total`, e há teste exigindo a identidade em quatro
+formatos de mercado.
+
+**O que a rodada de fato descobriu**, com os consertos: a rotação por momento
+**bate o índice mas perde dinheiro**, e a grade **perdeu 54% do capital com
+10/10 das faixas rompidas** — os degraus renderam 1,48% e o estoque preso comeu
+o resto. As duas são resultado, e as duas dizem a mesma coisa: naquele ano, o
+caixa ganhou.
+
+**Pendente: rodar o 🔁 de novo, com os dois consertos.**
 
 ---
 
@@ -2122,7 +2162,7 @@ Traduzido em regra:
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
-| 8 · Cinzas restantes | 🟡 **8.2 construída 10/08** — C9 e C10 no ar (C14 fechou em EMPATE). Falta o dono rodar o 🔁 |
+| 8 · Cinzas restantes | 🟡 **8.2 rodada 10/08** — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
 | 9 · Receita | 🔴 |
 
 Atualizar este quadro a cada entrega — regra da casa.
