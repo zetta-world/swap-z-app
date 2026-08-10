@@ -87,19 +87,56 @@ export function receitaUsd(volumeUsd: number, tier: Tier): number {
 }
 
 /**
- * ⚠️ A TRAVA DO CAMINHO DO DINHEIRO: sem destinatário configurado, taxa ZERO.
+ * A carteira que recebe a taxa nas cadeias EVM — dada pelo dono em 11/08.
+ *
+ * ⚠️ NÃO É SEGREDO, e por isso mora no código: endereço de recebimento é
+ * público por construção (aparece em toda transação on-chain). O que ele
+ * precisa é ser CONFERÍVEL numa revisão, e uma variável de ambiente esconderia
+ * justamente isso de quem lê o PR.
+ *
+ * ⚠️ CHECKSUM EIP-55 CONFERIDO antes de gravar. Um endereço com um caractere
+ * trocado é sintaticamente válido para quase toda biblioteca e manda a taxa
+ * para um lugar que ninguém controla — e não há como desfazer.
+ *
+ * `SWAP_FEE_RECIPIENT` no ambiente sobrescreve, para poder trocar sem deploy.
+ */
+export const CARTEIRA_TAXA_EVM = "0x904126D219dC6c1f7c019303EC743Ad45F473c1F";
+
+/**
+ * ⚠️ SOLANA NÃO TEM DESTINATÁRIO, E ISSO NÃO É DESCUIDO.
+ *
+ * A Jupiter não aceita um endereço de carteira: o `platformFeeBps` exige um
+ * `feeAccount`, que é uma CONTA DE TOKEN do lado Solana. Um endereço EVM ali
+ * não é "menos ideal", é inválido — a cotação seria recusada, ou pior,
+ * aceita apontando para lugar nenhum.
+ *
+ * Então a taxa em Solana fica DESLIGADA até existir uma conta própria. Aplicar
+ * a carteira EVM ali seria inventar um destinatário, que é exatamente o
+ * defeito que a trava abaixo existe para impedir.
+ */
+export const CARTEIRA_TAXA_SOLANA: string | null = null;
+
+/**
+ * ⚠️ A TRAVA DO CAMINHO DO DINHEIRO: sem destinatário para AQUELA cadeia,
+ * taxa ZERO naquela cadeia.
  *
  * Cobrar sem ter para onde mandar é pior que não cobrar — o agregador pode
  * recusar a cotação, ou pior, aceitar e mandar para um endereço vazio. A
- * ausência do env desliga a cobrança inteira, e isso é FALHA FECHADA na
- * direção certa: o default não cobra do usuário.
+ * decisão é POR FAMÍLIA DE CADEIA, porque um destinatário de EVM não serve
+ * para Solana e tratá-los como um só é como o dinheiro se perde.
  */
-export function destinatarioDaTaxa(): string | null {
+export type FamiliaCadeia = "evm" | "solana";
+
+export function destinatarioDaTaxa(familia: FamiliaCadeia = "evm"): string | null {
+  if (familia === "solana") {
+    const s = (process.env.SWAP_FEE_ACCOUNT_SOLANA ?? "").trim();
+    return s.length >= 32 ? s : CARTEIRA_TAXA_SOLANA;
+  }
   const r = (process.env.SWAP_FEE_RECIPIENT ?? "").trim();
-  return r.length >= 8 ? r : null;
+  return r.length >= 8 ? r : CARTEIRA_TAXA_EVM;
 }
 
 /** Os bps que de fato serão pedidos ao agregador — zero sem destinatário. */
-export function bpsEfetivos(tier: Tier): number {
-  return destinatarioDaTaxa() ? TIER_FEE_BPS[tier] : 0;
+export function bpsEfetivos(tier: Tier, familia: FamiliaCadeia = "evm"): number {
+  return destinatarioDaTaxa(familia) ? TIER_FEE_BPS[tier] : 0;
 }

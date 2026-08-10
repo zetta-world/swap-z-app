@@ -9,13 +9,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   TIER_FEE_BPS, taxaPct, receitaUsd, equilibrioMensalUsd,
-  destinatarioDaTaxa, bpsEfetivos,
+  destinatarioDaTaxa, bpsEfetivos, CARTEIRA_TAXA_EVM, CARTEIRA_TAXA_SOLANA,
 } from "@/lib/tier/fees";
+import { getAddress, isAddress } from "viem";
 import type { Tier } from "@/lib/tier/types";
 
 const PLANOS: Tier[] = ["free", "pro", "trader", "pilot"];
 const envOriginal = process.env.SWAP_FEE_RECIPIENT;
-beforeEach(() => { process.env.SWAP_FEE_RECIPIENT = "0x00000000000000000000000000000000000000fe"; });
+beforeEach(() => { delete process.env.SWAP_FEE_RECIPIENT; delete process.env.SWAP_FEE_ACCOUNT_SOLANA; });
 afterEach(() => {
   if (envOriginal === undefined) delete process.env.SWAP_FEE_RECIPIENT;
   else process.env.SWAP_FEE_RECIPIENT = envOriginal;
@@ -80,24 +81,52 @@ describe("o equilíbrio do upgrade — o número que decide", () => {
   });
 });
 
-describe("a trava do destinatário", () => {
+describe("a carteira que recebe", () => {
   /**
-   * ⚠️ SEM DESTINATÁRIO, TAXA ZERO. Cobrar sem ter para onde mandar é pior que
-   * não cobrar. O default do ambiente não configurado NÃO cobra do usuário.
+   * ⚠️ CHECKSUM EIP-55, e este teste é caro de não ter. Um endereço com um
+   * caractere trocado passa em quase toda validação e manda a taxa para um
+   * lugar que ninguém controla — sem desfazer.
    */
-  it("sem SWAP_FEE_RECIPIENT ninguém é cobrado", () => {
-    delete process.env.SWAP_FEE_RECIPIENT;
-    expect(destinatarioDaTaxa()).toBeNull();
-    for (const t of PLANOS) expect(bpsEfetivos(t), t).toBe(0);
+  it("a carteira EVM tem checksum válido", () => {
+    expect(isAddress(CARTEIRA_TAXA_EVM)).toBe(true);
+    expect(getAddress(CARTEIRA_TAXA_EVM.toLowerCase())).toBe(CARTEIRA_TAXA_EVM);
+  });
+
+  it("EVM cobra por padrão, com a carteira do código", () => {
+    expect(destinatarioDaTaxa("evm")).toBe(CARTEIRA_TAXA_EVM);
+    for (const t of PLANOS) expect(bpsEfetivos(t, "evm"), t).toBe(TIER_FEE_BPS[t]);
+  });
+
+  it("o ambiente sobrescreve a carteira sem precisar de deploy", () => {
+    process.env.SWAP_FEE_RECIPIENT = "0x00000000000000000000000000000000000000fe";
+    expect(destinatarioDaTaxa("evm")).toBe("0x00000000000000000000000000000000000000fe");
+  });
+
+  /**
+   * ⚠️ SOLANA FICA DESLIGADA. A Jupiter exige um `feeAccount` — CONTA DE TOKEN,
+   * não carteira — e um endereço EVM ali não é "menos ideal", é inválido.
+   * Aplicar a carteira de EVM na Solana seria inventar um destinatário.
+   */
+  it("Solana não cobra enquanto não tiver conta PRÓPRIA", () => {
+    expect(CARTEIRA_TAXA_SOLANA).toBeNull();
+    expect(destinatarioDaTaxa("solana")).toBeNull();
+    for (const t of PLANOS) expect(bpsEfetivos(t, "solana"), t).toBe(0);
+  });
+
+  it("a carteira de EVM NÃO vaza para o lado Solana", () => {
+    process.env.SWAP_FEE_RECIPIENT = CARTEIRA_TAXA_EVM;
+    expect(destinatarioDaTaxa("solana")).toBeNull();
+    expect(bpsEfetivos("free", "solana")).toBe(0);
+  });
+
+  it("com conta Solana configurada, Solana passa a cobrar", () => {
+    process.env.SWAP_FEE_ACCOUNT_SOLANA = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
+    expect(destinatarioDaTaxa("solana")).toBeTruthy();
+    expect(bpsEfetivos("free", "solana")).toBe(TIER_FEE_BPS.free);
   });
 
   it("endereço curto demais não conta como configurado", () => {
-    process.env.SWAP_FEE_RECIPIENT = "0x1";
-    expect(destinatarioDaTaxa()).toBeNull();
-    expect(bpsEfetivos("free")).toBe(0);
-  });
-
-  it("com destinatário, os bps efetivos são os da escada", () => {
-    for (const t of PLANOS) expect(bpsEfetivos(t), t).toBe(TIER_FEE_BPS[t]);
+    process.env.SWAP_FEE_ACCOUNT_SOLANA = "abc";
+    expect(destinatarioDaTaxa("solana")).toBeNull();
   });
 });
