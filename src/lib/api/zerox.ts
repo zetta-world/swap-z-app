@@ -119,6 +119,39 @@ interface QuoteArgs {
 }
 
 /**
+ * O token em que a taxa é retida.
+ *
+ * ⚠️ O 0X NÃO RETÉM TAXA EM TOKEN NATIVO, e descobrir isso custou dois swaps
+ * de verdade (11/08, 04:49 e 04:54). Nos dois o dono comprou BNB nativo na
+ * BSC; nos dois mandamos `swapFeeToken` = o endereço do nativo
+ * (`0xEeee…EEeE`); e nos dois o 0x devolveu `integratorFee: null` — aceitou a
+ * cotação e não reteve nada. **A tela prometia 1% e a cobrança era zero.**
+ *
+ * A regra do 0x é que `swapFeeToken` seja o de COMPRA ou o de VENDA. Então
+ * quando o de compra é nativo, sobra o de venda — e é ele que vai.
+ *
+ * ⚠️ A PREFERÊNCIA PELO TOKEN DE SAÍDA CONTINUA, e o motivo é o mesmo de
+ * antes: cobrar na saída é cobrar sobre o que o usuário RECEBEU. A entrada é
+ * o segundo lugar, não o primeiro.
+ *
+ * ⚠️ E A RESSALVA ANTIGA — "cobrar na entrada cobraria antes da troca
+ * acontecer, inclusive quando ela falha" — não se aplica aqui, e é por isso
+ * que este caminho é seguro: o 0x Settler faz TUDO numa transação só. Se a
+ * troca reverte, a retenção reverte junto. Não existe estado em que a taxa
+ * saia e o swap não aconteça.
+ *
+ * Devolve `null` quando os dois lados são nativos — que não é uma troca, mas
+ * se chegar aqui é melhor não pedir taxa nenhuma do que pedir uma que o 0x
+ * vai ignorar em silêncio.
+ */
+export function tokenDaTaxa(sellToken: string, buyToken: string): string | null {
+  const nativo = (t: string) => t.toLowerCase() === ZEROX_NATIVE.toLowerCase();
+  if (!nativo(buyToken))  return buyToken;    // preferido: o que o usuário recebe
+  if (!nativo(sellToken)) return sellToken;   // saída nativa → cobra na entrada
+  return null;                                 // nativo dos dois lados: sem taxa possível
+}
+
+/**
  * ⚠️ A TAXA SÓ VAI SE OS DOIS LADOS EXISTIREM (Fase 9.2, 11/08).
  *
  * `swapFeeBps` sem `swapFeeRecipient` é uma cotação que o 0x recusa — ou pior,
@@ -126,16 +159,18 @@ interface QuoteArgs {
  * usuário sem destino, que é o defeito que a trava de `fees.ts` existe para
  * impedir; aqui ela é repetida no ponto de contato com a rede.
  *
- * ⚠️ E A TAXA É COBRADA NO TOKEN DE SAÍDA (`buyToken`). O 0x exige declarar em
- * qual token, e escolher o de ENTRADA cobraria antes da troca acontecer —
- * inclusive quando a troca falha.
+ * ⚠️ E OS TRÊS ANDAM JUNTOS OU NENHUM VAI. Sem `swapFeeToken` utilizável não
+ * adianta mandar os outros dois: o 0x aceita e não retém — que é exatamente o
+ * silêncio que custou os dois swaps de 11/08.
  */
 function aplicarTaxa(params: URLSearchParams, args: QuoteArgs): void {
   const bps = args.feeBps ?? 0;
   if (!(bps > 0) || !args.feeRecipient) return;
+  const token = tokenDaTaxa(args.sellToken, args.buyToken);
+  if (!token) return;
   params.set("swapFeeBps", String(bps));
   params.set("swapFeeRecipient", args.feeRecipient);
-  params.set("swapFeeToken", args.buyToken);
+  params.set("swapFeeToken", token);
 }
 
 export async function fetchZeroXPrice(args: QuoteArgs, apiKey: string): Promise<ZxPriceResponse> {

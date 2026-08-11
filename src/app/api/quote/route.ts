@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
-import { recordEvent } from "@/lib/admin/track";
+import { recordEvent, notifyTelegram } from "@/lib/admin/track";
 import { isValidChain, validateAddress, validateAmount } from "@/lib/validate";
 import {
   fetchZeroXPrice, fetchZeroXQuote, isZeroXSupported, ZEROX_CHAIN_IDS, ZEROX_NATIVE,
@@ -82,6 +82,41 @@ async function tierDoCotante(): Promise<Tier> {
     const { tier } = await getTierForWallet(s.sub, s.chain);
     return tier;
   } catch { return "free"; }
+}
+
+/**
+ * ⚠️ PEDIMOS TAXA E O AGREGADOR NÃO CONFIRMOU — ISTO GRITA (11/08).
+ *
+ * Em dois swaps reais o 0x aceitou a cotação e devolveu `integratorFee: null`,
+ * porque o token de saída era nativo e ele não retém taxa em nativo. A tela
+ * dizia "Taxa da plataforma 1,00%" e a cobrança era ZERO. Ninguém teria
+ * descoberto: a cotação volta 200, o swap funciona, o usuário fica feliz, e a
+ * receita não existe.
+ *
+ * ⚠️ NÃO BLOQUEIA A COTAÇÃO, E ISSO É DE PROPÓSITO. O caminho de dinheiro que
+ * falha FECHADO é o do usuário — ordem sem preço de referência é recusada. Já
+ * a NOSSA receita é o outro lado: recusar a troca de alguém porque nós não
+ * fomos pagos seria transformar um problema nosso em prejuízo dele.
+ *
+ * Então: alerta alto, swap segue. Perder taxa por um bug é ruim; perder o
+ * usuário por causa dele é pior.
+ */
+function alertarTaxaNaoRetida(args: {
+  aceita: unknown; bps: number; source: string; fromChain: string;
+  sellToken: string; buyToken: string;
+}): void {
+  const temAceite = Array.isArray(args.aceita) ? args.aceita.length > 0 : args.aceita != null;
+  if (args.bps <= 0 || temAceite) return;
+  notifyTelegram(
+    `⚠️ TAXA NÃO RETIDA — pedimos ${args.bps}bps ao ${args.source} em ${args.fromChain} `
+    + `(${args.sellToken} → ${args.buyToken}) e a resposta não trouxe taxa de integrador. `
+    + `A tela promete a taxa e a cobrança é ZERO.`,
+    {
+      dedupKey: `taxa-nao-retida:${args.source}:${args.fromChain}`,
+      meta: { kind: "taxa_nao_retida", bps: args.bps, source: args.source,
+              fromChain: args.fromChain, sellToken: args.sellToken, buyToken: args.buyToken },
+    },
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -314,6 +349,10 @@ export async function GET(req: NextRequest) {
             ? { amount: q.fees.integratorFee.amount, token: q.fees.integratorFee.token }
             : null,
         } });
+        alertarTaxaNaoRetida({
+          aceita: q.fees?.integratorFee ?? null, bps: taxa.bps,
+          source: "0x", fromChain, sellToken, buyToken,
+        });
         return NextResponse.json(
           { ok: true, mode, source, taxa, result: q, normalized: normalizeZeroX(q, zxArgs.chainId, true) },
           { headers: { "Cache-Control": "no-store" } },
@@ -331,14 +370,19 @@ export async function GET(req: NextRequest) {
          * mudar nada na tela. `taxaAceita` sai da resposta dela, então a ordem
          * de grandeza fica conferível sem depender de ninguém abrir explorador.
          */
+        const taxaAceitaLiFi = (q.estimate?.feeCosts ?? [])
+          .filter((f) => /integrator|z-swap|referrer/i.test(`${f.name ?? ""}${f.description ?? ""}`))
+          .map((f) => ({ amount: f.amount, token: f.token?.symbol, pct: f.percentage }));
         recordEvent("swap_intent", { wallet: taker, meta: {
           source, fromChain, toChain, sellToken, buyToken, crossChain: true,
           chainId: lfArgs.fromChainId, target: q.transactionRequest?.to, spender: q.estimate?.approvalAddress,
           taxaPedidaBps: taxa.bps, taxaDestinatario: taxa.destinatario,
-          taxaAceita: (q.estimate?.feeCosts ?? [])
-            .filter((f) => /integrator|z-swap|referrer/i.test(`${f.name ?? ""}${f.description ?? ""}`))
-            .map((f) => ({ amount: f.amount, token: f.token?.symbol, pct: f.percentage })),
+          taxaAceita: taxaAceitaLiFi,
         } });
+        alertarTaxaNaoRetida({
+          aceita: taxaAceitaLiFi, bps: taxa.bps,
+          source: "lifi", fromChain, sellToken, buyToken,
+        });
         return NextResponse.json(
           { ok: true, mode, source, taxa, result: q, normalized: normalizeLiFi(q) },
           { headers: { "Cache-Control": "no-store" } },
