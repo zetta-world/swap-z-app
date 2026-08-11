@@ -15,6 +15,11 @@ type Tier = "free" | "pro" | "trader" | "pilot";
 interface Dados {
   real: { operacoes: number; volumeUsd: number; desde: string | null; ate: string | null };
   sonda: number; semVolume: number; falha: string | null;
+  arrecadado: { usd: number; operacoes: number };
+  porOrigem: Array<{
+    kind: string; operacoes: number; volumeUsd: number;
+    arrecadadoUsd: number; comTaxa: number; cobravel: boolean;
+  }>;
   receitaRealTetoUsd: number;
   taxaPorPlano: Record<Tier, number>;
   projecao: Array<{ volumeUsd: number; porPlano: Record<Tier, number> }>;
@@ -25,6 +30,23 @@ interface Dados {
 
 const PLANOS: Tier[] = ["free", "pro", "trader", "pilot"];
 const usd = (n: number) => `$${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/**
+ * ⚠️ ARRECADAÇÃO PEQUENA PRECISA DE CASAS, senão some (Fase 11).
+ *
+ * A primeira retenção da história foi $0,092. Com duas casas ela vira "$0,09",
+ * e a segunda vira "$0,00" — um valor que existe mostrado como se não
+ * existisse. Enquanto o número for pequeno, ele é escrito por inteiro.
+ */
+const usdFino = (n: number) =>
+  n === 0 ? "$0" : n < 1 ? `$${n.toFixed(4)}` : usd(n);
+
+/** Nome legível da origem. `?` quando algo novo aparecer sem tradução. */
+const ORIGEM: Record<string, string> = {
+  dex_swap:      "Swap DEX",
+  dex_bridge:    "Ponte entre cadeias",
+  autopilot_cex: "Autopiloto (corretora)",
+  cex_spot:      "Spot na corretora",
+};
 
 export default function ReceitaPanel() {
   const [data, setData] = useState<Dados | null>(null);
@@ -53,15 +75,95 @@ export default function ReceitaPanel() {
 
       {data && (
         <>
-          {/* ── O REAL ───────────────────────────────────────────────── */}
+          {/* ── ARRECADADO — dinheiro que MUDOU DE MÃOS (Fase 11) ──────
+
+                 ⚠️ ESTE BLOCO VEM PRIMEIRO, e o TETO desceu para baixo dele.
+
+                 Durante meses o topo do painel dizia "RECEITA (TETO, a 1%)
+                 $1,27" — 1% do volume. Em 11/08 descobrimos que a cotação
+                 FIRME nunca mandava a taxa: de 13/06 até as 10:42 daquele dia,
+                 toda troca cobrou ZERO. O teto não era estimativa conservadora
+                 do que houve; era a resposta de outra pergunta ("quanto TERIA
+                 rendido SE") ocupando o lugar do resultado.
+
+                 Aqui é soma de PARCELA: cada operação declara quanto foi
+                 retido, e a contagem ao lado diz de quantas. Sem parcela o
+                 número é zero, e a contagem zero explica por quê. */}
+          <div style={{ fontSize: 9, color: "var(--adm-green)", letterSpacing: "0.12em", marginBottom: 4 }}>
+            ARRECADADO — taxa retida em operação confirmada
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+            <Bloco r="DINHEIRO QUE ENTROU" v={usdFino(data.arrecadado.usd)} c="var(--adm-green)" />
+            <Bloco r="OPERAÇÕES QUE RETIVERAM" v={String(data.arrecadado.operacoes)} c="var(--adm-ink-2)" />
+          </div>
+          {data.arrecadado.operacoes === 0 && (
+            <div style={{ fontSize: 8, color: "var(--adm-amber)", lineHeight: 1.6, marginBottom: 8 }}>
+              ⚠️ nenhuma operação com retenção gravada ainda — a arrecadação passou a ser
+              gravada por operação em 11/08; o que veio antes não tem como ser recuperado
+            </div>
+          )}
+
+          {/* ── DE ONDE VEM O DINHEIRO ──────────────────────────────────
+
+                 ⚠️ A COLUNA `cobravel` É O PONTO DESTA TABELA. `autopilot_cex`
+                 e `cex_spot` são ordens do usuário na corretora dele: não
+                 passam por `/api/quote` e não têm onde reter nada. A receita
+                 deles é zero POR CONSTRUÇÃO, não por falha — e sem dizer isso,
+                 "VOLUME $127" ao lado de "RECEITA" faz qualquer um concluir
+                 que os $127 renderam. Onze das dezessete operações não podiam
+                 render nada. */}
+          <div style={{ fontSize: 9, color: "var(--adm-cyan)", letterSpacing: "0.12em", marginBottom: 2, marginTop: 8 }}>
+            DE ONDE VEM — por origem
+          </div>
+          <div style={{ overflowX: "auto", marginBottom: 8 }}>
+            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
+                  <th style={{ textAlign: "left", padding: "2px 6px 2px 0", fontWeight: 400 }}>ORIGEM</th>
+                  <th style={{ padding: "2px 6px", fontWeight: 400 }}>OPS</th>
+                  <th style={{ padding: "2px 6px", fontWeight: 400 }}>VOLUME</th>
+                  <th style={{ padding: "2px 6px", fontWeight: 400 }}>ARRECADADO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.porOrigem.map((o) => (
+                  <tr key={o.kind} style={{ borderTop: "1px solid var(--adm-line)", textAlign: "right" }}>
+                    <td style={{ textAlign: "left", padding: "3px 6px 3px 0", color: "var(--adm-ink-2)" }}>
+                      {ORIGEM[o.kind] ?? o.kind}
+                      {!o.cobravel && (
+                        <span style={{ color: "var(--adm-ink-4)", fontSize: 8 }}> · não cobra</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "3px 6px", color: "var(--adm-ink-3)" }}>{o.operacoes}</td>
+                    <td style={{ padding: "3px 6px", color: "var(--adm-ink-3)" }}>{usd(o.volumeUsd)}</td>
+                    <td style={{ padding: "3px 6px", color: o.cobravel ? "var(--adm-green)" : "var(--adm-ink-4)" }}>
+                      {o.cobravel ? usdFino(o.arrecadadoUsd) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 10 }}>
+            <b>&quot;não cobra&quot; não é falha</b>: corretora e autopiloto são ordens do usuário na
+            conta dele — não passam pela nossa cotação e não há onde reter taxa. O volume é
+            real; a receita é zero por construção.
+            {" · "}<b>Passes (tier)</b> não aparecem aqui: são receita ATRIBUÍDA (assinantes ×
+            preço), não caixa arrecadado — ficam no painel 💰 RECEITA ao lado.
+          </div>
+
+          {/* ── O VOLUME MEDIDO, e o TETO que ele geraria ─────────────── */}
           <div style={{ fontSize: 9, color: "var(--adm-ink-3)", letterSpacing: "0.12em", marginBottom: 4 }}>
-            MEDIDO — o que de fato passou pelo livro
+            VOLUME MEDIDO — e o teto que ele TERIA gerado
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
             <Bloco r="VOLUME REAL" v={usd(data.real.volumeUsd)} c="var(--adm-ink-2)" />
             <Bloco r="OPERAÇÕES" v={String(data.real.operacoes)} c="var(--adm-ink-2)" />
             {/* ⚠️ TETO, não estimativa — o livro não guarda o plano de quem operou. */}
-            <Bloco r="RECEITA (TETO, a 1%)" v={usd(data.receitaRealTetoUsd)} c="var(--adm-green)" />
+            {/* ⚠️ ÂMBAR, NÃO VERDE, e o rótulo diz "teria". Verde ao lado de um
+                   valor maior que o arrecadado é a mentira que este painel
+                   contou por meses. */}
+            <Bloco r="TETO — TERIA RENDIDO a 1%" v={usd(data.receitaRealTetoUsd)} c="var(--adm-amber)" />
           </div>
           <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 8 }}>
             {data.real.desde
@@ -81,8 +183,10 @@ export default function ReceitaPanel() {
                    receita que existiu e o livro não sabe medir. */}
             {data.semVolume > 0 && (
               <> · <span style={{ color: "var(--adm-amber)" }}>
-                ⚠️ {data.semVolume} operação(ões) CONFIRMADAS sem volume gravado — não são sonda,
-                são receita que o livro não consegue medir
+                ⚠️ {data.semVolume} operação(ões) CONFIRMADAS sem volume gravado — TODAS
+                anteriores a 11/08, quando o valor em dólar passou a ser gravado. Não são
+                sonda; são operações reais cujo volume o livro não tem como recuperar
+                (o preço do dia da troca não existe em lugar nenhum)
               </span></>
             )}
           </div>

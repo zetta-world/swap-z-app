@@ -107,6 +107,35 @@ export default function ExecuteSwap({
     ? (Number(sellAmount) / Math.pow(10, fromToken.decimals)) * fromUsd
     : null;
 
+  /**
+   * ⚠️ O QUE O AGREGADOR RETEVE PARA NÓS — em USD, no momento da troca (Fase 11).
+   *
+   * O `integratorFee` volta em unidades-base do token da taxa, que é o de SAÍDA
+   * na maioria dos casos e o de ENTRADA quando a saída é nativa. Então quem
+   * converte precisa saber QUAL dos dois é — comparar o endereço é o único
+   * jeito, e assumir "é sempre o de saída" daria um número errado justamente
+   * nos pares que a Fase 9 consertou por último.
+   *
+   * ⚠️ E O PREÇO É O DE AGORA, DE PROPÓSITO. A taxa é retida neste instante;
+   * convertê-la depois, com preço de outro dia, mediria a variação do token e
+   * não a arrecadação. Por isso o USD é congelado aqui e gravado junto.
+   *
+   * Devolve `undefined` quando falta o preço — e `undefined` não é zero: zero
+   * afirmaria que não arrecadamos, e a verdade seria "não sabemos converter".
+   */
+  const arrecadacao = useCallback((feeAmount?: string, feeToken?: string) => {
+    if (!feeAmount || !feeToken) return undefined;
+    const alvo = feeToken.toLowerCase();
+    const tok  = [fromToken, toToken].find((t) => t.address.toLowerCase() === alvo)
+      ?? (alvo === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ? fromToken : undefined);
+    if (!tok) return undefined;
+    const preco = livePrices[tokenPriceKey(tok)] ?? tok.priceUsd ?? null;
+    if (preco == null) return undefined;
+    const qtd = Number(feeAmount) / Math.pow(10, tok.decimals);
+    if (!Number.isFinite(qtd)) return undefined;
+    return qtd * preco;
+  }, [fromToken, toToken, livePrices]);
+
   const isCrossChain = fromChain !== toChain;
   const isJupiter    = source === "jupiter";
   const isSolanaSrc  = fromChain === "solana";
@@ -495,9 +524,20 @@ export default function ExecuteSwap({
         });
         setTxHash(hash);
         setPhase("tx_pending");
+        /**
+         * ⚠️ A ARRECADAÇÃO SAI DA COTAÇÃO FIRME, e só dela (Fase 11).
+         *
+         * `q` aqui é o `quote`, não o `price` — é o único lugar onde o 0x
+         * confirma quanto reteve DE FATO. E é gravado só neste ponto, depois
+         * de `sendTransaction`, porque o `swap_intent` do servidor acontece na
+         * cotação: contar a partir dele viraria cotação abandonada em receita.
+         */
         historyId.current = pushHistory({
           type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
           valueUsd: notionalUsd ?? undefined,
+          platformFeeAmount: q.fees?.integratorFee?.amount,
+          platformFeeToken:  q.fees?.integratorFee?.token,
+          platformFeeUsd:    arrecadacao(q.fees?.integratorFee?.amount, q.fees?.integratorFee?.token),
           fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
           toSymbol: toToken.symbol, toChain, txHash: hash, route: "0x",
           toAmount: String(Number(q.buyAmount) / Math.pow(10, toToken.decimals)),
@@ -561,7 +601,7 @@ export default function ExecuteSwap({
       setPhase("tx_failed");
       if (historyId.current) updateHistory(historyId.current, { status: "failed" });
     }
-  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory]);
+  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao]);
 
   // Quote-derived display values
   const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);

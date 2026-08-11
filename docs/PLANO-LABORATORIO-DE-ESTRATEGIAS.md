@@ -2497,6 +2497,85 @@ código depois.
 
 ---
 
+### FASE 11 — De onde vem o dinheiro · 🟢
+
+*O dono pediu: "quero saber exatamente quanto ganhei e de onde vem o dinheiro
+— o que vem de taxa DEX, CEX, autopiloto, tier". A resposta honesta de hoje é
+mais curta do que a pergunta espera, e a fase existe para a tela dizer isso.*
+
+## O levantamento — quantas fontes de receita existem de verdade
+
+`bpsEfetivos` e `destinatarioDaTaxa` são chamados em **um** lugar de produção:
+`/api/quote`. Mais nada no repositório cobra coisa alguma.
+
+| origem | operações | receita | por quê |
+|---|---|---|---|
+| `dex_swap` | 6 | **é a única que arrecada** | taxa de integrador retida pelo 0x/LI.FI |
+| `autopilot_cex` | 8 | **zero** | não existe mecanismo — são ordens do usuário na corretora dele |
+| `cex_spot` | 3 | **zero** | idem |
+| passes / tier | — | **atribuída, não arrecadada** | o painel já diz "Not realized cash" |
+
+**CEX e autopiloto não rendem nada, e isso não é defeito — é ausência de
+mecanismo.** A tela não diz isso hoje, e quem lê "OPERAÇÕES 17 · VOLUME $127"
+ao lado de "RECEITA $1,27" conclui naturalmente que os $127 renderam. Onze das
+dezessete operações não podiam render nada.
+
+## ⚠️ O NÚMERO DA TELA ESTÁ ERRADO POR UMA ORDEM DE GRANDEZA
+
+O painel mostra **RECEITA (TETO, a 1%) $1,27**, calculado como 1% de $127,09 de
+volume. Mas a Fase 9 provou hoje que **a cotação firme nunca mandou a taxa**:
+de 13/06 até 11/08 às 10:42, toda troca cobrou ZERO.
+
+O que foi arrecadado de verdade, no histórico inteiro, é **uma** retenção:
+
+```
+11/08 10:42 · BNB → USDT · $9,19
+integratorFee = 92016254981434444 → 0,092016 USDT   ← 1,0000%
+```
+
+**$0,09, não $1,27.** O teto não é uma estimativa conservadora do que
+aconteceu: é a resposta de outra pergunta ("quanto teria rendido SE") colada no
+lugar do resultado. É a invariante nº 6 outra vez — agregado sem parcela.
+
+## O que a fase faz
+
+**1. Arrecadação vira PARCELA, não estimativa.** A taxa retida passa a ser
+gravada na própria operação: `platform_fee_usd`, `platform_fee_amount`,
+`platform_fee_token`, `platform_fee_bps`. O valor vem do `integratorFee` que o
+agregador devolve na cotação firme — o mesmo número que hoje só existe no
+evento e não sobrevive à operação.
+
+⚠️ **E ela é gravada SÓ quando a operação confirma.** O `swap_intent` acontece
+na cotação, antes de assinar; contar a partir dele transformaria cotação
+abandonada em receita. Cotação não é caixa.
+
+⚠️ **`platform_fee_usd` NÃO é o `feesUsd` que já existe.** Esse é o que o
+USUÁRIO pagou de custo (gás, ponte, taker de CEX). Este é o que NÓS recebemos.
+Dois campos chamados "fee" com sinais opostos — somá-los seria transformar
+custo do cliente em receita nossa, e por isso os nomes são diferentes de
+propósito.
+
+**2. O painel separa três coisas que hoje são uma.**
+
+| bloco | o que é | como se lê |
+|---|---|---|
+| **ARRECADADO** | taxa retida em operação confirmada | dinheiro que mudou de mãos |
+| **ATRIBUÍDO** | passes × preço | direito a receber, não caixa |
+| **NÃO ARRECADÁVEL** | volume de CEX/autopiloto | não rende por construção |
+
+E a quebra por origem responde a pergunta como ela foi feita: quanto veio de
+DEX, quanto de CEX, quanto de autopiloto, quanto de tier.
+
+**3. O TETO sai do lugar de resultado.** Ele continua na tela — é útil para
+dimensionar — mas rotulado como cenário, ao lado do arrecadado, nunca no lugar
+dele.
+
+**4. As linhas sem volume ganham data.** "5 operações CONFIRMADAS sem volume
+gravado" não diz que são todas ANTERIORES à correção de 11/08, então lê-se como
+problema vivo. Com a data, lê-se como cicatriz fechada.
+
+---
+
 ## 4. REGRAS QUE VALEM PARA TODAS AS FASES
 
 Cicatrizes desta semana, transformadas em regra:
@@ -2549,5 +2628,6 @@ Traduzido em regra:
 | 8 · Cinzas restantes | 🟡 **8.2 rodada 10/08** — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
 | 9 · Receita | 🟢 **construída 11/08** — cobrança nas EVM com divulgação; Solana sem taxa por decisão; painel 💵 separando MEDIDO de PROJEÇÃO. 🟢 **cobrança CONFIRMADA 11/08 10:42** — o 0x devolveu `integratorFee` de 0,092016 USDT em swap de $9,19 (1,0000%). Quatro defeitos empilhados no caminho; o principal era a cotação FIRME nunca mandar a taxa. Falta só a conferência no explorador ([`TESTE-DA-TAXA-EVM.md`](TESTE-DA-TAXA-EVM.md)) |
 | 10 · O livro e a tela | 🟢 **concluída 11/08** — vocabulário de 6 estados (era 3), registro alinhado ao livro, detector de discordância na TELA. Restam 6 rodadas a remedir, listadas pelo próprio detector |
+| 11 · De onde vem o dinheiro | 🟢 **concluída 11/08** — ARRECADADO (parcela real) acima do TETO; quebra por origem com "não cobra" explícito; taxa retida gravada por operação (migração 0024) |
 
 Atualizar este quadro a cada entrega — regra da casa.

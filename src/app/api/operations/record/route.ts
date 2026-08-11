@@ -18,6 +18,11 @@ interface Body {
   side?:       string;
   volumeUsd?:  number;
   pnlUsd?:     number;
+  /** O que a plataforma RECEBEU nesta operação — ver a migração 0024. */
+  platformFeeUsd?:    number;
+  platformFeeAmount?: string;
+  platformFeeToken?:  string;
+  platformFeeBps?:    number;
   status?:     string;
   route?:      string;
   /** Real trade timestamp (unix ms) from the client tx-history entry. Drives
@@ -86,6 +91,20 @@ export async function POST(req: NextRequest) {
       side:           str(body.side, 8),
       volume_usd:     num(body.volumeUsd),
       pnl_usd:        num(body.pnlUsd),
+      /**
+       * ⚠️ A ARRECADAÇÃO VEM DO CLIENTE, e o CHECK do banco é a trava.
+       *
+       * Este corpo é enviado pelo navegador, então o número é declarado por
+       * quem opera — igual ao volume. A migração 0024 recusa valor NEGATIVO,
+       * que é a forma de alguém transformar custo em receita com sinal
+       * trocado. Valor inflado continua possível e é problema de outra ordem:
+       * o painel confere a retenção contra os bps do plano, e o explorador
+       * confere contra a cadeia.
+       */
+      platform_fee_usd:    num(body.platformFeeUsd),
+      platform_fee_amount: str(body.platformFeeAmount, 80),
+      platform_fee_token:  str(body.platformFeeToken, 64),
+      platform_fee_bps:    num(body.platformFeeBps),
       status:         str(body.status, 24)!,
       route:          str(body.route, 24),
       // Only set when we have a trustworthy trade time; otherwise omit so the

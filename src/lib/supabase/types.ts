@@ -206,6 +206,17 @@ export type OperationRow = {
   status:         string;
   route:          string | null;
   ref:            string | null;
+  /**
+   * ⚠️ O QUE A PLATAFORMA RECEBEU — não o que o usuário pagou (migração 0024).
+   *
+   * `pnl_usd` é resultado do cliente; estes quatro são receita nossa. O CHECK
+   * do banco recusa negativo: taxa retida é entrada, e um negativo aqui seria
+   * custo disfarçado de receita.
+   */
+  platform_fee_usd:    number | null;
+  platform_fee_amount: string | null;
+  platform_fee_token:  string | null;
+  platform_fee_bps:    number | null;
   created_at:     string;
 };
 

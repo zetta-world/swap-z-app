@@ -38,6 +38,25 @@ export interface TxHistoryEntry {
   feesUsd?:    number;   // all fees paid (gas + bridge + CEX taker)
   pnlUsd?:     number;   // realized P&L (for futures / arb)
 
+  /**
+   * ⚠️ O QUE **NÓS** RECEBEMOS — e não confundir com `feesUsd` acima (Fase 11).
+   *
+   * `feesUsd` é CUSTO DO USUÁRIO: gás, ponte, taker de corretora. Este é
+   * RECEITA NOSSA: a taxa de integrador que o agregador reteve e mandou para
+   * a carteira da plataforma. Dois campos chamados "fee" com sinais opostos —
+   * somá-los transformaria custo do cliente em receita nossa.
+   *
+   * Vem do `fees.integratorFee` da cotação FIRME, que é o único lugar onde o
+   * agregador confirma quanto reteve de fato.
+   */
+  platformFeeUsd?:    number;
+  /** A retenção em unidades-base, como o agregador devolveu. */
+  platformFeeAmount?: string;
+  /** O token em que ela foi retida. */
+  platformFeeToken?:  string;
+  /** Os bps pedidos, para conferir a retenção contra o plano. */
+  platformFeeBps?:    number;
+
   // On-chain / CEX refs
   txHash?:     string;
   exchange?:   string;   // CEX id for CEX trades

@@ -67,6 +67,16 @@ export function useOperationSync(): void {
           side:      sideOf(e.fromSymbol, e.toSymbol),
           volumeUsd: e.valueUsd,
           pnlUsd:    effectiveRealizedUsd(e, realized),
+          /**
+           * ⚠️ RECEITA NOSSA, não custo do usuário (Fase 11). `e.feesUsd` — que
+           * NÃO viaja aqui — é o que o cliente pagou de gás e taker. Este é o
+           * que o agregador reteve para a plataforma. Nomes parecidos, sinais
+           * opostos; misturá-los inverteria o sinal da receita.
+           */
+          platformFeeUsd:    e.platformFeeUsd,
+          platformFeeAmount: e.platformFeeAmount,
+          platformFeeToken:  e.platformFeeToken,
+          platformFeeBps:    e.platformFeeBps,
           route:     e.route,
           ts:        e.ts,
         });
