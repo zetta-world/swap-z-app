@@ -3,7 +3,7 @@ import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { recordEvent, notifyTelegram } from "@/lib/admin/track";
 import { isValidChain, validateAddress, validateAmount } from "@/lib/validate";
 import {
-  fetchZeroXPrice, fetchZeroXQuote, isZeroXSupported, ZEROX_CHAIN_IDS, ZEROX_NATIVE,
+  fetchZeroXPrice, fetchZeroXQuote, isZeroXSupported, ZEROX_CHAIN_IDS, ZEROX_NATIVE, tokenDaTaxa,
 } from "@/lib/api/zerox";
 import {
   fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE,
@@ -345,9 +345,31 @@ export async function GET(req: NextRequest) {
           source, fromChain, toChain, sellToken, buyToken,
           chainId: zxArgs.chainId, target: q.transaction?.to, spender: q.issues?.allowance?.spender,
           taxaPedidaBps: taxa.bps, taxaDestinatario: taxa.destinatario,
+          /**
+           * ⚠️ O TOKEN QUE PEDIMOS VAI PARA O EVENTO, E NÃO É REDUNDANTE (11/08).
+           *
+           * Eu já errei uma hipótese aqui hoje: culpei o token nativo, corrigi
+           * `tokenDaTaxa` para cair na entrada, e os três swaps seguintes
+           * continuaram com `taxaAceita: null`. E eu não tinha como saber se o
+           * código corrigido estava mesmo escolhendo o token novo, ou se ele
+           * escolhia certo e o 0x recusava assim mesmo.
+           *
+           * Duas causas diferentes com a mesma tela — de novo. Este campo
+           * separa as duas: se vier o endereço do ERC-20, a escolha está certa
+           * e o problema é do outro lado.
+           */
+          taxaTokenPedido: tokenDaTaxa(zxArgs.sellToken, zxArgs.buyToken),
           taxaAceita: q.fees?.integratorFee
             ? { amount: q.fees.integratorFee.amount, token: q.fees.integratorFee.token }
             : null,
+          /**
+           * ⚠️ E O BLOCO `fees` INTEIRO, cru. `integratorFee: null` sozinho não
+           * diz se o 0x processou o pedido e recusou, ou se nem viu. Se vierem
+           * `zeroExFee` e `gasFee` preenchidos ao lado do nosso nulo, a
+           * resposta é a primeira — e aí o problema é o que pedimos, não se
+           * pedimos.
+           */
+          taxaRespostaCrua: q.fees ?? null,
         } });
         alertarTaxaNaoRetida({
           aceita: q.fees?.integratorFee ?? null, bps: taxa.bps,
