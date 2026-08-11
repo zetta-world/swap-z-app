@@ -110,6 +110,32 @@ interface QuoteArgs {
   sellAmount:   string;   // base units, decimal string
   taker?:       string;   // user's address (recommended)
   slippageBps?: number;
+  /**
+   * Taxa da plataforma, em pontos-base (Fase 9.2). Só é enviada com
+   * `feeRecipient` junto — ver a nota em `aplicarTaxa`.
+   */
+  feeBps?:      number;
+  feeRecipient?: string;
+}
+
+/**
+ * ⚠️ A TAXA SÓ VAI SE OS DOIS LADOS EXISTIREM (Fase 9.2, 11/08).
+ *
+ * `swapFeeBps` sem `swapFeeRecipient` é uma cotação que o 0x recusa — ou pior,
+ * aceita e retém para lugar nenhum. Mandar um sem o outro seria cobrar do
+ * usuário sem destino, que é o defeito que a trava de `fees.ts` existe para
+ * impedir; aqui ela é repetida no ponto de contato com a rede.
+ *
+ * ⚠️ E A TAXA É COBRADA NO TOKEN DE SAÍDA (`buyToken`). O 0x exige declarar em
+ * qual token, e escolher o de ENTRADA cobraria antes da troca acontecer —
+ * inclusive quando a troca falha.
+ */
+function aplicarTaxa(params: URLSearchParams, args: QuoteArgs): void {
+  const bps = args.feeBps ?? 0;
+  if (!(bps > 0) || !args.feeRecipient) return;
+  params.set("swapFeeBps", String(bps));
+  params.set("swapFeeRecipient", args.feeRecipient);
+  params.set("swapFeeToken", args.buyToken);
 }
 
 export async function fetchZeroXPrice(args: QuoteArgs, apiKey: string): Promise<ZxPriceResponse> {
@@ -121,6 +147,7 @@ export async function fetchZeroXPrice(args: QuoteArgs, apiKey: string): Promise<
   });
   if (args.taker)       params.set("taker", args.taker);
   if (args.slippageBps) params.set("slippageBps", String(args.slippageBps));
+  aplicarTaxa(params, args);
 
   const res = await fetch(`${BASE_URL}/swap/allowance-holder/price?${params.toString()}`, {
     headers: {

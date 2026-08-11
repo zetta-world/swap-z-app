@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   TIER_FEE_BPS, taxaPct, receitaUsd, equilibrioMensalUsd,
-  destinatarioDaTaxa, bpsEfetivos, CARTEIRA_TAXA_EVM, CARTEIRA_TAXA_SOLANA,
+  destinatarioDaTaxa, bpsEfetivos, CARTEIRA_TAXA_EVM, CARTEIRA_TAXA_SOLANA, CONTA_TAXA_SOLANA,
 } from "@/lib/tier/fees";
 import { getAddress, isAddress } from "viem";
 import type { Tier } from "@/lib/tier/types";
@@ -107,10 +107,34 @@ describe("a carteira que recebe", () => {
    * não carteira — e um endereço EVM ali não é "menos ideal", é inválido.
    * Aplicar a carteira de EVM na Solana seria inventar um destinatário.
    */
-  it("Solana não cobra enquanto não tiver conta PRÓPRIA", () => {
-    expect(CARTEIRA_TAXA_SOLANA).toBeNull();
+  /**
+   * ⚠️ A CARTEIRA DA SOLANA ESTÁ REGISTRADA, e mesmo assim não se cobra —
+   * porque a Jupiter pede CONTA DE TOKEN, não carteira. Separar os dois campos
+   * é o que impede o erro fácil de mandar um no lugar do outro.
+   */
+  it("a carteira Solana está registrada e é válida", () => {
+    expect(CARTEIRA_TAXA_SOLANA).toBe("EWPtaW726VUcs2DA7q73b9vAJyyXJLynE8pH6TZGvd5L");
+    expect(CARTEIRA_TAXA_SOLANA.length).toBeGreaterThanOrEqual(32);
+  });
+
+  it("mas a CONTA de token ainda não existe, então Solana não cobra", () => {
+    expect(CONTA_TAXA_SOLANA).toBeNull();
     expect(destinatarioDaTaxa("solana")).toBeNull();
     for (const t of PLANOS) expect(bpsEfetivos(t, "solana"), t).toBe(0);
+  });
+
+  /**
+   * ⚠️ A TRAVA QUE A PERGUNTA DO DONO EXPÔS: a carteira NÃO pode virar o
+   * destinatário da Solana por descuido. Uma carteira base58 passa em qualquer
+   * validação por tamanho — quem decide é o CAMPO, não o formato.
+   */
+  it("a carteira Solana não vira feeAccount por descuido", () => {
+    expect(destinatarioDaTaxa("solana")).not.toBe(CARTEIRA_TAXA_SOLANA);
+  });
+
+  it("e a carteira Solana não vaza para o lado EVM", () => {
+    expect(destinatarioDaTaxa("evm")).toBe(CARTEIRA_TAXA_EVM);
+    expect(destinatarioDaTaxa("evm")).not.toBe(CARTEIRA_TAXA_SOLANA);
   });
 
   it("a carteira de EVM NÃO vaza para o lado Solana", () => {

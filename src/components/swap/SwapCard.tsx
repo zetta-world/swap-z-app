@@ -413,6 +413,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
               <TxDetailsStrip
                 priceImpact={display.priceImpact}
                 gasUsd={selectedQuote.gasUsd}
+                taxaPlataforma={quotesState.taxa}
                 minDec={display.minDec}
                 toSymbol={toToken?.symbol ?? ""}
                 inUsd={display.inUsd}
@@ -734,10 +735,12 @@ function RiskBadge({ risk }: { risk: "safe" | "caution" | "danger" }) {
 
 // ─── Transaction details strip ────────────────────────────────────────────
 function TxDetailsStrip({
-  priceImpact, gasUsd, minDec, toSymbol, inUsd,
+  priceImpact, gasUsd, minDec, toSymbol, inUsd, taxaPlataforma,
 }: {
   priceImpact: number | null;
   gasUsd:      number | undefined;
+  /** A taxa da plataforma que a cotação trouxe. `null` = ainda não cotado. */
+  taxaPlataforma: { tier: string; pct: number } | null;
   minDec:      number;
   toSymbol:    string;
   inUsd:       number;
@@ -784,6 +787,29 @@ function TxDetailsStrip({
           </span>
         </div>
       </div>
+
+      {/* ⚠️ A TAXA DA PLATAFORMA, ANTES DA ASSINATURA (Fase 9.2).
+           Reter 1% sem dizer é o tipo de coisa que a primeira pessoa a
+           conferir no explorador transforma em acusação — e não se recupera.
+           Aparece SEMPRE que a cotação trouxe a taxa, inclusive em 0%: "0%" e
+           campo ausente são afirmações diferentes. */}
+      {taxaPlataforma && (
+        <div className="flex items-center justify-between px-3.5 py-2.5 gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-mono text-[10px] text-ink-3 truncate">{t("swap.platformFee")}</span>
+            <span
+              className="w-3.5 h-3.5 rounded-full border border-white/15 bg-white/5 text-ink-4 font-mono text-[8px] leading-none flex items-center justify-center flex-shrink-0 cursor-help"
+              title={t("swap.platformFeeTip", { tier: taxaPlataforma.tier })}
+            >?</span>
+          </div>
+          <span className={cn(
+            "font-display font-bold text-[12px] tabular-nums",
+            taxaPlataforma.pct > 0 ? "text-gold" : "text-green",
+          )}>
+            {taxaPlataforma.pct.toFixed(2)}%
+          </span>
+        </div>
+      )}
 
       {/* Network fee */}
       {gasUsd !== undefined && gasUsd > 0 && (

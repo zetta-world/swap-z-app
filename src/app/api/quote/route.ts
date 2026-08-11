@@ -17,6 +17,10 @@ import {
 } from "@/lib/api/quote-types";
 import type { ChainId } from "@/lib/chains";
 import { envNumber } from "@/lib/env-number";
+import { bpsEfetivos, destinatarioDaTaxa } from "@/lib/tier/fees";
+import { getSession } from "@/lib/auth/session";
+import { getTierForWallet } from "@/lib/tier/check";
+import type { Tier } from "@/lib/tier/types";
 import { checarKillSwitches } from "@/lib/admin/kill-switches";
 
 export const runtime = "nodejs";
@@ -66,6 +70,20 @@ const QUOTE_DAILY_MAX = envNumber(process.env.QUOTE_DAILY_MAX, 250_000, { positi
  * When mode=quote, returns the firm, signable payload from the selected
  * source (transaction calldata + permit2 / approvalAddress).
  */
+/**
+ * O plano de quem está cotando. Sem sessão é `free` — que é o plano de quem
+ * não assinou, e portanto a taxa mais alta. Nunca lança: uma falha de
+ * resolução vira `free`, nunca "sem taxa".
+ */
+async function tierDoCotante(): Promise<Tier> {
+  try {
+    const s = await getSession();
+    if (!s) return "free";
+    const { tier } = await getTierForWallet(s.sub, s.chain);
+    return tier;
+  } catch { return "free"; }
+}
+
 export async function GET(req: NextRequest) {
   const zeroXKey = process.env.ZEROX_API_KEY;
   const lifiKey  = process.env.LIFI_API_KEY;        // optional — free tier works without
@@ -197,6 +215,27 @@ export async function GET(req: NextRequest) {
   // ─── Helpers ────────────────────────────────────────────────────────
   // EVM aggregator args. Only meaningful when the chains in question are EVM
   // (the `!` is safe because we gate every use behind isZeroXSupported / isLiFiSupported).
+  /**
+   * ⚠️ A TAXA DA PLATAFORMA (Fase 9.2, 11/08) — resolvida por PLANO.
+   *
+   * Cadeia EVM usa a carteira do código; Solana fica em zero porque não há
+   * conta de token. `bpsEfetivos` já devolve 0 sem destinatário, então a
+   * ausência de configuração NÃO cobra do usuário.
+   *
+   * ⚠️ E A TAXA VAI PARA A RESPOSTA, sempre — inclusive quando é zero. A tela
+   * precisa poder dizer "0%" com a mesma clareza com que diz "1%": um campo
+   * ausente seria lido como "não há taxa", que é uma afirmação diferente de
+   * "a taxa é zero neste caso".
+   */
+  const familiaCadeia = fromChain === "solana" ? "solana" : "evm";
+  const planoDoCotante = await tierDoCotante();
+  const taxa = {
+    tier: planoDoCotante,
+    bps: bpsEfetivos(planoDoCotante, familiaCadeia),
+    pct: bpsEfetivos(planoDoCotante, familiaCadeia) / 100,
+    destinatario: destinatarioDaTaxa(familiaCadeia),
+  };
+
   const zxArgs = {
     chainId:     ZEROX_CHAIN_IDS[fromChain as ChainId]!,
     sellToken:   sellToken === "native" ? ZEROX_NATIVE : sellToken,
@@ -204,6 +243,8 @@ export async function GET(req: NextRequest) {
     sellAmount,
     taker,
     slippageBps,
+    feeBps:      taxa.bps,
+    feeRecipient: taxa.destinatario ?? undefined,
   };
   const lfArgs = {
     fromChainId: LIFI_CHAIN_IDS[fromChain as ChainId]!,
@@ -214,7 +255,15 @@ export async function GET(req: NextRequest) {
     fromAddress: taker,
     toAddress:   recipient ?? taker,
     slippageBps,
+    feeBps:      taxa.bps,
+    feeRecipient: taxa.destinatario ?? undefined,
   };
+  /**
+   * ⚠️ A JUPITER NÃO RECEBE TAXA (Fase 9.2). O `platformFeeBps` exige um
+   * `feeAccount` — CONTA DE TOKEN da Solana, não carteira — e ela ainda não
+   * existe. `bpsEfetivos("...", "solana")` já devolve 0, então nada é pedido:
+   * a ausência aqui é DECLARADA, não esquecimento.
+   */
   // Jupiter args (Solana-only). Native SOL → wrapped SOL mint per Jupiter convention.
   const jupArgs = {
     inputMint:   sellToken === "native" ? JUPITER_SOL_MINT : sellToken,
@@ -244,7 +293,7 @@ export async function GET(req: NextRequest) {
           chainId: zxArgs.chainId, target: q.transaction?.to, spender: q.issues?.allowance?.spender,
         } });
         return NextResponse.json(
-          { ok: true, mode, source, result: q, normalized: normalizeZeroX(q, zxArgs.chainId, true) },
+          { ok: true, mode, source, taxa, result: q, normalized: normalizeZeroX(q, zxArgs.chainId, true) },
           { headers: { "Cache-Control": "no-store" } },
         );
       }
@@ -258,7 +307,7 @@ export async function GET(req: NextRequest) {
           chainId: lfArgs.fromChainId, target: q.transactionRequest?.to, spender: q.estimate?.approvalAddress,
         } });
         return NextResponse.json(
-          { ok: true, mode, source, result: q, normalized: normalizeLiFi(q) },
+          { ok: true, mode, source, taxa, result: q, normalized: normalizeLiFi(q) },
           { headers: { "Cache-Control": "no-store" } },
         );
       }
@@ -275,7 +324,7 @@ export async function GET(req: NextRequest) {
         recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain: "solana", toChain: "solana", sellToken, buyToken } });
         return NextResponse.json(
           {
-            ok: true, mode, source,
+            ok: true, mode, source, taxa,
             result: { quote, swap },
             normalized: normalizeJupiter(quote),
           },
@@ -355,7 +404,7 @@ export async function GET(req: NextRequest) {
 
   if (tasks.length === 0) {
     return NextResponse.json(
-      { ok: true, mode, quotes: [], note: "No aggregator supports this chain pair" },
+      { ok: true, mode, quotes: [], taxa, note: "No aggregator supports this chain pair" },
       { headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -364,7 +413,7 @@ export async function GET(req: NextRequest) {
   const quotes  = rankQuotes(settled.filter((x): x is NormalizedQuote => !!x));
 
   return NextResponse.json(
-    { ok: true, mode, quotes, isCrossChain },
+    { ok: true, mode, quotes, taxa, isCrossChain },
     {
       // When a taker is present the list contains firm quotes with calldata —
       // those must never be cached. Without a taker we only have indicative
