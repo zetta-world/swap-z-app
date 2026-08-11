@@ -9,6 +9,7 @@ import {
   ShieldCheck, CalendarClock, ChevronDown, Clock, Infinity as InfinityIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { richText } from "@/lib/i18n/rich-text";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useTier } from "@/lib/tier/client";
@@ -144,6 +145,13 @@ export default function PricingView() {
           ) : (
             <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">
               <span className="font-sans text-xs text-ink-3 text-center">{t("pricing.signInHint")}</span>
+              {/* ⚠️ ONDE OS PASSES VIVEM. Sem isto, quem conecta carteira EVM
+                  fica no Free sem pista nenhuma — o sistema estava certo e a
+                  tela não tinha como dizer por quê (11/08). */}
+              <span
+                className="font-sans text-[11px] text-gold/90 text-center max-w-md leading-relaxed [&_b]:text-gold"
+                dangerouslySetInnerHTML={richText(t("pricing.solanaOnly"))}
+              />
               <SignInButton />
             </div>
           )}

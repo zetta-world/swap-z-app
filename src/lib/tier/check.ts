@@ -19,13 +19,21 @@ import { isTier, type Tier, type TierResult, type TierSource } from "./types";
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-function freeResult(): TierResult {
-  return { tier: "free", source: "default", expiresAt: Date.now() + CACHE_TTL_MS };
+/**
+ * O fallback gratuito, com a origem HONESTA.
+ *
+ * ⚠️ `porque` distingue os dois motivos de alguém acabar no Free, que antes
+ * eram a mesma linha no banco: a checagem rodou e não achou passe
+ * (`sem_pass`), ou a checagem nem rodou (`nao_checado`).
+ */
+function freeResult(porque: "sem_pass" | "nao_checado"): TierResult {
+  return { tier: "free", source: porque, expiresAt: Date.now() + CACHE_TTL_MS };
 }
 
 export async function getTierForWallet(address: string, chain: WalletChain): Promise<TierResult> {
   const db = getSupabaseAdmin();
-  if (!db) return freeResult();
+  // Sem banco não há como checar nada — isso é ausência de medição.
+  if (!db) return freeResult("nao_checado");
 
   // ── 1. Cache hit ────────────────────────────────────────────────────────
   try {
@@ -62,11 +70,24 @@ export async function getTierForWallet(address: string, chain: WalletChain): Pro
     }
   }
 
-  // ── 3. Fallback ──────────────────────────────────────────────────────────
-  // Cache the "free" verdict too, so a wallet with no pass doesn't re-hit
-  // Helius on every request for the next 5 minutes.
-  const free = freeResult();
-  await writeCache(address, { ...free, source: "nft" }).catch(() => {});
+  /**
+   * ── 3. Fallback ────────────────────────────────────────────────────────
+   *
+   * ⚠️ AQUI ESTAVA A MENTIRA. Antes: `writeCache(address, { ...free, source:
+   * "nft" })`, com o comentário admitindo que `"default"` não passava no
+   * CHECK do banco. Resultado: carteira EVM — que nem chega no bloco 2, porque
+   * os passes vivem na Solana — ficava gravada como "checamos e não tem".
+   *
+   * Agora a origem diz qual dos dois foi:
+   *   · Solana que chegou até aqui  → a checagem RODOU e não achou: `sem_pass`
+   *   · qualquer outra cadeia       → a checagem NEM RODOU: `nao_checado`
+   *
+   * O cache continua sendo gravado (evita bater no Helius a cada request),
+   * mas agora ele guarda a verdade.
+   */
+  const porque = chain === "solana" ? "sem_pass" : "nao_checado";
+  const free = freeResult(porque);
+  await writeCache(address, free).catch(() => {});
   return free;
 }
 
@@ -77,8 +98,18 @@ async function writeCache(address: string, result: TierResult): Promise<void> {
     {
       wallet_address: address,
       tier: result.tier,
-      // "default" isn't a valid DB source; store the free fallback as an nft check.
-      source: result.source === "default" ? "nft" : result.source,
+      /**
+       * ⚠️ A ORIGEM VAI DIRETO, sem tradução. Aqui existia
+       * `result.source === "default" ? "nft" : result.source` — a segunda
+       * metade da mentira de 11/08: mesmo que quem chamasse dissesse a verdade,
+       * esta linha a reescrevia para `"nft"` na hora de gravar.
+       *
+       * O banco agora aceita `sem_pass` e `nao_checado` (migração 0022), então
+       * não há mais nada a traduzir. Se um valor novo aparecer, o CHECK do
+       * banco RECUSA — que é o comportamento certo: falha visível em vez de
+       * rótulo trocado em silêncio.
+       */
+      source: result.source,
       checked_at: new Date().toISOString(),
       expires_at: new Date(result.expiresAt).toISOString(),
     },
