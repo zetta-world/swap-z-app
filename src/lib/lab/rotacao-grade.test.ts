@@ -88,9 +88,9 @@ describe("rotação por momento", () => {
     expect(pontos[0].escolhidos).toHaveLength(2);
   });
 
-  it("amostra abaixo do piso é CINZA, e o piso é em DECISÕES", () => {
+  it("amostra abaixo do piso é INCONCLUSIVA, e o piso é em DECISÕES", () => {
     const v = vereditoRotacao([ponto(), ponto()], MIN_REBALANCES);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.texto).toContain("DECISÕES");
   });
 
@@ -117,7 +117,14 @@ describe("rotação por momento", () => {
   it("bater o índice PERDENDO dinheiro não é verde — o caixa bateu os dois", () => {
     const pontos = Array.from({ length: 9 }, () => ponto({ retornoPct: -3.01, segurarPct: -5.47 }));
     const v = vereditoRotacao(pontos);
-    expect(v.status).toBe("cinza");
+    /**
+     * ⚠️ ERA `cinza` ATÉ A FASE 10, e esse era o resto do mesmo defeito. O
+     * teste acertou em recusar VERDE e não tinha para onde ir: "não medida" foi
+     * o menos errado dos três estados que existiam. Resultado — `momentum_
+     * rotation` ficou marcada como se ninguém tivesse olhado, tendo perdido
+     * 3,01% por período numa medição que rodou.
+     */
+    expect(v.status).toBe("morta");
     expect(v.texto).toContain("CAIXA");
     // E não pode esconder que ela ganhou do índice — as duas coisas são verdade.
     expect(v.texto).toContain("bateu segurar todos");
@@ -193,8 +200,8 @@ describe("grade", () => {
     expect(rodarGrade([0, 100])).toBeNull();
   });
 
-  it("amostra abaixo do piso é CINZA", () => {
-    expect(vereditoGrade([grade(), grade()], MIN_SIMBOLOS_GRADE).status).toBe("cinza");
+  it("amostra abaixo do piso é INCONCLUSIVA", () => {
+    expect(vereditoGrade([grade(), grade()], MIN_SIMBOLOS_GRADE).status).toBe("inconclusiva");
   });
 
   /**
@@ -224,7 +231,8 @@ describe("grade", () => {
       totalPct: -54.11, realizadoPct: 1.48, estoquePct: -55.59, segurarPct: -64.55, rompeu: "abaixo",
     }));
     const v = vereditoGrade(rs);
-    expect(v.status).toBe("cinza");
+    /** ⚠️ Idem: perder metade do capital é MORTA, não "não medida". */
+    expect(v.status).toBe("morta");
     expect(v.texto).toContain("CAIXA");
     expect(v.texto).toContain("PERDEU");
   });

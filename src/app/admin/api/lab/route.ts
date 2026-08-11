@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { readLab, syncRegistry } from "@/lib/lab/store";
-import { FAMILIES } from "@/lib/lab/registry";
+import { readLab, syncRegistry, lerLivro } from "@/lib/lab/store";
+import { FAMILIES, LAB_STRATEGIES } from "@/lib/lab/registry";
+import { conferirLivro } from "@/lib/lab/conferencia";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,8 +66,31 @@ export async function GET(): Promise<NextResponse> {
      */
     const { synced } = await syncRegistry(db);
     const rows = await readLab(db);
+
+    /**
+     * ⚠️ A CONFERÊNCIA RODA AQUI, CONTRA O LIVRO DE VERDADE (Fase 10).
+     *
+     * Ela poderia viver só no teste — e não pegaria nada do que aconteceu em
+     * 11/08. O código estava certo; o DADO é que tinha apodrecido, com onze
+     * estratégias contando na tela uma história diferente da do `lab_results`.
+     * Teste confere o código de ontem contra um livro inventado pelo próprio
+     * teste. Só a rota confere o dado de hoje.
+     *
+     * ⚠️ E ELA NÃO DERRUBA O PAINEL. A conferência é diagnóstico, não caminho
+     * de dinheiro: se `lerLivro` falhar, o laboratório continua abrindo com a
+     * lista vazia. Um detector que tira a tela do ar quando quebra é pior que
+     * detector nenhum — vira motivo para alguém desligá-lo.
+     */
+    let discordancias: ReturnType<typeof conferirLivro> = [];
+    try {
+      discordancias = conferirLivro(LAB_STRATEGIES, await lerLivro(db));
+    } catch {
+      discordancias = [];
+    }
+
     return NextResponse.json({
       familias: FAMILIES, estrategias: rows, sincronizadoAgora: true, sincronizadas: synced,
+      discordancias,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: String(e).slice(0, 300) }, { status: 500 });

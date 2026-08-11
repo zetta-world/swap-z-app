@@ -31,6 +31,7 @@
  */
 
 import { median } from "@/lib/zion/stats";
+import type { LabStatus } from "./registry";
 
 /**
  * ⚠️ AS PISCINAS SÃO DECLARADAS AQUI, ANTES DA RODADA (invariante nº 12).
@@ -424,7 +425,7 @@ export function resumirLiquidez(janelas: JanelaPiscina[]): ResumoLiquidez {
   };
 }
 
-export type VereditoLiquidez = "verde" | "cinza" | "morta";
+export type VereditoLiquidez = LabStatus;
 
 export interface Veredito {
   status: VereditoLiquidez;
@@ -448,7 +449,7 @@ export function vereditoLiquidez(
 ): Veredito {
   if (r.medidas.length < minPiscinas) {
     return {
-      status: "cinza",
+      status: "inconclusiva",
       texto: `só ${r.medidas.length} piscina(s) com taxa medida, abaixo do piso de `
         + `${minPiscinas}. Amostra pequena não vira veredito — inconclusivo não é reprovado.`
         + (r.semApy > 0 ? ` ${r.semApy} ficaram de fora por a fonte não trazer o APY.` : ""),
@@ -465,7 +466,7 @@ export function vereditoLiquidez(
    */
   if (r.semGas > 0) {
     return {
-      status: "cinza",
+      status: "inconclusiva",
       texto: `${r.semGas} de ${r.medidas.length} piscina(s) entraram SEM preço de gás medido. `
         + `O gás é da ordem da margem que decide esta mesa, então concluir sem ele seria `
         + `decidir com a variável decisiva ausente. Sem o gás, a vantagem seria `
@@ -494,7 +495,7 @@ export function vereditoLiquidez(
         + `${(r.incertezaTaxaPct ?? 0).toFixed(2)} pontos para a mesma piscina`
       : `o modelo de gás usa unidades declaradas e a perda é de ponta a ponta`;
     return {
-      status: "cinza",
+      status: "empate",
       texto: `EMPATE: a mesa fica ${vantagem.toFixed(2)}% de segurar os mesmos ativos — `
         + `dentro da faixa de ±${margem.toFixed(2)}% que esta medição não consegue `
         + `distinguir, porque ${porque}. Não é aprovação nem reprovação: é ruído. `

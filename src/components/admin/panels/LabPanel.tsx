@@ -23,8 +23,13 @@ import TerminalPanel from "../TerminalPanel";
  *  1. UMA FAMÍLIA POR VEZ. Não 26 cartões empilhados — abas por quem paga você.
  *  2. VEREDITO ANTES DO NÚMERO. Placar antes do veredito convida a ler retorno
  *     como aprovação, e foi assim que os +34% duraram três semanas.
- *  3. TRÊS ESTADOS, e CINZA é cinza. Não medido não é âmbar: ausência de
- *     informação não é aviso, é vazio.
+ *  3. SEIS ESTADOS, e CINZA é cinza. Eram três até 11/08, quando a auditoria
+ *     achou onze estratégias contando aqui uma história diferente da do
+ *     `lab_results` — `grid_bot` tinha perdido 54% do capital e aparecia como
+ *     "NÃO MEDIDA". Não medido continua sem ser âmbar: ausência de informação
+ *     não é aviso, é vazio. Quem virou aviso foi INCONCLUSIVA, que É um pedido.
+ *  6. A CONFERÊNCIA FICA NO TOPO. Se a tela discordar do livro de novo, ela
+ *     aparece antes das abas — não num teste que ninguém roda olhando.
  *  4. CAPITAL SEMPRE VISÍVEL. Resultado sem o capital que o produziu não é
  *     comparável com nada.
  *  5. AMOSTRA SEMPRE VISÍVEL. Número sem `n` é opinião.
@@ -33,8 +38,9 @@ import TerminalPanel from "../TerminalPanel";
 type Estrategia = {
   id: string; slug: string; name: string; subtitle: string; family: string;
   capitalRequiredUsd: number; capitalWhy: string;
-  status: "verde" | "cinza" | "morta";
+  status: string;
   hypothesis?: string; killedWhy?: string;
+  notMeasurableWhy?: string; measuredElsewhere?: string;
   lastRunAt: string | null;
   lastStatus: "ok" | "falhou" | "rodando" | null;
   lastNetPct: number | null; lastNetAnnualizedPct: number | null;
@@ -42,17 +48,35 @@ type Estrategia = {
   runs: number;
 };
 type Familia = { id: string; label: string; hint: string };
-type Dados = { familias: Familia[]; estrategias: Estrategia[]; sincronizadoAgora: boolean };
+type Discordancia = {
+  slug: string; nome: string; tipo: string;
+  tela: string; livro: string | null; o_que: string; fazer_o_que: string;
+};
+type Dados = {
+  familias: Familia[]; estrategias: Estrategia[]; sincronizadoAgora: boolean;
+  discordancias?: Discordancia[];
+};
 
 const usd = (n: number) => (n <= 1 ? "—" : `$${n.toLocaleString("pt-BR")}`);
 const pct = (n: number | null, d = 2) => (n == null ? "—" : `${n > 0 ? "+" : ""}${n.toFixed(d)}%`);
 
-/** Os três estados. CINZA é neutro de propósito — ver a regra 3. */
+/**
+ * Os seis estados. CINZA é neutro de propósito — ver a regra 3.
+ *
+ * ⚠️ EMPATE e INCONCLUSIVA têm cores DIFERENTES porque pedem coisas
+ * diferentes: empate é medição boa que deu "não há vantagem" e não pede nada;
+ * inconclusiva é medição que não fechou e PEDE outra rodada. Pintar as duas de
+ * cinza foi exatamente o defeito que a Fase 10 consertou.
+ */
 const COR: Record<string, string> = {
   verde: "var(--adm-green)", morta: "var(--adm-red)", cinza: "var(--adm-ink-4)",
+  empate: "var(--adm-cyan)", inconclusiva: "var(--adm-amber)",
+  nao_mensuravel: "var(--adm-ink-3)",
 };
 const ROTULO: Record<string, string> = {
   verde: "MEDIDA · positiva", morta: "MEDIDA · negativa", cinza: "NÃO MEDIDA",
+  empate: "MEDIDA · empate", inconclusiva: "INCONCLUSIVA · pede outra rodada",
+  nao_mensuravel: "NÃO MENSURÁVEL",
 };
 
 export default function LabPanel() {
@@ -75,7 +99,13 @@ export default function LabPanel() {
 
   const daFamilia = (d?.estrategias ?? []).filter((e) => e.family === aba);
   const capitalDaFamilia = daFamilia.reduce((s, e) => s + (e.capitalRequiredUsd > 1 ? e.capitalRequiredUsd : 0), 0);
-  const medidas = daFamilia.filter((e) => e.status !== "cinza").length;
+  /** ⚠️ "Medida" agora exclui os dois estados que NÃO são medição: não medida
+      e não mensurável. `inconclusiva` conta como medida porque a rodada
+      aconteceu — o que falta é veredito, não medição. */
+  const medidas = daFamilia.filter(
+    (e) => e.status !== "cinza" && e.status !== "nao_mensuravel",
+  ).length;
+  const disc = d?.discordancias ?? [];
 
   return (
     <TerminalPanel
@@ -88,6 +118,40 @@ export default function LabPanel() {
 
       {d && (
         <>
+          {/* ── A CONFERÊNCIA, ANTES DE TUDO (Fase 10).
+
+                 ⚠️ Ela fica no TOPO porque foi a posição que faltou. Em 11/08
+                 onze estratégias diziam aqui uma coisa e no `lab_results`
+                 outra, e nada na tela pedia para alguém olhar. Um controle que
+                 mora no rodapé é um controle que ninguém lê.
+
+                 ⚠️ E QUANDO ESTÁ LIMPO, NÃO APARECE NADA. Sem "✅ tudo confere":
+                 registro e livro podem estar errados JUNTOS, e um selo verde
+                 afirmaria correção onde só houve consistência. */}
+          {disc.length > 0 && (
+            <div style={{
+              border: "1px solid var(--adm-amber)", borderRadius: 4,
+              padding: "7px 9px", marginBottom: 10, background: "rgba(255,176,0,.05)",
+            }}>
+              <div style={{ color: "var(--adm-amber)", fontSize: 10, fontWeight: 700 }}>
+                ⚠️ {disc.length} {disc.length === 1 ? "discordância" : "discordâncias"} entre esta tela e o livro
+              </div>
+              <div style={{ color: "var(--adm-ink-4)", fontSize: 8, marginTop: 2 }}>
+                o registro é escrito à mão, o `lab_results` é escrito por medição — quando os
+                dois divergem, um dos dois está mentindo para quem lê
+              </div>
+              <div style={{ marginTop: 6, display: "grid", gap: 5 }}>
+                {disc.map((x) => (
+                  <div key={`${x.slug}-${x.tipo}`} style={{ fontSize: 9, lineHeight: 1.5 }}>
+                    <b style={{ color: "var(--adm-ink-2)" }}>{x.nome}</b>
+                    <span style={{ color: "var(--adm-ink-4)" }}> · {x.o_que}</span>
+                    <div style={{ color: "var(--adm-cyan)", fontSize: 8 }}>→ {x.fazer_o_que}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ── ABAS POR FAMÍLIA. A família diz QUEM paga você — é a única
                  classificação que importa, e evita comparar carrego com
                  direcional na mesma tabela. */}
@@ -215,10 +279,36 @@ export default function LabPanel() {
                           <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.hypothesis}</div>
                         </div>
                       )}
+                      {/* ⚠️ O RÓTULO SEGUE O ESTADO. Este campo carrega tanto
+                             reprovação quanto "rodou e não deu para concluir",
+                             e chamar as duas de "reprovada" seria a mesma
+                             confusão de vocabulário que a Fase 10 desfez. */}
                       {e.killedWhy && (
                         <div style={{ marginTop: 6 }}>
-                          <span style={{ color: "var(--adm-red)" }}>por que foi reprovada</span>
+                          <span style={{ color: COR[e.status] ?? "var(--adm-red)" }}>
+                            {e.status === "inconclusiva" ? "por que não deu para concluir"
+                              : e.status === "empate"     ? "por que deu empate"
+                              : "por que foi reprovada"}
+                          </span>
                           <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.killedWhy}</div>
+                        </div>
+                      )}
+                      {e.notMeasurableWhy && (
+                        <div style={{ marginTop: 6 }}>
+                          <span style={{ color: COR.nao_mensuravel }}>
+                            por que não dá para medir daqui
+                          </span>
+                          <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.notMeasurableWhy}</div>
+                        </div>
+                      )}
+                      {/* ⚠️ Sem isto, um VERDE com zero rodadas parece veredito
+                             inventado — e a conferência do topo reclamaria dele
+                             para sempre. Declarar onde o número mora é o que
+                             separa "medido noutro lugar" de "afirmado". */}
+                      {e.measuredElsewhere && (
+                        <div style={{ marginTop: 6 }}>
+                          <span style={{ color: "var(--adm-cyan)" }}>onde esta medição vive</span>
+                          <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.measuredElsewhere}</div>
                         </div>
                       )}
                       {e.lastVerdictText && (
@@ -241,6 +331,12 @@ export default function LabPanel() {
           <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 10, lineHeight: 1.7 }}>
             <b style={{ color: COR.cinza }}>NÃO MEDIDA</b> é cinza de propósito: ausência de
             informação não é aviso, é vazio — não confundir com reprovada.
+            {" · "}<b style={{ color: COR.empate }}>EMPATE</b> é medição BOA cujo resultado foi
+            "não há vantagem que eu consiga distinguir" — não adianta remedir com o mesmo método.
+            {" · "}<b style={{ color: COR.inconclusiva }}>INCONCLUSIVA</b> é o único estado que
+            PEDE alguma coisa: a rodada aconteceu e faltou amostra ou dado para concluir.
+            {" · "}<b style={{ color: COR.nao_mensuravel }}>NÃO MENSURÁVEL</b> não é fila de
+            espera: é "não dá com a fonte que a gente alcança", e exige o motivo escrito.
             {" · "}O capital de cada uma é o que a ESTRATÉGIA exige, não o que ela tem hoje:
             mesa sub-capitalizada não rende menos, rende negativo por custo fixo.
           </div>

@@ -27,6 +27,7 @@
  * e a mediana aparece só para mostrar o tamanho da diferença entre as duas,
  * que é a própria assimetria do negócio.
  */
+import type { LabStatus } from "./registry";
 
 /**
  * Volatilidade realizada anualizada, de retornos logarítmicos diários.
@@ -222,14 +223,14 @@ export const MIN_JANELAS_INDEPENDENTES = 8;
 
 export interface VereditoVrp {
   readable: boolean;
-  status: "verde" | "cinza" | "morta";
+  status: LabStatus;
   verdict: string;
 }
 
 export function vereditoVrp(r: ResumoVrp | null, janelaDias = 30): VereditoVrp {
   if (!r) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: "nenhuma janela com implícita E futuro completo — inconclusivo, que não é "
         + "o mesmo que reprovado.",
     };
@@ -240,7 +241,7 @@ export function vereditoVrp(r: ResumoVrp | null, janelaDias = 30): VereditoVrp {
 
   if (indep < MIN_JANELAS_INDEPENDENTES) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: `${base} — só ${indep} janelas independentes, abaixo do piso de `
         + `${MIN_JANELAS_INDEPENDENTES}. Janelas diárias de ${janelaDias} dias se sobrepõem `
         + `${janelaDias - 1}/${janelaDias}: contar as ${r.n} como amostra seria contar o mesmo `

@@ -135,7 +135,7 @@ describe("o veredito — a maioria das janelas diz uma coisa e a média diz outr
       piorCobertaPct: -20, piorSegurarPct: -25, segurarAnualPct: 24.3,
     };
     const v = vereditoCoberta([r]);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.readable).toBe(false);
     expect(v.verdict).toContain(`margem de ${MARGEM_MINIMA_PCT}`);
     expect(v.verdict).toContain("lados opostos");
@@ -170,7 +170,7 @@ describe("o veredito — a maioria das janelas diz uma coisa e a média diz outr
   });
 
   it("sem janela nenhuma é inconclusivo, nunca reprovado", () => {
-    expect(vereditoCoberta([]).status).toBe("cinza");
+    expect(vereditoCoberta([]).status).toBe("inconclusiva");
     expect(resumirCoberta([], 1.1)).toBeNull();
   });
 });

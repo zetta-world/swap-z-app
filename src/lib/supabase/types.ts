@@ -4,6 +4,7 @@
  * schema grows, regenerate with `supabase gen types typescript`.
  */
 import type { Tier, TierSource } from "@/lib/tier/types";
+import type { LabStatus } from "@/lib/lab/registry";
 
 export type WalletChain = "evm" | "solana";
 
@@ -266,9 +267,14 @@ export type LabStrategyRow = {
   family:               string;
   capital_required_usd: number;
   capital_why:          string;
-  status:               "verde" | "cinza" | "morta";
+  /** ⚠️ Seis estados desde a Fase 10 — ver `LabStatus`, que é a fonte. */
+  status:               LabStatus;
   hypothesis:           string | null;
   killed_why:           string | null;
+  /** Obrigatório quando `status = 'nao_mensuravel'` (CHECK na migração 0023). */
+  not_measurable_why:   string | null;
+  /** Onde a medição vive, quando não vive no `lab_runs`. */
+  measured_elsewhere:   string | null;
   created_at:           string;
   updated_at:           string;
 };
@@ -308,7 +314,7 @@ export type LabResultRow = {
   exposure_pct:       number | null;
   /** Comprar-e-segurar na MESMA janela — sem ele "+18%" não diz nada. */
   benchmark_pct:      number | null;
-  verdict:            "verde" | "cinza" | "morta" | null;
+  verdict:            LabStatus | null;
   verdict_text:       string | null;
   per_symbol:         unknown[];
   not_measured:       string[];

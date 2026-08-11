@@ -15,7 +15,7 @@
 
 ## ⚠️ ANTES DE COMEÇAR QUALQUER FASE
 
-Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 18 regras
+Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 19 regras
 que qualquer medição deste laboratório respeita, cada uma com a cicatriz que a
 gerou.
 
@@ -2306,6 +2306,30 @@ aritmética sobre volume HIPOTÉTICO, não previsão"*.
   próprio teste. A tela mostra quantas foram excluídas.
 - **Os motivos da Solana aparecem no painel**, não só no código.
 
+## ⚠️ A PENDÊNCIA QUE FICA ABERTA — o teste de US$ 20
+
+**A Fase 9 está 🟢 no que ela construiu e 🔴 no que ela ainda não provou.** Os
+testes garantem que nós PEDIMOS a taxa corretamente; nenhum deles garante que
+o agregador ATENDEU e que a transferência aconteceu na cadeia. São coisas
+diferentes, e as quatro possibilidades — cobrada certo, ignorada, desviada,
+retida pelo agregador — **pintam a mesma linha na tela**.
+
+O dono decidiu em 11/08: *"o teste de 20 dólares faremos por último, pode fazer
+merge"*. O merge foi feito; o teste continua devendo.
+
+**Passo a passo em [`TESTE-DA-TAXA-EVM.md`](TESTE-DA-TAXA-EVM.md)** — troca de
+US$ 20 na Base, ETH → USDC (a taxa é cobrada no token de saída, e USDC lê-se
+direto no explorador), com conferência do destinatário caractere por caractere.
+
+> ⚠️ Enquanto ele não passar, o bloco MEDIDO do painel 💵 conta operações de
+> 13 a 18 de junho — **anteriores à cobrança existir**. Receita ali é teto
+> aritmético sobre volume que nunca pagou taxa nenhuma. O primeiro dólar de
+> verdade é esse teste.
+>
+> ⚠️ E ele cobre o 0x (mesma cadeia). A **LI.FI** é outro caminho de código,
+> com a taxa em fração em vez de pontos-base, e fica sem prova própria — um
+> segundo teste atravessando cadeias cobre o que este não cobre.
+
 ## O plano pago da Jupiter — o que ele muda
 
 Perguntado pelo dono. A resposta está na própria documentação: *"All plans use
@@ -2323,6 +2347,153 @@ only increases your rate limit and included credits**."*
 destrava a Solana. E $500/mês contra $63 de volume histórico não fecha — se o
 gargalo for taxa de requisição, o **Free COM chave** (1 req/s, créditos
 ilimitados) já dobra o que temos hoje e custa zero.
+
+---
+
+### FASE 10 — O livro e a tela dizem a mesma coisa · 🟢
+
+*Nenhuma estratégia nova é medida nesta fase. Ela existe porque a auditoria de
+estado achou onze linhas em que a tela conta uma história e o `lab_results`
+conta outra — e em nove delas a tela conta a história mais favorável.*
+
+## Verificação de estado (11/08) — e o que ela achou
+
+Consulta ao banco, não à memória. Das **28 estratégias**, cruzando
+`lab_strategies.status` (o que a tela pinta) com o veredito da última rodada
+`ok` em `lab_results`:
+
+| estratégia | a tela diz | o livro diz | a distância entre as duas |
+|---|---|---|---|
+| `grid_bot` | cinza — *"não medida"* | **−54,19%** do capital, 10 rebalanceamentos | a mesa perdeu metade do dinheiro e a tela diz que ninguém olhou |
+| `momentum_rotation` | cinza — *"não medida"* | **−3,01%** por período, 9 rebalanceamentos | idem |
+| `dex_cex_arb` | cinza — *"não medida"* | veredito **MORTA**, −0,337% | o livro reprovou e a tela não conta |
+| `amm_lp` | cinza — *"não medida"* | **EMPATE** medido, +0,55% dentro de ±3,68% | a medição mais cara da Fase 8 aparece como se não existisse |
+| `covered_call` | cinza | +0,62 pt **abaixo da margem** | inconclusiva vira "não medida" |
+| `restaking` | cinza | 2 produtos, **abaixo do piso de 3** | idem |
+| `carteira_verde` | **morta** | veredito gravado `cinza`, 2,66%/ano contra 3,13% | o registro anda na frente do que o livro registrou |
+| `trend_ma50_long_short` | **verde** | **zero rodadas** | veredito sem parcela |
+| `trend_ma50_long_only` | **verde** | **zero rodadas** | idem |
+| `buy_and_hold` | **verde** | **zero rodadas** | idem |
+| `regime_filter`, `playbook_short` | **morta** | **zero rodadas** | idem, do outro lado |
+
+**Onze linhas de 28.** E o viés tem direção: das nove primeiras, oito
+escondem um resultado RUIM atrás de "não medida", que é o estado que não pede
+nada de ninguém.
+
+## O diagnóstico — não é desleixo de atualização, é vocabulário curto
+
+`cinza` está fazendo **quatro trabalhos diferentes** ao mesmo tempo:
+
+1. **nunca medida** — `quarterly_basis`, `concentrated_lp`, `bridge_arb`…
+2. **medida, e deu EMPATE** — `amm_lp`, cuja vantagem cabe dentro da faixa que
+   a própria medição não distingue
+3. **rodou e não deu para concluir** — `restaking` (2 produtos, piso é 3),
+   `covered_call` (dentro da margem)
+4. **não é mensurável com fonte que a gente alcança** — `liquidations`,
+   `airdrop_points`, `launchpad`, `governance_bribes`, triadas assim em 09/08
+
+**Os quatro pedem coisas diferentes de quem lê.** O primeiro pede *"vá medir"*.
+O segundo pede *"não perca tempo, já foi medido e não há vantagem"*. O terceiro
+pede *"remeça com mais amostra"*. O quarto pede *"pare de olhar"*. Colapsados
+num cinza só, todos pedem a mesma coisa: nada.
+
+> Isto é a invariante nº 6 na sua forma mais cara. Ela diz *"agregado sem
+> parcela não é auditável"*; esta fase acrescenta a irmã dela: **estado sem
+> decisão associada não é estado, é decoração.** O teste de um estado novo é
+> conseguir escrever o que ele manda fazer — se dois estados mandam a mesma
+> coisa, é um estado com dois nomes.
+
+## ⚠️ O ACHADO QUE FECHA A FASE: a distinção JÁ EXISTE no código
+
+Cinco dos sete módulos de medição — `variancia`, `dex-cex`, `combinacao`,
+`rendimento`, `coberta` — já devolvem um campo `readable: boolean` ao lado do
+status. Ele separa exatamente o que falta:
+
+- `readable: false` + cinza → **não deu para ler** (amostra, dado ausente)
+- `readable: true` + cinza → **leu, e não há vantagem**
+
+**E esse campo é jogado fora na hora de gravar.** `RunResult.verdict` aceita só
+`"verde" | "cinza" | "morta"`, então o `readable` morre no ponto de contato com
+o livro. A informação foi produzida, custou rodada, e não chegou à tabela.
+
+O `liquidez` é o caso pior: ele nem tem `readable`, e devolve `cinza` para três
+situações distintas — piso de amostra, gás não lido, e o EMPATE que ele próprio
+escreve com essa palavra em maiúsculas no texto do veredito. **O texto sabe; a
+coluna não.**
+
+## O que esta fase faz
+
+**1. O vocabulário ganha os estados que faltam** — em `LabStatus` e na coluna
+`verdict`, com a mesma lista nos dois:
+
+| estado | o que significa | o que ele MANDA fazer |
+|---|---|---|
+| `verde` | medida, positiva | pode promover |
+| `morta` | medida, negativa | não voltar sem hipótese nova |
+| `empate` | medida bem, e a vantagem cabe dentro da incerteza da própria medição | não promove — e não adianta remedir com o mesmo método |
+| `inconclusiva` | rodou, e amostra ou dado ausente impede concluir | **remedir**, e o texto diz o que falta |
+| `cinza` | não medida | medir |
+| `nao_mensuravel` | não dá com fonte que a gente alcança | parar de olhar — e exige o motivo escrito |
+
+**2. `nao_mensuravel` exige motivo, no tipo e no banco.** Sem isso ele vira o
+novo cinza: um lugar onde coisa difícil se esconde. As quatro da triagem de
+09/08 recebem o motivo que já estava no plano e nunca esteve no dado.
+
+**3. `medidaFora` para veredito medido em outro livro.** As três verdes de
+tendência e o comprar-e-segurar foram medidos na Fase 1, pelo painel 🧭, fora
+do `lab_runs`. **Fabricar uma linha de rodada com números copiados à mão seria
+inventar parcela** — o oposto do que a tabela existe para fazer. Elas ganham um
+campo que diz ONDE a medição vive, e o detector para de reclamar delas por esse
+motivo, e só por ele.
+
+**4. `conferirLivro()` — o detector, para não drenar de novo.** Função pura que
+cruza registro × livro e classifica a discordância:
+
+- `veredito_sem_parcela` — verde/morta/empate com zero rodadas e sem `medidaFora`
+- `livro_discorda` — o veredito da última rodada difere do status do registro
+- `medida_mas_cinza` — tem rodada `ok` e o registro insiste em cinza
+- `sem_motivo` — `nao_mensuravel` sem porquê escrito
+- `rodada_pendurada` — rodada em `rodando` que nunca fechou
+
+**Ele vai para a TELA**, no topo do laboratório, com a contagem. Um detector que
+só existe no teste checa o código de ontem; na tela ele checa o dado de hoje —
+e é o dado que apodrece.
+
+## O que a conferência achou depois de tudo — 6, e todas da mesma classe
+
+Rodada contra o banco de verdade, com o registro já corrigido:
+
+```
+[livro_incoerente] LP em AMM clássico       · rodadasOk=6, verdict='cinza'
+[livro_incoerente] Grade (grid)             · rodadasOk=2, verdict='cinza'
+[livro_incoerente] Rotação por momento      · rodadasOk=2, verdict='cinza'
+[livro_incoerente] Venda de opção coberta   · rodadasOk=2, verdict='cinza'
+[livro_incoerente] Restaking                · rodadasOk=4, verdict='cinza'
+[livro_incoerente] Carteira das verdes      · rodadasOk=2, verdict='cinza'
+```
+
+**Uma rodada que FECHOU não pode ter gravado "não medida".** As seis são linhas
+escritas antes desta fase, quando `cinza` era o único destino para empate,
+inconclusivo e "perdeu dinheiro mas bateu o índice". Os números e os textos
+delas estão certos — só o rótulo não tinha para onde ir.
+
+⚠️ **E a correção é REMEDIR, não reescrever a coluna.** A conta é a mesma
+(mesma série, mesma janela) e o veredito sai com a palavra certa. Editar
+`lab_results.verdict` à mão gravaria veredito que medição nenhuma produziu —
+que é exatamente o defeito que o `measuredElsewhere` existe para não cometer do
+outro lado. São seis botões no painel.
+
+⚠️ **E o tipo `livro_incoerente` não é trava de mutirão.** Qualquer defeito
+futuro que grave `cinza` numa rodada `ok` cai nele, mesmo que registro e livro
+"concordem" — é uma trava permanente contra a classe, não a limpeza de uma vez.
+
+## A ordem de aplicação, que não é livre
+
+⚠️ **A migração vem ANTES do deploy do código.** A restrição
+`check (status in ('verde','cinza','morta'))` está no banco. Código novo
+mandando `empate` para um banco velho faz o `syncRegistry` estourar, e ele roda
+no GET do laboratório — o painel inteiro cai com 500. Migração primeiro,
+código depois.
 
 ---
 
@@ -2376,6 +2547,7 @@ Traduzido em regra:
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
 | 8 · Cinzas restantes | 🟡 **8.2 rodada 10/08** — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
-| 9 · Receita | 🟢 **concluída 11/08** — cobrança nas EVM com divulgação; Solana sem taxa por decisão; painel 💵 separando MEDIDO de PROJEÇÃO |
+| 9 · Receita | 🟢 **construída 11/08** — cobrança nas EVM com divulgação; Solana sem taxa por decisão; painel 💵 separando MEDIDO de PROJEÇÃO. 🔴 **falta o teste de US$ 20** provar que a taxa CHEGA na carteira ([`TESTE-DA-TAXA-EVM.md`](TESTE-DA-TAXA-EVM.md)) |
+| 10 · O livro e a tela | 🟢 **concluída 11/08** — vocabulário de 6 estados (era 3), registro alinhado ao livro, detector de discordância na TELA. Restam 6 rodadas a remedir, listadas pelo próprio detector |
 
 Atualizar este quadro a cada entrega — regra da casa.

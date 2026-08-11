@@ -14,6 +14,7 @@
  */
 
 import { median } from "@/lib/zion/stats";
+import type { LabStatus } from "./registry";
 
 /** Mesmo custo do resto do laboratório — ida e volta, taxa + slippage. */
 export const CUSTO_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
@@ -255,7 +256,7 @@ export const MIN_REBALANCES = 8;
 /** Grade: piso de símbolos, para uma moeda sortuda não virar veredito. */
 export const MIN_SIMBOLOS_GRADE = 4;
 
-export type Status = "verde" | "cinza" | "morta";
+export type Status = LabStatus;
 export interface Veredito { status: Status; texto: string }
 
 /**
@@ -283,7 +284,7 @@ export function vereditoRotacao(
 ): Veredito {
   if (pontos.length < minRebalances) {
     return {
-      status: "cinza",
+      status: "inconclusiva",
       texto: `só ${pontos.length} rebalanceamento(s), abaixo do piso de ${minRebalances}. `
         + `A amostra desta mesa são as DECISÕES, não os dias — inconclusivo não é reprovado.`,
     };
@@ -303,7 +304,7 @@ export function vereditoRotacao(
   /** ⚠️ Bateu o índice, mas PERDEU DINHEIRO. Ver `perdeuParaOCaixa`. */
   if (perdeuParaOCaixa(mesa)) {
     return {
-      status: "cinza",
+      status: "morta",
       texto: `a rotação bateu segurar todos (+${vantagem.toFixed(2)} ponto(s)) — mas PERDEU `
         + `${Math.abs(mesa).toFixed(2)}% por período, em ${pontos.length} rebalanceamentos. `
         + `Os dois caminhos perderam; ficar em CAIXA bateu os dois. `
@@ -322,7 +323,7 @@ export function vereditoGrade(
 ): Veredito {
   if (rs.length < minSimbolos) {
     return {
-      status: "cinza",
+      status: "inconclusiva",
       texto: `só ${rs.length} símbolo(s) medidos, abaixo do piso de ${minSimbolos}. `
         + `Uma moeda sortuda não é veredito.`,
     };
@@ -351,7 +352,7 @@ export function vereditoGrade(
   /** ⚠️ Bateu o índice, mas PERDEU DINHEIRO. Ver `perdeuParaOCaixa`. */
   if (perdeuParaOCaixa(total)) {
     return {
-      status: "cinza",
+      status: "morta",
       texto: `a grade perdeu ${Math.abs(total).toFixed(2)}% do capital — menos que os `
         + `${Math.abs(segurar).toFixed(2)}% de segurar, mas ainda assim PERDEU. Os degraus `
         + `renderam ${realizado.toFixed(2)}% e o estoque preso comeu o resto: `

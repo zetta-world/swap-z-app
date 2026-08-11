@@ -263,8 +263,13 @@ tabela — então uma mesa que perde dinheiro pode ganhar do índice e ser lida
 como aprovada.
 
 **Como travar:** retorno absoluto negativo **não pode ser verde**, por mais que
-ganhe do benchmark. Vira cinza, e a tela diz as três posições em ordem: a mesa,
-o índice e o caixa.
+ganhe do benchmark. A tela diz as três posições em ordem: a mesa, o índice e o
+caixa.
+
+> ⚠️ **Esta regra dizia "vira cinza" até 11/08, e isso era metade do defeito
+> da nº 19.** Uma mesa que perdeu 54% do capital ia para o mesmo estado de uma
+> que ninguém nunca mediu. Hoje vira **morta**: ela foi medida, e o resultado é
+> negativo.
 
 > **Cicatriz (10/08, Fase 8.2):** a rotação saiu **VERDE perdendo 3,01% por
 > período** (segurar perdeu 5,47%), e a grade saiu **VERDE tendo perdido 54,11%
@@ -274,6 +279,48 @@ o índice e o caixa.
 >
 > Num ano em que os dez majors caíram, *"menos ruim que o índice"* não é uma
 > mesa que se opera — é uma constatação sobre o mercado.
+
+---
+
+## 19. Estado sem decisão associada não é estado — é decoração
+
+Um estado de medição existe para dizer a quem lê **o que fazer em seguida**. Se
+dois estados mandam fazer a mesma coisa, é um estado com dois nomes; se um
+estado é usado para situações que mandam coisas diferentes, ele não informa
+nada — e o pior é que ele informa nada **parecendo informar**.
+
+**Como travar:** para cada estado, escreva a frase "quem vê isto deve ___".
+Estado que não completa a frase não entra. Estado cuja frase já foi escrita por
+outro é o mesmo estado.
+
+E, quando o registro é escrito à mão e o resultado é escrito por medição, **os
+dois vão divergir** — a pergunta nunca é *se*, é *se alguém percebe*. Por isso
+a conferência entre os dois roda **na tela, contra o dado de hoje**, não num
+teste, contra um livro que o próprio teste inventou.
+
+> **Cicatriz (11/08, Fase 10):** o laboratório tinha três estados — verde,
+> morta, cinza. Cruzando o registro com o `lab_results`, **onze das 28 linhas
+> contavam histórias diferentes**, e em oito a tela contava a mais favorável:
+> `grid_bot` tinha perdido **54,19% do capital** e aparecia como "NÃO MEDIDA";
+> `dex_cex_arb` tinha veredito MORTA gravado havia dois dias; o EMPATE do
+> `amm_lp` — a medição mais cara da Fase 8 — não aparecia.
+>
+> A causa não era desleixo de atualização: `cinza` fazia **quatro trabalhos**
+> — "nunca medida", "medida e deu empate", "rodou e não deu para concluir" e
+> "não dá para medir com o que alcançamos". Os quatro pedem coisas diferentes;
+> colapsados, pediam nada.
+>
+> ⚠️ **E a distinção já existia no código.** Cinco dos sete módulos devolviam
+> `readable: boolean` ao lado do status, e os textos gravados já diziam a
+> palavra certa — "EMPATE:", "INCONCLUSIVO.", "não é uma mesa que se opera" —
+> enquanto a coluna dizia `cinza` nos três casos. **O texto sabia; a coluna
+> não.** A informação foi produzida, custou rodada, e morria no ponto de
+> contato com a tabela porque `verdict` só aceitava três valores.
+>
+> ⚠️ **O sinal mais forte estava nos nomes dos testes.** Vinte e oito testes
+> se chamavam "é INCONCLUSIVO", "é EMPATE", "não é verde" — e asseveravam
+> `toBe("cinza")`. A suíte descrevia o vocabulário certo e afirmava o errado,
+> e passou verde por semanas.
 
 ---
 

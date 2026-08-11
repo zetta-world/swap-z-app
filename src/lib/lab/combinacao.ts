@@ -35,6 +35,7 @@
  */
 
 import { pearson, median } from "@/lib/zion/stats";
+import type { LabStatus } from "./registry";
 
 /** Um dia UTC, `YYYY-MM-DD`. A chave de alinhamento. */
 export type Dia = string;
@@ -163,7 +164,7 @@ export function carteiraIgual(
 
 export interface VereditoCombinacao {
   readable: boolean;
-  status: "verde" | "cinza" | "morta";
+  status: LabStatus;
   verdict: string;
 }
 
@@ -201,14 +202,14 @@ export function vereditoCombinacao(args: {
 
   if (fluxos < MIN_FLUXOS) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: `só ${fluxos} fluxo com série utilizável — um fluxo é o fluxo, não uma `
         + "carteira. INCONCLUSIVO, que não é reprovado.",
     };
   }
   if (diasComuns < MIN_DIAS_COMUNS) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: `só ${diasComuns} dias em que TODOS os ${fluxos} fluxos têm valor, abaixo do `
         + `piso de ${MIN_DIAS_COMUNS} — isso mede uma quinzena, não uma correlação. `
         + "INCONCLUSIVO.",
@@ -216,7 +217,7 @@ export function vereditoCombinacao(args: {
   }
   if (!carteira || carteiraLiquidaPct == null || melhorParteLiquidaPct == null) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: "faltou série ou custo para fechar a conta — sem os dois não há veredito.",
     };
   }
@@ -259,11 +260,18 @@ export function vereditoCombinacao(args: {
    * Reprovada no retorno, e o outro prato da balança nem sequer pesa. Não é
    * "morta" — é medida pela metade, e a metade que falta é a que justificaria
    * diversificar.
+   *
+   * ⚠️ NA FASE 10 EU TENTEI TROCAR ISTO POR `morta` e o teste-cicatriz logo
+   * acima me parou, com razão. A tentação era alinhar o módulo com o registro,
+   * que dizia MORTA para `carteira_verde`. Mas quem estava afirmando demais era
+   * o registro: o retorno perdeu e o RISCO — emissor, despegue, fila de resgate
+   * — está inteiro fora da série, então metade da tese nunca foi pesada.
+   * `inconclusiva` é o estado que diz isso sem inventar a metade que falta.
    */
   if (!ganhaRetorno && !tomboComparavel) {
     const perda = (melhorParteLiquidaPct - carteiraLiquidaPct).toFixed(2);
     return {
-      readable: true, status: "cinza",
+      readable: true, status: "inconclusiva",
       verdict: `${base} — combinar CUSTA ${perda} ponto de retorno. `
         + "⚠️ E não compra nada que esta medição enxergue: os dois tombos são ZERO por "
         + "construção, porque retorno de piscina é apy/365 e APY positivo nunca gera dia "
@@ -283,7 +291,7 @@ export function vereditoCombinacao(args: {
    */
   if (!ganhaRetorno && empataTombo) {
     return {
-      readable: true, status: "cinza",
+      readable: true, status: "empate",
       verdict: `${base} — e o tombo EMPATA em ${carteira.tomboPct.toFixed(2)} pontos. `
         + "Combinar custa retorno e não devolve nada: concentrar é o certo pelo que se "
         + "mediu, mas isto é empate, não derrota.",
@@ -299,7 +307,7 @@ export function vereditoCombinacao(args: {
   }
   if (!ganhaRetorno && ganhaTombo) {
     return {
-      readable: true, status: "cinza",
+      readable: true, status: "empate",
       verdict: `${base} — rende MENOS, como manda a aritmética, mas o tombo cai de `
         + `${melhorParteTomboPct!.toFixed(2)} para ${carteira.tomboPct.toFixed(2)} pontos. `
         + "É troca de retorno por sono, não ganho: quem decide é o dono, não o Sharpe.",

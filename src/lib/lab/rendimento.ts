@@ -26,6 +26,7 @@
  */
 
 import { median } from "@/lib/zion/stats";
+import type { LabStatus } from "./registry";
 
 /** As faixas fixas do critério do dono. A da estratégia entra junto na rota. */
 export const FAIXAS_PADRAO = [500, 5_000, 50_000] as const;
@@ -282,7 +283,7 @@ export function equilibrioDias(apyPct: number, idaEVoltaPct: number): number | n
 export interface VereditoRendimento {
   readable: boolean;
   verdict: string;
-  status: "verde" | "cinza" | "morta";
+  status: LabStatus;
 }
 
 /**
@@ -347,14 +348,14 @@ export function vereditoRendimento(
 
   if (n === 0) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: "nenhuma piscina declarada foi encontrada na fonte — inconclusivo, "
         + "que não é o mesmo que reprovado. Ver a lista de não encontradas.",
     };
   }
   if (n < minProdutos) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: `só ${quantos} distinto(s), abaixo do piso de ${minProdutos} — é a taxa `
         + "de um emissor num dia, não uma estratégia. O mesmo emissor em várias cadeias "
         + "tem UMA taxa, não várias. INCONCLUSIVO.",
@@ -362,7 +363,7 @@ export function vereditoRendimento(
   }
   if (liquidoNaFaixaDeclaradaPct == null) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: `${quantos}, mas o custo de entrada não foi medido — sem ele o rendimento `
         + "bruto não vira veredito.",
     };
@@ -394,7 +395,7 @@ export function vereditoRendimento(
    */
   if (ressalvas.precoIncoerente) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: `${quantos}, mediana bruta ${bruto.toFixed(2)}%/ano — mas a cotação devolveu `
         + "custo NEGATIVO em pelo menos uma faixa, o que é impossível: os dois lados da "
         + "troca têm preços que discordam na fonte. O custo foi achatado em zero e por "
@@ -403,7 +404,7 @@ export function vereditoRendimento(
   }
   if (ressalvas.gasLido === false) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: `${quantos}, mediana bruta ${bruto.toFixed(2)}%/ano — mas a cotação não trouxe `
         + "custo de gás, então o que está na tabela é impacto e taxa SEM gás. 'Gás barato' e "
         + `'gás não lido' dariam a mesma tela; este veredito existe para não darem.${ressalva}`,

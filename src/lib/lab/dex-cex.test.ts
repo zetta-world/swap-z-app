@@ -147,7 +147,7 @@ describe("o veredito", () => {
 
   it("sem par nenhum é inconclusivo, nunca reprovado", () => {
     const v = vereditoDexCex([]);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("inconclusivo");
   });
 
@@ -158,7 +158,7 @@ describe("o veredito", () => {
    */
   it("livro raso não vira número, e a contagem aparece", () => {
     const v = vereditoDexCex([linha("A", 5, false), linha("B", 5, false)]);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     // ⚠️ A frase mudou em 09/08: agora são DUAS condições (livro fundo E ida e
     // volta coerente), então o texto cita as duas em vez de só a do livro.
     expect(v.verdict).toContain("duas condições");
@@ -167,7 +167,7 @@ describe("o veredito", () => {
 
   it("abaixo do piso de símbolos é INCONCLUSIVO", () => {
     const v = vereditoDexCex([linha("A", 1), linha("B", 1)]);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain(`piso de ${MIN_SIMBOLOS}`);
     expect(v.verdict).toContain("um par com borda é um par, não um terreno");
   });
@@ -294,7 +294,7 @@ describe("ida e volta na mesma poça não pode ganhar dinheiro", () => {
 
   it("todos incoerentes é INCONCLUSIVO, não reprovado", () => {
     const v = vereditoDexCex([linha("A", 1, true, false), linha("B", 1, true, false)]);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("duas condições");
   });
 });

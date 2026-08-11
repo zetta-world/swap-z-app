@@ -197,7 +197,7 @@ describe("o veredito", () => {
   it("nenhuma piscina é INCONCLUSIVO, nunca reprovado", () => {
     const v = vereditoRendimento([], 3, 1000);
     expect(v.readable).toBe(false);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("inconclusivo");
   });
 
@@ -208,7 +208,7 @@ describe("o veredito", () => {
    */
   it("abaixo do piso de produtos é INCONCLUSIVO, com o número na frente", () => {
     const v = vereditoRendimento([p(5)], 3, 1000);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("INCONCLUSIVO");
     expect(v.verdict).toContain(`piso de ${MIN_PRODUTOS}`);
   });
@@ -220,7 +220,7 @@ describe("o veredito", () => {
   it("sem o custo medido não há veredito, mesmo com piscinas de sobra", () => {
     const v = vereditoRendimento([p(5), p(6), p(7)], null, 1000);
     expect(v.readable).toBe(false);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("custo de entrada não");
   });
 
@@ -300,7 +300,7 @@ describe("custo negativo — a cotação que te PAGA para entrar e sair", () => 
     const ps = [p(4), p(5), p(6)];
     expect(vereditoRendimento(ps, 3.1, 1000).status).toBe("verde");
     const v = vereditoRendimento(ps, 3.1, 1000, { precoIncoerente: true });
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.readable).toBe(false);
     expect(v.verdict).toContain("NEGATIVO");
     expect(v.verdict).toContain("inflado");
@@ -325,7 +325,7 @@ describe("gás não lido não pode parecer gás barato", () => {
    */
   it("sem gás lido o veredito é INCONCLUSIVO e diz por quê", () => {
     const v = vereditoRendimento([p(4), p(5), p(6)], 3.1, 1000, { gasLido: false });
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("não trouxe");
     expect(v.verdict).toContain("SEM gás");
   });
@@ -385,7 +385,7 @@ describe("o mesmo produto em N cadeias não é N observações", () => {
     expect(produtosDistintos(tres)).toHaveLength(2);
 
     const v = vereditoRendimento(tres, 2.89, 2000);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("INCONCLUSIVO");
     // E a tela mostra as duas contagens, para ninguém achar que sumiu dado.
     expect(v.verdict).toContain("3 implantações");

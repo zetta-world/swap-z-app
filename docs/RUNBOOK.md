@@ -97,6 +97,26 @@ aposentado; `deepseek-v4-flash` é o swap rápido/barato) · `kimi-k2.6` ·
 | `AI_CB_COOLDOWN_MIN` | Cooldown do breaker | `60` min |
 | `ALERT_ERROR_SPIKE` / `ALERT_SEC_FLOOD` / `ALERT_LARGE_OP_USD` | Limiares de alerta | `10` / `5` / `5000` |
 
+### Taxa da plataforma (Fase 9)
+| Var | O que é | Default |
+|-----|---------|---------|
+| `SWAP_FEE_RECIPIENT` | Para onde vai a taxa nas cadeias EVM. **Ausente = usa o endereço do código** (`0x904126D2…3c1F`), que é o comportamento correto | *(vazio)* |
+| `SWAP_FEE_ACCOUNT_SOLANA` | Conta de token (ATA) da Solana. **Ausente = Solana não cobra taxa**, que é a decisão vigente | *(vazio)* |
+
+⚠️ O endereço EVM mora no **código**, não no ambiente, de propósito: endereço de
+recebimento é público por construção e o que ele precisa é ser conferível numa
+revisão de PR. A variável existe só para trocar sem deploy — e se ela estiver
+preenchida, é **ela** que recebe, não o código.
+
+⚠️ Na Solana, `SWAP_FEE_ACCOUNT_SOLANA` exige uma **conta de token**, nunca uma
+carteira. Pôr um endereço de carteira ali faz a Jupiter recusar a cotação. Os
+quatro motivos de a Solana estar desligada estão em `MOTIVOS_SOLANA_SEM_TAXA`
+(`src/lib/tier/fees.ts`) — é decisão, não pendência.
+
+🔴 **A cobrança ainda não foi conferida na cadeia.** O protocolo está em
+`docs/TESTE-DA-TAXA-EVM.md`. Até ele passar, o painel 💵 RECEITA DE TAXA mostra
+aritmética sobre volume anterior à cobrança existir.
+
 ---
 
 ## 2. Crons (cron-job.org — fonte ÚNICA de agendamento)

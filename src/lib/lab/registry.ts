@@ -38,11 +38,53 @@ export type LabFamily =
   | "negocio";    // você cobra pela infraestrutura — não é trade
 
 /**
- * VERDE = medida por nós, positiva. MORTA = medida, negativa.
- * CINZA = **não medida**. Não é aprovação nem reprovação, e a tela mostra
- * cinza e não âmbar de propósito: ausência de informação não é um aviso.
+ * ⚠️ SEIS ESTADOS, PORQUE ERAM TRÊS E `cinza` FAZIA QUATRO TRABALHOS (Fase 10).
+ *
+ * A auditoria de 11/08 cruzou este registro com o veredito da última rodada de
+ * cada estratégia em `lab_results`. **Onze das 28 linhas contavam histórias
+ * diferentes**, e em oito delas a tela contava a mais favorável: `grid_bot`
+ * tinha perdido 54% do capital e aparecia como "não medida"; `dex_cex_arb`
+ * tinha veredito MORTA gravado e aparecia como "não medida"; o EMPATE do
+ * `amm_lp` — a medição mais cara da Fase 8 — aparecia como se não existisse.
+ *
+ * A causa não era desleixo de atualização. Era que `cinza` significava quatro
+ * coisas ao mesmo tempo, e as quatro pedem coisas DIFERENTES de quem lê:
+ *
+ *   · "nunca medida"                 → pede: vá medir
+ *   · "medida, e deu empate"         → pede: não perca tempo, já foi
+ *   · "rodou e não deu para concluir"→ pede: remeça com mais amostra
+ *   · "não dá para medir com o que alcançamos" → pede: pare de olhar
+ *
+ * Colapsadas num cinza só, todas pediam a mesma coisa: nada.
+ *
+ * ⚠️ O TESTE DE UM ESTADO NOVO é conseguir escrever o que ele MANDA fazer. Se
+ * dois estados mandam a mesma coisa, é um estado com dois nomes — e a tabela
+ * abaixo existe para essa coluna ser preenchível, não por simetria.
+ *
+ * | estado           | o que significa                                   | o que manda fazer |
+ * |------------------|---------------------------------------------------|-------------------|
+ * | `verde`          | medida, positiva                                  | pode promover |
+ * | `morta`          | medida, negativa                                  | não voltar sem hipótese nova |
+ * | `empate`         | medida BEM, e a vantagem cabe dentro da incerteza | não adianta remedir com o mesmo método |
+ * | `inconclusiva`   | rodou, e falta amostra ou dado para concluir      | remedir — o texto diz o que falta |
+ * | `cinza`          | **não medida**                                    | medir |
+ * | `nao_mensuravel` | não dá com fonte que a gente alcança              | parar de olhar |
+ *
+ * `cinza` continua sendo cinza na tela, e não âmbar: ausência de informação
+ * não é um aviso. Quem virou aviso foi `inconclusiva`, que É um pedido.
  */
-export type LabStatus = "verde" | "cinza" | "morta";
+export type LabStatus =
+  | "verde"
+  | "cinza"
+  | "morta"
+  | "empate"
+  | "inconclusiva"
+  | "nao_mensuravel";
+
+/** Os estados que afirmam ter havido medição — os que exigem parcela no livro. */
+export const STATUS_COM_VEREDITO: readonly LabStatus[] = [
+  "verde", "morta", "empate", "inconclusiva",
+] as const;
 
 export interface LabStrategy {
   slug: string;
@@ -57,6 +99,26 @@ export interface LabStrategy {
   hypothesis?: string;
   /** Por que foi morta. Reprovar sem motivo escrito é esquecer. */
   killedWhy?: string;
+  /**
+   * ⚠️ OBRIGATÓRIO quando `status === "nao_mensuravel"` — exigido aqui, no
+   * `assertRegistroCoerente` e por CHECK no banco (migração 0023).
+   *
+   * Sem isso, `nao_mensuravel` vira o novo cinza: um lugar onde coisa difícil
+   * se esconde sem ninguém precisar escrever por quê. "Não dá" não é motivo;
+   * "a fonte não publica liquidação por endereço" é.
+   */
+  notMeasurableWhy?: string;
+  /**
+   * Onde a medição vive, quando ela não vive no `lab_runs`.
+   *
+   * ⚠️ Isto existe para NÃO fabricar parcela. As mesas de tendência e o
+   * comprar-e-segurar foram medidos na Fase 1, pelo painel 🧭. Inventar uma
+   * linha de rodada com números copiados à mão seria o oposto do que estas
+   * tabelas existem para fazer — então elas declaram onde o número mora, e o
+   * detector de discordância para de reclamar delas por esse motivo, e só por
+   * ele: se o livro daqui vier a discordar, ele volta a reclamar.
+   */
+  measuredElsewhere?: string;
 }
 
 export const LAB_STRATEGIES: LabStrategy[] = [
@@ -72,6 +134,8 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     status: "verde",
     hypothesis: "poder vender vale +45,9 pontos no crash e custa 7 a 11 pontos fora dele — "
       + "é seguro, não vantagem. Medido em três janelas de 04/08.",
+    measuredElsewhere: "Fase 1 — painel 🧭 Estratégias, três janelas de 04/08. Antecede o "
+      + "`lab_runs`, então não há rodada aqui para conferir.",
   },
   {
     slug: "trend_ma50_long_only",
@@ -83,6 +147,8 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "isolada, e mudar o capital junto mediria duas coisas ao mesmo tempo",
     status: "verde",
     hypothesis: "+18,5% na janela de alta com 45% de exposição; morre nas de queda e lateral",
+    measuredElsewhere: "Fase 1 — painel 🧭 Estratégias, três janelas de 04/08. Antecede o "
+      + "`lab_runs`, então não há rodada aqui para conferir.",
   },
   {
     slug: "regime_filter",
@@ -108,6 +174,8 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "⚠️ O QUE ISTO NÃO REFUTA: os +27,7% do crash foram da MÉDIA MÓVEL 50, que é "
       + "seguidora de tendência e obviamente precisa de tendência. São estratégias opostas; "
       + "o regime certo para uma é o errado para a outra. Ver `trend_ma50_long_short`.",
+    measuredElsewhere: "Fase 1 — quebra `byRegime` do painel 🧭, 06/08. Antecede o "
+      + "`lab_runs`, então não há rodada aqui para conferir.",
   },
   {
     slug: "buy_and_hold",
@@ -120,6 +188,8 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     status: "verde",
     hypothesis: "toda mesa é julgada contra isto na MESMA janela — sem o denominador, "
       + "'+18%' não diz se foi a estratégia ou o mercado",
+    measuredElsewhere: "Fase 1 — painel 🧭 Estratégias, três janelas de 04/08. É o "
+      + "denominador das outras, medido junto com elas.",
   },
 
   // ══ CARREGO — alguém paga para você esperar.
@@ -181,9 +251,14 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 2000,
     capitalWhy: "camada extra de risco de corte pede amostra maior para o resultado "
       + "distinguir rendimento de sorte",
-    status: "cinza",
+    status: "inconclusiva",
     hypothesis: "5% a 15% ao ano com risco de corte empilhado — o rendimento extra "
       + "pode ser só o prêmio do risco novo",
+    killedWhy: "RODOU em 09/08 e a amostra não chegou ao piso: 2 produtos distintos "
+      + "(3 implantações) contra o mínimo de 3. O MESMO emissor em várias cadeias tem UMA "
+      + "taxa, não várias — contar implantação como amostra seria contar o mesmo número "
+      + "três vezes. É a taxa de um emissor num dia, não uma estratégia. "
+      + "O que destrava: um terceiro emissor de restaking com taxa publicada.",
   },
   {
     slug: "funding_basis",
@@ -220,7 +295,7 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalWhy: "o capital é DIVIDIDO entre os fluxos, e cada fatia paga a própria "
       + "entrada; abaixo de $5.000 a divisão em quatro deixa cada perna pequena "
       + "demais e a medição vira um teste de custo fixo, não de diversificação",
-    status: "morta",
+    status: "inconclusiva",
     hypothesis: "⚠️ HIPÓTESE MINHA, e é onde eu já errei duas vezes — o clima e o "
       + "filtro de regime, as duas levantadas por mim e derrubadas pela minha própria "
       + "medição, a segunda INVERTIDA. A tese: ρ=0,07 no funding mostrou que 50 nomes "
@@ -245,7 +320,12 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "e não diz nada sobre risco. "
       + "⚠️ O ÚNICO SINAL DE ESTRUTURA na matriz inteira foi funding × staking líquido = "
       + "−0,24, os dois ETH-adjacentes. Aponta para um PAR, não para uma cesta de quatro — "
-      + "é o que sobrou de vivo desta hipótese.",
+      + "é o que sobrou de vivo desta hipótese. "
+      + "⚠️ ESTADO CORRIGIDO EM 11/08, de MORTA para INCONCLUSIVA. Não é recuo da leitura "
+      + "acima — é ela levada a sério: o parágrafo diz \"reprova combinar PELO RETORNO, e "
+      + "não diz nada sobre risco\", e MORTA afirmava as duas metades. O módulo sempre se "
+      + "recusou a carimbar morta aqui, com teste-cicatriz próprio; o registro é que "
+      + "afirmava mais do que foi pesado.",
   },
   {
     slug: "quarterly_basis",
@@ -267,9 +347,15 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 5000,
     capitalWhy: "o lote mínimo de opção de BTC exige nocional; com $1.000 não se monta "
       + "uma posição coberta sem concentrar tudo numa moeda",
-    status: "cinza",
+    status: "inconclusiva",
     hypothesis: "volatilidade implícita do BTC roda 50-80% ao ano contra 15-20% do S&P — "
       + "é o prêmio mais gordo e estruturalmente persistente deste mercado, e nunca medimos",
+    killedWhy: "RODOU em 09/08 e não deu para concluir — o que é diferente de reprovar. "
+      + "Com teto de +5%, a coberta rendeu 1,48% contra 0,86% de segurar em 870 janelas de "
+      + "30 dias: vantagem de 0,62 ponto, ABAIXO da margem de 1 ponto exigida para prêmio "
+      + "MODELADO. O sorriso subestima o prêmio e a cauda subestima o risco, para lados "
+      + "opostos — aprovar aqui seria afirmar precisão que a simulação não tem. "
+      + "O que destrava: prêmio OBSERVADO de mercado, não modelado.",
   },
   {
     slug: "susde_wrapped_basis",
@@ -302,6 +388,8 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "duas direções), não do mercado. Mesmo creditando isso de volta, nenhum playbook "
       + "chega a positivo convincente. Correlação long×espelho −0,18: quase nenhuma — a "
       + "biblioteca não tem viés de lado, ela tem custo maior que a borda.",
+    measuredElsewhere: "Fase 1 — teste espelho do painel 🧭, 06/08. Antecede o `lab_runs`, "
+      + "então não há rodada aqui para conferir.",
   },
 
   // ══ DIRECIONAL — as que faltam.
@@ -313,9 +401,15 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 2000,
     capitalWhy: "precisa de 5+ posições simultâneas para a rotação existir; com menos "
       + "vira uma aposta só trocando de nome",
-    status: "cinza",
+    status: "morta",
     hypothesis: "nunca medida. É a família que os traders de copy operam e a única "
       + "direcional do mapa que não testamos.",
+    killedWhy: "MEDIDA em 10/08, 9 rebalanceamentos: a rotação PERDEU 3,01% por período. "
+      + "Ela bateu segurar todos por 2,45 pontos, e isso não a salva — os dois caminhos "
+      + "perderam, e ficar em CAIXA bateu os dois. "
+      + "⚠️ ESTE VEREDITO ESTEVE GRAVADO COMO `cinza` ATÉ 11/08, porque o vocabulário não "
+      + "tinha palavra para \"bateu o índice e ainda assim perdeu dinheiro\". Uma mesa que "
+      + "torrou 3% aparecia na tela igual a uma que ninguém nunca olhou.",
   },
   {
     slug: "grid_bot",
@@ -325,9 +419,15 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 1000,
     capitalWhy: "muitas ordens pequenas é o caso de uso REAL desta estratégia — medir "
       + "com capital grande responderia uma pergunta que ninguém faz",
-    status: "cinza",
+    status: "morta",
     hypothesis: "15% a 60% ao ano em consolidação segundo fontes públicas, mas um "
       + "rompimento apaga semanas; em teste comparativo só 3 de 8 bots deram lucro em 6 meses",
+    killedWhy: "MEDIDA em 10/08 e a fonte pública errou por uma ordem de grandeza: a grade "
+      + "perdeu 54,19% DO CAPITAL. Os degraus renderam 2,00% e o estoque preso comeu o resto — "
+      + "10 de 10 símbolos romperam a faixa, que é exatamente como esta estratégia morre. "
+      + "Perdeu menos que os 64,61% de segurar, e ficar em CAIXA bateu as duas. "
+      + "⚠️ E ISTO FICOU MARCADO `cinza` — \"não medida\" — DE 10 A 11/08. Metade do capital "
+      + "evaporou numa medição e a tela não pedia nada de ninguém.",
   },
 
   // ══ ESTRUTURA — você é a infraestrutura.
@@ -339,9 +439,14 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 5000,
     capitalWhy: "o gás é custo FIXO por operação; abaixo de $5.000 ele domina qualquer "
       + "borda, e mediríamos o gás em vez da oportunidade",
-    status: "cinza",
+    status: "morta",
     hypothesis: "o único terreno com vantagem estrutural — o tempo de bloco cria janela "
       + "lenta por construção. ⚠️ MEV compete pesado e a resposta pode ser a mesma das outras.",
+    killedWhy: "MEDIDA em 09/08: 7 pares, mediana da borda LÍQUIDA em −0,337%, com 0 de 7 "
+      + "positivos depois de taxa, impacto e gás, e o mesmo nocional dos dois lados. "
+      + "A janela de bloco existe — e não sobra dinheiro dentro dela. "
+      + "⚠️ O livro gravou `morta` no dia 09 e o registro continuou dizendo `cinza` por dois "
+      + "dias: a única linha em que a tela ignorava um veredito já escrito.",
   },
   {
     slug: "liquidations",
@@ -351,8 +456,12 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 10000,
     capitalWhy: "capital tem que estar PRONTO quando o evento vem, e o evento não avisa; "
       + "capital pequeno perde as liquidações grandes, que são as que pagam",
-    status: "cinza",
+    status: "nao_mensuravel",
     hypothesis: "5% a 10% por evento, concentrado em poucos momentos de estresse",
+    notMeasurableWhy: "é jogo de LATÊNCIA, e daqui não alcançamos nem feed de evento de "
+      + "liquidação nem posição na fila. Sem os dois, qualquer número seria teatro: mediria "
+      + "o desconto teórico da garantia, que ninguém captura sem chegar primeiro. "
+      + "O que destrava: feed de eventos por endereço + medição de posição na fila.",
   },
   {
     slug: "bridge_arb",
@@ -374,7 +483,13 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 2000,
     capitalWhy: "capital pequeno num pool grande recebe taxa proporcional irrisória e o "
       + "gás de entrada domina; $2.000 é onde a taxa passa a ser mensurável",
-    status: "cinza",
+    status: "empate",
+    killedWhy: "MEDIDA em 10/08 e deu EMPATE, que não é reprovação: a mesa fica +0,55% de "
+      + "segurar os mesmos ativos, dentro da faixa de ±3,68% que esta medição não consegue "
+      + "distinguir. E a faixa não é chute — é a discordância das DUAS estimativas de taxa "
+      + "da PRÓPRIA fonte para a MESMA piscina. O gás já está na conta (0,01%). "
+      + "⚠️ NÃO ADIANTA REMEDIR com o mesmo método: a incerteza está na fonte, não na "
+      + "amostra. O que destrava é taxa observada de eventos de swap, não estimada.",
   },
   {
     slug: "concentrated_lp",
@@ -417,9 +532,13 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 500,
     capitalWhy: "aqui TEMPO vale mais que capital — em 2026 os programas recompensam "
       + "narrativa de carteira, não tamanho de posição",
-    status: "cinza",
+    status: "nao_mensuravel",
     hypothesis: "retorno binário e não anualizável. Alto valor relativo para o peixe "
       + "pequeno justamente porque não depende de capital.",
+    notMeasurableWhy: "o retorno é RETROSPECTIVO e não repetível — medir os airdrops que já "
+      + "aconteceram não prevê os próximos, porque o critério muda de propósito a cada "
+      + "programa para não ser farmado. Um número aqui descreveria o passado e seria lido "
+      + "como expectativa. Não é falta de fonte: é a pergunta que não tem resposta estável.",
   },
   {
     slug: "launchpad",
@@ -429,7 +548,10 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 1000,
     capitalWhy: "a alocação é por tier de saldo; abaixo do tier mínimo a participação "
       + "é simbólica e o resultado não representa a estratégia",
-    status: "cinza",
+    status: "nao_mensuravel",
+    notMeasurableWhy: "não alcancei fonte histórica de alocação por tier NEM de preço de "
+      + "estreia. Faltam os dois lados da conta — quanto se consegue comprar e por quanto "
+      + "se vende — e com um só deles o resultado é metade de uma divisão.",
   },
   {
     slug: "governance_bribes",
@@ -439,7 +561,10 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     capitalRequiredUsd: 10000,
     capitalWhy: "poder de voto é proporcional; com pouco, o suborno recebido não paga "
       + "o gás de votar",
-    status: "cinza",
+    status: "nao_mensuravel",
+    notMeasurableWhy: "depende de API de marketplace de suborno (Votium, Hidden Hand) que "
+      + "não consegui alcançar daqui. ⚠️ Este é o único dos quatro que é NOSSO limite e não "
+      + "do mundo: com acesso à API, ele volta para a fila de medição.",
   },
 
   // ══ NEGÓCIO — não é trade, é receita. Capital nominal.

@@ -29,6 +29,7 @@
 
 import { vwapBuy, vwapSell, type Level } from "@/lib/zion/arb-realism";
 import { median } from "@/lib/zion/stats";
+import type { LabStatus } from "./registry";
 
 /**
  * Taxa de tomador na CEX, em %. Palpite DECLARADO, na faixa do varejo sem tier.
@@ -246,7 +247,7 @@ export function melhorSentido(ss: Sentido[]): Sentido {
 
 export interface VereditoDexCex {
   readable: boolean;
-  status: "verde" | "cinza" | "morta";
+  status: LabStatus;
   verdict: string;
 }
 
@@ -270,7 +271,7 @@ export function vereditoDexCex(
 
   if (usaveis.length === 0) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: linhas.length === 0
         ? "nenhum par com cotação de DEX E livro de CEX — inconclusivo, que não é reprovado."
         : `nenhum dos ${linhas.length} pares passou nas duas condições — livro fundo o `
@@ -279,7 +280,7 @@ export function vereditoDexCex(
   }
   if (usaveis.length < minSimbolos) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: `só ${usaveis.length} par(es) com livro completo, abaixo do piso de `
         + `${minSimbolos} — um par com borda é um par, não um terreno. INCONCLUSIVO.`,
     };

@@ -185,7 +185,7 @@ describe("janelas sobrepostas não são amostra", () => {
       dia: `d${i}`, implicitaPct: 60, realizadaPct: 50, vrpPct: 10,
     }));
     const v = vereditoVrp(resumirVrp(bons), 30);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.readable).toBe(false);
     expect(v.verdict).toContain(`piso de ${MIN_JANELAS_INDEPENDENTES}`);
     // E diz POR QUE 100 não são 100.
@@ -205,7 +205,7 @@ describe("janelas sobrepostas não são amostra", () => {
 
   it("sem nenhuma janela utilizável é inconclusivo, nunca reprovado", () => {
     const v = vereditoVrp(null);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("inconclusivo");
   });
 });

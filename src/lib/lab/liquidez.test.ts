@@ -192,10 +192,10 @@ describe("o resumo e o veredito", () => {
     expect(r.janelas).toHaveLength(3);   // mas continua visível na tela
   });
 
-  it("amostra abaixo do piso é CINZA, nunca reprovada", () => {
+  it("amostra abaixo do piso é INCONCLUSIVA, nunca reprovada", () => {
     const r = resumirLiquidez([janela(), janela()]);
     const v = vereditoLiquidez(r, MIN_PISCINAS);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.texto).toContain("inconclusivo não é reprovado");
   });
 
@@ -252,7 +252,7 @@ describe("o resumo e o veredito", () => {
       janela({ vantagemPct: +0.38, segurarPct: -57.6, lpPct: -57.5 }),
     ]);
     const v = vereditoLiquidez(r);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("empate");
     expect(v.texto).toContain("EMPATE");
     // E diz POR QUE não dá para decidir, com o número da faixa.
     expect(v.texto).toContain("±1.00%");
@@ -275,7 +275,7 @@ describe("o resumo e o veredito", () => {
     // O MÁXIMO, não a mediana: a mediana (0,4) deixaria +0,56% virar VERDE.
     expect(r.incertezaTaxaPct).toBe(3.4);
     const v = vereditoLiquidez(r);
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("empate");
     expect(v.texto).toContain("±3.40%");
     expect(v.texto).toContain("discordam");
   });
@@ -305,7 +305,7 @@ describe("o resumo e o veredito", () => {
     const quaseVerde = resumirLiquidez([
       janela({ vantagemPct: 0.5 }), janela({ vantagemPct: 0.5 }), janela({ vantagemPct: 0.5 }),
     ]);
-    expect(vereditoLiquidez(quaseVerde).status).toBe("cinza");
+    expect(vereditoLiquidez(quaseVerde).status).toBe("empate");
     expect(MARGEM_MINIMA_PCT).toBe(1);
   });
 

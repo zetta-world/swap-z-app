@@ -25,7 +25,9 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { LAB_STRATEGIES, type LabStrategy } from "@/lib/lab/registry";
+import { selectAllRows } from "@/lib/supabase/paginate";
+import type { LivroDaEstrategia } from "./conferencia";
+import { LAB_STRATEGIES, type LabStrategy, type LabStatus } from "@/lib/lab/registry";
 
 type Db = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 
@@ -48,6 +50,16 @@ export async function syncRegistry(db: Db): Promise<{ synced: number }> {
     status: s.status,
     hypothesis: s.hypothesis ?? null,
     killed_why: s.killedWhy ?? null,
+    /**
+     * ⚠️ ESTES DOIS PRECISAM VIAJAR JUNTO COM O STATUS (Fase 10).
+     *
+     * `not_measurable_why` tem CHECK no banco: `nao_mensuravel` sem motivo de
+     * 25+ caracteres é rejeitado. Esquecer a coluna aqui não daria um campo
+     * vazio — daria o upsert INTEIRO falhando, e `syncRegistry` roda no GET do
+     * laboratório. O painel cairia com 500 em vez de degradar.
+     */
+    not_measurable_why: s.notMeasurableWhy ?? null,
+    measured_elsewhere: s.measuredElsewhere ?? null,
     updated_at: new Date().toISOString(),
   }));
   const { error } = await db.from("lab_strategies").upsert(rows, { onConflict: "slug" });
@@ -110,7 +122,19 @@ export interface RunResult {
   exposurePct?: number | null;
   /** O que comprar-e-segurar fez na MESMA janela. Sem isso "+18%" não diz nada. */
   benchmarkPct?: number | null;
-  verdict?: "verde" | "cinza" | "morta" | null;
+  /**
+   * ⚠️ O VOCABULÁRIO INTEIRO, e não os três de antes (Fase 10).
+   *
+   * Este campo era `"verde" | "cinza" | "morta"`, e ERA AQUI que a informação
+   * morria. Os módulos de medição já devolvem `readable: boolean` ao lado do
+   * status — `false` = não deu para ler, `true` = leu e não há vantagem — e o
+   * campo não tinha para onde ir na hora de gravar. Pior: os TEXTOS gravados
+   * já diziam a palavra certa ("EMPATE:", "INCONCLUSIVO.", "não é uma mesa que
+   * se opera") enquanto esta coluna dizia `cinza` nos três casos.
+   *
+   * O texto sabia. A coluna não. Agora as duas usam a mesma lista.
+   */
+  verdict?: LabStatus | null;
   verdictText?: string | null;
   perSymbol?: unknown[];
   /** O que esta medição NÃO inclui — vai para a tela, não só para o comentário. */
@@ -201,10 +225,64 @@ export interface StrategyRow extends LabStrategy {
  * PostgREST. Ver `docs/LEITURA-SEGURA-DO-BANCO.md`.
  */
 // leitura-limitada: lab_strategies tem dezenas de linhas, não milhares
+/**
+ * O LIVRO, para a conferência da Fase 10 — quantas rodadas fecharam, com que
+ * veredito, e quantas ficaram penduradas.
+ *
+ * ⚠️ NÃO É O MESMO QUE `readLab`, e a diferença é o defeito que se quer pegar.
+ *
+ * `readLab` pega a rodada MAIS RECENTE, qualquer que seja o status dela, e só
+ * lê o resultado se ela tiver dado `ok`. Serve para a tela: mostrar a última
+ * tentativa. Não serve para conferir, porque uma medição que FALHOU depois de
+ * uma que deu certo apagaria o veredito bom e a conferência acusaria
+ * discordância onde não há.
+ *
+ * Aqui a pergunta é outra: **qual foi o último veredito que existe de fato?**
+ * Rodada `falhou` e rodada `rodando` não têm veredito e não são parcela — elas
+ * contam noutra coluna, a de pendência.
+ *
+ * ⚠️ PAGINADO, mesmo com 28 estratégias. `.limit()` é pedido do cliente e o
+ * PostgREST tem teto próprio; foi assim que uma leitura truncada virou base de
+ * decisão em 07/08 (ver `docs/LEITURA-SEGURA-DO-BANCO.md`). O laboratório
+ * acumula rodadas para sempre — o dia em que passar de mil não deve ser o dia
+ * em que a conferência começa a mentir por omissão.
+ */
+export async function lerLivro(db: Db): Promise<LivroDaEstrategia[]> {
+  const estrategias = await selectAllRows<{ id: string; slug: string }>((from, to) =>
+    db.from("lab_strategies").select("id, slug")
+      .order("id", { ascending: true }).range(from, to));
+
+  const runs = await selectAllRows<{ id: string; strategy_id: string; status: string; started_at: string }>(
+    (from, to) => db.from("lab_runs").select("id, strategy_id, status, started_at")
+      .order("started_at", { ascending: true }).range(from, to));
+
+  const okIds = runs.filter((r) => r.status === "ok").map((r) => r.id);
+  const vereditos = new Map<string, LabStatus | null>();
+  if (okIds.length > 0) {
+    const res = await selectAllRows<{ run_id: string; verdict: string | null }>((from, to) =>
+      db.from("lab_results").select("run_id, verdict")
+        .in("run_id", okIds).order("run_id", { ascending: true }).range(from, to));
+    for (const r of res) vereditos.set(r.run_id, (r.verdict as LabStatus | null) ?? null);
+  }
+
+  return estrategias.map((e) => {
+    /** Já vêm ordenadas por `started_at` crescente — a última do filtro é a mais nova. */
+    const minhas = runs.filter((r) => r.strategy_id === e.id);
+    const ok = minhas.filter((r) => r.status === "ok");
+    const ultima = ok.length > 0 ? ok[ok.length - 1] : null;
+    return {
+      slug: e.slug,
+      rodadasOk: ok.length,
+      ultimoVeredito: ultima ? (vereditos.get(ultima.id) ?? null) : null,
+      penduradas: minhas.filter((r) => r.status === "rodando").length,
+    };
+  });
+}
+
 export async function readLab(db: Db): Promise<StrategyRow[]> {
   const { data: strategies, error } = await db
     .from("lab_strategies")
-    .select("id, slug, name, subtitle, family, capital_required_usd, capital_why, status, hypothesis, killed_why")
+    .select("id, slug, name, subtitle, family, capital_required_usd, capital_why, status, hypothesis, killed_why, not_measurable_why, measured_elsewhere")
     .order("family", { ascending: true });
   if (error) throw new Error(`readLab: ${error.message}`);
 
@@ -245,6 +323,8 @@ export async function readLab(db: Db): Promise<StrategyRow[]> {
       status: s.status as LabStrategy["status"],
       hypothesis: s.hypothesis ? String(s.hypothesis) : undefined,
       killedWhy: s.killed_why ? String(s.killed_why) : undefined,
+      notMeasurableWhy: s.not_measurable_why ? String(s.not_measurable_why) : undefined,
+      measuredElsewhere: s.measured_elsewhere ? String(s.measured_elsewhere) : undefined,
       lastRunAt: run?.started_at ? String(run.started_at) : null,
       lastStatus: (run?.status as StrategyRow["lastStatus"]) ?? null,
       lastNetPct: result?.net_pct == null ? null : Number(result.net_pct),

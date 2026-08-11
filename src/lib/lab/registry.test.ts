@@ -95,16 +95,76 @@ describe("subtítulo — o leigo tem que entender", () => {
   });
 });
 
-describe("os três estados, e o que cada um obriga", () => {
-  it("CINZA é o estado padrão — não medido não é reprovado", () => {
+describe("os seis estados, e o que cada um obriga", () => {
+  /**
+   * ⚠️ ESTE TESTE MUDOU DE FORMA NA FASE 10, e a razão é o defeito que ela
+   * consertou. Ele exigia que MAIS DA METADE das estratégias estivesse em
+   * `cinza` — o que passava alegremente enquanto `grid_bot` (−54% do capital)
+   * e `dex_cex_arb` (veredito MORTA gravado) se escondiam lá dentro. Um teste
+   * que pede "muitas cinzas" premia justamente o acúmulo que a auditoria achou.
+   *
+   * O que ele exige agora é o contrário: `cinza` significa NÃO MEDIDA, e
+   * nenhuma estratégia em `cinza` pode carregar veredito escrito. Estado que
+   * afirma ausência de medição não convive com texto que descreve medição.
+   */
+  it("CINZA é ausência de medição — e nada em cinza carrega veredito escrito", () => {
     const cinzas = LAB_STRATEGIES.filter((s) => s.status === "cinza");
-    expect(cinzas.length).toBeGreaterThan(LAB_STRATEGIES.length / 2);
+    expect(cinzas.length).toBeGreaterThan(0);
+    const comVeredito = cinzas.filter((s) => (s.killedWhy ?? "").trim().length > 0);
+    expect(
+      comVeredito.map((s) => s.slug),
+      "cinza = não medida; se há veredito escrito, o estado está errado",
+    ).toEqual([]);
   });
 
   it("toda MORTA diz por que morreu — reprovar sem motivo é esquecer", () => {
     const mortas = LAB_STRATEGIES.filter((s) => s.status === "morta");
+    expect(mortas.length).toBeGreaterThan(0);
     for (const s of mortas) {
       expect(s.killedWhy, `${s.slug} morta sem motivo`).toBeTruthy();
+    }
+  });
+
+  /**
+   * ⚠️ INCONCLUSIVA É O ÚNICO ESTADO QUE PEDE ALGUMA COISA, e o pedido tem que
+   * estar escrito. "Não deu para concluir" sem dizer o que falta é um beco:
+   * ninguém sabe se espera amostra, fonte nova ou método diferente.
+   */
+  it("toda INCONCLUSIVA diz o que faltou para concluir", () => {
+    const incs = LAB_STRATEGIES.filter((s) => s.status === "inconclusiva");
+    expect(incs.length).toBeGreaterThan(0);
+    for (const s of incs) {
+      expect(s.killedWhy, `${s.slug} inconclusiva sem dizer o que faltou`).toBeTruthy();
+    }
+  });
+
+  /**
+   * ⚠️ SEM ISTO, `nao_mensuravel` VIRA O NOVO CINZA — um lugar onde coisa
+   * difícil se esconde sem ninguém precisar escrever por quê. O banco tem o
+   * mesmo CHECK (migração 0023); os dois existem porque o registro pode ser
+   * editado sem passar pelo banco e vice-versa.
+   */
+  it("toda NÃO MENSURÁVEL diz por que não dá, com motivo de verdade", () => {
+    const nm = LAB_STRATEGIES.filter((s) => s.status === "nao_mensuravel");
+    expect(nm.length).toBeGreaterThan(0);
+    for (const s of nm) {
+      expect(
+        (s.notMeasurableWhy ?? "").trim().length,
+        `${s.slug}: "não dá" não é motivo — o CHECK do banco exige 25 caracteres`,
+      ).toBeGreaterThanOrEqual(25);
+    }
+  });
+
+  /**
+   * ⚠️ EMPATE NÃO É CINZA COM OUTRO NOME. Ele afirma uma medição BOA cujo
+   * resultado foi "não há vantagem distinguível" — e essa afirmação precisa do
+   * número que a sustenta, senão vira desculpa para não decidir.
+   */
+  it("todo EMPATE explica de que margem ele está falando", () => {
+    const emp = LAB_STRATEGIES.filter((s) => s.status === "empate");
+    expect(emp.length).toBeGreaterThan(0);
+    for (const s of emp) {
+      expect(s.killedWhy, `${s.slug} empate sem explicação`).toBeTruthy();
     }
   });
 

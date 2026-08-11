@@ -162,7 +162,7 @@ describe("o veredito compara contra a MELHOR PARTE, não contra a média", () =>
       fluxos: 1, diasComuns: 200, carteira, carteiraLiquidaPct: 2,
       melhorParteNome: "x", melhorParteLiquidaPct: 3, melhorParteTomboPct: 1, rhoMedio: 0,
     });
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("não uma carteira");
     expect(MIN_FLUXOS).toBe(2);
   });
@@ -172,7 +172,7 @@ describe("o veredito compara contra a MELHOR PARTE, não contra a média", () =>
       fluxos: 3, diasComuns: 20, carteira, carteiraLiquidaPct: 2,
       melhorParteNome: "x", melhorParteLiquidaPct: 3, melhorParteTomboPct: 1, rhoMedio: 0,
     });
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain(`piso de ${MIN_DIAS_COMUNS}`);
     expect(v.verdict).toContain("20 dias");
   });
@@ -190,7 +190,7 @@ describe("o veredito compara contra a MELHOR PARTE, não contra a média", () =>
       melhorParteNome: "empréstimo", melhorParteLiquidaPct: 3.40,
       melhorParteTomboPct: 1.2, rhoMedio: 0.1,
     });
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("empate");
     expect(v.status).not.toBe("verde");
     expect(v.verdict).toContain("rende MENOS");
     expect(v.verdict).toContain("troca de retorno por sono");
@@ -237,7 +237,7 @@ describe("o veredito compara contra a MELHOR PARTE, não contra a média", () =>
     });
     // NÃO pode ser morta: metade da balança nem sequer pesa.
     expect(v.status).not.toBe("morta");
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("inconclusiva");
     expect(v.verdict).toContain("ZERO por construção");
     expect(v.verdict).toContain("FORA da série");
     // A perda de retorno continua dita, com a conta na frente.
@@ -254,7 +254,7 @@ describe("o veredito compara contra a MELHOR PARTE, não contra a média", () =>
       melhorParteNome: "x", melhorParteLiquidaPct: 3.0,
       melhorParteTomboPct: 1.2, rhoMedio: 0.1,
     });
-    expect(v.status).toBe("cinza");
+    expect(v.status).toBe("empate");
     expect(v.verdict).toContain("EMPATA");
     expect(v.verdict).toContain("empate, não derrota");
   });

@@ -33,6 +33,7 @@
  * ⚠️ E O QUE NÃO É MODELO: o retorno do BTC vem das velas reais. "Quantas vezes
  * o BTC subiu mais que o teto" é MEDIDO, e é o lado da conta que mais decide.
  */
+import type { LabStatus } from "./registry";
 
 /**
  * Distribuição normal acumulada — aproximação de Abramowitz-Stegun 26.2.17.
@@ -206,7 +207,7 @@ export const REGIME_TEXTO: Record<RegimeJanela, string> = {
 
 export interface VereditoCoberta {
   readable: boolean;
-  status: "verde" | "cinza" | "morta";
+  status: LabStatus;
   verdict: string;
 }
 
@@ -230,7 +231,7 @@ export function vereditoCoberta(
   const validos = rs.filter((r) => r.n > 0);
   if (validos.length === 0) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: "nenhuma janela com implícita, preço inicial e preço final — inconclusivo.",
     };
   }
@@ -274,7 +275,7 @@ export function vereditoCoberta(
   }
   if (melhor.vantagemPct < margem) {
     return {
-      readable: false, status: "cinza",
+      readable: false, status: "inconclusiva",
       verdict: `${base} — a vantagem é ${melhor.vantagemPct.toFixed(2)} ponto, abaixo da margem `
         + `de ${margem} exigida para um prêmio MODELADO. O sorriso subestima o prêmio e a cauda `
         + `subestima o risco, para lados opostos: aprovar aqui seria afirmar precisão que a `
