@@ -2214,8 +2214,38 @@ vizinho e dava por conferido.
 Foi o próprio teste de mutação que pegou. A asserção agora cita a linha inteira
 da taxa.
 
-**Pendente:** a conta de token da Solana; e a divulgação da taxa na tela de
-swap, antes da assinatura.
+### Cada cadeia com o seu destino (11/08)
+
+O dono: *"o endereço Solana para taxas Solana e o endereço EVM para as taxas
+EVM"*.
+
+| cadeia | destino | estado |
+|---|---|---|
+| EVM | `0x904126D2…3c1F` | ✅ cobrando |
+| Solana | `EWPtaW726V…Gvd5L` | registrada — **cobrança desligada** |
+
+**Não existe endereço que sirva para os dois**, e a pergunta do dono foi na
+direção certa: um `0x` de 20 bytes não existe na Solana, e uma chave ed25519 de
+32 bytes em base58 não existe em EVM. Duas carteiras, obrigatoriamente.
+
+**A carteira Solana foi conferida:** base58 válido, 32 bytes, e **na curva
+ed25519** — ou seja, carteira de verdade, com chave privada, e não um PDA de
+programa, para o qual ninguém consegue assinar.
+
+**⚠️ E ELA CONTINUA NÃO COBRANDO, de propósito.** A Jupiter pede um
+`feeAccount`, que é uma **conta de token (ATA)** derivada da carteira **para
+cada mint** recebido — diferente de EVM, onde um endereço recebe qualquer
+ERC-20. Por isso são DOIS campos: `CARTEIRA_TAXA_SOLANA` (a dona, registrada) e
+`CONTA_TAXA_SOLANA` (o que a Jupiter recebe, ainda `null`).
+
+Separar os dois é o que impede o erro fácil: a validação por tamanho **não
+distingue** carteira de conta de token — uma carteira base58 tem 32-44
+caracteres e passaria. Quem decide é o **campo**, não o formato. Há teste
+exigindo que a carteira não vire `feeAccount` por descuido.
+
+**Pendente:** confirmar o formato que a Jupiter exige hoje (o mecanismo mudou
+entre versões, e a rede está bloqueada neste ambiente), criar a ATA, e a
+divulgação da taxa na tela de swap antes da assinatura.
 
 ---
 

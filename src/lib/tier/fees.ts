@@ -103,18 +103,36 @@ export function receitaUsd(volumeUsd: number, tier: Tier): number {
 export const CARTEIRA_TAXA_EVM = "0x904126D219dC6c1f7c019303EC743Ad45F473c1F";
 
 /**
- * ⚠️ SOLANA NÃO TEM DESTINATÁRIO, E ISSO NÃO É DESCUIDO.
+ * A carteira que recebe a taxa na Solana — dada pelo dono em 11/08.
  *
- * A Jupiter não aceita um endereço de carteira: o `platformFeeBps` exige um
- * `feeAccount`, que é uma CONTA DE TOKEN do lado Solana. Um endereço EVM ali
- * não é "menos ideal", é inválido — a cotação seria recusada, ou pior,
- * aceita apontando para lugar nenhum.
+ * ⚠️ CONFERIDA: base58 válido, 32 bytes, e NA CURVA ed25519 — ou seja, é
+ * carteira de verdade, com chave privada, e não um PDA de programa (para o
+ * qual ninguém consegue assinar).
  *
- * Então a taxa em Solana fica DESLIGADA até existir uma conta própria. Aplicar
- * a carteira EVM ali seria inventar um destinatário, que é exatamente o
- * defeito que a trava abaixo existe para impedir.
+ * ⚠️ E ELA NÃO É, SOZINHA, O QUE A JUPITER PEDE. Isto aqui é a DONA das contas
+ * de taxa; o `platformFeeBps` exige um `feeAccount`, que é uma CONTA DE TOKEN
+ * (ATA) derivada desta carteira PARA CADA MINT recebido. Diferente de EVM,
+ * onde um endereço recebe qualquer ERC-20.
+ *
+ * Guardar a dona aqui e a conta em outro campo é o que impede o erro fácil:
+ * passar a carteira onde a Jupiter espera a conta de token faria a cotação ser
+ * recusada — ou aceita apontando para lugar nenhum.
  */
-export const CARTEIRA_TAXA_SOLANA: string | null = null;
+export const CARTEIRA_TAXA_SOLANA = "EWPtaW726VUcs2DA7q73b9vAJyyXJLynE8pH6TZGvd5L";
+
+/**
+ * A CONTA DE TOKEN que a Jupiter recebe. Ainda não existe.
+ *
+ * ⚠️ POR QUE NÃO É A CARTEIRA ACIMA. Uma ATA é derivada de (dona, mint) e
+ * precisa estar CRIADA na rede. Derivá-la é determinístico; garantir que
+ * exista, não — e uma conta não criada faz o swap falhar na hora de reter.
+ *
+ * Enquanto este campo for null, `bpsEfetivos(..., "solana")` devolve 0 e a
+ * Jupiter não recebe parâmetro nenhum. A ausência é DECLARADA: a carteira da
+ * dona já está registrada acima, então isto não é "esquecemos o endereço", é
+ * "falta a conta que a Jupiter exige".
+ */
+export const CONTA_TAXA_SOLANA: string | null = null;
 
 /**
  * ⚠️ A TRAVA DO CAMINHO DO DINHEIRO: sem destinatário para AQUELA cadeia,
@@ -129,8 +147,15 @@ export type FamiliaCadeia = "evm" | "solana";
 
 export function destinatarioDaTaxa(familia: FamiliaCadeia = "evm"): string | null {
   if (familia === "solana") {
+    /**
+     * ⚠️ AQUI VAI A CONTA DE TOKEN, NUNCA A CARTEIRA. A validação por tamanho
+     * não distingue as duas — uma carteira base58 tem 32-44 caracteres e
+     * passaria — então quem decide é o CAMPO, não o formato. Devolver a
+     * carteira aqui seria mandar à Jupiter algo que ela não aceita, com a
+     * aparência de configuração correta.
+     */
     const s = (process.env.SWAP_FEE_ACCOUNT_SOLANA ?? "").trim();
-    return s.length >= 32 ? s : CARTEIRA_TAXA_SOLANA;
+    return s.length >= 32 ? s : CONTA_TAXA_SOLANA;
   }
   const r = (process.env.SWAP_FEE_RECIPIENT ?? "").trim();
   return r.length >= 8 ? r : CARTEIRA_TAXA_EVM;
