@@ -155,6 +155,18 @@ export const CARTEIRA_TAXA_SOLANA = "EWPtaW726VUcs2DA7q73b9vAJyyXJLynE8pH6TZGvd5
 export const CONTA_TAXA_SOLANA: string | null = null;
 
 /** Os motivos, para quem lê a tela e não o código. */
+/**
+ * ⚠️ DECISÃO DO DONO, CONFIRMADA EM 11/08: a Solana NÃO cobra taxa, ponto.
+ *
+ * Isto deixou de ser "pendente até alguém resolver" e virou posição do
+ * produto. Os quatro motivos abaixo continuam sendo os motivos, e o primeiro
+ * sozinho já bastaria: o piso de 50 bps da Jupiter é MAIOR que a taxa
+ * prometida ao `trader` (25) e ao `pilot` (10) — cobrar lá significaria cobrar
+ * do assinante mais do que o plano dele promete.
+ *
+ * ⚠️ NÃO "LIGAR DEPOIS" SEM REVISITAR ISTO. Quem for mexer aqui está mexendo
+ * numa decisão, não num TODO esquecido.
+ */
 export const MOTIVOS_SOLANA_SEM_TAXA = [
   "o piso de 50 bps da Jupiter é maior que a taxa dos planos trader (25) e pilot (10)",
   "ligar a taxa desliga o gás patrocinado da Jupiter para quem tem pouco SOL",

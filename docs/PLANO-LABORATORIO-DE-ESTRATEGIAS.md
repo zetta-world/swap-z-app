@@ -2574,6 +2574,24 @@ dele.
 gravado" não diz que são todas ANTERIORES à correção de 11/08, então lê-se como
 problema vivo. Com a data, lê-se como cicatriz fechada.
 
+
+---
+
+### DECISÕES FECHADAS PELO DONO — 11/08
+
+**Solana não cobra taxa. Definitivo.** Não é pendência esperando alguém
+resolver; é posição do produto. O motivo que sozinho já basta: o piso de 50 bps
+da Jupiter é MAIOR que a taxa prometida ao `trader` (25 bps) e ao `pilot`
+(10 bps) — cobrar lá seria cobrar do assinante mais do que o plano dele diz.
+Registrado em `MOTIVOS_SOLANA_SEM_TAXA` com esta nota, para quem for mexer
+saber que está mexendo numa decisão.
+
+**O plano das mesas está cumprido.** As fases 0 a 8 percorreram as 28
+estratégias do Mapa do Lucro com o capital que cada uma pede. O que sobrou não
+é fase nova: são **6 remedições** que o próprio detector da Fase 10 lista na
+tela, e que existem só porque o vocabulário de veredito mudou depois de as
+rodadas terem sido gravadas. São botões, não trabalho de medição.
+
 ---
 
 ## 4. REGRAS QUE VALEM PARA TODAS AS FASES
@@ -2625,7 +2643,7 @@ Traduzido em regra:
 | 5 · Opção coberta | ⚪ **INCONCLUSIVA 09/08** — prêmio +5,7 pts medido; coberta +0,62 abaixo da margem, e condicional a mercado lateral |
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
-| 8 · Cinzas restantes | 🟡 **8.2 rodada 10/08** — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
+| 8 · Cinzas restantes | 🟢 **plano cumprido — dono fechou 11/08.** 8.2 rodada 10/08 — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
 | 9 · Receita | 🟢 **construída 11/08** — cobrança nas EVM com divulgação; Solana sem taxa por decisão; painel 💵 separando MEDIDO de PROJEÇÃO. 🟢 **cobrança CONFIRMADA 11/08 10:42** — o 0x devolveu `integratorFee` de 0,092016 USDT em swap de $9,19 (1,0000%). Quatro defeitos empilhados no caminho; o principal era a cotação FIRME nunca mandar a taxa. Falta só a conferência no explorador ([`TESTE-DA-TAXA-EVM.md`](TESTE-DA-TAXA-EVM.md)) |
 | 10 · O livro e a tela | 🟢 **concluída 11/08** — vocabulário de 6 estados (era 3), registro alinhado ao livro, detector de discordância na TELA. Restam 6 rodadas a remedir, listadas pelo próprio detector |
 | 11 · De onde vem o dinheiro | 🟢 **concluída 11/08** — ARRECADADO (parcela real) acima do TETO; quebra por origem com "não cobra" explícito; taxa retida gravada por operação (migração 0024) |

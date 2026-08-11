@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 // The module reads env at import time, so re-import per config with vi.resetModules.
 const ATTACKER = "0x000000000000000000000000000000000000dead";
@@ -121,5 +122,47 @@ describe("assertTrusted — `undefined` é pergunta não feita, não resposta va
   it("cadeia sem lista própria não é enforçada", async () => {
     const { assertTrusted } = await load(CFG);
     expect(() => assertTrusted(1, ATTACKER, ATTACKER)).not.toThrow();
+  });
+});
+
+/**
+ * ⚠️ ORDEM É DINHEIRO: conferir DEPOIS de aprovar queima gás à toa.
+ *
+ * A aprovação de ERC-20 é uma transação de verdade e custa. A conferência do
+ * alvo ficava DEPOIS dela nos dois caminhos — 0x e LI.FI — então um alvo fora
+ * da lista deixava o usuário pagar o `approve` e só então ser barrado. Gás
+ * gasto por uma troca que nunca ia acontecer.
+ *
+ * O dono deste projeto pediu explicitamente para não perder centavo de gás.
+ * Isto é a trava disso.
+ */
+describe("o alvo é conferido ANTES de a aprovação queimar gás", () => {
+  const exec = readFileSync("src/components/swap/ExecuteSwap.tsx", "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
+
+  it("no caminho do 0x, a conferência do alvo precede o approve", () => {
+    const iCheck   = exec.indexOf("assertTrusted(targetChainId, q.transaction?.to");
+    const iApprove = exec.indexOf("functionName: \"approve\"");
+    expect(iCheck, "a conferência adiantada sumiu").toBeGreaterThan(-1);
+    expect(iApprove).toBeGreaterThan(-1);
+    expect(iCheck).toBeLessThan(iApprove);
+  });
+
+  it("no caminho da LI.FI também", () => {
+    const iCheck   = exec.indexOf("assertTrusted(targetChainId, tx.to");
+    const iApprove = exec.indexOf("args:         [lfQuote.estimate.approvalAddress");
+    expect(iCheck).toBeGreaterThan(-1);
+    expect(iApprove).toBeGreaterThan(-1);
+    expect(iCheck).toBeLessThan(iApprove);
+  });
+
+  /**
+   * ⚠️ E A CONFERÊNCIA TARDIA NÃO PODE SUMIR. No 0x a cotação é REFEITA depois
+   * da aprovação (calldata nova), então o alvo pode mudar — a adiantada é
+   * economia, a tardia é a que decide. Trocar uma pela outra trocaria uma
+   * trava de segurança por uma de custo.
+   */
+  it("e a conferência autoritativa, depois da cotação nova, continua lá", () => {
+    expect(exec).toContain("assertTrusted(targetChainId, q.transaction.to, undefined)");
   });
 });

@@ -496,6 +496,21 @@ export default function ExecuteSwap({
         let q = zxQuote;
         if (!q) return;
 
+        /**
+         * ⚠️ O ALVO É CONFERIDO ANTES DA APROVAÇÃO, E ISSO É SOBRE GÁS.
+         *
+         * A aprovação é uma transação de verdade: ela custa. A conferência do
+         * alvo ficava DEPOIS dela, então um alvo fora da lista deixava o
+         * usuário pagar o `approve` e só então ser barrado — gás gasto por uma
+         * troca que nunca ia acontecer.
+         *
+         * ⚠️ E A CONFERÊNCIA TARDIA CONTINUA ONDE ESTAVA. Esta aqui usa o alvo
+         * da cotação ATUAL, e o 0x devolve calldata nova depois da aprovação —
+         * o alvo pode mudar. Esta adianta a recusa no caso comum; a de baixo é
+         * a que decide. Barato antes, autoritativo depois.
+         */
+        assertTrusted(targetChainId, q.transaction?.to, undefined);
+
         // One-time ERC-20 approval of the 0x AllowanceHolder spender.
         // MaxUint256 so the user never sees this step again for this token.
         if (q.issues?.allowance && fromToken.address !== "native") {
@@ -568,6 +583,13 @@ export default function ExecuteSwap({
         setPhase("tx_failed");
         return;
       }
+      /**
+       * ⚠️ MESMA ORDEM DO CAMINHO DO 0x: o alvo é conferido antes de a
+       * aprovação queimar gás. Aqui o `tx.to` já é o definitivo — a LI.FI não
+       * refaz a cotação depois da aprovação — então esta conferência é a
+       * mesma da linha de baixo, adiantada para antes do custo.
+       */
+      assertTrusted(targetChainId, tx.to, undefined);
       if (
         fromToken.address !== "native" &&
         lfQuote.estimate.approvalAddress &&
@@ -602,9 +624,30 @@ export default function ExecuteSwap({
       });
       setTxHash(hash);
       setPhase("tx_pending");
+      /**
+       * ⚠️ A ARRECADAÇÃO DA LI.FI TAMBÉM É GRAVADA (11/08).
+       *
+       * A Fase 11 ligou isto só no caminho do 0x. Se a LI.FI cobrasse, a
+       * receita dela entraria no livro como ZERO — o mesmo silêncio que fez
+       * toda troca DEX valer $0 no painel até hoje de manhã, agora restrito às
+       * trocas entre cadeias.
+       *
+       * ⚠️ A LI.FI DEVOLVE `feeCosts`, NÃO `integratorFee`. É uma LISTA que
+       * mistura a taxa dela com a nossa, então o filtro por nome é obrigatório
+       * — somar a lista inteira contaria custo do usuário como receita nossa.
+       */
+      const nossaTaxa = (lfQuote.estimate?.feeCosts ?? []).find(
+        (f) => /integrator|z-swap|referrer/i.test(`${f.name ?? ""}${f.description ?? ""}`),
+      );
       historyId.current = pushHistory({
         type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
         valueUsd: notionalUsd ?? undefined,
+        platformFeeAmount: nossaTaxa?.amount,
+        platformFeeToken:  nossaTaxa?.token?.address,
+        platformFeeUsd:    nossaTaxa?.amountUSD != null
+          ? Number(nossaTaxa.amountUSD)
+          : arrecadacao(nossaTaxa?.amount, nossaTaxa?.token?.address),
+        platformFeeBps:    taxaBpsRef.current ?? undefined,
         fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
         toSymbol: toToken.symbol, toChain, txHash: hash, route: "lifi",
         toAmount: String(Number(lfQuote.estimate.toAmount) / Math.pow(10, toToken.decimals)),
