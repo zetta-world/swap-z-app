@@ -29,6 +29,7 @@ import DexCexPanel            from "./panels/DexCexPanel";
 import LiberacaoPanel         from "./panels/LiberacaoPanel";
 import LiquidezPanel          from "./panels/LiquidezPanel";
 import RotacaoGradePanel      from "./panels/RotacaoGradePanel";
+import ReceitaPanel           from "./panels/ReceitaPanel";
 import LigasPanel             from "./panels/LigasPanel";
 import LabPanel               from "./panels/LabPanel";
 import LaunchGatePanel        from "./panels/LaunchGatePanel";
@@ -77,6 +78,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "autopilot-liberacao": <LiberacaoPanel />,
   "liquidez":           <LiquidezPanel />,
   "rotacao-grade":      <RotacaoGradePanel />,
+  "receita-taxa":       <ReceitaPanel />,
   "ligas":              <LigasPanel />,
   "lab":                <LabPanel />,
   "launch-gate":        <LaunchGatePanel />,

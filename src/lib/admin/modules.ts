@@ -23,6 +23,7 @@ export type ModuleId =
   | "dex-cex"
   | "liquidez"
   | "rotacao-grade"
+  | "receita-taxa"
   | "ligas"
   | "lab"
   | "tournament"
@@ -262,6 +263,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 9.1,
+  },
+  {
+    id: "receita-taxa",
+    title: "RECEITA DE TAXA",
+    subtitle: "C21/C22 — o que a plataforma arrecada por operar, não por acertar direção",
+    icon: "\u{1F4B5}",
+    category: "receita",
+    defaultEnabled: true,
+    defaultOrder: 4.5,
   },
   {
     id: "lab",
