@@ -131,6 +131,9 @@ interface QuoteArgs {
   /** Override the destination address on the target chain. */
   toAddress?:   string;
   slippageBps?: number;     // 1-5000
+  /** Taxa da plataforma em pontos-base (Fase 9.2). Exige `feeRecipient`. */
+  feeBps?:      number;
+  feeRecipient?: string;
 }
 
 /**
@@ -160,6 +163,17 @@ export async function fetchLiFiQuote(args: QuoteArgs, integratorKey?: string): P
   });
   if (args.toAddress)   params.set("toAddress",   args.toAddress);
   if (args.slippageBps) params.set("slippage", (args.slippageBps / 10_000).toString());
+  /**
+   * ⚠️ A TAXA SÓ VAI COM DESTINATÁRIO (Fase 9.2, 11/08). A LI.FI recebe a
+   * taxa como FRAÇÃO (0.01 = 1%), não em pontos-base — mandar `100` ali seria
+   * pedir 10.000%. A conversão fica aqui, no ponto de contato, e não em quem
+   * chama: quem chama fala em bps, que é a unidade da escada.
+   */
+  if ((args.feeBps ?? 0) > 0 && args.feeRecipient) {
+    params.set("fee", ((args.feeBps as number) / 10_000).toString());
+    params.set("integrator", "z-swap");
+    params.set("referrer", args.feeRecipient);
+  }
 
   const res = await fetch(`${LIFI_BASE}/quote?${params.toString()}`, {
     headers: {

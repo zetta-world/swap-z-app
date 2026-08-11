@@ -2183,9 +2183,39 @@ endereço de carteira: o `platformFeeBps` exige um `feeAccount`, que é uma
 nenhum. Há teste exigindo que a carteira de EVM **não vaze** para o lado
 Solana.
 
-**Pendente:** a conta de token da Solana, para a taxa valer lá; e ligar os
-parâmetros nos três agregadores, medindo a receita projetada por faixa de
-volume.
+## 9.2 — a cobrança ligada nas EVM (11/08)
+
+- **0x** recebe `swapFeeBps` + `swapFeeRecipient` + `swapFeeToken`. A taxa é
+  cobrada no token de **SAÍDA**: no de entrada ela sairia antes da troca
+  acontecer — inclusive quando a troca falha.
+- **LI.FI** recebe `fee` + `integrator` + `referrer`. ⚠️ Ela quer **fração**,
+  não pontos-base: mandar `100` ali seria pedir **10.000%**. A conversão mora no
+  ponto de contato, não em quem chama — quem chama fala em bps, que é a unidade
+  da escada.
+- **Os dois lados andam juntos.** `swapFeeBps` sem destinatário é cotação
+  recusada — ou, pior, aceita retendo para lugar nenhum. A trava do `fees.ts` é
+  repetida no ponto de contato com a rede.
+- **Jupiter continua sem taxa**, e a ausência é declarada no código: falta a
+  conta de token da Solana.
+- **O plano de quem cota é resolvido na rota.** Sem sessão, `free` — que é a
+  taxa mais alta. Falha de resolução também vira `free`, nunca "sem taxa": o
+  contrário faria qualquer erro de sessão virar swap de graça.
+- **A taxa vai em TODA resposta de sucesso**, inclusive quando é zero. `0%` e
+  campo ausente são afirmações diferentes, e a tela precisa poder dizer a
+  primeira.
+
+### ⚠️ Um teste meu passou pelo motivo errado
+
+A asserção da conversão da LI.FI conferia `"/ 10_000).toString()"` — string que
+também aparece na conversão de **slippage**, três linhas acima. A mutação que
+trocava fração por pontos-base **passou verde**: o teste achava o divisor do
+vizinho e dava por conferido.
+
+Foi o próprio teste de mutação que pegou. A asserção agora cita a linha inteira
+da taxa.
+
+**Pendente:** a conta de token da Solana; e a divulgação da taxa na tela de
+swap, antes da assinatura.
 
 ---
 
@@ -2239,6 +2269,6 @@ Traduzido em regra:
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
 | 8 · Cinzas restantes | 🟡 **8.2 rodada 10/08** — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
-| 9 · Receita | 🟡 **9.1 — escada + carteira EVM 11/08** (1% free → 0,1% pilot). Solana desligada: falta conta de token. Falta ligar nos agregadores |
+| 9 · Receita | 🟡 **9.2 — cobrança LIGADA nas EVM 11/08** (0x + LI.FI). Solana desligada: falta conta de token. Falta a divulgação na tela de swap |
 
 Atualizar este quadro a cada entrega — regra da casa.
