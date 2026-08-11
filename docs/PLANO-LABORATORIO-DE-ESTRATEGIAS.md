@@ -2243,9 +2243,20 @@ distingue** carteira de conta de token — uma carteira base58 tem 32-44
 caracteres e passaria. Quem decide é o **campo**, não o formato. Há teste
 exigindo que a carteira não vire `feeAccount` por descuido.
 
+### A divulgação, que sobe JUNTO com a cobrança
+
+⚠️ **Reter 1% sem dizer é o que a primeira pessoa a conferir no explorador
+transforma em acusação pública — e isso não se recupera.** Por isso a taxa
+aparece no card do swap, **antes da assinatura**, com o plano do usuário na
+explicação: *"planos maiores pagam taxa menor"*. A escada vira oferta na tela,
+não castigo descoberto depois.
+
+**⚠️ E ELA APARECE MESMO QUANDO É ZERO.** `0%` e campo ausente são afirmações
+diferentes: a primeira diz "medimos e não cobramos", a segunda não diz nada. Há
+teste com mutação — esconder a linha quando a taxa é zero reprova.
+
 **Pendente:** confirmar o formato que a Jupiter exige hoje (o mecanismo mudou
-entre versões, e a rede está bloqueada neste ambiente), criar a ATA, e a
-divulgação da taxa na tela de swap antes da assinatura.
+entre versões, e a rede está bloqueada neste ambiente) e criar a ATA.
 
 ---
 

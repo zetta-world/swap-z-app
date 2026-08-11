@@ -87,6 +87,39 @@ describe("a taxa chega à tela", () => {
   });
 });
 
+describe("a divulgação chega ao usuário antes da assinatura", () => {
+  const card = readFileSync("src/components/swap/SwapCard.tsx", "utf8");
+  const hook = readFileSync("src/lib/hooks/useQuotes.ts", "utf8");
+  const msgs = readFileSync("src/lib/i18n/messages.ts", "utf8");
+
+  /**
+   * ⚠️ A TRAVA QUE MAIS IMPORTA DESTA FASE. Reter 1% sem dizer é o que a
+   * primeira pessoa a conferir no explorador transforma em acusação pública —
+   * e isso não se recupera. A cobrança e a divulgação sobem juntas, ou nenhuma
+   * das duas sobe.
+   */
+  it("o card do swap mostra a taxa da plataforma", () => {
+    expect(card).toContain("swap.platformFee");
+    expect(card).toContain("taxaPlataforma");
+  });
+
+  it("a taxa viaja da rota até a tela", () => {
+    expect(hook).toContain("taxa:         body.taxa ?? null");
+    expect(card).toContain("taxaPlataforma={quotesState.taxa}");
+  });
+
+  it("a explicação existe nos 4 idiomas", () => {
+    expect((msgs.match(/platformFee:/g) ?? [])).toHaveLength(4);
+    expect((msgs.match(/platformFeeTip:/g) ?? [])).toHaveLength(4);
+  });
+
+  /** ⚠️ Zero também é dito. "0%" e campo ausente são afirmações diferentes. */
+  it("a linha aparece mesmo quando a taxa é zero", () => {
+    expect(card).toContain("{taxaPlataforma && (");
+    expect(card).not.toContain("taxaPlataforma.pct > 0 && (");
+  });
+});
+
 describe("sem sessão, o plano é o mais caro", () => {
   /**
    * ⚠️ Falha de resolução vira `free` — NUNCA "sem taxa". O contrário faria

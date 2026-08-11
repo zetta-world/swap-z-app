@@ -17,11 +17,25 @@ interface Args {
   debounceMs?:  number;
 }
 
+/**
+ * ⚠️ A TAXA DA PLATAFORMA VIAJA COM A COTAÇÃO (Fase 9.2).
+ *
+ * Ela vem em TODA resposta de sucesso, inclusive quando é zero — porque "0%" e
+ * "campo ausente" são afirmações diferentes, e a tela precisa poder dizer a
+ * primeira. `null` aqui significa "ainda não cotamos", não "não há taxa".
+ */
+export interface TaxaDaCotacao {
+  tier: string;
+  bps:  number;
+  pct:  number;
+}
+
 export interface QuotesState {
   quotes:      NormalizedQuote[];
   loading:     boolean;
   error:       string | null;
   isCrossChain: boolean;
+  taxa:        TaxaDaCotacao | null;
 }
 
 /**
@@ -30,7 +44,7 @@ export interface QuotesState {
  */
 export function useQuotes(args: Args): QuotesState {
   const [state, setState] = useState<QuotesState>({
-    quotes: [], loading: false, error: null, isCrossChain: false,
+    quotes: [], loading: false, error: null, isCrossChain: false, taxa: null,
   });
   const ctrlRef     = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,7 +88,7 @@ export function useQuotes(args: Args): QuotesState {
 
         if (!res.ok || !body.ok) {
           const err = body.error || body.message || `HTTP ${res.status}`;
-          setState({ quotes: [], loading: false, error: err, isCrossChain: fromChain !== toChain });
+          setState({ quotes: [], loading: false, error: err, isCrossChain: fromChain !== toChain, taxa: null });
           return;
         }
         setState({
@@ -82,6 +96,7 @@ export function useQuotes(args: Args): QuotesState {
           loading:      false,
           error:        null,
           isCrossChain: body.isCrossChain ?? (fromChain !== toChain),
+          taxa:         body.taxa ?? null,
         });
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;
