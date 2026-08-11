@@ -288,9 +288,31 @@ export async function GET(req: NextRequest) {
         // spender 0x returns, so the admin allow-list panel can show verified
         // canonical addresses to pin (no hand-typing). Firm path only = exactly
         // what ExecuteSwap signs.
+        /**
+         * ⚠️ A TAXA VAI PARA O EVENTO — E O QUE VAI É A RESPOSTA DO 0x, NÃO O
+         * NOSSO PEDIDO (11/08).
+         *
+         * O primeiro swap de verdade aconteceu às 03:51 UTC e não deu para
+         * conferir NADA a partir daqui: o evento gravava rota, cadeia, tokens,
+         * roteador e `spender`, e não gravava a taxa. Ficou impossível saber,
+         * pelos nossos próprios registros, se o pedido de cobrança sequer saiu.
+         *
+         * `taxaPedidaBps` é o que MANDAMOS. `taxaAceita` é o `integratorFee`
+         * que o 0x DEVOLVE — e são coisas diferentes de propósito: gravar só o
+         * pedido responderia "nós pedimos", que é justamente a metade que já
+         * estava provada por teste unitário. A metade que faltava é a outra.
+         *
+         * Com os dois no evento, "o 0x ignorou o parâmetro" para de ter a mesma
+         * aparência de "a taxa foi cobrada". Sobra uma pergunta só para o
+         * explorador de blocos: se o valor aceito chegou na carteira.
+         */
         recordEvent("swap_intent", { wallet: taker, meta: {
           source, fromChain, toChain, sellToken, buyToken,
           chainId: zxArgs.chainId, target: q.transaction?.to, spender: q.issues?.allowance?.spender,
+          taxaPedidaBps: taxa.bps, taxaDestinatario: taxa.destinatario,
+          taxaAceita: q.fees?.integratorFee
+            ? { amount: q.fees.integratorFee.amount, token: q.fees.integratorFee.token }
+            : null,
         } });
         return NextResponse.json(
           { ok: true, mode, source, taxa, result: q, normalized: normalizeZeroX(q, zxArgs.chainId, true) },
@@ -302,9 +324,20 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({ error: "lifi_unsupported_chain" }, { status: 400 });
         }
         const q = await fetchLiFiQuote(lfArgs, lifiKey);
+        /**
+         * ⚠️ MESMA GRAVAÇÃO NO CAMINHO DA LI.FI, e aqui ela vale ainda mais: a
+         * LI.FI recebe a taxa em FRAÇÃO (0,01) e não em pontos-base (100), e um
+         * erro de unidade nessa conversão cobraria 100× a mais ou a menos sem
+         * mudar nada na tela. `taxaAceita` sai da resposta dela, então a ordem
+         * de grandeza fica conferível sem depender de ninguém abrir explorador.
+         */
         recordEvent("swap_intent", { wallet: taker, meta: {
           source, fromChain, toChain, sellToken, buyToken, crossChain: true,
           chainId: lfArgs.fromChainId, target: q.transactionRequest?.to, spender: q.estimate?.approvalAddress,
+          taxaPedidaBps: taxa.bps, taxaDestinatario: taxa.destinatario,
+          taxaAceita: (q.estimate?.feeCosts ?? [])
+            .filter((f) => /integrator|z-swap|referrer/i.test(`${f.name ?? ""}${f.description ?? ""}`))
+            .map((f) => ({ amount: f.amount, token: f.token?.symbol, pct: f.percentage })),
         } });
         return NextResponse.json(
           { ok: true, mode, source, taxa, result: q, normalized: normalizeLiFi(q) },

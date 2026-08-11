@@ -2547,7 +2547,7 @@ Traduzido em regra:
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
 | 8 · Cinzas restantes | 🟡 **8.2 rodada 10/08** — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
-| 9 · Receita | 🟢 **construída 11/08** — cobrança nas EVM com divulgação; Solana sem taxa por decisão; painel 💵 separando MEDIDO de PROJEÇÃO. 🔴 **falta o teste de US$ 20** provar que a taxa CHEGA na carteira ([`TESTE-DA-TAXA-EVM.md`](TESTE-DA-TAXA-EVM.md)) |
+| 9 · Receita | 🟢 **construída 11/08** — cobrança nas EVM com divulgação; Solana sem taxa por decisão; painel 💵 separando MEDIDO de PROJEÇÃO. 🟡 **swap feito 11/08 03:51 UTC** (BSC, BNB→USDT, plano free = 1%); falta a conferência on-chain — a política de rede desta sessão bloqueia explorador ([`TESTE-DA-TAXA-EVM.md`](TESTE-DA-TAXA-EVM.md)) |
 | 10 · O livro e a tela | 🟢 **concluída 11/08** — vocabulário de 6 estados (era 3), registro alinhado ao livro, detector de discordância na TELA. Restam 6 rodadas a remedir, listadas pelo próprio detector |
 
 Atualizar este quadro a cada entrega — regra da casa.

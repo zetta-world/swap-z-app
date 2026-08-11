@@ -1,4 +1,4 @@
-# TESTE DA TAXA — provar que o dinheiro CHEGA · 🔴 PENDENTE
+# TESTE DA TAXA — provar que o dinheiro CHEGA · 🟡 SWAP FEITO, CONFERÊNCIA PENDENTE
 
 > **Aberto em:** 11/08/2026 · **Custo:** ~US$ 20 + gás (~US$ 0,02 na Base)
 > **Decisão do dono (11/08):** *"o teste de 20 dólares faremos por último"* —
@@ -35,6 +35,57 @@ situações com a mesma aparência na tela**.
 
 ---
 
+## 📍 O SWAP DE 11/08 — o que os nossos registros dizem, e o que falta
+
+O dono fez a troca às **03:51:43 UTC (00:51 BRT)**. Não foi na Base: foi na
+**BSC**. O que o `platform_events` guardou:
+
+| campo | valor |
+|---|---|
+| cadeia | **BSC** (chainId 56) |
+| vendeu | **BNB nativo** |
+| comprou | **USDT** (`0x55d398326f99059ff775485246999027b3197955`) |
+| roteador | `0x0000000000001ff3684f28c67538d4d072c22734` (Settler do 0x) |
+| quem assinou (`taker`) | `0xa904abe0e31f1c91c45e79c8cd7cb0f62a72ad5e` |
+| quem estava logado (sessão) | `0x9f068BDF763388E5DF3aB3265a738A02F6eB48AA` |
+| plano resolvido | **free** (`nao_checado`) → **1,00%** |
+
+✅ **O código da taxa estava no ar.** A Fase 9.2 foi a produção às **01:17 UTC**
+e o último deploy de produção antes da troca foi **03:26 UTC** — duas horas e
+meia de folga. A troca passou por código que pede a taxa.
+
+**Então o que conferir no BscScan** — `https://bscscan.com/tx/<hash>`, seção
+**"ERC-20 Tokens Transferred"**: uma linha de **USDT** para
+`0x904126D219dC6c1f7c019303EC743Ad45F473c1F`, valendo **1,00% do USDT que
+você recebeu** (numa troca de ~US$ 20, cerca de **0,20 USDT**).
+
+🛑 **O que EU não consegui conferir, e por quê.** A política de rede desta
+sessão recusa conexão a todo RPC e explorador (`403` no CONNECT para
+`mainnet.base.org`, `api.bscscan.com`, `rpc.ankr.com` e os demais testados).
+Não dá para contornar isso, e não se deve. **A conferência on-chain é sua.**
+
+⚠️ **E os nossos registros também não bastavam** — este é o achado que a troca
+produziu. O evento `swap_intent` gravava rota, cadeia, tokens, roteador e
+`spender`, e **não gravava a taxa**. Nem o que pedimos, nem o que o agregador
+respondeu. Corrigido em 11/08: o evento passa a gravar `taxaPedidaBps` e
+`taxaAceita` — esta última tirada do `integratorFee` que o próprio 0x devolve.
+São coisas diferentes de propósito: gravar só o pedido responderia "nós
+pedimos", que já estava provado por teste unitário. **Da próxima troca em
+diante, "o 0x ignorou o parâmetro" para de ter a mesma aparência de "a taxa foi
+cobrada"** sem ninguém precisar abrir explorador.
+
+⚠️ **Achado nº 2, separado e mais sério: o plano vem de quem está LOGADO, não
+de quem PAGA.** `tierDoCotante()` resolve o plano a partir da sessão
+(`0x9f068BDF…`), enquanto quem assina é a carteira conectada (`0xa904abe0…`), e
+não há comparação entre as duas. Nesta troca não muda nada — as duas dão
+`free`, 1% — mas o mecanismo está errado nos dois sentidos: uma sessão `pilot`
+paga 0,10% em troca assinada por qualquer endereço, e quem assinou e trocou de
+carteira no MetaMask sem relogar paga a taxa da carteira antiga. **Não corrigi
+junto**: mexer em quem paga quanto é decisão de produto, não limpeza de
+observabilidade.
+
+---
+
 ## Pré-voo — 3 minutos, sem gastar nada
 
 **P1 — O ambiente não está redirecionando a taxa.**
@@ -68,54 +119,31 @@ Anote a porcentagem exata que ela diz.
 
 ---
 
-## A troca
-
-**Rede: Base.** Escolhida por três motivos: gás de centavos, suportada pelo 0x
-(que é quem cobra a taxa na mesma cadeia), e explorador que mostra
-transferências de ERC-20 sem precisar decodificar nada.
-
-**Par: ETH → USDC.**
-
-- **Vender ETH nativo** dispensa a transação de aprovação — é uma assinatura
-  só, e menos gás.
-- **Comprar USDC** faz a taxa chegar **em USDC**, porque ela é cobrada no token
-  de SAÍDA. US$ 0,20 em USDC lê-se como `0.2` no explorador. Se a saída fosse
-  WETH você teria que converter `0.00005` a preço de mercado para saber se
-  bate.
-
-Passo a passo:
-
-- [ ] Conecte a carteira e selecione a rede **Base**.
-- [ ] Venda **~US$ 20 em ETH** por **USDC**.
-- [ ] Antes de assinar, anote da tela: **quanto de USDC você vai receber** e
-      **qual a taxa em %**.
-- [ ] Assine. Anote o **hash da transação**.
-
----
-
 ## A conferência — a parte que é o teste
+
+**Para o swap que já aconteceu:** `https://bscscan.com/tx/<hash>`, e o token a
+procurar é **USDT**, não USDC.
 
 ### C1 — a transferência da taxa existe
 
-Abra `https://basescan.org/tx/<hash>` e role até **"ERC-20 Tokens
-Transferred"**. Você deve ver **duas** linhas de USDC:
+Role até **"ERC-20 Tokens Transferred"**. Você deve ver **duas** linhas de USDT:
 
 ```
-From <pool/settler>  To 0x9041...3c1F   For 0.2      USDC   ← a taxa
-From <pool/settler>  To <sua carteira>  For 19.8...  USDC   ← o que sobrou
+From <pool/settler>  To 0x9041...3c1F   For 0.2      USDT   ← a taxa
+From <pool/settler>  To <sua carteira>  For 19.8...  USDT   ← o que sobrou
 ```
 
 - [ ] **Existe uma linha para `0x904126D219dC6c1f7c019303EC743Ad45F473c1F`.**
 
 🛑 **Se essa linha NÃO existir**, o teste REPROVOU e o achado é grande: a tela
 está declarando uma taxa que não é cobrada. Nesse caso não mexa em mais nada e
-me mande o hash — o problema está entre o nosso pedido e o 0x, e eu preciso ver
-a resposta crua da cotação para saber de que lado.
+me mande o hash — o problema está entre o nosso pedido e o 0x, e eu preciso da
+resposta crua da cotação para saber de que lado.
 
 ### C2 — o valor bate com o plano
 
-- [ ] O valor da linha da taxa ÷ (valor da linha da taxa + o que você recebeu)
-      ≈ a porcentagem que a tela prometeu no P3.
+- [ ] O valor da linha da taxa ÷ (valor da taxa + o que você recebeu) ≈ **1,00%**
+      (foi o plano `free` que resolveu — ver a tabela do swap acima).
 
 Tolerância: alguns centésimos, por arredondamento de decimais. **Ordem de
 grandeza errada não é arredondamento** — 10× a mais ou a menos é defeito de
@@ -131,10 +159,23 @@ unidade, exatamente o erro que a LI.FI cobraria se recebesse `100` onde espera
 
 ### C4 — o saldo aparece na carteira
 
-- [ ] Abra `https://basescan.org/address/0x904126D219dC6c1f7c019303EC743Ad45F473c1F`
-      → aba **Token Transfers (ERC-20)**. A entrada tem que estar lá.
-- [ ] Abra a carteira e confirme que você **enxerga** o USDC na Base. Receber
-      num endereço que você não consegue movimentar é o mesmo que não receber.
+- [ ] Abra `https://bscscan.com/address/0x904126D219dC6c1f7c019303EC743Ad45F473c1F`
+      → aba **Token Transfers (BEP-20)**. A entrada tem que estar lá.
+- [ ] Confirme que você **enxerga** o USDT na BSC na carteira. Receber num
+      endereço que você não consegue movimentar é o mesmo que não receber.
+
+---
+
+## Se for repetir noutra cadeia
+
+**Base, ETH → USDC** continua sendo o par mais fácil de ler: gás de centavos,
+uma assinatura só (vender nativo dispensa aprovação), e a taxa chega em USDC,
+que se lê como `0.2` sem converter nada. Numa saída em WETH você teria que
+converter `0.00005` a preço de mercado para saber se bate.
+
+E a **LI.FI** (troca ENTRE cadeias) continua sem prova própria: é outro caminho
+de código, com a taxa em fração em vez de pontos-base. Base → Arbitrum cobre o
+que este swap não cobriu.
 
 ---
 
