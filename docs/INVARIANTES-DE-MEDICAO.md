@@ -324,6 +324,41 @@ teste, contra um livro que o próprio teste inventou.
 
 ---
 
+## 20. Teste que lê o ARQUIVO prova que o código existe, não que ele roda
+
+Asserção sobre o texto-fonte (`expect(arquivo).toContain("…")`) responde *"esta
+linha foi escrita?"*. A pergunta que importa é *"esta linha é executada no
+caminho que importa?"* — e as duas passam verdes juntas até o dia em que não.
+
+**Como travar:** teste de comportamento sempre que der. Quando só der para ler
+o fonte, **recorte o corpo da função** e afirme a CHAMADA lá dentro, nunca a
+presença da string no arquivo. E verifique por mutação: apague a chamada, e o
+teste tem que quebrar.
+
+> **Cicatriz (11/08, Fase 9.2):** `aplicarTaxa` era chamada só em
+> `fetchZeroXPrice` — a cotação INDICATIVA, a que a tela usa para mostrar
+> número. `fetchZeroXQuote`, a cotação FIRME que vira a transação assinada,
+> nunca mandou `swapFeeBps`. **A taxa aparecia na tela e não existia na
+> transação: todo swap da plataforma cobrou ZERO.**
+>
+> O teste que devia pegar isso fazia
+> `expect(zerox).toContain('params.set("swapFeeBps"')` — e passava, porque
+> `aplicarTaxa` contém a linha. Ele provou que o código EXISTIA por dias
+> enquanto ninguém o chamava.
+>
+> ⚠️ **E o custo não foi só o dinheiro.** Diante de `integratorFee: null` eu
+> levantei três hipóteses — token nativo, direção do par, conta do 0x — todas
+> partindo de *"os parâmetros foram enviados e o agregador recusou"*. Cada uma
+> custou um swap real do dono, de madrugada. Eu estava depurando a resposta de
+> uma pergunta que nunca foi feita.
+>
+> O que quebrou o ciclo foi instrumentação, não raciocínio: gravar **o que
+> mandamos** ao lado de **o que voltou**. Enquanto só o retorno estava no log,
+> "não perguntamos" e "perguntaram e negaram" tinham a mesma cara — a
+> invariante nº 19 aplicada ao diagnóstico em vez de à medição.
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:

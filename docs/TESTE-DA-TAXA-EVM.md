@@ -1,4 +1,4 @@
-# TESTE DA TAXA — provar que o dinheiro CHEGA · 🟡 SWAP FEITO, CONFERÊNCIA PENDENTE
+# TESTE DA TAXA — provar que o dinheiro CHEGA · 🟡 AGREGADOR OK, FALTA A CADEIA
 
 > **Aberto em:** 11/08/2026 · **Custo:** ~US$ 20 + gás (~US$ 0,02 na Base)
 > **Decisão do dono (11/08):** *"o teste de 20 dólares faremos por último"* —
@@ -35,56 +35,45 @@ situações com a mesma aparência na tela**.
 
 ---
 
-## 📍 O SWAP DE 11/08 — o que os nossos registros dizem, e o que falta
+## ✅ 11/08 10:42 — O AGREGADOR CONFIRMOU A RETENÇÃO
 
-O dono fez a troca às **03:51:43 UTC (00:51 BRT)**. Não foi na Base: foi na
-**BSC**. O que o `platform_events` guardou:
+Swap na BSC, **BNB nativo → USDT**, US$ 9,19, `confirmed`. A resposta do 0x:
 
-| campo | valor |
-|---|---|
-| cadeia | **BSC** (chainId 56) |
-| vendeu | **BNB nativo** |
-| comprou | **USDT** (`0x55d398326f99059ff775485246999027b3197955`) |
-| roteador | `0x0000000000001ff3684f28c67538d4d072c22734` (Settler do 0x) |
-| quem assinou (`taker`) | `0xa904abe0e31f1c91c45e79c8cd7cb0f62a72ad5e` |
-| quem estava logado (sessão) | `0x9f068BDF763388E5DF3aB3265a738A02F6eB48AA` |
-| plano resolvido | **free** (`nao_checado`) → **1,00%** |
+```json
+"integratorFee": { "type": "volume",
+                   "token": "0x55d3…7955",     ← USDT
+                   "amount": "92016254981434444" }   ← 0,092016 USDT
+"zeroExFee":     { "amount": "13802438247215167" }   ← 0,0138, a fatia do 0x
+```
 
-✅ **O código da taxa estava no ar.** A Fase 9.2 foi a produção às **01:17 UTC**
-e o último deploy de produção antes da troca foi **03:26 UTC** — duas horas e
-meia de folga. A troca passou por código que pede a taxa.
+**0,092016 ÷ 9,2016 = 1,0000%** — exatamente a taxa do plano `free`, no
+destinatário `0x904126D219dC6c1f7c019303EC743Ad45F473c1F`.
 
-**Então o que conferir no BscScan** — `https://bscscan.com/tx/<hash>`, seção
-**"ERC-20 Tokens Transferred"**: uma linha de **USDT** para
-`0x904126D219dC6c1f7c019303EC743Ad45F473c1F`, valendo **1,00% do USDT que
-você recebeu** (numa troca de ~US$ 20, cerca de **0,20 USDT**).
-
-🛑 **O que EU não consegui conferir, e por quê.** A política de rede desta
-sessão recusa conexão a todo RPC e explorador (`403` no CONNECT para
-`mainnet.base.org`, `api.bscscan.com`, `rpc.ankr.com` e os demais testados).
-Não dá para contornar isso, e não se deve. **A conferência on-chain é sua.**
-
-⚠️ **E os nossos registros também não bastavam** — este é o achado que a troca
-produziu. O evento `swap_intent` gravava rota, cadeia, tokens, roteador e
-`spender`, e **não gravava a taxa**. Nem o que pedimos, nem o que o agregador
-respondeu. Corrigido em 11/08: o evento passa a gravar `taxaPedidaBps` e
-`taxaAceita` — esta última tirada do `integratorFee` que o próprio 0x devolve.
-São coisas diferentes de propósito: gravar só o pedido responderia "nós
-pedimos", que já estava provado por teste unitário. **Da próxima troca em
-diante, "o 0x ignorou o parâmetro" para de ter a mesma aparência de "a taxa foi
-cobrada"** sem ninguém precisar abrir explorador.
-
-⚠️ **Achado nº 2, separado e mais sério: o plano vem de quem está LOGADO, não
-de quem PAGA.** `tierDoCotante()` resolve o plano a partir da sessão
-(`0x9f068BDF…`), enquanto quem assina é a carteira conectada (`0xa904abe0…`), e
-não há comparação entre as duas. Nesta troca não muda nada — as duas dão
-`free`, 1% — mas o mecanismo está errado nos dois sentidos: uma sessão `pilot`
-paga 0,10% em troca assinada por qualquer endereço, e quem assinou e trocou de
-carteira no MetaMask sem relogar paga a taxa da carteira antiga. **Não corrigi
-junto**: mexer em quem paga quanto é decisão de produto, não limpeza de
-observabilidade.
+Falta **um** passo, e é o único que não dá para fazer daqui: conferir no
+`https://bscscan.com/tx/<hash>` que a transferência de **~0,092 USDT** para
+`0x9041…3c1F` está na aba **ERC-20 Tokens Transferred**. A cotação firme diz
+que o calldata foi montado com ela; o explorador diz se ela liquidou.
 
 ---
+
+## O caminho até aqui — quatro defeitos empilhados, e três hipóteses minhas erradas
+
+| quando | o que impedia | onde estava |
+|---|---|---|
+| 03:51 | a taxa nunca era pedida na cotação FIRME | `fetchZeroXQuote` não chamava `aplicarTaxa` |
+| 04:49 | a troca nem assinava | `assertTrusted` tratava alvo ausente como alvo malformado |
+| 05:41 | volume $0 no painel | `ExecuteSwap` nunca passava `valueUsd` ao histórico |
+| — | trocas reais contadas como sonda | painel de receita lia `NULL` como `0` |
+
+⚠️ **E EU PERSEGUI TRÊS CAUSAS ERRADAS ANTES DA CERTA** — "o 0x não retém em
+token nativo", "é a direção do par", "é a conta do 0x". As três partiam da
+mesma premissa falsa: *os parâmetros foram enviados e o 0x recusou*. **Nenhum
+parâmetro foi enviado.** Eu estava depurando a resposta de uma pergunta que
+nunca foi feita, e cada hipótese custou um swap do dono, de madrugada.
+
+O que quebrou o ciclo não foi pensar melhor — foi **gravar o que mandamos**
+(`taxaTokenPedido`) ao lado do que voltou (`taxaRespostaCrua`). Com os dois no
+mesmo evento, "não pedimos" parou de ter a mesma cara de "pediram e recusaram".
 
 ## Pré-voo — 3 minutos, sem gastar nada
 

@@ -7,7 +7,7 @@
 
 | Doc | O que é |
 |-----|---------|
-| `INVARIANTES-DE-MEDICAO.md` | **Ler ANTES de cada fase.** As 19 regras que qualquer medição respeita, cada uma com a cicatriz que a gerou |
+| `INVARIANTES-DE-MEDICAO.md` | **Ler ANTES de cada fase.** As 20 regras que qualquer medição respeita, cada uma com a cicatriz que a gerou |
 | `RUNBOOK.md` | Env vars, crons, playbooks de incidente |
 | `ARQUITETURA-IA.md` | Arquitetura completa dos agentes A/B/torneio/radar (+ Anexos) |
 | `AUDITORIA-GERAL.md` | Notas por área + achados + melhorias recomendadas |
@@ -18,7 +18,7 @@
 | `PLANO-MESTRE.md` | Roadmap de lançamento (fases A-E, NFT, Colosseum) |
 | `NFT-BRIEFING.md` | Supply/preços/decisões da coleção (aguarda §7 do founder) |
 | `TESTE-DINHEIRO-REAL.md` | Protocolo do teste com dinheiro real (pós-11/07) |
-| `TESTE-DA-TAXA-EVM.md` | 🟡 **SWAP FEITO 11/08** — a troca de US$ 20 que prova que a taxa da plataforma CHEGA na carteira. Sem ela, a Fase 9 está construída e não comprovada |
+| `TESTE-DA-TAXA-EVM.md` | 🟡 **AGREGADOR OK 11/08** — a troca de US$ 20 que prova que a taxa da plataforma CHEGA na carteira. Sem ela, a Fase 9 está construída e não comprovada |
 | `GOLDEN-SET.md` | Cenários de avaliação de prompt (executar pós-crédito) |
 | `ANALISE-DADOS-01.md` | Baseline da 1ª leva do flywheel (28/06→01/07) + hipóteses H1-H4 |
 | `ANALISE-DADOS-02.md` | Maturação da safra 01: Agent A net POSITIVO + a lição da inversão (H1/H2 teriam sido overfit) |
