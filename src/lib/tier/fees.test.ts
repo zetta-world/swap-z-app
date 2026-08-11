@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   TIER_FEE_BPS, taxaPct, receitaUsd, equilibrioMensalUsd,
-  destinatarioDaTaxa, bpsEfetivos, CARTEIRA_TAXA_EVM, CARTEIRA_TAXA_SOLANA, CONTA_TAXA_SOLANA,
+  destinatarioDaTaxa, bpsEfetivos, CARTEIRA_TAXA_EVM, CARTEIRA_TAXA_SOLANA, CONTA_TAXA_SOLANA, MOTIVOS_SOLANA_SEM_TAXA,
 } from "@/lib/tier/fees";
 import { getAddress, isAddress } from "viem";
 import type { Tier } from "@/lib/tier/types";
@@ -115,6 +115,18 @@ describe("a carteira que recebe", () => {
   it("a carteira Solana está registrada e é válida", () => {
     expect(CARTEIRA_TAXA_SOLANA).toBe("EWPtaW726VUcs2DA7q73b9vAJyyXJLynE8pH6TZGvd5L");
     expect(CARTEIRA_TAXA_SOLANA.length).toBeGreaterThanOrEqual(32);
+  });
+
+  /**
+   * ⚠️ A DECISÃO FICA ESCRITA, não implícita. "Solana sem taxa" tem que ser
+   * legível como ESCOLHA com motivos, senão daqui a um mês alguém lê como
+   * pendência e liga sem saber o que está desligando junto.
+   */
+  it("os motivos da Solana sem taxa estão registrados", () => {
+    expect(MOTIVOS_SOLANA_SEM_TAXA.length).toBe(4);
+    const juntos = MOTIVOS_SOLANA_SEM_TAXA.join(" ");
+    expect(juntos).toContain("50 bps");     // o piso que quebra a escada
+    expect(juntos).toContain("gás");        // o benefício que se perde
   });
 
   it("mas a CONTA de token ainda não existe, então Solana não cobra", () => {

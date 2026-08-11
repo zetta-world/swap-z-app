@@ -121,18 +121,46 @@ export const CARTEIRA_TAXA_EVM = "0x904126D219dC6c1f7c019303EC743Ad45F473c1F";
 export const CARTEIRA_TAXA_SOLANA = "EWPtaW726VUcs2DA7q73b9vAJyyXJLynE8pH6TZGvd5L";
 
 /**
- * A CONTA DE TOKEN que a Jupiter recebe. Ainda não existe.
+ * ⚠️ SOLANA SEM TAXA — POR DECISÃO, NÃO POR FALTA DE ENDEREÇO (11/08).
  *
- * ⚠️ POR QUE NÃO É A CARTEIRA ACIMA. Uma ATA é derivada de (dona, mint) e
- * precisa estar CRIADA na rede. Derivá-la é determinístico; garantir que
- * exista, não — e uma conta não criada faz o swap falhar na hora de reter.
+ * A carteira existe e está registrada acima. O que não existe é a conta de
+ * token, e a decisão de não criá-la agora foi tomada com QUATRO motivos, todos
+ * conferidos na documentação oficial da Jupiter:
  *
- * Enquanto este campo for null, `bpsEfetivos(..., "solana")` devolve 0 e a
- * Jupiter não recebe parâmetro nenhum. A ausência é DECLARADA: a carteira da
- * dona já está registrada acima, então isto não é "esquecemos o endereço", é
- * "falta a conta que a Jupiter exige".
+ * 1. ⚠️ O PISO DE 50 bps QUEBRA A ESCADA. O `referralFee` aceita 50-255 bps.
+ *    Nossos degraus de `trader` (25) e `pilot` (10) ficam ABAIXO do mínimo.
+ *    Cobrar 50 na Solana faria o Pilot pagar 5× o que paga em EVM — a escada
+ *    diz "plano melhor paga menos", e isso a contradiz na cara do cliente.
+ *
+ * 2. ⚠️ LIGAR A TAXA TIRA O GÁS PATROCINADO DO USUÁRIO. A documentação de
+ *    gasless é explícita: a subvenção automática *"does not fire when
+ *    `referralAccount` and `referralFee` are set"*. Hoje quem tem menos de
+ *    0,01 SOL num swap acima de ~$10 tem o gás pago pela Jupiter. Cobrar 0,5%
+ *    custaria ao usuário MAIS que 0,5% — e justamente ao usuário novo, que é
+ *    quem menos tem SOL.
+ *
+ * 3. A Jupiter aparentemente RETÉM 20% da taxa de integração (visto num deck,
+ *    não no spec — marcado como A CONFERIR). Se for verdade, 1% cobrado vira
+ *    0,8% recebido.
+ *
+ * 4. E o app roda na API SEM CHAVE (`lite-api`, 0,5 req/s). A própria Jupiter
+ *    recomenda chave para produção. Cobrar taxa de cliente enquanto se depende
+ *    do nível gratuito é frágil na ordem errada.
+ *
+ * ⚠️ O QUE ISTO NÃO É: não é "esquecemos de configurar". Ligar depois é uma
+ * linha — preencher este campo com uma ATA criada. O que está registrado aqui
+ * é o PORQUÊ de não estar ligado, para que a tela de amanhã diga "decidimos"
+ * em vez de "falta".
  */
 export const CONTA_TAXA_SOLANA: string | null = null;
+
+/** Os motivos, para quem lê a tela e não o código. */
+export const MOTIVOS_SOLANA_SEM_TAXA = [
+  "o piso de 50 bps da Jupiter é maior que a taxa dos planos trader (25) e pilot (10)",
+  "ligar a taxa desliga o gás patrocinado da Jupiter para quem tem pouco SOL",
+  "a Jupiter aparentemente retém 20% da taxa de integração (a conferir no spec)",
+  "o app usa a API sem chave (0,5 req/s), que a própria Jupiter não recomenda para produção",
+] as const;
 
 /**
  * ⚠️ A TRAVA DO CAMINHO DO DINHEIRO: sem destinatário para AQUELA cadeia,

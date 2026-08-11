@@ -2255,8 +2255,39 @@ não castigo descoberto depois.
 diferentes: a primeira diz "medimos e não cobramos", a segunda não diz nada. Há
 teste com mutação — esconder a linha quando a taxa é zero reprova.
 
-**Pendente:** confirmar o formato que a Jupiter exige hoje (o mecanismo mudou
-entre versões, e a rede está bloqueada neste ambiente) e criar a ATA.
+### Solana SEM TAXA — por decisão, não por falta de endereço (11/08)
+
+A carteira existe e está registrada. O que não existe é a conta de token, e a
+decisão de não criá-la agora tem **quatro motivos**, três deles conferidos na
+documentação oficial que o dono trouxe:
+
+**1. ⚠️ O piso de 50 bps quebra a escada.** O `referralFee` aceita **50-255
+bps**. Nossos degraus de `trader` (25) e `pilot` (10) ficam **abaixo do
+mínimo**. Cobrar 50 na Solana faria o Pilot pagar **5×** o que paga em EVM — a
+escada promete *"plano melhor paga menos"*, e isso a contradiz na cara do
+cliente.
+
+**2. ⚠️ Ligar a taxa TIRA o gás patrocinado do usuário.** A documentação de
+gasless é explícita: a subvenção automática *"does not fire when
+`referralAccount` and `referralFee` are set"*. Hoje, quem tem menos de 0,01 SOL
+num swap acima de ~$10 tem o gás pago pela Jupiter. Cobrar 0,5% custaria ao
+usuário **mais que 0,5%** — e justamente ao usuário novo, que é quem menos tem
+SOL.
+
+**3. A Jupiter aparentemente retém 20% da taxa.** Visto no deck, **não** no
+spec — marcado como A CONFERIR. Se for verdade, 1% cobrado vira 0,8% recebido.
+
+**4. O app roda na API sem chave** (`lite-api`, 0,5 req/s), que a própria
+Jupiter não recomenda para produção. Cobrar taxa de cliente dependendo do nível
+gratuito é frágil na ordem errada.
+
+**⚠️ O que isto NÃO é:** não é *"esquecemos de configurar"*. Ligar depois é uma
+linha — preencher `CONTA_TAXA_SOLANA` com uma ATA criada. O que está registrado
+é o **porquê** de não estar ligado, com teste exigindo que os motivos existam,
+para que a leitura de amanhã seja *"decidimos"* e não *"falta"*.
+
+**Nada disso afeta a EVM**, onde a escada inteira funciona e o valor chega
+integral.
 
 ---
 
@@ -2310,6 +2341,6 @@ Traduzido em regra:
 | 6 · DEX ↔ CEX | 🟡 **2ª rodada 09/08** — MORTA, mediana −0,32%; 3 defeitos corrigidos, falta reconfirmar |
 | 7 · Automação por API | 🟢 **pronta e FECHADA 09/08** — chave verificada antes de ir para o servidor; trava nas 3 portas; carteiras piloto para teste com dinheiro real; os 3 kill-switches da plataforma finalmente lidos |
 | 8 · Cinzas restantes | 🟡 **8.2 rodada 10/08** — C9 e C10 batem o índice PERDENDO dinheiro; o caixa ganhou das duas (invariante nº 18). Falta reconfirmar |
-| 9 · Receita | 🟡 **9.2 — cobrança LIGADA nas EVM 11/08** (0x + LI.FI). Solana desligada: falta conta de token. Falta a divulgação na tela de swap |
+| 9 · Receita | 🟢 **9.2 concluída 11/08** — cobrança nas EVM com divulgação na tela. Solana SEM taxa por decisão, com 4 motivos registrados |
 
 Atualizar este quadro a cada entrega — regra da casa.
