@@ -18,6 +18,18 @@ export const dynamic = "force-dynamic";
  * ⚠️ E O TRÁFEGO DE SONDA SAI DA CONTA. O banco de ataque grava operações com
  * `volume_usd = 0` de propósito; contá-las como volume de cliente inflaria a
  * amostra com o nosso próprio teste.
+ *
+ * ⚠️ MAS SONDA E VOLUME NÃO REGISTRADO SÃO COISAS DIFERENTES (11/08).
+ *
+ * O filtro era `Number(r.volume_usd ?? 0) > 0`, e ele tratava `NULL` como
+ * zero. Só que TODA troca DEX entrava com `volume_usd = NULL` — o
+ * `ExecuteSwap` nunca passava `valueUsd` ao histórico, então o valor em dólar
+ * morria antes de chegar ao livro. Resultado: as trocas de cliente de verdade
+ * eram contadas como "sonda do banco de ataque" e sumiam da conta.
+ *
+ * Três situações com a mesma cara: zero declarado (sonda), zero por falta de
+ * registro (troca real sem volume) e volume de verdade. A do meio é a única
+ * que pede alguma coisa — ela diz que o livro tem um buraco.
  */
 
 /** Faixas declaradas. A primeira é a nossa realidade; as outras, cenários. */
@@ -30,6 +42,8 @@ export async function GET(): Promise<NextResponse> {
 
   let real = { operacoes: 0, volumeUsd: 0, desde: null as string | null, ate: null as string | null };
   let sonda = 0;
+  /** Operações confirmadas cujo volume nunca foi gravado. Buraco no livro. */
+  let semVolume = 0;
   let falha: string | null = null;
 
   if (db) {
@@ -40,9 +54,14 @@ export async function GET(): Promise<NextResponse> {
         .eq("status", "confirmed");
       if (error) throw new Error(error.message);
       const linhas = data ?? [];
-      // ⚠️ Volume zero é sonda (o banco de ataque grava assim). Fora da conta.
-      const reais = linhas.filter((r) => Number(r.volume_usd ?? 0) > 0);
-      sonda = linhas.length - reais.length;
+      /**
+       * ⚠️ TRÊS BALDES, NÃO DOIS. `null` é ausência de medição e sai por uma
+       * porta com nome; `0` declarado é sonda e sai por outra. Somar os dois
+       * como "sonda" fazia troca de cliente virar tráfego de teste na tela.
+       */
+      const reais     = linhas.filter((r) => r.volume_usd != null && Number(r.volume_usd) > 0);
+      semVolume       = linhas.filter((r) => r.volume_usd == null).length;
+      sonda           = linhas.length - reais.length - semVolume;
       const datas = reais.map((r) => String(r.created_at)).sort();
       real = {
         operacoes: reais.length,
@@ -73,7 +92,7 @@ export async function GET(): Promise<NextResponse> {
   }));
 
   return NextResponse.json({
-    real, sonda, falha,
+    real, sonda, semVolume, falha,
     receitaRealTetoUsd,
     taxaPorPlano: TIER_FEE_BPS,
     projecao,

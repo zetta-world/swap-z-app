@@ -389,7 +389,22 @@ export default function ExecuteSwap({
         setSolSig(sig);
         setPhase("tx_pending");
         historyId.current = pushHistory({
-          type: "dex_swap", status: "pending",
+          /**
+           * ⚠️ SEM ISTO O SWAP VALE $0 NO PAINEL (11/08).
+           *
+           * `valueUsd` é opcional no tipo, então esquecê-lo não quebrava nada —
+           * só fazia `useOperationSync` mandar `volumeUsd: undefined`, virar
+           * `volume_usd = NULL` em `operations`, e o painel somar zero. TODA
+           * troca DEX desde 13/06 entrou assim: 3 operações, volume $0.
+           *
+           * E o estrago não era só cosmético: o painel 💵 RECEITA calcula a
+           * receita sobre o volume MEDIDO, então nenhuma troca DEX jamais
+           * contribuiu com um centavo para ele. A cobrança podia estar
+           * funcionando perfeitamente que a tela continuaria dizendo zero.
+           *
+           * `notionalUsd` está calculado desde a linha 106 e só faltava viajar.
+           */
+          type: "dex_swap", status: "pending", valueUsd: notionalUsd ?? undefined,
           fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
           toSymbol: toToken.symbol, toChain, route: "jupiter",
           toAmount: String(Number(jupResult.quote.outAmount) / Math.pow(10, toToken.decimals)),
@@ -482,6 +497,7 @@ export default function ExecuteSwap({
         setPhase("tx_pending");
         historyId.current = pushHistory({
           type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
+          valueUsd: notionalUsd ?? undefined,
           fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
           toSymbol: toToken.symbol, toChain, txHash: hash, route: "0x",
           toAmount: String(Number(q.buyAmount) / Math.pow(10, toToken.decimals)),
@@ -533,6 +549,7 @@ export default function ExecuteSwap({
       setPhase("tx_pending");
       historyId.current = pushHistory({
         type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
+        valueUsd: notionalUsd ?? undefined,
         fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
         toSymbol: toToken.symbol, toChain, txHash: hash, route: "lifi",
         toAmount: String(Number(lfQuote.estimate.toAmount) / Math.pow(10, toToken.decimals)),

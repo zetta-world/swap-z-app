@@ -14,7 +14,7 @@ import TerminalPanel from "../TerminalPanel";
 type Tier = "free" | "pro" | "trader" | "pilot";
 interface Dados {
   real: { operacoes: number; volumeUsd: number; desde: string | null; ate: string | null };
-  sonda: number; falha: string | null;
+  sonda: number; semVolume: number; falha: string | null;
   receitaRealTetoUsd: number;
   taxaPorPlano: Record<Tier, number>;
   projecao: Array<{ volumeUsd: number; porPlano: Record<Tier, number> }>;
@@ -68,8 +68,21 @@ export default function ReceitaPanel() {
               ? <>de {data.real.desde.slice(0, 10)} a {data.real.ate?.slice(0, 10)}</>
               : "nenhuma operação com volume registrado"}
             {data.sonda > 0 && (
+              <> · <span style={{ color: "var(--adm-ink-4)" }}>
+                {data.sonda} linha(s) de SONDA fora da conta (volume zero DECLARADO, do banco de ataque)
+              </span></>
+            )}
+            {/* ⚠️ ISTO NÃO É SONDA, E ESSA É A DIFERENÇA QUE FALTAVA (11/08).
+                   Operação de cliente CONFIRMADA cujo volume nunca foi gravado.
+                   Ela estava sendo contada como tráfego de teste e sumindo da
+                   conta — a causa era o `ExecuteSwap` não passar `valueUsd`, e
+                   TODA troca DEX desde 13/06 entrou assim. Fica em âmbar e com
+                   nome porque, ao contrário da sonda, ela PEDE alguma coisa: é
+                   receita que existiu e o livro não sabe medir. */}
+            {data.semVolume > 0 && (
               <> · <span style={{ color: "var(--adm-amber)" }}>
-                {data.sonda} linha(s) de SONDA fora da conta (volume zero, do banco de ataque)
+                ⚠️ {data.semVolume} operação(ões) CONFIRMADAS sem volume gravado — não são sonda,
+                são receita que o livro não consegue medir
               </span></>
             )}
           </div>
