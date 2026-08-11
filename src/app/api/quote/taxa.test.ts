@@ -30,6 +30,34 @@ describe("a taxa só é pedida com destinatário", () => {
     expect(zerox).toContain('params.set("swapFeeRecipient"');
   });
 
+  /**
+   * ⚠️ O TESTE ACIMA PASSOU VERDE ENQUANTO NENHUM SWAP COBRAVA NADA.
+   *
+   * Ele lê o ARQUIVO e acha `params.set("swapFeeBps"` dentro de `aplicarTaxa`.
+   * Só que `aplicarTaxa` era chamada apenas em `fetchZeroXPrice` — a cotação
+   * INDICATIVA, a que a tela usa para mostrar número. A cotação FIRME, que
+   * vira a transação assinada, nunca a chamava.
+   *
+   * Resultado: a taxa aparecia na tela e não existia na transação. Todo swap
+   * desde que a cobrança foi ligada cobrou ZERO, e a suíte inteira dizia que
+   * estava tudo certo — porque provava que o código EXISTIA, nunca que ele
+   * era CHAMADO no caminho que importa.
+   *
+   * Este teste exige a CHAMADA, nas duas funções, uma por uma.
+   */
+  it("as DUAS cotações aplicam a taxa — a indicativa e a FIRME", () => {
+    const corpoDe = (nome: string): string => {
+      const i = zerox.indexOf(`export async function ${nome}(`);
+      expect(i, `${nome} não existe`).toBeGreaterThan(-1);
+      const j = zerox.indexOf("\nexport ", i + 1);
+      return zerox.slice(i, j === -1 ? undefined : j);
+    };
+    expect(corpoDe("fetchZeroXPrice"), "a indicativa perdeu a taxa")
+      .toContain("aplicarTaxa(params, args)");
+    expect(corpoDe("fetchZeroXQuote"), "a FIRME é a que vira transação assinada")
+      .toContain("aplicarTaxa(params, args)");
+  });
+
   it("LI.FI idem", () => {
     expect(lifi).toContain("if ((args.feeBps ?? 0) > 0 && args.feeRecipient)");
   });

@@ -121,11 +121,20 @@ interface QuoteArgs {
 /**
  * O token em que a taxa é retida.
  *
- * ⚠️ O 0X NÃO RETÉM TAXA EM TOKEN NATIVO, e descobrir isso custou dois swaps
- * de verdade (11/08, 04:49 e 04:54). Nos dois o dono comprou BNB nativo na
- * BSC; nos dois mandamos `swapFeeToken` = o endereço do nativo
- * (`0xEeee…EEeE`); e nos dois o 0x devolveu `integratorFee: null` — aceitou a
- * cotação e não reteve nada. **A tela prometia 1% e a cobrança era zero.**
+ * ⚠️ ESTA FUNÇÃO NASCEU DE UMA HIPÓTESE QUE SE PROVOU FALSA, e o comentário
+ * fica para ninguém repetir o caminho.
+ *
+ * Em 11/08 dois swaps compraram BNB nativo e voltaram com `integratorFee:
+ * null`. Eu concluí "o 0x não retém taxa em nativo" e escrevi isto. Errado: a
+ * cotação FIRME nunca mandava parâmetro de taxa nenhum (ver `fetchZeroXQuote`),
+ * então `integratorFee` viria nulo para QUALQUER par — nativo ou não. A prova
+ * chegou no swap das 10:29, que comprou USDT (ERC-20) e também voltou nulo.
+ *
+ * ⚠️ ENTÃO A PREMISSA DAQUI SEGUE NÃO VERIFICADA: não sabemos se o 0x retém em
+ * nativo, porque nunca chegamos a perguntar direito. A função fica porque a
+ * regra que ela implementa é do próprio 0x — `swapFeeToken` tem que ser o de
+ * compra ou o de venda — e escolher entre os dois é correto de qualquer forma.
+ * Se um dia a taxa em nativo funcionar, esta preferência não atrapalha.
  *
  * A regra do 0x é que `swapFeeToken` seja o de COMPRA ou o de VENDA. Então
  * quando o de compra é nativo, sobra o de venda — e é ele que vai.
@@ -212,6 +221,28 @@ export async function fetchZeroXQuote(args: QuoteArgs, apiKey: string): Promise<
     taker:      args.taker,
   });
   if (args.slippageBps) params.set("slippageBps", String(args.slippageBps));
+  /**
+   * ⚠️ ESTA LINHA NÃO EXISTIA, E ERA O DEFEITO INTEIRO (11/08).
+   *
+   * `aplicarTaxa` era chamada só em `fetchZeroXPrice` — a cotação INDICATIVA,
+   * a que a tela usa para mostrar número. A cotação FIRME, que é a que vira a
+   * transação que o usuário assina, nunca mandou `swapFeeBps`,
+   * `swapFeeRecipient` nem `swapFeeToken`.
+   *
+   * Então a taxa aparecia na tela e não existia na transação. Todo swap da
+   * plataforma, desde que a cobrança foi ligada, cobrou ZERO.
+   *
+   * ⚠️ E O TESTE QUE DEVIA PEGAR ISSO PASSAVA VERDE. Ele fazia
+   * `expect(zerox).toContain('params.set("swapFeeBps"')` — leitura do ARQUIVO
+   * inteiro. `aplicarTaxa` contém essas linhas, então o teste dava certo
+   * enquanto ninguém a chamava no caminho que importa. Ele provava que o
+   * código EXISTIA, nunca que ele RODAVA.
+   *
+   * Eu persegui três hipóteses erradas antes desta (token nativo, direção do
+   * par, conta do 0x) porque todas partiam de "os parâmetros foram enviados e
+   * o 0x recusou". Nenhum parâmetro foi enviado.
+   */
+  aplicarTaxa(params, args);
 
   const res = await fetch(`${BASE_URL}/swap/allowance-holder/quote?${params.toString()}`, {
     headers: {
