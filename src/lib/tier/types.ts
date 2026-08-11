@@ -26,11 +26,30 @@ export function tierSatisfies(have: Tier, required: Tier): boolean {
 }
 
 /** Where a cached tier came from — purely informational for now. */
-export type TierSource = "nft" | "subscription" | "admin";
+/**
+ * De onde veio o tier.
+ *
+ * ⚠️ `sem_pass` e `nao_checado` são ESTADOS DIFERENTES, e separá-los foi o
+ * conserto de 11/08: antes os dois viravam `"nft"`, e uma carteira EVM — cuja
+ * checagem nem roda, porque os passes vivem na Solana — ficava registrada como
+ * se tivesse sido olhada e não tivesse passe. Ver `0022_origem_do_tier_honesta`.
+ */
+export type TierSource =
+  | "nft" | "subscription" | "admin"
+  /** A checagem RODOU e a carteira não tem passe. */
+  | "sem_pass"
+  /** A checagem NÃO rodou. Ausência de medição, não ausência de passe. */
+  | "nao_checado";
 
 export interface TierResult {
   tier:   Tier;
-  source: TierSource | "default";
+  /**
+   * ⚠️ `"default"` SAIU DA UNIÃO (11/08). Ele existia porque a coluna do banco
+   * não aceitava um quarto estado, e era ele que virava `"nft"` na gravação —
+   * a mentira que fazia "carteira de outra cadeia" parecer "checamos e não
+   * tem". Agora os dois estados reais têm nome: `sem_pass` e `nao_checado`.
+   */
+  source: TierSource;
   /** Epoch ms when this answer should be re-checked. */
   expiresAt: number;
 }

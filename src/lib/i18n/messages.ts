@@ -1156,6 +1156,10 @@ const en = {
     founderPick:        "Founder pick",
     freeTagline:        "Start free — upgrade whenever you're ready.",
     signInHint:         "Already hold a pass? Sign in to verify your tier.",
+    // ⚠️ Os passes vivem na SOLANA. Sem esta linha, quem conecta uma carteira
+    // EVM fica no Free sem nenhuma pista do porquê — foi o que aconteceu com o
+    // dono em 11/08, e a tela não tinha como explicar.
+    solanaOnly:         "Access passes live on <b>Solana</b>. Connect a Solana wallet to have your tier recognized — an EVM wallet cannot hold a pass, so it always reads as Free.",
     adminBadge:         "Admin mode",
     adminHint:          "choose any plan to test the whole platform as that tier.",
     adminUse:           "Use this plan",
@@ -2785,6 +2789,7 @@ const pt: Schema = {
     founderPick:        "Escolha Founder",
     freeTagline:        "Comece grátis — faça upgrade quando quiser.",
     signInHint:         "Já tem um pass? Assine pra verificar seu tier.",
+    solanaOnly:         "Os passes vivem na <b>Solana</b>. Conecte uma carteira Solana para o seu plano ser reconhecido — uma carteira EVM não tem como ter um pass, então ela sempre aparece como Free.",
     adminBadge:         "Modo admin",
     adminHint:          "escolha qualquer plano pra testar a plataforma inteira como aquele tier.",
     adminUse:           "Usar este plano",
@@ -4401,6 +4406,7 @@ const es: Schema = {
     founderPick:        "Elección Founder",
     freeTagline:        "Empieza gratis — mejora cuando quieras.",
     signInHint:         "¿Ya tienes un pass? Inicia sesión para verificar tu tier.",
+    solanaOnly:         "Los pases viven en <b>Solana</b>. Conecta una cartera Solana para que se reconozca tu plan — una cartera EVM no puede tener un pase, así que siempre aparece como Free.",
     adminBadge:         "Modo admin",
     adminHint:          "elige cualquier plan para probar toda la plataforma como ese tier.",
     adminUse:           "Usar este plan",
@@ -6017,6 +6023,7 @@ const zh: Schema = {
     founderPick:        "创始人之选",
     freeTagline:        "免费开始 — 随时升级。",
     signInHint:         "已持有通行证？登录以验证您的等级。",
+    solanaOnly:         "通行证存在于 <b>Solana</b> 上。请连接 Solana 钱包以识别你的等级——EVM 钱包无法持有通行证，因此始终显示为 Free。",
     adminBadge:         "管理员模式",
     adminHint:          "选择任意方案，以该等级测试整个平台。",
     adminUse:           "使用此方案",
