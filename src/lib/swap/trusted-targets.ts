@@ -65,3 +65,36 @@ export function checkSwapTarget(chainId: number, to: string | null | undefined):
 export function checkSwapSpender(chainId: number, spender: string | null | undefined): TrustCheck {
   return check(SPENDERS, chainId, spender, "spender");
 }
+
+/**
+ * A trava que o `ExecuteSwap` chama antes de assinar qualquer coisa.
+ *
+ * ⚠️ OS DOIS ARGUMENTOS SÃO OPCIONAIS — `undefined` significa "não confere
+ * isto", e não "confere isto, que veio vazio".
+ *
+ * Ela morava dentro do `ExecuteSwap.tsx` e por isso não tinha teste. Em
+ * 11/08 01:54 o `to` não tinha o `!= null` que o `spender` tinha, e toda troca
+ * que VENDE ERC-20 numa cadeia com lista configurada morria em
+ * `untrusted swap target — target address malformed` — porque a etapa de
+ * aprovação passa `undefined` no alvo de propósito, para conferir só o
+ * gastador. Vender token nativo passava (nativo não aprova nada), então o
+ * defeito atingia metade das trocas e nenhum teste.
+ *
+ * ⚠️ ISTO NÃO SUBSTITUI a recusa de calldata sem `to` nos pontos de
+ * assinatura: lá o alvo chega preenchido e é conferido de verdade. Aqui o
+ * `undefined` é a pergunta que não foi feita.
+ */
+export function assertTrusted(
+  chainId: number,
+  to: string | null | undefined,
+  spender: string | null | undefined,
+): void {
+  if (to != null) {
+    const tgt = checkSwapTarget(chainId, to);
+    if (tgt.configured && !tgt.ok) throw new Error(`untrusted swap target — ${tgt.reason}`);
+  }
+  if (spender != null) {
+    const sp = checkSwapSpender(chainId, spender);
+    if (sp.configured && !sp.ok) throw new Error(`untrusted approval spender — ${sp.reason}`);
+  }
+}

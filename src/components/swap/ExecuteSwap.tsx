@@ -22,24 +22,13 @@ import { CHAIN_BY_ID } from "@/lib/chains";
 import type { ZxQuoteResponse } from "@/lib/api/zerox";
 import { ZEROX_CHAIN_IDS } from "@/lib/api/zerox";
 import { LIFI_CHAIN_IDS } from "@/lib/api/lifi";
-import { checkSwapTarget, checkSwapSpender } from "@/lib/swap/trusted-targets";
+import { assertTrusted } from "@/lib/swap/trusted-targets";
 
 // Bound the 0x approval to the exact sell amount by default (blast-radius:
 // only this swap, not the wallet's whole token balance forever). Matches what
 // the LiFi path already does. Set NEXT_PUBLIC_ZEROX_INFINITE_APPROVAL=true to
 // restore the old persistent-approval UX after pinning a spender allow-list.
 const ZEROX_INFINITE_APPROVAL = process.env.NEXT_PUBLIC_ZEROX_INFINITE_APPROVAL === "true";
-// Abort a swap whose spender/target isn't allow-listed — but ONLY when the
-// owner has configured a list for this chain (checkSwap*.configured). Default
-// (no env) = no-op, so live swaps are unchanged. Throws to stop signing.
-function assertTrusted(chainId: number, to: string | null | undefined, spender: string | null | undefined) {
-  const tgt = checkSwapTarget(chainId, to);
-  if (tgt.configured && !tgt.ok) throw new Error(`untrusted swap target — ${tgt.reason}`);
-  if (spender != null) {
-    const sp = checkSwapSpender(chainId, spender);
-    if (sp.configured && !sp.ok) throw new Error(`untrusted approval spender — ${sp.reason}`);
-  }
-}
 import type { LfQuote } from "@/lib/api/lifi";
 import type { JupQuote, JupSwapResponse } from "@/lib/api/jupiter";
 import type { QuoteSource } from "@/lib/api/quote-types";

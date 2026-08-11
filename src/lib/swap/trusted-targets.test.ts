@@ -52,3 +52,74 @@ describe("trusted-targets — the aggregator-drain allow-list (pentest 28/07)", 
     expect(checkSwapTarget(1, null).ok).toBe(false);
   });
 });
+
+/**
+ * ⚠️ A CICATRIZ DE 11/08, 01:54 — o dono clicou em trocar USDT por BNB na BSC
+ * e a tela devolveu `untrusted swap target — target address malformed`. A
+ * trava não estava errada sobre o alvo: **ninguém tinha pedido para conferir
+ * alvo nenhum**.
+ *
+ * A etapa de aprovação de ERC-20 chama `assertTrusted(chain, undefined,
+ * spender)` de propósito, para conferir só o gastador. O `spender` tinha
+ * `if (spender != null)`; o `to` não tinha o par disso. Com a lista
+ * configurada, `undefined` não caía no ramo "não enforçado" — caía no teste de
+ * formato e falhava.
+ *
+ * Duas situações com a mesma cara: "não me pediram para checar o alvo" e "o
+ * alvo veio vazio" chegavam as duas como `undefined`.
+ *
+ * ⚠️ E O DEFEITO ATINGIA METADE DAS TROCAS. Vender token NATIVO não precisa de
+ * aprovação, então essa linha nunca rodava — por isso o primeiro swap
+ * (BNB→USDT) passou e o segundo (USDT→BNB) morreu. Vender qualquer ERC-20
+ * numa cadeia com lista configurada estava quebrado, e nenhum teste via,
+ * porque a trava morava dentro do componente.
+ */
+describe("assertTrusted — `undefined` é pergunta não feita, não resposta vazia", () => {
+  const CFG = {
+    NEXT_PUBLIC_ALLOWED_SWAP_TARGETS:  `56:${ROUTER_1}`,
+    NEXT_PUBLIC_ALLOWED_SWAP_SPENDERS: `56:${SPENDER_1}`,
+  };
+
+  it("a etapa de aprovação passa sem alvo, e isso NÃO é alvo malformado", async () => {
+    const { assertTrusted } = await load(CFG);
+    expect(() => assertTrusted(56, undefined, SPENDER_1)).not.toThrow();
+    expect(() => assertTrusted(56, null, SPENDER_1)).not.toThrow();
+  });
+
+  it("e continua barrando o gastador errado na MESMA chamada sem alvo", async () => {
+    const { assertTrusted } = await load(CFG);
+    expect(() => assertTrusted(56, undefined, ATTACKER)).toThrow(/untrusted approval spender/);
+  });
+
+  /** ⚠️ A trava não afrouxou: alvo PRESENTE e fora da lista continua barrado. */
+  it("alvo presente e fora da lista continua barrado", async () => {
+    const { assertTrusted } = await load(CFG);
+    expect(() => assertTrusted(56, ATTACKER, undefined)).toThrow(/untrusted swap target/);
+    expect(() => assertTrusted(56, ROUTER_1, undefined)).not.toThrow();
+  });
+
+  /**
+   * ⚠️ ALVO PRESENTE E VAZIO É OUTRA COISA — string vazia é alguém dizendo "o
+   * alvo é isto", e isto não é endereço. Continua barrado, senão a correção
+   * teria trocado um defeito por um buraco.
+   */
+  it("string vazia NÃO é `não confere` — é alvo malformado, e barra", async () => {
+    const { assertTrusted } = await load(CFG);
+    expect(() => assertTrusted(56, "", undefined)).toThrow(/target address malformed/);
+    expect(() => assertTrusted(56, "0xabc", undefined)).toThrow(/target address malformed/);
+  });
+
+  it("sem lista configurada, nada barra — o padrão continua no-op", async () => {
+    const { assertTrusted } = await load({
+      NEXT_PUBLIC_ALLOWED_SWAP_TARGETS: undefined,
+      NEXT_PUBLIC_ALLOWED_SWAP_SPENDERS: undefined,
+    });
+    expect(() => assertTrusted(56, ATTACKER, ATTACKER)).not.toThrow();
+  });
+
+  /** A cadeia sem lista não herda a lista de outra cadeia. */
+  it("cadeia sem lista própria não é enforçada", async () => {
+    const { assertTrusted } = await load(CFG);
+    expect(() => assertTrusted(1, ATTACKER, ATTACKER)).not.toThrow();
+  });
+});
