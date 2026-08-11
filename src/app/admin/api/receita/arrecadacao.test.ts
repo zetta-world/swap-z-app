@@ -119,3 +119,31 @@ describe("arrecadação pequena não pode ser arredondada até sumir", () => {
     expect(painel).toMatch(/n < 1 \? `\$\$\{n\.toFixed\(4\)\}`/);
   });
 });
+
+
+describe("arrecadar SEM saber quanto era devido não é conferir", () => {
+  /**
+   * ⚠️ O SWAP DAS 11:17 ARRECADOU E GRAVOU `platform_fee_bps = NULL`.
+   *
+   * O valor retido estava lá — $0,0918 sobre $9,187 — mas os pontos-base
+   * pedidos não viajaram: o campo existia no tipo, existia no sync, e o
+   * `ExecuteSwap` nunca o preenchia porque só lia `body.result` da cotação e
+   * descartava `body.taxa`.
+   *
+   * Sem os bps, o livro responde "arrecadamos algo" e não "arrecadamos o
+   * certo" — e a diferença entre 1,00% e 0,10% num plano `free` seria
+   * invisível. Retenção sem a régua que a julga é a invariante nº 5: número
+   * sem o `n` que o sustenta.
+   */
+  const exec = semComentarios(readFileSync("src/components/swap/ExecuteSwap.tsx", "utf8"));
+
+  it("o cliente guarda os bps que a cotação declarou", () => {
+    expect(exec).toContain("taxaBpsRef");
+    expect(exec).toMatch(/body\?\.taxa\?\.bps/);
+  });
+
+  it("e eles viajam junto com o valor retido", () => {
+    expect(exec).toMatch(/platformFeeBps:\s+taxaBpsRef\.current/);
+    expect(sync).toMatch(/platformFeeBps:\s+e\.platformFeeBps/);
+  });
+});

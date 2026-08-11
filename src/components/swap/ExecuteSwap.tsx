@@ -82,6 +82,18 @@ export default function ExecuteSwap({
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [zxQuote, setZxQuote] = useState<ZxQuoteResponse | null>(null);
+  /**
+   * ⚠️ OS BPS QUE PEDIMOS, para a arrecadação poder ser CONFERIDA (Fase 11).
+   *
+   * O `integratorFee` diz quanto foi retido; sozinho ele não diz se o valor
+   * BATE com o plano de quem operou. Guardar 0,0918 sem guardar "pedimos 100
+   * bps" responde "arrecadamos algo" e não "arrecadamos o certo" — e a
+   * primeira pergunta é a que não protege ninguém.
+   *
+   * O campo já vinha na resposta de `/api/quote` (`body.taxa`) e era
+   * descartado aqui: o cliente só lia `body.result`.
+   */
+  const taxaBpsRef = useRef<number | null>(null);
   const zxQuoteAtRef = useRef(0);
   const [lfQuote, setLfQuote] = useState<LfQuote | null>(null);
   const [jupResult, setJupResult] = useState<{ quote: JupQuote; swap: JupSwapResponse } | null>(null);
@@ -214,6 +226,7 @@ export default function ExecuteSwap({
           throw new Error(body.message || body.error || `HTTP ${res.status}`);
         }
 
+        taxaBpsRef.current = typeof body?.taxa?.bps === "number" ? body.taxa.bps : null;
         if (source === "0x") {
           const q = body.result as ZxQuoteResponse;
           setZxQuote(q);
@@ -322,6 +335,7 @@ export default function ExecuteSwap({
     if (!res.ok || !body.ok) {
       throw new Error(body.message || body.error || `HTTP ${res.status}`);
     }
+    taxaBpsRef.current = typeof body?.taxa?.bps === "number" ? body.taxa.bps : null;
     const q = body.result as ZxQuoteResponse;
     setZxQuote(q);
     zxQuoteAtRef.current = Date.now();
@@ -538,6 +552,7 @@ export default function ExecuteSwap({
           platformFeeAmount: q.fees?.integratorFee?.amount,
           platformFeeToken:  q.fees?.integratorFee?.token,
           platformFeeUsd:    arrecadacao(q.fees?.integratorFee?.amount, q.fees?.integratorFee?.token),
+          platformFeeBps:    taxaBpsRef.current ?? undefined,
           fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
           toSymbol: toToken.symbol, toChain, txHash: hash, route: "0x",
           toAmount: String(Number(q.buyAmount) / Math.pow(10, toToken.decimals)),
