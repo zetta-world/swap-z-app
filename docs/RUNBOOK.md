@@ -97,6 +97,28 @@ aposentado; `deepseek-v4-flash` é o swap rápido/barato) · `kimi-k2.6` ·
 | `AI_CB_COOLDOWN_MIN` | Cooldown do breaker | `60` min |
 | `ALERT_ERROR_SPIKE` / `ALERT_SEC_FLOOD` / `ALERT_LARGE_OP_USD` | Limiares de alerta | `10` / `5` / `5000` |
 
+### Acesso ao painel admin
+
+Três origens dão acesso, e **qualquer uma basta**:
+
+| origem | como se concede | quando usar |
+|---|---|---|
+| `ADMIN_WALLETS` (env) | vírgula-separada, no Vercel | a que sobrevive a banco vazio |
+| tabela `platform_admins` | pelo próprio painel | o caminho normal |
+| `tier_cache.source='admin'` | legado | quem foi cadastrado antes da tabela existir |
+
+⚠️ **Quem decide é `requireAdmin`, e só ele.** O middleware confere apenas se
+existe SESSÃO válida — não confere permissão. Ele já decidiu no passado, com
+base só na env, e isso trancou o dono para fora do próprio painel: as
+concessões por `platform_admins` eram gravadas, mostravam sucesso e nunca
+valiam nada, porque o 404 acontecia antes de `requireAdmin` rodar.
+Ver `src/lib/admin/portao.test.ts` — há teste exigindo que o middleware não
+volte a decidir.
+
+⚠️ **Negativa é 404, nunca 403**, e fica registrada como `admin_access_denied`.
+Se alguém legítimo levar 404, procure esse evento no painel de segurança: ele
+diz qual carteira tentou.
+
 ### Taxa da plataforma (Fase 9)
 | Var | O que é | Default |
 |-----|---------|---------|
