@@ -70,8 +70,14 @@ export default function TierHubPanel() {
       {!d && !erro && <div className="adm-shimmer" style={{ height: 200 }} />}
 
       {d && (
-        <>
-          {/* ── AS TRÊS FAIXAS ─────────────────────────────────────── */}
+        <div className="hub-corpo-painel">
+          {/* ── AS TRÊS FAIXAS ─────────────────────────────────────
+
+                 ⚠️ CARTA HORIZONTAL, não vertical. A primeira versão usava
+                 arte em 4:3 e empilhava em duas colunas — a terceira faixa
+                 quebrava para outra fileira e saía cortada pela dobra. Numa
+                 tela que ninguém rola, isso escondia um terço do produto.
+                 Miniatura + dados ao lado cabe as três em ~240px. */}
           <div className="hub-faixas">
             {d.faixas.map((f, i) => (
               <article
@@ -80,29 +86,35 @@ export default function TierHubPanel() {
                 onMouseEnter={() => setFoco(i)}
               >
                 <div className="hub-arte">
-                  <Image src={f.carta} alt={`Passe ${f.deus}`} fill sizes="220px"
+                  <Image src={f.carta} alt={`Passe ${f.deus}`} fill sizes="58px"
                          style={{ objectFit: "cover" }} />
                 </div>
-                <div className="hub-corpo">
-                  <span className="hub-runa" aria-hidden>{f.runa}</span>
-                  <h4>{f.deus}</h4>
-                  <p className="hub-epiteto">{f.epiteto} · {f.tier}</p>
 
+                <div className="hub-corpo">
+                  <h4>
+                    <span className="hub-runa" aria-hidden>{f.runa}</span>
+                    {f.deus}
+                  </h4>
+                  <p className="hub-epiteto">{f.epiteto} · {f.tier}</p>
+                  {/* ⚠️ OS DOIS PREÇOS. São ofertas diferentes — o passe é
+                      compra única de 3 anos, o Hird é mensal recorrente — e
+                      mostrar só uma escondia metade do produto. */}
+                  <p className="hub-precos">
+                    <span>passe <b>{usd(f.precoUsd)}</b></span>
+                    <span className="hird">Hird <b>{usd(f.mensalUsd)}</b>/mês</span>
+                  </p>
+                </div>
+
+                <div className="hub-conta">
                   {/* ⚠️ O NÚMERO GRANDE É O DE COMPRAS. Ver a nota do topo:
-                         contagem sem origem vira cortesia lida como tração. */}
+                      contagem sem origem vira cortesia lida como tração. */}
                   <strong className={f.compradas > 0 ? "vendeu" : "zerado"}>
                     {f.compradas}
                   </strong>
-                  <span className="hub-rot">passe(s) COMPRADO(s)</span>
-
+                  <span className="hub-rot">comprados</span>
                   {f.cortesia > 0 && (
-                    <span className="hub-cortesia">
-                      + {f.cortesia} cortesia — concedida por nós, não é venda
-                    </span>
+                    <span className="hub-cortesia">+{f.cortesia} cortesia</span>
                   )}
-                  <span className="hub-preco">
-                    {usd(f.precoUsd)} · Hird {usd(f.mensalUsd)}/mês
-                  </span>
                 </div>
               </article>
             ))}
@@ -140,7 +152,7 @@ export default function TierHubPanel() {
               ))}
             </ul>
           )}
-        </>
+        </div>
       )}
     </TerminalPanel>
   );

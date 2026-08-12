@@ -291,3 +291,39 @@ describe("a paleta é a declarada, não só uma paleta legível", () => {
     expect(bloco + geral).toMatch(/font-size|font-weight/);
   });
 });
+
+/**
+ * ⚠️ CABE NA TELA — a regra que o dono deu olhando o painel (12/08).
+ *
+ * O hub de planos abriu com cartas verticais, a terceira faixa quebrou para
+ * uma segunda fileira e saiu cortada pela dobra. A resposta dele foi a regra
+ * geral: "tudo tem que caber na tela sem precisar arrastar, para os lados,
+ * para cima ou para baixo".
+ *
+ * Numa tela de parede ninguém rola. O que ficou embaixo da dobra não existe
+ * para quem olha — e um painel que esconde um terço do produto por layout é
+ * da mesma família dos que escondiam número por vocabulário.
+ */
+describe("nenhum painel empurra a página", () => {
+  const css = readFileSync("src/app/admin/admin.css", "utf8");
+
+  it("o painel tem teto de altura", () => {
+    expect(css).toMatch(/\.adm-panel\s*\{[^}]*max-height:\s*\d+vh/);
+  });
+
+  /**
+   * E o corpo rola DENTRO da caixa — senão o teto só cortaria o conteúdo.
+   *
+   * ⚠️ CONFERE TODOS OS BLOCOS, não o primeiro. A versão inicial deste teste
+   * usava `match` simples e casou o bloco de DENSIDADE (`line-height`), que
+   * vem antes no arquivo — reprovou um CSS correto por ler a declaração
+   * errada. É a terceira vez nesta sessão que uma asserção sobre texto-fonte
+   * encontra um vizinho parecido em vez do alvo: quando a regra pode estar
+   * declarada em mais de um lugar, some todos antes de julgar.
+   */
+  it("e o corpo rola por dentro, em vez de cortar", () => {
+    const blocos = css.match(/\.adm-panel-body\s*\{[^}]*\}/g)?.join("\n") ?? "";
+    expect(blocos).toContain("overflow: auto");
+    expect(blocos).toContain("min-height: 0");
+  });
+});

@@ -204,6 +204,22 @@
   flex-shrink: 0;
 }
 
+/**
+ * ⚠️ O PAINEL NÃO EMPURRA A PÁGINA (12/08).
+ *
+ * O corpo já rolava por dentro (`overflow: auto`), mas o painel em si crescia
+ * com o conteúdo — então um painel alto esticava a fileira, empurrava os
+ * vizinhos para fora da dobra e obrigava a arrastar a página inteira.
+ *
+ * A regra é do dono, e vale para tudo: **cabe na tela, sem arrastar, em
+ * nenhuma direção.** Numa tela de parede ninguém rola, e o que ficou embaixo
+ * da dobra simplesmente não existe para quem olha.
+ *
+ * O teto é por painel, e a rolagem acontece DENTRO da caixa. É a diferença
+ * entre um painel denso e um painel que sequestra o layout dos outros.
+ */
+.adm-panel { max-height: 78vh; }
+
 .adm-panel-body {
   flex: 1;
   min-height: 0;
@@ -837,83 +853,105 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- * O HUB DE PLANOS — vitrine com contabilidade.
+ * O HUB DE PLANOS — vitrine com contabilidade, e que CABE.
  *
- * ⚠️ O CARTÃO É BONITO E O NÚMERO É HONESTO, e as duas coisas convivem de
- * propósito. Arte grande vende o produto; o "COMPRADO 0" ao lado impede que
- * a arte venda uma tração que não existe. Tirar o segundo deixaria o painel
- * mais impressionante e menos verdadeiro — que é a troca que este projeto
- * recusa em todas as outras telas, e não vai aceitar nesta.
+ * ⚠️ A PRIMEIRA VERSÃO NÃO CABIA NA TELA (12/08). Cartas verticais com arte em
+ * 4:3 empilhavam em duas colunas, a terceira quebrava para uma segunda fileira
+ * e saía cortada pela dobra. O dono viu e disse a regra que vale para o painel
+ * inteiro: **tudo tem que caber sem arrastar, em nenhuma direção.**
+ *
+ * Um painel que exige rolagem para mostrar a terceira faixa esconde um terço
+ * da informação de quem só olha — e numa tela de parede ninguém rola.
+ *
+ * A carta virou HORIZONTAL: miniatura da arte à esquerda, dados à direita.
+ * Três faixas ocupam ~240px em vez de ~700px, e a arte continua visível porque
+ * o que ela precisa comunicar é identidade, não detalhe.
+ *
+ * ⚠️ E O CARTÃO É BONITO E O NÚMERO É HONESTO ao mesmo tempo, de propósito.
+ * Arte grande vende o produto; o "COMPRADO 0" ao lado impede que a arte venda
+ * uma tração que não existe.
  * ═══════════════════════════════════════════════════════════════════════ */
 
-.hub-faixas {
-  display: grid; gap: 10px; margin-bottom: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
+/* ⚠️ O CORPO DO PAINEL NÃO CRESCE SEM LIMITE. Se o conteúdo passar, ele rola
+   DENTRO da própria caixa — a página nunca. É a diferença entre um painel
+   denso e um painel que empurra os vizinhos para fora da tela. */
+.hub-corpo-painel { max-height: 62vh; overflow-y: auto; }
+
+.hub-faixas { display: grid; gap: 6px; margin-bottom: 10px; }
+
+/* A carta horizontal: miniatura + dados. */
 .hub-carta {
-  position: relative; overflow: hidden;
-  border: 1px solid var(--adm-line); border-radius: 10px;
-  background: linear-gradient(180deg, rgba(255,255,255,.03), transparent);
-  transition: border-color .25s, transform .25s;
+  display: grid; grid-template-columns: 58px 1fr auto;
+  gap: 10px; align-items: center;
+  padding: 6px; overflow: hidden;
+  border: 1px solid var(--adm-line); border-radius: 8px;
+  background: linear-gradient(90deg, rgba(255,255,255,.035), transparent 60%);
+  transition: border-color .2s, background .2s;
 }
 .hub-carta.ativa {
-  border-color: rgba(0,255,255,.45);
-  box-shadow: 0 0 22px rgba(0,255,255,.10);
-  transform: translateY(-2px);
+  border-color: rgba(0,255,255,.4);
+  background: linear-gradient(90deg, rgba(0,255,255,.07), transparent 60%);
 }
-.hub-arte { position: relative; width: 100%; aspect-ratio: 4 / 3; }
-.hub-arte::after {
-  content: ""; position: absolute; inset: 0;
-  background: linear-gradient(180deg, transparent 35%, var(--adm-bg-panel) 100%);
+
+.hub-arte {
+  position: relative; width: 58px; height: 58px;
+  border-radius: 6px; overflow: hidden; flex-shrink: 0;
+  border: 1px solid var(--adm-line);
 }
-.hub-corpo { padding: 8px 10px 12px; position: relative; }
-.hub-runa {
-  position: absolute; top: -22px; right: 10px;
-  font-size: 26px; color: var(--adm-gold); text-shadow: 0 0 14px rgba(255,215,0,.5);
-}
+
+.hub-corpo { min-width: 0; }
 .hub-corpo h4 {
-  margin: 0; font-size: 14px; letter-spacing: .1em; color: var(--adm-ink);
+  margin: 0; font-size: 13px; letter-spacing: .08em; color: var(--adm-ink);
+  display: flex; align-items: baseline; gap: 6px;
 }
+.hub-runa { color: var(--adm-gold); font-size: 15px; text-shadow: 0 0 10px rgba(255,215,0,.45); }
 .hub-epiteto {
-  margin: 1px 0 8px; font-size: 10px; letter-spacing: .12em;
+  margin: 1px 0 0; font-size: 9.5px; letter-spacing: .1em;
   color: var(--adm-ink-3); text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.hub-corpo strong { display: block; font-size: 30px; line-height: 1; }
-.hub-corpo strong.vendeu { color: var(--adm-green); text-shadow: 0 0 18px rgba(57,255,115,.35); }
-/* ⚠️ Zero em cinza, nunca em vermelho: ainda não vendemos não é um defeito,
-   é o dia de hoje de um produto que não lançou. */
-.hub-corpo strong.zerado { color: var(--adm-ink-3); }
-.hub-rot { font-size: 9px; letter-spacing: .16em; color: var(--adm-ink-3); text-transform: uppercase; }
-.hub-cortesia {
-  display: block; margin-top: 6px; font-size: 9.5px; line-height: 1.5;
-  color: var(--adm-amber);
+
+/* ⚠️ OS DOIS PREÇOS APARECEM, e o dono apontou que o Hird tinha sumido. São
+   ofertas diferentes — o passe é compra única de 3 anos, o Hird é mensal
+   recorrente — e mostrar só uma esconde metade do produto. */
+.hub-precos {
+  margin: 3px 0 0; font-size: 10px; color: var(--adm-ink-3);
+  display: flex; gap: 8px; flex-wrap: wrap;
 }
-.hub-preco { display: block; margin-top: 6px; font-size: 10px; color: var(--adm-ink-3); }
+.hub-precos b { color: var(--adm-ink-2); font-weight: 600; }
+.hub-precos .hird { color: var(--adm-cyan); }
+
+/* A coluna de contagem, alinhada à direita. */
+.hub-conta { text-align: right; padding-right: 4px; }
+.hub-conta strong { display: block; font-size: 22px; line-height: 1; }
+.hub-conta strong.vendeu { color: var(--adm-green); text-shadow: 0 0 14px rgba(57,255,115,.35); }
+/* ⚠️ Zero em cinza, nunca em vermelho: ainda não vendemos não é defeito, é o
+   dia de hoje de um produto que não lançou. */
+.hub-conta strong.zerado { color: var(--adm-ink-3); }
+.hub-rot { font-size: 8px; letter-spacing: .14em; color: var(--adm-ink-3); text-transform: uppercase; }
+.hub-cortesia { display: block; margin-top: 2px; font-size: 9px; color: var(--adm-amber); }
 
 .hub-placar {
-  display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline;
-  padding: 8px 10px; margin-bottom: 12px;
-  border: 1px solid var(--adm-line); border-radius: 8px;
-  font-size: 11px; letter-spacing: .1em; color: var(--adm-ink-3);
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline;
+  padding: 6px 8px; margin-bottom: 8px;
+  border: 1px solid var(--adm-line); border-radius: 6px;
+  font-size: 10px; letter-spacing: .08em; color: var(--adm-ink-3);
 }
-.hub-placar b { color: var(--adm-ink-2); font-size: 14px; }
+.hub-placar b { color: var(--adm-ink-2); font-size: 13px; }
 .hub-placar b.vendeu { color: var(--adm-green); }
 .hub-placar b.zerado { color: var(--adm-ink-3); }
 .hub-placar .sep { opacity: .35; }
 
-.hub-titulo {
-  margin: 0 0 6px; font-size: 10px; letter-spacing: .2em;
-  color: var(--adm-ink-3); font-weight: 500;
-}
-.hub-vazio { margin: 0; font-size: 11px; color: var(--adm-ink-3); }
-.hub-ativacoes { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.hub-titulo { margin: 0 0 4px; font-size: 9px; letter-spacing: .18em; color: var(--adm-ink-3); font-weight: 500; }
+.hub-vazio { margin: 0; font-size: 10.5px; color: var(--adm-ink-3); }
+.hub-ativacoes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
 .hub-ativacoes li {
-  display: grid; grid-template-columns: 6.5em 1fr 4.5em 5.5em;
-  gap: 8px; align-items: baseline;
-  padding: 4px 2px; border-bottom: 1px solid var(--adm-line); font-size: 11px;
+  display: grid; grid-template-columns: 5.6em 1fr 3.8em 4.8em;
+  gap: 6px; align-items: baseline;
+  padding: 3px 2px; border-bottom: 1px solid var(--adm-line); font-size: 10px;
 }
-.hub-ativacoes .q { color: var(--adm-ink-3); font-size: 10px; }
+.hub-ativacoes .q { color: var(--adm-ink-3); font-size: 9px; }
 .hub-ativacoes .w { color: var(--adm-ink-2); font-variant-numeric: tabular-nums; }
-.hub-ativacoes .t { color: var(--adm-cyan); text-transform: uppercase; font-size: 10px; }
-.hub-ativacoes .o { color: var(--adm-amber); font-size: 10px; text-align: right; }
+.hub-ativacoes .t { color: var(--adm-cyan); text-transform: uppercase; font-size: 9px; }
+.hub-ativacoes .o { color: var(--adm-amber); font-size: 9px; text-align: right; }
 .hub-ativacoes .o.vendeu { color: var(--adm-green); font-weight: 700; }
