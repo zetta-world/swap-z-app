@@ -17,25 +17,6 @@ import {
 import type { ChainId } from "@/lib/chains";
 
 export const runtime = "nodejs";
-/**
- * ⚠️ SÃO PAULO, NÃO VIRGÍNIA — e é conformidade, não desempenho (12/08).
- *
- * A Binance devolve 451 (bloqueio geográfico) para chamadas vindas de
- * infraestrutura nos EUA quando a conta é Binance Brasil. Esta rota fala com
- * a corretora, então ela sai do Brasil — que é como servir cliente brasileiro
- * a partir de infraestrutura brasileira, e não contornar restrição nenhuma.
- *
- * ⚠️ E É POR ROTA, NÃO NO `vercel.json`. Mover TODAS as funções para `gru1`
- * foi a proposta inicial e teria quebrado o painel: o Supabase está em
- * `us-east-1`, então cada consulta ao banco passaria a atravessar São Paulo ↔
- * Virgínia (~5ms viram ~120ms). A rota `/admin/api/lab` faz ~85 idas ao banco
- * e passaria de meio segundo para mais de dez. As 52 rotas administrativas que
- * só falam com o banco ficam em `iad1`, coladas nele.
- *
- * Esta aqui faz 1 a 2 consultas e já espera 300-800ms pela própria Binance —
- * o custo da distância é ruído dentro do tempo que a corretora leva.
- */
-export const preferredRegion = "gru1";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
