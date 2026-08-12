@@ -226,6 +226,68 @@ export interface CustoFaixa {
  * mesma convenção de 4 pernas do funding, para os dois números serem
  * comparáveis na mesma tabela.
  */
+/**
+ * O custo de IDA E VOLTA medido em TOKEN, sem consultar preço nenhum.
+ *
+ * ⚠️ ISTO SUBSTITUI UMA CONTA QUE DEPENDIA DE DOIS PREÇOS CONCORDAREM (12/08).
+ *
+ * A versão anterior calculava o custo como a diferença em DÓLAR entre o que
+ * entrava e o que saía:
+ *
+ *     entraUsd = unidadesUSDC × precoUSDC
+ *     saiUsd   = unidadesNativo × precoNativo
+ *     custo    = (entraUsd − saiUsd + gas) / entraUsd
+ *
+ * Os dois preços vêm da mesma cotação, mas de fontes diferentes dentro dela. E
+ * quando discordam — o que aconteceu em ~0,4% — `saiUsd` passa de `entraUsd` e
+ * **a troca aparece como GANHO**. Foi isso que inflou `liquid_staking` e
+ * `tokenized_treasury` e derrubou as duas para INCONCLUSIVA em 12/08: o
+ * rendimento subiu porque o CUSTO sumiu, não porque a mesa rendeu mais.
+ *
+ * ⚠️ E A IRONIA ESTAVA ESCRITA NO PRÓPRIO ARQUIVO: o comentário de
+ * `medirCadeia` diz que a âncora é USDC "porque ela vale $1: converter uma
+ * faixa em dólares para unidades não exige consultar preço nenhum, e uma
+ * consulta a menos é uma fonte de erro a menos". A função de custo consultava
+ * o preço da USDC assim mesmo, e ainda o do nativo por cima.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * A CONTA CERTA NÃO PRECISA DE PREÇO.
+ *
+ * Manda X de USDC, troca por nativo, troca de volta, e conta quanto de USDC
+ * VOLTOU. O que faltar é o custo — taxa, impacto e derrapagem das duas pernas,
+ * tudo junto, em unidades do mesmo token.
+ *
+ *     custo% = (1 − voltou / mandou) × 100
+ *
+ * Dois preços que discordam não conseguem mexer nisso, porque nenhum preço
+ * entra na conta. É a mesma disciplina de medir a taxa retida pelo que o
+ * agregador DEVOLVE em vez de pelo que nós pedimos.
+ *
+ * ⚠️ E ELE MEDE A IDA E A VOLTA DE VERDADE. A versão antiga estimava UMA perna
+ * e multiplicava por dois — o que supõe que voltar custa o mesmo que ir. As
+ * duas pernas têm profundidade diferente, e nas faixas grandes a diferença é
+ * justamente o que decide.
+ *
+ * @param mandou  unidades-base de USDC enviadas na ida
+ * @param voltou  unidades-base de USDC recebidas na volta
+ * @returns custo percentual da ida e volta, ou `null` se a conta não fecha
+ */
+export function custoIdaEVoltaEmToken(
+  mandou: number, voltou: number,
+): { pct: number; incoerente: boolean } | null {
+  if (!Number.isFinite(mandou) || !Number.isFinite(voltou)) return null;
+  if (!(mandou > 0) || !(voltou >= 0)) return null;
+  const pct = (1 - voltou / mandou) * 100;
+  /**
+   * ⚠️ VOLTAR COM MAIS DO QUE FOI É IMPOSSÍVEL, e continua sendo bandeira.
+   *
+   * Aqui isso não pode mais vir de preço discordando — mas pode vir de uma
+   * cotação inconsistente entre as duas pernas, e a resposta é a mesma de
+   * antes: reprovar a leitura, não enfeitá-la. Zero também é mentira.
+   */
+  return { pct: Math.max(0, pct), incoerente: pct < 0 };
+}
+
 export function custoDaFaixa(
   faixaUsd: number, trocaPctUnitario: number, gasUsdUnitario: number,
 ): CustoFaixa {

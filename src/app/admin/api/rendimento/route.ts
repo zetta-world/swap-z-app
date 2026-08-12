@@ -9,7 +9,7 @@ import { fetchLiFiQuote, LIFI_CHAIN_IDS, LIFI_NATIVE, type LfQuote } from "@/lib
 import { findToken } from "@/lib/tokens";
 import { median } from "@/lib/zion/stats";
 import {
-  ALVOS, FAIXAS_PADRAO, casaAlvo, escolherApy, custoDaFaixa, produtosDistintos,
+  ALVOS, FAIXAS_PADRAO, casaAlvo, escolherApy, custoDaFaixa, custoIdaEVoltaEmToken, produtosDistintos,
   liquidoPrimeiroAnoPct, equilibrioDias, vereditoRendimento,
   type PiscinaMedida, type CustoFaixa,
 } from "@/lib/lab/rendimento";
@@ -90,29 +90,31 @@ function gasDaCotacao(q: LfQuote): { usd: number; unidades: number } | null {
 }
 
 /**
- * O custo percentual de UMA troca naquela faixa.
+ * ⚠️ AQUI VIVIA `custoDaTroca`, E ELA FOI REMOVIDA EM 12/08 — a cicatriz fica.
  *
- * ⚠️ IMPACTO + TAXA + GÁS, os três, e nenhum estimado. `fromToken.priceUSD` e
- * `toToken.priceUSD` vêm na resposta; a diferença entre o que entra e o que sai
- * É o custo, e ela já contém a taxa da rota. O gás entra por fora porque a
- * LI.FI o cobra em moeda nativa, não descontado do token.
+ * Ela media o custo de UMA troca pela diferença em DÓLAR entre os dois lados:
+ *
+ *     entraUsd = unidadesUSDC   × fromToken.priceUSD
+ *     saiUsd   = unidadesNativo × toToken.priceUSD
+ *     custo    = (entraUsd − saiUsd + gas) / entraUsd
+ *
+ * Os dois preços vêm da mesma resposta da LI.FI, mas de fontes diferentes
+ * dentro dela. Quando discordaram em ~0,4%, `saiUsd` passou de `entraUsd` e a
+ * troca apareceu como GANHO — inflando `liquid_staking` (1,80 → 2,29 %/ano) e
+ * `tokenized_treasury` (3,05 → 3,53) numa remedição que PARECEU melhora.
+ *
+ * O laboratório pegou: as duas caíram para INCONCLUSIVA porque o líquido
+ * passou o bruto. Mas pegar depois é caro, e o número inflado já tinha sido
+ * lido como boa notícia.
+ *
+ * A substituta é `custoIdaEVoltaEmToken` em `lib/lab/rendimento.ts`: manda
+ * USDC, troca, devolve, e conta quanto de USDC voltou. **Nenhum preço entra na
+ * conta, então nenhum preço pode mentir** — e ela mede a volta de verdade, em
+ * vez de supor que voltar custa o mesmo que ir.
+ *
+ * Não recriar esta função. Se o custo em dólar voltar a ser necessário para
+ * alguma outra coisa, ele precisa de UMA âncora de preço, nunca duas.
  */
-function custoDaTroca(q: LfQuote): number | null {
-  const pFrom = parseFloat(q.action?.fromToken?.priceUSD ?? "");
-  const pTo = parseFloat(q.action?.toToken?.priceUSD ?? "");
-  const dFrom = q.action?.fromToken?.decimals;
-  const dTo = q.action?.toToken?.decimals;
-  const aFrom = parseFloat(q.estimate?.fromAmount ?? "");
-  const aTo = parseFloat(q.estimate?.toAmount ?? "");
-  if (![pFrom, pTo, aFrom, aTo].every(Number.isFinite)) return null;
-  if (typeof dFrom !== "number" || typeof dTo !== "number") return null;
-  const entraUsd = (aFrom / 10 ** dFrom) * pFrom;
-  const saiUsd = (aTo / 10 ** dTo) * pTo;
-  if (entraUsd <= 0) return null;
-  const gas = gasDaCotacao(q);
-  const gasUsd = gas?.usd ?? 0;
-  return ((entraUsd - saiUsd + gasUsd) / entraUsd) * 100;
-}
 
 /**
  * Mede, numa cadeia, o preço do gás e o custo de troca em cada faixa.
@@ -159,7 +161,48 @@ async function medirCadeia(
         slippageBps: 50,
       }, process.env.LIFI_API_KEY);
       cotacoes++;
-      const custo = custoDaTroca(q);
+
+      /**
+       * ⚠️ A VOLTA É COTADA DE VERDADE (12/08).
+       *
+       * A versão anterior media UMA perna pela diferença em dólar entre os
+       * dois lados — e a diferença dependia de dois preços da própria LI.FI
+       * concordarem. Quando discordaram em ~0,4%, a troca virou GANHO e
+       * inflou `liquid_staking` e `tokenized_treasury`.
+       *
+       * Agora vai e volta: manda USDC, recebe nativo, devolve o nativo
+       * RECEBIDO e conta quanto de USDC voltou. Nenhum preço entra na conta,
+       * então nenhum preço pode mentir. Custa uma cotação a mais por faixa —
+       * barato para uma medição que roda sob demanda, e é o que separa um
+       * número confiável de um número bonito.
+       */
+      const recebido = q.estimate?.toAmount;
+      let custo: number | null = null;
+      if (recebido && Number(recebido) > 0) {
+        try {
+          const volta = await fetchLiFiQuote({
+            fromChainId: chainId, toChainId: chainId,
+            fromToken: LIFI_NATIVE, toToken: usdc.address,
+            fromAmount: recebido,
+            fromAddress: ENDERECO_LEITURA,
+            slippageBps: 50,
+          }, process.env.LIFI_API_KEY);
+          cotacoes++;
+          const voltou = Number(volta.estimate?.toAmount ?? NaN);
+          const r = custoIdaEVoltaEmToken(Number(bruto), voltou);
+          if (r) {
+            /**
+             * ⚠️ `custoDaFaixa` DOBRA o valor que recebe (era estimativa de
+             * uma perna). Este já é a ida E a volta, então entra pela metade
+             * para não ser cobrado duas vezes — e a bandeira de incoerência
+             * viaja pelo sinal, como antes.
+             */
+            custo = r.incoerente ? -1 : r.pct / 2;
+          }
+        } catch (e) {
+          erros.push(`${faixa}:volta:${String(e).slice(0, 30)}`);
+        }
+      }
       if (custo != null) porFaixa.set(faixa, custo);
       const g = gasDaCotacao(q);
       if (g) {

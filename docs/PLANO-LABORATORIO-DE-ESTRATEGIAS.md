@@ -15,7 +15,7 @@
 
 ## ⚠️ ANTES DE COMEÇAR QUALQUER FASE
 
-Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 22 regras
+Ler **[`INVARIANTES-DE-MEDICAO.md`](INVARIANTES-DE-MEDICAO.md)** — as 23 regras
 que qualquer medição deste laboratório respeita, cada uma com a cicatriz que a
 gerou.
 

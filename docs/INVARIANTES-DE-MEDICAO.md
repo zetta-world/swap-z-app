@@ -432,6 +432,48 @@ contraste contra o FUNDO (legibilidade) e contraste contra o DEGRAU VIZINHO
 
 ---
 
+## 23. Custo medido por DOIS preços vira lucro quando eles discordam
+
+Quando a conta de um custo depende de duas cotações independentes concordarem,
+o desacordo entre elas não aparece como erro — aparece como **resultado**. E
+aparece com o sinal errado: o custo encolhe, o líquido cresce, e a mesa parece
+ter melhorado.
+
+**Como travar:** medir custo em UNIDADES DO MESMO TOKEN, ida e volta. Mandou X,
+voltou Y, o que faltou é o custo. Nenhum preço na conta significa que nenhum
+preço pode mentir. Quando um valor em moeda for inevitável, use **uma** âncora
+de preço — nunca duas.
+
+> **Cicatriz (12/08):** depois de a Binance destravar, uma remedição mostrou
+> `liquid_staking` subindo de 1,80% para 2,29%/ano e `tokenized_treasury` de
+> 3,05% para 3,53%. Parecia a boa notícia que a migração prometia.
+>
+> Os dois **subiram porque estavam errados**. O custo era calculado assim:
+>
+> ```
+> entraUsd = unidadesUSDC   × fromToken.priceUSD
+> saiUsd   = unidadesNativo × toToken.priceUSD
+> custo    = (entraUsd − saiUsd + gas) / entraUsd
+> ```
+>
+> Os dois preços vêm da MESMA resposta da LI.FI, de fontes diferentes dentro
+> dela. Discordaram em ~0,4%, `saiUsd` passou de `entraUsd`, e **a troca virou
+> ganho**. O rendimento subiu porque o custo sumiu.
+>
+> ⚠️ **O laboratório pegou** — as duas caíram para INCONCLUSIVA porque o
+> líquido passou o bruto, e a bandeira de custo negativo já existia desde
+> 06/08. Mas pegar depois é caro: o número inflado já tinha sido lido como boa
+> notícia, e a diferença entre "melhorou" e "quebrou de um jeito favorável" só
+> apareceu quando alguém leu o texto do veredito.
+>
+> ⚠️ **E a ironia estava escrita no próprio arquivo.** O comentário logo acima
+> dizia que a âncora é USDC "porque ela vale $1: converter uma faixa em dólares
+> para unidades não exige consultar preço nenhum, e uma consulta a menos é uma
+> fonte de erro a menos". A função de custo consultava o preço da USDC assim
+> mesmo — e o do nativo por cima.
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:

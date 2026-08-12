@@ -13,7 +13,8 @@ import { describe, it, expect } from "vitest";
 import {
   ALVOS, TVL_MINIMO_USD, MIN_PRODUTOS,
   escolherApy, casaAlvo, custoDaFaixa, liquidoPrimeiroAnoPct, produtosDistintos,
-  equilibrioDias, vereditoRendimento, type PiscinaMedida,
+  equilibrioDias, vereditoRendimento, custoIdaEVoltaEmToken,
+  type PiscinaMedida,
 } from "@/lib/lab/rendimento";
 import { BY_SLUG } from "@/lib/lab/registry";
 
@@ -402,5 +403,66 @@ describe("o mesmo produto em N cadeias não é N observações", () => {
     const v = vereditoRendimento([...seis, p(10), p(10.5)], 3, 1000);
     expect(v.verdict).toContain("10.00%");
     expect(v.verdict).not.toContain("3.51%");
+  });
+});
+
+/**
+ * ⚠️ O CUSTO NÃO PODE DEPENDER DE DOIS PREÇOS CONCORDAREM (12/08).
+ *
+ * `liquid_staking` e `tokenized_treasury` subiram de 1,80→2,29 e 3,05→3,53
+ * %/ano depois de uma remedição — e SUBIRAM PORQUE ESTAVAM ERRADAS. O custo
+ * vinha da diferença em dólar entre os dois lados da troca, cada lado com o
+ * seu preço; quando a fonte discordou de si mesma em ~0,4%, a troca apareceu
+ * como GANHO e o líquido passou o bruto.
+ *
+ * O laboratório pegou (as duas caíram para INCONCLUSIVA), mas pegar depois é
+ * caro. A conta agora é em TOKEN: mandou X, voltou Y, o que faltou é o custo.
+ * Nenhum preço entra, então nenhum preço pode mentir.
+ */
+describe("custo de ida e volta — sem preço na conta", () => {
+  it("o que não voltou é o custo", () => {
+    // 1.000 USDC foram, 994 voltaram → 0,6% de ida e volta.
+    expect(custoIdaEVoltaEmToken(1_000, 994)?.pct).toBeCloseTo(0.6, 6);
+  });
+
+  it("volta inteira é custo zero, e isso não é incoerência", () => {
+    const r = custoIdaEVoltaEmToken(1_000, 1_000);
+    expect(r?.pct).toBe(0);
+    expect(r?.incoerente).toBe(false);
+  });
+
+  /**
+   * ⚠️ O CASO QUE INFLOU AS DUAS MESAS. Voltar com MAIS do que foi é
+   * impossível; aqui não pode mais vir de preço, mas se vier de qualquer
+   * outra coisa a bandeira sobe e o custo é achatado em zero — reprovar a
+   * leitura, nunca enfeitá-la.
+   */
+  it("voltar com mais do que foi levanta a bandeira e não vira lucro", () => {
+    const r = custoIdaEVoltaEmToken(1_000, 1_004);
+    expect(r?.incoerente).toBe(true);
+    expect(r?.pct, "custo negativo viraria rendimento inflado").toBe(0);
+  });
+
+  /** Perder tudo é 100%, não mais — e não quebra a conta. */
+  it("volta zerada é 100% de custo", () => {
+    expect(custoIdaEVoltaEmToken(1_000, 0)?.pct).toBe(100);
+  });
+
+  it("entrada inválida não vira número", () => {
+    expect(custoIdaEVoltaEmToken(0, 100)).toBeNull();
+    expect(custoIdaEVoltaEmToken(NaN, 100)).toBeNull();
+    expect(custoIdaEVoltaEmToken(100, NaN)).toBeNull();
+    expect(custoIdaEVoltaEmToken(100, -1)).toBeNull();
+  });
+
+  /**
+   * ⚠️ A PROVA DE QUE PREÇO NÃO ENTRA: a mesma ida e volta medida com
+   * qualquer par de preços dá o MESMO custo, porque a função nem recebe
+   * preço. É o que a versão antiga não conseguia garantir.
+   */
+  it("a escala das unidades não muda o custo — é razão pura", () => {
+    const a = custoIdaEVoltaEmToken(1_000, 994)!.pct;
+    const b = custoIdaEVoltaEmToken(1_000e18, 994e18)!.pct;
+    expect(b).toBeCloseTo(a, 6);
   });
 });
