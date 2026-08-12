@@ -413,3 +413,20 @@
 /* ── O PROMPT ganha as partes que faltavam ───────────────────────────── */
 .mural-prompt i { font-style: normal; color: var(--mural-vivo); }
 .mural-prompt .mural-sep { color: var(--mural-linha); }
+
+/* ── O PULSO ─────────────────────────────────────────────────────────── */
+.pulso { margin: clamp(8px, .8vw, 16px) 0 0; }
+.pulso figcaption {
+  display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  font-size: clamp(8px, .58vw, 12px); letter-spacing: .2em;
+  color: var(--mural-fraco); text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.pulso-num { letter-spacing: .08em; text-transform: none; }
+.pulso-num b { color: var(--mural-vivo); }
+.pulso svg { width: 100%; height: clamp(46px, 5vw, 110px); display: block; }
+.pulso-area  { fill: url(#pulso-fill); }
+.pulso-linha { fill: none; stroke: var(--mural-vivo); stroke-width: 1.4; }
+/* ⚠️ A BASE EM ZERO É DESENHADA. Gráfico sem chão visível deixa o leitor
+   supor onde ele está — e a suposição é sempre mais favorável que a verdade. */
+.pulso-base  { stroke: var(--mural-linha); stroke-width: 1; vector-effect: non-scaling-stroke; }

@@ -80,6 +80,37 @@ export async function GET(): Promise<NextResponse> {
     }
     const pracas = [...porLugar.values()].sort((a, b) => b.acessos - a.acessos);
 
+    /**
+     * ⚠️ O PULSO POR MINUTO — a série que a referência pede como
+     * "Requests / Second", com o nome que o dado realmente tem.
+     *
+     * É contagem de EVENTOS por minuto na última hora, dos mesmos
+     * `platform_events` que alimentam o mapa. Chamar de "requests/second" seria
+     * dar ao número uma precisão que ele não tem: um evento não é uma
+     * requisição, e a granularidade é de minuto.
+     *
+     * ⚠️ E OS MINUTOS VAZIOS ENTRAM COMO ZERO. Sem isso o gráfico "pula" o
+     * silêncio e uma hora morta desenha a mesma linha de uma hora movimentada
+     * — o vazio some, e some justamente onde ele é a informação.
+     */
+    const desde1h = new Date(agora - 3600_000).toISOString();
+    // leitura-limitada: uma hora de eventos, e o teto de 5.000 cobre picos
+    // muito acima de qualquer volume que esta plataforma já teve.
+    const { data: recentes } = await db
+      .from("platform_events")
+      .select("created_at")
+      .gte("created_at", desde1h)
+      .order("created_at", { ascending: false })
+      .limit(5000);
+
+    const balde = new Map<number, number>();
+    for (const e of recentes ?? []) {
+      const m = Math.floor((agora - new Date(String(e.created_at)).getTime()) / 60000);
+      if (m >= 0 && m < 60) balde.set(m, (balde.get(m) ?? 0) + 1);
+    }
+    /** Do mais antigo para o mais novo, com o silêncio preservado. */
+    const serie = Array.from({ length: 60 }, (_, i) => balde.get(59 - i) ?? 0);
+
     /** O fluxo: operações confirmadas, mais recentes primeiro. */
     const { data: ops } = await db
       .from("operations")
@@ -165,7 +196,7 @@ export async function GET(): Promise<NextResponse> {
      */
     return NextResponse.json({
       pracas, trocas, dinheiro,
-      pulso: { eventos5min: eventos5min ?? 0, usuarios: usuarios ?? 0 },
+      pulso: { eventos5min: eventos5min ?? 0, usuarios: usuarios ?? 0, serie },
       infra: {
         regiao: process.env.VERCEL_REGION ?? "local",
         levouMs: Date.now() - agora,

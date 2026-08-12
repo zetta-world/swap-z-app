@@ -327,3 +327,67 @@ describe("nenhum painel empurra a página", () => {
     expect(blocos).toContain("min-height: 0");
   });
 });
+
+/**
+ * ⚠️ UM GRÁFICO NUMA PAREDE É LIDO SEM CONFERÊNCIA (12/08).
+ *
+ * O pulso do mural é a peça que a referência pedia como "Requests / Second".
+ * Duas travas nascem daí, e as duas são sobre não deixar a forma mentir onde
+ * o número está certo:
+ *
+ * · o EIXO COMEÇA EM ZERO. Cortar a base transforma uma variação de 2 para 3
+ *   numa montanha — é a maneira mais comum de um gráfico honesto enganar, e a
+ *   três metros ninguém confere o eixo.
+ *
+ * · o RÓTULO É O QUE O DADO É. Chamar contagem de evento por MINUTO de
+ *   "requisições por segundo" daria ao número uma precisão que ele não tem, e
+ *   alguém acabaria citando isso numa reunião.
+ */
+describe("o gráfico do pulso não deixa a forma mentir", () => {
+  const pulso = readFileSync("src/components/admin/mural/Pulso.tsx", "utf8");
+  const css   = readFileSync("src/components/admin/mural/mural.css", "utf8");
+  /**
+   * ⚠️ SEM COMENTÁRIO ANTES DE JULGAR — e esta é a QUARTA vez nesta sessão
+   * que uma asserção sobre texto-fonte lê a explicação em vez do código.
+   *
+   * O comentário de `Pulso.tsx` cita `"Requests / Second"` justamente para
+   * explicar por que o rótulo NÃO usa isso. A asserção casou a citação e
+   * reprovou um arquivo correto — o mesmo erro do token lido do comentário no
+   * CSS, e do `.adm-panel-body` que pegou o bloco vizinho.
+   *
+   * A regra, agora escrita: asserção sobre fonte olha o CÓDIGO. Comentário é
+   * onde se escreve o que NÃO se faz, então é o lugar mais provável de conter
+   * exatamente a string que a trava proíbe.
+   */
+  const pulsoCodigo = pulso
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/^\s*\/\/.*$/gm, " ");
+
+  it("a base é zero e é desenhada, não suposta", () => {
+    expect(pulso).toContain('y1="100"');
+    expect(pulso).toContain("pulso-base");
+    expect(css).toContain(".pulso-base");
+  });
+
+  /** A escala sai do PICO, e o piso do gráfico é a base — nunca o mínimo. */
+  it("a escala vai do zero ao pico, sem recortar o fundo", () => {
+    expect(pulso).toMatch(/Math\.max\(1,\s*\.\.\.serie\)/);
+    expect(pulso, "recortar pelo mínimo esconde o chão").not.toMatch(/Math\.min\(\.\.\.serie\)/);
+  });
+
+  it("o rótulo diz minuto, não segundo", () => {
+    expect(pulsoCodigo).toContain("EVENTOS POR MINUTO");
+    expect(pulsoCodigo).not.toMatch(/requests\s*\/\s*second/i);
+  });
+
+  /**
+   * ⚠️ E O MINUTO VAZIO CONTA COMO ZERO. Sem isso o gráfico pula o silêncio, e
+   * uma hora morta desenha a mesma linha de uma hora movimentada — o vazio
+   * some justamente onde ele É a informação.
+   */
+  it("a rota preenche os minutos sem evento", () => {
+    const rota = readFileSync("src/app/admin/api/mural/route.ts", "utf8");
+    expect(rota).toMatch(/balde\.get\([^)]*\)\s*\?\?\s*0/);
+    expect(rota).toMatch(/length:\s*60/);
+  });
+});

@@ -23,7 +23,14 @@ export const dynamic = "force-dynamic";
 export interface FaixaHub {
   tier: Tier;
   deus: string; runa: string; epiteto: string;
-  guerreiro: string; carta: string;
+  /** ⚠️ CADA FAIXA TEM DOIS PRODUTOS, e a tela precisa mostrar os dois.
+   *  O passe (NFT do deus) é compra única de 3 anos; a Hird (o guerreiro que
+   *  SERVE aquele deus) é assinatura mensal. Mostrar só o passe escondia
+   *  metade da oferta — e é justamente a metade recorrente. */
+  carta: string;              /* arte do passe — /nft/* */
+  guerreiro: string; guerreiroDesc: string; guerreiroRuna: string;
+  avatar: string;             /* arte da Hird — /warriors/* */
+  brasao: string;             /* brasão do deus servido — /tiers/* */
   precoUsd: number; mensalUsd: number;
   /** Carteiras nesta faixa hoje. */
   ativos: number;
@@ -53,7 +60,10 @@ export async function GET(): Promise<NextResponse> {
       return {
         tier: p.tier,
         deus: p.god, runa: p.rune, epiteto: p.epithet,
-        guerreiro: p.warrior, carta: p.card,
+        carta: p.card,
+        guerreiro: p.warrior, guerreiroDesc: p.warriorDesc,
+        guerreiroRuna: p.warriorRune, avatar: p.avatar ?? p.crest,
+        brasao: p.crest,
         precoUsd: p.usdTarget, mensalUsd: p.monthlyUsd,
         ativos: desta.length,
         compradas: desta.filter((l) => l.source === "nft").length,

@@ -881,7 +881,7 @@
 
 /* A carta horizontal: miniatura + dados. */
 .hub-carta {
-  display: grid; grid-template-columns: 58px 1fr auto;
+  display: grid; grid-template-columns: 112px 1fr auto;
   gap: 10px; align-items: center;
   padding: 6px; overflow: hidden;
   border: 1px solid var(--adm-line); border-radius: 8px;
@@ -893,16 +893,32 @@
   background: linear-gradient(90deg, rgba(0,255,255,.07), transparent 60%);
 }
 
+/* ⚠️ DUAS ARTES POR FAIXA — passe e Hird. Cada uma rotulada, porque sem o
+   rótulo elas viram "duas imagens bonitas" e o leitor não sabe que são dois
+   produtos com preços diferentes. */
+.hub-artes { display: flex; gap: 4px; }
 .hub-arte {
-  position: relative; width: 58px; height: 58px;
+  position: relative; width: 52px; height: 52px; margin: 0;
   border-radius: 6px; overflow: hidden; flex-shrink: 0;
   border: 1px solid var(--adm-line);
 }
+.hub-arte figcaption {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  font-size: 7px; letter-spacing: .14em; text-align: center;
+  padding: 1px 0; background: rgba(0,0,0,.72);
+}
+.hub-arte.passe figcaption { color: var(--adm-gold); }
+.hub-arte.hird  figcaption { color: var(--adm-cyan); }
 
 .hub-corpo { min-width: 0; }
 .hub-corpo h4 {
   margin: 0; font-size: 13px; letter-spacing: .08em; color: var(--adm-ink);
   display: flex; align-items: baseline; gap: 6px;
+}
+.hub-tier {
+  font-size: 8.5px; letter-spacing: .16em; color: var(--adm-ink-3);
+  text-transform: uppercase; border: 1px solid var(--adm-line);
+  border-radius: 3px; padding: 0 4px;
 }
 .hub-runa { color: var(--adm-gold); font-size: 15px; text-shadow: 0 0 10px rgba(255,215,0,.45); }
 .hub-epiteto {
@@ -915,11 +931,14 @@
    ofertas diferentes — o passe é compra única de 3 anos, o Hird é mensal
    recorrente — e mostrar só uma esconde metade do produto. */
 .hub-precos {
-  margin: 3px 0 0; font-size: 10px; color: var(--adm-ink-3);
-  display: flex; gap: 8px; flex-wrap: wrap;
+  margin: 4px 0 0; font-size: 10px; color: var(--adm-ink-3);
+  display: grid; gap: 1px;
 }
-.hub-precos b { color: var(--adm-ink-2); font-weight: 600; }
+.hub-precos i { font-style: normal; opacity: .65; font-size: 9px; }
+.hub-precos .passe b { color: var(--adm-gold); font-weight: 600; }
 .hub-precos .hird { color: var(--adm-cyan); }
+.hub-precos .hird b { color: var(--adm-cyan); font-weight: 700; }
+.hub-runa-h { color: var(--adm-cyan); margin-right: 3px; }
 
 /* A coluna de contagem, alinhada à direita. */
 .hub-conta { text-align: right; padding-right: 4px; }

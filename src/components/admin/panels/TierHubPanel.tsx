@@ -7,7 +7,9 @@ import type { Tier } from "@/lib/tier/types";
 
 interface Faixa {
   tier: Tier; deus: string; runa: string; epiteto: string;
-  guerreiro: string; carta: string;
+  carta: string;
+  guerreiro: string; guerreiroDesc: string; guerreiroRuna: string;
+  avatar: string; brasao: string;
   precoUsd: number; mensalUsd: number;
   ativos: number; compradas: number; cortesia: number;
 }
@@ -85,29 +87,44 @@ export default function TierHubPanel() {
                 className={`hub-carta${i === foco ? " ativa" : ""}`}
                 onMouseEnter={() => setFoco(i)}
               >
-                <div className="hub-arte">
-                  <Image src={f.carta} alt={`Passe ${f.deus}`} fill sizes="58px"
-                         style={{ objectFit: "cover" }} />
+                {/* ⚠️ AS DUAS ARTES, LADO A LADO. Cada faixa vende DOIS
+                    produtos: o passe (NFT do deus, compra única de 3 anos) e a
+                    Hird (o guerreiro que serve aquele deus, mensal). Mostrar
+                    só o passe escondia metade da oferta — e justamente a
+                    metade recorrente, que é a que sustenta o negócio. */}
+                <div className="hub-artes">
+                  <figure className="hub-arte passe">
+                    <Image src={f.carta} alt={`Passe ${f.deus}`} fill sizes="52px"
+                           style={{ objectFit: "cover" }} />
+                    <figcaption>PASSE</figcaption>
+                  </figure>
+                  <figure className="hub-arte hird">
+                    <Image src={f.avatar} alt={`Hird ${f.guerreiro}`} fill sizes="52px"
+                           style={{ objectFit: "cover" }} />
+                    <figcaption>HIRD</figcaption>
+                  </figure>
                 </div>
 
                 <div className="hub-corpo">
                   <h4>
                     <span className="hub-runa" aria-hidden>{f.runa}</span>
                     {f.deus}
+                    <span className="hub-tier">{f.tier}</span>
                   </h4>
-                  <p className="hub-epiteto">{f.epiteto} · {f.tier}</p>
-                  {/* ⚠️ OS DOIS PREÇOS. São ofertas diferentes — o passe é
-                      compra única de 3 anos, o Hird é mensal recorrente — e
-                      mostrar só uma escondia metade do produto. */}
+                  <p className="hub-epiteto">{f.epiteto}</p>
+
                   <p className="hub-precos">
-                    <span>passe <b>{usd(f.precoUsd)}</b></span>
-                    <span className="hird">Hird <b>{usd(f.mensalUsd)}</b>/mês</span>
+                    <span className="passe">passe <b>{usd(f.precoUsd)}</b> <i>3 anos</i></span>
+                    <span className="hird">
+                      <span className="hub-runa-h" aria-hidden>{f.guerreiroRuna}</span>
+                      {f.guerreiro} <b>{usd(f.mensalUsd)}</b><i>/mês</i>
+                    </span>
                   </p>
                 </div>
 
                 <div className="hub-conta">
-                  {/* ⚠️ O NÚMERO GRANDE É O DE COMPRAS. Ver a nota do topo:
-                      contagem sem origem vira cortesia lida como tração. */}
+                  {/* ⚠️ O NÚMERO GRANDE É O DE COMPRAS. Contagem sem origem
+                      vira cortesia lida como tração. */}
                   <strong className={f.compradas > 0 ? "vendeu" : "zerado"}>
                     {f.compradas}
                   </strong>

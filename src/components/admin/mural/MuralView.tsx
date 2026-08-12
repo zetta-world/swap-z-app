@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import MapaMundi, { type Praca } from "./MapaMundi";
+import Pulso from "./Pulso";
 import "./mural.css";
 
 interface Troca {
@@ -16,7 +17,7 @@ interface Dados {
     volumeTotalUsd: number; volume24hUsd: number;
     operacoes: number; operacoes24h: number;
   };
-  pulso: { eventos5min: number; usuarios: number };
+  pulso: { eventos5min: number; usuarios: number; serie: number[] };
   infra: { regiao: string; levouMs: number };
   agora: string;
 }
@@ -183,6 +184,9 @@ export default function MuralView() {
           </ul>
         )}
       </section>
+
+      {/* ── O PULSO, colado ao mapa: o mesmo dado no tempo ─────────── */}
+      <Pulso serie={d?.pulso.serie ?? []} />
 
       {/* ── O FLUXO ─────────────────────────────────────────────────── */}
       <section className="mural-fluxo">
