@@ -141,3 +141,43 @@ describe("número alinha com número", () => {
     expect(css).toMatch(/\.admin-shell\s*\{[^}]*font-variant-numeric:\s*tabular-nums/);
   });
 });
+
+
+/**
+ * ⚠️ O MURAL TEM PALETA PRÓPRIA, E ELA TAMBÉM É CONTA (12/08).
+ *
+ * Ao virar terminal de fósforo, o mural deixou de usar os tokens do painel e
+ * ganhou os seus. Sem esta trava, a próxima mudança de "visual" derrubaria o
+ * contraste sem ninguém medir — que é exatamente como o painel chegou a
+ * 1,51:1 e ficou meses assim.
+ *
+ * E o piso é o MESMO: uma tela vista de três metros não pode ter regra mais
+ * frouxa que uma vista de meio metro.
+ */
+describe("a paleta do mural também passa na conta", () => {
+  const mural = readFileSync("src/components/admin/mural/mural.css", "utf8");
+  const tk = (nome: string): string => {
+    const m = mural.match(new RegExp(`^\\s*--${nome}:\\s*(#[0-9a-fA-F]{6})\\s*;`, "m"));
+    expect(m, `declaração de --${nome} não encontrada`).toBeTruthy();
+    return m![1];
+  };
+
+  it("tinta, fraco e os acentos passam em 4,5:1 contra o fundo do mural", () => {
+    const fundo = tk("mural-fundo");
+    for (const t of ["mural-tinta", "mural-fraco", "mural-vivo", "mural-ouro", "mural-verde"]) {
+      const r = contraste(tk(t), fundo);
+      expect(r, `--${t} está em ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  /**
+   * ⚠️ AS CAMADAS DE CRT NÃO PODEM CAPTURAR PONTEIRO. São ópticas; se uma
+   * ficar clicável, a tela inteira para de responder — e numa parede isso
+   * demora a ser notado, porque o vidro só parece estar sujo.
+   */
+  it("varredura e vinheta não interceptam ponteiro", () => {
+    for (const camada of [/\.mural::before\s*\{[^}]*\}/, /\.mural::after\s*\{[^}]*\}/]) {
+      expect(mural.match(camada)?.[0] ?? "").toContain("pointer-events: none");
+    }
+  });
+});

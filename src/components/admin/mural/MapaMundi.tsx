@@ -9,21 +9,26 @@ export interface Praca {
 }
 
 /**
- * O MAPA — a Terra em pontos, com os acessos reais brilhando por cima.
+ * ⚠️ O MAPA É DESENHADO COM CARACTERES, não com círculos (12/08).
  *
- * ⚠️ DUAS CAMADAS COM PESOS OPOSTOS, e isso é o desenho inteiro:
+ * A versão de pontos lia como gráfico. Glifo lê como TERMINAL — é a mesma
+ * diferença entre um mapa numa apresentação e um mapa numa sala de operações,
+ * e esta tela fica ligada numa sala de operações.
  *
- *   · a TERRA é cenário — apagada, fria, sem movimento. Ela orienta e cala.
- *   · o ACESSO é medição — quente, pulsando, com halo. Ele é o assunto.
- *
- * Se as duas tivessem o mesmo peso, o olho leria "mapa bonito". Com a terra
- * recuada, o olho lê "isto aqui está acontecendo" — que é a verdade, e é o que
- * uma tela de parede tem meio segundo para comunicar a quem passa.
- *
- * ⚠️ O BRILHO É O TEMPO. Um acesso de agora é branco e pulsa; um de ontem é
- * uma brasa fria. Ponto que não decai transformaria "esteve aqui uma vez" em
- * "está aqui" — a mentira mais fácil de um mapa ao vivo.
+ * ⚠️ E O GLIFO É ESTÁVEL POR COORDENADA. Sorteá-lo a cada quadro faria a Terra
+ * inteira cintilar como chuvisco, e o olho perderia o que importa: os acessos
+ * pulsando por cima. O caractere sai de um hash da própria posição — o mesmo
+ * lugar desenha sempre o mesmo símbolo, e o mapa fica quieto para o dado poder
+ * se mexer.
  */
+const GLIFOS = "ᚦᚱᚨᛁᛗᛒᛖᛚᛞᚷᚹᛟ0123456789";
+
+/** Hash barato e determinístico: mesma coordenada, mesmo glifo, sempre. */
+function glifoDe(x: number, y: number): string {
+  const h = Math.abs(Math.round(x * 9973) * 31 + Math.round(y * 9973) * 17);
+  return GLIFOS[h % GLIFOS.length];
+}
+
 export default function MapaMundi({
   pracas,
   compacto = false,
@@ -31,13 +36,28 @@ export default function MapaMundi({
   pracas: Praca[];
   compacto?: boolean;
 }) {
-  /** A silhueta não muda; calcular a cada respiro seria desperdício puro. */
-  const terra = useMemo(() => gradeDaTerra(compacto ? 3.2 : 2.2), [compacto]);
+  const terra = useMemo(() => gradeDaTerra(compacto ? 2.6 : 1.7), [compacto]);
 
-  /** Escala do ponto pelo volume de acessos — raiz, para 1000 não virar disco. */
-  const raio = (n: number) => Math.min(2.2, 0.5 + Math.sqrt(n) * 0.16);
-  /** 0 = agora, 1 = frio. Uma hora é o horizonte do "ao vivo". */
+  const raio = (n: number) => Math.min(2.4, 0.6 + Math.sqrt(n) * 0.17);
   const idade = (min: number) => Math.min(1, Math.max(0, min / 60));
+
+  /**
+   * ⚠️ OS ARCOS SAEM DA PRAÇA MAIS ATIVA para as outras — e só existem com
+   * duas praças ou mais. Um arco de um ponto para ele mesmo seria enfeite
+   * puro, e enfeite que finge ser rota é a categoria de mentira visual que
+   * esta tela não pode ter.
+   */
+  const arcos = useMemo(() => {
+    if (pracas.length < 2) return [];
+    const [origem, ...resto] = pracas;
+    return resto.slice(0, 5).map((p) => {
+      const x1 = projX(origem.lon) * 360, y1 = projY(origem.lat) * 156;
+      const x2 = projX(p.lon) * 360,      y2 = projY(p.lat) * 156;
+      const cx = (x1 + x2) / 2;
+      const cy = (y1 + y2) / 2 - Math.hypot(x2 - x1, y2 - y1) * 0.32;
+      return { d: `M${x1},${y1} Q${cx},${cy} ${x2},${y2}`, k: `${p.lat},${p.lon}` };
+    });
+  }, [pracas]);
 
   return (
     <svg
@@ -48,35 +68,46 @@ export default function MapaMundi({
       aria-label={`Mapa global · ${pracas.length} praça(s) com acesso nos últimos 30 dias`}
     >
       <defs>
-        {/* O halo do ponto quente. Um só, reaproveitado — cada acesso com o
-            seu filtro derrubaria a taxa de quadros numa tela de 65". */}
         <radialGradient id="mural-halo">
-          <stop offset="0%"   stopColor="var(--mural-vivo)" stopOpacity="0.55" />
-          <stop offset="45%"  stopColor="var(--mural-vivo)" stopOpacity="0.14" />
+          <stop offset="0%"   stopColor="var(--mural-vivo)" stopOpacity="0.6" />
+          <stop offset="45%"  stopColor="var(--mural-vivo)" stopOpacity="0.15" />
           <stop offset="100%" stopColor="var(--mural-vivo)" stopOpacity="0" />
         </radialGradient>
+        <linearGradient id="mural-arco" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%"   stopColor="var(--mural-vivo)" stopOpacity="0" />
+          <stop offset="50%"  stopColor="var(--mural-vivo)" stopOpacity=".7" />
+          <stop offset="100%" stopColor="var(--mural-vivo)" stopOpacity="0" />
+        </linearGradient>
       </defs>
 
-      {/* ── CAMADA 1 · A TERRA. Cenário, e se comporta como cenário. ───── */}
-      <g className="mural-terra">
+      {/* ── CAMADA 1 · A TERRA EM GLIFOS. Cenário, e se comporta como tal. */}
+      <g className="mural-terra" aria-hidden>
         {terra.map((p, i) => (
-          <circle key={i} cx={p.x * 360} cy={p.y * 156} r={compacto ? 0.42 : 0.34} />
+          <text key={i} x={p.x * 360} y={p.y * 156}
+                fontSize={compacto ? 2.1 : 1.55} textAnchor="middle">
+            {glifoDe(p.x, p.y)}
+          </text>
         ))}
       </g>
 
-      {/* ── CAMADA 2 · OS ACESSOS. Medição, e o assunto da tela. ───────── */}
+      {/* ── CAMADA 2 · AS ROTAS. Só com duas praças ou mais. ───────────── */}
+      <g className="mural-arcos" aria-hidden>
+        {arcos.map((a) => <path key={a.k} d={a.d} />)}
+      </g>
+
+      {/* ── CAMADA 3 · OS ACESSOS. Medição, e o assunto da tela. ───────── */}
       <g>
         {pracas.map((p) => {
           const x = projX(p.lon) * 360;
           const y = projY(p.lat) * 156;
           const r = raio(p.acessos);
           const frio = idade(p.minAtras);
-          /** Quanto mais recente, mais opaco e mais rápido o pulso. */
-          const op = 1 - frio * 0.62;
           return (
-            <g key={`${p.lat},${p.lon}`} style={{ opacity: op }}>
-              <circle cx={x} cy={y} r={r * 7} fill="url(#mural-halo)"
+            <g key={`${p.lat},${p.lon}`} style={{ opacity: 1 - frio * 0.6 }}>
+              <circle cx={x} cy={y} r={r * 7.5} fill="url(#mural-halo)"
                       className={frio < 0.35 ? "mural-pulso" : undefined} />
+              {/* A mira: dá coordenada ao ponto, como num radar. */}
+              <circle cx={x} cy={y} r={r * 2.6} className="mural-mira" />
               <circle cx={x} cy={y} r={r} className="mural-ponto" />
             </g>
           );

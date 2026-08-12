@@ -98,6 +98,15 @@ export default function MuralView() {
 
   return (
     <div className="mural">
+      {/* ⚠️ A LINHA DE PROMPT não é enfeite: ela responde, antes de qualquer
+             número, a pergunta que todo mundo faz numa reunião — isto é ao
+             vivo ou é uma apresentação? */}
+      <p className="mural-prompt">
+        <b>[ODIN@NEXUS:~]$</b> z-swap --live-ops --status{" "}
+        {vivo ? "[ATIVO]" : "[AGUARDANDO]"}{" "}
+        <span className="mural-cursor" aria-hidden />
+      </p>
+
       {/* ── CABEÇALHO ───────────────────────────────────────────────── */}
       <header className="mural-topo">
         <div className="mural-marca">
@@ -182,6 +191,19 @@ export default function MuralView() {
         )}
       </section>
       </div>
+
+      {/* ⚠️ A BARRA DIZ DE ONDE O DADO VEM E QUANDO. Numa tela ligada o dia
+             inteiro, a pergunta mais barata de responder é "isto congelou?" —
+             o horário e a contagem de eventos respondem sem ninguém perguntar. */}
+      <footer className="mural-barra">
+        <span>SISTEMA <b>{new Date(agora).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" })}</b></span>
+        <span className="sep">::</span>
+        <span>PULSO <b>{d?.pulso.eventos5min ?? 0}</b> eventos/5min</span>
+        <span className="sep">::</span>
+        <span>FONTE <b>supabase</b> · medido, sem projeção</span>
+        <span className="sep">::</span>
+        <span>OPERAÇÕES <b>{d?.dinheiro.operacoes ?? 0}</b> no livro</span>
+      </footer>
     </div>
   );
 }
