@@ -27,6 +27,7 @@ export type ModuleId =
   | "ligas"
   | "lab"
   | "mural-global"
+  | "tier-hub"
   | "tournament"
   | "ragnarok"
   | "swap-guard"
@@ -280,6 +281,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "receita",
     defaultEnabled: true,
     defaultOrder: 4.5,
+  },
+  {
+    id: "tier-hub",
+    title: "HUB DE PLANOS",
+    subtitle: "quem está em cada faixa — e se comprou ou ganhou",
+    icon: "🛡️",
+    category: "command",
+    defaultEnabled: true,
+    defaultOrder: 1,
   },
   {
     id: "mural-global",

@@ -33,6 +33,7 @@ import ReceitaPanel           from "./panels/ReceitaPanel";
 import LigasPanel             from "./panels/LigasPanel";
 import LabPanel               from "./panels/LabPanel";
 import MuralPanel             from "./panels/MuralPanel";
+import TierHubPanel           from "./panels/TierHubPanel";
 import LaunchGatePanel        from "./panels/LaunchGatePanel";
 import MarginPanel            from "./panels/MarginPanel";
 import AiCostPanel            from "./panels/AiCostPanel";
@@ -83,6 +84,7 @@ const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "ligas":              <LigasPanel />,
   "lab":                <LabPanel />,
   "mural-global":       <MuralPanel />,
+  "tier-hub":           <TierHubPanel />,
   "launch-gate":        <LaunchGatePanel />,
   "margin":             <MarginPanel />,
   "ai-cost":            <AiCostPanel />,
