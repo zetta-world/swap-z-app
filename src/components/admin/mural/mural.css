@@ -291,3 +291,77 @@
   .mural-cursor { animation: none; }
   .mural::before { display: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * AS MOLDURAS DE CARACTERE.
+ *
+ * ⚠️ DESENHADAS COM `::before`/`::after` E `content`, não com imagem nem
+ * fonte de ícone. Assim elas herdam a cor do fósforo, escalam com o `clamp()`
+ * do resto e não somam um pedido de rede numa tela que fica aberta o dia
+ * inteiro recarregando.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* A caixa de número: cantos em seta + etiqueta lateral, como no terminal. */
+.mural-numero {
+  border: 1px solid var(--mural-linha);
+  border-radius: 0;                 /* terminal não tem canto redondo */
+  padding-block: clamp(12px, 1.1vw, 26px);
+}
+.mural-numero::before {
+  content: "⌐";
+  position: absolute; top: -.15em; left: .25em;
+  width: auto; height: auto; border: none;
+  color: var(--mural-linha); font-size: clamp(11px, .8vw, 17px); line-height: 1;
+}
+.mural-numero::after {
+  content: "⌐";
+  position: absolute; bottom: -.15em; right: .25em;
+  width: auto; height: auto; border: none;
+  color: var(--mural-linha); font-size: clamp(11px, .8vw, 17px); line-height: 1;
+  transform: rotate(180deg);
+}
+/* A etiqueta lateral — o "[RPM]" da referência, mas com o que ela É. */
+.mural-numero .mural-etiqueta {
+  position: absolute; top: clamp(6px, .5vw, 12px); right: clamp(8px, .7vw, 16px);
+  font-size: clamp(7.5px, .52vw, 11px); letter-spacing: .2em;
+  color: var(--mural-linha); text-transform: uppercase;
+}
+
+/* ── CABEÇALHO DA TABELA de fluxo ────────────────────────────────────── */
+.mural-cabecalho {
+  display: grid; align-items: baseline;
+  grid-template-columns: 4.5em minmax(0,1fr) 5em minmax(0,7em) minmax(0,7em);
+  gap: clamp(6px, .7vw, 16px);
+  padding: 0 clamp(6px, .5vw, 12px) clamp(4px, .35vw, 8px);
+  border-bottom: 1px solid var(--mural-linha);
+  font-size: clamp(8px, .58vw, 12px); letter-spacing: .2em;
+  color: var(--mural-linha); text-transform: uppercase;
+}
+.mural-cabecalho span:nth-child(4),
+.mural-cabecalho span:nth-child(5) { text-align: right; }
+@media (min-width: 1101px) {
+  .mural-cabecalho { grid-template-columns: 3.6em minmax(0,1fr) minmax(0,6em) minmax(0,6.5em); }
+  .mural-cabecalho span:nth-child(3) { display: none; }
+}
+@media (max-width: 640px) {
+  .mural-cabecalho { display: none; }   /* a tabela vira lista; rótulo estorva */
+}
+
+/* ── AS COLUNAS DE RUNA nas bordas ───────────────────────────────────── */
+.mural-runas {
+  position: fixed; top: 0; bottom: 0; width: clamp(14px, 1.4vw, 34px);
+  z-index: 5; pointer-events: none;
+  display: flex; flex-direction: column; justify-content: space-around;
+  align-items: center;
+  font-size: clamp(8px, .62vw, 14px); line-height: 1.9;
+  color: var(--mural-linha); user-select: none;
+}
+.mural-runas.esq { left: 0; }
+.mural-runas.dir { right: 0; }
+/* ⚠️ Some no estreito: numa tela de celular elas roubariam largura da
+   informação, que é o oposto do que uma borda decorativa deve fazer. */
+@media (max-width: 900px) { .mural-runas { display: none; } }
+
+/* ── O PROMPT ganha as partes que faltavam ───────────────────────────── */
+.mural-prompt i { font-style: normal; color: var(--mural-vivo); }
+.mural-prompt .mural-sep { color: var(--mural-linha); }

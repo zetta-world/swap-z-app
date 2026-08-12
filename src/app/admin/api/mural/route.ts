@@ -150,9 +150,26 @@ export async function GET(): Promise<NextResponse> {
     const { count: usuarios } = await db
       .from("tier_cache").select("wallet_address", { count: "exact", head: true });
 
+    /**
+     * ⚠️ A REGIÃO ONDE ESTA FUNÇÃO EXECUTOU — e ela é dado, não enfeite.
+     *
+     * A referência do mural trazia "NETWORK: 1GBPS" e "SYS_LOAD: 72%", que
+     * são números inventados pela geração da imagem. Trocar por métrica falsa
+     * numa barra de status seria a mesma classe de mentira que este projeto
+     * persegue nos painéis — só que mais barata, porque ninguém confere
+     * rodapé.
+     *
+     * `VERCEL_REGION` é o oposto: é medido, e é exatamente a pergunta que a
+     * migração da Binance abriu — em qual região isto está rodando de fato?
+     * Ela vira visível na parede em vez de precisar de inspeção de artefato.
+     */
     return NextResponse.json({
       pracas, trocas, dinheiro,
       pulso: { eventos5min: eventos5min ?? 0, usuarios: usuarios ?? 0 },
+      infra: {
+        regiao: process.env.VERCEL_REGION ?? "local",
+        levouMs: Date.now() - agora,
+      },
       agora: new Date(agora).toISOString(),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
