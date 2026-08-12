@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
  * FUNDING / BASIS — o que sobrou depois de a arbitragem spot-spot ser reprovada.
@@ -193,7 +194,7 @@ export default function FundingPanel() {
               LÍQUIDO POR ANO (o que decide):{" "}
               <b style={{
                 fontSize: 14,
-                color: (d.resumo.medianaLiquidaAnualPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                color: corDoResultado(d.resumo.medianaLiquidaAnualPct),
               }}>
                 {pct(d.resumo.medianaLiquidaAnualPct, 2)}
               </b>

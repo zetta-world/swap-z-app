@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
  * O QUE TERIA DADO LUCRO — a pergunta que a semana de ajustes não respondia.
@@ -131,7 +132,7 @@ export default function WhatWorkedPanel() {
                     </td>
                     <td style={{
                       fontVariantNumeric: "tabular-nums",
-                      color: e.medianTotalPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                      color: corDoResultado(e.medianTotalPct),
                     }}>{pct(e.medianTotalPct)}</td>
                     {/* A AMOSTRA. Abaixo de 10 trades a mediana é anedota, e o
                         âmbar diz isso sem precisar de legenda. */}

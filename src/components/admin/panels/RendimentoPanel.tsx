@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
  * RENDIMENTO INTEGRADO — C1 a C4, e a tabela que vira produto.
@@ -246,7 +247,7 @@ export default function RendimentoPanel() {
                               </td>
                               <td style={{
                                 padding: "3px 5px",
-                                color: (f.liquido1oAnoPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                                color: corDoResultado(f.liquido1oAnoPct),
                               }}>
                                 <b>{pct(f.liquido1oAnoPct)}</b>
                               </td>

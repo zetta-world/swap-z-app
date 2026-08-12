@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoResultado, legendaDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
  * SER A CONTRAPARTE — C14, a mesa de liquidez (Fase 8.1).
@@ -115,8 +116,11 @@ export default function LiquidezPanel() {
             {/* ⚠️ A VANTAGEM É A RÉGUA, e o rótulo diz "contra segurar" para
                 ninguém a ler como retorno. Foi exatamente essa confusão que
                 pintou de verde, em 09/08, duas piscinas que perderam. */}
+            {/* ⚠️ E A COR OLHA O ABSOLUTO JUNTO (12/08). Em 01:05 a piscina
+                rendeu −53,6% e esta vantagem de +0,73 saía VERDE, porque
+                segurar rendeu −54,3. O rótulo já avisava; a cor desmentia. */}
             <Bloco rotulo="VANTAGEM vs SEGURAR" valor={pct(data.resumo.vantagemMedianaPct)}
-                   cor={(data.resumo.vantagemMedianaPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)"} />
+                   cor={corDoResultado(data.resumo.lpMedianoPct, data.resumo.vantagemMedianaPct)} />
             <Bloco rotulo="PISCINA (absoluto)" valor={pct(data.resumo.lpMedianoPct)} cor="var(--adm-ink-2)" />
             <Bloco rotulo="SEGURAR (absoluto)" valor={pct(data.resumo.segurarMedianoPct)} cor="var(--adm-ink-2)" />
             <Bloco rotulo="TAXA" valor={pct(data.resumo.taxaMedianaPct)} cor="var(--adm-ink-2)" />
@@ -214,7 +218,7 @@ export default function LiquidezPanel() {
                     <td style={{
                       textAlign: "right", fontWeight: 700,
                       color: p.apyDe === "ausente" ? "var(--adm-ink-4)"
-                        : p.vantagemPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                        : corDoResultado(p.lpPct, p.vantagemPct),
                     }}>
                       {p.apyDe === "ausente" ? "—" : pct(p.vantagemPct)}
                     </td>

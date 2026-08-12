@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
+import { corDoPnl } from "@/lib/admin/cor-resultado";
 
 type Recent = {
   wallet_address: string | null; kind: string; pair: string | null; side: string | null;
@@ -56,7 +57,7 @@ export default function OperationsLedgerPanel() {
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
             <Stat label="OPERATIONS" value={String(data.total)} color="var(--adm-cyan)" />
             <Stat label="VOLUME" value={usd(data.totalVolume)} color="var(--adm-ink)" />
-            <Stat label="REALIZED P&L" value={`${data.totalPnl >= 0 ? "+" : ""}${usd(data.totalPnl)}`} color={data.totalPnl >= 0 ? "var(--adm-green)" : "var(--adm-red)"} />
+            <Stat label="REALIZED P&L" value={`${data.totalPnl > 0 ? "+" : ""}${usd(data.totalPnl)}`} color={corDoPnl(data.totalPnl)} />
           </div>
           {Object.keys(data.byKind).length === 0 ? (
             <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>No operations recorded yet.</div>
@@ -69,7 +70,7 @@ export default function OperationsLedgerPanel() {
                     <td style={{ color: "var(--adm-cyan)", fontFamily: "monospace" }}>{kind}</td>
                     <td>{v.count}</td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>{usd(v.volume)}</td>
-                    <td style={{ color: v.pnl >= 0 ? "var(--adm-green)" : "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>{v.pnl >= 0 ? "+" : ""}{usd(v.pnl)}</td>
+                    <td style={{ color: corDoPnl(v.pnl), fontVariantNumeric: "tabular-nums" }}>{v.pnl > 0 ? "+" : ""}{usd(v.pnl)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -89,7 +90,7 @@ export default function OperationsLedgerPanel() {
               {r.side && <span style={{ color: r.side === "buy" ? "var(--adm-green)" : "var(--adm-red)", flexShrink: 0, width: 26 }}>{r.side}</span>}
               <span style={{ color: "var(--adm-ink)", flexShrink: 0, width: 76, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.pair ?? r.kind}</span>
               <span style={{ color: "var(--adm-ink-3)", flex: 1, fontVariantNumeric: "tabular-nums" }}>{r.volume_usd != null ? usd(r.volume_usd) : ""}</span>
-              <span style={{ color: (r.pnl_usd ?? 0) >= 0 ? "var(--adm-green)" : "var(--adm-red)", flexShrink: 0, width: 56, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ color: corDoPnl(r.pnl_usd), flexShrink: 0, width: 56, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                 {r.pnl_usd == null ? "" : `${r.pnl_usd >= 0 ? "+" : ""}${usd(r.pnl_usd)}`}
               </span>
             </div>

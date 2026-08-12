@@ -359,6 +359,42 @@ teste tem que quebrar.
 
 ---
 
+## 21. Corrigir o veredito e não corrigir a COR deixa o defeito de pé
+
+O olho vai no número grande colorido, não no parágrafo embaixo dele. Um selo
+que diz MORTA e um texto que diz "PERDEU" não desfazem um `−51,46%` pintado de
+verde — a tela continua dizendo "deu certo", só que mais devagar.
+
+**Como travar:** a cor de um resultado é decidida por UMA função, com o
+ABSOLUTO como argumento obrigatório. Ternário de cor escrito na tela é o defeito
+esperando lugar. E a função precisa de mais de duas saídas, porque existem mais
+de duas situações — "rendeu mas perdeu do índice" e "não medimos" não cabem em
+verde-ou-vermelho.
+
+> **Cicatriz (12/08, remedição do laboratório):** o dono remediu as 28 mesas e
+> disse *"temos muitos números negativos verdes"*. Estava certo:
+>
+> ```
+> grid_bot:  total −51,46%  ·  segurar −66,91%
+> cor = totalPct > segurarPct ? verde : vermelho   →   VERDE
+> ```
+>
+> A grade perdeu METADE DO CAPITAL e o número saiu verde por ter perdido menos
+> que segurar. Mesma coisa na `amm_lp`: a piscina rendeu −53,6% e a "vantagem"
+> de +0,73 sobre segurar (que rendeu −54,3%) saía verde.
+>
+> ⚠️ **A invariante nº 18 já existia, e o veredito já estava certo.** Ela foi
+> escrita em 10/08 exatamente por isso, e as funções passaram a devolver
+> `morta` nesses casos. Só a cor ficou para trás — em SEIS lugares, em quatro
+> painéis diferentes, porque cada um tinha o seu próprio ternário.
+>
+> ⚠️ **E a varredura achou uma segunda família junto:** as colunas de P&L
+> usavam `n >= 0 ? verde : vermelho`, então **zero e NULO saíam verdes**. O
+> painel de operações mostrava "+$0" em verde em toda linha, e "não sabemos o
+> resultado" ficava com a mesma cara de "deu lucro".
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:

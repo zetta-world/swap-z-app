@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
  * DEX ↔ CEX — a última arbitragem do mapa.
@@ -151,7 +152,7 @@ export default function DexCexPanel() {
                 mediana da borda LÍQUIDA:{" "}
                 <b style={{
                   fontSize: 14,
-                  color: r.medianaLiquidaPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                  color: corDoResultado(r.medianaLiquidaPct),
                 }}>
                   {pct(r.medianaLiquidaPct)}
                 </b>
@@ -204,7 +205,7 @@ export default function DexCexPanel() {
                     </td>
                     <td style={{
                       padding: "3px 5px",
-                      color: l.liquidaPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                      color: corDoResultado(l.liquidaPct),
                     }}>
                       <b>{pct(l.liquidaPct)}</b>
                     </td>

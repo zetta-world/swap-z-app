@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoResultado, legendaDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
  * ROTAÇÃO E GRADE — C9 e C10 (Fase 8.2).
@@ -88,8 +89,12 @@ export default function RotacaoGradePanel() {
           {/* ═══ C9 ═══════════════════════════════════════════════════ */}
           <Cabeca titulo="C9 · ROTAÇÃO POR MOMENTO" v={data.rotacao.veredito} />
           <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+            {/* ⚠️ A COR OLHA O ABSOLUTO, NÃO SÓ A VANTAGEM (12/08).
+                   `vantagemPct > 0` pintava de verde uma mesa que PERDEU
+                   dinheiro batendo o índice — a invariante nº 18 na cor, que
+                   tinha ficado para trás quando o veredito foi corrigido. */}
             <Bloco r="VANTAGEM vs SEGURAR" v={pct(data.rotacao.vantagemPct)}
-                   c={data.rotacao.vantagemPct > 0 ? "var(--adm-green)" : "var(--adm-red)"} />
+                   c={corDoResultado(data.rotacao.medianaPct, data.rotacao.vantagemPct)} />
             <Bloco r="ROTAÇÃO (por período)" v={pct(data.rotacao.medianaPct)} c="var(--adm-ink-2)" />
             <Bloco r="SEGURAR TODOS" v={pct(data.rotacao.segurarPct)} c="var(--adm-ink-2)" />
             <Bloco r="CAPITAL" v={`$${data.rotacao.capitalUsd.toLocaleString("pt-BR")}`} c="var(--adm-ink-3)" />
@@ -121,7 +126,7 @@ export default function RotacaoGradePanel() {
                         <td style={{ color: "var(--adm-ink-3)" }}>{p.escolhidos.join(" · ")}</td>
                         <td style={{ textAlign: "right" }}>{pct(p.retornoPct)}</td>
                         <td style={{ textAlign: "right" }}>{pct(p.segurarPct)}</td>
-                        <td style={{ textAlign: "right", fontWeight: 700, color: d > 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
+                        <td style={{ textAlign: "right", fontWeight: 700, color: corDoResultado(p.retornoPct, d) }}>
                           {pct(d)}
                         </td>
                       </tr>
@@ -135,8 +140,12 @@ export default function RotacaoGradePanel() {
           {/* ═══ C10 ══════════════════════════════════════════════════ */}
           <Cabeca titulo="C10 · GRADE" v={data.grade.veredito} />
           <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+            {/* ⚠️ ESTE ERA O PIOR: `totalPct > segurarPct` pintou de VERDE
+                   uma grade que perdeu 51,46% do capital, porque segurar
+                   perdeu 66,91%. Comparação com o competidor sem olhar se
+                   sobrou dinheiro. */}
             <Bloco r="TOTAL (com estoque)" v={pct(data.grade.totalPct)}
-                   c={data.grade.totalPct > data.grade.segurarPct ? "var(--adm-green)" : "var(--adm-red)"} />
+                   c={corDoResultado(data.grade.totalPct, data.grade.totalPct - data.grade.segurarPct)} />
             {/* ⚠️ O número das propagandas, rotulado como tal. */}
             <Bloco r="REALIZADO (degraus)" v={pct(data.grade.realizadoPct)} c="var(--adm-amber)" />
             <Bloco r="SEGURAR" v={pct(data.grade.segurarPct)} c="var(--adm-ink-2)" />
@@ -169,7 +178,9 @@ export default function RotacaoGradePanel() {
                     <td style={{ textAlign: "right" }}>{g.fills}</td>
                     <td style={{ textAlign: "right", color: "var(--adm-amber)" }}>{pct(g.realizadoPct)}</td>
                     <td style={{ textAlign: "right", color: "var(--adm-amber)" }}>{pct(g.estoquePct)}</td>
-                    <td style={{ textAlign: "right", fontWeight: 700, color: g.totalPct > g.segurarPct ? "var(--adm-green)" : "var(--adm-red)" }}>
+                    {/* ⚠️ Mesma régua da linha do topo: perder menos que
+                        segurar não pinta de verde um símbolo que perdeu. */}
+                    <td style={{ textAlign: "right", fontWeight: 700, color: corDoResultado(g.totalPct, g.totalPct - g.segurarPct) }}>
                       {pct(g.totalPct)}
                     </td>
                     <td style={{ textAlign: "right" }}>{pct(g.segurarPct)}</td>

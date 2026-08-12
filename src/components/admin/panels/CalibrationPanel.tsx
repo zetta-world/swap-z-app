@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
  * VARREDURA DE CALIBRAGEM — "estamos conservadores demais?", com número.
@@ -102,7 +103,7 @@ export default function CalibrationPanel() {
                     {/* O TOTAL é o juiz: média boa com amostra minúscula não paga conta. */}
                     <td style={{
                       fontVariantNumeric: "tabular-nums",
-                      color: l.totalPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                      color: corDoResultado(l.totalPct),
                     }}>{pct(l.totalPct, 1)}</td>
                     <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--adm-ink-4)" }}>
                       {l.winRate == null ? "—" : `${(l.winRate * 100).toFixed(0)}%`}

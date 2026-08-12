@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoPnl } from "@/lib/admin/cor-resultado";
 
 type WalletRow = {
   wallet: string; ops: number; volume: number; pnl: number; grossWin: number; grossLoss: number;
@@ -20,7 +21,8 @@ type Detail = {
 
 const short = (w: string) => `${w.slice(0, 6)}…${w.slice(-4)}`;
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
-const pnlColor = (n: number) => (n >= 0 ? "var(--adm-green)" : "var(--adm-red)");
+/** ⚠️ Zero e nulo eram VERDES aqui. Ver `corDoPnl`. */
+const pnlColor = (n: number | null | undefined) => corDoPnl(n);
 const date = (s: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }) : "—");
 
 function Tile({ label, value, color }: { label: string; value: string; color?: string }) {

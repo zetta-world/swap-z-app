@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
  * PRÊMIO DE VARIÂNCIA — Fase 5.1, e a correção da hipótese do mapa.
@@ -215,7 +216,10 @@ export default function VarianciaPanel() {
                             </td>
                             <td style={{
                               padding: "3px 5px",
-                              color: c.vantagemPct > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                              /* ⚠️ O ABSOLUTO DA COBERTA MANDA (12/08): uma
+                                 coberta que PERDEU não fica verde por ter
+                                 perdido menos que segurar. */
+                              color: corDoResultado(c.cobertaMediaPct, c.vantagemPct),
                             }}>
                               <b>{pt(c.vantagemPct)}</b>
                             </td>

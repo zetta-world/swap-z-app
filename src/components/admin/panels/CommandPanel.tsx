@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
+import { corDoPnl } from "@/lib/admin/cor-resultado";
 
 type Command = {
   users: number; active24h: number; volume24h: number; pnlAll: number; aiCost24h: number;
@@ -12,7 +13,8 @@ type Command = {
 };
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
-const pnlColor = (n: number) => (n >= 0 ? "var(--adm-green)" : "var(--adm-red)");
+/** ⚠️ Zero e nulo eram VERDES aqui. Ver `corDoPnl`. */
+const pnlColor = (n: number | null | undefined) => corDoPnl(n);
 
 export default function CommandPanel() {
   const [d, setD] = useState<Command | null>(null);

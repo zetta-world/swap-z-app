@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
  * COMBINAR AS VERDES — a única coisa que a correlação diz que funciona.
@@ -135,7 +136,7 @@ export default function CombinacaoPanel() {
               </div>
               <div style={{
                 fontSize: 15, fontWeight: 700,
-                color: (r.carteiraLiquidaPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                color: corDoResultado(r.carteiraLiquidaPct),
               }}>
                 {pct(r.carteiraLiquidaPct)}<span style={{ fontSize: 9, fontWeight: 400 }}>/ano</span>
               </div>
@@ -151,7 +152,7 @@ export default function CombinacaoPanel() {
               </div>
               <div style={{
                 fontSize: 15, fontWeight: 700,
-                color: (r.melhorParteLiquidaPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                color: corDoResultado(r.melhorParteLiquidaPct),
               }}>
                 {pct(r.melhorParteLiquidaPct)}<span style={{ fontSize: 9, fontWeight: 400 }}>/ano</span>
               </div>
@@ -246,7 +247,7 @@ export default function CombinacaoPanel() {
                       </td>
                       <td style={{
                         padding: "3px 5px",
-                        color: (p.liquidoPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                        color: corDoResultado(p.liquidoPct),
                       }}>
                         <b>{pct(p.liquidoPct)}</b>
                       </td>
