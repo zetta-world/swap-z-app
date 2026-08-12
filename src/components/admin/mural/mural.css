@@ -87,7 +87,25 @@
 }
 
 /* ── O MAPA ─────────────────────────────────────────────────────────── */
-.mural-globo { position: relative; flex: 1; min-height: 0; }
+/* ⚠️ O PALCO — mapa e fluxo LADO A LADO em tela larga (12/08).
+ *
+ * A primeira versão empilhava tudo: números, mapa, fluxo. Numa TV de 65
+ * polegadas isso deixava um vão enorme entre o mapa e a lista, e o fluxo caía
+ * abaixo da dobra — a informação mais viva da tela ficava invisível justamente
+ * onde há mais espaço.
+ *
+ * Agora o mapa toma dois terços e o fluxo ocupa a coluna da direita. Abaixo de
+ * 1100px volta a empilhar, que é o certo no notebook e no celular. */
+.mural-palco {
+  display: grid; gap: clamp(12px, 1.4vw, 32px);
+  grid-template-columns: minmax(0, 2.1fr) minmax(0, 1fr);
+  align-items: start; flex: 1; min-height: 0;
+}
+@media (max-width: 1100px) {
+  .mural-palco { grid-template-columns: minmax(0, 1fr); }
+}
+
+.mural-globo { position: relative; min-height: 0; }
 .mural-mapa { width: 100%; height: auto; display: block; }
 .mural-terra circle { fill: var(--mural-terra); }
 .mural-ponto {
@@ -122,7 +140,12 @@
   margin: 0 0 .6em; font-size: clamp(9px, .68vw, 14px);
   letter-spacing: .26em; color: var(--mural-fraco); font-weight: 500;
 }
-.mural-fluxo ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.mural-fluxo ul {
+  list-style: none; margin: 0; padding: 0; display: grid; gap: 2px;
+  /* Em tela larga a coluna é alta: deixa rolar em vez de esticar a página. */
+  max-height: min(58vh, 620px); overflow-y: auto;
+}
+@media (max-width: 1100px) { .mural-fluxo ul { max-height: none; overflow: visible; } }
 .mural-fluxo li {
   display: grid; align-items: baseline;
   grid-template-columns: 4.5em minmax(0,1fr) 5em minmax(0,7em) minmax(0,7em);
@@ -154,6 +177,12 @@
 }
 
 /* ── CELULAR: a tabela de fluxo vira duas linhas em vez de espremer ──── */
+/* Coluna lateral: mesmas cinco colunas não cabem em ~1/3 da tela. */
+@media (min-width: 1101px) {
+  .mural-fluxo li { grid-template-columns: 3.6em minmax(0,1fr) minmax(0,6em) minmax(0,6.5em); }
+  .mural-fluxo .mural-cadeia { display: none; }
+}
+
 @media (max-width: 640px) {
   .mural-fluxo li {
     grid-template-columns: 4.2em minmax(0,1fr) minmax(0,5.5em);

@@ -105,7 +105,14 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "ALERTS",
     subtitle: "Telegram · proactive notifications",
     icon: "🔔",
-    category: "command",
+    /**
+     * ⚠️ SAIU DO `command` EM 12/08. A aba COMMAND responde "como a empresa
+     * está agora"; um histórico de alertas responde "o que aconteceu" — é
+     * registro, e registro mora em `logs`. Com ele no COMMAND, a fila de
+     * "GeckoTerminal fora do ar" ocupava um terço da tela mais importante do
+     * painel e empurrava o que decide para baixo da dobra.
+     */
+    category: "logs",
     defaultEnabled: true,
     defaultOrder: -1,
   },
@@ -281,7 +288,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     icon: "🌍",
     category: "command",
     defaultEnabled: true,
-    defaultOrder: 0.5,
+    defaultOrder: -1,
   },
   {
     id: "lab",

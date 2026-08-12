@@ -127,7 +127,8 @@ export default function MuralView() {
         <Numero r="CARTEIRAS"          v={String(d?.pulso.usuarios ?? 0)} />
       </section>
 
-      {/* ── O MAPA ──────────────────────────────────────────────────── */}
+      {/* ── O PALCO: mapa à esquerda, fluxo à direita em tela larga ─── */}
+      <div className="mural-palco">
       <section className="mural-globo">
         <MapaMundi pracas={d?.pracas ?? []} />
         <div className="mural-legenda-mapa">
@@ -180,6 +181,7 @@ export default function MuralView() {
           </ul>
         )}
       </section>
+      </div>
     </div>
   );
 }
