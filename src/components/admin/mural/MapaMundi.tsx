@@ -104,10 +104,19 @@ export default function MapaMundi({
           const frio = idade(p.minAtras);
           return (
             <g key={`${p.lat},${p.lon}`} style={{ opacity: 1 - frio * 0.6 }}>
-              <circle cx={x} cy={y} r={r * 7.5} fill="url(#mural-halo)"
-                      className={frio < 0.35 ? "mural-pulso" : undefined} />
+              {/* O halo: ESTÁTICO. É o brilho do ponto, e brilho que apaga
+                  sozinho lê como defeito — ver a nota em `.mural-ping`. */}
+              <circle cx={x} cy={y} r={r * 7.5} fill="url(#mural-halo)" />
               {/* A mira: dá coordenada ao ponto, como num radar. */}
               <circle cx={x} cy={y} r={r * 2.6} className="mural-mira" />
+              {/* Os anéis: só no acesso RECENTE, e aditivos — some sem tirar
+                  nada da tela. Dois, com atraso, para varrer em vez de piscar. */}
+              {frio < 0.35 && (
+                <>
+                  <circle cx={x} cy={y} r={1.2} className="mural-ping" />
+                  <circle cx={x} cy={y} r={1.2} className="mural-ping atras" />
+                </>
+              )}
               <circle cx={x} cy={y} r={r} className="mural-ponto" />
             </g>
           );

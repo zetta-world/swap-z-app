@@ -114,8 +114,33 @@
   fill: var(--mural-vivo);
   filter: drop-shadow(0 0 3px var(--mural-vivo));
 }
-.mural-pulso { transform-box: fill-box; transform-origin: center;
-               animation: mural-expandir 3.4s ease-out infinite; }
+/**
+ * ⚠️ O BRILHO NÃO ANIMA. QUEM ANIMA É O ANEL (12/08).
+ *
+ * A versão anterior punha a animação no HALO — o próprio brilho do ponto — e
+ * levava a opacidade dele a ZERO, ficando em zero de 70% a 100% do ciclo. Um
+ * terço do tempo o acesso simplesmente sumia do mapa. Somado à escala de .55
+ * a 1.5 sobre um raio já 7,5× maior que o ponto, o brilho saltava entre 4× e
+ * 11× de tamanho. Lia como defeito, não como pulso.
+ *
+ * Radar não funciona assim: o alvo fica aceso e o ANEL é que varre. Aqui o
+ * halo é estático e o ping é um elemento SEPARADO, só traço. Quando ele está
+ * invisível não falta nada na tela — ele é aditivo, nunca subtrativo.
+ *
+ * ⚠️ E ANIMA `r`, NÃO `transform: scale`. Escala em SVG depende de
+ * `transform-box`/`transform-origin`, que é onde a versão anterior escorregou;
+ * animar o raio direto não tem origem para errar. Se um navegador não animar
+ * `r`, o anel fica parado no raio base — discreto, e nunca quebrado.
+ */
+.mural-ping {
+  fill: none;
+  stroke: var(--mural-vivo);
+  stroke-width: .4;
+  animation: mural-radar 3.2s cubic-bezier(.22,.8,.3,1) infinite;
+}
+/* O segundo anel sai atrasado — é o que dá a leitura de varredura contínua
+   em vez de um piscar isolado. */
+.mural-ping.atras { animation-delay: 1.6s; }
 
 .mural-legenda-mapa {
   display: flex; gap: clamp(8px, 1vw, 20px); flex-wrap: wrap; align-items: baseline;
@@ -196,9 +221,11 @@
 
 /* ── ANIMAÇÕES ──────────────────────────────────────────────────────── */
 @keyframes mural-bater   { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
-@keyframes mural-expandir{ 0% { transform: scale(.55); opacity: .9 }
-                           70% { transform: scale(1.5); opacity: 0 }
-                           100% { transform: scale(1.5); opacity: 0 } }
+@keyframes mural-radar {
+  0%   { r: 1.2;  opacity: .9; stroke-width: .5 }
+  75%  { r: 13;   opacity: 0;  stroke-width: .1 }
+  100% { r: 13;   opacity: 0;  stroke-width: .1 }
+}
 @keyframes mural-chegou  { 0% { background: rgba(57,255,115,.22) }
                            100% { background: transparent } }
 
@@ -207,7 +234,7 @@
    atender — e ela também vale para quem deixa o mural num telão o dia
    inteiro e não quer o cintilar no canto do olho. */
 @media (prefers-reduced-motion: reduce) {
-  .mural-farol.vivo, .mural-pulso, .mural-entrando { animation: none; }
+  .mural-farol.vivo, .mural-ping, .mural-entrando { animation: none; }
 }
 
 

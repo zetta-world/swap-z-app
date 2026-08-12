@@ -181,3 +181,50 @@ describe("a paleta do mural também passa na conta", () => {
     }
   });
 });
+
+/**
+ * ⚠️ A ANIMAÇÃO NÃO PODE APAGAR O DADO (12/08).
+ *
+ * O pulso do mapa animava o HALO — o próprio brilho do acesso — e levava a
+ * opacidade dele a ZERO, ficando assim de 70% a 100% do ciclo. Um terço do
+ * tempo o ponto sumia da tela. O dono viu e disse "o pulsar está quebrado".
+ *
+ * A regra que sai daí: efeito de movimento é ADITIVO. Ele acrescenta um
+ * elemento próprio que aparece e some; nunca apaga o elemento que carrega a
+ * informação. Quando a animação desliga — por preferência de movimento
+ * reduzido, por navegador antigo, por qualquer motivo — o dado tem que
+ * continuar inteiro na tela.
+ */
+describe("o pulso é aditivo — nunca apaga o ponto", () => {
+  const css = readFileSync("src/components/admin/mural/mural.css", "utf8");
+  const mapa = readFileSync("src/components/admin/mural/MapaMundi.tsx", "utf8");
+
+  it("o halo não tem animação — ele é o brilho, e brilho não pisca", () => {
+    const halo = mapa.match(/<circle[^>]*url\(#mural-halo\)[^>]*\/>/)?.[0] ?? "";
+    expect(halo, "o halo voltou a ser animado").not.toMatch(/className=/);
+  });
+
+  it("quem anima é um elemento separado, e ele é só traço", () => {
+    const ping = css.match(/\.mural-ping\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(ping).toContain("fill: none");
+    expect(ping).toContain("stroke:");
+  });
+
+  /**
+   * ⚠️ ANIMAR `r` EM VEZ DE `transform: scale` — escala em SVG depende de
+   * `transform-box`/`transform-origin`, que foi onde a versão anterior
+   * escorregou. Raio não tem origem para errar.
+   */
+  it("a varredura anima o raio, não uma escala com origem", () => {
+    const kf = css.match(/@keyframes mural-radar\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+    expect(kf).toMatch(/\br:\s*[\d.]+/);
+    expect(kf).not.toContain("transform");
+  });
+
+  /** Com movimento reduzido, o ponto continua lá — só para de varrer. */
+  it("movimento reduzido desliga o anel, não o ponto", () => {
+    const bloco = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\}/g)?.join("") ?? "";
+    expect(bloco).toContain("mural-ping");
+    expect(bloco).not.toContain("mural-ponto");
+  });
+});
