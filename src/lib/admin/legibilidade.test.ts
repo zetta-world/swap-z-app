@@ -228,3 +228,66 @@ describe("o pulso é aditivo — nunca apaga o ponto", () => {
     expect(bloco).not.toContain("mural-ponto");
   });
 });
+
+/**
+ * ⚠️ O TESTE DE CONTRASTE PASSOU NA PALETA ERRADA (12/08).
+ *
+ * A troca para fósforo falhou em silêncio numa substituição de texto, e o
+ * mural ficou rodando a paleta azul antiga com varredura de CRT por cima — o
+ * dono viu no telão e disse "o mapa está muito escuro e você não respeitou as
+ * cores". O teste de contraste passou o tempo todo, porque a paleta antiga
+ * TAMBÉM passava em 4,5:1.
+ *
+ * Ele respondia "as cores são legíveis?" e a pergunta que faltava era "são as
+ * cores CERTAS?". Duas perguntas, uma trava só — e a que não existia era a que
+ * teria pego.
+ *
+ * A regra do dono: **fósforo verde na estrutura, CIANO nos valores.**
+ */
+describe("a paleta é a declarada, não só uma paleta legível", () => {
+  const mural = readFileSync("src/components/admin/mural/mural.css", "utf8");
+  const tk = (nome: string): string => {
+    const m = mural.match(new RegExp(`^\\s*--${nome}:\\s*([^;]+);`, "m"));
+    expect(m, `--${nome} não declarado`).toBeTruthy();
+    return m![1].trim();
+  };
+
+  /** Verde é verde: o canal G domina. Azul dominante = paleta trocada. */
+  it("o fósforo é verde de verdade, não um cinza-azulado", () => {
+    for (const t of ["mural-tinta", "mural-fraco", "mural-verde"]) {
+      const hex = tk(t).replace("#", "");
+      const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+      expect(g, `--${t} não é fósforo: G=${g} R=${r} B=${b}`).toBeGreaterThan(r);
+      expect(g, `--${t} não é fósforo: G=${g} B=${b}`).toBeGreaterThanOrEqual(b);
+    }
+  });
+
+  /** Ciano é ciano: azul domina o vermelho com folga. */
+  it("o acento dos valores é ciano", () => {
+    const hex = tk("mural-vivo").replace("#", "");
+    const [r, , b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    expect(b, `--mural-vivo não é ciano: R=${r} B=${b}`).toBeGreaterThan(r + 60);
+  });
+
+  /**
+   * ⚠️ O MAPA É A MAIOR SUPERFÍCIE DA TELA e estava a 30% de opacidade —
+   * sumia a três metros. A referência pede alta densidade; abaixo de 50% ele
+   * vira esboço.
+   */
+  it("a terra tem presença — pelo menos 50% de opacidade", () => {
+    const alfa = Number(tk("mural-terra").match(/,\s*\.?([0-9.]+)\s*\)/)?.[1] ?? "0");
+    expect(alfa, `--mural-terra está a ${alfa}`).toBeGreaterThanOrEqual(0.5);
+  });
+
+  /**
+   * ⚠️ E O VALOR NÃO PODE SE DISTINGUIR SÓ PELA COR. Ciano e fósforo têm
+   * luminância quase igual (1,14× entre si) — quem não separa matiz veria o
+   * mesmo tom. A hierarquia tem que sobreviver em escala de cinza, e sobrevive
+   * porque o valor é também o maior e o mais pesado da caixa.
+   */
+  it("o valor é maior e mais pesado, não só de outra cor", () => {
+    const bloco = mural.match(/\.mural-numero strong\s*\{[^}]*\}/g)?.join("") ?? "";
+    const geral = mural.match(/\.mural-numero strong[\s\S]{0,400}?font-size[^;]*;/)?.[0] ?? "";
+    expect(bloco + geral).toMatch(/font-size|font-weight/);
+  });
+});

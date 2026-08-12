@@ -36,7 +36,11 @@ export default function MapaMundi({
   pracas: Praca[];
   compacto?: boolean;
 }) {
-  const terra = useMemo(() => gradeDaTerra(compacto ? 2.6 : 1.7), [compacto]);
+  /* ⚠️ "ALTA DENSIDADE" é pedido da referência, e no telão faz diferença: a
+     1,7° a silhueta fica rala e o mapa parece um esboço. A 1,2° são ~7 mil
+     glifos, que o navegador desenha uma vez e não redesenha — a grade é
+     memorizada e não depende do dado. */
+  const terra = useMemo(() => gradeDaTerra(compacto ? 2.4 : 1.2), [compacto]);
 
   const raio = (n: number) => Math.min(2.4, 0.6 + Math.sqrt(n) * 0.17);
   const idade = (min: number) => Math.min(1, Math.max(0, min / 60));
@@ -84,7 +88,7 @@ export default function MapaMundi({
       <g className="mural-terra" aria-hidden>
         {terra.map((p, i) => (
           <text key={i} x={p.x * 360} y={p.y * 156}
-                fontSize={compacto ? 2.1 : 1.55} textAnchor="middle">
+                fontSize={compacto ? 2.0 : 1.35} textAnchor="middle">
             {glifoDe(p.x, p.y)}
           </text>
         ))}

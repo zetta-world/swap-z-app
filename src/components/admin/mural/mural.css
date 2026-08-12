@@ -11,14 +11,32 @@
  * ═══════════════════════════════════════════════════════════════════════ */
 
 .mural {
-  --mural-fundo:  #05060a;
-  --mural-tinta:  #eef0f7;
-  --mural-fraco:  #8a8aa2;   /* 5,9:1 — mesmo piso do painel */
-  --mural-linha:  rgba(140,150,200,.14);
-  --mural-vivo:   #38e8ff;   /* acesso ao vivo */
-  --mural-ouro:   #ffcf6b;   /* dinheiro */
-  --mural-verde:  #39ff73;   /* taxa retida */
-  --mural-terra:  rgba(120,140,190,.30);
+  /* ═══ A PALETA DO TERMINAL — e a regra é do dono (12/08).
+   *
+   * "Texto em fósforo verde com VALORES EM CIANO." Estrutura, rótulo,
+   * subtítulo e o mapa são verdes; o número, o título e o marcador de acesso
+   * são ciano. Uma regra só, e ela diz o que a cor SIGNIFICA — não é decoração
+   * distribuída a gosto.
+   *
+   * ⚠️ EU TINHA INVENTADO OUTRA POR CIMA DESSA: ouro no dinheiro, verde na
+   * taxa, ciano no acesso. Três cores, três significados, nenhum deles
+   * declarado — e o dono, que escreveu a regra, teve que apontar.
+   *
+   * ⚠️ E A DIFERENÇA ENTRE CIANO E FÓSFORO NÃO PODE MORAR SÓ NO MATIZ: as duas
+   * têm luminância quase igual (1,14× entre si), então quem não distingue cor
+   * veria o mesmo tom. Por isso o valor em ciano é SEMPRE também o maior e o
+   * mais pesado da caixa — a hierarquia sobrevive em escala de cinza.
+   * ═══ */
+  --mural-fundo:  #020705;
+  --mural-tinta:  #b8ffcf;   /* fósforo · 17,6:1 — texto principal */
+  --mural-fraco:  #5fce85;   /* fósforo apagado · 10,3:1 — rótulo, legenda */
+  --mural-linha:  rgba(77,255,136,.24);
+  --mural-vivo:   #63f5ff;   /* CIANO · 15,5:1 — valor, título, acesso */
+  --mural-ouro:   #63f5ff;   /* mantido como apelido: o dinheiro é ciano */
+  --mural-verde:  #4dff88;   /* fósforo vivo · 15,4:1 — ok, taxa retida */
+  /* ⚠️ O MAPA ESTAVA A 30% E SUMIA NO TELÃO. A referência pede "alta
+   * densidade" — ele é a maior superfície da tela e precisa ter presença. */
+  --mural-terra:  rgba(77,255,136,.60);
 
   min-height: 100dvh;
   background:
@@ -43,12 +61,13 @@
 }
 .mural-marca { display: flex; align-items: center; gap: clamp(10px, 1vw, 20px); }
 .mural-runa {
-  font-size: clamp(26px, 2.6vw, 56px); color: var(--mural-ouro);
+  font-size: clamp(26px, 2.6vw, 56px); color: var(--mural-vivo);
   line-height: 1; text-shadow: 0 0 24px rgba(255,207,107,.45);
 }
 .mural-marca h1 {
   margin: 0; font-size: clamp(20px, 2.1vw, 46px);
   letter-spacing: .16em; font-weight: 700;
+  color: var(--mural-vivo);          /* título em ciano — regra da paleta */
 }
 .mural-marca p {
   margin: 2px 0 0; font-size: clamp(9px, .72vw, 15px);
@@ -84,9 +103,11 @@
   display: block; margin-top: .35em;
   font-size: clamp(20px, 2.3vw, 52px); font-weight: 700; letter-spacing: -.01em;
 }
-.mural-numero.destaque strong {
-  color: var(--mural-ouro); text-shadow: 0 0 30px rgba(255,207,107,.3);
-}
+/* ⚠️ TODO VALOR É CIANO, não só o destacado — é a regra da paleta. O
+   destaque agora é o BRILHO, não uma cor diferente: hierarquia por
+   intensidade dentro da mesma família, como num tubo de fósforo. */
+.mural-numero strong { color: var(--mural-vivo); }
+.mural-numero.destaque strong { text-shadow: 0 0 34px rgba(99,245,255,.45); }
 
 /* ── O MAPA ─────────────────────────────────────────────────────────── */
 /* ⚠️ O PALCO — mapa e fluxo LADO A LADO em tela larga (12/08).
