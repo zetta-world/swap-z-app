@@ -89,7 +89,7 @@ export default function PlatformEventsPanel() {
       </div>
 
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {data && tab === "overview" && (
         <table className="adm-table">
@@ -117,14 +117,14 @@ export default function PlatformEventsPanel() {
       {data && tab === "pages" && (
         <div>
           {data.topPages.length === 0 ? (
-            <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>No page views recorded yet.</div>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>No page views recorded yet.</div>
           ) : (
             data.topPages.map(({ path, count }) => (
               <div key={path} className="adm-stat" style={{ padding: "5px 0" }}>
-                <span style={{ fontSize: 9, color: "var(--adm-cyan)", fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 12, color: "var(--adm-cyan)", fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {path}
                 </span>
-                <span style={{ fontSize: 11, color: "var(--adm-ink)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 14, color: "var(--adm-ink)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
                   {count}
                 </span>
               </div>
@@ -136,10 +136,10 @@ export default function PlatformEventsPanel() {
       {data && tab === "feed" && (
         <div className="adm-scroll" style={{ maxHeight: 260 }}>
           {data.recent.length === 0 ? (
-            <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>No events yet.</div>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>No events yet.</div>
           ) : (
             data.recent.map((r, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 9 }}>
+              <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 12 }}>
                 <span style={{ color: "var(--adm-ink-3)", flexShrink: 0, whiteSpace: "nowrap" }}>
                   {new Date(r.created_at).toLocaleTimeString()}
                 </span>

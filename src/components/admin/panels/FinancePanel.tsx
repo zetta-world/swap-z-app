@@ -57,7 +57,7 @@ export default function FinancePanel() {
       </div>
 
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {/* CUSTO DE IA saiu daqui (30/07) para o painel próprio, na aba CUSTOS.
           Ele vivia como um terço deste card — mas é o que matou o assento
@@ -85,7 +85,7 @@ export default function FinancePanel() {
               ))}
             </tbody>
           </table>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8 }}>Attributed = tier holders × pass price (incl. admin grants). Not realized cash.</div>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 8 }}>Attributed = tier holders × pass price (incl. admin grants). Not realized cash.</div>
         </div>
       )}
     </TerminalPanel>
@@ -113,8 +113,8 @@ function DailyBars({ daily }: { daily: Array<{ date: string; cost: number }> }) 
 function Stat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "8px 10px" }}>
-      <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>{label}</div>
-      <div style={{ fontSize: 15, color, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>{label}</div>
+      <div style={{ fontSize: 18, color, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
     </div>
   );
 }

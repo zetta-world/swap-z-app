@@ -55,7 +55,7 @@ export default function MarketVolumePanel() {
         <div className="adm-shimmer" style={{ height: 80 }} />
       )}
       {error && (
-        <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>
+        <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>
       )}
       {data && (
         <>
@@ -69,13 +69,13 @@ export default function MarketVolumePanel() {
             )}
           </div>
           <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.2em", marginBottom: 6 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.2em", marginBottom: 6 }}>
               TOP PROTOCOLS
             </div>
             {data.top.map((p) => (
               <div key={p.name} className="adm-stat" style={{ padding: "4px 0" }}>
                 <span className="adm-stat-label">{p.name.toUpperCase()}</span>
-                <span className="adm-stat-value" style={{ fontSize: 11 }}>{fmtB(p.volume24h)}</span>
+                <span className="adm-stat-value" style={{ fontSize: 14 }}>{fmtB(p.volume24h)}</span>
               </div>
             ))}
           </div>

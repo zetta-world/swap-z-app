@@ -44,18 +44,18 @@ export default function MarginPanel() {
   };
 
   const row = (key: string, label: string, value: number, meta?: string, stale?: boolean) => (
-    <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 9, padding: "3px 0" }}>
+    <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "3px 0" }}>
       <span style={{ color: "var(--adm-ink-3)", flex: 1 }}>
         {label}
-        {meta && <span style={{ fontSize: 7, color: stale ? "var(--adm-amber)" : "var(--adm-ink-4)" }}> · {meta}</span>}
+        {meta && <span style={{ fontSize: 10, color: stale ? "var(--adm-amber)" : "var(--adm-ink-4)" }}> · {meta}</span>}
       </span>
       {edit === key ? (
         <>
           <input value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
             onKeyDown={(e) => { if (e.key === "Enter") save(key); if (e.key === "Escape") setEdit(null); }}
-            style={{ width: 70, fontSize: 9, padding: "1px 4px", background: "var(--adm-bg)", color: "var(--adm-cyan)",
+            style={{ width: 70, fontSize: 12, padding: "1px 4px", background: "var(--adm-bg)", color: "var(--adm-cyan)",
               border: "1px solid var(--adm-cyan)", borderRadius: 2, fontFamily: "monospace" }} />
-          <button onClick={() => save(key)} style={{ fontSize: 8, color: "var(--adm-green)", background: "none", border: "none", cursor: "pointer" }}>✓</button>
+          <button onClick={() => save(key)} style={{ fontSize: 11, color: "var(--adm-green)", background: "none", border: "none", cursor: "pointer" }}>✓</button>
         </>
       ) : (
         <span onClick={() => { setEdit(key); setDraft(String(value)); }}
@@ -70,12 +70,12 @@ export default function MarginPanel() {
   return (
     <TerminalPanel id="margin" title="MARGEM" subtitle="receita − custos · a conta que decide se a empresa vive" icon="📊" source="admin_kv + eventos de IA">
       {loading && <div className="adm-shimmer" style={{ height: 90 }} />}
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
 
       {d && (
         <div>
           <div style={{
-            fontSize: 10, padding: "7px 9px", borderRadius: 3, marginBottom: 10, lineHeight: 1.5,
+            fontSize: 13, padding: "7px 9px", borderRadius: 3, marginBottom: 10, lineHeight: 1.5,
             color: d.verdict.startsWith("🟢") ? "var(--adm-green)" : d.verdict.startsWith("🟡") ? "var(--adm-amber)" : "var(--adm-red)",
             background: "var(--adm-bg-raise)",
           }}>
@@ -83,7 +83,7 @@ export default function MarginPanel() {
           </div>
 
           <div className="adm-category">Receita mensal recorrente</div>
-          <div style={{ fontSize: 9, color: "var(--adm-ink-3)", padding: "3px 0", lineHeight: 1.6 }}>
+          <div style={{ fontSize: 12, color: "var(--adm-ink-3)", padding: "3px 0", lineHeight: 1.6 }}>
             {d.mrrUsd === null ? (
               <>
                 <span style={{ color: "var(--adm-amber)" }}>ainda não existe</span> — os passes vendidos são
@@ -100,26 +100,26 @@ export default function MarginPanel() {
             i.updatedAt === null ? "nunca preenchido" : `atualizado há ${i.staleDays}d`,
             i.updatedAt === null || (i.staleDays ?? 0) > 45,
           ))}
-          <div style={{ display: "flex", gap: 8, fontSize: 10, padding: "5px 0", borderTop: "1px solid var(--adm-border)", marginTop: 4 }}>
+          <div style={{ display: "flex", gap: 8, fontSize: 13, padding: "5px 0", borderTop: "1px solid var(--adm-border)", marginTop: 4 }}>
             <span style={{ color: "var(--adm-ink-2)", flex: 1 }}>TOTAL</span>
             <span style={{ color: "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>{usd(d.totalCostUsd)}/mês</span>
           </div>
 
           <div className="adm-category" style={{ marginTop: 8 }}>Caixa e fôlego</div>
           {row("cash_reserve_usd", "Reserva em caixa", d.cashUsd ?? 0, d.cashUsd === null ? "não informado" : undefined, d.cashUsd === null)}
-          <div style={{ fontSize: 9, color: "var(--adm-ink-3)", padding: "3px 0" }}>
+          <div style={{ fontSize: 12, color: "var(--adm-ink-3)", padding: "3px 0" }}>
             Fôlego: {d.runwayMonths === null
               ? <span style={{ color: "var(--adm-ink-4)" }}>—</span>
               : <span style={{ color: d.runwayMonths < 6 ? "var(--adm-red)" : "var(--adm-ink-2)" }}>{d.runwayMonths} meses</span>}
           </div>
 
           {d.incomplete && (
-            <div style={{ fontSize: 8, color: "var(--adm-amber)", marginTop: 8, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-amber)", marginTop: 8, lineHeight: 1.5 }}>
               ⚠ Algum custo de infra nunca foi preenchido — a margem acima é um TETO otimista,
               não um resultado. Toque num valor para editar.
             </div>
           )}
-          <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 8, fontStyle: "italic", lineHeight: 1.6 }}>
+          <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 8, fontStyle: "italic", lineHeight: 1.6 }}>
             Infra é entrada manual de propósito: integrar faturamento de Vercel e Supabase seria mais
             bonito e muito mais frágil. Um número digitado uma vez por mês é chato e confiável — e a data
             fica visível, para que um valor velho se denuncie sozinho em vez de mentir calado.

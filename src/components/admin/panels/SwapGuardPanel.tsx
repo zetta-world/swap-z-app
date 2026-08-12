@@ -63,32 +63,32 @@ export default function SwapGuardPanel() {
   return (
     <TerminalPanel id="swap-guard" title="SOLANA GUARD" subtitle="verificação de assinatura · Jupiter" icon="⛨" source="platform_events/swap_guard">
       {loading && <div className="adm-shimmer" style={{ height: 70 }} />}
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
 
       <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
         {PERIODS.map((p) => (
           <button key={p.label} className={`adm-toggle ${hours === p.h ? "active" : ""}`}
-            style={{ fontSize: 8, padding: "2px 6px" }}
+            style={{ fontSize: 11, padding: "2px 6px" }}
             onClick={() => { setHours(p.h); setLoading(true); }}>{p.label}</button>
         ))}
       </div>
 
       <div style={{ marginBottom: 10 }}>
         <button onClick={runProbe} disabled={probing}
-          style={{ fontSize: 9, letterSpacing: "0.05em", padding: "5px 10px", borderRadius: 3,
+          style={{ fontSize: 12, letterSpacing: "0.05em", padding: "5px 10px", borderRadius: 3,
             cursor: probing ? "wait" : "pointer", color: "var(--adm-cyan)",
             background: "rgba(0 229 255 / 0.06)", border: "1px solid rgba(0 229 255 / 0.25)" }}>
           {probing ? "verificando…" : "⚡ testar contra a Jupiter real (grátis · sem swap)"}
         </button>
         {probe && (
           <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 9, padding: "6px 8px", borderRadius: 3, lineHeight: 1.5,
+            <div style={{ fontSize: 12, padding: "6px 8px", borderRadius: 3, lineHeight: 1.5,
               color: probe.verdict.startsWith("✅") ? "var(--adm-green)" : "var(--adm-amber)",
               background: "var(--adm-bg-raise)" }}>
               {probe.verdict}
             </div>
             {probe.probes.map((p, i) => (
-              <div key={i} style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 4, fontFamily: "monospace" }}>
+              <div key={i} style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 4, fontFamily: "monospace" }}>
                 <span style={{ color: p.error ? "var(--adm-red)" : p.guardOk ? "var(--adm-green)" : "var(--adm-red)" }}>
                   {p.case}: {p.error ? `erro — ${p.error}` : p.guardOk ? "APROVADO" : `RECUSADO — ${p.reason ?? ""}`}
                 </span>
@@ -106,7 +106,7 @@ export default function SwapGuardPanel() {
 
       {data && m && (
         <div>
-          <div style={{ fontSize: 9, color: m.color, letterSpacing: "0.06em", marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: m.color, letterSpacing: "0.06em", marginBottom: 8 }}>
             {m.label} — {m.desc}
           </div>
 
@@ -118,14 +118,14 @@ export default function SwapGuardPanel() {
               ["TAXA RECUSA", rate == null ? "—" : `${(rate * 100).toFixed(1)}%`, alarming ? "var(--adm-red)" : "var(--adm-ink-2)"],
             ].map(([label, value, color]) => (
               <div key={label}>
-                <div style={{ fontSize: 7, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>{label}</div>
-                <div style={{ fontSize: 11, color, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+                <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>{label}</div>
+                <div style={{ fontSize: 14, color, fontVariantNumeric: "tabular-nums" }}>{value}</div>
               </div>
             ))}
           </div>
 
           <div style={{
-            fontSize: 9, padding: "6px 8px", borderRadius: 3, marginBottom: 8,
+            fontSize: 12, padding: "6px 8px", borderRadius: 3, marginBottom: 8,
             color: alarming ? "var(--adm-red)" : "var(--adm-ink-3)",
             background: alarming ? "rgba(255 60 60 / 0.07)" : "var(--adm-bg-raise)",
             borderLeft: `2px solid ${alarming ? "var(--adm-red)" : "var(--adm-border)"}`,
@@ -135,18 +135,18 @@ export default function SwapGuardPanel() {
 
           {data.unknown.length > 0 && (
             <div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 4 }}>
                 PROGRAMAS NÃO RECONHECIDOS — adicione à lista se for mudança da Jupiter
               </div>
               {data.unknown.map((u) => (
-                <div key={u.program} style={{ marginBottom: 5, fontSize: 9 }}>
+                <div key={u.program} style={{ marginBottom: 5, fontSize: 12 }}>
                   <div
                     onClick={() => navigator.clipboard?.writeText(u.program)}
                     title="toque p/ copiar"
                     style={{ fontFamily: "monospace", color: "var(--adm-cyan)", cursor: "pointer", wordBreak: "break-all" }}>
                     {u.program}
                   </div>
-                  <div style={{ fontSize: 7, color: "var(--adm-ink-4)", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 10, color: "var(--adm-ink-4)", display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <span>{u.count}×</span>
                     {u.symbols.length > 0 && <span>{u.symbols.join(", ")}</span>}
                     {u.likelyJupiterChange && (
@@ -157,7 +157,7 @@ export default function SwapGuardPanel() {
                   </div>
                 </div>
               ))}
-              <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 6, fontStyle: "italic" }}>
+              <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 6, fontStyle: "italic" }}>
                 Para liberar: adicione o endereço em <code>JUPITER_ALLOWED_PROGRAMS</code> (src/lib/swap/solana-guard.ts) e faça deploy.
                 Emergência: <code>NEXT_PUBLIC_SOLANA_TX_GUARD=off</code> + redeploy.
               </div>

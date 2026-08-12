@@ -29,7 +29,7 @@ export default function TierDistPanel() {
         <div className="adm-shimmer" style={{ height: 80 }} />
       )}
       {state.status === "error" && (
-        <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{state.message}</div>
+        <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{state.message}</div>
       )}
       {state.status === "ok" && (() => {
         const dist = state.data.tiers.distribution;
@@ -43,11 +43,11 @@ export default function TierDistPanel() {
               return (
                 <div key={tier} style={{ marginBottom: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color }}>
+                    <span style={{ fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color }}>
                       {tier}
                     </span>
-                    <span style={{ fontSize: 10, color, fontVariantNumeric: "tabular-nums" }}>
-                      {count.toLocaleString()} <span style={{ color: "var(--adm-ink-3)", fontSize: 8 }}>({pct}%)</span>
+                    <span style={{ fontSize: 13, color, fontVariantNumeric: "tabular-nums" }}>
+                      {count.toLocaleString()} <span style={{ color: "var(--adm-ink-3)", fontSize: 11 }}>({pct}%)</span>
                     </span>
                   </div>
                   <div style={{ height: 3, background: "var(--adm-border)", borderRadius: 2, overflow: "hidden" }}>
@@ -64,7 +64,7 @@ export default function TierDistPanel() {
                 </div>
               );
             })}
-            <div style={{ fontSize: 8, color: "var(--adm-ink-3)", marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-ink-3)", marginTop: 8 }}>
               Recent wallets only — tier_cache rows with unexpired entries.
             </div>
           </>

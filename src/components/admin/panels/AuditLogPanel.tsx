@@ -62,9 +62,9 @@ export default function AuditLogPanel() {
       source="supabase/admin_audit_log"
     >
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
       {!loading && !err && rows.length === 0 && (
-        <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>No actions logged yet.</div>
+        <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>No actions logged yet.</div>
       )}
       {!loading && rows.length > 0 && (
         <div className="adm-scroll" style={{ maxHeight: 280 }}>
@@ -80,16 +80,16 @@ export default function AuditLogPanel() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td style={{ color: "var(--adm-ink-3)", whiteSpace: "nowrap", fontSize: 9 }}>
+                  <td style={{ color: "var(--adm-ink-3)", whiteSpace: "nowrap", fontSize: 12 }}>
                     {new Date(r.created_at).toLocaleTimeString()}
                   </td>
                   <td style={{ color: actionColor(r.action), whiteSpace: "nowrap" }}>
                     {r.action}
                   </td>
-                  <td style={{ fontSize: 9, color: "var(--adm-ink-2)", fontFamily: "monospace" }}>
+                  <td style={{ fontSize: 12, color: "var(--adm-ink-2)", fontFamily: "monospace" }}>
                     {r.actor_wallet.slice(0, 6)}…{r.actor_wallet.slice(-4)}
                   </td>
-                  <td style={{ fontSize: 9, color: "var(--adm-ink-2)", fontFamily: "monospace" }}>
+                  <td style={{ fontSize: 12, color: "var(--adm-ink-2)", fontFamily: "monospace" }}>
                     {r.target ? `${r.target.slice(0, 6)}…${r.target.slice(-4)}` : "—"}
                   </td>
                 </tr>

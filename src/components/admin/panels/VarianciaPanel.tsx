@@ -87,7 +87,7 @@ export default function VarianciaPanel() {
       subtitle="o que sobra de vender volatilidade — implícita menos a que de fato aconteceu"
       icon="🌪" source="deribit/DVOL (implícita) + binance.vision (realizada)"
     >
-      <div style={{ fontSize: 9, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         O mapa dizia que a IV do BTC a 50–80% contra 15–20% do S&P era <i>&quot;o prêmio mais
         gordo deste mercado&quot;</i>. Isso compara o <b>preço do seguro</b>, não o lucro de
         vendê-lo. Quem vende ganha <b>implícita menos realizada</b> — e 60% contra 55% é o
@@ -98,13 +98,13 @@ export default function VarianciaPanel() {
         {rodando ? "lendo implícita e realizada…" : "🌪 MEDIR O PRÊMIO DE VARIÂNCIA · implícita × realizada"}
       </button>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 6 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 6 }}>{err}</div>}
 
       {d && (
         <div style={{ marginTop: 10 }}>
           <div style={{
             border: `1px solid ${d.veredito.readable ? "var(--adm-border)" : "var(--adm-amber)"}`,
-            borderRadius: 4, padding: "7px 9px", marginBottom: 10, fontSize: 10, lineHeight: 1.6,
+            borderRadius: 4, padding: "7px 9px", marginBottom: 10, fontSize: 13, lineHeight: 1.6,
             color: d.veredito.readable ? "var(--adm-ink-2)" : "var(--adm-amber)",
           }}>
             <span style={{ color: COR[d.veredito.status] }}>● {d.veredito.status.toUpperCase()}</span>
@@ -120,7 +120,7 @@ export default function VarianciaPanel() {
             <div style={{ marginBottom: 10 }}>
               <div style={{
                 border: `1px solid ${d.coberta.veredito.readable ? "var(--adm-border)" : "var(--adm-amber)"}`,
-                borderRadius: 4, padding: "7px 9px", fontSize: 10, lineHeight: 1.6,
+                borderRadius: 4, padding: "7px 9px", fontSize: 13, lineHeight: 1.6,
                 color: d.coberta.veredito.readable ? "var(--adm-ink-2)" : "var(--adm-amber)",
               }}>
                 <span style={{ color: COR[d.coberta.veredito.status] }}>
@@ -146,7 +146,7 @@ export default function VarianciaPanel() {
                   <div style={{
                     border: `1px solid ${lateral ? "var(--adm-amber)" : "var(--adm-border)"}`,
                     borderRadius: 3, padding: "5px 7px", marginTop: 6,
-                    fontSize: 8.5, lineHeight: 1.6,
+                    fontSize: 11, lineHeight: 1.6,
                     color: lateral ? "var(--adm-amber)" : "var(--adm-ink-3)",
                   }}>
                     ⚠️ CONDICIONAL AO REGIME. Nesta janela <b>SEGURAR rendeu{" "}
@@ -167,7 +167,7 @@ export default function VarianciaPanel() {
                      de modelo herda a credibilidade do número medido. */}
               <div style={{
                 border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
-                marginTop: 6, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+                marginTop: 6, fontSize: 11, color: "var(--adm-red)", lineHeight: 1.6,
               }}>
                 ⚠️ ESTA METADE É <b>SIMULAÇÃO</b>, não medição. O prêmio vem de Black-Scholes
                 com a implícita do dinheiro — não existe histórico gratuito de preço de opção.
@@ -179,7 +179,7 @@ export default function VarianciaPanel() {
 
               {d.coberta.porTeto.length > 0 && (
                 <div style={{ overflowX: "auto", marginTop: 7 }}>
-                  <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+                  <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                         <th style={{ textAlign: "left", padding: "3px 5px" }}>TETO</th>
@@ -240,7 +240,7 @@ export default function VarianciaPanel() {
                         ))}
                     </tbody>
                   </table>
-                  <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", marginTop: 3, lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 3, lineHeight: 1.6 }}>
                     COBERTA = min(retorno da moeda, teto) + prêmio. <b>GANHOU</b> é a fração de
                     janelas em que ela bateu segurar — e é o número que engana: ela ganha quase
                     sempre e pode perder na MÉDIA, porque as poucas altas grandes pagam a conta
@@ -256,7 +256,7 @@ export default function VarianciaPanel() {
                  que falta medir. */}
           <div style={{
             border: "1px solid var(--adm-amber)", borderRadius: 3, padding: "5px 7px",
-            marginBottom: 8, fontSize: 8.5, color: "var(--adm-amber)", lineHeight: 1.6,
+            marginBottom: 8, fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.6,
           }}>
             ⚠️ ABAIXO É O PRÊMIO (5.1), MEDIDO — não a estratégia. É o combustível da
             coberta, e continua faltando o <b>custo de execução</b> da opção: DVOL é índice,
@@ -267,17 +267,17 @@ export default function VarianciaPanel() {
             <>
               {/* O NÚMERO QUE DECIDE — e ele é a MÉDIA, contra a regra do resto
                   do laboratório. Ver a nota do topo. */}
-              <div style={{ fontSize: 11, marginBottom: 6 }}>
+              <div style={{ fontSize: 14, marginBottom: 6 }}>
                 PRÊMIO MÉDIO (o que decide):{" "}
-                <b style={{ fontSize: 15, color: r.mediaPct > 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
+                <b style={{ fontSize: 18, color: r.mediaPct > 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
                   {pt(r.mediaPct)}
                 </b>
-                <span style={{ fontSize: 9, color: "var(--adm-ink-4)" }}>
+                <span style={{ fontSize: 12, color: "var(--adm-ink-4)" }}>
                   {" "}pontos de volatilidade ao ano
                 </span>
               </div>
 
-              <div style={{ fontSize: 8.5, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
                 implícita média <b style={{ color: "var(--adm-ink-3)" }}>{r.implicitaMediaPct.toFixed(1)}%</b>
                 {" "}contra realizada <b style={{ color: "var(--adm-ink-3)" }}>{r.realizadaMediaPct.toFixed(1)}%</b>
                 {/* ⚠️ A MEDIANA APARECE PARA EXPOR A ASSIMETRIA, nunca como
@@ -314,13 +314,13 @@ export default function VarianciaPanel() {
                     <span> · {r.semFuturo} dias sem {r.janelaDias}d de futuro saíram da conta</span>
                   )}
                 </div>
-                <div style={{ fontSize: 8 }}>
+                <div style={{ fontSize: 11 }}>
                   implícita de {r.dvolDe ?? "—"} a {r.dvolAte ?? "—"} · {r.diasComPreco} dias com preço
                 </div>
               </div>
 
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+                <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                       <th style={{ textAlign: "left", padding: "3px 5px" }}>DIA</th>
@@ -357,7 +357,7 @@ export default function VarianciaPanel() {
                     ))}
                   </tbody>
                 </table>
-                <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", marginTop: 3 }}>
+                <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 3 }}>
                   as 30 piores da série INTEIRA ({d.piores.length} guardadas), não as últimas —
                   numa lista cronológica a cauda some, e é ela que decide se dá para segurar a
                   posição. Datas seguidas aqui são o MESMO episódio visto por janelas
@@ -368,12 +368,12 @@ export default function VarianciaPanel() {
           )}
 
           {d.falhas && (
-            <div style={{ fontSize: 8, color: "var(--adm-amber)", marginTop: 6, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-amber)", marginTop: 6, lineHeight: 1.6 }}>
               ⚠️ recusas: {d.falhas.join(" · ")}
             </div>
           )}
 
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
             <div style={{ color: "var(--adm-amber)" }}>⚠️ NÃO está nesta conta:</div>
             {d.naoMedido.map((n) => <div key={n}>· {n}</div>)}
             <div style={{ marginTop: 4 }}>

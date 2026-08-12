@@ -70,7 +70,7 @@ export default function ReceitaPanel() {
       source="supabase/operations + tier/fees"
       onRefresh={carregar}
     >
-      {erro && <div style={{ color: "var(--adm-red)", fontSize: 9 }}>{erro}</div>}
+      {erro && <div style={{ color: "var(--adm-red)", fontSize: 12 }}>{erro}</div>}
       {!data && !erro && <div className="adm-shimmer" style={{ height: 60 }} />}
 
       {data && (
@@ -89,7 +89,7 @@ export default function ReceitaPanel() {
                  Aqui é soma de PARCELA: cada operação declara quanto foi
                  retido, e a contagem ao lado diz de quantas. Sem parcela o
                  número é zero, e a contagem zero explica por quê. */}
-          <div style={{ fontSize: 9, color: "var(--adm-green)", letterSpacing: "0.12em", marginBottom: 4 }}>
+          <div style={{ fontSize: 12, color: "var(--adm-green)", letterSpacing: "0.12em", marginBottom: 4 }}>
             ARRECADADO — taxa retida em operação confirmada
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
@@ -97,7 +97,7 @@ export default function ReceitaPanel() {
             <Bloco r="OPERAÇÕES QUE RETIVERAM" v={String(data.arrecadado.operacoes)} c="var(--adm-ink-2)" />
           </div>
           {data.arrecadado.operacoes === 0 && (
-            <div style={{ fontSize: 8, color: "var(--adm-amber)", lineHeight: 1.6, marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.6, marginBottom: 8 }}>
               ⚠️ nenhuma operação com retenção gravada ainda — a arrecadação passou a ser
               gravada por operação em 11/08; o que veio antes não tem como ser recuperado
             </div>
@@ -112,11 +112,11 @@ export default function ReceitaPanel() {
                  "VOLUME $127" ao lado de "RECEITA" faz qualquer um concluir
                  que os $127 renderam. Onze das dezessete operações não podiam
                  render nada. */}
-          <div style={{ fontSize: 9, color: "var(--adm-cyan)", letterSpacing: "0.12em", marginBottom: 2, marginTop: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--adm-cyan)", letterSpacing: "0.12em", marginBottom: 2, marginTop: 8 }}>
             DE ONDE VEM — por origem
           </div>
           <div style={{ overflowX: "auto", marginBottom: 8 }}>
-            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "2px 6px 2px 0", fontWeight: 400 }}>ORIGEM</th>
@@ -131,7 +131,7 @@ export default function ReceitaPanel() {
                     <td style={{ textAlign: "left", padding: "3px 6px 3px 0", color: "var(--adm-ink-2)" }}>
                       {ORIGEM[o.kind] ?? o.kind}
                       {!o.cobravel && (
-                        <span style={{ color: "var(--adm-ink-4)", fontSize: 8 }}> · não cobra</span>
+                        <span style={{ color: "var(--adm-ink-4)", fontSize: 11 }}> · não cobra</span>
                       )}
                     </td>
                     <td style={{ padding: "3px 6px", color: "var(--adm-ink-3)" }}>{o.operacoes}</td>
@@ -144,7 +144,7 @@ export default function ReceitaPanel() {
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 10 }}>
             <b>&quot;não cobra&quot; não é falha</b>: corretora e autopiloto são ordens do usuário na
             conta dele — não passam pela nossa cotação e não há onde reter taxa. O volume é
             real; a receita é zero por construção.
@@ -153,7 +153,7 @@ export default function ReceitaPanel() {
           </div>
 
           {/* ── O VOLUME MEDIDO, e o TETO que ele geraria ─────────────── */}
-          <div style={{ fontSize: 9, color: "var(--adm-ink-3)", letterSpacing: "0.12em", marginBottom: 4 }}>
+          <div style={{ fontSize: 12, color: "var(--adm-ink-3)", letterSpacing: "0.12em", marginBottom: 4 }}>
             VOLUME MEDIDO — e o teto que ele TERIA gerado
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
@@ -165,7 +165,7 @@ export default function ReceitaPanel() {
                    contou por meses. */}
             <Bloco r="TETO — TERIA RENDIDO a 1%" v={usd(data.receitaRealTetoUsd)} c="var(--adm-amber)" />
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 8 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 8 }}>
             {data.real.desde
               ? <>de {data.real.desde.slice(0, 10)} a {data.real.ate?.slice(0, 10)}</>
               : "nenhuma operação com volume registrado"}
@@ -192,10 +192,10 @@ export default function ReceitaPanel() {
           </div>
 
           {/* ── A PROJEÇÃO, separada e rotulada ──────────────────────── */}
-          <div style={{ fontSize: 9, color: "var(--adm-amber)", letterSpacing: "0.12em", marginBottom: 2 }}>
+          <div style={{ fontSize: 12, color: "var(--adm-amber)", letterSpacing: "0.12em", marginBottom: 2 }}>
             PROJEÇÃO — aritmética sobre volume HIPOTÉTICO, não previsão
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 5, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 5, lineHeight: 1.6 }}>
             responde &quot;quanto renderia SE&quot;, nunca &quot;quanto vai render&quot;
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -229,23 +229,23 @@ export default function ReceitaPanel() {
 
           {/* ── A SOLANA, e por que não cobra ────────────────────────── */}
           <div style={{ marginTop: 8, borderTop: "1px solid var(--adm-border)", paddingTop: 6 }}>
-            <div style={{ fontSize: 8.5, color: "var(--adm-ink-3)" }}>
+            <div style={{ fontSize: 11, color: "var(--adm-ink-3)" }}>
               <b>SOLANA: sem taxa por DECISÃO</b> — não por falta de endereço
             </div>
             <ul style={{ margin: "3px 0 0", paddingLeft: 14 }}>
               {data.solanaSemTaxa.map((m, i) => (
-                <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 8, lineHeight: 1.6 }}>{m}</li>
+                <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 11, lineHeight: 1.6 }}>{m}</li>
               ))}
             </ul>
           </div>
 
           <div style={{ marginTop: 8, borderTop: "1px solid var(--adm-border)", paddingTop: 6 }}>
-            <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>
+            <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>
               O QUE ESTE PAINEL NÃO MEDE
             </div>
             <ul style={{ margin: "3px 0 0", paddingLeft: 14 }}>
               {data.naoMedido.map((n, i) => (
-                <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 8, lineHeight: 1.6 }}>{n}</li>
+                <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 11, lineHeight: 1.6 }}>{n}</li>
               ))}
             </ul>
           </div>
@@ -258,8 +258,8 @@ export default function ReceitaPanel() {
 function Bloco({ r, v, c }: { r: string; v: string; c: string }) {
   return (
     <div style={{ border: "1px solid var(--adm-border)", borderRadius: 3, padding: "4px 8px", minWidth: 92 }}>
-      <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", letterSpacing: "0.1em" }}>{r}</div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: c }}>{v}</div>
+      <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.1em" }}>{r}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: c }}>{v}</div>
     </div>
   );
 }

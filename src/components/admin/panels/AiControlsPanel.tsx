@@ -106,10 +106,10 @@ export default function AiControlsPanel() {
   return (
     <TerminalPanel id="ai-controls" title="AI CONTROLS" subtitle="liga/desliga agentes · torneio" icon="⏻" source="supabase/admin_kv">
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {err  && <div style={{ color: "var(--adm-red)", fontSize: 10, marginBottom: 8 }}>{err}</div>}
-      {note && <div style={{ color: "var(--adm-amber)", fontSize: 9, marginBottom: 10 }}>⚠ {note}</div>}
+      {err  && <div style={{ color: "var(--adm-red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      {note && <div style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 10 }}>⚠ {note}</div>}
       {UNLISTED_GATES.length > 0 && (
-        <div style={{ color: "var(--adm-red)", fontSize: 9, marginBottom: 10 }}>
+        <div style={{ color: "var(--adm-red)", fontSize: 12, marginBottom: 10 }}>
           ⚠ Gate sem cartão neste painel — só se desliga por deploy: {UNLISTED_GATES.join(", ")}
         </div>
       )}
@@ -122,12 +122,12 @@ export default function AiControlsPanel() {
           <div key={key} className="adm-stat" style={{ alignItems: "center", opacity: dimmed ? 0.45 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase",
+                fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase",
                 color: paused ? "var(--adm-red)" : master ? "var(--adm-gold)" : "var(--adm-green)",
               }}>
                 {label}
               </div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 2 }}>{desc}</div>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2 }}>{desc}</div>
             </div>
             <button
               className={`adm-toggle ${paused ? "danger" : "active"}`}
@@ -146,11 +146,11 @@ export default function AiControlsPanel() {
           allow a manual reset after fixing the key / topping up credits. */}
       {!loading && breakers.some((b) => b.configured) && (
         <div style={{ marginTop: 12, borderTop: "1px solid var(--adm-border)", paddingTop: 8 }}>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 6 }}>
             CIRCUIT BREAKERS · pula provedor com falhas seguidas
           </div>
           {breakers.filter((b) => b.configured).map((b) => (
-            <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 9 }}>
+            <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12 }}>
               <span style={{ flex: 1, color: "var(--adm-ink)" }}>{b.label}</span>
               {b.tripped ? (
                 <>

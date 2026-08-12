@@ -84,7 +84,7 @@ export default function AuditBenchPanel() {
       icon="⚖"
       source="produção · banco · rede"
     >
-      <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 8 }}>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 8 }}>
         Verifica o que leitura de código não alcança: migration aplicada, RLS valendo na
         instância, rota de admin exposta, segredo em variável pública, endpoint de terceiro
         desligado. Inclui sondas de ATAQUE disparadas de fora contra a própria produção —
@@ -93,36 +93,36 @@ export default function AuditBenchPanel() {
       </div>
 
       <button onClick={run} disabled={running}
-        style={{ fontSize: 9, letterSpacing: "0.05em", padding: "6px 12px", borderRadius: 3,
+        style={{ fontSize: 12, letterSpacing: "0.05em", padding: "6px 12px", borderRadius: 3,
           cursor: running ? "wait" : "pointer", color: "var(--adm-cyan)",
           background: "rgba(0 229 255 / 0.06)", border: "1px solid rgba(0 229 255 / 0.25)" }}>
         {running ? "auditando o sistema vivo…" : "⚖ rodar auditoria completa"}
       </button>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 8 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 8 }}>{err}</div>}
 
       {report && (
         <div style={{ marginTop: 10 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-            <span style={{ fontSize: 26, color: gradeColor, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+            <span style={{ fontSize: 30, color: gradeColor, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
               {report.score.toFixed(1)}
             </span>
-            <span style={{ fontSize: 12, color: gradeColor }}>{report.grade}</span>
-            <span style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>
+            <span style={{ fontSize: 15, color: gradeColor }}>{report.grade}</span>
+            <span style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>
               {report.passed} ok · {report.failed} falhou{report.inconclusive > 0 ? ` · ${report.inconclusive} não rodou` : ""}
             </span>
           </div>
 
           {/* O RECIBO. "Rodou rápido demais pra ter testado algo" é desconfiança
               legítima — a resposta honesta é o cronômetro, não pedir confiança. */}
-          <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.6 }}>
             {(report.totalMs / 1000).toFixed(1)}s de parede · {report.totalCalls} chamadas reais
             (rede + banco) · verificações rodam em PARALELO, por isso o total é menor
             que a soma das partes — abra cada linha para ver o tempo dela.
           </div>
 
           <div style={{
-            fontSize: 9, padding: "6px 8px", borderRadius: 3, marginBottom: 8, lineHeight: 1.5,
+            fontSize: 12, padding: "6px 8px", borderRadius: 3, marginBottom: 8, lineHeight: 1.5,
             color: report.verdict.startsWith("🟢") ? "var(--adm-green)" : report.verdict.startsWith("🟡") ? "var(--adm-amber)" : "var(--adm-red)",
             background: "var(--adm-bg-raise)",
           }}>
@@ -138,25 +138,25 @@ export default function AuditBenchPanel() {
                 borderLeft: `2px solid ${color(f)}`,
               }} onClick={() => setOpen(isOpen ? null : f.id)}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <span style={{ color: color(f), fontSize: 10, width: 10 }}>{icon(f)}</span>
-                  <span style={{ fontSize: 9, color: "var(--adm-ink-2)", flex: 1 }}>{f.name}</span>
-                  <span style={{ fontSize: 7, color: SEV_COLOR[f.severity], letterSpacing: "0.06em" }}>
+                  <span style={{ color: color(f), fontSize: 13, width: 10 }}>{icon(f)}</span>
+                  <span style={{ fontSize: 12, color: "var(--adm-ink-2)", flex: 1 }}>{f.name}</span>
+                  <span style={{ fontSize: 10, color: SEV_COLOR[f.severity], letterSpacing: "0.06em" }}>
                     {SEV_LABEL[f.severity]}
                   </span>
-                  <span style={{ fontSize: 7, color: "var(--adm-ink-4)" }}>{isOpen ? "▲" : "▼"}</span>
+                  <span style={{ fontSize: 10, color: "var(--adm-ink-4)" }}>{isOpen ? "▲" : "▼"}</span>
                 </div>
                 {/* Detalhe é evidência, não opinião — sempre visível quando falha. */}
                 {(!f.pass || isOpen) && (
-                  <div style={{ fontSize: 8, color: f.pass ? "var(--adm-ink-4)" : color(f), marginTop: 3, paddingLeft: 17, lineHeight: 1.5, wordBreak: "break-word" }}>
+                  <div style={{ fontSize: 11, color: f.pass ? "var(--adm-ink-4)" : color(f), marginTop: 3, paddingLeft: 17, lineHeight: 1.5, wordBreak: "break-word" }}>
                     {f.detail}
                   </div>
                 )}
                 {isOpen && (
                   <>
-                    <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 3, paddingLeft: 17, fontStyle: "italic", lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 3, paddingLeft: 17, fontStyle: "italic", lineHeight: 1.5 }}>
                       por que só em execução: {f.whyRuntime}
                     </div>
-                    <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 17, fontFamily: "monospace" }}>
+                    <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 17, fontFamily: "monospace" }}>
                       {f.durationMs ?? 0}ms · {f.calls ?? 0} chamada(s){(f.calls ?? 0) === 0 ? " — só leitura de ambiente/memória" : ""}
                     </div>
                   </>
@@ -165,7 +165,7 @@ export default function AuditBenchPanel() {
             );
           })}
 
-          <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 8, fontStyle: "italic", lineHeight: 1.6 }}>
+          <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 8, fontStyle: "italic", lineHeight: 1.6 }}>
             ◌ = não pôde rodar. Conta como buraco de cobertura, nunca como aprovação — é
             assim que uma auditoria mente sem mentir. Nota ponderada por severidade: um
             crítico reprovado não é diluído por dez aprovações cosméticas.

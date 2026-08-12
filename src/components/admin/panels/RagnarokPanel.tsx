@@ -63,12 +63,12 @@ export default function RagnarokPanel() {
      * coisas distintas. */
     <TerminalPanel id="ragnarok" title="RAGNARÖK" subtitle="② A FICHA do Setor A — unidade: USDT acumulado na carteira" icon="ᚱ" source="zion_suggestions/strat_*">
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {error && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
         {PERIODS.map((p) => (
           <button key={p.label} className={`adm-toggle ${days === p.days ? "active" : ""}`}
-            style={{ fontSize: 8, padding: "2px 6px" }}
+            style={{ fontSize: 11, padding: "2px 6px" }}
             onClick={() => { setDays(p.days); setLoading(true); }}>{p.label}</button>
         ))}
       </div>
@@ -76,11 +76,11 @@ export default function RagnarokPanel() {
       {data && (
         <div>
           {/* A RÉGUA: USDT na mão. É o mandato da mesa, então vem primeiro. */}
-          <div style={{ fontSize: 8, letterSpacing: "0.1em", color: "var(--adm-gold)", marginBottom: 5 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--adm-gold)", marginBottom: 5 }}>
             ᚠ USDT ACUMULADO — a régua desta mesa
           </div>
           {data.wallets.length === 0 && (
-            <div style={{ fontSize: 10, color: "var(--adm-ink-3)", marginBottom: 10 }}>
+            <div style={{ fontSize: 13, color: "var(--adm-ink-3)", marginBottom: 10 }}>
               Carteiras ainda não abertas — elas surgem no primeiro tick com <code>pause_paper=false</code>.
             </div>
           )}
@@ -88,30 +88,30 @@ export default function RagnarokPanel() {
             <div key={w.source} style={{ marginBottom: 8, padding: "6px 8px", background: "var(--adm-bg-raise)", borderRadius: 3,
               borderLeft: `2px solid ${w.brain === "none" ? "var(--adm-cyan)" : "var(--adm-gold)"}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-                <span style={{ fontSize: 10, color: "var(--adm-ink-2)" }}>
-                  {w.name} <span style={{ fontSize: 7, color: "var(--adm-ink-4)" }}>{w.brain === "none" ? "· sem IA (controle)" : "· com IA"}</span>
+                <span style={{ fontSize: 13, color: "var(--adm-ink-2)" }}>
+                  {w.name} <span style={{ fontSize: 10, color: "var(--adm-ink-4)" }}>{w.brain === "none" ? "· sem IA (controle)" : "· com IA"}</span>
                 </span>
-                <span style={{ fontSize: 12, color: col(w.realizedPnl), fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 15, color: col(w.realizedPnl), fontVariantNumeric: "tabular-nums" }}>
                   ${Math.round(w.usdt).toLocaleString()}
                 </span>
               </div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <span>partiu de ${Math.round(w.startingUsd).toLocaleString()}</span>
                 <span style={{ color: col(w.growthPct) }}>{pct(w.growthPct, 1)}</span>
                 <span>{w.closedTrades} fechados · {w.openPositions} abertos</span>
               </div>
-              {w.who && <div style={{ fontSize: 7, color: "var(--adm-ink-4)", fontStyle: "italic", marginTop: 2 }}>{w.who}</div>}
+              {w.who && <div style={{ fontSize: 10, color: "var(--adm-ink-4)", fontStyle: "italic", marginTop: 2 }}>{w.who}</div>}
             </div>
           ))}
 
           {/* QUAL ESTRATÉGIA PAGA — a pergunta que o funil antigo impedia de fazer. */}
-          <div style={{ fontSize: 8, letterSpacing: "0.1em", color: "var(--adm-cyan)", margin: "12px 0 4px" }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--adm-cyan)", margin: "12px 0 4px" }}>
             ᛃ QUAL ESTRATÉGIA PAGA
           </div>
           {data.playbooks.length === 0 ? (
-            <div style={{ fontSize: 9, color: "var(--adm-ink-3)" }}>Nenhum plano emitido ainda nesta janela.</div>
+            <div style={{ fontSize: 12, color: "var(--adm-ink-3)" }}>Nenhum plano emitido ainda nesta janela.</div>
           ) : (
-            <table className="adm-table" style={{ width: "100%", fontSize: 9 }}>
+            <table className="adm-table" style={{ width: "100%", fontSize: 12 }}>
               <thead><tr>
                 <th style={{ textAlign: "left" }}>PLAYBOOK</th><th>LÍQ./TRADE</th><th>WR</th><th>DEC</th><th>ABERTOS</th>
               </tr></thead>
@@ -151,7 +151,7 @@ export default function RagnarokPanel() {
               primeiro, não descoberto depois. */}
           {data.brainHealth && data.brainHealth.ticks24h > 0 && (
             <div style={{
-              fontSize: 8, lineHeight: 1.5, padding: "5px 8px", borderRadius: 3, marginTop: 12,
+              fontSize: 11, lineHeight: 1.5, padding: "5px 8px", borderRadius: 3, marginTop: 12,
               color: data.brainHealth.contaminated ? "var(--adm-red)"
                 : data.brainHealth.ranCount === data.brainHealth.ticks24h ? "var(--adm-ink-4)" : "var(--adm-amber)",
               background: data.brainHealth.contaminated ? "rgba(255 60 60 / 0.07)" : "transparent",
@@ -164,12 +164,12 @@ export default function RagnarokPanel() {
           )}
 
           {/* MECÂNICO vs IA — o duelo do experimento. */}
-          <div style={{ fontSize: 8, letterSpacing: "0.1em", color: "var(--adm-cyan)", margin: "12px 0 4px" }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--adm-cyan)", margin: "12px 0 4px" }}>
             ⚔︎ O DUELO — uma variável por mesa, mesmo seletor
           </div>
           {data.desks.map((d) => (
             <div key={d.source} style={{ marginBottom: 6 }}>
-              <div style={{ display: "flex", gap: 8, fontSize: 9, alignItems: "baseline" }}>
+              <div style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "baseline" }}>
                 <span style={{ color: d.brain === "none" ? "var(--adm-cyan)" : "var(--adm-gold)", flex: 1 }}>{d.name}</span>
                 {/* A COR É AUTORIDADE, E AUTORIDADE SE GANHA (01/08). Abaixo do
                     limiar de amostra o número sai em cinza: continua legível,
@@ -181,10 +181,10 @@ export default function RagnarokPanel() {
                     : shouldTint(d.decided) ? col(d.netPerTrade) : "var(--adm-ink-4)",
                   fontVariantNumeric: "tabular-nums",
                 }}>{pct(d.netPerTrade)}</span>
-                <span style={{ color: "var(--adm-ink-4)", width: 74, textAlign: "right", fontSize: 8 }}>{sampleLabel(d.decided)}</span>
+                <span style={{ color: "var(--adm-ink-4)", width: 74, textAlign: "right", fontSize: 11 }}>{sampleLabel(d.decided)}</span>
               </div>
               {d.variable && (
-                <div style={{ fontSize: 7, color: "var(--adm-ink-4)", paddingLeft: 8 }}>{d.variable}</div>
+                <div style={{ fontSize: 10, color: "var(--adm-ink-4)", paddingLeft: 8 }}>{d.variable}</div>
               )}
               {/* A FICHA DE CONSTRUÇÃO — "não sei como cada agente foi montado"
                   era reclamação literal do dono, e ele tinha razão: a lógica de
@@ -195,7 +195,7 @@ export default function RagnarokPanel() {
                 const sheet = deskFor(d.source)?.sheet;
                 if (!sheet) return null;
                 return (
-                  <div style={{ fontSize: 7, color: "var(--adm-ink-4)", paddingLeft: 8, lineHeight: 1.5, marginTop: 2 }}>
+                  <div style={{ fontSize: 10, color: "var(--adm-ink-4)", paddingLeft: 8, lineHeight: 1.5, marginTop: 2 }}>
                     <div>vê: {sheet.sees}</div>
                     <div>decide: {sheet.decides} · regra: {sheet.rule}</div>
                     {sheet.comparedTo && <div>lido contra: {sheet.comparedTo}</div>}
@@ -204,14 +204,14 @@ export default function RagnarokPanel() {
                 );
               })()}
               {d.byPlaybook.length > 0 && (
-                <div style={{ fontSize: 7, color: "var(--adm-ink-4)", paddingLeft: 8, marginTop: 1 }}>
+                <div style={{ fontSize: 10, color: "var(--adm-ink-4)", paddingLeft: 8, marginTop: 1 }}>
                   {d.byPlaybook.map((p) => `${(PLAYBOOK_LABEL[p.playbook] ?? p.playbook).split(" ")[0]} ${p.trades}×`).join(" · ")}
                 </div>
               )}
             </div>
           ))}
 
-          <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 10, fontStyle: "italic" }}>
+          <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 10, fontStyle: "italic" }}>
             {data.note}
           </div>
         </div>

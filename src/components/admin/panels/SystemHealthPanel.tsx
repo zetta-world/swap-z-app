@@ -56,13 +56,13 @@ export default function SystemHealthPanel() {
       source="heartbeats + live pings"
     >
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {data && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <span style={{ width: 10, height: 10, borderRadius: "50%", background: data.ok ? "var(--adm-green)" : "var(--adm-red)", boxShadow: `0 0 8px ${data.ok ? "var(--adm-glow-green)" : "var(--adm-glow-red)"}` }} />
-            <span style={{ fontSize: 11, color: data.ok ? "var(--adm-green)" : "var(--adm-red)", letterSpacing: "0.1em" }}>
+            <span style={{ fontSize: 14, color: data.ok ? "var(--adm-green)" : "var(--adm-red)", letterSpacing: "0.1em" }}>
               {data.ok ? "ALL SYSTEMS OPERATIONAL" : "ATTENTION NEEDED"}
             </span>
           </div>
@@ -73,7 +73,7 @@ export default function SystemHealthPanel() {
             <div style={{ marginBottom: 10 }}>
               <div className="adm-category">Dependências externas · caminho do dinheiro</div>
               {data.verdict && (
-                <div style={{ fontSize: 9, color: data.verdict.startsWith("🟢") ? "var(--adm-green)" : "var(--adm-red)", margin: "3px 0 6px" }}>
+                <div style={{ fontSize: 12, color: data.verdict.startsWith("🟢") ? "var(--adm-green)" : "var(--adm-red)", margin: "3px 0 6px" }}>
                   {data.verdict}
                 </div>
               )}
@@ -93,24 +93,24 @@ export default function SystemHealthPanel() {
                   <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%",
                       background: d.geoBlocked ? "var(--adm-ink-4)" : dot(d.ok), flexShrink: 0 }} />
-                    <span style={{ fontSize: 10, color: "var(--adm-ink-2)", flex: 1, fontFamily: "monospace" }}>{d.name}</span>
-                    <span style={{ fontSize: 7, color: d.geoBlocked ? "var(--adm-ink-4)" : d.impact === "critical" ? "var(--adm-red)" : "var(--adm-ink-4)", letterSpacing: "0.06em" }}>
+                    <span style={{ fontSize: 13, color: "var(--adm-ink-2)", flex: 1, fontFamily: "monospace" }}>{d.name}</span>
+                    <span style={{ fontSize: 10, color: d.geoBlocked ? "var(--adm-ink-4)" : d.impact === "critical" ? "var(--adm-red)" : "var(--adm-ink-4)", letterSpacing: "0.06em" }}>
                       {d.geoBlocked ? "REGIÃO" : IMPACT_LABEL[d.impact]}
                     </span>
-                    <span style={{ fontSize: 9, color: "var(--adm-ink-3)", fontVariantNumeric: "tabular-nums", width: 52, textAlign: "right" }}>
+                    <span style={{ fontSize: 12, color: "var(--adm-ink-3)", fontVariantNumeric: "tabular-nums", width: 52, textAlign: "right" }}>
                       {d.latencyMs != null ? `${d.latencyMs}ms` : "—"}
                     </span>
                   </div>
-                  <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 14 }}>{d.purpose}</div>
+                  <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 14 }}>{d.purpose}</div>
                   {/* "O QUE QUEBRA" só aparece quando ESTÁ quebrado: às 3 da
                       manhã o que importa é a consequência, não o catálogo. */}
                   {!d.ok && d.geoBlocked && (
-                    <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 14 }}>
+                    <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2, paddingLeft: 14 }}>
                       {d.note} · efeito permanente: {d.breaks}
                     </div>
                   )}
                   {!d.ok && !d.geoBlocked && (
-                    <div style={{ fontSize: 8, color: "var(--adm-red)", marginTop: 2, paddingLeft: 14 }}>
+                    <div style={{ fontSize: 11, color: "var(--adm-red)", marginTop: 2, paddingLeft: 14 }}>
                       ⚠ {d.breaks}
                       {d.note && <span style={{ color: "var(--adm-ink-4)" }}> · {d.note}</span>}
                     </div>
@@ -124,8 +124,8 @@ export default function SystemHealthPanel() {
           {data.crons.map((c) => (
             <div key={c.name} className="adm-stat" style={{ padding: "5px 0", display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: dot(!c.stale), flexShrink: 0 }} />
-              <span style={{ fontSize: 10, color: "var(--adm-ink-2)", flex: 1, fontFamily: "monospace" }}>{c.name}</span>
-              <span style={{ fontSize: 10, color: c.stale ? "var(--adm-red)" : "var(--adm-ink-3)", fontVariantNumeric: "tabular-nums" }}>{ageLabel(c)}</span>
+              <span style={{ fontSize: 13, color: "var(--adm-ink-2)", flex: 1, fontFamily: "monospace" }}>{c.name}</span>
+              <span style={{ fontSize: 13, color: c.stale ? "var(--adm-red)" : "var(--adm-ink-3)", fontVariantNumeric: "tabular-nums" }}>{ageLabel(c)}</span>
             </div>
           ))}
 
@@ -133,8 +133,8 @@ export default function SystemHealthPanel() {
           {data.deps.map((d) => (
             <div key={d.name} className="adm-stat" style={{ padding: "5px 0", display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: dot(d.ok), flexShrink: 0 }} />
-              <span style={{ fontSize: 10, color: "var(--adm-ink-2)", flex: 1 }}>{d.name}{d.note ? <span style={{ color: "var(--adm-ink-4)", fontSize: 8 }}> · {d.note}</span> : null}</span>
-              <span style={{ fontSize: 10, color: d.ok ? "var(--adm-ink-3)" : "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ fontSize: 13, color: "var(--adm-ink-2)", flex: 1 }}>{d.name}{d.note ? <span style={{ color: "var(--adm-ink-4)", fontSize: 11 }}> · {d.note}</span> : null}</span>
+              <span style={{ fontSize: 13, color: d.ok ? "var(--adm-ink-3)" : "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>
                 {d.ok ? (d.latencyMs != null ? `${d.latencyMs}ms` : "up") : "DOWN"}
               </span>
             </div>

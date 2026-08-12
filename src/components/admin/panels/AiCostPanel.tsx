@@ -32,14 +32,14 @@ const compact = (m: string) => m.replace(/^claude-/, "").replace(/-\d{8}$/, "");
 function Stat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ flex: 1 }}>
-      <div style={{ fontSize: 7, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>{label}</div>
-      <div style={{ fontSize: 11, color, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>{label}</div>
+      <div style={{ fontSize: 14, color, fontVariantNumeric: "tabular-nums" }}>{value}</div>
     </div>
   );
 }
 
 function Bars({ daily }: { daily: Array<{ date: string; cost: number }> }) {
-  if (!daily?.length) return <div style={{ fontSize: 9, color: "var(--adm-ink-3)" }}>sem gasto registrado</div>;
+  if (!daily?.length) return <div style={{ fontSize: 12, color: "var(--adm-ink-3)" }}>sem gasto registrado</div>;
   const max = Math.max(...daily.map((d) => d.cost), 0.0001);
   return (
     <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 34, marginTop: 4 }}>
@@ -73,7 +73,7 @@ export default function AiCostPanel() {
   return (
     <TerminalPanel id="ai-cost" title="CUSTO DE IA" subtitle="gasto por modelo · projeção do mês" icon="💸" source="platform_events/zion_analysis">
       {loading && <div className="adm-shimmer" style={{ height: 80 }} />}
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
 
       {d && (
         <div>
@@ -90,14 +90,14 @@ export default function AiCostPanel() {
           <div className="adm-category" style={{ marginTop: 12 }}>Por modelo</div>
           {/* Esta ressalva não é rodapé — é o que impede a leitura errada. Já
               houve um caso de "gasto" alto de um modelo em crédito de trial. */}
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.5 }}>
             ≈ ESTIMATIVA: tokens medidos × tarifa pública. NÃO é a fatura. Um modelo em
             crédito de trial aparece com &quot;gasto&quot; sem sair dinheiro da conta.
           </div>
           {d.ai.models.length === 0 ? (
-            <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>nenhuma chamada ainda</div>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>nenhuma chamada ainda</div>
           ) : (
-            <table className="adm-table" style={{ fontSize: 9 }}>
+            <table className="adm-table" style={{ fontSize: 12 }}>
               <thead><tr>
                 <th style={{ textAlign: "left" }}>MODELO</th>
                 <th style={{ textAlign: "right" }}>HOJE</th>
@@ -119,7 +119,7 @@ export default function AiCostPanel() {
             </table>
           )}
 
-          <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 8, fontStyle: "italic", lineHeight: 1.6 }}>
+          <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 8, fontStyle: "italic", lineHeight: 1.6 }}>
             Quem liga e desliga cada consumidor está em CONTROLES · o teto que dispara alerta
             está no watchdog · a subtração contra a receita está em MARGEM.
           </div>

@@ -395,6 +395,43 @@ verde-ou-vermelho.
 
 ---
 
+## 22. Contraste e tamanho são CONTA, e conta se confere sozinha
+
+Legibilidade não é gosto: é razão de luminância e altura de traço, as duas
+calculáveis. Deixar isso para o olho de quem revisa é como um painel chega a
+1,5:1 sem ninguém reclamar por meses — cada revisor assume que o anterior
+olhou, e ninguém mede.
+
+**Como travar:** teste que calcula o contraste dos tokens contra o fundo REAL,
+e varre a árvore atrás de tamanho abaixo do piso. E ele exige **duas** coisas:
+contraste contra o FUNDO (legibilidade) e contraste contra o DEGRAU VIZINHO
+(hierarquia) — consertar só o primeiro quebra o segundo.
+
+> **Cicatriz (12/08):** o dono mandou o print do painel: *"a leitura está muito
+> difícil"*. Medido contra `#0a0a0c`:
+>
+> ```
+> --adm-ink-3: #5a5a70  →  2,94:1   (mínimo legível: 4,5:1)
+> --adm-ink-4: #30303a  →  1,51:1   (praticamente invisível)
+> ```
+>
+> Eram esses dois que pintavam rótulo, legenda e o estado `cinza` — em texto de
+> **8 e 9 pixels**, e havia **520 tamanhos inline** nessa faixa.
+>
+> ⚠️ **E a primeira correção quebrou outra coisa.** Subir o `ink-3` para passar
+> em 4,5:1 o encostou no `ink-2`: 1,19:1 entre eles, dois degraus virando um.
+> Contraste com o fundo resolvido e hierarquia destruída no mesmo movimento. A
+> rampa teve que ser refeita inteira, com degraus de 1,66×. **Quem pegou isso
+> foi o teste**, não a revisão.
+>
+> ⚠️ **E o próprio teste nasceu com o defeito que ele caça:** a primeira versão
+> casava `--adm-ink-3:\s*(#hex)` em qualquer ponto do arquivo e leu os valores
+> ANTIGOS citados dentro do comentário que explicava a correção. Reprovou um
+> CSS que já estava certo, lendo a DESCRIÇÃO em vez do FATO — a mesma armadilha
+> da nº 20, agora dentro da trava.
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:

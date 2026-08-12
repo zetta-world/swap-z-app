@@ -54,7 +54,7 @@ export default function CalibrationPanel() {
       subtitle="a mesma janela com travas diferentes — qual cautela custa caro"
       icon="🎚" source="binance/klines + bracket.ts"
     >
-      <div style={{ fontSize: 9, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 10 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 10 }}>
         Roda a MESMA janela, sobre os MESMOS dados, mexendo em UMA trava por vez. Variar duas
         de uma vez devolveria um resultado sem dono — não daria para saber qual moveu.
       </div>
@@ -63,7 +63,7 @@ export default function CalibrationPanel() {
         {rodando ? "varrendo…" : "🎚 varrer a calibragem"}
       </button>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 8 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 8 }}>{err}</div>}
 
       {d && (
         <div style={{ marginTop: 12 }}>
@@ -71,7 +71,7 @@ export default function CalibrationPanel() {
               é o caminho mais curto para o sobreajuste, e um rodapé não segura
               ninguém que já viu um verde na tela. */}
           <div style={{
-            fontSize: 9, color: "var(--adm-amber)", lineHeight: 1.6,
+            fontSize: 12, color: "var(--adm-amber)", lineHeight: 1.6,
             border: "1px solid var(--adm-border)", borderRadius: 4, padding: "6px 8px", marginBottom: 10,
           }}>
             ⚠ {d.aviso}
@@ -88,13 +88,13 @@ export default function CalibrationPanel() {
                   <tr key={l.nome}>
                     <td style={{ color: l.nome.startsWith("padrão") ? "var(--adm-gold)" : "var(--adm-ink-2)" }}>
                       {l.nome}
-                      <div style={{ fontSize: 7, color: "var(--adm-ink-4)" }}>{l.oQueMuda}</div>
+                      <div style={{ fontSize: 10, color: "var(--adm-ink-4)" }}>{l.oQueMuda}</div>
                     </td>
                     <td style={{
                       fontVariantNumeric: "tabular-nums",
                       color: amostraCaiu ? "var(--adm-red)" : "var(--adm-ink-3)",
                     }}>
-                      {l.trades}{amostraCaiu && <span style={{ fontSize: 7 }}> ⚠</span>}
+                      {l.trades}{amostraCaiu && <span style={{ fontSize: 10 }}> ⚠</span>}
                     </td>
                     <td style={{
                       fontVariantNumeric: "tabular-nums",
@@ -114,7 +114,7 @@ export default function CalibrationPanel() {
             </tbody>
           </table>
 
-          <div style={{ marginTop: 8, fontSize: 7, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
+          <div style={{ marginTop: 8, fontSize: 10, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
             ⚠ na coluna TRADES = a amostra caiu mais da metade contra o padrão. Quando isso
             acontece, um líquido/trade melhor não é melhora: é a trava escolhendo a dedo os
             trades que iam dar certo. Compare pelo TOTAL. · {d.symbols.length} símbolos ·

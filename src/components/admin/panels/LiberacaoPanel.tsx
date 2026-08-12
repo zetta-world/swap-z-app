@@ -95,7 +95,7 @@ export default function LiberacaoPanel() {
       source="admin_kv/autopilot_cex_liberado"
       onRefresh={carregar}
     >
-      {erro && <div style={{ color: "var(--adm-red)", fontSize: 9 }}>{erro}</div>}
+      {erro && <div style={{ color: "var(--adm-red)", fontSize: 12 }}>{erro}</div>}
       {!data && !erro && <div className="adm-shimmer" style={{ height: 60 }} />}
 
       {data && (
@@ -107,7 +107,7 @@ export default function LiberacaoPanel() {
             </span>
           </div>
           <div style={{
-            fontSize: 8.5, lineHeight: 1.6, marginBottom: 8,
+            fontSize: 11, lineHeight: 1.6, marginBottom: 8,
             color: data.causa === "indisponivel" ? "var(--adm-red)" : "var(--adm-ink-4)",
           }}>
             {CAUSA_TEXTO[data.causa]}
@@ -118,7 +118,7 @@ export default function LiberacaoPanel() {
           {/* ⚠️ A CONSEQUÊNCIA VEM ANTES DO BOTÃO, não depois. */}
           <div style={{
             border: "1px solid var(--adm-amber)", borderRadius: 3, padding: "5px 7px",
-            margin: "7px 0", fontSize: 8, color: "var(--adm-amber)", lineHeight: 1.6,
+            margin: "7px 0", fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.6,
           }}>
             ⚠️ Abrir liga os <b>dois canais</b> de automação: o piloto do navegador e o
             worker do servidor, que compra sozinho com a chave do cliente e o navegador
@@ -127,12 +127,12 @@ export default function LiberacaoPanel() {
           </div>
 
           {/* A evidência, ao lado do interruptor. */}
-          <div style={{ fontSize: 8.5, color: "var(--adm-ink-3)", lineHeight: 1.6, marginBottom: 6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-3)", lineHeight: 1.6, marginBottom: 6 }}>
             <b>Verdes do laboratório ({data.verdes.length}):</b>{" "}
             {data.verdes.length === 0
               ? <span style={{ color: "var(--adm-ink-4)" }}>nenhuma — não há o que justificar abrir</span>
               : data.verdes.map((v) => `${v.name} (${v.family}, $${v.capitalUsd})`).join(" · ")}
-            <div style={{ color: "var(--adm-ink-4)", fontSize: 7.5, marginTop: 3 }}>
+            <div style={{ color: "var(--adm-ink-4)", fontSize: 10, marginTop: 3 }}>
               ⚠️ A lista NÃO distingue estratégia de corretora de estratégia on-chain —
               <code> lab_strategies.family</code> é carrego/direcional/estrutura, não venue.
               Automação por API de CEX só alcança as de corretora; conferir na leitura.
@@ -141,7 +141,7 @@ export default function LiberacaoPanel() {
 
           {!data.liberado ? (
             <>
-              <label style={{ display: "block", fontSize: 8, color: "var(--adm-ink-4)" }}>
+              <label style={{ display: "block", fontSize: 11, color: "var(--adm-ink-4)" }}>
                 justificativa (obrigatória, mínimo {min} caracteres — daqui a um mês a
                 pergunta vai ser &quot;o que justificava isto?&quot;)
                 <input
@@ -151,7 +151,7 @@ export default function LiberacaoPanel() {
                   style={{
                     display: "block", width: "100%", marginTop: 3, padding: "4px 6px",
                     background: "transparent", border: "1px solid var(--adm-border)",
-                    borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 9, fontFamily: "inherit",
+                    borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 12, fontFamily: "inherit",
                   }}
                 />
               </label>
@@ -176,7 +176,7 @@ export default function LiberacaoPanel() {
                 style={{
                   display: "block", width: "100%", marginTop: 3, padding: "4px 6px",
                   background: "transparent", border: "1px solid var(--adm-border)",
-                  borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 9, fontFamily: "inherit",
+                  borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 12, fontFamily: "inherit",
                 }}
               />
               <button
@@ -190,14 +190,14 @@ export default function LiberacaoPanel() {
           )}
           {/* ─── PILOTOS: quem roda com a automação fechada ─────────────── */}
           <div style={{ marginTop: 12, borderTop: "1px solid var(--adm-border)", paddingTop: 8 }}>
-            <div style={{ fontSize: 8.5, color: "var(--adm-ink-3)", marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-ink-3)", marginBottom: 4 }}>
               <b>CARTEIRAS PILOTO ({data.pilotos.length})</b> — rodam a automação mesmo
               fechada, para teste com dinheiro real
             </div>
             {/* ⚠️ A CONSEQUÊNCIA VEM ANTES DA LISTA. */}
             <div style={{
               border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
-              margin: "5px 0", fontSize: 8, color: "var(--adm-red)", lineHeight: 1.6,
+              margin: "5px 0", fontSize: 11, color: "var(--adm-red)", lineHeight: 1.6,
             }}>
               ⚠️ Isto é um <b>furo deliberado na trava</b>: a carteira listada negocia com
               DINHEIRO REAL numa feature fechada para todo o resto. Um grant de admin
@@ -207,19 +207,19 @@ export default function LiberacaoPanel() {
               precisa ser listada.
             </div>
             {data.pilotos.length === 0 && (
-              <div style={{ fontSize: 8.5, color: "var(--adm-ink-4)", marginBottom: 5 }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 5 }}>
                 nenhuma carteira autorizada além do <code>ADMIN_WALLETS</code>
               </div>
             )}
             {data.pilotos.map((p) => (
               <div key={p.wallet} style={{
-                display: "flex", alignItems: "baseline", gap: 6, fontSize: 8.5,
+                display: "flex", alignItems: "baseline", gap: 6, fontSize: 11,
                 color: "var(--adm-ink-3)", marginBottom: 3,
               }}>
                 <code style={{ color: "var(--adm-ink-2)" }}>{p.wallet.slice(0, 10)}…{p.wallet.slice(-6)}</code>
                 <i style={{ color: "var(--adm-ink-4)", flex: 1 }}>&quot;{p.nota}&quot;</i>
                 <button
-                  className="adm-btn" style={{ fontSize: 8, padding: "1px 5px" }}
+                  className="adm-btn" style={{ fontSize: 11, padding: "1px 5px" }}
                   disabled={busy}
                   onClick={() => void mexerPiloto({ remover: p.wallet })}
                 >revogar</button>
@@ -232,7 +232,7 @@ export default function LiberacaoPanel() {
               style={{
                 display: "block", width: "100%", marginTop: 5, padding: "4px 6px",
                 background: "transparent", border: "1px solid var(--adm-border)",
-                borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 9, fontFamily: "inherit",
+                borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 12, fontFamily: "inherit",
               }}
             />
             <input
@@ -242,7 +242,7 @@ export default function LiberacaoPanel() {
               style={{
                 display: "block", width: "100%", marginTop: 3, padding: "4px 6px",
                 background: "transparent", border: "1px solid var(--adm-border)",
-                borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 9, fontFamily: "inherit",
+                borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 12, fontFamily: "inherit",
               }}
             />
             <button

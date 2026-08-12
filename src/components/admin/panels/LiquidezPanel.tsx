@@ -87,10 +87,10 @@ export default function LiquidezPanel() {
       </button>
 
       {erro && (
-        <div style={{ color: "var(--adm-red)", fontSize: 9, marginTop: 8, lineHeight: 1.6 }}>
+        <div style={{ color: "var(--adm-red)", fontSize: 12, marginTop: 8, lineHeight: 1.6 }}>
           {erro}
           {/* ⚠️ Fonte recusada NÃO é perda zero. A tela diz qual falhou. */}
-          <div style={{ color: "var(--adm-ink-4)", fontSize: 8, marginTop: 3 }}>
+          <div style={{ color: "var(--adm-ink-4)", fontSize: 11, marginTop: 3 }}>
             fonte recusada não é resultado — nada foi medido nesta tentativa
           </div>
         </div>
@@ -103,10 +103,10 @@ export default function LiquidezPanel() {
             border: `1px solid ${COR[data.veredito.status]}`, borderRadius: 3,
             padding: "6px 8px", marginBottom: 8,
           }}>
-            <div style={{ color: COR[data.veredito.status], fontSize: 10, fontWeight: 700, letterSpacing: "0.1em" }}>
+            <div style={{ color: COR[data.veredito.status], fontSize: 13, fontWeight: 700, letterSpacing: "0.1em" }}>
               {ROTULO[data.veredito.status]}
             </div>
-            <div style={{ color: "var(--adm-ink-3)", fontSize: 8.5, lineHeight: 1.6, marginTop: 3 }}>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 11, lineHeight: 1.6, marginTop: 3 }}>
               {data.veredito.texto}
             </div>
           </div>
@@ -139,7 +139,7 @@ export default function LiquidezPanel() {
               Ethereum é número que exige conferência, e gwei é a unidade em
               que se sabe se um gás é plausível. */}
           {data.gasDetalhe && (
-            <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 4, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 4, lineHeight: 1.6 }}>
               gás: {data.gasDetalhe.unidades.toLocaleString("pt-BR")} unidades ×{" "}
               ${data.gasDetalhe.usdPorGas.toExponential(2)}/un = <b>${data.gasDetalhe.usdTotal.toFixed(2)}</b>
               {data.gasDetalhe.cotacaoUnidades != null && data.gasDetalhe.cotacaoUsd != null && (
@@ -149,7 +149,7 @@ export default function LiquidezPanel() {
             </div>
           )}
           {data.resumo.incertezaTaxaPct != null && (
-            <div style={{ fontSize: 8, color: "var(--adm-amber)", marginBottom: 4, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-amber)", marginBottom: 4, lineHeight: 1.6 }}>
               ⚠️ desacordo da fonte sobre a MESMA taxa (apyBase vs apyMean30d): até{" "}
               {data.resumo.incertezaTaxaPct.toFixed(2)} pontos — é isso que define a faixa de empate
             </div>
@@ -158,7 +158,7 @@ export default function LiquidezPanel() {
           {/* ⚠️ AS MEDIANAS SÃO POR COLUNA E NÃO SE COMBINAM. Cada uma pode
               vir de uma piscina diferente — sem esta linha a tela convida a
               conferir `taxa − perda ≈ vantagem`, que não fecha. */}
-          <div style={{ fontSize: 8, color: "var(--adm-amber)", marginBottom: 4, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-amber)", marginBottom: 4, lineHeight: 1.6 }}>
             ⚠️ cada número acima é a mediana da SUA coluna e pode vir de uma piscina
             diferente — <b>não se somam</b>. A régua é a VANTAGEM; o resto é contexto
             {data.resumo.piscinaMediana && (
@@ -166,7 +166,7 @@ export default function LiquidezPanel() {
             )}
           </div>
 
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.6 }}>
             janela de {data.janelaDias} dias · bateu segurar em {data.resumo.ganhouDeSegurar}/{data.resumo.medidas}
             {data.resumo.semApy > 0 && <> · {data.resumo.semApy} sem taxa na fonte (fora do veredito)</>}
             {data.hostUsado && <> · fonte: {data.hostUsado}</>}
@@ -196,9 +196,9 @@ export default function LiquidezPanel() {
                       )}
                       {p.rotulo}
                       {p.controle && (
-                        <span style={{ color: "var(--adm-amber)", fontSize: 7.5 }}> · CONTROLE</span>
+                        <span style={{ color: "var(--adm-amber)", fontSize: 10 }}> · CONTROLE</span>
                       )}
-                      <div style={{ color: "var(--adm-ink-4)", fontSize: 7.5 }}>{p.porque}</div>
+                      <div style={{ color: "var(--adm-ink-4)", fontSize: 10 }}>{p.porque}</div>
                     </td>
                     <td style={{ textAlign: "right" }}>{p.dias}</td>
                     <td style={{ textAlign: "right" }}>{p.apyDe === "ausente" ? "—" : pct(p.taxaPct)}</td>
@@ -222,12 +222,12 @@ export default function LiquidezPanel() {
                     }}>
                       {p.apyDe === "ausente" ? "—" : pct(p.vantagemPct)}
                     </td>
-                    <td style={{ color: p.apyDe === "ausente" ? "var(--adm-red)" : "var(--adm-ink-4)", fontSize: 8 }}>
+                    <td style={{ color: p.apyDe === "ausente" ? "var(--adm-red)" : "var(--adm-ink-4)", fontSize: 11 }}>
                       {p.apyDe === "ausente" ? "AUSENTE" : p.apyDe}
                       {/* ⚠️ QUAL piscina a fonte casou. Sem isto, uma taxa
                           implausível não tem como ser conferida. */}
                       {p.casada && (
-                        <div style={{ fontSize: 7 }}>
+                        <div style={{ fontSize: 10 }}>
                           {p.casada.symbol}
                           {p.casada.tvlUsd != null && <> · ${(p.casada.tvlUsd / 1e6).toFixed(1)}M</>}
                           {p.apyAnualPct != null && <> · {p.apyAnualPct.toFixed(2)}%/ano</>}
@@ -241,7 +241,7 @@ export default function LiquidezPanel() {
           </div>
 
           {data.naoCasadas.length > 0 && (
-            <div style={{ color: "var(--adm-amber)", fontSize: 8, marginTop: 6, lineHeight: 1.6 }}>
+            <div style={{ color: "var(--adm-amber)", fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>
               ⚠️ não encontradas na fonte: {data.naoCasadas.join(", ")} — entraram sem taxa e
               ficaram fora do veredito
             </div>
@@ -249,18 +249,18 @@ export default function LiquidezPanel() {
 
           {/* ── O QUE NÃO FOI MEDIDO, NA TELA ─────────────────────────── */}
           <div style={{ marginTop: 8, borderTop: "1px solid var(--adm-border)", paddingTop: 6 }}>
-            <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>
+            <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>
               O QUE ESTA MEDIÇÃO NÃO INCLUI
             </div>
             <ul style={{ margin: "3px 0 0", paddingLeft: 14 }}>
               {data.naoMedido.map((n, i) => (
-                <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 8, lineHeight: 1.6 }}>{n}</li>
+                <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 11, lineHeight: 1.6 }}>{n}</li>
               ))}
             </ul>
           </div>
 
           {data.falhas.length > 0 && (
-            <div style={{ color: "var(--adm-ink-4)", fontSize: 7.5, marginTop: 5 }}>
+            <div style={{ color: "var(--adm-ink-4)", fontSize: 10, marginTop: 5 }}>
               recusas de fonte: {data.falhas.join(" · ")}
             </div>
           )}
@@ -276,8 +276,8 @@ function Bloco({ rotulo, valor, cor }: { rotulo: string; valor: string; cor: str
       border: "1px solid var(--adm-border)", borderRadius: 3,
       padding: "4px 8px", minWidth: 92,
     }}>
-      <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", letterSpacing: "0.1em" }}>{rotulo}</div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: cor }}>{valor}</div>
+      <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.1em" }}>{rotulo}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: cor }}>{valor}</div>
     </div>
   );
 }

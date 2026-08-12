@@ -114,7 +114,7 @@ export default function LabPanel() {
       icon="🔬" source="supabase/lab_strategies"
     >
       {carregando && <div className="adm-shimmer" style={{ height: 120 }} />}
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
 
       {d && (
         <>
@@ -133,19 +133,19 @@ export default function LabPanel() {
               border: "1px solid var(--adm-amber)", borderRadius: 4,
               padding: "7px 9px", marginBottom: 10, background: "rgba(255,176,0,.05)",
             }}>
-              <div style={{ color: "var(--adm-amber)", fontSize: 10, fontWeight: 700 }}>
+              <div style={{ color: "var(--adm-amber)", fontSize: 13, fontWeight: 700 }}>
                 ⚠️ {disc.length} {disc.length === 1 ? "discordância" : "discordâncias"} entre esta tela e o livro
               </div>
-              <div style={{ color: "var(--adm-ink-4)", fontSize: 8, marginTop: 2 }}>
+              <div style={{ color: "var(--adm-ink-4)", fontSize: 11, marginTop: 2 }}>
                 o registro é escrito à mão, o `lab_results` é escrito por medição — quando os
                 dois divergem, um dos dois está mentindo para quem lê
               </div>
               <div style={{ marginTop: 6, display: "grid", gap: 5 }}>
                 {disc.map((x) => (
-                  <div key={`${x.slug}-${x.tipo}`} style={{ fontSize: 9, lineHeight: 1.5 }}>
+                  <div key={`${x.slug}-${x.tipo}`} style={{ fontSize: 12, lineHeight: 1.5 }}>
                     <b style={{ color: "var(--adm-ink-2)" }}>{x.nome}</b>
                     <span style={{ color: "var(--adm-ink-4)" }}> · {x.o_que}</span>
-                    <div style={{ color: "var(--adm-cyan)", fontSize: 8 }}>→ {x.fazer_o_que}</div>
+                    <div style={{ color: "var(--adm-cyan)", fontSize: 11 }}>→ {x.fazer_o_que}</div>
                   </div>
                 ))}
               </div>
@@ -164,7 +164,7 @@ export default function LabPanel() {
                   key={f.id} onClick={() => { setAba(f.id); setAberta(null); }}
                   className="adm-btn"
                   style={{
-                    padding: "4px 9px", fontSize: 9,
+                    padding: "4px 9px", fontSize: 12,
                     borderColor: ativa ? "var(--adm-cyan)" : undefined,
                     color: ativa ? "var(--adm-cyan)" : undefined,
                   }}
@@ -177,7 +177,7 @@ export default function LabPanel() {
 
           {/* O que a família É, em uma linha, mais o capital que ela exige
               somado — o número que diz se dá para rodar tudo de uma vez. */}
-          <div style={{ fontSize: 9, color: "var(--adm-ink-3)", marginBottom: 10, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 12, color: "var(--adm-ink-3)", marginBottom: 10, lineHeight: 1.6 }}>
             {d.familias.find((f) => f.id === aba)?.hint}
             {" · "}<b>{daFamilia.length}</b> estratégias
             {" · "}capital somado <b>{usd(capitalDaFamilia)}</b>
@@ -209,28 +209,28 @@ export default function LabPanel() {
                     {/* NOME + SUBTÍTULO FUNCIONAL. A decisão de 05/08: mantém a
                         identidade e resolve a legibilidade. */}
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-                      <span style={{ fontSize: 11, color: "var(--adm-ink-1, var(--adm-ink-2))", fontWeight: 600 }}>
+                      <span style={{ fontSize: 14, color: "var(--adm-ink-1, var(--adm-ink-2))", fontWeight: 600 }}>
                         {e.name}
                       </span>
-                      <span style={{ fontSize: 7.5, letterSpacing: "0.08em", color: COR[e.status], whiteSpace: "nowrap" }}>
+                      <span style={{ fontSize: 10, letterSpacing: "0.08em", color: COR[e.status], whiteSpace: "nowrap" }}>
                         {ROTULO[e.status]}
                       </span>
                     </div>
-                    <div style={{ fontSize: 8.5, color: "var(--adm-ink-4)", marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2 }}>
                       {e.subtitle}
                     </div>
 
                     {/* O RESULTADO, com a AMOSTRA colada nele. Número sem `n`
                         é opinião — e um `n` em cinza claro do lado de um número
                         grande e colorido não conta como visível. */}
-                    <div style={{ display: "flex", gap: 12, marginTop: 5, fontSize: 9, alignItems: "baseline" }}>
+                    <div style={{ display: "flex", gap: 12, marginTop: 5, fontSize: 12, alignItems: "baseline" }}>
                       {e.lastStatus === "ok" ? (
                         <>
                           <span style={{ color: "var(--adm-ink-4)" }}>
                             líquido{" "}
                             <b style={{
                               color: (e.lastNetPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
-                              fontSize: 11,
+                              fontSize: 14,
                             }}>
                               {pct(e.lastNetPct)}
                             </b>
@@ -252,7 +252,7 @@ export default function LabPanel() {
                           nunca rodou · aguarda a fase que a mede
                         </span>
                       )}
-                      <span style={{ marginLeft: "auto", color: "var(--adm-ink-4)", fontSize: 8 }}>
+                      <span style={{ marginLeft: "auto", color: "var(--adm-ink-4)", fontSize: 11 }}>
                         {aberto ? "▲" : "▼"}
                       </span>
                     </div>
@@ -261,7 +261,7 @@ export default function LabPanel() {
                   {aberto && (
                     <div style={{
                       borderTop: "1px solid var(--adm-border)", padding: "8px 10px",
-                      fontSize: 8.5, color: "var(--adm-ink-3)", lineHeight: 1.7,
+                      fontSize: 11, color: "var(--adm-ink-3)", lineHeight: 1.7,
                     }}>
                       {/* O CAPITAL E O PORQUÊ DELE. É a variável que mais
                           explica o resultado, e ela era invisível no painel
@@ -270,13 +270,13 @@ export default function LabPanel() {
                       <div>
                         <span style={{ color: "var(--adm-cyan)" }}>capital exigido</span>{" "}
                         <b style={{ color: "var(--adm-ink-2)" }}>{usd(e.capitalRequiredUsd)}</b>
-                        <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.capitalWhy}</div>
+                        <div style={{ color: "var(--adm-ink-4)", fontSize: 11 }}>{e.capitalWhy}</div>
                       </div>
 
                       {e.hypothesis && (
                         <div style={{ marginTop: 6 }}>
                           <span style={{ color: "var(--adm-cyan)" }}>hipótese registrada antes do dado</span>
-                          <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.hypothesis}</div>
+                          <div style={{ color: "var(--adm-ink-4)", fontSize: 11 }}>{e.hypothesis}</div>
                         </div>
                       )}
                       {/* ⚠️ O RÓTULO SEGUE O ESTADO. Este campo carrega tanto
@@ -290,7 +290,7 @@ export default function LabPanel() {
                               : e.status === "empate"     ? "por que deu empate"
                               : "por que foi reprovada"}
                           </span>
-                          <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.killedWhy}</div>
+                          <div style={{ color: "var(--adm-ink-4)", fontSize: 11 }}>{e.killedWhy}</div>
                         </div>
                       )}
                       {e.notMeasurableWhy && (
@@ -298,7 +298,7 @@ export default function LabPanel() {
                           <span style={{ color: COR.nao_mensuravel }}>
                             por que não dá para medir daqui
                           </span>
-                          <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.notMeasurableWhy}</div>
+                          <div style={{ color: "var(--adm-ink-4)", fontSize: 11 }}>{e.notMeasurableWhy}</div>
                         </div>
                       )}
                       {/* ⚠️ Sem isto, um VERDE com zero rodadas parece veredito
@@ -308,16 +308,16 @@ export default function LabPanel() {
                       {e.measuredElsewhere && (
                         <div style={{ marginTop: 6 }}>
                           <span style={{ color: "var(--adm-cyan)" }}>onde esta medição vive</span>
-                          <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.measuredElsewhere}</div>
+                          <div style={{ color: "var(--adm-ink-4)", fontSize: 11 }}>{e.measuredElsewhere}</div>
                         </div>
                       )}
                       {e.lastVerdictText && (
                         <div style={{ marginTop: 6 }}>
                           <span style={{ color: "var(--adm-cyan)" }}>veredito da última rodada</span>
-                          <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{e.lastVerdictText}</div>
+                          <div style={{ color: "var(--adm-ink-4)", fontSize: 11 }}>{e.lastVerdictText}</div>
                         </div>
                       )}
-                      <div style={{ marginTop: 6, color: "var(--adm-ink-4)", fontSize: 8 }}>
+                      <div style={{ marginTop: 6, color: "var(--adm-ink-4)", fontSize: 11 }}>
                         {e.runs} rodada(s) registrada(s)
                         {e.lastRunAt && ` · última em ${new Date(e.lastRunAt).toLocaleString("pt-BR")}`}
                       </div>
@@ -328,7 +328,7 @@ export default function LabPanel() {
             })}
           </div>
 
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 10, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 10, lineHeight: 1.7 }}>
             <b style={{ color: COR.cinza }}>NÃO MEDIDA</b> é cinza de propósito: ausência de
             informação não é aviso, é vazio — não confundir com reprovada.
             {" · "}<b style={{ color: COR.empate }}>EMPATE</b> é medição BOA cujo resultado foi

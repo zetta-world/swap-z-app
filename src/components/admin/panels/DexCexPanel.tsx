@@ -79,7 +79,7 @@ export default function DexCexPanel() {
       subtitle="o atraso do bloco contra o preço vivo — a última arbitragem do mapa"
       icon="⛓" source="li.quest (cotação real de DEX) + livro de CEX andado por tamanho"
     >
-      <div style={{ fontSize: 9, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         A arbitragem CEX↔CEX foi reprovada por <b>velocidade</b>. O DEX não tem esse problema:
         o preço on-chain só muda quando um bloco fecha, então existe uma janela lenta <b>por
         construção</b>. Só que <i>&quot;existe janela&quot;</i> e <i>&quot;sobra dinheiro na
@@ -90,13 +90,13 @@ export default function DexCexPanel() {
         {rodando ? "cotando DEX e andando os livros…" : "⛓ MEDIR A BORDA DEX ↔ CEX · mesmo tamanho dos dois lados"}
       </button>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 6 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 6 }}>{err}</div>}
 
       {d && r && (
         <div style={{ marginTop: 10 }}>
           <div style={{
             border: `1px solid ${d.veredito.readable ? "var(--adm-border)" : "var(--adm-amber)"}`,
-            borderRadius: 4, padding: "7px 9px", marginBottom: 10, fontSize: 10, lineHeight: 1.6,
+            borderRadius: 4, padding: "7px 9px", marginBottom: 10, fontSize: 13, lineHeight: 1.6,
             color: d.veredito.readable ? "var(--adm-ink-2)" : "var(--adm-amber)",
           }}>
             <span style={{ color: COR[d.veredito.status] }}>● {d.veredito.status.toUpperCase()}</span>
@@ -111,7 +111,7 @@ export default function DexCexPanel() {
           {d.falhasGravacao && (
             <div style={{
               border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
-              marginBottom: 8, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+              marginBottom: 8, fontSize: 11, color: "var(--adm-red)", lineHeight: 1.6,
             }}>
               ⚠️ ESTA RODADA <b>NÃO FOI GRAVADA</b> no laboratório: {d.falhasGravacao.join(" · ")}.
               O que está na tela existe só aqui — não dá para comparar com as próximas.
@@ -123,14 +123,14 @@ export default function DexCexPanel() {
                  ocasião — e é justamente no resultado bom que ele mais importa. */}
           <div style={{
             border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
-            marginBottom: 8, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+            marginBottom: 8, fontSize: 11, color: "var(--adm-red)", lineHeight: 1.6,
           }}>
             ⚠️ ISTO É <b>TETO</b>, NÃO CAPTURA. Quem vê a mesma diferença no bloco monta um
             pacote e entra antes — somos os últimos da fila por construção. A medição diz se a
             borda <b>existe</b>; quem fica com ela é outra pergunta, e não é esta que responde.
           </div>
 
-          <div style={{ fontSize: 8.5, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
             notional <b style={{ color: "var(--adm-ink-3)" }}>{usd(r.notionalUsd)}</b> dos DOIS
             lados · taxa de CEX {r.taxaCexPct}% · {r.comLivroCompleto} de {r.pares} pares
             utilizáveis
@@ -148,15 +148,15 @@ export default function DexCexPanel() {
               ele é negócio próprio, igual ao WBTC que ficou fora.
             </div>
             {r.medianaLiquidaPct != null && (
-              <div style={{ fontSize: 11, color: "var(--adm-ink-3)", marginTop: 3 }}>
+              <div style={{ fontSize: 14, color: "var(--adm-ink-3)", marginTop: 3 }}>
                 mediana da borda LÍQUIDA:{" "}
                 <b style={{
-                  fontSize: 14,
+                  fontSize: 17,
                   color: corDoResultado(r.medianaLiquidaPct),
                 }}>
                   {pct(r.medianaLiquidaPct)}
                 </b>
-                <span style={{ fontSize: 8.5, color: "var(--adm-ink-4)" }}>
+                <span style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>
                   {" "}· {r.positivos} de {r.comLivroCompleto} positivos
                 </span>
               </div>
@@ -171,7 +171,7 @@ export default function DexCexPanel() {
           </div>
 
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "3px 5px" }}>PAR</th>
@@ -198,7 +198,7 @@ export default function DexCexPanel() {
                   }}>
                     <td style={{ textAlign: "left", padding: "3px 5px", color: "var(--adm-ink-2)" }}>
                       {l.symbol}
-                      <span style={{ fontSize: 7.5, color: "var(--adm-ink-4)" }}> @{l.cadeia}</span>
+                      <span style={{ fontSize: 10, color: "var(--adm-ink-4)" }}> @{l.cadeia}</span>
                     </td>
                     <td style={{ textAlign: "left", padding: "3px 5px", color: "var(--adm-ink-4)" }}>
                       {l.melhorRota}
@@ -213,10 +213,10 @@ export default function DexCexPanel() {
                     <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>
                       {pct(l.outraRotaPct)}
                     </td>
-                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)", fontSize: 8 }}>
+                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)", fontSize: 11 }}>
                       {l.precoDexCompra.toFixed(4)} / {l.precoDexVenda.toFixed(4)}
                     </td>
-                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)", fontSize: 8 }}>
+                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)", fontSize: 11 }}>
                       {l.precoCexCompra.toFixed(4)} / {l.precoCexVenda.toFixed(4)}
                     </td>
                     {/* ⚠️ LIVRO RASO NÃO ENTRA EM NENHUMA CONTA. Preenchimento
@@ -234,7 +234,7 @@ export default function DexCexPanel() {
                 ))}
               </tbody>
             </table>
-            <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", marginTop: 3, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 3, lineHeight: 1.6 }}>
               Os dois lados medidos para o MESMO notional: o DEX por cotação real (taxa,
               impacto e gás dentro) e a CEX <b>andando o livro</b> — a mesma função que
               transformou +0,451% teóricos em −0,629% reais em 4.085 medições. Par com livro
@@ -246,12 +246,12 @@ export default function DexCexPanel() {
           </div>
 
           {d.falhas && (
-            <div style={{ fontSize: 8, color: "var(--adm-amber)", marginTop: 6, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-amber)", marginTop: 6, lineHeight: 1.6 }}>
               ⚠️ o que não entrou: {d.falhas.join(" · ")}
             </div>
           )}
 
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
             <div style={{ color: "var(--adm-amber)" }}>⚠️ NÃO está nesta conta:</div>
             {d.naoMedido.map((n) => <div key={n}>· {n}</div>)}
             <div style={{ marginTop: 4 }}>

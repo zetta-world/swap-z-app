@@ -25,8 +25,8 @@ type BT = {
 function Mini({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "6px 8px" }}>
-      <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.08em" }}>{label}</div>
-      <div style={{ fontSize: 14, color, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.08em" }}>{label}</div>
+      <div style={{ fontSize: 17, color, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
     </div>
   );
 }
@@ -114,19 +114,19 @@ export default function BacktestPanel() {
         {PERIODS.map((p) => (
           <button key={p.label}
             className={`adm-toggle ${days === p.days ? "active" : ""}`}
-            style={{ fontSize: 8, padding: "2px 6px" }}
+            style={{ fontSize: 11, padding: "2px 6px" }}
             onClick={() => { setDays(p.days); setLoading(true); }}>
             {p.label}
           </button>
         ))}
-        <span style={{ fontSize: 7, color: "var(--adm-ink-4)" }}>por data do CARD</span>
+        <span style={{ fontSize: 10, color: "var(--adm-ink-4)" }}>por data do CARD</span>
       </div>
       {/* Agent filter — same stats, one agent at a time (R2.4). */}
       <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
         {SOURCES.map((s) => (
           <button key={s.value}
             className={`adm-toggle ${source === s.value ? "active" : ""}`}
-            style={{ fontSize: 8, padding: "2px 6px" }}
+            style={{ fontSize: 11, padding: "2px 6px" }}
             onClick={() => { setSource(s.value); setLoading(true); }}>
             {s.label}
           </button>
@@ -134,7 +134,7 @@ export default function BacktestPanel() {
       </div>
 
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {data && tab === "stats" && (
         <div>
@@ -146,13 +146,13 @@ export default function BacktestPanel() {
             const net = data.expectancyNet ?? data.expectancy;
             return (
               <div className="adm-stat" style={{ padding: "6px 0" }}>
-                <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>
+                <span style={{ fontSize: 12, color: "var(--adm-ink-3)", flex: 1 }}>
                   NET EXPECTANCY / TRADE
                   {data.expectancy != null && data.expectancyNet != null && (
                     <span style={{ color: "var(--adm-ink-3)", opacity: 0.7 }}>{"  "}(gross {data.expectancy >= 0 ? "+" : ""}{data.expectancy.toFixed(2)}%)</span>
                   )}
                 </span>
-                <span style={{ fontSize: 18, color: net == null ? "var(--adm-ink-3)" : net >= 0 ? "var(--adm-green)" : "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 21, color: net == null ? "var(--adm-ink-3)" : net >= 0 ? "var(--adm-green)" : "var(--adm-red)", fontVariantNumeric: "tabular-nums" }}>
                   {net == null ? "—" : `${net >= 0 ? "+" : ""}${net.toFixed(2)}%`}
                 </span>
               </div>
@@ -162,7 +162,7 @@ export default function BacktestPanel() {
               trustworthy yet — flag it instead of letting a lucky 12-trade run
               read as signal (P1.5). */}
           {data.sufficientSample === false && (
-            <div style={{ fontSize: 8, color: "var(--adm-gold)", letterSpacing: "0.04em", marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-gold)", letterSpacing: "0.04em", marginBottom: 4 }}>
               ⚠ AMOSTRA PEQUENA — {data.wins + data.losses} trades decididos, ainda ruído estatístico
             </div>
           )}
@@ -175,8 +175,8 @@ export default function BacktestPanel() {
                   color="var(--adm-ink)" />
           </div>
           <div className="adm-stat" style={{ padding: "4px 0" }}>
-            <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>AVG WIN / AVG LOSS</span>
-            <span style={{ fontSize: 11, fontVariantNumeric: "tabular-nums" }}>
+            <span style={{ fontSize: 12, color: "var(--adm-ink-3)", flex: 1 }}>AVG WIN / AVG LOSS</span>
+            <span style={{ fontSize: 14, fontVariantNumeric: "tabular-nums" }}>
               <span style={{ color: "var(--adm-green)" }}>{data.avgWin == null ? "—" : `+${data.avgWin.toFixed(2)}%`}</span>
               <span style={{ color: "var(--adm-ink-3)" }}> / </span>
               <span style={{ color: "var(--adm-red)" }}>{data.avgLoss == null ? "—" : `${data.avgLoss.toFixed(2)}%`}</span>
@@ -214,9 +214,9 @@ export default function BacktestPanel() {
       {data && tab === "feed" && (
         <div className="adm-scroll" style={{ maxHeight: 280 }}>
           {data.recent.length === 0 ? (
-            <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>No suggestions yet — the flywheel logs every 30 min.</div>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>No suggestions yet — the flywheel logs every 30 min.</div>
           ) : data.recent.map((r, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 9, alignItems: "center" }}>
+            <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 12, alignItems: "center" }}>
               <span style={{ color: "var(--adm-ink-3)", flexShrink: 0, whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
               <span style={{ color: r.side === "buy" ? "var(--adm-green)" : "var(--adm-red)", flexShrink: 0, width: 30 }}>{r.side}</span>
               <span style={{ color: "var(--adm-ink)", flexShrink: 0, width: 48, fontFamily: "monospace" }}>{r.symbol}</span>

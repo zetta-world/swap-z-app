@@ -107,7 +107,7 @@ export default function FundingPanel() {
       subtitle="comprado no spot + vendido no perpétuo — renda neutra, sem depender de velocidade"
       icon="🪙" source="binance/fundingRate (histórico realizado)"
     >
-      <div style={{ fontSize: 9, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         A arbitragem spot-spot foi reprovada por velocidade: o spread entre CEXes vive
         milissegundos e a mesa olha a cada minuto. O funding não tem esse problema — é
         publicado, muda a cada 8h, e é fluxo de caixa contratual, não ineficiência a
@@ -118,7 +118,7 @@ export default function FundingPanel() {
         {rodando ? "lendo o histórico de funding…" : "🪙 MEDIR O FUNDING · janela do laboratório"}
       </button>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 6 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 6 }}>{err}</div>}
 
       {d && (
         <div style={{ marginTop: 10 }}>
@@ -128,7 +128,7 @@ export default function FundingPanel() {
           <div style={{
             border: `1px solid ${d.veredito.readable ? "var(--adm-border)" : "var(--adm-amber)"}`,
             borderRadius: 4, padding: "7px 9px", marginBottom: 10,
-            fontSize: 10, lineHeight: 1.6,
+            fontSize: 13, lineHeight: 1.6,
             color: d.veredito.readable ? "var(--adm-ink-2)" : "var(--adm-amber)",
           }}>
             {d.veredito.verdict}
@@ -140,7 +140,7 @@ export default function FundingPanel() {
           {d.resumo.paginacaoCortada && (
             <div style={{
               border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
-              marginBottom: 8, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+              marginBottom: 8, fontSize: 11, color: "var(--adm-red)", lineHeight: 1.6,
             }}>
               ⚠️ A PAGINAÇÃO FOI CORTADA POR TEMPO. A janela entregue é <b>menor</b> que os{" "}
               {d.resumo.janelaPedidaDias} dias pedidos — o número abaixo vale menos do que
@@ -156,7 +156,7 @@ export default function FundingPanel() {
           {d.resumo.fonteEsgotada && !d.resumo.paginacaoCortada && (
             <div style={{
               border: "1px solid var(--adm-amber)", borderRadius: 3, padding: "5px 7px",
-              marginBottom: 8, fontSize: 8.5, color: "var(--adm-amber)", lineHeight: 1.6,
+              marginBottom: 8, fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.6,
             }}>
               ⚠️ A FONTE ESGOTOU, não fomos nós. A paginação rodou até o fim e o relógio
               não estourou — o histórico público simplesmente termina em{" "}
@@ -166,7 +166,7 @@ export default function FundingPanel() {
             </div>
           )}
 
-          <div style={{ fontSize: 9, color: "var(--adm-ink-3)", lineHeight: 1.7, marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--adm-ink-3)", lineHeight: 1.7, marginBottom: 8 }}>
             {d.resumo.comAmostra} símbolos com amostra
             {d.resumo.semAmostra != null && d.resumo.semAmostra > 0 && (
               <span style={{ color: "var(--adm-amber)" }}>
@@ -190,10 +190,10 @@ export default function FundingPanel() {
                    tela: o destaque ia para o líquido da JANELA (+0,04%) e para
                    o anualizado BRUTO (+1,6%), enquanto o veredito julgava por
                    um terceiro número que ninguém via. Ver `netAnnualizedPct`. */}
-            <div style={{ fontSize: 11, marginTop: 4 }}>
+            <div style={{ fontSize: 14, marginTop: 4 }}>
               LÍQUIDO POR ANO (o que decide):{" "}
               <b style={{
-                fontSize: 14,
+                fontSize: 17,
                 color: corDoResultado(d.resumo.medianaLiquidaAnualPct),
               }}>
                 {pct(d.resumo.medianaLiquidaAnualPct, 2)}
@@ -241,13 +241,13 @@ export default function FundingPanel() {
                    nada, e não tinha como saber. Duas rodadas com o mesmo
                    carimbo leram o MESMO dado. */}
             {d.resumo.ultimoPontoEm && (
-              <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>
+              <div style={{ color: "var(--adm-ink-4)", fontSize: 11 }}>
                 último pagamento lido:{" "}
                 <b>{new Date(d.resumo.ultimoPontoEm).toLocaleString("pt-BR")}</b>
                 {" "}— duas rodadas com este mesmo carimbo leram o mesmo dado
               </div>
             )}
-            <div style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>
+            <div style={{ color: "var(--adm-ink-4)", fontSize: 11 }}>
               fonte:{" "}
               {Object.entries(d.fontes).map(([f, n]) => `${f} ${n}`).join(" · ") || "—"}
               {d.falhasPorStatus && ` · recusas: ${d.falhasPorStatus}`}
@@ -262,7 +262,7 @@ export default function FundingPanel() {
           </div>
 
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "3px 5px" }}>SÍMBOLO</th>
@@ -317,7 +317,7 @@ export default function FundingPanel() {
           {curtos.length > 0 && (
             <div style={{
               border: "1px dashed var(--adm-amber)", borderRadius: 3,
-              padding: "6px 8px", marginTop: 8, fontSize: 8.5, lineHeight: 1.7,
+              padding: "6px 8px", marginTop: 8, fontSize: 11, lineHeight: 1.7,
               color: "var(--adm-ink-4)",
             }}>
               <div style={{ color: "var(--adm-amber)" }}>
@@ -342,7 +342,7 @@ export default function FundingPanel() {
           {/* O QUE NÃO FOI MEDIDO, na tela e não só no código. Omissão que só
               existe no comentário vira, semanas depois, um número que alguém
               leu como completo. */}
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
             <div style={{ color: "var(--adm-amber)" }}>⚠️ NÃO está nesta conta:</div>
             {d.naoMedido.map((n) => <div key={n}>· {n}</div>)}
             <div style={{ marginTop: 4 }}>

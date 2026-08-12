@@ -7,7 +7,7 @@
 
 | Doc | O que é |
 |-----|---------|
-| `INVARIANTES-DE-MEDICAO.md` | **Ler ANTES de cada fase.** As 21 regras que qualquer medição respeita, cada uma com a cicatriz que a gerou |
+| `INVARIANTES-DE-MEDICAO.md` | **Ler ANTES de cada fase.** As 22 regras que qualquer medição respeita, cada uma com a cicatriz que a gerou |
 | `RUNBOOK.md` | Env vars, crons, playbooks de incidente |
 | `ARQUITETURA-IA.md` | Arquitetura completa dos agentes A/B/torneio/radar (+ Anexos) |
 | `AUDITORIA-GERAL.md` | Notas por área + achados + melhorias recomendadas |

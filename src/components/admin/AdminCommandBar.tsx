@@ -88,7 +88,7 @@ export default function AdminCommandBar() {
             </div>
           ))}
           {items.length === 0 && (
-            <div style={{ padding: "12px 16px", fontSize: 10, color: "var(--adm-ink-3)" }}>
+            <div style={{ padding: "12px 16px", fontSize: 13, color: "var(--adm-ink-3)" }}>
               No panels match.
             </div>
           )}

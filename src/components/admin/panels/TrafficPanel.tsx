@@ -76,7 +76,7 @@ export default function TrafficPanel() {
       </div>
 
       {loading && <div className="adm-shimmer" style={{ height: 140 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {data && tab === "mapa" && (
         <div>
@@ -111,13 +111,13 @@ export default function TrafficPanel() {
             </svg>
           </div>
           {data.cities.length === 0 ? (
-            <div style={{ fontSize: 9, color: "var(--adm-gold)", marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: "var(--adm-gold)", marginTop: 8 }}>
               ⚠ Sem geo ainda — o mapa povoa com os acessos a partir de agora (eventos antigos não têm localização).
             </div>
           ) : (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
               {data.cities.slice(0, 8).map((c, i) => (
-                <span key={i} style={{ fontSize: 8, fontFamily: "monospace", color: "var(--adm-ink-3)", border: "1px solid var(--adm-border)", borderRadius: 4, padding: "2px 6px" }}>
+                <span key={i} style={{ fontSize: 11, fontFamily: "monospace", color: "var(--adm-ink-3)", border: "1px solid var(--adm-border)", borderRadius: 4, padding: "2px 6px" }}>
                   <span style={{ color: "var(--adm-cyan)" }}>●</span> {c.city} · {c.country} · {c.views}
                 </span>
               ))}
@@ -135,9 +135,9 @@ export default function TrafficPanel() {
               { label: "30 DIAS", v: data.totals.last30.views },
             ].map((tile) => (
               <div key={tile.label} style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "6px 8px" }}>
-                <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.08em" }}>{tile.label}</div>
-                <div style={{ fontSize: 15, color: "var(--adm-cyan)", fontVariantNumeric: "tabular-nums" }}>{tile.v}</div>
-                {tile.sub && <div style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>{tile.sub}</div>}
+                <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.08em" }}>{tile.label}</div>
+                <div style={{ fontSize: 18, color: "var(--adm-cyan)", fontVariantNumeric: "tabular-nums" }}>{tile.v}</div>
+                {tile.sub && <div style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>{tile.sub}</div>}
               </div>
             ))}
           </div>
@@ -153,7 +153,7 @@ export default function TrafficPanel() {
               </div>
             ))}
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: "var(--adm-ink-4)", marginTop: 2 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2 }}>
             <span>{data.days[0]?.day.slice(5)}</span>
             <span><span style={{ color: "var(--adm-cyan)" }}>■</span> views <span style={{ color: "var(--adm-gold)" }}>■</span> únicos</span>
             <span>{data.days[data.days.length - 1]?.day.slice(5)}</span>
@@ -228,8 +228,8 @@ export default function TrafficPanel() {
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             {(["voce", "humano", "bot"] as const).map((k) => (
               <div key={k} style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "5px 7px" }}>
-                <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.06em" }}>{KIND_META[k].label.toUpperCase()}</div>
-                <div style={{ fontSize: 15, color: KIND_META[k].color }}>{data.visitorSummary[k]}</div>
+                <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.06em" }}>{KIND_META[k].label.toUpperCase()}</div>
+                <div style={{ fontSize: 18, color: KIND_META[k].color }}>{data.visitorSummary[k]}</div>
               </div>
             ))}
           </div>
@@ -241,9 +241,9 @@ export default function TrafficPanel() {
               {data.visitors.length === 0 && <tr><td colSpan={5} style={{ color: "var(--adm-ink-3)" }}>sem visitantes rastreados ainda</td></tr>}
               {data.visitors.map((v) => (
                 <tr key={v.cid}>
-                  <td style={{ color: KIND_META[v.kind].color, fontSize: 9 }}>{KIND_META[v.kind].label}</td>
-                  <td style={{ fontSize: 9, color: "var(--adm-ink-2)" }}>{v.browser}·{v.os}</td>
-                  <td style={{ fontSize: 9, color: "var(--adm-ink-3)" }}>{v.city !== "?" ? `${v.city}` : v.country}</td>
+                  <td style={{ color: KIND_META[v.kind].color, fontSize: 12 }}>{KIND_META[v.kind].label}</td>
+                  <td style={{ fontSize: 12, color: "var(--adm-ink-2)" }}>{v.browser}·{v.os}</td>
+                  <td style={{ fontSize: 12, color: "var(--adm-ink-3)" }}>{v.city !== "?" ? `${v.city}` : v.country}</td>
                   <td>{v.pageViews}</td>
                   <td style={{ color: "var(--adm-gold)" }}>{v.dwellSec > 0 ? dur(v.dwellSec) : "—"}</td>
                 </tr>

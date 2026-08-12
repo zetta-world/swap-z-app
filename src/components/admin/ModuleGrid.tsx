@@ -53,14 +53,14 @@ export default function ModuleGrid({ panels }: { panels: PanelMap }) {
           >
             {label}
             {id !== "all" && (
-              <span style={{ marginLeft: 5, color: "var(--adm-ink-3)", fontSize: 8 }}>
+              <span style={{ marginLeft: 5, color: "var(--adm-ink-3)", fontSize: 11 }}>
                 ({MODULE_REGISTRY.filter((m) => m.category === id && enabled.has(m.id)).length})
               </span>
             )}
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.1em", alignSelf: "center" }}>
+        <span style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.1em", alignSelf: "center" }}>
           {visible.length} panel{visible.length !== 1 ? "s" : ""} visible
         </span>
       </div>
@@ -69,7 +69,7 @@ export default function ModuleGrid({ panels }: { panels: PanelMap }) {
           bastante para valer um lembrete fixo, não uma convenção mental. */}
       {(cat === "lab" || cat === "bench" || cat === "mercado") && (
         <div style={{
-          fontSize: 8, lineHeight: 1.6, padding: "6px 9px", marginBottom: 8, borderRadius: 3,
+          fontSize: 11, lineHeight: 1.6, padding: "6px 9px", marginBottom: 8, borderRadius: 3,
           color: "var(--adm-ink-3)", background: "var(--adm-bg-raise)",
           borderLeft: `2px solid ${cat === "lab" ? "var(--adm-gold)" : cat === "mercado" ? "var(--adm-ink-3)" : "var(--adm-cyan)"}`,
         }}>
@@ -101,7 +101,7 @@ export default function ModuleGrid({ panels }: { panels: PanelMap }) {
           padding: "40px 0",
           textAlign: "center",
           color: "var(--adm-ink-4)",
-          fontSize: 11,
+          fontSize: 14,
           letterSpacing: "0.15em",
         }}>
           NO PANELS IN THIS CATEGORY

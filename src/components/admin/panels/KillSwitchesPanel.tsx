@@ -78,9 +78,9 @@ export default function KillSwitchesPanel() {
       source="supabase/admin_kv"
     >
       {loading && <div className="adm-shimmer" style={{ height: 80 }} />}
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginBottom: 8 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
       {note && (
-        <div style={{ color: "var(--adm-amber)", fontSize: 9, marginBottom: 10 }}>
+        <div style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 10 }}>
           ⚠ {note}
         </div>
       )}
@@ -90,7 +90,7 @@ export default function KillSwitchesPanel() {
           <div key={key} className="adm-stat" style={{ alignItems: "center" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                fontSize: 9,
+                fontSize: 12,
                 fontWeight: 700,
                 letterSpacing: "0.18em",
                 textTransform: "uppercase",
@@ -98,7 +98,7 @@ export default function KillSwitchesPanel() {
               }}>
                 {label}
               </div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 2 }}>{desc}</div>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2 }}>{desc}</div>
             </div>
             <button
               className={`adm-toggle ${isOn ? "danger" : "active"}`}

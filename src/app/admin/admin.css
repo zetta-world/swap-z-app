@@ -5,6 +5,53 @@
  */
 
 /* ── Tokens ──────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+ * PADRÃO INSTITUCIONAL — o que separa "denso" de "apertado" (12/08).
+ *
+ * O pedido foi um painel de banca suíça, e a diferença entre isso e um
+ * amontoado é mecânica, não estética:
+ *
+ *  1. NÚMERO ALINHA COM NÚMERO. Dígito de largura variável faz coluna de
+ *     valores serpentear, e o olho perde a comparação vertical — que é a
+ *     única coisa que uma tabela financeira existe para permitir.
+ *  2. RESPIRO É HIERARQUIA. Sem espaço entre blocos, tudo tem o mesmo peso, e
+ *     o leitor precisa reler para achar o que importa.
+ *  3. MEDIDA DE LINHA. Texto corrido atravessando 1400px de monitor obriga o
+ *     olho a caçar o começo da linha seguinte.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* ⚠️ TABULAR EM TODA A CASCA, não painel a painel. Era decidido caso a caso e
+ * a maioria dos painéis esquecia — então as colunas de valor não alinhavam. */
+.admin-shell {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv01" 1;
+}
+
+/* Respiro entre painéis e dentro deles. Estava tudo colado. */
+.admin-shell main {
+  padding-block: 18px;
+}
+.adm-panel + .adm-panel {
+  margin-top: 16px;
+}
+.adm-panel-body {
+  line-height: 1.65;
+}
+
+/* ⚠️ MEDIDA DE LINHA para texto EXPLICATIVO — e só para ele. As tabelas
+ * precisam da largura inteira; os parágrafos de "por quê", não. */
+.adm-panel-body p,
+.adm-nota {
+  max-width: 78ch;
+}
+
+/* Em monitor grande, o painel ganha ar em vez de esticar a linha. */
+@media (min-width: 1600px) {
+  .admin-shell main {
+    padding-inline: clamp(24px, 4vw, 72px);
+  }
+}
+
 .admin-shell {
   --adm-bg:        #0a0a0c;
   --adm-bg-panel:  #0d0d10;
@@ -13,10 +60,35 @@
   --adm-border-hi: rgba(255 255 255 / 0.14);
 
   /* text scale */
-  --adm-ink:       #e8e8f0;     /* primary text */
-  --adm-ink-2:     #9898b0;     /* secondary */
-  --adm-ink-3:     #5a5a70;     /* muted */
-  --adm-ink-4:     #30303a;     /* very muted / disabled */
+  /* ── TINTA ─────────────────────────────────────────────────────────────
+   * ⚠️ OS DOIS TONS BAIXOS ERAM ILEGÍVEIS, MEDIDOS (12/08).
+   *
+   * O dono disse "a leitura está muito difícil". Medido contra o fundo
+   * (#0a0a0c), o que havia aqui era:
+   *
+   *   --adm-ink-3: #5a5a70  →  2,94:1   (o mínimo legível é 4,5:1)
+   *   --adm-ink-4: #30303a  →  1,51:1   (praticamente invisível)
+   *
+   * E eram justamente esses dois que pintavam rótulo, legenda e o estado
+   * `cinza` — em texto de 8 e 9 pixels. Um painel institucional pode ser
+   * discreto; não pode ser ilegível, e "discreto" virou desculpa para os dois
+   * se confundirem.
+   *
+   * ⚠️ E A RAMPA FOI REFEITA INTEIRA, não só os dois culpados. Subir o `ink-3`
+   * sozinho o encostou no `ink-2` — 1,19:1 entre eles, dois tons virando um. O
+   * contraste com o FUNDO tinha sido resolvido e o contraste ENTRE OS DEGRAUS
+   * quebrado no mesmo movimento: legibilidade ganha, hierarquia perdida.
+   *
+   * Agora os quatro degraus são de 1,66× cada, e o teste exige as duas coisas
+   * — contra o fundo E contra o vizinho. Foi ele que pegou a regressão.
+   *
+   * Os valores estão anotados com o contraste medido. Quem mexer aqui refaz a
+   * conta: abaixo de 4,5:1 volta a ser decoração.
+   */
+  --adm-ink:       #e8e8f0;     /* primário       · 16,23:1 */
+  --adm-ink-2:     #b4b4c8;     /* secundário     ·  9,71:1  (era 7,01) */
+  --adm-ink-3:     #8a8aa2;     /* rótulo/legenda ·  5,88:1  (era 2,94) */
+  --adm-ink-4:     #66667c;     /* muito discreto ·  3,54:1  (era 1,51) */
 
   /* accent palette — terminal hacker colors */
   --adm-cyan:      #00e5ff;     /* data / info */

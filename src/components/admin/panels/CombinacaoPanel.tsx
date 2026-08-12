@@ -89,7 +89,7 @@ export default function CombinacaoPanel() {
       subtitle="as rendas aprovadas juntas — a carteira ganha de concentrar na melhor?"
       icon="🧬" source="okx (funding) + yields.llama.fi/chart (histórico de APY)"
     >
-      <div style={{ fontSize: 9, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         A Fase 4 mostrou que <b>o gás não é a barreira — a correlação é</b>: ρ=0,07 no funding
         transforma 50 nomes em 12 apostas, e o 51º perpétuo não faz nada. O que pode funcionar
         é juntar rendas com <b>motores diferentes</b> — posicionamento, crédito, juro soberano,
@@ -100,14 +100,14 @@ export default function CombinacaoPanel() {
         {rodando ? "alinhando as séries por data…" : "🧬 MEDIR A CARTEIRA COMBINADA · contra a melhor parte"}
       </button>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 6 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 6 }}>{err}</div>}
 
       {d && r && (
         <div style={{ marginTop: 10 }}>
           {/* VEREDITO PRIMEIRO — a mesma ordem de todos os painéis do laboratório. */}
           <div style={{
             border: `1px solid ${d.veredito.readable ? "var(--adm-border)" : "var(--adm-amber)"}`,
-            borderRadius: 4, padding: "7px 9px", marginBottom: 10, fontSize: 10, lineHeight: 1.6,
+            borderRadius: 4, padding: "7px 9px", marginBottom: 10, fontSize: 13, lineHeight: 1.6,
             color: d.veredito.readable ? "var(--adm-ink-2)" : "var(--adm-amber)",
           }}>
             <span style={{ color: COR[d.veredito.status] }}>● {d.veredito.status.toUpperCase()}</span>
@@ -118,7 +118,7 @@ export default function CombinacaoPanel() {
                  alguém leria a coluna VOL como se fosse risco. */}
           <div style={{
             border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
-            marginBottom: 8, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+            marginBottom: 8, fontSize: 11, color: "var(--adm-red)", lineHeight: 1.6,
           }}>
             ⚠️ O RISCO QUE DECIDE NÃO ESTÁ NESTA TABELA. Exploit de contrato, despegue e falha
             de emissor não aparecem em volatilidade. O empréstimo de stablecoin quase não tem
@@ -131,39 +131,39 @@ export default function CombinacaoPanel() {
             display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10,
           }}>
             <div style={{ border: "1px solid var(--adm-border)", borderRadius: 4, padding: "7px 9px" }}>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>
                 CARTEIRA · {r.fluxos} fluxos de {usd(r.fatiaUsd ?? 0)}
               </div>
               <div style={{
-                fontSize: 15, fontWeight: 700,
+                fontSize: 18, fontWeight: 700,
                 color: corDoResultado(r.carteiraLiquidaPct),
               }}>
-                {pct(r.carteiraLiquidaPct)}<span style={{ fontSize: 9, fontWeight: 400 }}>/ano</span>
+                {pct(r.carteiraLiquidaPct)}<span style={{ fontSize: 12, fontWeight: 400 }}>/ano</span>
               </div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
                 bruto {pct(r.carteiraBrutaPct)} · entrada −{r.custoEntradaPct.toFixed(3)}%
                 <div>tombo <b style={{ color: "var(--adm-ink-3)" }}>{r.carteiraTomboPct?.toFixed(2) ?? "—"}</b> pontos
                 {" · "}vol {pct(r.carteiraVolPct, 1)}</div>
               </div>
             </div>
             <div style={{ border: "1px solid var(--adm-border)", borderRadius: 4, padding: "7px 9px" }}>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>
                 CONCENTRAR NA MELHOR · {usd(r.capitalUsd)}
               </div>
               <div style={{
-                fontSize: 15, fontWeight: 700,
+                fontSize: 18, fontWeight: 700,
                 color: corDoResultado(r.melhorParteLiquidaPct),
               }}>
-                {pct(r.melhorParteLiquidaPct)}<span style={{ fontSize: 9, fontWeight: 400 }}>/ano</span>
+                {pct(r.melhorParteLiquidaPct)}<span style={{ fontSize: 12, fontWeight: 400 }}>/ano</span>
               </div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
                 {r.melhorParteNome ?? "—"}
                 <div>tombo <b style={{ color: "var(--adm-ink-3)" }}>{r.melhorParteTomboPct?.toFixed(2) ?? "—"}</b> pontos</div>
               </div>
             </div>
           </div>
 
-          <div style={{ fontSize: 8.5, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
             {/* A AMOSTRA: dias em COMUM, que é o que sustenta a correlação. */}
             <b style={{ color: "var(--adm-ink-3)" }}>{r.diasComuns} dias</b> em que TODOS os
             fluxos têm valor{r.primeiroDia && ` (${r.primeiroDia} → ${r.ultimoDia})`}
@@ -182,11 +182,11 @@ export default function CombinacaoPanel() {
           {/* A MATRIZ. É ela que diz se os motores são mesmo diferentes. */}
           {d.correlacao.slugs.length > 1 && (
             <div style={{ overflowX: "auto", marginBottom: 8 }}>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 3 }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 3 }}>
                 CORRELAÇÃO ENTRE OS FLUXOS — verde é o que diversifica, vermelho é o que
                 repete
               </div>
-              <table style={{ fontSize: 8.5, borderCollapse: "collapse" }}>
+              <table style={{ fontSize: 11, borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ color: "var(--adm-ink-4)" }}>
                     <th style={{ padding: "2px 6px" }}></th>
@@ -221,7 +221,7 @@ export default function CombinacaoPanel() {
 
           {/* AS PARTES. Ordenadas pelo LÍQUIDO — a régua que o veredito usa. */}
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "3px 5px" }}>FLUXO</th>
@@ -243,7 +243,7 @@ export default function CombinacaoPanel() {
                       <td style={{ textAlign: "left", padding: "3px 5px", color: "var(--adm-ink-2)" }}>
                         {p.nome}
                         {/* O MOTOR, porque a tese depende dele e não do número. */}
-                        <div style={{ fontSize: 7, color: "var(--adm-ink-4)" }}>{p.motor}</div>
+                        <div style={{ fontSize: 10, color: "var(--adm-ink-4)" }}>{p.motor}</div>
                       </td>
                       <td style={{
                         padding: "3px 5px",
@@ -270,12 +270,12 @@ export default function CombinacaoPanel() {
           </div>
 
           {d.falhas && (
-            <div style={{ fontSize: 8, color: "var(--adm-amber)", marginTop: 6, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-amber)", marginTop: 6, lineHeight: 1.6 }}>
               ⚠️ o que não entrou: {d.falhas.join(" · ")}
             </div>
           )}
 
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
             <div style={{ color: "var(--adm-amber)" }}>⚠️ NÃO está nesta conta:</div>
             {d.naoMedido.map((n) => <div key={n}>· {n}</div>)}
             {/* ⚠️ POR QUE O NÚMERO NÃO BATE COM O DO 🏦, e é de propósito.

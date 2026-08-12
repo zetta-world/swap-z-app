@@ -28,7 +28,7 @@ export default function AutopilotPanel() {
         <div className="adm-shimmer" style={{ height: 80 }} />
       )}
       {state.status === "error" && (
-        <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{state.message}</div>
+        <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{state.message}</div>
       )}
       {state.status === "ok" && (() => {
         const ap = state.data.autopilot;

@@ -150,7 +150,7 @@ export default function ArbiterCohortPanel() {
       icon="ᚼ" source="supabase/paper_positions"
     >
       {loading && <div className="adm-shimmer" style={{ height: 120 }} />}
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
 
       {d && (
         <div>
@@ -159,14 +159,14 @@ export default function ArbiterCohortPanel() {
           <div style={{
             border: `1px solid ${d.readable ? "var(--adm-green)" : "var(--adm-red)"}`,
             borderRadius: 4, padding: "7px 9px", marginBottom: 10,
-            fontSize: 10, lineHeight: 1.6,
+            fontSize: 13, lineHeight: 1.6,
             color: d.readable ? "var(--adm-green)" : "var(--adm-red)",
           }}>
             {d.readable
               ? "✓ a coorte é legível — os números abaixo podem ser lidos como desempenho"
               : "✕ NÃO É LEGÍVEL COMO DESEMPENHO"}
             {!d.readable && (
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 3 }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 3 }}>
                 Isto não quer dizer que a mesa deu prejuízo — quer dizer que o lucro que ela
                 mostra não foi medido contra o risco que ela corre. &quot;Não medido&quot; e &quot;ruim&quot;
                 são coisas diferentes, e tratar as duas igual leva a desligar coisa boa e a
@@ -182,7 +182,7 @@ export default function ArbiterCohortPanel() {
           {d.realism && (
             <div style={{
               border: "1px solid var(--adm-border)", borderRadius: 4,
-              padding: "7px 9px", marginBottom: 10, fontSize: 9, lineHeight: 1.7,
+              padding: "7px 9px", marginBottom: 10, fontSize: 12, lineHeight: 1.7,
             }}>
               <div style={{ color: "var(--adm-ink-2)" }}>
                 📖 PROFUNDIDADE REAL DO LIVRO · {d.realism.samples.toLocaleString("pt-BR")} medições
@@ -210,10 +210,10 @@ export default function ArbiterCohortPanel() {
 
               {d.realism.bySymbol.length > 0 && (
                 <div style={{ marginTop: 5 }}>
-                  <div style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>
+                  <div style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>
                     por símbolo, do livro mais FUNDO para o mais raso:
                   </div>
-                  <table className="adm-table" style={{ fontSize: 8 }}>
+                  <table className="adm-table" style={{ fontSize: 11 }}>
                     <thead><tr><th>SÍMBOLO</th><th>MEDIÇÕES</th><th>POSITIVAS</th><th>PASSAM</th><th>SLIPPAGE</th></tr></thead>
                     <tbody>
                       {d.realism.bySymbol.map((s) => (
@@ -232,7 +232,7 @@ export default function ArbiterCohortPanel() {
                       ))}
                     </tbody>
                   </table>
-                  <div style={{ fontSize: 8, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 11, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
                     Ordenado pela PROFUNDIDADE, não pelo volume — ordenar por volume repetiria
                     na tela o mesmo viés que a mesa tinha na seleção. O símbolo MAIS operado
                     (MANA, 298 ciclos) é o de pior livro e teve ZERO positivas; o único com
@@ -242,7 +242,7 @@ export default function ArbiterCohortPanel() {
                   </div>
                 </div>
               )}
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", fontStyle: "italic", marginTop: 3 }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", fontStyle: "italic", marginTop: 3 }}>
                 O spread do topo é o preço de UMA unidade. Operar ${'{'}50{'}'} exige andar o livro — pagar
                 subindo os asks e vender descendo os bids. Esta sonda existia desde 28/07 e só
                 registrava: o comentário da chamada dizia &quot;never blocks booking&quot;. Agora ela VETA
@@ -252,10 +252,10 @@ export default function ArbiterCohortPanel() {
           )}
 
           {d.flags.map((f) => (
-            <div key={f.id} style={{ borderTop: "1px solid var(--adm-border)", padding: "5px 0", fontSize: 9, lineHeight: 1.6 }}>
+            <div key={f.id} style={{ borderTop: "1px solid var(--adm-border)", padding: "5px 0", fontSize: 12, lineHeight: 1.6 }}>
               <div style={{ color: COR[f.level] }}>{ICONE[f.level]} {f.title}</div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-3)", paddingLeft: 12 }}>{f.finding}</div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", paddingLeft: 12, fontStyle: "italic" }}>{f.meaning}</div>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-3)", paddingLeft: 12 }}>{f.finding}</div>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", paddingLeft: 12, fontStyle: "italic" }}>{f.meaning}</div>
             </div>
           ))}
 
@@ -268,7 +268,7 @@ export default function ArbiterCohortPanel() {
                   <td style={{ fontVariantNumeric: "tabular-nums" }}>
                     {k.cycles}
                     {k.cycles > 0 && k.losses === 0 && (
-                      <span style={{ color: "var(--adm-red)", fontSize: 7 }}> · 0 perdas</span>
+                      <span style={{ color: "var(--adm-red)", fontSize: 10 }}> · 0 perdas</span>
                     )}
                   </td>
                   {/* A COLUNA QUE RESPONDE A PERGUNTA. Se ela for igual nos três,
@@ -282,7 +282,7 @@ export default function ArbiterCohortPanel() {
                   <td style={{ fontVariantNumeric: "tabular-nums", color: k.realizedUsd >= 0 ? "var(--adm-green)" : "var(--adm-red)" }}>
                     {k.realizedUsd >= 0 ? "+" : "−"}${Math.abs(k.realizedUsd).toFixed(2)}
                   </td>
-                  <td style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>
+                  <td style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>
                     {k.hoursLive < 48 ? `${k.hoursLive.toFixed(1)}h` : `${(k.hoursLive / 24).toFixed(0)}d`}
                   </td>
                 </tr>
@@ -293,7 +293,7 @@ export default function ArbiterCohortPanel() {
           {/* ONDE está a concentração. A marca diz QUE existe; conferir na
               corretora exige saber qual. */}
           {d.venues.length > 0 && (
-            <div style={{ marginTop: 8, fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
+            <div style={{ marginTop: 8, fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
               <div style={{ color: "var(--adm-ink-3)" }}>pernas por venue ({d.legs} no total):</div>
               {d.venues.slice(0, 6).map((v) => (
                 <div key={v.venue}>
@@ -324,13 +324,13 @@ export default function ArbiterCohortPanel() {
 
             {med && (
               <div style={{
-                marginTop: 8, fontSize: 9, lineHeight: 1.7,
+                marginTop: 8, fontSize: 12, lineHeight: 1.7,
                 border: "1px solid var(--adm-border)", borderRadius: 4, padding: "7px 9px",
               }}>
                 <div style={{ color: "var(--adm-ink-2)" }}>
                   🧮 CORTE DE OUTLIER · a conta de hoje contra a mediana de verdade
                 </div>
-                <div style={{ color: "var(--adm-ink-4)", fontSize: 8, marginBottom: 4 }}>
+                <div style={{ color: "var(--adm-ink-4)", fontSize: 11, marginBottom: 4 }}>
                   a fórmula em produção não é mediana quando a contagem de cotações é PAR.
                   Trocá-la AFROUXA o portão — devolve cotações baratas, e barata é a ponta
                   onde a mesa compra. Este número existe para a troca ser decisão, não descuido.
@@ -361,7 +361,7 @@ export default function ArbiterCohortPanel() {
                   </b>{" "}com a mediana correta
                 </div>
                 {med.resumo.oportunidadesNovas.length > 0 && (
-                  <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 4 }}>
                     <div style={{ color: "var(--adm-amber)" }}>
                       as que a troca ABRIRIA — leia antes de decidir:
                     </div>
@@ -374,7 +374,7 @@ export default function ArbiterCohortPanel() {
                     ))}
                   </div>
                 )}
-                <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 5 }}>
+                <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 5 }}>
                   leitura pura — nada foi aberto, nada foi alterado. O padrão continua
                   sendo a conta antiga.
                 </div>
@@ -384,7 +384,7 @@ export default function ArbiterCohortPanel() {
             {truth && (
               <div style={{ marginTop: 8 }}>
                 <div style={{
-                  fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-2)",
+                  fontSize: 12, lineHeight: 1.6, color: "var(--adm-ink-2)",
                   border: "1px solid var(--adm-border)", borderRadius: 4, padding: "6px 8px",
                 }}>
                   {truth.verdict}
@@ -393,7 +393,7 @@ export default function ArbiterCohortPanel() {
                 {/* Os dois números que respondem tudo: o maior desvio que existe
                     de verdade, contra o que a mesa exige para abrir. */}
                 {truth.biggestDispersionPct != null && (
-                  <div style={{ fontSize: 9, marginTop: 6, color: "var(--adm-ink-3)" }}>
+                  <div style={{ fontSize: 12, marginTop: 6, color: "var(--adm-ink-3)" }}>
                     maior desvio real medido:{" "}
                     <b style={{ color: "var(--adm-cyan)" }}>{truth.biggestDispersionPct.toFixed(3)}%</b>
                     {" · "}a mesa exige{" "}
@@ -408,7 +408,7 @@ export default function ArbiterCohortPanel() {
                     médio — ela selecionava a cauda, porque é a cauda que passa do
                     portão. MANA sozinha disparou em 144 horas distintas. */}
                 {truth.worstGaps.length > 0 && (
-                  <div style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.7, margin: "6px 0" }}>
+                  <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.7, margin: "6px 0" }}>
                     <div style={{ color: "var(--adm-ink-3)" }}>
                       maiores gaps POR SÍMBOLO agora
                       {truth.gapsAboveFloor.length > 0
@@ -428,14 +428,14 @@ export default function ArbiterCohortPanel() {
                 )}
 
                 {truth.stats.map((s) => (
-                  <div key={s.venue} style={{ fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.7 }}>
+                  <div key={s.venue} style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.7 }}>
                     · {s.venue}: desvio {s.dispersionPct.toFixed(3)}% · viés{" "}
                     {s.biasPct >= 0 ? "+" : ""}{s.biasPct.toFixed(3)}% · pior {s.worstPct.toFixed(2)}%{" "}
                     <span style={{ color: VER_COR[s.verdict] }}>[{s.verdict}]</span>
                   </div>
                 ))}
 
-                <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 4, fontStyle: "italic", lineHeight: 1.6 }}>
+                <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 4, fontStyle: "italic", lineHeight: 1.6 }}>
                   {truth.symbolsWithQuorum} de {truth.symbolsTotal} símbolos têm as 3 cotações que a
                   regra nova exige. Desvio COM sinal é praça com preço próprio; desvio SEM sinal é
                   feed oscilando — e um par isolado nunca separa os dois, só a mediana de três.
@@ -454,12 +454,12 @@ export default function ArbiterCohortPanel() {
           {!d.readable && d.desks.some((k) => k.realizedUsd !== 0) && !zeroed && (
             <div style={{
               marginTop: 10, border: "1px solid var(--adm-amber)", borderRadius: 4,
-              padding: "7px 9px", fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-3)",
+              padding: "7px 9px", fontSize: 12, lineHeight: 1.6, color: "var(--adm-ink-3)",
             }}>
               <div style={{ color: "var(--adm-amber)", fontWeight: 700, letterSpacing: "0.08em" }}>
                 ⌫ TIRAR {usdSigned(d.desks.reduce((s, k) => s + k.realizedUsd, 0))} DO LEDGER
               </div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", margin: "3px 0" }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", margin: "3px 0" }}>
                 Enquanto este lucro estiver no ledger, toda soma do laboratório está inflada e as
                 comparações entre mesas — a única coisa que este laboratório produz — ficam medidas
                 contra um número falso. As posições são <b>arquivadas, não apagadas</b>: a evidência
@@ -472,12 +472,12 @@ export default function ArbiterCohortPanel() {
             </div>
           )}
           {zeroed && (
-            <div style={{ marginTop: 10, fontSize: 9, color: "var(--adm-green)", lineHeight: 1.6 }}>
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--adm-green)", lineHeight: 1.6 }}>
               ✓ {zeroed}
             </div>
           )}
 
-          <div style={{ marginTop: 8, fontSize: 7, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
+          <div style={{ marginTop: 8, fontSize: 10, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
             Portão de entrada: {d.gatePct.toFixed(2)}% (custo + líquido mínimo){" "}
             {d.minSpreadPct != null && `· menor spread visto: ${d.minSpreadPct.toFixed(4)}%`}
             {" "}· {d.liquidations} liquidação(ões) na amostra. O portão é derivado das mesmas

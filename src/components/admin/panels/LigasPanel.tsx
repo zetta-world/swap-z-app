@@ -93,8 +93,8 @@ export default function LigasPanel() {
 
   const tabela = (linhas: Censo["majors"], titulo: string) => (
     <div style={{ marginTop: 6, overflowX: "auto" }}>
-      <div style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>{titulo}</div>
-      <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>{titulo}</div>
+      <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
             <th style={{ textAlign: "left", padding: "2px 4px" }}>SÍMB</th>
@@ -116,7 +116,7 @@ export default function LigasPanel() {
               }}>
                 <b>{pct(l.edgeBeforeFeesPct)}</b>
               </td>
-              <td style={{ textAlign: "left", padding: "2px 4px", color: "var(--adm-ink-4)", fontSize: 8 }}>
+              <td style={{ textAlign: "left", padding: "2px 4px", color: "var(--adm-ink-4)", fontSize: 11 }}>
                 {l.cheapVenue} → {l.richVenue}
               </td>
             </tr>
@@ -130,12 +130,12 @@ export default function LigasPanel() {
     <div style={{ marginTop: 8 }}>
       <div style={{
         border: `1px solid ${d.veredito.positivos > 0 ? "var(--adm-amber)" : "var(--adm-border)"}`,
-        borderRadius: 4, padding: "6px 8px", fontSize: 10, lineHeight: 1.6,
+        borderRadius: 4, padding: "6px 8px", fontSize: 13, lineHeight: 1.6,
         color: d.veredito.positivos > 0 ? "var(--adm-amber)" : "var(--adm-ink-2)",
       }}>
         {nome}: {d.veredito.verdict}
       </div>
-      <div style={{ fontSize: 9, color: "var(--adm-ink-3)", marginTop: 4 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-3)", marginTop: 4 }}>
         majors — pedágio {pct(d.resumo.majors.medianaPedagio)} · dispersão{" "}
         {pct(d.resumo.majors.medianaDispersao)} · borda <b>{pct(d.resumo.majors.medianaBorda)}</b>
         <div style={{ color: "var(--adm-ink-4)" }}>
@@ -156,7 +156,7 @@ export default function LigasPanel() {
         "ACUSADOS — a mesa marcou anomalia neles; aqui está o LIVRO, para conferir a acusação",
       )}
       {d.naoMedido && (
-        <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 5, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 5, lineHeight: 1.6 }}>
           <span style={{ color: "var(--adm-amber)" }}>⚠️ não medido:</span>{" "}
           {d.naoMedido.join(" · ")}
         </div>
@@ -170,7 +170,7 @@ export default function LigasPanel() {
       subtitle="onde a conta pode fechar — pedágio, futuros e postar o spread"
       icon="🏟" source="orderbooks ao vivo + klines 1m"
     >
-      <div style={{ fontSize: 9, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         A curva de equilíbrio sobre 4.085 medições disse que a barreira não é taxa nem
         velocidade: <b>com custo ZERO, 95% das oportunidades continuam perdendo</b>. O que come o
         spread é o bid-ask, atravessado duas vezes. <b>BORDA = dispersão − pedágio</b>, e é ela
@@ -195,7 +195,7 @@ export default function LigasPanel() {
 
       {venues && (
         <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 9, color: "var(--adm-ink-3)", lineHeight: 1.6 }}>
+          <div style={{ fontSize: 12, color: "var(--adm-ink-3)", lineHeight: 1.6 }}>
             {venues.resumo.funcionando} de {venues.resumo.tentadas} adaptadores funcionam
             {venues.resumo.adaptadorQuebrado > 0 && (
               <span style={{ color: "var(--adm-red)" }}>
@@ -209,7 +209,7 @@ export default function LigasPanel() {
             )}
           </div>
           <div style={{ overflowX: "auto", marginTop: 4 }}>
-            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <tbody>
                 {venues.linhas.map((l) => (
                   <tr key={l.venue} style={{ borderTop: "1px solid var(--adm-border)" }}>
@@ -223,7 +223,7 @@ export default function LigasPanel() {
                     }}>
                       <b>{l.simbolos}</b> símb
                     </td>
-                    <td style={{ padding: "2px 4px", color: "var(--adm-ink-4)", fontSize: 8 }}>
+                    <td style={{ padding: "2px 4px", color: "var(--adm-ink-4)", fontSize: 11 }}>
                       {l.amostra.map((a) => `${a.s} ${a.p}`).join(" · ") || l.diagnostico}
                     </td>
                   </tr>
@@ -231,7 +231,7 @@ export default function LigasPanel() {
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 5, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 5, lineHeight: 1.7 }}>
             <div style={{ color: "var(--adm-amber)" }}>
               ⚠️ recusadas, com motivo — nenhuma some em silêncio:
             </div>
@@ -242,7 +242,7 @@ export default function LigasPanel() {
         </div>
       )}
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 6 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 6 }}>{err}</div>}
 
       {spot && censo(spot, "SPOT")}
       {perp && censo(perp, "PERP")}
@@ -251,13 +251,13 @@ export default function LigasPanel() {
         <div style={{ marginTop: 10 }}>
           <div style={{
             border: `1px solid ${maker.algumPositivo ? "var(--adm-amber)" : "var(--adm-border)"}`,
-            borderRadius: 4, padding: "6px 8px", fontSize: 10, lineHeight: 1.6,
+            borderRadius: 4, padding: "6px 8px", fontSize: 13, lineHeight: 1.6,
             color: maker.algumPositivo ? "var(--adm-amber)" : "var(--adm-ink-2)",
           }}>
             MAKER: {maker.veredito}
           </div>
           <div style={{ overflowX: "auto", marginTop: 6 }}>
-            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "2px 4px" }}>LARGURA</th>
@@ -295,7 +295,7 @@ export default function LigasPanel() {
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 5, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 5, lineHeight: 1.6 }}>
             <span style={{ color: "var(--adm-amber)" }}>⚠️ não medido:</span> {maker.naoMedido.join(" · ")}
             <div>
               Os três empurram o resultado para CIMA. Negativo aqui é conclusão sólida;

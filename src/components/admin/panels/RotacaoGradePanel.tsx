@@ -76,9 +76,9 @@ export default function RotacaoGradePanel() {
       </button>
 
       {erro && (
-        <div style={{ color: "var(--adm-red)", fontSize: 9, marginTop: 8, lineHeight: 1.6 }}>
+        <div style={{ color: "var(--adm-red)", fontSize: 12, marginTop: 8, lineHeight: 1.6 }}>
           {erro}
-          <div style={{ color: "var(--adm-ink-4)", fontSize: 8, marginTop: 3 }}>
+          <div style={{ color: "var(--adm-ink-4)", fontSize: 11, marginTop: 3 }}>
             fonte recusada não é resultado — nada foi medido nesta tentativa
           </div>
         </div>
@@ -100,7 +100,7 @@ export default function RotacaoGradePanel() {
             <Bloco r="CAPITAL" v={`$${data.rotacao.capitalUsd.toLocaleString("pt-BR")}`} c="var(--adm-ink-3)" />
             <Bloco r="REBALANCES (n)" v={`${data.rotacao.pontos.length}/${data.rotacao.minRebalances}`} c="var(--adm-ink-3)" />
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 6, lineHeight: 1.6 }}>
             olha {data.rotacao.olharDias}d para trás · segura o topo {data.rotacao.topoN} ·
             gira a cada {data.rotacao.rebalanceDias}d · custo {data.custoPct}%/perna
           </div>
@@ -152,7 +152,7 @@ export default function RotacaoGradePanel() {
             <Bloco r="CAPITAL" v={`$${data.grade.capitalUsd.toLocaleString("pt-BR")}`} c="var(--adm-ink-3)" />
             <Bloco r="SÍMBOLOS (n)" v={`${data.grade.resultados.length}/${data.grade.minSimbolos}`} c="var(--adm-ink-3)" />
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-amber)", marginBottom: 6, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-amber)", marginBottom: 6, lineHeight: 1.6 }}>
             ⚠️ faixa ±{data.grade.faixaPct}% em {data.grade.degraus} degraus. O <b>REALIZADO</b> é
             o que as propagandas mostram — só os degraus que fecharam. O <b>TOTAL</b> inclui o
             estoque preso quando o preço fura a faixa, que é como a grade perde dinheiro.
@@ -184,7 +184,7 @@ export default function RotacaoGradePanel() {
                       {pct(g.totalPct)}
                     </td>
                     <td style={{ textAlign: "right" }}>{pct(g.segurarPct)}</td>
-                    <td style={{ color: g.rompeu === "nao" ? "var(--adm-ink-4)" : "var(--adm-red)", fontSize: 8 }}>
+                    <td style={{ color: g.rompeu === "nao" ? "var(--adm-ink-4)" : "var(--adm-red)", fontSize: 11 }}>
                       {g.rompeu === "nao" ? "dentro" : `rompeu ${g.rompeu}`}
                     </td>
                   </tr>
@@ -194,18 +194,18 @@ export default function RotacaoGradePanel() {
           </div>
 
           <div style={{ marginTop: 8, borderTop: "1px solid var(--adm-border)", paddingTop: 6 }}>
-            <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>
+            <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>
               O QUE ESTAS MEDIÇÕES NÃO INCLUEM
             </div>
             <ul style={{ margin: "3px 0 0", paddingLeft: 14 }}>
               {data.naoMedido.map((n, i) => (
-                <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 8, lineHeight: 1.6 }}>{n}</li>
+                <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 11, lineHeight: 1.6 }}>{n}</li>
               ))}
             </ul>
           </div>
 
           {data.falhas.length > 0 && (
-            <div style={{ color: "var(--adm-ink-4)", fontSize: 7.5, marginTop: 5 }}>
+            <div style={{ color: "var(--adm-ink-4)", fontSize: 10, marginTop: 5 }}>
               recusas de fonte: {data.falhas.join(" · ")}
             </div>
           )}
@@ -220,12 +220,12 @@ function Cabeca({ titulo, v }: { titulo: string; v: Veredito }) {
   return (
     <div style={{ border: `1px solid ${COR[v.status]}`, borderRadius: 3, padding: "6px 8px", marginBottom: 8 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 9, color: "var(--adm-ink-3)", letterSpacing: "0.12em" }}>{titulo}</span>
-        <span style={{ color: COR[v.status], fontSize: 10, fontWeight: 700, letterSpacing: "0.1em" }}>
+        <span style={{ fontSize: 12, color: "var(--adm-ink-3)", letterSpacing: "0.12em" }}>{titulo}</span>
+        <span style={{ color: COR[v.status], fontSize: 13, fontWeight: 700, letterSpacing: "0.1em" }}>
           {ROTULO[v.status]}
         </span>
       </div>
-      <div style={{ color: "var(--adm-ink-3)", fontSize: 8.5, lineHeight: 1.6, marginTop: 3 }}>{v.texto}</div>
+      <div style={{ color: "var(--adm-ink-3)", fontSize: 11, lineHeight: 1.6, marginTop: 3 }}>{v.texto}</div>
     </div>
   );
 }
@@ -233,8 +233,8 @@ function Cabeca({ titulo, v }: { titulo: string; v: Veredito }) {
 function Bloco({ r, v, c }: { r: string; v: string; c: string }) {
   return (
     <div style={{ border: "1px solid var(--adm-border)", borderRadius: 3, padding: "4px 8px", minWidth: 92 }}>
-      <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", letterSpacing: "0.1em" }}>{r}</div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: c }}>{v}</div>
+      <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.1em" }}>{r}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: c }}>{v}</div>
     </div>
   );
 }

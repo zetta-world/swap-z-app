@@ -71,8 +71,8 @@ function Sparkline({ curve, h = 20 }: { curve: number[]; h?: number }) {
 function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div>
-      <div style={{ fontSize: 7, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>{label}</div>
-      <div style={{ fontSize: 10, color: color ?? "var(--adm-ink-2)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>{label}</div>
+      <div style={{ fontSize: 13, color: color ?? "var(--adm-ink-2)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
     </div>
   );
 }
@@ -166,7 +166,7 @@ export default function PaperPanel() {
   return (
     <TerminalPanel id="paper" title="PAPER · GATE.IO" subtitle="③ SÓ AS CARTEIRAS, sem ranking — unidade: patrimônio em USDT" icon="📈" source="supabase/paper_accounts">
       {loading && <div className="adm-shimmer" style={{ height: 140 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {/* O ROMBO QUE SOBROU. O bug do débito-sem-posição foi corrigido em 01/08,
           mas correção não devolve dinheiro: uma mesa com $51 de $1.000 não abre
@@ -174,17 +174,17 @@ export default function PaperPanel() {
       {repair && repair.plan.length > 0 && (
         <div style={{
           border: "1px solid var(--adm-red)", borderRadius: 4, padding: "7px 9px", marginBottom: 10,
-          fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-3)",
+          fontSize: 12, lineHeight: 1.6, color: "var(--adm-ink-3)",
         }}>
           <div style={{ color: "var(--adm-red)", fontWeight: 700, letterSpacing: "0.08em" }}>
             ⚠ {repair.plan.length} CARTEIRA(S) VIVA(S) COM CAIXA A MENOS —{" "}
             {usd(repair.plan.reduce((s, p) => s + p.deltaUsd, 0))} a devolver
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", margin: "3px 0" }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", margin: "3px 0" }}>
             {repair.plan.slice(0, 6).map((p) => `${p.label}: ${usd(p.from)} → ${usd(p.to)}`).join(" · ")}
             {repair.plan.length > 6 && ` · +${repair.plan.length - 6}`}
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>
             O caixa é o que decide se a mesa consegue abrir posição — abaixo do piso ela
             simplesmente para, sem erro e sem alerta. Isto devolve o capital ao valor que os
             trades justificam. Não é automático de propósito: se fosse, um vazamento NOVO
@@ -209,7 +209,7 @@ export default function PaperPanel() {
         * aparece do lado em vez de ficar implícito.
         */}
       {repair && repair.plan.length === 0 && repair.last && (
-        <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.6 }}>
           ✓ caixa bate com os trades <b>nas carteiras VIVAS</b> · último reparo{" "}
           {new Date(repair.last.at).toLocaleString("pt-BR")} ({usd(repair.last.totalUsd)} devolvidos)
           — desvio que aparecer daqui pra frente é vazamento NOVO
@@ -235,17 +235,17 @@ export default function PaperPanel() {
       {repair?.contadorDivergente && repair.contadorDivergente.length > 0 && (
         <div style={{
           border: "1px solid var(--adm-amber)", borderRadius: 4, padding: "7px 9px",
-          marginBottom: 10, fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-3)",
+          marginBottom: 10, fontSize: 12, lineHeight: 1.6, color: "var(--adm-ink-3)",
         }}>
           <div style={{ color: "var(--adm-amber)", fontWeight: 700, letterSpacing: "0.08em" }}>
             ⚠ {repair.contadorDivergente.length} CARTEIRA(S) COM O CONTADOR DE P&amp;L FORA DAS POSIÇÕES
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", margin: "3px 0" }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", margin: "3px 0" }}>
             {repair.contadorDivergente.slice(0, 6).map((c) => (
               `${c.label}: coluna ${usdc(c.guardado)} vs posições ${usdc(c.calculado)}`
             )).join(" · ")}
           </div>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>
             A coluna <code>realized_pnl_usd</code> é o que o PAINEL lê; a soma das posições
             vivas é o que a CONFERÊNCIA usa. Quando divergem, as duas telas contam histórias
             diferentes da mesma carteira. Acontece num reset parcial: as posições são
@@ -260,20 +260,20 @@ export default function PaperPanel() {
       {recap && recap.plan.length > 0 && (
         <div style={{
           border: "1px solid var(--adm-cyan)", borderRadius: 4, padding: "8px 10px",
-          marginBottom: 10, fontSize: 9, lineHeight: 1.6, color: "var(--adm-ink-3)",
+          marginBottom: 10, fontSize: 12, lineHeight: 1.6, color: "var(--adm-ink-3)",
         }}>
           <div style={{ color: "var(--adm-cyan)", fontWeight: 700, letterSpacing: "0.08em" }}>
             ⚖ {recap.plan.length} MESA(S) COM CAPITAL DIFERENTE DO QUE A ESTRATÉGIA PEDE
           </div>
 
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", margin: "4px 0 6px" }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", margin: "4px 0 6px" }}>
             As 23 carteiras receberam $1.000 (ou $300) independentemente da estratégia. Isso
             não é neutro: mesa sub-capitalizada não rende menos — <b>rende negativo por custo
             fixo</b>, e o resultado é lido como &quot;a estratégia não presta&quot;.
           </div>
 
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: 8.5, borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
               <tbody>
                 {recap.plan.map((p) => (
                   <tr key={p.source} style={{ borderTop: "1px solid var(--adm-border)" }}>
@@ -290,7 +290,7 @@ export default function PaperPanel() {
                     </td>
                     {/* O PORQUÊ do número, vindo do registro. Capital sem
                         justificativa vira constante que ninguém confere. */}
-                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)", fontSize: 7.5 }}>
+                    <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)", fontSize: 10 }}>
                       {p.why}
                     </td>
                   </tr>
@@ -302,7 +302,7 @@ export default function PaperPanel() {
           {/* ⚠️ A CONSEQUÊNCIA VEM ANTES DO BOTÃO, não depois. */}
           <div style={{
             border: "1px solid var(--adm-amber)", borderRadius: 3, padding: "5px 7px",
-            margin: "7px 0", fontSize: 8, color: "var(--adm-amber)", lineHeight: 1.6,
+            margin: "7px 0", fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.6,
           }}>
             ⚠️ Isto <b>ARQUIVA a rodada atual</b> e recomeça a medição. Não é um ajuste de
             coluna: somar a diferença em <code>starting_usd</code> reescreveria o retorno
@@ -311,7 +311,7 @@ export default function PaperPanel() {
             número velho ser recalculado com a régua nova.
           </div>
 
-          <label style={{ display: "block", fontSize: 8, color: "var(--adm-ink-4)" }}>
+          <label style={{ display: "block", fontSize: 11, color: "var(--adm-ink-4)" }}>
             motivo (obrigatório, mínimo 15 caracteres — sem ele, daqui a um mês ninguém sabe
             se o degrau na curva foi decisão ou acidente)
             <input
@@ -321,7 +321,7 @@ export default function PaperPanel() {
               style={{
                 display: "block", width: "100%", marginTop: 3, padding: "4px 6px",
                 background: "transparent", border: "1px solid var(--adm-border)",
-                borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 9, fontFamily: "inherit",
+                borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 12, fontFamily: "inherit",
               }}
             />
           </label>
@@ -338,13 +338,13 @@ export default function PaperPanel() {
                 : `⚖ RECAPITALIZAR ${recap.plan.length} mesa(s) e arquivar a rodada`}
           </button>
           {recapErro && (
-            <div style={{ color: "var(--adm-red)", fontSize: 8, marginTop: 4 }}>{recapErro}</div>
+            <div style={{ color: "var(--adm-red)", fontSize: 11, marginTop: 4 }}>{recapErro}</div>
           )}
         </div>
       )}
 
       {recap && recap.plan.length === 0 && (
-        <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.6 }}>
           ✓ toda mesa viva está com o capital que a estratégia dela pede
           {recap.last && (
             <> · última recapitalização em {new Date(recap.last.at).toLocaleString("pt-BR")}
@@ -367,9 +367,9 @@ export default function PaperPanel() {
               { label: "ABERTAS", v: `${data.totals.openPositions}`, sub: `exp ${usd(data.totals.exposure)}` },
             ].map((t) => (
               <div key={t.label} style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "5px 8px" }}>
-                <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.08em" }}>{t.label}</div>
-                <div style={{ fontSize: 14, color: "var(--adm-cyan)", fontVariantNumeric: "tabular-nums" }}>{t.v}</div>
-                {t.sub && <div style={{ fontSize: 8, color: t.subColor ?? "var(--adm-ink-4)" }}>{t.sub}</div>}
+                <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.08em" }}>{t.label}</div>
+                <div style={{ fontSize: 17, color: "var(--adm-cyan)", fontVariantNumeric: "tabular-nums" }}>{t.v}</div>
+                {t.sub && <div style={{ fontSize: 11, color: t.subColor ?? "var(--adm-ink-4)" }}>{t.sub}</div>}
               </div>
             ))}
           </div>
@@ -382,14 +382,14 @@ export default function PaperPanel() {
             <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
               <button
                 className="adm-btn" onClick={() => { setVerArquivo(!verArquivo); setOpen(null); }}
-                style={{ padding: "3px 8px", fontSize: 8.5 }}
+                style={{ padding: "3px 8px", fontSize: 11 }}
               >
                 {verArquivo
                   ? `◀ voltar às ${todas.length - arquivadas.length} mesas VIVAS`
                   : `🗄 ver o arquivo (${arquivadas.length} aposentadas)`}
               </button>
               {verArquivo && (
-                <span style={{ fontSize: 8, color: "var(--adm-amber)", lineHeight: 1.5 }}>
+                <span style={{ fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.5 }}>
                   cicatriz preservada do vazamento de julho — <b>não é desempenho</b>.
                   Recreditá-las apagaria o registro.
                 </span>
@@ -441,14 +441,14 @@ export default function PaperPanel() {
                           {r.curve.length > 1 && (
                             <div style={{ marginBottom: r.openBook.length ? 8 : 0 }}>
                               <Sparkline curve={r.curve} />
-                              <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2 }}>curva realizada · base 100 → <span style={{ color: col(r.curve[r.curve.length - 1] - 100) }}>{r.curve[r.curve.length - 1].toFixed(0)}</span></div>
+                              <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 2 }}>curva realizada · base 100 → <span style={{ color: col(r.curve[r.curve.length - 1] - 100) }}>{r.curve[r.curve.length - 1].toFixed(0)}</span></div>
                             </div>
                           )}
                           {r.openBook.length > 0 && (
                             <div style={{ marginBottom: (r.recentTrades ?? []).length ? 8 : 0 }}>
-                              <div style={{ fontSize: 7, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 3 }}>LIVRO ABERTO</div>
+                              <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 3 }}>LIVRO ABERTO</div>
                               {r.openBook.map((p, j) => (
-                                <div key={j} style={{ display: "flex", gap: 6, fontSize: 8, padding: "1px 0", alignItems: "center" }}>
+                                <div key={j} style={{ display: "flex", gap: 6, fontSize: 11, padding: "1px 0", alignItems: "center" }}>
                                   <span style={{ color: p.side === "buy" ? "var(--adm-green)" : "var(--adm-red)", width: 26 }}>{p.side}</span>
                                   <span style={{ color: "var(--adm-ink-2)", flex: 1, fontFamily: "monospace" }}>{p.symbol}</span>
                                   <span style={{ color: "var(--adm-ink-4)" }}>{usd(p.costUsd)}</span>
@@ -459,9 +459,9 @@ export default function PaperPanel() {
                           )}
                           {(r.recentTrades ?? []).length > 0 && (
                             <div>
-                              <div style={{ fontSize: 7, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 3 }}>ÚLTIMAS ORDENS</div>
+                              <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 3 }}>ÚLTIMAS ORDENS</div>
                               {r.recentTrades.map((t, j) => (
-                                <div key={j} style={{ display: "flex", gap: 6, fontSize: 8, padding: "1px 0", alignItems: "center" }}>
+                                <div key={j} style={{ display: "flex", gap: 6, fontSize: 11, padding: "1px 0", alignItems: "center" }}>
                                   <span style={{ color: t.side === "buy" ? "var(--adm-green)" : "var(--adm-red)", width: 26 }}>{t.side}</span>
                                   <span style={{ color: "var(--adm-ink-2)", fontFamily: "monospace", width: 44 }}>{t.symbol}</span>
                                   <span style={{ color: "var(--adm-ink-4)", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.route ?? "—"}</span>
@@ -479,7 +479,7 @@ export default function PaperPanel() {
               })}
             </tbody>
           </table>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 6 }}>
             Fills no preço vivo da Gate.io · equity = capital + realizado + não-realizado (mark-to-market).
           </div>
         </div>

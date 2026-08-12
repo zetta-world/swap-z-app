@@ -79,7 +79,7 @@ export default function PlaybookBacktestPanel() {
       subtitle="cada playbook medido ISOLADO no histórico — substitui o palpite da prioridade"
       icon="⚖" source="binance/klines + playbooks.ts"
     >
-      <div style={{ fontSize: 9, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 10 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 10 }}>
         Roda a biblioteca inteira sobre o histórico real e mede CADA estratégia sozinha —
         inclusive as que o seletor não escolheria. Sem isso, não há como saber se o mecânico
         acerta a ordem: ele seguiria um palpite para sempre.
@@ -100,14 +100,14 @@ export default function PlaybookBacktestPanel() {
         </button>
       </div>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 8 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 8 }}>{err}</div>}
 
       {data && (
         <div style={{ marginTop: 12 }}>
           {/* A JANELA VEM ANTES DO RESULTADO, de propósito. Um número sem ela
               convida a ser lido como se valesse para sempre. */}
           <div style={{
-            fontSize: 9, color: "var(--adm-amber)", lineHeight: 1.6,
+            fontSize: 12, color: "var(--adm-amber)", lineHeight: 1.6,
             border: "1px solid var(--adm-border)", borderRadius: 4, padding: "6px 8px", marginBottom: 10,
           }}>
             {data.backDays > 0 && (
@@ -129,7 +129,7 @@ export default function PlaybookBacktestPanel() {
               o operador julga a biblioteca contra um pano de fundo imaginado. */}
           {data.marketPct != null && (
             <div style={{
-              fontSize: 9, lineHeight: 1.6, marginBottom: 10,
+              fontSize: 12, lineHeight: 1.6, marginBottom: 10,
               border: "1px solid var(--adm-border)", borderRadius: 4, padding: "6px 8px",
               color: "var(--adm-ink-3)",
             }}>
@@ -141,7 +141,7 @@ export default function PlaybookBacktestPanel() {
               {data.marketPct < 0
                 ? "Em janela de queda, mesa long-only no vermelho pode estar perdendo MENOS que o mercado — compare, não julgue no vácuo."
                 : "Em janela de alta, playbook long-only negativo é resultado ruim de verdade: bastava comprar e segurar."}
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 3 }}>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 3 }}>
                 {data.perSymbol.map((s) => `${s.symbol} ${s.buyHoldPct == null ? "—" : pct(s.buyHoldPct)}`).join(" · ")}
               </div>
             </div>
@@ -150,11 +150,11 @@ export default function PlaybookBacktestPanel() {
           {data.stats.map((s) => (
             <div key={s.playbook} style={{ borderTop: "1px solid var(--adm-border)", padding: "5px 0" }}>
               <div
-                style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 10, cursor: "pointer" }}
+                style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13, cursor: "pointer" }}
                 onClick={() => setOpen(open === s.playbook ? null : s.playbook)}
               >
                 <span style={{ flex: 1, color: "var(--adm-ink-2)" }}>{s.label}</span>
-                <span style={{ color: "var(--adm-ink-4)", fontSize: 8, width: 74, textAlign: "right" }}>
+                <span style={{ color: "var(--adm-ink-4)", fontSize: 11, width: 74, textAlign: "right" }}>
                   {sampleLabel(s.decided, data.noiseThreshold)}
                 </span>
                 <span style={{
@@ -162,11 +162,11 @@ export default function PlaybookBacktestPanel() {
                   color: !shouldTint(s.decided, data.noiseThreshold) ? "var(--adm-ink-4)"
                     : (s.netPerTrade ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
                 }}>{pct(s.netPerTrade)}</span>
-                <span style={{ color: "var(--adm-ink-4)", fontSize: 8 }}>{open === s.playbook ? "▲" : "▼"}</span>
+                <span style={{ color: "var(--adm-ink-4)", fontSize: 11 }}>{open === s.playbook ? "▲" : "▼"}</span>
               </div>
 
               {open === s.playbook && (
-                <div style={{ fontSize: 8, color: "var(--adm-ink-4)", paddingLeft: 6, lineHeight: 1.7, marginTop: 3 }}>
+                <div style={{ fontSize: 11, color: "var(--adm-ink-4)", paddingLeft: 6, lineHeight: 1.7, marginTop: 3 }}>
                   <div style={{ fontStyle: "italic" }}>{s.thesis}</div>
                   <div>
                     {s.wins} ganho(s) · {s.losses} perda(s) · {s.expired} expirada(s)
@@ -265,7 +265,7 @@ export default function PlaybookBacktestPanel() {
 
           {/* Quem não disparou. Ausência não é aprovação. */}
           {data.silent.length > 0 && (
-            <div style={{ marginTop: 10, fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
+            <div style={{ marginTop: 10, fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
               <div style={{ color: "var(--adm-ink-3)", marginBottom: 3 }}>
                 ◌ sem disparo na janela — é dado sobre o playbook, não aprovação:
               </div>
@@ -276,7 +276,7 @@ export default function PlaybookBacktestPanel() {
           {/* Os buracos declarados: a biblioteca não está completa, e a tabela
               acima sozinha daria a impressão contrária. */}
           {data.gaps.length > 0 && (
-            <div style={{ marginTop: 10, fontSize: 8, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
+            <div style={{ marginTop: 10, fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.6 }}>
               <div style={{ color: "var(--adm-ink-3)", marginBottom: 3 }}>
                 ⛔ fora da biblioteca — falta o dado, não a vontade:
               </div>
@@ -284,7 +284,7 @@ export default function PlaybookBacktestPanel() {
             </div>
           )}
 
-          <div style={{ marginTop: 10, fontSize: 7, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
+          <div style={{ marginTop: 10, fontSize: 10, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
             Sem lookahead: o retrato de cada barra usa só a história até ela, e a resolução só as
             barras depois. Um trade por playbook por vez, para o mesmo movimento não virar dez
             observações. O que isto NÃO cobre: liquidez e slippage reais, viés de sobrevivência,

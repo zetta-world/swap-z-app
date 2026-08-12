@@ -59,7 +59,7 @@ export default function WhatWorkedPanel() {
       subtitle="estratégias canônicas na mesma janela — inclusive as que VENDEM"
       icon="🧭" source="binance/klines + benchmarks.ts"
     >
-      <div style={{ fontSize: 9, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 10 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 10 }}>
         Média móvel, canal de Donchian e RSI com parâmetro de livro (50, 20, 14) — comprado E
         vendido. A pergunta é binária: alguma coisa simples extraía lucro daquela janela? Se
         nada extraía, nenhum ajuste na nossa biblioteca mudaria isso.
@@ -84,20 +84,20 @@ export default function WhatWorkedPanel() {
         </button>
       </div>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 8 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 8 }}>{err}</div>}
 
       {d && (
         <div style={{ marginTop: 12 }}>
           {/* A CORRELAÇÃO VEM PRIMEIRO porque ela muda como TODO o resto se lê —
               inclusive tudo que já foi medido neste laboratório. */}
           <div style={{
-            fontSize: 9, lineHeight: 1.6, marginBottom: 10, color: "var(--adm-amber)",
+            fontSize: 12, lineHeight: 1.6, marginBottom: 10, color: "var(--adm-amber)",
             border: "1px solid var(--adm-amber)", borderRadius: 4, padding: "6px 8px",
           }}>
             🔗 {d.correlacao.nota}
           </div>
 
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 8, fontStyle: "italic" }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 8, fontStyle: "italic" }}>
             ⚠ {d.aviso}
             {" · "}janela de ~{d.windowDays} dias, a MESMA do backtest — sem isso, comparar a nossa
             biblioteca com estas estratégias atribuiria a elas uma diferença que veio do calendário
@@ -123,9 +123,9 @@ export default function WhatWorkedPanel() {
                     <td style={{ color: "var(--adm-ink-2)" }}>
                       {e.usesShort && <span style={{ color: "var(--adm-cyan)" }}>⇅ </span>}
                       {e.name}
-                      <div style={{ fontSize: 7, color: "var(--adm-ink-4)" }}>{e.what}</div>
+                      <div style={{ fontSize: 10, color: "var(--adm-ink-4)" }}>{e.what}</div>
                       {aberta === e.name && (
-                        <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 3 }}>
+                        <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 3 }}>
                           {e.perSymbol.map((s) => `${s.symbol} ${pct(s.totalPct, 0)}`).join(" · ")}
                         </div>
                       )}
@@ -158,7 +158,7 @@ export default function WhatWorkedPanel() {
             </tbody>
           </table>
 
-          <div style={{ marginTop: 8, fontSize: 7, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
+          <div style={{ marginTop: 8, fontSize: 10, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
             ⇅ = opera VENDIDO. A diferença entre as linhas com e sem ⇅ é o preço exato da
             restrição long-only da nossa biblioteca, em número. EXP. é quanto tempo a estratégia
             passa posicionada: render pouco ficando fora quase sempre é diferente de render

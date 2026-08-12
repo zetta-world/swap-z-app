@@ -83,7 +83,7 @@ export default function RendimentoPanel() {
       subtitle="C1–C4 · quanto sobra do APY depois de entrar e sair, por faixa de capital"
       icon="🏦" source="yields.llama.fi (APY) + li.quest (custo real de entrada)"
     >
-      <div style={{ fontSize: 9, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         Aave rende 3,5–9% e o Tesouro tokenizado 3,3–8% — isso está publicado e não precisa
         de nós. O que ninguém publica é quanto sobra depois do gás e da troca, e a resposta
         muda de sinal conforme o capital: <b>um gás de $31 é 6,3% de $500 e 0,06% de $50.000</b>.
@@ -94,7 +94,7 @@ export default function RendimentoPanel() {
         {rodando ? "lendo APY e cotando a entrada…" : "🏦 MEDIR O RENDIMENTO LÍQUIDO · por faixa de capital"}
       </button>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginTop: 6 }}>{err}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginTop: 6 }}>{err}</div>}
 
       {d && (
         <div style={{ marginTop: 10 }}>
@@ -102,7 +102,7 @@ export default function RendimentoPanel() {
               prova que `yields.llama.fi` funciona — host diferente, bloqueio
               diferente, e foi essa distinção que me fez escolher a Bybit por
               evidência falsa e levar 403. */}
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 8, lineHeight: 1.7 }}>
             fonte: <b style={{ color: "var(--adm-ink-3)" }}>{d.fonte || "—"}</b>
             {" · "}{d.piscinasLidas.toLocaleString("pt-BR")} piscinas lidas
             {d.falhasPorHost && (
@@ -115,7 +115,7 @@ export default function RendimentoPanel() {
                 }}>
                   {/* Quantas cotações trouxeram `gasCosts`. Sem isto, gás não
                       lido vira gás zero e ninguém vê. */}
-                  {c.cadeia} <span style={{ fontSize: 7 }}>
+                  {c.cadeia} <span style={{ fontSize: 10 }}>
                     (gás {c.cotacoesComGas}/{c.cotacoes})
                   </span>{c.falha ? "⚠" : ""}{" "}
                 </span>
@@ -138,9 +138,9 @@ export default function RendimentoPanel() {
                     ler retorno como aprovação, e foi assim que os +34%
                     duraram três semanas. */}
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-                  <div style={{ fontSize: 11, color: "var(--adm-ink-2)" }}>
+                  <div style={{ fontSize: 14, color: "var(--adm-ink-2)" }}>
                     <b>{l.nome}</b>
-                    <span style={{ fontSize: 8.5, color: "var(--adm-ink-4)" }}>
+                    <span style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>
                       {/* ⚠️ PRODUTOS, NÃO IMPLANTAÇÕES. "12 piscinas" no Tesouro
                           eram BUIDL contado seis vezes com o mesmo 3,5%. Ver
                           `produtosDistintos`. */}
@@ -151,13 +151,13 @@ export default function RendimentoPanel() {
                       )}
                     </span>
                   </div>
-                  <div style={{ fontSize: 9, color: COR[l.veredito.status], whiteSpace: "nowrap" }}>
+                  <div style={{ fontSize: 12, color: COR[l.veredito.status], whiteSpace: "nowrap" }}>
                     ● {l.veredito.status.toUpperCase()}
                   </div>
                 </div>
 
                 <div style={{
-                  fontSize: 9, lineHeight: 1.6, marginTop: 5,
+                  fontSize: 12, lineHeight: 1.6, marginTop: 5,
                   color: l.veredito.readable ? "var(--adm-ink-3)" : "var(--adm-amber)",
                 }}>
                   {l.veredito.verdict}
@@ -170,7 +170,7 @@ export default function RendimentoPanel() {
                 {l.precoIncoerente && (
                   <div style={{
                     border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
-                    marginTop: 7, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+                    marginTop: 7, fontSize: 11, color: "var(--adm-red)", lineHeight: 1.6,
                   }}>
                     ⚠️ A COTAÇÃO DEVOLVEU CUSTO <b>NEGATIVO</b> em pelo menos uma faixa —
                     entrar e sair te pagando, o que é impossível. Os dois lados da troca têm
@@ -181,7 +181,7 @@ export default function RendimentoPanel() {
                 {l.gasLido === false && (
                   <div style={{
                     border: "1px solid var(--adm-red)", borderRadius: 3, padding: "5px 7px",
-                    marginTop: 7, fontSize: 8.5, color: "var(--adm-red)", lineHeight: 1.6,
+                    marginTop: 7, fontSize: 11, color: "var(--adm-red)", lineHeight: 1.6,
                   }}>
                     ⚠️ A COTAÇÃO NÃO TROUXE CUSTO DE GÁS. O que está na tabela é impacto e
                     taxa, <b>sem gás</b>. &quot;Gás barato&quot; e &quot;gás não lido&quot; dariam
@@ -194,7 +194,7 @@ export default function RendimentoPanel() {
                        pequeno?" — e a resposta muda de linha para linha. */}
                 {l.faixas.some((f) => f.liquido1oAnoPct != null) && (
                   <div style={{ overflowX: "auto", marginTop: 7 }}>
-                    <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+                    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                           <th style={{ textAlign: "left", padding: "3px 5px" }}>CAPITAL</th>
@@ -221,7 +221,7 @@ export default function RendimentoPanel() {
                               <td style={{ textAlign: "left", padding: "3px 5px", color: "var(--adm-ink-2)" }}>
                                 {usd(f.faixaUsd)}
                                 {declarada && (
-                                  <span style={{ fontSize: 7.5, color: "var(--adm-ink-4)" }}> ← declarado</span>
+                                  <span style={{ fontSize: 10, color: "var(--adm-ink-4)" }}> ← declarado</span>
                                 )}
                               </td>
                               <td style={{ textAlign: "left", padding: "3px 5px", color: "var(--adm-ink-3)" }}>
@@ -267,7 +267,7 @@ export default function RendimentoPanel() {
                        despriorizado ou ter quebrado — as três mudam a leitura,
                        e nenhuma aparece num agregado. */}
                 {l.naoEncontrados.length > 0 && (
-                  <div style={{ fontSize: 8, color: "var(--adm-amber)", marginTop: 6, lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 11, color: "var(--adm-amber)", marginTop: 6, lineHeight: 1.6 }}>
                     ⚠️ declarados e NÃO encontrados na fonte: {l.naoEncontrados.join(", ")}
                   </div>
                 )}
@@ -276,14 +276,14 @@ export default function RendimentoPanel() {
                   <>
                     <button
                       className="adm-btn"
-                      style={{ marginTop: 7, fontSize: 8, padding: "3px 7px" }}
+                      style={{ marginTop: 7, fontSize: 11, padding: "3px 7px" }}
                       onClick={() => setAberta(aberto ? null : l.slug)}
                     >
                       {aberto ? "▾ esconder as piscinas" : `▸ ver as ${l.piscinas.length} piscinas por trás do número`}
                     </button>
                     {aberto && (
                       <div style={{ overflowX: "auto", marginTop: 6 }}>
-                        <table style={{ width: "100%", fontSize: 8.5, borderCollapse: "collapse" }}>
+                        <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
                           <thead>
                             <tr style={{ color: "var(--adm-ink-4)", textAlign: "right" }}>
                               <th style={{ textAlign: "left", padding: "2px 5px" }}>PROJETO</th>
@@ -325,7 +325,7 @@ export default function RendimentoPanel() {
                             ))}
                           </tbody>
                         </table>
-                        <div style={{ fontSize: 7.5, color: "var(--adm-ink-4)", marginTop: 4, lineHeight: 1.6 }}>
+                        <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 4, lineHeight: 1.6 }}>
                           RECOMP. é rendimento pago em token de incentivo e <b>não entra</b> no APY
                           da coluna ao lado — ele assume venda instantânea a preço de tela.
                           {l.piscinas.length > 25 && ` · mostrando 25 de ${l.piscinas.length}`}
@@ -338,7 +338,7 @@ export default function RendimentoPanel() {
             );
           })}
 
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 8, lineHeight: 1.7 }}>
             <div style={{ color: "var(--adm-amber)" }}>⚠️ NÃO está nesta conta:</div>
             {d.naoMedido.map((n) => <div key={n}>· {n}</div>)}
             <div style={{ marginTop: 4 }}>
