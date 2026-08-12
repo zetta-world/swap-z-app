@@ -26,6 +26,7 @@ export type ModuleId =
   | "receita-taxa"
   | "ligas"
   | "lab"
+  | "mural-global"
   | "tournament"
   | "ragnarok"
   | "swap-guard"
@@ -272,6 +273,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "receita",
     defaultEnabled: true,
     defaultOrder: 4.5,
+  },
+  {
+    id: "mural-global",
+    title: "ALCANCE GLOBAL",
+    subtitle: "de onde vem quem acessa — e o atalho para o mural de parede",
+    icon: "🌍",
+    category: "command",
+    defaultEnabled: true,
+    defaultOrder: 0.5,
   },
   {
     id: "lab",

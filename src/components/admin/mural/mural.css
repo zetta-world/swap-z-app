@@ -1,0 +1,180 @@
+/* ═══════════════════════════════════════════════════════════════════════
+ * O MURAL — uma tela, quatro tamanhos.
+ *
+ * ⚠️ TUDO ESCALA COM `clamp()` AMARRADO À VIEWPORT, e isso é decisão, não
+ * preguiça. A alternativa seria um layout de TV e outro de celular; dois
+ * layouts divergem com o tempo, e o pequeno é sempre o esquecido. Aqui a
+ * mesma regra serve 65 polegadas e 5 — muda a densidade, não a informação.
+ *
+ * ⚠️ E NADA DE `vh` NA TIPOGRAFIA. Em celular a barra do navegador entra e
+ * sai, `vh` muda no meio da rolagem, e o texto pula. `vw` é estável.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+.mural {
+  --mural-fundo:  #05060a;
+  --mural-tinta:  #eef0f7;
+  --mural-fraco:  #8a8aa2;   /* 5,9:1 — mesmo piso do painel */
+  --mural-linha:  rgba(140,150,200,.14);
+  --mural-vivo:   #38e8ff;   /* acesso ao vivo */
+  --mural-ouro:   #ffcf6b;   /* dinheiro */
+  --mural-verde:  #39ff73;   /* taxa retida */
+  --mural-terra:  rgba(120,140,190,.30);
+
+  min-height: 100dvh;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(56,232,255,.07), transparent 60%),
+    var(--mural-fundo);
+  color: var(--mural-tinta);
+  font-variant-numeric: tabular-nums;
+  padding: clamp(12px, 1.6vw, 40px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 1.4vw, 30px);
+}
+
+/* ── CABEÇALHO ──────────────────────────────────────────────────────── */
+.mural-topo {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--mural-linha);
+  padding-bottom: clamp(10px, 1vw, 20px);
+}
+.mural-marca { display: flex; align-items: center; gap: clamp(10px, 1vw, 20px); }
+.mural-runa {
+  font-size: clamp(26px, 2.6vw, 56px); color: var(--mural-ouro);
+  line-height: 1; text-shadow: 0 0 24px rgba(255,207,107,.45);
+}
+.mural-marca h1 {
+  margin: 0; font-size: clamp(20px, 2.1vw, 46px);
+  letter-spacing: .16em; font-weight: 700;
+}
+.mural-marca p {
+  margin: 2px 0 0; font-size: clamp(9px, .72vw, 15px);
+  letter-spacing: .26em; text-transform: uppercase; color: var(--mural-fraco);
+}
+.mural-estado {
+  display: flex; align-items: center; gap: clamp(8px, .8vw, 18px);
+  font-size: clamp(10px, .8vw, 17px); letter-spacing: .18em; color: var(--mural-fraco);
+}
+.mural-farol { width: .7em; height: .7em; border-radius: 50%; }
+.mural-farol.vivo   { background: var(--mural-verde); box-shadow: 0 0 12px var(--mural-verde);
+                      animation: mural-bater 2s ease-in-out infinite; }
+.mural-farol.quieto { background: var(--mural-fraco); }
+.mural-relogio { color: var(--mural-tinta); font-weight: 600; }
+
+/* ── OS NÚMEROS ─────────────────────────────────────────────────────── */
+.mural-numeros {
+  display: grid; gap: clamp(8px, .9vw, 20px);
+  /* ⚠️ `auto-fit` + `minmax` é o que faz 5 colunas numa TV virarem 2 no
+     celular sem uma única media query — e sem nenhum número sumir. */
+  grid-template-columns: repeat(auto-fit, minmax(clamp(130px, 15vw, 300px), 1fr));
+}
+.mural-numero {
+  border: 1px solid var(--mural-linha); border-radius: clamp(6px, .5vw, 14px);
+  padding: clamp(10px, 1vw, 24px);
+  background: linear-gradient(180deg, rgba(255,255,255,.022), transparent);
+}
+.mural-rotulo {
+  display: block; font-size: clamp(8.5px, .62vw, 13px);
+  letter-spacing: .2em; color: var(--mural-fraco); text-transform: uppercase;
+}
+.mural-numero strong {
+  display: block; margin-top: .35em;
+  font-size: clamp(20px, 2.3vw, 52px); font-weight: 700; letter-spacing: -.01em;
+}
+.mural-numero.destaque strong {
+  color: var(--mural-ouro); text-shadow: 0 0 30px rgba(255,207,107,.3);
+}
+
+/* ── O MAPA ─────────────────────────────────────────────────────────── */
+.mural-globo { position: relative; flex: 1; min-height: 0; }
+.mural-mapa { width: 100%; height: auto; display: block; }
+.mural-terra circle { fill: var(--mural-terra); }
+.mural-ponto {
+  fill: var(--mural-vivo);
+  filter: drop-shadow(0 0 3px var(--mural-vivo));
+}
+.mural-pulso { transform-box: fill-box; transform-origin: center;
+               animation: mural-expandir 3.4s ease-out infinite; }
+
+.mural-legenda-mapa {
+  display: flex; gap: clamp(8px, 1vw, 20px); flex-wrap: wrap; align-items: baseline;
+  font-size: clamp(8.5px, .62vw, 13px); letter-spacing: .2em;
+  color: var(--mural-fraco); text-transform: uppercase; margin-top: -.4em;
+}
+.mural-sussurro { letter-spacing: .08em; text-transform: none; opacity: .8; }
+
+.mural-pracas {
+  list-style: none; margin: clamp(8px, .8vw, 16px) 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: clamp(6px, .7vw, 14px);
+}
+.mural-pracas li {
+  display: flex; align-items: baseline; gap: .55em;
+  border: 1px solid var(--mural-linha); border-radius: 999px;
+  padding: clamp(4px, .35vw, 9px) clamp(9px, .8vw, 18px);
+  font-size: clamp(10px, .78vw, 16px);
+}
+.mural-pais  { color: var(--mural-fraco); font-size: .8em; letter-spacing: .12em; }
+.mural-conta { color: var(--mural-vivo); font-weight: 700; }
+
+/* ── O FLUXO ────────────────────────────────────────────────────────── */
+.mural-fluxo h2 {
+  margin: 0 0 .6em; font-size: clamp(9px, .68vw, 14px);
+  letter-spacing: .26em; color: var(--mural-fraco); font-weight: 500;
+}
+.mural-fluxo ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.mural-fluxo li {
+  display: grid; align-items: baseline;
+  grid-template-columns: 4.5em minmax(0,1fr) 5em minmax(0,7em) minmax(0,7em);
+  gap: clamp(6px, .7vw, 16px);
+  padding: clamp(5px, .45vw, 11px) clamp(6px, .5vw, 12px);
+  font-size: clamp(11px, .85vw, 19px);
+  border-bottom: 1px solid var(--mural-linha);
+}
+.mural-quando { color: var(--mural-fraco); font-size: .82em; }
+.mural-par    { font-weight: 600; letter-spacing: .04em; }
+.mural-cadeia { color: var(--mural-fraco); font-size: .82em; text-transform: uppercase; letter-spacing: .12em; }
+.mural-vol    { text-align: right; }
+.mural-taxa       { text-align: right; color: var(--mural-verde); font-weight: 700; }
+.mural-taxa-vazia { text-align: right; color: var(--mural-fraco); }
+
+/* ⚠️ A troca que CHEGOU agora acende e apaga — e só ela. Ver a nota em
+   `MuralView`: destacar a primeira linha a cada busca seria movimento sem
+   fato, ruído com cara de notícia. */
+.mural-entrando { animation: mural-chegou 4s ease-out; }
+
+.mural-vazio {
+  margin: 0; color: var(--mural-fraco);
+  font-size: clamp(11px, .8vw, 17px); line-height: 1.7;
+}
+.mural-erro {
+  color: #ff6b6b; font-size: clamp(11px, .8vw, 16px);
+  border: 1px solid rgba(255,107,107,.35); border-radius: 6px;
+  padding: .7em 1em;
+}
+
+/* ── CELULAR: a tabela de fluxo vira duas linhas em vez de espremer ──── */
+@media (max-width: 640px) {
+  .mural-fluxo li {
+    grid-template-columns: 4.2em minmax(0,1fr) minmax(0,5.5em);
+  }
+  .mural-cadeia { display: none; }
+  .mural-vol    { grid-column: 3; }
+  .mural-taxa, .mural-taxa-vazia { grid-column: 2 / 4; text-align: right; font-size: .82em; }
+}
+
+/* ── ANIMAÇÕES ──────────────────────────────────────────────────────── */
+@keyframes mural-bater   { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+@keyframes mural-expandir{ 0% { transform: scale(.55); opacity: .9 }
+                           70% { transform: scale(1.5); opacity: 0 }
+                           100% { transform: scale(1.5); opacity: 0 } }
+@keyframes mural-chegou  { 0% { background: rgba(57,255,115,.22) }
+                           100% { background: transparent } }
+
+/* ⚠️ QUEM PEDE MENOS MOVIMENTO RECEBE MENOS MOVIMENTO. Uma tela que pulsa
+   o dia inteiro é exatamente o caso que esta preferência existe para
+   atender — e ela também vale para quem deixa o mural num telão o dia
+   inteiro e não quer o cintilar no canto do olho. */
+@media (prefers-reduced-motion: reduce) {
+  .mural-farol.vivo, .mural-pulso, .mural-entrando { animation: none; }
+}
