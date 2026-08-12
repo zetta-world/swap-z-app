@@ -1,0 +1,155 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "src/app/api/cex/order/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/cex/balance/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/cex/orderbook/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/cex/orders/open/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/autopilot/cron/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/prices/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/zion/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/depth-census/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/dex-cex/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/funding/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/liquidez/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/paper/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/perp-census/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/rotacao-grade/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/variancia/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/venue-probe/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/venue-truth/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/health/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/maker-backtest/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/what-worked/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/calibration/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/playbook-backtest/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/zion/backtest/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/radar/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/onramp/transak/session/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/admin/api/arbiter-median/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/cex/deposit-address/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/cex/markets/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/cex/order/cancel/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    },
+    "src/app/api/cex/order/status/route.ts": {
+      "regions": [
+        "gru1"
+      ]
+    }
+  }
+}
