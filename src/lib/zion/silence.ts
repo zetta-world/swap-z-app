@@ -155,3 +155,81 @@ export function readSilence(
     isProblem: motivos.length === 0,
   };
 }
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ * O RASTRO DE CADA MESA — onde ele mora, e como se lê.
+ *
+ * ⚠️ POR QUE ISTO PRECISOU EXISTIR (13/08).
+ *
+ * `readSilence` foi escrito em 06/08 e ficou seis dias sem NENHUM chamador
+ * fora do próprio teste. O módulo que abre citando a invariante nº 14 — "um
+ * controle que ninguém lê não é um controle" — era exatamente isso: um
+ * controle que ninguém lia. Ele classificava cinco silêncios perfeitamente
+ * dentro de um arquivo que nenhuma tela importava.
+ *
+ * O que faltava não era a classificação, era a PONTE: cada mesa grava o tick
+ * dela com um nome de evento próprio e um formato de metadados próprio, e sem
+ * essa tradução o painel não tinha como alimentar a função.
+ *
+ * ⚠️ E OS NOMES DOS CAMPOS NÃO COINCIDEM ENTRE AS FONTES. A ULLR chama de
+ * `eligible`/`fired` o que a URÐR chama de `offered`/`taken`, e a FREYJA
+ * chama de `candidates`/`logged`. Ler `offered` cru daria ZERO nas três — e
+ * zero oferta é o veredito "seca", que acusa a fonte de estar caída. Duas
+ * mesas trabalhando com disciplina seriam reportadas como quebradas.
+ */
+
+/** O `event_type` em `platform_events` onde cada mesa deixa rastro. */
+export const TICK_EVENT_BY_SOURCE: Readonly<Record<string, string>> = {
+  strat_dex:    "strat_dex_tick",
+  strat_ai:     "strat_ai_tick",
+  strat_record: "strat_record_tick",
+  ullr_launch:  "ullr_tick",
+  arbiter:      "arb_window_empty",
+  arbiter2:     "arb2_window_empty",
+  arbiter2_3x:  "arb2_window_empty",
+  arbiter2_5x:  "arb2_window_empty",
+};
+
+/** Metadados crus de `platform_events` — jsonb, então tudo é `unknown`. */
+type Meta = Record<string, unknown>;
+
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/**
+ * Traduz o metadado cru de um tick para o formato comum de `DeskTick`.
+ *
+ * ⚠️ O PRIMEIRO CAMPO QUE EXISTIR VENCE, e a ordem é deliberada: `offered`
+ * antes de `eligible` antes de `candidates`. Uma fonte que grave dois deles
+ * está dizendo a mesma coisa duas vezes, e o primeiro é o nome canônico.
+ */
+export function deskTickFrom(eventType: string, meta: Meta | null | undefined): DeskTick {
+  const m = meta ?? {};
+  const erro = typeof m.erro === "string" ? m.erro : null;
+
+  /**
+   * ⚠️ A JANELA DO ARBITER NÃO É SECA — ela é uma conta que não fecha.
+   *
+   * `arb_window_empty` grava `why: "piso de custo acima do teto de
+   * credibilidade"`. Sem trazer esse texto, a mesa cairia em "seca sem motivo
+   * reportado", que aponta para fonte caída — e a fonte está ótima: são as
+   * PREMISSAS que tornam a janela vazia por aritmética (piso 0,55% > teto
+   * 0,30%). Confundir os dois manda consertar a coleta em vez do custo.
+   */
+  const why = typeof m.why === "string" ? m.why : null;
+  const skipped = Array.isArray(m.skipped)
+    ? (m.skipped as Array<{ symbol?: unknown; reason?: unknown }>).map((s) => ({
+        symbol: String(s?.symbol ?? "—"), reason: String(s?.reason ?? "—"),
+      }))
+    : why
+      ? [{ symbol: "—", reason: why }]
+      : null;
+
+  return {
+    offered: num(m.offered) ?? num(m.eligible) ?? num(m.candidates),
+    taken:   num(m.taken)   ?? num(m.fired)    ?? num(m.logged),
+    vetoedByRecord: num(m.vetoedByRecord),
+    skipped,
+    erro: erro ?? (eventType.endsWith("_error") ? "tick registrou erro" : null),
+  };
+}

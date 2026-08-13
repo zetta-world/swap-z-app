@@ -15,8 +15,30 @@ type Row = {
   best: number | null; worst: number | null; closedTrades: number;
   openPositions: number; exposure: number; openBook: OpenPos[]; recentTrades: RecentTrade[]; curve: number[];
   retired: boolean;
+  /** ⚠️ `RET`/`WR` vêm da CONTA, `FECH.` vem do LIVRO VIVO. Quando divergem,
+   *  a linha está somando dois livros — ver o comentário longo na rota. */
+  divergencia: { trades: number; usd: number; livroTrades: number; livroUsd: number } | null;
+  /** Por que a mesa está calada. `operando` = não está. */
+  silencio: { kind: string; label: string; action: string; isProblem: boolean };
 };
-type PR = { rows: Row[]; totals: { startingUsd: number; equity: number; cashUsd: number; buracoUsd: number; comBuraco: number; realizedPnl: number; openPositions: number; exposure: number; closedTrades: number }; fetchedAt: string };
+type PR = { rows: Row[]; totals: { startingUsd: number; equity: number; cashUsd: number; buracoUsd: number; comBuraco: number; realizedPnl: number; openPositions: number; exposure: number; closedTrades: number; comDivergencia: number; comProblema: number }; fetchedAt: string };
+
+/**
+ * A COR DE CADA SILÊNCIO — e por que `disciplina` NÃO é âmbar.
+ *
+ * Os cinco estados pedem ações opostas, e pintar todos de alerta desfaria o
+ * trabalho inteiro: a URÐR recusando 15 de 15 candidatos por veto do histórico
+ * medido é a mesa mais correta do laboratório. Se ela acende igual a uma mesa
+ * quebrada, quem olhar vai "consertar" a certa.
+ */
+const COR_DO_SILENCIO: Record<string, string> = {
+  operando:    "var(--adm-ink-4)",
+  disciplina:  "var(--adm-ink-3)",
+  seca:        "var(--adm-amber)",
+  fome:        "var(--adm-amber)",
+  quebra:      "var(--adm-red)",
+  sem_rastro:  "var(--adm-red)",
+};
 type RepairState = {
   plan: Array<{ source: string; label: string; from: number; to: number; deltaUsd: number }>;
   last: { at: string; totalUsd: number } | null;
@@ -365,6 +387,13 @@ export default function PaperPanel() {
                 subColor: data.totals.buracoUsd < -0.01 ? "var(--adm-amber)" : "var(--adm-green)" },
               { label: "REALIZADO", v: usdc(data.totals.realizedPnl), subColor: col(data.totals.realizedPnl) },
               { label: "ABERTAS", v: `${data.totals.openPositions}`, sub: `exp ${usd(data.totals.exposure)}` },
+              /* ⚠️ "TODAS AS MESAS ESTÃO RODANDO?" era uma pergunta que só o
+                 SQL respondia. Duas contagens: quantas mesas VIVAS estão
+                 caladas por um motivo que pede ação (disciplina NÃO conta), e
+                 quantas linhas somam dois livros. */
+              { label: "MESAS OK", v: `${todas.filter((r) => !r.retired).length - data.totals.comProblema}/${todas.filter((r) => !r.retired).length}`,
+                sub: data.totals.comProblema > 0 ? `${data.totals.comProblema} pede(m) ação` : "nenhuma pede ação",
+                subColor: data.totals.comProblema > 0 ? "var(--adm-amber)" : "var(--adm-green)" },
             ].map((t) => (
               <div key={t.label} style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "5px 8px" }}>
                 <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.08em" }}>{t.label}</div>
@@ -413,7 +442,23 @@ export default function PaperPanel() {
                   <Fragment key={r.source}>
                     <tr style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : r.source)}>
                       <td>{MEDAL[i] ?? `#${i + 1}`}</td>
-                      <td style={{ color: "var(--adm-ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 130 }}>{r.label}</td>
+                      {/* ⚠️ O MOTIVO DO SILÊNCIO VIAJA COM O NOME, não atrás de
+                          um clique. A pergunta "todos os agentes estão rodando
+                          corretamente?" tinha que ser respondível SEM expandir
+                          linha nenhuma — foi por não ser que a FREYJA passou
+                          dias parecendo desligada enquanto recusava 9 candidatos
+                          a cada 30 minutos, com o motivo escrito de cada um. */}
+                      <td style={{ maxWidth: 150 }}>
+                        <div style={{ color: "var(--adm-ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {r.label}
+                          {r.divergencia && <span style={{ color: "var(--adm-amber)" }} title="esta linha soma dois livros — abra para a conferência"> ⚠</span>}
+                        </div>
+                        {r.silencio.kind !== "operando" && (
+                          <div style={{ fontSize: 10, color: COR_DO_SILENCIO[r.silencio.kind] ?? "var(--adm-ink-4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {r.silencio.label}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ fontVariantNumeric: "tabular-nums" }}>{usd(r.equity)}</td>
                       <td style={{ color: flat ? "var(--adm-ink-4)" : col(r.returnPct) }}>{flat ? "—" : pctS(r.returnPct)}</td>
                       <td>{r.winRate == null ? "—" : `${r.winRate.toFixed(0)}%`}</td>
@@ -438,6 +483,37 @@ export default function PaperPanel() {
                             <Stat label="EXPOSIÇÃO" value={usd(r.exposure)} />
                             <Stat label="CAIXA" value={usd(r.cashUsd)} />
                           </div>
+
+                          {/* ⚠️ A CONFERÊNCIA DOS DOIS LIVROS. Não escolhe um
+                              lado: a conta guarda o que houve antes do
+                              arquivamento, o livro guarda o que ainda está
+                              sendo medido, e a tela mostrava os dois como se
+                              fossem um retrato só. */}
+                          {r.divergencia && (
+                            <div style={{ fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.6, marginBottom: 8, border: "1px solid var(--adm-border)", borderRadius: 4, padding: "4px 6px" }}>
+                              ⚠ esta linha soma <b>dois livros</b>. A CONTA diz{" "}
+                              {r.wins + r.losses} decisão(ões) e {usdc(r.realizedPnl)}; o LIVRO VIVO diz{" "}
+                              {r.divergencia.livroTrades} e {usdc(r.divergencia.livroUsd)}.
+                              <div style={{ color: "var(--adm-ink-4)", marginTop: 2 }}>
+                                A diferença é o que foi ARQUIVADO e saiu da medição — o passado não
+                                se apaga nem se recalcula. <b>RET</b> e <b>WR</b> acima vêm da conta;{" "}
+                                <b>FECH.</b>, <b>PROFIT F.</b> e a curva vêm do livro vivo.
+                              </div>
+                            </div>
+                          )}
+
+                          {/* O silêncio por extenso: o rótulo cabe na tabela, a
+                              AÇÃO não — e sem a ação a leitura vira decoração. */}
+                          {r.silencio.kind !== "operando" && (
+                            <div style={{ fontSize: 11, lineHeight: 1.6, marginBottom: 8 }}>
+                              <span style={{ color: COR_DO_SILENCIO[r.silencio.kind] ?? "var(--adm-ink-4)" }}>
+                                {r.silencio.isProblem ? "⚠" : "✓"} {r.silencio.label}
+                              </span>
+                              {r.silencio.action && (
+                                <div style={{ color: "var(--adm-ink-4)" }}>{r.silencio.action}</div>
+                              )}
+                            </div>
+                          )}
                           {r.curve.length > 1 && (
                             <div style={{ marginBottom: r.openBook.length ? 8 : 0 }}>
                               <Sparkline curve={r.curve} />

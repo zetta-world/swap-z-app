@@ -211,6 +211,36 @@ export async function ensurePaperAccounts(db: Db): Promise<void> {
 
 interface PaperAccount { id: string; source: string; starting_usd: number; cash_usd: number; realized_pnl_usd: number; wins: number; losses: number; }
 
+/**
+ * A chave do par (carteira, símbolo).
+ *
+ * ⚠️ MAIÚSCULA SEMPRE. O ledger guarda o símbolo como a fonte mandou, e
+ * `gateioSpot` é consultado em maiúscula — um `ada` vindo de uma fonte e um
+ * `ADA` de outra virariam duas chaves distintas, e o guarda-duplicata deixaria
+ * as duas passarem justamente no caso que ele existe para pegar.
+ */
+export function chaveSimbolo(accountId: string, symbol: string): string {
+  return `${accountId}:${symbol.toUpperCase()}`;
+}
+
+/**
+ * Os pares (carteira, símbolo) em que há posição VIVA E ABERTA agora.
+ *
+ * ⚠️ OS DOIS FILTROS SÃO OBRIGATÓRIOS, e por motivos opostos. Sem
+ * `status === "open"`, uma mesa que já FECHOU ADA ficaria proibida de operar
+ * ADA para sempre — o guarda viraria uma lista negra permanente. Sem
+ * `archived_at == null`, uma posição retirada da medição continuaria bloqueando
+ * a mesa por uma exposição que não existe mais.
+ */
+export function simbolosAbertos(
+  posicoes: ReadonlyArray<{ account_id: string; symbol: string; status: string; archived_at: string | null }>,
+): Set<string> {
+  return new Set(
+    posicoes.filter((p) => p.status === "open" && p.archived_at == null)
+            .map((p) => chaveSimbolo(p.account_id, p.symbol)),
+  );
+}
+
 /** Open new positions: each wallet market-enters its source's still-open signals
  *  (with a bracket) that it hasn't taken yet, at the live Gate.io fill, sized by
  *  available cash. Returns how many were opened. */
@@ -251,15 +281,40 @@ export async function openPaperPositions(): Promise<number> {
   // constraint — e o insert é EM LOTE, então UMA duplicata matava o lote
   // inteiro, levando junto as posições novas e legítimas. Daí as amostras
   // minúsculas. A segunda metade do estrago está no débito, logo abaixo.
-  const held = await selectAllRows<{ account_id: string; suggestion_id: string }>(
+  const held = await selectAllRows<{ account_id: string; suggestion_id: string; symbol: string; status: string; archived_at: string | null }>(
     // inclui-arquivadas: o dedup protege a chave UNIQUE (account, suggestion),
     // que não conhece arquivamento. Filtrar aqui faria a mesa TENTAR reabrir
     // uma posição arquivada; o upsert ignoraria em silêncio e o trabalho seria
     // desperdiçado a cada tick, para sempre.
-    (from, to) => db.from("paper_positions").select("account_id, suggestion_id")
+    (from, to) => db.from("paper_positions").select("account_id, suggestion_id, symbol, status, archived_at")
       .order("id", { ascending: true }).range(from, to),
   );
   const taken = new Set(held.map((h) => `${h.account_id}:${h.suggestion_id}`));
+
+  /**
+   * ⚠️⚠️ UMA POSIÇÃO POR SÍMBOLO POR MESA — e a amostra que isto salva (13/08).
+   *
+   * A fila é processada por ordem de chegada e uma sugestão pode esperar mais
+   * de um tick para virar posição. Em 13/08 às 19:31 a VÖLUNDR abriu ADA DUAS
+   * VEZES no mesmo instante: a sugestão das 18:00 estava encalhada e a das
+   * 19:30 chegou por cima. As duas preencheram ao MESMO preço (0,18162), com o
+   * mesmo playbook (`range_reversion`) e o mesmo alvo. Os stops diferiam na
+   * quinta casa decimal. A SKAÐI e a URÐR fizeram idêntico, no mesmo segundo.
+   *
+   * O estrago é duplo, e o segundo é o grave:
+   *
+   *  1. EXPOSIÇÃO — $100 na mesma ideia onde o mandato manda $50.
+   *  2. AMOSTRA — as duas vão bater o mesmo alvo ou o mesmo stop, juntas, e o
+   *     ledger vai registrar DOIS trades. A contagem de fechados é a régua de
+   *     confiança do laboratório inteiro (a coluna FECH. fica âmbar abaixo de
+   *     10 justamente por isso). Dois trades que carregam a informação de um
+   *     inflam essa régua sem inflar o que ela mede — é a mesma família do
+   *     `expired ≠ win/loss` do flywheel: contar como parcela algo que não é.
+   *
+   * A sugestão preterida NÃO é descartada: ela continua `open` e vira posição
+   * quando a mesa sair de ADA. Adiar é o comportamento certo; empilhar não.
+   */
+  const jaDentro = simbolosAbertos(held);
 
   // Current champion (cull engine, alavanca 3) — best-effort, null when unset.
   let champion: string | null = null;
@@ -293,6 +348,9 @@ export async function openPaperPositions(): Promise<number> {
     const acc = accBySource.get(s.source);
     if (!acc) continue;
     if (taken.has(`${acc.id}:${s.id}`)) continue;
+    // `jaDentro` cresce DENTRO do laço: duas sugestões do mesmo símbolo podem
+    // chegar no mesmo tick, e ler só o estado do banco deixaria as duas passar.
+    if (jaDentro.has(chaveSimbolo(acc.id, s.symbol))) continue;
     const onChain = s.chain && s.pool_address;
     const fill = onChain ? poolPx.get(`${s.chain}|${s.pool_address}`) : px.get(s.symbol.toUpperCase());
     if (fill == null || !canEnter(s.side, fill, s.target_price, s.stop_price)) continue;
@@ -300,6 +358,7 @@ export async function openPaperPositions(): Promise<number> {
     const champMult = s.source === champion ? CHAMPION_MULT : 1;
     const size = sizePosition(cashAvail, Number(acc.starting_usd), convictionFactor(s.probability) * champMult);
     if (size <= 0) continue; // out of capital
+    jaDentro.add(chaveSimbolo(acc.id, s.symbol));
     inserts.push({
       account_id: acc.id, suggestion_id: s.id, source: s.source, symbol: s.symbol, side: s.side,
       qty: size / fill, entry_price: fill, cost_usd: size,

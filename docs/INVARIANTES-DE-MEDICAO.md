@@ -474,6 +474,103 @@ de preço — nunca duas.
 
 ---
 
+## 24. Uma linha que soma DOIS livros mostra uma contradição como se fosse retrato
+
+**Cicatriz:** 13/08, painel 🧪 CARTEIRA PAPEL. Cada linha de mesa exibia, lado
+a lado:
+
+| coluna | de onde vinha |
+|---|---|
+| `RET`, `WR`, `REALIZADO` | `paper_accounts` — colunas acumuladas da conta |
+| `FECH.`, `PROFIT F.`, `MELHOR`, `PIOR`, a curva | `paper_positions` **filtrado por `archived_at is null`** |
+
+Enquanto nada é arquivado, os dois coincidem e ninguém nota que são fontes
+distintas. Depois de um arquivamento, divergem — e a divergência é permanente.
+A leitura na tela, nas mesas **vivas**:
+
+```
+HEIMDALL (radar)   RET −1,34%   WR 39%    FECH. 0
+JÖRMUNGANDR        RET  0,00%   WR 100%   FECH. 0
+```
+
+"Perdeu 1,34% em 33 decisões" e "não fechou decisão nenhuma" ocupavam a mesma
+linha. Treze das 23 carteiras divergiam; onze estavam escondidas atrás do botão
+do ARQUIVO, o que fazia a visão padrão parecer sã.
+
+⚠️ **A causa não é um bug de código, é um bug de ÉPOCA.** `resetLedgers`
+(03/08) zera as colunas da conta ao arquivar. O arquivamento de **28/07** é
+anterior a esse módulo: arquivou as posições e não tocou nas contas. O código de
+hoje está certo; o dado carrega a data em que estava errado.
+
+⚠️ **E a correção NÃO é escolher um dos dois.** A conta guarda a história
+anterior ao arquivamento; o livro guarda o que ainda está sendo medido. Apagar a
+conta perde o passado; recalcular a conta a partir do livro **inventa** um
+passado que não houve. O que faltava era *dizer que são dois* — a divergência
+virou coluna, do mesmo jeito que o `buracoUsd` do caixa virou em 05/08.
+
+> A pergunta que separa: **"estas duas células da mesma linha respondem à mesma
+> pergunta sobre o mesmo conjunto?"** Se não, ou elas se rotulam, ou a linha
+> mente sem que nenhum número nela seja falso.
+
+---
+
+## 25. Um controle que nenhum importador chama não existe — nem quando tem teste
+
+**Cicatriz:** 13/08. `src/lib/zion/silence.ts` foi escrito em 06/08 para separar
+cinco silêncios que pedem ações **opostas** — disciplina (não fazer nada), fome
+(capital), quebra (código), seca (investigar a fonte), sem-rastro (não julgar).
+Tinha 11 testes passando. O arquivo abre citando a invariante nº 14: *"um
+controle que ninguém lê não é um controle"*.
+
+Durante sete dias seu **único importador foi o próprio teste**. Nenhuma rota,
+nenhum painel. A tela continuou mostrando "0 trades" para os cinco casos, e a
+pergunta "todos os agentes estão rodando corretamente?" só tinha resposta por
+SQL manual.
+
+⚠️ **A nº 20 dizia que teste-que-lê-arquivo não prova execução. Esta é o degrau
+seguinte: teste que EXECUTA a função não prova que o produto a chama.** Os 11
+testes rodavam a função de verdade, com entradas de verdade, e verificavam
+saídas de verdade. Todos verdes. E a função era código morto.
+
+⚠️ **E o que segurava a ponte não era a lógica — era o VOCABULÁRIO.** Cada mesa
+nomeia os campos do tick à sua maneira: a ULLR grava `eligible`/`fired`, a
+FREYJA `candidates`/`logged`, a URÐR `offered`/`taken`. Ler `offered` cru daria
+zero em três das quatro fontes, e zero oferta é o veredito **seca**, que acusa a
+fonte de estar caída. Duas mesas trabalhando com disciplina seriam reportadas
+como quebradas — o erro exatamente ao contrário.
+
+> `grep -rn "from \"@/lib/x\"" src/ | grep -v ".test."` — se só o teste
+> aparece, o módulo não está no produto. Vale rodar isso ao FECHAR a fase, não
+> ao abrir.
+
+---
+
+## 26. Fila que espera mais de um tick empilha a mesma ideia e infla a AMOSTRA
+
+**Cicatriz:** 13/08, 19:31:07. A VÖLUNDR abriu **ADA duas vezes no mesmo
+instante**: a sugestão das 18:00 estava encalhada na fila e a das 19:30 chegou
+por cima. As duas preencheram ao mesmo preço (0,18162), com o mesmo playbook
+(`range_reversion`) e o mesmo alvo. Os stops diferiam na quinta casa decimal. A
+SKAÐI e a URÐR fizeram idêntico, no mesmo segundo — seis posições, três ideias.
+
+O estrago é duplo, e **o segundo é o grave**:
+
+1. **Exposição** — $100 na mesma ideia onde o mandato manda $50.
+2. **Amostra** — as duas batem o mesmo alvo ou o mesmo stop, juntas, e o ledger
+   registra **dois trades**. A contagem de fechados é a régua de confiança deste
+   laboratório inteiro: a coluna `FECH.` fica âmbar abaixo de 10 justamente por
+   isso. Dois trades que carregam a informação de um inflam a régua sem inflar o
+   que ela mede.
+
+⚠️ É a família do **`expired ≠ win/loss`** do flywheel: contar como parcela algo
+que não é parcela independente. E é mais difícil de ver, porque aqui as duas
+linhas são trades legítimos — só não são *dois*.
+
+⚠️ **Adiar é certo; empilhar não.** A sugestão preterida não é descartada: ela
+continua `open` e vira posição quando a mesa sair do símbolo.
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:

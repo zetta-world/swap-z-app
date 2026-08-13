@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sizePosition, canEnter, computeExit, computeExitPath, convictionFactor } from "@/lib/paper/engine";
+import { sizePosition, canEnter, computeExit, computeExitPath, convictionFactor, simbolosAbertos, chaveSimbolo } from "@/lib/paper/engine";
 
 describe("paper engine — position sizing", () => {
   it("deploys 5% of starting capital, capped by available cash", () => {
@@ -110,5 +110,64 @@ describe("paper engine — path-aware exit (F3)", () => {
 
   it("stays in-flight when no candle touched a level and horizon is open", () => {
     expect(computeExitPath(base, [candle(10, 104, 98, 101)], 101, t0 + 3_600_000)).toBeNull();
+  });
+});
+
+/**
+ * UMA POSIÇÃO POR SÍMBOLO POR MESA — o caso real de 13/08.
+ *
+ * A sugestão de ADA das 18:00 ficou encalhada na fila; a das 19:30 chegou por
+ * cima; às 19:31:07 as DUAS viraram posição, ao mesmo preço, com o mesmo
+ * playbook e o mesmo alvo. VÖLUNDR, SKAÐI e URÐR fizeram idêntico no mesmo
+ * segundo — $300 de exposição onde o mandato manda $150, e seis trades no
+ * ledger carregando a informação de três.
+ */
+describe("guarda-duplicata por símbolo", () => {
+  const pos = (account_id: string, symbol: string, status = "open", archived_at: string | null = null) =>
+    ({ account_id, symbol, status, archived_at });
+
+  it("posição aberta bloqueia uma segunda no mesmo símbolo", () => {
+    const abertos = simbolosAbertos([pos("a1", "ADA")]);
+    expect(abertos.has(chaveSimbolo("a1", "ADA"))).toBe(true);
+  });
+
+  it("outra mesa no mesmo símbolo NÃO é bloqueada — a comparação entre mesas é o experimento", () => {
+    const abertos = simbolosAbertos([pos("a1", "ADA")]);
+    expect(abertos.has(chaveSimbolo("a2", "ADA"))).toBe(false);
+  });
+
+  /**
+   * ⚠️ SEM `status === "open"` o guarda vira LISTA NEGRA PERMANENTE: a mesa
+   * que já operou ADA uma vez nunca mais poderia operar ADA.
+   */
+  it("posição FECHADA não bloqueia — senão o guarda vira lista negra", () => {
+    expect(simbolosAbertos([pos("a1", "ADA", "closed")]).size).toBe(0);
+  });
+
+  /** Sem `archived_at == null`, exposição que saiu da medição segue bloqueando. */
+  it("posição ARQUIVADA não bloqueia — ela não é exposição", () => {
+    expect(simbolosAbertos([pos("a1", "ADA", "open", "2026-08-03T10:25:03Z")]).size).toBe(0);
+  });
+
+  it("a chave é insensível a caixa — 'ada' e 'ADA' são o mesmo símbolo", () => {
+    const abertos = simbolosAbertos([pos("a1", "ada")]);
+    expect(abertos.has(chaveSimbolo("a1", "ADA"))).toBe(true);
+    expect(chaveSimbolo("a1", "AdA")).toBe(chaveSimbolo("a1", "ada"));
+  });
+
+  /**
+   * O caso do mesmo tick: duas sugestões do mesmo símbolo chegam juntas e o
+   * banco não conhece nenhuma das duas. Ler só o estado inicial deixaria as
+   * duas passarem — por isso o conjunto CRESCE dentro do laço.
+   */
+  it("duas sugestões do mesmo símbolo no MESMO tick: só a primeira passa", () => {
+    const jaDentro = simbolosAbertos([]);
+    const fila = [{ acc: "a1", symbol: "ADA" }, { acc: "a1", symbol: "ADA" }, { acc: "a1", symbol: "OP" }];
+    const abertas = fila.filter((s) => {
+      if (jaDentro.has(chaveSimbolo(s.acc, s.symbol))) return false;
+      jaDentro.add(chaveSimbolo(s.acc, s.symbol));
+      return true;
+    });
+    expect(abertas.map((a) => a.symbol)).toEqual(["ADA", "OP"]);
   });
 });

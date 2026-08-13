@@ -4,6 +4,7 @@ import { deskFor } from "@/lib/zion/desks";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { gateioSpot } from "@/lib/paper/engine";
+import { readSilence, deskTickFrom, TICK_EVENT_BY_SOURCE, type DeskTick } from "@/lib/zion/silence";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,18 @@ export async function GET(): Promise<NextResponse> {
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
-  const [{ data: accounts }, open, closed] = await Promise.all([
+  /**
+   * ⚠️ A JANELA DO RASTRO — 24h, e o número tem motivo.
+   *
+   * `readSilence` recebe uma LISTA de ticks, nunca o último: um tick isolado
+   * não distingue "seca de agora" de "seca sempre", e foi assim que a URÐR
+   * quase foi desligada por estar cumprindo o mandato dela. Com as mesas
+   * batendo a cada 30 min, 24h dá ~48 ticks — amostra suficiente para separar
+   * o silêncio de uma rodada do silêncio de sempre.
+   */
+  const desde = new Date(Date.now() - 24 * 3600_000).toISOString();
+
+  const [{ data: accounts }, open, closed, { data: ticksRaw }] = await Promise.all([
     db.from("paper_accounts").select("*"),
     selectAllRows<{ account_id: string; source: string; symbol: string; side: string; cost_usd: number; entry_price: number }>(
       (from, to) => db.from("paper_positions").select("account_id, source, symbol, side, cost_usd, entry_price")
@@ -40,10 +52,23 @@ export async function GET(): Promise<NextResponse> {
     selectAllRows<{ account_id: string; symbol: string; side: string; pnl_usd: number | null; pnl_pct: number | null; exit_reason: string | null; closed_at: string | null }>(
       (from, to) => db.from("paper_positions").select("account_id, symbol, side, pnl_usd, pnl_pct, exit_reason, closed_at")
         .eq("status", "closed").is("archived_at", null).order("closed_at", { ascending: true }).range(from, to)),
+    db.from("platform_events").select("event_type, metadata")
+      .in("event_type", [...new Set(Object.values(TICK_EVENT_BY_SOURCE))])
+      .gte("created_at", desde).limit(5000),
   ]);
   if (!accounts) return NextResponse.json({ error: "no_accounts" }, { status: 500 });
 
   const prices = await gateioSpot([...new Set(open.map((p) => p.symbol))]);
+
+  // O rastro por tipo de evento. Mesas sem entrada aqui ficam com lista vazia,
+  // e `readSilence` devolve `sem_rastro` — que é a resposta honesta: sem tick
+  // nenhum, qualquer veredito sobre a mesa seria chute.
+  const trilha = new Map<string, DeskTick[]>();
+  for (const e of (ticksRaw ?? []) as Array<{ event_type: string; metadata: Record<string, unknown> | null }>) {
+    const lista = trilha.get(e.event_type) ?? [];
+    lista.push(deskTickFrom(e.event_type, e.metadata));
+    trilha.set(e.event_type, lista);
+  }
 
   // Open book + unrealized (mark-to-market) + exposure per account.
   type OpenPos = { symbol: string; side: string; costUsd: number; unrealized: number };
@@ -118,6 +143,66 @@ export async function GET(): Promise<NextResponse> {
     const cb = closedBy.get(a.id) ?? { pnls: [], pts: [], recent: [] };
     const wins = cb.pnls.filter((p) => p > 0), losses = cb.pnls.filter((p) => p < 0);
     const sumWin = wins.reduce((s, p) => s + p, 0), sumLoss = losses.reduce((s, p) => s + p, 0);
+
+    /**
+     * ⚠️⚠️ A LINHA DO PAINEL SOMAVA DOIS LIVROS DIFERENTES (13/08).
+     *
+     * `RET` e `WR` saem de `paper_accounts` (colunas `realized_pnl_usd`,
+     * `wins`, `losses`). `FECH.`, `PROFIT F.`, `MELHOR`, `PIOR` e a curva saem
+     * de `paper_positions` FILTRADO por `archived_at is null`. Os dois convivem
+     * na MESMA linha, e ninguém tinha como saber que eram fontes distintas.
+     *
+     * Enquanto nada é arquivado, eles coincidem. Depois de um arquivamento,
+     * divergem — e a divergência é permanente, porque `resetLedgers` (03/08)
+     * zera as colunas da conta ao arquivar, mas o arquivamento de 28/07 é
+     * ANTERIOR a esse módulo e arquivou as posições sem tocar nas contas.
+     *
+     * O resultado, hoje, na visão das mesas VIVAS:
+     *
+     *   HEIMDALL (radar)   RET −1,34%  ·  WR 39%  ·  FECH. 0
+     *   JÖRMUNGANDR        RET  0,00%  ·  WR 100% ·  FECH. 0
+     *
+     * "Perdeu 1,34% em 33 decisões" e "não fechou nenhuma decisão" estão lado a
+     * lado na mesma linha. Nenhum dos dois é mentira isolado; juntos são uma
+     * contradição que a tela apresentava como um retrato só.
+     *
+     * ⚠️ E A CORREÇÃO NÃO É ESCOLHER UM DOS DOIS. A conta guarda a história
+     * anterior ao arquivamento; o livro guarda o que ainda está sendo medido.
+     * Apagar a conta perderia o passado, recalcular a conta a partir do livro
+     * inventaria um passado que não houve. O que faltava era DIZER que são
+     * dois — e por isso a divergência vira coluna, do mesmo jeito que o
+     * `buracoUsd` do caixa virou em 05/08.
+     */
+    const decididosLivro = cb.pnls.length;
+    const realizadoLivro = cb.pnls.reduce((s, p) => s + p, 0);
+    const divTrades = decided - decididosLivro;
+    const divUsd = realized - realizadoLivro;
+    const divergencia = (divTrades === 0 && Math.abs(divUsd) < 0.01) ? null : {
+      trades: divTrades,
+      usd: Math.abs(divUsd) < 0.01 ? 0 : divUsd,
+      livroTrades: decididosLivro,
+      livroUsd: realizadoLivro,
+    };
+
+    /**
+     * ⚠️ POR QUE ESTA MESA ESTÁ CALADA — a leitura que existia em código e não
+     * chegava a nenhuma tela.
+     *
+     * `readSilence` foi escrito em 06/08 e até 13/08 seu único importador era o
+     * próprio teste. Cinco silêncios que pedem ações OPOSTAS (disciplina pede
+     * nada, fome pede capital, quebra pede código, seca pede investigar a
+     * fonte, sem-rastro pede não julgar) continuavam aparecendo como uma coisa
+     * só: "0 trades".
+     *
+     * A amostra fechada usada aqui é a do LIVRO VIVO, não a da conta: uma mesa
+     * com contadores antigos e livro vazio está calada AGORA, e é sobre agora
+     * que o veredito fala.
+     */
+    const silencio = readSilence(
+      trilha.get(TICK_EVENT_BY_SOURCE[a.source] ?? "") ?? [],
+      cash, openCount.get(a.id) ?? 0, decididosLivro,
+    );
+
     return {
       source: a.source, label: a.label,
       startingUsd: starting, cashUsd: cash, equity,
@@ -145,6 +230,7 @@ export async function GET(): Promise<NextResponse> {
       closedTrades: cb.pnls.length,
       openPositions: openCount.get(a.id) ?? 0,
       exposure: exposure.get(a.id) ?? 0,
+      divergencia, silencio,
       openBook: (openBook.get(a.id) ?? []).sort((x, y) => y.costUsd - x.costUsd).slice(0, 6),
       recentTrades: cb.recent.slice(-8).reverse(), // newest first
       curve: equityCurve(starting, cb.pts),
@@ -172,6 +258,10 @@ export async function GET(): Promise<NextResponse> {
     openPositions: rows.reduce((s, r) => s + r.openPositions, 0),
     exposure:      rows.reduce((s, r) => s + r.exposure, 0),
     closedTrades:  rows.reduce((s, r) => s + r.closedTrades, 0),
+    /** Quantas linhas somam dois livros — o resumo da contradição acima. */
+    comDivergencia: rows.filter((r) => r.divergencia != null).length,
+    /** Mesas VIVAS caladas por um motivo que pede ação. Disciplina não conta. */
+    comProblema: rows.filter((r) => !r.retired && r.silencio.isProblem).length,
   };
 
   return NextResponse.json({ rows, totals, fetchedAt: new Date().toISOString() });
