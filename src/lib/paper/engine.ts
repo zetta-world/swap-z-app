@@ -14,6 +14,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { DESKS as DESK_LIST } from "@/lib/zion/desks";
 import { getOHLCV } from "@/lib/api/geckoterminal";
+import { recordEvent } from "@/lib/admin/track";
 
 // Round-trip execution cost (fees + slippage, both legs) — mirrors the flywheel
 // so paper P&L is net, not gross. Default 0.2%.
@@ -344,20 +345,55 @@ export async function openPaperPositions(): Promise<number> {
   };
   const inserts: PaperInsert[] = [];
 
+  /**
+   * ⚠️⚠️ POR QUE A SUGESTÃO NÃO VIROU POSIÇÃO — o buraco entre decidir e
+   * executar, que não tinha rastro nenhum (13/08).
+   *
+   * A FREYJA (`strat_dex`) gerou 19 sugestões desde 03/08. Todas com alvo e
+   * stop, todas resolveram no torneio (`hit_stop`, `hit_target`), e cada uma
+   * ficou `open` de 3 a 14 HORAS — tempo de sobra para dezenas de ticks deste
+   * abridor. A carteira de papel dela nunca abriu **uma única posição**.
+   *
+   * Não dava para saber por quê, e a razão é esta linha:
+   *
+   *     if (fill == null || !canEnter(...)) continue;
+   *
+   * **Duas causas diferentes num `continue` só**, e mudas. "não consegui preço
+   * do pool" e "o preço saiu da faixa de entrada" pedem investigações opostas —
+   * a primeira é a FONTE, a segunda é o MERCADO — e do lado de fora as duas
+   * têm exatamente a mesma aparência: nada acontece.
+   *
+   * ⚠️ E foi instrumentação, não raciocínio, que quebrou o ciclo da taxa em
+   * 11/08: três hipóteses erradas caíram no minuto em que passamos a gravar o
+   * que MANDAMOS ao lado do que VOLTOU. Aqui é a mesma forma — o abridor passa
+   * a dizer, por mesa, quantas recusou e por quê.
+   */
+  const recusas = new Map<string, Record<string, number>>();
+  const nota = (source: string, motivo: string) => {
+    const r = recusas.get(source) ?? {};
+    r[motivo] = (r[motivo] ?? 0) + 1;
+    recusas.set(source, r);
+  };
+
   for (const s of sugg) {
     const acc = accBySource.get(s.source);
-    if (!acc) continue;
-    if (taken.has(`${acc.id}:${s.id}`)) continue;
+    if (!acc) { nota(s.source, "sem_carteira"); continue; }
+    // `ja_pega` é o estado NORMAL: a sugestão já virou posição e continua
+    // aberta no ledger de sinais. Conta, mas não acusa (ver o filtro abaixo).
+    if (taken.has(`${acc.id}:${s.id}`)) { nota(s.source, "ja_pega"); continue; }
     // `jaDentro` cresce DENTRO do laço: duas sugestões do mesmo símbolo podem
     // chegar no mesmo tick, e ler só o estado do banco deixaria as duas passar.
-    if (jaDentro.has(chaveSimbolo(acc.id, s.symbol))) continue;
+    if (jaDentro.has(chaveSimbolo(acc.id, s.symbol))) { nota(s.source, "ja_no_simbolo"); continue; }
     const onChain = s.chain && s.pool_address;
     const fill = onChain ? poolPx.get(`${s.chain}|${s.pool_address}`) : px.get(s.symbol.toUpperCase());
-    if (fill == null || !canEnter(s.side, fill, s.target_price, s.stop_price)) continue;
+    // ⚠️ SEPARADOS DE PROPÓSITO — ver o comentário acima. Juntar os dois foi o
+    // que deixou a FREYJA dez dias sem executar e sem ninguém saber de quê.
+    if (fill == null) { nota(s.source, onChain ? "sem_preco_de_pool" : "sem_preco_de_cex"); continue; }
+    if (!canEnter(s.side, fill, s.target_price, s.stop_price)) { nota(s.source, "preco_fora_da_faixa"); continue; }
     const cashAvail = Number(acc.cash_usd) - (spent.get(acc.id) ?? 0);
     const champMult = s.source === champion ? CHAMPION_MULT : 1;
     const size = sizePosition(cashAvail, Number(acc.starting_usd), convictionFactor(s.probability) * champMult);
-    if (size <= 0) continue; // out of capital
+    if (size <= 0) { nota(s.source, "sem_caixa"); continue; } // out of capital
     jaDentro.add(chaveSimbolo(acc.id, s.symbol));
     inserts.push({
       account_id: acc.id, suggestion_id: s.id, source: s.source, symbol: s.symbol, side: s.side,
@@ -367,6 +403,24 @@ export async function openPaperPositions(): Promise<number> {
     });
     spent.set(acc.id, (spent.get(acc.id) ?? 0) + size);
     taken.add(`${acc.id}:${s.id}`);
+  }
+
+  /**
+   * A mesa que RECEBEU sugestão e não abriu NADA neste tick — e o porquê.
+   *
+   * ⚠️ `ja_pega` fica de fora do gatilho: uma mesa cujas sugestões já viraram
+   * posição está funcionando, e acusá-la faria o evento disparar sempre, o que
+   * é a mesma coisa que não disparar nunca.
+   */
+  const abriuPorFonte = new Set(inserts.map((i) => i.source));
+  for (const [source, motivos] of recusas) {
+    if (abriuPorFonte.has(source)) continue;
+    const semJaPega = Object.entries(motivos).filter(([k]) => k !== "ja_pega");
+    if (semJaPega.length === 0) continue;
+    recordEvent("paper_open_skip", { meta: {
+      source, ...Object.fromEntries(semJaPega),
+      why: "a mesa tinha sugestão aberta e o abridor não executou nenhuma",
+    } });
   }
 
   if (inserts.length === 0) return 0;
