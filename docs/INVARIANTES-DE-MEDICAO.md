@@ -571,6 +571,59 @@ continua `open` e vira posição quando a mesa sair do símbolo.
 
 ---
 
+## 27. Rodar a função de verdade contra o DADO de verdade, e LER a saída linha por linha
+
+**Cicatriz:** 13/08. A primeira versão da ligação do `readSilence` ao painel
+passou em `tsc`, em `lint`, em **1213 testes** e em `build`. Estava escrita com
+comentário de cicatriz, teste de mutação e invariante registrada.
+
+E teria mostrado **alarme falso em 4 das 11 mesas vivas**.
+
+O dono disse *"não confio na tarefa que você executou, revisa tudo"* — e estava
+certo. O que achou os defeitos não foi reler o diff: foi extrair os **287
+eventos reais** de 24h e as **23 contas reais** do banco, rodar `deskTickFrom` +
+`readSilence` de verdade sobre eles, imprimir as 23 linhas do jeito que o painel
+mostraria, e **ler**:
+
+```
+strat_dex     disciplina ⚠  414 oferta(s), nenhuma tomada     ← 1
+arbiter2      seca       ⚠  nenhum candidato em 71 ticks      ← 2 e 3
+arbiter2_5x   seca       ⚠  nenhum candidato em 71 ticks
+arbiter       seca          nenhum candidato em 24 ticks      ← ...e esta não acendeu
+```
+
+Quatro defeitos, e **nenhum deles é um erro de lógica que um teste unitário
+pegaria** — todos são desencontros entre o código e o formato real do dado:
+
+1. A FREYJA escreve o motivo de **cada** recusa (414 ofertas, 410 motivos) e
+   mesmo assim acendia. A armadilha da URÐR de novo: o alarme punia quem
+   documenta.
+2. `arb2_window_empty` **não grava `why`** — só `ceil_pct` e `floor_pct`. As
+   três variantes saíam como "seca sem motivo", que acusa a fonte de estar
+   caída, enquanto a `arbiter` 1× (que grava `why`) saía limpa. Causa idêntica,
+   veredito oposto.
+3. `arb2_window_empty` é emitido por **três** mesas, que se identificam em
+   `metadata.source`. Cada uma lia os ticks das outras: "71 ticks" onde o rastro
+   real é 24. O veredito não mudava, o NÚMERO mudava — e número errado numa
+   frase que alguém vai citar começa uma investigação na direção errada.
+4. E o maior: a FREYJA gerou **19 sugestões desde 03/08**, que resolveram no
+   torneio (`hit_stop`, `hit_target`), e a carteira de papel dela **nunca abriu
+   uma posição**. Nos cinco estados isso caía em `disciplina · nenhuma tomada`
+   — rótulo literalmente falso sobre uma mesa que decidira 4 vezes em 24h.
+   Faltava um **sexto estado**: *decidiu e a execução não aconteceu*.
+
+⚠️ **O quarto só apareceu porque a saída impressa tinha um número estranho**
+(`logged: 4` numa mesa com zero posições) e alguém puxou o fio. Nenhuma
+asserção teria feito essa pergunta — asserção confirma o que já se suspeita.
+
+> A regra: antes de declarar uma leitura pronta, **produza a tela em texto** a
+> partir do dado de produção e leia as linhas. Se não dá para rodar a rota
+> inteira, rode as funções que ela chama, com o dado que ela receberia. Teste
+> verde é ausência de contradição conhecida; a leitura é a única coisa que vê o
+> que ninguém pensou em afirmar.
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:

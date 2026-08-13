@@ -70,6 +70,27 @@ export async function GET(): Promise<NextResponse> {
     trilha.set(e.event_type, lista);
   }
 
+  /**
+   * ⚠️ CADA MESA LÊ SÓ O RASTRO DELA — e isto não era verdade na primeira
+   * versão desta rota (achado ao conferir contra o banco, 13/08).
+   *
+   * `arb2_window_empty` é emitido pelas TRÊS variantes do Arbiter 2.0, que se
+   * identificam em `metadata.source`. Sem o filtro, cada uma somava os ticks
+   * das outras duas e a tela dizia "nenhum candidato em **71** ticks" quando o
+   * rastro real de cada uma tem 24.
+   *
+   * O veredito não mudava — as três estão secas de verdade — mas o número
+   * mudava, e número errado numa frase que alguém vai citar é o começo de uma
+   * investigação na direção errada. Quando a fonte não identifica a mesa
+   * (`desk: null`), o tick vale para quem mapear nele: é o caso da arbiter 1×,
+   * dona exclusiva de `arb_window_empty`.
+   */
+  const rastroDa = (source: string): DeskTick[] => {
+    const ev = TICK_EVENT_BY_SOURCE[source];
+    if (!ev) return [];
+    return (trilha.get(ev) ?? []).filter((t) => t.desk == null || t.desk === source);
+  };
+
   // Open book + unrealized (mark-to-market) + exposure per account.
   type OpenPos = { symbol: string; side: string; costUsd: number; unrealized: number };
   const unreal = new Map<string, number>(), exposure = new Map<string, number>(), openCount = new Map<string, number>();
@@ -198,10 +219,7 @@ export async function GET(): Promise<NextResponse> {
      * com contadores antigos e livro vazio está calada AGORA, e é sobre agora
      * que o veredito fala.
      */
-    const silencio = readSilence(
-      trilha.get(TICK_EVENT_BY_SOURCE[a.source] ?? "") ?? [],
-      cash, openCount.get(a.id) ?? 0, decididosLivro,
-    );
+    const silencio = readSilence(rastroDa(a.source), cash, openCount.get(a.id) ?? 0, decididosLivro);
 
     return {
       source: a.source, label: a.label,

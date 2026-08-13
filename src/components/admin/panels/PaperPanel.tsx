@@ -32,12 +32,14 @@ type PR = { rows: Row[]; totals: { startingUsd: number; equity: number; cashUsd:
  * quebrada, quem olhar vai "consertar" a certa.
  */
 const COR_DO_SILENCIO: Record<string, string> = {
-  operando:    "var(--adm-ink-4)",
-  disciplina:  "var(--adm-ink-3)",
-  seca:        "var(--adm-amber)",
-  fome:        "var(--adm-amber)",
-  quebra:      "var(--adm-red)",
-  sem_rastro:  "var(--adm-red)",
+  operando:     "var(--adm-ink-4)",
+  disciplina:   "var(--adm-ink-3)",
+  seca:         "var(--adm-amber)",
+  fome:         "var(--adm-amber)",
+  /** Decidiu e a carteira não abriu: o sinal existe, a posição não. */
+  nao_executou: "var(--adm-red)",
+  quebra:       "var(--adm-red)",
+  sem_rastro:   "var(--adm-red)",
 };
 type RepairState = {
   plan: Array<{ source: string; label: string; from: number; to: number; deltaUsd: number }>;
@@ -182,6 +184,8 @@ export default function PaperPanel() {
   // `retired` vem do registro de mesas — mesa fora do registro conta como VIVA,
   // porque o desconhecido não ganha dispensa.
   const arquivadas = todas.filter((r) => r.retired);
+  /** As mesas VIVAS — o denominador do card OPERANDO. */
+  const vivas = todas.filter((r) => !r.retired);
   const rows = verArquivo ? arquivadas : todas.filter((r) => !r.retired);
   const totalRet = data && data.totals.startingUsd > 0 ? (data.totals.equity / data.totals.startingUsd - 1) * 100 : 0;
 
@@ -387,13 +391,23 @@ export default function PaperPanel() {
                 subColor: data.totals.buracoUsd < -0.01 ? "var(--adm-amber)" : "var(--adm-green)" },
               { label: "REALIZADO", v: usdc(data.totals.realizedPnl), subColor: col(data.totals.realizedPnl) },
               { label: "ABERTAS", v: `${data.totals.openPositions}`, sub: `exp ${usd(data.totals.exposure)}` },
-              /* ⚠️ "TODAS AS MESAS ESTÃO RODANDO?" era uma pergunta que só o
-                 SQL respondia. Duas contagens: quantas mesas VIVAS estão
-                 caladas por um motivo que pede ação (disciplina NÃO conta), e
-                 quantas linhas somam dois livros. */
-              { label: "MESAS OK", v: `${todas.filter((r) => !r.retired).length - data.totals.comProblema}/${todas.filter((r) => !r.retired).length}`,
-                sub: data.totals.comProblema > 0 ? `${data.totals.comProblema} pede(m) ação` : "nenhuma pede ação",
-                subColor: data.totals.comProblema > 0 ? "var(--adm-amber)" : "var(--adm-green)" },
+              /**
+               * ⚠️ "TODAS AS MESAS ESTÃO RODANDO?" era pergunta que só o SQL
+               * respondia. Mas o card CONTA, não absolve.
+               *
+               * A primeira versão dizia "11/11 · nenhuma pede ação" — verde,
+               * tranquilizador, e ao lado de quatro mesas que não operam há
+               * dez dias. Silêncio explicado não é defeito, e mesmo assim é
+               * silêncio: quem olha o topo do painel precisa saber quantas
+               * mesas estão de fato COM DINHEIRO NA RUA, não quantas foram
+               * absolvidas. O número que pede ação vira o subtítulo, e a
+               * ausência dele não vira um selo verde.
+               */
+              { label: "OPERANDO", v: `${vivas.filter((r) => r.silencio.kind === "operando").length}/${vivas.length}`,
+                sub: data.totals.comProblema > 0
+                  ? `${data.totals.comProblema} pede(m) ação`
+                  : `${vivas.filter((r) => r.silencio.kind !== "operando").length} calada(s), com motivo`,
+                subColor: data.totals.comProblema > 0 ? "var(--adm-amber)" : "var(--adm-ink-4)" },
             ].map((t) => (
               <div key={t.label} style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "5px 8px" }}>
                 <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.08em" }}>{t.label}</div>

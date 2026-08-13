@@ -190,3 +190,78 @@ describe("deskTickFrom — os nomes não coincidem entre as fontes", () => {
     }
   });
 });
+
+/**
+ * ⚠️ OS QUATRO DEFEITOS QUE SÓ A CONFERÊNCIA CONTRA O BANCO ACHOU (13/08).
+ *
+ * A primeira versão da ligação passou em tsc, lint, 1213 testes e build — e
+ * teria mostrado ALARME FALSO em 4 das 11 mesas vivas. O que a pegou foi rodar
+ * `deskTickFrom` + `readSilence` de verdade sobre os 287 eventos reais de 24h e
+ * as 23 contas reais, e LER a saída linha por linha.
+ *
+ * É a invariante nº 20 outra vez: teste verde não é execução observada.
+ */
+describe("o que a conferência contra dados reais reprovou", () => {
+  /** DEFEITO 1 — a mesa que explica cada recusa acendia como quebrada. */
+  it("FREYJA: 414 ofertas com 410 motivos escritos NÃO é problema", () => {
+    // 46 ticks recusando 9 cada, todos com motivo, e nada tomado.
+    const ticks = Array.from({ length: 46 }, () => ({
+      offered: 9, taken: 0,
+      skipped: Array.from({ length: 9 }, (_, i) => ({ symbol: `T${i}`, reason: "faca caindo" })),
+    }));
+    const v = readSilence(ticks, 1000, 0, 0);
+    expect(v.kind).toBe("disciplina");
+    expect(v.isProblem).toBe(false);
+    expect(v.action).toContain("motivo");
+  });
+
+  /** ⚠️ A COBERTURA É EXIGIDA: um motivo solto não cala o controle inteiro. */
+  it("mas 9 recusas com UM motivo só continuam sendo problema", () => {
+    const v = readSilence([{ offered: 9, taken: 0, skipped: [{ symbol: "T", reason: "x" }] }], 1000, 0, 0);
+    expect(v.isProblem).toBe(true);
+  });
+
+  /** DEFEITO 2 — `arb2_window_empty` não grava `why`, só as duas colunas. */
+  it("a janela do arbiter2 vira motivo pela ARITMÉTICA quando falta o `why`", () => {
+    const t = deskTickFrom("arb2_window_empty", { source: "arbiter2_3x", ceil_pct: 0.3, floor_pct: 0.6, over_ceiling: 0 });
+    expect(t.skipped?.[0].reason).toContain("aritmética");
+    expect(readSilence([t], 300, 0, 0).isProblem).toBe(false);
+  });
+
+  /**
+   * ⚠️ E SÓ QUANDO A CONTA FECHA. Inventar motivo em cima de causa desconhecida
+   * é pior que não ter motivo: ninguém procuraria a de verdade.
+   */
+  it("com piso ABAIXO do teto não inventa motivo nenhum", () => {
+    const t = deskTickFrom("arb2_window_empty", { source: "arbiter2", ceil_pct: 0.6, floor_pct: 0.3 });
+    expect(t.skipped).toBeNull();
+    expect(readSilence([t], 300, 0, 0).isProblem).toBe(true);
+  });
+
+  /** DEFEITO 3 — três mesas dividem `arb2_window_empty` e liam 71 em vez de 24. */
+  it("o tick carrega o dono, para cada mesa ler só o rastro dela", () => {
+    expect(deskTickFrom("arb2_window_empty", { source: "arbiter2_5x" }).desk).toBe("arbiter2_5x");
+    // `arb_window_empty` (a 1×) não identifica: vale para quem mapear nele.
+    expect(deskTickFrom("arb_window_empty", { why: "x" }).desk).toBeNull();
+  });
+
+  /**
+   * DEFEITO 4 — o sexto estado. A FREYJA gerou 19 sugestões desde 03/08, que
+   * RESOLVERAM no torneio, e a carteira de papel dela nunca abriu nada.
+   * Nos cinco estados antigos isso saía como "disciplina · nenhuma tomada" —
+   * rótulo literalmente falso sobre uma mesa que tinha decidido 4 vezes.
+   */
+  it("decidiu e a carteira não abriu é estado PRÓPRIO, e vence a disciplina", () => {
+    const v = readSilence([{ offered: 9, taken: 4, skipped: [{ symbol: "T", reason: "x" }] }], 1000, 0, 0);
+    expect(v.kind).toBe("nao_executou");
+    expect(v.isProblem).toBe(true);
+    expect(v.label).toContain("4");
+    // O silêncio está na EXECUÇÃO, e o texto tem que mandar olhar lá.
+    expect(v.action).not.toContain("playbook」");
+    expect(v.action).toContain("abertura");
+  });
+
+  it("mas uma mesa que decidiu E abriu continua 'operando'", () => {
+    expect(readSilence([{ offered: 9, taken: 4 }], 1000, 2, 0).kind).toBe("operando");
+  });
+});

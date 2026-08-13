@@ -44,10 +44,23 @@ export interface DeskTick {
   skipped?: Array<{ symbol: string; reason: string }> | null;
   /** A mesa quebrou neste tick. */
   erro?: string | null;
+  /**
+   * ⚠️ DE QUEM É ESTE TICK, quando várias mesas dividem o mesmo `event_type`.
+   *
+   * `arb2_window_empty` é emitido pelas TRÊS variantes do Arbiter 2.0 e traz o
+   * dono em `metadata.source`. Sem este campo, cada uma lia os ticks das outras
+   * duas junto com os seus — e a tela dizia "nenhum candidato em 71 ticks"
+   * quando o rastro real de cada uma tem 24. Errar o denominador não muda o
+   * veredito aqui, mas muda a FRASE, e a frase é o que alguém vai citar.
+   *
+   * `null` = a fonte não identifica a mesa; o tick vale para quem mapear nele.
+   */
+  desk?: string | null;
 }
 
 export type SilenceKind =
   | "disciplina"   // recebeu e recusou — o sistema funcionando
+  | "nao_executou" // DECIDIU e a carteira não abriu — o sinal existe, a posição não
   | "fome"         // sem caixa para abrir
   | "seca"         // nada chegou
   | "quebra"       // o tick registrou erro
@@ -118,6 +131,39 @@ export function readSilence(
 
   const ofertas = ticks.reduce((s, t) => s + (t.offered ?? 0), 0);
   const vetos = ticks.reduce((s, t) => s + (t.vetoedByRecord ?? 0), 0);
+  const tomadas = ticks.reduce((s, t) => s + (t.taken ?? 0), 0);
+
+  /**
+   * ⚠️⚠️ O SEXTO ESTADO — "decidiu, e a carteira não abriu" (13/08).
+   *
+   * Este módulo nasceu para separar cinco silêncios e ficou seis dias afirmando
+   * que eram cinco. A conferência da rota contra o banco de verdade achou o que
+   * faltava, e ele estava na mesa mais quieta do painel.
+   *
+   * A FREYJA (`strat_dex`) gerou **19 sugestões desde 03/08** — elas estão no
+   * `zion_suggestions`, com alvo e stop, e RESOLVERAM (`hit_stop`,
+   * `hit_target`). O torneio mediu todas. A carteira de papel dela nunca abriu
+   * **uma única posição** e continua com os $1.000 intactos.
+   *
+   * Nos cinco estados antigos isso caía em `disciplina`, com o rótulo
+   * "nenhuma tomada" — que é literalmente falso: ela tomou 4 decisões só nas
+   * últimas 24h. O silêncio não estava na DECISÃO, estava na EXECUÇÃO, e os
+   * dois lugares pedem investigações que não se parecem: recusa se lê no
+   * playbook, execução se lê no preço de pool / `canEnter` / caixa.
+   *
+   * ⚠️ E ele vem ANTES da disciplina de propósito. Uma mesa que decide e não
+   * executa também recusou candidatos no mesmo tick — as duas condições são
+   * verdadeiras ao mesmo tempo, e a que precisa de gente é esta.
+   */
+  if (tomadas > 0) {
+    return {
+      kind: "nao_executou",
+      label: `decidiu ${tomadas} vez(es) e a carteira não abriu nada`,
+      action: "o sinal está no ledger e a posição não existe — conferir o caminho de "
+        + "abertura (preço do pool, `canEnter`, piso de caixa), não o playbook",
+      isProblem: true,
+    };
+  }
 
   /**
    * ⚠️ DISCIPLINA NÃO É PROBLEMA, e esta é a linha mais importante do módulo.
@@ -135,17 +181,40 @@ export function readSilence(
     };
   }
 
+  const motivos = ticks.flatMap((t) => t.skipped ?? []);
+
   if (ofertas > 0) {
+    /**
+     * ⚠️ RECUSA EXPLICADA NÃO É DEFEITO — o caso da FREYJA (13/08).
+     *
+     * Esta linha dizia `isProblem: true` com a ação "conferir por que o bracket
+     * não fechou". Mas a FREYJA reporta o motivo de CADA recusa: em 24h foram
+     * 414 candidatos, 4 aproveitados e **410 motivos escritos** — um para cada
+     * um dos 410 restantes. Ela já tinha respondido a pergunta que o texto
+     * mandava fazer, e mesmo assim acendia igual a uma mesa quebrada.
+     *
+     * É a armadilha da URÐR outra vez, com outra roupa: em 06/08 a mesa que
+     * recusava por VETO DO HISTÓRICO parecia morta; agora era a que recusava
+     * por GEOMETRIA. As duas documentam a recusa, e o alarme punia justamente
+     * quem documenta.
+     *
+     * ⚠️ A COBERTURA É EXIGIDA, não presumida. Se a fonte explicou menos
+     * recusas do que fez, o resto continua sem explicação e o alarme fica de
+     * pé — senão bastaria escrever UM motivo para calar o controle inteiro.
+     */
+    const recusas = ofertas - tomadas; // `tomadas` é 0 aqui: o ramo acima já saiu
+    const explicadas = motivos.length >= recusas && recusas > 0;
     return {
       kind: "disciplina",
       label: `${ofertas} oferta(s), nenhuma tomada`,
-      action: "conferir por que o bracket não fechou — o veto não foi do histórico",
-      isProblem: true,
+      action: explicadas
+        ? `todas as ${recusas} recusas têm motivo: ${[...new Set(motivos.map((m) => m.reason))].slice(0, 3).join(" · ")}`
+        : "conferir por que o bracket não fechou — o veto não foi do histórico",
+      isProblem: !explicadas,
     };
   }
 
   // Chegou aqui: ticks existem, sem erro, com caixa, e zero ofertas em todos.
-  const motivos = ticks.flatMap((t) => t.skipped ?? []);
   return {
     kind: "seca",
     label: `nenhum candidato em ${ticks.length} ticks`,
@@ -216,7 +285,27 @@ export function deskTickFrom(eventType: string, meta: Meta | null | undefined): 
    * PREMISSAS que tornam a janela vazia por aritmética (piso 0,55% > teto
    * 0,30%). Confundir os dois manda consertar a coleta em vez do custo.
    */
-  const why = typeof m.why === "string" ? m.why : null;
+  const whyBruto = typeof m.why === "string" ? m.why : null;
+
+  /**
+   * ⚠️ E `arb2_window_empty` NÃO GRAVA `why` — só `ceil_pct` e `floor_pct`.
+   *
+   * Achado ao conferir a rota contra o banco de verdade: a arbiter (1×) saía
+   * como seca COM motivo e as três variantes 2.0 como seca SEM motivo, que é o
+   * veredito que acusa a fonte de estar caída. A causa das quatro é idêntica —
+   * o piso de custo acima do teto de credibilidade — e as duas colunas que
+   * provam isso estavam no metadado das quatro.
+   *
+   * ⚠️ A DERIVAÇÃO SÓ ACONTECE QUANDO A ARITMÉTICA FECHA. Se `floor <= ceil` a
+   * janela não é vazia por conta, e inventar um motivo aqui seria pior que não
+   * ter nenhum: colocaria uma explicação plausível em cima de uma causa
+   * desconhecida, e ninguém procuraria a de verdade.
+   */
+  const piso = num(m.floor_pct), teto = num(m.ceil_pct);
+  const why = whyBruto ?? (piso != null && teto != null && piso > teto
+    ? `piso de custo ${piso}% acima do teto de credibilidade ${teto}% — janela vazia por aritmética`
+    : null);
+
   const skipped = Array.isArray(m.skipped)
     ? (m.skipped as Array<{ symbol?: unknown; reason?: unknown }>).map((s) => ({
         symbol: String(s?.symbol ?? "—"), reason: String(s?.reason ?? "—"),
@@ -231,5 +320,6 @@ export function deskTickFrom(eventType: string, meta: Meta | null | undefined): 
     vetoedByRecord: num(m.vetoedByRecord),
     skipped,
     erro: erro ?? (eventType.endsWith("_error") ? "tick registrou erro" : null),
+    desk: typeof m.source === "string" ? m.source : null,
   };
 }
