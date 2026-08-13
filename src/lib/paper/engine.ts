@@ -14,6 +14,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { DESKS as DESK_LIST } from "@/lib/zion/desks";
 import { getOHLCV } from "@/lib/api/geckoterminal";
+import { recordEvent } from "@/lib/admin/track";
 
 // Round-trip execution cost (fees + slippage, both legs) — mirrors the flywheel
 // so paper P&L is net, not gross. Default 0.2%.
@@ -211,6 +212,36 @@ export async function ensurePaperAccounts(db: Db): Promise<void> {
 
 interface PaperAccount { id: string; source: string; starting_usd: number; cash_usd: number; realized_pnl_usd: number; wins: number; losses: number; }
 
+/**
+ * A chave do par (carteira, símbolo).
+ *
+ * ⚠️ MAIÚSCULA SEMPRE. O ledger guarda o símbolo como a fonte mandou, e
+ * `gateioSpot` é consultado em maiúscula — um `ada` vindo de uma fonte e um
+ * `ADA` de outra virariam duas chaves distintas, e o guarda-duplicata deixaria
+ * as duas passarem justamente no caso que ele existe para pegar.
+ */
+export function chaveSimbolo(accountId: string, symbol: string): string {
+  return `${accountId}:${symbol.toUpperCase()}`;
+}
+
+/**
+ * Os pares (carteira, símbolo) em que há posição VIVA E ABERTA agora.
+ *
+ * ⚠️ OS DOIS FILTROS SÃO OBRIGATÓRIOS, e por motivos opostos. Sem
+ * `status === "open"`, uma mesa que já FECHOU ADA ficaria proibida de operar
+ * ADA para sempre — o guarda viraria uma lista negra permanente. Sem
+ * `archived_at == null`, uma posição retirada da medição continuaria bloqueando
+ * a mesa por uma exposição que não existe mais.
+ */
+export function simbolosAbertos(
+  posicoes: ReadonlyArray<{ account_id: string; symbol: string; status: string; archived_at: string | null }>,
+): Set<string> {
+  return new Set(
+    posicoes.filter((p) => p.status === "open" && p.archived_at == null)
+            .map((p) => chaveSimbolo(p.account_id, p.symbol)),
+  );
+}
+
 /** Open new positions: each wallet market-enters its source's still-open signals
  *  (with a bracket) that it hasn't taken yet, at the live Gate.io fill, sized by
  *  available cash. Returns how many were opened. */
@@ -251,15 +282,40 @@ export async function openPaperPositions(): Promise<number> {
   // constraint — e o insert é EM LOTE, então UMA duplicata matava o lote
   // inteiro, levando junto as posições novas e legítimas. Daí as amostras
   // minúsculas. A segunda metade do estrago está no débito, logo abaixo.
-  const held = await selectAllRows<{ account_id: string; suggestion_id: string }>(
+  const held = await selectAllRows<{ account_id: string; suggestion_id: string; symbol: string; status: string; archived_at: string | null }>(
     // inclui-arquivadas: o dedup protege a chave UNIQUE (account, suggestion),
     // que não conhece arquivamento. Filtrar aqui faria a mesa TENTAR reabrir
     // uma posição arquivada; o upsert ignoraria em silêncio e o trabalho seria
     // desperdiçado a cada tick, para sempre.
-    (from, to) => db.from("paper_positions").select("account_id, suggestion_id")
+    (from, to) => db.from("paper_positions").select("account_id, suggestion_id, symbol, status, archived_at")
       .order("id", { ascending: true }).range(from, to),
   );
   const taken = new Set(held.map((h) => `${h.account_id}:${h.suggestion_id}`));
+
+  /**
+   * ⚠️⚠️ UMA POSIÇÃO POR SÍMBOLO POR MESA — e a amostra que isto salva (13/08).
+   *
+   * A fila é processada por ordem de chegada e uma sugestão pode esperar mais
+   * de um tick para virar posição. Em 13/08 às 19:31 a VÖLUNDR abriu ADA DUAS
+   * VEZES no mesmo instante: a sugestão das 18:00 estava encalhada e a das
+   * 19:30 chegou por cima. As duas preencheram ao MESMO preço (0,18162), com o
+   * mesmo playbook (`range_reversion`) e o mesmo alvo. Os stops diferiam na
+   * quinta casa decimal. A SKAÐI e a URÐR fizeram idêntico, no mesmo segundo.
+   *
+   * O estrago é duplo, e o segundo é o grave:
+   *
+   *  1. EXPOSIÇÃO — $100 na mesma ideia onde o mandato manda $50.
+   *  2. AMOSTRA — as duas vão bater o mesmo alvo ou o mesmo stop, juntas, e o
+   *     ledger vai registrar DOIS trades. A contagem de fechados é a régua de
+   *     confiança do laboratório inteiro (a coluna FECH. fica âmbar abaixo de
+   *     10 justamente por isso). Dois trades que carregam a informação de um
+   *     inflam essa régua sem inflar o que ela mede — é a mesma família do
+   *     `expired ≠ win/loss` do flywheel: contar como parcela algo que não é.
+   *
+   * A sugestão preterida NÃO é descartada: ela continua `open` e vira posição
+   * quando a mesa sair de ADA. Adiar é o comportamento certo; empilhar não.
+   */
+  const jaDentro = simbolosAbertos(held);
 
   // Current champion (cull engine, alavanca 3) — best-effort, null when unset.
   let champion: string | null = null;
@@ -289,17 +345,56 @@ export async function openPaperPositions(): Promise<number> {
   };
   const inserts: PaperInsert[] = [];
 
+  /**
+   * ⚠️⚠️ POR QUE A SUGESTÃO NÃO VIROU POSIÇÃO — o buraco entre decidir e
+   * executar, que não tinha rastro nenhum (13/08).
+   *
+   * A FREYJA (`strat_dex`) gerou 19 sugestões desde 03/08. Todas com alvo e
+   * stop, todas resolveram no torneio (`hit_stop`, `hit_target`), e cada uma
+   * ficou `open` de 3 a 14 HORAS — tempo de sobra para dezenas de ticks deste
+   * abridor. A carteira de papel dela nunca abriu **uma única posição**.
+   *
+   * Não dava para saber por quê, e a razão é esta linha:
+   *
+   *     if (fill == null || !canEnter(...)) continue;
+   *
+   * **Duas causas diferentes num `continue` só**, e mudas. "não consegui preço
+   * do pool" e "o preço saiu da faixa de entrada" pedem investigações opostas —
+   * a primeira é a FONTE, a segunda é o MERCADO — e do lado de fora as duas
+   * têm exatamente a mesma aparência: nada acontece.
+   *
+   * ⚠️ E foi instrumentação, não raciocínio, que quebrou o ciclo da taxa em
+   * 11/08: três hipóteses erradas caíram no minuto em que passamos a gravar o
+   * que MANDAMOS ao lado do que VOLTOU. Aqui é a mesma forma — o abridor passa
+   * a dizer, por mesa, quantas recusou e por quê.
+   */
+  const recusas = new Map<string, Record<string, number>>();
+  const nota = (source: string, motivo: string) => {
+    const r = recusas.get(source) ?? {};
+    r[motivo] = (r[motivo] ?? 0) + 1;
+    recusas.set(source, r);
+  };
+
   for (const s of sugg) {
     const acc = accBySource.get(s.source);
-    if (!acc) continue;
-    if (taken.has(`${acc.id}:${s.id}`)) continue;
+    if (!acc) { nota(s.source, "sem_carteira"); continue; }
+    // `ja_pega` é o estado NORMAL: a sugestão já virou posição e continua
+    // aberta no ledger de sinais. Conta, mas não acusa (ver o filtro abaixo).
+    if (taken.has(`${acc.id}:${s.id}`)) { nota(s.source, "ja_pega"); continue; }
+    // `jaDentro` cresce DENTRO do laço: duas sugestões do mesmo símbolo podem
+    // chegar no mesmo tick, e ler só o estado do banco deixaria as duas passar.
+    if (jaDentro.has(chaveSimbolo(acc.id, s.symbol))) { nota(s.source, "ja_no_simbolo"); continue; }
     const onChain = s.chain && s.pool_address;
     const fill = onChain ? poolPx.get(`${s.chain}|${s.pool_address}`) : px.get(s.symbol.toUpperCase());
-    if (fill == null || !canEnter(s.side, fill, s.target_price, s.stop_price)) continue;
+    // ⚠️ SEPARADOS DE PROPÓSITO — ver o comentário acima. Juntar os dois foi o
+    // que deixou a FREYJA dez dias sem executar e sem ninguém saber de quê.
+    if (fill == null) { nota(s.source, onChain ? "sem_preco_de_pool" : "sem_preco_de_cex"); continue; }
+    if (!canEnter(s.side, fill, s.target_price, s.stop_price)) { nota(s.source, "preco_fora_da_faixa"); continue; }
     const cashAvail = Number(acc.cash_usd) - (spent.get(acc.id) ?? 0);
     const champMult = s.source === champion ? CHAMPION_MULT : 1;
     const size = sizePosition(cashAvail, Number(acc.starting_usd), convictionFactor(s.probability) * champMult);
-    if (size <= 0) continue; // out of capital
+    if (size <= 0) { nota(s.source, "sem_caixa"); continue; } // out of capital
+    jaDentro.add(chaveSimbolo(acc.id, s.symbol));
     inserts.push({
       account_id: acc.id, suggestion_id: s.id, source: s.source, symbol: s.symbol, side: s.side,
       qty: size / fill, entry_price: fill, cost_usd: size,
@@ -308,6 +403,24 @@ export async function openPaperPositions(): Promise<number> {
     });
     spent.set(acc.id, (spent.get(acc.id) ?? 0) + size);
     taken.add(`${acc.id}:${s.id}`);
+  }
+
+  /**
+   * A mesa que RECEBEU sugestão e não abriu NADA neste tick — e o porquê.
+   *
+   * ⚠️ `ja_pega` fica de fora do gatilho: uma mesa cujas sugestões já viraram
+   * posição está funcionando, e acusá-la faria o evento disparar sempre, o que
+   * é a mesma coisa que não disparar nunca.
+   */
+  const abriuPorFonte = new Set(inserts.map((i) => i.source));
+  for (const [source, motivos] of recusas) {
+    if (abriuPorFonte.has(source)) continue;
+    const semJaPega = Object.entries(motivos).filter(([k]) => k !== "ja_pega");
+    if (semJaPega.length === 0) continue;
+    recordEvent("paper_open_skip", { meta: {
+      source, ...Object.fromEntries(semJaPega),
+      why: "a mesa tinha sugestão aberta e o abridor não executou nenhuma",
+    } });
   }
 
   if (inserts.length === 0) return 0;
