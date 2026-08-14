@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DESKS, type DeskSector } from "@/lib/zion/desks";
+import { DESKS, isArquivada, type DeskSector } from "@/lib/zion/desks";
 import { PLAYBOOKS } from "@/lib/zion/playbooks";
 
 /**
@@ -173,6 +173,53 @@ describe("capital declarado e subtítulo legível", () => {
     expect(arquivo.length).toBeGreaterThan(0);
     for (const d of arquivo) {
       expect(d.capitalWhy, `${d.source}`).toMatch(/arquivad|histór/i);
+    }
+  });
+});
+
+/**
+ * ⚠️ O REGISTRO PRECISA VALER — a MUNINN e a GERI operando aposentadas (13/08).
+ *
+ * As duas estão declaradas aqui com todas as letras: "mesa arquivada · rodada
+ * encerrada", "o capital é histórico, NÃO alocação ativa", `status: valhalla`.
+ * E às 20:01 de 13/08 abriram ARB com esse capital, porque o cron do torneio
+ * gateava só por `pause_tournament` e pela lista de `culled` — nunca pelo
+ * `status`. Uma mesa pode estar fora dos dois E arquivada ao mesmo tempo.
+ *
+ * O painel esconde as aposentadas atrás do botão do ARQUIVO, então elas
+ * movimentavam capital numa aba que ninguém abre.
+ */
+describe("isArquivada — o registro como trava, não como comentário", () => {
+  it("MUNINN e GERI são arquivadas", () => {
+    expect(isArquivada("kimi_scan")).toBe(true);
+    expect(isArquivada("mistral_scan")).toBe(true);
+  });
+
+  it("nenhuma mesa VIVA é confundida com arquivada", () => {
+    for (const d of DESKS.filter((x) => x.status === "live")) {
+      expect(isArquivada(d.source), d.source).toBe(false);
+    }
+  });
+
+  /**
+   * ⚠️ MESA FORA DO REGISTRO CONTA COMO VIVA — mesma regra do painel desde
+   * 05/08: o desconhecido não ganha dispensa. Se um `source` novo sumisse
+   * calado por não estar registrado, o defeito seria pior que o original.
+   */
+  it("source desconhecido NÃO é tratado como arquivado", () => {
+    expect(isArquivada("mesa_que_nunca_existiu")).toBe(false);
+    expect(isArquivada("")).toBe(false);
+  });
+
+  /**
+   * A coerência que o defeito violava: toda mesa arquivada declara o setor de
+   * arquivo. Se alguém marcar `valhalla` e esquecer o setor (ou o contrário),
+   * as duas leituras voltam a discordar — e foi a discordância entre duas
+   * leituras da mesma coisa que criou o problema.
+   */
+  it("arquivada e D_arquivo andam sempre juntas", () => {
+    for (const d of DESKS) {
+      expect(d.status === "valhalla", d.source).toBe(d.sector === "D_arquivo");
     }
   });
 });

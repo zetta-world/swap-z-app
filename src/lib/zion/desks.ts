@@ -525,6 +525,34 @@ export function deskFor(source: string): Desk | null {
   return BY_SOURCE.get(source) ?? null;
 }
 
+/**
+ * ⚠️ ESTA MESA ESTÁ ARQUIVADA? — e por que a pergunta virou função (13/08).
+ *
+ * A MUNINN e a GERI estão declaradas aqui, com todas as letras:
+ *
+ *     subtitle:   "mesa arquivada · rodada encerrada"
+ *     capitalWhy: "arquivada — o capital é histórico, NÃO alocação ativa"
+ *     status:     "valhalla"   ·   sector: "D_arquivo"
+ *
+ * E em 13/08 às 20:01 as duas abriram posição de ARB com esse capital
+ * "histórico". O cron do torneio nunca consultou `status`: ele gateia por
+ * `pause_tournament` e pela lista de `culled`, e uma mesa pode estar fora das
+ * duas e arquivada ao mesmo tempo. Este arquivo se declara "fonte única de
+ * verdade sobre QUEM é cada agente" no cabeçalho, e sobre este ponto ele não
+ * era fonte de nada — era um comentário que o produto não lia.
+ *
+ * ⚠️ E o efeito era invisível de propósito: o painel esconde as aposentadas
+ * atrás do botão do ARQUIVO. As duas movimentavam capital de papel numa aba
+ * que ninguém abre, e o número delas entrava nas somas.
+ *
+ * ⚠️ MESA FORA DO REGISTRO CONTA COMO VIVA. É a mesma regra que o painel já
+ * seguia desde 05/08: o desconhecido não ganha dispensa. Um `source` novo que
+ * ninguém registrou deve continuar operando e aparecendo, não sumir calado.
+ */
+export function isArquivada(source: string): boolean {
+  return BY_SOURCE.get(source)?.status === "valhalla";
+}
+
 /** Nome de exibição — cai no `source` cru quando a mesa não está registrada. */
 export function deskName(source: string): string {
   return BY_SOURCE.get(source)?.name ?? source;
