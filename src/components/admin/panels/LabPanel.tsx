@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import {
+  razaoRetornoTombo, lerRazao, PORQUE_SEM_RAZAO, UNIDADE_DO_RETORNO,
+} from "@/lib/lab/retorno-tombo";
 
 /**
  * O LABORATÓRIO — as 26 estratégias, uma família por vez.
@@ -44,6 +47,7 @@ type Estrategia = {
   lastRunAt: string | null;
   lastStatus: "ok" | "falhou" | "rodando" | null;
   lastNetPct: number | null; lastNetAnnualizedPct: number | null;
+  lastMaxDrawdownPct: number | null;
   lastSampleN: number | null; lastVerdict: string | null; lastVerdictText: string | null;
   runs: number;
 };
@@ -244,6 +248,34 @@ export default function LabPanel() {
                             n={e.lastSampleN ?? 0}
                             {(e.lastSampleN ?? 0) < 30 && " · amostra curta"}
                           </span>
+                          {/* ⚠️ RETORNO ÷ TOMBO — o tombo era gravado e nunca lido.
+                              A coberta rende 13× mais que o funding e é só 1,7×
+                              melhor por unidade de tombo; sem esta célula os dois
+                              números pareciam diferir só no tamanho.
+                              A unidade é EXIGIDA: vantagem e nível não se ordenam
+                              na mesma coluna (invariante nº 17). */}
+                          {(() => {
+                            const r = razaoRetornoTombo(
+                              e.lastNetAnnualizedPct, e.lastMaxDrawdownPct,
+                              UNIDADE_DO_RETORNO[e.slug] ?? "desconhecida",
+                            );
+                            if (r.razao === null) {
+                              return (
+                                <span style={{ color: "var(--adm-ink-4)" }} title={PORQUE_SEM_RAZAO[r.motivo]}>
+                                  ret/tombo —
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                style={{ color: r.razao >= 1 ? "var(--adm-green)" : "var(--adm-ink-3)" }}
+                                title={`${lerRazao(r.razao)} · numerador em ${r.unidade}`}
+                              >
+                                ret/tombo <b>{r.razao.toFixed(2)}</b>
+                                {r.unidade === "vantagem" && " (vantagem)"}
+                              </span>
+                            );
+                          })()}
                         </>
                       ) : e.lastStatus === "falhou" ? (
                         <span style={{ color: "var(--adm-red)" }}>última rodada FALHOU — abra para ver o motivo</span>

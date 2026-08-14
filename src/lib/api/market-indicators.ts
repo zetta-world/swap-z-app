@@ -225,6 +225,40 @@ export function calcATR(candles: Candle[], period = 14): number | null {
   return atr;
 }
 
+/**
+ * ATR como SÉRIE, alinhada às velas — o mesmo Wilder do `calcATR`.
+ *
+ * ⚠️ POR QUE UMA SÉRIE, e não chamar `calcATR` num laço (14/08).
+ *
+ * O motor de tendência precisa do ATR **de cada dia** para dimensionar o stop
+ * daquele dia. Chamar `calcATR(velas.slice(0, i))` para cada `i` daria o número
+ * certo e seria quadrático — 1.000 velas viram 500.000 iterações de suavização.
+ * Pior: seriam DUAS definições do mesmo conceito vivendo lado a lado, que é o
+ * que a invariante nº 7 existe para impedir. Aqui a suavização é a mesma, o
+ * `trueRanges` é o mesmo, e só o que se devolve muda.
+ *
+ * ⚠️ ALINHAMENTO: `tr[i]` descreve a vela `i+1` (True Range precisa do
+ * fechamento anterior). A semente é a média dos `period` primeiros TRs, e ela
+ * descreve a vela de índice `period`. Antes disso o ATR **não existe** e o
+ * valor é `null` — não zero. ATR zero é uma vela sem amplitude, e um stop
+ * calculado sobre ele seria colado no preço; `null` obriga quem lê a pular o
+ * dia, que é o comportamento correto durante o aquecimento.
+ */
+export function calcATRSerie(candles: Candle[], period = 14): Array<number | null> {
+  const out: Array<number | null> = new Array(candles.length).fill(null);
+  if (candles.length < period + 1) return out;
+  const tr = trueRanges(candles);
+  if (tr.length < period) return out;
+
+  let atr = tr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  out[period] = atr;
+  for (let i = period; i < tr.length; i++) {
+    atr = (atr * (period - 1) + tr[i]) / period;
+    out[i + 1] = atr;
+  }
+  return out;
+}
+
 // ─── ADX (Average Directional Index, Wilder) ────────────────────────────
 
 interface ADXResult {
