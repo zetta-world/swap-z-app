@@ -92,12 +92,51 @@ primeira tela depois de uma viagem de metrô seria a mesma que ele deixou.
 
 ---
 
+## O AVISO DE RODADA NOVA — o buraco que a decisão acima abriu · 🟢
+
+Deixar os painéis de botão sem relógio é a decisão certa **e cobra um preço**:
+se o cron, outra aba ou outro dia produziu uma rodada mais nova, a tela continua
+mostrando a antiga **sem dizer que é antiga**. Número velho apresentado como
+número atual é a família de defeito que este repositório persegue desde o
+começo, aqui na forma mais inocente: um painel que simplesmente não sabe.
+
+⚠️ **A resposta certa não é recarregar — é AVISAR.** Recarregar apagaria o
+resultado que o dono está lendo e o trocaria por outro sem ele pedir. Quem
+decide se quer o novo é ele; o trabalho é garantir que ele SAIBA que existe.
+
+- `GET /admin/api/lab/ultima` — só o carimbo de data por slug. Não reusa
+  `/admin/api/lab` porque aquela faz três consultas POR ESTRATÉGIA (quase
+  noventa idas ao banco para 28 estratégias), e numa tela aberta o dia inteiro
+  isso repetiria para sempre.
+- `temRodadaNova()` — a decisão, pura e testada.
+- `<AvisoRodadaNova>` — usa o mesmo `useAutoRefresh`. Um aviso que sondasse por
+  conta própria seria a segunda política de atualização do painel, e duas
+  políticas divergem, é só questão de tempo.
+
+Ligado em **7 painéis**: Funding, Rendimento, Liquidez, DexCex, Combinacao,
+Variancia, RotacaoGrade.
+
+### ⚠️ A folga de 5 segundos, e por que ela não é frescura
+
+`vistoEm` é marcado no relógio do **navegador** quando a resposta chega;
+`started_at` é o relógio do **banco** quando a rodada começou. Não são o mesmo
+relógio, e a rodada sempre começa ANTES de a resposta chegar.
+
+Sem folga, **a própria medição que o dono acabou de rodar se anunciaria como
+"mais recente que a tela"** — o aviso acusaria a si mesmo, toda vez, e em uma
+semana ninguém mais olharia para ele. Tem teste.
+
+### E painel vazio não é painel desatualizado
+
+`vistoEm = 0` (nada na tela ainda) não avisa. Dizer "há algo mais recente que o
+nada que você está vendo" é verdade e é inútil — o botão logo ao lado já diz o
+mesmo, melhor.
+
+---
+
 ## O QUE ISTO NÃO RESOLVE
 
 - Os escopos do ping ainda são cinco (`stats`, `tier`, `killswitch`, `events`,
   `audit`). Não há escopo para "abriu posição" ou "terminou medição" — quem
   quer saber disso assina `events`, que é grosso. Um escopo por assunto tornaria
   a atualização mais barata, e é trabalho para quando incomodar.
-- Painel de botão continua sem saber que existe resultado novo. O certo ali não
-  é relógio: é um aviso de "há uma rodada mais recente que a que você está
-  vendo". Fica anotado, não feito.

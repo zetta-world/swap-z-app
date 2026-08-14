@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import AvisoRodadaNova from "../AvisoRodadaNova";
 import { corDoResultado, legendaDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
@@ -51,6 +52,8 @@ export default function RotacaoGradePanel() {
   const [data, setData] = useState<Dados | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [rodando, setRodando] = useState(false);
+  /** Quando a tela recebeu o que mostra — alimenta o aviso de rodada nova. */
+  const [vistoEm, setVistoEm] = useState(0);
 
   const medir = useCallback(async () => {
     setRodando(true); setErro(null);
@@ -58,7 +61,7 @@ export default function RotacaoGradePanel() {
       const res = await fetch("/admin/api/rotacao-grade", { method: "POST" });
       const body = await res.json() as Dados & { error?: string; detail?: string };
       if (!res.ok) { setErro(`${body.error ?? res.status}${body.detail ? ` — ${body.detail}` : ""}`); return; }
-      setData(body);
+      setData(body); setVistoEm(Date.now());
     } catch (e) { setErro(String(e).slice(0, 160)); }
     finally { setRodando(false); }
   }, []);
@@ -71,6 +74,7 @@ export default function RotacaoGradePanel() {
       icon="🔁"
       source="data-api.binance.vision"
     >
+      <AvisoRodadaNova slugs={["momentum_rotation", "grid_bot"]} vistoEm={vistoEm} />
       <button className="adm-btn" onClick={() => void medir()} disabled={rodando}>
         {rodando ? "medindo rotação e grade…" : "🔁 MEDIR ROTAÇÃO E GRADE"}
       </button>

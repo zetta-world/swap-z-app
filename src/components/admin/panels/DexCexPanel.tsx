@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import AvisoRodadaNova from "../AvisoRodadaNova";
 import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
@@ -59,6 +60,8 @@ const COR: Record<Dados["veredito"]["status"], string> = {
 export default function DexCexPanel() {
   const [d, setD] = useState<Dados | null>(null);
   const [rodando, setRodando] = useState(false);
+  /** Quando a tela recebeu o que mostra — alimenta o aviso de rodada nova. */
+  const [vistoEm, setVistoEm] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
   async function rodar() {
@@ -67,7 +70,7 @@ export default function DexCexPanel() {
       const res = await fetch("/admin/api/dex-cex", { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(`${json.error ?? res.status}${json.detail ? ` — ${json.detail}` : ""}`);
-      setD(json);
+      setD(json); setVistoEm(Date.now());
     } catch (e) { setErr(String(e)); } finally { setRodando(false); }
   }
 
@@ -79,6 +82,7 @@ export default function DexCexPanel() {
       subtitle="o atraso do bloco contra o preço vivo — a última arbitragem do mapa"
       icon="⛓" source="li.quest (cotação real de DEX) + livro de CEX andado por tamanho"
     >
+      <AvisoRodadaNova slugs={["dex_cex_arb"]} vistoEm={vistoEm} />
       <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         A arbitragem CEX↔CEX foi reprovada por <b>velocidade</b>. O DEX não tem esse problema:
         o preço on-chain só muda quando um bloco fecha, então existe uma janela lenta <b>por

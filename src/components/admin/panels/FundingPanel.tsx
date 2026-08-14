@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import AvisoRodadaNova from "../AvisoRodadaNova";
 import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
@@ -71,6 +72,8 @@ const pct = (n: number | null | undefined, d = 2) =>
 export default function FundingPanel() {
   const [d, setD] = useState<Dados | null>(null);
   const [rodando, setRodando] = useState(false);
+  /** Quando a tela recebeu o que mostra — alimenta o aviso de rodada nova. */
+  const [vistoEm, setVistoEm] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
   async function rodar() {
@@ -79,7 +82,7 @@ export default function FundingPanel() {
       const res = await fetch("/admin/api/funding", { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.status);
-      setD(json);
+      setD(json); setVistoEm(Date.now());
     } catch (e) { setErr(String(e)); } finally { setRodando(false); }
   }
 
@@ -107,6 +110,7 @@ export default function FundingPanel() {
       subtitle="comprado no spot + vendido no perpétuo — renda neutra, sem depender de velocidade"
       icon="🪙" source="binance/fundingRate (histórico realizado)"
     >
+      <AvisoRodadaNova slugs={["funding_basis"]} vistoEm={vistoEm} />
       <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         A arbitragem spot-spot foi reprovada por velocidade: o spread entre CEXes vive
         milissegundos e a mesa olha a cada minuto. O funding não tem esse problema — é

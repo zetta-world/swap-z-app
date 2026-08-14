@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import AvisoRodadaNova from "../AvisoRodadaNova";
 import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
@@ -64,6 +65,8 @@ const COR: Record<Linha["veredito"]["status"], string> = {
 export default function RendimentoPanel() {
   const [d, setD] = useState<Dados | null>(null);
   const [rodando, setRodando] = useState(false);
+  /** Quando a tela recebeu o que mostra — alimenta o aviso de rodada nova. */
+  const [vistoEm, setVistoEm] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [aberta, setAberta] = useState<string | null>(null);
 
@@ -73,7 +76,7 @@ export default function RendimentoPanel() {
       const res = await fetch("/admin/api/rendimento", { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(`${json.error ?? res.status}${json.detail ? ` — ${json.detail}` : ""}`);
-      setD(json);
+      setD(json); setVistoEm(Date.now());
     } catch (e) { setErr(String(e)); } finally { setRodando(false); }
   }
 
@@ -83,6 +86,7 @@ export default function RendimentoPanel() {
       subtitle="C1–C4 · quanto sobra do APY depois de entrar e sair, por faixa de capital"
       icon="🏦" source="yields.llama.fi (APY) + li.quest (custo real de entrada)"
     >
+      <AvisoRodadaNova slugs={["liquid_staking", "tokenized_treasury", "stablecoin_lending", "restaking"]} vistoEm={vistoEm} />
       <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         Aave rende 3,5–9% e o Tesouro tokenizado 3,3–8% — isso está publicado e não precisa
         de nós. O que ninguém publica é quanto sobra depois do gás e da troca, e a resposta
