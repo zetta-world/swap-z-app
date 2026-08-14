@@ -172,7 +172,8 @@ export function conferirLivro(
           + "concluída não pode ter (linha anterior à Fase 10)",
         fazer_o_que: "remedir: a conta é a mesma e o veredito sai com a palavra certa",
       });
-    } else if (ultimo && afirma && ultimo !== s.status) {
+    } else if (ultimo && afirma && ultimo !== s.status
+               && !(s.discordaDoLivroPorque ?? "").trim()) {
       /**
        * ⚠️ DISCORDAR NÃO É NECESSARIAMENTE ERRO DO REGISTRO.
        *
@@ -181,6 +182,17 @@ export function conferirLivro(
        * Quem estava errado era o resumo automático, não a leitura. Por isso o
        * texto oferece os DOIS caminhos — remedir com o veredito corrigido, ou
        * escrever por que o registro discorda de propósito.
+       *
+       * ⚠️ E ATÉ 14/08 O SEGUNDO CAMINHO NÃO EXISTIA. O texto mandava escrever
+       * a discordância e não havia ONDE — nenhum campo a recebia. Resultado: uma
+       * discordância pensada e uma esquecida acusavam igual, para sempre, e as
+       * duas viravam ruído permanente na lista. Um alarme que não pode ser
+       * respondido é um alarme que se aprende a ignorar, e aí ele deixa de valer
+       * para a linha que importa.
+       *
+       * `discordaDoLivroPorque` é esse lugar. Ele dispensa SÓ este tipo: veredito
+       * sem parcela, rodada pendurada e livro incoerente continuam acusando,
+       * porque nenhum deles é questão de leitura.
        */
       achados.push({
         slug: s.slug, nome: s.name, tipo: "livro_discorda",

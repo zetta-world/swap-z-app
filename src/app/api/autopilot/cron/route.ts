@@ -21,6 +21,8 @@ import {
 } from "@/lib/autopilot/positions-server";
 import type { AutopilotSessionRow, AutopilotRunRow, AutopilotPositionRow } from "@/lib/supabase/types";
 import type { CexId, CexCredentials, CexOrder } from "@/lib/cex/types";
+import { recordEvent } from "@/lib/admin/track";
+import { taxaEmUsd } from "@/lib/cex/taxa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,7 +60,6 @@ const RISK_EXPOSURE_USD: Record<string, number> = { conservador: 75, moderado: 2
 
 type RunRowT = Partial<AutopilotRunRow> & { wallet_address: string; exchange_id: string; status: string };
 
-const STABLE_FEE = new Set(["USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD", "USDP", "USD"]);
 
 /** Realized USD P&L of a filled SELL against a position's average cost. */
 function realizedFromSell(order: CexOrder, pos: AutopilotPositionRow): number | null {
@@ -69,10 +70,16 @@ function realizedFromSell(order: CexOrder, pos: AutopilotPositionRow): number | 
   const avgCost = Number(pos.base_amount) > 0 ? Number(pos.cost_usd) / Number(pos.base_amount) : 0;
   if (!(avgCost > 0)) return null;
   const costRemoved = avgCost * filledQty;
-  const feeCost = Number(order.fee?.cost ?? 0);
-  const feeCur  = (order.fee?.currency ?? "").toUpperCase();
-  const fee = feeCost > 0 && STABLE_FEE.has(feeCur) ? feeCost : 0;
-  const realized = proceeds - costRemoved - fee;
+  const taxa = taxaEmUsd(order, proceeds, filledQty, String(pos.pair ?? ""));
+  if (taxa.naoPrecificada) {
+    // Best-effort e sem `await`: o P&L não pode ficar refém do registro.
+    recordEvent("autopilot_taxa_nao_precificada", { meta: {
+      pair: pos.pair, moeda: taxa.naoPrecificada.moeda, valor: taxa.naoPrecificada.valor,
+      why: "taxa em moeda que não é stable nem a base do par — subtraída como ZERO, "
+        + "então o P&L realizado sai OTIMISTA e o stop de perda afrouxa",
+    } });
+  }
+  const realized = proceeds - costRemoved - taxa.usd;
   return Number.isFinite(realized) ? realized : null;
 }
 

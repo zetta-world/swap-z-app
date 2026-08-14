@@ -119,6 +119,25 @@ export interface LabStrategy {
    * ele: se o livro daqui vier a discordar, ele volta a reclamar.
    */
   measuredElsewhere?: string;
+  /**
+   * ⚠️ POR QUE O REGISTRO DISCORDA DO LIVRO — DE PROPÓSITO (14/08).
+   *
+   * `conferirLivro` sempre ofereceu três saídas para uma discordância: remedir,
+   * corrigir o registro, ou *"se a discordância for de propósito, escrevê-la"*.
+   * A terceira não tinha ONDE ser escrita. Sem campo, uma discordância pensada e
+   * uma esquecida ficam idênticas na tela — a mesma família de defeito que este
+   * laboratório persegue, agora dentro do próprio detector.
+   *
+   * ⚠️ E O TEXTO É EXIGIDO, não um booleano. `discordaDoLivro: true` calaria o
+   * alarme sem obrigar ninguém a defender a posição, e daqui a três meses
+   * ninguém saberia se foi decisão ou preguiça. Preencher isto é caro de
+   * propósito: é uma afirmação de que a LEITURA humana venceu o resumo
+   * automático, e ela precisa se sustentar sozinha.
+   *
+   * Só dispensa `livro_discorda`. Veredito sem parcela, rodada pendurada e
+   * livro incoerente continuam acusando — eles não são questão de leitura.
+   */
+  discordaDoLivroPorque?: string;
 }
 
 export const LAB_STRATEGIES: LabStrategy[] = [
@@ -347,6 +366,15 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "não diz nada sobre risco\", e MORTA afirmava as duas metades. O módulo sempre se "
       + "recusou a carimbar morta aqui, com teste-cicatriz próprio; o registro é que "
       + "afirmava mais do que foi pesado.",
+    discordaDoLivroPorque: "A rodada de 14/08 gravou EMPATE e o registro fica "
+      + "INCONCLUSIVA. Não é teimosia: EMPATE afirma \"medi e não há vantagem "
+      + "distinguível\", e essa frase cobre retorno E risco. A medição só pesou o "
+      + "RETORNO — o tombo dos três fluxos de piscina é zero POR CONSTRUÇÃO (retorno de "
+      + "piscina é apy/365, e APY positivo nunca gera dia negativo), então o risco que "
+      + "justificaria diversificar (emissor, despegue, fila de resgate) está inteiro FORA "
+      + "da série. Carimbar empate seria afirmar sobre uma metade que a série não contém. "
+      + "É a mesma correção feita em 11/08 quando o estado saiu de MORTA para "
+      + "INCONCLUSIVA, e vale igual contra EMPATE.",
   },
   {
     slug: "quarterly_basis",
@@ -468,6 +496,15 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "A janela de bloco existe — e não sobra dinheiro dentro dela. "
       + "⚠️ O livro gravou `morta` no dia 09 e o registro continuou dizendo `cinza` por dois "
       + "dias: a única linha em que a tela ignorava um veredito já escrito.",
+    discordaDoLivroPorque: "A rodada de 14/08 gravou VERDE — 7 pares, mediana +0,019% "
+      + "líquida, 4 de 7 positivos — e o registro fica MORTA assim mesmo, por duas razões "
+      + "que estão no texto da própria rodada. A primeira: ela mede uma janela de UM DIA, "
+      + "contra os 7 pares de 09/08 que deram −0,337%; um dia bom não desfaz a medição, "
+      + "troca de sinal com essa amostra é ruído. A segunda, e decisiva: o veredito diz "
+      + "\"isto é TETO, não captura — MEV compete no mesmo bloco e chega antes por "
+      + "construção\". Dezenove milésimos de ponto de teto teórico numa corrida que "
+      + "perdemos por construção não é receita; é o tamanho do que outra pessoa leva. "
+      + "Só muda de estado com captura MEDIDA, não com borda calculada.",
   },
   {
     slug: "liquidations",

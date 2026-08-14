@@ -186,13 +186,52 @@ export async function gateioSpot(symbols: string[]): Promise<Map<string, number>
 export async function poolKlines(chain: string, pool: string, fromMs: number, toMs: number): Promise<Candle[]> {
   const span = toMs - fromMs;
   const tf = span <= 12 * 3_600_000 ? "5m" : span <= 3 * 86_400_000 ? "1h" : "4h";
-  try {
-    const rows = await getOHLCV(chain, pool, tf, 300, "base");
-    return rows
-      .map((c) => ({ t: c.time * 1000, close: c.close, high: c.high, low: c.low }))
-      .filter((c) => Number.isFinite(c.high) && c.high > 0)
-      .sort((a, b) => a.t - b.t);
-  } catch { return []; }
+
+  /**
+   * ⚠️ ESCADA DE JANELA — e o que ela NÃO é (14/08).
+   *
+   * A FREYJA gerou 19 sugestões desde 03/08, todas com `chain` + `pool_address`,
+   * e a carteira de papel dela nunca abriu UMA posição. Descartei pelo banco o
+   * que dava: não é fila (cada sugestão ficou `open` de 3 a 14 HORAS), não é o
+   * caminho on-chain em geral (a ULLR abriu 1 das 4 dela, também com pool), não
+   * é caixa ($1.000 intactos).
+   *
+   * Sobraram DOIS candidatos, e eles moram no abridor: "não consegui preço do
+   * pool" e "o preço saiu da faixa de entrada". O `paper_open_skip` (13/08) vai
+   * dizer qual é — mas há uma coisa que dá para consertar sem saber a resposta.
+   *
+   * O abridor pede uma janela de 1 HORA, o que escolhe velas de 5 MINUTOS. Num
+   * pool fino a GeckoTerminal pode simplesmente não ter vela de 5m no período —
+   * e aí a lista volta vazia, sem erro, e o símbolo é pulado para sempre. Um
+   * pool com liquidez de sobra (o cbBTC da ULLR) tem; VELVET, CTR e afins podem
+   * não ter.
+   *
+   * ⚠️ ISTO NÃO É UM PALPITE SOBRE A CAUSA. Se a causa for o preço fora da
+   * faixa, esta escada não muda nada — ela é inerte. O que ela faz é **eliminar
+   * um dos dois candidatos**, de modo que a resposta do `paper_open_skip` fique
+   * sem ambiguidade. Três hipóteses erradas em 11/08 custaram um swap real do
+   * dono cada uma; a lição foi parar de adivinhar e passar a estreitar.
+   *
+   * ⚠️ E A PRIMEIRA RESPOSTA COM VELA VENCE. Não se mistura granularidade: uma
+   * vela de 4h e uma de 5m descrevem períodos diferentes, e concatenar as duas
+   * produziria uma série com buracos de escala que o resolvedor leria como
+   * movimento.
+   */
+  const escada: Array<"5m" | "1h" | "4h" | "1d"> = tf === "5m"
+    ? ["5m", "1h", "4h", "1d"]
+    : tf === "1h" ? ["1h", "4h", "1d"] : ["4h", "1d"];
+
+  for (const passo of escada) {
+    try {
+      const rows = await getOHLCV(chain, pool, passo, 300, "base");
+      const velas = rows
+        .map((c) => ({ t: c.time * 1000, close: c.close, high: c.high, low: c.low }))
+        .filter((c) => Number.isFinite(c.high) && c.high > 0)
+        .sort((a, b) => a.t - b.t);
+      if (velas.length > 0) return velas;
+    } catch { /* fonte instável neste passo: tenta o próximo */ }
+  }
+  return [];
 }
 
 // ── DB orchestration ──────────────────────────────────────────────────────
