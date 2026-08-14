@@ -36,7 +36,7 @@ export default function AuditLogPanel() {
   // Initial load + slow heartbeat (realtime covers real changes)
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 120_000 : 30_000);
+    const t = setInterval(load, 30_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 

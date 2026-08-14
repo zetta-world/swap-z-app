@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 
 type Infra = { key: string; label: string; usdPerMonth: number; updatedAt: string | null; staleDays: number | null };
 type Report = {
@@ -31,7 +32,7 @@ export default function MarginPanel() {
     } catch (e) { setErr(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useAutoRefresh({ onRefresh: load, intervalMs: 90_000 });
 
   const save = async (key: string) => {
     const n = Number(draft.replace(",", "."));

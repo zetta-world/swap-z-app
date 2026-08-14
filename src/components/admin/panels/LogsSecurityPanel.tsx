@@ -33,7 +33,7 @@ export default function LogsSecurityPanel() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 90_000 : 45_000);
+    const t = setInterval(load, 45_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 

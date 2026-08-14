@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import AvisoRodadaNova from "../AvisoRodadaNova";
 import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
@@ -69,6 +70,8 @@ function corRho(v: number): string {
 export default function CombinacaoPanel() {
   const [d, setD] = useState<Dados | null>(null);
   const [rodando, setRodando] = useState(false);
+  /** Quando a tela recebeu o que mostra — alimenta o aviso de rodada nova. */
+  const [vistoEm, setVistoEm] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
   async function rodar() {
@@ -77,7 +80,7 @@ export default function CombinacaoPanel() {
       const res = await fetch("/admin/api/combinacao", { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(`${json.error ?? res.status}${json.detail ? ` — ${json.detail}` : ""}`);
-      setD(json);
+      setD(json); setVistoEm(Date.now());
     } catch (e) { setErr(String(e)); } finally { setRodando(false); }
   }
 
@@ -89,6 +92,7 @@ export default function CombinacaoPanel() {
       subtitle="as rendas aprovadas juntas — a carteira ganha de concentrar na melhor?"
       icon="🧬" source="okx (funding) + yields.llama.fi/chart (histórico de APY)"
     >
+      <AvisoRodadaNova slugs={["carteira_verde", "funding_basis"]} vistoEm={vistoEm} />
       <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         A Fase 4 mostrou que <b>o gás não é a barreira — a correlação é</b>: ρ=0,07 no funding
         transforma 50 nomes em 12 apostas, e o 51º perpétuo não faz nada. O que pode funcionar

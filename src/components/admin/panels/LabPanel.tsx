@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import {
   razaoRetornoTombo, lerRazao, PORQUE_SEM_RAZAO, UNIDADE_DO_RETORNO,
 } from "@/lib/lab/retorno-tombo";
@@ -99,7 +100,7 @@ export default function LabPanel() {
     } catch (e) { setErr(String(e)); } finally { setCarregando(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useAutoRefresh({ onRefresh: load, intervalMs: 90_000 });
 
   const daFamilia = (d?.estrategias ?? []).filter((e) => e.family === aba);
   const capitalDaFamilia = daFamilia.reduce((s, e) => s + (e.capitalRequiredUsd > 1 ? e.capitalRequiredUsd : 0), 0);

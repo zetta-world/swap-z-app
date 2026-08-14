@@ -55,7 +55,7 @@ export default function PlatformEventsPanel() {
   // Initial load + heartbeat (slower when realtime is live)
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 180_000 : 60_000);
+    const t = setInterval(load, 60_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 

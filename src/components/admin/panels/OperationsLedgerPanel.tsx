@@ -35,7 +35,7 @@ export default function OperationsLedgerPanel() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 120_000 : 60_000);
+    const t = setInterval(load, 60_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 

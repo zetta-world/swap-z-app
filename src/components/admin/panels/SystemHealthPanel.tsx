@@ -43,7 +43,7 @@ export default function SystemHealthPanel() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 60_000 : 45_000);
+    const t = setInterval(load, 45_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 

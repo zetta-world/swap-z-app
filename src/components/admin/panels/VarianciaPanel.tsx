@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import AvisoRodadaNova from "../AvisoRodadaNova";
 import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 /**
@@ -67,6 +68,8 @@ const COR: Record<Dados["veredito"]["status"], string> = {
 export default function VarianciaPanel() {
   const [d, setD] = useState<Dados | null>(null);
   const [rodando, setRodando] = useState(false);
+  /** Quando a tela recebeu o que mostra — alimenta o aviso de rodada nova. */
+  const [vistoEm, setVistoEm] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
   async function rodar() {
@@ -75,7 +78,7 @@ export default function VarianciaPanel() {
       const res = await fetch("/admin/api/variancia", { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(`${json.error ?? res.status}${json.detail ? ` — ${json.detail}` : ""}`);
-      setD(json);
+      setD(json); setVistoEm(Date.now());
     } catch (e) { setErr(String(e)); } finally { setRodando(false); }
   }
 
@@ -87,6 +90,7 @@ export default function VarianciaPanel() {
       subtitle="o que sobra de vender volatilidade — implícita menos a que de fato aconteceu"
       icon="🌪" source="deribit/DVOL (implícita) + binance.vision (realizada)"
     >
+      <AvisoRodadaNova slugs={["covered_call"]} vistoEm={vistoEm} />
       <div style={{ fontSize: 12, color: "var(--adm-ink-4)", lineHeight: 1.7, marginBottom: 8 }}>
         O mapa dizia que a IV do BTC a 50–80% contra 15–20% do S&P era <i>&quot;o prêmio mais
         gordo deste mercado&quot;</i>. Isso compara o <b>preço do seguro</b>, não o lucro de
