@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 
 /**
  * RECEITA DE TAXA — C21/C22 (Fase 9.3).
@@ -59,7 +60,7 @@ export default function ReceitaPanel() {
       setData(await res.json() as Dados); setErro(null);
     } catch (e) { setErro(String(e).slice(0, 140)); }
   }, []);
-  useEffect(() => { void carregar(); }, [carregar]);
+  useAutoRefresh({ onRefresh: carregar, intervalMs: 90_000 });
 
   return (
     <TerminalPanel

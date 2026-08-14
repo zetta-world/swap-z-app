@@ -59,7 +59,7 @@ export default function TrafficPanel() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 180_000 : 120_000);
+    const t = setInterval(load, 120_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 

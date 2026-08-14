@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 
 /**
  * A COORTE DO ARBITER — o painel que responde "está indo bem mesmo?".
@@ -100,7 +101,7 @@ export default function ArbiterCohortPanel() {
     } catch (e) { setErr(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useAutoRefresh({ onRefresh: load, intervalMs: 90_000 });
 
   // O motivo viaja com a ação, montado a partir do que ESTA medição achou.
   // Um texto fixo diria a mesma coisa daqui a um ano, quando o motivo for outro.
