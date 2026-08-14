@@ -178,6 +178,27 @@ export const LAB_STRATEGIES: LabStrategy[] = [
       + "`lab_runs`, então não há rodada aqui para conferir.",
   },
   {
+    slug: "tendencia_baixa_freq",
+    name: "Tendência de baixa frequência",
+    subtitle: "EMA 50/200 · stop 2×ATR · risco fixo · walk-forward · $5.000",
+    family: "direcional",
+    capitalRequiredUsd: 5000,
+    capitalWhy: "mesmo capital das outras direcionais, senão a comparação contra elas mede "
+      + "o tamanho da posição em vez da estratégia. Com teto de 25% por posição, $5.000 "
+      + "comportam quatro posições simultâneas sem que uma vire a carteira inteira",
+    status: "cinza",
+    hypothesis: "⚠️ A PERGUNTA NÃO É 'tendência funciona?' — isso já foi medido "
+      + "(`trend_ma50_long_only`, verde, três janelas de 04/08: mercado −63% deu +27,7%, "
+      + "mercado +0,1% deu +18,5%). A pergunta é se SEGURAR POR SEMANAS amortiza o pedágio "
+      + "que matou a alta frequência: a grade pagou 54,27% de custo para render 3,39% bruto, "
+      + "e a biblioteca de playbooks perde −0,610%/trade com a borda menor que o custo. "
+      + "Se a resposta for não, o achado é sobre o NÍVEL de custo com que operamos — "
+      + "corretora e execução — e não sobre sinal. "
+      + "⚠️ Primeira estratégia deste laboratório medida FORA DA AMOSTRA "
+      + "(`walk-forward.ts`): o risco por trade é escolhido no treino e o número que vale "
+      + "sai só do teste.",
+  },
+  {
     slug: "buy_and_hold",
     name: "Comprar e segurar",
     subtitle: "o denominador de tudo · $5.000 · janela de 174 dias",

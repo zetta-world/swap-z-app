@@ -213,6 +213,16 @@ export interface StrategyRow extends LabStrategy {
   lastSampleN: number | null;
   lastVerdict: string | null;
   lastVerdictText: string | null;
+  /**
+   * ⚠️ O TOMBO, que era gravado desde sempre e nunca LIDO (14/08).
+   *
+   * `max_drawdown_pct` estava em `lab_results` desde o começo e nenhuma tela o
+   * buscava. Sem ele a coberta (9,26%/ano, tombo 46,10%) e o funding (0,68%,
+   * tombo 5,88%) apareciam como se a única diferença fosse o tamanho. É a
+   * invariante nº 14 na forma mais cara: um dado que a medição paga para
+   * produzir e ninguém consome.
+   */
+  lastMaxDrawdownPct: number | null;
   runs: number;
 }
 
@@ -301,7 +311,7 @@ export async function readLab(db: Db): Promise<StrategyRow[]> {
     if (run?.id && run.status === "ok") {
       const { data } = await db
         .from("lab_results")
-        .select("net_pct, net_annualized_pct, sample_n, verdict, verdict_text")
+        .select("net_pct, net_annualized_pct, sample_n, max_drawdown_pct, verdict, verdict_text")
         .eq("run_id", run.id)
         .maybeSingle();
       result = data ?? null;
@@ -332,6 +342,7 @@ export async function readLab(db: Db): Promise<StrategyRow[]> {
       lastSampleN: result?.sample_n == null ? null : Number(result.sample_n),
       lastVerdict: result?.verdict == null ? null : String(result.verdict),
       lastVerdictText: result?.verdict_text == null ? null : String(result.verdict_text),
+      lastMaxDrawdownPct: result?.max_drawdown_pct == null ? null : Number(result.max_drawdown_pct),
       runs: count ?? 0,
     });
   }

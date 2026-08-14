@@ -690,6 +690,43 @@ leitura foi feita na mão, no SQL, fora dele.
 
 ---
 
+## 30. Erro de ALINHAMENTO não produz exceção — produz RESULTADO
+
+**Cicatriz:** 14/08, montando a série do motor de tendência. `calcEMA(closes,
+period)` devolve `n − period + 1` valores, e `out[0]` descreve a vela de índice
+`period − 1`:
+
+```
+out[j]   ↔  vela[j + period − 1]
+vela[i]  ↔  out[i − period + 1]
+```
+
+Eu indexei `curta[i]` e `longa[i]` direto. Com isso a EMA de 200 saía
+`undefined` para **toda vela a partir da 201** (o array tem 201 posições numa
+série de 400), virava `null`, e o motor **nunca entrava**.
+
+⚠️ **E não haveria erro nenhum.** A medição rodaria, gravaria "0 trades", o
+walk-forward devolveria dobras legíveis com retorno 0,00% e o veredito sairia
+como se fosse notícia sobre o mercado: *"a estratégia não achou oportunidade"*.
+Uma frase perfeitamente plausível sobre uma estratégia que nunca foi executada.
+
+⚠️ **NENHUM TESTE DE "RODA SEM QUEBRAR" VERIA ISSO.** O que pegou foi um teste
+de RELAÇÃO:
+
+> *"em série que só sobe, a EMA curta fica ACIMA da longa depois do
+> aquecimento"*
+
+Uma afirmação sobre o SIGNIFICADO do número, não sobre sua existência. Testes de
+tipo (`é number?`) e de ausência de exceção passam felizes por cima de um
+indicador deslocado; só uma relação que o dado precisa obedecer denuncia.
+
+> Ao consumir uma série calculada por outro módulo, a primeira pergunta é **"o
+> índice `i` daqui é o índice `i` de lá?"** — e a resposta pertence a um teste,
+> não a uma leitura do código. Séries com aquecimento (EMA, ATR, MACD, ADX)
+> quase nunca começam onde a série de preço começa.
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:
