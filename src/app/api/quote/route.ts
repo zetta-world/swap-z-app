@@ -400,6 +400,29 @@ export async function GET(req: NextRequest) {
           chainId: lfArgs.fromChainId, target: q.transactionRequest?.to, spender: q.estimate?.approvalAddress,
           taxaPedidaBps: taxa.bps, taxaDestinatario: taxa.destinatario,
           taxaAceita: taxaAceitaLiFi,
+          /**
+           * ⚠️⚠️ A LISTA CRUA, E POR QUE ELA FALTAVA (14/08).
+           *
+           * O caminho do 0x grava `taxaRespostaCrua: q.fees` — o bloco inteiro,
+           * sem filtro. Este aqui gravava SÓ o resultado filtrado, e o filtro é
+           * uma expressão regular sobre `name`/`description`.
+           *
+           * Consequência: se a LI.FI nomear a nossa taxa de qualquer coisa que
+           * não case com `integrator|z-swap|referrer`, `taxaAceita` volta `[]` —
+           * **exatamente igual** a "a LI.FI ignorou o pedido". Duas situações,
+           * uma aparência. É o defeito que custou três swaps do dono de
+           * madrugada em 11/08, e o que quebrou aquele ciclo foi justamente
+           * gravar o cru ao lado do interpretado.
+           *
+           * ⚠️ E AQUI ELE É PIOR QUE NO 0x, porque a cobrança da LI.FI NUNCA foi
+           * conferida na cadeia. O `referrer` que mandamos pode ser campo de
+           * INDICAÇÃO e não destino da taxa de integrador — em várias APIs desse
+           * tipo o destinatário vive na configuração da conta, não no pedido. Se
+           * for o caso, toda troca ENTRE CADEIAS está saindo sem cobrar, e a
+           * tela não tem como notar. Enquanto ninguém abrir um explorador, isto
+           * é intenção, não receita (`docs/TESTE-DA-TAXA-EVM.md`).
+           */
+          taxaRespostaCrua: q.estimate?.feeCosts ?? null,
         } });
         alertarTaxaNaoRetida({
           aceita: taxaAceitaLiFi, bps: taxa.bps,

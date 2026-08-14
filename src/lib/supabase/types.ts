@@ -286,6 +286,8 @@ export type LabStrategyRow = {
   not_measurable_why:   string | null;
   /** Onde a medição vive, quando não vive no `lab_runs`. */
   measured_elsewhere:   string | null;
+  /** Por que o registro discorda do livro, DE PROPÓSITO (migração 0025). */
+  disagrees_with_ledger_why: string | null;
   created_at:           string;
   updated_at:           string;
 };

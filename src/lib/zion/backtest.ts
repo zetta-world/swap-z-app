@@ -477,10 +477,53 @@ export function extractSuggestion(
     if (regime === "TRENDING_DOWN" && side === "buy") return null;
   }
 
-  const entry = parsePrice(card.entryPrice ?? card.triggerPrice ?? "") || null;
-  const target = card.exits && card.exits[0] ? (parsePrice(card.exits[0].price) || null) : null;
-  const stop  = parsePrice(card.stopLoss ?? "") || null;
+  let entry = parsePrice(card.entryPrice ?? card.triggerPrice ?? "") || null;
+  let target = card.exits && card.exits[0] ? (parsePrice(card.exits[0].price) || null) : null;
+  let stop  = parsePrice(card.stopLoss ?? "") || null;
   const prob  = parsePrice(card.probability ?? "") || null;
+
+  /**
+   * ⚠️ O RESGATE DE ESCALA — item A7 da auditoria (14/08).
+   *
+   * `parsePrice("7.320")` devolve **7320**. A regra que faz isso é deliberada:
+   * quando há um separador só e os grupos parecem milhar, ela lê milhar, o que
+   * enviesa para o preço MAIOR — e preço maior numa compra dá quantidade menor,
+   * que é a direção segura (nunca gasta demais).
+   *
+   * O efeito colateral é que um preço legítimo entre 1 e 999 com exatamente 3
+   * decimais terminando em zero ("7.320" = 7,32) sai 1000× maior, bate no
+   * portão de escala logo abaixo e o card é **descartado em silêncio**. Todos
+   * os desdobramentos são fail-safe — nada de errado é operado — mas cobertura
+   * some sem deixar rastro, e sumir sem rastro é o que este repositório passa a
+   * vida separando de "não havia nada".
+   *
+   * ⚠️ POR QUE SÓ /1000, e por que a GEOMETRIA INTEIRA junto. A deriva
+   * documentada é sempre de mil (LINK a 7323 contra 7,32 real; DOT a 816 contra
+   * 0,816), e o viés do `parsePrice` só erra para MAIS — multiplicar não teria
+   * caso. E reescalar só a entrada quebraria a relação com alvo e stop: ou os
+   * três descem juntos, ou nenhum desce.
+   *
+   * ⚠️ E O RESGATE SÓ VALE SE ELE RESOLVE. A troca só acontece quando a entrada
+   * original está FORA da banda e a dividida está DENTRO. Sem essa condição
+   * isto viraria um dividir-por-mil oportunista, capaz de transformar um card
+   * genuinamente alucinado num card plausível — que é o oposto do portão.
+   *
+   * ⚠️ E DEIXA RASTRO. Um caminho de resgate no trajeto do dinheiro que ninguém
+   * lê é a invariante nº 14 esperando acontecer: se um dia ele passar a disparar
+   * o tempo todo, isso é notícia sobre o modelo, não um detalhe de parsing.
+   */
+  if (entry && entry > 0 && refPrice > 0
+      && Math.abs(entry / refPrice - 1) > 0.25
+      && Math.abs(entry / 1000 / refPrice - 1) <= 0.25) {
+    recordEvent("zion_escala_resgatada", { meta: {
+      symbol: base, entryLido: entry, entryCorrigido: entry / 1000, refPrice,
+      why: "preço entre 1 e 999 com 3 decimais terminando em zero é lido como milhar "
+        + "por `parsePrice` (viés seguro em compra); a geometria inteira desce junto",
+    } });
+    entry = entry / 1000;
+    if (target) target = target / 1000;
+    if (stop) stop = stop / 1000;
+  }
 
   // Scale sanity: the prompt says entryPrice = the CURRENT price, so it must be
   // within a sane band of the real ref_price. The model sometimes emits the

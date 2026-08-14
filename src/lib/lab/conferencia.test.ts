@@ -303,3 +303,54 @@ describe("o registro de verdade, conferido contra si mesmo", () => {
     }
   });
 });
+
+/**
+ * ⚠️ A TERCEIRA SAÍDA, QUE O TEXTO OFERECIA E NÃO EXISTIA (14/08).
+ *
+ * `conferirLivro` sempre disse "remedir, corrigir o registro, ou — se a
+ * discordância for de propósito — escrevê-la". A terceira não tinha campo. Uma
+ * discordância pensada e uma esquecida acusavam igual, e um alarme que não pode
+ * ser respondido é um alarme que se aprende a ignorar.
+ */
+describe("discordância declarada", () => {
+  const base = {
+    slug: "x", name: "X", subtitle: "s", family: "carrego" as const,
+    capitalRequiredUsd: 1000, capitalWhy: "w",
+  };
+  const livro = [{ slug: "x", rodadasOk: 3, ultimoVeredito: "verde" as const, penduradas: 0 }];
+
+  it("sem o motivo escrito, a discordância acusa", () => {
+    const r = conferirLivro([{ ...base, status: "morta" }], livro);
+    expect(r.map((d) => d.tipo)).toContain("livro_discorda");
+  });
+
+  it("com o motivo escrito, ela se cala", () => {
+    const r = conferirLivro(
+      [{ ...base, status: "morta", discordaDoLivroPorque: "a rodada mede TETO, não captura" }],
+      livro,
+    );
+    expect(r.map((d) => d.tipo)).not.toContain("livro_discorda");
+  });
+
+  it("motivo em branco NÃO conta como motivo", () => {
+    const r = conferirLivro([{ ...base, status: "morta", discordaDoLivroPorque: "   " }], livro);
+    expect(r.map((d) => d.tipo)).toContain("livro_discorda");
+  });
+
+  /** ⚠️ Dispensa SÓ este tipo. Os outros não são questão de leitura. */
+  it("não silencia veredito sem parcela", () => {
+    const r = conferirLivro(
+      [{ ...base, status: "verde", discordaDoLivroPorque: "porque sim" }],
+      [{ slug: "x", rodadasOk: 0, ultimoVeredito: null, penduradas: 0 }],
+    );
+    expect(r.map((d) => d.tipo)).toContain("veredito_sem_parcela");
+  });
+
+  it("não silencia rodada pendurada", () => {
+    const r = conferirLivro(
+      [{ ...base, status: "morta", discordaDoLivroPorque: "declarado" }],
+      [{ slug: "x", rodadasOk: 3, ultimoVeredito: "verde" as const, penduradas: 2 }],
+    );
+    expect(r.map((d) => d.tipo)).toContain("rodada_pendurada");
+  });
+});

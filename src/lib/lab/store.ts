@@ -60,6 +60,7 @@ export async function syncRegistry(db: Db): Promise<{ synced: number }> {
      */
     not_measurable_why: s.notMeasurableWhy ?? null,
     measured_elsewhere: s.measuredElsewhere ?? null,
+    disagrees_with_ledger_why: s.discordaDoLivroPorque ?? null,
     updated_at: new Date().toISOString(),
   }));
   const { error } = await db.from("lab_strategies").upsert(rows, { onConflict: "slug" });
@@ -292,7 +293,7 @@ export async function lerLivro(db: Db): Promise<LivroDaEstrategia[]> {
 export async function readLab(db: Db): Promise<StrategyRow[]> {
   const { data: strategies, error } = await db
     .from("lab_strategies")
-    .select("id, slug, name, subtitle, family, capital_required_usd, capital_why, status, hypothesis, killed_why, not_measurable_why, measured_elsewhere")
+    .select("id, slug, name, subtitle, family, capital_required_usd, capital_why, status, hypothesis, killed_why, not_measurable_why, measured_elsewhere, disagrees_with_ledger_why")
     .order("family", { ascending: true });
   if (error) throw new Error(`readLab: ${error.message}`);
 
@@ -335,6 +336,7 @@ export async function readLab(db: Db): Promise<StrategyRow[]> {
       killedWhy: s.killed_why ? String(s.killed_why) : undefined,
       notMeasurableWhy: s.not_measurable_why ? String(s.not_measurable_why) : undefined,
       measuredElsewhere: s.measured_elsewhere ? String(s.measured_elsewhere) : undefined,
+      discordaDoLivroPorque: s.disagrees_with_ledger_why ? String(s.disagrees_with_ledger_why) : undefined,
       lastRunAt: run?.started_at ? String(run.started_at) : null,
       lastStatus: (run?.status as StrategyRow["lastStatus"]) ?? null,
       lastNetPct: result?.net_pct == null ? null : Number(result.net_pct),
