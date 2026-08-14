@@ -12,7 +12,7 @@
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
-import { DESKS as DESK_LIST } from "@/lib/zion/desks";
+import { DESKS as DESK_LIST, isArquivada } from "@/lib/zion/desks";
 import { getOHLCV } from "@/lib/api/geckoterminal";
 import { recordEvent } from "@/lib/admin/track";
 
@@ -376,6 +376,24 @@ export async function openPaperPositions(): Promise<number> {
   };
 
   for (const s of sugg) {
+    /**
+     * ⚠️ A SEGUNDA TRAVA, e ela fica no caminho do DINHEIRO de propósito.
+     *
+     * O gate do registro no cron do torneio (13/08) impede que uma mesa
+     * arquivada gere sugestão nova. Este aqui impede que uma sugestão que já
+     * existe — as 6 da MUNINN gravadas às 20:00 daquele dia, por exemplo —
+     * vire posição depois. As duas travas parecem redundantes e não são: a
+     * primeira governa o gasto de token, a segunda governa o capital.
+     *
+     * A regra deste repo é que o caminho do dinheiro FALHA FECHADO. Uma mesa
+     * declarada "o capital é histórico, não alocação ativa" não pode voltar a
+     * alocar porque uma linha antiga sobrou numa fila.
+     *
+     * ⚠️ Não conta como recusa que ACUSA: a mesa está arquivada por decisão, e
+     * disparar `paper_open_skip` por isso a cada tick transformaria o alarme em
+     * ruído permanente — que é a mesma coisa que não ter alarme.
+     */
+    if (isArquivada(s.source)) continue;
     const acc = accBySource.get(s.source);
     if (!acc) { nota(s.source, "sem_carteira"); continue; }
     // `ja_pega` é o estado NORMAL: a sugestão já virou posição e continua

@@ -624,6 +624,72 @@ asserção teria feito essa pergunta — asserção confirma o que já se suspei
 
 ---
 
+## 28. Uma DECLARAÇÃO que nenhum portão consulta é decoração, igual a código morto
+
+**Cicatriz:** 13/08. `src/lib/zion/desks.ts` abre dizendo que é *"a fonte única
+de verdade sobre QUEM é cada agente"*. Sobre a MUNINN e a GERI ele diz, com
+todas as letras:
+
+```
+subtitle:   "mesa arquivada · rodada encerrada"
+capitalWhy: "arquivada — o capital é histórico, NÃO alocação ativa"
+status:     "valhalla"   ·   sector: "D_arquivo"
+```
+
+Às **20:01 daquele mesmo dia** as duas abriram posição de ARB — com esse capital
+"histórico". O cron do torneio gateia por `pause_tournament` e pela lista de
+`culled`, e **nunca consultou `status`**. Uma mesa pode estar fora dos dois e
+arquivada ao mesmo tempo, e era exatamente o caso.
+
+⚠️ **E o efeito era invisível por construção:** o painel esconde as aposentadas
+atrás do botão do ARQUIVO. As duas movimentavam capital de papel numa aba que
+ninguém abre, e o resultado delas entrava nas somas do laboratório.
+
+A nº 25 é sobre CÓDIGO que ninguém importa. Esta é sobre DADO que ninguém lê: um
+campo declarativo com a palavra certa, num arquivo que se anuncia autoridade, e
+nenhum caminho de execução consultando. Do lado de fora as duas falham igual —
+a intenção está escrita e o sistema faz outra coisa.
+
+⚠️ **O portão do registro vem ANTES dos operacionais.** `pause_*` e `culled` são
+reversíveis pelo painel; `status` é a identidade da mesa. Um arquivamento que um
+kill-switch desfaz sem querer não é arquivamento.
+
+> `grep` o campo, não o arquivo: se `status`/`kind`/`tier` só aparece em
+> declarações e em telas, e nunca dentro de um `if` no caminho de execução, ele
+> não governa nada.
+
+---
+
+## 29. Três ticks não são um diagnóstico — nem quando os três concordam
+
+**Cicatriz:** 13/08, e é a segunda vez com o mesmo formato. Reportei que o MÍMIR
+(`strat_ai`) estava com *"`candidates: 0` em todo tick — uma mesa de IA inteira
+parada"*, e cheguei perto de "consertar" a função dela.
+
+Eu tinha olhado **três** ticks: 21:00, 21:30 e 22:00. Os três anteriores dizem o
+contrário:
+
+```
+18:00  candidates 2  brainRan true
+19:30  candidates 2  brainRan true    ← os ticks em que a VÖLUNDR gerou plano
+20:30  candidates 1  brainRan true
+```
+
+O cérebro roda, recebe candidatos e recusa. A mesa está **sã**.
+
+⚠️ **E o aviso estava escrito no arquivo que eu mesmo liguei nesta rodada.** O
+cabeçalho do `silence.ts` diz, sobre a URÐR: *"Eu mesmo quase errei o
+diagnóstico: olhei UM tick, vi `offered: 0`, e ia reportar 'desconectada'. Com
+os 142 a resposta é o contrário."* Escrevi a regra, liguei a função que a
+implementa, e caí nela na mesma sessão — porque a regra estava no código e a
+leitura foi feita na mão, no SQL, fora dele.
+
+> Silêncio observado numa janela curta não distingue "silêncio agora" de
+> "silêncio sempre". Antes de chamar uma mesa de quebrada: quantos ticks eu
+> olhei, e o que dizem os ticks em que as mesas VIZINHAS produziram?
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:
