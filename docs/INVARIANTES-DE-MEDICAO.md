@@ -727,6 +727,45 @@ indicador deslocado; só uma relação que o dado precisa obedecer denuncia.
 
 ---
 
+## 31. Cicatriz corrigida num painel NÃO viaja para os outros
+
+**Cicatriz:** 15/08. O pódio do torneio, na aba SWING:
+
+```
+🥇 GERI      +6,84%   WR 100%    1 decidido
+🥈 SLEIPNIR  +2,21%   WR 100%    1 decidido
+🥉 MUNINN    +0,70%   WR  33%    3 decididos
+#5 VÖLUNDR   −1,43%   WR   8%   13 decididos
+```
+
+Um trade que deu certo não é uma taxa de acerto de 100% — é um trade que deu
+certo. O `⚠` ao lado do DEC já dizia isso; **a medalha ao lado dizia o
+contrário, mais alto**, e a medalha é o que se lê primeiro.
+
+⚠️ **E ESTA MESMA CICATRIZ JÁ TINHA SIDO CORRIGIDA EM 06/08 — no painel da
+carteira.** O comentário está lá até hoje:
+
+> *"FECHADOS É A AMOSTRA, e ela estava escondida atrás de um clique. A tabela dá
+> MEDALHA por retorno — 🥇🥈🥉 — e o número de trades só aparecia ao expandir a
+> linha. Uma mesa com 2 trades e +8% recebia a medalha de uma com 200 e +5%."*
+
+Nove dias depois, o painel ao lado fazia exatamente aquilo. O dado nem estava
+faltando: a rota já devolvia `sufficientSample` e `minSample`, prontos, sem
+ninguém usar.
+
+⚠️ **A causa não é descuido, é ARQUITETURA:** cada painel ordena e destaca por
+conta própria. Não existe um lugar onde "como se ranqueia neste laboratório"
+esteja escrito uma vez — então a lição fica presa no arquivo onde doeu, e a
+próxima tabela nasce com o mesmo defeito, escrita por quem acabou de corrigi-lo.
+
+> Ao consertar uma leitura, a pergunta seguinte não é "está certo agora?" — é
+> **"que outra tela faz esta mesma conta?"**. `grep` pelo sintoma (`MEDAL`,
+> `sort(`, `slice(0, 3)`), não pelo arquivo. Se a resposta for "três telas", ou
+> as três mudam juntas ou a regra vira função compartilhada — porque a versão
+> não corrigida é a que alguém vai olhar.
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:
