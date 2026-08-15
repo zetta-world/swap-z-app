@@ -19,6 +19,7 @@ export type ModuleId =
   | "funding"
   | "rendimento"
   | "combinacao"
+  | "taxa-cex"
   | "variancia"
   | "dex-cex"
   | "liquidez"
@@ -233,6 +234,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "COMBINAR AS VERDES",
     subtitle: "as rendas aprovadas juntas — vale mais que concentrar na melhor?",
     icon: "\u{1F9EC}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.6,
+  },
+  {
+    id: "taxa-cex",
+    title: "CUSTO DA CORRETORA",
+    subtitle: "a taxa que a corretora publica contra a que o laborat\u00f3rio sup\u00f5e",
+    icon: "\u{1F4B1}",
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8.6,
