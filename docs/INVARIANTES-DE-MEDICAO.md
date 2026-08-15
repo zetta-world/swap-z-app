@@ -766,6 +766,48 @@ próxima tabela nasce com o mesmo defeito, escrita por quem acabou de corrigi-lo
 
 ---
 
+## 32. Ligar não é importar, e importar não é montar
+
+**Cicatriz:** 15/08, e é a mais direta de todas porque eu a cometi **duas vezes
+seguidas, na correção da própria invariante que a proíbe**.
+
+Construí `GET /admin/api/taxa-cex` — módulo puro, dez testes, três mutações
+verificadas, comentário de cicatriz. **E nenhum botão.** O dono foi procurar no
+painel e não achou. É a nº 25 (*"um controle que nenhum importador chama não
+existe"*) cometida horas depois de eu a registrar.
+
+Fui consertar. Criei o painel, adicionei a entrada no catálogo de módulos,
+escrevi o `import` no dashboard. `tsc` passou. `lint` passou. **1.338 testes
+passaram. O build passou.**
+
+E o painel **não renderizava**, porque o mapa `id → componente` nunca recebeu a
+linha. O `import` existia; o componente nunca era montado.
+
+⚠️ **NENHUMA FERRAMENTA VIU.** Um import não usado é aviso de lint na melhor das
+hipóteses — e aqui nem isso, porque `TaxaCexPanel` *estava* referenciado no
+arquivo pelo próprio import. Tipo certo, build limpo, teste verde, tela vazia.
+
+O que pegou foi um `grep` de três linhas perguntando *"quem me chama?"*:
+
+```
+grep -rn "TaxaCexPanel" --include=*.tsx src/ | grep -v "TaxaCexPanel.tsx:"
+```
+
+⚠️ **E A LIÇÃO É SOBRE A CADEIA, NÃO SOBRE O ARQUIVO.** Ligar uma peça neste
+projeto tem TRÊS elos, e cada um falha em silêncio:
+
+| elo | o que falha se faltar |
+|---|---|
+| a rota / o módulo existe | nada roda |
+| algum arquivo o **importa** | código morto, com teste verde (nº 25) |
+| algo o **monta / chama** | import órfão, com build limpo — **esta** |
+
+> Ao ligar qualquer coisa, percorra os três elos com `grep` e **veja a peça
+> aparecer na tela**. "Compilou" prova o primeiro elo. Só o olho prova o
+> terceiro. É a nº 27 aplicada à fiação em vez de ao dado.
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:
