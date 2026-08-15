@@ -150,10 +150,40 @@ export default function TournamentPanel() {
               <span style={{ color: "var(--adm-cyan)" }}>{STYLE_LABEL[style] ?? "SEM FICHA · registrar em desks.ts"}</span>
               <span style={{ color: DIR_COLOR[dir] ?? "var(--adm-ink-4)" }}>{DIR_LABEL[dir] ?? ""}</span>
             </div>
+          {/**
+            * ⚠️⚠️ MEDALHA EXIGE AMOSTRA (15/08).
+            *
+            * O pódio do SWING estava assim:
+            *
+            *   🥇 GERI      +6,84%   WR 100%   1 decidido
+            *   🥈 SLEIPNIR  +2,21%   WR 100%   1 decidido
+            *   🥉 MUNINN    +0,70%   WR  33%   3 decididos
+            *   #5 VÖLUNDR   −1,43%   WR   8%  13 decididos
+            *
+            * Um trade que deu certo não é uma taxa de acerto de 100% — é um
+            * trade que deu certo. O `⚠` ao lado do DEC já dizia isso, e a
+            * medalha ao lado dizia o contrário, mais alto.
+            *
+            * É a MESMA cicatriz que o painel da carteira corrigiu em 06/08
+            * ("uma mesa com 2 trades e +8% recebia a medalha de uma com 200 e
+            * +5%"). Foi corrigida lá e ficou de pé aqui — porque cada painel
+            * ordena por conta própria, e a lição não viaja sozinha entre eles.
+            *
+            * ⚠️ E NINGUÉM É ESCONDIDO. Quem não tem amostra sai do pódio e vai
+            * para uma lista logo abaixo, com o número à vista. Sumir com o
+            * agente seria trocar "engana" por "esconde", e este laboratório
+            * separa "não medi" de "medi zero" desde o começo.
+            */}
+          {(() => {
+            const comAmostra = group.filter((a) => a.sufficientSample);
+            const semAmostra = group.filter((a) => !a.sufficientSample);
+            return (
+          <>
+          {comAmostra.length > 0 && (
           <table className="adm-table">
             <thead><tr><th style={{ width: 26 }}></th><th>AGENTE</th><th>LÍQ./TRADE</th><th>WR</th><th>PF</th><th>DEC</th></tr></thead>
             <tbody>
-              {group.map((a, i) => {
+              {comAmostra.map((a, i) => {
                 const decided = a.wins + a.losses;
                 const isOpen = open === a.source;
                 return (
@@ -215,6 +245,29 @@ export default function TournamentPanel() {
               })}
             </tbody>
           </table>
+          )}
+
+          {/* Sem amostra: aparecem, com o número à vista, e SEM medalha. */}
+          {semAmostra.length > 0 && (
+            <div style={{ marginTop: comAmostra.length > 0 ? 6 : 0 }}>
+              <div style={{ fontSize: 10, color: "var(--adm-gold)", letterSpacing: "0.06em", marginBottom: 3 }}>
+                AINDA SEM AMOSTRA — abaixo de {data.minSample} decididos, o número é anedota
+              </div>
+              {semAmostra.map((a) => {
+                const decided = a.wins + a.losses;
+                return (
+                  <div key={a.source} style={{ display: "flex", gap: 8, fontSize: 11, padding: "1px 0", alignItems: "center" }}>
+                    <span style={{ color: kindColor(a.kind), flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span>
+                    <span style={{ color: "var(--adm-ink-4)", fontVariantNumeric: "tabular-nums", width: 58, textAlign: "right" }}>{pct(a.expectancyNet)}</span>
+                    <span style={{ color: "var(--adm-gold)", width: 64, textAlign: "right" }}>{decided}/{data.minSample} dec ⚠</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          </>
+          );
+          })()}
           </div>
           );
           })}
