@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
+import { nEfetivo, type TradeCorrelacionavel } from "@/lib/zion/amostra-efetiva";
 import { DESKS as DESK_LIST, deskFor, type Desk } from "@/lib/zion/desks";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,8 @@ type Agg = {
   probSum: number; probCount: number;   // stated-confidence calibration
   form: string[];                        // recent decided outcomes ("W"/"L")
   curvePts: Array<{ t: number; net: number }>; // resolved trades for the equity curve
+  /** Os decididos com símbolo + playbook + instante, para a amostra EFETIVA. */
+  decididos: TradeCorrelacionavel[];
 };
 
 function downsample(eq: number[], maxPts: number): number[] {
@@ -103,10 +106,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // Paginated full read (A1): PostgREST caps a plain select at 1000 rows with
   // no error — a truncated ledger would rank the agents on stale data.
-  type TourRow = { source: string | null; status: string; outcome_pct: number | null; probability: number | null; entry_price: number | null; target_price: number | null; stop_price: number | null; created_at: string; resolved_at: string | null };
+  type TourRow = { source: string | null; status: string; outcome_pct: number | null; probability: number | null; entry_price: number | null; target_price: number | null; stop_price: number | null; created_at: string; resolved_at: string | null;
+    /** ⚠️ Carregados desde 15/08 SÓ para a amostra efetiva — sem eles não dá
+     *  para saber se dois trades são a mesma ideia. */
+    symbol: string | null; kind: string | null };
   const rows = await selectAllRows<TourRow>((from, to) => {
     let q = db.from("zion_suggestions")
-      .select("source, status, outcome_pct, probability, entry_price, target_price, stop_price, created_at, resolved_at")
+      .select("source, status, outcome_pct, probability, entry_price, target_price, stop_price, created_at, resolved_at, symbol, kind")
       .is("archived_at", null) // live round only (docs/PLANO-ARQUIVO-RODADAS.md)
       .order("created_at", { ascending: true }).range(from, to);
     if (since) q = q.gte("created_at", since);
@@ -140,7 +146,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     let a = by.get(source);
     if (!a) {
       const { name, kind } = labelFor(source);
-      a = { source, name, kind, total: 0, open: 0, resolved: 0, wins: 0, losses: 0, expired: 0, sum: 0, winSum: 0, lossSum: 0, rrSum: 0, rrCount: 0, probSum: 0, probCount: 0, form: [], curvePts: [] };
+      a = { source, name, kind, total: 0, open: 0, resolved: 0, wins: 0, losses: 0, expired: 0, sum: 0, winSum: 0, lossSum: 0, rrSum: 0, rrCount: 0, probSum: 0, probCount: 0, form: [], curvePts: [], decididos: [] };
       by.set(source, a);
     }
     return a;
@@ -163,10 +169,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (r.status === "win" || r.status === "hit_target")      { a.wins++;   a.winSum  += oc; a.form.push("W"); }
     else if (r.status === "loss" || r.status === "hit_stop")  { a.losses++; a.lossSum += oc; a.form.push("L"); }
     else a.expired++;
+    /**
+     * ⚠️ OS DECIDIDOS GUARDADOS INTEIROS, para a amostra efetiva.
+     *
+     * Contar `wins + losses` diz quantas LINHAS existem; não diz quantas IDEIAS.
+     * Em 15/08 quatro decididos eram duas ideias — três deles eram o mesmo OP,
+     * mesmo playbook, mesma manhã. Sem símbolo e playbook aqui, não há como
+     * distinguir uma coisa da outra.
+     */
+    if (r.status === "hit_target" || r.status === "hit_stop") {
+      a.decididos.push({
+        symbol: r.symbol, kind: r.kind,
+        resolvidoEmMs: Date.parse(r.resolved_at ?? r.created_at),
+      });
+    }
   }
 
   const agents = [...by.values()].map((a) => {
     const decided = a.wins + a.losses;
+    const efetivo = nEfetivo(a.decididos);
     const gross = a.resolved > 0 ? a.sum / a.resolved : null;
     const winRate = decided > 0 ? a.wins / decided : null;
     const avgConfidence = a.probCount > 0 ? a.probSum / a.probCount : null;
@@ -189,8 +210,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       curve:         equityCurve(a.curvePts),                 // flywheel signal-edge curve (index 100)
       paperCurve:    paperCurve(startingBy.get(a.source) ?? 1000, paperPtsBy.get(a.source) ?? []),
       paperClosed:   (paperPtsBy.get(a.source) ?? []).length, // "matured" gate on the client
-      sufficientSample: decided >= MIN_SAMPLE,
-      sampleProgress: Math.min(1, decided / MIN_SAMPLE),
+      /**
+       * ⚠️ O PISO DE AMOSTRA OLHA A IDEIA, NÃO A LINHA (15/08).
+       *
+       * `decided` conta quantas linhas resolveram; `efetivo` conta quantas
+       * vezes o MERCADO falou. Três trades do mesmo símbolo, mesmo playbook e
+       * mesma manhã são uma fala só, e tratá-los como três confirmações
+       * independentes é o que colocava medalha em coincidência.
+       *
+       * ⚠️ A EXPECTÂNCIA ACIMA NÃO MUDA. Correlação não enviesa a média — ela
+       * infla a CONFIANÇA. Mexer no número seria consertar a coisa errada.
+       */
+      decidedEffective: efetivo,
+      sufficientSample: efetivo >= MIN_SAMPLE,
+      sampleProgress: Math.min(1, efetivo / MIN_SAMPLE),
       ...taxonomy(a.source),
     };
   });
@@ -222,6 +255,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       curve: equityCurve(closedRows.map((r) => ({ t: Date.parse(r.closed_at ?? ""), net: Number(r.pnl_pct) }))),
       paperCurve: paperCurve(startingBy.get(source) ?? 1000, paperPtsBy.get(source) ?? []),
       paperClosed: (paperPtsBy.get(source) ?? []).length,
+      /**
+       * ⚠️ AS MESAS NEUTRAS NÃO SÃO AGRUPADAS — e isto é declaração, não
+       * esquecimento (15/08).
+       *
+       * A amostra efetiva agrupa por símbolo + playbook + janela, e essas três
+       * coisas vivem em `zion_suggestions`. Um ciclo de arbitragem vem do livro
+       * de PAPEL, que não carrega playbook: não há como dizer se dois ciclos são
+       * a mesma ideia sem inventar o critério.
+       *
+       * Então aqui o efetivo é IGUAL ao bruto. É a direção otimista, e está
+       * escrita: quando um arbiter voltar a operar, esta linha precisa de um
+       * agrupamento próprio antes de o número dela valer como amostra.
+       */
+      decidedEffective: decided,
       sufficientSample: decided >= MIN_SAMPLE,
       sampleProgress: Math.min(1, decided / MIN_SAMPLE),
       ...taxonomy(source),

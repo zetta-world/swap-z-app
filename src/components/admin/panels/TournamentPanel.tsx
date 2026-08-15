@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { sampleLabel, shouldTint, NOISE_THRESHOLD } from "@/lib/admin/sample";
 import TerminalPanel from "../TerminalPanel";
+import { porQueEfetivoMenor } from "@/lib/zion/amostra-efetiva";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Agent = {
@@ -21,6 +22,8 @@ type Agent = {
   who: string | null; horizonHours: number | null; status: string | null;
   curve: number[];
   paperCurve: number[]; paperClosed: number;
+  /** Ideias distintas dentro dos decididos — ver `amostra-efetiva.ts`. */
+  decidedEffective?: number;
   sufficientSample: boolean;
 };
 type Fallen = { name: string; decided: number; net: number | null; cause: string };
@@ -194,8 +197,17 @@ export default function TournamentPanel() {
                       <td style={{ color: netColor(a.expectancyNet), fontVariantNumeric: "tabular-nums" }}>{pct(a.expectancyNet)}</td>
                       <td>{a.winRate == null ? "—" : `${(a.winRate * 100).toFixed(0)}%`}</td>
                       <td style={{ color: a.profitFactor != null && a.profitFactor >= 1 ? "var(--adm-green)" : undefined }}>{a.profitFactor == null ? "—" : a.profitFactor.toFixed(2)}</td>
-                      <td style={{ color: a.sufficientSample ? "var(--adm-cyan)" : "var(--adm-gold)" }} title={a.sufficientSample ? "amostra confiável" : `abaixo de ${data.minSample} decididos`}>
-                        {decided}{a.sufficientSample ? "" : "⚠"} {isOpen ? "▲" : "▼"}
+                      {/* ⚠️ O NÚMERO QUE VALE É A IDEIA, NÃO A LINHA. Quando os
+                          dois divergem, os DOIS aparecem: esconder o bruto
+                          seria trocar um número enganoso por outro. */}
+                      <td style={{ color: a.sufficientSample ? "var(--adm-cyan)" : "var(--adm-gold)" }}
+                          title={porQueEfetivoMenor(decided, a.decidedEffective ?? decided)
+                            || (a.sufficientSample ? "amostra confiável" : `abaixo de ${data.minSample} ideias`)}>
+                        {decided}
+                        {(a.decidedEffective ?? decided) < decided && (
+                          <span style={{ color: "var(--adm-gold)" }}>→{a.decidedEffective}</span>
+                        )}
+                        {a.sufficientSample ? "" : "⚠"} {isOpen ? "▲" : "▼"}
                       </td>
                     </tr>
                     {isOpen && (
@@ -259,7 +271,12 @@ export default function TournamentPanel() {
                   <div key={a.source} style={{ display: "flex", gap: 8, fontSize: 11, padding: "1px 0", alignItems: "center" }}>
                     <span style={{ color: kindColor(a.kind), flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span>
                     <span style={{ color: "var(--adm-ink-4)", fontVariantNumeric: "tabular-nums", width: 58, textAlign: "right" }}>{pct(a.expectancyNet)}</span>
-                    <span style={{ color: "var(--adm-gold)", width: 64, textAlign: "right" }}>{decided}/{data.minSample} dec ⚠</span>
+                    <span style={{ color: "var(--adm-gold)", width: 78, textAlign: "right" }}
+                          title={porQueEfetivoMenor(decided, a.decidedEffective ?? decided)}>
+                      {(a.decidedEffective ?? decided) < decided
+                        ? `${decided}→${a.decidedEffective}/${data.minSample}`
+                        : `${decided}/${data.minSample}`} ideias ⚠
+                    </span>
                   </div>
                 );
               })}
