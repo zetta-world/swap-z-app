@@ -199,6 +199,24 @@ export function extractCards(text: string): ActionCard[] {
 export async function runBacktestScanForProvider(
   marketData: MarketIndicatorsResult,
   provider: ProviderConfig,
+  /**
+   * ⚠️ QUEM ESTÁ PAGANDO ESTA CHAMADA — e por que virou parâmetro (16/08).
+   *
+   * Esta função gravava o custo sempre como `backtest_${provider.id}`, porque
+   * nasceu servindo só ao torneio. Mas o RADAR também a chama
+   * (`api/radar/route.ts`), com o próprio cérebro — e toda chamada dele era
+   * carimbada como se fosse da mesa do torneio que usa o mesmo modelo.
+   *
+   * O sintoma: `backtest_mistral` aparecia com chamadas em 15/08 às 22:52,
+   * quando a GERI estava ARQUIVADA e não podia ter rodado. Não tinha rodado —
+   * era o HEIMDALL gastando com o nome dela.
+   *
+   * Isso não é cosmético: o painel de custo de IA soma por `source`, então o
+   * gasto do radar entrava na conta de uma mesa aposentada, e a conta do radar
+   * aparecia zerada. Um custo atribuído à mesa errada é pior que custo não
+   * medido — o primeiro dá uma resposta falsa, o segundo pelo menos cala.
+   */
+  quemPaga: string = `backtest_${provider.id}`,
 ): Promise<ActionCard[]> {
   if (!provider.apiKey) return [];
   // Circuit breaker: skip a provider that's tripped (broken key / dead endpoint)
@@ -212,14 +230,14 @@ export async function runBacktestScanForProvider(
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
     await recordResult(provider.id, provider.label, true);
-    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: `backtest_${provider.id}`, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
+    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: quemPaga, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return extractCards(r.text);
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     await recordResult(provider.id, provider.label, false, reason);
     // Log the reason so a repeatedly-failing provider is diagnosable (bad key /
     // no credit / dead model) from the admin Logs panel, not just "N failures".
-    logError(`backtest_scan:${provider.id}`, reason, { model: provider.model, source: `backtest_${provider.id}` });
+    logError(`backtest_scan:${provider.id}`, reason, { model: provider.model, source: quemPaga });
     return [];
   }
 }
