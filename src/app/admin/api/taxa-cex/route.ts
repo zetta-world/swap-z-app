@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { recordEvent } from "@/lib/admin/track";
 import { fetchTaxasGateio, compararCusto } from "@/lib/cex/taxa-gateio";
+import { CUSTO_POR_PERNA_PCT } from "@/lib/zion/custo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "ARB", "OP", "ADA"
 /** O que o laboratório assume hoje, por perna. Lido do MESMO lugar que as
  *  medições leem — comparar contra um valor digitado aqui compararia com uma
  *  cópia, não com a premissa em uso. */
-const MODELO_POR_PERNA_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const MODELO_POR_PERNA_PCT = CUSTO_POR_PERNA_PCT;
 
 export async function GET(): Promise<NextResponse> {
   await requireAdmin();

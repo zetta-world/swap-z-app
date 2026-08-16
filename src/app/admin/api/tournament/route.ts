@@ -4,13 +4,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { nEfetivo, type TradeCorrelacionavel } from "@/lib/zion/amostra-efetiva";
 import { DESKS as DESK_LIST, deskFor, type Desk } from "@/lib/zion/desks";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 export const dynamic = "force-dynamic";
 
 // Round-trip execution cost netted out of expectancy (mirrors backtest.ts /
 // the Backtest panel) so the tournament ranks agents by the edge a user KEEPS,
 // not the gross paper edge. Default 0.2%.
-const ROUND_TRIP_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const ROUND_TRIP_COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
 
 // Nomes e taxonomia vêm do REGISTRO DE MESAS (src/lib/zion/desks.ts) — fonte

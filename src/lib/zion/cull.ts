@@ -20,10 +20,14 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { recordEvent } from "@/lib/admin/track";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 const CULL_ON    = (process.env.TOURNAMENT_CULL ?? "on") !== "off";
 const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
-const COST_PCT   = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+// ⚠️ IDA E VOLTA: o veredito de corte fala de trades que abriram E fecharam.
+// Cobrando meia taxa, mesa perdedora passava por empatada e escapava do
+// machado — o corte errava para o lado de manter quem custa dinheiro.
+const COST_PCT   = CUSTO_IDA_E_VOLTA_PCT;
 
 /** Scan agents subject to the cull. Radar and sniper stay out: they are the
  *  event-driven control group / scarcity-budgeted desk, not 30-min spenders. */

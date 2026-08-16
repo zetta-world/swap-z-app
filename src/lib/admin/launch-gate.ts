@@ -17,6 +17,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { deskFor } from "@/lib/zion/desks";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 // ── Limiares. Mudar qualquer um exige registrar no doc: data, valor
 //    anterior, novo valor e motivo. Uma barra que se move em silêncio não é barra.
@@ -177,7 +178,9 @@ export function evaluate(input: {
   };
 }
 
-const COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+// ⚠️ IDA E VOLTA. Este gate decide se uma estratégia pode ver dinheiro real;
+// cobrar meia taxa aqui é o erro mais caro possível dos catorze.
+const COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 
 /** As mesas que precisam passar na barra para ir ao mercado. */
 const GATED = ["strat_mech", "strat_ai", "strat_dex", "strat_day", "ullr_launch"];

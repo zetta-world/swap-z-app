@@ -36,9 +36,12 @@
  */
 
 import type { Candle } from "@/lib/api/market-indicators";
+import { CUSTO_POR_PERNA_PCT } from "@/lib/zion/custo";
 
 /** O mesmo custo do resto do laboratório — ida e volta, taxa + slippage. */
-const COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+// ⚠️ POR PERNA — `runPositions` multiplica por `pernas` a cada troca de
+// posição. Já estava certo; agora diz no nome de onde vem.
+const COST_PCT = CUSTO_POR_PERNA_PCT;
 
 export interface BenchmarkResult {
   name: string;

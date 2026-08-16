@@ -6,6 +6,7 @@ import { deskFor } from "@/lib/zion/desks";
 import { STRAT_MECH, STRAT_AI, STRAT_DAY } from "@/lib/zion/ragnarok";
 import { STRAT_DEX } from "@/lib/zion/ragnarok-dex";
 import { ULLR } from "@/lib/zion/ullr";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export const dynamic = "force-dynamic";
  * desta mesa é aumentar a quantidade de USDT, então é isso que se mede.
  */
 
-const COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 // As quatro mesas do Ragnarök. Cada uma isola UMA variável contra o mesmo
 // seletor: MECH é o controle, AI troca o cérebro, DEX troca a praça, DAY troca
 // o relógio. Só uma variável por mesa — é o que torna o resultado legível.

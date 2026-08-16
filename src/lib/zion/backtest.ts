@@ -27,6 +27,7 @@ import { getMacroContext } from "@/lib/api/macro";
 import { fetchFundingContext, fetchFearGreed } from "@/lib/api/market-context";
 import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
 import type { ZionSuggestionRow } from "@/lib/supabase/types";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 /**
  * Generate scored predictions for the backtester (Z6). Unlike the autopilot
@@ -790,7 +791,7 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
 // Round-trip execution cost subtracted from gross expectancy so the reported
 // edge is NET of fees + slippage (Gemini/DeepSeek). Default ≈ 0.1% taker × 2
 // legs = 0.2%. Override with BACKTEST_COST_PCT.
-const ROUND_TRIP_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const ROUND_TRIP_COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100); // ≥100 to trust a comparison
 
 export interface BacktestStats {

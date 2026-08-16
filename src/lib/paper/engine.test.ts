@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { sizePosition, canEnter, computeExit, computeExitPath, convictionFactor, simbolosAbertos, chaveSimbolo } from "@/lib/paper/engine";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 describe("paper engine — position sizing", () => {
   it("deploys 5% of starting capital, capped by available cash", () => {
@@ -37,7 +38,9 @@ describe("paper engine — exit + P&L (net of cost, stop-first)", () => {
     expect(v.reason).toBe("target");
     expect(v.win).toBe(true);
     // gross +10%, net +9.8% on $50 = +$4.90
-    expect(v.pnlUsd).toBeCloseTo(50 * (10 - 0.2) / 100, 6);
+    // ⚠️ Da FONTE, não digitado: este `0.2` cru confirmava, verdinho, a
+    // meia-taxa que `engine.ts` cobrava até 16/08.
+    expect(v.pnlUsd).toBeCloseTo(50 * (10 - CUSTO_IDA_E_VOLTA_PCT) / 100, 6);
   });
 
   it("books a loss at stop", () => {

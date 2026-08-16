@@ -15,10 +15,15 @@ import { selectAllRows } from "@/lib/supabase/paginate";
 import { DESKS as DESK_LIST, isArquivada } from "@/lib/zion/desks";
 import { getOHLCV } from "@/lib/api/geckoterminal";
 import { recordEvent } from "@/lib/admin/track";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 // Round-trip execution cost (fees + slippage, both legs) — mirrors the flywheel
 // so paper P&L is net, not gross. Default 0.2%.
-const COST_PCT     = Number(process.env.BACKTEST_COST_PCT   ?? 0.2);
+// ⚠️ IDA E VOLTA, não uma perna. Até 16/08 esta linha lia o custo de UMA
+// ordem e o cobrava pelo ciclo inteiro — metade da taxa real da Gate.io
+// (0,2% por ordem, medida). Cada posição de papel fechada aqui parecia 0,2
+// ponto melhor do que foi, e este número vira dinheiro em `pnl_usd`.
+const COST_PCT     = CUSTO_IDA_E_VOLTA_PCT;
 const POSITION_PCT = Number(process.env.PAPER_POSITION_PCT  ?? 0.05); // deploy 5% of starting capital per signal
 const STARTING_USD = Number(process.env.PAPER_STARTING_USD  ?? 1000);
 const MIN_CASH_USD = Number(process.env.PAPER_MIN_CASH_USD  ?? 25);   // floor to open a position (out-of-capital below this)

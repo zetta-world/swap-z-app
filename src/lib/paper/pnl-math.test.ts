@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeExit, computeExitPath } from "@/lib/paper/engine";
+import { CUSTO_IDA_E_VOLTA_PCT, CUSTO_POR_PERNA_PCT, PERNAS_POR_CICLO } from "@/lib/zion/custo";
 
 /**
  * ARITMÉTICA DE P&L — os números que decidem a BARRA DE LANÇAMENTO.
@@ -15,7 +16,19 @@ import { computeExit, computeExitPath } from "@/lib/paper/engine";
  * nenhum dos 17 checks da bancada perceberia, porque todos passariam.
  */
 
-const COST = 0.2; // BACKTEST_COST_PCT padrão
+/**
+ * ⚠️ LIDO DA FONTE, NUNCA DIGITADO (16/08).
+ *
+ * Este `COST` era `0.2` na mão, com o comentário "BACKTEST_COST_PCT padrão".
+ * A cópia estava certa no dia em que foi escrita e passou a mentir junto com o
+ * código: `paper/engine.ts` cobrava o custo de UMA ordem pelo ciclo INTEIRO, e
+ * o teste confirmava o erro com o mesmo número errado. Oito asserções verdes
+ * sobre metade da taxa real da Gate.io.
+ *
+ * Um teste que copia a constante que ele deveria conferir não confere nada —
+ * ele só garante que a cópia continua igual à cópia.
+ */
+const COST = CUSTO_IDA_E_VOLTA_PCT;
 const t0 = Date.parse("2026-07-01T00:00:00Z");
 const H = 3_600_000;
 
@@ -34,13 +47,36 @@ describe("perda — valor EXATO, não só 'negativo'", () => {
     expect(v.pnlUsd).toBeCloseTo(50 * (-5 - COST) / 100, 6);
   });
 
-  it("o custo entra UMA vez — não duas, não nenhuma", () => {
+  it("o custo entra UM CICLO por trade — não dois, não nenhum", () => {
     // O bug clássico é subtrair o custo no cálculo e de novo ao creditar.
     const win = computeExit(long, 111, t0 + H)!;
     const loss = computeExit(long, 94, t0 + H)!;
     // Ganho bruto +10, perda bruta −5. A soma dos líquidos tem de ser
-    // (10 − 5) − 2×COST: exatamente um custo por trade, nos dois.
+    // (10 − 5) − 2×COST: exatamente um ciclo por trade, nos dois.
     expect(win.netPct + loss.netPct).toBeCloseTo(10 - 5 - 2 * COST, 6);
+  });
+
+  /**
+   * ⚠️ A CONVENÇÃO EM SI, FIXADA — e não só o número que ela produz.
+   *
+   * O defeito de 16/08 não foi um valor errado, foi uma AMBIGUIDADE: o mesmo
+   * `0,2` significava "o ciclo custa 0,2%" aqui e "cada perna custa 0,2%, logo
+   * o ciclo custa 0,4%" em `lab/tendencia.ts`. Nenhum teste falhava, porque
+   * cada um conferia a própria cópia.
+   *
+   * Esta asserção é a que teria pegado: ela afirma a RELAÇÃO entre as duas
+   * convenções, e é o único ponto do sistema onde as duas se encontram.
+   */
+  it("uma posição de papel custa DUAS pernas — a taxa da Gate.io é por ordem", () => {
+    expect(PERNAS_POR_CICLO).toBe(2);
+    expect(CUSTO_IDA_E_VOLTA_PCT).toBeCloseTo(CUSTO_POR_PERNA_PCT * 2, 10);
+
+    // E o motor cobra o ciclo, não a perna: entrada 100 → alvo 110 é +10%
+    // bruto e +10% menos DUAS pernas líquido.
+    const win = computeExit(long, 111, t0 + H)!;
+    expect(win.netPct).toBeCloseTo(10 - CUSTO_POR_PERNA_PCT * 2, 6);
+    // A conta errada de até 16/08, explícita para ninguém voltar a ela:
+    expect(win.netPct).not.toBeCloseTo(10 - CUSTO_POR_PERNA_PCT, 6);
   });
 
   it("o custo SEMPRE reduz o resultado, nos dois lados", () => {

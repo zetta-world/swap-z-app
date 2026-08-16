@@ -15,9 +15,12 @@
 
 import { median } from "@/lib/zion/stats";
 import type { LabStatus } from "./registry";
+import { CUSTO_POR_PERNA_PCT } from "@/lib/zion/custo";
 
 /** Mesmo custo do resto do laboratório — ida e volta, taxa + slippage. */
-export const CUSTO_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+// ⚠️ POR PERNA: a grade e a rotação cobram por NEGOCIAÇÃO, e cada giro tem
+// várias. O painel já rotula "custo X%/perna".
+export const CUSTO_PCT = CUSTO_POR_PERNA_PCT;
 
 /* ─────────────────────────────────────────────────────────────────────────
  * C9 — ROTAÇÃO POR MOMENTO
