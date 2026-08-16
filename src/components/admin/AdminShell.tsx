@@ -5,6 +5,7 @@ import { useAdminLayout } from "@/lib/store/admin-layout";
 import { AdminRealtimeProvider, type AdminRealtimeConfig } from "./AdminRealtimeProvider";
 import AdminHeader from "./AdminHeader";
 import AdminCommandBar from "./AdminCommandBar";
+import AreaNav from "./AreaNav";
 
 export default function AdminShell({
   wallet,
@@ -43,6 +44,11 @@ export default function AdminShell({
         {/* Content above backdrop */}
         <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1 }}>
           <AdminHeader wallet={wallet} />
+          {/* ⚠️ O MENU DAS ÁREAS VIVE NO SHELL, não em cada página: ele tem de
+              estar presente em TODAS as telas, inclusive na do painel sozinho.
+              Um menu que some quando você entra num item é como se perde o
+              caminho de volta. */}
+          <AreaNav />
           <main style={{ flex: 1, overflowY: "auto" }}>
             {children}
           </main>
