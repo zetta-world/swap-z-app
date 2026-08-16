@@ -34,10 +34,59 @@ const MAX_TRADES_REVIEWED = 20;
 
 // ── Pure helpers (unit-tested) ──────────────────────────────────────────────
 
-/** A retro fires when the agent added ≥ everyN decided trades since its last
- *  reflection (or has ≥ everyN and never reflected). */
-export function shouldRetro(decidedNow: number, decidedAtLastRetro: number | null, everyN = RETRO_EVERY_N): boolean {
-  return decidedNow - (decidedAtLastRetro ?? 0) >= everyN;
+/**
+ * QUANTOS DECIDIDOS AINDA NÃO FORAM REFLETIDOS.
+ *
+ * ⚠️⚠️ POR QUE ISTO SUBSTITUIU UM CONTADOR (16/08) — e por que o volante
+ * inteiro ficou 20 dias parado sem ninguém notar.
+ *
+ * O gatilho antigo era uma subtração de totais:
+ *
+ *     shouldRetro = decididosAgora − decididosNaÚltimaRetro >= everyN
+ *
+ * `decididosAgora` conta a RODADA VIVA (`archived_at is null`).
+ * `decididosNaÚltimaRetro` é o `decided_count` gravado na última reflexão —
+ * anotado quando a rodada anterior ainda estava viva.
+ *
+ * Arquivar a rodada zerou o numerador e deixou o marco lá em cima:
+ *
+ *     radar          marco 23   ·   vivos hoje 5   →   5−23 = −18 ≥ 10 ? não
+ *     mistral_scan   marco 60   ·   vivos hoje 1   →   nunca
+ *     kimi_scan      marco 54   ·   vivos hoje 3   →   nunca
+ *     grok_scan      marco 51   ·   vivos hoje 1   →   nunca
+ *
+ * Isso não é "ainda não chegou a hora", é **nunca mais**: o radar precisaria de
+ * 33 decididos na rodada viva para alcançar um marco que descreve trades já
+ * arquivados. Um contador absoluto medido contra uma população que OUTRA parte
+ * do sistema esvazia não tem como voltar a disparar — e falha em silêncio,
+ * porque "não disparou" é indistinguível de "ainda não deu o número".
+ *
+ * ⚠️ A CORREÇÃO É NÃO CONTAR TOTAIS. Conta-se o que ainda não foi refletido:
+ * trades resolvidos DEPOIS do instante da última reflexão. Isso é imune a
+ * arquivamento, a re-escopo da consulta e a qualquer mudança no tamanho da
+ * população, porque cada trade só é contado uma vez na vida — no intervalo em
+ * que ele é novo.
+ *
+ * `null` = nunca refletiu; nesse caso todo decidido é novo, que é o correto.
+ */
+export function naoRefletidos(
+  resolvidosEmMs: readonly number[],
+  ultimaRetroMs: number | null,
+): number {
+  let n = 0;
+  for (const t of resolvidosEmMs) {
+    // ⚠️ Um `resolved_at` ilegível conta como NOVO. O erro para este lado
+    // gasta uma reflexão a mais; para o outro, some com o trade para sempre —
+    // e foi exatamente "sumir em silêncio" que custou 20 dias.
+    if (!Number.isFinite(t)) { n++; continue; }
+    if (ultimaRetroMs === null || t > ultimaRetroMs) n++;
+  }
+  return n;
+}
+
+/** Uma retro dispara quando ≥ everyN decididos ainda não foram refletidos. */
+export function deveRefletir(naoRefletidosN: number, everyN = RETRO_EVERY_N): boolean {
+  return naoRefletidosN >= everyN;
 }
 
 /** Tolerant lesson extraction: {"lessons":[...]} direct, then embedded JSON.
@@ -143,10 +192,36 @@ function brainFor(source: string): { kind: "anthropic" } | { kind: "compat"; pro
   }
   if (source.startsWith("oracle_")) return { kind: "compat", providerId: source.slice("oracle_".length) };
   if (source.endsWith("_scan")) return { kind: "compat", providerId: source.slice(0, -"_scan".length) };
-  if (source === "sniper" || source === "radar") {
+  /**
+   * ⚠️ MÍMIR ENTROU EM 16/08 — e a ausência dele era invisível.
+   *
+   * `strat_ai` não termina em `_scan`, não começa com `oracle_` e não é sniper
+   * nem radar: caía no `return null` e era filtrado fora da varredura na linha
+   * do `bySource`. Resultado: a única mesa mecânica COM cérebro LLM
+   * (`roleProviderChain("brain")`, prompt próprio em `strategist-ai.ts`) nunca
+   * teve uma lição na vida, e nada na tela dizia isso.
+   *
+   * Reflete o assento `brain` — o mesmo que assina as escolhas. É a regra do
+   * módulo inteiro: auto-avaliação, não revisão por terceiro.
+   */
+  if (source === "sniper" || source === "radar" || source === "strat_ai") {
     const brain = hybridBrain();
     return brain ? { kind: "compat", providerId: brain.id } : null;
   }
+  /**
+   * ⚠️ E AS MESAS MECÂNICAS CONTINUAM FORA, DE PROPÓSITO.
+   *
+   * VÖLUNDR, SKAÐI, URÐR, FREYJA, ULLR e os arbitradores decidem em
+   * `selectPlaybook` / `candidateAttempts` — código determinístico, sem prompt.
+   * Uma lição é texto injetado num prompt; sem prompt ela não tem onde pousar,
+   * e gerá-la produziria texto que ninguém lê (invariante nº 25).
+   *
+   * O canal delas existe e é outro: URÐR lê `loadPlaybookRecord()` +
+   * `loadHistory()`, e VÖLUNDR ignora tudo POR DECISÃO — é o grupo de controle
+   * que dá sentido à comparação. Quem quiser ver isso olha o painel de
+   * aprendizado (`lib/zion/aprendizado.ts`), onde o canal de cada mesa é
+   * declarado em vez de deduzido deste `return null`.
+   */
   return null;
 }
 
@@ -180,18 +255,28 @@ export async function runRetroSweep(): Promise<RetroResult> {
   }
   if (bySource.size === 0) return none;
 
-  // Last retro checkpoint per source.
+  // INSTANTE da última reflexão por mesa — não mais a contagem dela. Ver a
+  // nota em `naoRefletidos`: contagem contra contagem morre quando o
+  // arquivamento esvazia a população, e foi o que aconteceu em 27/07.
   const { data: lastRetros } = await db.from("agent_lessons")
-    .select("source, decided_count, created_at")
+    .select("source, created_at")
     .in("source", [...bySource.keys()])
     .order("created_at", { ascending: false })
     .limit(bySource.size * 4);
-  const lastCountBy = new Map<string, number>();
-  for (const r of lastRetros ?? []) if (!lastCountBy.has(r.source)) lastCountBy.set(r.source, r.decided_count);
+  const ultimaRetroBy = new Map<string, number>();
+  for (const r of lastRetros ?? []) {
+    if (ultimaRetroBy.has(r.source)) continue;
+    const t = Date.parse(r.created_at);
+    if (Number.isFinite(t)) ultimaRetroBy.set(r.source, t);
+  }
 
   const reviewed: string[] = [];
   for (const [source, trades] of bySource) {
-    if (!shouldRetro(trades.length, lastCountBy.get(source) ?? null)) continue;
+    const novos = naoRefletidos(
+      trades.map((t) => Date.parse(t.resolved_at ?? "")),
+      ultimaRetroBy.get(source) ?? null,
+    );
+    if (!deveRefletir(novos)) continue;
     const brain = brainFor(source)!;
     const prompt = retroPrompt(source, trades.slice(0, MAX_TRADES_REVIEWED));
     try {
@@ -215,8 +300,11 @@ export async function runRetroSweep(): Promise<RetroResult> {
       const lessons = parseLessons(text);
       // An empty reflection still checkpoints — "no honest pattern yet" is a
       // valid answer and must not re-fire every tick.
+      // `decided_count` continua gravado para AUDITORIA — dá para reconstruir o
+      // tamanho da rodada no instante da reflexão. Ele não é mais o gatilho: o
+      // gatilho é `created_at` desta linha, lido pela próxima varredura.
       await db.from("agent_lessons").insert({ source, lessons, decided_count: trades.length });
-      recordEvent("agent_retro", { meta: { source, decided: trades.length, lessons: lessons.length } });
+      recordEvent("agent_retro", { meta: { source, decided: trades.length, nao_refletidos: novos, lessons: lessons.length } });
       reviewed.push(source);
     } catch (e) {
       logError(`retro:${source}`, e instanceof Error ? e.message : String(e), { source });

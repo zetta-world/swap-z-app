@@ -20,6 +20,7 @@ export type ModuleId =
   | "rendimento"
   | "combinacao"
   | "taxa-cex"
+  | "aprendizado"
   | "variancia"
   | "dex-cex"
   | "liquidez"
@@ -237,6 +238,19 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8.6,
+  },
+  {
+    id: "aprendizado",
+    title: "VOLANTE DE APRENDIZADO",
+    subtitle: "as mesas ainda est\u00e3o aprendendo com o pr\u00f3prio hist\u00f3rico?",
+    icon: "\u{1F393}",
+    category: "lab",
+    defaultEnabled: true,
+    // 3.5 = topo do laborat\u00f3rio, antes das medi\u00e7\u00f5es. Este painel n\u00e3o mede
+    // estrat\u00e9gia, mede se o MOTOR que ajusta as estrat\u00e9gias est\u00e1 vivo — e um
+    // alarme enterrado no fim da se\u00e7\u00e3o \u00e9 um alarme que ningu\u00e9m ouve. Foi o
+    // sil\u00eancio de 20 dias que comprou esta posi\u00e7\u00e3o.
+    defaultOrder: 3.5,
   },
   {
     id: "taxa-cex",

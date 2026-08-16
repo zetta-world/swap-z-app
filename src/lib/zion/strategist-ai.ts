@@ -47,6 +47,7 @@ import { openaiCompatChat } from "@/lib/ai/provider";
 import { roleProviderChain } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { recordEvent } from "@/lib/admin/track";
+import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
 import type { SymbolIndicators } from "@/lib/api/market-indicators";
 import { candidateAttempts, PLAYBOOKS } from "@/lib/zion/playbooks";
 import { buildLongBracket, type StrategyPlan } from "@/lib/zion/bracket";
@@ -284,11 +285,33 @@ export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<A
   let record = await loadPlaybookRecord();
   if (record && isStale(record, Date.now())) record = null;
 
+  /**
+   * ⚠️ AS PRÓPRIAS LIÇÕES — ligadas em 16/08, e faltavam desde sempre.
+   *
+   * O MÍMIR é a única mesa mecânica com cérebro LLM, e era a única mesa com
+   * cérebro que não recebia `<your_lessons>`: `brainFor()` em `retro.ts` não
+   * cobria `strat_ai`, então lição nunca era gerada, e este prompt nunca a
+   * pediria mesmo se fosse.
+   *
+   * Os DOIS lados tinham que ser ligados juntos. Ligar só o gerador escreveria
+   * lição que ninguém lê; ligar só o leitor leria uma tabela vazia para sempre.
+   * É a invariante nº 25 aplicada a um par: metade de um circuito não é meio
+   * circuito, é circuito aberto.
+   *
+   * ⚠️ Lição é CONTEXTO, nunca permissão — `lessonsBlock` diz isso no próprio
+   * texto, e a geometria continua saindo de `buildLongBracket` do jeito
+   * mecânico, sem o modelo tocar em stop nem em alvo.
+   */
+  const licoes = (await getActiveLessons([STRAT_AI])).get(STRAT_AI);
+
   const user = [
     "Pick the right setup for each symbol, or none. Reply with the JSON object only.",
     record
       ? `Track records below come from a backtest over ~${record.windowDays} days. Evidence, not proof.`
       : "No measured track record is available — judge on structure alone.",
+    // Sem lição, `lessonsBlock` devolve "" e o bloco some — em vez de deixar
+    // uma linha vazia extra que muda o prompt de quem ainda não refletiu.
+    ...(lessonsBlock(licoes) ? [lessonsBlock(licoes)] : []),
     "",
     ...menus.map((m) => describe(m.ind, m.candidates, record)),
   ].join("\n");
