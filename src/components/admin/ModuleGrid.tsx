@@ -28,23 +28,34 @@ const CATEGORIES: { id: ModuleCategory | "all"; label: string }[] = [
   { id: "logs",        label: "LOGS" },
 ];
 
-export default function ModuleGrid({ panels }: { panels: PanelMap }) {
+export default function ModuleGrid({ panels, only }: { panels: PanelMap; only?: readonly string[] }) {
+  /**
+   * ⚠️ `only` RESTRINGE A GRADE A UMA ÁREA. Sem ele o comportamento é o de
+   * sempre — a grade geral. Com ele, o chip de categoria some: dentro de uma
+   * área ele filtraria um filtro, e dois filtros empilhados é como o painel
+   * ficou impossível de navegar.
+   */
+  const escopo = only ? new Set(only) : null;
   const { enabled, order, toggleModule } = useAdminLayout();
   const [cat, setCat] = useState<ModuleCategory | "all">("all");
 
   const visible = order.filter((id) => {
+    if (escopo && !escopo.has(id)) return false;
     if (!enabled.has(id)) return false;
     if (!panels[id]) return false;
-    if (cat !== "all" && MODULE_BY_ID[id]?.category !== cat) return false;
+    if (!escopo && cat !== "all" && MODULE_BY_ID[id]?.category !== cat) return false;
     return true;
   });
 
-  const hidden = order.filter((id) => !enabled.has(id));
+  // Dentro de uma área, o "desligado" também é só da área.
+  const hidden = order.filter((id) => !enabled.has(id) && (!escopo || escopo.has(id)));
 
   return (
     <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Category filter tabs */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {/* Category filter tabs — só na grade GERAL; dentro de uma área o menu
+          já fez a filtragem, e dois filtros empilhados foi o que tornou este
+          painel impossível de navegar. */}
+      <div style={{ display: escopo ? "none" : "flex", gap: 6, flexWrap: "wrap" }}>
         {CATEGORIES.map(({ id, label }) => (
           <button
             key={id}
