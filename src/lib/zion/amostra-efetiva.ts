@@ -115,3 +115,40 @@ export function porQueEfetivoMenor(bruto: number, efetivo: number): string {
     + "A média continua valendo; o que não vale é tratá-los como confirmações "
     + "independentes.";
 }
+
+/**
+ * ⚠️⚠️ A CORRELAÇÃO ENTRE MESAS — o buraco no meu próprio conserto (16/08).
+ *
+ * O `nEfetivo` acima foi escrito em 15/08 e é aplicado POR MESA. No dia
+ * seguinte, medindo a coorte, apareceu o caso que ele não pega:
+ *
+ *     UNI · sell_safe · 14/08
+ *       kimi_scan     +5,83   resolvido 11:30
+ *       mistral_scan  +7,04   resolvido 12:00
+ *       radar         +4,93   resolvido 12:00
+ *
+ * Três mesas diferentes, um movimento do UNI. Como cada uma tem UM trade, cada
+ * uma marca "1 ideia" — e o painel apresenta **três confirmações
+ * independentes** de que `sell_safe` funciona. São uma.
+ *
+ * Na janela de 7 dias inteira: **46 decididos, 23 ideias distintas.** Metade.
+ *
+ * ⚠️ O ALGORITMO ESTAVA CERTO; ERRADO ERA O QUE EU DAVA A ELE. Por isso aqui
+ * não há função nova — há a MESMA `nEfetivo` recebendo a coorte inteira. Um
+ * segundo algoritmo para o mesmo conceito seria uma segunda definição de
+ * "ideia", e duas definições divergem, é só questão de tempo.
+ *
+ * ⚠️ E O DONO DISCORDOU DE UM PONTO, COM RAZÃO: as três não são cópias. Entrada,
+ * alvo, stop e confiança eram diferentes nas três — cada mesa montou a própria
+ * geometria, e a concordância na ENTRADA é sinal bom, não ruim. O que não muda
+ * é a contagem de evidência: se o UNI tivesse subido 1,9%, as três perdiam
+ * juntas. Independência de raciocínio e independência de RESULTADO são coisas
+ * diferentes, e é a segunda que decide quantas vezes o mundo falou.
+ */
+export function porQueCoorteMenor(bruto: number, efetivo: number): string {
+  if (efetivo >= bruto) return "";
+  return `${bruto} trades decididos na coorte, mas ${efetivo} ideia(s) distinta(s) — `
+    + "mesas diferentes pegando o MESMO movimento contam como uma. A média por "
+    + "trade continua valendo; o que não vale é ler concordância entre mesas "
+    + "como confirmação independente.";
+}

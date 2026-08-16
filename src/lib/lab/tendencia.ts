@@ -44,6 +44,7 @@
  */
 
 import { calcEMA, calcATRSerie } from "@/lib/api/market-indicators";
+import { CUSTO_POR_PERNA_PCT } from "@/lib/zion/custo";
 
 /** Períodos dos indicadores. Declarados aqui porque são parte da ESTRATÉGIA —
  *  a rota só escolhe janela e símbolos. */
@@ -82,7 +83,10 @@ export interface ParamsTendencia {
 export const PARAMS_PADRAO: ParamsTendencia = {
   atrStop: 2,
   riscoPct: 0.5,
-  custoPct: Number(process.env.BACKTEST_COST_PCT ?? 0.2),
+  // ⚠️ POR PERNA, e este arquivo sempre esteve certo: `rodar()` multiplica por
+  // 2 na linha do custo. Passa a ler do primitivo nomeado para que a
+  // convenção seja legível no tipo, e não só no comentário lá embaixo.
+  custoPct: CUSTO_POR_PERNA_PCT,
 };
 
 /**

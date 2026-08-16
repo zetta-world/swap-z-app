@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 export const dynamic = "force-dynamic";
 
 // Round-trip execution cost (taker fee + slippage, both legs) netted out of
 // expectancy so the panel shows the edge a user actually keeps, not the gross
 // paper edge (P0.1). Mirrors BACKTEST_COST_PCT in backtest.ts. Default 0.2%.
-const ROUND_TRIP_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const ROUND_TRIP_COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
 
 /** Shadow-Flywheel stats for the admin Backtest panel: win-rate, expectancy,

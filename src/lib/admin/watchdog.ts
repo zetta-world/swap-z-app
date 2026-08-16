@@ -5,6 +5,7 @@ import { checkExternalDeps } from "@/lib/admin/deps";
 import { estimateCost } from "@/lib/admin/ai-cost";
 import { getFlywheelGates, TOKEN_SPENDING_GATES } from "@/lib/admin/gates";
 import { selectAllRows } from "@/lib/supabase/paginate";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 /**
  * Alert watchdog — the platform's autonomous monitor. Runs every cron tick
@@ -192,7 +193,7 @@ export async function runAlertWatchdog(): Promise<void> {
 
 // Round-trip execution cost netted out of expectancy — mirrors backtest.ts /
 // the admin panel so the digest shows the SAME net edge, not a rosier gross.
-const DIGEST_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const DIGEST_COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 const DIGEST_MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
 
 type SuggRow = { status: string; outcome_pct: number | null; source: string | null };

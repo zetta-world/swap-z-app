@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { sampleLabel, shouldTint, NOISE_THRESHOLD } from "@/lib/admin/sample";
 import TerminalPanel from "../TerminalPanel";
 import { porQueEfetivoMenor } from "@/lib/zion/amostra-efetiva";
+import { corDoPnl } from "@/lib/admin/cor-resultado";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Agent = {
@@ -25,9 +26,12 @@ type Agent = {
   /** Ideias distintas dentro dos decididos — ver `amostra-efetiva.ts`. */
   decidedEffective?: number;
   sufficientSample: boolean;
+  /** O que a mesa fez na VIDA INTEIRA — arquivo incluído, janela ignorada. */
+  vidaInteira?: { decididos: number; bruto: number; liquido: number; ocultos: number } | null;
 };
 type Fallen = { name: string; decided: number; net: number | null; cause: string };
-type TT = { agents: Agent[]; valhalla?: Fallen[]; graveyard?: Fallen[]; minSample: number; fetchedAt: string };
+type TT = { agents: Agent[]; valhalla?: Fallen[]; graveyard?: Fallen[]; minSample: number; fetchedAt: string;
+  coorte?: { decididos: number; ideias: number; aviso: string } };
 
 const PAPER_MATURE = 8;
 // A separação que faltava: day trade e swing não se medem com a mesma régua,
@@ -133,6 +137,30 @@ export default function TournamentPanel() {
 
       {data && (
         <div>
+          {/**
+            * ⚠️⚠️ QUANTAS VEZES O MUNDO FALOU — a coorte inteira (16/08).
+            *
+            * O `→` ao lado do DEC de cada mesa agrupa DENTRO dela. Os três UNI
+            * `sell_safe` de 14/08 estão em TRÊS mesas, então cada uma marca "1
+            * ideia" e esta tela mostrava três confirmações independentes de um
+            * movimento só. Na janela de 7 dias: 46 decididos, 23 ideias.
+            *
+            * ⚠️ Fica no TOPO, antes de qualquer pódio. Quem lê o ranking sem
+            * este número lê metade da amostra como se fosse inteira, e é o
+            * ranking que decide quem vira dinheiro real.
+            */}
+          {data.coorte && data.coorte.ideias < data.coorte.decididos && (
+            <div style={{
+              fontSize: 11, lineHeight: 1.6, color: "var(--adm-amber)",
+              border: "1px solid var(--adm-border)", borderRadius: 4,
+              padding: "4px 6px", marginBottom: 8,
+            }}>
+              ⚠ a coorte inteira tem <b>{data.coorte.decididos}</b> decididos e{" "}
+              <b>{data.coorte.ideias}</b> ideia(s) distinta(s)
+              <div style={{ color: "var(--adm-ink-4)" }}>{data.coorte.aviso}</div>
+            </div>
+          )}
+
           {ranked.length === 0 && (
             <div style={{ color: "var(--adm-ink-3)", fontSize: 13, marginBottom: 8 }}>
               Nenhum agente com trade resolvido ainda — o torneio preenche a cada tick.
@@ -184,7 +212,7 @@ export default function TournamentPanel() {
           <>
           {comAmostra.length > 0 && (
           <table className="adm-table">
-            <thead><tr><th style={{ width: 26 }}></th><th>AGENTE</th><th>LÍQ./TRADE</th><th>WR</th><th>PF</th><th>DEC</th></tr></thead>
+            <thead><tr><th style={{ width: 26 }}></th><th>AGENTE</th><th>LÍQ./TRADE</th><th>WR</th><th>PF</th><th>DEC</th><th title="vida inteira: líquido/trade e decididos, arquivo incluído">VIDA</th></tr></thead>
             <tbody>
               {comAmostra.map((a, i) => {
                 const decided = a.wins + a.losses;
@@ -209,10 +237,31 @@ export default function TournamentPanel() {
                         )}
                         {a.sufficientSample ? "" : "⚠"} {isOpen ? "▲" : "▼"}
                       </td>
+                      {/* ⚠️ A VIDA INTEIRA, ao lado da rodada viva (16/08).
+                          Até hoje esta tela mostrava só a rodada viva, e a GERI
+                          aparecia como "+7,04% · 1 decidido" tendo 691
+                          decididos a −0,52% no arquivo. Uma mesa com 862 trades
+                          negativos podia ganhar medalha. */}
+                      <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--adm-ink-4)", fontSize: 10 }}
+                          title={a.vidaInteira
+                            ? `vida inteira: ${a.vidaInteira.decididos} decididos a ${a.vidaInteira.liquido.toFixed(2)}% líquido`
+                              + (a.vidaInteira.ocultos > 0 ? ` — ${a.vidaInteira.ocultos} fora da rodada viva` : "")
+                            : "sem histórico arquivado"}>
+                        {a.vidaInteira
+                          // ⚠️ `corDoPnl`, nunca ternário à mão: a guarda em
+                          // `cor-resultado.test.ts` existe porque o painel do
+                          // laboratório pintou de verde uma grade que perdeu
+                          // metade do capital, só por perder menos que segurar.
+                          ? <span style={{ color: corDoPnl(a.vidaInteira.liquido) }}>
+                              {pct(a.vidaInteira.liquido)}
+                              <span style={{ color: "var(--adm-ink-4)" }}> /{a.vidaInteira.decididos}</span>
+                            </span>
+                          : "—"}
+                      </td>
                     </tr>
                     {isOpen && (
                       <tr>
-                        <td colSpan={6} style={{ padding: "8px 4px 10px", background: "var(--adm-bg-raise)" }}>
+                        <td colSpan={7} style={{ padding: "8px 4px 10px", background: "var(--adm-bg-raise)" }}>
                           {(a.who || a.tests) && (
                             <div style={{ marginBottom: 8, padding: "6px 8px", background: "rgba(255 255 255 / 0.02)", borderLeft: "2px solid var(--adm-gold)", borderRadius: 2 }}>
                               {a.who && <div style={{ fontSize: 12, color: "var(--adm-ink-2)", fontStyle: "italic" }}>{a.who}</div>}

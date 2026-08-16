@@ -134,6 +134,19 @@ export type ZionSuggestionRow = {
    *  GeckoTerminal em vez de klines da Binance. Nulos = linha de CEX. */
   chain:          string | null;
   pool_address:   string | null;
+  /**
+   * Sugestão retirada da medição viva, sem ser apagada.
+   *
+   * ⚠️ MESMO BURACO DA `PaperPositionRow`, e ainda mais caro. A coluna existe
+   * no banco desde o primeiro arquivamento e MUITA leitura já filtrava por ela
+   * (`.is("archived_at", null)` em `cull.ts`, no torneio, no `retro.ts`) — só a
+   * declaração faltava. Filtrar por campo não declarado passa batido; SELECIONAR
+   * não compila, e é por isso que só apareceu em 16/08, quando o torneio
+   * precisou LER a coluna para separar rodada viva de vida inteira.
+   *
+   * Enquanto ninguém lia, o filtro escondia 2.114 decididos e ninguém via.
+   */
+  archived_at:    string | null;
 };
 
 export type PaperAccountRow = {

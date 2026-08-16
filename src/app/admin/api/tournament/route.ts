@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
-import { nEfetivo, type TradeCorrelacionavel } from "@/lib/zion/amostra-efetiva";
+import { nEfetivo, porQueCoorteMenor, type TradeCorrelacionavel } from "@/lib/zion/amostra-efetiva";
 import { DESKS as DESK_LIST, deskFor, type Desk } from "@/lib/zion/desks";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 export const dynamic = "force-dynamic";
 
 // Round-trip execution cost netted out of expectancy (mirrors backtest.ts /
 // the Backtest panel) so the tournament ranks agents by the edge a user KEEPS,
 // not the gross paper edge. Default 0.2%.
-const ROUND_TRIP_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const ROUND_TRIP_COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
 
 // Nomes e taxonomia vêm do REGISTRO DE MESAS (src/lib/zion/desks.ts) — fonte
@@ -109,15 +110,47 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   type TourRow = { source: string | null; status: string; outcome_pct: number | null; probability: number | null; entry_price: number | null; target_price: number | null; stop_price: number | null; created_at: string; resolved_at: string | null;
     /** ⚠️ Carregados desde 15/08 SÓ para a amostra efetiva — sem eles não dá
      *  para saber se dois trades são a mesma ideia. */
-    symbol: string | null; kind: string | null };
-  const rows = await selectAllRows<TourRow>((from, to) => {
-    let q = db.from("zion_suggestions")
-      .select("source, status, outcome_pct, probability, entry_price, target_price, stop_price, created_at, resolved_at, symbol, kind")
-      .is("archived_at", null) // live round only (docs/PLANO-ARQUIVO-RODADAS.md)
-      .order("created_at", { ascending: true }).range(from, to);
-    if (since) q = q.gte("created_at", since);
-    return q;
-  });
+    symbol: string | null; kind: string | null;
+    /** ⚠️ Desde 16/08: separa rodada viva de vida inteira NA MEMÓRIA, em vez
+     *  de o banco decidir por nós e sumir com 2.114 decididos. */
+    archived_at: string | null };
+  /**
+   * ⚠️⚠️ UMA LEITURA, DUAS VERDADES — e a linha que escondia 2.114 decididos.
+   *
+   * Até 16/08 esta consulta trazia `.is("archived_at", null)`: só a rodada
+   * viva. A intenção era boa (o arquivo é história, e uma média vitalícia
+   * esconde se um conserto funcionou). O efeito na tela não era:
+   *
+   *     GERI       torneio +7,040%  ·  1 decidido   │  arquivado: 691 a −0,517%
+   *     SLEIPNIR   torneio +2,410%  ·  1 decidido   │  arquivado: 862 a −0,592%
+   *     MUNINN     torneio +0,903%  ·  3 decididos  │  arquivado: 367 a −0,831%
+   *
+   * Uma mesa com 862 trades a −0,59% aparecia como "+2,41%, 1 trade" e podia
+   * ganhar medalha. O dono viu antes de mim: *"essa amostra de 1 decidido vem
+   * depois de centenas decididos historicamente"*. Estava certo.
+   *
+   * ⚠️ O CONSERTO NÃO É APAGAR O FILTRO — é mostrar as DUAS. A rodada viva
+   * continua sendo o número que responde "o conserto funcionou?"; a vida
+   * inteira responde "esta mesa já provou alguma coisa?". Trocar uma pela
+   * outra só inverteria qual mentira a tela conta.
+   *
+   * ⚠️ E É UMA LEITURA SÓ. Duas consultas custariam o dobro e poderiam
+   * divergir entre si por um trade que resolveu no meio; aqui os dois números
+   * saem exatamente das mesmas linhas, separados em memória.
+   *
+   * ⚠️ A VIDA INTEIRA IGNORA A JANELA DE PROPÓSITO. "Vida inteira dos últimos
+   * 7 dias" não é vida inteira, é a mesma janela com outro nome — e um rótulo
+   * que mente é pior que uma coluna a menos.
+   */
+  const rows = await selectAllRows<TourRow>((from, to) =>
+    db.from("zion_suggestions")
+      .select("source, status, outcome_pct, probability, entry_price, target_price, stop_price, created_at, resolved_at, symbol, kind, archived_at")
+      .order("created_at", { ascending: true }).range(from, to),
+  );
+
+  /** Esta linha conta para a RODADA VIVA? (não arquivada e dentro da janela) */
+  const naRodadaViva = (r: TourRow): boolean =>
+    r.archived_at == null && (since === null || r.created_at >= since);
 
   // Paper wallets (Gate.io sim) — realized equity curve per source, shown beside
   // the flywheel curve once a wallet has matured (enough closed positions).
@@ -152,7 +185,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return a;
   };
 
+  /**
+   * ⚠️ A VIDA INTEIRA — o balde que faltava. Acumula TODA linha, arquivada ou
+   * não, dentro ou fora da janela. É o que responde "esta mesa já provou
+   * alguma coisa?" quando a rodada viva tem um decidido só.
+   */
+  const vida = new Map<string, { decididos: number; soma: number }>();
+
+  /** Todos os decididos da rodada viva, SEM separar por mesa. Ver a nota em
+   *  `porQueCoorteMenor`: a correlação que engana está entre mesas. */
+  const decididosDaCoorte: TradeCorrelacionavel[] = [];
+
   for (const r of rows) {
+    if (r.status === "hit_target" || r.status === "hit_stop") {
+      const v = vida.get(r.source ?? "user") ?? { decididos: 0, soma: 0 };
+      v.decididos++; v.soma += typeof r.outcome_pct === "number" ? r.outcome_pct : 0;
+      vida.set(r.source ?? "user", v);
+    }
+    // ⚠️ A partir daqui é SÓ rodada viva — todo campo já existente continua
+    // significando exatamente o que significava antes de 16/08.
+    if (!naRodadaViva(r)) continue;
+
     const a = get(r.source ?? "user");
     a.total++;
     if (typeof r.probability === "number") { a.probSum += r.probability; a.probCount++; }
@@ -178,10 +231,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
      * distinguir uma coisa da outra.
      */
     if (r.status === "hit_target" || r.status === "hit_stop") {
-      a.decididos.push({
+      const ideia = {
         symbol: r.symbol, kind: r.kind,
         resolvidoEmMs: Date.parse(r.resolved_at ?? r.created_at),
-      });
+      };
+      a.decididos.push(ideia);
+      /**
+       * ⚠️ E A MESMA LINHA VAI PARA A COORTE, SEM O `source`.
+       *
+       * É essa a diferença inteira: agrupar por símbolo+playbook+janela DENTRO
+       * de uma mesa perde os três UNI `sell_safe` de 14/08, porque eles estão
+       * em três mesas. Sem o `source`, eles colapsam no que são — um movimento.
+       */
+      decididosDaCoorte.push(ideia);
     }
   }
 
@@ -198,6 +260,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       winRate,
       expectancy:    gross,                                   // gross, per resolved
       expectancyNet: gross === null ? null : gross - ROUND_TRIP_COST_PCT,
+      /**
+       * ⚠️ O QUE A MESA JÁ FEZ NA VIDA — arquivo incluído, janela ignorada.
+       *
+       * Sem isto a GERI é "+7,04% com 1 decidido"; com isto é "+7,04% com 1
+       * decidido, depois de 692 decididos a −0,52% líquido". O segundo é a
+       * mesma verdade com o contexto que muda a decisão.
+       */
+      vidaInteira: (() => {
+        const v = vida.get(a.source);
+        if (!v || v.decididos === 0) return null;
+        const brutoVida = v.soma / v.decididos;
+        return {
+          decididos: v.decididos,
+          bruto: brutoVida,
+          liquido: brutoVida - ROUND_TRIP_COST_PCT,
+          /** Quantos decididos a rodada viva NÃO está mostrando. */
+          ocultos: Math.max(0, v.decididos - (a.wins + a.losses)),
+        };
+      })(),
       avgWin:        a.wins   > 0 ? a.winSum  / a.wins   : null,
       avgLoss:       a.losses > 0 ? a.lossSum / a.losses : null,
       profitFactor:  a.lossSum < 0 ? a.winSum / Math.abs(a.lossSum) : null,
@@ -247,6 +328,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       wins: wins.length, losses: losses.length, expired: 0,
       winRate: decided > 0 ? wins.length / decided : null,
       expectancy: net, expectancyNet: net, // paper pnl_pct is already net of the desk's cost model
+      /**
+       * ⚠️ MESA NEUTRA NÃO TEM "VIDA INTEIRA" AQUI, e é declaração.
+       *
+       * O ledger dela é a carteira de papel, e `paperClosedRows` já vem
+       * filtrado por `archived_at is null`. Fabricar um número de vida inteira
+       * a partir do que temos em mãos daria um valor que parece a mesma coluna
+       * das outras mesas e mede outra coisa — exatamente a divergência
+       * silenciosa que este campo existe para acabar.
+       */
+      vidaInteira: null,
       avgWin:  wins.length   ? wins.reduce((s, p) => s + p, 0) / wins.length     : null,
       avgLoss: losses.length ? losses.reduce((s, p) => s + p, 0) / losses.length : null,
       profitFactor: losses.length ? wins.reduce((s, p) => s + p, 0) / Math.abs(losses.reduce((s, p) => s + p, 0)) : null,
@@ -298,13 +389,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     sniper: "caiu com a lâmina no zero", oracle_self: "a saga não o salvou", oracle_mistral: "a saga não o salvou",
     oracle_grok: "a saga não o salvou", oracle_deepseek: "a saga não o salvou", oracle_kimi: "a saga não o salvou",
   };
-  const gy = await selectAllRows<{ source: string | null; status: string; outcome_pct: number | null }>((from, to) =>
-    db.from("zion_suggestions").select("source, status, outcome_pct")
-      .not("archived_at", "is", null)
-      .order("created_at", { ascending: true }).range(from, to),
-  );
+  /**
+   * ⚠️ SEM SEGUNDA LEITURA DA TABELA (16/08). Isto era uma varredura própria
+   * com `.not("archived_at", "is", null)`. Desde que `rows` deixou de filtrar
+   * por arquivo, ela virou o mesmo trabalho feito duas vezes — e duas leituras
+   * do mesmo ledger em instantes diferentes podem discordar por um trade que
+   * resolveu no meio, o que faria a epígrafe de Valhalla divergir do torneio
+   * sem causa visível.
+   */
   const gAgg = new Map<string, { decided: number; sum: number; resolved: number }>();
-  for (const r of gy) {
+  for (const r of rows) {
+    if (r.archived_at == null) continue;
     if (!r.source || !(r.source in CAUSE)) continue;
     const a = gAgg.get(r.source) ?? { decided: 0, sum: 0, resolved: 0 };
     if (r.status !== "open") { a.resolved++; a.sum += Number(r.outcome_pct) || 0; }
@@ -319,5 +414,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   })).filter((g) => g.decided > 0).sort((x, y) => (x.net ?? 0) - (y.net ?? 0));
 
   // `graveyard` kept as an alias for older clients; `valhalla` is canonical.
-  return NextResponse.json({ agents, valhalla, graveyard: valhalla, minSample: MIN_SAMPLE, windowDays: days, fetchedAt: new Date().toISOString() });
+  /**
+   * ⚠️ A AMOSTRA EFETIVA DA COORTE — a correção do meu próprio conserto.
+   *
+   * O `decidedEffective` de cada mesa agrupa DENTRO dela. Os três UNI
+   * `sell_safe` de 14/08 estão em três mesas diferentes, então cada uma marca
+   * "1 ideia" e a tela mostra três confirmações independentes de um movimento
+   * só. Na janela de 7 dias: 46 decididos, 23 ideias.
+   */
+  const coorteBruta = decididosDaCoorte.length;
+  const coorteEfetiva = nEfetivo(decididosDaCoorte);
+
+  return NextResponse.json({
+    agents, valhalla, graveyard: valhalla,
+    minSample: MIN_SAMPLE, windowDays: days,
+    coorte: {
+      decididos: coorteBruta,
+      ideias: coorteEfetiva,
+      aviso: porQueCoorteMenor(coorteBruta, coorteEfetiva),
+    },
+    fetchedAt: new Date().toISOString(),
+  });
 }
