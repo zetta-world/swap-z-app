@@ -46,7 +46,11 @@ describe("todo painel declarado é DESENHADO", () => {
   it("nenhum componente no mapa aponta para módulo que não existe", () => {
     // O inverso: uma entrada órfã é um componente que nada consegue abrir —
     // trabalho feito e invisível, que é a outra metade da mesma invariante.
-    const ids = new Set(MODULE_REGISTRY.map((m) => m.id));
+    // `Set<string>`, não `Set<ModuleId>`: o que se confere aqui são strings
+    // lidas de um ARQUIVO, e um id inventado é exatamente o caso a pegar.
+    // Tipar como `ModuleId` obrigaria a asserção a assumir válido o que ela
+    // existe para questionar.
+    const ids = new Set<string>(MODULE_REGISTRY.map((m) => m.id));
     const orfaos = [...idsDoMapa()].filter((id) => !ids.has(id));
     expect(orfaos, "entrada no mapa sem módulo no registro").toEqual([]);
   });
