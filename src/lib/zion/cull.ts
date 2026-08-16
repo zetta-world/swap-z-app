@@ -30,17 +30,69 @@ const COST_PCT   = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
 // self_scan (Agent A) retired 27/07 — no longer runs, so it can't be culled.
 export const CULL_SOURCES = ["hybrid_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan"] as const;
 
+/**
+ * ⚠️⚠️ MESAS EM PROVA — isentas do corte automático, e por quê (16/08).
+ *
+ * O `decideCull` corta por NÍVEL: 100+ decididos e líquido negativo, desliga.
+ * Foi exatamente esse critério que mandou a GERI para Valhalla em 27/07 — e
+ * mediu certo o número errado. Naquela mesma janela, os cards por tick dela
+ * caíam de 4,00 para 1,29 e a confiança declarada subia de 59,7 para 64,3. O
+ * NÍVEL ainda era ruim; a DERIVADA não era. Ela foi desligada no meio de estar
+ * aprendendo, e foi a única mesa deste laboratório que já mostrou aprender.
+ *
+ * Ela voltou em 16/08 com um `retireWhen` próprio, declarado em `desks.ts`:
+ *
+ *     "a seletividade PARAR de melhorar (…) NÃO aposentar por continuar
+ *      negativa enquanto a curva ainda anda — foi esse critério que a matou
+ *      em 27/07, no meio do aprendizado"
+ *
+ * ⚠️ SEM ESTA LISTA, AQUELE CAMPO SERIA MENTIRA. A ficha diria uma coisa e o
+ * cron faria outra, automaticamente, ao centésimo trade — a invariante nº 25
+ * na forma mais cara: uma declaração que o produto não lê. Ou o código respeita
+ * a ficha, ou a ficha não devia existir.
+ *
+ * ⚠️ E ISTO NÃO É PERDÃO, É TROCA DE JUIZ. A GERI continua com critério de
+ * saída; ele só não é automático, porque "a curva parou de andar" não tem
+ * definição medida ainda. Quem julga é o dono, olhando a série semanal de
+ * cards/tick e confiança. No dia em que esse critério virar número testado, ele
+ * entra no `decideCull` e esta lista some — ela é andaime, não arquitetura.
+ *
+ * ⚠️ ISENÇÃO CUSTA CARO E POR ISSO É UMA SÓ. MUNINN, SLEIPNIR, HUGINN e ODIN
+ * continuam sob o corte normal. Uma lista que cresce vira "nenhuma mesa é
+ * cortada", e aí o cull não existe mais.
+ */
+export const EM_PROVA = ["mistral_scan"] as const;
+
 export interface SourceStat { source: string; decided: number; resolved: number; expectancyNet: number | null }
 
 /** Pure verdict: who gets culled, who is champion. Sub-sample agents are
- *  untouchable either way — a lucky/unlucky streak is not a verdict. */
-export function decideCull(stats: SourceStat[], minSample = MIN_SAMPLE): { cull: string[]; champion: string | null } {
+ *  untouchable either way — a lucky/unlucky streak is not a verdict.
+ *
+ *  ⚠️ Mesa EM PROVA não é cortada (ver `EM_PROVA`), mas continua concorrendo a
+ *  campeã: a isenção é do machado, não do placar. Escondê-la do ranking seria
+ *  proteger a mesa do resultado dela, e não é isso que se está comprando. */
+export function decideCull(
+  stats: SourceStat[],
+  minSample = MIN_SAMPLE,
+  emProva: readonly string[] = EM_PROVA,
+): { cull: string[]; champion: string | null; poupadas: string[] } {
   const judged = stats.filter((s) => s.decided >= minSample && s.expectancyNet != null);
-  const cull = judged.filter((s) => s.expectancyNet! < 0).map((s) => s.source);
-  const champion = judged
-    .filter((s) => s.expectancyNet! > 0)
-    .sort((a, b) => b.expectancyNet! - a.expectancyNet!)[0]?.source ?? null;
-  return { cull, champion };
+  const isenta = new Set(emProva);
+  const reprovadas = judged.filter((s) => s.expectancyNet! < 0);
+  /**
+   * ⚠️ QUEM FOI POUPADO SAI DAQUI COM NOME. Uma isenção que age em silêncio é o
+   * mesmo defeito do gatilho de retro que morreu 20 dias sem avisar: o sistema
+   * toma uma decisão e ninguém fica sabendo. A mesa poupada tem de aparecer no
+   * ledger a cada rodada em que o machado teria caído — é assim que o dono
+   * lembra de julgar a curva dela na mão, já que o cron não vai julgar.
+   */
+  return {
+    cull: reprovadas.filter((s) => !isenta.has(s.source)).map((s) => s.source),
+    poupadas: reprovadas.filter((s) => isenta.has(s.source)).map((s) => s.source),
+    champion: judged
+      .filter((s) => s.expectancyNet! > 0)
+      .sort((a, b) => b.expectancyNet! - a.expectancyNet!)[0]?.source ?? null,
+  };
 }
 
 /** admin_kv `culled:<source>` flags currently standing. */
@@ -97,6 +149,23 @@ export async function runTournamentCull(): Promise<{ culled: string[]; champion:
         expectancyNet: s?.expectancyNet != null ? Math.round(s.expectancyNet * 100) / 100 : null,
       } });
     } catch { /* best-effort — next tick retries */ }
+  }
+
+  /**
+   * ⚠️ O MACHADO QUE NÃO CAIU TAMBÉM É NOTÍCIA. Sem esta linha, a GERI passaria
+   * a existir num estado que nenhuma tela mostra: reprovada pelo critério
+   * automático e viva mesmo assim. Quem olhasse o painel veria uma mesa
+   * negativa que "por algum motivo" não foi cortada — e o motivo é uma decisão
+   * nossa, que precisa reaparecer toda vez que ela é aplicada.
+   */
+  for (const source of verdict.poupadas) {
+    const s = stats.find((x) => x.source === source);
+    recordEvent("tournament_cull_isento", { meta: {
+      source, decided: s?.decided ?? 0,
+      expectancyNet: s?.expectancyNet != null ? Math.round(s.expectancyNet * 100) / 100 : null,
+      porque: "mesa EM PROVA: julgada pela tendência da seletividade, não pelo nível "
+        + "do líquido — ver `retireWhen` em desks.ts. Julgamento é do operador.",
+    } });
   }
 
   try {
