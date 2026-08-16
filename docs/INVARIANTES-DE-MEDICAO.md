@@ -808,6 +808,46 @@ projeto tem TRÊS elos, e cada um falha em silêncio:
 
 ---
 
+## 33. Vazio devolvido por FALHA é indistinguível de vazio devolvido por AUSÊNCIA
+
+**A cicatriz — três vezes no mesmo dia, 16/08.**
+
+Em doze horas, três defeitos diferentes com a mesma forma:
+
+| o quê | quanto tempo escondido | como se via |
+|---|---|---|
+| gatilho do Auto-Retro parou | **20 dias** | varredura rodava, não escrevia, não errava |
+| custo do radar carimbado como GERI | semanas | painel de custo somava numa mesa aposentada |
+| mesas de CEX sem preço | **14 horas** | `offered: 0`, igualzinho a "não deu setup" |
+
+O padrão é sempre o mesmo:
+
+```ts
+if (!res.ok) return [];        // a fonte recusou
+catch { return []; }           // a rede caiu
+if (!instruction) return [];   // não havia o que perguntar
+```
+
+As três linhas devolvem **o mesmo valor** que o caminho normal devolve quando o
+mundo genuinamente não tinha nada a dizer. Quem lê o resultado — a mesa, o
+painel, eu conferindo o banco — não tem como separar *"o mercado está calmo"*
+de *"não estamos enxergando o mercado"*.
+
+⚠️ **E AS DUAS CONCLUSÕES SÃO OPOSTAS.** "Não deu setup" pede paciência. "Não vejo
+preço" pede socorro. Um sistema que responde a mesma coisa nos dois casos treina
+o dono a ter paciência exatamente quando devia ter pressa.
+
+⚠️ **POR QUE ISTO NÃO É A Nº 14.** A nº 14 diz que uma medição sem registro só
+existe enquanto alguém olha. Esta é pior: **o registro existe e está errado por
+omissão** — `offered: 0` é verdade, foi gravado, e mente sobre a causa.
+
+> Todo caminho que devolve vazio por FALHA grava um evento dizendo QUE falhou e
+> POR QUÊ. Nunca no caminho feliz — um evento por tick em cima do normal enterra
+> o sinal que ele existe para dar. O teste da regra é uma pergunta só: *olhando
+> só o ledger, dá para saber se ficou quieto por escolha ou por cegueira?*
+
+---
+
 ## Como usar
 
 Leia antes de escrever a primeira linha de uma fase. Para cada item, pergunte:
