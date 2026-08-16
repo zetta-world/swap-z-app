@@ -29,6 +29,7 @@
  */
 
 import { getOHLCV } from "@/lib/api/geckoterminal";
+import { recordEvent } from "@/lib/admin/track";
 
 // Binance's public market-data mirror. api.binance.com geo-blocks US
 // serverless IPs (Vercel iad1/sfo1) with HTTP 451, which silently emptied
@@ -978,6 +979,50 @@ export async function getMarketIndicators(symbols: string[]): Promise<MarketIndi
     ...ind,
     confidenceScore: computeConfidenceScore(ind, obMap.get(ind.symbol), fearGreed),
   }));
+
+  /**
+   * ⚠️⚠️ A MESA CEGA TEM DE APARECER NO LEDGER (16/08).
+   *
+   * Descoberto conferindo por que a GERI não escaneava depois de voltar de
+   * Valhalla: **as mesas de CEX pararam de ver preço às 00:30 e ninguém soube
+   * por catorze horas.**
+   *
+   *     strat_ai_tick   → offered: 0, candidates: 0, brainRan: false
+   *     VÖLUNDR         → último sinal 16/08 00:30
+   *     SKAÐI           → último sinal 16/08 00:30
+   *
+   * E o lado DEX seguia normal no mesmo tick (`scanned: 8`, 63 pools na ULLR),
+   * o que localiza o problema na fonte de CEX, não no cron.
+   *
+   * ⚠️ O MODO DE FALHA É O DE SEMPRE, E É O PIOR: `fetchCandles` faz
+   * `if (!res.ok) return []` e `catch { return [] }`. Geo-bloqueio, rate limit,
+   * queda da fonte e "não há dados" produzem BYTE POR BYTE o mesmo resultado.
+   * Sem vela, `candidateAttempts` não oferece nada e `buildScanInstruction`
+   * devolve `null` — as duas famílias de mesa emudecem, cada uma por um caminho
+   * diferente, e nenhuma grava evento.
+   *
+   * Isto NÃO conserta a fonte: conserta a INVISIBILIDADE. Uma mesa parada
+   * porque o mercado não deu setup e uma mesa parada porque não enxerga preço
+   * são coisas opostas, e até hoje a tela mostrava as duas do mesmo jeito.
+   *
+   * ⚠️ Só grava quando há algo a dizer — nenhum evento no caminho feliz. Um
+   * evento por tick de 30 minutos em cima do caminho normal enterraria o sinal
+   * que este próprio evento existe para dar.
+   */
+  // `price` é anulável: preço nulo E preço zero são igualmente cegos.
+  const cegos = indicators.filter((i) => !(Number(i.price) > 0)).map((i) => i.symbol);
+  if (symbols.length > 0 && cegos.length > 0) {
+    recordEvent("market_data_cego", { meta: {
+      pedidos: symbols.length,
+      cegos: cegos.length,
+      simbolos: cegos.slice(0, 12),
+      livros: books.length,
+      fonte: BINANCE_DATA,
+      nota: cegos.length === symbols.length
+        ? "NENHUM símbolo com preço — a fonte de CEX está inalcançável, não é falta de setup"
+        : "parte dos símbolos sem preço",
+    } });
+  }
 
   return { indicators, orderBooks: books, fearGreed };
 }
