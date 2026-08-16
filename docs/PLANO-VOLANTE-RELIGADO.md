@@ -1,6 +1,6 @@
 # PLANO — religar o volante de aprendizado
 
-**Status: 🟡 em execução** · aberto 16/08 por ordem do dono ("faz o A primeiro,
+**Status: 🟢 entregue** (A1–A3 em 16/08, PR #303) · **🟡 parte B em execução** · aberto 16/08 por ordem do dono ("faz o A primeiro,
 religa as lições pra todas as mesas").
 
 ---
@@ -165,3 +165,103 @@ volta a morrer em silêncio.
 - **Não mexe na pilha das 24 mesas** — é o item (B), separado, ainda não pedido.
 - **Não conserta as duas convenções de custo** (0,2% por perna vs ida-e-volta),
   que continua aberto.
+
+
+---
+
+# PARTE B — a volta da GERI (16/08)
+
+Ordem do dono, logo depois do volante religado: **"desarquiva a GERI"**.
+
+## Por que ela volta
+
+Ela foi para Valhalla por marcar −0,52%/trade em 691 decididos. O número está
+certo; a leitura estava errada. Ver a tabela semanal no topo deste plano: cards
+por tick caindo 4× enquanto a confiança declarada subia de 54 para 65, e o
+líquido indo de −0,524% (636 decididos) para −0,302% (56 decididos).
+
+**Continua negativa.** O que mudou foi a derivada, e é a derivada que este
+laboratório nunca soube julgar.
+
+## O que a volta exigiu, além de trocar uma palavra
+
+Trocar `status: "valhalla"` para `"live"` seria metade do trabalho. Três coisas
+apareceram no caminho, e cada uma teria deixado a mesa meio-morta:
+
+### 1. A carteira está em $0,00
+
+Cicatriz do vazamento de julho (`paper/reconcile.ts`): capital debitado que
+nunca voltou. A causa foi corrigida em 01/08, mas **correção não devolve
+dinheiro**, e o `planRepair` pula mesa aposentada de propósito.
+
+Conferido no banco — o padrão é exato e não deixa dúvida sobre a causa:
+
+| carteira | arquivadas | caixa real | caixa esperado | diferença |
+|---|---|---|---|---|
+| grok_scan | 135 | $0,00 | $951,01 | −$951,01 |
+| **mistral_scan** | 115 | **$0,00** | $916,36 | **−$916,36** |
+| kimi_scan | 141 | $60,94 | $908,04 | −$847,09 |
+| strat_dex | **0** | $892,49 | $892,49 | **$0,00** |
+| oracle_grok | **0** | $1.000,00 | $1.000,00 | **$0,00** |
+| ullr_launch | **0** | $900,00 | $900,00 | **$0,00** |
+| strat_record | **0** | $998,42 | $998,42 | **$0,00** |
+
+Toda carteira com posição arquivada diverge; **toda carteira com zero
+arquivadas bate na casa dos centavos.** Sair de Valhalla torna a GERI elegível
+ao botão de reparo que já existe. Sem isso ela geraria sinal e nunca abriria
+posição — o mesmo defeito da FREYJA.
+
+### 2. O Setor A não é a casa dela — SETOR E
+
+Tentei pôr a GERI em `A_direcional` e o teste barrou: *"uma única mesa de IA no
+Setor A — o duelo tem de ter uma variável só"*. O teste está certo.
+
+As mesas do Setor A partem todas do MESMO cardápio (`candidateAttempts`) e
+diferem na política de escolha: o que se mede lá é a **política**. A GERI não
+recebe cardápio — lê indicadores crus e inventa a própria geometria. O que se
+mede nela é o **modelo**. Ela se compara com MUNINN e SLEIPNIR, não com o
+VÖLUNDR.
+
+Enfiar as duas famílias na mesma tabela é exatamente a mistura que o dono chamou
+de "caos sofisticado". O `E_modelo` existe para não repeti-la.
+
+### 3. O corte automático a mataria de novo, pelo mesmo motivo
+
+`decideCull` corta por NÍVEL: 100+ decididos e líquido negativo, desliga. É
+**literalmente o critério que a matou em 27/07**, no meio do aprendizado.
+
+Ela volta com `retireWhen` próprio, declarado em `desks.ts`, que fala da
+tendência. **Sem isentá-la do corte automático, aquele campo seria mentira** — a
+ficha diria uma coisa e o cron faria outra, sozinho, ao centésimo trade. É a
+invariante nº 25 na forma mais cara: uma declaração que o produto não lê.
+
+Decisão do dono: **isentar só a GERI** (`EM_PROVA`). MUNINN, SLEIPNIR, HUGINN e
+ODIN continuam sob o corte normal.
+
+Três garantias em volta da isenção, porque exceção apodrece:
+
+- **É troca de juiz, não perdão.** Ela continua com critério de saída; ele só
+  não é automático, porque "a curva parou de andar" ainda não tem definição
+  medida. Quem julga é o dono, olhando a série semanal.
+- **É do machado, não do placar.** Mesa em prova continua concorrendo a campeã.
+  Escondê-la do ranking seria protegê-la do próprio resultado.
+- **Aparece no ledger.** `tournament_cull_isento` é gravado toda rodada em que o
+  machado teria caído. Isenção silenciosa é o mesmo defeito do gatilho que
+  morreu 20 dias sem avisar.
+
+É andaime, não arquitetura: quando o critério de tendência virar número testado,
+ele entra no `decideCull` e a lista some.
+
+## O que falta, e é do dono
+
+**Apertar o botão de reparo da carteira.** O `repairWallets()` nunca é
+automático de propósito — reparar dentro da própria verificação destruiria o
+detector, e um vazamento NOVO seria zerado a cada rodada sem ninguém ver. Até o
+reparo, a GERI gera sinal e não abre posição.
+
+## O que a parte B NÃO faz
+
+- Não mexe nas outras mesas de Valhalla.
+- Não muda o critério de corte de ninguém além da GERI.
+- Não toca na pilha das 24 mesas (item B da conversa maior) nem nas duas
+  convenções de custo.
