@@ -66,6 +66,31 @@ export function readWeather(indicators: SymbolIndicators[]): { weather: Weather;
   return { weather: weatherFromBreadth(b), breadthPct: b };
 }
 
+/**
+ * AGRUPA OS MOTIVOS DE RECUSA — por que isto é função e não um `reduce` inline.
+ *
+ * ⚠️ Catorze símbolos recusados pela MESMA regra é um diagnóstico ("a
+ * biblioteca inteira está travada nesta condição"); catorze linhas repetidas é
+ * ruído que ninguém lê até o fim, e um evento que ninguém lê é um evento que
+ * não existe.
+ *
+ * Fica exportada porque é a única parte TESTÁVEL do tick — o resto é async e
+ * toca o banco. Instrumentação sem teste é a próxima coisa a sumir num
+ * refatoramento, e esta nasceu justamente porque a anterior nunca existiu.
+ */
+export function agruparRecusas(
+  standAside: ReadonlyArray<{ symbol: string; reason: string }>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const s of standAside) {
+    // ⚠️ Motivo vazio vira rótulo explícito em vez de chave "". Uma contagem
+    // sob chave vazia some no JSON e o total deixa de fechar com `scanned`.
+    const k = s.reason?.trim() || "(sem motivo declarado)";
+    out[k] = (out[k] ?? 0) + 1;
+  }
+  return out;
+}
+
 export async function runStrategistScan(
   indicators: SymbolIndicators[],
   source: string = STRAT_MECH,
@@ -147,6 +172,43 @@ export async function runStrategistScan(
   for (const p of plans) byPlaybook[p.playbook] = (byPlaybook[p.playbook] ?? 0) + 1;
 
   const out: RagnarokRun = { scanned: indicators.length, logged: 0, standAside, byPlaybook };
+
+  /**
+   * ⚠️⚠️ O TICK PASSA A DEIXAR RASTRO — e a falta dele me fez inventar uma
+   * causa em 16/08.
+   *
+   * A VÖLUNDR e a SKAÐI ficaram 15 horas sem emitir sinal. Fui conferir o
+   * ledger e não havia NADA delas: nem "operei", nem "recusei", nem por quê.
+   * `strat_ai_tick` gravava `offered: 0`, e eu li aquele zero como "as mesas
+   * de CEX pararam de ver preço" — afirmei isso ao dono, e estava errado. O
+   * `market_data_cego` que subi no mesmo dia provou, no primeiro tick, que
+   * todo símbolo tinha preço. A biblioteca estava recusando, não cegando.
+   *
+   * ⚠️ E O `standAside` JÁ EXISTIA, calculado logo acima, com símbolo e
+   * motivo. Ele era montado, devolvido a quem chamou — e o chamador é um cron
+   * que descarta o retorno. Trabalho feito, resposta pronta, e nenhum lugar
+   * onde ela pudesse ser lida depois. Bastava esta chamada.
+   *
+   * ⚠️ A MESA AO LADO JÁ FAZIA CERTO. `strat_dex_tick` grava `skipped` com
+   * símbolo e motivo desde sempre — "faca caindo", "rompimento sem volume
+   * 0.6×", "o bracket não paga o risco". A lição existia no arquivo vizinho e
+   * não viajou: invariante nº 31, terceira aparição.
+   *
+   * Isto é a nº 33 aplicada ao caminho mecânico: sem o motivo, "não achou
+   * setup em 15 horas de mercado" e "a biblioteca quebrou" são a MESMA tela.
+   */
+  recordEvent("strat_mech_tick", { meta: {
+    source, scanned: indicators.length, planos: plans.length,
+    byPlaybook,
+    clima: clima.weather,
+    filtroDeClima: applyWeatherFilter,
+    // Os motivos, agrupados: 14 símbolos recusados pela mesma regra é um
+    // diagnóstico; 14 linhas repetidas é ruído que ninguém lê até o fim.
+    recusas: agruparRecusas(standAside),
+    // Uma amostra COM símbolo, para quando o motivo agregado não bastar.
+    exemplos: standAside.slice(0, 5),
+  } });
+
   if (plans.length === 0) return out;
 
   const db = getSupabaseAdmin();
