@@ -88,7 +88,10 @@ export async function POST(req: NextRequest) {
         try { marketData = await getMarketIndicators(symbols); } catch { return; }
         if (radarBrain) {
           try {
-            const cards = await runBacktestScanForProvider(marketData, radarBrain);
+            // ⚠️ O terceiro argumento é QUEM PAGA. Sem ele, o gasto do
+            // HEIMDALL era carimbado `backtest_mistral` e entrava na conta
+            // de uma mesa aposentada.
+            const cards = await runBacktestScanForProvider(marketData, radarBrain, "radar");
             if (cards.length) await logSuggestions(cards, marketData.indicators, "radar");
           } catch { /* best-effort: next trigger retries */ }
         }
