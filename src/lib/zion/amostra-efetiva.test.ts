@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { nEfetivo, porQueEfetivoMenor, JANELA_CLUSTER_MS } from "@/lib/zion/amostra-efetiva";
+import { nEfetivo, porQueEfetivoMenor, JANELA_CLUSTER_MS, porQueCoorteMenor } from "@/lib/zion/amostra-efetiva";
 
 const h = (n: number) => n * 3_600_000;
 const t = (symbol: string, kind: string, hora: number) =>
@@ -117,5 +117,64 @@ describe("porQueEfetivoMenor", () => {
     expect(f).toContain("4 trades");
     expect(f).toContain("2 ideia");
     expect(f).toContain("média continua valendo");
+  });
+});
+
+/**
+ * ⚠️ A CORRELAÇÃO ENTRE MESAS — o buraco do meu próprio conserto (16/08).
+ *
+ * `nEfetivo` foi escrito em 15/08 e aplicado POR MESA. No dia seguinte apareceu
+ * o caso que ele não pega: um movimento do UNI capturado por três mesas
+ * diferentes, cada uma com UM trade, cada uma marcando "1 ideia" — e o painel
+ * mostrando três confirmações independentes.
+ *
+ * O algoritmo estava certo. Errado era o que eu dava a ele.
+ */
+describe("amostra efetiva — a correlação ENTRE mesas", () => {
+  const H = 3_600_000;
+  const t = (iso: string) => Date.parse(iso);
+
+  /** O caso real de 14/08, com os instantes que estão no banco. */
+  const tresUni = [
+    { symbol: "UNI", kind: "sell_safe", resolvidoEmMs: t("2026-08-14T11:30:18Z") }, // kimi_scan
+    { symbol: "UNI", kind: "sell_safe", resolvidoEmMs: t("2026-08-14T12:00:19Z") }, // mistral_scan
+    { symbol: "UNI", kind: "sell_safe", resolvidoEmMs: t("2026-08-14T12:00:20Z") }, // radar
+  ];
+
+  it("por mesa: cada uma marca 1 ideia, e o total parece 3", () => {
+    // É exatamente o que a tela mostrava — e cada linha, isolada, está certa.
+    for (const trade of tresUni) expect(nEfetivo([trade])).toBe(1);
+    expect(tresUni.map((x) => nEfetivo([x])).reduce((a, b) => a + b, 0)).toBe(3);
+  });
+
+  it("na coorte: os mesmos três trades são UMA ideia", () => {
+    expect(nEfetivo(tresUni)).toBe(1);
+  });
+
+  it("mesas diferentes em símbolos diferentes continuam independentes", () => {
+    // A correção não pode colapsar tudo — só o que é o mesmo movimento.
+    const variado = [
+      { symbol: "UNI", kind: "sell_safe", resolvidoEmMs: t("2026-08-14T12:00:00Z") },
+      { symbol: "DOT", kind: "sell_safe", resolvidoEmMs: t("2026-08-14T12:00:00Z") },
+      { symbol: "UNI", kind: "range_reversion", resolvidoEmMs: t("2026-08-14T12:00:00Z") },
+    ];
+    expect(nEfetivo(variado)).toBe(3);
+  });
+
+  it("o mesmo par em dias distintos são duas ideias, não uma", () => {
+    expect(nEfetivo([
+      { symbol: "UNI", kind: "sell_safe", resolvidoEmMs: t("2026-08-14T12:00:00Z") },
+      { symbol: "UNI", kind: "sell_safe", resolvidoEmMs: t("2026-08-14T12:00:00Z") + 25 * H },
+    ])).toBe(2);
+  });
+
+  it("porQueCoorteMenor fala de MESAS, não de repetição da mesma mesa", () => {
+    const aviso = porQueCoorteMenor(46, 23);
+    expect(aviso).toContain("46");
+    expect(aviso).toContain("23");
+    expect(aviso).toContain("mesas diferentes");
+    // Silêncio quando não há o que avisar — aviso que aparece sempre não é lido.
+    expect(porQueCoorteMenor(23, 23)).toBe("");
+    expect(porQueCoorteMenor(10, 12)).toBe("");
   });
 });
