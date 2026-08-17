@@ -37,8 +37,8 @@ import { assessRealism, realismGate, type RealismGate } from "@/lib/zion/arb-rea
 import { recordEvent } from "@/lib/admin/track";
 import { median } from "@/lib/zion/stats";
 
-const COST_PCT     = Number(process.env.ARB_COST_PCT     ?? 0.4);  // 2 taker legs + slippage buffer
-const MIN_NET_PCT  = Number(process.env.ARB_MIN_NET_PCT  ?? 0.15); // floor to act
+export const COST_PCT     = Number(process.env.ARB_COST_PCT     ?? 0.4);  // 2 taker legs + slippage buffer
+export const MIN_NET_PCT  = Number(process.env.ARB_MIN_NET_PCT  ?? 0.15); // floor to act
 /**
  * "Too good to be true" ceiling.
  *
