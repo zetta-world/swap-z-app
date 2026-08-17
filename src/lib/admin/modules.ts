@@ -20,6 +20,7 @@ export type ModuleId =
   | "rendimento"
   | "combinacao"
   | "taxa-cex"
+  | "derrapagem"
   | "aprendizado"
   | "variancia"
   | "dex-cex"
@@ -251,6 +252,18 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     // alarme enterrado no fim da se\u00e7\u00e3o \u00e9 um alarme que ningu\u00e9m ouve. Foi o
     // sil\u00eancio de 20 dias que comprou esta posi\u00e7\u00e3o.
     defaultOrder: 3.5,
+  },
+  {
+    id: "derrapagem",
+    title: "DERRAPAGEM",
+    subtitle: "quanto o livro cobra al\u00e9m da taxa \u2014 e at\u00e9 que tamanho ainda cabe",
+    icon: "\u{1F30A}",
+    category: "lab",
+    defaultEnabled: true,
+    // Logo depois do CUSTO DA CORRETORA: os dois s\u00e3o as duas metades da mesma
+    // conta, e ler a taxa sem a derrapagem foi o que produziu "provavelmente
+    // otimista" em vez de um n\u00famero.
+    defaultOrder: 8.65,
   },
   {
     id: "taxa-cex",
