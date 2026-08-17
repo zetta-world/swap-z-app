@@ -21,6 +21,7 @@ export type ModuleId =
   | "combinacao"
   | "taxa-cex"
   | "derrapagem"
+  | "descartadas"
   | "aprendizado"
   | "variancia"
   | "dex-cex"
@@ -264,6 +265,18 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     // conta, e ler a taxa sem a derrapagem foi o que produziu "provavelmente
     // otimista" em vez de um n\u00famero.
     defaultOrder: 8.65,
+  },
+  {
+    id: "descartadas",
+    title: "AS DESCARTADAS",
+    subtitle: "o teto de credibilidade está barrando dinheiro real?",
+    icon: "\u{1F6AE}",
+    category: "lab",
+    defaultEnabled: true,
+    // Ao lado da DERRAPAGEM porque é a mesma pergunta pelo outro lado: lá o
+    // livro diz quanto custa executar, aqui diz se a oportunidade descartada
+    // existia. As duas leem livro, e as duas nasceram do mesmo achado de 17/08.
+    defaultOrder: 8.66,
   },
   {
     id: "taxa-cex",
