@@ -38,6 +38,7 @@ import FundingPanel           from "./panels/FundingPanel";
 import RendimentoPanel        from "./panels/RendimentoPanel";
 import CombinacaoPanel        from "./panels/CombinacaoPanel";
 import TaxaCexPanel           from "./panels/TaxaCexPanel";
+import DerrapagemPanel       from "./panels/DerrapagemPanel";
 import AprendizadoPanel      from "./panels/AprendizadoPanel";
 import VarianciaPanel         from "./panels/VarianciaPanel";
 import DexCexPanel            from "./panels/DexCexPanel";
@@ -91,6 +92,7 @@ export const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "rendimento":         <RendimentoPanel />,
   "combinacao":         <CombinacaoPanel />,
   "taxa-cex":           <TaxaCexPanel />,
+  "derrapagem":         <DerrapagemPanel />,
   "aprendizado":        <AprendizadoPanel />,
   "variancia":          <VarianciaPanel />,
   "dex-cex":            <DexCexPanel />,
