@@ -183,3 +183,51 @@ describe("controles de dinheiro no painel de carteiras", () => {
     expect(avisoIdx).toBeLessThan(botaoIdx);
   });
 });
+
+/**
+ * ⚠️⚠️ DIAGNÓSTICO SEM CONSERTO É METADE DE UM CONTROLE (18/08).
+ *
+ * O painel do paper mostrava "13 carteiras com o contador de P&L fora das
+ * posições" desde 05/08 — e não oferecia botão nenhum. O reparo foi escrito
+ * na biblioteca (`planRealizedRepair`) e ligado na rota (o POST escreve os
+ * dois planos), mas o ÚNICO botão morava no bloco do CAIXA, que só aparece
+ * quando há déficit. Sem déficit, o dono via o problema anunciado em amarelo
+ * e não tinha o que clicar.
+ *
+ * É a invariante nº 32 na terceira aparição: ligar não é importar, e importar
+ * não é montar. As duas primeiras foram um painel sem entrada no mapa e um
+ * import órfão. Esta é uma rota com capacidade que nenhuma tela chamava.
+ *
+ * ⚠️ E O NÚMERO DO BOTÃO TEM DE SER O QUE ELE ESCREVE. O aviso conta TODAS as
+ * divergentes (13); o plano só toca as VIVAS (3), porque cicatriz de mesa
+ * aposentada não se reescreve. Botão anunciando 13 e gravando 3 seria a mesma
+ * mentira que este painel existe para acabar.
+ */
+describe("todo diagnóstico de dinheiro oferece o conserto", () => {
+  const paper = readFileSync("src/components/admin/panels/PaperPanel.tsx", "utf8");
+
+  it("o contador divergente tem botão, e ele chama o reparo", () => {
+    expect(paper).toContain("contadorDivergente");
+    expect(paper, "o bloco do contador precisa de um botão próprio")
+      .toMatch(/alinhar o contador/);
+    // O botão tem de disparar a rota, não só existir.
+    const trecho = paper.slice(paper.indexOf("contadorDivergente"));
+    expect(trecho.slice(0, 4000)).toContain("onClick={runRepair}");
+  });
+
+  it("o botão conta o PLANO (vivas), não o diagnóstico (todas)", () => {
+    // `planContador` é o que a rota escreve; `contadorDivergente` inclui as
+    // aposentadas. Trocar um pelo outro no rótulo volta a mentir o número.
+    expect(paper).toContain("repair.planContador.length");
+  });
+
+  /**
+   * ⚠️ UM BOTÃO QUE FAZ DUAS COISAS TEM DE DIZER ISSO. A rota aplica caixa e
+   * contador na mesma passada; quando os dois planos têm entrada, o operador
+   * precisa saber antes de clicar — este painel já cometeu o erro de ter três
+   * controles de capital sem rótulo distinguível.
+   */
+  it("avisa quando a mesma ação também mexe no caixa", () => {
+    expect(paper).toMatch(/também devolve o caixa/);
+  });
+});
