@@ -49,6 +49,16 @@ type RepairState = {
     source: string; label: string; guardado: number | null;
     calculado: number; driftUsd: number; retired: boolean;
   }>;
+  /**
+   * ⚠️ O QUE O BOTÃO DE FATO ESCREVE — e é MENOR que `contadorDivergente`.
+   *
+   * O diagnóstico acima conta TODAS as carteiras divergentes, inclusive as
+   * aposentadas; o plano só toca as VIVAS, pela mesma regra do caixa (cicatriz
+   * não se reescreve). Hoje são 13 contra 3. Um botão anunciando 13 e
+   * escrevendo 3 seria a mesma família de mentira que este painel existe para
+   * acabar — por isso os dois números aparecem separados na tela.
+   */
+  planContador?: Array<{ source: string; label: string; from: number; to: number; deltaUsd: number }>;
 };
 
 /**
@@ -277,6 +287,40 @@ export default function PaperPanel() {
             diferentes da mesma carteira. Acontece num reset parcial: as posições são
             arquivadas e o contador fica para trás.
           </div>
+
+          {/**
+            * ⚠️⚠️ O BOTÃO QUE FALTAVA — e a falta dele é a invariante nº 32.
+            *
+            * O reparo do contador foi escrito na biblioteca (`planRealizedRepair`)
+            * e ligado na rota (o POST escreve os dois), mas NENHUMA tela o
+            * chamava: o único botão morava no bloco do CAIXA, que só aparece
+            * quando há déficit. Sem déficit, o painel mostrava o diagnóstico e
+            * não oferecia conserto — exatamente "ligar não é montar".
+            *
+            * ⚠️ E OS DOIS NÚMEROS FICAM À VISTA. O aviso acima conta TODAS as
+            * divergentes (13); este plano só toca as VIVAS (3), porque cicatriz
+            * de mesa aposentada não se reescreve. Anunciar 13 e escrever 3 seria
+            * a mesma mentira com outra roupa.
+            */}
+          {repair.planContador && repair.planContador.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-3)", marginTop: 4 }}>
+                Serão corrigidas <b>{repair.planContador.length}</b> — só as VIVAS. As
+                aposentadas ficam como estão: o número delas é cicatriz do vazamento de
+                julho, e reescrevê-lo apagaria o registro.
+              </div>
+              {repair.plan.length > 0 && (
+                <div style={{ fontSize: 11, color: "var(--adm-red)", marginTop: 3 }}>
+                  ⚠ este botão também devolve o caixa do bloco vermelho acima — a rota
+                  aplica os dois planos na mesma passada.
+                </div>
+              )}
+              <button className="adm-btn" style={{ marginTop: 6 }}
+                      onClick={runRepair} disabled={repairing}>
+                {repairing ? "alinhando…" : `↺ alinhar o contador às posições (${repair.planContador.length})`}
+              </button>
+            </>
+          )}
         </div>
       )}
 
