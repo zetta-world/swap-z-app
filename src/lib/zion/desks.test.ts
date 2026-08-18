@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { DESKS, isArquivada, type DeskSector } from "@/lib/zion/desks";
+import { DESKS, isArquivada, deskFor, type DeskSector } from "@/lib/zion/desks";
+import { EM_PROVA } from "@/lib/zion/cull";
 import { PLAYBOOKS } from "@/lib/zion/playbooks";
 
 /**
@@ -50,7 +51,7 @@ describe("toda mesa VIVA tem ficha de construção", () => {
 
 describe("os quatro setores", () => {
   it("toda mesa pertence a um setor", () => {
-    const validos: DeskSector[] = ["A_direcional", "B_neutro", "C_lancamento", "D_arquivo"];
+    const validos: DeskSector[] = ["A_direcional", "B_neutro", "C_lancamento", "D_arquivo", "E_modelo"];
     for (const d of DESKS) expect(validos, d.name).toContain(d.sector);
   });
 
@@ -190,9 +191,49 @@ describe("capital declarado e subtítulo legível", () => {
  * movimentavam capital numa aba que ninguém abre.
  */
 describe("isArquivada — o registro como trava, não como comentário", () => {
-  it("MUNINN e GERI são arquivadas", () => {
+  it("MUNINN continua arquivada", () => {
     expect(isArquivada("kimi_scan")).toBe(true);
-    expect(isArquivada("mistral_scan")).toBe(true);
+  });
+
+  /**
+   * ⚠️ A GERI SAIU DE VALHALLA, e o teste vira junto — mas a trava que ele
+   * guarda continua a mesma.
+   *
+   * Ela voltou porque foi a única mesa a mostrar aprendizado medível: cards por
+   * tick de 4,00 para 1,00 e confiança de 54 para 65, com o líquido indo de
+   * −0,524% (636 decididos) para −0,302% (56). Continua negativa; o que mudou
+   * foi a derivada.
+   *
+   * ⚠️ E VOLTA COM CRITÉRIO DE APOSENTADORIA. Sem retireWhen, uma mesa que
+   * volta vira estimação — e o critério que a mandou embora ("está negativa")
+   * a mataria de novo no meio do aprendizado.
+   */
+  it("GERI voltou de Valhalla, e voltou com critério de saída", () => {
+    expect(isArquivada("mistral_scan")).toBe(false);
+    const geri = deskFor("mistral_scan")!;
+    expect(geri.status).toBe("live");
+    expect(geri.sector).toBe("E_modelo");
+    expect(geri.sheet?.retireWhen, "mesa sem critério vira estimação").toBeTruthy();
+    expect(geri.sheet!.retireWhen).toContain("NÃO aposentar por continuar negativa");
+  });
+
+  /**
+   * ⚠️⚠️ A ISENÇÃO DE CORTE E O REGISTRO TÊM DE CONCORDAR — e este teste nasce
+   * de uma regressão real (18/08).
+   *
+   * A PR #304 mergeou o EM_PROVA do cull.ts e o plano, mas NENHUMA linha de
+   * desks.ts: a edição do registro morreu num git reset --hard. O repo ficou
+   * dois dias com uma isenção de corte protegendo uma mesa ARQUIVADA — e nada
+   * acusou, porque o teste antigo seguia afirmando o estado antigo, que era de
+   * fato o estado do código. Verde e errado ao mesmo tempo.
+   *
+   * Uma isenção que aponta para mesa que não opera é pior que não ter isenção:
+   * ela diz na tela que a mesa está protegida e em prova, quando ela está morta.
+   */
+  it("toda mesa EM PROVA está viva no registro", () => {
+    for (const src of EM_PROVA) {
+      expect(isArquivada(src), src + " está EM_PROVA e arquivada").toBe(false);
+    }
   });
 
   it("nenhuma mesa VIVA é confundida com arquivada", () => {

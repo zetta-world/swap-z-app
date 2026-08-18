@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeDrift, significantDrifts, starvedWallets, liveDrifts, retiredDrifts, planRepair,
+  planRealizedRepair, REALIZED_TOLERANCE_USD,
   realizedDrifts,
   DRIFT_TOLERANCE_USD,
 } from "@/lib/paper/reconcile";
@@ -304,5 +305,74 @@ describe("o contador de P&L contra as posições", () => {
     const pequeno = computeDrift({ ...base, source: "a", storedRealizedUsd: 2 }, 0, 0);
     const grande = computeDrift({ ...base, source: "b", storedRealizedUsd: -50 }, 0, 0);
     expect(realizedDrifts([pequeno, grande])[0].source).toBe("b");
+  });
+});
+
+/**
+ * ⚠️ O REPARO DO CONTADOR (auditoria de 18/08).
+ *
+ * `realizedDriftUsd` existe desde 05/08 e `realizedDrifts()` reporta — mas
+ * NADA nunca consertou. Na auditoria, 13 das 23 carteiras divergiam, até
+ * $13,37 no radar. Defeito medido e não resolvido é pior que desconhecido:
+ * alguém já pagou o custo de achar, e o painel segue lendo o número errado.
+ */
+describe("o reparo do contador", () => {
+  const drift = (over: Record<string, unknown> = {}) => computeDrift(
+    { source: "radar", label: "HEIMDALL", startingUsd: 1000, cashUsd: 1000,
+      storedRealizedUsd: -13.37, ...over } as Parameters<typeof computeDrift>[0],
+    0, 0,
+  );
+
+  it("leva o contador para o CALCULADO, que é a rodada viva", () => {
+    const [e] = planRealizedRepair([drift()]);
+    expect(e.from).toBeCloseTo(-13.37, 2);
+    expect(e.to).toBe(0);
+    expect(e.deltaUsd).toBeCloseTo(13.37, 2);
+  });
+
+  /**
+   * ⚠️ A DIFERENÇA DELIBERADA EM RELAÇÃO AO CAIXA. No caixa só o déficit é
+   * devolvido — sobra é bug diferente e consertar apagaria a pista. Aqui não
+   * há dinheiro: é espelho de linhas que já existem, e os dois sentidos têm a
+   * MESMA causa. Corrigir só um lado deixaria metade da mentira na tela.
+   */
+  it("anda nos DOIS sentidos, ao contrário do caixa", () => {
+    expect(planRealizedRepair([drift({ storedRealizedUsd: -13.37 })])).toHaveLength(1);
+    expect(planRealizedRepair([drift({ storedRealizedUsd: 13.37 })])).toHaveLength(1);
+    // e o do caixa continua só no déficit — a regra NÃO vazou de um para o outro
+    const sobra = computeDrift(
+      { source: "x", label: "X", startingUsd: 1000, cashUsd: 1500 } as Parameters<typeof computeDrift>[0], 0, 0);
+    expect(planRepair([sobra])).toHaveLength(0);
+  });
+
+  it("mesa APOSENTADA fica de fora — cicatriz não se reescreve", () => {
+    // `strat_mech` é viva; `kimi_scan` está em Valhalla no registro de mesas.
+    expect(planRealizedRepair([drift({ source: "strat_mech" })])).toHaveLength(1);
+    expect(planRealizedRepair([drift({ source: "kimi_scan" })])).toHaveLength(0);
+  });
+
+  it("tolerância é de CENTAVOS, mais apertada que a do caixa", () => {
+    expect(REALIZED_TOLERANCE_USD).toBeLessThan(DRIFT_TOLERANCE_USD);
+    // exatamente na tolerância NÃO repara; acima, repara
+    expect(planRealizedRepair([drift({ storedRealizedUsd: -REALIZED_TOLERANCE_USD })])).toHaveLength(0);
+    expect(planRealizedRepair([drift({ storedRealizedUsd: -0.5 })])).toHaveLength(1);
+  });
+
+  it("carteira sem a coluna informada não vira reparo fantasma", () => {
+    // Sem `storedRealizedUsd`, o desvio é 0 por construção — reparar aqui
+    // escreveria por cima de um número que ninguém conferiu.
+    const semColuna = computeDrift(
+      { source: "radar", label: "HEIMDALL", startingUsd: 1000, cashUsd: 1000 } as Parameters<typeof computeDrift>[0],
+      0, -5);
+    expect(planRealizedRepair([semColuna])).toHaveLength(0);
+  });
+
+  it("ordena pelo maior desvio ABSOLUTO, não pelo mais negativo", () => {
+    const plano = planRealizedRepair([
+      drift({ source: "radar", storedRealizedUsd: -2 }),
+      drift({ source: "strat_ai", storedRealizedUsd: 9 }),
+      drift({ source: "strat_day", storedRealizedUsd: -5 }),
+    ]);
+    expect(plano.map((e) => e.source)).toEqual(["strat_ai", "strat_day", "radar"]);
   });
 });
