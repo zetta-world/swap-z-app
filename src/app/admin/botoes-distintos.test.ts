@@ -210,9 +210,15 @@ describe("todo diagnóstico de dinheiro oferece o conserto", () => {
     expect(paper).toContain("contadorDivergente");
     expect(paper, "o bloco do contador precisa de um botão próprio")
       .toMatch(/alinhar o contador/);
-    // O botão tem de disparar a rota, não só existir.
-    const trecho = paper.slice(paper.indexOf("contadorDivergente"));
-    expect(trecho.slice(0, 4000)).toContain("onClick={runRepair}");
+    // ⚠️ A ÂNCORA É O TEXTO RENDERIZADO, não o nome do campo. A primeira
+    // ocorrência de `contadorDivergente` é a DEFINIÇÃO DE TIPO, 200 linhas
+    // acima do bloco que desenha — fatiar dali mede o arquivo errado. Este
+    // teste já falhou por isso, e o botão estava lá o tempo todo.
+    const i = paper.indexOf("CARTEIRA(S) COM O CONTADOR");
+    expect(i, "o bloco do contador sumiu da tela").toBeGreaterThan(-1);
+    const trecho = paper.slice(i, i + 4000);
+    expect(trecho, "o botão tem de disparar a rota, não só existir")
+      .toContain("onClick={runRepair}");
   });
 
   it("o botão conta o PLANO (vivas), não o diagnóstico (todas)", () => {
