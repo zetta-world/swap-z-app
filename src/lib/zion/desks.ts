@@ -58,7 +58,24 @@ export type DeskSector =
   | "A_direcional"   // aposta direção: a TESE do dono está aqui
   | "B_neutro"       // spread/funding: já paga hoje, zero IA — não mexer
   | "C_lancamento"   // pool recém-nascido: terreno e risco próprios
-  | "D_arquivo";     // Valhalla — histórico, não compete
+  | "D_arquivo"      // Valhalla — histórico, não compete
+  /**
+   * ⚠️ SETOR E — scanner de modelo puro. Criado ao desarquivar a GERI.
+   *
+   * O Setor A tem uma regra dura, e ela é boa: uma ÚNICA mesa de IA, senão o
+   * duelo VÖLUNDR × MÍMIR mede duas variáveis ao mesmo tempo e não diz nada.
+   * Ao trazer a GERI de volta, encaixá-la em A fez o teste barrar — com razão.
+   *
+   * E o motivo é que ela não pertence àquele experimento. As mesas do Setor A
+   * partem todas do MESMO cardápio (candidateAttempts) e diferem na política
+   * de escolha: o que se mede lá é a POLÍTICA. A GERI não recebe cardápio —
+   * lê indicadores crus e inventa a própria geometria. O que se mede nela é o
+   * MODELO.
+   *
+   * São perguntas diferentes, com controles diferentes: a GERI se compara com
+   * MUNINN e SLEIPNIR (mesmo prompt, outro modelo), não com o VÖLUNDR.
+   */
+  | "E_modelo";
 
 /**
  * A FICHA DE CONSTRUÇÃO — "não sei como cada agente novo foi montado".
@@ -414,14 +431,67 @@ export const DESKS: Desk[] = [
   },
   {
     source: "mistral_scan", name: "GERI", sigil: "ᚷ",
-    subtitle: "mesa arquivada · rodada encerrada",
+    /**
+     * ⚠️⚠️ DESARQUIVADA — e a razão é a única evidência de aprendizado que
+     * este laboratório produziu até hoje.
+     *
+     * Ela foi para Valhalla por marcar −0,52%/trade em 691 decididos. O número
+     * está certo; a leitura estava errada. Por semana, no MESMO tick e com o
+     * MESMO mercado à frente:
+     *
+     *     06/07   3,91 cards/tick   confiança 58,3   bruto −0,189%
+     *     13/07   4,00              59,7             −1,322%
+     *     20/07   1,43              63,6             +0,112%
+     *     27/07   1,29              64,3             −1,771%
+     *     10/08   1,00              65,0             +7,040%
+     *
+     * Cards por tick caiu 4× e a confiança subiu de forma monótona. Não é
+     * estrangulamento nosso: estrangular corta o número de TICKS, não o de
+     * cards DENTRO do tick. Agregado: 636 decididos a −0,524% antes de 20/07;
+     * 56 decididos a −0,302% depois.
+     *
+     * E o mecanismo está escrito por ela mesma, em agent_lessons de 27/07:
+     * três de três lições mandam exigir estrutura, esperar confirmação ou não
+     * entrar. O trade de 14/08 que deu +7,04% é um sell_safe — exatamente o
+     * que a lição dela mandou priorizar.
+     *
+     * ⚠️ O QUE ISTO **NÃO** DIZ: que ela ficou lucrativa. −0,302% continua
+     * negativo, e com 0,4% de ida e volta as duas eras perdem dinheiro. Com 56
+     * decididos, os 0,22 ponto não separam aprendizado de sorte. Ela volta como
+     * EXPERIMENTO, e o retireWhen abaixo fala da TENDÊNCIA, não do nível —
+     * aposentá-la de novo por ser negativa seria repetir o erro de 27/07.
+     *
+     * ⚠️ ESTA EDIÇÃO SE PERDEU UMA VEZ. A PR #304 mergeou o EM_PROVA do
+     * cull.ts e o plano, mas NENHUMA linha deste arquivo — a alteração morreu
+     * num git reset --hard de ressincronização de branch, e o resultado foi uma
+     * isenção de corte apontando para uma mesa que seguia arquivada. O teste de
+     * coerência em desks.test.ts existe para que isso não se repita calado.
+     */
+    subtitle: "scanner Mistral · $1.000 · swing 72h · em prova",
     capitalRequiredUsd: 1000, capitalWhy:
-      "arquivada — o capital é histórico, não alocação ativa; ver PLANO-ARQUIVO-RODADAS.md",
+      "dez posições de ~$100 no formato scanner; MESMO capital da rodada anterior "
+      + "de propósito, para que a comparação com os 691 decididos continue valendo",
     who: "o lobo Faminto que come ao pé da mesa de Odin",
     style: "swing", venue: "cex", direction: "long_short", brain: "llm",
-    model: "Mistral", horizonHours: 72, scoreboard: "both", status: "valhalla",
-    sector: "D_arquivo",
-    tests: "expectancy do modelo puro no formato scanner",
+    model: "Mistral", horizonHours: 72, scoreboard: "both", status: "live",
+    // Setor E, não A: ela mede o MODELO, não a política de playbook.
+    sector: "E_modelo",
+    tests: "se a seletividade que ela aprendeu sozinha (4,00 para 1,00 card/tick, "
+      + "confiança 54 para 65) continua e passa a pagar, agora com o volante religado",
+    sheet: {
+      sees: "os mesmos indicadores dos majors que todo scanner vê, mais as próprias "
+        + "lições destiladas do próprio ledger",
+      decides: "quais cards emitir, com que geometria e com que confiança declarada — "
+        + "ou nenhum, que passou a ser a resposta mais comum dela",
+      rule: "prompt de scanner puro, um modelo só (Mistral). A geometria sai do "
+        + "modelo, não de buildLongBracket — é por isso que ela mede o MODELO",
+      comparedTo: "MUNINN e SLEIPNIR (mesmo prompt, mesmo mercado, outro modelo) e "
+        + "ela mesma antes de 20/07 — a comparação que importa é com o próprio passado",
+      retireWhen: "a seletividade PARAR de melhorar: cards/tick voltar a subir, ou "
+        + "100+ decididos novos sem o líquido melhorar sobre os −0,302% de agora. "
+        + "NÃO aposentar por continuar negativa enquanto a curva ainda anda — foi "
+        + "esse critério que a matou em 27/07, no meio do aprendizado",
+    },
   },
   {
     source: "llama_scan", name: "FREKI", sigil: "ᚠ",

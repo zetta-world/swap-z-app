@@ -29,6 +29,14 @@
 | `PLANO-MESA-AGENTES.md` | Taxonomia das mesas: estilo, praça, cérebro, direção, setor |
 | `PLANO-RAGNAROK.md` | Torneio de estratégias e a régua do USDT acumulado |
 | `PLANO-ESCOLA-DE-TRADERS.md` | Produto de educação — painéis por setor ainda 🔴 |
+| `PLANO-FORA-DA-AMOSTRA.md` | Walk-forward, retorno/tombo e o motor de baixa frequência — a régua FORA da amostra |
+| `PLANO-PAINEL-SINCRONIZADO.md` | O painel em tempo real: escopos, pausa com a aba oculta, busca forçada na volta |
+| `PLANO-VOLANTE-RELIGADO.md` | O gatilho do Auto-Retro que morreu 20 dias em silêncio, e a volta da GERI |
+| `PLANO-CUSTO-UNIFICADO.md` | `BACKTEST_COST_PCT` significava duas coisas em catorze arquivos — um primitivo, nomes inconfundíveis |
+| `PLANO-TORNEIO-HONESTO.md` | As duas colunas (rodada viva × vida inteira) e a amostra efetiva ENTRE mesas |
+| `PLANO-PAINEL-POR-AREA.md` | As sete áreas, o menu, e cada painel em tela própria (fase 2 pendente) |
+| `PLANO-DERRAPAGEM.md` | Quanto o livro da Gate.io cobra além da taxa, por tamanho de ordem |
+| `PLANO-DESCARTADAS.md` | O teto de credibilidade do arbitrador julgado com livro lido |
 
 ## 📚 Históricos — contexto, não atualizar
 
@@ -52,6 +60,10 @@
 | `PLANO-DESKTOP.md` / `PLANO-HIRD-REDESIGN.md` | Planos de interface de rodadas anteriores |
 | `CONTEXTO-ZETTAWORD.md` | Contexto de marca/empresa |
 
+> ⚠️ **Reauditado em 18/08.** Oito documentos criados entre 14 e 17/08 estavam
+> FORA do índice — a regra abaixo, quebrada oito vezes em quatro dias, por quem
+> tinha acabado de lê-la. O índice volta a bater com `ls docs/*.md`.
+>
 > ⚠️ **Auditado em 05/08.** Antes desta data o índice listava 22 de 49 arquivos.
 > Os 27 que faltavam foram classificados acima. Doc novo entra aqui no mesmo
 > commit em que nasce — índice que não bate com `ls docs/` é pior que índice

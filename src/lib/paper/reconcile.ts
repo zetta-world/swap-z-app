@@ -41,6 +41,15 @@ import { deskFor } from "@/lib/zion/desks";
 /** Quanto de desvio ainda é arredondamento de ponto flutuante, e não fuga. */
 export const DRIFT_TOLERANCE_USD = 0.5;
 
+/**
+ * ⚠️ MAIS APERTADA QUE A DO CAIXA, DE PROPÓSITO. O caixa tolera $0,50 porque
+ * arredondamento de ponto flutuante em centenas de posições acumula. Este
+ * contador é uma SOMA das mesmas linhas que o detector já leu — divergência
+ * real aqui começa em centavos, e afrouxar esconderia justamente o caso
+ * pequeno-e-crescente, que é como o de julho começou.
+ */
+export const REALIZED_TOLERANCE_USD = 0.01;
+
 export interface WalletDrift {
   source: string;
   label: string;
@@ -201,6 +210,46 @@ export function planRepair(all: WalletDrift[], tolerance = DRIFT_TOLERANCE_USD):
 }
 
 /**
+ * O CONTADOR DESNORMALIZADO CONTRA AS POSIÇÕES — o reparo que faltava.
+ *
+ * ⚠️ ACHADO NA AUDITORIA DE 18/08: **13 das 23 carteiras** têm
+ * `realized_pnl_usd` divergindo da soma das próprias posições, até $13,37 no
+ * radar. E o mais desconfortável é que o repo JÁ SABIA — `realizedDriftUsd`
+ * existe desde 05/08, `realizedDrifts()` reporta, e nada nunca consertou.
+ * Defeito medido e não resolvido é pior que defeito desconhecido: alguém já
+ * pagou o custo de achar, e o painel segue lendo o número errado.
+ *
+ * ⚠️ QUAL DOS DOIS É A VERDADE. `reconcileWallets` soma apenas posições NÃO
+ * arquivadas, e `reset.ts` zera `realized_pnl_usd` ao arquivar uma rodada.
+ * As duas coisas juntas fixam o significado da coluna: **P&L realizado da
+ * RODADA VIVA**. Logo o calculado está certo e o guardado está velho —
+ * tipicamente um reset que arquivou as posições e deixou o contador para trás.
+ *
+ * ⚠️ POR QUE ESTE REPARO ANDA NOS DOIS SENTIDOS, ao contrário do caixa. No
+ * caixa, sobra é bug DIFERENTE (dinheiro do nada) e consertar apagaria a
+ * pista — por isso só o déficit é devolvido. Aqui não há dinheiro: é um espelho
+ * de linhas que já existem no ledger. Divergência para cima e para baixo têm a
+ * MESMA causa (contador que não acompanhou o arquivamento), então corrigir só
+ * um lado deixaria metade da mentira na tela.
+ *
+ * ⚠️ MESA APOSENTADA FICA DE FORA, pela mesma regra do caixa: o número dela é
+ * cicatriz, e reescrever cicatriz apaga o registro do vazamento de julho.
+ */
+export function planRealizedRepair(
+  all: WalletDrift[], tolerance = REALIZED_TOLERANCE_USD,
+): RepairEntry[] {
+  return all
+    .filter((d) => !d.retired && Math.abs(d.realizedDriftUsd) > tolerance)
+    .map((d) => ({
+      source: d.source, label: d.label,
+      from: d.storedRealizedUsd ?? 0,
+      to: d.computedRealizedUsd,
+      deltaUsd: d.computedRealizedUsd - (d.storedRealizedUsd ?? 0),
+    }))
+    .sort((a, b) => Math.abs(b.deltaUsd) - Math.abs(a.deltaUsd));
+}
+
+/**
  * Lê o estado real e reconcilia. Best-effort: sem banco devolve lista vazia em
  * vez de derrubar quem chamou.
  */
@@ -282,11 +331,27 @@ export async function reconcileWallets(minCashUsd = 25): Promise<WalletDrift[]> 
  * teria resposta. Com ele, a bancada mostra "reparado em tal data" ao lado, e
  * qualquer coisa nova aparece contra esse marco.
  */
-export async function repairWallets(): Promise<{ repaired: RepairEntry[]; failed: string[] }> {
+export async function repairWallets(): Promise<{ repaired: RepairEntry[]; realizedFixed: RepairEntry[]; failed: string[] }> {
   const db = getSupabaseAdmin();
-  if (!db) return { repaired: [], failed: [] };
-  const plan = planRepair(await reconcileWallets());
+  if (!db) return { repaired: [], realizedFixed: [], failed: [] };
+  const estado = await reconcileWallets();
+  const plan = planRepair(estado);
   const repaired: RepairEntry[] = [], failed: string[] = [];
+
+  /**
+   * ⚠️ O CONTADOR É CONSERTADO NA MESMA PASSADA, e num `update` SEPARADO do
+   * caixa. Juntar os dois campos num só `update` amarraria duas correções de
+   * causas diferentes: uma carteira pode ter o caixa certo e o contador
+   * errado (é o caso do `arbiter2` hoje), e um update conjunto ou mexeria no
+   * que está certo ou deixaria de fora o que está errado.
+   */
+  const planRealized = planRealizedRepair(estado);
+  const realizedFixed: RepairEntry[] = [];
+  for (const e of planRealized) {
+    const { error } = await db.from("paper_accounts")
+      .update({ realized_pnl_usd: e.to }).eq("source", e.source);
+    if (error) failed.push(`${e.source}:realized`); else realizedFixed.push(e);
+  }
 
   for (const e of plan) {
     // Um `update` por carteira, e o erro é LIDO. O cliente do Supabase resolve
@@ -297,7 +362,7 @@ export async function repairWallets(): Promise<{ repaired: RepairEntry[]; failed
     if (error) failed.push(e.source); else repaired.push(e);
   }
 
-  if (repaired.length > 0) {
+  if (repaired.length > 0 || realizedFixed.length > 0) {
     const total = repaired.reduce((s, e) => s + e.deltaUsd, 0);
     await db.from("admin_kv").upsert({
       key: "paper_repair:last",
@@ -306,10 +371,13 @@ export async function repairWallets(): Promise<{ repaired: RepairEntry[]; failed
         at: new Date().toISOString(),
         totalUsd: Math.round(total * 100) / 100,
         entries: repaired.map((e) => ({ source: e.source, delta: Math.round(e.deltaUsd * 100) / 100 })),
+        // ⚠️ Separado do caixa no registro: são reparos de causas distintas,
+        // e somar os dois num total só esconderia qual deles aconteceu.
+        realizados: realizedFixed.map((e) => ({ source: e.source, delta: Math.round(e.deltaUsd * 100) / 100 })),
       }),
     }, { onConflict: "key" });
   }
-  return { repaired, failed };
+  return { repaired, realizedFixed, failed };
 }
 
 /** O marco do último reparo, para a bancada distinguir cicatriz de ferida nova. */
