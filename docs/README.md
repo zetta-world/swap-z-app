@@ -7,6 +7,7 @@
 
 | Doc | O que é |
 |-----|---------|
+| `ESTADO-ATUAL.md` | **Leia PRIMEIRO em sessao nova.** Onde o projeto esta, o que esta aberto, o ambiente, e o que ja custou caro aprender |
 | `INVARIANTES-DE-MEDICAO.md` | **Ler ANTES de cada fase.** As 23 regras que qualquer medição respeita, cada uma com a cicatriz que a gerou |
 | `RUNBOOK.md` | Env vars, crons, playbooks de incidente |
 | `ARQUITETURA-IA.md` | Arquitetura completa dos agentes A/B/torneio/radar (+ Anexos) |
