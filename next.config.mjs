@@ -120,7 +120,35 @@ const securityHeaders = [
   // are not served with Cross-Origin-Resource-Policy headers). We
   // intentionally use "credentialless" which is the modern, safer fallback
   // that doesn't require the embedded partner to opt in.
-  { key: "Cross-Origin-Opener-Policy",     value: "same-origin"         },
+  //
+  // ⚠️⚠️ COOP É "allow-popups", E NÃO "same-origin" — 18/08.
+  //
+  // Com "same-origin" a Coinbase Smart Wallet NUNCA funcionou. O popup abre
+  // em keys.coinbase.com, conecta, e ao tentar devolver a assinatura mostra
+  // "Esse aplicativo não é compatível com carteiras inteligentes — o problema
+  // é que window.opener está inacessível".
+  //
+  // A trava cortava nos DOIS sentidos: além de impedir que outros sites
+  // mexessem na nossa janela (o objetivo), ela impedia que um popup que NÓS
+  // abrimos mantivesse o canal de volta — que é o fluxo inteiro de assinatura
+  // por popup.
+  //
+  // "same-origin-allow-popups" preserva a proteção que importa: quem ABRE a
+  // gente continua sem acesso à nossa janela. O que passa a ser permitido é
+  // só o que nós mesmos abrimos. É o valor padrão de qualquer aplicação com
+  // login por popup, e é o que a documentação COOP da Coinbase recomenda.
+  //
+  // ⚠️ O QUE SE PERDE, medido antes de trocar: `crossOriginIsolated` passa a
+  // ser false, o que desliga SharedArrayBuffer e timers de alta resolução.
+  // Varredura em src/ não achou UM uso de SharedArrayBuffer, Atomics ou
+  // crossOriginIsolated — a única menção é um comentário em cex/keystore.ts.
+  // Ou seja: trocamos uma proteção que este app não exercita por um meio de
+  // conexão que estava morto. `Origin-Agent-Cluster: ?1` e a COEP continuam.
+  //
+  // Descoberto por acaso: o dono testava OUTRA coisa (o override do axios) e
+  // esbarrou nisto. O guard em src/app/headers-carteira.test.ts existe para
+  // que apertar de volta falhe no CI em vez de quebrar a carteira em silêncio.
+  { key: "Cross-Origin-Opener-Policy",     value: "same-origin-allow-popups" },
   { key: "Cross-Origin-Embedder-Policy",   value: "credentialless"      },
   { key: "Cross-Origin-Resource-Policy",   value: "same-origin"         },
   // Origin-Agent-Cluster: hint to the browser to isolate this origin in
