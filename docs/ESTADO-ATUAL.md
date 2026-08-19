@@ -10,7 +10,7 @@
 > **Quando escrever:** ao fim de cada entrega. Documento desatualizado é pior que
 > documento nenhum — dá a impressão de que foi conferido.
 >
-> **Última atualização:** 18/08/2026, após o merge de #312.
+> **Última atualização:** 19/08/2026, após o merge de #314.
 
 ---
 
@@ -18,20 +18,20 @@
 
 | | |
 |---|---|
-| `main` | `1e0c54c` — "O botão que faltava no contador (#312)" |
-| CI | verde · **1.440 testes** · 102 arquivos |
+| `main` | `f4317ed` — "A Coinbase Smart Wallet nunca funcionou (#314)" |
+| CI | verde · **1.443 testes** · 103 arquivos |
 | PRs abertas | só a `#141` do Dependabot (setup-node 6→7), não é minha |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
 
 Últimos commits, do mais novo:
 
 ```
+f4317ed  A Coinbase Smart Wallet nunca funcionou — COOP nos dois sentidos (#314)
+1c3ff48  ESTADO-ATUAL.md — o ponto de retomada quando o contexto acaba (#313)
 1e0c54c  O botão que faltava no contador — invariante nº 32, 3ª aparição (#312)
 ba30cc2  Auditoria 18/08: a regressão que ninguém viu, e 5 buracos fechados (#311)
 f04f654  As descartadas: o teto de credibilidade julgado com livro lido (#310)
-647d731  Acordar o build: o merge do #309 não disparou deploy na Vercel
 f1c0b38  A derrapagem — o último buraco do modelo de custo (#309)
-25a70b1  O tick mecânico passa a deixar rastro (#308)
 ```
 
 ### Nota da auditoria (18/08): **8,2 / 10**
@@ -111,15 +111,17 @@ mesas misturadas).
 
 ### Depende dele (não consigo fazer)
 
-1. **Testar conexão de carteira Coinbase.** O `axios` subiu para `^1.19.0` por
-   override e chega ao browser via `wagmi → @base-org/account → cdp-sdk`. **Não
-   há teste automatizado** desse caminho — é o único item da auditoria que pode
-   quebrar algo que ninguém pega.
-2. **Apertar `alinhar o contador às posições (3)`** em MESAS → PAPER. Corrige
-   radar, mistral e arbiter2.
-3. **Decidir sobre o `next`.** A única correção é a **16.3.1** — major 14 para
+1. **Refazer o teste da carteira Coinbase** — agora que o COOP foi corrigido
+   (#314). Conectar pela Coinbase e ver o endereço aparecer. O teste de 18/08
+   ficou PARCIAL: o popup abriu (logo o SDK carregou e fez rede pelo `axios`
+   novo, sem indício de problema), mas o retorno estava bloqueado pelo COOP.
+2. **Decidir sobre o `next`.** A única correção é a **16.3.1** — major 14 para
    16, 21 advisories em jogo. É migração com branch e plano próprios, não audit
    fix.
+
+✅ **Feito em 18/08** — alinhamento do contador: 13 → 10 divergentes. As 3 vivas
+(radar, mistral, arbiter2) corrigidas; as 10 aposentadas preservadas de
+propósito, porque cicatriz não se reescreve.
 
 ### Decisões dele, não minhas
 
@@ -177,6 +179,16 @@ tick: todo símbolo tinha preço. A biblioteca estava **recusando**, não cegand
 **A auditoria só achou a regressão porque clonei do zero.** Auditar a partir da
 memória da sessão teria repetido o erro — eu tinha certeza e estava errado.
 Leia o código, não a lembrança dele.
+
+**Um header de segurança matou um meio de conexão, e o CI ficou verde.**
+`Cross-Origin-Opener-Policy: same-origin` quebrou a Coinbase Smart Wallet no
+commit `fc24aa3` e ninguém soube por semanas — nada no repositório conecta
+carteira, então o defeito só existia no navegador do usuário. O dono achou por
+acaso, testando outra coisa. Corrigido em #314 com trava em
+`headers-carteira.test.ts`.
+
+> Endurecimento de segurança que passa no CI não é endurecimento verificado.
+> O que o CI não exercita, o CI não protege.
 
 **Teste que copia a constante que deveria conferir não confere nada.**
 `pnl-math.test.ts` tinha `const COST = 0.2` na mão: oito asserções verdes sobre
