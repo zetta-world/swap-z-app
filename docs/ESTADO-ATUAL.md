@@ -10,7 +10,8 @@
 > **Quando escrever:** ao fim de cada entrega. Documento desatualizado é pior que
 > documento nenhum — dá a impressão de que foi conferido.
 >
-> **Última atualização:** 19/08/2026, após o merge de #314.
+> **Última atualização:** 19/08/2026, após o dono confirmar no navegador que a
+> Coinbase Smart Wallet voltou a conectar — #314 verificado em produção.
 
 ---
 
@@ -18,7 +19,7 @@
 
 | | |
 |---|---|
-| `main` | `f4317ed` — "A Coinbase Smart Wallet nunca funcionou (#314)" |
+| `main` | `9859394` — em produção, headers conferidos por `curl` |
 | CI | verde · **1.443 testes** · 103 arquivos |
 | PRs abertas | só a `#141` do Dependabot (setup-node 6→7), não é minha |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
@@ -26,6 +27,7 @@
 Últimos commits, do mais novo:
 
 ```
+9859394  ESTADO-ATUAL: main em f4317ed, o COOP e o contador fechados (#315)
 f4317ed  A Coinbase Smart Wallet nunca funcionou — COOP nos dois sentidos (#314)
 1c3ff48  ESTADO-ATUAL.md — o ponto de retomada quando o contexto acaba (#313)
 1e0c54c  O botão que faltava no contador — invariante nº 32, 3ª aparição (#312)
@@ -67,17 +69,41 @@ diretório de trabalho primário.
 ⚠️ O checkout vem com CRLF (o git normaliza para LF no commit — confira com
 `git show HEAD:arquivo` em caso de dúvida).
 
-⚠️ **Heredoc de bash quebra com conteúdo longo/acentuado** nesta máquina, e não
-há Python. Para escrever arquivo grande, use a ferramenta de escrita direta.
-Para editar, escreva um `.mjs` em `/tmp` e rode com `node` — e **nunca** misture
-heredoc com `node -e` no mesmo comando.
+⚠️ **Heredoc de bash quebra com conteúdo longo/acentuado** nesta máquina.
+Para escrever arquivo grande, use a ferramenta de escrita direta.
+
+✅ **Correção de 19/08: existe Python** — `python 3.13.1` no PATH. A anotação
+anterior dizia que não havia, e isso estava errado: `python - <<'PY'` com
+heredoc **funciona**, inclusive com acento, e é a forma mais segura de editar
+markdown longo (ancore a substituição e faça `assert count == 1` antes de
+gravar, para não errar silenciosamente). Para JS, escreva um `.mjs` e rode com
+`node` — e **nunca** misture heredoc com `node -e` no mesmo comando.
+
+⚠️ **O ref de rastreio da branch MENTE.** Em 19/08, `git fetch origin <branch>`
+rodou sem erro e `origin/claude/...` continuou apontando cinco PRs para trás. Se
+eu tivesse conferido o `--force-with-lease` contra esse ref, teria comparado
+contra a baseline errada — que é exatamente a classe de erro que apagou a GERI
+em #304. **Antes de qualquer force-push, pergunte ao servidor, não ao cache:**
+
+```bash
+git ls-remote origin claude/swap-z-recovery-deploy-b7y2cw   # a verdade
+git rev-parse origin/claude/swap-z-recovery-deploy-b7y2cw   # o que você acha
+```
+
+Divergiu? `git fetch origin --prune` e confira de novo. E ancore o lease no SHA
+que o `ls-remote` devolveu, nunca no nome da branch:
+`git push --force-with-lease=<branch>:<sha-do-ls-remote>`.
+
+Como a branch é sempre squash-merged, o normal é o remote dela ficar com UM
+commit órfão de conteúdo idêntico à `main`. Confirme que é isso antes de forçar:
+`git diff <sha-remoto> origin/main --stat` tem que sair **vazio**.
 
 Para retomar:
 
 ```bash
 export PATH="$PATH:/c/Program Files/GitHub CLI"
 cd /c/Users/55849/Downloads/.audit-swapz
-git fetch origin main --quiet
+git fetch origin --prune --quiet
 git checkout -B claude/swap-z-recovery-deploy-b7y2cw origin/main
 ```
 
@@ -111,11 +137,7 @@ mesas misturadas).
 
 ### Depende dele (não consigo fazer)
 
-1. **Refazer o teste da carteira Coinbase** — agora que o COOP foi corrigido
-   (#314). Conectar pela Coinbase e ver o endereço aparecer. O teste de 18/08
-   ficou PARCIAL: o popup abriu (logo o SDK carregou e fez rede pelo `axios`
-   novo, sem indício de problema), mas o retorno estava bloqueado pelo COOP.
-2. **Decidir sobre o `next`.** A única correção é a **16.3.1** — major 14 para
+1. **Decidir sobre o `next`.** A única correção é a **16.3.1** — major 14 para
    16, 21 advisories em jogo. É migração com branch e plano próprios, não audit
    fix.
 
@@ -123,13 +145,21 @@ mesas misturadas).
 (radar, mistral, arbiter2) corrigidas; as 10 aposentadas preservadas de
 propósito, porque cicatriz não se reescreve.
 
+✅ **Feito em 19/08** — teste da carteira Coinbase, **passou**. Com o COOP em
+`same-origin-allow-popups`, o popup de `keys.coinbase.com` abre e oferece
+"Entrar com a Base" (QR ou passkey) — exatamente o passo que morria antes com
+*"window.opener está inacessível"*. Fecha duas coisas de uma vez: a Smart Wallet
+volta a funcionar depois de semanas morta, e a verificação do override do
+`axios` sai de PARCIAL para **completa** — o SDK carrega, faz rede e conclui o
+fluxo com a versão nova.
+
 ### Decisões dele, não minhas
 
-4. **A pilha das 24 mesas para ~7 motores** (parte 3 do "item B"). Crítica dele:
+2. **A pilha das 24 mesas para ~7 motores** (parte 3 do "item B"). Crítica dele:
    *"vc fez a porra toda junto e misturado"*. O Setor E foi o primeiro corte.
    `runBacktestScanForProvider` é UMA função por 6 modelos; `selectPlaybook` é
    UMA biblioteca por 5 políticas; `arbiter2` é UM motor por 3 alavancagens.
-5. **A fronteira de custo no ledger de papel** (`FRONTEIRA_CUSTO_ISO`): arquivar
+3. **A fronteira de custo no ledger de papel** (`FRONTEIRA_CUSTO_ISO`): arquivar
    a rodada e recomeçar com a régua nova, ou conviver e cortar nas leituras.
 
 ### Trabalho meu, quando ele mandar
@@ -185,7 +215,12 @@ Leia o código, não a lembrança dele.
 commit `fc24aa3` e ninguém soube por semanas — nada no repositório conecta
 carteira, então o defeito só existia no navegador do usuário. O dono achou por
 acaso, testando outra coisa. Corrigido em #314 com trava em
-`headers-carteira.test.ts`.
+`headers-carteira.test.ts`, e **confirmado em 19/08 pelo único juiz que valia:
+o navegador dele**, conectando de verdade.
+
+E note o que o conserto exigiu: o `curl` do header voltando
+`same-origin-allow-popups` provava o deploy, **não** a carteira. Só o clique
+prova a carteira. Header servido não é fluxo funcionando.
 
 > Endurecimento de segurança que passa no CI não é endurecimento verificado.
 > O que o CI não exercita, o CI não protege.
