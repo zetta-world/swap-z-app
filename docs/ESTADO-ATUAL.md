@@ -79,12 +79,31 @@ markdown longo (ancore a substituição e faça `assert count == 1` antes de
 gravar, para não errar silenciosamente). Para JS, escreva um `.mjs` e rode com
 `node` — e **nunca** misture heredoc com `node -e` no mesmo comando.
 
+⚠️ **O ref de rastreio da branch MENTE.** Em 19/08, `git fetch origin <branch>`
+rodou sem erro e `origin/claude/...` continuou apontando cinco PRs para trás. Se
+eu tivesse conferido o `--force-with-lease` contra esse ref, teria comparado
+contra a baseline errada — que é exatamente a classe de erro que apagou a GERI
+em #304. **Antes de qualquer force-push, pergunte ao servidor, não ao cache:**
+
+```bash
+git ls-remote origin claude/swap-z-recovery-deploy-b7y2cw   # a verdade
+git rev-parse origin/claude/swap-z-recovery-deploy-b7y2cw   # o que você acha
+```
+
+Divergiu? `git fetch origin --prune` e confira de novo. E ancore o lease no SHA
+que o `ls-remote` devolveu, nunca no nome da branch:
+`git push --force-with-lease=<branch>:<sha-do-ls-remote>`.
+
+Como a branch é sempre squash-merged, o normal é o remote dela ficar com UM
+commit órfão de conteúdo idêntico à `main`. Confirme que é isso antes de forçar:
+`git diff <sha-remoto> origin/main --stat` tem que sair **vazio**.
+
 Para retomar:
 
 ```bash
 export PATH="$PATH:/c/Program Files/GitHub CLI"
 cd /c/Users/55849/Downloads/.audit-swapz
-git fetch origin main --quiet
+git fetch origin --prune --quiet
 git checkout -B claude/swap-z-recovery-deploy-b7y2cw origin/main
 ```
 
