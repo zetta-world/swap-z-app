@@ -79,24 +79,46 @@ markdown longo (ancore a substituição e faça `assert count == 1` antes de
 gravar, para não errar silenciosamente). Para JS, escreva um `.mjs` e rode com
 `node` — e **nunca** misture heredoc com `node -e` no mesmo comando.
 
-⚠️ **O ref de rastreio da branch MENTE.** Em 19/08, `git fetch origin <branch>`
-rodou sem erro e `origin/claude/...` continuou apontando cinco PRs para trás. Se
-eu tivesse conferido o `--force-with-lease` contra esse ref, teria comparado
-contra a baseline errada — que é exatamente a classe de erro que apagou a GERI
-em #304. **Antes de qualquer force-push, pergunte ao servidor, não ao cache:**
+⚠️ **O ref de rastreio da branch MENTIU por meses — e a causa era o clone.**
+Em 19/08, `git fetch origin <branch>` rodou sem erro e `origin/claude/...`
+continuou apontando **cinco PRs para trás**. `--prune` também não corrigiu.
+
+A causa: o clone foi feito **single-branch**, e o refspec era
+
+```
+remote.origin.fetch = +refs/heads/main:refs/remotes/origin/main
+```
+
+Só a `main`. Todo outro ref de rastreio ficou **congelado no valor do dia em que
+nasceu**, e nenhum `fetch` jamais o atualizaria. Não era cache velho — era um
+ref que o git nunca teve ordem de mexer, e que mesmo assim responde a
+`rev-parse` com cara de resposta atual.
+
+**Já corrigido neste clone** (19/08):
+
+```bash
+git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+git fetch origin --prune
+```
+
+⚠️ **Se um dia clonar de novo, não use `--single-branch`** — ou o ref volta a
+mentir. E `--force-with-lease=<branch>` sozinho **não protege nada** aqui: ele
+ancora justamente no ref podre. Confira no servidor antes de forçar:
 
 ```bash
 git ls-remote origin claude/swap-z-recovery-deploy-b7y2cw   # a verdade
 git rev-parse origin/claude/swap-z-recovery-deploy-b7y2cw   # o que você acha
 ```
 
-Divergiu? `git fetch origin --prune` e confira de novo. E ancore o lease no SHA
-que o `ls-remote` devolveu, nunca no nome da branch:
+E ancore o lease no SHA que o `ls-remote` devolveu, nunca no nome da branch:
 `git push --force-with-lease=<branch>:<sha-do-ls-remote>`.
 
 Como a branch é sempre squash-merged, o normal é o remote dela ficar com UM
 commit órfão de conteúdo idêntico à `main`. Confirme que é isso antes de forçar:
 `git diff <sha-remoto> origin/main --stat` tem que sair **vazio**.
+
+> Ferramenta de segurança apontada para a fonte errada dá a sensação da
+> proteção sem a proteção. Foi assim que a GERI morreu em #304.
 
 Para retomar:
 
