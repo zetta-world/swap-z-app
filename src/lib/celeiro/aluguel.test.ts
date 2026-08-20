@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  juroDoPeriodo, acumular, melhorTaxa, lerTaxaDeEmprestimo,
-  MS_POR_ANO, TETO_POR_LANCAMENTO_MS, AGENTE,
+  juroDoPeriodo, acumular, taxaDaMoeda, lerTaxaDeEmprestimo,
+  MS_POR_ANO, TETO_POR_LANCAMENTO_MS, TETO_PLAUSIVEL_ANUAL_PCT, AGENTE,
 } from "@/lib/celeiro/aluguel";
 
 /**
@@ -120,41 +120,57 @@ describe("o acúmulo entre ticks", () => {
 });
 
 describe("a leitura da taxa na Gate.io", () => {
+  /** O formato real de `/earn/uni/rate`, conferido em produção em 20/08. */
+  const CORPO = [
+    { est_rate: "0.0188", currency: "ETH" },
+    { est_rate: "0.0200", currency: "USDT" },
+    { est_rate: "0.0010", currency: "BTC" },
+  ];
+
   /**
-   * ⚠️ A CONVERSÃO DIÁRIA → ANUAL, FIXADA. A Gate.io publica `rate` AO DIA.
-   * 0,0002/dia = 7,30%/ano. Deixar o número diário passar por anual encolheria
-   * o piso em 365× e faria todo agente do Celeiro parecer excelente.
+   * ⚠️⚠️ A UNIDADE, FIXADA COM O NÚMERO QUE A PROVA. `est_rate` é fração
+   * ANUAL: 0,0200 → 2,00%/ano. Se fosse diária seriam 7,3% AO DIA numa
+   * stablecoin, e no mesmo instante BTC (0,0010) valeria 36,5%/ano — o inverso
+   * do mercado real, onde emprestar BTC rende quase nada.
+   *
+   * Multiplicar por 365 aqui inflaria o piso 365× e faria todo agente do
+   * Celeiro parecer lixo para sempre.
    */
-  it("converte a taxa diária da Gate.io para anual", () => {
-    const corpo = { rates: [{ rate: "0.0002" }] };
-    expect(melhorTaxa(corpo)).toBeCloseTo(7.3, 9);
+  it("est_rate é fração ANUAL, e vira percentual ao ano", () => {
+    expect(taxaDaMoeda(CORPO, "USDT")).toBeCloseTo(2.0, 9);
+    expect(taxaDaMoeda(CORPO, "BTC")).toBeCloseTo(0.1, 9);
+    expect(taxaDaMoeda(CORPO, "eth")).toBeCloseTo(1.88, 9);
   });
 
   /**
-   * ⚠️ PEGA A MENOR, NÃO A MAIOR. As pontas altas do livro são ofertas que
-   * talvez ninguém tome. Piso honesto é piso conservador — inflá-lo faz todo
-   * agente parecer pior do que é. Trocar `min` por `max` quebra aqui.
+   * ⚠️⚠️ O TETO DE PLAUSIBILIDADE. Se a Gate.io trocar a unidade, o número vira
+   * dez ou mil vezes maior e o CONTROLE passa a creditar juro fantasma — o que
+   * faria todo agente parecer péssimo para sempre, sem um erro em log sequer.
+   * Recusar é melhor que acreditar num número que mudou de significado.
    */
-  it("usa a menor taxa do livro, não a mais alta", () => {
-    const corpo = { rates: [{ rate: "0.0009" }, { rate: "0.0002" }, { rate: "0.0005" }] };
-    expect(melhorTaxa(corpo)).toBeCloseTo(7.3, 9);
-  });
-
-  it("aceita o corpo como lista solta", () => {
-    expect(melhorTaxa([{ rate: "0.0002" }])).toBeCloseTo(7.3, 9);
+  it("taxa implausível é recusada, não creditada", () => {
+    const trocouAUnidade = [{ est_rate: "0.0200", currency: "USDT" }].map(
+      (x) => ({ ...x, est_rate: String(0.02 * 365) }),   // se virasse "diária"
+    );
+    expect(taxaDaMoeda(trocouAUnidade, "USDT")).toBeNull();
+    expect(TETO_PLAUSIVEL_ANUAL_PCT).toBeLessThan(0.02 * 365 * 100);
+    // E o valor real continua passando folgado.
+    expect(taxaDaMoeda(CORPO, "USDT")).not.toBeNull();
   });
 
   /**
-   * ⚠️ LEITURA RUIM DEVOLVE null, NUNCA UM PADRÃO. Um número inventado quando a
-   * rede cai viraria juro que ninguém observou — e como este agente é a régua,
-   * o erro contaminaria o julgamento de todos os outros.
+   * ⚠️ O CASO QUE ACONTECEU DE VERDADE. O endpoint anterior respondia HTTP 200
+   * com `[]` — vivo e vazio, depois de a Gate.io migrar o empréstimo de margem.
+   * Lista vazia tem de virar `null`: um piso inventado contaminaria o
+   * julgamento de todos os outros agentes de uma vez.
    */
-  it("corpo inútil devolve null em vez de um padrão", () => {
-    expect(melhorTaxa(null)).toBeNull();
-    expect(melhorTaxa({})).toBeNull();
-    expect(melhorTaxa({ rates: [] })).toBeNull();
-    expect(melhorTaxa({ rates: [{ rate: "0" }] })).toBeNull();
-    expect(melhorTaxa({ rates: [{ rate: "abacaxi" }] })).toBeNull();
+  it("corpo vazio ou sem a moeda devolve null", () => {
+    expect(taxaDaMoeda([], "USDT")).toBeNull();
+    expect(taxaDaMoeda(null, "USDT")).toBeNull();
+    expect(taxaDaMoeda({}, "USDT")).toBeNull();
+    expect(taxaDaMoeda(CORPO, "DOGE")).toBeNull();
+    expect(taxaDaMoeda([{ est_rate: "abacaxi", currency: "USDT" }], "USDT")).toBeNull();
+    expect(taxaDaMoeda([{ est_rate: "0", currency: "USDT" }], "USDT")).toBeNull();
   });
 
   it("rede caída devolve null e não lança", async () => {
@@ -163,11 +179,17 @@ describe("a leitura da taxa na Gate.io", () => {
   });
 
   it("leitura boa carrega a fonte para o extrato poder ser auditado", async () => {
-    const ok = async () => ({ rates: [{ rate: "0.0002" }] });
-    const t = await lerTaxaDeEmprestimo(ok, 123);
-    expect(t?.taxaAnualPct).toBeCloseTo(7.3, 9);
-    expect(t?.fonte).toContain("api.gateio.ws");
+    const t = await lerTaxaDeEmprestimo(async () => CORPO, 123);
+    expect(t?.taxaAnualPct).toBeCloseTo(2.0, 9);
+    expect(t?.fonte).toContain("earn/uni/rate");
     expect(t?.lidoEmMs).toBe(123);
+  });
+
+  it("pede a rota que responde, e não a que ficou vazia", async () => {
+    let pedido = "";
+    await lerTaxaDeEmprestimo(async (u) => { pedido = u; return CORPO; });
+    expect(pedido).toContain("earn/uni/rate");
+    expect(pedido).not.toContain("funding_book");
   });
 });
 

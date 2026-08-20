@@ -147,10 +147,10 @@ export async function lerTaxaDeEmprestimo(
   buscar: (url: string) => Promise<unknown> = padraoBuscar,
   agoraMs: number = Date.now(),
 ): Promise<TaxaDeEmprestimo | null> {
-  const url = "https://api.gateio.ws/api/v4/margin/funding_book?currency=USDT";
+  const url = "https://api.gateio.ws/api/v4/earn/uni/rate";
   try {
     const corpo = await buscar(url);
-    const taxa = melhorTaxa(corpo);
+    const taxa = taxaDaMoeda(corpo, "USDT");
     if (taxa === null) return null;
     return { taxaAnualPct: taxa, fonte: url, lidoEmMs: agoraMs };
   } catch {
@@ -159,29 +159,50 @@ export async function lerTaxaDeEmprestimo(
 }
 
 /**
- * A taxa que o livro de empréstimo realmente oferece.
+ * Teto de plausibilidade para a taxa do controle, em %/ano.
  *
- * ⚠️ A GATE.IO PUBLICA `rate` AO DIA. Multiplicar por 365 é a conversão; deixar
- * o número diário passar por anual inflaria o controle em 365× e faria todo
- * agente do Celeiro parecer lixo. Conversão de unidade sem teste é como o
- * `pnl-math` que copiou a constante que devia conferir.
+ * ⚠️ SE A GATE.IO TROCAR A UNIDADE, o número viraria dez ou mil vezes maior e
+ * este agente — que é a RÉGUA — passaria a creditar juro fantasma, fazendo TODO
+ * agente do Celeiro parecer péssimo para sempre, sem nenhum erro em log. Acima
+ * do teto a leitura é RECUSADA, e o cron cai no caminho de "taxa não lida".
  *
- * ⚠️ E PEGA O MENOR, não o maior. O livro é ordenado por taxa e as pontas altas
- * são ofertas que talvez ninguém tome. O controle tem de ser um piso HONESTO —
- * inflá-lo faria todo agente parecer pior do que é.
+ * Preferir parar a acreditar num número que mudou de significado.
  */
-export function melhorTaxa(corpo: unknown): number | null {
-  if (!corpo || typeof corpo !== "object") return null;
-  const lista = (corpo as { rates?: unknown[] }).rates
-    ?? (Array.isArray(corpo) ? corpo : null);
-  if (!Array.isArray(lista) || lista.length === 0) return null;
+export const TETO_PLAUSIVEL_ANUAL_PCT = 60;
 
-  const diarias = lista
-    .map((r) => Number((r as { rate?: unknown })?.rate))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  if (diarias.length === 0) return null;
+/**
+ * A taxa anual de empréstimo de uma moeda, em %.
+ *
+ * ⚠️⚠️ A PRIMEIRA VERSÃO LIA O ENDPOINT ERRADO, e o cron provou em produção.
+ * `/margin/funding_book?currency=USDT` responde **HTTP 200 com `[]`** — a
+ * Gate.io migrou o empréstimo de margem e deixou a rota viva e vazia. O código
+ * recusou corretamente (`[]` → `null` → não creditou nada, e a Colheita nem foi
+ * examinada por falta de régua), mas o controle ficou parado em zero.
+ *
+ * ⚠️ E A UNIDADE FOI PROVADA, NÃO SUPOSTA. `est_rate` do USDT vem `0.0200`. Se
+ * fosse diária, seriam 7,3% AO DIA numa stablecoin — absurdo. Como fração
+ * ANUAL dá 2,00%/ano, e no mesmo instante BTC vem `0.0010` (0,10%/ano) e ETH
+ * `0.0188` (1,88%) — exatamente o formato deste mercado, onde emprestar BTC
+ * rende quase nada e stablecoin rende alguns por cento.
+ *
+ * Confere ainda com a outra rota: `/earn/uni/currencies` publica limites
+ * HORÁRIOS do USDT (`max_rate` 0.0000456 → 39,9%/ano de teto), e 2,00% cabe
+ * dentro. Duas fontes independentes concordando é o que separa unidade
+ * VERIFICADA de unidade adivinhada — e adivinhar unidade é como o `pnl-math`
+ * rodou oito asserções verdes sobre metade da taxa real.
+ */
+export function taxaDaMoeda(corpo: unknown, moeda: string): number | null {
+  if (!Array.isArray(corpo)) return null;
+  const alvo = corpo.find(
+    (x) => String((x as { currency?: unknown })?.currency ?? "").toUpperCase() === moeda.toUpperCase(),
+  );
+  if (!alvo) return null;
 
-  return Math.min(...diarias) * 365 * 100;
+  const fracaoAnual = Number((alvo as { est_rate?: unknown }).est_rate);
+  if (!Number.isFinite(fracaoAnual) || fracaoAnual <= 0) return null;
+
+  const pct = fracaoAnual * 100;
+  return pct > TETO_PLAUSIVEL_ANUAL_PCT ? null : pct;
 }
 
 async function padraoBuscar(url: string): Promise<unknown> {
