@@ -31,8 +31,20 @@ interface LinhaFluxo {
 }
 
 export async function GET() {
-  const negado = await requireAdmin();
-  if (negado) return negado;
+  /**
+   * ⚠️ `requireAdmin()` NÃO DEVOLVE RESPOSTA DE ERRO — ele lança `notFound()`
+   * quando nega, e devolve `{ wallet }` quando aprova.
+   *
+   * A primeira versão daqui fazia `const negado = await requireAdmin(); if
+   * (negado) return negado;` — e como `{ wallet }` é truthy, a rota SEMPRE
+   * devolveria `{"wallet":"0x…"}` no lugar dos dados. O painel nunca mostraria
+   * nada, e o motivo não apareceria em log nenhum.
+   *
+   * Quem pegou foi o tipo gerado do Next em `.next/types`, que só existe depois
+   * de um build — `tsc --noEmit` sozinho passa batido. É o mesmo padrão que o
+   * torneio usa desde sempre: chamar e ignorar o retorno.
+   */
+  await requireAdmin();
 
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ erro: "sem banco" }, { status: 503 });

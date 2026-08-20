@@ -56,6 +56,24 @@ function usd(n: number): string {
   return `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}`;
 }
 
+/**
+ * ⚠️ ESTILO INLINE COM AS VARIÁVEIS DA CASA, e não classe nova.
+ *
+ * A primeira versão deste painel inventou `adm-warn`, `adm-note`, `adm-dim`,
+ * `adm-ok` e `adm-bad`. Nenhuma existe no `admin.css` — o elemento renderiza
+ * SEM ESTILO NENHUM, e isso passa por tsc, por lint e por teste de unidade,
+ * porque classe inexistente é string válida em toda parte. Quem pegou foi o
+ * `admin-css.test.ts`, que existe exatamente para isso.
+ *
+ * O padrão do repositório é `style={{ color: "var(--adm-ink-3)" }}` — 272
+ * ocorrências de `--adm-ink-4` e 150 de `--adm-ink-3` nos painéis. Seguir o que
+ * já existe custa menos que criar vocabulário novo e esquecer o CSS.
+ */
+const APAGADO = { color: "var(--adm-ink-3)" } as const;
+const ALERTA  = { color: "var(--adm-red)" } as const;
+const BOM     = { color: "var(--adm-green)" } as const;
+const RUIM    = { color: "var(--adm-amber)" } as const;
+
 export default function CeleiroPanel() {
   const [d, setD] = useState<Dados | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -78,7 +96,7 @@ export default function CeleiroPanel() {
       subtitle="a segunda arena · placar em USDT acumulado, por faixa de capital"
       source="CELEIRO_FLUXOS"
     >
-      {erro && <div className="adm-warn">{erro}</div>}
+      {erro && <div style={ALERTA}>{erro}</div>}
 
       {/*
         ⚠️ O ESTADO DE ARRANQUE É DITO, NÃO DEDUZIDO. Um painel todo zerado é
@@ -87,7 +105,7 @@ export default function CeleiroPanel() {
         leitura errada, e a tela é onde a confusão nasce.
       */}
       {d?.semNenhumLancamento && (
-        <div className="adm-note">
+        <div className="adm-nota">
           <b>O Celeiro ainda não recebeu nenhum lançamento.</b> Isto não é
           resultado zero — é ausência de medição. Os agentes estão registrados e
           os portões construídos; nenhum escreveu no extrato ainda.
@@ -122,26 +140,26 @@ export default function CeleiroPanel() {
                       {l.ehControle && <span title="o piso do Celeiro">⚖ </span>}
                       {l.nome}
                       {l.convidado && (
-                        <span className="adm-dim" title="não é desta faixa — está aqui só como piso">
+                        <span style={APAGADO} title="não é desta faixa — está aqui só como piso">
                           {" "}· piso
                         </span>
                       )}
                     </td>
-                    <td className="adm-dim">
+                    <td style={APAGADO}>
                       {MODALIDADE[l.modalidade] ?? l.modalidade} · {l.ritmo}
                       {l.motor === "bot" ? " · bot" : " · bot+ia"}
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      {l.semDado ? <span className="adm-dim">sem dado</span> : <b>{usd(l.usdt)}</b>}
+                      {l.semDado ? <span style={APAGADO}>sem dado</span> : <b>{usd(l.usdt)}</b>}
                     </td>
                     <td style={{ textAlign: "right" }}>
                       {l.ehControle || l.semDado
-                        ? <span className="adm-dim">—</span>
-                        : <span className={l.acimaDoControle >= 0 ? "adm-ok" : "adm-bad"}>
+                        ? <span style={APAGADO}>—</span>
+                        : <span style={l.acimaDoControle >= 0 ? BOM : RUIM}>
                             {usd(l.acimaDoControle)}
                           </span>}
                     </td>
-                    <td style={{ textAlign: "right" }} className="adm-dim">{l.lancamentos}</td>
+                    <td style={{ ...APAGADO, textAlign: "right" }}>{l.lancamentos}</td>
                   </tr>
                 ))}
               </tbody>
@@ -156,12 +174,12 @@ export default function CeleiroPanel() {
             uma mesa acerta 70% e perde dinheiro.
           */}
           {f.linhas.filter((l) => aberto === `${f.faixa}:${l.agente}`).map((l) => (
-            <div key={l.agente} className="adm-note" style={{ marginTop: 8 }}>
+            <div key={l.agente} className="adm-nota" style={{ marginTop: 8 }}>
               <div><b>{l.nome}</b> — {l.mecanismo}</div>
-              <div className="adm-dim" style={{ marginTop: 4 }}>
+              <div style={{ ...APAGADO, marginTop: 4 }}>
                 <b>não faz:</b> {l.naoFaz}
               </div>
-              <div className="adm-dim" style={{ marginTop: 4 }}>
+              <div style={{ ...APAGADO, marginTop: 4 }}>
                 capital mínimo {l.capitalMinimoUsd > 0 ? `$${l.capitalMinimoUsd}` : "nenhum"}
               </div>
 
@@ -193,7 +211,7 @@ export default function CeleiroPanel() {
       ))}
 
       {d && (
-        <div className="adm-dim" style={{ marginTop: 10, fontSize: 11 }}>
+        <div style={{ ...APAGADO, marginTop: 10, fontSize: 11 }}>
           {d.totalDeLancamentos} lançamentos no extrato · ⚖ = o piso (Aluguel de
           Ocioso). <b>Win-rate não aparece de propósito</b>: mediu-se mesas com
           70% de acerto perdendo dinheiro.
