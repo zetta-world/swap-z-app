@@ -26,6 +26,7 @@ import { extractCards, extractSuggestion } from "@/lib/zion/backtest";
 import { getMacroContext } from "@/lib/api/macro";
 import { fetchFundingContext, fetchFearGreed } from "@/lib/api/market-context";
 import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
+import { isArquivada } from "@/lib/zion/desks";
 import { formatIndicatorsForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import type { ActionCard } from "@/lib/zion/parse";
 
@@ -211,10 +212,40 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
   // thesis cohort showed no separation between the expensive brain and the
   // cheap ones. Its 3 open theses still resolve (resolution is free and
   // source-agnostic), so the data it already produced is not lost.
+  //
+  /**
+   * ⚠️⚠️ 19/08: AS CINCO MESAS ORÁCULO ESTAVAM `valhalla` DESDE 27/07 E
+   * CONTINUARAM CHAMANDO A API PAGA POR TRÊS SEMANAS.
+   *
+   * O comentário acima registra a aposentadoria; o código abaixo nunca a
+   * aplicou. `oracle_self` parou só porque a Anthropic saiu do
+   * `configuredProviders()` — as outras quatro seguiram rodando todo dia às
+   * 00:00 UTC. Medido no banco: `oracle_grok` 7 chamadas, `oracle_kimi` 6,
+   * `oracle_deepseek` 4, só nos últimos 7 dias, com a última em 19/08 — vinte
+   * e três dias depois de a mesa ter sido dada como morta.
+   *
+   * ⚠️ E O GUARDA JÁ EXISTIA. `isArquivada` é a MESMA função que o cron do
+   * backtest usa desde 13/08, e lá funciona: `backtest_grok`, `backtest_kimi`
+   * e `backtest_deepseek` pararam em 14/08 e não gastaram mais nada. O portão
+   * estava construído, testado e ligado em um caminho só. Este aqui ninguém
+   * ligou.
+   *
+   * O dinheiro é pouco (≈ $0,50/mês) e não é o ponto. O ponto é que
+   * "aposentar uma mesa" era uma etiqueta em metade do sistema: o torneio
+   * marcava `retired`, o painel escrevia Valhalla, e a fatura continuava
+   * chegando. Disjuntor que dispara e não corta o gasto produz o REGISTRO de
+   * ter agido — é a mesma armadilha do `gate-keys.ts`, em outro caminho.
+   *
+   * A resolução das teses abertas segue livre de propósito: ela não custa
+   * chamada de modelo, e apagá-la perderia dado já pago.
+   */
   const runs: Array<{ source: string; exec: (instruction: string) => Promise<ActionCard[]> }> = [];
   for (const p of configuredProviders()) {
-    runs.push({ source: `oracle_${p.id}`, exec: (instruction) => runOracleForProvider(instruction, p) });
+    const source = `oracle_${p.id}`;
+    if (isArquivada(source)) continue;
+    runs.push({ source, exec: (instruction) => runOracleForProvider(instruction, p) });
   }
+  if (runs.length === 0) return { sources: 0, logged: 0 };
 
   // Auto-Retro lessons: each model's own distilled reflections ride along
   // with its desk memory (context, never permission).

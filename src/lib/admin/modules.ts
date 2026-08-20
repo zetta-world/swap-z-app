@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 
 export type ModuleId =
   | "command"
+  | "celeiro"
   | "alerts"
   | "growth"
   | "wallets-kpi"
@@ -376,6 +377,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 5,
+  },
+  {
+    id: "celeiro",
+    title: "CELEIRO",
+    subtitle: "a segunda arena — USDT acumulado por faixa de capital",
+    icon: "🌾",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 4.5,
   },
   {
     id: "tournament",

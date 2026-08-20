@@ -40,6 +40,7 @@ import { MODULE_REGISTRY, type ModuleCategory, type ModuleId } from "@/lib/admin
 export type AreaId =
   | "comando"
   | "mesas"
+  | "celeiro"
   | "medicoes"
   | "dinheiro"
   | "operacao"
@@ -76,30 +77,43 @@ export const AREAS: Area[] = [
     aviso: "MESAS — dinheiro SIMULADO de carteira paper. Nada aqui é receita "
       + "nem dinheiro real; é o experimento andando agora.",
   },
+  /**
+   * ⚠️⚠️ ÁREA PRÓPRIA, E NUNCA DENTRO DE `mesas`. O Celeiro é a SEGUNDA arena
+   * (docs/PLANO-O-CELEIRO.md) e mede outra coisa: USDT acumulado, não acerto de
+   * direção. Pendurá-lo em `mesas` faria as duas réguas dividirem a mesma tela,
+   * e a primeira leitura errada custaria a confiança nas duas.
+   */
   {
-    id: "medicoes", label: "MEDIÇÕES", icon: "🔬", ordem: 3,
+    id: "celeiro", label: "CELEIRO", icon: "🌾", ordem: 3,
+    pergunta: "quantos USDT cada agente acumulou, e de onde eles vieram?",
+    aviso: "CELEIRO — a SEGUNDA arena, separada das MESAS. Aqui o placar é USDT "
+      + "ACUMULADO e nenhum agente aposta em direção. Não comparar com o "
+      + "torneio antigo: as duas réguas medem coisas diferentes.",
+  },
+  {
+    id: "medicoes", label: "MEDIÇÕES", icon: "🔬", ordem: 4,
     pergunta: "o que o histórico diz sobre cada estratégia?",
     aviso: "MEDIÇÕES — perguntas sobre o PASSADO, rodadas sob demanda. Nenhuma "
       + "mesa opera a partir daqui, e nenhum número desta área é dinheiro.",
   },
   {
-    id: "dinheiro", label: "DINHEIRO", icon: "💰", ordem: 4,
+    id: "dinheiro", label: "DINHEIRO", icon: "💰", ordem: 5,
     pergunta: "quanto entrou, quanto custou, quanto sobrou?",
     aviso: "DINHEIRO — receita e custo REAIS da plataforma. Não confundir com "
       + "o resultado simulado das mesas.",
   },
   {
-    id: "operacao", label: "OPERAÇÃO", icon: "⚙", ordem: 5,
+    id: "operacao", label: "OPERAÇÃO", icon: "⚙", ordem: 6,
     pergunta: "o autopilot e as sessões estão saudáveis?",
     aviso: null,
   },
   {
-    id: "pessoas", label: "PESSOAS", icon: "👥", ordem: 6,
+    id: "pessoas", label: "PESSOAS", icon: "👥", ordem: 7,
     pergunta: "quem usa, quanto cresce, em que plano?",
     aviso: null,
   },
   {
-    id: "sistema", label: "SISTEMA", icon: "🛡", ordem: 7,
+    id: "sistema", label: "SISTEMA", icon: "🛡", ordem: 8,
     pergunta: "travas, auditoria, saúde e registro",
     aviso: null,
   },
@@ -159,8 +173,22 @@ export const MESAS: readonly ModuleId[] = [
   "rendimento",      // quanto cada mesa rendeu
 ] as const;
 
+/**
+ * Os painéis da segunda arena.
+ *
+ * ⚠️ MESMA MECÂNICA DE EXCEÇÃO POR NOME QUE `MESAS`, e pelo mesmo motivo: a
+ * categoria do registro descreve o QUE o painel é (laboratório, dinheiro
+ * simulado); a área descreve ONDE ele mora na tela. O Celeiro é laboratório por
+ * categoria e arena própria por navegação, e as duas coisas podem discordar sem
+ * reescrever uma à outra.
+ */
+export const CELEIRO: readonly ModuleId[] = [
+  "celeiro",
+] as const;
+
 /** A área de um módulo — a exceção por nome vence o mapa por categoria. */
 export function areaDoModulo(id: ModuleId): AreaId | null {
+  if (CELEIRO.includes(id)) return "celeiro";
   if (MESAS.includes(id)) return "mesas";
   const m = MODULE_REGISTRY.find((x) => x.id === id);
   return m ? AREA_DA_CATEGORIA[m.category] : null;

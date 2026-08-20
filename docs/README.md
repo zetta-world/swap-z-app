@@ -51,6 +51,8 @@
 | `ADMIN-COMMAND-CENTER.md` | Espec original do painel admin |
 | `PITCH-DECK.md` / `DEMO-VIDEO-SCRIPT.md` | Material de apresentação (atualizar só antes de usar) |
 | `LIGHTHOUSE-BASELINE.md` / `MANUAL_TEST_PLAN.md` | Baselines/planos de teste de uma rodada específica |
+| `PLANO-O-CELEIRO.md` | **A segunda arena** — torneio novo, placar em USDT acumulado, nenhum agente aposta em direção. O diagnóstico que o justifica está na seção 1 |
+| `AUDITORIA-MESAS-19-08.md` | **19/08** — resultado das 24 mesas e do torneio: o livro é negativo ANTES do custo, e a única mesa positiva são dois dias |
 | `AUDITORIA-PERDA-DINHEIRO.md` | A investigação do vazamento de caixa das carteiras paper |
 | `AUDITORIA-AGENTES-25-07.md` / `ANALISE-AUDITORIA-OPERACIONAL-08-07.md` | Auditorias de rodadas anteriores |
 | `PENTEST-28-07.md` | Pentest de uma rodada específica |

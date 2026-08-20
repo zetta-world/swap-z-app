@@ -26,6 +26,7 @@ import WhitelistPanel         from "./panels/WhitelistPanel";
 import SwapAllowlistPanel     from "./panels/SwapAllowlistPanel";
 import PlatformEventsPanel    from "./panels/PlatformEventsPanel";
 import BacktestPanel          from "./panels/BacktestPanel";
+import CeleiroPanel           from "./panels/CeleiroPanel";
 import TournamentPanel        from "./panels/TournamentPanel";
 import RagnarokPanel          from "./panels/RagnarokPanel";
 import SwapGuardPanel         from "./panels/SwapGuardPanel";
@@ -81,6 +82,7 @@ export const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "finance":            <FinancePanel />,
   "users-explorer":     <UsersPanel />,
   "backtest":           <BacktestPanel />,
+  "celeiro":            <CeleiroPanel />,
   "tournament":         <TournamentPanel />,
   "ragnarok":           <RagnarokPanel />,
   "swap-guard":         <SwapGuardPanel />,

@@ -37,10 +37,26 @@ describe("classes adm-* usadas nos painéis existem no CSS", () => {
     const usadas = new Set<string>();
     for (const f of arquivos("src/components/admin").concat(arquivos("src/app/admin"))) {
       const src = readFileSync(f, "utf8");
-      // className="adm-x adm-y" e className={`adm-x ${...}`}
-      for (const m of src.matchAll(/className=[{"`]([^"`}]*)/g)) {
-        for (const cls of m[1].split(/[\s${}]+/)) {
-          if (/^adm-[a-z0-9-]+$/.test(cls)) usadas.add(cls);
+      /**
+       * ⚠️ A EXPRESSÃO INTEIRA, NÃO ATÉ A PRIMEIRA ASPA (20/08).
+       *
+       * A versão anterior era `/className=[{"`]([^"`}]*)/` — ela parava no
+       * primeiro `"`, então um ternário escapava inteiro:
+       *
+       *   className={cond ? "adm-ok" : "adm-bad"}
+       *                     ^ a captura já tinha terminado aqui
+       *
+       * Foi assim que `adm-ok` e `adm-bad` entraram num painel novo sem existir
+       * no CSS e sem este teste reclamar — ele pegou as três classes escritas
+       * direto e deixou passar as duas do ternário. Meio guarda é pior que
+       * nenhum: dá a confiança sem dar a cobertura.
+       *
+       * Agora casa `className="..."` OU `className={...}` com o bloco completo
+       * (um nível de chaves aninhadas), e varre `adm-*` em qualquer lugar dele.
+       */
+      for (const m of src.matchAll(/className=(?:"([^"]*)"|\{((?:[^{}]|\{[^{}]*\})*)\})/g)) {
+        for (const cls of `${m[1] ?? ""} ${m[2] ?? ""}`.match(/adm-[a-z0-9-]+/g) ?? []) {
+          usadas.add(cls);
         }
       }
     }

@@ -63,8 +63,18 @@ diretório de trabalho primário.
 | `gh` CLI | instalado e **autenticado** (`zettaceo`, escopos `repo` + `workflow`) |
 
 ⚠️ **A SUÍTE DE TESTES NÃO RODA NESTA MÁQUINA.** O vitest 4 exige Node ≥ 22.12
-(`require()` de ESM) e o local é 22.11. `tsc --noEmit`, `npm run lint` e
-`npm run build` funcionam. **Quem decide sobre testes é o CI.**
+(`require()` de ESM) e o local é 22.11. `tsc --noEmit` e `npm run lint`
+funcionam. **Quem decide sobre testes é o CI.**
+
+⚠️ **E `npm run build` TAMBÉM NÃO FECHA MAIS** (20/08). O webpack COMPILA — sai
+`⚠ Compiled with warnings`, só os avisos pré-existentes do wagmi — e o processo
+estoura `Error: kill EPERM` no desmonte dos workers do jest, saindo com código 1
+antes de imprimir a lista de rotas.
+
+**Confirmado que não é o código:** com `git stash -u` aplicado, o mesmo build no
+`HEAD` limpo dá o mesmo exit 1 com as mesmas duas ocorrências de EPERM. É a
+máquina. Use o build só para ver se COMPILA (procure a linha `Compiled`), e trate
+o exit code como ruído.
 
 ⚠️ O checkout vem com CRLF (o git normaliza para LF no commit — confira com
 `git show HEAD:arquivo` em caso de dúvida).
@@ -159,7 +169,11 @@ mesas misturadas).
 
 ### Depende dele (não consigo fazer)
 
-1. **Decidir sobre o `next`.** A única correção é a **16.3.1** — major 14 para
+1. **Agendar `/api/celeiro/cron` no cron-job.org** — POST, header
+   `Authorization: Bearer <CRON_SECRET>`, a cada 30 min. Sem isso o Celeiro
+   inteiro está construído e parado: o controle nunca sai do zero, e um piso
+   congelado em zero faz TODO agente parecer vencedor.
+2. **Decidir sobre o `next`.** A única correção é a **16.3.1** — major 14 para
    16, 21 advisories em jogo. É migração com branch e plano próprios, não audit
    fix.
 
@@ -175,13 +189,36 @@ volta a funcionar depois de semanas morta, e a verificação do override do
 `axios` sai de PARCIAL para **completa** — o SDK carrega, faz rede e conclui o
 fluxo com a versão nova.
 
+### O CELEIRO — a segunda arena (construída em 19–20/08)
+
+Torneio novo, separado, placar em **USDT acumulado**. Nasceu de uma medição: num
+passeio aleatório P(alvo antes do stop) = `stop/(alvo+stop)`, e as seis mesas de
+LLM ficaram de **−6,7 a −30,4 pp ABAIXO disso** em 3.300 decisões. Prever direção
+com modelo é pior que jogar moeda — a família inteira saiu.
+
+Desenho em `docs/PLANO-O-CELEIRO.md`. Cinco agentes, nenhum direcional, três sem
+IA. A IA virou o **Investigador**: não opera, lê o extrato decomposto (taxa,
+derrapagem, funding, preço), propõe UMA mutação de parâmetro com resultado
+escrito antes, e é pontuada pelo **USDT que a mutação gerou** contra o braço que
+não mudou.
+
+Construído e no ar: tabelas `celeiro_*` (RLS, zero políticas), registro dos
+agentes, extrato, os 5 mecanismos, portão de profundidade, painel em área
+própria, e o cron `/api/celeiro/cron`.
+
+⚠️ **Falta agendar o cron** — ele existe e ninguém o chama. Ver "Depende dele".
+
+⚠️ **Tudo em papel, de propósito.** Funding e profundidade são dados públicos:
+dá para medir sem arriscar um centavo. Só se liga credencial quando o extrato
+provar USDT positivo em amostra que aguente.
+
 ### Decisões dele, não minhas
 
-2. **A pilha das 24 mesas para ~7 motores** (parte 3 do "item B"). Crítica dele:
+3. **A pilha das 24 mesas para ~7 motores** (parte 3 do "item B"). Crítica dele:
    *"vc fez a porra toda junto e misturado"*. O Setor E foi o primeiro corte.
    `runBacktestScanForProvider` é UMA função por 6 modelos; `selectPlaybook` é
    UMA biblioteca por 5 políticas; `arbiter2` é UM motor por 3 alavancagens.
-3. **A fronteira de custo no ledger de papel** (`FRONTEIRA_CUSTO_ISO`): arquivar
+4. **A fronteira de custo no ledger de papel** (`FRONTEIRA_CUSTO_ISO`): arquivar
    a rodada e recomeçar com a régua nova, ou conviver e cortar nas leituras.
 
 ### Trabalho meu, quando ele mandar
