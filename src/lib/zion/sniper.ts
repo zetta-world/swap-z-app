@@ -26,6 +26,10 @@ import { extractCards, extractSuggestion } from "@/lib/zion/backtest";
 import { formatIndicatorsForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
 import type { RadarTrigger } from "@/lib/zion/radar";
+import { isArquivada } from "@/lib/zion/desks";
+
+/** O `source` desta mesa no registro — um lugar só, para o guarda e o ledger. */
+export const SNIPER_SOURCE = "sniper";
 
 const MONTHLY_BUDGET = Number(process.env.SNIPER_MONTHLY_BUDGET ?? 30); // ≈ Trader plan, ~1/day
 // Aligned with the ledger's BACKTEST_MIN_RR (alavanca 2): the funnel rejects
@@ -126,6 +130,19 @@ export interface SniperResult { fired: number; passed: number; skipped: string |
 /** One sniper wake: budget → cheap brain (license to refuse) → objective gates
  *  → ledger. Best-effort throughout; never throws into the radar cron. */
 export async function runSniperScan(marketData: MarketIndicatorsResult, triggers: RadarTrigger[]): Promise<SniperResult> {
+  /**
+   * ⚠️ MESA ARQUIVADA NÃO GASTA — primeira coisa, antes de qualquer consulta.
+   *
+   * O `sniper` está `valhalla` no registro e hoje não está agendado, então
+   * este guarda não corta nada AGORA. Ele entra porque a mesa irmã provou o
+   * custo de não tê-lo: as cinco mesas oráculo ficaram `valhalla` desde 27/07
+   * e seguiram chamando a API paga por três semanas, porque a aposentadoria
+   * morava no comentário e não no código (ver `oracle.ts`, 19/08).
+   *
+   * A diferença entre este arquivo e aquele era só uma linha e um cron ligado.
+   */
+  if (isArquivada(SNIPER_SOURCE)) return { fired: 0, passed: 0, skipped: "arquivada" };
+
   const db = getSupabaseAdmin();
   if (!db) return { fired: 0, passed: 0, skipped: "db" };
 
