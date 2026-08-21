@@ -10,7 +10,11 @@ import {
 } from "@/lib/celeiro/funding-colheita";
 import {
   registrarFluxo, ultimoLancamentoMs, genomaAtivo, lerRelogio, marcarRelogio,
+  posicoesAbertas, abrirPosicao, varrerAbertas,
 } from "@/lib/celeiro/store";
+import { medirLateralidade, deveCotar, type Fatia } from "@/lib/celeiro/faixa-maker";
+import { decidir as decidirBase } from "@/lib/celeiro/base-convergencia";
+import { portaoDeProfundidade, converterLivro } from "@/lib/celeiro/profundidade";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -186,6 +190,129 @@ export async function POST(req: NextRequest) {
 
   relato.colheita = { genomaVersao: genoma?.versao ?? null, controleAnualPct: controleAnual, margem, exames };
 
+  // ── ③ OS AGENTES QUE OPERAM ────────────────────────────────────────────
+  /**
+   * ⚠️ ATÉ 21/08 ESTES DOIS ERAM CÓDIGO MORTO. Tinham `deveCotar()` e
+   * `decidir()` — o "devo?" — e nada os chamava. Cabeça sem mão. O dono
+   * apontou, com razão: um agente que não opera não é um agente.
+   */
+  const precos = new Map<string, number>();
+  const livros = new Map<string, ReturnType<typeof converterLivro>>();
+  const velas = new Map<string, Fatia[]>();
+
+  for (const sym of SIMBOLOS) {
+    const par = `${sym.toUpperCase()}_USDT`;
+    precos.set(sym, await umNumero(`https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${par}`,
+      (c) => Number((c as Array<{ last?: string }>)?.[0]?.last)));
+    livros.set(sym, await umLivro(`https://api.gateio.ws/api/v4/spot/order_book?currency_pair=${par}&limit=50`));
+    velas.set(sym, await uMasVelas(`https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${par}&interval=15m&limit=80`));
+  }
+  const precoDe = (sym: string) => precos.get(sym) ?? null;
+
+  const operados: Record<string, unknown> = {};
+
+  for (const id of ["maker_de_faixa", "convergencia_base"] as const) {
+    const ag = agentePor(id)!;
+    const gen = await genomaAtivo(db, id, id === "maker_de_faixa"
+      ? { multiploDoAcaso: 1.5, horasLimite: 8, alvoPct: 0.6, stopPct: 0.6 }
+      : { margemPp: 0.15, horasLimite: 8 });
+
+    // Primeiro FECHA o que já venceu — antes de pensar em abrir mais.
+    const fechados = await varrerAbertas(db, id, precoDe, agora);
+
+    const abertas = await posicoesAbertas(db, id);
+    const exames: Array<Record<string, unknown>> = [];
+
+    for (const sym of SIMBOLOS) {
+      if (abertas.some((p) => p.simbolo === sym)) continue;   // uma por símbolo
+      const preco = precoDe(sym);
+      if (preco === null) { exames.push({ sym, abre: false, porque: "sem preço" }); continue; }
+
+      const veredito = id === "maker_de_faixa"
+        ? deveCotar(medirLateralidade(velas.get(sym) ?? []), Number(gen?.params.multiploDoAcaso ?? 1.5))
+        : { cota: false, porque: "" };
+
+      let abre = false, porque = "", lado: "buy" | "sell" = "buy", alvo = 0, stop = 0;
+
+      if (id === "maker_de_faixa") {
+        abre = veredito.cota; porque = veredito.porque;
+        /**
+         * ⚠️ O MAKER NÃO ESCOLHE LADO POR OPINIÃO. Ele cota comprado no fundo da
+         * faixa medida — se o par sair da faixa, `deveCotar` fecha e ele PARA,
+         * em vez de virar direcional. É a fronteira escrita no `naoFaz` dele.
+         */
+        const p = Number(gen?.params.alvoPct ?? 0.6);
+        lado = "buy"; alvo = preco * (1 + p / 100); stop = preco * (1 - p / 100);
+      } else {
+        const perp = await umNumero(
+          `https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=${sym.toUpperCase()}_USDT`,
+          (c) => Number((c as Array<{ last?: string }>)?.[0]?.last));
+        const d = decidirBase(perp > 0 ? { perp, spot: preco } : null, Number(gen?.params.margemPp ?? 0.15));
+        abre = d.abre; porque = d.porque;
+        lado = d.lado === "vender_perp" ? "sell" : "buy";
+        // A base fecha na convergência: alvo é o spot, stop é a base dobrando.
+        const b = Math.abs(d.basePct ?? 0);
+        alvo = lado === "buy" ? preco * (1 + b / 100) : preco * (1 - b / 100);
+        stop = lado === "buy" ? preco * (1 - b / 100) : preco * (1 + b / 100);
+      }
+
+      if (!abre) { exames.push({ sym, abre: false, porque }); continue; }
+
+      /**
+       * ⚠️⚠️ O PORTÃO DE PROFUNDIDADE, NO TAMANHO REAL. É o que faltava na
+       * arbitragem antiga: a sonda existia, media certo 4.085 vezes, e não
+       * bloqueava nada. Aqui ela decide.
+       */
+      const usd = Math.max(ag.capitalMinimoUsd, 50);
+      const prof = portaoDeProfundidade(livros.get(sym) ?? null, usd);
+      if (!prof.passa) { exames.push({ sym, abre: false, porque: prof.porque }); continue; }
+
+      const posId = await abrirPosicao(db, {
+        agente: id, simbolo: sym, lado, usd,
+        precoEntrada: preco, alvo, stop,
+        derrapagemPct: prof.derrapagemPct ?? 0,
+        horasLimite: Number(gen?.params.horasLimite ?? 8),
+      }, gen?.versao ?? null, { porque, derrapagem: prof.porque });
+
+      exames.push({ sym, abre: posId !== null, porque, lado, usd, derrapagemPct: prof.derrapagemPct });
+    }
+
+    operados[id] = { genomaVersao: gen?.versao ?? null, fechados, abertas: abertas.length, exames };
+  }
+  relato.operados = operados;
+
   await recordEvent("celeiro_tick", { meta: relato });
   return NextResponse.json({ ok: true, emMs: agora, ...relato });
+}
+
+/** Uma leitura numérica que devolve 0 quando não dá para confiar. */
+async function umNumero(url: string, extrair: (corpo: unknown) => number): Promise<number> {
+  try {
+    const r = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!r.ok) return 0;
+    const n = extrair(await r.json());
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch { return 0; }
+}
+
+/** O livro de ofertas de venda. `null` reprova no portão — nunca vira livro vazio. */
+async function umLivro(url: string): Promise<ReturnType<typeof converterLivro>> {
+  try {
+    const r = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!r.ok) return null;
+    const c = await r.json() as { asks?: unknown };
+    return converterLivro(c?.asks);
+  } catch { return null; }
+}
+
+/** As velas de 15 min, para o teste de lateralidade. */
+async function uMasVelas(url: string): Promise<Fatia[]> {
+  try {
+    const r = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!r.ok) return [];
+    const c = await r.json();
+    if (!Array.isArray(c)) return [];
+    return c.map((v) => ({ fechamento: Number(Array.isArray(v) ? v[5] : Number.NaN) }))
+            .filter((f) => Number.isFinite(f.fechamento));
+  } catch { return []; }
 }

@@ -182,3 +182,126 @@ export async function marcarRelogio(db: SupabaseClient, chave: string, ms: numbe
     { onConflict: "key" },
   );
 }
+
+/* ───────────────────────── POSIÇÕES ───────────────────────── */
+
+import {
+  lancamentosDaAbertura, lancamentosDoFechamento, deveFechar, conferir,
+  type Abertura, type Fechamento,
+} from "@/lib/celeiro/posicao";
+
+export interface PosicaoAberta extends Abertura {
+  id: string;
+  abertaEmMs: number;
+  genomaVersao: number | null;
+}
+
+/** As posições que o agente ainda tem em pé. */
+export async function posicoesAbertas(
+  db: SupabaseClient,
+  agente: string,
+): Promise<PosicaoAberta[]> {
+  // leitura-limitada: só as abertas de um agente; o teto protege o patológico.
+  const { data } = await db
+    .from("celeiro_posicoes")
+    .select("id, agente, simbolo, lado, usd, preco_entrada, alvo, stop, horas_limite, derrapagem_pct, aberta_em, genoma_versao")
+    .eq("agente", agente).is("fechada_em", null)
+    .limit(100);
+
+  return (data ?? []).map((r) => ({
+    id: r.id, agente: r.agente, simbolo: r.simbolo, lado: r.lado,
+    usd: Number(r.usd), precoEntrada: Number(r.preco_entrada),
+    alvo: Number(r.alvo), stop: Number(r.stop),
+    horasLimite: Number(r.horas_limite), derrapagemPct: Number(r.derrapagem_pct),
+    abertaEmMs: Date.parse(r.aberta_em), genomaVersao: r.genoma_versao,
+  }));
+}
+
+/**
+ * Abre a posição E grava os lançamentos dela.
+ *
+ * ⚠️ A POSIÇÃO ENTRA PRIMEIRO. Se o registro falhar, nenhum lançamento é escrito
+ * — um extrato com taxa de uma posição que não existe seria dinheiro saindo sem
+ * dono, e nunca fecharia com nada.
+ */
+export async function abrirPosicao(
+  db: SupabaseClient,
+  a: Abertura,
+  genomaVersao: number | null,
+  meta: Record<string, unknown> = {},
+): Promise<string | null> {
+  const { data, error } = await db.from("celeiro_posicoes").insert({
+    agente: a.agente, simbolo: a.simbolo, lado: a.lado, usd: a.usd,
+    preco_entrada: a.precoEntrada, alvo: a.alvo, stop: a.stop,
+    horas_limite: a.horasLimite, derrapagem_pct: a.derrapagemPct,
+    genoma_versao: genomaVersao, meta,
+  }).select("id").limit(1);
+
+  const id = data?.[0]?.id as string | undefined;
+  if (error || !id) return null;
+
+  for (const l of lancamentosDaAbertura(a)) {
+    await registrarFluxo(db, {
+      agente: a.agente, causa: l.causa, usdt: l.usdt, simbolo: a.simbolo,
+      ref: `abertura:${id}`, genomaVersao, meta: { posicao: id },
+    });
+  }
+  return id;
+}
+
+/**
+ * Fecha a posição, grava o movimento e a segunda perna.
+ *
+ * ⚠️⚠️ A CONTA É CONFERIDA ANTES DE GRAVAR. Se a decomposição não reproduz o
+ * dinheiro movido, NADA é escrito e a posição fica aberta com o motivo no
+ * evento. Vale travar o agente em vez de gravar uma conta que não fecha: o
+ * extrato é a base do ranking, da comparação com o controle e do Investigador —
+ * se ele mente, os três raciocinam sobre ficção.
+ */
+export async function fecharPosicao(
+  db: SupabaseClient,
+  p: PosicaoAberta,
+  f: Fechamento,
+): Promise<{ fechou: boolean; porque: string }> {
+  const c = conferir(p, f);
+  if (!c.bate) return { fechou: false, porque: c.porque };
+
+  const { error } = await db.from("celeiro_posicoes").update({
+    fechada_em: new Date().toISOString(),
+    preco_saida: f.precoSaida, motivo_saida: f.motivo,
+  }).eq("id", p.id).is("fechada_em", null);
+  if (error) return { fechou: false, porque: `não consegui marcar o fechamento: ${error.message}` };
+
+  for (const l of lancamentosDoFechamento(p, f)) {
+    await registrarFluxo(db, {
+      agente: p.agente, causa: l.causa, usdt: l.usdt, simbolo: p.simbolo,
+      ref: `fechamento:${p.id}`, genomaVersao: p.genomaVersao,
+      meta: { posicao: p.id, motivo: f.motivo, precoSaida: f.precoSaida },
+    });
+  }
+  return { fechou: true, porque: `${f.motivo} em ${f.precoSaida}` };
+}
+
+/** Varre as abertas de um agente e fecha as que devem fechar. */
+export async function varrerAbertas(
+  db: SupabaseClient,
+  agente: string,
+  precoDe: (simbolo: string) => number | null,
+  agoraMs: number,
+): Promise<Array<{ simbolo: string; fechou: boolean; porque: string }>> {
+  const out: Array<{ simbolo: string; fechou: boolean; porque: string }> = [];
+  for (const p of await posicoesAbertas(db, agente)) {
+    const preco = precoDe(p.simbolo);
+    if (preco === null) {
+      // ⚠️ Sem preço a posição SEGUE ABERTA. Fechar no escuro inventaria saída.
+      out.push({ simbolo: p.simbolo, fechou: false, porque: "sem preço — segue aberta" });
+      continue;
+    }
+    const horas = (agoraMs - p.abertaEmMs) / 3_600_000;
+    const f = deveFechar(p, preco, horas);
+    if (!f) continue;
+    const r = await fecharPosicao(db, p, f);
+    out.push({ simbolo: p.simbolo, ...r });
+  }
+  return out;
+}
