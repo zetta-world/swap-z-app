@@ -54,6 +54,22 @@ const GASTAM: Record<string, "proprio" | string> = {
   "src/lib/admin/audit-ai.ts":
     "não é mesa: auditoria de código sob demanda do admin, não roda em cron e "
     + "não tem `source` de mesa.",
+
+  /**
+   * ⚠️ ENTRARAM EM 21/08, QUANDO A PLATAFORMA MIGROU PARA KIMI — e foi ESTE
+   * teste que os pegou. Os dois já chamavam modelo antes; chamavam pelo SDK da
+   * Anthropic, que a varredura não procura. Ao trocarem para `openaiCompatChat`
+   * apareceram no radar e o CI reprovou na hora.
+   *
+   * É o inventário fazendo o trabalho: um caminho que gasta não entra no
+   * sistema sem alguém declarar em nome de quem ele gasta.
+   */
+  "src/app/api/narratives/route.ts":
+    "não é mesa: agrupa pares em alta para a página pública de narrativas. Não "
+    + "tem `source` de mesa e não abre posição — se um dia tiver, precisa de guarda.",
+  "src/lib/autopilot/scan.ts":
+    "não é mesa: o scan do autopilot roda por SESSÃO de usuário, não por mesa do "
+    + "registro. O gate dele é a sessão estar ativa, não uma mesa estar viva.",
 };
 
 /** Os dois arquivos de infraestrutura que TODO chamador atravessa. */
