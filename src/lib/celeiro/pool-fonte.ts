@@ -1,0 +1,180 @@
+/**
+ * A FONTE DO POOL NOVO — de onde vêm os fatos que o portão exige.
+ *
+ * ⚠️⚠️ POR QUE ESTE MÓDULO ATRASOU O AGENTE (21/08). O `portaoDeSobrevivencia`
+ * existia e estava testado, e o Pool Novo mesmo assim ficou fora do cron —
+ * porque nada no repositório respondia às perguntas dele: a liquidez está
+ * travada? quanto o top 10 detém? dá para vender?
+ *
+ * Ligá-lo com esses portões devolvendo "ok" teria sido pior que não rodar: o
+ * agente apostaria em pool sem verificar nada, **com a aparência de estar
+ * protegido**. É exatamente o defeito do "escudo MEV" que era adesivo — flag
+ * lida só por quem a desenhava, nenhuma linha do caminho de execução olhando.
+ *
+ * ⚠️ E AS TRÊS FONTES JÁ EXISTIAM. `getNewPoolsForChain`, `getPairDetail` e
+ * `getTokenSecurity` estão no repositório há meses, servindo a outras telas.
+ * O que faltava era a PONTE — e procurar antes de escrever economizou três
+ * integrações.
+ */
+
+import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
+import { getPairDetail } from "@/lib/api/dexscreener";
+import { getNewPoolsForChain, type PoolSummary } from "@/lib/api/geckoterminal";
+import type { Pool } from "@/lib/celeiro/pool-novo";
+
+/**
+ * A liquidez está travada?
+ *
+ * ⚠️ AUSÊNCIA DE PROVA NÃO É PROVA DE TRAVA. Sem `lp_holders` a resposta é
+ * `false`, nunca `true` — e o portão reprova. Um pool cuja trava ninguém
+ * conseguiu verificar é indistinguível de um pool sem trava, e quem criou pode
+ * retirar a liquidez a qualquer momento.
+ *
+ * ⚠️ E "QUEIMADO" CONTA COMO TRAVADO. LP enviado para endereço morto não volta —
+ * é a trava mais forte que existe, e a GoPlus a marca com `tag` de burn.
+ */
+export function liquidezTravada(sec: GoPlusTokenSecurity | null): boolean {
+  const lps = sec?.lp_holders;
+  if (!Array.isArray(lps) || lps.length === 0) return false;
+
+  const travadoPct = lps.reduce((s, h) => {
+    const pct = Number(h.percent);
+    if (!Number.isFinite(pct)) return s;
+    const morto = /burn|black.?hole|dead|null/i.test(h.tag ?? "");
+    return s + (h.is_locked === 1 || morto ? pct : 0);
+  }, 0);
+
+  // Metade travada já impede a retirada que mata o pool de uma vez.
+  return travadoPct >= 0.5;
+}
+
+/**
+ * A fração do supply nas 10 maiores carteiras.
+ *
+ * ⚠️ `null` QUANDO NÃO DEU PARA MEDIR, e o portão reprova nisso. Devolver 0
+ * diria "pulverizado" — a leitura mais otimista possível a partir de nenhuma
+ * informação, e a mais cara quando estiver errada.
+ *
+ * ⚠️ CARTEIRA TRAVADA OU QUEIMADA SAI DA CONTA. Supply em contrato de trava ou
+ * em endereço morto não vai ser vendido; contá-lo como concentração reprovaria
+ * pools honestos por um risco que não existe.
+ */
+export function concentracaoTop10(sec: GoPlusTokenSecurity | null): number | null {
+  const hs = sec?.holders;
+  if (!Array.isArray(hs) || hs.length === 0) return null;
+
+  const soma = hs.slice(0, 10).reduce((s, h) => {
+    const pct = Number(h.percent);
+    if (!Number.isFinite(pct)) return s;
+    const morto = /burn|black.?hole|dead|null|lock/i.test(h.tag ?? "");
+    return s + (h.is_locked === 1 || morto ? 0 : pct);
+  }, 0);
+
+  return Math.min(1, Math.max(0, soma));
+}
+
+/**
+ * A venda de teste passou?
+ *
+ * ⚠️ TRÊS RESPOSTAS, NÃO DUAS. `true` dá para sair, `false` não dá, e `null`
+ * ninguém conseguiu simular — que o portão trata como o caso MAIS perigoso,
+ * porque é exatamente o que um honeypot produz.
+ *
+ * ⚠️ IMPOSTO DE VENDA ALTO É "NÃO DÁ PARA SAIR" na prática. Um token com 40% de
+ * taxa de venda tecnicamente permite vender e economicamente não — e o portão
+ * precisa da resposta econômica.
+ */
+export const TETO_IMPOSTO_DE_VENDA = Number(process.env.CELEIRO_POOL_SELL_TAX_MAX ?? 0.1);
+
+export function vendaTestePassou(sec: GoPlusTokenSecurity | null): boolean | null {
+  if (!sec) return null;
+
+  const honeypot = sec.is_honeypot;
+  const naoVendeTudo = sec.cannot_sell_all;
+  const taxa = Number(sec.sell_tax);
+
+  // Nenhum dos três campos veio: a simulação não aconteceu.
+  if (honeypot === undefined && naoVendeTudo === undefined && !Number.isFinite(taxa)) return null;
+
+  if (honeypot === "1" || naoVendeTudo === "1") return false;
+  if (Number.isFinite(taxa) && taxa > TETO_IMPOSTO_DE_VENDA) return false;
+  return true;
+}
+
+/** Monta o `Pool` que o portão consome. Função pura — o teste vive sem rede. */
+export function montarPool(
+  sec: GoPlusTokenSecurity | null,
+  liquidezUsd: number,
+  idadeMinutos: number,
+): Pool {
+  return {
+    liquidezUsd: Number.isFinite(liquidezUsd) && liquidezUsd > 0 ? liquidezUsd : 0,
+    liquidezTravada: liquidezTravada(sec),
+    concentracaoTop10: concentracaoTop10(sec),
+    vendaTestePassou: vendaTestePassou(sec),
+    idadeMinutos: Number.isFinite(idadeMinutos) && idadeMinutos > 0 ? idadeMinutos : 0,
+  };
+}
+
+export interface Candidato {
+  chain: string;
+  poolAddress: string;
+  tokenAddress: string;
+  nome: string;
+  pool: Pool | null;
+}
+
+/**
+ * Lê um candidato completo: liquidez e idade da dexscreener, segurança da GoPlus.
+ *
+ * ⚠️ CADEIA SEM SUPORTE NA GOPLUS DEVOLVE `pool: null`, e o portão reprova. Não
+ * dá para verificar honeypot numa rede que a fonte não cobre — e apostar ali
+ * seria operar exatamente onde a proteção não alcança.
+ */
+export async function lerCandidato(
+  chain: string,
+  poolAddress: string,
+  tokenAddress: string,
+  nome: string,
+  agoraMs: number = Date.now(),
+): Promise<Candidato> {
+  const base: Candidato = { chain, poolAddress, tokenAddress, nome, pool: null };
+  if (!isGoPlusSupported(chain)) return base;
+
+  const [par, sec] = await Promise.all([
+    getPairDetail(chain, poolAddress).catch(() => null),
+    getTokenSecurity(chain, tokenAddress).catch(() => null),
+  ]);
+  if (!par || !sec) return base;
+
+  const idadeMinutos = par.pairCreatedAt > 0
+    ? (agoraMs - par.pairCreatedAt) / 60_000
+    : 0;
+
+  return { ...base, pool: montarPool(sec, par.liquidity.usd, idadeMinutos) };
+}
+
+/**
+ * Os pools recém-criados que valem examinar.
+ *
+ * ⚠️ O ENDEREÇO DO TOKEN VEM DO ID DO POOL na GeckoTerminal (`rede_endereço`),
+ * e o token que interessa é o BASE — o quote é a moeda de cotação (WETH, USDT)
+ * e checar segurança dela seria auditar a moeda errada, aprovando qualquer coisa.
+ */
+export function candidatosDe(pools: readonly PoolSummary[]): Array<Omit<Candidato, "pool">> {
+  const out: Array<Omit<Candidato, "pool">> = [];
+  for (const p of pools) {
+    const endereco = (p.address ?? "").trim();
+    if (!endereco) continue;
+    out.push({
+      chain: p.network,
+      poolAddress: endereco,
+      // Sem o endereço do base token separado, o par carrega os dois no `id`.
+      tokenAddress: (p.id ?? "").split("_")[1] ?? endereco,
+      nome: p.name || `${p.baseSymbol}/${p.quoteSymbol}`,
+    });
+  }
+  return out;
+}
+
+export { getNewPoolsForChain };
