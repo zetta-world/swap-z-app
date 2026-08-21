@@ -1,5 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { openaiCompatStream } from "@/lib/ai/provider";
+import { allProviders } from "@/lib/ai/registry";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { getModeInstructions, type ZionOp } from "@/lib/zion/mode-prompts";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
@@ -362,19 +363,33 @@ const LANG_INSTRUCTION: Record<RunArgs["lang"], string> = {
 };
 
 async function runZion(args: RunArgs, signal?: AbortSignal) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  /**
+   * ⚠️ A GUARDA MUDOU DE CHAVE JUNTO COM O MODELO (21/08). Ela cobrava
+   * `ANTHROPIC_API_KEY` — e se tivesse ficado, o ZION recusaria por falta de
+   * uma chave que ele não usa mais, com uma mensagem mandando configurar a
+   * variável errada. Guarda que aponta para a chave errada é pior que guarda
+   * nenhuma: ela manda a pessoa consertar o que não está quebrado.
+   */
+  const kimi = allProviders().kimi;
+  if (!kimi?.apiKey) {
     return new Response(
-      "ANTHROPIC_API_KEY is not configured on the server. Set it in Vercel project → Settings → Environment Variables (Production + Preview + Development), then redeploy.",
+      "KIMI_API_KEY não está configurada no servidor. Defina-a em Vercel → Settings → "
+      + "Environment Variables (Production + Preview + Development) e refaça o deploy.",
       { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } },
     );
   }
+  /**
+   * ⚠️ A CHAVE VAI PARA UMA CONSTANTE AQUI porque a guarda acima não estreita o
+   * tipo dentro do closure do stream — o TypeScript perde a garantia ao
+   * atravessar a fronteira da função. Repetir `kimi.apiKey!` lá dentro
+   * silenciaria o compilador sem provar nada.
+   */
+  const chaveKimi: string = kimi.apiKey;
 
-  const client = new Anthropic({ apiKey });
   const userText = await buildUserMessage(args);
   const modeInstructions = getModeInstructions(args.op);
 
-  // Belt-and-suspenders timeout. Anthropic-side responses occasionally stall
+  // Belt-and-suspenders timeout. A resposta do provedor às vezes trava
   // mid-stream; without a hard cap the ReadableStream + frontend spinner sit
   // forever. 90s is well past a normal Sonnet 4.6 response (~15-30s).
   const STREAM_TIMEOUT_MS = 90_000;
@@ -393,89 +408,82 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
       }, STREAM_TIMEOUT_MS);
 
       // Combine the client-disconnect signal with our own timeout signal so
-      // EITHER condition aborts the upstream Anthropic call.
+      // Qualquer uma das condições aborta a chamada ao provedor.
       const combinedSignal = signal
         ? AbortSignal.any([signal, timeoutCtrl.signal])
         : timeoutCtrl.signal;
 
       // When the client disconnects (user closes drawer / navigates away),
-      // close the response stream so the loop unwinds. The Anthropic SDK's
-      // request is also aborted via the combined signal we pass below, so
-      // upstream tokens stop billing.
+      // close the response stream so the loop unwinds. A chamada ao provedor
+      // também é abortada pelo sinal combinado abaixo, então os tokens param
+      // de ser cobrados.
       const onAbort = () => closeOnce();
       signal?.addEventListener("abort", onAbort);
 
       try {
-        // Sonnet 4.6 default — env override (ZION_MODEL) lets us swap models
-        // without redeploy. Telemetry below captures usage tokens so we can
-        // compute real $/call once we have a few weeks of production traffic.
-        const model = process.env.ZION_MODEL ?? "claude-sonnet-4-6";
-        const msgStream = await client.messages.stream(
+        /**
+         * ⚠️⚠️ O ZION SAIU DA ANTHROPIC (21/08) — decisão do dono.
+         *
+         * Antes: `claude-sonnet-4-6` pelo SDK, com `cache_control` nos blocos de
+         * sistema. Agora: Kimi por endpoint OpenAI-compatível, e o modelo vem do
+         * REGISTRO (`PROVIDERS.kimi`) em vez de uma string aqui. Assim
+         * `KIMI_MODEL` troca a versão sem tocar em código — se o K3 existir,
+         * é uma variável de ambiente.
+         *
+         * ⚠️ O QUE A TROCA CUSTA, DECLARADO. Perdemos o cache de prompt: os
+         * ~10K tokens de fundação + modo eram cobrados a 0,1× no reuso e agora
+         * pagam cheio a cada chamada. Pela tabela de `ai-cost.ts`, Kimi custa
+         * $0,60/MTok de entrada contra $0,30 de um Sonnet EM CACHE — ou seja, a
+         * entrada fica ~2× mais cara. A saída compensa com folga: $2,50 contra
+         * $15/MTok, e com 4.000 tokens de teto a saída domina a conta.
+         *
+         * Não meço isso em produção porque não há o que medir: `zion_analysis`
+         * com `source: "user"` está ZERADO no banco — a gaveta do ZION nunca
+         * registrou uma chamada de usuário. A conta acima é de tabela, não de
+         * fatura, e está escrita aqui para ser conferida quando houver tráfego.
+         */
+        const model = process.env.ZION_MODEL ?? kimi.model;
+
+        /**
+         * ⚠️ OS TRÊS BLOCOS DE SISTEMA VIRAM UM. O formato OpenAI aceita uma
+         * mensagem `system` só; concatenar preserva a ORDEM, que importa —
+         * fundação, depois o modo, depois o idioma. A instrução de idioma
+         * continua repetida no turno do usuário porque, com ~10K tokens de
+         * inglês antes dela, o modelo respondia em inglês assim mesmo.
+         */
+        const sistema = [ZION_FOUNDATION, modeInstructions, LANG_INSTRUCTION[args.lang]].join("\n\n");
+
+        const { usage } = await openaiCompatStream(
           {
-            model,
-            // 4000 leaves room for: ~500 tokens of terminal-trace text PLUS
-            // up to 5 fully-populated trade-thesis action cards (each ~250-400
-            // tokens of JSON with entryPrice/exits[]/etc). 1800 was clipping
-            // TRADING mode responses before the 4th and 5th cards landed.
-            max_tokens: 4000,
-            system: [
-              // Foundation cached — same across every request, gets cache hits
-              { type: "text", text: ZION_FOUNDATION,    cache_control: { type: "ephemeral" } },
-              // Mode-specific — cached per-mode (each mode's prefix repeats)
-              { type: "text", text: modeInstructions,   cache_control: { type: "ephemeral" } },
-              // Language instruction — short, not cached (varies per request).
-              // Placed after the cached blocks so the cache keeps hitting even
-              // when users switch language. Also repeated inside the user
-              // message so the model can't anchor on the English foundation
-              // and respond in English anyway.
-              { type: "text", text: LANG_INSTRUCTION[args.lang] },
-            ],
-            messages: [{
-              role: "user",
-              // Front-load the language directive so it's the FIRST thing the
-              // model sees in the user turn — system-prompt-tail directives
-              // were being ignored when the rest of the system prompt is
-              // ~10K tokens of English.
-              content: `${LANG_INSTRUCTION[args.lang]}\n\n${userText}`,
-            }],
+            model, system: sistema,
+            user: `${LANG_INSTRUCTION[args.lang]}\n\n${userText}`,
+            // 4000 deixa espaço para ~500 tokens de rastro do terminal MAIS até
+            // 5 cartas de tese completas (~250-400 tokens de JSON cada).
+            maxTokens: 4000,
+            temperature: kimi.temperature,
           },
-          { signal: combinedSignal },
+          { apiKey: chaveKimi, baseUrl: kimi.baseUrl },
+          (delta) => { if (!closed) controller.enqueue(encoder.encode(delta)); },
+          combinedSignal,
         );
 
-        msgStream.on("text", (delta) => {
-          if (closed) return;
-          controller.enqueue(encoder.encode(delta));
-        });
-        msgStream.on("error", (err) => {
-          console.warn("[zion] stream error:", err?.message ?? err);
-          if (!closed) controller.enqueue(encoder.encode(`\n\n[ZION error: Stream interrupted. Please retry.]\n`));
-        });
-        const finalMsg = await msgStream.finalMessage();
-        const { usage } = finalMsg;
         console.log(JSON.stringify({
-          tag: "zion-usage",
-          ts: new Date().toISOString(),
-          model,
-          mode: args.op,
-          lang: args.lang,
-          autoScan: !args.fromAddr,
-          inputTokens: usage.input_tokens,
-          cachedInputTokens: usage.cache_read_input_tokens ?? 0,
-          outputTokens: usage.output_tokens,
-          cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
+          tag: "zion-usage", ts: new Date().toISOString(),
+          model, mode: args.op, lang: args.lang, autoScan: !args.fromAddr,
+          inputTokens: usage.inTokens,
+          cachedInputTokens: usage.cachedTokens,
+          outputTokens: usage.outTokens,
         }));
-        // Audit every analysis to platform_events (lacuna 3) — queryable in
-        // the admin Platform Events panel, unlike the console log above.
-        // AWAIT it: this runs just before the stream closes, and on serverless
-        // the function freezes the instant the response ends — a fire-and-forget
-        // insert would be lost (which is why manual analyses never showed up in
-        // the AI-spend panel). Awaiting keeps the function alive until it lands.
+
+        // AWAIT de propósito: na serverless a função congela no instante em que
+        // a resposta termina, e um insert solto se perderia — foi por isso que
+        // as análises manuais nunca apareciam no painel de gasto de IA.
         await recordEvent("zion_analysis", { meta: {
           op: args.op, chain: args.chain, model, source: "user",
-          inTokens: usage.input_tokens,
-          outTokens: usage.output_tokens,
-          cachedTokens: usage.cache_read_input_tokens ?? 0,
-          cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
+          inTokens: usage.inTokens,
+          outTokens: usage.outTokens,
+          cachedTokens: usage.cachedTokens,
+          cacheWriteTokens: 0,
         } });
       } catch (err) {
         // AbortError is the expected path when the client disconnects or the
