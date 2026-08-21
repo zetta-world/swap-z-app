@@ -73,6 +73,59 @@ export function convictionFactor(_probability: number | null): number {
   return 1;
 }
 
+/**
+ * A TENDÊNCIA DAS 24 HORAS ANTERIORES — o sinal do filtro de regime.
+ * (`docs/PLANO-TAMANHO-E-REGIME.md`)
+ *
+ * ⚠️⚠️ O SINAL OLHA PARA TRÁS, E ISSO É A COISA TODA.
+ *
+ * A tentação é filtrar pelo retorno DO DIA — e isso é viés de antecipação
+ * puro: usa o resultado para decidir a entrada que o produziu. Um backtest
+ * assim aprova qualquer coisa. Aqui a janela termina na vela mais recente
+ * DISPONÍVEL no momento da decisão e começa 24h antes dela.
+ *
+ * ⚠️ SEM VELA DE 24H ATRÁS, DEVOLVE `null` — nunca 0%. Zero seria "de lado",
+ * uma afirmação sobre o mercado; `null` é "não sei", e quem não sabe não barra
+ * (ver `permiteEntrada`). Confundir os dois faria série curta virar veredito.
+ *
+ * ⚠️ Exigir uma vela em `fim − 24h` já garante que a janela cobre 24 horas de
+ * verdade; não há guarda extra de cobertura porque ela seria inalcançável.
+ */
+export function tendencia24h(candles: Candle[], agoraMs: number): number | null {
+  const janela = candles.filter((c) => c.t <= agoraMs && c.close > 0).sort((a, b) => a.t - b.t);
+  if (janela.length < 2) return null;
+
+  const fim = janela[janela.length - 1];
+  const alvo = fim.t - 24 * 3_600_000;
+
+  // A vela mais RECENTE que ainda esteja em `fim − 24h` ou antes.
+  let inicio: Candle | null = null;
+  for (const c of janela) {
+    if (c.t <= alvo) inicio = c; else break;
+  }
+  if (inicio == null) return null;
+
+  return ((fim.close - inicio.close) / inicio.close) * 100;
+}
+
+/**
+ * O PORTÃO DO REGIME — e ele FALHA ABERTO, ao contrário do resto do repo.
+ *
+ * ⚠️ A regra da casa é que o caminho do dinheiro falha FECHADO: sem preço de
+ * referência, rejeita. Aqui é o oposto, de propósito, e a diferença é o que
+ * está em jogo dos dois lados.
+ *
+ * Um `price-guard` sem preço protege capital ao recusar. Este filtro sem sinal
+ * não protege nada — ele só impede a mesa de operar. Um provedor de velas fora
+ * do ar desligaria o laboratório inteiro em silêncio, que é exatamente o tipo
+ * de morte muda que este projeto já pagou caro (a FREYJA, dez dias).
+ *
+ * ⚠️ `> 0`, não `>= 0`: preço parado não é tendência de alta. Empate barra.
+ */
+export function permiteEntrada(tendenciaPct: number | null): boolean {
+  return tendenciaPct == null || tendenciaPct > 0;
+}
+
 /** A trade can only be ENTERED if the live fill sits on the correct side of the
  *  bracket — you can't market-enter a signal that already reached its target or
  *  stop (a stale signal). buy: stop < fill < target. sell(short): target < fill < stop. */
@@ -160,6 +213,39 @@ export async function gateioKlines(symbol: string, fromMs: number, toMs: number)
       .map((r) => ({ t: Number(r[0]) * 1000, close: parseFloat(r[2]), high: parseFloat(r[3]), low: parseFloat(r[4]) }))
       .filter((c) => Number.isFinite(c.high) && Number.isFinite(c.low) && c.high > 0);
   } catch { return []; }
+}
+
+/**
+ * ⚠️ TETO DE CHAMADAS DO FILTRO DE REGIME, e ele é ANUNCIADO.
+ *
+ * `gateioSpot` resolve N símbolos em UMA chamada; velas são uma chamada POR
+ * símbolo. No universo medido são ~15 símbolos, e 30 dá folga — mas se um dia
+ * passar disso, o excedente entra sem sinal (falha aberta) e o número sai no
+ * evento `paper_regime_tick`. Corte silencioso lê-se como "filtrei tudo".
+ */
+const MAX_SIMBOLOS_REGIME = Number(process.env.PAPER_MAX_SIMBOLOS_REGIME ?? 30);
+
+/**
+ * A tendência de 24h de cada símbolo, para o filtro de regime do abridor.
+ *
+ * ⚠️ MELHOR-ESFORÇO EM TODO SÍMBOLO: falha de rede vira `null`, e `null` deixa
+ * passar. O filtro nunca é o motivo de a mesa parar (ver `permiteEntrada`).
+ */
+export async function lerTendencias(
+  simbolos: readonly string[], agoraMs: number,
+): Promise<{ porSimbolo: Map<string, number | null>; ignorados: number }> {
+  const unicos = [...new Set(simbolos.map((s) => s.toUpperCase()))];
+  const lidos = unicos.slice(0, MAX_SIMBOLOS_REGIME);
+  const porSimbolo = new Map<string, number | null>();
+
+  // 26h de janela para garantir que exista vela em `fim − 24h` mesmo com buraco.
+  const desde = agoraMs - 26 * 3_600_000;
+  await Promise.all(lidos.map(async (sym) => {
+    const velas = await gateioKlines(sym, desde, agoraMs);
+    porSimbolo.set(sym, tendencia24h(velas, agoraMs));
+  }));
+
+  return { porSimbolo, ignorados: Math.max(0, unicos.length - lidos.length) };
 }
 
 /** One call to Gate.io's public tickers; returns base→USDT last price for the
@@ -380,6 +466,19 @@ export async function openPaperPositions(): Promise<number> {
       const c = await poolKlines(chain, pool, Date.now() - 3_600_000, Date.now());
       if (c.length) poolPx.set(key, c[c.length - 1].close);
     }));
+  /**
+   * O FILTRO DE REGIME (`docs/PLANO-TAMANHO-E-REGIME.md`).
+   *
+   * ⚠️ SÓ PARA OS SÍMBOLOS DE CEX. O lado on-chain preenche por pool, e a vela
+   * da Gate.io descreveria outro livro — o mesmo descasamento que carimbou o
+   * custo do HEIMDALL com o nome da GERI. Sugestão de pool passa sem sinal, e
+   * `null` deixa passar.
+   */
+  const regime = cexSugg.length
+    ? await lerTendencias(cexSugg.map((s) => s.symbol), Date.now())
+    : { porSimbolo: new Map<string, number | null>(), ignorados: 0 };
+  let bloqueadosPorRegime = 0;
+
   const spent = new Map<string, number>(); // account_id → cash deployed this tick
   type PaperInsert = {
     account_id: string; suggestion_id: string; source: string; symbol: string;
@@ -452,6 +551,19 @@ export async function openPaperPositions(): Promise<number> {
     // que deixou a FREYJA dez dias sem executar e sem ninguém saber de quê.
     if (fill == null) { nota(s.source, onChain ? "sem_preco_de_pool" : "sem_preco_de_cex"); continue; }
     if (!canEnter(s.side, fill, s.target_price, s.stop_price)) { nota(s.source, "preco_fora_da_faixa"); continue; }
+    /**
+     * ⚠️ O FILTRO DE REGIME FICA AQUI, DEPOIS DOS PORTÕES BARATOS, e a posição
+     * na fila não é detalhe: as recusas anteriores custam um `Map.get`, esta
+     * custou uma chamada de rede. Pôr a cara antes da barata gastaria banda
+     * para decidir sobre sugestão que já ia ser descartada de graça.
+     *
+     * ⚠️ SÓ PARA LONG. Uma venda em tendência de queda é a operação CERTA — as
+     * mesas de hoje são todas long-only, mas escrever a regra sem o lado
+     * deixaria uma armadilha pronta para a primeira mesa que vender.
+     */
+    if (s.side === "buy" && !permiteEntrada(regime.porSimbolo.get(s.symbol.toUpperCase()) ?? null)) {
+      nota(s.source, "contra_tendencia"); bloqueadosPorRegime++; continue;
+    }
     const cashAvail = Number(acc.cash_usd) - (spent.get(acc.id) ?? 0);
     const champMult = s.source === champion ? CHAMPION_MULT : 1;
     const size = sizePosition(cashAvail, Number(acc.starting_usd), convictionFactor(s.probability) * champMult);
@@ -482,6 +594,58 @@ export async function openPaperPositions(): Promise<number> {
     recordEvent("paper_open_skip", { meta: {
       source, ...Object.fromEntries(semJaPega),
       why: "a mesa tinha sugestão aberta e o abridor não executou nenhuma",
+    } });
+  }
+
+  /**
+   * ⚠️⚠️ A RECUSA POR FALTA DE CAIXA PRECISA DE EVENTO PRÓPRIO — e o motivo é
+   * o `continue` quinze linhas acima.
+   *
+   * O `paper_open_skip` só dispara para a mesa que não abriu NADA. Faz sentido
+   * para o que ele mede ("a mesa está muda?"), e é exatamente o errado para
+   * medir capital: a mesa que abre 3 e recusa 5 por falta de caixa está
+   * FUNCIONANDO — e é justamente ela que está com o tamanho apertado. Hoje
+   * esse caso não deixa rastro nenhum.
+   *
+   * ⚠️ ISTO É O INSTRUMENTO QUE PRECEDE O AUMENTO DE `PAPER_POSITION_PCT`
+   * (`docs/PLANO-TAMANHO-E-REGIME.md`, passo 2 antes do passo 3). Sem ele,
+   * subir o tamanho seria mexer no capital sem ter como saber se foi longe
+   * demais — e "descobrir depois" é como a FREYJA passou dez dias parada.
+   *
+   * O critério do plano é `sem_caixa` abaixo de ~5% das entradas; sem este
+   * evento esse número não existe para ser conferido.
+   */
+  for (const [source, motivos] of recusas) {
+    const semCaixa = motivos["sem_caixa"] ?? 0;
+    if (semCaixa === 0) continue;
+    const acc = accBySource.get(source);
+    recordEvent("paper_sem_caixa", { meta: {
+      source,
+      recusadas: semCaixa,
+      abertas_no_tick: inserts.filter((i) => i.source === source).length,
+      // ⚠️ O ESTADO DA CARTEIRA VIAJA JUNTO: "5 recusadas" não diz se o
+      // tamanho está apertado ou se a mesa está sem banca. São causas opostas.
+      caixa_usd: acc ? Number(acc.cash_usd) : null,
+      banca_usd: acc ? Number(acc.starting_usd) : null,
+      why: "havia sugestão aprovada e não havia capital para abrir",
+    } });
+  }
+
+  /**
+   * O tick do filtro de regime — SÓ quando teve o que dizer.
+   *
+   * ⚠️ Evento por tick seria 288 por dia, num `platform_events` que já grava
+   * 522 e ainda não tem política de retenção. Barrar nada é o estado normal e
+   * não merece linha; barrar alguém, ou estourar o teto de símbolos, merece.
+   */
+  if (bloqueadosPorRegime > 0 || regime.ignorados > 0) {
+    recordEvent("paper_regime_tick", { meta: {
+      bloqueados: bloqueadosPorRegime,
+      simbolos_avaliados: regime.porSimbolo.size,
+      // Sem sinal = passou sem ser julgado. É a taxa de cobertura do filtro.
+      sem_sinal: [...regime.porSimbolo.values()].filter((v) => v == null).length,
+      simbolos_ignorados_por_teto: regime.ignorados,
+      why: "entradas long barradas por tendência de 24h não positiva",
     } });
   }
 

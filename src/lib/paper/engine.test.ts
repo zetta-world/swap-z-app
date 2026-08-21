@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { sizePosition, canEnter, computeExit, computeExitPath, convictionFactor, simbolosAbertos, chaveSimbolo } from "@/lib/paper/engine";
+import {
+  sizePosition, canEnter, computeExit, computeExitPath, convictionFactor,
+  simbolosAbertos, chaveSimbolo, tendencia24h, permiteEntrada,
+} from "@/lib/paper/engine";
 import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 describe("paper engine — position sizing", () => {
@@ -172,5 +175,71 @@ describe("guarda-duplicata por símbolo", () => {
       return true;
     });
     expect(abertas.map((a) => a.symbol)).toEqual(["ADA", "OP"]);
+  });
+});
+
+/**
+ * O FILTRO DE REGIME (docs/PLANO-TAMANHO-E-REGIME.md).
+ *
+ * Medido em 206 posicoes reais: filtrar entradas contra a tendencia valia
+ * +$5,45 com posicao de $50 — e +$30,06 depois de o tamanho subir. O sinal
+ * olha para TRAS, e e isso que estes testes protegem.
+ */
+const H = 3_600_000;
+const vela = (t: number, close: number) => ({ t, high: close, low: close, close });
+
+describe("filtro de regime — a tendencia de 24h", () => {
+  const agora = 100 * H;
+
+  it("mede do fechamento de 24h atras ate a vela mais recente", () => {
+    const c = [vela(agora - 24 * H, 100), vela(agora - 12 * H, 105), vela(agora, 110)];
+    expect(tendencia24h(c, agora)).toBeCloseTo(10, 6);   // 100 -> 110
+  });
+
+  it("NUNCA usa vela posterior ao instante da decisao", () => {
+    // ⚠️ O teste central: a vela de +6h existe na serie e valeria +50%.
+    // Se ela entrar, o filtro decide com o futuro e todo o numero medido cai.
+    const c = [vela(agora - 24 * H, 100), vela(agora, 90), vela(agora + 6 * H, 150)];
+    const t = tendencia24h(c, agora);
+    expect(t).toBeCloseTo(-10, 6);       // 100 -> 90, e nao 100 -> 150
+    expect(permiteEntrada(t)).toBe(false);
+  });
+
+  it("sem vela de 24h atras devolve null, nunca 0", () => {
+    // ⚠️ 0 seria "de lado" (uma afirmacao); null e "nao sei". Serie de 3h nao
+    // vira tendencia de 24h com outro nome.
+    const c = [vela(agora - 3 * H, 100), vela(agora, 100)];
+    expect(tendencia24h(c, agora)).toBeNull();
+  });
+
+  it("escolhe a vela mais RECENTE dentro do corte, nao a primeira da serie", () => {
+    // Assimetrico de proposito: a primeira (48h) daria +100%, a do corte
+    // (24h) da +10%. Trocar `<=` por um `find` derruba esta assercao.
+    const c = [vela(agora - 48 * H, 50), vela(agora - 24 * H, 100), vela(agora, 110)];
+    expect(tendencia24h(c, agora)).toBeCloseTo(10, 6);
+  });
+
+  it("ignora fechamento nao positivo e serie curta demais", () => {
+    expect(tendencia24h([vela(agora - 24 * H, 0), vela(agora, 110)], agora)).toBeNull();
+    expect(tendencia24h([vela(agora, 110)], agora)).toBeNull();
+    expect(tendencia24h([], agora)).toBeNull();
+  });
+});
+
+describe("filtro de regime — o portao", () => {
+  it("FALHA ABERTO: sem sinal, deixa passar", () => {
+    // ⚠️ Ao contrario do caminho do dinheiro. Filtro sem sinal nao protege
+    // capital, so impede a mesa de operar — provedor de velas fora do ar nao
+    // pode desligar o laboratorio em silencio.
+    expect(permiteEntrada(null)).toBe(true);
+  });
+
+  it("passa na alta e barra na queda", () => {
+    expect(permiteEntrada(0.01)).toBe(true);
+    expect(permiteEntrada(-0.01)).toBe(false);
+  });
+
+  it("empate BARRA — preco parado nao e tendencia de alta", () => {
+    expect(permiteEntrada(0)).toBe(false);
   });
 });
