@@ -156,3 +156,96 @@ export function openaiCompatConfigFromEnv(): { apiKey: string; baseUrl: string; 
     model:   process.env.KIMI_MODEL   ?? "kimi-k2.6",
   };
 }
+
+/**
+ * STREAMING num endpoint OpenAI-compatível — o que o ZION precisa e
+ * `openaiCompatChat` não faz.
+ *
+ * ⚠️⚠️ POR QUE UM IRMÃO E NÃO UM PARÂMETRO. `openaiCompatChat` devolve o texto
+ * inteiro numa Promise; o ZION entrega token a token para o navegador enquanto o
+ * modelo escreve. São contratos diferentes — espremer os dois na mesma função
+ * daria um retorno que às vezes é texto e às vezes é iterador, e todo chamador
+ * teria de saber qual.
+ *
+ * ⚠️ E A CONTA DE TOKENS SÓ CHEGA NO FIM. O padrão OpenAI só manda `usage` se
+ * pedirmos `stream_options.include_usage`, e ela vem no ÚLTIMO evento, depois
+ * de todo o texto. Sem esse pedido explícito o gasto some — e um custo que não
+ * aparece é o que fez as mesas oráculo pagarem API por três semanas depois de
+ * aposentadas.
+ */
+export interface StreamResult {
+  usage: NormalizedUsage;
+  model: string;
+}
+
+export async function openaiCompatStream(
+  req: ChatRequest,
+  cfg: { apiKey: string; baseUrl: string },
+  onDelta: (texto: string) => void,
+  signal?: AbortSignal,
+): Promise<StreamResult> {
+  const res = await fetch(`${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
+    signal,
+    body: JSON.stringify({
+      model: req.model,
+      max_tokens: req.maxTokens,
+      temperature: req.temperature,
+      stream: true,
+      // ⚠️ Sem isto o `usage` nunca chega e o custo fica invisível.
+      stream_options: { include_usage: true },
+      messages: [
+        { role: "system", content: req.system },
+        { role: "user",   content: req.user },
+      ],
+    }),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`${cfg.baseUrl} respondeu ${res.status}`);
+  }
+
+  const usage: NormalizedUsage = { inTokens: 0, outTokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
+  const leitor = res.body.getReader();
+  const dec = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    const { done, value } = await leitor.read();
+    if (done) break;
+    buffer += dec.decode(value, { stream: true });
+
+    /**
+     * ⚠️ CORTA EM LINHA COMPLETA E GUARDA O RESTO. Um chunk de rede pode partir
+     * um evento SSE no meio de um JSON; tratar o pedaço como linha inteira faz
+     * `JSON.parse` lançar e derruba a resposta no meio da frase.
+     */
+    const linhas = buffer.split("\n");
+    buffer = linhas.pop() ?? "";
+
+    for (const linha of linhas) {
+      const t = linha.trim();
+      if (!t.startsWith("data:")) continue;
+      const corpo = t.slice(5).trim();
+      if (corpo === "[DONE]") continue;
+      try {
+        const j = JSON.parse(corpo) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number;
+                    prompt_tokens_details?: { cached_tokens?: number } };
+        };
+        const texto = j.choices?.[0]?.delta?.content;
+        if (texto) onDelta(texto);
+        if (j.usage) {
+          usage.inTokens = j.usage.prompt_tokens ?? 0;
+          usage.outTokens = j.usage.completion_tokens ?? 0;
+          usage.cachedTokens = j.usage.prompt_tokens_details?.cached_tokens ?? 0;
+        }
+      } catch {
+        // ⚠️ Um evento ilegível não derruba o resto: o texto já entregue vale, e
+        // o próximo chunk normalmente traz a continuação.
+      }
+    }
+  }
+  return { usage, model: req.model };
+}
