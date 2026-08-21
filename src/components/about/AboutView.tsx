@@ -29,7 +29,7 @@ const CEX_INTEGRATIONS = [
 ];
 
 const AI_INTEGRATIONS = [
-  { name: "Anthropic Claude Sonnet 4.6", role: "ZION advisory layer — streaming analysis of pair risk, liquidity depth, trade signals. Advisory mode only; all suggestions require manual user review." },
+  { name: "Kimi (Moonshot)", role: "ZION advisory layer — streaming analysis of pair risk, liquidity depth, trade signals. Advisory mode only; all suggestions require manual user review." },
 ];
 
 /* ── Architecture node ─────────────────────────────────────────────────── */
@@ -134,7 +134,7 @@ export default function AboutView() {
           Z-SWAP is a Next.js 14 App Router application deployed on Vercel edge infrastructure.
           The frontend talks directly to public DEX APIs, blockchain RPCs, and price-data feeds.
           CEX operations are proxied through Next.js route handlers so API keys stay server-side.
-          ZION calls Anthropic via a streaming route handler; the model output is advisory-only
+          ZION calls Kimi via a streaming route handler; the model output is advisory-only
           and never triggers on-chain actions autonomously.
         </p>
         {/* Layer diagram */}
@@ -227,7 +227,7 @@ export default function AboutView() {
             ["State / Queries",  "Zustand 5 · TanStack Query 5"],
             ["Charts",           "Lightweight-charts 4.2 (OHLCV)"],
             ["3D",               "Three.js 0.170 · @react-three/fiber (dynamically loaded)"],
-            ["AI",               "Anthropic SDK 0.96 (server-side streaming only)"],
+            ["AI",               "Kimi via OpenAI-compatible API (server-side streaming only)"],
             ["CEX",              "CCXT 4.5 (externalized, server-side only)"],
             ["Deploy",           "Vercel (Edge + Serverless) · HSTS preload"],
           ].map(([cat, val]) => (
