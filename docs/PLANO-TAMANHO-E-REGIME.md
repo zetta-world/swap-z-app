@@ -1,6 +1,6 @@
 # PLANO — o cinto e o motor: filtro de regime e tamanho de posição
 
-**Status: 🔴 medido, nada implementado** · 21/08.
+**Status: 🟡 passos 1 e 2 entregues · passo 3 aguardando decisão** · 21/08.
 
 > **Em uma frase:** o tamanho da posição vale ~26× mais que o filtro de regime
 > hoje — e o filtro vale 5,5× mais **depois** que o tamanho sobe. Um é o motor,
@@ -57,22 +57,37 @@ usa o resultado para decidir a entrada que o produziu. A medição acima usa a
 tendência das **24 horas ANTERIORES** à abertura, que é informação que existia
 no momento da decisão.
 
-O detector já existe e não precisa ser escrito: `computeIndicators`
-(`market-indicators.ts:684`) devolve `MarketRegime` a partir de ADX + DI —
-`TRENDING_UP` · `TRENDING_DOWN` · `RANGING` · `TRANSITIONING` (linha 716-721).
+### ⚠️ CORREÇÃO NA IMPLEMENTAÇÃO: o sinal medido não é o ADX
+
+A primeira versão deste plano mandava usar `MarketRegime` de `computeIndicators`
+(ADX + DI). **O que a medição de $5,45 usou foi outra coisa**: o retorno das 24
+horas anteriores, símbolo a símbolo.
+
+São sinais diferentes. Enviar o ADX citando aquele número seria carimbar uma
+medição no nome de outra grandeza — a mesma família do custo do HEIMDALL com o
+nome da GERI. Então o que foi implementado é **o que foi medido**:
+`tendencia24h` + `permiteEntrada` (`paper/engine.ts`), sobre velas de 5m da
+Gate.io — a mesma corretora onde as mesas preenchem.
+
+O ADX continua sendo o candidato mais rico e segue **não medido**. Vira variante
+a comparar depois, com número próprio, não substituição por intuição.
 
 ### A regra
 
-**Não abrir posição long quando o símbolo está em `TRENDING_DOWN`.**
+**Não abrir posição long quando a tendência de 24h do símbolo não for positiva.**
 
 ⚠️ **Por símbolo, não por mercado.** O dono formulou a política e ela está
 certa: *"nunca 100% do mercado está em queda; sempre tem uma parte sangrando e
 outra verde"*. Um filtro de mercado inteiro desligaria a mesa nos dias em que
 existe a moeda certa. O filtro é por ativo.
 
-⚠️ `RANGING` e `TRANSITIONING` **passam**. Só `TRENDING_DOWN` barra. A medição
-não separou lateralização de queda, então barrar lateral seria uma decisão sem
-número atrás — e este documento não faz isso.
+⚠️ **Empate barra.** `> 0`, não `>= 0` — preço parado não é tendência de alta.
+Foi assim que a medição contou (`px_agora <= px_ontem` entrava nas barradas), e
+o código segue a mesma linha para o número continuar descrevendo o código.
+
+⚠️ **Só o lado LONG.** Vender em tendência de queda é a operação certa. As mesas
+de hoje são todas long-only, mas escrever a regra sem o lado deixaria uma
+armadilha pronta para a primeira mesa que vender.
 
 ### Onde encaixa
 
@@ -80,7 +95,7 @@ número atrás — e este documento não faz isso.
 lado de `sem_preco_de_pool` e `preco_fora_da_faixa`:
 
 ```
-if (regime === "TRENDING_DOWN") { nota(s.source, "contra_tendencia"); continue; }
+if (s.side === "buy" && !permiteEntrada(tend)) { nota(s.source, "contra_tendencia"); continue; }
 ```
 
 ⚠️ **A recusa tem que aparecer no `paper_open_skip`.** Um filtro que barra em
@@ -102,8 +117,8 @@ do ar não pode desligar a mesa inteira.
 engine.ts:27  const POSITION_PCT = Number(process.env.PAPER_POSITION_PCT ?? 0.05)
 ```
 
-**Já é variável de ambiente.** Não há PR de lógica para o passo 1 — há uma
-decisão de número e o teste que a protege.
+**Já é variável de ambiente.** Não há PR de lógica para o passo 3 — há uma
+decisão de número e o teste que a protege. Por isso ele fica para o dono.
 
 ### O número proposto: 0,05 → 0,08
 
@@ -124,9 +139,14 @@ depende de o pico de cada uma se provar estável.
 
 `sizePosition` devolve 0 quando o caixa acaba, e o comentário da função já diz
 que esse estado "é exatamente a percepção de portfólio que queremos". Hoje ele
-vira `sem_caixa` no `paper_open_skip`. Com tamanho maior isso vai acontecer mais
-— e **precisa ser visível como número, não como evento solto**: quantas entradas
-por dia foram recusadas por falta de capital é o que diz se 8% foi longe demais.
+virava `sem_caixa` dentro do `paper_open_skip` — e ali ele SUMIA justamente no
+caso que importa: aquele evento só dispara para a mesa que não abriu NADA, então
+a mesa que abre 3 e recusa 5 por falta de caixa não deixava rastro.
+
+**Entregue no passo 2:** o evento `paper_sem_caixa`, que dispara por mesa sempre
+que houve recusa por capital — tenha ela aberto posição ou não — e leva junto o
+caixa e a banca, porque "5 recusadas" não diz se o tamanho está apertado ou se a
+mesa está sem dinheiro. São causas opostas.
 
 ---
 
@@ -166,7 +186,7 @@ convicção, estará repetindo uma auditoria de 25/07 que já custou dinheiro.
 ## 5. Como saber se deu certo — e quando voltar atrás
 
 **Critério de sucesso (filtro):** a taxa de acerto das entradas não cai e o
-número de entradas em `TRENDING_DOWN` vai a zero. Se a taxa de acerto cair, o
+número de entradas com tendência de 24h não positiva vai a zero (`paper_regime_tick`). Se a taxa de acerto cair, o
 filtro está barrando reversão boa e a regra precisa de faixa, não de corte.
 
 **Critério de sucesso (tamanho):** retorno sobre a banca sobe proporcionalmente
