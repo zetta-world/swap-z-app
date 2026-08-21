@@ -66,7 +66,7 @@ export function detectsReflection(body: string, payload: string): boolean {
   return body.includes(payload);
 }
 
-const LEAK_PATTERNS = /(at\s+\w+\s+\(\/|node_modules\/|PostgrestError|pg_|syntax error at or near|SUPABASE_|SERVICE_ROLE|ANTHROPIC_API|sk-[A-Za-z0-9]{10})/i;
+const LEAK_PATTERNS = /(at\s+\w+\s+\(\/|node_modules\/|PostgrestError|pg_|syntax error at or near|SUPABASE_|SERVICE_ROLE|ANTHROPIC_API|KIMI_API|MOONSHOT_API|sk-[A-Za-z0-9]{10})/i;
 
 /** A resposta vaza interno (stack, driver, nome de env)? Devolve o trecho. */
 export function detectsErrorLeak(body: string): string | null {

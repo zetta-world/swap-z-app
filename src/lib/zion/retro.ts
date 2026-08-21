@@ -15,7 +15,7 @@
  * (history stays). The flywheel keeps judging: if lessons hurt, expectancy
  * shows it and AGENT_RETRO=off turns the whole thing off.
  */
-import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
+import { openaiCompatChat } from "@/lib/ai/provider";
 import { configuredProviders, hybridBrain, roleProvider } from "@/lib/ai/registry";
 import { isTripped } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -179,10 +179,15 @@ function retroPrompt(source: string, trades: TradeRow[]): string {
 /** Sources that reflect, and which brain does the reflecting (the SAME brain
  *  that made the decisions — self-evaluation, not peer review). Covers the
  *  oracles, the event agents AND the scanners (relit 25/07 with lessons). */
-function brainFor(source: string): { kind: "anthropic" } | { kind: "compat"; providerId: string } | null {
-  // No Anthropic seat remains in the flywheel (27/07): Agent A retired,
-  // Agent B's CEO is DeepSeek, oracle_self retired. The branch stays because
-  // the kind is still modelled — it simply has no source routed to it today.
+function brainFor(source: string): { kind: "compat"; providerId: string } | null {
+  /**
+   * ⚠️ O RAMO `anthropic` SAIU EM 21/08, e ele já era código morto antes disso.
+   * O comentário anterior dizia, com todas as letras: "no Anthropic seat remains
+   * in the flywheel (27/07) ... it simply has no source routed to it today".
+   * Um ramo que nenhum `source` alcança é caminho que ninguém testa e todo mundo
+   * lê como se existisse — com a plataforma inteira migrada para Kimi, ele
+   * passaria a ser uma chamada 401 esperando alguém rotear para lá.
+   */
   // Agent B's CEO seat is DeepSeek since 27/07 — the seat that signs the cards
   // is the seat that reflects on them. (self_scan is retired: no new trades to
   // reflect on, so it simply never crosses the threshold again.)
@@ -281,13 +286,7 @@ export async function runRetroSweep(): Promise<RetroResult> {
     const prompt = retroPrompt(source, trades.slice(0, MAX_TRADES_REVIEWED));
     try {
       let text = "";
-      if (brain.kind === "anthropic") {
-        const apiKey = process.env.ANTHROPIC_API_KEY;
-        if (!apiKey) continue;
-        const r = await anthropicChat({ model: modelChain()[0], system: "You are a rigorous trading-desk reviewer.", user: prompt, maxTokens: 600, timeoutMs: 30_000 }, apiKey);
-        text = r.text;
-        recordEvent("zion_analysis", { meta: { op: "retro", model: r.model, source, ...r.usage } });
-      } else {
+      {
         const provider = configuredProviders().find((p) => p.id === brain.providerId) ?? hybridBrain();
         if (!provider?.apiKey || await isTripped(provider.id)) continue;
         const r = await openaiCompatChat(

@@ -4,7 +4,7 @@ import AboutView from "@/components/about/AboutView";
 export const metadata: Metadata = {
   title: "About · Z-SWAP",
   description:
-    "Technical whitepaper for Z-SWAP — architecture, real integrations (0x, LiFi, Jupiter, CCXT, Anthropic, GoPlus), and non-custodial posture.",
+    "Technical whitepaper for Z-SWAP — architecture, real integrations (0x, LiFi, Jupiter, CCXT, Kimi, GoPlus), and non-custodial posture.",
   openGraph: {
     title: "About Z-SWAP — The Liquidity Nexus",
     description:
