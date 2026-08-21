@@ -5,6 +5,7 @@ import { selectAllRows } from "@/lib/supabase/paginate";
 import { nEfetivo, porQueCoorteMenor, type TradeCorrelacionavel } from "@/lib/zion/amostra-efetiva";
 import { DESKS as DESK_LIST, deskFor, type Desk } from "@/lib/zion/desks";
 import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
+import { lerPontas, retornoDeSegurar, confrontar } from "@/lib/zion/comprar-e-segurar";
 
 export const dynamic = "force-dynamic";
 
@@ -167,6 +168,77 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     db.from("paper_positions").select("source").eq("status", "open").in("source", DESK_LIST.filter((d) => d.direction === "market_neutral").map((d) => d.source)),
   ]);
   const startingBy = new Map<string, number>((paperAccts ?? []).map((a) => [a.source, Number(a.starting_usd) || 1000]));
+
+  /**
+   * ⚠️⚠️ COMPRAR E SEGURAR — a régua que faltava (20/08).
+   *
+   * Nos sete dias até 20/08 as carteiras fecharam no positivo: SKAÐI +$14,92,
+   * radar +$14,00, GERI +$13,98, VÖLUNDR +$9,96, com 29, 14, 18 e 17 posições.
+   * Dinheiro de verdade. No MESMO período BTC fez +15,03% e ETH +23,34% — os
+   * mesmos $1.000 parados em BTC dariam +$150, dez vezes a melhor mesa.
+   *
+   * O painel sabia dizer "está lucrando" e não sabia dizer "está lucrando MENOS
+   * que parado". São frases diferentes e a segunda é a que decide.
+   *
+   * ⚠️ A referência usa os símbolos QUE A PRÓPRIA MESA OPEROU, não o BTC.
+   * Comparar mesa de altcoin com "segurar BTC" mistura duas decisões — qual
+   * ativo e quando entrar. Assim isola a segunda.
+   */
+  const simbolosPorMesa = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (!r.source || !r.symbol || !naRodadaViva(r)) continue;
+    const set = simbolosPorMesa.get(r.source) ?? new Set<string>();
+    set.add(r.symbol.toUpperCase());
+    simbolosPorMesa.set(r.source, set);
+  }
+
+  /**
+   * ⚠️ TETO DE SÍMBOLOS POR MESA, e um cache por símbolo. Sem os dois, uma mesa
+   * que tocou 60 tickers dispararia 60 chamadas de rede a cada abertura do
+   * painel — e o custo apareceria como lentidão, não como erro.
+   */
+  const TETO_SIMBOLOS = 8;
+  const janelaDias = days ?? 7;
+  const unicos = [...new Set([...simbolosPorMesa.values()].flatMap((s) => [...s].slice(0, TETO_SIMBOLOS)))];
+  const pontasPorSimbolo = new Map(
+    (await Promise.all(unicos.map((sym) => lerPontas(sym, janelaDias)))).map((p) => [p.simbolo, p]),
+  );
+
+  /**
+   * O confronto de uma mesa com "e se eu só tivesse segurado?".
+   *
+   * ⚠️⚠️ AS DUAS PONTAS TÊM DE ESTAR NA MESMA BASE, e é aqui que a comparação
+   * mais falha. O torneio mede a mesa em **% líquido POR TRADE**; a referência é
+   * **% do capital na janela**. Confrontar os dois diretamente compararia
+   * "+1,5% por operação" com "+15% no período" — números de unidades diferentes,
+   * e a mesa pareceria dez vezes pior ou melhor conforme quantas vezes operou.
+   *
+   * Por isso a mesa entra pelo USDT REALIZADO sobre o capital inicial: é a
+   * mesma pergunta que se faz de segurar — quanto sobrou de quanto se pôs.
+   *
+   * ⚠️ SEM CARTEIRA, SEM CONFRONTO. Mesa sem posição fechada na janela devolve
+   * `null`, e não zero: não ter operado é diferente de ter operado e empatado.
+   */
+  const confrontoDe = (source: string) => {
+    const fechadas = (paperClosedRows ?? []).filter((r) => r.source === source);
+    if (fechadas.length === 0) return null;
+
+    const capital = startingBy.get(source) ?? 1000;
+    if (!(capital > 0)) return null;
+
+    const usdt = fechadas.reduce((acc, r) => acc + (Number(r.pnl_usd) || 0), 0);
+    const mesaPct = usdt / capital * 100;
+
+    const simbolos = [...(simbolosPorMesa.get(source) ?? [])].slice(0, TETO_SIMBOLOS);
+    const pontas = simbolos
+      .map((sym) => pontasPorSimbolo.get(sym))
+      .filter((p): p is NonNullable<typeof p> => p != null);
+    if (pontas.length === 0) return null;
+
+    const ref = retornoDeSegurar(pontas);
+    return { ...confrontar(mesaPct, ref), usdt, fechadas: fechadas.length, janelaDias };
+  };
+
   const paperPtsBy = new Map<string, Array<{ t: number; pnl: number }>>();
   for (const r of paperClosedRows ?? []) {
     const arr = paperPtsBy.get(r.source) ?? [];
@@ -291,6 +363,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       curve:         equityCurve(a.curvePts),                 // flywheel signal-edge curve (index 100)
       paperCurve:    paperCurve(startingBy.get(a.source) ?? 1000, paperPtsBy.get(a.source) ?? []),
       paperClosed:   (paperPtsBy.get(a.source) ?? []).length, // "matured" gate on the client
+      /** Quanto da maré a mesa capturou — ver o bloco de COMPRAR E SEGURAR. */
+      contraSegurar: confrontoDe(a.source),
       /**
        * ⚠️ O PISO DE AMOSTRA OLHA A IDEIA, NÃO A LINHA (15/08).
        *
@@ -346,6 +420,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       curve: equityCurve(closedRows.map((r) => ({ t: Date.parse(r.closed_at ?? ""), net: Number(r.pnl_pct) }))),
       paperCurve: paperCurve(startingBy.get(source) ?? 1000, paperPtsBy.get(source) ?? []),
       paperClosed: (paperPtsBy.get(source) ?? []).length,
+      contraSegurar: confrontoDe(source),
       /**
        * ⚠️ AS MESAS NEUTRAS NÃO SÃO AGRUPADAS — e isto é declaração, não
        * esquecimento (15/08).

@@ -23,6 +23,12 @@ type Agent = {
   who: string | null; horizonHours: number | null; status: string | null;
   curve: number[];
   paperCurve: number[]; paperClosed: number;
+  /** Quanto da maré a mesa capturou — `null` quando não deu para medir. */
+  contraSegurar?: {
+    mesaPct: number; referenciaPct: number | null; diferencaPp: number | null;
+    fatiaDaMare: number | null; veredito: string;
+    usdt: number; fechadas: number; janelaDias: number;
+  } | null;
   /** Ideias distintas dentro dos decididos — ver `amostra-efetiva.ts`. */
   decidedEffective?: number;
   sufficientSample: boolean;
@@ -212,7 +218,7 @@ export default function TournamentPanel() {
           <>
           {comAmostra.length > 0 && (
           <table className="adm-table">
-            <thead><tr><th style={{ width: 26 }}></th><th>AGENTE</th><th>LÍQ./TRADE</th><th>WR</th><th>PF</th><th>DEC</th><th title="vida inteira: líquido/trade e decididos, arquivo incluído">VIDA</th></tr></thead>
+            <thead><tr><th style={{ width: 26 }}></th><th>AGENTE</th><th>LÍQ./TRADE</th><th>WR</th><th>PF</th><th>DEC</th><th title="vida inteira: líquido/trade e decididos, arquivo incluído">VIDA</th><th title="quanto do que SEGURAR os mesmos símbolos daria na janela a mesa capturou">vs. SEGURAR</th></tr></thead>
             <tbody>
               {comAmostra.map((a, i) => {
                 const decided = a.wins + a.losses;
@@ -258,10 +264,37 @@ export default function TournamentPanel() {
                             </span>
                           : "—"}
                       </td>
+                      {/* ⚠️⚠️ COMPRAR E SEGURAR (20/08). Nos 7 dias até 20/08 as
+                          carteiras fecharam no positivo — SKAÐI +$14,92, radar
+                          +$14,00, GERI +$13,98 — enquanto BTC fez +15,03% e ETH
+                          +23,34%. Os mesmos $1.000 parados em BTC dariam +$150,
+                          dez vezes a melhor mesa. Esta tela sabia dizer "está
+                          lucrando" e não sabia dizer "está lucrando MENOS que
+                          parado", que é a frase que decide.
+
+                          ⚠️ E ELA NÃO PINTA NADA DE VERDE. `cor-resultado` existe
+                          porque o painel do laboratório pintou de verde uma
+                          grade que PERDEU metade do capital, só por perder menos
+                          que segurar. Aqui o número é sempre neutro: ele mede
+                          captura da maré, não sucesso. */}
+                      <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--adm-ink-4)", fontSize: 10 }}
+                          title={a.contraSegurar
+                            ? `${a.contraSegurar.veredito} · a mesa fez `
+                              + `${a.contraSegurar.mesaPct.toFixed(2)}% do capital `
+                              + `($${a.contraSegurar.usdt.toFixed(2)}) em `
+                              + `${a.contraSegurar.fechadas} posições, janela de `
+                              + `${a.contraSegurar.janelaDias} dias`
+                            : "sem posição fechada na janela — nada a comparar"}>
+                        {a.contraSegurar?.fatiaDaMare != null
+                          ? `${(a.contraSegurar.fatiaDaMare * 100).toFixed(0)}%`
+                          : a.contraSegurar?.diferencaPp != null
+                            ? `${a.contraSegurar.diferencaPp >= 0 ? "+" : ""}${a.contraSegurar.diferencaPp.toFixed(1)}pp`
+                            : "—"}
+                      </td>
                     </tr>
                     {isOpen && (
                       <tr>
-                        <td colSpan={7} style={{ padding: "8px 4px 10px", background: "var(--adm-bg-raise)" }}>
+                        <td colSpan={8} style={{ padding: "8px 4px 10px", background: "var(--adm-bg-raise)" }}>
                           {(a.who || a.tests) && (
                             <div style={{ marginBottom: 8, padding: "6px 8px", background: "rgba(255 255 255 / 0.02)", borderLeft: "2px solid var(--adm-gold)", borderRadius: 2 }}>
                               {a.who && <div style={{ fontSize: 12, color: "var(--adm-ink-2)", fontStyle: "italic" }}>{a.who}</div>}
