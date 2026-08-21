@@ -15,6 +15,9 @@ import {
 import { medirLateralidade, deveCotar, type Fatia } from "@/lib/celeiro/faixa-maker";
 import { decidir as decidirBase } from "@/lib/celeiro/base-convergencia";
 import { portaoDeProfundidade, converterLivro } from "@/lib/celeiro/profundidade";
+import { portaoDeSobrevivencia, municaoDoDia } from "@/lib/celeiro/pool-novo";
+import { lerCandidato, candidatosDe, getNewPoolsForChain } from "@/lib/celeiro/pool-fonte";
+import { getPairDetail } from "@/lib/api/dexscreener";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -280,6 +283,103 @@ export async function POST(req: NextRequest) {
     operados[id] = { genomaVersao: gen?.versao ?? null, fechados, abertas: abertas.length, exames };
   }
   relato.operados = operados;
+
+  // ── ④ POOL NOVO ────────────────────────────────────────────────────────
+  /**
+   * ⚠️ ESTE AGENTE FICOU FORA ATÉ 21/08, e a razão importa: o portão dele exige
+   * liquidez travada, concentração do top 10 e teste de venda — e nada no
+   * repositório respondia a isso. Ligá-lo com esses portões devolvendo "ok"
+   * teria sido PIOR que não rodá-lo: apostaria sem verificar nada, com a
+   * aparência de estar protegido. É o defeito do "escudo MEV" que era adesivo.
+   *
+   * As três fontes já existiam (`getNewPoolsForChain`, `getPairDetail`,
+   * `getTokenSecurity`); faltava a ponte, agora em `pool-fonte.ts`.
+   */
+  const poolAg = agentePor("pool_novo")!;
+  const genPool = await genomaAtivo(db, poolAg.id, {
+    tetoDiario: 3, tamanhoUsd: 50, horasLimite: 24, cadeia: "base",
+  });
+
+  const tetoDiario = Number(genPool?.params.tetoDiario ?? 3);
+  const tamanhoUsd = Number(genPool?.params.tamanhoUsd ?? 50);
+  const cadeia = String(genPool?.params.cadeia ?? "base");
+
+  const desdeMeiaNoite = new Date(agora); desdeMeiaNoite.setUTCHours(0, 0, 0, 0);
+  const { count: gastasHoje } = await db
+    .from("celeiro_posicoes").select("*", { count: "exact", head: true })
+    .eq("agente", poolAg.id).gte("aberta_em", desdeMeiaNoite.toISOString());
+
+  const mun = municaoDoDia(gastasHoje ?? 0, tetoDiario, tamanhoUsd);
+  const examesPool: Array<Record<string, unknown>> = [];
+
+  /**
+   * ⚠️⚠️ PRIMEIRO FECHAR, e este agente quase nasceu sem conseguir.
+   *
+   * `precoDe` só conhece BTC/ETH/SOL — os símbolos da Gate.io. Uma posição de
+   * pool abriria e NUNCA fecharia, porque ninguém sabia cotá-la: o capital
+   * sumiria do experimento sem jamais aparecer como perda, que é pior do que
+   * perder. O preço de cada pool aberto vem da dexscreener, pelo endereço
+   * guardado no `meta` da posição.
+   */
+  const abertasPool = await posicoesAbertas(db, poolAg.id);
+  const precoPool = new Map<string, number>();
+  for (const pos of abertasPool) {
+    const pool = typeof pos.meta.pool === "string" ? pos.meta.pool : null;
+    const cad = typeof pos.meta.cadeia === "string" ? pos.meta.cadeia : null;
+    if (!pool || !cad) continue;
+    const par = await getPairDetail(cad, pool).catch(() => null);
+    if (par && par.priceUsd > 0) precoPool.set(pos.simbolo, par.priceUsd);
+  }
+  const fechadosPool = await varrerAbertas(
+    db, poolAg.id, (sym) => precoPool.get(sym) ?? null, agora,
+  );
+
+  if (mun.restam > 0) {
+    const novos = await getNewPoolsForChain(cadeia, 12).catch(() => []);
+    /**
+     * ⚠️ TETO DE CANDIDATOS POR TICK. Cada um custa duas chamadas de rede
+     * (dexscreener + GoPlus). Sem teto, uma lista longa estoura o `maxDuration`
+     * de 60s e o tick MORRE no meio — deixando posições abertas sem varredura.
+     */
+    for (const c of candidatosDe(novos).slice(0, Math.min(6, mun.restam * 2))) {
+      const lido = await lerCandidato(c.chain, c.poolAddress, c.tokenAddress, c.nome, agora);
+      const portao = portaoDeSobrevivencia(lido.pool);
+      examesPool.push({ nome: c.nome, entra: portao.entra, recusas: portao.recusas });
+      if (!portao.entra) continue;
+
+      /**
+       * ⚠️ PREÇO REAL, NUNCA UM ESPAÇO RESERVADO. A primeira versão deste bloco
+       * abria com `precoEntrada: 1, alvo: 3, stop: 0.5` — números inventados. O
+       * P&L seria calculado contra ficção e entraria no extrato como se fosse
+       * dinheiro, envenenando o ranking e o Investigador de uma vez.
+       */
+      const par = await getPairDetail(c.chain, c.poolAddress).catch(() => null);
+      if (!par || !(par.priceUsd > 0)) {
+        examesPool.push({ nome: c.nome, entra: false, recusas: ["sem preço para entrar"] });
+        continue;
+      }
+
+      /**
+       * ⚠️ ASSIMETRIA DECLARADA: alvo em 3× e stop em −50%. Esta é a única
+       * categoria em que perder quase sempre é aceitável — desde que o ganho
+       * raro pague a série e cada perda seja do TAMANHO COMBINADO, nunca maior.
+       */
+      await abrirPosicao(db, {
+        agente: poolAg.id, simbolo: c.nome, lado: "buy", usd: tamanhoUsd,
+        precoEntrada: par.priceUsd,
+        alvo: par.priceUsd * 3, stop: par.priceUsd * 0.5,
+        derrapagemPct: 0, horasLimite: Number(genPool?.params.horasLimite ?? 24),
+      }, genPool?.versao ?? null, { pool: c.poolAddress, cadeia: c.chain });
+
+      if (examesPool.filter((e) => e.entra).length >= mun.restam) break;
+    }
+  }
+
+  relato.poolNovo = {
+    genomaVersao: genPool?.versao ?? null,
+    municao: mun, cadeia, exames: examesPool,
+    fechados: fechadosPool, abertas: abertasPool.length,
+  };
 
   await recordEvent("celeiro_tick", { meta: relato });
   return NextResponse.json({ ok: true, emMs: agora, ...relato });

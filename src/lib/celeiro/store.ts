@@ -194,6 +194,15 @@ export interface PosicaoAberta extends Abertura {
   id: string;
   abertaEmMs: number;
   genomaVersao: number | null;
+  /**
+   * O que o agente guardou ao abrir — endereço do pool, cadeia, o porquê.
+   *
+   * ⚠️ VEM JUNTO NA MESMA CONSULTA, de propósito. A primeira versão buscava o
+   * `meta` de cada posição separadamente para achar o endereço do pool: N+1
+   * consultas num cron com `maxDuration` de 60s, e o custo apareceria como tick
+   * morrendo no meio, não como erro.
+   */
+  meta: Record<string, unknown>;
 }
 
 /** As posições que o agente ainda tem em pé. */
@@ -204,7 +213,7 @@ export async function posicoesAbertas(
   // leitura-limitada: só as abertas de um agente; o teto protege o patológico.
   const { data } = await db
     .from("celeiro_posicoes")
-    .select("id, agente, simbolo, lado, usd, preco_entrada, alvo, stop, horas_limite, derrapagem_pct, aberta_em, genoma_versao")
+    .select("id, agente, simbolo, lado, usd, preco_entrada, alvo, stop, horas_limite, derrapagem_pct, aberta_em, genoma_versao, meta")
     .eq("agente", agente).is("fechada_em", null)
     .limit(100);
 
@@ -214,6 +223,7 @@ export async function posicoesAbertas(
     alvo: Number(r.alvo), stop: Number(r.stop),
     horasLimite: Number(r.horas_limite), derrapagemPct: Number(r.derrapagem_pct),
     abertaEmMs: Date.parse(r.aberta_em), genomaVersao: r.genoma_versao,
+    meta: (r.meta ?? {}) as Record<string, unknown>,
   }));
 }
 

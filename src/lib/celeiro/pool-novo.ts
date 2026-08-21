@@ -25,8 +25,14 @@ export interface Pool {
   liquidezUsd: number;
   /** A liquidez está travada (LP queimado ou em contrato de trava)? */
   liquidezTravada: boolean;
-  /** Fração do supply nas 10 maiores carteiras (0 a 1). */
-  concentracaoTop10: number;
+  /**
+   * Fração do supply nas 10 maiores carteiras (0 a 1). `null` = não medido.
+   *
+   * ⚠️ NULO REPROVA, igual ao teste de venda. Concentração desconhecida é o
+   * caso em que uma carteira pode ter 90% do supply e ninguém sabe — tratar
+   * ausência como "provavelmente pulverizado" é a aposta mais cara possível.
+   */
+  concentracaoTop10: number | null;
   /** Uma venda de teste passou? `null` = não foi possível testar. */
   vendaTestePassou: boolean | null;
   /** Idade do pool em minutos. */
@@ -68,7 +74,9 @@ export function portaoDeSobrevivencia(p: Pool | null): Portao {
   if (!p.liquidezTravada) {
     recusas.push("liquidez não travada — quem criou pode retirá-la a qualquer momento");
   }
-  if (!(p.concentracaoTop10 <= CONCENTRACAO_MAXIMA)) {
+  if (p.concentracaoTop10 === null) {
+    recusas.push("concentração de detentores não medida — pode ser 90% numa carteira só");
+  } else if (!(p.concentracaoTop10 <= CONCENTRACAO_MAXIMA)) {
     recusas.push(
       `top 10 detém ${(p.concentracaoTop10 * 100).toFixed(0)}% do supply `
       + `(teto ${(CONCENTRACAO_MAXIMA * 100).toFixed(0)}%) — a saída deles é o preço`,
