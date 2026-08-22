@@ -10,8 +10,8 @@
 > **Quando escrever:** ao fim de cada entrega. Documento desatualizado é pior que
 > documento nenhum — dá a impressão de que foi conferido.
 >
-> **Última atualização:** 19/08/2026, após o dono confirmar no navegador que a
-> Coinbase Smart Wallet voltou a conectar — #314 verificado em produção.
+> **Última atualização:** 22/08/2026, com o Celeiro produzindo USDT real e a
+> plataforma analisando com Kimi (troca temporária — ver §4).
 
 ---
 
@@ -19,22 +19,40 @@
 
 | | |
 |---|---|
-| `main` | `9859394` — em produção, headers conferidos por `curl` |
-| CI | verde · **1.443 testes** · 103 arquivos |
-| PRs abertas | só a `#141` do Dependabot (setup-node 6→7), não é minha |
+| `main` | `224429d` — em produção, conferido por deployment API |
+| CI | verde · **115 arquivos de teste** |
+| Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
+| Outra mão no código | o agente **`zettaceo`** também commita aqui (ver §1.1) |
 
 Últimos commits, do mais novo:
 
 ```
-9859394  ESTADO-ATUAL: main em f4317ed, o COOP e o contador fechados (#315)
-f4317ed  A Coinbase Smart Wallet nunca funcionou — COOP nos dois sentidos (#314)
-1c3ff48  ESTADO-ATUAL.md — o ponto de retomada quando o contexto acaba (#313)
-1e0c54c  O botão que faltava no contador — invariante nº 32, 3ª aparição (#312)
-ba30cc2  Auditoria 18/08: a regressão que ninguém viu, e 5 buracos fechados (#311)
-f04f654  As descartadas: o teto de credibilidade julgado com livro lido (#310)
-f1c0b38  A derrapagem — o último buraco do modelo de custo (#309)
+224429d  O painel do Celeiro ganha o desenho pedido (#328)
+fe991d6  Trocar de provedor volta a ser uma variável, não um deploy (#327)
+bcf19e3  O ZION devolvia 400 — faltou o extraBody do Kimi (#326)
+720a95f  A plataforma inteira sai da Anthropic e passa a analisar com Kimi (#325)
+51465a6  O cinto antes do motor (#324)  ← do zettaceo, não meu
+d8ba000  Os agentes do Celeiro passam a OPERAR — eram cabeça sem mão (#321)
+e55a250  O CELEIRO — a segunda arena, e a auditoria que a obrigou (#318)
 ```
+
+### 1.1 ⚠️ NÃO SOU A ÚNICA MÃO NESTE REPOSITÓRIO
+
+O agente **`zettaceo`** commita aqui também — a #324 é dele. Descobri por acaso,
+ao levar um conflito de merge.
+
+**Antes de rebasear ou forçar, confira o que a `main` ganhou enquanto você
+trabalhava**, e compare ARQUIVO A ARQUIVO antes de assumir que não há
+sobreposição:
+
+```bash
+git log --oneline HEAD..origin/main          # o que apareceu
+git show --name-only --format="" <sha-dele>  # o que ele tocou
+```
+
+Na #324 a sobreposição era zero (ele em `paper/engine`, eu na camada de IA) e o
+rebase foi seguro. Da próxima pode não ser.
 
 ### Nota da auditoria (18/08): **8,2 / 10**
 
@@ -169,11 +187,15 @@ mesas misturadas).
 
 ### Depende dele (não consigo fazer)
 
-1. **Agendar `/api/celeiro/cron` no cron-job.org** — POST, header
-   `Authorization: Bearer <CRON_SECRET>`, a cada 30 min. Sem isso o Celeiro
-   inteiro está construído e parado: o controle nunca sai do zero, e um piso
-   congelado em zero faz TODO agente parecer vencedor.
-2. **Decidir sobre o `next`.** A única correção é a **16.3.1** — major 14 para
+1. **Reativar a Anthropic quando o saldo voltar** — `AI_PROVIDER=anthropic` +
+   `ANTHROPIC_API_KEY` na Vercel, e redeploy. **É só isso.** O passo a passo, o
+   que muda de verdade (o cache de prompt volta) e como conferir estão em
+   `docs/TROCAR-DE-PROVEDOR.md`.
+2. **Decidir sobre a página de preços enquanto durar o Kimi.** Ela vende
+   "Sonnet 4.6" (Pro/Trader) e "Claude Opus 4.8" (Pilot, 30 SOL). Se a volta for
+   em dias, deixar assim é o certo. Se demorar semanas com gente comprando,
+   precisa de aviso na vitrine — a página descreve o que não está entregando.
+3. **Decidir sobre o `next`.** A única correção é a **16.3.1** — major 14 para
    16, 21 advisories em jogo. É migração com branch e plano próprios, não audit
    fix.
 
@@ -202,15 +224,34 @@ derrapagem, funding, preço), propõe UMA mutação de parâmetro com resultado
 escrito antes, e é pontuada pelo **USDT que a mutação gerou** contra o braço que
 não mudou.
 
-Construído e no ar: tabelas `celeiro_*` (RLS, zero políticas), registro dos
-agentes, extrato, os 5 mecanismos, portão de profundidade, painel em área
-própria, e o cron `/api/celeiro/cron`.
+#### ✅ ESTÁ RODANDO E PRODUZINDO (desde 21/08)
 
-⚠️ **Falta agendar o cron** — ele existe e ninguém o chama. Ver "Depende dele".
+O cron está agendado no cron-job.org (30 min) e os **cinco agentes operam**.
+Números reais da madrugada de 22/08:
 
-⚠️ **Tudo em papel, de propósito.** Funding e profundidade são dados públicos:
-dá para medir sem arriscar um centavo. Só se liga credencial quando o extrato
-provar USDT positivo em amostra que aguente.
+| agente | USDT | lançamentos |
+|---|---|---|
+| **Maker de Faixa** (spot · day) | **+1,3661** | 46 |
+| ⚖ Aluguel de Ocioso (o piso) | +0,0725 | 50 |
+
+E o extrato já entrega o diagnóstico que a arena antiga nunca deu: o Maker
+ganhou **+3,00 de preço** em 14 fechamentos e devolveu **−1,63 em taxa** — a
+corretagem come 54% do que o mercado dá. Esse é o adversário dele, não a direção.
+
+⚠️ **TUDO EM PAPEL, de propósito.** Funding e profundidade são dados públicos:
+mede-se sem arriscar um centavo. Só se liga credencial quando o extrato provar
+USDT positivo em amostra que aguente.
+
+⚠️ **A Colheita de Funding ainda não abriu posição** — o portão exige funding
+acima do controle + 2pp (≈4%/ano) e BTC/ETH/SOL não passaram. Recusar é o
+comportamento certo, mas pode durar semanas.
+
+#### O que do plano AINDA NÃO existe
+
+O **Investigador** (§5 do `PLANO-O-CELEIRO.md`) está escrito e testado — prompt,
+validador, placar — mas **não é chamado por ninguém**. `celeiro_genoma` e
+`celeiro_mutacoes` existem e só o genoma-semente foi gravado. Ligar o ciclo de
+mutação A/B é o próximo pedaço grande.
 
 ### Decisões dele, não minhas
 
@@ -244,6 +285,27 @@ provar USDT positivo em amostra que aguente.
 | A derrapagem cabe no orçamento em tamanhos maiores? | botão **MEDIR A DERRAPAGEM**. A $50 deu impacto **0,000%** e sobra **0,000** — a taxa come o orçamento inteiro. Os outros 5 tamanhos aparecem na tela mas **não ficam gravados** no evento |
 | Por que a GERI não emite sinal? | ela só voltou a `live` no `ba30cc2` (18/08); antes o `isArquivada` bloqueava. **Conferir se escaneia depois do deploy** |
 | Por que nenhuma lição nova desde 16/08 02:30? | o volante foi religado no #303 e `agent_lessons` tem 18 linhas. Conferir `naoRefletidos` contra o limiar de 10 |
+
+---
+
+## 5.1 A AUDITORIA DA #324 (do zettaceo) — um achado em aberto
+
+Auditei o trabalho dele em 22/08. **A medição reproduz ao centavo**: ele afirma
+206 posições e +$126,98, e a posição nº 206 fechou às 22:01:14 com acumulado de
+exatamente +$126,98. `tendencia24h` não tem viés de antecipação, está LIGADO no
+abridor, e os testes cobrem o caso central.
+
+⚠️ **O ACHADO, AINDA ABERTO:** o filtro de tendência faz **~720 chamadas/dia** à
+Gate.io (15 símbolos × 48 ticks) e **não deixa rastro nenhum** quando não barra
+ninguém — `paper_regime_tick` só grava se bloqueou alguém ou estourou o teto.
+
+Hoje isso é correto (mercado subindo, filtro passa tudo). Mas é
+**indistinguível de estar quebrado**: se a Gate.io limitar taxa, tudo volta
+`null`, o filtro passa tudo, e a tela fica idêntica. Falha-aberta + ausência de
+registro é a combinação exata das cicatrizes desta casa.
+
+O conserto é pequeno: gravar quando o filtro AVALIOU — quantos símbolos deram
+sinal e quantos vieram `null`.
 
 ---
 
@@ -284,6 +346,30 @@ prova a carteira. Header servido não é fluxo funcionando.
 > Endurecimento de segurança que passa no CI não é endurecimento verificado.
 > O que o CI não exercita, o CI não protege.
 
+**Não pergunte "o quê" sem perguntar "por quanto tempo".** O dono pediu para
+trocar tudo para Kimi. Eu li como MIGRAÇÃO e apaguei o `anthropicChat`, tirei o
+SDK do `package.json`, removi o ramo do `retro`. Era uma PAUSA por falta de
+crédito — *"depois eu volto"*. Transformei uma decisão de ORÇAMENTO em tarefa de
+código, e tive de desfazer no dia seguinte.
+
+> Mudança temporária pede um seletor, não uma migração. A pergunta que faltou
+> era "isso é definitivo?", e ela custa uma frase.
+
+**A causa costuma estar escrita no arquivo que você já leu.** O ZION devolveu
+400 em toda chamada porque faltou o `extraBody` que desliga o thinking do Kimi —
+e o `registry.ts` diz, em texto: *"sending the wrong one 400s"*. Eu li aquele
+comentário, usei o campo certo em `narratives` e `autopilot`, e esqueci na
+função que EU acabara de escrever.
+
+> Copiar a assinatura de um irmão que funciona é mais seguro que reescrevê-la
+> de memória.
+
+**Três guardas do repositório me reprovaram em 48h, e os três estavam certos:**
+o `admin-css.test.ts` (classes que não existem), o `mesa-arquivada-nao-gasta`
+(caminho novo gastando fora do inventário) e o `legibilidade.test.ts` (texto de
+9px). Nenhum deles teria sido pego em revisão — os três são CONTA, e conta
+confere-se sozinha.
+
 **Teste que copia a constante que deveria conferir não confere nada.**
 `pnl-math.test.ts` tinha `const COST = 0.2` na mão: oito asserções verdes sobre
 metade da taxa real.
@@ -311,6 +397,17 @@ positivo custa a mesma credibilidade que falso negativo.
 | Reparo das carteiras | `src/lib/paper/reconcile.ts` |
 | Registro de painéis | `src/lib/admin/modules.ts` **e** `src/components/admin/panel-map.tsx` (as duas pontas) |
 | Áreas do painel | `src/lib/admin/areas.ts` |
+
+---
+
+## 7.1 Os documentos novos (19–22/08)
+
+| documento | para quê |
+|---|---|
+| `PLANO-O-CELEIRO.md` | o desenho da segunda arena e a medição que a obriga |
+| `AUDITORIA-MESAS-19-08.md` | por que o livro antigo é negativo ANTES do custo |
+| `TROCAR-DE-PROVEDOR.md` | **Kimi ↔ Anthropic numa variável** — leia ao reabastecer |
+| `PLANO-TAMANHO-E-REGIME.md` | do zettaceo: filtro de tendência e tamanho de posição |
 
 ---
 
