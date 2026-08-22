@@ -179,6 +179,24 @@ export async function openaiCompatStream(
         { role: "system", content: req.system },
         { role: "user",   content: req.user },
       ],
+      /**
+       * ⚠️⚠️ `extraBody` FALTAVA AQUI, e o ZION devolveu 400 em produção.
+       *
+       * O registro avisa em texto: o `kimi-k2.6` amarra a temperatura ao MODO de
+       * raciocínio — thinking-ON exige 1, thinking-OFF exige 0,6, e "sending the
+       * wrong one 400s". O `extraBody` do provedor é justamente
+       * `{ thinking: { type: "disabled" } }`.
+       *
+       * Eu passei a temperatura de 0,6 (o valor do modo instantâneo) e NÃO passei
+       * o campo que desliga o thinking. Resultado: temperatura de um modo com o
+       * raciocínio do outro → 400 em toda chamada.
+       *
+       * Passei `extraBody` corretamente em `narratives` e no `autopilot` — que
+       * usam `openaiCompatChat`. Esqueci na função que EU acabei de escrever, que
+       * não tinha o campo. Copiar a assinatura de um irmão que funciona é mais
+       * seguro que reescrevê-la de memória.
+       */
+      ...(req.extraBody ?? {}),
     }),
   });
   if (!res.ok || !res.body) {
