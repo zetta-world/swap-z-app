@@ -12,7 +12,11 @@ import {
   registrarFluxo, ultimoLancamentoMs, genomaAtivo, lerRelogio, marcarRelogio,
   posicoesAbertas, abrirPosicao, varrerAbertas,
 } from "@/lib/celeiro/store";
-import { medirLateralidade, deveCotar, type Fatia } from "@/lib/celeiro/faixa-maker";
+import {
+  lerRegime, permite, alvoLimpaOPedagio, alavancagemCoerente,
+  MULTIPLO_DO_PEDAGIO, type Vela,
+} from "@/lib/celeiro/regime";
+import { tamanhoDaPosicao } from "@/lib/celeiro/agentes";
 import { decidir as decidirBase } from "@/lib/celeiro/base-convergencia";
 import { portaoDeProfundidade, converterLivro } from "@/lib/celeiro/profundidade";
 import { portaoDeSobrevivencia, municaoDoDia } from "@/lib/celeiro/pool-novo";
@@ -201,7 +205,7 @@ export async function POST(req: NextRequest) {
    */
   const precos = new Map<string, number>();
   const livros = new Map<string, ReturnType<typeof converterLivro>>();
-  const velas = new Map<string, Fatia[]>();
+  const velas = new Map<string, Vela[]>();
 
   for (const sym of SIMBOLOS) {
     const par = `${sym.toUpperCase()}_USDT`;
@@ -214,16 +218,25 @@ export async function POST(req: NextRequest) {
 
   const operados: Record<string, unknown> = {};
 
-  for (const id of ["maker_de_faixa", "convergencia_base"] as const) {
+  for (const id of ["cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base"] as const) {
     const ag = agentePor(id)!;
-    const gen = await genomaAtivo(db, id, id === "maker_de_faixa"
-      ? { multiploDoAcaso: 1.5, horasLimite: 8, alvoPct: 0.6, stopPct: 0.6 }
-      : { margemPp: 0.15, horasLimite: 8 });
+    const gen = await genomaAtivo(db, id, id === "convergencia_base"
+      ? { margemPp: 0.15, horasLimite: 8 }
+      : {
+          /**
+           * ⚠️ O ALVO NASCE ACIMA DO PEDÁGIO, e não é escolha de gosto. Com
+           * múltiplo 6 sobre uma ida-e-volta de 0,225%, o mínimo é 1,35%. O
+           * Maker de Faixa morreu com 0,6% — perdendo acertando 65,5%.
+           */
+          alvoPct: 2.0, stopPct: 1.2, horasLimite: 48,
+          multiploDoPedagio: MULTIPLO_DO_PEDAGIO,
+        });
 
     // Primeiro FECHA o que já venceu — antes de pensar em abrir mais.
     const fechados = await varrerAbertas(db, id, precoDe, agora);
 
     const abertas = await posicoesAbertas(db, id);
+    const expostoUsd = abertas.reduce((soma, p) => soma + p.usd, 0);
     const exames: Array<Record<string, unknown>> = [];
 
     for (const sym of SIMBOLOS) {
@@ -231,56 +244,92 @@ export async function POST(req: NextRequest) {
       const preco = precoDe(sym);
       if (preco === null) { exames.push({ sym, abre: false, porque: "sem preço" }); continue; }
 
-      const veredito = id === "maker_de_faixa"
-        ? deveCotar(medirLateralidade(velas.get(sym) ?? []), Number(gen?.params.multiploDoAcaso ?? 1.5))
-        : { cota: false, porque: "" };
+      let abre = false, porque = "", lado: "buy" | "sell" = "buy";
+      let alvo = 0, stop = 0, alavanca = 1;
 
-      let abre = false, porque = "", lado: "buy" | "sell" = "buy", alvo = 0, stop = 0;
-
-      if (id === "maker_de_faixa") {
-        abre = veredito.cota; porque = veredito.porque;
-        /**
-         * ⚠️ O MAKER NÃO ESCOLHE LADO POR OPINIÃO. Ele cota comprado no fundo da
-         * faixa medida — se o par sair da faixa, `deveCotar` fecha e ele PARA,
-         * em vez de virar direcional. É a fronteira escrita no `naoFaz` dele.
-         */
-        const p = Number(gen?.params.alvoPct ?? 0.6);
-        lado = "buy"; alvo = preco * (1 + p / 100); stop = preco * (1 - p / 100);
-      } else {
+      if (id === "convergencia_base") {
         const perp = await umNumero(
           `https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=${sym.toUpperCase()}_USDT`,
           (c) => Number((c as Array<{ last?: string }>)?.[0]?.last));
         const d = decidirBase(perp > 0 ? { perp, spot: preco } : null, Number(gen?.params.margemPp ?? 0.15));
         abre = d.abre; porque = d.porque;
         lado = d.lado === "vender_perp" ? "sell" : "buy";
-        // A base fecha na convergência: alvo é o spot, stop é a base dobrando.
         const b = Math.abs(d.basePct ?? 0);
         alvo = lado === "buy" ? preco * (1 + b / 100) : preco * (1 - b / 100);
         stop = lado === "buy" ? preco * (1 - b / 100) : preco * (1 + b / 100);
+      } else {
+        /**
+         * ⚠️⚠️ O LADO VEM DO REGIME MEDIDO, nunca de opinião. Alta compra,
+         * baixa vende (só quem tem futuros), sangrando ninguém opera.
+         *
+         * ⚠️ E SPOT NÃO VENDE: sem futuros não há como lucrar na queda
+         * acumulando USDT — em spot, "vender na baixa" é apenas sair.
+         */
+        const podeVender = ag.modalidade === "futuros_gate";
+        const regime = lerRegime(velas.get(sym) ?? []);
+        const perm = permite(regime, podeVender);
+        porque = perm.porque;
+
+        if (!perm.opera || perm.lado === null) {
+          exames.push({ sym, abre: false, porque, estado: regime.estado });
+          continue;
+        }
+        lado = perm.lado;
+
+        /**
+         * ⚠️ A INVARIANTE QUE MATOU O MAKER. Alvo que não limpa o pedágio por
+         * múltiplo declarado NÃO ABRE — e a recusa vai para o extrato como
+         * recusa, não como prejuízo.
+         */
+        const alvoPct = Number(gen?.params.alvoPct ?? 2.0);
+        const limpa = alvoLimpaOPedagio(alvoPct, Number(gen?.params.multiploDoPedagio ?? MULTIPLO_DO_PEDAGIO));
+        if (!limpa.passa) {
+          exames.push({ sym, abre: false, porque: limpa.porque });
+          continue;
+        }
+
+        const stopPct = Number(gen?.params.stopPct ?? 1.2);
+        alvo = lado === "buy" ? preco * (1 + alvoPct / 100) : preco * (1 - alvoPct / 100);
+        stop = lado === "buy" ? preco * (1 - stopPct / 100) : preco * (1 + stopPct / 100);
+
+        /**
+         * ⚠️ ALAVANCAGEM PELO PIOR CASO MEDIDO, com teto duro do registro. Pode
+         * devolver 1× — e isso é RESULTADO, não falha.
+         */
+        const a = alavancagemCoerente(regime.piorContraPct, ag.alavancagemMaxima);
+        alavanca = a.vezes;
+        porque = `${porque} · ${limpa.porque} · alavanca ${a.porque}`;
+        abre = true;
       }
 
       if (!abre) { exames.push({ sym, abre: false, porque }); continue; }
 
       /**
-       * ⚠️⚠️ O PORTÃO DE PROFUNDIDADE, NO TAMANHO REAL. É o que faltava na
-       * arbitragem antiga: a sonda existia, media certo 4.085 vezes, e não
-       * bloqueava nada. Aqui ela decide.
+       * ⚠️ O TAMANHO SAI DA BANCA, não de um número escrito no cron. E o teto de
+       * exposição é o "sem suicídio" do mandato: sem ele, três posições de 25%
+       * viram 75% da banca em risco sem ninguém ter decidido isso.
        */
-      const usd = Math.max(ag.capitalMinimoUsd, 50);
-      const prof = portaoDeProfundidade(livros.get(sym) ?? null, usd);
+      const t = tamanhoDaPosicao(ag, expostoUsd);
+      if (!t.cabe) { exames.push({ sym, abre: false, porque: t.porque }); continue; }
+
+      const prof = portaoDeProfundidade(livros.get(sym) ?? null, t.usd);
       if (!prof.passa) { exames.push({ sym, abre: false, porque: prof.porque }); continue; }
 
       const posId = await abrirPosicao(db, {
-        agente: id, simbolo: sym, lado, usd,
+        agente: id, simbolo: sym, lado, usd: t.usd,
         precoEntrada: preco, alvo, stop,
         derrapagemPct: prof.derrapagemPct ?? 0,
-        horasLimite: Number(gen?.params.horasLimite ?? 8),
-      }, gen?.versao ?? null, { porque, derrapagem: prof.porque });
+        horasLimite: Number(gen?.params.horasLimite ?? 48),
+      }, gen?.versao ?? null, { porque, alavanca, exposicao: t.exposicaoDepois });
 
-      exames.push({ sym, abre: posId !== null, porque, lado, usd, derrapagemPct: prof.derrapagemPct });
+      exames.push({ sym, abre: posId !== null, porque, lado, usd: t.usd, alavanca });
     }
 
-    operados[id] = { genomaVersao: gen?.versao ?? null, fechados, abertas: abertas.length, exames };
+    operados[id] = {
+      genomaVersao: gen?.versao ?? null,
+      fechados, abertas: abertas.length,
+      expostoUsd, bancaUsd: ag.bancaUsd, exames,
+    };
   }
   relato.operados = operados;
 
@@ -406,13 +455,23 @@ async function umLivro(url: string): Promise<ReturnType<typeof converterLivro>> 
 }
 
 /** As velas de 15 min, para o teste de lateralidade. */
-async function uMasVelas(url: string): Promise<Fatia[]> {
+async function uMasVelas(url: string): Promise<Vela[]> {
   try {
     const r = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
     if (!r.ok) return [];
     const c = await r.json();
     if (!Array.isArray(c)) return [];
-    return c.map((v) => ({ fechamento: Number(Array.isArray(v) ? v[5] : Number.NaN) }))
-            .filter((f) => Number.isFinite(f.fechamento));
+    /**
+     * ⚠️ O REGIME PRECISA DE MÁXIMA E MÍNIMA, não só do fechamento. A
+     * volatilidade que separa "baixa" de "sangrando" e o pior movimento contra
+     * que dimensiona a alavanca saem da amplitude da vela — com só o fechamento
+     * os dois ficariam cegos justamente para o evento que liquida.
+     *
+     * Formato da Gate.io: [t, volume, close, high, low, ...].
+     */
+    return c.map((v) => Array.isArray(v)
+        ? { fechamento: Number(v[5]), maxima: Number(v[3]), minima: Number(v[4]) }
+        : { fechamento: Number.NaN, maxima: Number.NaN, minima: Number.NaN })
+      .filter((x) => Number.isFinite(x.fechamento) && Number.isFinite(x.maxima) && Number.isFinite(x.minima));
   } catch { return []; }
 }
