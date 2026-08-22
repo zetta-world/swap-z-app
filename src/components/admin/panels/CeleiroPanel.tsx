@@ -80,7 +80,7 @@ function dia(ms: number | null): string {
  */
 function Curva({ pontos, cor }: { pontos: number[]; cor: string }) {
   if (pontos.length < 2) {
-    return <span style={{ ...APAGADO, fontSize: 9 }}>sem série</span>;
+    return <span style={{ ...APAGADO, fontSize: 10 }}>sem série</span>;
   }
   const min = Math.min(...pontos), max = Math.max(...pontos);
   const amp = max - min || 1;
@@ -162,7 +162,7 @@ export default function CeleiroPanel() {
           </div>
 
           <div>
-            <div style={{ ...APAGADO, fontSize: 9, letterSpacing: ".06em" }}>TOTAL ACUMULADO</div>
+            <div style={{ ...APAGADO, fontSize: 10, letterSpacing: ".06em" }}>TOTAL ACUMULADO</div>
             <div style={{ fontSize: 22, fontVariantNumeric: "tabular-nums",
                           color: d.resumo.usdtTotal >= 0 ? "var(--adm-cyan)" : "var(--adm-red)" }}>
               {usd(d.resumo.usdtTotal)}
@@ -170,17 +170,17 @@ export default function CeleiroPanel() {
           </div>
 
           <div>
-            <div style={{ ...APAGADO, fontSize: 9, letterSpacing: ".06em" }}>LANÇAMENTOS</div>
+            <div style={{ ...APAGADO, fontSize: 10, letterSpacing: ".06em" }}>LANÇAMENTOS</div>
             <div style={{ fontSize: 22, fontVariantNumeric: "tabular-nums", color: "var(--adm-ink-2)" }}>
               {d.resumo.lancamentos}
             </div>
-            <div style={{ ...APAGADO, fontSize: 9 }}>
+            <div style={{ ...APAGADO, fontSize: 10 }}>
               {d.resumo.agentesComDado} agente(s) com dado
             </div>
           </div>
 
           <div>
-            <div style={{ ...APAGADO, fontSize: 9, letterSpacing: ".06em" }}>PERÍODO</div>
+            <div style={{ ...APAGADO, fontSize: 10, letterSpacing: ".06em" }}>PERÍODO</div>
             <div style={{ fontSize: 12, color: "var(--adm-ink-2)", marginTop: 4 }}>
               {dia(d.resumo.deMs)} → {dia(d.resumo.ateMs)}
             </div>
@@ -190,12 +190,12 @@ export default function CeleiroPanel() {
               hora? Um selo fixo continuaria verde com o cron morto — a morte
               muda que este projeto já pagou três vezes. */}
           <div>
-            <div style={{ ...APAGADO, fontSize: 9, letterSpacing: ".06em" }}>ESTADO</div>
+            <div style={{ ...APAGADO, fontSize: 10, letterSpacing: ".06em" }}>ESTADO</div>
             <div style={{ fontSize: 12, marginTop: 4,
                           color: d.resumo.ativo ? "var(--adm-green)" : "var(--adm-amber)" }}>
               {d.resumo.ativo ? "● escrevendo" : "○ sem lançar há mais de 1h"}
             </div>
-            <div style={{ ...APAGADO, fontSize: 9 }}>
+            <div style={{ ...APAGADO, fontSize: 10 }}>
               {d.resumo.ultimoMs ? `último ${new Date(d.resumo.ultimoMs).toLocaleTimeString("pt-BR")}` : "—"}
             </div>
           </div>
@@ -260,7 +260,7 @@ export default function CeleiroPanel() {
                               ausência de concorrência, e o piso nunca o leva. */}
                           {l.destaque && (
                             <span style={{
-                              marginLeft: 6, fontSize: 9, padding: "1px 5px", borderRadius: 2,
+                              marginLeft: 6, fontSize: 10, padding: "1px 5px", borderRadius: 2,
                               border: "1px solid var(--adm-gold)", color: "var(--adm-gold)",
                             }}>DESTAQUE</span>
                           )}
