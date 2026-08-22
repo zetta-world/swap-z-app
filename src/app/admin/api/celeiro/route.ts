@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { AGENTES, FAIXAS, ROTULO_DA_FAIXA, oControle, agentesDaFaixa } from "@/lib/celeiro/agentes";
-import { extratoDe, ranquear, type Fluxo, type Causa } from "@/lib/celeiro/fluxo";
+import {
+  extratoDe, ranquear, curvaAcumulada, contraOPiso, usdtProduzido,
+  type Fluxo, type Causa,
+} from "@/lib/celeiro/fluxo";
 
 export const dynamic = "force-dynamic";
 
@@ -76,19 +79,33 @@ export async function GET() {
    * tela em silêncio, e "não apareceu" é indistinguível de "não existe". É a
    * mesma razão de o extrato dizer "sem dado" em vez de devolver zero.
    */
+  const fluxosDe = (a: string) => fluxos.filter((f) => f.agente === a);
+  const usdtPiso = usdtProduzido(fluxosDe(controle.id));
+
   const faixas = FAIXAS.map((faixa) => {
     const doGrupo = agentesDaFaixa(faixa).map((a) => a.id);
     // O piso entra em toda faixa, mesmo não pertencendo a ela.
     const comControle = doGrupo.includes(controle.id) ? doGrupo : [...doGrupo, controle.id];
     const ranking = ranquear(fluxos, comControle, controle.id);
 
+    /**
+     * ⚠️ O DESTAQUE É POR FAIXA, e só existe se houver com quem comparar. Um
+     * selo de "melhor" numa faixa com um agente só premiaria a ausência de
+     * concorrência — e o piso, que é convidado, nunca pode levá-lo.
+     */
+    const concorrentes = ranking.filter(
+      (r) => !r.ehControle && fluxosDe(r.agente).length > 0,
+    );
+    const destaque = concorrentes.length >= 2 && concorrentes[0].usdt > 0
+      ? concorrentes[0].agente : null;
+
     return {
       faixa,
       rotulo: ROTULO_DA_FAIXA[faixa],
       linhas: ranking.map((r) => {
         const a = AGENTES.find((x) => x.id === r.agente)!;
+        const meus = fluxosDe(r.agente);
         const e = extratoDe(r.agente, fluxos);
-        const lancamentos = fluxos.filter((f) => f.agente === r.agente).length;
         return {
           ...r,
           nome: a.nome,
@@ -102,14 +119,40 @@ export async function GET() {
           porCausa: e.porCausa,
           vazamentos: e.vazamentos,
           fontes: e.fontes,
-          lancamentos,
-          semDado: lancamentos === 0,
+          lancamentos: meus.length,
+          semDado: meus.length === 0,
           /** O agente só pertence a esta faixa; o controle é convidado. */
           convidado: !doGrupo.includes(r.agente),
+          /** A linha do minigráfico: USDT acumulado ao longo do tempo. */
+          serie: curvaAcumulada(meus),
+          /** Como comparar com o piso sem produzir número que estoura a tela. */
+          piso: contraOPiso(r.usdt, usdtPiso, r.ehControle),
+          destaque: r.agente === destaque,
         };
       }),
     };
   });
+
+  /**
+   * ⚠️ O RESUMO SOMA CADA AGENTE UMA VEZ SÓ. As faixas repetem o piso como
+   * convidado — somar as linhas das três tabelas contaria o Aluguel de Ocioso
+   * três vezes e inflaria o total do Celeiro sem que nada tivesse rendido.
+   */
+  const instantes = fluxos.map((f) => f.ocorreuEmMs).filter(Number.isFinite);
+  const resumo = {
+    usdtTotal: usdtProduzido(fluxos),
+    lancamentos: fluxos.length,
+    agentesComDado: new Set(fluxos.map((f) => f.agente)).size,
+    deMs: instantes.length ? Math.min(...instantes) : null,
+    ateMs: instantes.length ? Math.max(...instantes) : null,
+    /**
+     * ⚠️ "ATIVO" É MEDIDO, NÃO DECLARADO: houve lançamento na última hora?
+     * Um selo fixo de "ativo e transmitindo" continuaria verde com o cron morto,
+     * que é a morte muda que este projeto já pagou três vezes.
+     */
+    ativo: instantes.length > 0 && (Date.now() - Math.max(...instantes)) < 3_600_000,
+    ultimoMs: instantes.length ? Math.max(...instantes) : null,
+  };
 
   return NextResponse.json({
     arena: "celeiro",
@@ -122,6 +165,7 @@ export async function GET() {
      */
     semNenhumLancamento: fluxos.length === 0,
     totalDeLancamentos: fluxos.length,
+    resumo,
     faixas,
   });
 }
