@@ -22,6 +22,8 @@ import { portaoDeProfundidade, converterLivro } from "@/lib/celeiro/profundidade
 import { portaoDeSobrevivencia, municaoDoDia } from "@/lib/celeiro/pool-novo";
 import { lerCandidato, candidatosDe, getNewPoolsForChain } from "@/lib/celeiro/pool-fonte";
 import { getPairDetail } from "@/lib/api/dexscreener";
+import { investigar } from "@/lib/celeiro/investigar";
+import { mutacaoEmCurso, bracoDaPosicao, posicoesDesde } from "@/lib/celeiro/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -237,6 +239,19 @@ export async function POST(req: NextRequest) {
 
     const abertas = await posicoesAbertas(db, id);
     const expostoUsd = abertas.reduce((soma, p) => soma + p.usd, 0);
+
+    /**
+     * ⚠️ O BRAÇO DO A/B — e ele alterna por POSIÇÃO, não por símbolo. Dividir
+     * por símbolo daria a cada braço um conjunto DIFERENTE de ativos, e o teste
+     * mediria "BTC contra ETH" em vez de "genoma antigo contra novo".
+     *
+     * Sem mutação em curso, `bracoDaPosicao` devolve `null` e nada é marcado:
+     * rotular o que não está sendo testado envenenaria o julgamento seguinte
+     * com dados de antes.
+     */
+    const emTeste = await mutacaoEmCurso(db, id);
+    let abertasDesde = emTeste?.aplicadaEmMs != null
+      ? await posicoesDesde(db, id, emTeste.aplicadaEmMs) : 0;
     const exames: Array<Record<string, unknown>> = [];
 
     for (const sym of SIMBOLOS) {
@@ -315,14 +330,16 @@ export async function POST(req: NextRequest) {
       const prof = portaoDeProfundidade(livros.get(sym) ?? null, t.usd);
       if (!prof.passa) { exames.push({ sym, abre: false, porque: prof.porque }); continue; }
 
+      const braco = bracoDaPosicao(emTeste != null, abertasDesde);
       const posId = await abrirPosicao(db, {
         agente: id, simbolo: sym, lado, usd: t.usd,
         precoEntrada: preco, alvo, stop,
         derrapagemPct: prof.derrapagemPct ?? 0,
         horasLimite: Number(gen?.params.horasLimite ?? 48),
-      }, gen?.versao ?? null, { porque, alavanca, exposicao: t.exposicaoDepois });
+      }, gen?.versao ?? null, { porque, alavanca, exposicao: t.exposicaoDepois }, braco);
+      if (posId) abertasDesde++;
 
-      exames.push({ sym, abre: posId !== null, porque, lado, usd: t.usd, alavanca });
+      exames.push({ sym, abre: posId !== null, porque, lado, usd: t.usd, alavanca, braco });
     }
 
     operados[id] = {
@@ -429,6 +446,20 @@ export async function POST(req: NextRequest) {
     municao: mun, cadeia, exames: examesPool,
     fechados: fechadosPool, abertas: abertasPool.length,
   };
+
+  // ── ⑤ O INVESTIGADOR ────────────────────────────────────────────────────
+  /**
+   * ⚠️ POR ÚLTIMO, E MELHOR-ESFORÇO. Ele não opera dinheiro: derrubar o tick por
+   * causa dele seria parar o que GANHA por causa do que APRENDE. E vem depois
+   * das aberturas para que a mutação aplicada agora só valha no próximo ciclo —
+   * trocar o genoma no meio do tick faria metade das posições nascerem com um
+   * parâmetro e metade com outro, sem ninguém ter decidido isso.
+   */
+  try {
+    relato.investigador = await investigar(db, agora);
+  } catch (e) {
+    relato.investigador = { erro: e instanceof Error ? e.message : String(e) };
+  }
 
   await recordEvent("celeiro_tick", { meta: relato });
   return NextResponse.json({ ok: true, emMs: agora, ...relato });

@@ -194,6 +194,8 @@ export interface PosicaoAberta extends Abertura {
   id: string;
   abertaEmMs: number;
   genomaVersao: number | null;
+  /** O braço do A/B a que esta posição pertence — viaja até os fluxos dela. */
+  braco: Braco | null;
   /**
    * O que o agente guardou ao abrir — endereço do pool, cadeia, o porquê.
    *
@@ -213,7 +215,7 @@ export async function posicoesAbertas(
   // leitura-limitada: só as abertas de um agente; o teto protege o patológico.
   const { data } = await db
     .from("celeiro_posicoes")
-    .select("id, agente, simbolo, lado, usd, preco_entrada, alvo, stop, horas_limite, derrapagem_pct, aberta_em, genoma_versao, meta")
+    .select("id, agente, simbolo, lado, usd, preco_entrada, alvo, stop, horas_limite, derrapagem_pct, aberta_em, genoma_versao, braco, meta")
     .eq("agente", agente).is("fechada_em", null)
     .limit(100);
 
@@ -223,6 +225,7 @@ export async function posicoesAbertas(
     alvo: Number(r.alvo), stop: Number(r.stop),
     horasLimite: Number(r.horas_limite), derrapagemPct: Number(r.derrapagem_pct),
     abertaEmMs: Date.parse(r.aberta_em), genomaVersao: r.genoma_versao,
+    braco: (r.braco ?? null) as Braco | null,
     meta: (r.meta ?? {}) as Record<string, unknown>,
   }));
 }
@@ -239,12 +242,19 @@ export async function abrirPosicao(
   a: Abertura,
   genomaVersao: number | null,
   meta: Record<string, unknown> = {},
+  /**
+   * ⚠️⚠️ O BRAÇO PRECISA CHEGAR AOS FLUXOS, não só à posição. `julgarMutacao`
+   * lê FLUXOS — se o rótulo ficasse só na linha da posição, os dois braços
+   * apareceriam vazios e todo veredito sairia "inconclusiva" para sempre, com
+   * o A/B parecendo funcionar.
+   */
+  braco: Braco | null = null,
 ): Promise<string | null> {
   const { data, error } = await db.from("celeiro_posicoes").insert({
     agente: a.agente, simbolo: a.simbolo, lado: a.lado, usd: a.usd,
     preco_entrada: a.precoEntrada, alvo: a.alvo, stop: a.stop,
     horas_limite: a.horasLimite, derrapagem_pct: a.derrapagemPct,
-    genoma_versao: genomaVersao, meta,
+    genoma_versao: genomaVersao, braco, meta,
   }).select("id").limit(1);
 
   const id = data?.[0]?.id as string | undefined;
@@ -253,7 +263,7 @@ export async function abrirPosicao(
   for (const l of lancamentosDaAbertura(a)) {
     await registrarFluxo(db, {
       agente: a.agente, causa: l.causa, usdt: l.usdt, simbolo: a.simbolo,
-      ref: `abertura:${id}`, genomaVersao, meta: { posicao: id },
+      ref: `abertura:${id}`, genomaVersao, braco, meta: { posicao: id },
     });
   }
   return id;
@@ -285,7 +295,7 @@ export async function fecharPosicao(
   for (const l of lancamentosDoFechamento(p, f)) {
     await registrarFluxo(db, {
       agente: p.agente, causa: l.causa, usdt: l.usdt, simbolo: p.simbolo,
-      ref: `fechamento:${p.id}`, genomaVersao: p.genomaVersao,
+      ref: `fechamento:${p.id}`, genomaVersao: p.genomaVersao, braco: p.braco,
       meta: { posicao: p.id, motivo: f.motivo, precoSaida: f.precoSaida },
     });
   }
@@ -314,4 +324,149 @@ export async function varrerAbertas(
     out.push({ simbolo: p.simbolo, ...r });
   }
   return out;
+}
+
+/* ───────────────────────── MUTAÇÕES ───────────────────────── */
+
+export interface MutacaoNova {
+  agente: string;
+  modelo: string;
+  hipotese: string;
+  diff: Record<string, unknown>;
+  esperado: string;
+}
+
+/** Grava a proposta. Ela ainda NÃO é aplicada — isso é decisão separada. */
+export async function registrarMutacao(db: SupabaseClient, m: MutacaoNova): Promise<string | null> {
+  const { data, error } = await db.from("celeiro_mutacoes").insert({
+    agente: m.agente, modelo: m.modelo, hipotese: m.hipotese,
+    diff: m.diff, esperado: m.esperado,
+  }).select("id").limit(1);
+  return error ? null : (data?.[0]?.id as string | undefined) ?? null;
+}
+
+export interface MutacaoEmCurso {
+  id: string; agente: string; modelo: string;
+  diff: Record<string, unknown>; esperado: string; hipotese: string;
+  aplicadaEmMs: number | null;
+}
+
+/**
+ * A mutação que está EM TESTE neste agente — aplicada e ainda não julgada.
+ *
+ * ⚠️ UMA POR AGENTE, e o `limit(1)` não é economia: duas mutações vivas ao mesmo
+ * tempo tornariam o A/B ilegível, porque o braço `mutacao` carregaria as duas e
+ * ninguém saberia qual pagou. É a mesma razão de o validador recusar diff com
+ * dois parâmetros.
+ */
+export async function mutacaoEmCurso(db: SupabaseClient, agente: string): Promise<MutacaoEmCurso | null> {
+  // leitura-limitada: no máximo uma mutação viva por agente, por construção.
+  const { data } = await db.from("celeiro_mutacoes")
+    .select("id, agente, modelo, diff, esperado, hipotese, aplicada_em")
+    .eq("agente", agente).not("aplicada_em", "is", null).is("avaliada_em", null)
+    .order("aplicada_em", { ascending: false }).limit(1);
+  const r = data?.[0];
+  if (!r) return null;
+  return {
+    id: r.id, agente: r.agente, modelo: r.modelo,
+    diff: (r.diff ?? {}) as Record<string, unknown>,
+    esperado: r.esperado, hipotese: r.hipotese,
+    aplicadaEmMs: r.aplicada_em ? Date.parse(r.aplicada_em) : null,
+  };
+}
+
+/**
+ * Aplica a mutação: nova versão do genoma, com autor e hipótese.
+ *
+ * ⚠️ A VERSÃO ANTERIOR NÃO É APAGADA — só perde o `ativo`. Reverter é reativar,
+ * não reconstruir; e o par (hipótese, resultado) fica no registro inclusive
+ * quando falha, porque hipótese refutada é informação.
+ */
+export async function aplicarMutacao(
+  db: SupabaseClient, mutacaoId: string, agente: string,
+  paramsNovos: Record<string, unknown>, modelo: string, hipotese: string,
+): Promise<number | null> {
+  const { data: atual } = await db.from("celeiro_genoma")
+    .select("versao").eq("agente", agente).order("versao", { ascending: false }).limit(1);
+  const versao = (Number(atual?.[0]?.versao) || 0) + 1;
+
+  await db.from("celeiro_genoma").update({ ativo: false }).eq("agente", agente).eq("ativo", true);
+  const { error } = await db.from("celeiro_genoma").insert({
+    agente, versao, params: paramsNovos, autor: modelo, hipotese, ativo: true,
+  });
+  if (error) return null;
+
+  await db.from("celeiro_mutacoes").update({ aplicada_em: new Date().toISOString() }).eq("id", mutacaoId);
+  return versao;
+}
+
+/**
+ * Fecha o julgamento e, quando não pagou, REVERTE o genoma.
+ *
+ * ⚠️ REVERTER É REATIVAR A VERSÃO ANTERIOR, não escrever uma nova. Escrever
+ * outra versão com os valores antigos encheria o histórico de idas e voltas e
+ * faria a contagem de versões mentir sobre quantas ideias foram testadas.
+ */
+export async function fecharMutacao(
+  db: SupabaseClient, mutacaoId: string, agente: string,
+  veredito: "pagou" | "nao_pagou" | "inconclusiva",
+  usdtControle: number, usdtMutacao: number,
+): Promise<void> {
+  const agora = new Date().toISOString();
+  await db.from("celeiro_mutacoes").update({
+    avaliada_em: agora, veredito,
+    usdt_controle: usdtControle, usdt_mutacao: usdtMutacao,
+    ...(veredito === "nao_pagou" ? { revertida_em: agora } : {}),
+  }).eq("id", mutacaoId);
+
+  if (veredito !== "nao_pagou") return;
+
+  const { data } = await db.from("celeiro_genoma")
+    .select("versao").eq("agente", agente).order("versao", { ascending: false }).limit(2);
+  const anterior = data?.[1]?.versao;
+  if (anterior == null) return;
+
+  await db.from("celeiro_genoma").update({ ativo: false }).eq("agente", agente).eq("ativo", true);
+  await db.from("celeiro_genoma").update({ ativo: true }).eq("agente", agente).eq("versao", anterior);
+}
+
+/** As mutações já julgadas — o insumo do placar dos modelos. */
+export async function mutacoesJulgadas(db: SupabaseClient, limite = 500): Promise<Array<{
+  modelo: string; veredito: "pagou" | "nao_pagou" | "inconclusiva"; diferenca: number;
+}>> {
+  // leitura-limitada: o placar olha o histórico recente, não a vida inteira.
+  const { data } = await db.from("celeiro_mutacoes")
+    .select("modelo, veredito, usdt_controle, usdt_mutacao")
+    .not("veredito", "is", null)
+    .order("avaliada_em", { ascending: false }).limit(limite);
+
+  return (data ?? []).map((r) => ({
+    modelo: r.modelo,
+    veredito: r.veredito as "pagou" | "nao_pagou" | "inconclusiva",
+    diferenca: (Number(r.usdt_mutacao) || 0) - (Number(r.usdt_controle) || 0),
+  }));
+}
+
+/**
+ * A qual braço do A/B esta posição pertence.
+ *
+ * ⚠️⚠️ ALTERNA POR POSIÇÃO, e não por símbolo. Dividir por símbolo daria a cada
+ * braço um conjunto DIFERENTE de ativos — e aí o A/B mediria "BTC contra ETH"
+ * em vez de "genoma antigo contra novo". Alternar é o único corte que mantém os
+ * dois braços expostos ao mesmo mercado.
+ *
+ * ⚠️ Sem mutação em curso, TUDO é controle. Marcar como `mutacao` o que não
+ * está sendo testado envenenaria o julgamento seguinte com dados de antes.
+ */
+export function bracoDaPosicao(temMutacao: boolean, jaAbertasDesdeAMutacao: number): Braco | null {
+  if (!temMutacao) return null;
+  return jaAbertasDesdeAMutacao % 2 === 0 ? "controle" : "mutacao";
+}
+
+/** Quantas posições o agente abriu desde que a mutação entrou. */
+export async function posicoesDesde(db: SupabaseClient, agente: string, desdeMs: number): Promise<number> {
+  const { count } = await db.from("celeiro_posicoes")
+    .select("*", { count: "exact", head: true })
+    .eq("agente", agente).gte("aberta_em", new Date(desdeMs).toISOString());
+  return count ?? 0;
 }

@@ -70,6 +70,20 @@ const GASTAM: Record<string, "proprio" | string> = {
   "src/lib/autopilot/scan.ts":
     "não é mesa: o scan do autopilot roda por SESSÃO de usuário, não por mesa do "
     + "registro. O gate dele é a sessão estar ativa, não uma mesa estar viva.",
+
+  /**
+   * ⚠️ O INVESTIGADOR DO CELEIRO (22/08). Ele gasta modelo, mas não por uma
+   * MESA da arena antiga — o Celeiro tem registro próprio (`celeiro/agentes.ts`)
+   * e `isArquivada` não sabe nada sobre ele.
+   *
+   * O gate dele é outro e está no próprio ciclo: só pergunta quando o agente
+   * tem extrato suficiente, e nunca com uma mutação já em curso. Um agente do
+   * Celeiro que fosse aposentado deixaria de produzir lançamentos, e o mínimo
+   * de extrato o barraria sozinho.
+   */
+  "src/lib/celeiro/investigar.ts":
+    "não é mesa: investiga agentes do CELEIRO, cujo registro é próprio. O gate é "
+    + "o mínimo de extrato na janela, não `isArquivada`.",
 };
 
 /** Os dois arquivos de infraestrutura que TODO chamador atravessa. */
