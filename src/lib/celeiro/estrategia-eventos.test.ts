@@ -1,10 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { basePct, decidir, MARGEM_EXIGIDA_PP } from "@/lib/celeiro/base-convergencia";
 import {
-  medirLateralidade, deveCotar, MULTIPLO_DO_ACASO,
-  AMPLITUDE_MINIMA_PCT, AMPLITUDE_MAXIMA_PCT, type Fatia,
-} from "@/lib/celeiro/faixa-maker";
-import {
   portaoDeSobrevivencia, municaoDoDia, LIQUIDEZ_MINIMA_USD, type Pool,
 } from "@/lib/celeiro/pool-novo";
 import { CUSTO_DO_CICLO_PCT } from "@/lib/celeiro/funding-colheita";
@@ -73,88 +69,23 @@ describe("Convergência de Base", () => {
   });
 });
 
-describe("Maker de Faixa", () => {
-  /** Série que oscila em torno de 100 — volta à média com frequência. */
-  function oscilando(n: number, amplitude: number): Fatia[] {
-    return Array.from({ length: n }, (_, i) => ({
-      fechamento: 100 + (i % 2 === 0 ? amplitude : -amplitude),
-    }));
-  }
-  /** Série que só sobe — nunca volta. */
-  function subindo(n: number, passo: number): Fatia[] {
-    return Array.from({ length: n }, (_, i) => ({ fechamento: 100 + i * passo }));
-  }
-
-  /**
-   * ⚠️ AS DUAS SÉRIES ANDAM O MESMO TANTO E SÃO OPOSTAS. `oscilando(60,1)`
-   * percorre 118 de caminho e termina a 2 de onde começou (eficiência 0,017);
-   * `subindo(60, 0.05)` percorre 2,95 e chega a 2,95 (eficiência 1,000). Uma
-   * medida de dispersão daria números parecidos para as duas — é por isso que
-   * as duas estão aqui, e é por isso que a métrica anterior (contar passos que
-   * voltam à média) foi trocada: ela dava ~50% para ambas.
-   */
-  it("separa faixa de tendência, que a variância não separaria", () => {
-    const faixa = medirLateralidade(oscilando(60, 1))!;
-    const tendencia = medirLateralidade(subindo(60, 0.05))!;
-
-    expect(faixa.razaoDeEficiencia).toBeCloseTo(2 / 118, 6);
-    expect(tendencia.razaoDeEficiencia).toBeCloseTo(1, 9);
-
-    expect(deveCotar(faixa).cota).toBe(true);
-    expect(deveCotar(tendencia).cota).toBe(false);
-    expect(deveCotar(tendencia).porque).toContain("é tendência");
-  });
-
-  /**
-   * ⚠️⚠️ O LIMIAR É MÚLTIPLO DO ACASO, NÃO VALOR ABSOLUTO. Num passeio
-   * aleatório de n passos a eficiência já vem em ~1/√n sem tendência nenhuma —
-   * com 60 fatias, ~0,130. Um teto fixo de 0,30 aprovaria metade dos passeios
-   * aleatórios do mercado achando que achou faixa.
-   *
-   * Saber o número do acaso ANTES de escolher o limiar é exatamente o que
-   * faltou na arena antiga: seis modelos ficaram abaixo do acaso por dois meses
-   * porque ninguém tinha calculado qual era.
-   */
-  it("o acaso é calculado e o teto se mede contra ele", () => {
-    const l = medirLateralidade(oscilando(60, 1))!;
-    expect(l.acasoEsperado).toBeCloseTo(1 / Math.sqrt(59), 9);
-    expect(l.acasoEsperado).toBeGreaterThan(0.12);
-
-    // Apertar o múltiplo abaixo da eficiência medida faz a MESMA série reprovar.
-    const apertado = deveCotar(l, l.razaoDeEficiencia / l.acasoEsperado * 0.5);
-    expect(apertado.cota).toBe(false);
-    expect(deveCotar(l, MULTIPLO_DO_ACASO).cota).toBe(true);
-  });
-
-  /**
-   * ⚠️ O TETO DE AMPLITUDE É TÃO IMPORTANTE QUANTO O DE EFICIÊNCIA. Um par que
-   * oscila 50% tem eficiência baixíssima — passa folgado no primeiro portão — e
-   * mataria o agente: cotar os dois lados disso é vender opção de graça. Só o
-   * portão de eficiência deixaria passar exatamente o pior caso.
-   */
-  it("amplitude enorme reprova, mesmo com eficiência ótima", () => {
-    const selvagem = medirLateralidade(oscilando(60, 25))!;
-    expect(selvagem.razaoDeEficiencia).toBeLessThan(selvagem.acasoEsperado);
-    expect(selvagem.amplitudePct).toBeGreaterThan(AMPLITUDE_MAXIMA_PCT);
-
-    const v = deveCotar(selvagem);
-    expect(v.cota).toBe(false);
-    expect(v.porque).toContain("vender opção de graça");
-  });
-
-  it("faixa estreita demais não paga a corretagem", () => {
-    const estreita = medirLateralidade(oscilando(60, 0.1))!;
-    expect(estreita.amplitudePct).toBeLessThan(AMPLITUDE_MINIMA_PCT);
-    expect(deveCotar(estreita).cota).toBe(false);
-    expect(deveCotar(estreita).porque).toContain("estreita demais");
-  });
-
-  it("série curta é ausência de medição, não faixa", () => {
-    expect(medirLateralidade(oscilando(10, 1))).toBeNull();
-    expect(deveCotar(null).cota).toBe(false);
-    expect(deveCotar(null).porque).toContain("não medido não é aprovado");
-  });
-});
+/**
+ * ⚠️ O "MAKER DE FAIXA" FOI REMOVIDO DAQUI EM 22/08, junto com o mecanismo.
+ *
+ * Ele rodou 29 posições em produção e ficou NEGATIVO acertando 65,5%: preço
+ * +3,1557 contra taxa −3,3750. O trade médio ganhava $0,1088 e pagava $0,1125
+ * de pedágio — perdia por CONSTRUÇÃO, com alvo de 0,6% contra ida-e-volta de
+ * 0,225%.
+ *
+ * ⚠️ E O MECANISMO FOI APAGADO, não ajustado. Subir o alvo para 1,35%
+ * consertaria a aritmética e destruiria a tese: uma faixa em que o preço
+ * percorre 1,35% para cada lado não é faixa estreita. Manter o módulo de pé
+ * seria deixar pronto um caminho que a medição já reprovou — a mesma razão que
+ * apagou o `anthropicChat` órfão.
+ *
+ * A cicatriz vive em `docs/PLANO-CELEIRO-AMBICIOSO.md`, com o extrato que o
+ * matou. Código morto não é documentação.
+ */
 
 describe("Pool Novo", () => {
   const bom: Pool = {

@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { AGENTES, FAIXAS, ROTULO_DA_FAIXA, oControle, agentesDaFaixa, agentePor } from "@/lib/celeiro/agentes";
+import {
+  AGENTES, FAIXAS, ROTULO_DA_FAIXA, oControle, agentesDaFaixa, agentePor,
+  tamanhoDaPosicao,
+} from "@/lib/celeiro/agentes";
 import { DESKS } from "@/lib/zion/desks";
 
 /**
@@ -25,17 +28,55 @@ describe("as invariantes do Celeiro", () => {
    * nasce reprovado por 3.300 medições e este teste diz isso na cara.
    */
   it("nenhum agente usa IA para decidir direção", () => {
-    const comIa = AGENTES.filter((a) => a.motor === "bot_mais_ia");
-    for (const a of comIa) {
+    /**
+     * ⚠️ A REGRA MUDOU DE FORMA EM 22/08, e a razão importa. Antes o teste
+     * exigia que os DOIS motores existissem — e quebrou quando o Maker de Faixa
+     * (o único `bot_mais_ia`) foi aposentado. Exigir que uma opção seja USADA
+     * confunde "esta opção é permitida" com "alguém precisa usá-la".
+     *
+     * O que importa é o contrário: nenhum motor fora dos dois, e todo agente com
+     * IA declarando a fronteira. Hoje não há nenhum — e isso é um estado válido.
+     */
+    const motores = new Set(AGENTES.map((a) => a.motor));
+    for (const m of motores) expect(["bot", "bot_mais_ia"]).toContain(m);
+
+    for (const a of AGENTES.filter((x) => x.motor === "bot_mais_ia")) {
       expect(
         a.naoFaz.length,
         `${a.nome} usa IA e não declarou o que NÃO faz — sem essa fronteira `
           + "escrita ele escorrega para direcional na primeira manutenção",
       ).toBeGreaterThan(40);
     }
-    // O motor "ia" puro não existe no tipo; se alguém o criar, isto falha.
-    const motores = new Set(AGENTES.map((a) => a.motor));
-    expect([...motores].sort()).toEqual(["bot", "bot_mais_ia"]);
+  });
+
+  /**
+   * ⚠️⚠️ O LADO VEM DO REGIME, NUNCA DE OPINIÃO — e é a correção de 22/08.
+   *
+   * A versão anterior deste registro dizia "nenhum agente aposta em direção", o
+   * que era generalização errada da medição: o que se mediu foi LLM PREVENDO
+   * direção. Agentes de tendência TOMAM lado, e isso é legítimo enquanto o lado
+   * sair de estado medido.
+   *
+   * Este teste exige que todo agente da categoria `tendencia` diga, no `naoFaz`,
+   * que não PREVÊ.
+   */
+  it("agente de tendência declara que não prevê", () => {
+    const deTendencia = AGENTES.filter((a) => a.categoria === "tendencia");
+    expect(deTendencia.length, "a categoria tendência existe e tem agentes").toBeGreaterThan(0);
+    for (const a of deTendencia) {
+      expect(a.naoFaz.toLowerCase(), `${a.nome} não declara que não prevê`).toContain("prevê");
+    }
+  });
+
+  /**
+   * ⚠️ SPOT NÃO VENDE, e o registro tem de dizer isso. Sem futuros não há como
+   * lucrar na queda acumulando USDT: em spot, "vender na baixa" é apenas sair.
+   */
+  it("agente de tendência em spot declara que não vende", () => {
+    const spot = AGENTES.filter((a) => a.categoria === "tendencia" && a.modalidade === "spot_gate");
+    for (const a of spot) {
+      expect(a.naoFaz.toLowerCase(), `${a.nome} é spot e não declara que não vende`).toContain("não vende");
+    }
   });
 
   /**
@@ -147,5 +188,60 @@ describe("as invariantes do Celeiro", () => {
   it("agentePor devolve o registro, e null para quem não existe", () => {
     expect(agentePor("colheita_funding")?.nome).toBe("Colheita de Funding");
     expect(agentePor("nao_existe")).toBeNull();
+  });
+});
+
+describe("o tamanho da posição e o teto de exposição", () => {
+  const base = AGENTES.find((a) => a.id === "cacador_de_tendencia")!;
+
+  /**
+   * ⚠️⚠️ ISTO SUBSTITUI O `Math.max(capitalMinimoUsd, 50)` DO CRON, e o erro
+   * que ele escondia: `capitalMinimoUsd` é "quanto preciso para o livro
+   * aguentar", NÃO "quanto aposto". Usar um pelo outro fez a Convergência de
+   * Base apostar $150 por posição sem ninguém ter decidido isso.
+   */
+  it("o tamanho sai da FRAÇÃO da banca, não do capital mínimo", () => {
+    const t = tamanhoDaPosicao(base, 0);
+    expect(t.usd).toBeCloseTo(base.bancaUsd * base.fracaoPorPosicao, 6);
+    expect(t.usd).not.toBeCloseTo(base.capitalMinimoUsd, 6);
+    expect(t.cabe).toBe(true);
+  });
+
+  /**
+   * ⚠️ O TETO DE EXPOSIÇÃO É O "SEM SUICÍDIO" DO MANDATO. Com 25% por posição e
+   * teto de 75%, a QUARTA posição não cabe — e a recusa é explícita, com o
+   * motivo indo para o extrato em vez de virar risco silencioso.
+   */
+  it("recusa a posição que estouraria o teto de exposição", () => {
+    const cada = base.bancaUsd * base.fracaoPorPosicao;
+
+    expect(tamanhoDaPosicao(base, cada * 2).cabe).toBe(true);    // 3ª cabe
+    const quarta = tamanhoDaPosicao(base, cada * 3);             // 4ª não
+    expect(quarta.cabe).toBe(false);
+    expect(quarta.porque).toContain("teto");
+    expect(quarta.exposicaoDepois).toBeGreaterThan(base.tetoDeExposicao);
+  });
+
+  /**
+   * ⚠️ E O CAPITAL MÍNIMO VOLTA AO PAPEL DELE: barrar o agente cuja BANCA não
+   * dá para o livro aguentar — não dimensionar aposta.
+   */
+  it("banca abaixo do mínimo declarado reprova", () => {
+    const magro = { ...base, bancaUsd: base.capitalMinimoUsd - 1 };
+    const t = tamanhoDaPosicao(magro, 0);
+    expect(t.cabe).toBe(false);
+    expect(t.porque).toContain("abaixo do mínimo");
+  });
+
+  /** Todo agente que opera declara banca, fração e teto coerentes. */
+  it("os campos de banca são coerentes em todo o registro", () => {
+    for (const a of AGENTES) {
+      expect(a.bancaUsd, `${a.nome}`).toBeGreaterThan(0);
+      expect(a.fracaoPorPosicao, `${a.nome}`).toBeGreaterThan(0);
+      expect(a.fracaoPorPosicao, `${a.nome}: fração maior que a banca`).toBeLessThanOrEqual(1);
+      expect(a.tetoDeExposicao, `${a.nome}: teto menor que uma posição`)
+        .toBeGreaterThanOrEqual(a.fracaoPorPosicao);
+      expect(a.alavancagemMaxima, `${a.nome}`).toBeGreaterThanOrEqual(1);
+    }
   });
 });
