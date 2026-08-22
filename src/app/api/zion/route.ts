@@ -461,6 +461,7 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
             // 5 cartas de tese completas (~250-400 tokens de JSON cada).
             maxTokens: 4000,
             temperature: kimi.temperature,
+            extraBody: kimi.extraBody,
           },
           { apiKey: chaveKimi, baseUrl: kimi.baseUrl },
           (delta) => { if (!closed) controller.enqueue(encoder.encode(delta)); },
