@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 /**
  * Model provider seam — the "acoplável" layer.
  *
@@ -52,15 +53,96 @@ const DEFAULT_TIMEOUT = 40_000;
 
 /** Anthropic (native SDK). maxRetries:0 — callers own their own fallback (N1). */
 /**
- * ⚠️ `anthropicChat` FOI REMOVIDA EM 21/08 — a plataforma inteira migrou para
- * Kimi, e o único chamador que restava era um ramo de `retro.ts` que o próprio
- * comentário declarava morto desde 27/07 ("no source routed to it today").
+ * ⚠️ `anthropicChat` VOLTOU EM 22/08, e o motivo importa.
  *
- * Deixar a função de pé teria custo: enquanto existisse um helper pronto lendo
- * `ANTHROPIC_API_KEY`, qualquer caminho novo poderia chamá-lo por engano e
- * falhar com 401 num provedor que ninguém configurou mais. É a mesma razão que
- * `backtest.ts` já registra para não deixar função órfã por perto.
+ * Em 21/08 eu a apaguei tratando a migração para Kimi como definitiva. Era uma
+ * PAUSA por falta de crédito — o dono disse depois: *"estou sem crédito na
+ * Anthropic para fazer os testes, depois eu volto"*. Apagar transformou uma
+ * decisão de orçamento em tarefa de código.
+ *
+ * Agora os dois caminhos convivem e quem escolhe é `AI_PROVIDER` (ver
+ * `src/lib/ai/ativo.ts`). Trocar de provedor é uma variável, não um deploy.
  */
+export async function anthropicChat(req: ChatRequest, apiKey: string): Promise<ChatResult> {
+  const client = new Anthropic({ apiKey, maxRetries: 0, timeout: req.timeoutMs ?? DEFAULT_TIMEOUT });
+  const params = {
+    model:      req.model,
+    max_tokens: req.maxTokens,
+    system: req.cacheSystem
+      ? [{ type: "text" as const, text: req.system, cache_control: { type: "ephemeral" as const } }]
+      : req.system,
+    messages: [{ role: "user" as const, content: req.user }],
+  };
+  if (req.jsonSchema) {
+    (params as Record<string, unknown>).output_config = { format: { type: "json_schema", schema: req.jsonSchema } };
+  }
+  const msg = await client.messages.create(params);
+  const u = msg.usage;
+  const text = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+  return {
+    text, model: req.model,
+    usage: {
+      inTokens:         u.input_tokens,
+      outTokens:        u.output_tokens,
+      cachedTokens:     u.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+    },
+  };
+}
+
+/**
+ * STREAMING pela Anthropic — o irmão de `openaiCompatStream`.
+ *
+ * ⚠️ ESTE NÃO EXISTIA ANTES DA MIGRAÇÃO: o ZION chamava o SDK direto dentro da
+ * rota, com o prompt montado lá. Trazer o streaming para cá é o que permite a
+ * rota ter UM caminho e o provedor ser escolha de ambiente.
+ *
+ * ⚠️ E O CACHE DE PROMPT VOLTA COM ELE. Os blocos de sistema recuperam o
+ * `cache_control`, que é o que faz a fundação de ~10K tokens ser cobrada a 0,1×
+ * no reuso. Foi exatamente o que a migração para Kimi perdeu — e o que torna a
+ * volta economicamente diferente, não só uma troca de nome.
+ */
+export async function anthropicStream(
+  req: ChatRequest & { systemBlocks?: string[] },
+  apiKey: string,
+  onDelta: (texto: string) => void,
+  signal?: AbortSignal,
+): Promise<StreamResult> {
+  const client = new Anthropic({ apiKey, maxRetries: 0 });
+
+  /**
+   * ⚠️ CADA BLOCO CACHEADO SEPARADAMENTE, e a ORDEM é a economia. O primeiro é
+   * a fundação (idêntica em toda chamada), o segundo o modo (4 variantes). Um
+   * bloco só, concatenado, perderia o acerto de cache sempre que o modo mudasse.
+   */
+  const blocos = (req.systemBlocks?.length ? req.systemBlocks : [req.system])
+    .filter((b) => b.trim().length > 0);
+  const system = blocos.map((text, i) => (
+    // O último bloco costuma variar por requisição (idioma) — não vale cachear.
+    i < blocos.length - 1
+      ? { type: "text" as const, text, cache_control: { type: "ephemeral" as const } }
+      : { type: "text" as const, text }
+  ));
+
+  const stream = await client.messages.stream(
+    { model: req.model, max_tokens: req.maxTokens, system,
+      messages: [{ role: "user" as const, content: req.user }] },
+    { signal },
+  );
+  stream.on("text", (delta) => onDelta(delta));
+
+  const final = await stream.finalMessage();
+  const u = final.usage;
+  return {
+    model: req.model,
+    usage: {
+      inTokens:         u.input_tokens,
+      outTokens:        u.output_tokens,
+      cachedTokens:     u.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+    },
+  };
+}
 
 /** Any OpenAI-compatible /chat/completions endpoint. No SDK — plain fetch. */
 export async function openaiCompatChat(

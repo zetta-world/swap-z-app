@@ -5,8 +5,8 @@ import { getTrendingPools, type PoolSummary } from "@/lib/api/geckoterminal";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import { recordEvent } from "@/lib/admin/track";
 import { modelChain, isRetryableModelError } from "@/lib/zion/model";
-import { openaiCompatChat } from "@/lib/ai/provider";
-import { allProviders } from "@/lib/ai/registry";
+import { openaiCompatChat, anthropicChat } from "@/lib/ai/provider";
+import { aiAtivo } from "@/lib/ai/ativo";
 
 /**
  * Server-side, NON-streaming ZION autopilot-CEX scan. Used by the background
@@ -181,8 +181,9 @@ export async function runAutopilotCexScan(args: AutopilotScanArgs): Promise<Auto
    * falta de uma chave que não usa mais, e o cron registraria o motivo errado
    * a cada execução.
    */
-  const kimi = allProviders().kimi;
-  if (!kimi?.apiKey) return { cards: [], rawText: "", error: "KIMI_API_KEY not configured" };
+  const ativo = aiAtivo();
+  if (!ativo.apiKey) return { cards: [], rawText: "", error: `${ativo.nomeDaChave} not configured` };
+  const chave: string = ativo.apiKey;
 
   let payload: string;
   try {
@@ -206,11 +207,14 @@ export async function runAutopilotCexScan(args: AutopilotScanArgs): Promise<Auto
     let r: Awaited<ReturnType<typeof openaiCompatChat>> | undefined;
     for (const m of chain) {
       try {
-        r = await openaiCompatChat(
-          { model: m, system: sistema, user: payload, maxTokens: 2500,
-            timeoutMs: kimi.timeoutMs ?? 40_000, temperature: kimi.temperature, extraBody: kimi.extraBody },
-          { apiKey: kimi.apiKey, baseUrl: kimi.baseUrl },
-        );
+        r = ativo.provedor === "anthropic"
+          ? await anthropicChat({ model: m, system: sistema, user: payload, maxTokens: 2500,
+                                  timeoutMs: ativo.timeoutMs, cacheSystem: true }, chave)
+          : await openaiCompatChat(
+              { model: m, system: sistema, user: payload, maxTokens: 2500,
+                timeoutMs: ativo.timeoutMs, temperature: ativo.temperature, extraBody: ativo.extraBody },
+              { apiKey: chave, baseUrl: ativo.baseUrl },
+            );
         break;
       } catch (e) {
         if (!isRetryableModelError(e) || m === chain[chain.length - 1]) throw e;

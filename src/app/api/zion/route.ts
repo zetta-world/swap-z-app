@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { openaiCompatStream } from "@/lib/ai/provider";
-import { allProviders } from "@/lib/ai/registry";
+import { openaiCompatStream, anthropicStream } from "@/lib/ai/provider";
+import { aiAtivo, faltaChave } from "@/lib/ai/ativo";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { getModeInstructions, type ZionOp } from "@/lib/zion/mode-prompts";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
@@ -370,21 +370,18 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
    * variável errada. Guarda que aponta para a chave errada é pior que guarda
    * nenhuma: ela manda a pessoa consertar o que não está quebrado.
    */
-  const kimi = allProviders().kimi;
-  if (!kimi?.apiKey) {
-    return new Response(
-      "KIMI_API_KEY não está configurada no servidor. Defina-a em Vercel → Settings → "
-      + "Environment Variables (Production + Preview + Development) e refaça o deploy.",
-      { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } },
-    );
-  }
   /**
-   * ⚠️ A CHAVE VAI PARA UMA CONSTANTE AQUI porque a guarda acima não estreita o
-   * tipo dentro do closure do stream — o TypeScript perde a garantia ao
-   * atravessar a fronteira da função. Repetir `kimi.apiKey!` lá dentro
-   * silenciaria o compilador sem provar nada.
+   * ⚠️ A GUARDA OLHA O PROVEDOR ATIVO, não um provedor fixo. Ela já apontou para
+   * `ANTHROPIC_API_KEY` depois da migração e mandaria configurar a variável
+   * errada; agora `faltaChave` nomeia a que realmente falta, seja qual for.
    */
-  const chaveKimi: string = kimi.apiKey;
+  const ativo = aiAtivo();
+  if (!ativo.apiKey) {
+    return new Response(faltaChave(ativo), {
+      status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+  const chaveAtiva: string = ativo.apiKey;
 
   const userText = await buildUserMessage(args);
   const modeInstructions = getModeInstructions(args.op);
@@ -442,31 +439,40 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
          * registrou uma chamada de usuário. A conta acima é de tabela, não de
          * fatura, e está escrita aqui para ser conferida quando houver tráfego.
          */
-        const model = process.env.ZION_MODEL ?? kimi.model;
+        const model = process.env.ZION_MODEL ?? ativo.modelo;
 
         /**
-         * ⚠️ OS TRÊS BLOCOS DE SISTEMA VIRAM UM. O formato OpenAI aceita uma
-         * mensagem `system` só; concatenar preserva a ORDEM, que importa —
-         * fundação, depois o modo, depois o idioma. A instrução de idioma
-         * continua repetida no turno do usuário porque, com ~10K tokens de
-         * inglês antes dela, o modelo respondia em inglês assim mesmo.
+         * ⚠️ OS DOIS CAMINHOS DIVERGEM EM UMA COISA SÓ: como o sistema viaja.
+         *
+         * A Anthropic aceita BLOCOS, e cada bloco pode ser cacheado por conta
+         * própria — fundação (estável) e modo (4 variantes) rendem acerto de
+         * cache separado. O formato OpenAI aceita UMA mensagem de sistema, então
+         * lá os blocos são concatenados, preservando a ordem.
+         *
+         * Manter a ordem importa nos dois: do mais estável para o mais variável,
+         * que é o que qualquer cache de prefixo aproveita.
          */
-        const sistema = [ZION_FOUNDATION, modeInstructions, LANG_INSTRUCTION[args.lang]].join("\n\n");
+        const blocos = [ZION_FOUNDATION, modeInstructions, LANG_INSTRUCTION[args.lang]];
+        const entregar = (delta: string) => { if (!closed) controller.enqueue(encoder.encode(delta)); };
+        const pedido = {
+          model, system: blocos.join("\n\n"),
+          user: `${LANG_INSTRUCTION[args.lang]}\n\n${userText}`,
+          // 4000 deixa espaço para ~500 tokens de rastro do terminal MAIS até
+          // 5 cartas de tese completas (~250-400 tokens de JSON cada).
+          maxTokens: 4000,
+          timeoutMs: ativo.timeoutMs,
+          temperature: ativo.temperature,
+          /**
+           * ⚠️ SEM ISTO O KIMI DEVOLVE 400 EM TODA CHAMADA. Ele amarra a
+           * temperatura ao modo de raciocínio, e o par errado é recusado.
+           * Custou um dia de ZION fora do ar em 21/08.
+           */
+          extraBody: ativo.extraBody,
+        };
 
-        const { usage } = await openaiCompatStream(
-          {
-            model, system: sistema,
-            user: `${LANG_INSTRUCTION[args.lang]}\n\n${userText}`,
-            // 4000 deixa espaço para ~500 tokens de rastro do terminal MAIS até
-            // 5 cartas de tese completas (~250-400 tokens de JSON cada).
-            maxTokens: 4000,
-            temperature: kimi.temperature,
-            extraBody: kimi.extraBody,
-          },
-          { apiKey: chaveKimi, baseUrl: kimi.baseUrl },
-          (delta) => { if (!closed) controller.enqueue(encoder.encode(delta)); },
-          combinedSignal,
-        );
+        const { usage } = ativo.provedor === "anthropic"
+          ? await anthropicStream({ ...pedido, systemBlocks: blocos }, chaveAtiva, entregar, combinedSignal)
+          : await openaiCompatStream(pedido, { apiKey: chaveAtiva, baseUrl: ativo.baseUrl }, entregar, combinedSignal);
 
         console.log(JSON.stringify({
           tag: "zion-usage", ts: new Date().toISOString(),
