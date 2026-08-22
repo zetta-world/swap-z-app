@@ -288,3 +288,50 @@ export function contraOPiso(usdtAgente: number, usdtPiso: number, ehPiso: boolea
   if (Math.abs(razao) >= 10) return { usdt, forma: "vezes", valor: razao };
   return { usdt, forma: "pct", valor: (razao - 1) * 100 };
 }
+
+export interface RetornoSobreCapital {
+  /** USDT produzido dividido pela banca, em %. */
+  pct: number | null;
+  /** Diferença em pontos percentuais contra o piso. `null` sem base. */
+  contraOPisoPp: number | null;
+  porque: string;
+}
+
+/**
+ * O RETORNO SOBRE CAPITAL — a régua que o `vs. piso` em USDT não dava.
+ *
+ * ⚠️⚠️ POR QUE A COMPARAÇÃO ANTERIOR ERA ENVIESADA. `contraOPiso` compara USDT
+ * PRODUZIDO. O Aluguel de Ocioso rende sobre uma banca de $1.000; um agente que
+ * arrisca $250 por posição com alavanca 6× tem exposição efetiva de $1.500.
+ * Comparar o USDT dos dois **premia quem arrisca mais**, que é o pior viés
+ * possível num placar de risco — e era exatamente o que a tela mostrava.
+ *
+ * Aqui os dois viram % da própria banca, e aí a pergunta fica honesta: *para
+ * cada dólar que você administra, quanto sobrou?*
+ *
+ * ⚠️ BANCA ~ZERO NÃO PRODUZ RETORNO. Dividir por quase-nada devolveria número
+ * gigante; sem base, devolve `null` e o USDT cru continua sendo exibido.
+ */
+export const BANCA_MINIMA_PARA_RETORNO = 1;
+
+export function retornoSobreCapital(
+  usdtAgente: number,
+  bancaAgente: number,
+  retornoDoPisoPct: number | null,
+): RetornoSobreCapital {
+  if (!(bancaAgente >= BANCA_MINIMA_PARA_RETORNO)) {
+    return {
+      pct: null, contraOPisoPp: null,
+      porque: `banca de ${bancaAgente} não dá base para retorno`,
+    };
+  }
+  const pct = (usdtAgente / bancaAgente) * 100;
+  if (retornoDoPisoPct == null) {
+    return { pct, contraOPisoPp: null, porque: `${pct.toFixed(3)}% da banca` };
+  }
+  const contraOPisoPp = pct - retornoDoPisoPct;
+  return {
+    pct, contraOPisoPp,
+    porque: `${pct.toFixed(3)}% da banca contra ${retornoDoPisoPct.toFixed(3)}% do piso`,
+  };
+}
