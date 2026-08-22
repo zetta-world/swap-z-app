@@ -51,6 +51,7 @@
 | `ADMIN-COMMAND-CENTER.md` | Espec original do painel admin |
 | `PITCH-DECK.md` / `DEMO-VIDEO-SCRIPT.md` | Material de apresentação (atualizar só antes de usar) |
 | `LIGHTHOUSE-BASELINE.md` / `MANUAL_TEST_PLAN.md` | Baselines/planos de teste de uma rodada específica |
+| `PLANO-CELEIRO-AMBICIOSO.md` | **A correção de 22/08.** O Maker perdeu acertando 65% -- o alvo não cobria o pedágio. As três invariantes que faltavam |
 | `PLANO-O-CELEIRO.md` | **A segunda arena** — torneio novo, placar em USDT acumulado, nenhum agente aposta em direção. O diagnóstico que o justifica está na seção 1 |
 | `TROCAR-DE-PROVEDOR.md` | **Kimi ↔ Anthropic numa variável.** Como reativar a Anthropic quando o saldo voltar, e o que muda de verdade |
 | `AUDITORIA-MESAS-19-08.md` | **19/08** — resultado das 24 mesas e do torneio: o livro é negativo ANTES do custo, e a única mesa positiva são dois dias |
