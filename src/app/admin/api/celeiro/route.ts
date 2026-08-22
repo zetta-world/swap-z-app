@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { AGENTES, FAIXAS, ROTULO_DA_FAIXA, oControle, agentesDaFaixa } from "@/lib/celeiro/agentes";
 import {
   extratoDe, ranquear, curvaAcumulada, contraOPiso, usdtProduzido,
+  retornoSobreCapital,
   type Fluxo, type Causa,
 } from "@/lib/celeiro/fluxo";
 
@@ -82,6 +83,14 @@ export async function GET() {
   const fluxosDe = (a: string) => fluxos.filter((f) => f.agente === a);
   const usdtPiso = usdtProduzido(fluxosDe(controle.id));
 
+  /**
+   * ⚠️⚠️ O RETORNO DO PISO É A RÉGUA HONESTA. Comparar USDT absoluto premiava
+   * quem arrisca mais: o Aluguel rende sobre $1.000 e um alavancado pode ter
+   * $1.500 de exposição efetiva. Sobre capital, a pergunta fica justa — para
+   * cada dólar administrado, quanto sobrou?
+   */
+  const retornoDoPisoPct = retornoSobreCapital(usdtPiso, controle.bancaUsd, null).pct;
+
   const faixas = FAIXAS.map((faixa) => {
     const doGrupo = agentesDaFaixa(faixa).map((a) => a.id);
     // O piso entra em toda faixa, mesmo não pertencendo a ela.
@@ -127,6 +136,12 @@ export async function GET() {
           serie: curvaAcumulada(meus),
           /** Como comparar com o piso sem produzir número que estoura a tela. */
           piso: contraOPiso(r.usdt, usdtPiso, r.ehControle),
+          /** A régua honesta: % da própria banca, e a diferença em pp. */
+          retorno: retornoSobreCapital(r.usdt, a.bancaUsd, r.ehControle ? null : retornoDoPisoPct),
+          bancaUsd: a.bancaUsd,
+          alavancagemMaxima: a.alavancagemMaxima,
+          tetoDeExposicao: a.tetoDeExposicao,
+          categoria: a.categoria,
           destaque: r.agente === destaque,
         };
       }),

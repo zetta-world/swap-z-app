@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   decompor, usdtProduzido, capitalAportado, extratoDe, julgarMutacao, ranquear,
   curvaAcumulada, contraOPiso, PISO_MINIMO_PARA_RAZAO,
+  retornoSobreCapital, BANCA_MINIMA_PARA_RETORNO,
   MINIMO_POR_BRACO, CAUSAS_DE_RESULTADO, type Fluxo,
 } from "@/lib/celeiro/fluxo";
 
@@ -252,5 +253,50 @@ describe("a comparação com o piso", () => {
     expect(c.usdt).toBeCloseTo(-0.5, 9);
     expect(c.forma).toBe("pct");
     expect(c.valor).toBeCloseTo(-50, 6);
+  });
+});
+
+describe("o retorno sobre capital", () => {
+  /**
+   * ⚠️⚠️ O VIÉS QUE ELE CONSERTA, COM NÚMEROS QUE O EXPÕEM. Dois agentes
+   * produzem o MESMO USDT — mas um administra $1.000 e o outro $300. Em USDT
+   * absoluto eles empatam; sobre capital, o segundo rende 3,3× mais.
+   *
+   * O placar anterior comparava USDT e premiava quem arrisca mais, que é o pior
+   * viés possível num placar de risco.
+   */
+  it("dois agentes com o MESMO USDT não empatam se a banca difere", () => {
+    const grande = retornoSobreCapital(10, 1000, null);
+    const pequeno = retornoSobreCapital(10, 300, null);
+    expect(grande.pct).toBeCloseTo(1, 6);
+    expect(pequeno.pct).toBeCloseTo(3.333, 3);
+    expect(pequeno.pct!).toBeGreaterThan(grande.pct!);
+  });
+
+  it("compara com o piso em pontos percentuais", () => {
+    const r = retornoSobreCapital(20, 1000, 1.2);
+    expect(r.pct).toBeCloseTo(2, 6);
+    expect(r.contraOPisoPp).toBeCloseTo(0.8, 6);
+    expect(r.porque).toContain("do piso");
+  });
+
+  /** Abaixo do piso, a diferença fica negativa — sem maquiagem. */
+  it("agente abaixo do piso mostra diferença negativa", () => {
+    const r = retornoSobreCapital(2, 1000, 1.2);
+    expect(r.contraOPisoPp).toBeCloseTo(0.2 - 1.2, 6);
+  });
+
+  /** ⚠️ Banca ~zero não produz retorno — devolve null em vez de estourar. */
+  it("banca insuficiente devolve null, e nunca um número gigante", () => {
+    const r = retornoSobreCapital(5, 0, 1);
+    expect(r.pct).toBeNull();
+    expect(r.contraOPisoPp).toBeNull();
+    expect(BANCA_MINIMA_PARA_RETORNO).toBeGreaterThan(0);
+  });
+
+  it("sem retorno do piso, devolve só o próprio", () => {
+    const r = retornoSobreCapital(10, 1000, null);
+    expect(r.pct).toBeCloseTo(1, 6);
+    expect(r.contraOPisoPp).toBeNull();
   });
 });

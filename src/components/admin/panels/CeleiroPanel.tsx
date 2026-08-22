@@ -33,6 +33,8 @@ type Linha = {
   modalidade: string; ritmo: string; motor: string; capitalMinimoUsd: number;
   mecanismo: string; naoFaz: string; destaque: boolean;
   serie: number[]; piso: Piso;
+  retorno: { pct: number | null; contraOPisoPp: number | null; porque: string };
+  bancaUsd: number; alavancagemMaxima: number; tetoDeExposicao: number; categoria: string;
   porCausa: Record<string, number>;
   vazamentos: Array<{ causa: string; usdt: number; fatiaDoVazamento: number }>;
   fontes: Array<{ causa: string; usdt: number; fatiaDoVazamento: number }>;
@@ -94,6 +96,28 @@ function Curva({ pontos, cor }: { pontos: number[]; cor: string }) {
       <polyline points={d} fill="none" stroke={cor} strokeWidth="1.2"
                 strokeLinejoin="round" strokeLinecap="round" opacity={0.9} />
     </svg>
+  );
+}
+
+/**
+ * O RETORNO SOBRE CAPITAL — a coluna que substituiu o `vs. piso` em USDT.
+ *
+ * ⚠️⚠️ A COMPARAÇÃO ANTERIOR PREMIAVA QUEM ARRISCA MAIS. Ela somava USDT
+ * produzido, e o piso rende sobre $1.000 enquanto um alavancado pode ter $1.500
+ * de exposição efetiva. Em % da própria banca a pergunta fica justa: para cada
+ * dólar administrado, quanto sobrou?
+ */
+function Retorno({ r, ehPiso }: { r: Linha["retorno"]; ehPiso: boolean }) {
+  if (r.pct == null) return <span style={APAGADO} title={r.porque}>—</span>;
+  const pct = <b>{r.pct >= 0 ? "+" : "−"}{Math.abs(r.pct).toFixed(3)}%</b>;
+  if (ehPiso || r.contraOPisoPp == null) {
+    return <span style={APAGADO} title={r.porque}>{pct}</span>;
+  }
+  const acima = r.contraOPisoPp >= 0;
+  return (
+    <span style={acima ? BOM : RUIM} title={r.porque}>
+      {pct} <span style={{ fontSize: 10 }}>{acima ? "↑" : "↓"}</span>
+    </span>
   );
 }
 
@@ -241,6 +265,7 @@ export default function CeleiroPanel() {
                       <th style={{ textAlign: "left" }}>onde · ritmo</th>
                       <th></th>
                       <th style={{ textAlign: "right" }}>USDT</th>
+                      <th style={{ textAlign: "right" }} title="USDT produzido sobre a banca do agente — a régua que não premia quem arrisca mais">sobre a banca</th>
                       <th style={{ textAlign: "right" }}>vs. piso</th>
                       <th style={{ textAlign: "right" }}>lanç.</th>
                     </tr>
@@ -278,6 +303,9 @@ export default function CeleiroPanel() {
                           {l.semDado ? <span style={APAGADO}>sem dado</span> : <b>{usd(l.usdt)}</b>}
                         </td>
                         <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {l.semDado ? <span style={APAGADO}>—</span> : <Retorno r={l.retorno} ehPiso={l.ehControle} />}
+                        </td>
+                        <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                           {l.semDado ? <span style={APAGADO}>—</span> : <ContraPiso p={l.piso} />}
                         </td>
                         <td style={{ ...APAGADO, textAlign: "right" }}>{l.lancamentos}</td>
@@ -297,7 +325,9 @@ export default function CeleiroPanel() {
                 <div><b>{l.nome}</b> — {l.mecanismo}</div>
                 <div style={{ ...SUAVE, marginTop: 4 }}><b>não faz:</b> {l.naoFaz}</div>
                 <div style={{ ...APAGADO, marginTop: 4 }}>
-                  capital mínimo {l.capitalMinimoUsd > 0 ? `$${l.capitalMinimoUsd}` : "nenhum"}
+                  banca <b>${l.bancaUsd}</b> · exposição máxima {(l.tetoDeExposicao * 100).toFixed(0)}%
+                  {l.alavancagemMaxima > 1 && <> · alavanca até <b>{l.alavancagemMaxima}×</b> (a conta manda abaixo)</>}
+                  {" · "}mínimo para competir {l.capitalMinimoUsd > 0 ? `$${l.capitalMinimoUsd}` : "nenhum"}
                 </div>
                 {l.semDado ? (
                   <div style={{ marginTop: 8 }}>Nenhum lançamento — <b>sem dado não há diagnóstico</b>.</div>
@@ -322,7 +352,9 @@ export default function CeleiroPanel() {
       {d && (
         <div style={{ ...APAGADO, marginTop: 10, fontSize: 11 }}>
           ⚖ = o piso (Aluguel de Ocioso), convidado em toda faixa ·
-          minigráfico é USDT acumulado, <b>escala própria por linha</b> ·{" "}
+          <b>sobre a banca</b> = USDT ÷ capital do agente — a régua que não premia
+          quem arrisca mais · minigráfico é USDT acumulado,{" "}
+          <b>escala própria por linha</b> ·{" "}
           <b>win-rate não aparece de propósito</b>: mediu-se mesas com 70% de
           acerto perdendo dinheiro.
         </div>
