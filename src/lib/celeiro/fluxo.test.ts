@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   decompor, usdtProduzido, capitalAportado, extratoDe, julgarMutacao, ranquear,
+  curvaAcumulada, contraOPiso, PISO_MINIMO_PARA_RAZAO,
   MINIMO_POR_BRACO, CAUSAS_DE_RESULTADO, type Fluxo,
 } from "@/lib/celeiro/fluxo";
 
@@ -156,5 +157,100 @@ describe("o ranking da faixa", () => {
     expect(r[1].agente).toBe("colheita_funding");
     expect(r[1].acimaDoControle).toBeCloseTo(4.5 - 12, 6);
     expect(r[2].acimaDoControle).toBeLessThan(0);
+  });
+});
+
+describe("a curva do minigráfico", () => {
+  const emT = (t: number, usdt: number): Fluxo =>
+    ({ agente: "a", causa: "preco", usdt, ocorreuEmMs: t });
+
+  /**
+   * ⚠️ ACUMULADO, NÃO POR LANÇAMENTO. Uma série de valores soltos mostraria a
+   * volatilidade do lançamento e esconderia a pergunta do Celeiro, que é quanto
+   * USDT existe a MAIS. A linha tem de subir quando o agente produz.
+   */
+  it("acumula em vez de listar os lançamentos", () => {
+    expect(curvaAcumulada([emT(1, 1), emT(2, 2), emT(3, 3)])).toEqual([1, 3, 6]);
+  });
+
+  /**
+   * ⚠️ ORDENA POR TEMPO ANTES DE SOMAR. Fluxo fora de ordem produziria uma
+   * curva que sobe e desce sem o agente ter feito nada — e a forma do gráfico é
+   * justamente o que a pessoa lê primeiro.
+   */
+  it("ordena por tempo, mesmo recebendo fora de ordem", () => {
+    expect(curvaAcumulada([emT(3, 3), emT(1, 1), emT(2, 2)])).toEqual([1, 3, 6]);
+  });
+
+  /** ⚠️ APORTE FORA: depositar não é render, e o degrau pareceria um dia ótimo. */
+  it("aporte não entra na curva", () => {
+    const fluxos: Fluxo[] = [
+      emT(1, 1),
+      { agente: "a", causa: "aporte", usdt: 1000, ocorreuEmMs: 2 },
+      emT(3, 1),
+    ];
+    expect(curvaAcumulada(fluxos)).toEqual([1, 2]);
+  });
+
+  it("série vazia não vira ponto solto", () => {
+    expect(curvaAcumulada([])).toEqual([]);
+  });
+
+  it("reduz a série longa sem perder as pontas", () => {
+    const muitos = Array.from({ length: 500 }, (_, i) => emT(i, 1));
+    const c = curvaAcumulada(muitos, 40);
+    expect(c).toHaveLength(40);
+    expect(c[0]).toBe(1);
+    expect(c[c.length - 1]).toBe(500);
+  });
+});
+
+describe("a comparação com o piso", () => {
+  /**
+   * ⚠️⚠️ O CASO REAL QUE MOTIVOU A FUNÇÃO. Piso em 0,0725 e agente em 1,3661 —
+   * a porcentagem honesta dá **+1.784%**, que não cabe na coluna e ainda passa
+   * impressão de erro de cálculo. Acima de 10× a leitura vira MÚLTIPLO.
+   */
+  it("razão grande vira múltiplo, não porcentagem", () => {
+    const c = contraOPiso(1.3661, 0.0725, false);
+    expect(c.forma).toBe("vezes");
+    expect(c.valor).toBeCloseTo(18.84, 1);
+    expect(c.usdt).toBeCloseTo(1.2936, 6);
+  });
+
+  it("razão pequena continua em porcentagem", () => {
+    const c = contraOPiso(1.1, 1.0, false);
+    expect(c.forma).toBe("pct");
+    expect(c.valor).toBeCloseTo(10, 6);
+  });
+
+  /**
+   * ⚠️ PISO ~ZERO NÃO PRODUZ RAZÃO. Dividir por quase-nada devolveria número
+   * gigante ou infinito — e a diferença em USDT, que é sempre verdadeira,
+   * continua sendo entregue.
+   */
+  it("piso perto de zero devolve sem_base, e nunca infinito", () => {
+    const c = contraOPiso(5, 0.0001, false);
+    expect(c.forma).toBe("sem_base");
+    expect(c.valor).toBeNull();
+    expect(c.usdt).toBeCloseTo(4.9999, 6);
+    expect(Number.isFinite(c.usdt)).toBe(true);
+    expect(Math.abs(0.0001)).toBeLessThan(PISO_MINIMO_PARA_RAZAO);
+  });
+
+  /** O próprio piso não se compara consigo: a diferença é zero por definição. */
+  it("o piso é marcado e não vira 0% nem 1×", () => {
+    const c = contraOPiso(0.0725, 0.0725, true);
+    expect(c.forma).toBe("piso");
+    expect(c.usdt).toBe(0);
+    expect(c.valor).toBeNull();
+  });
+
+  /** Agente abaixo do piso mantém o sinal negativo em USDT. */
+  it("abaixo do piso, a diferença é negativa", () => {
+    const c = contraOPiso(0.5, 1.0, false);
+    expect(c.usdt).toBeCloseTo(-0.5, 9);
+    expect(c.forma).toBe("pct");
+    expect(c.valor).toBeCloseTo(-50, 6);
   });
 });

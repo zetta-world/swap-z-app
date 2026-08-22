@@ -229,3 +229,62 @@ export function ranquear(
     }))
     .sort((x, y) => y.usdt - x.usdt);
 }
+
+/**
+ * A CURVA DE USDT ACUMULADO — o minigráfico de cada agente.
+ *
+ * ⚠️ ACUMULADO, NÃO POR LANÇAMENTO. O placar do Celeiro é quanto USDT existe a
+ * mais; uma série de valores soltos mostraria a volatilidade do lançamento e
+ * esconderia justamente a pergunta. A linha sobe quando o agente produz.
+ *
+ * ⚠️ APORTE FORA DA CURVA, pelo mesmo motivo de sempre: depositar não é render,
+ * e um degrau de capital pareceria um dia excelente.
+ */
+export function curvaAcumulada(fluxos: readonly Fluxo[], maxPontos = 40): number[] {
+  const meus = fluxos
+    .filter((f) => CAUSAS_DE_RESULTADO.includes(f.causa) && Number.isFinite(f.usdt))
+    .sort((a, b) => a.ocorreuEmMs - b.ocorreuEmMs);
+  if (meus.length === 0) return [];
+
+  const acc: number[] = [];
+  let soma = 0;
+  for (const f of meus) { soma += f.usdt; acc.push(soma); }
+  if (acc.length <= maxPontos) return acc;
+
+  const passo = (acc.length - 1) / (maxPontos - 1);
+  return Array.from({ length: maxPontos }, (_, i) => acc[Math.round(i * passo)]);
+}
+
+export interface ContraOPiso {
+  /** A diferença crua em USDT — sempre verdadeira, sempre exibível. */
+  usdt: number;
+  /** Como mostrar: `pct` quando a razão é legível, `vezes` quando estoura. */
+  forma: "pct" | "vezes" | "piso" | "sem_base";
+  valor: number | null;
+}
+
+/**
+ * Como o agente se compara ao piso, numa forma que CABE na tela.
+ *
+ * ⚠️⚠️ PORCENTAGEM CONTRA UM PISO PEQUENO EXPLODE, e o número vira ruído. Com o
+ * piso em 0,0725 e o agente em 1,3661, a conta honesta dá **+1.784%** — que não
+ * informa nada e ainda passa a impressão de erro de cálculo.
+ *
+ * Acima de 10× a leitura vira MÚLTIPLO ("18,8×"), que é como se fala desse
+ * tamanho de diferença. Abaixo, porcentagem. E quando o piso é ~zero não há
+ * base: devolve `sem_base` em vez de dividir e produzir infinito.
+ *
+ * ⚠️ A diferença em USDT vai SEMPRE junto, qualquer que seja a forma. É o número
+ * que não depende de escolha de apresentação — e é o que o dono usa para decidir.
+ */
+export const PISO_MINIMO_PARA_RAZAO = 0.01;
+
+export function contraOPiso(usdtAgente: number, usdtPiso: number, ehPiso: boolean): ContraOPiso {
+  const usdt = usdtAgente - usdtPiso;
+  if (ehPiso) return { usdt: 0, forma: "piso", valor: null };
+  if (Math.abs(usdtPiso) < PISO_MINIMO_PARA_RAZAO) return { usdt, forma: "sem_base", valor: null };
+
+  const razao = usdtAgente / usdtPiso;
+  if (Math.abs(razao) >= 10) return { usdt, forma: "vezes", valor: razao };
+  return { usdt, forma: "pct", valor: (razao - 1) * 100 };
+}
