@@ -10,8 +10,8 @@
 > **Quando escrever:** ao fim de cada entrega. Documento desatualizado é pior que
 > documento nenhum — dá a impressão de que foi conferido.
 >
-> **Última atualização:** 22/08/2026, com o Celeiro produzindo USDT real e a
-> plataforma analisando com Kimi (troca temporária — ver §4).
+> **Última atualização:** 23/08/2026, com o Celeiro **vendido em três símbolos**
+> por leitura de regime, e o Investigador ligado.
 
 ---
 
@@ -19,8 +19,8 @@
 
 | | |
 |---|---|
-| `main` | `224429d` — em produção, conferido por deployment API |
-| CI | verde · **115 arquivos de teste** |
+| `main` | `9b679dd` — em produção desde 23/08 00:01 UTC |
+| CI | verde · **117 arquivos de teste** |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
 | Outra mão no código | o agente **`zettaceo`** também commita aqui (ver §1.1) |
@@ -28,12 +28,14 @@
 Últimos commits, do mais novo:
 
 ```
+9b679dd  O Investigador liga — de escrito-e-parado para rodando (#333)
+9181855  Retorno sobre capital — deixa de premiar quem arrisca mais (#332)
+4c3aad4  Os dois agentes de tendência, a banca declarada (#331)
+1733d5f  As três invariantes que faltavam — o Maker perdeu acertando 65% (#330)
+ed97961  ESTADO-ATUAL: o Celeiro produzindo, o Kimi temporário (#329)
 224429d  O painel do Celeiro ganha o desenho pedido (#328)
-fe991d6  Trocar de provedor volta a ser uma variável, não um deploy (#327)
-bcf19e3  O ZION devolvia 400 — faltou o extraBody do Kimi (#326)
 720a95f  A plataforma inteira sai da Anthropic e passa a analisar com Kimi (#325)
 51465a6  O cinto antes do motor (#324)  ← do zettaceo, não meu
-d8ba000  Os agentes do Celeiro passam a OPERAR — eram cabeça sem mão (#321)
 e55a250  O CELEIRO — a segunda arena, e a auditoria que a obrigou (#318)
 ```
 
@@ -218,40 +220,84 @@ passeio aleatório P(alvo antes do stop) = `stop/(alvo+stop)`, e as seis mesas d
 LLM ficaram de **−6,7 a −30,4 pp ABAIXO disso** em 3.300 decisões. Prever direção
 com modelo é pior que jogar moeda — a família inteira saiu.
 
-Desenho em `docs/PLANO-O-CELEIRO.md`. Cinco agentes, nenhum direcional, três sem
-IA. A IA virou o **Investigador**: não opera, lê o extrato decomposto (taxa,
+⚠️⚠️ **CORREÇÃO DE 22/08 — eu generalizei errado.** Daquela medição eu escrevi
+"nenhum agente aposta em direção", e isso está errado: o que se mediu foi LLM
+**PREVENDO** direção. **Seguir tendência MEDIDA é outra coisa** — é reagir a um
+estado observável, e a #324 mediu que isso PAGA (5,5× mais quando a posição
+cresce). A regra correta: **o lado vem do regime medido, nunca da opinião de um
+modelo.**
+
+Desenho em `docs/PLANO-O-CELEIRO.md` + a correção em
+`docs/PLANO-CELEIRO-AMBICIOSO.md`. **Seis agentes**, quatro sem direção e dois de
+tendência. A IA é o **Investigador**: não opera, lê o extrato decomposto (taxa,
 derrapagem, funding, preço), propõe UMA mutação de parâmetro com resultado
 escrito antes, e é pontuada pelo **USDT que a mutação gerou** contra o braço que
 não mudou.
 
-#### ✅ ESTÁ RODANDO E PRODUZINDO (desde 21/08)
+#### ⚠️⚠️ O MAKER DE FAIXA MORREU, E A AUTÓPSIA MUDOU O PROJETO
 
-O cron está agendado no cron-job.org (30 min) e os **cinco agentes operam**.
-Números reais da madrugada de 22/08:
+Ele rodou 29 posições e ficou **NEGATIVO acertando 65,5%**:
 
-| agente | USDT | lançamentos |
-|---|---|---|
-| **Maker de Faixa** (spot · day) | **+1,3661** | 46 |
-| ⚖ Aluguel de Ocioso (o piso) | +0,0725 | 50 |
+    preço      +3,1557   (+0,1088 por operação)
+    taxa       −3,3750   (−0,0563 × 2 pernas)
+    líquido    −0,2339
 
-E o extrato já entrega o diagnóstico que a arena antiga nunca deu: o Maker
-ganhou **+3,00 de preço** em 14 fechamentos e devolveu **−1,63 em taxa** — a
-corretagem come 54% do que o mercado dá. Esse é o adversário dele, não a direção.
+**O trade médio ganhava $0,1088 e pagava $0,1125 de pedágio.** Perdia por
+CONSTRUÇÃO — alvo de 0,6% contra ida-e-volta de 0,225%.
 
-⚠️ **TUDO EM PAPEL, de propósito.** Funding e profundidade são dados públicos:
-mede-se sem arriscar um centavo. Só se liga credencial quando o extrato provar
-USDT positivo em amostra que aguente.
+⚠️ **E AUMENTAR O TAMANHO NÃO CONSERTA**: a taxa é proporcional ao nocional. O
+que muda a razão é o TAMANHO DO MOVIMENTO — swing, não escalpe. Foi apagado, não
+ajustado: subir o alvo para 1,35% consertaria a conta e destruiria a tese.
 
-⚠️ **A Colheita de Funding ainda não abriu posição** — o portão exige funding
-acima do controle + 2pp (≈4%/ano) e BTC/ETH/SOL não passaram. Recusar é o
-comportamento certo, mas pode durar semanas.
+#### ✅ O QUE ESTÁ RODANDO (23/08, madrugada)
 
-#### O que do plano AINDA NÃO existe
+Seis agentes, cron de 30 min. **O Alavancado de Tendência está VENDIDO em
+BTC, ETH e SOL** — o mercado virou baixa e ele tomou o lado:
 
-O **Investigador** (§5 do `PLANO-O-CELEIRO.md`) está escrito e testado — prompt,
-validador, placar — mas **não é chamado por ninguém**. `celeiro_genoma` e
-`celeiro_mutacoes` existem e só o genoma-semente foi gravado. Ligar o ciclo de
-mutação A/B é o próximo pedaço grande.
+| símbolo | lado | alavanca | liquida em |
+|---|---|---|---|
+| BTC | **sell** | **10×** | 10,0% |
+| ETH | **sell** | **8×** | 12,5% |
+| SOL | **sell** | **3×** | 33,3% |
+
+⚠️ **TRÊS ALAVANCAS DIFERENTES PARA A MESMA DECISÃO, e isso é o desenho.** O SOL
+tem volatilidade de 0,98% por vela contra 0,32% do BTC — a conta devolveu 3%
+onde o BTC aguentou 10×. A alavanca sai do risco MEDIDO de cada ativo.
+
+Exposição em **$600 de $1.000 = 60%**, exatamente o teto do agente. Abriu três e
+parou.
+
+**E as recusas também estão certas**, com o motivo literal no log:
+o Caçador de Tendência não abriu nada — *"este agente é spot e não vende: na
+baixa ele fica de fora"*; a Convergência recusou os três — *"operar no empate é
+pagar risco por nada"*.
+
+⚠️ **TUDO EM PAPEL, de propósito.** Só se liga credencial quando o extrato
+provar USDT positivo em amostra que aguente.
+
+#### As três invariantes que o cadáver do Maker exigiu
+
+| | regra |
+|---|---|
+| **I1** | o alvo tem de limpar o pedágio por **6×** (mínimo 1,35%) |
+| **I2** | o **regime** decide se opera e de que lado — e *sangrando* ≠ *baixa* |
+| **I3** | a alavanca sai do **pior movimento pico-a-vale**, com folga 2× |
+
+E a **banca declarada** por agente (`bancaUsd`, `fracaoPorPosicao`,
+`tetoDeExposicao`, `alavancagemMaxima`) substituiu o `Math.max(capitalMinimoUsd,
+50)` que vivia escrito na mão dentro do cron.
+
+#### O Investigador: LIGADO, mas ainda sem rodar um ciclo
+
+O ciclo está no cron desde `9b679dd`. **Ainda não produziu mutação nenhuma**, e
+por dois motivos legítimos:
+
+1. o deploy entrou às 00:01:16 e o último tick foi 00:00:27 — 49s antes;
+2. ele exige **30 lançamentos na janela** para perguntar, e só o Aluguel de
+   Ocioso tem — que é o controle e **não é investigado de propósito**.
+
+O primeiro ciclo real leva alguns dias até um agente acumular extrato. Isso é o
+desenho, não atraso.
 
 ### Decisões dele, não minhas
 
@@ -346,6 +392,23 @@ prova a carteira. Header servido não é fluxo funcionando.
 > Endurecimento de segurança que passa no CI não é endurecimento verificado.
 > O que o CI não exercita, o CI não protege.
 
+**Generalizar uma medição para além do que ela mediu custa um projeto inteiro.**
+Medi que LLM **PREVENDO** direção fica abaixo de uma moeda, e daí escrevi
+"nenhum agente aposta em direção". Seguir tendência MEDIDA é outra coisa — e a
+prova estava no próprio repositório, na #324 que eu tinha acabado de auditar.
+Três dias de desenho foram na direção errada por causa de uma palavra.
+
+> A medição diz exatamente o que mediu. Tudo além disso é opinião com cara de
+> dado.
+
+**Um alvo que não cobre o pedágio perde sem o mercado opinar.** O Maker de
+Faixa acertou 19 de 29 e ficou negativo: ganhava $0,1088 de preço e pagava
+$0,1125 de corretagem. Nenhum backtest tinha dito isso, e nenhuma taxa de acerto
+teria salvado.
+
+> Antes de perguntar se a estratégia funciona, pergunte se a ARITMÉTICA fecha.
+> E aumentar a aposta não conserta: a taxa é proporcional.
+
 **Não pergunte "o quê" sem perguntar "por quanto tempo".** O dono pediu para
 trocar tudo para Kimi. Eu li como MIGRAÇÃO e apaguei o `anthropicChat`, tirei o
 SDK do `package.json`, removi o ramo do `retro`. Era uma PAUSA por falta de
@@ -400,11 +463,12 @@ positivo custa a mesma credibilidade que falso negativo.
 
 ---
 
-## 7.1 Os documentos novos (19–22/08)
+## 7.1 Os documentos novos (19–23/08)
 
 | documento | para quê |
 |---|---|
 | `PLANO-O-CELEIRO.md` | o desenho da segunda arena e a medição que a obriga |
+| `PLANO-CELEIRO-AMBICIOSO.md` | **a correção de 22/08** — o Maker perdeu acertando 65%, e as três invariantes que faltavam |
 | `AUDITORIA-MESAS-19-08.md` | por que o livro antigo é negativo ANTES do custo |
 | `TROCAR-DE-PROVEDOR.md` | **Kimi ↔ Anthropic numa variável** — leia ao reabastecer |
 | `PLANO-TAMANHO-E-REGIME.md` | do zettaceo: filtro de tendência e tamanho de posição |
