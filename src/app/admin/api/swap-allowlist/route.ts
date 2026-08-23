@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
-import { checkSwapTarget, checkSwapSpender } from "@/lib/swap/trusted-targets";
+import { checkSwapTarget, checkSwapSpender, cadeiasVigiadas } from "@/lib/swap/trusted-targets";
 import { recordEvent } from "@/lib/admin/track";
 import { fetchZeroXPrice, ZEROX_CHAIN_IDS, ZEROX_NATIVE, isZeroXSupported } from "@/lib/api/zerox";
 import { fetchLiFiQuote, LIFI_CHAIN_IDS, LIFI_NATIVE, isLiFiSupported } from "@/lib/api/lifi";
@@ -41,7 +41,26 @@ interface Obs {
    *  endereço é canônico — e uma contagem inflada pelas próprias sondas do
    *  auto-populate seria evidência circular: o sistema confirmando a si mesmo. */
   realCount: number;
-  first: string; last: string; enforced: boolean;
+  first: string; last: string;
+  /**
+   * ⚠️ DOIS CAMPOS, PORQUE SAO DUAS PERGUNTAS DIFERENTES — e o campo unico
+   * `enforced` respondia a errada (auditoria 23/08).
+   *
+   * Ele vinha de `.configured`, que significa "esta CADEIA tem lista", e era
+   * lido na tela como "este ENDERECO esta aprovado". Dois estados opostos
+   * ficavam identicos:
+   *
+   *   endereco NA lista   -> enforced: true  -> o swap funciona
+   *   endereco FORA dela  -> enforced: true  -> o swap MORRE em "untrusted"
+   *
+   * Quem abrisse o painel para conferir "esta tudo liberado?" via verde nos
+   * dois. Numa ferramenta de auditoria de seguranca, confundir "sob
+   * vigilancia" com "aprovado" e pior que nao ter a coluna.
+   */
+  /** A cadeia tem allowlist configurada? (era o antigo `enforced`) */
+  cadeiaVigiada: boolean;
+  /** ESTE endereco passa na allowlist? false numa cadeia vigiada = swap BLOQUEADO. */
+  naLista: boolean;
 }
 
 export async function GET(): Promise<NextResponse> {
@@ -75,7 +94,10 @@ export async function GET(): Promise<NextResponse> {
         chainId: m.chainId, role, address: a, source: m.source ?? "?",
         count: 1, realCount: isProbe ? 0 : 1,
         first: r.created_at, last: r.created_at,
-        enforced: role === "target" ? checkSwapTarget(m.chainId, a).configured : checkSwapSpender(m.chainId, a).configured,
+        ...(() => {
+          const c = role === "target" ? checkSwapTarget(m.chainId, a) : checkSwapSpender(m.chainId, a);
+          return { cadeiaVigiada: c.configured, naLista: c.configured ? c.ok : false };
+        })(),
       });
     }
   }
@@ -93,10 +115,26 @@ export async function GET(): Promise<NextResponse> {
     observed,
     envTargets:  build("target"),
     envSpenders: build("spender"),
-    enforcing: {
-      targets:  !!process.env.NEXT_PUBLIC_ALLOWED_SWAP_TARGETS,
-      spenders: !!process.env.NEXT_PUBLIC_ALLOWED_SWAP_SPENDERS,
-    },
+    /**
+     * ⚠️ LIDO DO MAPA PARSEADO, NAO DE !!process.env.
+     *
+     * A versao anterior afirmava "ENFORCING" pela mera presenca da string.
+     * Variavel preenchida com formato errado — ou com enderecos que o filtro
+     * de parseChainMap descarta — produz mapa VAZIO: a trava nao bloqueia
+     * nada e a tela dizia que bloqueava.
+     *
+     * ⚠️ E A VIGILANCIA E POR CADEIA. Uma lista que cobre Ethereum e Base
+     * deixa Arbitrum sem verificacao nenhuma, e !!env nao mostrava isso.
+     */
+    enforcing: (() => {
+      const v = cadeiasVigiadas();
+      return {
+        targets:         v.targets.length > 0,
+        spenders:        v.spenders.length > 0,
+        cadeiasTargets:  v.targets,
+        cadeiasSpenders: v.spenders,
+      };
+    })(),
     note: "Verifique cada endereço no explorer antes de fixar. Cole envTargets/envSpenders na Vercel e faça redeploy. "
       + "ATENÇÃO: 'visto N×' conta TAMBÉM as sondas do auto-populate — confirmação vinda da própria ferramenta é circular. "
       + "Use a coluna REAL (swaps de usuário) como evidência independente.",

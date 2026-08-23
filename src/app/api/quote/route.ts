@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { recordEvent, notifyTelegram } from "@/lib/admin/track";
 import { isValidChain, validateAddress, validateAmount } from "@/lib/validate";
+import { conferirDestinatario, familiaDaRede } from "@/lib/swap/recipient";
 import {
   fetchZeroXPrice, fetchZeroXQuote, isZeroXSupported, ZEROX_CHAIN_IDS, ZEROX_NATIVE, tokenDaTaxa,
 } from "@/lib/api/zerox";
@@ -226,11 +227,30 @@ export async function GET(req: NextRequest) {
   let recipient: string | undefined;
   const recipientRaw = params.get("recipient");
   if (recipientRaw) {
-    const r = validateAddress(recipientRaw);
-    if (!r || r === "native") {
-      return NextResponse.json({ error: "invalid_recipient" }, { status: 400 });
+    /**
+     * ⚠️⚠️ A CHECAGEM CONHECE A REDE DE DESTINO — e antes não conhecia.
+     *
+     * `validateAddress` aceita EVM e base58 sem distinguir, porque é o
+     * validador genérico de toda a API. Aqui isso era um buraco de perda de
+     * fundo: um endereço SOLANA passava como `toAddress` de uma ponte para
+     * BASE, e o único lugar que reclamava era a cor do campo no navegador.
+     *
+     * O caminho real: o usuário escolhe destino Solana, cola um endereço
+     * Solana, troca o destino para Base — `setToToken` não limpa o
+     * destinatário — e a loja segue mandando o endereço antigo.
+     *
+     * ⚠️ ESTA É A SEGUNDA LINHA, NÃO A PRIMEIRA. A rota é pública: cliente em
+     * cache, script, ou regressão no componente chegam aqui sem passar pelo
+     * campo. O caminho do dinheiro não terceiriza a última palavra.
+     */
+    const v = conferirDestinatario(recipientRaw, familiaDaRede(toChain));
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: v.motivo === "queima" ? "burn_recipient" : "invalid_recipient", motivo: v.motivo },
+        { status: 400 },
+      );
     }
-    recipient = r;
+    recipient = v.endereco;
   }
 
   const slipRaw    = params.get("slippageBps");
