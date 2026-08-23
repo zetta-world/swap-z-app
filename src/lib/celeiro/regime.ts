@@ -75,6 +75,98 @@ export function alvoLimpaOPedagio(
   };
 }
 
+/* ──────────────── I2 — O STOP FORA DO RUÍDO DO ATIVO ──────────── */
+
+export interface VeredictoDeStop {
+  stopPct: number;
+  /** `false` = não deu para medir a volatilidade; ficou o declarado. */
+  medido: boolean;
+  porque: string;
+}
+
+/**
+ * Quantas amplitudes médias de vela o stop precisa ter de distância.
+ *
+ * ⚠️ 3 NÃO É PALPITE, É O QUE O BTC JÁ TINHA. Com stop fixo de 1,2% e amplitude
+ * de 0,32%/vela, o BTC operava a 3,75 amplitudes — e foi o menos chicoteado dos
+ * três (17,1% das janelas de 1,5h tocam 1,2%, contra 39,6% do SOL). O número
+ * iguala os ativos NA UNIDADE QUE IMPORTA, que é o ruído deles, não o preço.
+ */
+export const MULTIPLO_DO_RUIDO = Number(process.env.CELEIRO_MULTIPLO_DO_RUIDO ?? 3);
+
+/** Teto duro: stop largo demais transforma uma perda em várias. */
+export const STOP_TETO_PCT = Number(process.env.CELEIRO_STOP_TETO_PCT ?? 6);
+
+/**
+ * ⚠️⚠️ A INVARIANTE I2 — O STOP TEM QUE FICAR FORA DO RUÍDO.
+ *
+ * A CICATRIZ (23/08): as três primeiras entradas decididas do Celeiro morreram
+ * no stop, todas no SOL, todas em exatamente −1,200% e exatamente 1,5h. Uma
+ * vendeu SOL a 93,63; uma hora e meia depois duas COMPRARAM a 96,24 — vendeu o
+ * fundo e comprou o topo, e as três pagaram pedágio para descobrir isso.
+ *
+ * Medido em 3 dias de velas de 5m, janelas de 1,5h:
+ *
+ *     SOL   39,6% das janelas tocam ±1,2%   mediana do maior movimento 1,02%
+ *     ETH   24,2%                                                     0,80%
+ *     BTC   17,1%                                                     0,58%
+ *
+ * O stop era 1,2% para TODOS. No SOL isso fica a um passo da mediana do ruído:
+ * 4 em cada 10 janelas o tocam sem tendência nenhuma.
+ *
+ * ⚠️ E O PROJETO JÁ MEDIA ESSA VOLATILIDADE — usava em `alavancagemCoerente`
+ * para dimensionar a ALAVANCA, e mantinha o stop fixo. O risco estava medido e
+ * não era aplicado onde decide o resultado.
+ *
+ * ⚠️⚠️ POR QUE ISTO PAGA, e a razão NÃO é "menos stops". Num passeio sem
+ * tendência, QUALQUER par alvo/stop tem valor esperado exatamente zero — alargar
+ * o stop troca "erra menos vezes" por "perde mais quando erra", e as duas coisas
+ * se cancelam. O que não se cancela é o PEDÁGIO: ele é cobrado por ida-e-volta,
+ * então saída decidida por ruído é pedágio pago numa moeda. Menos viagens
+ * inúteis é a única economia real aqui.
+ *
+ * ⚠️ POR ISSO É PISO, NUNCA TETO. Só ALARGA o stop declarado, nunca aperta.
+ * Apertar o do BTC seria mudança sem medição atrás — e a medição que existe diz
+ * respeito a quem está apertado demais, não a quem está folgado.
+ */
+export function stopPorVolatilidade(
+  volatilidadePct: number | null,
+  stopDeclaradoPct: number,
+  multiplo: number = MULTIPLO_DO_RUIDO,
+  tetoPct: number = STOP_TETO_PCT,
+): VeredictoDeStop {
+  if (volatilidadePct == null || !(volatilidadePct > 0)) {
+    return {
+      stopPct: stopDeclaradoPct, medido: false,
+      porque: `volatilidade não medida — fica o stop declarado de ${stopDeclaradoPct.toFixed(2)}%`,
+    };
+  }
+
+  const pedido = volatilidadePct * multiplo;
+
+  if (pedido <= stopDeclaradoPct) {
+    return {
+      stopPct: stopDeclaradoPct, medido: true,
+      porque: `ruído de ${volatilidadePct.toFixed(2)}%/vela pede ${pedido.toFixed(2)}% — `
+        + `o declarado de ${stopDeclaradoPct.toFixed(2)}% já está fora dele`,
+    };
+  }
+
+  if (pedido > tetoPct) {
+    return {
+      stopPct: tetoPct, medido: true,
+      porque: `ruído de ${volatilidadePct.toFixed(2)}%/vela pediria ${pedido.toFixed(2)}%, `
+        + `acima do teto de ${tetoPct.toFixed(2)}% — ativo volátil demais para este alvo`,
+    };
+  }
+
+  return {
+    stopPct: pedido, medido: true,
+    porque: `stop alargado de ${stopDeclaradoPct.toFixed(2)}% para ${pedido.toFixed(2)}% `
+      + `= ${multiplo}× o ruído de ${volatilidadePct.toFixed(2)}%/vela`,
+  };
+}
+
 /* ─────────────────────────── O REGIME ─────────────────────────── */
 
 export type Estado = "alta" | "baixa" | "sangrando" | "sem_sinal";
