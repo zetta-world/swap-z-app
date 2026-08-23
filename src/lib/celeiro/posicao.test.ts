@@ -5,6 +5,68 @@ import {
 } from "@/lib/celeiro/posicao";
 
 /**
+ * A ALAVANCA E A LIQUIDAÇÃO (23/08).
+ *
+ * O Alavancado de Tendência declarava `aposentaQuando: uma liquidação apagar o
+ * ganho de semanas` — e liquidação era impossível: o campo não existia, e o
+ * teto de exposição prendia o agente abaixo de 0,6× da banca.
+ */
+describe("liquidação", () => {
+  const base: Abertura = {
+    agente: "t", simbolo: "SOL", lado: "buy", usd: 2000,
+    precoEntrada: 100, alvo: 102, stop: 90, derrapagemPct: 0, horasLimite: 48,
+  };
+
+  it("não existe sem alavanca — 1× liquidaria só a preço zero", () => {
+    expect(deveFechar({ ...base, alavanca: 1 }, 91, 1)?.motivo).toBeUndefined();
+  });
+
+  it("dispara quando a liquidação está MAIS PERTO que o stop", () => {
+    // 10× liquida um pouco ANTES de 10%, para caber a taxa; stop em 85 vem depois.
+    const p = { ...base, alavanca: 10, stop: 85 };
+    const f = deveFechar(p, 89, 1);
+    expect(f?.motivo).toBe("liquidacao");
+    expect(f?.precoSaida).toBeGreaterThan(90);
+    expect(f?.precoSaida).toBeLessThan(91);
+  });
+
+  /**
+   * ⚠️ O PAR QUE IMPORTA. Com o stop mais perto, o preço passou por ele ANTES
+   * de chegar na liquidação — reportar liquidação inventaria perda de margem
+   * inteira onde houve perda de stop. É o caso REAL do Celeiro hoje: alavanca
+   * 10× (liquida a 10%) com stop de 2%.
+   */
+  it("NÃO dispara quando o stop está mais perto — o stop é que fecha", () => {
+    const p = { ...base, alavanca: 10, stop: 98 };
+    const f = deveFechar(p, 85, 1);
+    expect(f?.motivo).toBe("stop");
+    expect(f?.precoSaida).toBeCloseTo(98, 9);
+  });
+
+  /**
+   * ⚠️⚠️ A INVARIANTE DA LIQUIDAÇÃO: ela custa a margem INTEIRA e nem um centavo
+   * a mais. Taxa das duas pernas e derrapagem cabem DENTRO dela. Se alguém
+   * simplificar o preço de liquidação para 100/alavanca %, este teste cai — e
+   * cai apontando para uma banca que ficaria devendo.
+   */
+  it("a liquidação custa exatamente a margem — taxa e derrapagem inclusas", () => {
+    const p: Abertura = { ...base, alavanca: 10, stop: 85, derrapagemPct: 0.05 };
+    const f = deveFechar(p, 1, 1)!;
+    expect(f.motivo).toBe("liquidacao");
+
+    const tudo = [...lancamentosDaAbertura(p), ...lancamentosDoFechamento(p, f)];
+    const soma = tudo.reduce((s, l) => s + l.usdt, 0);
+    expect(soma).toBeCloseTo(-(p.usd / 10), 9);
+    expect(conferir(p, f).bate).toBe(true);
+  });
+
+  it("vendido liquida para CIMA", () => {
+    const p: Abertura = { ...base, lado: "sell", alavanca: 10, stop: 115 };
+    expect(deveFechar(p, 111, 1)?.motivo).toBe("liquidacao");
+  });
+});
+
+/**
  * A POSIÇÃO — os testes que fazem os agentes OPERAREM em vez de só julgarem.
  *
  * ⚠️ Até 21/08 os agentes tinham `decidir()`, `deveCotar()` e

@@ -33,6 +33,15 @@ export interface Abertura {
   derrapagemPct: number;
   /** Depois disto a posição fecha por tempo, custe o que custar. */
   horasLimite: number;
+  /**
+   * Quantas vezes o NOCIONAL excede a margem. 1 = sem alavanca.
+   *
+   * ⚠️ É daqui que sai a liquidação: um movimento contrário de 100/alavanca %
+   * zera a margem. Sem este campo a posição alavancada era imortal — e o
+   * `aposentaQuando` do Alavancado de Tendência fala em "uma liquidação apagar
+   * o ganho de semanas", condição que nunca poderia disparar.
+   */
+  alavanca?: number;
 }
 
 /** Um lançamento a gravar: causa e valor assinado. */
@@ -63,7 +72,7 @@ export function lancamentosDaAbertura(a: Abertura): Lancamento[] {
   return out;
 }
 
-export type MotivoDeSaida = "alvo" | "stop" | "tempo";
+export type MotivoDeSaida = "alvo" | "stop" | "tempo" | "liquidacao";
 
 export interface Fechamento {
   precoSaida: number;
@@ -107,6 +116,50 @@ export function deveFechar(
   horasAbertas: number,
 ): Fechamento | null {
   if (!(precoAtual > 0)) return null;
+
+  /**
+   * ⚠️⚠️ A LIQUIDAÇÃO SÓ PRECEDE O STOP SE ESTIVER MAIS PERTO DA ENTRADA.
+   *
+   * Aqui a regra é o CONTRÁRIO da de alvo-vs-stop logo abaixo. Lá, uma vela que
+   * tocou os dois é ambígua e assumimos o pior. Aqui não há ambiguidade: o stop
+   * é uma ordem no livro, e se ele está mais perto, o preço passou por ele
+   * ANTES de chegar na liquidação. Reportar liquidação nesse caso inventaria
+   * perda de margem inteira onde houve perda de stop.
+   *
+   * Com alavanca de 10× a liquidação fica a 10% e o stop a ~2%: o stop ganha
+   * sempre, e é assim que tem que ser. A liquidação existe para quando a conta
+   * da alavanca e a do stop se cruzarem — aí ela é o desfecho verdadeiro.
+   */
+  const vezes = a.alavanca ?? 1;
+  if (vezes > 1) {
+    /**
+     * ⚠️⚠️ A LIQUIDAÇÃO VEM ANTES DOS 100/ALAVANCA %, E A TAXA É O MOTIVO.
+     *
+     * O ingênuo é "10× liquida a 10%". Mas 10% do nocional é a margem INTEIRA,
+     * e as duas pernas de corretagem ainda seriam cobradas por cima — a conta
+     * fecharia em −$204,50 contra uma margem de $200, e a banca ficaria
+     * devendo. Corretora nenhuma permite isso: elas liquidam antes, exatamente
+     * para caber a taxa.
+     *
+     * Com a derrapagem entrando junto, a perda da liquidação é EXATAMENTE a
+     * margem — nunca um centavo a mais. O teste trava esse valor.
+     */
+    const fracaoAdversa =
+      1 / vezes
+      - (TAXA_POR_PERNA_PCT * 2) / 100
+      - Math.max(0, a.derrapagemPct) / 100;
+    const precoDeLiquidacao = a.lado === "buy"
+      ? a.precoEntrada * (1 - fracaoAdversa)
+      : a.precoEntrada * (1 + fracaoAdversa);
+    const liquidaAntes =
+      Math.abs(precoDeLiquidacao - a.precoEntrada) < Math.abs(a.stop - a.precoEntrada);
+    if (liquidaAntes) {
+      const tocou = a.lado === "buy"
+        ? precoAtual <= precoDeLiquidacao
+        : precoAtual >= precoDeLiquidacao;
+      if (tocou) return { precoSaida: precoDeLiquidacao, motivo: "liquidacao" };
+    }
+  }
 
   const tocouStop = a.lado === "buy" ? precoAtual <= a.stop : precoAtual >= a.stop;
   if (tocouStop) return { precoSaida: a.stop, motivo: "stop" };

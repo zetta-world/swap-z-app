@@ -208,6 +208,24 @@ export interface PosicaoAberta extends Abertura {
 }
 
 /** As posições que o agente ainda tem em pé. */
+/**
+ * A alavanca guardada no `meta`, com 1× como piso.
+ *
+ * ⚠️ NA DÚVIDA, 1×. Um `meta` sem alavanca é uma posição antiga, aberta antes
+ * do campo existir — e tratá-la como alavancada inventaria uma liquidação que
+ * o agente nunca contratou.
+ */
+export function alavancaDoMeta(meta: Record<string, unknown>): number {
+  const v = Number(meta?.alavanca);
+  return Number.isFinite(v) && v >= 1 ? v : 1;
+}
+
+/** A margem comprometida por uma posição — o nocional dividido pela alavanca. */
+export function margemDa(p: { usd: number; alavanca?: number }): number {
+  const v = p.alavanca ?? 1;
+  return v >= 1 ? p.usd / v : p.usd;
+}
+
 export async function posicoesAbertas(
   db: SupabaseClient,
   agente: string,
@@ -219,15 +237,24 @@ export async function posicoesAbertas(
     .eq("agente", agente).is("fechada_em", null)
     .limit(100);
 
-  return (data ?? []).map((r) => ({
-    id: r.id, agente: r.agente, simbolo: r.simbolo, lado: r.lado,
-    usd: Number(r.usd), precoEntrada: Number(r.preco_entrada),
-    alvo: Number(r.alvo), stop: Number(r.stop),
-    horasLimite: Number(r.horas_limite), derrapagemPct: Number(r.derrapagem_pct),
-    abertaEmMs: Date.parse(r.aberta_em), genomaVersao: r.genoma_versao,
-    braco: (r.braco ?? null) as Braco | null,
-    meta: (r.meta ?? {}) as Record<string, unknown>,
-  }));
+  return (data ?? []).map((r) => {
+    const meta = (r.meta ?? {}) as Record<string, unknown>;
+    return {
+      id: r.id, agente: r.agente, simbolo: r.simbolo, lado: r.lado,
+      usd: Number(r.usd), precoEntrada: Number(r.preco_entrada),
+      alvo: Number(r.alvo), stop: Number(r.stop),
+      horasLimite: Number(r.horas_limite), derrapagemPct: Number(r.derrapagem_pct),
+      /**
+       * ⚠️ A ALAVANCA VOLTA DO `meta`, não de uma coluna. Sem ela aqui,
+       * `deveFechar` receberia `undefined`, assumiria 1× e a posição
+       * alavancada nunca liquidaria — o defeito exato que 23/08 corrigiu.
+       */
+      alavanca: alavancaDoMeta(meta),
+      abertaEmMs: Date.parse(r.aberta_em), genomaVersao: r.genoma_versao,
+      braco: (r.braco ?? null) as Braco | null,
+      meta,
+    };
+  });
 }
 
 /**

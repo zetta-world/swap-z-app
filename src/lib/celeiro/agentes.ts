@@ -350,8 +350,19 @@ export const ROTULO_DA_FAIXA: Record<Faixa, string> = {
 };
 
 export interface Tamanho {
+  /**
+   * A MARGEM — o capital da banca comprometido nesta posição.
+   *
+   * ⚠️ É ELA que o teto de exposição governa, nunca o nocional. Confundir os
+   * dois foi o defeito de 23/08: o teto media nocional, então um agente com
+   * alavanca declarada de 10× ficava preso abaixo de 0,6× da própria banca.
+   */
+  margemUsd: number;
+  /** O NOCIONAL — o que o preço e a taxa mordem. margem × alavanca. */
   usd: number;
-  /** Quanto da banca ficaria exposto se esta posição abrir (0 a 1). */
+  /** Quantas vezes o nocional excede a margem. 1 = sem alavanca. */
+  alavanca: number;
+  /** Quanto da banca ficaria comprometido em MARGEM se esta posição abrir (0 a 1). */
   exposicaoDepois: number;
   cabe: boolean;
   porque: string;
@@ -369,27 +380,38 @@ export interface Tamanho {
  * vira "alavancado sem perceber": três posições de 25% já são 75% da banca em
  * risco simultâneo. Aqui a recusa é explícita e o motivo vai para o extrato.
  */
-export function tamanhoDaPosicao(a: Agente, expostoUsd: number): Tamanho {
-  const usd = a.bancaUsd * a.fracaoPorPosicao;
-  const exposicaoDepois = (expostoUsd + usd) / a.bancaUsd;
+export function tamanhoDaPosicao(
+  a: Agente,
+  /** Margem JÁ comprometida pelas posições abertas — não nocional. */
+  expostoMargemUsd: number,
+  alavanca = 1,
+): Tamanho {
+  const vezes = Number.isFinite(alavanca) && alavanca >= 1 ? alavanca : 1;
+  const margemUsd = a.bancaUsd * a.fracaoPorPosicao;
+  const usd = margemUsd * vezes;
+  const exposicaoDepois = (expostoMargemUsd + margemUsd) / a.bancaUsd;
 
   if (exposicaoDepois > a.tetoDeExposicao + 1e-9) {
     return {
-      usd, exposicaoDepois, cabe: false,
+      margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: false,
       porque: `${(exposicaoDepois * 100).toFixed(0)}% da banca exposta passaria do teto `
         + `de ${(a.tetoDeExposicao * 100).toFixed(0)}% — a posição não cabe`,
     };
   }
   if (a.bancaUsd < a.capitalMinimoUsd) {
     return {
-      usd, exposicaoDepois, cabe: false,
-      porque: `banca de $${a.bancaUsd} abaixo do mínimo de $${a.capitalMinimoUsd} `
+      margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: false,
+      porque: `banca de ${a.bancaUsd} abaixo do mínimo de ${a.capitalMinimoUsd} `
         + "que este agente declara precisar",
     };
   }
+  const fatia = `${(a.fracaoPorPosicao * 100).toFixed(0)}% da banca`;
+  const expo = `exposição em margem ficaria em ${(exposicaoDepois * 100).toFixed(0)}%`;
   return {
-    usd, exposicaoDepois, cabe: true,
-    porque: `$${usd.toFixed(2)} (${(a.fracaoPorPosicao * 100).toFixed(0)}% da banca), `
-      + `exposição ficaria em ${(exposicaoDepois * 100).toFixed(0)}%`,
+    margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: true,
+    porque: vezes > 1
+      ? `${margemUsd.toFixed(2)} de margem (${fatia}) × ${vezes}× = `
+        + `${usd.toFixed(2)} de nocional, ${expo}`
+      : `${usd.toFixed(2)} (${fatia}), ${expo}`,
   };
 }

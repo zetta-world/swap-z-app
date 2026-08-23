@@ -10,7 +10,7 @@ import {
 } from "@/lib/celeiro/funding-colheita";
 import {
   registrarFluxo, ultimoLancamentoMs, genomaAtivo, lerRelogio, marcarRelogio,
-  posicoesAbertas, abrirPosicao, varrerAbertas, agentesComAbertas,
+  posicoesAbertas, abrirPosicao, varrerAbertas, agentesComAbertas, margemDa,
 } from "@/lib/celeiro/store";
 import {
   lerRegime, permite, alvoLimpaOPedagio, alavancagemCoerente, stopPorVolatilidade,
@@ -270,7 +270,22 @@ export async function POST(req: NextRequest) {
     const fechados = await varrerAbertas(db, id, precoDe, agora);
 
     const abertas = await posicoesAbertas(db, id);
-    const expostoUsd = abertas.reduce((soma, p) => soma + p.usd, 0);
+    /**
+     * ⚠️⚠️ A EXPOSIÇÃO É SOMADA EM MARGEM, E CRESCE DENTRO DO TICK.
+     *
+     * Dois defeitos consertados aqui em 23/08:
+     *
+     * (1) Somava NOCIONAL. Com o teto governando nocional, um agente com
+     *     alavanca de 10× ficava preso abaixo de 0,6× da própria banca — a
+     *     alavanca que ele calculava não podia existir. Teto e alavanca eram
+     *     duas guardas escritas sem saber uma da outra, e o teto ganhava sempre.
+     *
+     * (2) Era `const`, calculado FORA do laço de símbolos. As posições abertas
+     *     na mesma rodada não se enxergavam: três símbolos abriam cada um
+     *     achando que os outros não existiam. Com 3 símbolos passava raspando;
+     *     com mais, o teto vaza sem nada aparecer no extrato.
+     */
+    let expostoUsd = abertas.reduce((soma, p) => soma + margemDa(p), 0);
 
     /**
      * ⚠️ O BRAÇO DO A/B — e ele alterna por POSIÇÃO, não por símbolo. Dividir
@@ -367,7 +382,7 @@ export async function POST(req: NextRequest) {
        * exposição é o "sem suicídio" do mandato: sem ele, três posições de 25%
        * viram 75% da banca em risco sem ninguém ter decidido isso.
        */
-      const t = tamanhoDaPosicao(ag, expostoUsd);
+      const t = tamanhoDaPosicao(ag, expostoUsd, alavanca);
       if (!t.cabe) { exames.push({ sym, abre: false, porque: t.porque }); continue; }
 
       const prof = portaoDeProfundidade(livros.get(sym) ?? null, t.usd);
@@ -375,20 +390,25 @@ export async function POST(req: NextRequest) {
 
       const braco = bracoDaPosicao(emTeste != null, abertasDesde);
       const posId = await abrirPosicao(db, {
-        agente: id, simbolo: sym, lado, usd: t.usd,
+        agente: id, simbolo: sym, lado, usd: t.usd, alavanca: t.alavanca,
         precoEntrada: preco, alvo, stop,
         derrapagemPct: prof.derrapagemPct ?? 0,
         horasLimite: Number(gen?.params.horasLimite ?? 48),
-      }, gen?.versao ?? null, { porque, alavanca, exposicao: t.exposicaoDepois }, braco);
-      if (posId) abertasDesde++;
+      }, gen?.versao ?? null,
+        { porque, alavanca: t.alavanca, margemUsd: t.margemUsd, exposicao: t.exposicaoDepois },
+        braco);
+      if (posId) { abertasDesde++; expostoUsd += t.margemUsd; }
 
-      exames.push({ sym, abre: posId !== null, porque, lado, usd: t.usd, alavanca, braco });
+      exames.push({
+        sym, abre: posId !== null, porque, lado,
+        usd: t.usd, margemUsd: t.margemUsd, alavanca: t.alavanca, braco,
+      });
     }
 
     operados[id] = {
       genomaVersao: gen?.versao ?? null,
       fechados, abertas: abertas.length,
-      expostoUsd, bancaUsd: ag.bancaUsd, exames,
+      expostoMargemUsd: expostoUsd, bancaUsd: ag.bancaUsd, exames,
     };
   }
   relato.operados = operados;
