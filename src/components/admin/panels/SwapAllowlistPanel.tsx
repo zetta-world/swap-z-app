@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
-type Obs = { chain: string; chainId: number; role: "target" | "spender"; address: string; source: string; count: number; realCount: number; enforced: boolean };
-type Resp = { observed: Obs[]; envTargets: string; envSpenders: string; enforcing: { targets: boolean; spenders: boolean }; note: string };
+type Obs = { chain: string; chainId: number; role: "target" | "spender"; address: string; source: string; count: number; realCount: number; cadeiaVigiada: boolean; naLista: boolean };
+type Resp = { observed: Obs[]; envTargets: string; envSpenders: string;
+  enforcing: { targets: boolean; spenders: boolean; cadeiasTargets: number[]; cadeiasSpenders: number[] };
+  note: string };
 
 function Copyable({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -47,11 +49,44 @@ export default function SwapAllowlistPanel() {
 
   const enforcing = data?.enforcing.targets || data?.enforcing.spenders;
 
+  /**
+   * ⚠️ A COBERTURA E POR CADEIA, e o aviso de topo escondia isso.
+   *
+   * A trava so bloqueia numa cadeia que tem lista: uma allowlist cobrindo
+   * Ethereum e Base deixa Arbitrum passando qualquer roteador. Antes a tela
+   * dizia so "ENFORCING", e quem lesse concluia que valia para tudo.
+   *
+   * As cadeias abaixo sao as que de fato foram carregadas do env parseado.
+   * Cadeia OBSERVADA que nao aparece aqui esta sem verificacao nenhuma.
+   */
+  const vigiadas = new Set(data?.enforcing.cadeiasTargets ?? []);
+  const observadasSemLista = [...new Set((data?.observed ?? []).map((o) => o.chainId))]
+    .filter((id) => !vigiadas.has(id));
+  const foraDaLista = (data?.observed ?? []).filter((o) => o.cadeiaVigiada && !o.naLista);
+
   return (
     <TerminalPanel id="swap-allowlist" title="SWAP ALLOWLIST" subtitle="observe → verifique → fixe (anti-dreno)" icon="⛨" source="platform_events/swap_intent">
       <div style={{ fontSize: 12, color: enforcing ? "var(--adm-green)" : "var(--adm-amber)", marginBottom: 8, letterSpacing: "0.06em" }}>
-        {enforcing ? "✓ ENFORCING — envs de allowlist ativas (swaps fora da lista são bloqueados)" : "⚠ OBSERVANDO — allowlist DESLIGADA. Colete, verifique no explorer e cole as envs abaixo na Vercel + redeploy."}
+        {enforcing
+          ? `✓ ENFORCING em ${vigiadas.size} cadeia(s): ${[...vigiadas].join(", ") || "—"}`
+          : "⚠ OBSERVANDO — allowlist DESLIGADA. Colete, verifique no explorer e cole as envs abaixo na Vercel + redeploy."}
       </div>
+
+      {/* ⚠️ Cadeia com tráfego observado e SEM lista = trava inerte ali. */}
+      {enforcing && observadasSemLista.length > 0 && (
+        <div style={{ fontSize: 12, color: "var(--adm-amber)", marginBottom: 8 }}>
+          ⚠ SEM VIGILÂNCIA nestas cadeias observadas: {observadasSemLista.join(", ")} — qualquer roteador passa nelas.
+        </div>
+      )}
+
+      {/* ⚠️ O oposto: endereço visto no tráfego real que a lista NÃO tem.
+          Numa cadeia vigiada isso não é aviso, é swap que já está morrendo. */}
+      {foraDaLista.length > 0 && (
+        <div style={{ fontSize: 12, color: "var(--adm-red)", marginBottom: 8 }}>
+          ⛔ {foraDaLista.length} endereço(s) OBSERVADO(S) fora da allowlist numa cadeia vigiada — o swap é bloqueado ao assinar:{" "}
+          {foraDaLista.slice(0, 3).map((o) => `${o.chain}/${o.role} ${o.address.slice(0, 10)}…`).join(" · ")}
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <button onClick={autoPopulate} disabled={probing}
           style={{ fontSize: 12, letterSpacing: "0.05em", padding: "5px 10px", borderRadius: 3, cursor: probing ? "wait" : "pointer",

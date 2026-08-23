@@ -19,6 +19,7 @@ import { CHAIN_BY_ID } from "@/lib/chains";
 import { formatUsd, formatAmount, toBaseUnits, fromBaseUnits } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { assessImpact } from "@/lib/swap/impact-guard";
+import { conferirDestinatario, familiaDaRede } from "@/lib/swap/recipient";
 import { assessMevExposure, mevAdvice } from "@/lib/swap/mev-guard";
 import { assessTokenSafety, isNativeToken, nativeSafety, type TokenSafety } from "@/lib/swap/token-safety";
 import type { Token } from "@/lib/tokens";
@@ -83,6 +84,24 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
       setMode("swap");
     }
   }, [lockedMode, mode, setMode]);
+
+  /**
+   * ⚠️⚠️ O DESTINATÁRIO NÃO SOBREVIVE À TROCA DE REDE DE DESTINO.
+   *
+   * `setToToken` não limpa o destinatário — de propósito, porque trocar o
+   * TOKEN mantendo a rede não deveria apagar o que o usuário digitou. Mas
+   * trocar a REDE, sim: um endereço Solana deixa de fazer sentido quando o
+   * destino vira Base, e a loja continuava mandando o antigo para a cotação
+   * enquanto só a cor do campo reclamava.
+   *
+   * Este é o defeito de perda de fundo que a auditoria achou por último, e o
+   * mais perigoso dos doze: o botão de executar seguia ativo.
+   */
+  const destinoFamilia = familiaDaRede(toToken?.chain);
+  useEffect(() => {
+    if (!recipient) return;
+    if (!conferirDestinatario(recipient, destinoFamilia).ok) setRecipient(undefined);
+  }, [recipient, destinoFamilia, setRecipient]);
 
   // ─── Convert UI amount (decimal) → base units (integer) ─────────────
   //
@@ -216,10 +235,20 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   // isso que aparece aqui, em dólar.
   const mev = assessMevExposure({ chain: fromChain, notionalUsd: display?.inUsd ?? null, slippageBps });
 
+  /**
+   * ⚠️ O DESTINATÁRIO ENTRA NO PORTÃO — antes não entrava, e essa era a
+   * diferença entre "o campo fica vermelho" e "o usuário não consegue assinar".
+   * Vazio continua liberado: significa entregar na carteira conectada.
+   */
+  const destinatarioOk = !isCrossChain || !recipient
+    || conferirDestinatario(recipient, destinoFamilia).ok;
   const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker)
     && impact.level !== "block"
-    && !safety?.blocks;
-  const cantReason   = safety?.blocks
+    && !safety?.blocks
+    && destinatarioOk;
+  const cantReason   = !destinatarioOk
+    ? t("swap.addrWrongFamily", { chain: toToken ? (CHAIN_BY_ID[toToken.chain]?.name ?? toToken.chain) : t("swap.destination") })
+    : safety?.blocks
     ? safety.message
     : impact.level === "block"
     ? impact.message
@@ -291,7 +320,7 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
                  mode === "sniper" ? t("swap.titleSniper") :
                                      t("swap.titleSwap")}
               </span>
-              <RiskBadge risk={risk} />
+              <RiskBadge safety={safety} />
             </div>
             <div className="flex items-center gap-1">
               {/* Este botão era um ESCUDO VERDE afirmando proteção contra
@@ -750,14 +779,41 @@ function Stat({
   );
 }
 
-function RiskBadge({ risk }: { risk: "safe" | "caution" | "danger" }) {
-  const cfg = {
-    safe:    { cls: "tag tag-green",  label: "Safe Route"  },
-    caution: { cls: "tag tag-gold",   label: "Caution"     },
-    danger:  { cls: "tag tag-red",    label: "High Risk"   },
-  }[risk];
+/**
+ * O SELO DE SEGURANÇA — agora ligado na verificação que existe.
+ *
+ * ⚠️⚠️ O QUE ELE DIZIA ANTES (auditoria da ponte, 23/08).
+ *
+ * O selo vinha de `riskFromScore(max(fromToken.riskScore, toToken.riskScore))`,
+ * e `riskScore` é um número DIGITADO À MÃO no registro de tokens — presente em
+ * 36 entradas de um catálogo que aceita qualquer par. Com `?? 0`, token
+ * desconhecido caía em "score 0" e a tela mostrava **verde**.
+ *
+ * Enquanto isso a verificação de verdade (GoPlus + Honeypot.is, via
+ * `assessTokenSafety`) rodava ao lado e só aparecia QUANDO ACHAVA PROBLEMA.
+ * Ou seja: silêncio da checagem real e verde do número estático diziam a mesma
+ * coisa na tela, e eram coisas opostas.
+ *
+ * É a mesma família do escudo MEV que este projeto já rebaixou por honestidade
+ * — "verde comunica 'você está protegido', e o usuário não está".
+ *
+ * ⚠️ E O RÓTULO MUDOU DE PROPÓSITO: "Safe Route" afirmava sobre a ROTA, e a
+ * checagem é sobre o TOKEN de destino. "Verificado" é o que dá para sustentar.
+ *
+ * ⚠️ `null` (carregando) e `unverified` NÃO são verdes. Ausência de checagem
+ * renderizada como segurança é o defeito que este componente existia para ter.
+ */
+function RiskBadge({ safety }: { safety: TokenSafety | null }) {
+  const t = useT();
+  const cfg =
+    safety === null              ? { cls: "tag tag-violet", label: t("swap.badgeChecking")   } :
+    safety.level === "unverified" ? { cls: "tag tag-gold",   label: t("swap.badgeUnverified") } :
+    safety.level === "danger"     ? { cls: "tag tag-red",    label: t("swap.badgeDanger")     } :
+    safety.level === "risky"      ? { cls: "tag tag-red",    label: t("swap.badgeRisky")      } :
+    safety.level === "caution"    ? { cls: "tag tag-gold",   label: t("swap.badgeCaution")    } :
+                                    { cls: "tag tag-green",  label: t("swap.badgeSafe")       };
   return (
-    <span className={cfg.cls}>
+    <span className={cfg.cls} title={safety?.message || undefined}>
       <span className="w-1.5 h-1.5 rounded-full bg-current pulse-dot" />
       {cfg.label}
     </span>
