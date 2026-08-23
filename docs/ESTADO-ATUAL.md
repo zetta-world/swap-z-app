@@ -10,8 +10,12 @@
 > **Quando escrever:** ao fim de cada entrega. Documento desatualizado é pior que
 > documento nenhum — dá a impressão de que foi conferido.
 >
-> **Última atualização:** 23/08/2026, com o Celeiro **vendido em três símbolos**
-> por leitura de regime, e o Investigador ligado.
+> **Última atualização:** 23/08/2026 (noite), após a **auditoria da PONTE e do
+> AUTOPILOT** — 16 achados corrigidos em 5 PRs (#336, #337, #338, #340, #341).
+>
+> ⚠️ Esta atualização foi escrita pela **outra sessão** (a da nuvem). O que a
+> sessão do VSCode escreveu antes segue intacto — as duas mãos escrevem aqui,
+> e a §1.1 explica quem é quem.
 
 ---
 
@@ -19,30 +23,47 @@
 
 | | |
 |---|---|
-| `main` | `9b679dd` — em produção desde 23/08 00:01 UTC |
-| CI | verde · **117 arquivos de teste** |
+| `main` | `af886d7` — produção conferida na Vercel (`f27591e` para o código) |
+| CI | verde · **1.670 testes** · 120 arquivos |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
-| Outra mão no código | o agente **`zettaceo`** também commita aqui (ver §1.1) |
+| Outra mão no código | **duas sessões Claude** trabalham aqui — ver §1.1 (corrigido) |
 
 Últimos commits, do mais novo:
 
 ```
+af886d7  Plano: o mural de agentes — e a tabela de travas (#341)   ← nuvem
+f27591e  A ordem executava e o registro sumia calado — autopilot (#340)  ← nuvem
+7814ad1  Fecha a ponte: teto mudo, saída por Solana, destino (#338)  ← nuvem
+3236738  O destinatário de outra rede, o selo que não verificava (#337)  ← nuvem
+2c1339f  Auditoria da ponte: o valor que mudava sozinho (#336)  ← nuvem
+0187acc  O stop fora do ruído, e o agente que morreu com capital vivo (#335)
 9b679dd  O Investigador liga — de escrito-e-parado para rodando (#333)
-9181855  Retorno sobre capital — deixa de premiar quem arrisca mais (#332)
-4c3aad4  Os dois agentes de tendência, a banca declarada (#331)
-1733d5f  As três invariantes que faltavam — o Maker perdeu acertando 65% (#330)
-ed97961  ESTADO-ATUAL: o Celeiro produzindo, o Kimi temporário (#329)
-224429d  O painel do Celeiro ganha o desenho pedido (#328)
-720a95f  A plataforma inteira sai da Anthropic e passa a analisar com Kimi (#325)
-51465a6  O cinto antes do motor (#324)  ← do zettaceo, não meu
+51465a6  O cinto antes do motor (#324)   ← nuvem
 e55a250  O CELEIRO — a segunda arena, e a auditoria que a obrigou (#318)
 ```
 
 ### 1.1 ⚠️ NÃO SOU A ÚNICA MÃO NESTE REPOSITÓRIO
 
-O agente **`zettaceo`** commita aqui também — a #324 é dele. Descobri por acaso,
-ao levar um conflito de merge.
+⚠️ **CORREÇÃO DE ATRIBUIÇÃO (23/08, noite).** A versão anterior desta seção
+dizia que "o agente `zettaceo` commita aqui". Não existe agente com esse
+nome: **`zettaceo` é a conta do DONO**, e ela aparece como autora porque o
+GitHub atribui o squash-merge a quem mergeia, não a quem escreveu.
+
+As duas mãos são **duas sessões Claude do mesmo dono**:
+
+| sessão | onde roda | o que fez em 23/08 |
+|---|---|---|
+| **VSCode** | máquina Windows dele | celeiro, agentes de tendência, ZION → Kimi |
+| **nuvem** | contêiner isolado | auditoria de ponte e autopilot (#336–#341) |
+
+⚠️ **ELAS NÃO SE FALAM.** Verificado em 23/08: o `ListAgents` não enxerga
+sessões entre máquinas diferentes, e não há canal direto. A coordenação é
+assíncrona, pelo git e por este documento. O desenho de um mural compartilhado
+está em `docs/PLANO-MURAL-DE-AGENTES.md` (#341) — **não implementado**.
+
+O outro agente descobriu a segunda mão **por um conflito de merge**. Isso é o
+sintoma; abaixo está o que evita.
 
 **Antes de rebasear ou forçar, confira o que a `main` ganhou enquanto você
 trabalhava**, e compare ARQUIVO A ARQUIVO antes de assumir que não há
@@ -52,6 +73,41 @@ sobreposição:
 git log --oneline HEAD..origin/main          # o que apareceu
 git show --name-only --format="" <sha-dele>  # o que ele tocou
 ```
+
+### ⚠️ AS QUATRO TRAVAS — decore estas, não o mural
+
+Em 23/08 as duas sessões abriram 4 PRs e 5 commits no MESMO dia e não houve
+colisão. Duas coisas seguraram, e elas não são da mesma natureza:
+
+| | |
+|---|---|
+| `--force-with-lease` recusou dois pushes | **trava** — segura sempre |
+| a interseção foi conferida à mão | **disciplina** — segura enquanto não há pressa |
+
+```bash
+# 1. branch por agente, NUNCA commit direto na main
+git checkout -B minha-branch origin/main
+
+# 2. --force-with-lease, NUNCA --force  (recusou 2 pushes em 23/08)
+git push --force-with-lease
+
+# 3. antes de mergear: DOIS pontos, não três
+git diff --name-only main HEAD        # o que MUDA se eu mergear
+git diff --name-only main...HEAD      # ⚠️ ENGANA: mede desde a divergência
+
+# 4. provar por patch o que ficou de fora (imune a squash)
+git cherry origin/main <branch>       # linhas com + = não aplicado
+```
+
+⚠️ **O item 3 custou um susto real.** Três pontos mostrou 10 arquivos e 1.095
+linhas, incluindo trabalho da outra sessão que parecia prestes a ser revertido.
+Dois pontos mostrou **3**. Três pontos responde "o que esta branch fez desde
+que nasceu"; dois pontos responde "o que muda se eu mergear".
+
+⚠️ **E o item 4 desfaz o susto oposto:** depois de um squash-merge, `git log`
+main..branch` ainda lista o commit original (SHA diferente) e parece que
+sobrou trabalho. O `git cherry` compara por conteúdo do patch e mostra a
+verdade.
 
 Na #324 a sobreposição era zero (ele em `paper/engine`, eu na camada de IA) e o
 rebase foi seguro. Da próxima pode não ser.
@@ -352,6 +408,87 @@ registro é a combinação exata das cicatrizes desta casa.
 
 O conserto é pequeno: gravar quando o filtro AVALIOU — quantos símbolos deram
 sinal e quantos vieram `null`.
+
+> ✅ **A sessão da nuvem confirma: o achado está CERTO e segue aberto** (23/08,
+> noite). O defeito é meu — eu escrevi o `paper_regime_tick` para só gravar
+> quando barra alguém, com o argumento de não poluir o `platform_events`.
+>
+> O argumento era bom e a conclusão errada: silêncio por "não barrou nada" e
+> silêncio por "a Gate.io limitou taxa e tudo voltou `null`" ficam idênticos na
+> tela. É a invariante nº 33 cometida por quem passou o dia caçando ela nos
+> outros — a mesma armadilha do `offered: 0`.
+>
+> Não corrigi ainda porque o dono não pediu esta rodada. **É o primeiro item
+> da fila da nuvem.**
+
+---
+
+## 5.2 AS DUAS AUDITORIAS DE 23/08 (sessão da nuvem)
+
+Auditoria setor por setor, a pedido do dono, antes do beta. **Nível pedido:
+"minuciosa, nível CIA".** Método: leitura de código com execução real dos
+validadores — não inferência.
+
+### PONTE (`/bridge`) — 14 achados, 14 fechados
+
+| # | achado | onde |
+|---|---|---|
+| 🔴 | valor corrompido acima de 2^53, passando em TODAS as travas | #336 |
+| 🔴 | destinatário de outra rede com o botão ativo | #337 |
+| 🔴 | o destino que a LiFi devolve nunca era conferido | #338 |
+| 🔴 | ponte saindo de Solana: quebrada, e só se descobria no fim | #338 |
+| 🟠 | endereço de queima (`0x000…0`) pintado de VERDE | #336 |
+| 🟠 | `$0,00` como texto de "não sei" | #336 |
+| 🟠 | selo "SAFE ROUTE" vindo de `riskScore` digitado à mão | #337 |
+| 🟠 | coluna `enforced` confundindo "vigiado" com "aprovado" | #337 |
+| 🟠 | "ENFORCING" afirmado por `!!process.env` | #337 |
+| 🟡 | teto de cotação alto (4,32 M/dia) **e mudo** | #338 |
+| 🟡 | três validadores divergentes de endereço | #337 |
+| 🟡 | maiúsculas recusadas em endereço legítimo | #337 |
+| 🟡 | valores < 0,000001 quebrando | #336 |
+| 🟡 | destinatário persistindo entre navegações | #337 |
+
+⚠️ **ABERTO:** o CSP com `unsafe-inline`. É app-wide, não da ponte, e a migração
+para nonce toca middleware e todas as rotas. **Não caronar** numa leva de
+correção — merece plano e verificação próprios.
+
+### AUTOPILOT — 2 críticos, 2 fechados
+
+Os dois eram a **mesma classe** que o `engine.ts:492` já documenta:
+
+> "O cliente do Supabase NÃO LANÇA em erro de banco: ele RESOLVE com
+> `{ data: null, error }`."
+
+Lá custou US$ 450 a 1.000 em catorze carteiras de PAPEL. **A correção foi
+aplicada no laboratório e não no caminho de dinheiro real.**
+
+1. **A posição não gravada** — a ordem executava, o `upsert` falhava calado, e o
+   bot **nunca mais saía daquele trade** (o ramo de venda não achava a
+   posição). O painel dizia FIRED. Fechado com retentativa + alerta alto.
+2. **O contador diário** — o RPC sem conferir `error`. Se falhasse, o limite de
+   trades do usuário **deixava de existir** em silêncio. Agora devolve booleano
+   e a passada PARA de disparar.
+
+⚠️ **ABERTO, mesma classe:** ~9 chamadas de escrita em `positions-server.ts`
+e `sessions.ts` com erro não conferido. As do caminho crítico estão fechadas;
+`closeServerPosition` e `markServerExitArmed` são menos graves (a checagem de
+saldo na corretora protege contra venda dupla).
+
+⚠️ **NÃO AUDITADOS:** `/swap` (a home), o onramp, e o painel admin.
+
+### O padrão que as duas auditorias expuseram
+
+Dos 16 achados, **dez não eram lógica errada** — eram o sistema **afirmando com
+confiança o que não sabia**: `$0,00`, o selo verde, `enforced`, "ENFORCING", o
+503 mudo, `isSolanaSrc` nomeado e nunca usado, a resposta do agregador nunca
+conferida, e as duas escritas do autopilot.
+
+Nenhum quebrava nada. Todos deixavam alguém — o usuário ou o dono — decidir com
+informação falsa. **E três estavam nas próprias ferramentas de auditoria**, os
+instrumentos usados para confiar no resto.
+
+> Se for para procurar em um setor novo, **comece por onde a tela afirma**: de
+> onde vem o dado que sustenta a afirmação, e se os dois são a mesma coisa.
 
 ---
 
