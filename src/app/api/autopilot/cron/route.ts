@@ -240,6 +240,25 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   const nowIso = new Date().toISOString();
   const today = utcDayKey();
   const wasFrozen = s.frozen_until_day === today;
+  /**
+   * ⚠️⚠️ A ORDEM JA EXISTE NA CORRETORA — o registro e que falhou.
+   * (auditoria do autopilot, 23/08)
+   *
+   * Nao da para desfazer. Entao o objetivo nao e impedir, e NAO PERDER O
+   * FATO: alerta alto, com par e id da ordem, para alguem reconciliar a mao.
+   *
+   * ⚠️ A linha do run continua dizendo FIRED, porque ela DISPAROU. Marcar
+   * como erro seria trocar uma mentira por outra: o operador leria
+   * "errored" e concluiria que nada saiu da conta dele.
+   */
+  const avisarRegistroPerdido = (assunto: string, detalhe: Record<string, unknown>) => {
+    notifyTelegram(
+      `🔴 <b>AUTOPILOT: ordem executada e NAO registrada</b>\n` +
+      `${assunto}\n${JSON.stringify(detalhe).slice(0, 300)}`,
+      { dedupKey: `autopilot:registro:${s.id}`, meta: { kind: "autopilot_registro_perdido", sessionId: s.id, ...detalhe } },
+    );
+  };
+
   const alertIfNewlyFrozen = () => {
     if (!wasFrozen) {
       notifyTelegram(`📉 <b>Autopilot frozen</b> — daily loss-stop hit.\nwallet ${s.wallet_address.slice(0, 8)}… · ${s.exchange_id}`, { dedupKey: `freeze:${s.id}` });
@@ -365,18 +384,32 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   let fired = 0;
   let remainingTrades = s.max_trades_per_day - tradesToday;
 
+  /**
+   * ⚠️ AS DUAS BANDEIRAS DA AUDITORIA DE 23/08.
+   *
+   * `contadorConfiavel` cai quando o incremento do contador diario falha: a
+   * partir daí o limite que o usuario configurou nao e mais confiavel, e
+   * seguir disparando seria operar SEM limite. Falha fechada.
+   *
+   * `posicaoPerdida` cai quando a ordem executou e a posicao nao foi gravada.
+   * Nao muda o que ja aconteceu — entra no resumo para o operador enxergar
+   * sem ter de caçar no Telegram.
+   */
+  let contadorConfiavel = true;
+  let posicaoPerdida    = false;
+
   const pushRow = (intent: { symbol: string; side: string; type: string; amount: number; price?: number; notionalUsd: number }, status: string, cardKind: string, extra: Partial<AutopilotRunRow> = {}) =>
     runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: intent.notionalUsd, status, card_kind: cardKind, ...extra });
 
   outer:
   for (const card of scan.cards) {
-    if (fired >= MAX_ORDERS_PER_RUN || remainingTrades <= 0) break;
+    if (fired >= MAX_ORDERS_PER_RUN || remainingTrades <= 0 || !contadorConfiavel) break;
     if (frozenUntil === today) break;             // a sell may have tripped the freeze mid-run
     const intents = mapCardToCexIntents(card);
     if (!intents) continue;
 
     for (const intent of intents) {
-      if (fired >= MAX_ORDERS_PER_RUN || remainingTrades <= 0) break outer;
+      if (fired >= MAX_ORDERS_PER_RUN || remainingTrades <= 0 || !contadorConfiavel) break outer;
       if (frozenUntil === today) break outer;
 
       // A3 (money-path audit): multi-venue cards (cross-CEX arb) pin each leg
@@ -414,7 +447,13 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
           // Conta a ordem NA HORA (ver a nota em "contador incremental" no fim
           // desta função): a ordem já existe na corretora, então o limite diário
           // do usuário precisa registrá-la antes de qualquer coisa poder falhar.
-          await bumpSessionTrades(s.wallet_address, s.exchange_id, 1);
+          if (!await bumpSessionTrades(s.wallet_address, s.exchange_id, 1)) {
+            // ⚠️ Perdemos a conta do dia. A partir daqui o limite que o usuario
+            // configurou nao e mais confiavel, entao esta passada para de
+            // disparar — falha FECHADA na direcao certa.
+            contadorConfiavel = false;
+            avisarRegistroPerdido("contador diario nao subiu (venda)", { pair: intent.symbol, order_id: order.id });
+          }
           if (intent.type === "market") {
             const realized = realizedFromSell(order, pos);
             if (realized !== null) {
@@ -457,19 +496,43 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
       try {
         const { order } = await placeCexOrder(exchange, creds, { symbol: intent.symbol, side: "buy", type: intent.type, amount: intent.amount, price: intent.price });
         fired++; remainingTrades--;
-        await bumpSessionTrades(s.wallet_address, s.exchange_id, 1);
+        if (!await bumpSessionTrades(s.wallet_address, s.exchange_id, 1)) {
+          contadorConfiavel = false;
+          avisarRegistroPerdido("contador diario nao subiu (compra)", { pair: intent.symbol, order_id: order.id });
+        }
         // Record the entry with REAL fill data (fall back to the limit price).
         const fillPrice = Number(order.average) > 0 ? Number(order.average) : (intent.price && intent.price > 0 ? intent.price : (refPrice ?? 0));
         const filledQty = Number(order.filled)  > 0 ? Number(order.filled)  : intent.amount;
         const spentUsd  = Number(order.cost)    > 0 ? Number(order.cost)    : (fillPrice > 0 ? fillPrice * filledQty : buyNotional);
+        /**
+         * ⚠️ O ELSE EXISTE AGORA. Antes, preco ou quantidade nao positivos
+         * pulavam o registro EM SILENCIO — e a posicao ficava orfa: o ramo de
+         * venda nunca mais a encontraria, e o teto de exposicao ficaria cego.
+         * Hoje o ramo e inalcancavel (a guarda de preco garante refPrice > 0),
+         * mas caminho de dinheiro sem `else` e exatamente como a FREYJA passou
+         * dez dias parada sem ninguem saber de que.
+         */
         if (fillPrice > 0 && filledQty > 0) {
-          await recordServerEntry({
+          const gravou = await recordServerEntry({
             sessionId: s.id, walletAddress: s.wallet_address, exchangeId: s.exchange_id,
             pair: intent.symbol, entryPrice: fillPrice, baseAmount: filledQty, costUsd: spentUsd,
             reasoning: card.summary?.slice(0, 300), entryLabel: card.title?.slice(0, 80),
           });
+          if (!gravou.ok) {
+            avisarRegistroPerdido("posicao NAO gravada — o bot nunca vai sair deste trade sozinho", {
+              pair: intent.symbol, order_id: order.id, entry: fillPrice, qty: filledQty, erro: gravou.erro,
+            });
+            posicaoPerdida = true;
+          }
+          // ⚠️ Soma na memoria mesmo se a gravacao falhou: dentro DESTA passada
+          // o dinheiro esta exposto de verdade, e o teto tem de enxerga-lo.
           exposureUsd += spentUsd;
           ownedBases.add(base);
+        } else {
+          avisarRegistroPerdido("preco ou quantidade nao positivos — posicao NAO gravada", {
+            pair: intent.symbol, order_id: order.id, fillPrice, filledQty,
+          });
+          posicaoPerdida = true;
         }
         logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: intent.symbol, side: "buy", volumeUsd: buyNotional, pnlUsd: null, status: "fired", route: "cron", ref: `${exchange}:${order.id}` });
         pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: buyNotional });
@@ -502,5 +565,16 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     last_error:   null,
   });
 
-  return { fired, note: fired > 0 ? `fired ${fired}` : "nothing eligible" };
+  /**
+   * ⚠️ O RESUMO NAO PODE DIZER SO "fired N" quando algo ficou pendurado.
+   * Ordem executada sem registro exige reconciliacao humana, e contador
+   * perdido significa que a passada parou por falta de confianca no limite —
+   * as duas coisas somem se a nota so contar sucessos.
+   */
+  const avisos = [
+    posicaoPerdida    ? "POSICAO NAO GRAVADA — reconciliar a mao" : "",
+    !contadorConfiavel ? "contador diario perdido — passada interrompida" : "",
+  ].filter(Boolean).join(" · ");
+  const base = fired > 0 ? `fired ${fired}` : "nothing eligible";
+  return { fired, note: avisos ? `${base} ⚠ ${avisos}` : base };
 }
