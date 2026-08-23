@@ -153,8 +153,39 @@ export default function ExecuteSwap({
   const isSolanaSrc  = fromChain === "solana";
   const evmWallet    = isConnected && !!address;
   const solWallet    = sol.connected && !!sol.publicKey;
-  const walletReady  = isJupiter ? solWallet : evmWallet;
-  const taker        = isJupiter ? sol.publicKey?.toBase58() : address;
+  /**
+   * ⚠️⚠️ O TAKER SEGUE A REDE DE ORIGEM, NAO O AGREGADOR (auditoria 23/08).
+   *
+   * Era `isJupiter ? sol : address`. Isso acerta os dois casos comuns e erra
+   * o terceiro: uma PONTE saindo de Solana usa a LiFi, nao a Jupiter — entao
+   * `isJupiter` e false e o taker virava o endereco EVM, com a origem sendo
+   * Solana.
+   *
+   * O `SwapCard` ja escolhia certo (`fromChain === "solana" ? solAddress`),
+   * entao a cotacao mostrada e a cotacao FIRME do modal saiam com takers
+   * DIFERENTES. Duas verdades sobre quem esta pagando.
+   */
+  const walletReady  = isSolanaSrc ? solWallet : evmWallet;
+  const taker        = isSolanaSrc ? sol.publicKey?.toBase58() : address;
+
+  /**
+   * ⚠️ PONTE SAINDO DE SOLANA NAO TEM CAMINHO DE ASSINATURA — e o codigo
+   * andava ate quase o fim antes de descobrir isso.
+   *
+   * A LiFi suporta SOL->EVM (o id sintetico 1151111081099710 esta em
+   * LIFI_CHAIN_IDS), mas TODA a assinatura do caminho LiFi aqui e EVM:
+   * `sendTransactionAsync` e `writeContractAsync` do wagmi. Nao existe
+   * `sol.signTransaction` fora do ramo da Jupiter.
+   *
+   * Sem esta trava o usuario percorria: conectar as duas carteiras, abrir o
+   * modal, esperar a cotacao firme, e so entao bater num `switchChain` para
+   * um chain id que o wagmi nao conhece. Falhar cedo com o motivo certo e
+   * mais honesto que falhar tarde com erro de carteira.
+   *
+   * `isSolanaSrc` ja existia neste arquivo e NAO ERA USADO em lugar nenhum —
+   * a trava estava pela metade desde que alguem a nomeou.
+   */
+  const pontePartindoDeSolana = isCrossChain && isSolanaSrc;
 
   const targetChainId = source === "0x"
     ? ZEROX_CHAIN_IDS[fromChain]
@@ -481,6 +512,17 @@ export default function ExecuteSwap({
       }
 
       // ─── EVM paths ───────────────────────────────────────────────
+      /**
+       * ⚠️ A TRAVA ANTES DE QUALQUER GASTO. Ponte saindo de Solana chega aqui
+       * com um chain id sintético que o wagmi não conhece — e mesmo que
+       * conhecesse, não há assinatura Solana neste ramo. Recusar aqui, com a
+       * frase certa, em vez de morrer no `switchChain` com erro de carteira.
+       */
+      if (pontePartindoDeSolana) {
+        setError(tImp("swap.solanaBridgeUnsupported"));
+        setPhase("tx_failed");
+        return;
+      }
       if (!targetChainId) {
         setError(tImp("swap.chainUnsupported"));
         setPhase("tx_failed");
@@ -659,7 +701,7 @@ export default function ExecuteSwap({
       setPhase("tx_failed");
       if (historyId.current) updateHistory(historyId.current, { status: "failed" });
     }
-  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao]);
+  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
 
   // Quote-derived display values
   const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);

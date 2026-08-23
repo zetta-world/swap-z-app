@@ -105,6 +105,18 @@ export interface LfQuote {
     fromAmount:  string;
     slippage:    number;
     fromAddress?: string;
+    /**
+     * ⚠️ O DESTINO QUE A LI.FI DIZ QUE VAI USAR — e o tipo nao o modelava.
+     *
+     * A rota manda `toAddress` no pedido; a LiFi ecoa na resposta. Sem o
+     * campo aqui, o dado chegava e era DESCARTADO na fronteira do tipo, e
+     * ninguem tinha como conferir se o que voltou e o que foi pedido.
+     *
+     * Opcional de proposito: se a LiFi parar de devolver, a ausencia NAO
+     * pode virar recusa — conferir o que existe, nunca exigir o que talvez
+     * nao venha.
+     */
+    toAddress?:  string;
   };
   estimate: {
     fromAmount:        string;
