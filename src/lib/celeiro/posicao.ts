@@ -20,6 +20,18 @@ export const TAXA_POR_PERNA_PCT = Number(process.env.CELEIRO_TAXA_PERNA_PCT ?? 0
 
 export type Lado = "buy" | "sell";
 
+/**
+ * A taxa por perna desta posição, com a legada como piso de compatibilidade.
+ *
+ * ⚠️ NÃO devolve zero quando o campo falta. Zero seria "esta operação não pagou
+ * corretagem", uma afirmação forte e falsa — e ela inverteria o sinal de todo
+ * agente que morreu de pedágio.
+ */
+export function taxaDa(a: { taxaPernaPct?: number }): number {
+  const t = a.taxaPernaPct;
+  return Number.isFinite(t) && (t as number) >= 0 ? (t as number) : TAXA_POR_PERNA_PCT;
+}
+
 export interface Abertura {
   agente: string;
   simbolo: string;
@@ -33,6 +45,26 @@ export interface Abertura {
   derrapagemPct: number;
   /** Depois disto a posição fecha por tempo, custe o que custar. */
   horasLimite: number;
+  /**
+   * Quantas vezes o NOCIONAL excede a margem. 1 = sem alavanca.
+   *
+   * ⚠️ É daqui que sai a liquidação: um movimento contrário de 100/alavanca %
+   * zera a margem. Sem este campo a posição alavancada era imortal — e o
+   * `aposentaQuando` do Alavancado de Tendência fala em "uma liquidação apagar
+   * o ganho de semanas", condição que nunca poderia disparar.
+   */
+  alavanca?: number;
+  /**
+   * A taxa de corretagem DESTA posição, em % por perna.
+   *
+   * ⚠️⚠️ VIAJA COM A POSIÇÃO, não sai de uma global. A taxa depende da praça e
+   * do papel do agente (`taxas.ts`), e uma posição precisa FECHAR com a taxa
+   * com que ABRIU: trocar a régua no meio faria `conferir` reprovar o
+   * fechamento, e a posição ficaria aberta para sempre.
+   *
+   * Ausente = a taxa legada, que é o que as posições anteriores a 23/08 pagaram.
+   */
+  taxaPernaPct?: number;
 }
 
 /** Um lançamento a gravar: causa e valor assinado. */
@@ -55,7 +87,7 @@ export interface Lancamento {
  */
 export function lancamentosDaAbertura(a: Abertura): Lancamento[] {
   const out: Lancamento[] = [
-    { causa: "taxa", usdt: -(a.usd * TAXA_POR_PERNA_PCT / 100) },
+    { causa: "taxa", usdt: -(a.usd * taxaDa(a) / 100) },
   ];
   if (a.derrapagemPct > 0) {
     out.push({ causa: "derrapagem", usdt: -(a.usd * a.derrapagemPct / 100) });
@@ -63,7 +95,7 @@ export function lancamentosDaAbertura(a: Abertura): Lancamento[] {
   return out;
 }
 
-export type MotivoDeSaida = "alvo" | "stop" | "tempo";
+export type MotivoDeSaida = "alvo" | "stop" | "tempo" | "liquidacao";
 
 export interface Fechamento {
   precoSaida: number;
@@ -89,7 +121,7 @@ export function lancamentosDoFechamento(a: Abertura, f: Fechamento): Lancamento[
   const mov = movimentoPct(a.lado, a.precoEntrada, f.precoSaida);
   return [
     { causa: "preco", usdt: a.usd * mov / 100 },
-    { causa: "taxa", usdt: -(a.usd * TAXA_POR_PERNA_PCT / 100) },
+    { causa: "taxa", usdt: -(a.usd * taxaDa(a) / 100) },
   ];
 }
 
@@ -107,6 +139,50 @@ export function deveFechar(
   horasAbertas: number,
 ): Fechamento | null {
   if (!(precoAtual > 0)) return null;
+
+  /**
+   * ⚠️⚠️ A LIQUIDAÇÃO SÓ PRECEDE O STOP SE ESTIVER MAIS PERTO DA ENTRADA.
+   *
+   * Aqui a regra é o CONTRÁRIO da de alvo-vs-stop logo abaixo. Lá, uma vela que
+   * tocou os dois é ambígua e assumimos o pior. Aqui não há ambiguidade: o stop
+   * é uma ordem no livro, e se ele está mais perto, o preço passou por ele
+   * ANTES de chegar na liquidação. Reportar liquidação nesse caso inventaria
+   * perda de margem inteira onde houve perda de stop.
+   *
+   * Com alavanca de 10× a liquidação fica a 10% e o stop a ~2%: o stop ganha
+   * sempre, e é assim que tem que ser. A liquidação existe para quando a conta
+   * da alavanca e a do stop se cruzarem — aí ela é o desfecho verdadeiro.
+   */
+  const vezes = a.alavanca ?? 1;
+  if (vezes > 1) {
+    /**
+     * ⚠️⚠️ A LIQUIDAÇÃO VEM ANTES DOS 100/ALAVANCA %, E A TAXA É O MOTIVO.
+     *
+     * O ingênuo é "10× liquida a 10%". Mas 10% do nocional é a margem INTEIRA,
+     * e as duas pernas de corretagem ainda seriam cobradas por cima — a conta
+     * fecharia em −$204,50 contra uma margem de $200, e a banca ficaria
+     * devendo. Corretora nenhuma permite isso: elas liquidam antes, exatamente
+     * para caber a taxa.
+     *
+     * Com a derrapagem entrando junto, a perda da liquidação é EXATAMENTE a
+     * margem — nunca um centavo a mais. O teste trava esse valor.
+     */
+    const fracaoAdversa =
+      1 / vezes
+      - (taxaDa(a) * 2) / 100
+      - Math.max(0, a.derrapagemPct) / 100;
+    const precoDeLiquidacao = a.lado === "buy"
+      ? a.precoEntrada * (1 - fracaoAdversa)
+      : a.precoEntrada * (1 + fracaoAdversa);
+    const liquidaAntes =
+      Math.abs(precoDeLiquidacao - a.precoEntrada) < Math.abs(a.stop - a.precoEntrada);
+    if (liquidaAntes) {
+      const tocou = a.lado === "buy"
+        ? precoAtual <= precoDeLiquidacao
+        : precoAtual >= precoDeLiquidacao;
+      if (tocou) return { precoSaida: precoDeLiquidacao, motivo: "liquidacao" };
+    }
+  }
 
   const tocouStop = a.lado === "buy" ? precoAtual <= a.stop : precoAtual >= a.stop;
   if (tocouStop) return { precoSaida: a.stop, motivo: "stop" };
@@ -139,7 +215,7 @@ export function conferir(a: Abertura, f: Fechamento): {
 
   const mov = movimentoPct(a.lado, a.precoEntrada, f.precoSaida);
   const esperado = a.usd * mov / 100
-    - a.usd * (TAXA_POR_PERNA_PCT * 2) / 100
+    - a.usd * (taxaDa(a) * 2) / 100
     - a.usd * Math.max(0, a.derrapagemPct) / 100;
 
   const bate = Math.abs(somaDosLancamentos - esperado) < 1e-9;

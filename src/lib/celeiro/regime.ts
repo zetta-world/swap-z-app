@@ -53,9 +53,19 @@ export interface VeredictoDeAlvo {
 export function alvoLimpaOPedagio(
   alvoPct: number,
   multiplo: number = MULTIPLO_DO_PEDAGIO,
+  /**
+   * ⚠️⚠️ O PEDÁGIO É DO AGENTE, NÃO DA ARENA (23/08).
+   *
+   * Este portão decide se o alvo é grande o bastante para sobrar algo depois da
+   * corretagem — e com um pedágio único ele julgava um agente de futuros pela
+   * conta do spot. Em futuros o taker paga 0,05%/perna contra 0,20% do spot:
+   * o alvo mínimo cai quatro vezes, e operações que este portão recusava eram
+   * recusadas por uma taxa que aquele agente nunca pagaria.
+   */
+  pedagioIdaEVoltaPct: number = PEDAGIO_IDA_E_VOLTA_PCT,
 ): VeredictoDeAlvo {
-  const alvoMinimoPct = PEDAGIO_IDA_E_VOLTA_PCT * multiplo;
-  const fatiaDoPedagio = alvoPct > 0 ? PEDAGIO_IDA_E_VOLTA_PCT / alvoPct : 1;
+  const alvoMinimoPct = pedagioIdaEVoltaPct * multiplo;
+  const fatiaDoPedagio = alvoPct > 0 ? pedagioIdaEVoltaPct / alvoPct : 1;
 
   if (!(alvoPct > 0)) {
     return { passa: false, alvoMinimoPct, fatiaDoPedagio: 1, porque: "alvo não positivo" };

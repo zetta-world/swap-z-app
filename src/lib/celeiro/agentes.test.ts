@@ -223,6 +223,48 @@ describe("o tamanho da posição e o teto de exposição", () => {
   });
 
   /**
+   * ⚠️⚠️ MARGEM E NOCIONAL SÃO COISAS DIFERENTES (23/08).
+   *
+   * O teto governa a MARGEM — o capital da banca comprometido. O nocional é o
+   * que o preço e a taxa mordem, e ele pode passar da banca: é isso que
+   * alavancar significa. Enquanto o teto media nocional, o Alavancado de
+   * Tendência ficava preso abaixo de 0,6× da própria banca com uma alavanca
+   * declarada de 10×, e o A/B contra o Caçador comparava $200 sem alavanca
+   * contra $250 sem alavanca.
+   */
+  it("sem alavanca, margem e nocional são o mesmo número", () => {
+    const t = tamanhoDaPosicao(base, 0, 1);
+    expect(t.margemUsd).toBeCloseTo(t.usd, 9);
+    expect(t.alavanca).toBe(1);
+  });
+
+  it("com alavanca, o nocional multiplica e a margem não", () => {
+    const t = tamanhoDaPosicao(base, 0, 10);
+    expect(t.margemUsd).toBeCloseTo(base.bancaUsd * base.fracaoPorPosicao, 9);
+    expect(t.usd).toBeCloseTo(t.margemUsd * 10, 9);
+    expect(t.porque).toContain("nocional");
+  });
+
+  /**
+   * ⚠️ O TESTE QUE SEPARA O CONSERTO DA REGRESSÃO. O nocional aqui é MÚLTIPLO
+   * da banca inteira — e a posição cabe, porque o que o teto mede é a margem.
+   * Se alguém voltar o teto para o nocional, este teste cai.
+   */
+  it("o teto mede MARGEM, então o nocional pode passar da banca", () => {
+    const t = tamanhoDaPosicao(base, 0, 10);
+    expect(t.usd).toBeGreaterThan(base.bancaUsd);
+    expect(t.cabe).toBe(true);
+    expect(t.exposicaoDepois).toBeCloseTo(base.fracaoPorPosicao, 9);
+  });
+
+  it("e o teto continua barrando pela margem, alavancado ou não", () => {
+    const cada = base.bancaUsd * base.fracaoPorPosicao;
+    const quarta = tamanhoDaPosicao(base, cada * 3, 10);
+    expect(quarta.cabe).toBe(false);
+    expect(quarta.porque).toContain("teto");
+  });
+
+  /**
    * ⚠️ E O CAPITAL MÍNIMO VOLTA AO PAPEL DELE: barrar o agente cuja BANCA não
    * dá para o livro aguentar — não dimensionar aposta.
    */

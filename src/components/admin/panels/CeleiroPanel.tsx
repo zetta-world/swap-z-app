@@ -36,6 +36,24 @@ type Linha = {
   retorno: { pct: number | null; contraOPisoPp: number | null; porque: string };
   bancaUsd: number; alavancagemMaxima: number; tetoDeExposicao: number; categoria: string;
   porCausa: Record<string, number>;
+  execucao: "maker" | "taker";
+  taxaPernaPct: number;
+  /** ⚠️ O que o extrato NÃO respondia: o que está aberto e quanto capital está preso. */
+  abertas: Array<{
+    id: string; simbolo: string; lado: "buy" | "sell";
+    nocionalUsd: number; margemUsd: number; alavanca: number;
+    precoEntrada: number; precoAtual: number | null;
+    alvo: number; stop: number;
+    movPct: number | null; naoRealizadoUsd: number | null;
+    taxaPernaPct: number | null;
+    horasAbertas: number; horasLimite: number; vencida: boolean;
+  }>;
+  fechadas: { total: number; porMotivo: Record<string, number> };
+  capital: {
+    bancaUsd: number; margemComprometidaUsd: number; livreUsd: number;
+    nocionalUsd: number; exposicaoPct: number;
+  };
+  semPreco: boolean;
   vazamentos: Array<{ causa: string; usdt: number; fatiaDoVazamento: number }>;
   fontes: Array<{ causa: string; usdt: number; fatiaDoVazamento: number }>;
 };
@@ -107,6 +125,113 @@ function Curva({ pontos, cor }: { pontos: number[]; cor: string }) {
  * de exposição efetiva. Em % da própria banca a pergunta fica justa: para cada
  * dólar administrado, quanto sobrou?
  */
+/**
+ * O CAPITAL DO AGENTE — banca, o que está preso, o que sobra, o que o mercado move.
+ *
+ * ⚠️⚠️ MARGEM E NOCIONAL APARECEM OS DOIS, sempre. A margem é o que sai da
+ * banca; o nocional é o que o mercado move. Um agente de 10× tem nocional muito
+ * maior que a própria banca — mostrar só a margem esconde o risco, mostrar só o
+ * nocional inventa um capital que não existe. As duas leituras erram sozinhas.
+ */
+/** Um rótulo de seção — o que separa "cada coisa no seu espaço" de uma pilha. */
+function Secao({ titulo }: { titulo: string }) {
+  return (
+    <div style={{
+      ...APAGADO, marginTop: 12, marginBottom: 2,
+      textTransform: "uppercase", letterSpacing: ".08em", fontSize: 10,
+      borderBottom: "1px solid rgba(255,255,255,.08)", paddingBottom: 3,
+    }}>{titulo}</div>
+  );
+}
+
+function Capital({ c, alavancado }: { c: Linha["capital"]; alavancado: boolean }) {
+  const usado = Math.max(0, Math.min(100, c.exposicaoPct));
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "baseline" }}>
+        <span>banca <b>{usd(c.bancaUsd)}</b></span>
+        <span style={SUAVE}>comprometido <b>{usd(c.margemComprometidaUsd)}</b> ({usado.toFixed(0)}%)</span>
+        <span style={SUAVE}>livre <b>{usd(c.livreUsd)}</b></span>
+        {alavancado && (
+          <span style={SUAVE}>no mercado <b>{usd(c.nocionalUsd)}</b> de nocional</span>
+        )}
+      </div>
+      <div aria-hidden style={{
+        height: 6, borderRadius: 3, marginTop: 6,
+        background: "rgba(255,255,255,.10)", overflow: "hidden",
+      }}>
+        <div style={{
+          width: `${usado}%`, height: "100%",
+          background: usado > 80 ? "#f87171" : "#34d399",
+        }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * AS POSIÇÕES ABERTAS — a pergunta que o extrato não respondia.
+ *
+ * ⚠️ O NÃO REALIZADO É SÓ DE PREÇO e a tela diz isso: a segunda perna de
+ * corretagem ainda não foi paga. Chamar de "lucro" um número que ainda vai
+ * pagar pedágio é a mesma mentira que fez o Maker de Faixa parecer vencedor.
+ *
+ * ⚠️ SEM PREÇO LIDO mostra "—", nunca zero. "Não li" e "não mexeu" são coisas
+ * diferentes, e confundi-las é o começo de toda leitura errada.
+ */
+function Abertas({ ps }: { ps: Linha["abertas"] }) {
+  if (ps.length === 0) {
+    return <div style={{ ...APAGADO, marginTop: 8 }}>nenhuma posição aberta</div>;
+  }
+  return (
+    <div style={{ marginTop: 8, overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr style={APAGADO}>
+            <th style={TH}>par</th><th style={TH}>lado</th>
+            <th style={TH}>margem</th><th style={TH}>nocional</th>
+            <th style={TH}>entrada → agora</th><th style={TH}>não realizado</th>
+            <th style={TH}>alvo / stop</th><th style={TH}>idade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ps.map((p) => {
+            const ganha = (p.naoRealizadoUsd ?? 0) > 0;
+            return (
+              <tr key={p.id} style={{ borderTop: "1px solid rgba(255,255,255,.08)" }}>
+                <td style={TD}><b>{p.simbolo}</b></td>
+                <td style={TD}>{p.lado === "buy" ? "compra" : "venda"}
+                  {p.alavanca > 1 && <span style={APAGADO}> {p.alavanca}×</span>}</td>
+                <td style={TD}>{usd(p.margemUsd)}</td>
+                <td style={TD}>{usd(p.nocionalUsd)}</td>
+                <td style={TD}>
+                  {p.precoEntrada.toFixed(2)} → {p.precoAtual === null
+                    ? <span style={APAGADO}>preço não lido</span>
+                    : p.precoAtual.toFixed(2)}
+                </td>
+                <td style={{ ...TD, color: p.naoRealizadoUsd === null ? undefined
+                  : ganha ? "#34d399" : "#f87171" }}>
+                  {p.naoRealizadoUsd === null ? <span style={APAGADO}>—</span>
+                    : <>{usd(p.naoRealizadoUsd)} <span style={APAGADO}>
+                        ({p.movPct!.toFixed(2)}%)</span></>}
+                </td>
+                <td style={TD}>{p.alvo.toFixed(2)} / {p.stop.toFixed(2)}</td>
+                <td style={{ ...TD, color: p.vencida ? "#f87171" : undefined }}>
+                  {p.horasAbertas.toFixed(1)}h / {p.horasLimite}h
+                  {p.vencida && <b> vencida</b>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const TH: React.CSSProperties = { textAlign: "left", padding: "4px 8px 4px 0", fontWeight: 400 };
+const TD: React.CSSProperties = { textAlign: "left", padding: "5px 8px 5px 0", whiteSpace: "nowrap" };
+
 function Retorno({ r, ehPiso }: { r: Linha["retorno"]; ehPiso: boolean }) {
   if (r.pct == null) return <span style={APAGADO} title={r.porque}>—</span>;
   const pct = <b>{r.pct >= 0 ? "+" : "−"}{Math.abs(r.pct).toFixed(3)}%</b>;
@@ -325,22 +450,57 @@ export default function CeleiroPanel() {
                 <div><b>{l.nome}</b> — {l.mecanismo}</div>
                 <div style={{ ...SUAVE, marginTop: 4 }}><b>não faz:</b> {l.naoFaz}</div>
                 <div style={{ ...APAGADO, marginTop: 4 }}>
-                  banca <b>${l.bancaUsd}</b> · exposição máxima {(l.tetoDeExposicao * 100).toFixed(0)}%
+                  exposição máxima {(l.tetoDeExposicao * 100).toFixed(0)}%
                   {l.alavancagemMaxima > 1 && <> · alavanca até <b>{l.alavancagemMaxima}×</b> (a conta manda abaixo)</>}
-                  {" · "}mínimo para competir {l.capitalMinimoUsd > 0 ? `$${l.capitalMinimoUsd}` : "nenhum"}
+                  {" · "}mínimo para competir {l.capitalMinimoUsd > 0 ? `${l.capitalMinimoUsd}` : "nenhum"}
+                  {" · "}corretagem <b>{l.taxaPernaPct.toFixed(3)}%</b>/perna ({l.execucao} em {l.modalidade.replace("_", " ")})
                 </div>
-                {l.semDado ? (
-                  <div style={{ marginTop: 8 }}>Nenhum lançamento — <b>sem dado não há diagnóstico</b>.</div>
+
+                <Secao titulo="capital" />
+                <Capital c={l.capital} alavancado={l.alavancagemMaxima > 1} />
+
+                <Secao titulo={`abertas (${l.abertas.length})`} />
+                <Abertas ps={l.abertas} />
+
+                <Secao titulo={`fechadas (${l.fechadas.total})`} />
+                {l.fechadas.total === 0 ? (
+                  <div style={APAGADO}>nenhuma decidida ainda</div>
                 ) : (
-                  <div style={{ marginTop: 8 }}>
-                    <div><b>entrou:</b>{" "}
-                      {l.fontes.length === 0 ? "nada"
-                        : l.fontes.map((v) => `${v.causa} ${usd(v.usdt)}`).join(" · ")}</div>
-                    <div><b>vazou:</b>{" "}
-                      {l.vazamentos.length === 0 ? "nada"
-                        : l.vazamentos.map((v) =>
-                            `${v.causa} ${usd(v.usdt)} (${(v.fatiaDoVazamento * 100).toFixed(0)}%)`,
-                          ).join(" · ")}</div>
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                    {(["alvo", "stop", "tempo", "liquidacao"] as const).map((m) => (
+                      <span key={m} style={l.fechadas.porMotivo[m] ? undefined : APAGADO}>
+                        {m === "liquidacao" ? "liquidação" : m}{" "}
+                        <b>{l.fechadas.porMotivo[m] ?? 0}</b>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* ⚠️ A DIFERENÇA ENTRE "perdi 4 USDT" e "paguei 3,10 de taxa, 0,70 de
+                    derrapagem e o preço levou 2,40". O placar antigo guardava o
+                    RESULTADO e nunca as PARTES — e por isso não explicava como uma
+                    mesa acerta 70% e perde dinheiro. */}
+                <Secao titulo="o que fez lucrar, o que fez perder" />
+                {l.semDado ? (
+                  <div>Nenhum lançamento — <b>sem dado não há diagnóstico</b>.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 3 }}>
+                    {l.fontes.length === 0 && l.vazamentos.length === 0 && (
+                      <div style={APAGADO}>nada lançado</div>
+                    )}
+                    {l.fontes.map((v) => (
+                      <div key={`f${v.causa}`} style={{ display: "flex", gap: 8 }}>
+                        <span style={{ minWidth: 92 }}>{v.causa}</span>
+                        <b style={{ color: "#34d399" }}>{usd(v.usdt)}</b>
+                      </div>
+                    ))}
+                    {l.vazamentos.map((v) => (
+                      <div key={`v${v.causa}`} style={{ display: "flex", gap: 8 }}>
+                        <span style={{ minWidth: 92 }}>{v.causa}</span>
+                        <b style={{ color: "#f87171" }}>{usd(v.usdt)}</b>
+                        <span style={APAGADO}>{(v.fatiaDoVazamento * 100).toFixed(0)}% do vazamento</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

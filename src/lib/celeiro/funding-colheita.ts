@@ -38,21 +38,31 @@
  *  · **CUSTO DE MARGEM** além do funding, e risco de custódia.
  */
 
+import { custoDoCarryPct } from "@/lib/celeiro/taxas";
+
 /** Períodos de funding por dia na Gate.io — pagamento de 8 em 8 horas. */
 export const PERIODOS_POR_DIA = 3;
 
 /**
- * Corretagem de UMA perna, em %.
- *
  * ⚠️ QUATRO PERNAS, NÃO DUAS. Spot entra, spot sai, perp entra, perp sai. Contar
  * duas foi o erro que fez a arbitragem parecer viável por semanas: o ciclo
  * completo custa o dobro do que a conta ingênua diz.
  */
-export const TAXA_POR_PERNA_PCT = Number(process.env.CELEIRO_TAXA_PERNA_PCT ?? 0.1125);
 export const PERNAS_DO_CICLO = 4;
 
-/** O custo do ciclo completo, em % do nocional — pago UMA vez. */
-export const CUSTO_DO_CICLO_PCT = TAXA_POR_PERNA_PCT * PERNAS_DO_CICLO;
+/**
+ * O custo do ciclo completo, em % do nocional — pago UMA vez.
+ *
+ * ⚠️⚠️ AS QUATRO PERNAS NÃO SÃO DA MESMA PRAÇA (23/08). Duas são spot e duas são
+ * futuro, com tabelas que diferem em mais de dez vezes. A versão anterior
+ * cobrava as quatro por uma constante única de 0,1125% — errado por construção,
+ * e errado por sorte apenas de pouco: 0,45% cobrado contra 0,43% real.
+ *
+ * O carry SEGURA por dias e monta com limitada dos dois lados, então o papel é
+ * `maker`. Se algum dia ele passar a montar com ordem a mercado, este valor
+ * tem de mudar junto — é a mesma decisão, não duas.
+ */
+export const CUSTO_DO_CICLO_PCT = custoDoCarryPct("maker");
 
 /** Uma leitura de funding: a taxa daquele período, em % do nocional. */
 export interface PeriodoDeFunding {

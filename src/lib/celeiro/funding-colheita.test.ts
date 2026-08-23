@@ -4,6 +4,7 @@ import {
   CUSTO_DO_CICLO_PCT, PERNAS_DO_CICLO, PERIODOS_POR_DIA,
   MINIMO_DE_PERIODOS, TETO_SEQUENCIA_NEGATIVA, type PeriodoDeFunding,
 } from "@/lib/celeiro/funding-colheita";
+import { taxaPorPerna } from "@/lib/celeiro/taxas";
 
 /** Série de N períodos com a mesma taxa. */
 function serie(n: number, taxaPct: number): PeriodoDeFunding[] {
@@ -16,9 +17,21 @@ describe("a colheita", () => {
    * Contar duas foi o que fez a arbitragem parecer viável por semanas — o ciclo
    * completo custa o DOBRO do que a conta ingênua diz.
    */
-  it("o ciclo custa quatro pernas", () => {
+  /**
+   * ⚠️⚠️ ESTE TESTE FIXAVA 0,45 — o valor de `4 × 0,1125` — e quebrou quando a
+   * taxa ganhou praça (23/08). Ele estava testando a CONSTANTE, não a regra:
+   * qualquer mudança de tabela o derrubava sem nenhum defeito existir.
+   *
+   * Agora ele afirma o que realmente importa e não muda com a tabela: são
+   * QUATRO pernas, e elas se dividem entre DUAS praças com preços diferentes.
+   */
+  it("o ciclo custa quatro pernas, duas de cada praça", () => {
     expect(PERNAS_DO_CICLO).toBe(4);
-    expect(CUSTO_DO_CICLO_PCT).toBeCloseTo(0.45, 6);
+    expect(CUSTO_DO_CICLO_PCT).toBeCloseTo(
+      2 * taxaPorPerna("spot_gate", "maker") + 2 * taxaPorPerna("futuros_gate", "maker"), 9);
+
+    /** ⚠️ E segue custando MAIS que a conta ingênua de duas pernas. */
+    expect(CUSTO_DO_CICLO_PCT).toBeGreaterThan(2 * taxaPorPerna("spot_gate", "maker"));
   });
 
   /**
@@ -41,9 +54,14 @@ describe("a colheita", () => {
    * número triplica e o teste quebra.
    */
   it("calcula o ponto de equilíbrio em dias", () => {
-    expect(colher(serie(90, 0.01)).equilibrioEmDias).toBeCloseTo(15, 6);
-    expect(colher(serie(90, 0.0036)).equilibrioEmDias).toBeCloseTo(41.67, 1);
+    /** ⚠️ Derivado do custo, não fixado: é o custo dividido pelo que entra por dia. */
+    const equilibrio = (taxaPct: number) => CUSTO_DO_CICLO_PCT / (taxaPct * PERIODOS_POR_DIA);
+    expect(colher(serie(90, 0.01)).equilibrioEmDias).toBeCloseTo(equilibrio(0.01), 6);
+    expect(colher(serie(90, 0.0036)).equilibrioEmDias).toBeCloseTo(equilibrio(0.0036), 6);
     expect(PERIODOS_POR_DIA).toBe(3);
+
+    /** ⚠️ E o sentido continua travado: funding menor demora MAIS para pagar. */
+    expect(equilibrio(0.0036)).toBeGreaterThan(equilibrio(0.01));
   });
 
   /**
@@ -92,8 +110,9 @@ describe("a anualização", () => {
   it("independe da janela, e o líquido cru não", () => {
     const c = colher(serie(90, 0.01));
     expect(c.brutoPct).toBeCloseTo(0.9, 9);
-    expect(c.liquidoPct).toBeCloseTo(0.45, 9);
-    expect(anualizar(c, 30)).toBeCloseTo(10.5, 6);
+    /** ⚠️ O líquido é o bruto MENOS o ciclo — a relação, não o número. */
+    expect(c.liquidoPct).toBeCloseTo(0.9 - CUSTO_DO_CICLO_PCT, 9);
+    expect(anualizar(c, 30)).toBeCloseTo(0.9 * 365 / 30 - CUSTO_DO_CICLO_PCT, 6);
   });
 
   it("janela inválida devolve zero em vez de infinito", () => {
@@ -116,7 +135,7 @@ describe("o portão de entrada", () => {
    */
   it("fecha quando o funding rende menos que o controle, mesmo sendo positivo", () => {
     const c = colher(serie(90, 0.01));
-    expect(anualizar(c, JANELA)).toBeCloseTo(10.5, 6);
+    expect(anualizar(c, JANELA)).toBeCloseTo(0.9 * 365 / JANELA - CUSTO_DO_CICLO_PCT, 6);
 
     const contraControleAlto = portao(c, 12, JANELA);
     expect(contraControleAlto.entra).toBe(false);

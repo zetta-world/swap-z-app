@@ -42,6 +42,16 @@
 /** Onde o agente opera. */
 export type Modalidade = "spot_gate" | "margem_gate" | "futuros_gate" | "dex";
 
+/**
+ * Como a ordem chega ao livro.
+ *
+ * ⚠️ Mora AQUI, e não em `taxas.ts`, porque `taxas.ts` já importa `Modalidade`
+ * daqui. Definir os dois lados um no outro fecharia um ciclo — inofensivo para
+ * tipo puro, mas o primeiro valor em tempo de execução que cruzasse a fronteira
+ * viraria `undefined` sem erro de compilação.
+ */
+export type Execucao = "maker" | "taker";
+
 /** O ritmo da operação — o "swing e day" do mandato. */
 export type Ritmo = "day" | "swing" | "continuo";
 
@@ -65,6 +75,15 @@ export interface Agente {
   nome: string;
   categoria: Categoria;
   modalidade: Modalidade;
+  /**
+   * Como a ordem chega ao livro — e é ela que define a TAXA junto com a praça.
+   *
+   * ⚠️⚠️ NÃO É DETALHE. Em futuros, maker paga 0,015% e taker 0,05%: mais de
+   * três vezes. O `maker_de_faixa` foi aposentado por líquido negativo com uma
+   * taxa de spot-taker cobrada dele — enquanto o nome dele anuncia que ele
+   * POSTA. Foi morto por um número que o modelo inventou.
+   */
+  execucao: Execucao;
   ritmo: Ritmo;
   motor: Motor;
   faixa: Faixa;
@@ -130,6 +149,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Aluguel de Ocioso",
     categoria: "renda",
     modalidade: "margem_gate",
+    /** empresta USDT — a oferta fica postada, nunca cruza livro. */
+    execucao: "maker",
     ritmo: "continuo",
     motor: "bot",
     faixa: "renda",
@@ -159,6 +180,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Colheita de Funding",
     categoria: "renda",
     modalidade: "futuros_gate",
+    /** carry de dias: monta com limitada dos dois lados. */
+    execucao: "maker",
     ritmo: "swing",
     motor: "bot",
     /**
@@ -191,6 +214,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Convergência de Base",
     categoria: "estrutura",
     modalidade: "futuros_gate",
+    /** espera a base abrir; entrar com pressa comeria a sobra. */
+    execucao: "maker",
     ritmo: "day",
     motor: "bot",
     faixa: "trabalho",
@@ -224,6 +249,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Caçador de Tendência",
     categoria: "tendencia",
     modalidade: "spot_gate",
+    /** entra quando o sinal aparece — esperar o livro perde a tendência. */
+    execucao: "taker",
     /**
      * ⚠️ SWING, NÃO DAY — e é a lição do cadáver. O pedágio é proporcional ao
      * nocional, então aumentar a aposta não muda a razão: o que muda é o
@@ -260,6 +287,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Alavancado de Tendência",
     categoria: "tendencia",
     modalidade: "futuros_gate",
+    /** mesmo sinal do Caçador, mesma pressa. */
+    execucao: "taker",
     ritmo: "swing",
     motor: "bot",
     faixa: "renda",
@@ -295,6 +324,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Pool Novo com Portão de Sobrevivência",
     categoria: "evento",
     modalidade: "dex",
+    /** swap em pool: não existe ordem limitada. */
+    execucao: "taker",
     ritmo: "day",
     motor: "bot",
     faixa: "semente",
@@ -350,8 +381,19 @@ export const ROTULO_DA_FAIXA: Record<Faixa, string> = {
 };
 
 export interface Tamanho {
+  /**
+   * A MARGEM — o capital da banca comprometido nesta posição.
+   *
+   * ⚠️ É ELA que o teto de exposição governa, nunca o nocional. Confundir os
+   * dois foi o defeito de 23/08: o teto media nocional, então um agente com
+   * alavanca declarada de 10× ficava preso abaixo de 0,6× da própria banca.
+   */
+  margemUsd: number;
+  /** O NOCIONAL — o que o preço e a taxa mordem. margem × alavanca. */
   usd: number;
-  /** Quanto da banca ficaria exposto se esta posição abrir (0 a 1). */
+  /** Quantas vezes o nocional excede a margem. 1 = sem alavanca. */
+  alavanca: number;
+  /** Quanto da banca ficaria comprometido em MARGEM se esta posição abrir (0 a 1). */
   exposicaoDepois: number;
   cabe: boolean;
   porque: string;
@@ -369,27 +411,38 @@ export interface Tamanho {
  * vira "alavancado sem perceber": três posições de 25% já são 75% da banca em
  * risco simultâneo. Aqui a recusa é explícita e o motivo vai para o extrato.
  */
-export function tamanhoDaPosicao(a: Agente, expostoUsd: number): Tamanho {
-  const usd = a.bancaUsd * a.fracaoPorPosicao;
-  const exposicaoDepois = (expostoUsd + usd) / a.bancaUsd;
+export function tamanhoDaPosicao(
+  a: Agente,
+  /** Margem JÁ comprometida pelas posições abertas — não nocional. */
+  expostoMargemUsd: number,
+  alavanca = 1,
+): Tamanho {
+  const vezes = Number.isFinite(alavanca) && alavanca >= 1 ? alavanca : 1;
+  const margemUsd = a.bancaUsd * a.fracaoPorPosicao;
+  const usd = margemUsd * vezes;
+  const exposicaoDepois = (expostoMargemUsd + margemUsd) / a.bancaUsd;
 
   if (exposicaoDepois > a.tetoDeExposicao + 1e-9) {
     return {
-      usd, exposicaoDepois, cabe: false,
+      margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: false,
       porque: `${(exposicaoDepois * 100).toFixed(0)}% da banca exposta passaria do teto `
         + `de ${(a.tetoDeExposicao * 100).toFixed(0)}% — a posição não cabe`,
     };
   }
   if (a.bancaUsd < a.capitalMinimoUsd) {
     return {
-      usd, exposicaoDepois, cabe: false,
-      porque: `banca de $${a.bancaUsd} abaixo do mínimo de $${a.capitalMinimoUsd} `
+      margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: false,
+      porque: `banca de ${a.bancaUsd} abaixo do mínimo de ${a.capitalMinimoUsd} `
         + "que este agente declara precisar",
     };
   }
+  const fatia = `${(a.fracaoPorPosicao * 100).toFixed(0)}% da banca`;
+  const expo = `exposição em margem ficaria em ${(exposicaoDepois * 100).toFixed(0)}%`;
   return {
-    usd, exposicaoDepois, cabe: true,
-    porque: `$${usd.toFixed(2)} (${(a.fracaoPorPosicao * 100).toFixed(0)}% da banca), `
-      + `exposição ficaria em ${(exposicaoDepois * 100).toFixed(0)}%`,
+    margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: true,
+    porque: vezes > 1
+      ? `${margemUsd.toFixed(2)} de margem (${fatia}) × ${vezes}× = `
+        + `${usd.toFixed(2)} de nocional, ${expo}`
+      : `${usd.toFixed(2)} (${fatia}), ${expo}`,
   };
 }
