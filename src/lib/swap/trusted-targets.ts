@@ -67,6 +67,27 @@ export function checkSwapSpender(chainId: number, spender: string | null | undef
 }
 
 /**
+ * QUAIS CADEIAS ESTÃO DE FATO VIGIADAS — lido do mapa JÁ PARSEADO.
+ * (auditoria da ponte, 23/08)
+ *
+ * ⚠️ O painel de allowlist afirmava "✓ ENFORCING" a partir de
+ * `!!process.env.NEXT_PUBLIC_ALLOWED_SWAP_TARGETS` — presença crua da string.
+ * Isso mente em dois casos reais: variável preenchida com formato errado, e
+ * variável cujos endereços todos falham no filtro de `parseChainMap`. Nos dois
+ * o mapa sai VAZIO, `configured` é `false` em toda cadeia, e a trava não faz
+ * nada — enquanto a tela diz que bloqueia.
+ *
+ * ⚠️ E A VIGILÂNCIA É POR CADEIA. Uma lista que cobre Ethereum e Base deixa
+ * Arbitrum sem verificação nenhuma; `!!env` não tinha como mostrar isso.
+ */
+export function cadeiasVigiadas(): { targets: number[]; spenders: number[] } {
+  return {
+    targets:  [...TARGETS.keys()].sort((a, b) => a - b),
+    spenders: [...SPENDERS.keys()].sort((a, b) => a - b),
+  };
+}
+
+/**
  * A trava que o `ExecuteSwap` chama antes de assinar qualquer coisa.
  *
  * ⚠️ OS DOIS ARGUMENTOS SÃO OPCIONAIS — `undefined` significa "não confere
