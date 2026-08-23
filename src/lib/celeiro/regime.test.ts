@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  alvoLimpaOPedagio, lerRegime, permite, alavancagemCoerente,
+  alvoLimpaOPedagio, lerRegime, permite, alavancagemCoerente, stopPorVolatilidade,
   PEDAGIO_IDA_E_VOLTA_PCT, MULTIPLO_DO_PEDAGIO,
   TENDENCIA_MINIMA_PCT, VOLATILIDADE_DE_SANGRIA_PCT, FOLGA_DA_LIQUIDACAO,
+  MULTIPLO_DO_RUIDO, STOP_TETO_PCT,
   type Vela,
 } from "@/lib/celeiro/regime";
 
@@ -184,5 +185,62 @@ describe("a alavancagem coerente", () => {
     expect(alavancagemCoerente(10, 50, 1).vezes).toBe(10);
     expect(alavancagemCoerente(10, 50, 2).vezes).toBe(5);
     expect(FOLGA_DA_LIQUIDACAO).toBeGreaterThanOrEqual(2);
+  });
+});
+
+/**
+ * I2 — O STOP FORA DO RUÍDO, e o cadáver que a exigiu.
+ *
+ * ⚠️ As três primeiras entradas decididas do Celeiro morreram no stop, todas no
+ * SOL, todas em exatamente −1,200% e exatamente 1,5h. Uma vendeu SOL a 93,63;
+ * uma hora e meia depois duas COMPRARAM a 96,24 — vendeu o fundo, comprou o
+ * topo, e as três pagaram pedágio para descobrir isso.
+ *
+ * Medido em 3 dias de velas de 5m, janelas de 1,5h:
+ *
+ *     SOL   39,6% tocam ±1,2%   mediana do maior movimento 1,02%   0,98%/vela
+ *     ETH   24,2%                                          0,80%   ~0,55%/vela
+ *     BTC   17,1%                                          0,58%   0,32%/vela
+ */
+describe("I2 — o stop tem que ficar fora do ruído do ativo", () => {
+  it("ALARGA quando o ruído engole o stop declarado — o caso do SOL", () => {
+    // 0,98%/vela × 3 = 2,94%, bem acima do 1,2% que morreu três vezes.
+    const r = stopPorVolatilidade(0.98, 1.2);
+    expect(r.medido).toBe(true);
+    expect(r.stopPct).toBeCloseTo(2.94, 6);
+    expect(r.porque).toMatch(/alargado/);
+  });
+
+  /**
+   * ⚠️ O PAR QUE DISTINGUE PISO DE SUBSTITUIÇÃO. Com o BTC a conta pede 0,96%,
+   * que é MENOS que o declarado — e o declarado tem que ficar. Se alguém trocar
+   * o piso por substituição, este teste cai e o do SOL continua passando.
+   */
+  it("NÃO APERTA quando o declarado já está fora do ruído — o caso do BTC", () => {
+    const r = stopPorVolatilidade(0.32, 1.2);
+    expect(r.medido).toBe(true);
+    expect(r.stopPct).toBe(1.2);
+    expect(r.porque).toMatch(/já está fora/);
+  });
+
+  it("respeita o teto: ativo volátil demais não vira stop gigante", () => {
+    const r = stopPorVolatilidade(5, 1.2);        // 5 × 3 = 15%, acima do teto
+    expect(r.stopPct).toBe(STOP_TETO_PCT);
+    expect(r.porque).toMatch(/teto/);
+  });
+
+  it("sem volatilidade medida devolve o DECLARADO e diz que não mediu", () => {
+    // ⚠️ Não inventa stop a partir de ausência de dado — e marca `medido:false`
+    // para a diferença entre "medi e deu isso" e "não medi" não sumir na tela.
+    for (const v of [null, 0, -1, Number.NaN]) {
+      const r = stopPorVolatilidade(v as number | null, 1.2);
+      expect(r.stopPct).toBe(1.2);
+      expect(r.medido).toBe(false);
+    }
+  });
+
+  it("o múltiplo é declarado e vale pelo menos 2 amplitudes", () => {
+    expect(MULTIPLO_DO_RUIDO).toBeGreaterThanOrEqual(2);
+    expect(stopPorVolatilidade(1, 0.5, 4).stopPct).toBeCloseTo(4, 6);
   });
 });

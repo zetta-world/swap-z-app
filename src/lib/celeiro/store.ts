@@ -302,6 +302,31 @@ export async function fecharPosicao(
   return { fechou: true, porque: `${f.motivo} em ${f.precoSaida}` };
 }
 
+/**
+ * ⚠️⚠️ QUEM TEM POSIÇÃO ABERTA — perguntado à TABELA, não ao registro.
+ *
+ * A CICATRIZ (23/08): o `maker_de_faixa` foi apagado do registro quando a
+ * autópsia condenou a estratégia — e deixou DUAS posições abertas. O varredor é
+ * chamado por agente nomeado, numa lista escrita à mão no cron, e o Maker não
+ * estava em nenhuma. Resultado: $100 congelados, uma posição parada EXATAMENTE
+ * em cima do stop e 3,4h além do limite de 8h, sem ninguém para fechá-la.
+ *
+ * E o estrago não é o dinheiro: a autópsia que MATOU o agente é calculada sobre
+ * posições fechadas. Essas duas nunca entrariam — o número que justificou a
+ * decisão ficaria permanentemente incompleto.
+ *
+ * ⚠️ `deveFechar` só usa campos da própria linha (lado, alvo, stop, horas
+ * limite). Fechar NUNCA precisou do registro — era a lista que precisava.
+ */
+export async function agentesComAbertas(db: SupabaseClient): Promise<string[]> {
+  const { data, error } = await db
+    .from("celeiro_posicoes")
+    .select("agente")
+    .is("fechada_em", null);
+  if (error || !data) return [];
+  return [...new Set(data.map((r) => String((r as { agente: string }).agente)))];
+}
+
 /** Varre as abertas de um agente e fecha as que devem fechar. */
 export async function varrerAbertas(
   db: SupabaseClient,

@@ -10,10 +10,10 @@ import {
 } from "@/lib/celeiro/funding-colheita";
 import {
   registrarFluxo, ultimoLancamentoMs, genomaAtivo, lerRelogio, marcarRelogio,
-  posicoesAbertas, abrirPosicao, varrerAbertas,
+  posicoesAbertas, abrirPosicao, varrerAbertas, agentesComAbertas,
 } from "@/lib/celeiro/store";
 import {
-  lerRegime, permite, alvoLimpaOPedagio, alavancagemCoerente,
+  lerRegime, permite, alvoLimpaOPedagio, alavancagemCoerente, stopPorVolatilidade,
   MULTIPLO_DO_PEDAGIO, type Vela,
 } from "@/lib/celeiro/regime";
 import { tamanhoDaPosicao } from "@/lib/celeiro/agentes";
@@ -218,6 +218,38 @@ export async function POST(req: NextRequest) {
   }
   const precoDe = (sym: string) => precos.get(sym) ?? null;
 
+  /**
+   * ⚠️⚠️ OS ÓRFÃOS — agente que saiu do registro e deixou posição aberta.
+   *
+   * A CICATRIZ (23/08): o `maker_de_faixa` foi apagado quando a autópsia
+   * condenou a estratégia, e deixou DUAS posições vivas. O varredor abaixo é
+   * chamado por agente NOMEADO, numa lista escrita à mão — e ele não estava
+   * nela. Ficaram $100 congelados, uma delas parada EXATAMENTE em cima do
+   * stop e 3,4h além do limite de 8h, sem ninguém para fechá-la.
+   *
+   * ⚠️ O pior não era o dinheiro: a autópsia que MATOU o agente se calcula
+   * sobre posições FECHADAS. Essas duas nunca entrariam, e o número que
+   * justificou a decisão ficaria permanentemente incompleto.
+   *
+   * A lista de quem OPERA é uma decisão; a lista de quem FECHA não pode ser.
+   * Quem tem posição aberta é pergunta para a TABELA.
+   */
+  const VARRIDOS_NO_TICK = new Set([
+    "cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base", "pool_novo",
+  ]);
+  const orfaos = (await agentesComAbertas(db)).filter((a) => !VARRIDOS_NO_TICK.has(a));
+  if (orfaos.length > 0) {
+    const varridos: Record<string, unknown> = {};
+    for (const orf of orfaos) varridos[orf] = await varrerAbertas(db, orf, precoDe, agora);
+    relato.orfaos = { agentes: orfaos, varridos };
+    /**
+     * ⚠️ SEMPRE grava quando encontra órfão. Não é caminho feliz: agente fora
+     * do registro com capital vivo é estado que ninguém escolheu, e some da
+     * tela se depender de alguém abrir o relatório do tick.
+     */
+    recordEvent("celeiro_orfaos", { meta: { agentes: orfaos, varridos } });
+  }
+
   const operados: Record<string, unknown> = {};
 
   for (const id of ["cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base"] as const) {
@@ -303,7 +335,18 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        const stopPct = Number(gen?.params.stopPct ?? 1.2);
+        /**
+         * ⚠️ I2 — O STOP SAI DO RUÍDO MEDIDO, não de um número fixo.
+         *
+         * As três primeiras entradas decididas morreram no stop, todas no SOL,
+         * todas em exatamente −1,200%. Com amplitude de 0,98%/vela, o stop de
+         * 1,2% ficava DENTRO do ruído: 39,6% das janelas de 1,5h o tocam sem
+         * tendência nenhuma. O mesmo 1,2% no BTC (0,32%/vela) é outra coisa.
+         *
+         * `volatilidadePct` já era medido aqui — só alimentava a alavanca.
+         */
+        const st = stopPorVolatilidade(regime.volatilidadePct, Number(gen?.params.stopPct ?? 1.2));
+        const stopPct = st.stopPct;
         alvo = lado === "buy" ? preco * (1 + alvoPct / 100) : preco * (1 - alvoPct / 100);
         stop = lado === "buy" ? preco * (1 - stopPct / 100) : preco * (1 + stopPct / 100);
 
@@ -313,7 +356,7 @@ export async function POST(req: NextRequest) {
          */
         const a = alavancagemCoerente(regime.piorContraPct, ag.alavancagemMaxima);
         alavanca = a.vezes;
-        porque = `${porque} · ${limpa.porque} · alavanca ${a.porque}`;
+        porque = `${porque} · ${limpa.porque} · alavanca ${a.porque} · stop ${st.porque}`;
         abre = true;
       }
 
