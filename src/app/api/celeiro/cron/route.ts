@@ -356,7 +356,7 @@ export async function POST(req: NextRequest) {
          */
         const a = alavancagemCoerente(regime.piorContraPct, ag.alavancagemMaxima);
         alavanca = a.vezes;
-        porque = `${porque} · ${limpa.porque} · alavanca ${a.porque} · stop ${st.porque}`;
+        porque = `${porque} · ${limpa.porque} · alavanca ${a.porque} · ${st.porque}`;
         abre = true;
       }
 
