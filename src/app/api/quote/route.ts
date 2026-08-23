@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { recordEvent, notifyTelegram } from "@/lib/admin/track";
-import { isValidChain, validateAddress, validateAmount } from "@/lib/validate";
+import { isValidChain, validateAddress, validateAmount, isBurnAddress } from "@/lib/validate";
 import {
   fetchZeroXPrice, fetchZeroXQuote, isZeroXSupported, ZEROX_CHAIN_IDS, ZEROX_NATIVE, tokenDaTaxa,
 } from "@/lib/api/zerox";
@@ -229,6 +229,18 @@ export async function GET(req: NextRequest) {
     const r = validateAddress(recipientRaw);
     if (!r || r === "native") {
       return NextResponse.json({ error: "invalid_recipient" }, { status: 400 });
+    }
+    /**
+     * ⚠️ SEGUNDA LINHA, e ela existe porque a primeira é do cliente.
+     *
+     * O campo de destinatário já recusa endereço de queima — mas essa checagem
+     * roda no NAVEGADOR, e esta rota é pública: um cliente antigo em cache, um
+     * script, ou uma regressão no componente entregariam `0x000…000` aqui sem
+     * nada barrar. O caminho do dinheiro não terceiriza a última palavra para
+     * quem ele não controla. Mesma função dos dois lados, uma verdade só.
+     */
+    if (isBurnAddress(r)) {
+      return NextResponse.json({ error: "burn_recipient" }, { status: 400 });
     }
     recipient = r;
   }

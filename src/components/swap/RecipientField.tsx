@@ -5,6 +5,7 @@ import { ChevronRight, MapPin, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { isAddress } from "viem";
 import { isSolanaAddress } from "@/lib/solana";
+import { isBurnAddress } from "@/lib/validate";
 import { useT } from "@/lib/i18n";
 import type { ChainId } from "@/lib/chains";
 
@@ -35,9 +36,19 @@ export default function RecipientField({ value, onChange, connected, toChainName
     if (value) setOpen(true);
   }, [value]);
 
+  /**
+   * ⚠️ FORMATO VÁLIDO NÃO BASTA — endereço de queima é recusado aqui.
+   *
+   * `0x000…000` passa no `isAddress` do viem e passava no campo pintado de
+   * VERDE. Quem digitasse via o selo de válido e perdia tudo. A regra mora em
+   * `lib/validate` para o servidor aplicar a MESMA — o caminho da ponte já
+   * tinha três definições divergentes de "endereço válido", e uma quarta só no
+   * cliente seria mais uma para divergir.
+   */
   const isAddressValid = (s: string): boolean => {
+    if (isBurnAddress(s)) return false;
     if (destChain === "solana") return isSolanaAddress(s);
-    return isAddress(s);
+    return isAddress(s.trim());
   };
 
   const validity = useMemo<"empty" | "valid" | "invalid">(() => {
