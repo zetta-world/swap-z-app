@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { AGENTES, FAIXAS, ROTULO_DA_FAIXA, oControle, agentesDaFaixa } from "@/lib/celeiro/agentes";
+import { taxaPorPerna } from "@/lib/celeiro/taxas";
 import {
   extratoDe, ranquear, curvaAcumulada, contraOPiso, usdtProduzido,
   retornoSobreCapital,
@@ -9,6 +10,42 @@ import {
 } from "@/lib/celeiro/fluxo";
 
 export const dynamic = "force-dynamic";
+
+/** Os símbolos que o Celeiro opera — os mesmos do cron. */
+const SIMBOLOS = ["BTC", "ETH", "SOL"] as const;
+
+/**
+ * O preço à vista de cada símbolo, ou `null` por símbolo que não leu.
+ *
+ * ⚠️⚠️ FALHA COMO NULL, NUNCA COMO ZERO. Um preço zero faria toda posição
+ * aberta aparecer com prejuízo total na tela — e o painel afirmaria uma perda
+ * catastrófica que não existe. "Não li" e "vale zero" são coisas diferentes e
+ * a tela precisa saber qual das duas está vendo.
+ */
+async function precosAgora(): Promise<Record<string, number | null>> {
+  const fora: Record<string, number | null> = {};
+  await Promise.all(SIMBOLOS.map(async (sym) => {
+    try {
+      const r = await fetch(
+        `https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${sym}_USDT`,
+        { cache: "no-store", signal: AbortSignal.timeout(4_000) },
+      );
+      const j = await r.json() as Array<{ last?: string }>;
+      const n = Number(j?.[0]?.last);
+      fora[sym] = Number.isFinite(n) && n > 0 ? n : null;
+    } catch { fora[sym] = null; }
+  }));
+  return fora;
+}
+
+interface LinhaPosicao {
+  id: string; agente: string; simbolo: string; lado: "buy" | "sell";
+  usd: string | number; preco_entrada: string | number;
+  alvo: string | number; stop: string | number;
+  horas_limite: number; aberta_em: string;
+  fechada_em: string | null; preco_saida: string | number | null;
+  motivo_saida: string | null; meta: Record<string, unknown> | null;
+}
 
 /**
  * O PAINEL DO CELEIRO — uma tabela POR FAIXA, nunca uma lista com tudo dentro.
@@ -71,6 +108,88 @@ export async function GET() {
     braco: r.braco,
     genomaVersao: r.genoma_versao,
   }));
+
+  /**
+   * ⚠️ AS POSIÇÕES VÊM JUNTO, e não numa segunda chamada do painel. O extrato
+   * (`celeiro_fluxos`) diz QUANTO entrou e saiu; ele não diz o que está ABERTO
+   * agora nem quanto capital está preso. Eram duas perguntas e o painel só
+   * sabia responder uma — "com quanto cada agente está operando" não tinha
+   * resposta na tela.
+   */
+  const [posRes, precos] = await Promise.all([
+    db.from("celeiro_posicoes")
+      .select("id, agente, simbolo, lado, usd, preco_entrada, alvo, stop, horas_limite, "
+        + "aberta_em, fechada_em, preco_saida, motivo_saida, meta")
+      .order("aberta_em", { ascending: false })
+      .limit(2_000),
+    precosAgora(),
+  ]);
+  const posicoes: LinhaPosicao[] = (posRes.data ?? []) as LinhaPosicao[];
+  const agora = Date.now();
+
+  /**
+   * O retrato de capital e posições de um agente.
+   *
+   * ⚠️⚠️ MARGEM E NOCIONAL SÃO COISAS DIFERENTES e a tela mostra as duas. A
+   * margem é o que sai da banca; o nocional é o que o mercado move. Um agente
+   * de 10× tem nocional muito maior que a banca — e ver só um dos dois números
+   * dá a impressão errada em qualquer direção.
+   */
+  function retratoDe(agenteId: string, bancaUsd: number) {
+    const minhas = posicoes.filter((p) => p.agente === agenteId);
+    const abertasBrutas = minhas.filter((p) => p.fechada_em === null);
+
+    const abertas = abertasBrutas.map((p) => {
+      const meta = (p.meta ?? {}) as Record<string, unknown>;
+      const alavanca = Number(meta.alavanca) >= 1 ? Number(meta.alavanca) : 1;
+      const nocionalUsd = Number(p.usd) || 0;
+      const margemUsd = Number(meta.margemUsd) > 0
+        ? Number(meta.margemUsd) : nocionalUsd / alavanca;
+      const entrada = Number(p.preco_entrada) || 0;
+      const atual = precos[p.simbolo] ?? null;
+      const movPct = atual !== null && entrada > 0
+        ? (p.lado === "buy" ? (atual - entrada) / entrada : (entrada - atual) / entrada) * 100
+        : null;
+      const horasAbertas = (agora - Date.parse(p.aberta_em)) / 3_600_000;
+      return {
+        id: p.id, simbolo: p.simbolo, lado: p.lado,
+        nocionalUsd, margemUsd, alavanca,
+        precoEntrada: entrada, precoAtual: atual,
+        alvo: Number(p.alvo) || 0, stop: Number(p.stop) || 0,
+        /** ⚠️ NÃO REALIZADO e só de PREÇO — a segunda perna ainda não foi paga. */
+        movPct,
+        naoRealizadoUsd: movPct === null ? null : nocionalUsd * movPct / 100,
+        taxaPernaPct: Number.isFinite(Number(meta.taxaPernaPct))
+          ? Number(meta.taxaPernaPct) : null,
+        horasAbertas, horasLimite: p.horas_limite,
+        /** ⚠️ Passou do limite e ninguém fechou: é órfã, e a tela tem de gritar. */
+        vencida: horasAbertas >= p.horas_limite,
+      };
+    });
+
+    const fechadas = minhas.filter((p) => p.fechada_em !== null);
+    const porMotivo: Record<string, number> = { alvo: 0, stop: 0, tempo: 0, liquidacao: 0 };
+    for (const f of fechadas) {
+      const m = String(f.motivo_saida ?? "");
+      if (m in porMotivo) porMotivo[m]++;
+    }
+
+    const margemUsd = abertas.reduce((s, a) => s + a.margemUsd, 0);
+    const nocionalUsd = abertas.reduce((s, a) => s + a.nocionalUsd, 0);
+    return {
+      abertas,
+      fechadas: { total: fechadas.length, porMotivo },
+      capital: {
+        bancaUsd,
+        margemComprometidaUsd: margemUsd,
+        livreUsd: bancaUsd - margemUsd,
+        nocionalUsd,
+        exposicaoPct: bancaUsd > 0 ? margemUsd / bancaUsd * 100 : 0,
+      },
+      /** ⚠️ Sem preço, o não realizado é NULL na tela em vez de virar zero. */
+      semPreco: abertas.some((a) => a.precoAtual === null),
+    };
+  }
 
   const controle = oControle();
 
@@ -142,6 +261,10 @@ export async function GET() {
           alavancagemMaxima: a.alavancagemMaxima,
           tetoDeExposicao: a.tetoDeExposicao,
           categoria: a.categoria,
+          execucao: a.execucao,
+          /** ⚠️ A taxa que ESTE agente paga — a régua deixa de ser da arena. */
+          taxaPernaPct: taxaPorPerna(a.modalidade, a.execucao),
+          ...retratoDe(r.agente, a.bancaUsd),
           destaque: r.agente === destaque,
         };
       }),
