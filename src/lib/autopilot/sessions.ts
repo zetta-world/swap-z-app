@@ -183,10 +183,28 @@ export async function tryLockSession(id: string, ttlMs: number): Promise<boolean
  * be read back as the single authoritative daily count. No-op if no session
  * exists for the wallet+exchange.
  */
-export async function bumpSessionTrades(walletAddress: string, exchangeId: string, n: number): Promise<void> {
+/**
+ * ⚠️⚠️ DEVOLVE SE CONTOU — e antes engolia a falha (auditoria 23/08).
+ *
+ * Este contador E o limite de trades por dia que o usuario configurou. O cron
+ * ja o incrementa LOGO APOS a ordem existir, de proposito, para sobreviver a
+ * um timeout no meio da execucao — esse raciocinio estava certo.
+ *
+ * Mas o RPC era disparado sem conferir `error`, e o cliente do Supabase
+ * RESOLVE com `{ error }` em vez de lancar. Se ele falhasse, o contador nao
+ * subia e o limite diario simplesmente DEIXAVA DE EXISTIR, em silencio, pelo
+ * resto do dia — a mesma classe do `engine.ts`, agora em dinheiro real.
+ *
+ * ⚠️ Nao da para desfazer a ordem que ja foi. O que da e nao mentir sobre ela
+ * ter sido contada: quem chama trata o `false` como "perdi a conta", e o
+ * caminho do dinheiro falha FECHADO a partir dali.
+ */
+export async function bumpSessionTrades(walletAddress: string, exchangeId: string, n: number): Promise<boolean> {
   const db = getSupabaseAdmin();
-  if (!db || n <= 0) return;
-  await db.rpc("bump_session_trades", { p_wallet: walletAddress, p_exchange: exchangeId, p_n: n });
+  if (!db) return false;
+  if (n <= 0) return true;
+  const { error } = await db.rpc("bump_session_trades", { p_wallet: walletAddress, p_exchange: exchangeId, p_n: n });
+  return !error;
 }
 
 /** Release the per-session lock so the next cron run can pick it up. */
