@@ -220,6 +220,23 @@ export function alavancaDoMeta(meta: Record<string, unknown>): number {
   return Number.isFinite(v) && v >= 1 ? v : 1;
 }
 
+/**
+ * A taxa por perna com que a posição foi ABERTA.
+ *
+ * ⚠️⚠️ SEM ISTO A POSIÇÃO FECHA COM OUTRA RÉGUA. A perna de abertura já foi
+ * gravada com a taxa da praça do agente; se o fechamento cair no valor legado,
+ * a mesma operação registra DUAS taxas diferentes e o extrato dela deixa de
+ * reproduzir o dinheiro movido. `conferir` não pegaria: ele recalcula as duas
+ * pernas do mesmo objeto, então seria coerente consigo mesmo e errado com o
+ * banco — a pior combinação possível.
+ *
+ * Ausente = posição anterior a 23/08, que pagou a legada dos dois lados.
+ */
+export function taxaPernaDoMeta(meta: Record<string, unknown>): number | undefined {
+  const v = Number(meta?.taxaPernaPct);
+  return Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
 /** A margem comprometida por uma posição — o nocional dividido pela alavanca. */
 export function margemDa(p: { usd: number; alavanca?: number }): number {
   const v = p.alavanca ?? 1;
@@ -250,6 +267,7 @@ export async function posicoesAbertas(
        * alavancada nunca liquidaria — o defeito exato que 23/08 corrigiu.
        */
       alavanca: alavancaDoMeta(meta),
+      taxaPernaPct: taxaPernaDoMeta(meta),
       abertaEmMs: Date.parse(r.aberta_em), genomaVersao: r.genoma_versao,
       braco: (r.braco ?? null) as Braco | null,
       meta,

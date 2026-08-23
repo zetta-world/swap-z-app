@@ -42,6 +42,16 @@
 /** Onde o agente opera. */
 export type Modalidade = "spot_gate" | "margem_gate" | "futuros_gate" | "dex";
 
+/**
+ * Como a ordem chega ao livro.
+ *
+ * ⚠️ Mora AQUI, e não em `taxas.ts`, porque `taxas.ts` já importa `Modalidade`
+ * daqui. Definir os dois lados um no outro fecharia um ciclo — inofensivo para
+ * tipo puro, mas o primeiro valor em tempo de execução que cruzasse a fronteira
+ * viraria `undefined` sem erro de compilação.
+ */
+export type Execucao = "maker" | "taker";
+
 /** O ritmo da operação — o "swing e day" do mandato. */
 export type Ritmo = "day" | "swing" | "continuo";
 
@@ -65,6 +75,15 @@ export interface Agente {
   nome: string;
   categoria: Categoria;
   modalidade: Modalidade;
+  /**
+   * Como a ordem chega ao livro — e é ela que define a TAXA junto com a praça.
+   *
+   * ⚠️⚠️ NÃO É DETALHE. Em futuros, maker paga 0,015% e taker 0,05%: mais de
+   * três vezes. O `maker_de_faixa` foi aposentado por líquido negativo com uma
+   * taxa de spot-taker cobrada dele — enquanto o nome dele anuncia que ele
+   * POSTA. Foi morto por um número que o modelo inventou.
+   */
+  execucao: Execucao;
   ritmo: Ritmo;
   motor: Motor;
   faixa: Faixa;
@@ -130,6 +149,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Aluguel de Ocioso",
     categoria: "renda",
     modalidade: "margem_gate",
+    /** empresta USDT — a oferta fica postada, nunca cruza livro. */
+    execucao: "maker",
     ritmo: "continuo",
     motor: "bot",
     faixa: "renda",
@@ -159,6 +180,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Colheita de Funding",
     categoria: "renda",
     modalidade: "futuros_gate",
+    /** carry de dias: monta com limitada dos dois lados. */
+    execucao: "maker",
     ritmo: "swing",
     motor: "bot",
     /**
@@ -191,6 +214,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Convergência de Base",
     categoria: "estrutura",
     modalidade: "futuros_gate",
+    /** espera a base abrir; entrar com pressa comeria a sobra. */
+    execucao: "maker",
     ritmo: "day",
     motor: "bot",
     faixa: "trabalho",
@@ -224,6 +249,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Caçador de Tendência",
     categoria: "tendencia",
     modalidade: "spot_gate",
+    /** entra quando o sinal aparece — esperar o livro perde a tendência. */
+    execucao: "taker",
     /**
      * ⚠️ SWING, NÃO DAY — e é a lição do cadáver. O pedágio é proporcional ao
      * nocional, então aumentar a aposta não muda a razão: o que muda é o
@@ -260,6 +287,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Alavancado de Tendência",
     categoria: "tendencia",
     modalidade: "futuros_gate",
+    /** mesmo sinal do Caçador, mesma pressa. */
+    execucao: "taker",
     ritmo: "swing",
     motor: "bot",
     faixa: "renda",
@@ -295,6 +324,8 @@ export const AGENTES: readonly Agente[] = [
     nome: "Pool Novo com Portão de Sobrevivência",
     categoria: "evento",
     modalidade: "dex",
+    /** swap em pool: não existe ordem limitada. */
+    execucao: "taker",
     ritmo: "day",
     motor: "bot",
     faixa: "semente",

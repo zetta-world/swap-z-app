@@ -24,6 +24,7 @@ import { lerCandidato, candidatosDe, getNewPoolsForChain } from "@/lib/celeiro/p
 import { getPairDetail } from "@/lib/api/dexscreener";
 import { investigar } from "@/lib/celeiro/investigar";
 import { mutacaoEmCurso, bracoDaPosicao, posicoesDesde } from "@/lib/celeiro/store";
+import { taxaPorPerna } from "@/lib/celeiro/taxas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -309,6 +310,13 @@ export async function POST(req: NextRequest) {
       let abre = false, porque = "", lado: "buy" | "sell" = "buy";
       let alvo = 0, stop = 0, alavanca = 1;
 
+      /**
+       * ⚠️ A TAXA SAI DA PRAÇA E DO PAPEL DO AGENTE, não de uma constante da
+       * arena. Antes de 23/08 os quatro agentes de futuros pagavam taxa de
+       * spot — e o Caçador, que é spot, pagava METADE do que devia.
+       */
+      const taxaPerna = taxaPorPerna(ag.modalidade, ag.execucao);
+
       if (id === "convergencia_base") {
         const perp = await umNumero(
           `https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=${sym.toUpperCase()}_USDT`,
@@ -344,7 +352,11 @@ export async function POST(req: NextRequest) {
          * recusa, não como prejuízo.
          */
         const alvoPct = Number(gen?.params.alvoPct ?? 2.0);
-        const limpa = alvoLimpaOPedagio(alvoPct, Number(gen?.params.multiploDoPedagio ?? MULTIPLO_DO_PEDAGIO));
+        const limpa = alvoLimpaOPedagio(
+          alvoPct,
+          Number(gen?.params.multiploDoPedagio ?? MULTIPLO_DO_PEDAGIO),
+          taxaPerna * 2,
+        );
         if (!limpa.passa) {
           exames.push({ sym, abre: false, porque: limpa.porque });
           continue;
@@ -391,11 +403,18 @@ export async function POST(req: NextRequest) {
       const braco = bracoDaPosicao(emTeste != null, abertasDesde);
       const posId = await abrirPosicao(db, {
         agente: id, simbolo: sym, lado, usd: t.usd, alavanca: t.alavanca,
+        taxaPernaPct: taxaPerna,
         precoEntrada: preco, alvo, stop,
         derrapagemPct: prof.derrapagemPct ?? 0,
         horasLimite: Number(gen?.params.horasLimite ?? 48),
       }, gen?.versao ?? null,
-        { porque, alavanca: t.alavanca, margemUsd: t.margemUsd, exposicao: t.exposicaoDepois },
+        {
+          porque, alavanca: t.alavanca, margemUsd: t.margemUsd,
+          exposicao: t.exposicaoDepois,
+          /** ⚠️ GRAVADA na posição: ela precisa FECHAR com a taxa que ABRIU. */
+          taxaPernaPct: taxaPerna,
+          modalidade: ag.modalidade, execucao: ag.execucao,
+        },
         braco);
       if (posId) { abertasDesde++; expostoUsd += t.margemUsd; }
 

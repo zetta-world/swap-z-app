@@ -20,6 +20,18 @@ export const TAXA_POR_PERNA_PCT = Number(process.env.CELEIRO_TAXA_PERNA_PCT ?? 0
 
 export type Lado = "buy" | "sell";
 
+/**
+ * A taxa por perna desta posição, com a legada como piso de compatibilidade.
+ *
+ * ⚠️ NÃO devolve zero quando o campo falta. Zero seria "esta operação não pagou
+ * corretagem", uma afirmação forte e falsa — e ela inverteria o sinal de todo
+ * agente que morreu de pedágio.
+ */
+export function taxaDa(a: { taxaPernaPct?: number }): number {
+  const t = a.taxaPernaPct;
+  return Number.isFinite(t) && (t as number) >= 0 ? (t as number) : TAXA_POR_PERNA_PCT;
+}
+
 export interface Abertura {
   agente: string;
   simbolo: string;
@@ -42,6 +54,17 @@ export interface Abertura {
    * o ganho de semanas", condição que nunca poderia disparar.
    */
   alavanca?: number;
+  /**
+   * A taxa de corretagem DESTA posição, em % por perna.
+   *
+   * ⚠️⚠️ VIAJA COM A POSIÇÃO, não sai de uma global. A taxa depende da praça e
+   * do papel do agente (`taxas.ts`), e uma posição precisa FECHAR com a taxa
+   * com que ABRIU: trocar a régua no meio faria `conferir` reprovar o
+   * fechamento, e a posição ficaria aberta para sempre.
+   *
+   * Ausente = a taxa legada, que é o que as posições anteriores a 23/08 pagaram.
+   */
+  taxaPernaPct?: number;
 }
 
 /** Um lançamento a gravar: causa e valor assinado. */
@@ -64,7 +87,7 @@ export interface Lancamento {
  */
 export function lancamentosDaAbertura(a: Abertura): Lancamento[] {
   const out: Lancamento[] = [
-    { causa: "taxa", usdt: -(a.usd * TAXA_POR_PERNA_PCT / 100) },
+    { causa: "taxa", usdt: -(a.usd * taxaDa(a) / 100) },
   ];
   if (a.derrapagemPct > 0) {
     out.push({ causa: "derrapagem", usdt: -(a.usd * a.derrapagemPct / 100) });
@@ -98,7 +121,7 @@ export function lancamentosDoFechamento(a: Abertura, f: Fechamento): Lancamento[
   const mov = movimentoPct(a.lado, a.precoEntrada, f.precoSaida);
   return [
     { causa: "preco", usdt: a.usd * mov / 100 },
-    { causa: "taxa", usdt: -(a.usd * TAXA_POR_PERNA_PCT / 100) },
+    { causa: "taxa", usdt: -(a.usd * taxaDa(a) / 100) },
   ];
 }
 
@@ -146,7 +169,7 @@ export function deveFechar(
      */
     const fracaoAdversa =
       1 / vezes
-      - (TAXA_POR_PERNA_PCT * 2) / 100
+      - (taxaDa(a) * 2) / 100
       - Math.max(0, a.derrapagemPct) / 100;
     const precoDeLiquidacao = a.lado === "buy"
       ? a.precoEntrada * (1 - fracaoAdversa)
@@ -192,7 +215,7 @@ export function conferir(a: Abertura, f: Fechamento): {
 
   const mov = movimentoPct(a.lado, a.precoEntrada, f.precoSaida);
   const esperado = a.usd * mov / 100
-    - a.usd * (TAXA_POR_PERNA_PCT * 2) / 100
+    - a.usd * (taxaDa(a) * 2) / 100
     - a.usd * Math.max(0, a.derrapagemPct) / 100;
 
   const bate = Math.abs(somaDosLancamentos - esperado) < 1e-9;
