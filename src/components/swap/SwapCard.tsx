@@ -242,11 +242,28 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
    */
   const destinatarioOk = !isCrossChain || !recipient
     || conferirDestinatario(recipient, destinoFamilia).ok;
+
+  /**
+   * ⚠️ PONTE SAINDO DE SOLANA — barrada no CARTAO, nao so no modal.
+   *
+   * A LiFi cobre SOL->EVM, mas toda a assinatura do ramo LiFi e do wagmi
+   * (EVM): nao ha `sol.signTransaction` fora do caminho da Jupiter. Sem
+   * esta trava o usuario conecta as duas carteiras, abre o modal, espera a
+   * cotacao firme, e so entao bate num chain id que o wagmi nao conhece.
+   *
+   * O `ExecuteSwap` tambem recusa — esta e a primeira linha, aquela e a
+   * ultima. Dizer cedo, com o motivo certo, e o produto; dizer tarde, com
+   * erro de carteira, e o usuario descobrindo sozinho.
+   */
+  const pontePartindoDeSolana = isCrossChain && fromChain === "solana";
   const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker)
     && impact.level !== "block"
     && !safety?.blocks
-    && destinatarioOk;
-  const cantReason   = !destinatarioOk
+    && destinatarioOk
+    && !pontePartindoDeSolana;
+  const cantReason   = pontePartindoDeSolana
+    ? t("swap.solanaBridgeUnsupported")
+    : !destinatarioOk
     ? t("swap.addrWrongFamily", { chain: toToken ? (CHAIN_BY_ID[toToken.chain]?.name ?? toToken.chain) : t("swap.destination") })
     : safety?.blocks
     ? safety.message

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
-import { recordEvent, notifyTelegram } from "@/lib/admin/track";
+import { recordEvent, notifyTelegram, logSecurity } from "@/lib/admin/track";
 import { isValidChain, validateAddress, validateAmount } from "@/lib/validate";
 import { conferirDestinatario, familiaDaRede } from "@/lib/swap/recipient";
 import {
@@ -41,13 +41,23 @@ const RL_LIST  = { windowMs: 60_000, max: 40 };   // multi-quote list (heavier)
 const RL_FIRM  = { windowMs: 60_000, max: 25 };   // firm quote per source
 // Deployment-wide ceiling on paid-upstream (0x/LiFi) calls per minute — the
 // distributed-flood backstop the per-IP limit can't provide. See below.
-const QUOTE_GLOBAL_MAX = envNumber(process.env.QUOTE_GLOBAL_MAX, 3000, { positive: true });
+//
+// ⚠️ 3000 -> 600 (auditoria da ponte, 23/08). O comentario acima dizia
+// "tune down se voce adicionar um WAF/alerta": a auditoria confirmou que NAO
+// ha WAF, nem bot protection, nem regra de borda — entao este numero e a
+// unica barreira, e 3000/min sustentados sao 4,32 MILHOES de chamadas pagas
+// por dia. 600/min ainda e ~15x o teto por IP e milhares de vezes o trafego
+// real de hoje; e env var, entao sobe sem deploy se o beta pedir.
+const QUOTE_GLOBAL_MAX = envNumber(process.env.QUOTE_GLOBAL_MAX, 600, { positive: true });
 // TETO DIÁRIO (auditoria 01/08). O teto por minuto acima é backstop de
 // DISPONIBILIDADE, não de GASTO: 3000/min sustentados são 4,32 MILHÕES de
 // chamadas por dia, e uma enchente que fique logo abaixo do limite nunca o
 // dispara — ela só factura, indefinidamente. Um teto de conta precisa de
 // janela do tamanho da conta. Também falha ABERTO se o banco estiver fora.
-const QUOTE_DAILY_MAX = envNumber(process.env.QUOTE_DAILY_MAX, 250_000, { positive: true });
+//
+// ⚠️ 250.000 -> 25.000 pela mesma razao. Um teto de GASTO que ninguem nunca
+// atingiu nao esta calibrado, esta desligado por outro nome.
+const QUOTE_DAILY_MAX = envNumber(process.env.QUOTE_DAILY_MAX, 25_000, { positive: true });
 
 /**
  * /api/quote — unified quote router.
@@ -146,6 +156,26 @@ export async function GET(req: NextRequest) {
   // Fails OPEN (skips the check) if the DB is down — never blocks legit trading.
   const gb = await rateLimitDurable("q:global", { windowMs: 60_000, max: QUOTE_GLOBAL_MAX });
   if (!gb.ok) {
+    /**
+     * ⚠️⚠️ O TETO AVISA — antes ele devolvia 503 EM SILENCIO.
+     *
+     * Este e o backstop de conta paga: quando ele dispara, ou a plataforma
+     * esta sob enchente distribuida, ou o limite ficou apertado demais para o
+     * trafego legitimo. Os dois exigem que alguem SAIBA, e nenhum dos dois
+     * avisava: o dono descobriria pela fatura do 0x, ou por usuario
+     * reclamando que a cotacao nao carrega.
+     *
+     * ⚠️ E e o alerta que torna seguro APERTAR o numero. Sem ele, baixar o
+     * teto seria trocar um risco de conta por um risco de indisponibilidade
+     * muda — que e pior, porque a fatura pelo menos chega.
+     *
+     * Dedup de 5 min por chave (ver notifyTelegram): uma enchente vira UM
+     * aviso, nao mil.
+     */
+    notifyTelegram(
+      `🔴 <b>TETO DE COTACAO/MIN</b> atingido (` + QUOTE_GLOBAL_MAX + `/min).\nOu enchente distribuida, ou o limite esta apertado demais.`,
+      { dedupKey: "quote:global", meta: { kind: "quote_budget_minute", max: QUOTE_GLOBAL_MAX } },
+    );
     return NextResponse.json(
       { error: "quote_budget_exceeded", retryAfter: gb.retryAfter },
       { status: 503, headers: { "Retry-After": String(gb.retryAfter), "Cache-Control": "no-store" } },
@@ -155,6 +185,13 @@ export async function GET(req: NextRequest) {
   // uma enchente logo abaixo de 3000/min passa por (2) para sempre.
   const gd = await rateLimitDurable("q:global:day", { windowMs: 86_400_000, max: QUOTE_DAILY_MAX });
   if (!gd.ok) {
+    // ⚠️ Este e MAIS grave que o do minuto: significa que a plataforma esta
+    // sem cotacao pelo resto do dia. Silencio aqui e a loja fechada com a
+    // placa de aberta.
+    notifyTelegram(
+      `🔴 <b>TETO DIARIO DE COTACAO</b> atingido (` + QUOTE_DAILY_MAX + `/dia).\nA plataforma esta SEM cotacao ate a janela virar.`,
+      { dedupKey: "quote:daily", meta: { kind: "quote_budget_day", max: QUOTE_DAILY_MAX } },
+    );
     return NextResponse.json(
       { error: "quote_daily_budget_exceeded", retryAfter: gd.retryAfter },
       { status: 503, headers: { "Retry-After": String(gd.retryAfter), "Cache-Control": "no-store" } },
@@ -405,6 +442,34 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({ error: "lifi_unsupported_chain" }, { status: 400 });
         }
         const q = await fetchLiFiQuote(lfArgs, lifiKey);
+        /**
+         * ⚠️⚠️ O DESTINO QUE VOLTOU TEM DE SER O QUE FOI PEDIDO.
+         * (auditoria da ponte, 23/08)
+         *
+         * Toda a defesa desta rota estava do lado do PEDIDO: validar o
+         * destinatario, conferir a rede, recusar endereco de queima. Nada
+         * olhava a RESPOSTA. A ponte entrega numa cadeia onde nao temos
+         * como desfazer, e o endereco de entrega e escolha do agregador a
+         * partir do que mandamos — se ele ignorar, alterar, ou se a resposta
+         * for envenenada em transito, o dinheiro sai para outro lugar e o
+         * usuario assina achando que confirmou o dele.
+         *
+         * E o mesmo raciocinio do `assertTrusted`, que ja confere o `to` e o
+         * `spender` que voltaram do agregador. O destinatario faltava.
+         *
+         * ⚠️ FALHA FECHADO SO NA DIVERGENCIA, nunca na ausencia: se a LiFi
+         * nao ecoar o campo, seguimos — exigir o que talvez nao venha
+         * quebraria toda ponte por uma mudanca de contrato deles.
+         */
+        const destinoPedido  = (recipient ?? taker ?? "").trim();
+        const destinoVoltou  = (q.action?.toAddress ?? "").trim();
+        if (destinoPedido && destinoVoltou
+            && destinoVoltou.toLowerCase() !== destinoPedido.toLowerCase()) {
+          logSecurity("lifi_destino_divergente", {
+            pedido: destinoPedido, voltou: destinoVoltou, fromChain, toChain,
+          }, "high");
+          return NextResponse.json({ error: "destino_divergente" }, { status: 502 });
+        }
         /**
          * ⚠️ MESMA GRAVAÇÃO NO CAMINHO DA LI.FI, e aqui ela vale ainda mais: a
          * LI.FI recebe a taxa em FRAÇÃO (0,01) e não em pontos-base (100), e um
