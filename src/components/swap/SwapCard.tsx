@@ -16,7 +16,7 @@ import { useSwap, riskFromScore } from "@/lib/store/swap";
 import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { CHAIN_BY_ID } from "@/lib/chains";
-import { formatUsd, formatAmount, parseDecimalInput } from "@/lib/format";
+import { formatUsd, formatAmount, toBaseUnits, fromBaseUnits } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { assessImpact } from "@/lib/swap/impact-guard";
 import { assessMevExposure, mevAdvice } from "@/lib/swap/mev-guard";
@@ -85,14 +85,15 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   }, [lockedMode, mode, setMode]);
 
   // ─── Convert UI amount (decimal) → base units (integer) ─────────────
-  const sellAmountBase = useMemo(() => {
-    if (!fromToken) return "0";
-    const amt = parseDecimalInput(amountIn) ?? 0;
-    if (amt <= 0) return "0";
-    const [intPart, fracPart = ""] = amt.toString().split(".");
-    const fracPadded = (fracPart + "0".repeat(fromToken.decimals)).slice(0, fromToken.decimals);
-    return (intPart + fracPadded).replace(/^0+/, "") || "0";
-  }, [amountIn, fromToken]);
+  //
+  // ⚠️ A conversão é de STRING para STRING e não passa por `Number` — ver o
+  // cabeçalho de `toBaseUnits`. A versão que morava aqui corrompia em silêncio
+  // qualquer quantia acima de 2^53 e produzia notação exponencial abaixo de
+  // 0,000001. Nenhuma trava do caminho pegava a primeira.
+  const sellAmountBase = useMemo(
+    () => (fromToken ? toBaseUnits(amountIn, fromToken.decimals) : "0"),
+    [amountIn, fromToken],
+  );
 
   // ─── Multi-aggregator quotes (0x + LiFi) ────────────────────────────
   const quotesState = useQuotes({
@@ -140,9 +141,18 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     // Live prices win over the stale token.priceUsd snapshot.
     const fromPx  = fromLivePrice ?? fromToken.priceUsd ?? 0;
     const toPx    = toLivePrice   ?? toToken.priceUsd   ?? 0;
-    const inUsd   = sellDec * fromPx;
-    const outUsd  = buyDec  * toPx;
-    const priceImpact = inUsd > 0 && outUsd > 0
+    /**
+     * ⚠️ SEM PREÇO É `null`, NUNCA 0 (auditoria da ponte, 23/08).
+     *
+     * `sellDec * 0` dá zero, e zero na tela é uma AFIRMAÇÃO: "isto vale nada".
+     * O que de fato aconteceu foi o feed de preço não responder. É a invariante
+     * nº 33 no lugar mais caro possível — a tela onde o usuário decide quanto
+     * mandar. Um ETH aparecendo como $0,00 não é arredondamento, é o sistema
+     * dizendo com confiança algo que ele não sabe.
+     */
+    const inUsd   = fromPx > 0 ? sellDec * fromPx : null;
+    const outUsd  = toPx   > 0 ? buyDec  * toPx   : null;
+    const priceImpact = inUsd != null && outUsd != null && inUsd > 0 && outUsd > 0
       ? ((outUsd - inUsd) / inUsd) * 100
       : null;
     return { sellDec, buyDec, minDec, rate, inUsd, outUsd, priceImpact };
@@ -225,12 +235,30 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
             ? t("swap.indicativeOnly")
             : "";
 
+  /**
+   * 25% / 50% / MAX — a conta inteira em `bigint`, a partir do saldo BRUTO.
+   *
+   * ⚠️ A versão anterior era `Number(fromBalance.formatted) * pct`, e tinha os
+   * dois defeitos do conversor antigo mais um terceiro só dela:
+   *
+   *   · saldo grande (memecoin de 18 casas) perdia precisão no `Number`, e um
+   *     arredondamento PARA CIMA no MAX pede mais do que a carteira tem — a
+   *     transação reverte DEPOIS de o usuário pagar a aprovação;
+   *   · saldo pequeno virava `"1e-7"` no `toString()`, que o campo não sabe ler;
+   *   · `.slice(0, 18)` cortava a STRING, não as casas decimais.
+   *
+   * A divisão inteira sempre trunca, então o resultado nunca passa do saldo.
+   * Com `pct = 1` o cálculo devolve o saldo EXATO, dígito por dígito.
+   */
   const onPercent = (pct: number) => {
     if (!fromBalance || fromBalance.isZero || !fromToken) return;
-    const buf  = fromToken.address === "native" ? 0.001 : 0;
-    const num  = Number(fromBalance.formatted) * pct;
-    const safe = Math.max(num - buf, 0);
-    setAmountIn(safe.toString().slice(0, 18));
+    const dec = fromToken.decimals;
+    // Reserva de gás — só faz sentido no token nativo, que é quem paga a taxa.
+    const reserva = fromToken.address === "native" ? BigInt(toBaseUnits("0.001", dec)) : 0n;
+    const bps   = BigInt(Math.round(pct * 10_000));
+    const parte = (fromBalance.raw * bps) / 10_000n;
+    const sobra = parte - reserva;
+    setAmountIn(fromBaseUnits(sobra > 0n ? sobra : 0n, dec));
   };
 
   const ctaLabel = canExecute
@@ -606,7 +634,7 @@ function SideBox({
   label: string;
   token: Token | undefined;
   amount: string;
-  usdValue?: number;
+  usdValue?: number | null;
   onAmountChange: (v: string) => void;
   onTokenChange: (t: Token) => void;
   side: "from" | "to";
@@ -658,7 +686,10 @@ function SideBox({
       </div>
       <div className="flex items-center justify-between mt-2 gap-2 min-w-0">
         <span className="font-mono text-[11px] text-ink-3 truncate">
-          {usdValue !== undefined ? formatUsd(usdValue) : "$0.00"}
+          {/* ⚠️ "—" é "não sei". $0,00 seria uma afirmação de valor, e a
+              ausência de cotação ou de preço não é a mesma coisa que valer
+              zero. Ver o cálculo de `inUsd` acima. */}
+          {usdValue == null ? "—" : formatUsd(usdValue)}
         </span>
         {editable && onPercent && balance && !balance.isZero && (
           <div className="flex gap-1 flex-shrink-0">
@@ -743,7 +774,8 @@ function TxDetailsStrip({
   taxaPlataforma: { tier: string; pct: number } | null;
   minDec:      number;
   toSymbol:    string;
-  inUsd:       number;
+  /** `null` = preço indisponível. NÃO é zero — ver `inUsd` no cálculo. */
+  inUsd:       number | null;
 }) {
   const t = useT();
   const impact    = priceImpact ?? 0;
@@ -765,7 +797,12 @@ function TxDetailsStrip({
                       t("swap.impactHigh");
 
   const impactSign = impact >= 0 ? "+" : "";
-  const totalCost  = inUsd + (gasUsd ?? 0);
+  /**
+   * ⚠️ Sem o valor da perna de entrada, o custo TOTAL não existe — somar só o
+   * gás mostraria "$3,20" para uma troca de mil dólares. Ausência de uma parcela
+   * torna a soma desconhecida, não menor.
+   */
+  const totalCost  = inUsd == null ? null : inUsd + (gasUsd ?? 0);
 
   return (
     <div className={cn("rounded-xl border overflow-hidden divide-y divide-white/[0.04]", impactBorder, "bg-bg-1/40")}>
@@ -843,7 +880,7 @@ function TxDetailsStrip({
       <div className="flex items-center justify-between px-3.5 py-2.5 gap-2 bg-white/[0.02]">
         <span className="font-mono text-[10px] text-ink-3">{t("swap.totalCostLabel")}</span>
         <span className="font-display font-bold text-[13px] text-ink tabular-nums flex-shrink-0">
-          {formatUsd(totalCost)}
+          {totalCost == null ? "—" : formatUsd(totalCost)}
         </span>
       </div>
     </div>
