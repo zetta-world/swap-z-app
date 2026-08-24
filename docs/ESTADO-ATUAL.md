@@ -10,8 +10,9 @@
 > **Quando escrever:** ao fim de cada entrega. Documento desatualizado é pior que
 > documento nenhum — dá a impressão de que foi conferido.
 >
-> **Última atualização:** 23/08/2026 (noite), após a **auditoria da PONTE e do
-> AUTOPILOT** — 16 achados corrigidos em 5 PRs (#336, #337, #338, #340, #341).
+> **Última atualização:** 24/08/2026, após o **EINHERJAR** — a aba onde o dono
+> lê o que os agentes fizeram e escreve para eles. Antes disso, a **auditoria da
+> PONTE e do AUTOPILOT** — 16 achados em 5 PRs (#336, #337, #338, #340, #341).
 >
 > ⚠️ Esta atualização foi escrita pela **outra sessão** (a da nuvem). O que a
 > sessão do VSCode escreveu antes segue intacto — as duas mãos escrevem aqui,
@@ -23,8 +24,8 @@
 
 | | |
 |---|---|
-| `main` | `af886d7` — produção conferida na Vercel (`f27591e` para o código) |
-| CI | verde · **1.670 testes** · 120 arquivos |
+| `main` | `bfb5ab5` — ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
+| CI | verde · **1.696 testes** · 122 arquivos |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
 | Outra mão no código | **duas sessões Claude** trabalham aqui — ver §1.1 (corrigido) |
@@ -32,6 +33,9 @@
 Últimos commits, do mais novo:
 
 ```
+bfb5ab5  EINHERJAR: o plano, a migration, e o teto de tipos que parou a UI (#343)  ← nuvem
+ea1764e  Celeiro: a alavanca real, a taxa por praça, e o painel de capital (#339)
+c1b2ec3  ESTADO-ATUAL: as duas auditorias, as travas, e quem é a outra mão (#342)  ← nuvem
 af886d7  Plano: o mural de agentes — e a tabela de travas (#341)   ← nuvem
 f27591e  A ordem executava e o registro sumia calado — autopilot (#340)  ← nuvem
 7814ad1  Fecha a ponte: teto mudo, saída por Solana, destino (#338)  ← nuvem
@@ -492,6 +496,40 @@ instrumentos usados para confiar no resto.
 
 ---
 
+## 5.3 ⚠️ O TETO DE TIPOS DO `Database` — a armadilha que espera a próxima tabela
+
+**Leia isto ANTES de registrar qualquer tabela nova em
+`src/lib/supabase/types.ts`.** Custou uma UI inteira parada em 23/08 e vai
+custar de novo, porque o sintoma aparece longe da causa.
+
+O que aconteceu: registrei `einherjar_mensagens` como a **20ª tabela** do tipo
+`Database`. O `tsc` quebrou — mas **não naquela tabela**. Quebrou em
+`sniper.ts` e `ullr.ts`, dizendo que colunas de `zion_suggestions` não
+existiam. A inferência do genérico do `supabase-js` tem teto de profundidade;
+passar dele não dá erro na gota que transbordou, **dá `never` em outras
+tabelas**, escolhidas por ordem de resolução e não por culpa.
+
+> **O ERRO APARECE LONGE DA CAUSA.** Quem adicionar a 21ª tabela vai ver o
+> build quebrar num arquivo que não tocou, e vai procurar ali. O problema está
+> em `types.ts`, na linha que ele acabou de escrever.
+
+**O que está em produção hoje é o contorno (opção a):** a tabela ficou **fora**
+do `Database`. `src/lib/einherjar/mensagens.ts` tem um `ClienteCru` local e
+`const TABELA = "einherjar_mensagens" as never;`. Perde-se tipagem **nesse
+arquivo** — que tem 3 campos e 2 funções — e preserva-se a de
+`zion_suggestions`, que é caminho de dinheiro. O comentário no topo do arquivo
+diz isso com todas as letras.
+
+**A correção de verdade (opção b), quando alguém tiver fôlego:** quebrar o
+`Database` em tipos por domínio (`DatabaseZion`, `DatabaseAdmin`,
+`DatabaseCeleiro`) e tipar cada cliente com o seu. Não é urgente; é
+**inevitável**, e cada tabela nova até lá paga o pedágio.
+
+⚠️ **E a outra sessão está criando tabelas.** Se o build dela quebrar num
+arquivo que ela não tocou, é isto. Mande-a ler esta seção antes de debugar.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **A regressão que passou verde.** A PR #304 mergeou o `EM_PROVA` do `cull.ts` e
@@ -597,6 +635,7 @@ positivo custa a mesma credibilidade que falso negativo.
 | Reparo das carteiras | `src/lib/paper/reconcile.ts` |
 | Registro de painéis | `src/lib/admin/modules.ts` **e** `src/components/admin/panel-map.tsx` (as duas pontas) |
 | Áreas do painel | `src/lib/admin/areas.ts` |
+| EINHERJAR (a aba do salão) | `src/lib/einherjar/mensagens.ts` · `src/app/admin/api/einherjar/route.ts` · `EinherjarPanel.tsx` |
 
 ---
 
@@ -609,6 +648,8 @@ positivo custa a mesma credibilidade que falso negativo.
 | `AUDITORIA-MESAS-19-08.md` | por que o livro antigo é negativo ANTES do custo |
 | `TROCAR-DE-PROVEDOR.md` | **Kimi ↔ Anthropic numa variável** — leia ao reabastecer |
 | `PLANO-TAMANHO-E-REGIME.md` | do zettaceo: filtro de tendência e tamanho de posição |
+| `PLANO-MURAL-DE-AGENTES.md` | como duas sessões coordenam sem se derrubar — as travas |
+| `PLANO-EINHERJAR.md` | a aba do salão: o que ela mostra, e o que ela **não** mostra |
 
 ---
 

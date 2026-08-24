@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 
 export type ModuleId =
   | "command"
+  | "einherjar"
   | "celeiro"
   | "alerts"
   | "growth"
@@ -105,6 +106,24 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "command",
     defaultEnabled: true,
     defaultOrder: -2,
+  },
+  {
+    id: "einherjar",
+    title: "EINHERJAR",
+    subtitle: "o salão dos escolhidos — o que os agentes fizeram, e o que você quer perguntar",
+    icon: "\u16DD",
+    category: "command",
+    defaultEnabled: true,
+    /**
+     * ⚠️ DEPOIS do COMMAND, não antes — e a primeira versão errou isto.
+     *
+     * Eu tinha posto em -3 com o argumento de que "o que aconteceu enquanto eu
+     * não estava" vem primeiro. Rebaixar o painel que responde "como a empresa
+     * está" por causa de um mural de recados inverte a prioridade do dono, e a
+     * trava de layout acusou: o teste que garante a reinserção de módulo usa o
+     * COMMAND como o primeiro canônico.
+     */
+    defaultOrder: -1.5,
   },
   {
     id: "alerts",
