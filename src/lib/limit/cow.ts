@@ -38,6 +38,7 @@
  *     stored server-side.
  */
 
+import { toBaseUnits as paraUnidadesBase } from "@/lib/format";
 import type { ActionCard } from "@/lib/zion/parse";
 import type { ChainId } from "@/lib/chains";
 import type { Hex } from "viem";
@@ -206,8 +207,15 @@ export function buildCowOrder(input: BuildOrderInput): BuiltOrder {
     throw new Error("CoW: card is missing triggerPrice/entryPrice");
   }
 
-  // Convert to wei-units.
-  const sellAmountWei = toBaseUnits(sellAmountUserUnits, sellDecimals);
+  /**
+   * ⚠️ A VENDA CONVERTE A PARTIR DA STRING ORIGINAL, não do `Number` parseado.
+   *
+   * Este é o valor que entra na assinatura EIP-712 — o que o solver vai tirar
+   * da carteira. Passar pelo `Number` primeiro joga fora dígitos que o usuário
+   * digitou, e a auditoria da ponte já custou caro exatamente aqui.
+   */
+  const sellAmountWei = paraUnidadesBase(String(amountStr).replace(/[\s,_]/g, ""), sellDecimals);
+  if (sellAmountWei === "0") throw new Error(`CoW: amount "${amountStr}" rounds to zero in base units`);
 
   // Buy-amount in wei:
   //   sell_*:    sellAmount × triggerPrice  (sell BASE for QUOTE at limit)
@@ -218,7 +226,18 @@ export function buildCowOrder(input: BuildOrderInput): BuiltOrder {
   const buyAmountUserUnits = isBuyLimit
     ? sellAmountUserUnits / triggerPrice
     : sellAmountUserUnits * triggerPrice;
-  const buyAmountWei = toBaseUnits(buyAmountUserUnits, buyDecimals);
+  /**
+   * ⚠️ A COMPRA É CALCULADA, não digitada — vem de uma divisão ou multiplicação
+   * pelo preço-gatilho, então nasce `Number` e não há string original para
+   * preservar. `emStringFixa` a formata com as casas do token ANTES de
+   * converter, para que a conversão em si continue sendo a de string.
+   *
+   * A precisão aqui é a do `Number` (~16 dígitos) e isso está DITO, em vez de
+   * um comentário prometendo o contrário. Como este é o MÍNIMO aceito pelo
+   * usuário, qualquer poeira o favorece: ele recebe pelo menos isto.
+   */
+  const buyAmountWei = paraUnidadesBase(emStringFixa(buyAmountUserUnits, buyDecimals), buyDecimals);
+  if (buyAmountWei === "0") throw new Error("CoW: buy amount rounds to zero in base units");
 
   const validityDays = Math.max(1, Math.min(30, input.validityDays ?? 7));
   const validTo = Math.floor(Date.now() / 1000) + validityDays * 24 * 3600;
@@ -372,16 +391,38 @@ export async function fetchCowOrderStatus(
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 /**
- * Convert a user-friendly amount ("0.5") to base-units string ("500000…").
- * Uses BigInt-string arithmetic so we never lose precision on amounts the
- * user has typed manually with extra decimals.
+ * Um `number` em string decimal de casa fixa, SEM notação exponencial.
+ *
+ * ⚠️⚠️ O QUE ISTO SUBSTITUIU, E POR QUE (auditoria de 24/08).
+ *
+ * Havia aqui um `toBaseUnits` local cujo comentário dizia:
+ *
+ *   "Uses BigInt-string arithmetic so we never lose precision"
+ *
+ * e cuja conta era `BigInt(Math.round(amount * 10 ** decimals))` — ponto
+ * flutuante ANTES do BigInt. Medido, a 18 casas:
+ *
+ *   1234.5678  → 1234567800000000032768   (correto: …800000000000000000)
+ *
+ * ⚠️ SEJA JUSTO COM A ESCALA: a deriva é relativa ~1e-16, ou 3×10⁻¹⁴ token.
+ * É poeira, e NÃO era o bug catastrófico da ponte. O defeito de verdade era o
+ * COMENTÁRIO, que mandava o próximo leitor não olhar — e o fato de já existir
+ * um `toBaseUnits` correto, em string, em `lib/format.ts`, escrito na
+ * auditoria da ponte por este exato motivo. Duas convenções de conversão no
+ * mesmo caminho de dinheiro é como a ponte quebrou.
+ *
+ * ⚠️ `toFixed` vira exponencial acima de 1e21, e exponencial é justamente o
+ * que `paraUnidadesBase` recusa. Então o caso grande é tratado à mão.
  */
-function toBaseUnits(amount: number, decimals: number): string {
-  // Round to the token's precision to avoid Number → wei drift.
-  const factor = 10 ** decimals;
-  const wei    = BigInt(Math.round(amount * factor));
-  if (wei <= 0n) throw new Error("CoW: amount rounds to zero in base units");
-  return wei.toString();
+function emStringFixa(n: number, decimals: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  if (n < 1e21) return n.toFixed(Math.min(decimals, 100));
+  // Acima disto o `Number` já não tem casas decimais para perder: expande o
+  // expoente em dígitos e devolve o inteiro.
+  const [m, e] = n.toExponential(20).split("e");
+  const exp = Number(e);
+  const digitos = m.replace("-", "").replace(".", "");
+  return digitos.padEnd(exp + 1, "0").slice(0, exp + 1);
 }
 
 /** Pull a positive number out of a locale-formatted price string. */
