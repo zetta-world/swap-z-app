@@ -61,26 +61,55 @@ const RISK_EXPOSURE_USD: Record<string, number> = { conservador: 75, moderado: 2
 type RunRowT = Partial<AutopilotRunRow> & { wallet_address: string; exchange_id: string; status: string };
 
 
-/** Realized USD P&L of a filled SELL against a position's average cost. */
-function realizedFromSell(order: CexOrder, pos: AutopilotPositionRow): number | null {
+/**
+ * P&L realizado de uma VENDA preenchida, contra o custo médio da posição.
+ *
+ * ⚠️⚠️ DEVOLVE O AVISO EM VEZ DE GRAVÁ-LO — e a mudança tem motivo (24/08).
+ *
+ * Esta função é cálculo puro e gravava um evento no meio. Misturar as duas
+ * coisas obrigava a escolha ruim: ou ela virava `async` e o `await` subia por
+ * toda a cadeia, ou o registro ficava sem `await` — e ficou, com o comentário
+ * "o P&L não pode ficar refém do registro".
+ *
+ * ⚠️ AQUELE MOTIVO ERA FALSO. `recordEvent` NUNCA lança: engole o erro com
+ * `.catch()` lá dentro. Aguardar não podia deixar o P&L refém de nada.
+ *
+ * E o que se perdia é justamente o aviso de que o P&L sai OTIMISTA e o stop
+ * de perda afrouxa — a única pista de que o número na tela está errado A FAVOR
+ * DA CASA. Agora o aviso volta como dado, e quem chama (que já é async) grava.
+ */
+function realizedFromSell(order: CexOrder, pos: AutopilotPositionRow): {
+  realized: number | null;
+  aviso: { moeda: string; valor: number } | null;
+} {
+  const vazio = { realized: null, aviso: null } as const;
   const filledQty = Number(order.filled ?? 0);
-  if (!(filledQty > 0)) return null;
+  if (!(filledQty > 0)) return vazio;
   const proceeds = Number(order.cost) > 0 ? Number(order.cost) : filledQty * Number(order.average ?? 0);
-  if (!(proceeds > 0)) return null;
+  if (!(proceeds > 0)) return vazio;
   const avgCost = Number(pos.base_amount) > 0 ? Number(pos.cost_usd) / Number(pos.base_amount) : 0;
-  if (!(avgCost > 0)) return null;
+  if (!(avgCost > 0)) return vazio;
   const costRemoved = avgCost * filledQty;
   const taxa = taxaEmUsd(order, proceeds, filledQty, String(pos.pair ?? ""));
-  if (taxa.naoPrecificada) {
-    // Best-effort e sem `await`: o P&L não pode ficar refém do registro.
-    recordEvent("autopilot_taxa_nao_precificada", { meta: {
-      pair: pos.pair, moeda: taxa.naoPrecificada.moeda, valor: taxa.naoPrecificada.valor,
-      why: "taxa em moeda que não é stable nem a base do par — subtraída como ZERO, "
-        + "então o P&L realizado sai OTIMISTA e o stop de perda afrouxa",
-    } });
-  }
   const realized = proceeds - costRemoved - taxa.usd;
-  return Number.isFinite(realized) ? realized : null;
+  return {
+    realized: Number.isFinite(realized) ? realized : null,
+    aviso: taxa.naoPrecificada
+      ? { moeda: taxa.naoPrecificada.moeda, valor: taxa.naoPrecificada.valor }
+      : null,
+  };
+}
+
+/**
+ * Grava o aviso de taxa não precificada. ⚠️ AGUARDADO: na Vercel a função
+ * congela depois da resposta, e este é o registro de que o P&L saiu otimista.
+ */
+async function avisarTaxaNaoPrecificada(pair: unknown, aviso: { moeda: string; valor: number }) {
+  await recordEvent("autopilot_taxa_nao_precificada", { meta: {
+    pair, moeda: aviso.moeda, valor: aviso.valor,
+    why: "taxa em moeda que não é stable nem a base do par — subtraída como ZERO, "
+      + "então o P&L realizado sai OTIMISTA e o stop de perda afrouxa",
+  } });
 }
 
 /**
@@ -100,7 +129,8 @@ async function settleArmedExits(
       const order = await fetchCexOrderStatus(exchange, creds, pos.exit_order_id!, pos.pair);
       const st = order.status?.toLowerCase() ?? "";
       if (st === "closed" || st === "filled") {
-        const realized = realizedFromSell(order, pos);
+        const { realized, aviso } = realizedFromSell(order, pos);
+        if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
         if (realized !== null) {
           realizedDelta += realized;
           await applySessionPnl(s.id, realized, today);
@@ -455,7 +485,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
             avisarRegistroPerdido("contador diario nao subiu (venda)", { pair: intent.symbol, order_id: order.id });
           }
           if (intent.type === "market") {
-            const realized = realizedFromSell(order, pos);
+            const { realized, aviso } = realizedFromSell(order, pos);
+            if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
             if (realized !== null) {
               pnlToday += realized;
               await applySessionPnl(s.id, realized, today);

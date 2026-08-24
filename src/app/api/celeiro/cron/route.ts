@@ -248,7 +248,9 @@ export async function POST(req: NextRequest) {
      * do registro com capital vivo é estado que ninguém escolheu, e some da
      * tela se depender de alguém abrir o relatório do tick.
      */
-    recordEvent("celeiro_orfaos", { meta: { agentes: orfaos, varridos } });
+    // ⚠️ AGUARDADO: é cron, latência não importa, e o comentário acima já
+    // dizia que este registro não pode depender de ninguém abrir relatório.
+    await recordEvent("celeiro_orfaos", { meta: { agentes: orfaos, varridos } });
   }
 
   const operados: Record<string, unknown> = {};

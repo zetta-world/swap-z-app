@@ -398,7 +398,10 @@ export async function GET(req: NextRequest) {
          * aparência de "a taxa foi cobrada". Sobra uma pergunta só para o
          * explorador de blocos: se o valor aceito chegou na carteira.
          */
-        recordEvent("swap_intent", { wallet: taker, meta: {
+        // ⚠️ AGUARDADO: é a trilha que responde "cobramos o que dissemos?" —
+        // o achado da auditoria da ponte. A resposta já pagou uma ida ao
+        // agregador (centenas de ms); um insert não é o que pesa.
+        await recordEvent("swap_intent", { wallet: taker, meta: {
           source, fromChain, toChain, sellToken, buyToken,
           chainId: zxArgs.chainId, target: q.transaction?.to, spender: q.issues?.allowance?.spender,
           taxaPedidaBps: taxa.bps, taxaDestinatario: taxa.destinatario,
@@ -480,7 +483,8 @@ export async function GET(req: NextRequest) {
         const taxaAceitaLiFi = (q.estimate?.feeCosts ?? [])
           .filter((f) => /integrator|z-swap|referrer/i.test(`${f.name ?? ""}${f.description ?? ""}`))
           .map((f) => ({ amount: f.amount, token: f.token?.symbol, pct: f.percentage }));
-        recordEvent("swap_intent", { wallet: taker, meta: {
+        // ⚠️ AGUARDADO pelo mesmo motivo do caminho 0x acima.
+        await recordEvent("swap_intent", { wallet: taker, meta: {
           source, fromChain, toChain, sellToken, buyToken, crossChain: true,
           chainId: lfArgs.fromChainId, target: q.transactionRequest?.to, spender: q.estimate?.approvalAddress,
           taxaPedidaBps: taxa.bps, taxaDestinatario: taxa.destinatario,
@@ -528,7 +532,8 @@ export async function GET(req: NextRequest) {
           userPublicKey:    taker,
           wrapAndUnwrapSol: true,
         });
-        recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain: "solana", toChain: "solana", sellToken, buyToken } });
+        // ⚠️ AGUARDADO pelo mesmo motivo dos dois caminhos acima.
+        await recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain: "solana", toChain: "solana", sellToken, buyToken } });
         return NextResponse.json(
           {
             ok: true, mode, source, taxa,

@@ -62,18 +62,25 @@ const RAIZ = join(process.cwd(), "src/app/admin/api");
  */
 const RAIZ_PUBLICA = join(process.cwd(), "src/app/api");
 
-const DIVIDA_CONHECIDA = new Set([
-  "src/app/api/cex/order/route.ts:253",
-  "src/app/api/celeiro/cron/route.ts:251",
-  "src/app/api/beacon/route.ts:70",
-  "src/app/api/beacon/route.ts:88",
-  "src/app/api/quote/route.ts:401",
-  "src/app/api/quote/route.ts:483",
-  "src/app/api/quote/route.ts:531",
-  "src/app/api/radar/route.ts:62",
-  "src/app/api/swap-guard/route.ts:67",
-  "src/app/api/autopilot/cron/route.ts:76",
-]);
+/**
+ * ⚠️ A LISTA ESTÁ VAZIA — e ficou vazia no mesmo dia em que nasceu (24/08).
+ *
+ * Ela abrigou dez linhas: `cex/order`, `celeiro/cron`, `beacon` (×2),
+ * `quote` (×3), `radar`, `swap-guard` e `autopilot/cron`. Todas fechadas,
+ * cada uma pelo seu motivo:
+ *
+ *   · oito ganharam `await` — ordem real colocada, órfão do celeiro, gatilho
+ *     do radar, registro de segurança, aviso de P&L otimista e as três
+ *     trilhas de `swap_intent` que respondem "cobramos o que dissemos?"
+ *   · duas ficaram sem, COM MOTIVO DECLARADO: `page_view` e `dwell` são
+ *     telemetria de altíssimo volume, e perder uma amostra não muda decisão
+ *     nenhuma. É para isto que a saída `// telemetria:` existe.
+ *
+ * ⚠️ MANTER VAZIA. Se alguém precisar reabrir esta lista, o teste de baixo
+ * obriga a linha a existir de verdade — mas a pergunta certa é por que a
+ * durabilidade não coube, não como isentar.
+ */
+const DIVIDA_CONHECIDA = new Set<string>([]);
 
 /**
  * ⚠️⚠️ COMENTÁRIO NÃO É CÓDIGO — e esta trava não sabia (24/08).
@@ -122,14 +129,23 @@ describe("durabilidade de evento nas rotas admin", () => {
     const faltando: string[] = [];
 
     for (const arquivo of arquivos) {
-      const linhas = semComentarios(readFileSync(arquivo, "utf8")).split("\n");
+      /**
+       * ⚠️ DOIS ARRAYS, E NÃO UM. A CHAMADA é detectada na versão SEM
+       * comentários (senão a frase `recordEvent(` dentro de um bloco que
+       * EXPLICA a regra vira acusação). A ISENÇÃO é lida na versão ORIGINAL,
+       * porque a saída de emergência É um comentário — limpar os dois com a
+       * mesma régua desligaria o escape em silêncio. Eu fiz exatamente isso ao
+       * alargar a trava, e só apareceu quando fui usar a isenção.
+       */
+      const bruto  = readFileSync(arquivo, "utf8").split("\n");
+      const linhas = semComentarios(bruto.join("\n")).split("\n");
       linhas.forEach((linha, i) => {
         if (!linha.includes("recordEvent(")) return;
         // A importação não é chamada.
         if (/^\s*import\b/.test(linha)) return;
         if (linha.includes("await recordEvent(")) return;
         // Abrir mão da durabilidade exige dizer por quê, na linha de cima.
-        if ((linhas[i - 1] ?? "").includes("telemetria:")) return;
+        if ((bruto[i - 1] ?? "").includes("telemetria:")) return;
         faltando.push(`${arquivo.replace(process.cwd() + "/", "")}:${i + 1}`);
       });
     }
@@ -153,10 +169,14 @@ describe("durabilidade de evento nas rotas PÚBLICAS — a catraca", () => {
     const novos: string[] = [];
     for (const arquivo of arquivos) {
       const rel = arquivo.replace(process.cwd() + "/", "");
-      semComentarios(readFileSync(arquivo, "utf8")).split("\n").forEach((linha, i) => {
+      const bruto = readFileSync(arquivo, "utf8").split("\n");
+      semComentarios(bruto.join("\n")).split("\n").forEach((linha, i) => {
         if (!linha.includes("recordEvent(")) return;
         if (/^\s*import\b/.test(linha)) return;
         if (linha.includes("await recordEvent(")) return;
+        // ⚠️ A mesma saída de emergência do bloco admin: telemetria de alto
+        // volume pode abrir mão da durabilidade, DESDE QUE diga por quê.
+        if ((bruto[i - 1] ?? "").includes("telemetria:")) return;
         const ref = `${rel}:${i + 1}`;
         if (!DIVIDA_CONHECIDA.has(ref)) novos.push(ref);
       });
@@ -175,9 +195,11 @@ describe("durabilidade de evento nas rotas PÚBLICAS — a catraca", () => {
     const vivos = new Set<string>();
     for (const arquivo of arquivos) {
       const rel = arquivo.replace(process.cwd() + "/", "");
-      semComentarios(readFileSync(arquivo, "utf8")).split("\n").forEach((linha, i) => {
+      const bruto = readFileSync(arquivo, "utf8").split("\n");
+      semComentarios(bruto.join("\n")).split("\n").forEach((linha, i) => {
         if (linha.includes("recordEvent(") && !/^\s*import\b/.test(linha)
-            && !linha.includes("await recordEvent(")) vivos.add(`${rel}:${i + 1}`);
+            && !linha.includes("await recordEvent(")
+            && !(bruto[i - 1] ?? "").includes("telemetria:")) vivos.add(`${rel}:${i + 1}`);
       });
     }
     const fantasmas = [...DIVIDA_CONHECIDA].filter((d) => !vivos.has(d));
