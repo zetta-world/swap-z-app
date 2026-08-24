@@ -135,7 +135,16 @@ export async function GET() {
    * de 10× tem nocional muito maior que a banca — e ver só um dos dois números
    * dá a impressão errada em qualquer direção.
    */
-  function retratoDe(agenteId: string, bancaUsd: number) {
+  function retratoDe(agenteId: string, bancaInicialUsd: number, realizadoUsd: number) {
+    /**
+     * ⚠️⚠️ O SALDO É INICIAL + REALIZADO (24/08), e não a banca declarada.
+     *
+     * A primeira versão desta tela — que EU entreguei em 23/08 — calculava
+     * "livre" como `banca − margem`, ignorando prejuízo realizado. Ela mostrava
+     * $800 livres num agente que já tinha queimado $53. Era uma tela honesta
+     * construída sobre um número que não era: `bancaUsd: 1000` nunca se movia.
+     */
+    const saldoUsd = bancaInicialUsd + realizadoUsd;
     const minhas = posicoes.filter((p) => p.agente === agenteId);
     const abertasBrutas = minhas.filter((p) => p.fechada_em === null);
 
@@ -180,11 +189,15 @@ export async function GET() {
       abertas,
       fechadas: { total: fechadas.length, porMotivo },
       capital: {
-        bancaUsd,
+        bancaInicialUsd,
+        realizadoUsd,
+        saldoUsd,
         margemComprometidaUsd: margemUsd,
-        livreUsd: bancaUsd - margemUsd,
+        /** ⚠️ Sobre o SALDO, não sobre a banca — senão inventa dinheiro perdido. */
+        livreUsd: saldoUsd - margemUsd,
         nocionalUsd,
-        exposicaoPct: bancaUsd > 0 ? margemUsd / bancaUsd * 100 : 0,
+        exposicaoPct: saldoUsd > 0 ? margemUsd / saldoUsd * 100 : 0,
+        quebrado: saldoUsd <= 0,
       },
       /** ⚠️ Sem preço, o não realizado é NULL na tela em vez de virar zero. */
       semPreco: abertas.some((a) => a.precoAtual === null),
@@ -200,6 +213,12 @@ export async function GET() {
    * mesma razão de o extrato dizer "sem dado" em vez de devolver zero.
    */
   const fluxosDe = (a: string) => fluxos.filter((f) => f.agente === a);
+
+  /**
+   * ⚠️ TUDO que o extrato lançou para o agente — preço, taxa, derrapagem,
+   * aluguel, funding. É o realizado dele, e é o que move o saldo.
+   */
+  const somaDe = (a: string) => fluxosDe(a).reduce((s, f) => s + f.usdt, 0);
   const usdtPiso = usdtProduzido(fluxosDe(controle.id));
 
   /**
@@ -208,7 +227,7 @@ export async function GET() {
    * $1.500 de exposição efetiva. Sobre capital, a pergunta fica justa — para
    * cada dólar administrado, quanto sobrou?
    */
-  const retornoDoPisoPct = retornoSobreCapital(usdtPiso, controle.bancaUsd, null).pct;
+  const retornoDoPisoPct = retornoSobreCapital(usdtPiso, controle.bancaInicialUsd, null).pct;
 
   const faixas = FAIXAS.map((faixa) => {
     const doGrupo = agentesDaFaixa(faixa).map((a) => a.id);
@@ -256,15 +275,15 @@ export async function GET() {
           /** Como comparar com o piso sem produzir número que estoura a tela. */
           piso: contraOPiso(r.usdt, usdtPiso, r.ehControle),
           /** A régua honesta: % da própria banca, e a diferença em pp. */
-          retorno: retornoSobreCapital(r.usdt, a.bancaUsd, r.ehControle ? null : retornoDoPisoPct),
-          bancaUsd: a.bancaUsd,
+          retorno: retornoSobreCapital(r.usdt, a.bancaInicialUsd, r.ehControle ? null : retornoDoPisoPct),
+          bancaInicialUsd: a.bancaInicialUsd,
           alavancagemMaxima: a.alavancagemMaxima,
           tetoDeExposicao: a.tetoDeExposicao,
           categoria: a.categoria,
           execucao: a.execucao,
           /** ⚠️ A taxa que ESTE agente paga — a régua deixa de ser da arena. */
           taxaPernaPct: taxaPorPerna(a.modalidade, a.execucao),
-          ...retratoDe(r.agente, a.bancaUsd),
+          ...retratoDe(r.agente, a.bancaInicialUsd, somaDe(r.agente)),
           destaque: r.agente === destaque,
         };
       }),

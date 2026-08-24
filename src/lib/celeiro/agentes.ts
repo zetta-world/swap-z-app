@@ -107,7 +107,7 @@ export interface Agente {
    *    enquanto o Maker arriscava $50. **A comparação favorecia quem arriscava
    *    mais**, que é o pior viés possível num placar de risco.
    */
-  bancaUsd: number;
+  bancaInicialUsd: number;
 
   /**
    * Que fração da banca vai em CADA posição.
@@ -155,7 +155,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "renda",
     capitalMinimoUsd: 0,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     fracaoPorPosicao: 1.0,
     tetoDeExposicao: 1.0,
     alavancagemMaxima: 1,
@@ -192,7 +192,7 @@ export const AGENTES: readonly Agente[] = [
      */
     faixa: "renda",
     capitalMinimoUsd: 400,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     fracaoPorPosicao: 0.5,
     tetoDeExposicao: 0.5,
     alavancagemMaxima: 1,
@@ -220,7 +220,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "trabalho",
     capitalMinimoUsd: 150,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     fracaoPorPosicao: 0.15,
     tetoDeExposicao: 0.45,
     alavancagemMaxima: 1,
@@ -261,7 +261,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "trabalho",
     capitalMinimoUsd: 200,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     /**
      * ⚠️ 25% POR POSIÇÃO É AMBIÇÃO DECLARADA, não descuido. O mandato pede os
      * agentes mais ambiciosos "sem medo de perder capital"; o `tetoDeExposicao`
@@ -293,7 +293,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "renda",
     capitalMinimoUsd: 300,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     fracaoPorPosicao: 0.2,
     tetoDeExposicao: 0.6,
     /**
@@ -330,7 +330,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "semente",
     capitalMinimoUsd: 50,
-    bancaUsd: 300,
+    bancaInicialUsd: 300,
     /** ⚠️ Aposta pequena de propósito: a assimetria paga a série, não o tamanho. */
     fracaoPorPosicao: 0.1667,
     tetoDeExposicao: 0.5,
@@ -415,12 +415,47 @@ export function tamanhoDaPosicao(
   a: Agente,
   /** Margem JÁ comprometida pelas posições abertas — não nocional. */
   expostoMargemUsd: number,
+  /**
+   * O SALDO REAL do agente — inicial mais tudo que o extrato lançou.
+   *
+   * ⚠️⚠️ NÃO É `a.bancaInicialUsd`, e a ordem dos parâmetros mudou de propósito
+   * para que ninguém passe um pelo outro sem perceber (24/08).
+   *
+   * Até aqui o tamanho saía da banca INICIAL — um literal que o prejuízo nunca
+   * tocava. O Alavancado queimou $53,17 e seguia apostando como se tivesse
+   * $1.000 intactos: sem ruína, sem composição, e com `capitalMinimoUsd`
+   * comparando contra um número que não se move, logo nunca disparando.
+   */
+  saldoUsd: number,
   alavanca = 1,
 ): Tamanho {
   const vezes = Number.isFinite(alavanca) && alavanca >= 1 ? alavanca : 1;
-  const margemUsd = a.bancaUsd * a.fracaoPorPosicao;
+  const saldo = Number.isFinite(saldoUsd) ? saldoUsd : 0;
+  const margemUsd = saldo * a.fracaoPorPosicao;
   const usd = margemUsd * vezes;
-  const exposicaoDepois = (expostoMargemUsd + margemUsd) / a.bancaUsd;
+  const exposicaoDepois = saldo > 0 ? (expostoMargemUsd + margemUsd) / saldo : Infinity;
+
+  /**
+   * ⚠️⚠️ A RUÍNA EXISTE AGORA, e ela vem ANTES do teto de exposição.
+   *
+   * Um agente cujo saldo caiu abaixo do capital que ele declara precisar não
+   * "opera menor" — ele PARA. Deixá-lo continuar em tamanho reduzido esconderia
+   * a morte dentro de uma sequência de apostas cada vez menores, e o extrato
+   * mostraria um agente vivo sangrando devagar em vez de um agente morto.
+   */
+  if (saldo <= 0) {
+    return {
+      margemUsd: 0, usd: 0, alavanca: vezes, exposicaoDepois: Infinity, cabe: false,
+      porque: `saldo de $${saldo.toFixed(2)} USD — o agente quebrou e não opera mais`,
+    };
+  }
+  if (saldo < a.capitalMinimoUsd) {
+    return {
+      margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: false,
+      porque: `saldo de $${saldo.toFixed(2)} caiu abaixo do mínimo de `
+        + `$${a.capitalMinimoUsd} que este agente declara precisar — parou`,
+    };
+  }
 
   if (exposicaoDepois > a.tetoDeExposicao + 1e-9) {
     return {
@@ -429,14 +464,7 @@ export function tamanhoDaPosicao(
         + `de ${(a.tetoDeExposicao * 100).toFixed(0)}% — a posição não cabe`,
     };
   }
-  if (a.bancaUsd < a.capitalMinimoUsd) {
-    return {
-      margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: false,
-      porque: `banca de ${a.bancaUsd} abaixo do mínimo de ${a.capitalMinimoUsd} `
-        + "que este agente declara precisar",
-    };
-  }
-  const fatia = `${(a.fracaoPorPosicao * 100).toFixed(0)}% da banca`;
+  const fatia = `${(a.fracaoPorPosicao * 100).toFixed(0)}% do saldo de $${saldo.toFixed(2)}`;
   const expo = `exposição em margem ficaria em ${(exposicaoDepois * 100).toFixed(0)}%`;
   return {
     margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: true,

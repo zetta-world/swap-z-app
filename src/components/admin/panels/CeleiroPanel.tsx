@@ -34,7 +34,7 @@ type Linha = {
   mecanismo: string; naoFaz: string; destaque: boolean;
   serie: number[]; piso: Piso;
   retorno: { pct: number | null; contraOPisoPp: number | null; porque: string };
-  bancaUsd: number; alavancagemMaxima: number; tetoDeExposicao: number; categoria: string;
+  bancaInicialUsd: number; alavancagemMaxima: number; tetoDeExposicao: number; categoria: string;
   porCausa: Record<string, number>;
   execucao: "maker" | "taker";
   taxaPernaPct: number;
@@ -50,8 +50,9 @@ type Linha = {
   }>;
   fechadas: { total: number; porMotivo: Record<string, number> };
   capital: {
-    bancaUsd: number; margemComprometidaUsd: number; livreUsd: number;
-    nocionalUsd: number; exposicaoPct: number;
+    bancaInicialUsd: number; realizadoUsd: number; saldoUsd: number;
+    margemComprometidaUsd: number; livreUsd: number;
+    nocionalUsd: number; exposicaoPct: number; quebrado: boolean;
   };
   semPreco: boolean;
   vazamentos: Array<{ causa: string; usdt: number; fatiaDoVazamento: number }>;
@@ -149,7 +150,19 @@ function Capital({ c, alavancado }: { c: Linha["capital"]; alavancado: boolean }
   return (
     <div style={{ marginTop: 8 }}>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "baseline" }}>
-        <span>banca <b>{usd(c.bancaUsd)}</b></span>
+        {/* ⚠️ INICIAL E SALDO LADO A LADO. Mostrar só um dos dois foi o defeito
+            de 23/08: a tela dizia "$800 livres" num agente que tinha queimado
+            $53, porque a banca era um literal que o prejuízo nunca tocava. */}
+        <span style={SUAVE}>começou com <b>{usd(c.bancaInicialUsd)}</b></span>
+        <span>tem agora{" "}
+          <b style={{ color: c.realizadoUsd < 0 ? "#f87171" : c.realizadoUsd > 0 ? "#34d399" : undefined }}>
+            {usd(c.saldoUsd)}
+          </b>
+          {c.realizadoUsd !== 0 && (
+            <span style={APAGADO}> ({c.realizadoUsd > 0 ? "+" : ""}{usd(c.realizadoUsd)})</span>
+          )}
+        </span>
+        {c.quebrado && <b style={{ color: "#f87171" }}>QUEBRADO — parou de operar</b>}
         <span style={SUAVE}>comprometido <b>{usd(c.margemComprometidaUsd)}</b> ({usado.toFixed(0)}%)</span>
         <span style={SUAVE}>livre <b>{usd(c.livreUsd)}</b></span>
         {alavancado && (
