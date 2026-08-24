@@ -317,7 +317,13 @@ export const AGENTES: readonly Agente[] = [
     ritmo: "swing",
     motor: "bot",
     faixa: "trabalho",
-    capitalMinimoUsd: 0,
+    /**
+     * ⚠️ MESMO MÍNIMO DO CAÇADOR, de propósito. A regra do Celeiro diz que só o
+     * controle de RETORNO opera sem mínimo — e este aqui não é aquele. Ele é um
+     * agente de tendência de verdade, que compra e paga corretagem; dar a ele
+     * um piso diferente faria a comparação medir tamanho em vez de sinal.
+     */
+    capitalMinimoUsd: 200,
     bancaInicialUsd: 1000,
     fracaoPorPosicao: 0.25,
     tetoDeExposicao: 0.75,
@@ -327,9 +333,10 @@ export const AGENTES: readonly Agente[] = [
       "COMPRA, sempre, sem olhar sinal nenhum — mesma geometria de alvo e stop "
       + "do Caçador de Tendência, mesma corretagem, mesmo tamanho",
     naoFaz:
-      "não lê tendência, não lê volatilidade para decidir LADO, e nunca vende. "
-      + "Ele não é uma estratégia: é a régua contra a qual as estratégias "
-      + "direcionais se medem.",
+      "não PREVÊ direção — e não lê sinal nenhum para escolher lado, que é a "
+      + "única diferença dele para o Caçador. Em spot ele não vende: sem "
+      + "futuros, 'vender na baixa' é apenas sair. Ele não é uma estratégia; é "
+      + "a régua contra a qual as direcionais se medem.",
     receitaVemDe: ["preco"],
     aposentaQuando:
       "nunca — controle não se aposenta. Se ele render MAIS que os agentes de "
