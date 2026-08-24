@@ -258,12 +258,12 @@ RLS habilitada, ZERO policies — o padrão da casa.
 
 | # | o quê | status |
 |---|---|---|
-| D0 | `cex_conexoes` + backfill + `conexao_id` nulável (T1 da §2) | 🟡 **T1 aplicado — backfill NÃO exercitado (banco sem sessões)** |
+| D0 | `cex_conexoes` + backfill + `conexao_id` nulável (T1 da §2) | 🟢 **24/08 — backfill NÃO exercitado (banco sem sessões)** |
 | D1 | `lib/dca/relogio.ts` puro (janela, avanço, decisão de ciclo, tetos) com testes | 🟢 **24/08 — 33 testes** |
 | D2 | migration `dca_planos` + `dca_ciclos` | 🟢 **24/08 — trava unique provada no banco** |
 | D3 | rota `POST /api/dca/cron` PRÓPRIA, com a ordem reserva→ordem→registro da §3 | 🟢 **24/08 — falta AGENDAR no cron-job.org** |
 | D4 | `pause_dca` + liberação própria em `gate-keys.ts` e no painel | 🟢 **24/08 — cartão no AiControlsPanel** |
-| D5 | leitura dupla no autopilot + contador (T2 da §2) | 🔴 |
+| D5 | leitura dupla no autopilot + contador (T2 da §2) | 🟢 **24/08 — escrita dupla, leitura dupla, contador por passada** |
 | D6 | UI: criar plano, ver ciclos feitos/pulados, pausar, encerrar | 🟢 **24/08 — aba DCA no console de CEX** |
 | D7 | painel admin: planos ativos, ciclos do dia, falhas | 🔴 |
 | D8 | i18n nos 4 locales | 🔴 |
@@ -285,13 +285,26 @@ sete valores impossíveis que a tela aceitava, e é barato repetir.
   tinha ZERO sessões de autopilot, então a cópia foi no-op. A lógica está
   escrita e não está provada contra dado real — não confundir uma coisa com a
   outra.
-- **T2/T3 pendentes:** o autopilot ainda lê o próprio `creds_cipher`. Enquanto
-  isso, quem conectar pelo autopilot NÃO aparece no cofre, e um plano de DCA
-  exigirá conectar de novo. É o preço de não mexer no caminho de dinheiro vivo
-  no mesmo PR.
+- **T2 feito, T3 pendente e DEPENDENTE DE MEDIÇÃO.** Armar uma sessão agora
+  grava nos dois lugares, e a leitura prefere o cofre contando qual caminho
+  serviu (`cofre_origem_credencial`, um evento por passada com sessão).
+  Enquanto `sessao > 0` nesse contador, remover `creds_cipher` quebra alguém.
+  ⚠️ **Com zero sessões no banco, o contador ainda não gravou NADA** — e
+  "nunca rodou" não é "rodou e deu zero".
 - **A UI existe e o cron NÃO está agendado.** A própria tela diz isso, em
   vermelho, acima do formulário — plano salvo e nada rodando é exatamente o
   tipo de coisa que não pode ficar implícita.
+
+### ⚠️ O QUE O T2 DECIDIU, E QUE O PLANO NÃO PREVIA
+
+**Conexão revogada FALHA, não cai para trás.** O plano dizia "leitura dupla:
+usa o cofre quando existe, cai no `creds_cipher` quando não". Ao implementar
+ficou claro que essa regra, literal, tem um buraco: se o dono revogasse a
+conexão no cofre, a leitura cairia na cópia da sessão e **revogar não revogaria
+nada** — o oposto exato do ponto do cofre.
+
+Agora a queda só vale para "não há elo" ou "a linha sumiu". Conexão que EXISTE e
+está desligada lança, e o autopilot para aquela sessão. Falha fechado.
 
 ### ⚠️ ONDE A UI MORA, E POR QUÊ
 
