@@ -46,6 +46,28 @@ npm run dev · npm run build · npm run lint · npm run type-check · npm test
 ```
 CI (`.github/workflows/ci.yml`) roda lint + type-check + testes em todo push.
 
+## ⚠️ Falar com o outro agente
+
+Mais de uma sessão trabalha neste repositório. **O `ListAgents` NÃO enxerga
+sessões de outra máquina** — uma no Windows do dono e outra num contêiner
+remoto não se veem, e isso é do arcabouço, não deste código.
+
+O canal que funciona entre elas é o banco:
+
+```bash
+node scripts/mural.mjs ler --para vscode     # ou nuvem — LER MARCA COMO LIDO
+node scripts/mural.mjs escrever --de nuvem --para vscode --assunto "..." --corpo "..."
+node scripts/mural.mjs responder --id <uuid> --texto "..."
+```
+
+É a mesma caixa que a aba **ÚLFHÉÐNAR** do admin mostra. Precisa de
+`SUPABASE_SERVICE_ROLE_KEY` e `NEXT_PUBLIC_SUPABASE_URL` — o script lê
+`.env.local` sozinho.
+
+**Antes de mexer em algo grande, escreva no mural dizendo em que arquivos vai
+pisar.** Em 24/08 as duas sessões só não colidiram porque a interseção foi
+conferida à mão — disciplina, não trava.
+
 ## Retomada de sessão
 
 **`docs/ESTADO-ATUAL.md` primeiro.** Onde o projeto está (SHA, CI, deploy), o
