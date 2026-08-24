@@ -30,6 +30,7 @@ import type { CexCredentials, CexId } from "@/lib/cex/types";
 
 type Plano = {
   id: string; symbol: string; intervalo: string; status: string;
+  modo: "simulado" | "real";
   ciclos_total: number; ciclos_feitos: number; ciclos_pulados: number;
   orcamento_total_usd: number; por_ciclo_usd: number; gasto_acumulado_usd: number;
   next_run_at: string; encerrado_por: string | null;
@@ -38,6 +39,7 @@ type Ciclo = {
   ciclo_numero: number; status: string; motivo: string | null;
   agendado_para: string; executado_em: string | null;
   preco: number | null; quantidade: number | null; custo_usd: number | null;
+  simulado: boolean;
 };
 
 const INTERVALOS: { v: string; k: MessageKey }[] = [
@@ -65,6 +67,12 @@ export default function DcaPanel({ exchangeId, credentials }: {
   const [orcamento, setOrcamento] = useState("");
   const [ciclosTxt, setCiclosTxt] = useState("12");
   const [intervalo, setIntervalo] = useState("daily");
+  /**
+   * ⚠️ NASCE SIMULADO. Trocar para dinheiro real é um clique deliberado, e o
+   * servidor recusa qualquer valor que não seja exatamente "real" — campo
+   * ausente ou typo não podem acabar comprando.
+   */
+  const [modo, setModo] = useState<"simulado" | "real">("simulado");
   const [criando, setCriando] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -102,19 +110,21 @@ export default function DcaPanel({ exchangeId, credentials }: {
       const r = await fetch("/api/dca/planos", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          exchangeId, symbol, intervalo,
+          exchangeId, symbol, intervalo, modo,
           orcamentoTotalUsd: Number(orcamento), ciclosTotal: ciclosTxt,
-          credentials: {
+          // ⚠️ A chave só viaja no modo REAL. No simulado o servidor nem a pede,
+          // e mandar assim mesmo seria expor segredo sem necessidade.
+          ...(modo === "real" ? { credentials: {
             apiKey: credentials.apiKey, apiSecret: credentials.apiSecret,
             passphrase: credentials.passphrase,
-          },
+          } } : {}),
         }),
       });
       const j = await r.json();
       // ⚠️ Confere o corpo, não só o status: a rota devolve `ok:false` com 400
       // e 500, e tratar como sucesso deixaria o dono achando que criou.
       if (!r.ok || !j.ok) throw new Error(String(j.error ?? r.status));
-      toast.success(t("cex.dcaCreated"));
+      toast.success(modo === "real" ? t("cex.dcaCreated") : t("cex.dcaSimCreated"));
       setOrcamento("");
       await carregar();
     } catch (e) {
@@ -158,17 +168,43 @@ export default function DcaPanel({ exchangeId, credentials }: {
         <p className="font-mono text-[10px] text-ink-2 leading-relaxed">{t("cex.dcaNotScheduled")}</p>
       </div>
 
-      {/* ⚠️ E O CONSENTIMENTO VEM ANTES DO FORMULÁRIO, não depois. */}
-      <div className="rounded-xl border border-gold/25 bg-gold/[0.05] p-3">
-        <div className="font-display font-bold text-xs text-gold mb-1">{t("cex.dcaConsentTitle")}</div>
-        <p className="font-sans text-[11px] text-ink-2 leading-relaxed">{t("cex.dcaConsentBody")}</p>
-      </div>
+      {/* ⚠️ O CONSENTIMENTO SÓ APARECE NO MODO REAL — porque só ali ele é
+          verdade. Mostrá-lo no simulado seria pedir permissão para algo que
+          não vai acontecer, e avisos que não se aplicam ensinam a ignorar
+          avisos. */}
+      {modo === "real" && (
+        <div className="rounded-xl border border-gold/25 bg-gold/[0.05] p-3">
+          <div className="font-display font-bold text-xs text-gold mb-1">{t("cex.dcaConsentTitle")}</div>
+          <p className="font-sans text-[11px] text-ink-2 leading-relaxed">{t("cex.dcaConsentBody")}</p>
+        </div>
+      )}
 
       <div className="rounded-xl border border-white/10 bg-bg-2/40 p-4 space-y-3">
         <div className="flex items-center gap-2">
           <CalendarClock className="w-4 h-4 text-violet" />
           <span className="font-display font-bold text-sm text-ink">{t("cex.dcaTitle")}</span>
         </div>
+
+        {/* ⚠️ O MODO VEM PRIMEIRO, antes de qualquer número. É a decisão que
+            muda o significado de todo o resto do formulário. */}
+        <Campo label={t("cex.dcaMode")}>
+          <div className="grid grid-cols-2 gap-1.5">
+            {(["simulado", "real"] as const).map((m) => (
+              <button key={m} type="button" onClick={() => setModo(m)}
+                className={cn(
+                  "px-3 py-2 rounded-lg border font-mono text-[11px] tracking-widest uppercase transition-colors",
+                  modo === m
+                    ? (m === "real" ? "border-red/40 bg-red/[0.08] text-red" : "border-cyan/40 bg-cyan/[0.08] text-cyan")
+                    : "border-white/10 text-ink-4 hover:text-ink-3",
+                )}>
+                {t(m === "real" ? "cex.dcaModeReal" : "cex.dcaModeSim")}
+              </button>
+            ))}
+          </div>
+          <p className="font-sans text-[10px] text-ink-3 leading-relaxed mt-1.5">
+            {t(modo === "real" ? "cex.dcaModeRealHelp" : "cex.dcaModeSimHelp")}
+          </p>
+        </Campo>
 
         <div className="grid grid-cols-2 gap-2">
           <Campo label={t("cex.dcaPair")}>
@@ -225,7 +261,17 @@ export default function DcaPanel({ exchangeId, credentials }: {
       ) : planos.map((p) => (
         <div key={p.id} className="rounded-xl border border-white/10 bg-bg-2/30 p-3 space-y-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="font-display font-bold text-sm text-ink">{p.symbol}</div>
+            <div className="flex items-center gap-2">
+              <span className="font-display font-bold text-sm text-ink">{p.symbol}</span>
+              {/* ⚠️ O SELO É PERMANENTE. O modo não muda depois de criado, então
+                  ninguém confunde extrato simulado com compra que houve. */}
+              <span className={cn("font-mono text-[9px] tracking-widest uppercase px-1.5 py-0.5 rounded border",
+                p.modo === "real"
+                  ? "text-red border-red/30 bg-red/5"
+                  : "text-cyan border-cyan/30 bg-cyan/5")}>
+                {t(p.modo === "real" ? "cex.dcaModeReal" : "cex.dcaModeSim")}
+              </span>
+            </div>
             <span className={cn("font-mono text-[9px] tracking-widest uppercase px-1.5 py-0.5 rounded border",
               p.status === "ativo"    ? "text-green border-green/30 bg-green/5"
               : p.status === "pausado" ? "text-gold border-gold/30 bg-gold/5"
@@ -241,10 +287,15 @@ export default function DcaPanel({ exchangeId, credentials }: {
             {p.ciclos_pulados > 0 && (
               <span className="text-gold">{t("cex.dcaSkipped", { n: String(p.ciclos_pulados) })}</span>
             )}
-            <span>{t("cex.dcaSpent", {
-              spent:  Number(p.gasto_acumulado_usd).toFixed(2),
-              budget: Number(p.orcamento_total_usd).toFixed(2),
-            })}</span>
+            {/* ⚠️ "gastos" e "simulados" são frases DIFERENTES. Um plano
+                simulado que dissesse "gastos" seria a tela afirmando uma
+                compra que não houve. */}
+            <span className={p.modo === "simulado" ? "text-cyan" : undefined}>
+              {t(p.modo === "real" ? "cex.dcaSpent" : "cex.dcaSpentSim", {
+                spent:  Number(p.gasto_acumulado_usd).toFixed(2),
+                budget: Number(p.orcamento_total_usd).toFixed(2),
+              })}
+            </span>
             {p.status === "ativo" && (
               <span>{t("cex.dcaNext", { when: new Date(p.next_run_at).toLocaleString() })}</span>
             )}
@@ -276,6 +327,9 @@ export default function DcaPanel({ exchangeId, credentials }: {
                   <span className={cn("w-20", COR_CICLO[cy.status] ?? "text-ink-3")}>
                     {t(`cex.dcaCycle${cy.status === "feito" ? "Done" : cy.status === "pulado" ? "Skipped" : cy.status === "falhou" ? "Failed" : "Reserved"}` as MessageKey)}
                   </span>
+                  {cy.simulado && (
+                    <span className="text-cyan text-[9px] tracking-widest uppercase">sim</span>
+                  )}
                   <span className="text-ink-3 flex-1 truncate">
                     {cy.status === "feito" && cy.custo_usd != null
                       ? `${Number(cy.quantidade ?? 0)} @ ${Number(cy.preco ?? 0)} = $${Number(cy.custo_usd).toFixed(2)}`

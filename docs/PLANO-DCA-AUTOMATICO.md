@@ -323,6 +323,42 @@ no navegador, atrás de senha e com auto-lock de 10 minutos. Um plano de DCA nã
 pode viver assim — o cron roda com o dono dormindo. Por isso o aviso é a
 PRIMEIRA coisa da tela, antes do formulário, e não um asterisco no rodapé.
 
+### ⚠️ O MODO SIMULADO — testar tudo sem dinheiro de verdade
+
+Pedido do dono em 24/08: *"por enquanto não vai ser possível eu testar com
+dinheiro de verdade, então faça tudo que for possível para deixar tudo
+alinhado"*.
+
+Um plano nasce **`simulado`** e percorre o caminho INTEIRO — mesma decisão de
+janela, mesma reserva com a trava `unique`, mesmos tetos, mesmo preço real de
+mercado, mesmo extrato. A única linha que muda é a que chama `placeCexOrder`.
+
+⚠️ **É o que faz o ensaio valer.** Se o simulado fosse um caminho paralelo,
+provaria só que o caminho paralelo funciona — e o dono ligaria o dinheiro real
+confiando num ensaio que nunca ensaiou a peça certa.
+`lib/dca/modo-simulado.test.ts` exige isso: **uma** chamada a `placeCexOrder` no
+arquivo, e reserva/tetos/guarda-de-preço todos ANTES do ramo.
+
+⚠️ **NO PLANO, NUNCA NUMA VARIÁVEL DE AMBIENTE.** Um `DCA_DRY_RUN` global faria
+o mesmo plano se comportar diferente conforme o deploy, e alguém virando a
+chave transformaria histórico simulado em histórico com cara de real.
+
+⚠️ **E PLANO SIMULADO NÃO PEDE A CHAVE DA CORRETORA.** Dá para exercitar tudo
+sem entregar credencial a ninguém. Quem garante é o BANCO —
+`check (modo = 'simulado' or conexao_id is not null)` — porque esta tabela está
+fora do tipo `Database` e aqui não existe checagem de tipo.
+
+| trava | provada no banco |
+|---|---|
+| simulado sem conexão | aceito |
+| **real sem conexão** | **recusado** |
+| modo inventado | recusado |
+| campo omitido | vira `simulado` |
+
+O carimbo vai também no CICLO (`dca_ciclos.simulado`), e não deduzido do plano:
+um `update` na linha do plano relabelaria o histórico inteiro de uma vez. O que
+aconteceu fica dito onde aconteceu.
+
 ## 8. O que este plano NÃO faz
 
 - **Não faz DCA na DEX.** Fica para depois do beta, plano próprio: on-chain

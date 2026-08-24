@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { guardarConexao } from "@/lib/cex/conexoes";
-import { criarPlano, planosDaCarteira, ciclosDoPlano, avancarPlano } from "@/lib/dca/store";
+import {
+  criarPlano, planosDaCarteira, ciclosDoPlano, avancarPlano, type ModoPlano,
+} from "@/lib/dca/store";
 import { proximaJanela, type Intervalo } from "@/lib/dca/relogio";
 /**
  * ⚠️ AS MESMAS FUNÇÕES PURAS DA AUDITORIA DE `/orders` (PR #347).
@@ -74,22 +76,36 @@ export async function POST(req: NextRequest) {
   if (!cada || Number(cada) <= 0) {
     return NextResponse.json({ ok: false, error: "por_ciclo_zero" }, { status: 400 });
   }
-  if (!creds?.apiKey || !creds?.apiSecret) {
-    return NextResponse.json({ ok: false, error: "credenciais_ausentes" }, { status: 400 });
-  }
+  /**
+   * ⚠️⚠️ O MODO É EXPLÍCITO, E O PADRÃO É SIMULADO.
+   *
+   * Qualquer coisa que não seja exatamente `"real"` cai em simulado. Um campo
+   * ausente, um typo, um cliente antigo — nada disso pode acabar comprando com
+   * dinheiro de verdade. O caminho que gasta exige dizer o nome dele.
+   */
+  const modo: ModoPlano = b.modo === "real" ? "real" : "simulado";
 
   /**
-   * ⚠️ A CHAVE VAI PARA O COFRE, não para a linha do plano. É o ponto do
-   * `cex_conexoes`: uma cópia do segredo, um lugar para revogar — e revogar
-   * ali desliga DCA e autopilot de uma vez.
+   * ⚠️ PLANO SIMULADO NÃO PEDE CREDENCIAL — e é o ponto.
+   *
+   * Dá para exercitar relógio, reserva, tetos e extrato sem entregar a chave
+   * da corretora a ninguém. Só o caminho que gasta dinheiro exige a chave, e o
+   * banco confirma (check `dca_planos_real_exige_conexao`).
    */
-  const conexao = await guardarConexao({
-    walletAddress: session.sub,
-    exchangeId:    exchangeId as CexId,
-    credentials:   { apiKey: creds.apiKey, apiSecret: creds.apiSecret, passphrase: creds.passphrase },
-  });
-  if (!conexao.ok) {
-    return NextResponse.json({ ok: false, error: "conexao_nao_gravada", detalhe: conexao.erro }, { status: 500 });
+  let conexaoId: string | null = null;
+  if (modo === "real") {
+    if (!creds?.apiKey || !creds?.apiSecret) {
+      return NextResponse.json({ ok: false, error: "credenciais_ausentes" }, { status: 400 });
+    }
+    const conexao = await guardarConexao({
+      walletAddress: session.sub,
+      exchangeId:    exchangeId as CexId,
+      credentials:   { apiKey: creds.apiKey, apiSecret: creds.apiSecret, passphrase: creds.passphrase },
+    });
+    if (!conexao.ok) {
+      return NextResponse.json({ ok: false, error: "conexao_nao_gravada", detalhe: conexao.erro }, { status: 500 });
+    }
+    conexaoId = conexao.id;
   }
 
   /**
@@ -100,17 +116,17 @@ export async function POST(req: NextRequest) {
    * outra — o defeito que a auditoria de hoje achou dez vezes.
    */
   const r = await criarPlano({
-    conexaoId: conexao.id, walletAddress: session.sub, exchangeId, symbol,
+    conexaoId, modo, walletAddress: session.sub, exchangeId, symbol,
     orcamentoTotalUsd: orcamento, porCicloUsd: Number(cada), ciclosTotal: c.ciclos,
     intervalo, primeiraJanelaIso: new Date().toISOString(),
   });
   if (!r.ok) return NextResponse.json({ ok: false, error: "plano_nao_gravado", detalhe: r.erro }, { status: 500 });
 
   await recordEvent("dca_plano_criado", { wallet: session.sub, meta: {
-    exchangeId, symbol, intervalo, ciclos: c.ciclos, orcamento, porCiclo: cada,
+    exchangeId, symbol, intervalo, ciclos: c.ciclos, orcamento, porCiclo: cada, modo,
   } });
   return NextResponse.json({
-    ok: true, id: r.id, porCiclo: cada,
+    ok: true, id: r.id, porCiclo: cada, modo,
     // A tela mostra quando cai o próximo, para o dono conferir o relógio.
     proximaJanela: proximaJanela(new Date().toISOString(), intervalo),
   });
