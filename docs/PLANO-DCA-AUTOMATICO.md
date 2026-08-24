@@ -146,6 +146,22 @@ próxima janela futura.
 > `pulado` ≠ `feito` ≠ `falhou`. Três estados, como `expired` ≠ win/loss no
 > flywheel. Somar os três daria um plano "completo" que comprou metade.
 
+### ⚠️ E SÓ A JANELA CORRENTE COMPRA — descoberto no D1
+
+Se o plano tem 3 ciclos e o cron ficou fora cinco semanas, **o intervalo
+inteiro do plano já passou**. A primeira implementação disparava a última
+janela mesmo assim; o teste pegou.
+
+Uma compra cinco semanas depois de o plano ter terminado, num momento que o
+dono não escolheu, **não é DCA — é uma ordem a mercado avulsa com o dinheiro de
+uma poupança**. Nesse caso o plano encerra, com as janelas registradas como
+perdidas.
+
+"Janela corrente" tem definição exata e sem tolerância arbitrária: aquela cuja
+SEGUINTE ainda é futura. Vale o mesmo quando a passada bate o teto de janelas —
+paramos por tempo, não por ter alcançado o presente, então não compra: registra
+o que andou e a próxima passada continua.
+
 ---
 
 ## 5. As travas — PRÓPRIAS, não herdadas
@@ -243,7 +259,7 @@ RLS habilitada, ZERO policies — o padrão da casa.
 | # | o quê | status |
 |---|---|---|
 | D0 | `cex_conexoes` + backfill + `conexao_id` nulável (T1 da §2) | 🔴 |
-| D1 | `lib/dca/relogio.ts` puro (janela, avanço, decisão de ciclo, tetos) com testes | 🔴 |
+| D1 | `lib/dca/relogio.ts` puro (janela, avanço, decisão de ciclo, tetos) com testes | 🟢 **24/08 — 33 testes** |
 | D2 | migration `dca_planos` + `dca_ciclos` | 🔴 |
 | D3 | rota `POST /api/dca/cron` PRÓPRIA, com a ordem reserva→ordem→registro da §3 | 🔴 |
 | D4 | `pause_dca` + liberação própria em `gate-keys.ts` e no painel | 🔴 |
