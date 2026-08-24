@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
-import { estadoDa, faz, type Mensagem } from "@/lib/einherjar/mensagens";
+import { estadoDa, faz, type Mensagem } from "@/lib/einherjar/mensagem";
 
 /**
  * EINHERJAR — o salão onde os agentes se reportam.

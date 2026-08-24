@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estadoDa, faz, interlocutorValido } from "@/lib/einherjar/mensagens";
+import { estadoDa, faz, interlocutorValido } from "@/lib/einherjar/mensagem";
 
 /**
  * ⚠️ O QUE ESTES TESTES PROTEGEM (docs/PLANO-EINHERJAR.md).
