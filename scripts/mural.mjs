@@ -27,13 +27,26 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+
+/**
+ * ⚠️ A RAIZ DO REPO, e não o diretório de onde você chamou.
+ *
+ * A primeira versão lia `.env.local` por caminho RELATIVO, então funcionava só
+ * se você estivesse na raiz. De qualquer subpasta ela dizia "falta
+ * configuração" com o arquivo existindo dois níveis acima — mensagem
+ * verdadeira e enganosa, que manda procurar credencial quando o erro é o `cd`.
+ */
+const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const INTERLOCUTORES = ["dono", "nuvem", "vscode", "todos"];
 
 /** Carrega `.env.local` sem dependência. Não sobrescreve o que já veio do shell. */
 function carregarEnv() {
-  for (const arquivo of [".env.local", ".env"]) {
+  for (const nome of [".env.local", ".env"]) {
+    const arquivo = join(RAIZ, nome);
     if (!existsSync(arquivo)) continue;
     for (const linha of readFileSync(arquivo, "utf8").split("\n")) {
       const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(linha);
@@ -55,7 +68,10 @@ function cliente() {
       "Falta configuração:\n"
       + `  NEXT_PUBLIC_SUPABASE_URL   ${url ? "ok" : "AUSENTE"}\n`
       + `  SUPABASE_SERVICE_ROLE_KEY  ${key ? "ok" : "AUSENTE"}\n`
-      + "\nEsperado em `.env.local` na raiz do repo, ou no ambiente. Ver docs/RUNBOOK.md.",
+      + `\nProcurei em: ${join(RAIZ, ".env.local")}\n`
+      + `             ${join(RAIZ, ".env")}\n`
+      + "e no ambiente. Copie os valores do painel da Vercel (Settings → "
+      + "Environment Variables) ou do Supabase (Settings → API).",
     );
     process.exit(1);
   }
