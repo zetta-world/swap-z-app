@@ -40,7 +40,7 @@
 | `PLANO-DESCARTADAS.md` | O teto de credibilidade do arbitrador julgado com livro lido |
 | `PLANO-TAMANHO-E-REGIME.md` | Tamanho de posição por convicção e o filtro de regime — nesta ordem |
 | `PLANO-MURAL-DE-AGENTES.md` | Como duas sessões trabalham no mesmo repo sem se derrubar |
-| `PLANO-EINHERJAR.md` | A aba do salão: a linha do tempo dos agentes e a caixa de recados do dono |
+| `PLANO-ULFHEDNAR.md` | A aba do salão: a linha do tempo dos agentes e a caixa de recados do dono |
 
 ## 📚 Históricos — contexto, não atualizar
 

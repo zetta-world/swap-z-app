@@ -10,9 +10,13 @@
 > **Quando escrever:** ao fim de cada entrega. Documento desatualizado é pior que
 > documento nenhum — dá a impressão de que foi conferido.
 >
-> **Última atualização:** 24/08/2026, após o **EINHERJAR** — a aba onde o dono
-> lê o que os agentes fizeram e escreve para eles. Antes disso, a **auditoria da
-> PONTE e do AUTOPILOT** — 16 achados em 5 PRs (#336, #337, #338, #340, #341).
+> ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
+> Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
+>
+> **Última atualização:** 24/08/2026, após o **ÚLFHÉÐNAR** (#343, #344) e o
+> **conserto do shell que ele derrubou em produção** (#345 — leia a §6, primeiro
+> item). Antes disso, a **auditoria da PONTE e do AUTOPILOT** — 16 achados em 5
+> PRs (#336, #337, #338, #340, #341).
 >
 > ⚠️ Esta atualização foi escrita pela **outra sessão** (a da nuvem). O que a
 > sessão do VSCode escreveu antes segue intacto — as duas mãos escrevem aqui,
@@ -24,8 +28,8 @@
 
 | | |
 |---|---|
-| `main` | `bfb5ab5` — ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
-| CI | verde · **1.696 testes** · 122 arquivos |
+| `main` | `7aaf2e8` — ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
+| CI | verde · **1.893 testes** · 123 arquivos |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
 | Outra mão no código | **duas sessões Claude** trabalham aqui — ver §1.1 (corrigido) |
@@ -33,6 +37,8 @@
 Últimos commits, do mais novo:
 
 ```
+7aaf2e8  Conserta o shell derrubado: pura ao lado de import de servidor (#345)  ← nuvem
+f1c9174  EINHERJAR: a aba do salão, e a caixa de recados (#344)  ← nuvem
 bfb5ab5  EINHERJAR: o plano, a migration, e o teto de tipos que parou a UI (#343)  ← nuvem
 ea1764e  Celeiro: a alavanca real, a taxa por praça, e o painel de capital (#339)
 c1b2ec3  ESTADO-ATUAL: as duas auditorias, as travas, e quem é a outra mão (#342)  ← nuvem
@@ -502,7 +508,7 @@ instrumentos usados para confiar no resto.
 `src/lib/supabase/types.ts`.** Custou uma UI inteira parada em 23/08 e vai
 custar de novo, porque o sintoma aparece longe da causa.
 
-O que aconteceu: registrei `einherjar_mensagens` como a **20ª tabela** do tipo
+O que aconteceu: registrei `ulfhednar_mensagens` como a **20ª tabela** do tipo
 `Database`. O `tsc` quebrou — mas **não naquela tabela**. Quebrou em
 `sniper.ts` e `ullr.ts`, dizendo que colunas de `zion_suggestions` não
 existiam. A inferência do genérico do `supabase-js` tem teto de profundidade;
@@ -514,8 +520,8 @@ tabelas**, escolhidas por ordem de resolução e não por culpa.
 > em `types.ts`, na linha que ele acabou de escrever.
 
 **O que está em produção hoje é o contorno (opção a):** a tabela ficou **fora**
-do `Database`. `src/lib/einherjar/mensagens.ts` tem um `ClienteCru` local e
-`const TABELA = "einherjar_mensagens" as never;`. Perde-se tipagem **nesse
+do `Database`. `src/lib/ulfhednar/mensagens.ts` tem um `ClienteCru` local e
+`const TABELA = "ulfhednar_mensagens" as never;`. Perde-se tipagem **nesse
 arquivo** — que tem 3 campos e 2 funções — e preserva-se a de
 `zion_suggestions`, que é caminho de dinheiro. O comentário no topo do arquivo
 diz isso com todas as letras.
@@ -530,7 +536,62 @@ arquivo que ela não tocou, é isto. Mande-a ler esta seção antes de debugar.
 
 ---
 
+## 5.4 ⚠️ OS NOMES DA HIRD SÃO DOS TIERS — não use nenhum dos três
+
+`src/lib/pricing/plans.ts` reserva **Drengr** (US$ 7,90) · **Berserkr**
+(US$ 20,90) · **Einherjar** (US$ 159) para os planos pagos, com as runas
+ᛞ · ᛒ · ᛖ. Não batize nada dentro do produto com esses nomes.
+
+Eu batizei: a aba dos agentes nasceu **EINHERJAR** em 23/08, exatamente o nome
+do tier de US$ 159. Quem grepasse "einherjar" achava o plano do cliente e o
+mural dos agentes na mesma busca.
+
+⚠️ **E o primeiro substituto teria sido pior.** Ofereci `Berserkir` ao dono, que
+escolheu. Só ao ir mexer conferi a lista inteira e vi que **`Berserkr` também é
+tier** — teria trocado uma colisão exata por uma de UMA LETRA, que lê como erro
+de digitação. Voltei e perguntei antes de renomear 15 arquivos.
+
+> A lição não é "escolhi mal um nome". É que eu ofereci opções **sem ler a
+> fonte** — `plans.ts` estava a um `grep` de distância nas duas vezes.
+
+Renomeado para **ÚLFHÉÐNAR** ("os de pele de lobo", runa ᚢ), que não colide com
+nenhum dos três. A migration `0030` renomeia a tabela, os dois índices **e a
+chave primária** — a PK não segue o `rename to` da tabela, e só apareceu porque
+fui conferir no banco em vez de confiar no `success: true` da ferramenta.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
+
+**Uma função PURA ao lado de um import de servidor derrubou a aplicação
+inteira.** (24/08, minha, em produção, achada pelo dono no celular.)
+
+`UlfhednarPanel.tsx` é `"use client"` e importou `estadoDa` — função pura, não
+toca banco — de um módulo que na PRIMEIRA LINHA importava `getSupabaseAdmin`. O
+empacotador puxa o **módulo**, não a função. A guarda de `supabase/server.ts`
+lança quando avaliada no navegador, e como ela roda ao carregar o pacote do
+cliente, não caiu o painel novo: caiu o **Z-SWAP em todas as rotas**, com
+`supabase/server.ts must never be imported in the browser`.
+
+⚠️ **AS QUATRO FERRAMENTAS PASSARAM VERDES NO COMMIT QUE QUEBROU** — `tsc`,
+`lint`, `build` e 1.696 testes. Não é descuido delas: o defeito é de
+**avaliação no navegador**, e nenhuma das quatro avalia nada num navegador. É a
+mesma família do `Cross-Origin-Opener-Policy` que matou a Coinbase Wallet e
+ficou semanas verde.
+
+> Função pura morando ao lado de um import de servidor é armadilha carregada.
+> Se um `"use client"` precisa de algo de um módulo, o módulo INTEIRO vai junto.
+
+A trava é `src/lib/supabase/nao-vaza-para-o-cliente.test.ts`: percorre a árvore
+de imports de todo componente cliente e falha imprimindo o CAMINHO. Tem que ser
+**transitiva** — o caminho real tinha um salto no meio, e uma trava de primeiro
+nível teria passado batido.
+
+E ela **nasceu errada**: acusou um arquivo que não importa nada, porque casou a
+frase `from "@/lib/supabase/server"` escrita DENTRO de um comentário. O
+instrumento afirmando o que não sabe, de novo. Agora tira comentário antes de
+varrer, e foi provada nos dois sentidos — no teste e no pacote gerado (com o
+import errado a guarda aparece num chunk; com o conserto, em nenhum dos 183).
 
 **A regressão que passou verde.** A PR #304 mergeou o `EM_PROVA` do `cull.ts` e
 o plano, mas **nenhuma linha de `desks.ts`** — a edição morreu num
@@ -635,7 +696,7 @@ positivo custa a mesma credibilidade que falso negativo.
 | Reparo das carteiras | `src/lib/paper/reconcile.ts` |
 | Registro de painéis | `src/lib/admin/modules.ts` **e** `src/components/admin/panel-map.tsx` (as duas pontas) |
 | Áreas do painel | `src/lib/admin/areas.ts` |
-| EINHERJAR (a aba do salão) | `src/lib/einherjar/mensagens.ts` · `src/app/admin/api/einherjar/route.ts` · `EinherjarPanel.tsx` |
+| ÚLFHÉÐNAR (a matilha) | `src/lib/ulfhednar/mensagens.ts` · `src/app/admin/api/ulfhednar/route.ts` · `UlfhednarPanel.tsx` |
 
 ---
 
@@ -649,7 +710,7 @@ positivo custa a mesma credibilidade que falso negativo.
 | `TROCAR-DE-PROVEDOR.md` | **Kimi ↔ Anthropic numa variável** — leia ao reabastecer |
 | `PLANO-TAMANHO-E-REGIME.md` | do zettaceo: filtro de tendência e tamanho de posição |
 | `PLANO-MURAL-DE-AGENTES.md` | como duas sessões coordenam sem se derrubar — as travas |
-| `PLANO-EINHERJAR.md` | a aba do salão: o que ela mostra, e o que ela **não** mostra |
+| `PLANO-ULFHEDNAR.md` | a aba do salão: o que ela mostra, e o que ela **não** mostra |
 
 ---
 

@@ -2,7 +2,7 @@ import type { ComponentType } from "react";
 
 export type ModuleId =
   | "command"
-  | "einherjar"
+  | "ulfhednar"
   | "celeiro"
   | "alerts"
   | "growth"
@@ -108,10 +108,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     defaultOrder: -2,
   },
   {
-    id: "einherjar",
-    title: "EINHERJAR",
-    subtitle: "o salão dos escolhidos — o que os agentes fizeram, e o que você quer perguntar",
-    icon: "\u16DD",
+    id: "ulfhednar",
+    title: "ÚLFHÉÐNAR",
+    subtitle: "os de pele de lobo — o que os agentes fizeram, e o que você quer perguntar",
+    /**
+     * ⚠️ ᚢ (Uruz), não ᛒ (Berkanan) nem ᛖ (Ehwaz) — essas duas já são as runas
+     * dos tiers Berserkr e Einherjar em `pricing/plans.ts`. Repetir a runa
+     * refaria, no ícone, a colisão de nome que este rename veio desfazer.
+     */
+    icon: "\u16A2",
     category: "command",
     defaultEnabled: true,
     /**

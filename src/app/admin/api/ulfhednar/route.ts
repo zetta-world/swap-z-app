@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import {
   lerMensagens, escreverMensagem, interlocutorValido, INTERLOCUTORES,
-} from "@/lib/einherjar/mensagens";
+} from "@/lib/ulfhednar/mensagens";
 import { sanitizePromptText } from "@/lib/validate";
 import { recordEvent } from "@/lib/admin/track";
 
@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * EINHERJAR — o salão (`docs/PLANO-EINHERJAR.md`).
+ * ÚLFHÉÐNAR — a matilha (`docs/PLANO-ULFHEDNAR.md`).
  *
  * GET  → a linha do tempo do que os agentes fizeram + a caixa de mensagens.
  * POST → o dono escreve uma pergunta para um agente.
@@ -113,6 +113,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   // ⚠️ AGUARDADO: na Vercel a função congela depois da resposta e o insert se
   // perde. A trava `event-durability` pegou isto — a mesma classe do dia.
-  await recordEvent("einherjar_pergunta", { meta: { para, assunto } });
+  await recordEvent("ulfhednar_pergunta", { meta: { para, assunto } });
   return NextResponse.json({ ok: true });
 }

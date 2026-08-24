@@ -2,8 +2,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { Mensagem } from "./mensagem";
 
 /**
- * EINHERJAR — a caixa entre o dono e os agentes.
- * (`docs/PLANO-EINHERJAR.md`)
+ * ÚLFHÉÐNAR — a caixa entre o dono e os agentes.
+ * (`docs/PLANO-ULFHEDNAR.md`)
  *
  * ⚠️⚠️ POR QUE ESTA TABELA NÃO ESTÁ NO TIPO `Database` (23/08).
  *
@@ -40,7 +40,7 @@ type ClienteCru = { from: (t: never) => {
   insert: (v: unknown) => Promise<{ error: { message: string } | null }>;
 } };
 
-const TABELA = "einherjar_mensagens" as never;
+const TABELA = "ulfhednar_mensagens" as never;
 
 /**
  * ⚠️ SÓ O QUE TOCA O BANCO MORA AQUI — e por isso este módulo NUNCA pode ser
