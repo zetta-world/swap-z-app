@@ -111,9 +111,12 @@ export default function ZionOrdersList() {
   }, [refresh]);
 
   const onDelete = (id: string) => {
-    deletePendingOrder(id);
+    // ⚠️ Confere se gravou. `deletePendingOrder` devolve `false` com o
+    // `localStorage` cheio, e o "Ordem removida" mentiria igual ao "salva".
+    const ok = deletePendingOrder(id);
     refresh();
-    toast.success(t("orders.orderRemovedToast"));
+    if (ok) toast.success(t("orders.orderRemovedToast"));
+    else    toast.error(t("orders.deleteFailedToast"));
   };
 
   const onFireNow = (o: PendingOrder) => {
@@ -129,9 +132,25 @@ export default function ZionOrdersList() {
 
     setFromToken(fromToken);
     setToToken(toToken);
+    /**
+     * ⚠️ `from.amount` é o valor de UMA execução — num plano de DCA, um ciclo,
+     * e não o orçamento inteiro. Era aqui que o achado 🔴 batia: o card exibia
+     * "83,33 por ciclo" e este `setAmountIn` carregava 1.000.
+     */
     if (card.from?.amount) setAmountIn(card.from.amount);
     setSelectedSource(null);
-    updatePendingOrder(o.id, { status: "fired", lastError: undefined });
+    /**
+     * ⚠️⚠️ CARREGAR NÃO É DISPARAR (auditoria de 24/08).
+     *
+     * Esta linha gravava `status: "fired"` — antes de o drawer sequer abrir, e
+     * muito antes de qualquer assinatura. Fechar sem assinar deixava a ordem
+     * marcada DISPARADA para sempre.
+     *
+     * A aplicação NÃO consegue saber se o usuário assinou: isso acontece na
+     * carteira dele. Então ela não afirma. O status segue `pending` e fica o
+     * carimbo do que de fato aconteceu — o par foi carregado na tela.
+     */
+    updatePendingOrder(o.id, { loadedAt: Date.now(), lastError: undefined });
     refresh();
 
     toast.success(t("orders.pairLoadedToast"));
@@ -212,6 +231,12 @@ function OrderRow({
     cancelled: "text-ink-3 border-white/10 bg-white/[0.02]",
   }[order.status] ?? "text-ink-3 border-white/10 bg-white/[0.02]";
 
+  const idade = (ms: number) =>
+      ms < 60_000      ? `${Math.round(ms / 1_000)}s`
+    : ms < 3_600_000   ? `${Math.round(ms / 60_000)}m`
+    : ms < 86_400_000  ? `${Math.round(ms / 3_600_000)}h`
+                       : `${Math.round(ms / 86_400_000)}d`;
+
   const age = Date.now() - order.createdAt;
   const ageLabel =
     age < 60_000      ? `${Math.round(age / 1_000)}s`
@@ -250,9 +275,31 @@ function OrderRow({
           </p>
         )}
 
+        {/* ⚠️ "CARREGADA", não "DISPARADA". A tela diz o que ela SABE: o par foi
+            posto no swap card. Se assinou ou não, quem sabe é a carteira. */}
+        {order.loadedAt && order.status === "pending" && (
+          <div className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-cyan/25 bg-cyan/[0.05] px-1.5 py-0.5 font-mono text-[9px] tracking-widest uppercase text-cyan">
+            {t("orders.loadedBadge")} · {t("orders.loadedAgo", { ago: idade(Date.now() - order.loadedAt) })}
+          </div>
+        )}
+
         <div className="mt-2 grid grid-cols-2 gap-1.5 min-w-0">
           {card.from && (
-            <Field label={t("common.from")} value={`${card.from.amount ?? ""} ${card.from.symbol}`.trim()} />
+            <Field
+              label={card.plan ? t("orders.perCycleLabel") : t("common.from")}
+              value={`${card.from.amount ?? ""} ${card.from.symbol}`.trim()}
+            />
+          )}
+          {/* ⚠️ OS DOIS NÚMEROS, COM RÓTULOS DIFERENTES. Antes o card mostrava
+              o total em "De:" e o por-ciclo no resumo, e o botão usava o
+              primeiro. Agora "De:" é o que o botão carrega, e o orçamento
+              aparece separado, dito como orçamento. */}
+          {card.plan && (
+            <Field
+              label={t("orders.fieldTotalBudget")}
+              value={`${card.plan.totalBudget} ${card.from?.symbol ?? ""} · ${card.plan.cycles}×`.trim()}
+              tone="violet"
+            />
           )}
           {card.to && (
             <Field label={t("common.to")} value={card.to.symbol} />

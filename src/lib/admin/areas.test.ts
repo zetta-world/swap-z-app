@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  AREAS, AREA_DA_CATEGORIA, MESAS,
+  AREAS, AREA_DA_CATEGORIA, MESAS, ULFHEDNAR,
   areaDoModulo, modulosDaArea, areaPorId, contagemPorArea,
 } from "@/lib/admin/areas";
 import { MODULE_REGISTRY } from "@/lib/admin/modules";
@@ -73,6 +73,36 @@ describe("áreas — a separação que o dono cobrou", () => {
   it("nenhum id de MESAS é fantasma", () => {
     const ids = new Set(MODULE_REGISTRY.map((m) => m.id));
     expect(MESAS.filter((id) => !ids.has(id))).toEqual([]);
+  });
+
+  /**
+   * ⚠️⚠️ O ÚLFHÉÐNAR É ABA, NÃO CARTÃO DENTRO DO COMANDO — e eu entreguei
+   * errado primeiro (24/08).
+   *
+   * O dono pediu "uma aba nova com UI própria". Eu registrei um painel com
+   * `category: "command"` e parei ali: ele virou o segundo cartão da área
+   * COMANDO, no meio de outros três. Ele teve de vir dizer "isso tem que ficar
+   * no painel ADM né".
+   *
+   * ⚠️ E NADA PODIA TER ACUSADO. Um painel registrado nas duas pontas
+   * (`modules.ts` + `panel-map.tsx`) compila, aparece e funciona — só que na
+   * área errada. A invariante nº 32 protege contra painel que não desenha;
+   * não existia nada protegendo contra painel que desenha no lugar errado.
+   *
+   * Esta trava é esse pedaço: se alguém devolver o módulo para dentro do
+   * COMANDO, ou apagar a área, o teste falha em vez de a aba sumir calada.
+   */
+  it("ÚLFHÉÐNAR é uma ÁREA do menu, não um painel do COMANDO", () => {
+    expect(areaPorId("ulfhednar"), "a aba sumiu do menu").not.toBeNull();
+    expect(areaDoModulo("ulfhednar")).toBe("ulfhednar");
+    expect(modulosDaArea("ulfhednar")).toContain("ulfhednar");
+    // E não pode estar nos dois lugares: cartão no COMANDO E aba própria.
+    expect(modulosDaArea("comando")).not.toContain("ulfhednar");
+  });
+
+  it("nenhum id de ULFHEDNAR é fantasma", () => {
+    const ids = new Set(MODULE_REGISTRY.map((m) => m.id));
+    expect(ULFHEDNAR.filter((id) => !ids.has(id))).toEqual([]);
   });
 });
 

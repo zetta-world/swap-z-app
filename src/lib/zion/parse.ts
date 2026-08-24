@@ -18,13 +18,50 @@ export interface ActionCard {
     | "sell_safe" | "sell_medium" | "sell_aggressive"
     | "stop_loss"
     | "approve"
-    | string;
+    | "dca" | "twap"
+    /**
+     * ⚠️⚠️ O ESCAPE ANULAVA A UNIÃO (auditoria de 24/08).
+     *
+     * A lista acima terminava em `| string` puro, e isso faz o TypeScript
+     * COLAPSAR tudo para `string`: zero verificação de exaustividade em
+     * qualquer `switch (card.kind)`, zero autocomplete, e erro de digitação
+     * passando calado. Foi por isso que "dca" e "twap" — que a tela de
+     * /orders emite desde sempre — compilaram sem estar na lista.
+     *
+     * `(string & {})` mantém a MESMA permissividade em runtime (o modelo ainda
+     * pode inventar um kind novo e o parse não quebra) mas preserva os membros
+     * nomeados para a ferramenta. NÃO devolve exaustividade: para isso seria
+     * preciso remover o escape e acertar todos os chamadores, e isso merece PR
+     * próprio — este arquivo é lido pelas duas sessões.
+     */
+    | (string & {});
   title:      string;
   summary:    string;
   chain:      string;
   from?:      { symbol: string; address: string; amount?: string };
   to?:        { symbol: string; address: string };
   triggerPrice?: string;
+  /**
+   * O plano de uma ordem parcelada (DCA / TWAP).
+   *
+   * ⚠️ EXISTE PARA SEPARAR O QUE É EXECUTÁVEL DO QUE É ORÇAMENTO. `from.amount`
+   * é SEMPRE o valor de UMA execução — é ele que o "Disparar agora" carrega no
+   * swap card. O total do plano mora aqui, e a tela mostra os dois com rótulos
+   * diferentes.
+   *
+   * Antes disso `from.amount` levava o orçamento TOTAL de um DCA, e disparar
+   * abria o swap com 12× o tamanho pretendido enquanto o card exibia o valor
+   * por ciclo ao lado.
+   */
+  plan?: {
+    /** O orçamento inteiro, na unidade do token de origem. */
+    totalBudget: string;
+    cycles:      number;
+    /** O mesmo que `from.amount`, repetido aqui para a tela não ter de deduzir. */
+    perCycle:    string;
+    /** Só no DCA: hourly | daily | weekly | monthly. */
+    freq?:       string;
+  };
   estCost?:   string;
   estReturn?: string;
   targetReturn?: string;

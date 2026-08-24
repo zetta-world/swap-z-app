@@ -146,9 +146,25 @@ export default function SignLimitOrderButton({
       setPhase("submitting");
       const { orderUid } = await submitCowOrder(cardChain, built, signature, address);
 
-      // Persist locally so /orders can show status.
+      /**
+       * ⚠️⚠️ A PARTIR DAQUI A ORDEM JÁ ESTÁ VIVA (auditoria de 24/08).
+       *
+       * O `submitCowOrder` acima já postou a ordem assinada no livro da CoW:
+       * solvers PODEM preenchê-la. O registro local é só a cópia que o /orders
+       * usa para mostrar e cancelar.
+       *
+       * Antes, `savePendingOrder` devolvia um objeto mesmo quando o
+       * `localStorage` estava cheio, e o `attachCowOrder` seguinte fazia um
+       * `map` sobre uma lista que não continha aquele id — no-op silencioso.
+       * O desfecho era o pior possível: uma ordem VIVA, preenchível, que a
+       * aplicação nunca mais mostrava, com o toast dizendo "vai preencher
+       * automaticamente". O dono não teria como vê-la nem cancelá-la por aqui.
+       *
+       * ⚠️ Não dá para desfazer: cancelar na CoW exige outra assinatura. Então
+       * a tela ADMITE, e entrega o `orderUid` para o dono agir fora daqui.
+       */
       const saved = savePendingOrder(card);
-      attachCowOrder(saved.id, {
+      const anexou = saved !== null && attachCowOrder(saved.id, {
         chain:     cardChain,
         orderUid,
         signedAt:  Date.now(),
@@ -156,6 +172,14 @@ export default function SignLimitOrderButton({
       });
 
       setPhase("done");
+      if (!anexou) {
+        toast.warning(t("orders.cowLiveButUnsavedTitle"), {
+          description: t("orders.cowLiveButUnsavedBody", { uid: orderUid }),
+          duration: 30_000,
+        });
+        onDone();
+        return;
+      }
       toast.success(`Limit order pre-signed: ${built.meta.sellAmount} → ${built.meta.buyAmount}`, {
         description: `Fills automatically when market hits ${built.meta.limitPrice}. Valid for ${Math.round((built.meta.expiresAt - Date.now()) / 86_400_000)} days.`,
         duration: 8000,

@@ -67,6 +67,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // the visitor longest" without a second page_view row.
     const dwellMs = num(typeof body?.dwellMs === "number" ? String(body.dwellMs) : null);
     if (dwellMs != null && dwellMs > 0) {
+      // Permanência de página: altíssimo volume, sem consequência. Perder uma
+      // amostra não muda decisão nenhuma, e aguardar somaria um insert a CADA
+      // saída de página. É para isto que a saída de emergência existe — e ela
+      // exige que o motivo esteja na linha DE CIMA da chamada, não no topo do
+      // bloco, senão a trava não a enxerga.
+      // telemetria: amostragem de comportamento, perda aceitável por volume.
       recordEvent("dwell", { path, meta: { cid, ms: Math.min(dwellMs, 1_800_000) } });
       return new NextResponse(null, { status: 204 });
     }
@@ -85,6 +91,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     } catch { /* ignore malformed */ }
 
     const session = await getSession();
+    // Page view é o evento de MAIOR volume da plataforma — o próprio
+    // `recordEvent` já o exclui do broadcast do admin por isso. Perder uma
+    // linha não muda decisão; aguardar somaria latência a cada navegação.
+    // telemetria: amostragem de navegação, perda aceitável por volume.
     recordEvent("page_view", {
       wallet: session?.sub ?? null,
       path,

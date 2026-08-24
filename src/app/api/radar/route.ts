@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (triggers.length > 0) {
-    recordEvent("radar_trigger", { meta: {
+    // ⚠️ AGUARDADO: cron, sem ninguém esperando resposta.
+    await recordEvent("radar_trigger", { meta: {
       count:   triggers.length,
       symbols: triggers.map((t) => `${t.symbol} ${t.movePct > 0 ? "+" : ""}${t.movePct}%`),
     } });

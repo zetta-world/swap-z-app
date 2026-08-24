@@ -52,6 +52,15 @@ export type AutopilotSessionRow = {
   allowed_symbols:     string[];
   lang:                string;
   creds_cipher:        string;
+  /**
+   * ⚠️ O elo com o COFRE (`cex_conexoes`), NULÁVEL durante a virada.
+   *
+   * T1: criado e preenchido por backfill. T2 (agora): a leitura prefere o
+   * cofre quando isto existe e cai em `creds_cipher` quando não, contando qual
+   * caminho serviu. T3: só com o contador em 100% no caminho novo, o
+   * `creds_cipher` sai. Ver §2 de `docs/PLANO-DCA-AUTOMATICO.md`.
+   */
+  conexao_id:          string | null;
   is_active:           boolean;
   expires_at:          string;
   trades_today:        number;

@@ -20,7 +20,19 @@ const SEC_FLOOD    = Number(process.env.ALERT_SEC_FLOOD     ?? 5);   // high-sev
 const AI_BUDGET    = Number(process.env.ALERT_AI_BUDGET_USD ?? 20);  // $ / 24h → alert only
 const AI_KILL      = Number(process.env.ALERT_AI_KILL_USD   ?? 30);  // $ / 24h → auto-pause tournament (0 = off)
 const LARGE_OP     = Number(process.env.ALERT_LARGE_OP_USD  ?? 5000);// $ single op
-const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75, radar: 5 };
+/**
+ * ⚠️ CRON QUE NÃO ESTÁ AQUI MORRE EM SILÊNCIO.
+ *
+ * O `dca` bate heartbeat desde 24/08 e o RUNBOOK já dizia ">20 min" — mas a
+ * linha nunca existiu aqui, então o watchdog nunca ia acusar. Documento
+ * afirmando o que o código não faz é o mesmo defeito que as auditorias de
+ * 23–24/08 acharam dez vezes no produto; desta vez estava na operação.
+ *
+ * 20 min = quatro passadas perdidas numa cadência de 5. Mais folgado que o
+ * autopilot (12) de propósito: um ciclo de DCA atrasado alguns minutos não
+ * muda nada, e alarme que toca à toa é alarme que se aprende a ignorar.
+ */
+const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75, radar: 5, dca: 20 };
 
 /** Persistent dedup: returns true (and stamps) only if `key` hasn't fired
  *  within `windowMs`. Survives across cron invocations/instances via admin_kv. */

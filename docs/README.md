@@ -38,6 +38,10 @@
 | `PLANO-PAINEL-POR-AREA.md` | As sete áreas, o menu, e cada painel em tela própria (fase 2 pendente) |
 | `PLANO-DERRAPAGEM.md` | Quanto o livro da Gate.io cobra além da taxa, por tamanho de ordem |
 | `PLANO-DESCARTADAS.md` | O teto de credibilidade do arbitrador julgado com livro lido |
+| `PLANO-TAMANHO-E-REGIME.md` | Tamanho de posição por convicção e o filtro de regime — nesta ordem |
+| `PLANO-MURAL-DE-AGENTES.md` | Como duas sessões trabalham no mesmo repo sem se derrubar |
+| `PLANO-ULFHEDNAR.md` | A aba do salão: a linha do tempo dos agentes e a caixa de recados do dono |
+| `PLANO-DCA-AUTOMATICO.md` | DCA e autopilot são produtos SEPARADOS: cofre de credencial, relógio, e idempotência por ciclo |
 
 ## 📚 Históricos — contexto, não atualizar
 
