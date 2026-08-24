@@ -125,10 +125,21 @@ async function processarPlano(
   const v = decidirAutomacao(p.wallet_address, liberacao, pilotos);
   if (!v.permitido) return { plano: p.id, acao: "barrado", detalhe: v.causa };
 
-  const conexao = await lerConexaoPorId(p.conexao_id);
-  if (!conexao || !conexao.is_active) {
-    await avancarPlano(p.id, { status: "encerrado", encerradoPor: "conexao_revogada" });
-    return { plano: p.id, acao: "encerrado", detalhe: "conexao_revogada" };
+  /**
+   * ⚠️⚠️ PLANO SIMULADO NÃO TEM CONEXÃO — e não deve ter.
+   *
+   * É o ponto do modo: exercitar relógio, reserva, tetos e extrato SEM entregar
+   * a chave da corretora a ninguém. Só o plano REAL exige credencial, e o banco
+   * já garante isso (check `dca_planos_real_exige_conexao`).
+   */
+  const simulado = p.modo === "simulado";
+  let conexao: Awaited<ReturnType<typeof lerConexaoPorId>> = null;
+  if (!simulado) {
+    conexao = await lerConexaoPorId(p.conexao_id ?? "");
+    if (!conexao || !conexao.is_active) {
+      await avancarPlano(p.id, { status: "encerrado", encerradoPor: "conexao_revogada" });
+      return { plano: p.id, acao: "encerrado", detalhe: "conexao_revogada" };
+    }
   }
 
   const d = decidirCiclo({
@@ -140,7 +151,8 @@ async function processarPlano(
     ciclosTotal:   p.ciclos_total,
     status:        p.status,
     // `null` = sem prazo duro; o relógio trata data ilegível como "sem prazo".
-    conexaoExpiraIso: conexao.expires_at ?? "",
+    // Plano simulado não tem conexão, logo não tem prazo de credencial.
+    conexaoExpiraIso: conexao?.expires_at ?? "",
   });
 
   if (d.acao === "esperar") return { plano: p.id, acao: "espera" };
@@ -223,14 +235,30 @@ async function processarPlano(
     return { plano: p.id, acao: "erro", detalhe: "reserva falhou" };
   }
 
-  // ── passo 2: a ordem. DINHEIRO REAL SAI AQUI ────────────────────────
+  // ── passo 2: a ordem ────────────────────────────────────────────────
   const quantidade = teto.valorUsd / ref;
   try {
-    const { order } = await placeCexOrder(
-      p.exchange_id as CexId,
-      decifrarConexao(conexao),
-      { symbol: p.symbol, type: "market", side: "buy", amount: quantidade },
-    );
+    /**
+     * ⚠️⚠️ AQUI SAI DINHEIRO REAL — exceto em plano simulado, onde esta é a
+     * ÚNICA linha que muda.
+     *
+     * Todo o resto do caminho é idêntico: mesma decisão de janela, mesma
+     * reserva com a trava unique, mesmos tetos, mesmo preço de referência do
+     * mercado real, mesmo registro. É o que faz o teste sem dinheiro VALER —
+     * se ele fosse um caminho paralelo, provaria só que o caminho paralelo
+     * funciona.
+     *
+     * ⚠️ E o `order.id` de um ciclo simulado é prefixado. Um id que pudesse
+     * ser confundido com o de uma ordem real é como um extrato simulado vira
+     * evidência de compra que nunca houve.
+     */
+    const order = simulado
+      ? { id: `simulado:${p.id.slice(0, 8)}:${d.ciclo}`, average: ref, filled: quantidade, cost: teto.valorUsd }
+      : (await placeCexOrder(
+          p.exchange_id as CexId,
+          decifrarConexao(conexao!),
+          { symbol: p.symbol, type: "market", side: "buy", amount: quantidade },
+        )).order;
 
     const preco = Number(order.average) > 0 ? Number(order.average) : ref;
     const qtd   = Number(order.filled)  > 0 ? Number(order.filled)  : quantidade;
@@ -238,7 +266,7 @@ async function processarPlano(
 
     // ── passo 3: o registro ───────────────────────────────────────────
     const gravou = await fecharCiclo(p.id, d.ciclo, {
-      status: "feito", orderId: order.id, preco, quantidade: qtd, custoUsd: custo,
+      status: "feito", orderId: order.id, preco, quantidade: qtd, custoUsd: custo, simulado,
     });
     if (!gravou) {
       /**
@@ -260,13 +288,17 @@ async function processarPlano(
       ...(acabou ? { status: "completo" as const, encerradoPor: "completo" } : {}),
     });
 
-    return { plano: p.id, acao: "comprou", detalhe: `${qtd} ${base} por $${custo.toFixed(2)}` };
+    return {
+      plano: p.id,
+      acao: simulado ? "simulou" : "comprou",
+      detalhe: `${qtd} ${base} por $${custo.toFixed(2)}`,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // ⚠️ O ciclo fica `falhou`, não volta para `reservado`: repetir o número
     // faria a próxima passada tentar de novo e a trava unique a recusaria para
     // sempre. Falhou é um estado final, e conta como ciclo gasto.
-    await fecharCiclo(p.id, d.ciclo, { status: "falhou", motivo: msg });
+    await fecharCiclo(p.id, d.ciclo, { status: "falhou", motivo: msg, simulado });
     await avancarPlano(p.id, { ciclosPulados: pulados, nextRunAt: d.proximoRunAt });
     return { plano: p.id, acao: "falhou", detalhe: msg.slice(0, 120) };
   }
