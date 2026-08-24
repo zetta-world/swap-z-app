@@ -84,6 +84,13 @@ export interface Agente {
    * POSTA. Foi morto por um número que o modelo inventou.
    */
   execucao: Execucao;
+  /**
+   * ⚠️ CONTROLE DE DIREÇÃO ≠ CONTROLE DE RETORNO. `controle` marca o piso de
+   * RETORNO (o Aluguel de Ocioso): "valeu arriscar em vez de deixar rendendo?".
+   * Este marca o piso de DIREÇÃO: "o sinal sabe para que lado o mercado vai?".
+   * Confundir os dois deixou o segundo sem resposta por semanas.
+   */
+  controleDeDirecao?: boolean;
   ritmo: Ritmo;
   motor: Motor;
   faixa: Faixa;
@@ -107,7 +114,7 @@ export interface Agente {
    *    enquanto o Maker arriscava $50. **A comparação favorecia quem arriscava
    *    mais**, que é o pior viés possível num placar de risco.
    */
-  bancaUsd: number;
+  bancaInicialUsd: number;
 
   /**
    * Que fração da banca vai em CADA posição.
@@ -155,7 +162,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "renda",
     capitalMinimoUsd: 0,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     fracaoPorPosicao: 1.0,
     tetoDeExposicao: 1.0,
     alavancagemMaxima: 1,
@@ -192,7 +199,7 @@ export const AGENTES: readonly Agente[] = [
      */
     faixa: "renda",
     capitalMinimoUsd: 400,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     fracaoPorPosicao: 0.5,
     tetoDeExposicao: 0.5,
     alavancagemMaxima: 1,
@@ -220,7 +227,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "trabalho",
     capitalMinimoUsd: 150,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     fracaoPorPosicao: 0.15,
     tetoDeExposicao: 0.45,
     alavancagemMaxima: 1,
@@ -261,7 +268,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "trabalho",
     capitalMinimoUsd: 200,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     /**
      * ⚠️ 25% POR POSIÇÃO É AMBIÇÃO DECLARADA, não descuido. O mandato pede os
      * agentes mais ambiciosos "sem medo de perder capital"; o `tetoDeExposicao`
@@ -280,7 +287,60 @@ export const AGENTES: readonly Agente[] = [
     receitaVemDe: ["preco"],
     aposentaQuando:
       "render menos que o Aluguel de Ocioso com 100+ posições fechadas — aí o "
-      + "risco de mercado não está comprando nada",
+      + "risco de mercado não está comprando nada; OU render menos que o "
+      + "Comprador Cego — aí o sinal não sabe direção e só paga corretagem",
+  },
+  {
+    /**
+     * ⚠️⚠️ O CONTROLE DE DIREÇÃO — e ele NÃO é o mesmo que o controle de
+     * retorno (24/08).
+     *
+     * O Aluguel de Ocioso responde "valeu a pena arriscar em vez de deixar o
+     * USDT rendendo?". Ele não responde "o sinal sabe para que lado o mercado
+     * vai?", e essas são perguntas diferentes que estavam sendo confundidas.
+     *
+     * MEDIDO EM 41 DIAS, ~285 AMOSTRAS POR ATIVO: o filtro de tendência de 20h
+     * ganha do "compra às cegas" no BTC (+2,9pp) e no SOL (+4,6pp), e PERDE no
+     * ETH (−4,6pp). Efeito médio ≈ zero. O que parecia borda era o mercado, que
+     * subiu 22–32% no período.
+     *
+     * Este agente existe para que essa comparação seja PERMANENTE e automática
+     * em vez de um script que alguém rodou uma vez. Um sinal que não bate o
+     * escuro não é sinal — é enfeite que paga corretagem.
+     */
+    id: "comprador_cego",
+    nome: "Comprador Cego (controle de direção)",
+    categoria: "tendencia",
+    modalidade: "spot_gate",
+    /** compra a mercado, igual ao Caçador — a única diferença tem de ser o sinal. */
+    execucao: "taker",
+    ritmo: "swing",
+    motor: "bot",
+    faixa: "trabalho",
+    /**
+     * ⚠️ MESMO MÍNIMO DO CAÇADOR, de propósito. A regra do Celeiro diz que só o
+     * controle de RETORNO opera sem mínimo — e este aqui não é aquele. Ele é um
+     * agente de tendência de verdade, que compra e paga corretagem; dar a ele
+     * um piso diferente faria a comparação medir tamanho em vez de sinal.
+     */
+    capitalMinimoUsd: 200,
+    bancaInicialUsd: 1000,
+    fracaoPorPosicao: 0.25,
+    tetoDeExposicao: 0.75,
+    alavancagemMaxima: 1,
+    controleDeDirecao: true,
+    mecanismo:
+      "COMPRA, sempre, sem olhar sinal nenhum — mesma geometria de alvo e stop "
+      + "do Caçador de Tendência, mesma corretagem, mesmo tamanho",
+    naoFaz:
+      "não PREVÊ direção — e não lê sinal nenhum para escolher lado, que é a "
+      + "única diferença dele para o Caçador. Em spot ele não vende: sem "
+      + "futuros, 'vender na baixa' é apenas sair. Ele não é uma estratégia; é "
+      + "a régua contra a qual as direcionais se medem.",
+    receitaVemDe: ["preco"],
+    aposentaQuando:
+      "nunca — controle não se aposenta. Se ele render MAIS que os agentes de "
+      + "tendência, quem se aposenta são eles",
   },
   {
     id: "alavancado_de_tendencia",
@@ -293,7 +353,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "renda",
     capitalMinimoUsd: 300,
-    bancaUsd: 1000,
+    bancaInicialUsd: 1000,
     fracaoPorPosicao: 0.2,
     tetoDeExposicao: 0.6,
     /**
@@ -315,7 +375,9 @@ export const AGENTES: readonly Agente[] = [
     receitaVemDe: ["preco"],
     aposentaQuando:
       "uma liquidação apagar o ganho de semanas, ou render menos que o "
-      + "Caçador de Tendência sem alavanca — aí a alavanca só comprou risco",
+      + "Caçador de Tendência sem alavanca — aí a alavanca só comprou risco; "
+      + "OU render menos que o Comprador Cego — aí nem o sinal nem a alavanca "
+      + "estão comprando alguma coisa",
   },
 
   // ── CATEGORIA EVENTO — assimetria, perda limitada por construção ─────────
@@ -330,7 +392,7 @@ export const AGENTES: readonly Agente[] = [
     motor: "bot",
     faixa: "semente",
     capitalMinimoUsd: 50,
-    bancaUsd: 300,
+    bancaInicialUsd: 300,
     /** ⚠️ Aposta pequena de propósito: a assimetria paga a série, não o tamanho. */
     fracaoPorPosicao: 0.1667,
     tetoDeExposicao: 0.5,
@@ -415,12 +477,47 @@ export function tamanhoDaPosicao(
   a: Agente,
   /** Margem JÁ comprometida pelas posições abertas — não nocional. */
   expostoMargemUsd: number,
+  /**
+   * O SALDO REAL do agente — inicial mais tudo que o extrato lançou.
+   *
+   * ⚠️⚠️ NÃO É `a.bancaInicialUsd`, e a ordem dos parâmetros mudou de propósito
+   * para que ninguém passe um pelo outro sem perceber (24/08).
+   *
+   * Até aqui o tamanho saía da banca INICIAL — um literal que o prejuízo nunca
+   * tocava. O Alavancado queimou $53,17 e seguia apostando como se tivesse
+   * $1.000 intactos: sem ruína, sem composição, e com `capitalMinimoUsd`
+   * comparando contra um número que não se move, logo nunca disparando.
+   */
+  saldoUsd: number,
   alavanca = 1,
 ): Tamanho {
   const vezes = Number.isFinite(alavanca) && alavanca >= 1 ? alavanca : 1;
-  const margemUsd = a.bancaUsd * a.fracaoPorPosicao;
+  const saldo = Number.isFinite(saldoUsd) ? saldoUsd : 0;
+  const margemUsd = saldo * a.fracaoPorPosicao;
   const usd = margemUsd * vezes;
-  const exposicaoDepois = (expostoMargemUsd + margemUsd) / a.bancaUsd;
+  const exposicaoDepois = saldo > 0 ? (expostoMargemUsd + margemUsd) / saldo : Infinity;
+
+  /**
+   * ⚠️⚠️ A RUÍNA EXISTE AGORA, e ela vem ANTES do teto de exposição.
+   *
+   * Um agente cujo saldo caiu abaixo do capital que ele declara precisar não
+   * "opera menor" — ele PARA. Deixá-lo continuar em tamanho reduzido esconderia
+   * a morte dentro de uma sequência de apostas cada vez menores, e o extrato
+   * mostraria um agente vivo sangrando devagar em vez de um agente morto.
+   */
+  if (saldo <= 0) {
+    return {
+      margemUsd: 0, usd: 0, alavanca: vezes, exposicaoDepois: Infinity, cabe: false,
+      porque: `saldo de $${saldo.toFixed(2)} USD — o agente quebrou e não opera mais`,
+    };
+  }
+  if (saldo < a.capitalMinimoUsd) {
+    return {
+      margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: false,
+      porque: `saldo de $${saldo.toFixed(2)} caiu abaixo do mínimo de `
+        + `$${a.capitalMinimoUsd} que este agente declara precisar — parou`,
+    };
+  }
 
   if (exposicaoDepois > a.tetoDeExposicao + 1e-9) {
     return {
@@ -429,14 +526,7 @@ export function tamanhoDaPosicao(
         + `de ${(a.tetoDeExposicao * 100).toFixed(0)}% — a posição não cabe`,
     };
   }
-  if (a.bancaUsd < a.capitalMinimoUsd) {
-    return {
-      margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: false,
-      porque: `banca de ${a.bancaUsd} abaixo do mínimo de ${a.capitalMinimoUsd} `
-        + "que este agente declara precisar",
-    };
-  }
-  const fatia = `${(a.fracaoPorPosicao * 100).toFixed(0)}% da banca`;
+  const fatia = `${(a.fracaoPorPosicao * 100).toFixed(0)}% do saldo de $${saldo.toFixed(2)}`;
   const expo = `exposição em margem ficaria em ${(exposicaoDepois * 100).toFixed(0)}%`;
   return {
     margemUsd, usd, alavanca: vezes, exposicaoDepois, cabe: true,

@@ -34,7 +34,7 @@ type Linha = {
   mecanismo: string; naoFaz: string; destaque: boolean;
   serie: number[]; piso: Piso;
   retorno: { pct: number | null; contraOPisoPp: number | null; porque: string };
-  bancaUsd: number; alavancagemMaxima: number; tetoDeExposicao: number; categoria: string;
+  bancaInicialUsd: number; alavancagemMaxima: number; tetoDeExposicao: number; categoria: string;
   porCausa: Record<string, number>;
   execucao: "maker" | "taker";
   taxaPernaPct: number;
@@ -48,10 +48,21 @@ type Linha = {
     taxaPernaPct: number | null;
     horasAbertas: number; horasLimite: number; vencida: boolean;
   }>;
-  fechadas: { total: number; porMotivo: Record<string, number> };
+  fechadas: {
+    total: number; porMotivo: Record<string, number>;
+    ultimas: Array<{
+      id: string; simbolo: string; lado: "buy" | "sell"; alavanca: number;
+      nocionalUsd: number; margemUsd: number;
+      precoEntrada: number; precoSaida: number;
+      motivo: string | null; movPct: number;
+      precoUsd: number; taxaUsd: number | null; liquidoUsd: number | null;
+      abertaEmMs: number; fechadaEmMs: number | null;
+    }>;
+  };
   capital: {
-    bancaUsd: number; margemComprometidaUsd: number; livreUsd: number;
-    nocionalUsd: number; exposicaoPct: number;
+    bancaInicialUsd: number; realizadoUsd: number; saldoUsd: number;
+    margemComprometidaUsd: number; livreUsd: number;
+    nocionalUsd: number; exposicaoPct: number; quebrado: boolean;
   };
   semPreco: boolean;
   vazamentos: Array<{ causa: string; usdt: number; fatiaDoVazamento: number }>;
@@ -149,7 +160,19 @@ function Capital({ c, alavancado }: { c: Linha["capital"]; alavancado: boolean }
   return (
     <div style={{ marginTop: 8 }}>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "baseline" }}>
-        <span>banca <b>{usd(c.bancaUsd)}</b></span>
+        {/* ⚠️ INICIAL E SALDO LADO A LADO. Mostrar só um dos dois foi o defeito
+            de 23/08: a tela dizia "$800 livres" num agente que tinha queimado
+            $53, porque a banca era um literal que o prejuízo nunca tocava. */}
+        <span style={SUAVE}>começou com <b>{usd(c.bancaInicialUsd)}</b></span>
+        <span>tem agora{" "}
+          <b style={{ color: c.realizadoUsd < 0 ? "#f87171" : c.realizadoUsd > 0 ? "#34d399" : undefined }}>
+            {usd(c.saldoUsd)}
+          </b>
+          {c.realizadoUsd !== 0 && (
+            <span style={APAGADO}> ({c.realizadoUsd > 0 ? "+" : ""}{usd(c.realizadoUsd)})</span>
+          )}
+        </span>
+        {c.quebrado && <b style={{ color: "#f87171" }}>QUEBRADO — parou de operar</b>}
         <span style={SUAVE}>comprometido <b>{usd(c.margemComprometidaUsd)}</b> ({usado.toFixed(0)}%)</span>
         <span style={SUAVE}>livre <b>{usd(c.livreUsd)}</b></span>
         {alavancado && (
@@ -231,6 +254,61 @@ function Abertas({ ps }: { ps: Linha["abertas"] }) {
 
 const TH: React.CSSProperties = { textAlign: "left", padding: "4px 8px 4px 0", fontWeight: 400 };
 const TD: React.CSSProperties = { textAlign: "left", padding: "5px 8px 5px 0", whiteSpace: "nowrap" };
+
+/**
+ * AS OPERAÇÕES FECHADAS, uma a uma — quando, onde, o quê, e por quê.
+ *
+ * ⚠️⚠️ A CONTAGEM POR MOTIVO NÃO BASTA. Ela diz "8 morreram no stop" e não diz
+ * qual par, quando, por qual preço, nem quanto a taxa levou. É justamente aí
+ * que mora a diferença entre "perdi 4 USDT" e "acertei o preço e entreguei
+ * tudo no pedágio" — que foi exatamente como o Maker de Faixa morreu, acertando
+ * 19 alvos contra 8 stops.
+ *
+ * ⚠️ E O LÍQUIDO MOSTRA A TAXA SEPARADA. Um único número esconde a causa, e foi
+ * não separar causas que impediu a arena antiga de explicar como uma mesa
+ * acerta 70% e perde dinheiro.
+ */
+function Fechadas({ ps }: { ps: Linha["fechadas"]["ultimas"] }) {
+  if (ps.length === 0) return null;
+  const quando = (ms: number | null) => ms === null ? "—"
+    : new Date(ms).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const rotulo: Record<string, string> = {
+    alvo: "bateu o alvo", stop: "bateu o stop",
+    tempo: "venceu o prazo", liquidacao: "foi liquidada",
+  };
+  return (
+    <div style={{ marginTop: 8, overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr style={APAGADO}>
+            <th style={TH}>quando</th><th style={TH}>par</th><th style={TH}>lado</th>
+            <th style={TH}>entrou → saiu</th><th style={TH}>por quê</th>
+            <th style={TH}>preço</th><th style={TH}>taxa</th><th style={TH}>resultado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ps.map((p) => (
+            <tr key={p.id} style={{ borderTop: "1px solid rgba(255,255,255,.08)" }}>
+              <td style={TD}>{quando(p.fechadaEmMs)}</td>
+              <td style={TD}><b>{p.simbolo}</b></td>
+              <td style={TD}>{p.lado === "buy" ? "comprou" : "vendeu"}
+                {p.alavanca > 1 && <span style={APAGADO}> {p.alavanca}×</span>}</td>
+              <td style={TD}>{p.precoEntrada.toFixed(2)} → {p.precoSaida.toFixed(2)}
+                <span style={APAGADO}> ({p.movPct >= 0 ? "+" : ""}{p.movPct.toFixed(2)}%)</span></td>
+              <td style={TD}>{rotulo[p.motivo ?? ""] ?? p.motivo ?? "—"}</td>
+              <td style={{ ...TD, color: p.precoUsd >= 0 ? "#34d399" : "#f87171" }}>{usd(p.precoUsd)}</td>
+              <td style={{ ...TD, color: "#f87171" }}>
+                {p.taxaUsd === null ? <span style={APAGADO}>não gravada</span> : usd(p.taxaUsd)}</td>
+              <td style={{ ...TD, fontWeight: 700,
+                color: p.liquidoUsd === null ? undefined : p.liquidoUsd >= 0 ? "#34d399" : "#f87171" }}>
+                {p.liquidoUsd === null ? <span style={APAGADO}>—</span> : usd(p.liquidoUsd)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function Retorno({ r, ehPiso }: { r: Linha["retorno"]; ehPiso: boolean }) {
   if (r.pct == null) return <span style={APAGADO} title={r.porque}>—</span>;
@@ -473,6 +551,12 @@ export default function CeleiroPanel() {
                         <b>{l.fechadas.porMotivo[m] ?? 0}</b>
                       </span>
                     ))}
+                  </div>
+                )}
+                <Fechadas ps={l.fechadas.ultimas} />
+                {l.fechadas.total > l.fechadas.ultimas.length && (
+                  <div style={{ ...APAGADO, marginTop: 4 }}>
+                    mostrando as {l.fechadas.ultimas.length} mais recentes de {l.fechadas.total}
                   </div>
                 )}
 

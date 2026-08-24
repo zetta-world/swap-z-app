@@ -243,6 +243,78 @@ export function margemDa(p: { usd: number; alavanca?: number }): number {
   return v >= 1 ? p.usd / v : p.usd;
 }
 
+/**
+ * O SALDO de um agente — o dinheiro que ele REALMENTE tem agora.
+ *
+ * ⚠️⚠️ POR QUE ISTO PRECISOU EXISTIR (24/08). Até aqui não havia capital no
+ * Celeiro: havia `bancaUsd: 1000`, um literal repetido cinco vezes num arquivo
+ * `.ts`. O prejuízo NUNCA reduzia a banca. O Alavancado de Tendência queimou
+ * $53,17 e seguia dimensionando posição como se tivesse $1.000 intactos.
+ *
+ * Três coisas que isso quebrava, todas silenciosamente:
+ *
+ *  · **Ruína era impossível.** Um agente podia perder infinito e continuar
+ *    operando no tamanho cheio, para sempre.
+ *  · **`capitalMinimoUsd` nunca disparava** — ele comparava contra a constante,
+ *    e a constante não se move.
+ *  · **Não havia composição.** Ganhar não aumentava o tamanho da próxima
+ *    aposta, então o placar não media o que a estratégia realmente faria.
+ *
+ * ⚠️ O saldo sai do LEDGER, não de uma tabela nova. `celeiro_fluxos` já registra
+ * cada centavo que entrou e saiu, decomposto por causa — inventar uma segunda
+ * fonte de verdade para o mesmo número criaria duas contas que podem divergir,
+ * e a divergência apareceria como dinheiro que ninguém sabe de onde veio.
+ */
+export interface Saldo {
+  /** O dinheiro agora: inicial + tudo que o extrato lançou. */
+  usd: number;
+  bancaInicialUsd: number;
+  realizadoUsd: number;
+  lancamentos: number;
+  /**
+   * ⚠️⚠️ A SOMA PODE ESTAR INCOMPLETA. Se bateu no teto de leitura, este saldo
+   * é MAIOR que o real (faltam lançamentos, e a maioria é negativa). Dimensionar
+   * posição com ele apostaria dinheiro que não existe — quem recebe isto tem de
+   * RECUSAR a operação, não seguir com o número otimista.
+   */
+  truncado: boolean;
+}
+
+const TETO_DE_LANCAMENTOS = 50_000;
+
+export async function saldoDoAgente(
+  db: SupabaseClient,
+  agente: string,
+  bancaInicialUsd: number,
+): Promise<Saldo> {
+  const { data, error } = await db
+    .from("celeiro_fluxos")
+    .select("usdt")
+    .eq("agente", agente)
+    .limit(TETO_DE_LANCAMENTOS);
+
+  /**
+   * ⚠️ ERRO DE LEITURA NÃO VIRA SALDO CHEIO. Devolver a banca inicial num erro
+   * faria um agente quebrado parecer intacto — e ele abriria posição com
+   * dinheiro imaginário. Marca truncado e quem chama recusa.
+   */
+  if (error || !data) {
+    return {
+      usd: bancaInicialUsd, bancaInicialUsd, realizadoUsd: 0,
+      lancamentos: 0, truncado: true,
+    };
+  }
+
+  const realizadoUsd = data.reduce((s, r) => s + (Number(r.usdt) || 0), 0);
+  return {
+    usd: bancaInicialUsd + realizadoUsd,
+    bancaInicialUsd,
+    realizadoUsd,
+    lancamentos: data.length,
+    truncado: data.length >= TETO_DE_LANCAMENTOS,
+  };
+}
+
 export async function posicoesAbertas(
   db: SupabaseClient,
   agente: string,

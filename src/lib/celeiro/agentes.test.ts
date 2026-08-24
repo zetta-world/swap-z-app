@@ -201,8 +201,8 @@ describe("o tamanho da posição e o teto de exposição", () => {
    * Base apostar $150 por posição sem ninguém ter decidido isso.
    */
   it("o tamanho sai da FRAÇÃO da banca, não do capital mínimo", () => {
-    const t = tamanhoDaPosicao(base, 0);
-    expect(t.usd).toBeCloseTo(base.bancaUsd * base.fracaoPorPosicao, 6);
+    const t = tamanhoDaPosicao(base, 0, base.bancaInicialUsd);
+    expect(t.usd).toBeCloseTo(base.bancaInicialUsd * base.fracaoPorPosicao, 6);
     expect(t.usd).not.toBeCloseTo(base.capitalMinimoUsd, 6);
     expect(t.cabe).toBe(true);
   });
@@ -213,10 +213,10 @@ describe("o tamanho da posição e o teto de exposição", () => {
    * motivo indo para o extrato em vez de virar risco silencioso.
    */
   it("recusa a posição que estouraria o teto de exposição", () => {
-    const cada = base.bancaUsd * base.fracaoPorPosicao;
+    const cada = base.bancaInicialUsd * base.fracaoPorPosicao;
 
-    expect(tamanhoDaPosicao(base, cada * 2).cabe).toBe(true);    // 3ª cabe
-    const quarta = tamanhoDaPosicao(base, cada * 3);             // 4ª não
+    expect(tamanhoDaPosicao(base, cada * 2, base.bancaInicialUsd).cabe).toBe(true);    // 3ª cabe
+    const quarta = tamanhoDaPosicao(base, cada * 3, base.bancaInicialUsd);             // 4ª não
     expect(quarta.cabe).toBe(false);
     expect(quarta.porque).toContain("teto");
     expect(quarta.exposicaoDepois).toBeGreaterThan(base.tetoDeExposicao);
@@ -233,14 +233,14 @@ describe("o tamanho da posição e o teto de exposição", () => {
    * contra $250 sem alavanca.
    */
   it("sem alavanca, margem e nocional são o mesmo número", () => {
-    const t = tamanhoDaPosicao(base, 0, 1);
+    const t = tamanhoDaPosicao(base, 0, base.bancaInicialUsd, 1);
     expect(t.margemUsd).toBeCloseTo(t.usd, 9);
     expect(t.alavanca).toBe(1);
   });
 
   it("com alavanca, o nocional multiplica e a margem não", () => {
-    const t = tamanhoDaPosicao(base, 0, 10);
-    expect(t.margemUsd).toBeCloseTo(base.bancaUsd * base.fracaoPorPosicao, 9);
+    const t = tamanhoDaPosicao(base, 0, base.bancaInicialUsd, 10);
+    expect(t.margemUsd).toBeCloseTo(base.bancaInicialUsd * base.fracaoPorPosicao, 9);
     expect(t.usd).toBeCloseTo(t.margemUsd * 10, 9);
     expect(t.porque).toContain("nocional");
   });
@@ -251,17 +251,66 @@ describe("o tamanho da posição e o teto de exposição", () => {
    * Se alguém voltar o teto para o nocional, este teste cai.
    */
   it("o teto mede MARGEM, então o nocional pode passar da banca", () => {
-    const t = tamanhoDaPosicao(base, 0, 10);
-    expect(t.usd).toBeGreaterThan(base.bancaUsd);
+    const t = tamanhoDaPosicao(base, 0, base.bancaInicialUsd, 10);
+    expect(t.usd).toBeGreaterThan(base.bancaInicialUsd);
     expect(t.cabe).toBe(true);
     expect(t.exposicaoDepois).toBeCloseTo(base.fracaoPorPosicao, 9);
   });
 
   it("e o teto continua barrando pela margem, alavancado ou não", () => {
-    const cada = base.bancaUsd * base.fracaoPorPosicao;
-    const quarta = tamanhoDaPosicao(base, cada * 3, 10);
+    const cada = base.bancaInicialUsd * base.fracaoPorPosicao;
+    const quarta = tamanhoDaPosicao(base, cada * 3, base.bancaInicialUsd, 10);
     expect(quarta.cabe).toBe(false);
     expect(quarta.porque).toContain("teto");
+  });
+
+  /**
+   * ⚠️⚠️ O TAMANHO SEGUE O SALDO, NÃO A BANCA INICIAL (24/08).
+   *
+   * Até aqui `bancaUsd: 1000` era um literal que o prejuízo nunca tocava: o
+   * Alavancado queimou $53,17 e seguia apostando como se tivesse $1.000. Sem
+   * ruína, sem composição, e o mínimo declarado comparava contra um número
+   * imóvel — logo nunca disparava.
+   */
+  it("perder encolhe a próxima aposta, ganhar aumenta — isto é composição", () => {
+    const cheio = tamanhoDaPosicao(base, 0, base.bancaInicialUsd);
+    const depoisDePerder = tamanhoDaPosicao(base, 0, base.bancaInicialUsd * 0.5);
+    const depoisDeGanhar = tamanhoDaPosicao(base, 0, base.bancaInicialUsd * 2);
+
+    expect(depoisDePerder.margemUsd).toBeLessThan(cheio.margemUsd);
+    expect(depoisDeGanhar.margemUsd).toBeGreaterThan(cheio.margemUsd);
+    expect(depoisDePerder.margemUsd).toBeCloseTo(cheio.margemUsd / 2, 9);
+  });
+
+  /**
+   * ⚠️ A RUÍNA EXISTE E ELA PARA O AGENTE. Operar menor esconderia a morte
+   * dentro de apostas cada vez menores, e o extrato mostraria um agente vivo
+   * sangrando devagar em vez de um agente morto.
+   */
+  it("saldo zerado ou negativo QUEBRA o agente em vez de encolhê-lo", () => {
+    for (const saldo of [0, -50]) {
+      const t = tamanhoDaPosicao(base, 0, saldo);
+      expect(t.cabe).toBe(false);
+      expect(t.usd).toBe(0);
+      expect(t.porque).toContain("quebrou");
+    }
+  });
+
+  it("saldo abaixo do mínimo declarado PARA — e agora pode acontecer", () => {
+    const t = tamanhoDaPosicao(base, 0, base.capitalMinimoUsd - 1);
+    expect(t.cabe).toBe(false);
+    expect(t.porque).toContain("mínimo");
+  });
+
+  /**
+   * ⚠️ E A EXPOSIÇÃO É FRAÇÃO DO SALDO, não da banca inicial. Com o
+   * denominador velho, um agente que perdeu metade apareceria com metade da
+   * exposição que realmente tem — e o teto deixaria passar o dobro do risco.
+   */
+  it("a exposição é medida contra o SALDO, não contra a banca inicial", () => {
+    const metade = base.bancaInicialUsd * 0.5;
+    const t = tamanhoDaPosicao(base, metade * base.fracaoPorPosicao, metade);
+    expect(t.exposicaoDepois).toBeCloseTo(base.fracaoPorPosicao * 2, 9);
   });
 
   /**
@@ -269,8 +318,8 @@ describe("o tamanho da posição e o teto de exposição", () => {
    * dá para o livro aguentar — não dimensionar aposta.
    */
   it("banca abaixo do mínimo declarado reprova", () => {
-    const magro = { ...base, bancaUsd: base.capitalMinimoUsd - 1 };
-    const t = tamanhoDaPosicao(magro, 0);
+    const magro = { ...base, bancaInicialUsd: base.capitalMinimoUsd - 1 };
+    const t = tamanhoDaPosicao(magro, 0, magro.bancaInicialUsd);
     expect(t.cabe).toBe(false);
     expect(t.porque).toContain("abaixo do mínimo");
   });
@@ -278,7 +327,7 @@ describe("o tamanho da posição e o teto de exposição", () => {
   /** Todo agente que opera declara banca, fração e teto coerentes. */
   it("os campos de banca são coerentes em todo o registro", () => {
     for (const a of AGENTES) {
-      expect(a.bancaUsd, `${a.nome}`).toBeGreaterThan(0);
+      expect(a.bancaInicialUsd, `${a.nome}`).toBeGreaterThan(0);
       expect(a.fracaoPorPosicao, `${a.nome}`).toBeGreaterThan(0);
       expect(a.fracaoPorPosicao, `${a.nome}: fração maior que a banca`).toBeLessThanOrEqual(1);
       expect(a.tetoDeExposicao, `${a.nome}: teto menor que uma posição`)

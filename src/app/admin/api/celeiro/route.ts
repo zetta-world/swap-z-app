@@ -135,7 +135,16 @@ export async function GET() {
    * de 10× tem nocional muito maior que a banca — e ver só um dos dois números
    * dá a impressão errada em qualquer direção.
    */
-  function retratoDe(agenteId: string, bancaUsd: number) {
+  function retratoDe(agenteId: string, bancaInicialUsd: number, realizadoUsd: number) {
+    /**
+     * ⚠️⚠️ O SALDO É INICIAL + REALIZADO (24/08), e não a banca declarada.
+     *
+     * A primeira versão desta tela — que EU entreguei em 23/08 — calculava
+     * "livre" como `banca − margem`, ignorando prejuízo realizado. Ela mostrava
+     * $800 livres num agente que já tinha queimado $53. Era uma tela honesta
+     * construída sobre um número que não era: `bancaUsd: 1000` nunca se movia.
+     */
+    const saldoUsd = bancaInicialUsd + realizadoUsd;
     const minhas = posicoes.filter((p) => p.agente === agenteId);
     const abertasBrutas = minhas.filter((p) => p.fechada_em === null);
 
@@ -168,6 +177,46 @@ export async function GET() {
     });
 
     const fechadas = minhas.filter((p) => p.fechada_em !== null);
+
+    /**
+     * ⚠️⚠️ CADA OPERAÇÃO FECHADA, DECOMPOSTA (24/08).
+     *
+     * O dono: "se for visto por alguém que não entende nada do mercado vai
+     * ficar perdido — não vai saber quantas entradas foram feitas, o que foi
+     * lucrativo e o que perdeu, nem onde e o que o agente operou".
+     *
+     * A contagem por motivo respondia "quantas morreram de quê" e nada mais.
+     * Ela não diz QUAL par, QUANDO, por qual preço, nem quanto a taxa levou —
+     * e é justamente aí que mora a diferença entre "perdi 4 USDT" e "acertei o
+     * preço e entreguei tudo no pedágio", que foi como o Maker de Faixa morreu.
+     */
+    const ultimas = fechadas.slice(0, 25).map((p) => {
+      const meta = (p.meta ?? {}) as Record<string, unknown>;
+      const alavanca = Number(meta.alavanca) >= 1 ? Number(meta.alavanca) : 1;
+      const nocionalUsd = Number(p.usd) || 0;
+      const entrada = Number(p.preco_entrada) || 0;
+      const saida = Number(p.preco_saida) || 0;
+      const movPct = entrada > 0 && saida > 0
+        ? (p.lado === "buy" ? (saida - entrada) / entrada : (entrada - saida) / entrada) * 100
+        : 0;
+      const taxaPernaPct = Number.isFinite(Number(meta.taxaPernaPct))
+        ? Number(meta.taxaPernaPct) : null;
+
+      const precoUsd = nocionalUsd * movPct / 100;
+      /** ⚠️ DUAS pernas: a de entrada e a de saída. Contar uma esconde metade. */
+      const taxaUsd = taxaPernaPct === null ? null : -(nocionalUsd * taxaPernaPct * 2 / 100);
+      return {
+        id: p.id, simbolo: p.simbolo, lado: p.lado, alavanca,
+        nocionalUsd, margemUsd: nocionalUsd / alavanca,
+        precoEntrada: entrada, precoSaida: saida,
+        motivo: p.motivo_saida, movPct,
+        precoUsd, taxaUsd,
+        /** ⚠️ NULL quando a taxa não foi gravada — posição anterior à fronteira. */
+        liquidoUsd: taxaUsd === null ? null : precoUsd + taxaUsd,
+        abertaEmMs: Date.parse(p.aberta_em),
+        fechadaEmMs: p.fechada_em ? Date.parse(p.fechada_em) : null,
+      };
+    });
     const porMotivo: Record<string, number> = { alvo: 0, stop: 0, tempo: 0, liquidacao: 0 };
     for (const f of fechadas) {
       const m = String(f.motivo_saida ?? "");
@@ -178,13 +227,17 @@ export async function GET() {
     const nocionalUsd = abertas.reduce((s, a) => s + a.nocionalUsd, 0);
     return {
       abertas,
-      fechadas: { total: fechadas.length, porMotivo },
+      fechadas: { total: fechadas.length, porMotivo, ultimas },
       capital: {
-        bancaUsd,
+        bancaInicialUsd,
+        realizadoUsd,
+        saldoUsd,
         margemComprometidaUsd: margemUsd,
-        livreUsd: bancaUsd - margemUsd,
+        /** ⚠️ Sobre o SALDO, não sobre a banca — senão inventa dinheiro perdido. */
+        livreUsd: saldoUsd - margemUsd,
         nocionalUsd,
-        exposicaoPct: bancaUsd > 0 ? margemUsd / bancaUsd * 100 : 0,
+        exposicaoPct: saldoUsd > 0 ? margemUsd / saldoUsd * 100 : 0,
+        quebrado: saldoUsd <= 0,
       },
       /** ⚠️ Sem preço, o não realizado é NULL na tela em vez de virar zero. */
       semPreco: abertas.some((a) => a.precoAtual === null),
@@ -200,6 +253,12 @@ export async function GET() {
    * mesma razão de o extrato dizer "sem dado" em vez de devolver zero.
    */
   const fluxosDe = (a: string) => fluxos.filter((f) => f.agente === a);
+
+  /**
+   * ⚠️ TUDO que o extrato lançou para o agente — preço, taxa, derrapagem,
+   * aluguel, funding. É o realizado dele, e é o que move o saldo.
+   */
+  const somaDe = (a: string) => fluxosDe(a).reduce((s, f) => s + f.usdt, 0);
   const usdtPiso = usdtProduzido(fluxosDe(controle.id));
 
   /**
@@ -208,7 +267,7 @@ export async function GET() {
    * $1.500 de exposição efetiva. Sobre capital, a pergunta fica justa — para
    * cada dólar administrado, quanto sobrou?
    */
-  const retornoDoPisoPct = retornoSobreCapital(usdtPiso, controle.bancaUsd, null).pct;
+  const retornoDoPisoPct = retornoSobreCapital(usdtPiso, controle.bancaInicialUsd, null).pct;
 
   const faixas = FAIXAS.map((faixa) => {
     const doGrupo = agentesDaFaixa(faixa).map((a) => a.id);
@@ -256,15 +315,15 @@ export async function GET() {
           /** Como comparar com o piso sem produzir número que estoura a tela. */
           piso: contraOPiso(r.usdt, usdtPiso, r.ehControle),
           /** A régua honesta: % da própria banca, e a diferença em pp. */
-          retorno: retornoSobreCapital(r.usdt, a.bancaUsd, r.ehControle ? null : retornoDoPisoPct),
-          bancaUsd: a.bancaUsd,
+          retorno: retornoSobreCapital(r.usdt, a.bancaInicialUsd, r.ehControle ? null : retornoDoPisoPct),
+          bancaInicialUsd: a.bancaInicialUsd,
           alavancagemMaxima: a.alavancagemMaxima,
           tetoDeExposicao: a.tetoDeExposicao,
           categoria: a.categoria,
           execucao: a.execucao,
           /** ⚠️ A taxa que ESTE agente paga — a régua deixa de ser da arena. */
           taxaPernaPct: taxaPorPerna(a.modalidade, a.execucao),
-          ...retratoDe(r.agente, a.bancaUsd),
+          ...retratoDe(r.agente, a.bancaInicialUsd, somaDe(r.agente)),
           destaque: r.agente === destaque,
         };
       }),

@@ -10,7 +10,7 @@ import {
 } from "@/lib/celeiro/funding-colheita";
 import {
   registrarFluxo, ultimoLancamentoMs, genomaAtivo, lerRelogio, marcarRelogio,
-  posicoesAbertas, abrirPosicao, varrerAbertas, agentesComAbertas, margemDa,
+  posicoesAbertas, abrirPosicao, varrerAbertas, agentesComAbertas, margemDa, saldoDoAgente,
 } from "@/lib/celeiro/store";
 import {
   lerRegime, permite, alvoLimpaOPedagio, alavancagemCoerente, stopPorVolatilidade,
@@ -237,6 +237,7 @@ export async function POST(req: NextRequest) {
    */
   const VARRIDOS_NO_TICK = new Set([
     "cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base", "pool_novo",
+    "comprador_cego",
   ]);
   const orfaos = (await agentesComAbertas(db)).filter((a) => !VARRIDOS_NO_TICK.has(a));
   if (orfaos.length > 0) {
@@ -255,7 +256,11 @@ export async function POST(req: NextRequest) {
 
   const operados: Record<string, unknown> = {};
 
-  for (const id of ["cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base"] as const) {
+  for (const id of [
+    "cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base",
+    /** ⚠️ O controle de DIREÇÃO opera de verdade — senão não é comparável. */
+    "comprador_cego",
+  ] as const) {
     const ag = agentePor(id)!;
     const gen = await genomaAtivo(db, id, id === "convergencia_base"
       ? { margemPp: 0.15, horasLimite: 8 }
@@ -289,6 +294,15 @@ export async function POST(req: NextRequest) {
      *     com mais, o teto vaza sem nada aparecer no extrato.
      */
     let expostoUsd = abertas.reduce((soma, p) => soma + margemDa(p), 0);
+
+    /**
+     * ⚠️⚠️ O SALDO REAL, LIDO DO EXTRATO — não a banca inicial (24/08).
+     *
+     * Antes o tamanho saía de `bancaUsd: 1000`, um literal que o prejuízo nunca
+     * tocava: o Alavancado queimou $53,17 e seguia apostando como se tivesse
+     * $1.000. Sem ruína, sem composição, e o mínimo declarado nunca disparava.
+     */
+    const saldo = await saldoDoAgente(db, id, ag.bancaInicialUsd);
 
     /**
      * ⚠️ O BRAÇO DO A/B — e ele alterna por POSIÇÃO, não por símbolo. Dividir
@@ -339,14 +353,34 @@ export async function POST(req: NextRequest) {
          */
         const podeVender = ag.modalidade === "futuros_gate";
         const regime = lerRegime(velas.get(sym) ?? []);
-        const perm = permite(regime, podeVender);
-        porque = perm.porque;
 
-        if (!perm.opera || perm.lado === null) {
-          exames.push({ sym, abre: false, porque, estado: regime.estado });
-          continue;
+        if (ag.controleDeDirecao) {
+          /**
+           * ⚠️⚠️ O CONTROLE DE DIREÇÃO NÃO CONSULTA O SINAL. É a única
+           * diferença dele para o Caçador — mesma geometria, mesma corretagem,
+           * mesmo tamanho, mesmo stop pela volatilidade.
+           *
+           * ⚠️ E ELE NÃO É BARRADO PELO "sangrando". Barrar seria deixar o
+           * sinal decidir por ele pela porta dos fundos, e a comparação
+           * mediria os dois usando o mesmo filtro — que é exatamente o que
+           * este agente existe para NÃO fazer.
+           *
+           * ⚠️ Ele ainda precisa do regime para o STOP: dimensionar o stop
+           * pelo ruído não é ler direção, e dar a ele um stop pior faria a
+           * comparação medir geometria em vez de sinal.
+           */
+          lado = "buy";
+          porque = "compra às cegas — controle de direção, não lê sinal";
+        } else {
+          const perm = permite(regime, podeVender);
+          porque = perm.porque;
+
+          if (!perm.opera || perm.lado === null) {
+            exames.push({ sym, abre: false, porque, estado: regime.estado });
+            continue;
+          }
+          lado = perm.lado;
         }
-        lado = perm.lado;
 
         /**
          * ⚠️ A INVARIANTE QUE MATOU O MAKER. Alvo que não limpa o pedágio por
@@ -396,7 +430,20 @@ export async function POST(req: NextRequest) {
        * exposição é o "sem suicídio" do mandato: sem ele, três posições de 25%
        * viram 75% da banca em risco sem ninguém ter decidido isso.
        */
-      const t = tamanhoDaPosicao(ag, expostoUsd, alavanca);
+      /**
+       * ⚠️⚠️ SALDO TRUNCADO NÃO ABRE POSIÇÃO. Uma soma incompleta é sempre
+       * MAIOR que a real — os lançamentos que faltam são em maioria negativos.
+       * Dimensionar com ela apostaria dinheiro que não existe, e o erro
+       * apareceria como um agente operando grande demais sem ninguém saber por
+       * quê. Recusar é a única leitura honesta de "não consegui medir".
+       */
+      if (saldo.truncado) {
+        exames.push({ sym, abre: false, porque:
+          "saldo não pôde ser somado por inteiro — não opero com capital que não sei medir" });
+        continue;
+      }
+
+      const t = tamanhoDaPosicao(ag, expostoUsd, saldo.usd, alavanca);
       if (!t.cabe) { exames.push({ sym, abre: false, porque: t.porque }); continue; }
 
       const prof = portaoDeProfundidade(livros.get(sym) ?? null, t.usd);
@@ -429,7 +476,9 @@ export async function POST(req: NextRequest) {
     operados[id] = {
       genomaVersao: gen?.versao ?? null,
       fechados, abertas: abertas.length,
-      expostoMargemUsd: expostoUsd, bancaUsd: ag.bancaUsd, exames,
+      expostoMargemUsd: expostoUsd, exames,
+      bancaInicialUsd: ag.bancaInicialUsd,
+      saldoUsd: saldo.usd, realizadoUsd: saldo.realizadoUsd, saldoTruncado: saldo.truncado,
     };
   }
   relato.operados = operados;
