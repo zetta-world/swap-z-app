@@ -7,6 +7,7 @@ import { Activity, Target, Calendar, Clock, ChevronDown, AlertCircle, Sparkles }
 import { CHAINS, type ChainId } from "@/lib/chains";
 import { tokensByChain, type Token } from "@/lib/tokens";
 import { formatUsd, parseDecimalInput } from "@/lib/format";
+import { lerCiclos, porCiclo, sobra, MAX_CICLOS } from "@/lib/orders/plano";
 import { savePendingOrder } from "@/lib/zion/orders";
 import type { ActionCard } from "@/lib/zion/parse";
 import ZionOrdersList from "./ZionOrdersList";
@@ -37,7 +38,13 @@ export default function OrdersView() {
   const [fromToken, setFromToken] = useState<Token | undefined>(() => tokensByChain("ethereum").find((t) => t.symbol === "USDC"));
   const [toToken,   setToToken]   = useState<Token | undefined>(() => tokensByChain("ethereum").find((t) => t.symbol === "ETH"));
   const [amount,    setAmount]    = useState("");
-  const [limitPrice, setLimitPrice] = useState("3600");
+  /**
+   * ⚠️ NASCE VAZIO. Antes era `useState("3600")` — o preço do ETH cravado, que
+   * sobrevivia a troca de rede E de par: escolher outro ativo deixava o gatilho
+   * em US$ 3.600 para uma moeda que não vale isso. Palpite errado com cara de
+   * padrão é pior que campo em branco.
+   */
+  const [limitPrice, setLimitPrice] = useState("");
   const [intervals, setIntervals] = useState("12");
   const [freq, setFreq] = useState("daily");
   const [fromSelectorOpen, setFromSelectorOpen] = useState(false);
@@ -45,45 +52,113 @@ export default function OrdersView() {
 
   const chainTokens = tokensByChain(chain);
 
+  /**
+   * ⚠️ O GATILHO MORRE COM O PAR. Trocar de rede troca os dois tokens; um preço
+   * digitado para o par anterior não significa nada para o novo.
+   */
   const onChainChange = (c: ChainId) => {
     setChain(c);
     const tokens = tokensByChain(c);
     setFromToken(tokens[0]);
     setToToken(tokens[1]);
+    setLimitPrice("");
+  };
+
+  /** Mesmo motivo: o gatilho é cotado NO token de destino. */
+  const onToTokenChange = (tk: Token) => {
+    setToToken(tk);
+    setLimitPrice("");
+  };
+
+  /**
+   * ⚠️⚠️ O PLANO É CALCULADO UMA VEZ, E TUDO LÊ DAQUI (auditoria de 24/08).
+   *
+   * Antes, o "por ciclo" saía do valor parseado e o "ciclos" do texto CRU, e a
+   * mesma frase se contradizia: "$1000.00 por ciclo · 1e9 ciclos". Agora
+   * `lerCiclos` normaliza, e quem exibe usa SEMPRE o número normalizado.
+   */
+  const parcelado = tab === "dca" || tab === "twap";
+  const plano = useMemo(() => {
+    if (!parcelado) return null;
+    // ⚠️ União DISCRIMINADA por `ok`. A primeira versão distinguia os dois
+    // lados por `"erro" in plano`, e o TypeScript não estreitava — `plano.erro`
+    // saía `string | undefined`. Discriminante explícito é mais barato que
+    // narrowing esperto que falha calado.
+    const c = lerCiclos(intervals);
+    if (!c.ok) return { ok: false as const, motivo: c.motivo };
+    const dec = fromToken?.decimals ?? 18;
+    const cada = porCiclo(amount, c.ciclos, dec);
+    if (!cada) return { ok: false as const, motivo: "vazio" as const };
+    return { ok: true as const, ciclos: c.ciclos, cada, resto: sobra(amount, c.ciclos, dec) };
+  }, [parcelado, intervals, amount, fromToken?.decimals]);
+
+  /** A frase do motivo, para a tela DIZER por que recusou em vez de sumir. */
+  const motivoTexto = (m: string): string => {
+    if (m === "vazio")        return t("orders.cyclesEmpty");
+    if (m === "nao_inteiro")  return t("orders.cyclesNotInteger");
+    if (m === "menor_que_um") return t("orders.cyclesTooSmall");
+    return t("orders.cyclesTooMany", { max: String(MAX_CICLOS) });
   };
 
   const summary = useMemo(() => {
     const a = parseDecimalInput(amount) ?? 0;
-    if (!a) return null;
-    if (tab === "limit") return t("orders.summaryLimit", { symbol: toToken?.symbol ?? "", price: limitPrice, fromSymbol: fromToken?.symbol ?? "" });
-    if (tab === "dca")   return t("orders.summaryDca",   {
+    if (!a || !fromToken || !toToken) return null;
+    if (tab === "limit") {
+      // ⚠️ Sem gatilho não há ordem-limite. Antes o campo vinha pré-preenchido
+      // com 3600 e isto nunca era exercitado.
+      if (!(parseDecimalInput(limitPrice) ?? 0)) return null;
+      return t("orders.summaryLimit", { symbol: toToken.symbol, price: limitPrice, fromSymbol: fromToken.symbol });
+    }
+    if (!plano?.ok) return null;
+    if (tab === "dca") return t("orders.summaryDca", {
       freq:     t((FREQS.find((f) => f.v === freq)?.labelKey ?? "orders.freqDaily") as MessageKey),
-      perCycle: (a / parseInt(intervals || "1")).toFixed(2),
-      cycles:   intervals,
+      perCycle: plano.cada,
+      symbol:   fromToken.symbol,
+      cycles:   String(plano.ciclos),
     });
-    return t("orders.summaryTwap", { amount, fromSymbol: fromToken?.symbol ?? "", intervals });
-  }, [tab, amount, intervals, freq, fromToken, toToken, limitPrice, t]);
+    return t("orders.summaryTwap", {
+      amount, fromSymbol: fromToken.symbol,
+      intervals: String(plano.ciclos), perCycle: plano.cada, symbol: fromToken.symbol,
+    });
+  }, [tab, amount, freq, fromToken, toToken, limitPrice, plano, t]);
 
-  // Persist the configured order locally (advisory-only, no custody — same
-  // store the ZION cards use). The list to the right refreshes via the
-  // ORDERS_CHANGED_EVENT dispatched inside savePendingOrder.
+  /**
+   * ⚠️⚠️ O NÚMERO QUE O CARD MOSTRA É O NÚMERO QUE O BOTÃO USA.
+   *
+   * Este era o achado 🔴 da auditoria. `from.amount` levava o ORÇAMENTO TOTAL,
+   * e o "Disparar agora" fazia `setAmountIn(card.from.amount)` — então um plano
+   * de 1.000 USDC em 12 ciclos abria o swap card com 1.000, não com 83,33. O
+   * card exibia os dois números lado a lado e o botão usava o outro.
+   *
+   * Agora `from.amount` é O VALOR DE UM CICLO, que é o que uma execução faz.
+   * O total e a contagem vão em `plan`, para a tela poder mostrar os dois sem
+   * ambiguidade sobre qual deles é executável.
+   */
   const onPlaceOrder = () => {
     if (!summary || !fromToken || !toToken) return;
     const typeLabel = (() => {
       const k = TABS.find((x) => x.id === tab)?.labelKey;
       return k ? t(k) : tab;
     })();
-    const kind = tab === "limit" ? "buy_limit" : tab; // dca / twap kept as-is
+    const executavel = parcelado && plano?.ok ? plano.cada : amount;
     const card: ActionCard = {
-      kind,
+      kind: tab === "limit" ? "buy_limit" : tab,
       title:   `${typeLabel} · ${fromToken.symbol} → ${toToken.symbol}`,
       summary,
       chain:   fromToken.chain,
-      from:    { symbol: fromToken.symbol, address: fromToken.address, amount: amount || undefined },
+      from:    { symbol: fromToken.symbol, address: fromToken.address, amount: executavel || undefined },
       to:      { symbol: toToken.symbol,   address: toToken.address },
       triggerPrice: tab === "limit" ? limitPrice : undefined,
+      plan: parcelado && plano?.ok
+        ? { totalBudget: amount, cycles: plano.ciclos, perCycle: plano.cada, freq: tab === "dca" ? freq : undefined }
+        : undefined,
     };
-    savePendingOrder(card);
+    // ⚠️ Confere se GRAVOU. `savePendingOrder` devolve `null` quando o
+    // `localStorage` está cheio — antes engolia e o toast dizia "salva".
+    if (!savePendingOrder(card)) {
+      toast.error(t("orders.saveFailedToast"));
+      return;
+    }
     toast.success(t("orders.placedToast", { label: typeLabel }));
     setAmount("");
   };
@@ -207,10 +282,13 @@ export default function OrdersView() {
                       </select>
                     </Field>
                     <Field label={t("orders.fieldCycles")}>
+                      {/* ⚠️ `min` e `step` estavam AUSENTES: negativo, fracionário
+                          e expoente entravam digitando, e produziam $Infinity,
+                          $-200.00 e truncamento calado. */}
                       <input
                         value={intervals}
                         onChange={(e) => setIntervals(e.target.value)}
-                        type="number"
+                        type="number" min={1} max={MAX_CICLOS} step={1}
                         className="w-full bg-bg-2 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-ink-2 outline-none focus:border-violet/30"
                       />
                     </Field>
@@ -226,6 +304,28 @@ export default function OrdersView() {
                       className="w-full bg-bg-2 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-ink-2 outline-none focus:border-violet/30"
                     />
                   </Field>
+                )}
+
+                {/* ⚠️ RECUSA COM MOTIVO. Antes o resumo simplesmente sumia e o
+                    botão ficava inerte, sem dizer o que estava errado — ou,
+                    pior, aparecia com "$Infinity por ciclo". */}
+                {parcelado && plano && !plano.ok && (
+                  <div className="rounded-lg border border-gold/25 bg-gold/[0.05] px-3 py-2 font-mono text-[11px] text-gold">
+                    {motivoTexto(plano.motivo)}
+                  </div>
+                )}
+                {tab === "limit" && !!(parseDecimalInput(amount) ?? 0) && !(parseDecimalInput(limitPrice) ?? 0) && (
+                  <div className="rounded-lg border border-gold/25 bg-gold/[0.05] px-3 py-2 font-mono text-[11px] text-gold">
+                    {t("orders.triggerMissing")}
+                  </div>
+                )}
+                {/* ⚠️ A DIVISÃO INTEIRA TRUNCA, e a tela diz quanto sobrou.
+                    Truncar e calar é a invariante nº 33: o dono somaria os
+                    ciclos, veria menos que o orçamento e não saberia por quê. */}
+                {parcelado && plano?.ok && plano.resto && (
+                  <div className="font-mono text-[10px] text-ink-4">
+                    {t("orders.remainderNote", { rest: plano.resto, symbol: fromToken?.symbol ?? "" })}
+                  </div>
                 )}
 
                 {summary && (
@@ -248,6 +348,15 @@ export default function OrdersView() {
                       })
                     : t("orders.configureBtn")}
                 </button>
+                {/* ⚠️ A PROMESSA QUE NÃO EXISTIA. A aba dizia "compras
+                    recorrentes / recurring schedule" e não há agendador algum —
+                    nem rota, nem cron, nem código. Quem lia entendia que algo
+                    compraria sozinho todo dia. Agora a tela diz quem dispara. */}
+                {parcelado && (
+                  <p className="font-sans text-[11px] text-gold/80 leading-relaxed">
+                    {t("orders.manualNote")}
+                  </p>
+                )}
                 <p className="font-mono text-[10px] text-ink-4 text-center">
                   {t("orders.placerFooter")}
                 </p>
@@ -286,7 +395,7 @@ export default function OrdersView() {
         onClose={() => setToSelectorOpen(false)}
         tokens={chainTokens}
         selected={toToken}
-        onSelect={setToToken}
+        onSelect={onToTokenChange}
         title={t("orders.fieldReceive")}
       />
     </div>
