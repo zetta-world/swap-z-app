@@ -64,7 +64,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ? v.filter((x): x is string => typeof x === "string" && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(x)).slice(0, 12)
         : [];
 
-    recordEvent("swap_guard", {
+    // ⚠️ AGUARDADO: registro de SEGURANÇA (programa desconhecido, bloqueio).
+    // Evento de segurança que se perde é o mesmo que não ter tido.
+    await recordEvent("swap_guard", {
       meta: {
         ok, mode, blocked,
         unknownPrograms: addrs(body.unknownPrograms),

@@ -14,7 +14,10 @@
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Banco (server-only; service key NUNCA vira NEXT_PUBLIC) | app roda sem DB (best-effort) |
 | `SUPABASE_ANON_KEY` | Realtime broadcast do painel admin | realtime off |
 | `AUTH_JWT_SECRET` | Sessão por carteira assinada | login quebra |
-| `CRON_SECRET` | Bearer dos 3 crons (backtest/autopilot/radar) | crons retornam 401 |
+| `CRON_SECRET` | Bearer dos 4 crons (backtest/autopilot/radar/**dca**) | crons retornam 401 |
+| `DCA_MAX_CICLO_USD` | teto por ciclo de DCA | **padrão 500** — ausente NÃO é "sem limite" |
+| `DCA_MAX_DIARIO_USD` | teto diário somando TODOS os planos da carteira | **padrão 1000** |
+| `DCA_MIN_ORDEM_USD` | mínimo aceito pela corretora; abaixo disso o plano encerra | **padrão 5** |
 | `ADMIN_WALLETS` | Allowlist de carteiras admin (CSV) | só tier_cache source=admin entra |
 | `HELIUS_RPC_URL`, `NEXT_PUBLIC_SOLANA_RPC` | RPC Solana | RPC público (lento) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Alertas Odin | alertas mudos |
@@ -146,11 +149,111 @@ aritmética sobre volume anterior à cobrança existir.
 | Endpoint | Cadência | Auth | Stall alert |
 |----------|----------|------|-------------|
 | `POST /api/autopilot/cron` | 5 min | header `Authorization: <CRON_SECRET>` (com ou sem `Bearer `) | >12 min |
+| `POST /api/dca/cron` | 5 min | mesmo `CRON_SECRET` | >20 min | ⚠️ **AINDA NÃO AGENDADO** — ver §2.1 |
 | `POST /api/zion/backtest` | 30 min | idem | >75 min |
 | `POST /api/radar` | 1 min | idem | >5 min |
 
 GitHub Actions: `schedule` DESATIVADO nos dois workflows (só `workflow_dispatch`
 manual). NÃO reativar sem desligar o cron-job.org — daria tick duplicado.
+
+### 2.1 Como agendar o cron do DCA (pendente)
+
+**Enquanto este job não existir, nenhum plano de DCA roda.** A tela do usuário
+avisa isso em vermelho, mas o recurso está pronto e parado.
+
+No **cron-job.org**, criar um job novo:
+
+| campo | valor |
+|---|---|
+| Title | `z-swap · DCA` |
+| URL | `https://swap-z-app.vercel.app/api/dca/cron` |
+| Schedule | a cada **5 minutos** (`Every 5 minutes`) |
+| Request method | **POST** |
+| Header | `Authorization` = o valor de `CRON_SECRET` |
+| Timeout | 60 s (a rota declara `maxDuration = 60`) |
+| Treat redirects as success | **não** |
+| Save responses | sim — ajuda a ler o `resumo` quando algo estranhar |
+
+⚠️ **O header vai SEM `Bearer `**, igual aos outros três. O `autorizado()` da
+rota aceita os dois formatos, mas manter o padrão evita que alguém "conserte" o
+que não está quebrado.
+
+⚠️ **NÃO reaproveitar o job do autopilot mudando a URL.** São produtos
+separados de propósito: se um cair, o outro tem de seguir.
+
+**Conferir que pegou**, nesta ordem:
+
+1. cron-job.org → histórico do job → HTTP **200** com corpo `{"ok":true,...}`.
+   `401` = header errado. `{"ok":true,"paused":true}` = o `pause_dca` está
+   ligado no painel.
+2. Admin → **SISTEMA · System Health** → o heartbeat `dca` tem de aparecer com
+   data de minutos atrás.
+3. Sem plano nenhum, o corpo é `{"ok":true,"processed":0,"resumo":[]}`. Isso é
+   o esperado — **não** é sinal de problema.
+
+⚠️ **O watchdog só acusa `dca` parado desde 24/08**, quando a chave entrou em
+`CRON_STALE_MIN`. Antes disso o RUNBOOK dizia ">20 min" e o código não fazia
+nada — documento afirmando o que o código não faz.
+
+### 2.2 T3 do cofre de credenciais — remover `creds_cipher`
+
+Último passo da virada descrita em `docs/PLANO-DCA-AUTOMATICO.md` §2.
+**Depende de MEDIÇÃO, não de calendário.**
+
+**O que já está feito (T1 e T2):** a chave vive em `cex_conexoes`; armar uma
+sessão de autopilot grava nos DOIS lugares; a leitura prefere o cofre e cai em
+`autopilot_sessions.creds_cipher` quando não há elo; e cada passada do cron
+grava um evento `cofre_origem_credencial` com a conta.
+
+**O critério, e ele é único:**
+
+```sql
+select
+  sum((metadata->>'cofre')::int)  as pelo_cofre,
+  sum((metadata->>'sessao')::int) as pelo_campo_velho,
+  sum((metadata->>'erro')::int)   as erro,
+  count(*)                        as passadas,
+  min(created_at)                 as desde
+from platform_events
+where event_type = 'cofre_origem_credencial'
+  and created_at > now() - interval '7 days';
+```
+
+Só seguir quando, por **sete dias corridos**:
+
+- `pelo_campo_velho = 0`
+- `erro = 0`
+- `passadas > 0` ⚠️ **e esta é a que se esquece.** Zero passadas significa que
+  a medição nunca aconteceu — não que ela deu zero. É a invariante nº 33, e é
+  exatamente a situação de hoje: o banco tem ZERO sessões de autopilot, então o
+  contador nunca gravou nada.
+
+**Se `pelo_campo_velho > 0`:** existe sessão sem elo com o cofre. Achar com
+
+```sql
+select id, wallet_address, exchange_id, updated_at
+  from autopilot_sessions
+ where is_active and conexao_id is null;
+```
+
+O conserto é o dono re-armar aquela sessão — a escrita dupla cria o elo. **Não**
+fazer backfill à mão sem conferir que a chave da sessão ainda é a boa: se ela
+foi rotacionada fora do app, copiar o campo velho para o cofre propaga uma
+credencial morta.
+
+**Quando o critério bater**, nesta ordem:
+
+1. Migration `alter table autopilot_sessions alter column creds_cipher drop not null;`
+   e nada mais. **Não apagar dado ainda.**
+2. Deploy que remove `decryptSessionCreds` e o ramo de queda em
+   `credenciaisDaSessao` — a leitura passa a exigir `conexao_id`.
+3. **Esperar mais sete dias** com isso em produção. É a janela de arrependimento:
+   o dado velho ainda está lá se algo aparecer.
+4. Só então `alter table autopilot_sessions drop column creds_cipher;`
+
+⚠️ **O passo 3 não é excesso de zelo.** Entre 2 e 4 o `rollback` é um deploy;
+depois de 4 é restaurar backup do banco. A diferença entre os dois é a razão de
+o passo existir.
 
 ---
 

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import {
-  listRunnableSessions, decryptSessionCreds, patchSession, recordRuns, utcDayKey,
+  listRunnableSessions, credenciaisDaSessao, patchSession, recordRuns, utcDayKey,
+  type OrigemCredencial,
   tryLockSession, releaseLock, bumpSessionTrades,
 } from "@/lib/autopilot/sessions";
 import { runAutopilotCexScan, formatRegimeContext } from "@/lib/autopilot/scan";
@@ -61,26 +62,55 @@ const RISK_EXPOSURE_USD: Record<string, number> = { conservador: 75, moderado: 2
 type RunRowT = Partial<AutopilotRunRow> & { wallet_address: string; exchange_id: string; status: string };
 
 
-/** Realized USD P&L of a filled SELL against a position's average cost. */
-function realizedFromSell(order: CexOrder, pos: AutopilotPositionRow): number | null {
+/**
+ * P&L realizado de uma VENDA preenchida, contra o custo médio da posição.
+ *
+ * ⚠️⚠️ DEVOLVE O AVISO EM VEZ DE GRAVÁ-LO — e a mudança tem motivo (24/08).
+ *
+ * Esta função é cálculo puro e gravava um evento no meio. Misturar as duas
+ * coisas obrigava a escolha ruim: ou ela virava `async` e o `await` subia por
+ * toda a cadeia, ou o registro ficava sem `await` — e ficou, com o comentário
+ * "o P&L não pode ficar refém do registro".
+ *
+ * ⚠️ AQUELE MOTIVO ERA FALSO. `recordEvent` NUNCA lança: engole o erro com
+ * `.catch()` lá dentro. Aguardar não podia deixar o P&L refém de nada.
+ *
+ * E o que se perdia é justamente o aviso de que o P&L sai OTIMISTA e o stop
+ * de perda afrouxa — a única pista de que o número na tela está errado A FAVOR
+ * DA CASA. Agora o aviso volta como dado, e quem chama (que já é async) grava.
+ */
+function realizedFromSell(order: CexOrder, pos: AutopilotPositionRow): {
+  realized: number | null;
+  aviso: { moeda: string; valor: number } | null;
+} {
+  const vazio = { realized: null, aviso: null } as const;
   const filledQty = Number(order.filled ?? 0);
-  if (!(filledQty > 0)) return null;
+  if (!(filledQty > 0)) return vazio;
   const proceeds = Number(order.cost) > 0 ? Number(order.cost) : filledQty * Number(order.average ?? 0);
-  if (!(proceeds > 0)) return null;
+  if (!(proceeds > 0)) return vazio;
   const avgCost = Number(pos.base_amount) > 0 ? Number(pos.cost_usd) / Number(pos.base_amount) : 0;
-  if (!(avgCost > 0)) return null;
+  if (!(avgCost > 0)) return vazio;
   const costRemoved = avgCost * filledQty;
   const taxa = taxaEmUsd(order, proceeds, filledQty, String(pos.pair ?? ""));
-  if (taxa.naoPrecificada) {
-    // Best-effort e sem `await`: o P&L não pode ficar refém do registro.
-    recordEvent("autopilot_taxa_nao_precificada", { meta: {
-      pair: pos.pair, moeda: taxa.naoPrecificada.moeda, valor: taxa.naoPrecificada.valor,
-      why: "taxa em moeda que não é stable nem a base do par — subtraída como ZERO, "
-        + "então o P&L realizado sai OTIMISTA e o stop de perda afrouxa",
-    } });
-  }
   const realized = proceeds - costRemoved - taxa.usd;
-  return Number.isFinite(realized) ? realized : null;
+  return {
+    realized: Number.isFinite(realized) ? realized : null,
+    aviso: taxa.naoPrecificada
+      ? { moeda: taxa.naoPrecificada.moeda, valor: taxa.naoPrecificada.valor }
+      : null,
+  };
+}
+
+/**
+ * Grava o aviso de taxa não precificada. ⚠️ AGUARDADO: na Vercel a função
+ * congela depois da resposta, e este é o registro de que o P&L saiu otimista.
+ */
+async function avisarTaxaNaoPrecificada(pair: unknown, aviso: { moeda: string; valor: number }) {
+  await recordEvent("autopilot_taxa_nao_precificada", { meta: {
+    pair, moeda: aviso.moeda, valor: aviso.valor,
+    why: "taxa em moeda que não é stable nem a base do par — subtraída como ZERO, "
+      + "então o P&L realizado sai OTIMISTA e o stop de perda afrouxa",
+  } });
 }
 
 /**
@@ -100,7 +130,8 @@ async function settleArmedExits(
       const order = await fetchCexOrderStatus(exchange, creds, pos.exit_order_id!, pos.pair);
       const st = order.status?.toLowerCase() ?? "";
       if (st === "closed" || st === "filled") {
-        const realized = realizedFromSell(order, pos);
+        const { realized, aviso } = realizedFromSell(order, pos);
+        if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
         if (realized !== null) {
           realizedDelta += realized;
           await applySessionPnl(s.id, realized, today);
@@ -200,6 +231,18 @@ export async function POST(req: NextRequest) {
   })));
 
   const summary: Array<{ exchange: string; wallet: string; fired: number; skipped: string }> = [];
+  /**
+   * ⚠️ O CONTADOR DA VIRADA DO COFRE (T2, `docs/PLANO-DCA-AUTOMATICO.md` §2).
+   *
+   * Conta de onde cada credencial veio nesta passada. É ele — e só ele — que
+   * autoriza o T3 (remover `creds_cipher`): enquanto houver leitura por
+   * `sessao`, existe alguém que quebraria.
+   *
+   * ⚠️ E `erro` É O TERCEIRO ESTADO. Sem ele, uma sessão que falhou ao decifrar
+   * sumiria da conta, e "zero leituras pelo caminho velho" ficaria
+   * indistinguível de "as leituras nem aconteceram" — invariante nº 33.
+   */
+  const origens = { cofre: 0, sessao: 0, erro: 0 };
 
   for (const s of sessions) {
     // A2: acquire the per-session lock so a still-running prior cron pass can't
@@ -212,6 +255,7 @@ export async function POST(req: NextRequest) {
     }
     try {
       const result = await processSession(s);
+      if (result.origem) origens[result.origem] += 1; else origens.erro += 1;
       summary.push({
         exchange: s.exchange_id,
         wallet: `${s.wallet_address.slice(0, 6)}…`,
@@ -220,11 +264,24 @@ export async function POST(req: NextRequest) {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      origens.erro += 1;
       await patchSession(s.id, { last_error: msg.slice(0, 300), last_scan_at: new Date().toISOString() });
       summary.push({ exchange: s.exchange_id, wallet: `${s.wallet_address.slice(0, 6)}…`, fired: 0, skipped: `error: ${msg.slice(0, 80)}` });
     } finally {
       await releaseLock(s.id);
     }
+  }
+
+  /**
+   * ⚠️ SÓ GRAVA QUANDO HOUVE SESSÃO. Um evento por passada com tudo em zero
+   * inundaria o `platform_events` a cada 5 minutos e afogaria o sinal que ele
+   * existe para dar.
+   */
+  if (sessions.length > 0) {
+    await recordEvent("cofre_origem_credencial", { meta: {
+      ...origens,
+      why: "T2 da virada do cofre — enquanto `sessao` > 0, remover creds_cipher quebra alguém",
+    } });
   }
 
   // Platform-wide watchdog — error/security spikes, stale crons, AI budget,
@@ -234,7 +291,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, processed: sessions.length, blocked: barradas.length, summary });
 }
 
-interface ProcessResult { fired: number; note: string; }
+interface ProcessResult { fired: number; note: string; origem?: OrigemCredencial }
 
 async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   const nowIso = new Date().toISOString();
@@ -276,8 +333,15 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     await patchSession(s.id, { trades_today: 0, pnl_today: 0, last_reset_day: today, frozen_until_day: frozenUntil });
   }
 
-  // ── 2. Decrypt creds ──
-  const creds: CexCredentials = decryptSessionCreds(s);
+  /**
+   * ── 2. A credencial — LEITURA DUPLA (T2 do cofre) ──
+   *
+   * Prefere `cex_conexoes`; cai em `creds_cipher` quando a sessão ainda não
+   * tem elo. A ORIGEM sobe no resultado porque é ela que o contador mede — e é
+   * o contador que autoriza remover o `creds_cipher` no T3. Sem medida, aquele
+   * passo seria chute.
+   */
+  const { creds, origem } = await credenciaisDaSessao(s);
   const exchange = s.exchange_id as CexId;
 
   // ── 3. Settle exits armed on a prior run (A5). A filled exit realizes P&L
@@ -295,12 +359,12 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     alertIfNewlyFrozen();
     if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
-    return { fired: 0, note: "frozen (daily loss-stop)" };
+    return { origem, fired: 0, note: "frozen (daily loss-stop)" };
   }
   if (tradesToday >= s.max_trades_per_day) {
     if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
-    return { fired: 0, note: "daily trade cap reached" };
+    return { origem, fired: 0, note: "daily trade cap reached" };
   }
 
   // ── 5. Read live balance ──
@@ -320,7 +384,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   } catch (e) {
     if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: `balance read failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300) });
-    return { fired: 0, note: "balance read failed" };
+    return { origem, fired: 0, note: "balance read failed" };
   }
 
   // ── 6. Bounded per-trade cap (can only shrink vs the armed cap) ──
@@ -359,13 +423,13 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: `scan: ${scan.error}`.slice(0, 300) });
     await recordRuns([{ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, status: "scan_error", reason: scan.error.slice(0, 200) }]);
-    return { fired: 0, note: "scan error" };
+    return { origem, fired: 0, note: "scan error" };
   }
   if (scan.cards.length === 0) {
     if (runRows.length) await recordRuns(runRows);
     await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
     await recordRuns([{ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, status: "scan_empty", reason: "no actionable setup" }]);
-    return { fired: 0, note: "no setup" };
+    return { origem, fired: 0, note: "no setup" };
   }
 
   // ── 9. Background firing is SPOT-ONLY (no unattended leverage) ──
@@ -455,7 +519,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
             avisarRegistroPerdido("contador diario nao subiu (venda)", { pair: intent.symbol, order_id: order.id });
           }
           if (intent.type === "market") {
-            const realized = realizedFromSell(order, pos);
+            const { realized, aviso } = realizedFromSell(order, pos);
+            if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
             if (realized !== null) {
               pnlToday += realized;
               await applySessionPnl(s.id, realized, today);

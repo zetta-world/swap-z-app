@@ -250,7 +250,10 @@ export async function POST(req: NextRequest) {
       filledImmediately,
       fetchedAt: Date.now(),
     };
-    recordEvent("cex_order", {
+    // ⚠️ AGUARDADO: uma ordem REAL acabou de ser colocada na corretora. Perder
+    // este registro deixa um buraco no extrato do usuário — e a resposta já
+    // pagou uma ida à corretora, então um insert não é o que pesa aqui.
+    await recordEvent("cex_order", {
       meta: {
         exchange,
         symbol: body.symbol,
