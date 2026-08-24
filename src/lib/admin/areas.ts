@@ -41,6 +41,7 @@ export type AreaId =
   | "comando"
   | "mesas"
   | "celeiro"
+  | "ulfhednar"
   | "medicoes"
   | "dinheiro"
   | "operacao"
@@ -90,30 +91,47 @@ export const AREAS: Area[] = [
       + "ACUMULADO e nenhum agente aposta em direção. Não comparar com o "
       + "torneio antigo: as duas réguas medem coisas diferentes.",
   },
+  /**
+   * ⚠️⚠️ ABA PRÓPRIA, E NÃO UM PAINEL DENTRO DE `comando` — eu errei isto
+   * primeiro (24/08). O dono pediu "uma aba nova com UI própria"; eu registrei
+   * um painel na área COMANDO, que vira um cartão no meio de outros três. Ele
+   * teve de vir dizer "isso tem que ficar no painel ADM né".
+   *
+   * A diferença não é cosmética: nesta casa ÁREA é a aba do menu, e painel é o
+   * cartão dentro dela. Entregar painel quando se pede aba é entregar outra
+   * coisa — e a tela não acusa, porque um painel registrado funciona.
+   */
   {
-    id: "medicoes", label: "MEDIÇÕES", icon: "🔬", ordem: 4,
+    id: "ulfhednar", label: "ÚLFHÉÐNAR", icon: "ᚢ", ordem: 4,
+    pergunta: "o que os agentes fizeram, e o que eu quero perguntar a eles?",
+    aviso: "ÚLFHÉÐNAR — o registro é ASSÍNCRONO. Uma página web não interrompe "
+      + "uma sessão de agente: a pergunta fica na caixa e é lida quando ele "
+      + "volta a trabalhar. O estado de leitura de cada mensagem está na tela.",
+  },
+  {
+    id: "medicoes", label: "MEDIÇÕES", icon: "🔬", ordem: 5,
     pergunta: "o que o histórico diz sobre cada estratégia?",
     aviso: "MEDIÇÕES — perguntas sobre o PASSADO, rodadas sob demanda. Nenhuma "
       + "mesa opera a partir daqui, e nenhum número desta área é dinheiro.",
   },
   {
-    id: "dinheiro", label: "DINHEIRO", icon: "💰", ordem: 5,
+    id: "dinheiro", label: "DINHEIRO", icon: "💰", ordem: 6,
     pergunta: "quanto entrou, quanto custou, quanto sobrou?",
     aviso: "DINHEIRO — receita e custo REAIS da plataforma. Não confundir com "
       + "o resultado simulado das mesas.",
   },
   {
-    id: "operacao", label: "OPERAÇÃO", icon: "⚙", ordem: 6,
+    id: "operacao", label: "OPERAÇÃO", icon: "⚙", ordem: 7,
     pergunta: "o autopilot e as sessões estão saudáveis?",
     aviso: null,
   },
   {
-    id: "pessoas", label: "PESSOAS", icon: "👥", ordem: 7,
+    id: "pessoas", label: "PESSOAS", icon: "👥", ordem: 8,
     pergunta: "quem usa, quanto cresce, em que plano?",
     aviso: null,
   },
   {
-    id: "sistema", label: "SISTEMA", icon: "🛡", ordem: 8,
+    id: "sistema", label: "SISTEMA", icon: "🛡", ordem: 9,
     pergunta: "travas, auditoria, saúde e registro",
     aviso: null,
   },
@@ -186,8 +204,22 @@ export const CELEIRO: readonly ModuleId[] = [
   "celeiro",
 ] as const;
 
+/**
+ * A aba dos agentes.
+ *
+ * ⚠️ MESMA EXCEÇÃO POR NOME, e pelo mesmo motivo das outras duas: a `category`
+ * do registro segue `"command"` — porque é isso que o painel É, uma tela de
+ * comando — e a ÁREA discorda sem reescrevê-la. Trocar a categoria mexeria no
+ * chip antigo, no `admin-layout` salvo do dono e na ordem declarada, três
+ * coisas com teste próprio, por uma decisão de navegação.
+ */
+export const ULFHEDNAR: readonly ModuleId[] = [
+  "ulfhednar",
+] as const;
+
 /** A área de um módulo — a exceção por nome vence o mapa por categoria. */
 export function areaDoModulo(id: ModuleId): AreaId | null {
+  if (ULFHEDNAR.includes(id)) return "ulfhednar";
   if (CELEIRO.includes(id)) return "celeiro";
   if (MESAS.includes(id)) return "mesas";
   const m = MODULE_REGISTRY.find((x) => x.id === id);
