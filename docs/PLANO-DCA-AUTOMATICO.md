@@ -258,11 +258,11 @@ RLS habilitada, ZERO policies — o padrão da casa.
 
 | # | o quê | status |
 |---|---|---|
-| D0 | `cex_conexoes` + backfill + `conexao_id` nulável (T1 da §2) | 🔴 |
+| D0 | `cex_conexoes` + backfill + `conexao_id` nulável (T1 da §2) | 🟡 **T1 aplicado — backfill NÃO exercitado (banco sem sessões)** |
 | D1 | `lib/dca/relogio.ts` puro (janela, avanço, decisão de ciclo, tetos) com testes | 🟢 **24/08 — 33 testes** |
-| D2 | migration `dca_planos` + `dca_ciclos` | 🔴 |
-| D3 | rota `POST /api/dca/cron` PRÓPRIA, com a ordem reserva→ordem→registro da §3 | 🔴 |
-| D4 | `pause_dca` + liberação própria em `gate-keys.ts` e no painel | 🔴 |
+| D2 | migration `dca_planos` + `dca_ciclos` | 🟢 **24/08 — trava unique provada no banco** |
+| D3 | rota `POST /api/dca/cron` PRÓPRIA, com a ordem reserva→ordem→registro da §3 | 🟢 **24/08 — falta AGENDAR no cron-job.org** |
+| D4 | `pause_dca` + liberação própria em `gate-keys.ts` e no painel | 🟡 **chave criada; falta o painel** |
 | D5 | leitura dupla no autopilot + contador (T2 da §2) | 🔴 |
 | D6 | UI: criar plano, ver ciclos feitos/pulados, pausar, encerrar | 🔴 |
 | D7 | painel admin: planos ativos, ciclos do dia, falhas | 🔴 |
@@ -276,6 +276,20 @@ sete valores impossíveis que a tela aceitava, e é barato repetir.
 ⚠️ **D9 é o último, e depende de medição, não de calendário.**
 
 ---
+
+## 7.1 ⚠️ O QUE FICOU ABERTO DEPOIS DO D2/D3
+
+- **A rota existe e NÃO está agendada.** Sem o job no cron-job.org, nenhum
+  plano roda. Entra no `RUNBOOK` junto com os três que já existem.
+- **O backfill do D0 não foi exercitado.** No momento da migration o banco
+  tinha ZERO sessões de autopilot, então a cópia foi no-op. A lógica está
+  escrita e não está provada contra dado real — não confundir uma coisa com a
+  outra.
+- **T2/T3 pendentes:** o autopilot ainda lê o próprio `creds_cipher`. Enquanto
+  isso, quem conectar pelo autopilot NÃO aparece no cofre, e um plano de DCA
+  exigirá conectar de novo. É o preço de não mexer no caminho de dinheiro vivo
+  no mesmo PR.
+- **Sem UI.** Não há como criar um plano pela tela ainda (D6).
 
 ## 8. O que este plano NÃO faz
 

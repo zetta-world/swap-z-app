@@ -44,6 +44,55 @@ import { join } from "node:path";
 
 const RAIZ = join(process.cwd(), "src/app/admin/api");
 
+/**
+ * ⚠️⚠️ A TRAVA SÓ OLHAVA PARA O ADMIN — e a mesma classe estava solta nas
+ * rotas de DINHEIRO (24/08).
+ *
+ * Ao escrever o cron do DCA reparei que meu `recordEvent` sem `await` passou
+ * verde: esta trava varria apenas `src/app/admin/api`. Varrendo `src/app/api`
+ * apareceram ONZE pontos, incluindo `cex/order`, `quote` e os dois crons —
+ * exatamente onde perder o registro dói mais.
+ *
+ * ⚠️ CATRACA, não conserto. Consertar os dez pré-existentes é trabalho de
+ * outro PR; o que esta lista faz é impedir que a dívida CRESÇA. Ela só pode
+ * encolher: cada linha que sair daqui é uma a menos, e quando esvaziar, some.
+ *
+ * ⚠️ E A LISTA É DE LINHA, não de arquivo. Um arquivo isento inteiro deixaria
+ * um `recordEvent` NOVO entrar de carona no mesmo arquivo, calado.
+ */
+const RAIZ_PUBLICA = join(process.cwd(), "src/app/api");
+
+const DIVIDA_CONHECIDA = new Set([
+  "src/app/api/cex/order/route.ts:253",
+  "src/app/api/celeiro/cron/route.ts:251",
+  "src/app/api/beacon/route.ts:70",
+  "src/app/api/beacon/route.ts:88",
+  "src/app/api/quote/route.ts:401",
+  "src/app/api/quote/route.ts:483",
+  "src/app/api/quote/route.ts:531",
+  "src/app/api/radar/route.ts:62",
+  "src/app/api/swap-guard/route.ts:67",
+  "src/app/api/autopilot/cron/route.ts:76",
+]);
+
+/**
+ * ⚠️⚠️ COMENTÁRIO NÃO É CÓDIGO — e esta trava não sabia (24/08).
+ *
+ * A varredura casava `recordEvent(` em qualquer linha, inclusive dentro de um
+ * bloco `/** ... *\/` que EXPLICA a regra. Foi exatamente o que aconteceu: o
+ * comentário do cron do DCA cita `void recordEvent(...)` ao descrever o
+ * defeito, e a trava acusou o arquivo que estava certo.
+ *
+ * É a segunda vez no mesmo dia que escrevo um instrumento que confunde texto
+ * com código (a outra foi `nao-vaza-para-o-cliente`). O padrão que as
+ * auditorias acharam dez vezes no produto vale para as ferramentas também:
+ * elas afirmam com confiança o que não conferiram.
+ */
+function semComentarios(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
+            .replace(/^(\s*)\/\/.*$/gm, "$1");
+}
+
 function rotas(dir: string): string[] {
   const out: string[] = [];
   for (const nome of readdirSync(dir)) {
@@ -73,7 +122,7 @@ describe("durabilidade de evento nas rotas admin", () => {
     const faltando: string[] = [];
 
     for (const arquivo of arquivos) {
-      const linhas = readFileSync(arquivo, "utf8").split("\n");
+      const linhas = semComentarios(readFileSync(arquivo, "utf8")).split("\n");
       linhas.forEach((linha, i) => {
         if (!linha.includes("recordEvent(")) return;
         // A importação não é chamada.
@@ -89,6 +138,51 @@ describe("durabilidade de evento nas rotas admin", () => {
       "recordEvent sem await numa rota admin — na Vercel a função congela depois "
       + "da resposta e o insert se perde. Use `await recordEvent(...)`, ou "
       + "declare `// telemetria: <motivo>` na linha de cima se a perda for aceitável.",
+    ).toEqual([]);
+  });
+});
+
+describe("durabilidade de evento nas rotas PÚBLICAS — a catraca", () => {
+  const arquivos = rotas(RAIZ_PUBLICA);
+
+  it("existem rotas públicas para varrer", () => {
+    expect(arquivos.length).toBeGreaterThan(10);
+  });
+
+  it("nenhum recordEvent sem await FORA da dívida já conhecida", () => {
+    const novos: string[] = [];
+    for (const arquivo of arquivos) {
+      const rel = arquivo.replace(process.cwd() + "/", "");
+      semComentarios(readFileSync(arquivo, "utf8")).split("\n").forEach((linha, i) => {
+        if (!linha.includes("recordEvent(")) return;
+        if (/^\s*import\b/.test(linha)) return;
+        if (linha.includes("await recordEvent(")) return;
+        const ref = `${rel}:${i + 1}`;
+        if (!DIVIDA_CONHECIDA.has(ref)) novos.push(ref);
+      });
+    }
+    expect(novos,
+      "recordEvent sem await numa rota pública, fora da dívida conhecida. Na "
+      + "Vercel a função congela depois da resposta e o insert se perde — e "
+      + "estas são as rotas de DINHEIRO. Use `await recordEvent(...)`.",
+    ).toEqual([]);
+  });
+
+  it("⚠️ a dívida só pode ENCOLHER — linha consertada tem de sair da lista", () => {
+    // Sem isto a lista viraria cemitério: um `recordEvent` consertado deixaria
+    // a isenção para trás, e a próxima linha que caísse naquele número entraria
+    // de carona. É a mesma disciplina do "nenhum id de MESAS é fantasma".
+    const vivos = new Set<string>();
+    for (const arquivo of arquivos) {
+      const rel = arquivo.replace(process.cwd() + "/", "");
+      semComentarios(readFileSync(arquivo, "utf8")).split("\n").forEach((linha, i) => {
+        if (linha.includes("recordEvent(") && !/^\s*import\b/.test(linha)
+            && !linha.includes("await recordEvent(")) vivos.add(`${rel}:${i + 1}`);
+      });
+    }
+    const fantasmas = [...DIVIDA_CONHECIDA].filter((d) => !vivos.has(d));
+    expect(fantasmas,
+      "estas linhas foram consertadas ou moveram — tire-as de DIVIDA_CONHECIDA",
     ).toEqual([]);
   });
 });

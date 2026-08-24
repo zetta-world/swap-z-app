@@ -28,7 +28,16 @@ export type FlywheelGateKey =
   | "pause_ragnarok" | "pause_ragnarok_ai" | "pause_ragnarok_dex" | "pause_ullr"
   | "pause_zion"
   | "pause_urdr"
-  | "pause_arbiter2_lev";
+  | "pause_arbiter2_lev"
+  /**
+   * ⚠️ GATE PRÓPRIO DO DCA, e não o do autopilot.
+   *
+   * Abrir robô de IA ao público e abrir plano de poupança ao público são
+   * decisões DIFERENTES, com riscos diferentes — e agora podem ser tomadas em
+   * dias diferentes. O DCA também tem rota de cron própria: um bug na IA não
+   * pode parar a poupança de ninguém junto.
+   */
+  | "pause_dca";
 
 export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = [
   "pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament",
@@ -36,6 +45,7 @@ export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = [
   "pause_oracle", "pause_arbiter2",
   "pause_ragnarok", "pause_ragnarok_ai", "pause_ragnarok_dex", "pause_ullr",
   "pause_zion", "pause_urdr", "pause_arbiter2_lev",
+  "pause_dca",
 ];
 
 /**
@@ -88,6 +98,9 @@ export const GATE_SPENDS_TOKENS: Record<FlywheelGateKey, boolean> = {
   pause_arbiter:      false,  // detector de spread, zero LLM
   pause_arbiter2:     false,  // spot+perp hedgeado, zero LLM
   pause_ragnarok:     false,  // VÖLUNDR — seletor mecânico
+  // ⚠️ DCA não chama modelo nenhum: é relógio + ordem a mercado. Zero LLM, e
+  // por isso fora do corte automático de custo. Continua desligável à mão.
+  pause_dca:          false,
   pause_ragnarok_dex: false,  // FREYJA — mesmo seletor mecânico, praça DEX
   pause_ullr:         false,  // ULLR — regra de idade/liquidez/fluxo, sem LLM
   pause_urdr:         false,  // URÐR — obedece ao histórico medido, zero LLM

@@ -14,7 +14,10 @@
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Banco (server-only; service key NUNCA vira NEXT_PUBLIC) | app roda sem DB (best-effort) |
 | `SUPABASE_ANON_KEY` | Realtime broadcast do painel admin | realtime off |
 | `AUTH_JWT_SECRET` | Sessão por carteira assinada | login quebra |
-| `CRON_SECRET` | Bearer dos 3 crons (backtest/autopilot/radar) | crons retornam 401 |
+| `CRON_SECRET` | Bearer dos 4 crons (backtest/autopilot/radar/**dca**) | crons retornam 401 |
+| `DCA_MAX_CICLO_USD` | teto por ciclo de DCA | **padrão 500** — ausente NÃO é "sem limite" |
+| `DCA_MAX_DIARIO_USD` | teto diário somando TODOS os planos da carteira | **padrão 1000** |
+| `DCA_MIN_ORDEM_USD` | mínimo aceito pela corretora; abaixo disso o plano encerra | **padrão 5** |
 | `ADMIN_WALLETS` | Allowlist de carteiras admin (CSV) | só tier_cache source=admin entra |
 | `HELIUS_RPC_URL`, `NEXT_PUBLIC_SOLANA_RPC` | RPC Solana | RPC público (lento) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Alertas Odin | alertas mudos |
@@ -146,6 +149,7 @@ aritmética sobre volume anterior à cobrança existir.
 | Endpoint | Cadência | Auth | Stall alert |
 |----------|----------|------|-------------|
 | `POST /api/autopilot/cron` | 5 min | header `Authorization: <CRON_SECRET>` (com ou sem `Bearer `) | >12 min |
+| `POST /api/dca/cron` | 5 min | mesmo `CRON_SECRET` | >20 min | ⚠️ **AINDA NÃO AGENDADO** — a rota existe desde 24/08 e nenhum plano roda sem o job |
 | `POST /api/zion/backtest` | 30 min | idem | >75 min |
 | `POST /api/radar` | 1 min | idem | >5 min |
 
