@@ -237,6 +237,7 @@ export async function POST(req: NextRequest) {
    */
   const VARRIDOS_NO_TICK = new Set([
     "cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base", "pool_novo",
+    "comprador_cego",
   ]);
   const orfaos = (await agentesComAbertas(db)).filter((a) => !VARRIDOS_NO_TICK.has(a));
   if (orfaos.length > 0) {
@@ -255,7 +256,11 @@ export async function POST(req: NextRequest) {
 
   const operados: Record<string, unknown> = {};
 
-  for (const id of ["cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base"] as const) {
+  for (const id of [
+    "cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base",
+    /** ⚠️ O controle de DIREÇÃO opera de verdade — senão não é comparável. */
+    "comprador_cego",
+  ] as const) {
     const ag = agentePor(id)!;
     const gen = await genomaAtivo(db, id, id === "convergencia_base"
       ? { margemPp: 0.15, horasLimite: 8 }
@@ -348,14 +353,34 @@ export async function POST(req: NextRequest) {
          */
         const podeVender = ag.modalidade === "futuros_gate";
         const regime = lerRegime(velas.get(sym) ?? []);
-        const perm = permite(regime, podeVender);
-        porque = perm.porque;
 
-        if (!perm.opera || perm.lado === null) {
-          exames.push({ sym, abre: false, porque, estado: regime.estado });
-          continue;
+        if (ag.controleDeDirecao) {
+          /**
+           * ⚠️⚠️ O CONTROLE DE DIREÇÃO NÃO CONSULTA O SINAL. É a única
+           * diferença dele para o Caçador — mesma geometria, mesma corretagem,
+           * mesmo tamanho, mesmo stop pela volatilidade.
+           *
+           * ⚠️ E ELE NÃO É BARRADO PELO "sangrando". Barrar seria deixar o
+           * sinal decidir por ele pela porta dos fundos, e a comparação
+           * mediria os dois usando o mesmo filtro — que é exatamente o que
+           * este agente existe para NÃO fazer.
+           *
+           * ⚠️ Ele ainda precisa do regime para o STOP: dimensionar o stop
+           * pelo ruído não é ler direção, e dar a ele um stop pior faria a
+           * comparação medir geometria em vez de sinal.
+           */
+          lado = "buy";
+          porque = "compra às cegas — controle de direção, não lê sinal";
+        } else {
+          const perm = permite(regime, podeVender);
+          porque = perm.porque;
+
+          if (!perm.opera || perm.lado === null) {
+            exames.push({ sym, abre: false, porque, estado: regime.estado });
+            continue;
+          }
+          lado = perm.lado;
         }
-        lado = perm.lado;
 
         /**
          * ⚠️ A INVARIANTE QUE MATOU O MAKER. Alvo que não limpa o pedágio por

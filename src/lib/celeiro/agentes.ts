@@ -84,6 +84,13 @@ export interface Agente {
    * POSTA. Foi morto por um número que o modelo inventou.
    */
   execucao: Execucao;
+  /**
+   * ⚠️ CONTROLE DE DIREÇÃO ≠ CONTROLE DE RETORNO. `controle` marca o piso de
+   * RETORNO (o Aluguel de Ocioso): "valeu arriscar em vez de deixar rendendo?".
+   * Este marca o piso de DIREÇÃO: "o sinal sabe para que lado o mercado vai?".
+   * Confundir os dois deixou o segundo sem resposta por semanas.
+   */
+  controleDeDirecao?: boolean;
   ritmo: Ritmo;
   motor: Motor;
   faixa: Faixa;
@@ -280,7 +287,53 @@ export const AGENTES: readonly Agente[] = [
     receitaVemDe: ["preco"],
     aposentaQuando:
       "render menos que o Aluguel de Ocioso com 100+ posições fechadas — aí o "
-      + "risco de mercado não está comprando nada",
+      + "risco de mercado não está comprando nada; OU render menos que o "
+      + "Comprador Cego — aí o sinal não sabe direção e só paga corretagem",
+  },
+  {
+    /**
+     * ⚠️⚠️ O CONTROLE DE DIREÇÃO — e ele NÃO é o mesmo que o controle de
+     * retorno (24/08).
+     *
+     * O Aluguel de Ocioso responde "valeu a pena arriscar em vez de deixar o
+     * USDT rendendo?". Ele não responde "o sinal sabe para que lado o mercado
+     * vai?", e essas são perguntas diferentes que estavam sendo confundidas.
+     *
+     * MEDIDO EM 41 DIAS, ~285 AMOSTRAS POR ATIVO: o filtro de tendência de 20h
+     * ganha do "compra às cegas" no BTC (+2,9pp) e no SOL (+4,6pp), e PERDE no
+     * ETH (−4,6pp). Efeito médio ≈ zero. O que parecia borda era o mercado, que
+     * subiu 22–32% no período.
+     *
+     * Este agente existe para que essa comparação seja PERMANENTE e automática
+     * em vez de um script que alguém rodou uma vez. Um sinal que não bate o
+     * escuro não é sinal — é enfeite que paga corretagem.
+     */
+    id: "comprador_cego",
+    nome: "Comprador Cego (controle de direção)",
+    categoria: "tendencia",
+    modalidade: "spot_gate",
+    /** compra a mercado, igual ao Caçador — a única diferença tem de ser o sinal. */
+    execucao: "taker",
+    ritmo: "swing",
+    motor: "bot",
+    faixa: "trabalho",
+    capitalMinimoUsd: 0,
+    bancaInicialUsd: 1000,
+    fracaoPorPosicao: 0.25,
+    tetoDeExposicao: 0.75,
+    alavancagemMaxima: 1,
+    controleDeDirecao: true,
+    mecanismo:
+      "COMPRA, sempre, sem olhar sinal nenhum — mesma geometria de alvo e stop "
+      + "do Caçador de Tendência, mesma corretagem, mesmo tamanho",
+    naoFaz:
+      "não lê tendência, não lê volatilidade para decidir LADO, e nunca vende. "
+      + "Ele não é uma estratégia: é a régua contra a qual as estratégias "
+      + "direcionais se medem.",
+    receitaVemDe: ["preco"],
+    aposentaQuando:
+      "nunca — controle não se aposenta. Se ele render MAIS que os agentes de "
+      + "tendência, quem se aposenta são eles",
   },
   {
     id: "alavancado_de_tendencia",
@@ -315,7 +368,9 @@ export const AGENTES: readonly Agente[] = [
     receitaVemDe: ["preco"],
     aposentaQuando:
       "uma liquidação apagar o ganho de semanas, ou render menos que o "
-      + "Caçador de Tendência sem alavanca — aí a alavanca só comprou risco",
+      + "Caçador de Tendência sem alavanca — aí a alavanca só comprou risco; "
+      + "OU render menos que o Comprador Cego — aí nem o sinal nem a alavanca "
+      + "estão comprando alguma coisa",
   },
 
   // ── CATEGORIA EVENTO — assimetria, perda limitada por construção ─────────
