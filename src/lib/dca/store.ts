@@ -41,9 +41,17 @@ function cru(): ClienteCru | null {
   return getSupabaseAdmin() as unknown as ClienteCru | null;
 }
 
+export type ModoPlano = "simulado" | "real";
+
 export interface PlanoRow {
   id:                  string;
-  conexao_id:          string;
+  /**
+   * ⚠️ `null` só em plano SIMULADO. O banco garante (check
+   * `dca_planos_real_exige_conexao`) que plano real tem conexão — e a garantia
+   * PRECISA estar lá, porque esta tabela fica fora do tipo `Database` e aqui
+   * não há checagem de tipo nenhuma.
+   */
+  conexao_id:          string | null;
   wallet_address:      string;
   exchange_id:         string;
   symbol:              string;
@@ -57,6 +65,11 @@ export interface PlanoRow {
   gasto_acumulado_usd: number;
   status:              "ativo" | "pausado" | "completo" | "encerrado";
   encerrado_por:       string | null;
+  /**
+   * ⚠️ IMUTÁVEL DEPOIS DE CRIADO, e por isso não há função para trocá-lo.
+   * Simulado que vira real relabelaria histórico inteiro de uma vez.
+   */
+  modo:                ModoPlano;
 }
 
 /**
@@ -88,7 +101,9 @@ export async function planosVencidos(agoraIso: string, teto = 200): Promise<{ pl
  * tela fazendo algo diferente do que diz.
  */
 export async function criarPlano(p: {
-  conexaoId: string; walletAddress: string; exchangeId: string; symbol: string;
+  /** `null` em plano simulado — que é o ponto: dá para testar sem entregar chave. */
+  conexaoId: string | null; walletAddress: string; exchangeId: string; symbol: string;
+  modo: ModoPlano;
   orcamentoTotalUsd: number; porCicloUsd: number; ciclosTotal: number;
   intervalo: Intervalo; primeiraJanelaIso: string;
 }): Promise<{ ok: true; id: string } | { ok: false; erro: string }> {
@@ -98,6 +113,7 @@ export async function criarPlano(p: {
     conexao_id: p.conexaoId, wallet_address: p.walletAddress, exchange_id: p.exchangeId,
     symbol: p.symbol, orcamento_total_usd: p.orcamentoTotalUsd, por_ciclo_usd: p.porCicloUsd,
     ciclos_total: p.ciclosTotal, intervalo: p.intervalo, next_run_at: p.primeiraJanelaIso,
+    modo: p.modo,
   }).select("id").single();
   if (error || !data?.id) return { ok: false, erro: error?.message?.slice(0, 200) ?? "sem id" };
   return { ok: true, id: data.id };
@@ -170,6 +186,12 @@ export async function reservarCiclo(
 export async function fecharCiclo(planoId: string, cicloNumero: number, r: {
   status: "feito" | "falhou"; motivo?: string;
   orderId?: string; preco?: number; quantidade?: number; custoUsd?: number;
+  /**
+   * ⚠️ CARIMBADO NO CICLO, não deduzido do plano na hora de exibir. Se o modo
+   * vivesse só no plano, um `update` nele relabelaria o histórico todo. O que
+   * aconteceu fica dito onde aconteceu.
+   */
+  simulado?: boolean;
 }): Promise<boolean> {
   const db = cru();
   if (!db) return false;
@@ -181,6 +203,7 @@ export async function fecharCiclo(planoId: string, cicloNumero: number, r: {
     preco:        r.preco ?? null,
     quantidade:   r.quantidade ?? null,
     custo_usd:    r.custoUsd ?? null,
+    simulado:     r.simulado === true,
   }).eq("plano_id", planoId).eq("ciclo_numero", cicloNumero);
   return !error;
 }
