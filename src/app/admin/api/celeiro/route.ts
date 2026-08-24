@@ -177,6 +177,46 @@ export async function GET() {
     });
 
     const fechadas = minhas.filter((p) => p.fechada_em !== null);
+
+    /**
+     * ⚠️⚠️ CADA OPERAÇÃO FECHADA, DECOMPOSTA (24/08).
+     *
+     * O dono: "se for visto por alguém que não entende nada do mercado vai
+     * ficar perdido — não vai saber quantas entradas foram feitas, o que foi
+     * lucrativo e o que perdeu, nem onde e o que o agente operou".
+     *
+     * A contagem por motivo respondia "quantas morreram de quê" e nada mais.
+     * Ela não diz QUAL par, QUANDO, por qual preço, nem quanto a taxa levou —
+     * e é justamente aí que mora a diferença entre "perdi 4 USDT" e "acertei o
+     * preço e entreguei tudo no pedágio", que foi como o Maker de Faixa morreu.
+     */
+    const ultimas = fechadas.slice(0, 25).map((p) => {
+      const meta = (p.meta ?? {}) as Record<string, unknown>;
+      const alavanca = Number(meta.alavanca) >= 1 ? Number(meta.alavanca) : 1;
+      const nocionalUsd = Number(p.usd) || 0;
+      const entrada = Number(p.preco_entrada) || 0;
+      const saida = Number(p.preco_saida) || 0;
+      const movPct = entrada > 0 && saida > 0
+        ? (p.lado === "buy" ? (saida - entrada) / entrada : (entrada - saida) / entrada) * 100
+        : 0;
+      const taxaPernaPct = Number.isFinite(Number(meta.taxaPernaPct))
+        ? Number(meta.taxaPernaPct) : null;
+
+      const precoUsd = nocionalUsd * movPct / 100;
+      /** ⚠️ DUAS pernas: a de entrada e a de saída. Contar uma esconde metade. */
+      const taxaUsd = taxaPernaPct === null ? null : -(nocionalUsd * taxaPernaPct * 2 / 100);
+      return {
+        id: p.id, simbolo: p.simbolo, lado: p.lado, alavanca,
+        nocionalUsd, margemUsd: nocionalUsd / alavanca,
+        precoEntrada: entrada, precoSaida: saida,
+        motivo: p.motivo_saida, movPct,
+        precoUsd, taxaUsd,
+        /** ⚠️ NULL quando a taxa não foi gravada — posição anterior à fronteira. */
+        liquidoUsd: taxaUsd === null ? null : precoUsd + taxaUsd,
+        abertaEmMs: Date.parse(p.aberta_em),
+        fechadaEmMs: p.fechada_em ? Date.parse(p.fechada_em) : null,
+      };
+    });
     const porMotivo: Record<string, number> = { alvo: 0, stop: 0, tempo: 0, liquidacao: 0 };
     for (const f of fechadas) {
       const m = String(f.motivo_saida ?? "");
@@ -187,7 +227,7 @@ export async function GET() {
     const nocionalUsd = abertas.reduce((s, a) => s + a.nocionalUsd, 0);
     return {
       abertas,
-      fechadas: { total: fechadas.length, porMotivo },
+      fechadas: { total: fechadas.length, porMotivo, ultimas },
       capital: {
         bancaInicialUsd,
         realizadoUsd,
