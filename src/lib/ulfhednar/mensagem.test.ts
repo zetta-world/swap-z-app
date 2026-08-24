@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { estadoDa, faz, interlocutorValido } from "@/lib/einherjar/mensagem";
+import { estadoDa, faz, interlocutorValido } from "@/lib/ulfhednar/mensagem";
 
 /**
- * ⚠️ O QUE ESTES TESTES PROTEGEM (docs/PLANO-EINHERJAR.md).
+ * ⚠️ O QUE ESTES TESTES PROTEGEM (docs/PLANO-ULFHEDNAR.md).
  *
  * Esta tela existe para o dono perguntar a agentes que NÃO respondem na hora —
  * uma página web não interrompe uma sessão do Claude Code. O estado de leitura

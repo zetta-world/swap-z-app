@@ -1,25 +1,37 @@
-# PLANO — EINHERJAR: o salão onde os agentes se reportam
+# PLANO — ÚLFHÉÐNAR: onde a matilha se reporta
 
-**Status: 🟡 plano + migration entregues · UI bloqueada por um achado** · 23/08.
+**Status: 🟢 entregue** · 23–24/08 · plano, migration, rota, painel e rename.
 
 > **O que é:** a aba onde o dono vê o que os agentes fizeram e por quê, e onde
 > ele pergunta a eles — de forma ASSÍNCRONA, que é a única que funciona.
 
 ---
 
-## 1. O nome
+## 1. O nome — e por que ele mudou duas vezes
 
-Os **Einherjar** são os escolhidos de Odin: os únicos guerreiros selecionados
-por MÉRITO, não por nascimento. E o que os define não é só lutar — é que entre
-as batalhas eles se reúnem no salão para **aconselhar**. Treinam de dia,
-deliberam à noite, preparando Ragnarök.
+Os **Úlfhéðnar** ("os de pele de lobo") são a irmandade de elite de Odin: os
+guerreiros que lutavam vestidos em peles de lobo, primos dos berserkir, citados
+na *Vatnsdæla saga* e no *Haraldskvæði*. O que os define e serve a esta aba é
+que eles **atacavam como matilha** — coordenados, não cada um por si. É o que
+duas sessões de agente precisam fazer no mesmo repositório.
 
-⚠️ **A tensão com VALHALLA, registrada de propósito.** Neste repositório
-"Valhalla" já significa "mesas que tombaram e foram arquivadas". Na mitologia
-os Einherjar são justamente quem VIVE no salão de Valhalla — então alguém pode
-ler a aba como "os aposentados". A escolha foi mantida porque o sentido que
-importa aqui é o do CONSELHO entre batalhas, e não o da morte. Se um dia
-confundir alguém, o substituto natural é `ÞING` (a assembleia deliberativa).
+⚠️ **ESTA ABA JÁ SE CHAMOU EINHERJAR, E O NOME ESTAVA ERRADO — ERRO MEU.**
+
+`Einherjar` já era o tier pago de US$ 159/mês em `pricing/plans.ts` ("escolhido
+de Valhalla"). Eu batizei a aba assim sem conferir a lista de tiers. Duas coisas
+com um nome só no mesmo produto é confusão plantada: quem grepasse "einherjar"
+acharia o plano do cliente e o mural dos agentes na mesma busca.
+
+⚠️ **E O PRIMEIRO SUBSTITUTO TERIA SIDO PIOR.** Eu ofereci `Berserkir` ao dono,
+que escolheu. Só ao ir mexer é que conferi a lista inteira: **`Berserkr` também
+é tier** (US$ 20,90/mês). Teria trocado uma colisão exata por uma de uma letra,
+que lê como erro de digitação. Voltei e perguntei antes de fazer o trabalho.
+
+> A lição não é "escolhi mal um nome". É que eu ofereci opções **sem ler a
+> fonte** — `plans.ts` estava a um `grep` de distância nas duas vezes.
+
+Os três nomes da Hird ficam reservados aos tiers: **Drengr · Berserkr ·
+Einherjar**. A runa da aba é **ᚢ** (Uruz), não ᛒ nem ᛖ, que são dos tiers.
 
 ## 2. ⚠️ O QUE ESTA ABA NÃO É, E POR QUE ISSO VEM PRIMEIRO
 
@@ -82,7 +94,7 @@ branch, e TTL. Declaração vencida aparece MARCADA, não some.
 
 ## 4. O modelo de dados
 
-Tabela nova `einherjar_mensagens`, porque caixa de entrada precisa de estado de
+Tabela nova `ulfhednar_mensagens`, porque caixa de entrada precisa de estado de
 leitura e de resposta — coisas que `platform_events` (append-only, sem update)
 não modela bem.
 
@@ -136,7 +148,7 @@ caixa responde o "por que você decidiu assim", que só quem decidiu sabe.
 **A migration foi escrita e APLICADA no banco. A UI parou aqui**, e o motivo é
 maior que esta aba.
 
-Ao registrar `einherjar_mensagens` no tipo `Database` (`lib/supabase/types.ts`),
+Ao registrar `ulfhednar_mensagens` no tipo `Database` (`lib/supabase/types.ts`),
 que passaria a ter **20 tabelas**, o type-check quebrou em DOIS ARQUIVOS QUE
 NINGUÉM TOCOU:
 
@@ -192,9 +204,9 @@ não caronar numa entrega de UI.
 
 ## 8. Ordem de entrega
 
-1. Migration `0029_einherjar_mensagens.sql`
-2. `lib/einherjar/mensagens.ts` — puro + IO, com testes
-3. Rota `admin/api/einherjar` (GET lê tudo, POST escreve mensagem)
-4. Painel `EinherjarPanel.tsx` + registro em `modules.ts` **e** `panel-map.tsx`
+1. Migration `0029_ulfhednar_mensagens.sql`
+2. `lib/ulfhednar/mensagens.ts` — puro + IO, com testes
+3. Rota `admin/api/ulfhednar` (GET lê tudo, POST escreve mensagem)
+4. Painel `ÚlfhéðnarPanel.tsx` + registro em `modules.ts` **e** `panel-map.tsx`
    (invariante nº 32 — id sem componente compila e a tela fica vazia)
 5. Área própria em `areas.ts`

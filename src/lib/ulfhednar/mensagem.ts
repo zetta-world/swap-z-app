@@ -1,6 +1,6 @@
 /**
- * EINHERJAR — o TIPO e as funções PURAS da caixa de mensagens.
- * (`docs/PLANO-EINHERJAR.md`)
+ * ÚLFHÉÐNAR — o TIPO e as funções PURAS da caixa de mensagens.
+ * (`docs/PLANO-ULFHEDNAR.md`)
  *
  * ⚠️⚠️ POR QUE ESTE ARQUIVO EXISTE SEPARADO DE `mensagens.ts` (24/08).
  *
@@ -24,7 +24,7 @@
  * módulo que importe. Isto é código que roda nos DOIS lados.
  */
 
-/** O que a tabela guarda. Espelha `0029_einherjar_mensagens.sql`. */
+/** O que a tabela guarda. Espelha `0029_ulfhednar_mensagens.sql`. */
 export interface Mensagem {
   id:            string;
   de:            string;

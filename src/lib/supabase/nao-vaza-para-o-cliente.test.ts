@@ -11,7 +11,7 @@ import path from "node:path";
  * assim que o pacote do cliente carrega, então o erro não fica no componente
  * culpado — ele mata o `Z-SWAP` inteiro, em qualquer rota.
  *
- * Foi exatamente isso: `EinherjarPanel.tsx` (`"use client"`) importou `estadoDa`
+ * Foi exatamente isso: `ÚlfhéðnarPanel.tsx` (`"use client"`) importou `estadoDa`
  * de um módulo que, na PRIMEIRA LINHA, importava `getSupabaseAdmin`. O
  * `type-check`, o `lint`, o `build` e 1.696 testes passaram — porque o defeito
  * é de AVALIAÇÃO no navegador, não de compilação. Quem achou foi o dono, no
@@ -41,7 +41,7 @@ function arquivosDe(dir: string): string[] {
 /**
  * ⚠️ COMENTÁRIO NÃO É IMPORT — e a primeira versão desta trava não sabia disso.
  *
- * Ela acusou `einherjar/mensagem.ts`, que não importa nada: o que casou foi a
+ * Ela acusou `ulfhednar/mensagem.ts`, que não importa nada: o que casou foi a
  * frase `from "@/lib/supabase/server"` escrita DENTRO do comentário que explica
  * por que aquele arquivo existe. Instrumento que afirma o que não sabe é o
  * padrão que as auditorias de 23/08 acharam dez vezes — inclusive três vezes

@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
-import { estadoDa, faz, type Mensagem } from "@/lib/einherjar/mensagem";
+import { estadoDa, faz, type Mensagem } from "@/lib/ulfhednar/mensagem";
 
 /**
- * EINHERJAR — o salão onde os agentes se reportam.
- * (`docs/PLANO-EINHERJAR.md`)
+ * ÚLFHÉÐNAR — onde a matilha se reporta.
+ * (`docs/PLANO-ULFHEDNAR.md`)
  *
  * ⚠️⚠️ ESTA TELA NÃO É UM CHAT, E DIZ ISSO.
  *
@@ -38,7 +38,7 @@ const ROTULO_ESTADO = {
   respondida:        "respondido",
 } as const;
 
-export default function EinherjarPanel() {
+export default function UlfhednarPanel() {
   const [d, setD] = useState<Resp | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -51,7 +51,7 @@ export default function EinherjarPanel() {
   const carregar = async () => {
     setCarregando(true); setErr(null);
     try {
-      const res = await fetch("/admin/api/einherjar");
+      const res = await fetch("/admin/api/ulfhednar");
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.status);
       setD(json); setAgora(Date.now());
@@ -64,7 +64,7 @@ export default function EinherjarPanel() {
     if (!assunto.trim() || !corpo.trim()) return;
     setEnviando(true); setErr(null);
     try {
-      const res = await fetch("/admin/api/einherjar", {
+      const res = await fetch("/admin/api/ulfhednar", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ para, assunto, corpo }),
       });
@@ -77,9 +77,9 @@ export default function EinherjarPanel() {
 
   return (
     <TerminalPanel
-      id="einherjar" title="EINHERJAR" icon="ᛝ"
-      subtitle="o salão dos escolhidos — o que fizeram, e o que você quer perguntar"
-      source="platform_events + einherjar_mensagens"
+      id="ulfhednar" title="ÚLFHÉÐNAR" icon="ᛝ"
+      subtitle="os de pele de lobo — o que fizeram, e o que você quer perguntar"
+      source="platform_events + ulfhednar_mensagens"
     >
       {/* ⚠️ A primeira coisa que a tela diz é o que ela NÃO faz. */}
       <div style={{ fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.6, marginBottom: 10,
