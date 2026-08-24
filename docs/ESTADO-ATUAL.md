@@ -10,9 +10,10 @@
 > **Quando escrever:** ao fim de cada entrega. Documento desatualizado é pior que
 > documento nenhum — dá a impressão de que foi conferido.
 >
-> **Última atualização:** 24/08/2026, após o **EINHERJAR** — a aba onde o dono
-> lê o que os agentes fizeram e escreve para eles. Antes disso, a **auditoria da
-> PONTE e do AUTOPILOT** — 16 achados em 5 PRs (#336, #337, #338, #340, #341).
+> **Última atualização:** 24/08/2026, após o **EINHERJAR** (#343, #344) e o
+> **conserto do shell que ele derrubou em produção** (#345 — leia a §6, primeiro
+> item). Antes disso, a **auditoria da PONTE e do AUTOPILOT** — 16 achados em 5
+> PRs (#336, #337, #338, #340, #341).
 >
 > ⚠️ Esta atualização foi escrita pela **outra sessão** (a da nuvem). O que a
 > sessão do VSCode escreveu antes segue intacto — as duas mãos escrevem aqui,
@@ -24,8 +25,8 @@
 
 | | |
 |---|---|
-| `main` | `bfb5ab5` — ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
-| CI | verde · **1.696 testes** · 122 arquivos |
+| `main` | `7aaf2e8` — ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
+| CI | verde · **1.893 testes** · 123 arquivos |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
 | Outra mão no código | **duas sessões Claude** trabalham aqui — ver §1.1 (corrigido) |
@@ -33,6 +34,8 @@
 Últimos commits, do mais novo:
 
 ```
+7aaf2e8  Conserta o shell derrubado: pura ao lado de import de servidor (#345)  ← nuvem
+f1c9174  EINHERJAR: a aba do salão, e a caixa de recados (#344)  ← nuvem
 bfb5ab5  EINHERJAR: o plano, a migration, e o teto de tipos que parou a UI (#343)  ← nuvem
 ea1764e  Celeiro: a alavanca real, a taxa por praça, e o painel de capital (#339)
 c1b2ec3  ESTADO-ATUAL: as duas auditorias, as travas, e quem é a outra mão (#342)  ← nuvem
@@ -531,6 +534,36 @@ arquivo que ela não tocou, é isto. Mande-a ler esta seção antes de debugar.
 ---
 
 ## 6. O que custou caro aprender (além das 33 invariantes)
+
+**Uma função PURA ao lado de um import de servidor derrubou a aplicação
+inteira.** (24/08, minha, em produção, achada pelo dono no celular.)
+
+`EinherjarPanel.tsx` é `"use client"` e importou `estadoDa` — função pura, não
+toca banco — de um módulo que na PRIMEIRA LINHA importava `getSupabaseAdmin`. O
+empacotador puxa o **módulo**, não a função. A guarda de `supabase/server.ts`
+lança quando avaliada no navegador, e como ela roda ao carregar o pacote do
+cliente, não caiu o painel novo: caiu o **Z-SWAP em todas as rotas**, com
+`supabase/server.ts must never be imported in the browser`.
+
+⚠️ **AS QUATRO FERRAMENTAS PASSARAM VERDES NO COMMIT QUE QUEBROU** — `tsc`,
+`lint`, `build` e 1.696 testes. Não é descuido delas: o defeito é de
+**avaliação no navegador**, e nenhuma das quatro avalia nada num navegador. É a
+mesma família do `Cross-Origin-Opener-Policy` que matou a Coinbase Wallet e
+ficou semanas verde.
+
+> Função pura morando ao lado de um import de servidor é armadilha carregada.
+> Se um `"use client"` precisa de algo de um módulo, o módulo INTEIRO vai junto.
+
+A trava é `src/lib/supabase/nao-vaza-para-o-cliente.test.ts`: percorre a árvore
+de imports de todo componente cliente e falha imprimindo o CAMINHO. Tem que ser
+**transitiva** — o caminho real tinha um salto no meio, e uma trava de primeiro
+nível teria passado batido.
+
+E ela **nasceu errada**: acusou um arquivo que não importa nada, porque casou a
+frase `from "@/lib/supabase/server"` escrita DENTRO de um comentário. O
+instrumento afirmando o que não sabe, de novo. Agora tira comentário antes de
+varrer, e foi provada nos dois sentidos — no teste e no pacote gerado (com o
+import errado a guarda aparece num chunk; com o conserto, em nenhum dos 183).
 
 **A regressão que passou verde.** A PR #304 mergeou o `EM_PROVA` do `cull.ts` e
 o plano, mas **nenhuma linha de `desks.ts`** — a edição morreu num
