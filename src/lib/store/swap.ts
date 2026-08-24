@@ -37,8 +37,21 @@ interface SwapState {
   toToken:   Token | undefined;
   amountIn:  string;
   slippageBps: number;            // basis points e.g. 50 = 0.5%
-  mevProtect: boolean;
-  privacyMode: boolean;
+  /**
+   * Mostrar o aviso de exposição a MEV (auditoria 01/08).
+   *
+   * ANTES isto se chamava `mevProtect` e pintava um escudo verde afirmando
+   * "envio criptografado · anti-sandwich · mempool privado". Nenhuma dessas
+   * três coisas existia: a flag era lida só pelos componentes que a desenhavam.
+   * Havia também um `privacyMode` prometendo "logs criptografados · atraso
+   * aleatório · rotas ocultas" — igualmente sem uma linha de implementação;
+   * foi REMOVIDO, porque não havia nada honesto em que transformá-lo.
+   *
+   * Agora a flag controla a única coisa que a plataforma realmente faz: avisar,
+   * em dólar, quanto desta troca a tolerância de slippage deixa ao alcance de
+   * quem reordena transações. Ver `src/lib/swap/mev-guard.ts`.
+   */
+  mevWarn: boolean;
   mode:        SwapMode;
   /**
    * Optional override for the destination address when bridging cross-chain.
@@ -63,8 +76,7 @@ interface SwapState {
   setToToken:   (t: Token) => void;
   setAmountIn:  (v: string) => void;
   setSlippage:  (bps: number) => void;
-  setMev:       (b: boolean) => void;
-  setPrivacy:   (b: boolean) => void;
+  setMevWarn:   (b: boolean) => void;
   setMode:      (m: SwapMode) => void;
   setRecipient: (r: string | undefined) => void;
   setExecuteOpen: (b: boolean) => void;
@@ -81,8 +93,7 @@ export const useSwap = create<SwapState>((set, get) => ({
   toToken:   findToken("solana", "USDC"),
   amountIn:  "1.0",
   slippageBps: 50,
-  mevProtect:  true,
-  privacyMode: false,
+  mevWarn:     true,
   mode:        "swap",
   recipient:   undefined,
   executeOpen: false,
@@ -161,8 +172,7 @@ export const useSwap = create<SwapState>((set, get) => ({
 
   setAmountIn:  (v) => set({ amountIn: v }),
   setSlippage:  (bps) => set({ slippageBps: bps }),
-  setMev:       (b) => set({ mevProtect: b }),
-  setPrivacy:   (b) => set({ privacyMode: b }),
+  setMevWarn:   (b) => set({ mevWarn: b }),
   setMode:      (m) => set({ mode: m }),
   setRecipient: (r) => set({ recipient: r === "" ? undefined : r }),
   setExecuteOpen: (b) => set({ executeOpen: b }),

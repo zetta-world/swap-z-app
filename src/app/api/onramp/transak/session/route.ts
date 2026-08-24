@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import {
   createTransakWidgetUrl,
   TransakConfigError,
@@ -8,10 +8,25 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Pin to a stable non-US region so Transak's IP allowlist has a fixed
-// target to whitelist (Vercel's default pool rotates per-request). Same
-// rationale as the /api/cex/* routes.
-export const preferredRegion = ["gru1", "fra1"];
+/**
+ * ⚠️ ESTA LINHA NUNCA FUNCIONOU, E FICA COMO CICATRIZ (12/08).
+ *
+ * A intenção estava certa: fixar uma região não-americana estável para o
+ * Transak ter um alvo fixo na lista de IPs permitidos, já que o conjunto
+ * padrão da Vercel gira a cada requisição.
+ *
+ * Mas `preferredRegion` **só vale com `runtime = "edge"`** — está na
+ * documentação da Vercel, e esta rota é `nodejs`. Ela foi ignorada em
+ * silêncio desde que foi escrita: nenhum erro, nenhum aviso, e a função
+ * seguiu rodando no conjunto padrão. A lista do Transak provavelmente aponta
+ * para uma região onde nada executa.
+ *
+ * ⚠️ A CORREÇÃO NÃO É AQUI — é `vercel.json`, com `functions[].regions`, que
+ * é o mecanismo que a Vercel honra para funções Node. Esta declaração fica
+ * comentada para ninguém reescrevê-la achando que resolve.
+ *
+ * export const preferredRegion = ["gru1", "fra1"];   ← não faz nada em nodejs
+ */
 
 // Generous — the browser hits this once per widget open. 20/min/IP is
 // plenty for legitimate use and tight enough to blunt abuse.
@@ -42,7 +57,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "method_not_allowed" }, { status: 405 });
   }
 
-  const rl = rateLimit(`transak_session:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`transak_session:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },

@@ -24,13 +24,25 @@ import { recordEvent, logError } from "@/lib/admin/track";
 import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
 import { extractCards, extractSuggestion } from "@/lib/zion/backtest";
 import { formatIndicatorsForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
+import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
 import type { RadarTrigger } from "@/lib/zion/radar";
+import { isArquivada } from "@/lib/zion/desks";
+
+/** O `source` desta mesa no registro — um lugar só, para o guarda e o ledger. */
+export const SNIPER_SOURCE = "sniper";
 
 const MONTHLY_BUDGET = Number(process.env.SNIPER_MONTHLY_BUDGET ?? 30); // ≈ Trader plan, ~1/day
 // Aligned with the ledger's BACKTEST_MIN_RR (alavanca 2): the funnel rejects
 // sub-2 brackets anyway, so advertising 1.5 to the model just wastes cards.
 const MIN_RR         = Number(process.env.SNIPER_MIN_RR ?? 2);
 const MAX_CARDS      = 2; // per wake — a sniper doesn't spray
+// Stop floor (auditoria 25/07): every sniper LOSS had a 0.56-1.45% stop —
+// inside intraday noise, so the RR>=2 gate was met by TIGHTENING the stop
+// and noise (not the thesis) killed the trade. The stop must clear the
+// volatility band; if RR>=2 can't be built from an honest stop, no trade.
+const MIN_STOP_ATR   = Number(process.env.SNIPER_MIN_STOP_ATR ?? 1.5); // × 1h ATR%
+const MIN_STOP_PCT   = Number(process.env.SNIPER_MIN_STOP_PCT ?? 1.2);
+const COOLDOWN_H     = Number(process.env.SNIPER_COOLDOWN_H   ?? 12);  // per-symbol re-fire wait
 
 // ── Pure gates (unit-tested; objective by design — never the model's word) ──
 
@@ -62,9 +74,25 @@ export function budgetLeft(usedThisMonth: number, budget = MONTHLY_BUDGET): numb
   return Math.max(0, budget - Math.max(0, usedThisMonth));
 }
 
+/** Stop must sit OUTSIDE the volatility band: at least MIN_STOP_ATR × the
+ *  symbol's 1h ATR%, never under MIN_STOP_PCT. No ATR read → the flat floor
+ *  still applies (a stop can never be "cheap" just because data is missing). */
+export function stopFloorGate(
+  entry: number | null | undefined,
+  stop: number | null | undefined,
+  atrPct: number | null | undefined,
+  minAtrMult = MIN_STOP_ATR,
+  minStopPct = MIN_STOP_PCT,
+): boolean {
+  if (entry == null || stop == null || !(entry > 0)) return false;
+  const stopPct = (Math.abs(entry - stop) / entry) * 100;
+  const floor = Math.max(atrPct != null && atrPct > 0 ? atrPct * minAtrMult : 0, minStopPct);
+  return stopPct >= floor;
+}
+
 // ── The wake ────────────────────────────────────────────────────────────────
 
-function sniperInstruction(marketData: MarketIndicatorsResult, triggers: RadarTrigger[]): string {
+function sniperInstruction(marketData: MarketIndicatorsResult, triggers: RadarTrigger[], lessons: string): string {
   const trig = triggers.map((t) => `${t.symbol} ${t.movePct > 0 ? "+" : ""}${t.movePct}%`).join(", ");
   return [
     "You are ZION's SNIPER desk. A price event just fired: " + trig + ".",
@@ -77,6 +105,10 @@ function sniperInstruction(marketData: MarketIndicatorsResult, triggers: RadarTr
     "  · Every card needs entryPrice (current price), ONE take-profit rung and a",
     `    stopLoss with reward:risk >= ${MIN_RR} — target realistic for ~72h (never`,
     "    a multiple of the price), stop just beyond structure.",
+    `  · STOP FLOOR: the stop must sit at least max(${MIN_STOP_ATR}×ATR, ${MIN_STOP_PCT}%) from entry —`,
+    "    a tighter stop dies of NOISE, not of being wrong, and the ledger gate",
+    `    rejects it. Build RR >= ${MIN_RR} from that honest stop by choosing the`,
+    "    target; if the move doesn't support it, skip the symbol.",
     "  · probability = your honest confidence (it is logged, not obeyed).",
     "",
     "OUTPUT — a SINGLE JSON object, nothing else:",
@@ -89,6 +121,7 @@ function sniperInstruction(marketData: MarketIndicatorsResult, triggers: RadarTr
     "<market>",
     formatIndicatorsForPrompt(marketData).trim(),
     "</market>",
+    lessons ? `\n${lessons}` : "",
   ].join("\n");
 }
 
@@ -97,6 +130,19 @@ export interface SniperResult { fired: number; passed: number; skipped: string |
 /** One sniper wake: budget → cheap brain (license to refuse) → objective gates
  *  → ledger. Best-effort throughout; never throws into the radar cron. */
 export async function runSniperScan(marketData: MarketIndicatorsResult, triggers: RadarTrigger[]): Promise<SniperResult> {
+  /**
+   * ⚠️ MESA ARQUIVADA NÃO GASTA — primeira coisa, antes de qualquer consulta.
+   *
+   * O `sniper` está `valhalla` no registro e hoje não está agendado, então
+   * este guarda não corta nada AGORA. Ele entra porque a mesa irmã provou o
+   * custo de não tê-lo: as cinco mesas oráculo ficaram `valhalla` desde 27/07
+   * e seguiram chamando a API paga por três semanas, porque a aposentadoria
+   * morava no comentário e não no código (ver `oracle.ts`, 19/08).
+   *
+   * A diferença entre este arquivo e aquele era só uma linha e um cron ligado.
+   */
+  if (isArquivada(SNIPER_SOURCE)) return { fired: 0, passed: 0, skipped: "arquivada" };
+
   const db = getSupabaseAdmin();
   if (!db) return { fired: 0, passed: 0, skipped: "db" };
 
@@ -114,10 +160,13 @@ export async function runSniperScan(marketData: MarketIndicatorsResult, triggers
   if (!brain?.apiKey) return { fired: 0, passed: 0, skipped: "no_brain" };
   if (await isTripped(brain.id)) return { fired: 0, passed: 0, skipped: "breaker" };
 
+  // Auto-Retro lessons (context, never permission).
+  const lessons = await getActiveLessons(["sniper"]);
+
   let cards;
   try {
     const r = await openaiCompatChat(
-      { model: brain.model, system: ZION_FOUNDATION, user: sniperInstruction(marketData, triggers),
+      { model: brain.model, system: ZION_FOUNDATION, user: sniperInstruction(marketData, triggers, lessonsBlock(lessons.get("sniper"))),
         maxTokens: 1200, timeoutMs: brain.timeoutMs ?? 30_000, temperature: brain.temperature, extraBody: brain.extraBody },
       { apiKey: brain.apiKey, baseUrl: brain.baseUrl },
     );
@@ -132,25 +181,47 @@ export async function runSniperScan(marketData: MarketIndicatorsResult, triggers
   }
 
   // ③ Objective gates on top of the ledger's own sanity gates.
-  const refBy = new Map<string, number>(), regimeBy = new Map<string, string>();
+  const refBy = new Map<string, number>(), regimeBy = new Map<string, string>(), atrBy = new Map<string, number>();
   for (const ind of marketData.indicators) {
     const sym = ind.symbol.toUpperCase();
     if (ind.price != null && ind.price > 0) refBy.set(sym, ind.price);
     if (ind.regime) regimeBy.set(sym, ind.regime);
+    if (ind.atrPct != null && ind.atrPct > 0) atrBy.set(sym, ind.atrPct);
   }
+
+  // Per-symbol cooldown (auditoria 25/07: two ARB shots the same day). One
+  // trigger, one shot — re-firing inside the window is chasing, not sniping.
+  const cooldownCut = new Date(Date.now() - COOLDOWN_H * 3_600_000).toISOString();
+  // leitura-limitada: a janela de cooldown de UMA mesa — minutos, não meses.
+  // O teto de disparos do sniper mantém isto na casa das dezenas.
+  // inclui-arquivadas: o cooldown conta o que foi DISPARADO; arquivar tira da
+  // medição, não desfaz o disparo.
+  const { data: recentShots } = await db.from("zion_suggestions")
+    .select("symbol").eq("source", "sniper").gte("created_at", cooldownCut);
+  const cooling = new Set((recentShots ?? []).map((r) => r.symbol));
+
   const rows = [];
   for (const card of cards.slice(0, MAX_CARDS)) {
-    const s = extractSuggestion(card, refBy, regimeBy); // scale/geometry/clamp gates
+    const s = extractSuggestion(card, refBy, regimeBy, { atrPctBySymbol: atrBy }); // scale/geometry/clamp/stop-floor gates
     if (!s) continue;
+    if (cooling.has(s.symbol)) continue;
     if (!trendGate(s.side, regimeBy.get(s.symbol))) continue;
     if (!rrGate(s.side, s.entry_price, s.target_price, s.stop_price)) continue;
+    if (!stopFloorGate(s.entry_price, s.stop_price, atrBy.get(s.symbol))) continue;
     rows.push({ ...s, source: "sniper" });
+    cooling.add(s.symbol);
     if (rows.length >= left) break; // never overshoot the month's budget
   }
 
   if (rows.length > 0) {
-    try { await db.from("zion_suggestions").insert(rows); }
-    catch { return { fired: cards.length, passed: 0, skipped: "insert_error" }; }
+    // O cliente do Supabase NÃO lança em erro de banco: resolve com
+    // `{ error }`. Um `try/catch` aqui nunca dispararia, e a contagem devolvida
+    // seria uma MENTIRA — linhas "gravadas" que não existem. Foi essa mesma
+    // suposição que fez as carteiras de paper vazarem capital (ver
+    // `paper/engine.ts`). Aqui o estrago é de medição, não de dinheiro, mas uma
+    // mesa que relata trades inexistentes envenena o experimento igual.
+    const { error } = await db.from("zion_suggestions").insert(rows);
+    if (error) return { fired: cards.length, passed: 0, skipped: "insert_error" };
   }
   return { fired: cards.length, passed: rows.length, skipped: null };
 }

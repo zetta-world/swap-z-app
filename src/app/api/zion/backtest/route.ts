@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
-import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScan, runBacktestScanForProvider, runHybridScan } from "@/lib/zion/backtest";
+import { logSuggestions, resolveOpenSuggestions, getBacktestStats, runBacktestScanForProvider, runHybridScan } from "@/lib/zion/backtest";
 import { configuredProviders } from "@/lib/ai/registry";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { getCulledSources, runTournamentCull } from "@/lib/zion/cull";
 import { runOracleScan } from "@/lib/zion/oracle";
+import { runStrategistScan, runStrategistAiScan, runDayScan, runRecordScan } from "@/lib/zion/ragnarok";
+import { isArquivada } from "@/lib/zion/desks";
+import { runDexScan } from "@/lib/zion/ragnarok-dex";
+import { recordEvent } from "@/lib/admin/track";
+import { runUllrScan } from "@/lib/zion/ullr";
+import { runRetroSweep } from "@/lib/zion/retro";
 import { runPaperAgent } from "@/lib/paper/engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -100,6 +106,101 @@ export async function POST(req: NextRequest) {
     if (!gates.pause_backtest) {
       try {
         const marketData = await getMarketIndicators(scanSlice());
+
+        // RAGNARÖK (docs/PLANO-RAGNAROK.md): a mesa mecânica long-only escolhe
+        // o playbook do momento (range / pullback / reversão) sobre a MESMA
+        // fatia de mercado que os scanners veem. Zero token: código puro e
+        // determinístico — o controle honesto contra o qual a camada de IA vai
+        // ser medida. Roda ANTES dos scanners e com try próprio de propósito:
+        // é grátis e não pode ficar refém de uma falha de LLM lá embaixo.
+        if (!gates.pause_ragnarok) {
+          try { await runStrategistScan(marketData.indicators); } catch { /* best-effort */ }
+          // SKAÐI — o MESMO plano com relógio de 8h em vez de 48h. Rodar as
+          // duas isola a variável HORIZONTE: se render diferente, o achado é
+          // sobre o tempo de exposição, não sobre a estratégia.
+          try { await runDayScan(marketData.indicators); } catch { /* best-effort */ }
+        }
+        // A MESA DE IA (MÍMIR) — mesmo mercado, mesmo tick, ledger separado.
+        // Gate próprio porque esta gasta token e a mecânica não: cortar custo
+        // não pode calar o controle junto. É desta comparação que sai a resposta
+        // à tese do dono — a IA escolhe a estratégia do momento melhor que um
+        // bot determinístico?
+        if (!gates.pause_ragnarok_ai) {
+          try { await runStrategistAiScan(marketData.indicators); } catch { /* best-effort */ }
+        }
+        // FREYJA — a mesa DEX (S3). Mesmo seletor, praça diferente: agora que
+        // o resolver e a carteira sabem precificar por pool (migration 0019),
+        // uma sugestão on-chain finalmente preenche e resolve.
+        /**
+         * ⚠️ O TICK DA FREYJA — ela rodava e não deixava rastro (06/08).
+         *
+         * `runDexScan()` devolve `{ scanned, candidates, logged, skipped[] }`
+         * com o MOTIVO de cada símbolo descartado. Tudo isso era jogado fora na
+         * linha, e o `catch` engolia o erro sem uma palavra.
+         *
+         * Consequência: a FREYJA está `live` no registro, aparece no painel, no
+         * torneio e no portão de lançamento — e NUNCA abriu uma posição na
+         * existência inteira. Sem o tick não havia como distinguir "roda e não
+         * acha nada" de "quebra toda vez", e não se aposenta o que não se
+         * consegue diagnosticar.
+         */
+        if (!gates.pause_ragnarok_dex) {
+          try {
+            const r = await runDexScan();
+            await recordEvent("strat_dex_tick", { meta: {
+              scanned: r.scanned, candidates: r.candidates, logged: r.logged,
+              // Os motivos, não só a contagem: "0 candidatos" não diz se a
+              // fonte caiu ou se o seletor recusou tudo.
+              skipped: r.skipped.slice(0, 12),
+            } });
+          } catch (e) {
+            await recordEvent("strat_dex_tick", {
+              meta: { erro: String(e).slice(0, 200) },
+            });
+          }
+        }
+        // URÐR — o terceiro braço: mesma praça, mesmo cardápio, mas obedece ao
+        // HISTÓRICO MEDIDO em vez da prioridade declarada. Sem ela, uma vitória
+        // do MÍMIR não distinguiria o mérito da IA do mérito da evidência.
+        /**
+         * ⚠️ A URÐR já grava o tick dela dentro de `runRecordScan`, e foi
+         * exatamente esse rastro que provou, em 06/08, que ela está CERTA em
+         * ficar calada: 142 ticks, 15 com oferta, e nas 15 `vetoedByRecord: 1`.
+         * A mesa cujo mandato é obedecer ao histórico medido recusou tudo
+         * porque o histórico é negativo.
+         *
+         * O `catch` mudo continua sendo um buraco: se ela QUEBRAR, o silêncio
+         * fica idêntico ao silêncio de quem recusou com razão.
+         */
+        if (!gates.pause_urdr) {
+          try { await runRecordScan(marketData.indicators); }
+          catch (e) {
+            await recordEvent("strat_record_tick", { meta: { erro: String(e).slice(0, 200) } });
+          }
+        }
+        // ULLR — o arqueiro dos lançamentos. Sem LLM: num pool com horas de
+        // vida não existe estrutura pra ler (RSI de 14 períodos, EMA50, suporte
+        // testado três vezes — nada disso existe). O que existe é idade,
+        // liquidez e fluxo, e isso se lê com regra, não com modelo.
+        /**
+         * ⚠️ O TICK DO ULLR — mesmo defeito, mesma consequência (06/08).
+         *
+         * `runUllrScan()` devolve `{ seen, eligible, fired, capped }`. O `capped`
+         * é o mais importante dos quatro: ele distingue "não achou pool" de
+         * "achou e a munição diária acabou", que são situações opostas e
+         * apareciam idênticas na tela — ou seja, não apareciam.
+         */
+        if (!gates.pause_ullr) {
+          try {
+            const r = await runUllrScan();
+            await recordEvent("ullr_tick", { meta: {
+              seen: r.seen, eligible: r.eligible, fired: r.fired, capped: r.capped,
+            } });
+          } catch (e) {
+            await recordEvent("ullr_tick", { meta: { erro: String(e).slice(0, 200) } });
+          }
+        }
+
         // A/B: run Claude AND every configured direct provider (DeepSeek / Kimi /
         // Mistral / Llama) on the SAME market data, in parallel, each logged under
         // its own source so expectancy compares head-to-head. Providers with no
@@ -109,12 +210,27 @@ export async function POST(req: NextRequest) {
         // Tournament cull (alavanca 3): an agent judged on the live round's
         // minimum sample with negative net expectancy stops earning spend.
         const culled = await getCulledSources();
-        const [claudeCards, hybridCards, ...providerCards] = await Promise.all([
-          gates.pause_agent_a || culled.has("self_scan")   ? Promise.resolve([]) : runBacktestScan(marketData),   // Agent A — Sonnet (self_scan)
-          gates.pause_agent_b || culled.has("hybrid_scan") ? Promise.resolve([]) : runHybridScan(marketData),      // Agent B — Ferrari (hybrid_scan)
-          ...providers.map((p) => gates.pause_tournament || culled.has(`${p.id}_scan`) ? Promise.resolve([]) : runBacktestScanForProvider(marketData, p)),
+        // Agent A (Claude self_scan) RETIRED 27/07 — measured inside ~1pt of
+        // the free brains while being the biggest Anthropic line. Its stage is
+        // gone; `pause_agent_a` stays only to keep old runbooks truthful.
+        /**
+         * ⚠️ MESA ARQUIVADA NÃO COMPETE — e até 13/08 competia (ver `isArquivada`).
+         *
+         * O gate olhava `pause_tournament` e a lista de `culled`, e nunca o
+         * `status` do registro. Uma mesa pode estar fora dos dois E arquivada:
+         * foi assim que a MUNINN e a GERI, declaradas "rodada encerrada · o
+         * capital é histórico, não alocação ativa", abriram ARB às 20:01 de
+         * 13/08 com esse mesmo capital.
+         *
+         * O gate do registro entra ANTES dos outros dois de propósito: os
+         * outros são operacionais e reversíveis pelo painel, este é a
+         * identidade da mesa. Uma decisão de arquivar que um kill-switch pode
+         * desfazer sem querer não é arquivamento.
+         */
+        const [hybridCards, ...providerCards] = await Promise.all([
+          isArquivada("hybrid_scan") || gates.pause_agent_b || culled.has("hybrid_scan") ? Promise.resolve([]) : runHybridScan(marketData),      // Agent B — Ferrari (hybrid_scan)
+          ...providers.map((p) => isArquivada(`${p.id}_scan`) || gates.pause_tournament || culled.has(`${p.id}_scan`) ? Promise.resolve([]) : runBacktestScanForProvider(marketData, p)),
         ]);
-        if (claudeCards.length) await logSuggestions(claudeCards, marketData.indicators, "self_scan");
         if (hybridCards.length) await logSuggestions(hybridCards, marketData.indicators, "hybrid_scan");
         for (let i = 0; i < providers.length; i++) {
           if (providerCards[i]?.length) await logSuggestions(providerCards[i], marketData.indicators, `${providers[i].id}_scan`);
@@ -144,6 +260,10 @@ export async function POST(req: NextRequest) {
     // Cull verdicts AFTER resolution so they judge the freshest ledger. Free
     // (one paginated read), idempotent, and gated by TOURNAMENT_CULL.
     try { await runTournamentCull(); } catch { /* best-effort */ }
+
+    // Auto-Retro AFTER cull: agents that crossed RETRO_EVERY_N decided since
+    // their last reflection review their own record (PLANO-ANALISTA-PROFUNDO).
+    try { await runRetroSweep(); } catch { /* best-effort */ }
 
     // Paper-trading agent (Gate.io simulation): executes the flywheel's signals
     // as simulated trades vs the live Gate.io price. Isolated from the real

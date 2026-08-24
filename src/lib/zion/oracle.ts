@@ -15,15 +15,18 @@
  * against the paused scanner baseline. Same card schema, same ledger, same
  * resolution/panels/cull — the flywheel doesn't know it's a new species.
  */
-import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
+import { openaiCompatChat } from "@/lib/ai/provider";
 import { configuredProviders, type ProviderConfig } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
 import { recordEvent, logError } from "@/lib/admin/track";
-import { modelChain } from "@/lib/zion/model";
 import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
-import { extractCards, extractSuggestion, SCAN_CARDS_SCHEMA } from "@/lib/zion/backtest";
+import { extractCards, extractSuggestion } from "@/lib/zion/backtest";
 import { getMacroContext } from "@/lib/api/macro";
+import { fetchFundingContext, fetchFearGreed } from "@/lib/api/market-context";
+import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
+import { isArquivada } from "@/lib/zion/desks";
 import { formatIndicatorsForPrompt, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import type { ActionCard } from "@/lib/zion/parse";
 
@@ -32,6 +35,11 @@ const MIN_STOP_PCT  = Number(process.env.ORACLE_MIN_STOP_PCT  ?? 4);   // outsid
 const MIN_RR        = Number(process.env.ORACLE_MIN_RR        ?? 1.5); // thesis edge is the call, not the geometry
 const MAX_OPEN      = Number(process.env.ORACLE_MAX_OPEN      ?? 3);   // per source — scarcity is the strategy
 const MAX_THESES    = 3;                                               // per wake
+// Auditoria 25/07: the desk's five losses were near-identical ARB longs —
+// including a re-buy the DAY AFTER being stopped (stateless daily calls have
+// no memory), and 6 of 14 desk theses piled on one symbol. Three locks:
+const STOP_COOLDOWN_D = Number(process.env.ORACLE_STOP_COOLDOWN_D ?? 7); // days a model waits after a stop on that symbol
+const MAX_PER_SYMBOL  = Number(process.env.ORACLE_MAX_PER_SYMBOL  ?? 2); // desk-wide open theses per symbol (all models)
 
 // ── Pure gate (unit-tested) ─────────────────────────────────────────────────
 
@@ -41,44 +49,25 @@ export function invalidationGate(summary: string | undefined | null): boolean {
   return /invalida/i.test(summary ?? "");
 }
 
-// ── Context inputs (all public/free, all best-effort) ───────────────────────
-
-/** Crowded-positioning read from Bybit's public linear tickers: the funding
- *  extremes among our tracked majors. Persistent positive funding = longs pay
- *  to stay = crowded long (squeeze fuel), and vice versa. */
-async function fetchFundingContext(): Promise<string> {
-  try {
-    const res = await fetch("https://api.bybit.com/v5/market/tickers?category=linear", { next: { revalidate: 300 } });
-    if (!res.ok) return "";
-    const body = await res.json() as { result?: { list?: Array<{ symbol?: string; fundingRate?: string }> } };
-    const rows = (body.result?.list ?? [])
-      .filter((r) => (r.symbol ?? "").endsWith("USDT"))
-      .map((r) => ({ sym: (r.symbol ?? "").replace(/USDT$/, ""), f: parseFloat(r.fundingRate ?? "") }))
-      .filter((r) => Number.isFinite(r.f) && r.sym.length <= 6)
-      .sort((a, b) => Math.abs(b.f) - Math.abs(a.f))
-      .slice(0, 8);
-    if (rows.length === 0) return "";
-    const fmt = rows.map((r) => `${r.sym} ${(r.f * 100).toFixed(3)}%`).join(" · ");
-    return `Funding extremes (8h, Bybit linear — positive = crowded longs): ${fmt}`;
-  } catch { return ""; }
+/** Symbol-level locks (auditoria 25/07). A thesis is allowed only if the
+ *  model isn't re-buying a knife it was just stopped on (cooldown), doesn't
+ *  already hold a thesis on the symbol, and the DESK isn't piled on it. */
+export function symbolAllowed(
+  symbol: string,
+  ctx: { cooldown: Set<string>; ownOpen: Set<string>; deskOpenCount: number },
+  maxPerSymbol = MAX_PER_SYMBOL,
+): boolean {
+  if (ctx.cooldown.has(symbol)) return false;
+  if (ctx.ownOpen.has(symbol)) return false;
+  return ctx.deskOpenCount < maxPerSymbol;
 }
 
-/** Crypto Fear & Greed index (alternative.me, free). */
-async function fetchFearGreed(): Promise<string> {
-  try {
-    const res = await fetch("https://api.alternative.me/fng/?limit=7", { next: { revalidate: 3600 } });
-    if (!res.ok) return "";
-    const body = await res.json() as { data?: Array<{ value?: string; value_classification?: string }> };
-    const d = body.data ?? [];
-    if (d.length === 0) return "";
-    const today = d[0], weekAgo = d[d.length - 1];
-    return `Fear & Greed: ${today.value} (${today.value_classification}) — 7d ago: ${weekAgo?.value} (${weekAgo?.value_classification})`;
-  } catch { return ""; }
-}
+// Context inputs live in src/lib/api/market-context.ts (shared with the
+// relit scanners since 25/07).
 
 // ── The thesis question ─────────────────────────────────────────────────────
 
-function buildThesisInstruction(marketData: MarketIndicatorsResult, macro: string, funding: string, fng: string): string | null {
+function buildThesisInstruction(marketData: MarketIndicatorsResult, macro: string, funding: string, fng: string, memory: string): string | null {
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
   if (!indicatorsText) return null;
   return [
@@ -116,6 +105,7 @@ function buildThesisInstruction(marketData: MarketIndicatorsResult, macro: strin
     'When nothing qualifies: {"cards": []}.',
     "Machine-format every number (dot decimal, no separators, no symbols).",
     "",
+    memory ? `<your_desk_memory>\n${memory}\n</your_desk_memory>\n` : "",
     "<context>",
     macro ? `${macro}\n` : "",
     funding ? `${funding}\n` : "",
@@ -145,8 +135,6 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
     fetchFundingContext(),
     fetchFearGreed(),
   ]);
-  const instruction = buildThesisInstruction(marketData, macro, funding, fng);
-  if (!instruction) return { sources: 0, logged: 0 };
 
   const refBy = new Map<string, number>(), regimeBy = new Map<string, string>();
   for (const ind of marketData.indicators) {
@@ -155,43 +143,143 @@ export async function runOracleScan(marketData: MarketIndicatorsResult): Promise
     if (ind.regime) regimeBy.set(sym, ind.regime);
   }
 
-  // Open-thesis counts per source (scarcity: max MAX_OPEN standing theses).
-  const { data: openRows } = await db.from("zion_suggestions")
-    .select("source").like("source", "oracle%").eq("status", "open");
+  // Desk memory (auditoria 25/07): open theses + last-7-days outcomes, per
+  // source. Feeds the per-model prompt (no more stateless amnesia) AND the
+  // symbol locks: post-stop cooldown, one-thesis-per-symbol-per-model,
+  // desk-wide concentration cap.
+  const since = new Date(Date.now() - STOP_COOLDOWN_D * 86_400_000).toISOString();
+  // ⚠️ PAGINADO: alimenta o retrato que o Oráculo lê antes de decidir. Truncado,
+  // ele decide com metade da própria história e não tem como saber disso.
+  // inclui-arquivadas: o histórico de acerto da mesa É o dado; filtrar
+  // arquivadas apagaria justamente as rodadas antigas que dão base à conta.
+  const histRows = await selectAllRows<{ source: string; symbol: string; side: string; status: string; outcome_pct: number | null; created_at: string; resolved_at: string | null }>(
+    (from, to) => db.from("zion_suggestions")
+      .select("source, symbol, side, status, outcome_pct, created_at, resolved_at")
+      .like("source", "oracle%")
+      .or(`status.eq.open,resolved_at.gte.${since}`)
+      .order("id", { ascending: true }).range(from, to));
   const openBy = new Map<string, number>();
-  for (const r of openRows ?? []) openBy.set(r.source, (openBy.get(r.source) ?? 0) + 1);
-
-  const claudeKey = process.env.ANTHROPIC_API_KEY;
-  const runs: Array<{ source: string; exec: () => Promise<ActionCard[]> }> = [];
-  if (claudeKey) {
-    runs.push({ source: "oracle_self", exec: async () => {
-      const r = await anthropicChat(
-        { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, cacheSystem: true, jsonSchema: SCAN_CARDS_SCHEMA },
-        claudeKey,
+  const ownOpenBy = new Map<string, Set<string>>();
+  const deskOpenBySym = new Map<string, number>();
+  // DESK-WIDE cooldown (27/07). The per-model version shipped 25/07 had a
+  // hole the data found immediately: 5 of the desk's first 6 losses were the
+  // SAME ARB long, bought by three different models — Kimi entered it two
+  // days after DeepSeek and Mistral were already stopped there, because Kimi
+  // itself had never been stopped on ARB. A stop is evidence about the
+  // SYMBOL, not about the model that took it, so one stop now blocks the
+  // symbol for the whole desk. (Kimi's own Auto-Retro asked for exactly this:
+  // "impose a 48h asset-specific cooling-off period after any stop-out".)
+  const deskCooldown = new Set<string>();
+  const memoryBy = new Map<string, string[]>();
+  for (const r of histRows ?? []) {
+    const mem = memoryBy.get(r.source) ?? [];
+    if (r.status === "open") {
+      openBy.set(r.source, (openBy.get(r.source) ?? 0) + 1);
+      (ownOpenBy.get(r.source) ?? ownOpenBy.set(r.source, new Set()).get(r.source)!).add(r.symbol);
+      deskOpenBySym.set(r.symbol, (deskOpenBySym.get(r.symbol) ?? 0) + 1);
+      mem.push(`OPEN: ${r.side} ${r.symbol} (since ${r.created_at?.slice(0, 10)}) — still standing, do NOT re-emit it.`);
+    } else {
+      const out = typeof r.outcome_pct === "number" ? `${r.outcome_pct > 0 ? "+" : ""}${r.outcome_pct.toFixed(1)}%` : "?";
+      mem.push(`${r.status.toUpperCase()}: ${r.side} ${r.symbol} → ${out} (resolved ${r.resolved_at?.slice(0, 10)}).`);
+      if (r.status === "hit_stop") deskCooldown.add(r.symbol);
+    }
+    memoryBy.set(r.source, mem);
+  }
+  const cooled = [...deskCooldown];
+  const memoryFor = (source: string): string => {
+    const mem = memoryBy.get(source) ?? [];
+    const lines = [
+      "Your desk's record (last 7 days). An INVALIDATED thesis stays dead unless",
+      "the world produced NEW evidence — re-buying the same falling knife the",
+      "day after a stop is how this desk lost money before you.",
+      ...mem,
+    ];
+    if (cooled.length) {
+      lines.push(
+        `DESK COOLDOWN (${STOP_COOLDOWN_D}d) — a stop by ANY analyst on this desk,`,
+        "not just you, blocks the symbol for everyone: the stop is evidence about",
+        "the SYMBOL. The ledger REJECTS new theses on: " + cooled.join(", ") + ".",
       );
-      recordEvent("zion_analysis", { meta: { op: "oracle", model: r.model, source: "oracle_self", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
-      return extractCards(r.text);
-    } });
-  }
+    }
+    return mem.length || cooled.length ? lines.join("\n") : "";
+  };
+
+  // Bail early when there are no usable indicators this tick.
+  if (!buildThesisInstruction(marketData, macro, funding, fng, "")) return { sources: 0, logged: 0 };
+
+  // oracle_self (Claude) RETIRED 27/07 — with Agent A gone and Agent B off
+  // Anthropic, this desk was the last Anthropic seat in the flywheel, and the
+  // thesis cohort showed no separation between the expensive brain and the
+  // cheap ones. Its 3 open theses still resolve (resolution is free and
+  // source-agnostic), so the data it already produced is not lost.
+  //
+  /**
+   * ⚠️⚠️ 19/08: AS CINCO MESAS ORÁCULO ESTAVAM `valhalla` DESDE 27/07 E
+   * CONTINUARAM CHAMANDO A API PAGA POR TRÊS SEMANAS.
+   *
+   * O comentário acima registra a aposentadoria; o código abaixo nunca a
+   * aplicou. `oracle_self` parou só porque a Anthropic saiu do
+   * `configuredProviders()` — as outras quatro seguiram rodando todo dia às
+   * 00:00 UTC. Medido no banco: `oracle_grok` 7 chamadas, `oracle_kimi` 6,
+   * `oracle_deepseek` 4, só nos últimos 7 dias, com a última em 19/08 — vinte
+   * e três dias depois de a mesa ter sido dada como morta.
+   *
+   * ⚠️ E O GUARDA JÁ EXISTIA. `isArquivada` é a MESMA função que o cron do
+   * backtest usa desde 13/08, e lá funciona: `backtest_grok`, `backtest_kimi`
+   * e `backtest_deepseek` pararam em 14/08 e não gastaram mais nada. O portão
+   * estava construído, testado e ligado em um caminho só. Este aqui ninguém
+   * ligou.
+   *
+   * O dinheiro é pouco (≈ $0,50/mês) e não é o ponto. O ponto é que
+   * "aposentar uma mesa" era uma etiqueta em metade do sistema: o torneio
+   * marcava `retired`, o painel escrevia Valhalla, e a fatura continuava
+   * chegando. Disjuntor que dispara e não corta o gasto produz o REGISTRO de
+   * ter agido — é a mesma armadilha do `gate-keys.ts`, em outro caminho.
+   *
+   * A resolução das teses abertas segue livre de propósito: ela não custa
+   * chamada de modelo, e apagá-la perderia dado já pago.
+   */
+  const runs: Array<{ source: string; exec: (instruction: string) => Promise<ActionCard[]> }> = [];
   for (const p of configuredProviders()) {
-    runs.push({ source: `oracle_${p.id}`, exec: () => runOracleForProvider(instruction, p) });
+    const source = `oracle_${p.id}`;
+    if (isArquivada(source)) continue;
+    runs.push({ source, exec: (instruction) => runOracleForProvider(instruction, p) });
   }
+  if (runs.length === 0) return { sources: 0, logged: 0 };
+
+  // Auto-Retro lessons: each model's own distilled reflections ride along
+  // with its desk memory (context, never permission).
+  const lessons = await getActiveLessons(runs.map((r) => r.source));
 
   let logged = 0;
   await Promise.all(runs.map(async ({ source, exec }) => {
-    const cards = await exec().catch(() => [] as ActionCard[]);
+    // Each model gets ITS OWN memory + lessons block — reflection is per-desk.
+    const memory = [memoryFor(source), lessonsBlock(lessons.get(source))].filter(Boolean).join("\n\n");
+    const instruction = buildThesisInstruction(marketData, macro, funding, fng, memory);
+    if (!instruction) return;
+    const cards = await exec(instruction).catch(() => [] as ActionCard[]);
     const room = Math.max(0, MAX_OPEN - (openBy.get(source) ?? 0));
+    const ownOpen = ownOpenBy.get(source) ?? new Set<string>();
     const rows = [];
     for (const card of cards.slice(0, MAX_THESES)) {
       if (rows.length >= room) break;
       if (!invalidationGate(card.summary)) continue; // no invalidation, no trade
       const s = extractSuggestion(card, refBy, regimeBy, THESIS_OPTS);
       if (!s) continue;
+      if (!symbolAllowed(s.symbol, { cooldown: deskCooldown, ownOpen, deskOpenCount: deskOpenBySym.get(s.symbol) ?? 0 })) continue;
       rows.push({ ...s, source, horizon_hours: HORIZON_H });
+      ownOpen.add(s.symbol);
+      deskOpenBySym.set(s.symbol, (deskOpenBySym.get(s.symbol) ?? 0) + 1);
     }
     if (rows.length === 0) return;
-    try { await db.from("zion_suggestions").insert(rows); logged += rows.length; }
-    catch { /* best-effort — tomorrow retries */ }
+    // O cliente do Supabase NÃO lança em erro de banco: resolve com
+    // `{ error }`. Um `try/catch` aqui nunca dispararia, e a contagem devolvida
+    // seria uma MENTIRA — linhas "gravadas" que não existem. Foi essa mesma
+    // suposição que fez as carteiras de paper vazarem capital (ver
+    // `paper/engine.ts`). Aqui o estrago é de medição, não de dinheiro, mas uma
+    // mesa que relata trades inexistentes envenena o experimento igual.
+    const { error } = await db.from("zion_suggestions").insert(rows);
+    if (!error) logged += rows.length;
   }));
 
   return { sources: runs.length, logged };

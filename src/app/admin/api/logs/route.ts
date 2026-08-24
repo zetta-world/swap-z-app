@@ -16,12 +16,23 @@ export async function GET(): Promise<NextResponse> {
   const ago24h = new Date(Date.now() - 86_400_000).toISOString();
 
   const [{ data: recent }, { data: rows24h }] = await Promise.all([
+    // leitura-limitada: os 60 eventos mais recentes, que é o que a tela mostra.
+    // A CONTAGEM de 24h vem da consulta seguinte, que não depende deste recorte.
     db.from("platform_events")
       .select("event_type, metadata, created_at")
       .in("event_type", ["error", "security"])
       .order("created_at", { ascending: false })
+      .limit(60),    db.from("platform_events")
+      .select("event_type, metadata, created_at")
+      .in("event_type", ["error", "security"])
+      .order("created_at", { ascending: false })
       .limit(60),
+    // leitura-limitada: contagem de 24h para o cabeçalho. Se passar de 1.000
+    // erros num dia, o número exato deixou de ser a informação relevante.
     db.from("platform_events")
+      .select("event_type, metadata, created_at")
+      .in("event_type", ["error", "security"])
+      .gte("created_at", ago24h),    db.from("platform_events")
       .select("event_type, metadata, created_at")
       .in("event_type", ["error", "security"])
       .gte("created_at", ago24h),

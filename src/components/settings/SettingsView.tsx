@@ -312,7 +312,7 @@ function AppearancePanel() {
 }
 
 function ExecutionPanel() {
-  const { mevProtect, privacyMode, slippageBps, setMev, setPrivacy, setSlippage } = useSwap();
+  const { mevWarn, slippageBps, setMevWarn, setSlippage } = useSwap();
   const t = useT();
 
   return (
@@ -327,20 +327,22 @@ function ExecutionPanel() {
           <span>0.05%</span><span>2.50%</span><span>5.00%</span>
         </div>
       </Field>
+      {/* Auditoria 01/08: aqui havia dois toggles afirmando o que a plataforma
+          não faz — "envio criptografado · anti-sandwich · mempool privado" e
+          "logs criptografados · atraso aleatório · rotas ocultas". Nenhum dos
+          dois era lido por qualquer caminho de execução. O de privacidade foi
+          removido (não havia nada honesto em que transformá-lo); este passou a
+          descrever o que de fato acontece. */}
       <Toggle
-        label={t("settings.mevProtectionTitle")}
-        description={t("settings.mevProtectionDesc")}
-        value={mevProtect}
-        onChange={setMev}
-        tone="green"
+        label={t("settings.mevWarnTitle")}
+        description={t("settings.mevWarnDesc")}
+        value={mevWarn}
+        onChange={setMevWarn}
+        tone="cyan"
       />
-      <Toggle
-        label={t("settings.privacyModeTitle")}
-        description={t("settings.privacyModeDesc")}
-        value={privacyMode}
-        onChange={setPrivacy}
-        tone="gold"
-      />
+      <p className="font-mono text-[10px] leading-relaxed text-ink-4">
+        {t("settings.mevWarnNote")}
+      </p>
     </PanelCard>
   );
 }

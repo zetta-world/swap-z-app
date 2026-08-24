@@ -37,6 +37,8 @@ export async function GET(): Promise<NextResponse> {
     db.from("autopilot_sessions").select("*", { count: "exact", head: true }).eq("is_active", true),
     db.from("autopilot_sessions").select("pnl_today"),
     db.from("autopilot_positions").select("cost_usd").neq("status", "closed"),
+    // leitura-limitada: contadores do painel de comando. São indicadores de
+    // pulso, não a base de nenhuma decisão automática.
     db.from("zion_suggestions").select("status").is("archived_at", null),
     db.from("platform_events").select("metadata").eq("event_type", "security").gte("created_at", ago24h),
     getCronHeartbeats(),

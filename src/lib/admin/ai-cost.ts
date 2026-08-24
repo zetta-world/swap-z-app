@@ -33,6 +33,12 @@ const PRICES: Array<[RegExp, ModelPrice]> = [
   // cost is each provider's own console balance).
   [/kimi|moonshot/i,   tier(0.6, 2.5)],
   [/deepseek/i,        tier(0.27, 1.1)],
+  // Mistral runs on the FREE tier here (console 27/07: plano Gratuito,
+  // pay-as-you-go OFF) — cash cost is $0 and the real constraint is the
+  // monthly quota, not dollars. This line stays as the rate that WOULD
+  // apply if pay-as-you-go is ever enabled; until then FINANCE overstates
+  // Mistral, which is why it looked like our priciest agent when it is
+  // in fact our cheapest.
   [/mistral/i,         tier(2, 6)],
   [/grok|xai/i,        tier(1.25, 2.5)],
   [/llama/i,           tier(0.2, 0.6)],

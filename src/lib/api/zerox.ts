@@ -37,8 +37,6 @@ export const ZEROX_CHAIN_IDS: Partial<Record<ChainId, number>> = {
   arbitrum:  42161,
   optimism:  10,
   avalanche: 43114,
-  linea:     59144,
-  // zksync supported on 0x but uses different API path
 };
 
 // Special address 0x uses to represent the chain's native currency
@@ -112,6 +110,76 @@ interface QuoteArgs {
   sellAmount:   string;   // base units, decimal string
   taker?:       string;   // user's address (recommended)
   slippageBps?: number;
+  /**
+   * Taxa da plataforma, em pontos-base (Fase 9.2). Só é enviada com
+   * `feeRecipient` junto — ver a nota em `aplicarTaxa`.
+   */
+  feeBps?:      number;
+  feeRecipient?: string;
+}
+
+/**
+ * O token em que a taxa é retida.
+ *
+ * ⚠️ ESTA FUNÇÃO NASCEU DE UMA HIPÓTESE QUE SE PROVOU FALSA, e o comentário
+ * fica para ninguém repetir o caminho.
+ *
+ * Em 11/08 dois swaps compraram BNB nativo e voltaram com `integratorFee:
+ * null`. Eu concluí "o 0x não retém taxa em nativo" e escrevi isto. Errado: a
+ * cotação FIRME nunca mandava parâmetro de taxa nenhum (ver `fetchZeroXQuote`),
+ * então `integratorFee` viria nulo para QUALQUER par — nativo ou não. A prova
+ * chegou no swap das 10:29, que comprou USDT (ERC-20) e também voltou nulo.
+ *
+ * ⚠️ ENTÃO A PREMISSA DAQUI SEGUE NÃO VERIFICADA: não sabemos se o 0x retém em
+ * nativo, porque nunca chegamos a perguntar direito. A função fica porque a
+ * regra que ela implementa é do próprio 0x — `swapFeeToken` tem que ser o de
+ * compra ou o de venda — e escolher entre os dois é correto de qualquer forma.
+ * Se um dia a taxa em nativo funcionar, esta preferência não atrapalha.
+ *
+ * A regra do 0x é que `swapFeeToken` seja o de COMPRA ou o de VENDA. Então
+ * quando o de compra é nativo, sobra o de venda — e é ele que vai.
+ *
+ * ⚠️ A PREFERÊNCIA PELO TOKEN DE SAÍDA CONTINUA, e o motivo é o mesmo de
+ * antes: cobrar na saída é cobrar sobre o que o usuário RECEBEU. A entrada é
+ * o segundo lugar, não o primeiro.
+ *
+ * ⚠️ E A RESSALVA ANTIGA — "cobrar na entrada cobraria antes da troca
+ * acontecer, inclusive quando ela falha" — não se aplica aqui, e é por isso
+ * que este caminho é seguro: o 0x Settler faz TUDO numa transação só. Se a
+ * troca reverte, a retenção reverte junto. Não existe estado em que a taxa
+ * saia e o swap não aconteça.
+ *
+ * Devolve `null` quando os dois lados são nativos — que não é uma troca, mas
+ * se chegar aqui é melhor não pedir taxa nenhuma do que pedir uma que o 0x
+ * vai ignorar em silêncio.
+ */
+export function tokenDaTaxa(sellToken: string, buyToken: string): string | null {
+  const nativo = (t: string) => t.toLowerCase() === ZEROX_NATIVE.toLowerCase();
+  if (!nativo(buyToken))  return buyToken;    // preferido: o que o usuário recebe
+  if (!nativo(sellToken)) return sellToken;   // saída nativa → cobra na entrada
+  return null;                                 // nativo dos dois lados: sem taxa possível
+}
+
+/**
+ * ⚠️ A TAXA SÓ VAI SE OS DOIS LADOS EXISTIREM (Fase 9.2, 11/08).
+ *
+ * `swapFeeBps` sem `swapFeeRecipient` é uma cotação que o 0x recusa — ou pior,
+ * aceita e retém para lugar nenhum. Mandar um sem o outro seria cobrar do
+ * usuário sem destino, que é o defeito que a trava de `fees.ts` existe para
+ * impedir; aqui ela é repetida no ponto de contato com a rede.
+ *
+ * ⚠️ E OS TRÊS ANDAM JUNTOS OU NENHUM VAI. Sem `swapFeeToken` utilizável não
+ * adianta mandar os outros dois: o 0x aceita e não retém — que é exatamente o
+ * silêncio que custou os dois swaps de 11/08.
+ */
+function aplicarTaxa(params: URLSearchParams, args: QuoteArgs): void {
+  const bps = args.feeBps ?? 0;
+  if (!(bps > 0) || !args.feeRecipient) return;
+  const token = tokenDaTaxa(args.sellToken, args.buyToken);
+  if (!token) return;
+  params.set("swapFeeBps", String(bps));
+  params.set("swapFeeRecipient", args.feeRecipient);
+  params.set("swapFeeToken", token);
 }
 
 export async function fetchZeroXPrice(args: QuoteArgs, apiKey: string): Promise<ZxPriceResponse> {
@@ -123,6 +191,7 @@ export async function fetchZeroXPrice(args: QuoteArgs, apiKey: string): Promise<
   });
   if (args.taker)       params.set("taker", args.taker);
   if (args.slippageBps) params.set("slippageBps", String(args.slippageBps));
+  aplicarTaxa(params, args);
 
   const res = await fetch(`${BASE_URL}/swap/allowance-holder/price?${params.toString()}`, {
     headers: {
@@ -152,6 +221,28 @@ export async function fetchZeroXQuote(args: QuoteArgs, apiKey: string): Promise<
     taker:      args.taker,
   });
   if (args.slippageBps) params.set("slippageBps", String(args.slippageBps));
+  /**
+   * ⚠️ ESTA LINHA NÃO EXISTIA, E ERA O DEFEITO INTEIRO (11/08).
+   *
+   * `aplicarTaxa` era chamada só em `fetchZeroXPrice` — a cotação INDICATIVA,
+   * a que a tela usa para mostrar número. A cotação FIRME, que é a que vira a
+   * transação que o usuário assina, nunca mandou `swapFeeBps`,
+   * `swapFeeRecipient` nem `swapFeeToken`.
+   *
+   * Então a taxa aparecia na tela e não existia na transação. Todo swap da
+   * plataforma, desde que a cobrança foi ligada, cobrou ZERO.
+   *
+   * ⚠️ E O TESTE QUE DEVIA PEGAR ISSO PASSAVA VERDE. Ele fazia
+   * `expect(zerox).toContain('params.set("swapFeeBps"')` — leitura do ARQUIVO
+   * inteiro. `aplicarTaxa` contém essas linhas, então o teste dava certo
+   * enquanto ninguém a chamava no caminho que importa. Ele provava que o
+   * código EXISTIA, nunca que ele RODAVA.
+   *
+   * Eu persegui três hipóteses erradas antes desta (token nativo, direção do
+   * par, conta do 0x) porque todas partiam de "os parâmetros foram enviados e
+   * o 0x recusou". Nenhum parâmetro foi enviado.
+   */
+  aplicarTaxa(params, args);
 
   const res = await fetch(`${BASE_URL}/swap/allowance-holder/quote?${params.toString()}`, {
     headers: {

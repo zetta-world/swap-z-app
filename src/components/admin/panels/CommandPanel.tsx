@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
+import { corDoPnl } from "@/lib/admin/cor-resultado";
 
 type Command = {
   users: number; active24h: number; volume24h: number; pnlAll: number; aiCost24h: number;
@@ -12,7 +13,8 @@ type Command = {
 };
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
-const pnlColor = (n: number) => (n >= 0 ? "var(--adm-green)" : "var(--adm-red)");
+/** ⚠️ Zero e nulo eram VERDES aqui. Ver `corDoPnl`. */
+const pnlColor = (n: number | null | undefined) => corDoPnl(n);
 
 export default function CommandPanel() {
   const [d, setD] = useState<Command | null>(null);
@@ -31,7 +33,7 @@ export default function CommandPanel() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 60_000 : 45_000);
+    const t = setInterval(load, 45_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 
@@ -40,14 +42,14 @@ export default function CommandPanel() {
   return (
     <TerminalPanel id="command" title="COMMAND" subtitle="the whole company at a glance" icon="◆" source="all workspaces">
       {loading && <div className="adm-shimmer" style={{ height: 140 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {d && (
         <div>
           {/* Status strip */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "6px 10px", borderRadius: 6, background: hasAlerts ? "var(--adm-glow-red)" : "var(--adm-bg-raise)", border: `1px solid ${hasAlerts ? "var(--adm-red)" : "var(--adm-border)"}` }}>
             <span style={{ width: 9, height: 9, borderRadius: "50%", background: hasAlerts ? "var(--adm-red)" : "var(--adm-green)" }} />
-            <span style={{ fontSize: 10, color: hasAlerts ? "var(--adm-red)" : "var(--adm-green)", letterSpacing: "0.08em", flex: 1 }}>
+            <span style={{ fontSize: 13, color: hasAlerts ? "var(--adm-red)" : "var(--adm-green)", letterSpacing: "0.08em", flex: 1 }}>
               {hasAlerts
                 ? [d.alerts.highSecurity24h > 0 ? `${d.alerts.highSecurity24h} high-sev security` : "", d.alerts.staleCrons.length > 0 ? `stale cron: ${d.alerts.staleCrons.join(", ")}` : ""].filter(Boolean).join(" · ")
                 : "ALL CLEAR"}
@@ -73,9 +75,9 @@ export default function CommandPanel() {
 function Kpi({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
   return (
     <div style={{ background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 8, padding: "10px 12px" }}>
-      <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.12em" }}>{label}</div>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.12em" }}>{label}</div>
       <div style={{ fontSize: 22, color, fontVariantNumeric: "tabular-nums", marginTop: 3, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 3 }}>{sub}</div>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 3 }}>{sub}</div>
     </div>
   );
 }

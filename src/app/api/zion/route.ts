@@ -1,5 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { openaiCompatStream, anthropicStream } from "@/lib/ai/provider";
+import { aiAtivo, faltaChave } from "@/lib/ai/ativo";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { getModeInstructions, type ZionOp } from "@/lib/zion/mode-prompts";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
@@ -20,7 +21,11 @@ import { isValidChain, validateAddress, validateAmount, sanitizePromptText } fro
 import { getSession } from "@/lib/auth/session";
 import { getTierForWallet } from "@/lib/tier/check";
 import { gatesEnabled } from "@/lib/tier/flags";
+import { getFlywheelGates } from "@/lib/admin/gates";
 import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
+import { consumeAnalysisQuota, denialResponse } from "@/lib/tier/enforce";
+import { featureForOp } from "@/lib/zion/op-tier";
+import { envNumber } from "@/lib/env-number";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +41,21 @@ const LEGACY_MODE_MAP: Record<string, ZionOp> = {
 
 // Rate limit: 8 requests per 60s per IP.
 const RL_OPTS = { windowMs: 60_000, max: 8 };
+
+// TETO DIÁRIO DE CHAMADAS, VALENDO PARA O DEPLOY INTEIRO (auditoria 01/08).
+//
+// O limite por IP acima não segura enchente distribuída: 500 IPs a 8/min cada
+// ficam para sempre dentro da regra e gastam token sem teto. E este é o caminho
+// mais caro da plataforma — LLM por chamada, não uma cotação de agregador.
+//
+// O disjuntor do watchdog é REATIVO: ele mede o custo das últimas 24h e só corta
+// na conferência seguinte. Entre uma conferência e outra cabe uma conta inteira.
+// Este teto é o freio que age ANTES, sem depender de o watchdog rodar.
+//
+// Escolhido bem acima de qualquer uso legítimo de um app deste tamanho e
+// ajustável sem redeploy pela env. Falha ABERTO se o banco estiver fora — nunca
+// derruba o produto por causa da própria proteção.
+const ZION_DAILY_MAX = envNumber(process.env.ZION_DAILY_MAX, 20_000, { positive: true });
 
 /**
  * /api/zion — streaming Claude Sonnet 4.6 advisory.
@@ -73,27 +93,52 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // ─── 1b. Tier gate (dormant unless TIER_GATES_ENABLED=true) ───────────
-  // ZION advisory sits behind the "pro" tier. While gates are dormant this
-  // block is a no-op — the live ZION stays fully open. When enabled, a wallet
-  // below pro (or no session) gets a 402 pointing at /pricing. We never crash
-  // when Supabase/Helius are unconfigured: getTierForWallet falls back to free.
-  if (gatesEnabled()) {
-    const required = FEATURE_TIER.zionAdvisory; // "pro"
-    const session = await getSession();
-    const tier = session ? (await getTierForWallet(session.sub, session.chain)).tier : "free";
-    if (!tierSatisfies(tier, required)) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "tier_required", requiredTier: required, upgradeUrl: "/pricing" }),
-        { status: 402, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
-      );
-    }
+  // ─── 1a-bis. Kill-switch e teto diário de gasto (auditoria 01/08) ─────
+  //
+  // Este era o MAIOR gastador de token da plataforma e o ÚNICO caminho sem
+  // gate: o disjuntor de custo podia pausar as sete mesas internas e o gasto
+  // continuar correndo pela porta da frente. Agora ele fecha aqui também.
+  const zionGates = await getFlywheelGates();
+  if (zionGates.pause_zion) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "zion_paused",
+        message: "O ZION está temporariamente desligado por controle de custo. As cotações e o swap seguem funcionando." }),
+      { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Retry-After": "3600" } },
+    );
+  }
+  const daily = await rateLimitDurable("zion:global:day", { windowMs: 86_400_000, max: ZION_DAILY_MAX });
+  if (!daily.ok) {
+    logSecurity("rate_limited", { route: "zion", scope: "daily_global" }, "med");
+    return new Response(
+      JSON.stringify({ ok: false, error: "zion_daily_budget",
+        message: "O ZION atingiu o teto diário de uso da plataforma. As cotações e o swap seguem funcionando." }),
+      { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Retry-After": String(daily.retryAfter) } },
+    );
   }
 
+  // ─── 1b. Plano + COTA (auditoria 01/08) ───────────────────────────────
+  //
+  // Antes este bloco exigia "pro" e parava aí. Dois problemas:
+  //
+  //  · CONTRA O CLIENTE — a página de preços anuncia "Free: 5 / day (ZION)" e
+  //    a tabela `TIER_DAILY_ANALYSES` concorda (`free: 5`). O gate exigindo
+  //    "pro" entregava ZERO. Agora quem separa os planos aqui é a COTA, que é o
+  //    que a vitrine sempre prometeu.
+  //  · CONTRA A PLATAFORMA — `TIER_DAILY_ANALYSES` se dizia "source of truth
+  //    for the ENFORCEMENT LAYER" e a camada não existia: nada contava nada. O
+  //    assinante do plano mais barato consumia SEM LIMITE o recurso mais caro,
+  //    que é exatamente a conta que a assinatura paga.
+  //
+  // A SESSÃO CONTINUA OBRIGATÓRIA. Sem carteira não há a quem debitar a cota, e
+  // uma cota que não vincula a ninguém é o mesmo que não ter cota.
   // ─── 2. Input validation ─────────────────────────────────────────────
   const p = req.nextUrl.searchParams;
 
-  // Pick op (new) or fall back to legacy mode mapping
+  // Pick op (new) or fall back to legacy mode mapping.
+  //
+  // Isto roda ANTES do gate de propósito: a operação decide QUAL feature está
+  // sendo pedida, e uma recusa não pode acontecer depois de a cota já ter sido
+  // debitada — cobrar uma análise de quem levou 402 seria cobrar pelo "não".
   const opRaw   = p.get("op");
   const modeRaw = p.get("mode") || "";
   let op: ZionOp;
@@ -103,6 +148,20 @@ export async function GET(req: NextRequest) {
     op = LEGACY_MODE_MAP[modeRaw];
   } else {
     op = "trading";
+  }
+
+  if (gatesEnabled()) {
+    const session = await getSession();
+    if (!session) return denialResponse({ kind: "unauthenticated" });
+    // Nunca derruba por infra: getTierForWallet cai para "free" se Supabase ou
+    // Helius estiverem indisponíveis.
+    const { tier } = await getTierForWallet(session.sub, session.chain);
+    const required = FEATURE_TIER[featureForOp(op)] ?? "free";
+    if (!tierSatisfies(tier, required)) {
+      return denialResponse({ kind: "tier_required", required, have: tier });
+    }
+    const denial = await consumeAnalysisQuota(session.sub, tier);
+    if (denial) return denialResponse(denial);
   }
 
   const chainRaw = p.get("chain") || "ethereum";
@@ -304,19 +363,30 @@ const LANG_INSTRUCTION: Record<RunArgs["lang"], string> = {
 };
 
 async function runZion(args: RunArgs, signal?: AbortSignal) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return new Response(
-      "ANTHROPIC_API_KEY is not configured on the server. Set it in Vercel project → Settings → Environment Variables (Production + Preview + Development), then redeploy.",
-      { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } },
-    );
+  /**
+   * ⚠️ A GUARDA MUDOU DE CHAVE JUNTO COM O MODELO (21/08). Ela cobrava
+   * `ANTHROPIC_API_KEY` — e se tivesse ficado, o ZION recusaria por falta de
+   * uma chave que ele não usa mais, com uma mensagem mandando configurar a
+   * variável errada. Guarda que aponta para a chave errada é pior que guarda
+   * nenhuma: ela manda a pessoa consertar o que não está quebrado.
+   */
+  /**
+   * ⚠️ A GUARDA OLHA O PROVEDOR ATIVO, não um provedor fixo. Ela já apontou para
+   * `ANTHROPIC_API_KEY` depois da migração e mandaria configurar a variável
+   * errada; agora `faltaChave` nomeia a que realmente falta, seja qual for.
+   */
+  const ativo = aiAtivo();
+  if (!ativo.apiKey) {
+    return new Response(faltaChave(ativo), {
+      status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
   }
+  const chaveAtiva: string = ativo.apiKey;
 
-  const client = new Anthropic({ apiKey });
   const userText = await buildUserMessage(args);
   const modeInstructions = getModeInstructions(args.op);
 
-  // Belt-and-suspenders timeout. Anthropic-side responses occasionally stall
+  // Belt-and-suspenders timeout. A resposta do provedor às vezes trava
   // mid-stream; without a hard cap the ReadableStream + frontend spinner sit
   // forever. 90s is well past a normal Sonnet 4.6 response (~15-30s).
   const STREAM_TIMEOUT_MS = 90_000;
@@ -335,89 +405,92 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
       }, STREAM_TIMEOUT_MS);
 
       // Combine the client-disconnect signal with our own timeout signal so
-      // EITHER condition aborts the upstream Anthropic call.
+      // Qualquer uma das condições aborta a chamada ao provedor.
       const combinedSignal = signal
         ? AbortSignal.any([signal, timeoutCtrl.signal])
         : timeoutCtrl.signal;
 
       // When the client disconnects (user closes drawer / navigates away),
-      // close the response stream so the loop unwinds. The Anthropic SDK's
-      // request is also aborted via the combined signal we pass below, so
-      // upstream tokens stop billing.
+      // close the response stream so the loop unwinds. A chamada ao provedor
+      // também é abortada pelo sinal combinado abaixo, então os tokens param
+      // de ser cobrados.
       const onAbort = () => closeOnce();
       signal?.addEventListener("abort", onAbort);
 
       try {
-        // Sonnet 4.6 default — env override (ZION_MODEL) lets us swap models
-        // without redeploy. Telemetry below captures usage tokens so we can
-        // compute real $/call once we have a few weeks of production traffic.
-        const model = process.env.ZION_MODEL ?? "claude-sonnet-4-6";
-        const msgStream = await client.messages.stream(
-          {
-            model,
-            // 4000 leaves room for: ~500 tokens of terminal-trace text PLUS
-            // up to 5 fully-populated trade-thesis action cards (each ~250-400
-            // tokens of JSON with entryPrice/exits[]/etc). 1800 was clipping
-            // TRADING mode responses before the 4th and 5th cards landed.
-            max_tokens: 4000,
-            system: [
-              // Foundation cached — same across every request, gets cache hits
-              { type: "text", text: ZION_FOUNDATION,    cache_control: { type: "ephemeral" } },
-              // Mode-specific — cached per-mode (each mode's prefix repeats)
-              { type: "text", text: modeInstructions,   cache_control: { type: "ephemeral" } },
-              // Language instruction — short, not cached (varies per request).
-              // Placed after the cached blocks so the cache keeps hitting even
-              // when users switch language. Also repeated inside the user
-              // message so the model can't anchor on the English foundation
-              // and respond in English anyway.
-              { type: "text", text: LANG_INSTRUCTION[args.lang] },
-            ],
-            messages: [{
-              role: "user",
-              // Front-load the language directive so it's the FIRST thing the
-              // model sees in the user turn — system-prompt-tail directives
-              // were being ignored when the rest of the system prompt is
-              // ~10K tokens of English.
-              content: `${LANG_INSTRUCTION[args.lang]}\n\n${userText}`,
-            }],
-          },
-          { signal: combinedSignal },
-        );
+        /**
+         * ⚠️⚠️ O ZION SAIU DA ANTHROPIC (21/08) — decisão do dono.
+         *
+         * Antes: `claude-sonnet-4-6` pelo SDK, com `cache_control` nos blocos de
+         * sistema. Agora: Kimi por endpoint OpenAI-compatível, e o modelo vem do
+         * REGISTRO (`PROVIDERS.kimi`) em vez de uma string aqui. Assim
+         * `KIMI_MODEL` troca a versão sem tocar em código — se o K3 existir,
+         * é uma variável de ambiente.
+         *
+         * ⚠️ O QUE A TROCA CUSTA, DECLARADO. Perdemos o cache de prompt: os
+         * ~10K tokens de fundação + modo eram cobrados a 0,1× no reuso e agora
+         * pagam cheio a cada chamada. Pela tabela de `ai-cost.ts`, Kimi custa
+         * $0,60/MTok de entrada contra $0,30 de um Sonnet EM CACHE — ou seja, a
+         * entrada fica ~2× mais cara. A saída compensa com folga: $2,50 contra
+         * $15/MTok, e com 4.000 tokens de teto a saída domina a conta.
+         *
+         * Não meço isso em produção porque não há o que medir: `zion_analysis`
+         * com `source: "user"` está ZERADO no banco — a gaveta do ZION nunca
+         * registrou uma chamada de usuário. A conta acima é de tabela, não de
+         * fatura, e está escrita aqui para ser conferida quando houver tráfego.
+         */
+        const model = process.env.ZION_MODEL ?? ativo.modelo;
 
-        msgStream.on("text", (delta) => {
-          if (closed) return;
-          controller.enqueue(encoder.encode(delta));
-        });
-        msgStream.on("error", (err) => {
-          console.warn("[zion] stream error:", err?.message ?? err);
-          if (!closed) controller.enqueue(encoder.encode(`\n\n[ZION error: Stream interrupted. Please retry.]\n`));
-        });
-        const finalMsg = await msgStream.finalMessage();
-        const { usage } = finalMsg;
+        /**
+         * ⚠️ OS DOIS CAMINHOS DIVERGEM EM UMA COISA SÓ: como o sistema viaja.
+         *
+         * A Anthropic aceita BLOCOS, e cada bloco pode ser cacheado por conta
+         * própria — fundação (estável) e modo (4 variantes) rendem acerto de
+         * cache separado. O formato OpenAI aceita UMA mensagem de sistema, então
+         * lá os blocos são concatenados, preservando a ordem.
+         *
+         * Manter a ordem importa nos dois: do mais estável para o mais variável,
+         * que é o que qualquer cache de prefixo aproveita.
+         */
+        const blocos = [ZION_FOUNDATION, modeInstructions, LANG_INSTRUCTION[args.lang]];
+        const entregar = (delta: string) => { if (!closed) controller.enqueue(encoder.encode(delta)); };
+        const pedido = {
+          model, system: blocos.join("\n\n"),
+          user: `${LANG_INSTRUCTION[args.lang]}\n\n${userText}`,
+          // 4000 deixa espaço para ~500 tokens de rastro do terminal MAIS até
+          // 5 cartas de tese completas (~250-400 tokens de JSON cada).
+          maxTokens: 4000,
+          timeoutMs: ativo.timeoutMs,
+          temperature: ativo.temperature,
+          /**
+           * ⚠️ SEM ISTO O KIMI DEVOLVE 400 EM TODA CHAMADA. Ele amarra a
+           * temperatura ao modo de raciocínio, e o par errado é recusado.
+           * Custou um dia de ZION fora do ar em 21/08.
+           */
+          extraBody: ativo.extraBody,
+        };
+
+        const { usage } = ativo.provedor === "anthropic"
+          ? await anthropicStream({ ...pedido, systemBlocks: blocos }, chaveAtiva, entregar, combinedSignal)
+          : await openaiCompatStream(pedido, { apiKey: chaveAtiva, baseUrl: ativo.baseUrl }, entregar, combinedSignal);
+
         console.log(JSON.stringify({
-          tag: "zion-usage",
-          ts: new Date().toISOString(),
-          model,
-          mode: args.op,
-          lang: args.lang,
-          autoScan: !args.fromAddr,
-          inputTokens: usage.input_tokens,
-          cachedInputTokens: usage.cache_read_input_tokens ?? 0,
-          outputTokens: usage.output_tokens,
-          cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
+          tag: "zion-usage", ts: new Date().toISOString(),
+          model, mode: args.op, lang: args.lang, autoScan: !args.fromAddr,
+          inputTokens: usage.inTokens,
+          cachedInputTokens: usage.cachedTokens,
+          outputTokens: usage.outTokens,
         }));
-        // Audit every analysis to platform_events (lacuna 3) — queryable in
-        // the admin Platform Events panel, unlike the console log above.
-        // AWAIT it: this runs just before the stream closes, and on serverless
-        // the function freezes the instant the response ends — a fire-and-forget
-        // insert would be lost (which is why manual analyses never showed up in
-        // the AI-spend panel). Awaiting keeps the function alive until it lands.
+
+        // AWAIT de propósito: na serverless a função congela no instante em que
+        // a resposta termina, e um insert solto se perderia — foi por isso que
+        // as análises manuais nunca apareciam no painel de gasto de IA.
         await recordEvent("zion_analysis", { meta: {
           op: args.op, chain: args.chain, model, source: "user",
-          inTokens: usage.input_tokens,
-          outTokens: usage.output_tokens,
-          cachedTokens: usage.cache_read_input_tokens ?? 0,
-          cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
+          inTokens: usage.inTokens,
+          outTokens: usage.outTokens,
+          cachedTokens: usage.cachedTokens,
+          cacheWriteTokens: 0,
         } });
       } catch (err) {
         // AbortError is the expected path when the client disconnects or the

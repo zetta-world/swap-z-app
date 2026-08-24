@@ -46,6 +46,12 @@ npm run dev · npm run build · npm run lint · npm run type-check · npm test
 ```
 CI (`.github/workflows/ci.yml`) roda lint + type-check + testes em todo push.
 
+## Retomada de sessão
+
+**`docs/ESTADO-ATUAL.md` primeiro.** Onde o projeto está (SHA, CI, deploy), o
+que está aberto, as regras permanentes do dono, as armadilhas desta máquina, e
+as lições que já custaram caro. Atualizar ao fim de cada entrega.
+
 ## Referências
 
 - Env vars + playbooks de incidente: `docs/RUNBOOK.md`

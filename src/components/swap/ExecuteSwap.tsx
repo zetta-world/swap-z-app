@@ -11,13 +11,24 @@ import {
 } from "wagmi";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
+import { verifyJupiterTransaction, guardMode, shouldBlock } from "@/lib/swap/solana-guard";
+import { assessMevExposure } from "@/lib/swap/mev-guard";
+import { decideTip, sendViaJito, sendNarrative, type JitoSendResult } from "@/lib/swap/jito";
 import { erc20Abi, type Hex } from "viem";
-import type { Token } from "@/lib/tokens";
+import { findToken, type Token } from "@/lib/tokens";
+import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import type { ChainId } from "@/lib/chains";
 import { CHAIN_BY_ID } from "@/lib/chains";
 import type { ZxQuoteResponse } from "@/lib/api/zerox";
 import { ZEROX_CHAIN_IDS } from "@/lib/api/zerox";
 import { LIFI_CHAIN_IDS } from "@/lib/api/lifi";
+import { assertTrusted } from "@/lib/swap/trusted-targets";
+
+// Bound the 0x approval to the exact sell amount by default (blast-radius:
+// only this swap, not the wallet's whole token balance forever). Matches what
+// the LiFi path already does. Set NEXT_PUBLIC_ZEROX_INFINITE_APPROVAL=true to
+// restore the old persistent-approval UX after pinning a spender allow-list.
+const ZEROX_INFINITE_APPROVAL = process.env.NEXT_PUBLIC_ZEROX_INFINITE_APPROVAL === "true";
 import type { LfQuote } from "@/lib/api/lifi";
 import type { JupQuote, JupSwapResponse } from "@/lib/api/jupiter";
 import type { QuoteSource } from "@/lib/api/quote-types";
@@ -71,25 +82,110 @@ export default function ExecuteSwap({
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [zxQuote, setZxQuote] = useState<ZxQuoteResponse | null>(null);
+  /**
+   * ⚠️ OS BPS QUE PEDIMOS, para a arrecadação poder ser CONFERIDA (Fase 11).
+   *
+   * O `integratorFee` diz quanto foi retido; sozinho ele não diz se o valor
+   * BATE com o plano de quem operou. Guardar 0,0918 sem guardar "pedimos 100
+   * bps" responde "arrecadamos algo" e não "arrecadamos o certo" — e a
+   * primeira pergunta é a que não protege ninguém.
+   *
+   * O campo já vinha na resposta de `/api/quote` (`body.taxa`) e era
+   * descartado aqui: o cliente só lia `body.result`.
+   */
+  const taxaBpsRef = useRef<number | null>(null);
   const zxQuoteAtRef = useRef(0);
   const [lfQuote, setLfQuote] = useState<LfQuote | null>(null);
   const [jupResult, setJupResult] = useState<{ quote: JupQuote; swap: JupSwapResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<Hex | null>(null);
   const [solSig, setSolSig] = useState<string | null>(null);
+  /** Como a transação Solana saiu de fato — bundle privado ou RPC público. */
+  const [sendNote, setSendNote] = useState<string | null>(null);
   const historyId = useRef<string | null>(null);
   // Guards the firm-quote fetch so it runs once per unique param set per open —
   // not on every currentChainId / publicClient / token-object identity change.
   const fetchKeyRef = useRef("");
   const { push: pushHistory, update: updateHistory } = useTxHistory();
 
+  // Preço vivo para dimensionar a gorjeta do bundle privado (Solana). O SOL
+  // entra na mesma chamada em lote — a gorjeta é cotada em lamports e sem o
+  // preço dele não dá para saber se ela custa mais que o roubo que evita.
+  const solToken = useMemo(() => findToken("solana", "SOL"), []);
+  const { prices: livePrices } = useTokenPrices([fromToken, solToken]);
+  const solUsd = solToken ? livePrices[tokenPriceKey(solToken)] ?? null : null;
+  const fromUsd = livePrices[tokenPriceKey(fromToken)] ?? fromToken.priceUsd ?? null;
+  const notionalUsd = fromUsd != null
+    ? (Number(sellAmount) / Math.pow(10, fromToken.decimals)) * fromUsd
+    : null;
+
+  /**
+   * ⚠️ O QUE O AGREGADOR RETEVE PARA NÓS — em USD, no momento da troca (Fase 11).
+   *
+   * O `integratorFee` volta em unidades-base do token da taxa, que é o de SAÍDA
+   * na maioria dos casos e o de ENTRADA quando a saída é nativa. Então quem
+   * converte precisa saber QUAL dos dois é — comparar o endereço é o único
+   * jeito, e assumir "é sempre o de saída" daria um número errado justamente
+   * nos pares que a Fase 9 consertou por último.
+   *
+   * ⚠️ E O PREÇO É O DE AGORA, DE PROPÓSITO. A taxa é retida neste instante;
+   * convertê-la depois, com preço de outro dia, mediria a variação do token e
+   * não a arrecadação. Por isso o USD é congelado aqui e gravado junto.
+   *
+   * Devolve `undefined` quando falta o preço — e `undefined` não é zero: zero
+   * afirmaria que não arrecadamos, e a verdade seria "não sabemos converter".
+   */
+  const arrecadacao = useCallback((feeAmount?: string, feeToken?: string) => {
+    if (!feeAmount || !feeToken) return undefined;
+    const alvo = feeToken.toLowerCase();
+    const tok  = [fromToken, toToken].find((t) => t.address.toLowerCase() === alvo)
+      ?? (alvo === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ? fromToken : undefined);
+    if (!tok) return undefined;
+    const preco = livePrices[tokenPriceKey(tok)] ?? tok.priceUsd ?? null;
+    if (preco == null) return undefined;
+    const qtd = Number(feeAmount) / Math.pow(10, tok.decimals);
+    if (!Number.isFinite(qtd)) return undefined;
+    return qtd * preco;
+  }, [fromToken, toToken, livePrices]);
+
   const isCrossChain = fromChain !== toChain;
   const isJupiter    = source === "jupiter";
   const isSolanaSrc  = fromChain === "solana";
   const evmWallet    = isConnected && !!address;
   const solWallet    = sol.connected && !!sol.publicKey;
-  const walletReady  = isJupiter ? solWallet : evmWallet;
-  const taker        = isJupiter ? sol.publicKey?.toBase58() : address;
+  /**
+   * ⚠️⚠️ O TAKER SEGUE A REDE DE ORIGEM, NAO O AGREGADOR (auditoria 23/08).
+   *
+   * Era `isJupiter ? sol : address`. Isso acerta os dois casos comuns e erra
+   * o terceiro: uma PONTE saindo de Solana usa a LiFi, nao a Jupiter — entao
+   * `isJupiter` e false e o taker virava o endereco EVM, com a origem sendo
+   * Solana.
+   *
+   * O `SwapCard` ja escolhia certo (`fromChain === "solana" ? solAddress`),
+   * entao a cotacao mostrada e a cotacao FIRME do modal saiam com takers
+   * DIFERENTES. Duas verdades sobre quem esta pagando.
+   */
+  const walletReady  = isSolanaSrc ? solWallet : evmWallet;
+  const taker        = isSolanaSrc ? sol.publicKey?.toBase58() : address;
+
+  /**
+   * ⚠️ PONTE SAINDO DE SOLANA NAO TEM CAMINHO DE ASSINATURA — e o codigo
+   * andava ate quase o fim antes de descobrir isso.
+   *
+   * A LiFi suporta SOL->EVM (o id sintetico 1151111081099710 esta em
+   * LIFI_CHAIN_IDS), mas TODA a assinatura do caminho LiFi aqui e EVM:
+   * `sendTransactionAsync` e `writeContractAsync` do wagmi. Nao existe
+   * `sol.signTransaction` fora do ramo da Jupiter.
+   *
+   * Sem esta trava o usuario percorria: conectar as duas carteiras, abrir o
+   * modal, esperar a cotacao firme, e so entao bater num `switchChain` para
+   * um chain id que o wagmi nao conhece. Falhar cedo com o motivo certo e
+   * mais honesto que falhar tarde com erro de carteira.
+   *
+   * `isSolanaSrc` ja existia neste arquivo e NAO ERA USADO em lugar nenhum —
+   * a trava estava pela metade desde que alguem a nomeou.
+   */
+  const pontePartindoDeSolana = isCrossChain && isSolanaSrc;
 
   const targetChainId = source === "0x"
     ? ZEROX_CHAIN_IDS[fromChain]
@@ -161,6 +257,7 @@ export default function ExecuteSwap({
           throw new Error(body.message || body.error || `HTTP ${res.status}`);
         }
 
+        taxaBpsRef.current = typeof body?.taxa?.bps === "number" ? body.taxa.bps : null;
         if (source === "0x") {
           const q = body.result as ZxQuoteResponse;
           setZxQuote(q);
@@ -269,6 +366,7 @@ export default function ExecuteSwap({
     if (!res.ok || !body.ok) {
       throw new Error(body.message || body.error || `HTTP ${res.status}`);
     }
+    taxaBpsRef.current = typeof body?.taxa?.bps === "number" ? body.taxa.bps : null;
     const q = body.result as ZxQuoteResponse;
     setZxQuote(q);
     zxQuoteAtRef.current = Date.now();
@@ -295,15 +393,92 @@ export default function ExecuteSwap({
         setPhase("needs_tx_signature");
         const swapTxBytes = Buffer.from(jupResult.swap.swapTransaction, "base64");
         const tx = VersionedTransaction.deserialize(swapTxBytes);
+
+        // GUARD (29/07): em Solana a carteira assina o PACOTE INTEIRO de
+        // instruções que a Jupiter montou — não há `to` nem spender pra fixar
+        // numa allowlist como no EVM. Uma instrução a mais escondida no blob
+        // (SetAuthority, CloseAccount) seria autorizada junto com o swap.
+        // Então verificamos QUEM a transação invoca antes de assinar.
+        //
+        // Padrão SHADOW: observa e reporta, mas NÃO bloqueia — a lista de
+        // programas ainda não foi confirmada contra tráfego real, e bloquear
+        // por suposição trocaria um risco hipotético por uma quebra certa.
+        // Vira `enforce` depois que a telemetria mostrar aprovação consistente.
+        const gMode = guardMode();
+        if (gMode !== "off") {
+          const verdict = verifyJupiterTransaction(tx);
+          const blocked = shouldBlock(gMode, verdict);
+          // Fire-and-forget: telemetria nunca atrasa nem quebra o swap.
+          void fetch("/api/swap-guard", {
+            method: "POST", headers: { "content-type": "application/json" }, keepalive: true,
+            body: JSON.stringify({
+              ok: verdict.ok, mode: gMode, blocked,
+              unknownPrograms: verdict.unknownPrograms, programs: verdict.programs,
+              symbol: fromToken.symbol,
+            }),
+          }).catch(() => {});
+          if (blocked) {
+            // Sem "tente de novo": a Jupiter devolveria a mesma transação e o
+            // guard recusaria igual. Mandar o usuário reclicar em círculo é
+            // pior que dizer a verdade.
+            setError(tImp("swap.solGuardBlocked"));
+            setPhase("tx_failed");
+            return;
+          }
+        }
+
         const signed = await sol.signTransaction(tx);
-        const sig = await solConn.sendRawTransaction(signed.serialize(), {
-          skipPreflight: false,
-          maxRetries:    3,
-        });
+
+        // ─── ENVIO PRIVADO (auditoria 01/08) ───────────────────────────
+        //
+        // Solana é a ÚNICA rede em que a proteção contra reordenação depende de
+        // nós: aqui quem transmite somos nós, não a carteira do usuário. O
+        // `mev-guard` deixou essa dívida registrada; isto a paga.
+        //
+        // A gorjeta sai de uma fração da EXPOSIÇÃO calculada (notional ×
+        // slippage) e nunca pode custar mais que o roubo que evita — pagar
+        // $0,30 para proteger $0,50 seria mudar o prejuízo de lugar.
+        //
+        // FALLBACK OBRIGATÓRIO: se o block engine falhar, segue pelo RPC
+        // normal. Um swap que não executa é pior que um swap sem bundle — e a
+        // tela dirá qual dos dois aconteceu, em vez de exibir escudo que não
+        // houve.
+        const exposureUsd = assessMevExposure({
+          chain: "solana", notionalUsd: notionalUsd ?? null, slippageBps,
+        }).stealableUsd;
+        const tip = decideTip(exposureUsd, solUsd);
+        let sig: string | null = null;
+        let sent: JitoSendResult = { signature: null, usedJito: false };
+        if (tip.useJito) {
+          sent = await sendViaJito(Buffer.from(signed.serialize()).toString("base64"));
+          sig = sent.signature;
+        }
+        if (!sig) {
+          sig = await solConn.sendRawTransaction(signed.serialize(), {
+            skipPreflight: false,
+            maxRetries:    3,
+          });
+        }
+        setSendNote(tip.useJito ? sendNarrative(sent, tip.tipLamports) : null);
         setSolSig(sig);
         setPhase("tx_pending");
         historyId.current = pushHistory({
-          type: "dex_swap", status: "pending",
+          /**
+           * ⚠️ SEM ISTO O SWAP VALE $0 NO PAINEL (11/08).
+           *
+           * `valueUsd` é opcional no tipo, então esquecê-lo não quebrava nada —
+           * só fazia `useOperationSync` mandar `volumeUsd: undefined`, virar
+           * `volume_usd = NULL` em `operations`, e o painel somar zero. TODA
+           * troca DEX desde 13/06 entrou assim: 3 operações, volume $0.
+           *
+           * E o estrago não era só cosmético: o painel 💵 RECEITA calcula a
+           * receita sobre o volume MEDIDO, então nenhuma troca DEX jamais
+           * contribuiu com um centavo para ele. A cobrança podia estar
+           * funcionando perfeitamente que a tela continuaria dizendo zero.
+           *
+           * `notionalUsd` está calculado desde a linha 106 e só faltava viajar.
+           */
+          type: "dex_swap", status: "pending", valueUsd: notionalUsd ?? undefined,
           fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
           toSymbol: toToken.symbol, toChain, route: "jupiter",
           toAmount: String(Number(jupResult.quote.outAmount) / Math.pow(10, toToken.decimals)),
@@ -337,6 +512,17 @@ export default function ExecuteSwap({
       }
 
       // ─── EVM paths ───────────────────────────────────────────────
+      /**
+       * ⚠️ A TRAVA ANTES DE QUALQUER GASTO. Ponte saindo de Solana chega aqui
+       * com um chain id sintético que o wagmi não conhece — e mesmo que
+       * conhecesse, não há assinatura Solana neste ramo. Recusar aqui, com a
+       * frase certa, em vez de morrer no `switchChain` com erro de carteira.
+       */
+      if (pontePartindoDeSolana) {
+        setError(tImp("swap.solanaBridgeUnsupported"));
+        setPhase("tx_failed");
+        return;
+      }
       if (!targetChainId) {
         setError(tImp("swap.chainUnsupported"));
         setPhase("tx_failed");
@@ -352,15 +538,33 @@ export default function ExecuteSwap({
         let q = zxQuote;
         if (!q) return;
 
+        /**
+         * ⚠️ O ALVO É CONFERIDO ANTES DA APROVAÇÃO, E ISSO É SOBRE GÁS.
+         *
+         * A aprovação é uma transação de verdade: ela custa. A conferência do
+         * alvo ficava DEPOIS dela, então um alvo fora da lista deixava o
+         * usuário pagar o `approve` e só então ser barrado — gás gasto por uma
+         * troca que nunca ia acontecer.
+         *
+         * ⚠️ E A CONFERÊNCIA TARDIA CONTINUA ONDE ESTAVA. Esta aqui usa o alvo
+         * da cotação ATUAL, e o 0x devolve calldata nova depois da aprovação —
+         * o alvo pode mudar. Esta adianta a recusa no caso comum; a de baixo é
+         * a que decide. Barato antes, autoritativo depois.
+         */
+        assertTrusted(targetChainId, q.transaction?.to, undefined);
+
         // One-time ERC-20 approval of the 0x AllowanceHolder spender.
         // MaxUint256 so the user never sees this step again for this token.
         if (q.issues?.allowance && fromToken.address !== "native") {
+          // Spender comes from the quote response — verify it before approving
+          // (no-op unless an allow-list is configured for this chain).
+          assertTrusted(targetChainId, undefined, q.issues.allowance.spender);
           setPhase("approving");
           const approveHash = await writeContractAsync({
             address:      fromToken.address as Hex,
             abi:          erc20Abi,
             functionName: "approve",
-            args:         [q.issues.allowance.spender as Hex, 2n ** 256n - 1n],
+            args:         [q.issues.allowance.spender as Hex, ZEROX_INFINITE_APPROVAL ? 2n ** 256n - 1n : BigInt(sellAmount)],
             chainId:      targetChainId,
           });
           if (publicClient) await publicClient.waitForTransactionReceipt({ hash: approveHash });
@@ -380,6 +584,7 @@ export default function ExecuteSwap({
         }
 
         // AllowanceHolder = a single plain transaction. No EIP-712 signature.
+        assertTrusted(targetChainId, q.transaction.to, undefined);
         setPhase("needs_tx_signature");
         const hash = await sendTransactionAsync({
           to:      q.transaction.to as Hex,
@@ -390,8 +595,21 @@ export default function ExecuteSwap({
         });
         setTxHash(hash);
         setPhase("tx_pending");
+        /**
+         * ⚠️ A ARRECADAÇÃO SAI DA COTAÇÃO FIRME, e só dela (Fase 11).
+         *
+         * `q` aqui é o `quote`, não o `price` — é o único lugar onde o 0x
+         * confirma quanto reteve DE FATO. E é gravado só neste ponto, depois
+         * de `sendTransaction`, porque o `swap_intent` do servidor acontece na
+         * cotação: contar a partir dele viraria cotação abandonada em receita.
+         */
         historyId.current = pushHistory({
           type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
+          valueUsd: notionalUsd ?? undefined,
+          platformFeeAmount: q.fees?.integratorFee?.amount,
+          platformFeeToken:  q.fees?.integratorFee?.token,
+          platformFeeUsd:    arrecadacao(q.fees?.integratorFee?.amount, q.fees?.integratorFee?.token),
+          platformFeeBps:    taxaBpsRef.current ?? undefined,
           fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
           toSymbol: toToken.symbol, toChain, txHash: hash, route: "0x",
           toAmount: String(Number(q.buyAmount) / Math.pow(10, toToken.decimals)),
@@ -407,6 +625,13 @@ export default function ExecuteSwap({
         setPhase("tx_failed");
         return;
       }
+      /**
+       * ⚠️ MESMA ORDEM DO CAMINHO DO 0x: o alvo é conferido antes de a
+       * aprovação queimar gás. Aqui o `tx.to` já é o definitivo — a LI.FI não
+       * refaz a cotação depois da aprovação — então esta conferência é a
+       * mesma da linha de baixo, adiantada para antes do custo.
+       */
+      assertTrusted(targetChainId, tx.to, undefined);
       if (
         fromToken.address !== "native" &&
         lfQuote.estimate.approvalAddress &&
@@ -419,6 +644,7 @@ export default function ExecuteSwap({
           args:         [address as Hex, lfQuote.estimate.approvalAddress as Hex],
         });
         if (allowance < BigInt(sellAmount)) {
+          assertTrusted(targetChainId, undefined, lfQuote.estimate.approvalAddress);
           setPhase("approving");
           const approveHash = await writeContractAsync({
             address:      fromToken.address as Hex,
@@ -430,6 +656,7 @@ export default function ExecuteSwap({
           await publicClient.waitForTransactionReceipt({ hash: approveHash });
         }
       }
+      assertTrusted(targetChainId, tx.to, undefined);
       setPhase("needs_tx_signature");
       const hash = await sendTransactionAsync({
         to:      tx.to as Hex,
@@ -439,8 +666,30 @@ export default function ExecuteSwap({
       });
       setTxHash(hash);
       setPhase("tx_pending");
+      /**
+       * ⚠️ A ARRECADAÇÃO DA LI.FI TAMBÉM É GRAVADA (11/08).
+       *
+       * A Fase 11 ligou isto só no caminho do 0x. Se a LI.FI cobrasse, a
+       * receita dela entraria no livro como ZERO — o mesmo silêncio que fez
+       * toda troca DEX valer $0 no painel até hoje de manhã, agora restrito às
+       * trocas entre cadeias.
+       *
+       * ⚠️ A LI.FI DEVOLVE `feeCosts`, NÃO `integratorFee`. É uma LISTA que
+       * mistura a taxa dela com a nossa, então o filtro por nome é obrigatório
+       * — somar a lista inteira contaria custo do usuário como receita nossa.
+       */
+      const nossaTaxa = (lfQuote.estimate?.feeCosts ?? []).find(
+        (f) => /integrator|z-swap|referrer/i.test(`${f.name ?? ""}${f.description ?? ""}`),
+      );
       historyId.current = pushHistory({
         type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
+        valueUsd: notionalUsd ?? undefined,
+        platformFeeAmount: nossaTaxa?.amount,
+        platformFeeToken:  nossaTaxa?.token?.address,
+        platformFeeUsd:    nossaTaxa?.amountUSD != null
+          ? Number(nossaTaxa.amountUSD)
+          : arrecadacao(nossaTaxa?.amount, nossaTaxa?.token?.address),
+        platformFeeBps:    taxaBpsRef.current ?? undefined,
         fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
         toSymbol: toToken.symbol, toChain, txHash: hash, route: "lifi",
         toAmount: String(Number(lfQuote.estimate.toAmount) / Math.pow(10, toToken.decimals)),
@@ -452,7 +701,7 @@ export default function ExecuteSwap({
       setPhase("tx_failed");
       if (historyId.current) updateHistory(historyId.current, { status: "failed" });
     }
-  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory]);
+  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
 
   // Quote-derived display values
   const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);
@@ -596,6 +845,16 @@ export default function ExecuteSwap({
                 t={t}
               />
 
+              {/* COMO a transação saiu de fato. Existe porque o "escudo MEV"
+                  antigo afirmava proteção sem nada por trás: sucesso do swap
+                  não autoriza a tela a dizer que houve bundle privado. Quando
+                  o Jito falha e o RPC público salva a execução, isto diz. */}
+              {sendNote && (
+                <div className="mt-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-[10px] leading-relaxed text-ink-3">
+                  {sendNote}
+                </div>
+              )}
+
               {/* CTA */}
               <div className="flex gap-2 pt-3">
                 <button
@@ -613,7 +872,7 @@ export default function ExecuteSwap({
                     {t("swap.executeSignAndSend")}
                   </button>
                 )}
-                {phase === "tx_failed" && (zxQuote || lfQuote || jupResult) && (
+                {phase === "tx_failed" && (zxQuote || lfQuote || jupResult) && error !== tImp("swap.solGuardBlocked") && (
                   <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
                     {t("swap.executeRetry")}
                   </button>
@@ -809,7 +1068,6 @@ function explorerForChain(chain: ChainId): string {
     arbitrum:  "https://arbiscan.io",
     optimism:  "https://optimistic.etherscan.io",
     avalanche: "https://snowtrace.io",
-    linea:     "https://lineascan.build",
   };
   return map[chain] ?? "https://etherscan.io";
 }

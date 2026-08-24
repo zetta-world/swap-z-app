@@ -2,16 +2,45 @@ import type { ComponentType } from "react";
 
 export type ModuleId =
   | "command"
+  | "ulfhednar"
+  | "celeiro"
   | "alerts"
   | "growth"
   | "wallets-kpi"
   | "tier-dist"
   | "autopilot-activity"
+  | "autopilot-liberacao"
   | "live-ops"
   | "ops-ledger"
   | "finance"
   | "backtest"
+  | "playbook-backtest"
+  | "arbiter-cohort"
+  | "calibration"
+  | "what-worked"
+  | "funding"
+  | "rendimento"
+  | "combinacao"
+  | "taxa-cex"
+  | "derrapagem"
+  | "descartadas"
+  | "aprendizado"
+  | "variancia"
+  | "dex-cex"
+  | "liquidez"
+  | "rotacao-grade"
+  | "receita-taxa"
+  | "ligas"
+  | "lab"
+  | "mural-global"
+  | "tier-hub"
   | "tournament"
+  | "ragnarok"
+  | "swap-guard"
+  | "audit-bench"
+  | "launch-gate"
+  | "margin"
+  | "ai-cost"
   | "paper"
   | "traffic"
   | "ai-controls"
@@ -24,10 +53,38 @@ export type ModuleId =
   | "users-explorer"
   | "tier-control"
   | "whitelist"
+  | "swap-allowlist"
   | "kill-switches"
   | "platform-events";
 
-export type ModuleCategory = "command" | "dashboard" | "growth" | "finance" | "users" | "controls" | "logs" | "system";
+/**
+ * Categorias do painel.
+ *
+ * A separação entre `dashboard`, `lab` e `bench` NÃO é organização cosmética —
+ * é higiene de dado. Antes, patrimônio simulado de agente ficava lado a lado
+ * com volume real de usuário na mesma aba, e num relance de olho os dois viram
+ * "os números da plataforma". Misturar experimento com produção é como uma
+ * planilha de projeção colada na de faturamento: alguém, algum dia, soma as
+ * duas.
+ *
+ *   dashboard — DINHEIRO E USUÁRIO REAIS. Nada simulado entra aqui.
+ *   lab       — experimento: flywheel, mesas paper, torneio, backtest, barra
+ *               de lançamento. Tudo aqui é USDT de mentira.
+ *   bench     — verificação da própria plataforma: auditoria, sondas de
+ *               ataque, guard de assinatura, saúde de dependência.
+ */
+export type ModuleCategory =
+  | "command"     // e aí?
+  | "receita"     // estamos ganhando?
+  | "custos"      // estamos gastando quanto?
+  | "margem"      // estamos lucrando?
+  | "operacao"    // o que roda AGORA com dinheiro real
+  | "crescimento" // estamos crescendo?
+  | "mercado"     // como está o mercado LÁ FORA (dado de terceiro)
+  | "lab"         // o experimento funciona? (tudo simulado)
+  | "bench"       // a plataforma está sã?
+  | "controls"    // o que eu ligo/desligo
+  | "logs";       // o que aconteceu
 
 export type ModuleDef = {
   id:             ModuleId;
@@ -51,11 +108,41 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     defaultOrder: -2,
   },
   {
+    id: "ulfhednar",
+    title: "ÚLFHÉÐNAR",
+    subtitle: "os de pele de lobo — o que os agentes fizeram, e o que você quer perguntar",
+    /**
+     * ⚠️ ᚢ (Uruz), não ᛒ (Berkanan) nem ᛖ (Ehwaz) — essas duas já são as runas
+     * dos tiers Berserkr e Einherjar em `pricing/plans.ts`. Repetir a runa
+     * refaria, no ícone, a colisão de nome que este rename veio desfazer.
+     */
+    icon: "\u16A2",
+    category: "command",
+    defaultEnabled: true,
+    /**
+     * ⚠️ DEPOIS do COMMAND, não antes — e a primeira versão errou isto.
+     *
+     * Eu tinha posto em -3 com o argumento de que "o que aconteceu enquanto eu
+     * não estava" vem primeiro. Rebaixar o painel que responde "como a empresa
+     * está" por causa de um mural de recados inverte a prioridade do dono, e a
+     * trava de layout acusou: o teste que garante a reinserção de módulo usa o
+     * COMMAND como o primeiro canônico.
+     */
+    defaultOrder: -1.5,
+  },
+  {
     id: "alerts",
     title: "ALERTS",
     subtitle: "Telegram · proactive notifications",
     icon: "🔔",
-    category: "command",
+    /**
+     * ⚠️ SAIU DO `command` EM 12/08. A aba COMMAND responde "como a empresa
+     * está agora"; um histórico de alertas responde "o que aconteceu" — é
+     * registro, e registro mora em `logs`. Com ele no COMMAND, a fila de
+     * "GeckoTerminal fora do ar" ocupava um terço da tela mais importante do
+     * painel e empurrava o que decide para baixo da dobra.
+     */
+    category: "logs",
     defaultEnabled: true,
     defaultOrder: -1,
   },
@@ -64,7 +151,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "WALLETS",
     subtitle: "signups · active · chain split",
     icon: "◈",
-    category: "dashboard",
+    category: "crescimento",
     defaultEnabled: true,
     defaultOrder: 0,
   },
@@ -73,7 +160,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "TIER MATRIX",
     subtitle: "distribution across free / pro / trader / pilot",
     icon: "⊕",
-    category: "dashboard",
+    category: "receita",
     defaultEnabled: true,
     defaultOrder: 1,
   },
@@ -82,16 +169,28 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "AUTOPILOT",
     subtitle: "sessions · runs · pnl today",
     icon: "⊛",
-    category: "dashboard",
+    category: "operacao",
     defaultEnabled: true,
     defaultOrder: 2,
+  },
+  {
+    id: "autopilot-liberacao",
+    title: "LIBERAÇÃO DA AUTOMAÇÃO",
+    subtitle: "autopilot de CEX · aberto ao público?",
+    icon: "🔒",
+    category: "operacao",
+    defaultEnabled: true,
+    // Logo depois do AUTOPILOT de propósito: quem olha a atividade tem que ver,
+    // na linha seguinte, se o canal está aberto — senão "zero runs" fica
+    // ambíguo entre "ninguém armou" e "está fechado".
+    defaultOrder: 2.1,
   },
   {
     id: "live-ops",
     title: "LIVE OPS",
     subtitle: "open positions · autopilot run feed",
     icon: "⊠",
-    category: "dashboard",
+    category: "operacao",
     defaultEnabled: true,
     defaultOrder: 3,
   },
@@ -100,34 +199,287 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "OPERATIONS",
     subtitle: "every client trade · volume · realized P&L",
     icon: "≣",
-    category: "dashboard",
+    category: "receita",
     defaultEnabled: true,
     defaultOrder: 4,
+  },
+  {
+    id: "playbook-backtest",
+    title: "QUAL ESTRATÉGIA PAGA",
+    subtitle: "cada playbook medido isolado no histórico",
+    icon: "⚖",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 4,
+  },
+  {
+    id: "arbiter-cohort",
+    title: "COORTE DO ARBITER",
+    subtitle: "1× · 3× · 5× — a alavanca como única variável",
+    icon: "ᚼ",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
+    id: "calibration",
+    title: "CALIBRAGEM",
+    subtitle: "a mesma janela com travas diferentes — qual cautela custa caro",
+    icon: "🎚",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 6,
+  },
+  {
+    id: "what-worked",
+    title: "O QUE TERIA DADO LUCRO",
+    subtitle: "estratégias canônicas na mesma janela — inclusive as que vendem",
+    icon: "🧭",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 7,
+  },
+  {
+    id: "funding",
+    title: "FUNDING / BASIS",
+    subtitle: "renda neutra spot+perp — a arbitragem que não depende de velocidade",
+    icon: "🪙",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8,
+  },
+  {
+    id: "rendimento",
+    title: "RENDIMENTO INTEGRADO",
+    subtitle: "C1–C4 — quanto sobra do APY depois do gás, por faixa de capital",
+    icon: "\u{1F3E6}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.5,
+  },
+  {
+    id: "combinacao",
+    title: "COMBINAR AS VERDES",
+    subtitle: "as rendas aprovadas juntas — vale mais que concentrar na melhor?",
+    icon: "\u{1F9EC}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.6,
+  },
+  {
+    id: "aprendizado",
+    title: "VOLANTE DE APRENDIZADO",
+    subtitle: "as mesas ainda est\u00e3o aprendendo com o pr\u00f3prio hist\u00f3rico?",
+    icon: "\u{1F393}",
+    category: "lab",
+    defaultEnabled: true,
+    // 3.5 = topo do laborat\u00f3rio, antes das medi\u00e7\u00f5es. Este painel n\u00e3o mede
+    // estrat\u00e9gia, mede se o MOTOR que ajusta as estrat\u00e9gias est\u00e1 vivo — e um
+    // alarme enterrado no fim da se\u00e7\u00e3o \u00e9 um alarme que ningu\u00e9m ouve. Foi o
+    // sil\u00eancio de 20 dias que comprou esta posi\u00e7\u00e3o.
+    defaultOrder: 3.5,
+  },
+  {
+    id: "derrapagem",
+    title: "DERRAPAGEM",
+    subtitle: "quanto o livro cobra al\u00e9m da taxa \u2014 e at\u00e9 que tamanho ainda cabe",
+    icon: "\u{1F30A}",
+    category: "lab",
+    defaultEnabled: true,
+    // Logo depois do CUSTO DA CORRETORA: os dois s\u00e3o as duas metades da mesma
+    // conta, e ler a taxa sem a derrapagem foi o que produziu "provavelmente
+    // otimista" em vez de um n\u00famero.
+    defaultOrder: 8.65,
+  },
+  {
+    id: "descartadas",
+    title: "AS DESCARTADAS",
+    subtitle: "o teto de credibilidade está barrando dinheiro real?",
+    icon: "\u{1F6AE}",
+    category: "lab",
+    defaultEnabled: true,
+    // Ao lado da DERRAPAGEM porque é a mesma pergunta pelo outro lado: lá o
+    // livro diz quanto custa executar, aqui diz se a oportunidade descartada
+    // existia. As duas leem livro, e as duas nasceram do mesmo achado de 17/08.
+    defaultOrder: 8.66,
+  },
+  {
+    id: "taxa-cex",
+    title: "CUSTO DA CORRETORA",
+    subtitle: "a taxa que a corretora publica contra a que o laborat\u00f3rio sup\u00f5e",
+    icon: "\u{1F4B1}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.6,
+  },
+  {
+    id: "variancia",
+    title: "PRÊMIO DE VARIÂNCIA",
+    subtitle: "vender volatilidade paga? implícita menos a que de fato aconteceu",
+    icon: "\u{1F32A}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.7,
+  },
+  {
+    id: "dex-cex",
+    title: "DEX \u2194 CEX",
+    subtitle: "o atraso do bloco contra o preço vivo — a última arbitragem do mapa",
+    icon: "\u26d3",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.8,
+  },
+  {
+    id: "liquidez",
+    title: "SER A CONTRAPARTE",
+    subtitle: "C14 — a taxa da piscina cobre a perda impermanente?",
+    icon: "\u{1F4A7}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 8.9,
+  },
+  {
+    id: "rotacao-grade",
+    title: "ROTAÇÃO E GRADE",
+    subtitle: "C9 e C10 — escolher os melhores paga? e a grade sobrevive à queda?",
+    icon: "\u{1F501}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 9.1,
+  },
+  {
+    id: "receita-taxa",
+    title: "RECEITA DE TAXA",
+    subtitle: "C21/C22 — o que a plataforma arrecada por operar, não por acertar direção",
+    icon: "\u{1F4B5}",
+    category: "receita",
+    defaultEnabled: true,
+    defaultOrder: 4.5,
+  },
+  {
+    id: "tier-hub",
+    title: "HUB DE PLANOS",
+    subtitle: "quem está em cada faixa — e se comprou ou ganhou",
+    icon: "🛡️",
+    category: "command",
+    defaultEnabled: true,
+    defaultOrder: 1,
+  },
+  {
+    id: "mural-global",
+    title: "ALCANCE GLOBAL",
+    subtitle: "de onde vem quem acessa — e o atalho para o mural de parede",
+    icon: "🌍",
+    category: "command",
+    defaultEnabled: true,
+    defaultOrder: -1,
+  },
+  {
+    id: "lab",
+    title: "LABORATÓRIO DE ESTRATÉGIAS",
+    subtitle: "26 formas de lucro — capital exigido e o que já foi medido",
+    icon: "🔬",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 0,
+  },
+  {
+    id: "ligas",
+    title: "AS TRÊS LIGAS",
+    subtitle: "pedágio, futuros e postar o spread — onde a conta pode fechar",
+    icon: "🏟",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 9,
   },
   {
     id: "backtest",
     title: "BACKTEST",
     subtitle: "ZION win-rate · expectancy · suggestions",
     icon: "◇",
-    category: "dashboard",
+    category: "lab",
     defaultEnabled: true,
     defaultOrder: 5,
+  },
+  {
+    id: "celeiro",
+    title: "CELEIRO",
+    subtitle: "a segunda arena — USDT acumulado por faixa de capital",
+    icon: "🌾",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 4.5,
   },
   {
     id: "tournament",
     title: "TOURNAMENT",
     subtitle: "agents & models ranked by net expectancy",
     icon: "♛",
-    category: "dashboard",
+    category: "lab",
     defaultEnabled: true,
     defaultOrder: 5,
+  },
+  {
+    id: "ragnarok",
+    title: "RAGNARÖK",
+    subtitle: "acumulação de USDT · mecânico vs IA · qual estratégia paga",
+    icon: "ᚱ",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
+    id: "swap-guard",
+    title: "SOLANA GUARD",
+    subtitle: "verificação de assinatura · Jupiter",
+    icon: "⛨",
+    category: "bench",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
+    id: "audit-bench",
+    title: "BANCADA DE AUDITORIA",
+    subtitle: "o que só o sistema vivo responde",
+    icon: "⚖",
+    category: "bench",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
+    id: "ai-cost",
+    title: "CUSTO DE IA",
+    subtitle: "gasto por modelo · projeção do mês",
+    icon: "💸",
+    category: "custos",
+    defaultEnabled: true,
+    defaultOrder: 1,
+  },
+  {
+    id: "margin",
+    title: "MARGEM",
+    subtitle: "receita − custos · a conta que decide se a empresa vive",
+    icon: "📊",
+    category: "margem",
+    defaultEnabled: true,
+    defaultOrder: 1,
+  },
+  {
+    id: "launch-gate",
+    title: "BARRA DE LANÇAMENTO",
+    subtitle: "critério pré-registrado · 5 de 5 ou não vai",
+    icon: "🚦",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 4,
   },
   {
     id: "paper",
     title: "PAPER · GATE.IO",
     subtitle: "simulação autônoma · patrimônio por agente",
     icon: "📈",
-    category: "dashboard",
+    category: "lab",
     defaultEnabled: true,
     defaultOrder: 5,
   },
@@ -136,7 +488,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "CEX SESSIONS",
     subtitle: "active autopilot per exchange",
     icon: "⊞",
-    category: "dashboard",
+    category: "operacao",
     defaultEnabled: true,
     defaultOrder: 5,
   },
@@ -145,7 +497,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "MARKET",
     subtitle: "24h DEX volume · trending pairs",
     icon: "⋈",
-    category: "dashboard",
+    category: "mercado",
     defaultEnabled: true,
     defaultOrder: 4,
   },
@@ -154,7 +506,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "PLATFORM EVENTS",
     subtitle: "page views · swap intents · errors",
     icon: "◉",
-    category: "dashboard",
+    category: "logs",
     defaultEnabled: false,
     defaultOrder: 5,
   },
@@ -175,6 +527,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "controls",
     defaultEnabled: true,
     defaultOrder: 7,
+  },
+  {
+    id: "swap-allowlist",
+    title: "SWAP ALLOWLIST",
+    subtitle: "observe router/spender · anti-drain",
+    icon: "⛨",
+    category: "bench",
+    defaultEnabled: true,
+    defaultOrder: 8,
   },
   {
     id: "kill-switches",
@@ -226,7 +587,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "SYSTEM HEALTH",
     subtitle: "crons · dependencies · uptime",
     icon: "♥",
-    category: "system",
+    category: "bench",
     defaultEnabled: true,
     defaultOrder: 11,
   },
@@ -235,7 +596,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "FINANCE",
     subtitle: "AI cost · volume · revenue · CSV",
     icon: "$",
-    category: "finance",
+    category: "receita",
     defaultEnabled: true,
     defaultOrder: 12,
   },
@@ -244,7 +605,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "USERS",
     subtitle: "leaderboard · per-wallet drill-down",
     icon: "◭",
-    category: "users",
+    category: "crescimento",
     defaultEnabled: true,
     defaultOrder: 13,
   },
@@ -253,7 +614,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "MIDGARD",
     subtitle: "acessos no mapa · dia/semana/mês · origem",
     icon: "🌍",
-    category: "growth",
+    category: "crescimento",
     defaultEnabled: true,
     defaultOrder: 14,
   },
@@ -262,7 +623,7 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     title: "GROWTH",
     subtitle: "funnel · active users · signups",
     icon: "↗",
-    category: "growth",
+    category: "crescimento",
     defaultEnabled: true,
     defaultOrder: 14,
   },

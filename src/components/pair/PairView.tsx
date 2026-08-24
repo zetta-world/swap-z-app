@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import FlowSphere from "./FlowSphere";
 import ConvictionBadge from "./ConvictionBadge";
 import { compactNumber, formatUsd, formatPct } from "@/lib/format";
+import { safeExternalUrl } from "@/lib/safe-url";
 import { CHAIN_BY_ID, type ChainId } from "@/lib/chains";
 import { computeConviction, type ConvictionAudit } from "@/lib/conviction";
 import { cn } from "@/lib/cn";
@@ -214,8 +215,8 @@ function PairBody({ data, onRefresh }: { data: PairApi; onRefresh: () => void })
                 via {p.dex}
               </span>
               {/* Socials inline */}
-              {p.websites.slice(0, 1).map((url) => (
-                <a key={url} href={url} target="_blank" rel="noopener noreferrer"
+              {p.websites.slice(0, 1).map((url) => safeExternalUrl(url) && (
+                <a key={url} href={safeExternalUrl(url)} target="_blank" rel="noopener noreferrer"
                    className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-cyan/30 bg-cyan/5 text-cyan tracking-widest uppercase inline-flex items-center gap-1 hover:bg-cyan/10">
                   <Globe className="w-2.5 h-2.5" /> site
                 </a>
@@ -229,7 +230,7 @@ function PairBody({ data, onRefresh }: { data: PairApi; onRefresh: () => void })
                             : /telegram/i.test(s.type)    ? "tg"
                             :                                s.type || "link";
                 return (
-                  <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer"
+                  <a key={s.url} href={safeExternalUrl(s.url)} target="_blank" rel="noopener noreferrer"
                      className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-white/10 text-ink-3 hover:text-ink-2 tracking-widest uppercase inline-flex items-center gap-1">
                     <Icon className="w-2.5 h-2.5" /> {label}
                   </a>
@@ -490,8 +491,8 @@ function AddressPanel({
     <div className="rounded-xl border border-white/5 bg-bg-1/30 divide-y divide-white/[0.04]">
       <AddrRow label="Token" value={baseAddress} symbol={baseSymbol} explorer={explorer ? `${explorer}/address/${baseAddress}` : undefined} onCopy={copy} />
       <AddrRow label="Pair"  value={pairAddress} symbol="contract" explorer={explorer ? `${explorer}/address/${pairAddress}` : undefined} onCopy={copy} />
-      {externalUrl && (
-        <a href={externalUrl} target="_blank" rel="noopener noreferrer"
+      {safeExternalUrl(externalUrl) && (
+        <a href={safeExternalUrl(externalUrl)} target="_blank" rel="noopener noreferrer"
            className="flex items-center gap-2 px-3.5 py-3 font-mono text-[11px] text-cyan/80 hover:text-cyan hover:bg-cyan/[0.04] transition-colors">
           <ExternalLink className="w-3 h-3" /> Open on DexScreener
         </a>
@@ -594,8 +595,6 @@ function chainSlugToInternal(slug: string): ChainId | null {
     arbitrum: "arbitrum",
     optimism: "optimism",
     avalanche:"avalanche",
-    linea:    "linea",
-    zksync:   "zksync",
     solana:   "solana",
   };
   return map[slug] ?? null;

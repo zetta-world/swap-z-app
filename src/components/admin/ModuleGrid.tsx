@@ -6,35 +6,56 @@ import { MODULE_BY_ID, MODULE_REGISTRY, type ModuleId, type ModuleCategory } fro
 
 type PanelMap = Partial<Record<ModuleId, React.ReactNode>>;
 
+// A ordem importa: DASHBOARD (dinheiro real) vem antes de LAB (simulado), e os
+// dois nunca compartilham aba. Ver a nota em lib/admin/modules.ts — misturar
+// patrimônio de agente com volume de usuário na mesma tela é como colar a
+// planilha de projeção na de faturamento.
 const CATEGORIES: { id: ModuleCategory | "all"; label: string }[] = [
-  { id: "all",       label: "ALL" },
-  { id: "command",   label: "COMMAND" },
-  { id: "dashboard", label: "DASHBOARD" },
-  { id: "growth",    label: "GROWTH" },
-  { id: "finance",   label: "FINANCE" },
-  { id: "users",     label: "USERS" },
-  { id: "system",    label: "SYSTEM" },
-  { id: "controls",  label: "CONTROLS" },
-  { id: "logs",      label: "LOGS" },
+  { id: "all",         label: "ALL" },
+  { id: "command",     label: "COMMAND" },
+  // O dinheiro, em três perguntas separadas. Antes as três moravam num card só
+  // com sub-abas — o que é o sintoma de que eram três coisas desde sempre.
+  { id: "receita",     label: "💰 RECEITA" },
+  { id: "custos",      label: "💸 CUSTOS" },
+  { id: "margem",      label: "📊 MARGEM" },
+  { id: "operacao",    label: "OPERAÇÃO" },
+  { id: "crescimento", label: "CRESCIMENTO" },
+  // Dado de TERCEIRO, não nosso. Ficava junto dos nossos KPIs.
+  { id: "mercado",     label: "MERCADO" },
+  { id: "lab",         label: "🧪 LAB · SIMULADO" },
+  { id: "bench",       label: "⚖ BANCADA" },
+  { id: "controls",    label: "CONTROLES" },
+  { id: "logs",        label: "LOGS" },
 ];
 
-export default function ModuleGrid({ panels }: { panels: PanelMap }) {
+export default function ModuleGrid({ panels, only }: { panels: PanelMap; only?: readonly string[] }) {
+  /**
+   * ⚠️ `only` RESTRINGE A GRADE A UMA ÁREA. Sem ele o comportamento é o de
+   * sempre — a grade geral. Com ele, o chip de categoria some: dentro de uma
+   * área ele filtraria um filtro, e dois filtros empilhados é como o painel
+   * ficou impossível de navegar.
+   */
+  const escopo = only ? new Set(only) : null;
   const { enabled, order, toggleModule } = useAdminLayout();
   const [cat, setCat] = useState<ModuleCategory | "all">("all");
 
   const visible = order.filter((id) => {
+    if (escopo && !escopo.has(id)) return false;
     if (!enabled.has(id)) return false;
     if (!panels[id]) return false;
-    if (cat !== "all" && MODULE_BY_ID[id]?.category !== cat) return false;
+    if (!escopo && cat !== "all" && MODULE_BY_ID[id]?.category !== cat) return false;
     return true;
   });
 
-  const hidden = order.filter((id) => !enabled.has(id));
+  // Dentro de uma área, o "desligado" também é só da área.
+  const hidden = order.filter((id) => !enabled.has(id) && (!escopo || escopo.has(id)));
 
   return (
     <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Category filter tabs */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {/* Category filter tabs — só na grade GERAL; dentro de uma área o menu
+          já fez a filtragem, e dois filtros empilhados foi o que tornou este
+          painel impossível de navegar. */}
+      <div style={{ display: escopo ? "none" : "flex", gap: 6, flexWrap: "wrap" }}>
         {CATEGORIES.map(({ id, label }) => (
           <button
             key={id}
@@ -43,17 +64,33 @@ export default function ModuleGrid({ panels }: { panels: PanelMap }) {
           >
             {label}
             {id !== "all" && (
-              <span style={{ marginLeft: 5, color: "var(--adm-ink-3)", fontSize: 8 }}>
+              <span style={{ marginLeft: 5, color: "var(--adm-ink-3)", fontSize: 11 }}>
                 ({MODULE_REGISTRY.filter((m) => m.category === id && enabled.has(m.id)).length})
               </span>
             )}
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.1em", alignSelf: "center" }}>
+        <span style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.1em", alignSelf: "center" }}>
           {visible.length} panel{visible.length !== 1 ? "s" : ""} visible
         </span>
       </div>
+
+      {/* Faixa de contexto: o custo de confundir simulado com real é alto o
+          bastante para valer um lembrete fixo, não uma convenção mental. */}
+      {(cat === "lab" || cat === "bench" || cat === "mercado") && (
+        <div style={{
+          fontSize: 11, lineHeight: 1.6, padding: "6px 9px", marginBottom: 8, borderRadius: 3,
+          color: "var(--adm-ink-3)", background: "var(--adm-bg-raise)",
+          borderLeft: `2px solid ${cat === "lab" ? "var(--adm-gold)" : cat === "mercado" ? "var(--adm-ink-3)" : "var(--adm-cyan)"}`,
+        }}>
+          {cat === "lab"
+            ? "LABORATÓRIO — todo valor aqui é USDT SIMULADO de carteira paper. Nada nesta aba é receita, volume de usuário ou dinheiro real."
+            : cat === "mercado"
+              ? "MERCADO — dado de TERCEIROS sobre o mercado lá fora. Não é volume nosso nem atividade dos nossos usuários."
+              : "BANCADA — verificação da própria plataforma (auditoria, sondas de ataque, saúde de dependências). Não é dado de negócio."}
+        </div>
+      )}
 
       {/* Panel grid */}
       {visible.length > 0 && (
@@ -75,7 +112,7 @@ export default function ModuleGrid({ panels }: { panels: PanelMap }) {
           padding: "40px 0",
           textAlign: "center",
           color: "var(--adm-ink-4)",
-          fontSize: 11,
+          fontSize: 14,
           letterSpacing: "0.15em",
         }}>
           NO PANELS IN THIS CATEGORY

@@ -19,6 +19,44 @@ export function isValidChain(v: string | null): v is ChainId {
 }
 
 /**
+ * ENDEREÇOS DE QUEIMA — o destinatário que passa em toda validação e destrói
+ * o dinheiro (auditoria da ponte, 23/08).
+ *
+ * ⚠️ `0x000…000` é um endereço PERFEITAMENTE VÁLIDO em formato: `isAddress` do
+ * viem devolve `true`, o `ADDRESS_RE` daqui casa, e a interface pintava o campo
+ * de VERDE. O usuário digitava, via o selo de válido, e a ponte entregava para
+ * um endereço do qual ninguém tem a chave. Perda total, irreversível, sem um
+ * único aviso em nenhuma camada.
+ *
+ * ⚠️ ISTO MORA AQUI, E NÃO NO CAMPO DE ENTRADA, DE PROPÓSITO. A auditoria achou
+ * TRÊS definições diferentes de "endereço válido" no caminho da ponte (o campo
+ * usa `viem`, o painel de carteiras usa regex, o servidor usa outra regex e
+ * ainda passa `.toLowerCase()`). Uma quarta regra escrita só no cliente seria
+ * mais uma verdade para divergir. Cliente e servidor importam ESTA.
+ *
+ * ⚠️ A lista é curta e conservadora de propósito: só endereços cuja queima é
+ * consenso. Bloquear "endereço de contrato" ou "endereço sem histórico" seria
+ * palpite, e palpite que impede o usuário de mandar o próprio dinheiro para
+ * onde ele quer é pior que o risco que fecha.
+ */
+const BURN_ADDRESSES = new Set([
+  // EVM
+  "0x0000000000000000000000000000000000000000",
+  "0x000000000000000000000000000000000000dead",
+  // Solana — System Program e o incinerador oficial.
+  "11111111111111111111111111111111",
+  "1nc1nerator11111111111111111111111111111111",
+]);
+
+export function isBurnAddress(v: string | null | undefined): boolean {
+  if (!v || typeof v !== "string") return false;
+  const t = v.trim();
+  // EVM é insensível a caixa; base58 do Solana NÃO é, então só a comparação
+  // crua serve para ele. Testar as duas formas cobre os dois sem afrouxar.
+  return BURN_ADDRESSES.has(t.toLowerCase()) || BURN_ADDRESSES.has(t);
+}
+
+/**
  * Accepts:
  *   - "native"
  *   - EVM address: strict 0x + 40 hex chars

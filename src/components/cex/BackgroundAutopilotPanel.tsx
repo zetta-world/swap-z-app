@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CloudCog, Shield, AlertTriangle, Loader2, Power, PowerOff,
+  CloudCog, Shield, ShieldCheck, ShieldAlert, AlertTriangle, Loader2, Power, PowerOff,
   CheckCircle2, Clock, ChevronDown, ChevronUp, LogIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useWalletAuth } from "@/lib/auth/client";
 import type { CexId, CexCredentials } from "@/lib/cex/types";
 import { useT } from "@/lib/i18n";
+import { richText } from "@/lib/i18n/rich-text";
 import { useConfirm } from "@/components/ui/ConfirmModal";
 import { cn } from "@/lib/cn";
 
@@ -24,6 +25,13 @@ interface SessionStatus {
   last_scan_at:     string | null;
   last_error:       string | null;
   frozen_until_day: string | null;
+  /**
+   * ⚠️ TRÊS VALORES + NULL, e nenhum deles colapsa no outro (Fase 7).
+   * NULL = sessão armada antes da verificação existir. Isso NÃO é "segura":
+   * é ausência de medição, e a tela mostra assim.
+   */
+  key_permission?:        "so_negocia" | "pode_sacar" | "nao_verificavel" | null;
+  key_permission_detail?: string | null;
 }
 
 interface RunRow {
@@ -64,16 +72,41 @@ export default function BackgroundAutopilotPanel({
   const [busy,     setBusy]     = useState(false);
   const [showRuns, setShowRuns] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  /**
+   * ⚠️ A RECUSA FICA NA TELA, não some com o toast (Fase 7). Uma chave que pode
+   * sacar é o único motivo pelo qual nos recusamos a guardar a credencial — e um
+   * aviso que dura 4 segundos é indistinguível de nenhum aviso.
+   */
+  const [recusa, setRecusa] = useState<string | null>(null);
+  /**
+   * ⚠️ A automação pode estar FECHADA no servidor (Fase 7.2) — o recurso existe
+   * mas ainda não foi liberado ao público. Vem do GET, não só do erro do POST:
+   * descobrir isso depois de apertar "ativar" seria esconder a informação
+   * atrás de uma falha, e uma sessão já armada de antes precisa dizer na tela
+   * que NÃO vai disparar.
+   */
+  const [fechada, setFechada] = useState(false);
+  /**
+   * ⚠️ PILOTO: esta carteira roda a automação com a feature FECHADA para todo o
+   * resto — dinheiro real, em teste. Estado próprio, nunca colapsado em
+   * "aberto": quem está pilotando precisa saber que está pilotando.
+   */
+  const [piloto, setPiloto] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch(`/api/autopilot/session?exchangeId=${exchangeId}`);
       if (res.status === 401) { setBackend("auth_required"); setStatus(null); return; }
       if (res.status === 503) { setBackend("unconfigured");  setStatus(null); return; }
-      const body = await res.json() as { ok: boolean; status: SessionStatus | null; runs?: RunRow[] };
+      const body = await res.json() as {
+        ok: boolean; status: SessionStatus | null; runs?: RunRow[];
+        automationClosed?: boolean; automationPilot?: boolean;
+      };
       setBackend("ready");
       setStatus(body.status);
       setRuns(body.runs ?? []);
+      setFechada(body.automationClosed === true);
+      setPiloto(body.automationPilot === true);
     } catch {
       setBackend("unconfigured");
     }
@@ -83,6 +116,7 @@ export default function BackgroundAutopilotPanel({
 
   const arm = useCallback(async () => {
     setBusy(true);
+    setRecusa(null);
     try {
       const res = await fetch("/api/autopilot/session", {
         method: "POST",
@@ -96,14 +130,30 @@ export default function BackgroundAutopilotPanel({
           passphrase: credentials.passphrase,
         }),
       });
-      const body = await res.json() as { ok: boolean; error?: string; autoFires?: boolean };
+      const body = await res.json() as {
+        ok: boolean; error?: string; autoFires?: boolean;
+        keyPermission?: string; keyPermissionDetail?: string;
+      };
       if (res.status === 401) { setBackend("auth_required"); return; }
+      /**
+       * ⚠️ A chave que PODE SACAR não é "falha ao ativar" — é uma recusa nossa,
+       * com causa e com conserto. Cai em bloco próprio, não no erro genérico.
+       */
+      if (body.error === "automation_closed") { setFechada(true); toast.error(t("bgAutopilot.closedToast")); return; }
+      if (body.error === "key_can_withdraw") {
+        setRecusa(body.keyPermissionDetail ?? "");
+        toast.error(t("bgAutopilot.keyRefusedToast"));
+        return;
+      }
       if (!res.ok || !body.ok) { toast.error(t("bgAutopilot.activateFail", { error: body.error ?? res.status })); return; }
       toast.success(
         body.autoFires
           ? t("bgAutopilot.activatedSpot")
           : t("bgAutopilot.activatedAnalysis", { marketType }),
       );
+      // Não verificável passa — mas o usuário sai daqui sabendo que passou sem
+      // prova. O aviso persistente fica no bloco de estado armado, abaixo.
+      if (body.keyPermission === "nao_verificavel") toast.warning(t("bgAutopilot.keyUnverifiedToast"));
       await refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("bgAutopilot.networkFail"));
@@ -170,7 +220,11 @@ export default function BackgroundAutopilotPanel({
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          {isArmed
+          {/* ⚠️ Armado COM a automação fechada não é "ATIVO" em verde — não vai
+              disparar nada. Verde ali seria a tela mentindo o estado. */}
+          {isArmed && fechada
+            ? <span className="font-mono text-[9px] text-gold tracking-widest uppercase inline-flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> {t("bgAutopilot.armedButClosed")}</span>
+            : isArmed
             ? <span className="font-mono text-[9px] text-green tracking-widest uppercase inline-flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> {t("bgAutopilot.active")}</span>
             : <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">{t("bgAutopilot.inactive")}</span>}
           {expanded ? <ChevronUp className="w-3.5 h-3.5 text-ink-4" /> : <ChevronDown className="w-3.5 h-3.5 text-ink-4" />}
@@ -185,6 +239,31 @@ export default function BackgroundAutopilotPanel({
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden space-y-2.5"
           >
+            {/* ⚠️ Automação fechada — vem ANTES de tudo, inclusive do estado
+                armado: uma sessão que não vai disparar precisa dizer isso antes
+                de mostrar contadores que vão ficar parados. */}
+            {fechada && (
+              <div className="rounded-md border border-gold/40 bg-gold/[0.06] p-2 space-y-1">
+                <div className="font-mono text-[9px] text-gold tracking-widest uppercase inline-flex items-center gap-1">
+                  <ShieldAlert className="w-3 h-3" /> {t("bgAutopilot.closedHeading")}
+                </div>
+                <p className="font-mono text-[9px] text-ink-3 leading-relaxed">
+                  {isArmed ? t("bgAutopilot.closedArmedBody") : t("bgAutopilot.closedBody")}
+                </p>
+              </div>
+            )}
+
+            {piloto && (
+              <div className="rounded-md border border-purple-500/40 bg-purple-500/[0.07] p-2 space-y-1">
+                <div className="font-mono text-[9px] text-purple-300 tracking-widest uppercase inline-flex items-center gap-1">
+                  <ShieldAlert className="w-3 h-3" /> {t("bgAutopilot.pilotHeading")}
+                </div>
+                <p className="font-mono text-[9px] text-ink-3 leading-relaxed">
+                  {t("bgAutopilot.pilotBody")}
+                </p>
+              </div>
+            )}
+
             {/* Armed status */}
             {isArmed && status && (
               <div className="space-y-2">
@@ -213,6 +292,12 @@ export default function BackgroundAutopilotPanel({
                     </div>
                   )}
                 </div>
+
+                <KeyPermission
+                  veredito={status.key_permission ?? null}
+                  detalhe={status.key_permission_detail ?? null}
+                  t={t}
+                />
 
                 {runs.length > 0 && (
                   <div>
@@ -258,7 +343,7 @@ export default function BackgroundAutopilotPanel({
               <div className="space-y-2.5">
                 <p
                   className="font-mono text-[10px] text-ink-3 leading-relaxed [&_b]:text-ink-2"
-                  dangerouslySetInnerHTML={{ __html: t("bgAutopilot.keepsRunning") }}
+                  dangerouslySetInnerHTML={richText(t("bgAutopilot.keepsRunning"))}
                 />
 
                 {/* Security consent */}
@@ -267,12 +352,30 @@ export default function BackgroundAutopilotPanel({
                     <Shield className="w-3 h-3" /> {t("bgAutopilot.securityHeading")}
                   </div>
                   <ul className="font-mono text-[9px] text-ink-3 leading-relaxed space-y-1 list-disc pl-3.5 [&_b]:text-ink-2">
-                    <li dangerouslySetInnerHTML={{ __html: t("bgAutopilot.securityBullet1") }} />
-                    <li dangerouslySetInnerHTML={{ __html: t("bgAutopilot.securityBullet2") }} />
-                    <li dangerouslySetInnerHTML={{ __html: t("bgAutopilot.securityBullet3") }} />
+                    <li dangerouslySetInnerHTML={richText(t("bgAutopilot.securityBullet1"))} />
+                    <li dangerouslySetInnerHTML={richText(t("bgAutopilot.securityBullet2"))} />
+                    <li dangerouslySetInnerHTML={richText(t("bgAutopilot.securityBullet3"))} />
                     <li>{t("bgAutopilot.securityBullet4")}</li>
                   </ul>
                 </div>
+
+                {/* Recusa: a chave pode sacar. Fica na tela até armar de novo. */}
+                {recusa !== null && (
+                  <div className="rounded-md border border-red/40 bg-red/[0.07] p-2 space-y-1">
+                    <div className="font-mono text-[9px] text-red tracking-widest uppercase inline-flex items-center gap-1">
+                      <ShieldAlert className="w-3 h-3" /> {t("bgAutopilot.keyRefusedHeading")}
+                    </div>
+                    <p className="font-mono text-[9px] text-ink-3 leading-relaxed">
+                      {t("bgAutopilot.keyRefusedBody")}
+                    </p>
+                    <p className="font-mono text-[9px] text-ink-2 leading-relaxed">
+                      {t("bgAutopilot.keyRefusedFix")}
+                    </p>
+                    {recusa && (
+                      <p className="font-mono text-[8px] text-ink-4 break-words">{recusa}</p>
+                    )}
+                  </div>
+                )}
 
                 {backend === "auth_required" ? (
                   <button
@@ -288,7 +391,7 @@ export default function BackgroundAutopilotPanel({
                   <button
                     type="button"
                     onClick={arm}
-                    disabled={busy || allowedSymbols.length === 0}
+                    disabled={busy || fechada || allowedSymbols.length === 0}
                     className="w-full py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-500 font-display font-bold text-xs inline-flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
                   >
                     {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
@@ -308,6 +411,47 @@ export default function BackgroundAutopilotPanel({
         )}
       </AnimatePresence>
       {confirmModal}
+    </div>
+  );
+}
+
+/**
+ * ⚠️ O VEREDITO DA CHAVE NA TELA — quatro estados, nenhum silencioso.
+ *
+ * `so_negocia` é o único verde, e é verde porque a corretora PROVOU. Os outros
+ * três (não verificável, nunca verificada, pode sacar) saem em âmbar/vermelho:
+ * a diferença entre "provamos que não saca" e "não conseguimos olhar" é a
+ * própria razão deste bloco existir. Ver invariante nº 6.
+ */
+function KeyPermission({ veredito, detalhe, t }: {
+  veredito: "so_negocia" | "pode_sacar" | "nao_verificavel" | null;
+  detalhe:  string | null;
+  t: ReturnType<typeof useT>;
+}) {
+  const provada = veredito === "so_negocia";
+  const nunca   = veredito == null;
+  return (
+    <div className={cn(
+      "rounded-md border p-2 space-y-0.5",
+      provada ? "border-green/25 bg-green/[0.04]" : "border-gold/30 bg-gold/[0.05]",
+    )}>
+      <div className={cn(
+        "font-mono text-[9px] tracking-widest uppercase inline-flex items-center gap-1",
+        provada ? "text-green" : "text-gold",
+      )}>
+        {provada ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
+        {provada     ? t("bgAutopilot.keyProven")
+          : nunca    ? t("bgAutopilot.keyNeverChecked")
+          : veredito === "pode_sacar" ? t("bgAutopilot.keyCanWithdraw")
+          : t("bgAutopilot.keyUnverified")}
+      </div>
+      <p className="font-mono text-[9px] text-ink-3 leading-relaxed">
+        {provada     ? t("bgAutopilot.keyProvenBody")
+          : nunca    ? t("bgAutopilot.keyNeverCheckedBody")
+          : veredito === "pode_sacar" ? t("bgAutopilot.keyCanWithdrawBody")
+          : t("bgAutopilot.keyUnverifiedBody")}
+      </p>
+      {detalhe && <p className="font-mono text-[8px] text-ink-4 break-words">{detalhe}</p>}
     </div>
   );
 }

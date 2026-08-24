@@ -25,6 +25,8 @@ export async function GET(): Promise<NextResponse> {
 
   const since180 = new Date(Date.now() - 180 * 86_400_000).toISOString();
   const [{ data }, { data: dwellRows }, { data: pAdmins }, { data: lAdmins }] = await Promise.all([
+    // leitura-limitada: painel de tráfego. Mesma ressalva do analytics — é
+    // tendência para o olho, não número de decisão.
     db.from("platform_events").select("created_at, path, wallet_address, metadata")
       .eq("event_type", "page_view").gte("created_at", since180)
       .order("created_at", { ascending: false }).limit(50_000),

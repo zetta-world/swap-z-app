@@ -1,9 +1,11 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { notifyTelegram } from "@/lib/admin/track";
-import { getCronHeartbeats, pingAnthropic, pingAiProviders } from "@/lib/admin/health";
+import { getCronHeartbeats, pingAiProviders } from "@/lib/admin/health";
+import { checkExternalDeps } from "@/lib/admin/deps";
 import { estimateCost } from "@/lib/admin/ai-cost";
-import { getFlywheelGates } from "@/lib/admin/gates";
+import { getFlywheelGates, TOKEN_SPENDING_GATES } from "@/lib/admin/gates";
 import { selectAllRows } from "@/lib/supabase/paginate";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 /**
  * Alert watchdog — the platform's autonomous monitor. Runs every cron tick
@@ -18,7 +20,19 @@ const SEC_FLOOD    = Number(process.env.ALERT_SEC_FLOOD     ?? 5);   // high-sev
 const AI_BUDGET    = Number(process.env.ALERT_AI_BUDGET_USD ?? 20);  // $ / 24h → alert only
 const AI_KILL      = Number(process.env.ALERT_AI_KILL_USD   ?? 30);  // $ / 24h → auto-pause tournament (0 = off)
 const LARGE_OP     = Number(process.env.ALERT_LARGE_OP_USD  ?? 5000);// $ single op
-const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75, radar: 5 };
+/**
+ * ⚠️ CRON QUE NÃO ESTÁ AQUI MORRE EM SILÊNCIO.
+ *
+ * O `dca` bate heartbeat desde 24/08 e o RUNBOOK já dizia ">20 min" — mas a
+ * linha nunca existiu aqui, então o watchdog nunca ia acusar. Documento
+ * afirmando o que o código não faz é o mesmo defeito que as auditorias de
+ * 23–24/08 acharam dez vezes no produto; desta vez estava na operação.
+ *
+ * 20 min = quatro passadas perdidas numa cadência de 5. Mais folgado que o
+ * autopilot (12) de propósito: um ciclo de DCA atrasado alguns minutos não
+ * muda nada, e alarme que toca à toa é alarme que se aprende a ignorar.
+ */
+const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75, radar: 5, dca: 20 };
 
 /** Persistent dedup: returns true (and stamps) only if `key` hasn't fired
  *  within `windowMs`. Survives across cron invocations/instances via admin_kv. */
@@ -37,13 +51,6 @@ async function dedupOk(key: string, windowMs: number): Promise<boolean> {
   } catch { return true; }
 }
 
-async function pingOk(url: string): Promise<boolean> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 4000);
-  try { const r = await fetch(url, { signal: ctrl.signal, cache: "no-store" }); return r.ok; }
-  catch { return false; }
-  finally { clearTimeout(t); }
-}
 
 export async function runAlertWatchdog(): Promise<void> {
   const db = getSupabaseAdmin();
@@ -54,6 +61,9 @@ export async function runAlertWatchdog(): Promise<void> {
 
   try {
     const [errs, secs, aiRows, largeOps, heartbeats] = await Promise.all([
+      // leitura-limitada: janelas de 10 minutos e de 24h para os LIMIARES do
+      // watchdog. Se alguma delas passar de 1.000 linhas, o limiar já disparou
+      // muitas vezes antes — a conta exata deixou de importar.
       db.from("platform_events").select("created_at").eq("event_type", "error").gte("created_at", ago10m),
       db.from("platform_events").select("metadata").eq("event_type", "security").gte("created_at", ago10m),
       db.from("platform_events").select("metadata").eq("event_type", "zion_analysis").gte("created_at", ago24h),
@@ -90,18 +100,46 @@ export async function runAlertWatchdog(): Promise<void> {
     if (aiCost > AI_BUDGET && await dedupOk("ai_budget", 86_400_000)) {
       notifyTelegram(`💸 <b>AI cost</b> in 24h is $${aiCost.toFixed(2)} — over the $${AI_BUDGET} budget.`);
     }
-    // Budget cap with AUTO-KILL (P2.12). The alert above is advisory; this is
-    // the circuit that actually cuts spend. If the 24h estimate blows past the
-    // hard cap, auto-pause the tournament (the biggest non-Anthropic spender)
-    // by flipping its admin_kv gate — the same switch the AI Controls panel
-    // drives — so a runaway loop can't drain the budget between operator
-    // check-ins. The CEO re-enables it in the panel. Set ALERT_AI_KILL_USD=0
-    // to disable. Never auto-touches Agent A / Agent B — only the tournament.
+    // Budget cap with AUTO-KILL (P2.12). O alerta acima é aviso; ISTO é o
+    // circuito que corta o gasto de verdade quando um laço em fuga aparece
+    // entre duas conferências do operador.
+    //
+    // ⚠ CORREÇÃO 30/07 — O DISJUNTOR ESTAVA DESARMADO NA PRÁTICA.
+    //
+    // Ele pausava SÓ `pause_tournament`. Quando o torneio foi pausado por
+    // decisão de custo, o disjuntor passou a disparar contra uma chave que já
+    // estava desligada: acionava, mandava o alerta e NÃO cortava gasto nenhum.
+    // Pior, as mesas que gastam token hoje — MÍMIR e a VÖLVA — nasceram depois
+    // dele e nunca estiveram na lista.
+    //
+    // Agora ele desliga TODOS os consumidores de token conhecidos e só avisa
+    // sobre os que realmente mudou de estado — senão o alerta viraria ruído
+    // diário sobre gates que já estavam fechados.
+    //
+    // ⚠ SEGUNDA CORREÇÃO 01/08 — A LISTA AINDA ESTAVA INCOMPLETA.
+    //
+    // Mesmo depois do conserto de 30/07 ela era digitada à mão aqui, e faltavam
+    // `pause_agent_a`, `pause_radar` e `pause_sniper` — três mesas que gastam
+    // token. Faltava também o maior gastador de todos: o `/api/zion` do
+    // USUÁRIO, que nem gate tinha. O disjuntor podia pausar sete mesas internas
+    // e o gasto seguir correndo pela porta da frente.
+    //
+    // A lista agora é DERIVADA de `GATE_SPENDS_TOKENS`, que mora ao lado da
+    // definição dos gates. Mesa nova sem classificação não compila.
     if (AI_KILL > 0 && aiCost > AI_KILL) {
-      const { data: gate } = await db.from("admin_kv").select("value").eq("key", "pause_tournament").maybeSingle();
-      if (gate?.value !== "true") {
-        await db.from("admin_kv").upsert({ key: "pause_tournament", value: "true", updated_at: new Date().toISOString() }, { onConflict: "key" });
-        notifyTelegram(`🛑 <b>AI budget KILL</b> — 24h estimate $${aiCost.toFixed(2)} over the $${AI_KILL} hard cap. Tournament AUTO-PAUSED. Re-enable in AI Controls when ready.`);
+      const spenders: string[] = TOKEN_SPENDING_GATES;
+      const { data: gates } = await db.from("admin_kv").select("key, value").in("key", spenders);
+      const already = new Set((gates ?? []).filter((g) => g.value === "true").map((g) => g.key));
+      const toKill = spenders.filter((k) => !already.has(k));
+      if (toKill.length > 0) {
+        await db.from("admin_kv").upsert(
+          toKill.map((key) => ({ key, value: "true", updated_at: new Date().toISOString() })),
+          { onConflict: "key" },
+        );
+        notifyTelegram(
+          `🛑 <b>AI budget KILL</b> — 24h em $${aiCost.toFixed(2)}, acima do teto de $${AI_KILL}. `
+          + `PAUSADO: ${toKill.join(", ")}. Religue em AI Controls quando quiser.`,
+        );
       }
     }
 
@@ -112,23 +150,34 @@ export async function runAlertWatchdog(): Promise<void> {
       notifyTelegram(`🐋 <b>Large operation</b> — ${ops.length} trade(s) over $${LARGE_OP} in 10 min. Top: ${top.pair ?? "?"} $${Math.round(Number(top.volume_usd)).toLocaleString()}.`);
     }
 
-    // 6. Dependency down
-    // data-api.binance.vision: Binance public mirror that is NOT geo-blocked
-    // from US serverless IPs (api.binance.com returns 451 from Vercel iad1,
-    // which used to fire a permanent false "Binance down" alert).
-    const deps: Array<[string, string]> = [["Binance", "https://data-api.binance.vision/api/v3/ping"], ["CoinGecko", "https://api.coingecko.com/api/v3/ping"]];
-    for (const [name, url] of deps) {
-      if (!(await pingOk(url)) && await dedupOk(`dep_${name}`, 1_800_000)) {
-        notifyTelegram(`🌐 <b>Dependency down</b> — ${name} not responding.`);
+    // 6. DEPENDÊNCIAS EXTERNAS — o caminho do dinheiro (29/07).
+    //
+    // Antes aqui só havia dois pings genéricos (Binance, CoinGecko), e nenhum
+    // deles tocava no que EXECUTA swap. Foi assim que a Jupiter desligar o
+    // `quote-api.jup.ag` passou dias invisível: o código estava perfeito, o
+    // host é que tinha morrido — e nada no repositório poderia denunciar isso.
+    //
+    // Agora cada dependência é exercitada com chamada REAL e o alerta diz O QUE
+    // QUEBRA, não só o nome. Às 3 da manhã "GeckoTerminal down" não ajuda;
+    // "FREYJA e ULLR pararam de operar" manda agir.
+    const external = await checkExternalDeps();
+    for (const d of external) {
+      if (d.ok) continue;
+      // Cosmética não acorda ninguém — alarme que toca à toa vira alarme que
+      // ninguém olha, e aí o alarme de verdade também é ignorado.
+      if (d.impact === "cosmetic") continue;
+      // Geobloqueio (451) é condição PERMANENTE da região do deploy, não
+      // evento. Alertar seria mandar a mesma mensagem para sempre.
+      if (d.geoBlocked) continue;
+      // Crítico repete a cada 30min; degradado a cada 6h.
+      const window = d.impact === "critical" ? 1_800_000 : 21_600_000;
+      if (await dedupOk(`dep_${d.id}`, window)) {
+        const icon = d.impact === "critical" ? "🔴" : "🟡";
+        notifyTelegram(
+          `${icon} <b>${d.name} fora do ar</b>${d.note ? ` — ${d.note}` : ""}\n` +
+          `<b>O que quebra:</b> ${d.breaks}`,
+        );
       }
-    }
-    // Anthropic is the brain — a real outage stops every ZION analysis, so it
-    // gets its own authenticated check (the generic pingOk can't send the key).
-    // Only alert when the key IS present but the API failed (not when the env
-    // simply lacks the key).
-    const ant = await pingAnthropic();
-    if (!ant.ok && ant.note !== "no ANTHROPIC_API_KEY in this env" && await dedupOk("dep_Anthropic", 1_800_000)) {
-      notifyTelegram(`🧠 <b>Anthropic down</b> — ${ant.note ?? "API not responding"}. ZION analyses will fail until it recovers.`);
     }
     // The rest of the Ferrari's model stack (DeepSeek / Kimi / Mistral / Grok /
     // …) — alert per provider so a dead model doesn't silently skew the A/B.
@@ -156,7 +205,7 @@ export async function runAlertWatchdog(): Promise<void> {
 
 // Round-trip execution cost netted out of expectancy — mirrors backtest.ts /
 // the admin panel so the digest shows the SAME net edge, not a rosier gross.
-const DIGEST_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const DIGEST_COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 const DIGEST_MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
 
 type SuggRow = { status: string; outcome_pct: number | null; source: string | null };

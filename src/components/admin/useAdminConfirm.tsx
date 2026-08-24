@@ -53,13 +53,13 @@ export function useAdminConfirm() {
         <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{
-              fontSize: 18,
+              fontSize: 21,
               color: state.danger ? "var(--adm-red)" : "var(--adm-gold)",
             }}>
               {state.danger ? "⚠" : "?"}
             </span>
             <span style={{
-              fontSize: 10,
+              fontSize: 13,
               fontWeight: 700,
               letterSpacing: "0.22em",
               textTransform: "uppercase",
@@ -69,7 +69,7 @@ export function useAdminConfirm() {
             </span>
           </div>
           <p style={{
-            fontSize: 11,
+            fontSize: 14,
             lineHeight: 1.6,
             color: "var(--adm-ink)",
             margin: 0,

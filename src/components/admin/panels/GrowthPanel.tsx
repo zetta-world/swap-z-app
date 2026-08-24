@@ -28,7 +28,7 @@ export default function GrowthPanel() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 180_000 : 120_000);
+    const t = setInterval(load, 120_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 
@@ -43,13 +43,13 @@ export default function GrowthPanel() {
       </div>
 
       {loading && <div className="adm-shimmer" style={{ height: 120 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {d && tab === "funnel" && (
         <div>
           {d.funnel.map((f) => (
             <div key={f.step} style={{ marginBottom: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, marginBottom: 3 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
                 <span style={{ color: "var(--adm-ink-2)" }}>{f.step}</span>
                 <span style={{ color: "var(--adm-ink-3)" }}>
                   <span style={{ color: "var(--adm-ink)", fontVariantNumeric: "tabular-nums" }}>{f.count}</span>
@@ -61,7 +61,7 @@ export default function GrowthPanel() {
               </div>
             </div>
           ))}
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 8 }}>Conversion = % of signed-up wallets reaching each step.</div>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 8 }}>Conversion = % of signed-up wallets reaching each step.</div>
         </div>
       )}
 
@@ -73,12 +73,12 @@ export default function GrowthPanel() {
             <Stat label="MAU" value={d.active.mau} />
           </div>
           <div className="adm-stat" style={{ padding: "5px 0" }}>
-            <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>STICKINESS (DAU/MAU)</span>
-            <span style={{ fontSize: 12, color: "var(--adm-cyan)", fontVariantNumeric: "tabular-nums" }}>{d.active.stickiness == null ? "—" : `${(d.active.stickiness * 100).toFixed(0)}%`}</span>
+            <span style={{ fontSize: 12, color: "var(--adm-ink-3)", flex: 1 }}>STICKINESS (DAU/MAU)</span>
+            <span style={{ fontSize: 15, color: "var(--adm-cyan)", fontVariantNumeric: "tabular-nums" }}>{d.active.stickiness == null ? "—" : `${(d.active.stickiness * 100).toFixed(0)}%`}</span>
           </div>
           <div className="adm-stat" style={{ padding: "5px 0" }}>
-            <span style={{ fontSize: 9, color: "var(--adm-ink-3)", flex: 1 }}>NEW SIGNUPS</span>
-            <span style={{ fontSize: 11, color: "var(--adm-green)" }}>+{d.signups.new1d} (24h) · +{d.signups.new7d} (7d)</span>
+            <span style={{ fontSize: 12, color: "var(--adm-ink-3)", flex: 1 }}>NEW SIGNUPS</span>
+            <span style={{ fontSize: 14, color: "var(--adm-green)" }}>+{d.signups.new1d} (24h) · +{d.signups.new7d} (7d)</span>
           </div>
         </div>
       )}
@@ -89,8 +89,8 @@ export default function GrowthPanel() {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "8px 10px" }}>
-      <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>{label}</div>
-      <div style={{ fontSize: 18, color: "var(--adm-ink)", fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>{label}</div>
+      <div style={{ fontSize: 21, color: "var(--adm-ink)", fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTopPools, getTrendingPools } from "@/lib/api/geckoterminal";
 import { isValidChain } from "@/lib/validate";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const revalidate = 30;
@@ -10,7 +10,7 @@ const RL_OPTS = { windowMs: 60_000, max: 60 };
 
 export async function GET(req: NextRequest) {
   // Rate limit (read-only / cached upstream, generous limit)
-  const rl = rateLimit(`pools:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`pools:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { pools: [], error: "rate_limited", retryAfter: rl.retryAfter },

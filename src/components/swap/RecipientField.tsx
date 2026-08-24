@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, MapPin, X } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { isAddress } from "viem";
-import { isSolanaAddress } from "@/lib/solana";
+import { conferirDestinatario, familiaDaRede } from "@/lib/swap/recipient";
 import { useT } from "@/lib/i18n";
 import type { ChainId } from "@/lib/chains";
 
@@ -35,28 +34,31 @@ export default function RecipientField({ value, onChange, connected, toChainName
     if (value) setOpen(true);
   }, [value]);
 
-  const isAddressValid = (s: string): boolean => {
-    if (destChain === "solana") return isSolanaAddress(s);
-    return isAddress(s);
-  };
-
-  const validity = useMemo<"empty" | "valid" | "invalid">(() => {
-    if (!draft) return "empty";
-    return isAddressValid(draft) ? "valid" : "invalid";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, destChain]);
+  /**
+   * ⚠️ UMA REGRA SÓ, E ELA CONHECE A REDE DE DESTINO.
+   *
+   * O caminho da ponte tinha TRÊS definições de "endereço válido" (este campo,
+   * o painel de carteiras, e o servidor) e a do servidor não sabia a rede — um
+   * endereço Solana passava como destino de uma ponte para Base. Todas agora
+   * chamam `conferirDestinatario`.
+   *
+   * O veredito carrega o MOTIVO, e não só sim/não, porque a mensagem muda o que
+   * o usuário faz: "endereço de queima" pede desfazer, "rede errada" pede colar
+   * outro, "checksum" pede reler o que foi digitado.
+   */
+  const veredito = useMemo(
+    () => conferirDestinatario(draft, familiaDaRede(destChain)),
+    [draft, destChain],
+  );
+  const validity: "empty" | "valid" | "invalid" =
+    veredito.ok ? "valid" : veredito.motivo === "vazio" ? "empty" : "invalid";
 
   const handleCommit = (next: string) => {
     setDraft(next);
-    if (!next) {
-      onChange(undefined);
-      return;
-    }
-    if (isAddressValid(next)) {
-      onChange(next);
-    } else {
-      onChange(undefined);
-    }
+    const v = conferirDestinatario(next, familiaDaRede(destChain));
+    // ⚠️ Endereço recusado NUNCA vira valor da loja: entrega vai para a
+    // carteira conectada, que é o padrão seguro. O vermelho diz o porquê.
+    onChange(v.ok ? v.endereco : undefined);
   };
 
   if (!open) {
@@ -117,11 +119,17 @@ export default function RecipientField({ value, onChange, connected, toChainName
           validity === "invalid" && "text-red",
         )}
       />
-      {validity === "invalid" && (
+      {veredito.ok === false && veredito.motivo !== "vazio" && (
         <p className="mt-1 font-mono text-[10px] text-red/90">
-          {destChain === "solana"
-            ? t("swap.notValidSolana")
-            : t("swap.notValidEvm")}
+          {veredito.motivo === "queima"
+            ? t("swap.addrBurn")
+            : veredito.motivo === "familia"
+              ? t("swap.addrWrongFamily", { chain: toChainName ?? t("swap.destination") })
+              : veredito.motivo === "checksum"
+                ? t("swap.addrChecksum")
+                : destChain === "solana"
+                  ? t("swap.notValidSolana")
+                  : t("swap.notValidEvm")}
         </p>
       )}
       {validity === "valid" && draft.toLowerCase() !== (connected ?? "").toLowerCase() && (

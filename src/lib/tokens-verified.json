@@ -1,0 +1,276 @@
+{
+  "checkedAt": "2026-08-02T05:56:31.433Z",
+  "source": "trustwallet/assets",
+  "tokens": [
+    {
+      "chain": "zetta",
+      "symbol": "Z",
+      "address": "native",
+      "decimals": 18,
+      "status": "native"
+    },
+    {
+      "chain": "zetta",
+      "symbol": "zUSD",
+      "address": "0x0000000000000000000000000000000000000001",
+      "decimals": 6,
+      "status": "mock_chain"
+    },
+    {
+      "chain": "ethereum",
+      "symbol": "ETH",
+      "address": "native",
+      "decimals": 18,
+      "status": "native"
+    },
+    {
+      "chain": "ethereum",
+      "symbol": "USDC",
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    },
+    {
+      "chain": "ethereum",
+      "symbol": "USDT",
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    },
+    {
+      "chain": "ethereum",
+      "symbol": "WBTC",
+      "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+      "decimals": 8,
+      "status": "verified",
+      "checksum": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"
+    },
+    {
+      "chain": "ethereum",
+      "symbol": "LINK",
+      "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0x514910771AF9Ca656af840dff83E8264EcF986CA"
+    },
+    {
+      "chain": "ethereum",
+      "symbol": "stETH",
+      "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84"
+    },
+    {
+      "chain": "bsc",
+      "symbol": "BNB",
+      "address": "native",
+      "decimals": 18,
+      "status": "native"
+    },
+    {
+      "chain": "bsc",
+      "symbol": "ZETTA",
+      "address": "0x8AaCC38933007eC530c552007E210B4667749DF1",
+      "decimals": 18,
+      "status": "not_found",
+      "checksum": "0x8AaCC38933007eC530c552007E210B4667749DF1"
+    },
+    {
+      "chain": "bsc",
+      "symbol": "USDT",
+      "address": "0x55d398326f99059fF775485246999027B3197955",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0x55d398326f99059fF775485246999027B3197955"
+    },
+    {
+      "chain": "bsc",
+      "symbol": "USDC",
+      "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+    },
+    {
+      "chain": "bsc",
+      "symbol": "BUSD",
+      "address": "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56"
+    },
+    {
+      "chain": "bsc",
+      "symbol": "CAKE",
+      "address": "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82"
+    },
+    {
+      "chain": "bsc",
+      "symbol": "BTCB",
+      "address": "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c"
+    },
+    {
+      "chain": "polygon",
+      "symbol": "POL",
+      "address": "native",
+      "decimals": 18,
+      "status": "native"
+    },
+    {
+      "chain": "polygon",
+      "symbol": "USDC",
+      "address": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+    },
+    {
+      "chain": "polygon",
+      "symbol": "USDT",
+      "address": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F"
+    },
+    {
+      "chain": "base",
+      "symbol": "ETH",
+      "address": "native",
+      "decimals": 18,
+      "status": "native"
+    },
+    {
+      "chain": "base",
+      "symbol": "USDC",
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    },
+    {
+      "chain": "base",
+      "symbol": "cbBTC",
+      "address": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
+      "decimals": 8,
+      "status": "not_found",
+      "checksum": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf"
+    },
+    {
+      "chain": "arbitrum",
+      "symbol": "ETH",
+      "address": "native",
+      "decimals": 18,
+      "status": "native"
+    },
+    {
+      "chain": "arbitrum",
+      "symbol": "USDC",
+      "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+    },
+    {
+      "chain": "arbitrum",
+      "symbol": "USDT",
+      "address": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+    },
+    {
+      "chain": "arbitrum",
+      "symbol": "ARB",
+      "address": "0x912CE59144191C1204E64559FE8253a0e49E6548",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0x912CE59144191C1204E64559FE8253a0e49E6548"
+    },
+    {
+      "chain": "arbitrum",
+      "symbol": "GMX",
+      "address": "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a"
+    },
+    {
+      "chain": "optimism",
+      "symbol": "ETH",
+      "address": "native",
+      "decimals": 18,
+      "status": "native"
+    },
+    {
+      "chain": "optimism",
+      "symbol": "USDC",
+      "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
+    },
+    {
+      "chain": "optimism",
+      "symbol": "OP",
+      "address": "0x4200000000000000000000000000000000000042",
+      "decimals": 18,
+      "status": "verified",
+      "checksum": "0x4200000000000000000000000000000000000042"
+    },
+    {
+      "chain": "avalanche",
+      "symbol": "AVAX",
+      "address": "native",
+      "decimals": 18,
+      "status": "native"
+    },
+    {
+      "chain": "avalanche",
+      "symbol": "USDC",
+      "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
+    },
+    {
+      "chain": "solana",
+      "symbol": "SOL",
+      "address": "native",
+      "decimals": 9,
+      "status": "native"
+    },
+    {
+      "chain": "solana",
+      "symbol": "JUP",
+      "address": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
+    },
+    {
+      "chain": "solana",
+      "symbol": "USDC",
+      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    },
+    {
+      "chain": "solana",
+      "symbol": "WIF",
+      "address": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+      "decimals": 6,
+      "status": "verified",
+      "checksum": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm"
+    }
+  ]
+}

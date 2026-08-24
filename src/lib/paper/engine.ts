@@ -11,10 +11,19 @@
  * paper_accounts / paper_positions; zion_suggestions is only ever SELECTed.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/paginate";
+import { DESKS as DESK_LIST, isArquivada } from "@/lib/zion/desks";
+import { getOHLCV } from "@/lib/api/geckoterminal";
+import { recordEvent } from "@/lib/admin/track";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 // Round-trip execution cost (fees + slippage, both legs) — mirrors the flywheel
 // so paper P&L is net, not gross. Default 0.2%.
-const COST_PCT     = Number(process.env.BACKTEST_COST_PCT   ?? 0.2);
+// ⚠️ IDA E VOLTA, não uma perna. Até 16/08 esta linha lia o custo de UMA
+// ordem e o cobrava pelo ciclo inteiro — metade da taxa real da Gate.io
+// (0,2% por ordem, medida). Cada posição de papel fechada aqui parecia 0,2
+// ponto melhor do que foi, e este número vira dinheiro em `pnl_usd`.
+const COST_PCT     = CUSTO_IDA_E_VOLTA_PCT;
 const POSITION_PCT = Number(process.env.PAPER_POSITION_PCT  ?? 0.05); // deploy 5% of starting capital per signal
 const STARTING_USD = Number(process.env.PAPER_STARTING_USD  ?? 1000);
 const MIN_CASH_USD = Number(process.env.PAPER_MIN_CASH_USD  ?? 25);   // floor to open a position (out-of-capital below this)
@@ -28,16 +37,22 @@ const CHAMPION_MULT = Number(process.env.PAPER_CHAMPION_MULT ?? 2);
 export const PAPER_SOURCES = [
   "self_scan", "hybrid_scan", "mistral_scan", "grok_scan", "deepseek_scan", "kimi_scan", "radar", "sniper",
   "oracle_self", "oracle_mistral", "oracle_grok", "oracle_deepseek", "oracle_kimi",
+  // Ragnarök (PLANO-RAGNAROK): mesa long-only de acumulação de USDT. A carteira
+  // paper É a métrica deste experimento — não o win-rate, mas quanto USDT sobra.
+  "strat_mech", "strat_ai", "strat_dex", "strat_day", "ullr_launch",
+  // URÐR: a mesa que obedece ao histórico medido. Terceiro braço do duelo.
+  "strat_record",
+  // Os gêmeos alavancados do JÖRMUNGANDR — margem menor por ciclo, e o risco
+  // de liquidação que a alavancagem cria.
+  "arbiter2_3x", "arbiter2_5x",
 ] as const;
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 
-const LABELS: Record<string, string> = {
-  self_scan: "Claude (self)", hybrid_scan: "Ferrari (hybrid)", mistral_scan: "Mistral",
-  grok_scan: "Grok", deepseek_scan: "DeepSeek", kimi_scan: "Kimi", radar: "Radar",
-  sniper: "Sniper 🎯",
-  oracle_self: "Oráculo Claude 🔮", oracle_mistral: "Oráculo Mistral 🔮", oracle_grok: "Oráculo Grok 🔮",
-  oracle_deepseek: "Oráculo DeepSeek 🔮", oracle_kimi: "Oráculo Kimi 🔮",
-};
+// Rótulos vêm do registro de mesas (src/lib/zion/desks.ts) — fonte única de
+// nomes. A carteira mostra o mesmo nome que o torneio, sempre.
+const LABELS: Record<string, string> = Object.fromEntries(
+  DESK_LIST.map((d) => [d.source, `${d.sigil} ${d.name}`]),
+);
 
 // ── Pure helpers (unit-tested — no DB, no network) ────────────────────────
 
@@ -49,12 +64,66 @@ export function sizePosition(cashAvail: number, startingUsd: number, conviction 
   return size >= MIN_CASH_USD ? size : 0;
 }
 
-/** Map a signal's stated probability (0-100) to a sizing multiplier in
- *  [0.5, 1.5]: a 50%-conviction signal sizes normally, a 70% one 1.2×, a
- *  30% one 0.8× — conviction-weighted bets (F3). Missing prob → neutral 1×. */
-export function convictionFactor(probability: number | null): number {
-  const p = probability == null ? 50 : probability;
-  return Math.max(0.5, Math.min(1.5, 0.5 + p / 100));
+/** NEUTRALIZED (auditoria 25/07): this used to size bets UP with the model's
+ *  stated probability — which the flywheel proved ANTI-calibrated (win 32.7%
+ *  below 60 conf → 0% above 80), so it bet the most exactly where the model
+ *  was most wrong. Flat 1× until we can size by MEASURED per-agent
+ *  calibration from the ledger — never by self-reported confidence. */
+export function convictionFactor(_probability: number | null): number {
+  return 1;
+}
+
+/**
+ * A TENDÊNCIA DAS 24 HORAS ANTERIORES — o sinal do filtro de regime.
+ * (`docs/PLANO-TAMANHO-E-REGIME.md`)
+ *
+ * ⚠️⚠️ O SINAL OLHA PARA TRÁS, E ISSO É A COISA TODA.
+ *
+ * A tentação é filtrar pelo retorno DO DIA — e isso é viés de antecipação
+ * puro: usa o resultado para decidir a entrada que o produziu. Um backtest
+ * assim aprova qualquer coisa. Aqui a janela termina na vela mais recente
+ * DISPONÍVEL no momento da decisão e começa 24h antes dela.
+ *
+ * ⚠️ SEM VELA DE 24H ATRÁS, DEVOLVE `null` — nunca 0%. Zero seria "de lado",
+ * uma afirmação sobre o mercado; `null` é "não sei", e quem não sabe não barra
+ * (ver `permiteEntrada`). Confundir os dois faria série curta virar veredito.
+ *
+ * ⚠️ Exigir uma vela em `fim − 24h` já garante que a janela cobre 24 horas de
+ * verdade; não há guarda extra de cobertura porque ela seria inalcançável.
+ */
+export function tendencia24h(candles: Candle[], agoraMs: number): number | null {
+  const janela = candles.filter((c) => c.t <= agoraMs && c.close > 0).sort((a, b) => a.t - b.t);
+  if (janela.length < 2) return null;
+
+  const fim = janela[janela.length - 1];
+  const alvo = fim.t - 24 * 3_600_000;
+
+  // A vela mais RECENTE que ainda esteja em `fim − 24h` ou antes.
+  let inicio: Candle | null = null;
+  for (const c of janela) {
+    if (c.t <= alvo) inicio = c; else break;
+  }
+  if (inicio == null) return null;
+
+  return ((fim.close - inicio.close) / inicio.close) * 100;
+}
+
+/**
+ * O PORTÃO DO REGIME — e ele FALHA ABERTO, ao contrário do resto do repo.
+ *
+ * ⚠️ A regra da casa é que o caminho do dinheiro falha FECHADO: sem preço de
+ * referência, rejeita. Aqui é o oposto, de propósito, e a diferença é o que
+ * está em jogo dos dois lados.
+ *
+ * Um `price-guard` sem preço protege capital ao recusar. Este filtro sem sinal
+ * não protege nada — ele só impede a mesa de operar. Um provedor de velas fora
+ * do ar desligaria o laboratório inteiro em silêncio, que é exatamente o tipo
+ * de morte muda que este projeto já pagou caro (a FREYJA, dez dias).
+ *
+ * ⚠️ `> 0`, não `>= 0`: preço parado não é tendência de alta. Empate barra.
+ */
+export function permiteEntrada(tendenciaPct: number | null): boolean {
+  return tendenciaPct == null || tendenciaPct > 0;
 }
 
 /** A trade can only be ENTERED if the live fill sits on the correct side of the
@@ -146,6 +215,39 @@ export async function gateioKlines(symbol: string, fromMs: number, toMs: number)
   } catch { return []; }
 }
 
+/**
+ * ⚠️ TETO DE CHAMADAS DO FILTRO DE REGIME, e ele é ANUNCIADO.
+ *
+ * `gateioSpot` resolve N símbolos em UMA chamada; velas são uma chamada POR
+ * símbolo. No universo medido são ~15 símbolos, e 30 dá folga — mas se um dia
+ * passar disso, o excedente entra sem sinal (falha aberta) e o número sai no
+ * evento `paper_regime_tick`. Corte silencioso lê-se como "filtrei tudo".
+ */
+const MAX_SIMBOLOS_REGIME = Number(process.env.PAPER_MAX_SIMBOLOS_REGIME ?? 30);
+
+/**
+ * A tendência de 24h de cada símbolo, para o filtro de regime do abridor.
+ *
+ * ⚠️ MELHOR-ESFORÇO EM TODO SÍMBOLO: falha de rede vira `null`, e `null` deixa
+ * passar. O filtro nunca é o motivo de a mesa parar (ver `permiteEntrada`).
+ */
+export async function lerTendencias(
+  simbolos: readonly string[], agoraMs: number,
+): Promise<{ porSimbolo: Map<string, number | null>; ignorados: number }> {
+  const unicos = [...new Set(simbolos.map((s) => s.toUpperCase()))];
+  const lidos = unicos.slice(0, MAX_SIMBOLOS_REGIME);
+  const porSimbolo = new Map<string, number | null>();
+
+  // 26h de janela para garantir que exista vela em `fim − 24h` mesmo com buraco.
+  const desde = agoraMs - 26 * 3_600_000;
+  await Promise.all(lidos.map(async (sym) => {
+    const velas = await gateioKlines(sym, desde, agoraMs);
+    porSimbolo.set(sym, tendencia24h(velas, agoraMs));
+  }));
+
+  return { porSimbolo, ignorados: Math.max(0, unicos.length - lidos.length) };
+}
+
 /** One call to Gate.io's public tickers; returns base→USDT last price for the
  *  wanted symbols. Best-effort: a symbol missing from the map simply won't be
  *  filled/resolved this tick (fail-closed — no price, no trade). */
@@ -169,6 +271,60 @@ export async function gateioSpot(symbols: string[]): Promise<Map<string, number>
   return out;
 }
 
+/** Candles de um pool on-chain (S3), normalizados para o formato do Gate.io.
+ *  GeckoTerminal devolve `time` em SEGUNDOS — converter é obrigatório, senão
+ *  toda vela cai em 1970 e a janela de replay sai vazia. */
+export async function poolKlines(chain: string, pool: string, fromMs: number, toMs: number): Promise<Candle[]> {
+  const span = toMs - fromMs;
+  const tf = span <= 12 * 3_600_000 ? "5m" : span <= 3 * 86_400_000 ? "1h" : "4h";
+
+  /**
+   * ⚠️ ESCADA DE JANELA — e o que ela NÃO é (14/08).
+   *
+   * A FREYJA gerou 19 sugestões desde 03/08, todas com `chain` + `pool_address`,
+   * e a carteira de papel dela nunca abriu UMA posição. Descartei pelo banco o
+   * que dava: não é fila (cada sugestão ficou `open` de 3 a 14 HORAS), não é o
+   * caminho on-chain em geral (a ULLR abriu 1 das 4 dela, também com pool), não
+   * é caixa ($1.000 intactos).
+   *
+   * Sobraram DOIS candidatos, e eles moram no abridor: "não consegui preço do
+   * pool" e "o preço saiu da faixa de entrada". O `paper_open_skip` (13/08) vai
+   * dizer qual é — mas há uma coisa que dá para consertar sem saber a resposta.
+   *
+   * O abridor pede uma janela de 1 HORA, o que escolhe velas de 5 MINUTOS. Num
+   * pool fino a GeckoTerminal pode simplesmente não ter vela de 5m no período —
+   * e aí a lista volta vazia, sem erro, e o símbolo é pulado para sempre. Um
+   * pool com liquidez de sobra (o cbBTC da ULLR) tem; VELVET, CTR e afins podem
+   * não ter.
+   *
+   * ⚠️ ISTO NÃO É UM PALPITE SOBRE A CAUSA. Se a causa for o preço fora da
+   * faixa, esta escada não muda nada — ela é inerte. O que ela faz é **eliminar
+   * um dos dois candidatos**, de modo que a resposta do `paper_open_skip` fique
+   * sem ambiguidade. Três hipóteses erradas em 11/08 custaram um swap real do
+   * dono cada uma; a lição foi parar de adivinhar e passar a estreitar.
+   *
+   * ⚠️ E A PRIMEIRA RESPOSTA COM VELA VENCE. Não se mistura granularidade: uma
+   * vela de 4h e uma de 5m descrevem períodos diferentes, e concatenar as duas
+   * produziria uma série com buracos de escala que o resolvedor leria como
+   * movimento.
+   */
+  const escada: Array<"5m" | "1h" | "4h" | "1d"> = tf === "5m"
+    ? ["5m", "1h", "4h", "1d"]
+    : tf === "1h" ? ["1h", "4h", "1d"] : ["4h", "1d"];
+
+  for (const passo of escada) {
+    try {
+      const rows = await getOHLCV(chain, pool, passo, 300, "base");
+      const velas = rows
+        .map((c) => ({ t: c.time * 1000, close: c.close, high: c.high, low: c.low }))
+        .filter((c) => Number.isFinite(c.high) && c.high > 0)
+        .sort((a, b) => a.t - b.t);
+      if (velas.length > 0) return velas;
+    } catch { /* fonte instável neste passo: tenta o próximo */ }
+  }
+  return [];
+}
+
 // ── DB orchestration ──────────────────────────────────────────────────────
 
 type Db = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
@@ -186,6 +342,36 @@ export async function ensurePaperAccounts(db: Db): Promise<void> {
 
 interface PaperAccount { id: string; source: string; starting_usd: number; cash_usd: number; realized_pnl_usd: number; wins: number; losses: number; }
 
+/**
+ * A chave do par (carteira, símbolo).
+ *
+ * ⚠️ MAIÚSCULA SEMPRE. O ledger guarda o símbolo como a fonte mandou, e
+ * `gateioSpot` é consultado em maiúscula — um `ada` vindo de uma fonte e um
+ * `ADA` de outra virariam duas chaves distintas, e o guarda-duplicata deixaria
+ * as duas passarem justamente no caso que ele existe para pegar.
+ */
+export function chaveSimbolo(accountId: string, symbol: string): string {
+  return `${accountId}:${symbol.toUpperCase()}`;
+}
+
+/**
+ * Os pares (carteira, símbolo) em que há posição VIVA E ABERTA agora.
+ *
+ * ⚠️ OS DOIS FILTROS SÃO OBRIGATÓRIOS, e por motivos opostos. Sem
+ * `status === "open"`, uma mesa que já FECHOU ADA ficaria proibida de operar
+ * ADA para sempre — o guarda viraria uma lista negra permanente. Sem
+ * `archived_at == null`, uma posição retirada da medição continuaria bloqueando
+ * a mesa por uma exposição que não existe mais.
+ */
+export function simbolosAbertos(
+  posicoes: ReadonlyArray<{ account_id: string; symbol: string; status: string; archived_at: string | null }>,
+): Set<string> {
+  return new Set(
+    posicoes.filter((p) => p.status === "open" && p.archived_at == null)
+            .map((p) => chaveSimbolo(p.account_id, p.symbol)),
+  );
+}
+
 /** Open new positions: each wallet market-enters its source's still-open signals
  *  (with a bracket) that it hasn't taken yet, at the live Gate.io fill, sized by
  *  available cash. Returns how many were opened. */
@@ -198,8 +384,14 @@ export async function openPaperPositions(): Promise<number> {
   if (!accounts?.length) return 0;
   const accBySource = new Map<string, PaperAccount>(accounts.map((a) => [a.source, a as PaperAccount]));
 
+  // leitura-limitada: as 500 sugestões abertas MAIS ANTIGAS por tick. É um
+  // recorte deliberado — a fila é processada por ordem de chegada e o que
+  // sobrar entra no tick seguinte, então nada é perdido, só adiado. O teto
+  // existe para o tick caber no tempo do cron.
+  // inclui-arquivadas: `status = open` já exclui o que foi resolvido; sugestão
+  // arquivada com status aberto não existe (o arquivamento fecha antes).
   const { data: sugg } = await db.from("zion_suggestions")
-    .select("id, symbol, side, target_price, stop_price, probability, horizon_hours, source, status, created_at")
+    .select("id, symbol, side, target_price, stop_price, probability, horizon_hours, source, status, created_at, chain, pool_address")
     .in("source", PAPER_SOURCES as unknown as string[])
     .eq("status", "open")
     .not("target_price", "is", null)
@@ -208,8 +400,52 @@ export async function openPaperPositions(): Promise<number> {
     .limit(500);
   if (!sugg?.length) return 0;
 
-  const { data: held } = await db.from("paper_positions").select("account_id, suggestion_id");
-  const taken = new Set((held ?? []).map((h) => `${h.account_id}:${h.suggestion_id}`));
+  // ⚠️ PAGINADO — SEM ISTO O CAPITAL VAZAVA (causa raiz, achada em 01/08).
+  //
+  // Este `select` não tinha `.limit()`, e o PostgREST devolve no máximo 1.000
+  // linhas por padrão. A tabela passou de 2.700 posições, então o conjunto de
+  // "já peguei esta sugestão" vinha TRUNCADO: milhares de pares
+  // (conta, sugestão) sumiam da memória e as mesas tentavam reabrir posições
+  // que já tinham.
+  //
+  // Como existe `UNIQUE (account_id, suggestion_id)`, a reinserção violava a
+  // constraint — e o insert é EM LOTE, então UMA duplicata matava o lote
+  // inteiro, levando junto as posições novas e legítimas. Daí as amostras
+  // minúsculas. A segunda metade do estrago está no débito, logo abaixo.
+  const held = await selectAllRows<{ account_id: string; suggestion_id: string; symbol: string; status: string; archived_at: string | null }>(
+    // inclui-arquivadas: o dedup protege a chave UNIQUE (account, suggestion),
+    // que não conhece arquivamento. Filtrar aqui faria a mesa TENTAR reabrir
+    // uma posição arquivada; o upsert ignoraria em silêncio e o trabalho seria
+    // desperdiçado a cada tick, para sempre.
+    (from, to) => db.from("paper_positions").select("account_id, suggestion_id, symbol, status, archived_at")
+      .order("id", { ascending: true }).range(from, to),
+  );
+  const taken = new Set(held.map((h) => `${h.account_id}:${h.suggestion_id}`));
+
+  /**
+   * ⚠️⚠️ UMA POSIÇÃO POR SÍMBOLO POR MESA — e a amostra que isto salva (13/08).
+   *
+   * A fila é processada por ordem de chegada e uma sugestão pode esperar mais
+   * de um tick para virar posição. Em 13/08 às 19:31 a VÖLUNDR abriu ADA DUAS
+   * VEZES no mesmo instante: a sugestão das 18:00 estava encalhada e a das
+   * 19:30 chegou por cima. As duas preencheram ao MESMO preço (0,18162), com o
+   * mesmo playbook (`range_reversion`) e o mesmo alvo. Os stops diferiam na
+   * quinta casa decimal. A SKAÐI e a URÐR fizeram idêntico, no mesmo segundo.
+   *
+   * O estrago é duplo, e o segundo é o grave:
+   *
+   *  1. EXPOSIÇÃO — $100 na mesma ideia onde o mandato manda $50.
+   *  2. AMOSTRA — as duas vão bater o mesmo alvo ou o mesmo stop, juntas, e o
+   *     ledger vai registrar DOIS trades. A contagem de fechados é a régua de
+   *     confiança do laboratório inteiro (a coluna FECH. fica âmbar abaixo de
+   *     10 justamente por isso). Dois trades que carregam a informação de um
+   *     inflam essa régua sem inflar o que ela mede — é a mesma família do
+   *     `expired ≠ win/loss` do flywheel: contar como parcela algo que não é.
+   *
+   * A sugestão preterida NÃO é descartada: ela continua `open` e vira posição
+   * quando a mesa sair de ADA. Adiar é o comportamento certo; empilhar não.
+   */
+  const jaDentro = simbolosAbertos(held);
 
   // Current champion (cull engine, alavanca 3) — best-effort, null when unset.
   let champion: string | null = null;
@@ -218,41 +454,243 @@ export async function openPaperPositions(): Promise<number> {
     champion = champ?.value || null;
   } catch { /* no champion on a KV hiccup */ }
 
-  const px = await gateioSpot([...new Set(sugg.map((s) => s.symbol))]);
+  // Preço de entrada: CEX pelo ticker do Gate.io, DEX pelo último close do
+  // pool. Sem isto, uma sugestão on-chain nunca preencheria — `gateioSpot` não
+  // conhece um token que só existe em DEX, e a posição jamais abriria.
+  const cexSugg = sugg.filter((s) => !(s.chain && s.pool_address));
+  const px = cexSugg.length ? await gateioSpot([...new Set(cexSugg.map((s) => s.symbol))]) : new Map<string, number>();
+  const poolPx = new Map<string, number>();
+  await Promise.all([...new Set(sugg.filter((s) => s.chain && s.pool_address).map((s) => `${s.chain}|${s.pool_address}`))]
+    .map(async (key) => {
+      const [chain, pool] = key.split("|");
+      const c = await poolKlines(chain, pool, Date.now() - 3_600_000, Date.now());
+      if (c.length) poolPx.set(key, c[c.length - 1].close);
+    }));
+  /**
+   * O FILTRO DE REGIME (`docs/PLANO-TAMANHO-E-REGIME.md`).
+   *
+   * ⚠️ SÓ PARA OS SÍMBOLOS DE CEX. O lado on-chain preenche por pool, e a vela
+   * da Gate.io descreveria outro livro — o mesmo descasamento que carimbou o
+   * custo do HEIMDALL com o nome da GERI. Sugestão de pool passa sem sinal, e
+   * `null` deixa passar.
+   */
+  const regime = cexSugg.length
+    ? await lerTendencias(cexSugg.map((s) => s.symbol), Date.now())
+    : { porSimbolo: new Map<string, number | null>(), ignorados: 0 };
+  let bloqueadosPorRegime = 0;
+
   const spent = new Map<string, number>(); // account_id → cash deployed this tick
   type PaperInsert = {
     account_id: string; suggestion_id: string; source: string; symbol: string;
     side: "buy" | "sell"; qty: number; entry_price: number; cost_usd: number;
     target_price: number | null; stop_price: number | null; horizon_hours: number;
+    chain: string | null; pool_address: string | null;
   };
   const inserts: PaperInsert[] = [];
 
+  /**
+   * ⚠️⚠️ POR QUE A SUGESTÃO NÃO VIROU POSIÇÃO — o buraco entre decidir e
+   * executar, que não tinha rastro nenhum (13/08).
+   *
+   * A FREYJA (`strat_dex`) gerou 19 sugestões desde 03/08. Todas com alvo e
+   * stop, todas resolveram no torneio (`hit_stop`, `hit_target`), e cada uma
+   * ficou `open` de 3 a 14 HORAS — tempo de sobra para dezenas de ticks deste
+   * abridor. A carteira de papel dela nunca abriu **uma única posição**.
+   *
+   * Não dava para saber por quê, e a razão é esta linha:
+   *
+   *     if (fill == null || !canEnter(...)) continue;
+   *
+   * **Duas causas diferentes num `continue` só**, e mudas. "não consegui preço
+   * do pool" e "o preço saiu da faixa de entrada" pedem investigações opostas —
+   * a primeira é a FONTE, a segunda é o MERCADO — e do lado de fora as duas
+   * têm exatamente a mesma aparência: nada acontece.
+   *
+   * ⚠️ E foi instrumentação, não raciocínio, que quebrou o ciclo da taxa em
+   * 11/08: três hipóteses erradas caíram no minuto em que passamos a gravar o
+   * que MANDAMOS ao lado do que VOLTOU. Aqui é a mesma forma — o abridor passa
+   * a dizer, por mesa, quantas recusou e por quê.
+   */
+  const recusas = new Map<string, Record<string, number>>();
+  const nota = (source: string, motivo: string) => {
+    const r = recusas.get(source) ?? {};
+    r[motivo] = (r[motivo] ?? 0) + 1;
+    recusas.set(source, r);
+  };
+
   for (const s of sugg) {
+    /**
+     * ⚠️ A SEGUNDA TRAVA, e ela fica no caminho do DINHEIRO de propósito.
+     *
+     * O gate do registro no cron do torneio (13/08) impede que uma mesa
+     * arquivada gere sugestão nova. Este aqui impede que uma sugestão que já
+     * existe — as 6 da MUNINN gravadas às 20:00 daquele dia, por exemplo —
+     * vire posição depois. As duas travas parecem redundantes e não são: a
+     * primeira governa o gasto de token, a segunda governa o capital.
+     *
+     * A regra deste repo é que o caminho do dinheiro FALHA FECHADO. Uma mesa
+     * declarada "o capital é histórico, não alocação ativa" não pode voltar a
+     * alocar porque uma linha antiga sobrou numa fila.
+     *
+     * ⚠️ Não conta como recusa que ACUSA: a mesa está arquivada por decisão, e
+     * disparar `paper_open_skip` por isso a cada tick transformaria o alarme em
+     * ruído permanente — que é a mesma coisa que não ter alarme.
+     */
+    if (isArquivada(s.source)) continue;
     const acc = accBySource.get(s.source);
-    if (!acc) continue;
-    if (taken.has(`${acc.id}:${s.id}`)) continue;
-    const fill = px.get(s.symbol.toUpperCase());
-    if (fill == null || !canEnter(s.side, fill, s.target_price, s.stop_price)) continue;
+    if (!acc) { nota(s.source, "sem_carteira"); continue; }
+    // `ja_pega` é o estado NORMAL: a sugestão já virou posição e continua
+    // aberta no ledger de sinais. Conta, mas não acusa (ver o filtro abaixo).
+    if (taken.has(`${acc.id}:${s.id}`)) { nota(s.source, "ja_pega"); continue; }
+    // `jaDentro` cresce DENTRO do laço: duas sugestões do mesmo símbolo podem
+    // chegar no mesmo tick, e ler só o estado do banco deixaria as duas passar.
+    if (jaDentro.has(chaveSimbolo(acc.id, s.symbol))) { nota(s.source, "ja_no_simbolo"); continue; }
+    const onChain = s.chain && s.pool_address;
+    const fill = onChain ? poolPx.get(`${s.chain}|${s.pool_address}`) : px.get(s.symbol.toUpperCase());
+    // ⚠️ SEPARADOS DE PROPÓSITO — ver o comentário acima. Juntar os dois foi o
+    // que deixou a FREYJA dez dias sem executar e sem ninguém saber de quê.
+    if (fill == null) { nota(s.source, onChain ? "sem_preco_de_pool" : "sem_preco_de_cex"); continue; }
+    if (!canEnter(s.side, fill, s.target_price, s.stop_price)) { nota(s.source, "preco_fora_da_faixa"); continue; }
+    /**
+     * ⚠️ O FILTRO DE REGIME FICA AQUI, DEPOIS DOS PORTÕES BARATOS, e a posição
+     * na fila não é detalhe: as recusas anteriores custam um `Map.get`, esta
+     * custou uma chamada de rede. Pôr a cara antes da barata gastaria banda
+     * para decidir sobre sugestão que já ia ser descartada de graça.
+     *
+     * ⚠️ SÓ PARA LONG. Uma venda em tendência de queda é a operação CERTA — as
+     * mesas de hoje são todas long-only, mas escrever a regra sem o lado
+     * deixaria uma armadilha pronta para a primeira mesa que vender.
+     */
+    if (s.side === "buy" && !permiteEntrada(regime.porSimbolo.get(s.symbol.toUpperCase()) ?? null)) {
+      nota(s.source, "contra_tendencia"); bloqueadosPorRegime++; continue;
+    }
     const cashAvail = Number(acc.cash_usd) - (spent.get(acc.id) ?? 0);
     const champMult = s.source === champion ? CHAMPION_MULT : 1;
     const size = sizePosition(cashAvail, Number(acc.starting_usd), convictionFactor(s.probability) * champMult);
-    if (size <= 0) continue; // out of capital
+    if (size <= 0) { nota(s.source, "sem_caixa"); continue; } // out of capital
+    jaDentro.add(chaveSimbolo(acc.id, s.symbol));
     inserts.push({
       account_id: acc.id, suggestion_id: s.id, source: s.source, symbol: s.symbol, side: s.side,
       qty: size / fill, entry_price: fill, cost_usd: size,
       target_price: s.target_price, stop_price: s.stop_price, horizon_hours: s.horizon_hours ?? 72,
+      chain: s.chain ?? null, pool_address: s.pool_address ?? null,
     });
     spent.set(acc.id, (spent.get(acc.id) ?? 0) + size);
     taken.add(`${acc.id}:${s.id}`);
   }
 
+  /**
+   * A mesa que RECEBEU sugestão e não abriu NADA neste tick — e o porquê.
+   *
+   * ⚠️ `ja_pega` fica de fora do gatilho: uma mesa cujas sugestões já viraram
+   * posição está funcionando, e acusá-la faria o evento disparar sempre, o que
+   * é a mesma coisa que não disparar nunca.
+   */
+  const abriuPorFonte = new Set(inserts.map((i) => i.source));
+  for (const [source, motivos] of recusas) {
+    if (abriuPorFonte.has(source)) continue;
+    const semJaPega = Object.entries(motivos).filter(([k]) => k !== "ja_pega");
+    if (semJaPega.length === 0) continue;
+    recordEvent("paper_open_skip", { meta: {
+      source, ...Object.fromEntries(semJaPega),
+      why: "a mesa tinha sugestão aberta e o abridor não executou nenhuma",
+    } });
+  }
+
+  /**
+   * ⚠️⚠️ A RECUSA POR FALTA DE CAIXA PRECISA DE EVENTO PRÓPRIO — e o motivo é
+   * o `continue` quinze linhas acima.
+   *
+   * O `paper_open_skip` só dispara para a mesa que não abriu NADA. Faz sentido
+   * para o que ele mede ("a mesa está muda?"), e é exatamente o errado para
+   * medir capital: a mesa que abre 3 e recusa 5 por falta de caixa está
+   * FUNCIONANDO — e é justamente ela que está com o tamanho apertado. Hoje
+   * esse caso não deixa rastro nenhum.
+   *
+   * ⚠️ ISTO É O INSTRUMENTO QUE PRECEDE O AUMENTO DE `PAPER_POSITION_PCT`
+   * (`docs/PLANO-TAMANHO-E-REGIME.md`, passo 2 antes do passo 3). Sem ele,
+   * subir o tamanho seria mexer no capital sem ter como saber se foi longe
+   * demais — e "descobrir depois" é como a FREYJA passou dez dias parada.
+   *
+   * O critério do plano é `sem_caixa` abaixo de ~5% das entradas; sem este
+   * evento esse número não existe para ser conferido.
+   */
+  for (const [source, motivos] of recusas) {
+    const semCaixa = motivos["sem_caixa"] ?? 0;
+    if (semCaixa === 0) continue;
+    const acc = accBySource.get(source);
+    recordEvent("paper_sem_caixa", { meta: {
+      source,
+      recusadas: semCaixa,
+      abertas_no_tick: inserts.filter((i) => i.source === source).length,
+      // ⚠️ O ESTADO DA CARTEIRA VIAJA JUNTO: "5 recusadas" não diz se o
+      // tamanho está apertado ou se a mesa está sem banca. São causas opostas.
+      caixa_usd: acc ? Number(acc.cash_usd) : null,
+      banca_usd: acc ? Number(acc.starting_usd) : null,
+      why: "havia sugestão aprovada e não havia capital para abrir",
+    } });
+  }
+
+  /**
+   * O tick do filtro de regime — SÓ quando teve o que dizer.
+   *
+   * ⚠️ Evento por tick seria 288 por dia, num `platform_events` que já grava
+   * 522 e ainda não tem política de retenção. Barrar nada é o estado normal e
+   * não merece linha; barrar alguém, ou estourar o teto de símbolos, merece.
+   */
+  if (bloqueadosPorRegime > 0 || regime.ignorados > 0) {
+    recordEvent("paper_regime_tick", { meta: {
+      bloqueados: bloqueadosPorRegime,
+      simbolos_avaliados: regime.porSimbolo.size,
+      // Sem sinal = passou sem ser julgado. É a taxa de cobertura do filtro.
+      sem_sinal: [...regime.porSimbolo.values()].filter((v) => v == null).length,
+      simbolos_ignorados_por_teto: regime.ignorados,
+      why: "entradas long barradas por tendência de 24h não positiva",
+    } });
+  }
+
   if (inserts.length === 0) return 0;
-  try { await db.from("paper_positions").insert(inserts); } catch { return 0; }
-  for (const [accId, cash] of spent) {
-    const acc = accounts.find((a) => a.id === accId)!;
+
+  // ⚠️ A OUTRA METADE DA CAUSA RAIZ (01/08).
+  //
+  // Isto era `try { await db.insert(inserts); } catch { return 0; }` — e o
+  // `catch` NUNCA disparava. O cliente do Supabase não lança em erro de banco:
+  // ele RESOLVE com `{ data: null, error }`. Uma violação de UNIQUE devolvia
+  // erro silencioso, a promessa resolvia normalmente, e a execução seguia
+  // direto para o laço de débito abaixo — que descontava o caixa de posições
+  // QUE NUNCA FORAM CRIADAS.
+  //
+  // Foi assim que catorze carteiras perderam de US$450 a US$1.000, e o MÍMIR
+  // ficou com exatamente $950 a menos: dezenove lotes debitados sem uma única
+  // linha gravada. Nada disso levantava exceção, então nada aparecia em log.
+  //
+  // Duas mudanças fecham o buraco:
+  //
+  //  1. `ignoreDuplicates` — uma duplicata deixa de matar o lote inteiro. As
+  //     posições novas entram; as repetidas são puladas em silêncio, que é o
+  //     comportamento correto para um seed idempotente.
+  //  2. `.select()` faz o insert DEVOLVER as linhas realmente gravadas, e o
+  //     débito passa a ser calculado a partir DELAS. O caixa não pode mais
+  //     divergir das posições: ele é derivado do que o banco confirmou, não do
+  //     que a aplicação pretendia.
+  const { data: created, error: insErr } = await db
+    .from("paper_positions")
+    .upsert(inserts, { onConflict: "account_id,suggestion_id", ignoreDuplicates: true })
+    .select("account_id, cost_usd");
+  if (insErr || !created?.length) return 0;
+
+  // Débito derivado do que FOI GRAVADO — não do que se tentou gravar.
+  const debited = new Map<string, number>();
+  for (const row of created) {
+    const id = String(row.account_id);
+    debited.set(id, (debited.get(id) ?? 0) + Number(row.cost_usd ?? 0));
+  }
+  for (const [accId, cash] of debited) {
+    const acc = accounts.find((a) => a.id === accId);
+    if (!acc) continue;
     await db.from("paper_accounts").update({ cash_usd: Number(acc.cash_usd) - cash, updated_at: new Date().toISOString() }).eq("id", accId);
   }
-  return inserts.length;
+  return created.length;
 }
 
 /** Resolve open positions against the live Gate.io price: close on target/stop
@@ -260,27 +698,61 @@ export async function openPaperPositions(): Promise<number> {
 export async function resolvePaperPositions(): Promise<number> {
   const db = getSupabaseAdmin();
   if (!db) return 0;
-  const { data: openFull } = await db.from("paper_positions")
-    .select("id, account_id, symbol, side, entry_price, cost_usd, target_price, stop_price, horizon_hours, opened_at")
-    .eq("status", "open").limit(1000);
-  if (!openFull?.length) return 0;
-  const symbols = [...new Set(openFull.map((p) => p.symbol))];
+  // arbiter2's open rows are HEDGED spot+perp cycles that close by spread
+  // CONVERGENCE (its own scan does that) — resolving them here by target/
+  // stop/horizon would book directional P&L a hedge doesn't have.
+  // ⚠️ `archived_at is null` (03/08): este é o caminho que CREDITA caixa ao
+  // fechar. Sem o filtro, uma posição já retirada da medição volta a ser
+  // resolvida e devolve `custo + P&L` a uma carteira que já foi acertada — foi
+  // exatamente o que aconteceu com o Arbiter 2.0 no minuto seguinte ao
+  // zeramento. Todo leitor do ledger filtra arquivadas; os que creditam dinheiro
+  // são os que menos podem esquecer.
+  // ⚠️ PAGINADO. Truncar AQUI é o pior caso possível: a posição que ficar de
+  // fora nunca é resolvida, fica aberta para sempre, e o capital dela some do
+  // caixa disponível sem virar resultado nenhum. `.limit(1000)` dava a
+  // impressão de teto — e o teto do PostgREST é o mesmo 1.000, então o limite
+  // nunca chegava a valer.
+  const openFull = await selectAllRows<{
+    id: string; account_id: string; symbol: string; side: string;
+    entry_price: number; cost_usd: number; target_price: number | null;
+    stop_price: number | null; horizon_hours: number; opened_at: string;
+    chain: string | null; pool_address: string | null;
+  }>((from, to) => db.from("paper_positions")
+    .select("id, account_id, symbol, side, entry_price, cost_usd, target_price, stop_price, horizon_hours, opened_at, chain, pool_address")
+    .eq("status", "open").neq("source", "arbiter2").is("archived_at", null)
+    .order("id", { ascending: true }).range(from, to));
+  if (!openFull.length) return 0;
+  // Mesma separação da abertura: pool tem preço próprio, símbolo tem o do
+  // Gate.io. A chave é o pool — dois pools do mesmo token são preços distintos.
+  const cexPos = openFull.filter((p) => !(p.chain && p.pool_address));
+  const symbols = [...new Set(cexPos.map((p) => p.symbol))];
   const nowMs = Date.now();
 
   // Path-aware (F3): one Gate.io candle fetch per symbol, from that symbol's
   // oldest open position to now, reused across its positions. Spot is fallback.
   const candlesBySymbol = new Map<string, Candle[]>();
-  await Promise.all(symbols.map(async (sym) => {
-    const earliest = Math.min(...openFull.filter((p) => p.symbol === sym).map((p) => Date.parse(p.opened_at)));
-    candlesBySymbol.set(sym, await gateioKlines(sym, earliest, nowMs));
-  }));
-  const prices = await gateioSpot(symbols);
+  const candlesByPool = new Map<string, Candle[]>();
+  await Promise.all([
+    ...symbols.map(async (sym) => {
+      const earliest = Math.min(...cexPos.filter((p) => p.symbol === sym).map((p) => Date.parse(p.opened_at)));
+      candlesBySymbol.set(sym, await gateioKlines(sym, earliest, nowMs));
+    }),
+    ...[...new Set(openFull.filter((p) => p.chain && p.pool_address).map((p) => `${p.chain}|${p.pool_address}`))]
+      .map(async (key) => {
+        const [chain, pool] = key.split("|");
+        const earliest = Math.min(...openFull.filter((p) => `${p.chain}|${p.pool_address}` === key).map((p) => Date.parse(p.opened_at)));
+        candlesByPool.set(key, await poolKlines(chain, pool, earliest, nowMs));
+      }),
+  ]);
+  const prices = symbols.length ? await gateioSpot(symbols) : new Map<string, number>();
 
   const delta = new Map<string, { cash: number; pnl: number; wins: number; losses: number }>();
   let closed = 0;
 
   for (const p of openFull) {
-    const v = computeExitPath(p, candlesBySymbol.get(p.symbol) ?? [], prices.get(p.symbol.toUpperCase()), nowMs);
+    const onChain = p.chain && p.pool_address;
+    const candles = onChain ? candlesByPool.get(`${p.chain}|${p.pool_address}`) ?? [] : candlesBySymbol.get(p.symbol) ?? [];
+    const v = computeExitPath(p, candles, onChain ? candles[candles.length - 1]?.close : prices.get(p.symbol.toUpperCase()), nowMs);
     if (!v) continue;
     try {
       await db.from("paper_positions").update({

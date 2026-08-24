@@ -13,7 +13,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import ActionCardView from "./ActionCardView";
 import AutopilotPilot from "./AutopilotPilot";
-import RebalancePilot from "./RebalancePilot";
 import ZionExecuteRouter from "./ZionExecuteRouter";
 import TokenSelector from "@/components/swap/TokenSelector";
 import type { ZionOp } from "@/lib/zion/mode-prompts";
@@ -26,6 +25,8 @@ import { cn } from "@/lib/cn";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
 import { GOD_META, isPaidTier } from "@/lib/tier/gods";
 import { useTier } from "@/lib/tier/client";
+import { FEATURE_TIER } from "@/lib/tier/types";
+import { OP_FEATURE } from "@/lib/zion/op-tier";
 
 const OPS: { id: ZionOp; labelKey: MessageKey; taglineKey: MessageKey; Icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "trading",      labelKey: "zion.tabTrading",      taglineKey: "zion.taglineTrading",      Icon: TrendingUp },
@@ -41,7 +42,11 @@ export default function ZionDrawer() {
   const { zionOpen, setZion, lang } = useUI();
   const { active: tierActive, tier: activeTier } = useTierAccent();
   const { satisfies, authenticated } = useTier();
-  const tierLocked = !satisfies("pro");
+  // Lê a MATRIZ, não um literal. Com `"pro"` digitado aqui, a interface
+  // continuaria trancando o usuário Free depois de o servidor passar a
+  // liberá-lo — e a página de preços seguiria prometendo 5 análises/dia que
+  // ninguém conseguiria pedir. A separação entre planos no ZION é por COTA.
+  const tierLocked = !satisfies(FEATURE_TIER.zionAdvisory);
   const { fromToken, toToken, fromChain, amountIn } = useSwap();
   const t = useT();
 
@@ -335,18 +340,31 @@ export default function ZionDrawer() {
                 {OPS.map((o) => {
                   const active = op === o.id;
                   const Icon = o.Icon;
+                  // Operação com exigência PRÓPRIA de plano (hoje só a
+                  // arbitragem, vendida no card Trader). A aba mostra o cadeado
+                  // em vez de sumir: esconder faria o usuário nunca saber que o
+                  // recurso existe, e o servidor recusa de qualquer jeito — a
+                  // diferença é ele descobrir agora ou depois de clicar.
+                  const opFeature = OP_FEATURE[o.id];
+                  const locked = !!opFeature && !satisfies(FEATURE_TIER[opFeature]);
                   return (
                     <button
                       key={o.id}
-                      onClick={() => handleModeChange(o.id)}
+                      onClick={() => { if (!locked) handleModeChange(o.id); }}
+                      disabled={locked}
+                      title={locked ? t("zion.opNeedsTier", { tier: FEATURE_TIER[opFeature!] }) : undefined}
                       className={cn(
                         "relative flex-none flex flex-col items-center justify-center gap-0.5 px-2.5 py-2 rounded-lg font-mono text-[10px] tracking-widest uppercase transition-all min-w-0",
-                        active
-                          ? "bg-gold/15 text-gold border border-gold/30"
-                          : "text-ink-3 hover:text-ink-2 border border-transparent",
+                        locked
+                          ? "text-ink-4 border border-transparent opacity-50 cursor-not-allowed"
+                          : active
+                            ? "bg-gold/15 text-gold border border-gold/30"
+                            : "text-ink-3 hover:text-ink-2 border border-transparent",
                       )}
                     >
-                      <Icon className="w-3 h-3 flex-shrink-0" />
+                      {locked
+                        ? <Lock className="w-3 h-3 flex-shrink-0" />
+                        : <Icon className="w-3 h-3 flex-shrink-0" />}
                       <span className="whitespace-nowrap">{t(o.labelKey)}</span>
                     </button>
                   );
@@ -538,10 +556,6 @@ export default function ZionDrawer() {
                           CEX API. Hidden when autopilot is OFF or nothing
                           matches the rails. */}
                       <AutopilotPilot cards={parsed.cards} />
-                      {/* Auto-rebalance banner — sibling pilot for `rebalance`
-                          cards (CEX→wallet withdrawal). Independent opt-in toggle
-                          in settings, hidden when off or no rebalance card pending. */}
-                      <RebalancePilot cards={parsed.cards} />
                       <AnimatePresence initial={false}>
                         {parsed.cards.map((c, i) => (
                           <ActionCardView key={i} card={c} index={i} onExecute={setExecuting} />

@@ -39,7 +39,14 @@ export function allProviders(): Record<string, ProviderConfig> {
       id: "deepseek", label: "DeepSeek", origin: "china",
       apiKey:  process.env.DEEPSEEK_API_KEY,
       baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-      model:   process.env.DEEPSEEK_MODEL   ?? "deepseek-chat",
+      // "deepseek-chat" was RETIRED (25/07: every call 400'd "The supported API
+      // model names are deepseek-v4-pro or deepseek-v4-flash" → the breaker
+      // re-tripped hourly all day). We take the -pro flagship because this
+      // provider holds the "brain" seat (technical/quant reasoning) and both
+      // heavy paths (backtest scan, oracle) budget 40s. If latency bites — the
+      // hybrid brain seat only allows 18s — swap with ONE env var, no deploy:
+      // DEEPSEEK_MODEL=deepseek-v4-flash.
+      model:   process.env.DEEPSEEK_MODEL   ?? "deepseek-v4-pro",
       signup:  "https://platform.deepseek.com",
     },
     kimi: {
@@ -98,24 +105,59 @@ export function configuredProviders(): ProviderConfig[] {
  * Ferrari roles — each specialist in its strongest area. Preference order per
  * role; each overridable via HYBRID_<ROLE> (e.g. HYBRID_BRAIN=mistral). Returns
  * the first CONFIGURED provider for the role, or null.
- *   • brain     — technical / quant reasoning (DeepSeek → Mistral)
- *   • macro     — big-context macro digest (Kimi → DeepSeek)
- *   • sentiment — X / social sentiment, native to Grok (Grok → Mistral)
- * The CEO (synthesis) is Claude Opus, resolved separately in backtest.ts.
+ *   • brain     — technical / quant reasoning (Mistral → Kimi)
+ *   • macro     — big-context macro digest (Kimi → Mistral)
+ *   • sentiment — leitura de sentimento (Mistral → Kimi)
+ *   • ceo       — final synthesis (DeepSeek → Kimi → Mistral)
+ *
+ * 27/07: Anthropic left this desk entirely. The flywheel measured every
+ * brain within ~1pt of every other, so an Opus CEO bought nothing and cost
+ * $17.50 across the three days it ran — 70% of July's whole Anthropic bill.
+ * DeepSeek takes the CEO seat, and `brain` moves off DeepSeek to Mistral so
+ * the drafter and the synthesizer stay DIFFERENT models (a CEO reviewing its
+ * own draft is a rubber stamp, not a second opinion). Mistral is also the
+ * free tier, so the draft seat now costs nothing.
  */
-export type HybridRole = "brain" | "macro" | "sentiment";
+export type HybridRole = "brain" | "macro" | "sentiment" | "ceo";
 const ROLE_PREFERENCE: Record<HybridRole, string[]> = {
-  brain:     ["deepseek", "mistral"],
-  macro:     ["kimi", "deepseek"],
-  sentiment: ["grok", "mistral"],
+  brain:     ["mistral", "deepseek", "kimi", "grok"],
+  macro:     ["kimi", "mistral"],
+  // 29/07 — Grok SAI do assento de sentimento. A xAI aposentou o Live Search
+  // (ver a nota em backtest.ts), então o X deixou de alimentar o modelo: o
+  // assento rodava "Grok pelado", ou seja, um analista de sentimento SEM
+  // acesso à rede social que era a razão inteira de ele estar aqui. Pagar o
+  // prêmio do xAI por sentimento sem fonte é tiro no pé. Mistral assume; Grok
+  // segue no torneio de scanner, onde compete pelo mesmo insumo que os outros.
+  sentiment: ["mistral", "kimi"],
+  ceo:       ["deepseek", "kimi", "mistral"],
 };
 
 export function roleProvider(role: HybridRole): ProviderConfig | null {
+  return roleProviderChain(role)[0] ?? null;
+}
+
+/**
+ * TODOS os provedores do papel, na ordem de preferência — a cadeia de reserva.
+ *
+ * POR QUE ISTO EXISTE (03/08): o `roleProvider` devolvia UM provedor, e quem
+ * chamava não tinha para onde ir se a chamada falhasse. O ledger registrou
+ * "Mistral indisponível" e o MÍMIR perdeu o tick inteiro — sem decidir, sem
+ * gravar, sem par para o VÖLUNDR daquele ciclo.
+ *
+ * Isso não é só um trade perdido: é AMOSTRA perdida de um lado só do duelo. O
+ * controle continua acumulando enquanto a mesa de IA fica para trás, e a
+ * comparação vai ficando torta sem ninguém notar — porque os dois números
+ * continuam existindo, só que medindo janelas diferentes.
+ *
+ * Agora o chamador recebe a fila inteira e tenta o próximo quando um falha. O
+ * disjuntor (`isTripped`) segue valendo por provedor, então um que esteja em
+ * cooldown é pulado sem queimar chamada.
+ */
+export function roleProviderChain(role: HybridRole): ProviderConfig[] {
   const all = allProviders();
   const forced = process.env[`HYBRID_${role.toUpperCase()}`];
-  if (forced && all[forced]?.apiKey) return all[forced];
-  for (const id of ROLE_PREFERENCE[role]) if (all[id]?.apiKey) return all[id];
-  return null;
+  const ids = forced ? [forced, ...ROLE_PREFERENCE[role].filter((x) => x !== forced)] : ROLE_PREFERENCE[role];
+  return ids.map((id) => all[id]).filter((p): p is ProviderConfig => !!p?.apiKey);
 }
 
 /** The technical brain (kept for the radar's cheap wake). */

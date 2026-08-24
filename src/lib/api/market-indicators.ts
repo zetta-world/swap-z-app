@@ -29,6 +29,7 @@
  */
 
 import { getOHLCV } from "@/lib/api/geckoterminal";
+import { recordEvent } from "@/lib/admin/track";
 
 // Binance's public market-data mirror. api.binance.com geo-blocks US
 // serverless IPs (Vercel iad1/sfo1) with HTTP 451, which silently emptied
@@ -43,6 +44,70 @@ export interface Candle {
   low:    number;
   close:  number;
   volume: number;
+}
+
+/**
+ * Candles COM o instante de cada barra.
+ *
+ * O `Candle` do resto do módulo é só OHLCV — os indicadores não precisam de
+ * tempo, porque trabalham por posição no array. O BACKTEST precisa: para
+ * resolver um trade contra o caminho do preço é obrigatório saber QUANDO cada
+ * barra aconteceu, senão o horizonte não tem como vencer.
+ */
+export async function fetchTimedCandles(
+  symbol: string, interval: string, limit: number, revalidate = 3600,
+  /**
+   * Onde a janela TERMINA, em ms. Omitido = agora.
+   *
+   * ⚠️ POR QUE ISTO EXISTE (03/08, quando o mercado finalmente foi medido).
+   *
+   * A janela de 174 dias que o backtest usava terminava sempre HOJE, e o
+   * comprar-e-segurar dela foi de −18.49% na mediana — com OP a −52%, ADA a
+   * −26%, ARB a −25%. A biblioteca é long-only. Testar estratégia comprada num
+   * mercado que caiu 18% responde uma pergunta que ninguém fez.
+   *
+   * Com este parâmetro dá para rodar a MESMA biblioteca numa janela que SUBIU,
+   * e aí a comparação passa a significar alguma coisa: o problema é a
+   * estratégia, ou é a estação?
+   */
+  endAtMs?: number,
+): Promise<Array<Candle & { t: number }>> {
+  // A Binance devolve no máximo 1000 velas por chamada. Para janelas maiores é
+  // preciso PAGINAR PARA TRÁS: pede-se o bloco mais recente, olha-se o instante
+  // da primeira vela dele, e pede-se o bloco que termina um milissegundo antes.
+  //
+  // A ordem importa: paginar para FRENTE (startTime) exigiria saber a data de
+  // início, que depende de quantas velas existem — e um símbolo listado há dois
+  // meses devolveria uma janela silenciosamente mais curta que os outros. Indo
+  // para trás a partir de agora, cada símbolo entrega o que tem, e a diferença
+  // fica visível na contagem em vez de escondida.
+  const PAGE = 1000;
+  const out: Array<Candle & { t: number }> = [];
+  let endTime: number | undefined = endAtMs;
+
+  while (out.length < limit) {
+    const faltam = Math.min(PAGE, limit - out.length);
+    const params = new URLSearchParams({
+      symbol: `${symbol}USDT`, interval, limit: String(faltam),
+    });
+    if (endTime != null) params.set("endTime", String(endTime));
+    try {
+      const res = await fetch(`${BINANCE_DATA}/api/v3/klines?${params}`, { next: { revalidate } });
+      if (!res.ok) break;
+      const data = await res.json() as Array<[number, string, string, string, string, string, ...unknown[]]>;
+      if (!Array.isArray(data) || data.length === 0) break;   // fim do histórico
+      const page = data.map((row) => ({
+        t: Number(row[0]),
+        high: parseFloat(row[2]), low: parseFloat(row[3]),
+        close: parseFloat(row[4]), volume: parseFloat(row[5]),
+      }));
+      out.unshift(...page);
+      // Próximo bloco termina um ms antes da primeira vela deste.
+      endTime = page[0].t - 1;
+      if (data.length < faltam) break;                        // a fonte acabou
+    } catch { break; }
+  }
+  return out;
 }
 
 async function fetchCandles(symbol: string, interval: string, limit: number, revalidate: number): Promise<Candle[]> {
@@ -159,6 +224,40 @@ export function calcATR(candles: Candle[], period = 14): number | null {
     atr = (atr * (period - 1) + tr[i]) / period;
   }
   return atr;
+}
+
+/**
+ * ATR como SÉRIE, alinhada às velas — o mesmo Wilder do `calcATR`.
+ *
+ * ⚠️ POR QUE UMA SÉRIE, e não chamar `calcATR` num laço (14/08).
+ *
+ * O motor de tendência precisa do ATR **de cada dia** para dimensionar o stop
+ * daquele dia. Chamar `calcATR(velas.slice(0, i))` para cada `i` daria o número
+ * certo e seria quadrático — 1.000 velas viram 500.000 iterações de suavização.
+ * Pior: seriam DUAS definições do mesmo conceito vivendo lado a lado, que é o
+ * que a invariante nº 7 existe para impedir. Aqui a suavização é a mesma, o
+ * `trueRanges` é o mesmo, e só o que se devolve muda.
+ *
+ * ⚠️ ALINHAMENTO: `tr[i]` descreve a vela `i+1` (True Range precisa do
+ * fechamento anterior). A semente é a média dos `period` primeiros TRs, e ela
+ * descreve a vela de índice `period`. Antes disso o ATR **não existe** e o
+ * valor é `null` — não zero. ATR zero é uma vela sem amplitude, e um stop
+ * calculado sobre ele seria colado no preço; `null` obriga quem lê a pular o
+ * dia, que é o comportamento correto durante o aquecimento.
+ */
+export function calcATRSerie(candles: Candle[], period = 14): Array<number | null> {
+  const out: Array<number | null> = new Array(candles.length).fill(null);
+  if (candles.length < period + 1) return out;
+  const tr = trueRanges(candles);
+  if (tr.length < period) return out;
+
+  let atr = tr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  out[period] = atr;
+  for (let i = period; i < tr.length; i++) {
+    atr = (atr * (period - 1) + tr[i]) / period;
+    out[i + 1] = atr;
+  }
+  return out;
 }
 
 // ─── ADX (Average Directional Index, Wilder) ────────────────────────────
@@ -573,7 +672,16 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
  * Compute the full indicator set from raw candles of ANY source — Binance
  * klines (CEX symbols) or GeckoTerminal OHLCV (DEX pools, E1). Pure, no I/O.
  */
-function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], c1d: Candle[], c1w: Candle[]): SymbolIndicators {
+/**
+ * Exportada para o BACKTEST POR PLAYBOOK (03/08).
+ *
+ * Ela é PURA — só depende dos candles que recebe — e é justamente isso que
+ * permite reconstruir o retrato técnico em qualquer instante do passado: basta
+ * passar as séries CORTADAS naquele instante. Sem essa propriedade, medir
+ * estratégia no histórico exigiria reimplementar todos os indicadores, e duas
+ * implementações do mesmo indicador divergem em silêncio.
+ */
+export function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], c1d: Candle[], c1w: Candle[]): SymbolIndicators {
   const empty: SymbolIndicators = {
     symbol, price: null, rsi14: null, ema20: null, ema50: null, macd: null,
     atr14: null, atrPct: null, adx: null, regime: "TRANSITIONING",
@@ -871,6 +979,50 @@ export async function getMarketIndicators(symbols: string[]): Promise<MarketIndi
     ...ind,
     confidenceScore: computeConfidenceScore(ind, obMap.get(ind.symbol), fearGreed),
   }));
+
+  /**
+   * ⚠️⚠️ A MESA CEGA TEM DE APARECER NO LEDGER (16/08).
+   *
+   * Descoberto conferindo por que a GERI não escaneava depois de voltar de
+   * Valhalla: **as mesas de CEX pararam de ver preço às 00:30 e ninguém soube
+   * por catorze horas.**
+   *
+   *     strat_ai_tick   → offered: 0, candidates: 0, brainRan: false
+   *     VÖLUNDR         → último sinal 16/08 00:30
+   *     SKAÐI           → último sinal 16/08 00:30
+   *
+   * E o lado DEX seguia normal no mesmo tick (`scanned: 8`, 63 pools na ULLR),
+   * o que localiza o problema na fonte de CEX, não no cron.
+   *
+   * ⚠️ O MODO DE FALHA É O DE SEMPRE, E É O PIOR: `fetchCandles` faz
+   * `if (!res.ok) return []` e `catch { return [] }`. Geo-bloqueio, rate limit,
+   * queda da fonte e "não há dados" produzem BYTE POR BYTE o mesmo resultado.
+   * Sem vela, `candidateAttempts` não oferece nada e `buildScanInstruction`
+   * devolve `null` — as duas famílias de mesa emudecem, cada uma por um caminho
+   * diferente, e nenhuma grava evento.
+   *
+   * Isto NÃO conserta a fonte: conserta a INVISIBILIDADE. Uma mesa parada
+   * porque o mercado não deu setup e uma mesa parada porque não enxerga preço
+   * são coisas opostas, e até hoje a tela mostrava as duas do mesmo jeito.
+   *
+   * ⚠️ Só grava quando há algo a dizer — nenhum evento no caminho feliz. Um
+   * evento por tick de 30 minutos em cima do caminho normal enterraria o sinal
+   * que este próprio evento existe para dar.
+   */
+  // `price` é anulável: preço nulo E preço zero são igualmente cegos.
+  const cegos = indicators.filter((i) => !(Number(i.price) > 0)).map((i) => i.symbol);
+  if (symbols.length > 0 && cegos.length > 0) {
+    recordEvent("market_data_cego", { meta: {
+      pedidos: symbols.length,
+      cegos: cegos.length,
+      simbolos: cegos.slice(0, 12),
+      livros: books.length,
+      fonte: BINANCE_DATA,
+      nota: cegos.length === symbols.length
+        ? "NENHUM símbolo com preço — a fonte de CEX está inalcançável, não é falta de setup"
+        : "parte dos símbolos sem preço",
+    } });
+  }
 
   return { indicators, orderBooks: books, fearGreed };
 }

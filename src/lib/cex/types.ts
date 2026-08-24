@@ -29,8 +29,20 @@ export interface CexCredentials {
   apiSecret:  string;
   /** OKX uses a passphrase as a third leg. Other exchanges ignore it. */
   passphrase?: string;
-  /** Whether the keys are marked "trade-only" by the user (no withdraw scope). */
-  readOnly?:  boolean;
+  /**
+   * ⚠️ AQUI EXISTIA `readOnly?: boolean` — removido na Fase 7 (09/08).
+   *
+   * Era gravado FIXO em `true` por `CexSettings.tsx` em toda chave salva; o
+   * comentário dizia "marked by the user" e o usuário não marcava nada; o nome
+   * dizia `readOnly` e o significado pretendido era "trade-only" (coisas
+   * diferentes — só-leitura não negocia); e NINGUÉM lia o campo. Um controle
+   * que só existia como palavra.
+   *
+   * O de verdade está em `@/lib/cex/permissoes.ts`: o SERVIDOR pergunta à
+   * corretora antes de guardar a credencial, e o veredito fica gravado em
+   * `autopilot_sessions.key_permission`. Não recriar este campo no cliente —
+   * o cliente não tem como provar nada sobre a própria chave.
+   */
 }
 
 export interface CexBalance {

@@ -91,14 +91,14 @@ export default function TierControlPanel() {
         </button>
       </div>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginBottom: 8 }}>{err}</div>}
-      {msg && <div style={{ color: "var(--adm-green)", fontSize: 10, marginBottom: 8 }}>{msg}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      {msg && <div style={{ color: "var(--adm-green)", fontSize: 13, marginBottom: 8 }}>{msg}</div>}
 
       {result && (
         <>
           <div className="adm-stat">
             <span className="adm-stat-label">WALLET</span>
-            <span style={{ fontSize: 9, color: "var(--adm-cyan)", fontFamily: "monospace", wordBreak: "break-all" }}>
+            <span style={{ fontSize: 12, color: "var(--adm-cyan)", fontFamily: "monospace", wordBreak: "break-all" }}>
               {result.wallet}
             </span>
           </div>
@@ -106,11 +106,11 @@ export default function TierControlPanel() {
             <>
               <div className="adm-stat">
                 <span className="adm-stat-label">CHAIN</span>
-                <span className="adm-stat-value" style={{ fontSize: 11 }}>{result.user.wallet_chain.toUpperCase()}</span>
+                <span className="adm-stat-value" style={{ fontSize: 14 }}>{result.user.wallet_chain.toUpperCase()}</span>
               </div>
               <div className="adm-stat">
                 <span className="adm-stat-label">LAST SEEN</span>
-                <span style={{ fontSize: 9, color: "var(--adm-ink-2)" }}>
+                <span style={{ fontSize: 12, color: "var(--adm-ink-2)" }}>
                   {new Date(result.user.last_seen_at).toLocaleString()}
                 </span>
               </div>
@@ -130,7 +130,7 @@ export default function TierControlPanel() {
           </div>
 
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.2em", marginBottom: 6 }}>
+            <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.2em", marginBottom: 6 }}>
               GRANT TIER
             </div>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>

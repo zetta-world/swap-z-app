@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getCronHeartbeats, pingAnthropic, pingAiProviders } from "@/lib/admin/health";
+import { getCronHeartbeats, pingAiProviders } from "@/lib/admin/health";
+import { checkExternalDeps, summarizeDeps } from "@/lib/admin/deps";
 
 export const dynamic = "force-dynamic";
 
@@ -11,39 +12,19 @@ const STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75, radar: 
 
 type Ping = { name: string; ok: boolean; latencyMs: number | null; note?: string };
 
-async function ping(name: string, url: string): Promise<Ping> {
-  const start = Date.now();
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 4000);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
-    return { name, ok: res.ok, latencyMs: Date.now() - start };
-  } catch {
-    return { name, ok: false, latencyMs: null };
-  } finally {
-    clearTimeout(t);
-  }
-}
-
 export async function GET(): Promise<NextResponse> {
   await requireAdmin();
   const db = getSupabaseAdmin();
-  const [heartbeats, pings, anthropic, aiProviders] = await Promise.all([
+  const [heartbeats, external, aiProviders] = await Promise.all([
     getCronHeartbeats(),
-    Promise.all([
-      // data-api.binance.vision is Binance's public market-data mirror; unlike
-      // api.binance.com it is NOT geo-blocked from US serverless IPs (Vercel
-      // iad1/sfo1), so this reflects real Binance reachability instead of a
-      // permanent 451 false-positive.
-      ping("Binance",       "https://data-api.binance.vision/api/v3/ping"),
-      ping("CoinGecko",     "https://api.coingecko.com/api/v3/ping"),
-      ping("GeckoTerminal", "https://api.geckoterminal.com/api/v2/networks?page=1"),
-    ]),
-    // Real /v1/models check (zero inference cost) — replaces the old
-    // "had an analysis in 2h" proxy that went falsely DOWN between cron runs.
-    pingAnthropic(),
-    // The Ferrari's whole model stack (DeepSeek / Kimi / Mistral / Grok / …) —
-    // only the providers with a key configured are pinged.
+    // CAMINHO DO DINHEIRO (29/07). Antes aqui só havia pings genéricos — um
+    // `/api/v3/ping` da Binance prova que o host responde, não que os candles
+    // vêm. E Jupiter, 0x, LiFi e Gate.io não eram checados de forma nenhuma:
+    // foi assim que a morte do endpoint da Jupiter passou dias invisível.
+    // Agora cada dependência é exercitada com uma chamada REAL e declara o que
+    // quebra quando cai (src/lib/admin/deps.ts).
+    checkExternalDeps(),
+    // Stack de modelos (DeepSeek / Kimi / Mistral / …) — só os com chave.
     pingAiProviders(),
   ]);
 
@@ -54,13 +35,24 @@ export async function GET(): Promise<NextResponse> {
     return { name, last, ageMin, stale: ageMin == null || ageMin > staleMin };
   });
 
+  // Lista achatada — compatibilidade com quem já consumia `deps`.
   const deps: Ping[] = [
-    ...pings,
+    ...external.map((d) => ({ name: d.name, ok: d.ok, latencyMs: d.latencyMs, note: d.note })),
     ...aiProviders,
-    { name: "Supabase",  ok: !!db,            latencyMs: null },
-    { name: "Anthropic", ok: anthropic.ok,    latencyMs: anthropic.latencyMs, note: anthropic.note },
+    { name: "Supabase", ok: !!db, latencyMs: null },
   ];
 
-  const allOk = crons.every((c) => !c.stale) && deps.every((d) => d.ok);
-  return NextResponse.json({ ok: allOk, crons, deps, fetchedAt: new Date().toISOString() });
+  const { criticalDown, verdict } = summarizeDeps(external);
+  // `ok` reflete o que DERRUBA a plataforma. Um modelo de IA fora ou o índice
+  // de sentimento fora não é a mesma coisa que o agregador de swap fora — tratar
+  // tudo igual foi o que fez o alarme virar ruído e ninguém olhar.
+  const allOk = crons.every((c) => !c.stale) && criticalDown.length === 0;
+
+  return NextResponse.json({
+    ok: allOk, crons, deps,
+    external,            // com purpose/breaks/impact — é o que o painel mostra
+    verdict,
+    criticalDown: criticalDown.map((d) => d.name),
+    fetchedAt: new Date().toISOString(),
+  });
 }

@@ -1,10 +1,10 @@
+import Anthropic from "@anthropic-ai/sdk";
 /**
  * Model provider seam — the "acoplável" layer.
  *
  * One normalized interface over every LLM backend, so ZION can swap or add
  * models without the callers caring which vendor answered. Today it wraps two
  * backends:
- *   • anthropicChat     — native Anthropic SDK (prompt caching supported)
  *   • openaiCompatChat  — any OpenAI-compatible endpoint (Kimi/Moonshot,
  *                          DeepSeek, OpenRouter, Together, Groq, Fireworks…)
  *
@@ -15,7 +15,6 @@
  * the pre-seam direct SDK calls.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 
 export interface NormalizedUsage {
   inTokens:         number;  // uncached input
@@ -53,6 +52,17 @@ export interface ChatRequest {
 const DEFAULT_TIMEOUT = 40_000;
 
 /** Anthropic (native SDK). maxRetries:0 — callers own their own fallback (N1). */
+/**
+ * ⚠️ `anthropicChat` VOLTOU EM 22/08, e o motivo importa.
+ *
+ * Em 21/08 eu a apaguei tratando a migração para Kimi como definitiva. Era uma
+ * PAUSA por falta de crédito — o dono disse depois: *"estou sem crédito na
+ * Anthropic para fazer os testes, depois eu volto"*. Apagar transformou uma
+ * decisão de orçamento em tarefa de código.
+ *
+ * Agora os dois caminhos convivem e quem escolhe é `AI_PROVIDER` (ver
+ * `src/lib/ai/ativo.ts`). Trocar de provedor é uma variável, não um deploy.
+ */
 export async function anthropicChat(req: ChatRequest, apiKey: string): Promise<ChatResult> {
   const client = new Anthropic({ apiKey, maxRetries: 0, timeout: req.timeoutMs ?? DEFAULT_TIMEOUT });
   const params = {
@@ -64,8 +74,6 @@ export async function anthropicChat(req: ChatRequest, apiKey: string): Promise<C
     messages: [{ role: "user" as const, content: req.user }],
   };
   if (req.jsonSchema) {
-    // Structured outputs — GA on the API; typed loosely here so an older SDK's
-    // param type doesn't block the (pass-through) field.
     (params as Record<string, unknown>).output_config = { format: { type: "json_schema", schema: req.jsonSchema } };
   }
   const msg = await client.messages.create(params);
@@ -73,6 +81,60 @@ export async function anthropicChat(req: ChatRequest, apiKey: string): Promise<C
   const text = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
   return {
     text, model: req.model,
+    usage: {
+      inTokens:         u.input_tokens,
+      outTokens:        u.output_tokens,
+      cachedTokens:     u.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+    },
+  };
+}
+
+/**
+ * STREAMING pela Anthropic — o irmão de `openaiCompatStream`.
+ *
+ * ⚠️ ESTE NÃO EXISTIA ANTES DA MIGRAÇÃO: o ZION chamava o SDK direto dentro da
+ * rota, com o prompt montado lá. Trazer o streaming para cá é o que permite a
+ * rota ter UM caminho e o provedor ser escolha de ambiente.
+ *
+ * ⚠️ E O CACHE DE PROMPT VOLTA COM ELE. Os blocos de sistema recuperam o
+ * `cache_control`, que é o que faz a fundação de ~10K tokens ser cobrada a 0,1×
+ * no reuso. Foi exatamente o que a migração para Kimi perdeu — e o que torna a
+ * volta economicamente diferente, não só uma troca de nome.
+ */
+export async function anthropicStream(
+  req: ChatRequest & { systemBlocks?: string[] },
+  apiKey: string,
+  onDelta: (texto: string) => void,
+  signal?: AbortSignal,
+): Promise<StreamResult> {
+  const client = new Anthropic({ apiKey, maxRetries: 0 });
+
+  /**
+   * ⚠️ CADA BLOCO CACHEADO SEPARADAMENTE, e a ORDEM é a economia. O primeiro é
+   * a fundação (idêntica em toda chamada), o segundo o modo (4 variantes). Um
+   * bloco só, concatenado, perderia o acerto de cache sempre que o modo mudasse.
+   */
+  const blocos = (req.systemBlocks?.length ? req.systemBlocks : [req.system])
+    .filter((b) => b.trim().length > 0);
+  const system = blocos.map((text, i) => (
+    // O último bloco costuma variar por requisição (idioma) — não vale cachear.
+    i < blocos.length - 1
+      ? { type: "text" as const, text, cache_control: { type: "ephemeral" as const } }
+      : { type: "text" as const, text }
+  ));
+
+  const stream = await client.messages.stream(
+    { model: req.model, max_tokens: req.maxTokens, system,
+      messages: [{ role: "user" as const, content: req.user }] },
+    { signal },
+  );
+  stream.on("text", (delta) => onDelta(delta));
+
+  const final = await stream.finalMessage();
+  const u = final.usage;
+  return {
+    model: req.model,
     usage: {
       inTokens:         u.input_tokens,
       outTokens:        u.output_tokens,
@@ -115,14 +177,26 @@ export async function openaiCompatChat(
     }
     const data = await res.json() as {
       choices?: Array<{ message?: { content?: string } }>;
-      usage?:   { prompt_tokens?: number; completion_tokens?: number };
+      // completion_tokens_details.reasoning_tokens: xAI (and other reasoning
+      // models) bill an internal trace SEPARATELY from the completion. The
+      // July invoice showed 359.2K reasoning tokens ($0.90) against 140K
+      // completion tokens ($0.35) — 72% of Grok's output cost was invisible
+      // to our own accounting because we only read completion_tokens.
+      usage?: {
+        prompt_tokens?: number; completion_tokens?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      };
     };
     return {
       text:  data.choices?.[0]?.message?.content ?? "",
       model: req.model,
       usage: {
-        inTokens:         data.usage?.prompt_tokens ?? 0,
-        outTokens:        data.usage?.completion_tokens ?? 0,
+        inTokens:  data.usage?.prompt_tokens ?? 0,
+        // Some providers report completion_tokens EXCLUDING the reasoning
+        // trace they bill for; when the detail is present and not already
+        // included, add it so FINANCE stops under-reporting the real bill.
+        outTokens: (data.usage?.completion_tokens ?? 0)
+          + (data.usage?.completion_tokens_details?.reasoning_tokens ?? 0),
         cachedTokens:     0,
         cacheWriteTokens: 0,
       },
@@ -143,4 +217,115 @@ export function openaiCompatConfigFromEnv(): { apiKey: string; baseUrl: string; 
     baseUrl: process.env.KIMI_BASE_URL ?? "https://api.moonshot.ai/v1",
     model:   process.env.KIMI_MODEL   ?? "kimi-k2.6",
   };
+}
+
+/**
+ * STREAMING num endpoint OpenAI-compatível — o que o ZION precisa e
+ * `openaiCompatChat` não faz.
+ *
+ * ⚠️⚠️ POR QUE UM IRMÃO E NÃO UM PARÂMETRO. `openaiCompatChat` devolve o texto
+ * inteiro numa Promise; o ZION entrega token a token para o navegador enquanto o
+ * modelo escreve. São contratos diferentes — espremer os dois na mesma função
+ * daria um retorno que às vezes é texto e às vezes é iterador, e todo chamador
+ * teria de saber qual.
+ *
+ * ⚠️ E A CONTA DE TOKENS SÓ CHEGA NO FIM. O padrão OpenAI só manda `usage` se
+ * pedirmos `stream_options.include_usage`, e ela vem no ÚLTIMO evento, depois
+ * de todo o texto. Sem esse pedido explícito o gasto some — e um custo que não
+ * aparece é o que fez as mesas oráculo pagarem API por três semanas depois de
+ * aposentadas.
+ */
+export interface StreamResult {
+  usage: NormalizedUsage;
+  model: string;
+}
+
+export async function openaiCompatStream(
+  req: ChatRequest,
+  cfg: { apiKey: string; baseUrl: string },
+  onDelta: (texto: string) => void,
+  signal?: AbortSignal,
+): Promise<StreamResult> {
+  const res = await fetch(`${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
+    signal,
+    body: JSON.stringify({
+      model: req.model,
+      max_tokens: req.maxTokens,
+      temperature: req.temperature,
+      stream: true,
+      // ⚠️ Sem isto o `usage` nunca chega e o custo fica invisível.
+      stream_options: { include_usage: true },
+      messages: [
+        { role: "system", content: req.system },
+        { role: "user",   content: req.user },
+      ],
+      /**
+       * ⚠️⚠️ `extraBody` FALTAVA AQUI, e o ZION devolveu 400 em produção.
+       *
+       * O registro avisa em texto: o `kimi-k2.6` amarra a temperatura ao MODO de
+       * raciocínio — thinking-ON exige 1, thinking-OFF exige 0,6, e "sending the
+       * wrong one 400s". O `extraBody` do provedor é justamente
+       * `{ thinking: { type: "disabled" } }`.
+       *
+       * Eu passei a temperatura de 0,6 (o valor do modo instantâneo) e NÃO passei
+       * o campo que desliga o thinking. Resultado: temperatura de um modo com o
+       * raciocínio do outro → 400 em toda chamada.
+       *
+       * Passei `extraBody` corretamente em `narratives` e no `autopilot` — que
+       * usam `openaiCompatChat`. Esqueci na função que EU acabei de escrever, que
+       * não tinha o campo. Copiar a assinatura de um irmão que funciona é mais
+       * seguro que reescrevê-la de memória.
+       */
+      ...(req.extraBody ?? {}),
+    }),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`${cfg.baseUrl} respondeu ${res.status}`);
+  }
+
+  const usage: NormalizedUsage = { inTokens: 0, outTokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
+  const leitor = res.body.getReader();
+  const dec = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    const { done, value } = await leitor.read();
+    if (done) break;
+    buffer += dec.decode(value, { stream: true });
+
+    /**
+     * ⚠️ CORTA EM LINHA COMPLETA E GUARDA O RESTO. Um chunk de rede pode partir
+     * um evento SSE no meio de um JSON; tratar o pedaço como linha inteira faz
+     * `JSON.parse` lançar e derruba a resposta no meio da frase.
+     */
+    const linhas = buffer.split("\n");
+    buffer = linhas.pop() ?? "";
+
+    for (const linha of linhas) {
+      const t = linha.trim();
+      if (!t.startsWith("data:")) continue;
+      const corpo = t.slice(5).trim();
+      if (corpo === "[DONE]") continue;
+      try {
+        const j = JSON.parse(corpo) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number;
+                    prompt_tokens_details?: { cached_tokens?: number } };
+        };
+        const texto = j.choices?.[0]?.delta?.content;
+        if (texto) onDelta(texto);
+        if (j.usage) {
+          usage.inTokens = j.usage.prompt_tokens ?? 0;
+          usage.outTokens = j.usage.completion_tokens ?? 0;
+          usage.cachedTokens = j.usage.prompt_tokens_details?.cached_tokens ?? 0;
+        }
+      } catch {
+        // ⚠️ Um evento ilegível não derruba o resto: o texto já entregue vale, e
+        // o próximo chunk normalmente traz a continuação.
+      }
+    }
+  }
+  return { usage, model: req.model };
 }

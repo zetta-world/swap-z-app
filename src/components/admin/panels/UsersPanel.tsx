@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { corDoPnl } from "@/lib/admin/cor-resultado";
 
 type WalletRow = {
   wallet: string; ops: number; volume: number; pnl: number; grossWin: number; grossLoss: number;
@@ -20,13 +21,14 @@ type Detail = {
 
 const short = (w: string) => `${w.slice(0, 6)}…${w.slice(-4)}`;
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
-const pnlColor = (n: number) => (n >= 0 ? "var(--adm-green)" : "var(--adm-red)");
+/** ⚠️ Zero e nulo eram VERDES aqui. Ver `corDoPnl`. */
+const pnlColor = (n: number | null | undefined) => corDoPnl(n);
 const date = (s: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }) : "—");
 
 function Tile({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div style={{ flex: 1, minWidth: 70, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "5px 7px" }}>
-      <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.06em" }}>{label}</div>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.06em" }}>{label}</div>
       <div style={{ fontSize: 13, color: color ?? "var(--adm-ink)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
     </div>
   );
@@ -67,22 +69,22 @@ export default function UsersPanel() {
         <input className="adm-input" placeholder="cola uma wallet…" value={query} spellCheck={false}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && query.trim()) openWallet(query.trim()); }}
-          style={{ flex: 1, fontSize: 10, fontFamily: "monospace", background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "5px 8px", color: "var(--adm-ink)" }} />
+          style={{ flex: 1, fontSize: 13, fontFamily: "monospace", background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "5px 8px", color: "var(--adm-ink)" }} />
         <button className="adm-toggle" onClick={() => query.trim() && openWallet(query.trim())}>GO</button>
         {detail && <button className="adm-toggle" onClick={() => setDetail(null)}>← LISTA</button>}
       </div>
 
-      {error && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
       {loading && !list && <div className="adm-shimmer" style={{ height: 100 }} />}
 
       {detail ? (
         <div>
           {/* Identity */}
           <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--adm-cyan)" }}>{short(detail.wallet)}</span>
-            <span style={{ fontSize: 9, color: "var(--adm-violet)" }}>{detail.tier}{detail.tierSource ? ` (${detail.tierSource})` : ""}</span>
-            {detail.chain && <span style={{ fontSize: 9, color: "var(--adm-ink-3)" }}>{detail.chain.toUpperCase()}</span>}
-            <span style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>1ª {date(detail.firstSeen)} · últ {date(detail.lastSeen)}</span>
+            <span style={{ fontFamily: "monospace", fontSize: 14, color: "var(--adm-cyan)" }}>{short(detail.wallet)}</span>
+            <span style={{ fontSize: 12, color: "var(--adm-violet)" }}>{detail.tier}{detail.tierSource ? ` (${detail.tierSource})` : ""}</span>
+            {detail.chain && <span style={{ fontSize: 12, color: "var(--adm-ink-3)" }}>{detail.chain.toUpperCase()}</span>}
+            <span style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>1ª {date(detail.firstSeen)} · últ {date(detail.lastSeen)}</span>
           </div>
 
           {/* Financial X-ray */}
@@ -132,10 +134,10 @@ export default function UsersPanel() {
 
           {/* Browsing behaviour */}
           <div className="adm-category" style={{ marginTop: 6 }}>Navegação · {detail.browsing.pageViews} page-views</div>
-          {detail.browsing.byPath.length === 0 ? <div style={{ color: "var(--adm-ink-4)", fontSize: 9 }}>—</div> : (
+          {detail.browsing.byPath.length === 0 ? <div style={{ color: "var(--adm-ink-4)", fontSize: 12 }}>—</div> : (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {detail.browsing.byPath.map((p) => (
-                <span key={p.path} style={{ fontSize: 8, fontFamily: "monospace", color: "var(--adm-ink-3)", border: "1px solid var(--adm-border)", borderRadius: 4, padding: "1px 5px" }}>
+                <span key={p.path} style={{ fontSize: 11, fontFamily: "monospace", color: "var(--adm-ink-3)", border: "1px solid var(--adm-border)", borderRadius: 4, padding: "1px 5px" }}>
                   {p.path} <span style={{ color: "var(--adm-cyan)" }}>{p.n}</span>
                 </span>
               ))}
@@ -145,9 +147,9 @@ export default function UsersPanel() {
           {/* Recent operations */}
           <div className="adm-category" style={{ marginTop: 6 }}>Operações recentes</div>
           <div className="adm-scroll" style={{ maxHeight: 130 }}>
-            {detail.operations.length === 0 ? <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>Nenhuma.</div> :
+            {detail.operations.length === 0 ? <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>Nenhuma.</div> :
               detail.operations.map((o, i) => (
-                <div key={i} style={{ display: "flex", gap: 6, padding: "3px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 9, alignItems: "center" }}>
+                <div key={i} style={{ display: "flex", gap: 6, padding: "3px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 12, alignItems: "center" }}>
                   <span style={{ color: "var(--adm-ink-3)", flexShrink: 0 }}>{date(o.created_at)}</span>
                   {o.side && <span style={{ color: o.side === "buy" ? "var(--adm-green)" : "var(--adm-red)", width: 24 }}>{o.side}</span>}
                   <span style={{ color: "var(--adm-ink)", flex: 1, fontFamily: "monospace" }}>{o.pair ?? o.kind}</span>
@@ -159,7 +161,7 @@ export default function UsersPanel() {
         </div>
       ) : (
         list && (
-          list.length === 0 ? <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>Sem atividade de carteira ainda.</div> :
+          list.length === 0 ? <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>Sem atividade de carteira ainda.</div> :
           <table className="adm-table">
             <thead><tr><th>WALLET</th><th>TIER</th><th>OPS</th><th>VOL</th><th>P&L</th><th>👁</th><th>🤖</th></tr></thead>
             <tbody>

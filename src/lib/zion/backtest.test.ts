@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { extractSuggestion, resolveOne, extractCards } from "@/lib/zion/backtest";
+import { extractSuggestion, resolveOne, extractCards, runBacktestScanForProvider } from "@/lib/zion/backtest";
 import type { ActionCard } from "@/lib/zion/parse";
 import type { ZionSuggestionRow } from "@/lib/supabase/types";
+import { readFileSync } from "node:fs";
 
 /** Minimal valid card factory — only the fields the extractor reads. */
 function card(over: Partial<ActionCard>): ActionCard {
@@ -99,6 +100,29 @@ describe("extractSuggestion — money-in gate", () => {
     expect(extractSuggestion(sell, refs, down)).not.toBeNull();
   });
 
+  it("stop floor: rejects a stop inside the symbol's noise band (the agents' own lesson)", () => {
+    const atr = new Map([["SOL", 1.4]]); // floor = 1.5 × 1.4 = 2.1%
+    // 1.5% stop with a 4% target: RR 2.6 passes, but the stop is noise bait.
+    const tight = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "4", price: "104" }], stopLoss: "98.5" });
+    expect(extractSuggestion(tight, refs, regimes, { atrPctBySymbol: atr })).toBeNull();
+    // Same card with an honest 2.5% stop and a target that keeps RR >= 2.
+    const honest = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "6", price: "106" }], stopLoss: "97.5" });
+    expect(extractSuggestion(honest, refs, regimes, { atrPctBySymbol: atr })).not.toBeNull();
+  });
+
+  it("stop floor: flat 1.2% applies when the symbol has no ATR read", () => {
+    const sub = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "3", price: "103" }], stopLoss: "99" }); // 1% stop
+    expect(extractSuggestion(sub, refs, regimes)).toBeNull();
+  });
+
+  it("stop floor: the CONTROL group is exempt (a treated control is no control)", () => {
+    const sub = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "3", price: "103" }], stopLoss: "99" });
+    expect(extractSuggestion(sub, refs, regimes, { stopFloor: false })).not.toBeNull();
+    // Exemption is ONLY the floor — every other money gate still applies.
+    const badRR = card({ entryPrice: "100", exits: [{ label: "TP1", profitPct: "1", price: "101" }], stopLoss: "97" });
+    expect(extractSuggestion(badRR, refs, regimes, { stopFloor: false })).toBeNull();
+  });
+
   it("regime gate: TRANSITIONING and missing regime pass both sides", () => {
     const trans = new Map([["SOL", "TRANSITIONING"]]);
     expect(extractSuggestion(card({}), refs, trans)).not.toBeNull();
@@ -130,6 +154,7 @@ function row(over: Partial<ZionSuggestionRow>): ZionSuggestionRow {
     regime: null, source: "test", horizon_hours: 72, status: "open",
     outcome_pct: null, resolved_price: null,
     created_at: new Date(T0).toISOString(), resolved_at: null,
+    chain: null, pool_address: null, archived_at: null,
     ...over,
   };
 }
@@ -205,5 +230,34 @@ describe("extractCards", () => {
   it("returns an empty array for a valid-but-empty response and for garbage", () => {
     expect(extractCards('{"cards": []}')).toHaveLength(0);
     expect(extractCards("no cards here at all")).toHaveLength(0);
+  });
+});
+
+/**
+ * ⚠️ QUEM PAGA A CHAMADA (16/08) — um carimbo de custo na mesa errada.
+ *
+ * `runBacktestScanForProvider` gravava o custo sempre como
+ * `backtest_${provider.id}`, porque nasceu servindo só ao torneio. O RADAR
+ * também a chama, com o próprio cérebro — e todo gasto dele saía com o nome da
+ * mesa do torneio que usa o mesmo modelo.
+ *
+ * O sintoma apareceu conferindo o banco: `backtest_mistral` com chamadas em
+ * 15/08 às 22:52, quando a GERI estava ARQUIVADA e não podia ter rodado. Não
+ * tinha rodado — era o HEIMDALL, com o nome dela.
+ */
+describe("custo de IA — o carimbo vai para quem paga", () => {
+  it("o padrão continua sendo a mesa do torneio", () => {
+    // A assinatura tem default: nenhum chamador existente muda de comportamento.
+    const fn = runBacktestScanForProvider;
+    expect(fn.length).toBe(2); // terceiro parâmetro é opcional
+  });
+
+  it("o radar passa o PRÓPRIO nome, e não o do provedor", () => {
+    // ⚠️ Lido do arquivo: o defeito era exatamente a AUSÊNCIA do argumento, e
+    // nenhum teste de unidade sobre a função pega uma chamada que não existe.
+    // A verificação tem de olhar o ponto de chamada.
+    const rota = readFileSync("src/app/api/radar/route.ts", "utf8");
+    expect(rota).toContain('runBacktestScanForProvider(marketData, radarBrain, "radar")');
+    expect(rota).not.toMatch(/runBacktestScanForProvider\(marketData,\s*radarBrain\)/);
   });
 });

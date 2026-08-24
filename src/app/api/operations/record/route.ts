@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSession } from "@/lib/auth/session";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -17,6 +18,11 @@ interface Body {
   side?:       string;
   volumeUsd?:  number;
   pnlUsd?:     number;
+  /** O que a plataforma RECEBEU nesta operação — ver a migração 0024. */
+  platformFeeUsd?:    number;
+  platformFeeAmount?: string;
+  platformFeeToken?:  string;
+  platformFeeBps?:    number;
   status?:     string;
   route?:      string;
   /** Real trade timestamp (unix ms) from the client tx-history entry. Drives
@@ -29,6 +35,18 @@ interface Body {
  * POST /api/operations/record — the browser syncs each completed operation
  * here (idempotent on `ref`). Analytics-grade capture for ZION learning, NOT
  * an execution path: it places nothing, moves nothing. Best-effort.
+ *
+ * ⚠ CORREÇÃO 30/07 — ATRIBUIÇÃO VINHA DO CLIENTE.
+ *
+ * A carteira era lida de `body.wallet`, sem checar sessão, justificada por
+ * "isto é analytics, não auth". Só que esta tabela alimenta o painel RECEITA e
+ * o livro de operações: qualquer um podia inflar o volume da plataforma ou
+ * atribuir um trade forjado à carteira de outra pessoa. Não move fundo — mas
+ * corrompe exatamente os números que passamos a sessão inteira tornando
+ * honestos, e um número forjável tem valor zero para decidir qualquer coisa.
+ *
+ * Agora a carteira vem da SESSÃO. Sem sessão, o registro entra ANÔNIMO em vez
+ * de aceitar a alegação do cliente: perde-se atribuição, não integridade.
  */
 export async function POST(req: NextRequest) {
   const rl = rateLimit(`ops_record:${getClientId(req.headers)}`, RL_OPTS);
@@ -41,6 +59,10 @@ export async function POST(req: NextRequest) {
   if (!body.kind || !body.status) {
     return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
   }
+
+  // A carteira NUNCA vem do corpo: quem diz quem você é é o cookie assinado.
+  const session = await getSession();
+  const sessionWallet = session?.sub ?? null;
 
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ ok: false, error: "db_unavailable" }, { status: 503 });
@@ -62,13 +84,27 @@ export async function POST(req: NextRequest) {
   try {
     await db.from("operations").upsert({
       ref:            str(body.ref, 120),
-      wallet_address: str(body.wallet, 80),
+      wallet_address: sessionWallet,   // ignora body.wallet de propósito
       kind:           str(body.kind, 40)!,
       chain:          str(body.chain, 40),
       pair:           str(body.pair, 40),
       side:           str(body.side, 8),
       volume_usd:     num(body.volumeUsd),
       pnl_usd:        num(body.pnlUsd),
+      /**
+       * ⚠️ A ARRECADAÇÃO VEM DO CLIENTE, e o CHECK do banco é a trava.
+       *
+       * Este corpo é enviado pelo navegador, então o número é declarado por
+       * quem opera — igual ao volume. A migração 0024 recusa valor NEGATIVO,
+       * que é a forma de alguém transformar custo em receita com sinal
+       * trocado. Valor inflado continua possível e é problema de outra ordem:
+       * o painel confere a retenção contra os bps do plano, e o explorador
+       * confere contra a cadeia.
+       */
+      platform_fee_usd:    num(body.platformFeeUsd),
+      platform_fee_amount: str(body.platformFeeAmount, 80),
+      platform_fee_token:  str(body.platformFeeToken, 64),
+      platform_fee_bps:    num(body.platformFeeBps),
       status:         str(body.status, 24)!,
       route:          str(body.route, 24),
       // Only set when we have a trustworthy trade time; otherwise omit so the

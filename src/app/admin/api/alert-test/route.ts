@@ -29,7 +29,7 @@ export async function POST(): Promise<NextResponse> {
     });
     const body = await res.json().catch(() => ({})) as { ok?: boolean; description?: string };
     if (body.ok) {
-      recordEvent("alert", { meta: { text: "test alert sent" } });
+      await recordEvent("alert", { meta: { text: "test alert sent" } });
       return NextResponse.json({ ok: true, configured: true });
     }
     return NextResponse.json({ ok: false, configured: true, detail: `Telegram rejected: ${body.description ?? `HTTP ${res.status}`}` });

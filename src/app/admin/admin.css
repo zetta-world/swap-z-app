@@ -5,6 +5,53 @@
  */
 
 /* ── Tokens ──────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+ * PADRÃO INSTITUCIONAL — o que separa "denso" de "apertado" (12/08).
+ *
+ * O pedido foi um painel de banca suíça, e a diferença entre isso e um
+ * amontoado é mecânica, não estética:
+ *
+ *  1. NÚMERO ALINHA COM NÚMERO. Dígito de largura variável faz coluna de
+ *     valores serpentear, e o olho perde a comparação vertical — que é a
+ *     única coisa que uma tabela financeira existe para permitir.
+ *  2. RESPIRO É HIERARQUIA. Sem espaço entre blocos, tudo tem o mesmo peso, e
+ *     o leitor precisa reler para achar o que importa.
+ *  3. MEDIDA DE LINHA. Texto corrido atravessando 1400px de monitor obriga o
+ *     olho a caçar o começo da linha seguinte.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* ⚠️ TABULAR EM TODA A CASCA, não painel a painel. Era decidido caso a caso e
+ * a maioria dos painéis esquecia — então as colunas de valor não alinhavam. */
+.admin-shell {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv01" 1;
+}
+
+/* Respiro entre painéis e dentro deles. Estava tudo colado. */
+.admin-shell main {
+  padding-block: 18px;
+}
+.adm-panel + .adm-panel {
+  margin-top: 16px;
+}
+.adm-panel-body {
+  line-height: 1.65;
+}
+
+/* ⚠️ MEDIDA DE LINHA para texto EXPLICATIVO — e só para ele. As tabelas
+ * precisam da largura inteira; os parágrafos de "por quê", não. */
+.adm-panel-body p,
+.adm-nota {
+  max-width: 78ch;
+}
+
+/* Em monitor grande, o painel ganha ar em vez de esticar a linha. */
+@media (min-width: 1600px) {
+  .admin-shell main {
+    padding-inline: clamp(24px, 4vw, 72px);
+  }
+}
+
 .admin-shell {
   --adm-bg:        #0a0a0c;
   --adm-bg-panel:  #0d0d10;
@@ -13,10 +60,35 @@
   --adm-border-hi: rgba(255 255 255 / 0.14);
 
   /* text scale */
-  --adm-ink:       #e8e8f0;     /* primary text */
-  --adm-ink-2:     #9898b0;     /* secondary */
-  --adm-ink-3:     #5a5a70;     /* muted */
-  --adm-ink-4:     #30303a;     /* very muted / disabled */
+  /* ── TINTA ─────────────────────────────────────────────────────────────
+   * ⚠️ OS DOIS TONS BAIXOS ERAM ILEGÍVEIS, MEDIDOS (12/08).
+   *
+   * O dono disse "a leitura está muito difícil". Medido contra o fundo
+   * (#0a0a0c), o que havia aqui era:
+   *
+   *   --adm-ink-3: #5a5a70  →  2,94:1   (o mínimo legível é 4,5:1)
+   *   --adm-ink-4: #30303a  →  1,51:1   (praticamente invisível)
+   *
+   * E eram justamente esses dois que pintavam rótulo, legenda e o estado
+   * `cinza` — em texto de 8 e 9 pixels. Um painel institucional pode ser
+   * discreto; não pode ser ilegível, e "discreto" virou desculpa para os dois
+   * se confundirem.
+   *
+   * ⚠️ E A RAMPA FOI REFEITA INTEIRA, não só os dois culpados. Subir o `ink-3`
+   * sozinho o encostou no `ink-2` — 1,19:1 entre eles, dois tons virando um. O
+   * contraste com o FUNDO tinha sido resolvido e o contraste ENTRE OS DEGRAUS
+   * quebrado no mesmo movimento: legibilidade ganha, hierarquia perdida.
+   *
+   * Agora os quatro degraus são de 1,66× cada, e o teste exige as duas coisas
+   * — contra o fundo E contra o vizinho. Foi ele que pegou a regressão.
+   *
+   * Os valores estão anotados com o contraste medido. Quem mexer aqui refaz a
+   * conta: abaixo de 4,5:1 volta a ser decoração.
+   */
+  --adm-ink:       #e8e8f0;     /* primário       · 16,23:1 */
+  --adm-ink-2:     #b4b4c8;     /* secundário     ·  9,71:1  (era 7,01) */
+  --adm-ink-3:     #8a8aa2;     /* rótulo/legenda ·  5,88:1  (era 2,94) */
+  --adm-ink-4:     #66667c;     /* muito discreto ·  3,54:1  (era 1,51) */
 
   /* accent palette — terminal hacker colors */
   --adm-cyan:      #00e5ff;     /* data / info */
@@ -131,6 +203,22 @@
   letter-spacing: 0.12em;
   flex-shrink: 0;
 }
+
+/**
+ * ⚠️ O PAINEL NÃO EMPURRA A PÁGINA (12/08).
+ *
+ * O corpo já rolava por dentro (`overflow: auto`), mas o painel em si crescia
+ * com o conteúdo — então um painel alto esticava a fileira, empurrava os
+ * vizinhos para fora da dobra e obrigava a arrastar a página inteira.
+ *
+ * A regra é do dono, e vale para tudo: **cabe na tela, sem arrastar, em
+ * nenhuma direção.** Numa tela de parede ninguém rola, e o que ficou embaixo
+ * da dobra simplesmente não existe para quem olha.
+ *
+ * O teto é por painel, e a rolagem acontece DENTRO da caixa. É a diferença
+ * entre um painel denso e um painel que sequestra o layout dos outros.
+ */
+.adm-panel { max-height: 78vh; }
 
 .adm-panel-body {
   flex: 1;
@@ -491,6 +579,59 @@
 }
 
 /* ── Toggle button ───────────────────────────────────────────────────────── */
+/**
+ * ⚠️ ESTA CLASSE NÃO EXISTIA (04/08).
+ *
+ * Sete botões em cinco painéis usam `adm-btn` — rodar backtest, varrer
+ * calibragem, conferir preços ao vivo, devolver capital, zerar ledger — e a
+ * regra nunca foi escrita. Eles renderizavam como `<button>` cru herdando a
+ * fonte do terminal: texto grande, sem borda, sem fundo, sem cursor.
+ *
+ * O dono descreveu exatamente o sintoma: "nem parece algo clicável". Ele
+ * passou dias achando que tinha rodado varreduras que nunca disparou, porque
+ * os três botões pareciam uma frase só.
+ *
+ * Um controle que não parece controle é pior que um controle escondido: o
+ * operador acha que agiu.
+ */
+.adm-btn {
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+  border: 1px solid var(--adm-border-hi);
+  background: rgba(255 255 255 / 0.03);
+  color: var(--adm-ink-2);
+  /* Cada botão é um bloco com respiro próprio. Sem isto, três deles em
+     sequência viram uma linha de texto contínua — foi o que aconteceu. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.adm-btn:hover:not(:disabled) {
+  color: var(--adm-ink);
+  border-color: var(--adm-cyan);
+  background: rgba(0 229 255 / 0.08);
+}
+
+.adm-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* Trabalho em curso tem que PARECER em curso: o operador precisa saber que
+   clicou, e que ainda não acabou. */
+.adm-btn:disabled {
+  cursor: wait;
+  opacity: 0.55;
+  border-style: dashed;
+}
+
 .adm-toggle {
   font-family: inherit;
   font-size: 9px;
@@ -710,3 +851,126 @@
     padding: 10px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * O HUB DE PLANOS — vitrine com contabilidade, e que CABE.
+ *
+ * ⚠️ A PRIMEIRA VERSÃO NÃO CABIA NA TELA (12/08). Cartas verticais com arte em
+ * 4:3 empilhavam em duas colunas, a terceira quebrava para uma segunda fileira
+ * e saía cortada pela dobra. O dono viu e disse a regra que vale para o painel
+ * inteiro: **tudo tem que caber sem arrastar, em nenhuma direção.**
+ *
+ * Um painel que exige rolagem para mostrar a terceira faixa esconde um terço
+ * da informação de quem só olha — e numa tela de parede ninguém rola.
+ *
+ * A carta virou HORIZONTAL: miniatura da arte à esquerda, dados à direita.
+ * Três faixas ocupam ~240px em vez de ~700px, e a arte continua visível porque
+ * o que ela precisa comunicar é identidade, não detalhe.
+ *
+ * ⚠️ E O CARTÃO É BONITO E O NÚMERO É HONESTO ao mesmo tempo, de propósito.
+ * Arte grande vende o produto; o "COMPRADO 0" ao lado impede que a arte venda
+ * uma tração que não existe.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* ⚠️ O CORPO DO PAINEL NÃO CRESCE SEM LIMITE. Se o conteúdo passar, ele rola
+   DENTRO da própria caixa — a página nunca. É a diferença entre um painel
+   denso e um painel que empurra os vizinhos para fora da tela. */
+.hub-corpo-painel { max-height: 62vh; overflow-y: auto; }
+
+.hub-faixas { display: grid; gap: 6px; margin-bottom: 10px; }
+
+/* A carta horizontal: miniatura + dados. */
+.hub-carta {
+  display: grid; grid-template-columns: 112px 1fr auto;
+  gap: 10px; align-items: center;
+  padding: 6px; overflow: hidden;
+  border: 1px solid var(--adm-line); border-radius: 8px;
+  background: linear-gradient(90deg, rgba(255,255,255,.035), transparent 60%);
+  transition: border-color .2s, background .2s;
+}
+.hub-carta.ativa {
+  border-color: rgba(0,255,255,.4);
+  background: linear-gradient(90deg, rgba(0,255,255,.07), transparent 60%);
+}
+
+/* ⚠️ DUAS ARTES POR FAIXA — passe e Hird. Cada uma rotulada, porque sem o
+   rótulo elas viram "duas imagens bonitas" e o leitor não sabe que são dois
+   produtos com preços diferentes. */
+.hub-artes { display: flex; gap: 4px; }
+.hub-arte {
+  position: relative; width: 52px; height: 52px; margin: 0;
+  border-radius: 6px; overflow: hidden; flex-shrink: 0;
+  border: 1px solid var(--adm-line);
+}
+.hub-arte figcaption {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  font-size: 7px; letter-spacing: .14em; text-align: center;
+  padding: 1px 0; background: rgba(0,0,0,.72);
+}
+.hub-arte.passe figcaption { color: var(--adm-gold); }
+.hub-arte.hird  figcaption { color: var(--adm-cyan); }
+
+.hub-corpo { min-width: 0; }
+.hub-corpo h4 {
+  margin: 0; font-size: 13px; letter-spacing: .08em; color: var(--adm-ink);
+  display: flex; align-items: baseline; gap: 6px;
+}
+.hub-tier {
+  font-size: 8.5px; letter-spacing: .16em; color: var(--adm-ink-3);
+  text-transform: uppercase; border: 1px solid var(--adm-line);
+  border-radius: 3px; padding: 0 4px;
+}
+.hub-runa { color: var(--adm-gold); font-size: 15px; text-shadow: 0 0 10px rgba(255,215,0,.45); }
+.hub-epiteto {
+  margin: 1px 0 0; font-size: 9.5px; letter-spacing: .1em;
+  color: var(--adm-ink-3); text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ⚠️ OS DOIS PREÇOS APARECEM, e o dono apontou que o Hird tinha sumido. São
+   ofertas diferentes — o passe é compra única de 3 anos, o Hird é mensal
+   recorrente — e mostrar só uma esconde metade do produto. */
+.hub-precos {
+  margin: 4px 0 0; font-size: 10px; color: var(--adm-ink-3);
+  display: grid; gap: 1px;
+}
+.hub-precos i { font-style: normal; opacity: .65; font-size: 9px; }
+.hub-precos .passe b { color: var(--adm-gold); font-weight: 600; }
+.hub-precos .hird { color: var(--adm-cyan); }
+.hub-precos .hird b { color: var(--adm-cyan); font-weight: 700; }
+.hub-runa-h { color: var(--adm-cyan); margin-right: 3px; }
+
+/* A coluna de contagem, alinhada à direita. */
+.hub-conta { text-align: right; padding-right: 4px; }
+.hub-conta strong { display: block; font-size: 22px; line-height: 1; }
+.hub-conta strong.vendeu { color: var(--adm-green); text-shadow: 0 0 14px rgba(57,255,115,.35); }
+/* ⚠️ Zero em cinza, nunca em vermelho: ainda não vendemos não é defeito, é o
+   dia de hoje de um produto que não lançou. */
+.hub-conta strong.zerado { color: var(--adm-ink-3); }
+.hub-rot { font-size: 8px; letter-spacing: .14em; color: var(--adm-ink-3); text-transform: uppercase; }
+.hub-cortesia { display: block; margin-top: 2px; font-size: 9px; color: var(--adm-amber); }
+
+.hub-placar {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline;
+  padding: 6px 8px; margin-bottom: 8px;
+  border: 1px solid var(--adm-line); border-radius: 6px;
+  font-size: 10px; letter-spacing: .08em; color: var(--adm-ink-3);
+}
+.hub-placar b { color: var(--adm-ink-2); font-size: 13px; }
+.hub-placar b.vendeu { color: var(--adm-green); }
+.hub-placar b.zerado { color: var(--adm-ink-3); }
+.hub-placar .sep { opacity: .35; }
+
+.hub-titulo { margin: 0 0 4px; font-size: 9px; letter-spacing: .18em; color: var(--adm-ink-3); font-weight: 500; }
+.hub-vazio { margin: 0; font-size: 10.5px; color: var(--adm-ink-3); }
+.hub-ativacoes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.hub-ativacoes li {
+  display: grid; grid-template-columns: 5.6em 1fr 3.8em 4.8em;
+  gap: 6px; align-items: baseline;
+  padding: 3px 2px; border-bottom: 1px solid var(--adm-line); font-size: 10px;
+}
+.hub-ativacoes .q { color: var(--adm-ink-3); font-size: 9px; }
+.hub-ativacoes .w { color: var(--adm-ink-2); font-variant-numeric: tabular-nums; }
+.hub-ativacoes .t { color: var(--adm-cyan); text-transform: uppercase; font-size: 9px; }
+.hub-ativacoes .o { color: var(--adm-amber); font-size: 9px; text-align: right; }
+.hub-ativacoes .o.vendeu { color: var(--adm-green); font-weight: 700; }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { fetchCexOrderStatus } from "@/lib/cex/server";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import { type CexId, type CexCredentials, SUPPORTED_CEX_IDS, CEX_META } from "@/lib/cex/types";
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "method_not_allowed" }, { status: 405 });
   }
 
-  const rl = rateLimit(`cex_order_status:${getClientId(req.headers)}`, RL_OPTS);
+  const rl = await rateLimitDurable(`cex_order_status:${getClientId(req.headers)}`, RL_OPTS);
   if (!rl.ok) {
     return NextResponse.json(
       { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },

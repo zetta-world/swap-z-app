@@ -1,6 +1,8 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AutopilotSessionRow, AutopilotRunRow } from "@/lib/supabase/types";
 import { encryptJson, decryptJson } from "@/lib/crypto/secretbox";
+import { guardarConexao, lerConexaoPorId, decifrarConexao } from "@/lib/cex/conexoes";
+import { recordEvent } from "@/lib/admin/track";
 import type { CexCredentials } from "@/lib/cex/types";
 
 /**
@@ -28,6 +30,13 @@ export interface ArmSessionInput {
   credentials:       CexCredentials;
   /** How long the session may run unattended before auto-expiring (hours). */
   ttlHours:          number;
+  /**
+   * ⚠️ O VEREDITO DA CHAVE, obrigatório (Fase 7). Não é opcional de propósito:
+   * opcional viraria "quem esqueceu de passar grava NULL", e NULL aqui significa
+   * "nunca verificada". Quem chama tem que ter perguntado à corretora antes.
+   */
+  keyPermission:       "so_negocia" | "pode_sacar" | "nao_verificavel";
+  keyPermissionDetail: string;
 }
 
 /**
@@ -44,6 +53,32 @@ export async function armSession(input: ArmSessionInput): Promise<string | null>
     apiSecret:  input.credentials.apiSecret,
     passphrase: input.credentials.passphrase ?? null,
   });
+
+  /**
+   * ⚠️⚠️ ESCRITA DUPLA — T2 da virada do cofre (`docs/PLANO-DCA-AUTOMATICO.md`).
+   *
+   * A chave passa a viver TAMBÉM em `cex_conexoes`, que é o cofre que o DCA já
+   * usa. Sem isto, uma chave ROTACIONADA aqui deixaria o cofre desatualizado e
+   * o DCA operaria com a credencial velha — o pior tipo de bug, porque só
+   * aparece quando a corretora recusa e ninguém sabe por quê.
+   *
+   * ⚠️ FALHA DEGRADA, NÃO DERRUBA. Se o cofre não gravar, a sessão é armada do
+   * mesmo jeito com `conexao_id` nulo, e a leitura cai no `creds_cipher` — que
+   * é exatamente o caminho antigo, ainda intacto. Derrubar o armar do
+   * autopilot por causa de uma tabela que nada lê ainda seria trocar um
+   * problema pequeno por um grande.
+   */
+  const cofre = await guardarConexao({
+    walletAddress: input.walletAddress,
+    exchangeId:    input.exchangeId,
+    credentials:   input.credentials,
+  });
+  if (!cofre.ok) {
+    await recordEvent("cofre_nao_gravou", { meta: {
+      why: "sessão armada SEM elo com o cofre — leitura vai cair no creds_cipher",
+      exchange: input.exchangeId, erro: cofre.erro,
+    } });
+  }
   const today = utcDayKey();
   const expiresAt = new Date(Date.now() + input.ttlHours * 3600_000).toISOString();
 
@@ -60,6 +95,11 @@ export async function armSession(input: ArmSessionInput): Promise<string | null>
       allowed_symbols:     input.allowedSymbols,
       lang:                input.lang,
       creds_cipher:        credsCipher,
+      // `null` quando o cofre falhou: a leitura sabe cair no campo acima.
+      conexao_id:          cofre.ok ? cofre.id : null,
+      key_permission:        input.keyPermission,
+      key_permission_detail: input.keyPermissionDetail.slice(0, 300),
+      key_checked_at:        new Date().toISOString(),
       is_active:           true,
       expires_at:          expiresAt,
       // Reset counters on (re-)arm so a fresh session starts clean.
@@ -131,6 +171,37 @@ export function decryptSessionCreds(row: AutopilotSessionRow): CexCredentials {
   };
 }
 
+/** De onde a credencial veio nesta leitura. É o que o contador do T2 mede. */
+export type OrigemCredencial = "cofre" | "sessao";
+
+/**
+ * ⚠️⚠️ LEITURA DUPLA — T2 da virada do cofre.
+ *
+ * Prefere `cex_conexoes` quando a sessão tem elo; cai em `creds_cipher` quando
+ * não tem, ou quando o cofre não devolve linha utilizável. Devolve DE ONDE
+ * veio, porque é isso que autoriza o T3.
+ *
+ * ⚠️ O CONTADOR NÃO É ENFEITE. Sem ele, remover o `creds_cipher` é chute — e a
+ * invariante nº 33 diz que "ninguém usou o caminho velho" e "meu contador está
+ * quebrado" não podem ser a mesma tela.
+ *
+ * ⚠️ E A CONEXÃO REVOGADA NÃO CAI PARA TRÁS. Se o dono desligou a conexão no
+ * cofre, a leitura FALHA em vez de usar a cópia antiga da sessão — senão
+ * revogar não revogaria nada, que é o oposto do ponto do cofre.
+ */
+export async function credenciaisDaSessao(
+  row: AutopilotSessionRow,
+): Promise<{ creds: CexCredentials; origem: OrigemCredencial }> {
+  if (row.conexao_id) {
+    const c = await lerConexaoPorId(row.conexao_id);
+    if (c && !c.is_active) {
+      throw new Error("cofre: conexão revogada pelo dono");
+    }
+    if (c) return { creds: decifrarConexao(c), origem: "cofre" };
+  }
+  return { creds: decryptSessionCreds(row), origem: "sessao" };
+}
+
 /** Patch a session's mutable fields (counters, freeze, last_scan_at, error). */
 export async function patchSession(
   id: string,
@@ -173,10 +244,28 @@ export async function tryLockSession(id: string, ttlMs: number): Promise<boolean
  * be read back as the single authoritative daily count. No-op if no session
  * exists for the wallet+exchange.
  */
-export async function bumpSessionTrades(walletAddress: string, exchangeId: string, n: number): Promise<void> {
+/**
+ * ⚠️⚠️ DEVOLVE SE CONTOU — e antes engolia a falha (auditoria 23/08).
+ *
+ * Este contador E o limite de trades por dia que o usuario configurou. O cron
+ * ja o incrementa LOGO APOS a ordem existir, de proposito, para sobreviver a
+ * um timeout no meio da execucao — esse raciocinio estava certo.
+ *
+ * Mas o RPC era disparado sem conferir `error`, e o cliente do Supabase
+ * RESOLVE com `{ error }` em vez de lancar. Se ele falhasse, o contador nao
+ * subia e o limite diario simplesmente DEIXAVA DE EXISTIR, em silencio, pelo
+ * resto do dia — a mesma classe do `engine.ts`, agora em dinheiro real.
+ *
+ * ⚠️ Nao da para desfazer a ordem que ja foi. O que da e nao mentir sobre ela
+ * ter sido contada: quem chama trata o `false` como "perdi a conta", e o
+ * caminho do dinheiro falha FECHADO a partir dali.
+ */
+export async function bumpSessionTrades(walletAddress: string, exchangeId: string, n: number): Promise<boolean> {
   const db = getSupabaseAdmin();
-  if (!db || n <= 0) return;
-  await db.rpc("bump_session_trades", { p_wallet: walletAddress, p_exchange: exchangeId, p_n: n });
+  if (!db) return false;
+  if (n <= 0) return true;
+  const { error } = await db.rpc("bump_session_trades", { p_wallet: walletAddress, p_exchange: exchangeId, p_n: n });
+  return !error;
 }
 
 /** Release the per-session lock so the next cron run can pick it up. */

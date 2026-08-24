@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAccount } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
 import Link from "next/link";
-import { ArrowDownUp, Settings2, Shield, EyeOff, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame, Banknote } from "lucide-react";
+import { ArrowDownUp, Settings2, Shield, Sparkles, ChevronDown, Globe, Clock, Fuel, Workflow, Flame, Banknote } from "lucide-react";
 import TokenSelector from "./TokenSelector";
 import RoutePreview from "./RoutePreview";
 import QuoteComparison from "./QuoteComparison";
@@ -16,8 +16,12 @@ import { useSwap, riskFromScore } from "@/lib/store/swap";
 import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
 import { CHAIN_BY_ID } from "@/lib/chains";
-import { formatUsd, formatAmount, parseDecimalInput } from "@/lib/format";
+import { formatUsd, formatAmount, toBaseUnits, fromBaseUnits } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { assessImpact } from "@/lib/swap/impact-guard";
+import { conferirDestinatario, familiaDaRede } from "@/lib/swap/recipient";
+import { assessMevExposure, mevAdvice } from "@/lib/swap/mev-guard";
+import { assessTokenSafety, isNativeToken, nativeSafety, type TokenSafety } from "@/lib/swap/token-safety";
 import type { Token } from "@/lib/tokens";
 import { useQuotes } from "@/lib/hooks/useQuotes";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
@@ -36,9 +40,9 @@ interface SwapCardProps {
 export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
   const {
     fromChain, toChain,
-    fromToken, toToken, amountIn, slippageBps, mevProtect, privacyMode,
+    fromToken, toToken, amountIn, slippageBps, mevWarn,
     mode, recipient, executeOpen, selectedSource,
-    setFromToken, setToToken, setAmountIn, setSlippage, setMev, setPrivacy, flipPair,
+    setFromToken, setToToken, setAmountIn, setSlippage, setMevWarn, flipPair,
     setMode, setRecipient, setExecuteOpen, setSelectedSource,
   } = useSwap();
   const { toggleZion } = useUI();
@@ -81,15 +85,34 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     }
   }, [lockedMode, mode, setMode]);
 
+  /**
+   * ⚠️⚠️ O DESTINATÁRIO NÃO SOBREVIVE À TROCA DE REDE DE DESTINO.
+   *
+   * `setToToken` não limpa o destinatário — de propósito, porque trocar o
+   * TOKEN mantendo a rede não deveria apagar o que o usuário digitou. Mas
+   * trocar a REDE, sim: um endereço Solana deixa de fazer sentido quando o
+   * destino vira Base, e a loja continuava mandando o antigo para a cotação
+   * enquanto só a cor do campo reclamava.
+   *
+   * Este é o defeito de perda de fundo que a auditoria achou por último, e o
+   * mais perigoso dos doze: o botão de executar seguia ativo.
+   */
+  const destinoFamilia = familiaDaRede(toToken?.chain);
+  useEffect(() => {
+    if (!recipient) return;
+    if (!conferirDestinatario(recipient, destinoFamilia).ok) setRecipient(undefined);
+  }, [recipient, destinoFamilia, setRecipient]);
+
   // ─── Convert UI amount (decimal) → base units (integer) ─────────────
-  const sellAmountBase = useMemo(() => {
-    if (!fromToken) return "0";
-    const amt = parseDecimalInput(amountIn) ?? 0;
-    if (amt <= 0) return "0";
-    const [intPart, fracPart = ""] = amt.toString().split(".");
-    const fracPadded = (fracPart + "0".repeat(fromToken.decimals)).slice(0, fromToken.decimals);
-    return (intPart + fracPadded).replace(/^0+/, "") || "0";
-  }, [amountIn, fromToken]);
+  //
+  // ⚠️ A conversão é de STRING para STRING e não passa por `Number` — ver o
+  // cabeçalho de `toBaseUnits`. A versão que morava aqui corrompia em silêncio
+  // qualquer quantia acima de 2^53 e produzia notação exponencial abaixo de
+  // 0,000001. Nenhuma trava do caminho pegava a primeira.
+  const sellAmountBase = useMemo(
+    () => (fromToken ? toBaseUnits(amountIn, fromToken.decimals) : "0"),
+    [amountIn, fromToken],
+  );
 
   // ─── Multi-aggregator quotes (0x + LiFi) ────────────────────────────
   const quotesState = useQuotes({
@@ -137,20 +160,61 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     // Live prices win over the stale token.priceUsd snapshot.
     const fromPx  = fromLivePrice ?? fromToken.priceUsd ?? 0;
     const toPx    = toLivePrice   ?? toToken.priceUsd   ?? 0;
-    const inUsd   = sellDec * fromPx;
-    const outUsd  = buyDec  * toPx;
-    const priceImpact = inUsd > 0 && outUsd > 0
+    /**
+     * ⚠️ SEM PREÇO É `null`, NUNCA 0 (auditoria da ponte, 23/08).
+     *
+     * `sellDec * 0` dá zero, e zero na tela é uma AFIRMAÇÃO: "isto vale nada".
+     * O que de fato aconteceu foi o feed de preço não responder. É a invariante
+     * nº 33 no lugar mais caro possível — a tela onde o usuário decide quanto
+     * mandar. Um ETH aparecendo como $0,00 não é arredondamento, é o sistema
+     * dizendo com confiança algo que ele não sabe.
+     */
+    const inUsd   = fromPx > 0 ? sellDec * fromPx : null;
+    const outUsd  = toPx   > 0 ? buyDec  * toPx   : null;
+    const priceImpact = inUsd != null && outUsd != null && inUsd > 0 && outUsd > 0
       ? ((outUsd - inUsd) / inUsd) * 100
       : null;
     return { sellDec, buyDec, minDec, rate, inUsd, outUsd, priceImpact };
   }, [selectedQuote, sellAmountBase, fromToken, toToken, fromLivePrice, toLivePrice]);
 
-  // ─── Aurora risk ────────────────────────────────────────────────────
+  // ─── Aurora risk (cor de fundo) ─────────────────────────────────────
+  // Segue vindo do `riskScore` do registro: é só ESTÉTICA da tela, e o campo
+  // nunca prometeu mais que isso. O que era mentira é o SELO de segurança —
+  // ver abaixo.
   const risk = useMemo(() => {
     const a = fromToken?.riskScore ?? 0;
     const b = toToken?.riskScore ?? 0;
     return riskFromScore(Math.max(a, b));
   }, [fromToken, toToken]);
+
+  // ─── SEGURANÇA DO TOKEN — verificação REAL (auditoria 30/07) ─────────
+  //
+  // Antes, o indicador de risco do card vinha de `token.riskScore`, um número
+  // DIGITADO À MÃO no registro. Enquanto isso a plataforma já tinha checagem de
+  // verdade (GoPlus + Honeypot.is) usada só num scanner do explorer — o caminho
+  // do dinheiro, onde a informação decide algo, não consultava nada.
+  //
+  // Agora consulta. E o estado "não verificado" é VISUALMENTE distinto de
+  // "seguro": ausência de checagem não pode render como segurança.
+  const [safety, setSafety] = useState<TokenSafety | null>(null);
+  useEffect(() => {
+    const addr = toToken?.address;
+    if (!toToken || !addr) { setSafety(null); return; }
+    if (isNativeToken(addr)) { setSafety(nativeSafety()); return; }
+    let cancelled = false;
+    setSafety(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/risk?chain=${toToken.chain}&address=${addr}`);
+        const json = res.ok ? await res.json() : null;
+        if (!cancelled) setSafety(assessTokenSafety(json));
+      } catch {
+        // Falha de rede vira "não verificado", nunca "seguro".
+        if (!cancelled) setSafety(assessTokenSafety(null));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [toToken?.address, toToken?.chain, toToken]);
 
   // Reset modal when key inputs change
   useEffect(() => {
@@ -158,8 +222,54 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromToken?.address, toToken?.address, fromChain, sellAmountBase, recipient]);
 
-  const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker);
-  const cantReason   = !fromToken || !toToken
+  // GUARDA DE IMPACTO (auditoria 30/07): antes o impacto era só COLORIDO —
+  // vermelho acima de 2% e o swap seguia com um clique. Texto vermelho não é
+  // proteção. Um impacto catastrófico quase sempre é valor digitado errado ou
+  // token sem liquidez, não intenção, e a plataforma sabia o número ANTES de
+  // deixar acontecer.
+  const impact = assessImpact(display?.priceImpact ?? null, display?.inUsd ?? null);
+
+  // EXPOSIÇÃO A MEV (auditoria 01/08): o escudo verde afirmava "mempool
+  // privado · anti-sandwich" e não havia UMA LINHA por trás disso. O que dá
+  // para dizer com honestidade é o TETO do roubo — notional × slippage — e é
+  // isso que aparece aqui, em dólar.
+  const mev = assessMevExposure({ chain: fromChain, notionalUsd: display?.inUsd ?? null, slippageBps });
+
+  /**
+   * ⚠️ O DESTINATÁRIO ENTRA NO PORTÃO — antes não entrava, e essa era a
+   * diferença entre "o campo fica vermelho" e "o usuário não consegue assinar".
+   * Vazio continua liberado: significa entregar na carteira conectada.
+   */
+  const destinatarioOk = !isCrossChain || !recipient
+    || conferirDestinatario(recipient, destinoFamilia).ok;
+
+  /**
+   * ⚠️ PONTE SAINDO DE SOLANA — barrada no CARTAO, nao so no modal.
+   *
+   * A LiFi cobre SOL->EVM, mas toda a assinatura do ramo LiFi e do wagmi
+   * (EVM): nao ha `sol.signTransaction` fora do caminho da Jupiter. Sem
+   * esta trava o usuario conecta as duas carteiras, abre o modal, espera a
+   * cotacao firme, e so entao bate num chain id que o wagmi nao conhece.
+   *
+   * O `ExecuteSwap` tambem recusa — esta e a primeira linha, aquela e a
+   * ultima. Dizer cedo, com o motivo certo, e o produto; dizer tarde, com
+   * erro de carteira, e o usuario descobrindo sozinho.
+   */
+  const pontePartindoDeSolana = isCrossChain && fromChain === "solana";
+  const canExecute   = !!(display && selectedQuote && selectedQuote.isFirm !== false && fromToken && toToken && fromTaker)
+    && impact.level !== "block"
+    && !safety?.blocks
+    && destinatarioOk
+    && !pontePartindoDeSolana;
+  const cantReason   = pontePartindoDeSolana
+    ? t("swap.solanaBridgeUnsupported")
+    : !destinatarioOk
+    ? t("swap.addrWrongFamily", { chain: toToken ? (CHAIN_BY_ID[toToken.chain]?.name ?? toToken.chain) : t("swap.destination") })
+    : safety?.blocks
+    ? safety.message
+    : impact.level === "block"
+    ? impact.message
+    : !fromToken || !toToken
     ? t("swap.pickTokens")
     : !fromTaker
       ? (fromChain === "solana" ? t("swap.connectSolana") : t("swap.connectWallet"))
@@ -171,12 +281,30 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
             ? t("swap.indicativeOnly")
             : "";
 
+  /**
+   * 25% / 50% / MAX — a conta inteira em `bigint`, a partir do saldo BRUTO.
+   *
+   * ⚠️ A versão anterior era `Number(fromBalance.formatted) * pct`, e tinha os
+   * dois defeitos do conversor antigo mais um terceiro só dela:
+   *
+   *   · saldo grande (memecoin de 18 casas) perdia precisão no `Number`, e um
+   *     arredondamento PARA CIMA no MAX pede mais do que a carteira tem — a
+   *     transação reverte DEPOIS de o usuário pagar a aprovação;
+   *   · saldo pequeno virava `"1e-7"` no `toString()`, que o campo não sabe ler;
+   *   · `.slice(0, 18)` cortava a STRING, não as casas decimais.
+   *
+   * A divisão inteira sempre trunca, então o resultado nunca passa do saldo.
+   * Com `pct = 1` o cálculo devolve o saldo EXATO, dígito por dígito.
+   */
   const onPercent = (pct: number) => {
     if (!fromBalance || fromBalance.isZero || !fromToken) return;
-    const buf  = fromToken.address === "native" ? 0.001 : 0;
-    const num  = Number(fromBalance.formatted) * pct;
-    const safe = Math.max(num - buf, 0);
-    setAmountIn(safe.toString().slice(0, 18));
+    const dec = fromToken.decimals;
+    // Reserva de gás — só faz sentido no token nativo, que é quem paga a taxa.
+    const reserva = fromToken.address === "native" ? BigInt(toBaseUnits("0.001", dec)) : 0n;
+    const bps   = BigInt(Math.round(pct * 10_000));
+    const parte = (fromBalance.raw * bps) / 10_000n;
+    const sobra = parte - reserva;
+    setAmountIn(fromBaseUnits(sobra > 0n ? sobra : 0n, dec));
   };
 
   const ctaLabel = canExecute
@@ -209,16 +337,17 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
                  mode === "sniper" ? t("swap.titleSniper") :
                                      t("swap.titleSwap")}
               </span>
-              <RiskBadge risk={risk} />
+              <RiskBadge safety={safety} />
             </div>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setMev(!mevProtect)} aria-pressed={mevProtect} title={t("swap.mevProtection")}
-                className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", mevProtect ? "text-green bg-green/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
+              {/* Este botão era um ESCUDO VERDE afirmando proteção contra
+                  sanduíche. A proteção não existia (ver mev-guard.ts). Agora
+                  ele liga/desliga o AVISO de exposição — que é o que a
+                  plataforma de fato faz — e por isso não é mais verde: verde
+                  comunica "você está protegido", e o usuário não está. */}
+              <button type="button" onClick={() => setMevWarn(!mevWarn)} aria-pressed={mevWarn} title={t("swap.mevWarnToggle")}
+                className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", mevWarn ? "text-cyan bg-cyan/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
                 <Shield className="w-3.5 h-3.5" />
-              </button>
-              <button type="button" onClick={() => setPrivacy(!privacyMode)} aria-pressed={privacyMode} title={t("swap.privacyMode")}
-                className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", privacyMode ? "text-gold bg-gold/10" : "text-ink-3 hover:text-ink-2 hover:bg-white/5")}>
-                <EyeOff className="w-3.5 h-3.5" />
               </button>
               <button type="button" onClick={() => setShowSettings((s) => !s)} title={t("swap.settings")}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-3 hover:text-ink-2 hover:bg-white/5 transition-colors">
@@ -320,9 +449,45 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
           {/* Stats + Route */}
           {display && selectedQuote && (
             <div className="space-y-2.5">
+              {safety && safety.level !== "safe" && (
+                <div className={cn(
+                  "rounded-md px-3 py-2 font-mono text-[10px] leading-relaxed border",
+                  safety.level === "danger" ? "border-red/30 bg-red/[0.06] text-red"
+                    : safety.level === "risky" ? "border-gold/30 bg-gold/[0.06] text-gold"
+                    : "border-white/10 bg-white/[0.03] text-ink-3",
+                )}>
+                  {safety.level === "danger" ? "⛔ " : safety.level === "unverified" ? "◌ " : "⚠ "}
+                  {safety.message}
+                </div>
+              )}
+
+              {impact.level !== "ok" && (
+                <div className={cn(
+                  "rounded-md px-3 py-2 font-mono text-[10px] leading-relaxed border",
+                  impact.level === "block"
+                    ? "border-red/30 bg-red/[0.06] text-red"
+                    : "border-gold/30 bg-gold/[0.06] text-gold",
+                )}>
+                  {impact.level === "block" ? "⛔ " : "⚠ "}{impact.message}
+                </div>
+              )}
+
+              {mevWarn && mev.level !== "ok" && (
+                <div className={cn(
+                  "rounded-md px-3 py-2 font-mono text-[10px] leading-relaxed border",
+                  mev.level === "high"
+                    ? "border-gold/30 bg-gold/[0.06] text-gold"
+                    : "border-white/10 bg-white/[0.03] text-ink-3",
+                )}>
+                  ⚠ {mev.message}
+                  <div className="mt-1 text-ink-4">{mevAdvice(fromChain)}</div>
+                </div>
+              )}
+
               <TxDetailsStrip
                 priceImpact={display.priceImpact}
                 gasUsd={selectedQuote.gasUsd}
+                taxaPlataforma={quotesState.taxa}
                 minDec={display.minDec}
                 toSymbol={toToken?.symbol ?? ""}
                 inUsd={display.inUsd}
@@ -515,7 +680,7 @@ function SideBox({
   label: string;
   token: Token | undefined;
   amount: string;
-  usdValue?: number;
+  usdValue?: number | null;
   onAmountChange: (v: string) => void;
   onTokenChange: (t: Token) => void;
   side: "from" | "to";
@@ -567,7 +732,10 @@ function SideBox({
       </div>
       <div className="flex items-center justify-between mt-2 gap-2 min-w-0">
         <span className="font-mono text-[11px] text-ink-3 truncate">
-          {usdValue !== undefined ? formatUsd(usdValue) : "$0.00"}
+          {/* ⚠️ "—" é "não sei". $0,00 seria uma afirmação de valor, e a
+              ausência de cotação ou de preço não é a mesma coisa que valer
+              zero. Ver o cálculo de `inUsd` acima. */}
+          {usdValue == null ? "—" : formatUsd(usdValue)}
         </span>
         {editable && onPercent && balance && !balance.isZero && (
           <div className="flex gap-1 flex-shrink-0">
@@ -628,14 +796,41 @@ function Stat({
   );
 }
 
-function RiskBadge({ risk }: { risk: "safe" | "caution" | "danger" }) {
-  const cfg = {
-    safe:    { cls: "tag tag-green",  label: "Safe Route"  },
-    caution: { cls: "tag tag-gold",   label: "Caution"     },
-    danger:  { cls: "tag tag-red",    label: "High Risk"   },
-  }[risk];
+/**
+ * O SELO DE SEGURANÇA — agora ligado na verificação que existe.
+ *
+ * ⚠️⚠️ O QUE ELE DIZIA ANTES (auditoria da ponte, 23/08).
+ *
+ * O selo vinha de `riskFromScore(max(fromToken.riskScore, toToken.riskScore))`,
+ * e `riskScore` é um número DIGITADO À MÃO no registro de tokens — presente em
+ * 36 entradas de um catálogo que aceita qualquer par. Com `?? 0`, token
+ * desconhecido caía em "score 0" e a tela mostrava **verde**.
+ *
+ * Enquanto isso a verificação de verdade (GoPlus + Honeypot.is, via
+ * `assessTokenSafety`) rodava ao lado e só aparecia QUANDO ACHAVA PROBLEMA.
+ * Ou seja: silêncio da checagem real e verde do número estático diziam a mesma
+ * coisa na tela, e eram coisas opostas.
+ *
+ * É a mesma família do escudo MEV que este projeto já rebaixou por honestidade
+ * — "verde comunica 'você está protegido', e o usuário não está".
+ *
+ * ⚠️ E O RÓTULO MUDOU DE PROPÓSITO: "Safe Route" afirmava sobre a ROTA, e a
+ * checagem é sobre o TOKEN de destino. "Verificado" é o que dá para sustentar.
+ *
+ * ⚠️ `null` (carregando) e `unverified` NÃO são verdes. Ausência de checagem
+ * renderizada como segurança é o defeito que este componente existia para ter.
+ */
+function RiskBadge({ safety }: { safety: TokenSafety | null }) {
+  const t = useT();
+  const cfg =
+    safety === null              ? { cls: "tag tag-violet", label: t("swap.badgeChecking")   } :
+    safety.level === "unverified" ? { cls: "tag tag-gold",   label: t("swap.badgeUnverified") } :
+    safety.level === "danger"     ? { cls: "tag tag-red",    label: t("swap.badgeDanger")     } :
+    safety.level === "risky"      ? { cls: "tag tag-red",    label: t("swap.badgeRisky")      } :
+    safety.level === "caution"    ? { cls: "tag tag-gold",   label: t("swap.badgeCaution")    } :
+                                    { cls: "tag tag-green",  label: t("swap.badgeSafe")       };
   return (
-    <span className={cfg.cls}>
+    <span className={cfg.cls} title={safety?.message || undefined}>
       <span className="w-1.5 h-1.5 rounded-full bg-current pulse-dot" />
       {cfg.label}
     </span>
@@ -644,13 +839,16 @@ function RiskBadge({ risk }: { risk: "safe" | "caution" | "danger" }) {
 
 // ─── Transaction details strip ────────────────────────────────────────────
 function TxDetailsStrip({
-  priceImpact, gasUsd, minDec, toSymbol, inUsd,
+  priceImpact, gasUsd, minDec, toSymbol, inUsd, taxaPlataforma,
 }: {
   priceImpact: number | null;
   gasUsd:      number | undefined;
+  /** A taxa da plataforma que a cotação trouxe. `null` = ainda não cotado. */
+  taxaPlataforma: { tier: string; pct: number } | null;
   minDec:      number;
   toSymbol:    string;
-  inUsd:       number;
+  /** `null` = preço indisponível. NÃO é zero — ver `inUsd` no cálculo. */
+  inUsd:       number | null;
 }) {
   const t = useT();
   const impact    = priceImpact ?? 0;
@@ -672,7 +870,12 @@ function TxDetailsStrip({
                       t("swap.impactHigh");
 
   const impactSign = impact >= 0 ? "+" : "";
-  const totalCost  = inUsd + (gasUsd ?? 0);
+  /**
+   * ⚠️ Sem o valor da perna de entrada, o custo TOTAL não existe — somar só o
+   * gás mostraria "$3,20" para uma troca de mil dólares. Ausência de uma parcela
+   * torna a soma desconhecida, não menor.
+   */
+  const totalCost  = inUsd == null ? null : inUsd + (gasUsd ?? 0);
 
   return (
     <div className={cn("rounded-xl border overflow-hidden divide-y divide-white/[0.04]", impactBorder, "bg-bg-1/40")}>
@@ -694,6 +897,29 @@ function TxDetailsStrip({
           </span>
         </div>
       </div>
+
+      {/* ⚠️ A TAXA DA PLATAFORMA, ANTES DA ASSINATURA (Fase 9.2).
+           Reter 1% sem dizer é o tipo de coisa que a primeira pessoa a
+           conferir no explorador transforma em acusação — e não se recupera.
+           Aparece SEMPRE que a cotação trouxe a taxa, inclusive em 0%: "0%" e
+           campo ausente são afirmações diferentes. */}
+      {taxaPlataforma && (
+        <div className="flex items-center justify-between px-3.5 py-2.5 gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-mono text-[10px] text-ink-3 truncate">{t("swap.platformFee")}</span>
+            <span
+              className="w-3.5 h-3.5 rounded-full border border-white/15 bg-white/5 text-ink-4 font-mono text-[8px] leading-none flex items-center justify-center flex-shrink-0 cursor-help"
+              title={t("swap.platformFeeTip", { tier: taxaPlataforma.tier })}
+            >?</span>
+          </div>
+          <span className={cn(
+            "font-display font-bold text-[12px] tabular-nums",
+            taxaPlataforma.pct > 0 ? "text-gold" : "text-green",
+          )}>
+            {taxaPlataforma.pct.toFixed(2)}%
+          </span>
+        </div>
+      )}
 
       {/* Network fee */}
       {gasUsd !== undefined && gasUsd > 0 && (
@@ -727,7 +953,7 @@ function TxDetailsStrip({
       <div className="flex items-center justify-between px-3.5 py-2.5 gap-2 bg-white/[0.02]">
         <span className="font-mono text-[10px] text-ink-3">{t("swap.totalCostLabel")}</span>
         <span className="font-display font-bold text-[13px] text-ink tabular-nums flex-shrink-0">
-          {formatUsd(totalCost)}
+          {totalCost == null ? "—" : formatUsd(totalCost)}
         </span>
       </div>
     </div>

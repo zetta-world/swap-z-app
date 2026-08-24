@@ -21,14 +21,14 @@ export default function CexSessionsPanel() {
         <div className="adm-shimmer" style={{ height: 80 }} />
       )}
       {state.status === "error" && (
-        <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{state.message}</div>
+        <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{state.message}</div>
       )}
       {state.status === "ok" && (() => {
         const byEx = state.data.cex.byExchange;
         const keys = Object.keys(byEx).sort();
         if (keys.length === 0) {
           return (
-            <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>
               No autopilot sessions recorded yet.
             </div>
           );

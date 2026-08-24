@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
-type GateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_radar" | "pause_sniper" | "pause_arbiter" | "pause_paper";
+// A lista de gates NÃO é redigitada aqui (auditoria 01/08). Ela vem de
+// `gate-keys.ts` — módulo puro, sem import de servidor, justamente para que o
+// painel possa derivar da mesma fonte que o cron e o watchdog. Espelhar à mão
+// já custou três bugs: oracle/arbiter2 invisíveis no painel, e duas versões da
+// lista do disjuntor de custo com mesas faltando.
+import { FLYWHEEL_GATE_KEYS, type FlywheelGateKey } from "@/lib/admin/gate-keys";
+
+type GateKey = FlywheelGateKey;
 
 type Breaker = {
   id: string; label: string; configured: boolean;
@@ -16,16 +23,30 @@ const GATES: { key: GateKey; label: string; desc: string; master?: boolean }[] =
   { key: "pause_agent_b",    label: "AGENT B · FERRARI", desc: "Pausa o Agent B híbrido (Opus CEO). Também exige HYBRID_B_ENABLED." },
   { key: "pause_tournament", label: "TORNEIO (MODELOS)", desc: "Pausa Mistral/DeepSeek/Kimi/Llama/Grok. É o que gasta nos provedores diretos." },
   { key: "pause_radar",      label: "RADAR (BRAIN)",     desc: "Pausa o acorde do modelo nos gatilhos de preço. Detecção (grátis) continua." },
-  { key: "pause_sniper",     label: "SNIPER 🎯",         desc: "Agente event-driven com orçamento mensal e gates objetivos. Só gasta quando um gatilho dispara." },
-  { key: "pause_arbiter",    label: "ARBITER ⚖️",        desc: "Detector de arbitragem cross-CEX. ZERO IA (aritmética pura) — só dados públicos, opera no paper." },
-  { key: "pause_paper",      label: "PAPER · GATE.IO",   desc: "Pausa o agente de simulação. Zero token — pausar só congela o experimento." },
+  { key: "pause_sniper",     label: "SNIPER ANTIGO",     desc: "VEÐRFÖLNIR (aposentado). Já desligado por default — só religa com SNIPER_LEGACY=on." },
+  { key: "pause_oracle",     label: "VÖLVA 🔮 (ORÁCULO)", desc: "Mesa de tese diária, multi-modelo. Gasta 1×/dia." },
+  { key: "pause_arbiter",    label: "ᛉ RATATOSKR",       desc: "Arbitragem spot cross-CEX. ZERO IA (aritmética pura) — dados públicos, opera no paper." },
+  { key: "pause_arbiter2",   label: "ᛇ JÖRMUNGANDR",     desc: "Spot+perp hedgeada (funding + convergência), SEM alavanca. ZERO IA." },
+  { key: "pause_arbiter2_lev", label: "ᚼ NÍÐHÖGGR 3× + ᚠ FÁFNIR 5×", desc: "Os gêmeos alavancados: mesma arbitragem, margem menor por ciclo. Alavancado a posição hedgeada PODE ser liquidada — a simulação modela isso. ZERO IA." },
+  { key: "pause_ragnarok",   label: "ᚹ VÖLUNDR + ᛋ SKAÐI", desc: "Mesas mecânicas long-only (swing 48h + day 8h). ZERO token — é o CONTROLE do experimento." },
+  { key: "pause_ragnarok_ai", label: "ᛘ MÍMIR (IA)",     desc: "A mesa de IA que aceita/veta/ajusta o plano do ferreiro. ESTA gasta token." },
+  { key: "pause_ragnarok_dex", label: "ᚨ FREYJA (DEX)",  desc: "Mesma estratégia, praça on-chain (GeckoTerminal). ZERO token." },
+  { key: "pause_urdr",       label: "ᚢᚱ URÐR (HISTÓRICO)", desc: "A Norna do passado: mecânica, escolhe pelo líquido MEDIDO em vez da prioridade declarada. Terceiro braço do duelo. ZERO token." },
+  { key: "pause_ullr",       label: "ᚢ ULLR (LANÇAMENTO)", desc: "Arqueiro de pool recém-nascido. Long-only, munição diária contada. ZERO token." },
+  { key: "pause_paper",      label: "PAPER · GATE.IO",   desc: "Pausa o agente de simulação. Zero token — pausar só congela o experimento (e a carteira de USDT para de encher)." },
+  { key: "pause_dca",        label: "ᚦ DCA AUTOMÁTICO",  desc: "Para os planos de compra recorrente na corretora do CLIENTE — dinheiro REAL, não simulação. ZERO token: é relógio + ordem a mercado. Gate PRÓPRIO e rota de cron própria, separados do autopilot de propósito: um bug na IA não pode parar a poupança de ninguém." },
+  { key: "pause_zion",       label: "⚡ ZION (USUÁRIO)",  desc: "Desliga o ZION do PRODUTO, não uma mesa. Era o maior gastador de token e o único sem gate. Último recurso: degrada o que o usuário vê. Cotação e swap seguem funcionando." },
 ];
 
+// Um gate sem cartão aqui é uma mesa que só se desliga por deploy. O painel
+// avisa em vez de esconder — silêncio foi exatamente como oracle/arbiter2
+// passaram despercebidos.
+const UNLISTED_GATES = FLYWHEEL_GATE_KEYS.filter((k) => !GATES.some((g) => g.key === k));
+
 export default function AiControlsPanel() {
-  const [gates, setGates] = useState<Record<GateKey, boolean>>({
-    pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false,
-    pause_radar: false, pause_sniper: false, pause_arbiter: false, pause_paper: false,
-  });
+  const [gates, setGates] = useState<Record<GateKey, boolean>>(
+    () => Object.fromEntries(FLYWHEEL_GATE_KEYS.map((k) => [k, false])) as Record<GateKey, boolean>,
+  );
   const [loading, setLoading]   = useState(true);
   const [mutating, setMutating] = useState<GateKey | null>(null);
   const [err, setErr]           = useState<string | null>(null);
@@ -39,16 +60,9 @@ export default function AiControlsPanel() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.status);
       const s = json.switches ?? {};
-      setGates({
-        pause_backtest:   !!s.pause_backtest,
-        pause_agent_a:    !!s.pause_agent_a,
-        pause_agent_b:    !!s.pause_agent_b,
-        pause_tournament: !!s.pause_tournament,
-        pause_radar:      !!s.pause_radar,
-        pause_sniper:     !!s.pause_sniper,
-        pause_arbiter:    !!s.pause_arbiter,
-        pause_paper:      !!s.pause_paper,
-      });
+      setGates(
+        Object.fromEntries(FLYWHEEL_GATE_KEYS.map((k) => [k, !!s[k]])) as Record<GateKey, boolean>,
+      );
       if (json.note) setNote(json.note);
     } catch (e) { setErr(String(e)); } finally { setLoading(false); }
     // Circuit-breaker states — best-effort, never blocks the toggles.
@@ -93,8 +107,13 @@ export default function AiControlsPanel() {
   return (
     <TerminalPanel id="ai-controls" title="AI CONTROLS" subtitle="liga/desliga agentes · torneio" icon="⏻" source="supabase/admin_kv">
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {err  && <div style={{ color: "var(--adm-red)", fontSize: 10, marginBottom: 8 }}>{err}</div>}
-      {note && <div style={{ color: "var(--adm-amber)", fontSize: 9, marginBottom: 10 }}>⚠ {note}</div>}
+      {err  && <div style={{ color: "var(--adm-red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      {note && <div style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 10 }}>⚠ {note}</div>}
+      {UNLISTED_GATES.length > 0 && (
+        <div style={{ color: "var(--adm-red)", fontSize: 12, marginBottom: 10 }}>
+          ⚠ Gate sem cartão neste painel — só se desliga por deploy: {UNLISTED_GATES.join(", ")}
+        </div>
+      )}
 
       {!loading && GATES.map(({ key, label, desc, master }) => {
         const paused = gates[key];
@@ -104,12 +123,12 @@ export default function AiControlsPanel() {
           <div key={key} className="adm-stat" style={{ alignItems: "center", opacity: dimmed ? 0.45 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase",
+                fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase",
                 color: paused ? "var(--adm-red)" : master ? "var(--adm-gold)" : "var(--adm-green)",
               }}>
                 {label}
               </div>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 2 }}>{desc}</div>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2 }}>{desc}</div>
             </div>
             <button
               className={`adm-toggle ${paused ? "danger" : "active"}`}
@@ -128,11 +147,11 @@ export default function AiControlsPanel() {
           allow a manual reset after fixing the key / topping up credits. */}
       {!loading && breakers.some((b) => b.configured) && (
         <div style={{ marginTop: 12, borderTop: "1px solid var(--adm-border)", paddingTop: 8 }}>
-          <div style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 6 }}>
+          <div style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 6 }}>
             CIRCUIT BREAKERS · pula provedor com falhas seguidas
           </div>
           {breakers.filter((b) => b.configured).map((b) => (
-            <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 9 }}>
+            <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12 }}>
               <span style={{ flex: 1, color: "var(--adm-ink)" }}>{b.label}</span>
               {b.tripped ? (
                 <>

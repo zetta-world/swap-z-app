@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Lock, Unlock, Eye, EyeOff, KeyRound, ShieldAlert, Power,
-  ArrowDownUp, ListOrdered, Wallet, Bot,
+  ArrowDownUp, ListOrdered, Wallet, Bot, CalendarClock,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -16,14 +16,14 @@ import { CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials } from "@/
 import { useCexVault } from "@/lib/cex/vault";
 import { useT } from "@/lib/i18n";
 import CexTradePanel from "./CexTradePanel";
-import WalletCexBridge from "./WalletCexBridge";
+import DcaPanel from "./DcaPanel";
 import CexOpenOrdersPanel from "./CexOpenOrdersPanel";
 import ZionCexAutopilot from "./ZionCexAutopilot";
 import { cn } from "@/lib/cn";
 
 const AUTO_LOCK_MS = 10 * 60 * 1000; // 10 minutes idle → re-lock
 
-type ConsoleTab = "trade" | "orders" | "balance" | "zion";
+type ConsoleTab = "trade" | "orders" | "dca" | "zion";
 
 const TABS: Array<{
   id:       ConsoleTab;
@@ -32,7 +32,10 @@ const TABS: Array<{
 }> = [
   { id: "trade",   labelKey: "cex.tabTrade",   Icon: ArrowDownUp  },
   { id: "orders",  labelKey: "cex.tabOrders",  Icon: ListOrdered  },
-  { id: "balance", labelKey: "cex.tabBalance", Icon: Wallet       },
+  // ⚠️ DCA mora AQUI, na superfície de corretora — e não na aba /orders, que
+  // é DEX, vive no localStorage e você dispara à mão. Misturar as duas
+  // repetiria o acoplamento que o dono mandou desfazer em 24/08.
+  { id: "dca",     labelKey: "cex.tabDca",     Icon: CalendarClock },
   { id: "zion",    labelKey: "cex.tabZion",    Icon: Bot          },
 ];
 
@@ -363,9 +366,9 @@ export default function CexConsole() {
                   credentials={activeCreds}
                 />
               )}
-              {activeTab === "balance" && (
-                <WalletCexBridge
-                  key={`bridge-${selectedId}`}
+              {activeTab === "dca" && (
+                <DcaPanel
+                  key={`dca-${selectedId}`}
                   exchangeId={selectedId}
                   credentials={activeCreds}
                 />

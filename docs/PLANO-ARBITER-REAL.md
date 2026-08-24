@@ -1,0 +1,243 @@
+# ARBITER — do papel ao dinheiro real — 🔴 TESE REPROVADA (04/08)
+
+> ⚠️ **LEIA ISTO ANTES DE QUALQUER NÚMERO ABAIXO.**
+>
+> O caminho pro real está **PARADO**, e não por falta de execução: a
+> estratégia foi medida e não paga. Três medições independentes, todas na
+> mesma direção:
+>
+> | medição | resultado |
+> |---|---|
+> | profundidade real do livro (4.085 amostras, F2) | **−0,629%** por ciclo, contra +0,451% que o ledger anotava |
+> | dispersão entre venues ao vivo (57 símbolos) | **0,052%** máximo — o custo de ida e volta é 0,40–0,45% |
+> | assinatura da coorte | Gate.io em 90% das pernas, nos DOIS sentidos = variância de feed, não praça barata |
+>
+> Os **+0,303%/trade** registrados abaixo eram artefato: o topo do livro
+> prometia um spread que a profundidade comia inteiro, e a sonda que já
+> media isso rodava havia seis dias sem ninguém ler. Os ledgers fictícios
+> foram zerados (motivo gravado); o portão de profundidade agora REPROVA
+> em vez de observar.
+>
+> **O que continua de pé:** o desenho dos "dois bolsos" (saldo dos dois
+> lados, pernas simultâneas, sem transferência) está certo e implementado
+> — inclusive na aritmética do F2. Ele elimina risco de perna e
+> transferência. O que ele não elimina é a profundidade do livro, e era a
+> profundidade que estava comendo tudo.
+>
+> **Próximo teste da família:** funding/basis (a feature guardada mais
+> abaixo). É a única forma de renda neutra que não depende de velocidade —
+> o funding é publicado e muda a cada 8h, não a cada milissegundo. Ainda
+> NÃO medida.
+
+> Gatilho original: CEO validou o conceito (aula do "dois bolsos": vender na
+> cara + comprar na barata com saldo dos dois lados captura o spread inteiro
+> sem transferir nada) e definiu o produto: o cliente chega SÓ com USDT — a
+> máquina se prepara sozinha.
+
+## Fatos medidos (paper 1.0, rodada 2: 17-21/07) — ⚠️ REFUTADOS EM 04/08
+
+**Estes números não sobreviveram à validação de orderbook.** Ficam no
+registro porque apagá-los apagaria a cicatriz, e a cicatriz é o motivo de
+o portão de profundidade existir hoje.
+
+- 180 round-trips, 0 perdas, +$27,30 sobre entradas de $50 → +0,303%/trade
+  líquido (custo 0,4% já descontado). Retorno sobre capital DE GIRO ≈ 54%
+  em 3,5d; a escala vem de cobertura (moedas × venues), não do tamanho.
+  ⚠️ **"0 perdas" era a pista** — 180 ciclos sem uma única perda não é
+  estratégia boa, é medição contra o próprio feed.
+- **Gate.io é o hub** (154 dos 180 trades). Venues que importam: Gate.io,
+  Binance, OKX, MEXC. Kraken/Bybit quase não geram rota.
+- Moedas: MANA (35), BONK (32), JUP (14), LDO (13), RUNE (10) = 58% do
+  total — o universo expandido da alavanca 4 pagou.
+- Rotas são BIDIRECIONAIS (binance→gateio 38× e gateio→binance 26×): o
+  spread oscila de lado → estoque se rebalanceia sozinho, lucrando.
+
+## Arquitetura de produto (decisões do CEO)
+
+1. **Cliente só deposita USDT.** Nada de pedir pra ele comprar MANA.
+2. **Modo preparação autônomo**: o arbiter lê a própria telemetria (rotas/
+   moedas frequentes), gera a receita de alocação e compra o estoque de
+   trabalho sozinho, explicando no painel. Rebalanceia preferindo trades na
+   direção contrária (de graça, lucrando); transferência só em último caso.
+3. **Arbiter 2.0 (spot+futuros)** resolve o cold-start por completo: só
+   USDT, sem estoque — ver abaixo.
+
+## Arbiter 2.0 — spot + perpétuo (source `arbiter2`) — 🟢 simulando
+
+Mecânica: spread entre venues detectado → **compra spot na barata** +
+**short do perp na cara** (1x, USDT como margem) no mesmo instante →
+posição 100% neutra que TRAVA o spread → fecha as duas pontas quando os
+preços convergem (ou timeout). Funding positivo enquanto short = recebe
+por esperar.
+
+Simulação honesta, já na realidade dos **$300 de saldo** (decisão CEO):
+- Carteira paper `arbiter2` começa com **$300** (não $1000): cada ciclo
+  trava 2×$50 (perna spot + margem 1x) → máx 3 posições simultâneas — a
+  restrição de capital real desde o dia 1.
+- Custo de ciclo completo (4 pernas: spot in/out + perp in/out + basis
+  buffer): `ARB2_COST_PCT` = **0,45%**. Piso líquido `ARB2_MIN_NET_PCT`
+  0,15%. Mesmos filtros de sanidade do 1.0 (teto 3%, mediana, sem
+  Coinbase).
+- Convergência: fecha quando o spread atual ≤ `ARB2_EXIT_SPREAD_PCT`
+  (0,05%) — lucro = spread travado − custo + funding acumulado; timeout em
+  `ARB2_MAX_HOLD_H` (48h) fecha no spread que estiver (pode dar pequena
+  perda — registrada, flywheel honesto).
+- Funding: taxa real do perp da Bybit no fechamento × (horas/8) × tamanho;
+  short recebe quando positiva.
+- Aproximação declarada: preço do perp na venue cara ≈ spot da venue cara
+  (basis típico <0,05%, coberto no buffer de custo). A F2 mede o real.
+- Posições `arbiter2` abertas são HEDGEADAS: MTM direcional = 0 no painel;
+  o motor de paper comum NÃO resolve essas posições (o 2.0 fecha as
+  próprias, por convergência — não por alvo/stop).
+
+## F2 — validador de orderbook (pré-requisito do real) — 🟡 (28/07: implementado, coleta pendente)
+
+Antes de qualquer depósito: conferir cada oportunidade contra o LIVRO real
+(bid/ask com profundidade), registrando o preenchimento realista ao lado do
+teórico. Saída: "o 0,30% teórico vira X% real e aguenta $Y por ordem".
+
+**Implementado (28/07):** `src/lib/zion/arb-realism.ts` (matemática de
+caminhada no livro, unit-testada — livro raso vira perda real, provado) +
+`src/lib/api/cex-orderbook.ts` (profundidade pública de binance/gateio/okx/
+bybit/mexc) + gancho no arbiter que, com `ARB_ORDERBOOK_CHECK=on`, caminha a
+profundidade real da melhor oportunidade por tick e loga `arb_realism`
+(net teórico vs realista, slippage, se encheu). **Pendente:** ligar a env em
+prod e coletar ~1 semana (o fetch ao vivo é só-prod — o proxy do sandbox
+bloqueia as CEX, então a matemática está testada mas o fetch não foi
+exercitado daqui). Depois: ler os `arb_realism` no admin e decidir tamanho
+real por moeda/rota.
+
+## 💰 FEATURE GUARDADA: Funding Farming (renda neutra ~5-15% a.a.) — ⏸️
+
+O arroz-com-feijão dos desks neutros, quase de graça com a infra do 2.0:
+**long spot + short perp da MESMA moeda na MESMA corretora** — zero
+direção, zero dependência de spread entre venues — colhendo o funding a
+cada 8h (majors ~5-15% a.a.; memecoins lotadas de long, bem mais).
+- Uso ideal: capital OCIOSO entre oportunidades de spread vira rendimento.
+- Simulação primeiro (mesma regra de sempre): carteira paper
+  `funding_farm`, funding real da Bybit, custo de 4 pernas, rotação pra
+  moeda com melhor funding anualizado × liquidez.
+- Vira produto de prateleira: "renda neutra em USDT" — o cliente entende
+  "recebo aluguel a cada 8h" sem precisar entender perp.
+- Status: **guardada por decisão do CEO (21/07) — implementar após o
+  Arbiter 2.0 provar o motor spot+perp na simulação.**
+
+## Caminho pro real (ordem de execução) — ⛔ PARADO NO PASSO 3
+
+1. 🟢 Arbiter 2.0 em simulação com $300.
+2. 🟢 F2 — validador de orderbook. Implementado, ligado em prod, **e agora
+   REPROVANDO** (`realismGate`): livro não lido ou raso veta a abertura.
+   Antes era só observação — 4.085 medições corretas indo para um feed que
+   ninguém agregava enquanto a mesa abria assim mesmo.
+3. 🔴 **REPROVADO.** Os dados chegaram e disseram não: −0,629% real contra
+   +0,451% teórico, 17 de 4.085 amostras ainda positivas (0,4%). Não há o
+   que promover ao real. Passos 4 e 5 ficam suspensos para o spot-spot.
+4. 🟡 Funding farming — **agora é o próximo passo REAL da família**, não um
+   extra. É a única variante que não depende de velocidade.
+   **04/08: a MEDIÇÃO está no ar** (`src/lib/zion/funding.ts`, rota
+   `/admin/api/funding`, painel 🪙 FUNDING / BASIS). Lê o histórico
+   realizado da Binance para os ~57 símbolos rastreados, na mesma janela de
+   174 dias do resto do laboratório. Leitura pura — não abre posição.
+   **Pendente: rodar e ler o resultado.**
+
+   O que a conta inclui: funding realizado período a período + as 4 pernas
+   (`ARB2_COST_PCT`, 0,45%). O que ela NÃO inclui, declarado na tela e não
+   só no código: basis de entrada/saída, risco de liquidação da perna
+   vendida, custo de margem além do funding, risco de custódia.
+
+   Régua do veredito (limiares declarados como palpite, não medição):
+   abaixo de 60 dias é **inconclusivo**, nunca aprovado; o número que
+   decide é o **líquido da janela real**, não o anualizado; e positivo com
+   mais de 35% dos períodos negativos é **renda de regime, não de
+   estrutura** — reprova mesmo com média positiva.
+5. ⏸️ Real com capital de teste (~$300-1000, 3 venues, API keys SEM saque,
+   caps + kill-switch + fail-closed — regras da casa pra dinheiro).
+
+## Regras invioláveis no real
+
+Chave de API **sem permissão de retirada** · alavancagem 1x no short ·
+margem isolada · monitor de distância de liquidação com fechamento
+automático das duas pontas · caps por trade/dia · kill-switch admin_kv ·
+sem preço de referência = rejeita (fail-closed).
+
+---
+
+## 🏟 AS TRÊS LIGAS — 🟡 medindo (04/08)
+
+> Gatilho: o dono perguntou "como podemos fazer nosso arbiter concorrer nas
+> grandes ligas que lucram realmente com arbitragem". A curva de equilíbrio
+> sobre as 4.085 medições de livro respondeu de um jeito que ninguém tinha
+> testado.
+
+### A curva que mudou a pergunta
+
+| custo de ida e volta | quantas das 4.085 pagariam |
+|---|---|
+| 0,40% (o nosso) | 17 |
+| 0,10% | 137 |
+| 0,05% | 165 |
+| **0,00% — de graça** | **209** (5,1%) |
+
+**Com taxa ZERO, 95% continuam perdendo.** A mediana do bruto após andar o
+livro é **−0,238%** — negativo antes de qualquer taxa existir.
+
+Logo a barreira nunca foi taxa nem velocidade. O que come o spread é o
+**bid-ask, atravessado duas vezes**: slippage médio medido de 1,1% contra
+uma discordância entre venues de 0,05%. Não se atravessa dois spreads de
+meio ponto para capturar cinco centésimos — é aritmética, não competição.
+
+### O viés de seleção que escondia a resposta
+
+As 4.085 medições são de **oito altcoins rasas** (MANA 2.122, RUNE 561,
+SAND 576, IMX, VET, STX, JUP, GRT). **Zero em BTC, ETH ou SOL.**
+
+Porque a sonda só media a *melhor oportunidade aparente do tick* — e livro
+fino sempre ganha esse concurso, já que é ele que produz spread falso
+grande. Medimos exatamente onde não pode funcionar e nunca olhamos onde
+poderia.
+
+### As três medições que respondem
+
+| painel | pergunta | rota |
+|---|---|---|
+| 🔬 CENSO SPOT | nos majors o pedágio é menor que a discordância? | `/admin/api/depth-census` |
+| ⚡ CENSO PERP | o livro de futuros é mais estreito que o spot? | `/admin/api/perp-census` |
+| 📮 MESA MAKER | postar o spread em vez de atravessá-lo paga? | `/admin/api/maker-backtest` |
+
+Todas **leitura pura** — não abrem posição, não escrevem em `admin_kv`.
+
+**A métrica que decide é `borda = dispersão − pedágio`**, medida entre MIDs
+(não último preço — foi comparando últimos preços que a mesa achou 0,72%
+de borda que não existia). Borda negativa **antes da taxa** fecha a
+questão: não há tier VIP nem colocation que salve.
+
+Cada censo traz um grupo de **controle** com as rasas conhecidas, porque
+"0,03% de pedágio" só significa alguma coisa ao lado de "1,2%".
+
+### A mesa maker, e o perigo dela
+
+Simular ordem limitada é o jeito mais fácil que existe de fabricar lucro:
+basta assumir que a ordem encheu. Foi assim que os +34% nasceram. As regras
+de `src/lib/zion/maker.ts`:
+
+1. **Ordem só enche se o preço passou por ela** — mínima ≤ compra, máxima ≥
+   venda. Nada de "chegou perto".
+2. **Seleção adversa é contabilizada** — ser preenchido é informação ruim:
+   o preço veio até você porque estava andando contra.
+3. **Perna solta leva STOP** — encher um lado só transforma posição neutra
+   em aposta direcional. Era o que faltava, e é o que o dono pediu.
+
+O backtest varre a largura postada (0,02% a 0,50%, valores redondos e
+fixos) e grava a **curva inteira** — um número só seria um ponto escolhido
+por mim, que é o viés de seleção que esta semana já pegou uma vez.
+
+⚠️ **NÃO medido, e os três empurram para CIMA**: fila (você está atrás de
+outras ordens no mesmo preço), preenchimento parcial, impacto da própria
+ordem. Negativo com eles a favor é conclusão sólida; positivo é convite
+para medir com livro real, não mesa aprovada.
+
+### Estado
+
+🟡 As três medições estão no ar e **nunca foram rodadas**. Nenhuma mesa foi
+criada — a regra desta semana é medir antes de abrir posição, e ela pegou a
+Kucoin a tempo. Próximo passo: rodar os três botões e ler.

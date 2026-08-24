@@ -52,7 +52,7 @@ export default function TerminalPanel({
           )}
           {freshLabel && (
             <span style={{
-              fontSize: 8,
+              fontSize: 11,
               color: refreshing ? "var(--adm-green)" : "var(--adm-ink-4)",
               letterSpacing: "0.1em",
               transition: "color 300ms",
@@ -71,7 +71,7 @@ export default function TerminalPanel({
                 padding: "2px 4px",
                 cursor: refreshing ? "default" : "pointer",
                 color: refreshing ? "var(--adm-ink-4)" : "var(--adm-ink-3)",
-                fontSize: 11,
+                fontSize: 14,
                 lineHeight: 1,
                 transition: "color 120ms",
               }}

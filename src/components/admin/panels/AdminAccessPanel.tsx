@@ -93,8 +93,8 @@ export default function AdminAccessPanel() {
         </div>
       </div>
 
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 10, marginBottom: 8 }}>{err}</div>}
-      {msg && <div style={{ color: "var(--adm-green)", fontSize: 10, marginBottom: 8 }}>{msg}</div>}
+      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      {msg && <div style={{ color: "var(--adm-green)", fontSize: 13, marginBottom: 8 }}>{msg}</div>}
 
       <table className="adm-table">
         <thead><tr><th>CARTEIRA</th><th>ORIGEM</th><th></th></tr></thead>
@@ -102,22 +102,22 @@ export default function AdminAccessPanel() {
           {admins.length === 0 && <tr><td colSpan={3} style={{ color: "var(--adm-ink-3)" }}>—</td></tr>}
           {admins.map((a) => (
             <tr key={a.wallet}>
-              <td style={{ fontFamily: "monospace", fontSize: 9, color: "var(--adm-ink)", wordBreak: "break-all" }}
+              <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--adm-ink)", wordBreak: "break-all" }}
                   title={a.note ?? undefined}>
                 {a.wallet.slice(0, 14)}…{a.wallet.slice(-6)}
                 {a.note && <span style={{ color: "var(--adm-ink-4)" }}> · {a.note}</span>}
               </td>
-              <td style={{ color: SRC_COLOR[a.source], fontSize: 9 }}>{SRC_LABEL[a.source]}</td>
+              <td style={{ color: SRC_COLOR[a.source], fontSize: 12 }}>{SRC_LABEL[a.source]}</td>
               <td style={{ textAlign: "right" }}>
                 {a.revocable
-                  ? <button className="adm-toggle danger" onClick={() => revoke(a.wallet)} disabled={busy} style={{ padding: "2px 8px", fontSize: 9 }}>REVOGAR</button>
-                  : <span style={{ fontSize: 8, color: "var(--adm-ink-4)" }}>🔒</span>}
+                  ? <button className="adm-toggle danger" onClick={() => revoke(a.wallet)} disabled={busy} style={{ padding: "2px 8px", fontSize: 12 }}>REVOGAR</button>
+                  : <span style={{ fontSize: 11, color: "var(--adm-ink-4)" }}>🔒</span>}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <div style={{ fontSize: 8, color: "var(--adm-ink-4)", marginTop: 6 }}>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 6 }}>
         🔒 admins de ENV são fixos no deploy (edite ADMIN_WALLETS no Vercel). Você não pode revogar a si mesmo nem o último admin.
       </div>
       {modal}

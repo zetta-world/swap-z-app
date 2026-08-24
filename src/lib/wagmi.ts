@@ -2,7 +2,7 @@
 
 import { http, createConfig } from "wagmi";
 import {
-  mainnet, bsc, polygon, base, arbitrum, optimism, avalanche, zksync, linea,
+  mainnet, bsc, polygon, base, arbitrum, optimism, avalanche,
 } from "wagmi/chains";
 import { coinbaseWallet, injected, metaMask, walletConnect } from "wagmi/connectors";
 
@@ -70,7 +70,7 @@ const connectors = [
 ];
 
 export const wagmiConfig = createConfig({
-  chains: [mainnet, bsc, polygon, base, arbitrum, optimism, avalanche, zksync, linea],
+  chains: [mainnet, bsc, polygon, base, arbitrum, optimism, avalanche],
   connectors,
   multiInjectedProviderDiscovery: true,
   ssr: true,
@@ -82,8 +82,6 @@ export const wagmiConfig = createConfig({
     [arbitrum.id]:  http(),
     [optimism.id]:  http(),
     [avalanche.id]: http(),
-    [zksync.id]:    http(),
-    [linea.id]:     http(),
   },
 });
 
@@ -98,8 +96,6 @@ export const WAGMI_CHAIN_TO_INTERNAL: Record<number, ChainId> = {
   [arbitrum.id]:  "arbitrum",
   [optimism.id]:  "optimism",
   [avalanche.id]: "avalanche",
-  [zksync.id]:    "zksync",
-  [linea.id]:     "linea",
 };
 
 // Inverse: internal ChainId → wagmi numeric chain id
@@ -111,6 +107,4 @@ export const WAGMI_CHAIN_IDS: Partial<Record<ChainId, number>> = {
   arbitrum:  arbitrum.id,
   optimism:  optimism.id,
   avalanche: avalanche.id,
-  zksync:    zksync.id,
-  linea:     linea.id,
 };

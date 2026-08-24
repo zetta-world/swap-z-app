@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Syne, DM_Sans, DM_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
-import AppShell from "@/components/layout/AppShell";
 import ClientErrorReporter from "@/components/telemetry/ClientErrorReporter";
 
 const syne = Syne({
@@ -122,7 +121,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${syne.variable} ${dmSans.variable} ${dmMono.variable}`}>
       <body className="font-sans antialiased min-h-screen">
         <ClientErrorReporter />
-        <Providers><AppShell>{children}</AppShell></Providers>
+        {/**
+          * ⚠️ A RAIZ NÃO TEM CASCO (12/08). Aqui ficam só as coisas que valem
+          * para o documento inteiro — fontes, provedores, telemetria.
+          *
+          * O `AppShell` morava aqui e por isso o painel admin abria com a barra
+          * lateral de Swap/Bridge/Pools do lado. Ele desceu para
+          * `(plataforma)/layout.tsx`; `/admin` tem o seu, e os dois não se
+          * conhecem. Ver a nota de lá.
+          */}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

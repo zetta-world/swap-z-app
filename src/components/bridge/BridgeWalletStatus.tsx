@@ -6,6 +6,7 @@ import { Wallet, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
 import { useSwap } from "@/lib/store/swap";
 import { CHAIN_BY_ID } from "@/lib/chains";
+import { destinatarioValido, familiaDaRede } from "@/lib/swap/recipient";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
@@ -40,14 +41,15 @@ export default function BridgeWalletStatus() {
   const dstIsSolana = dstChain === "solana";
 
   const srcWalletReady = srcIsSolana ? sol.connected : isConnected;
-  // A custom recipient counts as "ready" only when the address actually
-  // matches the destination chain family. A malformed string used to slip
-  // through here and only fail downstream at quote time.
-  const recipientValid = recipient
-    ? (dstIsSolana
-        ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(recipient.trim())
-        : /^0x[0-9a-fA-F]{40}$/.test(recipient.trim()))
-    : false;
+  /**
+   * ⚠️ ERA A TERCEIRA DEFINIÇÃO DE "ENDEREÇO VÁLIDO" no caminho da ponte.
+   *
+   * A regex daqui não conferia checksum e aceitava o endereço de queima — então
+   * este painel podia mostrar ✓ VERDE para um destinatário que o campo logo
+   * abaixo pintava de vermelho. Duas telas, dois vereditos, o mesmo endereço.
+   * Agora as duas chamam a mesma função.
+   */
+  const recipientValid = destinatarioValido(recipient, familiaDaRede(dstChain));
   const dstWalletReady = recipient
     ? recipientValid
     : dstIsSolana ? sol.connected : isConnected;

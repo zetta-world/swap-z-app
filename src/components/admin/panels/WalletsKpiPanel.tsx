@@ -25,7 +25,7 @@ export default function WalletsKpiPanel() {
         </>
       )}
       {state.status === "error" && (
-        <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{state.message}</div>
+        <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{state.message}</div>
       )}
       {state.status === "ok" && (() => {
         const { total, active7d, active30d, chainSplit } = state.data.wallets;

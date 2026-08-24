@@ -10,12 +10,13 @@
  * Server-only. Best-effort: a DB hiccup never breaks the caller.
  */
 
-import { anthropicChat, openaiCompatChat } from "@/lib/ai/provider";
-import { roleProvider, type ProviderConfig } from "@/lib/ai/registry";
+import { openaiCompatChat } from "@/lib/ai/provider";
+import { roleProvider, configuredProviders, type ProviderConfig } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
+import { getOHLCV } from "@/lib/api/geckoterminal";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import { recordEvent, logError } from "@/lib/admin/track";
@@ -23,7 +24,10 @@ import { modelChain } from "@/lib/zion/model";
 import { ZION_FOUNDATION, ZION_FOUNDATION_VERSION } from "@/lib/zion/foundation";
 import { formatIndicatorsForPrompt, type SymbolIndicators, type MarketIndicatorsResult } from "@/lib/api/market-indicators";
 import { getMacroContext } from "@/lib/api/macro";
+import { fetchFundingContext, fetchFearGreed } from "@/lib/api/market-context";
+import { getActiveLessons, lessonsBlock } from "@/lib/zion/retro";
 import type { ZionSuggestionRow } from "@/lib/supabase/types";
+import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
 
 /**
  * Generate scored predictions for the backtester (Z6). Unlike the autopilot
@@ -32,8 +36,10 @@ import type { ZionSuggestionRow } from "@/lib/supabase/types";
  * with a steady stream of predictions to measure. Non-streaming, one call.
  */
 /** Build the backtest scan instruction (shared by every model in the A/B).
+ *  `extras` (25/07): positioning/sentiment context + the agent's own
+ *  Auto-Retro lessons — the same side-monitor the Oráculo reads.
  *  Returns null when there are no usable indicators this tick. */
-async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise<string | null> {
+async function buildScanInstruction(marketData: MarketIndicatorsResult, extras = ""): Promise<string | null> {
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
   if (!indicatorsText) return null;
   const macroText = await getMacroContext().catch(() => "");
@@ -87,13 +93,29 @@ async function buildScanInstruction(marketData: MarketIndicatorsResult): Promise
     "that the indicators genuinely support, the setup does not qualify — skip",
     "it. The ledger gate rejects anything below 2, so a weaker card only",
     "wastes your output.",
+    `STOP FLOOR — the stop must sit at least max(${MIN_STOP_ATR}×ATR, ${MIN_STOP_PCT}%) from entry.`,
+    "Build the RR ratio by choosing the TARGET, never by tightening the stop:",
+    "a stop inside the symbol's noise band dies of weather, not of being wrong,",
+    "and the ledger gate rejects it. If the move can't support both, skip it.",
     "Machine-format every number (dot decimal, no separators, no symbols).",
     "",
     "<market>",
     macroText ? `${macroText}\n` : "",
     indicatorsText,
     "</market>",
+    extras ? `\n${extras}` : "",
   ].join("\n");
+}
+
+/** Positioning/sentiment context + the agent's own lessons, as one extras
+ *  block for the scan prompt. Best-effort everywhere. */
+async function scanExtras(source: string): Promise<string> {
+  const [funding, fng, lessons] = await Promise.all([
+    fetchFundingContext(),
+    fetchFearGreed(),
+    getActiveLessons([source]),
+  ]);
+  return [funding, fng, lessonsBlock(lessons.get(source))].filter(Boolean).join("\n");
 }
 
 /** JSON schema for a flywheel scan (R1.1). On Anthropic paths (Agent A + CEO)
@@ -152,30 +174,19 @@ export function extractCards(text: string): ActionCard[] {
   return parseZionStream(text).cards;
 }
 
-export async function runBacktestScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return [];
-  const instruction = await buildScanInstruction(marketData);
-  if (!instruction) return [];
-
-  try {
-    // 504 guard. The backtest scan is heavy and runs inside a 60s Vercel
-    // function. A single attempt at 40s fits the budget (indicators ~3s + LLM
-    // ≤40s + resolve ~5s); stacking the N1 fallback chain would risk two
-    // timeouts = >60s. Best-effort — the next 30-min tick retries. (The real-
-    // money autopilot keeps the full fallback chain.) Prompt caching on the
-    // foundation via cacheSystem. Goes through the provider seam so the hybrid
-    // branch can swap this model without touching the flywheel logic.
-    const r = await anthropicChat(
-      { model: modelChain()[0], system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: 40_000, cacheSystem: true, jsonSchema: SCAN_CARDS_SCHEMA },
-      apiKey,
-    );
-    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: "backtest", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
-    return extractCards(r.text);
-  } catch {
-    return [];
-  }
-}
+/**
+ * AGENT A — APOSENTADO 27/07, e o CÓDIGO REMOVIDO em 29/07.
+ *
+ * Claude escaneava a cada 30min sob `self_scan`. O flywheel mediu esse assento
+ * dentro de ~1pt dos cérebros gratuitos (a vantagem inteira era ruído), sendo
+ * ao mesmo tempo a maior linha recorrente da fatura Anthropic.
+ *
+ * A função `runBacktestScan` vivia aqui como código morto "por precaução". Foi
+ * apagada: enquanto existisse uma função pronta lendo ANTHROPIC_API_KEY, um
+ * religamento distraído bastava para a fatura voltar. Sem assento Anthropic no
+ * flywheel, o caminho tem que ser estruturalmente inexistente, não apenas
+ * desativado. O histórico de `self_scan` segue no ledger e em Valhalla.
+ */
 
 /**
  * A/B variant — runs the SAME backtest scan through one configured direct
@@ -188,12 +199,30 @@ export async function runBacktestScan(marketData: MarketIndicatorsResult): Promi
 export async function runBacktestScanForProvider(
   marketData: MarketIndicatorsResult,
   provider: ProviderConfig,
+  /**
+   * ⚠️ QUEM ESTÁ PAGANDO ESTA CHAMADA — e por que virou parâmetro (16/08).
+   *
+   * Esta função gravava o custo sempre como `backtest_${provider.id}`, porque
+   * nasceu servindo só ao torneio. Mas o RADAR também a chama
+   * (`api/radar/route.ts`), com o próprio cérebro — e toda chamada dele era
+   * carimbada como se fosse da mesa do torneio que usa o mesmo modelo.
+   *
+   * O sintoma: `backtest_mistral` aparecia com chamadas em 15/08 às 22:52,
+   * quando a GERI estava ARQUIVADA e não podia ter rodado. Não tinha rodado —
+   * era o HEIMDALL gastando com o nome dela.
+   *
+   * Isso não é cosmético: o painel de custo de IA soma por `source`, então o
+   * gasto do radar entrava na conta de uma mesa aposentada, e a conta do radar
+   * aparecia zerada. Um custo atribuído à mesa errada é pior que custo não
+   * medido — o primeiro dá uma resposta falsa, o segundo pelo menos cala.
+   */
+  quemPaga: string = `backtest_${provider.id}`,
 ): Promise<ActionCard[]> {
   if (!provider.apiKey) return [];
   // Circuit breaker: skip a provider that's tripped (broken key / dead endpoint)
   // instead of burning a call + firing an alert every tick (P2.11).
   if (await isTripped(provider.id)) return [];
-  const instruction = await buildScanInstruction(marketData);
+  const instruction = await buildScanInstruction(marketData, await scanExtras(`${provider.id}_scan`));
   if (!instruction) return [];
   try {
     const r = await openaiCompatChat(
@@ -201,14 +230,14 @@ export async function runBacktestScanForProvider(
       { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
     );
     await recordResult(provider.id, provider.label, true);
-    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: `backtest_${provider.id}`, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
+    recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: quemPaga, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return extractCards(r.text);
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     await recordResult(provider.id, provider.label, false, reason);
     // Log the reason so a repeatedly-failing provider is diagnosable (bad key /
     // no credit / dead model) from the admin Logs panel, not just "N failures".
-    logError(`backtest_scan:${provider.id}`, reason, { model: provider.model, source: `backtest_${provider.id}` });
+    logError(`backtest_scan:${provider.id}`, reason, { model: provider.model, source: quemPaga });
     return [];
   }
 }
@@ -287,28 +316,38 @@ function buildCeoPrompt(indicatorsText: string, macro: string, sentiment: string
 
 /**
  * AGENT B — the TRUE Ferrari: each model in its strongest area, fused by a CEO.
+ *   • Mistral  → TECHNICAL/quant brain (the draft)   [roleProvider("brain")]
  *   • Kimi     → MACRO digest (big context)
  *   • Grok     → SENTIMENT (native to X)
- *   • DeepSeek → TECHNICAL/quant brain (the draft)   [roleProvider("brain")]
- *   • Opus     → CEO that SYNTHESIZES all into the final cards
- * The three specialists run in PARALLEL; Opus then fuses them. Every stage logs
- * cost under source "hybrid"; the caller logs the final suggestions as
- * "hybrid_scan". Needs the brain key + ANTHROPIC_API_KEY with live credits
- * (Opus/CEO) — dormant until both exist (wakes itself after the 11/07 top-up).
- * Missing specialist keys degrade gracefully (that report is just "(none)").
+ *   • DeepSeek → CEO that SYNTHESIZES all into the final cards
+ * The three specialists run in PARALLEL; the CEO then fuses them. Every stage
+ * logs cost under source "hybrid"; the caller logs the final suggestions as
+ * "hybrid_scan". Missing specialist keys degrade gracefully (that report is
+ * just "(none)").
+ *
+ * 27/07 — ANTHROPIC REMOVED from this desk (CEO decision). The flywheel had
+ * measured every brain within ~1pt of every other, so the Opus CEO bought no
+ * edge while costing $17.50 over the three days it ran (70% of July's entire
+ * Anthropic bill). DeepSeek now holds the CEO seat and the desk is
+ * Anthropic-free end to end; with the expensive seat gone, the HYBRID_B_ENABLED
+ * gate that existed to protect Opus credits now defaults to ON.
  */
 export async function runHybridScan(marketData: MarketIndicatorsResult): Promise<ActionCard[]> {
-  // Master switch — OFF by default so Agent B doesn't spend on the specialists
-  // while the CEO (Opus) has no credits. Flip HYBRID_B_ENABLED=true after the
-  // 11/07 Anthropic top-up to wake the full Ferrari.
-  if (process.env.HYBRID_B_ENABLED !== "true") return [];
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  // Master switch — defaults ON now that no seat bills Anthropic prices.
+  // HYBRID_B_ENABLED=false still parks the desk without a deploy.
+  if ((process.env.HYBRID_B_ENABLED ?? "true") === "false") return [];
   const brain = roleProvider("brain");
-  if (!anthropicKey || !brain?.apiKey) return [];
+  const ceo = roleProvider("ceo");
+  if (!brain?.apiKey || !ceo?.apiKey) return [];
   const indicatorsText = formatIndicatorsForPrompt(marketData).trim();
   if (!indicatorsText) return [];
   const macroText = await getMacroContext().catch(() => "");
-  const scanInstruction = await buildScanInstruction(marketData);
+  // Context to the technical seat; the agent's OWN lessons go to the CEO —
+  // the seat that actually signs the cards.
+  const [funding, fng, hybridLessons] = await Promise.all([
+    fetchFundingContext(), fetchFearGreed(), getActiveLessons(["hybrid_scan"]),
+  ]);
+  const scanInstruction = await buildScanInstruction(marketData, [funding, fng].filter(Boolean).join("\n"));
   if (!scanInstruction) return [];
   const symbolsCsv = marketData.indicators.map((i) => i.symbol).join(", ");
   const sentimentProvider = roleProvider("sentiment");
@@ -329,24 +368,29 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
   ]);
   if (!technical.trim()) return []; // no draft to synthesize
 
-  // CEO fuses everything into the final cards. Opus is the primary synthesizer,
-  // but it's a SINGLE point of failure — an Opus timeout/error would waste all
-  // three specialist calls and return nothing. So on failure we fall back to
-  // Sonnet (same key, always has credits when Anthropic is up) for the exact
-  // same synthesis (P0.3). Only if BOTH fail do we give up.
-  const ceoPrompt = buildCeoPrompt(indicatorsText, macro, sentiment, technical);
-  const primaryModel  = process.env.HYBRID_ORCH_MODEL ?? "claude-opus-4-8";
-  const fallbackModel = process.env.HYBRID_ORCH_FALLBACK_MODEL ?? modelChain()[0];
-  for (const [model, role] of [[primaryModel, "hybrid_ceo"], [fallbackModel, "hybrid_ceo_fallback"]] as const) {
+  // CEO fuses everything into the final cards. It's a SINGLE point of failure —
+  // one timeout would waste all three specialist calls — so on failure we retry
+  // the SAME synthesis on the next provider in the ceo chain (P0.3). Only if
+  // both attempts fail do we give up.
+  const lessonsTxt = lessonsBlock(hybridLessons.get("hybrid_scan"));
+  const ceoPrompt = buildCeoPrompt(indicatorsText, macro, sentiment, technical) + (lessonsTxt ? `\n\n${lessonsTxt}` : "");
+  const ceoFallback = configuredProviders().find((p) => p.id !== ceo.id && p.id !== brain.id) ?? null;
+  for (const [provider, role] of [[ceo, "hybrid_ceo"], [ceoFallback, "hybrid_ceo_fallback"]] as const) {
+    if (!provider?.apiKey) continue;
+    if (await isTripped(provider.id)) continue;
     try {
-      const o = await anthropicChat(
-        { model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200, timeoutMs: 25_000, cacheSystem: true, jsonSchema: SCAN_CARDS_SCHEMA },
-        anthropicKey,
+      const o = await openaiCompatChat(
+        { model: provider.model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200,
+          timeoutMs: provider.timeoutMs ?? 25_000, temperature: provider.temperature, extraBody: provider.extraBody },
+        { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
       );
+      await recordResult(provider.id, provider.label, true);
       recordEvent("zion_analysis", { meta: { op: role, model: o.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...o.usage } });
       return extractCards(o.text);
-    } catch {
-      if (model === fallbackModel) return []; // both CEO attempts failed
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      await recordResult(provider.id, provider.label, false, reason);
+      logError(`hybrid_ceo:${provider.id}`, reason, { model: provider.model, source: "hybrid" });
     }
   }
   return [];
@@ -373,6 +417,16 @@ const REGIME_FILTER_ON = (process.env.BACKTEST_REGIME_FILTER ?? "on") !== "off";
 // even at decent win rates. The prompt demands >=2; this enforces it.
 const MIN_RR = Number(process.env.BACKTEST_MIN_RR ?? 2);
 
+// Stop floor for the SCANNER profile (27/07). The weekend cohort exposed the
+// vice the RR>=2 gate creates: average stop shrank 2.02% → 1.72% because the
+// cheapest way to hit the ratio is TIGHTENING the stop, and a stop inside the
+// noise band dies of weather. The agents diagnosed it themselves in their
+// Auto-Retro ("stops under 1% are getting clipped almost instantly — DOGE
+// 0.4%, SOL 0.8%, BNB 0.3%, XRP 0.7%, all stopped in under 7h"), so the
+// funnel now enforces what they wrote: RR must be built from an honest stop.
+const MIN_STOP_ATR = Number(process.env.BACKTEST_MIN_STOP_ATR ?? 1.5); // × 1h ATR%
+const MIN_STOP_PCT = Number(process.env.BACKTEST_MIN_STOP_PCT ?? 1.2);
+
 type NewSuggestion = Partial<ZionSuggestionRow> & { symbol: string; kind: string; side: "buy" | "sell"; ref_price: number };
 
 /** Per-profile overrides for the funnel gates. Defaults reproduce the scanner
@@ -380,8 +434,20 @@ type NewSuggestion = Partial<ZionSuggestionRow> & { symbol: string; kind: string
  *  (docs/PLANO-ORACULO-ANALISTA.md): no regime filter (a reversal thesis WITH
  *  declared invalidation is its reason to exist), RR ≥1.5 with a stop parked
  *  OUTSIDE the noise band (minStopPct — a thesis stop, not a stroll stop),
- *  and a full bracket is mandatory. */
-export interface ExtractOpts { minRR?: number; regimeFilter?: boolean; minStopPct?: number }
+ *  and a full bracket is mandatory.
+ *
+ *  `atrPctBySymbol` + `minStopAtr` add the volatility-aware floor: the stop
+ *  must clear max(minStopAtr × ATR%, minStopPct). Both floors combine (the
+ *  strictest wins); callers that pass no ATR map simply get the flat floor.
+ *  The Oráculo deliberately stays on its flat 4% for now — its cohort is
+ *  mid-measurement and must not change shape under it. */
+export interface ExtractOpts {
+  minRR?: number; regimeFilter?: boolean; minStopPct?: number;
+  atrPctBySymbol?: Map<string, number>; minStopAtr?: number;
+  /** `false` exempts a caller from the volatility stop floor entirely. Exists
+   *  for ONE reason: the control group must never receive the treatment. */
+  stopFloor?: boolean;
+}
 
 /** Turn a card into a ledger row, or null when it isn't a trackable directional trade. */
 export function extractSuggestion(
@@ -430,10 +496,53 @@ export function extractSuggestion(
     if (regime === "TRENDING_DOWN" && side === "buy") return null;
   }
 
-  const entry = parsePrice(card.entryPrice ?? card.triggerPrice ?? "") || null;
-  const target = card.exits && card.exits[0] ? (parsePrice(card.exits[0].price) || null) : null;
-  const stop  = parsePrice(card.stopLoss ?? "") || null;
+  let entry = parsePrice(card.entryPrice ?? card.triggerPrice ?? "") || null;
+  let target = card.exits && card.exits[0] ? (parsePrice(card.exits[0].price) || null) : null;
+  let stop  = parsePrice(card.stopLoss ?? "") || null;
   const prob  = parsePrice(card.probability ?? "") || null;
+
+  /**
+   * ⚠️ O RESGATE DE ESCALA — item A7 da auditoria (14/08).
+   *
+   * `parsePrice("7.320")` devolve **7320**. A regra que faz isso é deliberada:
+   * quando há um separador só e os grupos parecem milhar, ela lê milhar, o que
+   * enviesa para o preço MAIOR — e preço maior numa compra dá quantidade menor,
+   * que é a direção segura (nunca gasta demais).
+   *
+   * O efeito colateral é que um preço legítimo entre 1 e 999 com exatamente 3
+   * decimais terminando em zero ("7.320" = 7,32) sai 1000× maior, bate no
+   * portão de escala logo abaixo e o card é **descartado em silêncio**. Todos
+   * os desdobramentos são fail-safe — nada de errado é operado — mas cobertura
+   * some sem deixar rastro, e sumir sem rastro é o que este repositório passa a
+   * vida separando de "não havia nada".
+   *
+   * ⚠️ POR QUE SÓ /1000, e por que a GEOMETRIA INTEIRA junto. A deriva
+   * documentada é sempre de mil (LINK a 7323 contra 7,32 real; DOT a 816 contra
+   * 0,816), e o viés do `parsePrice` só erra para MAIS — multiplicar não teria
+   * caso. E reescalar só a entrada quebraria a relação com alvo e stop: ou os
+   * três descem juntos, ou nenhum desce.
+   *
+   * ⚠️ E O RESGATE SÓ VALE SE ELE RESOLVE. A troca só acontece quando a entrada
+   * original está FORA da banda e a dividida está DENTRO. Sem essa condição
+   * isto viraria um dividir-por-mil oportunista, capaz de transformar um card
+   * genuinamente alucinado num card plausível — que é o oposto do portão.
+   *
+   * ⚠️ E DEIXA RASTRO. Um caminho de resgate no trajeto do dinheiro que ninguém
+   * lê é a invariante nº 14 esperando acontecer: se um dia ele passar a disparar
+   * o tempo todo, isso é notícia sobre o modelo, não um detalhe de parsing.
+   */
+  if (entry && entry > 0 && refPrice > 0
+      && Math.abs(entry / refPrice - 1) > 0.25
+      && Math.abs(entry / 1000 / refPrice - 1) <= 0.25) {
+    recordEvent("zion_escala_resgatada", { meta: {
+      symbol: base, entryLido: entry, entryCorrigido: entry / 1000, refPrice,
+      why: "preço entre 1 e 999 com 3 decimais terminando em zero é lido como milhar "
+        + "por `parsePrice` (viés seguro em compra); a geometria inteira desce junto",
+    } });
+    entry = entry / 1000;
+    if (target) target = target / 1000;
+    if (stop) stop = stop / 1000;
+  }
 
   // Scale sanity: the prompt says entryPrice = the CURRENT price, so it must be
   // within a sane band of the real ref_price. The model sometimes emits the
@@ -460,6 +569,18 @@ export function extractSuggestion(
     if (!entry || !target || !stop) return null;
     if ((Math.abs(entry - stop) / entry) * 100 < opts.minStopPct) return null;
   }
+
+  // Volatility-aware stop floor: a stop inside the symbol's own noise band is
+  // a coin flip against the tape, not a thesis. Only applies when the card
+  // carries a stop (a bracket-less directional call still resolves at horizon).
+  if ((opts?.stopFloor ?? true) && entry && entry > 0 && stop) {
+    const atrPct = opts?.atrPctBySymbol?.get(base);
+    const floor = Math.max(
+      atrPct != null && atrPct > 0 ? atrPct * (opts?.minStopAtr ?? MIN_STOP_ATR) : 0,
+      opts?.minStopPct ?? MIN_STOP_PCT,
+    );
+    if ((Math.abs(entry - stop) / entry) * 100 < floor) return null;
+  }
   if (entry && entry > 0 && target && stop) {
     const dir = side === "buy" ? 1 : -1;
     const reward = (target - entry) * dir;
@@ -482,18 +603,34 @@ export async function logSuggestions(cards: ActionCard[], indicators: SymbolIndi
   if (!db || cards.length === 0) return 0;
   const refBy = new Map<string, number>();
   const regimeBy = new Map<string, string>();
+  const atrBy = new Map<string, number>();
   for (const ind of indicators) {
     const sym = ind.symbol.toUpperCase();
     if (ind.price != null && ind.price > 0) refBy.set(sym, ind.price);
     if (ind.regime) regimeBy.set(sym, ind.regime);
+    if (ind.atrPct != null && ind.atrPct > 0) atrBy.set(sym, ind.atrPct);
   }
+  // The radar is the flywheel's CONTROL group — the untouched ruler every
+  // experiment is measured against (its prompt hasn't changed since the
+  // beginning, which is how we caught that the 17/07 collapse and the 26/07
+  // rally were both regime, not skill). A control that receives the treatment
+  // is not a control, so it is deliberately EXEMPT from the stop floor: while
+  // the treated agents are measured with it, the radar keeps producing the
+  // pre-treatment baseline. Do not "fix" this to make the radar look better.
+  const isControl = source === "radar";
   const rows = cards
-    .map((c) => extractSuggestion(c, refBy, regimeBy))
+    .map((c) => extractSuggestion(c, refBy, regimeBy, isControl ? { stopFloor: false } : { atrPctBySymbol: atrBy }))
     .filter((r): r is NewSuggestion => r !== null)
     .map((r) => ({ ...r, source }));
   if (rows.length === 0) return 0;
-  try { await db.from("zion_suggestions").insert(rows); return rows.length; }
-  catch { return 0; }
+  // O cliente do Supabase NÃO lança em erro de banco: resolve com
+  // `{ error }`. Um `try/catch` aqui nunca dispararia, e a contagem devolvida
+  // seria uma MENTIRA — linhas "gravadas" que não existem. Foi essa mesma
+  // suposição que fez as carteiras de paper vazarem capital (ver
+  // `paper/engine.ts`). Aqui o estrago é de medição, não de dinheiro, mas uma
+  // mesa que relata trades inexistentes envenena o experimento igual.
+  const { error } = await db.from("zion_suggestions").insert(rows);
+  return error ? 0 : rows.length;
 }
 
 export interface ResolveResult { checked: number; resolved: number; }
@@ -579,6 +716,29 @@ export function resolveOne(r: ZionSuggestionRow, klines: Kline[], spot: number |
 }
 
 /**
+ * Candles de um POOL on-chain (0019/S3), no mesmo formato do klines da Binance,
+ * para que `resolveOne` não precise saber de onde veio o preço.
+ *
+ * Sem isto, uma sugestão de token só-DEX ficaria "open" para sempre: o resolver
+ * inteiro indexa preço por SÍMBOLO contra a Binance, e um token on-chain não
+ * tem par lá. Best-effort → [] (a linha simplesmente não resolve neste tick).
+ */
+async function fetchPoolKlines(chain: string, pool: string, spanMs: number): Promise<Kline[]> {
+  // Mesma lógica de granularidade do caminho CEX: janela curta pede vela fina.
+  const tf = spanMs <= 12 * 3_600_000 ? "5m" : spanMs <= 3 * 86_400_000 ? "1h" : "4h";
+  try {
+    const rows = await getOHLCV(chain, pool, tf, 300, "base");
+    return rows
+      // GeckoTerminal devolve `time` em SEGUNDOS; o replay do resolver trabalha
+      // em milissegundos. Sem a conversão, toda vela cairia em 1970 e a janela
+      // do replay ficaria vazia — a linha nunca resolveria.
+      .map((c) => ({ t: c.time * 1000, high: c.high, low: c.low, close: c.close }))
+      .filter((c) => Number.isFinite(c.high) && Number.isFinite(c.low) && c.high > 0)
+      .sort((a, b) => a.t - b.t);
+  } catch { return []; }
+}
+
+/**
  * Resolve open suggestions by REPLAYING the price path (hourly candles) since
  * each was logged — first target/stop touch wins; horizon elapsed → directional
  * win/loss/neutral. One klines fetch per symbol (parallel), reused across that
@@ -589,6 +749,10 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
   const db = getSupabaseAdmin();
   if (!db) return { checked: 0, resolved: 0 };
   const { data: open } = await db
+    // leitura-limitada: `limit` é PARÂMETRO desta função — o chamador escolhe o
+    // tamanho do lote por tick, e o que sobra é resolvido no tick seguinte.
+    // inclui-arquivadas: `status = open` já exclui resolvida; sugestão
+    // arquivada em aberto não existe (o arquivamento fecha antes).
     .from("zion_suggestions")
     .select("*")
     .eq("status", "open")
@@ -597,20 +761,37 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
   if (!open || open.length === 0) return { checked: 0, resolved: 0 };
 
   const nowMs = Date.now();
-  const symbols = [...new Set(open.map((r) => r.symbol))];
+  // Linhas de POOL (S3) buscam candle on-chain; as demais seguem pelo caminho
+  // CEX de sempre. A chave do cache é o pool, não o símbolo — dois pools do
+  // mesmo token são preços diferentes e não podem se misturar.
+  const dexRows = open.filter((r) => r.pool_address && r.chain);
+  const cexRows = open.filter((r) => !(r.pool_address && r.chain));
 
-  // One candle fetch per symbol, in parallel, covering that symbol's oldest
-  // open suggestion → now. Spot map is the per-symbol fallback.
+  const symbols = [...new Set(cexRows.map((r) => r.symbol))];
   const klinesBySymbol = new Map<string, Kline[]>();
-  await Promise.all(symbols.map(async (sym) => {
-    const earliest = Math.min(...open.filter((r) => r.symbol === sym).map((r) => Date.parse(r.created_at)));
-    klinesBySymbol.set(sym, await fetchKlines(sym, earliest, nowMs, intervalForSpan(nowMs - earliest)));
-  }));
-  const spot = await getCexSpotPrices(symbols).catch(() => new Map());
+  const klinesByPool = new Map<string, Kline[]>();
+  await Promise.all([
+    ...symbols.map(async (sym) => {
+      const earliest = Math.min(...cexRows.filter((r) => r.symbol === sym).map((r) => Date.parse(r.created_at)));
+      klinesBySymbol.set(sym, await fetchKlines(sym, earliest, nowMs, intervalForSpan(nowMs - earliest)));
+    }),
+    ...[...new Set(dexRows.map((r) => `${r.chain}|${r.pool_address}`))].map(async (key) => {
+      const [chain, pool] = key.split("|");
+      const earliest = Math.min(...dexRows.filter((r) => `${r.chain}|${r.pool_address}` === key).map((r) => Date.parse(r.created_at)));
+      klinesByPool.set(key, await fetchPoolKlines(chain, pool, nowMs - earliest));
+    }),
+  ]);
+  const spot = symbols.length ? await getCexSpotPrices(symbols).catch(() => new Map()) : new Map();
 
   let resolved = 0;
   for (const r of open) {
-    const verdict = resolveOne(r, klinesBySymbol.get(r.symbol) ?? [], spot.get(r.symbol)?.priceUsd, nowMs);
+    const onChain = r.pool_address && r.chain;
+    const candles = onChain
+      ? klinesByPool.get(`${r.chain}|${r.pool_address}`) ?? []
+      : klinesBySymbol.get(r.symbol) ?? [];
+    // Sem spot fallback on-chain: o último close do pool já É o preço corrente,
+    // e inventar um spot de CEX para um token que não está lá seria mentira.
+    const verdict = resolveOne(r, candles, onChain ? candles[candles.length - 1]?.close : spot.get(r.symbol)?.priceUsd, nowMs);
     if (!verdict) continue;
     try {
       await db.from("zion_suggestions").update({
@@ -628,7 +809,7 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
 // Round-trip execution cost subtracted from gross expectancy so the reported
 // edge is NET of fees + slippage (Gemini/DeepSeek). Default ≈ 0.1% taker × 2
 // legs = 0.2%. Override with BACKTEST_COST_PCT.
-const ROUND_TRIP_COST_PCT = Number(process.env.BACKTEST_COST_PCT ?? 0.2);
+const ROUND_TRIP_COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100); // ≥100 to trust a comparison
 
 export interface BacktestStats {

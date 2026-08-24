@@ -25,19 +25,50 @@
  *                      zero-LLM, paper-booked; docs/PLANO-MESA-AGENTES.md).
  *   pause_oracle     — skip the ORÁCULO thesis desk (daily, context-driven,
  *                      multi-model; docs/PLANO-ORACULO-ANALISTA.md).
+ *   pause_arbiter2   — skip the ARBITER 2.0 desk (spot+perp hedged spread
+ *                      capture, $300 real-seed sim; docs/PLANO-ARBITER-REAL.md).
+ *   pause_ragnarok   — skip the RAGNARÖK desk (VÖLUNDR — seletor mecânico
+ *                      long-only, zero-LLM; docs/PLANO-RAGNAROK.md). Gate
+ *                      próprio de propósito: é mesa nova operando sozinha, e
+ *                      tem que dar pra desligar SEM derrubar o resto do tick.
+ *   pause_ragnarok_ai — skip a mesa de IA do Ragnarök (MÍMIR). Gate SEPARADO do
+ *                      mecânico: a mesa de IA gasta token, a mecânica não, então
+ *                      um corte de custo não pode calar o controle junto.
+ *   pause_ragnarok_dex — skip a mesa DEX (FREYJA). Gate próprio: ela depende da
+ *                      GeckoTerminal, e uma API de terceiro instável não pode
+ *                      obrigar a desligar as mesas de CEX junto.
+ *   pause_ullr       — skip o arqueiro (ULLR, lançamentos on-chain). Terreno de
+ *                      risco mais alto: gate próprio para poder calar SÓ ele.
+ *   pause_urdr       — skip a URÐR, a Norna do passado: mesa MECÂNICA que escolhe
+ *                      pelo histórico medido em vez da prioridade declarada. É o
+ *                      terceiro braço do duelo — sem ela, "IA com evidência" e
+ *                      "regra sem evidência" ficam confundidas numa comparação só.
+ *   pause_zion       — desliga o `/api/zion` VOLTADO AO USUÁRIO (auditoria
+ *                      01/08). Era o maior gastador de token da plataforma e o
+ *                      ÚNICO sem gate: o disjuntor de custo podia pausar as sete
+ *                      mesas internas e o gasto continuar correndo pela porta da
+ *                      frente. Último recurso — degrada o produto de propósito.
  *
  * Everything defaults to running (all gates false) — a missing/empty admin_kv
  * never accidentally pauses the flywheel.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { FLYWHEEL_GATE_KEYS, type FlywheelGateKey } from "@/lib/admin/gate-keys";
 
-export type FlywheelGateKey = "pause_backtest" | "pause_agent_a" | "pause_agent_b" | "pause_tournament" | "pause_paper" | "pause_radar" | "pause_sniper" | "pause_arbiter" | "pause_oracle";
-export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = ["pause_backtest", "pause_agent_a", "pause_agent_b", "pause_tournament", "pause_paper", "pause_radar", "pause_sniper", "pause_arbiter", "pause_oracle"];
+// As chaves e a classificação de gasto moram em `gate-keys.ts` — módulo puro,
+// sem import de servidor, para que o painel de admin (client) derive da MESMA
+// fonte em vez de redigitar a lista. Ver o cabeçalho de lá: três bugs nasceram
+// dessa duplicação. Reexportado aqui para não quebrar quem já importa daqui.
+export { FLYWHEEL_GATE_KEYS, GATE_SPENDS_TOKENS, TOKEN_SPENDING_GATES } from "@/lib/admin/gate-keys";
+export type { FlywheelGateKey } from "@/lib/admin/gate-keys";
 
 export type FlywheelGates = Record<FlywheelGateKey, boolean>;
 
 export async function getFlywheelGates(): Promise<FlywheelGates> {
-  const gates: FlywheelGates = { pause_backtest: false, pause_agent_a: false, pause_agent_b: false, pause_tournament: false, pause_paper: false, pause_radar: false, pause_sniper: false, pause_arbiter: false, pause_oracle: false };
+  // Derivado, não digitado — mesma razão de `gate-keys.ts`: uma mesa nova cuja
+  // chave ficasse de fora deste literal ficaria SEMPRE lida como `undefined`,
+  // ou seja, rodando, mesmo com o operador tendo desligado no painel.
+  const gates = Object.fromEntries(FLYWHEEL_GATE_KEYS.map((k) => [k, false])) as FlywheelGates;
   const db = getSupabaseAdmin();
   if (!db) return gates;
   try {

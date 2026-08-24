@@ -1,18 +1,31 @@
 /**
- * Jupiter v6 — Solana aggregator. Free, no key required.
+ * Jupiter Swap API — agregador de Solana.
  *
- *   GET /v6/quote   — indicative + firm quote (single endpoint)
- *   POST /v6/swap   — swap transaction builder (returns base64 tx for signing)
+ *   GET  /quote  — cotação (indicativa e firme, mesmo endpoint)
+ *   POST /swap   — monta a transação (base64, pronta para assinar)
  *
- * Docs: https://station.jup.ag/docs/apis/swap-api
+ * ⚠ MIGRAÇÃO 29/07 — O HOST ANTIGO MORREU.
  *
- * Jupiter routes across every meaningful Solana AMM (Raydium, Orca, Meteora,
- * Phoenix, Lifinity, OpenBook, Saber, Whirlpool, etc.) and SOL ↔ SPL token
- * pairs. It handles wrapping/unwrapping native SOL automatically when
- * wrapAndUnwrapSol = true.
+ * Isto apontava para `https://quote-api.jup.ag/v6`. Esse hostname deixou de
+ * existir: NÃO RESOLVE MAIS EM DNS (NXDOMAIN), não é 404 nem 410 — o host foi
+ * desligado pela Jupiter. Como o erro acontece na CONEXÃO, ele chega como
+ * "fetch failed" genérico, sem status HTTP: por isso passou despercebido em vez
+ * de aparecer como uma falha de API legível.
+ *
+ * O efeito era silencioso e total: TODO swap de Solana da plataforma estava
+ * quebrado, não só a sonda do guard. Foi a sonda que expôs o problema.
+ *
+ * `lite-api.jup.ag` é o nível gratuito (sem chave). `api.jup.ag` é o nível pago
+ * e exige chave — por isso a base é configurável: quando o volume justificar
+ * uma chave, muda-se a env e nada no código precisa mudar.
+ *
+ * Jupiter roteia por todas as AMMs relevantes de Solana (Raydium, Orca,
+ * Meteora, Phoenix, Lifinity, OpenBook, Whirlpool) e cuida sozinho do
+ * wrap/unwrap de SOL nativo quando `wrapAndUnwrapSol = true`.
  */
 
-export const JUPITER_BASE = "https://quote-api.jup.ag/v6";
+export const JUPITER_BASE =
+  process.env.JUPITER_BASE_URL ?? "https://lite-api.jup.ag/swap/v1";
 
 /** Jupiter address for native SOL (wrapped SOL mint). */
 export const JUPITER_SOL_MINT = "So11111111111111111111111111111111111111112";
@@ -78,6 +91,33 @@ interface SwapArgs {
   prioritizationFeeLamports?: number | "auto";
 }
 
+
+/**
+ * Envolve o fetch para que uma falha de CONEXÃO deixe rastro utilizável.
+ *
+ * O `fetch` do Node lança literalmente "fetch failed" quando o host não
+ * resolve ou recusa conexão — sem status, sem URL, sem causa. Foi exatamente
+ * assim que a morte do `quote-api.jup.ag` ficou invisível: parecia erro
+ * genérico de rede, e não "o endereço que a gente chama não existe mais".
+ *
+ * Aqui o erro passa a dizer QUAL host falhou e QUAL foi a causa raiz, para que
+ * o próximo desligamento de endpoint seja diagnosticado em segundos.
+ */
+async function jupFetch(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    const cause = (e as { cause?: { code?: string } })?.cause?.code;
+    const host = (() => { try { return new URL(url).host; } catch { return url; } })();
+    const hint =
+      cause === "ENOTFOUND" ? " — host não existe (endpoint desligado?)"
+      : cause === "ECONNREFUSED" ? " — conexão recusada"
+      : cause === "ETIMEDOUT" ? " — timeout de conexão"
+      : "";
+    throw new Error(`Jupiter inacessível em ${host}${hint}${cause ? ` [${cause}]` : ""}`);
+  }
+}
+
 // ─── Calls ──────────────────────────────────────────────────────────
 
 /**
@@ -94,7 +134,7 @@ export async function fetchJupiterQuote(args: QuoteArgs): Promise<JupQuote> {
   });
   if (args.onlyDirectRoutes) params.set("onlyDirectRoutes", "true");
 
-  const res = await fetch(`${JUPITER_BASE}/quote?${params.toString()}`, {
+  const res = await jupFetch(`${JUPITER_BASE}/quote?${params.toString()}`, {
     headers: { Accept: "application/json" },
     next: { revalidate: 5 },
   });
@@ -118,7 +158,7 @@ export async function fetchJupiterSwap(args: SwapArgs): Promise<JupSwapResponse>
     dynamicComputeUnitLimit: true,
     prioritizationFeeLamports: args.prioritizationFeeLamports ?? "auto",
   };
-  const res = await fetch(`${JUPITER_BASE}/swap`, {
+  const res = await jupFetch(`${JUPITER_BASE}/swap`, {
     method:  "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body:    JSON.stringify(body),

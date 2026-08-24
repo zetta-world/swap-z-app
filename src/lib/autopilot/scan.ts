@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { ZION_AUTOPILOT_CEX_INSTRUCTIONS } from "@/lib/zion/mode-prompts";
 import { getMultiExchangeSpot, type CexSpotSource } from "@/lib/api/cex-spot";
@@ -6,6 +5,8 @@ import { getTrendingPools, type PoolSummary } from "@/lib/api/geckoterminal";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
 import { recordEvent } from "@/lib/admin/track";
 import { modelChain, isRetryableModelError } from "@/lib/zion/model";
+import { openaiCompatChat, anthropicChat } from "@/lib/ai/provider";
+import { aiAtivo } from "@/lib/ai/ativo";
 
 /**
  * Server-side, NON-streaming ZION autopilot-CEX scan. Used by the background
@@ -174,8 +175,15 @@ export interface AutopilotScanResult {
  * next session.
  */
 export async function runAutopilotCexScan(args: AutopilotScanArgs): Promise<AutopilotScanResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return { cards: [], rawText: "", error: "ANTHROPIC_API_KEY not configured" };
+  /**
+   * ⚠️ A PLATAFORMA SAIU DA ANTHROPIC (21/08) — decisão do dono. A guarda
+   * cobrava `ANTHROPIC_API_KEY`; se tivesse ficado, o autopilot recusaria por
+   * falta de uma chave que não usa mais, e o cron registraria o motivo errado
+   * a cada execução.
+   */
+  const ativo = aiAtivo();
+  if (!ativo.apiKey) return { cards: [], rawText: "", error: `${ativo.nomeDaChave} not configured` };
+  const chave: string = ativo.apiKey;
 
   let payload: string;
   try {
@@ -184,37 +192,42 @@ export async function runAutopilotCexScan(args: AutopilotScanArgs): Promise<Auto
     return { cards: [], rawText: "", error: `payload build failed: ${e instanceof Error ? e.message : String(e)}` };
   }
 
-  const client = new Anthropic({ apiKey });
-  const params = {
-    max_tokens: 2500,
-    system: [
-      { type: "text" as const, text: ZION_FOUNDATION,                 cache_control: { type: "ephemeral" as const } },
-      { type: "text" as const, text: ZION_AUTOPILOT_CEX_INSTRUCTIONS, cache_control: { type: "ephemeral" as const } },
-    ],
-    messages: [{ role: "user" as const, content: payload }],
-  };
-
   try {
-    // N1: model fallback chain — degrade to the backup on an overloaded primary.
+    /**
+     * ⚠️ A CADEIA DE MODELOS CONTINUA, e continua servindo. Ela degrada quando
+     * o primário devolve erro transitório (429/500/503) — isso não é específico
+     * da Anthropic, e um provedor sobrecarregado responde igual.
+     *
+     * ⚠️ E OS DOIS BLOCOS DE SISTEMA VIRAM UM, preservando a ordem: fundação
+     * primeiro (estável, o pedaço que um cache de prefixo aproveita), instruções
+     * do modo depois.
+     */
+    const sistema = [ZION_FOUNDATION, ZION_AUTOPILOT_CEX_INSTRUCTIONS].join("\n\n");
     const chain = modelChain();
-    let msg: Anthropic.Message | undefined;
-    let model = chain[0];
+    let r: Awaited<ReturnType<typeof openaiCompatChat>> | undefined;
     for (const m of chain) {
-      try { msg = await client.messages.create({ model: m, ...params }); model = m; break; }
-      catch (e) { if (!isRetryableModelError(e) || m === chain[chain.length - 1]) throw e; }
+      try {
+        r = ativo.provedor === "anthropic"
+          ? await anthropicChat({ model: m, system: sistema, user: payload, maxTokens: 2500,
+                                  timeoutMs: ativo.timeoutMs, cacheSystem: true }, chave)
+          : await openaiCompatChat(
+              { model: m, system: sistema, user: payload, maxTokens: 2500,
+                timeoutMs: ativo.timeoutMs, temperature: ativo.temperature, extraBody: ativo.extraBody },
+              { apiKey: chave, baseUrl: ativo.baseUrl },
+            );
+        break;
+      } catch (e) {
+        if (!isRetryableModelError(e) || m === chain[chain.length - 1]) throw e;
+      }
     }
-    if (!msg) return { cards: [], rawText: "", error: "no model produced a response" };
+    if (!r) return { cards: [], rawText: "", error: "no model produced a response" };
 
     recordEvent("zion_analysis", { meta: {
-      op: "autopilot_cex", model, source: "cron",
-      inTokens: msg.usage.input_tokens, outTokens: msg.usage.output_tokens,
-      cachedTokens: msg.usage.cache_read_input_tokens ?? 0,
-      cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0,
+      op: "autopilot_cex", model: r.model, source: "cron",
+      inTokens: r.usage.inTokens, outTokens: r.usage.outTokens,
+      cachedTokens: r.usage.cachedTokens, cacheWriteTokens: r.usage.cacheWriteTokens,
     } });
-    const rawText = msg.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
+    const rawText = r.text;
 
     const { cards } = parseZionStream(rawText);
     return { cards, rawText };

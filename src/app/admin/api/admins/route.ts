@@ -22,10 +22,25 @@ export async function GET(): Promise<NextResponse> {
     db.from("tier_cache").select("wallet_address, tier").eq("source", "admin"),
   ]);
 
+  /**
+   * ⚠️ A CHAVE É MINÚSCULA, SEMPRE (11/08).
+   *
+   * `envAdminWallets()` devolve minúsculo; o banco guarda com checksum
+   * (`0x072c80F3…B1668A`). A comparação era literal, então a MESMA carteira
+   * aparecia DUAS vezes no painel — uma como `ENV (fixo)` e outra como
+   * `legado`, com botão de REVOGAR ao lado.
+   *
+   * E o botão não removia uma duplicata: ele apagava a linha do `tier_cache`,
+   * que é a mesma que carrega o PLANO daquela carteira. Um clique rotulado
+   * "revogar admin" tiraria o plano `trader` junto, enquanto o admin de ENV
+   * continuava valendo. Duas consequências de um botão que parecia limpar
+   * repetição.
+   */
+  const chave = (w: string) => w.trim().toLowerCase();
   const byWallet = new Map<string, { wallet: string; source: "env" | "panel" | "legacy"; revocable: boolean; grantedBy?: string | null; grantedAt?: string | null; note?: string | null }>();
-  for (const w of envAdminWallets()) byWallet.set(w, { wallet: w, source: "env", revocable: false });
-  for (const r of legacy ?? []) if (!byWallet.has(r.wallet_address)) byWallet.set(r.wallet_address, { wallet: r.wallet_address, source: "legacy", revocable: true });
-  for (const r of panel ?? []) byWallet.set(r.wallet_address, { wallet: r.wallet_address, source: "panel", revocable: true, grantedBy: r.granted_by, grantedAt: r.granted_at, note: r.note });
+  for (const w of envAdminWallets()) byWallet.set(chave(w), { wallet: w, source: "env", revocable: false });
+  for (const r of legacy ?? []) if (!byWallet.has(chave(r.wallet_address))) byWallet.set(chave(r.wallet_address), { wallet: r.wallet_address, source: "legacy", revocable: true });
+  for (const r of panel ?? []) byWallet.set(chave(r.wallet_address), { wallet: r.wallet_address, source: "panel", revocable: true, grantedBy: r.granted_by, grantedAt: r.granted_at, note: r.note });
 
   return NextResponse.json({ admins: [...byWallet.values()], fetchedAt: new Date().toISOString() });
 }
@@ -54,7 +69,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     logSecurity("admin_granted", { by: `${actor.slice(0, 10)}…`, to: `${target.slice(0, 10)}…` }, "high");
   } else {
     // ── revoke guards ──
-    if (target === actor)
+    // ⚠️ Comparação SEM CASE. Com ela literal, bastava digitar o próprio
+    // endereço com outra caixa para furar a trava de auto-revogação.
+    if (target.toLowerCase() === actor.toLowerCase())
       return NextResponse.json({ error: "você não pode revogar a si mesmo" }, { status: 400 });
     if (envAdminWallets().includes(target.toLowerCase()))
       return NextResponse.json({ error: "admin de ambiente — edite ADMIN_WALLETS no Vercel" }, { status: 400 });
@@ -64,18 +81,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       db.from("platform_admins").select("wallet_address"),
       db.from("tier_cache").select("wallet_address").eq("source", "admin"),
     ]);
+    /**
+     * ⚠️ TUDO EM MINÚSCULO ANTES DE CONTAR. Misturando ENV (minúsculo) com
+     * banco (checksum), a MESMA carteira entrava duas vezes — e a trava do
+     * "último admin" passava a permitir revogar o último, porque o conjunto
+     * continuava com o sósia dele em outra caixa.
+     */
     const remaining = new Set<string>([
-      ...envAdminWallets(),
-      ...(panel ?? []).map((r) => r.wallet_address),
-      ...(legacy ?? []).map((r) => r.wallet_address),
+      ...envAdminWallets().map((w) => w.toLowerCase()),
+      ...(panel ?? []).map((r) => r.wallet_address.toLowerCase()),
+      ...(legacy ?? []).map((r) => r.wallet_address.toLowerCase()),
     ]);
-    remaining.delete(target);
+    remaining.delete(target.toLowerCase());
     if (remaining.size === 0)
       return NextResponse.json({ error: "esse é o último admin — não dá pra revogar" }, { status: 400 });
 
     // Kill both mechanisms so access is actually gone.
-    await db.from("platform_admins").delete().eq("wallet_address", target);
-    await db.from("tier_cache").delete().eq("wallet_address", target).eq("source", "admin");
+    /**
+     * ⚠️ `ilike` E NÃO `eq`: o `eq` exigia a caixa exata, então revogar com o
+     * endereço digitado em minúsculo apagava ZERO linhas e devolvia sucesso —
+     * o operador via "revogado" e o acesso continuava de pé.
+     */
+    await db.from("platform_admins").delete().ilike("wallet_address", target);
+    await db.from("tier_cache").delete().ilike("wallet_address", target).eq("source", "admin");
     await logAdminAction(actor, "admin.revoke", target);
     logSecurity("admin_revoked", { by: `${actor.slice(0, 10)}…`, to: `${target.slice(0, 10)}…` }, "high");
   }

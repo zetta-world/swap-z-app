@@ -207,59 +207,12 @@ function AutopilotPanelInner() {
         </div>
       </div>
 
-      {/* Auto-rebalance — separate opt-in pipeline that lets the
-          autopilot fire a CEX→wallet withdrawal when ZION emits a
-          `rebalance` card. The user still has to manually re-deposit
-          to the destination CEX from their wallet; v1 doesn't auto-sign. */}
-      <div className="rounded-md border border-violet/20 bg-violet/[0.04] p-3 space-y-3">
-        <div className="flex items-center gap-2">
-          <Banknote className="w-3.5 h-3.5 text-violet flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="font-display font-bold text-xs text-violet">{t("autopilot.rebalanceTitle")}</div>
-            <div className="font-mono text-[9px] text-ink-3 tracking-wider uppercase">
-              {t("autopilot.rebalanceDesc")}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => a.setAutoRebalanceEnabled(!a.autoRebalanceEnabled)}
-            className={cn(
-              "px-2.5 py-1 rounded font-mono text-[10px] tracking-widest uppercase border",
-              a.autoRebalanceEnabled
-                ? "border-violet/50 bg-violet/15 text-violet hover:bg-violet/25"
-                : "border-white/15 bg-white/[0.03] text-ink-3 hover:bg-white/[0.06]",
-            )}
-          >
-            {a.autoRebalanceEnabled ? t("autopilot.on") : t("autopilot.off")}
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <NumRail
-            label={t("autopilot.railMaxPerRebalance")}
-            unit="$"
-            value={a.maxRebalanceUsd}
-            onChange={a.setMaxRebalanceUsd}
-            step={25}
-            min={10}
-            max={5_000}
-          />
-          <NumRail
-            label={t("autopilot.railRebalancesPerDay")}
-            unit=""
-            value={a.maxRebalancesPerDay}
-            onChange={a.setMaxRebalancesPerDay}
-            step={1}
-            min={1}
-            max={20}
-          />
-        </div>
-        <div className="font-mono text-[10px] text-ink-3 leading-relaxed">
-          {t("autopilot.rebalanceDestination")}
-        </div>
-      </div>
+      {/* Auto-rebalance REMOVIDO (30/07) junto do saque CEX: ele disparava
+          uma retirada CEX→carteira, e para isso a chave de API do usuário
+          precisava ter permissão de SAQUE. Ver lib/cex/server.ts. */}
 
       {/* Counters */}
-      <div className="grid grid-cols-4 gap-2 text-center pt-2 border-t border-white/5">
+      <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t border-white/5">
         <Counter label={t("autopilot.counterTradesToday")} value={`${a.tradesToday} / ${a.maxTradesPerDay}`} tone="cyan" />
         <Counter label={t("autopilot.counterRebalancesToday")} value={`${a.rebalancesToday} / ${a.maxRebalancesPerDay}`} tone="violet" />
         <Counter label={t("autopilot.counterDayPnl")} value={`${a.pnlToday >= 0 ? "+" : ""}$${a.pnlToday.toFixed(2)}`} tone={a.pnlToday < 0 ? "red" : "green"} />

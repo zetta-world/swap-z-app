@@ -33,7 +33,7 @@ export default function LogsSecurityPanel() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 90_000 : 45_000);
+    const t = setInterval(load, 45_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 
@@ -53,7 +53,7 @@ export default function LogsSecurityPanel() {
       </div>
 
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {data && tab === "overview" && (
         <div>
@@ -63,7 +63,7 @@ export default function LogsSecurityPanel() {
             <Stat label="HIGH SEV" value={data.high24h} color={data.high24h > 0 ? "var(--adm-red)" : "var(--adm-ink-3)"} />
           </div>
           {data.topKinds.length === 0 ? (
-            <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>No errors or security events in 24h. ✓</div>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>No errors or security events in 24h. ✓</div>
           ) : (
             <table className="adm-table">
               <thead><tr><th>KIND</th><th>24H</th></tr></thead>
@@ -80,13 +80,13 @@ export default function LogsSecurityPanel() {
       {data && tab === "feed" && (
         <div className="adm-scroll" style={{ maxHeight: 300 }}>
           {data.recent.length === 0 ? (
-            <div style={{ color: "var(--adm-ink-3)", fontSize: 10 }}>Nothing logged yet.</div>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>Nothing logged yet.</div>
           ) : data.recent.map((r, i) => {
             const m = r.metadata ?? {};
             const kind = String(m.kind ?? m.where ?? r.event_type);
             const detail = String(m.message ?? m.reason ?? m.route ?? m.symbol ?? "");
             return (
-              <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 9, alignItems: "center" }}>
+              <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 12, alignItems: "center" }}>
                 <span style={{ color: "var(--adm-ink-3)", flexShrink: 0, whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleTimeString()}</span>
                 <span style={{ color: r.event_type === "error" ? "var(--adm-gold)" : "var(--adm-cyan)", flexShrink: 0, width: 52 }}>{r.event_type}</span>
                 <span style={{ color: sevColor(m.severity), flexShrink: 0, width: 8 }} title={String(m.severity ?? "")}>●</span>
@@ -104,7 +104,7 @@ export default function LogsSecurityPanel() {
 function Stat({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div style={{ flex: 1, background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "8px 10px" }}>
-      <div style={{ fontSize: 8, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>{label}</div>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-3)", letterSpacing: "0.1em" }}>{label}</div>
       <div style={{ fontSize: 20, color, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
     </div>
   );

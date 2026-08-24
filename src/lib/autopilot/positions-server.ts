@@ -13,6 +13,47 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AutopilotPositionRow } from "@/lib/supabase/types";
 
+/**
+ * ⚠️⚠️ POR QUE ESTAS FUNCOES DEVOLVEM RESULTADO EM VEZ DE `void`.
+ * (auditoria do autopilot, 23/08)
+ *
+ * O `engine.ts` ja carrega esta cicatriz escrita, com o valor em dolares que
+ * ela custou: **o cliente do Supabase NAO LANCA em erro de banco — ele
+ * RESOLVE com `{ data: null, error }`**. Um `await db.from(...).upsert(...)`
+ * sem conferir `error` e indistinguivel de sucesso.
+ *
+ * La foram US$ 450 a 1.000 em catorze carteiras de PAPEL. Aqui e a conta na
+ * corretora do cliente, e a sequencia era:
+ *
+ *   1. `placeCexOrder` OK  -> dinheiro real saiu
+ *   2. o upsert falha      -> resolve com {error}, ninguem olha
+ *   3. o painel diz FIRED  -> e nenhuma posicao existe no banco
+ *
+ * Na passada seguinte `getOpenServerPositions` nao devolve a posicao, o ramo
+ * de venda cai em "no open autopilot position for this base", e **o bot nunca
+ * mais sai daquele trade**. O teto de exposicao tambem fica cego e libera
+ * comprar mais.
+ *
+ * ⚠️ NAO DA PARA DESFAZER A ORDEM. Entao o objetivo aqui nao e impedir — e
+ * NUNCA PERDER O FATO. Quem chama decide o que fazer; o que nao pode e achar
+ * que gravou.
+ */
+export type Gravacao = { ok: true } | { ok: false; erro: string };
+
+/** Uma tentativa extra cobre a falha transitoria sem virar retentativa infinita. */
+export async function comRetentativa(
+  // O builder do supabase-js e THENABLE, nao Promise completa — por isso
+  // `PromiseLike`. Exigir `Promise` aqui recusa o proprio cliente.
+  f: () => PromiseLike<{ error: { message: string } | null }>,
+): Promise<Gravacao> {
+  for (let i = 0; i < 2; i++) {
+    const { error } = await f();
+    if (!error) return { ok: true };
+    if (i === 1) return { ok: false, erro: error.message.slice(0, 200) };
+  }
+  return { ok: false, erro: "inalcancavel" };
+}
+
 /** All non-closed positions for a session (the held bag the cron manages). */
 export async function getOpenServerPositions(sessionId: string): Promise<AutopilotPositionRow[]> {
   const db = getSupabaseAdmin();
@@ -41,9 +82,11 @@ export async function recordServerEntry(p: {
   costUsd:       number;
   reasoning?:    string;
   entryLabel?:   string;
-}): Promise<void> {
+}): Promise<Gravacao> {
   const db = getSupabaseAdmin();
-  if (!db) return;
+  // ⚠️ Sem banco configurado isto e falha, nao "nada a fazer": a ordem ja
+  // existe na corretora e ninguem vai saber dela.
+  if (!db) return { ok: false, erro: "supabase nao configurado" };
   const base = p.pair.split("/")[0].toUpperCase();
 
   const { data: prev } = await db
@@ -58,7 +101,7 @@ export async function recordServerEntry(p: {
     const totalBase = Number(prev.base_amount) + p.baseAmount;
     const totalCost = Number(prev.cost_usd) + p.costUsd;
     const avgPrice  = totalBase > 0 ? totalCost / totalBase : p.entryPrice;
-    await db.from("autopilot_positions").update({
+    return comRetentativa(() => db.from("autopilot_positions").update({
       entry_price: avgPrice,
       base_amount: totalBase,
       cost_usd:    totalCost,
@@ -66,12 +109,11 @@ export async function recordServerEntry(p: {
       entry_label: p.entryLabel ?? prev.entry_label,
       status:      "open",       // re-open if it had an exit armed
       updated_at:  nowIso,
-    }).eq("id", prev.id);
-    return;
+    }).eq("id", prev.id));
   }
 
   // Fresh position (or replacing a closed one).
-  await db.from("autopilot_positions").upsert({
+  return comRetentativa(() => db.from("autopilot_positions").upsert({
     session_id:     p.sessionId,
     wallet_address: p.walletAddress,
     exchange_id:    p.exchangeId,
@@ -87,7 +129,7 @@ export async function recordServerEntry(p: {
     exit_armed_at:  null,
     entry_ts:       nowIso,
     updated_at:     nowIso,
-  }, { onConflict: "session_id,base" });
+  }, { onConflict: "session_id,base" }));
 }
 
 /** Flag that an exit order is resting for this position. */

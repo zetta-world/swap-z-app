@@ -23,8 +23,6 @@ export const LIFI_CHAIN_IDS: Partial<Record<ChainId, number>> = {
   arbitrum:  42161,
   optimism:  10,
   avalanche: 43114,
-  linea:     59144,
-  zksync:    324,
   // Solana — LiFi's synthetic chain id for mainnet-beta. Same-chain Solana
   // quotes route through Jupiter (better depth); LiFi handles SOL↔EVM bridges.
   solana:    1151111081099710,
@@ -107,6 +105,18 @@ export interface LfQuote {
     fromAmount:  string;
     slippage:    number;
     fromAddress?: string;
+    /**
+     * ⚠️ O DESTINO QUE A LI.FI DIZ QUE VAI USAR — e o tipo nao o modelava.
+     *
+     * A rota manda `toAddress` no pedido; a LiFi ecoa na resposta. Sem o
+     * campo aqui, o dado chegava e era DESCARTADO na fronteira do tipo, e
+     * ninguem tinha como conferir se o que voltou e o que foi pedido.
+     *
+     * Opcional de proposito: se a LiFi parar de devolver, a ausencia NAO
+     * pode virar recusa — conferir o que existe, nunca exigir o que talvez
+     * nao venha.
+     */
+    toAddress?:  string;
   };
   estimate: {
     fromAmount:        string;
@@ -133,6 +143,9 @@ interface QuoteArgs {
   /** Override the destination address on the target chain. */
   toAddress?:   string;
   slippageBps?: number;     // 1-5000
+  /** Taxa da plataforma em pontos-base (Fase 9.2). Exige `feeRecipient`. */
+  feeBps?:      number;
+  feeRecipient?: string;
 }
 
 /**
@@ -162,6 +175,17 @@ export async function fetchLiFiQuote(args: QuoteArgs, integratorKey?: string): P
   });
   if (args.toAddress)   params.set("toAddress",   args.toAddress);
   if (args.slippageBps) params.set("slippage", (args.slippageBps / 10_000).toString());
+  /**
+   * ⚠️ A TAXA SÓ VAI COM DESTINATÁRIO (Fase 9.2, 11/08). A LI.FI recebe a
+   * taxa como FRAÇÃO (0.01 = 1%), não em pontos-base — mandar `100` ali seria
+   * pedir 10.000%. A conversão fica aqui, no ponto de contato, e não em quem
+   * chama: quem chama fala em bps, que é a unidade da escada.
+   */
+  if ((args.feeBps ?? 0) > 0 && args.feeRecipient) {
+    params.set("fee", ((args.feeBps as number) / 10_000).toString());
+    params.set("integrator", "z-swap");
+    params.set("referrer", args.feeRecipient);
+  }
 
   const res = await fetch(`${LIFI_BASE}/quote?${params.toString()}`, {
     headers: {

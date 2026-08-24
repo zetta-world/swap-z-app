@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { placeCexOrder } from "@/lib/cex/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
+import { podeAutomatizar } from "@/lib/autopilot/liberacao";
+import { checarKillSwitches } from "@/lib/admin/kill-switches";
+import { getSession } from "@/lib/auth/session";
 import { logSecurity, logError } from "@/lib/admin/track";
 import { recordEvent } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
+import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
 import {
   type CexId, type CexCredentials, type CexOrderResponse, type CexOrderSide, type CexOrderType,
   SUPPORTED_CEX_IDS, CEX_META,
@@ -77,6 +81,29 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // GATE DE PLANO (auditoria 01/08). `FEATURE_TIER.cexAutopilot = "pro"` estava
+  // declarado desde sempre e NUNCA era verificado no servidor: o controle vivia
+  // só no `TierGate`, componente de cliente que ESCONDE a interface. Esconder
+  // botão não é controle de acesso — um `curl` nesta rota entregava igual, e a
+  // rota nem precisava ser descoberta, porque o código dela vai no bundle.
+  // Dormente com TIER_GATES_ENABLED=false, igual à UI.
+  const gate = await checkFeatureTier("cexAutopilot");
+  if (gate) return denialResponse(gate);
+
+  /**
+   * ⚠️ OS KILL-SWITCHES, agora lidos (Fase 7.3). Vale para ordem MANUAL também:
+   * `disable_cex` e `maintenance_mode` existem para parar o dinheiro, não para
+   * parar só o robô. Esta rota é dinheiro que SAI da conta do cliente, então
+   * falha de leitura BLOQUEIA — ver a nota em `kill-switches.ts`.
+   */
+  const kill = await checarKillSwitches(["disable_cex", "maintenance_mode"], "dinheiro_sai");
+  if (kill.bloqueado) {
+    return NextResponse.json(
+      { ok: false, error: "platform_disabled", detail: kill.motivo },
+      { status: 503 },
+    );
+  }
+
   let body: OrderRequestBody;
   try {
     body = await req.json() as OrderRequestBody;
@@ -144,6 +171,36 @@ export async function POST(req: NextRequest) {
   // price and reject oversized buys (and any order over the hard ceiling).
   // Manual orders skip this — the user is present and accepted the trade.
   if (body.autopilot === true) {
+    /**
+     * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2), no canal do NAVEGADOR.
+     *
+     * Gatear só o cron deixaria a metade errada aberta: o piloto do navegador
+     * (`AutopilotPilot`) dispara sozinho por esta rota quando a contagem
+     * regressiva zera. "Fechado" com um dos dois canais operando seria meia
+     * verdade — o defeito que a Fase 6 chamou de "mesmo defeito com outro nome".
+     *
+     * ⚠️ E ISTO NÃO É CONTROLE DE SEGURANÇA, é controle de PRODUTO: a flag
+     * `autopilot` vem do cliente, então quem quiser pode chamar esta rota sem
+     * ela. Não tem problema, e a distinção é deliberada — ordem MANUAL segue
+     * aberta de propósito. O que a trava fecha é a automação, não o negociar.
+     */
+    /**
+     * ⚠️ AQUI PRECISA DA CARTEIRA, e esta rota não tinha identidade nenhuma:
+     * ela recebe a credencial da corretora no corpo e nunca leu sessão. Sem
+     * ler a sessão, não há como distinguir o piloto autorizado do público — a
+     * trava viraria tudo-ou-nada justamente no canal do navegador.
+     *
+     * Ler a sessão AQUI, dentro do ramo de autopilot, mantém a ordem MANUAL
+     * exatamente como estava: sem exigir login, aberta de propósito.
+     */
+    const sessao = await getSession();
+    const automacao = await podeAutomatizar(sessao?.sub ?? "");
+    if (!automacao.permitido) {
+      return NextResponse.json(
+        { ok: false, error: "automation_closed", causa: automacao.causa },
+        { status: 403 },
+      );
+    }
     const base = body.symbol.split(/[\/\-]/)[0];
     const refPrice = await getReferencePriceUsd(base);
     const cap = typeof body.maxNotionalUsd === "number" && body.maxNotionalUsd > 0
@@ -193,7 +250,10 @@ export async function POST(req: NextRequest) {
       filledImmediately,
       fetchedAt: Date.now(),
     };
-    recordEvent("cex_order", {
+    // ⚠️ AGUARDADO: uma ordem REAL acabou de ser colocada na corretora. Perder
+    // este registro deixa um buraco no extrato do usuário — e a resposta já
+    // pagou uma ida à corretora, então um insert não é o que pesa aqui.
+    await recordEvent("cex_order", {
       meta: {
         exchange,
         symbol: body.symbol,

@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { aiAtivo } from "@/lib/ai/ativo";
 
 /**
  * Cron heartbeat (System Health / Phase 1). Each cron stamps a heartbeat every
@@ -27,18 +28,36 @@ export async function setCronHeartbeat(name: string): Promise<void> {
  * ok:false with a note when the key is absent so callers can degrade clearly.
  */
 export async function pingAnthropic(): Promise<{ ok: boolean; latencyMs: number | null; note?: string }> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { ok: false, latencyMs: null, note: "no ANTHROPIC_API_KEY in this env" };
+  /**
+   * ⚠️ O NOME FICA, O ALVO SEGUE O `AI_PROVIDER` (22/08). Um monitor apontado
+   * para um provedor fixo reportaria "tudo bem" enquanto o que a plataforma USA
+   * estivesse fora do ar — e monitor apontado para o serviço errado é pior que
+   * monitor nenhum: produz o registro de que alguém olhou.
+   *
+   * O nome permanece porque é a chave que o painel de saúde já espera; renomear
+   * mexeria na tela por causa de uma troca de provedor.
+   */
+  const ativo = aiAtivo();
+  if (!ativo.apiKey) {
+    return { ok: false, latencyMs: null, note: `sem ${ativo.nomeDaChave} neste ambiente` };
+  }
   const start = Date.now();
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 4000);
   try {
-    const res = await fetch("https://api.anthropic.com/v1/models?limit=1", {
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
-      signal: ctrl.signal, cache: "no-store",
-    });
-    // 401/403 = key problem (still "reachable" but broken) → report down with a note.
-    if (res.status === 401 || res.status === 403) return { ok: false, latencyMs: Date.now() - start, note: "auth rejected — check ANTHROPIC_API_KEY" };
+    const res = ativo.provedor === "anthropic"
+      ? await fetch("https://api.anthropic.com/v1/models?limit=1", {
+          headers: { "x-api-key": ativo.apiKey, "anthropic-version": "2023-06-01" },
+          signal: ctrl.signal, cache: "no-store",
+        })
+      : await fetch(`${ativo.baseUrl.replace(/\/+$/, "")}/models`, {
+          headers: { Authorization: `Bearer ${ativo.apiKey}` },
+          signal: ctrl.signal, cache: "no-store",
+        });
+    // 401/403 = problema de chave (alcançável mas quebrado) → reporta fora, com nota.
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, latencyMs: Date.now() - start, note: `auth recusada — confira ${ativo.nomeDaChave}` };
+    }
     return { ok: res.ok, latencyMs: Date.now() - start };
   } catch {
     return { ok: false, latencyMs: null };

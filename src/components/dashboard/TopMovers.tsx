@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExternalUrl } from "@/lib/safe-url";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
@@ -138,7 +139,7 @@ export default function TopMovers() {
           return (
             <motion.a
               key={m.pairAddress || m.symbol + i}
-              href={m.url || undefined}
+              href={safeExternalUrl(m.url)}
               target="_blank"
               rel="noopener noreferrer"
               initial={{ opacity: 0, x: -6 }}

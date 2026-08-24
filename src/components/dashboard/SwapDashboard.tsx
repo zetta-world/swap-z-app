@@ -108,7 +108,9 @@ export default function SwapDashboard() {
             <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
               <Chip icon={<Sparkles className="w-3 h-3" />}    label={t("swap.chipZionSafe")} tone="gold"   />
               <Chip icon={<Activity className="w-3 h-3" />}     label={t("swap.chipRoutes", { n: 14 })}  tone="cyan"   />
-              <Chip label={t("swap.chipMev")}                    tone="green"  />
+              {/* Era "Escudo MEV ativo", em verde, sem nada por trás.
+                  Ver src/lib/swap/mev-guard.ts. */}
+              <Chip label={t("swap.chipMevWarn")}               tone="cyan"   />
             </div>
           </motion.div>
 

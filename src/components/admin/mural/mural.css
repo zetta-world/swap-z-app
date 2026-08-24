@@ -1,0 +1,432 @@
+/* ═══════════════════════════════════════════════════════════════════════
+ * O MURAL — uma tela, quatro tamanhos.
+ *
+ * ⚠️ TUDO ESCALA COM `clamp()` AMARRADO À VIEWPORT, e isso é decisão, não
+ * preguiça. A alternativa seria um layout de TV e outro de celular; dois
+ * layouts divergem com o tempo, e o pequeno é sempre o esquecido. Aqui a
+ * mesma regra serve 65 polegadas e 5 — muda a densidade, não a informação.
+ *
+ * ⚠️ E NADA DE `vh` NA TIPOGRAFIA. Em celular a barra do navegador entra e
+ * sai, `vh` muda no meio da rolagem, e o texto pula. `vw` é estável.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+.mural {
+  /* ═══ A PALETA DO TERMINAL — e a regra é do dono (12/08).
+   *
+   * "Texto em fósforo verde com VALORES EM CIANO." Estrutura, rótulo,
+   * subtítulo e o mapa são verdes; o número, o título e o marcador de acesso
+   * são ciano. Uma regra só, e ela diz o que a cor SIGNIFICA — não é decoração
+   * distribuída a gosto.
+   *
+   * ⚠️ EU TINHA INVENTADO OUTRA POR CIMA DESSA: ouro no dinheiro, verde na
+   * taxa, ciano no acesso. Três cores, três significados, nenhum deles
+   * declarado — e o dono, que escreveu a regra, teve que apontar.
+   *
+   * ⚠️ E A DIFERENÇA ENTRE CIANO E FÓSFORO NÃO PODE MORAR SÓ NO MATIZ: as duas
+   * têm luminância quase igual (1,14× entre si), então quem não distingue cor
+   * veria o mesmo tom. Por isso o valor em ciano é SEMPRE também o maior e o
+   * mais pesado da caixa — a hierarquia sobrevive em escala de cinza.
+   * ═══ */
+  --mural-fundo:  #020705;
+  --mural-tinta:  #b8ffcf;   /* fósforo · 17,6:1 — texto principal */
+  --mural-fraco:  #5fce85;   /* fósforo apagado · 10,3:1 — rótulo, legenda */
+  --mural-linha:  rgba(77,255,136,.24);
+  --mural-vivo:   #63f5ff;   /* CIANO · 15,5:1 — valor, título, acesso */
+  --mural-ouro:   #63f5ff;   /* mantido como apelido: o dinheiro é ciano */
+  --mural-verde:  #4dff88;   /* fósforo vivo · 15,4:1 — ok, taxa retida */
+  /* ⚠️ O MAPA ESTAVA A 30% E SUMIA NO TELÃO. A referência pede "alta
+   * densidade" — ele é a maior superfície da tela e precisa ter presença. */
+  --mural-terra:  rgba(77,255,136,.60);
+
+  min-height: 100dvh;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(72,255,224,.06), transparent 60%),
+    var(--mural-fundo);
+  position: relative;
+  isolation: isolate;
+  color: var(--mural-tinta);
+  font-variant-numeric: tabular-nums;
+  padding: clamp(12px, 1.6vw, 40px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 1.4vw, 30px);
+}
+
+/* ── CABEÇALHO ──────────────────────────────────────────────────────── */
+.mural-topo {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--mural-linha);
+  padding-bottom: clamp(10px, 1vw, 20px);
+}
+.mural-marca { display: flex; align-items: center; gap: clamp(10px, 1vw, 20px); }
+.mural-runa {
+  font-size: clamp(26px, 2.6vw, 56px); color: var(--mural-vivo);
+  line-height: 1; text-shadow: 0 0 24px rgba(255,207,107,.45);
+}
+.mural-marca h1 {
+  margin: 0; font-size: clamp(20px, 2.1vw, 46px);
+  letter-spacing: .16em; font-weight: 700;
+  color: var(--mural-vivo);          /* título em ciano — regra da paleta */
+}
+.mural-marca p {
+  margin: 2px 0 0; font-size: clamp(9px, .72vw, 15px);
+  letter-spacing: .26em; text-transform: uppercase; color: var(--mural-fraco);
+}
+.mural-estado {
+  display: flex; align-items: center; gap: clamp(8px, .8vw, 18px);
+  font-size: clamp(10px, .8vw, 17px); letter-spacing: .18em; color: var(--mural-fraco);
+}
+.mural-farol { width: .7em; height: .7em; border-radius: 50%; }
+.mural-farol.vivo   { background: var(--mural-verde); box-shadow: 0 0 12px var(--mural-verde);
+                      animation: mural-bater 2s ease-in-out infinite; }
+.mural-farol.quieto { background: var(--mural-fraco); }
+.mural-relogio { color: var(--mural-tinta); font-weight: 600; }
+
+/* ── OS NÚMEROS ─────────────────────────────────────────────────────── */
+.mural-numeros {
+  display: grid; gap: clamp(8px, .9vw, 20px);
+  /* ⚠️ `auto-fit` + `minmax` é o que faz 5 colunas numa TV virarem 2 no
+     celular sem uma única media query — e sem nenhum número sumir. */
+  grid-template-columns: repeat(auto-fit, minmax(clamp(130px, 15vw, 300px), 1fr));
+}
+.mural-numero {
+  border: 1px solid var(--mural-linha); border-radius: clamp(6px, .5vw, 14px);
+  padding: clamp(10px, 1vw, 24px);
+  background: linear-gradient(180deg, rgba(255,255,255,.022), transparent);
+}
+.mural-rotulo {
+  display: block; font-size: clamp(8.5px, .62vw, 13px);
+  letter-spacing: .2em; color: var(--mural-fraco); text-transform: uppercase;
+}
+.mural-numero strong {
+  display: block; margin-top: .35em;
+  font-size: clamp(20px, 2.3vw, 52px); font-weight: 700; letter-spacing: -.01em;
+}
+/* ⚠️ TODO VALOR É CIANO, não só o destacado — é a regra da paleta. O
+   destaque agora é o BRILHO, não uma cor diferente: hierarquia por
+   intensidade dentro da mesma família, como num tubo de fósforo. */
+.mural-numero strong { color: var(--mural-vivo); }
+.mural-numero.destaque strong { text-shadow: 0 0 34px rgba(99,245,255,.45); }
+
+/* ── O MAPA ─────────────────────────────────────────────────────────── */
+/* ⚠️ O PALCO — mapa e fluxo LADO A LADO em tela larga (12/08).
+ *
+ * A primeira versão empilhava tudo: números, mapa, fluxo. Numa TV de 65
+ * polegadas isso deixava um vão enorme entre o mapa e a lista, e o fluxo caía
+ * abaixo da dobra — a informação mais viva da tela ficava invisível justamente
+ * onde há mais espaço.
+ *
+ * Agora o mapa toma dois terços e o fluxo ocupa a coluna da direita. Abaixo de
+ * 1100px volta a empilhar, que é o certo no notebook e no celular. */
+.mural-palco {
+  display: grid; gap: clamp(12px, 1.4vw, 32px);
+  grid-template-columns: minmax(0, 2.1fr) minmax(0, 1fr);
+  align-items: start; flex: 1; min-height: 0;
+}
+@media (max-width: 1100px) {
+  .mural-palco { grid-template-columns: minmax(0, 1fr); }
+}
+
+.mural-globo { position: relative; min-height: 0; }
+.mural-mapa { width: 100%; height: auto; display: block; }
+.mural-terra circle { fill: var(--mural-terra); }
+.mural-ponto {
+  fill: var(--mural-vivo);
+  filter: drop-shadow(0 0 3px var(--mural-vivo));
+}
+/**
+ * ⚠️ O BRILHO NÃO ANIMA. QUEM ANIMA É O ANEL (12/08).
+ *
+ * A versão anterior punha a animação no HALO — o próprio brilho do ponto — e
+ * levava a opacidade dele a ZERO, ficando em zero de 70% a 100% do ciclo. Um
+ * terço do tempo o acesso simplesmente sumia do mapa. Somado à escala de .55
+ * a 1.5 sobre um raio já 7,5× maior que o ponto, o brilho saltava entre 4× e
+ * 11× de tamanho. Lia como defeito, não como pulso.
+ *
+ * Radar não funciona assim: o alvo fica aceso e o ANEL é que varre. Aqui o
+ * halo é estático e o ping é um elemento SEPARADO, só traço. Quando ele está
+ * invisível não falta nada na tela — ele é aditivo, nunca subtrativo.
+ *
+ * ⚠️ E ANIMA `r`, NÃO `transform: scale`. Escala em SVG depende de
+ * `transform-box`/`transform-origin`, que é onde a versão anterior escorregou;
+ * animar o raio direto não tem origem para errar. Se um navegador não animar
+ * `r`, o anel fica parado no raio base — discreto, e nunca quebrado.
+ */
+.mural-ping {
+  fill: none;
+  stroke: var(--mural-vivo);
+  stroke-width: .4;
+  animation: mural-radar 3.2s cubic-bezier(.22,.8,.3,1) infinite;
+}
+/* O segundo anel sai atrasado — é o que dá a leitura de varredura contínua
+   em vez de um piscar isolado. */
+.mural-ping.atras { animation-delay: 1.6s; }
+
+.mural-legenda-mapa {
+  display: flex; gap: clamp(8px, 1vw, 20px); flex-wrap: wrap; align-items: baseline;
+  font-size: clamp(8.5px, .62vw, 13px); letter-spacing: .2em;
+  color: var(--mural-fraco); text-transform: uppercase; margin-top: -.4em;
+}
+.mural-sussurro { letter-spacing: .08em; text-transform: none; opacity: .8; }
+
+.mural-pracas {
+  list-style: none; margin: clamp(8px, .8vw, 16px) 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: clamp(6px, .7vw, 14px);
+}
+.mural-pracas li {
+  display: flex; align-items: baseline; gap: .55em;
+  border: 1px solid var(--mural-linha); border-radius: 999px;
+  padding: clamp(4px, .35vw, 9px) clamp(9px, .8vw, 18px);
+  font-size: clamp(10px, .78vw, 16px);
+}
+.mural-pais  { color: var(--mural-fraco); font-size: .8em; letter-spacing: .12em; }
+.mural-conta { color: var(--mural-vivo); font-weight: 700; }
+
+/* ── O FLUXO ────────────────────────────────────────────────────────── */
+.mural-fluxo h2 {
+  margin: 0 0 .6em; font-size: clamp(9px, .68vw, 14px);
+  letter-spacing: .26em; color: var(--mural-fraco); font-weight: 500;
+}
+.mural-fluxo ul {
+  list-style: none; margin: 0; padding: 0; display: grid; gap: 2px;
+  /* Em tela larga a coluna é alta: deixa rolar em vez de esticar a página. */
+  max-height: min(58vh, 620px); overflow-y: auto;
+}
+@media (max-width: 1100px) { .mural-fluxo ul { max-height: none; overflow: visible; } }
+.mural-fluxo li {
+  display: grid; align-items: baseline;
+  grid-template-columns: 4.5em minmax(0,1fr) 5em minmax(0,7em) minmax(0,7em);
+  gap: clamp(6px, .7vw, 16px);
+  padding: clamp(5px, .45vw, 11px) clamp(6px, .5vw, 12px);
+  font-size: clamp(11px, .85vw, 19px);
+  border-bottom: 1px solid var(--mural-linha);
+}
+.mural-quando { color: var(--mural-fraco); font-size: .82em; }
+.mural-par    { font-weight: 600; letter-spacing: .04em; }
+.mural-cadeia { color: var(--mural-fraco); font-size: .82em; text-transform: uppercase; letter-spacing: .12em; }
+.mural-vol    { text-align: right; }
+.mural-taxa       { text-align: right; color: var(--mural-verde); font-weight: 700; }
+.mural-taxa-vazia { text-align: right; color: var(--mural-fraco); }
+
+/* ⚠️ A troca que CHEGOU agora acende e apaga — e só ela. Ver a nota em
+   `MuralView`: destacar a primeira linha a cada busca seria movimento sem
+   fato, ruído com cara de notícia. */
+.mural-entrando { animation: mural-chegou 4s ease-out; }
+
+.mural-vazio {
+  margin: 0; color: var(--mural-fraco);
+  font-size: clamp(11px, .8vw, 17px); line-height: 1.7;
+}
+.mural-erro {
+  color: #ff6b6b; font-size: clamp(11px, .8vw, 16px);
+  border: 1px solid rgba(255,107,107,.35); border-radius: 6px;
+  padding: .7em 1em;
+}
+
+/* ── CELULAR: a tabela de fluxo vira duas linhas em vez de espremer ──── */
+/* Coluna lateral: mesmas cinco colunas não cabem em ~1/3 da tela. */
+@media (min-width: 1101px) {
+  .mural-fluxo li { grid-template-columns: 3.6em minmax(0,1fr) minmax(0,6em) minmax(0,6.5em); }
+  .mural-fluxo .mural-cadeia { display: none; }
+}
+
+@media (max-width: 640px) {
+  .mural-fluxo li {
+    grid-template-columns: 4.2em minmax(0,1fr) minmax(0,5.5em);
+  }
+  .mural-cadeia { display: none; }
+  .mural-vol    { grid-column: 3; }
+  .mural-taxa, .mural-taxa-vazia { grid-column: 2 / 4; text-align: right; font-size: .82em; }
+}
+
+/* ── ANIMAÇÕES ──────────────────────────────────────────────────────── */
+@keyframes mural-bater   { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+@keyframes mural-radar {
+  0%   { r: 1.2;  opacity: .9; stroke-width: .5 }
+  75%  { r: 13;   opacity: 0;  stroke-width: .1 }
+  100% { r: 13;   opacity: 0;  stroke-width: .1 }
+}
+@keyframes mural-chegou  { 0% { background: rgba(57,255,115,.22) }
+                           100% { background: transparent } }
+
+/* ⚠️ QUEM PEDE MENOS MOVIMENTO RECEBE MENOS MOVIMENTO. Uma tela que pulsa
+   o dia inteiro é exatamente o caso que esta preferência existe para
+   atender — e ela também vale para quem deixa o mural num telão o dia
+   inteiro e não quer o cintilar no canto do olho. */
+@media (prefers-reduced-motion: reduce) {
+  .mural-farol.vivo, .mural-ping, .mural-entrando { animation: none; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * O TRATAMENTO CRT.
+ *
+ * ⚠️ TUDO AQUI É `pointer-events: none`. São camadas puramente ópticas: se
+ * alguma capturar clique, a tela inteira para de responder — e numa parede
+ * isso demora a ser notado, porque o vidro só parece estar sujo. Há teste.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* Varredura. Período de 4px e 28% de preto: mais que isso e o texto pequeno
+   começa a bater com a grade de pixels e cintila em tela de alta densidade. */
+.mural::before {
+  content: ""; position: fixed; inset: 0; z-index: 40; pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg, rgba(0,0,0,.28) 0px, rgba(0,0,0,.28) 1px,
+    transparent 1px, transparent 4px);
+  mix-blend-mode: multiply;
+}
+/* Vinheta — o canto do tubo escurecendo. */
+.mural::after {
+  content: ""; position: fixed; inset: 0; z-index: 41; pointer-events: none;
+  background: radial-gradient(115% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55) 100%);
+}
+
+/* Brilho de fósforo — só onde o olho deve parar. */
+.mural-marca h1, .mural-numero strong, .mural-fluxo .mural-par {
+  text-shadow: 0 0 10px currentColor;
+}
+
+/* ── MOLDURA DE CANTO nos blocos de número ───────────────────────────── */
+.mural-numero { position: relative; border: none;
+  background: linear-gradient(180deg, rgba(90,230,140,.035), transparent); }
+.mural-numero::before, .mural-numero::after {
+  content: ""; position: absolute; width: 12px; height: 12px;
+  border-color: var(--mural-linha); border-style: solid;
+}
+.mural-numero::before { top: 0; left: 0;    border-width: 1px 0 0 1px; }
+.mural-numero::after  { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
+
+/* ── O MAPA EM GLIFOS ────────────────────────────────────────────────── */
+.mural-terra text {
+  fill: var(--mural-terra);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  /* ⚠️ Centro, não linha de base: sem isto a silhueta inteira sobe meia linha
+     em relação aos acessos, que se posicionam pelo centro do círculo — mapa e
+     dado ficariam desalinhados. */
+  dominant-baseline: central;
+}
+.mural-arcos path { fill: none; stroke: url(#mural-arco); stroke-width: .32; opacity: .75; }
+.mural-mira { fill: none; stroke: var(--mural-vivo); stroke-width: .22; opacity: .55; }
+
+/* ── O PROMPT do cabeçalho ───────────────────────────────────────────── */
+.mural-prompt {
+  font-size: clamp(9px, .68vw, 14px); color: var(--mural-fraco);
+  letter-spacing: .1em; margin: 0 0 clamp(8px, .9vw, 18px);
+  border-bottom: 1px solid var(--mural-linha);
+  padding-bottom: clamp(6px, .6vw, 12px);
+}
+.mural-prompt b { color: var(--mural-verde); font-weight: 600; }
+.mural-cursor {
+  display: inline-block; width: .55em; height: 1em;
+  background: var(--mural-verde); vertical-align: text-bottom;
+  animation: mural-piscar 1.1s steps(2) infinite;
+}
+@keyframes mural-piscar { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
+
+/* ── BARRA DE STATUS do rodapé ───────────────────────────────────────── */
+.mural-barra {
+  display: flex; gap: clamp(10px, 1.2vw, 28px); flex-wrap: wrap; align-items: baseline;
+  border-top: 1px solid var(--mural-linha);
+  padding-top: clamp(8px, .8vw, 16px);
+  font-size: clamp(9px, .68vw, 14px);
+  letter-spacing: .16em; color: var(--mural-fraco); text-transform: uppercase;
+}
+.mural-barra b { color: var(--mural-tinta); font-weight: 600; }
+.mural-barra .sep { opacity: .4; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mural-cursor { animation: none; }
+  .mural::before { display: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * AS MOLDURAS DE CARACTERE.
+ *
+ * ⚠️ DESENHADAS COM `::before`/`::after` E `content`, não com imagem nem
+ * fonte de ícone. Assim elas herdam a cor do fósforo, escalam com o `clamp()`
+ * do resto e não somam um pedido de rede numa tela que fica aberta o dia
+ * inteiro recarregando.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* A caixa de número: cantos em seta + etiqueta lateral, como no terminal. */
+.mural-numero {
+  border: 1px solid var(--mural-linha);
+  border-radius: 0;                 /* terminal não tem canto redondo */
+  padding-block: clamp(12px, 1.1vw, 26px);
+}
+.mural-numero::before {
+  content: "⌐";
+  position: absolute; top: -.15em; left: .25em;
+  width: auto; height: auto; border: none;
+  color: var(--mural-linha); font-size: clamp(11px, .8vw, 17px); line-height: 1;
+}
+.mural-numero::after {
+  content: "⌐";
+  position: absolute; bottom: -.15em; right: .25em;
+  width: auto; height: auto; border: none;
+  color: var(--mural-linha); font-size: clamp(11px, .8vw, 17px); line-height: 1;
+  transform: rotate(180deg);
+}
+/* A etiqueta lateral — o "[RPM]" da referência, mas com o que ela É. */
+.mural-numero .mural-etiqueta {
+  position: absolute; top: clamp(6px, .5vw, 12px); right: clamp(8px, .7vw, 16px);
+  font-size: clamp(7.5px, .52vw, 11px); letter-spacing: .2em;
+  color: var(--mural-linha); text-transform: uppercase;
+}
+
+/* ── CABEÇALHO DA TABELA de fluxo ────────────────────────────────────── */
+.mural-cabecalho {
+  display: grid; align-items: baseline;
+  grid-template-columns: 4.5em minmax(0,1fr) 5em minmax(0,7em) minmax(0,7em);
+  gap: clamp(6px, .7vw, 16px);
+  padding: 0 clamp(6px, .5vw, 12px) clamp(4px, .35vw, 8px);
+  border-bottom: 1px solid var(--mural-linha);
+  font-size: clamp(8px, .58vw, 12px); letter-spacing: .2em;
+  color: var(--mural-linha); text-transform: uppercase;
+}
+.mural-cabecalho span:nth-child(4),
+.mural-cabecalho span:nth-child(5) { text-align: right; }
+@media (min-width: 1101px) {
+  .mural-cabecalho { grid-template-columns: 3.6em minmax(0,1fr) minmax(0,6em) minmax(0,6.5em); }
+  .mural-cabecalho span:nth-child(3) { display: none; }
+}
+@media (max-width: 640px) {
+  .mural-cabecalho { display: none; }   /* a tabela vira lista; rótulo estorva */
+}
+
+/* ── AS COLUNAS DE RUNA nas bordas ───────────────────────────────────── */
+.mural-runas {
+  position: fixed; top: 0; bottom: 0; width: clamp(14px, 1.4vw, 34px);
+  z-index: 5; pointer-events: none;
+  display: flex; flex-direction: column; justify-content: space-around;
+  align-items: center;
+  font-size: clamp(8px, .62vw, 14px); line-height: 1.9;
+  color: var(--mural-linha); user-select: none;
+}
+.mural-runas.esq { left: 0; }
+.mural-runas.dir { right: 0; }
+/* ⚠️ Some no estreito: numa tela de celular elas roubariam largura da
+   informação, que é o oposto do que uma borda decorativa deve fazer. */
+@media (max-width: 900px) { .mural-runas { display: none; } }
+
+/* ── O PROMPT ganha as partes que faltavam ───────────────────────────── */
+.mural-prompt i { font-style: normal; color: var(--mural-vivo); }
+.mural-prompt .mural-sep { color: var(--mural-linha); }
+
+/* ── O PULSO ─────────────────────────────────────────────────────────── */
+.pulso { margin: clamp(8px, .8vw, 16px) 0 0; }
+.pulso figcaption {
+  display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  font-size: clamp(8px, .58vw, 12px); letter-spacing: .2em;
+  color: var(--mural-fraco); text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.pulso-num { letter-spacing: .08em; text-transform: none; }
+.pulso-num b { color: var(--mural-vivo); }
+.pulso svg { width: 100%; height: clamp(46px, 5vw, 110px); display: block; }
+.pulso-area  { fill: url(#pulso-fill); }
+.pulso-linha { fill: none; stroke: var(--mural-vivo); stroke-width: 1.4; }
+/* ⚠️ A BASE EM ZERO É DESENHADA. Gráfico sem chão visível deixa o leitor
+   supor onde ele está — e a suposição é sempre mais favorável que a verdade. */
+.pulso-base  { stroke: var(--mural-linha); stroke-width: 1; vector-effect: non-scaling-stroke; }

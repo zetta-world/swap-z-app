@@ -10,6 +10,7 @@ import { setCronHeartbeat } from "@/lib/admin/health";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { runSniperScan } from "@/lib/zion/sniper";
 import { runArbiterScan } from "@/lib/zion/arbiter";
+import { runArbiter2Scan } from "@/lib/zion/arbiter2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,9 +52,15 @@ export async function POST(req: NextRequest) {
   if (!gates.pause_arbiter) {
     waitUntil(runArbiterScan().then(() => undefined).catch(() => undefined));
   }
+  // ARBITER 2.0 — spot+perp hedged variant, same tick, own wallet/gate
+  // (docs/PLANO-ARBITER-REAL.md). Resolves its own hedges by convergence.
+  if (!gates.pause_arbiter2) {
+    waitUntil(runArbiter2Scan({ leveraged: !gates.pause_arbiter2_lev }).then(() => undefined).catch(() => undefined));
+  }
 
   if (triggers.length > 0) {
-    recordEvent("radar_trigger", { meta: {
+    // ⚠️ AGUARDADO: cron, sem ninguém esperando resposta.
+    await recordEvent("radar_trigger", { meta: {
       count:   triggers.length,
       symbols: triggers.map((t) => `${t.symbol} ${t.movePct > 0 ? "+" : ""}${t.movePct}%`),
     } });
@@ -66,7 +73,15 @@ export async function POST(req: NextRequest) {
     // Each has its own pause gate; detection + heartbeat above always run, so
     // the watchdog stays quiet when both are paused.
     const radarBrain = gates.pause_radar ? null : hybridBrain();
-    const sniperOn = !gates.pause_sniper;
+    // SNIPER ANTIGO (VEÐRFÖLNIR) APOSENTADO 29/07 — mandato errado. Ele caçava
+    // os 14 majors por gatilho de preço e podia emitir SHORT; o mandato pedido
+    // era outro: token recém-lançado, long-only, realizando em USDT. Quem faz
+    // isso agora é ULLR (src/lib/zion/ullr.ts), on-chain e sem LLM.
+    //
+    // Desligado por DEFAULT (e não só apagado) para não seguir gastando token
+    // num mandato que já sabemos estar errado. `SNIPER_LEGACY=on` religa, caso
+    // se queira comparar o histórico — mas o assento não volta sozinho.
+    const sniperOn = !gates.pause_sniper && process.env.SNIPER_LEGACY === "on";
     if (radarBrain || sniperOn) {
       const symbols = triggers.map((t) => t.symbol);
       waitUntil((async () => {
@@ -74,7 +89,10 @@ export async function POST(req: NextRequest) {
         try { marketData = await getMarketIndicators(symbols); } catch { return; }
         if (radarBrain) {
           try {
-            const cards = await runBacktestScanForProvider(marketData, radarBrain);
+            // ⚠️ O terceiro argumento é QUEM PAGA. Sem ele, o gasto do
+            // HEIMDALL era carimbado `backtest_mistral` e entrava na conta
+            // de uma mesa aposentada.
+            const cards = await runBacktestScanForProvider(marketData, radarBrain, "radar");
             if (cards.length) await logSuggestions(cards, marketData.indicators, "radar");
           } catch { /* best-effort: next trigger retries */ }
         }

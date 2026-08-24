@@ -7,6 +7,10 @@ import {
 } from "@/lib/autopilot/sessions";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { SUPPORTED_CEX_IDS, type CexId } from "@/lib/cex/types";
+import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
+import { verificarChave, decidirArmar } from "@/lib/cex/permissoes";
+import { podeAutomatizar } from "@/lib/autopilot/liberacao";
+import { checarKillSwitches } from "@/lib/admin/kill-switches";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +59,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
   }
 
+  // GATE DE PLANO no ARMAR (auditoria 01/08). `cexAutopilot: "pro"` era
+  // declarado e nunca checado no servidor — só o `TierGate` do cliente escondia
+  // o painel. Vai só no POST de propósito: DESARMAR e LER estado seguem abertos
+  // a quem já tem sessão, porque trancar a saída de um autopilot já armado
+  // seria transformar um problema de cobrança em risco de dinheiro do usuário.
+  const gate = await checkFeatureTier("cexAutopilot");
+  if (gate) return denialResponse(gate);
+
+  /**
+   * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2). A automação fica FECHADA até uma
+   * estratégia medida justificar abri-la — decisão do dono, registrada em
+   * `admin_kv` com a justificativa escrita.
+   *
+   * VEM ANTES DE LER O CORPO de propósito: fechado significa que a credencial
+   * do cliente nem chega a ser tocada por esta rota.
+   */
+  // Armar guarda a credencial no servidor para o cron comprar sozinho: é
+  // dinheiro que SAI. Falha de leitura bloqueia.
+  const kill = await checarKillSwitches(["disable_cex", "maintenance_mode"], "dinheiro_sai");
+  if (kill.bloqueado) {
+    return NextResponse.json(
+      { ok: false, error: "platform_disabled", detail: kill.motivo },
+      { status: 503 },
+    );
+  }
+
+  const permissaoAutomacao = await podeAutomatizar(session.sub);
+  if (!permissaoAutomacao.permitido) {
+    return NextResponse.json(
+      { ok: false, error: "automation_closed", causa: permissaoAutomacao.causa },
+      { status: 403 },
+    );
+  }
+
   let body: ArmBody;
   try { body = await req.json() as ArmBody; }
   catch { return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 }); }
@@ -86,6 +124,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_api_secret" }, { status: 400 });
   }
 
+  /**
+   * ⚠️ PERGUNTAR À CORRETORA ANTES DE GUARDAR A CHAVE (Fase 7, 09/08).
+   *
+   * Armar significa guardar a credencial CIFRADA NO SERVIDOR para negociar com
+   * o navegador fechado. Isso só é aceitável com a chave incapaz de sacar — e
+   * até aqui esse controle era `readOnly: true` fixo no cliente, num campo que
+   * ninguém lia. Agora o servidor pergunta, e:
+   *
+   *   · `pode_sacar`     → RECUSA. Não guardamos.
+   *   · `nao_verificavel`→ guarda COM AVISO explícito na resposta.
+   *   · `so_negocia`     → segue limpo.
+   *
+   * VEM ANTES do `armSession` de propósito: um aviso depois de a credencial já
+   * estar gravada no banco não é um controle, é uma notificação.
+   */
+  const credentials = {
+    apiKey:     body.apiKey,
+    apiSecret:  body.apiSecret,
+    passphrase: body.passphrase,
+  };
+  const permissao = await verificarChave(exchangeId, credentials);
+  const decisao = decidirArmar(permissao);
+  if (!decisao.permitido) {
+    return NextResponse.json(
+      {
+        ok: false, error: "key_can_withdraw",
+        // `detail` é o texto do servidor (log/consumidor não-UI). A UI usa o
+        // ENUM + `keyPermissionDetail` e escreve a prosa nos 4 idiomas — prosa
+        // do servidor na tela seria português fixo para um app em quatro.
+        detail: decisao.motivo,
+        keyPermission:       permissao.veredito,
+        keyPermissionDetail: permissao.detalhe,
+      },
+      { status: 400 },
+    );
+  }
+
   try {
     const id = await armSession({
       walletAddress:    session.sub,
@@ -98,17 +173,20 @@ export async function POST(req: NextRequest) {
       allowedSymbols,
       lang,
       ttlHours,
-      credentials: {
-        apiKey:     body.apiKey,
-        apiSecret:  body.apiSecret,
-        passphrase: body.passphrase,
-      },
+      credentials,
+      keyPermission:       permissao.veredito,
+      keyPermissionDetail: permissao.detalhe,
     });
     return NextResponse.json({
       ok: true, id, exchangeId, marketType, riskMode,
       expiresInHours: ttlHours,
       // Honesty surface for the client: only spot auto-fires in background.
       autoFires: marketType === "spot",
+      // O veredito viaja junto — e `keyWarning` é null quando a chave foi
+      // PROVADA incapaz de sacar. Silêncio aqui é "verificado", não "não olhei".
+      keyPermission:       permissao.veredito,
+      keyPermissionDetail: permissao.detalhe,
+      keyWarning:          decisao.aviso,
     });
   } catch (e) {
     return NextResponse.json(
@@ -147,11 +225,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_exchange" }, { status: 400 });
   }
 
-  const [status, runs] = await Promise.all([
+  const [status, runs, automacao] = await Promise.all([
     getSessionStatus(session.sub, exchangeId),
     listRecentRuns(session.sub, 30),
+    podeAutomatizar(session.sub),
   ]);
-  return NextResponse.json({ ok: true, status, runs });
+  /**
+   * ⚠️ O estado da trava vai no GET, não só no POST. Descobrir que a automação
+   * está fechada só depois de apertar "ativar" seria esconder a informação
+   * atrás de um erro — e uma sessão JÁ ARMADA de antes precisa dizer na tela
+   * que não vai disparar, senão o cliente lê "ativo" e espera trades.
+   */
+  return NextResponse.json({
+    ok: true, status, runs,
+    automationClosed: !automacao.permitido,
+    automationCausa:  automacao.causa,
+    // Piloto autorizado é um estado distinto de "aberto": a tela avisa que
+    // ESTA carteira roda com dinheiro real numa feature fechada para o resto.
+    automationPilot:  automacao.causa === "piloto_autorizado",
+  });
 }
 
 function clampNum(v: unknown, min: number, max: number, fallback: number): number {

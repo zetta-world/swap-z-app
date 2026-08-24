@@ -1,7 +1,10 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { sampleLabel, shouldTint, NOISE_THRESHOLD } from "@/lib/admin/sample";
 import TerminalPanel from "../TerminalPanel";
+import { porQueEfetivoMenor } from "@/lib/zion/amostra-efetiva";
+import { corDoPnl } from "@/lib/admin/cor-resultado";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Agent = {
@@ -14,16 +17,49 @@ type Agent = {
   profitFactor: number | null; avgRR: number | null;
   avgConfidence: number | null; calibration: number | null;
   form: string[]; sampleProgress: number;
+  // Ficha da mesa (src/lib/zion/desks.ts) — COMO opera, ONDE, com que cérebro.
+  style: string | null; venue: string | null; direction: string | null;
+  brain: string | null; model: string | null; tests: string | null;
+  who: string | null; horizonHours: number | null; status: string | null;
   curve: number[];
   paperCurve: number[]; paperClosed: number;
+  /** Quanto da maré a mesa capturou — `null` quando não deu para medir. */
+  contraSegurar?: {
+    mesaPct: number; referenciaPct: number | null; diferencaPp: number | null;
+    fatiaDaMare: number | null; veredito: string;
+    usdt: number; fechadas: number; janelaDias: number;
+  } | null;
+  /** Ideias distintas dentro dos decididos — ver `amostra-efetiva.ts`. */
+  decidedEffective?: number;
   sufficientSample: boolean;
+  /** O que a mesa fez na VIDA INTEIRA — arquivo incluído, janela ignorada. */
+  vidaInteira?: { decididos: number; bruto: number; liquido: number; ocultos: number } | null;
 };
-type TT = { agents: Agent[]; minSample: number; fetchedAt: string };
+type Fallen = { name: string; decided: number; net: number | null; cause: string };
+type TT = { agents: Agent[]; valhalla?: Fallen[]; graveyard?: Fallen[]; minSample: number; fetchedAt: string;
+  coorte?: { decididos: number; ideias: number; aviso: string } };
 
 const PAPER_MATURE = 8;
+// A separação que faltava: day trade e swing não se medem com a mesma régua,
+// então o ranking passa a ser POR ESTILO em vez de uma tabela só.
+const STYLE_ORDER = ["scalp", "day", "swing", "position", "event"] as const;
+const STYLE_LABEL: Record<string, string> = {
+  scalp: "SCALP · ciclos de minutos", day: "DAY TRADE · fecha no dia",
+  swing: "SWING · dias", position: "POSIÇÃO · semanas", event: "EVENTO · só com gatilho",
+};
+const DIR_LABEL: Record<string, string> = {
+  long_only: "long-only · acumula USDT", long_short: "long+short · direcional",
+  market_neutral: "market-neutral · hedgeada",
+};
+const DIR_COLOR: Record<string, string> = {
+  long_only: "var(--adm-gold)", market_neutral: "var(--adm-green)", long_short: "var(--adm-ink-3)",
+};
 const MEDAL = ["🥇", "🥈", "🥉"];
 const kindColor = (kind: string) =>
-  kind === "agent" ? "var(--adm-gold)" : kind === "model" ? "var(--adm-cyan)" : "var(--adm-ink-3)";
+  kind === "agent" ? "var(--adm-gold)" : kind === "model" ? "var(--adm-cyan)"
+  : kind === "desk" ? "var(--adm-green)" : kind === "oracle" ? "var(--adm-purple, #b48cff)"
+  : kind === "strat" ? "var(--adm-gold)"
+  : kind === "retired" ? "var(--adm-ink-4)" : "var(--adm-ink-3)";
 const pct = (n: number | null, d = 2) => (n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(d)}%`);
 const netColor = (n: number | null) => (n == null ? "var(--adm-ink-3)" : n >= 0 ? "var(--adm-green)" : "var(--adm-red)");
 
@@ -41,11 +77,18 @@ function Sparkline({ curve, h = 20 }: { curve: number[]; h?: number }) {
   );
 }
 
+const PERIODS: { label: string; days: number | null }[] = [
+  { label: "24H", days: 1 },
+  { label: "7D",  days: 7 },
+  { label: "30D", days: 30 },
+  { label: "TUDO", days: null },
+];
+
 function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div>
-      <div style={{ fontSize: 7, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>{label}</div>
-      <div style={{ fontSize: 10, color: color ?? "var(--adm-ink-2)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.08em" }}>{label}</div>
+      <div style={{ fontSize: 13, color: color ?? "var(--adm-ink-2)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
     </div>
   );
 }
@@ -55,20 +98,23 @@ export default function TournamentPanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
+  // Default 7d: the live round mixes config eras, and a lifetime average
+  // buries whether the last fix worked. TUDO stays one tap away.
+  const [days, setDays] = useState<number | null>(7);
   const realtime = useAdminRealtime();
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/admin/api/tournament");
+      const res = await fetch(`/admin/api/tournament${days ? `?days=${days}` : ""}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.status);
       setData(json); setError(null);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
-  }, []);
+  }, [days]);
 
   useEffect(() => {
     load();
-    const t = setInterval(load, realtime?.status === "live" ? 180_000 : 120_000);
+    const t = setInterval(load, 120_000);
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 
@@ -76,22 +122,105 @@ export default function TournamentPanel() {
   const waiting = (data?.agents ?? []).filter((a) => a.resolved === 0);
 
   return (
-    <TerminalPanel id="tournament" title="TOURNAMENT" subtitle="ranking por expectancy líquida · toque na linha p/ detalhes" icon="♛" source="supabase/zion_suggestions">
+    <TerminalPanel id="tournament" title="TOURNAMENT" subtitle="① COMPARA mesas — unidade: % líquido POR TRADE" icon="♛" source="supabase/zion_suggestions">
       {loading && <div className="adm-shimmer" style={{ height: 120 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 10 }}>{error}</div>}
+      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
+
+      {/* Janela de tempo — sem isso, a era nova fica diluída na antiga. */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {PERIODS.map((p) => (
+          <button key={p.label}
+            className={`adm-toggle ${days === p.days ? "active" : ""}`}
+            style={{ fontSize: 11, padding: "2px 6px" }}
+            onClick={() => { setDays(p.days); setLoading(true); }}>
+            {p.label}
+          </button>
+        ))}
+        <span style={{ fontSize: 10, color: "var(--adm-ink-4)" }}>
+          por data do CARD (a config que o gerou)
+        </span>
+      </div>
 
       {data && (
         <div>
+          {/**
+            * ⚠️⚠️ QUANTAS VEZES O MUNDO FALOU — a coorte inteira (16/08).
+            *
+            * O `→` ao lado do DEC de cada mesa agrupa DENTRO dela. Os três UNI
+            * `sell_safe` de 14/08 estão em TRÊS mesas, então cada uma marca "1
+            * ideia" e esta tela mostrava três confirmações independentes de um
+            * movimento só. Na janela de 7 dias: 46 decididos, 23 ideias.
+            *
+            * ⚠️ Fica no TOPO, antes de qualquer pódio. Quem lê o ranking sem
+            * este número lê metade da amostra como se fosse inteira, e é o
+            * ranking que decide quem vira dinheiro real.
+            */}
+          {data.coorte && data.coorte.ideias < data.coorte.decididos && (
+            <div style={{
+              fontSize: 11, lineHeight: 1.6, color: "var(--adm-amber)",
+              border: "1px solid var(--adm-border)", borderRadius: 4,
+              padding: "4px 6px", marginBottom: 8,
+            }}>
+              ⚠ a coorte inteira tem <b>{data.coorte.decididos}</b> decididos e{" "}
+              <b>{data.coorte.ideias}</b> ideia(s) distinta(s)
+              <div style={{ color: "var(--adm-ink-4)" }}>{data.coorte.aviso}</div>
+            </div>
+          )}
+
           {ranked.length === 0 && (
-            <div style={{ color: "var(--adm-ink-3)", fontSize: 10, marginBottom: 8 }}>
+            <div style={{ color: "var(--adm-ink-3)", fontSize: 13, marginBottom: 8 }}>
               Nenhum agente com trade resolvido ainda — o torneio preenche a cada tick.
             </div>
           )}
 
+          {/* "outros" fecha a conta: uma mesa sem ficha no registro não pode
+              sumir da tela só por não estar catalogada. */}
+          {[...STYLE_ORDER, "outros"].map((style) => {
+          const group = style === "outros"
+            ? ranked.filter((a) => !a.style || !STYLE_ORDER.includes(a.style as typeof STYLE_ORDER[number]))
+            : ranked.filter((a) => a.style === style);
+          if (group.length === 0) return null;
+          const dir = group[0]?.direction ?? "";
+          return (
+          <div key={style} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--adm-ink-4)", marginBottom: 3, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ color: "var(--adm-cyan)" }}>{STYLE_LABEL[style] ?? "SEM FICHA · registrar em desks.ts"}</span>
+              <span style={{ color: DIR_COLOR[dir] ?? "var(--adm-ink-4)" }}>{DIR_LABEL[dir] ?? ""}</span>
+            </div>
+          {/**
+            * ⚠️⚠️ MEDALHA EXIGE AMOSTRA (15/08).
+            *
+            * O pódio do SWING estava assim:
+            *
+            *   🥇 GERI      +6,84%   WR 100%   1 decidido
+            *   🥈 SLEIPNIR  +2,21%   WR 100%   1 decidido
+            *   🥉 MUNINN    +0,70%   WR  33%   3 decididos
+            *   #5 VÖLUNDR   −1,43%   WR   8%  13 decididos
+            *
+            * Um trade que deu certo não é uma taxa de acerto de 100% — é um
+            * trade que deu certo. O `⚠` ao lado do DEC já dizia isso, e a
+            * medalha ao lado dizia o contrário, mais alto.
+            *
+            * É a MESMA cicatriz que o painel da carteira corrigiu em 06/08
+            * ("uma mesa com 2 trades e +8% recebia a medalha de uma com 200 e
+            * +5%"). Foi corrigida lá e ficou de pé aqui — porque cada painel
+            * ordena por conta própria, e a lição não viaja sozinha entre eles.
+            *
+            * ⚠️ E NINGUÉM É ESCONDIDO. Quem não tem amostra sai do pódio e vai
+            * para uma lista logo abaixo, com o número à vista. Sumir com o
+            * agente seria trocar "engana" por "esconde", e este laboratório
+            * separa "não medi" de "medi zero" desde o começo.
+            */}
+          {(() => {
+            const comAmostra = group.filter((a) => a.sufficientSample);
+            const semAmostra = group.filter((a) => !a.sufficientSample);
+            return (
+          <>
+          {comAmostra.length > 0 && (
           <table className="adm-table">
-            <thead><tr><th style={{ width: 26 }}></th><th>AGENTE</th><th>LÍQ./TRADE</th><th>WR</th><th>PF</th><th>DEC</th></tr></thead>
+            <thead><tr><th style={{ width: 26 }}></th><th>AGENTE</th><th>LÍQ./TRADE</th><th>WR</th><th>PF</th><th>DEC</th><th title="vida inteira: líquido/trade e decididos, arquivo incluído">VIDA</th><th title="quanto do que SEGURAR os mesmos símbolos daria na janela a mesa capturou">vs. SEGURAR</th></tr></thead>
             <tbody>
-              {ranked.map((a, i) => {
+              {comAmostra.map((a, i) => {
                 const decided = a.wins + a.losses;
                 const isOpen = open === a.source;
                 return (
@@ -102,13 +231,81 @@ export default function TournamentPanel() {
                       <td style={{ color: netColor(a.expectancyNet), fontVariantNumeric: "tabular-nums" }}>{pct(a.expectancyNet)}</td>
                       <td>{a.winRate == null ? "—" : `${(a.winRate * 100).toFixed(0)}%`}</td>
                       <td style={{ color: a.profitFactor != null && a.profitFactor >= 1 ? "var(--adm-green)" : undefined }}>{a.profitFactor == null ? "—" : a.profitFactor.toFixed(2)}</td>
-                      <td style={{ color: a.sufficientSample ? "var(--adm-cyan)" : "var(--adm-gold)" }} title={a.sufficientSample ? "amostra confiável" : `abaixo de ${data.minSample} decididos`}>
-                        {decided}{a.sufficientSample ? "" : "⚠"} {isOpen ? "▲" : "▼"}
+                      {/* ⚠️ O NÚMERO QUE VALE É A IDEIA, NÃO A LINHA. Quando os
+                          dois divergem, os DOIS aparecem: esconder o bruto
+                          seria trocar um número enganoso por outro. */}
+                      <td style={{ color: a.sufficientSample ? "var(--adm-cyan)" : "var(--adm-gold)" }}
+                          title={porQueEfetivoMenor(decided, a.decidedEffective ?? decided)
+                            || (a.sufficientSample ? "amostra confiável" : `abaixo de ${data.minSample} ideias`)}>
+                        {decided}
+                        {(a.decidedEffective ?? decided) < decided && (
+                          <span style={{ color: "var(--adm-gold)" }}>→{a.decidedEffective}</span>
+                        )}
+                        {a.sufficientSample ? "" : "⚠"} {isOpen ? "▲" : "▼"}
+                      </td>
+                      {/* ⚠️ A VIDA INTEIRA, ao lado da rodada viva (16/08).
+                          Até hoje esta tela mostrava só a rodada viva, e a GERI
+                          aparecia como "+7,04% · 1 decidido" tendo 691
+                          decididos a −0,52% no arquivo. Uma mesa com 862 trades
+                          negativos podia ganhar medalha. */}
+                      <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--adm-ink-4)", fontSize: 10 }}
+                          title={a.vidaInteira
+                            ? `vida inteira: ${a.vidaInteira.decididos} decididos a ${a.vidaInteira.liquido.toFixed(2)}% líquido`
+                              + (a.vidaInteira.ocultos > 0 ? ` — ${a.vidaInteira.ocultos} fora da rodada viva` : "")
+                            : "sem histórico arquivado"}>
+                        {a.vidaInteira
+                          // ⚠️ `corDoPnl`, nunca ternário à mão: a guarda em
+                          // `cor-resultado.test.ts` existe porque o painel do
+                          // laboratório pintou de verde uma grade que perdeu
+                          // metade do capital, só por perder menos que segurar.
+                          ? <span style={{ color: corDoPnl(a.vidaInteira.liquido) }}>
+                              {pct(a.vidaInteira.liquido)}
+                              <span style={{ color: "var(--adm-ink-4)" }}> /{a.vidaInteira.decididos}</span>
+                            </span>
+                          : "—"}
+                      </td>
+                      {/* ⚠️⚠️ COMPRAR E SEGURAR (20/08). Nos 7 dias até 20/08 as
+                          carteiras fecharam no positivo — SKAÐI +$14,92, radar
+                          +$14,00, GERI +$13,98 — enquanto BTC fez +15,03% e ETH
+                          +23,34%. Os mesmos $1.000 parados em BTC dariam +$150,
+                          dez vezes a melhor mesa. Esta tela sabia dizer "está
+                          lucrando" e não sabia dizer "está lucrando MENOS que
+                          parado", que é a frase que decide.
+
+                          ⚠️ E ELA NÃO PINTA NADA DE VERDE. `cor-resultado` existe
+                          porque o painel do laboratório pintou de verde uma
+                          grade que PERDEU metade do capital, só por perder menos
+                          que segurar. Aqui o número é sempre neutro: ele mede
+                          captura da maré, não sucesso. */}
+                      <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--adm-ink-4)", fontSize: 10 }}
+                          title={a.contraSegurar
+                            ? `${a.contraSegurar.veredito} · a mesa fez `
+                              + `${a.contraSegurar.mesaPct.toFixed(2)}% do capital `
+                              + `($${a.contraSegurar.usdt.toFixed(2)}) em `
+                              + `${a.contraSegurar.fechadas} posições, janela de `
+                              + `${a.contraSegurar.janelaDias} dias`
+                            : "sem posição fechada na janela — nada a comparar"}>
+                        {a.contraSegurar?.fatiaDaMare != null
+                          ? `${(a.contraSegurar.fatiaDaMare * 100).toFixed(0)}%`
+                          : a.contraSegurar?.diferencaPp != null
+                            ? `${a.contraSegurar.diferencaPp >= 0 ? "+" : ""}${a.contraSegurar.diferencaPp.toFixed(1)}pp`
+                            : "—"}
                       </td>
                     </tr>
                     {isOpen && (
                       <tr>
-                        <td colSpan={6} style={{ padding: "8px 4px 10px", background: "var(--adm-bg-raise)" }}>
+                        <td colSpan={8} style={{ padding: "8px 4px 10px", background: "var(--adm-bg-raise)" }}>
+                          {(a.who || a.tests) && (
+                            <div style={{ marginBottom: 8, padding: "6px 8px", background: "rgba(255 255 255 / 0.02)", borderLeft: "2px solid var(--adm-gold)", borderRadius: 2 }}>
+                              {a.who && <div style={{ fontSize: 12, color: "var(--adm-ink-2)", fontStyle: "italic" }}>{a.who}</div>}
+                              {a.tests && <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 3 }}>TESTA: {a.tests}</div>}
+                              <div style={{ fontSize: 11, color: "var(--adm-ink-3)", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                <span>praça: {a.venue === "cex" ? "CEX" : a.venue === "dex" ? "DEX" : a.venue === "both" ? "CEX+DEX" : "—"}</span>
+                                <span>cérebro: {a.brain === "none" ? "mecânico (sem IA)" : a.model ?? "IA"}</span>
+                                {a.horizonHours != null && <span>horizonte: {a.horizonHours}h</span>}
+                              </div>
+                            </div>
+                          )}
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 8 }}>
                             <Stat label="GANHO MÉD" value={pct(a.avgWin)} color="var(--adm-green)" />
                             <Stat label="PERDA MÉD" value={pct(a.avgLoss)} color="var(--adm-red)" />
@@ -124,12 +321,12 @@ export default function TournamentPanel() {
                             <div style={{ display: "grid", gridTemplateColumns: a.paperClosed >= PAPER_MATURE ? "1fr 1fr" : "1fr", gap: 8 }}>
                               <div>
                                 <Sparkline curve={a.curve} />
-                                <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2 }}>sinal · flywheel → <span style={{ color: netColor(a.curve[a.curve.length - 1] - 100) }}>{a.curve[a.curve.length - 1].toFixed(0)}</span></div>
+                                <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 2 }}>sinal · flywheel → <span style={{ color: netColor(a.curve[a.curve.length - 1] - 100) }}>{a.curve[a.curve.length - 1].toFixed(0)}</span></div>
                               </div>
                               {a.paperClosed >= PAPER_MATURE && (
                                 <div>
                                   <Sparkline curve={a.paperCurve} />
-                                  <div style={{ fontSize: 7, color: "var(--adm-ink-4)", marginTop: 2 }}>paper · gate.io → <span style={{ color: netColor(a.paperCurve[a.paperCurve.length - 1] - 100) }}>{a.paperCurve[a.paperCurve.length - 1].toFixed(0)}</span></div>
+                                  <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 2 }}>paper · gate.io → <span style={{ color: netColor(a.paperCurve[a.paperCurve.length - 1] - 100) }}>{a.paperCurve[a.paperCurve.length - 1].toFixed(0)}</span></div>
                                 </div>
                               )}
                             </div>
@@ -142,16 +339,83 @@ export default function TournamentPanel() {
               })}
             </tbody>
           </table>
+          )}
+
+          {/* Sem amostra: aparecem, com o número à vista, e SEM medalha. */}
+          {semAmostra.length > 0 && (
+            <div style={{ marginTop: comAmostra.length > 0 ? 6 : 0 }}>
+              <div style={{ fontSize: 10, color: "var(--adm-gold)", letterSpacing: "0.06em", marginBottom: 3 }}>
+                AINDA SEM AMOSTRA — abaixo de {data.minSample} decididos, o número é anedota
+              </div>
+              {semAmostra.map((a) => {
+                const decided = a.wins + a.losses;
+                return (
+                  <div key={a.source} style={{ display: "flex", gap: 8, fontSize: 11, padding: "1px 0", alignItems: "center" }}>
+                    <span style={{ color: kindColor(a.kind), flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span>
+                    <span style={{ color: "var(--adm-ink-4)", fontVariantNumeric: "tabular-nums", width: 58, textAlign: "right" }}>{pct(a.expectancyNet)}</span>
+                    <span style={{ color: "var(--adm-gold)", width: 78, textAlign: "right" }}
+                          title={porQueEfetivoMenor(decided, a.decidedEffective ?? decided)}>
+                      {(a.decidedEffective ?? decided) < decided
+                        ? `${decided}→${a.decidedEffective}/${data.minSample}`
+                        : `${decided}/${data.minSample}`} ideias ⚠
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          </>
+          );
+          })()}
+          </div>
+          );
+          })}
 
           {waiting.length > 0 && (
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 8, color: "var(--adm-ink-4)", letterSpacing: "0.06em", marginBottom: 4 }}>AGUARDANDO RESOLUÇÃO (sem decididos)</div>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.06em", marginBottom: 4 }}>AGUARDANDO RESOLUÇÃO (sem decididos)</div>
               {waiting.map((a) => (
-                <div key={a.source} style={{ display: "flex", gap: 8, fontSize: 9, padding: "2px 0", alignItems: "center" }}>
+                <div key={a.source} style={{ display: "flex", gap: 8, fontSize: 12, padding: "2px 0", alignItems: "center" }}>
                   <span style={{ color: kindColor(a.kind), flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span>
                   <span style={{ color: "var(--adm-ink-3)", flexShrink: 0 }}>{a.open} abertos · {a.total} total</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {((data.valhalla ?? data.graveyard)?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 10, borderTop: "1px solid var(--adm-gold-dim, rgba(212 175 55 / 0.25))" }}>
+              <div style={{ fontSize: 11, color: "var(--adm-gold)", letterSpacing: "0.12em", marginBottom: 6 }}>
+                ᚠ VALHALLA ᚱ — guerreiros direcionais que tombaram (rodada arquivada · aguardam Ragnarök)
+              </div>
+              {(data.valhalla ?? data.graveyard)!.map((g, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, padding: "3px 0", alignItems: "center" }}>
+                  <span style={{ flexShrink: 0, color: "var(--adm-gold)" }}>⚔︎</span>
+                  <span style={{ color: "var(--adm-ink-2)", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {g.name}
+                  </span>
+                  <span style={{ color: "var(--adm-ink-4)", fontStyle: "italic", flexShrink: 0 }}>“{g.cause}”</span>
+                  {/* A AMOSTRA AO LADO DO NÚMERO (01/08). Antes estes cinco
+                      apareciam com o mesmo peso visual — e por trás deles havia
+                      3, 5, 2, 14 e 268 trades. SAGA "lucrou" com UM trade certo;
+                      VÖLVA·Kimi aparece no positivo com ZERO ganhos. Sem o `n`,
+                      ruído tem a mesma cara de resultado. */}
+                  <span style={{ color: "var(--adm-ink-4)", flexShrink: 0, width: 74, textAlign: "right", fontSize: 11 }}>
+                    {sampleLabel(g.decided)}
+                  </span>
+                  <span style={{
+                    // Abaixo do limiar o número sai em CINZA: continua legível,
+                    // mas sem a autoridade que a cor empresta. Pintar de verde um
+                    // +1,19% vindo de três trades é o mesmo erro do selo de
+                    // segurança que era constante — confiança sem garantia.
+                    color: shouldTint(g.decided) ? netColor(g.net) : "var(--adm-ink-4)",
+                    flexShrink: 0, width: 52, textAlign: "right",
+                  }}>{pct(g.net)}</span>
+                </div>
+              ))}
+              <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 6, fontStyle: "italic" }}>
+                ᚼ não morreram — festejam em Valhalla à espera de novo mandato. O veredito foi sobre <b>prever direção</b>; a próxima saga é <b>escolher a estratégia do momento</b>. Abaixo de {NOISE_THRESHOLD} decididos o número sai em cinza: é <b>ruído</b>, não resultado.
+              </div>
             </div>
           )}
         </div>
