@@ -27,7 +27,9 @@ type Filtro = {
 type ClienteCru = {
   from: (t: never) => {
     select: (c: string) => Filtro;
-    insert: (v: unknown) => Promise<Resposta<unknown>>;
+    insert: (v: unknown) => {
+      select: (c: string) => { single: () => Promise<Resposta<{ id: string }>> };
+    } & Promise<Resposta<unknown>>;
     update: (v: unknown) => { eq: (c: string, v: unknown) => { eq: (c: string, v: unknown) => Promise<Resposta<unknown>> } & Promise<Resposta<unknown>> };
   };
 };
@@ -76,6 +78,59 @@ export async function planosVencidos(agoraIso: string, teto = 200): Promise<{ pl
   if (error || !Array.isArray(data)) return { planos: [], truncado: false };
   const linhas = data as PlanoRow[];
   return { planos: linhas.slice(0, teto), truncado: linhas.length > teto };
+}
+
+/**
+ * Cria um plano. ⚠️ Devolve o id ou o erro — nunca "provavelmente deu certo".
+ *
+ * O `next_run_at` do PRIMEIRO ciclo é decisão de quem chama: começar AGORA é o
+ * que o dono espera ao apertar o botão, e adiar para a próxima janela seria a
+ * tela fazendo algo diferente do que diz.
+ */
+export async function criarPlano(p: {
+  conexaoId: string; walletAddress: string; exchangeId: string; symbol: string;
+  orcamentoTotalUsd: number; porCicloUsd: number; ciclosTotal: number;
+  intervalo: Intervalo; primeiraJanelaIso: string;
+}): Promise<{ ok: true; id: string } | { ok: false; erro: string }> {
+  const db = cru();
+  if (!db) return { ok: false, erro: "sem banco" };
+  const { data, error } = await db.from(PLANOS).insert({
+    conexao_id: p.conexaoId, wallet_address: p.walletAddress, exchange_id: p.exchangeId,
+    symbol: p.symbol, orcamento_total_usd: p.orcamentoTotalUsd, por_ciclo_usd: p.porCicloUsd,
+    ciclos_total: p.ciclosTotal, intervalo: p.intervalo, next_run_at: p.primeiraJanelaIso,
+  }).select("id").single();
+  if (error || !data?.id) return { ok: false, erro: error?.message?.slice(0, 200) ?? "sem id" };
+  return { ok: true, id: data.id };
+}
+
+/** Os planos de uma carteira, mais recentes primeiro. */
+export async function planosDaCarteira(wallet: string, teto = 50): Promise<PlanoRow[]> {
+  const db = cru();
+  if (!db) return [];
+  const { data, error } = await db.from(PLANOS)
+    .select("*").eq("wallet_address", wallet)
+    .order("criado_em", { ascending: false }).limit(teto);
+  if (error || !Array.isArray(data)) return [];
+  return data as PlanoRow[];
+}
+
+/** Os ciclos de um plano — o extrato que prova o que aconteceu. */
+export async function ciclosDoPlano(planoId: string, teto = 400): Promise<Array<{
+  ciclo_numero: number; status: string; motivo: string | null;
+  agendado_para: string; executado_em: string | null;
+  preco: number | null; quantidade: number | null; custo_usd: number | null;
+}>> {
+  const db = cru();
+  if (!db) return [];
+  const { data, error } = await db.from(CICLOS)
+    .select("ciclo_numero, status, motivo, agendado_para, executado_em, preco, quantidade, custo_usd")
+    .eq("plano_id", planoId).order("ciclo_numero", { ascending: false }).limit(teto);
+  if (error || !Array.isArray(data)) return [];
+  return data as Array<{
+    ciclo_numero: number; status: string; motivo: string | null;
+    agendado_para: string; executado_em: string | null;
+    preco: number | null; quantidade: number | null; custo_usd: number | null;
+  }>;
 }
 
 /** Postgres: violação de unicidade. É o sinal de "outra passada já pegou". */

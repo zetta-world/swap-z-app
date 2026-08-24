@@ -262,9 +262,9 @@ RLS habilitada, ZERO policies — o padrão da casa.
 | D1 | `lib/dca/relogio.ts` puro (janela, avanço, decisão de ciclo, tetos) com testes | 🟢 **24/08 — 33 testes** |
 | D2 | migration `dca_planos` + `dca_ciclos` | 🟢 **24/08 — trava unique provada no banco** |
 | D3 | rota `POST /api/dca/cron` PRÓPRIA, com a ordem reserva→ordem→registro da §3 | 🟢 **24/08 — falta AGENDAR no cron-job.org** |
-| D4 | `pause_dca` + liberação própria em `gate-keys.ts` e no painel | 🟡 **chave criada; falta o painel** |
+| D4 | `pause_dca` + liberação própria em `gate-keys.ts` e no painel | 🟢 **24/08 — cartão no AiControlsPanel** |
 | D5 | leitura dupla no autopilot + contador (T2 da §2) | 🔴 |
-| D6 | UI: criar plano, ver ciclos feitos/pulados, pausar, encerrar | 🔴 |
+| D6 | UI: criar plano, ver ciclos feitos/pulados, pausar, encerrar | 🟢 **24/08 — aba DCA no console de CEX** |
 | D7 | painel admin: planos ativos, ciclos do dia, falhas | 🔴 |
 | D8 | i18n nos 4 locales | 🔴 |
 | D9 | remover `creds_cipher` (T3 da §2) — só com o contador em 100% | 🔴 |
@@ -289,7 +289,26 @@ sete valores impossíveis que a tela aceitava, e é barato repetir.
   isso, quem conectar pelo autopilot NÃO aparece no cofre, e um plano de DCA
   exigirá conectar de novo. É o preço de não mexer no caminho de dinheiro vivo
   no mesmo PR.
-- **Sem UI.** Não há como criar um plano pela tela ainda (D6).
+- **A UI existe e o cron NÃO está agendado.** A própria tela diz isso, em
+  vermelho, acima do formulário — plano salvo e nada rodando é exatamente o
+  tipo de coisa que não pode ficar implícita.
+
+### ⚠️ ONDE A UI MORA, E POR QUÊ
+
+Na **aba DCA do console de CEX** (`/cex`), não na aba DCA de `/orders`. As duas
+se chamam DCA e são coisas diferentes:
+
+| | `/orders` · DCA | `/cex` · DCA |
+|---|---|---|
+| praça | DEX | corretora |
+| onde vive | `localStorage` do navegador | banco, cifrado |
+| quem dispara | você, à mão | o cron, sozinho |
+| a chave | nunca sai da carteira | cópia cifrada no servidor |
+
+⚠️ **E criar um plano aqui é um CONSENTIMENTO.** O console guarda as chaves só
+no navegador, atrás de senha e com auto-lock de 10 minutos. Um plano de DCA não
+pode viver assim — o cron roda com o dono dormindo. Por isso o aviso é a
+PRIMEIRA coisa da tela, antes do formulário, e não um asterisco no rodapé.
 
 ## 8. O que este plano NÃO faz
 
