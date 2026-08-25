@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   AGENTES, FAIXAS, ROTULO_DA_FAIXA, oControle, agentesDaFaixa, agentePor,
+  PRACA_VAZIA_PORQUE,
   tamanhoDaPosicao,
 } from "@/lib/celeiro/agentes";
 import { DESKS } from "@/lib/zion/desks";
@@ -174,11 +175,31 @@ describe("as invariantes do Celeiro", () => {
     }
   });
 
-  /** O mandato pediu spot, margem, futuros e DEX — todos precisam existir. */
-  it("as quatro modalidades do mandato estão cobertas", () => {
+  /**
+   * O mandato pediu spot, margem, futuros e DEX.
+   *
+   * ⚠️⚠️ AFROUXADO EM 25/08, E O AFROUXAMENTO TEM PREÇO. Antes exigia agente em
+   * toda praça. Agora aceita praça vazia SE houver motivo escrito em
+   * `PRACA_VAZIA_PORQUE` — com data e com o número que justifica.
+   *
+   * Por que não deixei cair: uma praça que esvazia por DECISÃO e uma que
+   * esvazia porque alguém apagou um agente sem querer são indistinguíveis
+   * depois de uma semana. A frase obrigatória é o que as separa.
+   *
+   * ⚠️ Por que não deixei como estava: o Caçador e o Comprador Cego saíram do
+   * spot porque lá eles NÃO ABREM MAIS NADA — a 0,20%/perna, um alvo de 2% não
+   * limpa o pedágio. Manter a exigência obrigaria a fingir um agente de spot
+   * que não opera, que é pior que praça vazia declarada.
+   */
+  it("as quatro modalidades do mandato estão cobertas, ou o vazio tem motivo", () => {
     const m = new Set(AGENTES.map((a) => a.modalidade));
     for (const exigida of ["spot_gate", "margem_gate", "futuros_gate", "dex"] as const) {
-      expect(m.has(exigida), `o mandato pediu ${exigida} e nenhum agente opera lá`).toBe(true);
+      if (m.has(exigida)) continue;
+      const porque = PRACA_VAZIA_PORQUE[exigida];
+      expect(porque, `o mandato pediu ${exigida}, nenhum agente opera lá, e não há motivo escrito`)
+        .toBeTruthy();
+      expect(porque!.length, `o motivo de ${exigida} estar vazia é curto demais para explicar`)
+        .toBeGreaterThan(80);
     }
     const r = new Set(AGENTES.map((a) => a.ritmo));
     expect(r.has("day"), "o mandato pediu day trader").toBe(true);
@@ -334,5 +355,75 @@ describe("o tamanho da posição e o teto de exposição", () => {
         .toBeGreaterThanOrEqual(a.fracaoPorPosicao);
       expect(a.alavancagemMaxima, `${a.nome}`).toBeGreaterThanOrEqual(1);
     }
+  });
+});
+
+/**
+ * ⚠️⚠️ O CONTROLE DE DIREÇÃO — e a cicatriz de como ele quase ficou sem teste.
+ *
+ * Este bloco foi escrito em 24/08 junto com o agente e NÃO FOI COMMITADO: o
+ * script que o anexava rodava depois de um `&&`, e o comando anterior saiu com
+ * código 1. O commit seguinte usou `git add -A` e não havia o que adicionar. O
+ * CI passou porque o teste não existia — e eu afirmei, na mensagem do commit e
+ * ao dono, que "tem teste travando isso". Não tinha.
+ *
+ * O que barrou o agente naquele dia foram as invariantes PRÉ-EXISTENTES do
+ * Celeiro, não estas. Elas fizeram o trabalho que as minhas deveriam fazer.
+ */
+describe("o controle de direção", () => {
+  const cego = AGENTES.find((a) => a.controleDeDirecao);
+
+  it("existe exatamente um, e ele não é o controle de retorno", () => {
+    expect(AGENTES.filter((a) => a.controleDeDirecao)).toHaveLength(1);
+    expect(cego!.controle).toBeFalsy();
+    expect(oControle().id).not.toBe(cego!.id);
+  });
+
+  /**
+   * ⚠️⚠️ O QUE A COMPARAÇÃO MEDE — e o que ela DEIXOU de medir em 25/08.
+   *
+   * Praça, papel, fração e banca continuam idênticos ao Caçador, e é isso que
+   * este teste trava: com eles diferentes, a comparação responderia "a taxa
+   * vale?" ou "o tamanho vale?" achando que responde "o sinal vale?".
+   *
+   * ⚠️ MAS A DIFERENÇA JÁ NÃO É SÓ O SINAL. O Caçador saiu do spot para futuros
+   * — em spot, a 0,20%/perna, um alvo de 2% não limpa o pedágio e ele parou de
+   * abrir — e ao mudar de praça ganhou o LADO VENDIDO. O controle só compra, e
+   * tem de continuar assim: um controle que escolhesse lado deixaria de ser
+   * régua.
+   *
+   * Então a pergunta que este par responde HOJE é: "o sinal, incluindo as
+   * vendas que ele manda fazer, bate comprar às cegas?". Não é mais "o sinal
+   * sabe direção?" em isolamento.
+   */
+  it("é idêntico ao Caçador em praça, papel, fração e banca", () => {
+    const cacador = agentePor("cacador_de_tendencia")!;
+    expect(cego!.modalidade).toBe(cacador.modalidade);
+    expect(cego!.execucao).toBe(cacador.execucao);
+    expect(cego!.fracaoPorPosicao).toBe(cacador.fracaoPorPosicao);
+    expect(cego!.bancaInicialUsd).toBe(cacador.bancaInicialUsd);
+    expect(cego!.capitalMinimoUsd).toBe(cacador.capitalMinimoUsd);
+  });
+
+  /** ⚠️ Sem alavanca: quem responde "a alavanca vale?" é o Alavancado. */
+  it("não alavanca — senão mediria alavanca em vez de sinal", () => {
+    expect(cego!.alavancagemMaxima).toBe(1);
+  });
+
+  /**
+   * ⚠️ E ELE DECLARA QUE NÃO VENDE MESMO PODENDO. Em spot isso era imposição da
+   * praça; em futuros virou escolha, e escolha precisa estar escrita.
+   */
+  it("declara que não vende, agora que a praça permitiria", () => {
+    expect(cego!.naoFaz.toLowerCase()).toContain("não vende");
+    expect(cego!.modalidade).toBe("futuros_gate");
+  });
+
+  /** ⚠️ Controle não se aposenta — quem se aposenta é quem não o bate. */
+  it("os direcionais declaram que se medem contra ele", () => {
+    for (const id of ["cacador_de_tendencia", "alavancado_de_tendencia"]) {
+      expect(agentePor(id)!.aposentaQuando).toContain("Comprador Cego");
+    }
+    expect(cego!.aposentaQuando).toContain("nunca");
   });
 });

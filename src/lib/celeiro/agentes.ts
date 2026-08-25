@@ -255,7 +255,19 @@ export const AGENTES: readonly Agente[] = [
     id: "cacador_de_tendencia",
     nome: "Caçador de Tendência",
     categoria: "tendencia",
-    modalidade: "spot_gate",
+    /**
+     * ⚠️⚠️ SAIU DO SPOT EM 25/08, e o motivo é aritmético.
+     *
+     * Spot taker custa 0,20%/perna = 0,40% ida-e-volta. Com o múltiplo de
+     * pedágio de 6 que o Celeiro exige, o alvo mínimo vira 2,40% — e o alvo
+     * declarado é 2,00%. Ele NÃO ABRIA MAIS NADA, e a recusa era correta:
+     * direcional em spot com alvo de 2% não paga o próprio pedágio.
+     *
+     * Ele só parecia viável enquanto pagava a taxa errada (0,1125%, a legada
+     * que não era de praça nenhuma). Em futuros o taker é 0,05%/perna, o
+     * mínimo cai para 0,60%, e o alvo de 2% passa com folga.
+     */
+    modalidade: "futuros_gate",
     /** entra quando o sinal aparece — esperar o livro perde a tendência. */
     execucao: "taker",
     /**
@@ -281,9 +293,10 @@ export const AGENTES: readonly Agente[] = [
       "compra em alta MEDIDA e segura o movimento inteiro, com alvo que limpa o "
       + "pedágio por múltiplo declarado; sai quando o regime deixa de ser alta",
     naoFaz:
-      "não PREVÊ direção: o lado vem do regime medido. E não vende — em spot, "
-      + "vender na baixa é apenas sair, não é lucrar com a queda. Na baixa e no "
-      + "mercado sangrando ele fica de fora.",
+      "não PREVÊ direção: o lado vem do regime medido, e em mercado sangrando "
+      + "ele fica de fora. ⚠️ Desde 25/08 ele opera em futuros e PODE vender — "
+      + "antes, em spot, 'vender na baixa' era apenas sair. É essa venda que o "
+      + "Comprador Cego, que só compra, existe para pôr à prova.",
     receitaVemDe: ["preco"],
     aposentaQuando:
       "render menos que o Aluguel de Ocioso com 100+ posições fechadas — aí o "
@@ -311,7 +324,12 @@ export const AGENTES: readonly Agente[] = [
     id: "comprador_cego",
     nome: "Comprador Cego (controle de direção)",
     categoria: "tendencia",
-    modalidade: "spot_gate",
+    /**
+     * ⚠️ VAI JUNTO COM O CAÇADOR, sempre. Se o agente medido muda de praça e o
+     * controle não, a comparação passa a medir TAXA em vez de sinal — e
+     * responderia a pergunta errada com toda a aparência de responder a certa.
+     */
+    modalidade: "futuros_gate",
     /** compra a mercado, igual ao Caçador — a única diferença tem de ser o sinal. */
     execucao: "taker",
     ritmo: "swing",
@@ -333,10 +351,11 @@ export const AGENTES: readonly Agente[] = [
       "COMPRA, sempre, sem olhar sinal nenhum — mesma geometria de alvo e stop "
       + "do Caçador de Tendência, mesma corretagem, mesmo tamanho",
     naoFaz:
-      "não PREVÊ direção — e não lê sinal nenhum para escolher lado, que é a "
-      + "única diferença dele para o Caçador. Em spot ele não vende: sem "
-      + "futuros, 'vender na baixa' é apenas sair. Ele não é uma estratégia; é "
-      + "a régua contra a qual as direcionais se medem.",
+      "não PREVÊ direção e não lê sinal nenhum. E não vende, mesmo PODENDO em "
+      + "futuros: um controle que escolhesse lado deixaria de ser régua. "
+      + "⚠️ Desde 25/08 ele difere do Caçador em DUAS coisas, não uma — o sinal "
+      + "e o lado vendido — porque o Caçador mudou de praça e ganhou a venda. "
+      + "Ele não é uma estratégia; é a régua contra a qual as direcionais se medem.",
     receitaVemDe: ["preco"],
     aposentaQuando:
       "nunca — controle não se aposenta. Se ele render MAIS que os agentes de "
@@ -435,6 +454,29 @@ export function oControle(): Agente {
 
 /** As faixas na ordem em que o painel as mostra. */
 export const FAIXAS: readonly Faixa[] = ["semente", "trabalho", "renda"] as const;
+
+/**
+ * ⚠️⚠️ PRAÇA SEM AGENTE PRECISA DE MOTIVO ESCRITO — nunca de silêncio.
+ *
+ * O mandato pediu spot, margem, futuros e DEX. Em 25/08 o `spot_gate` ficou
+ * vazio: o Caçador e o Comprador Cego eram os dois únicos, e ambos foram para
+ * futuros. Deixar a invariante simplesmente cair transformaria uma DECISÃO
+ * medida numa ausência silenciosa — e daqui a um mês ninguém saberia se spot
+ * sumiu por escolha ou por alguém ter apagado um agente sem querer.
+ *
+ * ⚠️ ISTO NÃO É PERMISSÃO PARA ESVAZIAR PRAÇA. É a exigência de que esvaziar
+ * custe uma frase com data e número. Praça vazia sem entrada aqui continua
+ * reprovando no CI.
+ */
+export const PRACA_VAZIA_PORQUE: Partial<Record<Modalidade, string>> = {
+  spot_gate:
+    "25/08 — spot taker custa 0,20%/perna (0,40% ida-e-volta). Com o múltiplo "
+    + "de pedágio 6 que o Celeiro exige, o alvo mínimo vira 2,40%, e o alvo "
+    + "declarado dos direcionais é 2,00%: eles pararam de abrir qualquer coisa. "
+    + "Só pareciam viáveis enquanto pagavam a taxa legada de 0,1125%, que não "
+    + "era de praça nenhuma. Caçador e Comprador Cego foram para futuros, onde "
+    + "o taker é 0,05%/perna e o mínimo cai para 0,60%. Decisão do dono.",
+};
 
 export const ROTULO_DA_FAIXA: Record<Faixa, string> = {
   semente:  "Semente — funciona pequeno",
