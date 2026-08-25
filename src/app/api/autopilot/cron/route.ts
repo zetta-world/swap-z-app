@@ -134,13 +134,22 @@ async function settleArmedExits(
         if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
         if (realized !== null) {
           realizedDelta += realized;
-          await applySessionPnl(s.id, realized, today);
+          await exigirGravacao(
+            await applySessionPnl(s.id, realized, today),
+            "P&L realizado NAO contabilizado — o stop de perda diaria nao viu esta perda e pode nao puxar o freio hoje",
+            { session: s.id, base: pos.base, realized });
         }
-        await closeServerPosition(s.id, pos.base);
+        await exigirGravacao(
+          await closeServerPosition(s.id, pos.base),
+          "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
+          { session: s.id, base: pos.base });
         logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: pos.pair, side: "sell", volumeUsd: Number(pos.cost_usd) || null, pnlUsd: realized, status: "settled", route: "cron", ref: `${exchange}:${pos.exit_order_id}` });
         rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", order_type: "limit", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: realized !== null ? `exit settled, realized $${realized.toFixed(2)}` : "exit settled" });
       } else if (st === "canceled" || st === "cancelled" || st === "expired") {
-        await reopenServerPosition(s.id, pos.base);
+        await exigirGravacao(
+          await reopenServerPosition(s.id, pos.base),
+          "posicao NAO reaberta — fica exit_armed apontando para ordem morta, e o bot nunca mais sai deste trade",
+          { session: s.id, base: pos.base });
         rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "skipped", order_id: pos.exit_order_id, reason: "armed exit canceled/expired — reopened" });
       }
       // still open → leave it armed for the next run
@@ -173,6 +182,28 @@ function authorized(req: NextRequest): boolean {
   const b = Buffer.from(secret);
   if (a.length !== b.length) return false;
   try { return timingSafeEqual(a, b); } catch { return false; }
+}
+
+/**
+ * ⚠️ TODA ESCRITA DE ESTADO DE POSIÇÃO PASSA POR AQUI (25/08).
+ *
+ * As quatro (`markServerExitArmed`, `reopenServerPosition`,
+ * `closeServerPosition`, `applySessionPnl`) devolviam `void` e ninguém
+ * conferia. Cada falha tem consequência PRÓPRIA e nenhuma delas aparece na
+ * tela — por isso o alerta carrega a consequência, não só o nome da função.
+ *
+ * É a mesma classe do `engine.ts:492`: o cliente do Supabase RESOLVE com
+ * `{ error }` em vez de lançar.
+ */
+async function exigirGravacao(
+  r: { ok: true } | { ok: false; erro: string },
+  consequencia: string,
+  meta: Record<string, unknown>,
+): Promise<boolean> {
+  if (r.ok) return true;
+  await recordEvent("autopilot_registro_perdido", { meta: { why: consequencia, erro: r.erro, ...meta } });
+  notifyTelegram(`🔴 <b>Autopilot — registro perdido</b>\n${consequencia}\n${JSON.stringify(meta).slice(0, 300)}`);
+  return false;
 }
 
 export async function POST(req: NextRequest) {
@@ -523,16 +554,25 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
             if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
             if (realized !== null) {
               pnlToday += realized;
-              await applySessionPnl(s.id, realized, today);
+              await exigirGravacao(
+                await applySessionPnl(s.id, realized, today),
+                "P&L realizado NAO contabilizado — o stop de perda diaria nao viu esta perda e pode nao puxar o freio hoje",
+                { session: s.id, base: pos.base, realized });
               if (pnlToday <= -s.daily_loss_stop_usd) frozenUntil = today;
             }
-            await closeServerPosition(s.id, pos.base);
+            await exigirGravacao(
+              await closeServerPosition(s.id, pos.base),
+              "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
+              { session: s.id, base: pos.base });
             ownedBases.delete(base);
             exposureUsd = Math.max(0, exposureUsd - Number(pos.cost_usd || 0));
             logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: intent.symbol, side: "sell", volumeUsd: Number(pos.cost_usd) || null, pnlUsd: realized, status: "filled", route: "cron", ref: `${exchange}:${order.id}` });
             pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: realized ?? intent.notionalUsd, reason: realized !== null ? `exit filled, realized $${realized.toFixed(2)}` : "exit filled" });
           } else {
-            await markServerExitArmed(s.id, pos.base, order.id);
+            await exigirGravacao(
+              await markServerExitArmed(s.id, pos.base, order.id),
+              "saida NAO marcada como armada — a passada seguinte arma DE NOVO e vende duas vezes a mesma bolsa",
+              { session: s.id, base: pos.base, order_id: order.id });
             pushRow(intent, "fired", card.kind, { order_id: order.id, reason: "exit armed (limit)" });
           }
         } catch (e) {

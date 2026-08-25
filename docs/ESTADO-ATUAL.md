@@ -13,7 +13,8 @@
 > ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
-> **Última atualização:** 24/08/2026, após o **ÚLFHÉÐNAR** (#343, #344) e o
+> **Última atualização:** 25/08/2026, após o **DCA AUTOMÁTICO na CEX** (#347–#352)
+> e a limpeza da dívida do autopilot. Antes disso, o **ÚLFHÉÐNAR** (#343, #344) e o
 > **conserto do shell que ele derrubou em produção** (#345 — leia a §6, primeiro
 > item). Antes disso, a **auditoria da PONTE e do AUTOPILOT** — 16 achados em 5
 > PRs (#336, #337, #338, #340, #341).
@@ -28,8 +29,8 @@
 
 | | |
 |---|---|
-| `main` | `7aaf2e8` — ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
-| CI | verde · **1.893 testes** · 123 arquivos |
+| `main` | ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
+| CI | verde · **1.986 testes** · 131 arquivos |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
 | Outra mão no código | **duas sessões Claude** trabalham aqui — ver §1.1 (corrigido) |
@@ -561,7 +562,85 @@ fui conferir no banco em vez de confiar no `success: true` da ferramenta.
 
 ---
 
+## 5.5 O DCA AUTOMÁTICO NA CEX (24–25/08)
+
+`docs/PLANO-DCA-AUTOMATICO.md` tem o desenho. O que a retomada precisa saber:
+
+**DCA e autopilot são produtos SEPARADOS**, por decisão do dono. Rota de cron
+própria (`/api/dca/cron`), gate próprio (`pause_dca`), tabelas próprias. O
+argumento decisivo é raio de explosão: se `/api/autopilot/cron` der 500, para
+tudo que estiver dentro dela — e a poupança de alguém não pode morrer junto com
+um bug da IA.
+
+**A chave da corretora agora mora em `cex_conexoes`** — um cofre que os dois
+produtos referenciam. `autopilot_sessions.creds_cipher` ainda existe: a leitura
+prefere o cofre e cai nele quando não há elo, contando qual caminho serviu
+(evento `cofre_origem_credencial`). **O T3 — remover o campo velho — depende
+dessa medição**, e com zero sessões de autopilot no banco ela nunca gravou.
+⚠️ "Nunca rodou" não é "rodou e deu zero". Critério em `RUNBOOK` §2.2.
+
+**Um plano nasce `simulado`** e roda o caminho inteiro sem colocar ordem e sem
+pedir credencial. É o mesmo caminho, não um paralelo — 12 travas exigem uma só
+chamada a `placeCexOrder`, e reserva/tetos/guarda-de-preço antes do ramo.
+
+⚠️ **A trava que sustenta tudo é do BANCO**: `unique (plano_id, ciclo_numero)`,
+com a ordem inegociável **reserva → ordem → registro**. Lock tem TTL; garantia
+tem constraint.
+
+### ⚠️ Duas sessões trabalharam no mesmo dia, e deu certo — leia como
+
+Em 24/08 as duas entregaram com minutos de diferença (#350 dele às 20:01, #349 e
+#351 minhas às 20:06 e 20:17). Ele mexeu no MESMO arquivo que eu
+(`celeiro/cron/route.ts`) e nada quebrou.
+
+O que segurou: branch por agente, CI em todo push, e **as travas trabalhando por
+mim** — a catraca do `event-durability` obrigou o `recordEvent` dele a ter
+`await` sem eu estar presente.
+
+⚠️ **O que NÃO estava protegido, e agora está:** as duas sessões aplicam DDL no
+MESMO banco. Se as duas criassem migration no mesmo dia, ambas chegariam ao
+mesmo número — e **o git não pega isso**, porque `0034_a.sql` e `0034_b.sql` não
+são conflito para ele. Escapou por sorte (só uma criou). A trava é
+`migrations-ordenadas.test.ts`.
+
+O canal entre as sessões é o mural (`scripts/mural.mjs`, aba ÚLFHÉÐNAR).
+⚠️ O `ListAgents` **não** enxerga sessões de outra máquina — é do arcabouço, não
+tem conserto aqui.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
+
+**Escrita de estado sem conferência, no autopilot — quatro de uma vez.**
+(25/08.) `markServerExitArmed`, `reopenServerPosition`, `closeServerPosition` e
+`applySessionPnl` devolviam `void`. O cliente do Supabase RESOLVE com
+`{ error }`, então cada uma era indistinguível de sucesso — e cada falha tinha
+consequência PRÓPRIA:
+
+| falha | consequência |
+|---|---|
+| saída não marcada | a passada seguinte arma DE NOVO e vende duas vezes |
+| posição não reaberta | fica presa apontando para ordem morta |
+| posição não removida | o teto de exposição conta capital que já saiu |
+| **P&L não contabilizado** | **o stop de perda diária não vê a perda** |
+
+> O alerta carrega a CONSEQUÊNCIA, não o nome da função. "closeServerPosition
+> falhou" não diz a ninguém o que fazer.
+
+A trava (`escritas-conferidas.test.ts`) conta **chamadas**, não presença — foi
+exatamente assim que estas passaram: cada função tinha um caminho conferido e
+outro não.
+
+**O instrumento que media o filtro ficava cego junto com ele.** (25/08.) O
+filtro de regime do paper falha ABERTO de propósito — sem sinal, a entrada
+passa. Se a corretora recusa as velas, tudo volta `null`, tudo passa,
+`bloqueados` fica 0 — e o evento `paper_regime_tick`, que só gravava ao barrar,
+nunca saía. Filtro trabalhando e filtro CEGO produziam o mesmo silêncio.
+
+> Quando um instrumento só fala no caminho feliz, o silêncio dele não prova
+> nada. Foi a outra sessão que apontou.
+
+
 
 **Uma função PURA ao lado de um import de servidor derrubou a aplicação
 inteira.** (24/08, minha, em produção, achada pelo dono no celular.)
