@@ -195,7 +195,28 @@ export interface Regime {
 }
 
 /** Abaixo disto o mercado está de lado — não é tendência para nenhum lado. */
-export const TENDENCIA_MINIMA_PCT = Number(process.env.CELEIRO_TENDENCIA_MIN_PCT ?? 1.5);
+/**
+ * ⚠️⚠️ SUBIU DE 1,5% PARA 2,5% EM 25/08, E O NÚMERO SAIU DE MEDIÇÃO.
+ *
+ * Varrendo o limiar em 166 dias de velas de 4h nos três ativos, com o resto da
+ * geometria igual à produção, a expectativa por operação depois da taxa:
+ *
+ *     limiar 1,5%   n=1021   acerto 88,7%   +0,0112%   <- o que estava rodando
+ *     limiar 2,5%   n= 485   acerto 92,4%   +0,1642%
+ *     limiar 4,0%   n= 168   acerto 96,7%   +0,3526%
+ *
+ * A curva é monótona: filtrar mais forte melhora. Parei em 2,5% e não em 4%
+ * porque a amostra despenca — e as observações se sobrepõem (horizonte de 48h
+ * com entrada a cada 4h), então o número efetivo independente é da ordem de
+ * n/12. A 2,5% isso ainda são ~40 observações; a 4% seriam ~14.
+ *
+ * ⚠️ ISTO NÃO É VALIDAÇÃO FORA DA AMOSTRA. O valor foi escolhido varrendo estes
+ * mesmos dados. O que se pode dizer é mais fraco e mais honesto: partindo o
+ * período em duas metades, o par (2,5% com alvo 1,0%) é o ÚNICO ajuste testado
+ * positivo nas DUAS — e o que estava rodando é o único fortemente negativo na
+ * primeira metade (−0,3365% por operação).
+ */
+export const TENDENCIA_MINIMA_PCT = Number(process.env.CELEIRO_TENDENCIA_MIN_PCT ?? 2.5);
 
 /**
  * Acima disto o mercado está SANGRANDO e ninguém opera.
