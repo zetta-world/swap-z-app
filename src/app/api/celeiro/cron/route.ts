@@ -387,7 +387,38 @@ export async function POST(req: NextRequest) {
          * múltiplo declarado NÃO ABRE — e a recusa vai para o extrato como
          * recusa, não como prejuízo.
          */
-        const alvoPct = Number(gen?.params.alvoPct ?? 2.0);
+        /**
+         * ⚠️⚠️ CAIU DE 2,0% PARA 1,0% EM 25/08, contra a intuição.
+         *
+         * Num teste de 10 dias, alvo MAIOR parecia muito melhor (+1,18%/op a
+         * 2,0%). Era o mercado: as três moedas subiram 25-32% naquela janela, e
+         * alvo largo comprado numa alta é só segurar mais tempo numa alta.
+         *
+         * Em 166 dias, com o terço do meio caindo 16-33%, a ordem se inverte:
+         *
+         *     alvo 1,0%   +0,0112%/op      alvo 2,0%   -0,1233%/op
+         *     alvo 1,5%   -0,0677%/op      alvo 2,5%   -0,1456%/op
+         *
+         * O ótimo é um platô em 0,7-1,0%; abaixo de 0,7% a trava do pedágio
+         * recusa (mínimo 0,60% em futuros).
+         *
+         * ⚠️ E A GEOMETRIA FICA INVERTIDA DE PROPÓSITO: com stop de 3x o ruído
+         * (1,4-2,9% nestes ativos), o alvo de 1,0% dá recompensa MENOR que o
+         * risco. É deliberado — a taxa de acerto medida é 88-92%, e é ela que
+         * paga. O preço é que as perdas, quando vêm, são grandes: quem olhar só
+         * o "acerta 90%" e esquecer isto vai levar um susto legítimo.
+         *
+         * ⚠️⚠️ E ATENÇÃO À ARMADILHA DESTE `??`: mudar o número aqui NÃO muda
+         * nada para agente que já tem genoma. O genoma vem primeiro, e os três
+         * de tendência tinham `alvoPct: 2` gravado em `celeiro_genoma`. Este
+         * default só vale para agente novo.
+         *
+         * Em 25/08 a linha foi alterada e o efeito em produção teria sido ZERO
+         * se as linhas do genoma não fossem atualizadas junto — um conserto que
+         * compila, passa no CI, é mergeado e não muda uma única decisão. Quem
+         * mexer em qualquer default aqui tem de conferir o genoma no banco.
+         */
+        const alvoPct = Number(gen?.params.alvoPct ?? 1.0);
         const limpa = alvoLimpaOPedagio(
           alvoPct,
           Number(gen?.params.multiploDoPedagio ?? MULTIPLO_DO_PEDAGIO),
