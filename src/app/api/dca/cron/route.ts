@@ -12,6 +12,7 @@ import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/libe
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { recordEvent, notifyTelegram } from "@/lib/admin/track";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CexId } from "@/lib/cex/types";
 
 export const runtime = "nodejs";
@@ -60,6 +61,30 @@ function minimoOrdem(): number {
 }
 
 /**
+ * Grava no máximo uma vez por `janelaMs` para a mesma chave.
+ *
+ * ⚠️ SEM ISTO, UM PLANO BARRADO GERA 288 EVENTOS POR DIA dizendo a mesma coisa,
+ * e o sinal afoga no volume — mesmo efeito de não gravar nada. O
+ * `platform_events` já recebe ~522/dia e não tem política de retenção.
+ *
+ * ⚠️ FALHA PARA O LADO DE GRAVAR. Se o `admin_kv` não responder, o evento sai:
+ * duplicata é ruído, ausência é cegueira, e entre os dois o ruído é barato.
+ */
+async function primeiraVezNaJanela(chave: string, janelaMs: number): Promise<boolean> {
+  const db = getSupabaseAdmin();
+  if (!db) return true;
+  const k = `dcadedup:${chave}`;
+  try {
+    const { data } = await db.from("admin_kv").select("value").eq("key", k).maybeSingle();
+    const antes = data?.value ? Date.parse(data.value) : 0;
+    if (Number.isFinite(antes) && Date.now() - antes < janelaMs) return false;
+    const agora = new Date().toISOString();
+    await db.from("admin_kv").upsert({ key: k, value: agora, updated_at: agora }, { onConflict: "key" });
+    return true;
+  } catch { return true; }
+}
+
+/**
  * Alerta alto: o que exige mão humana, não o que é rotina.
  *
  * ⚠️ AGUARDADO. Na Vercel a função congela depois da resposta e um
@@ -96,7 +121,12 @@ export async function POST(req: NextRequest) {
     await avisar("mais planos vencidos que o teto da passada", { teto: 200 });
   }
 
-  const [liberacao, pilotos] = await Promise.all([lerLiberacao(), lerPilotos()]);
+  /**
+   * ⚠️ O ESTADO É O DO DCA, não o do autopilot — e a falta deste argumento
+   * custou o primeiro teste real (25/08). O plano do dono foi barrado por uma
+   * chave que existe para segurar o robô de IA e que nunca foi criada.
+   */
+  const [liberacao, pilotos] = await Promise.all([lerLiberacao("dca"), lerPilotos("dca")]);
 
   const resumo: Array<{ plano: string; acao: string; detalhe?: string }> = [];
   for (const p of planos) {
@@ -123,7 +153,33 @@ async function processarPlano(
    * ao público e abrir poupança ao público são decisões diferentes.
    */
   const v = decidirAutomacao(p.wallet_address, liberacao, pilotos);
-  if (!v.permitido) return { plano: p.id, acao: "barrado", detalhe: v.causa };
+  if (!v.permitido) {
+    /**
+     * ⚠️⚠️ BARRADO NÃO PODE SER SILENCIOSO — invariante nº 7, e eu a violei.
+     *
+     * A versão anterior só devolvia `{ acao: "barrado" }` no corpo da resposta
+     * HTTP, que ninguém lê. O dono via "0 de 3 comprados" para sempre, sem uma
+     * linha explicando por quê — indistinguível de "o cron não roda".
+     *
+     * ⚠️ O CRON DO AUTOPILOT JÁ FAZIA ISSO CERTO. Eu li aquele arquivo para
+     * escrever este e copiei a estrutura sem a parte que importava: lá as
+     * sessões barradas viram linha em `autopilot_runs` com a causa.
+     *
+     * ⚠️ E o dedup é por PLANO e por CAUSA, uma vez por hora: sem ele, um plano
+     * barrado geraria 288 eventos por dia dizendo a mesma coisa, e o sinal
+     * afogaria no volume — mesmo efeito de não gravar nada. Uma linha por hora
+     * monta a linha do tempo sem encher o log.
+     */
+    if (await primeiraVezNaJanela(`barrado:${p.id}:${v.causa}`, 3_600_000)) {
+      await recordEvent("dca_barrado", { wallet: p.wallet_address, meta: {
+      plano: p.id, symbol: p.symbol, modo: p.modo, causa: v.causa,
+      why: "plano vencido NÃO executado: a liberação do DCA está fechada. "
+        + "Abrir em admin_kv (dca_liberado = 'true') ou autorizar a carteira "
+        + "como piloto em dca_pilotos",
+      } });
+    }
+    return { plano: p.id, acao: "barrado", detalhe: v.causa };
+  }
 
   /**
    * ⚠️⚠️ PLANO SIMULADO NÃO TEM CONEXÃO — e não deve ter.
