@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { guardarConexao } from "@/lib/cex/conexoes";
 import {
   criarPlano, planosDaCarteira, ciclosDoPlano, avancarPlano, type ModoPlano,
@@ -32,19 +33,51 @@ export const dynamic = "force-dynamic";
 
 const INTERVALOS: Intervalo[] = ["hourly", "daily", "weekly", "monthly"];
 
+/**
+ * Há quantos minutos o cron do DCA passou pela última vez.
+ *
+ * ⚠️⚠️ ISTO SUBSTITUI UM AVISO FIXO NA TELA, e a troca tem motivo.
+ *
+ * O painel trazia uma faixa vermelha dizendo "o cron ainda não está agendado".
+ * Era verdade quando escrevi — e deixou de ser no minuto em que o dono criou o
+ * job, sem que nada na tela soubesse. Aviso codificado à mão é uma afirmação
+ * que envelhece sozinha: ou vira mentira, ou vira ruído que se aprende a
+ * ignorar.
+ *
+ * Agora a tela LÊ o heartbeat que o próprio cron grava. Se ele parar, ela
+ * volta a avisar sozinha — e se nunca rodou, ela diz isso, que é diferente de
+ * "rodou e faz tempo".
+ *
+ * ⚠️ `null` = NUNCA rodou. Não confundir com um número grande.
+ */
+async function ultimaPassadaDoCron(): Promise<{ haMinutos: number | null }> {
+  const db = getSupabaseAdmin();
+  if (!db) return { haMinutos: null };
+  const { data, error } = await db.from("admin_kv")
+    .select("value").eq("key", "cron:dca:last").maybeSingle();
+  const iso = (data as { value?: string } | null)?.value;
+  if (error || !iso) return { haMinutos: null };
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return { haMinutos: 0 };
+  return { haMinutos: Math.floor(ms / 60_000) };
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
 
   const planoId = req.nextUrl.searchParams.get("plano");
-  const planos = await planosDaCarteira(session.sub);
-  if (!planoId) return NextResponse.json({ ok: true, planos });
+  const [planos, cron] = await Promise.all([
+    planosDaCarteira(session.sub),
+    ultimaPassadaDoCron(),
+  ]);
+  if (!planoId) return NextResponse.json({ ok: true, planos, cron });
 
   // ⚠️ O extrato só sai para um plano DESTA carteira. Sem esta conferência, um
   // id adivinhado leria os ciclos de outra pessoa.
   const meu = planos.find((p) => p.id === planoId);
   if (!meu) return NextResponse.json({ ok: false, error: "nao_encontrado" }, { status: 404 });
-  return NextResponse.json({ ok: true, planos, ciclos: await ciclosDoPlano(planoId) });
+  return NextResponse.json({ ok: true, planos, cron, ciclos: await ciclosDoPlano(planoId) });
 }
 
 export async function POST(req: NextRequest) {
