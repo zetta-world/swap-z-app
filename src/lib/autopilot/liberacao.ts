@@ -44,6 +44,27 @@ export const CHAVE_MOTIVO    = "autopilot_cex_liberado:motivo";
 export const CHAVE_PILOTOS   = "autopilot_cex_pilotos";
 
 /**
+ * ⚠️⚠️ O DCA TEM ESTADO PRÓPRIO — e a falta dele custou o primeiro teste real.
+ *
+ * `docs/PLANO-DCA-AUTOMATICO.md` §5 diz, com todas as letras, que o gate do DCA
+ * é PRÓPRIO: abrir robô de IA ao público e abrir plano de poupança ao público
+ * são decisões diferentes, com riscos diferentes. Eu escrevi isso no plano e
+ * chamei `lerLiberacao()` no código — que lê a chave do AUTOPILOT.
+ *
+ * Em 25/08 o dono criou o primeiro plano simulado. A chave
+ * `autopilot_cex_liberado` nunca existiu no banco, então o gate leu
+ * `sem_registro` = FECHADO, e o plano — que nem toca a IA — foi barrado por uma
+ * trava que existe para segurar o robô.
+ *
+ * ⚠️ E O DCA SIMULADO NÃO GASTA NADA. Exigir liberação de plataforma para um
+ * plano que não coloca ordem é trava sem risco do outro lado: ela só impede o
+ * teste que existe para provar que o resto funciona.
+ */
+export const CHAVE_LIBERACAO_DCA = "dca_liberado";
+export const CHAVE_MOTIVO_DCA    = "dca_liberado:motivo";
+export const CHAVE_PILOTOS_DCA   = "dca_pilotos";
+
+/**
  * Por que a automação está no estado em que está.
  *
  * ⚠️ Quatro causas, não duas. Colapsar `indisponivel` em `fechado_por_decisao`
@@ -72,25 +93,27 @@ const FECHADO = (causa: CausaLiberacao): Liberacao =>
  * Lê o estado da liberação. NUNCA lança e NUNCA devolve `liberado: true` por
  * omissão — os dois caminhos de erro caem em fechado, com a causa.
  */
-export async function lerLiberacao(): Promise<Liberacao> {
+export async function lerLiberacao(produto: "autopilot" | "dca" = "autopilot"): Promise<Liberacao> {
+  const chaveLib = produto === "dca" ? CHAVE_LIBERACAO_DCA : CHAVE_LIBERACAO;
+  const chaveMot = produto === "dca" ? CHAVE_MOTIVO_DCA    : CHAVE_MOTIVO;
   const db = getSupabaseAdmin();
   if (!db) return FECHADO("indisponivel");
   try {
     const { data, error } = await db
       .from("admin_kv")
       .select("key, value, updated_at")
-      .in("key", [CHAVE_LIBERACAO, CHAVE_MOTIVO]);
+      .in("key", [chaveLib, chaveMot]);
     if (error) return FECHADO("indisponivel");
 
     const linhas = data ?? [];
-    const chave  = linhas.find((r) => r.key === CHAVE_LIBERACAO);
+    const chave  = linhas.find((r) => r.key === chaveLib);
     if (!chave) return FECHADO("sem_registro");
     // Só a string exata "true" abre. Qualquer outro conteúdo — inclusive lixo
     // de uma escrita antiga — é lido como fechado.
     if (chave.value !== "true") {
       return { ...FECHADO("fechado_por_decisao"), desde: chave.updated_at ?? null };
     }
-    const motivo = linhas.find((r) => r.key === CHAVE_MOTIVO)?.value ?? null;
+    const motivo = linhas.find((r) => r.key === chaveMot)?.value ?? null;
     return {
       liberado: true, causa: "aberto",
       motivo, desde: chave.updated_at ?? null,
@@ -177,12 +200,13 @@ export interface Piloto {
 }
 
 /** Lê a lista de pilotos. Erro de leitura devolve lista VAZIA — fecha, não abre. */
-export async function lerPilotos(): Promise<Piloto[]> {
+export async function lerPilotos(produto: "autopilot" | "dca" = "autopilot"): Promise<Piloto[]> {
   const db = getSupabaseAdmin();
   if (!db) return [];
   try {
     const { data, error } = await db
-      .from("admin_kv").select("value").eq("key", CHAVE_PILOTOS).maybeSingle();
+      .from("admin_kv").select("value")
+      .eq("key", produto === "dca" ? CHAVE_PILOTOS_DCA : CHAVE_PILOTOS).maybeSingle();
     if (error || !data?.value) return [];
     const bruto = JSON.parse(data.value) as unknown;
     if (!Array.isArray(bruto)) return [];
