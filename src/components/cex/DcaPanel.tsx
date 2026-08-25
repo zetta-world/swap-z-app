@@ -76,6 +76,12 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
 } = {}) {
   const t = useT();
   const [planos, setPlanos]   = useState<Plano[] | null>(null);
+  /**
+   * ⚠️ `undefined` = ainda não perguntei. `null` dentro = o cron NUNCA rodou.
+   * Um número = minutos desde a última passada. Os três estados são
+   * diferentes, e juntá-los faria a tela afirmar o que não sabe.
+   */
+  const [cron, setCron] = useState<{ haMinutos: number | null } | undefined>();
   const [ciclos, setCiclos]   = useState<Record<string, Ciclo[]>>({});
   const [aberto, setAberto]   = useState<string | null>(null);
   const [symbol, setSymbol]   = useState("BTC/USDT");
@@ -97,6 +103,7 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
       const r = await fetch("/api/dca/planos");
       const j = await r.json();
       setPlanos(r.ok && Array.isArray(j.planos) ? j.planos : []);
+      if (r.ok && j.cron) setCron(j.cron);
     } catch {
       // ⚠️ `null` seguiria dizendo "carregando" para sempre; `[]` diria "não há
       // planos", que é AFIRMAR o que não se sabe. Um array vazio com erro na
@@ -179,11 +186,34 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
 
   return (
     <div className="space-y-4">
-      {/* ⚠️ O AVISO DO CRON VEM PRIMEIRO — enquanto o job não existe, nada roda. */}
-      <div className="rounded-xl border border-red/25 bg-red/[0.05] px-3 py-2 flex items-start gap-2">
-        <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
-        <p className="font-mono text-[10px] text-ink-2 leading-relaxed">{t("cex.dcaNotScheduled")}</p>
-      </div>
+      {/**
+        * ⚠️⚠️ O ESTADO DO CRON VEM PRIMEIRO, E É MEDIDO — não afirmado.
+        *
+        * Aqui havia uma faixa fixa dizendo "o cron ainda não está agendado".
+        * Era verdade quando foi escrita e virou mentira no minuto em que o dono
+        * criou o job. Aviso codificado à mão envelhece sozinho: ou mente, ou
+        * vira ruído que se aprende a ignorar.
+        *
+        * Agora lê o heartbeat que o próprio cron grava. Se ele parar, a tela
+        * volta a avisar sozinha.
+        */}
+      {cron && (cron.haMinutos === null || cron.haMinutos > 20 ? (
+        <div className="rounded-xl border border-red/25 bg-red/[0.05] px-3 py-2 flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
+          <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
+            {cron.haMinutos === null
+              ? t("cex.dcaCronNunca")
+              : t("cex.dcaCronParado", { min: String(cron.haMinutos) })}
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-green/20 bg-green/[0.04] px-3 py-2 flex items-center gap-2">
+          <CalendarClock className="w-3.5 h-3.5 text-green flex-shrink-0" />
+          <p className="font-mono text-[10px] text-ink-3">
+            {t("cex.dcaCronVivo", { min: String(cron.haMinutos) })}
+          </p>
+        </div>
+      ))}
 
       {/* ⚠️ O CONSENTIMENTO SÓ APARECE NO MODO REAL — porque só ali ele é
           verdade. Mostrá-lo no simulado seria pedir permissão para algo que
