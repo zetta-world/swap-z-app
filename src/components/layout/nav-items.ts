@@ -8,6 +8,7 @@ import {
   ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3,
   Shield, Vote, Wallet, Settings, Activity, Banknote, CreditCard,
   Handshake, Users, Gem, Info, History, Building2, LayoutDashboard, Crown,
+  CalendarClock,
 } from "lucide-react";
 import { type MessageKey } from "@/lib/i18n";
 
@@ -29,6 +30,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/bridge",    labelKey: "nav.bridge",     icon: Workflow,        group: "trade" },
   { href: "/orders",    labelKey: "nav.orders",     icon: Activity,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
   { href: "/cex",       labelKey: "nav.cex",        icon: Banknote,        group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
+  // ⚠️ Rota PRÓPRIA, e não só a aba dentro de /cex: o modo simulado existe para
+  // testar sem chave, e a aba mora atrás da tela de desbloqueio do cofre.
+  { href: "/dca",       labelKey: "nav.dca",        icon: CalendarClock,   group: "trade", badgeKey: "nav.badgeNew",  badgeTone: "new" },
   { href: "/otc",       labelKey: "nav.otc",        icon: Handshake,       group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
   { href: "/p2p",       labelKey: "nav.p2p",        icon: Users,           group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
   { href: "/nft",       labelKey: "nav.nft",        icon: Gem,             group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
