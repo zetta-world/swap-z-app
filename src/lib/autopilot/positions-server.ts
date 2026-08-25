@@ -132,38 +132,56 @@ export async function recordServerEntry(p: {
   }, { onConflict: "session_id,base" }));
 }
 
-/** Flag that an exit order is resting for this position. */
-export async function markServerExitArmed(sessionId: string, base: string, orderId: string): Promise<void> {
+/**
+ * Marca que existe ordem de saída pousada nesta posição.
+ *
+ * ⚠️ SE ISTO FALHAR CALADO, A POSIÇÃO CONTINUA `open` — e a passada seguinte
+ * arma a saída DE NOVO. Duas ordens de venda para a mesma bolsa, e a segunda
+ * tenta vender o que a primeira já vendeu.
+ */
+export async function markServerExitArmed(sessionId: string, base: string, orderId: string): Promise<Gravacao> {
   const db = getSupabaseAdmin();
-  if (!db) return;
-  await db.from("autopilot_positions").update({
+  if (!db) return { ok: false, erro: "sem banco" };
+  return comRetentativa(() => db.from("autopilot_positions").update({
     status:        "exit_armed",
     exit_order_id: orderId,
     exit_armed_at: new Date().toISOString(),
     updated_at:    new Date().toISOString(),
-  }).eq("session_id", sessionId).eq("base", base.toUpperCase());
+  }).eq("session_id", sessionId).eq("base", base.toUpperCase()));
 }
 
-/** Reopen a position whose armed exit was canceled/expired so it can re-arm. */
-export async function reopenServerPosition(sessionId: string, base: string): Promise<void> {
+/**
+ * Reabre posição cuja saída armada foi cancelada/expirada, para poder re-armar.
+ *
+ * ⚠️ SE ISTO FALHAR CALADO, a posição fica `exit_armed` apontando para uma ordem
+ * MORTA. Ela nunca mais re-arma — e o bot nunca mais sai daquele trade. É a
+ * mesma classe da posição não gravada, pelo lado oposto.
+ */
+export async function reopenServerPosition(sessionId: string, base: string): Promise<Gravacao> {
   const db = getSupabaseAdmin();
-  if (!db) return;
-  await db.from("autopilot_positions").update({
+  if (!db) return { ok: false, erro: "sem banco" };
+  return comRetentativa(() => db.from("autopilot_positions").update({
     status:        "open",
     exit_order_id: null,
     exit_armed_at: null,
     updated_at:    new Date().toISOString(),
-  }).eq("session_id", sessionId).eq("base", base.toUpperCase());
+  }).eq("session_id", sessionId).eq("base", base.toUpperCase()));
 }
 
-/** Remove a position once it's exited / no longer held. */
-export async function closeServerPosition(sessionId: string, base: string): Promise<void> {
+/**
+ * Remove a posição depois que ela saiu / não é mais mantida.
+ *
+ * ⚠️ SE ISTO FALHAR CALADO, o banco segue dizendo que a bolsa existe. O teto de
+ * exposição conta capital que não está mais lá, e o ramo de venda pode tentar
+ * vender de novo o que já foi vendido.
+ */
+export async function closeServerPosition(sessionId: string, base: string): Promise<Gravacao> {
   const db = getSupabaseAdmin();
-  if (!db) return;
-  await db.from("autopilot_positions")
+  if (!db) return { ok: false, erro: "sem banco" };
+  return comRetentativa(() => db.from("autopilot_positions")
     .delete()
     .eq("session_id", sessionId)
-    .eq("base", base.toUpperCase());
+    .eq("base", base.toUpperCase()));
 }
 
 /**
@@ -171,8 +189,20 @@ export async function closeServerPosition(sessionId: string, base: string): Prom
  * if the daily loss-stop is crossed (apply_session_pnl does both in one
  * statement). `today` is the UTC day key set as frozen_until_day.
  */
-export async function applySessionPnl(sessionId: string, deltaUsd: number, today: string): Promise<void> {
+export async function applySessionPnl(sessionId: string, deltaUsd: number, today: string): Promise<Gravacao> {
   const db = getSupabaseAdmin();
-  if (!db) return;
-  await db.rpc("apply_session_pnl", { p_id: sessionId, p_delta: deltaUsd, p_today: today });
+  if (!db) return { ok: false, erro: "sem banco" };
+  /**
+   * ⚠️⚠️ ESTA É A PIOR DAS QUATRO, e por isso ficou por último no comentário.
+   *
+   * Este RPC faz duas coisas numa instrução: soma o P&L realizado do dia E
+   * puxa o freio quando o stop de perda diária é cruzado.
+   *
+   * Falhar calado significa que o prejuízo NÃO FOI CONTADO. O stop que o dono
+   * configurou deixa de existir naquele dia, sem nada na tela dizendo — e ele
+   * só descobre pelo extrato da corretora. É a mesma cicatriz do contador
+   * diário de trades (#340), no freio que protege mais dinheiro.
+   */
+  return comRetentativa(() =>
+    db.rpc("apply_session_pnl", { p_id: sessionId, p_delta: deltaUsd, p_today: today }));
 }

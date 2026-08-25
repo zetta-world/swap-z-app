@@ -638,14 +638,40 @@ export async function openPaperPositions(): Promise<number> {
    * 522 e ainda não tem política de retenção. Barrar nada é o estado normal e
    * não merece linha; barrar alguém, ou estourar o teto de símbolos, merece.
    */
-  if (bloqueadosPorRegime > 0 || regime.ignorados > 0) {
+  const semSinal = [...regime.porSimbolo.values()].filter((v) => v == null).length;
+  /**
+   * ⚠️⚠️ O FILTRO CEGO — o defeito que eu deixei aqui em 23/08 e a outra sessão
+   * apontou.
+   *
+   * `permiteEntrada(null)` é PASSA: o filtro falha aberto de propósito, para
+   * nunca ser o motivo de a mesa parar (ver `lerTendencias`). A consequência é
+   * que, se a Gate.io recusa as velas, TODO símbolo volta `null`, tudo passa,
+   * `bloqueadosPorRegime` fica 0 — e a condição acima nunca dispara.
+   *
+   * Resultado: filtro funcionando sem nada para barrar e filtro CEGO por
+   * rate-limit produziam o MESMO silêncio. É a invariante nº 33 no instrumento
+   * que deveria medir o filtro.
+   *
+   * Cegueira TOTAL é o caso inequívoco e é o que o rate-limit produz. Não fica
+   * barulhento no caminho normal: só grava quando avaliou alguma coisa e não
+   * conseguiu sinal de NENHUMA delas.
+   */
+  const cego = regime.porSimbolo.size > 0 && semSinal === regime.porSimbolo.size;
+
+  if (bloqueadosPorRegime > 0 || regime.ignorados > 0 || cego) {
     recordEvent("paper_regime_tick", { meta: {
       bloqueados: bloqueadosPorRegime,
       simbolos_avaliados: regime.porSimbolo.size,
       // Sem sinal = passou sem ser julgado. É a taxa de cobertura do filtro.
-      sem_sinal: [...regime.porSimbolo.values()].filter((v) => v == null).length,
+      sem_sinal: semSinal,
       simbolos_ignorados_por_teto: regime.ignorados,
-      why: "entradas long barradas por tendência de 24h não positiva",
+      // ⚠️ Duas causas OPOSTAS não podem partilhar a mesma frase: uma diz que o
+      // filtro trabalhou, a outra que ele não enxergou nada.
+      why: cego
+        ? "FILTRO CEGO — avaliou " + regime.porSimbolo.size + " símbolos e não "
+          + "obteve tendência de nenhum. Tudo passou SEM ser julgado (o filtro "
+          + "falha aberto). Suspeita: rate-limit ou indisponibilidade da corretora"
+        : "entradas long barradas por tendência de 24h não positiva",
     } });
   }
 
