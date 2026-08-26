@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CalendarClock, Pause, Play, Square, AlertTriangle } from "lucide-react";
 import { lerCiclos, porCiclo, MAX_CICLOS } from "@/lib/orders/plano";
+import { projetarTaxa, compararComRealizado, precoMedio } from "@/lib/dca/custo";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { CexCredentials, CexId } from "@/lib/cex/types";
@@ -39,6 +40,7 @@ type Ciclo = {
   ciclo_numero: number; status: string; motivo: string | null;
   agendado_para: string; executado_em: string | null;
   preco: number | null; quantidade: number | null; custo_usd: number | null;
+  taxa_usd: number | null;
   simulado: boolean;
 };
 
@@ -117,6 +119,18 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
 
   const c = lerCiclos(ciclosTxt);
   const cada = c.ok ? porCiclo(orcamento, c.ciclos, 8) : null;
+  /**
+   * ⚠️ A projeção usa o MESMO `porCiclo` que a tela já mostra, e não uma conta
+   * própria — duas aritméticas para o mesmo plano divergiriam no primeiro
+   * arredondamento, e o dono veria uma taxa que não fecha com o valor exibido.
+   */
+  const projecao = c.ok && cada
+    ? projetarTaxa({
+        orcamentoTotalUsd: Number(orcamento),
+        porCicloUsd:       Number(cada),
+        ciclosTotal:       c.ciclos,
+      })
+    : null;
   const podeCriar = c.ok && Boolean(cada) && !criando;
 
   const motivoCiclos = (): string | null => {
@@ -303,6 +317,34 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
           </div>
         )}
 
+        {/* ⚠️ A TAXA APARECE ANTES DE CRIAR, não depois de pagar (26/08).
+            Num plano de $10 x 90 ciclos a 0,2% por ordem são $1,80 — 1,8% do
+            orçamento que a tela nunca escrevia em lugar nenhum. E o que faz
+            decidir é a PORCENTAGEM, não o valor: "$1,80" não diz nada sozinho.
+            O aviso do que a estimativa NÃO cobre vai junto, porque derrapagem
+            não foi medida para estes pares e omiti-la deixaria o número
+            parecendo mais exato do que é. */}
+        {projecao?.ok && (
+          <div className="rounded-lg border border-white/10 bg-bg-2/40 px-3 py-2 space-y-0.5">
+            <div className="font-mono text-[11px] text-ink-2">
+              {t("cex.dcaFeeEstimate", {
+                usd: projecao.taxaTotalUsd.toFixed(2),
+                pct: projecao.pctDoOrcamento.toFixed(2),
+                rate: String(projecao.taxaPct),
+              })}
+            </div>
+            {/* ⚠️ Quando o orçamento acaba antes da contagem, o plano roda
+                MENOS ciclos do que o dono pediu. Dizer isso aqui evita a
+                surpresa de um plano que se encerra "cedo" sem explicação. */}
+            {c.ok && projecao.ciclosQueVaoRodar !== c.ciclos && (
+              <div className="font-mono text-[10px] text-gold">
+                {t("cex.dcaFeeCycles", { n: String(projecao.ciclosQueVaoRodar) })}
+              </div>
+            )}
+            <div className="font-mono text-[10px] text-ink-4">{t("cex.dcaFeeExcludes")}</div>
+          </div>
+        )}
+
         <button onClick={criar} disabled={!podeCriar}
           className="w-full btn btn-primary py-3 text-sm tracking-widest disabled:opacity-40">
           {t("cex.dcaCreate")}
@@ -380,6 +422,7 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
 
           {aberto === p.id && (
             <div className="border-t border-white/5 pt-2 space-y-1 max-h-56 overflow-y-auto">
+              <ResumoDoExtrato plano={p} ciclos={ciclos[p.id] ?? []} t={t} />
               {(ciclos[p.id] ?? []).length === 0 ? (
                 <div className="font-mono text-[10px] text-ink-4">{t("cex.dcaNoneHint")}</div>
               ) : ciclos[p.id].map((cy) => (
@@ -394,6 +437,9 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
                   <span className="text-ink-3 flex-1 truncate">
                     {cy.status === "feito" && cy.custo_usd != null
                       ? `${Number(cy.quantidade ?? 0)} @ ${Number(cy.preco ?? 0)} = $${Number(cy.custo_usd).toFixed(2)}`
+                        // ⚠️ Taxa ausente NÃO vira "$0.00" — some da linha. Um
+                        // zero aqui afirmaria que a corretora não cobrou nada.
+                        + (cy.taxa_usd != null ? ` · ${t("cex.dcaFeeShort")} $${Number(cy.taxa_usd).toFixed(4)}` : "")
                       : cy.motivo ?? new Date(cy.agendado_para).toLocaleString()}
                   </span>
                 </div>
@@ -402,6 +448,65 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * O CABEÇALHO DO EXTRATO — preço médio e a aferição da taxa.
+ *
+ * ⚠️ POR QUE A TAXA APARECE COMO ALÍQUOTA, e não como total (26/08).
+ *
+ * Um plano no ciclo 3 de 90 pagou $0,06 de uma projeção de $1,80. Mostrar
+ * "projetado $1,80 · real $0,06" leria como economia de 97%, quando não é nada
+ * — é só um plano no começo. A pergunta que a aferição responde é "a alíquota
+ * que assumimos é a que estão cobrando?", e essa não depende de quantos ciclos
+ * já rodaram.
+ *
+ * ⚠️ E OS CICLOS SEM REGISTRO APARECEM. Plano simulado não paga taxa e grava
+ * `null`; ciclo anterior à migration 0034 também. Sem esse contador, uma
+ * medição feita sobre 1 de 40 ciclos teria a mesma cara da medição do plano
+ * inteiro — a armadilha de sempre, vazio-por-ausência com cara de vazio-por-
+ * medição.
+ */
+function ResumoDoExtrato({ plano, ciclos, t }: {
+  plano: Plano; ciclos: Ciclo[];
+  t: (k: MessageKey, v?: Record<string, string>) => string;
+}) {
+  const linhas = ciclos.map((c) => ({ custoUsd: c.custo_usd, taxaUsd: c.taxa_usd, quantidade: c.quantidade }));
+  const media  = precoMedio(linhas);
+  const proj   = projetarTaxa({
+    orcamentoTotalUsd: Number(plano.orcamento_total_usd),
+    porCicloUsd:       Number(plano.por_ciclo_usd),
+    ciclosTotal:       plano.ciclos_total,
+  });
+  const afer = proj.ok ? compararComRealizado(linhas, proj) : null;
+
+  if (media.ciclosContados === 0 && !afer) return null;
+
+  return (
+    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pb-1.5 mb-1 border-b border-white/5 font-mono text-[10px]">
+      {/* ⚠️ `null` vira travessão, nunca zero. Preço médio zero é uma afirmação. */}
+      <span className="text-ink-3">
+        {t("cex.dcaAvgPrice", {
+          price: media.precoMedioUsd == null ? "—" : media.precoMedioUsd.toFixed(6),
+          qty:   String(Number(media.quantidadeTotal.toFixed(8))),
+        })}
+      </span>
+      {afer && afer.taxaRealPct != null && (
+        <span className={Math.abs(afer.desvioPontos ?? 0) > 0.05 ? "text-gold" : "text-ink-3"}>
+          {t("cex.dcaFeeActual", {
+            actual: afer.taxaRealPct.toFixed(3),
+            est:    String(proj.ok ? proj.taxaPct : 0),
+            usd:    afer.taxaRealUsd.toFixed(4),
+          })}
+        </span>
+      )}
+      {afer && afer.ciclosSemRegistro > 0 && (
+        <span className="text-ink-4">
+          {t("cex.dcaFeeUnmeasured", { n: String(afer.ciclosSemRegistro) })}
+        </span>
+      )}
     </div>
   );
 }
