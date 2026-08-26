@@ -56,11 +56,32 @@ const COR_CICLO: Record<string, string> = {
   reservado: "text-cyan",
 };
 
-export default function DcaPanel({ exchangeId, credentials }: {
-  exchangeId: CexId; credentials: CexCredentials;
-}) {
+export default function DcaPanel({ exchangeId = "gateio", credentials = null }: {
+  exchangeId?: CexId;
+  /**
+   * ⚠️⚠️ OPCIONAL — e este parâmetro é o conserto de uma contradição minha.
+   *
+   * Eu construí o modo simulado para o dono poder testar SEM chave e SEM saldo,
+   * e depois pendurei a tela dentro do `CexConsole`, que começa com
+   * `if (!creds) return <tela de desbloqueio>`. O modo que existia para
+   * dispensar credencial ficou atrás de uma porta que exige credencial.
+   *
+   * Ele bateu nisso na primeira tentativa de usar: "essas duas não tenho saldo
+   * para fazer".
+   *
+   * Sem credencial, este painel roda em SIMULADO e diz por que o real está
+   * fechado. Com credencial, os dois modos.
+   */
+  credentials?: CexCredentials | null;
+} = {}) {
   const t = useT();
   const [planos, setPlanos]   = useState<Plano[] | null>(null);
+  /**
+   * ⚠️ `undefined` = ainda não perguntei. `null` dentro = o cron NUNCA rodou.
+   * Um número = minutos desde a última passada. Os três estados são
+   * diferentes, e juntá-los faria a tela afirmar o que não sabe.
+   */
+  const [cron, setCron] = useState<{ haMinutos: number | null } | undefined>();
   const [ciclos, setCiclos]   = useState<Record<string, Ciclo[]>>({});
   const [aberto, setAberto]   = useState<string | null>(null);
   const [symbol, setSymbol]   = useState("BTC/USDT");
@@ -73,6 +94,8 @@ export default function DcaPanel({ exchangeId, credentials }: {
    * ausente ou typo não podem acabar comprando.
    */
   const [modo, setModo] = useState<"simulado" | "real">("simulado");
+  /** Sem chave no cofre, o modo real não tem como existir. */
+  const temChave = Boolean(credentials?.apiKey && credentials?.apiSecret);
   const [criando, setCriando] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -80,6 +103,7 @@ export default function DcaPanel({ exchangeId, credentials }: {
       const r = await fetch("/api/dca/planos");
       const j = await r.json();
       setPlanos(r.ok && Array.isArray(j.planos) ? j.planos : []);
+      if (r.ok && j.cron) setCron(j.cron);
     } catch {
       // ⚠️ `null` seguiria dizendo "carregando" para sempre; `[]` diria "não há
       // planos", que é AFIRMAR o que não se sabe. Um array vazio com erro na
@@ -114,7 +138,7 @@ export default function DcaPanel({ exchangeId, credentials }: {
           orcamentoTotalUsd: Number(orcamento), ciclosTotal: ciclosTxt,
           // ⚠️ A chave só viaja no modo REAL. No simulado o servidor nem a pede,
           // e mandar assim mesmo seria expor segredo sem necessidade.
-          ...(modo === "real" ? { credentials: {
+          ...(modo === "real" && credentials ? { credentials: {
             apiKey: credentials.apiKey, apiSecret: credentials.apiSecret,
             passphrase: credentials.passphrase,
           } } : {}),
@@ -162,11 +186,34 @@ export default function DcaPanel({ exchangeId, credentials }: {
 
   return (
     <div className="space-y-4">
-      {/* ⚠️ O AVISO DO CRON VEM PRIMEIRO — enquanto o job não existe, nada roda. */}
-      <div className="rounded-xl border border-red/25 bg-red/[0.05] px-3 py-2 flex items-start gap-2">
-        <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
-        <p className="font-mono text-[10px] text-ink-2 leading-relaxed">{t("cex.dcaNotScheduled")}</p>
-      </div>
+      {/**
+        * ⚠️⚠️ O ESTADO DO CRON VEM PRIMEIRO, E É MEDIDO — não afirmado.
+        *
+        * Aqui havia uma faixa fixa dizendo "o cron ainda não está agendado".
+        * Era verdade quando foi escrita e virou mentira no minuto em que o dono
+        * criou o job. Aviso codificado à mão envelhece sozinho: ou mente, ou
+        * vira ruído que se aprende a ignorar.
+        *
+        * Agora lê o heartbeat que o próprio cron grava. Se ele parar, a tela
+        * volta a avisar sozinha.
+        */}
+      {cron && (cron.haMinutos === null || cron.haMinutos > 20 ? (
+        <div className="rounded-xl border border-red/25 bg-red/[0.05] px-3 py-2 flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-red flex-shrink-0 mt-0.5" />
+          <p className="font-mono text-[10px] text-ink-2 leading-relaxed">
+            {cron.haMinutos === null
+              ? t("cex.dcaCronNunca")
+              : t("cex.dcaCronParado", { min: String(cron.haMinutos) })}
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-green/20 bg-green/[0.04] px-3 py-2 flex items-center gap-2">
+          <CalendarClock className="w-3.5 h-3.5 text-green flex-shrink-0" />
+          <p className="font-mono text-[10px] text-ink-3">
+            {t("cex.dcaCronVivo", { min: String(cron.haMinutos) })}
+          </p>
+        </div>
+      ))}
 
       {/* ⚠️ O CONSENTIMENTO SÓ APARECE NO MODO REAL — porque só ali ele é
           verdade. Mostrá-lo no simulado seria pedir permissão para algo que
@@ -189,21 +236,35 @@ export default function DcaPanel({ exchangeId, credentials }: {
             muda o significado de todo o resto do formulário. */}
         <Campo label={t("cex.dcaMode")}>
           <div className="grid grid-cols-2 gap-1.5">
-            {(["simulado", "real"] as const).map((m) => (
-              <button key={m} type="button" onClick={() => setModo(m)}
-                className={cn(
-                  "px-3 py-2 rounded-lg border font-mono text-[11px] tracking-widest uppercase transition-colors",
-                  modo === m
-                    ? (m === "real" ? "border-red/40 bg-red/[0.08] text-red" : "border-cyan/40 bg-cyan/[0.08] text-cyan")
-                    : "border-white/10 text-ink-4 hover:text-ink-3",
-                )}>
-                {t(m === "real" ? "cex.dcaModeReal" : "cex.dcaModeSim")}
-              </button>
-            ))}
+            {(["simulado", "real"] as const).map((m) => {
+              // ⚠️ O botão do real fica DESABILITADO sem chave, não escondido.
+              // Escondê-lo faria o recurso parecer inexistente; desabilitado com
+              // motivo diz o que falta para destravá-lo.
+              const bloqueado = m === "real" && !temChave;
+              return (
+                <button key={m} type="button" disabled={bloqueado}
+                  onClick={() => !bloqueado && setModo(m)}
+                  title={bloqueado ? t("cex.dcaRealPrecisaChave") : undefined}
+                  className={cn(
+                    "px-3 py-2 rounded-lg border font-mono text-[11px] tracking-widest uppercase transition-colors",
+                    bloqueado ? "border-white/5 text-ink-4/40 cursor-not-allowed"
+                    : modo === m
+                      ? (m === "real" ? "border-red/40 bg-red/[0.08] text-red" : "border-cyan/40 bg-cyan/[0.08] text-cyan")
+                      : "border-white/10 text-ink-4 hover:text-ink-3",
+                  )}>
+                  {t(m === "real" ? "cex.dcaModeReal" : "cex.dcaModeSim")}
+                </button>
+              );
+            })}
           </div>
           <p className="font-sans text-[10px] text-ink-3 leading-relaxed mt-1.5">
             {t(modo === "real" ? "cex.dcaModeRealHelp" : "cex.dcaModeSimHelp")}
           </p>
+          {!temChave && (
+            <p className="font-sans text-[10px] text-gold/80 leading-relaxed mt-1">
+              {t("cex.dcaRealPrecisaChave")}
+            </p>
+          )}
         </Campo>
 
         <div className="grid grid-cols-2 gap-2">

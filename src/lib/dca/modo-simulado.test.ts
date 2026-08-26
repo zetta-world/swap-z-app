@@ -84,13 +84,32 @@ describe("credencial: só o caminho que gasta exige chave", () => {
   });
 
   it("o painel não manda a chave quando o modo é simulado", () => {
+    // ⚠️ A condição ficou MAIS estrita depois que o painel passou a aceitar
+    // credencial opcional (25/08): `modo === "real" && credentials`. Não basta
+    // pedir o modo real — a chave tem de existir. Esta trava acusou a mudança,
+    // e estava certa em acusar: o padrão antigo não cobria mais o código.
     const PANEL = semComentarios(
       readFileSync(join(process.cwd(), "src/components/cex/DcaPanel.tsx"), "utf8"));
-    expect(PANEL).toMatch(/\.\.\.\(modo === "real" \? \{ credentials:/);
+    expect(PANEL).toMatch(/\.\.\.\(modo === "real" && credentials \? \{ credentials:/);
   });
 
   it("o painel nasce em simulado", () => {
     const PANEL = readFileSync(join(process.cwd(), "src/components/cex/DcaPanel.tsx"), "utf8");
     expect(PANEL).toMatch(/useState<"simulado" \| "real">\("simulado"\)/);
+  });
+
+  it("⚠️ sem chave no cofre, o modo REAL fica indisponível", () => {
+    /**
+     * O conserto da contradição de 25/08: o modo simulado existe para testar
+     * sem chave, mas a tela morava atrás do desbloqueio do cofre. Agora o
+     * painel roda sem credencial — e o botão do real fica DESABILITADO com o
+     * motivo, em vez de escondido. Escondê-lo faria o recurso parecer
+     * inexistente.
+     */
+    const PANEL = semComentarios(
+      readFileSync(join(process.cwd(), "src/components/cex/DcaPanel.tsx"), "utf8"));
+    expect(PANEL).toMatch(/const temChave = Boolean\(credentials\?\.apiKey && credentials\?\.apiSecret\)/);
+    expect(PANEL).toMatch(/const bloqueado = m === "real" && !temChave/);
+    expect(PANEL).toMatch(/disabled=\{bloqueado\}/);
   });
 });
