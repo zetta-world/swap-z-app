@@ -13,7 +13,8 @@ import { getFlywheelGates } from "@/lib/admin/gates";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { recordEvent, notifyTelegram } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { CexId } from "@/lib/cex/types";
+import type { CexId, CexOrder } from "@/lib/cex/types";
+import { taxaEmUsd } from "@/lib/cex/taxa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -320,9 +321,39 @@ async function processarPlano(
     const qtd   = Number(order.filled)  > 0 ? Number(order.filled)  : quantidade;
     const custo = Number(order.cost)    > 0 ? Number(order.cost)    : preco * qtd;
 
+    /**
+     * ⚠️ A TAXA QUE A CORRETORA COBROU DE VERDADE (26/08).
+     *
+     * `custo` é `order.cost` — o TOTAL GASTO, não a taxa. Sem esta linha, a
+     * projeção de `lib/dca/custo.ts` não tinha contra o que ser conferida, e
+     * projeção que ninguém afere é promessa.
+     *
+     * ⚠️ PLANO SIMULADO GRAVA `null`, NUNCA 0. Uma simulação não pagou taxa
+     * nenhuma — dizer "a corretora cobrou zero" seria inventar uma medição. O
+     * `compararComRealizado()` conta ciclo sem registro à parte, então um plano
+     * simulado aparece honestamente como "0 medidos", e não como taxa zero.
+     *
+     * Numa compra a corretora costuma cobrar na moeda BASE (vem menos token),
+     * e `taxaEmUsd` resolve esse caso exato com `custo / qtd` — o preço que
+     * acabou de ser realizado. Uma consulta de preço a menos é uma fonte de
+     * erro a menos.
+     */
+    const t = simulado
+      ? { usd: null as number | null, naoPrecificada: null }
+      : taxaEmUsd(order as CexOrder, custo, qtd, p.symbol);
+    if (t.naoPrecificada) {
+      await avisar("taxa do ciclo NAO precificada — a alicota real fica sem este ciclo", {
+        plano: p.id, ciclo: d.ciclo, moeda: t.naoPrecificada.moeda, valor: t.naoPrecificada.valor,
+      });
+    }
+
     // ── passo 3: o registro ───────────────────────────────────────────
     const gravou = await fecharCiclo(p.id, d.ciclo, {
       status: "feito", orderId: order.id, preco, quantidade: qtd, custoUsd: custo, simulado,
+      // ⚠️ `naoPrecificada` presente significa que a taxa EXISTE e não soubemos
+      // converter — `null` na coluna, e o motivo gravado ao lado.
+      taxaUsd: t.naoPrecificada ? null : t.usd,
+      taxaNaoPrecificada: t.naoPrecificada,
     });
     if (!gravou) {
       /**

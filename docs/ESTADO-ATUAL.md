@@ -394,7 +394,7 @@ desenho, não atraso.
 
 | pergunta | como responder |
 |---|---|
-| O teto de credibilidade do arbitrador está cego? | botão **JULGAR AS DESCARTADAS** em MEDIÇÕES. `REAL = 0` fecha a questão: a estratégia não paga neste custo e as 4 mesas estão corretamente paradas |
+| O teto de credibilidade do arbitrador está cego? | **PARCIALMENTE RESPONDIDA em 26/08 — ver §5.6.** As 4 mesas estão paradas desde 03/08 09:54 e isso está CORRETO: 4.085 sondagens de livro deram líquido real −0,629% contra teórico +0,451%. O que falta é só o teto: botão **JULGAR AS DESCARTADAS** em MEDIÇÕES |
 | A derrapagem cabe no orçamento em tamanhos maiores? | botão **MEDIR A DERRAPAGEM**. A $50 deu impacto **0,000%** e sobra **0,000** — a taxa come o orçamento inteiro. Os outros 5 tamanhos aparecem na tela mas **não ficam gravados** no evento |
 | Por que a GERI não emite sinal? | ela só voltou a `live` no `ba30cc2` (18/08); antes o `isArquivada` bloqueava. **Conferir se escaneia depois do deploy** |
 | Por que nenhuma lição nova desde 16/08 02:30? | o volante foi religado no #303 e `agent_lessons` tem 18 linhas. Conferir `naoRefletidos` contra o limiar de 10 |
@@ -606,6 +606,103 @@ são conflito para ele. Escapou por sorte (só uma criou). A trava é
 O canal entre as sessões é o mural (`scripts/mural.mjs`, aba ÚLFHÉÐNAR).
 ⚠️ O `ListAgents` **não** enxerga sessões de outra máquina — é do arcabouço, não
 tem conserto aqui.
+
+---
+
+## 5.6 ⚠️ A ARBITRAGEM ESTÁ MORTA DESDE 03/08 — e o caixa está certo (26/08)
+
+**A pergunta que gerou isto:** o painel mostra **$313** de P&L nas quatro mesas
+de arbitragem e **exatamente 0,00** de movimento de caixa, enquanto
+`strat_mech` (+50,65), `strat_day` (+47,59), `radar` (+11,96) e `strat_ai`
+(−10,54) mexeram. Parecia dinheiro sumido.
+
+**Não é bug de caixa, e não era achado novo** — o `DescartadasPanel` já
+documenta a aritmética desde 17/08. São duas janelas diferentes na mesma tela.
+
+### O que os dados dizem
+
+1. **As quatro mesas não operam há 23 dias.** Último `arb_opportunity` e último
+   `arb2_open`: **03/08 09:54**. Não estão pausadas (`pause_arbiter` = false)
+   nem sem caixa. Continuam rodando: 5.376 `arb_data_anomaly` e 3.311
+   `arb2_window_empty` em 30 dias, o mais recente hoje.
+
+2. **Estão paradas por aritmética.** Piso de custo = `COST_PCT + MIN_NET_PCT` =
+   0,40 + 0,15 = **0,55%** (0,60% no arbiter2). Teto de credibilidade =
+   `MAX_GROSS_PCT` = **0,30%**. Um spread teria de ser maior que 0,55% E menor
+   que 0,30% ao mesmo tempo. **A janela é vazia por construção**, e o próprio
+   evento diz isso: *"piso de custo acima do teto de credibilidade"*.
+
+3. **O caixa em 0,00 está certo.** Em 03/08 10:25 as 2.078 posições foram
+   arquivadas e o caixa restaurado ao inicial. `reconcile` só lê não-arquivadas,
+   logo esperado = inicial = caixa. Os $313 são a coluna **vida inteira** do
+   torneio, que inclui arquivadas de propósito.
+
+### O número que decide
+
+As 4.085 sondagens de orderbook (`arb_realism`, 28/07 a 03/08):
+
+| | |
+|---|---|
+| líquido **teórico** médio | **+0,451%** |
+| líquido **real** (andando o livro a $50) | **−0,629%** |
+| derrapagem média | 1,081% |
+| teórico positivo E real negativo | **4.068 de 4.085 — 99,6%** |
+
+A última oportunidade da vida da mesa: RUNE, spread 0,71%, teórico +0,31%, real
+**−0,876%**.
+
+⚠️ **Os $313 foram contabilizados no preço de TOPO DE LIVRO.** Lidos os livros,
+os mesmos 2.078 trades perdiam dinheiro. Quem arquivou em 03/08 10:25 não
+escondeu lucro — retirou lucro que a medição já tinha desmentido.
+
+### O que fazer com isso
+
+- **Não construir produto pago em cima de arbitragem.** Um tier venderia o
+  número teórico (+0,45%) e entregaria o real (−0,63%), e piora com tamanho.
+- **A pergunta viva é o TETO, não o piso.** ~83 rotas/dia saem marcadas
+  "pagaria se fosse real". O `DescartadasPanel` existe para ler esses livros.
+- **Aposentar formalmente as quatro mesas**, ou marcá-las no torneio como
+  "janela vazia por construção" — 23 dias de silêncio não podem ter a mesma
+  cara de 23 dias sem setup (invariante nº 33).
+
+---
+
+## 5.7 A TAXA DO DCA — projeção e aferição (26/08)
+
+**O buraco:** a tela do DCA nunca escreveu a taxa em lugar nenhum. Num plano de
+$10 × 90 ciclos a 0,2% por ordem são **$1,80 — 1,8% do orçamento** evaporando
+sem aparecer. E `dca_ciclos.custo_usd` guarda `order.cost` (o **total gasto**),
+não a taxa: **a taxa nunca era gravada**, então não havia contra o que conferir.
+
+**O que foi entregue:**
+
+| peça | onde |
+|---|---|
+| projeção pura, testada | `src/lib/dca/custo.ts` + `custo.test.ts` (16 casos) |
+| coluna `taxa_usd` + `taxa_nao_precificada` | `supabase/migrations/0034_dca_taxa.sql` (aplicada) |
+| captura da taxa real da ordem | `src/app/api/dca/cron/route.ts` via `taxaEmUsd()` |
+| projeção na criação, aferição no extrato | `src/components/cex/DcaPanel.tsx` |
+
+⚠️ **DCA é UMA perna.** Usar `CUSTO_IDA_E_VOLTA_PCT` — que é o que quase todo o
+resto do repo usa — dobraria a taxa em silêncio. O primeiro teste do arquivo
+existe só para segurar isso.
+
+⚠️ **A projeção conta os ciclos que VÃO rodar, não os pedidos.** O plano para
+quando o orçamento acaba, e a aritmética espelha `tetoDoCiclo` — inclusive o
+último ciclo parcial, que compra se passar do mínimo da corretora.
+
+⚠️ **A aferição compara alíquota com alíquota, nunca total com total.** Um plano
+no ciclo 3 de 90 pagou $0,06 de $1,80 projetado; ler isso como economia de 97%
+seria ler um plano no começo como um plano barato.
+
+⚠️ **Ciclo sem taxa registrada NÃO vira zero** — sai contado à parte. Plano
+simulado grava `null` de propósito: simulação não paga taxa, e dizer "a
+corretora cobrou zero" seria inventar medição. *Este defeito existiu de verdade
+no primeiro rascunho* (`Number(null)` é `0`, que passa em `isFinite`) e foi o
+teste que o pegou.
+
+**O que continua fora:** derrapagem (não medida para estes pares), taxa efetiva
+por nível VIP (só em consulta autenticada) e taxa de saque. A tela diz isso.
 
 ---
 

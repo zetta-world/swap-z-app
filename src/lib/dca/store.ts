@@ -135,17 +135,19 @@ export async function ciclosDoPlano(planoId: string, teto = 400): Promise<Array<
   ciclo_numero: number; status: string; motivo: string | null;
   agendado_para: string; executado_em: string | null;
   preco: number | null; quantidade: number | null; custo_usd: number | null;
+  taxa_usd: number | null;
 }>> {
   const db = cru();
   if (!db) return [];
   const { data, error } = await db.from(CICLOS)
-    .select("ciclo_numero, status, motivo, agendado_para, executado_em, preco, quantidade, custo_usd")
+    .select("ciclo_numero, status, motivo, agendado_para, executado_em, preco, quantidade, custo_usd, taxa_usd")
     .eq("plano_id", planoId).order("ciclo_numero", { ascending: false }).limit(teto);
   if (error || !Array.isArray(data)) return [];
   return data as Array<{
     ciclo_numero: number; status: string; motivo: string | null;
     agendado_para: string; executado_em: string | null;
     preco: number | null; quantidade: number | null; custo_usd: number | null;
+    taxa_usd: number | null;
   }>;
 }
 
@@ -187,6 +189,14 @@ export async function fecharCiclo(planoId: string, cicloNumero: number, r: {
   status: "feito" | "falhou"; motivo?: string;
   orderId?: string; preco?: number; quantidade?: number; custoUsd?: number;
   /**
+   * ⚠️ `undefined` NÃO VIRA 0 AQUI. Ciclo cuja taxa não deu para precificar
+   * grava `null`, e `compararComRealizado()` conta esse ciclo à parte em vez de
+   * somar zero — senão a alíquota real despenca por falta de dado e a tela lê
+   * isso como "a corretora está cobrando barato".
+   */
+  taxaUsd?: number | null;
+  taxaNaoPrecificada?: { moeda: string; valor: number } | null;
+  /**
    * ⚠️ CARIMBADO NO CICLO, não deduzido do plano na hora de exibir. Se o modo
    * vivesse só no plano, um `update` nele relabelaria o histórico todo. O que
    * aconteceu fica dito onde aconteceu.
@@ -203,6 +213,8 @@ export async function fecharCiclo(planoId: string, cicloNumero: number, r: {
     preco:        r.preco ?? null,
     quantidade:   r.quantidade ?? null,
     custo_usd:    r.custoUsd ?? null,
+    taxa_usd:     r.taxaUsd ?? null,
+    taxa_nao_precificada: r.taxaNaoPrecificada ?? null,
     simulado:     r.simulado === true,
   }).eq("plano_id", planoId).eq("ciclo_numero", cicloNumero);
   return !error;
