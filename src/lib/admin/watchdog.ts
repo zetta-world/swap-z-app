@@ -255,23 +255,116 @@ async function flywheelDigestBlock(db: NonNullable<ReturnType<typeof getSupabase
   return `\n🏁 <b>Flywheel</b> ${state} — agente: decididos·win·líq.\n${lines.join("\n")}\n<i>⚠ = abaixo de ${DIGEST_MIN_SAMPLE} decididos (sub-amostra)</i>`;
 }
 
-/** Paper-trading leaderboard for the digest: per-agent book equity (starting +
- *  realized P&L) and win-rate, best-first. Realized-only (no live price fetch —
- *  keeps the digest cheap). Empty string until any wallet has traded. */
+/**
+ * Placar das carteiras de papel para o digest — patrimônio e taxa de acerto.
+ *
+ * ⚠️⚠️ AS DUAS METADES DESTA LINHA VINHAM DE ERAS DIFERENTES (29/08).
+ *
+ * O patrimônio saía de `realized_pnl_usd` e a taxa de acerto de `wins/losses`,
+ * as duas colunas da MESMA linha de `paper_accounts` — e elas descrevem
+ * períodos distintos:
+ *
+ *   · `repairWallets` (22/08 01:10, registrado em `admin_kv`) realinhou
+ *     `realized_pnl_usd` ao valor calculado da RODADA VIVA...
+ *   · ...e não tocou em `wins`/`losses`, que seguem com o total de ANTES do
+ *     arquivamento.
+ *
+ * O estrago é silencioso e mede pontos inteiros. Em 29/08:
+ *
+ *     Mistral   coluna 44/38 → 54%     livro vivo 30/12 → 71%
+ *     SKAÐI     coluna 74/60 → 55%     livro vivo 32/23 → 58%
+ *     Arbiter2  coluna  1/0  → 100%    livro vivo  0/0  → não opera desde 03/08
+ *
+ * O Mistral aparecia dezessete pontos PIOR do que é, e uma mesa parada há quase
+ * um mês aparecia com 100% de acerto por causa de uma única vitória órfã.
+ *
+ * ⚠️ E A CORREÇÃO NÃO É APAGAR A CONTA. `admin/api/paper/route.ts` já raciocinou
+ * isto em 13/08 e concluiu certo: a conta guarda a história anterior ao
+ * arquivamento, o livro guarda o que ainda está sendo medido, e recalcular a
+ * conta a partir do livro inventaria um passado que não houve.
+ *
+ * O que se conserta aqui é a MISTURA: se o patrimônio é da rodada viva, o
+ * acerto tem de ser da rodada viva também. As colunas seguem intactas para
+ * quem quiser a vida inteira — o painel PAPER mostra as duas.
+ *
+ * ⚠️ E QUANDO AS DUAS DISCORDAM, A LINHA DIZ (`≠`). Trocar uma fonte pela outra
+ * em silêncio esconderia que existe divergência — que é a informação que fez
+ * este conserto acontecer.
+ */
 async function paperDigestBlock(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>): Promise<string> {
-  const { data: accts } = await db.from("paper_accounts").select("label, starting_usd, realized_pnl_usd, wins, losses");
+  const { data: accts } = await db.from("paper_accounts").select("id, label, starting_usd, realized_pnl_usd, wins, losses");
   if (!accts?.length) return "";
+
+  // ⚠️ PAGINADO e filtrado por `archived_at is null`: é a rodada VIVA, a mesma
+  // janela de que o `realized_pnl_usd` reparado fala. `.limit()` aqui devolveria
+  // as primeiras mil linhas sem aviso — a cicatriz de 03/08 em `reconcile.ts`.
+  const fechadas = await selectAllRows<{ account_id: string; exit_reason: string | null }>(
+    (from, to) => db.from("paper_positions").select("account_id, exit_reason")
+      .eq("status", "closed").is("archived_at", null)
+      .order("id", { ascending: true }).range(from, to));
+
+  const vivo = new Map<string, { w: number; l: number }>();
+  for (const f of fechadas) {
+    const k = String(f.account_id);
+    const v = vivo.get(k) ?? { w: 0, l: 0 };
+    // ⚠️ `expired` não entra: não é vitória nem derrota, é ausência de veredito.
+    if (f.exit_reason === "target") v.w++;
+    else if (f.exit_reason === "stop") v.l++;
+    vivo.set(k, v);
+  }
+
   const rows = accts
     .map((a) => {
       const start = Number(a.starting_usd), pnl = Number(a.realized_pnl_usd);
-      const decided = Number(a.wins) + Number(a.losses);
-      return { label: a.label, equity: start + pnl, ret: start > 0 ? (pnl / start) * 100 : 0, decided, win: decided > 0 ? Math.round((Number(a.wins) / decided) * 100) : 0 };
+      const v = vivo.get(String(a.id)) ?? { w: 0, l: 0 };
+      const decidedVivo = v.w + v.l;
+      const decidedConta = Number(a.wins) + Number(a.losses);
+      const winVivo  = decidedVivo  > 0 ? Math.round((v.w / decidedVivo) * 100) : null;
+      const winConta = decidedConta > 0 ? Math.round((Number(a.wins) / decidedConta) * 100) : null;
+      return {
+        label: a.label, equity: start + pnl,
+        ret: start > 0 ? (pnl / start) * 100 : 0,
+        decidedVivo, winVivo,
+        // A conta e o livro discordam? A linha marca, em vez de escolher calado.
+        divergente: winConta != null && winVivo != null && winConta !== winVivo,
+      };
     })
-    .filter((r) => r.decided > 0)                 // only agents that actually closed a trade
+    // ⚠️ O FILTRO PASSA A SER DO LIVRO VIVO. Antes era `wins+losses > 0`, e por
+    // isso mesas sem NENHUMA posição viva — Arbiter 2.0, Sniper, os Oráculos —
+    // entravam no placar com o contador órfão de uma rodada arquivada.
     .sort((x, y) => y.equity - x.equity);
-  if (rows.length === 0) return "";
-  const line = rows.map((r) => ` ${r.ret >= 0 ? "🟢" : "🔴"} ${r.label}: $${Math.round(r.equity).toLocaleString()} (${r.ret >= 0 ? "+" : ""}${r.ret.toFixed(1)}% · ${r.win}%)`).join("\n");
-  return `\n📈 <b>Paper · Gate.io</b> (patrimônio · retorno · win)\n${line}`;
+
+  const vivas = rows.filter((r) => r.decidedVivo > 0);
+  /**
+   * ⚠️ AS QUE SAÍRAM DO PLACAR SÃO CONTADAS, NÃO SOMEM (invariante nº 33).
+   *
+   * Onze mesas — Arbiter 2.0, Sniper, os Oráculos, Claude (self) — têm contador
+   * na conta e ZERO decisões no livro vivo: o placar delas era resquício de
+   * rodada arquivada. Tirá-las é certo; tirá-las em silêncio faria "a mesa
+   * sumiu do digest" e "a mesa nunca existiu" terem a mesma cara.
+   */
+  const arquivadas = rows.filter((r) => r.decidedVivo === 0);
+  if (vivas.length === 0) return "";
+
+  const line = vivas.map((r) =>
+    ` ${r.ret >= 0 ? "🟢" : "🔴"} ${r.label}: $${Math.round(r.equity).toLocaleString()} `
+    + `(${r.ret >= 0 ? "+" : ""}${r.ret.toFixed(1)}% · ${r.winVivo}%`
+    // ⚠️ MESMA MARCA DE SUB-AMOSTRA DO FLYWHEEL. 67% em 3 decisões e 62% em 117
+    // não são a mesma afirmação, e sem a marca a tela apresenta as duas igual.
+    + `${r.decidedVivo < DIGEST_MIN_SAMPLE ? " ⚠" : ""}${r.divergente ? " ≠" : ""})`).join("\n");
+
+  const notas: string[] = [];
+  if (vivas.some((r) => r.decidedVivo < DIGEST_MIN_SAMPLE)) {
+    notas.push(`<i>⚠ = abaixo de ${DIGEST_MIN_SAMPLE} decididos na rodada viva</i>`);
+  }
+  if (vivas.some((r) => r.divergente)) {
+    notas.push("<i>≠ = a conta (vida inteira) discorda do livro vivo — ver painel PAPER</i>");
+  }
+  if (arquivadas.length > 0) {
+    notas.push(`<i>${arquivadas.length} mesa(s) fora: contador na conta, nenhuma decisão na rodada viva</i>`);
+  }
+  return `\n📈 <b>Paper · Gate.io</b> (patrimônio · retorno · win da RODADA VIVA)\n${line}`
+    + (notas.length ? `\n${notas.join("\n")}` : "");
 }
 
 async function sendDailyDigest(): Promise<void> {

@@ -85,6 +85,30 @@ export interface WalletDrift {
   computedRealizedUsd: number;
   /** O que a coluna denormalizada guarda. Ausente = não foi conferido. */
   storedRealizedUsd?: number;
+  /**
+   * ⚠️ OS CONTADORES `wins`/`losses` — a metade que ficou de fora (29/08).
+   *
+   * `realizedDriftUsd` existe desde 05/08 e confere o P&L. Os CONTADORES da
+   * mesma linha nunca foram conferidos por nada — e foram justamente eles que
+   * apareceram errados no digest do Telegram: `repairWallets` realinha
+   * `realized_pnl_usd` ao livro vivo e **não toca** em `wins`/`losses`, que
+   * seguem com o total de antes do arquivamento.
+   *
+   * Em 29/08 o Mistral tinha 44/38 na conta e 30/12 no livro vivo: dezessete
+   * pontos de diferença na taxa de acerto, na mesma linha do painel.
+   */
+  decididosNaConta: number;
+  decididosNoLivro: number;
+  /** Positivo = a conta conta MAIS decisões que o livro vivo. */
+  desvioDeContador: number;
+  /**
+   * ⚠️ A DIVERGÊNCIA É ESPERADA QUANDO HÁ POSIÇÃO ARQUIVADA, e sem esta
+   * distinção o detector seria alarme falso permanente: a conta guarda a
+   * história anterior ao arquivamento DE PROPÓSITO (ver `admin/api/paper`,
+   * 13/08). O que merece atenção é a carteira que diverge SEM ter arquivado
+   * nada — aí a conta e o livro descrevem a mesma janela e discordam.
+   */
+  temArquivadas: boolean;
 }
 
 /**
@@ -96,10 +120,14 @@ export interface WalletDrift {
 export function computeDrift(
   a: { source: string; label: string; startingUsd: number; cashUsd: number;
        /** A coluna denormalizada. Opcional: quem não passa, não é conferido. */
-       storedRealizedUsd?: number },
+       storedRealizedUsd?: number;
+       /** Os contadores da conta. Ausentes contam como 0 decisões. */
+       storedWins?: number; storedLosses?: number },
   openCostUsd: number,
   realizedPnlUsd: number,
   minCashUsd = 25,
+  /** O que o LIVRO VIVO diz: alvos e stops de posições não arquivadas. */
+  livro: { wins: number; losses: number; arquivadas: number } = { wins: 0, losses: 0, arquivadas: 0 },
 ): WalletDrift {
   const expectedUsd = a.startingUsd - openCostUsd + realizedPnlUsd;
   return {
@@ -134,6 +162,11 @@ export function computeDrift(
     // dispensa. Se apareceu uma carteira que ninguém declarou, ela merece
     // atenção, não silêncio.
     retired: deskFor(a.source)?.status === "valhalla",
+    decididosNaConta: (Number(a.storedWins) || 0) + (Number(a.storedLosses) || 0),
+    decididosNoLivro: livro.wins + livro.losses,
+    desvioDeContador: ((Number(a.storedWins) || 0) + (Number(a.storedLosses) || 0))
+      - (livro.wins + livro.losses),
+    temArquivadas: livro.arquivadas > 0,
   };
 }
 
@@ -156,6 +189,30 @@ export function realizedDrifts(all: WalletDrift[], tolerance = 0.01): WalletDrif
   return all
     .filter((d) => Math.abs(d.realizedDriftUsd) > tolerance)
     .sort((x, y) => Math.abs(y.realizedDriftUsd) - Math.abs(x.realizedDriftUsd));
+}
+
+/**
+ * Carteiras cujos CONTADORES discordam do livro vivo — a metade que faltava.
+ *
+ * ⚠️ POR QUE SEPARADO DE `realizedDrifts` (29/08). Aquele confere o P&L; este
+ * confere `wins`/`losses`. São a mesma família — "a mesma verdade escrita duas
+ * vezes com valores diferentes" — mas com causas e consequências distintas:
+ * o P&L errado mostra dinheiro que não existe, o contador errado mostra uma
+ * TAXA DE ACERTO que não existe. Foi o segundo que fez o digest do Telegram
+ * anunciar 54% para uma mesa de 71%, e 100% para uma mesa parada há um mês.
+ *
+ * ⚠️ E `semArquivo` É O QUE SEPARA CICATRIZ DE FERIDA. Com posição arquivada, a
+ * divergência é o desenho: a conta guarda a história e o livro guarda a rodada.
+ * SEM arquivo, os dois falam da mesma janela — e discordar aí é defeito novo.
+ */
+export function contadorDrifts(
+  all: WalletDrift[],
+  opts: { semArquivo?: boolean } = {},
+): WalletDrift[] {
+  return all
+    .filter((d) => d.desvioDeContador !== 0)
+    .filter((d) => (opts.semArquivo ? !d.temArquivadas : true))
+    .sort((x, y) => Math.abs(y.desvioDeContador) - Math.abs(x.desvioDeContador));
 }
 
 /** Carteiras que já não conseguem abrir posição — silêncio por falta de caixa. */
@@ -257,7 +314,7 @@ export async function reconcileWallets(minCashUsd = 25): Promise<WalletDrift[]> 
   const db = getSupabaseAdmin();
   if (!db) return [];
   const [{ data: accounts }, positions] = await Promise.all([
-    db.from("paper_accounts").select("id, source, label, starting_usd, cash_usd, realized_pnl_usd"),
+    db.from("paper_accounts").select("id, source, label, starting_usd, cash_usd, realized_pnl_usd, wins, losses"),
     // ⚠️ SÓ AS NÃO-ARQUIVADAS (correção 03/08, achada pela própria bancada).
     //
     // A primeira versão somava o P&L de TODAS as posições, inclusive as
@@ -292,33 +349,64 @@ export async function reconcileWallets(minCashUsd = 25): Promise<WalletDrift[]> 
      * problema. Uma verificação que lê dado truncado não é uma verificação
      * frouxa — ela INVENTA os números que reporta.
      */
-    selectAllRows<{ account_id: string; status: string; cost_usd: number | null; pnl_usd: number | null }>(
-      (from, to) => db.from("paper_positions").select("account_id, status, cost_usd, pnl_usd")
+    selectAllRows<{ account_id: string; status: string; cost_usd: number | null; pnl_usd: number | null; exit_reason: string | null }>(
+      // `exit_reason` entra para o contador de wins/losses do livro vivo (29/08).
+      (from, to) => db.from("paper_positions").select("account_id, status, cost_usd, pnl_usd, exit_reason")
         .is("archived_at", null).order("id", { ascending: true }).range(from, to),
     ),
   ]);
   if (!accounts) return [];
 
+  /**
+   * ⚠️ LEITURA SEPARADA, E SÓ DE UMA COLUNA. Saber QUEM tem posição arquivada é
+   * o que separa cicatriz de ferida no `contadorDrifts` — sem isso o detector
+   * acusaria como defeito a divergência que o arquivamento cria de propósito.
+   *
+   * Vai em outra consulta em vez de tirar o filtro da leitura acima: aquele
+   * filtro é a correção de 03/08 e mexer nele para ganhar uma contagem
+   * arriscaria o cálculo do P&L, que é o que realmente importa ali.
+   */
+  const arquivadasPorConta = new Map<string, number>();
+  for (const r of await selectAllRows<{ account_id: string }>(
+    (from, to) => db.from("paper_positions").select("account_id")
+      .not("archived_at", "is", null).order("id", { ascending: true }).range(from, to),
+  )) {
+    const id = String(r.account_id);
+    arquivadasPorConta.set(id, (arquivadasPorConta.get(id) ?? 0) + 1);
+  }
+
   const openBy = new Map<string, number>();
   const pnlBy = new Map<string, number>();
+  const livroBy = new Map<string, { wins: number; losses: number }>();
   for (const p of positions ?? []) {
     const id = String((p as { account_id: string }).account_id);
-    const row = p as { status: string; cost_usd: number | null; pnl_usd: number | null };
+    const row = p as { status: string; cost_usd: number | null; pnl_usd: number | null; exit_reason: string | null };
     if (row.status === "open") openBy.set(id, (openBy.get(id) ?? 0) + Number(row.cost_usd ?? 0));
     pnlBy.set(id, (pnlBy.get(id) ?? 0) + Number(row.pnl_usd ?? 0));
+    // ⚠️ `expired` não entra: não é vitória nem derrota. É a mesma regra do
+    // flywheel, e é o que faz a contagem daqui ser comparável à da conta.
+    if (row.exit_reason === "target" || row.exit_reason === "stop") {
+      const v = livroBy.get(id) ?? { wins: 0, losses: 0 };
+      if (row.exit_reason === "target") v.wins++; else v.losses++;
+      livroBy.set(id, v);
+    }
   }
 
   return accounts.map((a) => {
-    const row = a as { id: string; source: string; label: string | null; starting_usd: number; cash_usd: number; realized_pnl_usd: number };
+    const row = a as { id: string; source: string; label: string | null; starting_usd: number; cash_usd: number; realized_pnl_usd: number; wins: number; losses: number };
+    const id = String(row.id);
+    const v = livroBy.get(id) ?? { wins: 0, losses: 0 };
     return computeDrift(
       {
         source: row.source, label: row.label ?? row.source,
         startingUsd: Number(row.starting_usd), cashUsd: Number(row.cash_usd),
         storedRealizedUsd: Number(row.realized_pnl_usd),
+        storedWins: Number(row.wins), storedLosses: Number(row.losses),
       },
-      openBy.get(String(row.id)) ?? 0,
-      pnlBy.get(String(row.id)) ?? 0,
+      openBy.get(id) ?? 0,
+      pnlBy.get(id) ?? 0,
       minCashUsd,
+      { wins: v.wins, losses: v.losses, arquivadas: arquivadasPorConta.get(id) ?? 0 },
     );
   });
 }
