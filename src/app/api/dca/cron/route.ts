@@ -238,10 +238,22 @@ async function processarPlano(
   }
 
   // ── quanto pode gastar ──────────────────────────────────────────────
-  const gastoHoje = await gastoHojeDaCarteira([p.id]);
+  /**
+   * ⚠️⚠️ A CARTEIRA, NÃO O PLANO (26/08). Esta linha passava `[p.id]`, e com
+   * isso o "teto diário da carteira" era um teto POR PLANO: dez planos na
+   * mesma carteira davam dez vezes o limite — o cenário exato que o cabeçalho
+   * de `gastoHojeDaCarteira` nomeia como motivo dela existir.
+   *
+   * ⚠️ E É CONSULTADO A CADA PLANO, sem cache, DE PROPÓSITO. Numa passada com
+   * três planos vencidos da mesma carteira, o segundo tem de enxergar o que o
+   * primeiro acabou de gastar. Um valor lido uma vez no início da passada
+   * reabriria o furo dentro da própria passada.
+   */
+  const gastoHoje = await gastoHojeDaCarteira(p.wallet_address);
   if (gastoHoje === null) {
-    // ⚠️ FALHA FECHADO. Um erro de consulta que virasse `0` abriria o teto
-    // diário inteiro exatamente quando o banco está ruim.
+    // ⚠️ FALHA FECHADO. Um erro de consulta — ou uma leitura que estourou o
+    // teto e pode estar cortada — que virasse `0` abriria o teto diário
+    // inteiro exatamente quando o banco está ruim.
     return { plano: p.id, acao: "adiado", detalhe: "gasto do dia desconhecido" };
   }
   const teto = tetoDoCiclo({
@@ -286,7 +298,23 @@ async function processarPlano(
    * comprar duas vezes — o lock por sessão tem TTL e não basta.
    */
   const reserva = await reservarCiclo(p.id, d.ciclo, d.agendadoPara);
-  if (reserva === "ja_reservado") return { plano: p.id, acao: "ja_em_curso" };
+  if (reserva === "ja_reservado") {
+    /**
+     * ⚠️ NORMAL UMA VEZ, SINTOMA SE INSISTE. Duas passadas concorrentes no
+     * mesmo ciclo é o caso para o qual a trava existe. Mas um plano cujo
+     * avanço falhou (acima) bate aqui PARA SEMPRE, e sem registro isso é
+     * indistinguível de um plano que simplesmente não tem janela vencida.
+     * Uma linha por hora por ciclo monta a linha do tempo sem encher o log.
+     */
+    if (await primeiraVezNaJanela(`ja_reservado:${p.id}:${d.ciclo}`, 3_600_000)) {
+      await recordEvent("dca_ciclo_ja_reservado", { wallet: p.wallet_address, meta: {
+        plano: p.id, ciclo: d.ciclo,
+        why: "ciclo ja reservado por outra passada. Se repetir de hora em hora, "
+          + "o plano congelou: a compra foi feita e o avanco do plano falhou.",
+      } });
+    }
+    return { plano: p.id, acao: "ja_em_curso" };
+  }
   if (reserva === "erro") {
     await avisar("nao consegui reservar o ciclo — NADA foi comprado", { plano: p.id, ciclo: d.ciclo });
     return { plano: p.id, acao: "erro", detalhe: "reserva falhou" };
@@ -369,11 +397,31 @@ async function processarPlano(
     const feitos = p.ciclos_feitos + 1;
     const gasto  = Number(p.gasto_acumulado_usd) + custo;
     const acabou = feitos + pulados >= p.ciclos_total;
-    await avancarPlano(p.id, {
+    /**
+     * ⚠️⚠️ ESTA GRAVAÇÃO NÃO PODE FALHAR CALADA (26/08).
+     *
+     * `avancarPlano` devolve `false` quando o banco recusa — e o supabase-js
+     * resolve com `{ error }` em vez de lançar, então o `await` sozinho não
+     * prova nada. A rota PATCH deste mesmo recurso já checava; o cron não.
+     *
+     * O estrago não é comprar duas vezes — a reserva com `unique` impede isso.
+     * É pior de diagnosticar: o dinheiro SAIU e o relógio não andou, então toda
+     * passada seguinte recalcula o MESMO número de ciclo, bate em
+     * `ja_reservado` e sai sem fazer nada. O plano CONGELA para sempre, e o
+     * dono vê "1 de 12 comprados" sem uma linha dizendo por quê — a invariante
+     * nº 7 outra vez, do lado que já gastou.
+     */
+    if (!await avancarPlano(p.id, {
       ciclosFeitos: feitos, ciclosPulados: pulados, gastoAcumulado: gasto,
       nextRunAt: d.proximoRunAt,
       ...(acabou ? { status: "completo" as const, encerradoPor: "completo" } : {}),
-    });
+    })) {
+      await avisar("COMPRA feita e plano NAO avancado — o plano congela ate mao humana", {
+        plano: p.id, ciclo: d.ciclo, order_id: order.id, custo,
+        why: "ciclos_feitos, gasto_acumulado_usd e next_run_at ficaram para tras. "
+          + "A proxima passada recalcula o mesmo ciclo e sai em ja_reservado.",
+      });
+    }
 
     return {
       plano: p.id,

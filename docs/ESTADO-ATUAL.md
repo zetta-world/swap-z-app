@@ -706,6 +706,78 @@ por nível VIP (só em consulta autenticada) e taxa de saque. A tela diz isso.
 
 ---
 
+## 5.8 A AUDITORIA FINAL DO SETOR LIMIT/DCA (26/08) — três achados
+
+Passada de fechamento sobre `/orders`, `/dca`, o cron e o store. Os dez itens da
+auditoria de 24/08 (PR #347) continuam de pé. O que apareceu de novo:
+
+### 1. ⚠️⚠️ O teto diário da carteira era um teto POR PLANO
+
+`gastoHojeDaCarteira` diz, no próprio cabeçalho, por que existe:
+
+> "sem sessão para herdar limite, dez planos de US$ 100/dia na mesma carteira
+> seriam US$ 1.000/dia com nada olhando o conjunto"
+
+E o único chamador passava **`[p.id]`** — o plano corrente, sozinho. O limite que
+a função promete para a carteira valia por plano: **N planos na mesma carteira =
+N × US$ 1.000/dia**, que é literalmente o cenário nomeado como motivo dela
+existir.
+
+O tipo não tinha como pegar: `[p.id]` e a lista da carteira são os dois
+`string[]`. **A assinatura agora pede a CARTEIRA** (`gastoHojeDaCarteira(wallet)`)
+— não dá para passar um plano onde se pede um dono.
+
+⚠️ E é consultado a cada plano, **sem cache**, de propósito: numa passada com três
+planos vencidos da mesma carteira, o segundo precisa enxergar o que o primeiro
+acabou de gastar.
+
+### 2. ⚠️ A consulta do teto lia 1.000 linhas da plataforma inteira e filtrava no cliente
+
+```
+.select(...).eq("status","feito").order("executado_em",…).limit(1000)
+```
+…e só depois filtrava por plano e por data **em JavaScript**. Com mais de mil
+ciclos concluídos no intervalo, os desta carteira caem **fora** da janela lida, a
+soma volta menor do que é — e um teto de dinheiro que subestima o gasto **ABRE**.
+
+É a armadilha do PostgREST que o cabeçalho de `paper/reconcile.ts` documenta,
+dentro da função que existe para fechar um limite. Agora os filtros são do
+servidor (`.in`, `.gte`), e uma leitura que estoura o teto devolve **`null`** —
+"não sei" é não-compra, como o `price-guard`.
+
+### 3. ⚠️ `avancarPlano` depois da compra falhava calado
+
+O cron não checava o retorno (a rota `PATCH` do mesmo recurso já checava). O
+estrago não é comprar duas vezes — a reserva com `unique` impede. É pior de
+diagnosticar: **o dinheiro sai e o relógio não anda**, então toda passada
+seguinte recalcula o mesmo número de ciclo, bate em `ja_reservado` e sai sem
+fazer nada. **O plano congela para sempre**, e o dono vê "1 de 12" sem uma linha
+dizendo por quê.
+
+Agora a gravação é conferida e emite `dca_incidente` com Telegram; e o
+`ja_reservado` — normal uma vez, sintoma se insiste — grava
+`dca_ciclo_ja_reservado` uma vez por hora por ciclo.
+
+### O que foi conferido e está certo
+
+- `porCiclo` **trunca** (divisão inteira), então a projeção de taxa nunca
+  divergirá do plano gravado — conferido caso a caso.
+- Pausar um plano `completo` e retomá-lo **não** o ressuscita: `decidirCiclo`
+  barra em `restantes <= 0` antes de qualquer compra.
+- Reserva → ordem → registro continua na ordem certa, com a trava `unique` como
+  garantia (e não o lock, que tem TTL).
+- Modo simulado é o padrão; `real` exige a palavra e o banco confirma com
+  `dca_planos_real_exige_conexao`.
+- `GET`/`PATCH` só enxergam plano da carteira da sessão — id não é autorização.
+
+### Fica em aberto (não é defeito, é limite conhecido)
+
+`ultimaPassadaDoCron` devolve `haMinutos: null` tanto para "nunca rodou" quanto
+para "a leitura do `admin_kv` falhou". São estados diferentes com a mesma cara —
+invariante nº 33 em escala pequena, num indicador que não move dinheiro.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**
