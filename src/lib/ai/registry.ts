@@ -1,4 +1,5 @@
-import { openaiCompatChat, type ChatResult } from "@/lib/ai/provider";
+import { type ChatResult } from "@/lib/ai/provider";
+import { chamarComReserva } from "@/lib/ai/modelo-reserva";
 
 /**
  * Model registry + GEO ROUTING — the hybrid brain.
@@ -21,7 +22,16 @@ export interface ProviderConfig {
   origin:  ModelOrigin;
   apiKey:  string | undefined; // from env — undefined = not configured
   baseUrl: string;
-  model:   string;
+  model:   string;             // o PREFERIDO — sempre `models[0]`
+  /**
+   * ⚠️ A FILA DE RESERVA DO PROVEDOR (29/08). `model` sozinho era ponto único de
+   * falha DENTRO de um provedor vivo: a Mistral recusou `mistral-large-latest`
+   * por direito de plano (403 `tier_not_allowed`) e o disjuntor derrubou a
+   * Mistral INTEIRA — que ocupa o assento `brain` e o `sentiment`, então caíram
+   * junto o flywheel, o radar, o oráculo e o sniper. Um nome recusado apagou
+   * quatro mesas. Ver `modelo-reserva.ts`.
+   */
+  models:  string[];
   temperature?: number;        // sampling temp override; some models pin it
                                // (kimi-k2.6 only accepts 1). undefined = 0.6.
   timeoutMs?: number;          // per-provider call timeout; slow reasoning
@@ -30,6 +40,24 @@ export interface ProviderConfig {
                                // e.g. Kimi's { thinking: { type: "disabled" } }
                                // to skip its slow chain-of-thought.
   signup:  string;             // where to get the API key
+}
+
+/**
+ * A fila de modelos de um provedor: `<PROVEDOR>_MODEL` aceita LISTA separada
+ * por vírgula, e a ordem é a preferência.
+ *
+ * ⚠️ O ENV MANDA SOZINHO — o padrão só vale quando ele está mudo, e isso é
+ * deliberado. Se o dono escreve um nome só, ele está dizendo "este e mais
+ * nenhum": costurar a nossa reserva por baixo faria o sistema chamar um modelo
+ * que ele não escolheu, e cobrar por ele. Quem quer reserva escreve a vírgula.
+ *
+ * ⚠️ E CONTINUA SENDO SÓ VARIÁVEL DE AMBIENTE, sem deploy — a mesma propriedade
+ * que o comentário da DeepSeek promete desde 25/07.
+ */
+function cadeiaDeModelos(env: string | undefined, padrao: string[]): { model: string; models: string[] } {
+  const doEnv = (env ?? "").split(",").map((m) => m.trim()).filter(Boolean);
+  const models = doEnv.length > 0 ? [...new Set(doEnv)] : padrao;
+  return { model: models[0], models };
 }
 
 /** Every direct-from-source provider. */
@@ -46,14 +74,22 @@ export function allProviders(): Record<string, ProviderConfig> {
       // heavy paths (backtest scan, oracle) budget 40s. If latency bites — the
       // hybrid brain seat only allows 18s — swap with ONE env var, no deploy:
       // DEEPSEEK_MODEL=deepseek-v4-flash.
-      model:   process.env.DEEPSEEK_MODEL   ?? "deepseek-v4-pro",
+      // A reserva é o -flash que a PRÓPRIA mensagem de erro de 25/07 nomeou
+      // ("The supported API model names are deepseek-v4-pro or
+      // deepseek-v4-flash") — nome confirmado pelo upstream, não inventado.
+      ...cadeiaDeModelos(process.env.DEEPSEEK_MODEL, ["deepseek-v4-pro", "deepseek-v4-flash"]),
       signup:  "https://platform.deepseek.com",
     },
     kimi: {
       id: "kimi", label: "Kimi (Moonshot)", origin: "china",
       apiKey:  process.env.KIMI_API_KEY,
       baseUrl: process.env.KIMI_BASE_URL ?? "https://api.moonshot.ai/v1",
-      model:   process.env.KIMI_MODEL   ?? "kimi-k2.6",
+      // ⚠️ ELO ÚNICO, de propósito. `zion/model.ts` já dizia isso em 21/08:
+      // encher a fila com um segundo nome Kimi sem saber se ele existe daria uma
+      // falha DIFERENTE da que a reserva previne — e o `extraBody`/temperatura
+      // acima são amarrados ao `k2.6`, então um irmão exigiria outros dois
+      // valores. `KIMI_MODEL=a,b` liga a fila quando alguém confirmar o par.
+      ...cadeiaDeModelos(process.env.KIMI_MODEL, ["kimi-k2.6"]),
       // kimi-k2.6 pins the allowed temperature to the reasoning MODE: thinking-ON
       // demands 1, thinking-OFF (instant, below) demands 0.6 — sending the wrong
       // one 400s. We run instant, so 0.6.
@@ -73,14 +109,19 @@ export function allProviders(): Record<string, ProviderConfig> {
       id: "mistral", label: "Mistral", origin: "western",
       apiKey:  process.env.MISTRAL_API_KEY,
       baseUrl: process.env.MISTRAL_BASE_URL ?? "https://api.mistral.ai/v1",
-      model:   process.env.MISTRAL_MODEL   ?? "mistral-large-latest",
+      // ⚠️⚠️ A FILA QUE FALTAVA NO DIA 29/08. O `large` é o preferido e foi ele
+      // que o plano recusou; `medium` e `small` descem em capacidade e são os
+      // apelidos estáveis da Mistral. Se algum não existir mais, a primeira
+      // recusa o veta por 6h e a fila anda — custa UMA chamada, não a mesa.
+      ...cadeiaDeModelos(process.env.MISTRAL_MODEL,
+        ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"]),
       signup:  "https://console.mistral.ai",
     },
     llama: {
       id: "llama", label: "Llama (Meta)", origin: "western",
       apiKey:  process.env.LLAMA_API_KEY,
       baseUrl: process.env.LLAMA_BASE_URL ?? "https://api.llama.com/compat/v1",
-      model:   process.env.LLAMA_MODEL   ?? "Llama-4-Maverick-17B-128E-Instruct-FP8",
+      ...cadeiaDeModelos(process.env.LLAMA_MODEL, ["Llama-4-Maverick-17B-128E-Instruct-FP8"]),
       signup:  "https://llama.developer.meta.com",
     },
     // xAI (US, Western-origin) — works in BOTH regions. Its real edge is the
@@ -90,7 +131,7 @@ export function allProviders(): Record<string, ProviderConfig> {
       id: "grok", label: "Grok (xAI)", origin: "western",
       apiKey:  process.env.XAI_API_KEY,
       baseUrl: process.env.XAI_BASE_URL ?? "https://api.x.ai/v1",
-      model:   process.env.XAI_MODEL   ?? "grok-4.3",
+      ...cadeiaDeModelos(process.env.XAI_MODEL, ["grok-4.3"]),
       signup:  "https://console.x.ai",
     },
   };
@@ -222,9 +263,8 @@ export async function callGeoModel(req: {
 }): Promise<(ChatResult & { providerId: string; origin: ModelOrigin }) | null> {
   const p = providerForCountry(req.country);
   if (!p?.apiKey) return null;
-  const r = await openaiCompatChat(
-    { model: p.model, system: req.system, user: req.user, maxTokens: req.maxTokens, timeoutMs: req.timeoutMs, temperature: p.temperature },
-    { apiKey: p.apiKey, baseUrl: p.baseUrl },
-  );
+  const r = await chamarComReserva(p, {
+    system: req.system, user: req.user, maxTokens: req.maxTokens, timeoutMs: req.timeoutMs,
+  });
   return { ...r, providerId: p.id, origin: p.origin };
 }

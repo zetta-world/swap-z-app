@@ -97,7 +97,10 @@ aposentado; `deepseek-v4-flash` é o swap rápido/barato) · `kimi-k2.6` ·
 | `ALERT_AI_BUDGET_USD` | Alerta de custo IA 24h | `20` |
 | `ALERT_AI_KILL_USD` | **Auto-pausa** o torneio acima disso (0 = off) | `30` |
 | `AI_CB_THRESHOLD` | Falhas seguidas p/ tripar o breaker | `3` |
-| `AI_CB_COOLDOWN_MIN` | Cooldown do breaker | `60` min |
+| `AI_CB_COOLDOWN_MIN` | Cooldown do breaker (causa passageira) | `60` min |
+| `AI_CB_COOLDOWN_PERMANENTE_MIN` | Cooldown p/ causa que não passa sozinha (`plano`/`modelo`/`auth`) | `360` min |
+| `AI_MODELO_VETO_MIN` | Quanto tempo um modelo recusado fica fora da fila do provedor | `360` min |
+| `<PROVEDOR>_MODEL` | Modelo, ou **lista separada por vírgula** = fila de reserva. Ex.: `MISTRAL_MODEL=mistral-medium-latest,mistral-small-latest`. Um nome só = sem reserva. | ver `registry.ts` |
 | `ALERT_ERROR_SPIKE` / `ALERT_SEC_FLOOD` / `ALERT_LARGE_OP_USD` | Limiares de alerta | `10` / `5` / `5000` |
 
 ### Acesso ao painel admin

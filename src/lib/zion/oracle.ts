@@ -15,7 +15,7 @@
  * against the paused scanner baseline. Same card schema, same ledger, same
  * resolution/panels/cull — the flywheel doesn't know it's a new species.
  */
-import { openaiCompatChat } from "@/lib/ai/provider";
+import { chamarComReserva } from "@/lib/ai/modelo-reserva";
 import { configuredProviders, type ProviderConfig } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -289,10 +289,8 @@ async function runOracleForProvider(instruction: string, provider: ProviderConfi
   if (!provider.apiKey) return [];
   if (await isTripped(provider.id)) return [];
   try {
-    const r = await openaiCompatChat(
-      { model: provider.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: provider.timeoutMs ?? 40_000, temperature: provider.temperature, extraBody: provider.extraBody },
-      { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
-    );
+    const r = await chamarComReserva(provider,
+      { system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: provider.timeoutMs ?? 40_000 });
     await recordResult(provider.id, provider.label, true);
     recordEvent("zion_analysis", { meta: { op: "oracle", model: r.model, source: `oracle_${provider.id}`, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return extractCards(r.text);

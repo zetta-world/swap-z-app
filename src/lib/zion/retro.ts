@@ -15,7 +15,7 @@
  * (history stays). The flywheel keeps judging: if lessons hurt, expectancy
  * shows it and AGENT_RETRO=off turns the whole thing off.
  */
-import { openaiCompatChat } from "@/lib/ai/provider";
+import { chamarComReserva } from "@/lib/ai/modelo-reserva";
 import { configuredProviders, hybridBrain, roleProvider } from "@/lib/ai/registry";
 import { isTripped } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -289,10 +289,8 @@ export async function runRetroSweep(): Promise<RetroResult> {
       {
         const provider = configuredProviders().find((p) => p.id === brain.providerId) ?? hybridBrain();
         if (!provider?.apiKey || await isTripped(provider.id)) continue;
-        const r = await openaiCompatChat(
-          { model: provider.model, system: "You are a rigorous trading-desk reviewer.", user: prompt, maxTokens: 600, timeoutMs: provider.timeoutMs ?? 30_000, temperature: provider.temperature, extraBody: provider.extraBody },
-          { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
-        );
+        const r = await chamarComReserva(provider,
+          { system: "You are a rigorous trading-desk reviewer.", user: prompt, maxTokens: 600, timeoutMs: provider.timeoutMs ?? 30_000 });
         text = r.text;
         recordEvent("zion_analysis", { meta: { op: "retro", model: r.model, source, ...r.usage } });
       }

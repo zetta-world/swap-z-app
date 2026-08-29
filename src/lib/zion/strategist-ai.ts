@@ -43,7 +43,7 @@
  * Sem assento Anthropic (custo). Roda pelo seam OpenAI-compat, papel `brain`.
  */
 
-import { openaiCompatChat } from "@/lib/ai/provider";
+import { chamarComReserva } from "@/lib/ai/modelo-reserva";
 import { roleProviderChain } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { recordEvent } from "@/lib/admin/track";
@@ -323,11 +323,8 @@ export async function runStrategistAi(indicators: SymbolIndicators[]): Promise<A
     // chamada e SEGUE para o próximo da fila, em vez de desistir do tick.
     if (await isTripped(provider.id)) { tentados.push(`${provider.label}(breaker)`); continue; }
     try {
-      const r = await openaiCompatChat(
-        { model: provider.model, system: SYSTEM, user, maxTokens: 1100,
-          timeoutMs: provider.timeoutMs ?? 30_000, temperature: provider.temperature },
-        { apiKey: provider.apiKey!, baseUrl: provider.baseUrl },
-      );
+      const r = await chamarComReserva(provider,
+        { system: SYSTEM, user, maxTokens: 1100, timeoutMs: provider.timeoutMs ?? 30_000 });
       await recordResult(provider.id, provider.label, true);
       choices = parseChoices(r.text);
       out.brainRan = true;
