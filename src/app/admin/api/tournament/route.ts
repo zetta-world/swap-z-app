@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { STATUS_SEM_PRECO } from "@/lib/zion/backtest";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
@@ -477,7 +478,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (r.archived_at == null) continue;
     if (!r.source || !(r.source in CAUSE)) continue;
     const a = gAgg.get(r.source) ?? { decided: 0, sum: 0, resolved: 0 };
-    if (r.status !== "open") { a.resolved++; a.sum += Number(r.outcome_pct) || 0; }
+    // ⚠️ `unresolvable` é linha que NUNCA teve preço: sem alvo, sem stop, sem
+    // número. Contá-la como resolvida somaria 0% à média de quem não mediu nada.
+    if (r.status !== "open" && r.status !== STATUS_SEM_PRECO) { a.resolved++; a.sum += Number(r.outcome_pct) || 0; }
     if (["hit_target", "hit_stop", "win", "loss"].includes(r.status)) a.decided++;
     gAgg.set(r.source, a);
   }

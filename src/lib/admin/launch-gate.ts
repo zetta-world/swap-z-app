@@ -15,6 +15,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { STATUS_SEM_PRECO } from "@/lib/zion/backtest";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { deskFor } from "@/lib/zion/desks";
 import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
@@ -233,7 +234,9 @@ export async function measureLaunchGate(): Promise<LaunchReport> {
 
     const rows = (sug ?? []).filter((r) => r.source === source);
     const regimes = new Set(rows.map((r) => r.regime).filter((r): r is string => !!r && r !== "TRANSITIONING"));
-    const resolved = rows.filter((r) => r.status !== "open");
+    // ⚠️ Fora as insolúveis: `status !== "open"` as varreria para dentro como
+    // resultado, e elas são justamente as que nunca tiveram preço.
+    const resolved = rows.filter((r) => r.status !== "open" && r.status !== STATUS_SEM_PRECO);
     const decidedRows = rows.filter((r) => ["hit_target", "hit_stop", "win", "loss"].includes(r.status));
     const netExpectancy = resolved.length > 0
       ? resolved.reduce((s, r) => s + (Number(r.outcome_pct) || 0), 0) / resolved.length - COST_PCT
