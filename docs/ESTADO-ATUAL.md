@@ -29,8 +29,9 @@
 
 | | |
 |---|---|
-| `main` | ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
-| CI | verde · **1.986 testes** · 131 arquivos |
+| `main` | **`6bb2fe7`** (29/08 13:34) · ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
+| CI | verde · **2.058 testes** · 136 arquivos |
+| Deploy | Vercel produção do `6bb2fe7` READY às **13:34:45** de 29/08 |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
 | Outra mão no código | **duas sessões Claude** trabalham aqui — ver §1.1 (corrigido) |
@@ -38,6 +39,11 @@
 Últimos commits, do mais novo:
 
 ```
+6bb2fe7  O resolvedor nao expirava: guarda do preco antes da do horizonte (#362)  ← nuvem
+38cdb25  O sinal de cinco horas atras: o portao de frescor no abridor (#361)  ← nuvem
+0b87ac1  Auditoria do LIMIT/DCA: o teto diario era um teto POR PLANO (#360)  ← nuvem
+e00902a  A taxa do DCA sai da sombra: projetada antes, medida depois (#359)  ← nuvem
+143df6d  O DCA usava o gate do autopilot, e barrado era mudo (#358)  ← nuvem
 7aaf2e8  Conserta o shell derrubado: pura ao lado de import de servidor (#345)  ← nuvem
 f1c9174  EINHERJAR: a aba do salão, e a caixa de recados (#344)  ← nuvem
 bfb5ab5  EINHERJAR: o plano, a migration, e o teto de tipos que parou a UI (#343)  ← nuvem
@@ -280,6 +286,23 @@ volta a funcionar depois de semanas morta, e a verificação do override do
 `axios` sai de PARCIAL para **completa** — o SDK carrega, faz rede e conclui o
 fluxo com a versão nova.
 
+✅ **Feito em 29/08 — quatro entregas, e uma delas desmonta o placar.**
+
+| PR | o que fecha |
+|---|---|
+| #359 | a taxa do DCA: projetada antes de criar, medida a cada ciclo (`0034_dca_taxa.sql`) |
+| #360 | o teto diário da carteira **era um teto por plano** — N planos davam N × US$ 1.000/dia |
+| #361 | o portão de frescor: o sinal de 5 horas atrás não abre mais posição |
+| #362 | o resolvedor não expirava sugestões — **provado em produção às 14:00:21** |
+
+⚠️ **O que mudou de verdade na leitura do laboratório:** o lucro de 19–22/08 era
+artefato de execução atrasada dentro de uma alta, não borda (§5.9). Medir direito
+vai fazer o placar parecer **pior**, não melhor.
+
+⚠️ **EXISTE UM STATUS NOVO** em `zion_suggestions`: `unresolvable`. Qualquer
+código que faça `status !== "open"` para contar resolvidas passa a contar errado.
+Os três que existiam foram ajustados (§5.10).
+
 ### O CELEIRO — a segunda arena (construída em 19–20/08)
 
 Torneio novo, separado, placar em **USDT acumulado**. Nasceu de uma medição: num
@@ -387,6 +410,20 @@ desenho, não atraso.
 9. **Derrapagem de TEMPO** — exige `quoted_price` contra `executed_price` em
    ordem real. Sem isso todo resultado do laboratório é um PISO, não um número.
 10. `cron-job.org` é ponto único de agendamento.
+11. **F2 do atraso de execução** — apertar o teto de frescor de 1,0 para 0,5 SE a
+    medição mandar. Rodar até **≥100 fechadas** com o portão ativo, lendo a
+    `fracao_media_do_horizonte` do `paper_sinal_velho`. Critério de sucesso
+    escrito ANTES: `expired` cai de 15% para ≤10% **sem** a expectativa cair
+    junto. Se cair junto, o portão corta trade bom e volta atrás.
+12. **F3 do atraso de execução** — consertar a FILA, não só filtrar a saída dela.
+    A sugestão preterida ainda espera indefinidamente. ⚠️ Nada de F3 antes de F2:
+    mexer nos dois ao mesmo tempo deixa duas variáveis mudando e nenhuma medição.
+13. **A pergunta que continua sem resposta: as mesas têm borda?** A régua é o
+    `comprar-e-segurar` — segurar SOL de 19 a 28/08 deu **+37%**; as mesas
+    fizeram +$128 sobre ~$5.000 e devolveram. Suspeito que a resposta honesta
+    seja "nunca houve", e o repo já sabe fazer essa conta.
+14. **`ultimaPassadaDoCron` confunde "nunca rodou" com "a leitura falhou"** —
+    dois estados, uma cara, num indicador que não move dinheiro (§5.8).
 
 ---
 
@@ -775,6 +812,132 @@ Agora a gravação é conferida e emite `dca_incidente` com Telegram; e o
 `ultimaPassadaDoCron` devolve `haMinutos: null` tanto para "nunca rodou" quanto
 para "a leitura do `admin_kv` falhou". São estados diferentes com a mesma cara —
 invariante nº 33 em escala pequena, num indicador que não move dinheiro.
+
+---
+
+## 5.9 ⚠️⚠️ A COORTE INVERTEU — e a causa não era o filtro (29/08)
+
+O dono leu a coorte: *"estávamos ganhando, daí adicionamos um filtro e foi só
+ladeira abaixo"*. A data batia — o filtro de regime entrou em **23/08 02:31** e a
+virada é exatamente ali.
+
+**Não era o filtro. E a gente nunca esteve ganhando.**
+
+### O que foi descartado, cada um com dado
+
+| hipótese | teste | veredito |
+|---|---|---|
+| o mercado virou | SOL **+12,8%** de 22 a 28/08 (duas fontes independentes) | ❌ perderam em mercado que SUBIU |
+| o filtro escolhe errado | sem filtro: 24h de alta → **72,6%** (234 trades); de queda → 34,9% | ❌ a regra dele está certa |
+| alvo e stop trocados | 233/233 antes e 54/54 depois copiam a sugestão exata | ❌ sem troca |
+| o stop apertou | apertou, mas é **consequência**, não causa | ❌ |
+
+### A causa: execução atrasada dentro de uma alta
+
+| era | n | **preenchimento vs preço de referência** | stop% | alvo% |
+|---|---|---|---|---|
+| antes de 23/08 | 223 | **+2,090%** | 5,61 | 3,86 |
+| depois | 44 | **+0,038%** | 2,86 | 5,35 |
+
+A sugestão nasce com alvo em R+6% e stop em R−2,9%, mas a posição abria **5 horas
+depois** — a fila (uma posição por símbolo por mesa) adia a preterida e ela
+esperava indefinidamente. Na alta de 19–22/08 (SOL a ~5,8%/dia) o preço já tinha
+andado +2,09% nessas 5h, e medido do preenchimento REAL o par virava **alvo a
+3,86% / stop a 5,61%**: perto do alvo, longe do stop.
+
+Num mercado subindo isso bate no alvo quase sempre, e bateu: `strat_mech` fez
+**64 alvos em 70**. Quando a alta desacelerou, o preenchimento voltou a cair em
+cima da referência e apareceu a expectativa verdadeira.
+
+| mesa | expectativa ANTES | DEPOIS | alvos batidos |
+|---|---|---|---|
+| strat_mech | +2,07% | **−2,18%** | 64/70 → **0/12** |
+| strat_day | +1,58% | −1,30% | 29/77 → 0/13 |
+| radar | +1,02% | −2,57% | 26/39 → 1/11 |
+
+⚠️ **O lucro de 19–22/08 foi artefato de execução atrasada. Não era borda.**
+
+### ⚠️ A HIPÓTESE QUE EU ERREI, e ela está registrada de propósito
+
+Apostei que a deriva mataria a expectativa. **Medi e não mata** — todas as faixas
+de atraso deram expectativa positiva. O dano é outro: o atraso **transforma
+horizonte em ficção**. Aberta no prazo, 15% expiram; com metade do horizonte já
+gasto, **52%**. E `expired` não é win nem loss — o atraso não perde dinheiro,
+**fabrica amostra sem veredito**.
+
+### O que entrou (F1, PR #361)
+
+`lib/paper/frescor.ts` mais o portão no abridor. Teto em **1,0** por decisão do
+dono: barra só a posição que nasceria já vencida (5 dos 285 trades da janela).
+O padrão está no CÓDIGO, não só na env — a ausência de
+`PAPER_MAX_FRACAO_HORIZONTE` cairia em 0,5, que não foi o escolhido.
+
+✅ **CONFIRMADO EM PRODUÇÃO:** `paper_sinal_velho` disparou 5 vezes, a última às
+13:31 de 29/08.
+
+Plano completo, com F2 (apertar o teto com dado) e F3 (consertar a fila):
+`docs/PLANO-ATRASO-DE-EXECUCAO.md`.
+
+---
+
+## 5.10 ✅ O RESOLVEDOR NÃO EXPIRAVA — consertado e PROVADO em produção (29/08)
+
+Achado ao conferir se o portão da §5.9 sufocaria a fila: **9 `zion_suggestions`
+estavam `open`, a mais antiga de 04/08** — 25 dias com horizonte de 12h.
+
+Cinco eram legítimas (28/08, horizonte 72h). As **quatro presas eram todas
+`launch_shot` on-chain** — VEK, XSGD, USDC, HEGIC — abertas por **200 a 608
+horas**.
+
+### A causa: uma ordem de guardas
+
+```ts
+if (spot == null || spot <= 0) return null;                 // ← saía aqui
+...
+if (nowMs >= horizonMs) return { status: "expired", ... };  // ← nunca chegava
+```
+
+A guarda do preço vinha **antes** da do horizonte. Sem par na Binance e com o
+pool sem vela no GeckoTerminal, os dois caminhos de preço secavam e a função
+saía pela primeira linha, para sempre.
+
+### O conserto — e o que ele recusou fazer
+
+Sem cotação não dá para dizer se bateu alvo, stop ou nada. `expired` com
+`outcome_pct = 0` seria fabricar o único número que importa.
+
+- **status terminal `unresolvable`** com `outcome_pct` **NULO**
+- **carência de 24h** (`ZION_CARENCIA_SEM_PRECO_H`) — provedor fora do ar por dez
+  minutos não condena linha resolvível
+- **fora das três agregações** — `getBacktestStats`, torneio e `launch-gate`
+  faziam `status !== "open"` e teriam contado a linha como resolvida com 0%
+
+⚠️⚠️ **O SEGUNDO DEFEITO, que só apareceria depois de consertar o primeiro.** O
+GeckoTerminal devolve as **300 velas mais recentes**: para uma linha de 608h com
+horizonte de 12h, todas caem fora do replay, e o chamador passa o último close
+como `spot`. Desbloquear sem mais nada resolveria as quatro com o preço de
+**hoje** — quatro linhas travadas trocadas por **quatro números inventados**,
+que é pior, porque travado ao menos se vê.
+
+### ✅ A PROVA, e por que ela existe
+
+**Não mexi no banco à mão de propósito.** Um `UPDATE` manual daria o resultado
+bonito e nenhuma evidência de que o código funciona.
+
+| | |
+|---|---|
+| deploy de produção | 29/08 **13:34:45** |
+| primeira passada do cron depois dele | **14:00:15** |
+| as 4 viraram `unresolvable` | **14:00:21**, todas com `outcome_pct` NULO |
+| sobraram em `open` | 5 — exatamente as legítimas de 28/08 |
+| evento `zion_sugestao_sem_preco` | `linhas: 4` |
+
+⚠️ **A LIÇÃO DE PROCESSO:** às 13:44 as quatro ainda estavam `open` e eu quase
+concluí que o conserto falhara. O deploy tinha entrado às 13:34:45 e a última
+passada do cron fora às **13:30:11 — quatro minutos ANTES**. A instrução que eu
+mesmo tinha escrito na verificação agendada ("não conclua que falhou sem checar
+se o cron rodou depois do deploy") foi o que impediu o diagnóstico errado.
+**Sempre confira a ordem deploy → cron antes de julgar um conserto em produção.**
 
 ---
 
