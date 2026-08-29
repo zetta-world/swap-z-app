@@ -1,6 +1,7 @@
 # PLANO — o sinal de cinco horas atrás
 
-**Status: 🟡 F1 entregue · F2 e F3 aguardando amostra** · 29/08.
+**Status: 🟡 F1 entregue em 1,0 (só barra o que nasce vencido) · F2 e F3
+aguardando amostra** · 29/08.
 
 > **Em uma frase:** as mesas executam sugestões em média **5 horas** depois de
 > geradas, e uma posição que nasce com metade do horizonte já gasto **expira
@@ -117,15 +118,24 @@ gasta antes da entrada é a medida de frescor. Acima do teto, não abre.
 
 ```
 fracaoGasta = (abriuEm − criadaEm) / horizonteHoras
-abre  ⟺  fracaoGasta < MAX_FRACAO_DO_HORIZONTE     (padrão 0,5)
+abre  ⟺  fracaoGasta < MAX_FRACAO_DO_HORIZONTE     (padrão 1,0)
 ```
 
-**Por que meio horizonte e não um número mais apertado.** Os dados dizem que a
-melhor faixa é a imediata (161 trades, expectativa +1,38, atraso 0,2h) e que
-tudo o que espera é pior. Cortar em 5% capturaria isso — e seria **ajustar ao
-ruído de 285 trades**. Meio horizonte corta só o que é errado por aritmética:
-posição cujo prazo de vida já foi majoritariamente consumido antes de nascer.
-O teto é `PAPER_MAX_FRACAO_HORIZONTE` no ambiente, para F2 mexer sem deploy.
+**O teto entra em 1,0, por decisão do dono.** Neste valor o portão barra
+**exatamente uma coisa**: a posição que nasceria já vencida, com o prazo de vida
+inteiro consumido antes de a ordem sair. Não é juízo sobre mercado — é
+aritmética.
+
+O rascunho vinha com 0,5, que cortaria também a faixa que expira 52% e teria
+custado 47 dos 285 trades da janela. Começar no ponto inequívoco deixa o portão
+**ligado e acumulando `paper_sinal_velho`** — com a fração média de cada barrada,
+que é o insumo da F2 — sem tirar da amostra nada que ainda esteja em discussão.
+
+⚠️ **O padrão está no CÓDIGO, não só na variável de ambiente.** Depender de
+alguém lembrar de criar `PAPER_MAX_FRACAO_HORIZONTE` na Vercel faria o
+comportamento pedido valer só se a env existisse — e a ausência dela cairia em
+0,5, que é o que NÃO foi escolhido. A env continua funcionando e sobrepõe, para
+a F2 mexer sem deploy.
 
 ⚠️ **FALHA ABERTA, como o filtro de regime.** Sem `created_at` ou sem horizonte
 legível, passa. A regra da casa é falhar fechado no caminho do dinheiro, mas
@@ -135,11 +145,14 @@ morte que este projeto já pagou (a FREYJA, dez dias).
 ⚠️ **Barrado não é mudo.** Cada recusa entra no `paper_open_skip` como
 `sinal_velho`, e o tick do abridor conta quantas.
 
-**Custo medido de ligar isto:** dos 285 trades da janela, 47 seriam barrados
-(16%), somando +$21,54. Perde-se esse PnL e ganha-se que 26 posições que
-expiraram não entrem na amostra como se fossem veredito. **É troca deliberada de
-lucro medido por medição honesta** — e é a mesma escolha que o `expired ≠
-win/loss` já fez no flywheel.
+**Custo medido de ligar isto em 1,0:** dos 285 trades da janela, **5** seriam
+barrados — os que nasceram vencidos, e dos quais 4 expiraram. Quase nenhum PnL
+sai da conta.
+
+O custo de apertar para 0,5, quando a F2 decidir, seria outro: **47 trades (16%)
+e +$21,54**, em troca de 26 posições expiradas fora da amostra. Aí sim é troca
+deliberada de lucro medido por medição honesta — a mesma escolha que o
+`expired ≠ win/loss` já fez no flywheel. Não é o que entra hoje.
 
 ---
 
@@ -161,7 +174,8 @@ própria no resolvedor.
 
 O que falta para escolher o número de verdade:
 
-1. Rodar F1 com o padrão de 0,5 até haver **≥100 fechadas** com o portão ativo.
+1. Rodar F1 em **1,0** até haver **≥100 fechadas** com o portão ativo, lendo a
+   `fracao_media_do_horizonte` que o `paper_sinal_velho` acumula.
 2. Comparar expectativa e taxa de `expired` contra a janela anterior.
 3. Só então apertar. **Se apertar não melhorar a expectativa, não apertar** — o
    número existe para a amostra ficar honesta, não para o placar ficar bonito.

@@ -36,22 +36,29 @@
  */
 
 /**
- * ⚠️ MEIO HORIZONTE, E O NÚMERO É DELIBERADAMENTE FROUXO.
+ * ⚠️⚠️ UM HORIZONTE INTEIRO — O TETO MAIS FROUXO QUE AINDA SIGNIFICA ALGO.
+ *
+ * Neste valor o portão barra **exatamente uma coisa**: a posição que nasceria
+ * já vencida, com o prazo de vida inteiro consumido antes da ordem sair. Não é
+ * juízo sobre mercado nem calibração — é aritmética. O alvo e o stop foram
+ * dimensionados para uma janela que já tinha acabado.
+ *
+ * ⚠️ E É DECISÃO DO DONO, DE PROPÓSITO (29/08). O rascunho vinha com 0,5, que
+ * cortaria também a faixa que expira 52% — e teria custado 47 dos 285 trades da
+ * janela medida. Começar no ponto inequívoco deixa o portão LIGADO acumulando
+ * `paper_sinal_velho` (com a fração média de cada barrada) sem tirar da amostra
+ * nada que ainda esteja em discussão.
  *
  * Os dados dizem que a melhor faixa é a imediata (161 trades, expectativa
- * +1,38, atraso de 0,2h) e que TUDO que espera é pior. Cortar em 5% capturaria
- * isso — e seria ajustar ao ruído de 285 trades, que é exatamente o pecado que
- * o flywheel deste repo foi construído para não cometer.
+ * +1,38, atraso de 0,2h) e que TUDO que espera é pior — mas cortar por isso
+ * agora seria ajustar ao ruído de 285 trades, o pecado que o flywheel deste
+ * repo foi construído para não cometer.
  *
- * Meio horizonte corta só o que é errado por ARITMÉTICA: uma posição cujo prazo
- * de vida já foi majoritariamente consumido antes de ela nascer. O alvo e o
- * stop foram dimensionados para uma janela que já tinha acabado.
- *
- * O teto aperta na F2, a partir de medição com o portão ligado — nunca do meu
- * dedo. Ver §5 do plano, onde o critério de sucesso está escrito ANTES.
+ * O aperto vem na F2, da medição com o portão ligado, nunca do meu dedo. Ver §5
+ * do plano, onde o critério de sucesso está escrito ANTES dos dados.
  */
 export const MAX_FRACAO_DO_HORIZONTE = Number(
-  process.env.PAPER_MAX_FRACAO_HORIZONTE ?? 0.5,
+  process.env.PAPER_MAX_FRACAO_HORIZONTE ?? 1.0,
 );
 
 export type MotivoRecusaFrescor = "sinal_velho";

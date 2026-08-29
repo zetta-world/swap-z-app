@@ -21,11 +21,23 @@ describe("o portão barra o que é errado por aritmética", () => {
     expect(f.fracaoGasta).toBeCloseTo(94.5 / 72, 6);
   });
 
-  it("metade do horizonte gasto barra — é a faixa que expira 52%", () => {
-    // Exatamente no teto: 36h de um horizonte de 72h.
-    expect(medirFrescor(horasAtras(36), 72, AGORA).fresca).toBe(false);
-    // Um cabelo abaixo passa.
-    expect(medirFrescor(horasAtras(35.9), 72, AGORA).fresca).toBe(true);
+  it("no teto de hoje (1,0), meio horizonte ainda PASSA — e isso é escolha", () => {
+    /**
+     * ⚠️ A faixa de meio horizonte expira 52% contra 15% da saudável, e mesmo
+     * assim passa: o dono escolheu começar no ponto inequívoco e deixar a F2
+     * apertar com dado. Este teste existe para que apertar o teto seja uma
+     * decisão VISÍVEL — quem baixar para 0,5 vê esta linha virar vermelha e vai
+     * ler o porquê, em vez de mudar um número e seguir.
+     */
+    expect(MAX_FRACAO_DO_HORIZONTE).toBe(1);
+    expect(medirFrescor(horasAtras(36), 72, AGORA).fresca).toBe(true);
+    // Mas a fração É medida e sai no evento, que é o insumo da F2.
+    expect(medirFrescor(horasAtras(36), 72, AGORA).fracaoGasta).toBeCloseTo(0.5, 6);
+  });
+
+  it("o horizonte inteiro consumido barra — o caso inequívoco", () => {
+    expect(medirFrescor(horasAtras(72), 72, AGORA).fresca).toBe(false);
+    expect(medirFrescor(horasAtras(71.9), 72, AGORA).fresca).toBe(true);
   });
 
   it("a entrada imediata passa — é a faixa de expectativa +1,38", () => {
@@ -35,10 +47,10 @@ describe("o portão barra o que é errado por aritmética", () => {
   });
 
   it("o teto é relativo ao horizonte, não em horas absolutas", () => {
-    // 8h num horizonte curto de 12h já é 67% — barra.
-    expect(medirFrescor(horasAtras(8), 12, AGORA).fresca).toBe(false);
-    // As MESMAS 8h num horizonte de 72h são 11% — passa.
-    expect(medirFrescor(horasAtras(8), 72, AGORA).fresca).toBe(true);
+    // 14h num horizonte curto de 12h já passou do prazo — barra.
+    expect(medirFrescor(horasAtras(14), 12, AGORA).fresca).toBe(false);
+    // As MESMAS 14h num horizonte de 72h são 19% — passa.
+    expect(medirFrescor(horasAtras(14), 72, AGORA).fresca).toBe(true);
   });
 
   it("o teto vigente é o que o módulo exporta", () => {
