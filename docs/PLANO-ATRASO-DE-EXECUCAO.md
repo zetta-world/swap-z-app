@@ -156,17 +156,56 @@ deliberada de lucro medido por medição honesta — a mesma escolha que o
 
 ---
 
-## 4.1 ⚠️ ACHADO LATERAL — o resolvedor não está expirando sugestões
+## 4.1 ✅ ACHADO LATERAL — o resolvedor não expirava sugestões (consertado 29/08)
 
-Ao conferir se o portão sufocaria a fila, apareceu outra coisa: das
-`zion_suggestions`, **9 estão `open` e a mais antiga é de 04/08** — vinte e
-cinco dias, com horizonte de no máximo 72h. Ela deveria ter virado `expired`
-por conta própria e não virou.
+Ao conferir se o portão sufocaria a fila apareceu outra coisa: **9
+`zion_suggestions` estavam `open`, a mais antiga de 04/08** — 25 dias, com
+horizonte de 12h.
 
-Não é causado por esta entrega e não bloqueia ela (o teto da fila é 500 e há
-folga de ~55×), mas é da mesma família: **um estado que deveria ser terminal
-ficou vivo, e ninguém percebeu porque nada olha para isso.** Vale uma passada
-própria no resolvedor.
+Das 9, cinco eram legítimas (criadas em 28/08, horizonte de 72h). As **quatro
+presas eram todas `launch_shot` on-chain** — VEK (eth), XSGD (avax), USDC (eth),
+HEGIC (arbitrum) — abertas por **200 a 608 horas** com horizonte de 12h.
+
+### A causa: uma ordem de guardas
+
+```ts
+// Fallback — sem velas:
+if (spot == null || spot <= 0) return null;   // ← saía aqui
+...
+if (nowMs >= horizonMs) return { status: "expired", ... };  // ← nunca chegava
+```
+
+A guarda do preço vinha **antes** da do horizonte. Uma linha sem vela e sem
+cotação voltava `null` em toda passada, para sempre. Essas quatro não têm par na
+Binance e o pool delas parou de devolver vela no GeckoTerminal — os dois
+caminhos de preço secavam e a função saía pela primeira linha.
+
+### O conserto, e o que ele NÃO faz
+
+Sem cotação não dá para dizer se bateu alvo, stop ou nada. Escrever `expired`
+com `outcome_pct = 0` seria inventar o único número que importa. Então:
+
+- **status terminal `unresolvable`**, com `outcome_pct` **NULO**;
+- **carência de 24h depois do horizonte** (`ZION_CARENCIA_SEM_PRECO_H`), para
+  que um provedor fora do ar por dez minutos não condene uma linha resolvível;
+- **fora das três agregações** (`getBacktestStats`, torneio, `launch-gate`), que
+  faziam `status !== "open"` e teriam absorvido a linha como resolvida com 0%.
+
+### ⚠️ O segundo defeito, que só apareceria depois de consertar o primeiro
+
+O GeckoTerminal devolve as **300 velas mais recentes**. Para uma linha de 608h
+com horizonte de 12h, todas caem fora da janela do replay — e o chamador passa o
+último close do pool como `spot`. Desbloquear as presas sem mais nada as
+resolveria com o preço de **hoje**: um `hit_target` que nunca houve no prazo, ou
+um `expired` medindo 600 horas que a sugestão jamais viu.
+
+Seriam quatro linhas travadas trocadas por **quatro números inventados** — pior,
+porque travado ao menos se vê. Por isso o preço corrente só vale **dentro da
+carência**; passada ela, sem vela que cubra a janela, a única verdade é
+`unresolvable`.
+
+As quatro se resolvem sozinhas na próxima passada do cron de 30 min
+(`/api/zion/backtest`), e o evento `zion_sugestao_sem_preco` registra quantas.
 
 ---
 

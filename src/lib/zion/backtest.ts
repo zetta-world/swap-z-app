@@ -670,7 +670,34 @@ async function fetchKlines(symbol: string, startMs: number, endMs: number, inter
   } catch { return []; }
 }
 
-interface Verdict { status: string; outcomePct: number; price: number; }
+/**
+ * ⚠️ O STATUS TERMINAL DE QUEM NUNCA TEVE PREÇO (29/08).
+ *
+ * `expired` diz "o horizonte passou e o preço ficou entre o alvo e o stop" — é
+ * uma AFIRMAÇÃO sobre o mercado, com `outcome_pct` medido. Uma linha que nunca
+ * conseguiu preço nenhum não pode dizer isso: ela não sabe onde o preço foi
+ * parar. Escrever `expired` com 0% ali seria inventar o único número que
+ * importa, e o repo já tem `expired ≠ win/loss` exatamente para não confundir
+ * "sem veredito" com veredito.
+ */
+export const STATUS_SEM_PRECO = "unresolvable";
+
+/**
+ * ⚠️ CARÊNCIA DEPOIS DO HORIZONTE, e ela não é preciosismo.
+ *
+ * Um provedor de velas fora do ar por dez minutos não pode condenar uma linha a
+ * `unresolvable` para sempre. Vinte e quatro horas depois do prazo dão dezenas
+ * de passadas do cron para conseguir preço; só quem falha o dia inteiro é
+ * declarado insolúvel — e as quatro linhas que motivaram este conserto estavam
+ * 200 a 608 horas vencidas, muito além de qualquer hipótese de instabilidade.
+ */
+export const CARENCIA_SEM_PRECO_MS = Number(
+  process.env.ZION_CARENCIA_SEM_PRECO_H ?? 24,
+) * 3_600_000;
+
+/** ⚠️ `outcomePct` e `price` são NULOS quando não houve preço para medir. Um
+ *  zero ali entraria na expectância como se fosse resultado. */
+interface Verdict { status: string; outcomePct: number | null; price: number | null; }
 
 /**
  * Decide one suggestion's fate. PATH-AWARE: replays the hourly candles from
@@ -707,11 +734,55 @@ export function resolveOne(r: ZionSuggestionRow, klines: Kline[], spot: number |
     return null; // in-flight: no level touched yet, horizon not elapsed
   }
 
-  // Fallback — no candles: single current-spot check (legacy behaviour).
-  if (spot == null || spot <= 0) return null;
-  if (tp != null && (dir > 0 ? spot >= tp : spot <= tp)) return { status: "hit_target", outcomePct: pct(tp), price: tp };
-  if (sp != null && (dir > 0 ? spot <= sp : spot >= sp)) return { status: "hit_stop",   outcomePct: pct(sp), price: sp };
-  if (nowMs >= horizonMs) return { status: "expired", outcomePct: pct(spot), price: spot };
+  /**
+   * Fallback — sem velas: uma única checagem contra o preço corrente.
+   *
+   * ⚠️⚠️ A ORDEM DESTAS GUARDAS ERA O DEFEITO (achado em 29/08).
+   *
+   * A versão anterior começava com `if (spot == null) return null;` — ANTES de
+   * olhar o horizonte. Uma linha sem vela E sem preço voltava `null` em toda
+   * passada, para sempre, mesmo com o prazo vencido havia semanas.
+   *
+   * Não era hipótese: quatro `launch_shot` on-chain (VEK, XSGD, USDC, HEGIC)
+   * ficaram `open` por 200 a 608 HORAS com horizonte de 12h. Elas não têm par na
+   * Binance e o pool parou de devolver vela no GeckoTerminal, então os dois
+   * caminhos de preço secavam e a função saía pela primeira linha. O estado que
+   * deveria ser terminal ficava vivo, e ninguém via porque nada olhava.
+   *
+   * ⚠️ E O CONSERTO NÃO É INVENTAR UM PREÇO. Sem cotação não dá para dizer se
+   * bateu alvo, stop ou nada — só dá para dizer que o prazo acabou e que nunca
+   * soubemos. É isso que `unresolvable` significa, com `outcome_pct` NULO.
+   */
+  const horizonteVencido = nowMs >= horizonMs;
+  const passouDaCarencia = nowMs >= horizonMs + CARENCIA_SEM_PRECO_MS;
+
+  /**
+   * ⚠️⚠️ UM PREÇO DE HOJE NÃO PRECIFICA UM HORIZONTE QUE FECHOU HÁ SEMANAS.
+   *
+   * Este é o segundo defeito, e ele só ficaria visível DEPOIS de consertar o
+   * primeiro. As linhas presas são on-chain, e o GeckoTerminal devolve as 300
+   * velas mais RECENTES: para uma sugestão de 608h com horizonte de 12h, todas
+   * caem fora da janela do replay, `window` fica vazia — e o chamador passa o
+   * último close do pool como `spot`.
+   *
+   * Sem esta guarda, desbloquear as presas as resolveria com o preço de HOJE:
+   * um `hit_target` que nunca aconteceu no prazo, ou um `expired` cujo
+   * `outcome_pct` mede 600 horas de mercado que a sugestão nunca viu. Eu teria
+   * trocado quatro linhas travadas por quatro números inventados, que é o
+   * desfecho pior — travado ao menos se vê.
+   *
+   * Dentro da carência o preço corrente ainda descreve o mesmo mercado e vale
+   * como aproximação; passada ela, a única verdade é que não sabemos.
+   */
+  if (!passouDaCarencia && spot != null && spot > 0) {
+    if (tp != null && (dir > 0 ? spot >= tp : spot <= tp)) return { status: "hit_target", outcomePct: pct(tp), price: tp };
+    if (sp != null && (dir > 0 ? spot <= sp : spot >= sp)) return { status: "hit_stop",   outcomePct: pct(sp), price: sp };
+    if (horizonteVencido) return { status: "expired", outcomePct: pct(spot), price: spot };
+    return null;
+  }
+
+  // Passada a carência sem NENHUMA vela que cubra a janela, não há como medir.
+  if (passouDaCarencia) return { status: STATUS_SEM_PRECO, outcomePct: null, price: null };
   return null;
 }
 
@@ -783,7 +854,7 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
   ]);
   const spot = symbols.length ? await getCexSpotPrices(symbols).catch(() => new Map()) : new Map();
 
-  let resolved = 0;
+  let resolved = 0, semPreco = 0;
   for (const r of open) {
     const onChain = r.pool_address && r.chain;
     const candles = onChain
@@ -796,12 +867,32 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
     try {
       await db.from("zion_suggestions").update({
         status:         verdict.status,
-        outcome_pct:    Math.round(verdict.outcomePct * 100) / 100,
+        // ⚠️ NULO CONTINUA NULO. `Math.round(null * 100)/100` é 0, e um zero aqui
+        // entraria na expectância como se a linha tivesse andado de lado.
+        outcome_pct:    verdict.outcomePct == null ? null : Math.round(verdict.outcomePct * 100) / 100,
         resolved_price: verdict.price,
         resolved_at:    new Date().toISOString(),
       }).eq("id", r.id);
       resolved++;
+      if (verdict.status === STATUS_SEM_PRECO) semPreco++;
     } catch { /* skip */ }
+  }
+  /**
+   * ⚠️ DECLARAR INSOLÚVEL NÃO PODE SER MUDO (invariante nº 7).
+   *
+   * É o desfecho de quem o laboratório NUNCA conseguiu medir, e some das
+   * estatísticas de propósito. Se isso passar a acontecer em volume, é sinal de
+   * provedor de preço quebrado — não de mercado —, e a diferença tem de estar
+   * escrita em algum lugar antes de alguém estranhar a amostra encolhendo.
+   */
+  if (semPreco > 0) {
+    await recordEvent("zion_sugestao_sem_preco", { meta: {
+      linhas: semPreco,
+      carencia_horas: CARENCIA_SEM_PRECO_MS / 3_600_000,
+      why: "horizonte vencido e NENHUM preco disponivel (nem vela de CEX, nem "
+        + "vela de pool) por toda a carencia. Fica terminal com outcome_pct NULO "
+        + "e fora das estatisticas: nunca soubemos o desfecho",
+    } });
   }
   return { checked: open.length, resolved };
 }
@@ -842,6 +933,15 @@ export async function getBacktestStats(): Promise<BacktestStats> {
   let open = 0, wins = 0, losses = 0, expired = 0, sum = 0, resolvedCount = 0;
   for (const r of data) {
     if (r.status === "open") { open++; continue; }
+    /**
+     * ⚠️ INSOLÚVEL NÃO É RESULTADO — nem resolvido, nem expirado, nem aberto.
+     *
+     * A linha caía no `else expired++` e entrava no denominador de `avgOutcome`
+     * somando 0, porque `outcome_pct` é nulo. Duas mentiras de uma vez: a taxa
+     * de sinal contaria uma linha que nunca deu sinal, e a expectância seria
+     * puxada para zero por quem nunca teve número.
+     */
+    if (r.status === STATUS_SEM_PRECO) continue;
     resolvedCount++;
     if (typeof r.outcome_pct === "number") sum += r.outcome_pct;
     if      (r.status === "hit_target" || r.status === "win")  wins++;
