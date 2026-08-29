@@ -20,6 +20,10 @@ interface Resposta<T> { data: T | null; error: { message: string; code?: string 
 type Filtro = {
   eq:  (c: string, v: unknown) => Filtro;
   lte: (c: string, v: unknown) => Filtro;
+  /** ⚠️ Filtrar NO SERVIDOR. Filtro no cliente sobre leitura cortada é o
+   *  defeito que este arquivo carregava — ver `gastoHojeDaCarteira`. */
+  gte: (c: string, v: unknown) => Filtro;
+  in:  (c: string, v: readonly unknown[]) => Filtro;
   order: (c: string, o: { ascending: boolean }) => Filtro;
   limit: (n: number) => Promise<Resposta<unknown[]>>;
 } & Promise<Resposta<unknown[]>>;
@@ -260,29 +264,75 @@ export async function avancarPlano(planoId: string, p: {
 }
 
 /**
+ * Os ids dos planos de uma carteira.
+ *
+ * ⚠️ COM SINAL DE ESTOURO. Uma lista cortada faria o teto diário somar só parte
+ * dos planos — o mesmo furo por outro caminho. Quem chama trata `truncado`
+ * como "não sei".
+ */
+async function idsDaCarteira(wallet: string, teto = 200): Promise<{ ids: string[]; truncado: boolean }> {
+  const db = cru();
+  if (!db) return { ids: [], truncado: true };
+  const { data, error } = await db.from(PLANOS)
+    .select("id").eq("wallet_address", wallet).limit(teto + 1);
+  if (error || !Array.isArray(data)) return { ids: [], truncado: true };
+  const linhas = data as Array<{ id: string }>;
+  return { ids: linhas.slice(0, teto).map((r) => r.id), truncado: linhas.length > teto };
+}
+
+/**
  * Quanto esta carteira já gastou HOJE, somando TODOS os planos dela.
+ *
+ * ⚠️⚠️ RECEBE A CARTEIRA, NÃO UMA LISTA DE PLANOS (26/08) — e a assinatura
+ * antiga era o defeito.
+ *
+ * A versão anterior era `gastoHojeDaCarteira(planoIds: string[])`, e o único
+ * chamador passava `[p.id]`: o plano CORRENTE, sozinho. O teto que este
+ * cabeçalho promete para a CARTEIRA era, na prática, um teto POR PLANO — dez
+ * planos na mesma carteira davam dez vezes o limite, que é exatamente o
+ * cenário que o parágrafo abaixo nomeia como motivo desta função existir.
+ *
+ * O tipo não podia pegar: `[p.id]` e `idsDaCarteira(...)` são os dois
+ * `string[]`. Pedir a CARTEIRA fecha a porta na assinatura — não dá para
+ * passar um plano onde se pede um dono.
  *
  * ⚠️ É o teto que a separação do autopilot exigiu: sem sessão para herdar
  * limite, dez planos de US$ 100/dia na mesma carteira seriam US$ 1.000/dia com
  * nada olhando o conjunto.
  *
- * ⚠️ E DEVOLVE `null` QUANDO NÃO SABE. Um erro de consulta que virasse `0`
- * abriria o teto inteiro exatamente quando o banco está ruim. Quem chama trata
- * `null` como "não compra" — falha FECHADO, como o `price-guard`.
+ * ⚠️⚠️ E OS FILTROS SÃO DO SERVIDOR AGORA. A versão anterior pedia os 1.000
+ * ciclos `feito` mais recentes de TODA A PLATAFORMA e filtrava por plano e por
+ * data NO CLIENTE. Com mais de mil ciclos concluídos no intervalo, os desta
+ * carteira caem FORA da janela lida, a soma volta menor do que é — e um teto de
+ * dinheiro que subestima o gasto ABRE. É a armadilha do PostgREST que o
+ * cabeçalho de `paper/reconcile.ts` documenta, na função que existe para
+ * fechar um limite.
+ *
+ * ⚠️ E DEVOLVE `null` QUANDO NÃO SABE — inclusive quando a leitura estoura o
+ * teto. Um erro de consulta, ou um corte, que virasse `0` abriria o limite
+ * inteiro exatamente quando o banco está ruim. Quem chama trata `null` como
+ * "não compra": falha FECHADO, como o `price-guard`.
  */
-export async function gastoHojeDaCarteira(planoIds: string[]): Promise<number | null> {
+export async function gastoHojeDaCarteira(wallet: string, teto = 2000): Promise<number | null> {
   const db = cru();
   if (!db) return null;
-  if (planoIds.length === 0) return 0;
+
+  const { ids, truncado } = await idsDaCarteira(wallet);
+  if (truncado) return null;
+  if (ids.length === 0) return 0;
+
   const desde = new Date(Date.now() - 86_400_000).toISOString();
   const { data, error } = await db.from(CICLOS)
-    .select("plano_id, custo_usd, executado_em, status")
+    .select("custo_usd")
+    .in("plano_id", ids)
     .eq("status", "feito")
-    .order("executado_em", { ascending: false })
-    .limit(1000);
+    .gte("executado_em", desde)
+    .limit(teto + 1);
   if (error || !Array.isArray(data)) return null;
-  const meus = new Set(planoIds);
-  return (data as Array<{ plano_id: string; custo_usd: number | null; executado_em: string | null }>)
-    .filter((c) => meus.has(c.plano_id) && (c.executado_em ?? "") >= desde)
-    .reduce((s, c) => s + (Number(c.custo_usd) || 0), 0);
+  // ⚠️ Estourou o teto = leitura possivelmente cortada = não sei. Somar o que
+  // veio devolveria um gasto MENOR que o real, e o limite abriria.
+  if (data.length > teto) return null;
+
+  return (data as Array<{ custo_usd: number | null }>)
+    .reduce((soma, c) => soma + (Number(c.custo_usd) || 0), 0);
 }
