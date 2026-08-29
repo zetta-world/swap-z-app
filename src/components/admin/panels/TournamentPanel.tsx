@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { sampleLabel, shouldTint, NOISE_THRESHOLD } from "@/lib/admin/sample";
 import TerminalPanel from "../TerminalPanel";
 import { porQueEfetivoMenor } from "@/lib/zion/amostra-efetiva";
-import { corDoPnl } from "@/lib/admin/cor-resultado";
+import { corDoPnl, corDoResultado, legendaDoResultado } from "@/lib/admin/cor-resultado";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Agent = {
@@ -74,6 +74,121 @@ function Sparkline({ curve, h = 20 }: { curve: number[]; h?: number }) {
       <line x1={0} y1={baseY} x2={w} y2={baseY} stroke="var(--adm-border)" strokeDasharray="2 2" strokeWidth={0.5} vectorEffect="non-scaling-stroke" />
       <polyline points={pts} fill="none" stroke={color} strokeWidth={1.3} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/**
+ * ⚠️⚠️ A MESA CONTRA NÃO FAZER NADA — o gráfico que responde a pergunta de fundo.
+ *
+ * A coluna de "captura da maré" já existia, mas como um número de 10px com
+ * tooltip: quem não passava o mouse não via. E a pergunta que ele responde é a
+ * mais cara do laboratório — **as mesas têm borda?** — que a medição de 29/08
+ * respondeu com **cinco de seis mesas perdendo para segurar os próprios
+ * símbolos**, por 3 a 21 pontos percentuais.
+ *
+ * A melhor mesa fez +$42 de uma oportunidade de +$194 na mesma janela e nos
+ * mesmos símbolos: capturou 22% da maré assumindo risco de timing.
+ *
+ * ⚠️⚠️ A COR SAI DE `corDoResultado`, QUE TEM TRÊS ESTADOS — e o terceiro é o
+ * caso desta tela inteira.
+ *
+ * O primeiro rascunho usava `corDoPnl`, de dois estados, e teria pintado a
+ * strat_mech de VERDE por ter feito +4,21%. Mas segurar os mesmos símbolos deu
+ * +19,42%: ela rendeu e ESCOLHEU PIOR QUE NÃO ESCOLHER. Verde esconde a segunda
+ * metade e vermelho seria injusto (o dono tem mais dinheiro que antes).
+ *
+ *   · perdeu dinheiro ............................ VERMELHO, sempre
+ *   · ganhou dinheiro E bateu segurar ............ VERDE
+ *   · ganhou dinheiro e PERDEU de segurar ........ ÂMBAR   ← o caso de hoje
+ *
+ * ⚠️ E ÂMBAR VEM COM LEGENDA, porque `cor-resultado.ts` avisa que uma cor que
+ * ninguém sabe ler é decoração. A régua de segurar em si é sempre neutra: ela
+ * não é resultado da mesa.
+ *
+ * ⚠️ ESCALA COMPARTILHADA E ZERO ANCORADO. Escala por linha faria uma mesa de
+ * +0,7% parecer do tamanho de uma de +21%, que é a mentira mais fácil de contar
+ * com barra. O zero fica visível para que perda e ganho não se confundam.
+ */
+function ContraSegurar({ agentes }: { agentes: Agent[] }) {
+  const linhas = agentes
+    .map((a) => ({ nome: a.name, kind: a.kind, c: a.contraSegurar }))
+    .filter((l): l is { nome: string; kind: string; c: NonNullable<Agent["contraSegurar"]> } =>
+      l.c != null && l.c.referenciaPct != null)
+    .sort((x, y) => (y.c.diferencaPp ?? 0) - (x.c.diferencaPp ?? 0));
+
+  if (linhas.length === 0) return null;
+
+  const valores = linhas.flatMap((l) => [l.c.mesaPct, l.c.referenciaPct ?? 0]);
+  const max = Math.max(1, ...valores), min = Math.min(0, ...valores);
+  const span = max - min || 1;
+  const x = (v: number) => ((v - min) / span) * 100;
+  const zero = x(0);
+
+  const bateram = linhas.filter((l) => (l.c.diferencaPp ?? 0) > 0).length;
+  const janela = linhas[0].c.janelaDias;
+
+  return (
+    <div style={{ margin: "10px 0 14px", padding: "8px 10px", background: "var(--adm-bg-raise)", borderRadius: 3, border: "1px solid var(--adm-border)" }}>
+      <div style={{ fontSize: 11, color: "var(--adm-ink-2)", marginBottom: 2, letterSpacing: "0.06em" }}>
+        A MESA CONTRA NÃO FAZER NADA
+      </div>
+      <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginBottom: 8 }}>
+        barra cheia = a mesa · marca vazada = segurar os MESMOS símbolos em partes
+        iguais, na mesma janela de {janela} dias ·{" "}
+        <b style={{ color: bateram === 0 ? "var(--adm-red)" : "var(--adm-ink-2)" }}>
+          {bateram} de {linhas.length}
+        </b>{" "}
+        bateram segurar
+      </div>
+
+      {linhas.map((l) => {
+        const ref = l.c.referenciaPct ?? 0;
+        const aMesa = x(l.c.mesaPct), aRef = x(ref);
+        const legenda = legendaDoResultado(l.c.mesaPct, l.c.diferencaPp);
+        return (
+          <div key={l.nome} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}
+               title={`${l.c.veredito} · mesa ${l.c.mesaPct.toFixed(2)}% ($${l.c.usdt.toFixed(2)}, `
+                    + `${l.c.fechadas} fechadas) · segurar ${ref.toFixed(2)}%`
+                    + (legenda ? ` · ${legenda}` : "")}>
+            <span style={{ width: 78, fontSize: 10, color: kindColor(l.kind), flexShrink: 0,
+                           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {l.nome}
+            </span>
+            <svg viewBox="0 0 100 10" preserveAspectRatio="none"
+                 style={{ flex: 1, height: 10, display: "block" }}
+                 role="img" aria-label={`${l.nome}: mesa ${l.c.mesaPct.toFixed(1)}%, segurar ${ref.toFixed(1)}%`}>
+              <line x1={zero} y1={0} x2={zero} y2={10} stroke="var(--adm-border)" strokeWidth={0.6} vectorEffect="non-scaling-stroke" />
+              {/* A mesa: barra cheia, três estados — ver o cabeçalho. */}
+              <rect x={Math.min(zero, aMesa)} y={2.5} width={Math.abs(aMesa - zero)} height={5}
+                    fill={corDoResultado(l.c.mesaPct, l.c.diferencaPp)} opacity={0.85} />
+              {/* Segurar: régua neutra, nunca colorida — ela não é resultado da mesa. */}
+              <line x1={aRef} y1={0.5} x2={aRef} y2={9.5} stroke="var(--adm-ink-3)" strokeWidth={1.4} vectorEffect="non-scaling-stroke" />
+            </svg>
+            {/* ⚠️ A DIFERENÇA É O NÚMERO QUE DECIDE, e fica neutro de propósito:
+                ele mede captura da maré, não sucesso. */}
+            <span style={{ width: 52, textAlign: "right", fontSize: 10, flexShrink: 0,
+                           fontVariantNumeric: "tabular-nums", color: "var(--adm-ink-3)" }}>
+              {l.c.diferencaPp == null ? "—"
+                : `${l.c.diferencaPp >= 0 ? "+" : ""}${l.c.diferencaPp.toFixed(1)}pp`}
+            </span>
+          </div>
+        );
+      })}
+
+      {/* ⚠️ ÂMBAR SEM LEGENDA É DECORAÇÃO — `cor-resultado.ts` diz isso com todas
+          as letras. Se alguma mesa está no terceiro estado, a frase aparece na
+          tela, não só no tooltip de quem passar o mouse. */}
+      {linhas.some((l) => legendaDoResultado(l.c.mesaPct, l.c.diferencaPp) != null) && (
+        <div style={{ fontSize: 10, color: "var(--adm-amber)", marginTop: 6 }}>
+          ⚠ âmbar = rendeu, mas segurar teria rendido mais
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: "var(--adm-ink-4)", marginTop: 6, lineHeight: 1.4 }}>
+        ⚠ perder dinheiro é VERMELHO mesmo batendo segurar — bater a régua não
+        salva quem encolheu o capital. Símbolo sem preço na janela fica de fora
+        da régua em vez de entrar como 0%.
+      </div>
+    </div>
   );
 }
 
@@ -172,6 +287,12 @@ export default function TournamentPanel() {
               Nenhum agente com trade resolvido ainda — o torneio preenche a cada tick.
             </div>
           )}
+
+          {/* ⚠️ FICA ANTES DA TABELA, e a posição é a decisão. A comparação com
+              segurar responde a pergunta mais cara do laboratório — "as mesas
+              têm borda?" — e viver como coluna de 10px com tooltip, no fim de
+              uma tabela de oito colunas, é o mesmo que não existir. */}
+          <ContraSegurar agentes={ranked} />
 
           {/* "outros" fecha a conta: uma mesa sem ficha no registro não pode
               sumir da tela só por não estar catalogada. */}
