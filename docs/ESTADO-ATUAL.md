@@ -418,10 +418,16 @@ desenho, não atraso.
 12. **F3 do atraso de execução** — consertar a FILA, não só filtrar a saída dela.
     A sugestão preterida ainda espera indefinidamente. ⚠️ Nada de F3 antes de F2:
     mexer nos dois ao mesmo tempo deixa duas variáveis mudando e nenhuma medição.
-13. **A pergunta que continua sem resposta: as mesas têm borda?** A régua é o
-    `comprar-e-segurar` — segurar SOL de 19 a 28/08 deu **+37%**; as mesas
-    fizeram +$128 sobre ~$5.000 e devolveram. Suspeito que a resposta honesta
-    seja "nunca houve", e o repo já sabe fazer essa conta.
+13. ✅ **"As mesas têm borda?" — MEDIDA em 29/08. Ver `docs/MEDICAO-TEM-BORDA.md`.**
+    Cinco de seis perderam para segurar os próprios símbolos, por 3 a 21 pp; a
+    melhor fez **+$42 de uma oportunidade de +$194** (22% da maré). Separando as
+    eras, as cinco mesas ficam **negativas** quando o artefato de execução
+    atrasada some. E só uma passa no `MIN_SAMPLE` — com 112 dos seus 124 trades
+    dentro do período contaminado.
+    ⚠️ **NÃO é prova**: a janela limpa tem 51 trades em 5 dias, abaixo do
+    critério da casa. O certo não é desligar as mesas, é deixar a amostra limpa
+    chegar a 100 decididas — o critério de julgamento está escrito no documento
+    ANTES dos dados. O gráfico `ContraSegurar` está no topo do TORNEIO.
 14. **`ultimaPassadaDoCron` confunde "nunca rodou" com "a leitura falhou"** —
     dois estados, uma cara, num indicador que não move dinheiro (§5.8).
 
