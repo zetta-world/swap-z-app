@@ -12,6 +12,7 @@
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
+import { medirFrescor, MAX_FRACAO_DO_HORIZONTE } from "@/lib/paper/frescor";
 import { DESKS as DESK_LIST, isArquivada } from "@/lib/zion/desks";
 import { getOHLCV } from "@/lib/api/geckoterminal";
 import { recordEvent } from "@/lib/admin/track";
@@ -478,6 +479,8 @@ export async function openPaperPositions(): Promise<number> {
     ? await lerTendencias(cexSugg.map((s) => s.symbol), Date.now())
     : { porSimbolo: new Map<string, number | null>(), ignorados: 0 };
   let bloqueadosPorRegime = 0;
+  let velhas = 0;
+  let somaFracaoVelha = 0;
 
   const spent = new Map<string, number>(); // account_id → cash deployed this tick
   type PaperInsert = {
@@ -545,6 +548,37 @@ export async function openPaperPositions(): Promise<number> {
     // `jaDentro` cresce DENTRO do laço: duas sugestões do mesmo símbolo podem
     // chegar no mesmo tick, e ler só o estado do banco deixaria as duas passar.
     if (jaDentro.has(chaveSimbolo(acc.id, s.symbol))) { nota(s.source, "ja_no_simbolo"); continue; }
+    /**
+     * ⚠️⚠️ O SINAL VELHO NÃO ABRE (29/08 — `docs/PLANO-ATRASO-DE-EXECUCAO.md`).
+     *
+     * A fila acima é o que cria o problema: `ja_no_simbolo` ADIA a sugestão, e
+     * adiar é certo — empilhar $100 onde o mandato manda $50 é pior. Mas a
+     * preterida esperava INDEFINIDAMENTE e executava quando a vaga abrisse, com
+     * alvo e stop calculados sobre um preço que já não existe. Atraso medido:
+     * mediana de 180 min, cauda até 94,5 HORAS.
+     *
+     * ⚠️ O motivo NÃO é que trade atrasado perde dinheiro — medi, e não perde.
+     * É que ele transforma horizonte em ficção: aberta no prazo, 15% expiram;
+     * com metade do horizonte já gasto, 52%. E `expired` não é win nem loss —
+     * é amostra sem veredito, inflando a régua de confiança do laboratório sem
+     * inflar o que ela mede.
+     *
+     * ⚠️ CHECAGEM PURA, ANTES DA BUSCA DE PREÇO. Custa uma subtração; recusar
+     * aqui poupa a leitura do mapa e mantém a ordem barato→caro que o filtro de
+     * regime abaixo também respeita.
+     *
+     * ⚠️ CONSEQUÊNCIA ACEITA: a barrada continua `open` e será reavaliada todo
+     * tick. A fila lê as 500 mais antigas e hoje há 9 abertas — folga de ~55×.
+     * O conserto de verdade é a F3 (a sugestão expira na origem); enquanto isso
+     * o número aparece no tick e o teto da fila é grande o bastante.
+     */
+    const fr = medirFrescor(s.created_at, s.horizon_hours, Date.now());
+    if (!fr.fresca) {
+      nota(s.source, "sinal_velho");
+      velhas++;
+      somaFracaoVelha += fr.fracaoGasta ?? 0;
+      continue;
+    }
     const onChain = s.chain && s.pool_address;
     const fill = onChain ? poolPx.get(`${s.chain}|${s.pool_address}`) : px.get(s.symbol.toUpperCase());
     // ⚠️ SEPARADOS DE PROPÓSITO — ver o comentário acima. Juntar os dois foi o
@@ -672,6 +706,29 @@ export async function openPaperPositions(): Promise<number> {
           + "obteve tendência de nenhum. Tudo passou SEM ser julgado (o filtro "
           + "falha aberto). Suspeita: rate-limit ou indisponibilidade da corretora"
         : "entradas long barradas por tendência de 24h não positiva",
+    } });
+  }
+
+  /**
+   * O TICK DO PORTÃO DE FRESCOR — e ele NÃO compartilha evento com o regime.
+   *
+   * ⚠️ São duas recusas com causas opostas e ações opostas: "contra a
+   * tendência" pede olhar o mercado, "sinal velho" pede olhar a FILA. Juntar as
+   * duas num contador só faria a soma subir e ninguém saber qual mexeu — a
+   * mesma família do `expired ≠ win/loss`.
+   *
+   * ⚠️ A FRAÇÃO MÉDIA VAI JUNTO porque é ela que a F2 usa para escolher o teto
+   * de verdade. Saber que barrou 4 não diz se o teto está apertado ou frouxo;
+   * saber que as 4 estavam a 0,52 do horizonte diz.
+   */
+  if (velhas > 0) {
+    recordEvent("paper_sinal_velho", { meta: {
+      barradas: velhas,
+      fracao_media_do_horizonte: Math.round((somaFracaoVelha / velhas) * 100) / 100,
+      teto: MAX_FRACAO_DO_HORIZONTE,
+      why: "sugestao ficou na fila (uma posicao por simbolo por mesa) e chegou "
+        + "na vez dela com o horizonte majoritariamente gasto. Abrir agora "
+        + "produziria posicao que expira em vez de dar veredito",
     } });
   }
 
