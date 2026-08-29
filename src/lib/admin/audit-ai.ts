@@ -36,7 +36,7 @@
  * tarefa quer volume barato, não o melhor raciocínio do mercado.
  */
 
-import { openaiCompatChat } from "@/lib/ai/provider";
+import { chamarComReserva } from "@/lib/ai/modelo-reserva";
 import { roleProvider } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 
@@ -126,17 +126,12 @@ export async function generateReflectionPayloads(marker: string, fallback: strin
   if (await isTripped(provider.id)) return { payloads: fallback, source: "fixas", rejected: 0, note: "breaker aberto" };
 
   try {
-    const r = await openaiCompatChat(
-      {
-        model: provider.model,
-        system: SYSTEM,
-        user: `Marker token: "${marker}". Produce ${MAX_PAYLOADS} distinct reflection payloads. JSON only.`,
-        maxTokens: 900,
-        timeoutMs: provider.timeoutMs ?? 20_000,
-        temperature: provider.temperature,
-      },
-      { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
-    );
+    const r = await chamarComReserva(provider, {
+      system: SYSTEM,
+      user: `Marker token: "${marker}". Produce ${MAX_PAYLOADS} distinct reflection payloads. JSON only.`,
+      maxTokens: 900,
+      timeoutMs: provider.timeoutMs ?? 20_000,
+    });
     await recordResult(provider.id, provider.label, true);
 
     const raw = parsePayloads(r.text);
@@ -197,11 +192,8 @@ export async function judgeResponseLeaks(snippets: string[]): Promise<LeakVerdic
     .join("\n---\n");
 
   try {
-    const r = await openaiCompatChat(
-      { model: provider.model, system: JUDGE_SYSTEM, user: body, maxTokens: 600,
-        timeoutMs: provider.timeoutMs ?? 20_000, temperature: provider.temperature },
-      { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
-    );
+    const r = await chamarComReserva(provider,
+      { system: JUDGE_SYSTEM, user: body, maxTokens: 600, timeoutMs: provider.timeoutMs ?? 20_000 });
     await recordResult(provider.id, provider.label, true);
     try {
       const o = JSON.parse(r.text.replace(/```(?:json)?/g, "").trim()) as { leaks?: unknown };

@@ -17,7 +17,7 @@
  * wallet, tournament and digest all measure it automatically.
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { openaiCompatChat } from "@/lib/ai/provider";
+import { chamarComReserva } from "@/lib/ai/modelo-reserva";
 import { hybridBrain } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { recordEvent, logError } from "@/lib/admin/track";
@@ -165,11 +165,9 @@ export async function runSniperScan(marketData: MarketIndicatorsResult, triggers
 
   let cards;
   try {
-    const r = await openaiCompatChat(
-      { model: brain.model, system: ZION_FOUNDATION, user: sniperInstruction(marketData, triggers, lessonsBlock(lessons.get("sniper"))),
-        maxTokens: 1200, timeoutMs: brain.timeoutMs ?? 30_000, temperature: brain.temperature, extraBody: brain.extraBody },
-      { apiKey: brain.apiKey, baseUrl: brain.baseUrl },
-    );
+    const r = await chamarComReserva(brain,
+      { system: ZION_FOUNDATION, user: sniperInstruction(marketData, triggers, lessonsBlock(lessons.get("sniper"))),
+        maxTokens: 1200, timeoutMs: brain.timeoutMs ?? 30_000 });
     await recordResult(brain.id, brain.label, true);
     recordEvent("zion_analysis", { meta: { op: "sniper", model: r.model, source: "sniper", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     cards = extractCards(r.text);

@@ -1071,6 +1071,52 @@ se o cron rodou depois do deploy") foi o que impediu o diagnóstico errado.
 
 ---
 
+## 5.11 ⚠️ UM NOME DE MODELO APAGOU QUATRO MESAS (29/08)
+
+Detalhe completo em `PLANO-RESERVA-DE-MODELO.md`. O essencial:
+
+```
+403 · "This model is not available in your subscription tier"
+type: tier_not_allowed · code 1910 · modelo: mistral-large-latest
+```
+
+Entre 00:00 e 03:30 de 29/08 o `mistral-large-latest` saiu do plano do dono. **A
+chave continua válida** — o que é recusado é o MODELO. Três falhas abriram o
+disjuntor e a Mistral inteira saiu; como ela ocupa os assentos `brain` E
+`sentiment`, caíram junto o flywheel, o radar, o oráculo e o sniper.
+
+### Dois defeitos, e o primeiro apontava para o lugar errado
+
+1. **O alerta mandava gerar outra chave** (PR #367). `classificarFalha` procurava
+   `not found`/`not supported`/`invalid`; a Mistral disse **"not available"** — a
+   mesma cicatriz de 25/07 a um sinônimo de distância. Caiu no ramo `auth` por
+   causa do 403. Nasceu a classe `plano`, e o alerta de causa permanente parou
+   de se repetir de hora em hora (nove idênticos num dia).
+2. **Não havia reserva de modelo dentro do provedor.** Existiam três camadas de
+   reserva — provedor→provedor (`roleProviderChain`, 03/08), modelo→modelo da
+   plataforma (`zion/model.ts`, N1) — e nenhuma cobria esta. Cada camada ganhou
+   a sua reserva no dia em que caiu; esta caiu agora.
+
+⚠️ **E a reserva de provedor existia e não salvou.** Só o `strat_ai` consome a
+fila inteira; `backtest`, `oracle`, `sniper` e `radar` chamam `roleProvider()` /
+`hybridBrain()`, que devolvem **um**. Reserva que um chamador usa cobre um
+chamador — vale conferir isso na próxima vez que algo "já estiver coberto".
+
+### O que entrou
+
+`src/lib/ai/modelo-reserva.ts` substitui `openaiCompatChat` nos 10 pontos que
+chamam com `ProviderConfig`. `<PROVEDOR>_MODEL` passa a aceitar lista separada
+por vírgula. Troca de modelo SÓ nas classes `plano` e `modelo` — em `auth`,
+`cota` e `upstream` descer a fila repetiria o mesmo erro e esconderia a causa.
+O modelo que respondeu vai para o `recordEvent`, senão o flywheel mede um e
+credita outro.
+
+⚠️ **NÃO substitui a ação do dono:** se o plano não inclui nenhum modelo da
+fila, a mesa cai igual. Conferir a assinatura da Mistral e apontar
+`MISTRAL_MODEL` para o que o tier inclui continua pendente.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**

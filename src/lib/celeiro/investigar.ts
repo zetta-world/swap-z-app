@@ -19,7 +19,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { configuredProviders } from "@/lib/ai/registry";
-import { openaiCompatChat } from "@/lib/ai/provider";
+import { chamarComReserva } from "@/lib/ai/modelo-reserva";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { recordEvent } from "@/lib/admin/track";
 import { AGENTES, type Agente } from "@/lib/celeiro/agentes";
@@ -131,12 +131,9 @@ async function umAgente(db: SupabaseClient, ag: Agente, agoraMs: number): Promis
       continue;
     }
     try {
-      const r = await openaiCompatChat(
-        { model: p.model, system: "Você investiga o caixa de um agente de trading. Responda só JSON.",
-          user: prompt, maxTokens: 800, timeoutMs: p.timeoutMs ?? 30_000,
-          temperature: p.temperature, extraBody: p.extraBody },
-        { apiKey: p.apiKey, baseUrl: p.baseUrl },
-      );
+      const r = await chamarComReserva(p,
+        { system: "Você investiga o caixa de um agente de trading. Responda só JSON.",
+          user: prompt, maxTokens: 800, timeoutMs: p.timeoutMs ?? 30_000 });
       await recordResult(p.id, p.label, true);
       const lida = lerResposta(r.text, genoma.params);
       relato.propostas.push({ modelo: p.id, ok: lida.ok, porque: lida.ok ? "proposta válida" : lida.porque });

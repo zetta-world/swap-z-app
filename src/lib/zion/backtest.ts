@@ -10,7 +10,7 @@
  * Server-only. Best-effort: a DB hiccup never breaks the caller.
  */
 
-import { openaiCompatChat } from "@/lib/ai/provider";
+import { chamarComReserva } from "@/lib/ai/modelo-reserva";
 import { roleProvider, configuredProviders, type ProviderConfig } from "@/lib/ai/registry";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -225,10 +225,8 @@ export async function runBacktestScanForProvider(
   const instruction = await buildScanInstruction(marketData, await scanExtras(`${provider.id}_scan`));
   if (!instruction) return [];
   try {
-    const r = await openaiCompatChat(
-      { model: provider.model, system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: provider.timeoutMs ?? 40_000, temperature: provider.temperature, extraBody: provider.extraBody },
-      { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
-    );
+    const r = await chamarComReserva(provider,
+      { system: ZION_FOUNDATION, user: instruction, maxTokens: 2200, timeoutMs: provider.timeoutMs ?? 40_000 });
     await recordResult(provider.id, provider.label, true);
     recordEvent("zion_analysis", { meta: { op: "backtest", model: r.model, source: quemPaga, promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return extractCards(r.text);
@@ -248,11 +246,9 @@ async function runSpecialist(role: string, provider: ProviderConfig | null, user
   if (!provider?.apiKey) return "";
   if (await isTripped(provider.id)) return ""; // breaker open — degrade to "(none)" (P2.11)
   try {
-    const r = await openaiCompatChat(
-      { model: provider.model, system, user, maxTokens, timeoutMs: provider.timeoutMs ?? timeoutMs, temperature: provider.temperature,
-        extraBody: { ...(provider.extraBody ?? {}), ...(extraBody ?? {}) } },
-      { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
-    );
+    const r = await chamarComReserva(provider,
+      { system, user, maxTokens, timeoutMs: provider.timeoutMs ?? timeoutMs,
+        extraBody: { ...(provider.extraBody ?? {}), ...(extraBody ?? {}) } });
     await recordResult(provider.id, provider.label, true);
     recordEvent("zion_analysis", { meta: { op: `hybrid_${role}`, model: r.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...r.usage } });
     return r.text;
@@ -379,11 +375,9 @@ export async function runHybridScan(marketData: MarketIndicatorsResult): Promise
     if (!provider?.apiKey) continue;
     if (await isTripped(provider.id)) continue;
     try {
-      const o = await openaiCompatChat(
-        { model: provider.model, system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200,
-          timeoutMs: provider.timeoutMs ?? 25_000, temperature: provider.temperature, extraBody: provider.extraBody },
-        { apiKey: provider.apiKey, baseUrl: provider.baseUrl },
-      );
+      const o = await chamarComReserva(provider,
+        { system: ZION_FOUNDATION, user: ceoPrompt, maxTokens: 2200,
+          timeoutMs: provider.timeoutMs ?? 25_000 });
       await recordResult(provider.id, provider.label, true);
       recordEvent("zion_analysis", { meta: { op: role, model: o.model, source: "hybrid", promptVersion: ZION_FOUNDATION_VERSION, ...o.usage } });
       return extractCards(o.text);

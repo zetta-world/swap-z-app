@@ -87,11 +87,16 @@ const GASTAM: Record<string, "proprio" | string> = {
 };
 
 /** Os dois arquivos de infraestrutura que TODO chamador atravessa. */
-const INFRA = new Set(["src/lib/ai/provider.ts", "src/lib/ai/registry.ts"]);
+const INFRA = new Set([
+  "src/lib/ai/provider.ts", "src/lib/ai/registry.ts",
+  // A reserva de MODELO (29/08): toda chamada com `ProviderConfig` passa por
+  // aqui. Ela não escolhe gastar — só decide COM QUAL nome o gasto sai.
+  "src/lib/ai/modelo-reserva.ts",
+]);
 
 function chamaModelo(caminho: string): boolean {
   const src = readFileSync(caminho, "utf8");
-  return /\bopenaiCompatChat\b|\broleProviderChain\b/.test(src);
+  return /\bopenaiCompatChat\b|\bchamarComReserva\b|\broleProviderChain\b/.test(src);
 }
 
 /**
