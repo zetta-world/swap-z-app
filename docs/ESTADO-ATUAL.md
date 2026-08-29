@@ -13,15 +13,27 @@
 > ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
-> **Última atualização:** 25/08/2026, após o **DCA AUTOMÁTICO na CEX** (#347–#352)
-> e a limpeza da dívida do autopilot. Antes disso, o **ÚLFHÉÐNAR** (#343, #344) e o
-> **conserto do shell que ele derrubou em produção** (#345 — leia a §6, primeiro
-> item). Antes disso, a **auditoria da PONTE e do AUTOPILOT** — 16 achados em 5
-> PRs (#336, #337, #338, #340, #341).
+> **Última atualização:** 29/08/2026, `main` em **`0d75311`**. O dia fechou com
+> seis entregas (#359–#364) e uma resposta que muda como o painel se lê:
 >
-> ⚠️ Esta atualização foi escrita pela **outra sessão** (a da nuvem). O que a
-> sessão do VSCode escreveu antes segue intacto — as duas mãos escrevem aqui,
-> e a §1.1 explica quem é quem.
+> * **#364 — as mesas NÃO têm borda demonstrada.** Cinco de seis perderam para
+>   segurar os próprios símbolos. §5.9 e `docs/MEDICAO-TEM-BORDA.md`.
+> * **#361 — o lucro de 19–22/08 era artefato** de execução atrasada, não borda.
+> * **#360 — o teto diário da carteira era um teto POR PLANO** (limite frouxo).
+> * **#362 — o resolvedor não expirava sugestões**, provado em produção.
+> * **#359 — a taxa do DCA** passou a ser projetada e medida.
+>
+> Antes disso: o **DCA AUTOMÁTICO na CEX** (#347–#352, 25/08), o **ÚLFHÉÐNAR**
+> (#343, #344) e o **conserto do shell que ele derrubou em produção** (#345 —
+> leia a §6, primeiro item).
+>
+> ⚠️ **A §2 virou DUAS.** Ela descrevia "o ambiente" no singular, com as travas
+> da máquina Windows; o contêiner remoto tem as capacidades quase invertidas.
+> Ver §2 (Windows), §2.1 (contêiner) e §2.2 (o hook de git, consertado).
+>
+> ⚠️ Esta atualização foi escrita pela **sessão da nuvem**. O que a sessão do
+> VSCode escreveu antes segue intacto — as duas mãos escrevem aqui, e a §1.1
+> explica quem é quem.
 
 ---
 
@@ -29,9 +41,9 @@
 
 | | |
 |---|---|
-| `main` | **`6bb2fe7`** (29/08 13:34) · ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
-| CI | verde · **2.058 testes** · 136 arquivos |
-| Deploy | Vercel produção do `6bb2fe7` READY às **13:34:45** de 29/08 |
+| `main` | **`0d75311`** (29/08 14:48) · ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
+| CI | verde · **2.067 testes** · 137 arquivos |
+| Deploy | Vercel produção acompanha a `main` — o do `6bb2fe7` ficou READY às 13:34:45 |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
 | Outra mão no código | **duas sessões Claude** trabalham aqui — ver §1.1 (corrigido) |
@@ -39,6 +51,8 @@
 Últimos commits, do mais novo:
 
 ```
+0d75311  As mesas tem borda? Medido: cinco de seis perdem para nao fazer nada (#364)  ← nuvem
+7570115  ESTADO-ATUAL: o dia 29/08, e a coorte que nunca esteve ganhando (#363)  ← nuvem
 6bb2fe7  O resolvedor nao expirava: guarda do preco antes da do horizonte (#362)  ← nuvem
 38cdb25  O sinal de cinco horas atras: o portao de frescor no abridor (#361)  ← nuvem
 0b87ac1  Auditoria do LIMIT/DCA: o teto diario era um teto POR PLANO (#360)  ← nuvem
@@ -143,7 +157,21 @@ rebase foi seguro. Da próxima pode não ser.
 
 ---
 
-## 2. O ambiente — leia antes de rodar qualquer coisa
+## 2. Os ambientes — leia antes de rodar qualquer coisa
+
+⚠️⚠️ **SÃO DOIS, E ELES NÃO SE PARECEM.** Esta seção descrevia "o ambiente" no
+singular e listava as travas da máquina Windows — testes que não rodam, build
+que não fecha, heredoc que quebra. Nada disso vale no contêiner remoto, e um
+agente lendo a seção do outro conclui que está quebrado o que está funcionando.
+
+* **§2 (abaixo)** — a máquina do dono, Windows + Git Bash. É onde o agente do
+  VSCode trabalha.
+* **§2.1** — o contêiner remoto (Linux, efêmero). É onde a sessão da nuvem
+  trabalha, e ele tem as capacidades opostas.
+
+---
+
+### A máquina Windows (agente do VSCode)
 
 ⚠️ **A máquina mudou no meio da sessão de 17/08.** O repositório NÃO está no
 diretório de trabalho primário.
@@ -231,6 +259,102 @@ cd /c/Users/55849/Downloads/.audit-swapz
 git fetch origin --prune --quiet
 git checkout -B claude/swap-z-recovery-deploy-b7y2cw origin/main
 ```
+
+---
+
+## 2.1 O contêiner remoto (sessão da nuvem) — medido em 29/08
+
+⚠️ **As capacidades são quase o INVERSO da máquina acima.** Aqui a suíte roda e o
+build fecha; o que falta é acesso ao mundo e às chaves.
+
+| | |
+|---|---|
+| Plataforma | Linux · Ubuntu 24.04.4 · contêiner **efêmero** |
+| Repositório | `/home/user/swap-z-app`, clone fresco a cada sessão |
+| Node · npm | **22.22.2** · 10.9.7 |
+| Python | 3.11.15 |
+| `git` refspec | completo (`+refs/heads/*`), 29 refs remotas · ⚠️ clone **shallow** |
+| Fim de linha | LF, UTF-8 (sem o CRLF do Windows) |
+
+### O que funciona aqui e NÃO funciona lá
+
+| | Windows | contêiner |
+|---|---|---|
+| `npm test` | ❌ Node 22.11 < 22.12 | ✅ **2.067 testes** |
+| `npm run build` | ❌ `EPERM` no desmonte | ✅ **exit 0** |
+| heredoc de bash | ❌ quebra com acento | ✅ funciona |
+
+### O que NÃO funciona aqui, e a máquina Windows tem
+
+⚠️ **`gh` CLI é AUSENTE.** Toda operação de GitHub passa pelo **MCP**
+(`mcp__github__*`): PR, merge, leitura de CI, logs de job. Não adianta escrever
+comando `gh` para esta sessão.
+
+⚠️ **NÃO existe `.env.local`.** Sem `SUPABASE_SERVICE_ROLE_KEY` e sem
+`NEXT_PUBLIC_SUPABASE_URL` no disco.
+
+⚠️⚠️ **A REDE É FILTRADA, e isso derruba uma instrução do `CLAUDE.md`.**
+Medido em 29/08:
+
+| destino | resultado |
+|---|---|
+| `api.github.com` | ✅ 200 |
+| `api.gateio.ws` | ❌ **bloqueado** pelo proxy |
+| `<projeto>.supabase.co` | ❌ **bloqueado** pelo proxy |
+| `api.geckoterminal.com` | ❌ 403 |
+
+**Consequência prática:** `scripts/mural.mjs` **NÃO roda deste contêiner** — as
+duas condições dele falham (sem `.env.local` E com o host da Supabase bloqueado).
+O `CLAUDE.md` manda usar esse script para falar com o outro agente; daqui, o
+caminho que funciona é **SQL pelo MCP da Supabase**, escrevendo direto em
+`ulfhednar_mensagens`. A aba ÚLFHÉÐNAR mostra o mesmo conteúdo, então o efeito é
+idêntico — só o meio é outro.
+
+⚠️ E não dá para testar API de preço daqui (Gate.io, GeckoTerminal). Uma medição
+que dependa delas tem de sair do **banco** ou da **Vercel**, nunca de `curl`
+local — e afirmar "a API respondeu X" sem ter conseguido chamá-la seria inventar.
+
+### Para retomar (contêiner)
+
+```bash
+cd /home/user/swap-z-app
+git fetch origin main -q
+git checkout -B claude/swap-z-recovery-deploy-b7y2cw origin/main
+```
+
+---
+
+## 2.2 ⚠️ O `stop-hook-git-check.sh` tinha dois bugs — consertado em 29/08
+
+O hook que avisa *"There are N unpushed commit(s)"* ao fim de cada turno.
+⚠️ **Ele vive em `~/.claude/`, LOCAL DE CADA MÁQUINA** — não está no repo e o
+conserto de um lado não chega no outro. O patch completo está no mural.
+
+**Bug 1 — acusava branch JÁ MERGEADA.** Depois de um squash-merge,
+`origin/<branch>` continua apontando para o commit pré-squash e
+`origin/branch..HEAD` conta ≥1 para sempre. O hook pedia push de trabalho que já
+estava na `main`, e a correção que sugeria era empurrar um órfão de volta para
+uma branch morta. Disparou **três vezes em 29/08**.
+
+**Bug 2 — ficava MUDO com trabalho real.** Achado ao testar o primeiro, e é o
+grave. Sem branch remota de mesmo nome, o upstream caía no literal
+`origin/HEAD`; num clone sem essa ref e com default fora do padrão, o `rev-list`
+falhava, o `|| unpushed=0` engolia o erro e o hook **calava com commit não
+publicado na mão**.
+
+⚠️ **A correção do bug 2 não é trocar o fallback por `$default..HEAD`** — isso
+varreria commits já publicados em outra branch e trocaria um silêncio por um
+número inflado (é o mesmo raciocínio do bloco de assinatura, `claude-code#69586`).
+A pergunta que não depende de saber a default é **`HEAD --not --remotes`**:
+*"este commit está em algum ref remoto?"*.
+
+⚠️ **A REGRA QUE FICA:** se a default não for resolvível, o bloco não roda e o
+aviso antigo vale. **Falhar para o lado de avisar, nunca para o de calar** — um
+hook que emudece quando não consegue decidir perde exatamente o commit que
+existe para pegar.
+
+Testado em 8 cenários lado a lado com o original, incluindo os três que têm de
+continuar acusando (commit novo, arquivo não commitado, arquivo não rastreado).
 
 ---
 
