@@ -95,24 +95,54 @@ Agora existe `riscoPorStopPct` e o número está em teste.
 
 ## 3. A aritmética que decidiu o tamanho — e ela não é sobre lucro
 
+⚠️⚠️ **A PRIMEIRA VERSÃO DESTA SEÇÃO ESTAVA EM DIAS, E ISSO ERA ERRADO.** Ela
+dizia *"queima 38,70/dia → 11 dias até a ruína; decide 3,86/dia → 100 decididas
+em 26 dias"*. O dono contestou — o Celeiro **inteiro** tem 9,65 dias de vida — e
+tinha razão sobre o fundo: eu vesti de calendário uma taxa que não é calendário.
+
+O extrato diário mostra o tamanho do erro:
+
 ```
-decide 3,86 operações/dia  →  100 decididas (MIN_SAMPLE) em  26 dias
-queima 38,70 USDT/dia      →  436,76 até a ruína de $300 em   11 dias
+22/08   −0,68        27/08   +56,43
+23/08  −14,03        28/08  −111,21
+24/08   +0,54        29/08   −60,84
+25/08  −85,12        30/08        —   ← nada
+26/08  −48,34
 ```
 
-⚠️⚠️ **Ele morria no dia 11 de uma pergunta respondida no dia 26.** Nenhum ajuste
-de sinal conserta isso: a queima escala com o nocional, e o ritmo de decisão
-**não**. O único parâmetro que muda a razão entre os dois é o tamanho.
+Desvio diário maior que a própria média, dois dias positivos, e **o agente
+parado desde 29/08 19:30** — não por ruína, mas porque o portão de regime
+recusa: *"mercado andou 0,76% na janela — de lado, sem lado para tomar"*. Ele
+opera em RAJADAS, quando aparece tendência. Hoje queima zero.
+
+### A conta na unidade que não depende do calendário
+
+```
+263,24 de prejuízo  ÷  27 decididas  =  −9,75 USDT por operação decidida
+436,76 até a ruína  ÷  9,75          =  ~45 operações de vida
+o veredito exige                     =  100 decididas (MIN_SAMPLE)
+```
+
+⚠️⚠️ **45 < 100 — ele acaba antes de ser julgável.** Nenhum ajuste de sinal
+conserta isso: a queima escala com o nocional, o número de decisões **não**. O
+único parâmetro que muda a razão entre os dois é o tamanho.
 
 Com `alavancagemMaxima: 3`:
 
 ```
-risco por stop ....... 0,96% da banca   (era 3,2%)
-queima estimada ...... ~11,6/dia        (era 38,7)
-vida ................. ~37 dias         (era 11)
+risco por stop ......... 0,96% da banca      (era 3,2%)
+perda por operação ..... ~2,93 USDT          (era 9,75)
+vida ................... ~149 operações      (era ~45)
 ```
 
-**37 > 26.** Agora o experimento termina.
+**149 > 100.** Agora o experimento termina.
+
+⚠️ **Por que a unidade importa, e não é preciosismo:** em dias, a conta só vale se
+o mercado oferecer tendência no ritmo da semana passada — e ele já parou de
+oferecer. Por operação, a mesma frase continua verdadeira se as 100 decididas
+levarem três semanas ou três meses. Queima e amostra dependem **da mesma coisa**
+(tendência disponível), então a razão entre elas é estável mesmo quando as duas
+taxas mudam juntas.
 
 > ⚠️ **Isto não afirma que ele vai lucrar.** Afirma que agora dá para descobrir.
 > Se a borda for negativa, ele perde mais devagar e a resposta chega — o que é

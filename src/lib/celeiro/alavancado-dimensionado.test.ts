@@ -51,26 +51,44 @@ describe("⚠️⚠️ o tamanho: a conta media o evento errado", () => {
   });
 
   /**
-   * ⚠️⚠️ A ARITMÉTICA QUE DECIDIU O NÚMERO — e ela não é sobre lucro.
+   * ⚠️⚠️ A ARITMÉTICA QUE DECIDIU O NÚMERO — e ela NÃO é sobre lucro.
    *
-   * O agente decide 3,86 operações por dia. As 100 decididas que esta casa exige
-   * antes de confiar num número chegam em 26 dias. No tamanho antigo ele queimava
-   * 38,70/dia e tinha 436,76 até o piso de ruína — 11 dias.
+   * ⚠️ ESTE TESTE JÁ ESTEVE ERRADO, EM DIAS (30/08). A primeira versão dizia
+   * "queima 38,70/dia → 11 dias de vida; decide 3,86/dia → 100 decididas em 26
+   * dias". O dono contestou: o Celeiro INTEIRO tem 9,65 dias. Ele tinha razão
+   * sobre o fundo — eu vesti de calendário uma taxa que não é calendário.
    *
-   * Ele morria no dia 11 de uma pergunta respondida no dia 26.
+   * O extrato diário do agente vai de +56,43 a −111,21, e ele está PARADO desde
+   * 29/08 19:30 porque o portão de regime recusa ("mercado andou 0,76% na
+   * janela — de lado"). Ele opera em rajadas. Hoje queima zero.
+   *
+   * ⚠️ A UNIDADE CERTA É A OPERAÇÃO. Queima e amostra dependem da MESMA coisa —
+   * tendência disponível — então a razão entre elas é estável mesmo quando as
+   * duas taxas mudam juntas. Em dias, a conta só valeria se o mercado repetisse
+   * o ritmo da semana passada; por operação, ela vale em qualquer ritmo.
    */
-  it("⚠️⚠️ no tamanho antigo o experimento NÃO TERMINAVA; agora termina", () => {
-    const DECIDE_POR_DIA = 3.86, MIN_SAMPLE = 100;
-    const ateOVeredito = MIN_SAMPLE / DECIDE_POR_DIA;
-    const folgaAteRuina = 736.76 - AG.capitalMinimoUsd;
+  it("⚠️⚠️ no tamanho antigo o agente ACABA antes de ser julgável", () => {
+    const PREJUIZO = 263.24, DECIDIDAS = 27, MIN_SAMPLE = 100;
+    const perdaPorOperacao = PREJUIZO / DECIDIDAS;           // 9,75 USDT
+    expect(perdaPorOperacao).toBeCloseTo(9.75, 2);
 
-    const vidaAntes = folgaAteRuina / 38.70;
-    expect(vidaAntes).toBeLessThan(ateOVeredito);          // morria antes de saber
+    const folgaAteRuina = 736.76 - AG.capitalMinimoUsd;      // 436,76
+    const vidaAntes = folgaAteRuina / perdaPorOperacao;      // ~45 operações
+    expect(vidaAntes).toBeLessThan(MIN_SAMPLE);              // acabava antes de saber
 
-    // A queima escala com o nocional; o ritmo de decisão não.
+    // A perda por operação escala com o nocional; o número de decisões não.
     const escala = AG.alavancagemMaxima / 10;
-    const vidaAgora = folgaAteRuina / (38.70 * escala);
-    expect(vidaAgora).toBeGreaterThan(ateOVeredito);       // agora dá para descobrir
+    const vidaAgora = folgaAteRuina / (perdaPorOperacao * escala);
+    expect(vidaAgora).toBeGreaterThan(MIN_SAMPLE);           // agora dá para descobrir
+  });
+
+  it("⚠️ e a conta NÃO pode voltar a ser em dias — o agente opera em rajadas", () => {
+    // Trava textual: o dia como unidade foi o erro, e ele é fácil de reintroduzir
+    // porque "por dia" lê mais natural que "por operação".
+    const fonte = readFileSync("docs/PLANO-ALAVANCADO.md", "utf8");
+    expect(fonte).toMatch(/por operação decidida/);
+    expect(fonte).toMatch(/opera em RAJADAS/);
+    expect(fonte).not.toMatch(/436,76 até a ruína de \$300 em\s+11 dias/);
   });
 
   it("o nocional por posição deixa de ser 2× a banca inteira", () => {
