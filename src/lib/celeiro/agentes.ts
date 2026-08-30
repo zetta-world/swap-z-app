@@ -472,6 +472,30 @@ export function oControle(): Agente {
   return c[0];
 }
 
+/**
+ * É RÉGUA? — e a resposta olha as DUAS flags, não uma.
+ *
+ * ⚠️⚠️ ESTA FUNÇÃO NASCEU DE UM BURACO REAL (30/08). O Investigador excluía da
+ * mutação quem tem `controle`, com o comentário certo escrito ao lado: *"um
+ * experimento cujo controle muda no meio não mede nada"*. Só que `controle`
+ * marca o piso de RETORNO (o Aluguel de Ocioso) e o piso de DIREÇÃO é outra
+ * flag — `controleDeDirecao`, no Comprador Cego.
+ *
+ * O filtro olhava uma e o registro tinha duas. Resultado: em 27/08 o Cego levou
+ * uma mutação (`alvoPct` de 1 para 2) julgada por um A/B que ainda tinha um
+ * braço só. A régua contra a qual os agentes de sinal são medidos mudou de
+ * geometria no meio do experimento — e qualquer comparação que atravesse aquele
+ * instante compara contra duas réguas.
+ *
+ * ⚠️ POR ISSO A PERGUNTA VIRA UMA FUNÇÃO, e não um `&&` no ponto de uso. Uma
+ * terceira espécie de controle vai aparecer; quando aparecer, ela é acrescentada
+ * AQUI e todo mundo que pergunta "é régua?" acerta de graça. Foi exatamente a
+ * ausência desse lugar único que deixou o segundo controle de fora.
+ */
+export function ehRegua(a: Agente): boolean {
+  return a.controle === true || a.controleDeDirecao === true;
+}
+
 /** As faixas na ordem em que o painel as mostra. */
 export const FAIXAS: readonly Faixa[] = ["semente", "trabalho", "renda"] as const;
 

@@ -22,7 +22,7 @@ import { configuredProviders } from "@/lib/ai/registry";
 import { chamarComReserva } from "@/lib/ai/modelo-reserva";
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { recordEvent } from "@/lib/admin/track";
-import { AGENTES, type Agente } from "@/lib/celeiro/agentes";
+import { AGENTES, ehRegua, type Agente } from "@/lib/celeiro/agentes";
 import { extratoDe, julgarMutacao, type Fluxo } from "@/lib/celeiro/fluxo";
 import { promptDoInvestigador, lerResposta, placarDosModelos } from "@/lib/celeiro/investigador";
 import {
@@ -59,11 +59,15 @@ export async function investigar(db: SupabaseClient, agoraMs = Date.now()): Prom
   const agentes: RelatoDoAgente[] = [];
 
   /**
-   * ⚠️ O CONTROLE NÃO É INVESTIGADO, e não é esquecimento. Ele é o PISO: mudar
-   * os parâmetros dele moveria a régua contra a qual todos os outros são
-   * medidos, e um experimento cujo controle muda no meio não mede nada.
+   * ⚠️ NENHUMA RÉGUA É INVESTIGADA, e não é esquecimento. Elas são os PISOS:
+   * mudar os parâmetros de uma move a referência contra a qual todos os outros
+   * são medidos, e um experimento cuja régua muda no meio não mede nada.
+   *
+   * ⚠️⚠️ E SÃO DUAS RÉGUAS, não uma (30/08). Este filtro dizia `!a.controle` e
+   * deixava passar o `comprador_cego`, que é o piso de DIREÇÃO sob outra flag.
+   * Ele foi mutado em 27/08 por um A/B quebrado. Ver `ehRegua`.
    */
-  const investigaveis = AGENTES.filter((a) => !a.controle);
+  const investigaveis = AGENTES.filter((a) => !ehRegua(a));
 
   for (const ag of investigaveis) {
     try {
