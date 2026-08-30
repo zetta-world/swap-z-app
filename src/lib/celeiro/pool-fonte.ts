@@ -122,6 +122,16 @@ export interface Candidato {
   tokenAddress: string;
   nome: string;
   pool: Pool | null;
+  /**
+   * ⚠️ POR QUE NÃO DEU PARA LER — presente só quando `pool` é `null`.
+   *
+   * "Não lido" tinha quatro causas distintas colapsadas numa frase só, e as
+   * quatro pediam ações opostas: cadeia sem cobertura (nunca vai funcionar),
+   * candidato montado errado (defeito nosso), e cada uma das duas fontes fora
+   * do ar (esperar). Sem separá-las, dez dias de falha determinística passaram
+   * por "as fontes andam instáveis".
+   */
+  porqueNaoLeu?: string;
 }
 
 /**
@@ -139,13 +149,35 @@ export async function lerCandidato(
   agoraMs: number = Date.now(),
 ): Promise<Candidato> {
   const base: Candidato = { chain, poolAddress, tokenAddress, nome, pool: null };
-  if (!isGoPlusSupported(chain)) return base;
+  if (!isGoPlusSupported(chain)) {
+    return { ...base, porqueNaoLeu: `cadeia ${chain} não é coberta pela GoPlus — sem verificar honeypot não se aposta` };
+  }
+  /**
+   * ⚠️ ENDEREÇO IGUAL AO DO POOL É DEFEITO DE MONTAGEM, e foi ELE que manteve
+   * este agente em zero por dez dias. A GoPlus perguntada sobre um contrato de
+   * pool devolve vazio, e o "não lido" resultante parecia falha de rede.
+   */
+  if (tokenAddress.toLowerCase() === poolAddress.toLowerCase()) {
+    return { ...base, porqueNaoLeu: "endereço do token igual ao do pool — o candidato foi montado errado, não é falha da fonte" };
+  }
 
   const [par, sec] = await Promise.all([
     getPairDetail(chain, poolAddress).catch(() => null),
     getTokenSecurity(chain, tokenAddress).catch(() => null),
   ]);
-  if (!par || !sec) return base;
+
+  /**
+   * ⚠️⚠️ QUAL FONTE FALHOU, E NÃO SÓ QUE FALHOU (30/08).
+   *
+   * Antes as duas colapsavam num `pool: null` e o portão dizia "pool não lido"
+   * para tudo: cadeia sem cobertura, dexscreener muda, GoPlus muda e candidato
+   * montado errado davam a MESMA frase. Com 100% das recusas iguais, ninguém
+   * conseguia ver que nenhuma delas era um julgamento sobre o pool.
+   */
+  if (!par || !sec) {
+    const quais = [!par ? "dexscreener" : null, !sec ? "goplus" : null].filter(Boolean).join(" e ");
+    return { ...base, porqueNaoLeu: `${quais} não respondeu para este candidato` };
+  }
 
   const idadeMinutos = par.pairCreatedAt > 0
     ? (agoraMs - par.pairCreatedAt) / 60_000
@@ -166,11 +198,26 @@ export function candidatosDe(pools: readonly PoolSummary[]): Array<Omit<Candidat
   for (const p of pools) {
     const endereco = (p.address ?? "").trim();
     if (!endereco) continue;
+    /**
+     * ⚠️⚠️ O TOKEN BASE VEM DE `baseTokenAddress`, e a versão anterior o
+     * inventava a partir do id do POOL — `id.split("_")[1]`. O id da
+     * GeckoTerminal é `<rede>_<endereço do POOL>`: o token não está lá. O
+     * resultado era `tokenAddress === poolAddress` em TODOS os candidatos, e a
+     * GoPlus não devolve segurança de um contrato de pool.
+     *
+     * Dez dias, zero posições, e o relatório dizendo "pool não lido" — que soa
+     * transitório. Ver `extrairEndereco` em `geckoterminal.ts`.
+     *
+     * ⚠️ SEM O ENDEREÇO, O CANDIDATO NÃO ENTRA. Cair de volta no endereço do
+     * pool reproduziria o defeito com outro nome; é melhor um candidato a menos
+     * que um candidato que nunca pode ser julgado.
+     */
+    const token = (p.baseTokenAddress ?? "").trim();
+    if (!token || token.toLowerCase() === endereco.toLowerCase()) continue;
     out.push({
       chain: p.network,
       poolAddress: endereco,
-      // Sem o endereço do base token separado, o par carrega os dois no `id`.
-      tokenAddress: (p.id ?? "").split("_")[1] ?? endereco,
+      tokenAddress: token,
       nome: p.name || `${p.baseSymbol}/${p.quoteSymbol}`,
     });
   }
