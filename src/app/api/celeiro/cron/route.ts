@@ -14,6 +14,7 @@ import {
 } from "@/lib/celeiro/store";
 import {
   lerRegime, permite, alvoLimpaOPedagio, alavancagemCoerente, stopPorVolatilidade,
+  alvoAcompanhaOStop,
   MULTIPLO_DO_PEDAGIO, type Vela,
 } from "@/lib/celeiro/regime";
 import { tamanhoDaPosicao } from "@/lib/celeiro/agentes";
@@ -435,17 +436,6 @@ export async function POST(req: NextRequest) {
          * compila, passa no CI, é mergeado e não muda uma única decisão. Quem
          * mexer em qualquer default aqui tem de conferir o genoma no banco.
          */
-        const alvoPct = Number(params.alvoPct ?? 1.0);
-        const limpa = alvoLimpaOPedagio(
-          alvoPct,
-          Number(params.multiploDoPedagio ?? MULTIPLO_DO_PEDAGIO),
-          taxaPerna * 2,
-        );
-        if (!limpa.passa) {
-          exames.push({ sym, abre: false, porque: limpa.porque });
-          continue;
-        }
-
         /**
          * ⚠️ I2 — O STOP SAI DO RUÍDO MEDIDO, não de um número fixo.
          *
@@ -455,9 +445,30 @@ export async function POST(req: NextRequest) {
          * tendência nenhuma. O mesmo 1,2% no BTC (0,32%/vela) é outra coisa.
          *
          * `volatilidadePct` já era medido aqui — só alimentava a alavanca.
+         *
+         * ⚠️⚠️ E ELE VEM ANTES DO ALVO AGORA (30/08). O piso pode alargar o stop,
+         * e até ontem o alvo ficava onde estava — no SOL isso virou "arriscar 2%
+         * para ganhar 1%", o OPOSTO do que a mutação em teste tinha declarado.
+         * A I3 faz o alvo acompanhar; para isso ela precisa do stop já calculado,
+         * e o portão do pedágio precisa julgar o alvo FINAL.
          */
         const st = stopPorVolatilidade(regime.volatilidadePct, Number(params.stopPct ?? 1.2));
         const stopPct = st.stopPct;
+
+        // I3 — o alvo acompanha o stop efetivo. Ver `alvoAcompanhaOStop`.
+        const i3 = alvoAcompanhaOStop(Number(params.alvoPct ?? 1.0), stopPct);
+        const alvoPct = i3.alvoPct;
+
+        const limpa = alvoLimpaOPedagio(
+          alvoPct,
+          Number(params.multiploDoPedagio ?? MULTIPLO_DO_PEDAGIO),
+          taxaPerna * 2,
+        );
+        if (!limpa.passa) {
+          exames.push({ sym, abre: false, porque: `${st.porque} · ${i3.porque} · ${limpa.porque}` });
+          continue;
+        }
+
         alvo = lado === "buy" ? preco * (1 + alvoPct / 100) : preco * (1 - alvoPct / 100);
         stop = lado === "buy" ? preco * (1 - stopPct / 100) : preco * (1 + stopPct / 100);
 
@@ -467,7 +478,8 @@ export async function POST(req: NextRequest) {
          */
         const a = alavancagemCoerente(regime.piorContraPct, ag.alavancagemMaxima);
         alavanca = a.vezes;
-        porque = `${porque} · ${limpa.porque} · alavanca ${a.porque} · ${st.porque}`;
+        porque = `${porque} · ${limpa.porque} · alavanca ${a.porque} · ${st.porque}`
+          + (i3.ajustado ? ` · ${i3.porque}` : "");
         abre = true;
       }
 
