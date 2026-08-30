@@ -4,12 +4,48 @@ name: CI
 # net the repo never had: the money-math (parsePrice / extractSuggestion /
 # resolveOne / estimateCost) is covered by unit tests, and a regression in any
 # of them now fails the build instead of silently corrupting the flywheel.
+#
+# ⚠️⚠️ O `push:` PASSOU A VALER PARA TODA BRANCH EM 30/08, e o motivo é uma
+# falha que se disfarçava de sucesso.
+#
+# Naquele dia, TRÊS eventos não geraram run nenhum — e o quarto, que gerou,
+# é o que aponta a causa:
+#
+#   29/08 18:39  #367 aberto   (draft)  ✅ rodou
+#   29/08 21:59  #368 aberto   (draft)  ✅ rodou
+#   30/08 08:43  #369 aberto   (draft)  ❌ NÃO rodou
+#   30/08 16:04  #369 push     (pronto) ✅ rodou
+#   30/08 16:14  #370 aberto   (draft)  ❌ NÃO rodou
+#   30/08 16:20  #370 push     (draft)  ❌ NÃO rodou
+#
+# Todo caso que falhou era PR em rascunho, e o único evento que disparou naquele
+# dia foi o único em PR já marcado como pronto. Antes de 29/08 21:59 rascunho
+# disparava normalmente — ou seja, o comportamento MUDOU, e não foi aqui: este
+# arquivo não é tocado desde a subida do setup-node, e o repositório não tem
+# ruleset. A causa está nas configurações de Actions da organização.
+#
+# ⚠️ O SINTOMA É O PIOR TIPO: um PR sem run tem exatamente a mesma cara de um PR
+# verde. Ninguém olha o que não está lá. É a mesma família da invariante nº 33
+# desta casa — vazio-por-falha e vazio-por-ausência não podem ser
+# indistinguíveis.
+#
+# Depender do `pull_request` é depender de um estado (rascunho ou não) que não
+# tem nada a ver com a pergunta "este código passa?". `push` responde à pergunta
+# certa: houve código novo, então mede.
+#
+# ⚠️ E O PREÇO ESTÁ PAGO DE PROPÓSITO: numa branch com PR aberto rodam DOIS runs
+# por push (~2 min cada). Dá para deduplicar agrupando o `concurrency` por PR,
+# mas aí um dos dois aparece como `cancelled` — e check cancelado tem a mesma
+# cara de check ausente, que é a doença que este comentário existe para curar.
+# Dois runs claros valem mais que um run ambíguo.
 on:
   push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
+# ⚠️ Agrupado por `github.ref`, que DIFERE entre push (`refs/heads/…`) e
+# pull_request (`refs/pull/N/merge`) — então os dois convivem em vez de um
+# cancelar o outro. É deliberado; ver a nota acima.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
