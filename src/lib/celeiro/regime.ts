@@ -95,6 +95,53 @@ export interface VeredictoDeStop {
 }
 
 /**
+ * ⚠️⚠️ I3 — O ALVO ACOMPANHA O STOP EFETIVO (30/08).
+ *
+ * A I2 (acima) é um PISO: ela só alarga o stop, e faz isso pelo ruído medido do
+ * ativo. Ninguém alargava o alvo junto — e a razão declarada no genoma deixava
+ * de descrever a operação.
+ *
+ * O que isso produziu, medido em 29/08 no `alavancado_de_tendencia`:
+ *
+ *     genoma v3 pediu       alvo 1,00%  ·  stop 0,80%     (razão 1,25)
+ *     SOL executou          alvo 1,00%  ·  stop 2,00%     (razão 0,50)
+ *
+ * A mutação da v3 tinha como hipótese escrita *"reduzir o stop para abaixo do
+ * alvo inverte a assimetria de payoff"*. No SOL — **58% das posições do agente**
+ * — o piso entregou o oposto: stop 2,5× o que ela pediu, e o DOBRO do alvo. O
+ * experimento não testou o que disse testar, e o veredito saiu mesmo assim.
+ *
+ * ⚠️ ISTO NÃO É "PERDIA POR CONSTRUÇÃO". Num passeio sem tendência, alvo 1 com
+ * stop 2 tem valor esperado zero igual a qualquer outro par — a nota da I2
+ * explica por quê. O defeito é outro e é de HONESTIDADE: o genoma dizia uma
+ * razão e a operação rodava outra, então nem o Investigador nem o dono estavam
+ * olhando para o que de fato acontecia.
+ *
+ * ⚠️ E O ALVO SOBE, o stop não desce. Apertar o stop de volta desfaria a I2, que
+ * nasceu de três posições mortas no ruído do SOL. Subir o alvo também MELHORA a
+ * razão do pedágio (alvo maior, mesma taxa) — anda junto com a I1, não contra.
+ *
+ * ⚠️ O QUE ISTO CUSTA, dito antes de rodar: alvo maior é alvo menos tocado. A
+ * expectativa é que parte do que hoje morre em `stop` passe a morrer em `tempo`,
+ * e saída por tempo rendeu −0,248% em média. Se depois de 100 decididas a fatia
+ * de `tempo` subir sem o resultado melhorar, esta regra é a suspeita.
+ */
+export function alvoAcompanhaOStop(alvoPct: number, stopEfetivoPct: number): {
+  alvoPct: number; ajustado: boolean; porque: string;
+} {
+  const alvo = Number.isFinite(alvoPct) ? alvoPct : 0;
+  const stop = Number.isFinite(stopEfetivoPct) ? stopEfetivoPct : 0;
+  if (!(stop > alvo)) {
+    return { alvoPct: alvo, ajustado: false, porque: `alvo de ${alvo.toFixed(2)}% já cobre o stop de ${stop.toFixed(2)}%` };
+  }
+  return {
+    alvoPct: stop, ajustado: true,
+    porque: `alvo subiu de ${alvo.toFixed(2)}% para ${stop.toFixed(2)}% para acompanhar o stop `
+      + "efetivo — arriscar mais do que se pode ganhar não era o que o genoma declarou",
+  };
+}
+
+/**
  * Quantas amplitudes médias de vela o stop precisa ter de distância.
  *
  * ⚠️ 3 NÃO É PALPITE, É O QUE O BTC JÁ TINHA. Com stop fixo de 1,2% e amplitude

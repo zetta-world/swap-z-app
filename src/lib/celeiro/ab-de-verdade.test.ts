@@ -201,7 +201,7 @@ describe("o cron decide o braço ANTES da geometria", () => {
   it("⚠️ o braço é escolhido antes de alvo, stop e horasLimite", () => {
     const braco = fonte.indexOf("const bracoDoCiclo");
     expect(braco).toBeGreaterThan(0);
-    for (const depois of ["const alvoPct = Number(params", "stopPorVolatilidade(", "horasLimite: Number(params"]) {
+    for (const depois of ["Number(params.alvoPct", "stopPorVolatilidade(", "horasLimite: Number(params"]) {
       expect(fonte.indexOf(depois), depois).toBeGreaterThan(braco);
     }
   });

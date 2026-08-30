@@ -376,14 +376,34 @@ export const AGENTES: readonly Agente[] = [
     fracaoPorPosicao: 0.2,
     tetoDeExposicao: 0.6,
     /**
-     * ⚠️⚠️ O TETO É DURO E A CONTA MANDA ABAIXO DELE. `alavancagemCoerente`
-     * dimensiona pelo PIOR movimento contra já medido, com folga — este 10 é o
-     * limite que ela nunca ultrapassa, por mais calmo que o mercado pareça.
+     * ⚠️⚠️ DE 10 PARA 3 EM 30/08, E O MOTIVO NÃO É RETORNO — É SOBREVIVÊNCIA.
      *
-     * "Sem suicídio" precisa de número. Com pior movimento contra de 8% e folga
-     * 2×, a conta devolve 6× — não 10, e não 20.
+     * ① A CONTA QUE DIMENSIONA MEDIA O EVENTO ERRADO. `alavancagemCoerente`
+     * calcula a distância até a LIQUIDAÇÃO, com folga 2×. Nas 36 posições
+     * fechadas, o pior movimento contra medido ficou entre 1,11% e 4,95% — o
+     * que devolve de 10× a 45×, ou seja, **o teto era a única coisa que
+     * mandava**, e a conta que o comentário anterior descrevia nunca chegou a
+     * morder. Pior: a 10× a liquidação fica a 10% de distância e o STOP fica a
+     * 1,4–2,0%. O stop dispara sempre primeiro. A liquidação nunca foi o risco,
+     * e a fórmula dimensionava contra ela.
+     *
+     * ② O RISCO REAL É O STOP, e ele estava em 3,2% da banca por operação:
+     *
+     *     fração 0,20  ×  alavanca 10  ×  stop 1,6%  =  3,2% da banca por stop
+     *
+     * Ver `riscoPorStopPct`. Com 3×, a mesma conta dá 0,96%.
+     *
+     * ③ ⚠️⚠️ E A ARITMÉTICA QUE DECIDE: NO TAMANHO ANTIGO O EXPERIMENTO NÃO
+     * TERMINA. O agente decide 3,86 operações por dia, então as 100 decididas
+     * que esta casa exige antes de confiar num número chegam em **26 dias**. Ele
+     * queimava 38,70 USDT/dia e tinha 436,76 até o piso de ruína de $300 —
+     * **11 dias de vida**. Ele morreria no dia 11 de uma pergunta que só é
+     * respondida no dia 26.
+     *
+     * A 3× a queima cai para ~11,6/dia e a vida vai a ~37 dias. **Isto não
+     * afirma que ele vai lucrar** — afirma que agora dá para descobrir.
      */
-    alavancagemMaxima: 10,
+    alavancagemMaxima: 3,
     mecanismo:
       "toma o lado do regime medido no perpétuo — comprado na alta, VENDIDO na "
       + "baixa — com alavancagem dimensionada pela distância da liquidação",
@@ -483,6 +503,26 @@ export const ROTULO_DA_FAIXA: Record<Faixa, string> = {
   trabalho: "Trabalho — precisa de livro que aguente",
   renda:    "Renda — lenta e composta",
 };
+
+/**
+ * Quanto da banca UM STOP custa, em porcentagem — a conta de risco que faltava.
+ *
+ * ⚠️⚠️ O REGISTRO DIMENSIONAVA CONTRA A LIQUIDAÇÃO E NUNCA CONTRA O STOP, e são
+ * eventos diferentes por uma ordem de grandeza: a 10× a liquidação fica a 10%
+ * de distância, o stop a 1,4–2,0%. O stop dispara primeiro **em toda posição**,
+ * então ele é o único que determina o tamanho da perda típica — e não aparecia
+ * em conta nenhuma.
+ *
+ * ⚠️ E A ALAVANCA ENTRA MULTIPLICANDO. É fácil ler `fracaoPorPosicao: 0,2` como
+ * "arrisco 20% da banca" e `alavancagemMaxima: 10` como um limite distante. Os
+ * dois se multiplicam: 0,2 × 10 = **duas vezes a banca inteira** em nocional por
+ * posição, e o stop morde esse nocional.
+ */
+export function riscoPorStopPct(a: Agente, alavanca: number, stopPct: number): number {
+  const alav = Number.isFinite(alavanca) && alavanca >= 1 ? alavanca : 1;
+  const stop = Number.isFinite(stopPct) && stopPct > 0 ? stopPct : 0;
+  return a.fracaoPorPosicao * alav * stop;
+}
 
 export interface Tamanho {
   /**
