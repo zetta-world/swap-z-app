@@ -17,6 +17,7 @@ import { proximaJanela, type Intervalo } from "@/lib/dca/relogio";
  */
 import { lerCiclos, porCiclo } from "@/lib/orders/plano";
 import { recordEvent } from "@/lib/admin/track";
+import { rateLimitDurable } from "@/lib/rate-limit";
 import type { CexId } from "@/lib/cex/types";
 
 export const runtime = "nodejs";
@@ -62,9 +63,47 @@ async function ultimaPassadaDoCron(): Promise<{ haMinutos: number | null }> {
   return { haMinutos: Math.floor(ms / 60_000) };
 }
 
+
+/**
+ * ⚠️ A CHAVE É A CARTEIRA, NÃO O IP — e a escolha é o ponto (30/08).
+ *
+ * O resto do repositório limita por `getClientId(headers)`, que é o certo para
+ * rota ANÔNIMA: sem sessão, o IP é o único identificador que existe. Aqui há
+ * sessão, e o IP passa a ser a chave errada nos dois sentidos.
+ *
+ * Ele deixa passar: uma sessão válida atrás de uma rede doméstica com IP
+ * rotativo, ou de qualquer proxy, ganha um balde novo a cada troca. E ele
+ * barra quem não devia: duas pessoas na mesma NAT — um escritório, um café,
+ * uma operadora móvel — dividem o limite e uma tranca a outra.
+ *
+ * A carteira é o sujeito real do limite: é dela o orçamento, é dela o teto
+ * diário do DCA, e é ela que o abuso custaria caro.
+ *
+ * ⚠️ POR QUE ESTA ROTA FALTAVA. Ela tinha sessão e por isso PARECIA protegida —
+ * 37 das 43 rotas já limitavam. Mas sessão responde "quem é", não "quantas
+ * vezes", e criar plano em modo real grava conexão CIFRADA no banco: é a
+ * escrita mais cara do produto, e era a que ninguém contava.
+ */
+async function limitar(wallet: string, acao: "criar" | "mexer" | "ler") {
+  const opts = acao === "criar"
+    ? { windowMs: 3_600_000, max: 20 }   // plano é decisão rara: 20/hora sobra
+    : acao === "mexer"
+    ? { windowMs: 60_000, max: 30 }      // pausar/retomar/encerrar
+    : { windowMs: 60_000, max: 60 };     // leitura da própria lista
+  const rl = await rateLimitDurable(`dca_planos:${acao}:${wallet}`, opts);
+  if (rl.ok) return null;
+  return NextResponse.json(
+    { ok: false, error: "rate_limited", retryAfter: rl.retryAfter },
+    { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+  );
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
+
+  const barrado = await limitar(session.sub, "ler");
+  if (barrado) return barrado;
 
   const planoId = req.nextUrl.searchParams.get("plano");
   const [planos, cron] = await Promise.all([
@@ -83,6 +122,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
+
+  const barrado = await limitar(session.sub, "criar");
+  if (barrado) return barrado;
 
   const b = await req.json().catch(() => ({})) as Record<string, unknown>;
   const exchangeId = String(b.exchangeId ?? "");
@@ -168,6 +210,9 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
+
+  const barrado = await limitar(session.sub, "mexer");
+  if (barrado) return barrado;
 
   const b = await req.json().catch(() => ({})) as Record<string, unknown>;
   const id   = String(b.id ?? "");
