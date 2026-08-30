@@ -23,7 +23,7 @@ import { portaoDeSobrevivencia, municaoDoDia } from "@/lib/celeiro/pool-novo";
 import { lerCandidato, candidatosDe, getNewPoolsForChain } from "@/lib/celeiro/pool-fonte";
 import { getPairDetail } from "@/lib/api/dexscreener";
 import { investigar } from "@/lib/celeiro/investigar";
-import { mutacaoEmCurso, bracoDaPosicao, posicoesDesde } from "@/lib/celeiro/store";
+import { mutacaoEmCurso, bracoDoTick, genomaAnterior } from "@/lib/celeiro/store";
 import { taxaPorPerna } from "@/lib/celeiro/taxas";
 
 export const runtime = "nodejs";
@@ -305,17 +305,34 @@ export async function POST(req: NextRequest) {
     const saldo = await saldoDoAgente(db, id, ag.bancaInicialUsd);
 
     /**
-     * ⚠️ O BRAÇO DO A/B — e ele alterna por POSIÇÃO, não por símbolo. Dividir
-     * por símbolo daria a cada braço um conjunto DIFERENTE de ativos, e o teste
-     * mediria "BTC contra ETH" em vez de "genoma antigo contra novo".
+     * ⚠️⚠️ O BRAÇO DO A/B, E ELE VEM ANTES DA GEOMETRIA (29/08).
      *
-     * Sem mutação em curso, `bracoDaPosicao` devolve `null` e nada é marcado:
-     * rotular o que não está sendo testado envenenaria o julgamento seguinte
-     * com dados de antes.
+     * Até aqui `braco` era calculado no FIM do laço, depois de alvo, stop,
+     * horasLimite e alavanca já terem saído do genoma ATIVO — e nunca era lido
+     * por nada. Os dois braços abriam idênticos: `controle` e `mutacao` eram
+     * rótulos alternados na mesma estratégia.
+     *
+     * O banco mostra o efeito: na v3/SOL o controle abriu com stop 2,022% e a
+     * mutação com 1,991%, quando o controle deveria estar usando o 1,2% da
+     * versão anterior. Duas mutações foram julgadas — e carimbadas "pagou" —
+     * comparando duas metades da mesma coisa.
+     *
+     * Agora o braço é escolhido PRIMEIRO e ele escolhe QUAL GENOMA vale no tick.
      */
     const emTeste = await mutacaoEmCurso(db, id);
-    let abertasDesde = emTeste?.aplicadaEmMs != null
-      ? await posicoesDesde(db, id, emTeste.aplicadaEmMs) : 0;
+    const bracoDoCiclo = emTeste ? bracoDoTick(emTeste.aplicadaEmMs, agora) : null;
+
+    /**
+     * ⚠️ SEM VERSÃO ANTERIOR NÃO HÁ A/B — e a saída é PARAR de rotular, nunca
+     * cair no genoma ativo. Cair no ativo reproduz exatamente o defeito de
+     * origem: dois braços iguais com nomes diferentes, e um veredito por cima.
+     */
+    const genControle = bracoDoCiclo ? await genomaAnterior(db, id, gen?.versao) : null;
+    const braco: "controle" | "mutacao" | null =
+      bracoDoCiclo === null ? null : (genControle === null ? null : bracoDoCiclo);
+    const params = (braco === "controle" ? genControle?.params : gen?.params) ?? {};
+    const versaoDoBraco = braco === "controle" ? (genControle?.versao ?? null) : (gen?.versao ?? null);
+
     const exames: Array<Record<string, unknown>> = [];
 
     for (const sym of SIMBOLOS) {
@@ -337,7 +354,7 @@ export async function POST(req: NextRequest) {
         const perp = await umNumero(
           `https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=${sym.toUpperCase()}_USDT`,
           (c) => Number((c as Array<{ last?: string }>)?.[0]?.last));
-        const d = decidirBase(perp > 0 ? { perp, spot: preco } : null, Number(gen?.params.margemPp ?? 0.15));
+        const d = decidirBase(perp > 0 ? { perp, spot: preco } : null, Number(params.margemPp ?? 0.15));
         abre = d.abre; porque = d.porque;
         lado = d.lado === "vender_perp" ? "sell" : "buy";
         const b = Math.abs(d.basePct ?? 0);
@@ -418,10 +435,10 @@ export async function POST(req: NextRequest) {
          * compila, passa no CI, é mergeado e não muda uma única decisão. Quem
          * mexer em qualquer default aqui tem de conferir o genoma no banco.
          */
-        const alvoPct = Number(gen?.params.alvoPct ?? 1.0);
+        const alvoPct = Number(params.alvoPct ?? 1.0);
         const limpa = alvoLimpaOPedagio(
           alvoPct,
-          Number(gen?.params.multiploDoPedagio ?? MULTIPLO_DO_PEDAGIO),
+          Number(params.multiploDoPedagio ?? MULTIPLO_DO_PEDAGIO),
           taxaPerna * 2,
         );
         if (!limpa.passa) {
@@ -439,7 +456,7 @@ export async function POST(req: NextRequest) {
          *
          * `volatilidadePct` já era medido aqui — só alimentava a alavanca.
          */
-        const st = stopPorVolatilidade(regime.volatilidadePct, Number(gen?.params.stopPct ?? 1.2));
+        const st = stopPorVolatilidade(regime.volatilidadePct, Number(params.stopPct ?? 1.2));
         const stopPct = st.stopPct;
         alvo = lado === "buy" ? preco * (1 + alvoPct / 100) : preco * (1 - alvoPct / 100);
         stop = lado === "buy" ? preco * (1 - stopPct / 100) : preco * (1 + stopPct / 100);
@@ -480,14 +497,15 @@ export async function POST(req: NextRequest) {
       const prof = portaoDeProfundidade(livros.get(sym) ?? null, t.usd);
       if (!prof.passa) { exames.push({ sym, abre: false, porque: prof.porque }); continue; }
 
-      const braco = bracoDaPosicao(emTeste != null, abertasDesde);
       const posId = await abrirPosicao(db, {
         agente: id, simbolo: sym, lado, usd: t.usd, alavanca: t.alavanca,
         taxaPernaPct: taxaPerna,
         precoEntrada: preco, alvo, stop,
         derrapagemPct: prof.derrapagemPct ?? 0,
-        horasLimite: Number(gen?.params.horasLimite ?? 48),
-      }, gen?.versao ?? null,
+        horasLimite: Number(params.horasLimite ?? 48),
+        /** ⚠️ A VERSÃO É A DO BRAÇO — no controle, a anterior. Gravar a ativa
+         *  nos dois faria o extrato jurar que os dois rodaram o genoma novo. */
+      }, versaoDoBraco,
         {
           porque, alavanca: t.alavanca, margemUsd: t.margemUsd,
           exposicao: t.exposicaoDepois,
@@ -496,7 +514,7 @@ export async function POST(req: NextRequest) {
           modalidade: ag.modalidade, execucao: ag.execucao,
         },
         braco);
-      if (posId) { abertasDesde++; expostoUsd += t.margemUsd; }
+      if (posId) { expostoUsd += t.margemUsd; }
 
       exames.push({
         sym, abre: posId !== null, porque, lado,

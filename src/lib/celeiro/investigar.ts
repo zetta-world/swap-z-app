@@ -90,13 +90,18 @@ async function umAgente(db: SupabaseClient, ag: Agente, agoraMs: number): Promis
     relato.julgou = { veredito: j.veredito, porque: j.porque };
 
     /**
-     * ⚠️ `inconclusiva` NÃO FECHA A MUTAÇÃO — ela continua em teste. Fechar
-     * como inconclusiva seria descartar a hipótese por falta de tempo, e o
-     * modelo levaria a culpa por uma amostra que ainda estava crescendo.
+     * ⚠️ `aguardar` NÃO FECHA A MUTAÇÃO — ela continua em teste. Fechar por
+     * falta de tempo descartaria a hipótese por uma amostra que ainda estava
+     * crescendo, e o modelo levaria a culpa.
+     *
+     * ⚠️⚠️ MAS `inconclusiva` DEIXOU DE SIGNIFICAR "espere" (29/08). Com os dois
+     * braços destruindo valor o veredito é inconclusivo sobre o PARÂMETRO e
+     * ainda assim a mutação tem de sair de pé — senão o genoma continua andando
+     * em cima de comparações que não decidiram nada. Quem manda agora é `acao`.
      */
-    if (j.veredito === "inconclusiva") return relato;
+    if (j.acao === "aguardar") return relato;
 
-    await fecharMutacao(db, emCurso.id, ag.id, j.veredito, j.usdtControle, j.usdtMutacao);
+    await fecharMutacao(db, emCurso.id, ag.id, j.veredito, j.usdtControle, j.usdtMutacao, j.acao);
     return relato;   // ⚠️ só volta a perguntar no próximo ciclo, com o genoma limpo
   }
 

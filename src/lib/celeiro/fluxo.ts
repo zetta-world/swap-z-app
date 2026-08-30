@@ -46,6 +46,14 @@ export interface Fluxo {
   ocorreuEmMs: number;
   braco?: Braco | null;
   genomaVersao?: number | null;
+  /**
+   * ⚠️ A OPERAÇÃO QUE GEROU O LANÇAMENTO — `abertura:<id>` / `fechamento:<id>`.
+   *
+   * Existia no banco desde 20/08 e não subia para cá. Sem ele o piso de amostra
+   * conta LINHAS DE EXTRATO, e uma posição escreve de três a quatro: taxa de
+   * entrada, taxa de saída, derrapagem e preço. Ver `operacoesDistintas`.
+   */
+  ref?: string | null;
 }
 
 /** Quanto cada causa somou. Chaves sempre presentes, mesmo zeradas. */
@@ -74,6 +82,33 @@ export function decompor(fluxos: readonly Fluxo[]): PorCausa {
 export function usdtProduzido(fluxos: readonly Fluxo[]): number {
   const d = decompor(fluxos);
   return CAUSAS_DE_RESULTADO.reduce((s, c) => s + d[c], 0);
+}
+
+/**
+ * Quantas OPERAÇÕES distintas estes lançamentos representam.
+ *
+ * ⚠️⚠️ A UNIDADE ERRADA MULTIPLICA A AMOSTRA POR TRÊS (29/08). O piso do A/B
+ * pedia 20 e contava `fluxos.length` — mas uma posição escreve 3–4 linhas
+ * (taxa na entrada, taxa na saída, derrapagem, preço). Os dois vereditos que o
+ * Celeiro já emitiu passaram no piso com **6 e 7 operações** por braço.
+ *
+ * O comentário logo acima do piso avisava contra exatamente isso: *"a arena
+ * antiga premiou +7,04% com 1 decidido"*. A armadilha voltou a um nível de
+ * indireção de distância — a contagem estava certa, a UNIDADE não.
+ *
+ * ⚠️ E LANÇAMENTO SEM `ref` DEVOLVE `null`, não um palpite. Não dá para agrupar
+ * o que não tem identidade, e um número inventado aqui vira amostra falsa lá na
+ * frente — que é a doença inteira que esta função existe para curar.
+ */
+export function operacoesDistintas(fluxos: readonly Fluxo[]): number | null {
+  const ids = new Set<string>();
+  for (const f of fluxos) {
+    const r = (f.ref ?? "").trim();
+    if (!r) return null;
+    const corte = r.indexOf(":");
+    ids.add(corte >= 0 ? r.slice(corte + 1) : r);
+  }
+  return ids.size;
 }
 
 /** O capital que entrou (ou saiu) — separado do resultado, sempre. */
@@ -151,16 +186,37 @@ export interface Julgamento {
   usdtControle: number;
   usdtMutacao: number;
   diferenca: number;
+  /** Operações distintas por braço — `null` quando não deu para contar. */
+  operacoesControle: number | null;
+  operacoesMutacao: number | null;
   veredito: "pagou" | "nao_pagou" | "inconclusiva";
+  /**
+   * ⚠️⚠️ O QUE FAZER, SEPARADO DO QUE SE APRENDEU (29/08).
+   *
+   * Antes a ação era inferida da palavra: `nao_pagou` revertia, o resto não. Isso
+   * amarrava duas decisões diferentes numa só e não deixava espaço para o caso
+   * que apareceu na auditoria — **os dois braços destruindo valor**. Ali não há
+   * o que aprender sobre o parâmetro (`inconclusiva`) e mesmo assim a mudança
+   * não pode ficar de pé (`reverter`).
+   *
+   *   · `aguardar` — amostra ainda crescendo; a mutação NÃO fecha
+   *   · `manter`   — a mutação pagou e o genoma novo fica
+   *   · `reverter` — volta para a versão anterior
+   */
+  acao: "aguardar" | "manter" | "reverter";
   porque: string;
 }
 
 /**
- * O piso de lançamentos por braço para um veredito valer.
+ * O piso de OPERAÇÕES por braço para um veredito valer.
  *
- * ⚠️ CONTAGEM POR BRAÇO, NÃO NO TOTAL. Trinta lançamentos no controle e dois na
- * mutação somam 32 e não decidem nada — o braço fraco é que manda. A arena
- * antiga premiou "+7,04% com 1 decidido" por não fazer esta distinção.
+ * ⚠️ CONTAGEM POR BRAÇO, NÃO NO TOTAL. Trinta no controle e duas na mutação
+ * somam 32 e não decidem nada — o braço fraco é que manda. A arena antiga
+ * premiou "+7,04% com 1 decidido" por não fazer esta distinção.
+ *
+ * ⚠️⚠️ E A UNIDADE É OPERAÇÃO, NÃO LANÇAMENTO (29/08). Ver `operacoesDistintas`:
+ * contando linhas de extrato, os dois vereditos já emitidos passaram no piso
+ * com 6 e 7 operações por braço.
  */
 export const MINIMO_POR_BRACO = 20;
 
@@ -183,25 +239,71 @@ export function julgarMutacao(
   const usdtControle = usdtProduzido(ctrl);
   const usdtMutacao = usdtProduzido(mut);
   const diferenca = usdtMutacao - usdtControle;
+  const operacoesControle = operacoesDistintas(ctrl);
+  const operacoesMutacao = operacoesDistintas(mut);
+  const base = { usdtControle, usdtMutacao, diferenca, operacoesControle, operacoesMutacao };
 
-  if (ctrl.length < minimoPorBraco || mut.length < minimoPorBraco) {
+  // ⚠️ Sem conseguir CONTAR, não se julga. Ver `operacoesDistintas`.
+  if (operacoesControle === null || operacoesMutacao === null) {
     return {
-      usdtControle, usdtMutacao, diferenca,
-      veredito: "inconclusiva",
-      porque: `braço fraco com ${Math.min(ctrl.length, mut.length)} lançamentos, `
-        + `mínimo ${minimoPorBraco} — sem amostra o número não decide nada`,
+      ...base, veredito: "inconclusiva", acao: "aguardar",
+      porque: "lançamento sem `ref` no braço — não dá para contar operações, e "
+        + "contar linhas de extrato foi o defeito que este piso existe para não repetir",
     };
   }
-  if (diferenca > 0) {
+
+  const fraco = Math.min(operacoesControle, operacoesMutacao);
+  if (fraco < minimoPorBraco) {
     return {
-      usdtControle, usdtMutacao, diferenca, veredito: "pagou",
-      porque: `a mutação produziu ${diferenca.toFixed(2)} USDT a mais que o controle`,
+      ...base, veredito: "inconclusiva", acao: "aguardar",
+      porque: `braço fraco com ${fraco} operações, mínimo ${minimoPorBraco} — `
+        + "sem amostra o número não decide nada",
     };
   }
+
+  /**
+   * ⚠️⚠️ O TERCEIRO ESTADO, E ELE É A CICATRIZ DE 12/08 (`cor-resultado.ts`).
+   *
+   * O juiz antigo era `diferenca > 0 ? pagou : nao_pagou` — dois estados. Com os
+   * DOIS braços negativos, sangrar menos virava "pagou": em 29/08 uma mutação
+   * com **−40,43 USDT** foi carimbada como sucesso porque o controle fez
+   * −68,19. É o mesmo defeito que pintou de verde, no painel do laboratório,
+   * uma grade que perdeu metade do capital por perder menos que segurar.
+   *
+   * ⚠️ E AQUI ELE É PIOR QUE UMA COR ERRADA: cada "pagou" FIXA o parâmetro, e a
+   * mutação seguinte parte dali. Foi assim que o `stopPct` do Alavancado andou
+   * 1,2 → 0,8 → 1,6 em cinco dias, com diagnósticos opostos e o do meio
+   * aprovado.
+   *
+   * Com os dois negativos não há o que aprender SOBRE O PARÂMETRO — a notícia é
+   * sobre o agente, não sobre a mudança. Então: `inconclusiva` (não ensina) e
+   * `reverter` (não fica de pé). Separar veredito de ação é o que permite dizer
+   * as duas coisas ao mesmo tempo.
+   */
+  if (usdtMutacao <= 0 && usdtControle <= 0) {
+    return {
+      ...base, veredito: "inconclusiva", acao: "reverter",
+      porque: `os DOIS braços destruíram valor (controle ${usdtControle.toFixed(2)}, `
+        + `mutação ${usdtMutacao.toFixed(2)} USDT) — sangrar menos não é pagar. `
+        + "A comparação não decide o parâmetro; revertendo para o genoma anterior",
+    };
+  }
+
+  if (diferenca > 0 && usdtMutacao > 0) {
+    return {
+      ...base, veredito: "pagou", acao: "manter",
+      porque: `a mutação produziu ${usdtMutacao.toFixed(2)} USDT, `
+        + `${diferenca.toFixed(2)} a mais que o controle`,
+    };
+  }
+
   return {
-    usdtControle, usdtMutacao, diferenca, veredito: "nao_pagou",
-    porque: `a mutação produziu ${Math.abs(diferenca).toFixed(2)} USDT a MENOS `
-      + "que o controle — reverter o genoma",
+    ...base, veredito: "nao_pagou", acao: "reverter",
+    porque: usdtMutacao <= 0
+      ? `a mutação destruiu ${Math.abs(usdtMutacao).toFixed(2)} USDT enquanto o `
+        + `controle produziu ${usdtControle.toFixed(2)} — reverter o genoma`
+      : `a mutação produziu ${Math.abs(diferenca).toFixed(2)} USDT a MENOS `
+        + "que o controle — reverter o genoma",
   };
 }
 
