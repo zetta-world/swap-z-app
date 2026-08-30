@@ -290,3 +290,98 @@ Os dois `pagou` de 24/08 e 27/08 continuam gravados, e o genoma do Alavancado
 continua na v4. Reescrever veredito em produção e reverter genoma **mexe no que
 o agente vai operar no próximo tick** — não é conserto de código, é decisão
 sobre dinheiro vivo. Os itens ④ a ⑥ da §7 também seguem abertos.
+
+
+---
+
+## 10. OS TRÊS AGENTES SILENCIOSOS — medidos em 30/08
+
+A §1 registrou que `convergencia_base`, `pool_novo` e `colheita_funding` rodavam
+a cada tick e nunca produziram um lançamento. Da tela os três eram idênticos:
+*"examinou, recusou"*. Medindo, eram **três coisas completamente diferentes**, e
+só uma era defeito.
+
+### ① `convergencia_base` — silêncio HONESTO, e é aritmética de taxa
+
+Do tick de 30/08 16:00:
+
+```
+BTC  base −0,106%  →  deixa −0,324pp depois das 4 pernas (0,43%)
+ETH  base −0,126%  →  deixa −0,304pp
+SOL  base −0,075%  →  deixa −0,355pp
+```
+
+O portão exige `|base| ≥ 0,58%` (custo 0,43 + margem 0,15). A base dos majors
+vive em 0,07–0,13% — **entre quatro e oito vezes menor que o próprio custo**.
+
+⚠️ **E 93% do custo é a perna SPOT:** 2 × 0,20% de spot contra 2 × 0,015% de
+futuros. Nenhum ajuste do lado do perpétuo muda isso; o que exclui o agente é a
+tabela de spot da praça. Baixar o limiar não é opção — abaixo dele a operação
+perde por construção.
+
+**Ação: nenhuma no código.** O agente está certo. O que muda é a leitura: ele
+não é um agente esperando oportunidade, é um agente estruturalmente excluído
+nestes três símbolos e nesta praça.
+
+### ② `colheita_funding` — recusa porque o CONTROLE rende mais
+
+```
+BTC  3,83%/ano  ·  equilíbrio em  37 dias  ·  14% dos períodos negativos
+ETH  3,40%/ano  ·  equilíbrio em  41 dias  ·  18% negativos
+SOL  0,44%/ano  ·  equilíbrio em 180 dias  ·  51% negativos
+```
+
+Contra a barra de **4,50%/ano** (controle 2,5% + margem 2pp). Os três abaixo.
+
+⚠️ **E a régua se confirma no dinheiro:** o `aluguel_ocioso` rendeu 0,074
+USDT/dia sobre $1.000 = **2,70%/ano**, e o portão usa 2,5%. O piso não é número
+inventado — é o que o controle está de fato pagando, o que torna a recusa
+verificável.
+
+**Ação: nenhuma no código.** Duas pernas com risco de liquidação para render
+menos que emprestar USDT parado é exatamente o que o portão existe para barrar.
+
+### ③ ⚠️⚠️ `pool_novo` — ESTE era defeito, e se disfarçava de rigor
+
+Seis candidatos examinados, seis recusados, **todos com a mesma frase**:
+
+```
+"pool não lido — não medido não é aprovado"   × 6
+```
+
+Nenhum dos seis chegou ao portão de sobrevivência. A causa é determinística:
+
+```ts
+tokenAddress: (p.id ?? "").split("_")[1] ?? endereco   // ← o id é do POOL
+```
+
+O id da GeckoTerminal é `<rede>_<endereço do POOL>`; o token base vive em
+`relationships.base_token` e nunca subia. Resultado: `tokenAddress ===
+poolAddress` em **todos** os candidatos, e a GoPlus não devolve segurança de um
+contrato de pool. **Dez dias, zero posições, e o log cheio.**
+
+⚠️ **O teste passava verde sobre isso**, porque o fixture mentia: montava
+`id: "base_0xTOKEN"` — um formato que a fonte não produz. Um fixture é uma
+AFIRMAÇÃO sobre a fonte; escrito a partir da mesma suposição do código, ele não
+verifica nada, só ecoa.
+
+⚠️ **E havia um segundo defeito escondido no primeiro:** cortar o id no PRIMEIRO
+`_` quebra em redes com underscore no slug (`arbitrum_nova` → `"nova"`).
+`extrairEndereco` corta no último.
+
+**O que entrou:**
+
+| | |
+|---|---|
+| `baseTokenAddress` em `PoolSummary` | o dado sempre esteve na resposta |
+| `extrairEndereco` | corta no último `_`, não no primeiro |
+| candidato sem token base é **descartado** | melhor um a menos que um que nunca pode ser julgado |
+| `porqueNaoLeu` | as quatro causas deixam de ser a mesma frase |
+| `examinados` × `julgados` × `naoLidos` no tick | zero julgados com exames > 0 é defeito |
+
+### A lição que vale além do Celeiro
+
+⚠️ **Um agente que examina muito e julga zero é indistinguível, no relatório, de
+um agente rigoroso** — até alguém somar as duas colunas separadamente. É a mesma
+família do CI que não rodava (PR sem run com a cara de PR verde) e do A/B com um
+braço só: **atividade não é evidência de funcionamento.**

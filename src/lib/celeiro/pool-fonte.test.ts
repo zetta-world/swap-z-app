@@ -5,7 +5,7 @@ import {
 } from "@/lib/celeiro/pool-fonte";
 import { portaoDeSobrevivencia } from "@/lib/celeiro/pool-novo";
 import type { GoPlusTokenSecurity } from "@/lib/api/goplus";
-import type { PoolSummary } from "@/lib/api/geckoterminal";
+import { extrairEndereco, type PoolSummary } from "@/lib/api/geckoterminal";
 
 /**
  * A FONTE DO POOL NOVO — e a regra que atravessa cada função aqui.
@@ -152,20 +152,59 @@ describe("o pool montado, de ponta a ponta", () => {
 
 describe("os candidatos vindos da GeckoTerminal", () => {
   /**
-   * ⚠️ O TOKEN AUDITADO É O BASE, e o `id` do pool carrega `rede_endereço`. O
-   * quote é a moeda de cotação (WETH, USDT) — checar a segurança DELA aprovaria
-   * qualquer coisa, porque a moeda de cotação é sempre sadia.
+   * ⚠️⚠️ ESTE TESTE JÁ PASSOU VERDE SOBRE UM DEFEITO — e passou porque o
+   * FIXTURE mentia (30/08).
+   *
+   * A versão anterior montava `id: "base_0xTOKEN"` com `address: "0xPOOL"` e
+   * exigia que `candidatosDe` extraísse `0xTOKEN` do id. O código fazia
+   * `id.split("_")[1]` e o teste ficava verde.
+   *
+   * Só que o id REAL da GeckoTerminal é `<rede>_<endereço do POOL>` — o token
+   * base não está nele; ele vive em `relationships.base_token`. Ou seja, o
+   * fixture inventou um formato que a fonte não produz, e o teste passou a
+   * comprovar a crença do autor em vez do comportamento da API.
+   *
+   * Em produção isso dava `tokenAddress === poolAddress` em TODOS os
+   * candidatos. A GoPlus, perguntada sobre a segurança de um contrato de pool,
+   * não devolve nada — e o `pool_novo` reprovou 100% dos candidatos com "pool
+   * não lido" por DEZ DIAS, parecendo um agente rigoroso.
+   *
+   * ⚠️ A LIÇÃO: um fixture é uma AFIRMAÇÃO sobre a fonte. Quando ele é escrito
+   * a partir da mesma suposição que o código, o teste não verifica nada — só
+   * ecoa. Os campos abaixo são os do formato real.
    */
-  it("extrai o endereço do id, não o do par", () => {
-    const pools = [{
-      id: "base_0xTOKEN", address: "0xPOOL", network: "base",
-      name: "PEPE / WETH", baseSymbol: "PEPE", quoteSymbol: "WETH",
-      dex: "uniswap", tvlUsd: 1, volume24h: 1, change24h: 0, priceUsd: 1,
-    }] as PoolSummary[];
-    const c = candidatosDe(pools);
+  const poolReal = (over: Partial<PoolSummary> = {}) => ({
+    id: "base_0xPOOL", address: "0xPOOL", network: "base",
+    name: "PEPE / WETH", baseSymbol: "PEPE", quoteSymbol: "WETH",
+    dex: "uniswap", tvlUsd: 1, volume24h: 1, change24h: 0, priceUsd: 1,
+    baseTokenAddress: "0xTOKEN",
+    ...over,
+  }) as PoolSummary;
+
+  it("⚠️ o token vem de `baseTokenAddress`, não do id do pool", () => {
+    const c = candidatosDe([poolReal()]);
     expect(c[0].tokenAddress).toBe("0xTOKEN");
     expect(c[0].poolAddress).toBe("0xPOOL");
     expect(c[0].chain).toBe("base");
+  });
+
+  it("⚠️⚠️ o formato REAL do id não vira mais endereço de token", () => {
+    // Antes, `base_0xPOOL` produzia tokenAddress = "0xPOOL". Sem
+    // `baseTokenAddress`, o candidato agora é DESCARTADO em vez de nascer
+    // impossível de julgar.
+    expect(candidatosDe([poolReal({ baseTokenAddress: undefined })])).toEqual([]);
+  });
+
+  it("⚠️ token igual ao pool é descartado — era o sintoma do defeito", () => {
+    expect(candidatosDe([poolReal({ baseTokenAddress: "0xpool" })])).toEqual([]);
+  });
+
+  it("⚠️ rede com underscore no nome não parte o endereço ao meio", () => {
+    // `arbitrum_nova` existe. Cortar no PRIMEIRO `_` devolveria "nova".
+    expect(extrairEndereco("arbitrum_nova_0xABC")).toBe("0xABC");
+    expect(extrairEndereco("base_0xABC")).toBe("0xABC");
+    expect(extrairEndereco("0xSEMREDE")).toBe("0xSEMREDE");
+    expect(extrairEndereco(undefined)).toBe("");
   });
 
   it("pool sem endereço é descartado em vez de virar candidato vazio", () => {

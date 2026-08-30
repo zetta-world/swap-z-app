@@ -54,6 +54,34 @@ export interface PoolSummary {
   createdAt?: string;
   /** Unix ms of pool creation, derived from createdAt. Undefined when unknown. */
   createdAtMs?: number;
+  /**
+   * ⚠️⚠️ O ENDEREÇO DO TOKEN BASE — e a falta dele matou um agente por dez dias.
+   *
+   * O `pool_novo` do Celeiro montava o endereço do token fazendo
+   * `id.split("_")[1]` sobre o id do POOL. Mas o id da GeckoTerminal é
+   * `<rede>_<endereço do POOL>` — o token base não está ali. O resultado era
+   * `tokenAddress === poolAddress` SEMPRE, e a GoPlus, perguntada sobre a
+   * segurança de um contrato de pool, não devolvia nada. O agente reprovava
+   * 100% dos candidatos com "pool não lido" e parecia estar trabalhando.
+   *
+   * O dado sempre esteve na resposta, em `relationships.base_token`. Só não
+   * subia para cá. Ver `extrairEndereco`.
+   */
+  baseTokenAddress?: string;
+}
+
+/**
+ * O endereço dentro de um id da GeckoTerminal (`<rede>_<endereço>`).
+ *
+ * ⚠️ CORTA NO ÚLTIMO `_`, NUNCA NO PRIMEIRO. Há redes com underscore no slug —
+ * `arbitrum_nova` é a que existe hoje — e `split("_")[1]` devolveria `"nova"`
+ * em vez do endereço. Endereço EVM não contém underscore, então o último
+ * separador é sempre a fronteira certa.
+ */
+export function extrairEndereco(id: string | undefined | null): string {
+  const t = (id ?? "").trim();
+  const corte = t.lastIndexOf("_");
+  return corte >= 0 ? t.slice(corte + 1) : t;
 }
 
 function attrNumber(v: string | undefined | null): number {
@@ -82,6 +110,8 @@ function poolToSummary(pool: GTPool, networkSlug: string): PoolSummary {
     address:     a.address ?? "",
     createdAt,
     createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : undefined,
+    // ⚠️ O token BASE, não o pool. Ver a nota em `PoolSummary.baseTokenAddress`.
+    baseTokenAddress: extrairEndereco(pool.relationships?.base_token?.data?.id) || undefined,
   };
 }
 

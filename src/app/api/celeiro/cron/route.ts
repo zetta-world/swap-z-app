@@ -604,7 +604,16 @@ export async function POST(req: NextRequest) {
     for (const c of candidatosDe(novos).slice(0, Math.min(6, mun.restam * 2))) {
       const lido = await lerCandidato(c.chain, c.poolAddress, c.tokenAddress, c.nome, agora);
       const portao = portaoDeSobrevivencia(lido.pool);
-      examesPool.push({ nome: c.nome, entra: portao.entra, recusas: portao.recusas });
+      /**
+       * ⚠️ A RECUSA DIZ QUAL FONTE FALHOU, quando o motivo foi não ter lido.
+       * Sem isso, "pool não lido" era a única frase que este agente produzia —
+       * e nenhuma delas era julgamento sobre o pool. Ver `lerCandidato`.
+       */
+      examesPool.push({
+        nome: c.nome, entra: portao.entra,
+        recusas: lido.porqueNaoLeu ? [lido.porqueNaoLeu] : portao.recusas,
+        julgado: lido.pool !== null,
+      });
       if (!portao.entra) continue;
 
       /**
@@ -635,10 +644,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  /**
+   * ⚠️⚠️ QUANTOS FORAM DE FATO JULGADOS — o número que faltava (30/08).
+   *
+   * O relatório mostrava seis exames e seis recusas, e parecia um agente
+   * trabalhando. Nenhum dos seis tinha chegado ao portão: os seis morreram na
+   * leitura. Um agente que examina muito e julga zero é indistinguível, no
+   * relatório, de um agente rigoroso — até alguém somar.
+   */
+  const julgados = examesPool.filter((e) => e.julgado === true).length;
   relato.poolNovo = {
     genomaVersao: genPool?.versao ?? null,
     municao: mun, cadeia, exames: examesPool,
     fechados: fechadosPool, abertas: abertasPool.length,
+    /** Examinados × efetivamente JULGADOS. Zero julgados com exames > 0 é defeito. */
+    examinados: examesPool.length, julgados,
+    naoLidos: examesPool.length - julgados,
   };
 
   // ── ⑤ O INVESTIGADOR ────────────────────────────────────────────────────
