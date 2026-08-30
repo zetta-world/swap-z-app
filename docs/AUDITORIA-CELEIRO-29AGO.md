@@ -114,14 +114,18 @@ O princípio está no arquivo. Só não foi aplicado à mutação.
 3–4 (taxa de entrada, taxa de saída, derrapagem, preço). O que os vereditos
 realmente tiveram:
 
-| mutação | braço | lançamentos | **operações distintas** |
-|---|---|---|---|
-| 24/08 | controle | 23 | **13** |
-| 24/08 | mutação | 20 | **11** |
-| 27/08 | controle | 20 | **12** |
-| 27/08 | mutação | 21 | **12** |
+| mutação | braço | lançamentos | `ref` distintas | **operações** |
+|---|---|---|---|---|
+| 24/08 | controle | 23 | 13 | **7** |
+| 24/08 | mutação | 20 | 11 | **6** |
+| 27/08 | controle | 20 | 12 | **7** |
+| 27/08 | mutação | 21 | 12 | **7** |
 
-O piso promete 20 observações e entrega 11. O comentário logo acima dele avisa
+⚠️ **CORREÇÃO (29/08, mesmo dia).** A primeira versão desta tabela parou na
+coluna do meio e disse "11 e 12 operações". Estava errada: `ref` é
+`abertura:<id>` **ou** `fechamento:<id>`, então uma operação escreve DUAS refs.
+As operações são **6 e 7** — o piso promete 20 observações e entrega 6. O erro
+foi meu e ia na direção de suavizar o achado; o número certo o agrava. O comentário logo acima dele avisa
 contra exatamente isso — *"a arena antiga premiou +7,04% com 1 decidido"* — e a
 armadilha voltou a um nível de indireção de distância.
 
@@ -218,9 +222,9 @@ melhor que o controle. Mutação negativa que sangra menos é `inconclusiva` no
 melhor caso — nunca `pagou`. Reusar `classificarResultado` de
 `cor-resultado.ts`, que já existe e já é a régua da casa.
 
-**③ Piso de amostra em OPERAÇÕES, não em lançamentos.** `count(distinct ref)`
-por braço. Os dois vereditos existentes viram `inconclusiva` retroativamente —
-e o genoma do Alavancado deveria voltar para a v1.
+**③ Piso de amostra em OPERAÇÕES, não em lançamentos.** Os dois vereditos
+existentes viram `inconclusiva` retroativamente — e o genoma do Alavancado
+deveria voltar para a v1.
 
 **④ Pausar o Alavancado.** Ele perdeu 26% da banca em 6,8 dias (−38,7/dia);
 no ritmo atual encosta no mínimo de $300 — onde a regra de ruína o para — em
@@ -248,3 +252,41 @@ direções opostas, todas julgadas por um A/B de um braço só.
 > agente com opinião sobre preço só se justifica se render **mais que o
 > `aluguel_ocioso`** na mesma janela — 2,7% ao ano é a barra que qualquer um
 > pula sem pensar, e hoje nenhum deles pula.
+
+
+---
+
+## 9. ✅ ENTREGUE — ① a ③ (29/08, mesmo dia)
+
+| item | onde | o que mudou |
+|---|---|---|
+| ① o A/B | `cron/route.ts` · `store.ts` | `bracoDoTick` decide o braço **antes** da geometria; `genomaAnterior` dá ao controle os parâmetros da versão anterior; a posição grava a versão **do braço** |
+| ② três estados | `fluxo.ts` | os dois braços negativos → `inconclusiva` + `reverter`, nunca `pagou` |
+| ③ o piso | `fluxo.ts` · `store.ts` | `operacoesDistintas` conta operações; `ref` sobe do banco |
+
+### ⚠️ A alternância mudou de eixo, e o motivo é uma armadilha nova
+
+Alternar por **posição aberta** funcionava enquanto os braços eram idênticos.
+No instante em que eles passam a ter parâmetros diferentes, isso **trava**: o
+portão `alvoLimpaOPedagio` lê `alvoPct` e `multiploDoPedagio`, e **duas das
+cinco mutações já propostas mexem exatamente nesses campos**. Se o braço da vez
+é recusado ali, nenhuma posição abre, o contador não anda, e o braço da vez
+continua sendo o mesmo — para sempre. O extrato seguiria cheio, de um braço só.
+
+O relógio não trava. `bracoDoTick` alterna por tick do cron: função pura de dois
+instantes, sem contador guardado. Dentro de um tick todos os símbolos vão para o
+mesmo braço, e o tick seguinte leva todos para o outro — não é corte por ativo.
+
+### ⚠️ E `inconclusiva` deixou de significar "espere"
+
+Com os dois braços destruindo valor não há o que aprender **sobre o parâmetro**,
+e mesmo assim a mudança não pode ficar de pé. Veredito e ação viraram campos
+separados (`veredito` · `acao: aguardar | manter | reverter`) — sem isso as duas
+frases não cabiam na mesma resposta.
+
+### O que ficou de fora, e é decisão do dono
+
+Os dois `pagou` de 24/08 e 27/08 continuam gravados, e o genoma do Alavancado
+continua na v4. Reescrever veredito em produção e reverter genoma **mexe no que
+o agente vai operar no próximo tick** — não é conserto de código, é decisão
+sobre dinheiro vivo. Os itens ④ a ⑥ da §7 também seguem abertos.

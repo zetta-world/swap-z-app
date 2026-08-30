@@ -77,9 +77,18 @@ describe("a decomposição do USDT", () => {
 });
 
 describe("o julgamento da mutação", () => {
-  /** Monta N lançamentos de um braço com o mesmo valor unitário. */
+  /**
+   * Monta N lançamentos de um braço com o mesmo valor unitário.
+   *
+   * ⚠️ CADA UM COM `ref` PRÓPRIA (29/08). O piso passou a contar OPERAÇÕES, não
+   * linhas de extrato — e uma `ref` por lançamento é justamente o caso em que as
+   * duas contagens coincidem, que é o que estes testes históricos querem dizer.
+   * O caso REAL, em que uma operação escreve três ou quatro linhas, tem teste
+   * próprio em `ab-de-verdade.test.ts`.
+   */
   function braco(b: "controle" | "mutacao", n: number, cada: number): Fluxo[] {
-    return Array.from({ length: n }, () => f("x", "preco", cada, { braco: b }));
+    return Array.from({ length: n }, (_, i) =>
+      f("x", "preco", cada, { braco: b, ref: `abertura:${b}-${i}` }));
   }
 
   /**
@@ -91,7 +100,7 @@ describe("o julgamento da mutação", () => {
     const fluxos = [...braco("controle", 40, -1), ...braco("mutacao", 2, +50)];
     const j = julgarMutacao(fluxos);
     expect(j.veredito).toBe("inconclusiva");
-    expect(j.porque).toContain("2 lançamentos");
+    expect(j.porque).toContain("2 operações");
     // A diferença EXISTE e é gritante — e mesmo assim não decide.
     expect(j.diferenca).toBeGreaterThan(100);
   });

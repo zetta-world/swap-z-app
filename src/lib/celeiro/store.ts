@@ -122,6 +122,42 @@ export async function genomaAtivo(
 }
 
 /**
+ * O genoma da versão ANTERIOR à ativa — os parâmetros do braço de CONTROLE.
+ *
+ * ⚠️⚠️ SEM ISTO O A/B TINHA UM BRAÇO SÓ (29/08). O esquema declara em texto que
+ * `controle` roda **sem** a mutação, mas o cron lia `genomaAtivo` para os dois
+ * braços: `controle` e `mutacao` abriam com a MESMA geometria, e o rótulo era
+ * decorativo. Duas mutações foram julgadas comparando duas metades da mesma
+ * coisa — e cada "pagou" fixou um parâmetro que nunca foi testado.
+ *
+ * ⚠️ DEVOLVE `null` QUANDO NÃO HÁ ANTERIOR, e quem chama tem de tratar isso
+ * PARANDO o A/B, não caindo no genoma ativo. Cair no ativo é exatamente o
+ * defeito de origem: dois braços iguais com nomes diferentes.
+ */
+export async function genomaAnterior(
+  db: SupabaseClient,
+  agente: string,
+  versaoAtiva: number | null | undefined,
+): Promise<Genoma | null> {
+  if (versaoAtiva == null) return null;
+  // leitura-limitada: a versão imediatamente abaixo da ativa.
+  const { data } = await db
+    .from("celeiro_genoma")
+    .select("versao, params, autor, hipotese")
+    .eq("agente", agente).lt("versao", versaoAtiva)
+    .order("versao", { ascending: false }).limit(1);
+
+  const g = data?.[0];
+  if (!g) return null;
+  return {
+    versao: g.versao,
+    params: (g.params ?? {}) as Record<string, unknown>,
+    autor: g.autor,
+    hipotese: g.hipotese ?? null,
+  };
+}
+
+/**
  * Os fluxos de um agente desde um instante — o insumo do Investigador.
  *
  * ⚠️ JANELA EXPLÍCITA, e não "tudo". Um extrato que cresce sem limite acabaria
@@ -136,7 +172,9 @@ export async function fluxosDesde(
   // leitura-limitada: uma janela por agente; o teto protege o caso patológico.
   const { data } = await db
     .from("celeiro_fluxos")
-    .select("agente, causa, usdt, ocorreu_em, braco, genoma_versao")
+    // ⚠️ `ref` sobe agora: o piso do A/B conta OPERAÇÕES, e sem ele só dava
+    // para contar linhas de extrato — 3 a 4 por posição. Ver `operacoesDistintas`.
+    .select("agente, causa, usdt, ocorreu_em, braco, genoma_versao, ref")
     .eq("agente", agente)
     .gte("ocorreu_em", new Date(desdeMs).toISOString())
     .order("ocorreu_em", { ascending: true })
@@ -149,6 +187,7 @@ export async function fluxosDesde(
     ocorreuEmMs: Date.parse(r.ocorreu_em),
     braco: r.braco as Braco | null,
     genomaVersao: r.genoma_versao,
+    ref: r.ref,
   }));
 }
 
@@ -553,15 +592,25 @@ export async function fecharMutacao(
   db: SupabaseClient, mutacaoId: string, agente: string,
   veredito: "pagou" | "nao_pagou" | "inconclusiva",
   usdtControle: number, usdtMutacao: number,
+  /**
+   * ⚠️⚠️ A AÇÃO VEM DO JULGAMENTO, NÃO DA PALAVRA (29/08).
+   *
+   * Antes reverter era inferido de `veredito === "nao_pagou"`, o que amarrava
+   * duas decisões diferentes. O caso que a auditoria achou não cabia nessa
+   * amarração: com os DOIS braços destruindo valor não há o que aprender sobre
+   * o parâmetro (`inconclusiva`) e mesmo assim a mudança não pode ficar de pé
+   * (`reverter`). O default preserva o comportamento antigo para quem não passa.
+   */
+  acao: "manter" | "reverter" = veredito === "nao_pagou" ? "reverter" : "manter",
 ): Promise<void> {
   const agora = new Date().toISOString();
   await db.from("celeiro_mutacoes").update({
     avaliada_em: agora, veredito,
     usdt_controle: usdtControle, usdt_mutacao: usdtMutacao,
-    ...(veredito === "nao_pagou" ? { revertida_em: agora } : {}),
+    ...(acao === "reverter" ? { revertida_em: agora } : {}),
   }).eq("id", mutacaoId);
 
-  if (veredito !== "nao_pagou") return;
+  if (acao !== "reverter") return;
 
   const { data } = await db.from("celeiro_genoma")
     .select("versao").eq("agente", agente).order("versao", { ascending: false }).limit(2);
@@ -590,25 +639,52 @@ export async function mutacoesJulgadas(db: SupabaseClient, limite = 500): Promis
 }
 
 /**
- * A qual braço do A/B esta posição pertence.
+ * O PERÍODO DE ALTERNÂNCIA DO A/B — um tick do cron do Celeiro.
  *
- * ⚠️⚠️ ALTERNA POR POSIÇÃO, e não por símbolo. Dividir por símbolo daria a cada
- * braço um conjunto DIFERENTE de ativos — e aí o A/B mediria "BTC contra ETH"
- * em vez de "genoma antigo contra novo". Alternar é o único corte que mantém os
- * dois braços expostos ao mesmo mercado.
- *
- * ⚠️ Sem mutação em curso, TUDO é controle. Marcar como `mutacao` o que não
- * está sendo testado envenenaria o julgamento seguinte com dados de antes.
+ * Não é gosto: é o intervalo em que o cron roda. Alternar mais rápido que isso
+ * não muda nada (não há tick no meio), e mais devagar daria a cada braço blocos
+ * longos de mercado diferente.
  */
-export function bracoDaPosicao(temMutacao: boolean, jaAbertasDesdeAMutacao: number): Braco | null {
-  if (!temMutacao) return null;
-  return jaAbertasDesdeAMutacao % 2 === 0 ? "controle" : "mutacao";
+export const PERIODO_DO_BRACO_MS = 30 * 60_000;
+
+/**
+ * A qual braço do A/B esta posição pertence — alterna por TICK.
+ *
+ * ⚠️⚠️ ANTES ALTERNAVA POR POSIÇÃO ABERTA, e isso trava (29/08). O braço saía de
+ * `posicoesDesde`, um contador que só anda quando uma posição ABRE. Se os braços
+ * passam a ter parâmetros diferentes — que é o conserto desta entrega — um deles
+ * pode ser recusado num portão que depende do genoma: `alvoLimpaOPedagio` olha
+ * `alvoPct` e `multiploDoPedagio`, e DUAS das cinco mutações já propostas mexem
+ * exatamente nesses dois campos.
+ *
+ * Aí o contador congela no braço recusado, o outro braço nunca chega a ser
+ * sorteado, e o A/B morre de fome sem ninguém ver — porque o extrato continua
+ * cheio, só que de um braço só.
+ *
+ * ⚠️ O RELÓGIO SEMPRE ANDA. Alternar por tick não pode travar, não precisa de
+ * contador guardado, e é função pura de dois instantes — dá para quebrar em
+ * teste sem banco.
+ *
+ * ⚠️ E NÃO É CORTE POR SÍMBOLO, que é a armadilha que o comentário anterior
+ * nomeava com razão: dentro de um tick todos os símbolos vão para o MESMO braço,
+ * e o tick seguinte vai todo para o outro. Os dois braços veem todos os ativos.
+ *
+ * ⚠️ Sem mutação em curso devolve `null` e nada é marcado: rotular o que não
+ * está sendo testado envenena o julgamento seguinte com dados de antes.
+ */
+export function bracoDoTick(
+  aplicadaEmMs: number | null | undefined,
+  agoraMs: number,
+  periodoMs = PERIODO_DO_BRACO_MS,
+): Braco | null {
+  if (aplicadaEmMs == null || !Number.isFinite(aplicadaEmMs)) return null;
+  if (!Number.isFinite(agoraMs) || agoraMs < aplicadaEmMs) return null;
+  const p = periodoMs > 0 ? periodoMs : PERIODO_DO_BRACO_MS;
+  return Math.floor((agoraMs - aplicadaEmMs) / p) % 2 === 0 ? "controle" : "mutacao";
 }
 
-/** Quantas posições o agente abriu desde que a mutação entrou. */
-export async function posicoesDesde(db: SupabaseClient, agente: string, desdeMs: number): Promise<number> {
-  const { count } = await db.from("celeiro_posicoes")
-    .select("*", { count: "exact", head: true })
-    .eq("agente", agente).gte("aberta_em", new Date(desdeMs).toISOString());
-  return count ?? 0;
-}
+/**
+ * ⚠️ `posicoesDesde` FOI REMOVIDA EM 29/08 — ela era o contador que alternava o
+ * braço por posição aberta, e que travaria assim que os braços passaram a ter
+ * parâmetros diferentes. Quem alterna agora é `bracoDoTick`, pelo relógio.
+ */
