@@ -38,7 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/nft",       labelKey: "nav.nft",        icon: Gem,             group: "trade", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
   { href: "/pro",       labelKey: "nav.pro",        icon: BarChart3,       group: "trade", badgeKey: "nav.badgeBeta", badgeTone: "beta" },
 
-  { href: "/pools",     labelKey: "nav.pools",      icon: Layers,          group: "discover" },
+  { href: "/pools",     labelKey: "nav.pools",      icon: Layers,          group: "discover", badgeKey: "nav.badgeSoon", badgeTone: "soon" },
   { href: "/explorer",  labelKey: "nav.explorer",   icon: Shield,          group: "discover" },
   { href: "/zion",      labelKey: "nav.zion",       icon: Sparkles,        group: "discover", badgeKey: "nav.badgeAi", badgeTone: "ai" },
 
