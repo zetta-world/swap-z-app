@@ -13,27 +13,43 @@
 > ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
-> **Última atualização:** 29/08/2026, `main` em **`0d75311`**. O dia fechou com
-> seis entregas (#359–#364) e uma resposta que muda como o painel se lê:
+> **Última atualização:** 31/08/2026, `main` em **`f722941`**. Dois dias
+> densos (#366–#382). O fio que costura quase tudo:
 >
-> * **#364 — as mesas NÃO têm borda demonstrada.** Cinco de seis perderam para
->   segurar os próprios símbolos. §5.9 e `docs/MEDICAO-TEM-BORDA.md`.
-> * **#361 — o lucro de 19–22/08 era artefato** de execução atrasada, não borda.
-> * **#360 — o teto diário da carteira era um teto POR PLANO** (limite frouxo).
-> * **#362 — o resolvedor não expirava sugestões**, provado em produção.
-> * **#359 — a taxa do DCA** passou a ser projetada e medida.
+> ### ⚠️⚠️ ATIVIDADE NÃO É EVIDÊNCIA DE FUNCIONAMENTO
 >
-> Antes disso: o **DCA AUTOMÁTICO na CEX** (#347–#352, 25/08), o **ÚLFHÉÐNAR**
-> (#343, #344) e o **conserto do shell que ele derrubou em produção** (#345 —
-> leia a §6, primeiro item).
+> Cinco defeitos independentes, o mesmo formato: **a peça certa existia,
+> testada, e estava desligada do caminho que decide.**
 >
-> ⚠️ **A §2 virou DUAS.** Ela descrevia "o ambiente" no singular, com as travas
-> da máquina Windows; o contêiner remoto tem as capacidades quase invertidas.
-> Ver §2 (Windows), §2.1 (contêiner) e §2.2 (o hook de git, consertado).
+> | o que parecia | o que era | PR |
+> |---|---|---|
+> | A/B do Celeiro rodando | rodava com **um braço só** — `bracoDaPosicao` nunca alternava | #368, #369 |
+> | CI verde em todo push | o workflow só disparava em `main`; **PR em draft não rodava nada** | #370 |
+> | `pool_novo` examinando candidatos | montava o endereço do token a partir do id do **POOL** — reprovava 100% há dez dias | #371 |
+> | selo **LIVE** pulsando no `/pro` | o gráfico estava congelado; o selo media o `setInterval`, não a vela | #377 |
+> | filtro da régua de direção "certo" | checava `controle` e ignorava `controleDeDirecao` — metade das réguas passava | #372 |
+> | `/pools` dizendo "nenhuma pool" | era **429 da GeckoTerminal**; vazio-por-falha com cara de vazio-por-ausência | #374 |
 >
-> ⚠️ Esta atualização foi escrita pela **sessão da nuvem**. O que a sessão do
-> VSCode escreveu antes segue intacto — as duas mãos escrevem aqui, e a §1.1
-> explica quem é quem.
+> A lição operacional: **teste que confirma que a peça existe não prova que ela
+> é chamada.** Todo conserto desta leva teve de mostrar a peça *decidindo*.
+>
+> ### O que mais mudou
+>
+> * **#367 — cadeia de reserva de modelos.** Um modelo recusado não derruba
+>   mais o provedor inteiro; veto com prazo em `admin_kv` (`modelo_vetado:<id>`).
+> * **#370 — o Alavancado dimensionado para sobreviver ao experimento:**
+>   alavanca máxima **10 → 3**, e `alvoAcompanhaOStop` (I3) na ordem certa.
+> * **#381 — o Maker voltou com bracket ±1,5%.** Ele não morreu de errar (70,4%
+>   de alvo-primeiro, n=27, p≈0,026) — morreu de **pedágio**: entregava 121% do
+>   ganho de preço em taxa. O genoma v2 foi escrito **no banco**, porque
+>   `genomaAtivo` ignora a semente do código e ele teria voltado com o bracket
+>   que o matou.
+> * **#382 — a medição que este contêiner não roda virou botão no admin.**
+>   Ver §5.12.
+>
+> ⚠️ **Regra nova do dono, 31/08:** *"todas as correções que vc faz, melhorias e
+> mudanças, têm que ir para produção sempre"*. Não existe mais entregar num PR
+> e esperar ordem para mergear — ver §3 e a §8.
 
 ---
 
@@ -41,9 +57,9 @@
 
 | | |
 |---|---|
-| `main` | **`0d75311`** (29/08 14:48) · ⚠️ a última conferida NO NAVEGADOR foi `f27591e`; o resto é CI |
-| CI | verde · **2.067 testes** · 137 arquivos |
-| Deploy | Vercel produção acompanha a `main` — o do `6bb2fe7` ficou READY às 13:34:45 |
+| `main` | **`f722941`** (31/08 22:07) · conferido **por conteúdo**, não pelo estado do PR — ver §6 |
+| CI | verde · **2.316 testes** · 153 arquivos · agora dispara em **todas as branches** (#370) |
+| Deploy | Vercel produção acompanha a `main` |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
 | Outra mão no código | **duas sessões Claude** trabalham aqui — ver §1.1 (corrigido) |
@@ -51,6 +67,17 @@
 Últimos commits, do mais novo:
 
 ```
+f722941  A medicao que o conteiner nao roda vira botao no admin (#382)  ← nuvem
+daea83a  O Maker volta, com o bracket largo e o criterio de 23/08 intacto (#381)  ← nuvem
+65a9c8e  Terminal PRO: tamanho executavel, contra nao fazer nada, preferencias (#380)  ← nuvem
+d409b4d  Terminal PRO: a DEPTH volta, o dado descartado aparece, custo da ideia (#379)  ← nuvem
+d36c339  O terminal PRO dizia "LIVE" sobre um grafico congelado (#377)  ← nuvem
+cb4a911  "Nenhuma pool encontrada" era a fonte fora do ar, e ninguem sabia (#374)  ← nuvem
+ca12542  A regua de DIRECAO podia mutar, e o filtro estava "certo" (#372)  ← nuvem
+5c2ef17  Os tres agentes silenciosos do Celeiro (#371)  ← nuvem
+a6142df  O Alavancado dimensionado para sobreviver ao proprio experimento (#370)  ← nuvem
+2a475dd  O A/B do Celeiro passa a ter dois bracos (#369)  ← nuvem
+64af97f  A Mistral caia de hora em hora: alerta errado, e sem reserva de modelo (#367)  ← nuvem
 0d75311  As mesas tem borda? Medido: cinco de seis perdem para nao fazer nada (#364)  ← nuvem
 7570115  ESTADO-ATUAL: o dia 29/08, e a coorte que nunca esteve ganhando (#363)  ← nuvem
 6bb2fe7  O resolvedor nao expirava: guarda do preco antes da do horizonte (#362)  ← nuvem
@@ -365,9 +392,24 @@ erros de digitação — leia a intenção (`gare.io` = Gate.io, `corte` = coort
 
 Regras permanentes dele:
 
-- Branch de trabalho: `claude/swap-z-recovery-deploy-b7y2cw`. **Nunca empurrar
-  para a `main` sem ordem explícita.**
-- Não abrir PR sem ele pedir — mas ele pede com frequência ("manda pra main").
+- Branch de trabalho: `claude/swap-z-recovery-deploy-b7y2cw`. Commit direto na
+  `main` local **continua proibido** — o que mudou é quem aperta o merge.
+- ⚠️⚠️ **MUDOU EM 31/08 — TUDO VAI PARA PRODUÇÃO, SEMPRE.** Palavras dele:
+  *"uma coisa que vc tem que ter em sua mente cibernética: todas as correções
+  que vc faz, melhorias e mudanças têm que ir para produção sempre"*.
+
+  A regra anterior era **"nunca mergear sem ordem explícita"**, e ela produzia
+  exatamente o que ele não quer: trabalho pronto, verde, parado num PR
+  esperando ele voltar do celular. **Agora o ciclo é meu do começo ao fim** —
+  branch, PR, CI verde, merge, e conferir na `main`.
+
+  ⚠️ E a conferência é **por conteúdo, nunca pelo estado do PR**. Em 31/08 o
+  PR #381 apareceu "pronto" enquanto estava vazio do trabalho que eu tinha
+  anunciado — o push tinha ido para a branch antiga. `grep` no arquivo
+  mergeado, não "o GitHub diz merged".
+
+  O que continua sendo dele: variáveis de ambiente na Vercel, cliques em
+  botão que exigem sessão de admin, e decisões de produto.
 - **Solana não cobra taxa.** Decisão final, não reabrir.
 - Tudo tem que caber na tela sem arrastar para os lados. Revisto em 17/08: pode
   rolar DENTRO de uma área, e o menu leva a cada item em tela própria.
@@ -1117,6 +1159,75 @@ fila, a mesa cai igual. Conferir a assinatura da Mistral e apontar
 
 ---
 
+## 5.12 A MEDIÇÃO QUE ESTA MÁQUINA NÃO RODA — resolvida por botão (31/08)
+
+O `/pro` aponta `bnb-usdt` para a **PancakeSwap V3 0,05%**; a tela do DEXTools
+que o dono comparou era a **V2**. Ninguém escolheu isso — os endereços de
+`PRO_PAIRS` foram escritos à mão quando o terminal nasceu e nunca foram medidos
+contra alternativa nenhuma. **Uma constante escrita uma vez decide o que o
+usuário vê todo dia.**
+
+O item ficou parado por um motivo que não era trabalho: **este contêiner não
+alcança a `api.geckoterminal.com`**. A saída foi dele:
+
+> *"é só seguir a minha ideia: põe o teste para o painel ADM e um botão para
+> testar por lá, daí vc lê o resultado das medições e testes pelo banco"*
+
+É o padrão que vale para **qualquer** medição bloqueada por rede daqui em
+diante: a rota mede onde a rede existe (Vercel), grava em tabela, e a sessão lê
+por SQL. Medição que vive só na tela de quem clicou não é medição, é impressão.
+
+### ⚠️ A pergunta foi reescrita, e a nova é mais honesta
+
+O plano pedia *"qual piscina dá melhor execução no nosso tamanho"*. Isso **não
+é medível** com o que a GeckoTerminal publica: profundidade de V3 depende da
+liquidez **por tick**, e a fonte não expõe. Prometer essa resposta seria
+inventá-la. O que é medível são duas réguas, e elas ficam separadas:
+
+| régua | o que mede |
+|---|---|
+| **cobertura de vela de 1m** | quantos dos últimos 180 minutos têm vela. A fonte só devolve o minuto em que houve trade — isto **é** o *"o gráfico nem se mexe"*, medido, não um proxy |
+| **TVL** | o mais perto de execução que dá para ler honestamente, e está rotulado como TVL, nunca como profundidade |
+
+⚠️ **Quando as duas apontam para piscinas diferentes, o veredito é `conflito` e
+nada é escolhido.** Compor as duas num score esconderia justamente o que decide
+— é o erro que pintou de verde uma piscina que perdeu 53%, porque segurar
+perdeu 54% (§ do painel de LP). E sem TVL em nenhuma candidata **uma régua não
+existiu**: a saída é `inconclusiva`, não "a cobertura decide sozinha".
+
+### O que ficou no repositório
+
+| | |
+|---|---|
+| lógica pura | `src/lib/pro/escolha-da-piscina.ts` — 21 testes |
+| rota | `src/app/admin/api/pro-piscinas/route.ts` — leitura pura, `requireAdmin` |
+| painel | `ProPiscinasPanel` → id `pro-piscinas` |
+| tabelas | `pro_piscina_medicao` (o que foi **lido**) · `pro_piscina_veredito` (o que foi **concluído**) — migration `0035`, aplicada |
+
+⚠️ **A rota não troca a piscina sozinha.** `trocar` é recomendação **gravada**;
+mudar `PRO_PAIRS` é edição revisada em PR. Rota de admin que reescreve em
+silêncio o que o usuário vê é classe de automação que esta casa não tem.
+
+⚠️ **`getOHLCV` devolve `[]` para piscina morta E para 429.** Por isso nasceu
+`getOHLCVOuFalha`, que lança: sem ela, *"não medimos esta piscina"* (lacuna)
+ficaria idêntico a *"esta piscina está morta"* (condenação). Toda métrica das
+duas tabelas é nullable pelo mesmo motivo — `NULL` = a fonte recusou, `0` = ela
+respondeu zero.
+
+### O defeito que o meu próprio teste pegou
+
+A janela comparava milissegundos com `>= início` **e** `<= agora`, incluindo as
+duas bordas: **181 minutos distintos numa janela chamada de 180**, com cobertura
+passando de 100% antes do clamp. Agora conta minutos inteiros, e a tolerância de
+relógio **dobra** a vela do futuro para o minuto corrente em vez de esticar a
+janela — que era por onde o 181º entrava.
+
+**Pendente:** ninguém clicou o botão ainda. As tabelas estão vazias, e enquanto
+estiverem, **a escolha da piscina do `/pro` segue não medida** — o painel existe,
+o que não existe é o dado.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**
@@ -1305,8 +1416,15 @@ positivo custa a mesma credibilidade que falso negativo.
 
 Antes de terminar qualquer entrega:
 
-1. `tsc --noEmit` + `lint` + `build` localmente (testes: **CI**).
-2. PR, esperar CI verde, mergear só com ordem dele.
-3. Conferir que o deploy de produção disparou (já falhou 1 vez em 17).
-4. **Atualizar este documento** — estado, o que está aberto, e o que doeu.
-5. Doc novo? Entra no `docs/README.md` no mesmo commit.
+1. `tsc --noEmit` + `lint` + `npm test` localmente (o CI repete, mas achar
+   depois do push custa um ciclo).
+2. PR, esperar CI verde, **e mergear** — ver §3. Não existe mais deixar pronto
+   e esperar ordem.
+3. ⚠️ **Conferir na `main` POR CONTEÚDO**, não pelo estado do PR:
+   `git pull && grep` nos arquivos que deviam ter mudado. O #381 já apareceu
+   "pronto" estando vazio.
+4. Conferir que o deploy de produção disparou (já falhou 1 vez em 17).
+5. **Atualizar este documento** — estado, o que está aberto, e o que doeu.
+6. Doc novo? Entra no `docs/README.md` no mesmo commit.
+7. Migration nova? **Aplicar no banco** — código mergeado com tabela
+   inexistente é uma tela que promete gravar e não grava.
