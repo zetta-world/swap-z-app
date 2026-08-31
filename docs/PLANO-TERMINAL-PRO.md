@@ -178,7 +178,7 @@ timeframe, par. Barato, e é o tipo de coisa que separa "demo" de "ferramenta".
                                                     aceitar cauda longa
 7.  ✅ Tier 3.3 tamanho executável                  ENTREGUE
 8.  ✅ Tier 3.4 contra comprar-e-segurar             ENTREGUE
-9.  Tier 4.2   preferências persistentes
+9.  ✅ Tier 4.2 preferências persistentes            ENTREGUE
 10. Tier 4.1   streaming                           caro, e o polling já resolve
 ```
 

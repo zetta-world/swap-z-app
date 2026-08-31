@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { compactNumber } from "@/lib/format";
 import type { Timeframe, Trade, PriceToken, PoolMeta } from "@/lib/api/geckoterminal";
 import { taxaDaPerna } from "@/lib/pro/custo-da-ideia";
+import { carregar, salvar } from "@/lib/pro/preferencias";
 import { PRO_PAIRS, DEFAULT_PRO_PAIR, CATEGORY_LABELS, groupPairs, type ProPair } from "@/lib/pro-pairs";
 import { CHAINS } from "@/lib/chains";
 import { findToken } from "@/lib/tokens";
@@ -80,6 +81,8 @@ export default function ProTerminal() {
 
   // ─── State ────────────────────────────────────────────────────────
   const [pair, setPair]         = useState<ProPair>(DEFAULT_PRO_PAIR);
+  /** ⚠️ Trava a escrita até a leitura acontecer. Ver a nota abaixo. */
+  const [prefsCarregadas, setPrefsCarregadas] = useState(false);
   const [tf, setTf]             = useState<Timeframe>("5m");
   /**
    * ⚠️ A AMPLITUDE MÉDIA DA VELA, medida do MESMO conjunto que o gráfico desenha.
@@ -106,6 +109,54 @@ export default function ProTerminal() {
   const [rsiOn, setRsiOn]       = useState(false);
   const [macd, setMacd]         = useState(false);
   const [stochRsi, setStochRsi] = useState(false);
+
+  /**
+   * ⚠️⚠️ AS PREFERÊNCIAS SÓ SÃO LIDAS DEPOIS DA MONTAGEM, e isso não é
+   * preferência de estilo: este componente renderiza no servidor, onde
+   * `localStorage` não existe. Ler no `useState` inicial daria uma marcação no
+   * servidor diferente da do cliente — o erro de hidratação clássico, que o
+   * React resolve descartando a árvore e remontando tudo.
+   *
+   * O preço é um piscar: a tela abre no padrão e adota o salvo no primeiro
+   * efeito. É o preço certo — a alternativa é uma tela que às vezes não monta.
+   */
+  useEffect(() => {
+    const p = carregar();
+    if (p.pairId) {
+      const achado = PRO_PAIRS.find((x) => x.id === p.pairId);
+      if (achado) setPair(achado);
+    }
+    if (p.tf) setTf(p.tf as Timeframe);
+    if (p.kind) setKind(p.kind as ChartKind);
+    if (p.ligados) {
+      const on = new Set(p.ligados);
+      setMaOn(on.has("ma"));       setEmaOn(on.has("ema"));
+      setBb(on.has("bb"));         setVwap(on.has("vwap"));
+      setEma9(on.has("ema9"));     setEma21(on.has("ema21"));
+      setEma100(on.has("ema100")); setEma200(on.has("ema200"));
+      setRsiOn(on.has("rsi"));     setMacd(on.has("macd"));
+      setStochRsi(on.has("stochRsi"));
+    }
+    setPrefsCarregadas(true);
+  }, []);
+
+  /**
+   * ⚠️ E NÃO SALVA ANTES DE TER LIDO. Sem esta guarda, o primeiro efeito de
+   * salvar rodaria com os padrões e SOBRESCREVERIA o que estava guardado —
+   * apagando a preferência no exato instante em que o usuário abre a página.
+   */
+  useEffect(() => {
+    if (!prefsCarregadas) return;
+    salvar({
+      pairId: pair.id, tf, kind,
+      ligados: ([
+        maOn && "ma", emaOn && "ema", bb && "bb", vwap && "vwap",
+        ema9 && "ema9", ema21 && "ema21", ema100 && "ema100", ema200 && "ema200",
+        rsiOn && "rsi", macd && "macd", stochRsi && "stochRsi",
+      ] as const).filter((x): x is Exclude<typeof x, false> => x !== false),
+    });
+  }, [prefsCarregadas, pair.id, tf, kind, maOn, emaOn, bb, vwap,
+      ema9, ema21, ema100, ema200, rsiOn, macd, stochRsi]);
   const [signals, setSignals]   = useState<ChartSignals | null>(null);
   const [strategyOn, setStrategyOn]           = useState(false);
   const [strategyScenario, setStrategyScenario] = useState<StrategyScenario>("moderate");
