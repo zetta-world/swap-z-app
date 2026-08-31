@@ -214,12 +214,22 @@ export async function searchPools(query: string, limit = 30): Promise<PoolSummar
   }
 }
 
-export async function getTopPools(chainName: string, limit = 8): Promise<PoolSummary[]> {
+/**
+ * ⚠️ O TTL VEM DE FORA (31/08) — é ele que decide o custo, e quem sabe o custo
+ * é a rota, que conhece o tier de quem pediu.
+ *
+ * O cache de DADOS do Next é keyado pela URL **mais as opções do fetch**, então
+ * a mesma URL com `revalidate` diferente vira entradas separadas. É isso que
+ * permite três faixas de frescor sobre o mesmo endpoint sem uma servir dado da
+ * outra — e é onde a economia de crédito realmente acontece, não no
+ * `Cache-Control` da resposta.
+ */
+export async function getTopPools(chainName: string, limit = 8, ttlSegundos = 30): Promise<PoolSummary[]> {
   const network = NETWORK_IDS[chainName];
   if (!network) return [];
 
   const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools?page=1&include=dex`;
-  const data = await buscar<{ data: GTPool[] }>(url, 30);
+  const data = await buscar<{ data: GTPool[] }>(url, ttlSegundos);
   return (data.data ?? []).slice(0, limit).map((p) => poolToSummary(p, network));
 }
 
@@ -258,9 +268,9 @@ export async function getNewPoolsAcrossChains(perChain = 10): Promise<PoolSummar
   return results.flat();
 }
 
-export async function getTrendingPools(limit = 12): Promise<PoolSummary[]> {
+export async function getTrendingPools(limit = 12, ttlSegundos = 60): Promise<PoolSummary[]> {
   const url = `https://api.geckoterminal.com/api/v2/networks/trending_pools?page=1&include=dex`;
-  const data = await buscar<{ data: GTPool[] }>(url, 60);
+  const data = await buscar<{ data: GTPool[] }>(url, ttlSegundos);
   return (data.data ?? []).slice(0, limit).map((p) => {
     const networkId = p.relationships?.network?.data?.id ?? "";
     return poolToSummary(p, networkId);
