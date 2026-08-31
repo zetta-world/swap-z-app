@@ -164,9 +164,9 @@ timeframe, par. Barato, e é o tipo de coisa que separa "demo" de "ferramenta".
 
 ```
 1.  ✅ Tier 0.1  a DEPTH voltar a responder          ENTREGUE
-2.  Tier 1     o que já chega e é descartado       1 painel, 0 requisições novas
-3.  Tier 3.1   pedágio sobre o alvo                reuso de função testada
-4.  Tier 3.2   stop contra o ruído                 reuso de função testada
+2.  ✅ Tier 1    o que já chega e é descartado       ENTREGUE
+3.  ✅ Tier 3.1  pedágio sobre o alvo                ENTREGUE
+4.  ✅ Tier 3.2  stop contra o ruído                 ENTREGUE
 5.  Tier 0.2   medir V2 contra V3 no nosso tamanho medição, decide config
 6.  Tier 2     segurança e reservas                reuso do Celeiro
 7.  Tier 3.3   tamanho executável                  inverte o painel que já existe

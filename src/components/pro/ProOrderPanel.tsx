@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { pedagioSobreAlvo, stopContraRuido, type Severidade } from "@/lib/pro/custo-da-ideia";
 import { AnimatePresence, motion } from "framer-motion";
 import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -9,6 +10,13 @@ interface Props {
   pair:        { base: string; quote: string; chain: string };
   lastPrice:   number | null;
   accentColor: string;
+  /**
+   * ⚠️ OS DOIS INSUMOS DO "CUSTO DA IDEIA" — a taxa de uma perna da pool e a
+   * amplitude média das velas. Sem eles o bloco NÃO afirma nada; ele diz que
+   * não mediu, que é diferente de dizer que está tudo bem.
+   */
+  feeTierPct?:        number | null;
+  amplitudeVelaPct?:  number | null;
 }
 
 type Side      = "buy" | "sell";
@@ -25,7 +33,7 @@ const ORDER_TYPES: { id: OrderType; label: string }[] = [
   { id: "trailing", label: "TRAIL" },
 ];
 
-export default function ProOrderPanel({ pair, lastPrice, accentColor }: Props) {
+export default function ProOrderPanel({ pair, lastPrice, accentColor, feeTierPct, amplitudeVelaPct }: Props) {
   const [side,        setSide]        = useState<Side>("buy");
   const [orderType,   setOrderType]   = useState<OrderType>("market");
   const [size,        setSize]        = useState("");
@@ -44,6 +52,30 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor }: Props) {
   const sizeNum    = parseFloat(size)       || 0;
   const priceNum   = showLimit ? (parseFloat(limitPrice) || lastPrice || 0) : (lastPrice ?? 0);
   const estTotal   = sizeNum > 0 && priceNum > 0 ? sizeNum * priceNum : null;
+
+  /**
+   * ⚠️ O ALVO SAI DO QUE A PESSOA JÁ DIGITOU: o take-profit do OCO, ou o preço
+   * limite. Sem nenhum dos dois não há alvo, e sem alvo não há o que dizer —
+   * inventar um alvo padrão para ter o que mostrar seria opinar no lugar dela.
+   */
+  const alvoPct = useMemo(() => {
+    if (!lastPrice || lastPrice <= 0) return null;
+    const alvo = parseFloat(tpPrice) || (showLimit ? parseFloat(limitPrice) : NaN);
+    if (!Number.isFinite(alvo) || alvo <= 0) return null;
+    return Math.abs(alvo - lastPrice) / lastPrice * 100;
+  }, [tpPrice, limitPrice, showLimit, lastPrice]);
+
+  const stopPct = useMemo(() => {
+    if (!lastPrice || lastPrice <= 0) return null;
+    const sl = parseFloat(slPrice);
+    if (!Number.isFinite(sl) || sl <= 0) return null;
+    return Math.abs(lastPrice - sl) / lastPrice * 100;
+  }, [slPrice, lastPrice]);
+
+  const leituraPedagio = useMemo(
+    () => pedagioSobreAlvo(feeTierPct ?? null, alvoPct), [feeTierPct, alvoPct]);
+  const leituraRuido = useMemo(
+    () => stopContraRuido(stopPct, amplitudeVelaPct ?? null), [stopPct, amplitudeVelaPct]);
 
   // Trailing stop computation
   const trailPctNum = parseFloat(trailPct) || 2;
@@ -319,6 +351,35 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor }: Props) {
          * do trailing e o risco/retorno do OCO são contas reais sobre preço
          * real. O que ele não pode é parecer um botão que dispara.
          */}
+        {/*
+          ⚠️⚠️ O CUSTO DA IDEIA — as duas perguntas que o trader tem ANTES de
+          clicar, e que nenhum terminal do mercado responde.
+
+          Nenhuma conta nova: são duas medições desta casa, cada uma paga com
+          cicatriz. O pedágio matou o `maker_de_faixa`, que acertava 70% e
+          perdia dinheiro; o ruído nasceu de três entradas mortas no mesmo
+          minuto, todas no SOL, todas em exatamente −1,200%.
+
+          ⚠️ E ELE INFORMA, NUNCA BLOQUEIA. O terminal não mexe na ordem de
+          ninguém — quem decide é quem clica, e a diferença entre um aviso e um
+          portão é a diferença entre respeitar e tutelar.
+        */}
+        {(leituraPedagio.severidade !== "sem_dado" || leituraRuido.severidade !== "sem_dado") && (
+          <div className="rounded-md border px-2.5 py-1.5 space-y-1"
+            style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)" }}>
+            <div className="font-mono text-[8px] text-ink-4 tracking-widest uppercase">Custo da ideia</div>
+            {([leituraPedagio, leituraRuido] as const).map((l, i) =>
+              l.severidade === "sem_dado" ? null : (
+                <div key={i} className="flex items-start gap-1.5">
+                  <span className="w-1 h-1 rounded-full flex-shrink-0 mt-1.5"
+                    style={{ background: corDaSeveridade(l.severidade) }} />
+                  <p className="font-mono text-[9px] leading-snug"
+                    style={{ color: corDaSeveridade(l.severidade) }}>{l.texto}</p>
+                </div>
+              ))}
+          </div>
+        )}
+
         <div className="flex items-start gap-1.5 rounded-md bg-gold/[0.06] border border-gold/15 px-2.5 py-1.5">
           <Info className="w-3 h-3 text-gold flex-shrink-0 mt-0.5" />
           <p className="font-mono text-[8px] text-ink-3 leading-snug">
@@ -352,4 +413,17 @@ function fmtOrderPrice(n: number): string {
   if (n >= 1)     return n.toFixed(4);
   if (n >= 0.01)  return n.toFixed(6);
   return n.toPrecision(4);
+}
+
+/**
+ * ⚠️ A COR DA SEVERIDADE, e ela tem quatro estados porque há quatro situações.
+ * `sem_dado` nunca chega aqui — o bloco inteiro não é renderizado quando não há
+ * o que dizer, porque cinza-neutro ao lado de "custo da ideia" seria lido como
+ * "custo ok".
+ */
+function corDaSeveridade(s: Severidade): string {
+  return s === "grave"   ? "#FF3B5C"
+       : s === "atencao" ? "#F5A623"
+       : s === "ok"      ? "#00E087"
+       :                   "rgba(255,255,255,0.4)";
 }
