@@ -12,6 +12,53 @@ export type WalletChain = "evm" | "solana";
 // each table's Row/Insert/Update to `Record<string, unknown>`, and interfaces
 // don't satisfy that constraint (no implicit index signature) — which would
 // silently degrade every query's row type to `never`.
+/**
+ * QUAL PISCINA O TERMINAL DEVE MOSTRAR — ver 0035_pro_piscina_medicao.sql.
+ *
+ * ⚠️ TODA MÉTRICA É `number | null`, e o `null` é informação. NULL = a
+ * GeckoTerminal recusou (`porque_nao_leu` diz o quê); 0 = ela respondeu e o
+ * valor era zero. Tipar como `number` obrigaria a rota a inventar um zero, e
+ * "piscina morta" ficaria idêntico a "piscina não medida".
+ */
+export type ProPiscinaMedicaoRow = {
+  id:                  string;
+  rodada:              string;
+  medida_em:           string;
+  par:                 string;
+  rede:                string;
+  piscina:             string;
+  rotulo:              string;
+  atual:               boolean;
+  janela_min:          number;
+  velas_lidas:         number | null;
+  velas_paradas:       number | null;
+  minutos_com_vela:    number | null;
+  cobertura_pct:       number | null;
+  amplitude_media_pct: number | null;
+  atraso_min:          number | null;
+  tvl_usd:             number | null;
+  volume24h_usd:       number | null;
+  trocas24h:           number | null;
+  preco_usd:           number | null;
+  porque_nao_leu:      string | null;
+};
+
+/** ⚠️ Dois vencedores separados de propósito — ver a nota na migration. */
+export type ProPiscinaVereditoRow = {
+  id:                    string;
+  rodada:                string;
+  julgado_em:            string;
+  par:                   string;
+  rede:                  string;
+  melhor_para_o_grafico: string | null;
+  maior_liquidez:        string | null;
+  atual:                 string | null;
+  veredito:              string;
+  porque:                string;
+  lidas:                 number;
+  candidatas:            number;
+};
+
 export type UserRow = {
   id:                string;
   wallet_address:    string;
@@ -425,6 +472,18 @@ export interface Database {
           side: "buy" | "sell"; qty: number; entry_price: number; cost_usd: number;
         };
         Update: Partial<PaperPositionRow>;
+        Relationships: [];
+      };
+      pro_piscina_medicao: {
+        Row: ProPiscinaMedicaoRow;
+        Insert: Partial<ProPiscinaMedicaoRow> & { rodada: string; par: string; rede: string; piscina: string; rotulo: string; janela_min: number };
+        Update: never;
+        Relationships: [];
+      };
+      pro_piscina_veredito: {
+        Row: ProPiscinaVereditoRow;
+        Insert: Partial<ProPiscinaVereditoRow> & { rodada: string; par: string; rede: string; veredito: string; porque: string; lidas: number; candidatas: number };
+        Update: never;
         Relationships: [];
       };
       agent_lessons: {

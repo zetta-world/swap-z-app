@@ -46,6 +46,7 @@ import VarianciaPanel         from "./panels/VarianciaPanel";
 import DexCexPanel            from "./panels/DexCexPanel";
 import LiberacaoPanel         from "./panels/LiberacaoPanel";
 import LiquidezPanel          from "./panels/LiquidezPanel";
+import ProPiscinasPanel       from "./panels/ProPiscinasPanel";
 import RotacaoGradePanel      from "./panels/RotacaoGradePanel";
 import ReceitaPanel           from "./panels/ReceitaPanel";
 import LigasPanel             from "./panels/LigasPanel";
@@ -104,6 +105,7 @@ export const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "dex-cex":            <DexCexPanel />,
   "autopilot-liberacao": <LiberacaoPanel />,
   "liquidez":           <LiquidezPanel />,
+  "pro-piscinas":       <ProPiscinasPanel />,
   "rotacao-grade":      <RotacaoGradePanel />,
   "receita-taxa":       <ReceitaPanel />,
   "ligas":              <LigasPanel />,

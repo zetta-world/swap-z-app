@@ -28,6 +28,7 @@ export type ModuleId =
   | "variancia"
   | "dex-cex"
   | "liquidez"
+  | "pro-piscinas"
   | "rotacao-grade"
   | "receita-taxa"
   | "ligas"
@@ -338,6 +339,15 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "lab",
     defaultEnabled: true,
     defaultOrder: 8.9,
+  },
+  {
+    id: "pro-piscinas",
+    title: "QUAL PISCINA O /PRO MOSTRA",
+    subtitle: "o gráfico se mexe? e é a piscina mais funda? — duas réguas, medidas",
+    icon: "\u{1FA7A}",
+    category: "lab",
+    defaultEnabled: true,
+    defaultOrder: 9.0,
   },
   {
     id: "rotacao-grade",
