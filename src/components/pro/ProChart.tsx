@@ -67,6 +67,8 @@ interface Props {
   targetSymbol: string;
   onLastPrice?: (last: number, change24h: number, high: number, low: number, vol24hUsd: number) => void;
   onMeta?:      (meta: PoolMeta | null, side: PriceToken) => void;
+  /** Quando a última vela chegou. Alimenta o selo de vivacidade da barra. */
+  onAtualizado?: (ms: number) => void;
 }
 
 /**
@@ -84,7 +86,7 @@ export default function ProChart({
   bb, vwap, ema9, ema21, ema100, ema200, rsiOn,
   macd, stochRsi, onSignals,
   strategyLevels,
-  targetSymbol, onLastPrice, onMeta,
+  targetSymbol, onLastPrice, onMeta, onAtualizado,
 }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const chartRef        = useRef<IChartApi | null>(null);
@@ -555,6 +557,15 @@ export default function ProChart({
     setLoading(true);
     setError(null);
     const ctrl = new AbortController();
+    /**
+     * ⚠️ PRIMEIRA CARGA REDESENHA TUDO; AS SEGUINTES SÓ ANDAM A ÚLTIMA VELA.
+     *
+     * `setData` + `fitContent` numa atualização periódica arrancaria o zoom e o
+     * pan do usuário a cada dez segundos — a tela ficaria "viva" e inutilizável.
+     * `series.update()` mexe só no candle em formação e respeita o
+     * enquadramento que a pessoa escolheu.
+     */
+    let primeira = true;
 
     async function fetchData() {
       try {
@@ -589,20 +600,33 @@ export default function ProChart({
         if (cancelled) return;
         const rows = data.candles ?? [];
         setCandles(rows);
+        const ultima = rows[rows.length - 1];
 
         // Push to all live series
-        if (priceSeriesRef.current) {
-          pushCandles(priceSeriesRef.current, kind, rows);
+        if (primeira) {
+          if (priceSeriesRef.current) {
+            pushCandles(priceSeriesRef.current, kind, rows);
+          }
+          if (volSeriesRef.current) {
+            const vols: HistogramData<Time>[] = rows.map((c) => ({
+              time:  c.time as Time,
+              value: c.volume,
+              color: c.close >= c.open ? "#00E08744" : "#FF3B5C44",
+            }));
+            volSeriesRef.current.setData(vols);
+          }
+          chartRef.current?.timeScale().fitContent();
+        } else if (ultima) {
+          // ⚠️ Só a ponta. Ver a nota em `primeira`.
+          updateLast(priceSeriesRef.current, kind, ultima);
+          volSeriesRef.current?.update({
+            time:  ultima.time as Time,
+            value: ultima.volume,
+            color: ultima.close >= ultima.open ? "#00E08744" : "#FF3B5C44",
+          } as HistogramData<Time>);
         }
-        if (volSeriesRef.current) {
-          const vols: HistogramData<Time>[] = rows.map((c) => ({
-            time:  c.time as Time,
-            value: c.volume,
-            color: c.close >= c.open ? "#00E08744" : "#FF3B5C44",
-          }));
-          volSeriesRef.current.setData(vols);
-        }
-        chartRef.current?.timeScale().fitContent();
+        primeira = false;
+        onAtualizado?.(Date.now());
 
         // Push summary to parent
         if (onLastPrice && rows.length > 0) {
@@ -647,12 +671,14 @@ export default function ProChart({
       }
     }
     fetchData();
+    const timer = setInterval(fetchData, PASSO_MS[tf] ?? 30_000);
 
     return () => {
       cancelled = true;
       ctrl.abort();
+      clearInterval(timer);
     };
-  }, [chain, pool, tf, kind, targetSymbol, onLastPrice, onMeta, onSignals, ema9, ema21, ema, ema100, ema200, vwap, rsiOn, macd]);
+  }, [chain, pool, tf, kind, targetSymbol, onLastPrice, onMeta, onAtualizado, onSignals, ema9, ema21, ema, ema100, ema200, vwap, rsiOn, macd]);
 
   return (
     <div className="relative w-full h-full min-h-[320px]">
@@ -683,6 +709,49 @@ export default function ProChart({
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Anda SÓ a vela em formação, preservando zoom e pan.
+ *
+ * ⚠️ `update()` exige tempo >= ao último ponto da série; a API do
+ * lightweight-charts lança se vier para trás. Como as velas chegam ordenadas da
+ * fonte e só a última é empurrada aqui, a condição vale — mas se um dia a fonte
+ * devolver fora de ordem, o `catch` deixa o gráfico velho de pé em vez de
+ * derrubar a tela inteira, que é o comportamento certo para um painel.
+ */
+function updateLast(
+  series: ISeriesApi<"Candlestick" | "Bar" | "Line"> | null,
+  kind: ChartKind,
+  c: Candle,
+) {
+  if (!series) return;
+  try {
+    if (kind === "line") {
+      (series as ISeriesApi<"Line">).update({ time: c.time as Time, value: c.close });
+    } else {
+      (series as ISeriesApi<"Candlestick">).update({
+        time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close,
+      });
+    }
+  } catch { /* fora de ordem: mantém o desenho atual */ }
+}
+
+/**
+ * ⚠️⚠️ DE QUANTO EM QUANTO TEMPO O GRÁFICO SE ATUALIZA (31/08).
+ *
+ * Até aqui: NUNCA. O efeito que busca as velas dependia de
+ * `[chain, pool, tf, kind, ...]` e não tinha timer — ele buscava uma vez na
+ * montagem e só voltava a buscar se você trocasse o par ou o timeframe. Num
+ * gráfico de 1 minuto num ativo líquido como o BNB, isso congela na cara de
+ * quem está olhando. E o selo "● LIVE" pulsava ao lado, o tempo todo.
+ *
+ * ⚠️ A CADÊNCIA SEGUE O TIMEFRAME, e não é gosto: buscar de 10 em 10 segundos
+ * um gráfico diário gasta chamada para redesenhar a mesma vela. O passo é uma
+ * fração do candle, o suficiente para a vela em formação andar.
+ */
+const PASSO_MS: Record<Timeframe, number> = {
+  "1m": 10_000, "5m": 20_000, "15m": 30_000, "1h": 60_000, "4h": 120_000, "1d": 300_000,
+};
 
 function pushCandles(
   series: ISeriesApi<"Candlestick" | "Bar" | "Line">,

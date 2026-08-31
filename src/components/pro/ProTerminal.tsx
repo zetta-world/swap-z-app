@@ -57,6 +57,17 @@ type StrategyScenario = "conservative" | "moderate" | "aggressive";
 // Cryptocurrency icon CDN base
 const CRYPTO_ICON_BASE = "https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/icon";
 
+/**
+ * ⚠️ QUANTO ATRASO É NORMAL, POR TIMEFRAME.
+ *
+ * Cerca de 3× o passo de atualização do gráfico (ver `PASSO_MS` em ProChart):
+ * dá folga para uma requisição lenta sem deixar passar uma fonte que caiu. Um
+ * número fixo daria falso alarme no 1d e falso silêncio no 1m.
+ */
+const TOLERANCIA_MS: Record<Timeframe, number> = {
+  "1m": 35_000, "5m": 65_000, "15m": 95_000, "1h": 185_000, "4h": 365_000, "1d": 905_000,
+};
+
 export default function ProTerminal() {
   const t = useT();
 
@@ -69,6 +80,11 @@ export default function ProTerminal() {
   // ─── State ────────────────────────────────────────────────────────
   const [pair, setPair]         = useState<ProPair>(DEFAULT_PRO_PAIR);
   const [tf, setTf]             = useState<Timeframe>("5m");
+  /** Quando o gráfico recebeu vela pela última vez. `null` = ainda nada. */
+  const [chartAtualizadoEm, setChartAtualizadoEm] = useState<number | null>(null);
+  /** Relógio local que faz o selo ENVELHECER sozinho — sem ele, uma fonte que
+   *  para de responder deixa o selo congelado em "AO VIVO" para sempre. */
+  const [agoraTick, setAgoraTick] = useState<number>(() => Date.now());
   const [kind, setKind]         = useState<ChartKind>("candle");
   const [maOn, setMaOn]         = useState(false);
   const [emaOn, setEmaOn]       = useState(false);
@@ -176,6 +192,51 @@ export default function ProTerminal() {
   }, [signals]);
 
   // Keyboard shortcut: 1-9 → switch pair
+  /**
+   * ⚠️ A VIVACIDADE DA TELA, e ela tem três estados porque há três situações.
+   *
+   * `null` é ausência — nada chegou ainda, e isso NÃO é o mesmo que "parado".
+   * Pintar de verde um painel que nunca recebeu dado é a mentira que este selo
+   * contava antes; pintar de vermelho seria acusar falha onde só há espera.
+   *
+   * ⚠️ O ATRASO TOLERADO SEGUE O TIMEFRAME. Num gráfico de 1 dia, trinta
+   * segundos sem vela nova é normal; num de 1 minuto, é sintoma. Um limite fixo
+   * daria falso alarme num extremo e falso silêncio no outro.
+   */
+  const vivacidade = useMemo(() => {
+    if (chartAtualizadoEm === null) {
+      return { rotulo: "AGUARDANDO", cor: "var(--ink-3, #7E89C2)", pulsa: false,
+               titulo: "nenhuma vela recebida ainda — não é o mesmo que estar parado" };
+    }
+    const atraso = agoraTick - chartAtualizadoEm;
+    const teto = (TOLERANCIA_MS[tf] ?? 60_000);
+    if (atraso <= teto) {
+      return { rotulo: "AO VIVO", cor: "var(--green, #00E087)", pulsa: true,
+               titulo: `última vela há ${Math.round(atraso / 1000)}s` };
+    }
+    return { rotulo: `ATRASADO ${Math.round(atraso / 1000)}s`, cor: "var(--adm-amber, #F5A524)", pulsa: false,
+             titulo: `a fonte não devolve vela nova há ${Math.round(atraso / 1000)}s (tolerância ${Math.round(teto / 1000)}s)` };
+  }, [chartAtualizadoEm, agoraTick, tf]);
+
+  /**
+   * ⚠️ O RELÓGIO QUE FAZ O SELO ENVELHECER. Sem ele, o selo só mudaria quando
+   * chegasse dado novo — ou seja, jamais mudaria justamente no caso que ele
+   * existe para denunciar: a fonte parar de responder.
+   */
+  useEffect(() => {
+    const id = setInterval(() => setAgoraTick(Date.now()), 5_000);
+    return () => clearInterval(id);
+  }, []);
+
+  /**
+   * ⚠️ TROCOU DE PAR OU DE TIMEFRAME, O SELO VOLTA A "AGUARDANDO".
+   *
+   * Sem isto, o carimbo do par ANTERIOR seguiria valendo por alguns segundos e
+   * a tela diria "AO VIVO" sobre um gráfico que ainda está carregando outra
+   * coisa — afirmando frescor de um dado que nem é mais o dado da tela.
+   */
+  useEffect(() => { setChartAtualizadoEm(null); }, [pair.id, tf]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -211,9 +272,20 @@ export default function ProTerminal() {
           >
             Pro Terminal · Z-SWAP
           </span>
+          {/*
+            ⚠️⚠️ O SELO AGORA OLHA PARA O DADO (31/08).
+            Ele era `LIVE` fixo no JSX, com bolinha pulsando, ao lado de um
+            gráfico que buscava as velas UMA vez e nunca mais. Dizia "ao vivo"
+            enquanto congelava — a mesma família do PR sem run com cara de PR
+            verde. Agora a idade da última vela decide a palavra e a cor.
+          */}
           <div className="ml-auto flex items-center gap-2 font-mono text-[10px] text-ink-3">
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-green pulse-dot" /> LIVE
+            <span className="flex items-center gap-1.5" title={vivacidade.titulo}>
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${vivacidade.pulsa ? "pulse-dot" : ""}`}
+                style={{ background: vivacidade.cor }}
+              />
+              {vivacidade.rotulo}
             </span>
             <span className="text-ink-4">·</span>
             <span className="hidden sm:inline">GeckoTerminal feed</span>
@@ -547,6 +619,7 @@ export default function ProTerminal() {
                 targetSymbol={pair.targetSymbol}
                 onLastPrice={onLastPrice}
                 onMeta={onMeta}
+                onAtualizado={setChartAtualizadoEm}
               />
             </div>
           </div>
@@ -564,7 +637,7 @@ export default function ProTerminal() {
               toSymbol={pair.quote}
               midPrice={hdr?.last ?? 0}
             />
-            <ProTrades chain={pair.chain} pool={pair.pool} onTrades={onTrades} />
+            <ProTrades chain={pair.chain} pool={pair.pool} side={chartSide} onTrades={onTrades} />
           </div>
         </div>
 
