@@ -283,13 +283,6 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor }: Props) {
                 </div>
               )}
 
-              {/* Infrastructure note */}
-              <div className="flex items-start gap-1.5 rounded-md bg-gold/[0.06] border border-gold/15 px-2.5 py-1.5">
-                <Info className="w-3 h-3 text-gold flex-shrink-0 mt-0.5" />
-                <p className="font-mono text-[8px] text-ink-3 leading-snug">
-                  UI preview — live execution via server-side order engine (Phase 3 infrastructure).
-                </p>
-              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -305,22 +298,48 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor }: Props) {
         </div>
 
         {/* CTA */}
+        {/* ⚠️⚠️ O BOTÃO NÃO COLOCA ORDEM, E AGORA ELE DIZ ISSO (30/08).
+         *
+         * Ele nunca colocou: não havia `onClick`, nem `fetch`, nem handler de
+         * submissão — e o atalho `⌘↵` que ficava anunciado ao lado também não
+         * tinha handler de teclado. Mesmo assim vinha pintado de verde, com
+         * cinco tipos de ordem, tamanho em porcentagem, TP/SL e o trailing
+         * calculando na tela. Convincente e desligado.
+         *
+         * ⚠️ E A NOTA QUE AVISAVA ESTAVA NO LUGAR ERRADO. O aviso "UI preview"
+         * existia, mas dentro do bloco `showTrailing` — só aparecia no TRAIL.
+         * Em MKT (o padrão), LMT, STP e OCO não havia aviso nenhum. Quem abre
+         * o terminal cai em MKT: o único tipo em que nada avisava era o único
+         * que todo mundo vê primeiro.
+         *
+         * A execução no Pro é DEX (o par carrega `chain`/`pool`, e a
+         * profundidade sai de `/api/quote`), então ligar este botão não é
+         * conserto — é trazer carteira, aprovação e assinatura para cá. Até lá
+         * o painel continua valendo como CALCULADORA: total estimado, distância
+         * do trailing e o risco/retorno do OCO são contas reais sobre preço
+         * real. O que ele não pode é parecer um botão que dispara.
+         */}
+        <div className="flex items-start gap-1.5 rounded-md bg-gold/[0.06] border border-gold/15 px-2.5 py-1.5">
+          <Info className="w-3 h-3 text-gold flex-shrink-0 mt-0.5" />
+          <p className="font-mono text-[8px] text-ink-3 leading-snug">
+            Preview only — this panel does not place orders. Sizing, trailing distance and OCO risk/reward are live calculations on the real price.
+          </p>
+        </div>
+
         <button
           type="button"
-          className="w-full rounded-lg py-2.5 font-mono text-[10px] font-bold tracking-widest uppercase flex items-center justify-center gap-2 transition-opacity hover:opacity-90 active:scale-[0.98]"
-          style={{
-            background: isBuy ? "rgba(0,224,135,0.18)" : "rgba(255,59,92,0.18)",
-            border:     `1px solid ${isBuy ? "rgba(0,224,135,0.40)" : "rgba(255,59,92,0.40)"}`,
-            color:      isBuy ? "#00E087" : "#FF3B5C",
-          }}
+          disabled
+          title="Execution is not wired on the Pro terminal yet — use the Swap page to trade this pair."
+          className="w-full rounded-lg py-2.5 font-mono text-[10px] font-bold tracking-widest uppercase flex items-center justify-center gap-2 border border-white/10 bg-white/[0.03] text-ink-4 cursor-not-allowed"
         >
-          <span>▶ {ctaLabel}</span>
-          <kbd
-            className="inline-flex items-center rounded border px-1 py-0.5 font-mono text-[8px] opacity-60"
-            style={{ borderColor: isBuy ? "rgba(0,224,135,0.30)" : "rgba(255,59,92,0.30)" }}
-          >
-            ⌘↵
-          </kbd>
+          {/* ⚠️ O RÓTULO NÃO PODE PROMETER AÇÃO. "Execute Buy" cinza ainda é um
+              verbo: lê-se como "clique aqui para executar", e um botão
+              desabilitado costuma significar "falta uma condição" — saldo,
+              carteira — que o usuário procuraria satisfazer. Aqui não falta
+              condição nenhuma: não existe execução. O rótulo diz o estado, e
+              a intenção escolhida fica ao lado, entre parênteses. */}
+          <span>Execution unavailable</span>
+          <span className="opacity-50 normal-case tracking-normal">({ctaLabel})</span>
         </button>
       </div>
     </div>
