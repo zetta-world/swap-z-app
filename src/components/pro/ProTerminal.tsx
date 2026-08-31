@@ -87,6 +87,8 @@ export default function ProTerminal() {
    * que a conta fala do timeframe que a pessoa está olhando, não de outro.
    */
   const [amplitudeVela, setAmplitudeVela] = useState<number | null>(null);
+  /** Fechamentos da janela desenhada — insumo de "e se eu não fizesse nada?". */
+  const [fechamentos, setFechamentos] = useState<number[]>([]);
   /** Quando o gráfico recebeu vela pela última vez. `null` = ainda nada. */
   const [chartAtualizadoEm, setChartAtualizadoEm] = useState<number | null>(null);
   /** Relógio local que faz o selo ENVELHECER sozinho — sem ele, uma fonte que
@@ -242,7 +244,7 @@ export default function ProTerminal() {
    * a tela diria "AO VIVO" sobre um gráfico que ainda está carregando outra
    * coisa — afirmando frescor de um dado que nem é mais o dado da tela.
    */
-  useEffect(() => { setChartAtualizadoEm(null); setAmplitudeVela(null); }, [pair.id, tf]);
+  useEffect(() => { setChartAtualizadoEm(null); setAmplitudeVela(null); setFechamentos([]); }, [pair.id, tf]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -628,6 +630,7 @@ export default function ProTerminal() {
                 onMeta={onMeta}
                 onAtualizado={setChartAtualizadoEm}
                 onAmplitude={setAmplitudeVela}
+                onFechamentos={setFechamentos}
               />
             </div>
           </div>
@@ -641,6 +644,8 @@ export default function ProTerminal() {
               /* ⚠️ Os dois insumos do "custo da ideia". Sem eles o bloco cala. */
               feeTierPct={taxaDaPerna(pair.feeTier)}
               amplitudeVelaPct={amplitudeVela}
+              fechamentos={fechamentos}
+              rotuloJanela={tf}
             />
             <ProZionDock
               chain={pair.chain}

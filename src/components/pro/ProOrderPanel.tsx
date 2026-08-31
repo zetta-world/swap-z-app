@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { pedagioSobreAlvo, stopContraRuido, type Severidade } from "@/lib/pro/custo-da-ideia";
+import { pedagioSobreAlvo, stopContraRuido, contraSegurar, type Severidade } from "@/lib/pro/custo-da-ideia";
 import { AnimatePresence, motion } from "framer-motion";
 import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -17,6 +17,9 @@ interface Props {
    */
   feeTierPct?:        number | null;
   amplitudeVelaPct?:  number | null;
+  /** Fechamentos da janela do gráfico e o rótulo dela ("5m", "1d"). */
+  fechamentos?:  number[];
+  rotuloJanela?: string;
 }
 
 type Side      = "buy" | "sell";
@@ -33,7 +36,7 @@ const ORDER_TYPES: { id: OrderType; label: string }[] = [
   { id: "trailing", label: "TRAIL" },
 ];
 
-export default function ProOrderPanel({ pair, lastPrice, accentColor, feeTierPct, amplitudeVelaPct }: Props) {
+export default function ProOrderPanel({ pair, lastPrice, accentColor, feeTierPct, amplitudeVelaPct, fechamentos, rotuloJanela }: Props) {
   const [side,        setSide]        = useState<Side>("buy");
   const [orderType,   setOrderType]   = useState<OrderType>("market");
   const [size,        setSize]        = useState("");
@@ -76,6 +79,9 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor, feeTierPct
     () => pedagioSobreAlvo(feeTierPct ?? null, alvoPct), [feeTierPct, alvoPct]);
   const leituraRuido = useMemo(
     () => stopContraRuido(stopPct, amplitudeVelaPct ?? null), [stopPct, amplitudeVelaPct]);
+  const leituraSegurar = useMemo(
+    () => contraSegurar(alvoPct, (fechamentos ?? []).map((c) => ({ close: c })), rotuloJanela ?? "janela"),
+    [alvoPct, fechamentos, rotuloJanela]);
 
   // Trailing stop computation
   const trailPctNum = parseFloat(trailPct) || 2;
@@ -364,12 +370,12 @@ export default function ProOrderPanel({ pair, lastPrice, accentColor, feeTierPct
           ninguém — quem decide é quem clica, e a diferença entre um aviso e um
           portão é a diferença entre respeitar e tutelar.
         */}
-        {(leituraPedagio.severidade !== "sem_dado" || leituraRuido.severidade !== "sem_dado") && (
+        {[leituraPedagio, leituraRuido, leituraSegurar].some((l) => l.severidade !== "sem_dado" && l.texto) && (
           <div className="rounded-md border px-2.5 py-1.5 space-y-1"
             style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)" }}>
             <div className="font-mono text-[8px] text-ink-4 tracking-widest uppercase">Custo da ideia</div>
-            {([leituraPedagio, leituraRuido] as const).map((l, i) =>
-              l.severidade === "sem_dado" ? null : (
+            {([leituraPedagio, leituraRuido, leituraSegurar] as const).map((l, i) =>
+              l.severidade === "sem_dado" || !l.texto ? null : (
                 <div key={i} className="flex items-start gap-1.5">
                   <span className="w-1 h-1 rounded-full flex-shrink-0 mt-1.5"
                     style={{ background: corDaSeveridade(l.severidade) }} />
