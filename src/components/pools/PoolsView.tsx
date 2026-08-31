@@ -14,12 +14,40 @@ import { cn } from "@/lib/cn";
 
 type SortKey = "tvl" | "vol" | "change";
 
-async function fetchPools(chain: ChainId | "all"): Promise<PoolSummary[]> {
+interface Resposta {
+  pools: PoolSummary[];
+  /** De quanto em quanto tempo a FONTE é renovada para este tier. */
+  atualizaEmSegundos: number;
+}
+
+/**
+ * ⚠️ O FRESCOR É DECIDIDO NO SERVIDOR, e a tela apenas relata (31/08).
+ *
+ * A tabela dizia "Refreshes every 60s" — texto fixo — e o `refetchInterval`
+ * batia com ele. Passou a ser mentira no instante em que o frescor virou faixa
+ * por tier: um visitante lia "60s" olhando dado que a fonte só renova a cada 15
+ * minutos. Um número inventado na tela é pior que nenhum, porque quem lê acha
+ * que sabe.
+ *
+ * O padrão de 900 é o da faixa aberta — a mais lenta. Se a resposta vier sem o
+ * campo (servidor antigo durante um deploy), a tela promete MENOS do que
+ * entrega, que é o lado certo de errar.
+ */
+async function fetchPools(chain: ChainId | "all"): Promise<Resposta> {
   const url = chain === "all" ? "/api/pools?trending=1" : `/api/pools?chain=${chain}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error("Failed");
   const data = await res.json();
-  return (data.pools ?? []) as PoolSummary[];
+  const seg = Number(data.atualizaEmSegundos);
+  return {
+    pools: (data.pools ?? []) as PoolSummary[],
+    atualizaEmSegundos: Number.isFinite(seg) && seg > 0 ? seg : 900,
+  };
+}
+
+/** "30s", "3 min", "15 min" — o que o rodapé da tabela mostra. */
+function rotuloDeFrescor(segundos: number): string {
+  return segundos < 60 ? `${segundos}s` : `${Math.round(segundos / 60)} min`;
 }
 
 const CHAIN_COLOR: Record<string, string> = {
@@ -43,13 +71,18 @@ export default function PoolsView() {
   const { data, isError, isLoading, refetch } = useQuery({
     queryKey: ["pools-view", chain],
     queryFn: () => fetchPools(chain),
-    refetchInterval: 60_000,
+    /**
+     * ⚠️ PERGUNTAR MAIS RÁPIDO QUE A FONTE RENOVA NÃO TRAZ DADO NOVO — só gasta
+     * requisição e come o rate limit da própria rota. Na faixa aberta, os 60 s
+     * antigos faziam quinze perguntas para cada resposta diferente.
+     */
+    refetchInterval: (q) => (q.state.data?.atualizaEmSegundos ?? 900) * 1000,
   });
 
   const pools = useMemo(() => {
     // No FALLBACK substitution any more — empty array means "upstream
     // returned nothing", and the table renders an honest empty state.
-    const list = data ?? [];
+    const list = data?.pools ?? [];
     const filtered = q.trim()
       ? list.filter((p) =>
           (p.baseSymbol + p.quoteSymbol + p.dex).toLowerCase().includes(q.trim().toLowerCase()),
@@ -159,7 +192,11 @@ export default function PoolsView() {
         <div className="flex items-center gap-2 mb-3">
           <span className={cn("w-1.5 h-1.5 rounded-full", isError ? "bg-red" : "bg-cyan", "pulse-dot")} />
           <span className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">
-            {isLoading ? t("pools.statusLoading") : isError ? t("pools.statusError") : t("pools.statusRefresh")}
+            {isLoading
+              ? t("pools.statusLoading")
+              : isError
+              ? t("pools.statusError")
+              : t("pools.statusRefreshEvery", { every: rotuloDeFrescor(data?.atualizaEmSegundos ?? 900) })}
           </span>
         </div>
 
