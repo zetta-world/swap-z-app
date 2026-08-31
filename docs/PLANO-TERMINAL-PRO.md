@@ -167,9 +167,16 @@ timeframe, par. Barato, e é o tipo de coisa que separa "demo" de "ferramenta".
 2.  ✅ Tier 1    o que já chega e é descartado       ENTREGUE
 3.  ✅ Tier 3.1  pedágio sobre o alvo                ENTREGUE
 4.  ✅ Tier 3.2  stop contra o ruído                 ENTREGUE
-5.  Tier 0.2   medir V2 contra V3 no nosso tamanho medição, decide config
-6.  Tier 2     segurança e reservas                reuso do Celeiro
-7.  Tier 3.3   tamanho executável                  inverte o painel que já existe
+5.  Tier 0.2   medir V2 contra V3 no nosso tamanho ⚠️ EXIGE REDE — o contêiner
+                                                    do agente não alcança a
+                                                    GeckoTerminal nem a 0x
+6.  Tier 2     segurança e reservas                ⚠️ baixo valor NOS PARES DE
+                                                    HOJE: são todos blue chips,
+                                                    e honeypot/LP travado sempre
+                                                    diria "ok". Vira valioso no
+                                                    dia em que o registro
+                                                    aceitar cauda longa
+7.  ✅ Tier 3.3 tamanho executável                  ENTREGUE
 8.  Tier 3.4   contra comprar-e-segurar
 9.  Tier 4.2   preferências persistentes
 10. Tier 4.1   streaming                           caro, e o polling já resolve
