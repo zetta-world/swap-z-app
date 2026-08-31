@@ -116,6 +116,68 @@ function poolToSummary(pool: GTPool, networkSlug: string): PoolSummary {
 }
 
 /**
+ * ⚠️⚠️ FALHA DA FONTE NÃO É LISTA VAZIA — e neste arquivo era, em toda função.
+ *
+ * O padrão `if (!res.ok) return []` aparecia 20 vezes aqui. Uma rede sem pools e
+ * a GeckoTerminal fora do ar produziam **exatamente o mesmo valor**, e /pools
+ * mostrava "nenhuma pool encontrada" nos dois casos. O usuário selecionava
+ * Polygon e concluía que Polygon não tem liquidez.
+ *
+ * ⚠️ E NÃO É HIPÓTESE — foi medido em produção em 30/08:
+ *
+ *     /api/pools?chain=polygon  ->  0 pools, HTTP 200, sem erro
+ *     api.geckoterminal.com/.../polygon_pos/pools  ->  20 pools
+ *     api.geckoterminal.com/.../optimism/pools     ->  429 "exceeded the Rate Limit"
+ *
+ * É a invariante nº 33 rodando em página pública: vazio-por-falha com a cara de
+ * vazio-por-ausência. E piora com tráfego — o limite da GeckoTerminal é por IP,
+ * e os IPs de saída da Vercel são compartilhados entre todos os projetos.
+ *
+ * ⚠️ SEM TELEMETRIA AQUI, DE PROPÓSITO. Este módulo é importado por nove
+ * componentes `"use client"` — só como `import type`, que o build apaga. Trazer
+ * `recordEvent` para cá criaria uma aresta de VALOR até `supabase/server`, que é
+ * exatamente a cadeia que derrubou a produção em 25/08. Quem grava o evento é a
+ * ROTA, que já é servidor.
+ */
+export type MotivoIndisponivel = "limite" | "erro" | "rede";
+
+export class GeckoIndisponivel extends Error {
+  constructor(readonly status: number, readonly motivo: MotivoIndisponivel) {
+    super("geckoterminal indisponivel: " + motivo + " (status " + status + ")");
+    this.name = "GeckoIndisponivel";
+  }
+}
+
+/** `true` quando a falha é a fonte fora do ar, e não um defeito nosso. */
+export function ehIndisponivel(e: unknown): e is GeckoIndisponivel {
+  return e instanceof GeckoIndisponivel;
+}
+
+/**
+ * O único ponto deste arquivo que fala com a rede.
+ *
+ * ⚠️ LANÇA em vez de devolver vazio. Quem quiser melhor-esforço escreve o
+ * `try/catch` à vista — e aí a decisão de engolir a falha fica no chamador,
+ * onde dá para ler, em vez de escondida aqui dentro.
+ */
+async function buscar<T>(url: string, revalidate: number): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Accept: "application/json;version=20230302" },
+      next: { revalidate },
+    });
+  } catch {
+    throw new GeckoIndisponivel(0, "rede");
+  }
+  // 429 é o caso que mais acontece e o que mais dói: sem chave, o limite é por
+  // IP, e um vizinho de infraestrutura consome a nossa cota.
+  if (res.status === 429) throw new GeckoIndisponivel(429, "limite");
+  if (!res.ok) throw new GeckoIndisponivel(res.status, "erro");
+  return await res.json() as T;
+}
+
+/**
  * Page through every pool on a chain. GeckoTerminal v2 paginates 20 pools
  * per page; we pass the page through and let the caller decide how deep to
  * go. Used by the catalog/search page in /explorer.
@@ -124,17 +186,8 @@ export async function getPoolsPage(chainName: string, page: number): Promise<Poo
   const network = NETWORK_IDS[chainName];
   if (!network) return [];
   const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools?page=${Math.max(1, Math.min(100, page))}&include=dex`;
-  try {
-    const res = await fetch(url, {
-      headers: { Accept: "application/json;version=20230302" },
-      next: { revalidate: 30 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as { data: GTPool[] };
-    return (data.data ?? []).map((p) => poolToSummary(p, network));
-  } catch {
-    return [];
-  }
+  const data = await buscar<{ data: GTPool[] }>(url, 30);
+  return (data.data ?? []).map((p) => poolToSummary(p, network));
 }
 
 /**
@@ -166,17 +219,8 @@ export async function getTopPools(chainName: string, limit = 8): Promise<PoolSum
   if (!network) return [];
 
   const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools?page=1&include=dex`;
-  try {
-    const res = await fetch(url, {
-      headers: { Accept: "application/json;version=20230302" },
-      next: { revalidate: 30 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as { data: GTPool[] };
-    return (data.data ?? []).slice(0, limit).map((p) => poolToSummary(p, network));
-  } catch {
-    return [];
-  }
+  const data = await buscar<{ data: GTPool[] }>(url, 30);
+  return (data.data ?? []).slice(0, limit).map((p) => poolToSummary(p, network));
 }
 
 /**
@@ -216,20 +260,11 @@ export async function getNewPoolsAcrossChains(perChain = 10): Promise<PoolSummar
 
 export async function getTrendingPools(limit = 12): Promise<PoolSummary[]> {
   const url = `https://api.geckoterminal.com/api/v2/networks/trending_pools?page=1&include=dex`;
-  try {
-    const res = await fetch(url, {
-      headers: { Accept: "application/json;version=20230302" },
-      next: { revalidate: 60 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as { data: GTPool[] };
-    return (data.data ?? []).slice(0, limit).map((p) => {
-      const networkId = p.relationships?.network?.data?.id ?? "";
-      return poolToSummary(p, networkId);
-    });
-  } catch {
-    return [];
-  }
+  const data = await buscar<{ data: GTPool[] }>(url, 60);
+  return (data.data ?? []).slice(0, limit).map((p) => {
+    const networkId = p.relationships?.network?.data?.id ?? "";
+    return poolToSummary(p, networkId);
+  });
 }
 
 export interface TokenInfo {

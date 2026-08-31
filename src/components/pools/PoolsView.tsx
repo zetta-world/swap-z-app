@@ -63,11 +63,22 @@ export default function PoolsView() {
     return sorted;
   }, [data, q, sortBy]);
 
-  // Aggregate metrics
+  /**
+   * ⚠️ O CARD DE REDES DIZIA "all 11" — uma string fixa (30/08).
+   *
+   * Ele fica ao lado de TVL, Volume e "Pools tracked", que são todos derivados
+   * dos dados. Lê-se, portanto, como medição — e não era: o app define OITO
+   * redes, e a chamada de trending em produção trouxe DUAS (solana, robinhood).
+   * Um número que ninguém contou, ao lado de três que foram contados.
+   *
+   * Agora ele conta as redes distintas realmente presentes. Quando o usuário
+   * filtra por uma rede, o card mostra 1 — que é a verdade da tela.
+   */
   const totals = useMemo(() => {
     const tvl = pools.reduce((acc, p) => acc + p.tvlUsd, 0);
     const vol = pools.reduce((acc, p) => acc + p.volume24h, 0);
-    return { tvl, vol, count: pools.length };
+    const redes = new Set(pools.map((p) => p.network).filter(Boolean)).size;
+    return { tvl, vol, count: pools.length, redes };
   }, [pools]);
 
   return (
@@ -97,7 +108,7 @@ export default function PoolsView() {
           <StatCard label={t("pools.statTvl")}     value={`$${compactNumber(totals.tvl)}`} tone="cyan" />
           <StatCard label={t("pools.statVolume")}  value={`$${compactNumber(totals.vol)}`} tone="violet" />
           <StatCard label={t("pools.statTracked")} value={String(totals.count)}            tone="gold"   />
-          <StatCard label={t("pools.statChains")}  value={`${chain === "all" ? t("pools.chainsAll") : "1"}`} tone="green" />
+          <StatCard label={t("pools.statChains")}  value={String(totals.redes)} tone="green" />
         </div>
 
         {/* Filters */}
