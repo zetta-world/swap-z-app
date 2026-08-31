@@ -70,8 +70,16 @@ describe("② o selo LIVE olha para o dado", () => {
   });
 
   it("⚠️ trocar de par volta para AGUARDANDO", () => {
-    // O carimbo do par anterior não fala do par novo.
-    expect(TERM).toMatch(/setChartAtualizadoEm\(null\); \}, \[pair\.id, tf\]/);
+    /**
+     * O carimbo do par anterior não fala do par novo.
+     *
+     * ⚠️ A ASSERÇÃO OLHA A INTENÇÃO, NÃO A LINHA. A primeira versão transcrevia
+     * `setChartAtualizadoEm(null); }, [pair.id, tf]` e quebrou no dia em que o
+     * mesmo efeito passou a zerar a amplitude junto — uma mudança correta. Uma
+     * trava que transcreve proíbe crescer; uma que afirma intenção não.
+     */
+    const efeito = TERM.match(/useEffect\(\(\) => \{[^}]*setChartAtualizadoEm\(null\)[^}]*\}, \[pair\.id, tf\]\)/);
+    expect(efeito, "o reset tem de estar num efeito disparado por [pair.id, tf]").not.toBe(null);
   });
 
   it("a tolerância segue o timeframe, não é número fixo", () => {

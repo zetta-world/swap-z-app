@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/cn";
 import { compactNumber } from "@/lib/format";
 import type { Timeframe, Trade, PriceToken, PoolMeta } from "@/lib/api/geckoterminal";
+import { taxaDaPerna } from "@/lib/pro/custo-da-ideia";
 import { PRO_PAIRS, DEFAULT_PRO_PAIR, CATEGORY_LABELS, groupPairs, type ProPair } from "@/lib/pro-pairs";
 import { CHAINS } from "@/lib/chains";
 import { findToken } from "@/lib/tokens";
@@ -80,6 +81,12 @@ export default function ProTerminal() {
   // ─── State ────────────────────────────────────────────────────────
   const [pair, setPair]         = useState<ProPair>(DEFAULT_PRO_PAIR);
   const [tf, setTf]             = useState<Timeframe>("5m");
+  /**
+   * ⚠️ A AMPLITUDE MÉDIA DA VELA, medida do MESMO conjunto que o gráfico desenha.
+   * Ela é o insumo de "o stop está dentro do ruído?" — e vir do gráfico garante
+   * que a conta fala do timeframe que a pessoa está olhando, não de outro.
+   */
+  const [amplitudeVela, setAmplitudeVela] = useState<number | null>(null);
   /** Quando o gráfico recebeu vela pela última vez. `null` = ainda nada. */
   const [chartAtualizadoEm, setChartAtualizadoEm] = useState<number | null>(null);
   /** Relógio local que faz o selo ENVELHECER sozinho — sem ele, uma fonte que
@@ -235,7 +242,7 @@ export default function ProTerminal() {
    * a tela diria "AO VIVO" sobre um gráfico que ainda está carregando outra
    * coisa — afirmando frescor de um dado que nem é mais o dado da tela.
    */
-  useEffect(() => { setChartAtualizadoEm(null); }, [pair.id, tf]);
+  useEffect(() => { setChartAtualizadoEm(null); setAmplitudeVela(null); }, [pair.id, tf]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -620,6 +627,7 @@ export default function ProTerminal() {
                 onLastPrice={onLastPrice}
                 onMeta={onMeta}
                 onAtualizado={setChartAtualizadoEm}
+                onAmplitude={setAmplitudeVela}
               />
             </div>
           </div>
@@ -630,6 +638,9 @@ export default function ProTerminal() {
               pair={{ base: pair.base, quote: pair.quote, chain: pair.chain }}
               lastPrice={hdr?.last ?? null}
               accentColor={accentColor}
+              /* ⚠️ Os dois insumos do "custo da ideia". Sem eles o bloco cala. */
+              feeTierPct={taxaDaPerna(pair.feeTier)}
+              amplitudeVelaPct={amplitudeVela}
             />
             <ProZionDock
               chain={pair.chain}

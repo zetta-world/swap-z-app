@@ -17,6 +17,7 @@ import {
   type HistogramData,
 } from "lightweight-charts";
 import type { Candle, Timeframe, PriceToken, PoolMeta } from "@/lib/api/geckoterminal";
+import { amplitudeMediaPct } from "@/lib/pro/custo-da-ideia";
 
 export type ChartKind = "candle" | "bar" | "line";
 
@@ -69,6 +70,8 @@ interface Props {
   onMeta?:      (meta: PoolMeta | null, side: PriceToken) => void;
   /** Quando a última vela chegou. Alimenta o selo de vivacidade da barra. */
   onAtualizado?: (ms: number) => void;
+  /** A amplitude média das velas — insumo de "o stop está dentro do ruído?". */
+  onAmplitude?: (pct: number | null) => void;
 }
 
 /**
@@ -86,7 +89,7 @@ export default function ProChart({
   bb, vwap, ema9, ema21, ema100, ema200, rsiOn,
   macd, stochRsi, onSignals,
   strategyLevels,
-  targetSymbol, onLastPrice, onMeta, onAtualizado,
+  targetSymbol, onLastPrice, onMeta, onAtualizado, onAmplitude,
 }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const chartRef        = useRef<IChartApi | null>(null);
@@ -627,6 +630,8 @@ export default function ProChart({
         }
         primeira = false;
         onAtualizado?.(Date.now());
+        // ⚠️ Do MESMO conjunto que a tela desenha — ver a nota no terminal.
+        onAmplitude?.(amplitudeMediaPct(rows));
 
         // Push summary to parent
         if (onLastPrice && rows.length > 0) {
@@ -678,7 +683,7 @@ export default function ProChart({
       ctrl.abort();
       clearInterval(timer);
     };
-  }, [chain, pool, tf, kind, targetSymbol, onLastPrice, onMeta, onAtualizado, onSignals, ema9, ema21, ema, ema100, ema200, vwap, rsiOn, macd]);
+  }, [chain, pool, tf, kind, targetSymbol, onLastPrice, onMeta, onAtualizado, onAmplitude, onSignals, ema9, ema21, ema, ema100, ema200, vwap, rsiOn, macd]);
 
   return (
     <div className="relative w-full h-full min-h-[320px]">

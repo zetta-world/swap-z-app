@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { melhorBuyAmount } from "@/lib/pro/profundidade";
 import { Waves } from "lucide-react";
 import type { Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
@@ -51,14 +52,31 @@ export default function ProDepth({ fromToken, toToken, chain, midPrice }: Props)
       const sellAmountTo   = Math.floor((sizeUsd) * Math.pow(10, tt.decimals)).toString();
       // Hardcoded ETH for "selling" side direction is a simplification; the
       // server only needs sellToken/buyToken/sellAmount/chain to route.
+      /**
+       * ⚠️⚠️ ERA `mode: "quote"` COM TAKER ZERADO, E POR ISSO AS CINCO FAIXAS
+       * MOSTRAVAM `—` (31/08).
+       *
+       * Três coisas erradas na mesma linha, e qualquer uma bastava:
+       *
+       * ① A rota exige carteira real na cotação firme (`taker_required_for_quote`,
+       *   e o endereço nulo não constrói transação nenhuma na 0x).
+       * ② `mode=quote` passa pelo KILL-SWITCH DO SWAP. Desligar o swap apagaria
+       *   um painel de INFORMAÇÃO — que não move dinheiro e não deveria depender
+       *   disso.
+       * ③ São 10 cotações firmes por atualização (5 tamanhos × 2 direções)
+       *   contra `RL_FIRM = 25/min`: duas atualizações e o teto chega.
+       *
+       * `mode=list` é o caminho certo e já existia: ele chama `fetchZeroXPrice`
+       * — indicativo, sem taker, sem kill-switch, no limite mais folgado
+       * (`RL_LIST = 40/min`) e com cache de CDN. Impacto de preço é exatamente
+       * uma pergunta indicativa: ninguém vai assinar esta cotação.
+       */
       const baseParams = {
-        mode:        "quote",
-        source:      "0x",
+        mode:        "list",
         fromChain:   chain,
         toChain:     chain,
         sellAmount:  "",   // overwritten per direction
         slippageBps: "30",
-        taker:       "0x0000000000000000000000000000000000000000",
       };
 
       try {
@@ -72,10 +90,9 @@ export default function ProDepth({ fromToken, toToken, chain, midPrice }: Props)
         const buyRes = await fetch(`/api/quote?${buyParams.toString()}`, { signal: ctrl.signal });
         let buyBps: number | null = null;
         if (buyRes.ok) {
-          const body = await buyRes.json();
-          const raw  = body?.result;
-          if (raw?.buyAmount) {
-            const got = Number(raw.buyAmount) / Math.pow(10, ft.decimals);
+          const recebido = melhorBuyAmount(await buyRes.json());
+          if (recebido !== null) {
+            const got = recebido / Math.pow(10, ft.decimals);
             const fair = sizeUsd / midPrice;
             buyBps = fair > 0 ? Math.max(0, (fair - got) / fair * 10_000) : null;
           }
@@ -91,10 +108,9 @@ export default function ProDepth({ fromToken, toToken, chain, midPrice }: Props)
         const sellRes = await fetch(`/api/quote?${sellParams.toString()}`, { signal: ctrl.signal });
         let sellBps: number | null = null;
         if (sellRes.ok) {
-          const body = await sellRes.json();
-          const raw  = body?.result;
-          if (raw?.buyAmount) {
-            const got = Number(raw.buyAmount) / Math.pow(10, tt.decimals);
+          const recebido = melhorBuyAmount(await sellRes.json());
+          if (recebido !== null) {
+            const got = recebido / Math.pow(10, tt.decimals);
             const fair = sizeUsd;
             sellBps = fair > 0 ? Math.max(0, (fair - got) / fair * 10_000) : null;
           }

@@ -28,10 +28,18 @@ E o docstring da própria rota diz: *"taker: user wallet (**required** for
 atualização** (5 tamanhos × 2 direções) contra um limite de `RL_FIRM = 25/min`:
 duas atualizações e o teto chega.
 
-**Hipótese (não confirmada ao vivo):** trocar para `mode: "price"` — indicativo,
-que é exatamente o que impacto de preço precisa e não exige `taker`. Custo
-estimado: uma linha. **Precisa de UMA verificação em produção antes de eu
-afirmar** — não consigo chamar a 0x deste contêiner.
+⚠️ **CORREÇÃO (31/08, mesmo dia).** Eu escrevi acima *"trocar para
+`mode: price`"*. **Não existe `mode=price`** — a rota tem `list` e `quote`, e eu
+inventei um terceiro pelo nome do conceito. O caminho certo já existia e é o
+`list`, que internamente chama `fetchZeroXPrice`: indicativo, sem `taker`, fora
+do kill-switch e no limite folgado (`RL_LIST = 40/min`).
+
+E havia uma **terceira** coisa errada que eu não tinha visto: `mode=quote` passa
+pelo kill-switch do swap. Desligar o swap apagaria um painel de INFORMAÇÃO, que
+não move dinheiro.
+
+**✅ ENTREGUE.** Impacto de preço é exatamente uma pergunta indicativa — ninguém
+vai assinar essa cotação.
 
 ### 0.2 ⚠️ O par do BNB aponta para a pool com menos volume
 
@@ -155,10 +163,10 @@ timeframe, par. Barato, e é o tipo de coisa que separa "demo" de "ferramenta".
 ## A ordem que eu recomendo
 
 ```
-1.  Tier 0.1   a DEPTH voltar a responder          ~1 linha + 1 verificação
-2.  Tier 1     o que já chega e é descartado       1 painel, 0 requisições novas
-3.  Tier 3.1   pedágio sobre o alvo                reuso de função testada
-4.  Tier 3.2   stop contra o ruído                 reuso de função testada
+1.  ✅ Tier 0.1  a DEPTH voltar a responder          ENTREGUE
+2.  ✅ Tier 1    o que já chega e é descartado       ENTREGUE
+3.  ✅ Tier 3.1  pedágio sobre o alvo                ENTREGUE
+4.  ✅ Tier 3.2  stop contra o ruído                 ENTREGUE
 5.  Tier 0.2   medir V2 contra V3 no nosso tamanho medição, decide config
 6.  Tier 2     segurança e reservas                reuso do Celeiro
 7.  Tier 3.3   tamanho executável                  inverte o painel que já existe
