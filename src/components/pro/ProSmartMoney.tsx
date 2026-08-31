@@ -11,7 +11,20 @@ interface Props {
   whaleAt?:    number;   // USD threshold to classify a trade as "whale"
 }
 
-type Verdict = "ACCUMULATING" | "DISTRIBUTING" | "NEUTRAL";
+/**
+ * ⚠️⚠️ `SEM_BALEIA` É VEREDITO DE PRIMEIRA CLASSE, e nasceu de uma tela mentindo.
+ *
+ * `bias` caía em `0.5` quando não havia baleia nenhuma, e 0,5 cai na faixa do
+ * NEUTRAL. Resultado, exatamente como o dono viu:
+ *
+ *     0 whales · NEUTRAL · "Whale bias: 50% buy / 50% sell" · $0 buy  $0 sell
+ *
+ * Uma barra pela metade, uma palavra de veredito, e zero observações por trás.
+ * "Não vi baleia" virou "as baleias estão equilibradas" — que é uma afirmação
+ * sobre o mercado feita a partir de nada. É a mesma família do `Number(null)`
+ * que vale 0 e passa no `isFinite`.
+ */
+type Verdict = "ACCUMULATING" | "DISTRIBUTING" | "NEUTRAL" | "SEM_BALEIA";
 type MevRisk = "LOW" | "MEDIUM" | "HIGH";
 
 function fmtUsd(n: number): string {
@@ -30,17 +43,35 @@ export default function ProSmartMoney({ trades, accentColor = "#00E5FF", whaleAt
     const buyVol     = whaleBuys.reduce((s, t) => s + t.sizeUsd, 0);
     const sellVol    = whaleSells.reduce((s, t) => s + t.sizeUsd, 0);
     const totalWhale = buyVol + sellVol;
-    const bias       = totalWhale > 0 ? buyVol / totalWhale : 0.5;
+    /** ⚠️ `null` quando não houve baleia — ausência não vira meio-a-meio. */
+    const bias: number | null = totalWhale > 0 ? buyVol / totalWhale : null;
 
     const largest    = whales.reduce<Trade | null>((best, t) => !best || t.sizeUsd > best.sizeUsd ? t : best, null);
 
-    const verdict: Verdict = bias > 0.62 ? "ACCUMULATING" : bias < 0.38 ? "DISTRIBUTING" : "NEUTRAL";
+    const verdict: Verdict = bias === null
+      ? "SEM_BALEIA"
+      : bias > 0.62 ? "ACCUMULATING" : bias < 0.38 ? "DISTRIBUTING" : "NEUTRAL";
 
-    // MEV risk proxy: coefficient of variation in recent trade prices
+    /**
+     * MEV risk proxy: coefficient of variation in recent trade prices.
+     *
+     * ⚠️⚠️ ESTE MEDIDOR ESTAVA PRESO EM "HIGH" POR CAUSA DE OUTRO DEFEITO
+     * (31/08). O preço de cada trade vinha da ponta FROM do swap, que troca de
+     * token conforme a direção — então a série alternava 0,9998 e 687,59 no
+     * mesmo par. O desvio calculado sobre isso é gigante por construção, e a
+     * tela anunciava "High price variance — sandwich risk elevated" sobre um
+     * mercado calmo.
+     *
+     * Consertado na fonte (`getRecentTrades` cota uma ponta só). A guarda
+     * abaixo fica como cinto: se a série voltar a misturar unidades, o alerta
+     * some em vez de gritar.
+     */
     const recent = trades.slice(0, 30);
     const prices = recent.map(t => t.priceUsd).filter(p => p > 0);
+    const min = Math.min(...prices), max = Math.max(...prices);
+    const escalaMisturada = prices.length >= 2 && min > 0 && max / min > 10;
     let mev: MevRisk = "LOW";
-    if (prices.length >= 3) {
+    if (prices.length >= 3 && !escalaMisturada) {
       const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
       const cv  = Math.sqrt(prices.reduce((s, p) => s + (p - avg) ** 2, 0) / prices.length) / (avg || 1);
       const totalVol   = recent.reduce((s, t) => s + t.sizeUsd, 0);
@@ -65,12 +96,14 @@ export default function ProSmartMoney({ trades, accentColor = "#00E5FF", whaleAt
 
   const { whales, buyVol, sellVol, bias, verdict, largest, mev } = stats;
 
+  const semBaleia      = verdict === "SEM_BALEIA";
   const verdictColor   = verdict === "ACCUMULATING" ? "#00E087" : verdict === "DISTRIBUTING" ? "#FF3B5C" : "rgba(255,255,255,0.5)";
   const VerdictIcon    = verdict === "ACCUMULATING" ? TrendingUp : verdict === "DISTRIBUTING" ? TrendingDown : Minus;
   const mevColor       = mev === "HIGH" ? "#FF3B5C" : mev === "MEDIUM" ? "#F5A623" : "#00E087";
 
-  const buyPct  = bias * 100;
-  const sellPct = 100 - buyPct;
+  /** ⚠️ Sem baleia não há porcentagem. A barra fica vazia, não meio a meio. */
+  const buyPct  = bias === null ? 0 : bias * 100;
+  const sellPct = bias === null ? 0 : 100 - buyPct;
 
   return (
     <div className="rounded-xl border bg-black/60 backdrop-blur-sm overflow-hidden h-full flex flex-col"
@@ -92,10 +125,12 @@ export default function ProSmartMoney({ trades, accentColor = "#00E5FF", whaleAt
           <VerdictIcon className="w-4 h-4 flex-shrink-0" style={{ color: verdictColor }} />
           <div>
             <div className="font-mono text-[11px] font-bold leading-none" style={{ color: verdictColor }}>
-              {verdict}
+              {semBaleia ? "SEM BALEIA NA JANELA" : verdict}
             </div>
             <div className="font-mono text-[9px] text-ink-3 mt-0.5">
-              Whale bias: {buyPct.toFixed(0)}% buy / {sellPct.toFixed(0)}% sell
+              {semBaleia
+                ? `nenhuma ordem ≥ ${fmtUsd(whaleAt)} — não é equilíbrio, é ausência`
+                : `Whale bias: ${buyPct.toFixed(0)}% buy / ${sellPct.toFixed(0)}% sell`}
             </div>
           </div>
         </div>

@@ -2,12 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Crown, Inbox } from "lucide-react";
-import type { Trade } from "@/lib/api/geckoterminal";
+import type { Trade, PriceToken } from "@/lib/api/geckoterminal";
 import { cn } from "@/lib/cn";
 
 interface Props {
   chain:    string;
   pool:     string;
+  /**
+   * ⚠️ QUAL PONTA DO PAR A COLUNA DE PREÇO COTA — o mesmo `base`/`quote` que o
+   * gráfico usa. Sem ele, o preço de cada linha vinha da ponta que saía do
+   * swap, e o feed do WBNB/USDT mostrava `0.9998` na venda e `687.59` na
+   * compra: duas escalas na mesma coluna.
+   */
+  side?:    PriceToken;
   /** Crown threshold in USD. Trades ≥ this get highlighted + counted. */
   whaleAt?: number;
   /** Parent gets the latest trades for derived panels (ProFlow). */
@@ -21,7 +28,7 @@ type Filter = "all" | "buy" | "sell" | "whales";
  * (≥ $10k USD by default), explorer link per tx, filter chips for
  * direction / whales-only. Polls /api/trades every 15s.
  */
-export default function ProTrades({ chain, pool, whaleAt = 10_000, onTrades }: Props) {
+export default function ProTrades({ chain, pool, side, whaleAt = 10_000, onTrades }: Props) {
   const [trades,  setTrades]  = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
@@ -33,7 +40,9 @@ export default function ProTrades({ chain, pool, whaleAt = 10_000, onTrades }: P
 
     async function load() {
       try {
-        const res = await fetch(`/api/trades?chain=${chain}&pool=${pool}`, { signal: ctrl.signal });
+        // ⚠️ `side` viaja junto: sem ele a coluna de preço troca de unidade por linha.
+        const qs = `chain=${chain}&pool=${pool}${side ? `&token=${side}` : ""}`;
+        const res = await fetch(`/api/trades?${qs}`, { signal: ctrl.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as { trades?: Trade[] };
         if (cancelled) return;
@@ -56,7 +65,7 @@ export default function ProTrades({ chain, pool, whaleAt = 10_000, onTrades }: P
       ctrl.abort();
       clearInterval(id);
     };
-  }, [chain, pool, onTrades]);
+  }, [chain, pool, side, onTrades]);
 
   const whaleCount = useMemo(
     () => trades.filter((t) => sizeUsd(t) >= whaleAt).length,

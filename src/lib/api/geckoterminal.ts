@@ -537,10 +537,29 @@ interface GTTradeAttrs {
   volume_in_usd?:               string;
 }
 
+/**
+ * ⚠️⚠️ O PREÇO DA TRADE ERA O DO TOKEN QUE POR ACASO ESTAVA SAINDO (31/08).
+ *
+ * A linha era `price_from_in_usd ?? price_to_in_usd` — sempre a ponta FROM do
+ * swap, que muda de token conforme a direção. No mesmo feed do WBNB/USDT o
+ * dono viu, lado a lado:
+ *
+ *     SELL  $6   0.9998     ← preço do USDT
+ *     BUY   $34  687.59     ← preço do WBNB
+ *
+ * Duas escalas na mesma coluna, e nenhuma etiqueta dizendo qual era qual. Uma
+ * coluna de preço que troca de unidade por linha não é uma coluna de preço.
+ *
+ * `lado` diz qual ponta do par a tela está cotando — o MESMO `base`/`quote` que
+ * o gráfico já usa para não desenhar $1 no lugar de $700. Sem ele, o padrão
+ * segue o comportamento antigo, porque quem não passa o lado não tem como
+ * saber qual está certo.
+ */
 export async function getRecentTrades(
   chainName: string,
   poolAddress: string,
   limit = 25,
+  lado?: PriceToken,
 ): Promise<Trade[]> {
   const network = NETWORK_IDS[chainName];
   if (!network || !poolAddress) return [];
@@ -556,10 +575,19 @@ export async function getRecentTrades(
       const a = t.attributes;
       const ts = a.block_timestamp ? Math.floor(new Date(a.block_timestamp).getTime() / 1000) : 0;
       const isBuy = (a.kind ?? "").toLowerCase() === "buy";
+      /**
+       * ⚠️ NA GECKOTERMINAL, `from` É O TOKEN QUE SAI DA CARTEIRA. Numa COMPRA
+       * do base, sai o quote; numa VENDA, sai o base. Então a ponta que carrega
+       * o preço do BASE inverte com a direção — e é isso que a linha abaixo
+       * desfaz, para a coluna ter uma unidade só.
+       */
+      const doBase = isBuy ? a.price_to_in_usd : a.price_from_in_usd;
+      const doQuote = isBuy ? a.price_from_in_usd : a.price_to_in_usd;
+      const escolhido = lado === "quote" ? doQuote : lado === "base" ? doBase : (a.price_from_in_usd ?? a.price_to_in_usd);
       return {
         ts,
         kind:      isBuy ? "buy" as const : "sell" as const,
-        priceUsd:  Number(a.price_from_in_usd ?? a.price_to_in_usd ?? 0),
+        priceUsd:  Number(escolhido ?? 0),
         amountIn:  Number(a.from_token_amount ?? 0),
         amountOut: Number(a.to_token_amount   ?? 0),
         txHash:    a.tx_hash ?? "",
