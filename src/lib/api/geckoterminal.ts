@@ -68,6 +68,14 @@ export interface PoolSummary {
    * subia para cá. Ver `extrairEndereco`.
    */
   baseTokenAddress?: string;
+  /**
+   * ⚠️ O OUTRO LADO DO PAR — sem ele não dá para saber se duas piscinas cotam a
+   * MESMA coisa. Comparar "WBNB/USDT V2" com "WBNB/USDT V3" por símbolo aceita
+   * qualquer contrato que se chame USDT; comparar por endereço não aceita.
+   */
+  quoteTokenAddress?: string;
+  /** Trades em 24h (compras + vendas). `undefined` quando a fonte não mandou. */
+  trocas24h?: number;
 }
 
 /**
@@ -112,6 +120,16 @@ function poolToSummary(pool: GTPool, networkSlug: string): PoolSummary {
     createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : undefined,
     // ⚠️ O token BASE, não o pool. Ver a nota em `PoolSummary.baseTokenAddress`.
     baseTokenAddress: extrairEndereco(pool.relationships?.base_token?.data?.id) || undefined,
+    quoteTokenAddress: extrairEndereco(pool.relationships?.quote_token?.data?.id) || undefined,
+    trocas24h: (() => {
+      const t = a.transactions?.h24;
+      if (!t) return undefined;
+      const c = typeof t.buys === "number" ? t.buys : null;
+      const v = typeof t.sells === "number" ? t.sells : null;
+      // ⚠️ `undefined` quando NENHUM dos dois veio. Somar dois ausentes daria 0,
+      // e 0 aqui afirmaria "ninguém operou esta piscina em 24h".
+      return c == null && v == null ? undefined : (c ?? 0) + (v ?? 0);
+    })(),
   };
 }
 
@@ -481,6 +499,29 @@ export async function getTokenTopPool(
   }
 }
 
+/**
+ * TODAS as piscinas de um token numa rede, da mais líquida para a menos.
+ *
+ * ⚠️ EXISTE PORQUE `getTokenTopPool` DEVOLVE UMA SÓ. Uma piscina não se compara
+ * com nada: para decidir se o `/pro` está apontando para o endereço certo é
+ * preciso ver as alternativas — V2 ao lado da V3, faixa de 0,05% ao lado da de
+ * 0,30%. O endpoint sempre devolveu a lista inteira; era o nosso código que
+ * pegava `[0]` e descartava o resto.
+ *
+ * ⚠️ LANÇA em vez de devolver vazio — ver a nota do `buscar()`.
+ */
+export async function getTokenPools(
+  chainName: string,
+  tokenAddress: string,
+  limit = 20,
+): Promise<PoolSummary[]> {
+  const network = NETWORK_IDS[chainName];
+  if (!network || !tokenAddress || tokenAddress === "native") throw new GeckoIndisponivel(0, "rede");
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${tokenAddress.toLowerCase()}/pools?include=dex&page=1`;
+  const data = await buscar<{ data: GTPool[] }>(url, 30);
+  return (data.data ?? []).slice(0, limit).map((p) => poolToSummary(p, network));
+}
+
 // ─── OHLCV (chart candles) ───────────────────────────────────────────
 
 export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
@@ -522,34 +563,56 @@ export async function getOHLCV(
   limit = 200,
   token: PriceToken = "base",
 ): Promise<Candle[]> {
-  const network = NETWORK_IDS[chainName];
-  if (!network || !poolAddress) return [];
-  const cfg = TF_MAP[tf];
-  if (!cfg) return [];
-
-  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress.toLowerCase()}/ohlcv/${cfg.timeframe}?aggregate=${cfg.aggregate}&limit=${Math.min(limit, 1000)}&currency=usd&token=${token}`;
   try {
-    const res = await fetch(url, {
-      headers: { Accept: "application/json;version=20230302" },
-      next: { revalidate: 30 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as { data?: { attributes?: { ohlcv_list?: number[][] } } };
-    const rows = data.data?.attributes?.ohlcv_list ?? [];
-    return rows
-      .map((r) => ({
-        time:   Math.floor(r[0]),
-        open:   Number(r[1]),
-        high:   Number(r[2]),
-        low:    Number(r[3]),
-        close:  Number(r[4]),
-        volume: Number(r[5] ?? 0),
-      }))
-      .filter((c) => Number.isFinite(c.open) && Number.isFinite(c.close))
-      .sort((a, b) => a.time - b.time);
+    return await getOHLCVOuFalha(chainName, poolAddress, tf, limit, token);
   } catch {
     return [];
   }
+}
+
+/**
+ * ⚠️⚠️ A MESMA BUSCA, MAS LANÇANDO — e a diferença decide uma medição.
+ *
+ * `getOHLCV` devolve `[]` tanto quando a piscina não teve trade nenhum quanto
+ * quando a GeckoTerminal recusou. Para o GRÁFICO isso é indiferente: nos dois
+ * casos não há vela para desenhar. Para a MEDIÇÃO de qual piscina o terminal
+ * deve usar, é a diferença entre "esta piscina está morta" e "não medimos esta
+ * piscina" — e a primeira é uma condenação, a segunda é uma lacuna.
+ *
+ * É a mesma cicatriz do `buscar()` acima, que existe porque `/pools?chain=polygon`
+ * anunciava "nenhuma pool encontrada" enquanto a fonte devolvia 429.
+ *
+ * ⚠️ SEM `next: { revalidate }` DE PROPÓSITO. Quem mede cobertura de vela
+ * precisa das velas de AGORA; um cache de 30s serviria a janela do clique
+ * anterior e a medida sairia sistematicamente atrasada.
+ */
+export async function getOHLCVOuFalha(
+  chainName: string,
+  poolAddress: string,
+  tf: Timeframe,
+  limit = 200,
+  token: PriceToken = "base",
+): Promise<Candle[]> {
+  const network = NETWORK_IDS[chainName];
+  if (!network) throw new GeckoIndisponivel(0, "rede");
+  if (!poolAddress) throw new GeckoIndisponivel(0, "rede");
+  const cfg = TF_MAP[tf];
+  if (!cfg) throw new GeckoIndisponivel(0, "rede");
+
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress.toLowerCase()}/ohlcv/${cfg.timeframe}?aggregate=${cfg.aggregate}&limit=${Math.min(limit, 1000)}&currency=usd&token=${token}`;
+  const data = await buscar<{ data?: { attributes?: { ohlcv_list?: number[][] } } }>(url, 0);
+  const rows = data.data?.attributes?.ohlcv_list ?? [];
+  return rows
+    .map((r) => ({
+      time:   Math.floor(r[0]),
+      open:   Number(r[1]),
+      high:   Number(r[2]),
+      low:    Number(r[3]),
+      close:  Number(r[4]),
+      volume: Number(r[5] ?? 0),
+    }))
+    .filter((c) => Number.isFinite(c.open) && Number.isFinite(c.close))
+    .sort((a, b) => a.time - b.time);
 }
 
 // ─── Recent trades on a pool ─────────────────────────────────────────

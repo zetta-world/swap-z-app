@@ -52,6 +52,36 @@ Não é obviamente errado — V3 concentra liquidez e o TVL não é comparável 
 usuário vê. Merece uma medição: qual das duas dá melhor execução no tamanho que
 operamos.
 
+**🟢 A MEDIÇÃO EXISTE — 31/08.** O contêiner do agente não alcança a
+GeckoTerminal; a Vercel alcança. A saída foi ideia do dono: **o teste virou
+painel com botão, e o resultado desce para o banco**, de onde qualquer sessão lê
+por SQL sem depender de quem clicou ter copiado a tela.
+
+- lógica pura: `src/lib/pro/escolha-da-piscina.ts` (21 testes)
+- rota: `src/app/admin/api/pro-piscinas/route.ts` (leitura pura, `requireAdmin`)
+- painel: `ProPiscinasPanel` → `pro-piscinas`
+- tabelas: `pro_piscina_medicao` (o que foi lido) e `pro_piscina_veredito` (o
+  que foi concluído) — migration `0035`
+
+⚠️ **A pergunta foi reescrita, e a nova é mais honesta que a antiga.** "Qual dá
+melhor execução no nosso tamanho" **não é medível** com o que a GeckoTerminal
+publica: profundidade de V3 depende da liquidez por tick, que a fonte não
+expõe. O que É medível são duas réguas separadas:
+
+| régua | o que mede | por que ela |
+|---|---|---|
+| **cobertura de vela de 1m** | quantos dos últimos 180 minutos têm vela | a fonte só devolve o minuto em que houve trade — isto **é** o "o gráfico nem se mexe", medido, não um proxy |
+| **TVL** | o tamanho da piscina | o mais próximo de execução que dá para ler honestamente, e está rotulado como TVL, não como profundidade |
+
+⚠️ **E quando as duas discordam, o veredito é `conflito` e nada é escolhido.**
+Uma V3 concentrada pode ter gráfico vivo com menos TVL; uma V2 gorda pode ter
+mais TVL e gráfico picotado. Compor as duas num score esconderia exatamente a
+informação que decide — é o erro que pintou de verde uma piscina que perdeu
+53%, porque segurar perdeu 54%.
+
+⚠️ **A rota não troca a piscina sozinha.** `trocar` é recomendação gravada;
+mudar `PRO_PAIRS` é edição revisada em PR.
+
 ---
 
 ## Tier 1 — dado que JÁ CHEGA e a gente joga fora
@@ -167,9 +197,11 @@ timeframe, par. Barato, e é o tipo de coisa que separa "demo" de "ferramenta".
 2.  ✅ Tier 1    o que já chega e é descartado       ENTREGUE
 3.  ✅ Tier 3.1  pedágio sobre o alvo                ENTREGUE
 4.  ✅ Tier 3.2  stop contra o ruído                 ENTREGUE
-5.  Tier 0.2   medir V2 contra V3 no nosso tamanho ⚠️ EXIGE REDE — o contêiner
-                                                    do agente não alcança a
-                                                    GeckoTerminal nem a 0x
+5.  ✅ Tier 0.2 medir V2 contra V3                   ENTREGUE como botão no
+                                                    admin: o contêiner não
+                                                    alcança a fonte, a Vercel
+                                                    alcança, e o resultado vai
+                                                    para o banco
 6.  Tier 2     segurança e reservas                ⚠️ baixo valor NOS PARES DE
                                                     HOJE: são todos blue chips,
                                                     e honeypot/LP travado sempre
