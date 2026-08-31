@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
    */
   const VARRIDOS_NO_TICK = new Set([
     "cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base", "pool_novo",
-    "comprador_cego",
+    "comprador_cego", "maker_de_faixa",
   ]);
   const orfaos = (await agentesComAbertas(db)).filter((a) => !VARRIDOS_NO_TICK.has(a));
   if (orfaos.length > 0) {
@@ -261,10 +261,32 @@ export async function POST(req: NextRequest) {
     "cacador_de_tendencia", "alavancado_de_tendencia", "convergencia_base",
     /** ⚠️ O controle de DIREÇÃO opera de verdade — senão não é comparável. */
     "comprador_cego",
+    /** ⚠️ Volta em 31/08 como TESTE pré-registrado. Ver a nota em `agentes.ts`. */
+    "maker_de_faixa",
   ] as const) {
     const ag = agentePor(id)!;
     const gen = await genomaAtivo(db, id, id === "convergencia_base"
       ? { margemPp: 0.15, horasLimite: 8 }
+      : id === "maker_de_faixa"
+      /**
+       * ⚠️⚠️ O BRACKET LARGO DO MAKER, e o número saiu da autópsia de 23/08.
+       *
+       * Ele morreu com ±0,6% acertando 70,4%: no spot, a ida-e-volta de 0,40%
+       * comia DOIS TERÇOS do movimento bruto. A ±1,5% a mesma taxa vira 27% —
+       * e é essa a única variável que o teste muda. Mesmo sinal, mesmo tamanho,
+       * pedágio virando ruído.
+       *
+       * ⚠️ SIMÉTRICO DE PROPÓSITO. Alvo e stop iguais é o que torna a taxa de
+       * alvo-primeiro comparável com a de agosto: num passeio, 50% é o esperado,
+       * e foi contra esse 50% que os 70,4% deram p≈0,026. Mexer na simetria
+       * junto com a largura mediria duas mudanças de uma vez.
+       *
+       * ⚠️ E O HORIZONTE SOBE DE 8h PARA 24h. Um alvo 2,5× mais distante no
+       * mesmo prazo seria um teste diferente: mais saídas por tempo, menos por
+       * alvo, e a taxa de alvo-primeiro cairia por geometria em vez de por
+       * sinal. As quatro saídas por tempo de agosto já mostraram esse risco.
+       */
+      ? { alvoPct: 1.5, stopPct: 1.5, horasLimite: 24, multiploDoPedagio: MULTIPLO_DO_PEDAGIO }
       : {
           /**
            * ⚠️ O ALVO NASCE ACIMA DO PEDÁGIO, e não é escolha de gosto. Com
@@ -389,6 +411,37 @@ export async function POST(req: NextRequest) {
            */
           lado = "buy";
           porque = "compra às cegas — controle de direção, não lê sinal";
+        } else if (id === "maker_de_faixa") {
+          /**
+           * ⚠️⚠️ O MAKER É O COMPLEMENTO DOS AGENTES DE TENDÊNCIA, e a inversão
+           * do portão é literalmente isso: onde `permite` recusa por não haver
+           * lado a tomar, é exatamente onde ele opera.
+           *
+           * ⚠️ `sem_sinal` É A FAIXA DELE, e não ausência de informação. A mesma
+           * leitura de regime que faz o Caçador ficar de fora é a que diz ao
+           * Maker que o preço está oscilando dentro de uma banda — o estado em
+           * que cotar os dois lados ganha o spread.
+           *
+           * ⚠️ E `sangrando` BARRA OS DOIS. Queda desordenada com volatilidade
+           * explodindo não é faixa: é o preço pulando por cima do bracket. O
+           * mandato dele diz "se o par sair da faixa medida ele PARA de cotar", e
+           * é aqui que isso vira código.
+           */
+          if (regime.estado !== "sem_sinal") {
+            exames.push({
+              sym, abre: false, estado: regime.estado,
+              porque: `${regime.porque} — o Maker só opera FAIXA, e este par tem tendência`,
+            });
+            continue;
+          }
+          /**
+           * ⚠️ ELE NÃO ESCOLHE LADO. Num bracket simétrico dentro de uma faixa,
+           * comprar e vender são a mesma aposta espelhada — e escolher um lado
+           * seria a opinião direcional que o `naoFaz` dele proíbe. Compra por
+           * convenção, porque é spot e spot não vende a descoberto.
+           */
+          lado = "buy";
+          porque = `${regime.porque} — faixa: o Maker cota dentro dela`;
         } else {
           const perm = permite(regime, podeVender);
           porque = perm.porque;

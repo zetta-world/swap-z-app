@@ -73,3 +73,46 @@ o mercado, não o agente.
 - **Se o múltiplo 3 é o certo.** É um ponto de partida ancorado no BTC.
 - **Se os agentes de tendência prestam.** 3 fechamentos.
 - **Se o Maker merece voltar.** Depende do teste da §3, que ainda não rodou.
+
+
+---
+
+## 5. ✅ O TESTE FOI ARMADO — 31/08
+
+Oito dias depois, e sem mexer no critério.
+
+| | |
+|---|---|
+| agente | recriado em `agentes.ts`, `execucao: maker` (não taker) |
+| genoma | **v2**, `alvoPct 1,5 · stopPct 1,5 · horasLimite 24` |
+| pedágio | de **67%** do bruto para **27%** — a única variável que mudou |
+| portão | opera onde `permite` recusa: `regime.estado === "sem_sinal"` |
+| tamanho | banca $500, 10% por posição, **sem alavanca** |
+
+⚠️ **O CRITÉRIO NÃO FOI TOCADO**, e ele está agora em três lugares: nesta §3, no
+`aposentaQuando` do agente, e no campo `hipotese` do genoma v2 — onde vive junto
+do dado que vai julgá-lo.
+
+> alvo-primeiro **acima de 50% em outras 30 decisões**, com o regime anotado. Se
+> cair para 50% no bracket largo, a hipótese está morta e o +6,31% de agosto era
+> o mercado, não o agente.
+
+### ⚠️ A armadilha que quase engoliu o teste
+
+O genoma **v1 ainda estava ativo no banco**, com o `alvoPct: 0.6` de agosto. Como
+`genomaAtivo` devolve o que existe e ignora a semente do código, o agente teria
+voltado a operar com **o bracket que o matou** — e o teste rodaria medindo a
+hipótese errada, verdinho, sem ninguém perceber.
+
+É exatamente o que o comentário do cron já avisava: *"um conserto que compila,
+passa no CI, é mergeado e não muda uma única decisão"*. Por isso o v2 foi escrito
+no banco, e não só no código.
+
+### O que ainda pode derrubar a leitura, e está dito antes
+
+As três ressalvas da §3 continuam de pé — 27 decisões é pouco, maker de faixa
+ganha em mercado lateral, e o sinal foi achado depois de o agente morrer. A elas
+some-se uma quarta: **o horizonte subiu de 8h para 24h junto com o bracket.** Sem
+isso, um alvo 2,5× mais distante no mesmo prazo derrubaria a taxa de
+alvo-primeiro por geometria em vez de por sinal — mas são duas variáveis
+mudando, e a comparação com agosto carrega essa costura.
