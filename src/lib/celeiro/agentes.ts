@@ -419,6 +419,72 @@ export const AGENTES: readonly Agente[] = [
       + "estão comprando alguma coisa",
   },
 
+  {
+    /**
+     * ⚠️⚠️ O MAKER VOLTA, E VOLTA COMO TESTE PRÉ-REGISTRADO (31/08).
+     *
+     * Ele foi aposentado em 23/08 por líquido negativo. A autópsia daquele dia
+     * mediu outra coisa, e ela está escrita em `OBSERVACAO-CELEIRO-23AGO.md`:
+     *
+     *     19 alvos contra 8 stops num bracket SIMÉTRICO de ±0,6%
+     *     70,4% de alvo-primeiro · binomial n=27, p≈0,026
+     *     preço +2,88 · taxa −3,49 · líquido −0,62
+     *
+     * ⚠️ ELE NÃO MORREU DE ERRAR — MORREU DE PEDÁGIO. Acertava a direção em 7 de
+     * 10 e entregava 121% do ganho de preço para a corretora. Com alvo de 0,6% e
+     * ida-e-volta de 0,40% no spot, dois terços do movimento bruto viravam taxa
+     * antes de o preço se mexer.
+     *
+     * O TESTE, declarado em 23/08 e nunca rodado: mesmo sinal, bracket largo o
+     * bastante para o pedágio virar ruído. A ±1,5% a taxa cai para 27% do bruto.
+     *
+     * ⚠️ E O CRITÉRIO FOI ESCRITO ANTES DOS DADOS, de propósito: alvo-primeiro
+     * acima de 50% em OUTRAS 30 decisões, com o regime anotado. Se cair para
+     * 50% no bracket largo, a hipótese está morta e o +6,31% de agosto era o
+     * mercado, não o agente.
+     *
+     * ⚠️ A AUTÓPSIA TAMBÉM ADMITE O QUE A ENFRAQUECE, e isso continua valendo:
+     * 27 decisões é pouco, maker de faixa ganha em mercado lateral (pode ser o
+     * regime falando), e o sinal foi achado DEPOIS de o agente morrer — que é
+     * exatamente onde o viés mora.
+     */
+    id: "maker_de_faixa",
+    nome: "Maker de Faixa",
+    categoria: "estrutura",
+    modalidade: "spot_gate",
+    /**
+     * ⚠️ `maker` E NÃO `taker`, e o nome do agente anuncia isso. Ele foi morto
+     * em 23/08 por um número que cobrava spot-TAKER dele — a cicatriz que fez
+     * `taxas.ts` separar as tabelas por praça e por papel.
+     */
+    execucao: "maker",
+    ritmo: "day",
+    motor: "bot",
+    faixa: "semente",
+    capitalMinimoUsd: 50,
+    bancaInicialUsd: 500,
+    /**
+     * ⚠️ FATIA PEQUENA E SEM ALAVANCA. O teste é sobre a taxa de acerto sob um
+     * pedágio menor, não sobre tamanho — e amplificar antes de saber se a borda
+     * existe é o erro que custou 26% da banca do Alavancado.
+     */
+    fracaoPorPosicao: 0.1,
+    tetoDeExposicao: 0.5,
+    alavancagemMaxima: 1,
+    mecanismo:
+      "opera a FAIXA: entra quando o regime medido diz que não há tendência para "
+      + "nenhum lado, com bracket simétrico largo o bastante para o pedágio virar ruído",
+    naoFaz:
+      "não persegue rompimento e não escolhe lado por opinião. Quando o mercado "
+      + "TEM tendência ele fica de fora — é o complemento dos agentes de tendência, "
+      + "não um concorrente deles.",
+    receitaVemDe: ["preco"],
+    aposentaQuando:
+      "alvo-primeiro cair a 50% ou menos em 30 decisões no bracket largo — aí a "
+      + "hipótese de 23/08 está morta e o +6,31% era o mercado. OU o spread "
+      + "capturado mediano ficar abaixo da taxa paga por 30 dias.",
+  },
+
   // ── CATEGORIA EVENTO — assimetria, perda limitada por construção ─────────
   {
     id: "pool_novo",

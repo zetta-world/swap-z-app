@@ -236,7 +236,8 @@ gasta banca comprando ruído. Volta quando ① a ③ estiverem de pé.
 o alvo tem de acompanhar — senão a razão declarada no genoma é ficção. A regra
 mínima: `alvo ≥ stop efetivo`, aplicada depois do piso.
 
-**⑥ Rodar o teste do Maker que ficou pendente desde 23/08.** É a única hipótese
+**⑥ ✅ ENTREGUE (31/08) — o teste do Maker está armado.** Ver a §5 de
+`OBSERVACAO-CELEIRO-23AGO.md`. É a única hipótese
 do Celeiro com evidência pré-registrada a favor (p≈0,026) e a única barata de
 testar: mesmo sinal, bracket largo o bastante para o pedágio virar ruído.
 
