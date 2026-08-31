@@ -84,3 +84,41 @@ describe("⚠️ ler a lista sem inventar número", () => {
     expect(melhorBuyAmount({ quotes: [{ buyAmount: "1234567890" }] })).toBe(1234567890);
   });
 });
+
+/**
+ * ⚠️ E A SEGUNDA FILA DO POOL STATS CHEGA NA MESMA RESPOSTA.
+ *
+ * `market_cap_usd`, `fdv_usd`, `pool_created_at`, o `h1` de preço e volume e o
+ * `transactions.h24` são declarados em `GTPoolAttrs`, vêm no mesmo `fetch` e
+ * eram descartados por `getPoolMeta`. Zero requisição nova para todos.
+ */
+describe("o que já chegava e era jogado fora", () => {
+  const GT    = readFileSync("src/lib/api/geckoterminal.ts", "utf8");
+  const STATS = semComentario(readFileSync("src/components/pro/ProPoolStats.tsx", "utf8"));
+
+  it("⚠️ `PoolMeta` carrega os campos descartados", () => {
+    for (const campo of ["marketCapUsd", "fdvUsd", "criadaEmMs", "change1h", "volume1h",
+                         "compradores24h", "vendedores24h", "compras24h", "vendas24h"]) {
+      expect(GT, campo).toMatch(new RegExp(`${campo}:`));
+    }
+  });
+
+  it("⚠️⚠️ ausente vira `null`, nunca 0 — `attrNumber` diria zero", () => {
+    // Zero em `holders` diria "ninguém tem este token"; em `buyers`, "ninguém
+    // comprou". As duas são afirmações fortes construídas sobre ausência.
+    expect(GT).toMatch(/function numeroOuNulo/);
+    expect(GT).toMatch(/marketCapUsd:\s+numeroOuNulo\(a\.market_cap_usd\)/);
+    expect(GT).toMatch(/compradores24h: numeroOuNulo\(a\.transactions\?\.h24\?\.buyers\)/);
+  });
+
+  it("⚠️ e a tela mostra — inclusive a linha de CARTEIRAS ÚNICAS", () => {
+    expect(STATS).toMatch(/Market cap/);
+    expect(STATS).toMatch(/Idade da pool/);
+    expect(STATS).toMatch(/Carteiras 24h/);
+    expect(STATS).toMatch(/lerParticipacao\(meta\)/);
+  });
+
+  it("⚠️ a razão FDV/mcap não sai com metade dos dados", () => {
+    expect(STATS).toMatch(/if \(mc == null \|\| fdv == null \|\| !\(mc > 0\)\) return ""/);
+  });
+});

@@ -347,6 +347,42 @@ export interface PoolMeta {
   tvlUsd:            number;
   volume24h:         number;
   change24h:         number;
+
+  /**
+   * ⚠️⚠️ TUDO ABAIXO JÁ CHEGAVA NA MESMA RESPOSTA E ERA JOGADO FORA (31/08).
+   *
+   * `GTPoolAttrs` declara estes campos, o `fetch` os traz, o `JSON.parse` os
+   * materializa — e o objeto de retorno os descartava. Zero requisição nova
+   * para qualquer um deles.
+   *
+   * ⚠️ E O MAIS VALIOSO É O ÚLTIMO. `buyers`/`sellers` são carteiras ÚNICAS, não
+   * número de trades: é a diferença entre mil carteiras comprando e uma
+   * carteira comprando mil vezes. Nenhuma outra métrica do painel responde isso,
+   * e ela vinha de graça desde sempre.
+   *
+   * ⚠️ `null` QUANDO A FONTE NÃO MANDOU, nunca zero. Zero em `holders` diria
+   * "ninguém tem este token"; em `buyers`, "ninguém comprou". As duas são
+   * afirmações fortes construídas sobre ausência.
+   */
+  marketCapUsd:  number | null;
+  fdvUsd:        number | null;
+  /** Quando a pool foi criada. Idade é sinal de risco de primeira ordem. */
+  criadaEmMs:    number | null;
+  change1h:      number | null;
+  volume1h:      number | null;
+  quotePriceUsd: number | null;
+  /** Carteiras ÚNICAS em 24h — não é contagem de trades. */
+  compradores24h: number | null;
+  vendedores24h:  number | null;
+  compras24h:     number | null;
+  vendas24h:      number | null;
+}
+
+/** ⚠️ `null` para ausente; `attrNumber` devolveria 0 e 0 é uma afirmação. */
+function numeroOuNulo(v: string | number | undefined | null): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 interface GTIncluded {
@@ -393,6 +429,18 @@ export async function getPoolMeta(chainName: string, poolAddress: string): Promi
       tvlUsd:            attrNumber(a.reserve_in_usd),
       volume24h:         attrNumber(a.volume_usd?.h24),
       change24h:         attrNumber(a.price_change_percentage?.h24),
+
+      // ⚠️ Campos que já chegavam e eram descartados. Ver a nota em `PoolMeta`.
+      marketCapUsd:   numeroOuNulo(a.market_cap_usd),
+      fdvUsd:         numeroOuNulo(a.fdv_usd),
+      criadaEmMs:     a.pool_created_at ? (Number.isFinite(Date.parse(a.pool_created_at)) ? Date.parse(a.pool_created_at) : null) : null,
+      change1h:       numeroOuNulo(a.price_change_percentage?.h1),
+      volume1h:       numeroOuNulo(a.volume_usd?.h1),
+      quotePriceUsd:  numeroOuNulo(a.quote_token_price_usd),
+      compradores24h: numeroOuNulo(a.transactions?.h24?.buyers),
+      vendedores24h:  numeroOuNulo(a.transactions?.h24?.sellers),
+      compras24h:     numeroOuNulo(a.transactions?.h24?.buys),
+      vendas24h:      numeroOuNulo(a.transactions?.h24?.sells),
     };
   } catch {
     return null;

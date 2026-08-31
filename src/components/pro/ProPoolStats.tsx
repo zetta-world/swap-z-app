@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Droplet, DollarSign, Activity, Percent } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Droplet, DollarSign, Activity, Percent, Clock, Users } from "lucide-react";
 import { compactNumber, formatPct } from "@/lib/format";
 import type { PoolMeta } from "@/lib/api/geckoterminal";
+import { lerParticipacao, idadeDaPool } from "@/lib/pro/participacao";
 
 /**
  * Pro pool stats — TVL, 24h volume, 24h change, fee tier, vol/TVL ratio.
@@ -45,6 +46,22 @@ export default function ProPoolStats({
   // <0.1 = sleepy, 0.1-0.5 = healthy, >0.5 = hot.
   const turnover = meta && meta.tvlUsd > 0 ? meta.volume24h / meta.tvlUsd : null;
 
+  const participacao = useMemo(() => lerParticipacao(meta), [meta]);
+  const idade = useMemo(() => idadeDaPool(meta?.criadaEmMs ?? null), [meta]);
+
+  /**
+   * ⚠️ FDV SOBRE MARKET CAP — a razão que denuncia desbloqueio futuro. 3× quer
+   * dizer que dois terços do supply ainda não circulam, e vão circular um dia.
+   * `null` quando falta qualquer um dos dois: uma razão com metade dos dados é
+   * um número inventado.
+   */
+  const razaoFdv = useMemo(() => {
+    const mc = meta?.marketCapUsd, fdv = meta?.fdvUsd;
+    if (mc == null || fdv == null || !(mc > 0)) return "";
+    const r = fdv / mc;
+    return r >= 1.15 ? `${r.toFixed(1)}× o mcap` : "";
+  }, [meta]);
+
   return (
     <div className="rounded-lg border border-white/5 bg-black/40">
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/5">
@@ -81,8 +98,49 @@ export default function ProPoolStats({
           label="Δ 24h"
           value={meta ? formatPct(meta.change24h) : "—"}
           tone={meta ? (meta.change24h >= 0 ? "green" : "red") : undefined}
-          subtext={feeTier ? `fee ${feeTier}` : ""}
+          subtext={
+            meta?.change1h !== null && meta?.change1h !== undefined
+              ? `1h ${formatPct(meta.change1h)}`
+              : (feeTier ? `fee ${feeTier}` : "")
+          }
         />
+      </div>
+
+      {/*
+        ⚠️⚠️ SEGUNDA FILA — TUDO AQUI JÁ CHEGAVA NA MESMA RESPOSTA (31/08).
+        `market_cap_usd`, `fdv_usd`, `pool_created_at` e `transactions.h24` são
+        declarados em `GTPoolAttrs`, vêm no mesmo `fetch`, e o objeto de retorno
+        os descartava. Zero requisição nova.
+      */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-white/[0.04] border-t border-white/5">
+        <Cell Icon={DollarSign} label="Market cap"
+          value={meta?.marketCapUsd != null ? `$${compactNumber(meta.marketCapUsd)}` : "—"} />
+        <Cell Icon={DollarSign} label="FDV"
+          value={meta?.fdvUsd != null ? `$${compactNumber(meta.fdvUsd)}` : "—"}
+          subtext={razaoFdv} />
+        <Cell Icon={Clock} label="Idade da pool" value={idade ?? "—"} />
+        <Cell Icon={Activity} label="Vol 1h"
+          value={meta?.volume1h != null ? `$${compactNumber(meta.volume1h)}` : "—"} />
+      </div>
+
+      {/*
+        ⚠️⚠️ A LINHA QUE NENHUM OUTRO PAINEL RESPONDE. O `ORDER FLOW` mostra
+        VOLUME de compra contra venda — e volume não distingue mil carteiras
+        comprando de uma carteira comprando mil vezes. `buyers`/`sellers` são
+        carteiras ÚNICAS, e vinham de graça desde sempre.
+      */}
+      <div className="px-3 py-2 border-t border-white/5 flex items-center gap-2">
+        <Users className="w-3 h-3 flex-shrink-0" style={{
+          color: participacao.classe === "concentrado" ? "#F5A623"
+               : participacao.classe === "sem_dado"    ? "rgba(255,255,255,0.35)"
+               : "#00E8FF",
+        }} />
+        <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase flex-shrink-0">
+          Carteiras 24h
+        </span>
+        <span className="font-mono text-[10px] text-ink-2 truncate">
+          {participacao.leitura}
+        </span>
       </div>
     </div>
   );
