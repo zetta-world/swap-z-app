@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   pedagioSobreAlvo, stopContraRuido, amplitudeMediaPct, taxaDaPerna,
-  PEDAGIO_ATENCAO, PEDAGIO_GRAVE,
+  PEDAGIO_ATENCAO, PEDAGIO_GRAVE, contraSegurar,
 } from "@/lib/pro/custo-da-ideia";
 
 /**
@@ -128,9 +128,21 @@ describe("as duas leituras chegam à tela", () => {
   const TERM   = semComentario(readFileSync("src/components/pro/ProTerminal.tsx", "utf8"));
   const CHART  = semComentario(readFileSync("src/components/pro/ProChart.tsx", "utf8"));
 
-  it("⚠️ o painel de ordem chama as duas", () => {
+  it("⚠️ o painel de ordem chama as TRÊS", () => {
     expect(PAINEL).toMatch(/pedagioSobreAlvo\(feeTierPct \?\? null, alvoPct\)/);
     expect(PAINEL).toMatch(/stopContraRuido\(stopPct, amplitudeVelaPct \?\? null\)/);
+    expect(PAINEL).toMatch(/contraSegurar\(alvoPct, \(fechamentos \?\? \[\]\)/);
+  });
+
+  it("⚠️⚠️ e os fechamentos vêm do MESMO gráfico, não de outra busca", () => {
+    // Outra fonte falaria de uma janela que não é a que a pessoa está vendo.
+    expect(CHART).toMatch(/onFechamentos\?\.\(rows\.map\(\(c\) => c\.close\)\)/);
+    expect(TERM).toMatch(/onFechamentos=\{setFechamentos\}/);
+    expect(TERM).toMatch(/rotuloJanela=\{tf\}/);
+  });
+
+  it("⚠️ trocar de par zera os fechamentos junto com o resto", () => {
+    expect(TERM).toMatch(/setFechamentos\(\[\]\); \}, \[pair\.id, tf\]/);
   });
 
   it("⚠️ o terminal passa a taxa da pool e a amplitude", () => {
@@ -144,20 +156,94 @@ describe("as duas leituras chegam à tela", () => {
     expect(TERM).toMatch(/onAmplitude=\{setAmplitudeVela\}/);
   });
 
-  it("⚠️ trocar de par ou timeframe zera a amplitude", () => {
-    // A amplitude do par anterior não fala do par novo — e uma leitura de ruído
-    // com o número errado é pior que nenhuma.
-    expect(TERM).toMatch(/setChartAtualizadoEm\(null\); setAmplitudeVela\(null\); \}, \[pair\.id, tf\]/);
+  it("⚠️ trocar de par ou timeframe zera os insumos", () => {
+    /**
+     * A amplitude do par anterior não fala do par novo — uma leitura de ruído
+     * com o número errado é pior que nenhuma.
+     *
+     * ⚠️ ESTA ASSERÇÃO JÁ FOI LITERAL E QUEBROU DUAS VEZES: a linha cresceu
+     * quando o mesmo efeito passou a zerar a amplitude, e de novo quando passou
+     * a zerar os fechamentos — as duas mudanças CORRETAS. Agora ela exige que
+     * cada `set…(null|[])` esteja num efeito disparado por [pair.id, tf], sem
+     * transcrever a linha.
+     */
+    const efeito = TERM.match(/useEffect\(\(\) => \{([^}]*)\}, \[pair\.id, tf\]\)/);
+    expect(efeito, "não achei um efeito de reset disparado por [pair.id, tf]").not.toBe(null);
+    for (const alvo of ["setChartAtualizadoEm", "setAmplitudeVela", "setFechamentos"]) {
+      expect(efeito![1], alvo).toContain(alvo);
+    }
   });
 
-  it("⚠️ o bloco NÃO aparece quando as duas leituras estão sem dado", () => {
-    // Cinza-neutro ao lado de "custo da ideia" seria lido como "custo ok".
-    expect(PAINEL).toMatch(/leituraPedagio\.severidade !== "sem_dado" \|\| leituraRuido\.severidade !== "sem_dado"/);
+  it("⚠️ o bloco NÃO aparece quando NENHUMA leitura tem dado", () => {
+    /**
+     * Cinza-neutro ao lado de "custo da ideia" seria lido como "custo ok".
+     *
+     * ⚠️ Também já foi literal e quebrou quando a condição passou de duas
+     * leituras para três. A asserção olha a FORMA — alguma leitura com dado —,
+     * não a lista.
+     */
+    expect(PAINEL).toMatch(/\.some\(\(l\) => l\.severidade !== "sem_dado" && l\.texto\)/);
   });
 
   it("⚠️ ele INFORMA, nunca bloqueia o botão", () => {
     // O terminal não mexe na ordem de ninguém. A diferença entre um aviso e um
     // portão é a diferença entre respeitar e tutelar.
     expect(PAINEL).not.toMatch(/disabled=\{[^}]*leitura/);
+  });
+});
+
+/**
+ * ⚠️⚠️ A TERCEIRA PERGUNTA: E SE EU NÃO FIZESSE NADA? (item 8)
+ *
+ * `comprar-e-segurar.ts` nasceu porque o painel sabia dizer "está lucrando" e
+ * não sabia dizer "está lucrando MENOS que parado". Em 29/08 ela mediu que
+ * CINCO DE SEIS mesas perderam para não fazer nada.
+ *
+ * ⚠️ MAS AQUI OS DOIS LADOS NÃO SÃO DA MESMA NATUREZA, e é isso que estes
+ * testes seguram: segurar é REALIZADO, o alvo é INTENÇÃO. Chamar de "bateu
+ * segurar" um alvo que ainda não aconteceu seria afirmar sobre o não medido.
+ */
+describe("⚠️ contra não fazer nada — e sem fingir veredito", () => {
+  const sobe = (de: number, ate: number) => [{ close: de }, { close: (de + ate) / 2 }, { close: ate }];
+
+  it("põe os dois números lado a lado, sem dizer quem ganhou", () => {
+    const r = contraSegurar(2, sobe(100, 120), "7d");
+    expect(r.texto).toContain("segurar rendeu 20.0% em 7d");
+    expect(r.texto).toContain("seu alvo é 2.0%");
+    // ⚠️ Nenhum veredito: o alvo não aconteceu.
+    expect(r.texto).not.toMatch(/bateu|perdeu de|ganhou/);
+  });
+
+  it("⚠️ alvo menor que segurar vira ATENÇÃO, com a fração explícita", () => {
+    const r = contraSegurar(2, sobe(100, 120), "7d");
+    expect(r.severidade).toBe("atencao");
+    expect(r.texto).toContain("10% do que não fazer nada já daria");
+  });
+
+  it("alvo maior que segurar não acusa nada", () => {
+    expect(contraSegurar(30, sobe(100, 120), "7d").severidade).toBe("ok");
+  });
+
+  it("⚠️⚠️ segurar CAINDO inverte o sinal — não há o que bater", () => {
+    const r = contraSegurar(3, sobe(120, 100), "7d");
+    expect(r.severidade).toBe("ok");
+    expect(r.texto).toContain("segurar perdeu dinheiro");
+  });
+
+  it("⚠️ mercado de lado: a pergunta não se aplica, e ela diz isso", () => {
+    // Reusa MARE_MINIMA_PCT. Sem a guarda, um denominador minúsculo produziria
+    // "capturou 4.000% da maré" — façanha aparente num mercado parado.
+    const r = contraSegurar(2, sobe(100, 100.5), "7d");
+    expect(r.severidade).toBe("sem_dado");
+    expect(r.texto).toContain("de lado demais");
+  });
+
+  it("⚠️ janela curta demais não vira número", () => {
+    expect(contraSegurar(2, [{ close: 100 }], "1h").severidade).toBe("sem_dado");
+    expect(contraSegurar(2, [], "1h").severidade).toBe("sem_dado");
+  });
+
+  it("sem alvo, cala inteiramente", () => {
+    expect(contraSegurar(null, sobe(100, 120), "7d").texto).toBe("");
   });
 });

@@ -72,6 +72,12 @@ interface Props {
   onAtualizado?: (ms: number) => void;
   /** A amplitude média das velas — insumo de "o stop está dentro do ruído?". */
   onAmplitude?: (pct: number | null) => void;
+  /**
+   * As velas da janela desenhada — insumo de "e se eu não fizesse nada?".
+   * ⚠️ Só os fechamentos: o painel de ordem não precisa de mais, e passar o
+   * objeto inteiro convidaria a recalcular ali o que já é calculado aqui.
+   */
+  onFechamentos?: (closes: number[]) => void;
 }
 
 /**
@@ -89,7 +95,7 @@ export default function ProChart({
   bb, vwap, ema9, ema21, ema100, ema200, rsiOn,
   macd, stochRsi, onSignals,
   strategyLevels,
-  targetSymbol, onLastPrice, onMeta, onAtualizado, onAmplitude,
+  targetSymbol, onLastPrice, onMeta, onAtualizado, onAmplitude, onFechamentos,
 }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const chartRef        = useRef<IChartApi | null>(null);
@@ -632,6 +638,7 @@ export default function ProChart({
         onAtualizado?.(Date.now());
         // ⚠️ Do MESMO conjunto que a tela desenha — ver a nota no terminal.
         onAmplitude?.(amplitudeMediaPct(rows));
+        onFechamentos?.(rows.map((c) => c.close));
 
         // Push summary to parent
         if (onLastPrice && rows.length > 0) {
@@ -683,7 +690,7 @@ export default function ProChart({
       ctrl.abort();
       clearInterval(timer);
     };
-  }, [chain, pool, tf, kind, targetSymbol, onLastPrice, onMeta, onAtualizado, onAmplitude, onSignals, ema9, ema21, ema, ema100, ema200, vwap, rsiOn, macd]);
+  }, [chain, pool, tf, kind, targetSymbol, onLastPrice, onMeta, onAtualizado, onAmplitude, onFechamentos, onSignals, ema9, ema21, ema, ema100, ema200, vwap, rsiOn, macd]);
 
   return (
     <div className="relative w-full h-full min-h-[320px]">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { melhorBuyAmount } from "@/lib/pro/profundidade";
+import { melhorBuyAmount, tamanhoExecutavel } from "@/lib/pro/profundidade";
 import { Waves } from "lucide-react";
 import type { Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
@@ -35,6 +35,9 @@ interface Props {
 
 export default function ProDepth({ fromToken, toToken, chain, midPrice }: Props) {
   const [rows,    setRows]    = useState<ImpactRow[]>(BUCKETS.map((s) => ({ size: s, buyBps: null, sellBps: null })));
+
+  /** ⚠️ A leitura invertida da matriz. Ver `tamanhoExecutavel`. */
+  const executavel = useMemo(() => tamanhoExecutavel(rows), [rows]);
   const [loading, setLoading] = useState(true);
 
   const enabled = !!(fromToken && toToken && midPrice > 0);
@@ -151,8 +154,15 @@ export default function ProDepth({ fromToken, toToken, chain, midPrice }: Props)
           <Waves className="w-3 h-3 text-violet" />
           Depth · expected slippage
         </span>
-        <span className="font-mono text-[9px] text-ink-4 tracking-widest uppercase">
-          {loading ? "computing…" : "via 0x quote"}
+        {/*
+          ⚠️⚠️ A PERGUNTA INVERTIDA. A matriz abaixo responde "qual o impacto de
+          $50k?"; ninguém chega na tela com essa pergunta. A pergunta é "até
+          quanto consigo executar sem pagar caro?" — e ela exige inverter a
+          tabela, o que nunca tinha sido feito.
+        */}
+        <span className="font-mono text-[9px] tracking-wide truncate max-w-[60%]"
+          style={{ color: executavel.usd === null ? "#F5A623" : "var(--ink-3, #7E89C2)" }}>
+          {loading ? "computing…" : executavel.texto}
         </span>
       </div>
 

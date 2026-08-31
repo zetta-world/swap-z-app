@@ -1,5 +1,6 @@
 import { fracaoDoPedagio } from "@/lib/celeiro/taxas";
 import { stopPorVolatilidade, MULTIPLO_DO_RUIDO } from "@/lib/celeiro/regime";
+import { MARE_MINIMA_PCT } from "@/lib/zion/comprar-e-segurar";
 
 /**
  * O CUSTO DA IDEIA — as duas perguntas que o trader tem antes de clicar, e que
@@ -133,4 +134,65 @@ export function taxaDaPerna(feeTier: string | undefined | null): number | null {
   if (!feeTier) return null;
   const n = parseFloat(String(feeTier).replace("%", "").trim());
   return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/**
+ * ⚠️⚠️ A TERCEIRA PERGUNTA: E SE EU NÃO FIZESSE NADA?
+ *
+ * `comprar-e-segurar.ts` nasceu em 20/08 porque o painel sabia dizer *"está
+ * lucrando"* e não sabia dizer *"está lucrando MENOS que parado"* — que é a
+ * frase que decide. Em 29/08 ela mediu que **cinco de seis mesas perderam para
+ * não fazer nada**, por 3 a 21 pontos percentuais.
+ *
+ * ⚠️ MAS AQUI A COMPARAÇÃO NÃO É A MESMA, E FINGIR QUE É SERIA MENTIR. Lá, os
+ * dois lados são REALIZADOS: o que a mesa fez contra o que segurar teria dado.
+ * Aqui, segurar é realizado e o alvo é INTENÇÃO — ele pode não ser tocado, e
+ * geralmente não é em metade das vezes.
+ *
+ * Por isso esta função **não emite veredito**. Ela põe os dois números lado a
+ * lado e deixa a conclusão com quem está olhando. Chamar de "bateu segurar" um
+ * alvo que ainda não aconteceu seria exatamente o tipo de afirmação sobre o não
+ * medido que este repositório passou o dia caçando.
+ */
+export function contraSegurar(
+  alvoPct: number | null,
+  velas: ReadonlyArray<{ close: number }>,
+  rotuloJanela: string,
+): LeituraDoCusto {
+  if (alvoPct == null || !(alvoPct > 0)) {
+    return { severidade: "sem_dado", fracao: null, texto: "" };
+  }
+  const usaveis = velas.filter((c) => c.close > 0);
+  if (usaveis.length < 2) {
+    return { severidade: "sem_dado", fracao: null,
+             texto: "janela curta demais para medir o que segurar teria dado" };
+  }
+  const primeiro = usaveis[0].close, ultimo = usaveis[usaveis.length - 1].close;
+  const segurarPct = (ultimo - primeiro) / primeiro * 100;
+
+  /**
+   * ⚠️ MERCADO DE LADO É UMA JANELA EM QUE A PERGUNTA NÃO SE APLICA — a mesma
+   * guarda de `MARE_MINIMA_PCT`, reusada em vez de reinventada. Sem ela, uma
+   * referência minúscula no denominador produziria "capturou 4.000% da maré".
+   */
+  if (Math.abs(segurarPct) < MARE_MINIMA_PCT) {
+    return { severidade: "sem_dado", fracao: null,
+             texto: `segurar rendeu ${segurarPct.toFixed(2)}% em ${rotuloJanela} — de lado demais para a comparação valer` };
+  }
+
+  const fatia = alvoPct / segurarPct;
+  const base = `segurar rendeu ${segurarPct.toFixed(1)}% em ${rotuloJanela}; seu alvo é ${alvoPct.toFixed(1)}%`;
+
+  /**
+   * ⚠️ SEGURAR CAINDO É O CASO EM QUE UM ALVO DE ALTA JÁ SE JUSTIFICA — não há
+   * o que "bater". Dizer o contrário inverteria o sinal da leitura.
+   */
+  if (segurarPct < 0) {
+    return { severidade: "ok", fracao: fatia, texto: `${base} — segurar perdeu dinheiro nesta janela` };
+  }
+  if (fatia < 1) {
+    return { severidade: "atencao", fracao: fatia,
+             texto: `${base}, ou ${(fatia * 100).toFixed(0)}% do que não fazer nada já daria` };
+  }
+  return { severidade: "ok", fracao: fatia, texto: base };
 }

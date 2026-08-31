@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { melhorBuyAmount } from "@/lib/pro/profundidade";
+import { melhorBuyAmount, tamanhoExecutavel } from "@/lib/pro/profundidade";
 
 /**
  * ⚠️⚠️ A `DEPTH` MOSTRAVA `—` NAS CINCO FAIXAS (31/08).
@@ -120,5 +120,73 @@ describe("o que já chegava e era jogado fora", () => {
 
   it("⚠️ a razão FDV/mcap não sai com metade dos dados", () => {
     expect(STATS).toMatch(/if \(mc == null \|\| fdv == null \|\| !\(mc > 0\)\) return ""/);
+  });
+});
+
+/**
+ * ⚠️⚠️ A PERGUNTA INVERTIDA — item 7 da lista.
+ *
+ * A matriz responde "qual o impacto de $50k?". Ninguém chega na tela com essa
+ * pergunta: a pergunta é "até quanto consigo executar sem pagar caro?". Ela
+ * nunca esteve na tela porque exige inverter a tabela.
+ */
+describe("⚠️ o tamanho executável", () => {
+  const l = (size: number, bps: number | null) => ({ size, buyBps: bps, sellBps: bps });
+
+  it("acha o ponto de corte entre duas faixas medidas", () => {
+    const r = tamanhoExecutavel([l(1_000, 2), l(10_000, 8), l(50_000, 25), l(250_000, 90)], 30);
+    expect(r.usd).not.toBe(null);
+    expect(r.usd!).toBeGreaterThan(50_000);
+    expect(r.usd!).toBeLessThan(250_000);
+    expect(r.texto).toMatch(/acima de ~\$\d+k você paga mais de 30bps/);
+  });
+
+  it("⚠️⚠️ interpola em LOG do tamanho, não linearmente", () => {
+    // Entre 50k e 250k, com o teto exatamente no meio dos bps, o linear daria
+    // 150k. As faixas são geométricas, e o linear sai sistematicamente otimista.
+    const r = tamanhoExecutavel([l(50_000, 20), l(250_000, 40)], 30);
+    expect(r.usd!).toBeLessThan(150_000);
+    expect(r.usd!).toBeGreaterThan(100_000);   // ~111k
+  });
+
+  it("⚠️ usa o PIOR dos dois lados — quem executa paga o lado ruim", () => {
+    const r = tamanhoExecutavel([{ size: 10_000, buyBps: 5, sellBps: 80 }, { size: 1_000, buyBps: 1, sellBps: 2 }], 30);
+    expect(r.usd!).toBeLessThan(10_000);
+  });
+
+  it("⚠️⚠️ nunca atravessou: NÃO extrapola além do que foi medido", () => {
+    // Dizer "aguenta $5M" a partir de uma medição que parou em $1M seria
+    // inventar profundidade que ninguém viu.
+    const r = tamanhoExecutavel([l(1_000, 1), l(1_000_000, 4)], 30);
+    expect(r.usd).toBe(1_000_000);
+    expect(r.texto).toContain("acima disso não foi medido");
+  });
+
+  it("⚠️ já estoura na menor faixa: diz isso, e não inventa número abaixo dela", () => {
+    const r = tamanhoExecutavel([l(1_000, 55), l(10_000, 120)], 30);
+    expect(r.usd).toBe(null);
+    expect(r.texto).toContain("já custa 55bps");
+  });
+
+  it("⚠️ sem medição nenhuma, cala", () => {
+    expect(tamanhoExecutavel([]).usd).toBe(null);
+    expect(tamanhoExecutavel([l(1_000, null), l(10_000, null)]).texto).toContain("não medida");
+  });
+
+  it("faixa com um lado só ainda conta", () => {
+    const r = tamanhoExecutavel([{ size: 1_000, buyBps: 2, sellBps: null }, { size: 10_000, buyBps: 90, sellBps: null }], 30);
+    expect(r.usd!).toBeGreaterThan(1_000);
+    expect(r.usd!).toBeLessThan(10_000);
+  });
+});
+
+describe("⚠️ e a leitura invertida chega ao cabeçalho do painel", () => {
+  it("o painel calcula e mostra", () => {
+    expect(DEPTH).toMatch(/tamanhoExecutavel\(rows\)/);
+    expect(DEPTH).toMatch(/\{loading \? "computing…" : executavel\.texto\}/);
+  });
+
+  it("⚠️ e fica âmbar quando nem a menor faixa passa — não some no cinza", () => {
+    expect(DEPTH).toMatch(/executavel\.usd === null \? "#F5A623"/);
   });
 });
