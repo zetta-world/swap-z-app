@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAutoRefresh } from "../useAutoRefresh";
+import { corDoResultado } from "@/lib/admin/cor-resultado";
 import {
   razaoRetornoTombo, lerRazao, PORQUE_SEM_RAZAO, UNIDADE_DO_RETORNO,
 } from "@/lib/lab/retorno-tombo";
@@ -234,7 +235,13 @@ export default function LabPanel() {
                           <span style={{ color: "var(--adm-ink-4)" }}>
                             líquido{" "}
                             <b style={{
-                              color: (e.lastNetPct ?? 0) > 0 ? "var(--adm-green)" : "var(--adm-red)",
+                              /* ⚠️ `?? 0` pintava AUSÊNCIA de vermelho (01/09). As
+                                 rotas de combinação e rendimento gravam só o
+                                 anualizado, então `net_pct` fica NULL de propósito
+                                 — e CINCO linhas apareciam com a cor de prejuízo
+                                 para uma medição que não existe. O texto já
+                                 imprimia "—"; era só a cor que mentia. */
+                              color: corDoResultado(e.lastNetPct),
                               fontSize: 14,
                             }}>
                               {pct(e.lastNetPct)}

@@ -106,26 +106,51 @@ describe("veredito — impacto SOMADO à taxa, que é o que decide", () => {
    * A taxa sozinha já consome tudo, então QUALQUER impacto positivo estoura.
    */
   it("com a taxa medida da Gate.io, qualquer derrapagem já não cabe", () => {
-    const v = vereditoPorTamanho([imp(0.05)], 0.2, 0.2);
+    const v = vereditoPorTamanho(50, [imp(0.05)], 0.2, 0.2);
     expect(v.sobraPct).toBeCloseTo(-0.05, 6);   // 0,4 − 0,4 − 0,05
     expect(v.cabe).toBe(false);
   });
 
   it("com taxa menor, sobra espaço e o veredito muda", () => {
-    const v = vereditoPorTamanho([imp(0.05)], 0.1, 0.2);
+    const v = vereditoPorTamanho(50, [imp(0.05)], 0.1, 0.2);
     expect(v.sobraPct).toBeCloseTo(0.15, 6);    // 0,4 − 0,2 − 0,05
     expect(v.cabe).toBe(true);
   });
 
+  /**
+   * ⚠️⚠️ O DEFEITO DE 31/08, VIRADO TESTE. A rota chamava com `taxaPorPernaPct ?? 0`
+   * três linhas abaixo de um comentário que dizia "SEM TAXA MEDIDA, O VEREDITO NÃO
+   * É INVENTADO". Com 429 na Gate a mediana saía `null`, o `?? 0` a virava zero, e
+   * a sobra de 0,4 APROVAVA $50 numa rodada em que a taxa nunca foi lida.
+   */
+  it("⚠️ TAXA não medida anula a sobra — e nunca aprova", () => {
+    const v = vereditoPorTamanho(50, [imp(0.05)], null, 0.2);
+    expect(v.sobraPct).toBeNull();
+    expect(v.cabe).toBe(false);
+  });
+
+  it("⚠️ e o zero que significa 'a corretora cobra zero' continua sendo medição", () => {
+    const v = vereditoPorTamanho(50, [imp(0.05)], 0, 0.2);
+    expect(v.sobraPct).toBeCloseTo(0.35, 6);   // 0,4 − 0 − 0,05
+    expect(v.cabe).toBe(true);
+  });
+
+  it("⚠️ o tamanho é PARÂMETRO — não colapsa em 0 quando nenhum livro responde", () => {
+    const v = vereditoPorTamanho(5000, [], 0.2, 0.2);
+    expect(v.usd).toBe(5000);          // não 0
+    expect(v.idaEVoltaPct).toBeNull();
+    expect(v.cabe).toBe(false);
+  });
+
   it("SEM medição nunca é 'cabe' — ausência não vira aprovação", () => {
-    const v = vereditoPorTamanho([imp(null)], 0.2, 0.2);
+    const v = vereditoPorTamanho(50, [imp(null)], 0.2, 0.2);
     expect(v.idaEVoltaPct).toBeNull();
     expect(v.sobraPct).toBeNull();
     expect(v.cabe).toBe(false);
   });
 
   it("conta quantos pares tiveram livro curto — o número é piso quando há algum", () => {
-    const v = vereditoPorTamanho([imp(0.1), imp(0.2, true), imp(0.3, true)], 0.2, 0.2);
+    const v = vereditoPorTamanho(50, [imp(0.1), imp(0.2, true), imp(0.3, true)], 0.2, 0.2);
     expect(v.paresComLivroCurto).toBe(2);
     expect(v.pares).toBe(3);
     expect(leituraDaDerrapagem(v)).toContain("MAIOR que este");
@@ -134,16 +159,14 @@ describe("veredito — impacto SOMADO à taxa, que é o que decide", () => {
 
 describe("a leitura da tela diz o que o número SIGNIFICA", () => {
   it("estourou: nomeia a margem e diz que o gravado está otimista", () => {
-    const t = leituraDaDerrapagem(vereditoPorTamanho(
-      [{ usd: 5000, compraPct: 0, vendaPct: 0, idaEVoltaPct: 0.9, livroAcabou: false }], 0.2, 0.2));
+    const t = leituraDaDerrapagem(vereditoPorTamanho(5000, [{ usd: 5000, compraPct: 0, vendaPct: 0, idaEVoltaPct: 0.9, livroAcabou: false }], 0.2, 0.2));
     expect(t).toContain("faltam");
     expect(t).toContain("OTIMISTA");
     expect(t).toContain("$5k");
   });
 
   it("sem dado NÃO vira derrapagem zero", () => {
-    const t = leituraDaDerrapagem(vereditoPorTamanho(
-      [{ usd: 50, compraPct: null, vendaPct: null, idaEVoltaPct: null, livroAcabou: true }], 0.2, 0.2));
+    const t = leituraDaDerrapagem(vereditoPorTamanho(50, [{ usd: 50, compraPct: null, vendaPct: null, idaEVoltaPct: null, livroAcabou: true }], 0.2, 0.2));
     expect(t).toContain("NÃO é o mesmo que derrapagem zero");
   });
 });

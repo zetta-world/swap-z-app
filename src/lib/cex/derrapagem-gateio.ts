@@ -153,15 +153,42 @@ export interface VereditoDerrapagem {
  * de uma segunda cópia que pode divergir.
  */
 export function vereditoPorTamanho(
+  /**
+   * ⚠️ O TAMANHO É PARÂMETRO, NÃO INFERÊNCIA (01/09). Era `impactos[0]?.usd ?? 0`,
+   * e o tamanho é um dado de ENTRADA — conhecido antes de qualquer chamada de
+   * rede. Quando os 10 livros falhavam, `impactos` vinha vazio e as seis linhas
+   * nasciam com `usd: 0`: a tabela imprimia "$0" seis vezes e o `find(p => p.usd
+   * === 50)` do painel não achava nada. Perder um valor sabido por falha da
+   * fonte é trocar informação por zero.
+   */
+  usd: number,
   impactos: readonly ImpactoNoTamanho[],
-  taxaPorPernaPct: number,
+  /**
+   * ⚠️⚠️ `number | null`, E ESTA ASSINATURA É O CONSERTO (01/09).
+   *
+   * A rota chamava `vereditoPorTamanho(impactos, taxaPorPernaPct ?? 0, ...)`
+   * três linhas abaixo de um comentário que declarava, textualmente: *"SEM TAXA
+   * MEDIDA, O VEREDITO NÃO É INVENTADO... `null` força a tela a dizer que não
+   * sabe"*. O `?? 0` fazia o contrário do comentário.
+   *
+   * O efeito medido: 429 na Gate → `taxas=[]` → mediana `null` → `?? 0` →
+   * `sobraPct = 0,4 − 0 − 0 = 0,4` e **`cabe: true`**. O evento gravava
+   * `sobra_50usd_pct: 0.4` e `cabe_em_50usd: true` numa rodada em que a taxa
+   * nunca foi lida — uma aprovação construída sobre ausência.
+   */
+  taxaPorPernaPct: number | null,
   orcamentoPorPernaPct: number = CUSTO_POR_PERNA_PCT,
 ): VereditoDerrapagem {
-  const usd = impactos[0]?.usd ?? 0;
   const idaEVoltaPct = mediana(impactos.map((i) => i.idaEVoltaPct));
   const orcamentoCiclo = orcamentoPorPernaPct * 2;
-  const taxaCiclo = taxaPorPernaPct * 2;
-  const sobraPct = idaEVoltaPct == null ? null : orcamentoCiclo - taxaCiclo - idaEVoltaPct;
+  /**
+   * ⚠️ QUALQUER PARCELA AUSENTE ANULA A SOBRA. Subtrair um zero que significa
+   * "não sei" produz um número maior que a verdade — e sobra maior é justamente
+   * o lado que aprova.
+   */
+  const sobraPct = idaEVoltaPct == null || taxaPorPernaPct == null
+    ? null
+    : orcamentoCiclo - taxaPorPernaPct * 2 - idaEVoltaPct;
 
   return {
     usd, idaEVoltaPct,

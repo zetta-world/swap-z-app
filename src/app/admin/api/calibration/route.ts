@@ -82,13 +82,19 @@ export async function POST(): Promise<NextResponse> {
       : null;
     // O TOTAL importa tanto quanto a média: uma trava que melhora a média
     // cortando 90% dos trades não melhorou nada, só escolheu melhor a dedo.
-    const total = trades > 0 ? (net ?? 0) * trades : 0;
+    /**
+     * ⚠️ `null`, NÃO `0` (01/09). Um braço que não decidiu nada saía com TOTAL
+     * 0,0% e o `corDoResultado(0)` o pintava de VERMELHO — "não mediu" com a
+     * cara de "mediu e perdeu". `pct(null)` já imprime "—" e `corDoResultado(null)`
+     * já devolve cinza; a cor se resolve sozinha assim que o tipo permite null.
+     */
+    const total = trades > 0 ? (net ?? 0) * trades : null;
     const wins = stats.reduce((n, x) => n + x.wins, 0);
     const losses = stats.reduce((n, x) => n + x.losses, 0);
     return {
       nome, oQueMuda, trades,
       netPerTrade: net,
-      totalPct: total,
+      totalPct: total as number | null,
       winRate: wins + losses > 0 ? wins / (wins + losses) : null,
       porPlaybook: stats
         .filter((x) => x.decided >= 15)
@@ -103,7 +109,27 @@ export async function POST(): Promise<NextResponse> {
   await recordEvent("calibration_sweep", { meta: {
     symbols: usaveis.length, bars: BARS_1H,
     baseNet: base.netPerTrade, baseTrades: base.trades,
-    melhor: [...linhas].sort((a, b) => (b.netPerTrade ?? -9) - (a.netPerTrade ?? -9))[0]?.nome,
+    /**
+     * ⚠️⚠️ O "MELHOR" GRAVADO ERA UM NOME SOLTO, e nome solto vira decisão.
+     *
+     * Em 31/08 o evento gravou `melhor: "RR 2.5"` sobre um baseline NEGATIVO
+     * (−0,54%) e 64 trades. Quem lesse a linha do banco depois não teria como
+     * saber que o vencedor foi eleito por média entre 8 braços, que a base
+     * perdia dinheiro, nem quantos trades sustentavam o número. Escolher o
+     * melhor de N sobre 64 trades é varredura, não medição.
+     *
+     * ⚠️ E ELE É ELEITO POR TOTAL, NÃO POR MÉDIA. Uma trava que melhora a média
+     * cortando 90% dos trades não melhorou nada — só escolheu a dedo. Braços com
+     * menos da metade da amostra da base saem da disputa.
+     */
+    melhor: (() => {
+      const elegiveis = linhas.filter((l) => l.trades >= base.trades * 0.5);
+      const v = [...elegiveis].sort((a, b) => (b.totalPct ?? -9e9) - (a.totalPct ?? -9e9))[0];
+      return v ? { nome: v.nome, trades: v.trades, netPerTrade: v.netPerTrade, totalPct: v.totalPct } : null;
+    })(),
+    nBracos: linhas.length,
+    /** ⚠️ O contexto que faz o "melhor" ser lido como o menos ruim, e não como bom. */
+    baseNegativa: (base.netPerTrade ?? 0) < 0,
   } });
 
   return NextResponse.json({

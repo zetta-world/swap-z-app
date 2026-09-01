@@ -300,6 +300,22 @@ export async function POST(req: Request): Promise<NextResponse> {
     symbols: ok.map((s) => s.symbol),
     aviso: "Parâmetros CLÁSSICOS (50, 20, 14), não escolhidos olhando estes dados. "
       + "A pergunta é binária: alguma coisa simples extraía lucro? Não é encontrar a melhor.",
+    /**
+     * ⚠️⚠️ A LACUNA VAI PARA A TELA, NÃO SÓ PARA O COMENTÁRIO (01/09).
+     *
+     * As linhas com ⇅ operam VENDIDO metade da janela e o carrego dessa perna
+     * não é cobrado em lugar nenhum — o rodapé chamava a diferença de "preço
+     * EXATO da restrição long-only". As rotas irmãs deste laboratório têm
+     * `notMeasured` como canal de primeira classe; esta não usa `lab_runs`, e
+     * por isso a lacuna precisa viajar no payload.
+     */
+    naoMedido: [
+      "⚠️ o CARREGO da perna vendida (funding, aluguel de papel, custo de margem) — as linhas "
+        + "com ⇅ ficam vendidas em metade das barras e pagam só a taxa de execução na troca. "
+        + "O erro é de SINAL DESCONHECIDO: funding positivo paga o vendido, negativo cobra dele",
+      "risco de liquidação da perna vendida, que nenhuma série de preço mostra",
+      "derrapagem — só a taxa de execução entra, e ela é a mesma para os dois lados",
+    ],
     tookMs: Date.now() - t0,
     ranAt: new Date().toISOString(),
   }, { headers: { "Cache-Control": "no-store" } });
