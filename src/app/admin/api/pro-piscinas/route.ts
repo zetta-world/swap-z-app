@@ -5,7 +5,7 @@ import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { PRO_PAIRS, type ProPair } from "@/lib/pro-pairs";
 import {
-  getPoolMeta, getTokenPools, getOHLCVOuFalha, ehIndisponivel,
+  getPoolMeta, getPoolMetaOuFalha, getTokenPools, getOHLCVOuFalha, ehIndisponivel,
   type PoolSummary, type PoolMeta, type PriceToken,
 } from "@/lib/api/geckoterminal";
 import {
@@ -52,6 +52,66 @@ const MAX_CANDIDATAS = 6;
  */
 const TVL_MINIMO_USD = 100_000;
 
+/**
+ * ⚠️⚠️ O RITMO — e ele nasceu de a medição ter se afogado na própria sede.
+ *
+ * Em 31/08, primeira rodada real: o dono clicou MEDIR TODOS e **56 das 62
+ * leituras voltaram 429**. As duas rodadas de 23 pares terminaram em ~5
+ * segundos, o que já denunciava tudo — 23 pares não se medem em 5 segundos, a
+ * fonte só estava dizendo não muito rápido.
+ *
+ * A conta que faltou fazer: a GeckoTerminal pública, sem chave, permite ~30
+ * chamadas por minuto POR IP. Um par custa ~3 + 2k chamadas (meta da atual,
+ * lista de piscinas do token, e OHLCV + meta de cada candidata). Com 3
+ * alternativas são ~9 por par; 23 pares são ~200 chamadas disparadas em rajada.
+ *
+ * ⚠️ E O AGRAVANTE É MEU: `getOHLCVOuFalha` usa `revalidate: 0` de propósito,
+ * porque medir cobertura de vela pede a vela de AGORA. A decisão continua certa
+ * — o que estava errado era pedir 200 velas frescas sem respirar.
+ *
+ * ⚠️ OS IPs DE SAÍDA DA VERCEL SÃO COMPARTILHADOS entre projetos, então a cota
+ * real é menor que 30. Miramos em 20/min, que é 3 segundos entre chamadas.
+ */
+const CHAMADAS_POR_MINUTO_ALVO = 20;
+const ESPERA_ENTRE_CHAMADAS_MS = Math.ceil(60_000 / CHAMADAS_POR_MINUTO_ALVO);
+
+/**
+ * ⚠️ O TETO DE PARES POR CLIQUE, e ele é consequência do ritmo, não gosto.
+ *
+ * A 3s por chamada e ~9 chamadas por par, 6 pares levam ~160s — dentro do
+ * `maxDuration` de 300 com folga para a fonte demorar. Medir os 24 num clique
+ * levaria ~10 minutos e a função morreria no meio.
+ *
+ * ⚠️ E O QUE FICA DE FORA É DITO NA RESPOSTA. Corte silencioso lido como
+ * "medimos tudo" é o defeito irmão do que originou este arquivo.
+ */
+const MAX_PARES_POR_RODADA = 6;
+
+/** Sobra de tempo antes do `maxDuration` — preferimos parar dizendo a parar calado. */
+const ORCAMENTO_MS = 240_000;
+
+/**
+ * O marcapasso: espaça as chamadas e sabe quando o relógio acabou.
+ *
+ * ⚠️ ELE CONTA CHAMADAS, NÃO PARES. Um par com 5 alternativas custa o dobro de
+ * um com 2, e um limite por par deixaria a rajada acontecer dentro do par.
+ */
+function marcapasso(inicioMs: number) {
+  let chamadas = 0;
+  return {
+    get chamadas() { return chamadas; },
+    /** `false` quando o orçamento de tempo acabou — quem chama PARA e reporta. */
+    async passo(): Promise<boolean> {
+      if (Date.now() - inicioMs > ORCAMENTO_MS) return false;
+      if (chamadas > 0) {
+        await new Promise((r) => setTimeout(r, ESPERA_ENTRE_CHAMADAS_MS));
+      }
+      chamadas += 1;
+      return Date.now() - inicioMs <= ORCAMENTO_MS;
+    },
+  };
+}
+
 interface LinhaDaPiscina extends LeituraDaPiscina {
   par: string;
   rede: string;
@@ -85,6 +145,7 @@ async function medirPiscina(
   atual: boolean,
   lado: PriceToken,
   agoraMs: number,
+  mp: ReturnType<typeof marcapasso>,
 ): Promise<LinhaDaPiscina> {
   const vazia: LinhaDaPiscina = {
     par: par.id, rede: par.chain, piscina: endereco.toLowerCase(), rotulo, atual,
@@ -92,7 +153,12 @@ async function medirPiscina(
     velasLidas: null, velasParadas: null, minutosComVela: null,
     coberturaPct: null, amplitudeMediaPct: null, atrasoMin: null,
     tvlUsd: null, volume24hUsd: null, trocas24h: null, precoUsd: null,
+    porqueNaoLeuMeta: null,
   };
+
+  if (!(await mp.passo())) {
+    return { ...vazia, porqueNaoLeu: "orcamento de tempo da rodada esgotado — nao medida" };
+  }
 
   let medida;
   try {
@@ -108,7 +174,19 @@ async function medirPiscina(
    * régua da queixa. Marcar a linha inteira como não-lida por causa de uma
    * segunda requisição jogaria fora a medida que importa.
    */
-  const meta = await getPoolMeta(par.chain, endereco).catch(() => null);
+  await mp.passo();
+  /**
+   * ⚠️ O MOTIVO SOBE JUNTO. Engolir a falha em `null` fazia `julgarPar` escrever
+   * "nenhuma piscina devolveu TVL" sobre piscinas de bilhões que a fonte se
+   * recusou a descrever. `getPoolMetaOuFalha` lança; aqui o motivo vira campo.
+   */
+  let meta: PoolMeta | null = null;
+  let porqueNaoLeuMeta: string | null = null;
+  try {
+    meta = await getPoolMetaOuFalha(par.chain, endereco);
+  } catch (e) {
+    porqueNaoLeuMeta = motivoDe(e);
+  }
   const trocas = meta
     ? ((meta.compras24h ?? 0) + (meta.vendas24h ?? 0)) || null
     : null;
@@ -119,6 +197,7 @@ async function medirPiscina(
     tvlUsd: meta?.tvlUsd ?? null,
     volume24hUsd: meta?.volume24h ?? null,
     trocas24h: trocas,
+    porqueNaoLeuMeta,
     // ⚠️ O lado certo do par: `quote` quando o símbolo que queremos está do
     // outro lado. É a mesma correção que impediu o gráfico de desenhar $1 no
     // lugar de $700 para o WBNB/USDT.
@@ -131,6 +210,7 @@ async function candidatasDe(
   par: ProPair,
   atualEndereco: string,
   meta: PoolMeta | null,
+  mp: ReturnType<typeof marcapasso>,
 ): Promise<{ piscinas: PoolSummary[]; falha: string | null }> {
   const base = meta?.baseTokenAddress?.toLowerCase();
   const quote = meta?.quoteTokenAddress?.toLowerCase();
@@ -138,6 +218,7 @@ async function candidatasDe(
     return { piscinas: [], falha: "nao foi possivel ler os tokens da piscina atual" };
   }
   try {
+    await mp.passo();
     const todas = await getTokenPools(par.chain, base, 20);
     const mesmoPar = todas.filter((p) => {
       const b = p.baseTokenAddress?.toLowerCase();
@@ -178,16 +259,26 @@ export async function POST(req: Request) {
    * cabe em `maxDuration`, mas o botão manda um subconjunto por padrão para não
    * queimar a cota da GeckoTerminal a cada clique.
    */
-  const alvos = Array.isArray(body.pares) && body.pares.length > 0
+  const pedidos = Array.isArray(body.pares) && body.pares.length > 0
     ? PRO_PAIRS.filter((p) => body.pares!.includes(p.id))
     : PRO_PAIRS;
 
-  if (alvos.length === 0) {
+  if (pedidos.length === 0) {
     return NextResponse.json({ error: "nenhum par reconhecido" }, { status: 400 });
   }
 
+  /**
+   * ⚠️⚠️ O CORTE É EXPLÍCITO E VOLTA NA RESPOSTA. Em 31/08 esta rota aceitou 23
+   * pares num clique, disparou ~200 requisições em rajada, e devolveu 56 de 62
+   * leituras em 429 — com "gravado: true" na tela. Uma medição que se afoga na
+   * própria sede e reporta sucesso é pior que uma que recusa a rodada.
+   */
+  const alvos = pedidos.slice(0, MAX_PARES_POR_RODADA);
+  const foraDoLote = pedidos.slice(MAX_PARES_POR_RODADA).map((p) => p.id);
+
   const rodada = randomUUID();
   const agoraMs = Date.now();
+  const mp = marcapasso(t0);
   const linhas: LinhaDaPiscina[] = [];
   const vereditos: (JulgamentoDoPar & { par: string; rede: string })[] = [];
   const semCandidata: string[] = [];
@@ -196,14 +287,14 @@ export async function POST(req: Request) {
     const metaAtual = await getPoolMeta(par.chain, par.pool).catch(() => null);
     const lado = ladoDo(par, metaAtual);
 
-    const { piscinas, falha } = await candidatasDe(par, par.pool, metaAtual);
+    const { piscinas, falha } = await candidatasDe(par, par.pool, metaAtual, mp);
     if (falha || piscinas.length === 0) {
       semCandidata.push(`${par.id}: ${falha ?? "nenhuma alternativa acima do TVL minimo"}`);
     }
 
     const doPar: LinhaDaPiscina[] = [];
     doPar.push(await medirPiscina(
-      par, par.pool, rotuloDe(par.dex, par.pool, par.feeTier), true, lado, agoraMs,
+      par, par.pool, rotuloDe(par.dex, par.pool, par.feeTier), true, lado, agoraMs, mp,
     ));
     for (const alt of piscinas) {
       /**
@@ -218,7 +309,7 @@ export async function POST(req: Request) {
           ? lado
           : (lado === "base" ? "quote" : "base");
       doPar.push(await medirPiscina(
-        par, alt.address, rotuloDe(alt.dex, alt.address), false, ladoAlt, agoraMs,
+        par, alt.address, rotuloDe(alt.dex, alt.address), false, ladoAlt, agoraMs, mp,
       ));
     }
 
@@ -273,6 +364,13 @@ export async function POST(req: Request) {
     gravado,
     erroAoGravar,
     semCandidata,
+    /**
+     * ⚠️ O QUE NÃO COUBE NESTE CLIQUE, nomeado. Sem esta lista o painel diria
+     * "medimos" sobre 6 de 24 pares, que é a forma mais barata de mentir.
+     */
+    foraDoLote,
+    maxParesPorRodada: MAX_PARES_POR_RODADA,
+    chamadasAFonte: mp.chamadas,
     vereditos,
     linhas,
     /**
@@ -284,6 +382,9 @@ export async function POST(req: Request) {
       "profundidade real por tamanho — a GeckoTerminal não publica liquidez por tick; TVL é proxy e está rotulado como TVL",
       "custo de execução (spread + impacto) em cada piscina — exigiria cotação real por piscina, e a 0x roteia pelo agregador inteiro",
       "estabilidade da cobertura ao longo do dia — esta é UMA janela de " + JANELA_MIN + " minutos, não uma média",
+      ...(foraDoLote.length > 0
+        ? [`${foraDoLote.length} pares ficaram FORA deste clique (teto de ${MAX_PARES_POR_RODADA} por rodada, imposto pelo limite da fonte): ${foraDoLote.join(", ")}`]
+        : []),
     ],
     tookMs: Date.now() - t0,
   });

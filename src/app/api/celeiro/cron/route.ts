@@ -18,6 +18,7 @@ import {
   MULTIPLO_DO_PEDAGIO, type Vela,
 } from "@/lib/celeiro/regime";
 import { tamanhoDaPosicao } from "@/lib/celeiro/agentes";
+import { sementeDe } from "@/lib/celeiro/sementes";
 import { decidir as decidirBase } from "@/lib/celeiro/base-convergencia";
 import { portaoDeProfundidade, converterLivro } from "@/lib/celeiro/profundidade";
 import { portaoDeSobrevivencia, municaoDoDia } from "@/lib/celeiro/pool-novo";
@@ -265,37 +266,20 @@ export async function POST(req: NextRequest) {
     "maker_de_faixa",
   ] as const) {
     const ag = agentePor(id)!;
-    const gen = await genomaAtivo(db, id, id === "convergencia_base"
-      ? { margemPp: 0.15, horasLimite: 8 }
-      : id === "maker_de_faixa"
-      /**
-       * ⚠️⚠️ O BRACKET LARGO DO MAKER, e o número saiu da autópsia de 23/08.
-       *
-       * Ele morreu com ±0,6% acertando 70,4%: no spot, a ida-e-volta de 0,40%
-       * comia DOIS TERÇOS do movimento bruto. A ±1,5% a mesma taxa vira 27% —
-       * e é essa a única variável que o teste muda. Mesmo sinal, mesmo tamanho,
-       * pedágio virando ruído.
-       *
-       * ⚠️ SIMÉTRICO DE PROPÓSITO. Alvo e stop iguais é o que torna a taxa de
-       * alvo-primeiro comparável com a de agosto: num passeio, 50% é o esperado,
-       * e foi contra esse 50% que os 70,4% deram p≈0,026. Mexer na simetria
-       * junto com a largura mediria duas mudanças de uma vez.
-       *
-       * ⚠️ E O HORIZONTE SOBE DE 8h PARA 24h. Um alvo 2,5× mais distante no
-       * mesmo prazo seria um teste diferente: mais saídas por tempo, menos por
-       * alvo, e a taxa de alvo-primeiro cairia por geometria em vez de por
-       * sinal. As quatro saídas por tempo de agosto já mostraram esse risco.
-       */
-      ? { alvoPct: 1.5, stopPct: 1.5, horasLimite: 24, multiploDoPedagio: MULTIPLO_DO_PEDAGIO }
-      : {
-          /**
-           * ⚠️ O ALVO NASCE ACIMA DO PEDÁGIO, e não é escolha de gosto. Com
-           * múltiplo 6 sobre uma ida-e-volta de 0,225%, o mínimo é 1,35%. O
-           * Maker de Faixa morreu com 0,6% — perdendo acertando 65,5%.
-           */
-          alvoPct: 2.0, stopPct: 1.2, horasLimite: 48,
-          multiploDoPedagio: MULTIPLO_DO_PEDAGIO,
-        });
+    /**
+     * ⚠️⚠️ A SEMENTE VEM DE `sementes.ts`, E NÃO MORA MAIS AQUI (31/08).
+     *
+     * Ela vivia num ternário aninhado nesta linha, onde nenhum teste alcança —
+     * uma rota importa `supabase/server` e meio mundo. O preço apareceu no
+     * mesmo dia: o Maker nasceu com `alvoPct: 1.5` sob um comentário que citava
+     * o pedágio LEGADO de 0,225%, enquanto o portão abaixo já cobra
+     * `taxaPerna * 2` do agente — 0,40% no spot, mínimo 2,40%. Ele examinou
+     * BTC/ETH/SOL em produção e recusou os três, para sempre.
+     *
+     * Agora `sementesImpossiveis()` percorre todas as sementes contra o pedágio
+     * de CADA agente, e o teste falha antes do merge. Ver `sementes.ts`.
+     */
+    const gen = await genomaAtivo(db, id, sementeDe(id));
 
     // Primeiro FECHA o que já venceu — antes de pensar em abrir mais.
     const fechados = await varrerAbertas(db, id, precoDe, agora);

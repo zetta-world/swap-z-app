@@ -108,14 +108,46 @@ describe("medirVelas — a queixa do gráfico, virada número", () => {
 });
 
 describe("julgarPar — duas réguas, e o silêncio quando discordam", () => {
-  it("uma piscina lida só não julga nada", () => {
+  it("uma piscina lida só não julga nada — mas a recusa da fonte é dita", () => {
     const j = julgarPar([
       leitura({ piscina: "a", atual: true }),
       leitura({ piscina: "b", porqueNaoLeu: "geckoterminal limite (status 429)" }),
     ]);
+    // ⚠️ `inconclusiva`, NÃO `fonte_recusou`: metade da rodada foi medida.
     expect(j.veredito).toBe("inconclusiva");
     expect(j.lidas).toBe(1);
     expect(j.candidatas).toBe(2);
+    expect(j.porque).toContain("recusa da fonte");
+  });
+
+  /**
+   * ⚠️⚠️ O DEFEITO DE 31/08, VIRADO TESTE. A rota devolveu 56 de 62 leituras em
+   * 429 e o veredito gravado foi "0 de 1 piscinas foram lidas — comparação
+   * precisa de duas", que se lê como "este par só tem uma piscina". O estado
+   * real era "não medimos nada". São conclusões opostas.
+   */
+  it("⚠️ TUDO recusado pela fonte NÃO é 'só existe uma piscina'", () => {
+    const j = julgarPar([
+      leitura({ piscina: "a", atual: true, porqueNaoLeu: "geckoterminal limite (status 429)" }),
+      leitura({ piscina: "b", porqueNaoLeu: "geckoterminal limite (status 429)" }),
+    ]);
+    expect(j.veredito).toBe("fonte_recusou");
+    expect(j.porque).toContain("NADA foi medido");
+    expect(j.porque).not.toContain("comparação precisa de duas");
+  });
+
+  it("⚠️ mas um erro que NÃO é da fonte não vira 'fonte recusou'", () => {
+    const j = julgarPar([
+      leitura({ piscina: "a", atual: true, porqueNaoLeu: "TypeError: x is not a function" }),
+      leitura({ piscina: "b", porqueNaoLeu: "TypeError: x is not a function" }),
+    ]);
+    expect(j.veredito).toBe("inconclusiva");
+  });
+
+  it("⚠️ e uma piscina única de verdade continua sendo inconclusiva", () => {
+    const j = julgarPar([leitura({ piscina: "a", atual: true })]);
+    expect(j.veredito).toBe("inconclusiva");
+    expect(j.porque).toContain("comparação precisa de duas");
   });
 
   it("a atual não lida também é inconclusiva — não há contra o que comparar", () => {
@@ -176,6 +208,33 @@ describe("julgarPar — duas réguas, e o silêncio quando discordam", () => {
       leitura({ piscina: "b", coberturaPct: 60 + dentroDoRuido, tvlUsd: 10e6 }),
     ]);
     expect(j.veredito).toBe("atual_e_a_melhor");
+  });
+
+  /**
+   * ⚠️⚠️ "NÃO PUBLICOU TAMANHO" E "NÃO PERGUNTAMOS" LEVAM A AÇÕES OPOSTAS.
+   * A primeira é um fato sobre a piscina; a segunda é uma rodada a repetir.
+   * Sem o motivo, `julgarPar` descrevia duas piscinas de bilhões de dólares
+   * como "não devolveram TVL".
+   */
+  it("⚠️ TVL barrado pela fonte NÃO é 'a piscina não devolveu TVL'", () => {
+    const j = julgarPar([
+      leitura({ piscina: "a", atual: true, coberturaPct: 20, tvlUsd: null,
+                porqueNaoLeuMeta: "geckoterminal limite (status 429)" }),
+      leitura({ piscina: "b", coberturaPct: 95, tvlUsd: null,
+                porqueNaoLeuMeta: "geckoterminal limite (status 429)" }),
+    ]);
+    expect(j.veredito).toBe("inconclusiva");
+    expect(j.porque).toContain("não foi perguntado");
+    expect(j.porque).not.toContain("nenhuma das 2 piscinas lidas devolveu TVL");
+  });
+
+  it("⚠️ mas TVL genuinamente ausente continua sendo ausência", () => {
+    const j = julgarPar([
+      leitura({ piscina: "a", atual: true, coberturaPct: 20, tvlUsd: null, porqueNaoLeuMeta: null }),
+      leitura({ piscina: "b", coberturaPct: 95, tvlUsd: null, porqueNaoLeuMeta: null }),
+    ]);
+    expect(j.porque).toContain("devolveu TVL");
+    expect(j.porque).not.toContain("não foi perguntado");
   });
 
   it("⚠️ sem TVL em ninguém, uma régua faltou — e uma régua só não decide", () => {

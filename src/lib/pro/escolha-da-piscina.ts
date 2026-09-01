@@ -151,6 +151,18 @@ export interface LeituraDaPiscina extends MedidaDaVela {
   atual: boolean;
   /** `null` quando leu. Texto quando a fonte recusou — nunca vira zero. */
   porqueNaoLeu: string | null;
+  /**
+   * ⚠️ POR QUE O TVL FALTA — e sem este campo a frase saía uma calúnia.
+   *
+   * A vela e a meta são duas requisições. A vela pode ter lido e a meta ter
+   * batido em 429; a linha fica `lida` com `tvlUsd: null`, e `julgarPar`
+   * escrevia *"nenhuma das 2 piscinas lidas devolveu TVL"* — descrevendo duas
+   * piscinas de bilhões de dólares como se elas não publicassem tamanho.
+   *
+   * `null` aqui significa "a meta foi lida" (o TVL nulo é da fonte mesmo);
+   * texto significa "não perguntamos ou fomos barrados".
+   */
+  porqueNaoLeuMeta?: string | null;
   tvlUsd: number | null;
   volume24hUsd: number | null;
   trocas24h: number | null;
@@ -161,7 +173,13 @@ export type VereditoPiscina =
   | "atual_e_a_melhor"
   | "trocar"
   | "conflito"
-  | "inconclusiva";
+  | "inconclusiva"
+  /**
+   * ⚠️ A FONTE NOS BARROU — e este estado existe porque em 31/08 ele saiu como
+   * `inconclusiva` com o texto "0 de 1 piscinas foram lidas", que se lê como
+   * "este par só tem uma piscina". Ver a nota dentro de `julgarPar`.
+   */
+  | "fonte_recusou";
 
 export interface JulgamentoDoPar {
   melhorParaOGrafico: string | null;
@@ -193,11 +211,52 @@ export function julgarPar(leituras: ReadonlyArray<LeituraDaPiscina>): Julgamento
   const base = { melhorParaOGrafico: null, maiorLiquidez: null, atual, lidas: lidas.length, candidatas };
 
   if (lidas.length < 2) {
+    /**
+     * ⚠️⚠️ "NÃO HÁ ALTERNATIVA" E "A FONTE RECUSOU" SÃO COISAS DIFERENTES, e em
+     * 31/08 esta função as colapsou — no primeiro dia de vida dela.
+     *
+     * O dono clicou em MEDIR TODOS. A GeckoTerminal devolveu 429 em 56 das 62
+     * leituras, e o veredito gravado no banco foi:
+     *
+     *     "0 de 1 piscinas foram lidas — comparação precisa de duas."
+     *
+     * Que se lê como *"este par só tem uma piscina"*. O estado real era *"não
+     * medimos nada, a fonte nos barrou"* — e são conclusões opostas: a primeira
+     * encerra o assunto, a segunda pede outra rodada.
+     *
+     * É literalmente o defeito que este arquivo inteiro foi escrito para evitar,
+     * cometido por quem escreveu o aviso. Por isso a distinção agora é lida do
+     * `porqueNaoLeu` de cada linha, e não inferida da contagem.
+     */
+    const naoLidas = leituras.filter((l) => l.porqueNaoLeu !== null);
+    const recusadas = naoLidas.filter((l) => /geckoterminal|429|limite|rede/i.test(l.porqueNaoLeu ?? ""));
+
+    /**
+     * ⚠️ E SÓ QUANDO NADA FOI LIDO. Este portão nasceu agressivo demais e o
+     * próprio teste pegou: com a piscina atual LIDA e uma alternativa em 429,
+     * ele gritava "a fonte recusou" sobre uma rodada que mediu metade. Ter uma
+     * leitura e não ter comparação é `inconclusiva` com nota — não rodada
+     * perdida. Trocar um exagero por outro não seria conserto.
+     */
+    if (lidas.length === 0 && naoLidas.length > 0 && recusadas.length === naoLidas.length) {
+      return {
+        ...base,
+        veredito: "fonte_recusou",
+        porque: `a fonte recusou ${recusadas.length} de ${candidatas} leituras `
+          + `(${recusadas[0].porqueNaoLeu}) — NADA foi medido sobre este par. `
+          + `Isto não é "só existe uma piscina": é uma rodada perdida, e ela pede outra `
+          + `com menos pares de uma vez.`,
+      };
+    }
+
     return {
       ...base,
       veredito: "inconclusiva",
       porque: `${lidas.length} de ${candidatas} piscinas foram lidas — comparação precisa de duas. `
-        + `Piscina só é pior que outra quando a outra existe na medição.`,
+        + `Piscina só é pior que outra quando a outra existe na medição.`
+        + (recusadas.length > 0
+          ? ` ⚠️ ${recusadas.length} das não-lidas foram recusa da fonte, não ausência de piscina.`
+          : ""),
     };
   }
   if (!atualLeitura) {
@@ -226,13 +285,23 @@ export function julgarPar(leituras: ReadonlyArray<LeituraDaPiscina>): Julgamento
    * não "a cobertura decide sozinha".
    */
   if (melhorL == null) {
+    /**
+     * ⚠️ E O TEXTO MUDA CONFORME O MOTIVO. "A piscina não publicou TVL" e "não
+     * conseguimos perguntar" levam a ações opostas: a primeira é um fato sobre
+     * a piscina, a segunda é uma rodada a repetir.
+     */
+    const metaBarrada = lidas.filter((l) => l.porqueNaoLeuMeta != null);
+    const causa = metaBarrada.length > 0
+      ? `a fonte barrou a leitura de tamanho em ${metaBarrada.length} de ${lidas.length} piscinas `
+        + `(${metaBarrada[0].porqueNaoLeuMeta}) — o TVL não está ausente, ele não foi perguntado`
+      : `nenhuma das ${lidas.length} piscinas lidas devolveu TVL`;
     return {
       ...base,
       melhorParaOGrafico: melhorG.piscina,
       veredito: "inconclusiva",
-      porque: `nenhuma das ${lidas.length} piscinas lidas devolveu TVL — a régua da execução não foi `
-        + `medida nesta rodada. Pela cobertura, ${melhorG.rotulo} lidera com `
-        + `${pct(melhorG.coberturaPct)}, mas uma régua só não decide troca de endereço.`,
+      porque: `${causa} — a régua da execução não foi medida nesta rodada. Pela cobertura, `
+        + `${melhorG.rotulo} lidera com ${pct(melhorG.coberturaPct)}, mas uma régua só não `
+        + `decide troca de endereço.`,
     };
   }
 
