@@ -210,6 +210,33 @@ describe("julgarPar — duas réguas, e o silêncio quando discordam", () => {
     expect(j.veredito).toBe("atual_e_a_melhor");
   });
 
+  /**
+   * ⚠️⚠️ "NÃO PUBLICOU TAMANHO" E "NÃO PERGUNTAMOS" LEVAM A AÇÕES OPOSTAS.
+   * A primeira é um fato sobre a piscina; a segunda é uma rodada a repetir.
+   * Sem o motivo, `julgarPar` descrevia duas piscinas de bilhões de dólares
+   * como "não devolveram TVL".
+   */
+  it("⚠️ TVL barrado pela fonte NÃO é 'a piscina não devolveu TVL'", () => {
+    const j = julgarPar([
+      leitura({ piscina: "a", atual: true, coberturaPct: 20, tvlUsd: null,
+                porqueNaoLeuMeta: "geckoterminal limite (status 429)" }),
+      leitura({ piscina: "b", coberturaPct: 95, tvlUsd: null,
+                porqueNaoLeuMeta: "geckoterminal limite (status 429)" }),
+    ]);
+    expect(j.veredito).toBe("inconclusiva");
+    expect(j.porque).toContain("não foi perguntado");
+    expect(j.porque).not.toContain("nenhuma das 2 piscinas lidas devolveu TVL");
+  });
+
+  it("⚠️ mas TVL genuinamente ausente continua sendo ausência", () => {
+    const j = julgarPar([
+      leitura({ piscina: "a", atual: true, coberturaPct: 20, tvlUsd: null, porqueNaoLeuMeta: null }),
+      leitura({ piscina: "b", coberturaPct: 95, tvlUsd: null, porqueNaoLeuMeta: null }),
+    ]);
+    expect(j.porque).toContain("devolveu TVL");
+    expect(j.porque).not.toContain("não foi perguntado");
+  });
+
   it("⚠️ sem TVL em ninguém, uma régua faltou — e uma régua só não decide", () => {
     const j = julgarPar([
       leitura({ piscina: "a", atual: true, coberturaPct: 20, tvlUsd: null }),

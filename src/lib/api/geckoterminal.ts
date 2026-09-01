@@ -410,15 +410,40 @@ interface GTIncluded {
 }
 
 export async function getPoolMeta(chainName: string, poolAddress: string): Promise<PoolMeta | null> {
+  try {
+    return await getPoolMetaOuFalha(chainName, poolAddress);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ⚠️⚠️ A MESMA META, MAS LANÇANDO — e a diferença já produziu uma frase falsa.
+ *
+ * `getPoolMeta` tinha `if (!res.ok) return null`, então um 429 virava `null`,
+ * indistinguível de "esta piscina não existe". Em 31/08 a rota de piscinas leu
+ * esse `null` e escreveu, sob o título **"pares sem alternativa"**:
+ *
+ *     "bnb-usdt-pcs-v3: nao foi possivel ler os tokens da piscina atual"
+ *
+ * A frase acusa a PISCINA de não ter tokens legíveis. A verdade era que a FONTE
+ * nos barrou — e a alternativa que a medição existia para achar (a V2, que é a
+ * queixa original do dono) nunca chegou a ser procurada.
+ *
+ * É o irmão exato de `getOHLCVOuFalha`, escrito no mesmo arquivo dois dias
+ * antes pelo mesmo motivo. Faltava dar a mesma saída a esta função.
+ */
+export async function getPoolMetaOuFalha(chainName: string, poolAddress: string): Promise<PoolMeta | null> {
   const network = NETWORK_IDS[chainName];
   if (!network || !poolAddress) return null;
   const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress.toLowerCase()}?include=base_token,quote_token,dex`;
-  try {
+  {
     const res = await fetch(url, {
       headers: { Accept: "application/json;version=20230302" },
       next: { revalidate: 300 },
-    });
-    if (!res.ok) return null;
+    }).catch(() => { throw new GeckoIndisponivel(0, "rede"); });
+    if (res.status === 429) throw new GeckoIndisponivel(429, "limite");
+    if (!res.ok) throw new GeckoIndisponivel(res.status, "erro");
     const data = await res.json() as {
       data?: { id: string; attributes: GTPoolAttrs; relationships?: GTPool["relationships"] };
       included?: GTIncluded[];
@@ -460,8 +485,6 @@ export async function getPoolMeta(chainName: string, poolAddress: string): Promi
       compras24h:     numeroOuNulo(a.transactions?.h24?.buys),
       vendas24h:      numeroOuNulo(a.transactions?.h24?.sells),
     };
-  } catch {
-    return null;
   }
 }
 

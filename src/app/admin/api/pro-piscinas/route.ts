@@ -5,7 +5,7 @@ import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { PRO_PAIRS, type ProPair } from "@/lib/pro-pairs";
 import {
-  getPoolMeta, getTokenPools, getOHLCVOuFalha, ehIndisponivel,
+  getPoolMeta, getPoolMetaOuFalha, getTokenPools, getOHLCVOuFalha, ehIndisponivel,
   type PoolSummary, type PoolMeta, type PriceToken,
 } from "@/lib/api/geckoterminal";
 import {
@@ -153,6 +153,7 @@ async function medirPiscina(
     velasLidas: null, velasParadas: null, minutosComVela: null,
     coberturaPct: null, amplitudeMediaPct: null, atrasoMin: null,
     tvlUsd: null, volume24hUsd: null, trocas24h: null, precoUsd: null,
+    porqueNaoLeuMeta: null,
   };
 
   if (!(await mp.passo())) {
@@ -174,7 +175,18 @@ async function medirPiscina(
    * segunda requisição jogaria fora a medida que importa.
    */
   await mp.passo();
-  const meta = await getPoolMeta(par.chain, endereco).catch(() => null);
+  /**
+   * ⚠️ O MOTIVO SOBE JUNTO. Engolir a falha em `null` fazia `julgarPar` escrever
+   * "nenhuma piscina devolveu TVL" sobre piscinas de bilhões que a fonte se
+   * recusou a descrever. `getPoolMetaOuFalha` lança; aqui o motivo vira campo.
+   */
+  let meta: PoolMeta | null = null;
+  let porqueNaoLeuMeta: string | null = null;
+  try {
+    meta = await getPoolMetaOuFalha(par.chain, endereco);
+  } catch (e) {
+    porqueNaoLeuMeta = motivoDe(e);
+  }
   const trocas = meta
     ? ((meta.compras24h ?? 0) + (meta.vendas24h ?? 0)) || null
     : null;
@@ -185,6 +197,7 @@ async function medirPiscina(
     tvlUsd: meta?.tvlUsd ?? null,
     volume24hUsd: meta?.volume24h ?? null,
     trocas24h: trocas,
+    porqueNaoLeuMeta,
     // ⚠️ O lado certo do par: `quote` quando o símbolo que queremos está do
     // outro lado. É a mesma correção que impediu o gráfico de desenhar $1 no
     // lugar de $700 para o WBNB/USDT.

@@ -26,6 +26,7 @@ import type { VereditoPiscina } from "@/lib/pro/escolha-da-piscina";
 interface Linha {
   par: string; rede: string; piscina: string; rotulo: string; atual: boolean;
   porqueNaoLeu: string | null;
+  porqueNaoLeuMeta?: string | null;
   velasLidas: number | null; velasParadas: number | null;
   minutosComVela: number | null; coberturaPct: number | null;
   amplitudeMediaPct: number | null; atrasoMin: number | null;
@@ -165,6 +166,30 @@ export default function ProPiscinasPanel() {
             )}
           </div>
 
+          {/* ⚠️⚠️ O PLACAR DA FONTE, e ele existe porque a caixa verde acima NÃO
+              mente e mesmo assim engana. Em 31/08 a tela mostrou "✓ gravado no
+              banco" no topo, seguida de 23 blocos cinza de INCONCLUSIVA — e as
+              27 linhas foram mesmo inseridas. O que faltava era alguém somar os
+              429: a rodada inteira não foi evidência sobre piscina nenhuma, e a
+              hierarquia visual dizia sucesso. */}
+          {(() => {
+            const recusadas = data.linhas.filter((l) => l.porqueNaoLeu !== null).length;
+            if (recusadas === 0) return null;
+            const tudo = recusadas === data.linhas.length;
+            return (
+              <div style={{
+                border: `1px solid var(--adm-red)`, borderRadius: 3,
+                padding: "5px 8px", marginBottom: 8,
+                fontSize: 11, lineHeight: 1.6, color: "var(--adm-red)",
+              }}>
+                ⚠️ <b>{recusadas} de {data.linhas.length} leituras não aconteceram</b> — a fonte recusou.
+                {tudo
+                  ? " Esta rodada NÃO é evidência sobre as piscinas: nada foi medido."
+                  : " Os vereditos abaixo valem só para o que sobrou."}
+              </div>
+            );
+          })()}
+
           {/* ── UM BLOCO POR PAR: veredito, depois as piscinas ────────────── */}
           {data.vereditos.map((v) => {
             const doPar = data.linhas.filter((l) => l.par === v.par);
@@ -235,7 +260,15 @@ export default function ProPiscinasPanel() {
                                 </div>
                               )}
                             </td>
-                            <td style={{ textAlign: "right" }}>{usd(l.tvlUsd)}</td>
+                            {/* ⚠️ TVL vazio por RECUSA é vermelho, não traço neutro:
+                                "não publicou tamanho" e "não perguntamos" são coisas
+                                diferentes, e a segunda pede outra rodada. */}
+                            <td style={{
+                              textAlign: "right",
+                              color: l.porqueNaoLeuMeta ? "var(--adm-red)" : undefined,
+                            }}>
+                              {l.tvlUsd == null && l.porqueNaoLeuMeta ? "recusado" : usd(l.tvlUsd)}
+                            </td>
                             <td style={{ textAlign: "right", color: "var(--adm-ink-3)" }}>
                               {l.velasParadas == null ? "—" : l.velasParadas}
                             </td>

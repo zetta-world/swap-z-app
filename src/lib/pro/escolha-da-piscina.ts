@@ -151,6 +151,18 @@ export interface LeituraDaPiscina extends MedidaDaVela {
   atual: boolean;
   /** `null` quando leu. Texto quando a fonte recusou — nunca vira zero. */
   porqueNaoLeu: string | null;
+  /**
+   * ⚠️ POR QUE O TVL FALTA — e sem este campo a frase saía uma calúnia.
+   *
+   * A vela e a meta são duas requisições. A vela pode ter lido e a meta ter
+   * batido em 429; a linha fica `lida` com `tvlUsd: null`, e `julgarPar`
+   * escrevia *"nenhuma das 2 piscinas lidas devolveu TVL"* — descrevendo duas
+   * piscinas de bilhões de dólares como se elas não publicassem tamanho.
+   *
+   * `null` aqui significa "a meta foi lida" (o TVL nulo é da fonte mesmo);
+   * texto significa "não perguntamos ou fomos barrados".
+   */
+  porqueNaoLeuMeta?: string | null;
   tvlUsd: number | null;
   volume24hUsd: number | null;
   trocas24h: number | null;
@@ -273,13 +285,23 @@ export function julgarPar(leituras: ReadonlyArray<LeituraDaPiscina>): Julgamento
    * não "a cobertura decide sozinha".
    */
   if (melhorL == null) {
+    /**
+     * ⚠️ E O TEXTO MUDA CONFORME O MOTIVO. "A piscina não publicou TVL" e "não
+     * conseguimos perguntar" levam a ações opostas: a primeira é um fato sobre
+     * a piscina, a segunda é uma rodada a repetir.
+     */
+    const metaBarrada = lidas.filter((l) => l.porqueNaoLeuMeta != null);
+    const causa = metaBarrada.length > 0
+      ? `a fonte barrou a leitura de tamanho em ${metaBarrada.length} de ${lidas.length} piscinas `
+        + `(${metaBarrada[0].porqueNaoLeuMeta}) — o TVL não está ausente, ele não foi perguntado`
+      : `nenhuma das ${lidas.length} piscinas lidas devolveu TVL`;
     return {
       ...base,
       melhorParaOGrafico: melhorG.piscina,
       veredito: "inconclusiva",
-      porque: `nenhuma das ${lidas.length} piscinas lidas devolveu TVL — a régua da execução não foi `
-        + `medida nesta rodada. Pela cobertura, ${melhorG.rotulo} lidera com `
-        + `${pct(melhorG.coberturaPct)}, mas uma régua só não decide troca de endereço.`,
+      porque: `${causa} — a régua da execução não foi medida nesta rodada. Pela cobertura, `
+        + `${melhorG.rotulo} lidera com ${pct(melhorG.coberturaPct)}, mas uma régua só não `
+        + `decide troca de endereço.`,
     };
   }
 
