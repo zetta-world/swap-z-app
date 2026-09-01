@@ -34,7 +34,7 @@ export const CEX_TRACKED_SYMBOLS = [
 ] as const;
 
 // Kraken uses a different ticker naming. Map our symbol → Kraken pair.
-const KRAKEN_PAIR: Record<string, string> = {
+export const KRAKEN_PAIR: Record<string, string> = {
   BTC: "XBTUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT", BNB: "BNBUSDT",
   AVAX: "AVAXUSDT", MATIC: "MATICUSDT", LINK: "LINKUSDT", UNI: "UNIUSDT",
   AAVE: "AAVEUSDT", ARB: "ARBUSDT", OP: "OPUSDT", ATOM: "ATOMUSDT",

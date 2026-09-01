@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { fetchOrderbook } from "@/lib/api/cex-orderbook";
+import { fetchOrderbookDetalhado } from "@/lib/api/cex-orderbook";
 import type { CexSpotSource } from "@/lib/api/cex-spot";
 import { assessRealism, type Realism } from "@/lib/zion/arb-realism";
 import { spreadWindow, COST_PCT, MIN_NET_PCT } from "@/lib/zion/arbiter";
@@ -131,22 +131,39 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   const lidas: LinhaVeredito[] = await Promise.all(
     paraLer.map(async (rota): Promise<LinhaVeredito> => {
+      /**
+       * ⚠️ O LEITOR DETALHADO, e não o `fetchOrderbook` mudo (01/09). Os dois
+       * existem: aquele falha fechado para o dinheiro, este diz POR QUE não
+       * leu — porque aqui a diferença entre "livro vazio" e "429" vira classe,
+       * e classe vira veredito sobre o teto de custo.
+       */
       const [compra, venda] = await Promise.all([
-        fetchOrderbook(rota.buy as CexSpotSource, rota.symbol),
-        fetchOrderbook(rota.sell as CexSpotSource, rota.symbol),
-      ]).catch(() => [null, null] as const);
+        fetchOrderbookDetalhado(rota.buy as CexSpotSource, rota.symbol),
+        fetchOrderbookDetalhado(rota.sell as CexSpotSource, rota.symbol),
+      ]).catch(() => [
+        { ok: false, motivo: "rede" } as const,
+        { ok: false, motivo: "rede" } as const,
+      ]);
 
-      const semLivro = !compra?.asks.length || !venda?.bids.length;
-      const realista = semLivro
+      /** A perna que falhou manda: uma ponta não medida deixa a rota não medida. */
+      const falhou = !compra.ok ? compra : !venda.ok ? venda : null;
+      const realista = falhou || !compra.ok || !venda.ok
         ? null
-        : assessRealism(compra.asks, venda.bids, SIZE_USD, rota.spreadTopoPct, COST_PCT);
+        : assessRealism(compra.book.asks, venda.book.bids, SIZE_USD, rota.spreadTopoPct, COST_PCT);
 
-      return { ...rota, realista, ...classificarRota(realista, MIN_NET_PCT) };
+      return {
+        ...rota, realista,
+        ...classificarRota(realista, MIN_NET_PCT, falhou ? falhou.motivo : undefined),
+      };
     }),
   );
 
   const resumo = agregar(lidas.map((l) => l.classe));
-  const veredito = vereditoDoTeto(resumo, janela.ceilPct, janela.floorPct);
+  const veredito = vereditoDoTeto(resumo, janela.ceilPct, janela.floorPct, SIZE_USD, {
+    lidas: paraLer.length,
+    noHistorico: rotas.length,
+    regra: "as de MENOR spread acima do piso",
+  });
 
   await recordEvent("lab_descartadas", { meta: {
     horas,
@@ -154,6 +171,14 @@ export async function GET(req: Request): Promise<NextResponse> {
     rotas_lidas: lidas.length,
     rotas_ignoradas: Math.max(0, rotas.length - lidas.length),
     real: resumo.real, raso: resumo.raso, cadaver: resumo.cadaver,
+    /**
+     * ⚠️ AS DUAS RESSALVAS PASSAM A SER GRAVADAS (01/09). `nao_medido` distingue
+     * "o teto está certo" de "não olhamos"; `historico_truncado` viajava na
+     * resposta e morria nela — o evento anunciava "12 de 87 rotas" como se 87
+     * fosse tudo o que houve na semana.
+     */
+    nao_medido: resumo.naoMedido,
+    historico_truncado: (data ?? []).length >= TETO_EVENTOS,
     ceil_pct: janela.ceilPct,
     floor_pct: janela.floorPct,
     size_usd: SIZE_USD,
