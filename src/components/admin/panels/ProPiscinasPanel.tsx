@@ -41,6 +41,9 @@ interface Dados {
   rodada: string; janelaMin: number; medidoEm: string;
   gravado: boolean; erroAoGravar: string | null;
   semCandidata: string[];
+  foraDoLote: string[];
+  maxParesPorRodada: number;
+  chamadasAFonte: number;
   vereditos: Veredito[];
   linhas: Linha[];
   naoMedido: string[];
@@ -52,12 +55,15 @@ const COR: Record<VereditoPiscina, string> = {
   trocar:           "var(--adm-amber)",
   conflito:         "var(--adm-amber)",
   inconclusiva:     "var(--adm-ink-3)",
+  /** ⚠️ VERMELHO, não cinza. Rodada perdida não é resultado neutro. */
+  fonte_recusou:    "var(--adm-red)",
 };
 const ROTULO: Record<VereditoPiscina, string> = {
   atual_e_a_melhor: "✓ A ATUAL É A MELHOR",
   trocar:           "→ TROCAR",
   conflito:         "⚖ CONFLITO — as duas réguas discordam",
   inconclusiva:     "◌ INCONCLUSIVA",
+  fonte_recusou:    "✕ A FONTE RECUSOU — nada medido",
 };
 
 const pct = (n: number | null, casas = 0) =>
@@ -69,6 +75,14 @@ const usd = (n: number | null) =>
 
 /** Os pares que o botão mede por padrão — o do BNB primeiro, que foi a queixa. */
 const PADRAO = ["bnb-usdt-pcs-v3", "eth-usdt-uni-v3-005", "eth-usdc-uni-v3-005", "btcb-usdt-pcs-v3"];
+
+/**
+ * ⚠️ O SEGUNDO LOTE — os pares que não cabem num clique. A rota corta em 6 por
+ * rodada porque a GeckoTerminal permite ~30 chamadas/min por IP, e em 31/08 um
+ * clique de 23 pares voltou com 56 de 62 leituras em 429.
+ */
+const LOTE_2 = ["arb-usdc-uni-v3-005", "eth-usdc-arb-uni-v3", "op-usdc-uni-v3",
+                "matic-usdc-uni-v3", "avax-usdc-tj-v21", "cbbtc-usdc-base-uni"];
 
 export default function ProPiscinasPanel() {
   const [data, setData]       = useState<Dados | null>(null);
@@ -82,7 +96,7 @@ export default function ProPiscinasPanel() {
       const res = await fetch("/admin/api/pro-piscinas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(todos ? {} : { pares: PADRAO }),
+        body: JSON.stringify({ pares: todos ? LOTE_2 : PADRAO }),
       });
       const body = await res.json() as Dados & { error?: string; detail?: string };
       if (!res.ok) {
@@ -108,12 +122,16 @@ export default function ProPiscinasPanel() {
           {rodando && !tudo ? "medindo…" : `🩺 MEDIR ${PADRAO.length} PARES`}
         </button>
         <button className="adm-btn" onClick={() => void medir(true)} disabled={rodando}>
-          {rodando && tudo ? "medindo os 24…" : `MEDIR TODOS (${PRO_PAIRS.length})`}
+          {rodando && tudo ? "medindo lote 2…" : "🩺 MEDIR LOTE 2"}
         </button>
       </div>
+      {/* ⚠️ O RITMO NA TELA. Em 31/08 um clique de 23 pares devolveu 56 de 62
+          leituras em 429 e a tela disse "gravado". O botão agora é de LOTE, a
+          rota espaça as chamadas, e a rodada demora de propósito. */}
       <div style={{ color: "var(--adm-ink-4)", fontSize: 11, marginTop: 5, lineHeight: 1.6 }}>
-        cada par custa ~2 requisições por piscina candidata, e o limite da GeckoTerminal
-        é por IP — o botão curto existe para não queimar a cota a cada clique
+        a rota espaça as chamadas (~3s cada) porque a GeckoTerminal permite ~30/min por IP,
+        e os IPs da Vercel são compartilhados — <b>uma rodada leva 1 a 3 minutos</b>.
+        Máximo de {PRO_PAIRS.length > 0 ? 6 : 6} pares por clique; o que ficar de fora vem nomeado na resposta.
       </div>
 
       {erro && (
@@ -247,6 +265,13 @@ export default function ProPiscinasPanel() {
             );
           })}
 
+          {data.foraDoLote && data.foraDoLote.length > 0 && (
+            <div style={{ color: "var(--adm-amber)", fontSize: 11, lineHeight: 1.6, marginTop: 6 }}>
+              ⚠️ <b>{data.foraDoLote.length} pares ficaram fora deste clique</b> (teto de{" "}
+              {data.maxParesPorRodada} por rodada): {data.foraDoLote.join(", ")}
+            </div>
+          )}
+
           {data.semCandidata.length > 0 && (
             <div style={{ color: "var(--adm-amber)", fontSize: 11, lineHeight: 1.6, marginTop: 6 }}>
               ⚠️ pares sem alternativa nesta rodada — uma piscina sozinha não se compara com nada:
@@ -266,7 +291,7 @@ export default function ProPiscinasPanel() {
           </div>
 
           <div style={{ color: "var(--adm-ink-4)", fontSize: 11, marginTop: 6 }}>
-            janela de {data.janelaMin} min · medido em {new Date(data.medidoEm).toLocaleString("pt-BR")}
+            {data.chamadasAFonte} chamadas à fonte · janela de {data.janelaMin} min · medido em {new Date(data.medidoEm).toLocaleString("pt-BR")}
             {" · "}{(data.tookMs / 1000).toFixed(1)}s
           </div>
         </div>

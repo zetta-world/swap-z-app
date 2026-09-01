@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { AGENTES, agentePor, ehRegua } from "@/lib/celeiro/agentes";
 import { fracaoDoPedagio, taxaPorPerna } from "@/lib/celeiro/taxas";
+import { sementeDe, sementeAbreAlgumaVez } from "@/lib/celeiro/sementes";
+import { MULTIPLO_DO_PEDAGIO } from "@/lib/celeiro/regime";
 
 /**
  * ⚠️⚠️ O MAKER VOLTA COMO TESTE PRÉ-REGISTRADO (31/08).
@@ -81,30 +83,58 @@ describe("⚠️⚠️ o bracket largo — a única variável que o teste muda",
     expect(f).toBeCloseTo(0.667, 2);
   });
 
-  it("⚠️ a ±1,5% o mesmo pedágio vira 27% — e é essa a hipótese", () => {
+  /**
+   * ⚠️⚠️ ESTES TRÊS TESTES ERAM VARREDURA DE TEXTO SOBRE A ROTA, E ERRARAM
+   * EXATAMENTE COMO SE ESPERA (31/08).
+   *
+   * Eles afirmavam `CRON.toMatch(/alvoPct: 1.5, stopPct: 1.5/)` — a semente
+   * TRANSCRITA, não a semente USADA. Passaram verdes sobre um agente que não
+   * podia abrir posição nenhuma, porque a única coisa que verificavam é que o
+   * literal estava escrito ali. Foi a quarta vez no mesmo dia que uma trava
+   * minha leu texto em vez de valor.
+   *
+   * Agora eles perguntam a `sementeDe`, que é a fonte que o cron consulta. Um
+   * alvo impossível reprova; um alvo movido de arquivo, não.
+   */
+  it("⚠️ a ±1,5% o pedágio vira 27% — abaixo do limiar de atenção, e AINDA ASSIM insuficiente", () => {
     const f = fracaoDoPedagio(taxa(), 1.5);
     expect(f).toBeCloseTo(0.267, 2);
-    // Abaixo do limiar de "atenção" do custo da ideia (um terço).
     expect(f!).toBeLessThan(1 / 3);
+    // ⚠️ E É ISSO QUE NÃO BASTA. "Abaixo de um terço" é o conforto do custo da
+    // ideia; o portão do Celeiro exige 1/6. Confundir os dois foi o defeito.
+    expect(f!).toBeGreaterThan(1 / MULTIPLO_DO_PEDAGIO);
+    expect(sementeAbreAlgumaVez(maker!, { alvoPct: 1.5, stopPct: 1.5 }).abre).toBe(false);
   });
 
-  it("a semente do cron usa 1,5 simétrico", () => {
-    expect(CRON).toMatch(/alvoPct: 1\.5, stopPct: 1\.5, horasLimite: 24/);
+  it("a semente ATIVA é 2,5 simétrico — e ela abre", () => {
+    const s = sementeDe("maker_de_faixa");
+    expect(s.alvoPct).toBe(2.5);
+    expect(s.stopPct).toBe(2.5);
+    expect(sementeAbreAlgumaVez(maker!).abre).toBe(true);
   });
 
-  it("⚠️ SIMÉTRICO de propósito — é o que torna os 70,4% comparáveis", () => {
+  it("⚠️ SIMÉTRICO de propósito — é o que torna a taxa comparável com agosto", () => {
     // Num passeio, alvo == stop dá 50% esperado, e foi contra esse 50% que o
-    // binomial deu p≈0,026. Mexer na simetria junto com a largura mediria duas
-    // mudanças de uma vez.
-    const m = CRON.match(/alvoPct: (1\.5), stopPct: (1\.5)/);
-    expect(m).not.toBe(null);
-    expect(m![1]).toBe(m![2]);
+    // binomial de agosto deu p≈0,026. Mexer na simetria junto com a largura
+    // mediria duas mudanças de uma vez.
+    const s = sementeDe("maker_de_faixa");
+    expect(s.alvoPct).toBe(s.stopPct);
   });
 
   it("⚠️ e o horizonte sobe junto, senão a geometria derruba a taxa sozinha", () => {
-    // Alvo 2,5× mais distante no mesmo prazo daria mais saídas por TEMPO e
-    // menos por alvo — a taxa cairia por geometria, não por sinal.
-    expect(CRON).toMatch(/horasLimite: 24/);
+    // Alvo mais distante no mesmo prazo daria mais saídas por TEMPO e menos por
+    // alvo — a taxa cairia por geometria, não por sinal.
+    expect(sementeDe("maker_de_faixa").horasLimite).toBe(24);
+  });
+
+  it("⚠️ o equilíbrio aritmético do bracket, conferível à mão", () => {
+    // equilíbrio = 0,5 + custo_ida_e_volta / (2 × alvo)
+    const custo = 2 * taxa();
+    const eq = (alvo: number) => 0.5 + custo / (2 * alvo);
+    expect(eq(0.6)).toBeCloseTo(0.833, 3);   // agosto: mediu 70,4% → perdeu
+    expect(eq(2.5)).toBeCloseTo(0.580, 3);   // v3
+    // O bracket largo baixa a barra que o sinal precisa vencer. Esse é o ponto.
+    expect(eq(2.5)).toBeLessThan(eq(0.6));
   });
 });
 
