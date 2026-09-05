@@ -1228,6 +1228,79 @@ o que não existe é o dado.
 
 ---
 
+## 5.13 A BANCADA DO CLIENTE — fases 0 e 1 em produção (05/09)
+
+O dono mandou expor um **laboratório para o cliente**, e corrigiu minha primeira
+leitura: *"ter um laboratório de testes para os clientes não é copiar o nosso e
+pôr para os clientes, é algo totalmente diferente"*. O `/admin` é instrumento de
+pesquisa nosso; a bancada responde outra pergunta — *"a MINHA ideia, com o MEU
+capital, sobrevive ao custo?"*. Desenho inteiro em `docs/PLANO-BANCADA-DO-CLIENTE.md`.
+
+**Fase 0 — a tabela de velas** (`0036`, `lib/mercado/`). Vela de período FECHADO
+nunca muda: buscada uma vez, servida para sempre. O milésimo backtest de BTC sai
+de mil buscas para zero. É o que faz o produto ser barato — o backtest não custa
+token, custa CPU e vela, e a vela era o problema.
+
+**Fase 1 — as primeiras tabelas COM DONO** (`0037`, `lib/bancada/`).
+
+### ⚠️⚠️ A promessa de "RLS de verdade" não sobreviveu à arquitetura
+
+O plano dizia, escrito por mim: *"precisam de policy que amarre `wallet_address`
+à sessão"*. Ao ir escrever, dois fatos do código mataram a ideia:
+
+1. a sessão desta casa é um **JWT nosso** (HS256, `AUTH_JWT_SECRET`), verificado
+   no Node — ele **nunca chega ao Postgres**, e `auth.jwt()` devolveria NULL;
+2. quem consulta usa a **service key**, que **ignora RLS por definição**.
+
+⚠️ Escrever a policy assim mesmo teria sido **pior** do que não escrever: seria
+*uma trava que existe, parece certa, e está desligada do caminho que decide* — a
+classe exata de defeito que esta sessão perseguiu seis vezes. E a próxima pessoa
+a auditar leria a policy e **pararia de procurar**.
+
+O isolamento é real, em outra camada, e está declarado no cabeçalho da migration:
+
+| camada | o que impede |
+|---|---|
+| RLS ligada, zero policies | o anon key (exposto no browser) não lê nada |
+| `dono` é o 1º parâmetro obrigatório de todo o store | esquecer o filtro vira **erro de tipo** |
+| `Dono` é **tipo marcado**, só a sessão o constrói | `POST {"dono":"0xdavítima"}` **não compila** |
+| banco falso com linhas de verdade | prova o dado que voltou, não o texto do código |
+
+⚠️ **E o ataque real não era ler o banco** — é a rota aceitar `dono` do corpo da
+requisição. Nenhuma policy jamais veria isso: do ponto de vista do Postgres a
+consulta está perfeitamente filtrada, só que **pelo valor errado**.
+
+### Quebrado nos dois sentidos antes de subir
+
+| o que quebrei | o que aconteceu |
+|---|---|
+| removi o `.eq("dono", …)` da porta única de leitura | 6 testes vermelhos |
+| removi o `.eq("dono", …)` dos `update` | 3 testes vermelhos |
+| troquei `Dono` por `string` | `type-check` quebrou: *Unused '@ts-expect-error'* |
+
+⚠️ O terceiro é o mais útil: o `@ts-expect-error` no teste **é a asserção**. Se a
+marca do tipo enfraquecer, ele fica sem erro para suprimir e o CI quebra — não há
+como afrouxar a trava em silêncio.
+
+### Duas decisões de custo que ficaram no código
+
+- **A janela da cota é MÓVEL de 24h, não o dia do calendário.** Reset à
+  meia-noite convida ao consumo dobrado na virada: cota inteira às 23h59 e de
+  novo às 00h01.
+- **Rodada `recusada` não consome cota.** Ela é barrada pelo portão do pedágio
+  antes de ler vela nenhuma; cobrar por ela puniria o cliente justamente pela
+  mensagem que o impediu de perder dinheiro, e ensinaria a não testar.
+- **Falha de leitura devolve `null`, nunca `0`.** Zero liberaria a cota inteira
+  exatamente quando o banco está ruim — falha ABERTA num caminho que segura
+  custo.
+
+**Aberto:** fases 2–7 (motor puro, rota com cota, UI `/laboratorio`, estratégias
+da casa, papel adiante no cron, `/pricing` nos 4 locales). E as cotas da §6.2 do
+plano são **desenho meu por critério de custo**, não medição de disposição a
+pagar — preço é decisão do dono.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**

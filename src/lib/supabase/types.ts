@@ -50,6 +50,95 @@ export type MercadoCoberturaRow = {
   atualizada_em: string;
 };
 
+/**
+ * ── A BANCADA DO CLIENTE ────────────────────────────────────────────
+ *
+ * ⚠️⚠️ AS PRIMEIRAS TABELAS COM DONO. Tudo acima é NOSSO — velas, medições,
+ * agentes — e a service key bastava porque não havia de quem separar. Estas
+ * guardam a estratégia que o CLIENTE escreveu.
+ *
+ * ⚠️ `dono` É UM `string` AQUI porque é o que o Postgres devolve; o tipo MARCADO
+ * `Dono`, que a rota não consegue construir a partir do corpo da requisição,
+ * vive em `lib/bancada/dono.ts`. Não afrouxar um pelo outro: este descreve a
+ * linha, aquele descreve a procedência.
+ */
+export type BancadaEstrategiaRow = {
+  id:            string;
+  dono:          string;
+  chain:         WalletChain;
+  nome:          string;
+  params:        Record<string, unknown>;
+  praca:         "spot_gate" | "futuros_gate" | "dex";
+  papel:         "maker" | "taker";
+  /** ⚠️ Arquiva, não apaga: uma rodada aponta para ela e viraria órfã. */
+  arquivada_em:  string | null;
+  criada_em:     string;
+  atualizada_em: string;
+};
+
+/** ⚠️ `params` aqui é CÓPIA CONGELADA — editar a estratégia depois não pode
+ *  reescrever o passado. Mesma disciplina de `lab_runs.startRun`. */
+export type BancadaRodadaRow = {
+  id:            string;
+  dono:          string;
+  chain:         WalletChain;
+  estrategia_id: string | null;
+  origem:        "propria" | "casa";
+  capital_usd:   number;
+  simbolos:      string[];
+  intervalo:     string;
+  janela_de:     number;
+  janela_ate:    number;
+  praca:         "spot_gate" | "futuros_gate" | "dex";
+  papel:         "maker" | "taker";
+  params:        Record<string, unknown>;
+  /** `símbolos × velas`: o custo REAL, que é trabalho e não contagem. */
+  custo_velas:   number;
+  /** ⚠️ `recusada` é DESFECHO (o portão do pedágio), não erro. */
+  status:        "rodando" | "concluida" | "recusada" | "falhou";
+  porque:        string | null;
+  criada_em:     string;
+  terminada_em:  string | null;
+};
+
+/** ⚠️ bruto/taxa/derrapagem SEPARADOS do líquido: todo backtester do mercado
+ *  mostra bruto, e é por isso que todo backtester do mercado mente. */
+export type BancadaResultadoRow = {
+  rodada_id:              string;
+  dono:                   string;
+  bruto_pct:              number;
+  taxa_pct:               number;
+  derrapagem_pct:         number;
+  liquido_pct:            number;
+  n:                      number;
+  acertos:                number;
+  equilibrio_exigido_pct: number | null;
+  /** Três estados + ruído — ver `admin/cor-resultado.ts` e `admin/sample.ts`. */
+  veredito:               "perdeu" | "ganhou" | "ganhou_perdendo_do_indice" | "ruido";
+  /** ⚠️ O que NÃO foi medido tem nome. Vazio = medimos tudo. */
+  nao_medido:             string[];
+  criado_em:              string;
+};
+
+/** ⚠️ `expirada` não é ganho nem perda — cicatriz do flywheel. */
+export type BancadaPosicaoRow = {
+  id:            string;
+  dono:          string;
+  estrategia_id: string;
+  simbolo:       string;
+  lado:          "long" | "short";
+  entrada:       number;
+  tamanho_usd:   number;
+  alvo_pct:      number | null;
+  stop_pct:      number | null;
+  expira_em:     string | null;
+  status:        "aberta" | "ganhou" | "perdeu" | "expirada";
+  saida:         number | null;
+  resultado_pct: number | null;
+  aberta_em:     string;
+  fechada_em:    string | null;
+};
+
 export type ProPiscinaMedicaoRow = {
   id:                  string;
   rodada:              string;
@@ -514,6 +603,30 @@ export interface Database {
         Row: MercadoCoberturaRow;
         Insert: Partial<MercadoCoberturaRow> & { simbolo: string; intervalo: string; coberto_de: number; coberto_ate: number };
         Update: Partial<MercadoCoberturaRow>;
+        Relationships: [];
+      };
+      bancada_estrategia: {
+        Row: BancadaEstrategiaRow;
+        Insert: Partial<BancadaEstrategiaRow> & { dono: string; chain: WalletChain; nome: string; praca: string; papel: string };
+        Update: Partial<BancadaEstrategiaRow>;
+        Relationships: [];
+      };
+      bancada_rodada: {
+        Row: BancadaRodadaRow;
+        Insert: Partial<BancadaRodadaRow> & { dono: string; chain: WalletChain; capital_usd: number; simbolos: string[]; intervalo: string; janela_de: number; janela_ate: number; praca: string; papel: string };
+        Update: Partial<BancadaRodadaRow>;
+        Relationships: [];
+      };
+      bancada_resultado: {
+        Row: BancadaResultadoRow;
+        Insert: Partial<BancadaResultadoRow> & { rodada_id: string; dono: string; bruto_pct: number; taxa_pct: number; derrapagem_pct: number; liquido_pct: number; n: number; acertos: number; veredito: string };
+        Update: Partial<BancadaResultadoRow>;
+        Relationships: [];
+      };
+      bancada_posicao: {
+        Row: BancadaPosicaoRow;
+        Insert: Partial<BancadaPosicaoRow> & { dono: string; estrategia_id: string; simbolo: string; lado: string; entrada: number; tamanho_usd: number };
+        Update: Partial<BancadaPosicaoRow>;
         Relationships: [];
       };
       pro_piscina_medicao: {
