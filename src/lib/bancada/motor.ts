@@ -12,7 +12,13 @@
  */
 
 import type { VelaComTempo } from "@/lib/mercado/velas";
-import { computeExitPath } from "@/lib/paper/engine";
+/**
+ * ⚠️ DE `paper/saida.ts`, NUNCA de `paper/engine.ts` — o engine importa
+ * `supabase/server`, e o empacotador puxa o MÓDULO, não a função. Esta tela é
+ * de cliente: importar do engine arrastaria a service-role key para o navegador
+ * e derrubaria o app inteiro na primeira rota (aconteceu em 24/08).
+ */
+import { computeExitPath } from "@/lib/paper/saida";
 import type { EstrategiaDoCliente, Entrada } from "@/lib/bancada/vocabulario";
 import { taxaDaBancadaPct } from "@/lib/bancada/vocabulario";
 

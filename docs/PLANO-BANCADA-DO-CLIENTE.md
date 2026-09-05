@@ -1,7 +1,7 @@
 # PLANO — A BANCADA DO CLIENTE
 
-> **Status:** 🟡 fases 0 a 3 em produção. Falta a UI (4), as estratégias da
-> casa (5), o papel adiante (6) e a vitrine (7). Este documento é o desenho, e ele
+> **Status:** 🟡 fases 0 a 4 em produção. Falta as estratégias da casa (5), o
+> papel adiante (6) e a vitrine (7). Este documento é o desenho, e ele
 > existe antes de qualquer linha de código porque a regra da casa é essa.
 >
 > **Escrito em:** 05/09/2026, a partir de uma correção do dono.
@@ -326,7 +326,7 @@ Backtest é CPU, papel adiante é cron. Ambos escalam com número de clientes.
 | 1 | migration + isolamento por dono + testes entre carteiras | 🟢 |
 | 2 | `lib/bancada/` puro: custo, pedágio, equilíbrio, veredito (sem rede, testado) | 🟢 |
 | 3 | rota de backtest sob demanda + cotas por tier | 🟢 |
-| 4 | UI `/laboratorio`: montar, ver o pedágio ANTES, rodar, ler o veredito | 🔴 |
+| 4 | UI `/laboratorio`: montar, ver o pedágio ANTES, rodar, ler o veredito | 🟢 |
 | 5 | as estratégias da casa como ponto de partida (o cliente clona e mexe) | 🔴 |
 | 6 | papel adiante (trader+) no cron | 🔴 |
 | 7 | `/pricing` nos 4 locales + `FEATURE_TIER` + `BANCADA_COTAS` | 🔴 |
