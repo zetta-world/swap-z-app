@@ -254,6 +254,7 @@ Backtest é CPU, papel adiante é cron. Ambos escalam com número de clientes.
 
 | # | entrega | status |
 |---|---|---|
+| **0** | **tabela de velas + busca canônica** — é ela que faz o backtest ser barato (§6.1) | 🔴 |
 | 1 | migration + RLS + testes de isolamento entre carteiras | 🔴 |
 | 2 | `lib/bancada/` puro: custo, pedágio, equilíbrio, veredito (sem rede, testado) | 🔴 |
 | 3 | rota de backtest sob demanda + cotas por tier | 🔴 |
@@ -267,15 +268,123 @@ código, a vitrine tem de dizer a mesma coisa — senão é o Free/ZION de novo.
 
 ---
 
-## 6. O que é decisão do dono, não minha
+## 6. As decisões — tomadas em 05/09, pelo critério de LUCRO
 
-1. **As cotas da tabela §2.1 são um chute meu fundamentado, não uma medição.**
-   Elas definem preço e margem. Preciso do seu número, não do meu.
-2. **Papel adiante a partir de `trader` ou de `pro`?** É a diferença entre uma
-   feature de retenção e um custo de cron que cresce com o plano barato.
-3. **A bancada usa nossas praças reais (Gate) ou um custo genérico?** Usar a
-   nossa é mais honesto e amarra o cliente ao nosso custo real; genérico é mais
-   universal e menos nosso.
-4. **Mostramos as estratégias MORTAS da casa como ponto de partida?** Eu acho
-   que sim — "esta perdeu 46% e aqui está o porquê" ensina mais que qualquer
-   verde. Mas é decisão de produto.
+> O dono mandou escolher pelo que for mais lucrativo para a plataforma,
+> lembrando que **cada chamada e cada teste custam dinheiro**. As quatro
+> respostas abaixo saem dessa régua, e a medição que as sustenta vem primeiro.
+
+### 6.0 ⚠️⚠️ O que um teste CUSTA de verdade — medido, não estimado
+
+Antes de qualquer cota, dois fatos do código:
+
+**1. O motor de estratégia é PURO. Zero chamadas de IA.**
+`zion/benchmarks.ts` e `celeiro/regime.ts` não chamam modelo nenhum — um
+backtest é aritmética sobre velas. Ele custa **CPU e vela. Não custa token.**
+
+⚠️ E é por isso que **o ZION explicando o resultado é um produto SEPARADO**. No
+minuto em que "me explica por que perdi" vira botão, o custo por teste sai de
+frações de centavo para o preço de uma chamada de modelo. Essa alavanca fica
+guardada para o tier alto, nunca no free.
+
+**2. As velas já têm cache de 1h — mas keyed pela URL, que inclui o `limit`.**
+`fetchTimedCandles(symbol, interval, limit, 3600)`. Se cada cliente pede uma
+janela diferente, **o cache erra e cada teste refaz a busca**. Com N clientes
+isso é N buscas para o mesmo BTC.
+
+⚠️ E não é hipótese: foi exatamente assim que a medição de piscinas levou **56
+de 62 leituras em 429** em 31/08 — rajada de requisições contra um limite por
+IP compartilhado.
+
+### 6.1 A decisão que decide o lucro (e que o dono não perguntou)
+
+**Tabela de velas no banco, buscada UMA vez, servida para sempre.**
+
+Vela diária de um dia fechado **nunca muda**. Hoje elas vivem só no cache
+efêmero do Next — por deployment, por região. Com tabela:
+
+| | sem tabela | com tabela |
+|---|---|---|
+| 1º backtest de BTC/2 anos | 1 busca | 1 busca |
+| 1.000º backtest de BTC | até 1.000 buscas | **0 buscas** |
+| custo marginal do teste | busca + CPU + risco de 429 | **só CPU** |
+| tamanho | — | 10 símbolos × 730 dias = **7.300 linhas** |
+
+⚠️ **A regra que faz o cache funcionar: buscar SEMPRE a janela canônica máxima
+e fatiar em memória.** Se a busca acompanhar o `limit` do cliente, cada janela
+diferente vira uma chave de cache diferente e o ganho evapora.
+
+Com isso o backtest fica **quase de graça na margem** — e é essa a base das
+respostas 6.2 a 6.5.
+
+### 6.2 As cotas — generoso no que é barato, apertado no que recorre
+
+O ranking de custo real, do mais caro para o mais barato:
+
+1. **papel adiante** — recorrente, por estratégia, para sempre. **É O custo.**
+2. **primeira busca do histórico de um símbolo** — uma vez, depois zero.
+3. **CPU do backtest** — desprezível.
+4. **IA** — zero, enquanto o backtest for mecânico.
+
+Logo: **backtest generoso, papel adiante caro.**
+
+| | free | pro | trader | pilot |
+|---|---|---|---|---|
+| ler as estratégias da casa | ✅ | ✅ | ✅ | ✅ |
+| backtests por dia | **10** | 100 | 500 | sem teto prático |
+| capital simulado máximo | $1.000 | $25.000 | $250.000 | sem teto |
+| estratégias próprias salvas | 1 | 10 | 50 | 200 |
+| janela de histórico | 1 ano | 2 anos | 2 anos | 2 anos |
+| símbolos por teste | 3 | 10 | 10 | 10 |
+| **papel adiante** | — | — | **3 mesas** | **10 mesas** |
+| **ZION explica o resultado** | — | — | — | ✅ |
+
+⚠️ **O free ficou MAIS generoso que meu rascunho anterior (era 3/dia, 90 dias,
+1 símbolo), e isso é decisão econômica, não simpatia.** Depois da tabela de
+velas, dez backtests custam CPU de milissegundos. O que eles compram é
+conversão: o cliente que rodou dez testes e viu o pedágio comer o alvo dele
+entendeu o produto. O que ele NÃO ganha é o que recorre.
+
+⚠️ **O teto real é trabalho, não contagem.** A cota visível é "testes por dia",
+mas o freio interno é `símbolos × dias` por rodada — senão um free pede 3
+símbolos × 1 ano dez vezes e consome mais que um trader disciplinado.
+
+### 6.3 Papel adiante: **`trader`**, não `pro`
+
+É o único custo que **recorre**. Pô-lo no `pro` faz o plano pago mais barato
+gerar o maior custo permanente — margem invertida.
+
+E ele é a razão de subir de `pro` para `trader`, que é o degrau de receita mais
+alto da escada. Backtest é o passado obedecendo; papel adiante é o presente
+discordando, e é isso que se paga para ver.
+
+### 6.4 Custo da NOSSA praça (Gate), como padrão
+
+Duas razões, e as duas são de lucro:
+
+1. **Não custa nada a mais** — `taxas.ts` já tem a tabela por praça E por papel.
+2. ⚠️ **Amarra a medição à nossa mesa.** Um backtester genérico é commodity —
+   o cliente valida a estratégia dele e vai operar em qualquer lugar. Validada
+   com o NOSSO custo, ela só é verdadeira aqui: quem confirmou a $0,20/perna
+   tem motivo para operar a $0,20/perna.
+
+⚠️ Praça alternativa fica como campo, não como padrão — e o resultado carrega
+qual praça mediu, para ninguém comparar duas coisas diferentes.
+
+### 6.5 Mostrar as estratégias MORTAS: **sim**
+
+O argumento honesto já estava escrito. O argumento econômico é mais forte:
+
+- **custo marginal zero** — já foram medidas e pagas;
+- **nenhum concorrente tem** — backtester é commodity, *"esta perdeu 46% e aqui
+  está o porquê"* não é;
+- ⚠️ **elas REDUZEM custo.** O cliente que lê "o pedágio comeu 67% do alvo"
+  antes de rodar cinquenta backtests gasta menos CPU e abre menos suporte. A
+  mesa morta é o professor mais barato que temos.
+
+### 6.6 O que continua sendo do dono
+
+As cotas da 6.2 são **desenho meu por critério de custo**, não medição de
+disposição a pagar. Elas definem preço, e preço é seu. Se você mexer nelas,
+`/pricing` muda nos quatro locales no MESMO commit — a cicatriz do Free/ZION
+existe exatamente por isso.
