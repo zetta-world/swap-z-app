@@ -38,6 +38,7 @@ type Resposta = {
   rotasNoHistorico: number;
   rotasLidas: number;
   rotasIgnoradas: number;
+  historicoTruncado?: boolean;
   resumo: { real: number; raso: number; cadaver: number; total: number };
   veredito: string;
   linhas: Linha[];
@@ -125,9 +126,19 @@ export default function DescartadasPanel() {
           {/* ⚠️ Corte anunciado: silêncio aqui leria como "cobri tudo". */}
           <div style={{ fontSize: 10, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 3 }}>
             {d.rotasLidas} de {d.rotasNoHistorico} rotas · janela {d.horas}h · ${d.custo.sizeUsd}
+            {/* ⚠️ O TRUNCAMENTO VIAJAVA NA RESPOSTA E MORRIA NELA (01/09). A rota
+                calcula `historicoTruncado` e o tipo do painel não o listava, então
+                o `setD(json)` o descartava — a tela imprimia "12 de 87 rotas" como
+                se 87 fosse tudo o que houve na janela. */}
+            {d.historicoTruncado && (
+              <div style={{ color: "var(--adm-amber)", marginTop: 3 }}>
+                ⚠️ histórico truncado no teto de eventos — as anomalias mais antigas
+                da janela ficaram <b>fora desta contagem</b>
+              </div>
+            )}
             {d.rotasIgnoradas > 0 && (
               <span style={{ color: "var(--adm-amber)" }}>
-                {" "}· {d.rotasIgnoradas} não lidas (teto de custo)
+                {" "}· {d.rotasIgnoradas} não lidas (teto de custo, as de MENOR spread são as lidas)
               </span>
             )}
           </div>

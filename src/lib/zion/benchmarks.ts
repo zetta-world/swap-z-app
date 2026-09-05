@@ -154,8 +154,24 @@ export function runBenchmarks(candles: Candle[], warmup = 60, costPct = COST_PCT
   }
 
   // ── 3. Média 50, COMPRADO E VENDIDO. É o que um trader de verdade faria, e
-  //      o que a mesa NÃO pode fazer hoje. A diferença entre 2 e 3 é o preço
-  //      exato da restrição long-only, em número.
+  //      o que a mesa NÃO pode fazer hoje.
+  //
+  // ⚠️⚠️ A DIFERENÇA ENTRE 2 E 3 É O PREÇO **BRUTO** DA RESTRIÇÃO LONG-ONLY, e
+  // dizer "exato" era um overclaim caro (01/09). `runPositions` cobra taxa só na
+  // TROCA; o retorno da barra é `equity *= 1 + ret * pos`, e com `pos === -1`
+  // isso é um espelho perfeito do comprado — SEM funding, SEM aluguel, SEM
+  // margem, SEM liquidação. E `ma50LS` fica posicionada em 100% das barras:
+  // metade da janela é vendida e não custa nada.
+  //
+  // ⚠️ O ERRO É DE SINAL DESCONHECIDO, o que é pior que otimismo: funding
+  // positivo PAGA o vendido, negativo cobra dele. Em ~100 dias de carrego isso
+  // vale entre ±3 e ±15 pontos — a ordem de grandeza da mediana inteira que
+  // esta linha produz.
+  //
+  // ⚠️ E NÃO SE INVENTA UMA CONSTANTE PARA "CORRIGIR". Este laboratório não
+  // chuta número nem para o lado conservador: `fundingAccrued()` já existe em
+  // `arbiter2.ts` com busca real na Bybit, e enquanto ele não viajar até aqui a
+  // saída honesta é a lacuna DECLARADA, não um palpite embutido.
   const ma50LS = fora();
   for (let i = warmup; i < n; i++) {
     const m = sma(closes, i, 50);

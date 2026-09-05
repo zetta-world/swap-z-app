@@ -335,3 +335,67 @@ describe("os dois lados na MESMA moeda", () => {
     expect(c.compraMedio / c.vendaMedio).toBeCloseTo(p.compraMedio / p.vendaMedio, 12);
   });
 });
+
+describe("⚠️ o que o veredito precisa DIZER, e não só decidir (01/09)", () => {
+  const linha = (o: Partial<LinhaDexCex> & { symbol: string }): LinhaDexCex => ({
+    melhorRota: "dex→cex" as const, livroCompleto: true, dexCoerente: true, liquidaPct: 0.5,
+    brutaPct: 0.6, custoPct: 0.1, notionalUsd: 5000,
+    ...o,
+  } as LinhaDexCex);
+
+  /**
+   * ⚠️ A frase vai inteira para `lab_results.verdict_text`. Ela descartava os
+   * dois números que separam as causas: livro raso é o MERCADO; ida e volta
+   * incoerente é a COTAÇÃO. As ações são opostas.
+   */
+  it("zero utilizáveis: a frase separa livro raso de ida-e-volta incoerente", () => {
+    const v = vereditoDexCex([
+      linha({ symbol: "A", livroCompleto: false }),
+      linha({ symbol: "B", livroCompleto: false }),
+      linha({ symbol: "C", dexCoerente: false }),
+    ], 2);
+    expect(v.status).toBe("inconclusiva");
+    expect(v.verdict).toContain("2 fora por livro raso");
+    expect(v.verdict).toContain("1 por ida e volta INCOERENTE");
+    // ⚠️ a expressão que outro teste assere continua ali, ao pé da letra
+    expect(v.verdict).toContain("livro fundo o bastante");
+  });
+
+  it("⚠️ a recusa da fonte aparece, e é dita como recusa", () => {
+    const v = vereditoDexCex([linha({ symbol: "A", livroCompleto: false })], 2,
+      { declarados: 7, recusados: 6 });
+    expect(v.verdict).toContain("1 de 7 pares declarados");
+    expect(v.verdict).toContain("6 foram RECUSADOS pela fonte");
+    expect(v.verdict).toContain("não dizem nada sobre o mercado");
+  });
+
+  it("sem recusa, a frase não inventa ressalva", () => {
+    const v = vereditoDexCex([linha({ symbol: "A", livroCompleto: false })], 2,
+      { declarados: 1, recusados: 0 });
+    expect(v.verdict).not.toContain("RECUSADOS");
+  });
+
+  /**
+   * ⚠️⚠️ O piso é de SÍMBOLOS e comparava LINHAS. Três cotações do ETH dividem o
+   * MESMO livro de CEX — contá-las como três símbolos limpava um piso que existe
+   * para dizer "um par com borda é um par, não um terreno".
+   */
+  it("⚠️ três linhas do MESMO símbolo não limpam um piso de 2 símbolos", () => {
+    const v = vereditoDexCex([
+      linha({ symbol: "ETH", cadeia: "a" }),
+      linha({ symbol: "ETH", cadeia: "b" }),
+      linha({ symbol: "ETH", cadeia: "c" }),
+    ], 2);
+    expect(v.status).toBe("inconclusiva");
+    expect(v.verdict).toContain("3 linha(s)");
+    expect(v.verdict).toContain("1 símbolo(s) distinto(s)");
+  });
+
+  it("⚠️ mas dois símbolos DISTINTOS limpam o mesmo piso", () => {
+    const v = vereditoDexCex([
+      linha({ symbol: "ETH" }),
+      linha({ symbol: "BTC" }),
+    ], 2);
+    expect(v.status).not.toBe("inconclusiva");
+  });
+});

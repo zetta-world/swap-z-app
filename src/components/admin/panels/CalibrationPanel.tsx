@@ -3,6 +3,7 @@
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { corDoResultado } from "@/lib/admin/cor-resultado";
+import { shouldTint, sampleLabel } from "@/lib/admin/sample";
 
 /**
  * VARREDURA DE CALIBRAGEM — "estamos conservadores demais?", com número.
@@ -94,12 +95,28 @@ export default function CalibrationPanel() {
                       fontVariantNumeric: "tabular-nums",
                       color: amostraCaiu ? "var(--adm-red)" : "var(--adm-ink-3)",
                     }}>
-                      {l.trades}{amostraCaiu && <span style={{ fontSize: 10 }}> ⚠</span>}
+                      {sampleLabel(l.trades)}{amostraCaiu && <span style={{ fontSize: 10 }}> ⚠</span>}
                     </td>
+                    {/* ⚠️⚠️ A COR VEM DO SINAL, NÃO DE "GANHOU DA BASE" (01/09).
+                        Este ternário pintava de VERDE um líquido NEGATIVO sempre
+                        que ele fosse menos ruim que a base — e em 31/08 a base
+                        era −0,54%, então "melhor que a base" queria dizer "perde
+                        menos". Verde sobre número que perde dinheiro é a leitura
+                        exata que o painel de LP já custou caro para desfazer.
+                        ⚠️ E a tinta respeita a amostra: `shouldTint` é a régua
+                        que a casa já tem e este painel não usava. */}
                     <td style={{
                       fontVariantNumeric: "tabular-nums",
-                      color: melhorQueBase && !amostraCaiu ? "var(--adm-green)" : "var(--adm-ink-3)",
-                    }}>{pct(l.netPerTrade)}</td>
+                      color: shouldTint(l.trades) ? corDoResultado(l.netPerTrade) : "var(--adm-ink-4)",
+                    }}>
+                      {pct(l.netPerTrade)}
+                      {/* Ganhar da base é informação, mas não é vitória: marcador sem cor. */}
+                      {melhorQueBase && !amostraCaiu && (
+                        <span style={{ color: "var(--adm-ink-4)", fontSize: 10 }} title="melhor que a base">
+                          {" "}▲
+                        </span>
+                      )}
+                    </td>
                     {/* O TOTAL é o juiz: média boa com amostra minúscula não paga conta. */}
                     <td style={{
                       fontVariantNumeric: "tabular-nums",

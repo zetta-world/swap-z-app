@@ -10,7 +10,7 @@ import type { CexSpotSource } from "@/lib/api/cex-spot";
 import { findToken } from "@/lib/tokens";
 import { median } from "@/lib/zion/stats";
 import {
-  precoCex, precoDex, sentidos, melhorSentido, vereditoDexCex,
+  precoCex, precoDex, sentidos, melhorSentido, vereditoDexCex, MIN_SIMBOLOS,
   TAXA_CEX_PCT, PARES_EXCLUIDOS, enderecoLiFi, idaEVoltaCoerente,
   converterCexParaUsdc, type LinhaDexCex,
 } from "@/lib/lab/dex-cex";
@@ -224,7 +224,16 @@ export async function POST(): Promise<NextResponse> {
   }));
 
   linhas.sort((a, b) => b.liquidaPct - a.liquidaPct);
-  const veredito = vereditoDexCex(linhas);
+  /**
+   * ⚠️ A RECUSA DA FONTE VIAJA ATÉ O TEXTO (01/09). Sem `declarados`/`recusados`
+   * o veredito tratava `linhas.length` como o universo, e em 31/08 gravou em
+   * `lab_results.verdict_text` uma frase sobre PROFUNDIDADE DE LIVRO num caso em
+   * que a LI.FI podia simplesmente não ter respondido.
+   */
+  const veredito = vereditoDexCex(linhas, MIN_SIMBOLOS, {
+    declarados: PARES.length,
+    recusados: falhas.length,
+  });
   const usaveis = linhas.filter((l) => l.livroCompleto && l.dexCoerente);
   const medianaLiquida = usaveis.length ? median(usaveis.map((l) => l.liquidaPct)) : null;
 
@@ -249,6 +258,12 @@ export async function POST(): Promise<NextResponse> {
         costPct: TAXA_CEX_PCT,
         // ⚠️ A amostra são os pares com livro COMPLETO — parcial mente a favor.
         sampleN: usaveis.length,
+        /**
+         * ⚠️ SÍMBOLOS DISTINTOS, não linhas. O mesmo símbolo aparece em mais de
+         * uma rota de DEX e todas dividem o MESMO livro de CEX — contar linhas
+         * faria três cotações do ETH valerem por três observações.
+         */
+        effectiveN: new Set(usaveis.map((l) => l.symbol)).size,
         verdict: veredito.status,
         verdictText: veredito.verdict,
         perSymbol: linhas.map((l) => ({
@@ -258,6 +273,14 @@ export async function POST(): Promise<NextResponse> {
           liquida: Math.round(l.liquidaPct * 1000) / 1000,
           outra: Math.round(l.outraRotaPct * 1000) / 1000,
           completo: l.livroCompleto,
+          /**
+           * ⚠️ `coerente` PASSA A PERSISTIR (01/09). `per_symbol` guardava só
+           * `livroCompleto`, e faltava justamente a coluna que separa as DUAS
+           * causas de uma linha inutilizável: livro raso é o MERCADO; ida e volta
+           * incoerente é a COTAÇÃO. Sem ela, quem lesse a linha do banco depois
+           * não conseguia reconstituir por que o par saiu.
+           */
+          coerente: l.dexCoerente,
         })),
         notMeasured: naoMedido,
       }, Date.now() - t0);
@@ -272,7 +295,22 @@ export async function POST(): Promise<NextResponse> {
   }
 
   await recordEvent("dex_cex_study", { meta: {
-    pares: linhas.length, comLivroCompleto: usaveis.length,
+    /**
+     * ⚠️⚠️ `comLivroCompleto` CONTAVA DUAS CONDIÇÕES SOB O NOME DE UMA (01/09).
+     *
+     * `usaveis` é `livroCompleto && dexCoerente`. O evento durável gravava esse
+     * número chamando-o de "com livro completo", e o discriminador — quantas
+     * saíram por livro raso, quantas por cotação incoerente — não era gravado em
+     * lugar nenhum. Em 31/08 ficou registrado `comLivroCompleto: 0` de 7, e a
+     * causa daquele zero é irrecuperável do banco.
+     */
+    pares: linhas.length,
+    utilizaveis: usaveis.length,
+    rasos: linhas.filter((l) => !l.livroCompleto).length,
+    incoerentes: linhas.filter((l) => l.livroCompleto && !l.dexCoerente).length,
+    simbolosDistintos: new Set(usaveis.map((l) => l.symbol)).size,
+    paresDeclarados: PARES.length,
+    recusados: falhas.length,
     medianaLiquida, status: veredito.status, notionalUsd: NOTIONAL_USD,
     falhas: falhas.join(" · ") || null, tookMs: Date.now() - t0,
   } });
@@ -281,7 +319,10 @@ export async function POST(): Promise<NextResponse> {
     veredito,
     resumo: {
       pares: linhas.length,
+      /** ⚠️ Mantido para o painel, mas agora ao lado do que o discrimina. */
       comLivroCompleto: usaveis.length,
+      utilizaveis: usaveis.length,
+      rasos: linhas.filter((l) => !l.livroCompleto).length,
       incoerentes: linhas.filter((l) => l.livroCompleto && !l.dexCoerente).length,
       usdtPorUsdc: stable,
       notionalUsd: NOTIONAL_USD,

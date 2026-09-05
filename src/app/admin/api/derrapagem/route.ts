@@ -62,7 +62,14 @@ export async function GET(): Promise<NextResponse> {
 
   const porTamanho = TAMANHOS_USD.map((usd) => {
     const impactos: ImpactoNoTamanho[] = ok.map((l) => impactoNoLivro(l, usd));
-    const v = vereditoPorTamanho(impactos, taxaPorPernaPct ?? 0, CUSTO_POR_PERNA_PCT);
+    /**
+     * ⚠️⚠️ O `?? 0` SAIU DAQUI (01/09), e ele fazia o oposto do comentário três
+     * linhas acima. Com a taxa não medida, `0` produzia `sobra = 0,4` e
+     * `cabe: true` — o painel aprovava $50 numa rodada em que a taxa nunca foi
+     * lida. Agora o `null` viaja, `sobraPct` vira `null`, e `cabe` já falha
+     * fechado sozinho.
+     */
+    const v = vereditoPorTamanho(usd, impactos, taxaPorPernaPct, CUSTO_POR_PERNA_PCT);
     return {
       ...v,
       medido: taxaPorPernaPct !== null,

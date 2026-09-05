@@ -103,7 +103,20 @@ export function rotasDeEventos(eventos: readonly EventoAnomalia[]): RotaDescarta
   return [...porRota.values()].sort((a, b) => b.spreadTopoPct - a.spreadTopoPct);
 }
 
-export type Classe = "real" | "raso" | "cadaver";
+/**
+ * ⚠️⚠️ A QUARTA CLASSE — `nao_medido` — e ela nasceu de um veredito falso (01/09).
+ *
+ * Toda rota sem livro virava **cadáver**, e o veredito concluía: *"4 não tem
+ * livro. O teto está barrando o que o livro barraria de qualquer forma"*. Só
+ * que `fetchOrderbook` devolvia o mesmo `null` para 429, timeout, e para a
+ * **kraken**, que não tinha adaptador e nem chegava a fazer a chamada.
+ *
+ * Chamar de cadáver um livro que ninguém olhou é afirmar sobre o mercado o que
+ * é fato sobre a nossa infraestrutura — e essa afirmação virava a justificativa
+ * do teto de custo. `cadaver` agora exige que a praça tenha RESPONDIDO com um
+ * livro vazio; qualquer outra coisa sai do agregado.
+ */
+export type Classe = "real" | "raso" | "cadaver" | "nao_medido";
 
 export interface Veredito {
   classe: Classe;
@@ -123,11 +136,27 @@ export interface Veredito {
  * evidência: a hipótese sendo testada é "isto é dado podre", e livro que não
  * responde é a confirmação dela, não a falta dela.
  */
-export function classificarRota(r: Realism | null, minNetPct: number): Veredito {
+export function classificarRota(
+  r: Realism | null,
+  minNetPct: number,
+  /**
+   * ⚠️ POR QUE NÃO HOUVE LIVRO. `"vazio"` é a única que autoriza cadáver: só
+   * ela afirma alguma coisa sobre o MERCADO. As outras afirmam sobre nós.
+   */
+  motivoSemLivro?: "vazio" | "http" | "rede" | "sem_adaptador",
+): Veredito {
   if (r === null) {
+    if (motivoSemLivro && motivoSemLivro !== "vazio") {
+      return {
+        classe: "nao_medido",
+        motivo: motivoSemLivro === "sem_adaptador"
+          ? "não temos adaptador de livro para esta praça — NÃO foi medida, e isto não diz nada sobre o mercado"
+          : `a praça não respondeu (${motivoSemLivro}) — NÃO foi medida, e isto não diz nada sobre o mercado`,
+      };
+    }
     return {
       classe: "cadaver",
-      motivo: "livro não respondeu ou veio vazio — é o caso para o qual o teto existe",
+      motivo: "a praça respondeu e o livro veio vazio — é o caso para o qual o teto existe",
     };
   }
   const gate = realismGate(r, minNetPct);
@@ -140,6 +169,8 @@ export interface Agregado {
   real: number;
   raso: number;
   cadaver: number;
+  /** ⚠️ Rotas que a fonte não deixou medir. Não entram em conclusão nenhuma. */
+  naoMedido: number;
   total: number;
 }
 
@@ -148,6 +179,8 @@ export function agregar(classes: readonly Classe[]): Agregado {
     real:    classes.filter((c) => c === "real").length,
     raso:    classes.filter((c) => c === "raso").length,
     cadaver: classes.filter((c) => c === "cadaver").length,
+    /** ⚠️ FORA do denominador de conclusão: não medimos, logo não concluímos. */
+    naoMedido: classes.filter((c) => c === "nao_medido").length,
     total:   classes.length,
   };
 }
@@ -165,19 +198,57 @@ export function agregar(classes: readonly Classe[]): Agregado {
  * símbolo e com livro lido. A troca do `MAX_GROSS_PCT` continua sendo uma
  * decisão de dinheiro, tomada por gente, fora desta rota.
  */
-export function vereditoDoTeto(a: Agregado, ceilPct: number, floorPct: number): string {
+export function vereditoDoTeto(
+  a: Agregado,
+  ceilPct: number,
+  floorPct: number,
+  /**
+   * ⚠️ O TAMANHO VEM DE FORA (01/09). A frase interpolava "$50" fixo enquanto o
+   * medido sai de `ARB_SIZE_USD`. Com a variável em 200, a mesma tela imprimia
+   * "$200" no cabeçalho do corte e "$50" no veredito — e a frase é o que
+   * alguém copia para uma decisão.
+   */
+  sizeUsd: number,
+  /**
+   * ⚠️ COMO A AMOSTRA FOI ESCOLHIDA, e sem isto a frase generaliza demais.
+   * A leitura pega as N rotas de MENOR spread acima do piso — a ponta mais
+   * favorável ao contrário, o que é deliberado. Mas isso ANTI-SELECIONA por
+   * aritmética a única classe capaz de ser REAL: spread grande com livro fundo
+   * fica sempre entre as não lidas. "Estas N não pagaram" é o que a amostra
+   * sustenta; "esta estratégia não paga" não é.
+   */
+  escopo?: { lidas: number; noHistorico: number; regra: string },
+): string {
+  const cifra = `$${sizeUsd}`;
+  /** Rotas que a fonte não deixou medir saem do denominador de conclusão. */
+  const julgaveis = a.total - a.naoMedido;
+  const ressalvaNaoMedido = a.naoMedido > 0
+    ? ` ⚠️ ${a.naoMedido} rota(s) NÃO foram medidas (praça sem adaptador ou sem resposta) — `
+      + "elas ficam fora desta conta, e não são cadáver."
+    : "";
+  const ressalvaEscopo = escopo && escopo.lidas < escopo.noHistorico
+    ? ` ⚠️ Isto vale para as ${escopo.lidas} de ${escopo.noHistorico} rotas lidas, escolhidas pela regra `
+      + `"${escopo.regra}" — a classe REAL exige spread com folga, e ela fica justamente entre as não lidas.`
+    : "";
+
   if (a.total === 0) {
     return "nenhuma rota acima do piso foi descartada na janela — não há o que julgar. "
       + "Sem descarte, o teto não está barrando nada que pagaria.";
   }
-  if (a.real === 0) {
-    return `nenhuma das ${a.total} rotas descartadas sobrevive a andar o livro a $50: `
-      + `${a.raso} morre na profundidade e ${a.cadaver} não tem livro. `
-      + `O teto de ${ceilPct.toFixed(2)}% está barrando o que o livro barraria de qualquer forma — `
-      + "as mesas estão corretamente paradas, e a resposta é que esta estratégia não paga neste custo.";
+  if (julgaveis === 0) {
+    return `nenhuma das ${a.total} rotas pôde ser medida — a fonte não devolveu livro para nenhuma. `
+      + "Isto NÃO é 'o teto está certo': é uma rodada perdida." + ressalvaEscopo;
   }
-  return `${a.real} de ${a.total} rotas descartadas SOBREVIVEM a andar o livro a $50 `
-    + `(${a.raso} morrem na profundidade, ${a.cadaver} sem livro). `
+  if (a.real === 0) {
+    return `nenhuma das ${julgaveis} rotas descartadas E MEDIDAS sobrevive a andar o livro a ${cifra}: `
+      + `${a.raso} morre na profundidade e ${a.cadaver} tem livro vazio. `
+      + `O teto de ${ceilPct.toFixed(2)}% está barrando o que o livro barraria de qualquer forma — `
+      + "as mesas estão corretamente paradas."
+      + ressalvaNaoMedido + ressalvaEscopo;
+  }
+  return `${a.real} de ${julgaveis} rotas descartadas e medidas SOBREVIVEM a andar o livro a ${cifra} `
+    + `(${a.raso} morrem na profundidade, ${a.cadaver} com livro vazio). `
     + `O teto de ${ceilPct.toFixed(2)}% está barrando spread que pagaria o piso de ${floorPct.toFixed(2)}% `
-    + "com profundidade conferida — há número para discutir o teto.";
+    + "com profundidade conferida — há número para discutir o teto."
+    + ressalvaNaoMedido + ressalvaEscopo;
 }

@@ -27,7 +27,7 @@ import { corDoResultado } from "@/lib/admin/cor-resultado";
 
 type Parte = {
   slug: string; nome: string; motor: string;
-  diasProprios: number; idaEVoltaPct: number;
+  diasProprios: number; diasUsados?: number | null; idaEVoltaPct: number;
   brutoPct: number | null; liquidoPct: number | null;
   volAnualPct: number | null; tomboPct: number | null; diasNegativos: number | null;
 };
@@ -235,8 +235,14 @@ export default function CombinacaoPanel() {
                   <th style={{ padding: "3px 5px" }}>VOL</th>
                   <th style={{ padding: "3px 5px" }}>TOMBO</th>
                   <th style={{ padding: "3px 5px" }}>% NEG</th>
-                  {/* A AMOSTRA. Regra nº 5 do laboratório, travada em teste. */}
-                  <th style={{ padding: "3px 5px" }}>DIAS</th>
+                  {/* ⚠️⚠️ A AMOSTRA, E ELA MUDOU DE COLUNA (01/09). Isto imprimia
+                      `diasProprios` — o histórico INTEIRO do fluxo, até 1.273 —
+                      ao lado de um número medido sobre os dias EM COMUM (97 na
+                      rodada de 31/08). A coluna afirmava um n que não era o n da
+                      linha. O histórico continua visível, agora rotulado como
+                      tal e separado do que sustenta o número. */}
+                  <th style={{ padding: "3px 5px" }} title="dias em comum que produziram os números desta linha">DIAS USADOS</th>
+                  <th style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }} title="histórico próprio do fluxo — NÃO é o n desta linha">HIST.</th>
                 </tr>
               </thead>
               <tbody>
@@ -266,6 +272,9 @@ export default function CombinacaoPanel() {
                       <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>
                         {p.diasNegativos == null ? "—" : `${Math.round(p.diasNegativos * 100)}%`}
                       </td>
+                      <td style={{ padding: "3px 5px", color: "var(--adm-ink-3)" }}>
+                        {p.diasUsados ?? "—"}
+                      </td>
                       <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>{p.diasProprios}</td>
                     </tr>
                   ))}
@@ -289,9 +298,10 @@ export default function CombinacaoPanel() {
                    família de defeito que esta semana já achou seis vezes. */}
             <div style={{ marginTop: 4, color: "var(--adm-amber)" }}>
               ⚠️ BRUTO aqui é a <b>média da série própria</b> daquela UMA piscina, ao longo
-              dos DIAS da última coluna. No 🏦 RENDIMENTO é a <b>mediana à vista</b> entre
-              vários produtos, hoje. Divergem por construção: o empréstimo deu 2,67% (média
-              de 1.273 dias da aave-v3 USDT) contra 3,56% (mediana de 5 produtos hoje).
+              dos <b>DIAS USADOS</b> — os dias em comum entre todos os fluxos, não o histórico
+              da coluna HIST. No 🏦 RENDIMENTO é a <b>mediana à vista</b> entre vários
+              produtos, hoje. Divergem por construção: o empréstimo deu 2,67% (média dos
+              {" "}{d.resumo.diasComuns} dias em comum da aave-v3 USDT) contra 3,56% (mediana de 5 produtos hoje).
               Nenhum está errado — são perguntas diferentes, e só a da esquerda serve para
               correlacionar.
             </div>

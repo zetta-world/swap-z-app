@@ -62,10 +62,17 @@ const RANQUEIAM: Array<{ painel: string; amostra: string; porque: string }> = [
   },
   {
     painel: "CombinacaoPanel",
-    amostra: "DIAS",
+    /**
+     * ⚠️ "DIAS USADOS", não "DIAS" (01/09). A coluna antiga imprimia
+     * `diasProprios` — o histórico INTEIRO do fluxo, até 1.273 — ao lado de um
+     * número medido sobre os dias EM COMUM (97). Ela afirmava um n que não era
+     * o n da linha, que é o oposto do que este teste existe para garantir.
+     */
+    amostra: "DIAS USADOS",
     porque: "cada linha é um fluxo de renda ordenado por líquido/ano, e os fluxos têm "
       + "históricos de tamanhos MUITO diferentes — funding vem da okx, APY vem da "
-      + "DefiLlama; sem os dias, um fluxo de 20 dias parece igual a um de 400",
+      + "DefiLlama; sem os dias EM COMUM, um fluxo de 20 dias parece igual a um de 400 "
+      + "e a média de 97 dias parece a média de 1.273",
   },
   {
     painel: "VarianciaPanel",

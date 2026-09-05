@@ -259,6 +259,14 @@ export const MIN_SIMBOLOS = 4;
 
 export function vereditoDexCex(
   linhas: LinhaDexCex[], minSimbolos = MIN_SIMBOLOS,
+  /**
+   * ⚠️ QUANTOS PARES A FONTE RECUSOU (01/09). Sem isto, `linhas.length` era o
+   * universo — e a rodada de 31/08 gravou em `lab_results` a frase *"nenhum dos
+   * 7 pares passou nas duas condições — livro fundo o bastante..."* atribuindo à
+   * PROFUNDIDADE DO LIVRO o que podia ser recusa da LI.FI. Quem lesse a linha do
+   * banco depois não teria como distinguir "o mercado é raso" de "não medimos".
+   */
+  fonte?: { declarados: number; recusados: number },
 ): VereditoDexCex {
   /**
    * ⚠️ DUAS CONDIÇÕES PARA A LINHA CONTAR, e as duas vêm de cicatriz:
@@ -269,20 +277,51 @@ export function vereditoDexCex(
   const parciais = linhas.filter((l) => !l.livroCompleto).length;
   const incoerentes = linhas.filter((l) => l.livroCompleto && !l.dexCoerente).length;
 
+  /**
+   * ⚠️ A RECUSA DA FONTE, DITA EM TODA SAÍDA. Ela não muda o veredito — muda o
+   * que ele SIGNIFICA para quem lê a linha no banco seis meses depois.
+   */
+  const recusa = fonte && fonte.recusados > 0
+    ? ` ⚠️ ${linhas.length} de ${fonte.declarados} pares declarados formaram linha; `
+      + `${fonte.recusados} foram RECUSADOS pela fonte e não dizem nada sobre o mercado.`
+    : "";
+
   if (usaveis.length === 0) {
     return {
       readable: false, status: "inconclusiva",
-      verdict: linhas.length === 0
+      verdict: (linhas.length === 0
         ? "nenhum par com cotação de DEX E livro de CEX — inconclusivo, que não é reprovado."
+        /**
+         * ⚠️ A DISCRIMINAÇÃO ENTRA NA FRASE (01/09). Este texto vai inteiro para
+         * `lab_results.verdict_text`, e ele descartava justamente os dois números
+         * que separam as causas: "livro raso" e "ida e volta incoerente" levam a
+         * ações opostas — a primeira é o mercado, a segunda é a cotação.
+         *
+         * ⚠️ A expressão "livro fundo o bastante" é preservada ao pé da letra:
+         * `dex-cex.test.ts` a assere.
+         */
         : `nenhum dos ${linhas.length} pares passou nas duas condições — livro fundo o `
-          + "bastante para o notional E ida e volta coerente no DEX. INCONCLUSIVO.",
+          + `bastante para o notional E ida e volta coerente no DEX: ${parciais} fora por `
+          + `livro raso, ${incoerentes} por ida e volta INCOERENTE no DEX. INCONCLUSIVO.`)
+        + recusa,
     };
   }
-  if (usaveis.length < minSimbolos) {
+
+  /**
+   * ⚠️⚠️ O PISO É DE SÍMBOLOS, E ELE COMPARAVA LINHAS (01/09).
+   *
+   * O mesmo símbolo aparece em mais de uma linha (uma por rota de DEX), e todas
+   * elas dividem o MESMO livro de CEX. Contar linhas fazia três cotações do ETH
+   * valerem por três símbolos e o piso de "um par com borda é um par, não um
+   * terreno" era limpo por um terreno de um símbolo só.
+   */
+  const simbolosDistintos = new Set(usaveis.map((l) => l.symbol)).size;
+  if (simbolosDistintos < minSimbolos) {
     return {
       readable: false, status: "inconclusiva",
-      verdict: `só ${usaveis.length} par(es) com livro completo, abaixo do piso de `
-        + `${minSimbolos} — um par com borda é um par, não um terreno. INCONCLUSIVO.`,
+      verdict: `${usaveis.length} linha(s) utilizável(is) sobre apenas ${simbolosDistintos} `
+        + `símbolo(s) distinto(s), abaixo do piso de ${minSimbolos} — um par com borda é `
+        + `um par, não um terreno. INCONCLUSIVO.` + recusa,
     };
   }
 

@@ -32,10 +32,22 @@ type Dados = {
   estrategias: Estrategia[];
   correlacao: { rho: number | null; symbols: number; effectiveSymbols: number; nota: string };
   backDays: number; windowDays: number; endedAt: string | null; symbols: string[];
-  aviso: string; tookMs: number;
+  aviso: string; naoMedido?: string[]; tookMs: number;
 };
 
 const pct = (n: number, d = 1) => `${n > 0 ? "+" : ""}${n.toFixed(d)}%`;
+
+/**
+ * ⚠️⚠️ ABAIXO DISTO A CONTAGEM DE POSITIVOS NÃO JULGA NADA (01/09).
+ *
+ * `effectiveSymbols` era calculado na rota, testado, mandado no payload,
+ * TIPADO aqui — e não aparecia mais nenhuma vez no arquivo. A coluna que dá o
+ * veredito usava `symbolsPositive > symbols / 2`, o N CRU, pintando 9/10 de
+ * verde enquanto a linha logo acima já dizia que dez símbolos com ρ=0,75 valem
+ * ~1,3 apostas independentes. A peça existia, era testada, e estava desligada
+ * do caminho que decide.
+ */
+const INDEPENDENTES_MINIMO = 2;
 
 export default function WhatWorkedPanel() {
   const [d, setD] = useState<Dados | null>(null);
@@ -97,6 +109,21 @@ export default function WhatWorkedPanel() {
             🔗 {d.correlacao.nota}
           </div>
 
+          {/* ⚠️ O QUE NÃO FOI MEDIDO, ao lado da correlação e ANTES da tabela.
+              Sem isto o rodapé prometia "o preço exato da restrição long-only"
+              sobre linhas cuja perna vendida não paga carrego nenhum. */}
+          {d.naoMedido && d.naoMedido.length > 0 && (
+            <div style={{
+              fontSize: 11, lineHeight: 1.6, marginBottom: 10, color: "var(--adm-amber)",
+              border: "1px solid var(--adm-amber)", borderRadius: 4, padding: "6px 8px",
+            }}>
+              <b>não medido nesta rodada:</b>
+              <ul style={{ margin: "3px 0 0 16px" }}>
+                {d.naoMedido.map((t) => <li key={t}>{t}</li>)}
+              </ul>
+            </div>
+          )}
+
           <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 8, fontStyle: "italic" }}>
             ⚠ {d.aviso}
             {" · "}janela de ~{d.windowDays} dias, a MESMA do backtest — sem isso, comparar a nossa
@@ -118,6 +145,13 @@ export default function WhatWorkedPanel() {
             <tbody>
               {d.estrategias.map((e) => {
                 const maioria = e.symbolsPositive > e.symbols / 2;
+                /**
+                 * ⚠️ COM ρ ALTO, "9 de 10 positivos" é UM resultado repetido dez
+                 * vezes, não dez confirmações. Abaixo de 2 apostas independentes
+                 * a contagem não julga — sai em cinza, com o número efetivo à
+                 * vista, em vez de verde-ou-vermelho.
+                 */
+                const julgavel = d.correlacao.effectiveSymbols >= INDEPENDENTES_MINIMO;
                 return (
                   <tr key={e.name} style={{ cursor: "pointer" }} onClick={() => setAberta(aberta === e.name ? null : e.name)}>
                     <td style={{ color: "var(--adm-ink-2)" }}>
@@ -141,11 +175,18 @@ export default function WhatWorkedPanel() {
                       color: e.avgTrades < 10 ? "var(--adm-amber)" : "var(--adm-ink-4)",
                     }}>{e.avgTrades.toFixed(0)}{e.avgTrades < 10 ? " ⚠" : ""}</td>
                     {/* O JUIZ. Mediana boa com poucos símbolos positivos é
-                        bilhete premiado, não estratégia. */}
+                        bilhete premiado, não estratégia — e com correlação alta,
+                        MUITOS símbolos positivos também é. Ver `julgavel`. */}
                     <td style={{
                       fontVariantNumeric: "tabular-nums",
-                      color: maioria ? "var(--adm-green)" : "var(--adm-red)",
-                    }}>{e.symbolsPositive}/{e.symbols}</td>
+                      color: !julgavel ? "var(--adm-ink-4)"
+                        : maioria ? "var(--adm-green)" : "var(--adm-red)",
+                    }}>
+                      {e.symbolsPositive}/{e.symbols}
+                      <div style={{ fontSize: 10, color: "var(--adm-ink-4)" }}>
+                        ≈{d.correlacao.effectiveSymbols.toFixed(1)} indep.
+                      </div>
+                    </td>
                     <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--adm-ink-4)" }}>
                       {e.avgExposurePct.toFixed(0)}%
                     </td>
@@ -159,8 +200,9 @@ export default function WhatWorkedPanel() {
           </table>
 
           <div style={{ marginTop: 8, fontSize: 10, color: "var(--adm-ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
-            ⇅ = opera VENDIDO. A diferença entre as linhas com e sem ⇅ é o preço exato da
-            restrição long-only da nossa biblioteca, em número. EXP. é quanto tempo a estratégia
+            ⇅ = opera VENDIDO. A diferença entre as linhas com e sem ⇅ é o preço <b>BRUTO</b> da
+            restrição long-only — <b>sem o carrego da perna vendida</b>, que não é medido (ver
+            o aviso âmbar acima). EXP. é quanto tempo a estratégia
             passa posicionada: render pouco ficando fora quase sempre é diferente de render
             pouco exposto o tempo todo. TOMBO é a maior queda do pico ao vale — é onde quem
             opera com dinheiro desiste. · {d.symbols.length} símbolos · {(d.tookMs / 1000).toFixed(1)}s

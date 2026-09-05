@@ -243,6 +243,14 @@ export async function POST(): Promise<NextResponse> {
     return {
       slug: f.slug, nome: f.nome, motor: f.motor,
       diasProprios: f.porDia.size,
+      /**
+       * ⚠️ OS DIAS QUE PRODUZIRAM O NÚMERO DA LINHA (01/09). `alinhar` corta
+       * todas as séries para a interseção, e cada parte é medida sobre ESSES
+       * dias — mas a tabela imprimia `diasProprios` (o histórico inteiro do
+       * fluxo, até 1.273) ao lado de uma média calculada sobre 97. O rodapé
+       * repetia a afirmação falsa por escrito.
+       */
+      diasUsados: e?.dias ?? null,
       idaEVoltaPct: f.idaEVoltaPct,
       brutoPct: e?.anualizadoPct ?? null,
       liquidoPct: e == null ? null : Number((e.anualizadoPct - f.idaEVoltaPct).toFixed(4)),
@@ -289,7 +297,24 @@ export async function POST(): Promise<NextResponse> {
         costPct: Number(custoEntradaPct.toFixed(4)),
         // A amostra é o número de DIAS em comum: é ele que sustenta a correlação.
         sampleN: dias.length,
-        effectiveN: fluxos.length > 0 ? effectiveSampleSize(fluxos.length, rho) : null,
+        /**
+         * ⚠️⚠️ `null`, E A UNIDADE É O MOTIVO (01/09).
+         *
+         * `sample_n` e `effective_n` são colunas IRMÃS, e a documentação da
+         * migration as amarra na MESMA unidade: *"quantas observações
+         * INDEPENDENTES existem de verdade"*. Aqui `sampleN` são **97 dias** e
+         * o `effectiveN` gravado eram **4 fluxos** — quem consulta lê 97 e 4 e
+         * conclui "a correlação derreteu 96% da amostra", quando os 97 dias
+         * continuam 97 e o 4 é o número de APOSTAS da carteira.
+         *
+         * Não é hipotético: `amostra-efetiva.ts` já escreve por extenso que "a
+         * carteira_verde teve 94 dias virarem amostra EFETIVA 4 por correlação".
+         *
+         * A amostra efetiva EM DIAS não foi medida — a autocorrelação da série
+         * da carteira não é calculada, e inventá-la seria pior que a lacuna. O
+         * número de apostas vai abaixo, com a unidade colada nele.
+         */
+        effectiveN: null,
         correlationRho: rho == null ? null : Math.round(rho * 1000) / 1000,
         maxDrawdownPct: carteira?.tomboPct ?? null,
         // ⚠️ O denominador desta fase é a MELHOR PARTE, não comprar-e-segurar:
