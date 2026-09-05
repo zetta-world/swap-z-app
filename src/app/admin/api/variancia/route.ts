@@ -138,6 +138,20 @@ export async function POST(): Promise<NextResponse> {
     "o strike — este número é o prêmio do índice de 30 dias, não de uma call "
       + "específica; strike fora do dinheiro cobra menos e trava menos",
     "risco de custódia e de margem na corretora de opções",
+    /**
+     * ⚠️ AS DUAS LACUNAS QUE A AUDITORIA DE 05/09 ACHOU. Elas não mudam número
+     * nenhum — mudam o que os números já gravados SIGNIFICAM para quem os
+     * consultar depois, que é exatamente o que este array existe para carregar.
+     */
+    "⚠️ a dependência RESIDUAL entre janelas: o deflacionamento 870 → 29 remove a "
+      + "sobreposição mecânica, mas blocos de 30 dias CONSECUTIVOS ainda compartilham "
+      + "regime de volatilidade. Essa correlação NÃO foi medida — por isso effective_n "
+      + "vai null em vez de repetir sample_n",
+    "⚠️ o titular gravado (net_pct) é o MELHOR de quatro tetos, e os quatro correm "
+      + "sobre as MESMAS janelas — são braços correlacionados, não independentes. Os "
+      + "strikes são declarados antes de ver o resultado (isso está certo), mas máximo "
+      + "de quatro braços é estimador enviesado para cima, e a margem de 1,0 ponto "
+      + "existe por erro de MODELO, não por multiplicidade",
   ];
 
   if (db && runId) {
@@ -154,7 +168,22 @@ export async function POST(): Promise<NextResponse> {
         grossPct: melhorCob?.premioMedioPct ?? null,
         // A "amostra" é a de janelas INDEPENDENTES — ver `janelasIndependentes`.
         sampleN: resumo ? janelasIndependentes(resumo.n, JANELA_DIAS) : 0,
-        effectiveN: resumo ? janelasIndependentes(resumo.n, JANELA_DIAS) : null,
+        /**
+         * ⚠️⚠️ `null`, E A CÓPIA ERA O DEFEITO (05/09).
+         *
+         * `sampleN` e `effectiveN` recebiam a MESMA expressão, e `correlationRho`
+         * nunca era passado — a consulta devolvia 29 / 29 / null, e a razão 1,00
+         * se lê como "observações independentes, sem penalidade de correlação".
+         *
+         * O deflacionamento 870 → 29 remove só a sobreposição MECÂNICA das
+         * janelas. A dependência que RESTA — agrupamento de volatilidade entre
+         * blocos de 30 dias consecutivos — não é medida em lugar nenhum. As 12
+         * piores janelas de 09/08 eram 21/05, 22/05 … 01/06: um regime só.
+         *
+         * Preencher `effective_n` sem `rho` é o único caminho que não se pode
+         * defender. É a mesma decisão da `carteira_verde` em 01/09.
+         */
+        effectiveN: null,
         maxDrawdownPct: resumo ? Math.abs(Math.min(0, resumo.piorPct)) : null,
         // ⚠️ O DENOMINADOR É SEGURAR A MOEDA — a alternativa real de quem tem
         // BTC. Comparar contra zero mediria meia operação.

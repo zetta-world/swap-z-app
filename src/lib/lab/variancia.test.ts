@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import {
   volRealizadaAnualPct, construirVrp, resumirVrp, vereditoVrp,
   janelasIndependentes, contarEpisodios, pioresJanelas, MIN_JANELAS_INDEPENDENTES,
+  type PontoVrp,
 } from "@/lib/lab/variancia";
 
 /** Série de preços com retorno diário constante em módulo, sinal alternado. */
@@ -311,5 +312,89 @@ describe("janela negativa não é episódio negativo", () => {
     const v = vereditoVrp(resumirVrp(serie), 30);
     expect(v.verdict).toContain("EPISÓDIO");
     expect(v.verdict).toContain("um mês ruim aparece trinta vezes");
+  });
+});
+
+
+describe("⚠️⚠️ a faixa morta: o veredito decidia em ZERO EXATO (05/09)", () => {
+  /**
+   * `vereditoVrp` classificava por `mediaPct <= 0`. Com +0,01 saía
+   * "● VERDE — o prêmio existe"; com −0,01, "● MORTA — vender volatilidade NÃO
+   * paga". Um centésimo de ponto separando aprovação de reprovação, sobre 29
+   * blocos com cauda de −46 pontos.
+   *
+   * ⚠️ E A FAIXA NÃO É UMA CONSTANTE ESCOLHIDA A DEDO: ela sai da DISPERSÃO DOS
+   * BLOCOS medida na própria rodada. A irmã 5.2 usa margem fixa porque o prêmio
+   * dela é de MODELO; aqui os dois lados são medidos, e o que limita é ruído
+   * amostral — que se estima.
+   */
+
+  /** N blocos de 30 dias, cada um com a média pedida. */
+  const blocos = (medias: number[]): PontoVrp[] =>
+    medias.flatMap((m, b) =>
+      Array.from({ length: 30 }, (_, i) => ({
+        dia: `b${b}d${i}`, implicitaPct: 60, realizadaPct: 60 - m, vrpPct: m,
+      })),
+    );
+
+  it("blocos independentes são contados sobre a série cronológica", () => {
+    const r = resumirVrp(blocos(Array(10).fill(2)))!;
+    expect(r.n).toBe(300);
+    expect(r.blocosIndependentes).toBe(10);
+  });
+
+  it("⚠️ blocos idênticos têm dispersão ZERO — e aí a faixa não mascara nada", () => {
+    const r = resumirVrp(blocos(Array(10).fill(2)))!;
+    expect(r.erroPadraoPct).toBe(0);
+    // faixa de 0 não engole nada: +2 continua verde
+    expect(vereditoVrp(r, 30).status).toBe("verde");
+  });
+
+  it("⚠️ média DENTRO do ruído vira INCONCLUSIVA, não verde nem morta", () => {
+    // médias oscilando forte em torno de ~0 → erro padrão grande
+    const r = resumirVrp(blocos([20, -20, 18, -18, 22, -22, 19, -19, 21, -20.9]))!;
+    expect(r.erroPadraoPct).toBeGreaterThan(1);
+    const v = vereditoVrp(r, 30);
+    expect(v.status).toBe("inconclusiva");
+    expect(v.readable).toBe(false);
+    expect(v.verdict).toContain("DENTRO do ruído");
+    expect(v.verdict).toContain("erros padrão");
+  });
+
+  it("⚠️ e o mesmo sinal FORA do ruído continua decidindo", () => {
+    const r = resumirVrp(blocos([6, 5, 7, 6, 5, 7, 6, 5, 7, 6]))!;
+    const v = vereditoVrp(r, 30);
+    expect(v.status).toBe("verde");
+    expect(v.verdict).not.toContain("DENTRO do ruído");
+  });
+
+  it("⚠️ média negativa fora do ruído continua REPROVANDO", () => {
+    const r = resumirVrp(blocos([-6, -5, -7, -6, -5, -7, -6, -5, -7, -6]))!;
+    expect(vereditoVrp(r, 30).status).toBe("morta");
+  });
+
+  /**
+   * ⚠️ SEM DOIS BLOCOS NÃO HÁ DISPERSÃO — e `null` ali é ausência de estimativa,
+   * nunca precisão infinita. Um zero diria "a média é exatíssima", e a faixa que
+   * ele alimenta aprovaria qualquer coisa acima de zero.
+   */
+  it("⚠️ menos de dois blocos: erro padrão é null, não zero", () => {
+    const r = resumirVrp(blocos([2]))!;
+    expect(r.blocosIndependentes).toBe(1);
+    expect(r.erroPadraoPct).toBeNull();
+  });
+
+  it("⚠️ o desvio é dos BLOCOS, não das 870 diárias", () => {
+    // Dentro de cada bloco os dias variam muito; entre blocos, quase nada.
+    // Calcular sobre as diárias daria erro padrão grande; sobre blocos, pequeno.
+    const zigue: PontoVrp[] = Array.from({ length: 300 }, (_, i) => ({
+      dia: `d${i}`, implicitaPct: 60, realizadaPct: 60,
+      vrpPct: i % 2 === 0 ? 12 : -8,   // média 2 em todo bloco, ruído diário enorme
+    }));
+    const r = resumirVrp(zigue)!;
+    expect(r.mediaPct).toBeCloseTo(2, 6);
+    // Se lesse as diárias, o desvio seria ~10; lendo blocos, é ~0.
+    expect(r.erroPadraoPct!).toBeLessThan(0.5);
+    expect(vereditoVrp(r, 30).status).toBe("verde");
   });
 });

@@ -106,15 +106,6 @@ export default function VarianciaPanel() {
 
       {d && (
         <div style={{ marginTop: 10 }}>
-          <div style={{
-            border: `1px solid ${d.veredito.readable ? "var(--adm-border)" : "var(--adm-amber)"}`,
-            borderRadius: 4, padding: "7px 9px", marginBottom: 10, fontSize: 13, lineHeight: 1.6,
-            color: d.veredito.readable ? "var(--adm-ink-2)" : "var(--adm-amber)",
-          }}>
-            <span style={{ color: COR[d.veredito.status] }}>● {d.veredito.status.toUpperCase()}</span>
-            {" — "}{d.veredito.verdict}
-          </div>
-
           {/* ⚠️ FASE 5.2 — A ESTRATÉGIA, ACIMA DO PRÊMIO.
                  Prêmio positivo é condição NECESSÁRIA e não suficiente: quem
                  decide é se travar a alta custa menos que o prêmio recebido. Por
@@ -195,7 +186,14 @@ export default function VarianciaPanel() {
                         <th style={{ padding: "3px 5px" }}>GANHOU</th>
                         <th style={{ padding: "3px 5px" }}>EXERCIDA</th>
                         <th style={{ padding: "3px 5px" }}>PRÊMIO</th>
-                        <th style={{ padding: "3px 5px" }}>JANELAS</th>
+                        {/* ⚠️ AS DUAS CONTAGENS (05/09). A coluna imprimia só o `n`
+                            diário — 870 — enquanto o veredito do prêmio, na MESMA
+                            tela, dizia "870 diárias ≈ 29 independentes". Janelas de
+                            30 dias se sobrepõem 29/30: 870 é o mesmo mês contado
+                            trinta vezes, e era esse o número que sustentava o "77%". */}
+                        <th style={{ padding: "3px 5px" }} title="diárias sobrepostas ≈ independentes">
+                          JANELAS
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -239,7 +237,12 @@ export default function VarianciaPanel() {
                             <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>
                               +{c.premioMedioPct.toFixed(2)}%
                             </td>
-                            <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>{c.n}</td>
+                            <td style={{ padding: "3px 5px", color: "var(--adm-ink-4)" }}>
+                              {c.n}
+                              <span style={{ color: "var(--adm-ink-3)" }}>
+                                {" "}≈ {Math.floor(c.n / 30)}
+                              </span>
+                            </td>
                           </tr>
                         ))}
                     </tbody>
@@ -265,6 +268,23 @@ export default function VarianciaPanel() {
             ⚠️ ABAIXO É O PRÊMIO (5.1), MEDIDO — não a estratégia. É o combustível da
             coberta, e continua faltando o <b>custo de execução</b> da opção: DVOL é índice,
             não livro, e não há preço histórico em fonte gratuita.
+          </div>
+
+          {/* ⚠️⚠️ O VEREDITO DO PRÊMIO MORA AQUI, E ANTES ELE ESTAVA NO TOPO (05/09).
+                 O comentário logo acima do bloco da coberta já mandava: "o veredito
+                 da coberta vem primeiro, e o do prêmio vira contexto logo abaixo".
+                 O JSX fazia o oposto — a primeira coisa colorida da tela era
+                 "● VERDE — o prêmio existe", enquanto o veredito da MESA, gravado
+                 em `lab_results`, era `inconclusiva`. Condição necessária-e-não-
+                 suficiente ocupando a posição do veredito. Agora ele vem depois do
+                 aviso âmbar que o qualifica. */}
+          <div style={{
+            border: `1px solid ${d.veredito.readable ? "var(--adm-border)" : "var(--adm-amber)"}`,
+            borderRadius: 4, padding: "7px 9px", marginBottom: 10, fontSize: 13, lineHeight: 1.6,
+            color: d.veredito.readable ? "var(--adm-ink-2)" : "var(--adm-amber)",
+          }}>
+            <span style={{ color: COR[d.veredito.status] }}>● {d.veredito.status.toUpperCase()}</span>
+            {" — "}{d.veredito.verdict}
           </div>
 
           {r && (
