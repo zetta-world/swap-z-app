@@ -94,7 +94,11 @@ function Section({ icon: Icon, title, children, accent = "cyan" }: {
   );
 }
 
-export default function AboutView() {
+/**
+ * ⚠️ O modelo vem do servidor (`modeloDaVitrine()`), nunca escrito à mão: é a
+ * mesma `aiAtivo()` que a rota do ZION usa para chamar o modelo.
+ */
+export default function AboutView({ modelo }: { modelo: string }) {
   const t = useT();
 
   return (
@@ -172,7 +176,7 @@ export default function AboutView() {
             },
             {
               icon: Bot, accent: "text-gold", bg: "bg-gold/[0.06] border-gold/20",
-              title: t("about.vpZionTitle"), body: t("about.vpZionBody"),
+              title: t("about.vpZionTitle"), body: t("about.vpZionBody", { model: modelo }),
             },
             {
               icon: BarChart3, accent: "text-violet", bg: "bg-violet/[0.06] border-violet/20",

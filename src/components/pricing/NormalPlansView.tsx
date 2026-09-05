@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Check, ShieldCheck, Swords } from "lucide-react";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { varsDaBancada } from "@/lib/bancada/vitrine";
 import { PLAN_TIERS, usdToSol, normalMonthlyUsd, type PlanTier } from "@/lib/pricing/plans";
 
 /**
@@ -56,14 +57,22 @@ const ACCENT_BY_TIER: Record<string, Accent> = { pro: "gold", trader: "violet", 
 
 // The Hird gets the premium features but NOT the Founder layer (launch-only).
 const FEATURES_BY_TIER: Record<string, MessageKey[]> = {
-  pro:    ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionSonnet", "pricing.featAutopilot"],
-  trader: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionSonnet", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport"],
-  pilot:  ["pricing.featZionOpus", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport"],
+  pro:    ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionModel", "pricing.featBancada", "pricing.featAutopilot"],
+  trader: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionModel", "pricing.featBancada", "pricing.featPapelAdiante", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport"],
+  pilot:  ["pricing.featZionModel", "pricing.featBancada", "pricing.featPapelAdiante", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport"],
 };
 
-const MODEL_BY_TIER: Record<string, string> = { pro: "Sonnet 4.6", trader: "Sonnet 4.6", pilot: "Opus 4.8" };
+/**
+ * ⚠️⚠️ O MAPA DE MODELO POR PLANO FOI REMOVIDO (05/09).
+ *
+ * Ele dizia `{ pro: "Sonnet 4.6", trader: "Sonnet 4.6", pilot: "Opus 4.8" }`, e
+ * as duas metades estavam erradas: a plataforma rodava Kimi, e não existe — nem
+ * nunca existiu — roteamento de modelo por plano. Em `app/api/zion/route.ts` o
+ * tier decide a COTA e o PORTÃO; o modelo é `ZION_MODEL ?? ativo.modelo`, um só
+ * para todo mundo. O nome agora vem de `modeloDaVitrine()`, por prop.
+ */
 
-export default function NormalPlansView() {
+export default function NormalPlansView({ modelo }: { modelo: string }) {
   const t = useT();
   const [solUsd, setSolUsd] = useState<number | null>(null);
   useEffect(() => {
@@ -113,7 +122,7 @@ export default function NormalPlansView() {
         {PLAN_TIERS.map((p) => (
           <WarriorCard
             key={p.tier} plan={p} solUsd={solUsd}
-            features={FEATURES_BY_TIER[p.tier]} model={MODEL_BY_TIER[p.tier]} t={t}
+            features={FEATURES_BY_TIER[p.tier]} model={modelo} t={t}
             highlighted={p.tier === "trader"}
           />
         ))}
@@ -149,7 +158,7 @@ export default function NormalPlansView() {
 
 function WarriorCard({ plan, solUsd, features, model, t, highlighted }: {
   plan: PlanTier; solUsd: number | null; features: MessageKey[]; model: string;
-  t: (k: MessageKey) => string; highlighted?: boolean;
+  t: (k: MessageKey, vars?: Record<string, string | number>) => string; highlighted?: boolean;
 }) {
   const a = ACCENT[ACCENT_BY_TIER[plan.tier]];
   const monthlyUsd = normalMonthlyUsd(plan);
@@ -211,7 +220,7 @@ function WarriorCard({ plan, solUsd, features, model, t, highlighted }: {
           {features.map((f) => (
             <li key={f} className="flex items-start gap-2">
               <Check className={cn("w-3.5 h-3.5 flex-shrink-0 mt-0.5", a.check)} />
-              <span className="font-sans text-[12px] text-ink-2 leading-snug">{t(f)}</span>
+              <span className="font-sans text-[12px] text-ink-2 leading-snug">{t(f, { model, ...varsDaBancada(plan.tier) })}</span>
             </li>
           ))}
         </ul>

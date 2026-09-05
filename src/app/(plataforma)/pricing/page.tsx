@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import PricingView from "@/components/pricing/PricingView";
+import { modeloDaVitrine } from "@/lib/ai/vitrine";
 
 export const metadata: Metadata = {
   title: "O Panteão · Z-SWAP Access Pass",
@@ -13,5 +14,10 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <PricingView />;
+/**
+ * ⚠️ O NOME DO MODELO VEM DO SERVIDOR, de `modeloDaVitrine()` — a mesma
+ * `aiAtivo()` que a rota do ZION usa para chamar o modelo. A vitrine não tem
+ * fonte própria, então não tem como divergir do produto.
+ */
+  return <PricingView modelo={modeloDaVitrine().nome} />;
 }

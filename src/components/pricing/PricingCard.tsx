@@ -5,6 +5,8 @@ import { motion, useMotionValue, useSpring, useReducedMotion } from "framer-moti
 import { Check, Wallet, Loader2, BadgeCheck } from "lucide-react";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { varsDaBancada } from "@/lib/bancada/vitrine";
+import type { Tier } from "@/lib/tier/types";
 
 export type TierAccent = "gold" | "violet" | "prismatic";
 
@@ -21,7 +23,16 @@ export interface TierConfig {
   priceKey:  MessageKey;
   fiatKey?:  MessageKey;
   subKey?:   MessageKey;
-  modelKey:  MessageKey;
+  /**
+   * ⚠️ STRING, NÃO CHAVE DE i18n — e a mudança é o conserto (05/09).
+   *
+   * O nome do modelo era `pricing.tierProModel` etc., escrito à mão em quatro
+   * idiomas. Ele passou meses anunciando "Sonnet 4.6" com a plataforma rodando
+   * Kimi, e anunciando "Opus 4.8" ao plano de 30 SOL sem que nenhuma linha do
+   * código roteasse plano para modelo. Agora ele vem de `modeloDaVitrine()`,
+   * derivado da MESMA função que a rota usa para chamar o modelo.
+   */
+  modelo:    string;
   capKey:    MessageKey;
   features:  MessageKey[];
   accent:    TierAccent;
@@ -171,7 +182,7 @@ export default function PricingCard({ tier, onMint, admin }: {
 
         {/* Model + cap */}
         <div className="mt-2 text-center font-mono text-[11px] text-ink-2">
-          {t(tier.modelKey)} <span className="text-ink-4">·</span> {t(tier.capKey)}
+          {tier.modelo} <span className="text-ink-4">·</span> {t(tier.capKey)}
         </div>
 
         {/* Features */}
@@ -179,7 +190,9 @@ export default function PricingCard({ tier, onMint, admin }: {
           {tier.features.map((f) => (
             <li key={f} className="flex items-start gap-2">
               <Check className={cn("w-3.5 h-3.5 flex-shrink-0 mt-0.5", a.check)} />
-              <span className="font-sans text-[12px] text-ink-2 leading-snug">{t(f)}</span>
+              {/* ⚠️ `{model}` viaja em TODA feature: a que o usa é a do ZION, e
+                  passar a variável sempre evita que ela volte a ser texto fixo. */}
+              <span className="font-sans text-[12px] text-ink-2 leading-snug">{t(f, { model: tier.modelo, ...varsDaBancada(tier.id as Tier) })}</span>
             </li>
           ))}
         </ul>
