@@ -10,6 +10,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Causa, Braco, Fluxo } from "@/lib/celeiro/fluxo";
+import { genomaAbre } from "@/lib/celeiro/sementes";
 
 export interface LancamentoNovo {
   agente: string;
@@ -563,10 +564,45 @@ export async function mutacaoEmCurso(db: SupabaseClient, agente: string): Promis
  * não reconstruir; e o par (hipótese, resultado) fica no registro inclusive
  * quando falha, porque hipótese refutada é informação.
  */
+export type MutacaoAplicada =
+  | { ok: true; versao: number }
+  | { ok: false; motivo: "impossivel"; porque: string }
+  | { ok: false; motivo: "escrita"; porque: string };
+
 export async function aplicarMutacao(
   db: SupabaseClient, mutacaoId: string, agente: string,
   paramsNovos: Record<string, unknown>, modelo: string, hipotese: string,
-): Promise<number | null> {
+): Promise<MutacaoAplicada> {
+  /**
+   * ⚠️⚠️ O PORTÃO ANTES DA ESCRITA (05/09), e ele custou dois dias de A/B vazio.
+   *
+   * Em 03/09 o modelo aplicou `multiploDoPedagio` 6 → 12 no Maker — raciocínio
+   * legítimo, já que 87,9% do prejuízo era taxa. Mas múltiplo 12 sobre pedágio
+   * de 0,40% exige alvo de 4,80%, e o genoma declarava 2,50%. O agente parou de
+   * abrir e ninguém soube: **0 posições, 0 fluxos no braço da mutação, 9 no
+   * controle**, e o A/B a caminho de concluir que a mutação "não pagou".
+   *
+   * Um genoma que o portão de pedágio SEMPRE recusa não é uma hipótese ruim —
+   * é uma hipótese que não pode ser testada. Ela é recusada aqui, com o motivo
+   * gravado na própria mutação, em vez de descoberta dias depois no banco.
+   */
+  const portao = genomaAbre(agente, paramsNovos);
+  if (portao && !portao.abre) {
+    const porque = `genoma recusado ANTES de entrar no ar: ${portao.porque}`;
+    /**
+     * ⚠️ A RECUSA VIRA REGISTRO, não silêncio. `avaliada_em` fecha a mutação
+     * sem `aplicada_em` — ela nunca esteve no ar, então não há A/B para julgar,
+     * e o placar do modelo não deve ser penalizado por uma ideia que a arena
+     * não deixou testar.
+     */
+    await db.from("celeiro_mutacoes").update({
+      avaliada_em: new Date().toISOString(),
+      veredito: "inconclusiva",
+      porque,
+    }).eq("id", mutacaoId);
+    return { ok: false, motivo: "impossivel", porque };
+  }
+
   const { data: atual } = await db.from("celeiro_genoma")
     .select("versao").eq("agente", agente).order("versao", { ascending: false }).limit(1);
   const versao = (Number(atual?.[0]?.versao) || 0) + 1;
@@ -575,10 +611,11 @@ export async function aplicarMutacao(
   const { error } = await db.from("celeiro_genoma").insert({
     agente, versao, params: paramsNovos, autor: modelo, hipotese, ativo: true,
   });
-  if (error) return null;
+  // ⚠️ `supabase-js` resolve com `{ data: null, error }` — não lança.
+  if (error) return { ok: false, motivo: "escrita", porque: error.message.slice(0, 200) };
 
   await db.from("celeiro_mutacoes").update({ aplicada_em: new Date().toISOString() }).eq("id", mutacaoId);
-  return versao;
+  return { ok: true, versao };
 }
 
 /**

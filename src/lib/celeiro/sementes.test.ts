@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  SEMENTES, sementeDe, sementeAbreAlgumaVez, sementesImpossiveis,
+  SEMENTES, sementeDe, sementeAbreAlgumaVez, sementesImpossiveis, genomaAbre,
 } from "./sementes";
 import { agentePor } from "./agentes";
 import { MULTIPLO_DO_PEDAGIO } from "./regime";
@@ -113,5 +113,70 @@ describe("sementeDe", () => {
   it("⚠️ o padrão NÃO é o do Maker — trocar os dois seria silencioso", () => {
     expect(sementeDe("cacador_de_tendencia").alvoPct)
       .not.toBe(sementeDe("maker_de_faixa").alvoPct);
+  });
+});
+
+
+describe("⚠️⚠️ genomaAbre: a trava do lado certo da porta (05/09)", () => {
+  /**
+   * A trava das SEMENTES ficou do lado errado: ela percorre o código, e o
+   * flywheel escreve genoma no BANCO. Em 03/09 o modelo aplicou
+   * `multiploDoPedagio` 6 → 12 no Maker — múltiplo 12 sobre pedágio de 0,40%
+   * exige alvo de 4,80%, e o genoma declarava 2,50%.
+   *
+   * Medido dois dias depois: 0 posições do v4, 0 fluxos no braço da mutação,
+   * 9 no controle. O braço sob teste NUNCA operou, e o A/B ia concluir que a
+   * mutação "não pagou".
+   */
+  it("⚠️ O v4 REAL de 03/09 é recusado — múltiplo 12 com alvo 2,5", () => {
+    const v = genomaAbre("maker_de_faixa", {
+      alvoPct: 2.5, stopPct: 2.5, horasLimite: 24, multiploDoPedagio: 12,
+    });
+    expect(v).not.toBeNull();
+    expect(v!.abre).toBe(false);
+    expect(v!.alvoMinimoPct).toBeCloseTo(4.8, 6);
+  });
+
+  it("⚠️ e o v3, que está no ar, passa", () => {
+    const v = genomaAbre("maker_de_faixa", {
+      alvoPct: 2.5, stopPct: 2.5, horasLimite: 24, multiploDoPedagio: 6,
+    });
+    expect(v!.abre).toBe(true);
+  });
+
+  it("⚠️ o v2 (alvo 1,5) continua recusado por este caminho também", () => {
+    expect(genomaAbre("maker_de_faixa", { alvoPct: 1.5, stopPct: 1.5, multiploDoPedagio: 6 })!.abre)
+      .toBe(false);
+  });
+
+  /**
+   * ⚠️ `params` é jsonb: o banco devolve o que gravaram, e nem sempre é número.
+   * `Number(null)` é 0 e passa em `isFinite` — seria um alvo de 0% aprovado
+   * como "medido".
+   */
+  it("⚠️ número em string (jsonb) é lido, não descartado", () => {
+    const v = genomaAbre("maker_de_faixa", { alvoPct: "2.5", stopPct: "2.5", multiploDoPedagio: "6" });
+    expect(v!.abre).toBe(true);
+    expect(v!.alvoPct).toBe(2.5);
+  });
+
+  it("⚠️ null NÃO vira zero — vira ausente, e ausente não usa o portão", () => {
+    const v = genomaAbre("maker_de_faixa", { alvoPct: null, stopPct: null });
+    expect(v!.alvoPct).toBeNull();       // não 0
+    expect(v!.abre).toBe(true);          // "não se aplica", nunca "reprovado"
+  });
+
+  it("⚠️ lixo não numérico também é ausente", () => {
+    expect(genomaAbre("maker_de_faixa", { alvoPct: "abc" })!.alvoPct).toBeNull();
+  });
+
+  it("agente que não existe devolve null — e quem chama decide", () => {
+    expect(genomaAbre("agente_fantasma", { alvoPct: 2.5 })).toBeNull();
+  });
+
+  it("⚠️ o pedágio continua sendo o DO AGENTE: futuros aceita alvo que o spot recusa", () => {
+    const params = { alvoPct: 1.0, stopPct: 1.0, multiploDoPedagio: 6 };
+    expect(genomaAbre("maker_de_faixa", params)!.abre).toBe(false);       // spot: mín 2,40
+    expect(genomaAbre("cacador_de_tendencia", params)!.abre).toBe(true);  // futuros: mín 0,60
   });
 });
