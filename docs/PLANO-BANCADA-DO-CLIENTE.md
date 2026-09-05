@@ -1,7 +1,7 @@
 # PLANO — A BANCADA DO CLIENTE
 
-> **Status:** 🔴 nada construído. Este documento é o desenho, e ele existe antes
-> de qualquer linha de código porque a regra da casa é essa.
+> **Status:** 🟡 fases 0 e 1 em produção. Este documento é o desenho, e ele
+> existe antes de qualquer linha de código porque a regra da casa é essa.
 >
 > **Escrito em:** 05/09/2026, a partir de uma correção do dono.
 
@@ -224,10 +224,51 @@ Tabelas novas (migration a escrever):
   equilíbrio exigido, veredito, `nao_medido[]`.
 - `bancada_posicao` — só para o **papel adiante** (trader+), que tem estado.
 
-⚠️ **RLS de verdade aqui, não default-deny com zero policies.** As tabelas de
-hoje são internas e a service key basta. Estas são do CLIENTE: precisam de
-policy que amarre `wallet_address` à sessão, e de teste que prove que a
-carteira A não lê a linha da carteira B.
+⚠️⚠️ **CORREÇÃO, 05/09 — a promessa de "RLS de verdade" não sobreviveu à
+arquitetura, e escrevê-la assim mesmo teria sido pior do que não escrever.**
+
+O parágrafo original dizia: *"precisam de policy que amarre `wallet_address` à
+sessão"*. Ao ir escrever a migration, dois fatos do código mataram a ideia:
+
+1. **A sessão desta casa não é do Supabase Auth.** É um JWT nosso (HS256,
+   `AUTH_JWT_SECRET`), verificado no Node e guardado em cookie httpOnly —
+   `src/lib/auth/session.ts`. Ele **nunca chega ao Postgres**, e o `auth.jwt()`
+   de uma policy devolveria NULL para toda linha.
+2. **Quem consulta usa a service key** (`src/lib/supabase/server.ts`), que
+   **ignora RLS por definição**. Mesmo uma policy correta não seria consultada
+   em leitura nenhuma.
+
+Uma policy assim seria *"uma trava que existe, parece certa, e está desligada do
+caminho que decide"* — a classe de defeito que esta base perseguiu a sessão
+inteira. Pior: a próxima pessoa a auditar leria a policy e **pararia de
+procurar**.
+
+⚠️ **O isolamento é real, só que em outra camada — e a camada está declarada no
+cabeçalho da migration 0037 para ninguém precisar adivinhar:**
+
+| camada | o que ela impede |
+|---|---|
+| RLS ligada, **zero policies** | o anon key (exposto no browser para o realtime) não lê nada |
+| `dono` é o **1º parâmetro obrigatório** de toda função do store | esquecer o filtro vira **erro de tipo**, não vazamento |
+| `Dono` é **tipo marcado**, construído só a partir da sessão verificada | o ataque real — `POST {"dono":"0xdavítima"}` — **não compila** |
+| teste com **banco falso que guarda linhas de verdade** | prova o **dado que voltou**, não a transcrição do código |
+
+⚠️ E há **uma única porta de leitura** (`doDono`): vinte `.eq("dono", …)`
+espalhados seriam vinte chances de faltar um — e o que falta não aparece em
+teste nenhum, porque a consulta sem filtro devolve **mais** dados, não menos.
+Ela *funciona*.
+
+No dia em que o cliente falar com o Supabase direto (anon key + Supabase Auth),
+a policy passa a fazer sentido e entra numa migration própria. Hoje seria
+enfeite.
+
+**Provado quebrando nos dois sentidos** (05/09):
+
+| o que eu quebrei | o que aconteceu |
+|---|---|
+| removi o `.eq("dono", …)` de `doDono` | 6 testes vermelhos |
+| removi o `.eq("dono", …)` dos `update` | 3 testes vermelhos |
+| troquei `Dono` por `string` | `type-check` quebrou: *Unused '@ts-expect-error' directive* |
 
 ### 4.2 O construtor de estratégia
 
@@ -254,8 +295,8 @@ Backtest é CPU, papel adiante é cron. Ambos escalam com número de clientes.
 
 | # | entrega | status |
 |---|---|---|
-| **0** | **tabela de velas + busca canônica** — é ela que faz o backtest ser barato (§6.1) | 🔴 |
-| 1 | migration + RLS + testes de isolamento entre carteiras | 🔴 |
+| **0** | **tabela de velas + busca canônica** — é ela que faz o backtest ser barato (§6.1) | 🟢 |
+| 1 | migration + isolamento por dono + testes entre carteiras | 🟢 |
 | 2 | `lib/bancada/` puro: custo, pedágio, equilíbrio, veredito (sem rede, testado) | 🔴 |
 | 3 | rota de backtest sob demanda + cotas por tier | 🔴 |
 | 4 | UI `/laboratorio`: montar, ver o pedágio ANTES, rodar, ler o veredito | 🔴 |
