@@ -163,6 +163,56 @@ export function sementeAbreAlgumaVez(
 }
 
 /**
+ * O MESMO PORTÃO, SOBRE UM GENOMA QUALQUER — e ele existe porque a trava das
+ * sementes ficou do lado errado da porta (05/09).
+ *
+ * ⚠️⚠️ O QUE ACONTECEU. `sementesImpossiveis()` percorre as sementes do CÓDIGO.
+ * Mas o flywheel escreve genoma no BANCO, por `aplicarMutacao` — um caminho que
+ * a trava não enxergava. Em 03/09 16:00 o modelo aplicou `multiploDoPedagio`
+ * 6 → 12 no Maker, raciocinando (corretamente) que 87,9% do prejuízo era taxa e
+ * pedindo mais folga. Só que múltiplo 12 sobre pedágio de 0,40% exige alvo de
+ * **4,80%**, e o genoma declarava 2,50%.
+ *
+ * Medido dois dias depois, direto do banco:
+ *
+ *     posições do v4 ........... 0
+ *     fluxos do braço MUTAÇÃO .. 0
+ *     fluxos do braço CONTROLE . 9
+ *
+ * O braço sob teste **nunca operou**. E o A/B teria rodado até a amostra e
+ * concluído que a mutação "não pagou" — quando ela nunca foi testada. É o
+ * defeito do A/B com um braço só voltando por outra porta: lá a alternância
+ * estava quebrada; aqui ela funciona, e o braço que ela seleciona não consegue
+ * agir.
+ *
+ * ⚠️ E A CULPA NÃO É DO RACIOCÍNIO DO MODELO. Subir o múltiplo é uma resposta
+ * legítima a "a taxa está comendo o lucro". O que faltava era alguém conferir
+ * que o alvo acompanhava — e esse alguém é esta função, chamada ANTES de o
+ * genoma entrar no ar.
+ */
+export function genomaAbre(
+  agenteId: string,
+  params: Record<string, unknown>,
+): VeredictoDaSemente | null {
+  const ag = agentePor(agenteId);
+  if (!ag) return null;
+
+  /** ⚠️ Coerção defensiva: o genoma é jsonb, e jsonb aceita string onde o
+   *  código espera número. `Number("2.5")` é 2.5; `Number(null)` é 0 e passa
+   *  em `isFinite` — por isso o `!= null` explícito antes da conversão. */
+  const num = (v: unknown): number | undefined => {
+    if (v == null) return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  return sementeAbreAlgumaVez(ag, {
+    alvoPct: num(params.alvoPct),
+    stopPct: num(params.stopPct),
+    multiploDoPedagio: num(params.multiploDoPedagio),
+  });
+}
+
+/**
  * Os agentes cuja semente NUNCA abriria. Lista vazia é o estado saudável.
  *
  * ⚠️ Percorre `SEMENTES`, não a lista do cron: uma semente escrita para um

@@ -42,6 +42,12 @@ export interface RelatoDoAgente {
   perguntou?: number;
   propostas?: Array<{ modelo: string; ok: boolean; porque: string }>;
   aplicou?: { modelo: string; versao: number; hipotese: string } | null;
+  /**
+   * ⚠️ A MUTAÇÃO QUE A ARENA RECUSOU (05/09). `aplicou: null` cobria "erro de
+   * escrita" e "genoma que nunca abriria" com a mesma cara. O segundo caso
+   * custou dois dias de A/B com um braço que não operou.
+   */
+  recusou?: { modelo: string; motivo: "impossivel" | "escrita"; porque: string };
   pulou?: string;
 }
 
@@ -173,10 +179,16 @@ async function umAgente(db: SupabaseClient, ag: Agente, agoraMs: number): Promis
   const id = await registrarMutacao(db, { agente: ag.id, ...escolhida });
   if (!id) { relato.aplicou = null; return relato; }
 
-  const versao = await aplicarMutacao(
+  const r = await aplicarMutacao(
     db, id, ag.id, { ...genoma.params, ...escolhida.diff }, escolhida.modelo, escolhida.hipotese,
   );
-  relato.aplicou = versao == null ? null
-    : { modelo: escolhida.modelo, versao, hipotese: escolhida.hipotese };
+  /**
+   * ⚠️ A RECUSA É DITA, não engolida (05/09). Antes `null` cobria "erro de
+   * escrita" e "genoma impossível" com a mesma cara, e o relato só dizia
+   * `aplicou: null` — foi assim que o Maker ficou dois dias com um braço de A/B
+   * que nunca operou sem ninguém saber.
+   */
+  relato.aplicou = r.ok ? { modelo: escolhida.modelo, versao: r.versao, hipotese: escolhida.hipotese } : null;
+  if (!r.ok) relato.recusou = { modelo: escolhida.modelo, motivo: r.motivo, porque: r.porque };
   return relato;
 }
