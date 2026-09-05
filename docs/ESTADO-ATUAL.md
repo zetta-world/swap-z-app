@@ -1222,9 +1222,48 @@ passando de 100% antes do clamp. Agora conta minutos inteiros, e a tolerância d
 relógio **dobra** a vela do futuro para o minuto corrente em vez de esticar a
 janela — que era por onde o 181º entrava.
 
-**Pendente:** ninguém clicou o botão ainda. As tabelas estão vazias, e enquanto
-estiverem, **a escolha da piscina do `/pro` segue não medida** — o painel existe,
-o que não existe é o dado.
+### ⚠️⚠️ O BOTÃO FOI CLICADO — e a resposta é que O MÉTODO NÃO MEDE (lido em 05/09)
+
+Quatro rodadas: três em 31/08 22:51–22:52 e uma em 01/09 11:44. **69 medições,
+54 vereditos.** O painel funcionou, gravou, e reportou com honestidade. O que
+ele reportou é que a medição não aconteceu.
+
+**Dois bloqueios INDEPENDENTES, e o segundo é o que mata:**
+
+| | |
+|---|---|
+| **leitura** | **60 de 69 leituras voltaram `geckoterminal limite (status 429)`.** Só 9 leram, todas na ethereum. A rodada mais bem-sucedida (01/09, já com marcapasso) leu **43%**; a pior, 0%. |
+| **descoberta** | ⚠️ **De 23 pares, só UM teve mais de uma piscina candidata** (`eth-usdc-uni-v3-005`, 5 candidatas). Os outros 22 tinham **exatamente uma** — e comparação precisa de duas. |
+
+⚠️ **O segundo bloqueio é o grave**, e paginar mais devagar não resolve: mesmo
+com a fonte respondendo 100%, **22 dos 23 pares continuariam inconcluídos**,
+porque não há segunda piscina para comparar. O `porque` gravado diz isso com
+todas as letras: *"0 de 1 piscinas foram lidas — comparação precisa de duas.
+Piscina só é pior que outra quando a outra existe na medição."*
+
+**O único par mensurável deu resposta, e ela é consistente em TRÊS rodadas:**
+
+```
+ETH/USDC · Uniswap V3 0,05% · 0x88e6…5640
+  cobertura da atual   92–95%     melhor alternativa   92–99%
+  diferença            0–5 pontos (ruído é 10)
+  TVL                  $105,4M — a maior das candidatas
+  veredito             atual_e_a_melhor  (as duas réguas concordam)
+```
+
+⚠️ **Ou seja: para o par que dá para medir, a piscina do `/pro` já está certa.**
+Não é evidência sobre os outros 22 — é evidência sobre este.
+
+**O que fazer com isso (não é clicar de novo):**
+
+1. ⚠️ **A `mercado_vela` (fase 0 da bancada) é exatamente o conserto do 429.**
+   Vela fechada não muda: buscada uma vez, servida para sempre. A medição de
+   piscinas ainda busca direto na fonte a cada rodada — migrá-la para o cache
+   transforma 60 recusas em 60 leituras de banco.
+2. **A descoberta precisa de outra fonte ou de outro critério.** Se a
+   GeckoTerminal só conhece uma piscina para 22 dos 23 pares, a pergunta "qual a
+   melhor piscina" não tem resposta possível por essa porta — e isso é uma
+   conclusão sobre o MÉTODO, não sobre as piscinas.
 
 ---
 
