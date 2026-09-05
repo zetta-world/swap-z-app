@@ -1347,6 +1347,76 @@ derrapagem gravada como 0 — **um teste vermelho em cada caso**.
 
 ---
 
+## 5.15 A BANCADA — fase 3, a cota e a rota (05/09)
+
+`BANCADA_COTAS` em `tier/types.ts` (irmã de `TIER_DAILY_ANALYSES`, fonte única),
+`bancada/cotas.ts` (decisão pura) e `POST /api/bancada/backtest`.
+
+### ⚠️⚠️ O freio que o plano escreveu não freava nada
+
+§6.2 dizia que o teto interno era **`símbolos × dias` por rodada**. Ele ignora a
+granularidade:
+
+| pedido | velas por símbolo |
+|---|---|
+| 1 ano em velas de **1 dia** | 365 |
+| 1 ano em velas de **1 minuto** | **525.600** |
+
+Os dois cabem em *"3 símbolos, 1 ano"* do plano free. Um deles custa **1.400
+vezes** o outro, e é exatamente o pedido que vira rajada contra o limite por IP
+da fonte — a mesma rajada que em 31/08 voltou com 56 de 62 leituras em 429.
+
+O freio real é `símbolos × dias × 24` (a janela em velas de 1h): passa todo uso
+normal, barra a patologia. ⚠️ E a recusa **ensina a saída** — *"use um intervalo
+maior, a leitura fica igual de boa e sai na hora"* — em vez de só negar.
+
+⚠️ **E o que custa não é a CPU, é a BUSCA.** O motor varre 26 mil velas em
+milissegundos; o que dói é a primeira ida à fonte, e depois da tabela de velas
+ela não se repete. Por isso o teto é generoso, não apertado.
+
+### A bancada falha FECHADO onde o ZION falha ABERTO — e não é incoerência
+
+`consumeAnalysisQuota` libera quando o banco cai, com a regra certa para ela:
+uma proteção que derruba o produto quando ela própria falha não é proteção — e a
+resposta do ZION continua **boa** nesse estado.
+
+Aqui não continua. Sem banco, `velasDoIntervalo` cai para a fonte a cada rodada:
+o resultado sai **com buracos de vela** E cada teste vira uma rajada contra a
+fonte. Liberar seria entregar medição ruim ao preço mais caro que ela tem.
+
+⚠️ E a recusa **diz a verdade sobre o motivo**: `consumo_desconhecido`, nunca
+`cota_esgotada`. Um cliente que não rodou nada hoje lendo "acabou seu limite"
+reclamaria de um limite que não era o problema.
+
+### A comparação com "segurar" tinha unidades trocadas
+
+`resumir` somava percentuais de operação. Pôr esse total ao lado do retorno de
+janela do buy-and-hold é comparar `Σ` de retornos por trade com o que aconteceu
+com um dólar do começo ao fim — **e o erro cresce com o número de operações**:
+quanto mais a estratégia opera, mais bonita ela fica sem ter rendido nada a
+mais. Agora existe `liquidoCompostoPct` (`Π(1 + r_i)`), e é ele que entra no
+veredito. A soma continua exposta, com o nome do que ela é.
+
+### Duas decisões que ficaram no código
+
+- **O competidor não paga o pedágio da estratégia.** Comprar e não mexer paga
+  uma ida e volta só; cobrar dele as quarenta da estratégia inventaria vantagem
+  para o nosso lado. ⚠️ O competidor tem de ser difícil de bater — senão o
+  veredito vira propaganda.
+- **A janela termina na última vela FECHADA, e quem decide é o servidor.** Se o
+  cliente mandasse `janelaAte`, poderia escolher a janela depois de saber o
+  resultado — a forma mais educada de sobreajuste.
+
+**Quebrado nos dois sentidos:** consumo desconhecido tratado como zero (2
+vermelhos), teto de trabalho removido (1), portão da bancada exigindo `pro` —
+a cicatriz do Free/ZION (1).
+
+**Aberto:** fases 4 a 7. ⚠️ A 7 é gêmea da 3: no dia em que a `/pricing` falar da
+bancada, ela tem de dizer os números da §6.2 nos quatro idiomas. Hoje ela não
+fala, então não há contradição — mas a fase 4 (a UI) é o gatilho.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**

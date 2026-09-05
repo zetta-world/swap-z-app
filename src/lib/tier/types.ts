@@ -75,6 +75,62 @@ export const FEATURE_TIER: Record<string, Tier> = {
   cexAutopilot:  "pro",   // CEX autopilot panel
   arbScanner:    "trader",
   prioritySupport: "trader",
+
+  /**
+   * ⚠️ A BANCADA ENTRA COMO `free` PELO MESMO MOTIVO DO ZION, e não por
+   * generosidade: quem separa os planos aqui é a COTA, não o portão.
+   *
+   * Uma bancada onde o gratuito só OLHA é vitrine com botão falso — e o que ele
+   * ganha (dez backtests por dia) custa milissegundos de CPU depois da tabela
+   * de velas. O que ele NÃO ganha é o que RECORRE: o papel adiante, que é o
+   * único custo permanente, e por isso começa em `trader`.
+   */
+  bancadaBacktest:  "free",
+  bancadaPapelAdiante: "trader",
+};
+
+/**
+ * ⚠️⚠️ AS COTAS DA BANCADA — a irmã de `TIER_DAILY_ANALYSES`, e a fonte ÚNICA.
+ *
+ * Vem de `docs/PLANO-BANCADA-DO-CLIENTE.md` §6.2, decidida pelo critério de
+ * lucro. O ranking de custo real, do mais caro para o mais barato:
+ *
+ *   1. papel adiante — recorrente, por estratégia, para sempre. É O custo.
+ *   2. primeira busca do histórico de um símbolo — uma vez, depois zero.
+ *   3. CPU do backtest — desprezível.
+ *   4. IA — zero, enquanto o backtest for mecânico.
+ *
+ * Logo: **backtest generoso, papel adiante caro.**
+ *
+ * ⚠️ O PLANO TINHA DUAS TABELAS (§2.1 rascunho e §6.2 decisão) e cada uma era
+ * coerente sozinha — que é exatamente a forma da cicatriz do Free/ZION. Esta
+ * aqui é a §6.2, e a §2.1 está marcada como superada no documento.
+ *
+ * ⚠️ E NENHUM DESTES NÚMEROS É MEDIÇÃO DE DISPOSIÇÃO A PAGAR. São desenho por
+ * critério de CUSTO. Preço é decisão do dono.
+ */
+export interface CotaDaBancada {
+  /** Backtests por JANELA MÓVEL DE 24h — nunca por dia de calendário. */
+  backtestsPorDia:   number;
+  capitalMaxUsd:     number;
+  estrategiasSalvas: number;
+  janelaMaxDias:     number;
+  simbolosPorTeste:  number;
+  /** Mesas de papel adiante. 0 = o plano não tem. */
+  mesasDePapel:      number;
+}
+
+export const BANCADA_COTAS: Record<Tier, CotaDaBancada> = {
+  free:   { backtestsPorDia:   10, capitalMaxUsd:      1_000, estrategiasSalvas:   1, janelaMaxDias: 365, simbolosPorTeste:  3, mesasDePapel:  0 },
+  pro:    { backtestsPorDia:  100, capitalMaxUsd:     25_000, estrategiasSalvas:  10, janelaMaxDias: 730, simbolosPorTeste: 10, mesasDePapel:  0 },
+  trader: { backtestsPorDia:  500, capitalMaxUsd:    250_000, estrategiasSalvas:  50, janelaMaxDias: 730, simbolosPorTeste: 10, mesasDePapel:  3 },
+  /**
+   * ⚠️ "SEM TETO PRÁTICO" VIROU NÚMERO, de propósito. `Infinity` numa tela
+   * aparece como "Infinity", em `JSON.stringify` vira `null`, e numa comparação
+   * silencia o limite em vez de declará-lo. Um número grande e escrito é
+   * auditável; o infinito não é.
+   */
+  pilot:  { backtestsPorDia: 5_000, capitalMaxUsd: 100_000_000, estrategiasSalvas: 200, janelaMaxDias: 730, simbolosPorTeste: 10, mesasDePapel: 10 },
 };
 
 /**
