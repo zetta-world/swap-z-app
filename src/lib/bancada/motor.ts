@@ -28,6 +28,10 @@ export type Desfecho = "alvo" | "stop" | "expirada";
 export interface Operacao {
   /** Quando a posição abriu (unix ms da vela do sinal). */
   abriuEm: number;
+  /** Quando ela fechou. ⚠️ Sem isto não dá para medir EXPOSIÇÃO, e sem
+   *  exposição a comparação com "segurar" esconde metade da história: 3% com a
+   *  mesa 8% do tempo exposta é outra coisa que 3% exposto o tempo todo. */
+  fechouEm: number;
   entrada: number;
   saida: number;
   desfecho: Desfecho;
@@ -240,8 +244,10 @@ export function rodar(
     }
 
     const desfecho: Desfecho = v.reason === "target" ? "alvo" : v.reason === "stop" ? "stop" : "expirada";
+    const iFechou = indiceDoFechamento(velas, i, alvo, stop, dir, ate);
     operacoes.push({
       abriuEm,
+      fechouEm: velas[iFechou].t,
       entrada,
       saida: v.exit,
       desfecho,
@@ -255,7 +261,7 @@ export function rodar(
      * senão a barreira e o resultado falariam de velas diferentes, e a mesma
      * série produziria contagens que não se explicam.
      */
-    livreApartirDe = Math.max(i + 1, indiceDoFechamento(velas, i, alvo, stop, dir, ate) + 1);
+    livreApartirDe = Math.max(i + 1, iFechou + 1);
   }
 
   return { operacoes, velasLidas: velas.length, aindaAbertas };

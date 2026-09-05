@@ -1,6 +1,7 @@
 # PLANO — A BANCADA DO CLIENTE
 
-> **Status:** 🟡 fases 0, 1 e 2 em produção. Este documento é o desenho, e ele
+> **Status:** 🟡 fases 0 a 3 em produção. Falta a UI (4), as estratégias da
+> casa (5), o papel adiante (6) e a vitrine (7). Este documento é o desenho, e ele
 > existe antes de qualquer linha de código porque a regra da casa é essa.
 >
 > **Escrito em:** 05/09/2026, a partir de uma correção do dono.
@@ -324,7 +325,7 @@ Backtest é CPU, papel adiante é cron. Ambos escalam com número de clientes.
 | **0** | **tabela de velas + busca canônica** — é ela que faz o backtest ser barato (§6.1) | 🟢 |
 | 1 | migration + isolamento por dono + testes entre carteiras | 🟢 |
 | 2 | `lib/bancada/` puro: custo, pedágio, equilíbrio, veredito (sem rede, testado) | 🟢 |
-| 3 | rota de backtest sob demanda + cotas por tier | 🔴 |
+| 3 | rota de backtest sob demanda + cotas por tier | 🟢 |
 | 4 | UI `/laboratorio`: montar, ver o pedágio ANTES, rodar, ler o veredito | 🔴 |
 | 5 | as estratégias da casa como ponto de partida (o cliente clona e mexe) | 🔴 |
 | 6 | papel adiante (trader+) no cron | 🔴 |
@@ -415,6 +416,25 @@ entendeu o produto. O que ele NÃO ganha é o que recorre.
 ⚠️ **O teto real é trabalho, não contagem.** A cota visível é "testes por dia",
 mas o freio interno é `símbolos × dias` por rodada — senão um free pede 3
 símbolos × 1 ano dez vezes e consome mais que um trader disciplinado.
+
+> ⚠️⚠️ **CORREÇÃO (05/09, fase 3): `símbolos × dias` NÃO limita trabalho.**
+>
+> Ele ignora a granularidade. Um ano em velas de 1 minuto são **525.600 velas
+> por símbolo** contra 365 em velas diárias: o mesmo *"3 símbolos, 1 ano"* do
+> plano free custa **1.400 vezes mais** numa e cabe na outra, e a régua escrita
+> aqui não enxergava a diferença. É exatamente o pedido que vira rajada contra o
+> limite por IP da fonte — em 31/08 uma dessas voltou com 56 de 62 leituras em
+> 429, e a rodada inteira não foi evidência sobre nada.
+>
+> O freio que ficou no código é **`símbolos × dias × 24`** — a janela inteira em
+> velas de uma hora. Deixa passar todo uso normal (1d, 4h, 1h) e barra a
+> patologia, e a recusa ensina a saída em vez de só negar: *"use um intervalo
+> maior — a leitura fica igual de boa e sai na hora"*. Vive em
+> `bancada/cotas.ts` (`tetoDeVelasPorRodada`), com teste.
+>
+> ⚠️ E o que custa não é a CPU, é a BUSCA: o motor varre 26 mil velas em
+> milissegundos. Por isso o teto é generoso — depois da tabela de velas, a
+> segunda vez que alguém pedir o mesmo BTC não custa requisição nenhuma.
 
 ### 6.3 Papel adiante: **`trader`**, não `pro`
 

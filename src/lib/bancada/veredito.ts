@@ -55,7 +55,23 @@ export interface ResumoDaRodada {
   acertoPct: number | null;
   brutoPct: number;
   taxaPct: number;
+  /**
+   * ⚠️ A SOMA ARITMÉTICA das operações — "expectância por operação × n".
+   * Útil para ler o custo por operação; ⚠️ **NÃO comparável com segurar**.
+   */
   liquidoPct: number;
+  /**
+   * ⚠️⚠️ O QUE UMA CONTA TERIA FEITO — e é ESTE que se compara com segurar.
+   *
+   * Somar percentuais de operação e pôr o total ao lado do retorno da janela do
+   * buy-and-hold é comparar unidades diferentes com o mesmo símbolo de
+   * porcentagem: um é `Σ` de retornos por trade, o outro é o que aconteceu com
+   * um dólar do começo ao fim. Como o motor garante UMA posição por vez e sem
+   * sobreposição, a série é sequencial e compõe honestamente:
+   *
+   *     equity = Π (1 + líquido_i / 100)
+   */
+  liquidoCompostoPct: number;
   /** ⚠️ `null` SEMPRE nesta fase — ver `NAO_MEDIDO.derrapagem`. Nunca 0. */
   derrapagemPct: number | null;
 }
@@ -76,6 +92,7 @@ export function resumir(r: RodadaDoMotor, e: EstrategiaDoCliente): ResumoDaRodad
 
   const brutoPct = ops.reduce((s, o) => s + o.brutoPct, 0);
   const liquidoPct = ops.reduce((s, o) => s + o.liquidoPct, 0);
+  const equity = ops.reduce((eq, o) => eq * (1 + o.liquidoPct / 100), 1);
   const custoIdaEVolta = 2 * taxaDaBancadaPct(e.praca, e.papel);
 
   return {
@@ -88,6 +105,7 @@ export function resumir(r: RodadaDoMotor, e: EstrategiaDoCliente): ResumoDaRodad
     // "taxa 3,8%" ao lado de "bruto 4,1%" convida a somar os dois.
     taxaPct: -(ops.length * custoIdaEVolta),
     liquidoPct,
+    liquidoCompostoPct: (equity - 1) * 100,
     derrapagemPct: null,
   };
 }
@@ -126,8 +144,15 @@ export function julgar(
   const custoIdaEVolta = 2 * taxaDaBancadaPct(e.praca, e.papel);
   const eq = equilibrioExigido(e.alvoPct, e.stopPct, custoIdaEVolta);
 
-  const vantagem = competidorPct == null ? null : resumo.liquidoPct - competidorPct;
-  const classe = classificarResultado(resumo.n > 0 ? resumo.liquidoPct : null, vantagem);
+  /**
+   * ⚠️ O QUE ENTRA NA COMPARAÇÃO É O COMPOSTO, nunca a soma aritmética — ver a
+   * nota em `liquidoCompostoPct`. Usar a soma aqui compararia `Σ` de retornos
+   * por trade com o retorno de janela do competidor, e o erro cresce com o
+   * número de operações: quanto mais a estratégia opera, mais bonita ela fica
+   * sem ter rendido nada a mais.
+   */
+  const vantagem = competidorPct == null ? null : resumo.liquidoCompostoPct - competidorPct;
+  const classe = classificarResultado(resumo.n > 0 ? resumo.liquidoCompostoPct : null, vantagem);
   const amostra = gradeSample(resumo.n);
   const pinta = shouldTint(resumo.n);
 

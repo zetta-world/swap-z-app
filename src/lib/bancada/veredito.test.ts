@@ -17,7 +17,7 @@ const e: EstrategiaDoCliente = {
 /** `n` operações, cada uma com `brutoPct`, do desfecho pedido. */
 function rodada(n: number, brutoPct: number, desfecho: Desfecho = "alvo"): RodadaDoMotor {
   const operacoes: Operacao[] = Array.from({ length: n }, (_, k) => ({
-    abriuEm: k, entrada: 100, saida: 100 + brutoPct, desfecho,
+    abriuEm: k, fechouEm: k + 1, entrada: 100, saida: 100 + brutoPct, desfecho,
     brutoPct, liquidoPct: brutoPct - 0.4,
   }));
   return { operacoes, velasLidas: 1000, aindaAbertas: 0 };
@@ -105,6 +105,20 @@ describe("a contagem separa as quatro classes", () => {
     expect(resumo.acertos).toBe(0);
     expect(resumo.acertoPct).toBe(0);
     expect(resumo.porDesfecho).toEqual({ alvo: 0, stop: 0, expirada: 40 });
+  });
+
+  it("⚠️⚠️ o composto é o que se compara com segurar, e a SOMA não é", () => {
+    // 40 operações de +0,6% líquido: a soma dá +24,0, o composto dá +25,4.
+    // O erro cresce com o número de operações — quanto mais a estratégia opera,
+    // mais bonita ela fica sem ter rendido nada a mais.
+    const resumo = resumir(rodada(40, 1), e);
+    expect(resumo.liquidoPct).toBeCloseTo(24.0, 1);
+    expect(resumo.liquidoCompostoPct).toBeGreaterThan(resumo.liquidoPct);
+
+    // E é o COMPOSTO que decide o veredito: com o competidor entre os dois, a
+    // soma diria "perdeu do índice" e o composto diz "ganhou".
+    const meio = (resumo.liquidoPct + resumo.liquidoCompostoPct) / 2;
+    expect(julgar(resumo, e, meio).veredito).toBe("ganhou");
   });
 
   it("⚠️ a taxa aparece NEGATIVA — é dinheiro que sai", () => {
