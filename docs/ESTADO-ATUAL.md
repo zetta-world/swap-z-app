@@ -1301,6 +1301,52 @@ pagar — preço é decisão do dono.
 
 ---
 
+## 5.14 A BANCADA — fase 2, o motor puro (05/09)
+
+`lib/bancada/`: `vocabulario.ts` (parâmetros, nunca código), `custo.ts` (o
+pedágio ANTES de rodar), `motor.ts` (sinal → operações), `veredito.ts` (os três
+estados + ruído + o que não foi medido). 69 testes.
+
+### O que a fase 2 CONSERTOU do que eu mesmo tinha escrito
+
+| defeito | como apareceu |
+|---|---|
+| **o portão julgava `max(alvo, stop)`** | copiei de `sementeAbreAlgumaVez` sem perguntar se a pergunta era a mesma. Não era: lá é *"abre alguma vez?"*, aqui é *"sobra depois do pedágio?"* — e quem paga o pedágio é o ALVO. Com `max`, alvo de 0,1% com stop de 5% PASSAVA: sinal verde para a morte exata do Maker. Um teste pegou. |
+| **o horizonte nunca vencia** | `expiraEm` era medido de `abriuEm`, mas `computeExitPath` mede de `opened_at` = `abriuEm + 1`. Um milissegundo: `nowMs >= horizonMs` nunca era verdade, e toda posição que devia EXPIRAR voltava como "ainda aberta" — sumia do resultado sem aparecer como defeito. |
+| **posição aberta não bloqueava novas** | o `continue` do caso "não resolveu" pulava a barreira, e os sinais seguintes abriam por cima de uma posição viva. `aindaAbertas` subia para 3 e ninguém somava aquilo com nada. |
+| **`derrapagem_pct` era `not null`** (0037) | escrever 0 ali AFIRMA "medimos e não existiu". Backtest lê velas, e vela não tem livro de ofertas. Migration 0038 a torna nula. |
+
+⚠️ **Os quatro são meus, dos últimos dois dias.** Nenhum apareceu em revisão de
+código — apareceram ao escrever o teste que tentava quebrá-los.
+
+### A fórmula do equilíbrio era o caso particular
+
+O plano registrava `0,5 + custo/(2 × alvo)`. Ela vale só com `stop = alvo`. A
+geral é `p = (stop + custo)/(alvo + stop)` — e com alvo 3% / stop 1% a antiga
+erra por **21 pontos percentuais**. A nova reproduz as três linhas de cicatriz
+(83,3% · 63,3% · 58,0%) exatamente, o que é a prova de que ela **contém** a
+medição antiga em vez de contradizê-la.
+
+### Uma definição, não duas
+
+`computeExitPath` (`paper/engine.ts`) ganhou o custo como PARÂMETRO, com o
+default de sempre — nenhum chamador muda. A bancada reusa a convenção de saída
+(stop-first, `expirada` separada) com a taxa da praça e do papel do cliente.
+⚠️ Um segundo simulador de bracket seria uma segunda verdade sobre dinheiro, e
+foi uma taxa única aplicada a todo mundo que aposentou o Maker por engano.
+
+### O plano tinha DUAS tabelas de cota
+
+§2.1 (rascunho: free 3/dia) e §6.2 (decisão: free 10/dia). Cada uma coerente
+sozinha — **que é exatamente a forma da cicatriz do Free/ZION**. A §2.1 foi
+marcada como superada, no lugar, com o aviso de que a fase 3 lê a §6.2.
+
+**Quebrado nos dois sentidos antes de subir:** lookahead ligado, fórmula
+simétrica de volta, piso de ruído desligado, `expirada` contada como acerto,
+derrapagem gravada como 0 — **um teste vermelho em cada caso**.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**
