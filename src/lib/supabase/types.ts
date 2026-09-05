@@ -108,7 +108,8 @@ export type BancadaResultadoRow = {
   dono:                   string;
   bruto_pct:              number;
   taxa_pct:               number;
-  derrapagem_pct:         number;
+  /** ⚠️ NULO = não medido, nunca 0 — migration 0038. */
+  derrapagem_pct:         number | null;
   liquido_pct:            number;
   n:                      number;
   acertos:                number;
@@ -619,7 +620,7 @@ export interface Database {
       };
       bancada_resultado: {
         Row: BancadaResultadoRow;
-        Insert: Partial<BancadaResultadoRow> & { rodada_id: string; dono: string; bruto_pct: number; taxa_pct: number; derrapagem_pct: number; liquido_pct: number; n: number; acertos: number; veredito: string };
+        Insert: Partial<BancadaResultadoRow> & { rodada_id: string; dono: string; bruto_pct: number; taxa_pct: number; liquido_pct: number; n: number; acertos: number; veredito: string };
         Update: Partial<BancadaResultadoRow>;
         Relationships: [];
       };

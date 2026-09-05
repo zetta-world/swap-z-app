@@ -333,7 +333,12 @@ export async function consumoDaJanela(
 export interface ResultadoNovo {
   brutoPct: number;
   taxaPct: number;
-  derrapagemPct: number;
+  /**
+   * ⚠️ `null` = NÃO MEDIDO, e nunca 0 (migration 0038). Um backtest lê velas, e
+   * vela não tem livro de ofertas: gravar 0 aqui afirmaria que a derrapagem foi
+   * medida e não existiu. O nome do que falta vai em `naoMedido`.
+   */
+  derrapagemPct: number | null;
   liquidoPct: number;
   n: number;
   acertos: number;
@@ -370,7 +375,7 @@ const COLUNAS_RESULTADO =
 
 type LinhaResultado = {
   rodada_id: string; bruto_pct: number | string; taxa_pct: number | string;
-  derrapagem_pct: number | string; liquido_pct: number | string;
+  derrapagem_pct: number | string | null; liquido_pct: number | string;
   n: number; acertos: number; equilibrio_exigido_pct: number | string | null;
   veredito: string; nao_medido: unknown; criado_em: string;
 };
@@ -385,7 +390,10 @@ export async function resultado(dono: Dono, db: SupabaseClient, rodadaId: string
     rodadaId: r.rodada_id,
     brutoPct: Number(r.bruto_pct),
     taxaPct: Number(r.taxa_pct),
-    derrapagemPct: Number(r.derrapagem_pct),
+    // ⚠️ `Number(null)` é 0 e passa em `isFinite` — a cicatriz mais barata de
+    // repetir desta base, e aqui ela transformaria "não medimos" em "medimos e
+    // deu zero".
+    derrapagemPct: r.derrapagem_pct == null ? null : Number(r.derrapagem_pct),
     liquidoPct: Number(r.liquido_pct),
     n: Number(r.n),
     acertos: Number(r.acertos),

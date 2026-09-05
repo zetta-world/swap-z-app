@@ -1,6 +1,6 @@
 # PLANO — A BANCADA DO CLIENTE
 
-> **Status:** 🟡 fases 0 e 1 em produção. Este documento é o desenho, e ele
+> **Status:** 🟡 fases 0, 1 e 2 em produção. Este documento é o desenho, e ele
 > existe antes de qualquer linha de código porque a regra da casa é essa.
 >
 > **Escrito em:** 05/09/2026, a partir de uma correção do dono.
@@ -55,6 +55,20 @@ equilíbrio = 0,5 + custo_ida_e_volta / (2 × alvo)
 ±2,5%  → precisa acertar 58,0%
 ```
 
+⚠️ **CORREÇÃO (05/09, fase 2): a fórmula acima é o caso SIMÉTRICO.** Ela vale
+enquanto `stop = alvo`, que é como as três medições foram feitas — mas o cliente
+pode pôr alvo de 3% com stop de 1%, e ali ela erra por 21 pontos. A geral sai de
+igualar ganho e perda:
+
+```
+p × (alvo − custo) = (1 − p) × (stop + custo)
+p = (stop + custo) / (alvo + stop)
+```
+
+E ela reproduz as três linhas acima EXATAMENTE — o que é a prova de que a nova
+não contradiz a cicatriz, e sim a contém. Vive em `bancada/custo.ts`, com os
+três números fixados em teste.
+
 ⚠️ **É ISTO que a bancada põe no centro da tela.** O cliente digita "alvo de
 0,6%" e a bancada responde, antes de qualquer backtest: *"a ida e volta custa
 0,40% na Gate spot — 67% do seu movimento bruto. Você precisaria acertar 83%
@@ -82,7 +96,19 @@ portão."* A bancada segue a mesma regra.
 
 **Proposta: todos entram, o tier decide o tamanho da bancada.**
 
-| | free | pro | trader | pilot |
+> ⚠️⚠️ **A TABELA DESTA SEÇÃO É O RASCUNHO, E ESTÁ SUPERADA. Os números que
+> valem são os da §6.2** — decididos depois, pelo critério de lucro que o dono
+> mandou aplicar, e mais generosos no que é barato (o free passou de 3 para 10
+> testes/dia, de 90 dias para 1 ano, de 1 para 3 símbolos).
+>
+> ⚠️ Ela fica registrada, e não apagada, porque a mudança tem motivo — mas **a
+> tabela abaixo NÃO deve ser implementada**. Duas tabelas de cota no mesmo
+> documento é literalmente a cicatriz do Free/ZION: o card prometia 5/dia, o
+> `FEATURE_TIER` exigia `pro`, cada lado sozinho era coerente, e quem pagou foi
+> o usuário que recebeu 402. **Quando a fase 3 escrever `BANCADA_COTAS`, a fonte
+> é a §6.2.**
+
+| _(rascunho — não implementar)_ | free | pro | trader | pilot |
 |---|---|---|---|---|
 | ler as estratégias da casa | ✅ | ✅ | ✅ | ✅ |
 | **rodar** backtest histórico | 3/dia | 20/dia | 100/dia | 300/dia |
@@ -297,7 +323,7 @@ Backtest é CPU, papel adiante é cron. Ambos escalam com número de clientes.
 |---|---|---|
 | **0** | **tabela de velas + busca canônica** — é ela que faz o backtest ser barato (§6.1) | 🟢 |
 | 1 | migration + isolamento por dono + testes entre carteiras | 🟢 |
-| 2 | `lib/bancada/` puro: custo, pedágio, equilíbrio, veredito (sem rede, testado) | 🔴 |
+| 2 | `lib/bancada/` puro: custo, pedágio, equilíbrio, veredito (sem rede, testado) | 🟢 |
 | 3 | rota de backtest sob demanda + cotas por tier | 🔴 |
 | 4 | UI `/laboratorio`: montar, ver o pedágio ANTES, rodar, ler o veredito | 🔴 |
 | 5 | as estratégias da casa como ponto de partida (o cliente clona e mexe) | 🔴 |
