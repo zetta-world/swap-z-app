@@ -237,8 +237,23 @@ export function vereditoCoberta(
   }
   const melhor = validos.reduce((a, b) => (b.vantagemPct > a.vantagemPct ? b : a));
   const teto = `${Math.round((melhor.strikeFrac - 1) * 100)}%`;
+  /**
+   * ⚠️⚠️ O `n` AQUI É A CONTAGEM DIÁRIA SOBREPOSTA, e anunciá-lo cru inflava a
+   * amostra em trinta vezes (05/09).
+   *
+   * A frase dizia "em 870 janelas de 30 dias" — enquanto a irmã, na MESMA tela,
+   * imprime "870 janelas diárias ≈ 29 independentes". Duas contagens da mesma
+   * coisa lado a lado, uma delas trinta vezes maior. Janelas diárias de 30 dias
+   * se sobrepõem 29/30: 870 é o mesmo mês contado trinta vezes.
+   *
+   * ⚠️ AS DUAS APARECEM, e a independente é a que qualifica. Esconder a diária
+   * quebraria a reconciliação com a coluna JANELAS; esconder a independente é o
+   * que estava errado.
+   */
+  const indep = Math.floor(melhor.n / 30);
   const base = `melhor teto: +${teto} · coberta ${melhor.cobertaMediaPct.toFixed(2)}% contra `
-    + `${melhor.segurarMediaPct.toFixed(2)}% de SEGURAR, em ${melhor.n} janelas de 30 dias`;
+    + `${melhor.segurarMediaPct.toFixed(2)}% de SEGURAR, em ${melhor.n} janelas diárias `
+    + `≈ ${indep} independentes de 30 dias`;
 
   /**
    * ⚠️ A MEDIANA APARECE PORQUE ELA DIZ O CONTRÁRIO — e é o ponto da fase.

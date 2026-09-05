@@ -179,9 +179,38 @@ export interface ResumoVrp {
   cauda5Pct: number;
   implicitaMediaPct: number;
   realizadaMediaPct: number;
+  /** Quantos blocos de `janelaDias` consecutivos couberam na série. */
+  blocosIndependentes: number;
+  /**
+   * ⚠️ Erro padrão da média, calculado sobre os BLOCOS. `null` quando há menos
+   * de dois — ausência de estimativa, nunca precisão infinita.
+   */
+  erroPadraoPct: number | null;
 }
 
-export function resumirVrp(pontos: PontoVrp[]): ResumoVrp | null {
+/**
+ * As médias dos blocos INDEPENDENTES — a base honesta de qualquer dispersão.
+ *
+ * ⚠️⚠️ SOBRE OS BLOCOS, NUNCA SOBRE OS PONTOS DIÁRIOS. Janelas de 30 dias se
+ * sobrepõem 29/30: calcular desvio sobre as 870 diárias reinjetaria a inflação
+ * de amostra pela porta dos fundos — o erro padrão sairia √30 vezes menor que o
+ * verdadeiro, e a faixa morta que ele alimenta ficaria estreita demais para
+ * barrar coisa nenhuma.
+ *
+ * ⚠️ E OS PONTOS PRECISAM ESTAR EM ORDEM CRONOLÓGICA, que é como
+ * `construirVrp` os devolve. Blocos de dias embaralhados não são blocos.
+ */
+function mediasDeBloco(pontos: PontoVrp[], janelaDias: number): number[] {
+  const blocos = Math.floor(pontos.length / janelaDias);
+  const out: number[] = [];
+  for (let b = 0; b < blocos; b++) {
+    const fatia = pontos.slice(b * janelaDias, (b + 1) * janelaDias);
+    out.push(fatia.reduce((sum, p) => sum + p.vrpPct, 0) / fatia.length);
+  }
+  return out;
+}
+
+export function resumirVrp(pontos: PontoVrp[], janelaDias = 30): ResumoVrp | null {
   if (pontos.length === 0) return null;
   const vs = pontos.map((p) => p.vrpPct).sort((a, b) => a - b);
   const n = vs.length;
@@ -194,8 +223,27 @@ export function resumirVrp(pontos: PontoVrp[]): ResumoVrp | null {
    */
   const k = Math.max(1, Math.ceil(n * 0.05));
   const cauda = vs.slice(0, k);
+
+  /**
+   * ⚠️ O ERRO PADRÃO — e ele é `null` quando não dá para calcular, nunca 0.
+   *
+   * Com menos de dois blocos independentes não existe dispersão a estimar. Um
+   * zero ali diria "a média é exatíssima", que é o oposto da verdade, e a faixa
+   * morta que ele alimenta aprovaria qualquer coisa acima de zero.
+   */
+  const blocos = mediasDeBloco(pontos, janelaDias);
+  let erroPadraoPct: number | null = null;
+  if (blocos.length >= 2) {
+    const mb = blocos.reduce((sum, v) => sum + v, 0) / blocos.length;
+    const variancia = blocos.reduce((sum, v) => sum + (v - mb) ** 2, 0) / (blocos.length - 1);
+    const ep = Math.sqrt(variancia) / Math.sqrt(blocos.length);
+    erroPadraoPct = Number.isFinite(ep) ? Number(ep.toFixed(4)) : null;
+  }
+
   return {
     n,
+    blocosIndependentes: blocos.length,
+    erroPadraoPct,
     mediaPct: Number(media.toFixed(4)),
     medianaPct: Number(mediana.toFixed(4)),
     fracaoNegativa: vs.filter((v) => v < 0).length / n,
@@ -220,6 +268,23 @@ export function janelasIndependentes(n: number, janelaDias = 30): number {
 }
 
 export const MIN_JANELAS_INDEPENDENTES = 8;
+
+/**
+ * ⚠️⚠️ QUANTOS ERROS PADRÃO A MÉDIA PRECISA VALER PARA SE DISTINGUIR DE ZERO.
+ *
+ * O veredito decidia em `mediaPct <= 0` — fronteira em zero EXATO. Com +0,01
+ * saía "● VERDE — o prêmio existe"; com −0,01, "● MORTA — vender volatilidade
+ * NÃO paga". Um centésimo de ponto separando aprovação de reprovação, sobre 29
+ * blocos com cauda de −46 pontos.
+ *
+ * ⚠️ E O NÚMERO NÃO É INVENTADO. A faixa sai da DISPERSÃO DOS BLOCOS medida na
+ * própria rodada, não de uma constante escolhida a dedo — este laboratório não
+ * chuta número nem para o lado conservador. Dois erros padrão é a régua
+ * convencional para "não se distingue de zero"; o que a casa acrescenta é que,
+ * quando ela não pode ser calculada, o veredito diz isso em vez de voltar a
+ * decidir no zero em silêncio.
+ */
+export const ERROS_PADRAO_PARA_DECIDIR = 2;
 
 export interface VereditoVrp {
   readable: boolean;
@@ -262,6 +327,24 @@ export function vereditoVrp(r: ResumoVrp | null, janelaDias = 30): VereditoVrp {
     + `${r.episodiosNegativos} EPISÓDIO${r.episodiosNegativos === 1 ? "" : "S"} distinto`
     + `${r.episodiosNegativos === 1 ? "" : "s"} — com janela deslizante, um mês ruim aparece `
     + "trinta vezes";
+
+  /**
+   * ⚠️ A FAIXA MORTA VEM ANTES DO SINAL. Uma média dentro do ruído não é prêmio
+   * pequeno nem prejuízo pequeno — é ausência de resposta, e ela tem nome.
+   */
+  if (r.erroPadraoPct != null && r.erroPadraoPct > 0) {
+    const faixa = ERROS_PADRAO_PARA_DECIDIR * r.erroPadraoPct;
+    if (Math.abs(r.mediaPct) <= faixa) {
+      return {
+        readable: false, status: "inconclusiva",
+        verdict: `${base} — a média de ${r.mediaPct.toFixed(2)} está DENTRO do ruído: `
+          + `±${faixa.toFixed(2)} (${ERROS_PADRAO_PARA_DECIDIR} erros padrão de `
+          + `${r.erroPadraoPct.toFixed(2)}, medidos sobre os ${r.blocosIndependentes} blocos `
+          + `independentes). Não dá para dizer que o prêmio existe NEM que não existe. `
+          + `INCONCLUSIVO. ${nota}`,
+      };
+    }
+  }
 
   if (r.mediaPct <= 0) {
     return {
