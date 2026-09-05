@@ -8,7 +8,7 @@ import {
   ArrowLeftRight, Workflow, Sparkles, Layers, Rocket, BarChart3,
   Shield, Vote, Wallet, Settings, Activity, Banknote, CreditCard,
   Handshake, Users, Gem, Info, History, Building2, LayoutDashboard, Crown,
-  CalendarClock,
+  CalendarClock, FlaskConical,
 } from "lucide-react";
 import { type MessageKey } from "@/lib/i18n";
 
@@ -41,6 +41,10 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/pools",     labelKey: "nav.pools",      icon: Layers,          group: "discover" },
   { href: "/explorer",  labelKey: "nav.explorer",   icon: Shield,          group: "discover" },
   { href: "/zion",      labelKey: "nav.zion",       icon: Sparkles,        group: "discover", badgeKey: "nav.badgeAi", badgeTone: "ai" },
+  // ⚠️ A bancada do cliente — testar estratégia com dinheiro SIMULADO antes de
+  // arriscar de verdade. Fica em "discover" e não em "trade" porque ela não
+  // move dinheiro nenhum: é onde se aprende que o pedágio decide.
+  { href: "/laboratorio", labelKey: "nav.laboratorio", icon: FlaskConical,  group: "discover", badgeKey: "nav.badgeNew", badgeTone: "new" },
 
   { href: "/launchpad", labelKey: "nav.launchpad",  icon: Rocket,          group: "build" },
   { href: "/governance", labelKey: "nav.governance", icon: Vote,           group: "build" },

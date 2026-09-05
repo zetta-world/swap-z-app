@@ -40,6 +40,8 @@ export const NAO_MEDIDO = {
     "gás — na DEX ele anda em linha própria e não está incluído na taxa do pool.",
   liquidez:
     "liquidez — não sabemos se o mercado daquele instante aguentava o seu tamanho.",
+  competidor:
+    "comparação com ficar em caixa — sem ela não dá para saber se valeu a pena AGIR.",
 } as const;
 
 export type ChaveNaoMedido = keyof typeof NAO_MEDIDO;
@@ -125,7 +127,22 @@ export interface VeredictoDaBancada {
   competidorPct: number | null;
   /** O acerto que EMPATARIA, em %. `null` sem alvo e stop utilizáveis. */
   equilibrioPct: number | null;
+  /**
+   * ⚠️ O TEXTO EM PORTUGUÊS — para o BANCO, que é registro nosso.
+   *
+   * `titulo` e `porque` também. A tela do cliente NÃO os usa: ela monta a
+   * frase a partir de `veredito` (o código) e dos números, pelo catálogo dos
+   * quatro locales. Mandar prosa em português do servidor para uma interface em
+   * inglês seria entregar a metade que ninguém revisou.
+   */
   naoMedido: string[];
+  /**
+   * ⚠️ O MESMO CONTEÚDO EM CÓDIGO, para a tela traduzir. Ele existe porque a
+   * lista de "não medido" é a parte do veredito que o cliente MAIS precisa
+   * entender — e uma tela em chinês mostrando "derrapagem — o backtest lê
+   * velas" não comunica nada.
+   */
+  naoMedidoChaves: ChaveNaoMedido[];
 }
 
 /**
@@ -156,12 +173,11 @@ export function julgar(
   const amostra = gradeSample(resumo.n);
   const pinta = shouldTint(resumo.n);
 
-  const naoMedido: string[] = [NAO_MEDIDO.derrapagem];
-  if (e.praca === "dex") naoMedido.push(NAO_MEDIDO.gas);
-  for (const k of extras) if (!naoMedido.includes(NAO_MEDIDO[k])) naoMedido.push(NAO_MEDIDO[k]);
-  if (competidorPct == null) {
-    naoMedido.push("comparação com ficar em caixa — sem ela não dá para saber se valeu a pena AGIR.");
-  }
+  const chaves: ChaveNaoMedido[] = ["derrapagem"];
+  if (e.praca === "dex") chaves.push("gas");
+  for (const k of extras) if (!chaves.includes(k)) chaves.push(k);
+  if (competidorPct == null) chaves.push("competidor");
+  const naoMedido = chaves.map((k) => NAO_MEDIDO[k]);
 
   /**
    * ⚠️⚠️ A AMOSTRA TEM PRECEDÊNCIA SOBRE O SINAL. Um `+4%` com n=6 não é
@@ -177,7 +193,7 @@ export function julgar(
         + "ou um gatilho que dispare mais.",
       classe: "sem_dado", amostra, pinta: false,
       rotuloDaAmostra: sampleLabel(0),
-      competidorPct, equilibrioPct: eq?.acertoParaEmpatarPct ?? null, naoMedido,
+      competidorPct, equilibrioPct: eq?.acertoParaEmpatarPct ?? null, naoMedido, naoMedidoChaves: chaves,
     };
   }
 
@@ -189,7 +205,7 @@ export function julgar(
         + "Ele fica visível e sem cor de propósito: 'ainda não sei' é diferente de 'deu errado'.",
       classe, amostra, pinta: false,
       rotuloDaAmostra: sampleLabel(resumo.n),
-      competidorPct, equilibrioPct: eq?.acertoParaEmpatarPct ?? null, naoMedido,
+      competidorPct, equilibrioPct: eq?.acertoParaEmpatarPct ?? null, naoMedido, naoMedidoChaves: chaves,
     };
   }
 
@@ -203,7 +219,7 @@ export function julgar(
     veredito, titulo: tituloDe(veredito), porque: porqueDe(veredito, resumo, eq?.acertoParaEmpatarPct ?? null),
     classe, amostra, pinta,
     rotuloDaAmostra: sampleLabel(resumo.n),
-    competidorPct, equilibrioPct: eq?.acertoParaEmpatarPct ?? null, naoMedido,
+    competidorPct, equilibrioPct: eq?.acertoParaEmpatarPct ?? null, naoMedido, naoMedidoChaves: chaves,
   };
 }
 

@@ -1417,6 +1417,66 @@ fala, então não há contradição — mas a fase 4 (a UI) é o gatilho.
 
 ---
 
+## 5.16 A BANCADA — fase 4, a tela do cliente (05/09)
+
+`/laboratorio`, `components/bancada/Bancada.tsx`, entrada em `nav-items.ts`,
+strings nos **quatro** locales. Uma pergunta por vez, o pedágio acima do botão
+reagindo a cada tecla, o veredito antes do placar.
+
+### ⚠️⚠️ A trava de 24/08 pegou de novo — desta vez ANTES de subir
+
+`Bancada.tsx` (`"use client"`) importava `ChaveNaoMedido` de `veredito.ts`, e a
+cadeia era:
+
+```
+components/bancada/Bancada.tsx → lib/bancada/veredito.ts
+  → lib/bancada/motor.ts → lib/paper/engine.ts → lib/supabase/server.ts
+```
+
+⚠️ **A importação era de TIPO PURO — e não importa: o empacotador puxa o
+MÓDULO, não a função.** É literalmente o defeito do `ÚlfhéðnarPanel` que em
+24/08 derrubou o Z-SWAP inteiro em toda rota, achado pelo dono no celular
+depois de type-check, lint, build e 1.696 testes passarem.
+
+Desta vez quem achou foi `supabase/nao-vaza-para-o-cliente.test.ts`, escrito
+justamente naquele dia. **O instrumento funcionou.**
+
+O conserto foi extrair a convenção de saída para `paper/saida.ts` — puro, sem
+nenhum import de servidor — com `engine.ts` reexportando para não mexer em
+chamador nenhum. ⚠️ A regra que o arquivo encarna: *função pura morando ao lado
+de um import de servidor é uma armadilha carregada*.
+
+### O veredito voltava em português para uma tela em quatro idiomas
+
+`julgar` devolve `titulo`, `porque` e `naoMedido` em português — certo para o
+BANCO, que é registro nosso; errado para a tela. Agora ele devolve também
+`naoMedidoChaves` (códigos), e a UI monta a frase pelo catálogo.
+
+⚠️ E a exaustividade é do compilador: o mapa na tela é
+`Record<ChaveNaoMedido, string>`, então **uma quinta razão de "não medido" sem
+as quatro traduções quebra o `type-check`** — não renderiza `undefined` em
+silêncio.
+
+⚠️ **A exceção é o motivo da RECUSA, que vem do servidor e é mostrado como
+veio:** ele carrega o número exato (o alvo mínimo, o teto do plano) que uma
+tradução genérica apagaria.
+
+### Duas decisões da tela
+
+- **Sem `TierGate` em `/laboratorio`.** Quem separa os planos aqui é a COTA, e
+  esconder a tela de quem tem dez testes por dia é a cicatriz do Free/ZION ao
+  contrário. A rota exige SESSÃO; a cota responde quando acaba.
+- **A regra do admin atravessa; o CSS não.** `corDoResultado` devolve
+  `var(--adm-*)`, que não existe nesta árvore — sairia transparente numa tela em
+  que a cor É a mensagem. O que atravessa é `classificarResultado`, e
+  `CorDoCliente.ts` mapeia para a paleta do cliente.
+
+**Aberto:** fases 5 (estratégias da casa), 6 (papel adiante no cron) e 7 (a
+vitrine). ⚠️ **A 7 venceu agora:** a tela existe, então a `/pricing` precisa
+falar da bancada com os números da §6.2 nos quatro idiomas.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**
