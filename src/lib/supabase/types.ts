@@ -20,6 +20,36 @@ export type WalletChain = "evm" | "solana";
  * valor era zero. Tipar como `number` obrigaria a rota a inventar um zero, e
  * "piscina morta" ficaria idêntico a "piscina não medida".
  */
+/**
+ * AS VELAS QUE SÓ SE BUSCA UMA VEZ — ver 0036_mercado_velas.sql.
+ *
+ * ⚠️ Estas duas são DADO DE MERCADO, não dado de cliente: preço público de BTC
+ * não tem dono. As tabelas da bancada (fase 1) são o oposto e vão precisar de
+ * policy de verdade.
+ */
+export type MercadoVelaRow = {
+  simbolo:    string;
+  intervalo:  string;
+  /** Instante em que a vela ABRIU, unix ms. Só vela FECHADA entra aqui. */
+  abriu_em:   number;
+  high:       number;
+  low:        number;
+  close:      number;
+  volume:     number;
+  gravada_em: string;
+};
+
+/** ⚠️ A faixa PERGUNTADA, não a que veio — ver a nota na migration. */
+export type MercadoCoberturaRow = {
+  simbolo:       string;
+  intervalo:     string;
+  coberto_de:    number;
+  coberto_ate:   number;
+  /** A fonte não tem histórico antes de `coberto_de`. Impede a re-busca eterna. */
+  fonte_esgotou: boolean;
+  atualizada_em: string;
+};
+
 export type ProPiscinaMedicaoRow = {
   id:                  string;
   rodada:              string;
@@ -472,6 +502,18 @@ export interface Database {
           side: "buy" | "sell"; qty: number; entry_price: number; cost_usd: number;
         };
         Update: Partial<PaperPositionRow>;
+        Relationships: [];
+      };
+      mercado_vela: {
+        Row: MercadoVelaRow;
+        Insert: Partial<MercadoVelaRow> & { simbolo: string; intervalo: string; abriu_em: number; high: number; low: number; close: number; volume: number };
+        Update: Partial<MercadoVelaRow>;
+        Relationships: [];
+      };
+      mercado_cobertura: {
+        Row: MercadoCoberturaRow;
+        Insert: Partial<MercadoCoberturaRow> & { simbolo: string; intervalo: string; coberto_de: number; coberto_ate: number };
+        Update: Partial<MercadoCoberturaRow>;
         Relationships: [];
       };
       pro_piscina_medicao: {
