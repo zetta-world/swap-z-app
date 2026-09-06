@@ -25,6 +25,9 @@ import { resumir, julgar } from "@/lib/bancada/veredito";
 import { velasDoIntervalo } from "@/lib/mercado/store";
 import { ultimaVelaFechada } from "@/lib/mercado/velas";
 import type { Operacao } from "@/lib/bancada/motor";
+import { rodarMesa, agregar, MAX_BARRAS_AVALIADAS } from "@/lib/bancada/mesa-real";
+import { mesasElegiveis, custoIdaEVoltaDaMesa } from "@/lib/bancada/mesas-da-casa";
+import { deskFor } from "@/lib/zion/desks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,10 +76,53 @@ export async function POST(req: NextRequest) {
   try { corpo = await req.json(); } catch { return json({ ok: false, error: "corpo_invalido" }, 400); }
   const o = (corpo ?? {}) as Record<string, unknown>;
 
+  /**
+   * ⚠️⚠️ DOIS MODOS, e o segundo é o que o dono pediu ao dizer "não tem como
+   * escolher" diante dos cards das mesas.
+   *
+   *   · própria — o cliente monta no vocabulário fechado;
+   *   · MESA    — ele roda **o seletor real da casa** (`mesa-real.ts`), a mesma
+   *     linha de código que a FREYJA roda, sobre os símbolos e a janela dele.
+   *
+   * ⚠️ O modo MESA não recebe alvo nem stop: eles saem do playbook, da
+   * volatilidade daquele instante. Aceitar um alvo do cliente aqui seria voltar
+   * a aproximar a mesa — o defeito que este modo existe para não cometer.
+   */
+  const idDaMesa = typeof o.mesa === "string" ? o.mesa : null;
+  const mesa = idDaMesa ? deskFor(idDaMesa) : null;
+  if (idDaMesa && (!mesa || !mesasElegiveis().some((m) => m.source === idDaMesa))) {
+    return json({ ok: false, error: "mesa_desconhecida", porque: "esta mesa não está disponível na bancada." }, 400);
+  }
+
   // ── 1. O vocabulário: `unknown` vira estratégia, ou recusa com motivo ──
-  const lida = lerEstrategia(o.estrategia);
-  if (!lida.ok) return json({ ok: false, error: "estrategia_invalida", porque: lida.porque }, 400);
-  const estrategia = lida.valor;
+  let estrategia: import("@/lib/bancada/vocabulario").EstrategiaDoCliente;
+  if (mesa) {
+    /**
+     * ⚠️ A PRAÇA VEM DO CLIENTE, o resto vem da mesa. É exatamente a pergunta
+     * que a FREYJA existe para responder — *"a mesma regra paga na DEX como na
+     * CEX?"* — agora na mão de quem paga.
+     *
+     * ⚠️ `alvoPct`/`stopPct` ficam em ZERO de propósito, e isso não é um valor:
+     * é a ausência de um. `equilibrioExigido` devolve `null` sem denominador, e
+     * a tela recebe a ressalva `bracketVariavel` explicando que nesta mesa não
+     * existe UM acerto-para-empatar. Publicar um número único ali seria
+     * inventar uma régua que a estratégia não tem.
+     */
+    const pracaEscolhida = o.praca === "spot_gate" || o.praca === "futuros_gate" || o.praca === "dex"
+      ? o.praca : (mesa.venue === "dex" ? "dex" : "spot_gate");
+    const papelEscolhido = o.papel === "maker" ? "maker" : "taker";
+    estrategia = {
+      entrada: { tipo: "media", n: 20 },   // não usado no modo mesa — o seletor decide
+      direcao: "compra",                   // estas mesas são long-only, por construção
+      alvoPct: 0, stopPct: 0,
+      horasLimite: mesa.horizonHours ?? 48,
+      praca: pracaEscolhida, papel: papelEscolhido,
+    };
+  } else {
+    const lida = lerEstrategia(o.estrategia);
+    if (!lida.ok) return json({ ok: false, error: "estrategia_invalida", porque: lida.porque }, 400);
+    estrategia = lida.valor;
+  }
 
   const simbolos = Array.isArray(o.simbolos) ? o.simbolos.filter((s): s is string => typeof s === "string") : [];
   const intervalo = typeof o.intervalo === "string" ? o.intervalo : "1d";
@@ -107,7 +153,11 @@ export async function POST(req: NextRequest) {
    * consome cota — cobrar por ela puniria o cliente justamente pela mensagem
    * que o impediu de perder dinheiro, e ensinaria a não testar.
    */
-  const pedagio = oPortaoDoPedagio(estrategia);
+  // ⚠️ O portão julga um ALVO FIXO. No modo mesa não há um: o bracket sai do
+  // playbook e já respeita o próprio piso de RR (1,8) e o teto de escala do
+  // `zion/bracket.ts`. Aplicá-lo aqui recusaria a mesa por um alvo que ela
+  // nunca declarou.
+  const pedagio = mesa ? { ok: true as const, valor: true as const } : oPortaoDoPedagio(estrategia);
   if (!pedagio.ok) {
     const r = await abrirRodada(dono, chain, db, {
       estrategiaId: null, origem: "propria", capitalUsd: Number.isFinite(capitalUsd) ? capitalUsd : 1,
@@ -143,7 +193,44 @@ export async function POST(req: NextRequest) {
   const problemas: string[] = [];
   const retornosDeSegurar: number[] = [];
 
+  let cortadaPeloTeto = false;
   for (const simbolo of simbolos) {
+    if (mesa) {
+      /**
+       * ⚠️⚠️ O SELETOR DA CASA PRECISA DE QUATRO PRAZOS. `computeIndicators` lê
+       * 1h, 4h, 1d e 1w — o regime e o alinhamento saem da comparação entre
+       * eles. Buscar só 1h daria um regime sempre "TRANSITIONING", e a mesa
+       * ficaria parada por falta de dado em vez de por falta de setup: uma mesa
+       * quieta e uma mesa cega têm exatamente a mesma aparência.
+       *
+       * ⚠️ São quatro leituras por símbolo, e é por isso que a `mercado_vela`
+       * existe: na segunda rodada do mesmo par elas não custam requisição.
+       */
+      const [h1, h4, d1] = await Promise.all([
+        velasDoIntervalo(db, simbolo, "1h", janelaDe, janelaAte),
+        velasDoIntervalo(db, simbolo, "4h", janelaDe, janelaAte),
+        velasDoIntervalo(db, simbolo, "1d", janelaDe, janelaAte),
+      ]);
+      // ⚠️ A SEMANAL É AGREGADA DAS DIÁRIAS, não substituída por elas. O
+      // `DURACAO_MS` não tem "1w", e passar diárias no lugar faria o `htf1w` do
+      // seletor ler outra coisa do que lê ao vivo — em silêncio.
+      const w1 = agregar(d1.velas, 7);
+      for (const [nome, l] of [["1h", h1], ["4h", h4], ["1d", d1]] as const) {
+        if (l.porqueIncompleta) problemas.push(`${simbolo} ${nome}: ${l.porqueIncompleta}`);
+      }
+      if (h1.velas.length < 2) continue;
+
+      const custo = 2 * (estrategia.praca === "dex" ? 0.30 : estrategia.papel === "maker" ? 0.015 : 0.20);
+      const r = rodarMesa({ h1: h1.velas, h4: h4.velas, d1: d1.velas, w1 }, simbolo, custo);
+      if (r.cortadaPeloTeto) cortadaPeloTeto = true;
+      operacoes.push(...r.operacoes);
+
+      const p0 = h1.velas[0].close;
+      const pN = h1.velas[h1.velas.length - 1].close;
+      if (p0 > 0) retornosDeSegurar.push(((pN - p0) / p0) * 100);
+      continue;
+    }
+
     const leitura = await velasDoIntervalo(db, simbolo, intervalo, janelaDe, janelaAte);
     if (leitura.porqueIncompleta) problemas.push(`${simbolo}: ${leitura.porqueIncompleta}`);
     if (leitura.velas.length < 2) continue;
@@ -169,8 +256,15 @@ export async function POST(req: NextRequest) {
     // ⚠️ `null`, nunca 0: zero afirmaria que o mercado ficou parado.
     : null;
 
-  const v = julgar(resumo, estrategia, competidorPct);
+  // ⚠️ No modo mesa, o alvo e o stop mudam a cada operação — não há um
+  // acerto-para-empatar único, e a ressalva diz isso em vez de a tela mostrar
+  // um número inventado.
+  const v = julgar(resumo, estrategia, competidorPct, mesa ? ["bracketVariavel"] : []);
   const naoMedido = [...v.naoMedido, ...problemas];
+  // ⚠️ Teto de barras é DECLARADO, nunca silencioso — regra da casa.
+  if (cortadaPeloTeto) {
+    naoMedido.push(`a janela foi cortada em ${MAX_BARRAS_AVALIADAS} barras de 1h — o resto do período não foi avaliado`);
+  }
 
   await gravarResultado(dono, db, rodadaId, {
     brutoPct: resumo.brutoPct,

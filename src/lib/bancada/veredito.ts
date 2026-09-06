@@ -40,6 +40,13 @@ export const NAO_MEDIDO = {
     "gás — na DEX ele anda em linha própria e não está incluído na taxa do pool.",
   liquidez:
     "liquidez — não sabemos se o mercado daquele instante aguentava o seu tamanho.",
+  /**
+   * ⚠️ Numa mesa da casa o alvo e o stop NÃO são fixos: saem da volatilidade a
+   * cada operação. Então não existe UM "acerto para empatar" — e publicar um
+   * número único ali seria inventar uma régua que a estratégia não tem.
+   */
+  bracketVariavel:
+    "acerto para empatar — nesta mesa o alvo e o stop mudam a cada operação (saem da volatilidade), então não existe um número único de equilíbrio.",
   competidor:
     "comparação com ficar em caixa — sem ela não dá para saber se valeu a pena AGIR.",
 } as const;

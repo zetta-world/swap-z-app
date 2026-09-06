@@ -79,6 +79,7 @@ export default function Bancada() {
 
   const [verCasa, setVerCasa] = useState(false);
   const [mesas, setMesas] = useState<CartaoDaMesa[]>([]);
+  const [rodandoMesa, setRodandoMesa] = useState<string | null>(null);
   const [nome, setNome] = useState("");
   const [salvas, setSalvas] = useState<Salva[]>([]);
   const [ocupado, setOcupado] = useState(false);
@@ -169,6 +170,30 @@ export default function Bancada() {
     finally { setOcupado(false); }
   }
 
+  /**
+   * ⚠️ Roda o SELETOR REAL da mesa sobre a janela do cliente — não uma
+   * tradução dela para o formulário. Manda `mesa`, e a rota não aceita alvo
+   * nem stop neste modo: eles saem do playbook.
+   */
+  async function rodarMesa(mesaId: string) {
+    setRodandoMesa(mesaId); setR(null);
+    try {
+      const res = await fetch("/api/bancada/backtest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mesa: mesaId, simbolos, capitalUsd: capital, janelaDias,
+          praca, papel,
+        }),
+      });
+      setR(await res.json());
+    } catch {
+      setR({ ok: false, error: "rede", porque: "" });
+    } finally {
+      setRodandoMesa(null);
+    }
+  }
+
   async function rodar() {
     setRodando(true); setR(null);
     try {
@@ -205,7 +230,10 @@ export default function Bancada() {
           <p className="text-sm font-medium text-ink">{t("bancada.mesasTitulo")}</p>
           <p className="mt-0.5 text-xs leading-relaxed text-ink-3">{t("bancada.mesasSub")}</p>
           <ul className="mt-3 space-y-2">
-            {mesas.map((m) => <MesaDaCasa key={m.source} m={m} />)}
+            {mesas.map((m) => (
+              <MesaDaCasa key={m.source} m={m} rodando={rodandoMesa === m.source}
+                onRodar={() => rodarMesa(m.source)} />
+            ))}
           </ul>
         </section>
       )}
@@ -486,6 +514,7 @@ function Veredito({ r }: { r: Resposta }) {
     gas:        t("bancada.nmGas"),
     liquidez:   t("bancada.nmLiquidity"),
     competidor: t("bancada.nmCompetitor"),
+    bracketVariavel: t("bancada.nmBracket"),
   };
 
   return (
@@ -533,7 +562,7 @@ function Veredito({ r }: { r: Resposta }) {
  * o token existia na minha cabeça e não no `tailwind.config.ts`.
  */
 /** Um cartão de mesa da casa: o que ela é, o que mediu, e o que o número NÃO prova. */
-function MesaDaCasa({ m }: { m: CartaoDaMesa }) {
+function MesaDaCasa({ m, rodando, onRodar }: { m: CartaoDaMesa; rodando: boolean; onRodar: () => void }) {
   const t = useT();
   /**
    * ⚠️ A REGRA DE COR É A DO ADMIN, e a amostra tem precedência: abaixo de 100
@@ -551,6 +580,14 @@ function MesaDaCasa({ m }: { m: CartaoDaMesa }) {
           </p>
           <p className="mt-0.5 text-xs text-ink-3">{m.subtitulo}</p>
           <p className="mt-1 text-xs italic leading-relaxed text-ink-4">{m.testa}</p>
+          {/* ⚠️ O BOTÃO RODA O SELETOR REAL, não uma tradução. É a mesma linha
+              de código que a mesa roda ao vivo, sobre os símbolos e a janela
+              que o cliente escolheu abaixo — e com o pedágio da praça dele. */}
+          <button type="button" onClick={onRodar} disabled={rodando}
+            className={`mt-2 ${CHIP} ${CHIP_OFF} disabled:opacity-40`}>
+            {rodando ? t("bancada.mesasRodando") : t("bancada.mesasRodar")}
+          </button>
+          <p className="mt-1 text-[10px] leading-relaxed text-ink-4">{t("bancada.mesasSuaJanela")}</p>
         </div>
         <div className="flex-shrink-0 text-right">
           {m.liquidoPorOpPct == null ? (
