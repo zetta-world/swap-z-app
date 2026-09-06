@@ -26,6 +26,8 @@ import { PRACAS, rotuloDaPraca, type EstrategiaDoCliente, type Praca, type Papel
 import { classificarResultado } from "@/lib/admin/cor-resultado";
 import { corDoNumero } from "@/components/bancada/CorDoCliente";
 import type { ChaveNaoMedido } from "@/lib/bancada/veredito";
+import { ESTRATEGIAS_DA_CASA, type EstrategiaDaCasa } from "@/lib/bancada/casa";
+import type { MessageKey } from "@/lib/i18n";
 
 const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOT", "MATIC"];
 const INTERVALOS = ["1h", "4h", "1d"];
@@ -69,6 +71,26 @@ export default function Bancada() {
   const [rodando, setRodando] = useState(false);
   const [r, setR] = useState<Resposta | null>(null);
 
+  /**
+   * ⚠️ CARREGAR UMA DA CASA É SÓ PREENCHER O FORMULÁRIO — nada roda sozinho.
+   *
+   * O cliente vê os parâmetros mudarem, o bloco do pedágio reagir na hora, e
+   * decide. Se o botão disparasse a rodada, a estratégia morta gastaria cota
+   * para ensinar o que o portão ensina de graça.
+   */
+  function carregar(e: EstrategiaDaCasa) {
+    setTipo(e.params.entrada.tipo);
+    setN(e.params.entrada.n);
+    if (e.params.entrada.tipo === "rsi") setNivel(e.params.entrada.nivel);
+    setDirecao(e.params.direcao);
+    setAlvo(e.params.alvoPct);
+    setStop(e.params.stopPct);
+    setHoras(e.params.horasLimite);
+    setPraca(e.params.praca);
+    setPapel(e.params.papel);
+    setR(null);
+  }
+
   const estrategia: EstrategiaDoCliente = useMemo(() => ({
     entrada: tipo === "rsi" ? { tipo, n, nivel } : { tipo, n },
     direcao, alvoPct, stopPct, horasLimite, praca, papel,
@@ -105,6 +127,48 @@ export default function Bancada() {
         <h1 className="text-2xl font-semibold text-ink">{t("bancada.title")}</h1>
         <p className="mt-1 text-sm text-ink-3">{t("bancada.subtitle")}</p>
       </header>
+
+      {/* ── AS ESTRATÉGIAS DA CASA, INCLUSIVE AS MORTAS ─────────────── */}
+      <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
+        <p className="text-sm font-medium text-ink">{t("bancada.casaTitulo")}</p>
+        <p className="mt-0.5 text-xs text-ink-3">{t("bancada.casaSub")}</p>
+        <ul className="mt-3 space-y-2">
+          {ESTRATEGIAS_DA_CASA.map((e) => (
+            <li key={e.id} className="rounded-xl border border-white/5 bg-bg-0/40 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] text-ink">
+                    {t(e.nomeKey as MessageKey)}{" "}
+                    {/* ⚠️ A morta NÃO some e NÃO fica vermelha: ela é o material
+                        didático mais barato que temos. Cinza + rótulo. */}
+                    <span className={`ml-1 rounded border px-1.5 py-0.5 text-[10px] ${
+                      e.viva ? "border-cyan/30 text-cyan" : "border-white/10 text-ink-3"}`}>
+                      {e.viva ? t("bancada.casaViva") : t("bancada.casaMorta")}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-xs text-ink-3">{t(e.comoFuncionaKey as MessageKey)}</p>
+                  {e.medicao && (
+                    <p className="mt-1.5 text-xs text-gold/90">
+                      {/* ⚠️ O NÚMERO NUNCA SAI SEM A JANELA. Medição sem data é
+                          propaganda, e o resultado da casa não é previsão para
+                          a janela do cliente. */}
+                      <span className="font-medium">{e.medicao.resultado}</span>
+                      <span className="text-ink-4"> · </span>
+                      <span className="text-ink-3">{t("bancada.casaMedidoEm", { quando: e.medicao.quando })}</span>
+                      <br />
+                      <span className="text-ink-3">{t(e.medicao.porqueKey as MessageKey)}</span>
+                    </p>
+                  )}
+                </div>
+                <button type="button" onClick={() => carregar(e)}
+                  className="flex-shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-ink-2 hover:border-cyan/40 hover:text-cyan transition">
+                  {t("bancada.casaUsar")}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {/* ── MONTE SEU TESTE ─────────────────────────────────────────── */}
       <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5 space-y-4">
