@@ -20,28 +20,38 @@ import PricingCard, { type TierConfig } from "./PricingCard";
 import FounderBenefits from "./FounderBenefits";
 import { PLAN_TIERS, usdToSol } from "@/lib/pricing/plans";
 
-const TIERS: TierConfig[] = [
+/**
+ * ⚠️⚠️ NENHUM PLANO ANUNCIA MODELO PRÓPRIO — e isto é conserto, não simplificação.
+ *
+ * Até 05/09 o Pilot (30 SOL) vendia "Opus 4.8" contra o "Sonnet 4.6" dos outros.
+ * Não existe, e nunca existiu, uma linha que roteie PLANO para MODELO: em
+ * `app/api/zion/route.ts` o tier decide a COTA e o PORTÃO, e o modelo é
+ * `ZION_MODEL ?? ativo.modelo` — um só para a plataforma inteira.
+ *
+ * O que separa os planos é cota, autopilot, arbitragem e suporte. O modelo, não.
+ */
+const TIERS: Omit<TierConfig, "modelo">[] = [
   {
     id: "pro", accent: "gold", art: "/nft/pro.jpg",
     nameKey: "pricing.tierProName", priceKey: "pricing.tierProPrice",
     fiatKey: "pricing.tierProFiat", subKey: "pricing.tierProSub",
-    modelKey: "pricing.tierProModel", capKey: "pricing.tierProCap",
-    features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionSonnet", "pricing.featAutopilot", "pricing.featFounder"],
+    capKey: "pricing.tierProCap",
+    features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionModel", "pricing.featBancada", "pricing.featAutopilot", "pricing.featFounder"],
   },
   {
     id: "trader", accent: "violet", art: "/nft/trader.png",
     nameKey: "pricing.tierTraderName", priceKey: "pricing.tierTraderPrice",
     fiatKey: "pricing.tierTraderFiat", subKey: "pricing.tierTraderSub",
-    modelKey: "pricing.tierTraderModel", capKey: "pricing.tierTraderCap",
-    features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionSonnet", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport", "pricing.featFounder"],
+    capKey: "pricing.tierTraderCap",
+    features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionModel", "pricing.featBancada", "pricing.featPapelAdiante", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport", "pricing.featFounder"],
   },
   {
     id: "pilot", accent: "prismatic", art: "/nft/pilot.jpg",
     highlighted: true, badgeKey: "pricing.founderPick",
     nameKey: "pricing.tierPilotName", priceKey: "pricing.tierPilotPrice",
     fiatKey: "pricing.tierPilotFiat", subKey: "pricing.tierPilotSub",
-    modelKey: "pricing.tierPilotModel", capKey: "pricing.tierPilotCap",
-    features: ["pricing.featZionOpus", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport", "pricing.featFounder"],
+    capKey: "pricing.tierPilotCap",
+    features: ["pricing.featZionModel", "pricing.featBancada", "pricing.featPapelAdiante", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport", "pricing.featFounder"],
   },
 ];
 
@@ -57,7 +67,7 @@ const FAQ: { q: MessageKey; a: MessageKey }[] = [
 
 const WAITLIST_KEY = "zswap_pricing_mint_waitlist";
 
-export default function PricingView() {
+export default function PricingView({ modelo }: { modelo: string }) {
   const t = useT();
   const [mintOpen, setMintOpen] = useState(false);
   const { authenticated, source, tier: currentTier, refresh } = useTier();
@@ -74,10 +84,11 @@ export default function PricingView() {
     return () => { alive = false; };
   }, []);
 
-  const priced = (tier: TierConfig): TierConfig => {
+  const priced = (tier: Omit<TierConfig, "modelo">): TierConfig => {
     const cfg = PLAN_TIERS.find((p) => p.tier === (tier.id as Tier));
-    if (!cfg) return tier;
-    return { ...tier, priceUsd: cfg.usdTarget, priceSol: solUsd ? usdToSol(cfg.usdTarget, solUsd) : null };
+    // ⚠️ O modelo entra AQUI, o mesmo para todo card — ver a nota em `TIERS`.
+    if (!cfg) return { ...tier, modelo };
+    return { ...tier, modelo, priceUsd: cfg.usdTarget, priceSol: solUsd ? usdToSol(cfg.usdTarget, solUsd) : null };
   };
 
   // The seeded admin wallet (source='admin' in tier_cache) can switch plans

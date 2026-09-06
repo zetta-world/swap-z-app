@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import EnterpriseView from "@/components/enterprise/EnterpriseView";
+import { modeloDaVitrine } from "@/lib/ai/vitrine";
 
 export const metadata: Metadata = {
   title: "Enterprise · Z-SWAP",
@@ -13,5 +14,9 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <EnterpriseView />;
+/**
+ * ⚠️ O nome do modelo vem de `modeloDaVitrine()`, no servidor — a mesma
+ * `aiAtivo()` que a rota do ZION usa. Nenhuma tela escreve o nome à mão.
+ */
+  return <EnterpriseView modelo={modeloDaVitrine().nome} />;
 }

@@ -32,7 +32,11 @@ type TabId = typeof TABS[number]["id"];
 
 // ─── Page ─────────────────────────────────────────────────────────────────
 
-export default function SettingsView() {
+/**
+ * ⚠️ O modelo vem do servidor (`modeloDaVitrine()`), nunca escrito à mão: é a
+ * mesma `aiAtivo()` que a rota do ZION usa para chamar o modelo.
+ */
+export default function SettingsView({ modelo }: { modelo: string }) {
   const [active, setActive] = useState<TabId>("appearance");
   const { accentColor, glowColor } = useTierAccent();
   const t = useT();
@@ -145,7 +149,7 @@ export default function SettingsView() {
               >
                 {active === "appearance"    && <AppearancePanel />}
                 {active === "execution"     && <ExecutionPanel />}
-                {active === "zion"          && <ZionPanel />}
+                {active === "zion"          && <ZionPanel modelo={modelo} />}
                 {active === "notifications" && <NotificationsPanel />}
                 {active === "security"      && <SecurityPanel />}
                 {active === "rpc"           && <RpcPanel />}
@@ -347,7 +351,7 @@ function ExecutionPanel() {
   );
 }
 
-function ZionPanel() {
+function ZionPanel({ modelo }: { modelo: string }) {
   const { zionMode, setZionMode } = useUI();
   const t = useT();
 
@@ -372,7 +376,7 @@ function ZionPanel() {
         </Field>
         <div className="rounded-xl border border-gold/15 bg-gold/[0.04] p-3 flex gap-2.5">
           <Brain className="w-3.5 h-3.5 text-gold flex-shrink-0 mt-0.5" />
-          <p className="font-sans text-[11px] text-ink-2 leading-relaxed">{t("settings.zionCostNote")}</p>
+          <p className="font-sans text-[11px] text-ink-2 leading-relaxed">{t("settings.zionCostNote", { model: modelo })}</p>
         </div>
       </PanelCard>
       <AutopilotPanel />

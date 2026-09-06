@@ -22,7 +22,11 @@ const DIFFERENTIALS: { Icon: React.ComponentType<{ className?: string }>; titleK
   { Icon: Languages,  titleKey: "enterprise.diff4Title", bodyKey: "enterprise.diff4Body" },
 ];
 
-export default function EnterpriseView() {
+/**
+ * ⚠️ O modelo vem do servidor (`modeloDaVitrine()`), nunca escrito à mão: é a
+ * mesma `aiAtivo()` que a rota do ZION usa para chamar o modelo.
+ */
+export default function EnterpriseView({ modelo }: { modelo: string }) {
   const t = useT();
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
@@ -103,9 +107,9 @@ export default function EnterpriseView() {
           </div>
           <div>
             <h2 className="font-display font-bold text-base text-ink">{t("enterprise.pilotHeading")}</h2>
-            <p className="font-sans text-[13px] text-ink-2 leading-relaxed mt-1.5">{t("enterprise.pilotBody")}</p>
+            <p className="font-sans text-[13px] text-ink-2 leading-relaxed mt-1.5">{t("enterprise.pilotBody", { model: modelo })}</p>
             <div className="inline-block mt-3 px-3 py-1 rounded-full border border-gold/30 bg-gold/[0.06] font-mono text-[10px] tracking-widest uppercase text-gold">
-              {t("enterprise.pilotTierNote")}
+              {t("enterprise.pilotTierNote", { model: modelo })}
             </div>
           </div>
         </div>

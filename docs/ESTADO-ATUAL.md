@@ -1516,6 +1516,70 @@ falar da bancada com os números da §6.2 nos quatro idiomas.
 
 ---
 
+## 5.17 ⚠️⚠️ A VITRINE VENDIA UM MODELO QUE NUNCA EXISTIU POR PLANO (05/09)
+
+Eu tinha levantado isto como *"a página vende Sonnet 4.6 enquanto roda Kimi"*.
+Ao ir consertar, o defeito era maior e mais antigo.
+
+### O que eu achei
+
+`app/api/zion/route.ts` lê o tier na **linha 158** e o modelo na **442**:
+
+```
+const { tier } = await getTierForWallet(...)      // 158 — COTA e PORTÃO
+const model = process.env.ZION_MODEL ?? ativo.modelo;   // 442 — um só, global
+```
+
+⚠️ **Não existe, e nunca existiu, roteamento de modelo por plano.** O passe
+Pilot (30 SOL ≈ $4.350) era vendido com **"Claude Opus 4.8"** contra o
+**"Sonnet 4.6"** dos planos abaixo, e o código sempre entregou o mesmo modelo
+para todos. Isso **não era efeito da pausa da Anthropic** — continuaria falso no
+dia em que ela voltasse.
+
+⚠️ É o espelho exato do achado do `op-tier.ts` (01/08): lá se vendia como
+exclusivo de um plano algo entregue a todos; **aqui se vendia ao plano mais caro
+um modelo melhor e se entregava o mesmo de todo mundo.**
+
+### O conserto não foi trocar o texto
+
+O nome estava escrito à mão em **~44 lugares** (4 locales × 11 chaves + um mapa
+no `NormalPlansView`). Trocar os 44 moveria a mentira. O que ficou:
+
+- **`lib/ai/vitrine.ts`** — `modeloDaVitrine()` deriva de `aiAtivo()`, **a mesma
+  função que a rota usa para chamar o modelo**, e respeita `ZION_MODEL` porque a
+  rota respeita. A vitrine não tem fonte própria, então não tem como divergir.
+- **Nenhum card anuncia modelo por plano.** O campo `mesmoParaTodosOsPlanos`
+  documenta o porquê e vira `false` no dia em que houver roteamento de verdade.
+- **`vitrine-nao-mente.test.ts`** lê o FONTE das seis telas de venda e recusa
+  qualquer nome de modelo literal. Comentário não conta — a nota que explica o
+  defeito precisa citar os nomes.
+- ⚠️ **Id desconhecido aparece cru.** Um nome comercial chutado é o mesmo
+  defeito de novo, só mais difícil de achar.
+
+### E a fase 7 entrou junto, porque é a mesma tela
+
+`/pricing` e `/plans` passam a anunciar a bancada com os números vindos de
+`BANCADA_COTAS` — nunca digitados. `vitrine-e-porta.test.ts` compara os dois
+lados **em ambas as direções**: anunciar mesa de papel a quem o portão barra é o
+Free/ZION; barrar quem tem mesa é o mesmo defeito com o sinal trocado.
+
+⚠️ `capitalCurto()` formata sem `toLocaleString` de propósito: ele varia com o
+ambiente, e servidor e navegador podem discordar — hidratação quebrada por um
+separador decimal só aparece em produção.
+
+**Quebrado nos dois sentidos:** nome de modelo digitado num card (1 vermelho),
+vitrine ignorando `ZION_MODEL` (1), papel adiante anunciado no plano que o
+portão barra (2), cota digitada em vez de lida (3).
+
+### ⚠️ O que ficou ABERTO, e é decisão do dono
+
+A página não promete mais modelo por plano — mas se a intenção comercial é que o
+**Pilot realmente rode um modelo melhor**, isso é código que não existe e custa
+dinheiro por chamada. Enquanto não existir, a vitrine está certa em não
+prometer.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**
