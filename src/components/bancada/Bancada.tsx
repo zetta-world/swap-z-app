@@ -18,7 +18,7 @@
  * do capital.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Loader2, AlertTriangle, Info } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { oPedagioAntesDeRodar } from "@/lib/bancada/custo";
@@ -31,6 +31,11 @@ import type { MessageKey } from "@/lib/i18n";
 
 const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOT", "MATIC"];
 const INTERVALOS = ["1h", "4h", "1d"];
+
+interface Salva {
+  id: string; nome: string; arquivada: boolean;
+  papelAdiante: boolean; papelDesde: string | null;
+}
 
 interface Resposta {
   ok: boolean;
@@ -71,6 +76,20 @@ export default function Bancada() {
   const [rodando, setRodando] = useState(false);
   const [r, setR] = useState<Resposta | null>(null);
 
+  const [nome, setNome] = useState("");
+  const [salvas, setSalvas] = useState<Salva[]>([]);
+  const [ocupado, setOcupado] = useState(false);
+  const [avisoSalvar, setAviso] = useState<string | null>(null);
+
+  const recarregar = useCallback(async () => {
+    try {
+      const res = await fetch("/api/bancada/estrategias");
+      const j = await res.json();
+      if (j?.ok) setSalvas(j.estrategias ?? []);
+    } catch { /* melhor-esforço: a bancada funciona sem a lista */ }
+  }, []);
+  useEffect(() => { void recarregar(); }, [recarregar]);
+
   /**
    * ⚠️ CARREGAR UMA DA CASA É SÓ PREENCHER O FORMULÁRIO — nada roda sozinho.
    *
@@ -104,6 +123,36 @@ export default function Bancada() {
    * servidor sem ninguém perceber.
    */
   const pedagio = useMemo(() => oPedagioAntesDeRodar(estrategia), [estrategia]);
+
+  async function salvar() {
+    setOcupado(true); setAviso(null);
+    try {
+      const res = await fetch("/api/bancada/estrategias", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estrategia, nome, simbolos, intervalo }),
+      });
+      const j = await res.json();
+      // ⚠️ O motivo vem do SERVIDOR como veio: ele carrega o número exato (o
+      // teto do plano, o alvo mínimo) que uma frase genérica apagaria.
+      if (!j?.ok) setAviso(j?.porque ?? t("bancada.errorTitle"));
+      else { setNome(""); await recarregar(); }
+    } catch { setAviso(t("bancada.errorTitle")); }
+    finally { setOcupado(false); }
+  }
+
+  async function alternarPapel(e: Salva) {
+    setOcupado(true); setAviso(null);
+    try {
+      const res = await fetch("/api/bancada/estrategias", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: e.id, papelAdiante: !e.papelAdiante }),
+      });
+      const j = await res.json();
+      if (!j?.ok) setAviso(j?.porque ?? t("bancada.papelSo"));
+      await recarregar();
+    } catch { setAviso(t("bancada.errorTitle")); }
+    finally { setOcupado(false); }
+  }
 
   async function rodar() {
     setRodando(true); setR(null);
@@ -294,6 +343,48 @@ export default function Bancada() {
         {r?.ok && typeof r.restamHoje === "number" && (
           <p className="mt-2 text-center text-xs text-ink-3">{t("bancada.quotaLeft", { n: r.restamHoje })}</p>
         )}
+      </section>
+
+      {/* ── SALVAR, E AS MESAS VIVAS ────────────────────────────────── */}
+      <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5 space-y-3">
+        <div className="flex gap-2">
+          <input value={nome} onChange={(e) => setNome(e.target.value)}
+            placeholder={t("bancada.nomePlaceholder")} className={INPUT} />
+          <button type="button" onClick={salvar} disabled={ocupado}
+            className="flex-shrink-0 rounded-lg border border-white/10 px-3 py-2 text-xs text-ink-2 hover:border-cyan/40 hover:text-cyan transition disabled:opacity-40">
+            {t("bancada.salvar")}
+          </button>
+        </div>
+        {avisoSalvar && <p className="text-xs text-gold">{avisoSalvar}</p>}
+
+        <div>
+          <p className="text-xs text-ink-3">{t("bancada.minhasTitulo")}</p>
+          {salvas.length === 0 ? (
+            <p className="mt-1 text-xs text-ink-4">{t("bancada.minhasVazio")}</p>
+          ) : (
+            <ul className="mt-2 space-y-1.5">
+              {salvas.filter((e) => !e.arquivada).map((e) => (
+                <li key={e.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-bg-0/40 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] text-ink">{e.nome}</p>
+                    {/* ⚠️ A mesa viva mostra DESDE QUANDO: resultado de papel
+                        adiante sem o tempo decorrido é número sem amostra. */}
+                    {e.papelAdiante && e.papelDesde && (
+                      <p className="text-[11px] text-green">
+                        {t("bancada.papelLigado", { desde: e.papelDesde.slice(0, 10) })}
+                      </p>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => alternarPapel(e)} disabled={ocupado}
+                    className={`flex-shrink-0 rounded-lg border px-2.5 py-1 text-xs transition disabled:opacity-40 ${
+                      e.papelAdiante ? "border-green/30 text-green" : "border-white/10 text-ink-3 hover:border-cyan/40 hover:text-cyan"}`}>
+                    {e.papelAdiante ? t("bancada.papelDesligar") : t("bancada.papelLigar")}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       {/* ── O VEREDITO, ANTES DO PLACAR ─────────────────────────────── */}

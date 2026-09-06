@@ -339,7 +339,7 @@ describe("a cota — janela móvel, custo em trabalho, e o portão que não cobr
 describe("papel adiante: isolado por dono, menos onde o cron precisa de todos", () => {
   const POSICAO = {
     estrategiaId: "e1", simbolo: "BTC", lado: "long" as const,
-    entrada: 100, tamanhoUsd: 500, alvoPct: 2, stopPct: 1.2, expiraEm: null,
+    entrada: 100, tamanhoUsd: 500, alvoPct: 2, stopPct: 1.2, expiraEm: null, velaEm: null,
   };
 
   it("A vê as suas posições abertas e nenhuma de B", async () => {

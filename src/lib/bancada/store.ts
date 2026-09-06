@@ -63,17 +63,24 @@ export interface EstrategiaNova {
   params: Record<string, unknown>;
   praca: Praca;
   papel: Papel;
+  /** Onde a mesa olha, quando ela vira papel adiante (0039). */
+  simbolos?: string[];
+  intervalo?: string;
 }
 
 export interface Estrategia extends EstrategiaNova {
   id: string;
   criadaEm: string;
   arquivada: boolean;
+  papelAdiante: boolean;
+  papelDesde: string | null;
 }
 
 type LinhaEstrategia = {
   id: string; nome: string; params: Record<string, unknown> | null;
   praca: string; papel: string; criada_em: string; arquivada_em: string | null;
+  papel_adiante: boolean | null; simbolos: string[] | null;
+  intervalo: string | null; papel_desde: string | null;
 };
 
 function paraEstrategia(r: LinhaEstrategia): Estrategia {
@@ -85,10 +92,14 @@ function paraEstrategia(r: LinhaEstrategia): Estrategia {
     papel: r.papel as Papel,
     criadaEm: r.criada_em,
     arquivada: r.arquivada_em != null,
+    simbolos: r.simbolos ?? [],
+    intervalo: r.intervalo ?? "1h",
+    papelAdiante: Boolean(r.papel_adiante),
+    papelDesde: r.papel_desde,
   };
 }
 
-const COLUNAS_ESTRATEGIA = "id, nome, params, praca, papel, criada_em, arquivada_em";
+const COLUNAS_ESTRATEGIA = "id, nome, params, praca, papel, criada_em, arquivada_em, papel_adiante, simbolos, intervalo, papel_desde";
 
 export async function salvarEstrategia(
   dono: Dono, chain: WalletChain, db: SupabaseClient, nova: EstrategiaNova,
@@ -99,6 +110,11 @@ export async function salvarEstrategia(
     params: nova.params,
     praca: nova.praca,
     papel: nova.papel,
+    simbolos: nova.simbolos ?? [],
+    intervalo: nova.intervalo ?? "1h",
+    // ⚠️ O papel adiante NASCE DESLIGADO. Salvar não é ligar: ligar é ato
+    // explícito, e é o ato que a cota de mesas conta.
+    papel_adiante: false,
   }).select("id").single();
   if (error || !data) return falhou(error, "salvar estratégia");
   return { ok: true, valor: String((data as { id: string }).id) };
@@ -157,6 +173,78 @@ export async function contarEstrategiasVivas(dono: Dono, db: SupabaseClient): Pr
   // caminho que segura custo. Quem chama decide, e decide fechado.
   if (error || typeof count !== "number") return null;
   return count;
+}
+
+/**
+ * Liga ou desliga o papel adiante de UMA estratégia.
+ *
+ * ⚠️ O TETO NÃO É CONFERIDO AQUI, e isso é de propósito: quem conta mesas é a
+ * camada de decisão (`cotas`/rota), com o tier em mãos. Um store que decide
+ * política é um store que duplica a política.
+ *
+ * ⚠️ E `papel_desde` só é escrito ao LIGAR: um resultado de papel adiante sem o
+ * tempo decorrido é o mesmo defeito do número sem amostra.
+ */
+export async function ligarPapelAdiante(
+  dono: Dono, db: SupabaseClient, id: string, ligar: boolean,
+): Promise<Escrita<true>> {
+  const { error } = await db.from("bancada_estrategia").update({
+    papel_adiante: ligar,
+    papel_desde: ligar ? new Date().toISOString() : null,
+    atualizada_em: new Date().toISOString(),
+  }).eq("dono", dono).eq("id", id);
+  if (error) return falhou(error, "ligar papel adiante");
+  return { ok: true, valor: true };
+}
+
+/** Quantas mesas VIVAS este dono tem — a régua da cota `mesasDePapel`. */
+export async function contarMesasVivas(dono: Dono, db: SupabaseClient): Promise<number | null> {
+  const { count, error } = await db.from("bancada_estrategia")
+    .select("id", { count: "exact", head: true })
+    .eq("dono", dono).eq("papel_adiante", true).is("arquivada_em", null);
+  // ⚠️ `null` é "não sei", nunca 0 — ver `contarEstrategiasVivas`.
+  if (error || typeof count !== "number") return null;
+  return count;
+}
+
+/** Uma mesa como o cron a enxerga: a regra, onde olha, e o estado dela. */
+export interface MesaDoCron {
+  id: string;
+  dono: Dono;
+  params: Record<string, unknown>;
+  simbolos: string[];
+  intervalo: string;
+  criadaEm: string;
+}
+
+/**
+ * ⚠️⚠️ TODAS AS MESAS LIGADAS, DE TODO MUNDO — a segunda função sem dono deste
+ * arquivo, e o nome diz por quê.
+ *
+ * O cron não tem sessão e não tem uma carteira "certa" a filtrar: ele varre o
+ * mundo e trata cada linha como do dono dela, reconstruído com
+ * `donoDeLinhaDoBanco`. ⚠️ Se isto aparecer numa rota de cliente, o isolamento
+ * acabou.
+ */
+export async function mesasLigadasParaOCron(db: SupabaseClient, limite = 200): Promise<MesaDoCron[]> {
+  const { data, error } = await db.from("bancada_estrategia")
+    .select("id, dono, params, simbolos, intervalo, criada_em")
+    .eq("papel_adiante", true).is("arquivada_em", null)
+    .order("criada_em", { ascending: true })
+    .limit(Math.max(1, Math.min(1000, Math.floor(limite))));
+  if (error || !data) return [];
+  const linhas = data as unknown as Array<{
+    id: string; dono: string; params: Record<string, unknown> | null;
+    simbolos: string[] | null; intervalo: string | null; criada_em: string;
+  }>;
+  return linhas.flatMap((r) => {
+    const d = donoDeLinhaDoBanco(r.dono);
+    if (!d) return [];
+    return [{
+      id: r.id, dono: d, params: r.params ?? {},
+      simbolos: r.simbolos ?? [], intervalo: r.intervalo ?? "1h", criadaEm: r.criada_em,
+    }];
+  });
 }
 
 // ── RODADAS ─────────────────────────────────────────────────────────
@@ -417,6 +505,12 @@ export interface PosicaoNova {
   alvoPct: number | null;
   stopPct: number | null;
   expiraEm: string | null;
+  /**
+   * ⚠️ De qual VELA veio o sinal (unix ms) — migration 0040. É ela que impede o
+   * mesmo cruzamento de abrir duas vezes quando o cron tick mais rápido do que
+   * a vela fecha. NÃO confundir com `aberta_em` (quando a linha foi criada).
+   */
+  velaEm: number | null;
 }
 
 export async function abrirPosicao(
@@ -432,22 +526,24 @@ export async function abrirPosicao(
     alvo_pct: p.alvoPct,
     stop_pct: p.stopPct,
     expira_em: p.expiraEm,
+    vela_em: p.velaEm,
     status: "aberta",
   }).select("id").single();
   if (error || !data) return falhou(error, "abrir posição");
   return { ok: true, valor: String((data as { id: string }).id) };
 }
 
-export interface Posicao extends PosicaoNova { id: string; dono: Dono; status: StatusPosicao }
+export interface Posicao extends PosicaoNova { id: string; dono: Dono; status: StatusPosicao; abertaEm: string }
 
 const COLUNAS_POSICAO =
-  "id, dono, estrategia_id, simbolo, lado, entrada, tamanho_usd, alvo_pct, stop_pct, expira_em, status";
+  "id, dono, estrategia_id, simbolo, lado, entrada, tamanho_usd, alvo_pct, stop_pct, expira_em, vela_em, status, aberta_em";
 
 type LinhaPosicao = {
   id: string; dono: string; estrategia_id: string; simbolo: string; lado: string;
   entrada: number | string; tamanho_usd: number | string;
   alvo_pct: number | string | null; stop_pct: number | string | null;
-  expira_em: string | null; status: string;
+  expira_em: string | null; vela_em: number | string | null;
+  status: string; aberta_em: string;
 };
 
 function paraPosicao(r: LinhaPosicao): Posicao | null {
@@ -464,6 +560,8 @@ function paraPosicao(r: LinhaPosicao): Posicao | null {
     alvoPct: r.alvo_pct == null ? null : Number(r.alvo_pct),
     stopPct: r.stop_pct == null ? null : Number(r.stop_pct),
     expiraEm: r.expira_em,
+    velaEm: r.vela_em == null ? null : Number(r.vela_em),
+    abertaEm: r.aberta_em,
     status: r.status as StatusPosicao,
   };
 }

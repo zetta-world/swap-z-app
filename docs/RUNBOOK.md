@@ -153,8 +153,15 @@ aritmética sobre volume anterior à cobrança existir.
 |----------|----------|------|-------------|
 | `POST /api/autopilot/cron` | 5 min | header `Authorization: <CRON_SECRET>` (com ou sem `Bearer `) | >12 min |
 | `POST /api/dca/cron` | 5 min | mesmo `CRON_SECRET` | >20 min | ⚠️ **AINDA NÃO AGENDADO** — ver §2.1 |
-| `POST /api/zion/backtest` | 30 min | idem | >75 min |
+| `POST /api/zion/backtest` | 30 min | idem | >75 min | ⚠️ carrega TAMBÉM o papel adiante da bancada (fase 6) — ver nota abaixo |
 | `POST /api/radar` | 1 min | idem | >5 min |
+
+⚠️ **O papel adiante da bancada NÃO tem cron próprio, de propósito.** Ele está
+pendurado no `/api/zion/backtest` (30 min), que já está agendado e já roda o
+papel da própria casa. Criar rota nova exigiria agendá-la — e o `/api/dca/cron`
+está escrito, testado e **nunca agendado** desde 26/08 (§2.1). Uma rota de cron
+que ninguém agenda é código que parece pronto e nunca roda. Ele respeita o
+mesmo gate `pause_paper` do `admin_kv`.
 
 GitHub Actions: `schedule` DESATIVADO nos dois workflows (só `workflow_dispatch`
 manual). NÃO reativar sem desligar o cron-job.org — daria tick duplicado.
