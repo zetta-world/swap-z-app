@@ -537,3 +537,58 @@ morta desde 03/08.
 
 Estender o vocabulário: bracket por volatilidade (ATR) e os playbooks como
 gatilhos, no motor, na UI e nos testes. Fase própria — não remendo de carona.
+
+
+---
+
+## 9. Rodar a mesa DE VERDADE (06/09)
+
+> Dono, olhando os cards com `+4,34%` e nenhum botão: *"não tem como escolher"*.
+> Estava certo — uma tela que mostra e não deixa fazer.
+
+### ⚠️⚠️ A saída não foi estender o formulário. Foi expor o motor.
+
+Eu tinha proposto "estender o vocabulário com bracket por ATR e os playbooks".
+Era a pior das duas opções. Os dois pedaços que decidem **já são puros**:
+
+```
+velas → computeIndicators(símbolo, 1h, 4h, 1d, 1w)     [market-indicators]
+      → candidateAttempts(indicadores)                  [zion/playbooks]
+      → StrategyPlan { entry, target, stop, horizonHours, playbook }
+```
+
+Então o cliente não recebe uma FREYJA aproximada: ele **roda o seletor real**,
+sobre os símbolos e a janela dele, com o pedágio da praça dele. `mesa-real.ts`
+não reimplementa regra nenhuma — ele costura.
+
+⚠️ E isso responde a pergunta que a própria FREYJA existe para fazer —
+*"a mesma regra paga na DEX como na CEX?"* — **na mão de quem paga**.
+
+### As quatro coisas que não podiam dar errado
+
+1. ⚠️ **Sem lookahead, por construção.** Em cada barra os indicadores são
+   recalculados sobre a fatia **até ela**. O teste espiona `computeIndicators` e
+   exige que a fatia da barra `i` tenha exatamente `i+1` velas — e afirma que o
+   espião interceptou (`chamadas.length > 100`), senão o teste seria vazio.
+2. ⚠️ **A semanal é AGREGADA das diárias, não substituída por elas.** A primeira
+   versão passava as diárias no lugar — `DURACAO_MS` não tem `1w`. O `htf1w` do
+   seletor leria outra coisa do que lê ao vivo, **em silêncio**. Agregar é a
+   definição, não aproximação: máxima = maior, mínima = menor, fechamento = o
+   último. O bloco incompleto do fim fica de fora, como a vela corrente.
+3. ⚠️ **O teto de barras é declarado.** 4.000 barras de 1h ≈ 5,5 meses; acima
+   disso a função serverless estoura. Quem pedir mais recebe a janela cortada
+   **e o aviso em `nao_medido`** — "sem teto silencioso" é regra da casa.
+4. ⚠️ **Não existe UM acerto-para-empatar.** O alvo e o stop mudam a cada
+   operação, então a ressalva `bracketVariavel` diz isso em vez de a tela
+   publicar um número único que a estratégia não tem.
+
+### O portão do pedágio não se aplica ao modo mesa
+
+Ele julga um **alvo fixo**, e aqui não há um: o bracket sai do playbook e já
+respeita o próprio piso de RR (1,8) e o teto de escala do `zion/bracket.ts`.
+Aplicá-lo recusaria a mesa por um alvo que ela nunca declarou.
+
+### O que continua de fora
+
+O motivo da recusa é **contado** (`porQueNaoAbriu`): sem isso, uma mesa parada e
+uma mesa quebrada produzem exatamente a mesma saída.
