@@ -27,6 +27,7 @@ import { classificarResultado } from "@/lib/admin/cor-resultado";
 import { corDoNumero } from "@/components/bancada/CorDoCliente";
 import type { ChaveNaoMedido } from "@/lib/bancada/veredito";
 import { ESTRATEGIAS_DA_CASA, type EstrategiaDaCasa } from "@/lib/bancada/casa";
+import type { CartaoDaMesa } from "@/lib/bancada/mesas-da-casa";
 import type { MessageKey } from "@/lib/i18n";
 
 const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOT", "MATIC"];
@@ -77,6 +78,7 @@ export default function Bancada() {
   const [r, setR] = useState<Resposta | null>(null);
 
   const [verCasa, setVerCasa] = useState(false);
+  const [mesas, setMesas] = useState<CartaoDaMesa[]>([]);
   const [nome, setNome] = useState("");
   const [salvas, setSalvas] = useState<Salva[]>([]);
   const [ocupado, setOcupado] = useState(false);
@@ -90,6 +92,18 @@ export default function Bancada() {
     } catch { /* melhor-esforço: a bancada funciona sem a lista */ }
   }, []);
   useEffect(() => { void recarregar(); }, [recarregar]);
+
+  useEffect(() => {
+    // ⚠️ Melhor-esforço: a bancada funciona sem a vitrine. Falhar aqui não
+    // pode impedir alguém de rodar um teste.
+    (async () => {
+      try {
+        const res = await fetch("/api/bancada/mesas-da-casa");
+        const j = await res.json();
+        if (j?.ok && Array.isArray(j.cartoes)) setMesas(j.cartoes);
+      } catch { /* silêncio: a seção some, o resto fica */ }
+    })();
+  }, []);
 
   /**
    * ⚠️ CARREGAR UMA DA CASA É SÓ PREENCHER O FORMULÁRIO — nada roda sozinho.
@@ -177,6 +191,24 @@ export default function Bancada() {
         <h1 className="text-2xl font-semibold text-ink">{t("bancada.title")}</h1>
         <p className="mt-1 text-sm text-ink-3">{t("bancada.subtitle")}</p>
       </header>
+
+      {/* ── O QUE A CASA DE FATO RODA ──────────────────────────────── */}
+      {/* ⚠️⚠️ VITRINE, NÃO CLONE — e a diferença é honestidade, não preguiça.
+          Estas mesas usam bracket por VOLATILIDADE (stop = ATR×1,5, alvo
+          limitado a ATR×√horas×2) e escolhem entre 10 playbooks por regime de
+          mercado. O formulário abaixo fala `média|canal|RSI` com percentual
+          fixo. Aproximar uma mesa nisso e pôr o nome dela em cima seria o
+          cliente rodando uma coisa achando que é outra — com a nossa marca, e
+          com números que vieram da regra REAL, não da aproximação. */}
+      {mesas.length > 0 && (
+        <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
+          <p className="text-sm font-medium text-ink">{t("bancada.mesasTitulo")}</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-ink-3">{t("bancada.mesasSub")}</p>
+          <ul className="mt-3 space-y-2">
+            {mesas.map((m) => <MesaDaCasa key={m.source} m={m} />)}
+          </ul>
+        </section>
+      )}
 
       {/* ── AS ESTRATÉGIAS DA CASA, INCLUSIVE AS MORTAS ─────────────── */}
       {/* ⚠️ RECOLHIDA POR PADRÃO. Sete entradas com descrição e lápide somam
@@ -500,6 +532,67 @@ function Veredito({ r }: { r: Resposta }) {
  * ⚠️ É a mesma família de "duas fontes, uma silenciosa" que esta base persegue:
  * o token existia na minha cabeça e não no `tailwind.config.ts`.
  */
+/** Um cartão de mesa da casa: o que ela é, o que mediu, e o que o número NÃO prova. */
+function MesaDaCasa({ m }: { m: CartaoDaMesa }) {
+  const t = useT();
+  /**
+   * ⚠️ A REGRA DE COR É A DO ADMIN, e a amostra tem precedência: abaixo de 100
+   * decididas o número sai SEM cor de veredito, por mais bonito que seja.
+   */
+  const classe = classificarResultado(m.liquidoPorOpPct);
+  const cor = corDoNumero(classe, m.sustentacao === "sustenta");
+
+  return (
+    <li className="rounded-xl border border-white/5 bg-bg-2/60 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[13px] text-ink">
+            <span className="mr-1.5 text-ink-3">{m.sigilo}</span>{m.nome}
+          </p>
+          <p className="mt-0.5 text-xs text-ink-3">{m.subtitulo}</p>
+          <p className="mt-1 text-xs italic leading-relaxed text-ink-4">{m.testa}</p>
+        </div>
+        <div className="flex-shrink-0 text-right">
+          {m.liquidoPorOpPct == null ? (
+            <span className="text-xs text-ink-4">{t("bancada.mesasSemMedida")}</span>
+          ) : (
+            <>
+              <span className={`block text-base font-semibold ${cor}`}>
+                {m.liquidoPorOpPct >= 0 ? "+" : ""}{m.liquidoPorOpPct.toFixed(2)}%
+              </span>
+              <span className="block text-[10px] text-ink-4">{t("bancada.mesasPorOp")}</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {m.medicao && m.acertoPct != null && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-ink-3">
+          <span>{t("bancada.mesasAcerto", { pct: m.acertoPct.toFixed(0), n: m.medicao.decididos })}</span>
+          {/* ⚠️ Expirada aparece SEMPRE que existe: ela não é ganho nem perda,
+              e uma mesa que expira mais do que decide é outra coisa. */}
+          {m.medicao.expiradas > 0 && <span>{t("bancada.mesasExpiradas", { n: m.medicao.expiradas })}</span>}
+          <span>{t("bancada.mesasJanela", {
+            simbolos: m.medicao.simbolos, dias: m.medicao.dias,
+            de: m.medicao.primeiroDia, ate: m.medicao.ultimoDia,
+          })}</span>
+        </div>
+      )}
+
+      {/* ⚠️⚠️ AS RESSALVAS VIAJAM COM O NÚMERO. Publicar "+4,34% por operação"
+          sozinho é propaganda; publicá-lo com o que ele NÃO prova é medição — e
+          é o que separa esta bancada de um backtester que vende esperança. */}
+      {m.ressalvas.length > 0 && (
+        <ul className="mt-2 space-y-1 border-t border-white/5 pt-2">
+          {m.ressalvas.map((r) => (
+            <li key={r} className="text-[11px] leading-relaxed text-ink-4">· {t(r as MessageKey)}</li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 const INPUT = "w-full rounded-lg border border-white/10 bg-bg-2/80 px-3 py-2 text-sm text-ink placeholder:text-ink-4 outline-none focus:border-cyan/40";
 const CHIP = "rounded-lg border px-2.5 py-1.5 text-xs transition";
 const CHIP_ON = "border-cyan/40 bg-cyan/10 text-cyan";
