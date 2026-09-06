@@ -19,7 +19,7 @@
  */
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Loader2, AlertTriangle, Info } from "lucide-react";
+import { Loader2, AlertTriangle, Info, ChevronDown } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { oPedagioAntesDeRodar } from "@/lib/bancada/custo";
 import { PRACAS, rotuloDaPraca, type EstrategiaDoCliente, type Praca, type Papel } from "@/lib/bancada/vocabulario";
@@ -76,6 +76,7 @@ export default function Bancada() {
   const [rodando, setRodando] = useState(false);
   const [r, setR] = useState<Resposta | null>(null);
 
+  const [verCasa, setVerCasa] = useState(false);
   const [nome, setNome] = useState("");
   const [salvas, setSalvas] = useState<Salva[]>([]);
   const [ocupado, setOcupado] = useState(false);
@@ -178,139 +179,159 @@ export default function Bancada() {
       </header>
 
       {/* ── AS ESTRATÉGIAS DA CASA, INCLUSIVE AS MORTAS ─────────────── */}
-      <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
-        <p className="text-sm font-medium text-ink">{t("bancada.casaTitulo")}</p>
-        <p className="mt-0.5 text-xs text-ink-3">{t("bancada.casaSub")}</p>
-        <ul className="mt-3 space-y-2">
-          {ESTRATEGIAS_DA_CASA.map((e) => (
-            <li key={e.id} className="rounded-xl border border-white/5 bg-bg-0/40 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[13px] text-ink">
-                    {t(e.nomeKey as MessageKey)}{" "}
-                    {/* ⚠️ A morta NÃO some e NÃO fica vermelha: ela é o material
-                        didático mais barato que temos. Cinza + rótulo. */}
-                    <span className={`ml-1 rounded border px-1.5 py-0.5 text-[10px] ${
-                      e.viva ? "border-cyan/30 text-cyan" : "border-white/10 text-ink-3"}`}>
-                      {e.viva ? t("bancada.casaViva") : t("bancada.casaMorta")}
-                    </span>
-                  </p>
-                  <p className="mt-1 text-xs text-ink-3">{t(e.comoFuncionaKey as MessageKey)}</p>
-                  {e.medicao && (
-                    <p className="mt-1.5 text-xs text-gold/90">
-                      {/* ⚠️ O NÚMERO NUNCA SAI SEM A JANELA. Medição sem data é
-                          propaganda, e o resultado da casa não é previsão para
-                          a janela do cliente. */}
-                      <span className="font-medium">{e.medicao.resultado}</span>
-                      <span className="text-ink-4"> · </span>
-                      <span className="text-ink-3">{t("bancada.casaMedidoEm", { quando: e.medicao.quando })}</span>
-                      <br />
-                      <span className="text-ink-3">{t(e.medicao.porqueKey as MessageKey)}</span>
+      {/* ⚠️ RECOLHIDA POR PADRÃO. Sete entradas com descrição e lápide somam
+          uma tela inteira, e no celular empurravam a FERRAMENTA para fora da
+          primeira dobra — quem chega via um catálogo, não uma bancada. Ela
+          continua a um toque, e o rótulo diz quantas são. */}
+      <section className="rounded-2xl border border-white/5 bg-bg-1/40">
+        <button type="button" onClick={() => setVerCasa((v) => !v)}
+          className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left">
+          <span>
+            <span className="block text-sm font-medium text-ink">
+              {t("bancada.casaVer", { n: ESTRATEGIAS_DA_CASA.length })}
+            </span>
+            <span className="mt-0.5 block text-xs text-ink-3">{t("bancada.casaSub")}</span>
+          </span>
+          <ChevronDown className={`h-4 w-4 flex-shrink-0 text-ink-3 transition-transform ${verCasa ? "rotate-180" : ""}`} />
+        </button>
+
+        {verCasa && (
+          <ul className="space-y-2 px-5 pb-5">
+            {ESTRATEGIAS_DA_CASA.map((e) => (
+              <li key={e.id} className="rounded-xl border border-white/5 bg-bg-2/60 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] text-ink">
+                      {t(e.nomeKey as MessageKey)}{" "}
+                      {/* ⚠️ A morta NÃO some e NÃO fica vermelha: ela é o material
+                          didático mais barato que temos. Cinza + rótulo. */}
+                      <span className={`ml-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] ${
+                        e.viva ? "border-cyan/30 text-cyan" : "border-white/10 text-ink-3"}`}>
+                        {e.viva ? t("bancada.casaViva") : t("bancada.casaMorta")}
+                      </span>
                     </p>
-                  )}
+                    <p className="mt-1 text-xs leading-relaxed text-ink-3">{t(e.comoFuncionaKey as MessageKey)}</p>
+                    {e.medicao && (
+                      <p className="mt-1.5 text-xs leading-relaxed">
+                        {/* ⚠️ O NÚMERO NUNCA SAI SEM A JANELA. Medição sem data é
+                            propaganda, e o resultado da casa não é previsão para
+                            a janela do cliente. */}
+                        <span className="font-medium text-gold">{e.medicao.resultado}</span>
+                        <span className="text-ink-4"> · </span>
+                        <span className="text-ink-4">{t("bancada.casaMedidoEm", { quando: e.medicao.quando })}</span>
+                        <br />
+                        <span className="text-ink-3">{t(e.medicao.porqueKey as MessageKey)}</span>
+                      </p>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => carregar(e)}
+                    className={`flex-shrink-0 ${CHIP} ${CHIP_OFF}`}>
+                    {t("bancada.casaUsar")}
+                  </button>
                 </div>
-                <button type="button" onClick={() => carregar(e)}
-                  className="flex-shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-ink-2 hover:border-cyan/40 hover:text-cyan transition">
-                  {t("bancada.casaUsar")}
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {/* ── MONTE SEU TESTE ─────────────────────────────────────────── */}
-      <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5 space-y-4">
-        <Campo rotulo={t("bancada.capital")}>
-          <input type="number" min={1} value={capital} onChange={(e) => setCapital(Number(e.target.value))}
-            className={INPUT} />
-        </Campo>
+      {/* ⚠️ AGRUPADO, e não um campo por bloco. A versão anterior dava uma
+          linha inteira a cada pergunta: no celular virava uma coluna de
+          rolagem sem hierarquia, em que "capital" e "intervalo da vela" tinham
+          o mesmo peso visual. §2.4 do plano pede UMA PERGUNTA POR VEZ — o que
+          não é o mesmo que um campo por tela. */}
+      <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5 space-y-5">
+
+        {/* dinheiro e janela: os três números que emolduram o teste */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <label className="col-span-2 block sm:col-span-2">
+            <span className="mb-1 block text-[11px] text-ink-3">{t("bancada.capital")}</span>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-4">$</span>
+              <input type="number" min={1} value={capital} onChange={(e) => setCapital(Number(e.target.value))}
+                className={`${INPUT} pl-7`} />
+            </div>
+          </label>
+          <Escolha rotulo={t("bancada.window")} valor={janelaDias} set={setJanela}
+            opcoes={[90, 365, 730].map((d) => ({ v: d, r: `${d}${t("bancada.days").slice(0, 1)}` }))} />
+          <Escolha rotulo="—" valor={intervalo} set={setIntervalo}
+            opcoes={INTERVALOS.map((i) => ({ v: i, r: i }))} />
+        </div>
 
         <Campo rotulo={t("bancada.symbols")}>
           <div className="flex flex-wrap gap-1.5">
-            {SIMBOLOS.map((s) => (
-              <button key={s} type="button"
-                onClick={() => setSimbolos((atual) => atual.includes(s) ? atual.filter((x) => x !== s) : [...atual, s])}
-                className={`rounded-lg border px-2.5 py-1 text-xs transition ${
-                  simbolos.includes(s) ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-white/5 text-ink-3 hover:border-white/15"}`}>
-                {s}
+            {SIMBOLOS.map((sim) => (
+              <button key={sim} type="button"
+                onClick={() => setSimbolos((atual) => atual.includes(sim) ? atual.filter((x) => x !== sim) : [...atual, sim])}
+                className={`${CHIP} ${simbolos.includes(sim) ? CHIP_ON : CHIP_OFF}`}>
+                {sim}
               </button>
             ))}
           </div>
         </Campo>
 
+        {/* ⚠️ O GATILHO EM TRÊS FICHAS CURTAS, com a frase inteira EMBAIXO.
+            Antes cada opção era um botão de largura total com a frase dentro
+            ("Fechamento cruza a média de 20 períodos"), e três parágrafos
+            empilhados não se leem como um seletor — se leem como uma lista. */}
         <Campo rotulo={t("bancada.trigger")}>
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex gap-1.5">
               {(["media", "canal", "rsi"] as const).map((k) => (
                 <button key={k} type="button" onClick={() => setTipo(k)}
-                  className={`rounded-lg border px-3 py-1.5 text-xs transition ${
-                    tipo === k ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-white/5 text-ink-3 hover:border-white/15"}`}>
-                  {k === "media" ? t("bancada.triggerMedia", { n }) : k === "canal" ? t("bancada.triggerCanal", { n }) : t("bancada.triggerRsi", { n, nivel })}
+                  className={`${CHIP} ${tipo === k ? CHIP_ON : CHIP_OFF}`}>
+                  {k === "media" ? t("bancada.triggerMediaCurto")
+                    : k === "canal" ? t("bancada.triggerCanalCurto") : t("bancada.triggerRsiCurto")}
                 </button>
               ))}
             </div>
-            <div className="flex gap-2">
-              <Mini rotulo={t("bancada.period")} valor={n} set={setN} min={2} max={400} />
-              {tipo === "rsi" && <Mini rotulo={t("bancada.level")} valor={nivel} set={setNivel} min={5} max={95} />}
-            </div>
+            <Mini rotulo={t("bancada.period")} valor={n} set={setN} min={2} max={400} estreito />
+            {tipo === "rsi" && <Mini rotulo={t("bancada.level")} valor={nivel} set={setNivel} min={5} max={95} estreito />}
           </div>
+          <p className="mt-2 text-xs leading-relaxed text-ink-4">
+            {tipo === "media" ? t("bancada.triggerMedia", { n })
+              : tipo === "canal" ? t("bancada.triggerCanal", { n }) : t("bancada.triggerRsi", { n, nivel })}
+          </p>
         </Campo>
 
-        <Campo rotulo={t("bancada.direction")}>
-          <div className="flex gap-1.5">
-            {(["compra", "venda"] as const).map((d) => (
-              <button key={d} type="button" onClick={() => setDirecao(d)}
-                className={`rounded-lg border px-3 py-1.5 text-xs transition ${
-                  direcao === d ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-white/5 text-ink-3 hover:border-white/15"}`}>
-                {d === "compra" ? t("bancada.buy") : t("bancada.sell")}
+        {/* direção, alvo, stop e tempo: as quatro que definem a operação */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Campo rotulo={t("bancada.direction")}>
+            <div className="flex gap-1.5">
+              {(["compra", "venda"] as const).map((d) => (
+                <button key={d} type="button" onClick={() => setDirecao(d)}
+                  className={`${CHIP} flex-1 ${direcao === d ? CHIP_ON : CHIP_OFF}`}>
+                  {d === "compra" ? t("bancada.buy") : t("bancada.sell")}
+                </button>
+              ))}
+            </div>
+          </Campo>
+          <Mini rotulo={`${t("bancada.target")} %`} valor={alvoPct} set={setAlvo} min={0.05} max={100} passo={0.1} />
+          <Mini rotulo={`${t("bancada.stop")} %`} valor={stopPct} set={setStop} min={0.05} max={100} passo={0.1} />
+          <Mini rotulo={`${t("bancada.horizon")} · h`} valor={horasLimite} set={setHoras} min={1} max={2160} />
+        </div>
+
+        {/* ⚠️ PRAÇA E PAPEL SEPARADOS. Como seis botões combinados eles
+            quebravam em três linhas, e o cliente tinha de procurar a
+            combinação certa em vez de escolher duas coisas. */}
+        <Campo rotulo={t("bancada.venue")}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PRACAS.map((pr) => (
+              <button key={pr} type="button" onClick={() => setPraca(pr)}
+                className={`${CHIP} ${praca === pr ? CHIP_ON : CHIP_OFF}`}>
+                {rotuloDaPraca(pr)}
+              </button>
+            ))}
+            <span className="mx-1 text-ink-5">·</span>
+            {(["maker", "taker"] as const).map((pa) => (
+              <button key={pa} type="button" onClick={() => setPapel(pa)}
+                className={`${CHIP} ${papel === pa ? CHIP_ON : CHIP_OFF}`}>
+                {pa}
               </button>
             ))}
           </div>
         </Campo>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <Mini rotulo={`${t("bancada.target")} %`} valor={alvoPct} set={setAlvo} min={0.05} max={100} passo={0.1} />
-          <Mini rotulo={`${t("bancada.stop")} %`} valor={stopPct} set={setStop} min={0.05} max={100} passo={0.1} />
-          <Mini rotulo={`${t("bancada.horizon")} (${t("bancada.hours")})`} valor={horasLimite} set={setHoras} min={1} max={2160} />
-        </div>
-
-        <Campo rotulo={t("bancada.venue")}>
-          <div className="flex flex-wrap gap-1.5">
-            {PRACAS.flatMap((p) => (["maker", "taker"] as const).map((pa) => (
-              <button key={`${p}-${pa}`} type="button" onClick={() => { setPraca(p); setPapel(pa); }}
-                className={`rounded-lg border px-2.5 py-1 text-xs transition ${
-                  praca === p && papel === pa ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-white/5 text-ink-3 hover:border-white/15"}`}>
-                {rotuloDaPraca(p)} · {pa}
-              </button>
-            )))}
-          </div>
-        </Campo>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Campo rotulo={t("bancada.window")}>
-            <div className="flex gap-1.5">
-              {[90, 365, 730].map((d) => (
-                <button key={d} type="button" onClick={() => setJanela(d)}
-                  className={`rounded-lg border px-2.5 py-1 text-xs transition ${
-                    janelaDias === d ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-white/5 text-ink-3 hover:border-white/15"}`}>
-                  {d} {t("bancada.days")}
-                </button>
-              ))}
-            </div>
-          </Campo>
-          <Campo rotulo="—">
-            <div className="flex gap-1.5">
-              {INTERVALOS.map((i) => (
-                <button key={i} type="button" onClick={() => setIntervalo(i)}
-                  className={`rounded-lg border px-2.5 py-1 text-xs transition ${
-                    intervalo === i ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-white/5 text-ink-3 hover:border-white/15"}`}>
-                  {i}
-                </button>
-              ))}
-            </div>
-          </Campo>
-        </div>
       </section>
 
       {/* ── O PEDÁGIO, ANTES DO BOTÃO ───────────────────────────────── */}
@@ -337,7 +358,7 @@ export default function Bancada() {
         )}
 
         <button type="button" onClick={rodar} disabled={rodando || simbolos.length === 0}
-          className="mt-4 w-full rounded-xl bg-grad-cyan px-4 py-2.5 text-sm font-medium text-bg-0 disabled:opacity-40">
+          className="mt-4 w-full rounded-xl bg-grad-cyan px-4 py-2.5 text-sm font-medium text-bg disabled:opacity-40">
           {rodando ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{t("bancada.running")}</span> : t("bancada.run")}
         </button>
         {r?.ok && typeof r.restamHoje === "number" && (
@@ -364,7 +385,7 @@ export default function Bancada() {
           ) : (
             <ul className="mt-2 space-y-1.5">
               {salvas.filter((e) => !e.arquivada).map((e) => (
-                <li key={e.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-bg-0/40 px-3 py-2">
+                <li key={e.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-bg-2/60 px-3 py-2">
                   <div className="min-w-0">
                     <p className="truncate text-[13px] text-ink">{e.nome}</p>
                     {/* ⚠️ A mesa viva mostra DESDE QUANDO: resultado de papel
@@ -454,7 +475,7 @@ function Veredito({ r }: { r: Resposta }) {
         <span>{t("bancada.holding")}: {v.competidorPct == null ? "—" : `${v.competidorPct.toFixed(2)}%`}</span>
       </div>
 
-      <div className="rounded-xl border border-white/5 bg-bg-0/40 p-3">
+      <div className="rounded-xl border border-white/5 bg-bg-2/60 p-3">
         <div className="flex items-center gap-1.5 text-xs font-medium text-ink-2">
           <Info className="h-3 w-3" />
           {t("bancada.notMeasured")}
@@ -467,7 +488,22 @@ function Veredito({ r }: { r: Resposta }) {
   );
 }
 
-const INPUT = "w-full rounded-lg border border-white/5 bg-bg-0/60 px-3 py-2 text-sm text-ink outline-none focus:border-cyan/40";
+/**
+ * ⚠️⚠️ `bg-bg-2`, NUNCA `bg-bg-0` — o defeito que o dono viu na tela (06/09).
+ *
+ * A escala de fundo do tema é `bg` (DEFAULT), `bg-1`…`bg-4`. **`bg-0` não
+ * existe.** Uma classe do Tailwind que não resolve simplesmente não vira CSS —
+ * ela não avisa, não quebra o build e não aparece em teste nenhum. O `<input>`
+ * então caiu no branco padrão do navegador, e a tela inteira ficou com quatro
+ * retângulos brancos gritando contra o tema escuro.
+ *
+ * ⚠️ É a mesma família de "duas fontes, uma silenciosa" que esta base persegue:
+ * o token existia na minha cabeça e não no `tailwind.config.ts`.
+ */
+const INPUT = "w-full rounded-lg border border-white/10 bg-bg-2/80 px-3 py-2 text-sm text-ink placeholder:text-ink-4 outline-none focus:border-cyan/40";
+const CHIP = "rounded-lg border px-2.5 py-1.5 text-xs transition";
+const CHIP_ON = "border-cyan/40 bg-cyan/10 text-cyan";
+const CHIP_OFF = "border-white/10 text-ink-3 hover:border-white/25 hover:text-ink-2";
 
 function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
@@ -478,15 +514,35 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
   );
 }
 
-function Mini({ rotulo, valor, set, min, max, passo = 1 }: {
-  rotulo: string; valor: number; set: (n: number) => void; min: number; max: number; passo?: number;
+function Mini({ rotulo, valor, set, min, max, passo = 1, estreito = false }: {
+  rotulo: string; valor: number; set: (n: number) => void;
+  min: number; max: number; passo?: number; estreito?: boolean;
 }) {
   return (
-    <label className="block flex-1">
+    <label className={estreito ? "block w-20" : "block"}>
       <span className="mb-1 block text-[11px] text-ink-3">{rotulo}</span>
       <input type="number" value={valor} min={min} max={max} step={passo}
         onChange={(e) => set(Number(e.target.value))} className={INPUT} />
     </label>
+  );
+}
+
+/** Um seletor curto de valor fixo — janela e intervalo, que só têm 3 opções. */
+function Escolha<T extends string | number>({ rotulo, valor, set, opcoes }: {
+  rotulo: string; valor: T; set: (v: T) => void; opcoes: Array<{ v: T; r: string }>;
+}) {
+  return (
+    <div>
+      <span className="mb-1 block text-[11px] text-ink-3">{rotulo}</span>
+      <div className="flex gap-1">
+        {opcoes.map((o) => (
+          <button key={String(o.v)} type="button" onClick={() => set(o.v)}
+            className={`${CHIP} flex-1 px-1.5 ${valor === o.v ? CHIP_ON : CHIP_OFF}`}>
+            {o.r}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

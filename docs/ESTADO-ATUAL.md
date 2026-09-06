@@ -1765,6 +1765,51 @@ Coinbase morre — e `/admin` em **404**, nunca 403.
 
 ---
 
+## 5.21 ⚠️ A CLASSE DO TAILWIND QUE NÃO EXISTE NÃO VIRA CSS — E NÃO AVISA (06/09)
+
+O dono abriu o `/laboratorio` no celular: *"essa parte da UI está horrível"*.
+Estava, e além do layout havia um **defeito de verdade**.
+
+### O defeito
+
+Os `<input>` usavam **`bg-bg-0/60`**. A escala de fundo deste tema é
+`bg` (DEFAULT), `bg-1`…`bg-4` — **`bg-0` não existe**.
+
+⚠️ **Uma classe do Tailwind que não resolve não vira CSS nenhum.** Ela não
+avisa, não quebra o `build`, não aparece no `type-check` e não falha em teste
+algum: o elemento fica sem a propriedade. Os campos caíram no **branco padrão do
+navegador**, e a tela ficou com quatro retângulos brancos contra o tema escuro.
+
+⚠️ **Quem viu foi o dono, na tela.** Nossos 2.537 testes não tinham como — é a
+mesma família de "duas fontes, uma silenciosa": o token existia na minha cabeça
+e não no `tailwind.config.ts`.
+
+### A trava, e o que ela achou sozinha
+
+`components/token-de-cor-existe.test.ts` lê as escalas do `tailwind.config.ts` e
+recusa qualquer `bg-|text-|border-…` que aponte para um degrau inexistente.
+
+⚠️ **Na primeira execução ela achou um segundo, que eu não tinha visto:**
+`text-bg-0` no botão RODAR — o texto do botão estava **sem cor definida** sobre
+o gradiente ciano.
+
+### O layout, e por que ele estava errado
+
+| o que estava | por quê |
+|---|---|
+| 7 estratégias da casa abertas no topo | somavam uma tela inteira e empurravam a FERRAMENTA para fora da primeira dobra — quem chegava via um catálogo, não uma bancada. Agora recolhida, com a contagem no rótulo |
+| gatilhos como botões de largura total com a frase dentro | três parágrafos empilhados não se leem como seletor, se leem como lista. Agora três fichas curtas (Média · Canal · RSI) com a frase inteira embaixo |
+| um campo por bloco | "capital" e "intervalo da vela" tinham o mesmo peso visual. Agora agrupados: dinheiro+janela numa linha, direção+alvo+stop+tempo noutra |
+| praça×papel como 6 botões combinados | quebravam em três linhas, e obrigavam a procurar a combinação em vez de escolher duas coisas |
+
+⚠️ §2.4 do plano pede **uma pergunta por vez** — o que não é o mesmo que **um
+campo por tela**, e eu tinha lido como se fosse.
+
+**Conferido no HTML e no CSS gerados**, não no fonte: a regra
+`.bg-bg-2\/80{background-color:#080b22cc}` existe no chunk que a página carrega.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**
