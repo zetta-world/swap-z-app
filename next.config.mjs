@@ -176,13 +176,18 @@ const nextConfig = {
       "@radix-ui/react-popover",
       "@radix-ui/react-select",
     ],
-    // ccxt is a huge runtime-only package (3+MB with all 100+ exchange
-    // adapters and their crypto deps). Forcing it through webpack pulls in
-    // optional deps for exchanges we don't use (dydx-v4 protobuf, etc.).
-    // External-ize it so the route handler `require()`s it from node_modules
-    // at runtime instead.
-    serverComponentsExternalPackages: ["ccxt"],
   },
+  // ccxt is a huge runtime-only package (3+MB with all 100+ exchange adapters
+  // and their crypto deps). Forcing it through webpack pulls in optional deps
+  // for exchanges we don't use (dydx-v4 protobuf, etc.). External-ize it so the
+  // route handler `require()`s it from node_modules at runtime instead.
+  //
+  // ⚠️ SAIU DE `experimental` E MUDOU DE NOME NO NEXT 15 (06/09):
+  // `experimental.serverComponentsExternalPackages` → `serverExternalPackages`,
+  // agora estável. O build avisava, e um aviso de config é o tipo de coisa que
+  // some no meio de 200 linhas de saída — mas se ela deixasse de valer, o ccxt
+  // (3 MB, 100+ adaptadores) voltaria para dentro do bundle do servidor.
+  serverExternalPackages: ["ccxt"],
   async headers() {
     return [
       {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Search, Sparkles, Bell, Menu } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
 import { useT } from "@/lib/i18n";
@@ -29,12 +30,16 @@ export default function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => vo
         >
           <Menu className="w-5 h-5" />
         </button>
-        <a href="/" className="flex items-center gap-2 min-w-0">
+        {/* ⚠️ `Link`, não `<a>`: um `<a href="/">` recarrega a página inteira e
+            derruba o estado do cliente — carteira conectada, idioma, gaveta do
+            ZION. Achado pelo `eslint-config-next@16`, que passou a tratar isto
+            como erro. */}
+        <Link href="/" className="flex items-center gap-2 min-w-0">
           <BrandMark size="sm" />
           <span className="font-display font-extrabold text-ink text-sm whitespace-nowrap hidden xs:inline">
             Z-SWAP
           </span>
-        </a>
+        </Link>
       </div>
 
       {/* ─── CENTER: command bar (md+) ────────────────────────────────── */}
