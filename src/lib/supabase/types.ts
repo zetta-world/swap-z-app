@@ -72,6 +72,13 @@ export type BancadaEstrategiaRow = {
   papel:         "maker" | "taker";
   /** ⚠️ Arquiva, não apaga: uma rodada aponta para ela e viraria órfã. */
   arquivada_em:  string | null;
+  /** ⚠️ O interruptor da mesa viva (0039). Nasce DESLIGADO. */
+  papel_adiante: boolean;
+  /** Símbolos que a mesa acompanha. Vazio = o cron ignora. */
+  simbolos:      string[];
+  intervalo:     string;
+  /** Quando a mesa foi ligada. Resultado sem tempo decorrido é número sem amostra. */
+  papel_desde:   string | null;
   criada_em:     string;
   atualizada_em: string;
 };
@@ -133,6 +140,8 @@ export type BancadaPosicaoRow = {
   alvo_pct:      number | null;
   stop_pct:      number | null;
   expira_em:     string | null;
+  /** ⚠️ De qual VELA veio o sinal (0040). Não confundir com `aberta_em`. */
+  vela_em:       number | null;
   status:        "aberta" | "ganhou" | "perdeu" | "expirada";
   saida:         number | null;
   resultado_pct: number | null;

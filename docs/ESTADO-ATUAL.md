@@ -1632,6 +1632,80 @@ sem medição (1), chave de texto que ninguém criou (1).
 
 ---
 
+## 5.19 A BANCADA — fase 6, o papel adiante. **AS SETE FASES FECHADAS** (06/09)
+
+`lib/bancada/papel.ts` (puro), `tique.ts` (a costura), `/api/bancada/estrategias`
+(salvar / listar / ligar), migrations `0039` e `0040`, e a UI de salvar + ligar
+a mesa.
+
+### ⚠️ Onde ele tick — e por que NÃO tem cron próprio
+
+Está pendurado no **`/api/zion/backtest`** (30 min), que já está agendado no
+cron-job.org e já roda o papel da própria casa.
+
+⚠️ **Criar rota nova exigiria que o dono a agendasse — e `/api/dca/cron` está
+escrito, testado e NUNCA AGENDADO desde 26/08** (RUNBOOK §2.1). Uma rota de cron
+que ninguém agenda é *"atividade não é evidência de funcionamento"* esperando
+para acontecer.
+
+⚠️ E **não** vai no cron do autopilot, que move dinheiro real: um defeito no
+papel de um cliente não pode chegar perto daquele caminho. Melhor-esforço, como
+o papel da casa logo acima — uma mesa com problema não leva junto o flywheel.
+
+### O que eu ia deixar como remendo, e virou migration
+
+Eu ia guardar o instante da vela do sinal na coluna **`expira_em`**, com um
+comentário pedindo desculpa. Duas razões para não:
+
+1. `expira_em` significa outra coisa e a tela a mostra como expiração —
+   escrever ali faz a interface mentir;
+2. ⚠️ **usar `aberta_em` também não serve, e o erro é sutil:** uma posição
+   aberta às 05h01 a partir da vela das 04h **bloquearia a vela das 05h**,
+   porque 05h < 05h01. A guarda passaria a recusar sinais legítimos e ninguém
+   veria — a mesa só ficaria quieta.
+
+`0040` dá coluna própria (`vela_em`) ao dado próprio.
+
+### ⚠️ O tier é relido A CADA TICK
+
+Quem cai de `trader` para `pro` para de tickar sozinho. Se a checagem morasse só
+no ato de LIGAR, ele continuaria consumindo cron para sempre depois de parar de
+pagar — e **nada quebraria** para denunciar. O corte é determinístico (mais
+antigas sobrevivem): por ordem arbitrária, a mesa do cliente pararia e voltaria
+sem explicação a cada tick.
+
+### ⚠️ Uma vela, um sinal
+
+O cron roda a cada 30 min e a vela pode ser de 1h: sem a guarda, o tick das :00
+e o das :30 leriam **o mesmo cruzamento** e abririam duas posições do mesmo
+movimento — a inflação de amostra que o motor evita usando cruzamento, entrando
+pela porta do relógio.
+
+### A marca do `Dono` pegou fora do teste
+
+`Mesa.dono` estava declarado `string`, e `abrirPosicao` **recusou em tempo de
+compilação**. A trava da fase 1 fez o trabalho dela em código de produção, não
+num exercício.
+
+### E o que faltava para a fase 6 EXISTIR
+
+Até aqui o `/laboratorio` montava e rodava, e o parâmetro morria na tela:
+`salvarEstrategia` estava no store desde a fase 1 e **nenhuma rota o chamava**.
+Sem estratégia salva não há o que tickar. A rota e a UI entraram junto — senão a
+peça ficaria *"correta, testada e desconectada do caminho que decide"*.
+
+**Quebrado nos dois sentidos:** teto só no ato de ligar (2 vermelhos), sem a
+guarda de vela já avaliada (1), vela corrente decidindo (1), expirada no lucro
+contada como ganho (1).
+
+### ⚠️ O QUE FALTA AGORA É USO
+
+As sete fases estão em produção e **nenhuma rodada real aconteceu**. As tabelas
+`bancada_*` estão zeradas. Os 2537 testes provam as peças; o caminho completo
+com dado real, não. A primeira rodada em `/laboratorio` é o teste que falta.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**

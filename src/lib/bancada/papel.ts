@@ -1,0 +1,182 @@
+/**
+ * O PAPEL ADIANTE — a decisão pura de quem tick, quando abre e quando fecha.
+ *
+ * ⚠️⚠️ ESTE É O ÚNICO CUSTO DA BANCADA QUE RECORRE. Um backtest custa uma vez;
+ * uma mesa viva custa a cada 30 minutos, para sempre, por cliente. Por isso ele
+ * começa em `trader` (§6.3) e por isso cada guarda daqui é uma guarda de
+ * dinheiro, não de correção.
+ *
+ * ⚠️ E ELE NÃO CRIA CRON NOVO. Entra no `/api/zion/backtest`, que já roda de 30
+ * em 30 minutos, já está agendado no cron-job.org e já executa o papel da
+ * própria casa (`runPaperAgent`). Criar rota nova exigiria que o dono fosse
+ * agendá-la — e `/api/dca/cron` está escrito, testado e **nunca agendado**
+ * desde 26/08, esperando no RUNBOOK §2.1. Uma rota de cron que ninguém agenda é
+ * "atividade não é evidência de funcionamento" esperando para acontecer.
+ *
+ * ⚠️ NÃO ENTRA no cron do autopilot, que move DINHEIRO REAL. Um defeito meu no
+ * papel do cliente não pode chegar perto daquele caminho.
+ */
+
+import { BANCADA_COTAS, type Tier } from "@/lib/tier/types";
+import type { Dono } from "@/lib/bancada/dono";
+import { ultimaVelaFechada, type VelaComTempo } from "@/lib/mercado/velas";
+import { sinais } from "@/lib/bancada/motor";
+import { taxaDaBancadaPct, type EstrategiaDoCliente } from "@/lib/bancada/vocabulario";
+import { computeExitPath } from "@/lib/paper/saida";
+
+/** Uma mesa viva: a estratégia do cliente mais onde ela olha. */
+export interface Mesa {
+  id: string;
+  /**
+   * ⚠️ `Dono`, NÃO `string` — a marca do tipo pegou isto ao escrever o tick
+   * (06/09): eu tinha declarado `string` aqui, e `abrirPosicao` recusou em
+   * tempo de compilação. A mesa vem do banco e o dono dela é reconstruído com
+   * `donoDeLinhaDoBanco`; afrouxar o tipo aqui seria abrir a porta que o
+   * `bancada/dono.ts` existe para fechar.
+   */
+  dono: Dono;
+  params: EstrategiaDoCliente;
+  simbolos: string[];
+  intervalo: string;
+  /** `abriu_em` da posição mais recente desta mesa. `null` se nunca abriu. */
+  ultimaAberturaMs: number | null;
+  temPosicaoAberta: boolean;
+  criadaEm: string;
+}
+
+/**
+ * ⚠️⚠️ QUAIS MESAS PODEM TICKAR — e o downgrade é o caso que importa.
+ *
+ * Um `trader` que cai para `pro` fica com 0 mesas. Se a checagem morasse só no
+ * momento de LIGAR, ele continuaria consumindo cron para sempre depois de parar
+ * de pagar por isso — e ninguém perceberia, porque nada quebra.
+ *
+ * ⚠️ A ORDEM É DETERMINÍSTICA (mais antigas primeiro). Cortar por uma ordem
+ * arbitrária faria mesas diferentes sobreviverem a cada tick, e o cliente veria
+ * a mesa dele parar e voltar sem explicação.
+ */
+export function mesasQuePodemTickar(mesas: Mesa[], tier: Tier): { tickam: Mesa[]; cortadas: Mesa[] } {
+  const teto = BANCADA_COTAS[tier].mesasDePapel;
+  const ordenadas = [...mesas].sort((a, b) => a.criadaEm.localeCompare(b.criadaEm) || a.id.localeCompare(b.id));
+  return { tickam: ordenadas.slice(0, teto), cortadas: ordenadas.slice(teto) };
+}
+
+export type PorQueNaoAbre =
+  | "sem_velas"
+  | "ja_tem_posicao"
+  /** ⚠️ O sinal desta vela já foi avaliado num tick anterior. */
+  | "vela_ja_avaliada"
+  | "sem_sinal";
+
+export type DecisaoDeAbertura =
+  | { abre: true; velaMs: number; preco: number }
+  | { abre: false; porque: PorQueNaoAbre };
+
+/**
+ * Abre posição nesta vela?
+ *
+ * ⚠️⚠️ SÓ VELA FECHADA, E SÓ UMA VEZ POR VELA. O cron roda a cada 30 minutos e
+ * a vela pode ser de 1h: sem a segunda guarda, o MESMO sinal seria lido duas
+ * vezes e abriria duas posições do mesmo movimento — a inflação de amostra que
+ * o motor evita usando cruzamento, entrando pela porta do relógio.
+ *
+ * ⚠️ E a vela CORRENTE nunca decide: ela muda a cada negócio, então um sinal
+ * lido nela pode desaparecer antes de a vela fechar. É o mesmo motivo pelo qual
+ * ela não entra na `mercado_vela`.
+ */
+export function decidirAbertura(
+  mesa: Mesa, velas: ReadonlyArray<VelaComTempo>, agoraMs: number,
+): DecisaoDeAbertura {
+  if (mesa.temPosicaoAberta) return { abre: false, porque: "ja_tem_posicao" };
+
+  const fim = ultimaVelaFechada(mesa.intervalo, agoraMs);
+  if (fim == null || velas.length === 0) return { abre: false, porque: "sem_velas" };
+
+  const fechadas = velas.filter((v) => v.t <= fim);
+  if (fechadas.length === 0) return { abre: false, porque: "sem_velas" };
+
+  const ultima = fechadas[fechadas.length - 1];
+  if (mesa.ultimaAberturaMs != null && ultima.t <= mesa.ultimaAberturaMs) {
+    return { abre: false, porque: "vela_ja_avaliada" };
+  }
+
+  const marca = sinais(fechadas, mesa.params);
+  if (!marca[marca.length - 1]) return { abre: false, porque: "sem_sinal" };
+  if (!(ultima.close > 0)) return { abre: false, porque: "sem_velas" };
+
+  return { abre: true, velaMs: ultima.t, preco: ultima.close };
+}
+
+/** Alvo e stop em PREÇO, a partir da entrada. */
+export function alvoEStop(params: EstrategiaDoCliente, entrada: number): { alvo: number; stop: number } {
+  const dir = params.direcao === "compra" ? 1 : -1;
+  return {
+    alvo: entrada * (1 + dir * (params.alvoPct / 100)),
+    stop: entrada * (1 - dir * (params.stopPct / 100)),
+  };
+}
+
+export interface Fechamento {
+  status: "ganhou" | "perdeu" | "expirada";
+  saida: number;
+  resultadoPct: number;
+}
+
+/**
+ * A posição fechou?
+ *
+ * ⚠️ REUSA `computeExitPath` — a MESMA convenção de saída do papel da casa e do
+ * motor do backtest: stop-first pessimista, `expirada` como classe própria. Um
+ * terceiro simulador seria uma terceira verdade sobre dinheiro.
+ *
+ * ⚠️ E O CUSTO É O DA PRAÇA DO CLIENTE, não o da casa: uma mesa de futuros
+ * maker paga 0,03% e uma de spot taker paga 0,40%. Foi uma taxa única aplicada
+ * a todo mundo que aposentou o Maker de Faixa por engano.
+ */
+export function decidirFechamento(
+  params: EstrategiaDoCliente,
+  posicao: { entrada: number; tamanhoUsd: number; abertaEmMs: number },
+  velas: ReadonlyArray<VelaComTempo>,
+  agoraMs: number,
+): Fechamento | null {
+  const { alvo, stop } = alvoEStop(params, posicao.entrada);
+  const custo = 2 * taxaDaBancadaPct(params.praca, params.papel);
+
+  const v = computeExitPath(
+    {
+      side: params.direcao === "compra" ? "buy" : "sell",
+      entry_price: posicao.entrada,
+      cost_usd: posicao.tamanhoUsd,
+      target_price: alvo,
+      stop_price: stop,
+      opened_at: new Date(posicao.abertaEmMs).toISOString(),
+      horizon_hours: params.horasLimite,
+    },
+    velas.map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close })),
+    undefined,
+    agoraMs,
+    custo,
+  );
+  if (!v) return null;
+
+  /**
+   * ⚠️ AS TRÊS CLASSES DO BANCO, e `expirada` NÃO vira ganho nem perda mesmo
+   * fechando no lucro. `computeExitPath` devolve `win: true` para uma expirada
+   * positiva — certo para o placar da casa, errado aqui: contá-la como vitória
+   * infla a borda medida, e é cicatriz do flywheel.
+   */
+  const status: Fechamento["status"] =
+    v.reason === "target" ? "ganhou" : v.reason === "stop" ? "perdeu" : "expirada";
+
+  return { status, saida: v.exit, resultadoPct: v.netPct };
+}
+
+/**
+ * ⚠️ O TETO DE TRABALHO DE UM TICK, global.
+ *
+ * O cron do `/api/zion/backtest` já faz muita coisa em 30 minutos, e uma mesa
+ * que demora derruba o resto. Este número limita quantas mesas um tick
+ * processa; as que sobram pegam o tick seguinte, e a ordem determinística
+ * garante que ninguém fique para trás para sempre.
+ */
+export const MESAS_POR_TICK = Number(process.env.BANCADA_MESAS_POR_TICK ?? 40);

@@ -15,6 +15,7 @@ import { recordEvent } from "@/lib/admin/track";
 import { runUllrScan } from "@/lib/zion/ullr";
 import { runRetroSweep } from "@/lib/zion/retro";
 import { runPaperAgent } from "@/lib/paper/engine";
+import { tiqueDoPapelAdiante } from "@/lib/bancada/tique";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -270,6 +271,38 @@ export async function POST(req: NextRequest) {
     // money path, spends no tokens. Gated independently; default OFF until the
     // operator enables `pause_paper=false` in admin_kv.
     if (!gates.pause_paper) { try { await runPaperAgent(); } catch { /* best-effort */ } }
+
+    /**
+     * ⚠️⚠️ O PAPEL ADIANTE DO CLIENTE (fase 6 da bancada) — pendurado AQUI, e
+     * não numa rota de cron nova.
+     *
+     * Esta rota já roda de 30 em 30 minutos, já está agendada no cron-job.org e
+     * já executa o papel da própria casa logo acima. Criar rota nova exigiria
+     * que o dono fosse agendá-la, e `/api/dca/cron` está escrito, testado e
+     * NUNCA AGENDADO desde 26/08 (RUNBOOK §2.1) — uma rota de cron que ninguém
+     * agenda é "atividade não é evidência de funcionamento" esperando para
+     * acontecer.
+     *
+     * ⚠️ E NÃO vai no cron do autopilot, que move DINHEIRO REAL: um defeito no
+     * papel de um cliente não pode chegar perto daquele caminho.
+     *
+     * ⚠️ Melhor-esforço, como o de cima: uma mesa de cliente com problema não
+     * leva junto o flywheel, o oráculo e o papel da casa.
+     */
+    if (!gates.pause_paper) {
+      try {
+        const db = getSupabaseAdmin();
+        if (db) {
+          const r = await tiqueDoPapelAdiante(db);
+          if (r.mesas > 0) {
+            await recordEvent("bancada_papel_tique", {
+              meta: { mesas: r.mesas, abertas: r.abertas, fechadas: r.fechadas,
+                      cortadasPorPlano: r.cortadasPorPlano, problemas: r.problemas.slice(0, 5) },
+            });
+          }
+        }
+      } catch { /* best-effort */ }
+    }
   })());
 
   return NextResponse.json({ ok: true, queued: true, paused: gates.pause_backtest });
