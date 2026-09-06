@@ -1580,6 +1580,58 @@ prometer.
 
 ---
 
+## 5.18 A BANCADA — fase 5: as estratégias da casa, e o CEMITÉRIO (06/09)
+
+`lib/bancada/casa.ts` + a tira em `/laboratorio`. Sete entradas: três vivas
+canônicas (média 50, canal 20, RSI 14), o Maker largo, e **três lápides** —
+Maker de ±0,6%, Grade e Rotação — cada uma com o número, a data e o mecanismo.
+
+### Por que o cemitério é o ativo, e não um constrangimento (§6.5)
+
+Backtester é commodity. *"Esta perdeu 46,77% e aqui está o porquê"* não é. E o
+argumento econômico é mais forte que o honesto: **custo marginal zero** (já
+foram medidas e pagas), ninguém publica o que não funcionou, e ⚠️ **elas
+REDUZEM custo** — quem lê "o pedágio comeu 67% do seu alvo" antes de rodar
+cinquenta backtests gasta menos CPU e abre menos suporte.
+
+### ⚠️ O par que é a aula inteira
+
+| | alvo | praça | portão |
+|---|---|---|---|
+| Maker de Faixa (morto) | ±0,6% | Gate **spot taker** | **recusado** — pedágio come 67% do alvo |
+| Maker de Faixa (vivo) | ±2,5% | Gate **futuros maker** | passa — pedágio come 5% |
+
+**O gatilho é IDÊNTICO** (o teste afirma isso comparando os dois `entrada`).
+Não foi a ideia que mudou, foi o tamanho do movimento contra o pedágio.
+Carregar a morta faz o portão recusar na hora, com o número: a recusa é a aula.
+
+### ⚠️ E a Rotação passa no portão E ESTÁ MORTA
+
+−1,61% por período, com **ficar em caixa batendo**. Ela não morreu de taxa —
+morreu do mercado daquela janela. É a prova, dentro do próprio catálogo, de que
+o portão do pedágio **não é o único juiz**, e de que o veredito precisa do
+competidor.
+
+### O catálogo é conferido contra o MOTOR, não contra si mesmo
+
+- todo `params` passa pelo **mesmo `lerEstrategia`** da rota — senão o botão
+  "usar esta" preencheria o formulário com algo que o servidor recusaria, e o
+  cliente levaria a culpa por um erro nosso;
+- nenhuma **viva** é recusada pelo nosso próprio portão;
+- toda **morta** carrega medição com data — ⚠️ lápide sem número é opinião;
+- toda chave de texto existe nos quatro idiomas.
+
+⚠️ **A medição da casa não é previsão para o cliente.** Cada número saiu de UMA
+janela, com UM par de parâmetros, nas NOSSAS mesas — por isso o número nunca
+aparece sem a data ao lado, e o botão só PREENCHE o formulário: nada roda
+sozinho, e a estratégia morta não gasta cota para ensinar o que o portão ensina
+de graça.
+
+**Quebrado nos dois sentidos:** viva que o portão recusa (2 vermelhos), lápide
+sem medição (1), chave de texto que ninguém criou (1).
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**
