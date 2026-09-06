@@ -436,9 +436,10 @@ mesas misturadas).
    "Sonnet 4.6" (Pro/Trader) e "Claude Opus 4.8" (Pilot, 30 SOL). Se a volta for
    em dias, deixar assim é o certo. Se demorar semanas com gente comprando,
    precisa de aviso na vitrine — a página descreve o que não está entregando.
-3. **Decidir sobre o `next`.** A única correção é a **16.3.1** — major 14 para
-   16, 21 advisories em jogo. É migração com branch e plano próprios, não audit
-   fix.
+3. ~~**Decidir sobre o `next`.**~~ ✅ **FEITO em 06/09** — `14.2.35 → 16.3.4`,
+   `react@18 → 19`, `eslint@8 → 9`. **O `next` saiu do `npm audit`.** Plano e
+   resultado em `docs/PLANO-NEXT-16.md`; o que sobra no audit (44) é tudo pilha
+   de carteira, frente separada.
 
 ✅ **Feito em 18/08** — alinhamento do contador: 13 → 10 divergentes. As 3 vivas
 (radar, mistral, arbiter2) corrigidas; as 10 aposentadas preservadas de
@@ -1703,6 +1704,64 @@ contada como ganho (1).
 As sete fases estão em produção e **nenhuma rodada real aconteceu**. As tabelas
 `bancada_*` estão zeradas. Os 2537 testes provam as peças; o caminho completo
 com dado real, não. A primeira rodada em `/laboratorio` é o teste que falta.
+
+---
+
+## 5.20 A MIGRAÇÃO DO NEXT 14 → 16 (06/09)
+
+`next@14.2.35 → 16.3.4`, `react@18 → 19`, `eslint@8 → 9`, `@react-three/fiber@8
+→ 9`. ⚠️ **O `next` não aparece mais no `npm audit`** — os 21 advisories que
+motivaram tudo fecharam. Plano e verificação em `docs/PLANO-NEXT-16.md`.
+
+### ⚠️ Eu superestimei o risco ao descrevê-lo, e a medição corrigiu três coisas
+
+| eu disse | o que o levantamento mostrou |
+|---|---|
+| "os `params` viraram assíncronos e o repo tem 30+ rotas" | **3 rotas dinâmicas**, e **2 já estavam** no formato. Faltava **uma** |
+| "`cookies()` vira assíncrono" | `auth/session.ts` **já fazia `await cookies()`** |
+| "o fim do cache padrão toca o `revalidate: 3600` das velas" | `next: { revalidate }` explícito **continua valendo**. Muda só o padrão de quem não anota |
+
+⚠️ **E o "risco de cache" que eu levantei também não existia.** Contei 53
+fetches sem anotação; o `grep` excluía a anotação quando ela estava na linha
+seguinte — que é onde ela está neste repositório. Contando a chamada inteira:
+**71 anotados, 22 sem**, e os 22 são fetch de navegador, POST, ou decisão
+deliberada de não cachear (o `funding` tem cicatriz de 06/08 sobre isso). **Não
+havia nada a anotar** — fazer o trabalho para casar com o meu diagnóstico errado
+teria mexido em 22 arquivos e enterrado duas decisões deliberadas.
+
+### Dois achados que não eram da migração
+
+**1. `serverComponentsExternalPackages` mudou de nome** e saiu de `experimental`.
+Se tivesse deixado de valer em silêncio, o `ccxt` (3 MB, 100+ adaptadores)
+voltaria para dentro do bundle do servidor.
+
+**2. ⚠️ Um `<a href="/">` no Topbar.** O `eslint-config-next@16` passou a tratar
+como erro, e com razão: `<a>` recarrega a página inteira e **derruba o estado do
+cliente — carteira conectada, idioma, gaveta do ZION**. Virou `Link`. Esse
+achado sozinho paga a migração.
+
+### As 117 do React Compiler ficaram como AVISO, e o porquê está escrito
+
+Seis regras novas, 117 ocorrências em código que roda há meses. Não são
+regressão. Consertá-las agora seria refatorar estado em 30+ componentes de
+carona numa troca de framework; desligá-las perderia o sinal que achou o `<a>`.
+Ficaram visíveis e contáveis. ⚠️ `set-state-in-effect` (70) e `purity` (36)
+merecem leva própria.
+
+### ⚠️ O `--silent` do npm engoliu um `ERESOLVE`
+
+`npm install next@16 --silent` **não instalou nada e não disse nada**. Só
+apareceu porque eu conferi a versão depois. É a mesma família de "atividade não
+é evidência de funcionamento": o comando rodou, o exit code foi 0, e o efeito
+não aconteceu. **Não use `--silent` em install.**
+
+### O que foi exercitado À MÃO — porque CI verde não prova App Router
+
+Servidor de produção local: 9 páginas em 200, a rota de `params` assíncrono em
+200, `/api/bancada/*` sem cookie em **401** (recusa, não explode), os **4 crons
+sem `CRON_SECRET` em 401** nos quatro, todos os cabeçalhos de segurança
+presentes — **inclusive o `same-origin-allow-popups`** sem o qual a carteira
+Coinbase morre — e `/admin` em **404**, nunca 403.
 
 ---
 
