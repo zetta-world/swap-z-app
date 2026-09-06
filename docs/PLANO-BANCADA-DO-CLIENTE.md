@@ -1,7 +1,8 @@
 # PLANO — A BANCADA DO CLIENTE
 
-> **Status:** 🟢 as sete fases em produção (06/09). O que falta agora é USO —
-> nenhuma rodada real aconteceu ainda. Este documento é o desenho, e ele
+> **Status:** 🟢 as sete fases em produção (06/09), mais a **fase 8** (as mesas
+> do torneio como vitrine). O que falta agora é USO — nenhuma rodada real
+> aconteceu ainda. Este documento é o desenho, e ele
 > existe antes de qualquer linha de código porque a regra da casa é essa.
 >
 > **Escrito em:** 05/09/2026, a partir de uma correção do dono.
@@ -475,3 +476,64 @@ As cotas da 6.2 são **desenho meu por critério de custo**, não medição de
 disposição a pagar. Elas definem preço, e preço é seu. Se você mexer nelas,
 `/pricing` muda nos quatro locales no MESMO commit — a cicatriz do Free/ZION
 existe exatamente por isso.
+
+
+---
+
+## 8. As mesas do torneio na bancada (06/09)
+
+> Pedido do dono: *"vc não adicionou os agentes do torneio na bancada do
+> cliente, e estes agentes estão indo bem"*. Ele está certo nas duas metades.
+
+### ⚠️⚠️ Por que elas entram como VITRINE e não como clone
+
+Ao ler o código, elas **não cabem no vocabulário do cliente** — e não por
+detalhe:
+
+| a mesa faz | o formulário aceita |
+|---|---|
+| stop = `max(ATR% × 1,5, piso)`, alvo limitado a `ATR% × √horas × 2,0`, RR ≥ 1,8 (`zion/bracket.ts`) | alvo e stop em **percentual fixo** |
+| escolhe entre **10 playbooks por regime** (`zion/playbooks.ts`): reversão de faixa, pullback até a EMA, rompimento com reteste, divergência, absorção… | `média \| canal \| RSI` |
+
+⚠️ Aproximar uma mesa nisso e pôr o nome dela em cima seria o cliente rodando
+uma coisa achando que é outra, **com a nossa marca** — e com números que vieram
+da regra REAL, não da aproximação.
+
+### O que elas de fato mediram (vida inteira, líquido do custo da praça)
+
+| mesa | decididas | acerto | expiradas | janela | líquido/op |
+|---|---|---|---|---|---|
+| **FREYJA** (`strat_dex`) | 335 | 79,4% | 57 | 11 símbolos · 21 dias | **+4,34%** |
+| **VÖLUNDR** (`strat_mech`) | 331 | 60,7% | 21 | 13 símbolos · 37 dias | **+2,25%** |
+| **HEIMDALL** (`radar`) | 285 | 44,9% | 78 | 13 símbolos · 37 dias | **+0,55%** |
+| **SKAÐI** (`strat_day`) | 132 | 47,7% | **188** | 13 símbolos · 36 dias | **+0,90%** |
+| URÐR · ULLR | 5 · 1 | — | — | — | ruído, sem cor |
+
+⚠️ **A FREYJA paga 0,60% (DEX), não 0,40%.** Eu tinha dito +4,54% ao dono usando
+o custo de CEX; o certo é **+4,34%**.
+
+### As quatro decisões que impedem isto de virar propaganda
+
+1. **Só mesa mecânica e viva.** `brain !== "none"` fica fora: 3.300 decisões
+   mediram LLM prevendo direção de −6,7 a −30,4 pontos ABAIXO do passeio
+   aleatório, e os números confirmam (`grok_scan` −0,99%/op, `kimi_scan` −1,22).
+   Oferecer uma dessas seria vender o que a própria casa aposentou.
+2. **Custo da PRAÇA da mesa**, não um número único — foi taxa única que
+   aposentou o Maker de Faixa por engano.
+3. ⚠️ **A ressalva viaja com o número, sempre** (decisão do dono, perguntado):
+   expectância por operação ≠ retorno de conta; símbolos correlacionados; uma
+   janela é um regime só; a mesa que expira mais do que decide diz isso.
+4. **Abaixo de 100 decididas o número sai SEM cor.** A linha mais perigosa do
+   banco é a ULLR: **+17,40% de UMA operação**. Pintada de verde, viraria
+   promessa.
+
+⚠️ **Mesa medida em OUTRO livro não vira card.** Os quatro arbitradores passam
+no filtro de "mecânica e viva" mas não produzem sugestão — são julgados na
+carteira de USDT. Um card "ainda sem operação decidida" afirmaria que não foram
+medidas, quando o certo é que são medidas em outro lugar; e a arbitragem está
+morta desde 03/08.
+
+### O que falta para elas serem CLONÁVEIS
+
+Estender o vocabulário: bracket por volatilidade (ATR) e os playbooks como
+gatilhos, no motor, na UI e nos testes. Fase própria — não remendo de carona.
