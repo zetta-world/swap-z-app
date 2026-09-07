@@ -34,7 +34,7 @@ import { classificarResultado } from "@/lib/admin/cor-resultado";
 import { corDoNumero } from "@/components/bancada/CorDoCliente";
 import type { ChaveNaoMedido } from "@/lib/bancada/veredito";
 import { ESTRATEGIAS_DA_CASA, type EstrategiaDaCasa } from "@/lib/bancada/casa";
-import type { CartaoDaMesa } from "@/lib/bancada/mesas-da-casa";
+import { ressalvasComuns, ressalvasSoDeste, type CartaoDaMesa, type ChaveDeRessalva } from "@/lib/bancada/mesas-da-casa";
 import type { MessageKey } from "@/lib/i18n";
 
 const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOT", "MATIC"];
@@ -126,8 +126,31 @@ export default function Bancada() {
    * enxergue.
    */
   const [recarregarAgentes, setRecarregarAgentes] = useState(0);
+  /**
+   * ⚠️⚠️ QUAIS MESAS JÁ TÊM INSTÂNCIA — para o botão não criar gêmeas.
+   *
+   * Sem isto, "Contratar" fica aceso depois de contratado e um segundo clique
+   * cria uma instância indistinguível da primeira: mesmo nome, mesmo sigilo,
+   * dois números diferentes e nenhuma forma de saber qual é qual. O `<Agentes>`
+   * informa aqui o que ele carregou — uma fonte só, e ela é a que o servidor
+   * devolveu.
+   */
+  const [jaContratadas, setJaContratadas] = useState<string[]>([]);
+  /**
+   * ⚠️ A ABA ABRE EM "AGENTES" SÓ QUANDO EXISTE ALGUM. Abrir sempre ali daria a
+   * quem nunca contratou uma tela vazia como primeira impressão do produto; e
+   * abrir sempre em "contratar" esconderia, de quem já paga, exatamente o que
+   * ele paga para ver. O estado inicial é `null` e a decisão espera a resposta
+   * do servidor — chutar antes seria trocar de aba na cara do cliente.
+   */
+  const [abaEscolhida, setAba] = useState<"agentes" | "contratar" | "testar" | null>(null);
+  const [temAgentes, setTemAgentes] = useState<boolean | null>(null);
+  const aba = abaEscolhida ?? (temAgentes ? "agentes" : "contratar");
   const [contratando, setContratando] = useState<string | null>(null);
   const [erroDeContratar, setErroDeContratar] = useState<string | null>(null);
+  /** ⚠️ QUAL card falhou. O erro renderizado longe do botão que o causou faz o
+   *  cliente clicar de novo sem nunca ver o motivo. */
+  const [contratarErrouEm, setContratarErrouEm] = useState<string | null>(null);
 
   const [verCasa, setVerCasa] = useState(false);
   const [mesas, setMesas] = useState<CartaoDaMesa[]>([]);
@@ -326,12 +349,21 @@ export default function Bancada() {
    */
   function abrirCartao(identidade: Identidade, ctx: Contexto): string {
     const chave = `local:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    /**
+     * ⚠️ A NOVA NASCE ABERTA, E AS ANTERIORES FECHAM.
+     *
+     * O bloco "NÃO medido" tem quatro itens e é reimpresso por rodada aberta;
+     * como toda rodada da sessão nascia aberta, três testes seguidos empilhavam
+     * três cópias do mesmo aviso — a mesma repetição que o dono viu nos cards
+     * das mesas. O que ele quer ver aberto é o que acabou de rodar; o resto
+     * continua a um clique.
+     */
     setCorridas((atual) => [{
       chave, rodadaId: null, quando: new Date().toISOString(),
       identidade, contexto: ctx, estado: "rodando",
       porque: null, upgradeUrl: null, medida: null,
       ops: null, opsCarregando: false, aberta: true,
-    }, ...atual]);
+    }, ...atual.map((c) => (c.aberta ? { ...c, aberta: false } : c))]);
     return chave;
   }
 
@@ -375,6 +407,7 @@ export default function Bancada() {
   async function contratar(m: CartaoDaMesa) {
     setContratando(m.source);
     setErroDeContratar(null);
+    setContratarErrouEm(null);
     try {
       const res = await fetch("/api/bancada/agentes", {
         method: "POST",
@@ -386,11 +419,13 @@ export default function Bancada() {
         // ⚠️ O motivo vem do SERVIDOR e é mostrado como veio: ele carrega o
         // número exato (o teto do plano, o símbolo que falta).
         setErroDeContratar(typeof j?.porque === "string" ? j.porque : t("bancada.errorTitle"));
+        setContratarErrouEm(m.source);
         return;
       }
       setRecarregarAgentes((n) => n + 1);
     } catch {
       setErroDeContratar(t("bancada.errorTitle"));
+      setContratarErrouEm(m.source);
     } finally {
       setContratando(null);
     }
@@ -445,6 +480,13 @@ export default function Bancada() {
     }
   }
 
+  /**
+   * ⚠️ A INTERSEÇÃO É CALCULADA SOBRE OS CARDS QUE A TELA MOSTRA, não sobre uma
+   * lista fixa: uma ressalva nova, ou um card que fuja do padrão, muda o corte
+   * sozinho. Não há literal a envelhecer em silêncio.
+   */
+  const comuns = ressalvasComuns(mesas);
+
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8 space-y-6">
       <header>
@@ -452,20 +494,49 @@ export default function Bancada() {
         <p className="mt-1 text-sm text-ink-3">{t("bancada.subtitle")}</p>
       </header>
 
+      {/* ── OS TRÊS TRABALHOS, SEPARADOS ────────────────────────────── */}
+      {/* ⚠️⚠️ NOVE SEÇÕES NUMA ROLAGEM SÓ, TODAS COM O MESMO PESO (07/09).
+          O dono: *"está uma bagunça horrível... jogando informações em cima de
+          informações deixando tudo misturado"*.
+
+          Quem chega aqui está fazendo UMA de três coisas — acompanhar o que já
+          contratou, escolher o que contratar, ou experimentar uma ideia — e as
+          três estavam intercaladas. Pior: o trabalho PRIMÁRIO (acompanhar) era
+          uma seção entre nove, e o resultado dos dois botões principais caía
+          fora da tela, em direções opostas.
+
+          ⚠️ NADA FOI APAGADO: as mesmas seções, em três portas. E a aba abre em
+          "meus agentes" QUANDO EXISTE algum — quem já pagou vê primeiro o que
+          pagou; quem ainda não tem nada cai em "contratar", que é o próximo
+          passo dele. */}
+      <nav className="flex gap-1 rounded-xl border border-white/5 bg-bg-1/40 p-1">
+        {([
+          ["agentes",   jaContratadas.length > 0
+            ? t("bancada.abaAgentesN", { n: jaContratadas.length })
+            : t("bancada.abaAgentes")],
+          ["contratar", t("bancada.abaContratar")],
+          ["testar",    t("bancada.abaTestar")],
+        ] as const).map(([id, rotulo]) => (
+          <button key={id} type="button" onClick={() => setAba(id)}
+            className={`flex-1 rounded-lg px-2 py-1.5 text-xs transition ${
+              aba === id ? "bg-bg-2 text-ink" : "text-ink-3 hover:text-ink-2"}`}>
+            {rotulo}
+          </button>
+        ))}
+      </nav>
+
+      {aba === "agentes" && (<>
       {/* ── OS AGENTES DELE, ANTES DOS NOSSOS ───────────────────────── */}
       {/* ⚠️⚠️ A ORDEM É A CORREÇÃO. O que o investidor contratou vem PRIMEIRO,
           com o número dele; o placar da nossa mesa vem depois, rotulado como
           nosso. Invertido, a primeira coisa que ele lê é o nosso resultado — e
           foi assim que a bancada acabou "pegando os resultados das mesas do
           painel e Admin e repetindo para o investidor". */}
-      <Agentes recarregar={recarregarAgentes} />
+      <Agentes recarregar={recarregarAgentes} onMesas={(m) => { setJaContratadas(m); setTemAgentes(m.length > 0); }} />
 
-      {erroDeContratar && (
-        <p className="rounded-2xl border border-gold/30 bg-gold/5 p-4 text-xs leading-relaxed text-gold">
-          {erroDeContratar}
-        </p>
-      )}
+      </>)}
 
+      {aba === "contratar" && (<>
       {/* ── O QUE A CASA DE FATO RODA ──────────────────────────────── */}
       {/* ⚠️⚠️ VITRINE, NÃO CLONE — e a diferença é honestidade, não preguiça.
           Estas mesas usam bracket por VOLATILIDADE (stop = ATR×1,5, alvo
@@ -478,17 +549,42 @@ export default function Bancada() {
         <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
           <p className="text-sm font-medium text-ink">{t("bancada.mesasTitulo")}</p>
           <p className="mt-0.5 text-xs leading-relaxed text-ink-3">{t("bancada.mesasSub")}</p>
+          {/* ⚠️⚠️ DITO UMA VEZ, NA SEÇÃO — não em dez cards dourados. O rótulo
+              "o que a NOSSA mesa fez" é verdade sobre TODOS os números desta
+              lista, e repeti-lo em cada um treinava o olho a pular a linha. */}
+          <p className="mt-2 text-[11px] leading-relaxed text-gold/80">{t("bancada.mesasDaCasaNumero")}</p>
           <ul className="mt-3 space-y-2">
             {mesas.map((m) => (
               <MesaDaCasa key={m.source} m={m} rodando={rodandoMesa === m.source}
                 contratando={contratando === m.source}
+                jaContratada={jaContratadas.includes(m.source)}
+                soDeste={ressalvasSoDeste(m, comuns)}
+                comOQue={{ simbolos, praca: rotuloDaPraca(praca), papel }}
+                erro={contratarErrouEm === m.source ? erroDeContratar : null}
                 onRodar={() => rodarMesa(m)}
                 onContratar={() => void contratar(m)} />
             ))}
           </ul>
+          {/* ⚠️⚠️ A NOTA DE RODAPÉ DA SEÇÃO — o que vale para TODOS os cards.
+              Medido: 4 frases × 10 cards = ~4.000 caracteres idênticos numa
+              rolagem de celular. O corte é por INTERSEÇÃO (`ressalvasComuns`),
+              então nada some: o que distingue um card continua NELE. */}
+          {comuns.length > 0 && (
+            <ul className="mt-4 space-y-1 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-ink-4">
+              {comuns.map((r) => <li key={r}>· {t(r as MessageKey)}</li>)}
+            </ul>
+          )}
+          {/* ⚠️ E o motivo de uma mesa não ter botão, dito uma vez em vez de
+              oito. A AUSÊNCIA do botão já é o sinal; isto é a legenda dele. */}
+          {mesas.some((m) => !m.podeRodar) && (
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-4">{t("bancada.mesasSoVitrine")}</p>
+          )}
         </section>
       )}
 
+      </>)}
+
+      {aba === "testar" && (<>
       {/* ── AS ESTRATÉGIAS DA CASA, INCLUSIVE AS MORTAS ─────────────── */}
       {/* ⚠️ RECOLHIDA POR PADRÃO. Sete entradas com descrição e lápide somam
           uma tela inteira, e no celular empurravam a FERRAMENTA para fora da
@@ -830,6 +926,7 @@ export default function Bancada() {
           <CartaoDeRodada key={c.chave} c={c} onAlternar={() => void alternarExtrato(c)} />
         ))}
       </section>
+      </>)}
     </div>
   );
 }
@@ -984,10 +1081,14 @@ function CartaoDeRodada({ c, onAlternar }: { c: Corrida; onAlternar: () => void 
         <div className="space-y-4 px-5 pb-5">
           <p className={`text-base font-semibold ${cor}`}>{titulo}</p>
 
-          <div className="grid grid-cols-3 gap-3 text-sm">
+          {/* ⚠️⚠️ O LÍQUIDO SAIU DAQUI — ele já está grande no cabeçalho deste
+              mesmo card, com o mesmo rótulo e o mesmo número. Eram 14
+              impressões em 7 rodadas: o olho lê duas vezes e não ganha nada,
+              e a repetição rouba o contraste de BRUTO e TAXA, que são a
+              informação nova desta linha (quanto a taxa comeu). */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
             <Numero rotulo={t("bancada.gross")} valor={m.brutoPct} />
             <Numero rotulo={t("bancada.fees")} valor={m.taxaPct} />
-            <Numero rotulo={t("bancada.net")} valor={m.liquidoPct} destaque cor={cor} />
           </div>
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
@@ -1050,8 +1151,16 @@ function CartaoDeRodada({ c, onAlternar }: { c: Corrida; onAlternar: () => void 
  * o token existia na minha cabeça e não no `tailwind.config.ts`.
  */
 /** Um cartão de mesa da casa: o que ela é, o que mediu, e o que o número NÃO prova. */
-function MesaDaCasa({ m, rodando, contratando, onRodar, onContratar }: {
+function MesaDaCasa({ m, rodando, contratando, jaContratada, soDeste, comOQue, erro, onRodar, onContratar }: {
   m: CartaoDaMesa; rodando: boolean; contratando: boolean;
+  /** ⚠️ Já existe instância desta mesa — o botão não pode criar uma gêmea. */
+  jaContratada: boolean;
+  /** ⚠️ SÓ o que distingue este card — o comum já foi dito na seção. */
+  soDeste: ChaveDeRessalva[];
+  /** ⚠️ COM O QUE ele vai contratar — ver a nota no corpo. */
+  comOQue: { simbolos: string[]; praca: string; papel: string };
+  /** ⚠️ O erro deste card, renderizado NELE. */
+  erro: string | null;
   onRodar: () => void; onContratar: () => void;
 }) {
   const t = useT();
@@ -1077,26 +1186,52 @@ function MesaDaCasa({ m, rodando, contratando, onRodar, onContratar }: {
               botão não está escondida — ela diz por que não roda. */}
           {m.podeRodar ? (
             <>
+              {/* ⚠️⚠️ O QUE O BOTÃO VAI USAR, DITO AO LADO DELE.
+                  Um clique aqui lia símbolos e praça do construtor que fica
+                  CENTENAS de linhas ABAIXO, fora da tela: o cliente contratava
+                  com valores que nunca viu. A dependência não sumiu — ela ficou
+                  visível, que é o mínimo honesto enquanto o construtor não
+                  subir para dentro do card. */}
+              <p className="mt-2 text-[10px] leading-relaxed text-ink-4">
+                {t("bancada.agComOQue", {
+                  simbolos: comOQue.simbolos.join(" · ") || "—",
+                  praca: comOQue.praca, papel: comOQue.papel,
+                })}
+                {" · "}{t("bancada.agMudarAbaixo")}
+              </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {/* ⚠️⚠️ CONTRATAR VEM PRIMEIRO, e é o botão em destaque: é ele
                     que faz o agente TRABALHAR na conta do investidor a partir
                     dali. O backtest ao lado é a outra pergunta — o que essa
                     regra teria feito no passado — e ele não gera resultado
                     nenhum para ele. */}
-                <button type="button" onClick={onContratar} disabled={contratando}
-                  className={`${CHIP} border-cyan/40 text-cyan hover:border-cyan hover:bg-cyan/5 disabled:opacity-40`}>
-                  {contratando ? t("bancada.agContratando") : t("bancada.agContratar")}
-                </button>
+                {/* ⚠️ Contratado NÃO reabre o botão: um segundo clique criaria
+                    uma instância indistinguível da primeira — mesmo nome, mesmo
+                    sigilo, dois números, e nenhuma forma de saber qual é qual. */}
+                {jaContratada ? (
+                  <span className={`${CHIP} border-green/30 text-green`}>{t("bancada.agJaContratado")}</span>
+                ) : (
+                  <button type="button" onClick={onContratar} disabled={contratando}
+                    className={`${CHIP} border-cyan/40 text-cyan hover:border-cyan hover:bg-cyan/5 disabled:opacity-40`}>
+                    {contratando ? t("bancada.agContratando") : t("bancada.agContratar")}
+                  </button>
+                )}
                 <button type="button" onClick={onRodar} disabled={rodando}
                   className={`${CHIP} ${CHIP_OFF} disabled:opacity-40`}>
                   {rodando ? t("bancada.mesasRodando") : t("bancada.agTestarPassado")}
                 </button>
               </div>
               <p className="mt-1 text-[10px] leading-relaxed text-ink-4">{t("bancada.mesasSuaJanela")}</p>
+              {/* ⚠️ O MOTIVO DA RECUSA FICA NO CARD QUE FALHOU. Ele era
+                  desenhado duas seções acima, fora da vista — o cliente clicava
+                  de novo sem nunca ver por quê. */}
+              {erro && (
+                <p className="mt-2 rounded-lg border border-gold/30 bg-gold/5 px-2.5 py-1.5 text-[11px] leading-relaxed text-gold">
+                  {erro}
+                </p>
+              )}
             </>
-          ) : (
-            <p className="mt-2 text-[10px] leading-relaxed text-ink-4">{t("bancada.mesasSoVitrine")}</p>
-          )}
+          ) : null}
         </div>
         <div className="flex-shrink-0 text-right">
           {m.liquidoPorOpPct == null ? (
@@ -1107,15 +1242,6 @@ function MesaDaCasa({ m, rodando, contratando, onRodar, onContratar }: {
                 {m.liquidoPorOpPct >= 0 ? "+" : ""}{m.liquidoPorOpPct.toFixed(2)}%
               </span>
               <span className="block text-[10px] text-ink-4">{t("bancada.mesasPorOp")}</span>
-              {/* ⚠️⚠️ O NÚMERO É NOSSO, E A TELA DIZ ISSO. Sem este rótulo o
-                  investidor lê o placar da nossa mesa como se fosse o
-                  desempenho do que ele contratou — que é literalmente a queixa
-                  de 07/09: "pegando os resultados das mesas do painel e Admin e
-                  repetindo para o investidor". O número dele está na seção dos
-                  agentes, acima, e começa vazio. */}
-              <span className="mt-0.5 block max-w-[9rem] text-[10px] leading-tight text-gold/70">
-                {t("bancada.mesasDaCasaNumero")}
-              </span>
             </>
           )}
         </div>
@@ -1141,9 +1267,12 @@ function MesaDaCasa({ m, rodando, contratando, onRodar, onContratar }: {
       {/* ⚠️⚠️ AS RESSALVAS VIAJAM COM O NÚMERO. Publicar "+4,34% por operação"
           sozinho é propaganda; publicá-lo com o que ele NÃO prova é medição — e
           é o que separa esta bancada de um backtester que vende esperança. */}
-      {m.ressalvas.length > 0 && (
+      {/* ⚠️ SÓ AS QUE DISTINGUEM ESTE CARD. As comuns a todos foram ditas uma
+          vez, no rodapé da seção — ver `ressalvasComuns`. Nada some: a soma das
+          duas listas é sempre o conjunto original. */}
+      {soDeste.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-white/5 pt-2">
-          {m.ressalvas.map((r) => (
+          {soDeste.map((r) => (
             <li key={r} className="text-[11px] leading-relaxed text-ink-4">· {t(r as MessageKey)}</li>
           ))}
         </ul>

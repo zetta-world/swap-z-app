@@ -1,34 +1,38 @@
 "use client";
 
 /**
- * OS AGENTES DO INVESTIDOR — a instância dele, e o número DELE.
+ * O PAINEL DOS AGENTES DO INVESTIDOR.
  *
- * ⚠️⚠️ ESTA TELA EXISTE POR UMA FRASE (07/09): *"apenas estamos pegando os
- * resultados das mesas do painel e Admin e repetindo para o investidor... eu
- * falei que tinha que ser isolado... o investidor roda estratégia/agente e o
- * mesmo começa a trabalhar e gerar resultado dali"*.
+ * ⚠️⚠️ ESTA TELA FOI REESCRITA POR UMA FRASE (07/09): *"ao contratar o agente
+ * deveria aparecer aí no próprio agente, as informações e resultados em tempo
+ * real"* — seguida de *"está uma bagunça horrível... jogando informações em
+ * cima de informações"*.
  *
- * ⚠️ NENHUM NÚMERO DAQUI VEM DO LIVRO DA CASA. `/api/bancada/agentes` lê
- * `bancada_posicao` do dono, da instância dele, e agrega em `desempenho.ts`. O
- * placar da nossa mesa continua existindo — no card DELA, rotulado como nosso.
+ * A versão anterior gastava quase toda a altura do card com o que NÃO muda (um
+ * parágrafo explicativo e uma caixa de aviso repetida em cada agente) e
+ * escondia o que muda: a posição aberta ficava atrás de `decididas === 0`, de
+ * modo que quem tinha três posições vivas e nada fechado lia *"contratado,
+ * ainda sem nada decidido"* — o texto afirmando o contrário do que acontecia.
+ * E isso empurrava a informação para a seção "Rodando agora", 500 linhas
+ * abaixo, criando a duplicação de que o dono reclamou.
  *
- * ⚠️ E O VAZIO É UMA RESPOSTA. Quem contratou hoje vê "ainda sem nada decidido",
- * com a explicação de que ficar de fora é a decisão na maior parte do tempo.
- * Preencher esse vazio com a nossa amostra seria vender a nossa credibilidade
- * como se fosse o desempenho dele — que é exatamente o que estava acontecendo.
+ * A ORDEM AQUI É A CORREÇÃO, e ela é: o que ele ACABOU DE FAZER → o que está
+ * ABERTO agora → o que ele JÁ MEDIU → o extrato. Do mais volátil ao mais
+ * estável; o que muda a cada 30 minutos fica no topo.
+ *
+ * ⚠️ NENHUM NÚMERO DAQUI VEM DO LIVRO DA CASA — ver `/api/bancada/agentes`.
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, ChevronDown } from "lucide-react";
+import { Loader2, ChevronDown, AlertTriangle } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { classificarResultado } from "@/lib/admin/cor-resultado";
 import { corDoNumero } from "@/components/bancada/CorDoCliente";
 import { rotuloDaPraca, type Praca, type Papel } from "@/lib/bancada/vocabulario";
+import type { MotivoDeNaoAbrir, Saude } from "@/lib/bancada/ultimo-tique";
 
-/** O desempenho como a rota o devolve — espelho de `desempenho.ts`. */
 interface Desempenho {
-  desdeMs: number | null;
-  horasRodando: number | null;
+  desdeMs: number | null; horasRodando: number | null;
   decididas: number; alvo: number; stop: number; expiradas: number; abertas: number;
   acertoPct: number | null;
   liquidoPorOpPct: number | null;
@@ -38,6 +42,8 @@ interface Desempenho {
   simbolos: number;
 }
 
+interface Distancia { alvoPct: number | null; stopPct: number | null; abertoPct: number | null }
+
 interface Operacao {
   id: string; simbolo: string; lado: "long" | "short";
   entrada: number; saida: number | null;
@@ -46,6 +52,17 @@ interface Operacao {
   resultadoPct: number | null;
   playbook: string | null;
   abertaEm: string; fechadaEm: string | null; expiraEm: string | null;
+  /** ⚠️ Só em posição ABERTA — o que o tique viu, e a distância até o alvo. */
+  precoVisto?: number | null;
+  distancia?: Distancia | null;
+}
+
+interface VistoNoSimbolo {
+  preco: number | null;
+  velaEm: number | null;
+  motivo: MotivoDeNaoAbrir | null;
+  detalhe: string | null;
+  abriu: boolean;
 }
 
 export interface Agente {
@@ -56,33 +73,62 @@ export interface Agente {
   ligada: boolean; desde: string | null;
   desempenho: Desempenho;
   operacoes: Operacao[];
+  /** ⚠️ `null` = NUNCA foi verificada. Estado legítimo nos primeiros 30 min. */
+  tique: { em: number; simbolos: Record<string, VistoNoSimbolo> } | null;
+  saude: Saude;
+  cadenciaMs: number;
 }
 
 const CHIP = "rounded-lg border px-2.5 py-1 text-xs transition disabled:opacity-40";
 const CHIP_OFF = "border-white/10 text-ink-3 hover:border-cyan/40 hover:text-cyan";
+const M = 60_000;
 
-export default function Agentes({ recarregar }: { recarregar: number }) {
+export default function Agentes({ recarregar, onMesas }: {
+  recarregar: number;
+  /**
+   * ⚠️ QUAIS MESAS JÁ TÊM INSTÂNCIA — para a vitrine não oferecer "Contratar"
+   * de novo e criar uma gêmea indistinguível. UMA fonte: a que o servidor
+   * devolveu aqui, nunca uma segunda busca da vitrine.
+   */
+  onMesas?: (mesas: string[]) => void;
+}) {
   const t = useT();
   const [agentes, setAgentes] = useState<Agente[] | null>(null);
+  const [pausadoPelaCasa, setPausado] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     try {
       const res = await fetch("/api/bancada/agentes");
       const j = await res.json();
-      // ⚠️ Falha vira `[]`? Não: `null` mantém a seção calada em vez de afirmar
-      // "você não tem agente nenhum" para quem tem três.
-      setAgentes(j?.ok && Array.isArray(j.agentes) ? j.agentes : null);
+      // ⚠️ Falha vira `null`, não `[]`: `[]` afirmaria "você não tem agente
+      // nenhum" para quem tem três.
+      const lista = j?.ok && Array.isArray(j.agentes) ? (j.agentes as Agente[]) : null;
+      setAgentes(lista);
+      setPausado(j?.pausadoPelaCasa === true);
+      // ⚠️ Só avisa quando a leitura DEU CERTO: numa falha, dizer "nenhuma
+      // contratada" reabriria o botão e convidaria à gêmea.
+      if (lista) onMesas?.(lista.map((x) => x.mesa));
     } catch { setAgentes(null); }
-  }, []);
+  }, [onMesas]);
   useEffect(() => { void carregar(); }, [carregar, recarregar]);
+
+  /**
+   * ⚠️⚠️ A SEÇÃO PEDIDA "EM TEMPO REAL" ERA A ÚNICA SEM RECARGA — e a duplicata
+   * que ela gerou é que recarregava. O cron anda de 30 em 30 minutos; recarregar
+   * a cada minuto é barato e garante que o card reflita a passagem assim que
+   * ela acontece, em vez de exigir um F5 do investidor.
+   */
+  useEffect(() => {
+    const id = setInterval(() => { void carregar(); }, 60_000);
+    return () => clearInterval(id);
+  }, [carregar]);
 
   async function mexer(id: string, corpo: Record<string, unknown>) {
     setOcupado(id);
     try {
       await fetch("/api/bancada/agentes", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, ...corpo }),
       });
       await carregar();
@@ -99,6 +145,16 @@ export default function Agentes({ recarregar }: { recarregar: number }) {
         <p className="mt-0.5 text-xs leading-relaxed text-ink-3">{t("bancada.agSub")}</p>
       </div>
 
+      {/* ⚠️⚠️ UM ESTADO NOSSO NÃO PODE CHEGAR DISFARÇADO DE DEFEITO DELE. Sem
+          esta faixa, uma pausa da casa desenha agentes "ligados" que viram
+          "atrasado" 60 min depois, sem causa visível. */}
+      {pausadoPelaCasa && (
+        <p className="flex items-start gap-2 rounded-2xl border border-gold/30 bg-gold/5 p-4 text-xs leading-relaxed text-gold">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          {t("bancada.agPausadoCasa")}
+        </p>
+      )}
+
       {agentes.length === 0 ? (
         <p className="rounded-2xl border border-white/5 bg-bg-1/40 p-5 text-xs leading-relaxed text-ink-3">
           {t("bancada.agVazio")}
@@ -110,14 +166,23 @@ export default function Agentes({ recarregar }: { recarregar: number }) {
               onPausar={() => void mexer(a.id, { ligada: !a.ligada })}
               onDispensar={() => void mexer(a.id, { dispensar: true })} />
           ))}
-          {/* ⚠️ A CADÊNCIA É DITA. Chamar de "tempo real" o que anda de meia em
-              meia hora cria a expectativa errada — e "papel" precisa estar
-              escrito, não subentendido. */}
-          <p className="text-[11px] leading-relaxed text-ink-4">{t("bancada.agCadencia")}</p>
+          {/* ⚠️ A CADÊNCIA É DITA UMA VEZ, NO RODAPÉ DA SEÇÃO — não uma caixa
+              por card. Repetir a mesma ressalva em cada agente ensina o leitor
+              a pular a borda cinza inteira, inclusive nos cards em que ela
+              muda. É a nota da seção, e é aqui que ela pertence. */}
+          <p className="text-[11px] leading-relaxed text-ink-4">
+            {t("bancada.agCadencia")} {t("bancada.agNaoEmprestamos")}
+          </p>
         </>
       )}
     </section>
   );
+}
+
+/** Há quantos minutos, arredondado para baixo. `null` sem carimbo. */
+function minutosAtras(ms: number | null | undefined, agora: number): number | null {
+  if (ms == null || !Number.isFinite(ms)) return null;
+  return Math.max(0, Math.floor((agora - ms) / M));
 }
 
 function CartaoDoAgente({ a, ocupado, onPausar, onDispensar }: {
@@ -128,17 +193,46 @@ function CartaoDoAgente({ a, ocupado, onPausar, onDispensar }: {
   const d = a.desempenho;
 
   /**
-   * ⚠️⚠️ A COR SÓ EXISTE SE A AMOSTRA SUSTENTA. `d.pinta` vem de
-   * `shouldTint(decididas)` no servidor: um `+12%` de UMA operação sai cinza,
-   * de propósito. É a mesma disciplina que faltou no painel do Valhalla.
+   * ⚠️ `agora` é lido UMA VEZ por render. Chamar `Date.now()` em cada linha
+   * faria dois símbolos do mesmo card serem datados contra relógios diferentes.
    */
+  const agora = Date.now();
+
   const classe = classificarResultado(d.decididas > 0 ? d.liquidoPorOpPct : null);
   const cor = corDoNumero(classe, d.pinta);
 
-  const regras = Object.entries(d.porPlaybook).sort((x, y) => y[1] - x[1]);
+  const MOTIVOS: Record<MotivoDeNaoAbrir, string> = {
+    ja_tem_posicao: t("bancada.agMotivoJaTemPos"),
+    aquecendo:      t("bancada.agMotivoAquecendo"),
+    sem_vela_nova:  t("bancada.agMotivoSemVela"),
+    sem_dado:       t("bancada.agMotivoSemDado"),
+    sem_setup:      t("bancada.agMotivoSemSetup"),
+    outro:          t("bancada.agMotivoOutro"),
+  };
+
+  const abertas = a.operacoes.filter((o) => o.status === "aberta");
+  const minDoTique = minutosAtras(a.tique?.em, agora);
+
+  /**
+   * ⚠️⚠️ QUATRO ESTADOS DE SAÚDE, E OS QUATRO DIZEM COISAS DIFERENTES.
+   * `adiado` e `atrasado` são os dois em que a culpa é NOSSA, e a frase diz
+   * isso — o investidor não pode ler uma limitação nossa como defeito do agente
+   * que ele pagou.
+   */
+  const linhaDeSaude =
+    a.saude === "nunca_verificado" ? { texto: t("bancada.agNuncaVerificado"), cor: "text-ink-4" }
+    : a.saude === "adiado"   ? { texto: t("bancada.agAdiado"), cor: "text-ink-4" }
+    : a.saude === "atrasado" ? { texto: t("bancada.agAtrasado"), cor: "text-gold" }
+    : {
+        texto: minDoTique != null && minDoTique < 1
+          ? t("bancada.agVerificadoAgora")
+          : t("bancada.agVerificado", { min: minDoTique ?? 0 }),
+        cor: "text-ink-3",
+      };
 
   return (
     <article className={`overflow-hidden rounded-2xl border bg-bg-1/40 ${a.ligada ? "border-green/20" : "border-white/5"}`}>
+      {/* ── QUEM É, E COMO ESTÁ ─────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-3 p-5 pb-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -146,8 +240,6 @@ function CartaoDoAgente({ a, ocupado, onPausar, onDispensar }: {
               a.ligada ? "border-green/30 text-green" : "border-white/10 text-ink-4"}`}>
               {a.ligada ? t("bancada.agLigada") : t("bancada.agPausada")}
             </span>
-            {/* ⚠️ HÁ QUANTO TEMPO — um resultado de papel adiante sem o tempo
-                decorrido é o mesmo defeito do número sem amostra. */}
             {d.horasRodando != null && (
               <span className="text-[10px] text-ink-4">
                 {t("bancada.agDesde", { horas: Math.floor(d.horasRodando) })}
@@ -163,61 +255,89 @@ function CartaoDoAgente({ a, ocupado, onPausar, onDispensar }: {
         </div>
 
         <div className="flex-shrink-0 text-right">
-          {/* ⚠️⚠️ ZERO DECIDIDAS NÃO MOSTRA NÚMERO NENHUM — nem 0%. É o coração
-              do isolamento: o vazio dele é dele, e a nossa amostra não o
-              preenche. */}
+          {/* ⚠️ ZERO DECIDIDAS NÃO MOSTRA NÚMERO — nem 0%. O vazio dele é dele,
+              e a nossa amostra não o preenche. */}
           {d.decididas === 0 || d.liquidoPorOpPct == null ? (
-            <span className="text-xs text-ink-4">{t("bancada.agAguardando")}</span>
+            <span className="text-xs text-ink-4">—</span>
           ) : (
             <>
               <span className={`block text-xl font-semibold tabular-nums ${cor}`}>
                 {d.liquidoPorOpPct >= 0 ? "+" : ""}{d.liquidoPorOpPct.toFixed(2)}%
               </span>
-              <span className="block text-[10px] text-ink-4">{t("bancada.agPorOp")}</span>
+              <span className="block text-[10px] text-ink-4">{t("bancada.mesasPorOp")}</span>
             </>
           )}
         </div>
       </div>
 
       <div className="space-y-3 px-5 pb-5">
+        {/* ── 1. O QUE ELE ACABOU DE FAZER ─────────────────────────── */}
+        {/* ⚠️ NO TOPO porque é o que muda a cada 30 minutos, e era o que estava
+            faltando: "esperando setup" não separava "verificou e ficou de fora"
+            de "ainda não verificou" de "parou de verificar". */}
+        <p className={`text-[11px] leading-relaxed ${linhaDeSaude.cor}`}>{linhaDeSaude.texto}</p>
+
+        {a.tique != null && a.saude !== "atrasado" && (
+          <ul className="space-y-1">
+            {a.simbolos.map((sim) => {
+              const v = a.tique!.simbolos[sim];
+              const minVela = minutosAtras(v?.velaEm, agora);
+              return (
+                <li key={sim} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
+                  <span className="text-ink-2">{sim}</span>
+                  {/* ⚠️ A IDADE É DA VELA, não da passagem do cron: o cache pode
+                      servir um fechamento de horas atrás. Idade errada
+                      declarada é pior que idade nenhuma. */}
+                  <span className="tabular-nums text-ink-4">
+                    {v?.preco != null && minVela != null
+                      ? t("bancada.agPrecoVisto", { preco: v.preco.toFixed(4), min: minVela })
+                      : t("bancada.agSemPreco")}
+                  </span>
+                  {v?.motivo && <span className="text-ink-4">· {MOTIVOS[v.motivo]}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {/* ── 2. O QUE ESTÁ ABERTO AGORA ───────────────────────────── */}
+        {/* ⚠️⚠️ FORA do ramo `decididas === 0`. Era ali que ele vivia, e por isso
+            quem tinha três posições vivas e nada fechado lia "ainda sem nada
+            decidido" — o texto afirmando o contrário do que acontecia. */}
+        {abertas.length > 0 && (
+          <ul className="space-y-1.5">
+            {abertas.map((o) => <PosicaoViva key={o.id} o={o} agora={agora} />)}
+          </ul>
+        )}
+
+        {/* ── 3. O QUE ELE JÁ MEDIU ────────────────────────────────── */}
         {d.decididas === 0 ? (
-          <p className="text-xs leading-relaxed text-ink-3">{t("bancada.agAindaNada")}</p>
+          abertas.length === 0 && (
+            <p className="text-xs leading-relaxed text-ink-3">{t("bancada.agAindaNada")}</p>
+          )
         ) : (
           <>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
               <span>{d.decididas === 1 ? t("bancada.agDecididaUma") : t("bancada.agDecididas", { n: d.decididas })}</span>
               {d.acertoPct != null && <span>{t("bancada.agAcerto", { pct: d.acertoPct.toFixed(0) })}</span>}
-              {/* ⚠️ EXPIRADA APARECE. Uma instância que expira mais do que
-                  decide morre de relógio, não de tese. */}
+              {/* ⚠️ Uma instância que expira mais do que decide morre de
+                  relógio, não de tese. */}
               {d.expiradas > 0 && (
                 <span>{d.expiradas === 1 ? t("bancada.agExpiradaUma") : t("bancada.agExpiradasN", { n: d.expiradas })}</span>
               )}
-              {d.abertas > 0 && (
-                <span>{d.abertas === 1 ? t("bancada.agAbertaUma") : t("bancada.agAbertasN", { n: d.abertas })}</span>
-              )}
             </div>
-            {/* ⚠️ A SEGUNDA MÉDIA, com as expiradas dentro: a primeira diz se a
-                TESE paga, esta diz o que o período REALMENTE rendeu. Publicar
-                só a primeira numa mesa que expira metade dos sinais é escolher
-                o número bonito. */}
+            {/* ⚠️ As duas médias contam histórias diferentes: a primeira diz se
+                a TESE paga, esta diz o que o período REALMENTE rendeu. */}
             {d.liquidoComExpiradasPct != null && d.expiradas > 0 && (
               <p className="text-[11px] text-ink-4">
                 {t("bancada.agComExpiradas", { pct: d.liquidoComExpiradasPct.toFixed(2) })}
               </p>
             )}
-            {regras.length > 0 && (
-              <p className="text-[11px] text-ink-4">
-                {t("bancada.agRegras")}: {regras.map(([k, n]) => `${k} (${n})`).join(" · ")}
-              </p>
-            )}
           </>
         )}
 
-        <p className="rounded-xl border border-white/5 bg-bg-2/60 p-3 text-[11px] leading-relaxed text-ink-3">
-          {t("bancada.agNaoEmprestamos")}
-        </p>
-
-        <div className="flex flex-wrap items-center gap-2">
+        {/* ── 4. OS CONTROLES, E O EXTRATO SOB DEMANDA ─────────────── */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
           <button type="button" onClick={onPausar} disabled={ocupado} className={`${CHIP} ${CHIP_OFF}`}>
             {ocupado ? <Loader2 className="h-3 w-3 animate-spin" />
               : a.ligada ? t("bancada.agDesligar") : t("bancada.agLigar")}
@@ -236,27 +356,78 @@ function CartaoDoAgente({ a, ocupado, onPausar, onDispensar }: {
         </div>
 
         {aberto && (
-          a.operacoes.length === 0 ? (
-            <p className="text-xs text-ink-3">{t("bancada.agSemOperacoes")}</p>
-          ) : (
+          <>
+            {Object.keys(d.porPlaybook).length > 0 && (
+              <p className="text-[11px] text-ink-4">
+                {t("bancada.agRegras")}: {Object.entries(d.porPlaybook)
+                  .sort((x, y) => y[1] - x[1]).map(([k, n]) => `${k} (${n})`).join(" · ")}
+              </p>
+            )}
             <ul className="space-y-1.5">
-              {a.operacoes.map((o) => <Linha key={o.id} o={o} />)}
+              {a.operacoes.filter((o) => o.status !== "aberta").map((o) => <Linha key={o.id} o={o} />)}
             </ul>
-          )
+          </>
         )}
       </div>
     </article>
   );
 }
 
-/** Uma operação da instância — quando entrou, a que preço, por que saiu. */
+/**
+ * UMA POSIÇÃO VIVA — e o único número desta tela que é sobre AGORA.
+ *
+ * ⚠️⚠️ A DISTÂNCIA ATÉ O ALVO É CALCULADA NO SERVIDOR e era jogada fora pelo
+ * card. O investidor com posição aberta lia o preço de entrada ao lado de
+ * "esperando setup" e não sabia se estava ganhando ou perdendo — tendo os
+ * quatro números na resposta HTTP para somar de cabeça.
+ */
+function PosicaoViva({ o, agora }: { o: Operacao; agora: number }) {
+  const t = useT();
+  const dist = o.distancia ?? null;
+  const aberto = dist?.abertoPct ?? null;
+
+  // ⚠️ Verde/vermelho aqui é o não-realizado de UMA posição, não um veredito de
+  // amostra: ele não passa por `shouldTint` porque não é média de nada.
+  const cor = aberto == null ? "text-ink-4" : aberto >= 0 ? "text-green" : "text-red";
+  const expiraMin = o.expiraEm ? Math.round((Date.parse(o.expiraEm) - agora) / M) : null;
+
+  return (
+    <li className="rounded-xl border border-cyan/20 bg-cyan/5 px-3 py-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs text-ink">
+          <span className="mr-1.5 rounded border border-cyan/30 px-1 py-0.5 text-[9px] text-cyan">
+            {t("bancada.agAberta")}
+          </span>
+          {o.simbolo}
+        </span>
+        <span className={`text-xs tabular-nums ${cor}`}>
+          {aberto == null ? "—"
+            : aberto >= 0 ? t("bancada.agNoAzul", { pct: aberto.toFixed(2) })
+            : t("bancada.agNoVermelho", { pct: Math.abs(aberto).toFixed(2) })}
+        </span>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-ink-4">
+        <span>{t("bancada.opsEntrada")} {o.entrada.toFixed(4)}</span>
+        {o.precoVisto != null && <span>→ {o.precoVisto.toFixed(4)}</span>}
+        {/* ⚠️ `null` some, nunca vira 0 — zero diria "chegou no alvo". */}
+        {dist?.alvoPct != null && <span>{t("bancada.agFaltaAlvo", { pct: dist.alvoPct.toFixed(2) })}</span>}
+        {dist?.stopPct != null && <span>{t("bancada.agFaltaStop", { pct: dist.stopPct.toFixed(2) })}</span>}
+        {expiraMin != null && expiraMin > 0 && (
+          <span>{t("bancada.vivoExpira", { quando: `${Math.floor(expiraMin / 60)}h` })}</span>
+        )}
+        {o.playbook && <span>{t("bancada.opsPorPlaybook", { playbook: o.playbook })}</span>}
+      </div>
+    </li>
+  );
+}
+
+/** Uma operação já FECHADA — o extrato que sustenta o número. */
 function Linha({ o }: { o: Operacao }) {
   const t = useT();
-  const dia = (iso: string) => iso.slice(0, 10);
   const cor = o.status === "ganhou" ? "text-green"
     : o.status === "perdeu" ? "text-red"
-    // ⚠️ Expirada é CINZA nos dois sentidos: ela não é vitória nem derrota,
-    // mesmo fechando no lucro.
+    // ⚠️ Expirada é CINZA nos dois sentidos: não é vitória nem derrota, mesmo
+    // fechando no lucro.
     : "text-ink-4";
 
   return (
@@ -264,17 +435,13 @@ function Linha({ o }: { o: Operacao }) {
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs text-ink">{o.simbolo}</span>
         <span className={`text-xs tabular-nums ${cor}`}>
-          {o.status === "aberta" || o.resultadoPct == null
-            ? t("bancada.agAguardando")
+          {o.resultadoPct == null ? "—"
             : `${o.resultadoPct >= 0 ? "+" : ""}${o.resultadoPct.toFixed(2)}%`}
         </span>
       </div>
       <div className="mt-0.5 flex flex-wrap gap-x-3 text-[10px] text-ink-4">
-        <span>{dia(o.abertaEm)} · {t("bancada.opsEntrada")} {o.entrada.toFixed(4)}</span>
+        <span>{o.abertaEm.slice(0, 10)} · {t("bancada.opsEntrada")} {o.entrada.toFixed(4)}</span>
         {o.saida != null && <span>{t("bancada.opsSaida")} {o.saida.toFixed(4)}</span>}
-        {o.alvoPct != null && o.stopPct != null && (
-          <span>{t("bancada.opsAlvo")} {o.alvoPct.toFixed(1)}% · {t("bancada.opsStop")} {o.stopPct.toFixed(1)}%</span>
-        )}
         {o.playbook && <span>{t("bancada.opsPorPlaybook", { playbook: o.playbook })}</span>}
       </div>
     </li>

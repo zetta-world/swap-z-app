@@ -42,8 +42,22 @@ export async function GET() {
    * não está ligada" são estados diferentes, e sem os dois na resposta a tela
    * mostraria vazio para os dois casos.
    */
+  /**
+   * ⚠️⚠️ AS INSTÂNCIAS DE AGENTE FICAM DE FORA (07/09) — elas moram no card
+   * delas, em "Seus agentes".
+   *
+   * O dono viu a FREYJA desenhada DUAS VEZES na mesma rolagem: uma vez com o
+   * número dela, outra sem. *"você está bagunçando muito, jogando informações
+   * em cima de informações"*. Ele estava certo, e a causa era este filtro
+   * faltando: as duas rotas irmãs (`/agentes` e `/estrategias`) já separam as
+   * duas espécies, e só esta não separava.
+   *
+   * ⚠️ E a cópia que sobrava aqui era a PIOR das duas: sem desempenho, sem o
+   * que o tique viu, sem distância até o alvo. Quando duas telas respondem a
+   * mesma pergunta, some com a que responde pior.
+   */
   const mesasLigadas = estrategias
-    .filter((e) => e.papelAdiante && !e.arquivada)
+    .filter((e) => e.papelAdiante && !e.arquivada && e.mesa == null)
     .map((e) => ({
       id: e.id, nome: e.nome, desde: e.papelDesde,
       simbolos: e.simbolos ?? [], intervalo: e.intervalo ?? "1h",
@@ -53,7 +67,11 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     mesasLigadas,
-    abertas: abertas.map((p) => ({
+    // ⚠️ E as posições seguem o mesmo corte: uma posição de instância de agente
+    // desenhada aqui reapareceria sob um nome que esta seção não mostra mais.
+    abertas: abertas
+      .filter((p) => mesasLigadas.some((m) => m.id === p.estrategiaId))
+      .map((p) => ({
       id: p.id, estrategiaId: p.estrategiaId, simbolo: p.simbolo, lado: p.lado,
       entrada: p.entrada, tamanhoUsd: p.tamanhoUsd,
       alvoPct: p.alvoPct, stopPct: p.stopPct,

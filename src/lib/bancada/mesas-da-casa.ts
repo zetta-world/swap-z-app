@@ -170,6 +170,44 @@ export const RESSALVAS = {
 
 export type ChaveDeRessalva = (typeof RESSALVAS)[keyof typeof RESSALVAS];
 
+/**
+ * ⚠️⚠️ AS RESSALVAS QUE VALEM PARA **TODOS** OS CARDS — para a tela dizê-las UMA
+ * vez, no rodapé da seção, em vez de dez.
+ *
+ * O DEFEITO (07/09, medido numa auditoria): `montarCartao` empurra
+ * `porOperacao` incondicionalmente, `correlacao` com mais de um símbolo,
+ * `umRegime` abaixo de 90 dias e `amostraCurta` abaixo de 100 decididas. Como
+ * as mesas da casa medem vários símbolos em janelas curtas, as quatro disparam
+ * juntas em quase todo card — 40 elementos de lista tirados de 4 frases, 4.000
+ * caracteres de texto idêntico numa rolagem de celular.
+ *
+ * E a repetição NÃO protege. O investidor lê o bloco no primeiro card,
+ * reconhece o formato no segundo, e a partir do terceiro os olhos pulam a borda
+ * cinza inteira — inclusive nos cards em que a ressalva MUDA (`expiraMuito` só
+ * aparece na SKAÐI; `mesmoSeletor` só nas duas rodáveis). Ela treina o leitor a
+ * não ver justamente a linha que era diferente e importava.
+ *
+ * ⚠️ MAS NADA SOME. A regra é a INTERSEÇÃO, calculada sobre os cards que a tela
+ * de fato mostra: o que vale para todos vira nota da seção; o que distingue um
+ * card continua NELE. Uma ressalva nova, ou um card que fuja do padrão, muda o
+ * corte sozinho — não há lista fixa a envelhecer.
+ */
+export function ressalvasComuns(cartoes: ReadonlyArray<CartaoDaMesa>): ChaveDeRessalva[] {
+  const comRessalva = cartoes.filter((c) => c.ressalvas.length > 0);
+  // ⚠️ Menos de dois cards não tem interseção que valha: com um card só, mover
+  // a ressalva para o rodapé só a afasta do número que ela qualifica.
+  if (comRessalva.length < 2) return [];
+  const [primeiro, ...resto] = comRessalva;
+  return primeiro.ressalvas.filter((r) => resto.every((c) => c.ressalvas.includes(r)));
+}
+
+/** O que sobra num card depois de a seção já ter dito o que é comum a todos. */
+export function ressalvasSoDeste(
+  cartao: CartaoDaMesa, comuns: ReadonlyArray<ChaveDeRessalva>,
+): ChaveDeRessalva[] {
+  return cartao.ressalvas.filter((r) => !comuns.includes(r));
+}
+
 /** Abaixo disto o número não sustenta veredito — o mesmo 100 do torneio. */
 export const DECIDIDOS_PARA_SUSTENTAR = 100;
 

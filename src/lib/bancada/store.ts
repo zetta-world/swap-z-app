@@ -79,12 +79,61 @@ export interface EstrategiaNova {
   mesa?: string | null;
 }
 
+/**
+ * ⚠️⚠️ O QUE O CRON VIU NA ÚLTIMA PASSAGEM (0044) — melhor-esforço, e o retorno
+ * é IGNORADO de propósito por quem chama dentro do laço do tique.
+ *
+ * Perder o registro do que aconteceu é ruim; deixar de abrir a posição que ia
+ * abrir é pior. Esta é a única escrita da bancada cujo erro não vira aviso na
+ * tela — porque a tela já tem como perceber sozinha: `ultimo_tique` velho é
+ * exatamente o que `saudeDoTique` chama de `atrasado`.
+ */
+export async function gravarUltimoTique(
+  dono: Dono, db: SupabaseClient, id: string, visto: Record<string, unknown>, emMs: number,
+): Promise<void> {
+  await db.from("bancada_estrategia")
+    .update({ ultimo_tique: { em: emMs, simbolos: visto } })
+    .eq("dono", dono).eq("id", id);
+}
+
+/**
+ * ⚠️⚠️ MARCA QUEM A CASA DEIXOU DE FORA NESTA PASSAGEM — e isto não é
+ * telemetria, é o que impede um alarme falso.
+ *
+ * `aVezDeQuem` gira uma janela de `AGENTES_POR_TICK`: com 10 agentes e teto 8,
+ * cada instância perde a vez uma vez a cada cinco ciclos, e o intervalo entre
+ * duas avaliações passa de 60 minutos. Sem esta marca, `saudeDoTique` leria
+ * isso como `atrasado` e acusaria o agente DO INVESTIDOR por um teto NOSSO.
+ *
+ * ⚠️ ESCRITA COM MERGE, não substituição: o adiamento não pode apagar o
+ * `simbolos` da última avaliação de verdade — é ele que a tela mostra enquanto
+ * a próxima não chega.
+ */
+export async function marcarTiqueAdiado(
+  db: SupabaseClient, ids: string[], emMs: number,
+): Promise<void> {
+  if (ids.length === 0) return;
+  /**
+   * ⚠️ `jsonb_set` no SERVIDOR, num UPDATE só. Ler-modificar-gravar por linha
+   * seriam duas idas por instância adiada dentro do laço do cron — e um
+   * intervalo em que duas passagens se sobrescrevem. `coalesce` cobre a linha
+   * que ainda não tem `ultimo_tique` nenhum.
+   */
+  await db.rpc("bancada_marcar_adiado", { ids, em: emMs });
+}
+
 export interface Estrategia extends EstrategiaNova {
   id: string;
   criadaEm: string;
   arquivada: boolean;
   papelAdiante: boolean;
   papelDesde: string | null;
+  /**
+   * ⚠️ Cru do banco (jsonb). Quem interpreta é `lerUltimoTique`, que trata
+   * `null` como "NUNCA FOI VERIFICADA" — um estado legítimo, e diferente de
+   * "verificada e não achou nada".
+   */
+  ultimoTique: unknown;
 }
 
 type LinhaEstrategia = {
@@ -92,6 +141,7 @@ type LinhaEstrategia = {
   praca: string; papel: string; criada_em: string; arquivada_em: string | null;
   papel_adiante: boolean | null; simbolos: string[] | null;
   intervalo: string | null; papel_desde: string | null; mesa: string | null;
+  ultimo_tique: unknown;
 };
 
 function paraEstrategia(r: LinhaEstrategia): Estrategia {
@@ -108,10 +158,11 @@ function paraEstrategia(r: LinhaEstrategia): Estrategia {
     papelAdiante: Boolean(r.papel_adiante),
     papelDesde: r.papel_desde,
     mesa: r.mesa,
+    ultimoTique: r.ultimo_tique ?? null,
   };
 }
 
-const COLUNAS_ESTRATEGIA = "id, nome, params, praca, papel, criada_em, arquivada_em, papel_adiante, simbolos, intervalo, papel_desde, mesa";
+const COLUNAS_ESTRATEGIA = "id, nome, params, praca, papel, criada_em, arquivada_em, papel_adiante, simbolos, intervalo, papel_desde, mesa, ultimo_tique";
 
 export async function salvarEstrategia(
   dono: Dono, chain: WalletChain, db: SupabaseClient, nova: EstrategiaNova,
