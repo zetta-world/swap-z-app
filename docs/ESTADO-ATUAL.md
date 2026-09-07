@@ -1810,6 +1810,77 @@ campo por tela**, e eu tinha lido como se fosse.
 
 ---
 
+## 5.22 ⚠️⚠️ A PRIMEIRA RODADA REAL ACHOU QUATRO DEFEITOS MEUS (06/09)
+
+O dono clicou numa mesa. Os 2.569 testes estavam verdes; o banco contou outra
+história. **Esta seção é a prova de que teste unitário não substitui uso.**
+
+### 1. A janela encolhia EM SILÊNCIO — o grave
+
+O cliente pediu **365 dias**. O cache tinha:
+
+| | velas | dias cobertos |
+|---|---|---|
+| 1d | 366 | **365** ✓ |
+| **1h** | 1600 | **66,6** ✗ |
+| 4h | 1600 | 266 |
+
+⚠️ **A mesa caminha sobre 1h.** Ela mediu 66 dias e o veredito saiu como se
+fosse a janela pedida.
+
+A causa: `MAX_VELAS_POR_BUSCA = 800` no `mercado/store.ts`, meu. O comentário
+dizia *"800 dias cobre os 2 anos com folga"* — verdade para velas DIÁRIAS; em
+1h, 800 são **33 dias**. E `fetchTimedCandles` **já paginava sozinho** até o
+limite pedido: o 800 não protegia de rajada nenhuma, só cortava.
+
+⚠️ **E duas rodadas idênticas a 30 segundos deram números diferentes**, porque a
+segunda buscou mais 800 e mediu outro período. Nada explicava.
+
+Conserto: teto de 10.000, **e a cobertura real comparada com a pedida** — abaixo
+de 90% o `porqueIncompleta` diz, com os números, de que período o veredito fala.
+
+### 2. A cota subcontava ~10×
+
+`custo_velas: 365` gravado; a rodada leu **3.566 velas** (1h + 4h + 1d). O modo
+mesa lê quatro prazos e a cota cobrava um — e pelo prazo errado, o `1d` marcado
+na tela em vez do `1h` sobre o qual o seletor caminha.
+
+### 3. O extrato mentia sobre o que foi rodado
+
+`origem: "propria"` e `intervalo: "1d"` numa corrida de MESA. O histórico do
+cliente descrevia uma estratégia dele, num prazo que a mesa não usa.
+
+### 4. ⚠️ E o dono viu o que faltava: *"não aparece as entradas feitas"*
+
+O motor produzia cada `Operacao` — entrada, saída, desfecho, qual playbook — e
+`resumir()` **jogava tudo fora**. Um veredito sem as operações é um número sem
+como conferir: o cliente lê "−1,85%" e não sabe se foram quatro entradas ruins
+ou uma catástrofe.
+
+E `bancada_posicao` era escrita pelo cron desde a fase 6 com **nenhuma tela
+lendo**: a mesa tickava, abria, fechava, e o dono dela não via nada. É a mesma
+família de *"a peça existe, é testada, e está desligada do caminho que decide"*
+que esta base perseguiu a sessão inteira — agora do lado do cliente.
+
+Migration `0041` guarda as operações; a tela mostra cada entrada com preço,
+saída, desfecho e playbook, mais a seção **"Rodando agora"** com as mesas vivas
+e suas posições abertas.
+
+⚠️ **A tela diz a CADÊNCIA:** as mesas tickam a cada 30 minutos com o cron.
+Chamar de "tempo real" o que anda de meia em meia hora criaria a expectativa
+errada.
+
+### ⚠️ Dois consertos meus nasceram SEM TESTE, e eu só descobri quebrando
+
+Depois de corrigir o truncamento e a cota, quebrei os dois de propósito: **nada
+acusou**. `mercado/store.ts` não tinha arquivo de teste nenhum. Os dois guardas
+existem agora, e quebram.
+
+E a trava de cor que escrevi ontem pegou um `bg-bg-0` que **acabei de escrever**
+na seção nova — a terceira vez que ela acha um caso meu.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**

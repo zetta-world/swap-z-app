@@ -16,13 +16,24 @@ import {
 } from "@/lib/mercado/velas";
 
 /**
- * ⚠️ O TETO DE UMA BUSCA, em velas. A fonte pagina de 1000 em 1000 e
- * `fetchTimedCandles` já faz o laço — este número é quantas ela pode pedir numa
- * ida só, para uma janela absurda não virar uma rajada contra o limite por IP.
+ * ⚠️⚠️ O TETO DE UMA BUSCA, EM VELAS — e o 800 anterior TRUNCAVA EM SILÊNCIO.
  *
- * 800 dias cobre os 2 anos que o tier mais alto pede, com folga.
+ * O defeito (achado em 06/09, na primeira rodada real que o dono clicou): o
+ * comentário antigo dizia *"800 dias cobre os 2 anos com folga"*, e isso vale
+ * para velas DIÁRIAS. Em velas de 1h, 800 são **33 dias**.
+ *
+ * A mesa do torneio caminha sobre 1h. O cliente pediu 365 dias, o cache
+ * devolveu **66,6 dias** de 1h, e o veredito saiu como se fosse a janela
+ * inteira. Duas rodadas idênticas a 30 segundos de distância deram números
+ * diferentes — porque a segunda buscou mais 800 e mediu outro período.
+ *
+ * ⚠️ `fetchTimedCandles` JÁ PAGINA sozinho até o limite pedido (blocos de 1000
+ * na origem). O 800 não protegia de rajada nenhuma: só cortava a janela.
+ *
+ * O teto agora é grande o bastante para um ano de 1h (8.760) com folga — e o
+ * que ele ainda cortar é DECLARADO em `porqueIncompleta`, nunca silencioso.
  */
-const MAX_VELAS_POR_BUSCA = 800;
+const MAX_VELAS_POR_BUSCA = Number(process.env.BANCADA_MAX_VELAS_BUSCA ?? 10_000);
 
 export interface LeituraDeVelas {
   velas: VelaComTempo[];
@@ -193,6 +204,30 @@ export async function velasDoIntervalo(
 
   const { velas, erro } = await lerDoBanco(db, simbolo, intervalo, desde, ate);
   if (erro) problemas.push(`leitura: ${erro}`);
+
+  /**
+   * ⚠️⚠️ A COBERTURA REAL É COMPARADA COM A PEDIDA — e é isto que faltava.
+   *
+   * Uma leitura que devolve 66 dias de uma janela de 365 não é um erro do
+   * banco: é uma janela mais curta. Sem esta comparação quem chama não tem como
+   * saber, e o veredito sai falando de um período que não é o que a tela diz.
+   *
+   * ⚠️ O limiar é 90% do pedido. Menos que isso não é arredondamento — é outra
+   * janela.
+   */
+  if (velas.length > 0) {
+    const dur2 = dur;
+    const pedidas = Math.floor((ate - desde) / dur2) + 1;
+    const primeira = velas[0].t;
+    const cobertas = Math.floor((velas[velas.length - 1].t - primeira) / dur2) + 1;
+    if (cobertas < pedidas * 0.9) {
+      const diasPedidos = Math.round((ate - desde) / 86_400_000);
+      const diasCobertos = Math.round((velas[velas.length - 1].t - primeira) / 86_400_000);
+      problemas.push(
+        `a janela pedida era de ${diasPedidos} dias em velas de ${intervalo}, mas só ${diasCobertos} dias chegaram `
+        + `(${velas.length} de ~${pedidas} velas) — o resultado fala desse período menor, não do pedido`);
+    }
+  }
 
   /**
    * ⚠️ A VELA CORRENTE NUNCA ESTÁ NO BANCO, e quem pede uma janela que termina

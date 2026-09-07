@@ -16,7 +16,7 @@ import { rateLimitDurable } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { donoDaSessao } from "@/lib/bancada/dono";
 import {
-  abrirRodada, fecharRodada, gravarResultado, consumoDaJanela,
+  abrirRodada, fecharRodada, gravarResultado, consumoDaJanela, gravarOperacoes,
 } from "@/lib/bancada/store";
 import { lerEstrategia, oPortaoDoPedagio } from "@/lib/bancada/vocabulario";
 import { decidir, type PedidoDeRodada } from "@/lib/bancada/cotas";
@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
   const janelaAte = fim;
   const janelaDe = fim - janelaDias * 86_400_000;
 
-  const pedido: PedidoDeRodada = { simbolos, intervalo, janelaDe, janelaAte, capitalUsd };
+  const pedido: PedidoDeRodada = { simbolos, intervalo, janelaDe, janelaAte, capitalUsd, mesa: !!mesa };
 
   // ── 2. O portão do pedágio, ANTES da cota ─────────────────────────────
   /**
@@ -180,10 +180,22 @@ export async function POST(req: NextRequest) {
   // ── 4. A rodada nasce ANTES de haver resultado ────────────────────────
   const aberta = await abrirRodada(dono, chain, db, {
     estrategiaId: typeof o.estrategiaId === "string" ? o.estrategiaId : null,
-    origem: o.origem === "casa" ? "casa" : "propria",
-    capitalUsd, simbolos, intervalo, janelaDe, janelaAte,
+    /**
+     * ⚠️ `casa` QUANDO É MESA — o registro tem de dizer o que foi rodado.
+     * Na primeira rodada real (06/09) uma corrida da FREYJA ficou gravada como
+     * `propria` com `intervalo: "1d"`: o histórico do cliente descrevia uma
+     * estratégia dele, num prazo que a mesa não usa. Extrato que mente sobre o
+     * que aconteceu é pior que extrato ausente.
+     */
+    origem: mesa ? "casa" : (o.origem === "casa" ? "casa" : "propria"),
+    capitalUsd, simbolos,
+    // ⚠️ A mesa CAMINHA em 1h, qualquer que seja o intervalo marcado na tela.
+    intervalo: mesa ? "1h" : intervalo,
+    janelaDe, janelaAte,
     praca: estrategia.praca, papel: estrategia.papel,
-    params: { ...estrategia }, custoVelas: d.custoVelas,
+    // O `mesa` entra nos params congelados: sem ele, ninguém sabe QUAL mesa foi.
+    params: mesa ? { ...estrategia, mesa: mesa.source, mesaNome: mesa.name } : { ...estrategia },
+    custoVelas: d.custoVelas,
   });
   if (!aberta.ok) return json({ ok: false, error: "nao_consegui_abrir", porque: aberta.porque }, 500);
   const rodadaId = aberta.valor;
@@ -235,7 +247,9 @@ export async function POST(req: NextRequest) {
     if (leitura.porqueIncompleta) problemas.push(`${simbolo}: ${leitura.porqueIncompleta}`);
     if (leitura.velas.length < 2) continue;
 
-    operacoes.push(...rodar(leitura.velas, estrategia).operacoes);
+    // ⚠️ O símbolo viaja na operação: sem ele a tela não sabe de qual série
+    // veio a entrada quando o cliente roda vários pares.
+    operacoes.push(...rodar(leitura.velas, estrategia).operacoes.map((op) => ({ ...op, simbolo })));
 
     /**
      * ⚠️ O COMPETIDOR É "SEGURAR", medido na MESMA janela e SEM custo.
@@ -275,6 +289,24 @@ export async function POST(req: NextRequest) {
     equilibrioExigidoPct: v.equilibrioPct,
     veredito: v.veredito, naoMedido,
   });
+  /**
+   * ⚠️⚠️ AS OPERAÇÕES SÃO GRAVADAS — foi o que faltava (06/09). Sem elas o
+   * cliente lê um veredito e não tem como conferir: não vê quando entrou, a que
+   * preço, por que saiu, nem qual playbook abriu.
+   *
+   * ⚠️ Melhor-esforço, mas NÃO em silêncio: se a gravação falhar, o motivo
+   * entra em `nao_medido` em vez de a tela mostrar uma lista vazia como se não
+   * houvesse operação nenhuma.
+   */
+  const g = await gravarOperacoes(dono, db, rodadaId, operacoes.map((op) => ({
+    simbolo: op.simbolo ?? simbolos[0] ?? "?",
+    abriuEm: op.abriuEm, fechouEm: op.fechouEm,
+    entrada: op.entrada, saida: op.saida, desfecho: op.desfecho,
+    brutoPct: op.brutoPct, liquidoPct: op.liquidoPct,
+    playbook: op.playbook ?? null,
+  })));
+  if (!g.ok) naoMedido.push(`o detalhe das operações não foi gravado: ${g.porque}`);
+
   await fecharRodada(dono, db, rodadaId, "concluida");
 
   return json({
@@ -283,5 +315,8 @@ export async function POST(req: NextRequest) {
     veredito: { ...v, naoMedido },
     resumo,
     competidorPct,
+    // ⚠️ Devolvidas na resposta para a tela não precisar de uma segunda volta —
+    // e ordenadas, porque uma lista de entradas fora de ordem não se lê.
+    operacoes: [...operacoes].sort((a, b) => a.abriuEm - b.abriuEm),
   });
 }

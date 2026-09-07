@@ -45,6 +45,11 @@ export interface Operacao {
   brutoPct: number;
   /** O mesmo, já descontado o pedágio de ida e volta da praça e do papel. */
   liquidoPct: number;
+  /** ⚠️ Qual playbook abriu — só no modo mesa. Numa estratégia própria o
+   *  gatilho é o que o cliente escolheu, e não há playbook a nomear. */
+  playbook?: string;
+  /** O símbolo, para a tela não precisar adivinhar de qual série veio. */
+  simbolo?: string;
 }
 
 /** Média simples das últimas `n` fechando em `i`. `null` antes de haver `n`. */

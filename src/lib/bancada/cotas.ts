@@ -16,6 +16,8 @@ export interface PedidoDeRodada {
   janelaDe: number;
   janelaAte: number;
   capitalUsd: number;
+  /** ⚠️ `true` no modo mesa: ele lê QUATRO prazos, e a cota cobra pelos quatro. */
+  mesa?: boolean;
 }
 
 export type MotivoDaRecusa =
@@ -56,12 +58,35 @@ export function tetoDeVelasPorRodada(cota: CotaDaBancada): number {
   return cota.simbolosPorTeste * cota.janelaMaxDias * 24;
 }
 
-/** Quantas velas esta rodada vai ler. `null` se o intervalo não existe. */
+/**
+ * Quantas velas esta rodada vai ler. `null` se o intervalo não existe.
+ *
+ * ⚠️⚠️ O MODO MESA LÊ QUATRO PRAZOS, e cobrar um só subcontava ~10× (achado em
+ * 06/09, na primeira rodada real).
+ *
+ * A rodada registrada como `custo_velas: 365` leu, de fato, **3.566 velas**:
+ * 1h e 4h e 1d do mesmo símbolo. O seletor da casa precisa dos quatro para o
+ * regime e o alinhamento — então a cota tem de cobrar pelos quatro.
+ *
+ * ⚠️ E A BASE DO MODO MESA É 1h, não o intervalo que o cliente escolheu: é
+ * sobre as velas de 1h que o seletor caminha. Cobrar pelo `1d` que ele marcou
+ * na tela cobraria pelo prazo errado.
+ */
 export function custoDoPedido(p: PedidoDeRodada): number | null {
-  const dur = duracaoDoIntervaloMs(p.intervalo);
-  if (dur == null) return null;
   const span = p.janelaAte - p.janelaDe;
   if (!Number.isFinite(span) || span <= 0) return null;
+
+  if (p.mesa) {
+    const h1 = duracaoDoIntervaloMs("1h")!;
+    const h4 = duracaoDoIntervaloMs("4h")!;
+    const d1 = duracaoDoIntervaloMs("1d")!;
+    // A semanal é AGREGADA das diárias — não custa leitura própria.
+    const porSimbolo = Math.ceil(span / h1) + Math.ceil(span / h4) + Math.ceil(span / d1);
+    return p.simbolos.length * porSimbolo;
+  }
+
+  const dur = duracaoDoIntervaloMs(p.intervalo);
+  if (dur == null) return null;
   const porSimbolo = Math.ceil(span / dur);
   return p.simbolos.length * porSimbolo;
 }
