@@ -683,3 +683,89 @@ senão isso parece defeito de conta em vez do que é.
   `supabase-js` resolve com `{ data: null, error }` em vez de lançar: uma coluna
   faltando apagaria a rodada do histórico sem log, sem erro na tela e com a
   resposta parecendo perfeita. Agora a rodada fecha como `falhou` com o motivo.
+
+---
+
+## FASE 8 — O AGENTE DO INVESTIDOR, ISOLADO DE VERDADE (07/09)
+
+> *"ainda assim está super errado, apenas estamos pegando os resultados das
+> mesas do painel e Admin e repetindo para o investidor... eu falei que tinha
+> que ser isolado... o investidor roda estratégia/agente e o mesmo começa a
+> trabalhar e gerar resultado dali... vc tem que parar de ficar amontoando uma
+> coisa em cima de outra por preguiça de separar"* — o dono.
+
+Ele estava certo, e o defeito era de arquitetura, não de tela. As fases 1–7
+entregaram três peças que pareciam a coisa e não eram:
+
+| o que existia | o que ele lia |
+|---|---|
+| card da mesa com `+4,34%/op` | agregação de `zion_suggestions` — **o livro do admin** |
+| botão "rodar esta mesa" | um **backtest**: passado obedecendo, não um agente trabalhando |
+| papel adiante (`bancada_posicao`) | vivo e isolado de verdade, mas só sabia rodar `media\|canal\|rsi` |
+
+Faltava a peça do meio: **o agente da casa rodando NA CONTA DO INVESTIDOR**, a
+partir do instante em que ele o contrata.
+
+### O que passou a existir
+
+```
+contratar → bancada_estrategia { mesa: "strat_dex", papel_adiante: true, papel_desde: agora }
+   ↓ (cron de 30 min, tique.ts bifurca por `mesa`)
+agente.ts → computeIndicators(1h,4h,1d,1w) → candidateAttempts → plano
+   ↓
+bancada_posicao { dono, alvo_pct, stop_pct, horas_limite, playbook }   ← DELE
+   ↓
+desempenho.ts → decididas · expiradas · acerto · líquido/op            ← DELE, do zero
+```
+
+- **`agente.ts`** — a decisão de abertura de uma instância. Não reimplementa a
+  mesa: chama as MESMAS funções que `mesa-real.ts` e o cron da casa chamam.
+- **`desempenho.ts`** — o extrato da instância. **Nenhuma linha de
+  `zion_suggestions` entra aqui.**
+- **`/api/bancada/agentes`** — contratar, pausar, dispensar, e ler o número dele.
+- **migration `0043`** — `bancada_estrategia.mesa`, `bancada_posicao.playbook`,
+  `bancada_posicao.horas_limite`.
+
+### As decisões que doeriam depois se fossem tomadas por preguiça
+
+1. **`params` de uma instância é `{}`, e o tipo `Mesa.params` virou
+   `EstrategiaDoCliente | null`.** A tentação era guardar uma estratégia de
+   fachada (`alvoPct: 2.5`) para o resto do código não precisar de um `null`.
+   Isso faria o tick abrir posições com um alvo que a mesa **nunca declarou** —
+   o bracket dela sai da volatilidade a cada operação. O `null` obriga cada
+   consumidor a perguntar "qual dos dois é este?" antes de decidir, e
+   `decidirAbertura` passou a aceitar só `MesaPropria`: passar uma instância de
+   agente ali **não compila**.
+
+2. **Uma coluna, não uma tabela nova.** Uma `bancada_agente` paralela teria de
+   duplicar dono, símbolos, intervalo, praça, papel, interruptor, cota e índice
+   do cron — e as posições apontariam para uma de duas tabelas. Duas fontes para
+   "o que este cliente tem ligado" é a receita para as duas discordarem.
+
+3. **O fechamento passou a ler o bracket DA POSIÇÃO** (`decidirFechamentoDaPosicao`).
+   Isto era exigência do agente, e de quebra consertou um **defeito latente**: o
+   caminho antigo relia o alvo da ESTRATÉGIA para fechar posição já aberta —
+   editar a estratégia movia o alvo retroativamente, e o resultado mudava depois
+   do fato.
+
+4. **O vazio é uma resposta.** Quem contrata hoje vê *"contratado, ainda sem
+   nada decidido — ele só abre quando a regra dele acha setup"*, e **nenhum
+   número**. Nem 0%. Preencher esse vazio com a nossa amostra de 335 operações
+   seria vender a nossa credibilidade como se fosse o desempenho dele.
+
+5. **O placar da casa continua na tela — rotulado.** O card da mesa agora diz,
+   embaixo do número, *"o que a NOSSA mesa fez — não o seu"*. Esconder o número
+   seria perder informação honesta; deixá-lo sem etiqueta era a queixa.
+
+6. **A ordem da tela é parte da correção.** Os agentes DELE vêm antes da vitrine
+   NOSSA. Invertido, a primeira coisa que ele lê é o nosso resultado.
+
+### O que continua verdade e precisa continuar dito
+
+- É **papel**, não dinheiro real, e o tick é de **30 minutos** — não é cotação
+  ao vivo. As duas coisas estão escritas na tela.
+- Só `strat_mech` e `strat_dex` são contratáveis, pela mesma
+  `MESAS_QUE_A_RODADA_REPRODUZ` do botão de backtest. Contratar uma mesa cuja
+  política não reproduzimos seria o defeito de 07/09 entrando pela outra porta.
+- `expirada` não é ganho nem perda, e a cor sai das **decididas**: 40 expiradas
+  não compram cor para 2 decididas.

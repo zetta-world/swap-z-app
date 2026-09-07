@@ -97,14 +97,23 @@ export interface RodadaDaMesa {
   porQueNaoAbriu: Record<string, number>;
 }
 
-/** As velas do nosso cache no formato que os indicadores esperam. */
-function paraCandle(v: ReadonlyArray<VelaComTempo>): Candle[] {
+/**
+ * As velas do nosso cache no formato que os indicadores esperam.
+ *
+ * ⚠️ EXPORTADA para `agente.ts` — a instância viva do investidor tem de chamar
+ * `computeIndicators` com exatamente a mesma preparação do backtest. Uma
+ * segunda cópia desta função seria uma segunda forma de montar a entrada do
+ * seletor, e a divergência apareceria como "o backtest disse uma coisa e o
+ * agente fez outra" — sem nada para apontar.
+ */
+export function paraCandle(v: ReadonlyArray<VelaComTempo>): Candle[] {
   // ⚠️ `open` não existe no nosso cache e os indicadores não o usam — nenhum
   // dos cálculos (RSI, EMA, MACD, ATR, ADX, OBV) lê abertura.
   return v.map((x) => ({ high: x.high, low: x.low, close: x.close, volume: x.volume }));
 }
 
-function ateOInstante<T extends { t: number }>(velas: ReadonlyArray<T>, t: number): T[] {
+/** ⚠️ Exportada pelo mesmo motivo de `paraCandle`: uma preparação só. */
+export function ateOInstante<T extends { t: number }>(velas: ReadonlyArray<T>, t: number): T[] {
   return velas.filter((v) => v.t <= t);
 }
 

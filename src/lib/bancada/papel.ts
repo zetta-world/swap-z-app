@@ -35,7 +35,19 @@ export interface Mesa {
    * `bancada/dono.ts` existe para fechar.
    */
   dono: Dono;
-  params: EstrategiaDoCliente;
+  /**
+   * ⚠️⚠️ `null` NUMA INSTÂNCIA DE AGENTE (0043) — e é de propósito que o tipo
+   * force a bifurcação.
+   *
+   * O agente da casa NÃO TEM alvo e stop fixos: o bracket sai da volatilidade a
+   * cada operação. Guardar um `EstrategiaDoCliente` de fachada aqui (com
+   * `alvoPct: 2.5`, digamos) faria o tick abrir posições com um alvo que a mesa
+   * nunca declarou — e a mentira só apareceria no extrato do investidor.
+   * `null` obriga quem lê a perguntar "qual dos dois é este?" antes de decidir.
+   */
+  params: EstrategiaDoCliente | null;
+  /** ⚠️ Preenchido = instância de agente da casa (o `source` do desk). */
+  mesa: string | null;
   simbolos: string[];
   intervalo: string;
   /** `abriu_em` da posição mais recente desta mesa. `null` se nunca abriu. */
@@ -61,6 +73,15 @@ export function mesasQuePodemTickar(mesas: Mesa[], tier: Tier): { tickam: Mesa[]
   return { tickam: ordenadas.slice(0, teto), cortadas: ordenadas.slice(teto) };
 }
 
+/**
+ * Uma mesa do VOCABULÁRIO DO CLIENTE — a única que `decidirAbertura` sabe ler.
+ *
+ * ⚠️ O tipo é a trava: passar uma instância de agente aqui não compila, e é
+ * exatamente o erro que se quer impossível. O agente decide em `agente.ts`, com
+ * o seletor real; `sinais()` não tem o que dizer sobre ele.
+ */
+export type MesaPropria = Mesa & { params: EstrategiaDoCliente };
+
 export type PorQueNaoAbre =
   | "sem_velas"
   | "ja_tem_posicao"
@@ -85,7 +106,7 @@ export type DecisaoDeAbertura =
  * ela não entra na `mercado_vela`.
  */
 export function decidirAbertura(
-  mesa: Mesa, velas: ReadonlyArray<VelaComTempo>, agoraMs: number,
+  mesa: MesaPropria, velas: ReadonlyArray<VelaComTempo>, agoraMs: number,
 ): DecisaoDeAbertura {
   if (mesa.temPosicaoAberta) return { abre: false, porque: "ja_tem_posicao" };
 
@@ -140,22 +161,63 @@ export function decidirFechamento(
   agoraMs: number,
 ): Fechamento | null {
   const { alvo, stop } = alvoEStop(params, posicao.entrada);
-  const custo = 2 * taxaDaBancadaPct(params.praca, params.papel);
+  return decidirFechamentoDaPosicao(
+    {
+      entrada: posicao.entrada, tamanhoUsd: posicao.tamanhoUsd, abertaEmMs: posicao.abertaEmMs,
+      alvo, stop, horasLimite: params.horasLimite,
+      lado: params.direcao === "compra" ? "long" : "short",
+      custoIdaEVoltaPct: 2 * taxaDaBancadaPct(params.praca, params.papel),
+    },
+    velas, agoraMs,
+  );
+}
 
+/** O bracket JÁ RESOLVIDO de uma posição — em preço, não em regra. */
+export interface PosicaoParaFechar {
+  entrada: number;
+  tamanhoUsd: number;
+  abertaEmMs: number;
+  alvo: number;
+  stop: number;
+  horasLimite: number;
+  lado: "long" | "short";
+  /** ⚠️ Ida E volta, em %. A praça do DONO, nunca uma taxa única da casa. */
+  custoIdaEVoltaPct: number;
+}
+
+/**
+ * ⚠️⚠️ O FECHAMENTO LÊ O BRACKET **DA POSIÇÃO**, e isto conserta um defeito
+ * latente do caminho antigo (0043).
+ *
+ * `decidirFechamento` relia o alvo e o stop da ESTRATÉGIA para fechar uma
+ * posição já aberta. Editar a estratégia movia, retroativamente, o alvo de
+ * posições vivas: o resultado mudava depois do fato, e nada denunciava — a
+ * mesma família de "escolher a janela depois de ver o número".
+ *
+ * ⚠️ E É ISTO QUE O AGENTE DO INVESTIDOR EXIGE. O bracket dele é VARIÁVEL: sai
+ * da volatilidade daquele instante, e duas posições da mesma instância têm
+ * alvos diferentes. Não existe "a regra" de onde reler — só existe o que foi
+ * decidido na hora, e é o que a linha guarda.
+ */
+export function decidirFechamentoDaPosicao(
+  p: PosicaoParaFechar,
+  velas: ReadonlyArray<VelaComTempo>,
+  agoraMs: number,
+): Fechamento | null {
   const v = computeExitPath(
     {
-      side: params.direcao === "compra" ? "buy" : "sell",
-      entry_price: posicao.entrada,
-      cost_usd: posicao.tamanhoUsd,
-      target_price: alvo,
-      stop_price: stop,
-      opened_at: new Date(posicao.abertaEmMs).toISOString(),
-      horizon_hours: params.horasLimite,
+      side: p.lado === "long" ? "buy" : "sell",
+      entry_price: p.entrada,
+      cost_usd: p.tamanhoUsd,
+      target_price: p.alvo,
+      stop_price: p.stop,
+      opened_at: new Date(p.abertaEmMs).toISOString(),
+      horizon_hours: p.horasLimite,
     },
     velas.map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close })),
     undefined,
     agoraMs,
-    custo,
+    p.custoIdaEVoltaPct,
   );
   if (!v) return null;
 

@@ -4,7 +4,7 @@
  * aqui custa a cada 30 minutos, para sempre, por cliente.
  */
 import { describe, it, expect } from "vitest";
-import { mesasQuePodemTickar, decidirAbertura, decidirFechamento, alvoEStop, type Mesa } from "@/lib/bancada/papel";
+import { mesasQuePodemTickar, decidirAbertura, decidirFechamento, alvoEStop, type Mesa, type MesaPropria } from "@/lib/bancada/papel";
 import type { EstrategiaDoCliente } from "@/lib/bancada/vocabulario";
 import type { VelaComTempo } from "@/lib/mercado/velas";
 import { donoDeLinhaDoBanco } from "@/lib/bancada/dono";
@@ -15,9 +15,15 @@ const params: EstrategiaDoCliente = {
   alvoPct: 2, stopPct: 2, horasLimite: 24, praca: "futuros_gate", papel: "maker",
 };
 
-function mesa(p: Partial<Mesa> = {}): Mesa {
+/**
+ * ⚠️ `MesaPropria`, não `Mesa`: desde 0043 uma mesa pode ser uma INSTÂNCIA DE
+ * AGENTE, e nessa o `params` é `null` porque o bracket é variável. Este helper
+ * monta o caso do vocabulário do cliente — o único que `decidirAbertura` lê.
+ */
+function mesa(p: Partial<MesaPropria> = {}): MesaPropria {
   return {
-    id: "m1", dono: donoDeLinhaDoBanco("0xA")!, params, simbolos: ["BTC"], intervalo: "1h",
+    id: "m1", dono: donoDeLinhaDoBanco("0xA")!, params, mesa: null,
+    simbolos: ["BTC"], intervalo: "1h",
     ultimaAberturaMs: null, temPosicaoAberta: false, criadaEm: "2026-01-01T00:00:00Z", ...p,
   };
 }
