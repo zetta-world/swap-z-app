@@ -41,6 +41,50 @@ export function mesasElegiveis(): Desk[] {
   return DESKS.filter((d) => d.brain === "none" && d.status === "live");
 }
 
+/**
+ * ⚠️⚠️ QUAIS MESAS O BOTÃO "RODAR ESTA" PODE DE FATO RODAR — e a lista é curta
+ * porque a verdade é curta.
+ *
+ * ACHADO NO BANCO (07/09). O dono clicou em ULLR e depois em FREYJA, sobre BTC
+ * e 365 dias, e as duas devolveram `+2,140788280112371%` — o MESMO número, até
+ * a última casa decimal, com uma operação cada. Não é coincidência: `rodarMesa`
+ * (`mesa-real.ts`) NÃO recebe a mesa. Ela roda um único caminho — o cardápio de
+ * `candidateAttempts` com a política "primeiro playbook com plano" — e o nome
+ * da mesa era só o rótulo colado em cima do resultado.
+ *
+ * ⚠️ E as dez mesas de `mesasElegiveis` NÃO fazem isso. As quatro de arbitragem
+ * (Setor B) não tomam trade direcional nenhum: vivem de spread e funding, em
+ * outro livro. A URÐR ordena os candidatos pelo histórico medido e VETA os que
+ * mediram negativo naquele regime. A SKAÐI aplica o filtro de clima e revalida
+ * a geometria no prazo curto. A HEIMDALL é um scanner de evento. E a ULLR caça
+ * pool RECÉM-NASCIDA (2 a 48h de vida, TVL ≥ US$ 80 mil) com bracket fixo de
+ * 18%/9% — ela nem olha BTC.
+ *
+ * Rodar qualquer uma delas por aqui não é uma aproximação da mesa: é a FREYJA
+ * com outro nome na etiqueta. É exatamente o que o cabeçalho deste arquivo diz
+ * que não se faz — *"o cliente rodando uma coisa achando que é outra, com a
+ * nossa marca"* — e entrou pela porta do botão, três dias depois de escrito.
+ *
+ * ⚠️ ELAS CONTINUAM NA VITRINE. O card, a medição e as ressalvas são honestos e
+ * são o produto: o que sai é a promessa de reproduzir o que não reproduzimos.
+ * Quando `mesa-real.ts` souber a política de cada mesa, cada uma volta — uma a
+ * uma, com o teste que prova que a política mudou o resultado.
+ */
+export const MESAS_QUE_A_RODADA_REPRODUZ = [
+  // VÖLUNDR — o controle: `selectPlaybook`, sem filtro de clima, sem histórico.
+  // É literalmente a política que `mesa-real.ts` implementa.
+  "strat_mech",
+  // FREYJA — a MESMA seleção, na DEX. A pergunta dela é "a mesma regra paga na
+  // DEX como na CEX?", e aqui quem escolhe a praça é o cliente — então as duas
+  // devolvem o mesmo número quando ele escolhe a mesma praça. Isso é verdade
+  // sobre as mesas, não defeito da conta, e a ressalva `mesmoSeletor` diz isso.
+  "strat_dex",
+] as const;
+
+export function mesaPodeRodar(source: string): boolean {
+  return (MESAS_QUE_A_RODADA_REPRODUZ as readonly string[]).includes(source);
+}
+
 /** O que a medição do banco devolve por mesa. */
 export interface MedicaoDaMesa {
   source: string;
@@ -89,6 +133,11 @@ export interface CartaoDaMesa {
   sustentacao: Sustentacao;
   /** As chaves de ressalva que a tela precisa mostrar junto do número. */
   ressalvas: ChaveDeRessalva[];
+  /**
+   * ⚠️ Se o botão "rodar esta" aparece. Ver `MESAS_QUE_A_RODADA_REPRODUZ`: um
+   * botão que roda outra coisa é pior que botão nenhum.
+   */
+  podeRodar: boolean;
 }
 
 /**
@@ -110,6 +159,13 @@ export const RESSALVAS = {
   expiraMuito: "bancada.ressalvaExpiraMuito",
   /** Amostra abaixo do limiar. */
   amostraCurta: "bancada.ressalvaAmostraCurta",
+  /**
+   * ⚠️ As duas mesas rodáveis partilham UM seletor — ver
+   * `MESAS_QUE_A_RODADA_REPRODUZ`. Sem esta linha, dois cards devolvendo o
+   * mesmo número parecem defeito de conta em vez do que são: a mesma regra,
+   * medida em praças diferentes, com a praça escolhida pelo cliente.
+   */
+  mesmoSeletor: "bancada.ressalvaMesmoSeletor",
 } as const;
 
 export type ChaveDeRessalva = (typeof RESSALVAS)[keyof typeof RESSALVAS];
@@ -144,6 +200,7 @@ export function montarCartao(d: Desk, m: MedicaoDaMesa | null): CartaoDaMesa {
   const base = {
     source: d.source, nome: d.name, sigilo: d.sigil, subtitulo: d.subtitle,
     testa: d.tests, venue: d.venue, direcao: d.direction, horizonteHoras: d.horizonHours,
+    podeRodar: mesaPodeRodar(d.source),
   };
   if (!m || m.decididos === 0) {
     return { ...base, medicao: m, liquidoPorOpPct: null, acertoPct: null, sustentacao: "ruido", ressalvas: [] };
@@ -161,6 +218,9 @@ export function montarCartao(d: Desk, m: MedicaoDaMesa | null): CartaoDaMesa {
   if (m.dias <= 90) ressalvas.push(RESSALVAS.umRegime);
   if (m.expiradas >= m.decididos * EXPIRA_DEMAIS) ressalvas.push(RESSALVAS.expiraMuito);
   if (!sustenta) ressalvas.push(RESSALVAS.amostraCurta);
+  // ⚠️ Só nas rodáveis: nas outras a frase não teria a que se referir, e
+  // ressalva sem referente é ruído que ensina a ignorar as que importam.
+  if (base.podeRodar) ressalvas.push(RESSALVAS.mesmoSeletor);
 
   return {
     ...base, medicao: m,

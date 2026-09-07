@@ -592,3 +592,94 @@ Aplicá-lo recusaria a mesa por um alvo que ela nunca declarou.
 
 O motivo da recusa é **contado** (`porQueNaoAbriu`): sem isso, uma mesa parada e
 uma mesa quebrada produzem exatamente a mesma saída.
+
+---
+
+## O HISTÓRICO, E O BOTÃO QUE PROMETIA DEMAIS (07/09)
+
+> *"tá uma merda cada teste que rodo sobrepõe o outro, e não mostra qual agente
+> está rodando, não dá pra saber o que está rodando.... cadê a experiência
+> Premium que tanto queremos oferecer ao cliente?"* — o dono, com dois
+> resultados na tela e nenhum deles com nome.
+
+Três defeitos, e um quarto que só apareceu no banco.
+
+### 1. `const [r, setR]` — a rodada era um estado, não uma lista
+
+Cada corrida escrevia por cima da anterior, e recarregar a página apagava a
+tarde inteira. As linhas estavam todas gravadas desde a fase 1 (`bancada_rodada`,
+`bancada_resultado`, `bancada_operacao`) e **nenhuma tela as lia de volta** — a
+mesma família de `bancada_posicao`: a peça existe, é testada, e está desligada do
+caminho que o cliente enxerga.
+
+Agora são uma lista, da mais nova para a mais velha, alimentada por
+`GET /api/bancada/rodadas` (a lista) e `?id=` (o extrato daquela rodada, sob
+demanda — uma rodada de mesa sobre quatro pares passa de 300 linhas).
+
+### 2. O resultado não dizia quem era
+
+`+2,14%` sozinho não diz se saiu da FREYJA sobre BTC em 365 dias ou de um
+RSI(14) sobre SOL em 90. `identidade.ts` reconstrói isso dos `params`
+congelados — e **a mesma função serve os dois caminhos**, o POST que acabou de
+responder e a releitura do banco. Duas montagens de rótulo divergiriam sem
+ninguém perceber, e divergiriam exatamente onde mais confunde.
+
+⚠️ E o cartão **nasce antes da resposta**, com `estado: "rodando"`. É isso que
+responde ao *"não mostra qual agente está rodando"*: a identidade é conhecida no
+instante do clique.
+
+### 3. "1 operações"
+
+Singular ganhou chave própria nos quatro idiomas (`sampleUm`, `opsUma`,
+`mesasExpiradaUma`, `quotaLeftUm`), e `quatro-idiomas.test.ts` trava três coisas
+de uma vez: paridade de chaves entre en/pt/es/zh, os mesmos `{placeholders}` em
+todas, e que a chave singular **não interpole** `{n}` (senão ela é a plural com
+outro nome).
+
+### 4. ⚠️⚠️ O QUE O BANCO MOSTROU: dez botões, um seletor só
+
+Lendo as rodadas do dono para conferir o conserto:
+
+| hora | mesa clicada | líquido | n |
+|------|--------------|---------|---|
+| 08:35 | **FREYJA** (`strat_dex`) | `+2,140788280112371%` | 1 |
+| 08:37 | **ULLR** (`ullr_launch`) | `+2,140788280112371%` | 1 |
+
+Idêntico até a última casa decimal. Não é coincidência: **`rodarMesa` não recebe
+a mesa**. Ela roda um caminho único — o cardápio de `candidateAttempts` com a
+política "primeiro playbook com plano" — e o nome era o rótulo colado por cima.
+
+E as dez mesas que o botão oferecia não fazem isso:
+
+- as **quatro de arbitragem** (Setor B) não tomam trade direcional nenhum;
+- a **URÐR** ordena os candidatos pelo histórico medido e **veta** os negativos
+  naquele regime;
+- a **SKAÐI** aplica o filtro de clima e revalida a geometria no prazo curto;
+- a **HEIMDALL** é scanner de evento;
+- a **ULLR** caça pool recém-nascida (2–48h de vida, TVL ≥ US$ 80 mil) com
+  bracket fixo 18%/9% — ela nem olha BTC.
+
+É literalmente o que o cabeçalho de `mesas-da-casa.ts` diz que não se faz —
+*"o cliente rodando uma coisa achando que é outra, com a nossa marca"* — e
+entrou pela porta do botão, três dias depois da frase ser escrita.
+
+**Correção:** `MESAS_QUE_A_RODADA_REPRODUZ` = `strat_mech` (VÖLUNDR, o controle)
+e `strat_dex` (FREYJA, a mesma seleção na DEX). As outras oito **continuam na
+vitrine** — o card, a medição e as ressalvas são honestos e são o produto; o que
+saiu foi a promessa de reproduzir o que não reproduzimos. O filtro está na
+**rota**, não só no botão: checagem que mora na tela é checagem que um `curl`
+contorna.
+
+⚠️ E como as duas rodáveis partilham o seletor, a ressalva `mesmoSeletor` explica
+por que elas devolvem o mesmo número quando o cliente escolhe a mesma praça —
+senão isso parece defeito de conta em vez do que é.
+
+### O que mais mudou por tabela
+
+- **Migration 0042**: `competidor_pct` (nulo = não medido, nunca 0) e
+  `nao_medido_chaves` (a chave, para a tela traduzir; a prosa continua em
+  `nao_medido` para quem abrir o Postgres). Aplicada no banco.
+- **O retorno de `gravarResultado` passou a ser lido.** Ele não era, e
+  `supabase-js` resolve com `{ data: null, error }` em vez de lançar: uma coluna
+  faltando apagaria a rodada do histórico sem log, sem erro na tela e com a
+  resposta parecendo perfeita. Agora a rodada fecha como `falhou` com o motivo.

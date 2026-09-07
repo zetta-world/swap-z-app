@@ -21,6 +21,12 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { Loader2, AlertTriangle, Info, ChevronDown } from "lucide-react";
 import { useT } from "@/lib/i18n";
+import { useUI } from "@/lib/store/ui";
+import { shouldTint } from "@/lib/admin/sample";
+import {
+  identidadeDaMesa, identidadeDaPropria, type Identidade, type Contexto,
+} from "@/lib/bancada/identidade";
+import { medidaDoPost, medidaDoHistorico, acertoPct, type Medida } from "@/lib/bancada/resposta";
 import { oPedagioAntesDeRodar } from "@/lib/bancada/custo";
 import { PRACAS, rotuloDaPraca, type EstrategiaDoCliente, type Praca, type Papel } from "@/lib/bancada/vocabulario";
 import { classificarResultado } from "@/lib/admin/cor-resultado";
@@ -51,30 +57,42 @@ interface Salva {
   papelAdiante: boolean; papelDesde: string | null;
 }
 
-interface Resposta {
-  ok: boolean;
-  error?: string;
-  porque?: string;
-  restamHoje?: number;
-  upgradeUrl?: string;
-  veredito?: {
-    veredito: "perdeu" | "ganhou" | "ganhou_perdendo_do_indice" | "ruido";
-    pinta: boolean;
-    competidorPct: number | null;
-    equilibrioPct: number | null;
-    naoMedidoChaves: ChaveNaoMedido[];
-  };
-  resumo?: {
-    n: number; acertos: number; acertoPct: number | null;
-    brutoPct: number; taxaPct: number; liquidoCompostoPct: number;
-  };
-  /** ⚠️ As operações que geraram o número — o que faltava aparecer. */
-  operacoes?: Array<{
-    simbolo?: string; abriuEm: number; fechouEm: number;
-    entrada: number; saida: number;
-    desfecho: "alvo" | "stop" | "expirada";
-    brutoPct: number; liquidoPct: number; playbook?: string;
-  }>;
+/** Uma operação do extrato — a mesma forma vindo do POST ou do histórico. */
+interface Op {
+  simbolo?: string; abriuEm: number; fechouEm: number;
+  entrada: number; saida: number;
+  desfecho: "alvo" | "stop" | "expirada";
+  brutoPct: number; liquidoPct: number; playbook?: string | null;
+}
+
+/**
+ * UMA RODADA NA TELA — com nome, contexto e hora.
+ *
+ * ⚠️⚠️ ELA É UM ITEM DE LISTA, NÃO UM ESTADO ÚNICO. Até 07/09 a bancada tinha
+ * `const [r, setR]`: a segunda rodada apagava a primeira, e o dono via um
+ * `+2,14%` sem dono. *"cada teste que rodo sobrepõe o outro, e não mostra qual
+ * agente está rodando"*. Uma lista não sobrepõe nada, e cada item se apresenta.
+ *
+ * ⚠️ E O CARTÃO NASCE ANTES DA RESPOSTA. É com `estado: "rodando"` que a tela
+ * consegue dizer QUAL mesa está rodando enquanto ela roda — o pedido literal.
+ */
+interface Corrida {
+  /** Chave local e estável. ⚠️ Nunca o índice: a lista cresce pela frente. */
+  chave: string;
+  /** O id no banco — nulo enquanto a resposta não chegou. */
+  rodadaId: string | null;
+  quando: string;
+  identidade: Identidade;
+  contexto: Contexto;
+  estado: "rodando" | "pronta" | "recusada" | "falhou";
+  /** O motivo, palavra por palavra do SERVIDOR — ele carrega o número exato. */
+  porque: string | null;
+  upgradeUrl: string | null;
+  medida: Medida | null;
+  /** ⚠️ `null` = ainda não buscadas; `[]` = buscadas e não houve nenhuma. */
+  ops: Op[] | null;
+  opsCarregando: boolean;
+  aberta: boolean;
 }
 
 export default function Bancada() {
@@ -95,7 +113,12 @@ export default function Bancada() {
   const [janelaDias, setJanela] = useState(365);
 
   const [rodando, setRodando] = useState(false);
-  const [r, setR] = useState<Resposta | null>(null);
+  /**
+   * ⚠️⚠️ AS RODADAS SÃO UMA LISTA, DA MAIS NOVA PARA A MAIS VELHA. Ver `Corrida`.
+   */
+  const [corridas, setCorridas] = useState<Corrida[]>([]);
+  const [restamHoje, setRestamHoje] = useState<number | null>(null);
+  const [historicoFalhou, setHistoricoFalhou] = useState(false);
 
   const [verCasa, setVerCasa] = useState(false);
   const [mesas, setMesas] = useState<CartaoDaMesa[]>([]);
@@ -163,7 +186,9 @@ export default function Bancada() {
     setHoras(e.params.horasLimite);
     setPraca(e.params.praca);
     setPapel(e.params.papel);
-    setR(null);
+    // ⚠️ NÃO limpa as rodadas. Carregar um exemplo é mudar o formulário; apagar
+    // o que já foi medido seria destruir trabalho do cliente por um clique que
+    // ele deu para COMPARAR.
   }
 
   const estrategia: EstrategiaDoCliente = useMemo(() => ({
@@ -212,40 +237,163 @@ export default function Bancada() {
   }
 
   /**
+   * ⚠️⚠️ O HISTÓRICO ENTRA NA TELA — e é a metade do conserto que não se vê.
+   *
+   * Sem isto, recarregar a página apagava a tarde inteira de testes: as
+   * rodadas continuavam no banco (`bancada_rodada` desde a fase 1) e nenhuma
+   * tela as lia de volta. É o mesmo defeito que `bancada_posicao` teve — a peça
+   * existe, é testada, e está desligada do caminho que o cliente enxerga.
+   *
+   * ⚠️ ELAS CHEGAM FECHADAS. Trinta cartões abertos seriam uma tela de rolagem
+   * sem hierarquia; o que o cliente quer ao chegar é reconhecer a rodada, não
+   * reler o extrato dela.
+   */
+  const carregarHistorico = useCallback(async () => {
+    try {
+      const res = await fetch("/api/bancada/rodadas");
+      const j = await res.json();
+      if (!j?.ok || !Array.isArray(j.rodadas)) { setHistoricoFalhou(true); return; }
+      setHistoricoFalhou(false);
+      setCorridas(j.rodadas.map((r: Record<string, unknown>): Corrida => {
+        const st = r.status;
+        return {
+          chave: `db:${String(r.id)}`,
+          rodadaId: String(r.id),
+          quando: String(r.quando ?? ""),
+          identidade: r.identidade as Identidade,
+          contexto: r.contexto as Contexto,
+          estado: st === "recusada" ? "recusada"
+            : st === "falhou" ? "falhou"
+            // ⚠️ `rodando` no banco é uma rodada que nunca fechou (deploy no
+            // meio, timeout). Ela NÃO volta com giro eterno na tela: isso
+            // prometeria um resultado que não vem mais.
+            : st === "rodando" ? "falhou"
+            : "pronta",
+          porque: typeof r.porque === "string" ? r.porque : null,
+          upgradeUrl: null,
+          medida: medidaDoHistorico(r.resultado),
+          ops: null, opsCarregando: false, aberta: false,
+        };
+      }));
+    } catch { setHistoricoFalhou(true); }
+  }, []);
+  useEffect(() => { void carregarHistorico(); }, [carregarHistorico]);
+
+  /** Troca UMA corrida pela chave, sem tocar nas outras. */
+  const atualizar = useCallback((chave: string, mudanca: Partial<Corrida>) => {
+    setCorridas((atual) => atual.map((c) => (c.chave === chave ? { ...c, ...mudanca } : c)));
+  }, []);
+
+  /**
+   * Abre (ou fecha) o extrato de uma rodada.
+   *
+   * ⚠️ AS OPERAÇÕES DA RODADA RELIDA SÃO BUSCADAS SOB DEMANDA. Uma rodada de
+   * mesa sobre quatro pares passa de 300 linhas; mandar isso trinta vezes só
+   * para desenhar uma lista de títulos seria pagar o extrato inteiro de todo
+   * mundo para mostrar um nome.
+   */
+  const alternarExtrato = useCallback(async (c: Corrida) => {
+    if (c.aberta) { atualizar(c.chave, { aberta: false }); return; }
+    atualizar(c.chave, { aberta: true });
+    if (c.ops != null || c.rodadaId == null || c.opsCarregando) return;
+    atualizar(c.chave, { opsCarregando: true });
+    try {
+      const res = await fetch(`/api/bancada/rodadas?id=${encodeURIComponent(c.rodadaId)}`);
+      const j = await res.json();
+      // ⚠️ Falha vira `[]`? NÃO. `[]` afirma "não houve operação"; deixar em
+      // `null` mantém o botão tentando de novo, que é a verdade.
+      atualizar(c.chave, {
+        ops: j?.ok && Array.isArray(j.operacoes) ? (j.operacoes as Op[]) : null,
+        opsCarregando: false,
+      });
+    } catch { atualizar(c.chave, { opsCarregando: false }); }
+  }, [atualizar]);
+
+  /**
+   * ⚠️⚠️ O CARTÃO NASCE ANTES DA RESPOSTA — e é isto que responde ao *"não
+   * mostra qual agente está rodando"*. A identidade e o contexto são conhecidos
+   * no instante do clique; esperar o servidor para exibi-los seria esconder por
+   * trinta segundos a única coisa que o cliente precisa ver enquanto espera.
+   */
+  function abrirCartao(identidade: Identidade, ctx: Contexto): string {
+    const chave = `local:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    setCorridas((atual) => [{
+      chave, rodadaId: null, quando: new Date().toISOString(),
+      identidade, contexto: ctx, estado: "rodando",
+      porque: null, upgradeUrl: null, medida: null,
+      ops: null, opsCarregando: false, aberta: true,
+    }, ...atual]);
+    return chave;
+  }
+
+  /**
+   * ⚠️ Uma resposta do POST fecha o cartão que a pediu — pela CHAVE, nunca pela
+   * posição. Duas rodadas podem estar no ar ao mesmo tempo (a mesa e a própria),
+   * e a segunda a responder não pode escrever no cartão da primeira.
+   */
+  function fecharCartao(chave: string, j: Record<string, unknown> | null) {
+    if (!j || j.ok !== true) {
+      atualizar(chave, {
+        estado: "recusada",
+        porque: typeof j?.porque === "string" ? j.porque : null,
+        upgradeUrl: typeof j?.upgradeUrl === "string" ? j.upgradeUrl : null,
+      });
+      return;
+    }
+    if (typeof j.restamHoje === "number") setRestamHoje(j.restamHoje);
+    atualizar(chave, {
+      estado: "pronta",
+      rodadaId: typeof j.rodadaId === "string" ? j.rodadaId : null,
+      medida: medidaDoPost(j),
+      // ⚠️ O POST já traz o extrato: não há segunda volta a dar.
+      ops: Array.isArray(j.operacoes) ? (j.operacoes as Op[]) : [],
+    });
+  }
+
+  /**
    * ⚠️ Roda o SELETOR REAL da mesa sobre a janela do cliente — não uma
    * tradução dela para o formulário. Manda `mesa`, e a rota não aceita alvo
    * nem stop neste modo: eles saem do playbook.
    */
-  async function rodarMesa(mesaId: string) {
-    setRodandoMesa(mesaId); setR(null);
+  async function rodarMesa(m: CartaoDaMesa) {
+    setRodandoMesa(m.source);
+    // ⚠️ `1h` porque é assim que a mesa CAMINHA, qualquer que seja o intervalo
+    // marcado no formulário — a rota faz o mesmo, e o cartão tem de dizer a
+    // verdade sobre o que rodou.
+    const chave = abrirCartao(identidadeDaMesa(m.source, m.nome), {
+      simbolos, intervalo: "1h", janelaDias, praca, papel, capitalUsd: capital,
+    });
     try {
       const res = await fetch("/api/bancada/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mesa: mesaId, simbolos, capitalUsd: capital, janelaDias,
+          mesa: m.source, simbolos, capitalUsd: capital, janelaDias,
           praca, papel,
         }),
       });
-      setR(await res.json());
+      fecharCartao(chave, await res.json());
     } catch {
-      setR({ ok: false, error: "rede", porque: "" });
+      atualizar(chave, { estado: "falhou", porque: null });
     } finally {
       setRodandoMesa(null);
     }
   }
 
   async function rodar() {
-    setRodando(true); setR(null);
+    setRodando(true);
+    const chave = abrirCartao(identidadeDaPropria(estrategia), {
+      simbolos, intervalo, janelaDias, praca, papel, capitalUsd: capital,
+    });
     try {
       const res = await fetch("/api/bancada/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ estrategia, simbolos, intervalo, capitalUsd: capital, janelaDias }),
       });
-      setR(await res.json());
+      fecharCartao(chave, await res.json());
     } catch {
-      setR({ ok: false, error: "rede", porque: "" });
+      atualizar(chave, { estado: "falhou", porque: null });
     } finally {
       setRodando(false);
     }
@@ -273,7 +421,7 @@ export default function Bancada() {
           <ul className="mt-3 space-y-2">
             {mesas.map((m) => (
               <MesaDaCasa key={m.source} m={m} rodando={rodandoMesa === m.source}
-                onRodar={() => rodarMesa(m.source)} />
+                onRodar={() => rodarMesa(m)} />
             ))}
           </ul>
         </section>
@@ -462,8 +610,10 @@ export default function Bancada() {
           className="mt-4 w-full rounded-xl bg-grad-cyan px-4 py-2.5 text-sm font-medium text-bg disabled:opacity-40">
           {rodando ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{t("bancada.running")}</span> : t("bancada.run")}
         </button>
-        {r?.ok && typeof r.restamHoje === "number" && (
-          <p className="mt-2 text-center text-xs text-ink-3">{t("bancada.quotaLeft", { n: r.restamHoje })}</p>
+        {restamHoje != null && (
+          <p className="mt-2 text-center text-xs text-ink-3">
+            {restamHoje === 1 ? t("bancada.quotaLeftUm") : t("bancada.quotaLeft", { n: restamHoje })}
+          </p>
         )}
       </section>
 
@@ -580,53 +730,121 @@ export default function Bancada() {
         </section>
       )}
 
-      {/* ── O VEREDITO, ANTES DO PLACAR ─────────────────────────────── */}
-      {r && !r.ok && (
-        <section className="rounded-2xl border border-gold/30 bg-gold/5 p-5">
-          <p className="text-sm font-medium text-gold">{t("bancada.errorTitle")}</p>
-          {/* ⚠️ O motivo vem do SERVIDOR e é mostrado como veio: ele carrega o
-              número exato (o alvo mínimo, o teto do plano) que uma tradução
-              genérica apagaria. */}
-          {r.porque && <p className="mt-1 text-sm text-ink-2">{r.porque}</p>}
-          {r.upgradeUrl && (
-            <a href={r.upgradeUrl} className="mt-3 inline-block text-xs text-cyan underline">{t("bancada.upgrade")}</a>
+      {/* ── AS RODADAS, EMPILHADAS ──────────────────────────────────── */}
+      {/* ⚠️⚠️ UMA LISTA, DA MAIS NOVA PARA A MAIS VELHA. Antes de 07/09 aqui
+          havia um estado único: a segunda rodada apagava a primeira, e o
+          número que sobrava não dizia de onde veio. O dono: *"cada teste que
+          rodo sobrepõe o outro, e não mostra qual agente está rodando... cadê a
+          experiência Premium?"*. Comparar duas ideias é o trabalho inteiro
+          desta tela — e não dá para comparar o que foi apagado. */}
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-ink">{t("bancada.histTitulo")}</p>
+            <p className="mt-0.5 text-xs text-ink-3">{t("bancada.histSub")}</p>
+          </div>
+          {corridas.length > 0 && (
+            <span className="flex-shrink-0 text-xs tabular-nums text-ink-4">{corridas.length}</span>
           )}
-        </section>
-      )}
+        </div>
 
-      {r?.ok && r.veredito && r.resumo && <Veredito r={r} />}
+        {/* ⚠️ A FALHA DE LEITURA TEM NOME. Uma lista vazia por erro de rede e
+            uma lista vazia por nunca ter rodado nada são a mesma imagem e
+            coisas opostas — e a primeira faria o cliente achar que perdeu o
+            trabalho dele. */}
+        {historicoFalhou && corridas.length === 0 && (
+          <p className="rounded-2xl border border-gold/30 bg-gold/5 p-4 text-xs leading-relaxed text-gold">
+            {t("bancada.histFalha")}
+          </p>
+        )}
 
-      {/* ── AS OPERAÇÕES, uma a uma ─────────────────────────────────── */}
-      {/* ⚠️ O dono, na primeira rodada real: "não aparece as entradas feitas,
-          não aparece nada". Um veredito sem as operações é um número sem como
-          conferir — o cliente lê "−1,85%" e não sabe se foram quatro entradas
-          ruins ou uma catástrofe, nem quando entrou, nem por que saiu. */}
-      {r?.ok && r.operacoes && <Operacoes ops={r.operacoes} />}
+        {!historicoFalhou && corridas.length === 0 && (
+          <p className="rounded-2xl border border-white/5 bg-bg-1/40 p-5 text-xs text-ink-3">
+            {t("bancada.histVazio")}
+          </p>
+        )}
+
+        {corridas.map((c) => (
+          <CartaoDeRodada key={c.chave} c={c} onAlternar={() => void alternarExtrato(c)} />
+        ))}
+      </section>
     </div>
   );
 }
 
-function Veredito({ r }: { r: Resposta }) {
-  const t = useT();
-  const v = r.veredito!;
-  const s = r.resumo!;
+/**
+ * ⚠️ A HORA NO IDIOMA DE QUEM LÊ. Uma pilha de rodadas sem hora é uma pilha
+ * sem ordem legível — "a de antes" e "a de ontem" viram a mesma coisa.
+ */
+const BCP47: Record<string, string> = { pt: "pt-BR", es: "es-ES", zh: "zh-CN", en: "en-US" };
 
-  const titulo =
-    s.n === 0 ? t("bancada.verdictNoTrades")
-    : v.veredito === "perdeu" ? t("bancada.verdictLost")
-    : v.veredito === "ganhou" ? t("bancada.verdictWon")
-    : v.veredito === "ganhou_perdendo_do_indice" ? t("bancada.verdictBehind")
-    : t("bancada.verdictNoise");
+function useQuando() {
+  const lang = useUI((st) => st.lang);
+  return useCallback((iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString(BCP47[lang] ?? "en-US", {
+      day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+  }, [lang]);
+}
+
+/** O nome do gatilho de uma estratégia própria, curto — `Média(20)`. */
+function useRotuloDaIdentidade() {
+  const t = useT();
+  return useCallback((id: Identidade): string => {
+    if (id.tipo === "mesa") return id.nome;
+    const curto = id.entrada.tipo === "media" ? t("bancada.triggerMediaCurto")
+      : id.entrada.tipo === "canal" ? t("bancada.triggerCanalCurto") : t("bancada.triggerRsiCurto");
+    const gatilho = id.entrada.tipo === "rsi"
+      ? `${curto}(${id.entrada.n}) ${id.entrada.nivel}`
+      : `${curto}(${id.entrada.n})`;
+    return t("bancada.propriaResumo", {
+      gatilho,
+      direcao: id.direcao === "compra" ? t("bancada.buy") : t("bancada.sell"),
+      alvo: id.alvoPct, stop: id.stopPct, horas: id.horasLimite,
+    });
+  }, [t]);
+}
+
+/**
+ * UM CARTÃO DE RODADA — e ele SEMPRE diz quem é.
+ *
+ * ⚠️⚠️ O CABEÇALHO VEM ANTES DO NÚMERO, e não é diagramação: é a correção de
+ * 07/09. Um `+2,14%` sozinho na tela não diz se saiu da FREYJA sobre BTC em
+ * 365 dias ou de um RSI(14) sobre SOL em 90 — e o dono tinha exatamente isso na
+ * frente dele, duas vezes, sem conseguir distinguir.
+ *
+ * ⚠️ E O VEREDITO CONTINUA VINDO ANTES DO PLACAR. Número grande primeiro faz
+ * retorno parecer aprovação: foi assim que a grade apareceu VERDE tendo perdido
+ * metade do capital.
+ */
+function CartaoDeRodada({ c, onAlternar }: { c: Corrida; onAlternar: () => void }) {
+  const t = useT();
+  const quando = useQuando();
+  const rotulo = useRotuloDaIdentidade();
+  const m = c.medida;
 
   /**
    * ⚠️ A CLASSIFICAÇÃO VEM DA REGRA DO ADMIN (`classificarResultado`), a COR vem
    * da paleta do cliente. É a regra que atravessa, nunca o CSS.
+   *
+   * ⚠️ E `shouldTint` decide a cor NOS DOIS CAMINHOS — o do POST e o do
+   * histórico. Confiar num `pinta` que só a resposta fresca traz faria a mesma
+   * rodada mudar de cor depois de um F5.
    */
-  const classe = classificarResultado(
-    s.n > 0 ? s.liquidoCompostoPct : null,
-    v.competidorPct == null ? null : s.liquidoCompostoPct - v.competidorPct,
+  const classe = m == null ? "sem_dado" : classificarResultado(
+    m.n > 0 ? m.liquidoPct : null,
+    m.competidorPct == null ? null : m.liquidoPct - m.competidorPct,
   );
-  const cor = corDoNumero(classe, v.pinta);
+  const cor = corDoNumero(classe, m != null && shouldTint(m.n));
+
+  const titulo = m == null ? ""
+    : m.n === 0 ? t("bancada.verdictNoTrades")
+    : m.veredito === "perdeu" ? t("bancada.verdictLost")
+    : m.veredito === "ganhou" ? t("bancada.verdictWon")
+    : m.veredito === "ganhou_perdendo_do_indice" ? t("bancada.verdictBehind")
+    : t("bancada.verdictNoise");
 
   const NM: Record<ChaveNaoMedido, string> = {
     derrapagem: t("bancada.nmSlippage"),
@@ -636,35 +854,124 @@ function Veredito({ r }: { r: Resposta }) {
     bracketVariavel: t("bancada.nmBracket"),
   };
 
+  const borda = c.estado === "rodando" ? "border-cyan/30"
+    : c.estado === "recusada" || c.estado === "falhou" ? "border-gold/30"
+    : "border-white/5";
+
   return (
-    <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5 space-y-4">
-      <p className={`text-lg font-semibold ${cor}`}>{titulo}</p>
-
-      <div className="grid grid-cols-3 gap-3 text-sm">
-        <Numero rotulo={t("bancada.gross")} valor={s.brutoPct} />
-        <Numero rotulo={t("bancada.fees")} valor={s.taxaPct} />
-        <Numero rotulo={t("bancada.net")} valor={s.liquidoCompostoPct} destaque cor={cor} />
-      </div>
-
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
-        <span>{t("bancada.sample", { n: s.n })}</span>
-        {s.acertoPct != null && v.equilibrioPct != null && (
-          <span>{t("bancada.hitRate", { pct: s.acertoPct.toFixed(0), alvo: v.equilibrioPct.toFixed(1) })}</span>
-        )}
-        {/* ⚠️ `null` é CINZA e diz "—", nunca 0%: não medimos ≠ ficou parado. */}
-        <span>{t("bancada.holding")}: {v.competidorPct == null ? "—" : `${v.competidorPct.toFixed(2)}%`}</span>
-      </div>
-
-      <div className="rounded-xl border border-white/5 bg-bg-2/60 p-3">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-ink-2">
-          <Info className="h-3 w-3" />
-          {t("bancada.notMeasured")}
+    <article className={`overflow-hidden rounded-2xl border ${borda} bg-bg-1/40`}>
+      {/* ── QUEM RODOU ─────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between gap-3 p-5 pb-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className={`whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] ${
+              c.identidade.tipo === "mesa" ? "border-cyan/30 text-cyan" : "border-white/10 text-ink-3"}`}>
+              {c.identidade.tipo === "mesa" ? t("bancada.etiquetaMesa") : t("bancada.etiquetaPropria")}
+            </span>
+            {c.estado === "rodando" && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-cyan">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t("bancada.histEmAndamento")}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 break-words text-[13px] font-medium text-ink">{rotulo(c.identidade)}</p>
+          {/* ⚠️ O CONTEXTO ANDA COLADO NO NOME. Um número sem os símbolos, a
+              janela e a praça é um número sem pergunta: a mesma mesa rende
+              coisas opostas em 90 e em 730 dias, e paga o dobro na DEX. */}
+          <p className="mt-0.5 text-[11px] leading-relaxed text-ink-4">
+            {c.contexto.simbolos.join(" · ") || "—"}
+            {" · "}{c.contexto.janelaDias}{t("bancada.days").slice(0, 1)}
+            {" · "}{c.contexto.intervalo}
+            {" · "}{rotuloDaPraca(c.contexto.praca)} {c.contexto.papel}
+            {c.quando && <> · {quando(c.quando)}</>}
+          </p>
         </div>
-        <ul className="mt-1.5 space-y-1 text-xs text-ink-3">
-          {v.naoMedidoChaves.map((k) => <li key={k}>· {NM[k]}</li>)}
-        </ul>
+
+        <div className="flex-shrink-0 text-right">
+          {c.estado === "rodando" ? (
+            <Loader2 className="ml-auto h-5 w-5 animate-spin text-cyan" />
+          ) : m != null ? (
+            <>
+              <span className={`block text-xl font-semibold tabular-nums ${cor}`}>
+                {m.liquidoPct >= 0 ? "+" : ""}{m.liquidoPct.toFixed(2)}%
+              </span>
+              <span className="block text-[10px] text-ink-4">{t("bancada.net")}</span>
+            </>
+          ) : null}
+        </div>
       </div>
-    </section>
+
+      {/* ── O QUE ACONTECEU ────────────────────────────────────────── */}
+      {(c.estado === "recusada" || c.estado === "falhou") && (
+        <div className="px-5 pb-5">
+          <p className="text-xs font-medium text-gold">
+            {c.estado === "recusada" ? t("bancada.histRecusada") : t("bancada.histFalhou")}
+          </p>
+          {/* ⚠️ O motivo vem do SERVIDOR e é mostrado como veio: ele carrega o
+              número exato (o alvo mínimo, o teto do plano) que uma tradução
+              genérica apagaria. */}
+          {c.porque && <p className="mt-1 text-xs leading-relaxed text-ink-2">{c.porque}</p>}
+          {c.upgradeUrl && (
+            <a href={c.upgradeUrl} className="mt-2 inline-block text-xs text-cyan underline">{t("bancada.upgrade")}</a>
+          )}
+        </div>
+      )}
+
+      {c.estado === "pronta" && m != null && (
+        <div className="space-y-4 px-5 pb-5">
+          <p className={`text-base font-semibold ${cor}`}>{titulo}</p>
+
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <Numero rotulo={t("bancada.gross")} valor={m.brutoPct} />
+            <Numero rotulo={t("bancada.fees")} valor={m.taxaPct} />
+            <Numero rotulo={t("bancada.net")} valor={m.liquidoPct} destaque cor={cor} />
+          </div>
+
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
+            {/* ⚠️ "1 operações" era o que estava na tela. Singular tem chave
+                própria nos quatro idiomas — o plural interpolado não é
+                gramática, é um descuido que o cliente lê como desleixo. */}
+            <span>{m.n === 1 ? t("bancada.sampleUm") : t("bancada.sample", { n: m.n })}</span>
+            {acertoPct(m) != null && m.equilibrioPct != null && (
+              <span>{t("bancada.hitRate", {
+                pct: acertoPct(m)!.toFixed(0), alvo: m.equilibrioPct.toFixed(1),
+              })}</span>
+            )}
+            {/* ⚠️ `null` é CINZA e diz "—", nunca 0%: não medimos ≠ ficou parado. */}
+            <span>{t("bancada.holding")}: {m.competidorPct == null ? "—" : `${m.competidorPct.toFixed(2)}%`}</span>
+          </div>
+
+          <button type="button" onClick={onAlternar}
+            className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/5 bg-bg-2/60 px-3 py-2 text-xs text-ink-3 transition hover:border-white/15 hover:text-ink-2">
+            <span>{c.aberta ? t("bancada.histFechar") : t("bancada.histVer")}</span>
+            <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${c.aberta ? "rotate-180" : ""}`} />
+          </button>
+
+          {c.aberta && (
+            <>
+              <div className="rounded-xl border border-white/5 bg-bg-2/60 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-ink-2">
+                  <Info className="h-3 w-3" />
+                  {t("bancada.notMeasured")}
+                </div>
+                <ul className="mt-1.5 space-y-1 text-xs leading-relaxed text-ink-3">
+                  {m.naoMedidoChaves.map((k) => <li key={k}>· {NM[k]}</li>)}
+                  {/* ⚠️ OS PROBLEMAS DE LEITURA NÃO TÊM CHAVE — "BTC 1h: só
+                      chegaram 66% da janela" só existe como frase, e escondê-la
+                      deixaria o cartão mais bonito e menos verdadeiro. Quem
+                      separa prosa-de-chave de problema é o SERVIDOR: a tabela
+                      `NAO_MEDIDO` mora lá, e duplicá-la aqui seria uma segunda
+                      cópia para sair de sincronia. */}
+                  {m.naoMedidoTexto.map((x) => <li key={x}>· {x}</li>)}
+                </ul>
+              </div>
+              <Operacoes ops={c.ops} carregando={c.opsCarregando} />
+            </>
+          )}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -699,14 +1006,21 @@ function MesaDaCasa({ m, rodando, onRodar }: { m: CartaoDaMesa; rodando: boolean
           </p>
           <p className="mt-0.5 text-xs text-ink-3">{m.subtitulo}</p>
           <p className="mt-1 text-xs italic leading-relaxed text-ink-4">{m.testa}</p>
-          {/* ⚠️ O BOTÃO RODA O SELETOR REAL, não uma tradução. É a mesma linha
-              de código que a mesa roda ao vivo, sobre os símbolos e a janela
-              que o cliente escolheu abaixo — e com o pedágio da praça dele. */}
-          <button type="button" onClick={onRodar} disabled={rodando}
-            className={`mt-2 ${CHIP} ${CHIP_OFF} disabled:opacity-40`}>
-            {rodando ? t("bancada.mesasRodando") : t("bancada.mesasRodar")}
-          </button>
-          <p className="mt-1 text-[10px] leading-relaxed text-ink-4">{t("bancada.mesasSuaJanela")}</p>
+          {/* ⚠️⚠️ O BOTÃO SÓ APARECE EM QUEM A RODADA REPRODUZ. Em 07/09 ele
+              aparecia nas dez, e por baixo havia um seletor só: ULLR e FREYJA
+              devolveram o mesmo número até a última decimal. Uma mesa sem o
+              botão não está escondida — ela diz por que não roda. */}
+          {m.podeRodar ? (
+            <>
+              <button type="button" onClick={onRodar} disabled={rodando}
+                className={`mt-2 ${CHIP} ${CHIP_OFF} disabled:opacity-40`}>
+                {rodando ? t("bancada.mesasRodando") : t("bancada.mesasRodar")}
+              </button>
+              <p className="mt-1 text-[10px] leading-relaxed text-ink-4">{t("bancada.mesasSuaJanela")}</p>
+            </>
+          ) : (
+            <p className="mt-2 text-[10px] leading-relaxed text-ink-4">{t("bancada.mesasSoVitrine")}</p>
+          )}
         </div>
         <div className="flex-shrink-0 text-right">
           {m.liquidoPorOpPct == null ? (
@@ -727,7 +1041,11 @@ function MesaDaCasa({ m, rodando, onRodar }: { m: CartaoDaMesa; rodando: boolean
           <span>{t("bancada.mesasAcerto", { pct: m.acertoPct.toFixed(0), n: m.medicao.decididos })}</span>
           {/* ⚠️ Expirada aparece SEMPRE que existe: ela não é ganho nem perda,
               e uma mesa que expira mais do que decide é outra coisa. */}
-          {m.medicao.expiradas > 0 && <span>{t("bancada.mesasExpiradas", { n: m.medicao.expiradas })}</span>}
+          {m.medicao.expiradas > 0 && (
+            <span>{m.medicao.expiradas === 1
+              ? t("bancada.mesasExpiradaUma")
+              : t("bancada.mesasExpiradas", { n: m.medicao.expiradas })}</span>
+          )}
           <span>{t("bancada.mesasJanela", {
             simbolos: m.medicao.simbolos, dias: m.medicao.dias,
             de: m.medicao.primeiroDia, ate: m.medicao.ultimoDia,
@@ -749,30 +1067,43 @@ function MesaDaCasa({ m, rodando, onRodar }: { m: CartaoDaMesa; rodando: boolean
   );
 }
 
-/** A lista de operações de uma rodada — o extrato que sustenta o veredito. */
-function Operacoes({ ops }: { ops: NonNullable<Resposta["operacoes"]> }) {
+/**
+ * A lista de operações de uma rodada — o extrato que sustenta o veredito.
+ *
+ * ⚠️ TRÊS ESTADOS, NÃO DOIS. `carregando`, `[]` e `null` são coisas diferentes:
+ * "estou buscando", "busquei e não houve nenhuma" e "não consegui buscar". As
+ * três desenham a mesma caixa vazia se ninguém as separar — e a terceira faria
+ * o cliente ler "esta rodada não operou" sobre uma rodada que operou.
+ */
+function Operacoes({ ops, carregando }: { ops: Op[] | null; carregando: boolean }) {
   const t = useT();
-  if (ops.length === 0) {
+  if (carregando) {
     return (
-      <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
-        <p className="text-sm font-medium text-ink">{t("bancada.opsTitulo")}</p>
-        {/* ⚠️ "Nenhuma posição aberta" é uma RESPOSTA, não uma tela vazia. */}
-        <p className="mt-1 text-xs text-ink-3">{t("bancada.opsVazio")}</p>
-      </section>
+      <p className="inline-flex items-center gap-2 text-xs text-ink-3">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />{t("bancada.histCarregando")}
+      </p>
     );
+  }
+  if (ops == null) return <p className="text-xs text-gold">{t("bancada.errorTitle")}</p>;
+  if (ops.length === 0) {
+    // ⚠️ "Nenhuma posição aberta" é uma RESPOSTA, não uma tela vazia.
+    return <p className="text-xs text-ink-3">{t("bancada.histSemOps")}</p>;
   }
 
   const dia = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
   return (
-    <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
+    <div>
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-medium text-ink">{t("bancada.opsTitulo")}</p>
-        <span className="text-xs text-ink-3">{t("bancada.opsQuantas", { n: ops.length })}</span>
+        <p className="text-xs font-medium text-ink-2">{t("bancada.opsTitulo")}</p>
+        {/* ⚠️ "1 operações" era o que estava na tela — singular tem chave. */}
+        <span className="text-xs text-ink-4">
+          {ops.length === 1 ? t("bancada.opsUma") : t("bancada.opsQuantas", { n: ops.length })}
+        </span>
       </div>
 
-      <ul className="mt-3 space-y-1.5">
-        {ops.map((o, i) => {
+      <ul className="mt-2 space-y-1.5">
+        {ops.map((o: Op, i: number) => {
           /**
            * ⚠️ A COR SEGUE O DESFECHO, não o sinal do número: uma EXPIRADA no
            * lucro continua cinza. Ela não é ganho nem perda — contá-la como
@@ -804,7 +1135,7 @@ function Operacoes({ ops }: { ops: NonNullable<Resposta["operacoes"]> }) {
           );
         })}
       </ul>
-    </section>
+    </div>
   );
 }
 
