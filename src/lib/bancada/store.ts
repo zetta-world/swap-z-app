@@ -66,6 +66,17 @@ export interface EstrategiaNova {
   /** Onde a mesa olha, quando ela vira papel adiante (0039). */
   simbolos?: string[];
   intervalo?: string;
+  /**
+   * ⚠️⚠️ A INSTÂNCIA DE UM AGENTE DA CASA (0043).
+   *
+   * `null`/ausente = estratégia própria, no vocabulário fechado do cliente.
+   * Preenchido = o `source` da mesa (`strat_dex`, `strat_mech`), e o cron roda
+   * o SELETOR REAL nessa linha em vez de `sinais()`.
+   *
+   * É esta coluna que separa "o investidor tem uma instância dele rodando" de
+   * "o investidor está lendo o placar da casa".
+   */
+  mesa?: string | null;
 }
 
 export interface Estrategia extends EstrategiaNova {
@@ -80,7 +91,7 @@ type LinhaEstrategia = {
   id: string; nome: string; params: Record<string, unknown> | null;
   praca: string; papel: string; criada_em: string; arquivada_em: string | null;
   papel_adiante: boolean | null; simbolos: string[] | null;
-  intervalo: string | null; papel_desde: string | null;
+  intervalo: string | null; papel_desde: string | null; mesa: string | null;
 };
 
 function paraEstrategia(r: LinhaEstrategia): Estrategia {
@@ -96,10 +107,11 @@ function paraEstrategia(r: LinhaEstrategia): Estrategia {
     intervalo: r.intervalo ?? "1h",
     papelAdiante: Boolean(r.papel_adiante),
     papelDesde: r.papel_desde,
+    mesa: r.mesa,
   };
 }
 
-const COLUNAS_ESTRATEGIA = "id, nome, params, praca, papel, criada_em, arquivada_em, papel_adiante, simbolos, intervalo, papel_desde";
+const COLUNAS_ESTRATEGIA = "id, nome, params, praca, papel, criada_em, arquivada_em, papel_adiante, simbolos, intervalo, papel_desde, mesa";
 
 export async function salvarEstrategia(
   dono: Dono, chain: WalletChain, db: SupabaseClient, nova: EstrategiaNova,
@@ -112,6 +124,8 @@ export async function salvarEstrategia(
     papel: nova.papel,
     simbolos: nova.simbolos ?? [],
     intervalo: nova.intervalo ?? "1h",
+    // ⚠️ `null` explícito = estratégia própria. Ver `EstrategiaNova.mesa`.
+    mesa: nova.mesa ?? null,
     // ⚠️ O papel adiante NASCE DESLIGADO. Salvar não é ligar: ligar é ato
     // explícito, e é o ato que a cota de mesas conta.
     papel_adiante: false,
@@ -215,6 +229,20 @@ export interface MesaDoCron {
   simbolos: string[];
   intervalo: string;
   criadaEm: string;
+  /** ⚠️ Preenchido = instância de agente; o tick bifurca por aqui (0043). */
+  mesa: string | null;
+  /** Quando o investidor ligou — a régua do "há quanto tempo roda". */
+  papelDesde: string | null;
+  /**
+   * ⚠️ A PRAÇA E O PAPEL DESTA LINHA — e o tick precisa deles.
+   *
+   * Numa estratégia própria eles também vivem em `params`; numa instância de
+   * agente NÃO existe `params` (o bracket é variável), e sem eles o fechamento
+   * teria de chutar uma taxa única. Foi uma taxa única aplicada a todo mundo
+   * que aposentou o Maker de Faixa por engano.
+   */
+  praca: Praca;
+  papel: Papel;
 }
 
 /**
@@ -228,7 +256,7 @@ export interface MesaDoCron {
  */
 export async function mesasLigadasParaOCron(db: SupabaseClient, limite = 200): Promise<MesaDoCron[]> {
   const { data, error } = await db.from("bancada_estrategia")
-    .select("id, dono, params, simbolos, intervalo, criada_em")
+    .select("id, dono, params, simbolos, intervalo, criada_em, mesa, papel_desde, praca, papel")
     .eq("papel_adiante", true).is("arquivada_em", null)
     .order("criada_em", { ascending: true })
     .limit(Math.max(1, Math.min(1000, Math.floor(limite))));
@@ -236,6 +264,7 @@ export async function mesasLigadasParaOCron(db: SupabaseClient, limite = 200): P
   const linhas = data as unknown as Array<{
     id: string; dono: string; params: Record<string, unknown> | null;
     simbolos: string[] | null; intervalo: string | null; criada_em: string;
+    mesa: string | null; papel_desde: string | null; praca: string; papel: string;
   }>;
   return linhas.flatMap((r) => {
     const d = donoDeLinhaDoBanco(r.dono);
@@ -243,6 +272,8 @@ export async function mesasLigadasParaOCron(db: SupabaseClient, limite = 200): P
     return [{
       id: r.id, dono: d, params: r.params ?? {},
       simbolos: r.simbolos ?? [], intervalo: r.intervalo ?? "1h", criadaEm: r.criada_em,
+      mesa: r.mesa, papelDesde: r.papel_desde,
+      praca: r.praca as Praca, papel: r.papel as Papel,
     }];
   });
 }
@@ -646,6 +677,19 @@ export interface PosicaoNova {
    * a vela fecha. NÃO confundir com `aberta_em` (quando a linha foi criada).
    */
   velaEm: number | null;
+  /**
+   * ⚠️ QUAL PLAYBOOK ABRIU (0043). Nulo em estratégia própria — lá o gatilho é
+   * o do cliente e já está na regra. Numa instância de agente, sem isto o
+   * extrato do investidor vira número sem como conferir, e aqui é pior que no
+   * backtest: a posição viva aconteceu UMA vez.
+   */
+  playbook?: string | null;
+  /**
+   * ⚠️ O HORIZONTE DESTA POSIÇÃO (0043). O bracket de um agente é VARIÁVEL —
+   * sai da volatilidade daquele instante —, então cada posição carrega o seu.
+   * Relê-lo da estratégia na hora de fechar movia o alvo retroativamente.
+   */
+  horasLimite?: number | null;
 }
 
 export async function abrirPosicao(
@@ -662,6 +706,8 @@ export async function abrirPosicao(
     stop_pct: p.stopPct,
     expira_em: p.expiraEm,
     vela_em: p.velaEm,
+    playbook: p.playbook ?? null,
+    horas_limite: p.horasLimite ?? null,
     status: "aberta",
   }).select("id").single();
   if (error || !data) return falhou(error, "abrir posição");
@@ -671,7 +717,7 @@ export async function abrirPosicao(
 export interface Posicao extends PosicaoNova { id: string; dono: Dono; status: StatusPosicao; abertaEm: string }
 
 const COLUNAS_POSICAO =
-  "id, dono, estrategia_id, simbolo, lado, entrada, tamanho_usd, alvo_pct, stop_pct, expira_em, vela_em, status, aberta_em";
+  "id, dono, estrategia_id, simbolo, lado, entrada, tamanho_usd, alvo_pct, stop_pct, expira_em, vela_em, status, aberta_em, playbook, horas_limite";
 
 type LinhaPosicao = {
   id: string; dono: string; estrategia_id: string; simbolo: string; lado: string;
@@ -679,6 +725,7 @@ type LinhaPosicao = {
   alvo_pct: number | string | null; stop_pct: number | string | null;
   expira_em: string | null; vela_em: number | string | null;
   status: string; aberta_em: string;
+  playbook: string | null; horas_limite: number | string | null;
 };
 
 function paraPosicao(r: LinhaPosicao): Posicao | null {
@@ -698,6 +745,10 @@ function paraPosicao(r: LinhaPosicao): Posicao | null {
     velaEm: r.vela_em == null ? null : Number(r.vela_em),
     abertaEm: r.aberta_em,
     status: r.status as StatusPosicao,
+    playbook: r.playbook,
+    // ⚠️ De novo: `Number(null)` é 0 e passa em `isFinite`. Um horizonte 0
+    // expiraria a posição no instante seguinte à abertura.
+    horasLimite: r.horas_limite == null ? null : Number(r.horas_limite),
   };
 }
 
@@ -728,6 +779,77 @@ export async function posicoesAbertasParaOCron(db: SupabaseClient, limite = 500)
     .limit(Math.max(1, Math.min(2000, Math.floor(limite))));
   if (error || !data) return [];
   return (data as unknown as LinhaPosicao[]).map(paraPosicao).filter((p): p is Posicao => p !== null);
+}
+
+/**
+ * ⚠️⚠️ TODAS as posições de UMA instância do dono — abertas e fechadas (0043).
+ *
+ * É a entrada de `desempenhoDaInstancia`, e é o que separa "o número do
+ * investidor" de "o placar da casa". Nenhuma linha de `zion_suggestions` chega
+ * aqui: a origem é `bancada_posicao`, filtrada pelo dono (pela porta única) e
+ * pela instância.
+ *
+ * ⚠️ AS FECHADAS VÊM JUNTO, obrigatoriamente — são elas que FORMAM o número.
+ * `posicoesAbertas` responde "o que está no ar agora"; esta responde "o que
+ * este agente fez por você desde que você o contratou", que é outra pergunta.
+ */
+export async function posicoesDaEstrategia(
+  dono: Dono, db: SupabaseClient, estrategiaId: string, limite = 1000,
+): Promise<PosicaoFechada[]> {
+  const { data, error } = await doDono(db, "bancada_posicao", dono, COLUNAS_EXTRATO)
+    .eq("estrategia_id", estrategiaId)
+    .order("aberta_em", { ascending: false })
+    .limit(Math.max(1, Math.min(2000, Math.floor(limite))));
+  if (error || !data) return [];
+  return (data as unknown as LinhaExtrato[]).map(paraExtrato);
+}
+
+/** Uma posição da instância com o DESFECHO — o que `posicoesAbertas` não traz. */
+export interface PosicaoFechada {
+  id: string;
+  simbolo: string;
+  lado: "long" | "short";
+  entrada: number;
+  saida: number | null;
+  alvoPct: number | null;
+  stopPct: number | null;
+  status: StatusPosicao;
+  /** ⚠️ JÁ LÍQUIDO do pedágio da praça do dono. Não descontar de novo. */
+  resultadoPct: number | null;
+  playbook: string | null;
+  abertaEm: string;
+  fechadaEm: string | null;
+  expiraEm: string | null;
+}
+
+const COLUNAS_EXTRATO =
+  "id, simbolo, lado, entrada, saida, alvo_pct, stop_pct, status, resultado_pct, playbook, aberta_em, fechada_em, expira_em";
+
+type LinhaExtrato = {
+  id: string; simbolo: string; lado: string; entrada: number | string;
+  saida: number | string | null; alvo_pct: number | string | null; stop_pct: number | string | null;
+  status: string; resultado_pct: number | string | null; playbook: string | null;
+  aberta_em: string; fechada_em: string | null; expira_em: string | null;
+};
+
+function paraExtrato(r: LinhaExtrato): PosicaoFechada {
+  return {
+    id: r.id,
+    simbolo: r.simbolo,
+    lado: r.lado === "short" ? "short" : "long",
+    entrada: Number(r.entrada),
+    // ⚠️ Posição aberta NÃO tem saída, e `Number(null)` seria 0 — um preço de
+    // saída zero na tela do investidor.
+    saida: r.saida == null ? null : Number(r.saida),
+    alvoPct: r.alvo_pct == null ? null : Number(r.alvo_pct),
+    stopPct: r.stop_pct == null ? null : Number(r.stop_pct),
+    status: r.status as StatusPosicao,
+    resultadoPct: r.resultado_pct == null ? null : Number(r.resultado_pct),
+    playbook: r.playbook,
+    abertaEm: r.aberta_em,
+    fechadaEm: r.fechada_em,
+    expiraEm: r.expira_em,
+  };
 }
 
 /**

@@ -46,7 +46,15 @@ async function contexto() {
 export async function GET() {
   const c = await contexto();
   if ("erro" in c) return c.erro;
-  const estrategias = await listarEstrategias(c.dono, c.db);
+  /**
+   * ⚠️ AS INSTÂNCIAS DE AGENTE FICAM DE FORA (0043) — elas moram em
+   * `/api/bancada/agentes`. As duas espécies compartilham a tabela porque
+   * compartilham dono, símbolos, interruptor, cota e índice do cron; o que elas
+   * NÃO compartilham é como se medem. Uma instância de agente listada como
+   * "sua estratégia" apareceria com o alvo e o stop em branco — o bracket dela
+   * é variável — e o cliente leria isso como estratégia mal salva.
+   */
+  const estrategias = (await listarEstrategias(c.dono, c.db)).filter((e) => e.mesa == null);
   return json({ ok: true, tier: c.tier, cota: BANCADA_COTAS[c.tier], estrategias });
 }
 

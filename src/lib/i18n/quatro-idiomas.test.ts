@@ -82,6 +82,9 @@ describe("singular não é o plural com outro nome", () => {
     ["bancada.opsUma", "bancada.opsQuantas"],
     ["bancada.mesasExpiradaUma", "bancada.mesasExpiradas"],
     ["bancada.quotaLeftUm", "bancada.quotaLeft"],
+    ["bancada.agDecididaUma", "bancada.agDecididas"],
+    ["bancada.agExpiradaUma", "bancada.agExpiradasN"],
+    ["bancada.agAbertaUma", "bancada.agAbertasN"],
   ];
 
   it.each(["en", ...OUTROS] as const)("%s: a singular não interpola e a plural sim", (locale) => {

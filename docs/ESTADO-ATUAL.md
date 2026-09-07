@@ -1939,6 +1939,87 @@ traduzir) — **aplicada no banco**.
 
 ---
 
+## 5.24 ⚠️⚠️ O INVESTIDOR LIA O PLACAR DA CASA — A INSTÂNCIA NÃO EXISTIA (07/09)
+
+> *"apenas estamos pegando os resultados das mesas do painel e Admin e
+> repetindo para o investidor... eu falei que tinha que ser isolado... vc tem
+> que parar de ficar amontoando uma coisa em cima de outra por preguiça de
+> separar"*
+
+Ele estava certo, e a crítica é sobre **método**, não sobre uma tela. Eu tinha
+empilhado três entregas que juntas PARECIAM a coisa:
+
+| peça | o que ela era de fato |
+|---|---|
+| card da mesa, `+4,34%/op` | agregação de `zion_suggestions` — **o livro do admin** |
+| botão "rodar esta mesa" | um **backtest**: passado obedecendo |
+| papel adiante | vivo e isolado, mas só sabia `media\|canal\|rsi` |
+
+Nenhuma das três é a instância do investidor. E o mais desconfortável: cada uma
+delas foi entregue como resposta a uma crítica anterior dele. Três camadas em
+cima do buraco, em vez do buraco.
+
+### O que faltava, e agora existe
+
+`bancada_estrategia.mesa` (0043) transforma uma linha em INSTÂNCIA de agente. O
+tick bifurca por ela: `agente.ts` chama `computeIndicators` + `candidateAttempts`
+— as MESMAS funções da mesa ao vivo — e a posição que nasce é do investidor.
+`desempenho.ts` conta o extrato dele, **do zero**, sem tocar em
+`zion_suggestions`.
+
+### As decisões que a preguiça teria tomado errado
+
+1. **`params` de uma instância é `{}`**, e `Mesa.params` virou
+   `EstrategiaDoCliente | null`. Guardar uma estratégia de fachada com
+   `alvoPct: 2.5` faria o tick abrir posições com um alvo que a mesa **nunca
+   declarou** — o bracket dela é variável. `decidirAbertura` só aceita
+   `MesaPropria`: passar uma instância de agente ali **não compila**.
+2. **Uma coluna, não uma tabela nova.** Duas fontes para "o que este cliente tem
+   ligado" é a receita para as duas discordarem.
+3. **O vazio é uma resposta.** Quem contrata hoje vê "ainda sem nada decidido" e
+   **nenhum número** — nem 0%. Preencher com a nossa amostra era o defeito.
+4. **O placar da casa fica, rotulado**: *"o que a NOSSA mesa fez — não o seu"*.
+
+### E de quebra, um defeito latente do caminho antigo
+
+`decidirFechamento` relia o alvo da ESTRATÉGIA para fechar uma posição já
+aberta: editar a estratégia movia o alvo **retroativamente**. Agora o bracket é
+lido da POSIÇÃO (`decidirFechamentoDaPosicao`), e cada linha carrega o seu —
+exigência do agente, cujas duas posições têm alvos diferentes.
+
+### ⚠️ E o teto do tick mentia — achado ao dimensionar o agente
+
+`MESAS_POR_TICK = 40` vinha com o comentário *"as que sobram pegam o tick
+seguinte, e a ordem determinística garante que ninguém fique para trás para
+sempre"*. Ele afirmava **o oposto do que o código fazia**: com a lista ordenada
+por criação e um `.slice(0, 40)`, as mesmas 40 primeiras ganham em TODO tick e a
+de número 41 **nunca roda**. Isso não é fila, é corte.
+
+Só apareceu porque a instância de agente custa **3 leituras de vela por símbolo
+mais `computeIndicators`**, contra 1 leitura da estratégia própria — 40 agentes
+de 5 símbolos pedem 600 leituras dentro de uma função com `maxDuration = 60`
+que antes disso já rodou o flywheel, o oráculo, o radar e o papel da casa. Ao
+fazer essa conta o comentário caiu junto.
+
+Dois consertos: `AGENTES_POR_TICK = 8` (orçamento próprio para a espécie cara) e
+`aVezDeQuem()`, uma janela que **rola** a cada tick — a ordem continua
+determinística, o ponto de partida anda, e em `n/teto` ticks todo mundo passou.
+O teste que prova isso inclui a contraprova: com o `.slice` fixo, o último da
+fila não aparece em 50 ticks.
+
+E `adiadas` entrou no resumo e no evento do cron: sem esse número, a única forma
+de descobrir que o teto está apertado seria um cliente reclamando que a mesa
+dele não abre.
+
+### A lição de método
+
+Três críticas seguidas do dono sobre a mesma tela, e as três primeiras respostas
+foram camadas. A pergunta que faltou nas três: *"o que ele pediu já existe como
+peça, ou eu estou decorando o que já tem?"*. Nas fases 5, 6 e 7 a resposta era
+"não existe" — e eu decorei.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**

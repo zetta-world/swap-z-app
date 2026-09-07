@@ -35,7 +35,19 @@ export interface Mesa {
    * `bancada/dono.ts` existe para fechar.
    */
   dono: Dono;
-  params: EstrategiaDoCliente;
+  /**
+   * ⚠️⚠️ `null` NUMA INSTÂNCIA DE AGENTE (0043) — e é de propósito que o tipo
+   * force a bifurcação.
+   *
+   * O agente da casa NÃO TEM alvo e stop fixos: o bracket sai da volatilidade a
+   * cada operação. Guardar um `EstrategiaDoCliente` de fachada aqui (com
+   * `alvoPct: 2.5`, digamos) faria o tick abrir posições com um alvo que a mesa
+   * nunca declarou — e a mentira só apareceria no extrato do investidor.
+   * `null` obriga quem lê a perguntar "qual dos dois é este?" antes de decidir.
+   */
+  params: EstrategiaDoCliente | null;
+  /** ⚠️ Preenchido = instância de agente da casa (o `source` do desk). */
+  mesa: string | null;
   simbolos: string[];
   intervalo: string;
   /** `abriu_em` da posição mais recente desta mesa. `null` se nunca abriu. */
@@ -61,6 +73,15 @@ export function mesasQuePodemTickar(mesas: Mesa[], tier: Tier): { tickam: Mesa[]
   return { tickam: ordenadas.slice(0, teto), cortadas: ordenadas.slice(teto) };
 }
 
+/**
+ * Uma mesa do VOCABULÁRIO DO CLIENTE — a única que `decidirAbertura` sabe ler.
+ *
+ * ⚠️ O tipo é a trava: passar uma instância de agente aqui não compila, e é
+ * exatamente o erro que se quer impossível. O agente decide em `agente.ts`, com
+ * o seletor real; `sinais()` não tem o que dizer sobre ele.
+ */
+export type MesaPropria = Mesa & { params: EstrategiaDoCliente };
+
 export type PorQueNaoAbre =
   | "sem_velas"
   | "ja_tem_posicao"
@@ -85,7 +106,7 @@ export type DecisaoDeAbertura =
  * ela não entra na `mercado_vela`.
  */
 export function decidirAbertura(
-  mesa: Mesa, velas: ReadonlyArray<VelaComTempo>, agoraMs: number,
+  mesa: MesaPropria, velas: ReadonlyArray<VelaComTempo>, agoraMs: number,
 ): DecisaoDeAbertura {
   if (mesa.temPosicaoAberta) return { abre: false, porque: "ja_tem_posicao" };
 
@@ -140,22 +161,63 @@ export function decidirFechamento(
   agoraMs: number,
 ): Fechamento | null {
   const { alvo, stop } = alvoEStop(params, posicao.entrada);
-  const custo = 2 * taxaDaBancadaPct(params.praca, params.papel);
+  return decidirFechamentoDaPosicao(
+    {
+      entrada: posicao.entrada, tamanhoUsd: posicao.tamanhoUsd, abertaEmMs: posicao.abertaEmMs,
+      alvo, stop, horasLimite: params.horasLimite,
+      lado: params.direcao === "compra" ? "long" : "short",
+      custoIdaEVoltaPct: 2 * taxaDaBancadaPct(params.praca, params.papel),
+    },
+    velas, agoraMs,
+  );
+}
 
+/** O bracket JÁ RESOLVIDO de uma posição — em preço, não em regra. */
+export interface PosicaoParaFechar {
+  entrada: number;
+  tamanhoUsd: number;
+  abertaEmMs: number;
+  alvo: number;
+  stop: number;
+  horasLimite: number;
+  lado: "long" | "short";
+  /** ⚠️ Ida E volta, em %. A praça do DONO, nunca uma taxa única da casa. */
+  custoIdaEVoltaPct: number;
+}
+
+/**
+ * ⚠️⚠️ O FECHAMENTO LÊ O BRACKET **DA POSIÇÃO**, e isto conserta um defeito
+ * latente do caminho antigo (0043).
+ *
+ * `decidirFechamento` relia o alvo e o stop da ESTRATÉGIA para fechar uma
+ * posição já aberta. Editar a estratégia movia, retroativamente, o alvo de
+ * posições vivas: o resultado mudava depois do fato, e nada denunciava — a
+ * mesma família de "escolher a janela depois de ver o número".
+ *
+ * ⚠️ E É ISTO QUE O AGENTE DO INVESTIDOR EXIGE. O bracket dele é VARIÁVEL: sai
+ * da volatilidade daquele instante, e duas posições da mesma instância têm
+ * alvos diferentes. Não existe "a regra" de onde reler — só existe o que foi
+ * decidido na hora, e é o que a linha guarda.
+ */
+export function decidirFechamentoDaPosicao(
+  p: PosicaoParaFechar,
+  velas: ReadonlyArray<VelaComTempo>,
+  agoraMs: number,
+): Fechamento | null {
   const v = computeExitPath(
     {
-      side: params.direcao === "compra" ? "buy" : "sell",
-      entry_price: posicao.entrada,
-      cost_usd: posicao.tamanhoUsd,
-      target_price: alvo,
-      stop_price: stop,
-      opened_at: new Date(posicao.abertaEmMs).toISOString(),
-      horizon_hours: params.horasLimite,
+      side: p.lado === "long" ? "buy" : "sell",
+      entry_price: p.entrada,
+      cost_usd: p.tamanhoUsd,
+      target_price: p.alvo,
+      stop_price: p.stop,
+      opened_at: new Date(p.abertaEmMs).toISOString(),
+      horizon_hours: p.horasLimite,
     },
     velas.map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close })),
     undefined,
     agoraMs,
-    custo,
+    p.custoIdaEVoltaPct,
   );
   if (!v) return null;
 
@@ -176,7 +238,59 @@ export function decidirFechamento(
  *
  * O cron do `/api/zion/backtest` já faz muita coisa em 30 minutos, e uma mesa
  * que demora derruba o resto. Este número limita quantas mesas um tick
- * processa; as que sobram pegam o tick seguinte, e a ordem determinística
- * garante que ninguém fique para trás para sempre.
+ * processa; as que sobram pegam o tick seguinte — ver `aVezDeQuem`, que é o que
+ * de fato impede alguém de ficar para trás para sempre.
  */
 export const MESAS_POR_TICK = Number(process.env.BANCADA_MESAS_POR_TICK ?? 40);
+
+/**
+ * ⚠️⚠️ O TETO SEPARADO DAS INSTÂNCIAS DE AGENTE — e o motivo é aritmética de
+ * orçamento, não cautela genérica.
+ *
+ * As duas espécies de mesa custam coisas MUITO diferentes por símbolo:
+ *
+ *   · estratégia própria — 1 leitura de vela, e `sinais()` sobre ela;
+ *   · instância de agente — **3 leituras** (1h, 4h, 1d), a agregação semanal, e
+ *     `computeIndicators` sobre ~400 barras.
+ *
+ * Contar as duas contra o mesmo teto de 40 significa que 40 agentes de 5
+ * símbolos pedem 600 leituras — dentro de uma função com `maxDuration = 60`
+ * que ANTES disso já rodou o flywheel, o oráculo, o radar e o papel da casa.
+ * O que estoura ali não é a bancada do cliente: é o tick inteiro.
+ */
+export const AGENTES_POR_TICK = Number(process.env.BANCADA_AGENTES_POR_TICK ?? 8);
+
+/**
+ * ⚠️⚠️ DE QUEM É A VEZ NESTE TICK — a janela ROLA, e sem isso o teto mente.
+ *
+ * O comentário de `MESAS_POR_TICK` dizia que "a ordem determinística garante
+ * que ninguém fique para trás para sempre". Ele estava errado: com uma ordem
+ * estável e um corte fixo, as mesmas primeiras `teto` mesas ganham em TODO
+ * tick, e a de número `teto+1` nunca roda. Não é uma fila — é um corte.
+ *
+ * Aqui a ordem continua determinística (a lista chega ordenada por criação),
+ * mas o PONTO DE PARTIDA anda a cada tick. Em `n/teto` ticks todo mundo passou,
+ * e o cliente cuja mesa é a última a ser criada não fica invisível para sempre.
+ *
+ * ⚠️ `tick` vem do relógio dividido pela cadência, não de um contador guardado:
+ * um contador em `admin_kv` seria mais uma escrita que pode falhar, e falhando
+ * ele congelaria a janela exatamente onde estava.
+ */
+export function aVezDeQuem<T>(fila: ReadonlyArray<T>, teto: number, tick: number): T[] {
+  const n = fila.length;
+  if (n === 0 || teto <= 0) return [];
+  if (n <= teto) return [...fila];
+  // ⚠️ `((x % n) + n) % n` porque `%` em JS devolve negativo para entrada
+  // negativa — e um relógio errado não pode virar um índice negativo.
+  const inicio = (((tick * teto) % n) + n) % n;
+  const saida: T[] = [];
+  for (let i = 0; i < teto; i++) saida.push(fila[(inicio + i) % n]);
+  return saida;
+}
+
+/** A cadência do cron que hospeda o tique. `aVezDeQuem` conta ticks com ela. */
+export const CADENCIA_MS = 30 * 60_000;
+
+export function tickAtual(agoraMs: number): number {
+  return Math.floor(agoraMs / CADENCIA_MS);
+}

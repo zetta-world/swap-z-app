@@ -296,8 +296,12 @@ export async function POST(req: NextRequest) {
           const r = await tiqueDoPapelAdiante(db);
           if (r.mesas > 0) {
             await recordEvent("bancada_papel_tique", {
+              // ⚠️ `adiadas` entra no evento: sem ela, a única forma de
+              // descobrir que o teto de trabalho está apertado seria um cliente
+              // reclamando que a mesa dele não abre.
               meta: { mesas: r.mesas, abertas: r.abertas, fechadas: r.fechadas,
-                      cortadasPorPlano: r.cortadasPorPlano, problemas: r.problemas.slice(0, 5) },
+                      cortadasPorPlano: r.cortadasPorPlano, adiadas: r.adiadas,
+                      problemas: r.problemas.slice(0, 5) },
             });
           }
         }

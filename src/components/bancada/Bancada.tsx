@@ -27,6 +27,7 @@ import {
   identidadeDaMesa, identidadeDaPropria, type Identidade, type Contexto,
 } from "@/lib/bancada/identidade";
 import { medidaDoPost, medidaDoHistorico, acertoPct, type Medida } from "@/lib/bancada/resposta";
+import Agentes from "@/components/bancada/Agentes";
 import { oPedagioAntesDeRodar } from "@/lib/bancada/custo";
 import { PRACAS, rotuloDaPraca, type EstrategiaDoCliente, type Praca, type Papel } from "@/lib/bancada/vocabulario";
 import { classificarResultado } from "@/lib/admin/cor-resultado";
@@ -119,6 +120,14 @@ export default function Bancada() {
   const [corridas, setCorridas] = useState<Corrida[]>([]);
   const [restamHoje, setRestamHoje] = useState<number | null>(null);
   const [historicoFalhou, setHistoricoFalhou] = useState(false);
+  /**
+   * ⚠️ Um contador, não um booleano: contratar dois agentes seguidos precisa
+   * disparar DUAS recargas, e `true → true` não é uma mudança que o `useEffect`
+   * enxergue.
+   */
+  const [recarregarAgentes, setRecarregarAgentes] = useState(0);
+  const [contratando, setContratando] = useState<string | null>(null);
+  const [erroDeContratar, setErroDeContratar] = useState<string | null>(null);
 
   const [verCasa, setVerCasa] = useState(false);
   const [mesas, setMesas] = useState<CartaoDaMesa[]>([]);
@@ -351,6 +360,43 @@ export default function Bancada() {
   }
 
   /**
+   * ⚠️⚠️ CONTRATAR É DIFERENTE DE TESTAR, e as duas coisas convivem no card.
+   *
+   *   · **testar no passado** — o backtest: a mesma regra sobre a janela que
+   *     ele escolheu. Passado obedecendo. Custa uma vez.
+   *   · **contratar** — nasce uma INSTÂNCIA dele, que passa a tickar a cada 30
+   *     minutos e a acumular o resultado DELE, do zero. Presente discordando.
+   *     Custa para sempre, e por isso está atrás do portão do `trader`.
+   *
+   * ⚠️ Os símbolos e a praça saem do FORMULÁRIO abaixo — os mesmos que ele
+   * usaria para testar. Um agente contratado com símbolos que ele não escolheu
+   * seria uma instância dele com uma pergunta nossa.
+   */
+  async function contratar(m: CartaoDaMesa) {
+    setContratando(m.source);
+    setErroDeContratar(null);
+    try {
+      const res = await fetch("/api/bancada/agentes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mesa: m.source, simbolos, praca, papel }),
+      });
+      const j = await res.json();
+      if (!j?.ok) {
+        // ⚠️ O motivo vem do SERVIDOR e é mostrado como veio: ele carrega o
+        // número exato (o teto do plano, o símbolo que falta).
+        setErroDeContratar(typeof j?.porque === "string" ? j.porque : t("bancada.errorTitle"));
+        return;
+      }
+      setRecarregarAgentes((n) => n + 1);
+    } catch {
+      setErroDeContratar(t("bancada.errorTitle"));
+    } finally {
+      setContratando(null);
+    }
+  }
+
+  /**
    * ⚠️ Roda o SELETOR REAL da mesa sobre a janela do cliente — não uma
    * tradução dela para o formulário. Manda `mesa`, e a rota não aceita alvo
    * nem stop neste modo: eles saem do playbook.
@@ -406,6 +452,20 @@ export default function Bancada() {
         <p className="mt-1 text-sm text-ink-3">{t("bancada.subtitle")}</p>
       </header>
 
+      {/* ── OS AGENTES DELE, ANTES DOS NOSSOS ───────────────────────── */}
+      {/* ⚠️⚠️ A ORDEM É A CORREÇÃO. O que o investidor contratou vem PRIMEIRO,
+          com o número dele; o placar da nossa mesa vem depois, rotulado como
+          nosso. Invertido, a primeira coisa que ele lê é o nosso resultado — e
+          foi assim que a bancada acabou "pegando os resultados das mesas do
+          painel e Admin e repetindo para o investidor". */}
+      <Agentes recarregar={recarregarAgentes} />
+
+      {erroDeContratar && (
+        <p className="rounded-2xl border border-gold/30 bg-gold/5 p-4 text-xs leading-relaxed text-gold">
+          {erroDeContratar}
+        </p>
+      )}
+
       {/* ── O QUE A CASA DE FATO RODA ──────────────────────────────── */}
       {/* ⚠️⚠️ VITRINE, NÃO CLONE — e a diferença é honestidade, não preguiça.
           Estas mesas usam bracket por VOLATILIDADE (stop = ATR×1,5, alvo
@@ -421,7 +481,9 @@ export default function Bancada() {
           <ul className="mt-3 space-y-2">
             {mesas.map((m) => (
               <MesaDaCasa key={m.source} m={m} rodando={rodandoMesa === m.source}
-                onRodar={() => rodarMesa(m)} />
+                contratando={contratando === m.source}
+                onRodar={() => rodarMesa(m)}
+                onContratar={() => void contratar(m)} />
             ))}
           </ul>
         </section>
@@ -988,7 +1050,10 @@ function CartaoDeRodada({ c, onAlternar }: { c: Corrida; onAlternar: () => void 
  * o token existia na minha cabeça e não no `tailwind.config.ts`.
  */
 /** Um cartão de mesa da casa: o que ela é, o que mediu, e o que o número NÃO prova. */
-function MesaDaCasa({ m, rodando, onRodar }: { m: CartaoDaMesa; rodando: boolean; onRodar: () => void }) {
+function MesaDaCasa({ m, rodando, contratando, onRodar, onContratar }: {
+  m: CartaoDaMesa; rodando: boolean; contratando: boolean;
+  onRodar: () => void; onContratar: () => void;
+}) {
   const t = useT();
   /**
    * ⚠️ A REGRA DE COR É A DO ADMIN, e a amostra tem precedência: abaixo de 100
@@ -1012,10 +1077,21 @@ function MesaDaCasa({ m, rodando, onRodar }: { m: CartaoDaMesa; rodando: boolean
               botão não está escondida — ela diz por que não roda. */}
           {m.podeRodar ? (
             <>
-              <button type="button" onClick={onRodar} disabled={rodando}
-                className={`mt-2 ${CHIP} ${CHIP_OFF} disabled:opacity-40`}>
-                {rodando ? t("bancada.mesasRodando") : t("bancada.mesasRodar")}
-              </button>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {/* ⚠️⚠️ CONTRATAR VEM PRIMEIRO, e é o botão em destaque: é ele
+                    que faz o agente TRABALHAR na conta do investidor a partir
+                    dali. O backtest ao lado é a outra pergunta — o que essa
+                    regra teria feito no passado — e ele não gera resultado
+                    nenhum para ele. */}
+                <button type="button" onClick={onContratar} disabled={contratando}
+                  className={`${CHIP} border-cyan/40 text-cyan hover:border-cyan hover:bg-cyan/5 disabled:opacity-40`}>
+                  {contratando ? t("bancada.agContratando") : t("bancada.agContratar")}
+                </button>
+                <button type="button" onClick={onRodar} disabled={rodando}
+                  className={`${CHIP} ${CHIP_OFF} disabled:opacity-40`}>
+                  {rodando ? t("bancada.mesasRodando") : t("bancada.agTestarPassado")}
+                </button>
+              </div>
               <p className="mt-1 text-[10px] leading-relaxed text-ink-4">{t("bancada.mesasSuaJanela")}</p>
             </>
           ) : (
@@ -1031,6 +1107,15 @@ function MesaDaCasa({ m, rodando, onRodar }: { m: CartaoDaMesa; rodando: boolean
                 {m.liquidoPorOpPct >= 0 ? "+" : ""}{m.liquidoPorOpPct.toFixed(2)}%
               </span>
               <span className="block text-[10px] text-ink-4">{t("bancada.mesasPorOp")}</span>
+              {/* ⚠️⚠️ O NÚMERO É NOSSO, E A TELA DIZ ISSO. Sem este rótulo o
+                  investidor lê o placar da nossa mesa como se fosse o
+                  desempenho do que ele contratou — que é literalmente a queixa
+                  de 07/09: "pegando os resultados das mesas do painel e Admin e
+                  repetindo para o investidor". O número dele está na seção dos
+                  agentes, acima, e começa vazio. */}
+              <span className="mt-0.5 block max-w-[9rem] text-[10px] leading-tight text-gold/70">
+                {t("bancada.mesasDaCasaNumero")}
+              </span>
             </>
           )}
         </div>

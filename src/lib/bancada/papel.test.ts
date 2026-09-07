@@ -4,7 +4,11 @@
  * aqui custa a cada 30 minutos, para sempre, por cliente.
  */
 import { describe, it, expect } from "vitest";
-import { mesasQuePodemTickar, decidirAbertura, decidirFechamento, alvoEStop, type Mesa } from "@/lib/bancada/papel";
+import {
+  mesasQuePodemTickar, decidirAbertura, decidirFechamento, alvoEStop,
+  aVezDeQuem, MESAS_POR_TICK, AGENTES_POR_TICK,
+  type Mesa, type MesaPropria,
+} from "@/lib/bancada/papel";
 import type { EstrategiaDoCliente } from "@/lib/bancada/vocabulario";
 import type { VelaComTempo } from "@/lib/mercado/velas";
 import { donoDeLinhaDoBanco } from "@/lib/bancada/dono";
@@ -15,9 +19,15 @@ const params: EstrategiaDoCliente = {
   alvoPct: 2, stopPct: 2, horasLimite: 24, praca: "futuros_gate", papel: "maker",
 };
 
-function mesa(p: Partial<Mesa> = {}): Mesa {
+/**
+ * ⚠️ `MesaPropria`, não `Mesa`: desde 0043 uma mesa pode ser uma INSTÂNCIA DE
+ * AGENTE, e nessa o `params` é `null` porque o bracket é variável. Este helper
+ * monta o caso do vocabulário do cliente — o único que `decidirAbertura` lê.
+ */
+function mesa(p: Partial<MesaPropria> = {}): MesaPropria {
   return {
-    id: "m1", dono: donoDeLinhaDoBanco("0xA")!, params, simbolos: ["BTC"], intervalo: "1h",
+    id: "m1", dono: donoDeLinhaDoBanco("0xA")!, params, mesa: null,
+    simbolos: ["BTC"], intervalo: "1h",
     ultimaAberturaMs: null, temPosicaoAberta: false, criadaEm: "2026-01-01T00:00:00Z", ...p,
   };
 }
@@ -121,5 +131,76 @@ describe("o fechamento reusa a convenção da casa, com o custo do CLIENTE", () 
     const maker = decidirFechamento(params, pos, velas, 2 * H)!;                                    // futuros maker: 0,03%
     const taker = decidirFechamento({ ...params, praca: "spot_gate", papel: "taker" }, pos, velas, 2 * H)!; // spot: 0,40%
     expect(maker.resultadoPct - taker.resultadoPct).toBeCloseTo(0.37, 6);
+  });
+});
+
+/**
+ * ⚠️⚠️ O TETO QUE MENTIA (07/09).
+ *
+ * `MESAS_POR_TICK` vinha com o comentário *"as que sobram pegam o tick
+ * seguinte, e a ordem determinística garante que ninguém fique para trás para
+ * sempre"*. Ele afirmava o oposto do que o código fazia: com uma ordem estável
+ * e um `.slice(0, teto)`, as mesmas primeiras `teto` mesas ganham em TODO tick
+ * e a de número `teto+1` **nunca roda**. Não é uma fila — é um corte.
+ *
+ * Apareceu ao somar as instâncias de agente (0043), que custam 3 leituras por
+ * símbolo em vez de 1: foi ao dimensionar o orçamento do tick que a conta não
+ * fechou e o comentário caiu.
+ */
+describe("a vez de quem — a janela ROLA, senão o teto é um corte", () => {
+  const fila = ["a", "b", "c", "d", "e", "f", "g"];
+
+  it("cabendo todo mundo, todo mundo roda — e na ordem", () => {
+    expect(aVezDeQuem(fila, 10, 0)).toEqual(fila);
+    expect(aVezDeQuem(fila, 7, 99)).toEqual(fila);
+  });
+
+  it("não cabendo, cada tick começa num ponto diferente", () => {
+    expect(aVezDeQuem(fila, 3, 0)).toEqual(["a", "b", "c"]);
+    expect(aVezDeQuem(fila, 3, 1)).toEqual(["d", "e", "f"]);
+    // ⚠️ E dá a volta: `g` não fica para trás porque a lista acabou.
+    expect(aVezDeQuem(fila, 3, 2)).toEqual(["g", "a", "b"]);
+  });
+
+  /**
+   * ⚠️ A ASSERÇÃO QUE IMPORTA, e é sobre AUSÊNCIA DE FOME: em ticks
+   * suficientes, TODA mesa da fila rodou pelo menos uma vez. É exatamente o que
+   * o `.slice` fixo não cumpria.
+   */
+  it("em poucos ticks, ninguém fica de fora", () => {
+    const vistos = new Set<string>();
+    for (let t = 0; t < 3; t++) for (const x of aVezDeQuem(fila, 3, t)) vistos.add(x);
+    expect([...vistos].sort()).toEqual(fila);
+  });
+
+  it("o corte fixo NÃO cumpriria isso — a prova de que o teste não é vazio", () => {
+    // Sem rotação, `g` nunca apareceria por mais ticks que passassem.
+    const vistos = new Set<string>();
+    for (let t = 0; t < 50; t++) for (const x of fila.slice(0, 3)) vistos.add(x);
+    expect(vistos.has("g")).toBe(false);
+  });
+
+  it("fila vazia e teto zero não explodem nem inventam mesa", () => {
+    expect(aVezDeQuem([], 5, 3)).toEqual([]);
+    expect(aVezDeQuem(fila, 0, 3)).toEqual([]);
+  });
+
+  /**
+   * ⚠️ `%` em JS devolve NEGATIVO para entrada negativa, e um relógio errado
+   * (ou um teste com data anterior a 1970) viraria um índice negativo — que em
+   * JS não estoura, devolve `undefined`, e a mesa "rodaria" com `undefined` no
+   * lugar dos dados.
+   */
+  it("tick negativo não vira índice negativo", () => {
+    const r = aVezDeQuem(fila, 3, -1);
+    expect(r).toHaveLength(3);
+    expect(r.every((x) => fila.includes(x))).toBe(true);
+  });
+
+  it("o orçamento do agente é MENOR que o geral — ele custa 3 leituras por símbolo", () => {
+    // ⚠️ Valores fixados, não derivados um do outro: um teste que escreve
+    // `AGENTES_POR_TICK < MESAS_POR_TICK` passa com os dois em 1.
+    expect(MESAS_POR_TICK).toBe(40);
+    expect(AGENTES_POR_TICK).toBe(8);
   });
 });
