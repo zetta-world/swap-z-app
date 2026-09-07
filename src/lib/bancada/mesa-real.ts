@@ -201,6 +201,8 @@ export function rodarMesa(
       desfecho: v.reason === "target" ? "alvo" : v.reason === "stop" ? "stop" : "expirada",
       brutoPct: v.netPct + custoIdaEVoltaPct,
       liquidoPct: v.netPct,
+      playbook: plano.playbook,
+      simbolo,
     });
 
     // A próxima entrada só nasce depois desta fechar.

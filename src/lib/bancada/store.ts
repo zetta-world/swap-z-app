@@ -29,7 +29,7 @@ export type StatusPosicao = "aberta" | "ganhou" | "perdeu" | "expirada";
 
 /** As tabelas que têm coluna `dono`. Fechada: nomear tabela por string solta
  *  seria a porta de trás que este módulo existe para não ter. */
-type TabelaComDono = "bancada_estrategia" | "bancada_rodada" | "bancada_resultado" | "bancada_posicao";
+type TabelaComDono = "bancada_estrategia" | "bancada_rodada" | "bancada_resultado" | "bancada_posicao" | "bancada_operacao";
 
 /**
  * ⚠️⚠️ A PORTA ÚNICA DE LEITURA. Todo `select` deste arquivo nasce aqui, já
@@ -492,6 +492,75 @@ export async function resultado(dono: Dono, db: SupabaseClient, rodadaId: string
     naoMedido: Array.isArray(r.nao_medido) ? (r.nao_medido as unknown[]).map(String) : [],
     criadoEm: r.criado_em,
   };
+}
+
+/**
+ * ⚠️⚠️ AS OPERAÇÕES QUE GERARAM O NÚMERO (0041).
+ *
+ * O dono, na primeira rodada real: *"não aparece as entradas feitas, não
+ * aparece nada"*. O motor produzia cada operação e o resumo as descartava — um
+ * veredito sem como conferir.
+ */
+export interface OperacaoGravada {
+  simbolo: string;
+  abriuEm: number;
+  fechouEm: number;
+  entrada: number;
+  saida: number;
+  desfecho: "alvo" | "stop" | "expirada";
+  brutoPct: number;
+  liquidoPct: number;
+  /** Nulo em estratégia própria — lá o gatilho é o do cliente. */
+  playbook: string | null;
+}
+
+/**
+ * Grava as operações de uma rodada.
+ *
+ * ⚠️ MELHOR-ESFORÇO: falhar aqui não pode derrubar a rodada. O veredito já foi
+ * calculado e é o que o cliente pediu; perder o detalhe é ruim, perder a
+ * resposta é pior. O que NÃO se faz é falhar em silêncio — quem chama recebe o
+ * motivo e o põe em `nao_medido`.
+ */
+export async function gravarOperacoes(
+  dono: Dono, db: SupabaseClient, rodadaId: string, ops: OperacaoGravada[],
+): Promise<Escrita<number>> {
+  if (ops.length === 0) return { ok: true, valor: 0 };
+  const { error } = await db.from("bancada_operacao").insert(
+    ops.map((o) => ({
+      rodada_id: rodadaId, dono,
+      simbolo: o.simbolo, abriu_em: o.abriuEm, fechou_em: o.fechouEm,
+      entrada: o.entrada, saida: o.saida, desfecho: o.desfecho,
+      bruto_pct: o.brutoPct, liquido_pct: o.liquidoPct, playbook: o.playbook,
+    })),
+  );
+  if (error) return falhou(error, "gravar operações");
+  return { ok: true, valor: ops.length };
+}
+
+const COLUNAS_OPERACAO =
+  "simbolo, abriu_em, fechou_em, entrada, saida, desfecho, bruto_pct, liquido_pct, playbook";
+
+/** As operações de UMA rodada do dono, em ordem cronológica. */
+export async function operacoesDaRodada(
+  dono: Dono, db: SupabaseClient, rodadaId: string, limite = 500,
+): Promise<OperacaoGravada[]> {
+  const { data, error } = await doDono(db, "bancada_operacao", dono, COLUNAS_OPERACAO)
+    .eq("rodada_id", rodadaId)
+    .order("abriu_em", { ascending: true })
+    .limit(Math.max(1, Math.min(2000, Math.floor(limite))));
+  if (error || !data) return [];
+  return (data as unknown as Array<Record<string, unknown>>).map((r) => ({
+    simbolo: String(r.simbolo),
+    abriuEm: Number(r.abriu_em),
+    fechouEm: Number(r.fechou_em),
+    entrada: Number(r.entrada),
+    saida: Number(r.saida),
+    desfecho: r.desfecho as OperacaoGravada["desfecho"],
+    brutoPct: Number(r.bruto_pct),
+    liquidoPct: Number(r.liquido_pct),
+    playbook: r.playbook == null ? null : String(r.playbook),
+  }));
 }
 
 // ── PAPEL ADIANTE ───────────────────────────────────────────────────

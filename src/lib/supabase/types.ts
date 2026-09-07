@@ -128,6 +128,25 @@ export type BancadaResultadoRow = {
   criado_em:              string;
 };
 
+/** ⚠️ As operações que geraram o veredito (0041) — sem elas o número não se
+ *  confere, nem por nós. */
+export type BancadaOperacaoRow = {
+  id:          string;
+  rodada_id:   string;
+  dono:        string;
+  simbolo:     string;
+  abriu_em:    number;
+  fechou_em:   number;
+  entrada:     number;
+  saida:       number;
+  desfecho:    "alvo" | "stop" | "expirada";
+  bruto_pct:   number;
+  liquido_pct: number;
+  /** Nulo em estratégia própria. */
+  playbook:    string | null;
+  criada_em:   string;
+};
+
 /** ⚠️ `expirada` não é ganho nem perda — cicatriz do flywheel. */
 export type BancadaPosicaoRow = {
   id:            string;
@@ -631,6 +650,12 @@ export interface Database {
         Row: BancadaResultadoRow;
         Insert: Partial<BancadaResultadoRow> & { rodada_id: string; dono: string; bruto_pct: number; taxa_pct: number; liquido_pct: number; n: number; acertos: number; veredito: string };
         Update: Partial<BancadaResultadoRow>;
+        Relationships: [];
+      };
+      bancada_operacao: {
+        Row: BancadaOperacaoRow;
+        Insert: Partial<BancadaOperacaoRow> & { rodada_id: string; dono: string; simbolo: string; abriu_em: number; fechou_em: number; entrada: number; saida: number; desfecho: string; bruto_pct: number; liquido_pct: number };
+        Update: never;
         Relationships: [];
       };
       bancada_posicao: {

@@ -27,6 +27,7 @@ import {
   contarEstrategiasVivas, abrirRodada, fecharRodada, listarRodadas, rodada,
   consumoDaJanela, gravarResultado, resultado,
   abrirPosicao, posicoesAbertas, posicoesAbertasParaOCron, fecharPosicao,
+  gravarOperacoes, operacoesDaRodada,
   JANELA_DA_COTA_MS,
 } from "@/lib/bancada/store";
 
@@ -382,5 +383,41 @@ describe("papel adiante: isolado por dono, menos onde o cron precisa de todos", 
     const daA = await abrirPosicao(A, db, POSICAO);
     await fecharPosicao(A, db, daA.ok ? daA.valor : "", "ganhou", 102, 2);
     expect(await posicoesAbertasParaOCron(db)).toHaveLength(0);
+  });
+});
+
+describe("⚠️ as operações da rodada: mesmo isolamento das outras tabelas", () => {
+  const op = {
+    simbolo: "BTC", abriuEm: 1_000, fechouEm: 2_000,
+    entrada: 100, saida: 102, desfecho: "alvo" as const,
+    brutoPct: 2, liquidoPct: 1.6, playbook: "range_reversion",
+  };
+
+  it("A não lê a operação de B, e lê a sua (a metade positiva)", async () => {
+    const { db } = bancoFalso();
+    await gravarOperacoes(A, db, "r-da-A", [op]);
+    await gravarOperacoes(B, db, "r-da-B", [{ ...op, simbolo: "ETH" }]);
+
+    expect((await operacoesDaRodada(A, db, "r-da-A")).map((o) => o.simbolo)).toEqual(["BTC"]);
+    // ⚠️ Nem com o id da rodada de B na mão: o filtro de dono vem ANTES do id.
+    expect(await operacoesDaRodada(A, db, "r-da-B")).toEqual([]);
+    expect((await operacoesDaRodada(B, db, "r-da-B")).map((o) => o.simbolo)).toEqual(["ETH"]);
+  });
+
+  it("lista vazia não escreve nada e não é erro", () => {
+    // Uma rodada que não abriu posição é um resultado legítimo — ver `opsVazio`.
+    const { db, tabelas } = bancoFalso();
+    return gravarOperacoes(A, db, "r1", []).then((r) => {
+      expect(r.ok).toBe(true);
+      expect(tabelas.bancada_operacao).toBeUndefined();
+    });
+  });
+
+  it("⚠️ o playbook nulo sobrevive à ida e volta — não vira string vazia", () => {
+    // Estratégia própria não tem playbook: ausência tem de continuar ausência.
+    const { db } = bancoFalso();
+    return gravarOperacoes(A, db, "r1", [{ ...op, playbook: null }])
+      .then(() => operacoesDaRodada(A, db, "r1"))
+      .then((ops) => expect(ops[0].playbook).toBeNull());
   });
 });

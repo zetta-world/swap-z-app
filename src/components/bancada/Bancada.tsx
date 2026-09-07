@@ -33,6 +33,19 @@ import type { MessageKey } from "@/lib/i18n";
 const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOT", "MATIC"];
 const INTERVALOS = ["1h", "4h", "1d"];
 
+interface Vivo {
+  mesasLigadas: Array<{
+    id: string; nome: string; desde: string | null;
+    simbolos: string[]; intervalo: string; abertas: number;
+  }>;
+  abertas: Array<{
+    id: string; estrategiaId: string; simbolo: string; lado: "long" | "short";
+    entrada: number; tamanhoUsd: number;
+    alvoPct: number | null; stopPct: number | null;
+    expiraEm: string | null; abertaEm: string;
+  }>;
+}
+
 interface Salva {
   id: string; nome: string; arquivada: boolean;
   papelAdiante: boolean; papelDesde: string | null;
@@ -55,6 +68,13 @@ interface Resposta {
     n: number; acertos: number; acertoPct: number | null;
     brutoPct: number; taxaPct: number; liquidoCompostoPct: number;
   };
+  /** ⚠️ As operações que geraram o número — o que faltava aparecer. */
+  operacoes?: Array<{
+    simbolo?: string; abriuEm: number; fechouEm: number;
+    entrada: number; saida: number;
+    desfecho: "alvo" | "stop" | "expirada";
+    brutoPct: number; liquidoPct: number; playbook?: string;
+  }>;
 }
 
 export default function Bancada() {
@@ -80,6 +100,7 @@ export default function Bancada() {
   const [verCasa, setVerCasa] = useState(false);
   const [mesas, setMesas] = useState<CartaoDaMesa[]>([]);
   const [rodandoMesa, setRodandoMesa] = useState<string | null>(null);
+  const [vivo, setVivo] = useState<Vivo | null>(null);
   const [nome, setNome] = useState("");
   const [salvas, setSalvas] = useState<Salva[]>([]);
   const [ocupado, setOcupado] = useState(false);
@@ -93,6 +114,25 @@ export default function Bancada() {
     } catch { /* melhor-esforço: a bancada funciona sem a lista */ }
   }, []);
   useEffect(() => { void recarregar(); }, [recarregar]);
+
+  /**
+   * ⚠️ O QUE ESTÁ RODANDO AGORA. Reconsultado a cada 60s — as mesas tickam com
+   * o cron de 30 minutos, então pedir mais rápido só gastaria requisição sem
+   * trazer número novo. A tela diz isso ao cliente em vez de fingir cotação
+   * ao vivo.
+   */
+  const recarregarVivo = useCallback(async () => {
+    try {
+      const res = await fetch("/api/bancada/posicoes");
+      const j = await res.json();
+      if (j?.ok) setVivo({ mesasLigadas: j.mesasLigadas ?? [], abertas: j.abertas ?? [] });
+    } catch { /* melhor-esforço: a bancada funciona sem esta seção */ }
+  }, []);
+  useEffect(() => {
+    void recarregarVivo();
+    const id = setInterval(() => { void recarregarVivo(); }, 60_000);
+    return () => clearInterval(id);
+  }, [recarregarVivo]);
 
   useEffect(() => {
     // ⚠️ Melhor-esforço: a bancada funciona sem a vitrine. Falhar aqui não
@@ -166,6 +206,7 @@ export default function Bancada() {
       const j = await res.json();
       if (!j?.ok) setAviso(j?.porque ?? t("bancada.papelSo"));
       await recarregar();
+      await recarregarVivo();   // ⚠️ ligar a mesa tem de aparecer na hora
     } catch { setAviso(t("bancada.errorTitle")); }
     finally { setOcupado(false); }
   }
@@ -468,6 +509,77 @@ export default function Bancada() {
         </div>
       </section>
 
+      {/* ── O QUE ESTÁ RODANDO AGORA ────────────────────────────────── */}
+      {/* ⚠️ `bancada_posicao` era escrita pelo cron desde a fase 6 e NENHUMA
+          tela a lia: a mesa tickava, abria e fechava, e o dono dela não tinha
+          como ver. A peça existia, era testada, e estava desligada do caminho
+          que decide — do lado do cliente desta vez. */}
+      {vivo && (vivo.mesasLigadas.length > 0 || vivo.abertas.length > 0) && (
+        <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
+          <p className="text-sm font-medium text-ink">{t("bancada.vivoTitulo")}</p>
+
+          <ul className="mt-3 space-y-2">
+            {vivo.mesasLigadas.map((m) => {
+              const suas = vivo.abertas.filter((p) => p.estrategiaId === m.id);
+              return (
+                <li key={m.id} className="rounded-xl border border-white/5 bg-bg-2/60 p-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-[13px] text-ink">
+                      <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-green align-middle" />
+                      {m.nome}
+                    </span>
+                    {m.desde && (
+                      <span className="text-[11px] text-ink-4">
+                        {t("bancada.vivoDesde", { desde: m.desde.slice(0, 10) })}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* ⚠️ "Ligada e ainda sem setup" NÃO é o mesmo que "desligada",
+                      e uma tela vazia confundiria os dois. */}
+                  {suas.length === 0 ? (
+                    <p className="mt-1 text-xs text-ink-3">{t("bancada.vivoLigadaSemPos")}</p>
+                  ) : (
+                    <ul className="mt-2 space-y-1">
+                      {suas.map((p) => (
+                        <li key={p.id} className="rounded-lg border border-white/5 bg-bg/40 px-2.5 py-1.5">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-xs text-ink">{p.simbolo} · {p.lado}</span>
+                            <span className="text-[11px] text-ink-3">
+                              {t("bancada.vivoAberta", { desde: p.abertaEm.slice(0, 10) })}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-ink-4">
+                            {t("bancada.vivoEntrada", { preco: p.entrada.toFixed(4) })}
+                            {p.alvoPct != null && p.stopPct != null && (
+                              <> · {t("bancada.vivoAlvoStop", { alvo: p.alvoPct, stop: p.stopPct })}</>
+                            )}
+                            {p.expiraEm && <> · {t("bancada.vivoExpira", { quando: p.expiraEm.slice(0, 10) })}</>}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* ⚠️ DIZER A CADÊNCIA É PARTE DA HONESTIDADE: chamar de "tempo real"
+              algo que anda de 30 em 30 minutos criaria a expectativa errada. */}
+          <p className="mt-3 border-t border-white/5 pt-2 text-[11px] leading-relaxed text-ink-4">
+            {t("bancada.vivoTick")}
+          </p>
+        </section>
+      )}
+
+      {vivo && vivo.mesasLigadas.length === 0 && vivo.abertas.length === 0 && salvas.some((e) => !e.arquivada) && (
+        <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
+          <p className="text-sm font-medium text-ink">{t("bancada.vivoTitulo")}</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-3">{t("bancada.vivoNenhuma")}</p>
+        </section>
+      )}
+
       {/* ── O VEREDITO, ANTES DO PLACAR ─────────────────────────────── */}
       {r && !r.ok && (
         <section className="rounded-2xl border border-gold/30 bg-gold/5 p-5">
@@ -483,6 +595,13 @@ export default function Bancada() {
       )}
 
       {r?.ok && r.veredito && r.resumo && <Veredito r={r} />}
+
+      {/* ── AS OPERAÇÕES, uma a uma ─────────────────────────────────── */}
+      {/* ⚠️ O dono, na primeira rodada real: "não aparece as entradas feitas,
+          não aparece nada". Um veredito sem as operações é um número sem como
+          conferir — o cliente lê "−1,85%" e não sabe se foram quatro entradas
+          ruins ou uma catástrofe, nem quando entrou, nem por que saiu. */}
+      {r?.ok && r.operacoes && <Operacoes ops={r.operacoes} />}
     </div>
   );
 }
@@ -627,6 +746,65 @@ function MesaDaCasa({ m, rodando, onRodar }: { m: CartaoDaMesa; rodando: boolean
         </ul>
       )}
     </li>
+  );
+}
+
+/** A lista de operações de uma rodada — o extrato que sustenta o veredito. */
+function Operacoes({ ops }: { ops: NonNullable<Resposta["operacoes"]> }) {
+  const t = useT();
+  if (ops.length === 0) {
+    return (
+      <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
+        <p className="text-sm font-medium text-ink">{t("bancada.opsTitulo")}</p>
+        {/* ⚠️ "Nenhuma posição aberta" é uma RESPOSTA, não uma tela vazia. */}
+        <p className="mt-1 text-xs text-ink-3">{t("bancada.opsVazio")}</p>
+      </section>
+    );
+  }
+
+  const dia = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+  return (
+    <section className="rounded-2xl border border-white/5 bg-bg-1/40 p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-sm font-medium text-ink">{t("bancada.opsTitulo")}</p>
+        <span className="text-xs text-ink-3">{t("bancada.opsQuantas", { n: ops.length })}</span>
+      </div>
+
+      <ul className="mt-3 space-y-1.5">
+        {ops.map((o, i) => {
+          /**
+           * ⚠️ A COR SEGUE O DESFECHO, não o sinal do número: uma EXPIRADA no
+           * lucro continua cinza. Ela não é ganho nem perda — contá-la como
+           * vitória infla a borda, e é cicatriz do flywheel.
+           */
+          const cor = o.desfecho === "alvo" ? "text-green"
+            : o.desfecho === "stop" ? "text-red" : "text-ink-3";
+          const rotulo = o.desfecho === "alvo" ? t("bancada.opsAlvo")
+            : o.desfecho === "stop" ? t("bancada.opsStop") : t("bancada.opsExpirada");
+          return (
+            <li key={`${o.abriuEm}-${i}`} className="rounded-lg border border-white/5 bg-bg-2/60 px-3 py-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-xs text-ink-2">
+                  {o.simbolo && <span className="mr-1.5 text-ink">{o.simbolo}</span>}
+                  {dia(o.abriuEm)} → {dia(o.fechouEm)}
+                </span>
+                <span className={`text-xs font-medium ${cor}`}>
+                  {o.liquidoPct >= 0 ? "+" : ""}{o.liquidoPct.toFixed(2)}% · {rotulo}
+                </span>
+              </div>
+              <div className="mt-0.5 text-[11px] text-ink-4">
+                {t("bancada.opsEntrada")} {o.entrada.toFixed(4)} · {t("bancada.opsSaida")} {o.saida.toFixed(4)}
+                {/* ⚠️ Qual playbook abriu — só existe no modo mesa. Sem ele,
+                    "a mesa operou" e "a mesa operou por reversão de faixa" são
+                    indistinguíveis. */}
+                {o.playbook && <> · {t("bancada.opsPorPlaybook", { playbook: o.playbook })}</>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

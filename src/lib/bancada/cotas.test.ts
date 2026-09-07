@@ -155,3 +155,43 @@ describe("⚠️ a vitrine e a porta dizem a mesma coisa", () => {
     expect(BANCADA_COTAS.trader.mesasDePapel).toBeGreaterThan(0);
   });
 });
+
+describe("⚠️⚠️ o modo mesa lê QUATRO prazos, e a cota tem de cobrar pelos quatro", () => {
+  it("uma rodada de mesa custa muito mais que a mesma janela em 1d", () => {
+    // O defeito medido em 06/09: a rodada gravada como `custo_velas: 365` leu
+    // 3.566 velas (1h + 4h + 1d do mesmo símbolo). A cota subcontava ~10×.
+    const janela = { janelaDe: FIM - 365 * DIA, janelaAte: FIM };
+    const comoDiario = custoDoPedido(pedido({ ...janela, intervalo: "1d" }))!;
+    const comoMesa = custoDoPedido(pedido({ ...janela, intervalo: "1d", mesa: true }))!;
+
+    expect(comoDiario).toBe(365);
+    // 8.760 (1h) + 2.190 (4h) + 365 (1d) ≈ 11.315
+    expect(comoMesa).toBeGreaterThan(comoDiario * 8);
+  });
+
+  it("⚠️ a base do modo mesa é 1h, não o intervalo marcado na tela", () => {
+    // O seletor caminha sobre 1h; cobrar pelo `1d` que o cliente marcou
+    // cobraria pelo prazo errado — e o custo real não muda com essa marcação.
+    const janela = { janelaDe: FIM - 30 * DIA, janelaAte: FIM };
+    const comMarcacao1d = custoDoPedido(pedido({ ...janela, intervalo: "1d", mesa: true }))!;
+    const comMarcacao1h = custoDoPedido(pedido({ ...janela, intervalo: "1h", mesa: true }))!;
+    expect(comMarcacao1d).toBe(comMarcacao1h);
+  });
+
+  it("⚠️ a semanal NÃO custa leitura — ela é agregada das diárias", () => {
+    const janela = { janelaDe: FIM - 70 * DIA, janelaAte: FIM };
+    const c = custoDoPedido(pedido({ ...janela, mesa: true }))!;
+    const h1 = 70 * 24, h4 = 70 * 6, d1 = 70;
+    expect(c).toBe(h1 + h4 + d1);
+  });
+
+  it("o teto de trabalho continua valendo, e agora sobre o custo REAL da mesa", () => {
+    // Uma janela de 365 dias em modo mesa estoura o teto do free (3 × 365 × 24).
+    const d = decidir("free", pedido({
+      janelaDe: FIM - 365 * DIA, janelaAte: FIM, mesa: true,
+      simbolos: ["BTC", "ETH", "SOL"],
+    }), zerado);
+    expect(d.ok).toBe(false);
+    if (!d.ok) expect(d.motivo).toBe("trabalho_demais");
+  });
+});
