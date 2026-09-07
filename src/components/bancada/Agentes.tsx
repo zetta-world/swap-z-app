@@ -264,7 +264,7 @@ function CartaoDoAgente({ a, ocupado, onPausar, onDispensar }: {
               <span className={`block text-xl font-semibold tabular-nums ${cor}`}>
                 {d.liquidoPorOpPct >= 0 ? "+" : ""}{d.liquidoPorOpPct.toFixed(2)}%
               </span>
-              <span className="block text-[10px] text-ink-4">{t("bancada.agPorOp")}</span>
+              <span className="block text-[10px] text-ink-4">{t("bancada.mesasPorOp")}</span>
             </>
           )}
         </div>
@@ -413,7 +413,7 @@ function PosicaoViva({ o, agora }: { o: Operacao; agora: number }) {
         {dist?.alvoPct != null && <span>{t("bancada.agFaltaAlvo", { pct: dist.alvoPct.toFixed(2) })}</span>}
         {dist?.stopPct != null && <span>{t("bancada.agFaltaStop", { pct: dist.stopPct.toFixed(2) })}</span>}
         {expiraMin != null && expiraMin > 0 && (
-          <span>{t("bancada.agExpiraEm", { quando: `${Math.floor(expiraMin / 60)}h` })}</span>
+          <span>{t("bancada.vivoExpira", { quando: `${Math.floor(expiraMin / 60)}h` })}</span>
         )}
         {o.playbook && <span>{t("bancada.opsPorPlaybook", { playbook: o.playbook })}</span>}
       </div>

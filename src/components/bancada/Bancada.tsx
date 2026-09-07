@@ -349,12 +349,21 @@ export default function Bancada() {
    */
   function abrirCartao(identidade: Identidade, ctx: Contexto): string {
     const chave = `local:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    /**
+     * ⚠️ A NOVA NASCE ABERTA, E AS ANTERIORES FECHAM.
+     *
+     * O bloco "NÃO medido" tem quatro itens e é reimpresso por rodada aberta;
+     * como toda rodada da sessão nascia aberta, três testes seguidos empilhavam
+     * três cópias do mesmo aviso — a mesma repetição que o dono viu nos cards
+     * das mesas. O que ele quer ver aberto é o que acabou de rodar; o resto
+     * continua a um clique.
+     */
     setCorridas((atual) => [{
       chave, rodadaId: null, quando: new Date().toISOString(),
       identidade, contexto: ctx, estado: "rodando",
       porque: null, upgradeUrl: null, medida: null,
       ops: null, opsCarregando: false, aberta: true,
-    }, ...atual]);
+    }, ...atual.map((c) => (c.aberta ? { ...c, aberta: false } : c))]);
     return chave;
   }
 
