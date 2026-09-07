@@ -20,7 +20,8 @@ import {
 } from "@/lib/bancada/store";
 import {
   mesasQuePodemTickar, decidirAbertura, decidirFechamentoDaPosicao,
-  MESAS_POR_TICK, type Mesa, type MesaPropria,
+  aVezDeQuem, tickAtual, MESAS_POR_TICK, AGENTES_POR_TICK,
+  type Mesa, type MesaPropria,
 } from "@/lib/bancada/papel";
 import { decidirAberturaDoAgente, INTERVALO_DO_AGENTE, BARRAS_DE_AQUECIMENTO } from "@/lib/bancada/agente";
 import { agregar } from "@/lib/bancada/mesa-real";
@@ -53,6 +54,15 @@ export interface ResumoDoTique {
   fechadas: number;
   /** Mesas ignoradas por o plano do dono não as cobrir mais (downgrade). */
   cortadasPorPlano: number;
+  /**
+   * ⚠️ Quantas ficaram para o PRÓXIMO tick por causa do teto de trabalho.
+   *
+   * Ela é contada e reportada porque "adiada" e "parada" são coisas diferentes,
+   * e sem esse número a única forma de descobrir que o teto está apertado seria
+   * um cliente reclamando que a mesa dele não abre. ⚠️ E elas voltam: a janela
+   * de `aVezDeQuem` rola a cada tick.
+   */
+  adiadas: number;
   problemas: string[];
 }
 
@@ -66,7 +76,9 @@ export interface ResumoDoTique {
 export async function tiqueDoPapelAdiante(
   db: SupabaseClient, agoraMs: number = Date.now(),
 ): Promise<ResumoDoTique> {
-  const resumo: ResumoDoTique = { mesas: 0, abertas: 0, fechadas: 0, cortadasPorPlano: 0, problemas: [] };
+  const resumo: ResumoDoTique = {
+    mesas: 0, abertas: 0, fechadas: 0, cortadasPorPlano: 0, adiadas: 0, problemas: [],
+  };
 
   const ligadas = await mesasLigadasParaOCron(db);
   if (ligadas.length === 0) return resumo;
@@ -182,8 +194,27 @@ export async function tiqueDoPapelAdiante(
     const { tickam, cortadas } = mesasQuePodemTickar(comoMesa, tier);
     resumo.cortadasPorPlano += cortadas.length;
 
+    /**
+     * ⚠️⚠️ AS DUAS ESPÉCIES TÊM ORÇAMENTOS SEPARADOS, porque custam coisas
+     * diferentes: a própria pede 1 leitura por símbolo; a instância de agente
+     * pede 3 mais `computeIndicators`. Ver `AGENTES_POR_TICK`.
+     *
+     * ⚠️ E A JANELA ROLA (`aVezDeQuem`): com um corte fixo sobre uma ordem
+     * estável, as mesmas primeiras mesas ganhariam em TODO tick e a de número
+     * `teto+1` nunca rodaria. Isso não é uma fila, é um corte — e era o que o
+     * código fazia enquanto o comentário afirmava o contrário.
+     */
+    const agora = tickAtual(agoraMs);
+    const proprias = tickam.filter((m) => m.mesa == null);
+    const instancias = tickam.filter((m) => m.mesa != null);
+    const daVez = [
+      ...aVezDeQuem(proprias, MESAS_POR_TICK, agora),
+      ...aVezDeQuem(instancias, AGENTES_POR_TICK, agora),
+    ];
+    resumo.adiadas += (proprias.length + instancias.length) - daVez.length;
+
     // ── 3. Abrir o que o sinal mandar ─────────────────────────────
-    for (const mesa of tickam) {
+    for (const mesa of daVez) {
       if (processadas >= MESAS_POR_TICK) break;
       processadas++;
       resumo.mesas++;

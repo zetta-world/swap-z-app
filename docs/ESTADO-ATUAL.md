@@ -1987,6 +1987,30 @@ aberta: editar a estratégia movia o alvo **retroativamente**. Agora o bracket �
 lido da POSIÇÃO (`decidirFechamentoDaPosicao`), e cada linha carrega o seu —
 exigência do agente, cujas duas posições têm alvos diferentes.
 
+### ⚠️ E o teto do tick mentia — achado ao dimensionar o agente
+
+`MESAS_POR_TICK = 40` vinha com o comentário *"as que sobram pegam o tick
+seguinte, e a ordem determinística garante que ninguém fique para trás para
+sempre"*. Ele afirmava **o oposto do que o código fazia**: com a lista ordenada
+por criação e um `.slice(0, 40)`, as mesmas 40 primeiras ganham em TODO tick e a
+de número 41 **nunca roda**. Isso não é fila, é corte.
+
+Só apareceu porque a instância de agente custa **3 leituras de vela por símbolo
+mais `computeIndicators`**, contra 1 leitura da estratégia própria — 40 agentes
+de 5 símbolos pedem 600 leituras dentro de uma função com `maxDuration = 60`
+que antes disso já rodou o flywheel, o oráculo, o radar e o papel da casa. Ao
+fazer essa conta o comentário caiu junto.
+
+Dois consertos: `AGENTES_POR_TICK = 8` (orçamento próprio para a espécie cara) e
+`aVezDeQuem()`, uma janela que **rola** a cada tick — a ordem continua
+determinística, o ponto de partida anda, e em `n/teto` ticks todo mundo passou.
+O teste que prova isso inclui a contraprova: com o `.slice` fixo, o último da
+fila não aparece em 50 ticks.
+
+E `adiadas` entrou no resumo e no evento do cron: sem esse número, a única forma
+de descobrir que o teto está apertado seria um cliente reclamando que a mesa
+dele não abre.
+
 ### A lição de método
 
 Três críticas seguidas do dono sobre a mesma tela, e as três primeiras respostas

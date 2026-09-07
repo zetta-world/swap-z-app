@@ -238,7 +238,59 @@ export function decidirFechamentoDaPosicao(
  *
  * O cron do `/api/zion/backtest` já faz muita coisa em 30 minutos, e uma mesa
  * que demora derruba o resto. Este número limita quantas mesas um tick
- * processa; as que sobram pegam o tick seguinte, e a ordem determinística
- * garante que ninguém fique para trás para sempre.
+ * processa; as que sobram pegam o tick seguinte — ver `aVezDeQuem`, que é o que
+ * de fato impede alguém de ficar para trás para sempre.
  */
 export const MESAS_POR_TICK = Number(process.env.BANCADA_MESAS_POR_TICK ?? 40);
+
+/**
+ * ⚠️⚠️ O TETO SEPARADO DAS INSTÂNCIAS DE AGENTE — e o motivo é aritmética de
+ * orçamento, não cautela genérica.
+ *
+ * As duas espécies de mesa custam coisas MUITO diferentes por símbolo:
+ *
+ *   · estratégia própria — 1 leitura de vela, e `sinais()` sobre ela;
+ *   · instância de agente — **3 leituras** (1h, 4h, 1d), a agregação semanal, e
+ *     `computeIndicators` sobre ~400 barras.
+ *
+ * Contar as duas contra o mesmo teto de 40 significa que 40 agentes de 5
+ * símbolos pedem 600 leituras — dentro de uma função com `maxDuration = 60`
+ * que ANTES disso já rodou o flywheel, o oráculo, o radar e o papel da casa.
+ * O que estoura ali não é a bancada do cliente: é o tick inteiro.
+ */
+export const AGENTES_POR_TICK = Number(process.env.BANCADA_AGENTES_POR_TICK ?? 8);
+
+/**
+ * ⚠️⚠️ DE QUEM É A VEZ NESTE TICK — a janela ROLA, e sem isso o teto mente.
+ *
+ * O comentário de `MESAS_POR_TICK` dizia que "a ordem determinística garante
+ * que ninguém fique para trás para sempre". Ele estava errado: com uma ordem
+ * estável e um corte fixo, as mesmas primeiras `teto` mesas ganham em TODO
+ * tick, e a de número `teto+1` nunca roda. Não é uma fila — é um corte.
+ *
+ * Aqui a ordem continua determinística (a lista chega ordenada por criação),
+ * mas o PONTO DE PARTIDA anda a cada tick. Em `n/teto` ticks todo mundo passou,
+ * e o cliente cuja mesa é a última a ser criada não fica invisível para sempre.
+ *
+ * ⚠️ `tick` vem do relógio dividido pela cadência, não de um contador guardado:
+ * um contador em `admin_kv` seria mais uma escrita que pode falhar, e falhando
+ * ele congelaria a janela exatamente onde estava.
+ */
+export function aVezDeQuem<T>(fila: ReadonlyArray<T>, teto: number, tick: number): T[] {
+  const n = fila.length;
+  if (n === 0 || teto <= 0) return [];
+  if (n <= teto) return [...fila];
+  // ⚠️ `((x % n) + n) % n` porque `%` em JS devolve negativo para entrada
+  // negativa — e um relógio errado não pode virar um índice negativo.
+  const inicio = (((tick * teto) % n) + n) % n;
+  const saida: T[] = [];
+  for (let i = 0; i < teto; i++) saida.push(fila[(inicio + i) % n]);
+  return saida;
+}
+
+/** A cadência do cron que hospeda o tique. `aVezDeQuem` conta ticks com ela. */
+export const CADENCIA_MS = 30 * 60_000;
+
+export function tickAtual(agoraMs: number): number {
+  return Math.floor(agoraMs / CADENCIA_MS);
+}

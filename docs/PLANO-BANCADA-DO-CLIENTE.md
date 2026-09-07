@@ -769,3 +769,21 @@ desempenho.ts → decididas · expiradas · acerto · líquido/op            ←
   política não reproduzimos seria o defeito de 07/09 entrando pela outra porta.
 - `expirada` não é ganho nem perda, e a cor sai das **decididas**: 40 expiradas
   não compram cor para 2 decididas.
+
+### ⚠️ O teto do tick, achado ao dimensionar o agente
+
+`MESAS_POR_TICK = 40` afirmava, em comentário, que *"a ordem determinística
+garante que ninguém fique para trás para sempre"*. Com uma ordem estável e um
+`.slice(0, 40)`, a mesa de número 41 **nunca roda**.
+
+Só apareceu ao somar o custo da nova espécie: a instância de agente pede **3
+leituras por símbolo + `computeIndicators`**, contra 1 da estratégia própria —
+40 agentes × 5 símbolos = 600 leituras numa função com `maxDuration = 60` que já
+rodou o flywheel, o oráculo, o radar e o papel da casa antes.
+
+- `AGENTES_POR_TICK = 8` — orçamento próprio para a espécie cara.
+- `aVezDeQuem(fila, teto, tick)` — a janela **rola**: ordem determinística, ponto
+  de partida móvel, e em `n/teto` ticks todo mundo passou. O teste traz a
+  contraprova: com o corte fixo, o último da fila não aparece em 50 ticks.
+- `adiadas` no resumo e no evento do cron — sem esse número, a única forma de
+  descobrir que o teto aperta seria um cliente reclamando.
