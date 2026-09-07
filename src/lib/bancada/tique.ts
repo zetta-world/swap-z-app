@@ -16,9 +16,9 @@ import { velasDoIntervalo } from "@/lib/mercado/store";
 import { lerEstrategia } from "@/lib/bancada/vocabulario";
 import {
   mesasLigadasParaOCron, posicoesAbertasParaOCron, abrirPosicao, fecharPosicao,
-  gravarUltimoTique, type MesaDoCron,
+  gravarUltimoTique, marcarTiqueAdiado, type MesaDoCron,
 } from "@/lib/bancada/store";
-import type { VistoNoSimbolo } from "@/lib/bancada/ultimo-tique";
+import { motivoFechado, type VistoNoSimbolo } from "@/lib/bancada/ultimo-tique";
 import {
   mesasQuePodemTickar, decidirAbertura, decidirFechamentoDaPosicao,
   aVezDeQuem, tickAtual, MESAS_POR_TICK, AGENTES_POR_TICK,
@@ -212,7 +212,25 @@ export async function tiqueDoPapelAdiante(
       ...aVezDeQuem(proprias, MESAS_POR_TICK, agora),
       ...aVezDeQuem(instancias, AGENTES_POR_TICK, agora),
     ];
-    resumo.adiadas += (proprias.length + instancias.length) - daVez.length;
+    const adiadas = [...proprias, ...instancias].filter((m) => !daVez.includes(m));
+    resumo.adiadas += adiadas.length;
+
+    /**
+     * ⚠️⚠️ QUEM PERDEU A VEZ É CARIMBADO — e isto não é telemetria, é o que
+     * impede um alarme falso na tela do cliente.
+     *
+     * Sem a marca, o intervalo entre duas avaliações de uma instância adiada
+     * passa dos 60 minutos que `saudeDoTique` usa para gritar `atrasado`: o
+     * único aviso que o investidor tem passaria a disparar por um TETO NOSSO,
+     * culpando o agente DELE. Ver `0045_bancada_marcar_adiado.sql`.
+     *
+     * ⚠️ Melhor-esforço, como todo o resto deste laço: não conseguir carimbar
+     * não pode derrubar o tique das que GANHARAM a vez.
+     */
+    if (adiadas.length > 0) {
+      try { await marcarTiqueAdiado(db, adiadas.map((m) => m.id), agoraMs); }
+      catch { /* ver acima */ }
+    }
 
     // ── 3. Abrir o que o sinal mandar ─────────────────────────────
     for (const mesa of daVez) {
@@ -287,13 +305,25 @@ async function decidirDaPropria(
   const leitura = await velasDoIntervalo(
     db, simbolo, mesa.intervalo, agoraMs - VELAS_POR_MESA * 3_600_000, agoraMs, agoraMs,
   );
-  // ⚠️ O último fechamento LIDO, não uma cotação: a tela mostra a idade junto.
+  /**
+   * ⚠️⚠️ O CARIMBO DA VELA VIAJA JUNTO DO PREÇO. O cron pode passar às 14:30 e
+   * servir um fechamento de 11:00: o cache `mercado_vela` responde com o que
+   * tem quando a fonte recusa. Guardar só a hora do CRON faria a tela declarar
+   * uma idade ERRADA — pior que não declarar idade nenhuma.
+   */
   const ultima = leitura.velas[leitura.velas.length - 1];
   const preco = ultima != null && ultima.close > 0 ? ultima.close : null;
+  const velaEm = ultima != null ? ultima.t : null;
 
   const d = decidirAbertura(mesa, leitura.velas, agoraMs);
-  if (!d.abre) return { abertura: null, visto: { preco, motivo: d.porque, abriu: false } };
-  return { visto: { preco, motivo: null, abriu: true }, abertura: {
+  // ⚠️ O motivo é FECHADO na borda — ver `motivoFechado`. Guardar a string crua
+  // punha `ja_tem_posicao` na tela de um cliente chinês.
+  if (!d.abre) {
+    return { abertura: null, visto: {
+      preco, velaEm, motivo: motivoFechado(d.porque), detalhe: null, abriu: false,
+    } };
+  }
+  return { visto: { preco, velaEm, motivo: null, detalhe: null, abriu: true }, abertura: {
     lado: mesa.params.direcao === "compra" ? "long" : "short",
     entrada: d.preco,
     tamanhoUsd: TAMANHO_DE_PAPEL_USD,
@@ -333,10 +363,12 @@ async function decidirDoAgente(
     velasDoIntervalo(db, simbolo, "1d", agoraMs - 400 * 86_400_000, agoraMs, agoraMs),
   ]);
 
-  // ⚠️ O último fechamento de 1h que ELE leu — a mesma vela que decide. A tela
-  // mostra a idade junto: isto não é cotação ao vivo, e não pode parecer.
+  // ⚠️ O último fechamento de 1h que ELE leu — a mesma vela que decide. O
+  // carimbo dela vai junto: a idade que a tela mostra tem de ser a do DADO, não
+  // a da passagem do cron. Ver a nota gêmea em `decidirDaPropria`.
   const ultima1h = h1.velas[h1.velas.length - 1];
   const preco = ultima1h != null && ultima1h.close > 0 ? ultima1h.close : null;
+  const velaEm = ultima1h != null ? ultima1h.t : null;
 
   const d = decidirAberturaDoAgente(
     { temPosicaoAberta: mesa.temPosicaoAberta, ultimaAberturaMs: mesa.ultimaAberturaMs },
@@ -357,10 +389,18 @@ async function decidirDoAgente(
     if (d.porque === "aquecendo") {
       resumo.problemas.push(`${mesa.id}/${simbolo}: ainda aquecendo (${h1.velas.length} velas de 1h)`);
     }
-    return { abertura: null, visto: { preco, motivo: d.porque, abriu: false } };
+    /**
+     * ⚠️ O `porque` do agente inclui a prosa livre do SELETOR ("EMA50 acima do
+     * preço") — texto que este arquivo não controla e que muda numa entrega do
+     * admin. Ele é fechado para tradução e o cru fica em `detalhe`, que a tela
+     * nunca imprime como se fosse nosso.
+     */
+    return { abertura: null, visto: {
+      preco, velaEm, motivo: motivoFechado(d.porque), detalhe: d.porque, abriu: false,
+    } };
   }
 
-  return { visto: { preco, motivo: null, abriu: true }, abertura: {
+  return { visto: { preco, velaEm, motivo: null, detalhe: null, abriu: true }, abertura: {
     // ⚠️ Estas mesas são long-only por construção — ver `agente.ts`.
     lado: "long",
     entrada: d.entrada,

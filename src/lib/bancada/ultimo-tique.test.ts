@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { lerUltimoTique, saudeDoTique, distanciaAte } from "@/lib/bancada/ultimo-tique";
+import { lerUltimoTique, saudeDoTique, distanciaAte, motivoFechado } from "@/lib/bancada/ultimo-tique";
 
 const M = 60_000;
 const CADENCIA = 30 * M;
@@ -57,19 +57,103 @@ describe("a saúde do tique — o alarme que faltava", () => {
     expect(saudeDoTique({ em: agora - 60 * M, simbolos: {} }, CADENCIA, agora)).toBe("em_dia");
     expect(saudeDoTique({ em: agora - 60 * M - 1, simbolos: {} }, CADENCIA, agora)).toBe("atrasado");
   });
+
+  /**
+   * ⚠️⚠️ O QUARTO ESTADO NASCEU DE UM DEFEITO MEU, achado em auditoria no mesmo
+   * dia em que o código subiu.
+   *
+   * Com 10 agentes (o teto do plano `pilot`) e `AGENTES_POR_TICK = 8`, a janela
+   * rolante de `aVezDeQuem` deixa cada instância de fora uma vez a cada cinco
+   * ciclos — e o intervalo entre duas avaliações cai EXATAMENTE na fronteira
+   * dos 60 minutos. O único alarme que o investidor tem passaria a disparar por
+   * limitação NOSSA, culpando o agente DELE. Depois de duas ou três vezes ele
+   * aprende a ignorar o aviso, que é o mesmo efeito de não ter aviso.
+   */
+  it("adiado pelo teto da casa NÃO é o agente parado", () => {
+    const t = { em: agora - 90 * M, adiadaEm: agora - 5 * M, simbolos: {} };
+    expect(saudeDoTique(t, CADENCIA, agora)).toBe("adiado");
+  });
+
+  it("mas um adiamento VELHO não desculpa o silêncio de hoje", () => {
+    // Senão "a casa está sempre te deixando de fora" viraria `atrasado` com
+    // outro nome — e sem o alarme.
+    const t = { em: agora - 300 * M, adiadaEm: agora - 200 * M, simbolos: {} };
+    expect(saudeDoTique(t, CADENCIA, agora)).toBe("atrasado");
+  });
+
+  it("quem foi avaliado agora está em dia, adiamento antigo ou não", () => {
+    const t = { em: agora - 5 * M, adiadaEm: agora - 999 * M, simbolos: {} };
+    expect(saudeDoTique(t, CADENCIA, agora)).toBe("em_dia");
+  });
+});
+
+/**
+ * ⚠️⚠️ O VOCABULÁRIO DO MOTIVO É FECHADO — e a razão é a tela de um cliente
+ * pagante. A primeira versão guardava a string crua, inclusive
+ * `tentativas[0].reason`, que vem do SELETOR e não é controlado por este
+ * arquivo. Renderizar isso põe `ja_tem_posicao` na tela de um cliente chinês, e
+ * deixa o texto do admin vazar para a Bancada na primeira entrega que o
+ * reescrever, sem ninguém notar.
+ */
+describe("o motivo é fechado na borda, nunca cru", () => {
+  it.each([
+    ["ja_tem_posicao", "ja_tem_posicao"],
+    ["aquecendo", "aquecendo"],
+    ["vela_ja_avaliada", "sem_vela_nova"],
+    ["sem_velas", "sem_dado"],
+    ["sem_sinal", "sem_setup"],
+    ["bracket degenerado", "outro"],
+  ])("%s vira %s", (cru, esperado) => {
+    expect(motivoFechado(cru)).toBe(esperado);
+  });
+
+  /**
+   * ⚠️ O DESCONHECIDO VIRA `sem_setup`, NÃO `outro`. O seletor devolve prosa
+   * livre exatamente no caso NORMAL ("EMA50 acima do preço"), e mandá-lo para
+   * `outro` faria o estado mais comum da tela ser o rótulo genérico.
+   */
+  it("prosa livre do seletor cai em `sem_setup`, o caso normal", () => {
+    expect(motivoFechado("EMA50 acima do preço")).toBe("sem_setup");
+    expect(motivoFechado("suporte não testado")).toBe("sem_setup");
+  });
+
+  it("abriu (sem motivo) continua sem motivo", () => {
+    expect(motivoFechado(null)).toBeNull();
+    expect(motivoFechado("")).toBeNull();
+  });
 });
 
 describe("o que o tique viu, por símbolo", () => {
-  it("lê preço, motivo e se abriu", () => {
+  it("lê preço, carimbo da vela, motivo fechado e se abriu", () => {
     const t = lerUltimoTique({
       em: 1000,
       simbolos: {
-        BTC: { preco: 121750.76, motivo: "EMA50 acima do preço", abriu: false },
-        ETH: { preco: 4200, motivo: null, abriu: true },
+        BTC: { preco: 121750.76, velaEm: 900, motivo: "sem_setup", detalhe: "EMA50 acima do preço", abriu: false },
+        ETH: { preco: 4200, velaEm: 900, motivo: null, detalhe: null, abriu: true },
       },
     });
-    expect(t?.simbolos.BTC).toEqual({ preco: 121750.76, motivo: "EMA50 acima do preço", abriu: false });
-    expect(t?.simbolos.ETH).toEqual({ preco: 4200, motivo: null, abriu: true });
+    expect(t?.simbolos.BTC).toEqual({
+      preco: 121750.76, velaEm: 900, motivo: "sem_setup", detalhe: "EMA50 acima do preço", abriu: false,
+    });
+    expect(t?.simbolos.ETH.abriu).toBe(true);
+  });
+
+  /**
+   * ⚠️⚠️ O CARIMBO É DA VELA, NÃO DO CRON. O cron pode passar às 14:30 e servir
+   * um fechamento de 11:00 — o cache responde com o que tem quando a fonte
+   * recusa. Uma idade ERRADA declarada é pior que idade nenhuma.
+   */
+  it("o carimbo da vela é independente do carimbo do cron", () => {
+    const t = lerUltimoTique({ em: 50_000, simbolos: { BTC: { preco: 1, velaEm: 11_000, abriu: false } } });
+    expect(t?.em).toBe(50_000);
+    expect(t?.simbolos.BTC.velaEm).toBe(11_000);
+  });
+
+  it("motivo desconhecido no banco não vira chave de tradução inexistente", () => {
+    // Uma linha gravada por outra versão do código desenharia um marcador
+    // vazio — pior que ausente, porque parece medido.
+    const t = lerUltimoTique({ em: 1, simbolos: { BTC: { motivo: "inventado", abriu: false } } });
+    expect(t?.simbolos.BTC.motivo).toBeNull();
   });
 
   /**
@@ -85,6 +169,11 @@ describe("o que o tique viu, por símbolo", () => {
   it("motivo vazio é ausência de motivo, não uma string vazia na tela", () => {
     const t = lerUltimoTique({ em: 1000, simbolos: { BTC: { motivo: "", abriu: false } } });
     expect(t?.simbolos.BTC.motivo).toBeNull();
+  });
+
+  it("o detalhe cru é truncado — ele é diagnóstico, não conteúdo de tela", () => {
+    const t = lerUltimoTique({ em: 1, simbolos: { BTC: { detalhe: "x".repeat(500), abriu: false } } });
+    expect(t?.simbolos.BTC.detalhe).toHaveLength(200);
   });
 
   it("`abriu` só é verdade quando é literalmente `true`", () => {

@@ -289,7 +289,16 @@ export async function POST(req: NextRequest) {
      * ⚠️ Melhor-esforço, como o de cima: uma mesa de cliente com problema não
      * leva junto o flywheel, o oráculo e o papel da casa.
      */
-    if (!gates.pause_paper) {
+    /**
+     * ⚠️⚠️ GATE PRÓPRIO (`pause_bancada`), NÃO O `pause_paper` (07/09).
+     *
+     * Isto pendurava no mesmo gate do experimento da casa na Gate.io — cujo
+     * rótulo no painel diz "pausar só congela o experimento". Um operador
+     * desligaria o que acha ser um teste interno e pararia, junto, TODOS os
+     * agentes que os clientes contrataram e pagam, sem uma palavra na tela
+     * deles dizendo por quê.
+     */
+    if (!gates.pause_bancada) {
       try {
         const db = getSupabaseAdmin();
         if (db) {

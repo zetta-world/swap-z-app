@@ -37,6 +37,7 @@ import { INTERVALO_DO_AGENTE } from "@/lib/bancada/agente";
 import { lerUltimoTique, saudeDoTique, distanciaAte } from "@/lib/bancada/ultimo-tique";
 import { CADENCIA_MS } from "@/lib/bancada/papel";
 import { BANCADA_COTAS } from "@/lib/tier/types";
+import { getFlywheelGates } from "@/lib/admin/gates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,6 +89,20 @@ export async function GET() {
    * `atrasado`, que é onde ela mais confunde.
    */
   const agoraMs = Date.now();
+
+  /**
+   * ⚠️⚠️ A CASA PODE TER PAUSADO, E O CLIENTE TEM DE SABER (07/09).
+   *
+   * Sem esta leitura, um incidente do nosso lado desenha um agente "ligado, em
+   * dia" que vira `atrasado` sessenta minutos depois — sem causa visível, e com
+   * a culpa aparente no agente dele. Um estado nosso não pode chegar ao
+   * investidor disfarçado de defeito dele.
+   *
+   * ⚠️ Best-effort: falha ao ler o gate não derruba a tela. `false` é o padrão
+   * honesto — o cron roda com gate ausente, então "não pausado" é a verdade.
+   */
+  let pausadoPelaCasa = false;
+  try { pausadoPelaCasa = (await getFlywheelGates()).pause_bancada === true; } catch { /* ver acima */ }
 
   const agentes = await Promise.all(instancias.map(async (e) => {
     const posicoes = await posicoesDaEstrategia(c.dono, c.db, e.id);
@@ -161,7 +176,7 @@ export async function GET() {
     };
   }));
 
-  return json({ ok: true, tier: c.tier, cota: BANCADA_COTAS[c.tier], agentes });
+  return json({ ok: true, tier: c.tier, cota: BANCADA_COTAS[c.tier], agentes, pausadoPelaCasa });
 }
 
 /** Contratar um agente: nasce uma INSTÂNCIA do investidor, já ligada. */

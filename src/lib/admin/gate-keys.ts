@@ -26,7 +26,7 @@ export type FlywheelGateKey =
   | "pause_paper" | "pause_radar" | "pause_sniper" | "pause_arbiter"
   | "pause_oracle" | "pause_arbiter2"
   | "pause_ragnarok" | "pause_ragnarok_ai" | "pause_ragnarok_dex" | "pause_ullr"
-  | "pause_zion"
+  | "pause_zion" | "pause_bancada"
   | "pause_urdr"
   | "pause_arbiter2_lev"
   /**
@@ -45,6 +45,7 @@ export const FLYWHEEL_GATE_KEYS: FlywheelGateKey[] = [
   "pause_oracle", "pause_arbiter2",
   "pause_ragnarok", "pause_ragnarok_ai", "pause_ragnarok_dex", "pause_ullr",
   "pause_zion", "pause_urdr", "pause_arbiter2_lev",
+  "pause_bancada",
   "pause_dca",
 ];
 
@@ -105,6 +106,20 @@ export const GATE_SPENDS_TOKENS: Record<FlywheelGateKey, boolean> = {
   pause_ullr:         false,  // ULLR — regra de idade/liquidez/fluxo, sem LLM
   pause_urdr:         false,  // URÐR — obedece ao histórico medido, zero LLM
   pause_arbiter2_lev: false,  // gêmeos alavancados 3×/5×, zero LLM
+  /**
+   * ⚠️⚠️ A BANCADA DO CLIENTE TEM GATE PRÓPRIO — e ela ganhou um porque não
+   * tinha (07/09, achado em auditoria).
+   *
+   * O tique dos agentes do cliente pendurava em `pause_paper`, o MESMO gate do
+   * experimento da casa na Gate.io. O rótulo que o operador lê no painel é
+   * "PAPER · GATE.IO — pausar só congela o experimento": ele desligaria o que
+   * acha ser um teste interno e pararia, junto, o produto que o cliente PAGA
+   * para usar — sem uma palavra na tela dizendo por quê.
+   *
+   * ⚠️ E ele NÃO entra no corte automático de custo: zero LLM, e o que ele
+   * pausa é receita. Desligar continua possível à mão, com o rótulo certo.
+   */
+  pause_bancada:      false,
 };
 
 /** Os gates que o disjuntor de custo deve fechar. Derivado, nunca digitado. */

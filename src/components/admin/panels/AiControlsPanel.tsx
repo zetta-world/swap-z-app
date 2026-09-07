@@ -33,7 +33,8 @@ const GATES: { key: GateKey; label: string; desc: string; master?: boolean }[] =
   { key: "pause_ragnarok_dex", label: "ᚨ FREYJA (DEX)",  desc: "Mesma estratégia, praça on-chain (GeckoTerminal). ZERO token." },
   { key: "pause_urdr",       label: "ᚢᚱ URÐR (HISTÓRICO)", desc: "A Norna do passado: mecânica, escolhe pelo líquido MEDIDO em vez da prioridade declarada. Terceiro braço do duelo. ZERO token." },
   { key: "pause_ullr",       label: "ᚢ ULLR (LANÇAMENTO)", desc: "Arqueiro de pool recém-nascido. Long-only, munição diária contada. ZERO token." },
-  { key: "pause_paper",      label: "PAPER · GATE.IO",   desc: "Pausa o agente de simulação. Zero token — pausar só congela o experimento (e a carteira de USDT para de encher)." },
+  { key: "pause_paper",      label: "PAPER · GATE.IO",   desc: "Pausa o agente de simulação DA CASA. Zero token — pausar só congela o experimento (e a carteira de USDT para de encher). ⚠️ NÃO afeta os agentes contratados por clientes: esses são o `BANCADA` abaixo." },
+  { key: "pause_bancada",    label: "BANCADA DO CLIENTE", desc: "⚠️ PARA OS AGENTES QUE OS CLIENTES CONTRATARAM E PAGAM. Zero token, e o que ele pausa é receita — cada instância deixa de ser avaliada e a tela do cliente passa a dizer que a casa pausou. Use só em incidente." },
   { key: "pause_dca",        label: "ᚦ DCA AUTOMÁTICO",  desc: "Para os planos de compra recorrente na corretora do CLIENTE — dinheiro REAL, não simulação. ZERO token: é relógio + ordem a mercado. Gate PRÓPRIO e rota de cron própria, separados do autopilot de propósito: um bug na IA não pode parar a poupança de ninguém." },
   { key: "pause_zion",       label: "⚡ ZION (USUÁRIO)",  desc: "Desliga o ZION do PRODUTO, não uma mesa. Era o maior gastador de token e o único sem gate. Último recurso: degrada o que o usuário vê. Cotação e swap seguem funcionando." },
 ];

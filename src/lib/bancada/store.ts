@@ -96,6 +96,32 @@ export async function gravarUltimoTique(
     .eq("dono", dono).eq("id", id);
 }
 
+/**
+ * ⚠️⚠️ MARCA QUEM A CASA DEIXOU DE FORA NESTA PASSAGEM — e isto não é
+ * telemetria, é o que impede um alarme falso.
+ *
+ * `aVezDeQuem` gira uma janela de `AGENTES_POR_TICK`: com 10 agentes e teto 8,
+ * cada instância perde a vez uma vez a cada cinco ciclos, e o intervalo entre
+ * duas avaliações passa de 60 minutos. Sem esta marca, `saudeDoTique` leria
+ * isso como `atrasado` e acusaria o agente DO INVESTIDOR por um teto NOSSO.
+ *
+ * ⚠️ ESCRITA COM MERGE, não substituição: o adiamento não pode apagar o
+ * `simbolos` da última avaliação de verdade — é ele que a tela mostra enquanto
+ * a próxima não chega.
+ */
+export async function marcarTiqueAdiado(
+  db: SupabaseClient, ids: string[], emMs: number,
+): Promise<void> {
+  if (ids.length === 0) return;
+  /**
+   * ⚠️ `jsonb_set` no SERVIDOR, num UPDATE só. Ler-modificar-gravar por linha
+   * seriam duas idas por instância adiada dentro do laço do cron — e um
+   * intervalo em que duas passagens se sobrescrevem. `coalesce` cobre a linha
+   * que ainda não tem `ultimo_tique` nenhum.
+   */
+  await db.rpc("bancada_marcar_adiado", { ids, em: emMs });
+}
+
 export interface Estrategia extends EstrategiaNova {
   id: string;
   criadaEm: string;
