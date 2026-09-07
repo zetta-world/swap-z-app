@@ -79,12 +79,35 @@ export interface EstrategiaNova {
   mesa?: string | null;
 }
 
+/**
+ * ⚠️⚠️ O QUE O CRON VIU NA ÚLTIMA PASSAGEM (0044) — melhor-esforço, e o retorno
+ * é IGNORADO de propósito por quem chama dentro do laço do tique.
+ *
+ * Perder o registro do que aconteceu é ruim; deixar de abrir a posição que ia
+ * abrir é pior. Esta é a única escrita da bancada cujo erro não vira aviso na
+ * tela — porque a tela já tem como perceber sozinha: `ultimo_tique` velho é
+ * exatamente o que `saudeDoTique` chama de `atrasado`.
+ */
+export async function gravarUltimoTique(
+  dono: Dono, db: SupabaseClient, id: string, visto: Record<string, unknown>, emMs: number,
+): Promise<void> {
+  await db.from("bancada_estrategia")
+    .update({ ultimo_tique: { em: emMs, simbolos: visto } })
+    .eq("dono", dono).eq("id", id);
+}
+
 export interface Estrategia extends EstrategiaNova {
   id: string;
   criadaEm: string;
   arquivada: boolean;
   papelAdiante: boolean;
   papelDesde: string | null;
+  /**
+   * ⚠️ Cru do banco (jsonb). Quem interpreta é `lerUltimoTique`, que trata
+   * `null` como "NUNCA FOI VERIFICADA" — um estado legítimo, e diferente de
+   * "verificada e não achou nada".
+   */
+  ultimoTique: unknown;
 }
 
 type LinhaEstrategia = {
@@ -92,6 +115,7 @@ type LinhaEstrategia = {
   praca: string; papel: string; criada_em: string; arquivada_em: string | null;
   papel_adiante: boolean | null; simbolos: string[] | null;
   intervalo: string | null; papel_desde: string | null; mesa: string | null;
+  ultimo_tique: unknown;
 };
 
 function paraEstrategia(r: LinhaEstrategia): Estrategia {
@@ -108,10 +132,11 @@ function paraEstrategia(r: LinhaEstrategia): Estrategia {
     papelAdiante: Boolean(r.papel_adiante),
     papelDesde: r.papel_desde,
     mesa: r.mesa,
+    ultimoTique: r.ultimo_tique ?? null,
   };
 }
 
-const COLUNAS_ESTRATEGIA = "id, nome, params, praca, papel, criada_em, arquivada_em, papel_adiante, simbolos, intervalo, papel_desde, mesa";
+const COLUNAS_ESTRATEGIA = "id, nome, params, praca, papel, criada_em, arquivada_em, papel_adiante, simbolos, intervalo, papel_desde, mesa, ultimo_tique";
 
 export async function salvarEstrategia(
   dono: Dono, chain: WalletChain, db: SupabaseClient, nova: EstrategiaNova,

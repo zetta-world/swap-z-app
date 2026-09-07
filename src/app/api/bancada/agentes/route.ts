@@ -34,6 +34,8 @@ import { desempenhoDaInstancia, type PosicaoDaInstancia } from "@/lib/bancada/de
 import { mesaPodeRodar } from "@/lib/bancada/mesas-da-casa";
 import { deskFor } from "@/lib/zion/desks";
 import { INTERVALO_DO_AGENTE } from "@/lib/bancada/agente";
+import { lerUltimoTique, saudeDoTique, distanciaAte } from "@/lib/bancada/ultimo-tique";
+import { CADENCIA_MS } from "@/lib/bancada/papel";
 import { BANCADA_COTAS } from "@/lib/tier/types";
 
 export const runtime = "nodejs";
@@ -79,6 +81,14 @@ export async function GET() {
   // que se medem de formas diferentes.
   const instancias = todas.filter((e) => e.mesa != null && !e.arquivada);
 
+  /**
+   * ⚠️ UM "AGORA" SÓ para a resposta inteira. Chamar `Date.now()` dentro do
+   * laço faria dois agentes da mesma resposta serem julgados contra relógios
+   * diferentes — e a diferença apareceria justamente na fronteira do
+   * `atrasado`, que é onde ela mais confunde.
+   */
+  const agoraMs = Date.now();
+
   const agentes = await Promise.all(instancias.map(async (e) => {
     const posicoes = await posicoesDaEstrategia(c.dono, c.db, e.id);
     const desde = e.papelDesde ? Date.parse(e.papelDesde) : null;
@@ -91,6 +101,20 @@ export async function GET() {
       fechadaEmMs: p.fechadaEm ? Date.parse(p.fechadaEm) : null,
     }));
     const desk = deskFor(e.mesa!);
+
+    /**
+     * ⚠️⚠️ O QUE ELE VIU NA ÚLTIMA PASSAGEM (0044) — o pedido literal do dono:
+     * *"ao contratar o agente deveria aparecer aí no próprio agente, as
+     * informações e resultados em tempo real"*.
+     *
+     * ⚠️ `null` NÃO É VAZIO: significa "ainda não foi verificada", e toda
+     * instância passa por esse estado nos primeiros 30 minutos de vida. A tela
+     * precisa dos três — verificou-e-ficou-de-fora, ainda-não-verificou,
+     * parou-de-verificar — porque hoje eles desenham a mesma coisa.
+     */
+    const tique = lerUltimoTique(e.ultimoTique);
+    const saude = saudeDoTique(tique, CADENCIA_MS, agoraMs);
+
     return {
       id: e.id,
       mesa: e.mesa,
@@ -112,7 +136,28 @@ export async function GET() {
        * abriu. A lista completa é a mesma consulta com outro limite, quando
        * fizer falta.
        */
-      operacoes: posicoes.slice(0, 20),
+      /**
+       * ⚠️ A ÚLTIMA PASSAGEM, COM A IDADE JUNTO. O preço aqui é o fechamento da
+       * última vela que o CRON leu — não uma cotação. Publicá-lo sem o carimbo
+       * de quando foi lido criaria a expectativa de tempo real que esta bancada
+       * não tem e não promete.
+       */
+      tique: tique == null ? null : { em: tique.em, simbolos: tique.simbolos },
+      saude,
+      cadenciaMs: CADENCIA_MS,
+      /**
+       * ⚠️⚠️ QUANTO FALTA PARA O ALVO, calculado no servidor a partir do preço
+       * que o tique viu. É a conta que o investidor quer ler pronta — com a
+       * posição aberta a 118.733 e o último preço em 121.750, ele quer "faltam
+       * 0,4% para o alvo", não quatro números soltos para juntar de cabeça.
+       *
+       * ⚠️ Sem preço, os três campos são `null` — nunca 0, que diria "chegou".
+       */
+      operacoes: posicoes.slice(0, 20).map((o) => {
+        if (o.status !== "aberta") return { ...o, distancia: null };
+        const preco = tique?.simbolos[o.simbolo]?.preco ?? null;
+        return { ...o, precoVisto: preco, distancia: distanciaAte(o, preco) };
+      }),
     };
   }));
 
