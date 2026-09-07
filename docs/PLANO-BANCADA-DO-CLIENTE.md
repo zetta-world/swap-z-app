@@ -787,3 +787,78 @@ rodou o flywheel, o oráculo, o radar e o papel da casa antes.
   contraprova: com o corte fixo, o último da fila não aparece em 50 ticks.
 - `adiadas` no resumo e no evento do cron — sem esse número, a única forma de
   descobrir que o teto aperta seria um cliente reclamando.
+
+---
+
+## FASE 9 — A ARQUITETURA DA INFORMAÇÃO (07/09)
+
+> *"ao contratar o agente deveria aparecer aí no próprio agente, as informações
+> e resultados em tempo real... está uma bagunça horrível... você está
+> bagunçando muito, jogando informações em cima de informações deixando tudo
+> misturado... você pode fazer algo melhor que isso, mais Premium e mais
+> lendário"*
+
+A fase 8 acertou a arquitetura e errou a **tela**. Um fan-out de auditoria com
+quatro lentes independentes devolveu **50 achados, 27 graves** — e sete deles
+eram de código que tinha subido nas horas anteriores.
+
+### O que estava repetido (medido, não estimado)
+
+| repetição | quantas vezes | onde foi parar |
+|---|---|---|
+| as 4 ressalvas das mesas (~4.000 chars idênticos) | ×10 cards | rodapé da seção, **por interseção** |
+| "o que a NOSSA mesa fez — não o seu" | ×10 | cabeçalho da seção, ×1 |
+| "Medida aqui, mas ainda não rodável…" | ×8 | rodapé da seção, ×1 |
+| "LÍQUIDO" + o mesmo % no mesmo card | ×2 por rodada | só no cabeçalho |
+| a caixa "Este número é só seu" | ×1 por agente | rodapé da seção |
+
+⚠️ **A regra é INTERSEÇÃO, não lista fixa.** `ressalvasComuns(cartoes)` calcula o
+que vale para *todos* os cards mostrados; o que distingue um card continua
+**nele**. O teste prova que nada some: `comuns ∪ do-card = o conjunto original`,
+para todo card. Uma ressalva nova muda o corte sozinha.
+
+E a repetição **não protegia**: o leitor lê o bloco no primeiro card, reconhece
+no segundo, e do terceiro em diante pula a borda cinza inteira — inclusive onde
+a ressalva MUDAVA (`expiraMuito` só na SKAÐI, `mesmoSeletor` só nas rodáveis).
+
+### O card do agente virou painel
+
+A ordem agora é **o que muda mais rápido primeiro**: o que ele acabou de fazer →
+o que está aberto agora → o que ele já mediu → o extrato sob demanda.
+
+- **posição aberta saiu de dentro de `decididas === 0`.** Era ali que vivia — e
+  por isso quem tinha três posições vivas e nada fechado lia *"contratado, ainda
+  sem nada decidido"*, o texto afirmando o contrário do que acontecia. É o
+  estado mais comum das primeiras 48h, exatamente quando o investidor está
+  olhando para conferir se o que pagou funciona.
+- **a distância até o alvo aparece.** Era calculada no servidor e descartada
+  pelo card: o investidor lia o preço de entrada ao lado de "esperando setup".
+- **a seção pedida "em tempo real" era a única sem recarga** — e a duplicata que
+  ela gerou é que recarregava. Agora recarrega a cada 60s.
+
+### Três trabalhos, três portas
+
+Acompanhar / Contratar / Testar estavam intercalados em nove seções de peso
+igual, com o trabalho **primário** sendo 1 delas. Nada foi apagado — as mesmas
+seções, em três abas. A aba inicial só cai em "meus agentes" **quando existe
+algum**: quem nunca contratou veria uma tela vazia como primeira impressão.
+
+### Os defeitos de fluxo
+
+- **o botão Contratar lia um formulário que fica centenas de linhas ABAIXO**, e
+  o cliente contratava com valores que nunca viu. A dependência não sumiu — ela
+  ficou **visível** ("contrata com: BTC · Gate spot taker").
+- **o erro era desenhado duas seções acima do botão que falhou.** Agora fica no
+  card.
+- **"Contratar" continuava aceso depois de contratado**, e um segundo clique
+  criava uma instância indistinguível da primeira. Agora diz "já contratado".
+- **a FREYJA era desenhada duas vezes** — `/api/bancada/posicoes` era a única das
+  três rotas irmãs sem o filtro de instância, e a cópia que sobrava era a **pior
+  das duas**: sem desempenho, sem tique, sem distância.
+
+### E os sete da camada de dados
+
+Estão na §5.25 do `ESTADO-ATUAL`: o alarme que acusava o agente do investidor por
+um teto nosso, o slug cru na tela de um cliente chinês, a idade do cron
+disfarçada de idade da vela, e o gate que derrubava todo agente pago com um
+rótulo dizendo "experimento interno".

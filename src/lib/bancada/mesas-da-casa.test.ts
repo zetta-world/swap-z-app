@@ -8,7 +8,8 @@
 import { describe, it, expect } from "vitest";
 import {
   mesasElegiveis, montarCartao, mereceCartao, custoIdaEVoltaDaMesa, RESSALVAS,
-  DECIDIDOS_PARA_SUSTENTAR, mesaPodeRodar, type MedicaoDaMesa,
+  DECIDIDOS_PARA_SUSTENTAR, mesaPodeRodar, ressalvasComuns, ressalvasSoDeste,
+  type MedicaoDaMesa, type CartaoDaMesa,
 } from "@/lib/bancada/mesas-da-casa";
 import { DESKS, deskFor } from "@/lib/zion/desks";
 
@@ -233,5 +234,68 @@ describe("só roda a mesa que a rodada de fato reproduz", () => {
     // ⚠️ Sem botão, a frase não teria a que se referir — e ressalva sem
     // referente ensina o cliente a ignorar as que importam.
     expect(vitrine.ressalvas).not.toContain(RESSALVAS.mesmoSeletor);
+  });
+});
+
+/**
+ * ⚠️⚠️ AS MESMAS 4 RESSALVAS × 10 CARDS (07/09).
+ *
+ * O dono, com prints: *"está uma bagunça horrível... jogando informações em
+ * cima de informações"*. Uma auditoria mediu: 40 elementos de lista tirados de
+ * 4 frases, ~4.000 caracteres de texto idêntico numa rolagem de celular.
+ *
+ * E a repetição não protegia — treinava o leitor a pular a borda cinza inteira,
+ * inclusive nos cards em que a ressalva MUDAVA. O corte é por INTERSEÇÃO, e é
+ * isso que garante que nada suma: o que vale para todos vira nota da seção; o
+ * que distingue continua no card.
+ */
+describe("a ressalva comum a todos é dita uma vez; a que distingue fica no card", () => {
+  const cartao = (ressalvas: string[]): CartaoDaMesa =>
+    ({ ...montarCartao(deskFor("strat_dex")!, medicao()), ressalvas } as CartaoDaMesa);
+
+  it("o que os três compartilham sai como comum", () => {
+    const cs = [
+      cartao([RESSALVAS.porOperacao, RESSALVAS.correlacao, RESSALVAS.expiraMuito]),
+      cartao([RESSALVAS.porOperacao, RESSALVAS.correlacao]),
+      cartao([RESSALVAS.porOperacao, RESSALVAS.correlacao, RESSALVAS.amostraCurta]),
+    ];
+    expect(ressalvasComuns(cs).sort()).toEqual([RESSALVAS.correlacao, RESSALVAS.porOperacao].sort());
+  });
+
+  /**
+   * ⚠️ A ASSERÇÃO QUE IMPORTA: NADA SOME. Toda ressalva de todo card aparece
+   * ou na nota da seção, ou no próprio card — nunca em lugar nenhum.
+   */
+  it("nenhuma ressalva desaparece: comum ∪ do-card = o conjunto original", () => {
+    const cs = [
+      cartao([RESSALVAS.porOperacao, RESSALVAS.correlacao, RESSALVAS.expiraMuito]),
+      cartao([RESSALVAS.porOperacao, RESSALVAS.correlacao]),
+      cartao([RESSALVAS.porOperacao, RESSALVAS.umRegime]),
+    ];
+    const comuns = ressalvasComuns(cs);
+    for (const c of cs) {
+      const mostradas = [...comuns, ...ressalvasSoDeste(c, comuns)];
+      expect(new Set(mostradas)).toEqual(new Set([...comuns, ...c.ressalvas]));
+      for (const r of c.ressalvas) expect(mostradas).toContain(r);
+    }
+  });
+
+  it("a que só um card tem NUNCA vira nota da seção", () => {
+    const cs = [
+      cartao([RESSALVAS.porOperacao, RESSALVAS.expiraMuito]),
+      cartao([RESSALVAS.porOperacao]),
+    ];
+    expect(ressalvasComuns(cs)).not.toContain(RESSALVAS.expiraMuito);
+    expect(ressalvasSoDeste(cs[0], ressalvasComuns(cs))).toEqual([RESSALVAS.expiraMuito]);
+  });
+
+  it("com um card só, nada é promovido — a nota longe do número não ajuda", () => {
+    expect(ressalvasComuns([cartao([RESSALVAS.porOperacao])])).toEqual([]);
+  });
+
+  it("sem interseção, o rodapé fica vazio e cada card mantém as suas", () => {
+    const cs = [cartao([RESSALVAS.porOperacao]), cartao([RESSALVAS.umRegime])];
+    expect(ressalvasComuns(cs)).toEqual([]);
+    expect(ressalvasSoDeste(cs[0], [])).toEqual([RESSALVAS.porOperacao]);
   });
 });
