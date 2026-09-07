@@ -326,16 +326,25 @@ export interface Rodada {
   status: StatusRodada;
   porque: string | null;
   criadaEm: string;
+  /**
+   * ⚠️⚠️ A CÓPIA CONGELADA VOLTA NA LEITURA — e é ela que dá NOME à rodada.
+   *
+   * O dono, diante de duas rodadas na tela: *"não mostra qual agente está
+   * rodando, não dá pra saber o que está rodando"*. Sem `params` uma rodada de
+   * mesa é indistinguível de outra: mesmos símbolos, mesma janela, e o `+2,14%`
+   * sem dono. `mesa`/`mesaNome` moram aqui desde a rodada #401.
+   */
+  params: Record<string, unknown>;
 }
 
 const COLUNAS_RODADA =
-  "id, origem, estrategia_id, capital_usd, simbolos, intervalo, janela_de, janela_ate, praca, papel, custo_velas, status, porque, criada_em";
+  "id, origem, estrategia_id, capital_usd, simbolos, intervalo, janela_de, janela_ate, praca, papel, custo_velas, status, porque, criada_em, params";
 
 type LinhaRodada = {
   id: string; origem: string; estrategia_id: string | null; capital_usd: number | string;
   simbolos: string[] | null; intervalo: string; janela_de: number | string; janela_ate: number | string;
   praca: string; papel: string; custo_velas: number | string; status: string;
-  porque: string | null; criada_em: string;
+  porque: string | null; criada_em: string; params: Record<string, unknown> | null;
 };
 
 function paraRodada(r: LinhaRodada): Rodada {
@@ -354,6 +363,7 @@ function paraRodada(r: LinhaRodada): Rodada {
     status: r.status as StatusRodada,
     porque: r.porque,
     criadaEm: r.criada_em,
+    params: r.params ?? {},
   };
 }
 
@@ -434,6 +444,21 @@ export interface ResultadoNovo {
   veredito: Veredito;
   /** ⚠️ O que NÃO foi medido, com nome. Lista vazia = medimos tudo. */
   naoMedido: string[];
+  /**
+   * ⚠️ AS MESMAS RESSALVAS, COMO CHAVE — para a tela traduzir (0042). A prosa
+   * de `naoMedido` nasceu quando só havia uma tela em português; a bancada fala
+   * quatro idiomas. As duas convivem: a prosa ainda carrega os problemas de
+   * leitura ("BTC 1h: só chegaram 66% da janela") que não têm chave.
+   */
+  naoMedidoChaves: string[];
+  /**
+   * Quanto rendeu FICAR EM CAIXA na mesma janela.
+   *
+   * ⚠️ `null` = NÃO MEDIDO, nunca 0 — zero afirmaria que o mercado ficou
+   * parado. É metade do veredito: em 31/08 a Rotação rendeu −1,61% e ficar
+   * parado bateu.
+   */
+  competidorPct: number | null;
 }
 
 export async function gravarResultado(
@@ -451,6 +476,8 @@ export async function gravarResultado(
     equilibrio_exigido_pct: r.equilibrioExigidoPct,
     veredito: r.veredito,
     nao_medido: r.naoMedido,
+    nao_medido_chaves: r.naoMedidoChaves,
+    competidor_pct: r.competidorPct,
   }, { onConflict: "rodada_id" });
   if (error) return falhou(error, "gravar resultado");
   return { ok: true, valor: true };
@@ -459,20 +486,55 @@ export async function gravarResultado(
 export interface Resultado extends ResultadoNovo { rodadaId: string; criadoEm: string }
 
 const COLUNAS_RESULTADO =
-  "rodada_id, bruto_pct, taxa_pct, derrapagem_pct, liquido_pct, n, acertos, equilibrio_exigido_pct, veredito, nao_medido, criado_em";
+  "rodada_id, bruto_pct, taxa_pct, derrapagem_pct, liquido_pct, n, acertos, equilibrio_exigido_pct, veredito, nao_medido, nao_medido_chaves, competidor_pct, criado_em";
 
 type LinhaResultado = {
   rodada_id: string; bruto_pct: number | string; taxa_pct: number | string;
   derrapagem_pct: number | string | null; liquido_pct: number | string;
   n: number; acertos: number; equilibrio_exigido_pct: number | string | null;
-  veredito: string; nao_medido: unknown; criado_em: string;
+  veredito: string; nao_medido: unknown; nao_medido_chaves: unknown;
+  competidor_pct: number | string | null; criado_em: string;
 };
+
+/**
+ * Os resultados de VÁRIAS rodadas, numa volta só.
+ *
+ * ⚠️ EM LOTE DE PROPÓSITO. O histórico da bancada mostra 30 rodadas; pedir o
+ * resultado de cada uma seriam 30 idas ao Postgres para montar UMA tela, e o
+ * `N+1` que ninguém vê no desenvolvimento é o que derruba a rota no dia em que
+ * o cliente tem histórico de verdade.
+ *
+ * ⚠️ A CHAVE AUSENTE É AUSÊNCIA, NÃO ZERO: rodada `rodando`, `recusada` ou
+ * `falhou` simplesmente não tem resultado, e o mapa não a contém. Quem lê
+ * distingue "ainda não terminou" de "terminou em nada".
+ */
+export async function resultadosDasRodadas(
+  dono: Dono, db: SupabaseClient, rodadaIds: string[],
+): Promise<Map<string, Resultado>> {
+  const out = new Map<string, Resultado>();
+  if (rodadaIds.length === 0) return out;
+  const { data, error } = await doDono(db, "bancada_resultado", dono, COLUNAS_RESULTADO)
+    .in("rodada_id", rodadaIds.slice(0, 200));
+  if (error || !data) return out;
+  for (const linha of data as unknown as LinhaResultado[]) {
+    out.set(linha.rodada_id, paraResultado(linha));
+  }
+  return out;
+}
 
 export async function resultado(dono: Dono, db: SupabaseClient, rodadaId: string): Promise<Resultado | null> {
   const { data, error } = await doDono(db, "bancada_resultado", dono, COLUNAS_RESULTADO)
     .eq("rodada_id", rodadaId).maybeSingle();
   if (error || !data) return null;
-  const r = data as unknown as LinhaResultado;
+  return paraResultado(data as unknown as LinhaResultado);
+}
+
+/**
+ * ⚠️ UMA CONVERSÃO SÓ, para as duas leituras. Duas cópias desta função seriam
+ * duas chances de uma delas esquecer que `Number(null)` é 0 — e essa é a
+ * cicatriz mais barata de repetir nesta base.
+ */
+function paraResultado(r: LinhaResultado): Resultado {
   const eq = r.equilibrio_exigido_pct;
   return {
     rodadaId: r.rodada_id,
@@ -490,6 +552,10 @@ export async function resultado(dono: Dono, db: SupabaseClient, rodadaId: string
     equilibrioExigidoPct: eq == null ? null : Number(eq),
     veredito: r.veredito as Veredito,
     naoMedido: Array.isArray(r.nao_medido) ? (r.nao_medido as unknown[]).map(String) : [],
+    naoMedidoChaves: Array.isArray(r.nao_medido_chaves) ? (r.nao_medido_chaves as unknown[]).map(String) : [],
+    // ⚠️ De novo: ausência tem de continuar ausência. Rodada gravada antes de
+    // 0042 não tem competidor, e "—" é a resposta certa — não "0,00%".
+    competidorPct: r.competidor_pct == null ? null : Number(r.competidor_pct),
     criadoEm: r.criado_em,
   };
 }

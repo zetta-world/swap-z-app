@@ -26,8 +26,9 @@ import { velasDoIntervalo } from "@/lib/mercado/store";
 import { ultimaVelaFechada } from "@/lib/mercado/velas";
 import type { Operacao } from "@/lib/bancada/motor";
 import { rodarMesa, agregar, MAX_BARRAS_AVALIADAS } from "@/lib/bancada/mesa-real";
-import { mesasElegiveis, custoIdaEVoltaDaMesa } from "@/lib/bancada/mesas-da-casa";
+import { mesaPodeRodar, custoIdaEVoltaDaMesa } from "@/lib/bancada/mesas-da-casa";
 import { deskFor } from "@/lib/zion/desks";
+import { identidadeDaRodada, janelaEmDias } from "@/lib/bancada/identidade";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,8 +91,20 @@ export async function POST(req: NextRequest) {
    */
   const idDaMesa = typeof o.mesa === "string" ? o.mesa : null;
   const mesa = idDaMesa ? deskFor(idDaMesa) : null;
-  if (idDaMesa && (!mesa || !mesasElegiveis().some((m) => m.source === idDaMesa))) {
-    return json({ ok: false, error: "mesa_desconhecida", porque: "esta mesa não está disponível na bancada." }, 400);
+  /**
+   * ⚠️⚠️ `mesaPodeRodar`, NÃO `mesasElegiveis`. As duas listas medem coisas
+   * diferentes e confundi-las foi o defeito de 07/09: `mesasElegiveis` diz quem
+   * merece um CARD (mesa mecânica e viva), e a rota usava isso para decidir quem
+   * podia RODAR. Resultado: dez mesas rodáveis e um único seletor por baixo —
+   * ULLR e FREYJA devolveram `+2,140788280112371%` idênticos.
+   *
+   * ⚠️ E o filtro tem de estar AQUI, não só no botão. Uma checagem que mora só
+   * na tela é uma checagem que qualquer `curl` contorna, e a rodada gravada
+   * carregaria o nome de uma mesa que não rodou.
+   */
+  if (idDaMesa && (!mesa || !mesaPodeRodar(idDaMesa))) {
+    return json({ ok: false, error: "mesa_nao_rodavel",
+      porque: "esta mesa aparece na vitrine mas ainda não roda aqui: a regra dela não é a que esta bancada reproduz." }, 400);
   }
 
   // ── 1. O vocabulário: `unknown` vira estratégia, ou recusa com motivo ──
@@ -147,6 +160,16 @@ export async function POST(req: NextRequest) {
 
   const pedido: PedidoDeRodada = { simbolos, intervalo, janelaDe, janelaAte, capitalUsd, mesa: !!mesa };
 
+  /**
+   * ⚠️ UMA CÓPIA SÓ dos params congelados — a que vai para o banco É a que vira
+   * a identidade na resposta. Duas montagens iguais hoje são duas montagens
+   * diferentes depois do próximo campo, e a divergência apareceria como um
+   * cartão que muda de nome ao recarregar a página.
+   */
+  const paramsCongelados: Record<string, unknown> = mesa
+    ? { ...estrategia, mesa: mesa.source, mesaNome: mesa.name }
+    : { ...estrategia };
+
   // ── 2. O portão do pedágio, ANTES da cota ─────────────────────────────
   /**
    * ⚠️ A ORDEM IMPORTA. A rodada recusada aqui é gravada como `recusada` e NÃO
@@ -194,7 +217,7 @@ export async function POST(req: NextRequest) {
     janelaDe, janelaAte,
     praca: estrategia.praca, papel: estrategia.papel,
     // O `mesa` entra nos params congelados: sem ele, ninguém sabe QUAL mesa foi.
-    params: mesa ? { ...estrategia, mesa: mesa.source, mesaNome: mesa.name } : { ...estrategia },
+    params: paramsCongelados,
     custoVelas: d.custoVelas,
   });
   if (!aberta.ok) return json({ ok: false, error: "nao_consegui_abrir", porque: aberta.porque }, 500);
@@ -274,13 +297,35 @@ export async function POST(req: NextRequest) {
   // acerto-para-empatar único, e a ressalva diz isso em vez de a tela mostrar
   // um número inventado.
   const v = julgar(resumo, estrategia, competidorPct, mesa ? ["bracketVariavel"] : []);
-  const naoMedido = [...v.naoMedido, ...problemas];
+  /**
+   * ⚠️⚠️ DUAS LISTAS, E A DIFERENÇA IMPORTA NA TELA.
+   *
+   *   · as CHAVES (`v.naoMedidoChaves`) — ressalvas estruturais, iguais em toda
+   *     rodada, e traduzidas pelo cliente nos quatro idiomas;
+   *   · os PROBLEMAS — o que deu errado NESTA leitura ("BTC 1h: chegaram 66% da
+   *     janela"), que só existe como frase e não tem chave.
+   *
+   * Misturá-las numa lista só obrigaria a tela a adivinhar qual item já foi
+   * traduzido — e a errar, mostrando a mesma ressalva duas vezes, uma em
+   * português. O banco continua guardando a soma das duas em `nao_medido`,
+   * porque quem abre o Postgres quer o texto legível.
+   */
+  const problemasDaLeitura = [...problemas];
   // ⚠️ Teto de barras é DECLARADO, nunca silencioso — regra da casa.
   if (cortadaPeloTeto) {
-    naoMedido.push(`a janela foi cortada em ${MAX_BARRAS_AVALIADAS} barras de 1h — o resto do período não foi avaliado`);
+    problemasDaLeitura.push(`a janela foi cortada em ${MAX_BARRAS_AVALIADAS} barras de 1h — o resto do período não foi avaliado`);
   }
+  const naoMedido = [...v.naoMedido, ...problemasDaLeitura];
 
-  await gravarResultado(dono, db, rodadaId, {
+  /**
+   * ⚠️⚠️ O RETORNO DESTA ESCRITA É LIDO. Ele não era — e `supabase-js` RESOLVE
+   * com `{ data: null, error }` em vez de lançar, então uma coluna faltando (ou
+   * uma migration não aplicada) apagaria a rodada do histórico sem uma linha de
+   * log, sem erro na tela, e com a resposta parecendo perfeita. O cliente só
+   * descobriria ao recarregar a página e não achar mais o teste dele — que é
+   * exatamente a queixa que o histórico foi feito para resolver.
+   */
+  const gr = await gravarResultado(dono, db, rodadaId, {
     brutoPct: resumo.brutoPct,
     taxaPct: resumo.taxaPct,
     derrapagemPct: resumo.derrapagemPct,
@@ -288,6 +333,14 @@ export async function POST(req: NextRequest) {
     n: resumo.n, acertos: resumo.acertos,
     equilibrioExigidoPct: v.equilibrioPct,
     veredito: v.veredito, naoMedido,
+    /**
+     * ⚠️⚠️ AS CHAVES E O COMPETIDOR SÃO GRAVADOS (0042) — sem eles o histórico
+     * teria de escolher entre calar a comparação com ficar em caixa (metade do
+     * veredito) e inventá-la, e mostraria a ressalva em português para uma tela
+     * de quatro idiomas.
+     */
+    naoMedidoChaves: v.naoMedidoChaves,
+    competidorPct,
   });
   /**
    * ⚠️⚠️ AS OPERAÇÕES SÃO GRAVADAS — foi o que faltava (06/09). Sem elas o
@@ -305,14 +358,38 @@ export async function POST(req: NextRequest) {
     brutoPct: op.brutoPct, liquidoPct: op.liquidoPct,
     playbook: op.playbook ?? null,
   })));
-  if (!g.ok) naoMedido.push(`o detalhe das operações não foi gravado: ${g.porque}`);
+  if (!g.ok) {
+    const aviso = `o detalhe das operações não foi gravado: ${g.porque}`;
+    naoMedido.push(aviso);
+    problemasDaLeitura.push(aviso);
+  }
+  // ⚠️ Aqui só cabe avisar na RESPOSTA: a linha que guardaria o aviso é
+  // justamente a que não foi gravada.
+  if (!gr.ok) {
+    problemasDaLeitura.push(`este resultado NÃO entrou no seu histórico: ${gr.porque}`);
+  }
 
-  await fecharRodada(dono, db, rodadaId, "concluida");
+  await fecharRodada(dono, db, rodadaId, gr.ok ? "concluida" : "falhou",
+    gr.ok ? undefined : gr.porque);
 
   return json({
     ok: true, rodadaId, tier,
+    quando: new Date().toISOString(),
     restamHoje: d.restamHoje - 1,
-    veredito: { ...v, naoMedido },
+    /**
+     * ⚠️⚠️ A RESPOSTA DIZ QUEM RODOU — e pela MESMA função que o histórico usa
+     * ao reler o banco (`identidadeDaRodada`). Duas montagens de rótulo
+     * divergiriam sem ninguém perceber, e divergiriam justamente onde mais
+     * confunde: duas rodadas parecidas, lado a lado na tela.
+     */
+    identidade: identidadeDaRodada(mesa ? "casa" : "propria", paramsCongelados),
+    contexto: {
+      simbolos,
+      intervalo: mesa ? "1h" : intervalo,
+      janelaDias: janelaEmDias(janelaDe, janelaAte),
+      praca: estrategia.praca, papel: estrategia.papel, capitalUsd,
+    },
+    veredito: { ...v, naoMedido, naoMedidoTexto: problemasDaLeitura },
     resumo,
     competidorPct,
     // ⚠️ Devolvidas na resposta para a tela não precisar de uma segunda volta —

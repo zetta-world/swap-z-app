@@ -272,6 +272,7 @@ describe("rodadas e resultados: o mesmo isolamento, e a cota que ele sustenta", 
     await gravarResultado(B, db, idB, {
       brutoPct: 4.1, taxaPct: -3.8, derrapagemPct: -0.2, liquidoPct: 0.1,
       n: 24, acertos: 15, equilibrioExigidoPct: 58, veredito: "ganhou", naoMedido: [],
+      naoMedidoChaves: [], competidorPct: 2.5,
     });
 
     expect(await resultado(A, db, idB)).toBeNull();
@@ -285,10 +286,15 @@ describe("rodadas e resultados: o mesmo isolamento, e a cota que ele sustenta", 
     await gravarResultado(A, db, id, {
       brutoPct: 1, taxaPct: -1, derrapagemPct: 0, liquidoPct: 0,
       n: 3, acertos: 1, equilibrioExigidoPct: null, veredito: "ruido", naoMedido: ["derrapagem"],
+      // ⚠️ E O COMPETIDOR TAMBÉM: `null` significa "não medimos quanto rendeu
+      // ficar em caixa". Zero afirmaria que o mercado ficou parado.
+      naoMedidoChaves: ["derrapagem", "competidor"], competidorPct: null,
     });
     const lido = await resultado(A, db, id);
     expect(lido?.equilibrioExigidoPct).toBeNull();
+    expect(lido?.competidorPct).toBeNull();
     expect(lido?.naoMedido).toEqual(["derrapagem"]);
+    expect(lido?.naoMedidoChaves).toEqual(["derrapagem", "competidor"]);
   });
 });
 

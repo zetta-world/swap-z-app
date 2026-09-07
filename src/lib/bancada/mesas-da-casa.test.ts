@@ -8,7 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   mesasElegiveis, montarCartao, mereceCartao, custoIdaEVoltaDaMesa, RESSALVAS,
-  DECIDIDOS_PARA_SUSTENTAR, type MedicaoDaMesa,
+  DECIDIDOS_PARA_SUSTENTAR, mesaPodeRodar, type MedicaoDaMesa,
 } from "@/lib/bancada/mesas-da-casa";
 import { DESKS, deskFor } from "@/lib/zion/desks";
 
@@ -174,5 +174,64 @@ describe("⚠️⚠️ a linha mais perigosa do banco: uma operação, +17,40%",
     expect(c.liquidoPorOpPct!).toBeCloseTo(17.40, 2);   // DEX: −0,60
     expect(c.sustentacao).toBe("ruido");
     expect(c.ressalvas).toContain(RESSALVAS.amostraCurta);
+  });
+});
+
+/**
+ * ⚠️⚠️ O BOTÃO "RODAR ESTA" NÃO PODE PROMETER O QUE `mesa-real.ts` NÃO FAZ.
+ *
+ * ACHADO NO BANCO (07/09), não na leitura: o dono rodou ULLR e depois FREYJA
+ * sobre BTC/365d e as duas devolveram `+2,140788280112371%` — idêntico até a
+ * última casa decimal, uma operação cada. `rodarMesa` não recebe a mesa: ela
+ * roda UM caminho (o cardápio de `candidateAttempts`, política "primeiro
+ * playbook com plano") e o nome da mesa era só o rótulo por cima.
+ *
+ * A trava aqui é um CENSO, de propósito. Ela não checa uma regra abstrata —
+ * ela conta quantas mesas o botão oferece, e obriga quem aumentar esse número a
+ * ter ensinado `mesa-real.ts` a política da mesa nova primeiro.
+ */
+describe("só roda a mesa que a rodada de fato reproduz", () => {
+  it("o botão é oferecido em DUAS mesas, e são estas", () => {
+    const rodaveis = mesasElegiveis().filter((d) => mesaPodeRodar(d.source)).map((d) => d.source);
+    expect(rodaveis).toEqual(["strat_mech", "strat_dex"]);
+  });
+
+  it("as oito restantes seguem elegíveis para a VITRINE — não sumiram", () => {
+    // ⚠️ Tirar o botão não é tirar a mesa. O card, a medição e as ressalvas são
+    // honestos e são o produto; o que saiu foi a promessa de reproduzi-la.
+    const soVitrine = mesasElegiveis().filter((d) => !mesaPodeRodar(d.source));
+    expect(soVitrine.length).toBe(8);
+  });
+
+  /**
+   * ⚠️ AS QUATRO NOMEADAS, uma a uma, com o motivo. Um `expect(x).toBe(false)`
+   * sobre uma lista genérica passaria mesmo que a lista tivesse esvaziado.
+   */
+  it.each([
+    // caça pool recém-nascida (2–48h, TVL ≥ US$80 mil), bracket fixo 18%/9%
+    ["ullr_launch"],
+    // ordena candidatos pelo histórico medido e VETA os negativos no regime
+    ["strat_record"],
+    // filtro de clima + revalidação da geometria no prazo curto
+    ["strat_day"],
+    // spread/funding: não toma trade direcional nenhum, e é julgada noutro livro
+    ["arbiter2"],
+  ])("%s não roda: a regra dela ao vivo não é a que a bancada reproduz", (source) => {
+    expect(mesaPodeRodar(source)).toBe(false);
+    // ⚠️ E ela continua existindo como mesa — senão este teste passaria por um
+    // motivo errado (a mesa sumiu do catálogo).
+    expect(deskFor(source)).not.toBeUndefined();
+  });
+
+  it("o cartão carrega a decisão, e a ressalva do seletor partilhado vem junto", () => {
+    const rodavel = montarCartao(deskFor("strat_dex")!, medicao());
+    expect(rodavel.podeRodar).toBe(true);
+    expect(rodavel.ressalvas).toContain(RESSALVAS.mesmoSeletor);
+
+    const vitrine = montarCartao(deskFor("ullr_launch")!, medicao({ source: "ullr_launch" }));
+    expect(vitrine.podeRodar).toBe(false);
+    // ⚠️ Sem botão, a frase não teria a que se referir — e ressalva sem
+    // referente ensina o cliente a ignorar as que importam.
+    expect(vitrine.ressalvas).not.toContain(RESSALVAS.mesmoSeletor);
   });
 });

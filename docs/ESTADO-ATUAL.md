@@ -1881,6 +1881,64 @@ na seção nova — a terceira vez que ela acha um caso meu.
 
 ---
 
+## 5.23 ⚠️⚠️ DEZ BOTÕES, UM SELETOR SÓ — E A TELA QUE ESQUECIA (07/09)
+
+> *"cada teste que rodo sobrepõe o outro, e não mostra qual agente está
+> rodando, não dá pra saber o que está rodando.... cadê a experiência Premium
+> que tanto queremos oferecer ao cliente?"*
+
+Três defeitos de tela, e **um quarto que só o banco mostrou**.
+
+### O que a tela fazia de errado
+
+`const [r, setR]` — a rodada era um ESTADO, não uma lista. Cada corrida escrevia
+por cima da anterior, e o F5 apagava a tarde inteira. As linhas estavam gravadas
+desde a fase 1 e **nenhuma tela as lia de volta**: a mesma família de
+`bancada_posicao`. Agora há `GET /api/bancada/rodadas`, e cada cartão **nasce
+antes da resposta**, já com nome — é isso que responde ao *"não mostra qual
+agente está rodando"*.
+
+E `"1 operações"` estava na tela: o plural era interpolado e servia para todo
+`n`. Singular ganhou chave nos quatro idiomas, e `quatro-idiomas.test.ts` trava
+paridade de chaves, paridade de `{placeholders}` e a forma singular/plural.
+
+### ⚠️⚠️ O QUARTO: o botão prometia o que `mesa-real.ts` não faz
+
+Lendo as rodadas do dono para conferir o conserto:
+
+| hora | mesa clicada | líquido | n |
+|------|--------------|---------|---|
+| 08:35 | **FREYJA** (`strat_dex`) | `+2,140788280112371%` | 1 |
+| 08:37 | **ULLR** (`ullr_launch`) | `+2,140788280112371%` | 1 |
+
+Idêntico até a última casa decimal. **`rodarMesa` não recebe a mesa.** Ela roda
+um caminho único — `candidateAttempts` com a política "primeiro playbook com
+plano" — e o nome era o rótulo colado por cima. As quatro de arbitragem não
+tomam trade direcional; a URÐR veta pelo histórico; a SKAÐI filtra clima; a ULLR
+caça pool recém-nascida com bracket fixo 18%/9% e nem olha BTC.
+
+É literalmente o que o cabeçalho de `mesas-da-casa.ts` proíbe — *"o cliente
+rodando uma coisa achando que é outra, com a nossa marca"* — e entrou pela porta
+do botão **três dias depois da frase ser escrita**. A lição não é "faltou um
+teste": é que a regra estava escrita, em português, no topo do arquivo certo, e
+mesmo assim não segurou — porque nada a executava.
+
+`MESAS_QUE_A_RODADA_REPRODUZ` = `strat_mech` + `strat_dex`. As outras oito
+continuam na vitrine. O filtro está na **rota**, não só no botão.
+
+### O de sempre: uma escrita cujo erro ninguém lia
+
+`gravarResultado` devolvia `Escrita<true>` e a rota **descartava**. Com
+`supabase-js` resolvendo `{ data: null, error }` em vez de lançar, uma coluna
+faltando apagaria a rodada do histórico sem log, sem erro na tela, e com a
+resposta parecendo perfeita — o cliente só descobriria no F5 seguinte, que é
+exatamente a queixa que o histórico foi feito para resolver.
+
+Migration `0042` (`competidor_pct` nulo-é-nulo, `nao_medido_chaves` para a tela
+traduzir) — **aplicada no banco**.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**
