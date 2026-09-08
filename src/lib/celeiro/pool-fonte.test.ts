@@ -21,13 +21,31 @@ const VAZIO = {} as GoPlusTokenSecurity;
 
 describe("a liquidez travada", () => {
   /**
-   * ⚠️ SEM `lp_holders` A RESPOSTA É `false`, NUNCA `true`. Um pool cuja trava
-   * ninguém verificou é indistinguível de um pool sem trava.
+   * ⚠️⚠️ SEM `lp_holders` A RESPOSTA É `null` — "NÃO MEDI" —, nunca `true` e
+   * nunca `false` (07/09).
+   *
+   * O portão reprova nos dois casos, e é certo que reprove: um pool cuja trava
+   * ninguém verificou é, para efeito de DECISÃO, indistinguível de um pool sem
+   * trava. Mas para efeito de DIAGNÓSTICO eles são opostos, e a versão anterior
+   * devolvia `false` para os dois.
+   *
+   * Isso custou 18 dias de cegueira: 92,4% dos pools que chegaram ao portão
+   * (2.591 de 2.804) foram barrados nesta linha, e com uma frase só não havia
+   * como decidir entre "o mercado da Base é assim" e "a fonte não indexa LP
+   * nesta chain" — que pedem ações opostas.
    */
-  it("sem dado de LP, não está travada", () => {
-    expect(liquidezTravada(null)).toBe(false);
-    expect(liquidezTravada(VAZIO)).toBe(false);
-    expect(liquidezTravada({ lp_holders: [] } as GoPlusTokenSecurity)).toBe(false);
+  it("sem dado de LP, a resposta é `null` (não medi), não `false`", () => {
+    expect(liquidezTravada(null)).toBeNull();
+    expect(liquidezTravada(VAZIO)).toBeNull();
+    expect(liquidezTravada({ lp_holders: [] } as GoPlusTokenSecurity)).toBeNull();
+  });
+
+  /** ⚠️ E `false` continua existindo: MEDIU e a trava é insuficiente. */
+  it("medido e abaixo de metade travada: `false`, não `null`", () => {
+    expect(liquidezTravada({ lp_holders: [
+      { address: "0x1", balance: "1", percent: "0.3", is_locked: 1 },
+      { address: "0x2", balance: "1", percent: "0.7" },
+    ] } as GoPlusTokenSecurity)).toBe(false);
   });
 
   it("LP marcado como travado conta", () => {

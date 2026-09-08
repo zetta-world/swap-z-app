@@ -25,17 +25,35 @@ import type { Pool } from "@/lib/celeiro/pool-novo";
 /**
  * A liquidez está travada?
  *
- * ⚠️ AUSÊNCIA DE PROVA NÃO É PROVA DE TRAVA. Sem `lp_holders` a resposta é
- * `false`, nunca `true` — e o portão reprova. Um pool cuja trava ninguém
- * conseguiu verificar é indistinguível de um pool sem trava, e quem criou pode
- * retirar a liquidez a qualquer momento.
+ * ⚠️ AUSÊNCIA DE PROVA NÃO É PROVA DE TRAVA — e o portão continua REPROVANDO
+ * quando não dá para medir. Um pool cuja trava ninguém verificou é, para efeito
+ * de decisão, indistinguível de um pool sem trava: quem criou pode retirar a
+ * liquidez a qualquer momento.
+ *
+ * ⚠️⚠️ MAS TRÊS RESPOSTAS, NÃO DUAS (07/09) — e a diferença é de DIAGNÓSTICO,
+ * não de decisão.
+ *
+ * A versão anterior devolvia `boolean`, colapsando "medi e NÃO está travada" com
+ * "a fonte não me devolveu os detentores de LP". As duas reprovam igual, e é
+ * certo que reprovem — mas com a mesma frase na recusa **não dá para saber qual
+ * das duas está acontecendo**.
+ *
+ * Isso custou caro: em 18 dias o agente examinou 5.004 pools e aprovou zero,
+ * com 92,4% dos que chegaram ao portão barrados por esta linha. Com uma frase
+ * só, não há como decidir entre "o mercado da Base é assim mesmo" (nada a
+ * fazer) e "a GoPlus não indexa LP nesta chain" (troca de fonte ou de chain).
+ * Instrumento que não separa as duas é instrumento que manda ajustar às cegas.
+ *
+ * ⚠️ É a mesma disciplina que `concentracaoTop10` já tinha ao lado: `null` para
+ * "não medi". Ela estava certa e esta estava errada, no mesmo arquivo.
  *
  * ⚠️ E "QUEIMADO" CONTA COMO TRAVADO. LP enviado para endereço morto não volta —
  * é a trava mais forte que existe, e a GoPlus a marca com `tag` de burn.
  */
-export function liquidezTravada(sec: GoPlusTokenSecurity | null): boolean {
+export function liquidezTravada(sec: GoPlusTokenSecurity | null): boolean | null {
   const lps = sec?.lp_holders;
-  if (!Array.isArray(lps) || lps.length === 0) return false;
+  // ⚠️ `null` = NÃO MEDI. O portão trata como reprovação, igual a `false`.
+  if (!Array.isArray(lps) || lps.length === 0) return null;
 
   const travadoPct = lps.reduce((s, h) => {
     const pct = Number(h.percent);
