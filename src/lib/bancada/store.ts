@@ -449,8 +449,21 @@ function paraRodada(r: LinhaRodada): Rodada {
   };
 }
 
+/**
+ * As rodadas VIVAS deste dono — as arquivadas ficam fora da tela (0046).
+ *
+ * ⚠️ ARQUIVAR NÃO É APAGAR: a linha continua no banco, e `bancada_operacao` e
+ * `bancada_resultado` continuam apontando para ela. O cliente não perde a prova
+ * do que rodou; ela só sai da listagem.
+ *
+ * ⚠️ E É POR ISSO QUE ESTA FUNÇÃO É A ÚNICA COM O FILTRO. Espalhar
+ * `.is("arquivada_em", null)` por chamador seria espalhar a chance de esquecer
+ * — e o que se esquece aqui devolve MAIS linhas, não menos: a leitura funciona,
+ * e a rodada arquivada reaparece na tela sem ninguém notar.
+ */
 export async function listarRodadas(dono: Dono, db: SupabaseClient, limite = 50): Promise<Rodada[]> {
   const { data, error } = await doDono(db, "bancada_rodada", dono, COLUNAS_RODADA)
+    .is("arquivada_em", null)
     .order("criada_em", { ascending: false })
     .limit(Math.max(1, Math.min(200, Math.floor(limite))));
   if (error || !data) return [];
