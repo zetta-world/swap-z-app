@@ -34,7 +34,7 @@ import { classificarResultado } from "@/lib/admin/cor-resultado";
 import { corDoNumero } from "@/components/bancada/CorDoCliente";
 import type { ChaveNaoMedido } from "@/lib/bancada/veredito";
 import { ESTRATEGIAS_DA_CASA, type EstrategiaDaCasa } from "@/lib/bancada/casa";
-import { ressalvasComuns, ressalvasSoDeste, type CartaoDaMesa, type ChaveDeRessalva } from "@/lib/bancada/mesas-da-casa";
+import { ressalvasComuns, ressalvasSoDeste, mesaPodeRodar, type CartaoDaMesa, type ChaveDeRessalva } from "@/lib/bancada/mesas-da-casa";
 import type { MessageKey } from "@/lib/i18n";
 
 const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOT", "MATIC"];
@@ -143,7 +143,7 @@ export default function Bancada() {
    * ele paga para ver. O estado inicial é `null` e a decisão espera a resposta
    * do servidor — chutar antes seria trocar de aba na cara do cliente.
    */
-  const [abaEscolhida, setAba] = useState<"agentes" | "contratar" | "testar" | null>(null);
+  const [abaEscolhida, setAba] = useState<"agentes" | "contratar" | "testar" | "rodadas" | null>(null);
   const [temAgentes, setTemAgentes] = useState<boolean | null>(null);
   const aba = abaEscolhida ?? (temAgentes ? "agentes" : "contratar");
   const [contratando, setContratando] = useState<string | null>(null);
@@ -348,6 +348,14 @@ export default function Bancada() {
    * trinta segundos a única coisa que o cliente precisa ver enquanto espera.
    */
   function abrirCartao(identidade: Identidade, ctx: Contexto): string {
+    /**
+     * ⚠️⚠️ LEVA O CLIENTE ATÉ O RESULTADO. Com o histórico em aba própria, quem
+     * aperta "Rodar teste" ficaria olhando o formulário enquanto a resposta
+     * chega numa porta que ele não está vendo — o mesmo defeito que a auditoria
+     * achou na rolagem única ("os botões primários entregam o resultado fora da
+     * tela"), só que pior, porque agora a distância é uma aba inteira.
+     */
+    setAba("rodadas");
     const chave = `local:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
     /**
      * ⚠️ A NOVA NASCE ABERTA, E AS ANTERIORES FECHAM.
@@ -423,6 +431,10 @@ export default function Bancada() {
         return;
       }
       setRecarregarAgentes((n) => n + 1);
+      // ⚠️ E contratar leva para "meus agentes": a instância acabou de nascer,
+      // e é lá que ela vive. Ficar na vitrine deixaria o cliente sem saber se
+      // deu certo — a não ser voltando a clicar no botão que já foi.
+      setAba("agentes");
     } catch {
       setErroDeContratar(t("bancada.errorTitle"));
       setContratarErrouEm(m.source);
@@ -516,6 +528,9 @@ export default function Bancada() {
             : t("bancada.abaAgentes")],
           ["contratar", t("bancada.abaContratar")],
           ["testar",    t("bancada.abaTestar")],
+          ["rodadas",   corridas.length > 0
+            ? t("bancada.abaRodadasN", { n: corridas.length })
+            : t("bancada.abaRodadas")],
         ] as const).map(([id, rotulo]) => (
           <button key={id} type="button" onClick={() => setAba(id)}
             className={`flex-1 rounded-lg px-2 py-1.5 text-xs transition ${
@@ -817,6 +832,13 @@ export default function Bancada() {
         </div>
       </section>
 
+      </>)}
+
+      {/* ⚠️⚠️ AS PRÓPRIAS VIVAS VÃO PARA "ACOMPANHAR", junto dos agentes:
+          é o mesmo trabalho — ver o que está trabalhando por mim agora. Elas
+          estavam na aba do construtor porque nasceram ali, não porque
+          pertencem ali. */}
+      {aba === "agentes" && (<>
       {/* ── O QUE ESTÁ RODANDO AGORA ────────────────────────────────── */}
       {/* ⚠️ `bancada_posicao` era escrita pelo cron desde a fase 6 e NENHUMA
           tela a lia: a mesa tickava, abria e fechava, e o dono dela não tinha
@@ -888,6 +910,15 @@ export default function Bancada() {
         </section>
       )}
 
+      </>)}
+
+      {/* ⚠️⚠️ O HISTÓRICO GANHA PORTA PRÓPRIA (07/09). O dono: *"o primeiro
+          erro é ele estar na mesma tela onde o cliente pode montar sua própria
+          estratégia"*. Consultar o que já rodou e montar algo novo são
+          trabalhos diferentes, e o histórico empurrava o construtor para fora
+          da tela — sete cartões de consulta sempre montados embaixo da
+          ferramenta. */}
+      {aba === "rodadas" && (<>
       {/* ── AS RODADAS, EMPILHADAS ──────────────────────────────────── */}
       {/* ⚠️⚠️ UMA LISTA, DA MAIS NOVA PARA A MAIS VELHA. Antes de 07/09 aqui
           havia um estado único: a segunda rodada apagava a primeira, e o
@@ -900,6 +931,13 @@ export default function Bancada() {
           <div>
             <p className="text-sm font-medium text-ink">{t("bancada.histTitulo")}</p>
             <p className="mt-0.5 text-xs text-ink-3">{t("bancada.histSub")}</p>
+            {/* ⚠️⚠️ DITO NO TOPO DA SEÇÃO, e é a correção de um rótulo meu.
+                O card de uma rodada de mesa dizia "mesa da casa", descrevendo a
+                origem da REGRA — e o dono leu, com razão, como a origem do
+                NÚMERO: *"ele está com os dados e resultados da mesa do torneio e
+                não do teste do cliente"*. O número sempre foi dele; era a
+                etiqueta que afirmava o contrário. */}
+            <p className="mt-1 text-[11px] leading-relaxed text-cyan/70">{t("bancada.histTudoSeu")}</p>
           </div>
           {corridas.length > 0 && (
             <span className="flex-shrink-0 text-xs tabular-nums text-ink-4">{corridas.length}</span>
@@ -1013,6 +1051,24 @@ function CartaoDeRodada({ c, onAlternar }: { c: Corrida; onAlternar: () => void 
     bracketVariavel: t("bancada.nmBracket"),
   };
 
+  /**
+   * ⚠️⚠️ ESTA RODADA CARREGA O NOME DE UMA MESA QUE AQUELE CÓDIGO NÃO RODAVA.
+   *
+   * Até 07/09 o botão "rodar esta mesa" oferecia dez mesas e por baixo havia um
+   * seletor só: a ULLR e a FREYJA do histórico do dono devolveram
+   * `+2,140788280112371%` — idêntico à VÖLUNDR, até a última casa decimal, com
+   * o mesmo playbook (`trend_continuation`).
+   *
+   * As linhas ficaram no banco, e apagá-las seria pior: o cliente pediu aquele
+   * teste e o número é real. O que é falso é o NOME em cima dele. Então a
+   * rodada é marcada, e a marca diz exatamente isso.
+   *
+   * ⚠️ A REGRA É DERIVADA, não uma data no código: qualquer rodada de mesa que
+   * a bancada não reproduz HOJE recebe a marca. Se uma mesa sair da lista
+   * amanhã, o histórico dela se marca sozinho.
+   */
+  const nomeNaoConfere = c.identidade.tipo === "mesa" && !mesaPodeRodar(c.identidade.mesa);
+
   const borda = c.estado === "rodando" ? "border-cyan/30"
     : c.estado === "recusada" || c.estado === "falhou" ? "border-gold/30"
     : "border-white/5";
@@ -1035,6 +1091,11 @@ function CartaoDeRodada({ c, onAlternar }: { c: Corrida; onAlternar: () => void 
             )}
           </div>
           <p className="mt-1 break-words text-[13px] font-medium text-ink">{rotulo(c.identidade)}</p>
+          {nomeNaoConfere && (
+            <p className="mt-1 rounded-lg border border-gold/30 bg-gold/5 px-2 py-1 text-[10px] leading-relaxed text-gold">
+              {t("bancada.histRegraAntiga")}
+            </p>
+          )}
           {/* ⚠️ O CONTEXTO ANDA COLADO NO NOME. Um número sem os símbolos, a
               janela e a praça é um número sem pergunta: a mesma mesa rende
               coisas opostas em 90 e em 730 dias, e paga o dobro na DEX. */}

@@ -862,3 +862,52 @@ Estão na §5.25 do `ESTADO-ATUAL`: o alarme que acusava o agente do investidor 
 um teto nosso, o slug cru na tela de um cliente chinês, a idade do cron
 disfarçada de idade da vela, e o gate que derrubava todo agente pago com um
 rótulo dizendo "experimento interno".
+
+### O rótulo que descrevia a regra e se lia como o número (07/09, tarde)
+
+> *"o primeiro erro é ele estar na mesma tela onde o cliente pode montar sua
+> própria estratégia; segundo erro, ele está com os dados e resultados da mesa
+> do torneio e não do teste do cliente"*
+
+**O segundo ponto era um rótulo meu, não um dado errado.** As três rodadas que
+ele viu são dele — `bancada_rodada` do dono dele, com operações gravadas em
+`bancada_operacao`, medidas sobre BTC/365d:
+
+| hora | mesa | líquido | ops | playbook |
+|---|---|---|---|---|
+| 09:35 | VÖLUNDR | +2,1408% | 1 | `trend_continuation` |
+| 08:37 | ULLR | +2,1408% | 1 | `trend_continuation` |
+| 08:35 | FREYJA | +2,1408% | 1 | `trend_continuation` |
+
+O número sempre foi dele. O que a tela dizia era **"mesa da casa"** — descrevendo
+a origem da REGRA — e ele leu como a origem do NÚMERO. A leitura dele é a
+correta para o que estava escrito.
+
+- `etiquetaMesa` passou de *"mesa da casa"* para **"regra nossa, teste seu"**;
+  `etiquetaPropria`, para **"regra sua, teste seu"**. O eixo do rótulo deixou de
+  ser "de quem é isto" e passou a ser "de quem é a regra / de quem é o teste".
+- A seção diz uma vez, no topo: *"toda rodada abaixo é SUA"*.
+
+**E as duas de baixo carregam um nome falso.** ULLR e FREYJA são anteriores à
+correção de hoje, quando o botão oferecia dez mesas e rodava um seletor só —
+daí os três números idênticos até a última decimal, com o mesmo playbook.
+Apagá-las seria pior: o cliente pediu aquele teste e o número é real. O que é
+falso é o nome. Então elas ganham a marca, e a marca diz exatamente isso.
+
+⚠️ **A regra da marca é DERIVADA, não uma data no código**: qualquer rodada de
+mesa que a bancada não reproduz HOJE recebe o aviso. Se uma mesa sair da lista
+amanhã, o histórico dela se marca sozinho.
+
+### E a quarta aba
+
+O histórico saiu de baixo do construtor — sete cartões de consulta sempre
+montados abaixo da ferramenta empurravam a ferramenta para fora da tela.
+Consultar o que já rodou e montar algo novo são trabalhos diferentes.
+
+As "mesas próprias vivas" ("Rodando agora") migraram para **Acompanhar**, junto
+dos agentes: é o mesmo trabalho — ver o que está trabalhando por mim agora.
+Elas estavam na aba do construtor porque nasceram ali, não porque pertencem ali.
+
+⚠️ E os dois botões primários agora **levam o cliente até o resultado**: rodar um
+teste abre "Minhas rodadas", contratar abre "Meus agentes". Com o histórico em
+aba própria, a resposta chegaria numa porta que ele não está vendo.
