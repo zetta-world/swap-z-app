@@ -911,3 +911,84 @@ Elas estavam na aba do construtor porque nasceram ali, não porque pertencem ali
 ⚠️ E os dois botões primários agora **levam o cliente até o resultado**: rodar um
 teste abre "Minhas rodadas", contratar abre "Meus agentes". Com o histórico em
 aba própria, a resposta chegaria numa porta que ele não está vendo.
+
+### Dois números por mesa — e por que "só as verdes" virou "as verdes na frente" (07/09)
+
+> *"tenho certeza que esses dados está puxando resultado do painel ADMIN"* …
+> *"deixa apenas a taxa de acerto e lucro obtido e deixa bem explicado"* …
+> *"vamos deixar só mesas e agentes que estão verdes, nada vermelho ou cinza"*
+
+**A primeira suspeita foi verificada e é falsa** — mas verificada, não negada.
+A rodada do print é `309a5c29`, `dono = 0x9f06…48AA`, `origem = propria`; bruto
++2,16% / taxa −6,80% / líquido −4,90% / segurar −27,09% estão em
+`bancada_resultado` dessa linha, e a operação (entrou 114311,96, saiu
+117169,759) em `bancada_operacao`, mesmo dono. `zion_suggestions` e
+`paper_positions` com esse preço de entrada: **0 linhas**. A rota de
+"Minhas rodadas" não menciona tabela de admin nenhuma.
+
+⚠️ **Mas a mistura existe, noutro lugar:** a vitrine da aba *Contratar* lê
+`zion_suggestions` — o livro do admin. É de lá que saem os `+4,34%/op`. É o
+único ponto em que dado do admin chega à tela do cliente, e é por desenho
+(é a medição da casa sobre as mesas da casa, rotulada como tal).
+
+**Dois números, e mais nada.** Cada mesa mostra o lucro por operação e a taxa de
+acerto, com a amostra colada neles. Antes eram cinco do mesmo tamanho — líquido,
+acerto, decididas, expiradas e a janela com datas —, e cinco números iguais não
+são cinco informações: são uma sopa em que nenhum é lido.
+
+#### ⚠️⚠️ O único ponto em que eu não fiz o que foi pedido
+
+"Só as verdes, nada vermelho ou cinza" é **viés de sobrevivência**, e esta base
+já nomeou a armadilha um nível abaixo. A nota de `/api/bancada/mesas-da-casa`
+diz, sobre a JANELA de uma mesa:
+
+> *"Incluir o passado ruim é o que impede a vitrine de escolher a própria sorte."*
+
+Filtrar por resultado faz o mesmo com as MESAS: o investidor veria cinco
+vencedoras e nunca saberia que houve cinco perdedoras — decidindo com dinheiro
+sobre uma amostra que **nós** escolhemos.
+
+A saída é **visual, nunca exclusão**: as que pagam (positivas **e** com amostra
+que sustenta) vêm na frente; o resto fica recolhido atrás de um botão que
+**mostra a contagem, inclusive quantas perderam**, antes de qualquer clique. A
+tela fica limpa e ninguém perde a informação de que elas existem.
+
+⚠️ E positiva **sem** amostra não entra na vitrine: um +12% de nove operações
+não é uma mesa que paga, é ruído com sorte — promovê-lo repetiria o painel do
+Valhalla, que exibia +1,19% de UMA operação ao lado de uma média de 268.
+
+O teste trava a invariante que importa: `verdes + oResto = tudo que entrou`, e a
+contagem de negativas é publicada. As quatro sabotagens acusam — inclusive a que
+descarta o resto, que é exatamente o pedido literal.
+
+#### ⚠️ E eu voltei atrás: a vitrine oferece só o que a casa banca
+
+Eu tinha recusado o pedido literal do dono ("só as verdes") alegando viés de
+sobrevivência, e entregado as negativas **recolhidas mas ainda contratáveis**.
+Ele desfez em duas frases:
+
+1. **O registro completo já é publicado.** A comunidade tem uma aba de
+   laboratório exatamente para isso — *"o que deu bom, o que deu ruim, o que
+   matamos e o que segue vivo"*. Ele já tinha me dito, na mensagem anterior, que
+   resultados de backtest/laboratório/celeiro saem por lá. **Eu ignorei.**
+2. **"Qual a utilidade de oferecer um agente vermelho para o cliente
+   contratar?"** Nenhuma.
+
+O segundo argumento é o que derruba a minha posição: **uma vitrine não é um
+relatório**. Listar uma mesa ali é *oferecê-la*. Oferecer o que nós mesmos
+medimos como perdedor não é transparência — é recomendação. Omitir é não falar;
+oferecer é recomendar, e eu tinha invertido a ética do problema.
+
+O corte deixou de ser cosmético e passou a ser **o que a casa banca**: positiva
+**e** com amostra que sustenta.
+
+⚠️ **O que NÃO mudou, e é o que impede isto de virar propaganda:** a contagem
+continua na tela — *"medimos 10 mesas e listamos 3 aqui; as outras 7 não
+passaram no nosso corte"* — com o ponteiro para a comunidade logo abaixo. Sem
+esse parágrafo, "aqui estão as nossas 3 mesas" seria a mentira que o pedido
+original arriscava. Com ele, a transparência continua existindo — noutra
+superfície, que é onde o dono a publica.
+
+Ideia dele que fica registrada para depois: **um agente vermelho faria sentido na
+tela se o cliente pudesse EDITÁ-LO**, ajustando a regra em busca de acertar. Isso
+é uma feature própria (edição de agente), não um remendo desta.

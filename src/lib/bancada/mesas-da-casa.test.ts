@@ -8,7 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   mesasElegiveis, montarCartao, mereceCartao, custoIdaEVoltaDaMesa, RESSALVAS,
-  DECIDIDOS_PARA_SUSTENTAR, mesaPodeRodar, ressalvasComuns, ressalvasSoDeste,
+  DECIDIDOS_PARA_SUSTENTAR, mesaPodeRodar, ressalvasComuns, ressalvasSoDeste, ordenarVitrine,
   type MedicaoDaMesa, type CartaoDaMesa,
 } from "@/lib/bancada/mesas-da-casa";
 import { DESKS, deskFor } from "@/lib/zion/desks";
@@ -297,5 +297,73 @@ describe("a ressalva comum a todos é dita uma vez; a que distingue fica no card
     const cs = [cartao([RESSALVAS.porOperacao]), cartao([RESSALVAS.umRegime])];
     expect(ressalvasComuns(cs)).toEqual([]);
     expect(ressalvasSoDeste(cs[0], [])).toEqual([RESSALVAS.porOperacao]);
+  });
+});
+
+/**
+ * ⚠️⚠️ "SÓ AS VERDES" É VIÉS DE SOBREVIVÊNCIA — e esta base já nomeou a
+ * armadilha, um nível abaixo.
+ *
+ * O dono (07/09): *"vamos deixar só mesas e agentes que estão verdes, nada
+ * vermelho ou cinza"*. O pedido por trás é legítimo: a tela virava um cemitério
+ * de vermelho. Mas a nota de `/api/bancada/mesas-da-casa` já diz, sobre a
+ * JANELA de uma mesa — *"incluir o passado ruim é o que impede a vitrine de
+ * escolher a própria sorte"* — e filtrar por resultado faz o mesmo com as
+ * MESAS: o investidor veria cinco vencedoras e nunca saberia das cinco
+ * perdedoras, decidindo com dinheiro sobre uma amostra que nós escolhemos.
+ *
+ * A saída é visual, não exclusão: as que pagam na frente, o resto recolhido —
+ * COM A CONTAGEM À MOSTRA.
+ */
+describe("a vitrine ordena, mas nunca esconde uma mesa sem dizer que ela existe", () => {
+  const c = (liquido: number | null, sustenta: boolean): CartaoDaMesa =>
+    ({ ...montarCartao(deskFor("strat_dex")!, medicao()),
+       liquidoPorOpPct: liquido, sustentacao: sustenta ? "sustenta" : "ruido" } as CartaoDaMesa);
+
+  it("separa quem paga COM amostra de todo o resto", () => {
+    const v = ordenarVitrine([c(4.3, true), c(-1.4, true), c(12, false), c(null, false)]);
+    expect(v.verdes.map((x) => x.liquidoPorOpPct)).toEqual([4.3]);
+    expect(v.oResto).toHaveLength(3);
+  });
+
+  /**
+   * ⚠️ AS DUAS CONDIÇÕES, não só o sinal. Um +12% de nove operações não é uma
+   * mesa que paga — é ruído com sorte. Promovê-lo à vitrine repetiria o painel
+   * do Valhalla, que exibia +1,19% de UMA operação ao lado de uma média de 268.
+   */
+  it("positiva SEM amostra não entra na vitrine", () => {
+    expect(ordenarVitrine([c(12, false)]).verdes).toEqual([]);
+  });
+
+  /**
+   * ⚠️⚠️ A ASSERÇÃO QUE SOBROU DEPOIS DE EU MUDAR DE IDEIA.
+   *
+   * A vitrine passou a OFERECER só o que a casa banca — oferecer uma mesa que
+   * nós medimos como perdedora é pior que omitir, porque listar ali é
+   * recomendar. Mas o `oResto` continua saindo desta função, e é isso que a
+   * tela usa para CONTAR: "medimos 10, listamos 3" é honesto; "aqui estão as
+   * nossas 3 mesas" é propaganda. Se esta soma quebrar, a contagem mente.
+   */
+  it("nenhuma mesa some da CONTA: verdes + resto = tudo que entrou", () => {
+    const entrada = [c(4.3, true), c(-1.4, true), c(0.9, true), c(12, false), c(null, true)];
+    const v = ordenarVitrine(entrada);
+    expect(v.verdes.length + v.oResto.length).toBe(entrada.length);
+  });
+
+  it("a contagem de negativas é publicada — é ela que impede o silêncio", () => {
+    const v = ordenarVitrine([c(4.3, true), c(-1.4, true), c(-0.2, true), c(12, false)]);
+    expect(v.quantasNegativas).toBe(2);
+    expect(v.quantasSemAmostra).toBe(1);
+  });
+
+  it("melhor primeiro, e sem-medida por último — ausência não ganha de número ruim", () => {
+    const v = ordenarVitrine([c(0.9, true), c(4.3, true), c(2.1, true)]);
+    expect(v.verdes.map((x) => x.liquidoPorOpPct)).toEqual([4.3, 2.1, 0.9]);
+    const r = ordenarVitrine([c(null, true), c(-5, true), c(-0.1, true)]);
+    expect(r.oResto.map((x) => x.liquidoPorOpPct)).toEqual([-0.1, -5, null]);
+  });
+
+  it("vitrine vazia não explode nem inventa mesa", () => {
+    expect(ordenarVitrine([])).toEqual({ verdes: [], oResto: [], quantasNegativas: 0, quantasSemAmostra: 0 });
   });
 });

@@ -201,6 +201,85 @@ export function ressalvasComuns(cartoes: ReadonlyArray<CartaoDaMesa>): ChaveDeRe
   return primeiro.ressalvas.filter((r) => resto.every((c) => c.ressalvas.includes(r)));
 }
 
+/**
+ * ⚠️⚠️ A VITRINE OFERECE SÓ O QUE A CASA BANCA — e o registro completo mora na
+ * COMUNIDADE (07/09).
+ *
+ * ESTA FUNÇÃO MUDOU DE IDEIA UMA VEZ, E VALE REGISTRAR POR QUÊ.
+ *
+ * O dono pediu *"deixar só mesas e agentes que estão verdes"*. Eu recusei o
+ * pedido literal, alegando viés de sobrevivência — o investidor veria cinco
+ * vencedoras e não saberia das cinco perdedoras — e entreguei as negativas
+ * recolhidas atrás de um botão, ainda contratáveis.
+ *
+ * ⚠️ ERA UMA INVERSÃO DA ÉTICA DO PROBLEMA, e ele desfez em duas frases:
+ *
+ *  1. **O registro completo JÁ É PUBLICADO.** A comunidade tem uma aba de
+ *     laboratório exatamente para isso — o que deu bom, o que deu ruim, o que
+ *     matamos e o que segue vivo. Ele tinha me dito isso, e eu ignorei. O
+ *     argumento de "concealment" não se aplica quando a transparência existe,
+ *     só não é nesta superfície.
+ *  2. **"Qual a utilidade de oferecer um agente vermelho para o cliente
+ *     contratar?"** Nenhuma. Uma vitrine não é um relatório: listar uma mesa
+ *     ali é OFERECÊ-LA. Oferecer o que nós mesmos medimos como perdedor é pior
+ *     que omitir — omitir é não falar, oferecer é recomendar.
+ *
+ * O corte deixa de ser cosmético e passa a ser o que a casa BANCA: positiva E
+ * com amostra que sustenta. O resto não é escondido — é contado, e a tela diz
+ * onde o registro inteiro sai.
+ *
+ * ⚠️ A CONTAGEM CONTINUA SAINDO (`quantasNegativas`), e é ela que impede isto
+ * de virar propaganda: "medimos 10, oferecemos 3" é uma frase honesta; "aqui
+ * estão as nossas 3 mesas" não é.
+ */
+export interface VitrineOrdenada {
+  /** ⚠️ O QUE A CASA BANCA: positiva E com amostra. É o que a tela OFERECE. */
+  verdes: CartaoDaMesa[];
+  /**
+   * Negativas ou sem amostra.
+   *
+   * ⚠️ NÃO SÃO OFERECIDAS — mas continuam saindo daqui porque a tela precisa
+   * CONTÁ-LAS. "Medimos 10, oferecemos 3" é honesto; "aqui estão as nossas 3
+   * mesas" é propaganda.
+   */
+  oResto: CartaoDaMesa[];
+  /** ⚠️ Quantas do resto de fato PERDERAM. Este número tem de aparecer. */
+  quantasNegativas: number;
+  /** Quantas não sustentam veredito (amostra curta). Também aparece. */
+  quantasSemAmostra: number;
+}
+
+export function ordenarVitrine(cartoes: ReadonlyArray<CartaoDaMesa>): VitrineOrdenada {
+  const verdes: CartaoDaMesa[] = [];
+  const oResto: CartaoDaMesa[] = [];
+  let quantasNegativas = 0;
+  let quantasSemAmostra = 0;
+
+  for (const c of cartoes) {
+    const sustenta = c.sustentacao === "sustenta";
+    const paga = c.liquidoPorOpPct != null && c.liquidoPorOpPct > 0;
+    // ⚠️ AS DUAS CONDIÇÕES, não só o sinal: um +12% de nove operações não é uma
+    // mesa que paga, é ruído com sorte — e promovê-lo à vitrine seria repetir
+    // o painel do Valhalla, que exibia +1,19% de UMA operação ao lado de uma
+    // média de 268.
+    if (paga && sustenta) { verdes.push(c); continue; }
+    oResto.push(c);
+    if (c.liquidoPorOpPct != null && c.liquidoPorOpPct < 0) quantasNegativas++;
+    if (!sustenta) quantasSemAmostra++;
+  }
+
+  // ⚠️ Melhor primeiro DENTRO de cada grupo. `null` (sem medida) vai ao fim:
+  // ausência de número nunca ganha de um número ruim.
+  const porResultado = (a: CartaoDaMesa, b: CartaoDaMesa) =>
+    (b.liquidoPorOpPct ?? -Infinity) - (a.liquidoPorOpPct ?? -Infinity);
+
+  return {
+    verdes: [...verdes].sort(porResultado),
+    oResto: [...oResto].sort(porResultado),
+    quantasNegativas, quantasSemAmostra,
+  };
+}
+
 /** O que sobra num card depois de a seção já ter dito o que é comum a todos. */
 export function ressalvasSoDeste(
   cartao: CartaoDaMesa, comuns: ReadonlyArray<ChaveDeRessalva>,
