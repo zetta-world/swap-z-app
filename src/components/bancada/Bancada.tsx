@@ -34,7 +34,7 @@ import { classificarResultado } from "@/lib/admin/cor-resultado";
 import { corDoNumero } from "@/components/bancada/CorDoCliente";
 import type { ChaveNaoMedido } from "@/lib/bancada/veredito";
 import { ESTRATEGIAS_DA_CASA, type EstrategiaDaCasa } from "@/lib/bancada/casa";
-import { ressalvasComuns, ressalvasSoDeste, mesaPodeRodar, type CartaoDaMesa, type ChaveDeRessalva } from "@/lib/bancada/mesas-da-casa";
+import { ressalvasComuns, ressalvasSoDeste, mesaPodeRodar, ordenarVitrine, type CartaoDaMesa, type ChaveDeRessalva } from "@/lib/bancada/mesas-da-casa";
 import type { MessageKey } from "@/lib/i18n";
 
 const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOT", "MATIC"];
@@ -498,6 +498,21 @@ export default function Bancada() {
    * sozinho. Não há literal a envelhecer em silêncio.
    */
   const comuns = ressalvasComuns(mesas);
+  /**
+   * ⚠️⚠️ AS QUE PAGAM NA FRENTE, O RESTO RECOLHIDO — E A CONTAGEM À MOSTRA.
+   *
+   * O dono pediu *"só as verdes, nada vermelho ou cinza"*. O pedido por trás é
+   * legítimo: a tela virava um cemitério. Mas EXCLUIR pelo resultado é viés de
+   * sobrevivência — e esta base já nomeou a armadilha um nível abaixo, na nota
+   * de `/api/bancada/mesas-da-casa`: *"incluir o passado ruim é o que impede a
+   * vitrine de escolher a própria sorte"*.
+   *
+   * Então a separação é VISUAL. Ele ganha a tela limpa; o investidor continua
+   * podendo ver quantas mesas existem e quantas perderam. Esconder o número é
+   * a mentira; recolher dizendo quantas são, não é.
+   */
+  const vitrine = ordenarVitrine(mesas);
+  const [mostrarOResto, setMostrarOResto] = useState(false);
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8 space-y-6">
@@ -568,8 +583,12 @@ export default function Bancada() {
               "o que a NOSSA mesa fez" é verdade sobre TODOS os números desta
               lista, e repeti-lo em cada um treinava o olho a pular a linha. */}
           <p className="mt-2 text-[11px] leading-relaxed text-gold/80">{t("bancada.mesasDaCasaNumero")}</p>
+          {/* ⚠️ A EXPLICAÇÃO DOS DOIS NÚMEROS, uma vez, antes deles. "Bem
+              explicado" era metade do pedido — e um número sem a régua ao lado
+              é a metade que engana. */}
+          <p className="mt-2 text-[11px] leading-relaxed text-ink-4">{t("bancada.mesasDoisNumeros")}</p>
           <ul className="mt-3 space-y-2">
-            {mesas.map((m) => (
+            {vitrine.verdes.map((m) => (
               <MesaDaCasa key={m.source} m={m} rodando={rodandoMesa === m.source}
                 contratando={contratando === m.source}
                 jaContratada={jaContratadas.includes(m.source)}
@@ -580,6 +599,39 @@ export default function Bancada() {
                 onContratar={() => void contratar(m)} />
             ))}
           </ul>
+
+          {/* ⚠️⚠️ O RESTO, RECOLHIDO MAS CONTADO. O botão diz quantas são e
+              quantas PERDERAM — antes de qualquer clique. É esta linha que
+              separa "a tela está limpa" de "a vitrine escolheu a própria
+              sorte": o investidor sabe que elas existem sem precisar abrir. */}
+          {vitrine.oResto.length > 0 && (
+            <div className="mt-3">
+              <button type="button" onClick={() => setMostrarOResto((v) => !v)}
+                className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/5 bg-bg-2/60 px-3 py-2 text-xs text-ink-3 transition hover:border-white/15 hover:text-ink-2">
+                <span>{mostrarOResto
+                  ? t("bancada.mesasEsconderResto")
+                  : t("bancada.mesasVerOResto", { n: vitrine.oResto.length, neg: vitrine.quantasNegativas })}</span>
+                <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${mostrarOResto ? "rotate-180" : ""}`} />
+              </button>
+              {mostrarOResto && (
+                <>
+                  <p className="mt-2 text-[11px] leading-relaxed text-ink-4">{t("bancada.mesasPorqueOResto")}</p>
+                  <ul className="mt-2 space-y-2">
+                    {vitrine.oResto.map((m) => (
+                      <MesaDaCasa key={m.source} m={m} rodando={rodandoMesa === m.source}
+                        contratando={contratando === m.source}
+                        jaContratada={jaContratadas.includes(m.source)}
+                        soDeste={ressalvasSoDeste(m, comuns)}
+                        comOQue={{ simbolos, praca: rotuloDaPraca(praca), papel }}
+                        erro={contratarErrouEm === m.source ? erroDeContratar : null}
+                        onRodar={() => rodarMesa(m)}
+                        onContratar={() => void contratar(m)} />
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
           {/* ⚠️⚠️ A NOTA DE RODAPÉ DA SEÇÃO — o que vale para TODOS os cards.
               Medido: 4 frases × 10 cards = ~4.000 caracteres idênticos numa
               rolagem de celular. O corte é por INTERSEÇÃO (`ressalvasComuns`),
@@ -1294,43 +1346,46 @@ function MesaDaCasa({ m, rodando, contratando, jaContratada, soDeste, comOQue, e
             </>
           ) : null}
         </div>
+        {/* ⚠️⚠️ DOIS NÚMEROS, E MAIS NADA (07/09) — pedido do dono: *"deixa
+            apenas a taxa de acerto e lucro obtido, e deixa bem explicado"*.
+            Antes eram cinco: líquido, acerto, decididas, expiradas e a janela
+            inteira com datas. Cinco números do mesmo tamanho não são cinco
+            informações — são uma sopa em que nenhum é lido. */}
         <div className="flex-shrink-0 text-right">
-          {m.liquidoPorOpPct == null ? (
+          {m.liquidoPorOpPct == null || m.acertoPct == null ? (
             <span className="text-xs text-ink-4">{t("bancada.mesasSemMedida")}</span>
           ) : (
             <>
               <span className={`block text-base font-semibold ${cor}`}>
-                {m.liquidoPorOpPct >= 0 ? "+" : ""}{m.liquidoPorOpPct.toFixed(2)}%
+                {m.liquidoPorOpPct >= 0
+                  ? t("bancada.mesasLucroSo", { pct: m.liquidoPorOpPct.toFixed(2) })
+                  : t("bancada.mesasPrejuizoSo", { pct: m.liquidoPorOpPct.toFixed(2) })}
               </span>
-              <span className="block text-[10px] text-ink-4">{t("bancada.mesasPorOp")}</span>
+              <span className="mt-0.5 block text-[11px] text-ink-2">
+                {t("bancada.mesasAcertoSo", { pct: m.acertoPct.toFixed(0) })}
+              </span>
+              {/* ⚠️ A AMOSTRA FICA COLADA NOS DOIS NÚMEROS, sempre. Um acerto de
+                  79% sem o "de quantas" é a mesma armadilha do painel do
+                  Valhalla — e é o único contexto que estes dois números não
+                  carregam sozinhos. */}
+              {m.medicao && (
+                <span className="block text-[10px] text-ink-4">
+                  {t("bancada.mesasDeQuantas", { n: m.medicao.decididos })}
+                </span>
+              )}
+              {m.sustentacao !== "sustenta" && (
+                <span className="mt-0.5 block max-w-[10rem] text-[10px] leading-tight text-ink-4">
+                  {t("bancada.mesasSemAmostraSo")}
+                </span>
+              )}
             </>
           )}
         </div>
       </div>
 
-      {m.medicao && m.acertoPct != null && (
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-ink-3">
-          <span>{t("bancada.mesasAcerto", { pct: m.acertoPct.toFixed(0), n: m.medicao.decididos })}</span>
-          {/* ⚠️ Expirada aparece SEMPRE que existe: ela não é ganho nem perda,
-              e uma mesa que expira mais do que decide é outra coisa. */}
-          {m.medicao.expiradas > 0 && (
-            <span>{m.medicao.expiradas === 1
-              ? t("bancada.mesasExpiradaUma")
-              : t("bancada.mesasExpiradas", { n: m.medicao.expiradas })}</span>
-          )}
-          <span>{t("bancada.mesasJanela", {
-            simbolos: m.medicao.simbolos, dias: m.medicao.dias,
-            de: m.medicao.primeiroDia, ate: m.medicao.ultimoDia,
-          })}</span>
-        </div>
-      )}
-
-      {/* ⚠️⚠️ AS RESSALVAS VIAJAM COM O NÚMERO. Publicar "+4,34% por operação"
-          sozinho é propaganda; publicá-lo com o que ele NÃO prova é medição — e
-          é o que separa esta bancada de um backtester que vende esperança. */}
-      {/* ⚠️ SÓ AS QUE DISTINGUEM ESTE CARD. As comuns a todos foram ditas uma
-          vez, no rodapé da seção — ver `ressalvasComuns`. Nada some: a soma das
-          duas listas é sempre o conjunto original. */}
+      {/* ⚠️ SÓ AS RESSALVAS QUE DISTINGUEM ESTE CARD. As comuns a todos foram
+          ditas uma vez, no rodapé da seção — ver `ressalvasComuns`. Nada some:
+          a soma das duas listas é sempre o conjunto original. */}
       {soDeste.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-white/5 pt-2">
           {soDeste.map((r) => (

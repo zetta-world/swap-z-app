@@ -201,6 +201,69 @@ export function ressalvasComuns(cartoes: ReadonlyArray<CartaoDaMesa>): ChaveDeRe
   return primeiro.ressalvas.filter((r) => resto.every((c) => c.ressalvas.includes(r)));
 }
 
+/**
+ * ⚠️⚠️ A VITRINE, ORDENADA — as que pagam na frente, o resto RECOLHIDO (07/09).
+ *
+ * O DONO PEDIU: *"vamos deixar só mesas e agentes que estão verdes, nada
+ * vermelho ou cinza"*. O pedido por trás é legítimo — a tela virava um cemitério
+ * de números vermelhos, e ninguém quer isso como primeira impressão do produto.
+ *
+ * ⚠️ MAS FILTRAR PELO RESULTADO É A ARMADILHA QUE ESTA BASE JÁ NOMEOU. A nota
+ * de `/api/bancada/mesas-da-casa` diz, sobre a janela de UMA mesa: *"incluir o
+ * passado ruim é o que impede a vitrine de escolher a própria sorte"*. Deixar
+ * só as verdes faz o mesmo um nível acima: em vez de escolher a boa JANELA de
+ * uma mesa, escolhe as boas MESAS. O investidor veria cinco vencedoras e nunca
+ * saberia que houve cinco perdedoras — que é a definição de viés de
+ * sobrevivência, e ele está pagando para decidir com esses números.
+ *
+ * ⚠️ ENTÃO A SEPARAÇÃO É VISUAL, NUNCA UMA EXCLUSÃO. As que pagam vêm na
+ * frente; as outras ficam recolhidas atrás de um botão que MOSTRA A CONTAGEM,
+ * inclusive quantas são negativas. A tela fica limpa e ninguém perde a
+ * informação de que elas existem. Esconder o número é a mentira; recolher
+ * dizendo quantas são, não é.
+ */
+export interface VitrineOrdenada {
+  /** Positivas E com amostra que sustenta. Vêm abertas, melhor primeiro. */
+  verdes: CartaoDaMesa[];
+  /** Negativas ou sem amostra. Recolhidas — nunca removidas. */
+  oResto: CartaoDaMesa[];
+  /** ⚠️ Quantas do resto de fato PERDERAM. Este número tem de aparecer. */
+  quantasNegativas: number;
+  /** Quantas não sustentam veredito (amostra curta). Também aparece. */
+  quantasSemAmostra: number;
+}
+
+export function ordenarVitrine(cartoes: ReadonlyArray<CartaoDaMesa>): VitrineOrdenada {
+  const verdes: CartaoDaMesa[] = [];
+  const oResto: CartaoDaMesa[] = [];
+  let quantasNegativas = 0;
+  let quantasSemAmostra = 0;
+
+  for (const c of cartoes) {
+    const sustenta = c.sustentacao === "sustenta";
+    const paga = c.liquidoPorOpPct != null && c.liquidoPorOpPct > 0;
+    // ⚠️ AS DUAS CONDIÇÕES, não só o sinal: um +12% de nove operações não é uma
+    // mesa que paga, é ruído com sorte — e promovê-lo à vitrine seria repetir
+    // o painel do Valhalla, que exibia +1,19% de UMA operação ao lado de uma
+    // média de 268.
+    if (paga && sustenta) { verdes.push(c); continue; }
+    oResto.push(c);
+    if (c.liquidoPorOpPct != null && c.liquidoPorOpPct < 0) quantasNegativas++;
+    if (!sustenta) quantasSemAmostra++;
+  }
+
+  // ⚠️ Melhor primeiro DENTRO de cada grupo. `null` (sem medida) vai ao fim:
+  // ausência de número nunca ganha de um número ruim.
+  const porResultado = (a: CartaoDaMesa, b: CartaoDaMesa) =>
+    (b.liquidoPorOpPct ?? -Infinity) - (a.liquidoPorOpPct ?? -Infinity);
+
+  return {
+    verdes: [...verdes].sort(porResultado),
+    oResto: [...oResto].sort(porResultado),
+    quantasNegativas, quantasSemAmostra,
+  };
+}
+
 /** O que sobra num card depois de a seção já ter dito o que é comum a todos. */
 export function ressalvasSoDeste(
   cartao: CartaoDaMesa, comuns: ReadonlyArray<ChaveDeRessalva>,
