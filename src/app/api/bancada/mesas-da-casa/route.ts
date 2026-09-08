@@ -14,7 +14,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
-import { mesasElegiveis, montarCartao, mereceCartao, type MedicaoDaMesa } from "@/lib/bancada/mesas-da-casa";
+import { mesasElegiveis, montarCartao, mereceCartao, diaDaDecisao, type MedicaoDaMesa } from "@/lib/bancada/mesas-da-casa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +28,12 @@ export const dynamic = "force-dynamic";
  * Trinta minutos porque o dado muda no ritmo do cron (30 min): cachear menos
  * não traria número novo, só conta.
  */
-const CHAVE = "bancada:mesas-da-casa";
+// ⚠️ O SUFIXO `v2` É PARTE DA CORREÇÃO, não enfeite: o cache guarda CARTÕES
+// PRONTOS por 30 min, com o carimbo de validade já dentro. Sem trocar a chave,
+// a vitrine continuaria servindo a data errada por meia hora depois do deploy —
+// e o cache é global, não por visitante. Trocar a chave é o único jeito de a
+// correção valer no primeiro acesso.
+const CHAVE = "bancada:mesas-da-casa:v2";
 const VALIDADE_MS = 30 * 60_000;
 
 interface Cacheado { emMs: number; cartoes: unknown[] }
@@ -78,14 +83,17 @@ export async function GET() {
    */
   const linhas = await selectAllRows<{
     source: string; status: string; outcome_pct: number | string | null;
-    symbol: string | null; created_at: string;
+    symbol: string | null; created_at: string; resolved_at: string | null;
   }>((de, ate) => db
     // inclui-arquivadas: vida inteira de propósito — a rodada arquivada é o
     // passado RUIM da mesa, e tirá-la só melhoraria o nosso número. Ver a nota
     // acima.
     // leitura-limitada: paginada por `selectAllRows` (1.000 por bloco).
     .from("zion_suggestions")
-    .select("source, status, outcome_pct, symbol, created_at")
+    // ⚠️ `resolved_at` VEM JUNTO porque o carimbo de validade fala de DECISÃO,
+    // e `created_at` é a EMISSÃO — até 72h de diferença, medidas no banco. A
+    // regra de qual data conta mora em `diaDaDecisao`, com nota e teste.
+    .select("source, status, outcome_pct, symbol, created_at, resolved_at")
     .in("source", sources)
     .in("status", ["hit_target", "hit_stop", "expired"])
     .order("created_at", { ascending: true })
@@ -105,7 +113,7 @@ export async function GET() {
       source: l.source, decididos: 0, alvo: 0, stop: 0, expiradas: 0,
       brutoPorOpPct: 0, simbolos: 0, dias: 0, primeiroDia: "", ultimoDia: "",
     };
-    const dia = l.created_at.slice(0, 10);
+    const dia = diaDaDecisao(l);
     if (!m.primeiroDia || dia < m.primeiroDia) m.primeiroDia = dia;
     if (!m.ultimoDia || dia > m.ultimoDia) m.ultimoDia = dia;
 

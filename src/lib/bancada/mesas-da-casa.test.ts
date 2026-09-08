@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import {
   mesasElegiveis, montarCartao, mereceCartao, custoIdaEVoltaDaMesa, RESSALVAS,
   DECIDIDOS_PARA_SUSTENTAR, mesaPodeRodar, ressalvasComuns, ressalvasSoDeste, ordenarVitrine, diasSemDecidir, DIAS_ATE_PARADA,
+  diaDaDecisao,
   type MedicaoDaMesa, type CartaoDaMesa,
 } from "@/lib/bancada/mesas-da-casa";
 import { DESKS, deskFor } from "@/lib/zion/desks";
@@ -412,5 +413,40 @@ describe("uma mesa parada tem de dizer desde quando", () => {
     expect(DIAS_ATE_PARADA).toBe(3);
     expect(diasSemDecidir(medicao({ ultimoDia: "2026-09-05" }), em("2026-09-07"))).toBeLessThan(DIAS_ATE_PARADA);
     expect(diasSemDecidir(medicao({ ultimoDia: "2026-09-04" }), em("2026-09-07"))).toBeGreaterThanOrEqual(DIAS_ATE_PARADA);
+  });
+});
+
+/**
+ * ⚠️⚠️ O CARIMBO DE VALIDADE FALA DE DECISÃO — e a emissão é OUTRA data.
+ *
+ * Medido no banco: ~40h de defasagem média nas mesas do torneio, 72h no pior
+ * caso. A `hybrid_scan` decidiu por último em 16/08 e o card dizia 13/08 —
+ * três dias, que é exatamente `DIAS_ATE_PARADA`.
+ */
+describe("diaDaDecisao — a data da DECISÃO, nunca a da emissão", () => {
+  it("com `resolved_at`, é ele quem manda — a emissão não entra", () => {
+    expect(diaDaDecisao({ created_at: "2026-08-13T22:00:00Z", resolved_at: "2026-08-16T04:00:00Z" }))
+      .toBe("2026-08-16");
+  });
+
+  it("os três dias de defasagem viram uma mesa parada numa mesa viva", () => {
+    const agora = Date.parse("2026-08-17T12:00:00Z");
+    const linha = { created_at: "2026-08-13T22:00:00Z", resolved_at: "2026-08-16T04:00:00Z" };
+
+    const pelaDecisao = diasSemDecidir(medicao({ ultimoDia: diaDaDecisao(linha) }), agora);
+    const pelaEmissao = diasSemDecidir(medicao({ ultimoDia: linha.created_at.slice(0, 10) }), agora);
+
+    expect(pelaDecisao).toBeLessThan(DIAS_ATE_PARADA);       // viva, e é a verdade
+    expect(pelaEmissao).toBeGreaterThanOrEqual(DIAS_ATE_PARADA); // "parada", e é mentira
+  });
+
+  it("sem `resolved_at` cai para a emissão — que ENVELHECE o carimbo, nunca o rejuvenesce", () => {
+    // O lado seguro: uma linha antiga sem `resolved_at` faz a mesa parecer mais
+    // parada do que está. O erro para o outro lado venderia número velho como novo.
+    const semResolucao = { created_at: "2026-08-13T22:00:00Z", resolved_at: null };
+    expect(diaDaDecisao(semResolucao)).toBe("2026-08-13");
+    expect(diaDaDecisao(semResolucao) <= diaDaDecisao({ ...semResolucao, resolved_at: "2026-08-16T04:00:00Z" }))
+      .toBe(true);
+    expect(diaDaDecisao({ created_at: "2026-08-13T22:00:00Z" })).toBe("2026-08-13");
   });
 });
