@@ -133,7 +133,8 @@ describe("o que o tique viu, por símbolo", () => {
       },
     });
     expect(t?.simbolos.BTC).toEqual({
-      preco: 121750.76, velaEm: 900, motivo: "sem_setup", detalhe: "EMA50 acima do preço", abriu: false,
+      preco: 121750.76, velaEm: 900, velaFechaEm: null, regime: null,
+      motivo: "sem_setup", detalhe: "EMA50 acima do preço", abriu: false,
     });
     expect(t?.simbolos.ETH.abriu).toBe(true);
   });
@@ -147,6 +148,51 @@ describe("o que o tique viu, por símbolo", () => {
     const t = lerUltimoTique({ em: 50_000, simbolos: { BTC: { preco: 1, velaEm: 11_000, abriu: false } } });
     expect(t?.em).toBe(50_000);
     expect(t?.simbolos.BTC.velaEm).toBe(11_000);
+  });
+
+  /**
+   * ⚠️⚠️ ABERTURA E FECHAMENTO SÃO CAMPOS DIFERENTES, e confundi-los foi o
+   * defeito que o dono viu no print (08/09).
+   *
+   * O card dizia *"vela de 104 min atrás"* sobre uma vela de 1h ABERTA às 07:00
+   * e lida às 08:44. Ela FECHOU às 08:00 — o dado tinha 44 minutos. Medir da
+   * abertura envelhece o preço em até uma duração de intervalo inteira, e faz o
+   * agente parecer cego estando em dia.
+   */
+  it("guarda abertura E fechamento — a idade sai do fechamento", () => {
+    const abre = Date.parse("2026-09-08T07:00:00Z");
+    const fecha = Date.parse("2026-09-08T08:00:00Z");
+    const agora = Date.parse("2026-09-08T08:44:00Z");
+    const t = lerUltimoTique({ em: agora, simbolos: { BTC: { preco: 78482, velaEm: abre, velaFechaEm: fecha, abriu: false } } });
+
+    const v = t!.simbolos.BTC;
+    expect(v.velaEm).toBe(abre);
+    expect(v.velaFechaEm).toBe(fecha);
+
+    // O caso exato do print: 104 minutos pela abertura, 44 pelo fechamento.
+    expect(Math.floor((agora - v.velaEm!) / 60_000)).toBe(104);
+    expect(Math.floor((agora - v.velaFechaEm!) / 60_000)).toBe(44);
+  });
+
+  it("fechamento ausente continua ausente — nunca cai na abertura por acidente", () => {
+    // ⚠️ Cair para `velaEm` seria reintroduzir o defeito em silêncio, num
+    // caminho que ninguém olha (linha gravada por versão antiga).
+    const t = lerUltimoTique({ em: 1, simbolos: { BTC: { velaEm: 99, abriu: false } } });
+    expect(t?.simbolos.BTC.velaFechaEm).toBeNull();
+  });
+
+  /**
+   * ⚠️ O REGIME É O "ONDE ELE ACHA QUE ESTÁ" — e ele agora viaja na RECUSA
+   * também. Antes só saía quando a mesa abria, que é justamente quando o
+   * investidor NÃO precisa perguntar o que ela está fazendo.
+   */
+  it("o regime é lido, e string vazia é ausência", () => {
+    const t = lerUltimoTique({ em: 1, simbolos: {
+      BTC: { regime: "TRENDING_DOWN", abriu: false },
+      ETH: { regime: "", abriu: false },
+    } });
+    expect(t?.simbolos.BTC.regime).toBe("TRENDING_DOWN");
+    expect(t?.simbolos.ETH.regime).toBeNull();
   });
 
   it("motivo desconhecido no banco não vira chave de tradução inexistente", () => {

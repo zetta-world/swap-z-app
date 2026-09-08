@@ -13,7 +13,9 @@
 > ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
-> **Última atualização:** 31/08/2026, `main` em **`f722941`**. Dois dias
+> **Última atualização:** 08/09/2026 — a leva do PR #410 (§5.26: sete telas
+> afirmando sobre A o que só era verdade sobre B). Antes disso: 31/08/2026,
+> `main` em **`f722941`**. Dois dias
 > densos (#366–#382). O fio que costura quase tudo:
 >
 > ### ⚠️⚠️ ATIVIDADE NÃO É EVIDÊNCIA DE FUNCIONAMENTO
@@ -2069,6 +2071,51 @@ O proxy deste contêiner bloqueia `api.gopluslabs.io` (`CONNECT tunnel failed,
 403`), então **não dá para testar a API ao vivo** e confirmar se ela devolve
 `lp_holders`/`holders` para a Base. A instrumentação acima é o caminho honesto:
 em vez de afirmar o que a fonte faz, deixar o próprio agente medir e dizer.
+
+---
+
+## 5.26 ⚠️⚠️ O RÓTULO FALA DE **A**, O NÚMERO VEM DE **B** — sete telas (08/09)
+
+Uma caçada só, um formato só de defeito. Nenhum deles é conta errada: a conta
+está certa e **descreve outra coisa** que não a que o rótulo promete. Foi a
+família que o dono farejou três vezes dizendo *"está aparecendo resultado que
+vem do painel ADMIN"* — não era vazamento (medido: `0 de 36` operações da
+bancada compartilham preço de entrada com o admin), era a **tela** dizendo
+errado, de um jeito diferente a cada vez.
+
+| tela | dizia | vinha de | consequência |
+|---|---|---|---|
+| card do agente | "vela de 104 min atrás" | **abertura** da vela | dado de 44 min parecia velho — PR #410 (`velaFechaEm`) |
+| vitrine das mesas | "nada decidido desde {dia}" | `created_at` (**emissão**) | até 72h de defasagem; a `hybrid_scan` decidiu 16/08 e o card dizia 13/08 |
+| DCA (dinheiro real) | "Agendador vivo — há 3 min" | heartbeat gravado **antes** do gate | com `pause_dca` ligado, fila congelada com selo verde |
+| carteira | "Carteiras acima são **demo**" | sobra do mock | saldo REAL do cliente, 12 linhas abaixo de "nada é fabricado" |
+| painel | "Atividade · **30 dias**" | laço de **14** buckets | o "total" subestimava o volume do próprio cliente |
+| terminal `/pro` | "última vela há 8s" | idade da **busca** | e `200` com `candles: []` acendia verde sobre gráfico vazio |
+| terminal `/pro` | "**24h**" e "Vol 24h" | 250 velas = **4,2h** no 1m, 20,8h no 5m | erro de até 6× em número que decide ordem |
+| card do agente | "trabalhando há 2h" | `papel_desde` reescrito ao **religar** | ao lado de 48 decididas de duas semanas |
+
+### A regra que sai daí
+
+**Todo instante na tela tem de vir do evento que o rótulo nomeia.** Não do
+evento vizinho que estava à mão — a busca em vez da vela, a emissão em vez da
+decisão, o religar em vez da contratação. As duas costumam existir no mesmo
+objeto, a poucos caracteres uma da outra, e a errada quase sempre é a mais
+fácil de alcançar.
+
+E o corolário: **quando as duas idades importam, mostre as duas.** No selo do
+`/pro` a fonte responder e o dado ser recente são perguntas distintas, e uma não
+substitui a outra.
+
+### O que virou trava
+
+Módulos puros, com teste que quebra nos dois sentidos:
+`diaDaDecisao` · `estadoDoAgendador` · `vivacidadeDoGrafico` · `janelaDoCabecalho`
+· `inicioDaCobertura`. Nenhuma dessas decisões ficou em `if` dentro de JSX —
+`vitest` roda em `node`, e o que mora em `.tsx` não é testado.
+
+⚠️ **E um número escrito à mão num texto é uma afirmação que envelhece
+sozinha**: "30 dias" e "24h" eram literais. Agora saem da constante que alimenta
+o laço.
 
 ---
 

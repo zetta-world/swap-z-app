@@ -17,6 +17,7 @@ import { proximaJanela, type Intervalo } from "@/lib/dca/relogio";
  */
 import { lerCiclos, porCiclo } from "@/lib/orders/plano";
 import { recordEvent } from "@/lib/admin/track";
+import { getFlywheelGates } from "@/lib/admin/gates";
 import { rateLimitDurable } from "@/lib/rate-limit";
 import type { CexId } from "@/lib/cex/types";
 
@@ -50,17 +51,35 @@ const INTERVALOS: Intervalo[] = ["hourly", "daily", "weekly", "monthly"];
  * "rodou e faz tempo".
  *
  * ⚠️ `null` = NUNCA rodou. Não confundir com um número grande.
+ *
+ * ⚠️⚠️ O HEARTBEAT SOZINHO NÃO DIZ QUE ALGO EXECUTA — 08/09, DINHEIRO REAL.
+ *
+ * O cron do DCA grava o heartbeat ANTES de ler o gate, e isso está certo: com
+ * a trava fechada, o watchdog não pode acusar "cron parado" e esconder a causa
+ * real atrás de um alarme errado. Só que o cliente lê o MESMO carimbo — e com
+ * `pause_dca` ligado ele via "Agendador vivo — última passada há 3 min" sobre
+ * uma fila onde NADA é executado. O cron passa; ele só passa e volta.
+ *
+ * "Passou" e "executa" são duas coisas, e a tela precisa das duas. Por isso o
+ * gate vem junto — é o mesmo que `/api/bancada/agentes` já faz com
+ * `pausadoPelaCasa`.
  */
-async function ultimaPassadaDoCron(): Promise<{ haMinutos: number | null }> {
+async function ultimaPassadaDoCron(): Promise<{ haMinutos: number | null; pausado: boolean }> {
+  // ⚠️ Best-effort e padrão `false`: falha ao ler o gate não pode derrubar a
+  // tela de planos. E `false` é o padrão HONESTO — com gate ausente o cron
+  // executa, então "não pausado" é a verdade, não um chute otimista.
+  let pausado = false;
+  try { pausado = (await getFlywheelGates()).pause_dca === true; } catch { /* ver acima */ }
+
   const db = getSupabaseAdmin();
-  if (!db) return { haMinutos: null };
+  if (!db) return { haMinutos: null, pausado };
   const { data, error } = await db.from("admin_kv")
     .select("value").eq("key", "cron:dca:last").maybeSingle();
   const iso = (data as { value?: string } | null)?.value;
-  if (error || !iso) return { haMinutos: null };
+  if (error || !iso) return { haMinutos: null, pausado };
   const ms = Date.now() - Date.parse(iso);
-  if (!Number.isFinite(ms) || ms < 0) return { haMinutos: 0 };
-  return { haMinutos: Math.floor(ms / 60_000) };
+  if (!Number.isFinite(ms) || ms < 0) return { haMinutos: 0, pausado };
+  return { haMinutos: Math.floor(ms / 60_000), pausado };
 }
 
 

@@ -96,6 +96,38 @@ function media(xs: number[]): number | null {
   return xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 
+/**
+ * ⚠️⚠️ A JANELA QUE OS NÚMEROS COBREM — 08/09.
+ *
+ * `papel_desde` era reescrito com `Date.now()` a CADA vez que o investidor
+ * religava o agente, e apagado ao pausar. Só que as posições contadas ao lado
+ * são as da estratégia INTEIRA, desde a contratação. Quem pausasse e religasse
+ * lia *"trabalhando há 2h"* colado em "48 decididas" de duas semanas — uma taxa
+ * cujo numerador e denominador falam de janelas diferentes. E quem só pausasse
+ * via o carimbo SUMIR, como se o agente nunca tivesse trabalhado.
+ *
+ * A régua correta é a contratação: é dela que as posições contam. `papel_desde`
+ * passou a ser escrito só na primeira vez (ver `ligarPapelAdiante`), e
+ * `criadaEm` é a rede de segurança para as linhas antigas, que é exatamente o
+ * mesmo instante — contratar cria a linha E liga.
+ *
+ * ⚠️ Por isso o rótulo na tela deixou de ser "trabalhando há" e passou a ser
+ * "os números cobrem": incluir o tempo pausado num rótulo que diz "trabalhando"
+ * seria trocar uma mentira por outra.
+ */
+export function inicioDaCobertura(
+  papelDesde: string | null, criadaEm: string | null,
+): number | null {
+  for (const iso of [papelDesde, criadaEm]) {
+    if (!iso) continue;
+    const ms = Date.parse(iso);
+    // ⚠️ `Date.parse` devolve NaN em lixo, e NaN viraria "há NaN horas".
+    if (Number.isFinite(ms)) return ms;
+  }
+  // ⚠️ Ausência continua ausência: sem carimbo nenhum, a tela não afirma janela.
+  return null;
+}
+
 /** Só o que É número. ⚠️ `Number(null)` é 0 e passa em `isFinite`. */
 function numeros(xs: Array<number | null>): number[] {
   return xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x));

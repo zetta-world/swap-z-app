@@ -30,7 +30,7 @@ import {
   salvarEstrategia, listarEstrategias, contarMesasVivas, ligarPapelAdiante,
   arquivarEstrategia, posicoesDaEstrategia, estrategia as umaEstrategia,
 } from "@/lib/bancada/store";
-import { desempenhoDaInstancia, type PosicaoDaInstancia } from "@/lib/bancada/desempenho";
+import { desempenhoDaInstancia, inicioDaCobertura, type PosicaoDaInstancia } from "@/lib/bancada/desempenho";
 import { mesaPodeRodar } from "@/lib/bancada/mesas-da-casa";
 import { deskFor } from "@/lib/zion/desks";
 import { INTERVALO_DO_AGENTE } from "@/lib/bancada/agente";
@@ -106,7 +106,9 @@ export async function GET() {
 
   const agentes = await Promise.all(instancias.map(async (e) => {
     const posicoes = await posicoesDaEstrategia(c.dono, c.db, e.id);
-    const desde = e.papelDesde ? Date.parse(e.papelDesde) : null;
+    // ⚠️ A janela que os NÚMEROS cobrem — não "desde que religou". Ver a nota
+    // em `inicioDaCobertura`.
+    const desde = inicioDaCobertura(e.papelDesde, e.criadaEm);
     const paraContar: PosicaoDaInstancia[] = posicoes.map((p) => ({
       status: p.status,
       resultadoPct: p.resultadoPct,
@@ -140,10 +142,13 @@ export async function GET() {
       intervalo: e.intervalo ?? INTERVALO_DO_AGENTE,
       praca: e.praca, papel: e.papel,
       ligada: e.papelAdiante,
-      desde: e.papelDesde,
+      desde: e.papelDesde ?? e.criadaEm,
       // ⚠️ `Number.isFinite(desde)` porque `Date.parse` devolve NaN em lixo, e
       // NaN aqui viraria "rodando há NaN horas" na tela.
-      desempenho: desempenhoDaInstancia(paraContar, Number.isFinite(desde) ? desde : null),
+      // ⚠️ `agoraMs` VAI EXPLÍCITO: sem ele `desempenhoDaInstancia` chamava o
+      // próprio `Date.now()`, e a regra do "um agora só" desta rota valia para
+      // a saúde do tique mas não para as horas de cobertura ao lado dela.
+      desempenho: desempenhoDaInstancia(paraContar, desde, agoraMs),
       /**
        * ⚠️ AS ÚLTIMAS OPERAÇÕES VIAJAM JUNTO — até 20. É o extrato que
        * sustenta o número: sem ele o investidor lê um percentual e não tem como

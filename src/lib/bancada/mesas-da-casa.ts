@@ -288,6 +288,36 @@ export function ressalvasSoDeste(
 }
 
 /**
+ * ⚠️⚠️ A DATA QUE CONTA É A DA DECISÃO (`resolved_at`), NÃO A DA EMISSÃO
+ * (`created_at`) — 08/09.
+ *
+ * O carimbo de validade que escrevi hoje ("medido até {dia}", "nada decidido
+ * desde {dia}") fala de DECISÃO, e estava sendo alimentado pelo dia em que o
+ * sinal NASCEU. Entre uma coisa e outra há o horizonte da mesa: medido no
+ * banco, a defasagem média é de ~40h nas mesas do torneio e chega a 72h no
+ * pior caso — a `hybrid_scan` decidiu por último em 16/08 e o card diria
+ * 13/08. Com `DIAS_ATE_PARADA = 3`, esses três dias são exatamente o que vira
+ * uma mesa viva em "mesa parada", e uma parada em viva.
+ *
+ * É a mesma cicatriz do `velaEm` do agente, em escala de dia: um instante
+ * verdadeiro sobre OUTRA coisa, exibido sob um rótulo que promete esta.
+ *
+ * ⚠️ O `?? created_at` NÃO é decoração: `resolved_at` foi medido e hoje está
+ * preenchido em 100% das 5.722 linhas resolvidas, mas uma linha antiga sem ele
+ * cairia para a emissão — que ENVELHECE o carimbo (data mais antiga), nunca o
+ * rejuvenesce. Errar para o lado do "parada" é o lado seguro. É também a
+ * convenção que `admin/api/tournament` já usa.
+ */
+export function diaDaDecisao(l: { resolved_at?: string | null; created_at: string }): string {
+  const quando = l.resolved_at ?? l.created_at;
+  // ⚠️ `slice(0,10)` de um timestamptz vem em UTC — e é assim que tem de ser:
+  // `primeiroDia`/`ultimoDia` são comparados entre si e com `Date.parse(...Z)`
+  // em `diasSemDecidir`. Misturar fuso local aqui criaria dias de largura
+  // diferente na mesma conta.
+  return quando.slice(0, 10);
+}
+
+/**
  * ⚠️⚠️ QUANTOS DIAS SEM DECIDIR NADA JÁ É "PARADA" (07/09).
  *
  * ACHADO MEDINDO A COORTE, e é consequência de um corte MEU: ao reduzir o card

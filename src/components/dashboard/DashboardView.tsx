@@ -24,6 +24,18 @@ import { useT } from "@/lib/i18n";
 import { useUI } from "@/lib/store/ui";
 import { Panel, Kpi, AreaChart, Donut, Bars, Gauge } from "./widgets";
 
+/**
+ * ⚠️⚠️ O RÓTULO DIZIA 30 DIAS E O GRÁFICO DESENHAVA 14 (08/09).
+ *
+ * E o "total" embaixo somava os mesmos 14 sob o cabeçalho de 30 — ou seja, a
+ * tela SUBESTIMAVA o volume do próprio cliente, nos quatro idiomas.
+ *
+ * A constante agora alimenta as duas coisas: as barras e o rótulo. Um número
+ * escrito à mão no texto é uma afirmação que envelhece sozinha no dia em que
+ * alguém mexe no laço — foi exatamente o que aconteceu aqui.
+ */
+const DIAS_DA_ATIVIDADE = 14;
+
 const CEX_TOTAL_CACHE_KEY = "zswap_cex_last_total_usd";
 
 function readCachedCexTotal(): number {
@@ -291,10 +303,10 @@ export default function DashboardView() {
     return [...map.entries()].sort((x, y) => y[1].volume - x[1].volume);
   }, [entries]);
 
-  // ─── Activity: trading volume per day, last 14 days ──────────────────
+  // ─── Activity: trading volume per day ────────────────────────────────
   // Capital flows (deposit/withdraw) excluded — not trading volume.
   const activity = useMemo(() => {
-    const DAYS = 14;
+    const DAYS = DIAS_DA_ATIVIDADE;
     const now = new Date();
     const buckets: { label: string; value: number; ts: number }[] = [];
     for (let i = DAYS - 1; i >= 0; i--) {
@@ -796,7 +808,7 @@ export default function DashboardView() {
           <Panel
             title={t("dashboard.activityTitle")}
             icon={<Activity className="w-3.5 h-3.5 text-cyan" />}
-            right={<span className="font-mono text-[10px] text-ink-4 tracking-widest uppercase">{t("dashboard.activitySubLabel")}</span>}
+            right={<span className="font-mono text-[10px] text-ink-4 tracking-widest uppercase">{t("dashboard.activitySubLabel", { n: String(DIAS_DA_ATIVIDADE) })}</span>}
           >
             {activity.every((d) => d.value === 0) ? (
               <p className="py-6 text-center font-sans text-xs text-ink-3">{t("dashboard.activityEmpty")}</p>

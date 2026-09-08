@@ -60,10 +60,38 @@ export interface VistoNoSimbolo {
    * `mercado_vela` responde com o que tem quando a fonte recusa. Guardar só a
    * hora do cron faria a tela declarar uma idade ERRADA para o preço, que é
    * pior que não declarar idade nenhuma.
+   *
+   * ⚠️ ELE É A **ABERTURA** DA VELA (`VelaComTempo.t`) — nunca use este campo
+   * para calcular idade. Use `velaFechaEm`. Ver a nota lá.
    */
   velaEm: number | null;
+  /**
+   * ⚠️⚠️ QUANDO A VELA FECHOU — e é ESTE o carimbo da idade (08/09).
+   *
+   * O DEFEITO, visto pelo dono num print: o card dizia *"vela de 104 min
+   * atrás"* sobre uma vela de 1h aberta às 07:00, lida às 08:44. Mas essa vela
+   * FECHOU às 08:00: o dado tinha 44 minutos, não 104. Medir da ABERTURA
+   * superestima a idade em até uma duração de intervalo inteira.
+   *
+   * E isso é pior do que parece por uma razão que este mesmo arquivo já
+   * declarava: *"idade errada declarada é pior que idade nenhuma"*. Um número
+   * sem carimbo o leitor trata com desconfiança; um número com carimbo ERRADO
+   * ele trata como verificado — e conclui que o agente está cego quando ele
+   * está em dia.
+   */
+  velaFechaEm: number | null;
   /** ⚠️ Fechado e traduzível — ver `MotivoDeNaoAbrir`. `null` quando abriu. */
   motivo: MotivoDeNaoAbrir | null;
+  /**
+   * O REGIME de mercado que o seletor leu — `null` quando não deu para ler.
+   *
+   * ⚠️ ELE É O "O QUE O AGENTE ESTÁ FAZENDO" TRADUZÍVEL. O dono, olhando o
+   * card: *"não dá pra saber o que o agente está fazendo"*. A tela dizia
+   * "olhou e não achou setup", que é verdade e não informa nada. O regime tem
+   * quatro valores fechados e diz em que mercado ele acha que está — é a
+   * metade da resposta que cabe nos quatro idiomas.
+   */
+  regime: string | null;
   /** O texto cru, só para diagnóstico. ⚠️ NUNCA é o que a tela mostra. */
   detalhe: string | null;
   abriu: boolean;
@@ -141,6 +169,8 @@ export function lerUltimoTique(v: unknown): UltimoTique | null {
       simbolos[k] = {
         preco: numeroOuNulo(s.preco),
         velaEm: numeroOuNulo(s.velaEm),
+        velaFechaEm: numeroOuNulo(s.velaFechaEm),
+        regime: typeof s.regime === "string" && s.regime.length > 0 ? s.regime : null,
         // ⚠️ SÓ MOTIVO CONHECIDO PASSA. Uma linha gravada por uma versão mais
         // nova (ou mais velha) do código não pode virar chave de tradução
         // inexistente — isso desenharia um marcador vazio, que é pior que

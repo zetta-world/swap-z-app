@@ -60,6 +60,9 @@ interface Operacao {
 interface VistoNoSimbolo {
   preco: number | null;
   velaEm: number | null;
+  /** ⚠️ É DAQUI que sai a idade — nunca de `velaEm`. Ver `ultimo-tique.ts`. */
+  velaFechaEm: number | null;
+  regime: string | null;
   motivo: MotivoDeNaoAbrir | null;
   detalhe: string | null;
   abriu: boolean;
@@ -201,6 +204,17 @@ function CartaoDoAgente({ a, ocupado, onPausar, onDispensar }: {
   const classe = classificarResultado(d.decididas > 0 ? d.liquidoPorOpPct : null);
   const cor = corDoNumero(classe, d.pinta);
 
+  /**
+   * ⚠️ O REGIME, TRADUZIDO. Vocabulário fechado de quatro valores, então ele
+   * cabe nos quatro idiomas — ao contrário da prosa do seletor.
+   */
+  const REGIMES: Record<string, string> = {
+    TRENDING_UP:   t("bancada.agRegimeSubindo"),
+    TRENDING_DOWN: t("bancada.agRegimeCaindo"),
+    RANGING:       t("bancada.agRegimeLateral"),
+    TRANSITIONING: t("bancada.agRegimeTransicao"),
+  };
+
   const MOTIVOS: Record<MotivoDeNaoAbrir, string> = {
     ja_tem_posicao: t("bancada.agMotivoJaTemPos"),
     aquecendo:      t("bancada.agMotivoAquecendo"),
@@ -281,19 +295,48 @@ function CartaoDoAgente({ a, ocupado, onPausar, onDispensar }: {
           <ul className="space-y-1">
             {a.simbolos.map((sim) => {
               const v = a.tique!.simbolos[sim];
-              const minVela = minutosAtras(v?.velaEm, agora);
+              /**
+               * ⚠️⚠️ A IDADE SAI DO FECHAMENTO DA VELA (08/09), não da abertura
+               * e não da passagem do cron.
+               *
+               * O card dizia "vela de 104 min atrás" sobre uma vela de 1h
+               * aberta às 07:00 e lida às 08:44 — mas ela FECHOU às 08:00, e o
+               * dado tinha 44 minutos. Envelhecer o preço em uma duração de
+               * intervalo inteira fazia o agente parecer cego estando em dia, e
+               * "idade errada declarada é pior que idade nenhuma".
+               */
+              const minVela = minutosAtras(v?.velaFechaEm, agora);
+              const regime = v?.regime ? REGIMES[v.regime] : null;
               return (
-                <li key={sim} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
-                  <span className="text-ink-2">{sim}</span>
-                  {/* ⚠️ A IDADE É DA VELA, não da passagem do cron: o cache pode
-                      servir um fechamento de horas atrás. Idade errada
-                      declarada é pior que idade nenhuma. */}
-                  <span className="tabular-nums text-ink-4">
-                    {v?.preco != null && minVela != null
-                      ? t("bancada.agPrecoVisto", { preco: v.preco.toFixed(4), min: minVela })
-                      : t("bancada.agSemPreco")}
-                  </span>
-                  {v?.motivo && <span className="text-ink-4">· {MOTIVOS[v.motivo]}</span>}
+                <li key={sim} className="text-[11px]">
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-ink-2">{sim}</span>
+                    <span className="tabular-nums text-ink-4">
+                      {v?.preco != null && minVela != null
+                        ? t("bancada.agPrecoVisto", { preco: v.preco.toFixed(4), min: minVela })
+                        : t("bancada.agSemPreco")}
+                    </span>
+                    {/* ⚠️ O REGIME É O "ONDE ELE ACHA QUE ESTÁ" — quatro valores
+                        fechados, traduzíveis, e a metade da resposta ao *"não dá
+                        pra saber o que o agente está fazendo"*. */}
+                    {regime && <span className="text-cyan/70">· {regime}</span>}
+                    {v?.motivo && <span className="text-ink-4">· {MOTIVOS[v.motivo]}</span>}
+                  </div>
+                  {/**
+                    * ⚠️⚠️ A LEITURA CRUA DA MESA — a outra metade da resposta, e
+                    * ela estava gravada no banco sendo jogada fora pela tela.
+                    *
+                    * "queda sem divergência de exaustão — faca caindo" diz o que
+                    * o agente está FAZENDO; "olhou e não achou setup" não diz
+                    * nada. Ela vem do seletor da casa e NÃO é tradução nossa —
+                    * por isso entra rotulada como leitura DELA, em vez de
+                    * fingir que é texto do produto.
+                    */}
+                  {v?.detalhe && v.motivo === "sem_setup" && (
+                    <p className="mt-0.5 pl-1 text-[10px] leading-relaxed text-ink-4">
+                      <span className="text-ink-3">{t("bancada.agLeituraDaMesa")}:</span> {v.detalhe}
+                    </p>
+                  )}
                 </li>
               );
             })}
@@ -312,7 +355,15 @@ function CartaoDoAgente({ a, ocupado, onPausar, onDispensar }: {
 
         {/* ── 3. O QUE ELE JÁ MEDIU ────────────────────────────────── */}
         {d.decididas === 0 ? (
-          abertas.length === 0 && (
+          /**
+           * ⚠️ O PARÁGRAFO GENÉRICO SÓ APARECE QUANDO NÃO HÁ LEITURA REAL.
+           *
+           * "Contratado, ainda sem nada decidido. Ele só abre quando a regra
+           * dele acha setup" impresso ABAIXO de "mercado em queda · faca
+           * caindo" é a mesma frase duas vezes, e a segunda é a que não
+           * informa. Com o tique lido, a explicação vira ruído.
+           */
+          abertas.length === 0 && a.tique == null && (
             <p className="text-xs leading-relaxed text-ink-3">{t("bancada.agAindaNada")}</p>
           )
         ) : (

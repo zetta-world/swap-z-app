@@ -68,7 +68,7 @@ describe("as guardas que protegem a posição do investidor", () => {
     const d = decidirAberturaDoAgente(
       { temPosicaoAberta: true, ultimaAberturaMs: null }, "BTC", VELAS(400), depoisDe(399 * H),
     );
-    expect(d).toEqual({ abre: false, porque: "ja_tem_posicao" });
+    expect(d).toEqual({ abre: false, porque: "ja_tem_posicao", regime: null });
     // ⚠️ E o seletor NEM É CHAMADO: a guarda vem antes do custo.
     expect(candidateAttempts).not.toHaveBeenCalled();
   });
@@ -84,7 +84,7 @@ describe("as guardas que protegem a posição do investidor", () => {
     const d = decidirAberturaDoAgente(
       { temPosicaoAberta: false, ultimaAberturaMs: ultima }, "BTC", velas, depoisDe(ultima),
     );
-    expect(d).toEqual({ abre: false, porque: "vela_ja_avaliada" });
+    expect(d).toEqual({ abre: false, porque: "vela_ja_avaliada", regime: null });
   });
 
   /**
@@ -105,7 +105,9 @@ describe("as guardas que protegem a posição do investidor", () => {
 
   it("abaixo de 200 barras não decide — indicador que ainda não nasceu não é sinal fraco", () => {
     const d = decidirAberturaDoAgente(PARADO, "BTC", VELAS(199), depoisDe(198 * H));
-    expect(d).toEqual({ abre: false, porque: "aquecendo" });
+    // ⚠️ `regime: null` porque a recusa acontece ANTES de `computeIndicators`:
+    // não há leitura de mercado a declarar, e inventar uma seria pior.
+    expect(d).toEqual({ abre: false, porque: "aquecendo", regime: null });
     expect(candidateAttempts).not.toHaveBeenCalled();
   });
 
@@ -160,7 +162,7 @@ describe("o bracket vira percentual DA ENTRADA", () => {
     comPlano({ entry: 100, target: 100, stop: 97 });
     const velas = VELAS(400);
     expect(decidirAberturaDoAgente(PARADO, "BTC", velas, depoisDe(velas.h1[399].t)))
-      .toEqual({ abre: false, porque: "bracket degenerado" });
+      .toMatchObject({ abre: false, porque: "bracket degenerado" });
   });
 });
 
@@ -174,14 +176,41 @@ describe("ficar de fora é uma decisão, e ela vem com motivo", () => {
     semPlano("EMA50 acima do preço");
     const velas = VELAS(400);
     expect(decidirAberturaDoAgente(PARADO, "BTC", velas, depoisDe(velas.h1[399].t)))
-      .toEqual({ abre: false, porque: "EMA50 acima do preço" });
+      .toMatchObject({ abre: false, porque: "EMA50 acima do preço" });
   });
 
   it("sem candidato nenhum, o regime é a resposta", () => {
     plano.atual = [];
     const velas = VELAS(400);
     expect(decidirAberturaDoAgente(PARADO, "BTC", velas, depoisDe(velas.h1[399].t)))
-      .toEqual({ abre: false, porque: "sem candidato no regime" });
+      .toMatchObject({ abre: false, porque: "sem candidato no regime" });
+  });
+});
+
+/**
+ * ⚠️⚠️ O REGIME VIAJA NA RECUSA (08/09) — e é o pedido literal do dono diante
+ * do card: *"não dá pra saber o que o agente está fazendo"*.
+ *
+ * Antes ele só saía quando a mesa ABRIA — justamente o caso em que o investidor
+ * não precisa perguntar. Ficar de fora é a decisão na maior parte do tempo, e é
+ * aí que "em que mercado ele acha que está" responde a pergunta.
+ */
+describe("a recusa diz em que mercado o agente acha que está", () => {
+  it("depois de ler os indicadores, o regime acompanha a recusa", () => {
+    semPlano("suporte não testado");
+    const velas = VELAS(400);
+    const d = decidirAberturaDoAgente(PARADO, "BTC", velas, depoisDe(velas.h1[399].t));
+    expect(d.abre).toBe(false);
+    if (d.abre) return;
+    // ⚠️ A asserção é sobre EXISTIR e ser do vocabulário fechado — não sobre
+    // QUAL valor: o regime é o que os indicadores leram da série, e fixá-lo
+    // aqui testaria `computeIndicators`, que tem os testes dele.
+    expect(["TRENDING_UP", "TRENDING_DOWN", "RANGING", "TRANSITIONING"]).toContain(d.regime);
+  });
+
+  it("antes de ler os indicadores, o regime é `null` — nunca um chute", () => {
+    const d = decidirAberturaDoAgente(PARADO, "BTC", VELAS(199), depoisDe(198 * H));
+    expect(d).toEqual({ abre: false, porque: "aquecendo", regime: null });
   });
 });
 

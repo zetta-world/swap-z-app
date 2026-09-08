@@ -247,18 +247,38 @@ export async function contarEstrategiasVivas(dono: Dono, db: SupabaseClient): Pr
  * camada de decisão (`cotas`/rota), com o tier em mãos. Um store que decide
  * política é um store que duplica a política.
  *
- * ⚠️ E `papel_desde` só é escrito ao LIGAR: um resultado de papel adiante sem o
- * tempo decorrido é o mesmo defeito do número sem amostra.
+ * ⚠️⚠️ `papel_desde` É A CONTRATAÇÃO, E SÓ SE ESCREVE UMA VEZ (08/09).
+ *
+ * Antes ele era reescrito com o relógio a cada RELIGAR e apagado a cada PAUSAR.
+ * As posições contadas ao lado, porém, são as da estratégia inteira: quem
+ * pausasse e religasse lia "trabalhando há 2h" sobre 48 operações de duas
+ * semanas, e quem só pausasse via o carimbo sumir. Numerador e denominador de
+ * janelas diferentes é a mesma doença do número sem amostra.
  */
 export async function ligarPapelAdiante(
   dono: Dono, db: SupabaseClient, id: string, ligar: boolean,
 ): Promise<Escrita<true>> {
+  const agora = new Date().toISOString();
   const { error } = await db.from("bancada_estrategia").update({
     papel_adiante: ligar,
-    papel_desde: ligar ? new Date().toISOString() : null,
-    atualizada_em: new Date().toISOString(),
+    atualizada_em: agora,
   }).eq("dono", dono).eq("id", id);
   if (error) return falhou(error, "ligar papel adiante");
+
+  /**
+   * ⚠️ O `.is("papel_desde", null)` é a condição inteira: carimba a PRIMEIRA
+   * contratação e não toca em nada depois. Melhor que ler-e-decidir aqui, que
+   * abriria uma corrida entre a leitura e a escrita.
+   *
+   * ⚠️ Best-effort de propósito: falhar aqui deixa `papel_desde` nulo, e o
+   * leitor cai em `criadaEm` — mesmo instante, porque contratar cria a linha e
+   * liga na mesma passagem. Derrubar o LIGAR por causa de um carimbo seria
+   * trocar o essencial pelo acessório.
+   */
+  if (ligar) {
+    await db.from("bancada_estrategia").update({ papel_desde: agora })
+      .eq("dono", dono).eq("id", id).is("papel_desde", null);
+  }
   return { ok: true, valor: true };
 }
 
@@ -449,8 +469,21 @@ function paraRodada(r: LinhaRodada): Rodada {
   };
 }
 
+/**
+ * As rodadas VIVAS deste dono — as arquivadas ficam fora da tela (0046).
+ *
+ * ⚠️ ARQUIVAR NÃO É APAGAR: a linha continua no banco, e `bancada_operacao` e
+ * `bancada_resultado` continuam apontando para ela. O cliente não perde a prova
+ * do que rodou; ela só sai da listagem.
+ *
+ * ⚠️ E É POR ISSO QUE ESTA FUNÇÃO É A ÚNICA COM O FILTRO. Espalhar
+ * `.is("arquivada_em", null)` por chamador seria espalhar a chance de esquecer
+ * — e o que se esquece aqui devolve MAIS linhas, não menos: a leitura funciona,
+ * e a rodada arquivada reaparece na tela sem ninguém notar.
+ */
 export async function listarRodadas(dono: Dono, db: SupabaseClient, limite = 50): Promise<Rodada[]> {
   const { data, error } = await doDono(db, "bancada_rodada", dono, COLUNAS_RODADA)
+    .is("arquivada_em", null)
     .order("criada_em", { ascending: false })
     .limit(Math.max(1, Math.min(200, Math.floor(limite))));
   if (error || !data) return [];

@@ -16,6 +16,8 @@ import { PRO_PAIRS, DEFAULT_PRO_PAIR, CATEGORY_LABELS, groupPairs, type ProPair 
 import { CHAINS } from "@/lib/chains";
 import { findToken } from "@/lib/tokens";
 import { useT } from "@/lib/i18n";
+import { vivacidadeDoGrafico, type LeituraDoGrafico } from "@/lib/pro/vivacidade";
+import { rotuloDaJanela, type Janela } from "@/lib/pro/janela";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
 import ProChart, { type ChartKind, type StrategyLevel, type ChartSignals } from "./ProChart";
 import ProTrades from "./ProTrades";
@@ -59,17 +61,6 @@ type StrategyScenario = "conservative" | "moderate" | "aggressive";
 // Cryptocurrency icon CDN base
 const CRYPTO_ICON_BASE = "https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/icon";
 
-/**
- * ⚠️ QUANTO ATRASO É NORMAL, POR TIMEFRAME.
- *
- * Cerca de 3× o passo de atualização do gráfico (ver `PASSO_MS` em ProChart):
- * dá folga para uma requisição lenta sem deixar passar uma fonte que caiu. Um
- * número fixo daria falso alarme no 1d e falso silêncio no 1m.
- */
-const TOLERANCIA_MS: Record<Timeframe, number> = {
-  "1m": 35_000, "5m": 65_000, "15m": 95_000, "1h": 185_000, "4h": 365_000, "1d": 905_000,
-};
-
 export default function ProTerminal() {
   const t = useT();
 
@@ -92,8 +83,14 @@ export default function ProTerminal() {
   const [amplitudeVela, setAmplitudeVela] = useState<number | null>(null);
   /** Fechamentos da janela desenhada — insumo de "e se eu não fizesse nada?". */
   const [fechamentos, setFechamentos] = useState<number[]>([]);
-  /** Quando o gráfico recebeu vela pela última vez. `null` = ainda nada. */
-  const [chartAtualizadoEm, setChartAtualizadoEm] = useState<number | null>(null);
+  /**
+   * O que a última busca do gráfico viu. `null` = ainda nada.
+   *
+   * ⚠️ DOIS INSTANTES, e antes era um só: quando a FONTE respondeu e de quando
+   * é a VELA. Ver a nota em `@/lib/pro/vivacidade`.
+   */
+  const [leituraDoGrafico, setLeituraDoGrafico] =
+    useState<LeituraDoGrafico>({ buscaEmMs: null, velaAbreEmMs: null });
   /** Relógio local que faz o selo ENVELHECER sozinho — sem ele, uma fonte que
    *  para de responder deixa o selo congelado em "AO VIVO" para sempre. */
   const [agoraTick, setAgoraTick] = useState<number>(() => Date.now());
@@ -165,10 +162,8 @@ export default function ProTerminal() {
   const [pairQuery, setPairQuery]             = useState("");
 
   // Live header values pushed from ProChart
-  const [hdr, setHdr] = useState<{ last: number; change: number; high: number; low: number; vol: number } | null>(null);
-  const onLastPrice = useCallback((last: number, change: number, high: number, low: number, vol: number) => {
-    setHdr({ last, change, high, low, vol });
-  }, []);
+  const [hdr, setHdr] = useState<{ ultimo: number; janela: Janela } | null>(null);
+  const onLastPrice = useCallback((resumo: { ultimo: number; janela: Janela }) => setHdr(resumo), []);
 
   // ProTrades publishes its current trade window up to the parent so the
   // flow + depth panels can derive aggregate stats without re-fetching.
@@ -199,7 +194,7 @@ export default function ProTerminal() {
   // ─── Strategy levels ─────────────────────────────────────────────
   const strategyLevels = useMemo((): StrategyLevel[] => {
     if (!strategyOn || !hdr) return [];
-    const p   = hdr.last;
+    const p   = hdr.ultimo;
     const atr = signals?.atr ?? (p * 0.01);
     const configs: Record<StrategyScenario, { entryMult: number; targetMult: number; stopMult: number }> = {
       conservative: { entryMult: 0.2, targetMult: 1.5, stopMult: 1.0 },
@@ -264,19 +259,32 @@ export default function ProTerminal() {
    * daria falso alarme num extremo e falso silêncio no outro.
    */
   const vivacidade = useMemo(() => {
-    if (chartAtualizadoEm === null) {
-      return { rotulo: "AGUARDANDO", cor: "var(--ink-3, #7E89C2)", pulsa: false,
-               titulo: "nenhuma vela recebida ainda — não é o mesmo que estar parado" };
+    const v = vivacidadeDoGrafico(leituraDoGrafico, tf, agoraTick);
+    const seg = (ms: number | null) => (ms == null ? "—" : `${Math.round(ms / 1000)}s`);
+
+    /**
+     * ⚠️ A DICA FALA DA VELA, O SELO FALA DA FONTE — e são perguntas
+     * diferentes. Antes a dica dizia "última vela há {N}s" com o N da BUSCA:
+     * num gráfico de 1h isso lia-se como "acabou de fechar uma vela" sobre uma
+     * vela aberta 52 minutos antes.
+     */
+    switch (v.selo) {
+      case "aguardando":
+        return { rotulo: "AGUARDANDO", cor: "var(--ink-3, #7E89C2)", pulsa: false,
+                 titulo: "nenhuma vela recebida ainda — não é o mesmo que estar parado" };
+      case "sem_vela":
+        // A fonte respondeu e não veio vela nenhuma: verde aqui seria dizer que
+        // há dado ao vivo sobre um gráfico vazio.
+        return { rotulo: "SEM VELA", cor: "var(--adm-amber, #F5A524)", pulsa: false,
+                 titulo: `a fonte respondeu há ${seg(v.fonteHaMs)} e não devolveu vela nenhuma` };
+      case "ao_vivo":
+        return { rotulo: "AO VIVO", cor: "var(--green, #00E087)", pulsa: true,
+                 titulo: `última vela fechou há ${seg(v.velaHaMs)} · fonte respondeu há ${seg(v.fonteHaMs)}` };
+      case "atrasado":
+        return { rotulo: `ATRASADO ${seg(v.fonteHaMs)}`, cor: "var(--adm-amber, #F5A524)", pulsa: false,
+                 titulo: `a fonte não responde há ${seg(v.fonteHaMs)} (tolerância ${seg(v.tetoMs)}) · última vela fechou há ${seg(v.velaHaMs)}` };
     }
-    const atraso = agoraTick - chartAtualizadoEm;
-    const teto = (TOLERANCIA_MS[tf] ?? 60_000);
-    if (atraso <= teto) {
-      return { rotulo: "AO VIVO", cor: "var(--green, #00E087)", pulsa: true,
-               titulo: `última vela há ${Math.round(atraso / 1000)}s` };
-    }
-    return { rotulo: `ATRASADO ${Math.round(atraso / 1000)}s`, cor: "var(--adm-amber, #F5A524)", pulsa: false,
-             titulo: `a fonte não devolve vela nova há ${Math.round(atraso / 1000)}s (tolerância ${Math.round(teto / 1000)}s)` };
-  }, [chartAtualizadoEm, agoraTick, tf]);
+  }, [leituraDoGrafico, agoraTick, tf]);
 
   /**
    * ⚠️ O RELÓGIO QUE FAZ O SELO ENVELHECER. Sem ele, o selo só mudaria quando
@@ -295,7 +303,7 @@ export default function ProTerminal() {
    * a tela diria "AO VIVO" sobre um gráfico que ainda está carregando outra
    * coisa — afirmando frescor de um dado que nem é mais o dado da tela.
    */
-  useEffect(() => { setChartAtualizadoEm(null); setAmplitudeVela(null); setFechamentos([]); }, [pair.id, tf]);
+  useEffect(() => { setLeituraDoGrafico({ buscaEmMs: null, velaAbreEmMs: null }); setAmplitudeVela(null); setFechamentos([]); }, [pair.id, tf]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -514,15 +522,28 @@ export default function ProTerminal() {
             <div className="text-[10px] text-ink-3 tracking-widest uppercase">Last</div>
             <div className={cn(
               "font-display font-extrabold text-xl sm:text-2xl tabular-nums",
-              hdr ? (hdr.change >= 0 ? "text-green" : "text-red") : "text-ink",
+              // ⚠️ Sem variação medida o preço fica neutro: verde/vermelho
+              // sobre `null` pintaria um veredito que ninguém calculou.
+              hdr?.janela.variacaoPct == null ? "text-ink"
+                : hdr.janela.variacaoPct >= 0 ? "text-green" : "text-red",
             )}>
-              {hdr ? formatPrice(hdr.last) : "—"}
+              {hdr ? formatPrice(hdr.ultimo) : "—"}
             </div>
           </div>
-          <Field label="24h"    value={hdr ? `${hdr.change >= 0 ? "+" : ""}${hdr.change.toFixed(2)}%` : "—"} tone={hdr ? (hdr.change >= 0 ? "green" : "red") : undefined} />
-          <Field label="High"   value={hdr ? formatPrice(hdr.high) : "—"} />
-          <Field label="Low"    value={hdr ? formatPrice(hdr.low)  : "—"} />
-          <Field label="Vol 24h" value={hdr ? `$${compactNumber(hdr.vol)}` : "—"} />
+          {/**
+            * ⚠️⚠️ O RÓTULO SEGUE A JANELA QUE EXISTE — não "24h" sempre.
+            *
+            * A rota devolve 250 velas; num gráfico de 1m isso é 4,2h e no de
+            * 5m (o padrão) é 20,8h. Chamar os dois de "24h" fazia a tela errar
+            * a janela por até 6× num número que decide ordem.
+            */}
+          <Field label={hdr ? rotuloDaJanela(hdr.janela) : "24h"}
+                 value={hdr?.janela.variacaoPct != null ? `${hdr.janela.variacaoPct >= 0 ? "+" : ""}${hdr.janela.variacaoPct.toFixed(2)}%` : "—"}
+                 tone={hdr?.janela.variacaoPct != null ? (hdr.janela.variacaoPct >= 0 ? "green" : "red") : undefined} />
+          <Field label="High"   value={hdr?.janela.maxima != null ? formatPrice(hdr.janela.maxima) : "—"} />
+          <Field label="Low"    value={hdr?.janela.minima != null ? formatPrice(hdr.janela.minima) : "—"} />
+          <Field label={`Vol ${hdr ? rotuloDaJanela(hdr.janela) : "24h"}`}
+                 value={hdr?.janela.volume != null ? `$${compactNumber(hdr.janela.volume)}` : "—"} />
           {marketRegime && (
             <div className="font-mono hidden sm:block">
               <div className="text-[10px] text-ink-3 tracking-widest uppercase">Regime</div>
@@ -679,7 +700,7 @@ export default function ProTerminal() {
                 targetSymbol={pair.targetSymbol}
                 onLastPrice={onLastPrice}
                 onMeta={onMeta}
-                onAtualizado={setChartAtualizadoEm}
+                onAtualizado={setLeituraDoGrafico}
                 onAmplitude={setAmplitudeVela}
                 onFechamentos={setFechamentos}
               />
@@ -690,7 +711,7 @@ export default function ProTerminal() {
           <div className="col-span-12 lg:col-span-4 space-y-3">
             <ProOrderPanel
               pair={{ base: pair.base, quote: pair.quote, chain: pair.chain }}
-              lastPrice={hdr?.last ?? null}
+              lastPrice={hdr?.ultimo ?? null}
               accentColor={accentColor}
               /* ⚠️ Os dois insumos do "custo da ideia". Sem eles o bloco cala. */
               feeTierPct={taxaDaPerna(pair.feeTier)}
@@ -702,7 +723,7 @@ export default function ProTerminal() {
               chain={pair.chain}
               fromSymbol={pair.base}
               toSymbol={pair.quote}
-              midPrice={hdr?.last ?? 0}
+              midPrice={hdr?.ultimo ?? 0}
             />
             <ProTrades chain={pair.chain} pool={pair.pool} side={chartSide} onTrades={onTrades} />
           </div>
@@ -722,7 +743,7 @@ export default function ProTerminal() {
               fromToken={fromToken}
               toToken={toToken}
               chain={pair.chain}
-              midPrice={hdr?.last ?? 0}
+              midPrice={hdr?.ultimo ?? 0}
             />
           </div>
           <div className="col-span-12 md:col-span-5 xl:col-span-3">
@@ -753,7 +774,7 @@ export default function ProTerminal() {
                   </span>
                   {hdr && (
                     <span className="font-mono text-[10px] text-ink-3">
-                      · Based on price action at {formatPrice(hdr.last)}
+                      · Based on price action at {formatPrice(hdr.ultimo)}
                     </span>
                   )}
                 </div>
@@ -779,7 +800,7 @@ export default function ProTerminal() {
 
                 {/* Levels grid */}
                 {hdr && (() => {
-                  const p   = hdr.last;
+                  const p   = hdr.ultimo;
                   const atr = signals?.atr ?? (p * 0.01);
                   const cfgMap = {
                     conservative: { entryMult: 0.2, targetMult: 1.5, stopMult: 1.0 },
@@ -797,7 +818,7 @@ export default function ProTerminal() {
                         <div className="font-mono text-[9px] text-ink-4 mb-2">
                           ATR(14) = <span className="text-ink-3">{formatPrice(signals.atr)}</span>
                           <span className="mx-1.5">·</span>
-                          <span className="text-ink-3">{((signals.atr / hdr.last) * 100).toFixed(2)}% of price</span>
+                          <span className="text-ink-3">{((signals.atr / hdr.ultimo) * 100).toFixed(2)}% of price</span>
                         </div>
                       )}
                       {convictionScore && (

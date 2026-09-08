@@ -319,6 +319,20 @@ export default function PortfolioView() {
         {/* CEX rollup — real read-only data from the connected exchanges */}
         <CexPortfolioRollup onTotalUsdChange={setCexUsd} hidden={hidden} />
 
+        {/**
+          * ⚠️⚠️ ESTE RODAPÉ CHAMAVA DE "DEMO" O SALDO REAL DO CLIENTE (08/09).
+          *
+          * Sobra da época em que a seção era mockada. Desde então `holdings`
+          * vem de `useTokenBalance` (RPC on-chain) com preço de
+          * `useTokenPrices` — e o parágrafo do topo, a doze linhas daqui, já
+          * dizia *"vêm direto dos RPCs on-chain — nada é fabricado"*. Duas
+          * afirmações opostas na MESMA tela, nos quatro idiomas.
+          *
+          * Não é só feio: quem lê "demo" no rodapé desconfia do número certo, e
+          * quem lê o topo confia — a tela ensinava a ignorar os próprios avisos.
+          * O texto novo diz o que é verdade E onde está o limite: são os
+          * tokens que esta página acompanha, não a carteira inteira.
+          */}
         <p className="font-mono text-[10px] text-ink-4 text-center mt-6">
           {t("portfolio.wallets")}
         </p>

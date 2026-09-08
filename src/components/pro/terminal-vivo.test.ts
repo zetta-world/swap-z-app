@@ -54,13 +54,32 @@ describe("② o selo LIVE olha para o dado", () => {
     expect(TERM).toMatch(/vivacidade\.rotulo/);
   });
 
-  it("⚠️⚠️ tem três estados, e o terceiro é AUSÊNCIA", () => {
+  it("⚠️⚠️ tem QUATRO estados, e dois deles são formas de ausência", () => {
     // Pintar de verde quem nunca recebeu dado é a mentira que ele contava.
-    // Pintar de vermelho seria acusar falha onde só há espera.
+    // Pintar de vermelho seria acusar falha onde só há espera. E `SEM VELA` é
+    // o quarto (08/09): a fonte responde `200` com a lista vazia — há resposta
+    // e não há dado, e verde ali seria vender frescor sobre um gráfico em branco.
     expect(TERM).toMatch(/AGUARDANDO/);
     expect(TERM).toMatch(/AO VIVO/);
     expect(TERM).toMatch(/ATRASADO/);
-    expect(TERM).toMatch(/chartAtualizadoEm === null/);
+    expect(TERM).toMatch(/SEM VELA/);
+    // ⚠️ A decisão mora no módulo puro, com teste — não em `if`s no JSX.
+    expect(TERM).toMatch(/vivacidadeDoGrafico\(leituraDoGrafico, tf, agoraTick\)/);
+  });
+
+  /**
+   * ⚠️⚠️ A DICA FALA DA VELA; O SELO FALA DA FONTE (08/09).
+   *
+   * A dica dizia "última vela há {N}s" com o N da BUSCA. O terminal repesca a
+   * cada poucos segundos e recebe de volta a MESMA vela em formação: num
+   * gráfico de 1h, "há 8s" lia-se como "acabou de fechar uma vela" sobre uma
+   * vela aberta 52 minutos antes.
+   */
+  it("⚠️⚠️ a idade da VELA e a da BUSCA são dois números distintos na tela", () => {
+    expect(TERM).toMatch(/última vela fechou há \$\{seg\(v\.velaHaMs\)\}/);
+    expect(TERM).toMatch(/fonte respondeu há \$\{seg\(v\.fonteHaMs\)\}/);
+    // e o gráfico manda os DOIS instantes, não só o da busca
+    expect(CHART).toMatch(/buscaEmMs: Date\.now\(\), velaAbreEmMs: ultima \? ultima\.time \* 1000 : null/);
   });
 
   it("⚠️ o selo ENVELHECE sozinho — senão congela em AO VIVO quando a fonte cai", () => {
@@ -78,12 +97,16 @@ describe("② o selo LIVE olha para o dado", () => {
      * mesmo efeito passou a zerar a amplitude junto — uma mudança correta. Uma
      * trava que transcreve proíbe crescer; uma que afirma intenção não.
      */
-    const efeito = TERM.match(/useEffect\(\(\) => \{[^}]*setChartAtualizadoEm\(null\)[^}]*\}, \[pair\.id, tf\]\)/);
+    const efeito = TERM.match(/useEffect\(\(\) => \{[^}]*setLeituraDoGrafico\(\{ buscaEmMs: null[^}]*\}[^}]*\}, \[pair\.id, tf\]\)/);
     expect(efeito, "o reset tem de estar num efeito disparado por [pair.id, tf]").not.toBe(null);
   });
 
   it("a tolerância segue o timeframe, não é número fixo", () => {
-    expect(TERM).toMatch(/const TOLERANCIA_MS: Record<Timeframe, number>/);
+    // ⚠️ Mora em `@/lib/pro/vivacidade` desde 08/09 — junto da duração da vela,
+    // porque as duas se comparam. Uma cópia local aqui voltaria a divergir.
+    const VIVO = readFileSync("src/lib/pro/vivacidade.ts", "utf8");
+    expect(VIVO).toMatch(/const TOLERANCIA_MS: Record<Timeframe, number>/);
+    expect(TERM).not.toMatch(/const TOLERANCIA_MS/);
   });
 });
 

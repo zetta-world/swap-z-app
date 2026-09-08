@@ -253,6 +253,37 @@ describe("rodadas e resultados: o mesmo isolamento, e a cota que ele sustenta", 
     expect((await rodada(A, db, idA))?.custoVelas).toBe(365);
   });
 
+  /**
+   * ⚠️⚠️ A RODADA ARQUIVADA SAI DA TELA E CONTINUA NO BANCO (0046).
+   *
+   * Pedido do dono: *"deixa zerado a aba minhas rodadas, quero que só apareça
+   * as rodadas abertas a partir de hoje"* — o histórico dele carregava duas
+   * rodadas com nome de mesa FALSO (ULLR e FREYJA devolvendo o número da
+   * VÖLUNDR) e outras sem as colunas de 0042.
+   *
+   * ⚠️ E o esquecimento aqui devolve MAIS linhas, não menos: sem o filtro a
+   * leitura FUNCIONA e a rodada arquivada reaparece na tela sem nada quebrar.
+   * É a mesma família do filtro de dono, e por isso é testada do mesmo jeito —
+   * sobre o filtro que chegou ao banco.
+   */
+  it("rodada arquivada não aparece na lista — mas continua acessível por id", async () => {
+    const { db, tabelas } = bancoFalso();
+    const viva = await abrirRodada(A, "evm", db, RODADA);
+    const velha = await abrirRodada(A, "evm", db, RODADA);
+    const idViva = viva.ok ? viva.valor : "";
+    const idVelha = velha.ok ? velha.valor : "";
+
+    // A migration 0046 carimba o passado inteiro de uma vez.
+    for (const r of tabelas.bancada_rodada) {
+      if (r.id === idVelha) r.arquivada_em = new Date().toISOString();
+    }
+
+    expect((await listarRodadas(A, db)).map((r) => r.id)).toEqual([idViva]);
+    // ⚠️ ARQUIVAR NÃO É APAGAR: `bancada_operacao` e `bancada_resultado`
+    // apontam para esta linha, e o cliente não perde a prova do que rodou.
+    expect(await rodada(A, db, idVelha)).not.toBeNull();
+  });
+
   it("⚠️ A não fecha a rodada de B", async () => {
     const { db, tabelas } = bancoFalso();
     const daB = await abrirRodada(B, "evm", db, RODADA);
