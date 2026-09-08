@@ -145,7 +145,10 @@ export async function GET() {
       desde: e.papelDesde ?? e.criadaEm,
       // ⚠️ `Number.isFinite(desde)` porque `Date.parse` devolve NaN em lixo, e
       // NaN aqui viraria "rodando há NaN horas" na tela.
-      desempenho: desempenhoDaInstancia(paraContar, desde),
+      // ⚠️ `agoraMs` VAI EXPLÍCITO: sem ele `desempenhoDaInstancia` chamava o
+      // próprio `Date.now()`, e a regra do "um agora só" desta rota valia para
+      // a saúde do tique mas não para as horas de cobertura ao lado dela.
+      desempenho: desempenhoDaInstancia(paraContar, desde, agoraMs),
       /**
        * ⚠️ AS ÚLTIMAS OPERAÇÕES VIAJAM JUNTO — até 20. É o extrato que
        * sustenta o número: sem ele o investidor lê um percentual e não tem como
