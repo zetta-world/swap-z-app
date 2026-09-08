@@ -37,6 +37,14 @@ import { ESTRATEGIAS_DA_CASA, type EstrategiaDaCasa } from "@/lib/bancada/casa";
 import { ressalvasComuns, ressalvasSoDeste, mesaPodeRodar, ordenarVitrine, type CartaoDaMesa, type ChaveDeRessalva } from "@/lib/bancada/mesas-da-casa";
 import type { MessageKey } from "@/lib/i18n";
 
+/**
+ * ⚠️ A COMUNIDADE — onde o registro completo dos testes é publicado.
+ *
+ * Configurável por env porque o endereço é do DONO, não do código: um link
+ * cravado aqui obrigaria um deploy para trocar de canal.
+ */
+const COMUNIDADE_URL = process.env.NEXT_PUBLIC_COMUNIDADE_URL ?? "https://t.me/ZSwapCommunity";
+
 const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOT", "MATIC"];
 const INTERVALOS = ["1h", "4h", "1d"];
 
@@ -499,20 +507,19 @@ export default function Bancada() {
    */
   const comuns = ressalvasComuns(mesas);
   /**
-   * ⚠️⚠️ AS QUE PAGAM NA FRENTE, O RESTO RECOLHIDO — E A CONTAGEM À MOSTRA.
+   * ⚠️⚠️ A VITRINE OFERECE SÓ O QUE A CASA BANCA — ver `ordenarVitrine`.
    *
-   * O dono pediu *"só as verdes, nada vermelho ou cinza"*. O pedido por trás é
-   * legítimo: a tela virava um cemitério. Mas EXCLUIR pelo resultado é viés de
-   * sobrevivência — e esta base já nomeou a armadilha um nível abaixo, na nota
-   * de `/api/bancada/mesas-da-casa`: *"incluir o passado ruim é o que impede a
-   * vitrine de escolher a própria sorte"*.
+   * Eu tinha entregado as negativas recolhidas atrás de um botão, ainda
+   * CONTRATÁVEIS, alegando viés de sobrevivência. O dono desfez em duas frases:
+   * o registro completo já sai na comunidade (a aba de laboratório existe para
+   * isso, e ele já tinha me dito), e *"qual a utilidade de oferecer um agente
+   * vermelho para o cliente contratar?"*.
    *
-   * Então a separação é VISUAL. Ele ganha a tela limpa; o investidor continua
-   * podendo ver quantas mesas existem e quantas perderam. Esconder o número é
-   * a mentira; recolher dizendo quantas são, não é.
+   * Nenhuma. Uma vitrine não é relatório: listar ali é OFERECER, e oferecer o
+   * que nós medimos como perdedor é pior que omitir. A contagem continua na
+   * tela — é ela que separa "medimos 10, oferecemos 3" de propaganda.
    */
   const vitrine = ordenarVitrine(mesas);
-  const [mostrarOResto, setMostrarOResto] = useState(false);
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8 space-y-6">
@@ -600,36 +607,28 @@ export default function Bancada() {
             ))}
           </ul>
 
-          {/* ⚠️⚠️ O RESTO, RECOLHIDO MAS CONTADO. O botão diz quantas são e
-              quantas PERDERAM — antes de qualquer clique. É esta linha que
-              separa "a tela está limpa" de "a vitrine escolheu a própria
-              sorte": o investidor sabe que elas existem sem precisar abrir. */}
+          {/* ⚠️⚠️ A CONTA À MOSTRA, SEM OFERECER O QUE NÃO PASSOU.
+              "Medimos 10, listamos 3" é uma frase honesta; "aqui estão as
+              nossas 3 mesas" é propaganda. A diferença entre as duas é este
+              parágrafo — e ele custa três linhas. */}
           {vitrine.oResto.length > 0 && (
-            <div className="mt-3">
-              <button type="button" onClick={() => setMostrarOResto((v) => !v)}
-                className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/5 bg-bg-2/60 px-3 py-2 text-xs text-ink-3 transition hover:border-white/15 hover:text-ink-2">
-                <span>{mostrarOResto
-                  ? t("bancada.mesasEsconderResto")
-                  : t("bancada.mesasVerOResto", { n: vitrine.oResto.length, neg: vitrine.quantasNegativas })}</span>
-                <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${mostrarOResto ? "rotate-180" : ""}`} />
-              </button>
-              {mostrarOResto && (
-                <>
-                  <p className="mt-2 text-[11px] leading-relaxed text-ink-4">{t("bancada.mesasPorqueOResto")}</p>
-                  <ul className="mt-2 space-y-2">
-                    {vitrine.oResto.map((m) => (
-                      <MesaDaCasa key={m.source} m={m} rodando={rodandoMesa === m.source}
-                        contratando={contratando === m.source}
-                        jaContratada={jaContratadas.includes(m.source)}
-                        soDeste={ressalvasSoDeste(m, comuns)}
-                        comOQue={{ simbolos, praca: rotuloDaPraca(praca), papel }}
-                        erro={contratarErrouEm === m.source ? erroDeContratar : null}
-                        onRodar={() => rodarMesa(m)}
-                        onContratar={() => void contratar(m)} />
-                    ))}
-                  </ul>
-                </>
-              )}
+            <div className="mt-4 border-t border-white/5 pt-3">
+              <p className="text-[11px] leading-relaxed text-ink-4">
+                {t("bancada.mesasSoAsQueBancamos", {
+                  n: mesas.length, ok: vitrine.verdes.length, fora: vitrine.oResto.length,
+                })}
+              </p>
+              {/* ⚠️ E O REGISTRO COMPLETO TEM ENDEREÇO. Sem este ponteiro, a
+                  contagem acima vira uma confissão sem saída: "existem outras e
+                  você não pode vê-las". Com ele, a transparência continua
+                  existindo — noutra superfície, que é onde o dono a publica. */}
+              <p className="mt-1 text-[11px] leading-relaxed text-ink-4">
+                {t("bancada.mesasRegistroCompleto")}
+              </p>
+              <a href={COMUNIDADE_URL} target="_blank" rel="noopener noreferrer"
+                className="mt-1 inline-block text-[11px] text-cyan underline">
+                {t("bancada.mesasIrAComunidade")}
+              </a>
             </div>
           )}
           {/* ⚠️⚠️ A NOTA DE RODAPÉ DA SEÇÃO — o que vale para TODOS os cards.

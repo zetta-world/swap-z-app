@@ -336,10 +336,15 @@ describe("a vitrine ordena, mas nunca esconde uma mesa sem dizer que ela existe"
   });
 
   /**
-   * ⚠️⚠️ A ASSERÇÃO QUE IMPEDE O VIÉS: nada é DESCARTADO. Toda mesa que entrou
-   * sai em um dos dois grupos, e a contagem das negativas é publicada.
+   * ⚠️⚠️ A ASSERÇÃO QUE SOBROU DEPOIS DE EU MUDAR DE IDEIA.
+   *
+   * A vitrine passou a OFERECER só o que a casa banca — oferecer uma mesa que
+   * nós medimos como perdedora é pior que omitir, porque listar ali é
+   * recomendar. Mas o `oResto` continua saindo desta função, e é isso que a
+   * tela usa para CONTAR: "medimos 10, listamos 3" é honesto; "aqui estão as
+   * nossas 3 mesas" é propaganda. Se esta soma quebrar, a contagem mente.
    */
-  it("nenhuma mesa some: verdes + resto = tudo que entrou", () => {
+  it("nenhuma mesa some da CONTA: verdes + resto = tudo que entrou", () => {
     const entrada = [c(4.3, true), c(-1.4, true), c(0.9, true), c(12, false), c(null, true)];
     const v = ordenarVitrine(entrada);
     expect(v.verdes.length + v.oResto.length).toBe(entrada.length);

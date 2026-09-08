@@ -202,30 +202,46 @@ export function ressalvasComuns(cartoes: ReadonlyArray<CartaoDaMesa>): ChaveDeRe
 }
 
 /**
- * ⚠️⚠️ A VITRINE, ORDENADA — as que pagam na frente, o resto RECOLHIDO (07/09).
+ * ⚠️⚠️ A VITRINE OFERECE SÓ O QUE A CASA BANCA — e o registro completo mora na
+ * COMUNIDADE (07/09).
  *
- * O DONO PEDIU: *"vamos deixar só mesas e agentes que estão verdes, nada
- * vermelho ou cinza"*. O pedido por trás é legítimo — a tela virava um cemitério
- * de números vermelhos, e ninguém quer isso como primeira impressão do produto.
+ * ESTA FUNÇÃO MUDOU DE IDEIA UMA VEZ, E VALE REGISTRAR POR QUÊ.
  *
- * ⚠️ MAS FILTRAR PELO RESULTADO É A ARMADILHA QUE ESTA BASE JÁ NOMEOU. A nota
- * de `/api/bancada/mesas-da-casa` diz, sobre a janela de UMA mesa: *"incluir o
- * passado ruim é o que impede a vitrine de escolher a própria sorte"*. Deixar
- * só as verdes faz o mesmo um nível acima: em vez de escolher a boa JANELA de
- * uma mesa, escolhe as boas MESAS. O investidor veria cinco vencedoras e nunca
- * saberia que houve cinco perdedoras — que é a definição de viés de
- * sobrevivência, e ele está pagando para decidir com esses números.
+ * O dono pediu *"deixar só mesas e agentes que estão verdes"*. Eu recusei o
+ * pedido literal, alegando viés de sobrevivência — o investidor veria cinco
+ * vencedoras e não saberia das cinco perdedoras — e entreguei as negativas
+ * recolhidas atrás de um botão, ainda contratáveis.
  *
- * ⚠️ ENTÃO A SEPARAÇÃO É VISUAL, NUNCA UMA EXCLUSÃO. As que pagam vêm na
- * frente; as outras ficam recolhidas atrás de um botão que MOSTRA A CONTAGEM,
- * inclusive quantas são negativas. A tela fica limpa e ninguém perde a
- * informação de que elas existem. Esconder o número é a mentira; recolher
- * dizendo quantas são, não é.
+ * ⚠️ ERA UMA INVERSÃO DA ÉTICA DO PROBLEMA, e ele desfez em duas frases:
+ *
+ *  1. **O registro completo JÁ É PUBLICADO.** A comunidade tem uma aba de
+ *     laboratório exatamente para isso — o que deu bom, o que deu ruim, o que
+ *     matamos e o que segue vivo. Ele tinha me dito isso, e eu ignorei. O
+ *     argumento de "concealment" não se aplica quando a transparência existe,
+ *     só não é nesta superfície.
+ *  2. **"Qual a utilidade de oferecer um agente vermelho para o cliente
+ *     contratar?"** Nenhuma. Uma vitrine não é um relatório: listar uma mesa
+ *     ali é OFERECÊ-LA. Oferecer o que nós mesmos medimos como perdedor é pior
+ *     que omitir — omitir é não falar, oferecer é recomendar.
+ *
+ * O corte deixa de ser cosmético e passa a ser o que a casa BANCA: positiva E
+ * com amostra que sustenta. O resto não é escondido — é contado, e a tela diz
+ * onde o registro inteiro sai.
+ *
+ * ⚠️ A CONTAGEM CONTINUA SAINDO (`quantasNegativas`), e é ela que impede isto
+ * de virar propaganda: "medimos 10, oferecemos 3" é uma frase honesta; "aqui
+ * estão as nossas 3 mesas" não é.
  */
 export interface VitrineOrdenada {
-  /** Positivas E com amostra que sustenta. Vêm abertas, melhor primeiro. */
+  /** ⚠️ O QUE A CASA BANCA: positiva E com amostra. É o que a tela OFERECE. */
   verdes: CartaoDaMesa[];
-  /** Negativas ou sem amostra. Recolhidas — nunca removidas. */
+  /**
+   * Negativas ou sem amostra.
+   *
+   * ⚠️ NÃO SÃO OFERECIDAS — mas continuam saindo daqui porque a tela precisa
+   * CONTÁ-LAS. "Medimos 10, oferecemos 3" é honesto; "aqui estão as nossas 3
+   * mesas" é propaganda.
+   */
   oResto: CartaoDaMesa[];
   /** ⚠️ Quantas do resto de fato PERDERAM. Este número tem de aparecer. */
   quantasNegativas: number;

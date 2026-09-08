@@ -960,3 +960,35 @@ Valhalla, que exibia +1,19% de UMA operação ao lado de uma média de 268.
 O teste trava a invariante que importa: `verdes + oResto = tudo que entrou`, e a
 contagem de negativas é publicada. As quatro sabotagens acusam — inclusive a que
 descarta o resto, que é exatamente o pedido literal.
+
+#### ⚠️ E eu voltei atrás: a vitrine oferece só o que a casa banca
+
+Eu tinha recusado o pedido literal do dono ("só as verdes") alegando viés de
+sobrevivência, e entregado as negativas **recolhidas mas ainda contratáveis**.
+Ele desfez em duas frases:
+
+1. **O registro completo já é publicado.** A comunidade tem uma aba de
+   laboratório exatamente para isso — *"o que deu bom, o que deu ruim, o que
+   matamos e o que segue vivo"*. Ele já tinha me dito, na mensagem anterior, que
+   resultados de backtest/laboratório/celeiro saem por lá. **Eu ignorei.**
+2. **"Qual a utilidade de oferecer um agente vermelho para o cliente
+   contratar?"** Nenhuma.
+
+O segundo argumento é o que derruba a minha posição: **uma vitrine não é um
+relatório**. Listar uma mesa ali é *oferecê-la*. Oferecer o que nós mesmos
+medimos como perdedor não é transparência — é recomendação. Omitir é não falar;
+oferecer é recomendar, e eu tinha invertido a ética do problema.
+
+O corte deixou de ser cosmético e passou a ser **o que a casa banca**: positiva
+**e** com amostra que sustenta.
+
+⚠️ **O que NÃO mudou, e é o que impede isto de virar propaganda:** a contagem
+continua na tela — *"medimos 10 mesas e listamos 3 aqui; as outras 7 não
+passaram no nosso corte"* — com o ponteiro para a comunidade logo abaixo. Sem
+esse parágrafo, "aqui estão as nossas 3 mesas" seria a mentira que o pedido
+original arriscava. Com ele, a transparência continua existindo — noutra
+superfície, que é onde o dono a publica.
+
+Ideia dele que fica registrada para depois: **um agente vermelho faria sentido na
+tela se o cliente pudesse EDITÁ-LO**, ajustando a regra em busca de acertar. Isso
+é uma feature própria (edição de agente), não um remendo desta.
