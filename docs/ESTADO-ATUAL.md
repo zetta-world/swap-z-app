@@ -2020,6 +2020,58 @@ peça, ou eu estou decorando o que já tem?"*. Nas fases 5, 6 e 7 a resposta era
 
 ---
 
+## 5.25 O ATIRADOR QUE NUNCA ATIROU — e o instrumento que não sabia dizer por quê (08/09)
+
+> *"o atirador cedo sumiu do celeiro, para onde ele foi?"* … *"vamos ver por que
+> o pool_novo não achou nenhum pool"*
+
+Ele não sumiu. O cron passou por ele **834 vezes** e ele examinou **5.004 pools
+desde 21/08, aprovando ZERO**.
+
+| | |
+|---|---|
+| examinados | 5.004 |
+| nunca lidos (dexscreener/GoPlus não responderam) | **2.200 — 44%** |
+| chegaram ao portão | 2.804 |
+| barrados por *"liquidez não travada"* | **2.591 — 92,4%** |
+| barrados por *"concentração não medida"* | 2.015 — 71,9% |
+| falharam em UMA coisa só | 34 — e **27 deles só na concentração** |
+
+### ⚠️ O defeito: `liquidezTravada` não sabia dizer "não medi"
+
+Ela devolvia `boolean`, colapsando **"medi e NÃO está travada"** com **"a fonte
+não me devolveu os detentores de LP"**. As duas reprovam — e é certo que
+reprovem, porque para efeito de DECISÃO um pool cuja trava ninguém verificou é
+indistinguível de um sem trava.
+
+Mas para efeito de **diagnóstico** elas são opostas, e pedem ações opostas:
+
+- *"o mercado da Base é assim mesmo"* → nada a fazer, o agente está certo em não
+  atirar;
+- *"a GoPlus não indexa LP nesta chain"* → trocar de fonte, ou apontar o agente
+  para outra chain.
+
+Com 92,4% das reprovações caindo numa frase só, **não havia como escolher entre
+as duas**. Instrumento que não separa isso manda ajustar às cegas — e foi por
+isso que 18 dias de silêncio pareceram normais.
+
+⚠️ E a disciplina certa já estava **no mesmo arquivo**: `concentracaoTop10`
+devolve `null` para "não medi" desde sempre. Uma das duas estava certa e a outra
+errada, lado a lado.
+
+Agora são três respostas, a decisão é a mesma (`null` reprova, igual a `false`),
+e a recusa diz qual dos dois casos ocorreu. A próxima medição responde a
+pergunta sozinha.
+
+### O que NÃO foi possível verificar daqui
+
+O proxy deste contêiner bloqueia `api.gopluslabs.io` (`CONNECT tunnel failed,
+403`), então **não dá para testar a API ao vivo** e confirmar se ela devolve
+`lp_holders`/`holders` para a Base. A instrumentação acima é o caminho honesto:
+em vez de afirmar o que a fonte faz, deixar o próprio agente medir e dizer.
+
+---
+
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
 **Escrita de estado sem conferência, no autopilot — quatro de uma vez.**

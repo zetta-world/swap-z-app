@@ -24,7 +24,9 @@ export interface Pool {
   /** USD de liquidez no par. */
   liquidezUsd: number;
   /** A liquidez está travada (LP queimado ou em contrato de trava)? */
-  liquidezTravada: boolean;
+  /** ⚠️ `null` = não deu para medir. O portão reprova nos dois casos, mas a
+   *  recusa diz QUAL dos dois — ver `portaoDeSobrevivencia`. */
+  liquidezTravada: boolean | null;
   /**
    * Fração do supply nas 10 maiores carteiras (0 a 1). `null` = não medido.
    *
@@ -71,7 +73,17 @@ export function portaoDeSobrevivencia(p: Pool | null): Portao {
   if (!(p.liquidezUsd >= LIQUIDEZ_MINIMA_USD)) {
     recusas.push(`liquidez ${p.liquidezUsd.toFixed(0)} USD abaixo do mínimo ${LIQUIDEZ_MINIMA_USD}`);
   }
-  if (!p.liquidezTravada) {
+  /**
+   * ⚠️⚠️ AS DUAS RECUSAS REPROVAM IGUAL — a diferença é de DIAGNÓSTICO (07/09).
+   *
+   * "Não medi" e "medi e não está travada" tinham a MESMA frase, e por isso os
+   * 92,4% de reprovação nesta linha (2.591 de 2.804 pools em 18 dias) não
+   * diziam se o mercado da Base é assim ou se a fonte não indexa LP aqui. As
+   * duas leituras pedem ações opostas: aceitar, ou trocar de fonte.
+   */
+  if (p.liquidezTravada === null) {
+    recusas.push("trava da liquidez NÃO MEDIDA — a fonte não devolveu os detentores de LP");
+  } else if (!p.liquidezTravada) {
     recusas.push("liquidez não travada — quem criou pode retirá-la a qualquer momento");
   }
   if (p.concentracaoTop10 === null) {
