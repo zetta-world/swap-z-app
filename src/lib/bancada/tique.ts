@@ -19,6 +19,7 @@ import {
   gravarUltimoTique, marcarTiqueAdiado, type MesaDoCron,
 } from "@/lib/bancada/store";
 import { motivoFechado, type VistoNoSimbolo } from "@/lib/bancada/ultimo-tique";
+import { duracaoDoIntervaloMs } from "@/lib/mercado/velas";
 import {
   mesasQuePodemTickar, decidirAbertura, decidirFechamentoDaPosicao,
   aVezDeQuem, tickAtual, MESAS_POR_TICK, AGENTES_POR_TICK,
@@ -314,16 +315,28 @@ async function decidirDaPropria(
   const ultima = leitura.velas[leitura.velas.length - 1];
   const preco = ultima != null && ultima.close > 0 ? ultima.close : null;
   const velaEm = ultima != null ? ultima.t : null;
+  /**
+   * ⚠️⚠️ O FECHAMENTO, não a abertura — é ELE que data o dado (08/09).
+   *
+   * `VelaComTempo.t` é o instante em que a vela ABRE. Uma vela de 1h aberta às
+   * 07:00 só termina de se formar às 08:00: antes disso ela nem existia como
+   * dado fechado. Medir a idade da abertura faz a tela envelhecer o preço em
+   * até uma duração de intervalo inteira — foi assim que o card disse "vela de
+   * 104 min atrás" sobre um dado de 44 minutos.
+   */
+  const durMs = duracaoDoIntervaloMs(mesa.intervalo);
+  const velaFechaEm = velaEm != null && durMs != null ? velaEm + durMs : null;
 
   const d = decidirAbertura(mesa, leitura.velas, agoraMs);
   // ⚠️ O motivo é FECHADO na borda — ver `motivoFechado`. Guardar a string crua
   // punha `ja_tem_posicao` na tela de um cliente chinês.
   if (!d.abre) {
     return { abertura: null, visto: {
-      preco, velaEm, motivo: motivoFechado(d.porque), detalhe: null, abriu: false,
+      preco, velaEm, velaFechaEm, regime: null,
+      motivo: motivoFechado(d.porque), detalhe: null, abriu: false,
     } };
   }
-  return { visto: { preco, velaEm, motivo: null, detalhe: null, abriu: true }, abertura: {
+  return { visto: { preco, velaEm, velaFechaEm, regime: null, motivo: null, detalhe: null, abriu: true }, abertura: {
     lado: mesa.params.direcao === "compra" ? "long" : "short",
     entrada: d.preco,
     tamanhoUsd: TAMANHO_DE_PAPEL_USD,
@@ -369,6 +382,9 @@ async function decidirDoAgente(
   const ultima1h = h1.velas[h1.velas.length - 1];
   const preco = ultima1h != null && ultima1h.close > 0 ? ultima1h.close : null;
   const velaEm = ultima1h != null ? ultima1h.t : null;
+  // ⚠️ O agente caminha em 1h — o fechamento é a abertura + uma hora. Ver a
+  // nota gêmea em `decidirDaPropria`: a idade sai daqui, nunca de `velaEm`.
+  const velaFechaEm = velaEm != null ? velaEm + 3_600_000 : null;
 
   const d = decidirAberturaDoAgente(
     { temPosicaoAberta: mesa.temPosicaoAberta, ultimaAberturaMs: mesa.ultimaAberturaMs },
@@ -396,11 +412,12 @@ async function decidirDoAgente(
      * nunca imprime como se fosse nosso.
      */
     return { abertura: null, visto: {
-      preco, velaEm, motivo: motivoFechado(d.porque), detalhe: d.porque, abriu: false,
+      preco, velaEm, velaFechaEm, regime: d.regime,
+      motivo: motivoFechado(d.porque), detalhe: d.porque, abriu: false,
     } };
   }
 
-  return { visto: { preco, velaEm, motivo: null, detalhe: null, abriu: true }, abertura: {
+  return { visto: { preco, velaEm, velaFechaEm, regime: d.regime, motivo: null, detalhe: null, abriu: true }, abertura: {
     // ⚠️ Estas mesas são long-only por construção — ver `agente.ts`.
     lado: "long",
     entrada: d.entrada,

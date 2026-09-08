@@ -81,7 +81,16 @@ export type DecisaoDoAgente =
       playbook: string;
       regime: string;
     }
-  | { abre: false; porque: string };
+  | {
+      abre: false;
+      porque: string;
+      /**
+       * ⚠️ O REGIME VIAJA NA RECUSA TAMBÉM (08/09) — antes ele só saía quando
+       * a mesa ABRIA, e é justamente quando ela NÃO abre que o investidor
+       * pergunta o que ela está fazendo. `null` quando não deu para ler.
+       */
+      regime: string | null;
+    };
 
 /**
  * O agente decide, nesta vela, se abre.
@@ -102,19 +111,19 @@ export function decidirAberturaDoAgente(
   velas: VelasDoAgente,
   agoraMs: number,
 ): DecisaoDoAgente {
-  if (estado.temPosicaoAberta) return { abre: false, porque: "ja_tem_posicao" };
+  if (estado.temPosicaoAberta) return { abre: false, porque: "ja_tem_posicao", regime: null };
 
   const fim = ultimaVelaFechada(INTERVALO_DO_AGENTE, agoraMs);
-  if (fim == null) return { abre: false, porque: "sem_velas" };
+  if (fim == null) return { abre: false, porque: "sem_velas", regime: null };
 
   const h1 = ateOInstante(velas.h1, fim);
-  if (h1.length < BARRAS_DE_AQUECIMENTO) return { abre: false, porque: "aquecendo" };
+  if (h1.length < BARRAS_DE_AQUECIMENTO) return { abre: false, porque: "aquecendo", regime: null };
 
   const ultima = h1[h1.length - 1];
   if (estado.ultimaAberturaMs != null && ultima.t <= estado.ultimaAberturaMs) {
-    return { abre: false, porque: "vela_ja_avaliada" };
+    return { abre: false, porque: "vela_ja_avaliada", regime: null };
   }
-  if (!(ultima.close > 0)) return { abre: false, porque: "sem_velas" };
+  if (!(ultima.close > 0)) return { abre: false, porque: "sem_velas", regime: null };
 
   /**
    * ⚠️⚠️ QUATRO PRAZOS, e nenhum deles é opcional. O regime e o alinhamento
@@ -140,11 +149,11 @@ export function decidirAberturaDoAgente(
     // ⚠️ O motivo vem do playbook de MAIOR prioridade do regime — o que mais
     // tinha chance de operar. Sem playbook nenhum, o próprio regime é a
     // resposta. É a mesma disciplina de `selectWithCandidates`.
-    return { abre: false, porque: tentativas[0]?.reason ?? "sem candidato no regime" };
+    return { abre: false, porque: tentativas[0]?.reason ?? "sem candidato no regime", regime: ind.regime };
   }
 
   const plano = comPlano.plan;
-  if (!(plano.entry > 0)) return { abre: false, porque: "plano sem preço de entrada" };
+  if (!(plano.entry > 0)) return { abre: false, porque: "plano sem preço de entrada", regime: ind.regime };
 
   /**
    * ⚠️ O BRACKET VIRA PERCENTUAL DA ENTRADA porque é assim que a posição o
@@ -160,7 +169,7 @@ export function decidirAberturaDoAgente(
    */
   const alvoPct = Math.abs((plano.target - plano.entry) / plano.entry) * 100;
   const stopPct = Math.abs((plano.entry - plano.stop) / plano.entry) * 100;
-  if (!(alvoPct > 0) || !(stopPct > 0)) return { abre: false, porque: "bracket degenerado" };
+  if (!(alvoPct > 0) || !(stopPct > 0)) return { abre: false, porque: "bracket degenerado", regime: ind.regime };
 
   return {
     abre: true,
