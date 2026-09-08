@@ -17,6 +17,7 @@ import { CHAINS } from "@/lib/chains";
 import { findToken } from "@/lib/tokens";
 import { useT } from "@/lib/i18n";
 import { vivacidadeDoGrafico, type LeituraDoGrafico } from "@/lib/pro/vivacidade";
+import { rotuloDaJanela, type Janela } from "@/lib/pro/janela";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
 import ProChart, { type ChartKind, type StrategyLevel, type ChartSignals } from "./ProChart";
 import ProTrades from "./ProTrades";
@@ -161,10 +162,8 @@ export default function ProTerminal() {
   const [pairQuery, setPairQuery]             = useState("");
 
   // Live header values pushed from ProChart
-  const [hdr, setHdr] = useState<{ last: number; change: number; high: number; low: number; vol: number } | null>(null);
-  const onLastPrice = useCallback((last: number, change: number, high: number, low: number, vol: number) => {
-    setHdr({ last, change, high, low, vol });
-  }, []);
+  const [hdr, setHdr] = useState<{ ultimo: number; janela: Janela } | null>(null);
+  const onLastPrice = useCallback((resumo: { ultimo: number; janela: Janela }) => setHdr(resumo), []);
 
   // ProTrades publishes its current trade window up to the parent so the
   // flow + depth panels can derive aggregate stats without re-fetching.
@@ -195,7 +194,7 @@ export default function ProTerminal() {
   // ─── Strategy levels ─────────────────────────────────────────────
   const strategyLevels = useMemo((): StrategyLevel[] => {
     if (!strategyOn || !hdr) return [];
-    const p   = hdr.last;
+    const p   = hdr.ultimo;
     const atr = signals?.atr ?? (p * 0.01);
     const configs: Record<StrategyScenario, { entryMult: number; targetMult: number; stopMult: number }> = {
       conservative: { entryMult: 0.2, targetMult: 1.5, stopMult: 1.0 },
@@ -523,15 +522,28 @@ export default function ProTerminal() {
             <div className="text-[10px] text-ink-3 tracking-widest uppercase">Last</div>
             <div className={cn(
               "font-display font-extrabold text-xl sm:text-2xl tabular-nums",
-              hdr ? (hdr.change >= 0 ? "text-green" : "text-red") : "text-ink",
+              // ⚠️ Sem variação medida o preço fica neutro: verde/vermelho
+              // sobre `null` pintaria um veredito que ninguém calculou.
+              hdr?.janela.variacaoPct == null ? "text-ink"
+                : hdr.janela.variacaoPct >= 0 ? "text-green" : "text-red",
             )}>
-              {hdr ? formatPrice(hdr.last) : "—"}
+              {hdr ? formatPrice(hdr.ultimo) : "—"}
             </div>
           </div>
-          <Field label="24h"    value={hdr ? `${hdr.change >= 0 ? "+" : ""}${hdr.change.toFixed(2)}%` : "—"} tone={hdr ? (hdr.change >= 0 ? "green" : "red") : undefined} />
-          <Field label="High"   value={hdr ? formatPrice(hdr.high) : "—"} />
-          <Field label="Low"    value={hdr ? formatPrice(hdr.low)  : "—"} />
-          <Field label="Vol 24h" value={hdr ? `$${compactNumber(hdr.vol)}` : "—"} />
+          {/**
+            * ⚠️⚠️ O RÓTULO SEGUE A JANELA QUE EXISTE — não "24h" sempre.
+            *
+            * A rota devolve 250 velas; num gráfico de 1m isso é 4,2h e no de
+            * 5m (o padrão) é 20,8h. Chamar os dois de "24h" fazia a tela errar
+            * a janela por até 6× num número que decide ordem.
+            */}
+          <Field label={hdr ? rotuloDaJanela(hdr.janela) : "24h"}
+                 value={hdr?.janela.variacaoPct != null ? `${hdr.janela.variacaoPct >= 0 ? "+" : ""}${hdr.janela.variacaoPct.toFixed(2)}%` : "—"}
+                 tone={hdr?.janela.variacaoPct != null ? (hdr.janela.variacaoPct >= 0 ? "green" : "red") : undefined} />
+          <Field label="High"   value={hdr?.janela.maxima != null ? formatPrice(hdr.janela.maxima) : "—"} />
+          <Field label="Low"    value={hdr?.janela.minima != null ? formatPrice(hdr.janela.minima) : "—"} />
+          <Field label={`Vol ${hdr ? rotuloDaJanela(hdr.janela) : "24h"}`}
+                 value={hdr?.janela.volume != null ? `$${compactNumber(hdr.janela.volume)}` : "—"} />
           {marketRegime && (
             <div className="font-mono hidden sm:block">
               <div className="text-[10px] text-ink-3 tracking-widest uppercase">Regime</div>
@@ -699,7 +711,7 @@ export default function ProTerminal() {
           <div className="col-span-12 lg:col-span-4 space-y-3">
             <ProOrderPanel
               pair={{ base: pair.base, quote: pair.quote, chain: pair.chain }}
-              lastPrice={hdr?.last ?? null}
+              lastPrice={hdr?.ultimo ?? null}
               accentColor={accentColor}
               /* ⚠️ Os dois insumos do "custo da ideia". Sem eles o bloco cala. */
               feeTierPct={taxaDaPerna(pair.feeTier)}
@@ -711,7 +723,7 @@ export default function ProTerminal() {
               chain={pair.chain}
               fromSymbol={pair.base}
               toSymbol={pair.quote}
-              midPrice={hdr?.last ?? 0}
+              midPrice={hdr?.ultimo ?? 0}
             />
             <ProTrades chain={pair.chain} pool={pair.pool} side={chartSide} onTrades={onTrades} />
           </div>
@@ -731,7 +743,7 @@ export default function ProTerminal() {
               fromToken={fromToken}
               toToken={toToken}
               chain={pair.chain}
-              midPrice={hdr?.last ?? 0}
+              midPrice={hdr?.ultimo ?? 0}
             />
           </div>
           <div className="col-span-12 md:col-span-5 xl:col-span-3">
@@ -762,7 +774,7 @@ export default function ProTerminal() {
                   </span>
                   {hdr && (
                     <span className="font-mono text-[10px] text-ink-3">
-                      · Based on price action at {formatPrice(hdr.last)}
+                      · Based on price action at {formatPrice(hdr.ultimo)}
                     </span>
                   )}
                 </div>
@@ -788,7 +800,7 @@ export default function ProTerminal() {
 
                 {/* Levels grid */}
                 {hdr && (() => {
-                  const p   = hdr.last;
+                  const p   = hdr.ultimo;
                   const atr = signals?.atr ?? (p * 0.01);
                   const cfgMap = {
                     conservative: { entryMult: 0.2, targetMult: 1.5, stopMult: 1.0 },
@@ -806,7 +818,7 @@ export default function ProTerminal() {
                         <div className="font-mono text-[9px] text-ink-4 mb-2">
                           ATR(14) = <span className="text-ink-3">{formatPrice(signals.atr)}</span>
                           <span className="mx-1.5">·</span>
-                          <span className="text-ink-3">{((signals.atr / hdr.last) * 100).toFixed(2)}% of price</span>
+                          <span className="text-ink-3">{((signals.atr / hdr.ultimo) * 100).toFixed(2)}% of price</span>
                         </div>
                       )}
                       {convictionScore && (

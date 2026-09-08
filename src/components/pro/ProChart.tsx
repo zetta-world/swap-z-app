@@ -17,6 +17,7 @@ import {
   type HistogramData,
 } from "lightweight-charts";
 import type { Candle, Timeframe, PriceToken, PoolMeta } from "@/lib/api/geckoterminal";
+import { janelaDoCabecalho, type Janela } from "@/lib/pro/janela";
 import { amplitudeMediaPct } from "@/lib/pro/custo-da-ideia";
 
 export type ChartKind = "candle" | "bar" | "line";
@@ -66,7 +67,12 @@ interface Props {
    * requests would chart USDT@$1 instead of BNB@$700 on inverted pools.
    */
   targetSymbol: string;
-  onLastPrice?: (last: number, change24h: number, high: number, low: number, vol24hUsd: number) => void;
+  /**
+   * ⚠️ `janela` VIAJA JUNTO porque os quatro números não são de 24h em todo
+   * timeframe: a rota devolve 250 velas, e 250 velas de 1m são 4,2h. Ver
+   * `@/lib/pro/janela`.
+   */
+  onLastPrice?: (resumo: { ultimo: number; janela: Janela }) => void;
   onMeta?:      (meta: PoolMeta | null, side: PriceToken) => void;
   /**
    * O que esta busca viu. Alimenta o selo de vivacidade da barra.
@@ -651,17 +657,16 @@ export default function ProChart({
         onAmplitude?.(amplitudeMediaPct(rows));
         onFechamentos?.(rows.map((c) => c.close));
 
-        // Push summary to parent
+        /**
+         * ⚠️⚠️ A JANELA DIZ O TAMANHO QUE TEM (08/09).
+         *
+         * Aqui havia `first24 ? first24.close : rows[0].close` — quando não
+         * existia vela de 24h atrás, a variação usava a mais antiga em mãos e
+         * seguia sendo rotulada "24h". Com 250 velas de 1m isso eram 4,2h. A
+         * conta inteira mudou-se para `janelaDoCabecalho`, com teste.
+         */
         if (onLastPrice && rows.length > 0) {
-          const first24 = findFirst24hAgo(rows);
-          const last    = rows[rows.length - 1].close;
-          const ref     = first24 ? first24.close : rows[0].close;
-          const change  = ref > 0 ? ((last - ref) / ref) * 100 : 0;
-          const recent  = rows.slice(-Math.min(rows.length, ticksFor24h(tf)));
-          const high    = Math.max(...recent.map((r) => r.high));
-          const low     = Math.min(...recent.map((r) => r.low));
-          const vol24   = recent.reduce((acc, r) => acc + r.volume, 0);
-          onLastPrice(last, change, high, low, vol24);
+          onLastPrice({ ultimo: rows[rows.length - 1].close, janela: janelaDoCabecalho(rows, tf) });
         }
 
         if (onSignals && rows.length > 0) {
@@ -898,27 +903,6 @@ function rsiCalc(rows: Candle[], period = 14): LineData<Time>[] {
     out.push({ time: rows[i + 1].time as Time, value: calcRsi(avgGain, avgLoss) });
   }
   return out;
-}
-
-function ticksFor24h(tf: Timeframe): number {
-  switch (tf) {
-    case "1m":  return 1440;
-    case "5m":  return 288;
-    case "15m": return 96;
-    case "1h":  return 24;
-    case "4h":  return 6;
-    case "1d":  return 1;
-  }
-}
-
-function findFirst24hAgo(rows: Candle[]): Candle | null {
-  if (!rows.length) return null;
-  const last   = rows[rows.length - 1].time;
-  const target = last - 24 * 3600;
-  for (let i = rows.length - 1; i >= 0; i--) {
-    if (rows[i].time <= target) return rows[i];
-  }
-  return null;
 }
 
 function macdCalc(rows: Candle[]): {
