@@ -167,9 +167,13 @@ describe("as duas leituras chegam à tela", () => {
      * cada `set…(null|[])` esteja num efeito disparado por [pair.id, tf], sem
      * transcrever a linha.
      */
-    const efeito = TERM.match(/useEffect\(\(\) => \{([^}]*)\}, \[pair\.id, tf\]\)/);
+    // ⚠️ `[\s\S]*?` e não `[^}]*`: desde 08/09 o reset da vivacidade passa um
+    // OBJETO (`{ buscaEmMs: null, … }`), e a versão antiga da regex parava na
+    // primeira chave — quebrando por causa da forma do argumento, não da
+    // intenção. Terceira vez que esta asserção aprende a mesma lição.
+    const efeito = TERM.match(/useEffect\(\(\) => \{([\s\S]*?)\}, \[pair\.id, tf\]\)/);
     expect(efeito, "não achei um efeito de reset disparado por [pair.id, tf]").not.toBe(null);
-    for (const alvo of ["setChartAtualizadoEm", "setAmplitudeVela", "setFechamentos"]) {
+    for (const alvo of ["setLeituraDoGrafico", "setAmplitudeVela", "setFechamentos"]) {
       expect(efeito![1], alvo).toContain(alvo);
     }
   });

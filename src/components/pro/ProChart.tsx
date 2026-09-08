@@ -68,8 +68,16 @@ interface Props {
   targetSymbol: string;
   onLastPrice?: (last: number, change24h: number, high: number, low: number, vol24hUsd: number) => void;
   onMeta?:      (meta: PoolMeta | null, side: PriceToken) => void;
-  /** Quando a última vela chegou. Alimenta o selo de vivacidade da barra. */
-  onAtualizado?: (ms: number) => void;
+  /**
+   * O que esta busca viu. Alimenta o selo de vivacidade da barra.
+   *
+   * ⚠️⚠️ SÃO DOIS INSTANTES, e antes ia só um. `buscaEmMs` diz que a FONTE
+   * respondeu; `velaAbreEmMs` diz de quando é o DADO. Mandar só o primeiro
+   * fazia o selo prometer "última vela há 8s" quando a vela de 1h tinha aberto
+   * 52 minutos antes — e fazia um `200` com `candles: []` acender o verde sobre
+   * um gráfico vazio. `velaAbreEmMs: null` é justamente esse caso.
+   */
+  onAtualizado?: (leitura: { buscaEmMs: number; velaAbreEmMs: number | null }) => void;
   /** A amplitude média das velas — insumo de "o stop está dentro do ruído?". */
   onAmplitude?: (pct: number | null) => void;
   /**
@@ -635,7 +643,10 @@ export default function ProChart({
           } as HistogramData<Time>);
         }
         primeira = false;
-        onAtualizado?.(Date.now());
+        // ⚠️ `ultima.time` é a ABERTURA, em SEGUNDOS (formato do lightweight-charts).
+        // Quem soma a duração do timeframe é `vivacidadeDoGrafico` — aqui só
+        // reporta o que veio, sem interpretar.
+        onAtualizado?.({ buscaEmMs: Date.now(), velaAbreEmMs: ultima ? ultima.time * 1000 : null });
         // ⚠️ Do MESMO conjunto que a tela desenha — ver a nota no terminal.
         onAmplitude?.(amplitudeMediaPct(rows));
         onFechamentos?.(rows.map((c) => c.close));

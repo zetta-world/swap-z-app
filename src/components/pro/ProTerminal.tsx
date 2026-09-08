@@ -16,6 +16,7 @@ import { PRO_PAIRS, DEFAULT_PRO_PAIR, CATEGORY_LABELS, groupPairs, type ProPair 
 import { CHAINS } from "@/lib/chains";
 import { findToken } from "@/lib/tokens";
 import { useT } from "@/lib/i18n";
+import { vivacidadeDoGrafico, type LeituraDoGrafico } from "@/lib/pro/vivacidade";
 import { useTierAccent } from "@/components/tier/TierAccentProvider";
 import ProChart, { type ChartKind, type StrategyLevel, type ChartSignals } from "./ProChart";
 import ProTrades from "./ProTrades";
@@ -59,17 +60,6 @@ type StrategyScenario = "conservative" | "moderate" | "aggressive";
 // Cryptocurrency icon CDN base
 const CRYPTO_ICON_BASE = "https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/icon";
 
-/**
- * ⚠️ QUANTO ATRASO É NORMAL, POR TIMEFRAME.
- *
- * Cerca de 3× o passo de atualização do gráfico (ver `PASSO_MS` em ProChart):
- * dá folga para uma requisição lenta sem deixar passar uma fonte que caiu. Um
- * número fixo daria falso alarme no 1d e falso silêncio no 1m.
- */
-const TOLERANCIA_MS: Record<Timeframe, number> = {
-  "1m": 35_000, "5m": 65_000, "15m": 95_000, "1h": 185_000, "4h": 365_000, "1d": 905_000,
-};
-
 export default function ProTerminal() {
   const t = useT();
 
@@ -92,8 +82,14 @@ export default function ProTerminal() {
   const [amplitudeVela, setAmplitudeVela] = useState<number | null>(null);
   /** Fechamentos da janela desenhada — insumo de "e se eu não fizesse nada?". */
   const [fechamentos, setFechamentos] = useState<number[]>([]);
-  /** Quando o gráfico recebeu vela pela última vez. `null` = ainda nada. */
-  const [chartAtualizadoEm, setChartAtualizadoEm] = useState<number | null>(null);
+  /**
+   * O que a última busca do gráfico viu. `null` = ainda nada.
+   *
+   * ⚠️ DOIS INSTANTES, e antes era um só: quando a FONTE respondeu e de quando
+   * é a VELA. Ver a nota em `@/lib/pro/vivacidade`.
+   */
+  const [leituraDoGrafico, setLeituraDoGrafico] =
+    useState<LeituraDoGrafico>({ buscaEmMs: null, velaAbreEmMs: null });
   /** Relógio local que faz o selo ENVELHECER sozinho — sem ele, uma fonte que
    *  para de responder deixa o selo congelado em "AO VIVO" para sempre. */
   const [agoraTick, setAgoraTick] = useState<number>(() => Date.now());
@@ -264,19 +260,32 @@ export default function ProTerminal() {
    * daria falso alarme num extremo e falso silêncio no outro.
    */
   const vivacidade = useMemo(() => {
-    if (chartAtualizadoEm === null) {
-      return { rotulo: "AGUARDANDO", cor: "var(--ink-3, #7E89C2)", pulsa: false,
-               titulo: "nenhuma vela recebida ainda — não é o mesmo que estar parado" };
+    const v = vivacidadeDoGrafico(leituraDoGrafico, tf, agoraTick);
+    const seg = (ms: number | null) => (ms == null ? "—" : `${Math.round(ms / 1000)}s`);
+
+    /**
+     * ⚠️ A DICA FALA DA VELA, O SELO FALA DA FONTE — e são perguntas
+     * diferentes. Antes a dica dizia "última vela há {N}s" com o N da BUSCA:
+     * num gráfico de 1h isso lia-se como "acabou de fechar uma vela" sobre uma
+     * vela aberta 52 minutos antes.
+     */
+    switch (v.selo) {
+      case "aguardando":
+        return { rotulo: "AGUARDANDO", cor: "var(--ink-3, #7E89C2)", pulsa: false,
+                 titulo: "nenhuma vela recebida ainda — não é o mesmo que estar parado" };
+      case "sem_vela":
+        // A fonte respondeu e não veio vela nenhuma: verde aqui seria dizer que
+        // há dado ao vivo sobre um gráfico vazio.
+        return { rotulo: "SEM VELA", cor: "var(--adm-amber, #F5A524)", pulsa: false,
+                 titulo: `a fonte respondeu há ${seg(v.fonteHaMs)} e não devolveu vela nenhuma` };
+      case "ao_vivo":
+        return { rotulo: "AO VIVO", cor: "var(--green, #00E087)", pulsa: true,
+                 titulo: `última vela fechou há ${seg(v.velaHaMs)} · fonte respondeu há ${seg(v.fonteHaMs)}` };
+      case "atrasado":
+        return { rotulo: `ATRASADO ${seg(v.fonteHaMs)}`, cor: "var(--adm-amber, #F5A524)", pulsa: false,
+                 titulo: `a fonte não responde há ${seg(v.fonteHaMs)} (tolerância ${seg(v.tetoMs)}) · última vela fechou há ${seg(v.velaHaMs)}` };
     }
-    const atraso = agoraTick - chartAtualizadoEm;
-    const teto = (TOLERANCIA_MS[tf] ?? 60_000);
-    if (atraso <= teto) {
-      return { rotulo: "AO VIVO", cor: "var(--green, #00E087)", pulsa: true,
-               titulo: `última vela há ${Math.round(atraso / 1000)}s` };
-    }
-    return { rotulo: `ATRASADO ${Math.round(atraso / 1000)}s`, cor: "var(--adm-amber, #F5A524)", pulsa: false,
-             titulo: `a fonte não devolve vela nova há ${Math.round(atraso / 1000)}s (tolerância ${Math.round(teto / 1000)}s)` };
-  }, [chartAtualizadoEm, agoraTick, tf]);
+  }, [leituraDoGrafico, agoraTick, tf]);
 
   /**
    * ⚠️ O RELÓGIO QUE FAZ O SELO ENVELHECER. Sem ele, o selo só mudaria quando
@@ -295,7 +304,7 @@ export default function ProTerminal() {
    * a tela diria "AO VIVO" sobre um gráfico que ainda está carregando outra
    * coisa — afirmando frescor de um dado que nem é mais o dado da tela.
    */
-  useEffect(() => { setChartAtualizadoEm(null); setAmplitudeVela(null); setFechamentos([]); }, [pair.id, tf]);
+  useEffect(() => { setLeituraDoGrafico({ buscaEmMs: null, velaAbreEmMs: null }); setAmplitudeVela(null); setFechamentos([]); }, [pair.id, tf]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -679,7 +688,7 @@ export default function ProTerminal() {
                 targetSymbol={pair.targetSymbol}
                 onLastPrice={onLastPrice}
                 onMeta={onMeta}
-                onAtualizado={setChartAtualizadoEm}
+                onAtualizado={setLeituraDoGrafico}
                 onAmplitude={setAmplitudeVela}
                 onFechamentos={setFechamentos}
               />
