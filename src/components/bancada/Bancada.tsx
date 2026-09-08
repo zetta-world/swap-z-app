@@ -34,7 +34,7 @@ import { classificarResultado } from "@/lib/admin/cor-resultado";
 import { corDoNumero } from "@/components/bancada/CorDoCliente";
 import type { ChaveNaoMedido } from "@/lib/bancada/veredito";
 import { ESTRATEGIAS_DA_CASA, type EstrategiaDaCasa } from "@/lib/bancada/casa";
-import { ressalvasComuns, ressalvasSoDeste, mesaPodeRodar, ordenarVitrine, type CartaoDaMesa, type ChaveDeRessalva } from "@/lib/bancada/mesas-da-casa";
+import { ressalvasComuns, ressalvasSoDeste, mesaPodeRodar, ordenarVitrine, diasSemDecidir, DIAS_ATE_PARADA, type CartaoDaMesa, type ChaveDeRessalva } from "@/lib/bancada/mesas-da-casa";
 import type { MessageKey } from "@/lib/i18n";
 
 /**
@@ -1282,6 +1282,8 @@ function MesaDaCasa({ m, rodando, contratando, jaContratada, soDeste, comOQue, e
    */
   const classe = classificarResultado(m.liquidoPorOpPct);
   const cor = corDoNumero(classe, m.sustentacao === "sustenta");
+  // ⚠️ Um `Date.now()` por card, lido uma vez — ver a nota do carimbo abaixo.
+  const paradaHa = diasSemDecidir(m.medicao, Date.now());
 
   return (
     <li className="rounded-xl border border-white/5 bg-bg-2/60 p-3">
@@ -1376,6 +1378,25 @@ function MesaDaCasa({ m, rodando, contratando, jaContratada, soDeste, comOQue, e
                 <span className="mt-0.5 block max-w-[10rem] text-[10px] leading-tight text-ink-4">
                   {t("bancada.mesasSemAmostraSo")}
                 </span>
+              )}
+              {/* ⚠️⚠️ O CARIMBO DE VALIDADE — não é um terceiro número, é o que
+                  diz se os outros dois valem hoje.
+                  Ao cortar o card para dois números eu tirei junto a janela de
+                  medição, e a FREYJA (que estampa +4,34% sobre 335 decididas)
+                  não decide nada desde 31/08: o investidor lia dois números
+                  corretos como se fossem correntes. É a mesma regra do card do
+                  agente — "idade errada declarada é pior que idade nenhuma" —, e
+                  aqui era idade nenhuma. */}
+              {m.medicao && (
+                paradaHa != null && paradaHa >= DIAS_ATE_PARADA ? (
+                  <span className="mt-1 block max-w-[10rem] text-[10px] leading-tight text-gold">
+                    {t("bancada.mesasParada", { dia: m.medicao.ultimoDia })}
+                  </span>
+                ) : (
+                  <span className="block text-[10px] text-ink-4">
+                    {t("bancada.mesasMedidoAte", { dia: m.medicao.ultimoDia })}
+                  </span>
+                )
               )}
             </>
           )}

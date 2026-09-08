@@ -287,6 +287,35 @@ export function ressalvasSoDeste(
   return cartao.ressalvas.filter((r) => !comuns.includes(r));
 }
 
+/**
+ * ⚠️⚠️ QUANTOS DIAS SEM DECIDIR NADA JÁ É "PARADA" (07/09).
+ *
+ * ACHADO MEDINDO A COORTE, e é consequência de um corte MEU: ao reduzir o card
+ * a dois números, tirei junto a janela de medição — e a FREYJA, que estampa
+ * `+4,34%` sobre 335 decididas, não decide nada desde 31/08. O investidor lia
+ * dois números corretos como se fossem correntes.
+ *
+ * Um carimbo de validade NÃO É um terceiro número de desempenho: é o que diz se
+ * os outros dois valem hoje. É a mesma regra que já vale no card do agente —
+ * *"idade errada declarada é pior que idade nenhuma"* —, e aqui era idade
+ * nenhuma.
+ *
+ * ⚠️ TRÊS DIAS porque as mesas de swing têm horizonte de 48h: uma janela de 72h
+ * sem NENHUMA decisão não é silêncio normal, é a mesa parada ou o resolvedor
+ * sem preço. Menos que isso acusaria fim de semana.
+ */
+export const DIAS_ATE_PARADA = 3;
+
+/** Há quantos dias esta mesa não decide nada. `null` sem medição. */
+export function diasSemDecidir(m: MedicaoDaMesa | null, agoraMs: number): number | null {
+  if (!m || !m.ultimoDia) return null;
+  const ultimo = Date.parse(`${m.ultimoDia}T23:59:59Z`);
+  if (!Number.isFinite(ultimo)) return null;
+  // ⚠️ Nunca negativo: `ultimoDia` é uma data (fim do dia), e um relógio adiantado
+  // faria "decidiu daqui a −1 dia".
+  return Math.max(0, Math.floor((agoraMs - ultimo) / 86_400_000));
+}
+
 /** Abaixo disto o número não sustenta veredito — o mesmo 100 do torneio. */
 export const DECIDIDOS_PARA_SUSTENTAR = 100;
 
