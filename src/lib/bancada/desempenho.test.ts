@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { desempenhoDaInstancia, type PosicaoDaInstancia } from "@/lib/bancada/desempenho";
+import { desempenhoDaInstancia, inicioDaCobertura, type PosicaoDaInstancia } from "@/lib/bancada/desempenho";
 
 /**
  * ⚠️⚠️ ESTE ARQUIVO GUARDA A FRASE DO DONO (07/09): *"apenas estamos pegando os
@@ -146,5 +146,50 @@ describe("o investidor vê QUAL regra operou", () => {
       p({ simbolo: "SOL", status: "aberta", resultadoPct: null, fechadaEmMs: null }),
     ], 0);
     expect(d.simbolos).toBe(2);
+  });
+});
+
+/**
+ * ⚠️⚠️ "TRABALHANDO HÁ 2H" AO LADO DE 48 OPERAÇÕES DE DUAS SEMANAS (08/09).
+ *
+ * `papel_desde` era reescrito a cada RELIGAR e apagado a cada PAUSAR, enquanto
+ * as posições contadas ao lado seguiam sendo as da estratégia inteira. Bastava
+ * o investidor pausar e religar para a tela pôr numerador e denominador de
+ * janelas diferentes lado a lado.
+ */
+describe("inicioDaCobertura — a janela que os números cobrem", () => {
+  const CONTRATOU = "2026-08-25T10:00:00Z";
+  const RELIGOU   = "2026-09-08T15:00:00Z";
+
+  it("com o carimbo da contratação, é ele — e é o mesmo que conta as posições", () => {
+    expect(inicioDaCobertura(CONTRATOU, CONTRATOU)).toBe(Date.parse(CONTRATOU));
+  });
+
+  it("pausado (carimbo nulo) NÃO apaga a história — cai na criação da linha", () => {
+    // Antes, pausar zerava `papel_desde` e o selo de tempo sumia da tela, como
+    // se o agente nunca tivesse trabalhado.
+    expect(inicioDaCobertura(null, CONTRATOU)).toBe(Date.parse(CONTRATOU));
+  });
+
+  it("religar não pode encurtar a janela — o carimbo novo é o defeito antigo", () => {
+    // Este teste documenta a REGRA: quem escreve `papel_desde` só escreve na
+    // primeira vez (`ligarPapelAdiante`), então o valor que chega aqui é o da
+    // contratação. Se um dia voltar a ser reescrito, a janela mentiria de novo.
+    const cobertura = inicioDaCobertura(CONTRATOU, CONTRATOU);
+    expect(cobertura).toBeLessThan(Date.parse(RELIGOU));
+    const horas = (Date.parse(RELIGOU) - cobertura!) / 3_600_000;
+    expect(horas).toBeGreaterThan(300); // duas semanas, não duas horas
+  });
+
+  it("lixo em qualquer um dos dois não vira NaN na tela", () => {
+    expect(inicioDaCobertura("nada disso", CONTRATOU)).toBe(Date.parse(CONTRATOU));
+    expect(inicioDaCobertura("nada disso", "nem isso")).toBeNull();
+    expect(inicioDaCobertura(null, null)).toBeNull();
+  });
+
+  it("sem carimbo nenhum a tela não afirma janela — `null`, nunca 0", () => {
+    // Zero seria 1970: "números cobrem 490.000 horas".
+    expect(inicioDaCobertura(null, null)).toBeNull();
+    expect(desempenhoDaInstancia([], inicioDaCobertura(null, null)).horasRodando).toBeNull();
   });
 });
