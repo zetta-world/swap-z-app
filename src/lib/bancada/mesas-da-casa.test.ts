@@ -8,7 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   mesasElegiveis, montarCartao, mereceCartao, custoIdaEVoltaDaMesa, RESSALVAS,
-  DECIDIDOS_PARA_SUSTENTAR, mesaPodeRodar, ressalvasComuns, ressalvasSoDeste, ordenarVitrine,
+  DECIDIDOS_PARA_SUSTENTAR, mesaPodeRodar, ressalvasComuns, ressalvasSoDeste, ordenarVitrine, diasSemDecidir, DIAS_ATE_PARADA,
   type MedicaoDaMesa, type CartaoDaMesa,
 } from "@/lib/bancada/mesas-da-casa";
 import { DESKS, deskFor } from "@/lib/zion/desks";
@@ -365,5 +365,52 @@ describe("a vitrine ordena, mas nunca esconde uma mesa sem dizer que ela existe"
 
   it("vitrine vazia não explode nem inventa mesa", () => {
     expect(ordenarVitrine([])).toEqual({ verdes: [], oResto: [], quantasNegativas: 0, quantasSemAmostra: 0 });
+  });
+});
+
+/**
+ * ⚠️⚠️ O CARIMBO DE VALIDADE — achado medindo a coorte, e é consequência de um
+ * corte MEU (07/09).
+ *
+ * Ao reduzir o card a dois números eu tirei junto a janela de medição. A FREYJA
+ * estampa `+4,34%` sobre 335 decididas e **não decide nada desde 31/08**: o
+ * investidor lia dois números corretos como se fossem correntes.
+ *
+ * A data não é um terceiro número de desempenho — é o que diz se os outros dois
+ * valem hoje. Mesma regra do card do agente: *"idade errada declarada é pior que
+ * idade nenhuma"*, e aqui era idade nenhuma.
+ */
+describe("uma mesa parada tem de dizer desde quando", () => {
+  const D = 86_400_000;
+  const em = (dia: string) => Date.parse(`${dia}T23:59:59Z`);
+
+  it("conta os dias desde a última decidida", () => {
+    expect(diasSemDecidir(medicao({ ultimoDia: "2026-08-31" }), em("2026-09-07"))).toBe(7);
+  });
+
+  it("decidiu hoje: zero dias", () => {
+    expect(diasSemDecidir(medicao({ ultimoDia: "2026-09-07" }), em("2026-09-07"))).toBe(0);
+  });
+
+  /** ⚠️ Nunca negativo: um relógio adiantado diria "decidiu daqui a −1 dia". */
+  it("relógio adiantado não produz dia negativo", () => {
+    expect(diasSemDecidir(medicao({ ultimoDia: "2026-09-09" }), em("2026-09-07"))).toBe(0);
+  });
+
+  it("sem medição, `null` — e `null` não é zero", () => {
+    // Zero diria "decidiu hoje" sobre uma mesa que nunca decidiu nada.
+    expect(diasSemDecidir(null, Date.now())).toBeNull();
+    expect(diasSemDecidir(medicao({ ultimoDia: "" }), Date.now())).toBeNull();
+  });
+
+  /**
+   * ⚠️ TRÊS DIAS porque as mesas de swing têm horizonte de 48h: 72h sem
+   * NENHUMA decisão não é silêncio normal. Menos que isso acusaria fim de
+   * semana.
+   */
+  it("o limiar é três dias, e é fixado — não derivado de si mesmo", () => {
+    expect(DIAS_ATE_PARADA).toBe(3);
+    expect(diasSemDecidir(medicao({ ultimoDia: "2026-09-05" }), em("2026-09-07"))).toBeLessThan(DIAS_ATE_PARADA);
+    expect(diasSemDecidir(medicao({ ultimoDia: "2026-09-04" }), em("2026-09-07"))).toBeGreaterThanOrEqual(DIAS_ATE_PARADA);
   });
 });

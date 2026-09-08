@@ -1653,6 +1653,8 @@ const en = {
     mesasSoAsQueBancamos: "We measured {n} desks and list {ok} here — only the ones that pay AND have enough operations to hold a verdict. The other {fora} did not clear our bar, so we don't offer them.",
     mesasRegistroCompleto: "The full record — what worked, what didn't, what we killed and what is still alive — goes out in the community.",
     mesasIrAComunidade: "See the record in the community",
+    mesasMedidoAte:    "measured through {dia}",
+    mesasParada:       "⚠️ nothing decided since {dia} — this desk has been quiet, and the two numbers above stopped moving then",
     // ── OS AGENTES DO INVESTIDOR — o número DELE, do zero ────────────
     agTitulo:          "Your agents",
     agSub:             "Agents you hired run on your account, on your symbols. Everything below is measured from the moment you hired them — none of it is our desk's record.",
@@ -3568,6 +3570,8 @@ const pt: Schema = {
     mesasSoAsQueBancamos: "Medimos {n} mesas e listamos {ok} aqui — só as que pagam E têm operações suficientes para sustentar veredito. As outras {fora} não passaram no nosso corte, então não oferecemos.",
     mesasRegistroCompleto: "O registro completo — o que deu bom, o que deu ruim, o que matamos e o que segue vivo — sai na comunidade.",
     mesasIrAComunidade: "Ver o registro na comunidade",
+    mesasMedidoAte:    "medido até {dia}",
+    mesasParada:       "⚠️ nada decidido desde {dia} — esta mesa está parada, e os dois números acima congelaram aí",
     // ── OS AGENTES DO INVESTIDOR — o número DELE, do zero ────────────
     agTitulo:          "Seus agentes",
     agSub:             "O agente que você contrata roda na sua conta, nos seus símbolos. Tudo aqui embaixo é medido a partir do instante em que você o contratou — nada disso é o placar da nossa mesa.",
@@ -5470,6 +5474,8 @@ const es: Schema = {
     mesasSoAsQueBancamos: "Medimos {n} mesas y listamos {ok} aquí — solo las que pagan Y tienen operaciones suficientes para sostener veredicto. Las otras {fora} no pasaron nuestro corte, así que no las ofrecemos.",
     mesasRegistroCompleto: "El registro completo — lo que funcionó, lo que no, lo que matamos y lo que sigue vivo — sale en la comunidad.",
     mesasIrAComunidade: "Ver el registro en la comunidad",
+    mesasMedidoAte:    "medido hasta {dia}",
+    mesasParada:       "⚠️ nada decidido desde {dia} — esta mesa está parada, y los dos números de arriba se congelaron ahí",
     // ── OS AGENTES DO INVESTIDOR — o número DELE, do zero ────────────
     agTitulo:          "Tus agentes",
     agSub:             "El agente que contratas corre en tu cuenta, sobre tus símbolos. Todo lo de abajo se mide desde el instante en que lo contrataste — nada de esto es el marcador de nuestra mesa.",
@@ -7372,6 +7378,8 @@ const zh: Schema = {
     mesasSoAsQueBancamos: "我们测算了 {n} 个策略台，这里只列出 {ok} 个 —— 只有既盈利、样本又足以支撑结论的才会出现。另外 {fora} 个没有通过我们的标准，所以不对外提供。",
     mesasRegistroCompleto: "完整记录 —— 哪些有效、哪些无效、我们停掉了哪些、哪些还在跑 —— 会在社区公布。",
     mesasIrAComunidade: "到社区查看完整记录",
+    mesasMedidoAte:    "数据截至 {dia}",
+    mesasParada:       "⚠️ 自 {dia} 起没有任何已决出的交易 —— 这个策略台已经静止，上面两个数字就停在那一天",
     // ── OS AGENTES DO INVESTIDOR — o número DELE, do zero ────────────
     agTitulo:          "你的智能体",
     agSub:             "你雇用的智能体在你的账户里、按你选的品种运行。下面的所有数字都从你雇用它的那一刻开始计算 —— 没有一项来自我们自营策略台的战绩。",
