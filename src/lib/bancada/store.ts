@@ -332,7 +332,18 @@ export async function mesasLigadasParaOCron(db: SupabaseClient, limite = 200): P
     .order("criada_em", { ascending: true })
     .limit(Math.max(1, Math.min(1000, Math.floor(limite))));
   if (error || !data) return [];
-  const linhas = data as unknown as Array<{
+  return paraMesasDoCron(data);
+}
+
+/**
+ * ⚠️ O MESMO MAPEAMENTO PARA AS DUAS LEITURAS DO CRON. Duas cópias divergiriam
+ * no dia em que uma coluna nova entrasse só numa delas — e a diferença
+ * apareceria como uma mesa que tica e não fecha, ou o contrário.
+ *
+ * ⚠️ `donoDeLinhaDoBanco` porque a carteira vem da LINHA, nunca de requisição.
+ */
+function paraMesasDoCron(data: unknown): MesaDoCron[] {
+  const linhas = data as Array<{
     id: string; dono: string; params: Record<string, unknown> | null;
     simbolos: string[] | null; intervalo: string | null; criada_em: string;
     mesa: string | null; papel_desde: string | null; praca: string; papel: string;
@@ -347,6 +358,46 @@ export async function mesasLigadasParaOCron(db: SupabaseClient, limite = 200): P
       praca: r.praca as Praca, papel: r.papel as Papel,
     }];
   });
+}
+
+/**
+ * ⚠️⚠️ AS MESAS DAS POSIÇÕES QUE AINDA ESTÃO ABERTAS — LIGADAS OU NÃO (12/09).
+ *
+ * ACHADO DA AUDITORIA, e é o pior tipo: perda de dado em silêncio.
+ *
+ * O fechamento do tique procurava a mesa dentro de `mesasLigadasParaOCron`,
+ * que filtra `papel_adiante = true` e `arquivada_em is null`. Consequência:
+ * PAUSAR, ARQUIVAR ou DISPENSAR congelava a posição ABERTA para sempre. Pausar
+ * ainda era recuperável (religou, ela fecha retroativamente); arquivar e
+ * dispensar são definitivos — e `agentes/route.ts` até comenta *"ARQUIVA, NÃO
+ * APAGA: as posições dela apontam para esta linha"*. O vínculo foi visto; o
+ * que passou é que uma posição ABERTA nunca vira histórico.
+ *
+ * ⚠️ E as órfãs se acumulavam na CABEÇA da fila de `posicoesAbertasParaOCron`
+ * (ordenada por `aberta_em` crescente, teto 500). Passando de 500 órfãs,
+ * nenhuma posição viva seria lida: a bancada abriria e nunca mais fecharia
+ * nada, para todo mundo.
+ *
+ * ⚠️ QUEM ABRIU TEM DE FECHAR. A posição nasceu de uma regra e só o MERCADO
+ * pode resolvê-la — desligar a mesa é dizer "não abra mais", nunca "esqueça o
+ * que já está no ar". O bracket viaja na própria posição desde a 0043, então
+ * fechar não precisa que a regra ainda esteja ligada: precisa só da praça, do
+ * papel e do intervalo desta linha.
+ *
+ * ⚠️ SEM DONO, como as irmãs `paraOCron` — e o nome carrega o aviso. Numa rota
+ * de cliente isto seria vazamento.
+ */
+export async function mesasDasPosicoesParaOCron(
+  db: SupabaseClient, ids: ReadonlyArray<string>,
+): Promise<MesaDoCron[]> {
+  if (ids.length === 0) return [];
+  // ⚠️ Sem `.eq("papel_adiante")` e sem `.is("arquivada_em", null)` DE PROPÓSITO:
+  // é exatamente o filtro que congelava a posição órfã.
+  const { data, error } = await db.from("bancada_estrategia")
+    .select("id, dono, params, simbolos, intervalo, criada_em, mesa, papel_desde, praca, papel")
+    .in("id", ids.slice(0, 1000));
+  if (error || !data) return [];
+  return paraMesasDoCron(data);
 }
 
 // ── RODADAS ─────────────────────────────────────────────────────────

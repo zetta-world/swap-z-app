@@ -21,7 +21,7 @@ import {
   salvarEstrategia, listarEstrategias, arquivarEstrategia,
   contarEstrategiasVivas, contarMesasVivas, ligarPapelAdiante,
 } from "@/lib/bancada/store";
-import { lerEstrategia, oPortaoDoPedagio } from "@/lib/bancada/vocabulario";
+import { lerEstrategia, oPortaoDoPedagio, lerSimbolos } from "@/lib/bancada/vocabulario";
 import { BANCADA_COTAS } from "@/lib/tier/types";
 import { duracaoDoIntervaloMs } from "@/lib/mercado/velas";
 
@@ -90,7 +90,13 @@ export async function POST(req: NextRequest) {
       `seu plano guarda até ${teto} estratégia(s). Arquive uma para salvar outra.`, upgradeUrl: "/pricing" }, 429);
   }
 
-  const simbolos = Array.isArray(o.simbolos) ? o.simbolos.filter((s): s is string => typeof s === "string") : [];
+  /**
+   * ⚠️⚠️ O TETO VALE PARA ESTA PORTA TAMBÉM (12/09). Ela aceitava um array de
+   * qualquer tamanho, sem deduplicar e sem validar formato, enquanto a rota
+   * irmã `/agentes` já limitava e deduplicava — e as duas gravam na MESMA
+   * tabela e alimentam o MESMO laço do cron. Ver a nota em `lerSimbolos`.
+   */
+  const simbolos = lerSimbolos(o.simbolos, BANCADA_COTAS[c.tier].simbolosPorTeste);
   const intervalo = typeof o.intervalo === "string" && duracaoDoIntervaloMs(o.intervalo) != null ? o.intervalo : "1h";
   const nome = typeof o.nome === "string" && o.nome.trim() ? o.nome.trim() : "sem nome";
 

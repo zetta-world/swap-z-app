@@ -27,6 +27,7 @@ import {
   contarEstrategiasVivas, abrirRodada, fecharRodada, listarRodadas, rodada,
   consumoDaJanela, gravarResultado, resultado,
   abrirPosicao, posicoesAbertas, posicoesAbertasParaOCron, fecharPosicao,
+  mesasLigadasParaOCron, mesasDasPosicoesParaOCron,
   gravarOperacoes, operacoesDaRodada,
   JANELA_DA_COTA_MS,
 } from "@/lib/bancada/store";
@@ -72,6 +73,7 @@ function consulta(
     gte(col: string, val: unknown) { filtros.push((r) => comparavel(r[col]) >= comparavel(val)); return api; },
     lte(col: string, val: unknown) { filtros.push((r) => comparavel(r[col]) <= comparavel(val)); return api; },
     is(col: string, val: unknown) { filtros.push((r) => (r[col] ?? null) === val); return api; },
+    in(col: string, vals: unknown[]) { filtros.push((r) => vals.includes(r[col])); return api; },
     order(col: string, o?: { ascending?: boolean }) { ordem = { col, asc: o?.ascending !== false }; return api; },
     limit(n: number) { limite = n; return api; },
     maybeSingle() { um = true; return api; },
@@ -456,5 +458,59 @@ describe("⚠️ as operações da rodada: mesmo isolamento das outras tabelas",
     return gravarOperacoes(A, db, "r1", [{ ...op, playbook: null }])
       .then(() => operacoesDaRodada(A, db, "r1"))
       .then((ops) => expect(ops[0].playbook).toBeNull());
+  });
+});
+
+/**
+ * ⚠️⚠️ QUEM ABRIU TEM DE FECHAR — MESA LIGADA OU NÃO (12/09).
+ *
+ * ACHADO DA AUDITORIA. O fechamento do tique procurava a mesa dentro de
+ * `mesasLigadasParaOCron`, que filtra `papel_adiante = true` e não arquivada.
+ * Pausar, arquivar ou DISPENSAR congelava a posição ABERTA para sempre — e as
+ * órfãs iam se empilhando na cabeça da fila de `posicoesAbertasParaOCron`
+ * (ordenada por `aberta_em`, teto 500) até nenhuma posição viva ser lida.
+ *
+ * Esta trava existe para que a "limpeza" de acrescentar o filtro de volta
+ * quebre aqui, e não na conta do cliente.
+ */
+describe("mesasDasPosicoesParaOCron — a leitura que NÃO filtra por ligada", () => {
+  const LINHAS = [
+    { id: "viva",      dono: "0xA", papel_adiante: true,  arquivada_em: null,
+      params: {}, simbolos: ["BTC"], intervalo: "1h", criada_em: "2026-09-01", mesa: null,
+      papel_desde: "2026-09-01", praca: "spot_gate", papel: "taker" },
+    { id: "pausada",   dono: "0xA", papel_adiante: false, arquivada_em: null,
+      params: {}, simbolos: ["ETH"], intervalo: "1h", criada_em: "2026-09-02", mesa: null,
+      papel_desde: "2026-09-02", praca: "spot_gate", papel: "taker" },
+    { id: "arquivada", dono: "0xB", papel_adiante: true,  arquivada_em: "2026-09-03",
+      params: {}, simbolos: ["SOL"], intervalo: "1h", criada_em: "2026-09-03", mesa: "strat_mech",
+      papel_desde: "2026-09-03", praca: "dex", papel: "taker" },
+  ];
+
+  it("a leitura das LIGADAS segue estrita — e é isso que impede abrir de novo", () => {
+    const { db } = bancoFalso({ bancada_estrategia: LINHAS });
+    return mesasLigadasParaOCron(db as unknown as SupabaseClient).then((ms) => {
+      expect(ms.map((m) => m.id)).toEqual(["viva"]);
+    });
+  });
+
+  it("⚠️ a leitura das POSIÇÕES traz pausada e arquivada — senão a posição nunca fecha", () => {
+    const { db } = bancoFalso({ bancada_estrategia: LINHAS });
+    return mesasDasPosicoesParaOCron(db as unknown as SupabaseClient, ["viva", "pausada", "arquivada"]).then((ms) => {
+      expect(ms.map((m) => m.id).sort()).toEqual(["arquivada", "pausada", "viva"]);
+    });
+  });
+
+  it("traz a praça e o papel DA LINHA — é com eles que o fechamento cobra a taxa", () => {
+    // Uma taxa única aplicada a todo mundo já aposentou uma mesa por engano.
+    const { db } = bancoFalso({ bancada_estrategia: LINHAS });
+    return mesasDasPosicoesParaOCron(db as unknown as SupabaseClient, ["arquivada"]).then((ms) => {
+      expect(ms[0].praca).toBe("dex");
+      expect(ms[0].papel).toBe("taker");
+    });
+  });
+
+  it("lista vazia não vira varredura da tabela inteira", () => {
+    const { db } = bancoFalso({ bancada_estrategia: LINHAS });
+    return mesasDasPosicoesParaOCron(db as unknown as SupabaseClient, []).then((ms) => expect(ms).toEqual([]));
   });
 });

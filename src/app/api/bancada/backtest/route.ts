@@ -18,7 +18,7 @@ import { donoDaSessao } from "@/lib/bancada/dono";
 import {
   abrirRodada, fecharRodada, gravarResultado, consumoDaJanela, gravarOperacoes,
 } from "@/lib/bancada/store";
-import { lerEstrategia, oPortaoDoPedagio } from "@/lib/bancada/vocabulario";
+import { lerEstrategia, oPortaoDoPedagio, taxaDaBancadaPct } from "@/lib/bancada/vocabulario";
 import { decidir, type PedidoDeRodada } from "@/lib/bancada/cotas";
 import { rodar } from "@/lib/bancada/motor";
 import { resumir, julgar } from "@/lib/bancada/veredito";
@@ -26,7 +26,7 @@ import { velasDoIntervalo } from "@/lib/mercado/store";
 import { ultimaVelaFechada } from "@/lib/mercado/velas";
 import type { Operacao } from "@/lib/bancada/motor";
 import { rodarMesa, agregar, MAX_BARRAS_AVALIADAS } from "@/lib/bancada/mesa-real";
-import { mesaPodeRodar, custoIdaEVoltaDaMesa } from "@/lib/bancada/mesas-da-casa";
+import { mesaPodeRodar } from "@/lib/bancada/mesas-da-casa";
 import { deskFor } from "@/lib/zion/desks";
 import { identidadeDaRodada, janelaEmDias } from "@/lib/bancada/identidade";
 
@@ -255,7 +255,31 @@ export async function POST(req: NextRequest) {
       }
       if (h1.velas.length < 2) continue;
 
-      const custo = 2 * (estrategia.praca === "dex" ? 0.30 : estrategia.papel === "maker" ? 0.015 : 0.20);
+      /**
+       * ⚠️⚠️ A TAXA VEM DA TABELA DA CASA, NUNCA DE UM TERNÁRIO AQUI (12/09).
+       *
+       * Esta linha tinha a PRÓPRIA tabela, e ela colapsava a praça em "dex ou
+       * não-dex" antes de olhar o papel. O 0,015 é a taxa de maker de FUTUROS e
+       * estava sendo aplicada a qualquer maker não-DEX:
+       *
+       *     spot_gate + maker    → cobrava 0,03% ida-e-volta · real 0,40%  (13× barato)
+       *     futuros_gate + taker → cobrava 0,40% · real 0,10%              (4× caro)
+       *
+       * E é o número com que o investidor decide contratar o agente: uma mesa
+       * que a taxa real aposenta aparecia lucrativa. É a mesma cicatriz que
+       * aposentou o Maker de Faixa por engano — taxa única aplicada a todo
+       * mundo —, desta vez virada para o cliente pagante.
+       *
+       * ⚠️ `taxaDaBancadaPct` é a MESMA função que `resumir()` usa para montar
+       * o `taxaPct` desta rodada. Duas tabelas para o mesmo pedágio divergem em
+       * silêncio, e divergiram.
+       *
+       * ⚠️ E a praça segue vindo do CLIENTE de propósito — ver a nota lá em
+       * cima: *"a mesma regra paga na DEX como na CEX?"* é a pergunta que a
+       * mesa existe para responder. Trocar por `custoIdaEVoltaDaMesa(venue)`
+       * consertaria a taxa e mataria o recurso.
+       */
+      const custo = 2 * taxaDaBancadaPct(estrategia.praca, estrategia.papel);
       const r = rodarMesa({ h1: h1.velas, h4: h4.velas, d1: d1.velas, w1 }, simbolo, custo);
       if (r.cortadaPeloTeto) cortadaPeloTeto = true;
       operacoes.push(...r.operacoes);
