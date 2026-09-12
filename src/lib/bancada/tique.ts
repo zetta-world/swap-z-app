@@ -15,7 +15,7 @@ import { getTierForWallet } from "@/lib/tier/check";
 import { velasDoIntervalo } from "@/lib/mercado/store";
 import { lerEstrategia } from "@/lib/bancada/vocabulario";
 import {
-  mesasLigadasParaOCron, posicoesAbertasParaOCron, abrirPosicao, fecharPosicao,
+  mesasLigadasParaOCron, mesasDasPosicoesParaOCron, posicoesAbertasParaOCron, abrirPosicao, fecharPosicao,
   gravarUltimoTique, marcarTiqueAdiado, type MesaDoCron,
 } from "@/lib/bancada/store";
 import { motivoFechado, type VistoNoSimbolo } from "@/lib/bancada/ultimo-tique";
@@ -86,13 +86,48 @@ export async function tiqueDoPapelAdiante(
   if (ligadas.length === 0) return resumo;
 
   const abertas = await posicoesAbertasParaOCron(db);
-  const abertasPorEstrategia = new Map<string, typeof abertas[number]>();
-  for (const p of abertas) abertasPorEstrategia.set(p.estrategiaId, p);
+
+  /**
+   * ⚠️⚠️ QUEM ABRIU TEM DE FECHAR, MESA LIGADA OU NÃO (12/09).
+   *
+   * O fechamento procurava a mesa dentro de `ligadas` e pulava a posição quando
+   * não achava. Como `ligadas` só traz `papel_adiante = true` e não arquivada,
+   * PAUSAR, ARQUIVAR ou DISPENSAR congelava a posição ABERTA para sempre — e as
+   * órfãs iam se acumulando na cabeça da fila de `posicoesAbertasParaOCron`
+   * (ordenada por `aberta_em`, teto 500) até nenhuma posição viva ser lida.
+   *
+   * Desligar a mesa diz "não abra mais". Nunca "esqueça o que já está no ar".
+   */
+  const mesasDasAbertas = await mesasDasPosicoesParaOCron(db, [...new Set(abertas.map((p) => p.estrategiaId))]);
+  const mesaPorId = new Map(mesasDasAbertas.map((m) => [m.id, m]));
+
+  /**
+   * ⚠️⚠️ OS SÍMBOLOS ABERTOS DE CADA MESA, e não UMA posição por mesa (12/09).
+   *
+   * Era um `Map<estrategiaId, posicao>` montado com `set` em laço: a última
+   * sobrescrevia as anteriores. Com três posições abertas na mesma mesa, o
+   * `delete` ao fechar UMA apagava a marca das outras duas — a mesa voltava a
+   * parecer livre e reabria por cima do que já estava no ar.
+   */
+  const abertasPorEstrategia = new Map<string, Set<string>>();
+  const ultimaVelaPorEstrategia = new Map<string, number>();
+  for (const p of abertas) {
+    const s = abertasPorEstrategia.get(p.estrategiaId) ?? new Set<string>();
+    s.add(p.simbolo); abertasPorEstrategia.set(p.estrategiaId, s);
+    // ⚠️ A MAIOR vela, não a última lida: é ela que impede reavaliar o mesmo sinal.
+    const v = p.velaEm ?? null;
+    if (v != null) ultimaVelaPorEstrategia.set(p.estrategiaId, Math.max(ultimaVelaPorEstrategia.get(p.estrategiaId) ?? 0, v));
+  }
 
   // ── 1. Fechar o que já venceu ────────────────────────────────────
   for (const p of abertas) {
-    const mesa = ligadas.find((m) => m.id === p.estrategiaId);
-    if (!mesa) continue;
+    const mesa = mesaPorId.get(p.estrategiaId);
+    if (!mesa) {
+      // ⚠️ A LINHA DA ESTRATÉGIA SUMIU e a posição ficou. Não dá para fechar
+      // sem praça/papel, e ficar calado foi o defeito anterior.
+      resumo.problemas.push(`${p.id}: posição aberta sem linha de estratégia (${p.estrategiaId})`);
+      continue;
+    }
 
     /**
      * ⚠️⚠️ O BRACKET VEM DA POSIÇÃO, NÃO DA REGRA (0043).
@@ -127,7 +162,8 @@ export async function tiqueDoPapelAdiante(
       db, p.simbolo, intervaloDaLeitura,
       // ⚠️ A janela começa na ABERTURA da posição: velas anteriores a ela não
       // podem fechá-la, e trazê-las só gastaria leitura.
-      abertaEmMs > 0 ? abertaEmMs : agoraMs - VELAS_POR_MESA * 3_600_000,
+      // ⚠️ Mesma correção da janela: o recuo segue o intervalo da leitura.
+      abertaEmMs > 0 ? abertaEmMs : agoraMs - VELAS_POR_MESA * (duracaoDoIntervaloMs(intervaloDaLeitura) ?? 3_600_000),
       agoraMs, agoraMs,
     );
     const dir = p.lado === "long" ? 1 : -1;
@@ -142,7 +178,8 @@ export async function tiqueDoPapelAdiante(
     if (!f) continue;
 
     const r = await fecharPosicao(p.dono, db, p.id, f.status, f.saida, f.resultadoPct);
-    if (r.ok) { resumo.fechadas++; abertasPorEstrategia.delete(p.estrategiaId); }
+    // ⚠️ TIRA O SÍMBOLO, não a mesa inteira: as outras posições dela seguem no ar.
+    if (r.ok) { resumo.fechadas++; abertasPorEstrategia.get(p.estrategiaId)?.delete(p.simbolo); }
     else resumo.problemas.push(`fechar ${p.id}: ${r.porque}`);
   }
 
@@ -179,12 +216,14 @@ export async function tiqueDoPapelAdiante(
      * abrir posições com um alvo que a mesa nunca declarou.
      */
     const comoMesa: Mesa[] = doDono.flatMap((m): Mesa[] => {
-      const aberta = abertasPorEstrategia.get(m.id);
+      const abertasDela = abertasPorEstrategia.get(m.id);
       const base = {
         id: m.id, dono, simbolos: m.simbolos,
         intervalo: m.mesa ? INTERVALO_DO_AGENTE : m.intervalo,
-        ultimaAberturaMs: aberta?.velaEm ?? null,
-        temPosicaoAberta: Boolean(aberta),
+        ultimaAberturaMs: ultimaVelaPorEstrategia.get(m.id) ?? null,
+        // ⚠️ `size > 0`, não `Boolean(aberta)`: o conjunto pode existir e estar
+        // vazio depois de a última posição fechar nesta mesma passagem.
+        temPosicaoAberta: (abertasDela?.size ?? 0) > 0,
         criadaEm: m.criadaEm,
       };
       if (m.mesa) return [{ ...base, mesa: m.mesa, params: null }];
@@ -236,7 +275,19 @@ export async function tiqueDoPapelAdiante(
     // ── 3. Abrir o que o sinal mandar ─────────────────────────────
     for (const mesa of daVez) {
       if (processadas >= MESAS_POR_TICK) break;
-      processadas++;
+      /**
+       * ⚠️⚠️ O TETO CONTA TRABALHO, NÃO MESAS (12/09).
+       *
+       * `processadas++` por MESA fazia uma mesa com 10.000 símbolos custar o
+       * mesmo que uma com um só. O teto existe para limitar o tempo da função,
+       * e o tempo é gasto no laço de dentro: uma leitura de vela por símbolo.
+       * Com o teto contando mesas, uma única mesa gorda consumia a invocação
+       * inteira e nenhum outro cliente tickava.
+       *
+       * O teto de símbolos (`lerSimbolos`) fecha a porta de entrada; este
+       * fecha a que já está dentro — as linhas gravadas antes da correção.
+       */
+      processadas += Math.max(1, mesa.simbolos.length);
       resumo.mesas++;
 
       /**
@@ -245,17 +296,39 @@ export async function tiqueDoPapelAdiante(
        * este registro, "verificou e ficou de fora", "ainda não verificou" e
        * "parou de verificar" desenham exatamente a mesma tela.
        */
-      const visto: Record<string, VistoNoSimbolo> = {};
+      /**
+       * ⚠️ `Object.create(null)`, não `{}`: a chave vem do array de símbolos que
+       * o cliente gravou, e um símbolo chamado `__proto__` escreveria na chave
+       * especial do objeto em vez de numa propriedade comum — o `ultimo_tique`
+       * da mesa sairia vazio e a tela diria "nunca foi verificada" sobre uma
+       * mesa verificada a cada 30 minutos.
+       */
+      const visto: Record<string, VistoNoSimbolo> = Object.create(null);
+
+      /**
+       * ⚠️⚠️ A GUARDA DE "UMA POSIÇÃO POR MESA" TEM DE ANDAR DENTRO DO LAÇO (12/09).
+       *
+       * `mesa.temPosicaoAberta` era calculado UMA vez, antes do laço, e o
+       * sucesso de `abrirPosicao` nunca voltava para ele. Uma mesa zerada com
+       * cinco símbolos que sinalizassem no mesmo tique abria CINCO posições de
+       * uma vez — violando a regra que a própria mesa declara, e inflando a
+       * amostra do cliente com cinco desfechos correlacionados do mesmo
+       * movimento.
+       */
+      let temAberta = mesa.temPosicaoAberta;
 
       for (const simbolo of mesa.simbolos) {
-        const p = mesa.mesa
-          ? await decidirDoAgente(db, mesa, simbolo, agoraMs, resumo)
-          : await decidirDaPropria(db, mesa as MesaPropria, simbolo, agoraMs);
+        const emMesa: Mesa = { ...mesa, temPosicaoAberta: temAberta };
+        const p = emMesa.mesa
+          ? await decidirDoAgente(db, emMesa, simbolo, agoraMs, resumo)
+          : await decidirDaPropria(db, emMesa as MesaPropria, simbolo, agoraMs);
         visto[simbolo] = p.visto;
         if (!p.abertura) continue;
 
         const r = await abrirPosicao(mesa.dono, db, { ...p.abertura, estrategiaId: mesa.id, simbolo });
-        if (r.ok) resumo.abertas++;
+        // ⚠️ SÓ O SUCESSO fecha a guarda. Uma escrita que falhou não abriu nada,
+        // e tratá-la como abertura deixaria a mesa muda até o tique seguinte.
+        if (r.ok) { resumo.abertas++; temAberta = true; }
         else resumo.problemas.push(`abrir ${mesa.id}/${simbolo}: ${r.porque}`);
       }
 
@@ -303,8 +376,28 @@ const TAMANHO_DE_PAPEL_USD = 1000;
 async function decidirDaPropria(
   db: SupabaseClient, mesa: MesaPropria, simbolo: string, agoraMs: number,
 ): Promise<Passagem> {
+  /**
+   * ⚠️⚠️ A JANELA SEGUE O INTERVALO, NÃO O RELÓGIO (12/09).
+   *
+   * Era `VELAS_POR_MESA * 3_600_000` — 420 HORAS fixas, qualquer que fosse o
+   * intervalo da mesa. O que chegava:
+   *
+   *     1h → 420 velas ✓      4h → 105 velas      1d → 17 velas
+   *
+   * O vocabulário aceita período até `nMax = 400` e `sinais()` exige um
+   * CRUZAMENTO, então uma média de 20 dias sobre 17 velas devolve `null` em
+   * todo índice e a marca sai toda `false`. E "1d" é o PADRÃO da tela
+   * (`Bancada.tsx`, `useState("1d")`): a configuração que o cliente vê primeiro
+   * NUNCA abria posição, e a tela dizia "sem setup" — que ele lê como "o
+   * mercado não deu oportunidade", quando queria dizer "nossa janela é curta
+   * demais para calcular o seu indicador".
+   *
+   * ⚠️ `VELAS_POR_MESA` são VELAS, e agora são mesmo: multiplicar pela duração
+   * do intervalo é o que faz o nome da constante virar verdade.
+   */
+  const durDoIntervalo = duracaoDoIntervaloMs(mesa.intervalo) ?? 3_600_000;
   const leitura = await velasDoIntervalo(
-    db, simbolo, mesa.intervalo, agoraMs - VELAS_POR_MESA * 3_600_000, agoraMs, agoraMs,
+    db, simbolo, mesa.intervalo, agoraMs - VELAS_POR_MESA * durDoIntervalo, agoraMs, agoraMs,
   );
   /**
    * ⚠️⚠️ O CARIMBO DA VELA VIAJA JUNTO DO PREÇO. O cron pode passar às 14:30 e

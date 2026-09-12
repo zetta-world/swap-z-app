@@ -36,6 +36,7 @@ import { deskFor } from "@/lib/zion/desks";
 import { INTERVALO_DO_AGENTE } from "@/lib/bancada/agente";
 import { lerUltimoTique, saudeDoTique, distanciaAte } from "@/lib/bancada/ultimo-tique";
 import { CADENCIA_MS } from "@/lib/bancada/papel";
+import { lerSimbolos } from "@/lib/bancada/vocabulario";
 import { BANCADA_COTAS } from "@/lib/tier/types";
 import { getFlywheelGates } from "@/lib/admin/gates";
 
@@ -215,9 +216,9 @@ export async function POST(req: NextRequest) {
       "esta mesa aparece na vitrine mas ainda não roda aqui: a regra dela não é a que esta bancada reproduz." }, 400);
   }
 
-  const simbolos = Array.isArray(o.simbolos)
-    ? [...new Set(o.simbolos.filter((s): s is string => typeof s === "string" && s.length > 0))].slice(0, MAX_SIMBOLOS)
-    : [];
+  // ⚠️ A MESMA função da rota irmã, desde 12/09: duas leituras do mesmo campo
+  // divergiram, e a que não tinha teto deixava um cliente parar o cron de todos.
+  const simbolos = lerSimbolos(o.simbolos, MAX_SIMBOLOS);
   // ⚠️ Instância sem símbolo não tem o que tickar: ela nasceria ligada e muda,
   // e "ligada sem nunca abrir" é indistinguível de "quebrada".
   if (simbolos.length === 0) return json({ ok: false, error: "sem_simbolos", porque: "escolha ao menos um símbolo." }, 400);

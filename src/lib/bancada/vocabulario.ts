@@ -168,6 +168,42 @@ export function taxaDaBancadaPct(praca: Praca, papel: Papel): number {
   return taxaPorPerna(praca as Modalidade, papel as Execucao);
 }
 
+/**
+ * ⚠️⚠️ O TETO DE SÍMBOLOS, NUM LUGAR SÓ — e ele existe para o CRON (12/09).
+ *
+ * ACHADO DA AUDITORIA, e a prova estava na assimetria entre duas rotas irmãs:
+ * `/api/bancada/agentes` limitava em 5 e deduplicava; `/api/bancada/estrategias`
+ * não fazia nem uma coisa nem outra. As duas gravam na MESMA tabela e alimentam
+ * o MESMO laço do cron (`for (const simbolo of mesa.simbolos)`), cujo teto de
+ * trabalho conta MESAS, não símbolos.
+ *
+ * Um cliente `trader` (3 mesas) gravava 10.000 símbolos em cada uma e ligava:
+ * 30.000 leituras sequenciais de vela numa única invocação, a função da Vercel
+ * estourando o tempo, e NENHUM outro cliente da plataforma tickando — nem
+ * abrindo, nem fechando posição. Um teto que mora só numa das duas portas não
+ * é um teto.
+ *
+ * ⚠️ O TETO É O DO PLANO (`simbolosPorTeste`, 3 a 10), porque é a régua de
+ * "quantos pares este cliente roda ao mesmo tempo" que o produto já tinha.
+ * Inventar um número novo aqui criaria uma terceira régua para a mesma coisa.
+ *
+ * ⚠️ E O FORMATO É FECHADO. O símbolo vira CHAVE do objeto `visto` no tique:
+ * `__proto__` escreveria na chave especial do objeto em vez de numa
+ * propriedade, e o registro do último tique sairia vazio.
+ */
+export const SIMBOLO_VALIDO = /^[A-Z0-9]{2,12}$/;
+
+export function lerSimbolos(v: unknown, teto: number): string[] {
+  if (!Array.isArray(v)) return [];
+  const limpos = v
+    .filter((s): s is string => typeof s === "string")
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => SIMBOLO_VALIDO.test(s));
+  // ⚠️ Deduplica ANTES de cortar: sem isso, ["BTC","BTC","BTC"] gastaria o teto
+  // inteiro num par só — e o laço do tique abriria a mesma posição três vezes.
+  return [...new Set(limpos)].slice(0, Math.max(1, Math.floor(teto)));
+}
+
 /** ⚠️ Só para a tela: as taxas que o cliente pode escolher, sem inventar número. */
 export const TAXAS_VISIVEIS: Record<Praca, Record<Papel, number>> = {
   spot_gate:    { ...TAXA_POR_PERNA.spot_gate },
