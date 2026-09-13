@@ -24,6 +24,9 @@ const mw = readFileSync("src/middleware.ts", "utf8");
 const semComentarios = (c: string) =>
   c.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
 const mwCodigo = semComentarios(mw);
+// ⚠️ Sem comentários: as notas deste arquivo CITAM as chaves, e uma trava que
+// casasse com a prosa passaria com o código errado.
+const reqCodigo = semComentarios(readFileSync("src/lib/admin/require.ts", "utf8"));
 
 describe("o middleware NÃO decide quem é admin", () => {
   /**
@@ -116,5 +119,51 @@ describe("requireAdmin continua aceitando as TRÊS origens", () => {
   /** Negar sem registrar perde o único sinal de que alguém tentou. */
   it("e registra a negativa como sinal de intrusão", () => {
     expect(req).toContain("admin_access_denied");
+  });
+
+  /**
+   * ⚠️⚠️ NENHUM CAMINHO DE NEGAÇÃO PODE SER MUDO (13/09).
+   *
+   * O dono disse "não consigo entrar no painel". `admin_access_denied` tinha
+   * ZERO ocorrências no banco desde sempre — o que provava que ninguém estava
+   * sendo recusado por falta de PERMISSÃO, e não dizia mais nada. Os outros
+   * dois `notFound()` desta função não registravam nada, e descobrir que ele
+   * parava por falta de SESSÃO levou meia dúzia de consultas ao banco.
+   *
+   * `requireAdmin` tem TRÊS saídas de negação. Esta trava exige que as três
+   * deixem rastro — a diferença entre "expirou a sessão", "o banco caiu" e
+   * "esta carteira não é admin" é a diferença entre três incidentes
+   * completamente diferentes.
+   */
+  it("⚠️ as TRÊS negações registram, não só a de permissão", () => {
+    expect(req).toContain("admin_sem_sessao");
+    expect(req).toContain("admin_sem_banco");
+    expect(req).toContain("admin_access_denied");
+
+    // Nenhum `notFound()` solto: todo `if` que nega passa por `logSecurity`.
+    const negacoesMudas = reqCodigo.match(/if \([^)]*\)\s*notFound\(\);/g) ?? [];
+    expect(negacoesMudas, `negação sem registro: ${negacoesMudas.join(" | ")}`).toEqual([]);
+  });
+
+  /**
+   * ⚠️ Sessão expirada é ROTINA (o cookie dura 30 dias e vence sozinho), não
+   * intrusão. Marcá-la como `high` mandaria Telegram toda vez e treinaria todo
+   * mundo a ignorar o alerta que importa.
+   */
+  it("⚠️ sessão ausente é sinal BAIXO — senão o alerta que importa vira ruído", () => {
+    expect(req).toMatch(/admin_sem_sessao[\s\S]{0,160}"low"/);
+    expect(req).toMatch(/admin_access_denied[\s\S]{0,160}"high"/);
+  });
+
+  /**
+   * ⚠️ O COMENTÁRIO DESCREVIA O BUG ANTIGO COMO COMPORTAMENTO ATUAL.
+   *
+   * A nota de `require.ts` seguiu dizendo *"o middleware pré-triagem com
+   * ADMIN_WALLETS"* por um mês depois de isso deixar de ser verdade — e é
+   * exatamente o portão que trancou o dono fora em 11/08. Quem leu daqui em
+   * 13/09 foi procurar o defeito no lugar errado.
+   */
+  it("⚠️ e a nota não descreve mais a pré-triagem que não existe", () => {
+    expect(req).not.toMatch(/middleware pre-screens with \(1\)/i);
   });
 });
