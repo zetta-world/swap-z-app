@@ -234,14 +234,59 @@ export function decidirFechamentoDaPosicao(
 }
 
 /**
- * ⚠️ O TETO DE TRABALHO DE UM TICK, global.
+ * ⚠️⚠️ O TETO DE TRABALHO DE UM TICK — E ELE CONTA LEITURAS, NÃO MESAS (13/09).
  *
  * O cron do `/api/zion/backtest` já faz muita coisa em 30 minutos, e uma mesa
- * que demora derruba o resto. Este número limita quantas mesas um tick
- * processa; as que sobram pegam o tick seguinte — ver `aVezDeQuem`, que é o que
- * de fato impede alguém de ficar para trás para sempre.
+ * que demora derruba o resto.
+ *
+ * ⚠️ ELE SE CHAMAVA `MESAS_POR_TICK` E CONTAVA MESAS, e isso era o defeito: uma
+ * mesa com 10 símbolos custava o mesmo que uma com um só, então o teto não
+ * limitava o tempo da função — limitava um número que não tinha relação com o
+ * tempo dela. Uma mesa gorda consumia a invocação inteira e ninguém mais
+ * tickava.
+ *
+ * ⚠️ E O TRABALHO É PESADO POR ESPÉCIE, porque elas custam coisas diferentes —
+ * é a mesma aritmética que já justificava `AGENTES_POR_TICK` logo abaixo:
+ * a estratégia própria pede 1 leitura por símbolo; a instância de agente pede
+ * 3 (1h, 4h, 1d) mais a agregação semanal e `computeIndicators`. Contar as duas
+ * como "um símbolo" repetiria, dentro do teto, o erro que ele acabou de sair de
+ * cometer entre mesas.
+ *
+ * ⚠️ O VALOR SUBIU DE 40 PARA 120 porque a unidade mudou. Quarenta MESAS de
+ * ~3 símbolos eram ~120 leituras; manter 40 com a unidade nova cortaria a
+ * capacidade do tique em três vezes sem ninguém pedir. O número velho não era
+ * um limite de leituras — era um limite de mesas que ninguém traduziu.
  */
-export const MESAS_POR_TICK = Number(process.env.BANCADA_MESAS_POR_TICK ?? 40);
+export const TRABALHO_POR_TICK = Number(process.env.BANCADA_TRABALHO_POR_TICK ?? 120);
+
+/** ⚠️ Quanto custa a instância de agente, em leituras, contra a própria. */
+export const PESO_DO_AGENTE = 3;
+
+/**
+ * O custo desta mesa neste tick, na moeda do teto: leituras de vela.
+ *
+ * ⚠️ PISO UM. Uma mesa sem símbolo nenhum não é grátis — ela ainda é lida,
+ * decidida e carimbada —, e custo zero a tornaria infinita dentro do teto.
+ */
+export function custoDoTrabalho(mesa: { simbolos: ReadonlyArray<string>; mesa: string | null }): number {
+  const n = Math.max(1, mesa.simbolos.length);
+  return n * (mesa.mesa != null ? PESO_DO_AGENTE : 1);
+}
+
+/**
+ * ⚠️⚠️ QUANTOS DONOS UM TICK ATENDE — e por que este teto existe (13/09).
+ *
+ * ACHADO DA AUDITORIA, e é o `aVezDeQuem` pela metade: a janela rolava DENTRO
+ * de um dono e o laço ENTRE donos continuava sendo um corte estável, na ordem
+ * de `criada_em`. Como o teto por plano é de 3 a 10 mesas, `aVezDeQuem` virava
+ * no-op na prática (`n <= teto`), e quem passava do teto GLOBAL era sempre o
+ * mesmo cliente — o mais novo, o que acabou de pagar.
+ *
+ * *"Isso não é uma fila, é um corte"* — a frase já estava escrita neste
+ * arquivo, sobre o corte entre mesas. Ela valia igual entre donos, e ninguém
+ * tinha levado.
+ */
+export const DONOS_POR_TICK = Number(process.env.BANCADA_DONOS_POR_TICK ?? 12);
 
 /**
  * ⚠️⚠️ O TETO SEPARADO DAS INSTÂNCIAS DE AGENTE — e o motivo é aritmética de
@@ -263,7 +308,7 @@ export const AGENTES_POR_TICK = Number(process.env.BANCADA_AGENTES_POR_TICK ?? 8
 /**
  * ⚠️⚠️ DE QUEM É A VEZ NESTE TICK — a janela ROLA, e sem isso o teto mente.
  *
- * O comentário de `MESAS_POR_TICK` dizia que "a ordem determinística garante
+ * O comentário de `TRABALHO_POR_TICK` (então `MESAS_POR_TICK`) dizia que "a ordem determinística garante
  * que ninguém fique para trás para sempre". Ele estava errado: com uma ordem
  * estável e um corte fixo, as mesmas primeiras `teto` mesas ganham em TODO
  * tick, e a de número `teto+1` nunca roda. Não é uma fila — é um corte.

@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import {
   mesasQuePodemTickar, decidirAbertura, decidirFechamento, alvoEStop,
-  aVezDeQuem, MESAS_POR_TICK, AGENTES_POR_TICK,
+  aVezDeQuem, TRABALHO_POR_TICK, AGENTES_POR_TICK, DONOS_POR_TICK, custoDoTrabalho, PESO_DO_AGENTE,
   type Mesa, type MesaPropria,
 } from "@/lib/bancada/papel";
 import type { EstrategiaDoCliente } from "@/lib/bancada/vocabulario";
@@ -137,7 +137,7 @@ describe("o fechamento reusa a convenção da casa, com o custo do CLIENTE", () 
 /**
  * ⚠️⚠️ O TETO QUE MENTIA (07/09).
  *
- * `MESAS_POR_TICK` vinha com o comentário *"as que sobram pegam o tick
+ * `TRABALHO_POR_TICK` (então `MESAS_POR_TICK`) vinha com o comentário *"as que sobram pegam o tick
  * seguinte, e a ordem determinística garante que ninguém fique para trás para
  * sempre"*. Ele afirmava o oposto do que o código fazia: com uma ordem estável
  * e um `.slice(0, teto)`, as mesmas primeiras `teto` mesas ganham em TODO tick
@@ -199,8 +199,68 @@ describe("a vez de quem — a janela ROLA, senão o teto é um corte", () => {
 
   it("o orçamento do agente é MENOR que o geral — ele custa 3 leituras por símbolo", () => {
     // ⚠️ Valores fixados, não derivados um do outro: um teste que escreve
-    // `AGENTES_POR_TICK < MESAS_POR_TICK` passa com os dois em 1.
-    expect(MESAS_POR_TICK).toBe(40);
+    // `AGENTES_POR_TICK < TRABALHO_POR_TICK` passa com os dois em 1.
+    //
+    // ⚠️ 120, NÃO 40, e a mudança é de UNIDADE: o teto passou a contar leituras
+    // em vez de mesas (13/09). Quarenta mesas de ~3 símbolos eram ~120
+    // leituras; manter 40 com a unidade nova cortaria a capacidade do tique em
+    // três vezes sem ninguém ter pedido.
+    expect(TRABALHO_POR_TICK).toBe(120);
     expect(AGENTES_POR_TICK).toBe(8);
+  });
+});
+
+/**
+ * ⚠️⚠️ O TETO QUE CORTA SEMPRE OS MESMOS — a auditoria de 13/09.
+ *
+ * `aVezDeQuem` estava certo, testado, e aplicado PELA METADE: rolava dentro de
+ * um dono e não entre donos. Como o teto por plano é de 3 a 10 mesas, a rotação
+ * interna virava no-op, e quem passava do teto global era sempre o mesmo
+ * cliente — o mais novo. É o padrão que esta casa já pagou seis vezes: a peça
+ * certa, testada, e desligada do caminho que decide.
+ */
+describe("o teto do tique conta LEITURAS e gira entre donos", () => {
+  it("⚠️ a instância de agente custa 3× a própria, por símbolo", () => {
+    // Não é cautela genérica: são 3 leituras (1h, 4h, 1d) contra 1.
+    expect(custoDoTrabalho({ simbolos: ["BTC", "ETH"], mesa: null })).toBe(2);
+    expect(custoDoTrabalho({ simbolos: ["BTC", "ETH"], mesa: "strat_mech" })).toBe(2 * PESO_DO_AGENTE);
+    expect(PESO_DO_AGENTE).toBe(3);
+  });
+
+  it("⚠️ mesa sem símbolo NÃO é grátis — custo zero a tornaria infinita no teto", () => {
+    expect(custoDoTrabalho({ simbolos: [], mesa: null })).toBe(1);
+    expect(custoDoTrabalho({ simbolos: [], mesa: "strat_dex" })).toBe(PESO_DO_AGENTE);
+  });
+
+  it("⚠️⚠️ uma mesa gorda não custa o mesmo que uma magra — era esse o defeito", () => {
+    const magra = custoDoTrabalho({ simbolos: ["BTC"], mesa: null });
+    const gorda = custoDoTrabalho({ simbolos: Array(10).fill("X"), mesa: null });
+    expect(gorda).toBeGreaterThan(magra);
+    // Com o teto contando MESAS, as duas custavam 1 — e a gorda comia o tique.
+    expect(gorda / magra).toBe(10);
+  });
+
+  it("⚠️⚠️ a janela gira entre DONOS, não só dentro de um", () => {
+    const donos = ["a", "b", "c", "d", "e"];
+    const t0 = aVezDeQuem(donos, 2, 0);
+    const t1 = aVezDeQuem(donos, 2, 1);
+    const t2 = aVezDeQuem(donos, 2, 2);
+    expect(t0).not.toEqual(t1);
+    // Em ceil(n/teto) ticks todo mundo passou: é isso que faz ser fila e não corte.
+    const vistos = new Set([...t0, ...t1, ...t2]);
+    expect(vistos.size).toBe(donos.length);
+  });
+
+  it("⚠️ o teto de donos é menor que a plataforma, senão ele não é teto", () => {
+    expect(DONOS_POR_TICK).toBeGreaterThan(0);
+    expect(Number.isFinite(DONOS_POR_TICK)).toBe(true);
+  });
+
+  it("⚠️ o orçamento por dono divide o global — um cliente não come o tique", () => {
+    // É a conta que o tique faz: ceil(TRABALHO_POR_TICK / donosDaVez.length).
+    const porDono = (n: number) => Math.max(1, Math.ceil(TRABALHO_POR_TICK / n));
+    expect(porDono(1)).toBe(TRABALHO_POR_TICK);        // sozinho, leva tudo
+    expect(porDono(12)).toBeLessThan(TRABALHO_POR_TICK); // com fila, divide
+    expect(porDono(1000)).toBe(1);                      // e nunca chega a zero
   });
 });

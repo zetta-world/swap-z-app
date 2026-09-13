@@ -96,8 +96,16 @@ describe("② a janela do tique segue o INTERVALO, não o relógio", () => {
 });
 
 describe("③ o teto do tique conta TRABALHO, e a guarda anda dentro do laço", () => {
-  it("⚠️ `processadas` não conta mais mesas", () => {
-    expect(TIQUE).toMatch(/processadas \+= Math\.max\(1, mesa\.simbolos\.length\)/);
+  /**
+   * ⚠️ ESTA ASSERÇÃO JÁ NASCEU LITERAL E QUEBROU EM UM DIA. Ela transcrevia
+   * `processadas += Math.max(1, mesa.simbolos.length)` e caiu quando o teto
+   * passou a PESAR o trabalho por espécie (13/09) — uma mudança correta. Agora
+   * ela exige a INTENÇÃO: o contador não conta mesas, e não conta símbolos
+   * crus; ele soma um custo calculado.
+   */
+  it("⚠️ `processadas` não conta mesas — soma um custo", () => {
+    expect(TIQUE).not.toMatch(/processadas\+\+/);
+    expect(TIQUE).toMatch(/processadas \+= custoDoTrabalho\(mesa\)/);
   });
 
   it("⚠️⚠️ a guarda de uma-posição-por-mesa é reavaliada a cada símbolo", () => {
@@ -115,5 +123,40 @@ describe("③ o teto do tique conta TRABALHO, e a guarda anda dentro do laço", 
 
   it("⚠️ o acumulador do tique tem protótipo nulo — a chave vem do cliente", () => {
     expect(TIQUE).toMatch(/const visto: Record<string, VistoNoSimbolo> = Object\.create\(null\)/);
+  });
+});
+
+/**
+ * ⚠️⚠️ O CORTE PELO TETO GLOBAL SAI CARIMBADO (13/09).
+ *
+ * Quem `aVezDeQuem` adiava era carimbado; quem o TETO cortava sumia calado. A
+ * diferença chega ao cliente como `atrasado` — que a tela traduz como "o
+ * problema é nosso, e nós também estamos vendo", ou seja, um incidente
+ * desconhecido no lugar de um teto conhecido. E `resumo.adiadas`, o número
+ * pelo qual a casa descobriria que o teto está apertado, ficava cego
+ * justamente para o teto que morde primeiro.
+ */
+describe("④ o teto do tique gira, pesa e carimba", () => {
+  it("⚠️ a janela gira entre DONOS, com a mesma peça já testada", () => {
+    expect(TIQUE).toMatch(/const donosDaVez = aVezDeQuem\(donosNaFila, DONOS_POR_TICK, tickAtual\(agoraMs\)\)/);
+    expect(TIQUE).toMatch(/for \(const dono of donosDaVez\)/);
+    // O laço não pode voltar a iterar o Map direto: era isso que era o corte.
+    expect(TIQUE).not.toMatch(/for \(const \[dono, doDono\] of porDono\)/);
+  });
+
+  it("⚠️ existe orçamento POR DONO — senão a rotação só troca quem é atropelado", () => {
+    expect(TIQUE).toMatch(/const tetoDesteDono = Math\.max\(1, Math\.ceil\(TRABALHO_POR_TICK \/ donosDaVez\.length\)\)/);
+    expect(TIQUE).toMatch(/processadas - processadasAntes >= tetoDesteDono/);
+  });
+
+  it("⚠️⚠️ nada sai do teto sem carimbo, e o resumo conta", () => {
+    expect(TIQUE).toMatch(/cortadasPeloTeto\.push/);
+    expect(TIQUE).toMatch(/resumo\.adiadas \+= cortadasPeloTeto\.length/);
+    expect(TIQUE).toMatch(/marcarTiqueAdiado\(db, \[\.\.\.new Set\(cortadasPeloTeto\)\], agoraMs\)/);
+  });
+
+  it("⚠️ o trabalho é pesado por espécie, não contado como símbolo", () => {
+    expect(TIQUE).toMatch(/processadas \+= custoDoTrabalho\(mesa\)/);
+    expect(TIQUE).not.toMatch(/processadas \+= Math\.max\(1, mesa\.simbolos\.length\)/);
   });
 });

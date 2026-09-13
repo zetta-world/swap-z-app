@@ -22,7 +22,7 @@ import { motivoFechado, type VistoNoSimbolo } from "@/lib/bancada/ultimo-tique";
 import { duracaoDoIntervaloMs } from "@/lib/mercado/velas";
 import {
   mesasQuePodemTickar, decidirAbertura, decidirFechamentoDaPosicao,
-  aVezDeQuem, tickAtual, MESAS_POR_TICK, AGENTES_POR_TICK,
+  aVezDeQuem, tickAtual, TRABALHO_POR_TICK, AGENTES_POR_TICK, DONOS_POR_TICK, custoDoTrabalho,
   type Mesa, type MesaPropria,
 } from "@/lib/bancada/papel";
 import { decidirAberturaDoAgente, INTERVALO_DO_AGENTE, BARRAS_DE_AQUECIMENTO } from "@/lib/bancada/agente";
@@ -191,9 +191,53 @@ export async function tiqueDoPapelAdiante(
     porDono.set(m.dono, lista);
   }
 
+  /**
+   * ⚠️⚠️ A JANELA GIRA ENTRE DONOS TAMBÉM (13/09).
+   *
+   * ACHADO DA AUDITORIA, e é o `aVezDeQuem` aplicado pela metade: ele rolava
+   * DENTRO de um dono, e o laço ENTRE donos seguia sendo um corte estável na
+   * ordem de `criada_em`. Como o teto por plano é de 3 a 10 mesas, a rotação
+   * interna virava no-op (`n <= teto`), e quem caía fora do teto GLOBAL era
+   * sempre o mesmo cliente: o mais novo, o que acabou de pagar. A tela dizia
+   * LIGADA e o agente dele não rodava em tick nenhum, nunca.
+   *
+   * *"Isso não é uma fila, é um corte"* — a frase já estava neste arquivo,
+   * sobre o corte entre mesas. Valia igual um nível acima.
+   */
+  const donosNaFila = [...porDono.keys()];
+  const donosDaVez = aVezDeQuem(donosNaFila, DONOS_POR_TICK, tickAtual(agoraMs));
+
+  /**
+   * ⚠️ CARIMBAR QUEM O TETO DEIXOU DE FORA, e não só quem `aVezDeQuem` adiou.
+   *
+   * Sem isto, `ultimo_tique` envelhece e `saudeDoTique` chama de `atrasado` —
+   * que a tela traduz como "o problema é nosso, e nós também estamos vendo",
+   * ou seja, um incidente DESCONHECIDO no lugar de um teto conhecido. E
+   * `resumo.adiadas`, que é o número pelo qual a casa descobre que o teto está
+   * apertado, ficava cego justamente para o teto que morde primeiro.
+   */
+  const cortadasPeloTeto: string[] = [];
+  for (const d of donosNaFila) {
+    if (donosDaVez.includes(d)) continue;
+    for (const m of porDono.get(d) ?? []) cortadasPeloTeto.push(m.id);
+  }
+
   let processadas = 0;
-  for (const [dono, doDono] of porDono) {
-    if (processadas >= MESAS_POR_TICK) break;
+  for (const dono of donosDaVez) {
+    const doDono = porDono.get(dono) ?? [];
+    if (processadas >= TRABALHO_POR_TICK) {
+      for (const m of doDono) cortadasPeloTeto.push(m.id);
+      continue;
+    }
+
+    /**
+     * ⚠️ O ORÇAMENTO É POR DONO, não só global — senão a rotação só troca QUEM
+     * é atropelado. Um único cliente com muitas mesas gordas consumiria a
+     * invocação inteira e empurraria todo mundo atrás dele, que é exatamente o
+     * defeito que a rotação existe para não ter.
+     */
+    const tetoDesteDono = Math.max(1, Math.ceil(TRABALHO_POR_TICK / donosDaVez.length));
+    const processadasAntes = processadas;
 
     /**
      * ⚠️⚠️ O TIER É RELIDO A CADA TICK. Quem cai de `trader` para `pro` para de
@@ -249,7 +293,7 @@ export async function tiqueDoPapelAdiante(
     const proprias = tickam.filter((m) => m.mesa == null);
     const instancias = tickam.filter((m) => m.mesa != null);
     const daVez = [
-      ...aVezDeQuem(proprias, MESAS_POR_TICK, agora),
+      ...aVezDeQuem(proprias, TRABALHO_POR_TICK, agora),
       ...aVezDeQuem(instancias, AGENTES_POR_TICK, agora),
     ];
     const adiadas = [...proprias, ...instancias].filter((m) => !daVez.includes(m));
@@ -274,7 +318,11 @@ export async function tiqueDoPapelAdiante(
 
     // ── 3. Abrir o que o sinal mandar ─────────────────────────────
     for (const mesa of daVez) {
-      if (processadas >= MESAS_POR_TICK) break;
+      // ⚠️ Os DOIS tetos, e o que sobra é carimbado em vez de sumir calado.
+      if (processadas >= TRABALHO_POR_TICK || processadas - processadasAntes >= tetoDesteDono) {
+        cortadasPeloTeto.push(mesa.id);
+        continue;
+      }
       /**
        * ⚠️⚠️ O TETO CONTA TRABALHO, NÃO MESAS (12/09).
        *
@@ -287,7 +335,9 @@ export async function tiqueDoPapelAdiante(
        * O teto de símbolos (`lerSimbolos`) fecha a porta de entrada; este
        * fecha a que já está dentro — as linhas gravadas antes da correção.
        */
-      processadas += Math.max(1, mesa.simbolos.length);
+      // ⚠️ PESADO POR ESPÉCIE: a instância de agente pede 3 leituras por
+      // símbolo contra 1 da própria. Ver `custoDoTrabalho`.
+      processadas += custoDoTrabalho(mesa);
       resumo.mesas++;
 
       /**
@@ -341,6 +391,25 @@ export async function tiqueDoPapelAdiante(
        */
       try { await gravarUltimoTique(mesa.dono, db, mesa.id, visto, agoraMs); } catch { /* ver acima */ }
     }
+  }
+
+  /**
+   * ⚠️⚠️ O QUE O TETO CORTOU SAI CARIMBADO, E CONTADO (13/09).
+   *
+   * As mesas que o teto global deixou de fora não passavam por
+   * `marcarTiqueAdiado` nem por `gravarUltimoTique`, então `ultimo_tique`
+   * envelhecia e `saudeDoTique` as declarava `atrasado` — um incidente
+   * desconhecido no lugar de um teto conhecido. E `resumo.adiadas` ficava cego
+   * exatamente para o teto que morde primeiro: o número pelo qual a casa
+   * descobriria que precisa subir `TRABALHO_POR_TICK` nunca subia.
+   *
+   * ⚠️ Melhor-esforço, como o resto do laço: não conseguir carimbar não pode
+   * derrubar um tique que já abriu e fechou posições.
+   */
+  if (cortadasPeloTeto.length > 0) {
+    resumo.adiadas += cortadasPeloTeto.length;
+    try { await marcarTiqueAdiado(db, [...new Set(cortadasPeloTeto)], agoraMs); }
+    catch { /* ver acima */ }
   }
 
   return resumo;
