@@ -58,7 +58,9 @@ export default function AdminAccessPanel() {
         body: JSON.stringify({ wallet: w, action: "grant", note: note.trim() || undefined }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      // ⚠️ `porque` carrega a consequência; `error` é só o código. Mostrar o
+      // código sozinho manda o operador procurar no lugar errado.
+      if (!res.ok) throw new Error(json.porque ?? json.error ?? res.status);
       setMsg(`✓ admin concedido a ${w.slice(0, 10)}…`); setWallet(""); setNote("");
       await load();
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
@@ -73,8 +75,17 @@ export default function AdminAccessPanel() {
         body: JSON.stringify({ wallet: w, action: "revoke" }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
-      setMsg(`✓ admin revogado de ${w.slice(0, 10)}…`);
+      if (!res.ok) throw new Error(json.porque ?? json.error ?? res.status);
+      /**
+       * ⚠⚠ ZERO LINHAS NÃO É "REVOGUEI". A rota devolve `removidas`, e um
+       * DELETE que casa zero linhas é sucesso de banco e NÃO é revogação. Dizer
+       * "✓ admin revogado" nesse caso é a mesma mentira que o `.select()` da
+       * rota passou a impedir do outro lado — e num painel de CONTROLE DE
+       * ACESSO ela faz o operador parar de procurar uma pessoa com acesso.
+       */
+      setMsg(json.removidas === 0
+        ? `⚠ nada foi removido — ${w.slice(0, 10)}… já não era admin por painel nem por legado`
+        : `✓ admin revogado de ${w.slice(0, 10)}… (${json.removidas} registro${json.removidas === 1 ? "" : "s"})`);
       await load();
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   }
