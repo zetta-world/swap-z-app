@@ -461,6 +461,27 @@ export const DESKS: Desk[] = [
      * EXPERIMENTO, e o retireWhen abaixo fala da TENDÊNCIA, não do nível —
      * aposentá-la de novo por ser negativa seria repetir o erro de 27/07.
      *
+     * ⚠️⚠️ MEDIDO EM 14/09 — A APOSTA PAGOU, E O NÚMERO VIROU DE SINAL.
+     *
+     * O dono mandou medir a coorte. Cortando o histórico dela por era, com
+     * `resolved_at` (a data da DECISÃO) e 0,40% de ida e volta:
+     *
+     *     até 19/07        632 decididos   28,5% de acerto   líquido −0,92%
+     *     20/07 a 09/08     59 decididos   27,1%             líquido −0,92%
+     *     desde 10/08       87 decididos   51,7%             líquido **+0,71%**
+     *
+     * A nota acima dizia "o que isto NÃO diz: que ela ficou lucrativa". Agora
+     * diz. O acerto quase DOBROU (28,5% → 51,7%) e o líquido atravessou o zero
+     * com 87 decididos — mais que os 56 sobre os quais a ressalva original foi
+     * escrita, e com a margem seis vezes maior em módulo.
+     *
+     * ⚠️ Na medição de 14/09 ela aparece com −572 pontos acumulados de vida
+     * inteira, o terceiro pior número da casa — e esse número é um retrato do
+     * passado dela. Quem olhar só o agregado vai querer aposentá-la de novo:
+     * EU quis, e propus isso ao dono antes de cortar por era. A vida inteira é
+     * a régua errada para uma mesa que mudou de comportamento; é exatamente o
+     * erro de 27/07, e ele quase se repetiu por leitura de média.
+     *
      * ⚠️ ESTA EDIÇÃO SE PERDEU UMA VEZ. A PR #304 mergeou o EM_PROVA do
      * cull.ts e o plano, mas NENHUMA linha deste arquivo — a alteração morreu
      * num git reset --hard de ressincronização de branch, e o resultado foi uma
