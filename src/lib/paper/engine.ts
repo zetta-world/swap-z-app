@@ -282,8 +282,24 @@ export async function ensurePaperAccounts(db: Db): Promise<void> {
     source: s, label: LABELS[s] ?? s, exchange: "gateio",
     starting_usd: STARTING_USD, cash_usd: STARTING_USD,
   }));
-  try { await db.from("paper_accounts").upsert(rows, { onConflict: "source", ignoreDuplicates: true }); }
-  catch { /* best-effort */ }
+  /**
+   * ⚠⚠ ISTO TAMBÉM ERA `try/catch` — e pelo mesmo engano: `supabase-js`
+   * RESOLVE com `{ error }` e não lança, então o `catch` nunca rodou.
+   *
+   * ⚠️ O DANO AQUI É SILÊNCIO, NÃO ESTRAGO. Com `ignoreDuplicates`, a
+   * re-execução normal é no-op, então um erro é excepcional de verdade. E se a
+   * semente não entrar, toda leitura seguinte cai em `if (!acc) continue`: o
+   * agente de papel não abre nada, não fecha nada, e NÃO DIZ NADA — a
+   * invariante nº 7 desta casa, indistinguível de "não havia o que fazer".
+   */
+  const { error } = await db.from("paper_accounts").upsert(rows, { onConflict: "source", ignoreDuplicates: true });
+  if (error) {
+    recordEvent("paper_contas_nao_semeadas", { meta: {
+      contas: rows.length, erro: error.message.slice(0, 160),
+      why: "sem as carteiras de papel o agente nao abre nem fecha posicao, e sai "
+        + "silencioso a cada passada — igual a 'nao havia o que fazer'.",
+    } });
+  }
 }
 
 interface PaperAccount { id: string; source: string; starting_usd: number; cash_usd: number; realized_pnl_usd: number; wins: number; losses: number; }
@@ -716,7 +732,23 @@ export async function openPaperPositions(): Promise<number> {
   for (const [accId, cash] of debited) {
     const acc = accounts.find((a) => a.id === accId);
     if (!acc) continue;
-    await db.from("paper_accounts").update({ cash_usd: Number(acc.cash_usd) - cash, updated_at: new Date().toISOString() }).eq("id", accId);
+    /**
+     * ⚠️ O DÉBITO É DERIVADO DO QUE O BANCO CONFIRMOU (ver a nota acima) — e a
+     * ÚLTIMA LINHA da derivação estava solta. Recusado, as posições existem e o
+     * caixa não foi debitado: a conta passa a dizer que tem mais dinheiro do que
+     * tem, e abre mais posição por cima. É a mesma divergência que o `.select()`
+     * acima existe para impedir, entrando pela porta seguinte.
+     */
+    const { error: erroDoDebito } = await db.from("paper_accounts")
+      .update({ cash_usd: Number(acc.cash_usd) - cash, updated_at: new Date().toISOString() })
+      .eq("id", accId);
+    if (erroDoDebito) {
+      recordEvent("paper_debito_nao_gravado", { meta: {
+        account: accId, caixa: cash, erro: erroDoDebito.message.slice(0, 160),
+        why: "as posicoes foram abertas e o caixa NAO foi debitado. A conta acredita "
+          + "ter mais capital do que tem e vai abrir mais posicao por cima.",
+      } });
+    }
   }
   return created.length;
 }
@@ -782,12 +814,38 @@ export async function resolvePaperPositions(): Promise<number> {
     const candles = onChain ? candlesByPool.get(`${p.chain}|${p.pool_address}`) ?? [] : candlesBySymbol.get(p.symbol) ?? [];
     const v = computeExitPath(p, candles, onChain ? candles[candles.length - 1]?.close : prices.get(p.symbol.toUpperCase()), nowMs);
     if (!v) continue;
-    try {
-      await db.from("paper_positions").update({
-        status: "closed", exit_price: v.exit, exit_reason: v.reason,
-        pnl_usd: v.pnlUsd, pnl_pct: v.netPct, closed_at: new Date().toISOString(),
-      }).eq("id", p.id);
-    } catch { continue; }
+    /**
+     * ⚠⚠ ISTO ERA UM `try/catch`, E ELE NÃO PEGAVA NADA.
+     *
+     * É a invariante nº 1 desta casa ao contrário: `supabase-js` **NÃO LANÇA**
+     * em erro de banco — ele RESOLVE com `{ error }`. O `catch { continue; }`
+     * foi escrito para tornar o laço resistente e nunca executou uma vez.
+     *
+     * O estrago é no LIVRO, e é de dupla contagem: com o UPDATE recusado, a
+     * execução caía direto no `delta` abaixo e a conta era CREDITADA pelo P&L
+     * enquanto a posição continuava `open`. Na passada seguinte
+     * `resolvePaperPositions` acha a mesma posição, fecha (ou falha) de novo, e
+     * **credita de novo** — `realized_pnl_usd` e `wins` crescendo sem teto sobre
+     * uma única saída.
+     *
+     * ⚠️ E é o flywheel que lê esses números. Expectancy inflada por contagem
+     * dupla é pior que expectancy ausente: ela decide escala.
+     *
+     * Agora o `continue` acontece por LEITURA DO ERRO. Posição não fechada não
+     * credita nada, e a passada seguinte tenta de novo — que é o desfecho certo.
+     */
+    const { error: erroDoFecho } = await db.from("paper_positions").update({
+      status: "closed", exit_price: v.exit, exit_reason: v.reason,
+      pnl_usd: v.pnlUsd, pnl_pct: v.netPct, closed_at: new Date().toISOString(),
+    }).eq("id", p.id);
+    if (erroDoFecho) {
+      recordEvent("paper_fecho_nao_gravado", { meta: {
+        position: p.id, account: p.account_id, symbol: p.symbol, erro: erroDoFecho.message.slice(0, 160),
+        why: "a posicao continua ABERTA e o caixa NAO foi creditado. A passada seguinte "
+          + "tenta de novo — creditar aqui seria contar a mesma saida duas vezes.",
+      } });
+      continue;
+    }
     const d = delta.get(p.account_id) ?? { cash: 0, pnl: 0, wins: 0, losses: 0 };
     d.cash += Number(p.cost_usd) + v.pnlUsd; // return deployed capital + P&L to cash
     d.pnl  += v.pnlUsd;
@@ -799,12 +857,28 @@ export async function resolvePaperPositions(): Promise<number> {
   for (const [accId, d] of delta) {
     const { data: acc } = await db.from("paper_accounts").select("cash_usd, realized_pnl_usd, wins, losses").eq("id", accId).maybeSingle();
     if (!acc) continue;
-    await db.from("paper_accounts").update({
+    /**
+     * ⚠️ AQUI NÃO DÁ PARA DESFAZER: as posições JÁ estão `closed`. Se este
+     * crédito for recusado, o P&L daquelas saídas some do livro para sempre — e
+     * nada vai tentar de novo, porque a passada seguinte não as enxerga mais.
+     *
+     * Então o objetivo não é impedir, é NUNCA PERDER O FATO — a mesma doutrina
+     * de `positions-server.ts`. O evento carrega o valor para reconciliação.
+     */
+    const { error: erroDoCredito } = await db.from("paper_accounts").update({
       cash_usd: Number(acc.cash_usd) + d.cash,
       realized_pnl_usd: Number(acc.realized_pnl_usd) + d.pnl,
       wins: Number(acc.wins) + d.wins, losses: Number(acc.losses) + d.losses,
       updated_at: new Date().toISOString(),
     }).eq("id", accId);
+    if (erroDoCredito) {
+      recordEvent("paper_credito_nao_gravado", { meta: {
+        account: accId, caixa: d.cash, pnl: d.pnl, wins: d.wins, losses: d.losses,
+        erro: erroDoCredito.message.slice(0, 160),
+        why: "as posicoes ja estao closed e este P&L NAO entrou no livro. Nada vai "
+          + "tentar de novo: a expectancy desta mesa fica menor que a real.",
+      } });
+    }
   }
   return closed;
 }
