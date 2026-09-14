@@ -61,12 +61,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "action deve ser grant ou revoke" }, { status: 400 });
 
   if (action === "grant") {
-    await db.from("platform_admins").upsert(
+    const { error: erroDaConcessao } = await db.from("platform_admins").upsert(
       { wallet_address: target, granted_by: actor, note, granted_at: new Date().toISOString() },
       { onConflict: "wallet_address" },
     );
+    if (erroDaConcessao) {
+      return NextResponse.json(
+        { error: "nao_gravou", action, target,
+          porque: `o admin NÃO foi criado: ${erroDaConcessao.message.slice(0, 160)}` },
+        { status: 500 },
+      );
+    }
+    // ⚠️ Auditoria e alerta DEPOIS da gravação confirmada — ver a nota do revoke.
     await logAdminAction(actor, "admin.grant", target, { note });
     logSecurity("admin_granted", { by: `${actor.slice(0, 10)}…`, to: `${target.slice(0, 10)}…` }, "high");
+    broadcastAdminRefresh("audit");
+    return NextResponse.json({ ok: true, action, target });
   } else {
     // ── revoke guards ──
     // ⚠️ Comparação SEM CASE. Com ela literal, bastava digitar o próprio
@@ -101,13 +111,65 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
      * ⚠️ `ilike` E NÃO `eq`: o `eq` exigia a caixa exata, então revogar com o
      * endereço digitado em minúsculo apagava ZERO linhas e devolvia sucesso —
      * o operador via "revogado" e o acesso continuava de pé.
+     *
+     * ⚠⚠ E O `ilike` CORRIGIU O SINTOMA, NÃO O MECANISMO. A frase acima
+     * — *"apagava ZERO linhas e devolvia sucesso"* — continuava verdadeira por
+     * outra porta: `supabase-js` RESOLVE com `{ error }` e não lança, então um
+     * DELETE **recusado** era indistinguível de um bem-sucedido, e sem
+     * `.select()` um DELETE que casa ZERO linhas também.
+     *
+     * ⚠⚠ ISTO É CONTROLE DE ACESSO, e é pior que o kill-switch (A25): ali o
+     * operador deixava de procurar um problema; aqui ele deixa de procurar uma
+     * PESSOA com acesso de admin à plataforma inteira. E o `logAdminAction` +
+     * `logSecurity` gravavam "revogado" de qualquer jeito — o registro forense
+     * mentia junto com a tela.
+     *
+     * ⚠️ SÃO DOIS MECANISMOS, e falhar em UM deixa o acesso de pé. Apagar
+     * `platform_admins` e não apagar o `tier_cache` de origem `admin` é uma
+     * revogação PELA METADE lida como completa — e a metade que sobra ainda
+     * autoriza.
      */
-    await db.from("platform_admins").delete().ilike("wallet_address", target);
-    await db.from("tier_cache").delete().ilike("wallet_address", target).eq("source", "admin");
-    await logAdminAction(actor, "admin.revoke", target);
-    logSecurity("admin_revoked", { by: `${actor.slice(0, 10)}…`, to: `${target.slice(0, 10)}…` }, "high");
-  }
+    const [doPainel, doLegado] = await Promise.all([
+      db.from("platform_admins").delete().ilike("wallet_address", target).select("wallet_address"),
+      db.from("tier_cache").delete().ilike("wallet_address", target).eq("source", "admin").select("wallet_address"),
+    ]);
+    const falhou = [
+      doPainel.error ? `platform_admins: ${doPainel.error.message.slice(0, 80)}` : "",
+      doLegado.error ? `tier_cache: ${doLegado.error.message.slice(0, 80)}` : "",
+    ].filter(Boolean);
+    if (falhou.length) {
+      logSecurity("admin_revoke_falhou", {
+        by: `${actor.slice(0, 10)}…`, to: `${target.slice(0, 10)}…`, falhou,
+      }, "high");
+      return NextResponse.json(
+        { error: "nao_revogou", action, target, falhou,
+          porque: "o acesso de admin CONTINUA DE PÉ — pelo menos um dos dois "
+            + "mecanismos não foi apagado. Confira antes de fechar o painel." },
+        { status: 500 },
+      );
+    }
 
-  broadcastAdminRefresh("audit");
-  return NextResponse.json({ ok: true, action, target });
+    /**
+     * ⚠️ ZERO LINHAS NÃO É ERRO — mas também não é "revoguei".
+     *
+     * Um segundo clique no mesmo botão casa zero linhas e está certo: é
+     * idempotência. O que não pode é o painel dizer "revogado" quando nada
+     * mudou — o operador precisa distinguir "tirei o acesso" de "esta carteira
+     * já não tinha acesso por nenhum dos dois caminhos".
+     */
+    const removidas = (doPainel.data?.length ?? 0) + (doLegado.data?.length ?? 0);
+    await logAdminAction(actor, "admin.revoke", target, { removidas });
+    logSecurity("admin_revoked", {
+      by: `${actor.slice(0, 10)}…`, to: `${target.slice(0, 10)}…`, removidas,
+    }, "high");
+    broadcastAdminRefresh("audit");
+    return NextResponse.json({
+      ok: true, action, target, removidas,
+      painel: doPainel.data?.length ?? 0,
+      legado: doLegado.data?.length ?? 0,
+      ...(removidas === 0
+        ? { nota: "nenhuma linha correspondia — esta carteira já não era admin por painel nem por legado" }
+        : {}),
+    });
+  }
 }
