@@ -11,7 +11,8 @@
  * quem ainda não entrou não ter como avaliar o produto.
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { mesasElegiveis, montarCartao, mereceCartao, diaDaDecisao, type MedicaoDaMesa } from "@/lib/bancada/mesas-da-casa";
@@ -38,7 +39,94 @@ const VALIDADE_MS = 30 * 60_000;
 
 interface Cacheado { emMs: number; cartoes: unknown[] }
 
-export async function GET() {
+/**
+ * ⚠️⚠️ QUANTO A VARREDURA PODE SER REFEITA — a trava contra a debandada (14/09).
+ *
+ * ACHADO DA AUDITORIA (lente `ratelimit`). Esta rota é PÚBLICA — sem sessão, de
+ * propósito — e o `middleware.ts` só cobre `/admin/:path*`, então NADA acima
+ * dela limita coisa alguma. O cache de 30 min é lido no começo e só escrito no
+ * FIM, depois da varredura inteira: K requisições que cheguem com o cache
+ * vencido TODAS erram e TODAS varrem. O cache não serializa nada.
+ *
+ * E a varredura não é uma consulta: `selectAllRows` pagina em blocos de 1.000
+ * sobre `.in("source", …).in("status", …).order("created_at")`, e NENHUM índice
+ * de `zion_suggestions` cobre esse filtro — os que existem são parciais em
+ * `status='open'`, por `symbol`, e por `created_at where archived_at is null`.
+ * Cada página é varredura + ordenação do conjunto filtrado inteiro, e o OFFSET
+ * cresce a cada página.
+ *
+ * ⚠️ O Postgres é UM só para a plataforma. Derrubar o pool aqui derruba login,
+ * swap, admin e os agentes dos clientes pagantes junto.
+ *
+ * ⚠️⚠️ E O ÍNDICE **NÃO** É A CORREÇÃO — medido em 14/09, não chute.
+ *
+ * A leitura óbvia do parágrafo acima é "falta um índice em (source, status,
+ * created_at)". Eu criei esse índice, medi com `explain (analyze, buffers)`
+ * sobre as 5.875 linhas reais, e DESFIZ:
+ *
+ *     seq scan     4,25 ms ·   169 buffers
+ *     index scan   3,95 ms · 1.422 buffers   ← oito vezes mais páginas lidas
+ *
+ * Com 2.494 das 5.875 linhas casando o filtro (42%), o índice obriga a buscar
+ * quase metade da tabela no heap, uma linha por vez, em vez de varrê-la em
+ * sequência. O planejador só o escolheu por margem estreita de custo (243 vs
+ * 286) — e pagaria escrita a cada insert do cron por um ganho que não existe.
+ *
+ * ⚠️ QUANDO ELE PASSARIA A PAGAR: quando a fração que casa o filtro cair bem
+ * abaixo de 42%, ou quando a tabela crescer a ponto de a varredura sequencial
+ * custar mais que o heap fetch. Refaça a medição antes de criar — não crie
+ * porque o texto acima diz "varredura sequencial".
+ *
+ * O que corrige DE VERDADE é o que está abaixo: o freio de rajada e a trava.
+ * Eles limitam quantas varreduras existem, que é o número que importa; o índice
+ * mexeria no custo de cada uma, que hoje já é de 4 milissegundos.
+ */
+const TRAVA = "lock:bancada:mesas-da-casa";
+const TRAVA_MS = 60_000;
+
+/**
+ * ⚠️ FALHA ABERTA, como o resto da casa: não conseguir ler ou gravar a trava
+ * não pode derrubar a vitrine. O pior caso sem trava é o que já existia hoje.
+ */
+async function pegouATrava(db: ReturnType<typeof getSupabaseAdmin>): Promise<boolean> {
+  if (!db) return true;
+  try {
+    const { data } = await db.from("admin_kv").select("value").eq("key", TRAVA).maybeSingle();
+    const valor = (data as { value?: string } | null)?.value;
+    if (valor) {
+      const quando = Date.parse(valor);
+      if (Number.isFinite(quando) && Date.now() - quando < TRAVA_MS) return false;
+    }
+    await db.from("admin_kv").upsert(
+      { key: TRAVA, value: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+    return true;
+  } catch { return true; }
+}
+
+export async function GET(req: NextRequest) {
+  /**
+   * ⚠️⚠️ FREIO DE RAJADA NUMA ROTA SEM SESSÃO (14/09).
+   *
+   * A chave é o IP porque aqui NÃO HÁ carteira — é o único identificador que
+   * existe numa rota anônima, e é exatamente o caso que `getClientId` documenta
+   * como o certo. (Nas rotas com sessão a chave é a carteira; usar IP lá seria
+   * o erro que o DCA já pagou.)
+   *
+   * ⚠️ Generoso de propósito: a vitrine é a porta de entrada de quem ainda não
+   * assinou, e um teto apertado transformaria um defeito de disponibilidade
+   * numa barreira de venda. 30 por minuto é muito acima de qualquer navegação
+   * humana e muito abaixo de uma rajada.
+   */
+  const limite = await rateLimitDurable(`vitrine:${getClientId(req.headers)}`, { windowMs: 60_000, max: 30 });
+  if (!limite.ok) {
+    return NextResponse.json(
+      { ok: false, error: "muitas_requisicoes", cartoes: [] },
+      { status: 429, headers: { "Retry-After": String(limite.retryAfter) } },
+    );
+  }
+
   const db = getSupabaseAdmin();
   if (!db) {
     // ⚠️ Sem banco a vitrine some, e isso é melhor que mostrar mesa sem número:
@@ -56,8 +144,28 @@ export async function GET() {
     const cru = (guardado as { value?: string } | null)?.value;
     c = cru ? (JSON.parse(cru) as Cacheado) : null;
   } catch { c = null; }
-  if (c && typeof c.emMs === "number" && agora - c.emMs < VALIDADE_MS && Array.isArray(c.cartoes)) {
-    return NextResponse.json({ ok: true, cartoes: c.cartoes, doCache: true });
+  const temCache = !!c && typeof c.emMs === "number" && Array.isArray(c.cartoes);
+  if (temCache && agora - c!.emMs < VALIDADE_MS) {
+    return NextResponse.json({ ok: true, cartoes: c!.cartoes, doCache: true });
+  }
+
+  /**
+   * ⚠️⚠️ SÓ UMA VARREDURA POR VEZ — e quem não pega a trava serve o CACHE VELHO.
+   *
+   * Servir dado de 31 minutos é melhor que somar mais uma varredura completa à
+   * que já está correndo. Sem cache nenhum para servir, 503: a vitrine some, que
+   * é a mesma escolha que a rota já faz sem banco — um card com "—" no lugar do
+   * resultado convida a leitura errada.
+   *
+   * ⚠️ `doCache: "vencido"` e não `true`: quem consome precisa poder distinguir
+   * "fresco" de "o melhor que eu tinha". Devolver os dois como a mesma coisa
+   * seria a família de defeito que esta auditoria inteira persegue.
+   */
+  if (!(await pegouATrava(db))) {
+    if (temCache) {
+      return NextResponse.json({ ok: true, cartoes: c!.cartoes, doCache: "vencido" });
+    }
+    return NextResponse.json({ ok: false, error: "medindo", cartoes: [] }, { status: 503 });
   }
 
   const elegiveis = mesasElegiveis();
@@ -100,6 +208,13 @@ export async function GET() {
     .range(de, ate));
 
   if (linhas.length === 0) {
+    /**
+     * ⚠️ SEM LINHA NENHUMA a rota devolve 503 e NÃO grava cache — então neste
+     * estado toda requisição refaz a varredura. É deliberado (cachear "vazio"
+     * esconderia uma leitura quebrada por 30 minutos), e é justamente por isso
+     * que o freio de rajada e a trava acima existem: eles são o que impede esse
+     * caminho de virar varredura sem fim.
+     */
     return NextResponse.json({ ok: false, error: "leitura", cartoes: [] }, { status: 503 });
   }
 
