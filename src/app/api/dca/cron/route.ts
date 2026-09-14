@@ -430,11 +430,45 @@ async function processarPlano(
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // ⚠️ O ciclo fica `falhou`, não volta para `reservado`: repetir o número
-    // faria a próxima passada tentar de novo e a trava unique a recusaria para
-    // sempre. Falhou é um estado final, e conta como ciclo gasto.
-    await fecharCiclo(p.id, d.ciclo, { status: "falhou", motivo: msg, simulado });
-    await avancarPlano(p.id, { ciclosPulados: pulados, nextRunAt: d.proximoRunAt });
+    /**
+     * ⚠⚠ O CICLO QUE FALHOU TEM DE CONTAR — SENÃO O PLANO CONGELA PARA SEMPRE.
+     *
+     * O comentário que estava aqui dizia a coisa certa e o código não a fazia:
+     * *"Falhou é um estado final, e conta como ciclo gasto"* — só que **nada
+     * incrementava**. `decidirCiclo` deriva o número do ciclo de
+     * `ciclosFeitos + ciclosPulados + 1` (`relogio.ts:148`), e a falha não
+     * mexia em nenhum dos dois.
+     *
+     * A passada seguinte recalculava o MESMO número, batia na trava `unique` do
+     * `reservarCiclo`, saía em `ja_reservado` — e assim a cada 5 minutos, para
+     * sempre. Uma única ordem recusada pela corretora matava o plano de
+     * poupança inteiro, em silêncio, e o dono via "1 de 12" congelado sem uma
+     * linha dizendo por quê. É exatamente o desfecho que o caminho de SUCESSO
+     * logo acima descreve por escrito e se protege de ter.
+     *
+     * ⚠️ E NÃO SE REPETE O NÚMERO, DE PROPÓSITO: uma ordem a mercado que estourou
+     * por timeout pode ter sido aceita pela corretora. Repetir arrisca comprar
+     * DUAS vezes; consumir o ciclo e seguir arrisca comprar uma vez a menos.
+     * Só um dos dois devolve dinheiro ao dono.
+     *
+     * `ciclos_pulados` passa a significar "ciclos consumidos sem compra" — pulo
+     * de janela e ordem falha. O extrato continua distinguindo os dois por
+     * ciclo (`pulado` vs `falhou`, com o motivo), e o rótulo da tela foi
+     * corrigido junto: dizer "pulados" para uma ordem que falhou seria a mesma
+     * mentira de contador que `encerrado` vs `completo` já custou a esta casa.
+     */
+    if (!await fecharCiclo(p.id, d.ciclo, { status: "falhou", motivo: msg, simulado })) {
+      await avisar("ordem FALHOU e o ciclo nao foi marcado — ele fica preso em reservado", {
+        plano: p.id, ciclo: d.ciclo, erro: msg.slice(0, 160),
+      });
+    }
+    if (!await avancarPlano(p.id, { ciclosPulados: pulados + 1, nextRunAt: d.proximoRunAt })) {
+      await avisar("ordem FALHOU e o plano NAO avancou — o plano congela ate mao humana", {
+        plano: p.id, ciclo: d.ciclo, erro: msg.slice(0, 160),
+        why: "ciclos_pulados e next_run_at ficaram para tras. A proxima passada recalcula "
+          + "o mesmo ciclo e sai em ja_reservado, a cada 5 minutos, para sempre.",
+      });
+    }
     return { plano: p.id, acao: "falhou", detalhe: msg.slice(0, 120) };
   }
 }
