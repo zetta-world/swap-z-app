@@ -12,8 +12,17 @@
  * (a fresh public spot price) and rejects oversized BUYS. The dangerous
  * direction is overspend (price read too low → base amount too high); an
  * underspend (price read too high → base amount too low) is harmless and
- * passes. SELLS are only checked against the absolute ceiling — they reduce
- * exposure and are naturally bounded by the user's holdings.
+ * passes. SELLS are only checked against the absolute ceiling, because a
+ * position that grew past the per-trade cap must still be exitable in one go.
+ *
+ * ⚠⚠ ESSA ISENÇÃO DEPENDE DE UM TRINCO QUE VIVE FORA DAQUI, e a redação
+ * anterior a descrevia errado: dizia que as vendas são *"naturally bounded by
+ * the user's holdings"*. São — e era exatamente o buraco (achado A13): as
+ * posses do USUÁRIO incluem moeda que o bot nunca comprou, então esse limite
+ * protege a conta de vender a descoberto, não o dono de ter a própria bolsa
+ * despejada pelo robô dele. Quem limita a venda à POSIÇÃO DO BOT é
+ * `quantoPodeVender`, em `venda-limitada.ts`, chamado no pré-voo do cron antes
+ * desta guarda rodar. Tirar de lá reabre este aqui.
  *
  * Server-safe: no "use client", no React/zustand. Used by both the in-browser
  * order route and the background cron so the two channels share one guard.

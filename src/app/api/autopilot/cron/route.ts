@@ -12,13 +12,14 @@ import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
 import { trendGate } from "@/lib/zion/sniper";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
+import { quantoPodeVender, oQueSobrou } from "@/lib/autopilot/venda-limitada";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { runAlertWatchdog } from "@/lib/admin/watchdog";
 import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import {
   getOpenServerPositions, recordServerEntry, markServerExitArmed,
-  closeServerPosition, reopenServerPosition, applySessionPnl,
+  closeServerPosition, reopenServerPosition, applySessionPnl, reduzirServerPosition,
 } from "@/lib/autopilot/positions-server";
 import type { AutopilotSessionRow, AutopilotRunRow, AutopilotPositionRow } from "@/lib/supabase/types";
 import type { CexId, CexCredentials, CexOrder } from "@/lib/cex/types";
@@ -139,12 +140,27 @@ async function settleArmedExits(
             "P&L realizado NAO contabilizado — o stop de perda diaria nao viu esta perda e pode nao puxar o freio hoje",
             { session: s.id, base: pos.base, realized });
         }
-        await exigirGravacao(
-          await closeServerPosition(s.id, pos.base),
-          "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
-          { session: s.id, base: pos.base });
-        logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: pos.pair, side: "sell", volumeUsd: Number(pos.cost_usd) || null, pnlUsd: realized, status: "settled", route: "cron", ref: `${exchange}:${pos.exit_order_id}` });
-        rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", order_type: "limit", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: realized !== null ? `exit settled, realized $${realized.toFixed(2)}` : "exit settled" });
+        /**
+         * ⚠⚠ IDEM AQUI (A14): uma ordem limitada pode fechar PARCIALMENTE
+         * preenchida, e apagar a linha deixaria o resto órfão para sempre.
+         * `filled` ausente vira a posição inteira — o comportamento antigo,
+         * que é o seguro quando a corretora não diz quanto saiu.
+         */
+        const vendido = Number(order.filled) > 0 ? Number(order.filled) : Number(pos.base_amount);
+        const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
+        if (sobra.fecha) {
+          await exigirGravacao(
+            await closeServerPosition(s.id, pos.base),
+            "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
+            { session: s.id, base: pos.base });
+        } else {
+          await exigirGravacao(
+            await reduzirServerPosition(s.id, pos.base, sobra.baseRestante, sobra.custoRestante),
+            "saida PARCIAL nao gravada — o banco segue dizendo que a bolsa inteira esta la, e a passada seguinte tenta vender de novo o que ja saiu",
+            { session: s.id, base: pos.base, resta: sobra.baseRestante });
+        }
+        logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: pos.pair, side: "sell", volumeUsd: sobra.custoRemovido || null, pnlUsd: realized, status: "settled", route: "cron", ref: `${exchange}:${pos.exit_order_id}` });
+        rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", order_type: "limit", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: realized !== null ? `exit settled, realized $${realized.toFixed(2)}${sobra.fecha ? "" : `, ${sobra.baseRestante} still held`}` : "exit settled" });
       } else if (st === "canceled" || st === "cancelled" || st === "expired") {
         await exigirGravacao(
           await reopenServerPosition(s.id, pos.base),
@@ -520,24 +536,80 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         pushRow(intent, "rejected", card.kind, { reason: "symbol not allowed" });
         continue;
       }
-      const refPrice = refPrices.get(base)?.priceUsd ?? null;
-      const guard = checkRealNotional({ side: intent.side, baseAmount: intent.amount, refPrice, maxTradeUsd: effectiveMaxTradeUsd });
-      if (!guard.ok) {
-        pushRow(intent, "rejected", card.kind, { notional_usd: guard.realNotionalUsd ?? intent.notionalUsd, reason: guard.reason ?? "notional guard" });
-        continue;
-      }
-
-      // ── SELL (A5): only sell a base the bot actually holds — never dump an
-      //    unrelated user holding. Market sell settles P&L now; a limit sell
-      //    is armed and settled on a later run. ──
+      /**
+       * ── PRÉ-VOO DA VENDA (A5 + A13) — o que o bot tem é o TETO do que ele vende.
+       *
+       * ⚠⚠ ISTO ACONTECE ANTES DA GUARDA DE NOCIONAL DE PROPÓSITO: a guarda
+       * precisa checar a quantidade QUE VAI SER ENVIADA, e o registro da linha
+       * precisa mostrar o nocional real, não o que o modelo pediu.
+       *
+       * O comentário antigo aqui dizia *"only sell a base the bot actually
+       * holds — never dump an unrelated user holding"*, e conferia o SÍMBOLO e
+       * nunca o TAMANHO: `placeCexOrder` recebia `intent.amount`, vindo do
+       * cartão do modelo. E `price-guard.ts` isenta as vendas do teto por
+       * operação justamente porque *"they are naturally bounded by the user's
+       * holdings"* — as posses do USUÁRIO, que incluem moeda que o bot nunca
+       * comprou. Duas suposições, cada uma contando com a outra; entre elas só
+       * restava o teto rígido de US$ 100.000 por ordem, a cada 5 minutos.
+       */
+      let vendaDe: AutopilotPositionRow | null = null;
+      let amount = intent.amount;
       if (intent.side === "sell") {
         const pos = openPositions.find((p) => p.base.toUpperCase() === base);
         if (!pos || !ownedBases.has(base)) {
           pushRow(intent, "skipped", card.kind, { reason: "no open autopilot position for this base" });
           continue;
         }
+        /**
+         * ⚠⚠ UMA SAÍDA ARMADA JÁ É UMA ORDEM VIVA NA CORRETORA. Uma segunda
+         * venda aqui vende a MESMA bolsa duas vezes — exatamente o desfecho que
+         * `markServerExitArmed` teme por escrito, só que pelo caminho de
+         * SUCESSO em vez do de falha. O modelo recebe `exit_armed=yes` no
+         * contexto, mas informar o modelo não é travar o código.
+         *
+         * Falha FECHADA: pula e deixa a ordem armada resolver sozinha. Trocar
+         * uma saída armada por uma a mercado exigiria cancelar a primeira, e
+         * cancelar-e-repor não existe aqui — enquanto não existir, duas ordens
+         * vivas é o pior dos desfechos.
+         */
+        if (pos.status === "exit_armed") {
+          pushRow(intent, "skipped", card.kind, {
+            order_id: pos.exit_order_id,
+            reason: "exit already armed for this base — a second sell would dump the same bag twice",
+          });
+          continue;
+        }
+        const venda = quantoPodeVender(intent.amount, pos.base_amount);
+        if (!venda.ok) {
+          pushRow(intent, "rejected", card.kind, { reason: `sell blocked: ${venda.porque}` });
+          continue;
+        }
+        if (venda.limitada) {
+          // O modelo pediu mais do que o bot tem. NÃO é ruído: é a diferença
+          // entre vender a posição e vender a bolsa do dono.
+          await recordEvent("autopilot_venda_limitada_a_posicao", { meta: {
+            session: s.id, pair: intent.symbol, pedido: intent.amount, naPosicao: venda.naPosicao,
+            why: "o cartão pediu vender mais do que o bot comprou — o excedente seria moeda "
+              + "do próprio usuário, que o autopilot não tem mandato para vender",
+          } });
+        }
+        amount = venda.qtd;
+        vendaDe = pos;
+      }
+
+      const refPrice = refPrices.get(base)?.priceUsd ?? null;
+      const guard = checkRealNotional({ side: intent.side, baseAmount: amount, refPrice, maxTradeUsd: effectiveMaxTradeUsd });
+      if (!guard.ok) {
+        pushRow(intent, "rejected", card.kind, { notional_usd: guard.realNotionalUsd ?? intent.notionalUsd, reason: guard.reason ?? "notional guard" });
+        continue;
+      }
+
+      // ── SELL (A5): market sell settles P&L now; a limit sell is armed e
+      //    liquidada numa passada posterior. ──
+      if (vendaDe) {
+        const pos = vendaDe;
         try {
-          const { order } = await placeCexOrder(exchange, creds, { symbol: intent.symbol, side: "sell", type: intent.type, amount: intent.amount, price: intent.price });
+          const { order } = await placeCexOrder(exchange, creds, { symbol: intent.symbol, side: "sell", type: intent.type, amount, price: intent.price });
           fired++; remainingTrades--;
           // Conta a ordem NA HORA (ver a nota em "contador incremental" no fim
           // desta função): a ordem já existe na corretora, então o limite diário
@@ -560,14 +632,35 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
                 { session: s.id, base: pos.base, realized });
               if (pnlToday <= -s.daily_loss_stop_usd) frozenUntil = today;
             }
-            await exigirGravacao(
-              await closeServerPosition(s.id, pos.base),
-              "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
-              { session: s.id, base: pos.base });
-            ownedBases.delete(base);
-            exposureUsd = Math.max(0, exposureUsd - Number(pos.cost_usd || 0));
-            logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: intent.symbol, side: "sell", volumeUsd: Number(pos.cost_usd) || null, pnlUsd: realized, status: "filled", route: "cron", ref: `${exchange}:${order.id}` });
-            pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: realized ?? intent.notionalUsd, reason: realized !== null ? `exit filled, realized $${realized.toFixed(2)}` : "exit filled" });
+            /**
+             * ⚠⚠ SAÍDA PARCIAL NÃO APAGA A LINHA (A14). Antes, qualquer
+             * preenchimento > 0 chamava `closeServerPosition`: vendida uma
+             * parte, o bot passava a acreditar que não tem nada — o resto
+             * ficava órfão na conta do cliente e o teto de exposição liberava o
+             * custo INTEIRO, então ele ainda comprava por cima.
+             *
+             * ⚠️ `filled` ausente vira a quantidade ENVIADA — a mesma convenção
+             * que o ramo de compra já usa. Tratar como "vendeu zero" faria a
+             * passada seguinte vender de novo o que já saiu.
+             */
+            const vendido = Number(order.filled) > 0 ? Number(order.filled) : amount;
+            const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
+            if (sobra.fecha) {
+              await exigirGravacao(
+                await closeServerPosition(s.id, pos.base),
+                "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
+                { session: s.id, base: pos.base });
+              ownedBases.delete(base);
+            } else {
+              await exigirGravacao(
+                await reduzirServerPosition(s.id, pos.base, sobra.baseRestante, sobra.custoRestante),
+                "saida PARCIAL nao gravada — o banco segue dizendo que a bolsa inteira esta la, e a passada seguinte tenta vender de novo o que ja saiu",
+                { session: s.id, base: pos.base, resta: sobra.baseRestante });
+              // A base CONTINUA nas mãos do bot: sai de `ownedBases` só quando fecha.
+            }
+            exposureUsd = Math.max(0, exposureUsd - sobra.custoRemovido);
+            logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: intent.symbol, side: "sell", volumeUsd: sobra.custoRemovido || null, pnlUsd: realized, status: "filled", route: "cron", ref: `${exchange}:${order.id}` });
+            pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: realized ?? guard.realNotionalUsd ?? intent.notionalUsd, reason: realized !== null ? `exit filled, realized $${realized.toFixed(2)}${sobra.fecha ? "" : `, ${sobra.baseRestante} still held`}` : "exit filled" });
           } else {
             await exigirGravacao(
               await markServerExitArmed(s.id, pos.base, order.id),
