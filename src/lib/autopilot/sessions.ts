@@ -245,18 +245,38 @@ export async function credenciaisDaSessao(
 }
 
 /** Patch a session's mutable fields (counters, freeze, last_scan_at, error). */
+/**
+ * ⚠⚠ POR QUE ISTO DEIXOU DE SER `Promise<void>` (achado A11, segunda parte).
+ *
+ * As nove chamadas no cron não são iguais. Oito são telemetria
+ * (`last_scan_at`, `last_error`): falhar ali envelhece a tela e nada mais.
+ *
+ * A NONA É A VIRADA DO DIA — `trades_today: 0, pnl_today: 0, last_reset_day`.
+ * E ela decide dinheiro: o cron zera o contador NA MEMÓRIA e calcula
+ * `remainingTrades = max_trades_per_day - tradesToday` a partir do valor local.
+ * Se a gravação for recusada, `last_reset_day` continua em ontem, a passada
+ * seguinte vê de novo "é outro dia", zera de novo na memória — e o limite
+ * diário que o usuário configurou vira limite POR PASSADA, a cada 5 minutos.
+ *
+ * Com `Promise<void>` não havia o que conferir: `supabase-js` resolve com
+ * `{ error }` e não lança, então recusa e sucesso eram indistinguíveis.
+ *
+ * ⚠️ `sem banco` também é `ok: false`. Antes o `return` cedo devolvia o mesmo
+ * `undefined` do caminho feliz — ausente e gravado liam igual.
+ */
 export async function patchSession(
   id: string,
   patch: Partial<Pick<AutopilotSessionRow,
     "trades_today" | "pnl_today" | "last_reset_day" | "frozen_until_day" |
     "last_scan_at" | "last_error" | "is_active">>,
-): Promise<void> {
+): Promise<{ ok: boolean; erro?: string }> {
   const db = getSupabaseAdmin();
-  if (!db) return;
-  await db
+  if (!db) return { ok: false, erro: "supabase nao configurado" };
+  const { error } = await db
     .from("autopilot_sessions")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id);
+  return error ? { ok: false, erro: error.message.slice(0, 200) } : { ok: true };
 }
 
 /**
