@@ -64,10 +64,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!VALID_KEYS.includes(key))
     return NextResponse.json({ error: "invalid key" }, { status: 400 });
 
-  await db.from("admin_kv").upsert(
+  /**
+   * ⚠️⚠️ UM KILL-SWITCH QUE DIZ "LIGADO" SEM TER GRAVADO É PIOR QUE NÃO TER
+   * KILL-SWITCH (achado A25 da auditoria externa, 14/09).
+   *
+   * Aqui o `upsert` tinha o retorno jogado fora. `supabase-js` RESOLVE com
+   * `{ error }` e não lança, então uma escrita recusada devolvia
+   * `{ ok: true, key, enabled }` ao painel — e o operador PARA DE PROCURAR o
+   * problema, que é exatamente o oposto do que o interruptor existe para fazer.
+   *
+   * ⚠️ E ERA PIOR QUE O 200 MENTIROSO: o `logAdminAction` abaixo gravava que o
+   * interruptor foi virado. O registro forense — a coisa que se consulta quando
+   * algo dá errado — passava a mentir junto com a tela.
+   *
+   * Por isso a auditoria só é escrita DEPOIS de a gravação ser confirmada.
+   */
+  const { error: erroDaEscrita } = await db.from("admin_kv").upsert(
     { key, value: String(enabled), updated_at: new Date().toISOString() },
     { onConflict: "key" },
   );
+  if (erroDaEscrita) {
+    return NextResponse.json(
+      { error: "nao_gravou", key, enabled,
+        porque: `o interruptor NÃO foi alterado: ${erroDaEscrita.message.slice(0, 160)}` },
+      { status: 500 },
+    );
+  }
 
   await logAdminAction(actor, `killswitch.${key}`, undefined, { enabled });
   broadcastAdminRefresh("killswitch");

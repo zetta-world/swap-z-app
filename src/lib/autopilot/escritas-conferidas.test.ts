@@ -21,6 +21,20 @@ import { join } from "node:path";
 
 const STORE = readFileSync(join(process.cwd(), "src/lib/autopilot/positions-server.ts"), "utf8");
 const CRON  = readFileSync(join(process.cwd(), "src/app/api/autopilot/cron/route.ts"), "utf8");
+/**
+ * ⚠️⚠️ ESTE ARQUIVO ENTROU EM 14/09, E A OMISSÃO DELE CUSTOU O ACHADO A11.
+ *
+ * A trava acima estava certa e completa — para `positions-server.ts`. Só que
+ * `disarmSession`, que é o BOTÃO DE PARAR do autopilot, mora em `sessions.ts` e
+ * nunca foi olhada: devolvia `Promise<void>`, a rota respondia `{ ok: true }`, e
+ * uma escrita recusada deixava o robô negociando com dinheiro real enquanto a
+ * tela dizia "desligado".
+ *
+ * É o padrão nº 8 desta casa outra vez: a peça certa, testada, e apontada para
+ * o arquivo errado.
+ */
+const SESSOES = readFileSync(join(process.cwd(), "src/lib/autopilot/sessions.ts"), "utf8");
+const ROTA_SESSAO = readFileSync(join(process.cwd(), "src/app/api/autopilot/session/route.ts"), "utf8");
 
 const semComentarios = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/^(\s*)\/\/.*$/gm, "$1");
@@ -65,5 +79,90 @@ describe("o cron CONFERE cada uma delas", () => {
     expect(codigo).toMatch(/vende duas vezes a mesma bolsa/);
     expect(codigo).toMatch(/nunca mais sai deste trade/);
     expect(codigo).toMatch(/teto de exposicao conta capital que nao esta mais la/);
+  });
+});
+
+/**
+ * ⚠️⚠️ O BOTÃO DE PARAR — achado A11 da auditoria externa (14/09).
+ *
+ * `disarmSession` devolvia `Promise<void>`. A rota fazia `await disarmSession(…)`
+ * e, na linha seguinte, `{ ok: true }`. Como `supabase-js` RESOLVE com
+ * `{ error }` e não lança, um UPDATE recusado era indistinguível de sucesso: a
+ * tela dizia "ele para de operar imediatamente", `is_active` continuava `true`,
+ * e o cron de 5 minutos seguia colocando ordem na corretora do cliente.
+ *
+ * ⚠️ E a leitura fechava a armadilha: `getSessionStatus` também engolia o erro
+ * e devolvia `null`, que o painel lê como DESARMADO. Numa queda de banco a
+ * escrita E a leitura falhavam juntas — a tela mostrava desligado enquanto a
+ * linha continuava ativa, e o cron retomava minutos depois.
+ */
+describe("o botão de PARAR do autopilot não pode mentir", () => {
+  it("⚠️⚠️ `disarmSession` não devolve void — conferir tem de ser possível", () => {
+    const m = /export async function disarmSession\([\s\S]*?\)\s*:\s*Promise<([^>]+)>/.exec(SESSOES);
+    expect(m, "disarmSession não encontrada — renomeada? atualize esta trava").not.toBeNull();
+    expect(m![1].trim()).not.toBe("void");
+    expect(m![1]).toContain("ok");
+  });
+
+  it("⚠️ ela lê o `error` e conta as linhas que casaram", () => {
+    const corpo = SESSOES.slice(SESSOES.indexOf("export async function disarmSession"));
+    const ate = corpo.slice(0, corpo.indexOf("\n}"));
+    expect(ate).toMatch(/const \{ data, error \} = await db/);
+    // Sem `.select()`, "gravou" e "não achou o que gravar" voltam idênticos.
+    expect(ate).toMatch(/\.select\("id"\)/);
+  });
+
+  it("⚠️⚠️ a rota falha FECHADO — 500, não `ok: true`", () => {
+    const codigo = semComentarios(ROTA_SESSAO);
+    expect(codigo).toMatch(/const r = await disarmSession\(/);
+    expect(codigo).toMatch(/if \(!r\.ok\)/);
+    expect(codigo).toMatch(/status: 500/);
+    // O `await disarmSession(...)` solto seguido de ok:true era o defeito.
+    expect(codigo).not.toMatch(/await disarmSession\([^)]*\);\s*\n\s*return NextResponse\.json\(\{ ok: true \}\)/);
+  });
+
+  it("⚠️ e o evento carrega a CONSEQUÊNCIA, não só o nome do erro", () => {
+    // "disarm_failed" não diz a ninguém o que fazer. "a sessão CONTINUA ativa e
+    // o cron vai negociar de novo" diz — e manda revogar a chave na corretora.
+    expect(ROTA_SESSAO).toMatch(/a sessão CONTINUA ativa e o cron vai negociar de novo/);
+  });
+
+  it("⚠️ falha de LEITURA não vira 'não há sessão' — o painel leria desarmado", () => {
+    const corpo = SESSOES.slice(SESSOES.indexOf("export async function getSessionStatus"));
+    const ate = corpo.slice(0, corpo.indexOf("\n}"));
+    expect(ate).toMatch(/const \{ data, error \} = await db/);
+    expect(ate).toMatch(/if \(error\) throw new Error/);
+  });
+});
+
+/**
+ * ⚠️⚠️ O KILL-SWITCH — achado A25 (14/09).
+ *
+ * Um interruptor que diz "ligado" sem ter gravado é PIOR que não ter
+ * interruptor: o operador para de procurar o problema. E era pior que o 200
+ * mentiroso — o `logAdminAction` gravava a virada mesmo na falha, então o
+ * registro forense mentia junto com a tela.
+ */
+describe("o kill-switch não pode confirmar o que não gravou", () => {
+  const KILL = readFileSync(join(process.cwd(), "src/app/admin/api/killswitch/route.ts"), "utf8");
+  const codigo = semComentarios(KILL);
+
+  it("⚠️⚠️ o upsert tem o erro lido, e a rota devolve 500", () => {
+    expect(codigo).toMatch(/const \{ error: erroDaEscrita \} = await db\.from\("admin_kv"\)\.upsert/);
+    expect(codigo).toMatch(/if \(erroDaEscrita\)/);
+    expect(codigo).toMatch(/status: 500/);
+  });
+
+  it("⚠️⚠️ a AUDITORIA só é escrita depois da gravação confirmada", () => {
+    // O registro forense é o que se consulta quando algo dá errado. Ele mentir
+    // junto com a tela é o pior desfecho possível deste defeito.
+    const iErro = codigo.indexOf("if (erroDaEscrita)");
+    const iAudit = codigo.indexOf("logAdminAction(actor, `killswitch.");
+    expect(iErro).toBeGreaterThan(0);
+    expect(iAudit).toBeGreaterThan(iErro);
+  });
+
+  it("⚠️ e o motivo diz que o interruptor NÃO mudou", () => {
+    expect(KILL).toMatch(/o interruptor NÃO foi alterado/);
   });
 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
+import { recordEvent } from "@/lib/admin/track";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { isEncryptionConfigured } from "@/lib/crypto/secretbox";
 import {
@@ -208,8 +209,30 @@ export async function DELETE(req: NextRequest) {
   if (!VALID_EXCHANGES.has(exchangeId)) {
     return NextResponse.json({ ok: false, error: "invalid_exchange" }, { status: 400 });
   }
-  await disarmSession(session.sub, exchangeId);
-  return NextResponse.json({ ok: true });
+  /**
+   * ⚠️⚠️ FALHA FECHADO — o botão de PARAR não pode mentir (A11, 14/09).
+   *
+   * Aqui havia `await disarmSession(...)` e, na linha seguinte, `{ ok: true }`.
+   * O `await` engolia o erro (supabase-js resolve com `{error}`, não lança), a
+   * tela dizia "ele para de operar imediatamente", e o cron seguia negociando.
+   *
+   * ⚠️ `linhas === 0` devolve SUCESSO: já estava desarmado, ou nunca houve
+   * sessão. Um segundo clique não é uma falha.
+   */
+  const r = await disarmSession(session.sub, exchangeId);
+  if (!r.ok) {
+    /**
+     * ⚠️ E O EVENTO SAI COM A CONSEQUÊNCIA ESCRITA, não só com o erro: quem
+     * ler o alerta precisa saber que a sessão CONTINUA ativa, senão trata como
+     * ruído de banco e não vai revogar a chave na corretora.
+     */
+    await recordEvent("autopilot_disarm_nao_gravou", { meta: {
+      exchange: exchangeId,
+      why: "a sessão CONTINUA ativa e o cron vai negociar de novo — o usuário acha que desligou",
+    } });
+    return NextResponse.json({ ok: false, error: "disarm_failed" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true, jaEstavaDesarmado: r.linhas === 0 });
 }
 
 /** GET — status for ?exchangeId=… plus recent background run log. */
