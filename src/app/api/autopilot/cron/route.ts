@@ -222,6 +222,31 @@ async function exigirGravacao(
   return false;
 }
 
+/**
+ * ⚠️ AS OITO CHAMADAS DE TELEMETRIA — e o nome existe para dizer isso.
+ *
+ * `last_scan_at` e `last_error` não decidem nada: uma recusa aqui envelhece a
+ * tela e o painel do admin, e só. Interromper a passada por causa delas seria
+ * trocar um defeito barato por um caro.
+ *
+ * ⚠⚠ MAS NÃO PODE SER MUDA. `last_scan_at` parado é exatamente o sintoma que
+ * o watchdog lê como "cron morto" — e ele não pode acusar isso sem a causa
+ * gravada ao lado, ou a investigação começa no lugar errado. O `dedupKey` do
+ * `recordEvent` segura o volume numa queda de banco prolongada.
+ */
+async function telemetria(
+  id: string,
+  patch: Parameters<typeof patchSession>[1],
+): Promise<void> {
+  const r = await patchSession(id, patch);
+  if (r.ok) return;
+  await recordEvent("autopilot_telemetria_nao_gravou", { meta: { severity: "low",
+    session: id, erro: r.erro,
+    why: "last_scan_at/last_error ficaram para tras. O watchdog pode ler isto como "
+      + "'cron parado' \u2014 a passada em si seguiu normal.",
+  } });
+}
+
 export async function POST(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -312,7 +337,10 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       origens.erro += 1;
-      await patchSession(s.id, { last_error: msg.slice(0, 300), last_scan_at: new Date().toISOString() });
+      // Telemetria: recusa aqui só envelhece a tela, então não interrompe nada.
+      // Mas fica REGISTRADA — `last_scan_at` parado é o sintoma que o watchdog
+      // usa para dizer "cron morto", e ele não pode acusar sem a causa ao lado.
+      await telemetria(s.id, { last_error: msg.slice(0, 300), last_scan_at: new Date().toISOString() });
       summary.push({ exchange: s.exchange_id, wallet: `${s.wallet_address.slice(0, 6)}…`, fired: 0, skipped: `error: ${msg.slice(0, 80)}` });
     } finally {
       await releaseLock(s.id);
@@ -377,7 +405,33 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     tradesToday = 0;
     pnlToday    = 0;
     frozenUntil = frozenUntil === today ? frozenUntil : null;
-    await patchSession(s.id, { trades_today: 0, pnl_today: 0, last_reset_day: today, frozen_until_day: frozenUntil });
+    /**
+     * ⚠⚠ A ÚNICA DAS NOVE `patchSession` QUE DECIDE DINHEIRO — e a que ficou
+     * para este PR quando o A11 entrou.
+     *
+     * O contador foi zerado ACIMA, na memória, e `remainingTrades` sai de
+     * `max_trades_per_day - tradesToday` (linha ~496) — do valor LOCAL. Se esta
+     * gravação for recusada, `last_reset_day` continua em ontem: a passada
+     * seguinte vê "é outro dia" de novo, zera de novo na memória, e o limite
+     * diário que o usuário configurou vira limite POR PASSADA — a cada 5
+     * minutos, até 288 cotas diárias num dia.
+     *
+     * O mesmo vale para `pnl_today`: o stop de perda local passa a enxergar só
+     * o prejuízo DESTA passada.
+     *
+     * FALHA FECHADO: sem virada gravada, esta sessão não negocia. É a mesma
+     * decisão do `contadorConfiavel` mais abaixo — perder a conta do dia
+     * interrompe a passada — só que aqui na origem do contador.
+     */
+    const virou = await patchSession(s.id, { trades_today: 0, pnl_today: 0, last_reset_day: today, frozen_until_day: frozenUntil });
+    if (!virou.ok) {
+      await recordEvent("autopilot_virada_do_dia_nao_gravou", { wallet: s.wallet_address, meta: { severity: "high",
+        session: s.id, dia: today, erro: virou.erro,
+        why: "o contador diario foi zerado na memoria e NAO no banco. Sem falhar fechado, "
+          + "toda passada zeraria de novo e o limite diario viraria limite por passada.",
+      } });
+      return { origem: undefined, fired: 0, note: "daily rollover not persisted — session skipped" };
+    }
   }
 
   /**
@@ -405,12 +459,12 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   if (frozenUntil === today) {
     alertIfNewlyFrozen();
     if (runRows.length) await recordRuns(runRows);
-    await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
+    await telemetria(s.id, { last_scan_at: nowIso, last_error: null });
     return { origem, fired: 0, note: "frozen (daily loss-stop)" };
   }
   if (tradesToday >= s.max_trades_per_day) {
     if (runRows.length) await recordRuns(runRows);
-    await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
+    await telemetria(s.id, { last_scan_at: nowIso, last_error: null });
     return { origem, fired: 0, note: "daily trade cap reached" };
   }
 
@@ -430,7 +484,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     balanceContext = `total: $${totalUsd.toFixed(2)} | ${parts}`;
   } catch (e) {
     if (runRows.length) await recordRuns(runRows);
-    await patchSession(s.id, { last_scan_at: nowIso, last_error: `balance read failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300) });
+    await telemetria(s.id, { last_scan_at: nowIso, last_error: `balance read failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300) });
     return { origem, fired: 0, note: "balance read failed" };
   }
 
@@ -468,13 +522,13 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
 
   if (scan.error) {
     if (runRows.length) await recordRuns(runRows);
-    await patchSession(s.id, { last_scan_at: nowIso, last_error: `scan: ${scan.error}`.slice(0, 300) });
+    await telemetria(s.id, { last_scan_at: nowIso, last_error: `scan: ${scan.error}`.slice(0, 300) });
     await recordRuns([{ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, status: "scan_error", reason: scan.error.slice(0, 200) }]);
     return { origem, fired: 0, note: "scan error" };
   }
   if (scan.cards.length === 0) {
     if (runRows.length) await recordRuns(runRows);
-    await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
+    await telemetria(s.id, { last_scan_at: nowIso, last_error: null });
     await recordRuns([{ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, status: "scan_empty", reason: "no actionable setup" }]);
     return { origem, fired: 0, note: "no setup" };
   }
@@ -482,7 +536,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   // ── 9. Background firing is SPOT-ONLY (no unattended leverage) ──
   if (s.market_type !== "spot") {
     if (runRows.length) await recordRuns(runRows);
-    await patchSession(s.id, { last_scan_at: nowIso, last_error: null });
+    await telemetria(s.id, { last_scan_at: nowIso, last_error: null });
     await recordRuns([{
       session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id,
       status: "skipped", card_kind: s.market_type,
@@ -758,7 +812,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   // Agora cada ordem é contada logo após existir. O RPC é relativo e atômico
   // (o mesmo que o navegador usa), então somas concorrentes não se perdem — e
   // pagar uma ida ao banco por ordem executada é barato no caminho do dinheiro.
-  await patchSession(s.id, {
+  await telemetria(s.id, {
     last_scan_at: nowIso,
     last_error:   null,
   });

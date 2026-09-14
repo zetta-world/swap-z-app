@@ -166,3 +166,61 @@ describe("o kill-switch não pode confirmar o que não gravou", () => {
     expect(KILL).toMatch(/o interruptor NÃO foi alterado/);
   });
 });
+
+/**
+ * ⚠⚠ A NONA `patchSession` — a que ficou para um PR próprio quando o A11
+ * entrou, e que agora fecha.
+ *
+ * As nove chamadas no cron não são iguais. Oito são telemetria
+ * (`last_scan_at`, `last_error`): recusa ali envelhece a tela e nada mais. A
+ * nona é a VIRADA DO DIA, e ela decide dinheiro.
+ *
+ * O cron zera `tradesToday` NA MEMÓRIA e calcula
+ * `remainingTrades = max_trades_per_day - tradesToday` a partir do valor local.
+ * Gravação recusada → `last_reset_day` continua em ontem → a passada seguinte
+ * vê "é outro dia" outra vez, zera de novo na memória — e o limite diário que
+ * o usuário configurou vira limite POR PASSADA. A cada 5 minutos, até 288
+ * cotas diárias num dia.
+ */
+describe("a virada do dia não pode falhar calada", () => {
+  const codigo = semComentarios(CRON);
+
+  it("⚠⚠ `patchSession` devolve SE gravou — `void` tornava a conferência impossível", () => {
+    const m = /export async function patchSession\([\s\S]*?\)\s*:\s*Promise<([^>]+)>/.exec(SESSOES);
+    expect(m, "patchSession não encontrada — renomeada? atualize esta trava").not.toBeNull();
+    expect(m![1].trim()).not.toBe("void");
+    expect(m![1]).toContain("ok");
+  });
+
+  it("⚠️ e `sem banco` também é falha — ausente não pode ler como gravado", () => {
+    const corpo = SESSOES.slice(SESSOES.indexOf("export async function patchSession"));
+    const ate = corpo.slice(0, corpo.indexOf("\n}"));
+    expect(ate).toMatch(/if \(!db\) return \{ ok: false/);
+    expect(ate).toMatch(/const \{ error \} = await db/);
+  });
+
+  it("⚠⚠ a virada do dia FALHA FECHADO — sem gravar, a sessão não negocia", () => {
+    expect(codigo).toMatch(/const virou = await patchSession\(s\.id, \{ trades_today: 0/);
+    expect(codigo).toMatch(/if \(!virou\.ok\)/);
+    // O `return` é o que impede a passada de negociar com contador de mentira.
+    const i = codigo.indexOf("if (!virou.ok)");
+    expect(codigo.slice(i, i + 700)).toMatch(/return \{ origem: undefined, fired: 0/);
+  });
+
+  it("⚠️ o evento carrega a CONSEQUÊNCIA, não só o nome do erro", () => {
+    expect(CRON).toMatch(/o limite diario viraria limite por passada/);
+    expect(codigo).toMatch(/autopilot_virada_do_dia_nao_gravou/);
+  });
+
+  it("⚠⚠ e as OITO de telemetria são nomeadas como tal — não esquecidas", () => {
+    // Um `await patchSession(...)` solto é indistinguível de retorno esquecido.
+    // O helper diz, no nome, que a recusa foi considerada e não interrompe.
+    const soltas = [...codigo.matchAll(/await patchSession\(s\.id,/g)].length;
+    expect(soltas, "só a virada do dia chama patchSession direto").toBe(1);
+    expect([...codigo.matchAll(/await telemetria\(s\.id,/g)].length).toBe(8);
+  });
+
+  it("⚠️ e a telemetria recusada fica REGISTRADA — last_scan_at parado é sintoma de watchdog", () => {
+    expect(codigo).toMatch(/autopilot_telemetria_nao_gravou/);
+  });
+});
