@@ -134,6 +134,58 @@ export async function planosDaCarteira(wallet: string, teto = 50): Promise<Plano
   return data as PlanoRow[];
 }
 
+/**
+ * ⚠⚠ UM PLANO SÓ, BUSCADO DIRETO — achado A18 da auditoria externa (14/09).
+ *
+ * A rota autorizava pausar/encerrar com
+ * `planosDaCarteira(wallet).find(p => p.id === id)`, e essa lista tem teto de
+ * **50**, ordenada do mais novo para o mais velho.
+ *
+ * O cron, porém, lê `planosVencidos` com teto de **200**. Então do 51º plano
+ * mais antigo em diante havia uma assimetria com dinheiro dentro: **o executor
+ * enxergava planos que o controlador não conseguia parar**. Pausar e encerrar
+ * devolviam 404 `nao_encontrado` — e o plano seguia comprando, janela após
+ * janela, sem botão que o alcançasse.
+ *
+ * ⚠️ LISTA NÃO É AUTORIZAÇÃO. A lista é uma VISTA, e toda vista tem teto;
+ * a pergunta "este plano é desta carteira?" é de UMA linha e não pode depender
+ * de paginação. O `eq("wallet_address", wallet)` aqui é o que autoriza — o id
+ * sozinho continua não sendo autorização.
+ *
+ * ⚠️ `null` distingue "não é seu / não existe" de erro de banco: erro devolve
+ * `undefined`, e quem chama trata os dois de forma diferente — 404 não pode
+ * significar "o banco caiu".
+ */
+export async function planoDaCarteira(
+  wallet: string, planoId: string,
+): Promise<PlanoRow | null | undefined> {
+  const db = cru();
+  if (!db) return undefined;
+  // ⚠️ `limit(1)` e não `maybeSingle`: o `Filtro` deste arquivo é estreito de
+  // propósito (ver o cabeçalho), e alargá-lo por uma consulta não se paga.
+  const { data, error } = await db.from(PLANOS)
+    .select("*").eq("wallet_address", wallet).eq("id", planoId).limit(1);
+  if (error || !Array.isArray(data)) return undefined;
+  return (data[0] as PlanoRow | undefined) ?? null;
+}
+
+/**
+ * A lista veio cortada? — para a tela poder dizer isso em vez de fingir que
+ * mostrou tudo (A18, segunda metade).
+ *
+ * ⚠️ Mesmo padrão de `idsDaCarteira`: pede UM a mais que o teto. Erro de
+ * banco devolve `null` (= não sei), nunca `false` — "não sei" e "mostrei tudo"
+ * são respostas diferentes, e só uma delas é verdade.
+ */
+export async function haMaisPlanos(wallet: string, teto = 50): Promise<boolean | null> {
+  const db = cru();
+  if (!db) return null;
+  const { data, error } = await db.from(PLANOS)
+    .select("id").eq("wallet_address", wallet).limit(teto + 1);
+  if (error || !Array.isArray(data)) return null;
+  return data.length > teto;
+}
+
 /** Os ciclos de um plano — o extrato que prova o que aconteceu. */
 export async function ciclosDoPlano(planoId: string, teto = 400): Promise<Array<{
   ciclo_numero: number; status: string; motivo: string | null;

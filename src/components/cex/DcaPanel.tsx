@@ -85,6 +85,11 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
    * diferentes, e juntá-los faria a tela afirmar o que não sabe.
    */
   const [cron, setCron] = useState<{ haMinutos: number | null; pausado?: boolean } | undefined>();
+  /**
+   * ⚠️ A lista tem teto de 50 e o cron lê até 200 (achado A18). `null` = não
+   * sei, `false` = mostrei tudo — são respostas diferentes, e só uma afirma.
+   */
+  const [cortada, setCortada] = useState<boolean | null>(null);
   const [ciclos, setCiclos]   = useState<Record<string, Ciclo[]>>({});
   const [aberto, setAberto]   = useState<string | null>(null);
   const [symbol, setSymbol]   = useState("BTC/USDT");
@@ -107,6 +112,7 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
       const j = await r.json();
       setPlanos(r.ok && Array.isArray(j.planos) ? j.planos : []);
       if (r.ok && j.cron) setCron(j.cron);
+      setCortada(r.ok && typeof j.cortada === "boolean" ? j.cortada : null);
     } catch {
       // ⚠️ `null` seguiria dizendo "carregando" para sempre; `[]` diria "não há
       // planos", que é AFIRMAR o que não se sabe. Um array vazio com erro na
@@ -372,6 +378,18 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
       </div>
 
       {/* ── os planos ─────────────────────────────────────────────── */}
+      {/* ⚠⚠ A LISTA TEM TETO, E ELA DIZ ISSO (achado A18).
+          Mostrar 50 sem avisar que há mais afirma "isto é tudo" sem saber — e
+          era pior que estética: o PATCH autorizava pelo que estava NESTA lista,
+          então o plano invisível era também o imparavel. A rota passou a
+          autorizar por consulta dirigida; aqui fica o aviso de que a VISTA
+          está cortada. */}
+      {cortada === true && (
+        <div className="rounded-xl border border-gold/20 bg-gold/[0.04] px-3 py-2">
+          <p className="font-mono text-[10px] text-gold">{t("cex.dcaListaCortada")}</p>
+        </div>
+      )}
+
       {planos === null ? (
         <div className="font-mono text-[11px] text-ink-4">…</div>
       ) : planos.length === 0 ? (

@@ -3,7 +3,8 @@ import { getSession } from "@/lib/auth/session";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { guardarConexao } from "@/lib/cex/conexoes";
 import {
-  criarPlano, planosDaCarteira, ciclosDoPlano, avancarPlano, type ModoPlano,
+  criarPlano, planosDaCarteira, planoDaCarteira, haMaisPlanos, ciclosDoPlano,
+  avancarPlano, type ModoPlano,
 } from "@/lib/dca/store";
 import { proximaJanela, type Intervalo } from "@/lib/dca/relogio";
 /**
@@ -125,17 +126,37 @@ export async function GET(req: NextRequest) {
   if (barrado) return barrado;
 
   const planoId = req.nextUrl.searchParams.get("plano");
-  const [planos, cron] = await Promise.all([
+  const [planos, cron, cortada] = await Promise.all([
     planosDaCarteira(session.sub),
     ultimaPassadaDoCron(),
+    haMaisPlanos(session.sub),
   ]);
-  if (!planoId) return NextResponse.json({ ok: true, planos, cron });
+  /**
+   * ⚠️ `cortada` existe porque a lista tem teto de 50 e o cron lê até 200: uma
+   * tela que mostra 50 e não diz que há mais afirma "isto é tudo" sem saber.
+   * `null` = não sei, que é diferente de `false`.
+   */
+  if (!planoId) return NextResponse.json({ ok: true, planos, cron, cortada });
 
-  // ⚠️ O extrato só sai para um plano DESTA carteira. Sem esta conferência, um
-  // id adivinhado leria os ciclos de outra pessoa.
-  const meu = planos.find((p) => p.id === planoId);
+  /**
+   * ⚠⚠ CONSULTA DIRIGIDA, NÃO BUSCA NA LISTA (achado A18).
+   *
+   * Aqui era `planos.find(p => p.id === planoId)` — e `planos` tem teto de 50.
+   * Do 51º plano mais antigo em diante o próprio dono recebia 404 no extrato do
+   * plano dele. Lista é VISTA, e toda vista tem teto; "este plano é desta
+   * carteira?" é pergunta de uma linha e não pode depender de paginação.
+   *
+   * ⚠️ O `eq("wallet_address", …)` dentro de `planoDaCarteira` é o que
+   * autoriza — o id sozinho continua não sendo autorização.
+   */
+  const meu = await planoDaCarteira(session.sub, planoId);
+  if (meu === undefined) {
+    // Falha de banco não pode virar "não é seu": 404 mandaria o dono procurar
+    // no lugar errado, e o plano dele está lá.
+    return NextResponse.json({ ok: false, error: "banco_indisponivel" }, { status: 503 });
+  }
   if (!meu) return NextResponse.json({ ok: false, error: "nao_encontrado" }, { status: 404 });
-  return NextResponse.json({ ok: true, planos, cron, ciclos: await ciclosDoPlano(planoId) });
+  return NextResponse.json({ ok: true, planos, cron, cortada, ciclos: await ciclosDoPlano(planoId) });
 }
 
 export async function POST(req: NextRequest) {
@@ -237,9 +258,24 @@ export async function PATCH(req: NextRequest) {
   const id   = String(b.id ?? "");
   const acao = String(b.acao ?? "");
 
-  // ⚠️ Só mexe em plano DESTA carteira. O id sozinho não é autorização.
-  const meus = await planosDaCarteira(session.sub);
-  const meu = meus.find((p) => p.id === id);
+  /**
+   * ⚠️ Só mexe em plano DESTA carteira. O id sozinho não é autorização.
+   *
+   * ⚠⚠ E ISTO ERA `planosDaCarteira(…).find(…)`, COM TETO DE 50 (achado A18).
+   *
+   * O cron lê `planosVencidos` com teto de **200**. Do 51º plano mais antigo em
+   * diante havia uma assimetria com dinheiro dentro: **o executor enxergava
+   * planos que o controlador não conseguia parar**. PAUSAR e ENCERRAR devolviam
+   * 404 `nao_encontrado` — e o plano seguia comprando, janela após janela, sem
+   * botão que o alcançasse. É o botão de parar que não para, pela terceira vez
+   * nesta auditoria.
+   */
+  const meu = await planoDaCarteira(session.sub, id);
+  if (meu === undefined) {
+    // ⚠️ FALHA DE BANCO NÃO É "NÃO É SEU". Devolver 404 aqui diria ao dono que
+    // o plano não existe enquanto ele continua ativo e comprando.
+    return NextResponse.json({ ok: false, error: "banco_indisponivel" }, { status: 503 });
+  }
   if (!meu) return NextResponse.json({ ok: false, error: "nao_encontrado" }, { status: 404 });
 
   if (acao === "pausar")  {
