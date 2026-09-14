@@ -117,15 +117,44 @@ export async function armSession(input: ArmSessionInput): Promise<string | null>
   return data?.id ?? null;
 }
 
-/** Disarm — flip is_active false. The cron skips inactive rows. */
-export async function disarmSession(walletAddress: string, exchangeId: string): Promise<void> {
+/**
+ * O botão de PARAR do autopilot.
+ *
+ * ⚠️⚠️ ELE DEVOLVIA `Promise<void>` — e isso é o defeito, não um detalhe de
+ * assinatura (achado A11 da auditoria externa, 14/09).
+ *
+ * `supabase-js` RESOLVE com `{ data, error }` e NÃO lança (invariante nº 1
+ * desta casa). Sem `const { error } =`, um UPDATE recusado — banco fora,
+ * PostgREST 5xx, rede — era indistinguível de sucesso. A rota respondia
+ * `{ ok: true }`, a tela dizia "desligado, ele para de operar imediatamente",
+ * e `is_active` continuava `true`: o cron de 5 minutos seguia negociando com a
+ * credencial cifrada que ESTÁ no servidor. Dinheiro REAL na corretora do
+ * cliente, no botão que existe para parar.
+ *
+ * ⚠️ E `Promise<void>` era o que tornava a conferência IMPOSSÍVEL para quem
+ * chama. A trava `escritas-conferidas.test.ts` já proíbe exatamente isso — só
+ * que ela lia `positions-server.ts` e o cron, e nunca este arquivo.
+ *
+ * ⚠️ O padrão certo existe duas pastas ao lado: `revogarConexao`
+ * (`lib/cex/conexoes.ts`) é a MESMA classe de escrita e devolve `!error`.
+ *
+ * ⚠️ `linhas === 0` NÃO é falha: é idempotência — já estava desarmado, ou nunca
+ * houve sessão. Tratar isso como erro faria um segundo clique parecer quebra.
+ */
+export async function disarmSession(
+  walletAddress: string, exchangeId: string,
+): Promise<{ ok: boolean; linhas: number }> {
   const db = getSupabaseAdmin();
-  if (!db) return;
-  await db
+  if (!db) return { ok: false, linhas: 0 };
+  const { data, error } = await db
     .from("autopilot_sessions")
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("wallet_address", walletAddress)
-    .eq("exchange_id", exchangeId);
+    .eq("exchange_id", exchangeId)
+    // ⚠️ `.select()` para SABER quantas linhas casaram. Sem ele, "gravou" e
+    // "não achou nada para gravar" voltam idênticos.
+    .select("id");
+  return { ok: !error, linhas: data?.length ?? 0 };
 }
 
 /** Read the public-safe view of a session (NO decrypted credentials). */
@@ -135,12 +164,25 @@ export async function getSessionStatus(
 ): Promise<Omit<AutopilotSessionRow, "creds_cipher"> | null> {
   const db = getSupabaseAdmin();
   if (!db) return null;
-  const { data } = await db
+  /**
+   * ⚠️⚠️ FALHA DE LEITURA NÃO PODE VIRAR "NÃO HÁ SESSÃO" (14/09).
+   *
+   * Esta função devolvia `null` tanto para "não existe sessão" quanto para "não
+   * consegui ler" — e o painel faz `isArmed = !!status?.is_active`. Numa queda
+   * de banco, a escrita do desarme falha E a leitura falha juntas: a tela mostra
+   * DESARMADO enquanto a linha continua `is_active = true`, e o cron retoma as
+   * ordens na invocação seguinte, com o banco já de volta.
+   *
+   * Ausência continua ausência; erro agora LANÇA, e quem chama decide. É a mesma
+   * escolha que `listRunnableSessions` logo abaixo já fazia.
+   */
+  const { data, error } = await db
     .from("autopilot_sessions")
     .select("*")
     .eq("wallet_address", walletAddress)
     .eq("exchange_id", exchangeId)
     .maybeSingle();
+  if (error) throw new Error(`getSessionStatus failed: ${error.message}`);
   if (!data) return null;
   const { creds_cipher: _omit, ...safe } = data;
   void _omit;
