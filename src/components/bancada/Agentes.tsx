@@ -23,7 +23,7 @@
  * ⚠️ NENHUM NÚMERO DAQUI VEM DO LIVRO DA CASA — ver `/api/bancada/agentes`.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2, ChevronDown, AlertTriangle } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { classificarResultado } from "@/lib/admin/cor-resultado";
@@ -100,6 +100,35 @@ export default function Agentes({ recarregar, onMesas }: {
   const [pausadoPelaCasa, setPausado] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
 
+  /**
+   * ⚠️⚠️ `onMesas` VIVE NUM REF, E ISSO É CORREÇÃO DE LAÇO INFINITO (14/09).
+   *
+   * ACHADO DA AUDITORIA, por duas lentes independentes, pelas duas pontas.
+   * `carregar` tinha `[onMesas]` nas dependências, e o pai passava uma arrow
+   * ANÔNIMA (`onMesas={(m) => { setJaContratadas(m); ... }}`), recriada a cada
+   * render. O ciclo fechava sozinho:
+   *
+   *   fetch resolve → `onMesas(lista.map(…))` → `setJaContratadas(ARRAY NOVO)`
+   *   → o pai re-renderiza (dois arrays nunca são `Object.is`-iguais, então
+   *   não há bail-out) → nova arrow → novo `carregar` → as deps do efeito
+   *   mudaram → fetch de novo → …
+   *
+   * Sem ponto de parada, contra a rota MAIS CARA da bancada (uma consulta de
+   * posições por instância). E o laço existia só no caminho FELIZ: numa falha
+   * `lista` é `null`, `onMesas` não é chamado, e a página ficava quieta — o
+   * defeito aparecia exatamente quando tudo dava certo.
+   *
+   * ⚠️ De quebra, o `setInterval` de 60s abaixo NUNCA chegava aos 60s: ele
+   * também dependia de `carregar`, então era destruído e recriado a cada volta.
+   * A recarga "em tempo real" que o bloco abaixo documenta era código morto —
+   * quem recarregava era o laço.
+   *
+   * O ref quebra a corrente sem tirar o aviso do pai: ele continua sendo
+   * chamado a cada leitura, só não participa mais da identidade de `carregar`.
+   */
+  const onMesasRef = useRef(onMesas);
+  useEffect(() => { onMesasRef.current = onMesas; });
+
   const carregar = useCallback(async () => {
     try {
       const res = await fetch("/api/bancada/agentes");
@@ -111,9 +140,11 @@ export default function Agentes({ recarregar, onMesas }: {
       setPausado(j?.pausadoPelaCasa === true);
       // ⚠️ Só avisa quando a leitura DEU CERTO: numa falha, dizer "nenhuma
       // contratada" reabriria o botão e convidaria à gêmea.
-      if (lista) onMesas?.(lista.map((x) => x.mesa));
+      if (lista) onMesasRef.current?.(lista.map((x) => x.mesa));
     } catch { setAgentes(null); }
-  }, [onMesas]);
+    // ⚠️ DEPS VAZIAS DE PROPÓSITO — ver a nota acima. `carregar` tem de ter
+    // identidade ESTÁVEL, senão o efeito que o dispara vira um laço.
+  }, []);
   useEffect(() => { void carregar(); }, [carregar, recarregar]);
 
   /**
