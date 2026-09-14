@@ -153,6 +153,22 @@ export default function Bancada() {
    */
   const [abaEscolhida, setAba] = useState<"agentes" | "contratar" | "testar" | "rodadas" | null>(null);
   const [temAgentes, setTemAgentes] = useState<boolean | null>(null);
+  /**
+   * ⚠️⚠️ ESTÁVEL, E COMPARANDO CONTEÚDO — a outra ponta do laço de fetch.
+   *
+   * Era uma arrow anônima no JSX, recriada a cada render, e `setJaContratadas`
+   * recebia sempre um array NOVO — que nunca é `Object.is`-igual, então sempre
+   * re-renderizava. Junto com `[onMesas]` nas deps de `carregar`, isso fechava
+   * um laço de requisições sem ponto de parada. O `useCallback` mata a
+   * identidade nova; a comparação de conteúdo mata o re-render inútil.
+   *
+   * As duas correções são independentes e as duas ficam: o ref do lado do
+   * `Agentes` impede o laço mesmo se alguém voltar a passar uma arrow daqui.
+   */
+  const aoSaberDasMesas = useCallback((m: string[]) => {
+    setJaContratadas((a) => (a.length === m.length && a.every((x, i) => x === m[i]) ? a : m));
+    setTemAgentes(m.length > 0);
+  }, []);
   const aba = abaEscolhida ?? (temAgentes ? "agentes" : "contratar");
   const [contratando, setContratando] = useState<string | null>(null);
   const [erroDeContratar, setErroDeContratar] = useState<string | null>(null);
@@ -562,16 +578,38 @@ export default function Bancada() {
         ))}
       </nav>
 
-      {aba === "agentes" && (<>
       {/* ── OS AGENTES DELE, ANTES DOS NOSSOS ───────────────────────── */}
       {/* ⚠️⚠️ A ORDEM É A CORREÇÃO. O que o investidor contratou vem PRIMEIRO,
           com o número dele; o placar da nossa mesa vem depois, rotulado como
           nosso. Invertido, a primeira coisa que ele lê é o nosso resultado — e
           foi assim que a bancada acabou "pegando os resultados das mesas do
           painel e Admin e repetindo para o investidor". */}
-      <Agentes recarregar={recarregarAgentes} onMesas={(m) => { setJaContratadas(m); setTemAgentes(m.length > 0); }} />
-
-      </>)}
+      {/**
+        * ⚠️⚠️ MONTADO SEMPRE, ESCONDIDO QUANDO NÃO É A ABA (14/09).
+        *
+        * ACHADO DA AUDITORIA, e é a peça desligada de novo — a oitava vez nesta
+        * base. Ele vinha dentro de `{aba === "agentes" && …}`, e `aba` decide
+        * por `temAgentes` — que SÓ este componente escreve. Um ciclo fechado:
+        * no primeiro render `temAgentes` é `null`, `aba` cai em "contratar",
+        * `<Agentes>` não monta, e `temAgentes` fica `null` para sempre.
+        *
+        * Duas consequências, e a segunda custa dinheiro:
+        *   · a regra documentada logo acima ("a aba abre em AGENTES só quando
+        *     existe algum") nunca pôde acontecer: quem paga por três agentes
+        *     caía em "Contratar" toda vez;
+        *   · `jaContratadas` tem a MESMA origem única, então na aba padrão ele
+        *     é `[]` e o botão "contratar" nasce aceso para uma mesa que o
+        *     cliente já tem — criando a gêmea que o comentário de `jaContratada`
+        *     existe para impedir.
+        *
+        * ⚠️ `hidden` e não desmontar: a resposta do servidor é o que DECIDE a
+        * aba, então ela precisa chegar antes de a vitrine desenhar o botão.
+        * Desmontar para "economizar" a leitura é economizar justamente o dado
+        * que a decisão precisa.
+        */}
+      <div hidden={aba !== "agentes"}>
+        <Agentes recarregar={recarregarAgentes} onMesas={aoSaberDasMesas} />
+      </div>
 
       {aba === "contratar" && (<>
       {/* ── O QUE A CASA DE FATO RODA ──────────────────────────────── */}

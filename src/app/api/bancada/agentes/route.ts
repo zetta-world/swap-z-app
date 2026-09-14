@@ -229,6 +229,30 @@ export async function POST(req: NextRequest) {
     ? o.praca : (desk.venue === "dex" ? "dex" : "spot_gate");
   const papel = o.papel === "maker" ? "maker" : "taker";
 
+  /**
+   * ⚠️⚠️ A MESMA MESA DUAS VEZES — A TRAVA ESTAVA SÓ NA TELA (14/09).
+   *
+   * ACHADO DA AUDITORIA. A vitrine apaga o botão com `jaContratada`, e a lista
+   * que alimenta esse booleano vinha do card dos agentes — que só monta quando
+   * o cliente ABRE a aba dele. No primeiro render a lista é `[]`, então o botão
+   * nasce ACESO para toda mesa, inclusive a que ele contratou ontem.
+   *
+   * E aqui não havia nada: só o teto de `mesasDePapel`. Duas instâncias da
+   * mesma mesa são indistinguíveis na tela — mesmo sigilo, mesmo nome, mesmos
+   * símbolos, dois números diferentes — e a segunda queima um slot PAGO e
+   * consome cron a cada 30 minutos.
+   *
+   * ⚠️ Trava que mora só na tela é trava que o primeiro render contorna, e que
+   * qualquer `curl` ignora. Esta base já pagou essa lição no middleware do
+   * admin: o portão que vale é o de baixo.
+   */
+  const jaTem = (await listarEstrategias(c.dono, c.db))
+    .some((e) => e.mesa === id && !e.arquivada);
+  if (jaTem) {
+    return json({ ok: false, error: "ja_contratada", porque:
+      `você já tem ${desk.name} rodando. Dispense a atual antes de contratar de novo.` }, 409);
+  }
+
   const mesas = await contarMesasVivas(c.dono, c.db);
   // ⚠️ `null` = não consegui contar. Recusar é o único caminho honesto: liberar
   // entregaria a cota inteira exatamente quando o banco está ruim.
