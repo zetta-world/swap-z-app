@@ -169,6 +169,34 @@ export async function reopenServerPosition(sessionId: string, base: string): Pro
 }
 
 /**
+ * Reduz a posição depois de uma saída PARCIAL — o resto continua sendo gerido.
+ *
+ * ⚠️⚠️ ANTES NÃO EXISTIA: qualquer venda com preenchimento > 0 chamava
+ * `closeServerPosition` e apagava a linha inteira (achado A14). Vender US$ 100
+ * de uma posição de US$ 500 fazia o bot acreditar que não tem nada — o resto
+ * fica órfão na conta do cliente, nunca mais gerido nem vendido, e o teto de
+ * exposição libera os US$ 500 inteiros, então ele ainda compra por cima.
+ *
+ * ⚠️ Volta a `open` de propósito: a ordem de saída que estava armada acabou de
+ * ser resolvida, e o que sobrou precisa poder armar de novo. Ficar
+ * `exit_armed` apontando para ordem morta é a cicatriz de `reopenServerPosition`.
+ */
+export async function reduzirServerPosition(
+  sessionId: string, base: string, baseRestante: number, custoRestante: number,
+): Promise<Gravacao> {
+  const db = getSupabaseAdmin();
+  if (!db) return { ok: false, erro: "sem banco" };
+  return comRetentativa(() => db.from("autopilot_positions").update({
+    base_amount:   baseRestante,
+    cost_usd:      custoRestante,
+    status:        "open",
+    exit_order_id: null,
+    exit_armed_at: null,
+    updated_at:    new Date().toISOString(),
+  }).eq("session_id", sessionId).eq("base", base.toUpperCase()));
+}
+
+/**
  * Remove a posição depois que ela saiu / não é mais mantida.
  *
  * ⚠️ SE ISTO FALHAR CALADO, o banco segue dizendo que a bolsa existe. O teto de

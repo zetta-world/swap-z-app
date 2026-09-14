@@ -1,0 +1,162 @@
+/**
+ * ⚠️⚠️ O BOT PODIA VENDER A BOLSA DO DONO, E A SAÍDA PARCIAL APAGAVA A POSIÇÃO.
+ * Achados A13/A14 da auditoria externa (14/09), confirmados no código.
+ *
+ * Dinheiro real na corretora do cliente, a cada 5 minutos.
+ */
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { quantoPodeVender, oQueSobrou } from "./venda-limitada";
+
+const semComentarios = (c: string) =>
+  c.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
+
+const CRON = semComentarios(readFileSync(join(process.cwd(), "src/app/api/autopilot/cron/route.ts"), "utf8"));
+
+describe("① a posição do bot é o TETO da venda", () => {
+  it("⚠️⚠️ o pedido do modelo acima da posição é CORTADO na posição", () => {
+    // O caso real: o bot comprou 0,01 BTC; o cartão manda vender 0,5. Os 0,49
+    // de diferença seriam moeda do próprio usuário.
+    const v = quantoPodeVender(0.5, 0.01);
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+    expect(v.qtd).toBe(0.01);
+    expect(v.limitada).toBe(true);
+  });
+
+  it("pedido abaixo da posição passa intacto — saída parcial é legítima", () => {
+    const v = quantoPodeVender(0.004, 0.01);
+    expect(v.ok && v.qtd).toBe(0.004);
+    expect(v.ok && v.limitada).toBe(false);
+  });
+
+  it("pedido igual à posição não é 'limitada'", () => {
+    const v = quantoPodeVender(0.01, 0.01);
+    expect(v.ok && v.qtd).toBe(0.01);
+    expect(v.ok && v.limitada).toBe(false);
+  });
+
+  it("⚠️⚠️ falha FECHADO: ausência de posição não é posição zero", () => {
+    // `Number(null) === 0` e passa no isFinite — a armadilha nº 2 desta casa.
+    for (const semPosicao of [null, undefined, 0, -1, NaN, Infinity, "abc"]) {
+      const v = quantoPodeVender(1, semPosicao);
+      expect(v.ok, `${String(semPosicao)} deveria recusar`).toBe(false);
+    }
+  });
+
+  it("⚠️ quantidade pedida inválida recusa — nunca vira 'vende tudo'", () => {
+    for (const pedidoRuim of [0, -3, NaN, Infinity, null, undefined, "x"]) {
+      expect(quantoPodeVender(pedidoRuim, 5).ok, `${String(pedidoRuim)} deveria recusar`).toBe(false);
+    }
+  });
+});
+
+describe("② a saída parcial deixa o resto EXISTINDO", () => {
+  it("⚠️⚠️ vendeu 1/5 → sobra 4/5 da base e 4/5 do custo", () => {
+    const s = oQueSobrou(100, 500, 20);
+    expect(s.fecha).toBe(false);
+    if (s.fecha) return;
+    expect(s.baseRestante).toBe(80);
+    expect(s.custoRestante).toBeCloseTo(400, 9);
+    expect(s.custoRemovido).toBeCloseTo(100, 9);
+  });
+
+  it("⚠️⚠️ o teto de exposição só devolve o que SAIU, não a posição inteira", () => {
+    // Era o segundo dano do A14: liberava US$ 500 tendo voltado US$ 100, e o
+    // bot comprava por cima com folga que não existe.
+    const s = oQueSobrou(100, 500, 20);
+    expect(s.custoRemovido).toBeCloseTo(100, 9);
+    expect(s.custoRemovido).not.toBe(500);
+  });
+
+  it("vendeu tudo → fecha, e o custo removido é o custo inteiro", () => {
+    const s = oQueSobrou(100, 500, 100);
+    expect(s.fecha).toBe(true);
+    expect(s.custoRemovido).toBe(500);
+  });
+
+  it("⚠️ ruído de ponto flutuante ao vender tudo ainda FECHA", () => {
+    // 0,1 + 0,2 − 0,3 deixa 5,5e-17. Sem isto a posição ficaria viva com poeira
+    // e o bot tentaria vendê-la para sempre.
+    const s = oQueSobrou(0.3, 100, 0.1 + 0.2);
+    expect(s.fecha).toBe(true);
+  });
+
+  it("⚠️ preenchimento acima da posição fecha — não deixa resto negativo", () => {
+    const s = oQueSobrou(10, 100, 12);
+    expect(s.fecha).toBe(true);
+  });
+
+  it("⚠️⚠️ sobra pequena demais para vender CONTINUA sendo sobra", () => {
+    // Não há corte em dólares de propósito: a linha diz a verdade — o bot tem
+    // aquilo e não consegue vender. Apagá-la é que seria a mentira.
+    const s = oQueSobrou(1000, 500, 999);
+    expect(s.fecha).toBe(false);
+    if (s.fecha) return;
+    expect(s.baseRestante).toBeCloseTo(1, 9);
+    expect(s.custoRestante).toBeCloseTo(0.5, 9);
+  });
+
+  it("preenchimento zero/ausente não remove nada", () => {
+    const s = oQueSobrou(10, 100, 0);
+    expect(s.fecha).toBe(false);
+    if (s.fecha) return;
+    expect(s.baseRestante).toBe(10);
+    expect(s.custoRemovido).toBe(0);
+  });
+
+  it("custo removido + custo restante = custo original (nada some, nada nasce)", () => {
+    for (const vendido of [1, 7, 33.3, 99.9]) {
+      const s = oQueSobrou(100, 500, vendido);
+      if (s.fecha) continue;
+      expect(s.custoRemovido + s.custoRestante).toBeCloseTo(500, 9);
+    }
+  });
+});
+
+/**
+ * ⚠️⚠️ AS TRAVAS DO FIO — leitura de fonte DE PROPÓSITO.
+ *
+ * As funções acima têm teste que as executa. Mas a peça certa, testada e
+ * DESLIGADA do caminho que decide é o padrão nº 8 desta casa, e os testes de
+ * comportamento seguiriam verdes com o cron mandando `intent.amount` para a
+ * corretora como antes.
+ */
+describe("③ e o cron REALMENTE usa as duas", () => {
+  it("⚠️⚠️ a ordem de venda leva a quantidade CORTADA, não a do cartão", () => {
+    expect(CRON).toMatch(/side: "sell", type: intent\.type, amount,/);
+    // `amount: intent.amount` na venda era o defeito inteiro.
+    expect(CRON).not.toMatch(/side: "sell", type: intent\.type, amount: intent\.amount/);
+  });
+
+  it("⚠️⚠️ a guarda de nocional confere a quantidade ENVIADA", () => {
+    // Conferir `intent.amount` e mandar outra coisa mediria o que não vai.
+    expect(CRON).toMatch(/checkRealNotional\(\{ side: intent\.side, baseAmount: amount,/);
+  });
+
+  it("⚠️⚠️ os DOIS caminhos de liquidação tratam sobra — mercado e saída armada", () => {
+    const chamadas = [...CRON.matchAll(/const sobra = oQueSobrou\(/g)].length;
+    expect(chamadas, "mercado e settle da armada precisam dos dois").toBe(2);
+    expect([...CRON.matchAll(/reduzirServerPosition\(/g)].length).toBe(2);
+    // E fechar passou a ser condicional nos dois.
+    expect([...CRON.matchAll(/if \(sobra\.fecha\) \{/g)].length).toBe(2);
+  });
+
+  it("⚠️⚠️ a base só sai de `ownedBases` quando a posição FECHA", () => {
+    // Removê-la numa saída parcial faria o resto sumir do mundo do bot.
+    const i = CRON.indexOf("ownedBases.delete(base)");
+    expect(i).toBeGreaterThan(0);
+    const antes = CRON.slice(Math.max(0, i - 400), i);
+    expect(antes).toMatch(/if \(sobra\.fecha\) \{/);
+  });
+
+  it("⚠️⚠️ uma saída JÁ ARMADA não recebe segunda ordem de venda", () => {
+    expect(CRON).toMatch(/if \(pos\.status === "exit_armed"\)/);
+    expect(CRON).toMatch(/a second sell would dump the same bag twice/);
+  });
+
+  it("⚠️ e o corte vira EVENTO — o modelo pedir a bolsa do dono não é ruído", () => {
+    expect(CRON).toMatch(/recordEvent\("autopilot_venda_limitada_a_posicao"/);
+  });
+});
