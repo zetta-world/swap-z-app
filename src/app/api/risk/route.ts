@@ -4,6 +4,7 @@ import { getHoneypot, isHoneypotSupported, type HoneypotResponse } from "@/lib/a
 import { getTokenInfo, type TokenInfo } from "@/lib/api/geckoterminal";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { isValidChain, validateAddress } from "@/lib/validate";
+import { osPioresPrimeiro, type Signal } from "@/lib/swap/sinais-de-risco";
 
 export const runtime = "nodejs";
 export const revalidate = 60;
@@ -44,12 +45,12 @@ export async function GET(req: NextRequest) {
     getTokenInfo(chain, address),
   ]);
 
-  const { score, category, signals } = scoreRisk(security, honey);
+  const { score, category, signals, impedidoPor } = scoreRisk(security, honey);
 
   return NextResponse.json(
     {
       chain, address,
-      score, category, signals,
+      score, category, signals, impedidoPor,
       security: security ? compactGoPlus(security) : null,
       honeypot: honey    ? compactHoneypot(honey) : null,
       info,
@@ -59,20 +60,48 @@ export async function GET(req: NextRequest) {
   );
 }
 
-interface Signal { kind: "ok" | "warn" | "danger"; label: string; weight: number; }
-
+/**
+ * ⚠️⚠️ OS SINAIS QUE BLOQUEIAM SOZINHOS — achado A27 da auditoria externa
+ * (14/09), confirmado no código.
+ *
+ * O bloqueio exige `category === "danger"`, e a categoria saía SÓ do score, com
+ * corte em 70. Nenhum sinal de perigo chega a 70 sozinho:
+ *
+ *     GoPlus is_honeypot        60  →  "risky", passa
+ *     Cannot sell all           50  →  "risky", passa
+ *     Honeypot.is confirmado    50  →  "risky", passa
+ *
+ * Ou seja: `add("danger", …)` ROTULAVA o sinal como perigo e a categoria
+ * ignorava o rótulo. O swap só era barrado por ACÚMULO acidental — um honeypot
+ * confirmado, sozinho, pintava um aviso amarelo e o botão seguia clicável.
+ * "Não dá para vender" é perda de 100%, não um aviso.
+ *
+ * ⚠️ E NÃO É "TODO SINAL `danger` BLOQUEIA". Vários deles são caros, não
+ * fatais: taxa de venda de 12% (peso 30), dono oculto (20), top-10 com 55%
+ * (15). Bloquear todo swap de token concentrado seria trocar um defeito por
+ * outro, e ensinaria o usuário a ignorar o bloqueio.
+ *
+ * O critério é estreito e literal: o dinheiro NÃO SAI de volta.
+ *   · honeypot confirmado, por qualquer uma das duas fontes;
+ *   · `cannot_sell_all` — o contrato recusa a venda.
+ *
+ * `cannot_buy` fica de FORA de propósito: ali a transação reverte e o usuário
+ * perde o gás, não o principal. É prejuízo, não é o dinheiro preso.
+ */
 function scoreRisk(s: GoPlusTokenSecurity | null, h: HoneypotResponse | null) {
   let score = 0;
+  let impedido: string | null = null;
   const signals: Signal[] = [];
-  const add = (kind: Signal["kind"], label: string, weight: number) => {
+  const add = (kind: Signal["kind"], label: string, weight: number, impeditivo?: true) => {
     score += weight;
-    signals.push({ kind, label, weight });
+    if (impeditivo && !impedido) impedido = label;
+    signals.push(impeditivo ? { kind, label, weight, impeditivo } : { kind, label, weight });
   };
 
   // GoPlus signals
   if (s) {
-    if (s.is_honeypot === "1")            add("danger", "GoPlus honeypot flag",       60);
-    if (s.cannot_sell_all === "1")        add("danger", "Cannot sell all",             50);
+    if (s.is_honeypot === "1")            add("danger", "GoPlus honeypot flag",       60, true);
+    if (s.cannot_sell_all === "1")        add("danger", "Cannot sell all",             50, true);
     if (s.cannot_buy === "1")             add("danger", "Cannot buy",                  50);
     const buyTax  = parseFloat(s.buy_tax  || "0");
     const sellTax = parseFloat(s.sell_tax || "0");
@@ -108,7 +137,7 @@ function scoreRisk(s: GoPlusTokenSecurity | null, h: HoneypotResponse | null) {
 
   // Honeypot.is overlay
   if (h) {
-    if (h.honeypotResult?.isHoneypot)     add("danger", `Honeypot.is: ${h.honeypotResult.honeypotReason ?? "honeypot"}`, 50);
+    if (h.honeypotResult?.isHoneypot)     add("danger", `Honeypot.is: ${h.honeypotResult.honeypotReason ?? "honeypot"}`, 50, true);
     if (h.summary?.risk === "high")       add("danger", "Honeypot.is risk: HIGH",      20);
     else if (h.summary?.risk === "medium") add("warn",  "Honeypot.is risk: MEDIUM",    10);
   }
@@ -118,8 +147,15 @@ function scoreRisk(s: GoPlusTokenSecurity | null, h: HoneypotResponse | null) {
   }
 
   score = Math.min(score, 100);
-  const category = score >= 70 ? "danger" : score >= 40 ? "risky" : score >= 20 ? "caution" : "safe";
-  return { score, category, signals };
+  /**
+   * ⚠️⚠️ UM SINAL IMPEDITIVO MANDA MAIS QUE O SCORE. Ele existe justamente
+   * porque a soma não representa "o dinheiro não volta": um honeypot
+   * confirmado marcava 50 e passava, enquanto três avisos baratos somando 70
+   * bloqueavam. A régua era a errada para esta pergunta.
+   */
+  const category = impedido ? "danger"
+    : score >= 70 ? "danger" : score >= 40 ? "risky" : score >= 20 ? "caution" : "safe";
+  return { score, category, signals: osPioresPrimeiro(signals), impedidoPor: impedido };
 }
 
 function compactGoPlus(s: GoPlusTokenSecurity) {

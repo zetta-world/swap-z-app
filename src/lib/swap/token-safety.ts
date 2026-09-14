@@ -48,6 +48,12 @@ export interface RiskApiShape {
   score?: number;
   category?: string;
   signals?: Array<{ level?: string; label?: string } | string>;
+  /**
+   * O sinal que bloqueou SOZINHO, quando houve um — honeypot confirmado ou
+   * `cannot_sell_all`. Ausente quando o bloqueio veio do acúmulo de score.
+   * A distinção muda a frase que o usuário lê: ver `message` abaixo.
+   */
+  impedidoPor?: string | null;
 }
 
 /**
@@ -77,10 +83,23 @@ export function assessTokenSafety(api: RiskApiShape | null): TokenSafety {
   // o usuário perderia 100% do que colocasse. A interface impede.
   const blocks = level === "danger";
 
+  /**
+   * ⚠️⚠️ O BLOQUEIO TEM DUAS CAUSAS DIFERENTES, E DIZIAM A MESMA FRASE.
+   *
+   * *“você pode não conseguir vender o que comprar”* é uma afirmação sobre o
+   * CONTRATO. Ela vale quando o que bloqueou foi um sinal impeditivo —
+   * honeypot confirmado, venda recusada. Não vale quando o bloqueio veio do
+   * acúmulo: dono oculto + não é código aberto + taxa alta somam 70 num token
+   * que vende normalmente. Afirmar o mecanismo errado é a mesma classe de
+   * defeito que o A27 — o rótulo falando de A com o número vindo de B.
+   */
   const message =
     level === "danger"
-      ? `Token BLOQUEADO pela verificação de segurança${signals.length ? `: ${signals[0]}` : ""}. `
-        + "Sinais assim indicam que você pode não conseguir vender o que comprar."
+      ? api.impedidoPor
+        ? `Token BLOQUEADO: ${api.impedidoPor}. `
+          + "Esse sinal significa que você pode não conseguir vender o que comprar."
+        : `Token BLOQUEADO pela verificação de segurança${signals.length ? `: ${signals[0]}` : ""}. `
+          + "O acúmulo de sinais de risco passou do limite tolerado."
       : level === "risky"
         ? `Token de ALTO RISCO${signals.length ? `: ${signals[0]}` : ""}. Confirme que você entende antes de seguir.`
         : level === "caution"
