@@ -405,8 +405,13 @@ export default function DcaPanel({ exchangeId = "gateio", credentials = null }: 
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[10px] text-ink-3">
             <span>{t("cex.dcaDone", { done: String(p.ciclos_feitos), total: String(p.ciclos_total) })}</span>
-            {/* ⚠️ PULADOS APARECEM SEMPRE que houver — somar com "feitos" daria
-                um plano "completo" que comprou metade. */}
+            {/* ⚠️ APARECE SEMPRE que houver — somar com "feitos" daria um plano
+                "completo" que comprou metade.
+                ⚠⚠ O CONTADOR É "ciclos consumidos SEM COMPRA": janela perdida E
+                ordem que falhou. O rótulo dizia "pulados" e passou a mentir no
+                dia em que a falha passou a contar (sem contar, o plano
+                congelava para sempre — ver o `catch` do cron). O extrato por
+                ciclo distingue os dois com o motivo. */}
             {p.ciclos_pulados > 0 && (
               <span className="text-gold">{t("cex.dcaSkipped", { n: String(p.ciclos_pulados) })}</span>
             )}
