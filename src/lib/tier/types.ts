@@ -35,7 +35,25 @@ export function tierSatisfies(have: Tier, required: Tier): boolean {
  * se tivesse sido olhada e não tivesse passe. Ver `0022_origem_do_tier_honesta`.
  */
 export type TierSource =
-  | "nft" | "subscription" | "admin"
+  | "nft" | "subscription"
+  /**
+   * ⚠️⚠️ `"admin"` SIGNIFICA "ESTA CARTEIRA É UM ADMIN" — e é LEGADO.
+   *
+   * `src/lib/admin/require.ts` honra este valor como concessão de acesso ao
+   * painel (a ponte para quem foi semeado antes de `platform_admins` existir).
+   * Ele NÃO deve ser escrito por mais nada: conceder um PLANO com este valor
+   * entregava o painel inteiro ao cliente — achado A04, 14/09, confirmado no
+   * banco com três carteiras que tinham admin sem estar em `platform_admins`.
+   */
+  | "admin"
+  /**
+   * O plano que um admin concedeu pelo painel. Diz QUEM decidiu o plano, e
+   * absolutamente nada sobre quem a carteira é.
+   *
+   * ⚠️ A distinção entre este valor e o de cima é a correção do A04. Eles
+   * couberam na mesma palavra por meses, e a palavra era a que abria a porta.
+   */
+  | "concessao"
   /** A checagem RODOU e a carteira não tem passe. */
   | "sem_pass"
   /** A checagem NÃO rodou. Ausência de medição, não ausência de passe. */

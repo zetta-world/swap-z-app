@@ -56,16 +56,52 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (action === "grant") {
     const farFuture = new Date(Date.now() + 100 * 365 * 86_400_000).toISOString();
-    await db.from("tier_cache").upsert(
+    const { error } = await db.from("tier_cache").upsert(
       {
         wallet_address: target,
         tier,
-        source:     "admin",
+        /**
+         * ⚠️⚠️ `"concessao"`, NUNCA `"admin"` — conceder um PLANO criava um
+         * ADMIN (14/09, achado A04 da auditoria externa, confirmado no banco).
+         *
+         * `tier_cache.source` carregava DOIS significados no mesmo valor:
+         *
+         *   (a) "este plano foi definido por um admin"  ← o que esta linha grava
+         *   (b) "esta carteira É um admin"              ← o que `requireAdmin` LÊ
+         *
+         * Um clique em "conceder trader" para um cliente entregava a ele o
+         * painel inteiro: gates, kill-switches, concessão de tier, mural.
+         *
+         * Medido: das 4 carteiras com `source = 'admin'`, TRÊS não estão em
+         * `platform_admins` — duas dormentes, uma nunca sequer entrou.
+         *
+         * ⚠️ O caminho LEGÍTIMO de conceder admin é `platform_admins`, por
+         * POST /admin/api/admins — e ele nem toca nesta coluna. A confusão só
+         * existia porque os dois sentidos couberam na mesma palavra.
+         *
+         * ⚠️ As linhas ANTIGAS com `'admin'` ficam como estão, e `requireAdmin`
+         * segue honrando-as: revogá-las aqui tiraria acesso sem decisão humana,
+         * e uma delas é de quem concedeu admin ao dono. O conjunto agora só
+         * pode ENCOLHER.
+         */
+        source:     "concessao",
         checked_at: new Date().toISOString(),
         expires_at: farFuture,
       },
       { onConflict: "wallet_address" },
     );
+    /**
+     * ⚠️ E O ERRO É LIDO. `supabase-js` resolve com `{ error }` e não lança: um
+     * `await` cujo erro ninguém lê é uma concessão que falhou em silêncio,
+     * sobre a qual o painel diz "ok" — e o cliente pagou por um plano que não
+     * existe.
+     */
+    if (error) {
+      return NextResponse.json(
+        { error: "nao_consegui_conceder", porque: error.message.slice(0, 200) },
+        { status: 500 },
+      );
+    }
   } else {
     await db.from("tier_cache").delete().eq("wallet_address", target);
   }
