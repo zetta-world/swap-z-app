@@ -619,11 +619,44 @@ export async function aplicarMutacao(
 }
 
 /**
+ * O que o fechamento conseguiu fazer — para quem chama poder CONFERIR.
+ *
+ * ⚠️ As três respostas boas são diferentes entre si e antes liam todas igual:
+ * "reativei a versão N", "não pedi reversão" e "não havia versão anterior" não
+ * são o mesmo fato, e nenhuma delas é "falhou".
+ */
+export type FechamentoDaMutacao =
+  | { ok: true; reversao: "reativou"; versao: number }
+  | { ok: true; reversao: "nao_pedida" }
+  | { ok: true; reversao: "sem_anterior" }
+  | { ok: false; onde: "julgamento" | "reversao"; porque: string };
+
+/**
  * Fecha o julgamento e, quando não pagou, REVERTE o genoma.
  *
  * ⚠️ REVERTER É REATIVAR A VERSÃO ANTERIOR, não escrever uma nova. Escrever
  * outra versão com os valores antigos encheria o histórico de idas e voltas e
  * faria a contagem de versões mentir sobre quantas ideias foram testadas.
+ *
+ * ⚠️⚠️ E ELA PODIA DEIXAR O AGENTE SEM GENOMA NENHUM — achado A06 da auditoria
+ * externa. Eram QUATRO escritas soltas, todo `error` descartado, retorno `void`:
+ * não havia o que conferir. Entre desativar a versão atual e ativar a anterior
+ * o agente fica sem os parâmetros com que opera — e uma falha no meio o DEIXAVA
+ * assim, em silêncio.
+ *
+ * ⚠️ INVERTER A ORDEM NÃO É CONSERTO. O índice parcial
+ * `celeiro_genoma_um_ativo on (agente) where ativo` recusa dois ativos — medido
+ * contra o banco de produção, que devolve 23505. A ordem segura simplesmente não
+ * existe fora de uma transação, então a reversão virou RPC (migration 0048),
+ * pelo mesmo motivo de `apply_session_pnl` e `bump_session_trades` existirem.
+ *
+ * ⚠️ E O CARIMBO AGORA VEM DEPOIS DA REVERSÃO. Carimbar `revertida_em` primeiro
+ * fazia uma falha na reversão deixar a mutação DIZENDO que foi revertida sobre
+ * um genoma intacto — o registro mentindo sobre o mundo, que é a pior das
+ * falhas possíveis aqui porque some do relatório. Nesta ordem, uma falha no
+ * carimbo deixa a mutação por julgar e o próximo ciclo refaz o fechamento; a
+ * reversão é idempotente (medido: reexecutar devolve a mesma versão e não move
+ * nada, porque a "anterior" sai de `versao`, que não depende de `ativo`).
  */
 export async function fecharMutacao(
   db: SupabaseClient, mutacaoId: string, agente: string,
@@ -639,23 +672,46 @@ export async function fecharMutacao(
    * (`reverter`). O default preserva o comportamento antigo para quem não passa.
    */
   acao: "manter" | "reverter" = veredito === "nao_pagou" ? "reverter" : "manter",
-): Promise<void> {
+): Promise<FechamentoDaMutacao> {
+  let reversao: FechamentoDaMutacao & { ok: true };
+
+  if (acao !== "reverter") {
+    reversao = { ok: true, reversao: "nao_pedida" };
+  } else {
+    const { data, error } = await db.rpc("celeiro_reverter_genoma", { p_agente: agente });
+    // ⚠️ `supabase-js` RESOLVE com `{ error }` — não lança. Um `try/catch` em
+    // volta disto não pegaria uma falha sequer.
+    if (error) return { ok: false, onde: "reversao", porque: error.message.slice(0, 200) };
+
+    if (data == null) {
+      // A RPC devolve NULL para genoma de versão única: não há para onde voltar.
+      reversao = { ok: true, reversao: "sem_anterior" };
+    } else {
+      const versao = Number(data);
+      /**
+       * ⚠️ NÃO CONFUNDIR COM `sem_anterior`. `Number(null)` é 0 e passa em
+       * `isFinite` — por isso o `data == null` é conferido ANTES, e o que cai
+       * aqui sem virar número é resposta que não sabemos ler, não ausência.
+       */
+      if (!Number.isFinite(versao)) {
+        return { ok: false, onde: "reversao",
+          porque: `a RPC devolveu ${JSON.stringify(data)}, que nao e versao nem NULL` };
+      }
+      reversao = { ok: true, reversao: "reativou", versao };
+    }
+  }
+
   const agora = new Date().toISOString();
-  await db.from("celeiro_mutacoes").update({
+  const { error: erroDoCarimbo } = await db.from("celeiro_mutacoes").update({
     avaliada_em: agora, veredito,
     usdt_controle: usdtControle, usdt_mutacao: usdtMutacao,
     ...(acao === "reverter" ? { revertida_em: agora } : {}),
   }).eq("id", mutacaoId);
+  if (erroDoCarimbo) {
+    return { ok: false, onde: "julgamento", porque: erroDoCarimbo.message.slice(0, 200) };
+  }
 
-  if (acao !== "reverter") return;
-
-  const { data } = await db.from("celeiro_genoma")
-    .select("versao").eq("agente", agente).order("versao", { ascending: false }).limit(2);
-  const anterior = data?.[1]?.versao;
-  if (anterior == null) return;
-
-  await db.from("celeiro_genoma").update({ ativo: false }).eq("agente", agente).eq("ativo", true);
-  await db.from("celeiro_genoma").update({ ativo: true }).eq("agente", agente).eq("versao", anterior);
+  return reversao;
 }
 
 /** As mutações já julgadas — o insumo do placar dos modelos. */
