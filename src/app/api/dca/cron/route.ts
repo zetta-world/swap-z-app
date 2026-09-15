@@ -11,6 +11,7 @@ import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { setCronHeartbeat } from "@/lib/admin/health";
+import { pegarATrava, soltarATrava } from "@/lib/dca/trava";
 import { recordEvent, notifyTelegram } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CexId, CexOrder } from "@/lib/cex/types";
@@ -114,6 +115,51 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, paused: true, processed: 0 });
   }
 
+  /**
+   * ⚠⚠ UMA PASSADA POR VEZ — achado A20 da auditoria externa.
+   *
+   * O teto diário é da CARTEIRA e é aplicado por leitura-depois-ação:
+   * `gastoHojeDaCarteira` lê, `tetoDoCiclo` decide, e só depois a ordem sai.
+   * Duas invocações concorrentes leem o MESMO gasto e disparam as duas.
+   *
+   * ⚠️ A `unique` do `reservarCiclo` NÃO cobre isto: ela impede repetir o
+   * MESMO ciclo do MESMO plano. O teto atravessa PLANOS — dois planos da mesma
+   * carteira reservam ciclos diferentes, passam os dois, e estouram o teto
+   * juntos.
+   *
+   * ⚠️ E o comentário de `gastoHoje` lá embaixo já SUPUNHA serialização — diz
+   * que a consulta é refeita a cada plano "para o segundo enxergar o que o
+   * primeiro gastou". Está certo DENTRO de uma passada, e é exatamente a
+   * suposição que uma segunda passada simultânea quebra. Esta trava é o que
+   * torna aquele comentário verdadeiro.
+   */
+  const trava = await pegarATrava();
+  if (trava === "ocupada") {
+    // Rotina, e sai calado: é o caso para o qual a trava existe.
+    return NextResponse.json({ ok: true, processed: 0, nota: "outra passada em curso" });
+  }
+  if (trava === "nao_sei") {
+    /**
+     * ⚠⚠ FALHA FECHADO. Seguir sem saber se outra passada está comprando é
+     * exatamente o defeito que esta trava fecha. Uma janela perdida é
+     * recuperável — a próxima vem em 5 minutos; um teto diário estourado não é.
+     * O DCA já falha fechado quando `gastoHoje` vem `null`, pelo mesmo motivo.
+     */
+    await avisar("nao consegui ler a trava da passada — NADA foi executado", {
+      why: "seguir sem a trava arrisca duas passadas comprando com o mesmo teto diario",
+    });
+    return NextResponse.json({ ok: false, error: "trava_indisponivel", processed: 0 }, { status: 503 });
+  }
+
+  try {
+    return await passada();
+  } finally {
+    // ⚠️ `finally`: uma exceção no meio não pode deixar a trava presa até o TTL.
+    await soltarATrava();
+  }
+}
+
+async function passada(): Promise<NextResponse> {
   const agoraIso = new Date().toISOString();
   const { planos, truncado } = await planosVencidos(agoraIso);
   if (truncado) {
