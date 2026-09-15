@@ -90,15 +90,66 @@ export function lerPermissao(id: CexId, resposta: unknown): PermissaoChave {
       detalhe: "resposta vazia ou fora do formato esperado",
     };
   }
-  const r = resposta as Record<string, unknown>;
+  /**
+   * ⚠⚠ O ENVELOPE DA CORRETORA — achado A16 da auditoria externa, e maior do
+   * que ele descreve.
+   *
+   * A versão anterior lia os campos no TOPO da resposta. Três das quatro
+   * corretoras envelopam o corpo, então o campo vinha `undefined` e o veredito
+   * saía `nao_verificavel` SEMPRE — para toda chave, inclusive as que sacam.
+   *
+   * ⚠️ FALHA SEGURO, MAS NÃO FUNCIONA. `nao_verificavel` não libera nada (é a
+   * doutrina do topo deste arquivo), então ninguém ficou exposto por um default
+   * otimista. O que aconteceu foi pior de outro jeito: o controle que este
+   * arquivo existe para ter — avisar que a chave SACA — nunca disparou nessas
+   * três, e a tela dizia "não consegui verificar" achando que era limitação da
+   * corretora.
+   *
+   * ⚠⚠ E O TESTE CODIFICAVA O DEFEITO: ele alimentava `{ permissions: {...} }`
+   * e `{ perm: "..." }` no topo, formatos que corretora nenhuma envia. Teste e
+   * código concordavam, e os dois discordavam da realidade — quebrar a trava
+   * nos dois sentidos nunca acharia isto.
+   *
+   * Os envelopes abaixo têm EVIDÊNCIA na fonte do ccxt vendido em
+   * `node_modules`, não na minha memória:
+   *
+   *   bybit  `{ retCode, result: { permissions: {…} } }`   (bybit.js:1432)
+   *   okx    `{ code, data: [ { perm: "read_only,withdraw,trade" } ] }` (okx.js:1620)
+   *   kucoin `{ code: "200000", data: {…} }`               (71 leituras de `data`)
+   *
+   * ⚠️ BINANCE FICA COMO ESTÁ. `sapi/v1/account/apiRestrictions` devolve o
+   * objeto direto, e eu NÃO achei evidência no ccxt para confirmar. Não mexo no
+   * que não verifiquei.
+   */
+  const env = resposta as Record<string, unknown>;
+  const r = (
+    id === "bybit"  ? env.result
+    : id === "okx"  ? (Array.isArray(env.data) ? env.data[0] : undefined)
+    : id === "kucoin" ? env.data
+    : env
+  ) as Record<string, unknown> | undefined;
+
+  if (r == null || typeof r !== "object") {
+    return {
+      veredito: "nao_verificavel", suportado: true,
+      detalhe: `corpo ausente no envelope de ${id}`,
+    };
+  }
 
   /**
    * Os nomes de campo por corretora. Achatados num só lugar para a leitura ser
    * conferível — e `undefined` (campo ausente) é tratado diferente de `false`.
+   *
+   * ⚠️ BYBIT VARRE TODOS OS GRUPOS. A permissão de saque não mora numa chave
+   * fixa: o ccxt documenta grupos como `Wallet`, `Exchange`, `NFT`, e o próprio
+   * código dele cita os nomes "Account Transfer", "Subaccount Transfer" e
+   * "Withdrawal" (bybit.js:9772). Procurar só por `permissions.Withdraw` erra
+   * quando a Bybit guarda o saque em outro grupo — e errar aqui é deixar passar
+   * chave que saca.
    */
   const bruto =
     id === "binance" ? r.enableWithdrawals
-    : id === "bybit" ? (r as { permissions?: { Withdraw?: unknown[] } }).permissions?.Withdraw
+    : id === "bybit" ? achatarPermissoesBybit(r.permissions)
     : id === "okx" ? r.perm
     : id === "kucoin" ? r.permission
     : undefined;
@@ -125,6 +176,25 @@ export function lerPermissao(id: CexId, resposta: unknown): PermissaoChave {
   return podeSacar
     ? { veredito: "pode_sacar", suportado: true, detalhe: `${id} confirma permissão de SAQUE nesta chave` }
     : { veredito: "so_negocia", suportado: true, detalhe: `${id} confirma que a chave não saca` };
+}
+
+/**
+ * Junta todos os grupos de permissão da Bybit num texto só.
+ *
+ * ⚠️ `undefined` quando não há objeto de permissões — e `undefined` vira
+ * `nao_verificavel` lá em cima, nunca "não saca".
+ *
+ * ⚠️ Objeto de permissões VAZIO devolve string vazia, que é legítimo: a Bybit
+ * respondeu e não listou poder nenhum. Isso é `so_negocia`, não "não sei".
+ */
+function achatarPermissoesBybit(p: unknown): string | undefined {
+  if (p == null || typeof p !== "object") return undefined;
+  const partes: string[] = [];
+  for (const v of Object.values(p as Record<string, unknown>)) {
+    if (Array.isArray(v)) partes.push(...v.map(String));
+    else if (typeof v === "string") partes.push(v);
+  }
+  return partes.join(",");
 }
 
 /** As chamadas por corretora. Nome do método privado do ccxt, declarado. */

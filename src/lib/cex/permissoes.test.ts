@@ -60,33 +60,70 @@ describe("ler a permissão — o default é o PESSIMISTA", () => {
     expect(lerPermissao("binance", { enableWithdrawals: false }).veredito).toBe("so_negocia");
   });
 
-  it("bybit: lista de permissões vazia = não saca", () => {
-    expect(lerPermissao("bybit", { permissions: { Withdraw: [] } }).veredito).toBe("so_negocia");
-    expect(lerPermissao("bybit", { permissions: { Withdraw: ["Withdraw"] } }).veredito)
-      .toBe("pode_sacar");
-  });
-
-  it("okx e kucoin: a permissão vem como texto", () => {
-    expect(lerPermissao("okx", { perm: "read_only,trade" }).veredito).toBe("so_negocia");
-    expect(lerPermissao("okx", { perm: "read_only,trade,withdraw" }).veredito).toBe("pode_sacar");
-    expect(lerPermissao("kucoin", { permission: "General,Trade" }).veredito).toBe("so_negocia");
-    expect(lerPermissao("kucoin", { permission: "General,Trade,Withdraw" }).veredito)
-      .toBe("pode_sacar");
-  });
-
   /**
-   * ⚠️ Assumir que "sem endpoint = sem saque" seria INVENTAR segurança —
-   * exatamente o que este módulo existe para impedir. Seis das dez corretoras
-   * caem aqui, e todas saem marcadas.
+   * ⚠️⚠️ ESTES TESTES CODIFICAVAM O DEFEITO (achado A16).
+   *
+   * Eles alimentavam `{ permissions: {…} }` e `{ perm: "…" }` no TOPO da
+   * resposta — formatos que corretora nenhuma envia. Três das quatro envelopam
+   * o corpo, então o código lia `undefined` e devolvia `nao_verificavel` para
+   * TODA chave, inclusive as que sacam.
+   *
+   * Teste e código concordavam, e os dois discordavam da realidade. Quebrar a
+   * trava nos dois sentidos nunca acharia isto — só comparar com o formato de
+   * verdade acha.
+   *
+   * Os formatos abaixo têm EVIDÊNCIA na fonte do ccxt vendido, não na memória:
+   * `bybit.js:1432`, `okx.js:1620`, e as 71 leituras de `data` em `kucoin.js`.
    */
-  it("corretora sem endpoint sai como NÃO VERIFICÁVEL, com o motivo", () => {
-    for (const id of ["kraken", "coinbase", "bitfinex", "mexc", "gateio", "htx"] as const) {
-      expect(suportaVerificacao(id), id).toBe(false);
-      const p = lerPermissao(id, { enableWithdrawals: false });
-      expect(p.veredito, id).toBe("nao_verificavel");
-      expect(p.suportado).toBe(false);
-      expect(p.detalhe).toContain("não expõe");
-    }
+  it("⚠️⚠️ bybit: o corpo vem dentro de `result`", () => {
+    const semSaque = { retCode: 0, result: { permissions: { Spot: ["SpotTrade"], Wallet: [] } } };
+    const comSaque = { retCode: 0, result: { permissions: { Spot: ["SpotTrade"], Wallet: ["Withdrawal"] } } };
+    expect(lerPermissao("bybit", semSaque).veredito).toBe("so_negocia");
+    expect(lerPermissao("bybit", comSaque).veredito).toBe("pode_sacar");
+  });
+
+  it("⚠️⚠️ bybit: o saque é procurado em TODOS os grupos, não só em `Withdraw`", () => {
+    // O ccxt documenta grupos como `Wallet`, `Exchange`, `NFT` e cita os nomes
+    // "Account Transfer", "Subaccount Transfer", "Withdrawal" (bybit.js:9772).
+    // Procurar só `permissions.Withdraw` erra quando a Bybit guarda o saque em
+    // outro grupo — e errar aqui é deixar passar chave que saca.
+    const emOutroGrupo = { retCode: 0, result: { permissions: { Exchange: ["Withdrawal"] } } };
+    expect(lerPermissao("bybit", emOutroGrupo).veredito).toBe("pode_sacar");
+  });
+
+  it("⚠️ bybit: o formato ANTIGO (topo) agora lê como não verificável", () => {
+    // É o que a versão anterior aceitava — e que a corretora nunca manda.
+    expect(lerPermissao("bybit", { permissions: { Withdraw: ["Withdraw"] } }).veredito)
+      .toBe("nao_verificavel");
+  });
+
+  it("⚠️⚠️ okx: o corpo vem dentro de `data[0]`", () => {
+    const semSaque = { code: "0", data: [{ perm: "read_only,trade" }] };
+    const comSaque = { code: "0", data: [{ perm: "read_only,withdraw,trade" }] };
+    expect(lerPermissao("okx", semSaque).veredito).toBe("so_negocia");
+    expect(lerPermissao("okx", comSaque).veredito).toBe("pode_sacar");
+    expect(lerPermissao("okx", { perm: "read_only,withdraw" }).veredito).toBe("nao_verificavel");
+  });
+
+  it("⚠️⚠️ kucoin: o corpo vem dentro de `data`", () => {
+    const semSaque = { code: "200000", data: { permission: "General,Trade" } };
+    const comSaque = { code: "200000", data: { permission: "General,Trade,Withdraw" } };
+    expect(lerPermissao("kucoin", semSaque).veredito).toBe("so_negocia");
+    expect(lerPermissao("kucoin", comSaque).veredito).toBe("pode_sacar");
+    expect(lerPermissao("kucoin", { permission: "General,Withdraw" }).veredito).toBe("nao_verificavel");
+  });
+
+  it("⚠️ envelope presente mas corpo ausente não vira 'não saca'", () => {
+    expect(lerPermissao("bybit", { retCode: 0 }).veredito).toBe("nao_verificavel");
+    expect(lerPermissao("okx", { code: "0", data: [] }).veredito).toBe("nao_verificavel");
+    expect(lerPermissao("kucoin", { code: "200000" }).veredito).toBe("nao_verificavel");
+  });
+
+  it("⚠️ binance NÃO foi mexida — não achei evidência do formato dela no ccxt", () => {
+    // `sapi/v1/account/apiRestrictions` devolve o objeto direto. Não mexo no
+    // que não verifiquei.
+    expect(lerPermissao("binance", { enableWithdrawals: true }).veredito).toBe("pode_sacar");
+    expect(lerPermissao("binance", { enableWithdrawals: false }).veredito).toBe("so_negocia");
   });
 });
 
