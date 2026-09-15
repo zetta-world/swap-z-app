@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { separarPorAtribuicao } from "@/lib/admin/atribuicao";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
@@ -145,9 +146,10 @@ export async function GET(): Promise<NextResponse> {
      */
     const todas = await selectAllRows<{
       created_at: string; volume_usd: number | null; platform_fee_usd: number | null;
+      wallet_address: string | null;
     }>((de, ate) => db
       .from("operations")
-      .select("created_at, volume_usd, platform_fee_usd")
+      .select("created_at, volume_usd, platform_fee_usd, wallet_address")
       .eq("status", "confirmed")
       .order("created_at", { ascending: true }).range(de, ate));
 
@@ -155,9 +157,26 @@ export async function GET(): Promise<NextResponse> {
     const soma = (f: (r: typeof linhas[number]) => number) => linhas.reduce((t, r) => t + f(r), 0);
     const em24h = linhas.filter((r) => String(r.created_at) >= desde24h);
 
+    /**
+     * ⚠️⚠️ ARRECADADO SÓ CONTA O QUE TEM IDENTIDADE ASSINADA — achado A07.
+     *
+     * `/api/operations/record` aceita `status: "confirmed"` e `platformFeeUsd`
+     * de um chamador SEM sessão; a linha entra com `wallet_address = NULL`.
+     * Este total somava tudo — e é o número que fica projetado em 65 polegadas,
+     * o lugar onde ninguém confere. Alegação anônima subindo no telão como
+     * caixa é a desonestidade exata que a casa proíbe.
+     *
+     * A linha anônima NÃO sai do volume: a troca aconteceu na cadeia. Ela sai
+     * do dinheiro, e com nome — `naoAtribuidoUsd`.
+     */
+    const total = separarPorAtribuicao(linhas);
+    const ultimas24h = separarPorAtribuicao(em24h);
+
     const dinheiro = {
-      arrecadadoTotalUsd: Number(soma((r) => Number(r.platform_fee_usd ?? 0)).toFixed(6)),
-      arrecadado24hUsd: Number(em24h.reduce((t, r) => t + Number(r.platform_fee_usd ?? 0), 0).toFixed(6)),
+      arrecadadoTotalUsd: total.arrecadado.usd,
+      arrecadado24hUsd: ultimas24h.arrecadado.usd,
+      naoAtribuidoUsd: total.naoAtribuido.usd,
+      operacoesAnonimas: total.naoAtribuido.linhas,
       volumeTotalUsd: Number(soma((r) => Number(r.volume_usd ?? 0)).toFixed(2)),
       volume24hUsd: Number(em24h.reduce((t, r) => t + Number(r.volume_usd ?? 0), 0).toFixed(2)),
       operacoes: linhas.length,

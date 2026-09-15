@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { TIER_FEE_BPS, receitaUsd, MOTIVOS_SOLANA_SEM_TAXA } from "@/lib/tier/fees";
+import { separarPorAtribuicao, temIdentidadeAssinada } from "@/lib/admin/atribuicao";
 import type { Tier } from "@/lib/tier/types";
 
 export const runtime = "nodejs";
@@ -56,9 +57,24 @@ export async function GET(): Promise<NextResponse> {
   let semVolume = 0;
   /** O que de fato foi retido, somado das operações. Ver a nota em `comTaxa`. */
   let arrecadado = { usd: 0, operacoes: 0 };
+  /**
+   * ⚠️⚠️ RETENÇÃO DECLARADA POR CHAMADA SEM SESSÃO — achado A07.
+   *
+   * `/api/operations/record` aceita `status: "confirmed"` e `platformFeeUsd` de
+   * quem não apresentou cookie assinado nenhum. A linha entra com
+   * `wallet_address = NULL`, e este painel somava tudo que estava confirmado:
+   * uma alegação anônima virava arrecadação na tela, sem nada que a
+   * distinguisse de dinheiro medido.
+   *
+   * Não há a quem perguntar sobre esta linha. Ela sai do agregado e ganha nome
+   * próprio — o mesmo tratamento que `sonda` e `semVolume` já recebiam.
+   */
+  let naoAtribuido = { usd: 0, operacoes: 0, linhas: 0, volumeUsd: 0 };
   let porOrigem: Array<{
     kind: string; operacoes: number; volumeUsd: number;
     arrecadadoUsd: number; comTaxa: number; cobravel: boolean;
+    /** ⚠️ A parcela desta origem que veio sem sessão — ver `naoAtribuido`. */
+    naoAtribuidoUsd: number;
   }> = [];
   let falha: string | null = null;
 
@@ -66,7 +82,7 @@ export async function GET(): Promise<NextResponse> {
     try {
       const { data, error } = await db
         .from("operations")
-        .select("volume_usd, created_at, status, kind, platform_fee_usd")
+        .select("volume_usd, created_at, status, kind, platform_fee_usd, wallet_address")
         .eq("status", "confirmed");
       if (error) throw new Error(error.message);
       const linhas = data ?? [];
@@ -90,11 +106,13 @@ export async function GET(): Promise<NextResponse> {
        * retido. Sem parcela, o número é zero — e zero por ausência de dado
        * aparece em `arrecadadoOperacoes`, que é a amostra ao lado do agregado.
        */
-      const comTaxa = linhas.filter((r) => r.platform_fee_usd != null);
-      arrecadado = {
-        usd: Number(comTaxa.reduce((t, r) => t + Number(r.platform_fee_usd ?? 0), 0).toFixed(6)),
-        operacoes: comTaxa.length,
-      };
+      /**
+       * ⚠️ ARRECADADO É SÓ O QUE TEM IDENTIDADE ASSINADA (A07). A linha anônima
+       * não é descartada — ela é REAL no livro, e as quatro de hoje são trocas
+       * BSC de verdade feitas sem sessão. Ela só não pode entrar num número que
+       * a tela apresenta como caixa medido.
+       */
+      ({ arrecadado, naoAtribuido } = separarPorAtribuicao(linhas));
 
       /**
        * ⚠️ A QUEBRA POR ORIGEM RESPONDE "DE ONDE VEM O DINHEIRO", e a resposta
@@ -107,13 +125,21 @@ export async function GET(): Promise<NextResponse> {
        * "VOLUME $127" ao lado de "RECEITA" faz o leitor concluir que os $127
        * renderam.
        */
-      const mapa = new Map<string, { operacoes: number; volumeUsd: number; arrecadadoUsd: number; comTaxa: number }>();
+      const mapa = new Map<string, {
+        operacoes: number; volumeUsd: number; arrecadadoUsd: number; comTaxa: number;
+        naoAtribuidoUsd: number;
+      }>();
       for (const r of linhas) {
         const k = String(r.kind ?? "?");
-        const cur = mapa.get(k) ?? { operacoes: 0, volumeUsd: 0, arrecadadoUsd: 0, comTaxa: 0 };
+        const cur = mapa.get(k)
+          ?? { operacoes: 0, volumeUsd: 0, arrecadadoUsd: 0, comTaxa: 0, naoAtribuidoUsd: 0 };
         cur.operacoes += 1;
         cur.volumeUsd += Number(r.volume_usd ?? 0);
-        if (r.platform_fee_usd != null) { cur.arrecadadoUsd += Number(r.platform_fee_usd); cur.comTaxa += 1; }
+        // ⚠️ Mesma régua do agregado (A07): a coluna tem que fechar com o topo.
+        if (r.platform_fee_usd != null) {
+          if (temIdentidadeAssinada(r)) { cur.arrecadadoUsd += Number(r.platform_fee_usd); cur.comTaxa += 1; }
+          else { cur.naoAtribuidoUsd += Number(r.platform_fee_usd); }
+        }
         mapa.set(k, cur);
       }
       porOrigem = [...mapa.entries()]
@@ -123,6 +149,7 @@ export async function GET(): Promise<NextResponse> {
           volumeUsd: Number(v.volumeUsd.toFixed(2)),
           arrecadadoUsd: Number(v.arrecadadoUsd.toFixed(6)),
           comTaxa: v.comTaxa,
+          naoAtribuidoUsd: Number(v.naoAtribuidoUsd.toFixed(6)),
           /** Se esta origem PODE cobrar. Zero sem mecanismo ≠ zero por falha. */
           cobravel: COBRAM.includes(kind),
         }))
@@ -158,7 +185,7 @@ export async function GET(): Promise<NextResponse> {
   }));
 
   return NextResponse.json({
-    real, sonda, semVolume, arrecadado, porOrigem, falha,
+    real, sonda, semVolume, arrecadado, naoAtribuido, porOrigem, falha,
     receitaRealTetoUsd,
     taxaPorPlano: TIER_FEE_BPS,
     projecao,
@@ -169,6 +196,10 @@ export async function GET(): Promise<NextResponse> {
         + "plano teria que ser gravado por operação daqui para a frente",
       "⚠️ a projeção NÃO é previsão: é aritmética sobre um volume hipotético. "
         + "Ela responde 'quanto renderia SE', não 'quanto vai render'",
+      "⚠️ operação ANÔNIMA é declaração, não medição: `/api/operations/record` "
+        + "aceita `confirmed` e taxa de quem não tem sessão assinada. Ela conta "
+        + "no volume (a troca aconteceu na cadeia) mas NÃO na arrecadação — "
+        + "sai em NÃO ATRIBUÍDO, porque não há a quem perguntar",
       "só EVM cobra — a Solana está sem taxa por decisão registrada",
       "a taxa é retida no token de saída, então o valor em dólar depende do "
         + "preço daquele token na hora, não do preço de hoje",
