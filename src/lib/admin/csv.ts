@@ -27,15 +27,47 @@
 /** Os caracteres que fazem uma planilha AVALIAR em vez de exibir. */
 const ABRE_FORMULA = /^[=+\-@\t\r]/;
 
+/**
+ * O valor é um número de verdade?
+ *
+ * ⚠️ TAB e CR no início NÃO contam, mesmo que `Number("\t5")` dê 5: nenhum
+ * número vindo do banco começa com controle, e deixá-los passar reabriria a
+ * porta por um caractere que o próprio `Number` ignora.
+ */
+function ehNumero(s: string): boolean {
+  if (s.trim() === "") return false;
+  if (/^[\t\r]/.test(s)) return false;
+  return Number.isFinite(Number(s));
+}
+
 export function csvCell(v: unknown): string {
   if (v == null) return "";
   let s = String(v);
 
   /**
-   * ⚠️ O apóstrofo vem ANTES do escape de aspas, e a ordem importa: colocá-lo
-   * depois o deixaria fora do campo citado, onde a planilha o ignoraria.
+   * ⚠⚠ NÚMERO NEGATIVO NÃO É FÓRMULA — e a primeira versão desta função
+   * quebrou a contabilidade por não distinguir os dois (achado do revisor no
+   * #433, depois de eu ter mandado para produção).
+   *
+   * `-` abre fórmula, então eu o pus na lista. Só que `pnl_usd` é
+   * ROTINEIRAMENTE negativo: todo prejuízo do extrato virava o texto `'-53.2`,
+   * ficava fora do `SUM` da planilha, e o total de quem fecha a contabilidade
+   * saía errado. O arquivo existe para isso — *"ledger as CSV for accounting"*.
+   *
+   * ⚠️ O QUE ME ESCAPOU NA VERIFICAÇÃO: eu quebrei a trava em cinco direções e
+   * todas testavam que o guarda DISPARA. Nenhuma testava que um valor legítimo
+   * SOBREVIVE. Teste de um lado só não vê falso positivo.
+   *
+   * O critério certo não é o primeiro caractere, é o que o valor É: um número
+   * finito passa inteiro; o resto que comece com abre-fórmula leva apóstrofo.
    */
-  if (ABRE_FORMULA.test(s)) s = `'${s}`;
+  if (!ehNumero(s) && ABRE_FORMULA.test(s)) {
+    /**
+     * ⚠️ O apóstrofo vem ANTES do escape de aspas, e a ordem importa: colocá-lo
+     * depois o deixaria fora do campo citado, onde a planilha o ignoraria.
+     */
+    s = `'${s}`;
+  }
 
   /**
    * ⚠️ `\r` ENTROU NA LISTA. A versão anterior citava só `" , \n` — um valor com
