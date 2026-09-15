@@ -6,15 +6,24 @@ import { TrendingUp, Layers, Network, Server } from "lucide-react";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { CHAINS } from "@/lib/chains";
 import { SUPPORTED_CEX_IDS } from "@/lib/cex/types";
+import { FONTES_DE_COTACAO, NOMES_DAS_FONTES } from "@/lib/swap/fontes";
 import { formatUsd } from "@/lib/format";
 
 // Real, verifiable platform counts — derived from the same source of truth
 // the rest of the app uses, never hardcoded marketing numbers.
 const CHAIN_COUNT = CHAINS.length;            // 11
 const CEX_COUNT   = SUPPORTED_CEX_IDS.length; // 10
-// DEX route sources actually wired into the quote engine (see AboutView +
-// useQuotes): 0x v2, LiFi, Jupiter, CoW Protocol.
-const DEX_AGGREGATORS = ["0x", "LiFi", "Jupiter", "CoW"] as const;
+/**
+ * ⚠️⚠️ ESTA LISTA ERA LITERAL E JÁ TINHA DERIVADO — achado A02. Ela dizia
+ * `["0x", "LiFi", "Jupiter", "CoW"]`, e o comentário em cima afirmava que eram
+ * as fontes "actually wired into the quote engine". A CoW não é: ela é a venue
+ * de ordem limitada (`src/lib/limit/cow.ts`), e `/api/quote` não a consulta em
+ * caminho nenhum. O painel contava 4 onde o motor tem 3.
+ *
+ * O resto deste arquivo já derivava de fonte de verdade — `CHAINS.length`,
+ * `SUPPORTED_CEX_IDS.length`. Só esta linha era mantida à mão, e foi só ela que
+ * mentiu.
+ */
 
 type Tone = "cyan" | "violet" | "gold" | "green";
 
@@ -58,7 +67,7 @@ export default function StatPanel() {
     tone:     Tone;
   }[] = [
     { icon: TrendingUp, labelKey: "swap.statDexVolume",     value: volumeValue,            note: t("swap.statSourceMarket"), tone: "cyan"   },
-    { icon: Layers,     labelKey: "swap.statAggregators",   value: String(DEX_AGGREGATORS.length), note: DEX_AGGREGATORS.join(" · "), tone: "violet" },
+    { icon: Layers,     labelKey: "swap.statAggregators",   value: String(FONTES_DE_COTACAO.length), note: NOMES_DAS_FONTES, tone: "violet" },
     { icon: Network,    labelKey: "swap.statChains",        value: String(CHAIN_COUNT),    note: t("swap.statLive"),         tone: "gold"   },
     { icon: Server,     labelKey: "swap.statCexIntegrated", value: String(CEX_COUNT),      note: t("swap.statSourceCcxt"),   tone: "green"  },
   ];

@@ -9,8 +9,9 @@ import TierClassBanner from "@/components/tier/TierClassBanner";
 import StatPanel from "./StatPanel";
 import TopMovers from "./TopMovers";
 import ChainConstellation from "./ChainConstellation";
-import { Activity, Sparkles } from "lucide-react";
+import { Activity } from "lucide-react";
 import { useT } from "@/lib/i18n";
+import { FONTES_DE_COTACAO } from "@/lib/swap/fontes";
 
 // Liquid Nexus (R3F) is heavy and uses browser-only APIs — load client-only
 const LiquidNexus = dynamic(() => import("@/components/viz/LiquidNexus"), { ssr: false });
@@ -105,9 +106,29 @@ export default function SwapDashboard() {
             </Link>
 
             {/* Strip under swap: quick chips */}
+            {/* ── OS CHIPS ────────────────────────────────────────────────
+
+                   ⚠️⚠️ DOIS DELES AFIRMAVAM FATO SEM NADA POR TRÁS (achado A02),
+                   ao lado de um comentário dizendo que o TERCEIRO tinha sido
+                   consertado por exatamente esse motivo.
+
+                   "ZION considera seguro", em dourado, renderizado sempre —
+                   antes de o visitante escolher token nenhum. Não há "isto".
+                   ZION não avaliou nada. A verificação de segurança de token
+                   que EXISTE mora no `SwapCard`, é por token e é medida; aqui
+                   não havia como ligar o selo em coisa alguma, então ele saiu.
+
+                   "14 rotas avaliadas" — o 14 escrito à mão no JSX. Nada foi
+                   avaliado, e 14 nem era alcançável: `/api/quote` despacha três
+                   fontes MUTUAMENTE EXCLUSIVAS por par de cadeias. Virou o que
+                   dá para afirmar sem par escolhido: quantas fontes estão
+                   LIGADAS, e o número sai de `FONTES_DE_COTACAO`. */}
             <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
-              <Chip icon={<Sparkles className="w-3 h-3" />}    label={t("swap.chipZionSafe")} tone="gold"   />
-              <Chip icon={<Activity className="w-3 h-3" />}     label={t("swap.chipRoutes", { n: 14 })}  tone="cyan"   />
+              <Chip
+                icon={<Activity className="w-3 h-3" />}
+                label={t("swap.chipFontes", { n: FONTES_DE_COTACAO.length })}
+                tone="cyan"
+              />
               {/* Era "Escudo MEV ativo", em verde, sem nada por trás.
                   Ver src/lib/swap/mev-guard.ts. */}
               <Chip label={t("swap.chipMevWarn")}               tone="cyan"   />
