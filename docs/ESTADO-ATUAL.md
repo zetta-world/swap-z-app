@@ -13,8 +13,10 @@
 > ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
-> **Última atualização:** 08/09/2026 — a leva do PR #410 (§5.26: sete telas
-> afirmando sobre A o que só era verdade sobre B). Antes disso: 31/08/2026,
+> **Última atualização:** 15/09/2026 — **a auditoria externa de 30 achados,
+> fechada** (§5.27, PRs #419–#445). Antes disso: 08/09/2026, a leva do PR #410
+> (§5.26: sete telas afirmando sobre A o que só era verdade sobre B). E antes,
+> 31/08/2026,
 > `main` em **`f722941`**. Dois dias
 > densos (#366–#382). O fio que costura quase tudo:
 >
@@ -59,8 +61,8 @@
 
 | | |
 |---|---|
-| `main` | **`f722941`** (31/08 22:07) · conferido **por conteúdo**, não pelo estado do PR — ver §6 |
-| CI | verde · **2.316 testes** · 153 arquivos · agora dispara em **todas as branches** (#370) |
+| `main` | **`5863b04`** (15/09) · conferido **por conteúdo**, não pelo estado do PR — ver §6 |
+| CI | verde · **3.068 testes** · 207 arquivos · dispara em **todas as branches** (#370) |
 | Deploy | Vercel produção acompanha a `main` |
 | Provedor de IA | **Kimi** (`AI_PROVIDER=kimi`) — temporário, sem crédito na Anthropic |
 | Banco | Supabase `vuvvftdsfmagmtbovzgq` (projeto **z-swap**) |
@@ -2122,6 +2124,89 @@ sozinha**: "30 dias" e "24h" eram literais. Agora saem da constante que alimenta
 o laço.
 
 ---
+
+## 5.27 ⚠️⚠️ A AUDITORIA EXTERNA DE 30 ACHADOS — fechada (15/09)
+
+Uma auditoria externa (ChatGPT) apontou **30 itens: 8 altos, 21 médios, 1
+baixo**. Todos foram conferidos contra o código real, os reais foram corrigidos,
+testados, quebrados nos dois sentidos e entregues. **PRs #419 a #445.**
+
+### A família de defeito que dominou
+
+Doze dos trinta tinham a MESMA forma:
+
+> **a peça certa, testada, com a cicatriz escrita — e um caminho que não a usa.**
+
+Não era código faltando. Era código existente, conferido num chamador e
+ignorado noutro. Exemplos:
+
+| a peça | onde era conferida | onde não era |
+|---|---|---|
+| `bumpSessionTrades` devolve `boolean` | os dois pontos do cron | a rota do navegador (#436) |
+| guarda de impacto do swap | a cotação exibida | a cotação REASSINADA (#429, #432) |
+| `savePendingOrder` devolve `false` | dois chamadores | o terceiro (#440) |
+| chip "sem nada por trás" já removido | o chip do MEV | os dois vizinhos (#445) |
+
+⚠️ **A lição operacional:** antes de mudar como um dado é interpretado, **ler
+todos os chamadores, não só a função.** Eu mandei DUAS regressões nesta leva
+pela causa oposta — consertei a função pura sem ler o caminho inteiro (#435,
+#441). Ambas achadas pelo revisor, não por mim.
+
+### O que eu aprendi sobre quebrar as próprias travas
+
+- **Quebrar a guarda prova que ela pega o que mede — não que ela mede a coisa
+  certa.** Os três defeitos que o revisor achou no MEU trabalho estavam todos no
+  que eu não estava medindo. Em #435 todas as minhas quebras testaram que a
+  guarda DISPARA; nenhuma testou que a entrada legítima SOBREVIVE — e a guarda
+  transformou `pnl_usd` negativo em texto, quebrando a contabilidade em produção.
+  **Toda negação precisa da gêmea positiva.**
+- **Travador que roda sujo não é detecção.** Quatro quebras "passaram" porque o
+  arquivo estava quebrado e o vitest nem rodava. Passou a valer: `type-check`
+  limpo em CADA quebra, senão não conta.
+- **Âncora textual pega o texto, não o código.** Cinco vezes uma trava casou com
+  o próprio comentário que contava a cicatriz. Comentários saem antes de medir.
+- **Trava textual sobre fonte de rota é a armadilha que a casa já tinha marcado.**
+  Quando a conta dá para extrair, ela vira módulo puro com teste de verdade
+  (`admin/atribuicao.ts`, `swap/fontes.ts`).
+
+### Os cinco últimos, em 15/09
+
+| # | achado | o que era |
+|---|---|---|
+| A06 | #442 | reverter um genoma fazia 4 escritas soltas; falhar no meio deixava o agente **sem genoma ativo**. Virou RPC atômica (0048). Inverter a ordem não era saída: o índice parcial devolve 23505 — medido |
+| A07 | #443 | `/api/operations/record` aceita `confirmed` + taxa **sem sessão**; os painéis somavam tudo. **100% da arrecadação exibida** vinha de linha anônima |
+| A05 | #444 | a restrição `motivo_saida = 'liquidacao'` existia em produção e **não no repo**: banco novo recusaria 23514 no fechamento de posição alavancada |
+| A03 | #444 | cinco lugares diziam que `/api/dca/cron` "nunca foi agendado". Medido: `cron:dca:last` a 3,2 min, na cadência de 5 min |
+| A02 | #445 | a home afirmava **"ZION considera seguro"** sem token escolhido, e **"14 rotas avaliadas"** com o 14 escrito à mão — sendo que no máximo UMA fonte dispara por par |
+
+### O que ficou para o dono decidir
+
+Nenhum destes é defeito — são escolhas que não são minhas:
+
+1. as **3 carteiras admin legadas**;
+2. a **TOCTOU de cota** (precisa de restrição no banco, não em código);
+3. `liquidoCompostoPct` **compondo símbolos paralelos**;
+4. a venue do **`maker_de_faixa`**;
+5. ⚠️⚠️ **O BRAÇO DOS MODELOS DE IA PAROU INTEIRO.** Medido em 15/09 sobre
+   `zion_suggestions` — 19 fontes já escreveram ali, e **só 4 escreveram nos
+   últimos 10 dias**:
+
+   | viva | última | | dormente | parada há |
+   |---|---|---|---|---|
+   | `strat_mech` | hoje | | `mistral_scan` (944 sugestões) | 11,6 d |
+   | `strat_dex` | hoje | | `radar` | 11,5 d |
+   | `strat_day` | hoje | | `grok_scan` (955) · `kimi_scan` (451) · `hybrid_scan` | 32,7 d |
+   | `strat_ai` | 1,4 d | | `deepseek_scan` (774) · `self_scan` (875) | ~51 d |
+
+   As quatro vivas são **todas `strat_*`** — as estratégias mecânicas. **Todo
+   scanner de modelo de IA está parado**, incluindo `mistral_scan`, a única mesa
+   que chegou a virar positiva. Isto é medição, não opinião, e é a pergunta mais
+   cara em aberto.
+
+   ⚠️ **Correção de um número que eu mesmo publiquei nesta sessão:** eu disse
+   "19 das 22 mesas dormentes". O certo é **15 de 19 fontes**, e o recorte que
+   importa não é a contagem — é que o corte separa `strat_*` de todo o resto.
+
 
 ## 6. O que custou caro aprender (além das 33 invariantes)
 
