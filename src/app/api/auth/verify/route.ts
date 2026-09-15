@@ -60,15 +60,44 @@ async function finishVerify(address: string, chain: WalletChain, signature: stri
   const db = getSupabaseAdmin();
   if (!db) return json({ ok: false, error: "auth_unconfigured" }, 503);
 
-  const { data: nonceRow } = await db
+  /**
+   * ⚠⚠ CONSUMIR É O DELETE, NÃO O SELECT — achado A01 da auditoria externa.
+   *
+   * Antes eram três passos: SELECT, verifica, DELETE. Dois pedidos concorrentes
+   * com a MESMA assinatura liam os dois a mesma linha, verificavam os dois com
+   * sucesso, e saíam os dois com sessão. O comentário abaixo diz
+   * *"Single-use regardless of outcome"* — a intenção estava certa e o passo
+   * que a garantia vinha DEPOIS da decisão.
+   *
+   * ⚠⚠ E ERA PIOR PELO OUTRO LADO: o `error` do DELETE era jogado fora.
+   * `supabase-js` RESOLVE com `{ error }` e não lança, então um DELETE recusado
+   * deixava o nonce DE PÉ — reutilizável até expirar, para quem tivesse a
+   * assinatura. Uso único que depende de uma escrita nunca conferida não é uso
+   * único.
+   *
+   * `DELETE … RETURNING` resolve os dois de uma vez: o Postgres serializa, e de
+   * duas chamadas concorrentes exatamente UMA leva a linha. Quem não levou não
+   * tem contra o que verificar — que é a resposta certa. É o mesmo mecanismo de
+   * `tryLockSession` e da trava do DCA.
+   */
+  const { data: consumidas, error: erroDoConsumo } = await db
     .from("auth_nonces")
-    .select("nonce, issued_at, expires_at")
+    .delete()
     .eq("wallet_address", address)
-    .maybeSingle();
+    .select("nonce, issued_at, expires_at");
 
+  if (erroDoConsumo) {
+    /**
+     * ⚠️ FALHA FECHADO. Sem conseguir CONSUMIR o desafio não dá para conceder
+     * sessão: seguir aqui é exatamente o caminho que deixava o nonce vivo.
+     */
+    return json({ ok: false, error: "auth_unavailable" }, 503);
+  }
+
+  const nonceRow = consumidas?.[0];
   if (!nonceRow) return json({ ok: false, error: "no_challenge" }, 400);
   if (new Date(nonceRow.expires_at).getTime() < Date.now()) {
-    await db.from("auth_nonces").delete().eq("wallet_address", address);
+    // Já foi removido pelo próprio consumo acima — nada a apagar aqui.
     return json({ ok: false, error: "challenge_expired" }, 400);
   }
 
@@ -82,9 +111,10 @@ async function finishVerify(address: string, chain: WalletChain, signature: stri
       ? await verifyEvmSignature({ address, signature, nonce: nonceRow.nonce, issuedAt })
       : verifySolanaSignature({ address, signature, nonce: nonceRow.nonce, issuedAt });
 
-  // Single-use regardless of outcome — burn the nonce so failed attempts can't
-  // be brute-forced and successes can't be replayed.
-  await db.from("auth_nonces").delete().eq("wallet_address", address);
+  // ⚠️ O nonce JÁ foi queimado — o consumo aconteceu no `DELETE … RETURNING`
+  // lá em cima, ANTES da verificação. Uso único independente do desfecho
+  // continua valendo (tentativa falha também gasta o desafio), e agora vale
+  // também sob concorrência.
 
   if (!ok) {
     console.warn(`[auth] signature verification failed for ${chain} wallet ${address.slice(0, 6)}…`);
