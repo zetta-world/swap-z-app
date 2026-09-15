@@ -13,6 +13,8 @@ import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { verifyJupiterTransaction, guardMode, shouldBlock } from "@/lib/swap/solana-guard";
 import { assessMevExposure } from "@/lib/swap/mev-guard";
+import { assessImpact } from "@/lib/swap/impact-guard";
+import { impactoDaCotacao } from "@/lib/swap/impacto";
 import { decideTip, sendViaJito, sendNarrative, type JitoSendResult } from "@/lib/swap/jito";
 import { erc20Abi, type Hex } from "viem";
 import { findToken, type Token } from "@/lib/tokens";
@@ -373,6 +375,72 @@ export default function ExecuteSwap({
     return q;
   }, [fromChain, toChain, fromToken, toToken, sellAmount, taker, slippageBps]);
 
+  // Quote-derived display values
+  const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);
+  const { estOut, minOut, routeText, durationText } = useMemo(() => {
+    if (source === "0x" && zxQuote) {
+      return {
+        estOut: Number(zxQuote.buyAmount) / Math.pow(10, toToken.decimals),
+        minOut: Number(zxQuote.minBuyAmount) / Math.pow(10, toToken.decimals),
+        routeText: zxQuote.route.fills.length === 1
+          ? zxQuote.route.fills[0].source
+          : `${zxQuote.route.fills.length} hops · ${zxQuote.route.fills.map((f) => f.source).slice(0, 3).join(" · ")}${zxQuote.route.fills.length > 3 ? "…" : ""}`,
+        durationText: "~12s · 1 block",
+      };
+    }
+    if (source === "lifi" && lfQuote) {
+      const steps = lfQuote.includedSteps ?? [];
+      const dur = lfQuote.estimate.executionDuration;
+      return {
+        estOut: Number(lfQuote.estimate.toAmount)    / Math.pow(10, toToken.decimals),
+        minOut: Number(lfQuote.estimate.toAmountMin) / Math.pow(10, toToken.decimals),
+        routeText: steps.length > 0
+          ? steps.map((s) => s.toolDetails?.name ?? s.tool).filter(Boolean).slice(0, 4).join(" → ")
+          : (lfQuote.toolDetails?.name ?? lfQuote.tool ?? "LiFi"),
+        durationText: dur < 60 ? `~${dur}s` : dur < 3600 ? `~${Math.round(dur / 60)}min` : `~${Math.round(dur / 3600)}h`,
+      };
+    }
+    if (source === "jupiter" && jupResult) {
+      const q = jupResult.quote;
+      const labels = (q.routePlan ?? [])
+        .map((s) => s.swapInfo.label).filter((x): x is string => !!x);
+      return {
+        estOut: Number(q.outAmount) / Math.pow(10, toToken.decimals),
+        minOut: Number(q.otherAmountThreshold) / Math.pow(10, toToken.decimals),
+        routeText: labels.length > 0
+          ? labels.slice(0, 4).join(" → ") + (labels.length > 4 ? " …" : "")
+          : "Jupiter",
+        durationText: "~2s · 1 slot",
+      };
+    }
+    return { estOut: null, minOut: null, routeText: "", durationText: "" };
+  }, [source, zxQuote, lfQuote, jupResult, toToken.decimals]);
+
+  /**
+   * ⚠⚠ A RECONFERÊNCIA DO IMPACTO — achado A21 da auditoria externa.
+   *
+   * O `SwapCard` calcula o impacto sobre a cotação INDICATIVA e trava o botão
+   * com ele. Este modal busca uma cotação FIRME ao abrir — e, no caminho do 0x,
+   * uma TERCEIRA logo antes de enviar, porque o calldata carrega o preço e
+   * envelhece rápido. Nenhuma das duas era conferida.
+   *
+   * Em pool raso é exatamente aí que o número se move: o usuário passava por um
+   * impacto de 1% e assinava um de 40%. A guarda existia, media a coisa certa,
+   * e apontava para a cotação errada — mesma família do A13.
+   *
+   * ⚠️ OS MESMOS PREÇOS VIVOS DO CARTÃO. `useTokenPrices` faz UMA chamada
+   * batched; usar o `priceUsd` congelado do registro faria as duas pontas
+   * medirem coisas diferentes, que é o defeito de novo com outra roupa.
+   */
+  const { prices: precosVivos } = useTokenPrices([fromToken, toToken]);
+  const impactoFirme = useMemo(() => impactoDaCotacao({
+    entradaDec:      estIn,
+    saidaDec:        estOut,
+    precoEntradaUsd: precosVivos[tokenPriceKey(fromToken)] ?? fromToken.priceUsd ?? null,
+    precoSaidaUsd:   precosVivos[tokenPriceKey(toToken)]   ?? toToken.priceUsd   ?? null,
+  }), [estIn, estOut, precosVivos, fromToken, toToken]);
+  const vereditoFirme = assessImpact(impactoFirme.impactoPct, impactoFirme.entradaUsd);
+
   /**
    * One click does the whole journey: switch network → one-time approval →
    * fresh quote → send. The wallet only ever sees plain transactions (no
@@ -381,6 +449,15 @@ export default function ExecuteSwap({
    */
   const onExecute = useCallback(async () => {
     setError(null);
+    /**
+     * ⚠⚠ O PORTÃO FICA AQUI, na ÚNICA porta por onde as três fontes passam
+     * (0x, LiFi, Jupiter) — antes de qualquer pedido de assinatura.
+     */
+    if (vereditoFirme.level === "block") {
+      setError(vereditoFirme.message);
+      setPhase("tx_failed");
+      return;
+    }
     try {
       // ─── Jupiter (Solana) path ───────────────────────────────────
       if (isJupiter) {
@@ -701,48 +778,8 @@ export default function ExecuteSwap({
       setPhase("tx_failed");
       if (historyId.current) updateHistory(historyId.current, { status: "failed" });
     }
-  }, [source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
+  }, [vereditoFirme, source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
 
-  // Quote-derived display values
-  const estIn = Number(sellAmount) / Math.pow(10, fromToken.decimals);
-  const { estOut, minOut, routeText, durationText } = useMemo(() => {
-    if (source === "0x" && zxQuote) {
-      return {
-        estOut: Number(zxQuote.buyAmount) / Math.pow(10, toToken.decimals),
-        minOut: Number(zxQuote.minBuyAmount) / Math.pow(10, toToken.decimals),
-        routeText: zxQuote.route.fills.length === 1
-          ? zxQuote.route.fills[0].source
-          : `${zxQuote.route.fills.length} hops · ${zxQuote.route.fills.map((f) => f.source).slice(0, 3).join(" · ")}${zxQuote.route.fills.length > 3 ? "…" : ""}`,
-        durationText: "~12s · 1 block",
-      };
-    }
-    if (source === "lifi" && lfQuote) {
-      const steps = lfQuote.includedSteps ?? [];
-      const dur = lfQuote.estimate.executionDuration;
-      return {
-        estOut: Number(lfQuote.estimate.toAmount)    / Math.pow(10, toToken.decimals),
-        minOut: Number(lfQuote.estimate.toAmountMin) / Math.pow(10, toToken.decimals),
-        routeText: steps.length > 0
-          ? steps.map((s) => s.toolDetails?.name ?? s.tool).filter(Boolean).slice(0, 4).join(" → ")
-          : (lfQuote.toolDetails?.name ?? lfQuote.tool ?? "LiFi"),
-        durationText: dur < 60 ? `~${dur}s` : dur < 3600 ? `~${Math.round(dur / 60)}min` : `~${Math.round(dur / 3600)}h`,
-      };
-    }
-    if (source === "jupiter" && jupResult) {
-      const q = jupResult.quote;
-      const labels = (q.routePlan ?? [])
-        .map((s) => s.swapInfo.label).filter((x): x is string => !!x);
-      return {
-        estOut: Number(q.outAmount) / Math.pow(10, toToken.decimals),
-        minOut: Number(q.otherAmountThreshold) / Math.pow(10, toToken.decimals),
-        routeText: labels.length > 0
-          ? labels.slice(0, 4).join(" → ") + (labels.length > 4 ? " …" : "")
-          : "Jupiter",
-        durationText: "~2s · 1 slot",
-      };
-    }
-    return { estOut: null, minOut: null, routeText: "", durationText: "" };
-  }, [source, zxQuote, lfQuote, jupResult, toToken.decimals]);
 
   const explorerBase = isJupiter ? "https://solscan.io" : explorerForChain(fromChain);
   const sourceLabel  = source === "0x"      ? t("swap.routerZeroEx")
