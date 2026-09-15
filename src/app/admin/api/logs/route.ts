@@ -15,14 +15,27 @@ export async function GET(): Promise<NextResponse> {
 
   const ago24h = new Date(Date.now() - 86_400_000).toISOString();
 
+  /**
+   * ⚠⚠ AS QUATRO CONSULTAS ERAM DUAS, DUPLICADAS — achado A28 da auditoria
+   * externa.
+   *
+   * O `Promise.all` carregava QUATRO consultas e a desestruturação pegava DUAS.
+   * Os elementos 0 e 1 eram a MESMA consulta (`limit(60)`), e os de 24h, nos
+   * índices 2 e 3, rodavam e eram DESCARTADOS.
+   *
+   * Resultado: `errors24h`, `security24h`, `high24h` e `topKinds` saíam dos 60
+   * eventos mais recentes DE TODOS OS TEMPOS. Num dia calmo o painel INFLAVA,
+   * contando erros de semanas atrás como se fossem de hoje; num dia movimentado
+   * ele TRAVAVA em 60, escondendo o volume real bem quando ele importa.
+   *
+   * O rótulo dizia "24h" e o número vinha de outro lugar — a família de defeito
+   * que esta auditoria mais encontrou, agora no painel que existe para ver
+   * abuso e tentativa de invasão.
+   */
   const [{ data: recent }, { data: rows24h }] = await Promise.all([
     // leitura-limitada: os 60 eventos mais recentes, que é o que a tela mostra.
     // A CONTAGEM de 24h vem da consulta seguinte, que não depende deste recorte.
     db.from("platform_events")
-      .select("event_type, metadata, created_at")
-      .in("event_type", ["error", "security"])
-      .order("created_at", { ascending: false })
-      .limit(60),    db.from("platform_events")
       .select("event_type, metadata, created_at")
       .in("event_type", ["error", "security"])
       .order("created_at", { ascending: false })
@@ -32,10 +45,8 @@ export async function GET(): Promise<NextResponse> {
     db.from("platform_events")
       .select("event_type, metadata, created_at")
       .in("event_type", ["error", "security"])
-      .gte("created_at", ago24h),    db.from("platform_events")
-      .select("event_type, metadata, created_at")
-      .in("event_type", ["error", "security"])
-      .gte("created_at", ago24h),
+      .gte("created_at", ago24h)
+      .limit(1000),
   ]);
 
   let errors24h = 0, security24h = 0, high24h = 0;
