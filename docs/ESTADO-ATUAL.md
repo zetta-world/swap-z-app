@@ -1646,10 +1646,14 @@ a mesa.
 Está pendurado no **`/api/zion/backtest`** (30 min), que já está agendado no
 cron-job.org e já roda o papel da própria casa.
 
-⚠️ **Criar rota nova exigiria que o dono a agendasse — e `/api/dca/cron` está
-escrito, testado e NUNCA AGENDADO desde 26/08** (RUNBOOK §2.1). Uma rota de cron
-que ninguém agenda é *"atividade não é evidência de funcionamento"* esperando
-para acontecer.
+⚠️ **Criar rota nova exige um passo FORA do repositório** — alguém abrir o
+cron-job.org e criar o job. O `/api/dca/cron` ficou escrito e testado desde
+26/08 esperando exatamente isso (RUNBOOK §2.1). Uma rota de cron que ninguém
+agenda é *"atividade não é evidência de funcionamento"* esperando para acontecer.
+
+⚠️ **O DCA JÁ FOI AGENDADO** — e três documentos e dois comentários de código
+seguiam dizendo "nunca agendado" (achado A03). Medido em 15/09: `cron:dca:last`
+há 3,2 min, na cadência de 5 minutos, três segundos depois do autopilot.
 
 ⚠️ E **não** vai no cron do autopilot, que move dinheiro real: um defeito no
 papel de um cliente não pode chegar perto daquele caminho. Melhor-esforço, como

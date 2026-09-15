@@ -8,10 +8,17 @@
  *
  * ⚠️ E ELE NÃO CRIA CRON NOVO. Entra no `/api/zion/backtest`, que já roda de 30
  * em 30 minutos, já está agendado no cron-job.org e já executa o papel da
- * própria casa (`runPaperAgent`). Criar rota nova exigiria que o dono fosse
- * agendá-la — e `/api/dca/cron` está escrito, testado e **nunca agendado**
- * desde 26/08, esperando no RUNBOOK §2.1. Uma rota de cron que ninguém agenda é
- * "atividade não é evidência de funcionamento" esperando para acontecer.
+ * própria casa (`runPaperAgent`). Criar rota nova exige um passo FORA do
+ * repositório — alguém abrir o cron-job.org e criar o job — e `/api/dca/cron`
+ * ficou escrito e testado desde 26/08 esperando exatamente isso. Uma rota de
+ * cron que ninguém agenda é "atividade não é evidência de funcionamento"
+ * esperando para acontecer.
+ *
+ * ⚠️ O EXEMPLO ENVELHECEU E O TEXTO NÃO (achado A03). Isto aqui dizia que o
+ * `/api/dca/cron` estava "nunca agendado", em cinco lugares do repositório, e
+ * ele está agendado: medido em 15/09, `cron:dca:last` há 3,2 min, na cadência
+ * de 5 minutos. A DECISÃO continua de pé — o custo de agendar é real; só a
+ * cautionary tale que a sustentava é que já foi resolvida.
  *
  * ⚠️ NÃO ENTRA no cron do autopilot, que move DINHEIRO REAL. Um defeito meu no
  * papel do cliente não pode chegar perto daquele caminho.
