@@ -69,10 +69,18 @@ describe("① a fórmula, em um lugar só", () => {
  */
 describe("② e o modal REALMENTE reconfere antes de assinar", () => {
   it("⚠️⚠️ o veredito sai da cotação FIRME, não da indicativa", () => {
-    expect(EXEC).toMatch(/const impactoFirme = useMemo\(\(\) => impactoDaCotacao\(\{/);
-    expect(EXEC).toMatch(/entradaDec:\s+estIn,/);
-    expect(EXEC).toMatch(/saidaDec:\s+estOut,/);
-    expect(EXEC).toMatch(/const vereditoFirme = assessImpact\(impactoFirme\.impactoPct, impactoFirme\.entradaUsd\)/);
+    /**
+     * ⚠️ ESTA TRAVA JÁ REPROVOU CÓDIGO MELHOR. A primeira versão casava a
+     * FORMA literal (`const impactoFirme = useMemo(…)`) e quebrou quando o
+     * veredito virou função, para poder julgar a terceira cotação. Trava que
+     * transcreve linha em vez de intenção é a cicatriz nº 4 desta casa.
+     *
+     * A INTENÇÃO: o veredito da tela sai da função compartilhada, alimentada
+     * pela entrada e pela saída da cotação firme.
+     */
+    expect(EXEC).toMatch(/impactoDaCotacao\(\{ entradaDec: estIn, saidaDec,/);
+    expect(EXEC).toMatch(/assessImpact\(i\.impactoPct, i\.entradaUsd\)/);
+    expect(EXEC).toMatch(/const vereditoFirme = vereditoDeSaida\(estOut\)/);
   });
 
   it("⚠️⚠️ e ele BARRA o envio — na única porta das três fontes", () => {
@@ -124,5 +132,56 @@ describe("② e o modal REALMENTE reconfere antes de assinar", () => {
     expect(CARD).toMatch(/impactoDaCotacao\(\{/);
     // A fórmula inline era a porta dos fundos: duas contas do mesmo número.
     expect(CARD).not.toMatch(/\(\(outUsd - inUsd\) \/ inUsd\) \* 100/);
+  });
+});
+
+/**
+ * ⚠️⚠️ A TERCEIRA COTAÇÃO — achado do revisor no #429, e ele estava certo.
+ *
+ * Minha primeira correção conferia só a cotação FIRME (a segunda) e deixava
+ * passar a TERCEIRA: aquela que o caminho do 0x rebusca logo antes de enviar,
+ * porque "calldata embeds pricing and goes stale fast". O próprio texto do PR
+ * nomeava essa terceira como parte do problema, e a guarda não a cobria.
+ *
+ * ⚠️ O QUE ME ENGANOU: `fetchFreshZxQuote` chama `setZxQuote(q)`, e eu contei
+ * com isso. Mas `setState` NÃO reescreve a constante já capturada no closure de
+ * um callback EM EXECUÇÃO — o portão do topo já tinha passado com os números da
+ * segunda cotação, e a transação saía com os da terceira.
+ */
+describe("③ e a TERCEIRA cotação do 0x também passa pelo portão", () => {
+  it("⚠️⚠️ o veredito é FUNÇÃO de uma saída, não um valor de outro momento", () => {
+    // Um `const` calculado na renderização não acompanha uma cotação buscada
+    // DEPOIS, dentro do mesmo callback. Perguntar é o que funciona.
+    expect(EXEC).toMatch(/const vereditoDeSaida = useCallback\(\(saidaDec: number \| null\) => \{/);
+    expect(EXEC).toMatch(/const vereditoFirme = vereditoDeSaida\(estOut\)/);
+  });
+
+  it("⚠️⚠️ a cotação rebuscada é julgada ANTES de virar transação", () => {
+    const iRefetch = EXEC.indexOf("q = await fetchFreshZxQuote();");
+    const iJulga   = EXEC.indexOf("const vereditoFresco = vereditoDeSaida(");
+    const iEnvia   = EXEC.indexOf("const hash = await sendTransactionAsync({", iRefetch);
+    expect(iRefetch).toBeGreaterThan(0);
+    expect(iJulga, "a terceira cotação não é conferida").toBeGreaterThan(iRefetch);
+    expect(iEnvia).toBeGreaterThan(iJulga);
+  });
+
+  it("⚠️⚠️ e ela BARRA — o `return` é o que impede a assinatura", () => {
+    const i = EXEC.indexOf("if (vereditoFresco.level === \"block\")");
+    expect(i).toBeGreaterThan(0);
+    expect(EXEC.slice(i, i + 200)).toMatch(/setPhase\("tx_failed"\)[\s\S]{0,60}return;/);
+  });
+
+  it("⚠️ o julgamento usa a saída DA COTAÇÃO REBUSCADA, não `estOut`", () => {
+    // `estOut` vem do estado `zxQuote`, que o `setZxQuote` só atualiza na
+    // renderização seguinte — tarde demais para este envio.
+    expect(EXEC).toMatch(/vereditoDeSaida\(Number\(q\.buyAmount\) \/ Math\.pow\(10, toToken\.decimals\)\)/);
+  });
+
+  it("⚠️ TODA rebusca de cotação no envio é seguida de um veredito", () => {
+    // Se um dia aparecer uma quarta, isto reprova até ela ser conferida.
+    const rebuscas = [...EXEC.matchAll(/await fetchFreshZxQuote\(\)/g)].length;
+    const vereditos = [...EXEC.matchAll(/const vereditoFresco = vereditoDeSaida\(/g)].length;
+    expect(rebuscas).toBeGreaterThan(0);
+    expect(vereditos, `${rebuscas} rebusca(s), ${vereditos} veredito(s)`).toBe(rebuscas);
   });
 });
