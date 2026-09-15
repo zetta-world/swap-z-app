@@ -224,3 +224,57 @@ describe("a virada do dia não pode falhar calada", () => {
     expect(codigo).toMatch(/autopilot_telemetria_nao_gravou/);
   });
 });
+
+/**
+ * ⚠️⚠️ O CANAL DO NAVEGADOR — achado A12 (15/09).
+ *
+ * `bumpSessionTrades` devolve `boolean` e foi MUDADA de propósito para isso, com
+ * a cicatriz escrita no cabeçalho dela: "DEVOLVE SE CONTOU — e antes engolia a
+ * falha". O cron confere nos DOIS pontos onde chama.
+ *
+ * A rota `record-fire`, por onde o navegador publica os próprios disparos, não
+ * conferia — e ainda envolvia a chamada num `try/catch` que nunca rodou, porque
+ * a função RESOLVE com `false` e não lança. Toda falha de banco devolvia
+ * `{ ok: true }`, e o limite de trades por dia parava de contar aquele canal em
+ * silêncio, pelo resto do dia.
+ *
+ * É a peça certa, com a cicatriz escrita, conferida num caminho e ignorada no
+ * outro — pela décima primeira vez nesta auditoria.
+ */
+describe("o disparo do navegador não pode dizer que contou sem ter contado", () => {
+  const FIRE = readFileSync(join(process.cwd(), "src/app/api/autopilot/session/record-fire/route.ts"), "utf8");
+  const codigo = semComentarios(FIRE);
+
+  it("⚠️⚠️ o retorno de `bumpSessionTrades` é LIDO", () => {
+    expect(codigo).toMatch(/const contou = await bumpSessionTrades\(session\.sub, exchangeId, count\)/);
+    expect(codigo).toMatch(/if \(!contou\)/);
+  });
+
+  it("⚠️⚠️ e a rota falha FECHADO — 500, não `ok: true`", () => {
+    const i = codigo.indexOf("if (!contou)");
+    expect(i).toBeGreaterThan(0);
+    const ramo = codigo.slice(i, codigo.indexOf("return NextResponse.json({ ok: true }", i));
+    expect(ramo).toMatch(/status: 500/);
+  });
+
+  it("⚠️⚠️ o `try/catch` saiu — ele nunca pegou nada", () => {
+    // `bumpSessionTrades` resolve com `false`; não lança. O catch era teatro,
+    // e o `{ ok: true }` do try era a mentira.
+    expect(codigo).not.toMatch(/try \{\s*await bumpSessionTrades/);
+    expect(codigo).not.toMatch(/error: "bump_failed"/);
+  });
+
+  it("⚠️ e o evento carrega a CONSEQUÊNCIA, não só o nome do erro", () => {
+    // "bump_failed" não diz a ninguém o que fazer. "o seu limite de trades por
+    // dia deixou de contar este canal hoje" diz.
+    expect(FIRE).toMatch(/limite de trades por dia deixou de contar este canal hoje/);
+    expect(codigo).toMatch(/autopilot_disparo_nao_contado/);
+  });
+
+  it("⚠️ o cron continua conferindo as DUAS chamadas dele", () => {
+    const conferidas = [...semComentarios(CRON).matchAll(/if \(!await bumpSessionTrades\(/g)].length;
+    const chamadas = [...semComentarios(CRON).matchAll(/await bumpSessionTrades\(/g)].length;
+    expect(chamadas).toBe(2);
+    expect(conferidas).toBe(chamadas);
+  });
+});
