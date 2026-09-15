@@ -563,7 +563,24 @@ export default function ExecuteSwap({
 
         // Wait for confirmation against the lastValidBlockHeight Jupiter returned.
         try {
-          await solConn.confirmTransaction(
+          /**
+           * ⚠⚠ `confirmTransaction` RESOLVE QUANDO A TRANSAÇÃO FALHOU NA CADEIA
+           * (achado A19 da auditoria externa).
+           *
+           * Ela responde "esta assinatura chegou a um slot confirmado" — NÃO
+           * "ela deu certo". Uma transação que pousou e reverteu (slippage
+           * estourado, saldo insuficiente, CPI que falhou) CONFIRMA, com o erro
+           * dentro de `value.err`. E o retorno era jogado fora.
+           *
+           * O desfecho: a tela dizia "Swap confirmado", os tokens nunca
+           * chegavam, o histórico gravava `confirmed` — e o `useOperationSync`
+           * contava volume e receita em cima de um swap que não aconteceu.
+           *
+           * ⚠️ O CAMINHO EVM JÁ FAZIA CERTO, 200 LINHAS ACIMA NESTE ARQUIVO:
+           * `if (receipt.status === "success")`. É a peça certa, escrita, e o
+           * outro caminho sem ela — o padrão que esta auditoria mais encontrou.
+           */
+          const conf = await solConn.confirmTransaction(
             {
               signature:            sig,
               blockhash:            tx.message.recentBlockhash,
@@ -571,6 +588,16 @@ export default function ExecuteSwap({
             },
             "confirmed",
           );
+          if (conf.value.err) {
+            // Pousou e reverteu. Dizer "confirmado" aqui é a pior mentira da
+            // tela: o dono para de procurar o dinheiro.
+            setError(`${tImp("swap.solExecutionFailed")} ${JSON.stringify(conf.value.err).slice(0, 120)}`);
+            setPhase("tx_failed");
+            if (historyId.current) {
+              updateHistory(historyId.current, { status: "failed", txHash: sig });
+            }
+            return;
+          }
           setPhase("tx_confirmed");
           if (historyId.current) {
             updateHistory(historyId.current, { status: "confirmed", txHash: sig });
