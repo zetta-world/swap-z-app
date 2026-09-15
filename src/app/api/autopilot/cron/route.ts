@@ -9,10 +9,15 @@ import { runAutopilotCexScan, formatRegimeContext } from "@/lib/autopilot/scan";
 import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
 import { fetchCexBalance, fetchCexOrderStatus } from "@/lib/cex/server";
 import { executarOrdemCex } from "@/lib/cex/execucao/executor";
+import { reconciliarPendentes } from "@/lib/cex/execucao/reconciliador";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
-import { trendGate } from "@/lib/zion/sniper";
+import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
+import { certificadoVivo } from "@/lib/autopilot/certificado";
+import { decidirPelaAutorizacao, precisaRevalidar } from "@/lib/autopilot/tier-da-sessao";
+import { getTierForWallet } from "@/lib/tier/check";
+import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
 import { quantoPodeVender, oQueSobrou } from "@/lib/autopilot/venda-limitada";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
@@ -307,6 +312,25 @@ async function telemetria(
   } });
 }
 
+/**
+ * Carimba o plano revalidado na sessão (achado A111).
+ *
+ * ⚠️ NÃO É TELEMETRIA, e por isso não usa `telemetria()`. É um fato de
+ * AUTORIZAÇÃO: se ele não gravar, a sessão revalida de novo na passada seguinte
+ * (custo) e, persistindo, o prazo duro fecha as ENTRADAS sozinho. A direção da
+ * falha é fechada — mas ela não pode ser muda, senão "o provedor está fora" e
+ * "o banco está recusando a escrita" ficam idênticos.
+ */
+async function carimbarPlano(id: string, tier: string | null, quandoIso: string): Promise<void> {
+  const r = await patchSession(id, { tier_snapshot: tier, tier_checked_at: quandoIso });
+  if (r.ok) return;
+  await recordEvent("autopilot_carimbo_de_plano_nao_gravou", { meta: { severity: "med",
+    session: id, tier, erro: r.erro,
+    why: "o plano foi revalidado e o carimbo nao gravou. A sessao revalida de novo "
+      + "na proxima passada; persistindo, o prazo duro fecha as ENTRADAS.",
+  } });
+}
+
 export async function POST(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -419,11 +443,73 @@ export async function POST(req: NextRequest) {
     } });
   }
 
+  /**
+   * ⚠️⚠️⚠️ O RECUPERADOR — INVARIANTE 7, achado A105, Cenário C do briefing.
+   *
+   * Todo intent não-terminal é perguntado à corretora: `SUBMITTING` de um
+   * processo que morreu em voo, `UNKNOWN` de um timeout, `PARTIALLY_FILLED`
+   * que ainda pode crescer. Sem isto, o modelo durável das fases 1 a 4 seria a
+   * peça certa DESLIGADA — a família de defeito que esta auditoria mais
+   * encontrou, cometida por mim dentro do conserto dela.
+   *
+   * ⚠️ PENDURADO NESTE CRON, não em rota nova. Criar rota nova exige um passo
+   * FORA do repositório — alguém abrir o cron-job.org e agendar — e o achado
+   * A03 desta casa é exatamente uma rota que ficou escrita, testada e nunca
+   * agendada. Este cron já roda de 5 em 5 minutos.
+   *
+   * ⚠️ MELHOR-ESFORÇO: a reconciliação NÃO envia ordem nenhuma. Ela lê e
+   * registra. Uma falha aqui não pode derrubar a passada que opera.
+   *
+   * ⚠️ E LEITURA FALHADA É BARULHENTA: "nenhum pendente" e "não consegui
+   * olhar" não podem ler igual — a regra nº 33 desta casa.
+   */
+  let reconciliados = 0;
+  try {
+    const dbRec = getSupabaseAdmin();
+    if (dbRec) {
+      const r = await reconciliarPendentes({
+        db: dbRec,
+        credenciais: async (intent) => {
+          try {
+            const sessao = intent.session_id
+              ? todas.find((x) => x.id === intent.session_id) : undefined;
+            if (!sessao) return null;
+            return (await credenciaisDaSessao(sessao)).creds;
+          } catch {
+            // Cofre revogado ou ilegível NÃO é evidência sobre a ordem.
+            return null;
+          }
+        },
+      });
+      reconciliados = r.olhados;
+      if (r.leituraFalhou) {
+        await recordEvent("reconciliacao_leitura_falhou", { meta: { severity: "high",
+          why: "nao deu para listar intents pendentes. 'nenhum pendente' e 'nao consegui "
+            + "olhar' sao coisas diferentes, e ordens em duvida ficam sem reconciliar.",
+        } });
+      }
+      const emQuarentena = r.resultados.filter((x) => x.desfecho === "quarentena");
+      if (emQuarentena.length > 0) {
+        await recordEvent("intents_em_quarentena", { meta: { severity: "high",
+          quantos: emQuarentena.length,
+          ids: emQuarentena.map((x) => x.intentId).slice(0, 10),
+          why: "intents que a reconciliacao nao resolveu sozinha, ou conta com atividade "
+            + "externa nao atribuivel (ACCOUNT_DRIFT). Pedem mao humana.",
+        } });
+      }
+    }
+  } catch (e) {
+    await recordEvent("reconciliacao_falhou", { meta: { severity: "med",
+      erro: (e as Error)?.message?.slice(0, 200) ?? "erro",
+    } });
+  }
+
   // Platform-wide watchdog — error/security spikes, stale crons, AI budget,
   // large ops, dependency health, daily digest. Runs every tick (~5 min).
   await runAlertWatchdog();
 
-  return NextResponse.json({ ok: true, processed: sessions.length, blocked: barradas.length, summary });
+  return NextResponse.json({ ok: true, processed: sessions.length,
+    blocked: barradas.length, reconciliados, summary });
 }
 
 interface ProcessResult { fired: number; note: string; origem?: OrigemCredencial }
@@ -559,6 +645,52 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   // D3 Executor: ADX trend regime per symbol — feeds the scan's context AND
   // the hard entry gate below. Fail-closed: if the fetch fails, the map stays
   // empty and every BUY is rejected (exits are never gated).
+  /**
+   * ⚠️⚠️ O CERTIFICADO DA ESTRATÉGIA DESTA SESSÃO — achado A110.
+   *
+   * Autorizar a carteira não é autorizar a estratégia. Sem certificado vivo, o
+   * motor de política recusa TODA entrada autônoma — e o banco recusa o intent
+   * antes disso (`cex_intent_autonomo_tem_certificado`). É o fail-closed que o
+   * veredito da auditoria pede para o autopilot de fundo.
+   *
+   * ⚠️ Leitura que FALHA conta como ausência, e ausência é recusa. Esta é a
+   * direção certa para esta pergunta: um banco intermitente não pode virar
+   * licença para operar sem envelope.
+   */
+  /**
+   * ⚠️⚠️ O PLANO DA SESSÃO, REVALIDADO COM PRAZO — achado A111.
+   *
+   * O tier era conferido UMA VEZ, ao armar, e a sessão dura horas. Assinatura
+   * cancelada no meio não chegava a lugar nenhum.
+   *
+   * ⚠️ E A REVALIDAÇÃO NÃO PODE DERRUBAR TUDO. Se o provedor de assinatura não
+   * responder, o carimbo antigo vale até o prazo duro — senão uma instabilidade
+   * comercial vira indisponibilidade de segurança, que o briefing proíbe.
+   */
+  const agoraMsTier = Date.now();
+  const carimbadoEmMs = s.tier_checked_at ? new Date(s.tier_checked_at).getTime() : null;
+  let revalidacao: { satisfaz: boolean; tier: string } | null | undefined;
+  if (precisaRevalidar({ carimbadoEmMs, agoraMs: agoraMsTier })) {
+    try {
+      const { tier } = await getTierForWallet(s.wallet_address, "evm");
+      revalidacao = { satisfaz: tierSatisfies(tier, FEATURE_TIER.cexAutopilot), tier };
+    } catch {
+      // ⚠️ `null` = tentei e não respondeu. Diferente de `undefined` (nem tentei).
+      revalidacao = null;
+    }
+  }
+  const autorizacao = decidirPelaAutorizacao({
+    carimbo: s.tier_snapshot, carimbadoEmMs, agoraMs: agoraMsTier, revalidacao,
+  });
+  if (autorizacao.abreEntrada && autorizacao.precisaCarimbar) {
+    await carimbarPlano(s.id, autorizacao.tier, new Date(agoraMsTier).toISOString());
+  }
+
+  const dbCert = getSupabaseAdmin();
+  const certificadoDaSessao = dbCert && s.strategy_id && s.strategy_version
+    ? (await certificadoVivo(dbCert, s.strategy_id, s.strategy_version)) ?? null
+    : null;
+
   const marketInd = await getMarketIndicators(s.allowed_symbols).catch(() => null);
   const regimeBy = new Map<string, string>();
   for (const ind of marketInd?.indicators ?? []) if (ind.regime) regimeBy.set(ind.symbol.toUpperCase(), ind.regime);
@@ -731,8 +863,10 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
            */
           const exec = await executarOrdemCex(
             { db: getSupabaseAdmin() },
+            /** ⚠️ Venda não leva certificado — saída não precisa de licença. */
             { origin: "autopilot_cron", autonomous: true,
-              walletAddress: s.wallet_address, sessionId: s.id, conexaoId: s.conexao_id },
+              walletAddress: s.wallet_address, sessionId: s.id, conexaoId: s.conexao_id,
+              strategyId: s.strategy_id, strategyVersion: s.strategy_version },
             { exchangeId: exchange, symbol: intent.symbol, side: "sell",
               type: intent.type, qty: amount, price: intent.price ?? null,
               notionalUsd: guard.realNotionalUsd ?? intent.notionalUsd },
@@ -859,13 +993,41 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         continue;
       }
 
-      // ── BUY: D3 trend gate FIRST — entries only WITH a confirmed uptrend
-      //    (evidence: with-trend won 70-92% in bull AND bear windows; the
-      //    model's own confidence is inverted). Fail-closed: no regime data =
-      //    no entry. Exits (sells) are never gated. ──
+      /**
+       * ⚠️⚠️ O MOTOR DE POLÍTICA ÚNICO — achado A113.
+       *
+       * Esta decisão era `trendGate("buy", regime)` inline, AQUI e em lugar
+       * nenhum mais. O piloto do navegador dispara o MESMO cartão por
+       * `/api/cex/order` e nunca passava por ela: dois canais, dois vereditos
+       * para a mesma estratégia.
+       *
+       * Agora os dois chamam `avaliarDecisaoDeEstrategia`, e a versão da
+       * política entra no registro — senão "por que este trade passou?" não
+       * tem resposta reconstruível.
+       */
+      /**
+       * ⚠️⚠️ TIER REBAIXADO FECHA A ENTRADA, e SÓ a entrada (A111). Barrar a
+       * venda prenderia o cliente numa posição por causa de uma cobrança — o
+       * pior desfecho possível de um controle de acesso.
+       */
+      if (!autorizacao.abreEntrada) {
+        pushRow(intent, "rejected", card.kind, {
+          reason: `autorizacao/${autorizacao.motivo}: ${autorizacao.porque}`.slice(0, 200) });
+        continue;
+      }
+
       const regime = regimeBy.get(base) ?? null;
-      if (!trendGate("buy", regime)) {
-        pushRow(intent, "rejected", card.kind, { reason: `trend gate: regime ${regime ?? "unavailable"} (entries need TRENDING_UP)` });
+      const decisao = avaliarDecisaoDeEstrategia({
+        canal: "worker", side: "buy", symbol: intent.symbol, base,
+        regime, notionalUsd: guard.realNotionalUsd ?? intent.notionalUsd,
+        maxTradeUsd: effectiveMaxTradeUsd,
+        allowedSymbols: s.allowed_symbols ?? null,
+        autonomous: true, certificado: certificadoDaSessao, venue: exchange,
+        strategyHash: s.strategy_hash,
+      });
+      if (!decisao.permite) {
+        pushRow(intent, "rejected", card.kind, {
+          reason: `politica v${decisao.versao}/${decisao.motivo}: ${decisao.porque}`.slice(0, 200) });
         continue;
       }
 
@@ -884,7 +1046,9 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         const exec = await executarOrdemCex(
           { db: getSupabaseAdmin() },
           { origin: "autopilot_cron", autonomous: true,
-            walletAddress: s.wallet_address, sessionId: s.id, conexaoId: s.conexao_id },
+            walletAddress: s.wallet_address, sessionId: s.id, conexaoId: s.conexao_id,
+            strategyId: s.strategy_id, strategyVersion: s.strategy_version,
+            certificateId: decisao.certificadoId },
           { exchangeId: exchange, symbol: intent.symbol, side: "buy",
             type: intent.type, qty: intent.amount, price: intent.price ?? null,
             notionalUsd: buyNotional },

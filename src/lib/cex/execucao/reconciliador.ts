@@ -25,8 +25,10 @@ import type { CexId, CexCredentials } from "@/lib/cex/types";
 import { lerOrdemNaVenue, type LeituraDaOrdem } from "@/lib/cex/execucao/venue-leitura";
 import {
   transicionar, ingerirTrades, ingerirSnapshotDaOrdem,
-  intentsParaReconciliar, marcarReconciliado, type IntentRow,
+  intentsParaReconciliar, marcarReconciliado, ordensConhecidas, tradesNoLivro,
+  type IntentRow,
 } from "@/lib/cex/execucao/intents";
+import { detectarDeriva, type TradeObservado } from "@/lib/cex/execucao/deriva";
 import { ehTerminal } from "@/lib/cex/execucao/estados";
 
 /**
@@ -114,6 +116,41 @@ export async function reconciliarIntent(
 
   await marcarReconciliado(db, intent.id, intent.reconcile_attempts);
   const tentativas = intent.reconcile_attempts + 1;
+
+  /**
+   * ⚠️⚠️ A DERIVA DE CONTA, DE GRAÇA — achado A103.
+   *
+   * O histórico de trades que acabamos de buscar cobre o SÍMBOLO inteiro na
+   * janela, não só a nossa ordem. Então ele já responde a pergunta do A103 sem
+   * nenhuma chamada a mais: existe trade aqui que a Z-SWAP não consegue
+   * explicar?
+   *
+   * ⚠️ E A CONDUTA É FAIL-CLOSED: derivou, QUARENTENA. Continuar operando "com
+   * cuidado" sobre uma conta que não fecha é a definição do problema — o
+   * autopilot decide quanto comprar a partir do que ele ACHA que tem.
+   */
+  if (leitura.tipo === "achada" || leitura.tipo === "so_trades") {
+    /**
+     * ⚠️⚠️ A ORDEM QUE ACABAMOS DE DESCOBRIR É NOSSA.
+     *
+     * Este bloco quase inverteu o Cenário A inteiro. Um intent em UNKNOWN
+     * ainda NÃO tem `external_order_id` gravado — é justamente o que a
+     * reconciliação vem descobrir. Sem contá-la como conhecida, os trades
+     * dela ficavam "sem intent correspondente" e TODA recuperação de timeout
+     * terminava em quarentena: o conserto do A80 destruído pelo conserto do
+     * A103, em silêncio.
+     *
+     * Pego pelo teste do Cenário A, não por leitura.
+     */
+    const idDescoberto = leitura.tipo === "achada"
+      ? (leitura.ordem.id ? String(leitura.ordem.id) : null)
+      : (leitura.trades[0]?.orderId ?? null);
+    const derivou = await conferirDeriva(db, intent, leitura.trades, idDescoberto);
+    if (derivou) {
+      await transicionar(db, intent.id, "QUARANTINED", derivou.slice(0, 300));
+      return fim("quarentena", "QUARANTINED", derivou);
+    }
+  }
 
   // ── caminho 1: os trades são a verdade ────────────────────────────────
   if (leitura.tipo === "so_trades" || (leitura.tipo === "achada" && leitura.trades.length > 0)) {
@@ -210,6 +247,45 @@ export async function reconciliarIntent(
     await transicionar(db, intent.id, "UNKNOWN", leitura.porque.slice(0, 300));
   }
   return fim("segue_em_duvida", intent.state, leitura.porque);
+}
+
+/**
+ * Há trade na corretora que a Z-SWAP não explica?
+ *
+ * ⚠️ FALHA DE LEITURA NÃO ACUSA. Se não der para montar o conjunto de ordens
+ * conhecidas, o resultado é "não sei" — e não sei NÃO pode virar acusação de
+ * deriva, senão um banco intermitente colocaria a conta do cliente em
+ * quarentena toda vez que piorasse.
+ */
+async function conferirDeriva(
+  db: SupabaseClient<Database>, intent: IntentRow,
+  trades: readonly { tradeId: string; orderId: string | null; qty: number;
+                     executedAt: string | null }[],
+  /** A ordem que a leitura acabou de atribuir a ESTE intent. */
+  idDescoberto: string | null,
+): Promise<string | null> {
+  if (trades.length === 0) return null;
+  const observados: TradeObservado[] = trades.map((t) => ({
+    tradeId: t.tradeId, orderId: t.orderId, symbol: intent.symbol, qty: t.qty,
+    // ⚠️ `null` continua `null`: trade sem horário não pode ser posto dentro
+    // nem fora da janela por conveniência.
+    executedAtMs: t.executedAt ? new Date(t.executedAt).getTime() : null,
+  }));
+  const desdeMs = new Date(intent.created_at).getTime() - 60_000;
+  const desdeIso = new Date(desdeMs).toISOString();
+  const [ordens, noLivro] = await Promise.all([
+    ordensConhecidas(db, intent.exchange_id, intent.symbol, desdeIso),
+    tradesNoLivro(db, intent.exchange_id, desdeIso),
+  ]);
+  if (ordens === undefined || noLivro === undefined) return null;
+  // As nossas: as gravadas, mais a que este intent acabou de descobrir.
+  const nossas = new Set(ordens);
+  if (idDescoberto) nossas.add(idDescoberto);
+  if (intent.external_order_id) nossas.add(intent.external_order_id);
+  const v = detectarDeriva(observados, {
+    ordensConhecidas: nossas, tradesNoLivro: noLivro, desdeMs,
+  });
+  return v.derivou ? `ACCOUNT_DRIFT: ${v.achado.detalhe}` : null;
 }
 
 /** Mapeia o status da corretora para o fim do intent, quando ele é conclusivo. */

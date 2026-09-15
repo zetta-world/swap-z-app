@@ -27,9 +27,29 @@ import { useT, type MessageKey } from "@/lib/i18n";
  * A single card can produce one OR two intents:
  *   - One leg  → swap, buy_limit, sell_*, arbitrage_dex_cex (CEX side).
  *   - Two legs → arbitrage_cross_cex (BUY on cheap venue + SELL on
- *                expensive venue, atomic — both legs fire in parallel
- *                so price moves between them can't open one-sided
- *                directional risk).
+ *                expensive venue, fired in parallel).
+ *
+ * ⚠️⚠️⚠️ ESTA DESCRIÇÃO DIZIA "ATOMIC", E ERA FALSO.
+ *
+ * O texto era: *"atomic — both legs fire in parallel so price moves between
+ * them can't open one-sided directional risk"*. Disparar em paralelo NÃO é
+ * atomicidade. São duas chamadas a dois sistemas independentes, cada uma
+ * podendo falhar sozinha:
+ *
+ *     BUY executa, SELL falha    → exposição COMPRADA, sem hedge
+ *     BUY falha, SELL executa    → exposição VENDIDA, possivelmente a descoberto
+ *     triangular: perna 2 falha  → inventário preso na moeda intermediária
+ *
+ * O paralelismo reduz a JANELA entre as pernas; ele não elimina o caso de uma
+ * executar e a outra não — e é exatamente esse caso que "atomic" promete que
+ * não existe. O nome errado faz quem lê parar de procurar o resíduo.
+ *
+ * ⚠️ E NÃO EXISTE ROLLBACK. Trade em corretora não desfaz; "desfazer" é abrir
+ * ordem CONTRÁRIA, com preço próprio, custo próprio e chance própria de falhar.
+ * `src/lib/cex/execucao/multi-perna.ts` dá o vocabulário — exposição residual,
+ * compensação, quarentena — e a máquina de estados que nomeia cada desfecho.
+ *
+ * ⚠️ ARBITRAGEM AUTÔNOMA SEGUE NO-GO. Ter o vocabulário não é ter a prova.
  *
  * Why one banner instead of one per card: pros expect a clear single
  * "next action" they can intercept. Showing 5 simultaneous countdowns

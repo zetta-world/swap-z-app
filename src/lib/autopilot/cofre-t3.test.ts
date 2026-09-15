@@ -1,13 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
- * ⚠️ A LEITURA DUPLA DO T2 (docs/PLANO-DCA-AUTOMATICO.md §2).
+ * ⚠️⚠️ O T3 DO COFRE — achado A115. Este arquivo se chamava `cofre-t2` e
+ * travava o comportamento da TRANSIÇÃO; agora trava o de CHEGADA.
  *
- * Esta é a janela mais perigosa da virada: o autopilot lê de DOIS lugares e
- * qualquer engano manda dinheiro real com a credencial errada — ou com uma que
- * o dono já revogou.
+ * O que ele afirmava antes:
  *
- * Os três casos abaixo são o que autoriza (ou barra) o T3.
+ *     it("elo apontando para linha que sumiu: cai na sessão")
+ *
+ * Era verdade do T2 e é exatamente o defeito que o A115 nomeia. `lerConexaoPorId`
+ * devolvia `null` para "não existe", para "o banco recusou a leitura" e para
+ * "não há banco" — e os três caíam no segredo LEGADO de `autopilot_sessions`.
+ * A propriedade que o cofre existe para dar — *uma cópia do segredo, um lugar
+ * para revogar* — deixava de valer justamente quando o banco estava ruim.
+ *
+ * ⚠️ AGORA, COM `conexao_id`, NÃO EXISTE OUTRO CAMINHO. Revogada, inexistente,
+ * ilegível: as três BLOQUEIAM. O ramo legado sobrevive só para sessão SEM elo
+ * — as armadas antes do cofre existir — e ele é explícito e medido.
+ *
+ * ⚠️ A MUDANÇA É DELIBERADA, e por isso o teste foi REESCRITO em vez de
+ * afrouxado: o caso "cai na sessão" virou "bloqueia", com o mesmo cuidado de
+ * antes em não deixar o autopilot morrer na virada.
  */
 
 const lerConexaoPorId = vi.fn();
@@ -55,11 +68,34 @@ describe("credenciaisDaSessao — de onde a chave vem", () => {
     expect(lerConexaoPorId).not.toHaveBeenCalled();
   });
 
-  it("elo apontando para linha que sumiu: cai na sessão", async () => {
+  it("⚠️⚠️ elo apontando para linha que SUMIU: BLOQUEIA (era: caía na sessão)", async () => {
+    // Vínculo quebrado não é licença para procurar o segredo em outro lugar.
     const { credenciaisDaSessao } = await import("@/lib/autopilot/sessions");
     lerConexaoPorId.mockResolvedValue(null);
-    const r = await credenciaisDaSessao(linha("c1"));
-    expect(r.origem).toBe("sessao");
+    await expect(credenciaisDaSessao(linha("c1"))).rejects.toThrow(/inexistente/);
+    expect(decryptJson).not.toHaveBeenCalled();
+  });
+
+  it("⚠️⚠️ leitura do cofre que NÃO RESPONDEU: BLOQUEIA", async () => {
+    /**
+     * O caso mais perigoso dos três, e o que estava aberto: uma queda de banco
+     * fazia a sessão operar com a cópia antiga do segredo — inclusive uma que o
+     * dono já tivesse revogado, porque a revogação mora no cofre.
+     */
+    const { credenciaisDaSessao } = await import("@/lib/autopilot/sessions");
+    lerConexaoPorId.mockResolvedValue(undefined);
+    await expect(credenciaisDaSessao(linha("c1"))).rejects.toThrow(/nao deu para ler/);
+    expect(decryptJson).not.toHaveBeenCalled();
+  });
+
+  it("⚠️ cofre ILEGÍVEL (adulteração / chave de cifra ausente): BLOQUEIA", async () => {
+    // `decifrarConexao` lança de propósito. Capturar aqui para tentar o segredo
+    // antigo seria reabrir o fallback pela porta do erro.
+    const { credenciaisDaSessao } = await import("@/lib/autopilot/sessions");
+    lerConexaoPorId.mockResolvedValue({ id: "c1", is_active: true, creds_cipher: "x" });
+    decifrarConexao.mockImplementation(() => { throw new Error("secretbox: adulterado"); });
+    await expect(credenciaisDaSessao(linha("c1"))).rejects.toThrow(/adulterado/);
+    expect(decryptJson).not.toHaveBeenCalled();
   });
 
   it("⚠️⚠️ conexão REVOGADA lança — NÃO cai para a cópia antiga", async () => {

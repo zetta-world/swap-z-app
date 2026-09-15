@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { executarOrdemCex } from "@/lib/cex/execucao/executor";
+import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
+import { certificadoVivo } from "@/lib/autopilot/certificado";
+import { regimeDaBase } from "@/lib/autopilot/regime";
+import { getSessionStatus } from "@/lib/autopilot/sessions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
 import { podeAutomatizar } from "@/lib/autopilot/liberacao";
@@ -173,6 +177,9 @@ export async function POST(req: NextRequest) {
   // Manual orders skip this — the user is present and accepted the trade.
   /** ⚠️ O canal: o piloto do navegador dispara por esta MESMA rota. */
   const ehAutopilot = body.autopilot === true;
+  /** Preenchidos no ramo do piloto — o intent autônomo precisa deles (A110). */
+  let certificadoDoPiloto: string | null = null;
+  let estrategiaDoPiloto: { id: string | null; versao: number | null } = { id: null, versao: null };
   if (ehAutopilot) {
     /**
      * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2), no canal do NAVEGADOR.
@@ -217,6 +224,69 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+
+    /**
+     * ⚠️⚠️⚠️ O MOTOR DE POLÍTICA ÚNICO — achado A113, no canal que não o tinha.
+     *
+     * O portão de tendência existia SÓ no cron (`autopilot/cron/route.ts:867`).
+     * O piloto do navegador dispara o MESMO cartão, do MESMO modelo, por esta
+     * rota — e passava direto. Dois canais, dois vereditos para a mesma
+     * estratégia; quem lia "o autopilot só entra a favor da tendência"
+     * acreditava nisso para o produto inteiro.
+     *
+     * ⚠️ A DECISÃO É DO SERVIDOR. A tela mostra o veredito; ela não o produz.
+     * `politicaVersao` volta na resposta justamente para a UI poder exibir POR
+     * QUE, sem ter de reimplementar a regra para saber.
+     */
+    const dbPolitica = getSupabaseAdmin();
+    /**
+     * ⚠️ FALHA DE LEITURA DA SESSÃO É RECUSA, não "sem sessão". `getSessionStatus`
+     * LANÇA quando o banco não responde (correção de 14/09, e por bom motivo).
+     * Engolir isso aqui faria um Postgres intermitente virar licença para o
+     * piloto operar sem teto, sem lista de símbolos e sem certificado.
+     */
+    let sessaoDoPiloto: Awaited<ReturnType<typeof getSessionStatus>> = null;
+    try {
+      sessaoDoPiloto = sessao?.sub ? await getSessionStatus(sessao.sub, exchange) : null;
+    } catch (e) {
+      logSecurity("politica_sem_sessao_legivel", { route: "cex/order" }, "high");
+      return NextResponse.json(
+        { ok: false, error: "sessao_nao_legivel",
+          detail: (e as Error)?.message?.slice(0, 160) ?? "falha ao ler a sessao" },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    const cert = dbPolitica && sessaoDoPiloto?.strategy_id && sessaoDoPiloto.strategy_version
+      ? (await certificadoVivo(dbPolitica, sessaoDoPiloto.strategy_id, sessaoDoPiloto.strategy_version)) ?? null
+      : null;
+
+    const decisaoDoPiloto = avaliarDecisaoDeEstrategia({
+      canal: "browser", side, symbol: body.symbol, base: base.toUpperCase(),
+      regime: await regimeDaBase(base),
+      notionalUsd: guard.realNotionalUsd ?? null,
+      maxTradeUsd: cap,
+      allowedSymbols: sessaoDoPiloto?.allowed_symbols ?? null,
+      autonomous: true,
+      certificado: cert,
+      venue: exchange,
+      strategyHash: sessaoDoPiloto?.strategy_hash ?? null,
+    });
+    if (!decisaoDoPiloto.permite) {
+      logSecurity("politica_bloqueou_piloto", {
+        route: "cex/order", symbol: body.symbol, motivo: decisaoDoPiloto.motivo,
+      }, "high");
+      return NextResponse.json(
+        { ok: false, error: "politica_de_estrategia",
+          motivo: decisaoDoPiloto.motivo, detail: decisaoDoPiloto.porque,
+          politicaVersao: decisaoDoPiloto.versao },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    certificadoDoPiloto = decisaoDoPiloto.certificadoId;
+    estrategiaDoPiloto = {
+      id: sessaoDoPiloto?.strategy_id ?? null,
+      versao: sessaoDoPiloto?.strategy_version ?? null,
+    };
   }
 
   if (typeof body.apiKey !== "string" || body.apiKey.length < 8 || body.apiKey.length > 200) {
@@ -266,7 +336,10 @@ export async function POST(req: NextRequest) {
        */
       { origin: ehAutopilot ? "autopilot_browser" : "manual",
         autonomous: ehAutopilot,
-        walletAddress: (await getSession())?.sub ?? null },
+        walletAddress: (await getSession())?.sub ?? null,
+        strategyId: estrategiaDoPiloto.id,
+        strategyVersion: estrategiaDoPiloto.versao,
+        certificateId: certificadoDoPiloto },
       { exchangeId: exchange, symbol: body.symbol, side, type,
         qty: body.amount, price: type === "limit" ? body.price : null,
         notionalUsd: typeof body.price === "number" ? body.amount * body.price : null },

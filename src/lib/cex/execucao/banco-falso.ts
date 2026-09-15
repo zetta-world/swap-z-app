@@ -160,6 +160,21 @@ export function bancoFalso(): BancoFalso {
       select: (_c: string) => alvo,
       eq: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return alvo; },
       in: (c: string, vs: unknown[]) => { filtros.push((r) => vs.includes(r[c])); return alvo; },
+      /**
+       * ⚠️ `gte` e `not` EXISTEM AQUI PORQUE A PRODUÇÃO OS USA (a checagem de
+       * deriva do A103). Um banco falso que não implementa o que o código
+       * chama não é um banco falso simples — é um teste que não exercita o
+       * caminho, e ele avisa isso estourando, que é o melhor que pode fazer.
+       */
+      gte: (c: string, v: unknown) => {
+        filtros.push((r) => String(r[c] ?? "") >= String(v)); return alvo;
+      },
+      not: (c: string, op: string, v: unknown) => {
+        if (op === "is" && v === null) filtros.push((r) => r[c] != null);
+        else filtros.push((r) => r[c] !== v);
+        return alvo;
+      },
+      is: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return alvo; },
       order: () => alvo,
       limit: (n: number) => { limite = n; return alvo; },
       then: (res: (x: { data: Linha[]; error: null }) => void) =>

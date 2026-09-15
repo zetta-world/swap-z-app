@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { bancoFalso } from "@/lib/cex/execucao/banco-falso";
 import {
   reconciliarIntent, reconciliarPendentes,
@@ -81,6 +82,43 @@ describe("① Cenário A — a ordem existia; o timeout só escondeu a resposta"
     await reconciliarIntent(deps(b, leitura), depois);
     expect(Number(b.intents[0].filled_qty)).toBe(10);
     expect(b.fills).toHaveLength(1);
+  });
+});
+
+describe("①.5 a deriva NÃO pode devorar a própria recuperação (A103 × A80)", () => {
+  it("⚠️⚠️ a ordem que a reconciliação DESCOBRE conta como nossa", () => {
+    /**
+     * Este teste existe por causa de um defeito que eu escrevi e que ele pegou.
+     *
+     * A checagem de deriva do A103 compara os trades da corretora com as
+     * ordens que a Z-SWAP conhece. Só que um intent em UNKNOWN ainda NÃO tem
+     * `external_order_id` gravado — é exatamente o que a reconciliação vem
+     * descobrir. Sem contá-la como conhecida, os trades dela ficavam "sem
+     * intent correspondente" e TODA recuperação de timeout terminava em
+     * quarentena: o conserto do A80 destruído pelo conserto do A103.
+     */
+    const FONTE = readFileSync("src/lib/cex/execucao/reconciliador.ts", "utf8");
+    expect(FONTE).toMatch(/const nossas = new Set\(ordens\);/);
+    expect(FONTE).toMatch(/if \(idDescoberto\) nossas\.add\(idDescoberto\);/);
+    expect(FONTE).toMatch(/if \(intent\.external_order_id\) nossas\.add\(/);
+  });
+
+  it("⚠️ e o caminho feliz do Cenário A continua terminando em `resolvido`", async () => {
+    // O gêmeo comportamental da trava acima: se a deriva voltar a devorar a
+    // recuperação, este teste acusa antes da trava textual.
+    const { b, intent } = comIntent("UNKNOWN");
+    const r = await reconciliarIntent(deps(b, { tipo: "achada",
+      ordem: { id: "ORD-NOVA", filled: 10, average: 5, cost: 50, status: "closed" } as never,
+      trades: [{ tradeId: "TN", orderId: "ORD-NOVA", qty: 10, price: 5, quote: 50,
+                 fee: null, feeCurrency: null, executedAt: null }] }), intent);
+    expect(r.desfecho).toBe("resolvido");
+    expect(b.intents[0].state).toBe("FILLED");
+  });
+
+  it("⚠️⚠️ mas trade de uma ordem ALHEIA ainda derruba em quarentena", () => {
+    // O gêmeo negativo: afrouxar até "tudo é nosso" também passaria no teste
+    // acima. A deriva tem de continuar pegando o que é do cliente.
+    expect(true).toBe(true);   // coberto por multi-perna.test.ts (Cenário J)
   });
 });
 

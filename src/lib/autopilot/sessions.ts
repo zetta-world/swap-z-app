@@ -231,15 +231,55 @@ export type OrigemCredencial = "cofre" | "sessao";
  * cofre, a leitura FALHA em vez de usar a cópia antiga da sessão — senão
  * revogar não revogaria nada, que é o oposto do ponto do cofre.
  */
+/**
+ * ⚠️⚠️⚠️ O COFRE É A FONTE AUTORITATIVA — achado A115, o T3 concluído.
+ *
+ * A versão anterior era esta:
+ *
+ *     if (row.conexao_id) {
+ *       const c = await lerConexaoPorId(row.conexao_id);
+ *       if (c && !c.is_active) throw new Error("revogada");
+ *       if (c) return { creds: decifrarConexao(c), origem: "cofre" };
+ *     }
+ *     return { creds: decryptSessionCreds(row), origem: "sessao" };   // ← aqui
+ *
+ * Aquele último `return` era um FALLBACK SILENCIOSO. Uma sessão moderna, com
+ * `conexao_id` preenchido, caía no segredo LEGADO de `autopilot_sessions`
+ * sempre que a leitura do cofre não devolvesse linha — e "não devolveu linha"
+ * incluía **falha de banco**. Ou seja: a propriedade que o cofre existe para
+ * dar, *uma cópia do segredo e um lugar para revogar*, deixava de valer
+ * exatamente quando o banco estava ruim.
+ *
+ * ⚠️ AGORA, COM `conexao_id`, NÃO EXISTE OUTRO CAMINHO:
+ *
+ *     revogada           BLOQUEIA
+ *     não existe         BLOQUEIA
+ *     não deu para ler   BLOQUEIA
+ *     cofre ilegível     BLOQUEIA (o `decifrarConexao` lança, e deve lançar)
+ *
+ * ⚠️ O CAMINHO LEGADO SÓ SOBREVIVE PARA SESSÃO SEM `conexao_id` — as antigas,
+ * armadas antes do cofre existir. Ele é EXPLÍCITO e MEDIDO (`origem: "sessao"`
+ * sobe no resultado e o cron conta), não um `return` de fim de função. Quando o
+ * contador zerar, `creds_cipher` sai da tabela e este ramo some.
+ */
 export async function credenciaisDaSessao(
   row: AutopilotSessionRow,
 ): Promise<{ creds: CexCredentials; origem: OrigemCredencial }> {
   if (row.conexao_id) {
     const c = await lerConexaoPorId(row.conexao_id);
-    if (c && !c.is_active) {
+    if (c === undefined) {
+      throw new Error("cofre: nao deu para ler a conexao — nenhuma ordem sai sobre duvida de credencial");
+    }
+    if (c === null) {
+      throw new Error("cofre: conexao inexistente para esta sessao — vinculo quebrado");
+    }
+    if (!c.is_active) {
       throw new Error("cofre: conexão revogada pelo dono");
     }
-    if (c) return { creds: decifrarConexao(c), origem: "cofre" };
+    // ⚠️ `decifrarConexao` LANÇA em adulteração ou chave ausente. Não se
+    // captura aqui de propósito: cofre ilegível é bloqueio, não motivo para
+    // procurar o segredo em outro lugar.
+    return { creds: decifrarConexao(c), origem: "cofre" };
   }
   return { creds: decryptSessionCreds(row), origem: "sessao" };
 }
@@ -268,7 +308,9 @@ export async function patchSession(
   id: string,
   patch: Partial<Pick<AutopilotSessionRow,
     "trades_today" | "pnl_today" | "last_reset_day" | "frozen_until_day" |
-    "last_scan_at" | "last_error" | "is_active">>,
+    "last_scan_at" | "last_error" | "is_active" |
+    /** ⚠️ O carimbo do plano, revalidado com prazo pelo worker (achado A111). */
+    "tier_snapshot" | "tier_checked_at">>,
 ): Promise<{ ok: boolean; erro?: string }> {
   const db = getSupabaseAdmin();
   if (!db) return { ok: false, erro: "supabase nao configurado" };

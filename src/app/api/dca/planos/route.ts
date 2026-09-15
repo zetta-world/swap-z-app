@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { guardarConexao } from "@/lib/cex/conexoes";
+import { verificarChave, decidirArmar } from "@/lib/cex/permissoes";
 import {
   criarPlano, planosDaCarteira, planoDaCarteira, haMaisPlanos, ciclosDoPlano,
   avancarPlano, type ModoPlano,
@@ -212,6 +213,42 @@ export async function POST(req: NextRequest) {
     if (!creds?.apiKey || !creds?.apiSecret) {
       return NextResponse.json({ ok: false, error: "credenciais_ausentes" }, { status: 400 });
     }
+    /**
+     * ⚠️⚠️⚠️ A CHAVE É VERIFICADA ANTES DE SER GUARDADA — achado A114.
+     *
+     * Esta rota chamava `guardarConexao` direto. A rota de armar o autopilot
+     * — o OUTRO produto que guarda chave no servidor para operar sozinho —
+     * chama `verificarChave` + `decidirArmar` desde 09/08. A peça certa,
+     * testada, com a cicatriz escrita, ligada num produto e ignorada no outro:
+     * é a família de defeito que esta auditoria mais encontrou, agora no
+     * caminho que guarda a credencial do cliente.
+     *
+     * ⚠️ CHAVE QUE PODE SACAR É RECUSADA para dinheiro real. Guardá-la no
+     * servidor coloca os fundos do cliente ao alcance de quem invadir o
+     * servidor — e um plano de DCA não precisa de saque para nada.
+     *
+     * ⚠️ NÃO VERIFICÁVEL SEGUE COM AVISO, e isto é a política EXISTENTE sendo
+     * preservada de propósito, não uma frouxidão nova: `decidirArmar` já
+     * decidiu esse caso para o autopilot, e inventar aqui um comportamento
+     * diferente criaria duas políticas para a mesma pergunta. O risco fica
+     * declarado: numa corretora cuja API não informa permissão, o cliente
+     * precisa conferir no painel dela.
+     */
+    const permissao = await verificarChave(exchangeId as CexId,
+      { apiKey: creds.apiKey, apiSecret: creds.apiSecret, passphrase: creds.passphrase });
+    const decisao = decidirArmar(permissao);
+    if (!decisao.permitido) {
+      await recordEvent("dca_chave_recusada", { wallet: session.sub, meta: {
+        exchange: exchangeId, veredito: permissao.veredito,
+        why: "chave com permissao de SAQUE recusada para DCA real — guarda-la no "
+          + "servidor colocaria os fundos ao alcance de quem invadir o servidor",
+      } });
+      return NextResponse.json(
+        { ok: false, error: "chave_pode_sacar", detalhe: decisao.motivo },
+        { status: 400 },
+      );
+    }
+
     const conexao = await guardarConexao({
       walletAddress: session.sub,
       exchangeId:    exchangeId as CexId,

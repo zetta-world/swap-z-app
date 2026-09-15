@@ -10,6 +10,8 @@ import { executarOrdemCex } from "@/lib/cex/execucao/executor";
 import { intentVivoDoPlano } from "@/lib/cex/execucao/intents";
 import { reconciliarIntent } from "@/lib/cex/execucao/reconciliador";
 import { decidirPeloIntent } from "@/lib/dca/liquidacao";
+import { decidirCapacidade, lerCapacidades, type EstadoDasCapacidades }
+  from "@/lib/dca/capacidade";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import { getFlywheelGates } from "@/lib/admin/gates";
@@ -176,12 +178,19 @@ async function passada(): Promise<NextResponse> {
    * custou o primeiro teste real (25/08). O plano do dono foi barrado por uma
    * chave que existe para segurar o robô de IA e que nunca foi criada.
    */
-  const [liberacao, pilotos] = await Promise.all([lerLiberacao("dca"), lerPilotos("dca")]);
+  const [liberacao, pilotos, capacidades] = await Promise.all([
+    lerLiberacao("dca"), lerPilotos("dca"),
+    /**
+     * ⚠️ AS DUAS CAPACIDADES, numa ida só, para a passada inteira (A112).
+     * Simulado e real são interruptores DIFERENTES, e o real nasce fechado.
+     */
+    lerCapacidades(getSupabaseAdmin()),
+  ]);
 
   const resumo: Array<{ plano: string; acao: string; detalhe?: string }> = [];
   for (const p of planos) {
     try {
-      resumo.push(await processarPlano(p, agoraIso, liberacao, pilotos));
+      resumo.push(await processarPlano(p, agoraIso, liberacao, pilotos, capacidades));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       resumo.push({ plano: p.id, acao: "erro", detalhe: msg.slice(0, 120) });
@@ -196,12 +205,39 @@ type Pilotos   = Awaited<ReturnType<typeof lerPilotos>>;
 
 async function processarPlano(
   p: PlanoRow, agoraIso: string, liberacao: Liberacao, pilotos: Pilotos,
+  capacidades: EstadoDasCapacidades,
 ): Promise<{ plano: string; acao: string; detalhe?: string }> {
   /**
    * ⚠️ GATE PRÓPRIO, função compartilhada. `decidirAutomacao` é decisão PURA
    * sobre um estado lido do banco — o DCA passa o SEU estado. Abrir robô de IA
    * ao público e abrir poupança ao público são decisões diferentes.
    */
+  /**
+   * ⚠️⚠️ A CAPACIDADE DO MODO, ANTES DE TUDO — achado A112.
+   *
+   * `dca_liberado` foi aberto em 25/08 "para o primeiro teste SIMULADO" — a
+   * justificativa está gravada ao lado dele em produção — e o MESMO
+   * interruptor liberava o caminho REAL. Agora são duas capacidades, e a real
+   * nasce FECHADA: ausência de `dca_real_liberado` é recusa.
+   *
+   * ⚠️ E ELA VEM ANTES do gate de automação, de propósito: "este produto pode
+   * mover dinheiro?" é pergunta anterior a "esta carteira pode automatizar?".
+   */
+  const capacidade = decidirCapacidade(
+    (p.modo === "real" ? "real" : "simulado"), capacidades);
+  if (!capacidade.permitido) {
+    if (await primeiraVezNaJanela(`sem_capacidade:${p.id}:${capacidade.causa}`, 3_600_000)) {
+      await recordEvent("dca_sem_capacidade", { wallet: p.wallet_address, meta: {
+        plano: p.id, modo: p.modo, causa: capacidade.causa,
+        why: p.modo === "real"
+          ? "DCA REAL exige `dca_real_liberado = true` em admin_kv. Ele nasce FECHADO "
+            + "de proposito: o interruptor antigo foi aberto para um teste SIMULADO."
+          : "DCA simulado exige `dca_simulado_liberado` (ou a chave legada `dca_liberado`).",
+      } });
+    }
+    return { plano: p.id, acao: "sem_capacidade", detalhe: capacidade.causa };
+  }
+
   const v = decidirAutomacao(p.wallet_address, liberacao, pilotos);
   if (!v.permitido) {
     /**
@@ -242,7 +278,19 @@ async function processarPlano(
   let conexao: Awaited<ReturnType<typeof lerConexaoPorId>> = null;
   if (!simulado) {
     conexao = await lerConexaoPorId(p.conexao_id ?? "");
-    if (!conexao || !conexao.is_active) {
+    /**
+     * ⚠️⚠️ TRÊS RESPOSTAS, TRÊS CONDUTAS — achado A115.
+     *
+     * `!conexao` cobria `null` e `undefined` juntos, e ENCERRAVA o plano como
+     * "conexao_revogada" nos dois. Ou seja: uma falha de leitura do banco
+     * matava um plano de poupança do cliente, com um motivo que dizia outra
+     * coisa. Fail-closed estava certo; destruir estado não.
+     */
+    if (conexao === undefined) {
+      // Não deu para olhar. Nada sai, e o plano continua vivo.
+      return { plano: p.id, acao: "adiado", detalhe: "cofre ilegivel — nada enviado" };
+    }
+    if (conexao === null || !conexao.is_active) {
       await avancarPlano(p.id, { status: "encerrado", encerradoPor: "conexao_revogada" });
       return { plano: p.id, acao: "encerrado", detalhe: "conexao_revogada" };
     }

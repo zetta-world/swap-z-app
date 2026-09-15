@@ -217,6 +217,14 @@ describe("a virada do dia não pode falhar calada", () => {
     // O helper diz, no nome, que a recusa foi considerada e não interrompe.
     const soltas = [...codigo.matchAll(/await patchSession\(s\.id,/g)].length;
     expect(soltas, "só a virada do dia chama patchSession direto").toBe(1);
+    /**
+     * ⚠️ E O CARIMBO DE PLANO TEM HELPER PRÓPRIO (achado A111). Ele NÃO é
+     * telemetria: é fato de autorização, e a falha dele tem consequência
+     * diferente — a sessão revalida de novo e, persistindo, o prazo duro fecha
+     * as entradas. Usar `telemetria()` aqui seria mentir sobre o que a escrita é.
+     */
+    expect(codigo).toMatch(/async function carimbarPlano\(/);
+    expect(codigo).toMatch(/autopilot_carimbo_de_plano_nao_gravou/);
     expect([...codigo.matchAll(/await telemetria\(s\.id,/g)].length).toBe(8);
   });
 

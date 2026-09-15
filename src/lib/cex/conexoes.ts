@@ -110,13 +110,30 @@ export async function lerConexao(walletAddress: string, exchangeId: string): Pro
   return data as Conexao;
 }
 
-export async function lerConexaoPorId(id: string): Promise<Conexao | null> {
+/**
+ * ⚠️⚠️ TRÊS RESPOSTAS, NÃO DUAS — achado A115.
+ *
+ * Esta função devolvia `null` para "não existe", para "o banco recusou a
+ * leitura" e para "não há banco configurado". Quem chamava caía no segredo
+ * LEGADO nos três casos, e a propriedade que o cofre existe para dar — *uma
+ * cópia do segredo, um lugar para revogar* — deixava de valer exatamente
+ * quando o banco estava ruim.
+ *
+ *     `undefined`  não consegui olhar      → BLOQUEAR
+ *     `null`       olhei e não existe      → BLOQUEAR
+ *     `Conexao`    olhei e está aqui       → usar
+ *
+ * As duas primeiras bloqueiam; a diferença entre elas é de diagnóstico, não de
+ * permissão. Fundi-las seria voltar ao defeito.
+ */
+export async function lerConexaoPorId(id: string): Promise<Conexao | null | undefined> {
   const db = cru();
-  if (!db) return null;
+  if (!db) return undefined;
   const { data, error } = await db.from(TABELA)
     .select("id, wallet_address, exchange_id, creds_cipher, expires_at, is_active")
     .eq("id", id).maybeSingle();
-  if (error || !data) return null;
+  if (error) return undefined;
+  if (!data) return null;
   return data as Conexao;
 }
 

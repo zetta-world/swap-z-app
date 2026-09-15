@@ -267,6 +267,21 @@ export type AutopilotSessionRow = {
   /** Advisory lock (A2): the cron holds this until `now()` passes it. */
   locked_until:        string | null;
   /**
+   * ⚠️⚠️ A IDENTIDADE DA ESTRATÉGIA — achado A110. A sessão dizia "quanto" e
+   * "onde", nunca "o quê". `null` significa RECUSA: sem estratégia declarada e
+   * certificada, nenhuma entrada autônoma passa pelo motor de política.
+   */
+  strategy_id:         string | null;
+  strategy_version:    number | null;
+  /** O hash dos parâmetros COM QUE esta sessão roda — amarra ao certificado. */
+  strategy_hash:       string | null;
+  /**
+   * ⚠️ O PLANO CARIMBADO — achado A111. O tier era conferido UMA VEZ, ao armar,
+   * e a sessão dura horas. Vencido e sem resposta, só SAÍDAS passam.
+   */
+  tier_snapshot:       string | null;
+  tier_checked_at:     string | null;
+  /**
    * Veredito da chave no momento do armar (0021). NULL = sessão anterior à
    * verificação — ausência de medição, NÃO "segura".
    */
@@ -643,6 +658,33 @@ export type CexFillRow = {
   created_at:        string;
 };
 
+/**
+ * ⚠️ CERTIFICADO POR VERSÃO DE ESTRATÉGIA — achado A110. Autorizar a carteira
+ * não é autorizar a estratégia. `strategy_hash` amarra o certificado ao
+ * conteúdo exato dos parâmetros: mudança silenciosa deixa de casar.
+ */
+export type StrategyCertificateRow = {
+  id:                  string;
+  strategy_id:         string;
+  strategy_version:    number;
+  strategy_hash:       string;
+  certificate_version: number;
+  evidence:            Record<string, unknown>;
+  sample_size:         number | null;
+  cost_assumptions:    Record<string, unknown> | null;
+  risk_limits:         Record<string, unknown>;
+  allowed_venues:      string[];
+  allowed_symbols:     string[];
+  valid_from:          string;
+  valid_until:         string | null;
+  /** ⚠️ Preenchido impede intent NOVO daquela estratégia (INVARIANTE 14). */
+  revoked_at:          string | null;
+  revoked_reason:      string | null;
+  created_at:          string;
+  created_by:          string | null;
+  notes:               string | null;
+};
+
 export interface Database {
   public: {
     Tables: {
@@ -673,6 +715,17 @@ export interface Database {
          */
         Update: Pick<Partial<CexExecutionIntentRow>,
           "external_order_id" | "state_reason" | "last_reconciled_at" | "reconcile_attempts">;
+        Relationships: [];
+      };
+      strategy_certificates: {
+        Row: StrategyCertificateRow;
+        Insert: Partial<StrategyCertificateRow> & {
+          strategy_id: string; strategy_version: number; strategy_hash: string;
+          evidence: Record<string, unknown>; risk_limits: Record<string, unknown>;
+          allowed_venues: string[]; allowed_symbols: string[];
+        };
+        /** ⚠️ Revogar é a única edição esperada — e exige motivo (constraint). */
+        Update: Pick<Partial<StrategyCertificateRow>, "revoked_at" | "revoked_reason" | "notes">;
         Relationships: [];
       };
       cex_fills: {

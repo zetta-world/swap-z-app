@@ -287,6 +287,43 @@ export async function intentVivoDoPlano(
   return ((data ?? [])[0] as IntentRow | undefined) ?? null;
 }
 
+/**
+ * As ordens externas que NÓS criamos nesta corretora e símbolo, na janela.
+ *
+ * ⚠️ É o denominador da deriva (A103): trade da corretora cuja ordem NÃO está
+ * aqui é atividade que a Z-SWAP não consegue explicar.
+ *
+ * ⚠️ `undefined` é falha de leitura, e ela NÃO pode virar "não conheço nenhuma
+ * ordem" — isso acusaria o cliente de deriva toda vez que o banco piorasse.
+ */
+export async function ordensConhecidas(
+  db: SupabaseClient<Database>, exchangeId: string, symbol: string, desdeIso: string,
+): Promise<Set<string> | undefined> {
+  const { data, error } = await db.from("cex_execution_intents")
+    .select("external_order_id")
+    .eq("exchange_id", exchangeId).eq("symbol", symbol)
+    .gte("created_at", desdeIso)
+    .not("external_order_id", "is", null)
+    .limit(1000);
+  if (error) return undefined;
+  return new Set((data ?? [])
+    .map((r) => String((r as { external_order_id: string }).external_order_id)));
+}
+
+/** Os ids de trade que o livro já tem para esta corretora. */
+export async function tradesNoLivro(
+  db: SupabaseClient<Database>, exchangeId: string, desdeIso: string,
+): Promise<Set<string> | undefined> {
+  const { data, error } = await db.from("cex_fills")
+    .select("external_trade_id")
+    .eq("exchange_id", exchangeId).gte("created_at", desdeIso)
+    .not("external_trade_id", "is", null)
+    .limit(1000);
+  if (error) return undefined;
+  return new Set((data ?? [])
+    .map((r) => String((r as { external_trade_id: string }).external_trade_id)));
+}
+
 /** Marca que a reconciliação passou por aqui — para o ritmo e o diagnóstico. */
 export async function marcarReconciliado(
   db: SupabaseClient<Database>, intentId: string, tentativas: number,
