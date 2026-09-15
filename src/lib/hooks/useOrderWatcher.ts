@@ -8,6 +8,9 @@ import {
 import { useSwap } from "@/lib/store/swap";
 import { findToken } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
+import {
+  direcaoDoGatilho, simboloVigiado, lerPrecoDoGatilho, gatilhoAtingido,
+} from "@/lib/orders/gatilho";
 
 const POLL_MS = 20_000;
 
@@ -35,7 +38,12 @@ export function useOrderWatcher() {
       const keys = new Set<string>();
       for (const o of orders) {
         const chain = o.card.chain as ChainId;
-        const sym   = o.card.from?.symbol ?? o.card.to?.symbol;
+        /**
+         * ⚠⚠ O SÍMBOLO VIGIADO, NÃO O `from` (achado A22). Numa COMPRA o
+         * `from` é a stablecoin com que se paga — e era o preço DELA que este
+         * laço buscava, US$ 1,00, contra um gatilho do token.
+         */
+        const sym   = simboloVigiado(o.card);
         if (!sym) continue;
         const tok = findToken(chain, sym);
         if (tok && tok.address !== "native") {
@@ -100,24 +108,31 @@ export function useOrderWatcher() {
 }
 
 /**
- * Returns true when the market price satisfies an order's trigger condition.
- * Supports buy_limit / sniper_watch (buy when price ≤ trigger) and
- * sell_* / stop_loss (sell when price ≥ trigger).
+ * O gatilho foi atingido? A decisão mora em `lib/orders/gatilho.ts`, pura e com
+ * teste que a executa — aqui fica só a busca do preço.
+ *
+ * ⚠️ ANTES ESTA FUNÇÃO DECIDIA TRÊS COISAS DE UMA VEZ, e errava duas:
+ * qual moeda vigiar (usava o `from`, que na compra é a stablecoin), como ler o
+ * preço (`replace(/[^0-9.]/g)` virava `1e-5` em `15`) e para que lado comparar
+ * (`stop_loss` caía no ramo da subida).
  */
 function checkTrigger(
   o: PendingOrder,
   prices: Record<string, number | null>,
 ): boolean {
-  const rawTrigger = o.card.triggerPrice;
-  if (!rawTrigger) return false;
+  const direcao = direcaoDoGatilho(o.card.kind);
+  // ⚠️ `kind` que não reconhecemos NÃO dispara. A união termina em
+  // `(string & {})`: o modelo pode inventar um nome, e o `else` mudo de antes
+  // dava semântica de VENDA a qualquer invenção.
+  if (!direcao) return false;
 
-  const trigger = parseFloat(rawTrigger.replace(/[^0-9.]/g, ""));
-  if (!isFinite(trigger) || trigger <= 0) return false;
+  const gatilho = lerPrecoDoGatilho(o.card.triggerPrice);
+  if (gatilho == null) return false;
 
-  const chain = o.card.chain as ChainId;
-  const sym   = o.card.from?.symbol ?? o.card.to?.symbol;
+  const sym = simboloVigiado(o.card);
   if (!sym) return false;
 
+  const chain = o.card.chain as ChainId;
   const tok = findToken(chain, sym);
   if (!tok) return false;
 
@@ -125,7 +140,5 @@ function checkTrigger(
   const current  = prices[priceKey];
   if (current == null) return false;
 
-  const isBuy = ["buy_limit", "sniper_watch", "limit"].includes(o.card.kind);
-  if (isBuy) return current <= trigger;          // buy when price drops to / below trigger
-  return current >= trigger;                     // sell / stop when price rises to / above trigger
+  return gatilhoAtingido(direcao, current, gatilho);
 }
