@@ -37,6 +37,36 @@ describe("① a planilha não avalia o que veio de fora", () => {
     expect(csvCell("=BTC/USDT")).toContain("=BTC/USDT");
   });
 
+  /**
+   * ⚠⚠ O LADO QUE EU NÃO TESTAVA — e foi por ali que o defeito passou.
+   *
+   * As cinco quebras do #433 testavam que o guarda DISPARA. Nenhuma testava que
+   * um valor legítimo SOBREVIVE, e o `-` da lista transformava todo `pnl_usd`
+   * negativo em TEXTO: fora do `SUM`, contabilidade errada. Achado do revisor
+   * depois de eu ter mandado para produção.
+   */
+  it("⚠⚠ NÚMERO NEGATIVO CONTINUA NÚMERO — senão o SUM da planilha o ignora", () => {
+    expect(csvCell(-53.2)).toBe("-53.2");
+    expect(csvCell("-53.2")).toBe("-53.2");
+    expect(csvCell("-0.0001")).toBe("-0.0001");
+    expect(csvCell("-1e-7")).toBe("-1e-7");
+  });
+
+  it("⚠️ e o sinal de mais também — `+5` é cinco", () => {
+    expect(csvCell("+5")).toBe("+5");
+  });
+
+  it("⚠⚠ mas `-cmd|\u2026` NÃO é número, e segue neutralizado", () => {
+    // O critério é o que o valor É, não o primeiro caractere.
+    expect(csvCell("-cmd|'/c calc'!A0")).toMatch(/^"?'-cmd/);
+    expect(csvCell("+HYPERLINK(\"http://x\")")).toMatch(/^"?'\+/);
+    expect(csvCell("-53.2 ou algo")).toMatch(/^"?'-53/);
+  });
+
+  it("⚠️ TAB inicial não vira número, mesmo que `Number(\"\\t5\")` dê 5", () => {
+    expect(csvCell("\t5")).toMatch(/'/);
+  });
+
   it("valor comum passa sem adorno", () => {
     expect(csvCell("BTC/USDT")).toBe("BTC/USDT");
     expect(csvCell(42)).toBe("42");
