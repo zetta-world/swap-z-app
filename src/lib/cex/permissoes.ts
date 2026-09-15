@@ -239,9 +239,24 @@ export async function verificarChave(
       };
     }
     const bruta = await (fn as (p?: unknown) => Promise<unknown>).call(ex, {});
-    // OKX e Bybit embrulham em `data: [...]`; Binance devolve o objeto direto.
-    const corpo = (bruta as { data?: unknown[] })?.data?.[0] ?? bruta;
-    return lerPermissao(id, corpo);
+    /**
+     * ⚠⚠ A RESPOSTA VAI CRUA — o desembrulho é UM SÓ, e mora em
+     * `lerPermissao` (achado do revisor no #439).
+     *
+     * Aqui havia um pré-desembrulho `bruta.data?.[0] ?? bruta` com o comentário
+     * *"OKX e Bybit embrulham em `data: [...]`"*. O comentário estava errado
+     * sobre a Bybit — ela embrulha em `result` — e por isso só a OKX era
+     * desembrulhada de fato.
+     *
+     * ⚠️ E EU NÃO TINHA LIDO ESTA LINHA quando escrevi o #439. Concluí "3 das 4
+     * quebradas" olhando só `lerPermissao`: eram DUAS (bybit e kucoin), a OKX
+     * funcionava por causa deste pré-desembrulho — e meu envelope passou a
+     * desembrulhá-la DUAS vezes, quebrando o que estava certo.
+     *
+     * Dois desembrulhos em lugares diferentes é a porta dos fundos de sempre.
+     * Agora é um, na função PURA, que é a que tem teste.
+     */
+    return lerPermissao(id, bruta);
   } catch (e) {
     return {
       veredito: "nao_verificavel", suportado: true,
