@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { bumpSessionTrades } from "@/lib/autopilot/sessions";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { SUPPORTED_CEX_IDS, type CexId } from "@/lib/cex/types";
+import { recordEvent } from "@/lib/admin/track";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,13 +42,43 @@ export async function POST(req: NextRequest) {
   // Clamp the count hard — a single browser fire is 1-3 legs.
   const count = Math.max(1, Math.min(3, Math.round(Number(body.count) || 1)));
 
-  try {
-    await bumpSessionTrades(session.sub, exchangeId, count);
-    return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
-  } catch (e) {
+  /**
+   * ⚠⚠ O RETORNO ERA DESCARTADO, E O `try/catch` NÃO PEGAVA NADA
+   * (achado A12 da auditoria externa).
+   *
+   * `bumpSessionTrades` devolve `boolean` — e foi MUDADA de propósito para
+   * isso, com a cicatriz escrita no cabeçalho dela:
+   *
+   *     ⚠⚠ DEVOLVE SE CONTOU — e antes engolia a falha (auditoria 23/08).
+   *     Se ele falhasse, o contador nao subia e o limite diario simplesmente
+   *     DEIXAVA DE EXISTIR, em silencio, pelo resto do dia.
+   *
+   * O cron confere nos DOIS pontos onde chama. Esta rota, não. É a peça certa,
+   * com a cicatriz escrita, conferida num caminho e ignorada no outro — o
+   * padrão que esta auditoria mais encontrou.
+   *
+   * ⚠️ E o `try/catch` era engano de cima a baixo: a função RESOLVE com
+   * `false`, ela não lança. O `catch` nunca rodou uma vez, e a rota devolvia
+   * `{ ok: true }` para toda falha de banco.
+   *
+   * O navegador dispara a ordem PRIMEIRO e publica depois: não dá para desfazer
+   * nada aqui. O objetivo é NUNCA PERDER O FATO — quem chama precisa saber que
+   * o limite diário dele parou de contar este canal.
+   */
+  const contou = await bumpSessionTrades(session.sub, exchangeId, count);
+  if (!contou) {
+    await recordEvent("autopilot_disparo_nao_contado", { wallet: session.sub, meta: {
+      exchangeId, count, severity: "high",
+      why: "a ordem do navegador JÁ FOI COLOCADA e o contador diario nao subiu. "
+        + "O limite de trades por dia que o usuario configurou parou de contar "
+        + "este canal, em silencio, pelo resto do dia.",
+    } });
     return NextResponse.json(
-      { ok: false, error: "bump_failed", detail: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
+      { ok: false, error: "nao_contou", exchangeId, count,
+        porque: "a ordem foi colocada, mas o contador diário NÃO subiu — o seu "
+          + "limite de trades por dia deixou de contar este canal hoje." },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
+  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
