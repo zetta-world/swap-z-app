@@ -433,13 +433,32 @@ export default function ExecuteSwap({
    * medirem coisas diferentes, que é o defeito de novo com outra roupa.
    */
   const { prices: precosVivos } = useTokenPrices([fromToken, toToken]);
-  const impactoFirme = useMemo(() => impactoDaCotacao({
-    entradaDec:      estIn,
-    saidaDec:        estOut,
-    precoEntradaUsd: precosVivos[tokenPriceKey(fromToken)] ?? fromToken.priceUsd ?? null,
-    precoSaidaUsd:   precosVivos[tokenPriceKey(toToken)]   ?? toToken.priceUsd   ?? null,
-  }), [estIn, estOut, precosVivos, fromToken, toToken]);
-  const vereditoFirme = assessImpact(impactoFirme.impactoPct, impactoFirme.entradaUsd);
+  const precoEntradaUsd = precosVivos[tokenPriceKey(fromToken)] ?? fromToken.priceUsd ?? null;
+  const precoSaidaUsd   = precosVivos[tokenPriceKey(toToken)]   ?? toToken.priceUsd   ?? null;
+
+  /**
+   * ⚠⚠ O VEREDITO SE APLICA A UMA COTAÇÃO, e existem TRÊS nesta jornada.
+   *
+   * A primeira versão desta correção conferia só a cotação FIRME (a segunda) e
+   * deixava passar a TERCEIRA — aquela que o caminho do 0x rebusca logo antes
+   * de enviar, porque *"calldata embeds pricing and goes stale fast"*. O próprio
+   * texto do PR nomeava essa terceira como parte do problema, e a guarda não a
+   * cobria. Achado do revisor no #429, e ele estava certo.
+   *
+   * ⚠️ O QUE ME ENGANOU: `fetchFreshZxQuote` chama `setZxQuote(q)`, e eu contei
+   * com isso. Mas `setState` NÃO reescreve a constante já capturada no closure
+   * de um callback EM EXECUÇÃO — o portão do topo já tinha passado com os
+   * números da segunda cotação, e a transação saía com os da terceira.
+   *
+   * Por isso o veredito virou FUNÇÃO de uma saída: quem tem uma cotação na mão
+   * a pergunta, em vez de confiar num valor calculado em outro momento.
+   */
+  const vereditoDeSaida = useCallback((saidaDec: number | null) => {
+    const i = impactoDaCotacao({ entradaDec: estIn, saidaDec, precoEntradaUsd, precoSaidaUsd });
+    return assessImpact(i.impactoPct, i.entradaUsd);
+  }, [estIn, precoEntradaUsd, precoSaidaUsd]);
+
+  const vereditoFirme = vereditoDeSaida(estOut);
 
   /**
    * One click does the whole journey: switch network → one-time approval →
@@ -680,6 +699,17 @@ export default function ExecuteSwap({
         if (Date.now() - zxQuoteAtRef.current > ZX_QUOTE_TTL_MS) {
           setPhase("fetching_quote");
           q = await fetchFreshZxQuote();
+          /**
+           * ⚠⚠ A TERCEIRA COTAÇÃO TAMBÉM PASSA PELO PORTÃO. É ESTA que vai ser
+           * assinada — o portão do topo julgou a segunda, e entre uma e outra o
+           * impacto pode ter virado justamente o que ele existe para barrar.
+           */
+          const vereditoFresco = vereditoDeSaida(Number(q.buyAmount) / Math.pow(10, toToken.decimals));
+          if (vereditoFresco.level === "block") {
+            setError(vereditoFresco.message);
+            setPhase("tx_failed");
+            return;
+          }
         }
         if (!q.transaction?.to || !q.transaction?.data) {
           setError(tImp("swap.executeIncompleteQuote0x"));
@@ -805,7 +835,7 @@ export default function ExecuteSwap({
       setPhase("tx_failed");
       if (historyId.current) updateHistory(historyId.current, { status: "failed" });
     }
-  }, [vereditoFirme, source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
+  }, [vereditoFirme, vereditoDeSaida, source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
 
 
   const explorerBase = isJupiter ? "https://solscan.io" : explorerForChain(fromChain);
