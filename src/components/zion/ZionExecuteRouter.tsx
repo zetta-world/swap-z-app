@@ -110,7 +110,25 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
   };
 
   const saveOrder = () => {
-    savePendingOrder(card);
+    /**
+     * ⚠⚠ CONFERE SE GRAVOU — achado A23 da auditoria externa.
+     *
+     * `savePendingOrder` devolve `null` quando o `localStorage` recusa (cheio,
+     * janela privada, dados do site limpos). Aqui o retorno era DESCARTADO e o
+     * toast dizia "salva" de qualquer jeito: o dono fechava a tela acreditando
+     * ter uma ordem agendada que não existia.
+     *
+     * ⚠️ A CICATRIZ ESTÁ ESCRITA DUAS VEZES, e nos OUTROS DOIS chamadores:
+     * `OrdersView` ("antes engolia e o toast dizia 'salva'") e
+     * `SignLimitOrderButton` ("`savePendingOrder` devolvia um objeto mesmo
+     * quando o `localStorage` estava cheio"). A mesma função, o mesmo erro
+     * documentado, conferido em dois lugares e ignorado neste — o padrão que
+     * esta auditoria mais encontrou.
+     */
+    if (!savePendingOrder(card)) {
+      toast.error(t("orders.saveFailedToast"));
+      return;
+    }
     toast.success(t("toast.saved"), {
       description: t("orders.saveNowBody"),
       action: {
