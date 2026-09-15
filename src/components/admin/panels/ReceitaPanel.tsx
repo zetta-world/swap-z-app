@@ -17,9 +17,12 @@ interface Dados {
   real: { operacoes: number; volumeUsd: number; desde: string | null; ate: string | null };
   sonda: number; semVolume: number; falha: string | null;
   arrecadado: { usd: number; operacoes: number };
+  /** ⚠️ Taxa declarada por chamada SEM sessão assinada — achado A07. */
+  naoAtribuido: { usd: number; operacoes: number; linhas: number; volumeUsd: number };
   porOrigem: Array<{
     kind: string; operacoes: number; volumeUsd: number;
     arrecadadoUsd: number; comTaxa: number; cobravel: boolean;
+    naoAtribuidoUsd: number;
   }>;
   receitaRealTetoUsd: number;
   taxaPorPlano: Record<Tier, number>;
@@ -101,6 +104,31 @@ export default function ReceitaPanel() {
             <div style={{ fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.6, marginBottom: 8 }}>
               ⚠️ nenhuma operação com retenção gravada ainda — a arrecadação passou a ser
               gravada por operação em 11/08; o que veio antes não tem como ser recuperado
+            </div>
+          )}
+
+          {/* ── NÃO ATRIBUÍDO ────────────────────────────────────────────
+
+                 ⚠️⚠️ O NÚMERO NÃO SUMIU, ELE GANHOU NOME (achado A07).
+
+                 `/api/operations/record` aceita `status: "confirmed"` e
+                 `platformFeeUsd` de quem não apresentou sessão. A linha entra
+                 com `wallet_address = NULL` e era somada como caixa — em 15/09,
+                 100% da arrecadação exibida vinha de UMA linha anônima.
+
+                 Esconder seria trocar um erro por outro. Ela fica aqui, em
+                 âmbar, dizendo exatamente o que é: alegação sem dono. */}
+          {data.naoAtribuido.linhas > 0 && (
+            <div style={{
+              fontSize: 11, color: "var(--adm-amber)", lineHeight: 1.6,
+              marginBottom: 8, paddingLeft: 8, borderLeft: "2px solid var(--adm-amber)",
+            }}>
+              ⚠️ NÃO ATRIBUÍDO — {usdFino(data.naoAtribuido.usd)} em {data.naoAtribuido.operacoes}{" "}
+              operação(ões), de {data.naoAtribuido.linhas} linha(s) sem carteira assinada
+              {data.naoAtribuido.volumeUsd > 0 && <> ({usdFino(data.naoAtribuido.volumeUsd)} de volume)</>}.
+              {" "}O registro aceita taxa declarada por quem não tem sessão, então este valor
+              é ALEGAÇÃO, não medição — fica fora do ARRECADADO acima e dentro do volume,
+              porque a troca aconteceu na cadeia e não há a quem perguntar sobre o resto.
             </div>
           )}
 

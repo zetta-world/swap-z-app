@@ -14,6 +14,8 @@ interface Dados {
   trocas: Troca[];
   dinheiro: {
     arrecadadoTotalUsd: number; arrecadado24hUsd: number;
+    /** ⚠️ Taxa declarada por chamada SEM sessão assinada — achado A07. */
+    naoAtribuidoUsd: number; operacoesAnonimas: number;
     volumeTotalUsd: number; volume24hUsd: number;
     operacoes: number; operacoes24h: number;
   };
@@ -140,6 +142,11 @@ export default function MuralView() {
 
       {/* ── OS NÚMEROS QUE IMPORTAM ─────────────────────────────────── */}
       <section className="mural-numeros">
+        {/* ⚠️⚠️ O TOTAL SOMAVA ALEGAÇÃO ANÔNIMA (achado A07). `/api/operations/record`
+               aceita `confirmed` e taxa de quem não tem sessão; a linha entra com
+               `wallet_address = NULL`. Em 15/09, 100% do valor exibido aqui vinha de
+               UMA linha assim. Este é o número projetado em 65 polegadas — o lugar
+               onde ninguém confere, e por isso o único que não pode alegar. */}
         <Numero r="ARRECADADO · TOTAL" v={usdFino(d?.dinheiro.arrecadadoTotalUsd ?? 0)} destaque un="USD" />
         <Numero r="VOLUME · 24H"       v={usd(d?.dinheiro.volume24hUsd ?? 0)} un="USD" />
         <Numero r="OPERAÇÕES · 24H"    v={String(d?.dinheiro.operacoes24h ?? 0)} un="QTD" />
@@ -155,7 +162,7 @@ export default function MuralView() {
           v={
             (d?.dinheiro.volumeTotalUsd ?? 0) > 0 && (d?.dinheiro.arrecadadoTotalUsd ?? 0) > 0
               ? `${((d!.dinheiro.arrecadadoTotalUsd / d!.dinheiro.volumeTotalUsd) * 100).toFixed(3)}%`
-              : "—"
+              : (d?.dinheiro.naoAtribuidoUsd ?? 0) > 0 ? "s/ atrib." : "—"
           }
         />
       </section>

@@ -20,6 +20,8 @@ function semComentarios(c: string): string {
 const rota   = semComentarios(readFileSync("src/app/admin/api/receita/route.ts", "utf8"));
 const painel = semComentarios(readFileSync("src/components/admin/panels/ReceitaPanel.tsx", "utf8"));
 const sync   = semComentarios(readFileSync("src/lib/hooks/useOperationSync.ts", "utf8"));
+/** ⚠️ Onde a soma de parcelas passou a morar — ver A07 em `atribuicao.test.ts`. */
+const atribuicao = semComentarios(readFileSync("src/lib/admin/atribuicao.ts", "utf8"));
 
 describe("o arrecadado é soma de PARCELA, nunca porcentagem de agregado", () => {
   /**
@@ -29,10 +31,23 @@ describe("o arrecadado é soma de PARCELA, nunca porcentagem de agregado", () =>
    */
   it("arrecadado soma platform_fee_usd, e não deriva do volume", () => {
     expect(rota).toContain("platform_fee_usd");
-    expect(rota).toMatch(/arrecadado\s*=\s*\{[\s\S]{0,200}reduce/);
+    /**
+     * ⚠️ A SOMA MUDOU DE CASA, A TRAVA SEGUIU (A07). Ela morava aqui como
+     * `/arrecadado = \{ ... reduce/` sobre o fonte da rota. A separação entre
+     * taxa com dono e taxa anônima virou `@/lib/admin/atribuicao`, e o `reduce`
+     * foi junto — então a trava passa a perguntar no lugar onde a conta É.
+     *
+     * Afrouxar a asserção porque o código andou seria trocar a pergunta pela
+     * conveniência: o que ela protege continua igual — parcela somada, nunca
+     * porcentagem de agregado.
+     */
+    expect(rota).toMatch(/separarPorAtribuicao\(/);
+    expect(atribuicao).toMatch(/usdCom \+= taxa/);
+    expect(atribuicao).toMatch(/platform_fee_usd/);
     // O teto continua existindo — mas com nome próprio, longe do arrecadado.
     expect(rota).toContain("receitaRealTetoUsd");
     expect(rota).not.toMatch(/arrecadado[\s\S]{0,120}receitaUsd\(/);
+    expect(atribuicao).not.toMatch(/receitaUsd|volume_usd \*/);
   });
 
   /**

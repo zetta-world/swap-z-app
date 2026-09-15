@@ -46,7 +46,21 @@ interface Body {
  * honestos, e um número forjável tem valor zero para decidir qualquer coisa.
  *
  * Agora a carteira vem da SESSÃO. Sem sessão, o registro entra ANÔNIMO em vez
- * de aceitar a alegação do cliente: perde-se atribuição, não integridade.
+ * de aceitar a alegação do cliente.
+ *
+ * ⚠️⚠️ MAS "PERDE-SE ATRIBUIÇÃO, NÃO INTEGRIDADE" ERA FALSO — achado A07.
+ *
+ * Esta frase estava aqui e sustentava o resto. A linha anônima entra com
+ * `status: "confirmed"` e `platformFeeUsd` DECLARADOS por um chamador sem
+ * sessão nenhuma, e o painel RECEITA soma `platform_fee_usd` de tudo que está
+ * confirmado. Medido em produção hoje: 4 das 18 operações confirmadas são
+ * anônimas, e a ÚNICA linha que carrega arrecadação — 100% do que o painel
+ * exibe — é uma delas.
+ *
+ * Recusar o registro anônimo seria pior: as quatro linhas de hoje são trocas
+ * BSC de verdade, feitas sem sessão assinada, e jogá-las fora abriria um buraco
+ * no livro para consertar um buraco no painel. A honestidade é RIO ABAIXO —
+ * quem soma separa o que tem identidade assinada do que é só alegação.
  */
 export async function POST(req: NextRequest) {
   const rl = rateLimit(`ops_record:${getClientId(req.headers)}`, RL_OPTS);
@@ -81,8 +95,19 @@ export async function POST(req: NextRequest) {
       ? new Date(tsMs).toISOString()
       : null;
 
-  try {
-    await db.from("operations").upsert({
+  /**
+   * ⚠️⚠️ O `try/catch` AQUI NÃO PEGAVA NADA — achado A07 da auditoria externa.
+   *
+   * `supabase-js` RESOLVE com `{ error }`; ele não lança. O `catch` nunca rodou
+   * uma vez, e a rota devolvia `{ ok: true }` para toda falha de banco.
+   *
+   * ⚠️ E ISSO PERDIA A OPERAÇÃO DE VEZ. `useOperationSync` só repete o que
+   * NÃO deu certo: `if (ok) synced.add(e.id)`, e o conjunto é persistido. Um
+   * `ok: true` mentiroso marcava a operação como sincronizada para sempre — ela
+   * nunca mais seria reenviada, e o livro ficava com o buraco sem ninguém ver.
+   */
+  {
+    const { error } = await db.from("operations").upsert({
       ref:            str(body.ref, 120),
       wallet_address: sessionWallet,   // ignora body.wallet de propósito
       kind:           str(body.kind, 40)!,
@@ -111,8 +136,10 @@ export async function POST(req: NextRequest) {
       // DB default now() applies.
       ...(createdAt ? { created_at: createdAt } : {}),
     }, { onConflict: "ref", ignoreDuplicates: true });
-    return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
-  } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "insert_failed" }, { status: 500 });
+    // Devolver 500 faz o navegador REPETIR no próximo ciclo, que é o ponto.
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message.slice(0, 160) }, { status: 500 });
+    }
   }
+  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
