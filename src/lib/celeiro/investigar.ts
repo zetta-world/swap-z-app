@@ -68,6 +68,13 @@ export interface RelatoDoAgente {
    * custou dois dias de A/B com um braço que não operou.
    */
   recusou?: { modelo: string; motivo: "impossivel" | "escrita"; porque: string };
+  /**
+   * ⚠️ O FECHAMENTO QUE NÃO FECHOU (achado A06). `fecharMutacao` devolvia `void`
+   * e descartava todo `error`: uma reversão que falhava deixava o agente
+   * operando com um genoma que a arena já tinha reprovado, e o relato saía
+   * idêntico ao de um fechamento perfeito.
+   */
+  naoFechou?: { onde: "julgamento" | "reversao"; porque: string };
   pulou?: string;
 }
 
@@ -190,7 +197,24 @@ async function umAgente(db: SupabaseClient, ag: Agente, agoraMs: number): Promis
       return relato;
     }
 
-    await fecharMutacao(db, emCurso.id, ag.id, j.veredito, j.usdtControle, j.usdtMutacao, j.acao);
+    /**
+     * ⚠️⚠️ O RETORNO É CONFERIDO (achado A06). Nenhuma das duas falhas é
+     * corrigível aqui — a mutação fica POR JULGAR e o próximo ciclo refaz o
+     * fechamento inteiro, que é idempotente de propósito. O que não pode é
+     * passar calado: enquanto não fechar, o agente segue operando o genoma que
+     * o julgamento acabou de reprovar.
+     */
+    const fechamento = await fecharMutacao(
+      db, emCurso.id, ag.id, j.veredito, j.usdtControle, j.usdtMutacao, j.acao,
+    );
+    if (!fechamento.ok) {
+      relato.naoFechou = { onde: fechamento.onde, porque: fechamento.porque };
+      notifyTelegram(
+        `⚠️ CELEIRO — o fechamento de ${ag.id} falhou em "${fechamento.onde}": o genoma `
+        + `reprovado SEGUE NO AR até o próximo ciclo refazer.\n${fechamento.porque}`,
+        { dedupKey: `celeiro:naofechou:${ag.id}`, meta: { agente: ag.id, onde: fechamento.onde } },
+      );
+    }
     return relato;   // ⚠️ só volta a perguntar no próximo ciclo, com o genoma limpo
   }
 
