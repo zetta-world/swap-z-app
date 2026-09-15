@@ -277,11 +277,16 @@ export async function POST(req: NextRequest) {
      * não numa rota de cron nova.
      *
      * Esta rota já roda de 30 em 30 minutos, já está agendada no cron-job.org e
-     * já executa o papel da própria casa logo acima. Criar rota nova exigiria
-     * que o dono fosse agendá-la, e `/api/dca/cron` está escrito, testado e
-     * NUNCA AGENDADO desde 26/08 (RUNBOOK §2.1) — uma rota de cron que ninguém
-     * agenda é "atividade não é evidência de funcionamento" esperando para
-     * acontecer.
+     * já executa o papel da própria casa logo acima. Criar rota nova exige um
+     * passo FORA do repositório — alguém abrir o cron-job.org e criar o job — e
+     * `/api/dca/cron` ficou escrito e testado desde 26/08 esperando exatamente
+     * isso. Uma rota de cron que ninguém agenda é "atividade não é evidência de
+     * funcionamento" esperando para acontecer.
+     *
+     * ⚠️ E O EXEMPLO ENVELHECEU (achado A03): o `/api/dca/cron` HOJE está
+     * agendado — `cron:dca:last` a 3,2 min em 15/09, na cadência de 5 minutos.
+     * A decisão de não criar rota nova continua valendo pelo custo do passo
+     * manual; o que caducou foi a ilustração.
      *
      * ⚠️ E NÃO vai no cron do autopilot, que move DINHEIRO REAL: um defeito no
      * papel de um cliente não pode chegar perto daquele caminho.

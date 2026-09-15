@@ -261,7 +261,7 @@ RLS habilitada, ZERO policies — o padrão da casa.
 | D0 | `cex_conexoes` + backfill + `conexao_id` nulável (T1 da §2) | 🟢 **24/08 — backfill NÃO exercitado (banco sem sessões)** |
 | D1 | `lib/dca/relogio.ts` puro (janela, avanço, decisão de ciclo, tetos) com testes | 🟢 **24/08 — 33 testes** |
 | D2 | migration `dca_planos` + `dca_ciclos` | 🟢 **24/08 — trava unique provada no banco** |
-| D3 | rota `POST /api/dca/cron` PRÓPRIA, com a ordem reserva→ordem→registro da §3 | 🟢 **24/08 — falta AGENDAR no cron-job.org** |
+| D3 | rota `POST /api/dca/cron` PRÓPRIA, com a ordem reserva→ordem→registro da §3 | 🟢 **24/08 — agendada; vivo e na cadência em 15/09 (A03)** |
 | D4 | `pause_dca` + liberação própria em `gate-keys.ts` e no painel | 🟢 **24/08 — cartão no AiControlsPanel** |
 | D5 | leitura dupla no autopilot + contador (T2 da §2) | 🟢 **24/08 — escrita dupla, leitura dupla, contador por passada** |
 | D6 | UI: criar plano, ver ciclos feitos/pulados, pausar, encerrar | 🟢 **24/08 — aba DCA no console de CEX** |

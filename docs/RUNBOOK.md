@@ -153,24 +153,44 @@ aritmética sobre volume anterior à cobrança existir.
 | Endpoint | Cadência | Auth | Stall alert |
 |----------|----------|------|-------------|
 | `POST /api/autopilot/cron` | 5 min | header `Authorization: <CRON_SECRET>` (com ou sem `Bearer `) | >12 min |
-| `POST /api/dca/cron` | 5 min | mesmo `CRON_SECRET` | >20 min | ⚠️ **AINDA NÃO AGENDADO** — ver §2.1 |
+| `POST /api/dca/cron` | 5 min | mesmo `CRON_SECRET` | >20 min | ✅ agendado e vivo — conferido em 15/09 (§2.1) |
 | `POST /api/zion/backtest` | 30 min | idem | >75 min | ⚠️ carrega TAMBÉM o papel adiante da bancada (fase 6) — ver nota abaixo |
 | `POST /api/radar` | 1 min | idem | >5 min |
 
 ⚠️ **O papel adiante da bancada NÃO tem cron próprio, de propósito.** Ele está
 pendurado no `/api/zion/backtest` (30 min), que já está agendado e já roda o
-papel da própria casa. Criar rota nova exigiria agendá-la — e o `/api/dca/cron`
-está escrito, testado e **nunca agendado** desde 26/08 (§2.1). Uma rota de cron
-que ninguém agenda é código que parece pronto e nunca roda. Ele respeita o
-mesmo gate `pause_paper` do `admin_kv`.
+papel da própria casa. Criar rota nova exige um passo FORA do repositório —
+alguém abrir o cron-job.org e criar o job — e o `/api/dca/cron` ficou escrito e
+testado desde 26/08 esperando exatamente isso. Uma rota de cron que ninguém
+agenda é código que parece pronto e nunca roda. Ele respeita o mesmo gate
+`pause_paper` do `admin_kv`.
 
 GitHub Actions: `schedule` DESATIVADO nos dois workflows (só `workflow_dispatch`
 manual). NÃO reativar sem desligar o cron-job.org — daria tick duplicado.
 
-### 2.1 Como agendar o cron do DCA (pendente)
+### 2.1 O cron do DCA — JÁ AGENDADO (conferido em 15/09)
 
-**Enquanto este job não existir, nenhum plano de DCA roda.** A tela do usuário
-avisa isso em vermelho, mas o recurso está pronto e parado.
+⚠️⚠️ **ESTA SEÇÃO DIZIA "AINDA NÃO AGENDADO" E ISSO ERA FALSO** — achado A03 da
+auditoria externa. O RUNBOOK é o manual de incidente: quem o lesse às três da
+manhã concluiria que o DCA não pode estar disparando ordem, e ele pode.
+
+Medido em 15/09 às 14:48 UTC, lendo `admin_kv`:
+
+    cron:autopilot:last   há 3,2 min   (cadência 5 min)
+    cron:dca:last         há 3,2 min   (cadência 5 min)
+    cron:backtest:last    há 18,1 min  (cadência 30 min)
+    cron:radar:last       há 0,3 min   (cadência 1 min)
+
+O do DCA dispara três segundos depois do autopilot, no mesmo ritmo — é job
+próprio, não carona.
+
+O recurso NÃO está parado. A tela do usuário nunca dependeu deste texto: ela
+deriva o estado de `cron:dca:last` em tempo real (`src/lib/dca/agendador.ts`),
+e a faixa vermelha fixa que existia foi removida quando o agendador passou a ser
+MEDIDO em vez de declarado.
+
+A receita abaixo fica como referência — para refazer o job, movê-lo, ou montar
+outro ambiente.
 
 No **cron-job.org**, criar um job novo:
 
