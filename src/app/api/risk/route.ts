@@ -142,8 +142,48 @@ function scoreRisk(s: GoPlusTokenSecurity | null, h: HoneypotResponse | null) {
     else if (h.summary?.risk === "medium") add("warn",  "Honeypot.is risk: MEDIUM",    10);
   }
 
+  /**
+   * ⚠⚠ SEM COBERTURA NÃO É SCORE ZERO — achado A26 da auditoria externa.
+   *
+   * Nenhum provedor respondeu (ou a rede não é coberta por nenhum dos dois), e
+   * daqui saía `score: 0` → `category: "safe"`. `token-safety.ts` só cai em
+   * `unverified` quando `typeof api.score !== "number"` — um ZERO é número, e
+   * passava direto por essa porta como SEGURO, com mensagem vazia.
+   *
+   * ⚠️ E O CONSUMIDOR ESCREVE A REGRA CONTRÁRIA EM CAIXA ALTA:
+   *
+   *     "Ausência de verificação NUNCA renderiza como segurança."
+   *
+   * Ele a implementa corretamente para `null`. Quem a derrotava era ESTE
+   * arquivo, fabricando um número onde não houve medição — a peça certa,
+   * escrita, e contornada por quem a alimenta.
+   *
+   * ⚠️⚠️ E ISSO ATINGE A SOLANA INTEIRA. GoPlus e Honeypot.is cobrem 7 das 8
+   * redes do produto; Solana não está em nenhuma das duas. Todo token de Solana
+   * era renderizado como SEGURO, sem uma frase dizendo por quê.
+   *
+   * `score: null` é a resposta honesta, e o consumidor JÁ sabe lê-la.
+   */
+  const semCobertura = s === null && h === null;
+  if (semCobertura) {
+    return {
+      score: null,
+      category: "unverified",
+      signals: [{
+        kind: "warn" as const,
+        label: "No external risk coverage on this chain — this is NOT a clean bill of health",
+        weight: 0,
+      }],
+      impedidoPor: null,
+    };
+  }
+
   if (signals.length === 0) {
-    signals.push({ kind: "warn", label: "No external risk coverage on this chain", weight: 0 });
+    /**
+     * ⚠️ Os provedores RESPONDERAM e não acharam nada a apontar — diferente de
+     * não terem sido consultados. Aqui o score zero é uma medição, e vale.
+     */
+    signals.push({ kind: "ok", label: "Checked — no risk signals found", weight: 0 });
   }
 
   score = Math.min(score, 100);

@@ -12,8 +12,13 @@ interface Signal { kind: "ok" | "warn" | "danger"; label: string; weight: number
 interface RiskResponse {
   chain: string;
   address: string;
-  score: number;
-  category: "safe" | "caution" | "risky" | "danger";
+  /**
+   * ⚠️ `null` = NÃO MEDIDO (achado A26). Antes vinha `0`, que o consumidor
+   * lia como "nota zero de risco" — isto é, ÓTIMO. Ausência de verificação
+   * não pode renderizar como segurança.
+   */
+  score: number | null;
+  category: "safe" | "caution" | "risky" | "danger" | "unverified";
   signals: Signal[];
   security: Record<string, unknown> | null;
   honeypot: Record<string, unknown> | null;
@@ -32,7 +37,14 @@ const EXAMPLES = [
   { chain: "bsc",      addr: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82", label: "CAKE (defi)"      },
 ];
 
-const CAT_CFG: Record<"safe"|"caution"|"risky"|"danger", { color: string; bg: string; border: string; labelKey: MessageKey; glow: string }> = {
+/**
+ * ⚠⚠ `unverified` É CINZA, NÃO VERDE (achado A26). GoPlus e Honeypot.is cobrem
+ * 7 das 8 redes do produto — Solana não está em nenhuma das duas. Pintar "não
+ * verificado" com a cor de "seguro" é a mesma mentira do selo que vinha de
+ * constante, contada por outro caminho.
+ */
+const CAT_CFG: Record<"safe"|"caution"|"risky"|"danger"|"unverified", { color: string; bg: string; border: string; labelKey: MessageKey; glow: string }> = {
+  unverified: { color: "text-ink-3", bg: "bg-white/[0.03]", border: "border-white/15", labelKey: "explorer.scannerCatUnverified", glow: "" },
   safe:    { color: "text-green",  bg: "bg-green/10",  border: "border-green/30",  labelKey: "explorer.scannerCatSafe",    glow: "shadow-glow-green" },
   caution: { color: "text-gold",   bg: "bg-gold/10",   border: "border-gold/30",   labelKey: "explorer.scannerCatCaution", glow: "shadow-glow-gold"  },
   risky:   { color: "text-gold",   bg: "bg-gold/15",   border: "border-gold/40",   labelKey: "explorer.scannerCatRisky",   glow: "shadow-glow-gold"  },
@@ -200,18 +212,24 @@ export default function RiskScanner() {
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <div className={cn("font-display font-extrabold text-4xl tabular-nums", cat.color)}>{result.score}</div>
-                  <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mt-1">{t("explorer.scannerScoreOf100")}</div>
+                  {/* ⚠️ Um traço, não um zero: zero é uma NOTA, e aqui não houve medição. */}
+                  <div className={cn("font-display font-extrabold text-4xl tabular-nums", cat.color)}>{result.score ?? "—"}</div>
+                  <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mt-1">
+                    {result.score == null ? t("explorer.scannerNaoMedido") : t("explorer.scannerScoreOf100")}
+                  </div>
                 </div>
               </div>
 
-              {/* Score bar */}
-              <div className="mt-4 h-1.5 bg-white/5 rounded-full overflow-hidden">
-                <div
-                  className={cn("h-full rounded-full", result.score < 20 ? "bg-green" : result.score < 40 ? "bg-gold" : result.score < 70 ? "bg-gold" : "bg-red")}
-                  style={{ width: `${Math.max(result.score, 4)}%` }}
-                />
-              </div>
+              {/* Score bar — ⚠️ só existe quando houve medição. Uma barra vazia
+                  pintada de verde diria "risco baixo" sobre nada. */}
+              {result.score != null && (
+                <div className="mt-4 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className={cn("h-full rounded-full", result.score < 20 ? "bg-green" : result.score < 70 ? "bg-gold" : "bg-red")}
+                    style={{ width: `${Math.max(result.score, 4)}%` }}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Token info */}
