@@ -19,6 +19,7 @@ import { CHAIN_BY_ID } from "@/lib/chains";
 import { formatUsd, formatAmount, toBaseUnits, fromBaseUnits } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { assessImpact } from "@/lib/swap/impact-guard";
+import { impactoDaCotacao } from "@/lib/swap/impacto";
 import { conferirDestinatario, familiaDaRede } from "@/lib/swap/recipient";
 import { assessMevExposure, mevAdvice } from "@/lib/swap/mev-guard";
 import { assessTokenSafety, isNativeToken, nativeSafety, type TokenSafety } from "@/lib/swap/token-safety";
@@ -169,12 +170,16 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
      * mandar. Um ETH aparecendo como $0,00 não é arredondamento, é o sistema
      * dizendo com confiança algo que ele não sabe.
      */
-    const inUsd   = fromPx > 0 ? sellDec * fromPx : null;
-    const outUsd  = toPx   > 0 ? buyDec  * toPx   : null;
-    const priceImpact = inUsd != null && outUsd != null && inUsd > 0 && outUsd > 0
-      ? ((outUsd - inUsd) / inUsd) * 100
-      : null;
-    return { sellDec, buyDec, minDec, rate, inUsd, outUsd, priceImpact };
+    /**
+     * ⚠️ A CONTA MORA EM `lib/swap/impacto.ts` (achado A21). Ela era inline
+     * aqui, e o modal de execução — que busca outra cotação — não tinha como
+     * refazê-la sem copiá-la. Duas cópias da mesma fórmula é a porta dos fundos
+     * que o `lerCiclos` do DCA já nomeia.
+     */
+    const { impactoPct: priceImpact, entradaUsd: inUsd, saidaUsd: outUsd } = impactoDaCotacao({
+      entradaDec: sellDec, saidaDec: buyDec, precoEntradaUsd: fromPx, precoSaidaUsd: toPx,
+    });
+    return { sellDec, buyDec, minDec, rate, inUsd, outUsd, priceImpact, fromPx, toPx };
   }, [selectedQuote, sellAmountBase, fromToken, toToken, fromLivePrice, toLivePrice]);
 
   // ─── Aurora risk (cor de fundo) ─────────────────────────────────────
