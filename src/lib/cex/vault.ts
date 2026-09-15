@@ -31,6 +31,18 @@ interface VaultState {
   setUnlocked: (creds: Partial<Record<CexId, CexCredentials>>) => void;
   touch:       () => void;
   lock:        () => void;
+  /**
+   * ⚠⚠ ESQUECER UMA CORRETORA SÓ — achado A15 da auditoria externa.
+   *
+   * "Desconectar" no painel removia a chave do keystore cifrado do navegador e
+   * NÃO tocava aqui. Estas credenciais estão DECIFRADAS em memória e o autopilot
+   * lê `getActive()`: o robô seguia negociando naquela corretora até o recarregar
+   * da página ou as 8 horas de auto-lock.
+   *
+   * ⚠️ É POR CORRETORA, não `lock()`: desconectar a Binance não pode trancar a
+   * Bybit e obrigar o dono a redigitar a senha por causa de outra conta.
+   */
+  esquecer:    (id: CexId) => void;
   /** Returns the creds IF unlocked AND not expired; locks + returns null otherwise. */
   getActive:   () => Partial<Record<CexId, CexCredentials>> | null;
 }
@@ -49,6 +61,17 @@ export const useCexVault = create<VaultState>((set, get) => ({
   touch: () => set({ lastTouched: Date.now() }),
 
   lock: () => set({ creds: null, unlockedAt: null, lastTouched: 0 }),
+
+  esquecer: (id) => set((st) => {
+    if (!st.creds) return st;
+    const resto = { ...st.creds };
+    delete resto[id];
+    // Sem nenhuma corretora sobrando, o cofre fica vazio de verdade — e não
+    // um objeto vazio que `getActive()` devolveria como "destrancado".
+    return Object.keys(resto).length === 0
+      ? { creds: null, unlockedAt: null, lastTouched: 0 }
+      : { creds: resto };
+  }),
 
   getActive: () => {
     const { creds, lastTouched } = get();

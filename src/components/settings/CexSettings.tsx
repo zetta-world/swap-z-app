@@ -10,6 +10,7 @@ import {
   hasKeystore, listExchanges, getFingerprint,
   unlockKeystore, saveCredentials, removeExchange, forgetEverything,
 } from "@/lib/cex/keystore";
+import { useCexVault } from "@/lib/cex/vault";
 import {
   CEX_META, SUPPORTED_CEX_IDS, type CexId, type CexCredentials, type CexBalance,
 } from "@/lib/cex/types";
@@ -195,13 +196,44 @@ export default function CexSettings() {
     }
     setBusy(true);
     try {
+      /**
+       * ⚠⚠ DESCONECTAR TEM DE ALCANÇAR OS TRÊS LUGARES (achado A15).
+       *
+       *   1. keystore cifrado do navegador — `removeExchange`, já existia;
+       *   2. cofre DECIFRADO em memória    — o autopilot lê `getActive()`, e ele
+       *      seguia armado por até 8 HORAS depois do "desconectado";
+       *   3. cópia cifrada no SERVIDOR     — a que o CRON usa com o dono ausente,
+       *      e que nada nunca revogou.
+       *
+       * Limpar só o primeiro é o botão de parar que não para, pela quinta vez
+       * nesta auditoria — desta vez com a chave da corretora do cliente.
+       */
       await removeExchange(passphrase, id);
+      useCexVault.getState().esquecer(id);
+
+      /**
+       * ⚠️ O SERVIDOR É O QUE MAIS IMPORTA e é o que pode falhar: o navegador já
+       * esqueceu, mas a chave cifrada no banco é a que negocia sem o dono na
+       * frente. Se a revogação não passar, a tela NÃO diz "desconectado".
+       */
+      const r = await fetch("/api/cex/revogar", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ exchangeId: id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j?.ok) {
+        toast.error(j?.porque ?? t("cex.revogacaoFalhou"), { duration: 12_000 });
+      } else {
+        toast.success(t("cex.settingsDisconnectedToast", { label: CEX_META[id].label }));
+      }
+
       setPresentList(listExchanges());
       setFingerprint(getFingerprint());
       setVaultExists(hasKeystore());
       setForm((f) => ({ ...f, [id]: { apiKey: "", apiSecret: "", passphrase: "" } }));
       setPerExchange((s) => ({ ...s, [id]: { status: "idle" } }));
-      toast.success(t("cex.settingsDisconnectedToast", { label: CEX_META[id].label }));
+      // ⚠️ O toast já saiu acima, e depende de a revogação no SERVIDOR ter
+      // passado. Um "desconectado" incondicional aqui desfaria a correção.
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
@@ -211,7 +243,28 @@ export default function CexSettings() {
 
   const onForgetAll = async () => {
     if (!await confirm(t("cex.forgetConfirm"))) return;
+    /**
+     * ⚠⚠ "Esquecer tudo" tinha o MESMO buraco, nos três lugares. Aqui o cofre
+     * em memória vai inteiro (`lock`), e cada conexão do servidor é revogada uma
+     * a uma — o que falhar aparece nomeado.
+     */
+    const aRevogar = listExchanges();
     forgetEverything();
+    useCexVault.getState().lock();
+    const falharam: string[] = [];
+    for (const id of aRevogar) {
+      try {
+        const r = await fetch("/api/cex/revogar", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ exchangeId: id }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j?.ok) falharam.push(CEX_META[id].label);
+      } catch { falharam.push(CEX_META[id].label); }
+    }
+    if (falharam.length) {
+      toast.error(t("cex.revogacaoFalhouLista", { lista: falharam.join(", ") }), { duration: 15_000 });
+    }
     setVaultExists(false);
     setUnlocked(false);
     setPresentList([]);
@@ -219,7 +272,7 @@ export default function CexSettings() {
     setForm(EMPTY_FORM);
     setPassphrase("");
     setPerExchange(EMPTY_STATE);
-    toast.success(t("cex.forgetToast"));
+    if (!falharam.length) toast.success(t("cex.forgetToast"));
   };
 
   const showUnlockPrompt = vaultExists && !unlocked;
