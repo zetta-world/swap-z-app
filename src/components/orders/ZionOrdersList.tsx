@@ -13,6 +13,7 @@ import {
   isImmediateCard, ORDERS_CHANGED_EVENT, type PendingOrder,
 } from "@/lib/zion/orders";
 import { fetchCowOrderStatus } from "@/lib/limit/cow";
+import { podeApagarORegistro, linkDoExplorerCow } from "@/lib/limit/apagar-ordem";
 import { useSwap } from "@/lib/store/swap";
 import { findToken, type Token } from "@/lib/tokens";
 import type { ChainId } from "@/lib/chains";
@@ -67,6 +68,12 @@ const FALLBACK_DECIMALS: Record<string, number> = {
 export default function ZionOrdersList() {
   const t = useT();
   const [orders, setOrders] = useState<PendingOrder[]>([]);
+  /**
+   * ⚠️ A ordem que o dono tentou apagar e está VIVA na CoW (achado A24).
+   * `viva` = status `open` confirmado; `desconhecida` = a consulta de status
+   * ainda não respondeu, e não saber não é estar morta.
+   */
+  const [naoApagavel, setNaoApagavel] = useState<{ id: string; porque: "viva" | "desconhecida" } | null>(null);
   const { setFromToken, setToToken, setAmountIn, setExecuteOpen, setSelectedSource } = useSwap();
 
   // Hydrate from localStorage on mount + when the browser focuses back
@@ -111,6 +118,24 @@ export default function ZionOrdersList() {
   }, [refresh]);
 
   const onDelete = (id: string) => {
+    /**
+     * ⚠⚠ NÃO SE APAGA O REGISTRO DE UMA ORDEM QUE NÃO SE CONSEGUE PARAR
+     * (achado A24).
+     *
+     * `deletePendingOrder` remove a linha do `localStorage` — e só. Uma ordem
+     * enviada à CoW vive no ORDERBOOK DELES e continua lá: pode preencher
+     * horas depois, contra uma carteira que o dono acredita estar limpa.
+     *
+     * ⚠️ E apagar era PIOR que não fazer nada: o laço de 60s là em cima só
+     * consulta o status de ordens que estão NA LISTA. Sem o registro, uma ordem
+     * que preencher não deixa rastro nenhum na tela.
+     */
+    const ordem = orders.find((p) => p.id === id);
+    const veredito = podeApagarORegistro({ cow: ordem?.cow ?? null });
+    if (!veredito.pode) {
+      setNaoApagavel({ id, porque: veredito.porque });
+      return;
+    }
     // ⚠️ Confere se gravou. `deletePendingOrder` devolve `false` com o
     // `localStorage` cheio, e o "Ordem removida" mentiria igual ao "salva".
     const ok = deletePendingOrder(id);
@@ -169,8 +194,38 @@ export default function ZionOrdersList() {
     );
   }
 
+  /**
+   * ⚠⚠ A ORDEM CONTINUA VIVA NA COW, E A TELA DIZ ISSO (achado A24).
+   *
+   * Apagar o registro não cancela nada — `cow.ts` não tem cancelamento — e
+   * ainda tira do dono a única coisa que acompanha a ordem. Em vez de fingir,
+   * o aviso nomeia o estado e aponta para onde ele CONSEGUE cancelar.
+   */
+  const bloqueada = naoApagavel ? orders.find((o) => o.id === naoApagavel.id) : undefined;
+  const linkCow = bloqueada?.cow ? linkDoExplorerCow(bloqueada.cow.chain, bloqueada.cow.orderUid) : null;
+
   return (
     <div className="rounded-2xl border border-white/5 glass-pane overflow-hidden">
+      {naoApagavel && bloqueada && (
+        <div className="px-4 py-3 border-b border-gold/20 bg-gold/[0.05]">
+          <p className="font-mono text-[11px] text-gold">
+            {t(naoApagavel.porque === "viva" ? "orders.cowAindaViva" : "orders.cowStatusDesconhecido")}
+          </p>
+          <div className="flex items-center gap-3 mt-1.5">
+            {linkCow && (
+              <a href={linkCow} target="_blank" rel="noopener noreferrer"
+                 className="font-mono text-[10px] text-cyan hover:underline">
+                {t("orders.cowCancelarLa")}
+              </a>
+            )}
+            <button type="button" onClick={() => setNaoApagavel(null)}
+                    className="font-mono text-[10px] text-ink-3 hover:text-ink">
+              {t("common.close")}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 flex-wrap gap-2">
         <span className="font-display font-bold text-sm text-ink inline-flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-gold" />
