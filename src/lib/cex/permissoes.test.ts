@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import {
   lerPermissao, decidirArmar, suportaVerificacao, type PermissaoChave,
@@ -219,5 +220,35 @@ describe("a rota de armar verifica ANTES de guardar", () => {
       readFileSync("src/components/settings/CexSettings.tsx", "utf8"),
     );
     expect(settings).not.toContain("readOnly");
+  });
+});
+
+/**
+ * ⚠️⚠️ O DESEMBRULHO É UM SÓ — achado do revisor no #439, sobre a MINHA
+ * correção.
+ *
+ * `verificarChave` tinha um pré-desembrulho `bruta.data?.[0] ?? bruta`, com o
+ * comentário "OKX e Bybit embrulham em `data: [...]`". O comentário estava
+ * errado sobre a Bybit (ela usa `result`), então só a OKX era desembrulhada —
+ * e ela FUNCIONAVA por causa disso.
+ *
+ * Eu não tinha lido essa linha. Conclui "3 das 4 quebradas" olhando só
+ * `lerPermissao`: eram DUAS (bybit e kucoin), e o meu envelope passou a
+ * desembrulhar a OKX duas vezes, quebrando o que estava certo.
+ */
+describe("⑥ a resposta chega CRUA em `lerPermissao`", () => {
+  const SRC = readFileSync(join(process.cwd(), "src/lib/cex/permissoes.ts"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
+
+  it("⚠️⚠️ `verificarChave` não pré-desembrulha nada", () => {
+    expect(SRC).toMatch(/return lerPermissao\(id, bruta\)/);
+    expect(SRC, "o pré-desembrulho voltou").not.toMatch(/\.data\?\.\[0\] \?\? bruta/);
+  });
+
+  it("⚠️⚠️ e existe UM único lugar que conhece envelope", () => {
+    // Dois desembrulhos em lugares diferentes é a porta dos fundos de sempre:
+    // cada um certo sozinho, e errados juntos.
+    expect([...SRC.matchAll(/env\.data/g)].length, "só o de `lerPermissao`").toBeGreaterThan(0);
+    expect([...SRC.matchAll(/bruta\.data/g)]).toHaveLength(0);
   });
 });
