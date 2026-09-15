@@ -19,29 +19,58 @@ const semComentarios = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/^(\s*)\/\/.*$/gm, "$1");
 const CODIGO = semComentarios(CRON);
 
+/**
+ * ⚠️⚠️ AS ÂNCORAS MUDARAM DE LUGAR, A PROPRIEDADE NÃO.
+ *
+ * O ramo `const order = simulado ? ... : placeCexOrder(...)` deixou de existir
+ * no cron: a execução passou para o EXECUTOR AUTORITATIVO (achado A107), e é lá
+ * que o simulado difere do real por uma linha. Estas travas passam a perguntar
+ * nos dois lugares — o que elas protegem continua igual:
+ *
+ *   · um caminho só, não dois
+ *   · reserva, tetos e preço ANTES do envio, nos dois modos
+ *   · o simulado não pode se passar por real
+ */
+const EXECUTOR = semComentarios(
+  readFileSync("src/lib/cex/execucao/executor.ts", "utf8"));
+
 describe("o simulado percorre o MESMO caminho", () => {
-  it("só existe UMA chamada a placeCexOrder no cron", () => {
+  it("só existe UMA chamada de execução no cron", () => {
     // Duas chamadas significariam um ramo paralelo — exatamente o que este
     // arquivo existe para impedir.
-    const n = (CODIGO.match(/placeCexOrder\(/g) ?? []).length;
+    const n = (CODIGO.match(/executarOrdemCex\(/g) ?? []).length;
     expect(n, "mais de uma chamada = caminho paralelo").toBe(1);
+    // ⚠️ E o atalho antigo não voltou por baixo.
+    expect(CODIGO).not.toMatch(/placeCexOrder\(/);
   });
 
-  it("a reserva do ciclo acontece ANTES do ramo de simulação", () => {
+  it("⚠️ o ramo do simulado mora no EXECUTOR, e é uma linha só", () => {
+    // `simularOrdem` é a única diferença: mesmo intent, mesmo kill-switch,
+    // mesma reserva, mesmo livro de fills. Um caminho paralelo só provaria
+    // que o caminho paralelo funciona.
+    expect(EXECUTOR).toMatch(/ordem\.simulated\s*\n?\s*\?\s*simularOrdem\(/);
+    expect(EXECUTOR).toMatch(/function simularOrdem\(/);
+  });
+
+  it("a reserva do ciclo acontece ANTES do envio", () => {
     // ⚠️ A trava contra comprar duas vezes tem de valer nos dois modos. Se a
-    // reserva ficasse dentro do ramo real, um plano simulado poderia gravar
-    // ciclos duplicados e o extrato mentiria sobre a própria simulação.
-    expect(CODIGO.indexOf("reservarCiclo(")).toBeLessThan(CODIGO.indexOf("const order = simulado"));
+    // reserva ficasse depois, um plano simulado poderia gravar ciclos
+    // duplicados e o extrato mentiria sobre a própria simulação.
+    expect(CODIGO.indexOf("reservarCiclo(")).toBeLessThan(CODIGO.indexOf("executarOrdemCex("));
   });
 
-  it("os tetos são aplicados ANTES do ramo — simulado respeita orçamento", () => {
-    expect(CODIGO.indexOf("tetoDoCiclo(")).toBeLessThan(CODIGO.indexOf("const order = simulado"));
+  it("os tetos são aplicados ANTES do envio — simulado respeita orçamento", () => {
+    expect(CODIGO.indexOf("tetoDoCiclo(")).toBeLessThan(CODIGO.indexOf("executarOrdemCex("));
   });
 
   it("a guarda de preço vale nos dois modos", () => {
     // Sem preço de referência não há como simular honestamente: o extrato
     // sairia com preço inventado.
-    expect(CODIGO.indexOf("sem preco de referencia")).toBeLessThan(CODIGO.indexOf("const order = simulado"));
+    expect(CODIGO.indexOf("sem preco de referencia")).toBeLessThan(CODIGO.indexOf("executarOrdemCex("));
+  });
+
+  it("⚠️ e o executor recusa simular sem preço, em vez de inventar um", () => {
+    expect(EXECUTOR).toMatch(/simulado sem preco de referencia/);
   });
 });
 
@@ -49,7 +78,7 @@ describe("o simulado não pode se passar por real", () => {
   it("o id da ordem simulada é prefixado", () => {
     // Um id que pudesse ser confundido com o de uma ordem real transformaria
     // extrato simulado em evidência de compra que nunca houve.
-    expect(CODIGO).toMatch(/id: `simulado:/);
+    expect(EXECUTOR).toMatch(/id: `simulado:/);
   });
 
   it("o ciclo é carimbado como simulado ao fechar", () => {

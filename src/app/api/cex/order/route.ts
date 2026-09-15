@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
-import { placeCexOrder } from "@/lib/cex/server";
+import { executarOrdemCex } from "@/lib/cex/execucao/executor";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
 import { podeAutomatizar } from "@/lib/autopilot/liberacao";
 import { checarKillSwitches } from "@/lib/admin/kill-switches";
@@ -170,7 +171,9 @@ export async function POST(req: NextRequest) {
   // above can't bind it. Recompute the TRUE notional from a fresh reference
   // price and reject oversized buys (and any order over the hard ceiling).
   // Manual orders skip this — the user is present and accepted the trade.
-  if (body.autopilot === true) {
+  /** ⚠️ O canal: o piloto do navegador dispara por esta MESMA rota. */
+  const ehAutopilot = body.autopilot === true;
+  if (ehAutopilot) {
     /**
      * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2), no canal do NAVEGADOR.
      *
@@ -235,19 +238,86 @@ export async function POST(req: NextRequest) {
     passphrase: body.passphrase,
   };
 
+  /**
+   * ⚠️⚠️ ESTA ROTA NÃO EXECUTA MAIS NADA POR CONTA PRÓPRIA — achado A107.
+   *
+   * Ela chamava `placeCexOrder` direto, como o cron do DCA e os dois ramos do
+   * autopilot faziam. Três consumidores, três semânticas de sucesso e de
+   * falha, nenhum com estado durável antes do efeito externo.
+   *
+   * Agora ela monta o pedido e entrega ao EXECUTOR, que grava o intent, confere
+   * o kill-switch no limiar, marca SUBMITTING antes do envio e trata timeout
+   * como DÚVIDA. O kill-switch acima continua aqui de propósito: recusar cedo
+   * economiza uma escrita e dá erro melhor — mas ele NÃO é mais a única trava,
+   * e é isso que o A106 pedia.
+   */
   try {
-    const { order, filledImmediately } = await placeCexOrder(exchange, creds, {
-      symbol: body.symbol,
-      side,
-      type,
-      amount: body.amount,
-      price:  type === "limit" ? body.price : undefined,
-    });
+    const r = await executarOrdemCex(
+      { db: getSupabaseAdmin() },
+      /**
+       * ⚠️ A ORIGEM DISTINGUE OS DOIS CANAIS DESTA MESMA ROTA. O piloto do
+       * navegador dispara por aqui com `autopilot: true`, e um intent autônomo
+       * precisa ser reconhecível como tal no livro — senão "quem mandou esta
+       * ordem" vira pergunta sem resposta depois do fato.
+       *
+       * ⚠️ A sessão é lida aqui, FORA do ramo de automação, só para atribuir o
+       * intent. A ordem manual continua aberta sem login, de propósito: ler
+       * não é exigir.
+       */
+      { origin: ehAutopilot ? "autopilot_browser" : "manual",
+        autonomous: ehAutopilot,
+        walletAddress: (await getSession())?.sub ?? null },
+      { exchangeId: exchange, symbol: body.symbol, side, type,
+        qty: body.amount, price: type === "limit" ? body.price : null,
+        notionalUsd: typeof body.price === "number" ? body.amount * body.price : null },
+      creds,
+    );
+
+    if (r.desfecho === "incerto") {
+      /**
+       * ⚠️⚠️ O CASO QUE ANTES VIRAVA ERRO 5xx E SUMIA.
+       *
+       * A ordem PODE estar na corretora. Devolver "falhou" convidaria o usuário
+       * a mandar de novo — o retry destrutivo que o briefing proíbe. O intent
+       * fica em UNKNOWN com a chave de idempotência, e a reconciliação decide.
+       */
+      return NextResponse.json(
+        { ok: false, error: "resultado_incerto", intentId: r.intentId,
+          detail: r.porque,
+          porque: "a ordem pode ter sido aceita pela corretora. NAO reenvie: "
+            + "a reconciliacao vai confirmar em ate alguns minutos." },
+        { status: 202, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    if (r.desfecho === "recusado") {
+      const httpStatus = r.motivo === "kill_switch" ? 503
+                       : r.motivo === "sem_banco" ? 503
+                       : r.motivo === "recusada_pela_corretora" ? 400 : 500;
+      return NextResponse.json(
+        { ok: false, error: r.motivo, detail: sanitizeUpstreamMessage(r.porque, body.apiKey),
+          intentId: r.intentId },
+        { status: httpStatus, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    /**
+     * ⚠️ `filledImmediately` AGORA SAI DO LIVRO, não do ACK (achado A81).
+     * Antes ele era `status === "closed" || (market && filled > 0)`; um ACK sem
+     * preenchimento podia vir como "preenchido" para a tela.
+     */
     const resp: CexOrderResponse = {
       ok:        true,
       exchange,
-      order,
-      filledImmediately,
+      order: {
+        id: r.externalOrderId ?? r.intentId,
+        symbol: body.symbol, side, type,
+        status: r.state === "FILLED" ? "closed" : "open",
+        amount: body.amount,
+        filled: r.filledQty,
+        remaining: Math.max(body.amount - r.filledQty, 0),
+        price: type === "limit" ? body.price : undefined,
+      },
+      filledImmediately: r.state === "FILLED",
       fetchedAt: Date.now(),
     };
     // ⚠️ AGUARDADO: uma ordem REAL acabou de ser colocada na corretora. Perder
@@ -259,7 +329,9 @@ export async function POST(req: NextRequest) {
         symbol: body.symbol,
         side,
         type,
-        filledImmediately,
+        filledImmediately: r.state === "FILLED",
+        intentId: r.intentId,
+        estado: r.state,
         notional: typeof body.price === "number" ? body.amount * body.price : null,
       },
     });

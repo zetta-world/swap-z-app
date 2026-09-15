@@ -560,6 +560,89 @@ export type LabCapitalLogRow = {
   changed_at:  string;
 };
 
+/**
+ * ⚠️⚠️ O INTENT DURÁVEL DE EXECUÇÃO EM CORRETORA — achados A80/A108/A109.
+ *
+ * Gravado ANTES do efeito externo. `filled_qty` e `filled_quote` são DERIVADOS
+ * da soma de `cex_fills` pela RPC `cex_recalcular_intent`: nunca escrever
+ * direto, nem daqui nem de lugar nenhum. Ver `supabase/migrations/0050`/`0051`.
+ */
+export type CexIntentState =
+  | "CREATED" | "AUTHORIZED" | "RESERVED" | "SUBMITTING" | "SUBMITTED"
+  | "PARTIALLY_FILLED" | "FILLED" | "CANCEL_PENDING" | "CANCELED"
+  | "UNKNOWN" | "RECONCILIATION_REQUIRED" | "QUARANTINED" | "FAILED_PRE_SUBMIT";
+
+export type CexExecutionIntentRow = {
+  id:                     string;
+  /** A chave de idempotência mandada à corretora. Única por construção. */
+  client_order_id:        string;
+  wallet_address:         string | null;
+  origin:                 string;
+  autonomous:             boolean;
+  session_id:             string | null;
+  plan_id:                string | null;
+  cycle_number:           number | null;
+  conexao_id:             string | null;
+  strategy_id:            string | null;
+  strategy_version:       number | null;
+  certificate_id:         string | null;
+  exchange_id:            string;
+  symbol:                 string;
+  side:                   "buy" | "sell";
+  order_type:             "market" | "limit";
+  requested_qty:          number;
+  limit_price:            number | null;
+  requested_notional_usd: number | null;
+  simulated:              boolean;
+  /** ⚠️ UNKNOWN ≠ FAILED_PRE_SUBMIT. UNKNOWN pode ter executado. */
+  state:                  CexIntentState;
+  state_reason:           string | null;
+  external_order_id:      string | null;
+  /** ⚠️ DERIVADO do livro. Nunca escrever direto. */
+  filled_qty:             number;
+  filled_quote:           number;
+  fee_total:              number | null;
+  fee_currency:           string | null;
+  /** ⚠️ Só o REMANESCENTE — o que já executou é fato imutável (A101). */
+  canceled_qty:           number;
+  created_at:             string;
+  authorized_at:          string | null;
+  submitting_at:          string | null;
+  submitted_at:           string | null;
+  terminal_at:            string | null;
+  last_reconciled_at:     string | null;
+  reconcile_attempts:     number;
+  updated_at:             string;
+};
+
+/**
+ * ⚠️ O LIVRO APPEND-ONLY DE EXECUÇÕES — achado A108.
+ *
+ * Um fill = uma linha, deduplicado por `(exchange_id, dedupe_key)` NO BANCO.
+ * `sintetico` marca a linha derivada do acumulado da ordem, sem id de trade:
+ * ela é estimativa e cede lugar ao trade real quando ele chega.
+ */
+export type CexFillRow = {
+  id:                string;
+  intent_id:         string;
+  exchange_id:       string;
+  external_order_id: string | null;
+  external_trade_id: string | null;
+  client_order_id:   string | null;
+  symbol:            string;
+  side:              "buy" | "sell";
+  qty:               number;
+  price:             number;
+  quote_amount:      number;
+  fee:               number | null;
+  fee_currency:      string | null;
+  executed_at:       string | null;
+  sintetico:         boolean;
+  dedupe_key:        string;
+  raw_hash:          string | null;
+  created_at:        string;
+};
+
 export interface Database {
   public: {
     Tables: {
@@ -576,6 +659,33 @@ export interface Database {
       platform_admins: { Row: PlatformAdminRow; Insert: Partial<PlatformAdminRow> & { wallet_address: string }; Update: Partial<PlatformAdminRow>; Relationships: [] };
       market_brain: { Row: MarketBrainRow; Insert: Partial<MarketBrainRow> & { symbol: string }; Update: Partial<MarketBrainRow>; Relationships: [] };
       operations: { Row: OperationRow; Insert: Partial<OperationRow> & { kind: string; status: string }; Update: Partial<OperationRow>; Relationships: [] };
+      cex_execution_intents: {
+        Row: CexExecutionIntentRow;
+        Insert: Partial<CexExecutionIntentRow> & {
+          client_order_id: string; origin: string; exchange_id: string; symbol: string;
+          side: "buy" | "sell"; order_type: "market" | "limit"; requested_qty: number;
+        };
+        /**
+         * ⚠️ `filled_qty`, `filled_quote` e `state` NÃO entram aqui de propósito.
+         * Eles saem da RPC, que os deriva do livro sob `for update`. Deixá-los
+         * atualizáveis daqui devolveria ao código a capacidade de afirmar
+         * execução sem fill — que é o achado A81 inteiro.
+         */
+        Update: Pick<Partial<CexExecutionIntentRow>,
+          "external_order_id" | "state_reason" | "last_reconciled_at" | "reconcile_attempts">;
+        Relationships: [];
+      };
+      cex_fills: {
+        Row: CexFillRow;
+        Insert: Partial<CexFillRow> & {
+          intent_id: string; exchange_id: string; symbol: string;
+          side: "buy" | "sell"; qty: number; price: number; quote_amount: number;
+          dedupe_key: string;
+        };
+        /** ⚠️ Livro append-only: linha de fill não se edita. */
+        Update: never;
+        Relationships: [];
+      };
       zion_suggestions: {
         Row: ZionSuggestionRow;
         Insert: Partial<ZionSuggestionRow> & { symbol: string; kind: string; side: "buy" | "sell"; ref_price: number };
@@ -696,6 +806,38 @@ export interface Database {
       bump_session_trades: {
         Args: { p_wallet: string; p_exchange: string; p_n: number };
         Returns: undefined;
+      };
+      /**
+       * ⚠️ AS RPCs DO EXECUTOR (migration 0051). Elas são a ÚNICA porta por onde
+       * `filled_qty` muda: somar um fill exige ler o total e escrever o novo, e
+       * duas passadas concorrentes perderiam um fill. O corpo roda sob
+       * `for update` numa transação só.
+       */
+      cex_transicionar: {
+        Args: {
+          p_intent_id: string; p_para: CexIntentState;
+          p_motivo: string | null; p_external_order_id: string | null;
+        };
+        Returns: { ok: boolean; de?: CexIntentState; para?: CexIntentState;
+                   noop?: boolean; porque?: string };
+      };
+      cex_ingest_trades: {
+        Args: { p_intent_id: string; p_external_order_id: string | null; p_trades: unknown };
+        Returns: { inseridos: number; filled_qty: number; state: CexIntentState };
+      };
+      cex_ingest_order_snapshot: {
+        Args: {
+          p_intent_id: string; p_external_order_id: string | null;
+          p_cumulative_qty: number; p_avg_price: number; p_cumulative_quote: number;
+          p_fee: number | null; p_fee_currency: string | null; p_executed_at: string | null;
+        };
+        Returns: { inseridos: number; regrediu: boolean;
+                   filled_qty?: number; state?: CexIntentState };
+      };
+      cex_recalcular_intent: { Args: { p_intent_id: string }; Returns: undefined };
+      cex_transicao_permitida: {
+        Args: { p_de: CexIntentState; p_para: CexIntentState };
+        Returns: boolean;
       };
     };
   };

@@ -7,7 +7,9 @@ import {
 } from "@/lib/autopilot/sessions";
 import { runAutopilotCexScan, formatRegimeContext } from "@/lib/autopilot/scan";
 import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
-import { fetchCexBalance, placeCexOrder, fetchCexOrderStatus } from "@/lib/cex/server";
+import { fetchCexBalance, fetchCexOrderStatus } from "@/lib/cex/server";
+import { executarOrdemCex } from "@/lib/cex/execucao/executor";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
 import { trendGate } from "@/lib/zion/sniper";
@@ -143,10 +145,27 @@ async function settleArmedExits(
         /**
          * ⚠⚠ IDEM AQUI (A14): uma ordem limitada pode fechar PARCIALMENTE
          * preenchida, e apagar a linha deixaria o resto órfão para sempre.
-         * `filled` ausente vira a posição inteira — o comportamento antigo,
-         * que é o seguro quando a corretora não diz quanto saiu.
+         *
+         * ⚠️⚠️ ACHADO A81. A linha dizia:
+         *
+         *     const vendido = Number(order.filled) > 0 ? ... : Number(pos.base_amount);
+         *
+         * e o comentário chamava isso de "o seguro quando a corretora não diz
+         * quanto saiu". Não é seguro: é AFIRMAR execução sem evidência. Uma
+         * ordem marcada `closed` com `filled` ausente apagava a posição
+         * inteira, e o resto ficava na conta do cliente sem ninguém saber.
+         *
+         * Agora, sem evidência de fill, NADA é liquidado — a posição segue
+         * armada e a passada seguinte pergunta de novo.
          */
-        const vendido = Number(order.filled) > 0 ? Number(order.filled) : Number(pos.base_amount);
+        const vendido = Number(order.filled);
+        if (!(vendido > 0)) {
+          rows.push({ session_id: s.id, wallet_address: s.wallet_address,
+            exchange_id: s.exchange_id, symbol: pos.pair, side: "sell",
+            order_type: "limit", status: "skipped", order_id: pos.exit_order_id,
+            reason: "venue diz fechada e nao informa quanto saiu — posicao MANTIDA ate haver evidencia" });
+          continue;
+        }
         const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
         if (sobra.fecha) {
           await exigirGravacao(
@@ -162,11 +181,52 @@ async function settleArmedExits(
         logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: pos.pair, side: "sell", volumeUsd: sobra.custoRemovido || null, pnlUsd: realized, status: "settled", route: "cron", ref: `${exchange}:${pos.exit_order_id}` });
         rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", order_type: "limit", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: realized !== null ? `exit settled, realized $${realized.toFixed(2)}${sobra.fecha ? "" : `, ${sobra.baseRestante} still held`}` : "exit settled" });
       } else if (st === "canceled" || st === "cancelled" || st === "expired") {
-        await exigirGravacao(
-          await reopenServerPosition(s.id, pos.base),
-          "posicao NAO reaberta — fica exit_armed apontando para ordem morta, e o bot nunca mais sai deste trade",
-          { session: s.id, base: pos.base });
-        rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "skipped", order_id: pos.exit_order_id, reason: "armed exit canceled/expired — reopened" });
+        /**
+         * ⚠️⚠️ ACHADO A101 — CANCELAMENTO DEPOIS DE PREENCHIMENTO PARCIAL.
+         *
+         * Isto reabria a posição INTEIRA, sempre. Uma saída limitada que
+         * vendeu 4 de 10 e depois foi cancelada voltava ao livro como se os 10
+         * ainda estivessem lá: o bot passava a acreditar que tem uma bolsa que
+         * já não tem, o teto de exposição contava capital inexistente, e a
+         * passada seguinte tentava vender de novo o que já saiu.
+         *
+         * O que já executou é FATO IMUTÁVEL. Só o remanescente volta.
+         */
+        const jaVendido = Number(order.filled);
+        if (jaVendido > 0) {
+          const { realized, aviso } = realizedFromSell(order, pos);
+          if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
+          if (realized !== null) {
+            realizedDelta += realized;
+            await exigirGravacao(
+              await applySessionPnl(s.id, realized, today),
+              "P&L da saida parcial cancelada NAO contabilizado — o stop de perda nao viu esta perda",
+              { session: s.id, base: pos.base, realized });
+          }
+          const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), jaVendido);
+          if (sobra.fecha) {
+            await exigirGravacao(
+              await closeServerPosition(s.id, pos.base),
+              "posicao NAO removida apos saida parcial cancelada que zerou a bolsa",
+              { session: s.id, base: pos.base });
+          } else {
+            await exigirGravacao(
+              await reduzirServerPosition(s.id, pos.base, sobra.baseRestante, sobra.custoRestante),
+              "remanescente NAO gravado — o livro segue dizendo que a bolsa inteira esta la",
+              { session: s.id, base: pos.base, resta: sobra.baseRestante });
+            await exigirGravacao(
+              await reopenServerPosition(s.id, pos.base),
+              "remanescente nao reaberto — fica exit_armed apontando para ordem morta",
+              { session: s.id, base: pos.base });
+          }
+          rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: `cancelada com ${jaVendido} ja vendido — so o remanescente reabre` });
+        } else {
+          await exigirGravacao(
+            await reopenServerPosition(s.id, pos.base),
+            "posicao NAO reaberta — fica exit_armed apontando para ordem morta, e o bot nunca mais sai deste trade",
+            { session: s.id, base: pos.base });
+          rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "skipped", order_id: pos.exit_order_id, reason: "armed exit canceled/expired sem preenchimento — reaberta inteira" });
+        }
       }
       // still open → leave it armed for the next run
     } catch { /* transient — retry next run */ }
@@ -663,7 +723,59 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
       if (vendaDe) {
         const pos = vendaDe;
         try {
-          const { order } = await placeCexOrder(exchange, creds, { symbol: intent.symbol, side: "sell", type: intent.type, amount, price: intent.price });
+          /**
+           * ⚠️⚠️ PASSA PELO EXECUTOR AUTORITATIVO (A107). O intent é gravado
+           * ANTES do envio, o kill-switch é conferido no limiar (A106) e um
+           * timeout vira DÚVIDA — nunca "errored" com o livro afirmando o que
+           * não sabe.
+           */
+          const exec = await executarOrdemCex(
+            { db: getSupabaseAdmin() },
+            { origin: "autopilot_cron", autonomous: true,
+              walletAddress: s.wallet_address, sessionId: s.id, conexaoId: s.conexao_id },
+            { exchangeId: exchange, symbol: intent.symbol, side: "sell",
+              type: intent.type, qty: amount, price: intent.price ?? null,
+              notionalUsd: guard.realNotionalUsd ?? intent.notionalUsd },
+            creds,
+          );
+
+          if (exec.desfecho === "recusado") {
+            pushRow(intent, "errored", card.kind, { reason: `${exec.motivo}: ${exec.porque}`.slice(0, 200) });
+            continue;
+          }
+
+          /**
+           * ⚠️⚠️ A BOLSA PODE TER SIDO VENDIDA. Não se mexe na posição, não se
+           * realiza P&L — mas o contador diário SOBE, porque o fato "existe uma
+           * ordem possivelmente viva" já aconteceu.
+           */
+          if (exec.desfecho === "incerto") {
+            fired++; remainingTrades--;
+            if (!await bumpSessionTrades(s.wallet_address, s.exchange_id, 1)) {
+              contadorConfiavel = false;
+              avisarRegistroPerdido("contador diario nao subiu (venda incerta)", { pair: intent.symbol });
+            }
+            avisarRegistroPerdido("VENDA INCERTA — a posicao NAO foi alterada", {
+              pair: intent.symbol, intent: exec.intentId, porque: exec.porque,
+              why: "reduzir a posicao agora e nao reduzir sao os dois erros possiveis. "
+                + "A reconciliacao decide com o que a corretora disser.",
+            });
+            pushRow(intent, "errored", card.kind, { reason: `incerto: ${exec.porque}`.slice(0, 200) });
+            continue;
+          }
+
+          /**
+           * ⚠️ O "order" daqui para baixo é uma VISTA DO LIVRO, não a resposta
+           * crua da corretora. `realizedFromSell` e `taxaEmUsd` continuam sendo
+           * as contas de sempre — só que agora alimentadas por evidência.
+           */
+          const order = {
+            id: exec.externalOrderId ?? exec.intentId,
+            filled: exec.filledQty, cost: exec.filledQuote,
+            average: exec.filledQty > 0 ? exec.filledQuote / exec.filledQty : 0,
+            fee: exec.feeTotal != null && exec.feeCurrency
+              ? { cost: exec.feeTotal, currency: exec.feeCurrency } : undefined,
+          } as unknown as CexOrder;
           fired++; remainingTrades--;
           // Conta a ordem NA HORA (ver a nota em "contador incremental" no fim
           // desta função): a ordem já existe na corretora, então o limite diário
@@ -693,11 +805,30 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
              * ficava órfão na conta do cliente e o teto de exposição liberava o
              * custo INTEIRO, então ele ainda comprava por cima.
              *
-             * ⚠️ `filled` ausente vira a quantidade ENVIADA — a mesma convenção
-             * que o ramo de compra já usa. Tratar como "vendeu zero" faria a
-             * passada seguinte vender de novo o que já saiu.
+             * ⚠️⚠️ ACHADO A81, NA LINHA EXATA. Isto era:
+             *
+             *     const vendido = Number(order.filled) > 0 ? ... : amount;
+             *
+             * O comentário defendia a convenção: tratar como "vendeu zero"
+             * faria a passada seguinte vender de novo. O raciocínio era
+             * razoável e o efeito não — `filled` ausente passou a significar
+             * "vendeu tudo", e a posição saía do livro sem evidência nenhuma.
+             *
+             * Agora vem do LIVRO, e zero é zero. O caso do ACK sem
+             * preenchimento é tratado logo abaixo como o que ele é: uma ordem
+             * a mercado que ainda não devolveu execução, e que a reconciliação
+             * resolve. Vender de novo por engano é o erro caro; esperar uma
+             * passada é o barato.
              */
-            const vendido = Number(order.filled) > 0 ? Number(order.filled) : amount;
+            const vendido = exec.filledQty;
+            if (!(vendido > 0)) {
+              avisarRegistroPerdido("venda a mercado aceita SEM preenchimento — posicao mantida", {
+                pair: intent.symbol, intent: exec.intentId, estado: exec.state,
+              });
+              pushRow(intent, "fired", card.kind, { order_id: order.id,
+                reason: "aceita sem preenchimento — posicao intacta ate reconciliar" });
+              continue;
+            }
             const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
             if (sobra.fecha) {
               await exigirGravacao(
@@ -746,16 +877,67 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         continue;
       }
       try {
-        const { order } = await placeCexOrder(exchange, creds, { symbol: intent.symbol, side: "buy", type: intent.type, amount: intent.amount, price: intent.price });
+        /**
+         * ⚠️⚠️ PASSA PELO EXECUTOR AUTORITATIVO (A107). Intent durável antes do
+         * envio, kill-switch no limiar (A106), timeout vira DÚVIDA (A104).
+         */
+        const exec = await executarOrdemCex(
+          { db: getSupabaseAdmin() },
+          { origin: "autopilot_cron", autonomous: true,
+            walletAddress: s.wallet_address, sessionId: s.id, conexaoId: s.conexao_id },
+          { exchangeId: exchange, symbol: intent.symbol, side: "buy",
+            type: intent.type, qty: intent.amount, price: intent.price ?? null,
+            notionalUsd: buyNotional },
+          creds,
+        );
+
+        if (exec.desfecho === "recusado") {
+          pushRow(intent, "errored", card.kind, { reason: `${exec.motivo}: ${exec.porque}`.slice(0, 200) });
+          continue;
+        }
+
+        /**
+         * ⚠️⚠️ A COMPRA PODE TER ACONTECIDO. NÃO se grava posição — gravar uma
+         * entrada sobre dúvida é inventar uma bolsa que talvez não exista, e o
+         * ramo de venda passaria a tentar vendê-la. O contador diário sobe,
+         * porque a ordem pode estar viva.
+         */
+        if (exec.desfecho === "incerto") {
+          fired++; remainingTrades--;
+          if (!await bumpSessionTrades(s.wallet_address, s.exchange_id, 1)) {
+            contadorConfiavel = false;
+            avisarRegistroPerdido("contador diario nao subiu (compra incerta)", { pair: intent.symbol });
+          }
+          avisarRegistroPerdido("COMPRA INCERTA — posicao NAO gravada", {
+            pair: intent.symbol, intent: exec.intentId, porque: exec.porque,
+            why: "a ordem pode ter executado. A reconciliacao abre a posicao se ela existir.",
+          });
+          pushRow(intent, "errored", card.kind, { reason: `incerto: ${exec.porque}`.slice(0, 200) });
+          continue;
+        }
+
+        const order = { id: exec.externalOrderId ?? exec.intentId };
         fired++; remainingTrades--;
         if (!await bumpSessionTrades(s.wallet_address, s.exchange_id, 1)) {
           contadorConfiavel = false;
           avisarRegistroPerdido("contador diario nao subiu (compra)", { pair: intent.symbol, order_id: order.id });
         }
-        // Record the entry with REAL fill data (fall back to the limit price).
-        const fillPrice = Number(order.average) > 0 ? Number(order.average) : (intent.price && intent.price > 0 ? intent.price : (refPrice ?? 0));
-        const filledQty = Number(order.filled)  > 0 ? Number(order.filled)  : intent.amount;
-        const spentUsd  = Number(order.cost)    > 0 ? Number(order.cost)    : (fillPrice > 0 ? fillPrice * filledQty : buyNotional);
+        /**
+         * ⚠️⚠️ ACHADO A81, NA LINHA EXATA. Isto era:
+         *
+         *     const filledQty = Number(order.filled) > 0 ? Number(order.filled) : intent.amount;
+         *
+         * — e o comentário acima dela dizia *"Record the entry with REAL fill
+         * data"*. Não era real: `filled` ausente ou zero virava a quantidade
+         * PEDIDA, e o bot abria uma posição inteira sobre um ACK. Depois o teto
+         * de exposição contava esse capital, e o ramo de venda tentava vender
+         * uma bolsa que podia não existir.
+         *
+         * Agora sai do LIVRO. ACK sem preenchimento não abre posição nenhuma.
+         */
+        const filledQty = exec.filledQty;
+        const spentUsd  = exec.filledQuote;
+        const fillPrice = filledQty > 0 && spentUsd > 0 ? spentUsd / filledQty : 0;
         /**
          * ⚠️ O ELSE EXISTE AGORA. Antes, preco ou quantidade nao positivos
          * pulavam o registro EM SILENCIO — e a posicao ficava orfa: o ramo de
@@ -781,10 +963,15 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
           exposureUsd += spentUsd;
           ownedBases.add(base);
         } else {
-          avisarRegistroPerdido("preco ou quantidade nao positivos — posicao NAO gravada", {
-            pair: intent.symbol, order_id: order.id, fillPrice, filledQty,
-          });
-          posicaoPerdida = true;
+          /**
+           * ⚠️ AGORA ESTE RAMO SIGNIFICA OUTRA COISA, e melhor: a ordem foi
+           * ACEITA e ainda não preencheu. Não é registro perdido — é ordem
+           * viva. Uma limitada esperando o livro cai aqui normalmente, e a
+           * reconciliação abre a posição quando (e se) ela executar.
+           */
+          pushRow(intent, "fired", card.kind, { order_id: order.id,
+            reason: `aceita sem preenchimento (${exec.state}) — posicao abre na reconciliacao` });
+          continue;
         }
         logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: intent.symbol, side: "buy", volumeUsd: buyNotional, pnlUsd: null, status: "fired", route: "cron", ref: `${exchange}:${order.id}` });
         pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: buyNotional });

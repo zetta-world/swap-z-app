@@ -125,9 +125,15 @@ describe("② a saída parcial deixa o resto EXISTINDO", () => {
  */
 describe("③ e o cron REALMENTE usa as duas", () => {
   it("⚠️⚠️ a ordem de venda leva a quantidade CORTADA, não a do cartão", () => {
-    expect(CRON).toMatch(/side: "sell", type: intent\.type, amount,/);
-    // `amount: intent.amount` na venda era o defeito inteiro.
-    expect(CRON).not.toMatch(/side: "sell", type: intent\.type, amount: intent\.amount/);
+    /**
+     * ⚠️ A ÂNCORA MUDOU DE FORMA, A PROPRIEDADE NÃO. A venda passou a ir pelo
+     * executor autoritativo (achado A107), então o pedido virou um objeto
+     * nomeado — mas continua tendo de levar `qty: amount`, a quantidade
+     * CORTADA pela posição, e nunca a do cartão do modelo.
+     */
+    expect(CRON).toMatch(/symbol: intent\.symbol, side: "sell",\s*\n?\s*type: intent\.type, qty: amount,/);
+    // `qty: intent.amount` na venda seria o defeito inteiro de volta.
+    expect(CRON).not.toMatch(/side: "sell",[\s\S]{0,80}qty: intent\.amount/);
   });
 
   it("⚠️⚠️ a guarda de nocional confere a quantidade ENVIADA", () => {
@@ -135,12 +141,17 @@ describe("③ e o cron REALMENTE usa as duas", () => {
     expect(CRON).toMatch(/checkRealNotional\(\{ side: intent\.side, baseAmount: amount,/);
   });
 
-  it("⚠️⚠️ os DOIS caminhos de liquidação tratam sobra — mercado e saída armada", () => {
+  it("⚠️⚠️ os TRÊS caminhos de liquidação tratam sobra", () => {
+    /**
+     * ⚠️ ERAM DOIS E VIRARAM TRÊS — achado A101. O terceiro é a saída armada
+     * CANCELADA depois de preenchimento parcial: ela reabria a posição
+     * INTEIRA, como se nada tivesse sido vendido. O que já executou é fato
+     * imutável; só o remanescente volta.
+     */
     const chamadas = [...CRON.matchAll(/const sobra = oQueSobrou\(/g)].length;
-    expect(chamadas, "mercado e settle da armada precisam dos dois").toBe(2);
-    expect([...CRON.matchAll(/reduzirServerPosition\(/g)].length).toBe(2);
-    // E fechar passou a ser condicional nos dois.
-    expect([...CRON.matchAll(/if \(sobra\.fecha\) \{/g)].length).toBe(2);
+    expect(chamadas, "mercado, settle da armada e cancelamento parcial").toBe(3);
+    expect([...CRON.matchAll(/reduzirServerPosition\(/g)].length).toBe(3);
+    expect([...CRON.matchAll(/if \(sobra\.fecha\) \{/g)].length).toBe(3);
   });
 
   it("⚠️⚠️ a base só sai de `ownedBases` quando a posição FECHA", () => {

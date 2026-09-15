@@ -271,10 +271,19 @@ describe("o disparo do navegador não pode dizer que contou sem ter contado", ()
     expect(codigo).toMatch(/autopilot_disparo_nao_contado/);
   });
 
-  it("⚠️ o cron continua conferindo as DUAS chamadas dele", () => {
+  it("⚠️ o cron confere TODAS as chamadas dele, quantas forem", () => {
+    /**
+     * ⚠️ ERAM DUAS E VIRARAM QUATRO. Compra e venda passaram a contar o trade
+     * também no caminho INCERTO (achado A104): a ordem pode estar viva na
+     * corretora, então o limite diário do usuário tem de registrá-la.
+     *
+     * ⚠️ E A TRAVA DEIXOU DE FIXAR O NÚMERO. Fixar dois fez este teste quebrar
+     * quando o caminho da dúvida nasceu — e o que ele protege nunca foi a
+     * contagem: é que NENHUMA chamada fique sem conferência.
+     */
     const conferidas = [...semComentarios(CRON).matchAll(/if \(!await bumpSessionTrades\(/g)].length;
     const chamadas = [...semComentarios(CRON).matchAll(/await bumpSessionTrades\(/g)].length;
-    expect(chamadas).toBe(2);
-    expect(conferidas).toBe(chamadas);
+    expect(chamadas, "o cron precisa contar o trade em algum lugar").toBeGreaterThanOrEqual(2);
+    expect(conferidas, "toda chamada tem de ser conferida").toBe(chamadas);
   });
 });

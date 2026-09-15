@@ -6,7 +6,10 @@ import {
   gastoHojeDaCarteira, type PlanoRow,
 } from "@/lib/dca/store";
 import { lerConexaoPorId, decifrarConexao } from "@/lib/cex/conexoes";
-import { placeCexOrder } from "@/lib/cex/server";
+import { executarOrdemCex } from "@/lib/cex/execucao/executor";
+import { intentVivoDoPlano } from "@/lib/cex/execucao/intents";
+import { reconciliarIntent } from "@/lib/cex/execucao/reconciliador";
+import { decidirPeloIntent } from "@/lib/dca/liquidacao";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import { getFlywheelGates } from "@/lib/admin/gates";
@@ -245,6 +248,82 @@ async function processarPlano(
     }
   }
 
+  /**
+   * ⚠️⚠️ A PRIMEIRA PERGUNTA DA PASSADA: SOBROU DÚVIDA DA VEZ ANTERIOR?
+   *
+   * Achados A104 e A105. O cron antigo fazia `submit → timeout → falhou →
+   * avança`, e a ordem podia ter executado. Agora um intent não-terminal deste
+   * plano BLOQUEIA tudo até a corretora responder: nada de ciclo novo, nada de
+   * avanço, nada de segunda ordem. Primeiro se descobre a verdade.
+   */
+  const dbExec = getSupabaseAdmin();
+  if (!dbExec) {
+    return { plano: p.id, acao: "adiado", detalhe: "sem banco para conferir intents" };
+  }
+  const vivo = await intentVivoDoPlano(dbExec, p.id);
+  if (vivo === undefined) {
+    // ⚠️ Falha de leitura NÃO é "nada pendente". Falha FECHADO.
+    return { plano: p.id, acao: "adiado", detalhe: "nao consegui ler intents pendentes" };
+  }
+  if (vivo) {
+    const rec = await reconciliarIntent({
+      db: dbExec,
+      credenciais: async () => (conexao ? decifrarConexao(conexao) : null),
+    }, vivo);
+    const atual = (await intentVivoDoPlano(dbExec, p.id)) ?? null;
+    const decisao = decidirPeloIntent(atual ?? { ...vivo, state: "FILLED" } as typeof vivo);
+
+    if (decisao.acao === "esperar") {
+      await avisar("ciclo de DCA em DUVIDA — plano NAO avanca ate reconciliar", {
+        plano: p.id, ciclo: vivo.cycle_number, intent: vivo.id,
+        estado: rec.estado, porque: decisao.porque,
+        why: "a ordem pode ter executado. Avancar o ciclo agora arriscaria comprar duas vezes.",
+      });
+      return { plano: p.id, acao: "em_duvida", detalhe: decisao.porque };
+    }
+    if (decisao.acao === "quarentena") {
+      await avisar("intent do DCA em QUARENTENA — mao humana", {
+        plano: p.id, ciclo: vivo.cycle_number, intent: vivo.id, porque: decisao.porque,
+      });
+      return { plano: p.id, acao: "quarentena", detalhe: decisao.porque };
+    }
+
+    /**
+     * ⚠️ O CICLO FECHA COM O QUE O LIVRO TEM, não com o que foi pedido. É o
+     * achado A81 no caminho do DCA: `filled` ausente não vira "comprou tudo".
+     */
+    const ciclo = Number(vivo.cycle_number);
+    const fechou = await fecharCiclo(p.id, ciclo, {
+      status: decisao.status, motivo: decisao.motivo ?? undefined,
+      orderId: decisao.orderId ?? undefined,
+      preco: decisao.precoMedio ?? undefined,
+      quantidade: decisao.quantidade || undefined,
+      custoUsd: decisao.custoUsd || undefined,
+      simulado: vivo.simulated,
+      taxaUsd: vivo.simulated ? null : vivo.fee_total,
+    });
+    if (!fechou) {
+      await avisar("intent resolvido e ciclo NAO fechado — reconciliar a mao", {
+        plano: p.id, ciclo, intent: vivo.id,
+      });
+    }
+    const feitosAgora = p.ciclos_feitos + (decisao.contaComoFeito ? 1 : 0);
+    const puladosAgora = p.ciclos_pulados + (decisao.contaComoFeito ? 0 : 1);
+    const gastoAgora = Number(p.gasto_acumulado_usd) + decisao.custoUsd;
+    const acabouAgora = feitosAgora + puladosAgora >= p.ciclos_total;
+    if (!await avancarPlano(p.id, {
+      ciclosFeitos: feitosAgora, ciclosPulados: puladosAgora,
+      gastoAcumulado: gastoAgora, nextRunAt: new Date(Date.now() + 60_000).toISOString(),
+      ...(acabouAgora ? { status: "completo" as const, encerradoPor: "completo" } : {}),
+    })) {
+      await avisar("intent resolvido e plano NAO avancou — congela ate mao humana", {
+        plano: p.id, ciclo, intent: vivo.id,
+      });
+    }
+    return { plano: p.id, acao: decisao.contaComoFeito ? "reconciliado_comprou" : "reconciliado_sem_compra",
+      detalhe: `${decisao.quantidade} por $${decisao.custoUsd.toFixed(2)}` };
+  }
+
   const d = decidirCiclo({
     agoraIso,
     nextRunAtIso:  p.next_run_at,
@@ -383,17 +462,74 @@ async function processarPlano(
      * ser confundido com o de uma ordem real é como um extrato simulado vira
      * evidência de compra que nunca houve.
      */
-    const order = simulado
-      ? { id: `simulado:${p.id.slice(0, 8)}:${d.ciclo}`, average: ref, filled: quantidade, cost: teto.valorUsd }
-      : (await placeCexOrder(
-          p.exchange_id as CexId,
-          decifrarConexao(conexao!),
-          { symbol: p.symbol, type: "market", side: "buy", amount: quantidade },
-        )).order;
+    /**
+     * ⚠️⚠️ AGORA QUEM EXECUTA É O EXECUTOR AUTORITATIVO — achado A107.
+     *
+     * O intent é gravado ANTES do envio, o kill-switch é conferido no limiar
+     * (A106 — este cron NUNCA consultava `disable_cex`), e um timeout vira
+     * DÚVIDA em vez de "falhou" (A104).
+     *
+     * ⚠️ O SIMULADO PERCORRE O MESMO CAMINHO. É a única linha que muda lá
+     * dentro, e é o que faz o teste sem dinheiro valer.
+     */
+    const exec = await executarOrdemCex(
+      { db: dbExec },
+      { origin: "dca_cron", autonomous: true, walletAddress: p.wallet_address,
+        planId: p.id, cycleNumber: d.ciclo, conexaoId: p.conexao_id },
+      { exchangeId: p.exchange_id as CexId, symbol: p.symbol, side: "buy",
+        type: "market", qty: quantidade, notionalUsd: teto.valorUsd,
+        simulated: simulado, precoDeReferencia: ref },
+      simulado ? null : decifrarConexao(conexao!),
+    );
 
-    const preco = Number(order.average) > 0 ? Number(order.average) : ref;
-    const qtd   = Number(order.filled)  > 0 ? Number(order.filled)  : quantidade;
-    const custo = Number(order.cost)    > 0 ? Number(order.cost)    : preco * qtd;
+    /**
+     * ⚠️⚠️ ACHADO A104, NO PONTO EXATO. Dúvida NÃO fecha o ciclo e NÃO avança o
+     * plano. O ciclo fica reservado e o intent fica em UNKNOWN; a passada
+     * seguinte reconcilia ANTES de qualquer coisa (ver o topo desta função).
+     */
+    if (exec.desfecho === "incerto") {
+      await avisar("ordem do DCA INCERTA — pode ter executado; plano NAO avanca", {
+        plano: p.id, ciclo: d.ciclo, intent: exec.intentId, porque: exec.porque,
+        why: "marcar como falhou e avancar arriscaria comprar de novo o que ja foi comprado.",
+      });
+      return { plano: p.id, acao: "em_duvida", detalhe: exec.porque.slice(0, 120) };
+    }
+
+    if (exec.desfecho === "recusado") {
+      /**
+       * ⚠️ RECUSA PROVADA: nada saiu. O ciclo conta como consumido — senão o
+       * plano congela recalculando o mesmo número para sempre (cicatriz 26/08).
+       */
+      if (!await fecharCiclo(p.id, d.ciclo, { status: "falhou", motivo: exec.porque.slice(0, 200), simulado })) {
+        await avisar("ordem recusada e ciclo nao marcado — fica preso em reservado", {
+          plano: p.id, ciclo: d.ciclo, erro: exec.porque.slice(0, 160),
+        });
+      }
+      if (!await avancarPlano(p.id, { ciclosPulados: pulados + 1, nextRunAt: d.proximoRunAt })) {
+        await avisar("ordem recusada e plano NAO avancou — congela ate mao humana", {
+          plano: p.id, ciclo: d.ciclo, erro: exec.porque.slice(0, 160),
+        });
+      }
+      return { plano: p.id, acao: "falhou", detalhe: exec.porque.slice(0, 120) };
+    }
+
+    /**
+     * ⚠️⚠️ ACHADO A81. Os números vêm do LIVRO (`exec.filledQty`), não do
+     * pedido. O código antigo fazia `Number(order.filled) > 0 ? ... : quantidade`
+     * — `filled` ausente virava "comprou tudo", e o plano gastava orçamento
+     * sobre uma compra que podia não ter acontecido.
+     */
+    if (exec.filledQty <= 0) {
+      // ACK sem preenchimento: a ordem está viva na corretora. Não fecha nada.
+      await avisar("ordem do DCA aceita e AINDA SEM preenchimento — plano NAO avanca", {
+        plano: p.id, ciclo: d.ciclo, intent: exec.intentId, estado: exec.state,
+      });
+      return { plano: p.id, acao: "em_duvida", detalhe: "aceita sem fill" };
+    }
+    const order = { id: exec.externalOrderId ?? exec.intentId };
+    const qtd   = exec.filledQty;
+    const custo = exec.filledQuote > 0 ? exec.filledQuote : ref * qtd;
+    const preco = custo / qtd;
 
     /**
      * ⚠️ A TAXA QUE A CORRETORA COBROU DE VERDADE (26/08).
@@ -412,9 +548,18 @@ async function processarPlano(
      * acabou de ser realizado. Uma consulta de preço a menos é uma fonte de
      * erro a menos.
      */
+    /**
+     * ⚠️ A TAXA VEM DO LIVRO, não de um objeto de ordem que já não existe. O
+     * executor ingere `fee`/`fee_currency` junto do fill, e `taxaEmUsd`
+     * continua sendo a única conta que sabe converter — inclusive o caso da
+     * taxa cobrada na moeda BASE, que não precisa de consulta de preço.
+     */
     const t = simulado
       ? { usd: null as number | null, naoPrecificada: null }
-      : taxaEmUsd(order as CexOrder, custo, qtd, p.symbol);
+      : taxaEmUsd(
+          { fee: exec.feeTotal != null && exec.feeCurrency
+              ? { cost: exec.feeTotal, currency: exec.feeCurrency } : undefined } as CexOrder,
+          custo, qtd, p.symbol);
     if (t.naoPrecificada) {
       await avisar("taxa do ciclo NAO precificada — a alicota real fica sem este ciclo", {
         plano: p.id, ciclo: d.ciclo, moeda: t.naoPrecificada.moeda, valor: t.naoPrecificada.valor,
