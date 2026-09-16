@@ -20,7 +20,16 @@ import { executarOrdemCex, autorizarSubmissaoNoBanco,
 import type { RespostaDaVenue } from "@/lib/cex/execucao/venue-primitivo";
 import type { CexCredentials, CexId } from "@/lib/cex/types";
 
-const CTX: ContextoDeExecucao = { origin: "manual", autonomous: false, walletAddress: "0xdono" };
+/**
+ * ⚠️ A120-H (round 5): o caminho MANUAL REAL exige o vínculo da credencial —
+ * o executor recusa (`fingerprint_ausente`) antes de gravar intent sem ele.
+ * Aqui só o FORMATO importa (o HMAC de verdade nasce na rota, coberto por
+ * `fingerprint-criacao.test.ts`); os testes do próprio gate vivem em
+ * `fingerprint-enforcement.test.ts`.
+ */
+const FINGERPRINT_VALIDO = "0123456789abcdef".repeat(4);
+const CTX: ContextoDeExecucao = { origin: "manual", autonomous: false,
+  walletAddress: "0xdono", credentialFingerprint: FINGERPRINT_VALIDO };
 const ORDEM: OrdemPedida = {
   exchangeId: "binance", symbol: "BTC/USDT", side: "buy", type: "limit",
   qty: 10, price: 100, notionalUsd: 1000,
