@@ -35,7 +35,9 @@ const CATALOGO: Record<string, string> = {
   cex_ingest_order_snapshot: "0055_rpcs_financeiras_acl.sql",
   cex_transicionar:          "0055_rpcs_financeiras_acl.sql",
   // A110 (round 2): RPC nova já nasce com REVOKE/GRANT na própria migration.
-  cex_autorizar_e_submeter:  "0057_executor_autoriza_submissao.sql",
+  // A110 (round 3): a assinatura nova (uuid) nasce fechada na 0060, que
+  // também APAGA o overload antigo — a ACL aponta para ela.
+  cex_autorizar_e_submeter:  "0060_autorizacao_deriva_do_intent.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
