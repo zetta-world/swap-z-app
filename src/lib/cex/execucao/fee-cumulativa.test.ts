@@ -905,3 +905,419 @@ describe("⑦ brecha do verificador (round 4) — o SNAPSHOT enxerga o sintétic
       /into v_ja, v_quote from public\.cex_fills where intent_id = p_intent_id;/);
   });
 });
+
+/**
+ * A122 (round 5) — DUPLICATA DE trade_id DENTRO DO MESMO LOTE.
+ *
+ * O NOT EXISTS da cobertura só olhava fills PERSISTIDOS: duas cópias do
+ * MESMO trade_id no mesmo lote somavam 2× em v_novos, mas colidiam na dedupe
+ * key na inserção e entravam 1× — a cobertura era enganada e o livro
+ * regredia (real 5, sintético 3, lote [T9 1.5, T9 1.5] → 8 virava 6.5).
+ *
+ * A regra (ordem obrigatória do §26): LOTE BRUTO → valida ids
+ * ('trade_sem_id') → filtro de ordem → dedupe intra-lote por trade_id
+ * (payload idêntico conta UMA vez; divergente é 'trade_id_conflitante',
+ * fail-closed, livro byte-a-byte intacto) → remove persistidos → N →
+ * coberturas de qty/fee sobre o lote NORMALIZADO → delete → insert → recalc.
+ */
+describe("⑧ A122 — duplicata intra-lote NÃO engana a cobertura", () => {
+  /** Intent pós-envio com quantidade solicitada arbitrária. */
+  async function comIntentQtd(b: ReturnType<typeof bancoFalso>, qtd: number) {
+    await b.cliente.from("cex_execution_intents").insert({
+      id: "i-fee", exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
+      order_type: "market", requested_qty: qtd, client_order_id: "zsFEE",
+      origin: "dca_cron", autonomous: true, state: "SUBMITTED",
+    });
+    return b.intents[0];
+  }
+  const T1 = { tradeId: "T1", qty: 2, price: 100, quote: 200, fee: 0.02, feeCurrency: "USDT" };
+  const T2 = { tradeId: "T2", qty: 3, price: 100, quote: 300, fee: 0.03, feeCurrency: "USDT" };
+  /** Real 5 no livro + snapshot 8 ⇒ sintético 3 com fee 0.03. */
+  async function real5Sint3(b: ReturnType<typeof bancoFalso>) {
+    await comIntentQtd(b, 8);
+    const r1 = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2]);
+    expect(r1.ok).toBe(true);
+    const s = await snap(b, { qty: 8, quote: 800, fee: 0.08 });
+    expect(s.ok).toBe(true);
+    expect(Number(b.intents[0].filled_qty)).toBe(8);
+    expect(b.fills).toHaveLength(3);
+  }
+
+  it("⚠️⚠️⚠️ CENTRAL: real 5, sint 3, lote [T9 1.5, T9 1.5] ⇒ N=1.5 < 3 → cobertura_incompleta, o livro segue 8 — NUNCA 6.5", async () => {
+    // O defeito medido: N=3 (2×1.5) ≥ 3 liberava a substituição, o T9
+    // colidia na dedupe e entrava uma vez — o livro caía de 8 para 6.5.
+    const b = bancoFalso();
+    await real5Sint3(b);
+    const ledgerAntes = JSON.stringify(b.fills);
+    const intentAntes = JSON.stringify(b.intents[0]);
+    const copia = { tradeId: "T9", qty: 1.5, price: 100, quote: 150,
+                    fee: 0.015, feeCurrency: "USDT" };
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [copia, { ...copia }]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.porque).toBe("cobertura_incompleta");
+      expect(r.adiado).toBe(true);
+    }
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(JSON.stringify(b.intents[0])).toBe(intentAntes);
+    expect(Number(b.intents[0].filled_qty)).toBe(8);        // NUNCA 6.5
+    expect(feeTotal(b)).toBeCloseTo(0.08, 12);
+    // E a resposta crua do banco confessa N=1.5, não 3.
+    const cru = await b.cliente.rpc("cex_ingest_trades", {
+      p_intent_id: "i-fee", p_external_order_id: "ORD-1",
+      p_trades: [{ trade_id: "T9", qty: 1.5, price: 100, quote: 150,
+                   fee: 0.015, fee_currency: "USDT", executed_at: null, order: null },
+                 { trade_id: "T9", qty: 1.5, price: 100, quote: 150,
+                   fee: 0.015, fee_currency: "USDT", executed_at: null, order: null }],
+    });
+    expect(cru.error).toBeNull();
+    const d = cru.data as { ok: boolean; porque: string; novos: number; sintetico: number };
+    expect(d.ok).toBe(false);
+    expect(d.porque).toBe("cobertura_incompleta");
+    expect(Number(d.novos)).toBeCloseTo(1.5, 12);           // NUNCA 3
+    expect(Number(d.sintetico)).toBeCloseTo(3, 12);
+  });
+
+  it("⚠️⚠️ [T9 3, T9 3] IDÊNTICOS cobrem o sintético 3: real 8, T9 UMA vez, replay estável", async () => {
+    const b = bancoFalso();
+    await real5Sint3(b);
+    const copia = { tradeId: "T9", qty: 3, price: 100, quote: 300,
+                    fee: 0.03, feeCurrency: "USDT" };
+    const lote = [copia, { ...copia }];
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", lote);
+    expect(r.ok).toBe(true);
+    expect(b.fills).toHaveLength(3);                        // T1, T2, T9
+    expect(b.fills.filter((f) => f.external_trade_id === "T9")).toHaveLength(1);
+    expect(b.fills.every((f) => f.sintetico === false)).toBe(true);
+    expect(Number(b.intents[0].filled_qty)).toBe(8);        // NUNCA 11 nem 6.5
+    expect(feeTotal(b)).toBeCloseTo(0.08, 12);              // NUNCA 0.11
+    const ledgerAntes = JSON.stringify(b.fills);
+    const replay = await ingerirTrades(b.cliente, "i-fee", "ORD-1", lote);
+    expect(replay.ok).toBe(true);
+    if (replay.ok) expect(replay.inseridos).toBe(0);
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(Number(b.intents[0].filled_qty)).toBe(8);
+  });
+
+  it("payload idêntico com escala numérica diferente (1.5 ≡ 1.50) NÃO é conflito", async () => {
+    // A comparação é NUMÉRICA, como o `is distinct from` do SQL: a mesma
+    // quantidade com outra serialização é o mesmo fato, não duas versões.
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    const cru = await b.cliente.rpc("cex_ingest_trades", {
+      p_intent_id: "i-fee", p_external_order_id: "ORD-1",
+      p_trades: [{ trade_id: "T9", qty: 1.5, price: 100, quote: 150,
+                   fee: 0.02, fee_currency: "USDT", executed_at: null, order: null },
+                 { trade_id: "T9", qty: "1.50", price: "100.0", quote: "150.00",
+                   fee: "0.020", fee_currency: "USDT", executed_at: null, order: null }],
+    });
+    expect(cru.error).toBeNull();
+    const d = cru.data as { ok: boolean; inseridos: number };
+    expect(d.ok).toBe(true);
+    expect(d.inseridos).toBe(1);
+    expect(b.fills.filter((f) => f.external_trade_id === "T9")).toHaveLength(1);
+    expect(Number(b.intents[0].filled_qty)).toBeCloseTo(1.5, 12);
+  });
+
+  it("TRÊS duplicatas idênticas contam UMA vez", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    const copia = { tradeId: "T9", qty: 1, price: 100, quote: 100,
+                    fee: 0.01, feeCurrency: "USDT" };
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1",
+      [copia, { ...copia }, { ...copia }]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.inseridos).toBe(1);
+    expect(b.fills).toHaveLength(1);
+    expect(Number(b.intents[0].filled_qty)).toBe(1);
+    expect(feeTotal(b)).toBeCloseTo(0.01, 12);              // NUNCA 0.03
+  });
+
+  it("lote PARCIALMENTE dedupado no banco: T1 já persistido, T9 novo duplicado ⇒ N=2 cobre o sint 2", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2]);   // real 5
+    const s = await snap(b, { qty: 7, quote: 700, fee: 0.07 });   // sint 2, fee 0.02
+    expect(s.ok).toBe(true);
+    const copia = { tradeId: "T9", qty: 2, price: 100, quote: 200,
+                    fee: 0.02, feeCurrency: "USDT" };
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, copia, { ...copia }]);
+    expect(r.ok).toBe(true);
+    expect(b.fills).toHaveLength(3);                        // T1, T2, T9
+    expect(b.fills.filter((f) => f.external_trade_id === "T9")).toHaveLength(1);
+    expect(Number(b.intents[0].filled_qty)).toBe(7);
+    expect(feeTotal(b)).toBeCloseTo(0.07, 12);
+  });
+
+  it("lote TODO dedupado (sem sintético): replay é no-op, ledger intacto", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2]);
+    const ledgerAntes = JSON.stringify(b.fills);
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.inseridos).toBe(0);
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(Number(b.intents[0].filled_qty)).toBe(5);
+  });
+});
+
+describe("⑨ A122 — duas cópias de T9 qty 3 fee 0.02 NUNCA viram 6/0.04", () => {
+  async function comIntentQtd(b: ReturnType<typeof bancoFalso>, qtd: number) {
+    await b.cliente.from("cex_execution_intents").insert({
+      id: "i-fee", exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
+      order_type: "market", requested_qty: qtd, client_order_id: "zsFEE",
+      origin: "dca_cron", autonomous: true, state: "SUBMITTED",
+    });
+    return b.intents[0];
+  }
+  const T9 = { tradeId: "T9", qty: 3, price: 100, quote: 300, fee: 0.02, feeCurrency: "USDT" };
+
+  it("sem sintético: entra UMA vez — filled 3, fee_total 0.02, um fill", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T9, { ...T9 }]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.inseridos).toBe(1);
+    expect(b.fills).toHaveLength(1);
+    expect(Number(b.intents[0].filled_qty)).toBe(3);        // NUNCA 6
+    expect(feeTotal(b)).toBeCloseTo(0.02, 12);              // NUNCA 0.04
+  });
+
+  it("sintético 5/0.05: N=3 < 5 → cobertura_incompleta, o banco confessa novos=3 (NUNCA 6)", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    const s = await snap(b, { qty: 5, quote: 500, fee: 0.05 });
+    expect(s.ok).toBe(true);
+    const ledgerAntes = JSON.stringify(b.fills);
+    const cru = await b.cliente.rpc("cex_ingest_trades", {
+      p_intent_id: "i-fee", p_external_order_id: "ORD-1",
+      p_trades: [{ trade_id: "T9", qty: 3, price: 100, quote: 300,
+                   fee: 0.02, fee_currency: "USDT", executed_at: null, order: null },
+                 { trade_id: "T9", qty: 3, price: 100, quote: 300,
+                   fee: 0.02, fee_currency: "USDT", executed_at: null, order: null }],
+    });
+    expect(cru.error).toBeNull();
+    const d = cru.data as { ok: boolean; porque: string; novos: number };
+    expect(d.ok).toBe(false);
+    expect(d.porque).toBe("cobertura_incompleta");
+    expect(Number(d.novos)).toBeCloseTo(3, 12);             // NUNCA 6
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(feeTotal(b)).toBeCloseTo(0.05, 12);              // NUNCA 0.04/0.02
+    expect(Number(b.intents[0].filled_qty)).toBe(5);
+  });
+});
+
+describe("⑩ A122 — trade_id CONFLITANTE é fail-closed ('trade_id_conflitante')", () => {
+  async function real5Sint3(b: ReturnType<typeof bancoFalso>) {
+    await b.cliente.from("cex_execution_intents").insert({
+      id: "i-fee", exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
+      order_type: "market", requested_qty: 8, client_order_id: "zsFEE",
+      origin: "dca_cron", autonomous: true, state: "SUBMITTED",
+    });
+    await ingerirTrades(b.cliente, "i-fee", "ORD-1", [
+      { tradeId: "T1", qty: 2, price: 100, quote: 200, fee: 0.02, feeCurrency: "USDT" },
+      { tradeId: "T2", qty: 3, price: 100, quote: 300, fee: 0.03, feeCurrency: "USDT" },
+    ]);
+    await snap(b, { qty: 8, quote: 800, fee: 0.08 });
+  }
+
+  it("⚠️⚠️ mesmo T9 com QTY divergente (3 vs 3.5): ZERO mudança, livro byte-a-byte intacto", async () => {
+    // Duas versões do mesmo fato = leitura corrompida. Nunca escolher uma.
+    const b = bancoFalso();
+    await real5Sint3(b);
+    const ledgerAntes = JSON.stringify(b.fills);
+    const intentAntes = JSON.stringify(b.intents[0]);
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [
+      { tradeId: "T9", qty: 3, price: 100, quote: 300, fee: 0.03, feeCurrency: "USDT" },
+      { tradeId: "T9", qty: 3.5, price: 100, quote: 350, fee: 0.03, feeCurrency: "USDT" },
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.porque).toBe("trade_id_conflitante");
+      expect(r.adiado).toBeFalsy();        // contradição não é página curta
+    }
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(JSON.stringify(b.intents[0])).toBe(intentAntes);
+    expect(Number(b.intents[0].filled_qty)).toBe(8);
+    expect(feeTotal(b)).toBeCloseTo(0.08, 12);
+    expect(b.fills.some((f) => f.sintetico)).toBe(true);
+  });
+
+  it("⚠️⚠️ mesmo T9 com FEE divergente (0.03 vs 0.04): idem — nada é deletado nem inserido", async () => {
+    const b = bancoFalso();
+    await real5Sint3(b);
+    const ledgerAntes = JSON.stringify(b.fills);
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [
+      { tradeId: "T9", qty: 3, price: 100, quote: 300, fee: 0.03, feeCurrency: "USDT" },
+      { tradeId: "T9", qty: 3, price: 100, quote: 300, fee: 0.04, feeCurrency: "USDT" },
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.porque).toBe("trade_id_conflitante");
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(Number(b.intents[0].filled_qty)).toBe(8);
+    expect(feeTotal(b)).toBeCloseTo(0.08, 12);
+  });
+
+  it("executed_at divergente também é conflito; fee null vs '' NÃO é (política do R4)", async () => {
+    const b = bancoFalso();
+    await real5Sint3(b);
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [
+      { tradeId: "T9", qty: 3, price: 100, quote: 300, fee: 0.03,
+        feeCurrency: "USDT", executedAt: "2025-01-01T00:00:00Z" },
+      { tradeId: "T9", qty: 3, price: 100, quote: 300, fee: 0.03,
+        feeCurrency: "USDT", executedAt: "2025-01-01T00:00:01Z" },
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.porque).toBe("trade_id_conflitante");
+    expect(Number(b.intents[0].filled_qty)).toBe(8);
+    // null e "" são a MESMA ausência (nullif do SQL) — uma cópia só. Banco
+    // novo, sem sintético com fee, para isolar a comparação de payload.
+    const b2 = bancoFalso();
+    await b2.cliente.from("cex_execution_intents").insert({
+      id: "i-fee", exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
+      order_type: "market", requested_qty: 8, client_order_id: "zsFEE",
+      origin: "dca_cron", autonomous: true, state: "SUBMITTED",
+    });
+    const cru = await b2.cliente.rpc("cex_ingest_trades", {
+      p_intent_id: "i-fee", p_external_order_id: "ORD-1",
+      p_trades: [{ trade_id: "T8", qty: 3, price: 100, quote: 300,
+                   fee: null, fee_currency: "", executed_at: "", order: null },
+                 { trade_id: "T8", qty: 3, price: 100, quote: 300,
+                   fee: "", fee_currency: null, executed_at: null, order: null }],
+    });
+    expect(cru.error).toBeNull();
+    const d = cru.data as { ok: boolean; porque?: string; inseridos?: number };
+    expect(d.ok).toBe(true);
+    expect(d.inseridos).toBe(1);
+    expect(b2.fills.filter((f) => f.external_trade_id === "T8")).toHaveLength(1);
+  });
+});
+
+describe("⑪ A122 — trade SEM ID é recusado no LOTE BRUTO ('trade_sem_id')", () => {
+  async function comIntentQtd(b: ReturnType<typeof bancoFalso>, qtd: number) {
+    await b.cliente.from("cex_execution_intents").insert({
+      id: "i-fee", exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
+      order_type: "market", requested_qty: qtd, client_order_id: "zsFEE",
+      origin: "dca_cron", autonomous: true, state: "SUBMITTED",
+    });
+    return b.intents[0];
+  }
+  const rpcDireto = (b: ReturnType<typeof bancoFalso>, trades: unknown[]) =>
+    b.cliente.rpc("cex_ingest_trades", {
+      p_intent_id: "i-fee", p_external_order_id: "ORD-1", p_trades: trades });
+
+  it("⚠️ item sem trade_id → ok:false 'trade_sem_id', zero delete/insert (antes de qualquer coverage)", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    await snap(b, { qty: 5, quote: 500, fee: 0.05 });       // sintético presente
+    const ledgerAntes = JSON.stringify(b.fills);
+    const cru = await rpcDireto(b, [
+      { trade_id: "T9", qty: 5, price: 100, quote: 500,
+        fee: 0.05, fee_currency: "USDT", executed_at: null, order: null },
+      { qty: 5, price: 100, quote: 500, fee: 0.05,
+        fee_currency: "USDT", executed_at: null, order: null },
+    ]);
+    expect(cru.error).toBeNull();
+    const d = cru.data as { ok: boolean; porque: string };
+    expect(d.ok).toBe(false);
+    expect(d.porque).toBe("trade_sem_id");
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(Number(b.intents[0].filled_qty)).toBe(5);
+  });
+
+  it("⚠️ trade_id vazio ('') também é sem id — e vale para item de OUTRA ordem (lote bruto)", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    const cru = await rpcDireto(b, [
+      { trade_id: "T9", qty: 1, price: 100, quote: 100,
+        fee: null, fee_currency: null, executed_at: null, order: null },
+      { trade_id: "", qty: 1, price: 100, quote: 100, fee: null,
+        fee_currency: null, executed_at: null, order: "ORD-OUTRA" },
+    ]);
+    expect(cru.error).toBeNull();
+    const d = cru.data as { ok: boolean; porque: string };
+    expect(d.ok).toBe(false);
+    expect(d.porque).toBe("trade_sem_id");
+    expect(b.fills).toHaveLength(0);                        // nem o T9 entrou
+  });
+
+  it("o caller (ingerirTrades) já recusa antes da RPC — defesa em profundidade coerente", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [
+      { tradeId: "", qty: 1, price: 100, quote: 100, fee: null, feeCurrency: null },
+    ]);
+    expect(r.ok).toBe(false);
+    expect(b.fills).toHaveLength(0);
+  });
+});
+
+describe("⑫ A122 — guarda estrutural: a ordem obrigatória do §26 na 0059", () => {
+  const iFunc = SQL_0059.indexOf("function public.cex_ingest_trades");
+  const iFim = SQL_0059.indexOf("revoke execute on function public.cex_ingest_trades", iFunc);
+  const corpo = SQL_0059.slice(iFunc, iFim);
+
+  it("o parser recortou a função de verdade — vazio aprovaria tudo", () => {
+    expect(iFunc).toBeGreaterThan(-1);
+    expect(iFim).toBeGreaterThan(iFunc);
+    expect(corpo).toContain("cex_ingest_trades");
+    expect(corpo).toContain("cex_recalcular_intent");
+  });
+
+  it("⚠️⚠️ ORDEM: valida ids → filtro de ordem → dedupe intra-lote → conflito → N → coberturas → delete → insert → recalc", () => {
+    const iScan = corpo.indexOf("into v_lote, v_sem_id");
+    const iSemId = corpo.indexOf("'trade_sem_id'");
+    const iFiltro = corpo.indexOf("filter (where u.t->>'order' is null");
+    const iConflito = corpo.indexOf("'trade_id_conflitante'");
+    const iDedupe = corpo.indexOf("distinct on (e.t->>'trade_id')");
+    const iNovos = corpo.indexOf("into v_novos, v_qtd_novos");
+    const iCobertura = corpo.indexOf("'cobertura_incompleta'");
+    const iFee = corpo.indexOf("'cobertura_fee_incompleta'");
+    const iDelete = corpo.indexOf("delete from public.cex_fills");
+    const iInsert = corpo.indexOf("for v_t in select * from jsonb_array_elements(v_lote)");
+    const iRecalc = corpo.lastIndexOf("perform public.cex_recalcular_intent");
+    for (const [nome, pos] of Object.entries({ iScan, iSemId, iFiltro, iConflito,
+        iDedupe, iNovos, iCobertura, iFee, iDelete, iInsert, iRecalc })) {
+      expect(pos, `${nome} ausente do corpo`).toBeGreaterThan(-1);
+    }
+    // O scan único (valida ids + filtra) vem antes de TUDO; a recusa de id
+    // sai antes de qualquer uso do lote.
+    expect(iScan).toBeLessThan(iSemId);
+    expect(iSemId).toBeLessThan(iConflito);
+    expect(iFiltro).toBeLessThan(iConflito);
+    // O conflito é detectado ANTES do dedupe normalizado, e ambos ANTES de N.
+    expect(iConflito).toBeLessThan(iDedupe);
+    expect(iDedupe).toBeLessThan(iNovos);
+    // N alimenta a cobertura de qty, que vem antes da de fee, e ambas ANTES
+    // de deletar/inserir — qualquer falha retorna com o livro intacto.
+    expect(iNovos).toBeLessThan(iCobertura);
+    expect(iCobertura).toBeLessThan(iFee);
+    expect(iFee).toBeLessThan(iDelete);
+    expect(iDelete).toBeLessThan(iInsert);
+    expect(iInsert).toBeLessThan(iRecalc);
+  });
+
+  it("⚠️ a comparação de payload é NUMÉRICA com is distinct from, nullif de '' e order normalizado", () => {
+    expect(corpo).toMatch(/\(a->>'qty'\)::numeric\s+is distinct from \(b->>'qty'\)::numeric/);
+    expect(corpo).toMatch(/nullif\(a->>'fee',''\)::numeric\s+is distinct from nullif\(b->>'fee',''\)::numeric/);
+    expect(corpo).toMatch(/nullif\(a->>'fee_currency',''\)\s+is distinct from nullif\(b->>'fee_currency',''\)/);
+    expect(corpo).toMatch(/coalesce\(nullif\(a->>'order',''\), p_external_order_id\)/);
+    expect(corpo).toMatch(/nullif\(a->>'executed_at',''\)\s+is distinct from nullif\(b->>'executed_at',''\)/);
+  });
+
+  it("⚠️ N, cobertura de fee e insert usam o lote NORMALIZADO (v_lote), nunca o bruto", () => {
+    // Depois do dedupe, p_trades não é relido: o scan único é a única
+    // leitura bruta (guarda da ⑥ já trava isso) e todo o resto é v_lote.
+    const depois = corpo.slice(corpo.indexOf("distinct on (e.t->>'trade_id')"));
+    expect(depois).not.toMatch(/jsonb_array_elements\(coalesce\(p_trades/);
+    expect(corpo.match(/jsonb_array_elements\(v_lote\)/g)!.length)
+      .toBeGreaterThanOrEqual(5);   // conflito(a+b), dedupe, N, fee×2, insert
+  });
+
+  it("os dois motivos novos voltam ANTES do delete — livro intacto na recusa", () => {
+    const iDelete = corpo.indexOf("delete from public.cex_fills");
+    expect(corpo.indexOf("'trade_sem_id'")).toBeLessThan(iDelete);
+    expect(corpo.indexOf("'trade_id_conflitante'")).toBeLessThan(iDelete);
+  });
+});

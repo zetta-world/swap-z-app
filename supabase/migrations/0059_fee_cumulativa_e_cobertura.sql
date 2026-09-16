@@ -140,6 +140,35 @@
 --    ordem seguem fora. A base de qty/quote (`v_ja`/`v_quote`) já era
 --    intent-wide e não muda.
 --
+-- 6. A122 (round 5) — DEDUPE INTRA-LOTE na `cex_ingest_trades`. O NOT EXISTS
+--    da cobertura só olhava fills PERSISTIDOS: duas cópias do MESMO trade_id
+--    no mesmo lote somavam 2× em v_novos, mas colidiam na dedupe key na
+--    inserção e entravam 1× — a cobertura era enganada (real 5, sintético 3,
+--    lote [T9 1.5, T9 1.5]: N=3 ≥ 3 liberava a substituição e o livro caía
+--    de 8 para 6.5). Ordem lógica OBRIGATÓRIA (cada passo antes do seguinte):
+--
+--      LOTE BRUTO → valida ids → filtro de ordem (achado d) → dedupe
+--      intra-lote por trade_id → conflito? → remove já persistidos NESTE
+--      INTENT → N → cobertura de qty → cobertura de fee → delete → insert
+--      → recalc.
+--
+--    a. TRADE SEM ID: qualquer item do LOTE BRUTO sem `trade_id` não-vazio
+--       → `{ok:false, porque:'trade_sem_id'}`, zero delete/insert — antes de
+--       qualquer coverage. A validação precede o filtro de ordem: id ausente
+--       é dado corrompido mesmo num item que seria ignorado, e o caller
+--       (`ingerirTrades`) já recusa antes — isto é defesa em profundidade.
+--    b. PAYLOAD IDÊNTICO CONTA UMA VEZ: cópias do mesmo trade_id com os
+--       campos financeiros idênticos (qty, price, quote, fee, fee_currency,
+--       order, executed_at — comparação NUMÉRICA via `is distinct from`, com
+--       `nullif(...,'')` para fee/moeda/executed_at, a mesma política do R4)
+--       colapsam na primeira ocorrência; N, a cobertura de fee e o insert
+--       usam SEMPRE o lote normalizado, nunca o bruto.
+--    c. PAYLOAD DIVERGENTE É FAIL-CLOSED: mesmo trade_id com qualquer campo
+--       divergente → `{ok:false, porque:'trade_id_conflitante'}` — ZERO
+--       mudança, livro byte-a-byte intacto. Nunca escolher uma versão: duas
+--       versões do mesmo fato significam leitura corrompida, e decidir qual
+--       vale seria inventar execução.
+--
 -- ACL: mesma disciplina da 0055 (A116) — REVOKE/GRANT repetidos aqui são
 -- idempotentes, e o CATALOGO de `rpcs-acl.test.ts` aponta estas duas funções
 -- para esta migration (regra: ACL file ≥ def file).
@@ -342,6 +371,11 @@ end; $$;
 -- ⚠️ TODOS OS TRADES DA ORDEM DE UMA VEZ, e não um por chamada: a substituição
 -- (delete + insert) continua na MESMA transação quando a cobertura fecha, e
 -- qualquer validação que falha retorna ANTES de tocar o livro (atomicidade).
+--
+-- ⚠️ A122 (round 5): antes de qualquer coverage, trade sem id é recusado
+-- ('trade_sem_id'), cópias IDÊNTICAS do mesmo trade_id no lote contam UMA vez
+-- e cópias DIVERGENTES são fail-closed ('trade_id_conflitante') — o lote
+-- normalizado é a única base de N, da cobertura de fee e do insert.
 -- ─────────────────────────────────────────────────────────────────────────
 create or replace function public.cex_ingest_trades(
   p_intent_id uuid,
@@ -352,7 +386,7 @@ declare
   v_intent public.cex_execution_intents%rowtype;
   v_t jsonb; v_inseridos integer := 0;
   v_sint numeric; v_novos numeric; v_qtd_novos integer;
-  v_lote jsonb;
+  v_lote jsonb; v_sem_id boolean;
 begin
   select * into v_intent from public.cex_execution_intents
    where id = p_intent_id for update;
@@ -364,6 +398,14 @@ begin
     raise exception 'fill contra intent em % — estado pre-envio nao admite execucao', v_intent.state;
   end if;
 
+  -- A122 (round 5), passo 1 — TRADE SEM ID, sobre o LOTE BRUTO e ANTES de
+  -- qualquer coverage: id ausente é dado corrompido mesmo num item que o
+  -- filtro de ordem ignoraria, e decidir cobertura sobre um lote assim seria
+  -- provar com fato sem identidade. Zero delete/insert. A leitura bruta de
+  -- p_trades acontece UMA vez, nesta varredura que já produz o lote filtrado
+  -- (ordem lógica: valida ids → filtra; a recusa sai antes de v_lote ser
+  -- usado para qualquer coisa).
+  --
   -- DEFESA EM PROFUNDIDADE (A121 round 4, achado d): itens do lote que
   -- declaram OUTRA ordem (`t->>'order'` não nulo e diferente de
   -- p_external_order_id) são IGNORADOS — não inseridos, não contam em
@@ -371,14 +413,62 @@ begin
   -- sintético DESTA ordem e seriam carimbados com o external_order_id errado.
   -- O caller já filtra; a RPC não confia. Item sem `order` segue: o caller
   -- nem sempre conhece o id da ordem de cada trade.
-  select coalesce(jsonb_agg(u.t order by u.ord), '[]'::jsonb) into v_lote
-    from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) with ordinality as u(t, ord)
-   where u.t->>'order' is null or u.t->>'order' = p_external_order_id;
+  select coalesce(jsonb_agg(u.t order by u.ord)
+                  filter (where u.t->>'order' is null or u.t->>'order' = p_external_order_id),
+                  '[]'::jsonb),
+         coalesce(bool_or(nullif(u.t->>'trade_id','') is null), false)
+    into v_lote, v_sem_id
+    from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) with ordinality as u(t, ord);
+  if v_sem_id then
+    return jsonb_build_object('ok', false, 'porque', 'trade_sem_id');
+  end if;
+
+  -- A122 (round 5), passo 2 — DEDUPE INTRA-LOTE por trade_id. O NOT EXISTS da
+  -- cobertura só enxerga fills PERSISTIDOS: duas cópias do mesmo trade_id no
+  -- mesmo lote somavam 2× em v_novos e entravam 1× (colisão na dedupe key),
+  -- enganando a cobertura — real 5, sintético 3, lote [T9 1.5, T9 1.5]
+  -- derrubava o livro de 8 para 6.5.
+  --
+  -- PAYLOAD DIVERGENTE É CONTRADIÇÃO, fail-closed: mesmo trade_id com
+  -- qualquer campo financeiro divergente → zero mudança, livro byte-a-byte
+  -- intacto — nunca escolher uma versão. Comparação NUMÉRICA via
+  -- `is distinct from` (1.5 ≡ 1.50), com `nullif(...,'')` em fee/fee_currency/
+  -- executed_at — a mesma política do R4 ("" é ausência, null ≠ 0). O `order`
+  -- compara NORMALIZADO: item sem `order` vale p_external_order_id (é o que o
+  -- insert gravaria), então null explícito e ausência são a mesma ordem.
+  if exists (
+    select 1
+      from jsonb_array_elements(v_lote) a
+      join jsonb_array_elements(v_lote) b
+        on a->>'trade_id' = b->>'trade_id'
+     where (a->>'qty')::numeric   is distinct from (b->>'qty')::numeric
+        or (a->>'price')::numeric is distinct from (b->>'price')::numeric
+        or (a->>'quote')::numeric is distinct from (b->>'quote')::numeric
+        or nullif(a->>'fee','')::numeric
+           is distinct from nullif(b->>'fee','')::numeric
+        or nullif(a->>'fee_currency','')
+           is distinct from nullif(b->>'fee_currency','')
+        or coalesce(nullif(a->>'order',''), p_external_order_id)
+           is distinct from coalesce(nullif(b->>'order',''), p_external_order_id)
+        or nullif(a->>'executed_at','')
+           is distinct from nullif(b->>'executed_at','')) then
+    return jsonb_build_object('ok', false, 'porque', 'trade_id_conflitante');
+  end if;
+
+  -- PAYLOAD IDÊNTICO CONTA UMA VEZ: o lote normalizado tem UM item por
+  -- trade_id (a primeira ocorrência, ordem do lote preservada). Cobertura de
+  -- qty, cobertura de fee e insert trabalham SEMPRE sobre ele.
+  select coalesce(jsonb_agg(d.t order by d.ord), '[]'::jsonb) into v_lote
+    from (select distinct on (e.t->>'trade_id') e.t as t, e.ord as ord
+            from jsonb_array_elements(v_lote) with ordinality as e(t, ord)
+           order by e.t->>'trade_id', e.ord) d;
 
   -- Cobertura de QUANTIDADE (A121): só os NOVOS trades únicos do lote
   -- provam o que veio DEPOIS do sintético. O real já existente é anterior a
   -- ele e não entra na conta — somas sempre por (intent_id, ordem,
   -- exchange_id) e uma ordem nunca cobre outra.
+  -- ⚠️ O LOTE AQUI JÁ É O NORMALIZADO (A122): um item por trade_id, payload
+  -- idêntico colapsado — duplicata intra-lote não infla v_novos.
   -- ⚠️ SINTÉTICO NÃO ATRIBUÍDO (A121 round 4, achado b): o sintético gravado
   -- com external_order_id NULL (ACK sem id) é do MESMO INTENT e entra em
   -- v_sint e no delete — os trades que chegam com o id descoberto SÃO a

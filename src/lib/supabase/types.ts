@@ -891,8 +891,10 @@ export interface Database {
       };
       cex_ingest_trades: {
         Args: { p_intent_id: string; p_external_order_id: string | null; p_trades: unknown };
-        /** A118 (0059): ok:false 'cobertura_incompleta' = adiado, nada gravado. */
-        Returns: { ok?: boolean; porque?: string; real?: number; sintetico?: number;
+        /** A118/A121 (0059): ok:false 'cobertura_incompleta' (e variantes de
+         *  fee) = adiado, nada gravado; A122 (0059): 'trade_sem_id' e
+         *  'trade_id_conflitante' = recusa fail-closed, nada gravado. */
+        Returns: { ok?: boolean; porque?: string; novos?: number; sintetico?: number;
                    inseridos: number; filled_qty: number; state: CexIntentState };
       };
       cex_ingest_order_snapshot: {
