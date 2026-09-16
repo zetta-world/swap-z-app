@@ -7,7 +7,7 @@ import {
 } from "@/lib/dca/store";
 import { lerConexaoPorId, decifrarConexao } from "@/lib/cex/conexoes";
 import { executarOrdemCex } from "@/lib/cex/execucao/executor";
-import { intentVivoDoPlano } from "@/lib/cex/execucao/intents";
+import { intentVivoDoPlano, intentPorId } from "@/lib/cex/execucao/intents";
 import { reconciliarIntent } from "@/lib/cex/execucao/reconciliador";
 import { decidirPeloIntent } from "@/lib/dca/liquidacao";
 import { decidirCapacidade, lerCapacidades, type EstadoDasCapacidades }
@@ -318,8 +318,49 @@ async function processarPlano(
       db: dbExec,
       credenciais: async () => (conexao ? decifrarConexao(conexao) : null),
     }, vivo);
-    const atual = (await intentVivoDoPlano(dbExec, p.id)) ?? null;
-    const decisao = decidirPeloIntent(atual ?? { ...vivo, state: "FILLED" } as typeof vivo);
+    /**
+     * ⚠️⚠️⚠️ RELER O MESMO INTENT, PELO ID — achado A117.
+     *
+     * A linha que estava aqui era o pior defeito do arquivo:
+     *
+     *     const atual = (await intentVivoDoPlano(dbExec, p.id)) ?? null;
+     *     const decisao = decidirPeloIntent(atual ?? { ...vivo, state: "FILLED" });
+     *
+     * `intentVivoDoPlano` só enxerga estados NÃO-terminais. O caminho feliz da
+     * reconciliação — a corretora confirmou, o livro fechou em FILLED — faz o
+     * intent SAIR dessa consulta, `atual` vinha `null`, e o `??` inventava um
+     * intent FILLED com os números do PEDIDO. Ou seja: exatamente quando a
+     * reconciliação FUNCIONAVA, o plano liquidava com `filled_qty = 0` virando
+     * "comprou tudo" — o A81 ressuscitado por um fallback sintético, uma linha
+     * abaixo do comentário que jura que "o que entra no ciclo é o que o livro
+     * tem".
+     *
+     * Estado sintético não existe mais aqui, em lugar nenhum: depois de
+     * reconciliar, relê-se o MESMO intent pelo id. `undefined` (falha de
+     * leitura) adia, fail-closed; `null` (a linha SUMIU) é incidente crítico —
+     * ninguém apaga intent — e também não avança.
+     */
+    const atual = await intentPorId(dbExec, vivo.id);
+    if (atual === undefined) {
+      await avisar("releitura do intent FALHOU — plano NAO avanca", {
+        plano: p.id, ciclo: vivo.cycle_number, intent: vivo.id,
+        why: "reconciliei e nao consegui reler o resultado. Avancar sobre leitura "
+          + "falha e o mesmo que avancar as cegas.",
+      });
+      return { plano: p.id, acao: "adiado", detalhe: "nao consegui reler o intent" };
+    }
+    if (atual === null) {
+      // ⚠️ A LINHA SUMIU DO LIVRO. Intents não se apagam — se não está lá,
+      // algo gravíssimo aconteceu, e o plano congela até mão humana.
+      await recordEvent("dca_intent_sumiu", { wallet: p.wallet_address, meta: {
+        severity: "high", plano: p.id, ciclo: vivo.cycle_number, intent: vivo.id,
+        why: "o intent existia antes da reconciliacao e NAO existe mais. Ninguem "
+          + "apaga intent — o plano NAO avanca ate mao humana.",
+      } });
+      notifyTelegram(`🔴 DCA — intent SUMIU do livro\nplano ${p.id} · intent ${vivo.id}`);
+      return { plano: p.id, acao: "adiado", detalhe: "intent sumiu do livro" };
+    }
+    const decisao = decidirPeloIntent(atual);
 
     if (decisao.acao === "esperar") {
       await avisar("ciclo de DCA em DUVIDA — plano NAO avanca ate reconciliar", {

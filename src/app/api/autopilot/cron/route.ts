@@ -10,6 +10,7 @@ import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
 import { fetchCexBalance, fetchCexOrderStatus } from "@/lib/cex/server";
 import { executarOrdemCex } from "@/lib/cex/execucao/executor";
 import { reconciliarPendentes } from "@/lib/cex/execucao/reconciliador";
+import { reconciliarConta } from "@/lib/cex/execucao/reconciliar-conta";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCexSpotPrices, type CexSpotPrice } from "@/lib/api/cex-spot";
 import { getMarketIndicators } from "@/lib/api/market-indicators";
@@ -468,6 +469,14 @@ export async function POST(req: NextRequest) {
     if (dbRec) {
       const r = await reconciliarPendentes({
         db: dbRec,
+        /**
+         * ⚠️ INTENTS MANUAIS NÃO ENTRAM AQUI (ponto 9). Sem `session_id` e sem
+         * `conexao_id`, a credencial não existe em lugar nenhum do servidor —
+         * contar tentativa até a quarentena era alarme falso por desenho. Eles
+         * ficam UNKNOWN até a reconciliação INTERATIVA (o usuário reautentica).
+         * O do piloto do navegador agora carrega `session_id` e passa.
+         */
+        elegivel: (intent) => Boolean(intent.session_id || intent.conexao_id),
         credenciais: async (intent) => {
           try {
             const sessao = intent.session_id
@@ -631,6 +640,63 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     if (runRows.length) await recordRuns(runRows);
     await telemetria(s.id, { last_scan_at: nowIso, last_error: `balance read failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300) });
     return { origem, fired: 0, note: "balance read failed" };
+  }
+
+  /**
+   * ── 5b. A CONTA AINDA FECHA? — achado A103, INDEPENDENTE de intents. ──
+   *
+   * ⚠️⚠️ A reconciliação por intent (`reconciliarPendentes`, fim da passada) só
+   * roda quando há ordem em dúvida. Um saque do cliente ou uma venda manual no
+   * app da corretora não geram intent — e deixariam o bot decidindo sobre um
+   * inventário que já não existe. Aqui a conta é conferida TODA passada: o
+   * saldo livre real tem de sustentar o inventário de `autopilot_positions`.
+   *
+   * CONDUTA FAIL-CLOSED, e só sobre ENTRADAS:
+   *   · deriva confirmada → a sessão entra em QUARENTENA (ela grava
+   *     `quarentena_em`/`quarentena_motivo`) — zero BUY autônomo até mão humana;
+   *   · leitura falhou → não se conclui "sem drift": entradas bloqueadas até
+   *     haver leitura confiável;
+   *   · SAÍDAS/redução NUNCA são presas — quarentena não pode trancar o cliente
+   *     numa posição. O gate mora no ramo de COMPRA, depois do de venda.
+   */
+  let entradasLiberadas = true;
+  if (s.quarentena_em) {
+    entradasLiberadas = false;
+    // Dedup pelo Telegram: o evento já saiu no dia da deriva; repetir a cada 5
+    // minutos afogaria o sinal. A quarentena continua valendo em silêncio.
+  } else {
+    const dbConta = getSupabaseAdmin();
+    if (dbConta) {
+      try {
+        const rc = await reconciliarConta({ db: dbConta }, s, creds);
+        if (rc.resultado === "deriva") {
+          entradasLiberadas = false;
+          await recordEvent("account_drift", { wallet: s.wallet_address, meta: {
+            severity: "high", session: s.id, achados: rc.achados,
+            quarentenaGravada: rc.quarentenaGravada,
+            why: "o saldo livre real nao sustenta o inventario interno do bot. "
+              + "Sessao em QUARENTENA: zero BUY autonomo, saidas permitidas, ate mao humana.",
+          } });
+          notifyTelegram(
+            `🔴 <b>ACCOUNT_DRIFT</b> — sessão em quarentena\n${rc.achados.join("\n").slice(0, 300)}`,
+            { dedupKey: `account_drift:${s.id}` });
+        } else if (rc.resultado === "leitura_falhou") {
+          // ⚠️ NÃO é "sem drift". Entradas presas até ler de novo; saídas livres.
+          entradasLiberadas = false;
+          await recordEvent("reconciliacao_conta_falhou", { wallet: s.wallet_address, meta: {
+            severity: "med", session: s.id, etapa: rc.etapa, porque: rc.porque,
+            why: "nao deu para conferir a conta — novas entradas bloqueadas ate leitura confiavel (fail-closed).",
+          } });
+        }
+      } catch (e) {
+        entradasLiberadas = false;
+        await recordEvent("reconciliacao_conta_falhou", { wallet: s.wallet_address, meta: {
+          severity: "med", session: s.id,
+          porque: (e as Error)?.message?.slice(0, 200) ?? "erro",
+          why: "a reconciliacao de conta estourou — fail-closed: zero BUY nesta passada.",
+        } });
+      }
+    }
   }
 
   // ── 6. Bounded per-trade cap (can only shrink vs the armed cap) ──
@@ -1012,6 +1078,20 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
       if (!autorizacao.abreEntrada) {
         pushRow(intent, "rejected", card.kind, {
           reason: `autorizacao/${autorizacao.motivo}: ${autorizacao.porque}`.slice(0, 200) });
+        continue;
+      }
+
+      /**
+       * ⚠️⚠️ QUARENTENA DE CONTA (A103): ZERO BUY autônomo.
+       *
+       * Este gate mora DEPOIS do ramo de venda de propósito: saída e redução
+       * NUNCA são presas pela quarentena — trancar saída seria trancar o
+       * cliente numa posição por causa de um alarme nosso. Só a entrada, que é
+       * onde dinheiro novo entraria sobre um inventário que não fecha.
+       */
+      if (!entradasLiberadas) {
+        pushRow(intent, "rejected", card.kind, {
+          reason: "conta em quarentena ou reconciliacao sem leitura confiavel — zero BUY autonomo (A103)" });
         continue;
       }
 

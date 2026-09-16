@@ -62,6 +62,17 @@ export interface DependenciasDaReconciliacao {
   credenciais: (intent: IntentRow) => Promise<CexCredentials | null>;
   ler?: typeof lerOrdemNaVenue;
   agoraMs?: () => number;
+  /**
+   * ⚠️ ELEGIBILIDADE DO RECUPERADOR GLOBAL — ponto 9 do Round 2.
+   *
+   * Intents MANUAIS não têm sessão nem conexão: a rota descarta a credencial,
+   * então o recuperador NUNCA vai conseguir olhar a venue por eles. Antes eles
+   * contavam tentativa atrás de tentativa até a QUARENTENA — um alarme de
+   * segurança disparado por uma limitação de desenho, não por evidência. Com
+   * este predicado, o recuperador os PULA: ficam UNKNOWN aguardando a
+   * reconciliação interativa (o usuário reautentica e consulta).
+   */
+  elegivel?: (intent: IntentRow) => boolean;
 }
 
 /**
@@ -325,6 +336,13 @@ export async function reconciliarPendentes(
   }
   const resultados: ResultadoDaReconciliacao[] = [];
   for (const intent of pendentes) {
+    /**
+     * ⚠️ PULAR NÃO É CONTAR. Um intent inelegível (manual, sem credencial
+     * persistida) não acumula `reconcile_attempts` e NÃO vai para quarentena
+     * automática — quarentena é para "tentamos e não concluímos", não para
+     * "nunca tivemos como tentar".
+     */
+    if (deps.elegivel && !deps.elegivel(intent)) continue;
     try {
       resultados.push(await reconciliarIntent(deps, intent));
     } catch (e) {

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { executarOrdemCex } from "@/lib/cex/execucao/executor";
+import { reconciliarIntent } from "@/lib/cex/execucao/reconciliador";
+import { intentPorId } from "@/lib/cex/execucao/intents";
+import { ehTerminal } from "@/lib/cex/execucao/estados";
 import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { regimeDaBase } from "@/lib/autopilot/regime";
@@ -182,6 +185,12 @@ export async function POST(req: NextRequest) {
   let estrategiaDoPiloto: { id: string | null; versao: number | null } = { id: null, versao: null };
   /** O hash vai ao executor: a autorização FINAL é no banco (A110, round 2). */
   let hashDoPiloto: string | null = null;
+  /**
+   * ⚠️ O ID DA SESSÃO DO PILOTO — ponto 9 do Round 2. Com ele no intent, o
+   * recuperador global resolve a credencial PELA SESSÃO (cofre) se uma ordem
+   * do navegador ficar UNKNOWN — sem duplicar segredo e sem quarentena errada.
+   */
+  let sessaoDoPilotoId: string | null = null;
   if (ehAutopilot) {
     /**
      * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2), no canal do NAVEGADOR.
@@ -290,6 +299,7 @@ export async function POST(req: NextRequest) {
       id: sessaoDoPiloto?.strategy_id ?? null,
       versao: sessaoDoPiloto?.strategy_version ?? null,
     };
+    sessaoDoPilotoId = sessaoDoPiloto?.id ?? null;
   }
 
   if (typeof body.apiKey !== "string" || body.apiKey.length < 8 || body.apiKey.length > 200) {
@@ -340,6 +350,13 @@ export async function POST(req: NextRequest) {
       { origin: ehAutopilot ? "autopilot_browser" : "manual",
         autonomous: ehAutopilot,
         walletAddress: (await getSession())?.sub ?? null,
+        /**
+         * ⚠️ O sessionId no intent (ponto 9): uma ordem do piloto que ficar
+         * UNKNOWN é reconciliada pelo recuperador global com a credencial DA
+         * SESSÃO, via cofre. Ordem MANUAL continua sem sessão — a credencial
+         * dela não é guardada, e ninguém pode reconciliá-la sem reautenticar.
+         */
+        sessionId: sessaoDoPilotoId,
         strategyId: estrategiaDoPiloto.id,
         strategyVersion: estrategiaDoPiloto.versao,
         certificateId: certificadoDoPiloto,
@@ -357,12 +374,80 @@ export async function POST(req: NextRequest) {
        * A ordem PODE estar na corretora. Devolver "falhou" convidaria o usuário
        * a mandar de novo — o retry destrutivo que o briefing proíbe. O intent
        * fica em UNKNOWN com a chave de idempotência, e a reconciliação decide.
+       *
+       * ⚠️⚠️ UMA RECONCILIAÇÃO IMEDIATA, ENQUANTO A CREDENCIAL ESTÁ NA MÃO
+       * (ponto 9 do Round 2). Esta rota DESCARTA a credencial ao final — o
+       * recuperador global não consegue olhar a venue por um intent manual, e
+       * a resposta antiga prometia "a reconciliacao vai confirmar em ate
+       * alguns minutos", o que para ordem manual é MENTIRA. Agora a rota faz
+       * UMA tentativa segura na hora: `reconciliarIntent` é LEITURA por
+       * clientOrderId — NUNCA reenvio. Se ela conclui, respondemos o estado
+       * real. Se não, o 202 diz a verdade: reconciliar exige reautenticar.
+       */
+      const dbRec = getSupabaseAdmin();
+      if (dbRec) {
+        try {
+          const pendente = await intentPorId(dbRec, r.intentId);
+          if (pendente) {
+            const rec = await reconciliarIntent({
+              db: dbRec, credenciais: async () => creds,
+            }, pendente);
+            if (rec.desfecho === "resolvido") {
+              const final = await intentPorId(dbRec, r.intentId);
+              if (final && final.state === "FILLED") {
+                await recordEvent("cex_order_reconciliada_na_hora", { meta: {
+                  exchange, symbol: body.symbol, intentId: r.intentId, estado: final.state,
+                } });
+                const filled = Number(final.filled_qty);
+                const resp: CexOrderResponse = {
+                  ok: true, exchange,
+                  order: {
+                    id: final.external_order_id ?? final.id,
+                    symbol: body.symbol, side, type,
+                    status: "closed",
+                    amount: body.amount, filled,
+                    remaining: Math.max(body.amount - filled, 0),
+                    price: type === "limit" ? body.price : undefined,
+                  },
+                  filledImmediately: true,
+                  fetchedAt: Date.now(),
+                };
+                return NextResponse.json(resp, {
+                  headers: { "Cache-Control": "no-store, no-transform" } });
+              }
+              if (final && ehTerminal(final.state)) {
+                // A corretora NEGOU a ordem em todos os caminhos: nada executou.
+                return NextResponse.json(
+                  { ok: false, error: "ordem_nao_executada_na_venue",
+                    intentId: r.intentId, estado: final.state,
+                    detail: "a corretora confirma que a ordem nao executou. "
+                      + "Nada saiu da sua conta; pode tentar de novo." },
+                  { status: 409, headers: { "Cache-Control": "no-store" } },
+                );
+              }
+            }
+          }
+        } catch { /* cai no 202 honesto abaixo */ }
+      }
+      /**
+       * ⚠️⚠️ O 202 HONESTO. Sem promessa falsa: para ordem MANUAL, esta rota
+       * não guardou a credencial, então NINGUÉM vai reconciliar sozinho "em
+       * alguns minutos" — intents manuais sem sessão nem entram na quarentena
+       * automática do recuperador (ele os pula de propósito). O caminho real
+       * é reautenticar e consultar. Para ordem do PILOTO (com sessão), o
+       * recuperador global resolve pela sessão — e a resposta diz isso.
        */
       return NextResponse.json(
         { ok: false, error: "resultado_incerto", intentId: r.intentId,
           detail: r.porque,
-          porque: "a ordem pode ter sido aceita pela corretora. NAO reenvie: "
-            + "a reconciliacao vai confirmar em ate alguns minutos." },
+          porque: ehAutopilot && sessaoDoPilotoId
+            ? "a ordem pode ter sido aceita pela corretora. NAO reenvie: "
+              + "a reconciliacao automatica confere pela sua sessao em alguns minutos."
+            : "a ordem pode ter sido aceita pela corretora. NAO reenvie. "
+              + "Esta rota NAO guarda a sua credencial, entao a reconciliacao "
+              + "exige nova autenticacao: consulte o estado em /api/cex/order/status "
+              + "com a mesma chave (somente leitura), informando o intentId acima "
+              + "ao suporte se a duvida persistir." },
         { status: 202, headers: { "Cache-Control": "no-store" } },
       );
     }
