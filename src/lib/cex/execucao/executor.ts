@@ -106,6 +106,10 @@ export interface ContextoDeExecucao {
    * nesses casos ela fica NULL e o recovery por intentId fecha com
    * `recovery_not_bound`. O campo `credentialFingerprint` do body do cliente
    * NUNCA é autoridade: a rota o ignora de propósito.
+   *
+   * ⚠️ A120-H (round 5): para `origin: "manual"` NÃO simulado este campo é
+   * OBRIGATÓRIO — o executor recusa (`fingerprint_ausente`) ANTES de gravar
+   * o intent se ele estiver ausente ou fora do formato `^[0-9a-f]{64}$`.
    */
   credentialFingerprint?: string | null;
 }
@@ -143,6 +147,9 @@ export interface ReservaDeRisco {
 
 export type MotivoDeRecusa =
   | "sem_banco"
+  /** A120-H: ordem MANUAL REAL sem `credentialFingerprint` (ou com ele
+   *  malformado) — recusada ANTES de gravar intent: zero side effect. */
+  | "fingerprint_ausente"
   | "intent_nao_gravado"
   | "ja_existe_intent_vivo"
   | "kill_switch"
@@ -231,6 +238,35 @@ export async function executarOrdemCex(
   if (!db) {
     return { desfecho: "recusado", motivo: "sem_banco", intentId: null,
       porque: "banco indisponivel — sem registro duravel nenhuma ordem pode ser enviada" };
+  }
+
+  // ── 1.5. A120-H — MANUAL REAL SEM VÍNCULO NÃO NASCE ───────────────────
+  /**
+   * ⚠️⚠️ FAIL-CLOSED, ANTES DO INTENT E DE QUALQUER SIDE EFFECT. A rota
+   * `/api/cex/order` calcula o fingerprint no servidor e já recusa com 500
+   * quando a env falta — mas o executor é o caminho autoritativo, e ele não
+   * pode depender de que todo consumidor lembre de vincular: uma ordem
+   * MANUAL REAL gravada sem `credential_fingerprint` seria
+   * irreconciliável por desenho (o recovery por intentId fecha com
+   * `recovery_not_bound`) e violaria a CHECK `cex_intent_manual_real_tem_
+   * fingerprint` da migration 0061. Aqui a recusa é explícita e ANTES do
+   * insert: zero intent, zero createOrder.
+   *
+   * ⚠️ O EXECUTOR EXIGE O VÍNCULO; ELE NÃO O RECALCULA. A apiKey não é
+   * assunto deste arquivo — quem calcula é a rota (`fingerprint.ts`), e
+   * conferir formato (`^[0-9a-f]{64}$`) basta para recusar vínculo falso.
+   *
+   * ⚠️ SÓ O MANUAL REAL. Autopilot/DCA (credencial no cofre, recovery pela
+   * sessão) e o SIMULADO (nenhum dinheiro se move) seguem sem fingerprint.
+   */
+  if (ctx.origin === "manual" && ordem.simulated !== true) {
+    const fp = ctx.credentialFingerprint;
+    if (typeof fp !== "string" || !/^[0-9a-f]{64}$/.test(fp)) {
+      return { desfecho: "recusado", motivo: "fingerprint_ausente", intentId: null,
+        porque: fp == null
+          ? "ordem manual real sem fingerprint de credencial — sem vinculo ela seria irreconciliavel; nada foi gravado nem enviado"
+          : "fingerprint de credencial malformado (esperado HMAC-SHA256 hex minusculo, 64 chars) — nada foi gravado nem enviado" };
+    }
   }
 
   // ── 2. O INTENT DURÁVEL, ANTES DE TUDO ────────────────────────────────
