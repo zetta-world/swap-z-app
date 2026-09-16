@@ -200,8 +200,10 @@ export function bancoFalso(): BancoFalso {
       const feeDelta = args.p_fee == null ? null
         : Math.max(Number(args.p_fee) - feeJa, 0);
       const chave = `ordercum:${args.p_external_order_id ?? "?"}:${cum}:${args.p_fee ?? "-"}`;
+      // A123 (round 5): dedupe por INTENT, não por corretora — replay no
+      // mesmo intent é no-op, outro intent com a mesma chave persiste.
       const jaTemChave = () =>
-        fills.some((f) => f.exchange_id === it.exchange_id && f.dedupe_key === chave);
+        fills.some((f) => f.intent_id === it.id && f.dedupe_key === chave);
       if (!(cum > ja + 1e-12)) {
         // Qty parada com fee corrigida: ajuste de qty zero (quote zero).
         let inseridos = 0;
@@ -278,6 +280,17 @@ export function bancoFalso(): BancoFalso {
      *     recusa);
      *  d. itens do lote que declaram OUTRA ordem são IGNORADOS — não
      *     inseridos, não contam em v_novos (a RPC não confia no caller).
+     *
+     * A122 (round 5), na ordem obrigatória da 0059:
+     *  e. TRADE SEM ID no LOTE BRUTO → {ok:false, porque:'trade_sem_id'},
+     *     antes do filtro de ordem e de qualquer coverage;
+     *  f. DEDUPE INTRA-LOTE por trade_id: payload idêntico (qty, price,
+     *     quote, fee, fee_currency, order normalizado, executed_at — com
+     *     comparação numérica e nullif de "", como o SQL) conta UMA vez
+     *     (fica a primeira ocorrência); payload divergente →
+     *     {ok:false, porque:'trade_id_conflitante'}, ZERO mudança — nunca
+     *     escolher uma versão;
+     *  g. N, cobertura de fee e insert usam SEMPRE o lote normalizado.
      */
     if (nome === "cex_ingest_trades") {
       const estado = it.state as EstadoDoIntent;
@@ -291,10 +304,6 @@ export function bancoFalso(): BancoFalso {
             || f.external_order_id == null);
       const sinteticoRows = fills.filter((f) => daOrdem(f) && f.sintetico);
       const sint = sinteticoRows.reduce((t, f) => t + Number(f.qty), 0);
-      // (d) defesa em profundidade: itens de OUTRA ordem são ignorados.
-      const lote = ((args.p_trades as Linha[]) ?? [])
-        .filter((t) => t.order == null
-                    || t.order === (args.p_external_order_id ?? null));
       // (c) nullif(t->>'fee',''): "", não-numérico ou ausente = SEM fee.
       const feeDe = (t: Linha): number | null => {
         const f = t.fee;
@@ -304,8 +313,47 @@ export function bancoFalso(): BancoFalso {
       };
       const moedaDe = (t: Linha): string | null =>
         t.fee_currency == null || t.fee_currency === "" ? null : String(t.fee_currency);
+      const bruto = (args.p_trades as Linha[]) ?? [];
+      // (e) A122 passo 1: trade sem id no LOTE BRUTO — antes do filtro de
+      // ordem e de qualquer coverage; zero delete/insert.
+      if (bruto.some((t) => t.trade_id == null || t.trade_id === "")) {
+        return { data: { ok: false, porque: "trade_sem_id" }, error: null };
+      }
+      // (d) defesa em profundidade: itens de OUTRA ordem são ignorados.
+      const filtrado = bruto.filter((t) => t.order == null
+                    || t.order === (args.p_external_order_id ?? null));
+      // (f) A122 passo 2: assinatura do payload financeiro, com a MESMA
+      // normalização do insert/SQL — Number() (1.5 ≡ 1.50), nullif de "" em
+      // fee/fee_currency/executed_at, e `order` ausente vale a ordem da
+      // chamada (é o que o insert gravaria). Null nunca é 0.
+      const numDe = (v: unknown): string =>
+        v == null ? "∅" : String(Number(v));
+      const assinatura = (t: Linha): string => [
+        numDe(t.qty), numDe(t.price), numDe(t.quote),
+        feeDe(t) == null ? "∅" : String(feeDe(t)),
+        moedaDe(t) ?? "∅",
+        t.order == null || t.order === ""
+          ? String(args.p_external_order_id ?? "∅") : String(t.order),
+        t.executed_at == null || t.executed_at === "" ? "∅" : String(t.executed_at),
+      ].join("|");
+      const vistos = new Map<string, string>();
+      const lote: Linha[] = [];
+      let conflito = false;
+      for (const t of filtrado) {
+        const id = String(t.trade_id);
+        const sig = assinatura(t);
+        const prev = vistos.get(id);
+        if (prev === undefined) { vistos.set(id, sig); lote.push(t); }
+        else if (prev !== sig) { conflito = true; break; }
+      }
+      if (conflito) {
+        return { data: { ok: false, porque: "trade_id_conflitante" }, error: null };
+      }
+      // (g) daqui em diante SÓ o lote normalizado: um item por trade_id.
+      // A123 (round 5): "já persistido" é NESTE intent — outro intent com o
+      // mesmo trade_id tem fill próprio e legítimo (dedupe por intent_id).
       const jaExiste = (t: Linha) =>
-        fills.some((f) => f.exchange_id === it.exchange_id
+        fills.some((f) => f.intent_id === it.id
                        && f.dedupe_key === `trade:${t.trade_id}`);
       const novos = lote.filter((t) => !jaExiste(t));
       const novosQty = novos.reduce((t, x) => t + Number(x.qty), 0);
@@ -337,7 +385,9 @@ export function bancoFalso(): BancoFalso {
       let inseridos = 0;
       for (const t of lote) {
         const chave = `trade:${t.trade_id}`;
-        if (fills.some((f) => f.exchange_id === it.exchange_id && f.dedupe_key === chave)) continue;
+        // A123: o conflito é por (intent_id, dedupe_key) — outro intent não
+        // bloqueia, replay no mesmo intent é no-op.
+        if (fills.some((f) => f.intent_id === it.id && f.dedupe_key === chave)) continue;
         fills.push({
           id: `f${++seq}`, intent_id: it.id, exchange_id: it.exchange_id,
           external_order_id: args.p_external_order_id, external_trade_id: t.trade_id,
