@@ -167,20 +167,26 @@ export function bancoFalso(): BancoFalso {
       const mesmaOrdem = (f: Linha) =>
         f.intent_id === it.id
         && (f.external_order_id ?? null) === (args.p_external_order_id ?? null);
-      const sintDaOrdem = () => fills.filter((f) => mesmaOrdem(f) && f.sintetico);
-      // Moeda incompatível: fail-closed, sem somar moedas diferentes.
-      if (args.p_fee_currency != null) {
-        const outra = sintDaOrdem().find((f) =>
-          f.fee_currency != null && f.fee_currency !== args.p_fee_currency);
+      const daOrdem = () => fills.filter(mesmaOrdem);
+      // Moeda incompatível: fail-closed — e o NULL também fecha (CCXT traz
+      // `cost` sem `currency`). Dispara quando o snapshot traz fee (ou moeda)
+      // e existe fill DA ORDEM (real ou sintético) com fee não nula cuja
+      // moeda diverge; null↔'USDT' fecha nos dois sentidos.
+      if (args.p_fee != null || args.p_fee_currency != null) {
+        const outra = daOrdem().find((f) =>
+          f.fee != null && (f.fee_currency ?? null) !== (args.p_fee_currency ?? null));
         if (outra) {
           return { data: null, error: { message:
             `fee_currency incompativel na ordem ${args.p_external_order_id}: ` +
-            `livro tem ${outra.fee_currency}, snapshot traz ${args.p_fee_currency}` } };
+            `livro tem ${outra.fee_currency ?? "(null)"}, snapshot traz ${args.p_fee_currency ?? "(null)"}` } };
         }
       }
       const ja = somaDoLivro(String(it.id));
       const cum = Number(args.p_cumulative_qty);
-      const feeJa = sintDaOrdem()
+      // A base do delta é o LIVRO INTEIRO da ordem (reais + sintéticos) na
+      // mesma moeda — depois da substituição synthetic→real não há mais
+      // sintético, e filtrar por ele regravaria a fee inteira (achado 1, r3).
+      const feeJa = daOrdem()
         .filter((f) => (f.fee_currency ?? null) === (args.p_fee_currency ?? null))
         .reduce((t, f) => t + Number(f.fee ?? 0), 0);
       const feeDelta = args.p_fee == null ? null

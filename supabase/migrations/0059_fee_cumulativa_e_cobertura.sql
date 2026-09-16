@@ -11,9 +11,25 @@
 --    key `ordercum:<ordem>:<qty>` não protegia — a qty muda.
 --
 --    A correção trata fee EXATAMENTE como qty/quote: grava o DELTA contra o
---    que os sintéticos DAQUELA ORDEM já contabilizaram NA MESMA MOEDA
+--    que o LIVRO INTEIRO DAQUELA ORDEM já contabilizou NA MESMA MOEDA
 --    (`v_fee_delta := greatest(p_fee - v_fee_ja, 0)`). `p_fee` null continua
 --    null — não se inventa fee.
+--
+--    A base do delta são os fills DA ORDEM, reais E sintéticos — qty/quote
+--    já são assim (`v_ja`/`v_quote` somam o intent inteiro), e a fee não pode
+--    ser diferente: depois que trades reais substituem os sintéticos (guarda
+--    de cobertura, item 2), NÃO HÁ MAIS sintético na ordem, e um delta que
+--    olhasse só sintéticos veria zero e regravaria a fee cumulativa INTEIRA
+--    no snapshot seguinte (medido na revisão do round 3: snapshot 5/0.05 →
+--    trades completos → snapshot 8/0.08 fechava fee_total 0.13; replay do
+--    5/0.05 após os trades fechava 0.10).
+--
+--    ⚠️ ASSIMETRIA DECLARADA: fee RETROCEDENDO entre snapshots é clampada a
+--    delta ZERO (`greatest(p_fee - v_fee_ja, 0)`) — correção para baixo não
+--    entra e o `fee_total` pode ficar SUPerestimado até os trades reais
+--    chegarem. Declarado, não escondido: errar o pedágio para CIMA é
+--    conservador (não libera gasto a mais), e subtrair do livro faria um
+--    replay fora de ordem apagar fee legítima.
 --
 --    A dedupe key passa a incluir o fee: `ordercum:<ordem>:<qty>:<fee>`.
 --    Replay idêntico cai no `on conflict do nothing` (ou no caminho "nada
@@ -23,12 +39,16 @@
 --    fill sem qty só existe para carregar correção de fee, nunca quote.
 --
 --    ⚠️ MOEDA DE FEE INCOMPATÍVEL É EXCEÇÃO (fail-closed). Se o livro já tem
---    sintéticos da ordem com `fee_currency` não nula e DIFERENTE da que o
+--    fills da ordem com fee não nula cuja `fee_currency` DIVERGE da que o
 --    snapshot traz, somar seria misturar moedas e converter exigiria um
---    preço inventado — os dois proibidos. Limitação documentada: `fee_total`
---    é um numérico único por intent e `cex_recalcular_intent` já assume
---    moeda única (`max(fee_currency)`); multi-moeda na mesma ordem vai para
---    reconciliação, não para soma.
+--    preço inventado — os dois proibidos. E O NULL TAMBÉM FECHA: o CCXT pode
+--    trazer `cost` sem `currency`, então a guarda usa `is distinct from` e
+--    cobre null↔'USDT' nos DOIS sentidos (livro USDT + snapshot sem moeda é
+--    exceção, não soma cega). Snapshot com `p_fee`/`p_fee_currency` ambos
+--    null segue como antes: fee null, sem inventar. Limitação documentada:
+--    `fee_total` é um numérico único por intent e `cex_recalcular_intent` já
+--    assume moeda única (`max(fee_currency)`); multi-moeda na mesma ordem
+--    vai para reconciliação, não para soma.
 --
 --    Invariante: o `fee_total` final INDEPENDE do número de snapshots
 --    (1 snapshot direto de 0.05 ≡ 10 progressivos terminando em 0.05).
@@ -81,7 +101,7 @@ create or replace function public.cex_ingest_order_snapshot(
 declare
   v_intent public.cex_execution_intents%rowtype;
   v_ja numeric; v_delta numeric; v_quote numeric; v_preco numeric;
-  v_fee_ja numeric; v_fee_delta numeric; v_moeda_livro text;
+  v_fee_ja numeric; v_fee_delta numeric; v_moeda_livro text; v_incomp integer;
   v_chave text; v_ajuste boolean := false;
 begin
   select * into v_intent from public.cex_execution_intents
@@ -91,27 +111,36 @@ begin
     raise exception 'snapshot contra intent em % — estado pre-envio nao admite execucao', v_intent.state;
   end if;
 
-  -- ⚠️ MOEDA DE FEE INCOMPATÍVEL É EXCEÇÃO, não conversão. Somar moedas
-  -- diferentes é mentira; converter exige preço inventado. Fail-closed.
-  select min(f.fee_currency) into v_moeda_livro
-    from public.cex_fills f
-   where f.intent_id = p_intent_id and f.sintetico
-     and f.external_order_id is not distinct from p_external_order_id
-     and f.fee_currency is not null
-     and p_fee_currency is not null
-     and f.fee_currency <> p_fee_currency;
-  if v_moeda_livro is not null then
-    raise exception 'fee_currency incompativel na ordem %: livro tem %, snapshot traz % — sem conversao inventada',
-      p_external_order_id, v_moeda_livro, p_fee_currency;
+  -- ⚠️ MOEDA DE FEE INCOMPATÍVEL É EXCEÇÃO, não conversão — e o NULL também
+  -- fecha. O CCXT pode trazer `cost` sem `currency`: um livro USDT seguido de
+  -- snapshot sem moeda NÃO pode somar como se fosse USDT. Fail-closed quando
+  -- o snapshot traz fee (ou moeda) e existe fill DA ORDEM (real ou sintético)
+  -- com fee não nula cuja moeda diverge — `is distinct from` cobre
+  -- null↔'USDT' nos dois sentidos. p_fee e p_fee_currency ambos null: segue
+  -- sem exceção, fee null, sem inventar.
+  if p_fee is not null or p_fee_currency is not null then
+    select count(*), min(f.fee_currency) into v_incomp, v_moeda_livro
+      from public.cex_fills f
+     where f.intent_id = p_intent_id
+       and f.external_order_id is not distinct from p_external_order_id
+       and f.fee is not null
+       and f.fee_currency is distinct from p_fee_currency;
+    if v_incomp > 0 then
+      raise exception 'fee_currency incompativel na ordem %: livro tem %, snapshot traz % — sem conversao inventada',
+        p_external_order_id, coalesce(v_moeda_livro, '(null)'), coalesce(p_fee_currency, '(null)');
+    end if;
   end if;
 
   select coalesce(sum(qty),0), coalesce(sum(quote_amount),0)
     into v_ja, v_quote from public.cex_fills where intent_id = p_intent_id;
 
-  -- Fee já contabilizada pelos sintéticos DESTA ordem, NA MESMA moeda.
+  -- Fee já contabilizada pelos fills DESTA ordem — reais E sintéticos, NA
+  -- MESMA moeda. O livro inteiro da ordem é a base do delta, como qty/quote
+  -- já são: depois da substituição synthetic→real não há mais sintético, e
+  -- filtrar por ele regravaria a fee cumulativa inteira (achado 1, round 3).
   select coalesce(sum(f.fee),0) into v_fee_ja
     from public.cex_fills f
-   where f.intent_id = p_intent_id and f.sintetico
+   where f.intent_id = p_intent_id
      and f.external_order_id is not distinct from p_external_order_id
      and f.fee_currency is not distinct from p_fee_currency;
   v_fee_delta := case when p_fee is null then null

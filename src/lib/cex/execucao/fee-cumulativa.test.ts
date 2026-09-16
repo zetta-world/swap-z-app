@@ -202,8 +202,78 @@ describe("② guarda de cobertura synthetic→real (A118)", () => {
   });
 });
 
-describe("③ guarda estrutural — a 0059 é lida de verdade", () => {
-  it("⚠️ o parser achou as duas funções — vazio aprovaria tudo", () => {
+describe("③ revisão round 3 — a base do delta da fee é o LIVRO INTEIRO da ordem", () => {
+  const tradesCompletos = [
+    { tradeId: "T1", qty: 2, price: 100, quote: 200, fee: 0.02, feeCurrency: "USDT" },
+    { tradeId: "T2", qty: 3, price: 100, quote: 300, fee: 0.03, feeCurrency: "USDT" },
+  ];
+
+  it("⚠️⚠️ (a) snapshot 5/0.05 → trades completos (2/0.02+3/0.03) → snapshot 8/0.08 ⇒ qty 8, fee 0.08", async () => {
+    // O defeito medido pelo revisor: depois da substituição synthetic→real
+    // não há mais sintético; o delta que olhava só sintéticos via zero e
+    // regravava a fee cumulativa INTEIRA — fee_total fechava 0.13.
+    const b = bancoFalso();
+    await comIntent(b);
+    await snap(b, { qty: 5, quote: 500, fee: 0.05 });
+    const r1 = await ingerirTrades(b.cliente, "i-fee", "ORD-1", tradesCompletos);
+    expect(r1.ok).toBe(true);
+    expect(b.fills.every((f) => f.sintetico === false)).toBe(true);
+    const r2 = await snap(b, { qty: 8, quote: 800, fee: 0.08 });
+    expect(r2.ok).toBe(true);
+    expect(Number(b.intents[0].filled_qty)).toBe(8);
+    // 0.05 já estava no livro (nos trades reais): o delta é 0.03, não 0.08.
+    expect(feeTotal(b)).toBeCloseTo(0.08, 12);
+  });
+
+  it("⚠️⚠️ (b) snapshot 5/0.05 → trades completos → REPLAY do 5/0.05 ⇒ fee_total continua 0.05", async () => {
+    const b = bancoFalso();
+    await comIntent(b);
+    await snap(b, { qty: 5, quote: 500, fee: 0.05 });
+    const r1 = await ingerirTrades(b.cliente, "i-fee", "ORD-1", tradesCompletos);
+    expect(r1.ok).toBe(true);
+    // O replay do snapshot PRÉ-trades não pode somar nada: qty parada, fee
+    // já contabilizada nos fills reais da mesma ordem.
+    const r2 = await snap(b, { qty: 5, quote: 500, fee: 0.05 });
+    expect(r2.ok).toBe(true);
+    if (r2.ok) expect(r2.inseridos).toBe(0);
+    expect(b.fills).toHaveLength(2);
+    expect(Number(b.intents[0].filled_qty)).toBe(5);
+    expect(feeTotal(b)).toBeCloseTo(0.05, 12);
+  });
+
+  it("⚠️⚠️ livro USDT 0.03 → snapshot 0.05 com moeda NULL ⇒ EXCEÇÃO (fail-closed)", async () => {
+    // O CCXT pode trazer `cost` sem `currency`: somar como se fosse USDT
+    // seria mistura cega de moedas. O null fecha como qualquer divergência.
+    // (chamada direta: o helper `snap` defaulta moeda null para "USDT")
+    const b = bancoFalso();
+    await comIntent(b);
+    await snap(b, { qty: 3, quote: 300, fee: 0.03, moeda: "USDT" });
+    const r = await ingerirSnapshotDaOrdem(b.cliente, "i-fee", "ORD-1", {
+      cumulativeQty: 5, avgPrice: 100, cumulativeQuote: 500,
+      fee: 0.05, feeCurrency: null,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.porque).toMatch(/fee_currency incompativel/i);
+    expect(b.fills).toHaveLength(1);
+    expect(feeTotal(b)).toBeCloseTo(0.03, 12);
+  });
+
+  it("caminho feliz null+null: livro todo sem moeda, snapshot sem fee ⇒ sem exceção, fee null", async () => {
+    const b = bancoFalso();
+    await comIntent(b);
+    const semMoeda = (qty: number, quote: number) =>
+      ingerirSnapshotDaOrdem(b.cliente, "i-fee", "ORD-1", {
+        cumulativeQty: qty, avgPrice: quote / qty, cumulativeQuote: quote,
+        fee: null, feeCurrency: null,
+      });
+    expect((await semMoeda(3, 300)).ok).toBe(true);
+    expect((await semMoeda(5, 500)).ok).toBe(true);
+    expect(b.intents[0].fee_total).toBeNull();
+    expect(Number(b.intents[0].filled_qty)).toBe(5);
+  });
+});
+
+describe("④ guarda estrutural — a 0059 é lida de verdade", () => {  it("⚠️ o parser achou as duas funções — vazio aprovaria tudo", () => {
     expect(SQL_0059).toMatch(
       /create\s+or\s+replace\s+function\s+public\.cex_ingest_order_snapshot\(/i);
     expect(SQL_0059).toMatch(
@@ -212,15 +282,27 @@ describe("③ guarda estrutural — a 0059 é lida de verdade", () => {
 
   it("⚠️⚠️ a fee é gravada como DELTA por mesma moeda, nunca o cumulativo inteiro", () => {
     expect(SQL_0059).toMatch(/greatest\(p_fee - v_fee_ja, 0\)/);
-    expect(SQL_0059).toMatch(/sum\(f\.fee\)[\s\S]{0,200}sintetico/);
+    // ⚠️ A base do delta é o LIVRO INTEIRO da ordem (reais + sintéticos) na
+    // mesma moeda — filtrar `sintetico` aqui regravava a fee cumulativa
+    // inteira depois da substituição synthetic→real (achado 1, round 3).
+    const iInicio = SQL_0059.indexOf("sum(f.fee)");
+    expect(iInicio).toBeGreaterThan(-1);
+    const bloco = SQL_0059.slice(iInicio, SQL_0059.indexOf("v_fee_delta :=", iInicio));
+    expect(bloco).toMatch(/f\.fee_currency is not distinct from p_fee_currency/);
+    expect(bloco).not.toMatch(/sintetico/);
   });
 
   it("a dedupe key passa a incluir o fee (replay idêntico é no-op, correção entra)", () => {
     expect(SQL_0059).toMatch(/'ordercum:'[\s\S]{0,160}p_fee::text/);
   });
 
-  it("⚠️ moeda de fee incompatível é raise exception — fail-closed", () => {
+  it("⚠️ moeda de fee incompatível é raise exception — fail-closed, e o NULL também fecha", () => {
     expect(SQL_0059).toMatch(/raise exception 'fee_currency incompativel/);
+    // CCXT traz `cost` sem `currency`: a guarda dispara com o snapshot
+    // trazendo fee e o livro divergindo — `is distinct from` cobre
+    // null↔'USDT' nos dois sentidos (achado 2, round 3).
+    expect(SQL_0059).toMatch(/p_fee is not null or p_fee_currency is not null/);
+    expect(SQL_0059).toMatch(/f\.fee_currency is distinct from p_fee_currency/);
   });
 
   it("o ajuste de fee com qty parada é um fill de qty ZERO e quote zero", () => {

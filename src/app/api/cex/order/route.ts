@@ -373,7 +373,17 @@ export async function POST(req: NextRequest) {
         strategyHash: hashDoPiloto },
       { exchangeId: exchange, symbol: body.symbol, side, type,
         qty: body.amount, price: type === "limit" ? body.price : null,
-        notionalUsd: typeof body.price === "number" ? body.amount * body.price : null },
+        /**
+         * ⚠️ MARKET DO PILOTO NÃO TEM `body.price` — sem este fallback o
+         * intent gravava `requested_notional_usd` NULL e a autorização final
+         * do banco (RPC 0060) recusava qualquer certificado com teto
+         * ("nocional não mensurável"). O nocional REAL medido no servidor
+         * (price-guard) cobre exatamente esse buraco; ordem MANUAL segue
+         * inalterada (`notionalRealDoPiloto` é null fora do ramo do piloto),
+         * e null nunca vira 0 — sem medida, sem número.
+         */
+        notionalUsd: (typeof body.price === "number" ? body.amount * body.price : null)
+          ?? notionalRealDoPiloto },
       creds,
     );
 
