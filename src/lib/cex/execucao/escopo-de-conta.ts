@@ -131,7 +131,11 @@ export async function ordensConhecidasNoEscopo(
       .eq("exchange_id", exchangeId).eq("symbol", symbol)
       .gte("created_at", desdeIso)
       .not("external_order_id", "is", null)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      // ⚠️ Desempate determinístico (revisão R6): sem `id` secundário, empates
+      // de created_at numa fronteira de página podem reordenar entre queries
+      // no Postgres e pular/duplicar uma linha entre páginas.
+      .order("id");
     const { data, error } = await comEscopo(base, escopo)
       .range(inicio, inicio + pagina - 1);
     if (error) return undefined;
@@ -163,7 +167,11 @@ async function idsDosIntentsNoEscopo(
       .select("id")
       .eq("exchange_id", exchangeId)
       .gte("created_at", desdeIso)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      // ⚠️ Desempate determinístico (revisão R6): sem `id` secundário, empates
+      // de created_at numa fronteira de página podem reordenar entre queries
+      // no Postgres e pular/duplicar uma linha entre páginas.
+      .order("id");
     const { data, error } = await comEscopo(base, escopo)
       .range(inicio, inicio + pagina - 1);
     if (error) return undefined;
@@ -203,6 +211,10 @@ export async function tradesNoLivroNoEscopo(
         .gte("created_at", desdeIso)
         .not("external_trade_id", "is", null)
         .order("created_at", { ascending: true })
+      // ⚠️ Desempate determinístico (revisão R6): sem `id` secundário, empates
+      // de created_at numa fronteira de página podem reordenar entre queries
+      // no Postgres e pular/duplicar uma linha entre páginas.
+      .order("id")
         .range(inicio, inicio + pagina - 1);
       if (error) return undefined;
       const linhas = (data ?? []) as Array<{ external_trade_id: string }>;
