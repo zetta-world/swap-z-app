@@ -164,7 +164,10 @@ export interface TradeParaIngerir {
 
 export type ResultadoDeIngestao =
   | { ok: true; inseridos: number; filledQty: number; state: EstadoDoIntent }
-  | { ok: false; porque: string };
+  | { ok: false; porque: string;
+      /** A118: cobertura_incompleta é ADIADO — o intent permanece para nova
+       *  tentativa; NÃO é erro fatal nem divergência. */
+      adiado?: boolean };
 
 /**
  * Ingestão nível-TRADE: identidade de verdade, dedupe por id de trade.
@@ -172,6 +175,11 @@ export type ResultadoDeIngestao =
  * ⚠️ TODOS OS TRADES DA ORDEM DE UMA VEZ. A RPC apaga os sintéticos daquela
  * ordem na mesma transação; mandar um trade por chamada deixaria o total
  * transitoriamente MENOR que a verdade.
+ *
+ * ⚠️ A118: `fetchMyTrades` é página única SEM prova de completude. Se o lote
+ * não cobre o estimado sintético, a RPC não deleta nem insere nada e devolve
+ * `ok:false, porque:'cobertura_incompleta'` — aqui isso vira `adiado:true`,
+ * e quem chama registra e segue (o intent permanece para nova tentativa).
  */
 export async function ingerirTrades(
   db: SupabaseClient<Database>, intentId: string, externalOrderId: string | null,
@@ -193,7 +201,12 @@ export async function ingerirTrades(
     })),
   });
   if (error) return { ok: false, porque: error.message.slice(0, 200) };
-  const r = data as { inseridos?: number; filled_qty?: number; state?: string } | null;
+  const r = data as { ok?: boolean; porque?: string; inseridos?: number;
+                      filled_qty?: number; state?: string } | null;
+  if (r && r.ok === false) {
+    return { ok: false, porque: (r.porque ?? "ingestao recusada pelo banco").slice(0, 200),
+             adiado: r.porque === "cobertura_incompleta" };
+  }
   return {
     ok: true, inseridos: Number(r?.inseridos ?? 0),
     filledQty: Number(r?.filled_qty ?? 0), state: (r?.state ?? "UNKNOWN") as EstadoDoIntent,

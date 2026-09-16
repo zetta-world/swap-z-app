@@ -31,8 +31,10 @@ const CATALOGO: Record<string, string> = {
   bancada_marcar_adiado:     "0045_bancada_marcar_adiado.sql",
   celeiro_reverter_genoma:   "0055_rpcs_financeiras_acl.sql",
   cex_recalcular_intent:     "0055_rpcs_financeiras_acl.sql",
-  cex_ingest_trades:         "0055_rpcs_financeiras_acl.sql",
-  cex_ingest_order_snapshot: "0055_rpcs_financeiras_acl.sql",
+  // A118 (round 3): as duas ingestões foram redefinidas na 0059, que repete
+  // o REVOKE/GRANT — a regra ACL file ≥ def file passa a apontar para ela.
+  cex_ingest_trades:         "0059_fee_cumulativa_e_cobertura.sql",
+  cex_ingest_order_snapshot: "0059_fee_cumulativa_e_cobertura.sql",
   cex_transicionar:          "0055_rpcs_financeiras_acl.sql",
   // A110 (round 2): RPC nova já nasce com REVOKE/GRANT na própria migration.
   cex_autorizar_e_submeter:  "0057_executor_autoriza_submissao.sql",
