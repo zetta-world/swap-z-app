@@ -185,6 +185,15 @@
 -- ACL: mesma disciplina da 0055 (A116) — REVOKE/GRANT repetidos aqui são
 -- idempotentes, e o CATALOGO de `rpcs-acl.test.ts` aponta estas duas funções
 -- para esta migration (regra: ACL file ≥ def file).
+--
+-- NOTA (round 5, revisão) — divergência de CANAL conhecida e inalcançável:
+-- na checagem `trade_id_conflitante` o SQL faz `fee::numeric` por par, então
+-- um trade com fee NÃO-numérico (ex.: "abc") ABORTA com exceção (transação
+-- desfeita, nada muda); o banco-falso trata o mesmo valor como "sem fee" e
+-- devolve `{ok:false, porque:'trade_sem_id'|'cobertura_fee_incompleta'}`
+-- conforme o caso. Os dois são fail-closed (zero efeito) e o valor só
+-- chegaria via fetchMyTrades já normalizado pelo executor TS — declarado
+-- aqui para o auditor não tratar como divergência de comportamento.
 -- ═══════════════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────────────────────

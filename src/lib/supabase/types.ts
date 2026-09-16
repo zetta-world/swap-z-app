@@ -648,7 +648,9 @@ export type CexExecutionIntentRow = {
 /**
  * ⚠️ O LIVRO APPEND-ONLY DE EXECUÇÕES — achado A108.
  *
- * Um fill = uma linha, deduplicado por `(exchange_id, dedupe_key)` NO BANCO.
+ * Um fill = uma linha, deduplicado por `(intent_id, dedupe_key)` NO BANCO
+ * (A123, migration 0062 — antes `(exchange_id, dedupe_key)`, global demais:
+ * um intent consumia a idempotência de outro).
  * `sintetico` marca a linha derivada do acumulado da ordem, sem id de trade:
  * ela é estimativa e cede lugar ao trade real quando ele chega.
  */
