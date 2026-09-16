@@ -339,11 +339,21 @@ async function processarPlano(
      * reconciliar, relê-se o MESMO intent pelo id. `undefined` (falha de
      * leitura) adia, fail-closed; `null` (a linha SUMIU) é incidente crítico —
      * ninguém apaga intent — e também não avança.
+     *
+     * ⚠️⚠️ E DA RELEITURA EM DIANTE, TODO DADO DO INTENT VEM DE `atual` —
+     * achado A119. `vivo` é a fotografia PRÉ-reconciliação: a taxa, o modo e
+     * até o número do ciclo que ela carrega são anteriores ao que a corretora
+     * acabou de responder. Liquidar o ciclo com `vivo.fee_total` gravava a taxa
+     * VELHA (ou nenhuma) exatamente quando a reconciliação tinha acabado de
+     * trazer a verdadeira. `vivo` só presta, daqui para frente, para o `id`
+     * (é a chave da releitura) e para os ramos em que `atual` não existe —
+     * e mesmo neles, só o ciclo, capturado ANTES da releitura.
      */
+    const cicloDoIntentVivo = Number(vivo.cycle_number);
     const atual = await intentPorId(dbExec, vivo.id);
     if (atual === undefined) {
       await avisar("releitura do intent FALHOU — plano NAO avanca", {
-        plano: p.id, ciclo: vivo.cycle_number, intent: vivo.id,
+        plano: p.id, ciclo: cicloDoIntentVivo, intent: vivo.id,
         why: "reconciliei e nao consegui reler o resultado. Avancar sobre leitura "
           + "falha e o mesmo que avancar as cegas.",
       });
@@ -353,7 +363,7 @@ async function processarPlano(
       // ⚠️ A LINHA SUMIU DO LIVRO. Intents não se apagam — se não está lá,
       // algo gravíssimo aconteceu, e o plano congela até mão humana.
       await recordEvent("dca_intent_sumiu", { wallet: p.wallet_address, meta: {
-        severity: "high", plano: p.id, ciclo: vivo.cycle_number, intent: vivo.id,
+        severity: "high", plano: p.id, ciclo: cicloDoIntentVivo, intent: vivo.id,
         why: "o intent existia antes da reconciliacao e NAO existe mais. Ninguem "
           + "apaga intent — o plano NAO avanca ate mao humana.",
       } });
@@ -364,7 +374,7 @@ async function processarPlano(
 
     if (decisao.acao === "esperar") {
       await avisar("ciclo de DCA em DUVIDA — plano NAO avanca ate reconciliar", {
-        plano: p.id, ciclo: vivo.cycle_number, intent: vivo.id,
+        plano: p.id, ciclo: Number(atual.cycle_number), intent: atual.id,
         estado: rec.estado, porque: decisao.porque,
         why: "a ordem pode ter executado. Avancar o ciclo agora arriscaria comprar duas vezes.",
       });
@@ -372,7 +382,7 @@ async function processarPlano(
     }
     if (decisao.acao === "quarentena") {
       await avisar("intent do DCA em QUARENTENA — mao humana", {
-        plano: p.id, ciclo: vivo.cycle_number, intent: vivo.id, porque: decisao.porque,
+        plano: p.id, ciclo: Number(atual.cycle_number), intent: atual.id, porque: decisao.porque,
       });
       return { plano: p.id, acao: "quarentena", detalhe: decisao.porque };
     }
@@ -380,16 +390,21 @@ async function processarPlano(
     /**
      * ⚠️ O CICLO FECHA COM O QUE O LIVRO TEM, não com o que foi pedido. É o
      * achado A81 no caminho do DCA: `filled` ausente não vira "comprou tudo".
+     *
+     * ⚠️⚠️ E A TAXA TAMBÉM VEM DO LIVRO RELIDO (A119): `decidirPeloIntent` não
+     * devolve fee — o único caminho da taxa até o ciclo é `atual.fee_total`,
+     * lido DEPOIS da reconciliação. A fotografia velha (`vivo`) pré-datada
+     * gravaria taxa 0/null sobre um fill que já tinha taxa na corretora.
      */
-    const ciclo = Number(vivo.cycle_number);
+    const ciclo = Number(atual.cycle_number);
     const fechou = await fecharCiclo(p.id, ciclo, {
       status: decisao.status, motivo: decisao.motivo ?? undefined,
       orderId: decisao.orderId ?? undefined,
       preco: decisao.precoMedio ?? undefined,
       quantidade: decisao.quantidade || undefined,
       custoUsd: decisao.custoUsd || undefined,
-      simulado: vivo.simulated,
-      taxaUsd: vivo.simulated ? null : vivo.fee_total,
+      simulado: atual.simulated,
+      taxaUsd: atual.simulated ? null : atual.fee_total,
     });
     if (!fechou) {
       await avisar("intent resolvido e ciclo NAO fechado — reconciliar a mao", {

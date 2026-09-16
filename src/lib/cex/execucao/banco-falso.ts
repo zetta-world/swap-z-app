@@ -56,6 +56,16 @@ export function bancoFalso(): BancoFalso {
                        .reduce((t, f) => t + Number(f.quote_amount), 0);
     it.filled_qty = qty;
     it.filled_quote = quote;
+    /**
+     * ⚠️ O FEE SOMA POR LINHA, como o `cex_recalcular_intent` da 0051
+     * (`nullif(sum(coalesce(fee,0)),0)`, `max(fee_currency)`): o fee_total do
+     * intent é o que o livro tem, e replay deduplicado não soma duas vezes.
+     */
+    const doLivro = fills.filter((f) => f.intent_id === intentId);
+    const somaFee = doLivro.reduce((t, f) => t + Number(f.fee ?? 0), 0);
+    it.fee_total = somaFee !== 0 ? somaFee : null;
+    const moedas = doLivro.map((f) => f.fee_currency).filter(Boolean) as string[];
+    if (moedas.length) it.fee_currency = moedas.sort()[moedas.length - 1];
     const estado = it.state as EstadoDoIntent;
     if (["SUBMITTED", "PARTIALLY_FILLED", "UNKNOWN", "CANCEL_PENDING",
          "RECONCILIATION_REQUIRED"].includes(estado)) {
@@ -165,6 +175,7 @@ export function bancoFalso(): BancoFalso {
           external_order_id: args.p_external_order_id, external_trade_id: null,
           symbol: it.symbol, side: it.side, qty: cum - ja, price: preco,
           quote_amount: Math.max(cq - Number(it.filled_quote), 0),
+          fee: args.p_fee ?? null, fee_currency: args.p_fee_currency ?? null,
           sintetico: true, dedupe_key: chave,
         });
       }
@@ -195,7 +206,9 @@ export function bancoFalso(): BancoFalso {
           id: `f${++seq}`, intent_id: it.id, exchange_id: it.exchange_id,
           external_order_id: args.p_external_order_id, external_trade_id: t.trade_id,
           symbol: it.symbol, side: it.side, qty: Number(t.qty), price: Number(t.price),
-          quote_amount: Number(t.quote), sintetico: false, dedupe_key: chave,
+          quote_amount: Number(t.quote),
+          fee: t.fee ?? null, fee_currency: t.fee_currency ?? null,
+          sintetico: false, dedupe_key: chave,
         });
         inseridos++;
       }
@@ -259,6 +272,7 @@ export function bancoFalso(): BancoFalso {
           const linha: Linha = {
             id: `i${++seq}`, state: "CREATED", filled_qty: 0, filled_quote: 0,
             canceled_qty: 0, external_order_id: null, state_reason: null,
+            fee_total: null, fee_currency: null,
             created_at: new Date().toISOString(), reconcile_attempts: 0,
             last_reconciled_at: null, submitted_at: null, ...valores,
           };
