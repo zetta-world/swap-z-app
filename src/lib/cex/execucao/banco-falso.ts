@@ -356,6 +356,8 @@ export function bancoFalso(): BancoFalso {
             id: `i${++seq}`, state: "CREATED", filled_qty: 0, filled_quote: 0,
             fee_total: null, fee_currency: null,
             canceled_qty: 0, external_order_id: null, state_reason: null,
+            // A120 (0061): a coluna nova nasce NULL — histórico/autopilot/DCA.
+            credential_fingerprint: null,
             created_at: new Date().toISOString(), reconcile_attempts: 0,
             last_reconciled_at: null, submitted_at: null, ...valores,
           };

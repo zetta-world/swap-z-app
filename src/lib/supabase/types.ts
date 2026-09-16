@@ -611,6 +611,11 @@ export type CexExecutionIntentRow = {
   /** ⚠️ DURÁVEL desde a 0060: a autorização final o lê da linha, sob lock. */
   strategy_hash:          string | null;
   certificate_id:         string | null;
+  /** ⚠️ A120 (0061): HMAC da credencial que criou a ordem MANUAL REAL. O
+   *  recovery por intentId confere contra ele ANTES de tocar na venue. NULL
+   *  em históricos e em autopilot/DCA (credencial no cofre) — e null fecha:
+   *  `recovery_not_bound`. Nunca exposto, nunca atualizado. */
+  credential_fingerprint: string | null;
   exchange_id:            string;
   symbol:                 string;
   side:                   "buy" | "sell";

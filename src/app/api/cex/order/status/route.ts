@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { intentPorId } from "@/lib/cex/execucao/intents";
 import { reconciliarIntent } from "@/lib/cex/execucao/reconciliador";
 import { ehTerminal } from "@/lib/cex/execucao/estados";
+import { impressaoDaCredencial, impressaoConfere } from "@/lib/cex/fingerprint";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
@@ -186,6 +187,52 @@ async function recoveryPorIntent(body: BodyShape): Promise<NextResponse> {
   if (CEX_META[exchange].needsPassphrase
       && (!body.passphrase || typeof body.passphrase !== "string")) {
     return NextResponse.json({ ok: false, error: `passphrase_required_for_${exchange}` }, { status: 400 });
+  }
+
+  /**
+   * ── 2.5. ⚠️⚠️ O VÍNCULO CREDENCIAL ↔ INTENT (A120) — ANTES DE TUDO ──
+   *
+   * Até aqui NADA tocou na venue nem no livro, e é exatamente aqui que o
+   * gate mora: o recovery reconciliava o intent com QUALQUER credencial
+   * válida apresentada — quem soubesse o `intentId` reconciliava (e mutava)
+   * o livro alheio com a PRÓPRIA chave.
+   *
+   *   · intent sem fingerprint (histórico, ou autopilot/DCA — esses já saíram
+   *     no `use_a_sessao` acima) → 409 `recovery_not_bound`: fail-closed, o
+   *     legado não reconcilia às cegas;
+   *   · fingerprint não confere → 403 `credential_mismatch`: ZERO fetchOrder,
+   *     ZERO fetchMyTrades, ZERO reconciliarIntent, ZERO UPDATE e ZERO
+   *     reconcile_attempt — o intent fica byte a byte como estava;
+   *   · confere → o fluxo do Round 3 segue INALTERADO.
+   *
+   * ⚠️ O fingerprint NUNCA é lido do body (`body.credentialFingerprint` não
+   * existe para este código): quem apresenta o próprio fingerprint estaria se
+   * autoautorizando. E ele NUNCA aparece na resposta.
+   */
+  if (intent.credential_fingerprint == null) {
+    return NextResponse.json(
+      { ok: false, error: "recovery_not_bound",
+        detail: "este intent nao tem vinculo de credencial (anterior ao A120 "
+          + "ou de sessao/cofre) — o recovery por intentId nao reconcilia sem "
+          + "prova de que a credencial e a mesma que criou a ordem" },
+      { status: 409, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  let impressaoApresentada: string;
+  try {
+    impressaoApresentada = impressaoDaCredencial(intent.exchange_id, body.apiKey);
+  } catch {
+    // ⚠️ Env de HMAC ausente no SERVIDOR: configuração quebrada não é
+    // credencial errada — fail-closed, sem tocar na venue.
+    return NextResponse.json({ ok: false, error: "server_configuration_error" },
+      { status: 500, headers: { "Cache-Control": "no-store" } });
+  }
+  if (!impressaoConfere(impressaoApresentada, intent.credential_fingerprint)) {
+    return NextResponse.json(
+      { ok: false, error: "credential_mismatch",
+        detail: "a credencial apresentada nao e a mesma que criou esta ordem" },
+      { status: 403, headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   // ── 3. Reconcilia — a credencial só lê; este caminho NUNCA envia ordem ──
