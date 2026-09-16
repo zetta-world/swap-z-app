@@ -5,6 +5,20 @@
  * cliente ou uma venda manual no app da corretora não geram intent — e deixam
  * o bot decidindo sobre um inventário que já não existe. Estes testes exercem
  * `reconciliarConta` contra banco e venue falsos, e travam o hook no cron.
+ *
+ * CONTRATO DO ROUND 3 (A103 cirúrgico):
+ *
+ *   · a EXISTÊNCIA do inventário é medida pelo saldo TOTAL (free + used),
+ *     nunca pelo free sozinho — um exit armado pela própria Z-SWAP move o
+ *     saldo para `used` sem tirar um satoshi da conta (cenário A);
+ *   · total suficiente mas `free + armada` abaixo do inventário →
+ *     `bloqueio_nao_explicado` (cenário C): entradas presas, evento
+ *     `account_external_activity`, SEM quarentena e SEM alegar "saldo não
+ *     sustenta inventário";
+ *   · total abaixo do inventário menos a tolerância → deriva, quarentena
+ *     (cenários B/E);
+ *   · depósito a mais nunca é deriva nem aumenta posição (cenário D);
+ *   · falha de leitura → entradas presas, fail-closed (cenário F).
  */
 
 import { describe, it, expect } from "vitest";
@@ -45,19 +59,29 @@ function sessao(extra: Partial<AutopilotSessionRow> = {}): AutopilotSessionRow {
 
 /** 1 ETH a US$ 3.000: tolerância = max($5, 2%) = $60 → 0,02 ETH. */
 const POS_ETH: PosicaoInterna = { base: "ETH", baseAmount: 1, precoRef: 3_000 };
-const SALDO_ETH = (free: number): CexBalance[] =>
-  [{ asset: "ETH", free, used: 0, total: free, usdValue: free * 3_000 }];
+const POS_ETH_ARMADA: PosicaoInterna = { ...POS_ETH, armada: true };
 
-describe("A103 — reconciliarConta", () => {
-  it("J1 ⚠️⚠️ saldo livre abaixo do inventário (além da tolerância) → DERIVA + quarentena gravada", async () => {
+/**
+ * Saldo da venue com `free`/`used` explícitos. `total` é free+used, como na
+ * corretora; `totalNaN` simula venue que não manda o total (o fallback soma).
+ */
+const SALDO_ETH = (free: number, used = 0, totalNaN = false): CexBalance[] => [{
+  asset: "ETH", free, used,
+  total: totalNaN ? Number.NaN : free + used,
+  usdValue: (free + used) * 3_000,
+}];
+
+describe("A103 — reconciliarConta (existência medida pelo TOTAL)", () => {
+  it("J1 ⚠️⚠️ saldo TOTAL abaixo do inventário (além da tolerância) → DERIVA + quarentena gravada", async () => {
     const b = dbFalso();
-    // O bot acha que tem 1 ETH; a corretora diz que há 0,5 livre. Alguém mexeu.
+    // O bot acha que tem 1 ETH; a corretora diz que há 0,5 NO TOTAL. Alguém mexeu.
     const r = await reconciliarConta({
       db: b.db, lerPosicoes: async () => [POS_ETH], lerSaldos: async () => SALDO_ETH(0.5),
     }, sessao(), CREDS);
     if (r.resultado !== "deriva") throw new Error(`esperava deriva, veio ${r.resultado}`);
     expect(r.achados[0]).toContain("ACCOUNT_DRIFT");
     expect(r.achados[0]).toContain("ETH");
+    expect(r.achados[0]).toContain("saldo total real");
     expect(r.quarentenaGravada).toBe(true);
     const q = b.updates.find((u) => u.patch.quarentena_em);
     expect(q, "a quarentena tem de ser gravada na sessão").toBeTruthy();
@@ -75,7 +99,7 @@ describe("A103 — reconciliarConta", () => {
 
   it("J3 dentro da tolerância (max $5, 2%) NÃO é deriva", async () => {
     const b = dbFalso();
-    // 0,99 ETH livre vs 1,0 interno: diferença $30 < $60 de tolerância.
+    // 0,99 ETH no total vs 1,0 interno: diferença $30 < $60 de tolerância.
     const r = await reconciliarConta({
       db: b.db, lerPosicoes: async () => [POS_ETH], lerSaldos: async () => SALDO_ETH(0.99),
     }, sessao(), CREDS);
@@ -116,7 +140,7 @@ describe("A103 — reconciliarConta", () => {
     if (r.resultado !== "sem_drift") throw new Error(`veio ${r.resultado}`);
     expect(r.baselineGravada).toBe(true);
     const base = b.updates.find((u) => u.patch.saldo_baseline);
-    expect(base, "snapshot da primeira reconciliação").toBeTruthy();
+    expect(base, "snapshot da primeira reconciliação (telemetria)").toBeTruthy();
 
     const b2 = dbFalso();
     const r2 = await reconciliarConta({
@@ -148,6 +172,111 @@ describe("A103 — reconciliarConta", () => {
   });
 });
 
+describe("A103 round 3 — cenários A–F do contrato novo", () => {
+  it("A ⚠️⚠️⚠️ free .2 / used .8 / total 1 COM exit armado NÃO é drift — o saldo está numa ordem NOSSA", async () => {
+    const b = dbFalso();
+    const r = await reconciliarConta({
+      db: b.db, lerPosicoes: async () => [POS_ETH_ARMADA],
+      lerSaldos: async () => SALDO_ETH(0.2, 0.8),
+    }, sessao(), CREDS);
+    expect(r.resultado).toBe("sem_drift");
+    expect(b.updates.some((u) => u.patch.quarentena_em)).toBe(false);
+  });
+
+  it("A2 o fallback free+used vale quando a venue não manda `total`", async () => {
+    const b = dbFalso();
+    const r = await reconciliarConta({
+      db: b.db, lerPosicoes: async () => [POS_ETH_ARMADA],
+      lerSaldos: async () => SALDO_ETH(0.2, 0.8, true),
+    }, sessao(), CREDS);
+    expect(r.resultado).toBe("sem_drift");
+  });
+
+  it("B total 0.5 com parte travada é deriva igual — o TOTAL é que mede a existência", async () => {
+    const b = dbFalso();
+    const r = await reconciliarConta({
+      db: b.db, lerPosicoes: async () => [POS_ETH_ARMADA],
+      lerSaldos: async () => SALDO_ETH(0.3, 0.2),
+    }, sessao(), CREDS);
+    expect(r.resultado).toBe("deriva");
+    const q = b.updates.find((u) => u.patch.quarentena_em);
+    expect(q, "deriva real continua gravando quarentena").toBeTruthy();
+  });
+
+  it("C ⚠️⚠️⚠️ total 1, used .8 SEM exit armado → bloqueio_nao_explicado, SEM quarentena, SEM 'nao sustenta'", async () => {
+    const b = dbFalso();
+    const r = await reconciliarConta({
+      db: b.db, lerPosicoes: async () => [POS_ETH],
+      lerSaldos: async () => SALDO_ETH(0.2, 0.8),
+    }, sessao(), CREDS);
+    if (r.resultado !== "bloqueio_nao_explicado") {
+      throw new Error(`esperava bloqueio_nao_explicado, veio ${r.resultado}`);
+    }
+    expect(r.achados[0]).toContain("ACCOUNT_EXTERNAL_ACTIVITY");
+    // ⚠️ A mensagem NÃO pode alegar que o saldo não sustenta o inventário —
+    // ele sustenta. O que não se explica é a TRAVA.
+    expect(r.achados[0]).not.toMatch(/nao sustenta/i);
+    expect(r.achados[0]).toMatch(/existe/);
+    // ⚠️ SEM quarentena destrutiva: o inventário está lá, nada se apaga.
+    expect(b.updates.some((u) => u.patch.quarentena_em)).toBe(false);
+  });
+
+  it("C2 trava DENTRO da tolerância não é bloqueio (0.99 livre, 0 armada)", async () => {
+    const b = dbFalso();
+    const r = await reconciliarConta({
+      db: b.db, lerPosicoes: async () => [POS_ETH],
+      lerSaldos: async () => SALDO_ETH(0.99, 0.005),
+    }, sessao(), CREDS);
+    expect(r.resultado).toBe("sem_drift");
+  });
+
+  it("D depósito a mais (+2 ETH) não é deriva e NÃO aumenta a posição interna", async () => {
+    const b = dbFalso();
+    const r = await reconciliarConta({
+      db: b.db, lerPosicoes: async () => [POS_ETH], lerSaldos: async () => SALDO_ETH(3),
+    }, sessao(), CREDS);
+    expect(r.resultado).toBe("sem_drift");
+    // A posição interna é do bot; este módulo JAMAIS escreve nela.
+    expect(b.updates.every((u) => !("base_amount" in u.patch))).toBe(true);
+    expect(b.updates.some((u) => u.patch.quarentena_em)).toBe(false);
+  });
+
+  it("E saque real com saldo parcialmente travado → deriva (total 0.3 < 1)", async () => {
+    const b = dbFalso();
+    const r = await reconciliarConta({
+      db: b.db, lerPosicoes: async () => [POS_ETH],
+      lerSaldos: async () => SALDO_ETH(0.1, 0.2),
+    }, sessao(), CREDS);
+    if (r.resultado !== "deriva") throw new Error(`veio ${r.resultado}`);
+    expect(r.achados[0]).toContain("ACCOUNT_DRIFT");
+  });
+
+  it("F falha de leitura → leitura_falhou (quem chama prende as entradas), sem acusar nada", async () => {
+    const b = dbFalso();
+    const r = await reconciliarConta({
+      db: b.db, lerPosicoes: async () => [POS_ETH_ARMADA],
+      lerSaldos: async () => { throw new Error("venue fora"); },
+    }, sessao(), CREDS);
+    expect(r.resultado).toBe("leitura_falhou");
+    expect(b.updates.some((u) => u.patch.quarentena_em)).toBe(false);
+  });
+
+  it("duas posições no MESMO ativo dividem o mesmo saldo — agrega por base, não acusa em dobro", async () => {
+    const b = dbFalso();
+    // 0.6 + 0.4 = 1 ETH interno; total 1 cobre. Conferidas separadamente contra
+    // o mesmo free, a segunda acusaria falta que não existe.
+    const r = await reconciliarConta({
+      db: b.db,
+      lerPosicoes: async () => [
+        { base: "ETH", baseAmount: 0.6, precoRef: 3_000 },
+        { base: "ETH", baseAmount: 0.4, precoRef: 3_000, armada: true },
+      ],
+      lerSaldos: async () => SALDO_ETH(0.6, 0.4),
+    }, sessao(), CREDS);
+    expect(r.resultado).toBe("sem_drift");
+  });
+});
+
 describe("J7 — o hook no cron do autopilot", () => {
   const semComentarios = (s: string) =>
     s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/^(\s*)\/\/.*$/gm, "$1");
@@ -171,6 +300,24 @@ describe("J7 — o hook no cron do autopilot", () => {
     expect(CRON).toMatch(/rc\.resultado === "leitura_falhou"/);
   });
 
+  it("⚠️⚠️⚠️ bloqueio_nao_explicado também VEDA entradas — evento e dedup PRÓPRIOS, sem quarentena", () => {
+    const iBloq = CRON.indexOf('rc.resultado === "bloqueio_nao_explicado"');
+    expect(iBloq, "o cron precisa tratar bloqueio_nao_explicado").toBeGreaterThan(-1);
+    const iFalhou = CRON.indexOf('rc.resultado === "leitura_falhou"');
+    const trecho = CRON.slice(iBloq, iFalhou);
+    // Entradas presas, fail-closed...
+    expect(trecho).toMatch(/entradasLiberadas = false/);
+    // ...com evento DISTINTO do drift...
+    expect(trecho).toMatch(/recordEvent\("account_external_activity"/);
+    // ...dedup própria (não a do drift)...
+    expect(trecho).toMatch(/dedupKey: `account_external_activity:/);
+    expect(trecho).not.toMatch(/account_drift:/);
+    // ...e SEM quarentena neste ramo — ela só existe no ramo da deriva.
+    expect(trecho).not.toMatch(/quarentena_em:/);
+    // Severity med: o inventário existe; não é o alarme máximo do drift.
+    expect(trecho).toMatch(/severity: "med"/);
+  });
+
   it("⚠️⚠️⚠️ o gate prende BUY e NUNCA prende SELL", () => {
     // O ramo de venda (`if (vendaDe)`) vem ANTES do gate e termina em
     // `continue` — saída nunca passa por `!entradasLiberadas`.
@@ -180,5 +327,31 @@ describe("J7 — o hook no cron do autopilot", () => {
     expect(iVenda).toBeGreaterThan(-1);
     expect(iGate).toBeGreaterThan(iVenda);
     expect(iGate).toBeLessThan(iCompra);
+  });
+});
+
+describe("A103 — guarda do módulo: a existência é medida pelo TOTAL", () => {
+  const semComentarios = (s: string) =>
+    s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/^(\s*)\/\/.*$/gm, "$1");
+  const MOD = semComentarios(readFileSync("src/lib/cex/execucao/reconciliar-conta.ts", "utf8"));
+
+  it("⚠️⚠️ a comparação de deriva usa o TOTAL real (com fallback free+used), nunca o free sozinho", () => {
+    expect(MOD).toMatch(/totalRealDo/);
+    expect(MOD).toMatch(/Number\(saldo\.free\) \+ Number\(saldo\.used\)/);
+    // A deriva compara o total — não o livre.
+    expect(MOD).toMatch(/if \(totalReal < g\.interno - g\.limiteQty\)/);
+    // E o bloqueio é medido por free + armada — o free SOZINHO não acusa nada.
+    expect(MOD).toMatch(/livreReal \+ g\.armada < g\.interno - g\.limiteQty/);
+  });
+
+  it("⚠️ a posição exit_armed (status + exit_order_id) é o que explica o `used`", () => {
+    expect(MOD).toMatch(/p\.status === "exit_armed" && !!p\.exit_order_id/);
+  });
+
+  it("⚠️ o módulo não promete 'reconciliação completa' — prova é integridade do inventário", () => {
+    const cru = readFileSync("src/lib/cex/execucao/reconciliar-conta.ts", "utf8");
+    expect(cru).toMatch(/INTEGRIDADE DO INVENTÁRIO ATRIBUÍDO AO AUTOPILOT/i);
+    expect(cru).not.toMatch(/reconciliação completa da conta[.:]? (feita|garantida|assegurada)/i);
+    expect(cru).toMatch(/TELEMETRIA/);
   });
 });

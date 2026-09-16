@@ -649,11 +649,17 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
    * roda quando há ordem em dúvida. Um saque do cliente ou uma venda manual no
    * app da corretora não geram intent — e deixariam o bot decidindo sobre um
    * inventário que já não existe. Aqui a conta é conferida TODA passada: o
-   * saldo livre real tem de sustentar o inventário de `autopilot_positions`.
+   * saldo TOTAL real (free + used) tem de sustentar o inventário de
+   * `autopilot_positions`. Exit armado pela própria Z-SWAP explica `used`;
+   * total íntegro com trava não explicada é `bloqueio_nao_explicado`, não
+   * deriva.
    *
    * CONDUTA FAIL-CLOSED, e só sobre ENTRADAS:
    *   · deriva confirmada → a sessão entra em QUARENTENA (ela grava
    *     `quarentena_em`/`quarentena_motivo`) — zero BUY autônomo até mão humana;
+   *   · bloqueio não explicado → entradas bloqueadas e evento
+   *     `account_external_activity`, SEM quarentena: o inventário existe, o
+   *     que não tem dono é a trava sobre ele;
    *   · leitura falhou → não se conclui "sem drift": entradas bloqueadas até
    *     haver leitura confiável;
    *   · SAÍDAS/redução NUNCA são presas — quarentena não pode trancar o cliente
@@ -680,6 +686,24 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
           notifyTelegram(
             `🔴 <b>ACCOUNT_DRIFT</b> — sessão em quarentena\n${rc.achados.join("\n").slice(0, 300)}`,
             { dedupKey: `account_drift:${s.id}` });
+        } else if (rc.resultado === "bloqueio_nao_explicado") {
+          /**
+           * ⚠️ O INVENTÁRIO EXISTE — a trava sobre ele é que não tem dono.
+           * Fail-closed nas ENTRADAS, como toda incerteza sobre a conta; mas
+           * SEM quarentena (nada a apagar) e SEM dizer "saldo não sustenta o
+           * inventário" — ele sustenta. Evento e dedup PRÓPRIOS: afogar isto
+           * no canal do drift diluiria os dois sinais.
+           */
+          entradasLiberadas = false;
+          await recordEvent("account_external_activity", { wallet: s.wallet_address, meta: {
+            severity: "med", session: s.id, achados: rc.achados,
+            why: "o saldo total sustenta o inventario, mas ha saldo travado/"
+              + "atividade externa que a Z-SWAP nao explica. Novas entradas "
+              + "bloqueadas (fail-closed), sem quarentena — saidas livres.",
+          } });
+          notifyTelegram(
+            `🟠 <b>ACCOUNT_EXTERNAL_ACTIVITY</b> — entradas bloqueadas\n${rc.achados.join("\n").slice(0, 300)}`,
+            { dedupKey: `account_external_activity:${s.id}` });
         } else if (rc.resultado === "leitura_falhou") {
           // ⚠️ NÃO é "sem drift". Entradas presas até ler de novo; saídas livres.
           entradasLiberadas = false;
