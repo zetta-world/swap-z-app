@@ -8,6 +8,7 @@ import {
   avancarPlano, type ModoPlano,
 } from "@/lib/dca/store";
 import { proximaJanela, type Intervalo } from "@/lib/dca/relogio";
+import { decidirCapacidade, lerCapacidades } from "@/lib/dca/capacidade";
 /**
  * ⚠️ AS MESMAS FUNÇÕES PURAS DA AUDITORIA DE `/orders` (PR #347).
  *
@@ -210,6 +211,36 @@ export async function POST(req: NextRequest) {
    */
   let conexaoId: string | null = null;
   if (modo === "real") {
+    /**
+     * ⚠️⚠️⚠️ A CAPACIDADE, ANTES DE QUALQUER EFEITO — achado A112, na CRIAÇÃO.
+     *
+     * O cron já recusa plano real sem `dca_real_liberado` (fail-closed). Mas o
+     * cron é a ÚLTIMA porta; esta rota é a PRIMEIRA — e sem o check aqui, o
+     * cliente ENTREGA A CHAVE DA CORRETORA, ela é verificada contra a venue
+     * (chamada externa) e GRAVADA cifrada no cofre... para um plano que o cron
+     * vai recusar para sempre. Credencial guardada "para quando abrir" é
+     * exatamente o ativo que o cofre existe para não acumular sem motivo.
+     *
+     * O check é o MESMO caminho do cron (`lerCapacidades` + `decidirCapacidade`,
+     * sem fallback para a chave legada), e vem antes de `verificarChave`,
+     * `guardarConexao` e `criarPlano`: capacidade fechada → zero verificação
+     * externa, zero cofre, zero plano. `undefined` (não deu para ler) é
+     * FECHADO — criar plano real sobre leitura falha é operar às cegas.
+     */
+    const capacidade = decidirCapacidade("real", await lerCapacidades(getSupabaseAdmin()));
+    if (!capacidade.permitido) {
+      await recordEvent("dca_real_fechado", { wallet: session.sub, meta: {
+        exchangeId, symbol, causa: capacidade.causa,
+        why: "criacao de plano REAL recusada: dca_real_liberado nao esta 'true' em "
+          + "admin_kv (ou nao deu para ler). Ele nasce FECHADO de proposito — o "
+          + "interruptor antigo foi aberto para um teste SIMULADO. Nada foi "
+          + "verificado, gravado ou criado.",
+      } });
+      return NextResponse.json(
+        { ok: false, error: "dca_real_fechado", causa: capacidade.causa },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (!creds?.apiKey || !creds?.apiSecret) {
       return NextResponse.json({ ok: false, error: "credenciais_ausentes" }, { status: 400 });
     }
