@@ -19,15 +19,22 @@
  *    9. ingestão do que se sabe   ACK não é fill
  *
  * ─────────────────────────────────────────────────────────────────────────
- * A110, ROUND 2 — O CERTIFICADO É A AUTORIDADE FINAL, DENTRO DO EXECUTOR.
+ * A110, ROUNDS 2 E 3 — O CERTIFICADO É A AUTORIDADE FINAL, DENTRO DO EXECUTOR,
+ * E ELA DERIVA DO INTENT.
  *
  * O precheck das rotas (`avaliarCertificado`) continua onde está — é ele que
  * dá o erro bom cedo (A113, política única). Mas ele decide num instante
  * ANTERIOR ao envio: revogar o certificado entre a decisão da rota e o
- * submit passava batido. Agora o passo 6 chama a RPC
- * `cex_autorizar_e_submeter` (migration 0057), que relê o PRÓPRIO intent sob
- * `for update`, valida o certificado no banco e marca SUBMITTING na mesma
- * transação. A autorização final não é mais uma lembrança da rota.
+ * submit passava batido. O passo 6 chama a RPC `cex_autorizar_e_submeter`
+ * (0057, endurecida na 0060), que relê o PRÓPRIO intent sob `for update`,
+ * valida o certificado no banco e marca SUBMITTING na mesma transação.
+ *
+ * ⚠️ ROUND 3 — A AUTORIZAÇÃO DERIVA DO INTENT, NÃO DO CALLER. A RPC recebe
+ * APENAS o id: venue, símbolo, nocional e hash vêm da linha gravada no passo
+ * 2 (o `strategy_hash` virou coluna durável). Um caller que mentisse venue,
+ * símbolo ou nocional DEPOIS do precheck não tem mais como expressar a
+ * mentira — não existe parâmetro para isso. A autorização final não é mais
+ * uma lembrança da rota, nem uma afirmação de quem chama.
  *
  * ⚠️ JANELA RESIDUAL, DECLARADA: uma revogação comitada DEPOIS do commit da
  * RPC e ANTES do HTTP à corretora não é pega. Eliminar essa janela exigiria
@@ -82,8 +89,10 @@ export interface ContextoDeExecucao {
   strategyVersion?: number | null;
   certificateId?: string | null;
   /**
-   * ⚠️ O HASH DOS PARÂMETROS COM QUE a estratégia vai rodar agora (A110,
-   * round 2). O intent não o guarda; quem chama o tem na mão da sessão.
+   * ⚠️ O HASH DOS PARÂMETROS COM QUE a estratégia vai rodar agora (A110).
+   * Desde o round 3 ele é gravado NO INTENT na criação (coluna
+   * `strategy_hash`, migration 0060) — e a autorização final do passo 6 lê o
+   * hash DE LÁ, não de parâmetro: depois de gravado, ninguém mais o afirma.
    * Compra autônoma real sem hash que case é recusada NO BANCO, no passo 6.
    */
   strategyHash?: string | null;
@@ -148,37 +157,29 @@ export type ResultadoDaExecucao =
    */
   | { desfecho: "incerto"; intentId: string; porque: string };
 
-/** O pedido de autorização final — o que o intent NÃO guarda em si. */
-export interface PedidoDeAutorizacao {
-  strategyHash: string | null;
-  venue: string;
-  symbol: string;
-  notionalUsd: number | null;
-}
-
 export type ResultadoDaAutorizacao =
   | { ok: true }
   | { ok: false; porque: string };
 
 /**
- * ⚠️ O SEAM DA AUTORIZAÇÃO FINAL (A110, round 2). O default é a RPC
- * `cex_autorizar_e_submeter` (migration 0057); os testes injetam um falso que
- * reproduz a mesma decisão. Nenhum outro caminho marca SUBMITTING a partir
- * deste executor — autorização e ponto-sem-volta são a mesma passada.
+ * ⚠️ O SEAM DA AUTORIZAÇÃO FINAL (A110, round 3). A assinatura recebe APENAS
+ * o id do intent: venue, símbolo, nocional e hash são lidos DA PRÓPRIA LINHA
+ * pela RPC `cex_autorizar_e_submeter` (migration 0060), sob `for update`.
+ * O caller mentiroso deixou de ser um caso a detectar — é IMPOSSÍVEL DE
+ * EXPRESSAR: não existe parâmetro para mentir. O default é a RPC; os testes
+ * injetam um falso que reproduz a mesma decisão. Nenhum outro caminho marca
+ * SUBMITTING a partir deste executor — autorização e ponto-sem-volta são a
+ * mesma passada.
  */
 export type AutorizarSubmissao = (
-  db: SupabaseClient<Database>, intentId: string, pedido: PedidoDeAutorizacao,
+  db: SupabaseClient<Database>, intentId: string,
 ) => Promise<ResultadoDaAutorizacao>;
 
 /** A autorização de verdade: valida o certificado e marca SUBMITTING numa
- *  transação só, no banco. */
-export const autorizarSubmissaoNoBanco: AutorizarSubmissao = async (db, intentId, p) => {
+ *  transação só, no banco. O único argumento é o id — o resto é do intent. */
+export const autorizarSubmissaoNoBanco: AutorizarSubmissao = async (db, intentId) => {
   const { data, error } = await db.rpc("cex_autorizar_e_submeter", {
     p_intent_id: intentId,
-    p_strategy_hash: p.strategyHash,
-    p_venue: p.venue,
-    p_symbol: p.symbol,
-    p_notional: p.notionalUsd,
   });
   if (error) return { ok: false, porque: error.message.slice(0, 200) };
   const r = data as { ok?: boolean; porque?: string } | null;
@@ -221,6 +222,12 @@ export async function executarOrdemCex(
   }
 
   // ── 2. O INTENT DURÁVEL, ANTES DE TUDO ────────────────────────────────
+  /**
+   * ⚠️ TUDO QUE A AUTORIZAÇÃO FINAL VAI CONFERIR É GRAVADO AQUI (A110,
+   * round 3): venue, símbolo, nocional E o `strategyHash`. A RPC do passo 6
+   * lê esses fatos DA LINHA gravada — depois deste insert, o caller não tem
+   * mais como afirmar nada sobre eles.
+   */
   const aberto = await abrirIntent(db, {
     origin: ctx.origin, autonomous: ctx.autonomous,
     exchangeId: ordem.exchangeId, symbol: ordem.symbol, side: ordem.side,
@@ -229,7 +236,7 @@ export async function executarOrdemCex(
     walletAddress: ctx.walletAddress, sessionId: ctx.sessionId, planId: ctx.planId,
     cycleNumber: ctx.cycleNumber, conexaoId: ctx.conexaoId,
     strategyId: ctx.strategyId, strategyVersion: ctx.strategyVersion,
-    certificateId: ctx.certificateId,
+    certificateId: ctx.certificateId, strategyHash: ctx.strategyHash ?? null,
   });
   if (!aberto.ok) {
     return { desfecho: "recusado", intentId: null,
@@ -288,24 +295,22 @@ export async function executarOrdemCex(
    * registrar "estou enviando" é exatamente o buraco do A80: o processo morre
    * e o banco não tem como saber que houve uma tentativa.
    *
-   * ⚠️⚠️ E AGORA A GRAVAÇÃO É TAMBÉM A AUTORIZAÇÃO (A110, round 2). A RPC
+   * ⚠️⚠️ E AGORA A GRAVAÇÃO É TAMBÉM A AUTORIZAÇÃO (A110, rounds 2 e 3). A RPC
    * `cex_autorizar_e_submeter` relê o PRÓPRIO intent sob `for update` e, para
    * compra autônoma real, valida o certificado no banco — revogado, expirado,
    * de outra estratégia/versão, hash divergente, venue ou símbolo fora do
    * envelope, nocional acima do teto: recusa, e o intent NÃO transiciona.
-   * O kill-switch (passo 3) continua ANTES desta chamada, de propósito: o
-   * freio universal não depende de certificado nenhum.
+   * Desde o round 3 (migration 0060) TUDO o que ela confere vem DA LINHA do
+   * intent — venue, símbolo, nocional e hash foram gravados no passo 2, e a
+   * assinatura recebe só o id. O kill-switch (passo 3) continua ANTES desta
+   * chamada, de propósito: o freio universal não depende de certificado
+   * nenhum.
    *
    * ⚠️ SELL É ISENTA POR DECISÃO DOCUMENTADA — ver o cabeçalho do arquivo e
-   * da migration 0057.
+   * das migrations 0057/0060.
    */
   const autorizar = deps.autorizarSubmissao ?? autorizarSubmissaoNoBanco;
-  const aut = await autorizar(db, intent.id, {
-    strategyHash: ctx.strategyHash ?? null,
-    venue: ordem.exchangeId,
-    symbol: ordem.symbol,
-    notionalUsd: ordem.notionalUsd ?? null,
-  });
+  const aut = await autorizar(db, intent.id);
   if (!aut.ok) {
     if (reserva?.liberar) await reserva.liberar();
     return recusarPreEnvio("autorizacao_recusada", `autorizacao: ${aut.porque}`);

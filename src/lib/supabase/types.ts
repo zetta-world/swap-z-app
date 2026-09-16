@@ -608,6 +608,8 @@ export type CexExecutionIntentRow = {
   conexao_id:             string | null;
   strategy_id:            string | null;
   strategy_version:       number | null;
+  /** ⚠️ DURÁVEL desde a 0060: a autorização final o lê da linha, sob lock. */
+  strategy_hash:          string | null;
   certificate_id:         string | null;
   exchange_id:            string;
   symbol:                 string;
@@ -902,10 +904,13 @@ export interface Database {
        * existência do certificate_id não é mais confundida com validade.
        */
       cex_autorizar_e_submeter: {
-        Args: {
-          p_intent_id: string; p_strategy_hash: string | null;
-          p_venue: string; p_symbol: string; p_notional: number | null;
-        };
+        /**
+         * ⚠️ A110 ROUND 3 (migration 0060): a assinatura recebe APENAS o id.
+         * Venue, símbolo, nocional e hash são derivados DA LINHA do intent,
+         * sob `for update` — o caller não tem parâmetro para mentir. A
+         * assinatura antiga (uuid, text, text, text, numeric) foi APAGADA.
+         */
+        Args: { p_intent_id: string };
         Returns: { ok: boolean; de?: CexIntentState; para?: CexIntentState;
                    porque?: string };
       };
