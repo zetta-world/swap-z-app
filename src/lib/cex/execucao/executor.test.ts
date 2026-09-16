@@ -15,7 +15,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { bancoFalso } from "@/lib/cex/execucao/banco-falso";
-import { executarOrdemCex, type ContextoDeExecucao, type OrdemPedida } from "@/lib/cex/execucao/executor";
+import { executarOrdemCex, autorizarSubmissaoNoBanco,
+         type ContextoDeExecucao, type OrdemPedida } from "@/lib/cex/execucao/executor";
 import type { RespostaDaVenue } from "@/lib/cex/execucao/venue-primitivo";
 import type { CexCredentials, CexId } from "@/lib/cex/types";
 
@@ -275,19 +276,22 @@ describe("⑥ o simulado percorre o mesmo caminho", () => {
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
- * ⑦ A110, ROUND 2 — O CERTIFICADO É A AUTORIDADE FINAL, DENTRO DO EXECUTOR.
+ * ⑦ A110 — O CERTIFICADO É A AUTORIDADE FINAL, DENTRO DO EXECUTOR.
  *
  * O precheck da rota (`avaliarCertificado`) decide CEDO, mas decide num
  * instante anterior ao envio. Entre os dois cabia uma revogação — e ela
- * passava. Agora o passo 6 é a RPC `cex_autorizar_e_submeter` (migration
- * 0057): relê o PRÓPRIO intent, valida o certificado NO BANCO e marca
- * SUBMITTING na mesma transação. Estes testes perguntam:
+ * passava. Desde o round 2 o passo 6 é a RPC `cex_autorizar_e_submeter`, e
+ * desde o ROUND 3 (migration 0060) ela recebe APENAS o id do intent: venue,
+ * símbolo, nocional e hash são lidos DA PRÓPRIA LINHA, sob `for update`. O
+ * caller mentiroso não é um caso a detectar — é impossível de expressar.
+ * Estes testes perguntam:
  *
  *   · certificado válido → a ordem SAI?                    (H1)
  *   · revogado antes — ou ENTRE precheck e executor —      (H2, H3)
  *     → ZERO chamada à corretora?
  *   · cert de outra strategy / versão / hash / venue /     (H4–H8)
  *     símbolo → ZERO chamada?
+ *   · hash ausente no intent → ZERO chamada?               (H6b)
  *   · nocional acima do teto certificado → ZERO chamada?   (H9)
  *   · SELL com certificado revogado → SAI (exceção         (H10)
  *     documentada: revogação não prende saída)?
@@ -387,6 +391,8 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   });
 
   it("H6 ⚠️⚠️ hash divergente — os parâmetros mudaram sob o certificado: ZERO createOrder", async () => {
+    // Round 3: o hash do ctx é GRAVADO no intent na criação; a RPC o lê de
+    // lá e o confere contra o certificado. Adulterado, não casa: recusa.
     const b = bancoFalso();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
@@ -395,6 +401,25 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
       { ...CTX_AUTO, strategyHash: "hash-adulterado" }, ORDEM, CREDS);
     expect(enviar).not.toHaveBeenCalled();
     if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
+    // ⚠️ E o hash adulterado ficou GRAVADO — a evidência da tentativa não some.
+    expect(b.intents[0].strategy_hash).toBe("hash-adulterado");
+  });
+
+  it("H6b ⚠️⚠️ hash AUSENTE no intent — não medimos não passa: ZERO createOrder", async () => {
+    // Uma compra autônoma real sem strategy_hash gravado (ctx veio sem ele)
+    // não tem como provar que roda os parâmetros certificados.
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const enviar = venue(ACEITA);
+    const { strategyHash: _omitido, ...ctxSemHash } = CTX_AUTO;
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, ctxSemHash, ORDEM, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") {
+      expect(r.motivo).toBe("autorizacao_recusada");
+      expect(r.porque).toMatch(/strategy_hash/);
+    }
+    expect(b.intents[0].strategy_hash ?? null).toBeNull();
   });
 
   it("H7 ⚠️ venue fora do envelope certificado: ZERO createOrder", async () => {
@@ -478,36 +503,197 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   });
 });
 
-describe("⑧ guarda estrutural — a RPC da 0057 existe e nasce FECHADA (A110/A116)", () => {
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ * ⑦b A110 ROUND 3 — O CALLER MENTIROSO DEIXOU DE EXISTIR.
+ *
+ * Até o round 2 a RPC recebia `p_venue/p_symbol/p_notional/p_strategy_hash`
+ * do CALLER: a autorização final conferia o certificado contra o que quem
+ * chama AFIRMOU. Desde a 0060 a assinatura é `cex_autorizar_e_submeter(uuid)`
+ * e TUDO deriva da linha do intent. Um ctx/ordem com symbol divergente do
+ * intent é IMPOSSÍVEL DE EXPRESSAR — a ordem É o que grava o intent; depois
+ * disso, ninguém afirma mais nada.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+describe("⑦b A110 round 3 — a autorização deriva DO INTENT, não do caller", () => {
+  it("⚠️⚠️ a RPC é chamada com APENAS p_intent_id — não há parâmetro para mentir", async () => {
+    // Espiona o transporte: se venue/símbolo/nocional/hash voltarem a viajar
+    // como argumento, este teste quebra ANTES de qualquer outro.
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const rpcReal = b.cliente.rpc.bind(b.cliente) as unknown as (
+      nome: string, args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+    const chamadas: Record<string, unknown>[] = [];
+    (b.cliente as { rpc: unknown }).rpc = async (
+      nome: string, args: Record<string, unknown>,
+    ) => {
+      if (nome === "cex_autorizar_e_submeter") chamadas.push(args);
+      return rpcReal(nome, args);
+    };
+    const enviar = venue(ACEITA);
+    await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO, ORDEM, CREDS);
+    expect(enviar).toHaveBeenCalledTimes(1);
+    expect(chamadas).toHaveLength(1);
+    expect(Object.keys(chamadas[0])).toEqual(["p_intent_id"]);
+  });
+
+  it("⚠️ a seam não carrega dados de caller: exatamente (db, intentId)", async () => {
+    const b = bancoFalso();
+    const espiada = vi.fn(autorizarSubmissaoNoBanco);
+    await executarOrdemCex(
+      { db: b.cliente, enviar: venue(ACEITA), killSwitches: passaLivre,
+        autorizarSubmissao: espiada },
+      CTX, ORDEM, CREDS);
+    expect(espiada).toHaveBeenCalledTimes(1);
+    expect(espiada.mock.calls[0]).toHaveLength(2);
+    expect(espiada.mock.calls[0]?.[1]).toBe(String(b.intents[0].id));
+  });
+
+  it("⚠️⚠️ AUTORIDADE DO BANCO: intent coerente autoriza SEM o caller dizer nada", async () => {
+    /**
+     * A chamada direta à RPC com um intent cuja linha já carrega venue,
+     * símbolo, nocional e hash: a validação inteira acontece contra a LINHA.
+     * É este teste que a quebra deliberada derruba — um banco que volte a
+     * ler esses fatos dos argumentos (que não existem mais) recusa aqui.
+     */
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    await b.cliente.from("cex_execution_intents").insert({
+      id: "i-direto", client_order_id: "c-direto", origin: "autopilot_cron",
+      autonomous: true, exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
+      order_type: "market", requested_qty: 10, requested_notional_usd: 1000,
+      strategy_id: "estrategia-x", strategy_version: 3, strategy_hash: "hash-abc",
+      certificate_id: CERT_ID, state: "RESERVED",
+    });
+    const r = await autorizarSubmissaoNoBanco(b.cliente, "i-direto");
+    expect(r.ok).toBe(true);
+    expect(b.intents[0].state).toBe("SUBMITTING");
+  });
+
+  it("⚠️⚠️ venue DO INTENT fora do certificado → recusa (a autoridade é a linha)", async () => {
+    // Não é um caller mentindo: é a prova de que a venue conferida é a da
+    // linha. Um intent gravado com venue fora do envelope não passa, e nada
+    // que o caller pudesse dizer mudaria isso.
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    await b.cliente.from("cex_execution_intents").insert({
+      id: "i-kraken", client_order_id: "c-kraken", origin: "autopilot_cron",
+      autonomous: true, exchange_id: "kraken", symbol: "BTC/USDT", side: "buy",
+      order_type: "market", requested_qty: 10, requested_notional_usd: 1000,
+      strategy_id: "estrategia-x", strategy_version: 3, strategy_hash: "hash-abc",
+      certificate_id: CERT_ID, state: "RESERVED",
+    });
+    const r = await autorizarSubmissaoNoBanco(b.cliente, "i-kraken");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.porque).toMatch(/kraken.*(fora do certificado|nao esta entre)/);
+    // ⚠️ E o intent NÃO transicionou: a recusa não é a marcação.
+    expect(b.intents[0].state).toBe("RESERVED");
+  });
+});
+
+describe("⑦c A110 round 3 — market autônomo: o nocional DURÁVEL decide", () => {
+  /**
+   * Ordem MARKET não tem preço no pedido — o nocional tem de vir medido do
+   * servidor (a rota repassa `guard.realNotionalUsd`) e gravado no intent.
+   * A RPC confere o teto do certificado contra `requested_notional_usd`.
+   */
+  const ORDEM_MARKET: OrdemPedida = {
+    exchangeId: "binance", symbol: "BTC/USDT", side: "buy", type: "market",
+    qty: 10, notionalUsd: 1500,
+  };
+
+  it("⚠️ nocional persistido DENTRO do teto → autoriza e envia", async () => {
+    const b = bancoFalso();
+    b.certificados.push(certVivo());   // teto 2000; pedido 1500
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO, ORDEM_MARKET, CREDS);
+    expect(enviar).toHaveBeenCalledTimes(1);
+    expect(r.desfecho).toBe("submetido");
+    expect(b.intents[0].requested_notional_usd).toBe(1500);
+  });
+
+  it("⚠️⚠️ nocional persistido ACIMA do teto → ZERO createOrder", async () => {
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO,
+      { ...ORDEM_MARKET, qty: 50, notionalUsd: 5000 }, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
+  });
+
+  it("⚠️⚠️ nocional NULL com certificado com teto → ZERO createOrder (não medimos não passa)", async () => {
+    // Sem referência de preço, a rota deixa null de propósito — e a recusa
+    // do banco é o comportamento correto, não um acidente.
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO,
+      { ...ORDEM_MARKET, notionalUsd: null }, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") {
+      expect(r.motivo).toBe("autorizacao_recusada");
+      expect(r.porque).toMatch(/nocional|teto/i);
+    }
+    expect(b.intents[0].requested_notional_usd ?? null).toBeNull();
+  });
+});
+
+describe("⑧ guarda estrutural — a RPC da 0060 deriva do intent e nasce FECHADA", () => {
   /**
    * ⚠️ LÊ O SQL, não a memória. O banco-falso reproduz a decisão; esta guarda
-   * garante que a RPC de verdade existe, é `security definer`, lê o próprio
-   * intent sob lock e NUNCA fica exposta a PUBLIC/anon/authenticated — a
-   * lição do A116 aplicada no nascimento, não na varredura seguinte.
+   * garante que a RPC de verdade existe com a assinatura NOVA (só uuid), lê
+   * tudo do próprio intent sob lock, que a assinatura ANTIGA foi apagada de
+   * forma inequívoca, e que a ACL nasce fechada — a lição do A116 aplicada
+   * no nascimento, não na varredura seguinte.
    */
   const SQL = readFileSync(
-    "supabase/migrations/0057_executor_autoriza_submissao.sql", "utf8").toLowerCase();
+    "supabase/migrations/0060_autorizacao_deriva_do_intent.sql", "utf8").toLowerCase();
 
-  it("a RPC existe com a assinatura esperada, security definer, search_path fixo", () => {
-    const i = SQL.indexOf("function public.cex_autorizar_e_submeter");
-    expect(i, "a RPC não está na migration").toBeGreaterThanOrEqual(0);
+  it("⚠️⚠️ a assinatura ANTIGA é apagada, de forma inequívoca", () => {
+    // `create or replace` NÃO remove overloads: sem este drop, a versão de
+    // cinco parâmetros (a que confia no caller) seguiria callable.
+    expect(SQL).toMatch(
+      /drop function if exists public\.cex_autorizar_e_submeter\(uuid, text, text, text, numeric\)/);
+  });
+
+  it("a coluna durável strategy_hash é criada no intent", () => {
+    expect(SQL).toMatch(
+      /alter table public\.cex_execution_intents\s+add column if not exists strategy_hash text/);
+  });
+
+  it("a RPC nova recebe APENAS o id — security definer, search_path fixo", () => {
+    const i = SQL.indexOf("function public.cex_autorizar_e_submeter(\n  p_intent_id uuid");
+    expect(i, "a RPC nova (só uuid) não está na migration").toBeGreaterThanOrEqual(0);
     const corpo = SQL.slice(i, SQL.indexOf("$$;", i));
-    expect(corpo).toMatch(/p_intent_id uuid/);
-    expect(corpo).toMatch(/p_strategy_hash text/);
-    expect(corpo).toMatch(/p_notional numeric/);
+    // ⚠️ NENHUM parâmetro de caller: venue/símbolo/nocional/hash não existem
+    // como entrada. Se voltarem, o caller mentiroso volta junto.
+    expect(corpo).not.toMatch(/p_strategy_hash/);
+    expect(corpo).not.toMatch(/p_venue/);
+    expect(corpo).not.toMatch(/p_symbol/);
+    expect(corpo).not.toMatch(/p_notional/);
     expect(corpo).toMatch(/security definer/);
     expect(corpo).toMatch(/set search_path = public/);
-    // ⚠️ A autoridade é o PRÓPRIO intent, sob lock — não parâmetro de quem chama.
+    // ⚠️ A autoridade é o PRÓPRIO intent, sob lock — e os fatos vêm DA LINHA.
     expect(corpo).toMatch(/from public\.cex_execution_intents\s+where id = p_intent_id for update/);
+    expect(corpo).toMatch(/v_intent\.exchange_id = any\(v_cert\.allowed_venues\)/);
+    expect(corpo).toMatch(/v_intent\.symbol = any\(v_cert\.allowed_symbols\)/);
+    expect(corpo).toMatch(/v_intent\.requested_notional_usd/);
+    expect(corpo).toMatch(/v_intent\.strategy_hash is null or v_intent\.strategy_hash <> v_cert\.strategy_hash/);
     // ⚠️ E a transição usa a MESMA máquina de estados — sem segundo critério.
     expect(corpo).toMatch(/cex_transicao_permitida/);
   });
 
   it("⚠️⚠️ REVOKE de public/anon/authenticated e GRANT só a service_role — na MESMA migration", () => {
     expect(SQL).toMatch(
-      /revoke execute on function public\.cex_autorizar_e_submeter\(uuid, text, text, text, numeric\)\s+from public, anon, authenticated/);
+      /revoke execute on function public\.cex_autorizar_e_submeter\(uuid\)\s+from public, anon, authenticated/);
     expect(SQL).toMatch(
-      /grant execute on function public\.cex_autorizar_e_submeter\(uuid, text, text, text, numeric\)\s+to service_role/);
+      /grant execute on function public\.cex_autorizar_e_submeter\(uuid\)\s+to service_role/);
   });
 
   it("⚠️ a exceção SELL e a janela residual estão DOCUMENTADAS no SQL", () => {
