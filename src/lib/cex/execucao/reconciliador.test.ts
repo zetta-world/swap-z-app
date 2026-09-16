@@ -39,7 +39,9 @@ function comIntent(estado: "SUBMITTING" | "UNKNOWN" | "SUBMITTED", opts: {
     external_order_id: opts.externalOrderId ?? null,
     filled_qty: 0, filled_quote: 0, canceled_qty: 0, fee_total: null, fee_currency: null,
     wallet_address: "0xd", session_id: null, plan_id: "p1", cycle_number: 3,
-    conexao_id: null, strategy_id: null, strategy_version: null, certificate_id: null,
+    // A124: o cron DCA SEMPRE passa `p.conexao_id` (dca/cron/route.ts) — a
+    // fixture sem conexão era irreal e cairia no "escopo indeterminado".
+    conexao_id: "c1", strategy_id: null, strategy_version: null, certificate_id: null,
     created_at: criado, submitted_at: null, last_reconciled_at: null,
     reconcile_attempts: opts.tentativas ?? 0,
   };

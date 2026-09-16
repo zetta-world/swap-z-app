@@ -186,6 +186,9 @@ describe("② guarda de cobertura synthetic→real (A118)", () => {
       id: "i-fee", exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
       order_type: "market", requested_qty: 10, client_order_id: "zsFEE",
       origin: "dca_cron", autonomous: true, state: "UNKNOWN",
+      // A124: o cron DCA sempre passa conexao_id — sem ele o escopo é
+      // indeterminado e o intent não sai do lugar.
+      conexao_id: "cx-fee",
       external_order_id: "ORD-1",
     });
     await snap(b, { qty: 5, quote: 500, fee: 0.05 });
@@ -570,6 +573,8 @@ describe("⑤ A121 — cobertura provada SÓ pelos NOVOS trades únicos (N≥S) 
         id: "i-fee", exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
         order_type: "market", requested_qty: 10, client_order_id: "zsFEE",
         origin: "dca_cron", autonomous: true, state: "UNKNOWN",
+        // A124: o cron DCA sempre passa conexao_id (escopo da deriva).
+        conexao_id: "cx-fee",
         external_order_id: "ORD-1",
       });
       await snap(b, { qty: 5, quote: 500, fee: 0.05 });
