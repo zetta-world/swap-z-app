@@ -288,6 +288,16 @@ export type AutopilotSessionRow = {
   key_permission:        "so_negocia" | "pode_sacar" | "nao_verificavel" | null;
   key_permission_detail: string | null;
   key_checked_at:        string | null;
+  /**
+   * ⚠️ A QUARENTENA DE CONTA — achado A103 (migration 0058). Preenchidos pela
+   * reconciliação de conta quando o saldo real não sustenta o inventário
+   * interno. Enquanto `quarentena_em` existir: zero BUY autônomo, saídas
+   * permitidas, até mão humana.
+   */
+  quarentena_motivo:   string | null;
+  quarentena_em:       string | null;
+  /** O snapshot da primeira reconciliação — declaração, não patrimônio. */
+  saldo_baseline:      unknown;
   created_at:          string;
   updated_at:          string;
 };
