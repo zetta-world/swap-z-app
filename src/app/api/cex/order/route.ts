@@ -180,6 +180,8 @@ export async function POST(req: NextRequest) {
   /** Preenchidos no ramo do piloto — o intent autônomo precisa deles (A110). */
   let certificadoDoPiloto: string | null = null;
   let estrategiaDoPiloto: { id: string | null; versao: number | null } = { id: null, versao: null };
+  /** O hash vai ao executor: a autorização FINAL é no banco (A110, round 2). */
+  let hashDoPiloto: string | null = null;
   if (ehAutopilot) {
     /**
      * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2), no canal do NAVEGADOR.
@@ -283,6 +285,7 @@ export async function POST(req: NextRequest) {
       );
     }
     certificadoDoPiloto = decisaoDoPiloto.certificadoId;
+    hashDoPiloto = sessaoDoPiloto?.strategy_hash ?? null;
     estrategiaDoPiloto = {
       id: sessaoDoPiloto?.strategy_id ?? null,
       versao: sessaoDoPiloto?.strategy_version ?? null,
@@ -339,7 +342,8 @@ export async function POST(req: NextRequest) {
         walletAddress: (await getSession())?.sub ?? null,
         strategyId: estrategiaDoPiloto.id,
         strategyVersion: estrategiaDoPiloto.versao,
-        certificateId: certificadoDoPiloto },
+        certificateId: certificadoDoPiloto,
+        strategyHash: hashDoPiloto },
       { exchangeId: exchange, symbol: body.symbol, side, type,
         qty: body.amount, price: type === "limit" ? body.price : null,
         notionalUsd: typeof body.price === "number" ? body.amount * body.price : null },

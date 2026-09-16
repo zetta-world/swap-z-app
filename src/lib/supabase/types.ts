@@ -886,6 +886,19 @@ export interface Database {
                    filled_qty?: number; state?: CexIntentState };
       };
       cex_recalcular_intent: { Args: { p_intent_id: string }; Returns: undefined };
+      /**
+       * ⚠️ A AUTORIZAÇÃO FINAL DO EXECUTOR (migration 0057, A110 round 2).
+       * Valida o certificado NO BANCO e marca SUBMITTING na mesma transação —
+       * existência do certificate_id não é mais confundida com validade.
+       */
+      cex_autorizar_e_submeter: {
+        Args: {
+          p_intent_id: string; p_strategy_hash: string | null;
+          p_venue: string; p_symbol: string; p_notional: number | null;
+        };
+        Returns: { ok: boolean; de?: CexIntentState; para?: CexIntentState;
+                   porque?: string };
+      };
       cex_transicao_permitida: {
         Args: { p_de: CexIntentState; p_para: CexIntentState };
         Returns: boolean;

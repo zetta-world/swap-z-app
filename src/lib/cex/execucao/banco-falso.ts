@@ -18,6 +18,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { transicaoPermitida, type EstadoDoIntent } from "@/lib/cex/execucao/estados";
+import { avaliarCertificado, type CertificadoRow } from "@/lib/autopilot/certificado";
 
 type Linha = Record<string, unknown>;
 
@@ -25,17 +26,22 @@ export interface BancoFalso {
   cliente: SupabaseClient<Database>;
   intents: Linha[];
   fills: Linha[];
+  /** Os certificados que a RPC `cex_autorizar_e_submeter` enxerga (A110 r2).
+   *  O teste os grava — e os REVOGA no meio do voo quando quer a janela. */
+  certificados: Linha[];
   /** Falhas injetáveis, por operação, para exercitar o caminho de erro. */
   falhas: {
     insertIntent?: string;
     transicao?: string;
     ingestao?: string;
+    autorizacao?: string;
   };
 }
 
 export function bancoFalso(): BancoFalso {
   const intents: Linha[] = [];
   const fills: Linha[] = [];
+  const certificados: Linha[] = [];
   const falhas: BancoFalso["falhas"] = {};
   let seq = 0;
 
@@ -67,6 +73,57 @@ export function bancoFalso(): BancoFalso {
     }
     const it = intents.find((i) => i.id === args.p_intent_id);
     if (!it) return { data: null, error: { message: "intent nao existe" } };
+
+    /**
+     * ⚠️ A AUTORIZAÇÃO FINAL (migration 0057, A110 round 2), reproduzida aqui
+     * para o teste do executor rodar sem banco. NÃO é uma segunda regra: a
+     * legalidade da transição vem do mesmo `transicaoPermitida`, e a decisão
+     * sobre o certificado vem do mesmo `avaliarCertificado` puro — a guarda
+     * estrutural lê o SQL da 0057 e confere que a RPC real existe e nasce
+     * fechada. O que este ramo acrescenta por cima do avaliador puro é o que
+     * a RPC confere e o precheck não pode: identidade do certificado contra o
+     * PRÓPRIO intent (strategy/versão) e o hash obrigatório.
+     */
+    if (nome === "cex_autorizar_e_submeter") {
+      if (falhas.autorizacao) {
+        return { data: null, error: { message: falhas.autorizacao } };
+      }
+      const de = it.state as EstadoDoIntent;
+      if (de !== "AUTHORIZED" && de !== "RESERVED") {
+        return { data: { ok: false, porque: `estado ${de} nao admite submissao` }, error: null };
+      }
+      if (it.autonomous === true && it.side === "buy" && it.simulated !== true) {
+        if (!it.certificate_id) {
+          return { data: { ok: false, porque: "compra autonoma sem certificate_id" }, error: null };
+        }
+        const cert = certificados.find((c) => c.id === it.certificate_id);
+        if (!cert) {
+          return { data: { ok: false, porque: "certificado inexistente" }, error: null };
+        }
+        if (cert.strategy_id !== it.strategy_id
+            || Number(cert.strategy_version) !== Number(it.strategy_version)) {
+          return { data: { ok: false, porque: "certificado de outra estrategia ou versao" },
+                   error: null };
+        }
+        if (args.p_strategy_hash == null || args.p_strategy_hash !== cert.strategy_hash) {
+          return { data: { ok: false, porque: "strategy_hash nao confere" }, error: null };
+        }
+        // hash já conferido acima (no precheck ele é opcional; aqui, exigido)
+        const v = avaliarCertificado(cert as unknown as CertificadoRow, {
+          venue: String(args.p_venue), symbol: String(args.p_symbol),
+          notionalUsd: args.p_notional == null ? null : Number(args.p_notional),
+          strategyHash: null,
+        });
+        if (!v.vale) return { data: { ok: false, porque: v.porque }, error: null };
+      }
+      if (!transicaoPermitida(de, "SUBMITTING")) {
+        return { data: { ok: false, de, para: "SUBMITTING", porque: "transicao proibida" },
+                 error: null };
+      }
+      it.state = "SUBMITTING";
+      it.submitting_at = new Date().toISOString();
+      return { data: { ok: true, de, para: "SUBMITTING" }, error: null };
+    }
 
     if (nome === "cex_transicionar") {
       const de = it.state as EstadoDoIntent;
@@ -232,5 +289,6 @@ export function bancoFalso(): BancoFalso {
   };
   const linhasDe = (t: string) => (t === "cex_fills" ? fills : intents);
 
-  return { cliente: cliente as unknown as SupabaseClient<Database>, intents, fills, falhas };
+  return { cliente: cliente as unknown as SupabaseClient<Database>,
+           intents, fills, certificados, falhas };
 }

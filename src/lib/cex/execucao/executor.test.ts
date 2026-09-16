@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { bancoFalso } from "@/lib/cex/execucao/banco-falso";
 import { executarOrdemCex, type ContextoDeExecucao, type OrdemPedida } from "@/lib/cex/execucao/executor";
 import type { RespostaDaVenue } from "@/lib/cex/execucao/venue-primitivo";
@@ -192,13 +193,16 @@ describe("④ sem banco e sem credencial, nada sai (INVARIANTE 9)", () => {
   it("⚠️⚠️ não consegui marcar SUBMITTING: ZERO chamada", async () => {
     // Enviar sem ter conseguido registrar "estou enviando" é o buraco do A80
     // inteiro: o processo morre e o banco não sabe que houve tentativa.
+    // Desde o round 2 (A110) a marcação SUBMITTING acontece DENTRO da RPC
+    // `cex_autorizar_e_submeter` — a falha injetável é a dela.
     const b = bancoFalso();
     const enviar = venue({ tipo: "aceita", ordem: { id: "X" } as never });
-    b.falhas.transicao = "banco fora do ar";
+    b.falhas.autorizacao = "banco fora do ar";
     const r = await executarOrdemCex({ db: b.cliente, enviar, killSwitches: passaLivre },
       CTX, ORDEM, CREDS);
     expect(enviar).not.toHaveBeenCalled();
     expect(r.desfecho).toBe("recusado");
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
   });
 });
 
@@ -266,5 +270,251 @@ describe("⑥ o simulado percorre o mesmo caminho", () => {
       CTX, { ...ORDEM, simulated: true, price: null, type: "market" }, null);
     expect(r.desfecho).toBe("recusado");
     expect(b.fills).toHaveLength(0);
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ * ⑦ A110, ROUND 2 — O CERTIFICADO É A AUTORIDADE FINAL, DENTRO DO EXECUTOR.
+ *
+ * O precheck da rota (`avaliarCertificado`) decide CEDO, mas decide num
+ * instante anterior ao envio. Entre os dois cabia uma revogação — e ela
+ * passava. Agora o passo 6 é a RPC `cex_autorizar_e_submeter` (migration
+ * 0057): relê o PRÓPRIO intent, valida o certificado NO BANCO e marca
+ * SUBMITTING na mesma transação. Estes testes perguntam:
+ *
+ *   · certificado válido → a ordem SAI?                    (H1)
+ *   · revogado antes — ou ENTRE precheck e executor —      (H2, H3)
+ *     → ZERO chamada à corretora?
+ *   · cert de outra strategy / versão / hash / venue /     (H4–H8)
+ *     símbolo → ZERO chamada?
+ *   · nocional acima do teto certificado → ZERO chamada?   (H9)
+ *   · SELL com certificado revogado → SAI (exceção         (H10)
+ *     documentada: revogação não prende saída)?
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+const CERT_ID = "cert-1";
+/** Um certificado vivo, coerente com CTX_AUTO e ORDEM. */
+const certVivo = (): Record<string, unknown> => ({
+  id: CERT_ID, strategy_id: "estrategia-x", strategy_version: 3,
+  strategy_hash: "hash-abc", certificate_version: 1,
+  evidence: {}, sample_size: null, cost_assumptions: null,
+  risk_limits: { maxTradeUsd: 2000 },
+  allowed_venues: ["binance"], allowed_symbols: ["BTC/USDT"],
+  valid_from: "2020-01-01T00:00:00Z", valid_until: null,
+  revoked_at: null, revoked_reason: null,
+});
+const CTX_AUTO: ContextoDeExecucao = {
+  origin: "autopilot_cron", autonomous: true, walletAddress: "0xdono",
+  strategyId: "estrategia-x", strategyVersion: 3, certificateId: CERT_ID,
+  strategyHash: "hash-abc",
+};
+const ACEITA = { tipo: "aceita" as const,
+  ordem: { id: "ORD-A110", filled: 10, average: 100, cost: 1000 } as never };
+
+describe("⑦ A110 round 2 — a autorização final é transacional, no banco", () => {
+  it("H1 ⚠️ o gêmeo positivo: certificado VÁLIDO deixa a ordem sair", async () => {
+    // Sem este, um executor que recusasse tudo passaria em H2–H9.
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO, ORDEM, CREDS);
+    expect(enviar).toHaveBeenCalledTimes(1);
+    expect(r.desfecho).toBe("submetido");
+    expect(b.intents[0].state).toBe("FILLED");
+  });
+
+  it("H2 ⚠️⚠️ certificado REVOGADO antes: ZERO createOrder", async () => {
+    const b = bancoFalso();
+    b.certificados.push({ ...certVivo(), revoked_at: new Date().toISOString(),
+                          revoked_reason: "estrategia degradada" });
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO, ORDEM, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    expect(r.desfecho).toBe("recusado");
+    if (r.desfecho === "recusado") {
+      expect(r.motivo).toBe("autorizacao_recusada");
+      expect(r.porque).toMatch(/revogad/);
+    }
+    // ⚠️ Rastro, não silêncio: o intent morre ANTES do ponto sem volta.
+    expect(b.intents[0].state).toBe("FAILED_PRE_SUBMIT");
+  });
+
+  it("H3 ⚠️⚠️ revogação ENTRE o precheck e o executor: ZERO createOrder", async () => {
+    /**
+     * A janela que o round 1 deixou aberta. A rota avaliou o certificado VIVO;
+     * antes do submit, alguém revogou. A reserva de risco é o último gancho
+     * antes do passo 6 — revogamos lá dentro, e a RPC tem de enxergar.
+     */
+    const b = bancoFalso();
+    const cert = certVivo();
+    b.certificados.push(cert);
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO, ORDEM, CREDS,
+      { reservar: async () => {
+          cert.revoked_at = new Date().toISOString();   // a revogação no meio do voo
+          cert.revoked_reason = "revogado apos o precheck";
+          return { ok: true as const };
+        } });
+    expect(enviar).not.toHaveBeenCalled();
+    expect(r.desfecho).toBe("recusado");
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
+  });
+
+  it("H4 ⚠️ certificado de OUTRA estratégia: ZERO createOrder", async () => {
+    // A FK garante que o certificate_id EXISTE; não que é desta estratégia.
+    const b = bancoFalso();
+    b.certificados.push({ ...certVivo(), strategy_id: "estrategia-alheia" });
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO, ORDEM, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
+  });
+
+  it("H5 ⚠️ certificado de OUTRA versão: ZERO createOrder", async () => {
+    const b = bancoFalso();
+    b.certificados.push({ ...certVivo(), strategy_version: 4 });
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO, ORDEM, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
+  });
+
+  it("H6 ⚠️⚠️ hash divergente — os parâmetros mudaram sob o certificado: ZERO createOrder", async () => {
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre },
+      { ...CTX_AUTO, strategyHash: "hash-adulterado" }, ORDEM, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
+  });
+
+  it("H7 ⚠️ venue fora do envelope certificado: ZERO createOrder", async () => {
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO,
+      { ...ORDEM, exchangeId: "kraken" }, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
+  });
+
+  it("H8 ⚠️ símbolo fora do envelope certificado: ZERO createOrder", async () => {
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO,
+      { ...ORDEM, symbol: "ETH/USDT" }, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
+  });
+
+  it("H9 ⚠️⚠️ nocional ACIMA do teto da evidência: ZERO createOrder", async () => {
+    // O certificado cobre trades até $2000; o pedido é $5000. Operar acima é
+    // usar a evidência para outra coisa.
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO,
+      { ...ORDEM, qty: 50, notionalUsd: 5000 }, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("autorizacao_recusada");
+  });
+
+  it("H10 ⚠️⚠️ EXCEÇÃO DOCUMENTADA: SELL com certificado revogado SAI", async () => {
+    /**
+     * Certificado porteia ENTRADA. Exigi-lo para vender prenderia a posição
+     * de uma estratégia revogada — o controle criando o perigo que existe
+     * para evitar. A saída passa pela MESMA RPC, que deliberadamente não a
+     * valida para sell.
+     */
+    const b = bancoFalso();
+    b.certificados.push({ ...certVivo(), revoked_at: new Date().toISOString(),
+                          revoked_reason: "revogado — e a saida continua livre" });
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre }, CTX_AUTO,
+      { ...ORDEM, side: "sell" }, CREDS);
+    expect(enviar).toHaveBeenCalledTimes(1);
+    expect(r.desfecho).toBe("submetido");
+  });
+
+  it("⚠️ o simulado autônomo SEM certificado também sai — nenhum dinheiro se move", async () => {
+    // Mesma isenção da constraint da 0052: exigir certificado do simulado
+    // pararia a única coisa que hoje pode rodar sem risco.
+    const b = bancoFalso();
+    const enviar = venue({ tipo: "aceita", ordem: { id: "NAO-DEVE-SAIR" } as never });
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre },
+      { origin: "dca_cron", autonomous: true, walletAddress: "0xdono" },
+      { ...ORDEM, simulated: true }, null);
+    expect(enviar).not.toHaveBeenCalled();   // simulado nunca fala com a venue
+    expect(r.desfecho).toBe("submetido");
+  });
+
+  it("⚠️ o kill-switch continua ANTES da autorização (A106 não regride)", async () => {
+    // Mesmo com certificado válido, o freio universal fecha tudo — e nem
+    // chega a consultar o certificado: a ordem dos passos é a correção.
+    const b = bancoFalso();
+    b.certificados.push(certVivo());
+    const enviar = venue(ACEITA);
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar,
+        killSwitches: async () => ({ bloqueado: true, motivo: "disable_cex" as const }) },
+      CTX_AUTO, ORDEM, CREDS);
+    expect(enviar).not.toHaveBeenCalled();
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("kill_switch");
+  });
+});
+
+describe("⑧ guarda estrutural — a RPC da 0057 existe e nasce FECHADA (A110/A116)", () => {
+  /**
+   * ⚠️ LÊ O SQL, não a memória. O banco-falso reproduz a decisão; esta guarda
+   * garante que a RPC de verdade existe, é `security definer`, lê o próprio
+   * intent sob lock e NUNCA fica exposta a PUBLIC/anon/authenticated — a
+   * lição do A116 aplicada no nascimento, não na varredura seguinte.
+   */
+  const SQL = readFileSync(
+    "supabase/migrations/0057_executor_autoriza_submissao.sql", "utf8").toLowerCase();
+
+  it("a RPC existe com a assinatura esperada, security definer, search_path fixo", () => {
+    const i = SQL.indexOf("function public.cex_autorizar_e_submeter");
+    expect(i, "a RPC não está na migration").toBeGreaterThanOrEqual(0);
+    const corpo = SQL.slice(i, SQL.indexOf("$$;", i));
+    expect(corpo).toMatch(/p_intent_id uuid/);
+    expect(corpo).toMatch(/p_strategy_hash text/);
+    expect(corpo).toMatch(/p_notional numeric/);
+    expect(corpo).toMatch(/security definer/);
+    expect(corpo).toMatch(/set search_path = public/);
+    // ⚠️ A autoridade é o PRÓPRIO intent, sob lock — não parâmetro de quem chama.
+    expect(corpo).toMatch(/from public\.cex_execution_intents\s+where id = p_intent_id for update/);
+    // ⚠️ E a transição usa a MESMA máquina de estados — sem segundo critério.
+    expect(corpo).toMatch(/cex_transicao_permitida/);
+  });
+
+  it("⚠️⚠️ REVOKE de public/anon/authenticated e GRANT só a service_role — na MESMA migration", () => {
+    expect(SQL).toMatch(
+      /revoke execute on function public\.cex_autorizar_e_submeter\(uuid, text, text, text, numeric\)\s+from public, anon, authenticated/);
+    expect(SQL).toMatch(
+      /grant execute on function public\.cex_autorizar_e_submeter\(uuid, text, text, text, numeric\)\s+to service_role/);
+  });
+
+  it("⚠️ a exceção SELL e a janela residual estão DOCUMENTADAS no SQL", () => {
+    // A guarda estrutural das DECISÕES: se alguém remover a isenção da saída
+    // ou esconder a janela pós-commit, este teste quebra e força a conversa.
+    const i = SQL.indexOf("if v_intent.autonomous and v_intent.side = 'buy' and not v_intent.simulated");
+    expect(i, "a validação tem de mirar só a entrada autônoma real").toBeGreaterThanOrEqual(0);
+    expect(SQL).toMatch(/janela residual/);
   });
 });
