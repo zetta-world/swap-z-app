@@ -25,9 +25,12 @@ import type { CexId, CexCredentials } from "@/lib/cex/types";
 import { lerOrdemNaVenue, type LeituraDaOrdem } from "@/lib/cex/execucao/venue-leitura";
 import {
   transicionar, ingerirTrades, ingerirSnapshotDaOrdem,
-  intentsParaReconciliar, marcarReconciliado, ordensConhecidas, tradesNoLivro,
+  intentsParaReconciliar, marcarReconciliado,
   type IntentRow,
 } from "@/lib/cex/execucao/intents";
+import {
+  resolverEscopoDaConta, ordensConhecidasNoEscopo, tradesNoLivroNoEscopo,
+} from "@/lib/cex/execucao/escopo-de-conta";
 import { detectarDeriva, type TradeObservado } from "@/lib/cex/execucao/deriva";
 import { ehTerminal } from "@/lib/cex/execucao/estados";
 
@@ -164,10 +167,35 @@ export async function reconciliarIntent(
     const idDescoberto = leitura.tipo === "achada"
       ? (leitura.ordem.id ? String(leitura.ordem.id) : null)
       : (leitura.trades[0]?.orderId ?? null);
-    const derivou = await conferirDeriva(db, intent, leitura.trades, idDescoberto);
-    if (derivou) {
-      await transicionar(db, intent.id, "QUARANTINED", derivou.slice(0, 300));
-      return fim("quarentena", "QUARANTINED", derivou);
+    const atribuicao = await conferirDeriva(db, intent, leitura.trades, idDescoberto);
+    if (atribuicao.tipo === "deriva") {
+      await transicionar(db, intent.id, "QUARANTINED", atribuicao.motivo.slice(0, 300));
+      return fim("quarentena", "QUARANTINED", atribuicao.motivo);
+    }
+    if (atribuicao.tipo === "indeterminado") {
+      /**
+       * ⚠️⚠️ A124: INDETERMINADO NUNCA VIRA VERDE. Não saber a conta (ou não
+       * conseguir LER o escopo) não é "sem drift": é "não conferi". Conduta
+       * fail-closed — esgotadas as tentativas, QUARENTENA com motivo próprio;
+       * antes disso, RECONCILIATION_REQUIRED e segue em dúvida. NUNCA
+       * CANCELED, NUNCA "resolvido", NUNCA fallback exchange-wide.
+       */
+      if (tentativas >= TENTATIVAS_ATE_QUARENTENA) {
+        await transicionar(db, intent.id, "QUARANTINED",
+          `atribuicao_indeterminada apos ${tentativas} tentativas: ${atribuicao.motivo}`
+            .slice(0, 300));
+        return fim("quarentena", "QUARANTINED", atribuicao.motivo);
+      }
+      // ⚠️ De SUBMITTING não há aresta direta para RECONCILIATION_REQUIRED
+      // (a máquina de estados manda SUBMITTING→UNKNOWN na dúvida) — faz o
+      // desvio em dois passos, como o caminho 4 já faz.
+      if (intent.state === "SUBMITTING") {
+        await transicionar(db, intent.id, "UNKNOWN",
+          `atribuicao indeterminada: ${atribuicao.motivo}`.slice(0, 300));
+      }
+      await transicionar(db, intent.id, "RECONCILIATION_REQUIRED",
+        `atribuicao indeterminada: ${atribuicao.motivo}`.slice(0, 300));
+      return fim("segue_em_duvida", "RECONCILIATION_REQUIRED", atribuicao.motivo);
     }
   }
 
@@ -283,12 +311,24 @@ export async function reconciliarIntent(
 }
 
 /**
- * Há trade na corretora que a Z-SWAP não explica?
+ * O resultado explícito da atribuição (A124): o "não sei" é um valor de
+ * primeira classe, não `null` disfarçado de "sem deriva".
+ */
+export type ResultadoDaAtribuicao =
+  | { tipo: "ok" }                          // conferiu, nada órfão
+  | { tipo: "deriva"; motivo: string }      // ACCOUNT_DRIFT
+  | { tipo: "indeterminado"; motivo: string };
+
+/**
+ * Há trade na corretora que a Z-SWAP não explica NA CONTA DESTE INTENT?
  *
- * ⚠️ FALHA DE LEITURA NÃO ACUSA. Se não der para montar o conjunto de ordens
- * conhecidas, o resultado é "não sei" — e não sei NÃO pode virar acusação de
- * deriva, senão um banco intermitente colocaria a conta do cliente em
- * quarentena toda vez que piorasse.
+ * ⚠️⚠️ A124: O ESCOPO É A CONTA, NUNCA A CORRETORA. Os conjuntos passaram a
+ * ser montados por `conexao_id`/`credential_fingerprint`/`session_id` —
+ * trade ou ordem de OUTRA CONTA do mesmo cliente não absolve atividade
+ * externa desta (cross-account era o P0). Sem identidade de conta, ou com a
+ * leitura do escopo falhando, o veredito é `indeterminado` — fail-closed:
+ * quem chama NÃO pode transformar isso em "sem drift", CANCELED ou consulta
+ * exchange-wide.
  */
 async function conferirDeriva(
   db: SupabaseClient<Database>, intent: IntentRow,
@@ -296,8 +336,8 @@ async function conferirDeriva(
                      executedAt: string | null }[],
   /** A ordem que a leitura acabou de atribuir a ESTE intent. */
   idDescoberto: string | null,
-): Promise<string | null> {
-  if (trades.length === 0) return null;
+): Promise<ResultadoDaAtribuicao> {
+  if (trades.length === 0) return { tipo: "ok" };
   const observados: TradeObservado[] = trades.map((t) => ({
     tradeId: t.tradeId, orderId: t.orderId, symbol: intent.symbol, qty: t.qty,
     // ⚠️ `null` continua `null`: trade sem horário não pode ser posto dentro
@@ -306,19 +346,29 @@ async function conferirDeriva(
   }));
   const desdeMs = new Date(intent.created_at).getTime() - 60_000;
   const desdeIso = new Date(desdeMs).toISOString();
+  const resolvido = await resolverEscopoDaConta(db, intent);
+  if (!resolvido.ok) {
+    return { tipo: "indeterminado", motivo: `escopo de conta indeterminado: ${resolvido.porque}` };
+  }
   const [ordens, noLivro] = await Promise.all([
-    ordensConhecidas(db, intent.exchange_id, intent.symbol, desdeIso),
-    tradesNoLivro(db, intent.exchange_id, desdeIso),
+    ordensConhecidasNoEscopo(db, resolvido.escopo, intent.exchange_id, intent.symbol, desdeIso),
+    tradesNoLivroNoEscopo(db, resolvido.escopo, intent.exchange_id, intent.symbol, desdeIso),
   ]);
-  if (ordens === undefined || noLivro === undefined) return null;
-  // As nossas: as gravadas, mais a que este intent acabou de descobrir.
+  if (ordens === undefined || noLivro === undefined) {
+    return { tipo: "indeterminado",
+             motivo: "falha de leitura ao montar o escopo da conta" };
+  }
+  // As nossas: as gravadas NO ESCOPO, mais a que este intent acabou de
+  // descobrir (§19 preservado: sem isto a recuperação do A80 quarentenava).
   const nossas = new Set(ordens);
   if (idDescoberto) nossas.add(idDescoberto);
   if (intent.external_order_id) nossas.add(intent.external_order_id);
   const v = detectarDeriva(observados, {
     ordensConhecidas: nossas, tradesNoLivro: noLivro, desdeMs,
   });
-  return v.derivou ? `ACCOUNT_DRIFT: ${v.achado.detalhe}` : null;
+  return v.derivou
+    ? { tipo: "deriva", motivo: `ACCOUNT_DRIFT: ${v.achado.detalhe}` }
+    : { tipo: "ok" };
 }
 
 /** Mapeia o status da corretora para o fim do intent, quando ele é conclusivo. */

@@ -29,12 +29,20 @@ export interface BancoFalso {
   /** Os certificados que a RPC `cex_autorizar_e_submeter` enxerga (A110 r3).
    *  O teste os grava — e os REVOGA no meio do voo quando quer a janela. */
   certificados: Linha[];
+  /** A124: `autopilot_sessions` — o resolver de escopo lê `conexao_id` daqui
+   *  quando o intent só tem `session_id`. */
+  sessoes: Linha[];
   /** Falhas injetáveis, por operação, para exercitar o caminho de erro. */
   falhas: {
     insertIntent?: string;
     transicao?: string;
     ingestao?: string;
     autorizacao?: string;
+    /** A124: falha de LEITURA genérica (toda `select` passa a errar). */
+    select?: string;
+    /** A124: falha só na N-ésima leitura (ex.: erro na 2ª página de um
+     *  `.range()` — a 1ª passa, a 2ª quebra). */
+    selectNaChamada?: { n: number; mensagem: string };
   };
 }
 
@@ -42,8 +50,20 @@ export function bancoFalso(): BancoFalso {
   const intents: Linha[] = [];
   const fills: Linha[] = [];
   const certificados: Linha[] = [];
+  const sessoes: Linha[] = [];
   const falhas: BancoFalso["falhas"] = {};
   let seq = 0;
+  let leiturasFeitas = 0;
+
+  /**
+   * ⚠️ AS TRÊS TABELAS QUE O FALSO CONHECE, mapeadas explicitamente. O default
+   * para tabela desconhecida continua `intents` SÓ por compatibilidade com os
+   * testes anteriores ao A124 — código novo deve usar tabela mapeada.
+   */
+  const linhasDe = (t: string) =>
+    t === "cex_fills" ? fills
+    : t === "autopilot_sessions" ? sessoes
+    : intents;
 
   const somaDoLivro = (intentId: string) =>
     fills.filter((f) => f.intent_id === intentId)
@@ -411,9 +431,12 @@ export function bancoFalso(): BancoFalso {
   };
 
   function consulta(tabela: string) {
-    const linhas = () => (tabela === "cex_fills" ? fills : intents);
+    const linhas = () => linhasDe(tabela);
     const filtros: Array<(r: Linha) => boolean> = [];
     let limite = Infinity;
+    // A124: `.range(inicio, fim)` do PostgREST — fatia APÓS os filtros, com
+    // precedência sobre `limit` (é o que a paginação do escopo usa).
+    let faixa: [number, number] | null = null;
     const alvo = {
       select: (_c: string) => alvo,
       eq: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return alvo; },
@@ -435,11 +458,26 @@ export function bancoFalso(): BancoFalso {
       is: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return alvo; },
       order: () => alvo,
       limit: (n: number) => { limite = n; return alvo; },
-      then: (res: (x: { data: Linha[]; error: null }) => void) =>
-        Promise.resolve({
-          data: linhas().filter((r) => filtros.every((f) => f(r))).slice(0, limite),
-          error: null as null,
-        }).then(res),
+      range: (inicio: number, fim: number) => { faixa = [inicio, fim]; return alvo; },
+      then: (res: (x: { data: Linha[] | null;
+                        error: { message: string } | null }) => void) => {
+        leiturasFeitas++;
+        // A124: falha de leitura injetável — genérica ou só na N-ésima
+        // chamada (erro de paginação no meio do caminho).
+        if (falhas.select) {
+          return Promise.resolve({ data: null, error: { message: falhas.select } }).then(res);
+        }
+        if (falhas.selectNaChamada && leiturasFeitas === falhas.selectNaChamada.n) {
+          return Promise.resolve({ data: null,
+            error: { message: falhas.selectNaChamada.mensagem } }).then(res);
+        }
+        const filtradas = linhas().filter((r) => filtros.every((f) => f(r)));
+        return Promise.resolve({
+          data: faixa ? filtradas.slice(faixa[0], faixa[1] + 1)
+                      : filtradas.slice(0, limite),
+          error: null,
+        }).then(res);
+      },
     };
     return alvo;
   }
@@ -466,7 +504,7 @@ export function bancoFalso(): BancoFalso {
             created_at: new Date().toISOString(), reconcile_attempts: 0,
             last_reconciled_at: null, submitted_at: null, ...valores,
           };
-          (tabela === "cex_fills" ? fills : intents).push(linha);
+          (linhasDe(tabela)).push(linha);
           const alvo = {
             select: () => alvo, limit: () => alvo,
             then: (res: (x: unknown) => void) =>
@@ -491,8 +529,6 @@ export function bancoFalso(): BancoFalso {
       };
     },
   };
-  const linhasDe = (t: string) => (t === "cex_fills" ? fills : intents);
-
   return { cliente: cliente as unknown as SupabaseClient<Database>,
-           intents, fills, certificados, falhas };
+           intents, fills, certificados, sessoes, falhas };
 }
