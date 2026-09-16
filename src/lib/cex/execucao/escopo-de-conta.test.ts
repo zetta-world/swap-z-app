@@ -8,7 +8,8 @@
  * e que o indeterminado NUNCA vira verde.
  *
  * Mapa: A124.1–A124.12 + §19/§34 (a recuperação do A80/A102 segue resolvendo)
- * + a guarda estrutural (§42).
+ * + a guarda estrutural (§42) + A126.1–A126.6 (o escopo conexão materializa
+ * as sessões da conexão) + a guarda §45.
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -19,6 +20,7 @@ import {
 } from "@/lib/cex/execucao/reconciliador";
 import {
   resolverEscopoDaConta, ordensConhecidasNoEscopo, tradesNoLivroNoEscopo,
+  idsDeSessoesDaConexao,
 } from "@/lib/cex/execucao/escopo-de-conta";
 import type { IntentRow } from "@/lib/cex/execucao/intents";
 import type { LeituraDaOrdem, TradeDaVenue } from "@/lib/cex/execucao/venue-leitura";
@@ -319,8 +321,11 @@ describe("A124.11 — falha de leitura é INDETERMINADO, nunca Set vazio + verde
     const b = bancoFalso();
     plantarIntent(b, { id: "iC", conexao_id: "C1", external_order_id: "ORD-1" });
     plantarFill(b, { intent_id: "iC", external_trade_id: "T1" });
-    // 1ª leitura (ids dos intents) passa; a 2ª (fills) quebra.
-    b.falhas.selectNaChamada = { n: 2, mensagem: "pagina quebrada" };
+    // As leituras de intents (sessões da conexão + braços) passam; a leitura
+    // dos FILLS quebra. (A126: a falha é por tabela — a contagem global de
+    // chamadas mudaria com o braço de sessão; a tabela alvo não.)
+    b.falhas.selectNaTabela = { tabela: "cex_fills", naChamada: 1,
+                                mensagem: "pagina quebrada" };
     const r = await tradesNoLivroNoEscopo(b.cliente,
       { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO);
     expect(r).toBeUndefined();
@@ -347,10 +352,204 @@ describe("A124.12 — paginação: página cheia NÃO é fim de tabela", () => {
       plantarIntent(b, { id: `i${n}`, conexao_id: "C1",
                          external_order_id: `ORD-${n}` });
     }
-    b.falhas.selectNaChamada = { n: 2, mensagem: "caiu na 2a pagina" };
+    // Erro na 2ª leitura DA TABELA DE INTENTS = erro na 2ª página do braço
+    // (A126: a contagem global incluiria a listagem de sessões; a falha por
+    // tabela mantém o cenário fiel: a 1ª página passa, a 2ª quebra).
+    b.falhas.selectNaTabela = { tabela: "cex_execution_intents", naChamada: 2,
+                                mensagem: "caiu na 2a pagina" };
     const r = await ordensConhecidasNoEscopo(b.cliente,
       { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO, 2);
     expect(r).toBeUndefined();
+  });
+});
+
+/**
+ * Grava os valores de cada `.in("intent_id", ...)` feito sobre `cex_fills` —
+ * a prova COMPORTAMENTAL do dedup por intent.id (A126.4): sem dedup, o id do
+ * intent que bate nos dois braços entraria duas vezes no IN dos fills.
+ */
+function espiarChunksDeIntentsDosFills(b: BancoFalso): string[][] {
+  const chunks: string[][] = [];
+  type Consulta = { in: (c: string, vs: unknown[]) => unknown };
+  type Entrada = { select: (c: string) => Consulta };
+  const cliente = b.cliente as unknown as { from: (t: string) => Entrada };
+  const fromOriginal = cliente.from.bind(cliente);
+  cliente.from = ((tabela: string): Entrada => {
+    const f = fromOriginal(tabela);
+    if (tabela !== "cex_fills") return f;
+    const selectOriginal = f.select.bind(f);
+    f.select = (c: string): Consulta => {
+      const q = selectOriginal(c);
+      const inOriginal = q.in.bind(q);
+      q.in = (coluna: string, valores: unknown[]) => {
+        if (coluna === "intent_id") chunks.push(valores.map(String));
+        return inOriginal(coluna, valores);
+      };
+      return q;
+    };
+    return f;
+  }) as typeof cliente.from;
+  return chunks;
+}
+
+describe("A126.1 — browser da MESMA conexão se reconhece (escopo conexão inclui sessões)", () => {
+  it("⚠️⚠️ o intent A (S1→C1, conexao NULL) explica o trade na reconciliação de B (S2→C1) — sem falso drift", async () => {
+    const b = bancoFalso();
+    b.sessoes.push({ id: "S1", conexao_id: "C1" }, { id: "S2", conexao_id: "C1" });
+    // O browser grava session_id com conexao_id NULL (api/cex/order/route.ts).
+    // No baseline, o escopo de C1 era só `conexao_id = C1`: O-A sumia e a
+    // reconciliação de B acusava ACCOUNT_DRIFT na própria conta.
+    plantarIntent(b, { id: "iA", origin: "autopilot_browser", session_id: "S1",
+                       conexao_id: null, external_order_id: "O-A", state: "FILLED" });
+    const iB = plantarIntent(b, { id: "iB", origin: "autopilot_browser",
+                                  session_id: "S2", conexao_id: null });
+    // T-B (da ordem ORD-B que B acabou de descobrir) é explicado pelo
+    // idDescoberto; T-A (ordem O-A, do irmão A) SÓ é explicado se O-A entrar
+    // no escopo de C1 pelo braço de sessão — é ele que o break §43 derruba.
+    const r = await reconciliar(b, iB, { tipo: "so_trades",
+      trades: [trade("T-B", "ORD-B"), trade("T-A", "O-A")] });
+    expect(r.desfecho).toBe("resolvido");
+    expect(estadoDe(b, "iB")).not.toBe("QUARANTINED");
+  });
+});
+
+describe("A126.2 — browser de C1 NÃO enxerga a sessão de C2", () => {
+  it("⚠️⚠️ S1→C1 e S2→C2: a ordem O-A segue alheia na reconciliação de B → deriva", async () => {
+    const b = bancoFalso();
+    b.sessoes.push({ id: "S1", conexao_id: "C1" }, { id: "S2", conexao_id: "C2" });
+    plantarIntent(b, { id: "iA", origin: "autopilot_browser", session_id: "S1",
+                       conexao_id: null, external_order_id: "O-A" });
+    const iB = plantarIntent(b, { id: "iB", origin: "autopilot_browser",
+                                  session_id: "S2", conexao_id: null });
+    const r = await reconciliar(b, iB, { tipo: "achada",
+      ordem: { id: "ORD-B", status: "open", filled: 0, average: 0,
+               cost: 0 } as never,
+      trades: [trade("T-A", "O-A")] });
+    expect(r.desfecho).toBe("quarentena");
+    expect(estadoDe(b, "iB")).toBe("QUARANTINED");
+  });
+});
+
+describe("A126.3 — DCA direto (conexao_id=C1) + browser indireto (S1→C1) compartilham", () => {
+  it("⚠️ a ordem do dca_cron explica o trade na reconciliação do browser da mesma conta", async () => {
+    const b = bancoFalso();
+    b.sessoes.push({ id: "S1", conexao_id: "C1" });
+    plantarIntent(b, { id: "iDca", origin: "dca_cron", conexao_id: "C1",
+                       external_order_id: "ORD-DCA" });
+    const iBr = plantarIntent(b, { id: "iBr", origin: "autopilot_browser",
+                                   session_id: "S1", conexao_id: null });
+    // T-BR (ordem que o browser acabou de descobrir) é explicado pelo
+    // idDescoberto; T-DCA SÓ é explicado se a sessão S1 resolver para o
+    // escopo conexão C1, onde o braço direto enxerga o intent do dca_cron.
+    const r = await reconciliar(b, iBr, { tipo: "so_trades",
+      trades: [trade("T-BR", "ORD-BR"), trade("T-DCA", "ORD-DCA")] });
+    expect(r.desfecho).toBe("resolvido");
+    expect(estadoDe(b, "iBr")).not.toBe("QUARANTINED");
+  });
+});
+
+describe("A126.4 — intent com conexao_id E session_id (S1→C1) aparece UMA vez", () => {
+  it("⚠️ a união dos braços faz dedup por intent.id — sem duplicação de order/intent/fill ids", async () => {
+    const b = bancoFalso();
+    b.sessoes.push({ id: "S1", conexao_id: "C1" });
+    // iD bate nos DOIS braços (conexao_id = C1 e session_id = S1, S1→C1).
+    plantarIntent(b, { id: "iD", conexao_id: "C1", session_id: "S1",
+                       external_order_id: "ORD-D", state: "FILLED" });
+    plantarFill(b, { intent_id: "iD", external_order_id: "ORD-D",
+                     external_trade_id: "T-D" });
+    const chunks = espiarChunksDeIntentsDosFills(b);
+    const ordens = await ordensConhecidasNoEscopo(b.cliente,
+      { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO);
+    expect(ordens).toEqual(new Set(["ORD-D"]));
+    const trades = await tradesNoLivroNoEscopo(b.cliente,
+      { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO);
+    expect(trades).toEqual(new Set(["T-D"]));
+    // O ponto do dedup: sem ele, iD entraria DUAS vezes no IN dos fills
+    // (uma por braço). Com dedup, exatamente uma.
+    expect(chunks.flat().filter((id) => id === "iD")).toHaveLength(1);
+  });
+});
+
+describe("A126.5 — erro ao listar as sessões da conexão → INDETERMINADO (fail-closed)", () => {
+  it("⚠️⚠️ o braço direto até leria bem, mas a consulta inteira vai a undefined", async () => {
+    const b = bancoFalso();
+    b.sessoes.push({ id: "S1", conexao_id: "C1" });
+    plantarIntent(b, { id: "iDir", conexao_id: "C1", external_order_id: "ORD-DIRETA" });
+    plantarIntent(b, { id: "iBr", origin: "autopilot_browser", session_id: "S1",
+                       conexao_id: null, external_order_id: "ORD-BROWSER" });
+    // SÓ a leitura de autopilot_sessions falha; a tabela de intents está boa.
+    // Se o erro virasse "só o braço direto", o resultado seria
+    // Set{"ORD-DIRETA"} — declarar completo pela metade. Nunca.
+    b.falhas.selectNaTabela = { tabela: "autopilot_sessions",
+                                mensagem: "listar sessoes quebrou" };
+    const ordens = await ordensConhecidasNoEscopo(b.cliente,
+      { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO);
+    expect(ordens).toBeUndefined();
+    const trades = await tradesNoLivroNoEscopo(b.cliente,
+      { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO);
+    expect(trades).toBeUndefined();
+    const sessoes = await idsDeSessoesDaConexao(b.cliente, "C1");
+    expect(sessoes).toBeUndefined();
+  });
+});
+
+describe("A126.6 — paginação das SESSÕES da conexão", () => {
+  function plantarCincoSessoes(b: BancoFalso): void {
+    for (let n = 1; n <= 5; n++) {
+      b.sessoes.push({ id: `S${n}`, conexao_id: "C1" });
+      plantarIntent(b, { id: `iS${n}`, origin: "autopilot_browser",
+                         session_id: `S${n}`, conexao_id: null,
+                         external_order_id: `ORD-S${n}` });
+    }
+    // Ruído: sessão de OUTRA conexão não entra nem paginando.
+    b.sessoes.push({ id: "SX", conexao_id: "C2" });
+    plantarIntent(b, { id: "iSX", origin: "autopilot_browser", session_id: "SX",
+                       conexao_id: null, external_order_id: "ORD-SX" });
+  }
+
+  it("⚠️ pagina=2 com 5 sessões de C1: TODOS os intents de todas as sessões aparecem", async () => {
+    const b = bancoFalso();
+    plantarCincoSessoes(b);
+    // A listagem de sessões pagina até esgotar (2+2+1)...
+    const sessoes = await idsDeSessoesDaConexao(b.cliente, "C1", 2);
+    expect(sessoes).toEqual(["S1", "S2", "S3", "S4", "S5"]);
+    // ...e a materialização inteira também — nenhuma sessão fica de fora.
+    const r = await ordensConhecidasNoEscopo(b.cliente,
+      { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO, 2);
+    expect(r).toEqual(new Set(["ORD-S1", "ORD-S2", "ORD-S3", "ORD-S4", "ORD-S5"]));
+  });
+
+  it("⚠️⚠️ erro na 2ª página das sessões → undefined, NUNCA a 1ª página como completa", async () => {
+    // Duas instâncias: a falha é na 2ª leitura da tabela, e cada função faz
+    // a sua própria listagem paginada de sessões.
+    const b1 = bancoFalso();
+    plantarCincoSessoes(b1);
+    b1.falhas.selectNaTabela = { tabela: "autopilot_sessions", naChamada: 2,
+                                 mensagem: "caiu na 2a pagina de sessoes" };
+    const sessoes = await idsDeSessoesDaConexao(b1.cliente, "C1", 2);
+    expect(sessoes).toBeUndefined();
+
+    const b2 = bancoFalso();
+    plantarCincoSessoes(b2);
+    b2.falhas.selectNaTabela = { tabela: "autopilot_sessions", naChamada: 2,
+                                 mensagem: "caiu na 2a pagina de sessoes" };
+    const r = await ordensConhecidasNoEscopo(b2.cliente,
+      { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO, 2);
+    expect(r).toBeUndefined();
+  });
+});
+
+describe("§45 — guarda: a materialização de conexão consulta autopilot_sessions", () => {
+  const ESCOPO = readFileSync("src/lib/cex/execucao/escopo-de-conta.ts", "utf8");
+
+  it("⚠️ autopilot_sessions é lida na MATERIALIZAÇÃO, não só no resolver", () => {
+    // Uma leitura no resolver (resolverEscopoDaConta) + uma na listagem das
+    // sessões da conexão (idsDeSessoesDaConexao). Se o braço de sessão sair
+    // da materialização, a contagem cai para 1 — e o A126.1 quebra junto
+    // (é o deliberate break §43).
+    const leituras = ESCOPO.match(/from\("autopilot_sessions"\)/g) ?? [];
+    expect(leituras.length).toBeGreaterThanOrEqual(2);
+    expect(ESCOPO).toMatch(/export async function idsDeSessoesDaConexao\(/);
   });
 });
 

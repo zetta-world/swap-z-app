@@ -43,6 +43,11 @@ export interface BancoFalso {
     /** A124: falha só na N-ésima leitura (ex.: erro na 2ª página de um
      *  `.range()` — a 1ª passa, a 2ª quebra). */
     selectNaChamada?: { n: number; mensagem: string };
+    /** A126: falha de leitura só numa TABELA (ex.: só `autopilot_sessions`
+     *  quebra, com a tabela de intents boa — é o que prova o fail-closed da
+     *  união de braços). `naChamada` limita à N-ésima leitura DAQUELA tabela
+     *  (ex.: erro na 2ª página da listagem de sessões). */
+    selectNaTabela?: { tabela: string; mensagem: string; naChamada?: number };
   };
 }
 
@@ -54,6 +59,7 @@ export function bancoFalso(): BancoFalso {
   const falhas: BancoFalso["falhas"] = {};
   let seq = 0;
   let leiturasFeitas = 0;
+  const leiturasPorTabela: Record<string, number> = {};
 
   /**
    * ⚠️ AS TRÊS TABELAS QUE O FALSO CONHECE, mapeadas explicitamente. O default
@@ -462,6 +468,7 @@ export function bancoFalso(): BancoFalso {
       then: (res: (x: { data: Linha[] | null;
                         error: { message: string } | null }) => void) => {
         leiturasFeitas++;
+        leiturasPorTabela[tabela] = (leiturasPorTabela[tabela] ?? 0) + 1;
         // A124: falha de leitura injetável — genérica ou só na N-ésima
         // chamada (erro de paginação no meio do caminho).
         if (falhas.select) {
@@ -470,6 +477,15 @@ export function bancoFalso(): BancoFalso {
         if (falhas.selectNaChamada && leiturasFeitas === falhas.selectNaChamada.n) {
           return Promise.resolve({ data: null,
             error: { message: falhas.selectNaChamada.mensagem } }).then(res);
+        }
+        // A126: falha só numa tabela — para provar que o erro de UM braço da
+        // união derruba a consulta inteira mesmo com o outro braço saudável.
+        const falhaTabela = falhas.selectNaTabela;
+        if (falhaTabela && falhaTabela.tabela === tabela
+            && (falhaTabela.naChamada === undefined
+                || leiturasPorTabela[tabela] === falhaTabela.naChamada)) {
+          return Promise.resolve({ data: null,
+            error: { message: falhaTabela.mensagem } }).then(res);
         }
         const filtradas = linhas().filter((r) => filtros.every((f) => f(r)));
         return Promise.resolve({
