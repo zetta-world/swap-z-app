@@ -54,6 +54,14 @@ export interface ResultadoDaReconciliacao {
   desfecho: DesfechoDaReconciliacao;
   estado: string;
   detalhe: string;
+  /**
+   * ⚠️ `true` quando a LEITURA na venue falhou (credencial recusada, rede,
+   * endpoint fora) — distinguindo "não consegui olhar" de "olhei e segue em
+   * dúvida" (ex.: ausente mas cedo demais). Quem atende o usuário (A80/A102)
+   * precisa dessa diferença: leitura falha é ERRO honesto, nunca "a ordem
+   * não existe" e nunca FAILED.
+   */
+  leituraFalhou?: boolean;
 }
 
 export interface DependenciasDaReconciliacao {
@@ -257,7 +265,7 @@ export async function reconciliarIntent(
   if (intent.state === "SUBMITTING" || intent.state === "SUBMITTED") {
     await transicionar(db, intent.id, "UNKNOWN", leitura.porque.slice(0, 300));
   }
-  return fim("segue_em_duvida", intent.state, leitura.porque);
+  return { ...fim("segue_em_duvida", intent.state, leitura.porque), leituraFalhou: true };
 }
 
 /**
