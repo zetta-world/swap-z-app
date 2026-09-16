@@ -167,11 +167,19 @@ export function bancoFalso(): BancoFalso {
       const mesmaOrdem = (f: Linha) =>
         f.intent_id === it.id
         && (f.external_order_id ?? null) === (args.p_external_order_id ?? null);
-      const daOrdem = () => fills.filter(mesmaOrdem);
+      // Mesmo predicado "não atribuído" do achado 2 (cex_ingest_trades): o
+      // sintético com external_order_id NULL do MESMO intent entra na base de
+      // fee e na guarda de moeda; o de OUTRA ordem segue fora (brecha do
+      // verificador, round 4 — espelha a 0059).
+      const daOrdemOuNaoAtribuido = (f: Linha) =>
+        f.intent_id === it.id
+        && ((f.external_order_id ?? null) === (args.p_external_order_id ?? null)
+            || f.external_order_id == null);
+      const daOrdem = () => fills.filter(daOrdemOuNaoAtribuido);
       // Moeda incompatível: fail-closed — e o NULL também fecha (CCXT traz
       // `cost` sem `currency`). Dispara quando o snapshot traz fee (ou moeda)
-      // e existe fill DA ORDEM (real ou sintético) com fee não nula cuja
-      // moeda diverge; null↔'USDT' fecha nos dois sentidos.
+      // e existe fill DA ORDEM (real ou sintético, atribuído ou não) com fee
+      // não nula cuja moeda diverge; null↔'USDT' fecha nos dois sentidos.
       if (args.p_fee != null || args.p_fee_currency != null) {
         const outra = daOrdem().find((f) =>
           f.fee != null && (f.fee_currency ?? null) !== (args.p_fee_currency ?? null));

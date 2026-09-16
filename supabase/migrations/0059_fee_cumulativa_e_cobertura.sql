@@ -126,6 +126,20 @@
 --       IGNORADOS — não inseridos, não contam em v_novos (pertencem a outra
 --       ingestão). O caller já filtra; a RPC não confia.
 --
+-- 5. ROUND 4 (brecha do verificador, RPC irmã): na `cex_ingest_order_snapshot`
+--    a base do delta de fee (`v_fee_ja`) e a guarda de moeda filtravam só
+--    `external_order_id is not distinct from p_external_order_id` e ficavam
+--    CEGAS ao sintético NULL do mesmo intent — enquanto a base de qty
+--    (`v_ja`) já é do intent inteiro. Medido: ACK sem id → sintético NULL
+--    5/0.05 → snapshot ORD-1 5/0.05 via `v_fee_ja = 0`, inseria ajuste
+--    zero-qty de 0.05 e fee_total fechava 0.10 (esperado 0.05); e sintético
+--    NULL USDT + snapshot ORD-1 BNB não levantava exceção de moeda. A base
+--    de fee e a guarda de moeda passam a usar o MESMO predicado "não
+--    atribuído" do achado 2 (`is not distinct from` OU `is null`): o
+--    sintético NULL do mesmo intent entra nas duas; fills com id de OUTRA
+--    ordem seguem fora. A base de qty/quote (`v_ja`/`v_quote`) já era
+--    intent-wide e não muda.
+--
 -- ACL: mesma disciplina da 0055 (A116) — REVOKE/GRANT repetidos aqui são
 -- idempotentes, e o CATALOGO de `rpcs-acl.test.ts` aponta estas duas funções
 -- para esta migration (regra: ACL file ≥ def file).
@@ -180,11 +194,16 @@ begin
   -- com fee não nula cuja moeda diverge — `is distinct from` cobre
   -- null↔'USDT' nos dois sentidos. p_fee e p_fee_currency ambos null: segue
   -- sem exceção, fee null, sem inventar.
+  -- ⚠️ SINTÉTICO NÃO ATRIBUÍDO (mesmo predicado do achado 2 da
+  -- cex_ingest_trades): fills do MESMO INTENT com external_order_id NULL
+  -- (ACK sem id) entram na guarda — o snapshot que chega com o id descoberto
+  -- É a atribuição. Fills com external_order_id de OUTRA ordem seguem fora.
   if p_fee is not null or p_fee_currency is not null then
     select count(*), min(f.fee_currency) into v_incomp, v_moeda_livro
       from public.cex_fills f
      where f.intent_id = p_intent_id
-       and f.external_order_id is not distinct from p_external_order_id
+       and (f.external_order_id is not distinct from p_external_order_id
+            or f.external_order_id is null)
        and f.fee is not null
        and f.fee_currency is distinct from p_fee_currency;
     if v_incomp > 0 then
@@ -200,10 +219,18 @@ begin
   -- MESMA moeda. O livro inteiro da ordem é a base do delta, como qty/quote
   -- já são: depois da substituição synthetic→real não há mais sintético, e
   -- filtrar por ele regravaria a fee cumulativa inteira (achado 1, round 3).
+  -- ⚠️ SINTÉTICO NÃO ATRIBUÍDO (brecha do verificador, round 4): o sintético
+  -- gravado com external_order_id NULL (ACK sem id) é do MESMO INTENT e tem
+  -- de entrar na base — sem isso, ACK sem id → sintético NULL 5/0.05 →
+  -- snapshot com o id descoberto ORD-1 5/0.05 via v_fee_ja = 0 e inseria um
+  -- ajuste zero-qty de 0.05, fechando fee_total 0.10 (esperado 0.05). O
+  -- predicado é o mesmo do achado 2 da cex_ingest_trades: `is not distinct
+  -- from` OU null; fills com external_order_id de OUTRA ordem seguem fora.
   select coalesce(sum(f.fee),0) into v_fee_ja
     from public.cex_fills f
    where f.intent_id = p_intent_id
-     and f.external_order_id is not distinct from p_external_order_id
+     and (f.external_order_id is not distinct from p_external_order_id
+          or f.external_order_id is null)
      and f.fee_currency is not distinct from p_fee_currency;
   v_fee_delta := case when p_fee is null then null
                       else greatest(p_fee - v_fee_ja, 0) end;

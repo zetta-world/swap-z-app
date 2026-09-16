@@ -805,3 +805,103 @@ describe("⑥ A121 round 4 (revisão) — os 4 achados na cex_ingest_trades", ()
     expect(corpo).toMatch(/for v_t in select \* from jsonb_array_elements\(v_lote\)/);
   });
 });
+
+describe("⑦ brecha do verificador (round 4) — o SNAPSHOT enxerga o sintético NULL na base de fee/moeda", () => {
+  // A base de qty (`v_ja`) já era do intent inteiro, mas a base de fee
+  // (`v_fee_ja`) e a guarda de moeda filtravam só `is not distinct from` e
+  // ficavam CEGAS ao sintético com external_order_id NULL do mesmo intent
+  // (ACK sem id). A correção espelha o achado 2 na cex_ingest_order_snapshot:
+  // predicado "não atribuído" = `is not distinct from` OU `is null`.
+  const snapNull = (b: ReturnType<typeof bancoFalso>, qty: number,
+                    quote: number, fee: number | null, moeda: string | null) =>
+    ingerirSnapshotDaOrdem(b.cliente, "i-fee", null, {
+      cumulativeQty: qty, avgPrice: qty > 0 ? quote / qty : 0,
+      cumulativeQuote: quote, fee, feeCurrency: moeda,
+    });
+
+  it("⚠️⚠️⚠️ NULL 5/0.05 → snapshot ORD-1 5/0.05 ⇒ ZERO inserções, fee_total 0.05 (NUNCA 0.10)", async () => {
+    // O cenário medido: qty parada, mas v_fee_ja=0 (cego ao NULL) inseria um
+    // ajuste zero-qty de 0.05 — fee_total fechava 0.10.
+    const b = bancoFalso();
+    await comIntent(b);
+    const s0 = await snapNull(b, 5, 500, 0.05, "USDT");
+    expect(s0.ok).toBe(true);
+    expect(b.fills[0].external_order_id).toBeNull();
+    const r = await snap(b, { qty: 5, quote: 500, fee: 0.05 });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.inseridos).toBe(0);          // nenhum ajuste zero-qty
+    expect(b.fills).toHaveLength(1);
+    expect(Number(b.intents[0].filled_qty)).toBe(5);
+    expect(feeTotal(b)).toBeCloseTo(0.05, 12);      // NUNCA 0.10
+  });
+
+  it("⚠️⚠️⚠️ NULL 5/0.05 → snapshot ORD-1 8/0.08 ⇒ qty 8, fee_total 0.08 (NUNCA 0.13)", async () => {
+    const b = bancoFalso();
+    await comIntent(b);
+    await snapNull(b, 5, 500, 0.05, "USDT");
+    const r = await snap(b, { qty: 8, quote: 800, fee: 0.08 });
+    expect(r.ok).toBe(true);
+    expect(Number(b.intents[0].filled_qty)).toBe(8);
+    // O delta de fee enxerga os 0.05 do sintético NULL: entra 0.03, não 0.08.
+    expect(feeTotal(b)).toBeCloseTo(0.08, 12);      // NUNCA 0.13
+    const delta = b.fills.find((f) => f.external_order_id === "ORD-1");
+    expect(delta).toBeDefined();
+    expect(Number(delta!.fee)).toBeCloseTo(0.03, 12);
+  });
+
+  it("⚠️⚠️ sintético NULL USDT + snapshot ORD-1 BNB ⇒ EXCEÇÃO fee_currency_incompativel (fail-closed)", async () => {
+    const b = bancoFalso();
+    await comIntent(b);
+    await snapNull(b, 5, 500, 0.05, "USDT");
+    const ledgerAntes = JSON.stringify(b.fills);
+    const r = await ingerirSnapshotDaOrdem(b.cliente, "i-fee", "ORD-1", {
+      cumulativeQty: 8, avgPrice: 100, cumulativeQuote: 800,
+      fee: 0.08, feeCurrency: "BNB",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.porque).toMatch(/fee_currency incompativel/i);
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(feeTotal(b)).toBeCloseTo(0.05, 12);
+  });
+
+  it("⚠️ regressão multi-ordem: sintético de ORD-A NÃO entra na base de fee de ORD-B", async () => {
+    // NULL é "não atribuído"; ordem nomeada de OUTRA ordem segue fora — se
+    // ORD-A entrasse na base de ORD-B, o delta seria 0.03 e o total 0.08.
+    const b = bancoFalso();
+    await comIntent(b);
+    const sa = await ingerirSnapshotDaOrdem(b.cliente, "i-fee", "ORD-A", {
+      cumulativeQty: 5, avgPrice: 100, cumulativeQuote: 500,
+      fee: 0.05, feeCurrency: "USDT",
+    });
+    expect(sa.ok).toBe(true);
+    const r = await ingerirSnapshotDaOrdem(b.cliente, "i-fee", "ORD-B", {
+      cumulativeQty: 8, avgPrice: 100, cumulativeQuote: 800,
+      fee: 0.08, feeCurrency: "USDT",
+    });
+    expect(r.ok).toBe(true);
+    const deltaB = b.fills.find((f) => f.external_order_id === "ORD-B");
+    expect(deltaB).toBeDefined();
+    expect(Number(deltaB!.fee)).toBeCloseTo(0.08, 12);   // inteiro, não 0.03
+    expect(feeTotal(b)).toBeCloseTo(0.13, 12);           // 0.05 (A) + 0.08 (B)
+  });
+
+  it("⚠️ guarda estrutural: `or ... is null` na base de fee E na guarda de moeda da função SNAPSHOT na 0059", () => {
+    const iFunc = SQL_0059.indexOf("function public.cex_ingest_order_snapshot");
+    const iFim = SQL_0059.indexOf("end; $$;", iFunc);
+    expect(iFunc).toBeGreaterThan(-1);
+    expect(iFim).toBeGreaterThan(iFunc);
+    const corpo = SQL_0059.slice(iFunc, iFim);
+    const pred = /or\s+f\.external_order_id is null/;
+    // Guarda de moeda (select count(*) ... fee_currency is distinct from).
+    const iGuarda = corpo.indexOf("into v_incomp, v_moeda_livro");
+    expect(iGuarda).toBeGreaterThan(-1);
+    expect(pred.test(corpo.slice(iGuarda, iGuarda + 400))).toBe(true);
+    // Base do delta de fee (sum(f.fee) into v_fee_ja).
+    const iFee = corpo.indexOf("sum(f.fee)");
+    expect(iFee).toBeGreaterThan(-1);
+    expect(pred.test(corpo.slice(iFee, iFee + 400))).toBe(true);
+    // E a base de qty/quote segue INTENT-WIDE (sem filtro de ordem).
+    expect(corpo).toMatch(
+      /into v_ja, v_quote from public\.cex_fills where intent_id = p_intent_id;/);
+  });
+});
