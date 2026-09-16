@@ -57,12 +57,40 @@
 --    e inseria o lote recebido — mas `fetchMyTrades` é PÁGINA ÚNICA de 200,
 --    SEM PROVA DE COMPLETUDE. Um lote parcial substituía a estimativa por
 --    um fato menor, e o restante nunca voltava (a próxima leitura traria os
---    mesmos trades, dedupados). O fato sintético só é substituído quando o
---    conjunto real COBRE o estimado: se `sum(qty)` real (livro + lote novo)
---    < `sum(qty)` sintética, a RPC NÃO deleta sintético e NÃO insere trade
---    (inserir somaria em dobro na próxima tentativa completa), e devolve
---    `{ok:false, porque:'cobertura_incompleta'}` — o reconciliador registra
---    como ADIADO e segue; o intent permanece para a próxima passada.
+--    mesmos trades, dedupados). O fato sintético só é substituído quando os
+--    NOVOS trades únicos do lote COBREM o estimado (A121, abaixo): se a soma
+--    das quantidades novas < `sum(qty)` sintética, a RPC NÃO deleta sintético
+--    e NÃO insere trade (inserir somaria em dobro na próxima tentativa
+--    completa), e devolve `{ok:false, porque:'cobertura_incompleta'}` — o
+--    reconciliador registra como ADIADO e segue; o intent permanece para a
+--    próxima passada.
+--
+-- 3. A121 (round 4) — a fórmula original da guarda (`real existente + novos
+--    >= sintético`) ainda permitia apagar sintético criado DEPOIS do real
+--    existente: real 5, snapshot 8 → sintético 3; um lote só com os trades
+--    ANTIGOS (dedupados) fechava 5 ≥ 3, apagava os 3 e o total caía de 8
+--    para 5 — um fato sumia sem nenhum trade novo. O real existente é
+--    ANTERIOR ao sintético e não prova nada sobre o que veio depois: a
+--    cobertura de QUANTIDADE é provada só pelos NOVOS trades únicos
+--    (`v_novos >= v_sint`), somados por (intent_id, external_order_id is not
+--    distinct from, exchange_id) — external_order_id null é tratado
+--    explicitamente e uma ordem nunca cobre outra.
+--
+--    E a cobertura de FEE: sintético com fee CONHECIDA carrega um fato que
+--    os trades novos têm de trazer EXPLÍCITO e na MESMA moeda, senão a
+--    substituição o apaga. Trade novo com fee null →
+--    `{ok:false, porque:'cobertura_fee_incompleta'}`; fee_currency divergente
+--    → `{ok:false, porque:'fee_currency_incompativel'}` (sem conversão
+--    inventada, sem null=0, sem somar moedas). Fee MENOR mas explícita e
+--    completa → substitui: o real é fato (final pode ser 0.048 contra 0.05
+--    estimado). Sintético SEM fee → trades sem fee não destroem informação
+--    e a substituição procede. Os dois motivos novos são ADIADOS para o
+--    reconciliador, como `cobertura_incompleta`.
+--
+--    ATOMICIDADE DECLARADA: PL/pgSQL roda na transação do chamador; todas as
+--    validações acima retornam ANTES de qualquer delete/insert, e qualquer
+--    exceção desfaz a transação inteira — ou a substituição acontece
+--    completa (delete + inserts) ou o livro fica byte-a-byte intacto.
 --
 -- ACL: mesma disciplina da 0055 (A116) — REVOKE/GRANT repetidos aqui são
 -- idempotentes, e o CATALOGO de `rpcs-acl.test.ts` aponta estas duas funções
@@ -231,8 +259,21 @@ end; $$;
 -- e o reconciliador trata como ADIADO — não marca FAILED, o intent permanece
 -- para a próxima tentativa.
 --
+-- ⚠️ A121: a cobertura é provada SÓ PELOS NOVOS TRADES ÚNICOS do lote
+-- (`v_novos >= v_sint`). O real existente é ANTERIOR ao sintético e nunca
+-- cobre o que veio depois dele — somá-lo permitia apagar um sintético
+-- criado depois do real sem nenhum trade novo (real 5, snapshot 8 → sint 3,
+-- lote só dedupado → 5 ≥ 3 apagava os 3 e o total caía de 8 para 5).
+--
+-- ⚠️ E a FEE também é coberta: sintético com fee conhecida exige fee
+-- explícita na MESMA moeda nos trades novos — fee null é
+-- 'cobertura_fee_incompleta', moeda divergente é 'fee_currency_incompativel'
+-- (os dois ADIADOS, como 'cobertura_incompleta'); fee menor mas explícita e
+-- completa substitui — o real é fato.
+--
 -- ⚠️ TODOS OS TRADES DA ORDEM DE UMA VEZ, e não um por chamada: a substituição
--- (delete + insert) continua na MESMA transação quando a cobertura fecha.
+-- (delete + insert) continua na MESMA transação quando a cobertura fecha, e
+-- qualquer validação que falha retorna ANTES de tocar o livro (atomicidade).
 -- ─────────────────────────────────────────────────────────────────────────
 create or replace function public.cex_ingest_trades(
   p_intent_id uuid,
@@ -242,7 +283,7 @@ create or replace function public.cex_ingest_trades(
 declare
   v_intent public.cex_execution_intents%rowtype;
   v_t jsonb; v_inseridos integer := 0;
-  v_sint numeric; v_real numeric;
+  v_sint numeric; v_novos numeric;
 begin
   select * into v_intent from public.cex_execution_intents
    where id = p_intent_id for update;
@@ -254,25 +295,67 @@ begin
     raise exception 'fill contra intent em % — estado pre-envio nao admite execucao', v_intent.state;
   end if;
 
-  -- Cobertura: o real (livro + lote novo, sem recontar trade já dedupado)
-  -- tem de cobrir o sintético que vai ser apagado.
+  -- Cobertura de QUANTIDADE (A121): só os NOVOS trades únicos do lote
+  -- provam o que veio DEPOIS do sintético. O real já existente é anterior a
+  -- ele e não entra na conta — somas sempre por (intent_id,
+  -- external_order_id is not distinct from, exchange_id): external_order_id
+  -- null é tratado explicitamente e uma ordem nunca cobre outra.
   select coalesce(sum(qty),0) into v_sint from public.cex_fills
    where intent_id = p_intent_id and sintetico
-     and external_order_id is not distinct from p_external_order_id;
+     and external_order_id is not distinct from p_external_order_id
+     and exchange_id = v_intent.exchange_id;
 
-  select coalesce(sum(qty),0) into v_real from public.cex_fills
-   where intent_id = p_intent_id and not sintetico
-     and external_order_id is not distinct from p_external_order_id;
-
-  select v_real + coalesce(sum((t->>'qty')::numeric),0) into v_real
+  select coalesce(sum((t->>'qty')::numeric),0) into v_novos
     from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) t
    where not exists (select 1 from public.cex_fills f
           where f.exchange_id = v_intent.exchange_id
             and f.dedupe_key = 'trade:' || (t->>'trade_id'));
 
-  if v_real < v_sint - 1e-12 then
+  if v_sint > 0 and v_novos < v_sint - 1e-12 then
     return jsonb_build_object('ok', false, 'porque', 'cobertura_incompleta',
-                              'real', v_real, 'sintetico', v_sint);
+                              'novos', v_novos, 'sintetico', v_sint);
+  end if;
+
+  -- Cobertura de FEE (A121): sintético com fee CONHECIDA é um fato que a
+  -- substituição não pode apagar. Os trades novos precisam trazer a fee
+  -- EXPLÍCITA e na MESMA moeda — sem conversão inventada, sem null=0, sem
+  -- somar moedas. Fee MENOR mas explícita e completa substitui (o real é
+  -- fato). Sintético sem fee: trades sem fee não destroem nada, procede.
+  -- Qualquer falha aqui retorna ANTES do delete/insert: livro intacto.
+  if v_sint > 0 and exists (select 1 from public.cex_fills f
+         where f.intent_id = p_intent_id and f.sintetico
+           and f.external_order_id is not distinct from p_external_order_id
+           and f.exchange_id = v_intent.exchange_id
+           and f.fee is not null) then
+    if exists (
+        select 1 from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) t
+         where not exists (select 1 from public.cex_fills f
+                where f.exchange_id = v_intent.exchange_id
+                  and f.dedupe_key = 'trade:' || (t->>'trade_id'))
+           and nullif(t->>'fee','') is null) then
+      return jsonb_build_object('ok', false, 'porque', 'cobertura_fee_incompleta',
+                                'novos', v_novos, 'sintetico', v_sint);
+    end if;
+    if exists (
+        with novos as (
+          select nullif(t->>'fee_currency','') as moeda
+            from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) t
+           where not exists (select 1 from public.cex_fills f
+                  where f.exchange_id = v_intent.exchange_id
+                    and f.dedupe_key = 'trade:' || (t->>'trade_id'))
+        ), moedas_sint as (
+          select distinct f.fee_currency as moeda from public.cex_fills f
+           where f.intent_id = p_intent_id and f.sintetico
+             and f.external_order_id is not distinct from p_external_order_id
+             and f.exchange_id = v_intent.exchange_id
+             and f.fee is not null
+        )
+        select 1 from novos n
+         where not exists (select 1 from moedas_sint m
+                where m.moeda is not distinct from n.moeda)) then
+      return jsonb_build_object('ok', false, 'porque', 'fee_currency_incompativel',
+                                'novos', v_novos, 'sintetico', v_sint);
+    end if;
   end if;
 
   -- O sintético é estimativa; o trade é fato. O fato substitui.

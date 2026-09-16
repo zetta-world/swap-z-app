@@ -189,9 +189,11 @@ export async function reconciliarIntent(
     })));
     if (!ing.ok) {
       /**
-       * ⚠️ A118: COBERTURA INCOMPLETA É ADIADO, não erro. `fetchMyTrades` é
-       * página única sem prova de completude; o banco recusou substituir o
-       * sintético por um fato menor. NADA foi deletado nem inserido — o
+       * ⚠️ A118/A121: COBERTURA INCOMPLETA É ADIADO, não erro — de quantidade
+       * (`cobertura_incompleta`) ou de fee (`cobertura_fee_incompleta`,
+       * `fee_currency_incompativel`). `fetchMyTrades` é página única sem
+       * prova de completude; o banco recusou substituir o sintético por um
+       * fato menor ou menos informado. NADA foi deletado nem inserido — o
        * intent permanece no estado em que está para a próxima passada (não
        * marca FAILED, não abre RECONCILIATION_REQUIRED por uma página curta).
        */

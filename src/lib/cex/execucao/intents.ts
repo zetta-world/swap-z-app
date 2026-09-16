@@ -171,8 +171,9 @@ export interface TradeParaIngerir {
 export type ResultadoDeIngestao =
   | { ok: true; inseridos: number; filledQty: number; state: EstadoDoIntent }
   | { ok: false; porque: string;
-      /** A118: cobertura_incompleta é ADIADO — o intent permanece para nova
-       *  tentativa; NÃO é erro fatal nem divergência. */
+      /** A118/A121: cobertura_incompleta, cobertura_fee_incompleta e
+       *  fee_currency_incompativel são ADIADOS — o intent permanece para
+       *  nova tentativa; NÃO é erro fatal nem divergência. */
       adiado?: boolean };
 
 /**
@@ -182,10 +183,13 @@ export type ResultadoDeIngestao =
  * ordem na mesma transação; mandar um trade por chamada deixaria o total
  * transitoriamente MENOR que a verdade.
  *
- * ⚠️ A118: `fetchMyTrades` é página única SEM prova de completude. Se o lote
- * não cobre o estimado sintético, a RPC não deleta nem insere nada e devolve
- * `ok:false, porque:'cobertura_incompleta'` — aqui isso vira `adiado:true`,
- * e quem chama registra e segue (o intent permanece para nova tentativa).
+ * ⚠️ A118/A121: `fetchMyTrades` é página única SEM prova de completude. Se
+ * os NOVOS trades únicos do lote não cobrem o estimado sintético (ou não
+ * trazem a fee explícita na mesma moeda que o sintético conhece), a RPC não
+ * deleta nem insere nada e devolve `ok:false` com `cobertura_incompleta`,
+ * `cobertura_fee_incompleta` ou `fee_currency_incompativel` — aqui isso vira
+ * `adiado:true`, e quem chama registra e segue (o intent permanece para nova
+ * tentativa).
  */
 export async function ingerirTrades(
   db: SupabaseClient<Database>, intentId: string, externalOrderId: string | null,
@@ -210,8 +214,14 @@ export async function ingerirTrades(
   const r = data as { ok?: boolean; porque?: string; inseridos?: number;
                       filled_qty?: number; state?: string } | null;
   if (r && r.ok === false) {
+    // A118/A121: cobertura incompleta (de quantidade ou de fee) e moeda de
+    // fee incompatível são ADIADOS — o banco não tocou o livro e a próxima
+    // passada pode fechar a cobertura. Nunca divergência fatal.
+    const adiado = r.porque === "cobertura_incompleta"
+      || r.porque === "cobertura_fee_incompleta"
+      || r.porque === "fee_currency_incompativel";
     return { ok: false, porque: (r.porque ?? "ingestao recusada pelo banco").slice(0, 200),
-             adiado: r.porque === "cobertura_incompleta" };
+             adiado };
   }
   return {
     ok: true, inseridos: Number(r?.inseridos ?? 0),

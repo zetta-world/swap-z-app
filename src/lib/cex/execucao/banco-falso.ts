@@ -246,10 +246,17 @@ export function bancoFalso(): BancoFalso {
     }
 
     /**
-     * A118 (migration 0059): GUARDA DE COBERTURA synthetic→real. fetchMyTrades
-     * é página única sem prova de completude — o sintético só é substituído
-     * quando o real (livro + lote novo) cobre o estimado. Lote parcial: nada
-     * é deletado, nada é inserido, retorno ok:false 'cobertura_incompleta'.
+     * A118 + A121 (migration 0059): GUARDA DE COBERTURA synthetic→real.
+     * fetchMyTrades é página única sem prova de completude — o sintético só
+     * é substituído quando os NOVOS trades únicos do lote cobrem o estimado
+     * (`v_novos >= v_sint`). O real existente é ANTERIOR ao sintético e nunca
+     * cobre o que veio depois dele (real 5, snapshot 8 → sint 3, lote só
+     * dedupado: 0 < 3 → adiado; a fórmula antiga R+N≥S apagava os 3 e o
+     * total caía de 8 para 5). E a FEE também é coberta: sintético com fee
+     * conhecida exige fee explícita na mesma moeda nos novos — fee null é
+     * 'cobertura_fee_incompleta', moeda divergente é
+     * 'fee_currency_incompativel'. Tudo adiado, nada deletado nem inserido,
+     * retorno ANTES de tocar o livro (atomicidade).
      */
     if (nome === "cex_ingest_trades") {
       const estado = it.state as EstadoDoIntent;
@@ -259,20 +266,30 @@ export function bancoFalso(): BancoFalso {
       const daOrdem = (f: Linha) =>
         f.intent_id === it.id
         && (f.external_order_id ?? null) === (args.p_external_order_id ?? null);
-      const sint = fills.filter((f) => daOrdem(f) && f.sintetico)
-        .reduce((t, f) => t + Number(f.qty), 0);
-      let real = fills.filter((f) => daOrdem(f) && !f.sintetico)
-        .reduce((t, f) => t + Number(f.qty), 0);
+      const sinteticoRows = fills.filter((f) => daOrdem(f) && f.sintetico);
+      const sint = sinteticoRows.reduce((t, f) => t + Number(f.qty), 0);
       const lote = (args.p_trades as Linha[]) ?? [];
-      for (const t of lote) {
-        const chaveT = `trade:${t.trade_id}`;
-        if (!fills.some((f) => f.exchange_id === it.exchange_id && f.dedupe_key === chaveT)) {
-          real += Number(t.qty);
-        }
-      }
-      if (real < sint - 1e-12) {
+      const jaExiste = (t: Linha) =>
+        fills.some((f) => f.exchange_id === it.exchange_id
+                       && f.dedupe_key === `trade:${t.trade_id}`);
+      const novos = lote.filter((t) => !jaExiste(t));
+      const novosQty = novos.reduce((t, x) => t + Number(x.qty), 0);
+      if (sint > 0 && novosQty < sint - 1e-12) {
         return { data: { ok: false, porque: "cobertura_incompleta",
-                         real, sintetico: sint }, error: null };
+                         novos: novosQty, sintetico: sint }, error: null };
+      }
+      // Cobertura de FEE: só os novos provam; sintético sem fee não exige nada.
+      if (sint > 0 && sinteticoRows.some((f) => f.fee != null)) {
+        if (novos.some((t) => t.fee == null)) {
+          return { data: { ok: false, porque: "cobertura_fee_incompleta",
+                           novos: novosQty, sintetico: sint }, error: null };
+        }
+        const moedasSint = new Set(sinteticoRows.filter((f) => f.fee != null)
+          .map((f) => f.fee_currency ?? null));
+        if (novos.some((t) => !moedasSint.has(t.fee_currency ?? null))) {
+          return { data: { ok: false, porque: "fee_currency_incompativel",
+                           novos: novosQty, sintetico: sint }, error: null };
+        }
       }
       // O sintético é estimativa; o trade é fato. O fato substitui.
       for (let i = fills.length - 1; i >= 0; i--) {
