@@ -62,19 +62,8 @@ describe("migrations — a numeração é a coordenação entre as sessões", ()
      */
     const numeros = ARQUIVOS.map((f) => numeroDe(f)!).sort((a, b) => a - b);
     const buracos: string[] = [];
-    /**
-     * ⚠️ NÚMEROS RESERVADOS POR BRANCHES IRMÃS (Round 3). A divisão do SPEC deu
-     * 0059 ao Coder A (fees) e 0060 ao Coder B (A110) — cada um numa worktree
-     * separada, então esta worktree vê um buraco que o MERGE fecha. Reservar
-     * aqui é o oposto de apagar migration: é declarar um número que outra
-     * branch VAI ocupar. Quando as branches mergearem, a sequência fica
-     * contínua e esta lista vira no-op (buraco nenhum para ela esconder) —
-     * como aconteceu no Round 2 com 0055/0056/0057.
-     */
-    const RESERVADOS = new Set([59]);
     for (let i = 1; i < numeros.length; i++) {
-      let esperado = numeros[i - 1] + 1;
-      while (RESERVADOS.has(esperado) && esperado < numeros[i]) esperado++;
+      const esperado = numeros[i - 1] + 1;
       if (numeros[i] !== esperado) {
         buracos.push(`entre ${numeros[i - 1]} e ${numeros[i]}`);
       }
