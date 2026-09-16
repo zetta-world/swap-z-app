@@ -470,6 +470,14 @@ export async function POST(req: NextRequest) {
     if (dbRec) {
       const r = await reconciliarPendentes({
         db: dbRec,
+        /**
+         * ⚠️ INTENTS MANUAIS NÃO ENTRAM AQUI (ponto 9). Sem `session_id` e sem
+         * `conexao_id`, a credencial não existe em lugar nenhum do servidor —
+         * contar tentativa até a quarentena era alarme falso por desenho. Eles
+         * ficam UNKNOWN até a reconciliação INTERATIVA (o usuário reautentica).
+         * O do piloto do navegador agora carrega `session_id` e passa.
+         */
+        elegivel: (intent) => Boolean(intent.session_id || intent.conexao_id),
         credenciais: async (intent) => {
           try {
             const sessao = intent.session_id
