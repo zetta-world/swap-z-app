@@ -49,12 +49,17 @@ async function plantarIntent(
 }
 
 /** A leitura da corretora: 0.01 BTC a 61.000, com 0.61 de taxa em USDT. */
+const TRADES_A119 = [{ tradeId: "t-a119", orderId: "ext-a119", qty: 0.01,
+                       price: 61_000, quote: 610, fee: 0.61,
+                       feeCurrency: "USDT", executedAt: VELHO }];
 const LEITURA_COM_TAXA: LeituraDaOrdem = {
   tipo: "achada",
   ordem: { id: "ext-a119", status: "closed", filled: 0.01, average: 61_000,
            cost: 610, fee: { cost: 0.61, currency: "USDT" } } as never,
-  trades: [{ tradeId: "t-a119", orderId: "ext-a119", qty: 0.01, price: 61_000,
-             quote: 610, fee: 0.61, feeCurrency: "USDT", executedAt: VELHO }],
+  // A125: settlement lê tradesDaOrdem; a deriva lê o histórico account-wide —
+  // aqui só há o trade da própria ordem, compartilhado pelas duas coleções.
+  tradesDaOrdem: TRADES_A119,
+  historico: { trades: TRADES_A119, possivelmenteIncompleto: false },
 };
 
 async function reconciliar(banco: ReturnType<typeof bancoFalso>, leitura: LeituraDaOrdem) {
@@ -123,7 +128,8 @@ describe("A119.3 — replay da MESMA reconciliação não soma a taxa duas vezes
       tipo: "achada",
       ordem: { id: "ext-a119", status: "open", filled: 0.01, average: 61_000,
                cost: 610, fee: { cost: 0.61, currency: "USDT" } } as never,
-      trades: LEITURA_COM_TAXA.trades,
+      tradesDaOrdem: TRADES_A119,
+      historico: { trades: TRADES_A119, possivelmenteIncompleto: false },
     };
     const primeira = await reconciliar(banco, leituraParcial);
     expect(primeira.state).toBe("PARTIALLY_FILLED");

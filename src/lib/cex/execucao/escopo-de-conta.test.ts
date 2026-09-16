@@ -66,6 +66,20 @@ function trade(tradeId: string, orderId: string | null): TradeDaVenue {
            fee: null, feeCurrency: null, executedAt: null };
 }
 
+/**
+ * ⚠️ A125 — as duas coleções do contrato novo. A deriva lê `historico`
+ * (account-wide); o settlement lê `tradesDaOrdem` (só a ordem alvo). Nas
+ * fixtures abaixo os dois compartilham os MESMOS objetos quando o trade é da
+ * ordem — como na leitura real, em que o subset é filtro do bruto.
+ */
+const daOrdem = (ts: TradeDaVenue[]) =>
+  ({ tradesDaOrdem: ts,
+     historico: { trades: ts, possivelmenteIncompleto: false } });
+/** Trades EXTERNOS à ordem alvo: só o histórico os carrega (é o caso A125). */
+const soNoHistorico = (ts: TradeDaVenue[]) =>
+  ({ tradesDaOrdem: [] as TradeDaVenue[],
+     historico: { trades: ts, possivelmenteIncompleto: false } });
+
 function reconciliar(b: BancoFalso, intent: IntentRow, leitura: LeituraDaOrdem,
                      tentativas = 0) {
   return reconciliarIntent({
@@ -89,7 +103,7 @@ describe("A124.1 — trade de OUTRA CONTA não absolve (cross-account por trade_
     const r = await reconciliar(b, iB, { tipo: "achada",
       ordem: { id: "ORD-B", status: "open", filled: 0, average: 0,
                cost: 0 } as never,
-      trades: [trade("777", "MANUAL-B")] });
+      ...soNoHistorico([trade("777", "MANUAL-B")]) });
     expect(r.desfecho).toBe("quarentena");
     expect(r.detalhe).toContain("ACCOUNT_DRIFT");
     expect(estadoDe(b, "iB")).toBe("QUARANTINED");
@@ -105,7 +119,7 @@ describe("A124.2 — colisão de order id entre contas (cross-account por ordem)
     const r = await reconciliar(b, iB, { tipo: "achada",
       ordem: { id: "ORD-B", status: "open", filled: 0, average: 0,
                cost: 0 } as never,
-      trades: [trade("T-X", "ORD-123")] });
+      ...soNoHistorico([trade("T-X", "ORD-123")]) });
     expect(r.desfecho).toBe("quarentena");
     expect(estadoDe(b, "iB")).toBe("QUARANTINED");
   });
@@ -118,7 +132,7 @@ describe("A124.3 — mesma conexão, sessões diferentes: SEM falso drift", () =
                        external_order_id: "ORD-S1" });
     const iS2 = plantarIntent(b, { id: "iS2", conexao_id: "C1", session_id: "S2" });
     const r = await reconciliar(b, iS2, { tipo: "so_trades",
-      trades: [trade("T-S1", "ORD-S1")] });
+      ...daOrdem([trade("T-S1", "ORD-S1")]) });
     expect(r.desfecho).toBe("resolvido");
     expect(estadoDe(b, "iS2")).not.toBe("QUARANTINED");
   });
@@ -136,7 +150,7 @@ describe("A124.4 — autopilot_browser: a sessão resolve para a conexão", () =
 
     plantarIntent(b, { id: "iC1", conexao_id: "C1", external_order_id: "ORD-C1" });
     const ok = await reconciliar(b, iBrowser, { tipo: "so_trades",
-      trades: [trade("T-C1", "ORD-C1")] });
+      ...daOrdem([trade("T-C1", "ORD-C1")]) });
     expect(ok.desfecho).toBe("resolvido");
     expect(estadoDe(b, "iBr")).not.toBe("QUARANTINED");
   });
@@ -150,7 +164,7 @@ describe("A124.4 — autopilot_browser: a sessão resolve para a conexão", () =
     const r = await reconciliar(b, iBrowser, { tipo: "achada",
       ordem: { id: "ORD-BR", status: "open", filled: 0, average: 0,
                cost: 0 } as never,
-      trades: [trade("T-C2", "ORD-C2")] });
+      ...soNoHistorico([trade("T-C2", "ORD-C2")]) });
     expect(r.desfecho).toBe("quarentena");
     expect(estadoDe(b, "iBr")).toBe("QUARANTINED");
   });
@@ -167,7 +181,7 @@ describe("A124.5 — sessão antiga sem conexao_id: fallback ESTREITO de sessão
     const r = await reconciliar(b, iS1, { tipo: "achada",
       ordem: { id: "ORD-S1", status: "open", filled: 0, average: 0,
                cost: 0 } as never,
-      trades: [trade("T-S2", "ORD-S2")] });
+      ...soNoHistorico([trade("T-S2", "ORD-S2")]) });
     expect(r.desfecho).toBe("quarentena");
     expect(estadoDe(b, "iS1")).toBe("QUARANTINED");
   });
@@ -193,7 +207,7 @@ describe("A124.6 — manual: o fingerprint F1 vê F1, não vê F2", () => {
 
     // F1 reconhece a própria ordem (mesmo símbolo).
     const ok = await reconciliar(b, iF1a, { tipo: "so_trades",
-      trades: [trade("T-F1", "ORD-F1")] });
+      ...daOrdem([trade("T-F1", "ORD-F1")]) });
     expect(ok.desfecho).toBe("resolvido");
 
     // F1 NÃO é absolvido pela ordem de F2 — nem dividindo a mesma wallet.
@@ -202,7 +216,7 @@ describe("A124.6 — manual: o fingerprint F1 vê F1, não vê F2", () => {
     const r = await reconciliar(b, iF1b, { tipo: "achada",
       ordem: { id: "ORD-F1B", status: "open", filled: 0, average: 0,
                cost: 0 } as never,
-      trades: [trade("T-F2", "ORD-F2")] });
+      ...soNoHistorico([trade("T-F2", "ORD-F2")]) });
     expect(r.desfecho).toBe("quarentena");
     expect(estadoDe(b, "iF1b")).toBe("QUARANTINED");
   });
@@ -217,7 +231,7 @@ describe("A124.7 — wallet NÃO é conta", () => {
     const r = await reconciliar(b, iC1, { tipo: "achada",
       ordem: { id: "ORD-C1", status: "open", filled: 0, average: 0,
                cost: 0 } as never,
-      trades: [trade("T-C2", "ORD-C2")] });
+      ...soNoHistorico([trade("T-C2", "ORD-C2")]) });
     expect(r.desfecho).toBe("quarentena");
     expect(estadoDe(b, "iC1")).toBe("QUARANTINED");
   });
@@ -235,7 +249,7 @@ describe("A124.8 — cross-symbol NÃO absolve", () => {
     const r = await reconciliar(b, iEth, { tipo: "achada",
       ordem: { id: "ORD-E", status: "open", filled: 0, average: 0,
                cost: 0 } as never,
-      trades: [trade("999", "ORD-EXT-ETH")] });
+      ...soNoHistorico([trade("999", "ORD-EXT-ETH")]) });
     expect(r.desfecho).toBe("quarentena");
     expect(estadoDe(b, "iEth")).toBe("QUARANTINED");
   });
@@ -249,7 +263,7 @@ describe("A124.9 — DCA e autopilot na MESMA conexão compartilham atribuição
     const iAp = plantarIntent(b, { id: "iAp", origin: "autopilot_cron",
                                    conexao_id: "C1", session_id: "S9" });
     const r = await reconciliar(b, iAp, { tipo: "so_trades",
-      trades: [trade("T-DCA", "ORD-DCA")] });
+      ...daOrdem([trade("T-DCA", "ORD-DCA")]) });
     expect(r.desfecho).toBe("resolvido");
     expect(estadoDe(b, "iAp")).not.toBe("QUARANTINED");
   });
@@ -269,7 +283,7 @@ describe("A124.10 — sem identidade nenhuma: INDETERMINADO, nunca verde", () =>
                      external_trade_id: "T-ORB" });
     const iSem = plantarIntent(b, { id: "iSem", origin: "manual", ...semIdentidade });
     const r = await reconciliar(b, iSem, { tipo: "so_trades",
-      trades: [trade("T-ORB", "ORD-ORB")] });
+      ...daOrdem([trade("T-ORB", "ORD-ORB")]) });
     expect(r.desfecho).toBe("segue_em_duvida");
     expect(r.estado).toBe("RECONCILIATION_REQUIRED");
     expect(estadoDe(b, "iSem")).toBe("RECONCILIATION_REQUIRED");
@@ -280,7 +294,7 @@ describe("A124.10 — sem identidade nenhuma: INDETERMINADO, nunca verde", () =>
     const b = bancoFalso();
     const iSem = plantarIntent(b, { id: "iSem", origin: "manual", ...semIdentidade });
     const r = await reconciliar(b, iSem, { tipo: "so_trades",
-      trades: [trade("T-ORB", "ORD-ORB")] }, TENTATIVAS_ATE_QUARENTENA - 1);
+      ...daOrdem([trade("T-ORB", "ORD-ORB")]) }, TENTATIVAS_ATE_QUARENTENA - 1);
     expect(r.desfecho).toBe("quarentena");
     expect(estadoDe(b, "iSem")).toBe("QUARANTINED");
     expect(String(b.intents.find((i) => i.id === "iSem")?.state_reason))
@@ -298,7 +312,7 @@ describe("A124.11 — falha de leitura é INDETERMINADO, nunca Set vazio + verde
     expect(r0).toEqual({ ok: false, porque: "falha ao resolver sessao" });
 
     const r = await reconciliar(b, iS, { tipo: "so_trades",
-      trades: [trade("T1", "ORD-Q")] });
+      ...daOrdem([trade("T1", "ORD-Q")]) });
     expect(r.desfecho).toBe("segue_em_duvida");
     expect(estadoDe(b, "iS")).toBe("RECONCILIATION_REQUIRED");
   });
@@ -310,7 +324,7 @@ describe("A124.11 — falha de leitura é INDETERMINADO, nunca Set vazio + verde
     // Se a falha virasse Set VAZIO + verde, o trade seria explicado pelo
     // idDescoberto e o intent sairia "resolvido" — o que NÃO pode acontecer.
     const r = await reconciliar(b, iC, { tipo: "so_trades",
-      trades: [trade("T1", "ORD-Q")] });
+      ...daOrdem([trade("T1", "ORD-Q")]) });
     expect(r.desfecho).toBe("segue_em_duvida");
     expect(r.estado).toBe("RECONCILIATION_REQUIRED");
     expect(estadoDe(b, "iC")).toBe("RECONCILIATION_REQUIRED");
@@ -407,7 +421,9 @@ describe("A126.1 — browser da MESMA conexão se reconhece (escopo conexão inc
     // idDescoberto; T-A (ordem O-A, do irmão A) SÓ é explicado se O-A entrar
     // no escopo de C1 pelo braço de sessão — é ele que o break §43 derruba.
     const r = await reconciliar(b, iB, { tipo: "so_trades",
-      trades: [trade("T-B", "ORD-B"), trade("T-A", "O-A")] });
+      tradesDaOrdem: [trade("T-B", "ORD-B")],
+      historico: { trades: [trade("T-B", "ORD-B"), trade("T-A", "O-A")],
+                   possivelmenteIncompleto: false } });
     expect(r.desfecho).toBe("resolvido");
     expect(estadoDe(b, "iB")).not.toBe("QUARANTINED");
   });
@@ -424,7 +440,7 @@ describe("A126.2 — browser de C1 NÃO enxerga a sessão de C2", () => {
     const r = await reconciliar(b, iB, { tipo: "achada",
       ordem: { id: "ORD-B", status: "open", filled: 0, average: 0,
                cost: 0 } as never,
-      trades: [trade("T-A", "O-A")] });
+      ...soNoHistorico([trade("T-A", "O-A")]) });
     expect(r.desfecho).toBe("quarentena");
     expect(estadoDe(b, "iB")).toBe("QUARANTINED");
   });
@@ -442,7 +458,9 @@ describe("A126.3 — DCA direto (conexao_id=C1) + browser indireto (S1→C1) com
     // idDescoberto; T-DCA SÓ é explicado se a sessão S1 resolver para o
     // escopo conexão C1, onde o braço direto enxerga o intent do dca_cron.
     const r = await reconciliar(b, iBr, { tipo: "so_trades",
-      trades: [trade("T-BR", "ORD-BR"), trade("T-DCA", "ORD-DCA")] });
+      tradesDaOrdem: [trade("T-BR", "ORD-BR")],
+      historico: { trades: [trade("T-BR", "ORD-BR"), trade("T-DCA", "ORD-DCA")],
+                   possivelmenteIncompleto: false } });
     expect(r.desfecho).toBe("resolvido");
     expect(estadoDe(b, "iBr")).not.toBe("QUARANTINED");
   });
@@ -561,7 +579,7 @@ describe("§19/§34 — a recuperação do A80/A102 segue resolvendo COM escopo"
     const r = await reconciliar(b, iRec, { tipo: "achada",
       ordem: { id: "ORD-REC", status: "closed", filled: 10, average: 100,
                cost: 1000 } as never,
-      trades: [{ ...trade("T-REC", "ORD-REC"), qty: 10, quote: 1000 }] });
+      ...daOrdem([{ ...trade("T-REC", "ORD-REC"), qty: 10, quote: 1000 }]) });
     expect(r.desfecho).toBe("resolvido");
     expect(estadoDe(b, "iRec")).toBe("FILLED");
     expect(Number(b.intents.find((i) => i.id === "iRec")?.filled_qty)).toBe(10);

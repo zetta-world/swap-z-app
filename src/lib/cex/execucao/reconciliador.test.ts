@@ -18,12 +18,21 @@ import {
   reconciliarIntent, reconciliarPendentes,
   IDADE_MINIMA_PARA_CONCLUIR_AUSENCIA_MS, TENTATIVAS_ATE_QUARENTENA,
 } from "@/lib/cex/execucao/reconciliador";
-import type { LeituraDaOrdem } from "@/lib/cex/execucao/venue-leitura";
+import type { HistoricoDoSimbolo, LeituraDaOrdem, TradeDaVenue } from "@/lib/cex/execucao/venue-leitura";
 import type { IntentRow } from "@/lib/cex/execucao/intents";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 
 const CREDS = { apiKey: "k", apiSecret: "s" };
+
+/**
+ * A125: a deriva lê `historico` (account-wide, confiável aqui) e o settlement
+ * lê `tradesDaOrdem`. Nestas fixtures os trades plantados são TODOS da ordem
+ * alvo — então as duas coleções carregam os mesmos objetos, como na leitura
+ * real (o subset é filtro, não renormalização).
+ */
+const historicoCom = (trades: TradeDaVenue[]): HistoricoDoSimbolo =>
+  ({ trades, possivelmenteIncompleto: false });
 
 /** Cria um intent já em SUBMITTING ou UNKNOWN, como depois de um timeout. */
 function comIntent(estado: "SUBMITTING" | "UNKNOWN" | "SUBMITTED", opts: {
@@ -58,13 +67,15 @@ const deps = (b: { cliente: SupabaseClient<Database> }, leitura: LeituraDaOrdem)
 describe("① Cenário A — a ordem existia; o timeout só escondeu a resposta", () => {
   it("⚠️⚠️ a reconciliação acha e liquida EXATAMENTE UMA VEZ", async () => {
     const { b, intent } = comIntent("UNKNOWN");
+    const trades: TradeDaVenue[] = [
+      { tradeId: "T1", orderId: "ORD-77", qty: 6, price: 100, quote: 600,
+        fee: 0.1, feeCurrency: "USDT", executedAt: null },
+      { tradeId: "T2", orderId: "ORD-77", qty: 4, price: 100, quote: 400,
+        fee: 0.1, feeCurrency: "USDT", executedAt: null }];
     const d = deps(b, { tipo: "achada",
       ordem: { id: "ORD-77", filled: 10, average: 100, cost: 1000, status: "closed",
                remaining: 0, amount: 10, symbol: "BTC/USDT", side: "buy", type: "market" } as never,
-      trades: [{ tradeId: "T1", orderId: "ORD-77", qty: 6, price: 100, quote: 600,
-                 fee: 0.1, feeCurrency: "USDT", executedAt: null },
-               { tradeId: "T2", orderId: "ORD-77", qty: 4, price: 100, quote: 400,
-                 fee: 0.1, feeCurrency: "USDT", executedAt: null }] });
+      tradesDaOrdem: trades, historico: historicoCom(trades) });
 
     const r = await reconciliarIntent(d, intent);
     expect(r.desfecho).toBe("resolvido");
@@ -75,10 +86,12 @@ describe("① Cenário A — a ordem existia; o timeout só escondeu a resposta"
 
   it("⚠️⚠️ e reconciliar DE NOVO não soma nada (INVARIANTE 1)", async () => {
     const { b, intent } = comIntent("UNKNOWN");
+    const trades: TradeDaVenue[] = [
+      { tradeId: "T1", orderId: "ORD-77", qty: 10, price: 100, quote: 1000,
+        fee: null, feeCurrency: null, executedAt: null }];
     const leitura: LeituraDaOrdem = { tipo: "achada",
       ordem: { id: "ORD-77", filled: 10, average: 100, cost: 1000, status: "closed" } as never,
-      trades: [{ tradeId: "T1", orderId: "ORD-77", qty: 10, price: 100, quote: 1000,
-                 fee: null, feeCurrency: null, executedAt: null }] };
+      tradesDaOrdem: trades, historico: historicoCom(trades) };
     await reconciliarIntent(deps(b, leitura), intent);
     const depois = { ...b.intents[0] } as unknown as IntentRow;
     await reconciliarIntent(deps(b, leitura), depois);
@@ -109,10 +122,12 @@ describe("①.5 a deriva NÃO pode devorar a própria recuperação (A103 × A80
     // O gêmeo comportamental da trava acima: se a deriva voltar a devorar a
     // recuperação, este teste acusa antes da trava textual.
     const { b, intent } = comIntent("UNKNOWN");
+    const trades: TradeDaVenue[] = [
+      { tradeId: "TN", orderId: "ORD-NOVA", qty: 10, price: 5, quote: 50,
+        fee: null, feeCurrency: null, executedAt: null }];
     const r = await reconciliarIntent(deps(b, { tipo: "achada",
       ordem: { id: "ORD-NOVA", filled: 10, average: 5, cost: 50, status: "closed" } as never,
-      trades: [{ tradeId: "TN", orderId: "ORD-NOVA", qty: 10, price: 5, quote: 50,
-                 fee: null, feeCurrency: null, executedAt: null }] }), intent);
+      tradesDaOrdem: trades, historico: historicoCom(trades) }), intent);
     expect(r.desfecho).toBe("resolvido");
     expect(b.intents[0].state).toBe("FILLED");
   });
@@ -127,9 +142,11 @@ describe("①.5 a deriva NÃO pode devorar a própria recuperação (A103 × A80
 describe("② Cenário D — fetchOrder nega, fetchMyTrades tem o fill (A102)", () => {
   it("⚠️⚠️ o fill é recuperado pelo histórico e contabilizado", async () => {
     const { b, intent } = comIntent("UNKNOWN", { externalOrderId: "ORD-D" });
+    const trades: TradeDaVenue[] = [
+      { tradeId: "TD1", orderId: "ORD-D", qty: 7, price: 50, quote: 350,
+        fee: null, feeCurrency: null, executedAt: null }];
     const r = await reconciliarIntent(deps(b, { tipo: "so_trades",
-      trades: [{ tradeId: "TD1", orderId: "ORD-D", qty: 7, price: 50, quote: 350,
-                 fee: null, feeCurrency: null, executedAt: null }] }), intent);
+      tradesDaOrdem: trades, historico: historicoCom(trades) }), intent);
 
     expect(r.desfecho).toBe("resolvido");
     expect(Number(b.intents[0].filled_qty)).toBe(7);
@@ -143,7 +160,7 @@ describe("③ Cenário C — o processo morreu depois do submit", () => {
     void intent;
     const d = deps(b, { tipo: "achada",
       ordem: { id: "ORD-C", filled: 10, average: 9, cost: 90, status: "closed" } as never,
-      trades: [] });
+      tradesDaOrdem: [], historico: historicoCom([]) });
     const r = await reconciliarPendentes(d, 10);
     expect(r.olhados).toBe(1);
     expect(r.resultados[0].desfecho).toBe("resolvido");
@@ -155,7 +172,7 @@ describe("③ Cenário C — o processo morreu depois do submit", () => {
     const { b } = comIntent("SUBMITTING");
     const leitura: LeituraDaOrdem = { tipo: "achada",
       ordem: { id: "ORD-C", filled: 10, average: 9, cost: 90, status: "closed" } as never,
-      trades: [] };
+      tradesDaOrdem: [], historico: historicoCom([]) };
     await reconciliarPendentes(deps(b, leitura), 10);
     await reconciliarPendentes(deps(b, leitura), 10);
     expect(b.fills).toHaveLength(1);
@@ -245,7 +262,7 @@ describe("⑥ A101 pela porta da reconciliação — cancelar só o remanescente
     const { b, intent } = comIntent("SUBMITTED", { externalOrderId: "ORD-P" });
     const r = await reconciliarIntent(deps(b, { tipo: "achada",
       ordem: { id: "ORD-P", filled: 4, average: 25, cost: 100, status: "canceled" } as never,
-      trades: [] }), intent);
+      tradesDaOrdem: [], historico: historicoCom([]) }), intent);
 
     expect(r.desfecho).toBe("resolvido");
     expect(b.intents[0].state).toBe("CANCELED");

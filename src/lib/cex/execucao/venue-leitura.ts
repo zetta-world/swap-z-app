@@ -42,9 +42,47 @@ export interface TradeDaVenue {
   executedAt: string | null;
 }
 
+/**
+ * ⚠️⚠️ A125 — O HISTÓRICO DA CONTA E OS TRADES DA ORDEM SÃO COISAS DISTINTAS.
+ *
+ * `fetchMyTrades(symbol, ...)` devolve os trades do SÍMBOLO inteiro na janela,
+ * pela credencial da chamada — incluindo trades manuais e de outras ordens.
+ * Desse bruto saem DUAS coleções com semânticas que NÃO podem se misturar:
+ *
+ *   · `historico.trades`  — account-wide. Alimenta SOMENTE a deriva (A103):
+ *     "existe trade aqui que a Z-SWAP não explica?" NUNCA vai para o livro.
+ *   · `tradesDaOrdem`     — filtro local do bruto pelo id da ordem alvo.
+ *     SÓ isto alimenta o settlement (`ingerirTrades`/`cex_fills`).
+ *
+ * No contrato antigo havia um campo genérico `trades`, sempre filtrado por
+ * ordem: o trade manual externo do mesmo símbolo era descartado ANTES de
+ * chegar ao detector de deriva — o A124 tinha o escopo certo e recebia a
+ * entrada incompleta. O rename é proposital: não existe campo `trades`.
+ *
+ * ⚠️ §14: trades SEM timestamp seguem na análise — o `executedAtMs != null`
+ * do deriva.ts já os mantém na janela; descartá-los aqui seria esconder
+ * evidência por conveniência de formato.
+ */
+export interface HistoricoDoSimbolo {
+  /** TODOS os trades normalizados do símbolo na janela — account-wide pela
+   *  credencial da chamada. Alimenta SOMENTE a deriva, nunca o livro. */
+  trades: TradeDaVenue[];
+  /**
+   * ⚠️ `true` quando a página veio NO LIMITE (200) — a completude NÃO está
+   * provada (§13, opção B: não existe cursor universal do ccxt inventável
+   * aqui). O truncamento só pode ESCONDER órfãos (sub-detecção): o que se
+   * vê continua sendo evidência; o que não se vê impede o "sem drift".
+   */
+  possivelmenteIncompleto: boolean;
+}
+
 export type LeituraDaOrdem =
   /** A corretora respondeu e a ordem existe. */
-  | { tipo: "achada"; ordem: CexOrder; trades: TradeDaVenue[] }
+  | { tipo: "achada"; ordem: CexOrder;
+      /** Os trades DESTA ordem (filtro local do histórico) — settlement SÓ usa isto. */
+      tradesDaOrdem: TradeDaVenue[];
+      /** O histórico account-wide do símbolo; `null` = a leitura falhou (§39/§40). */
+      historico: HistoricoDoSimbolo | null }
   /**
    * ⚠️⚠️ O CENÁRIO D DO BRIEFING, EXATAMENTE. `fetchOrder` devolveu
    * OrderNotFound — a ordem sumiu do endpoint de ordens — e o histórico de
@@ -53,7 +91,8 @@ export type LeituraDaOrdem =
    * Sem este caminho, o A102 acontece: "não achei a ordem" viraria "nada
    * executou", sobre dinheiro que saiu.
    */
-  | { tipo: "so_trades"; trades: TradeDaVenue[] }
+  | { tipo: "so_trades"; tradesDaOrdem: TradeDaVenue[];
+      historico: HistoricoDoSimbolo | null }
   /**
    * ⚠️ A corretora respondeu e afirma NÃO TER esta ordem em NENHUM dos
    * caminhos consultados — incluindo o histórico. Só isto autoriza concluir
@@ -106,21 +145,46 @@ export async function lerOrdemNaVenue(
   let negaram = 0;
   let ultimoErro: string | null = null;
 
-  const buscarTrades = async (orderId: string | null): Promise<TradeDaVenue[]> => {
+  /**
+   * ⚠️ O SLOT LAZY DO HISTÓRICO — §37/§39.
+   *
+   * `fetchMyTrades` executa NO MÁXIMO UMA VEZ por leitura, custe o caminho
+   * que custar. `undefined` = ainda não chamado; `null` = a leitura FALHOU
+   * (erro ou NotSupported) — e falha NUNCA vira `[]`: um array vazio é um
+   * FATO ("sem trades no símbolo/janela"), que só o sucesso pode declarar.
+   *
+   * A normalização é ÚNICA (§38): `tradesDaOrdem` é um FILTRO sobre os
+   * mesmos objetos de `historico.trades`, nunca uma renormalização.
+   */
+  const LIMITE_DA_PAGINA = 200;
+  let slotHistorico: HistoricoDoSimbolo | null | undefined = undefined;
+  const buscarHistorico = async (): Promise<HistoricoDoSimbolo | null> => {
+    if (slotHistorico !== undefined) return slotHistorico;
     try {
       consultados.push("fetchMyTrades");
       const raw = await exchange.fetchMyTrades(
-        alvo.symbol, alvo.desdeMs ?? undefined, 200) as unknown as Record<string, unknown>[];
+        alvo.symbol, alvo.desdeMs ?? undefined, LIMITE_DA_PAGINA
+      ) as unknown as Record<string, unknown>[];
       const todos = raw.map(normalizarTrade).filter((t): t is TradeDaVenue => t !== null);
-      // ⚠️ Sem id de ordem não dá para atribuir o trade a ESTE intent. Atribuir
-      // por símbolo e horário seria adivinhação — e erra exatamente quando há
-      // duas ordens parecidas, que é quando importa.
-      return orderId ? todos.filter((t) => t.orderId === orderId) : [];
+      slotHistorico = { trades: todos, possivelmenteIncompleto: raw.length === LIMITE_DA_PAGINA };
     } catch (e) {
       ultimoErro = (e as Error)?.message ?? String(e);
-      return [];
+      slotHistorico = null;
     }
+    return slotHistorico;
   };
+
+  /**
+   * Settlement: SÓ os trades DA ORDEM. ⚠️ Sem id de ordem não dá para
+   * atribuir o trade a ESTE intent. Atribuir por símbolo e horário seria
+   * adivinhação — e erra exatamente quando há duas ordens parecidas, que é
+   * quando importa.
+   */
+  const filtrarDaOrdem = (historico: HistoricoDoSimbolo | null,
+                          orderId: string | null): TradeDaVenue[] =>
+    historico !== null && orderId
+      ? historico.trades.filter((t) => t.orderId === orderId)
+      : [];
 
   // ── 1. pelo id externo ──────────────────────────────────────────────
   if (alvo.externalOrderId) {
@@ -129,7 +193,9 @@ export async function lerOrdemNaVenue(
       const raw = await exchange.fetchOrder(
         alvo.externalOrderId, alvo.symbol) as unknown as Record<string, unknown>;
       const ordem = normalizeOrder(raw);
-      return { tipo: "achada", ordem, trades: await buscarTrades(alvo.externalOrderId) };
+      const historico = await buscarHistorico();
+      return { tipo: "achada", ordem, historico,
+        tradesDaOrdem: filtrarDaOrdem(historico, alvo.externalOrderId) };
     } catch (e) {
       if (ehNaoEncontrada(e)) {
         negaram++;
@@ -138,8 +204,11 @@ export async function lerOrdemNaVenue(
          * externo — então o histórico de trades pode atribuir as execuções a
          * esta ordem com certeza, sem adivinhar por símbolo e horário.
          */
-        const doHistorico = await buscarTrades(alvo.externalOrderId);
-        if (doHistorico.length > 0) return { tipo: "so_trades", trades: doHistorico };
+        const historico = await buscarHistorico();
+        const daOrdem = filtrarDaOrdem(historico, alvo.externalOrderId);
+        if (daOrdem.length > 0) {
+          return { tipo: "so_trades", tradesDaOrdem: daOrdem, historico };
+        }
       } else {
         ultimoErro = (e as Error)?.message ?? String(e);
       }
@@ -153,8 +222,9 @@ export async function lerOrdemNaVenue(
       undefined as unknown as string, alvo.symbol,
       { clientOrderId: alvo.clientOrderId }) as unknown as Record<string, unknown>;
     const ordem = normalizeOrder(raw);
-    return { tipo: "achada", ordem,
-      trades: await buscarTrades(ordem.id ? String(ordem.id) : null) };
+    const historico = await buscarHistorico();
+    return { tipo: "achada", ordem, historico,
+      tradesDaOrdem: filtrarDaOrdem(historico, ordem.id ? String(ordem.id) : null) };
   } catch (e) {
     if (ehNaoEncontrada(e)) negaram++;
     else ultimoErro = (e as Error)?.message ?? String(e);
@@ -170,8 +240,9 @@ export async function lerOrdemNaVenue(
       || (alvo.externalOrderId != null && String(o.id ?? "") === alvo.externalOrderId));
     if (casada) {
       const ordem = normalizeOrder(casada);
-      return { tipo: "achada", ordem,
-        trades: await buscarTrades(ordem.id ? String(ordem.id) : null) };
+      const historico = await buscarHistorico();
+      return { tipo: "achada", ordem, historico,
+        tradesDaOrdem: filtrarDaOrdem(historico, ordem.id ? String(ordem.id) : null) };
     }
     negaram++;
   } catch (e) {

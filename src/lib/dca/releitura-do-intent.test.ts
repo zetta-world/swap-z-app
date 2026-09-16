@@ -71,12 +71,16 @@ describe("A117.1 — UNKNOWN→FILLED liquida com os números REAIS do livro", (
     await plantarIntent(banco, "UNKNOWN", 0.01);
     // ⚠️ O preço realizado NÃO é o de referência do pedido: a corretora
     // executou a 61.000. O ciclo tem de fechar com o número DELA.
+    const trades = [{ tradeId: "t1", orderId: "ext-1", qty: 0.01, price: 61_000,
+                      quote: 610, fee: null, feeCurrency: null, executedAt: VELHO }];
     const decisao = await reconciliarEReler(banco, {
       tipo: "achada",
       ordem: { id: "ext-1", status: "closed", filled: 0.01, average: 61_000,
                cost: 610 } as never,
-      trades: [{ tradeId: "t1", orderId: "ext-1", qty: 0.01, price: 61_000,
-                 quote: 610, fee: null, feeCurrency: null, executedAt: VELHO }],
+      // A125: settlement lê tradesDaOrdem; a deriva lê o histórico — aqui os
+      // dois carregam os mesmos trades da própria ordem, como na leitura real.
+      tradesDaOrdem: trades,
+      historico: { trades, possivelmenteIncompleto: false },
     });
     if (decisao.acao !== "liquidar") throw new Error(`esperava liquidar, veio ${decisao.acao}`);
     expect(decisao.status).toBe("feito");
@@ -110,14 +114,16 @@ describe("A117.4 — PARTIAL→CANCELED conta SÓ o executado", () => {
   it("o cancelamento do remanescente não apaga o fill que já aconteceu (A101)", async () => {
     const banco = bancoFalso();
     await plantarIntent(banco, "SUBMITTED", 0.01);
+    const trades = [{ tradeId: "t2", orderId: "ext-2", qty: 0.004, price: 60_000,
+                      quote: 240, fee: null, feeCurrency: null, executedAt: VELHO }];
     const decisao = await reconciliarEReler(banco, {
       tipo: "achada",
       // ⚠️ A ordem executou 0.004 de 0.01 e depois foi cancelada. O ciclo
       // liquida 0.004 — nem 0.01 (o pedido) nem 0 (o cancelamento).
       ordem: { id: "ext-2", status: "canceled", filled: 0.004, average: 60_000,
                cost: 240 } as never,
-      trades: [{ tradeId: "t2", orderId: "ext-2", qty: 0.004, price: 60_000,
-                 quote: 240, fee: null, feeCurrency: null, executedAt: VELHO }],
+      tradesDaOrdem: trades,
+      historico: { trades, possivelmenteIncompleto: false },
     });
     if (decisao.acao !== "liquidar") throw new Error(`esperava liquidar, veio ${decisao.acao}`);
     expect(decisao.status).toBe("feito");

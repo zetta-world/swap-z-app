@@ -194,10 +194,15 @@ describe("② guarda de cobertura synthetic→real (A118)", () => {
     await snap(b, { qty: 5, quote: 500, fee: 0.05 });
     // O snapshot promoveu UNKNOWN → PARTIALLY_FILLED (recálculo do livro).
     expect(b.intents[0].state).toBe("PARTIALLY_FILLED");
-    const leitura: LeituraDaOrdem = { tipo: "so_trades", trades: [
+    const leitura: LeituraDaOrdem = { tipo: "so_trades", tradesDaOrdem: [
       { tradeId: "T1", orderId: "ORD-1", qty: 2, price: 100, quote: 200,
         fee: 0.02, feeCurrency: "USDT", executedAt: null },
-    ] };
+    ], historico: { trades: [
+      // A125: a deriva lê o histórico account-wide; aqui só há o trade da
+      // própria ordem — os mesmos objetos do settlement, como na leitura real.
+      { tradeId: "T1", orderId: "ORD-1", qty: 2, price: 100, quote: 200,
+        fee: 0.02, feeCurrency: "USDT", executedAt: null },
+    ], possivelmenteIncompleto: false } };
     const r = await reconciliarIntent({
       db: b.cliente, credenciais: async () => ({ apiKey: "k", apiSecret: "s" }),
       ler: vi.fn(async () => leitura),
@@ -579,10 +584,13 @@ describe("⑤ A121 — cobertura provada SÓ pelos NOVOS trades únicos (N≥S) 
       });
       await snap(b, { qty: 5, quote: 500, fee: 0.05 });
       expect(b.intents[0].state).toBe("PARTIALLY_FILLED");
-      const leitura: LeituraDaOrdem = { tipo: "so_trades", trades: [
+      const leitura: LeituraDaOrdem = { tipo: "so_trades", tradesDaOrdem: [
         { tradeId: "T1", orderId: "ORD-1", qty: 5, price: 100, quote: 500,
           fee: trade.fee, feeCurrency: trade.feeCurrency, executedAt: null },
-      ] };
+      ], historico: { trades: [
+        { tradeId: "T1", orderId: "ORD-1", qty: 5, price: 100, quote: 500,
+          fee: trade.fee, feeCurrency: trade.feeCurrency, executedAt: null },
+      ], possivelmenteIncompleto: false } };
       const r = await reconciliarIntent({
         db: b.cliente, credenciais: async () => ({ apiKey: "k", apiSecret: "s" }),
         ler: vi.fn(async () => leitura),

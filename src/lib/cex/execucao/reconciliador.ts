@@ -22,7 +22,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { CexId, CexCredentials } from "@/lib/cex/types";
-import { lerOrdemNaVenue, type LeituraDaOrdem } from "@/lib/cex/execucao/venue-leitura";
+import { lerOrdemNaVenue, type HistoricoDoSimbolo, type LeituraDaOrdem } from "@/lib/cex/execucao/venue-leitura";
 import {
   transicionar, ingerirTrades, ingerirSnapshotDaOrdem,
   intentsParaReconciliar, marcarReconciliado,
@@ -147,6 +147,12 @@ export async function reconciliarIntent(
    * nenhuma chamada a mais: existe trade aqui que a Z-SWAP não consegue
    * explicar?
    *
+   * ⚠️⚠️ A125: A DERIVA RECEBE O HISTÓRICO ACCOUNT-WIDE, NUNCA OS TRADES DA
+   * ORDEM. No contrato antigo os dois alimentos eram o MESMO array filtrado
+   * pela ordem — um trade manual externo do mesmo símbolo era descartado na
+   * leitura e NUNCA chegava ao detector. Agora `historico` vai à deriva e
+   * `tradesDaOrdem` vai ao settlement, e nenhum dos dois invade o outro.
+   *
    * ⚠️ E A CONDUTA É FAIL-CLOSED: derivou, QUARENTENA. Continuar operando "com
    * cuidado" sobre uma conta que não fecha é a definição do problema — o
    * autopilot decide quanto comprar a partir do que ele ACHA que tem.
@@ -166,8 +172,8 @@ export async function reconciliarIntent(
      */
     const idDescoberto = leitura.tipo === "achada"
       ? (leitura.ordem.id ? String(leitura.ordem.id) : null)
-      : (leitura.trades[0]?.orderId ?? null);
-    const atribuicao = await conferirDeriva(db, intent, leitura.trades, idDescoberto);
+      : (leitura.tradesDaOrdem[0]?.orderId ?? null);
+    const atribuicao = await conferirDeriva(db, intent, leitura.historico, idDescoberto);
     if (atribuicao.tipo === "deriva") {
       await transicionar(db, intent.id, "QUARANTINED", atribuicao.motivo.slice(0, 300));
       return fim("quarentena", "QUARANTINED", atribuicao.motivo);
@@ -200,8 +206,13 @@ export async function reconciliarIntent(
   }
 
   // ── caminho 1: os trades são a verdade ────────────────────────────────
-  if (leitura.tipo === "so_trades" || (leitura.tipo === "achada" && leitura.trades.length > 0)) {
-    const trades = leitura.trades;
+  // ⚠️ A125: o settlement usa SÓ `tradesDaOrdem` — o filtro local da ordem
+  // alvo. Um trade externo do histórico account-wide NUNCA entra em
+  // `ingerirTrades`/`cex_fills` (§9): ele é evidência para a deriva, não
+  // fato do livro deste intent.
+  if (leitura.tipo === "so_trades"
+      || (leitura.tipo === "achada" && leitura.tradesDaOrdem.length > 0)) {
+    const trades = leitura.tradesDaOrdem;
     const idOrdem = leitura.tipo === "achada"
       ? (leitura.ordem.id ? String(leitura.ordem.id) : intent.external_order_id)
       : intent.external_order_id;
@@ -329,16 +340,37 @@ export type ResultadoDaAtribuicao =
  * leitura do escopo falhando, o veredito é `indeterminado` — fail-closed:
  * quem chama NÃO pode transformar isso em "sem drift", CANCELED ou consulta
  * exchange-wide.
+ *
+ * ⚠️⚠️ A125: A ENTRADA É O HISTÓRICO ACCOUNT-WIDE DO SÍMBOLO, não os trades
+ * da ordem alvo — filtrar por ordem ANTES daqui escondia exatamente o trade
+ * manual externo que esta checagem existe para encontrar. E a confiabilidade
+ * da leitura faz parte do veredito:
+ *
+ *   · `historico === null` (a leitura account-wide falhou) → indeterminado;
+ *   · observados vazio + leitura confiável → ok;
+ *   · órfãos à vista → deriva (órfão visível é evidência, página cheia ou não);
+ *   · sem órfãos + página possivelmente truncada → indeterminado: o
+ *     truncamento pode ESCONDER órfãos, nunca absolver sobre o que não se viu.
  */
 async function conferirDeriva(
   db: SupabaseClient<Database>, intent: IntentRow,
-  trades: readonly { tradeId: string; orderId: string | null; qty: number;
-                     executedAt: string | null }[],
+  /** O histórico account-wide do símbolo; `null` = a leitura falhou (§39/§40). */
+  historico: HistoricoDoSimbolo | null,
   /** A ordem que a leitura acabou de atribuir a ESTE intent. */
   idDescoberto: string | null,
 ): Promise<ResultadoDaAtribuicao> {
-  if (trades.length === 0) return { tipo: "ok" };
-  const observados: TradeObservado[] = trades.map((t) => ({
+  if (historico === null) {
+    return { tipo: "indeterminado", motivo: "historico account-wide falhou" };
+  }
+  // ⚠️ Página NO LIMITE = completude não provada (§13B): sem órfãos à vista
+  // isso é "não conferi tudo", NUNCA "sem drift".
+  const confiavel = !historico.possivelmenteIncompleto;
+  if (historico.trades.length === 0) {
+    return confiavel
+      ? { tipo: "ok" }
+      : { tipo: "indeterminado", motivo: "pagina cheia — completude nao provada" };
+  }
+  const observados: TradeObservado[] = historico.trades.map((t) => ({
     tradeId: t.tradeId, orderId: t.orderId, symbol: intent.symbol, qty: t.qty,
     // ⚠️ `null` continua `null`: trade sem horário não pode ser posto dentro
     // nem fora da janela por conveniência.
@@ -366,9 +398,14 @@ async function conferirDeriva(
   const v = detectarDeriva(observados, {
     ordensConhecidas: nossas, tradesNoLivro: noLivro, desdeMs,
   });
-  return v.derivou
-    ? { tipo: "deriva", motivo: `ACCOUNT_DRIFT: ${v.achado.detalhe}` }
-    : { tipo: "ok" };
+  if (v.derivou) {
+    // ⚠️ Órfão VISÍVEL é evidência — deriva mesmo com a página possivelmente
+    // truncada (o truncamento esconde órfãos, nunca absolve o que se vê).
+    return { tipo: "deriva", motivo: `ACCOUNT_DRIFT: ${v.achado.detalhe}` };
+  }
+  return confiavel
+    ? { tipo: "ok" }
+    : { tipo: "indeterminado", motivo: "pagina cheia — completude nao provada" };
 }
 
 /** Mapeia o status da corretora para o fim do intent, quando ele é conclusivo. */
