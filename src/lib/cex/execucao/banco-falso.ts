@@ -257,18 +257,45 @@ export function bancoFalso(): BancoFalso {
      * 'cobertura_fee_incompleta', moeda divergente é
      * 'fee_currency_incompativel'. Tudo adiado, nada deletado nem inserido,
      * retorno ANTES de tocar o livro (atomicidade).
+     *
+     * Revisão do round 4 (espelho EXATO da 0059):
+     *  a. o gate de fee dispara pela EXISTÊNCIA de sintético da ordem com fee
+     *     — INDEPENDENTE de sint > 0: o ajuste de fee de qty zero é fato, e
+     *     lote todo dedupado (zero novos) não é evidência substituta;
+     *  b. sintético NÃO ATRIBUÍDO (external_order_id NULL, ACK sem id) entra
+     *     em v_sint e no delete — os trades com o id descoberto são a
+     *     atribuição; sintético de OUTRA ordem segue fora;
+     *  c. fee "", não-numérica ou ausente é SEM fee (a mesma semântica do
+     *     `nullif(t->>'fee','')` do SQL — o teste não aprova o que o banco
+     *     recusa);
+     *  d. itens do lote que declaram OUTRA ordem são IGNORADOS — não
+     *     inseridos, não contam em v_novos (a RPC não confia no caller).
      */
     if (nome === "cex_ingest_trades") {
       const estado = it.state as EstadoDoIntent;
       if (["CREATED", "AUTHORIZED", "RESERVED", "FAILED_PRE_SUBMIT"].includes(estado)) {
         return { data: null, error: { message: `fill contra intent em ${estado}` } };
       }
+      // (b) `is not distinct from` + não atribuídos: NULL entra na ordem.
       const daOrdem = (f: Linha) =>
         f.intent_id === it.id
-        && (f.external_order_id ?? null) === (args.p_external_order_id ?? null);
+        && ((f.external_order_id ?? null) === (args.p_external_order_id ?? null)
+            || f.external_order_id == null);
       const sinteticoRows = fills.filter((f) => daOrdem(f) && f.sintetico);
       const sint = sinteticoRows.reduce((t, f) => t + Number(f.qty), 0);
-      const lote = (args.p_trades as Linha[]) ?? [];
+      // (d) defesa em profundidade: itens de OUTRA ordem são ignorados.
+      const lote = ((args.p_trades as Linha[]) ?? [])
+        .filter((t) => t.order == null
+                    || t.order === (args.p_external_order_id ?? null));
+      // (c) nullif(t->>'fee',''): "", não-numérico ou ausente = SEM fee.
+      const feeDe = (t: Linha): number | null => {
+        const f = t.fee;
+        if (f == null || f === "") return null;
+        const n = Number(f);
+        return Number.isFinite(n) ? n : null;
+      };
+      const moedaDe = (t: Linha): string | null =>
+        t.fee_currency == null || t.fee_currency === "" ? null : String(t.fee_currency);
       const jaExiste = (t: Linha) =>
         fills.some((f) => f.exchange_id === it.exchange_id
                        && f.dedupe_key === `trade:${t.trade_id}`);
@@ -278,20 +305,23 @@ export function bancoFalso(): BancoFalso {
         return { data: { ok: false, porque: "cobertura_incompleta",
                          novos: novosQty, sintetico: sint }, error: null };
       }
-      // Cobertura de FEE: só os novos provam; sintético sem fee não exige nada.
-      if (sint > 0 && sinteticoRows.some((f) => f.fee != null)) {
-        if (novos.some((t) => t.fee == null)) {
+      // Cobertura de FEE (a): dispara pela EXISTÊNCIA de sintético com fee,
+      // independente de sint > 0; zero trades novos também recusa — sem
+      // evidência substituta explícita, a correção de fee é preservada.
+      if (sinteticoRows.some((f) => f.fee != null)) {
+        if (novos.length === 0 || novos.some((t) => feeDe(t) == null)) {
           return { data: { ok: false, porque: "cobertura_fee_incompleta",
                            novos: novosQty, sintetico: sint }, error: null };
         }
         const moedasSint = new Set(sinteticoRows.filter((f) => f.fee != null)
           .map((f) => f.fee_currency ?? null));
-        if (novos.some((t) => !moedasSint.has(t.fee_currency ?? null))) {
+        if (novos.some((t) => !moedasSint.has(moedaDe(t)))) {
           return { data: { ok: false, porque: "fee_currency_incompativel",
                            novos: novosQty, sintetico: sint }, error: null };
         }
       }
-      // O sintético é estimativa; o trade é fato. O fato substitui.
+      // O sintético é estimativa; o trade é fato. O fato substitui (b: o
+      // delete inclui os não atribuídos — NULL — e nunca outra ordem).
       for (let i = fills.length - 1; i >= 0; i--) {
         const f = fills[i];
         if (daOrdem(f) && f.sintetico) fills.splice(i, 1);
@@ -305,7 +335,7 @@ export function bancoFalso(): BancoFalso {
           external_order_id: args.p_external_order_id, external_trade_id: t.trade_id,
           symbol: it.symbol, side: it.side, qty: Number(t.qty), price: Number(t.price),
           quote_amount: Number(t.quote),
-          fee: t.fee ?? null, fee_currency: t.fee_currency ?? null,
+          fee: feeDe(t), fee_currency: moedaDe(t),
           executed_at: t.executed_at ?? null,
           sintetico: false, dedupe_key: chave,
         });

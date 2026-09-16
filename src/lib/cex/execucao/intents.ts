@@ -175,6 +175,10 @@ export interface TradeParaIngerir {
   fee?: number | null;
   feeCurrency?: string | null;
   executedAt?: string | null;
+  /** A121 round 4: id da ordem que o trade declara (CCXT `trade.order`).
+   *  Quando presente e divergente da ordem da ingestão, a RPC IGNORA o item
+   *  (defesa em profundidade — pertence a outra ingestão). */
+  orderId?: string | null;
 }
 
 export type ResultadoDeIngestao =
@@ -217,6 +221,8 @@ export async function ingerirTrades(
       trade_id: t.tradeId, qty: t.qty, price: t.price, quote: t.quote,
       fee: t.fee ?? null, fee_currency: t.feeCurrency ?? null,
       executed_at: t.executedAt ?? null,
+      // A121 round 4: a RPC ignora itens que declaram OUTRA ordem.
+      order: t.orderId ?? null,
     })),
   });
   if (error) return { ok: false, porque: error.message.slice(0, 200) };

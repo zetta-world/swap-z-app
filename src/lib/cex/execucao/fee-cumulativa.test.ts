@@ -593,3 +593,215 @@ describe("⑤ A121 — cobertura provada SÓ pelos NOVOS trades únicos (N≥S) 
     await cenario({ fee: 0.05, feeCurrency: "BNB" });       // fee_currency_incompativel
   });
 });
+
+describe("⑥ A121 round 4 (revisão) — os 4 achados na cex_ingest_trades", () => {
+  async function comIntentQtd(b: ReturnType<typeof bancoFalso>, qtd: number,
+                              estado: EstadoDoIntent = "SUBMITTED") {
+    await b.cliente.from("cex_execution_intents").insert({
+      id: "i-fee", exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
+      order_type: "market", requested_qty: qtd, client_order_id: "zsFEE",
+      origin: "dca_cron", autonomous: true, state: estado,
+    });
+    return b.intents[0];
+  }
+
+  const T1 = { tradeId: "T1", qty: 2, price: 100, quote: 200, fee: 0.02, feeCurrency: "USDT" };
+  const T2 = { tradeId: "T2", qty: 3, price: 100, quote: 300, fee: 0.03, feeCurrency: "USDT" };
+
+  it("⚠️⚠️⚠️ ACHADO 1: ajuste de fee qty-ZERO (v_sint=0) NÃO é apagado por lote dedupado — fee_total fica em 0.07", async () => {
+    // O cenário medido pelo revisor: snapshot 5/0.05 → trades completos →
+    // corretora corrige a fee → snapshot 5/0.07 cria ajuste qty=0 fee 0.02 →
+    // o reconciliador ingere os MESMOS trades (dedupados). Antes: v_sint=0
+    // pulava as guardas e o delete apagava o ajuste — 0.07 → 0.05.
+    const b = bancoFalso();
+    await comIntentQtd(b, 5);
+    await snap(b, { qty: 5, quote: 500, fee: 0.05 });
+    expect((await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2])).ok).toBe(true);
+    const ajuste = await snap(b, { qty: 5, quote: 500, fee: 0.07 });
+    expect(ajuste.ok).toBe(true);
+    const ajusteFill = b.fills.find((f) => f.sintetico && Number(f.qty) === 0);
+    expect(ajusteFill).toBeDefined();
+    expect(Number(ajusteFill!.fee)).toBeCloseTo(0.02, 12);
+    expect(feeTotal(b)).toBeCloseTo(0.07, 12);
+    const ledgerAntes = JSON.stringify(b.fills);
+    // O lote dedupado NÃO é evidência substituta: adiado, NADA deleta/insere.
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.porque).toBe("cobertura_fee_incompleta");
+      expect(r.adiado).toBe(true);
+    }
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(feeTotal(b)).toBeCloseTo(0.07, 12);   // nunca 0.05
+  });
+
+  it("ACHADO 1 (outro lado): evidência substituta EXPLÍCITA libera a substituição, inclusive o ajuste zero-qty", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    await snap(b, { qty: 5, quote: 500, fee: 0.05 });
+    await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2]);
+    await snap(b, { qty: 5, quote: 500, fee: 0.07 });       // ajuste qty=0 fee 0.02
+    expect(feeTotal(b)).toBeCloseTo(0.07, 12);
+    // Trade NOVO único com fee explícita na mesma moeda: o real é fato e
+    // substitui — o ajuste zero-qty cede junto.
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2,
+      { tradeId: "T3", qty: 1, price: 100, quote: 100, fee: 0.01, feeCurrency: "USDT" }]);
+    expect(r.ok).toBe(true);
+    expect(b.fills).toHaveLength(3);
+    expect(b.fills.every((f) => f.sintetico === false)).toBe(true);
+    expect(Number(b.intents[0].filled_qty)).toBe(6);
+    expect(feeTotal(b)).toBeCloseTo(0.06, 12);   // 0.02+0.03+0.01: o real é fato
+  });
+
+  it("⚠️⚠️⚠️ ACHADO 2: ACK sem id → sintético NULL 5 → trades com ORD-1 ⇒ real 5, sintético 0, filled 5 (NUNCA 10)", async () => {
+    // O sintético gravado com external_order_id NULL nunca entrava em v_sint
+    // nem no delete quando os trades chegavam com o id descoberto — o null
+    // (5) + o real (5) double-countavam. Agora o não-atribuído do MESMO
+    // intent é atribuído pela ingestão que traz o id.
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    const s = await ingerirSnapshotDaOrdem(b.cliente, "i-fee", null, {
+      cumulativeQty: 5, avgPrice: 100, cumulativeQuote: 500,
+      fee: 0.05, feeCurrency: "USDT",
+    });
+    expect(s.ok).toBe(true);
+    expect(b.fills[0].external_order_id).toBeNull();
+    expect(b.intents[0].external_order_id).toBeNull();
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2]);
+    expect(r.ok).toBe(true);
+    expect(b.fills).toHaveLength(2);                        // o null CEDE
+    expect(b.fills.every((f) => f.sintetico === false)).toBe(true);
+    expect(b.fills.every((f) => f.external_order_id === "ORD-1")).toBe(true);
+    expect(Number(b.intents[0].filled_qty)).toBe(5);        // NUNCA 10
+    expect(feeTotal(b)).toBeCloseTo(0.05, 12);
+    expect(b.intents[0].external_order_id).toBe("ORD-1");
+  });
+
+  it("ACHADO 2 (fronteira): sintético de OUTRA ordem continua fora — ordem A nunca cobre B", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    const sa = await ingerirSnapshotDaOrdem(b.cliente, "i-fee", "ORD-A", {
+      cumulativeQty: 5, avgPrice: 100, cumulativeQuote: 500,
+      fee: 0.05, feeCurrency: "USDT",
+    });
+    expect(sa.ok).toBe(true);
+    // Trades de ORD-1: não tocam o sintético de ORD-A (não é NULL, é outra).
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-1", [T1, T2]);
+    expect(r.ok).toBe(true);
+    expect(b.fills.filter((f) => f.external_order_id === "ORD-A"
+                              && f.sintetico)).toHaveLength(1);
+    expect(b.fills.filter((f) => f.external_order_id === "ORD-1"
+                              && !f.sintetico)).toHaveLength(2);
+    expect(Number(b.intents[0].filled_qty)).toBe(10);   // 5 sint A + 5 real ORD-1
+  });
+
+  it("⚠️⚠️ ACHADO 3: fee '' (string vazia) é SEM fee — cobertura_fee_incompleta, como o nullif do SQL", async () => {
+    // O banco-falso aceitava "" (`t.fee == null` falso) e substituía apagando
+    // a fee conhecida; o SQL (`nullif(t->>'fee','') is null`) recusa. Um
+    // teste não pode aprovar o que o banco recusa — alinhados.
+    const b = bancoFalso();
+    await comIntentQtd(b, 5);
+    await snap(b, { qty: 5, quote: 500, fee: 0.05 });
+    const ledgerAntes = JSON.stringify(b.fills);
+    const r = await b.cliente.rpc("cex_ingest_trades", {
+      p_intent_id: "i-fee", p_external_order_id: "ORD-1",
+      p_trades: [{ trade_id: "T9", qty: 5, price: 100, quote: 500,
+                   fee: "", fee_currency: "USDT", executed_at: null }],
+    });
+    expect(r.error).toBeNull();
+    expect(r.data).toMatchObject({ ok: false, porque: "cobertura_fee_incompleta" });
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(feeTotal(b)).toBeCloseTo(0.05, 12);
+    // E fee não-numérica é tratada igual ("sem fee"), não como fee válida.
+    const r2 = await b.cliente.rpc("cex_ingest_trades", {
+      p_intent_id: "i-fee", p_external_order_id: "ORD-1",
+      p_trades: [{ trade_id: "T9", qty: 5, price: 100, quote: 500,
+                   fee: "abc", fee_currency: "USDT", executed_at: null }],
+    });
+    expect(r2.data).toMatchObject({ ok: false, porque: "cobertura_fee_incompleta" });
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+  });
+
+  it("ACHADO 3 (paridade no insert): sintético SEM fee + trade com fee '' ⇒ substitui e grava fee NULL (nullif)", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    await snap(b, { qty: 5, quote: 500, fee: null, moeda: null });
+    const r = await b.cliente.rpc("cex_ingest_trades", {
+      p_intent_id: "i-fee", p_external_order_id: "ORD-1",
+      p_trades: [{ trade_id: "T9", qty: 5, price: 100, quote: 500,
+                   fee: "", fee_currency: "", executed_at: null }],
+    });
+    expect(r.data).toMatchObject({ ok: true, inseridos: 1 });
+    expect(b.fills).toHaveLength(1);
+    expect(b.fills[0].sintetico).toBe(false);
+    expect(b.fills[0].fee).toBeNull();
+    expect(b.fills[0].fee_currency).toBeNull();
+    expect(b.intents[0].fee_total).toBeNull();
+  });
+
+  it("⚠️⚠️ ACHADO 4: lote multi-ordem — só os trades DESTA ordem entram e contam; o de outra ordem é ignorado", async () => {
+    // Defesa em profundidade no nível da RPC: sem o filtro, o trade de
+    // ORD-A cobriria o sintético de ORD-B e seria carimbado com ORD-B.
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    const sb = await ingerirSnapshotDaOrdem(b.cliente, "i-fee", "ORD-B", {
+      cumulativeQty: 3, avgPrice: 100, cumulativeQuote: 300,
+      fee: null, feeCurrency: null,
+    });
+    expect(sb.ok).toBe(true);
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-B", [
+      { tradeId: "TB1", qty: 3, price: 100, quote: 300, fee: null, feeCurrency: null,
+        orderId: "ORD-B" },
+      { tradeId: "TX9", qty: 9, price: 100, quote: 900, fee: null, feeCurrency: null,
+        orderId: "ORD-A" },   // de OUTRA ordem: ignorado, não conta, não entra
+    ]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.inseridos).toBe(1);
+    expect(b.fills.some((f) => f.external_trade_id === "TX9")).toBe(false);
+    const real = b.fills.find((f) => f.external_trade_id === "TB1");
+    expect(real).toBeDefined();
+    expect(real!.external_order_id).toBe("ORD-B");
+    expect(b.fills.every((f) => f.sintetico === false)).toBe(true);
+    expect(Number(b.intents[0].filled_qty)).toBe(3);        // nunca 12
+  });
+
+  it("ACHADO 4 (fronteira): lote SÓ com trades de outra ordem ⇒ v_novos = 0 → cobertura_incompleta, ledger intacto", async () => {
+    const b = bancoFalso();
+    await comIntentQtd(b, 8);
+    await ingerirSnapshotDaOrdem(b.cliente, "i-fee", "ORD-B", {
+      cumulativeQty: 3, avgPrice: 100, cumulativeQuote: 300,
+      fee: null, feeCurrency: null,
+    });
+    const ledgerAntes = JSON.stringify(b.fills);
+    const r = await ingerirTrades(b.cliente, "i-fee", "ORD-B", [
+      { tradeId: "TX9", qty: 9, price: 100, quote: 900, fee: null, feeCurrency: null,
+        orderId: "ORD-A" },
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.porque).toBe("cobertura_incompleta");
+    expect(JSON.stringify(b.fills)).toBe(ledgerAntes);
+    expect(Number(b.intents[0].filled_qty)).toBe(3);
+  });
+
+  it("⚠️ guarda estrutural: a 0059 carrega as 4 correções do round 4", () => {
+    const iFunc = SQL_0059.indexOf("function public.cex_ingest_trades");
+    const iFim = SQL_0059.indexOf("revoke execute on function public.cex_ingest_trades", iFunc);
+    expect(iFunc).toBeGreaterThan(-1);
+    expect(iFim).toBeGreaterThan(iFunc);
+    const corpo = SQL_0059.slice(iFunc, iFim);
+    // (1) o gate de fee NÃO é mais condicionado a v_sint > 0, e recusa quando
+    // não há NENHUM trade novo único (sem evidência substituta explícita).
+    expect(corpo).not.toMatch(/v_sint\s*>\s*0\s+and\s+exists/);
+    expect(corpo).toMatch(/v_qtd_novos\s*=\s*0\s+or\s+exists/);
+    // (2) sintéticos não atribuídos (external_order_id NULL) entram em v_sint,
+    // no gate de fee e no delete — os de outra ordem, nunca.
+    expect(corpo.match(/or\s+(f\.)?external_order_id is null/g)?.length)
+      .toBeGreaterThanOrEqual(4);
+    // (4) itens de outra ordem são ignorados ANTES de tudo, e o insert itera
+    // o lote FILTRADO — p_trades cru é lido uma única vez (na filtragem).
+    expect(corpo).toMatch(
+      /u\.t->>'order' is null or u\.t->>'order' = p_external_order_id/);
+    expect(corpo.match(/jsonb_array_elements\(coalesce\(p_trades/g)).toHaveLength(1);
+    expect(corpo).toMatch(/for v_t in select \* from jsonb_array_elements\(v_lote\)/);
+  });
+});

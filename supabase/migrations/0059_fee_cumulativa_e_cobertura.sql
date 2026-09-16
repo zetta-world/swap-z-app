@@ -92,6 +92,40 @@
 --    exceção desfaz a transação inteira — ou a substituição acontece
 --    completa (delete + inserts) ou o livro fica byte-a-byte intacto.
 --
+-- 4. A121 (round 4, revisão) — quatro correções na `cex_ingest_trades`:
+--
+--    a. O GATE DE FEE DISPARA PELA EXISTÊNCIA de sintético DA ORDEM com fee
+--       conhecida — INDEPENDENTE de v_sint > 0. Um ajuste de fee de QTY ZERO
+--       (correção da corretora, item 1) é um fato tanto quanto um fill com
+--       qty: sem o gate, um lote todo dedupado (v_novos = 0) pulava as duas
+--       guardas e o delete apagava o ajuste — fee_total regredia 0.07→0.05
+--       sem nenhuma evidência substituta. Agora a correção de fee é
+--       PRESERVADA ATÉ EVIDÊNCIA SUBSTITUTA EXPLÍCITA: sem trades novos
+--       únicos, ou com algum sem fee explícita na mesma moeda, retorna
+--       'cobertura_fee_incompleta' e NADA deleta/insere; com os trades novos
+--       cobrindo, a substituição libera o delete dos sintéticos incluindo os
+--       ajustes zero-qty (o real é fato).
+--
+--    b. SINTÉTICO NÃO ATRIBUÍDO (external_order_id NULL): o ACK sem id grava
+--       o sintético com ordem NULL, e ele nunca entrava em v_sint nem no
+--       delete quando os trades chegavam com o id descoberto — sintético 5 +
+--       real 5 fechavam filled 10 sobre pedido 8. Decisão declarada:
+--       sintéticos do MESMO INTENT com external_order_id NULL são "não
+--       atribuídos" — entram em v_sint e no delete da ingestão de trades
+--       daquele intent (os trades com o id descoberto SÃO a atribuição).
+--       Sintéticos com external_order_id de OUTRA ordem continuam fora:
+--       uma ordem nunca cobre outra. A cobertura N≥S e os gates de fee
+--       protegem a substituição.
+--
+--    c. (banco-falso) fee "" ou não-numérico/ausente é SEM fee — a mesma
+--       semântica do `nullif(t->>'fee','')` do SQL, para o teste não aprovar
+--       o que o banco recusa.
+--
+--    d. DEFESA EM PROFUNDIDADE no nível da RPC: itens do lote com
+--       `t->>'order'` não nulo e diferente de `p_external_order_id` são
+--       IGNORADOS — não inseridos, não contam em v_novos (pertencem a outra
+--       ingestão). O caller já filtra; a RPC não confia.
+--
 -- ACL: mesma disciplina da 0055 (A116) — REVOKE/GRANT repetidos aqui são
 -- idempotentes, e o CATALOGO de `rpcs-acl.test.ts` aponta estas duas funções
 -- para esta migration (regra: ACL file ≥ def file).
@@ -271,6 +305,13 @@ end; $$;
 -- (os dois ADIADOS, como 'cobertura_incompleta'); fee menor mas explícita e
 -- completa substitui — o real é fato.
 --
+-- ⚠️ ROUND 4 (revisão): o gate de fee dispara pela EXISTÊNCIA do sintético
+-- com fee, mesmo com v_sint = 0 (ajuste de fee de qty zero é fato — sem
+-- evidência substituta explícita, NADA é deletado); sintéticos NÃO
+-- ATRIBUÍDOS (external_order_id NULL, ACK sem id) entram em v_sint e no
+-- delete; e itens do lote que declaram OUTRA ordem são ignorados (a RPC não
+-- confia no caller). Detalhes no cabeçalho, item 4.
+--
 -- ⚠️ TODOS OS TRADES DA ORDEM DE UMA VEZ, e não um por chamada: a substituição
 -- (delete + insert) continua na MESMA transação quando a cobertura fecha, e
 -- qualquer validação que falha retorna ANTES de tocar o livro (atomicidade).
@@ -283,7 +324,8 @@ create or replace function public.cex_ingest_trades(
 declare
   v_intent public.cex_execution_intents%rowtype;
   v_t jsonb; v_inseridos integer := 0;
-  v_sint numeric; v_novos numeric;
+  v_sint numeric; v_novos numeric; v_qtd_novos integer;
+  v_lote jsonb;
 begin
   select * into v_intent from public.cex_execution_intents
    where id = p_intent_id for update;
@@ -295,18 +337,35 @@ begin
     raise exception 'fill contra intent em % — estado pre-envio nao admite execucao', v_intent.state;
   end if;
 
+  -- DEFESA EM PROFUNDIDADE (A121 round 4, achado d): itens do lote que
+  -- declaram OUTRA ordem (`t->>'order'` não nulo e diferente de
+  -- p_external_order_id) são IGNORADOS — não inseridos, não contam em
+  -- v_novos: pertencem a outra ingestão, e sem este filtro cobririam o
+  -- sintético DESTA ordem e seriam carimbados com o external_order_id errado.
+  -- O caller já filtra; a RPC não confia. Item sem `order` segue: o caller
+  -- nem sempre conhece o id da ordem de cada trade.
+  select coalesce(jsonb_agg(u.t order by u.ord), '[]'::jsonb) into v_lote
+    from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) with ordinality as u(t, ord)
+   where u.t->>'order' is null or u.t->>'order' = p_external_order_id;
+
   -- Cobertura de QUANTIDADE (A121): só os NOVOS trades únicos do lote
   -- provam o que veio DEPOIS do sintético. O real já existente é anterior a
-  -- ele e não entra na conta — somas sempre por (intent_id,
-  -- external_order_id is not distinct from, exchange_id): external_order_id
-  -- null é tratado explicitamente e uma ordem nunca cobre outra.
+  -- ele e não entra na conta — somas sempre por (intent_id, ordem,
+  -- exchange_id) e uma ordem nunca cobre outra.
+  -- ⚠️ SINTÉTICO NÃO ATRIBUÍDO (A121 round 4, achado b): o sintético gravado
+  -- com external_order_id NULL (ACK sem id) é do MESMO INTENT e entra em
+  -- v_sint e no delete — os trades que chegam com o id descoberto SÃO a
+  -- atribuição; sem isso o sintético null (5) + o real (5) double-countavam
+  -- (filled 10 sobre pedido 8). Sintético com external_order_id de OUTRA
+  -- ordem continua fora: ordem A nunca cobre B.
   select coalesce(sum(qty),0) into v_sint from public.cex_fills
    where intent_id = p_intent_id and sintetico
-     and external_order_id is not distinct from p_external_order_id
+     and (external_order_id is not distinct from p_external_order_id
+          or external_order_id is null)
      and exchange_id = v_intent.exchange_id;
 
-  select coalesce(sum((t->>'qty')::numeric),0) into v_novos
-    from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) t
+  select coalesce(sum((t->>'qty')::numeric),0), count(*) into v_novos, v_qtd_novos
+    from jsonb_array_elements(v_lote) t
    where not exists (select 1 from public.cex_fills f
           where f.exchange_id = v_intent.exchange_id
             and f.dedupe_key = 'trade:' || (t->>'trade_id'));
@@ -322,13 +381,25 @@ begin
   -- somar moedas. Fee MENOR mas explícita e completa substitui (o real é
   -- fato). Sintético sem fee: trades sem fee não destroem nada, procede.
   -- Qualquer falha aqui retorna ANTES do delete/insert: livro intacto.
-  if v_sint > 0 and exists (select 1 from public.cex_fills f
+  --
+  -- ⚠️ O GATE DISPARA PELA EXISTÊNCIA DO SINTÉTICO COM FEE, INDEPENDENTE de
+  -- v_sint > 0 (A121 round 4, achado a): um ajuste de fee de QTY ZERO é um
+  -- fato tanto quanto um fill com qty, e um lote todo dedupado (v_novos = 0)
+  -- não é evidência substituta — sem esta guarda o delete apagava o ajuste e
+  -- o fee_total regredia (0.07 → 0.05) sem nenhum trade novo. A correção de
+  -- fee é PRESERVADA ATÉ EVIDÊNCIA SUBSTITUTA EXPLÍCITA: sem trades novos
+  -- únicos, ou com algum sem fee explícita na mesma moeda, NADA é deletado
+  -- nem inserido. Quando os trades novos cobrem (todos com fee explícita,
+  -- mesma moeda), a substituição libera o delete dos sintéticos incluindo os
+  -- ajustes zero-qty — o real é fato.
+  if exists (select 1 from public.cex_fills f
          where f.intent_id = p_intent_id and f.sintetico
-           and f.external_order_id is not distinct from p_external_order_id
+           and (f.external_order_id is not distinct from p_external_order_id
+                or f.external_order_id is null)
            and f.exchange_id = v_intent.exchange_id
            and f.fee is not null) then
-    if exists (
-        select 1 from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) t
+    if v_qtd_novos = 0 or exists (
+        select 1 from jsonb_array_elements(v_lote) t
          where not exists (select 1 from public.cex_fills f
                 where f.exchange_id = v_intent.exchange_id
                   and f.dedupe_key = 'trade:' || (t->>'trade_id'))
@@ -339,14 +410,15 @@ begin
     if exists (
         with novos as (
           select nullif(t->>'fee_currency','') as moeda
-            from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) t
+            from jsonb_array_elements(v_lote) t
            where not exists (select 1 from public.cex_fills f
                   where f.exchange_id = v_intent.exchange_id
                     and f.dedupe_key = 'trade:' || (t->>'trade_id'))
         ), moedas_sint as (
           select distinct f.fee_currency as moeda from public.cex_fills f
            where f.intent_id = p_intent_id and f.sintetico
-             and f.external_order_id is not distinct from p_external_order_id
+             and (f.external_order_id is not distinct from p_external_order_id
+                  or f.external_order_id is null)
              and f.exchange_id = v_intent.exchange_id
              and f.fee is not null
         )
@@ -358,12 +430,15 @@ begin
     end if;
   end if;
 
-  -- O sintético é estimativa; o trade é fato. O fato substitui.
+  -- O sintético é estimativa; o trade é fato. O fato substitui. Entram no
+  -- delete os sintéticos desta ordem E os não atribuídos (external_order_id
+  -- NULL do mesmo intent — achado b); os de OUTRA ordem jamais.
   delete from public.cex_fills
    where intent_id = p_intent_id and sintetico
-     and external_order_id is not distinct from p_external_order_id;
+     and (external_order_id is not distinct from p_external_order_id
+          or external_order_id is null);
 
-  for v_t in select * from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) loop
+  for v_t in select * from jsonb_array_elements(v_lote) loop
     insert into public.cex_fills (
       intent_id, exchange_id, external_order_id, external_trade_id, client_order_id,
       symbol, side, qty, price, quote_amount, fee, fee_currency, executed_at,
