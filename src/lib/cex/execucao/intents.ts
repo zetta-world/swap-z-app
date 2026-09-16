@@ -32,6 +32,10 @@ export interface IntentRow {
    *  autorização final o lê DAQUI, nunca de parâmetro do caller. */
   strategy_hash: string | null;
   certificate_id: string | null;
+  /** ⚠️ A120 (0061): a impressão HMAC da credencial que criou a ordem manual
+   *  real. O recovery por intentId a confere ANTES de qualquer leitura na
+   *  venue; null (histórico/autopilot/DCA) fecha com `recovery_not_bound`. */
+  credential_fingerprint: string | null;
   exchange_id: string;
   symbol: string;
   side: "buy" | "sell";
@@ -76,6 +80,10 @@ export interface PedidoDeIntent {
   /** O hash dos parâmetros — persistido na linha (A110 round 3). */
   strategyHash?: string | null;
   certificateId?: string | null;
+  /** ⚠️ A120: a impressão da credencial, calculada NO SERVIDOR pela rota de
+   *  criação (manual real). NUNCA vem do body do cliente — quem apresenta um
+   *  fingerprint pronto estaria se autoautorizando. */
+  credentialFingerprint?: string | null;
 }
 
 export type ResultadoDeIntent =
@@ -120,6 +128,7 @@ export async function abrirIntent(
     strategy_version: p.strategyVersion ?? null,
     strategy_hash: p.strategyHash ?? null,
     certificate_id: p.certificateId ?? null,
+    credential_fingerprint: p.credentialFingerprint ?? null,
   }).select("*").limit(1);
 
   if (error) {

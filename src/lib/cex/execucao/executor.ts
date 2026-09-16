@@ -96,6 +96,18 @@ export interface ContextoDeExecucao {
    * Compra autônoma real sem hash que case é recusada NO BANCO, no passo 6.
    */
   strategyHash?: string | null;
+  /**
+   * ⚠️ A120 — A IMPRESSÃO DA CREDENCIAL, só no caminho MANUAL REAL.
+   *
+   * A rota `/api/cex/order` a calcula NO SERVIDOR (HMAC sobre exchange+NUL+
+   * apiKey, ver `src/lib/cex/fingerprint.ts`) e a entrega aqui; o executor a
+   * grava no intent no passo 2. Autopilot/DCA passam SEM ela (a credencial
+   * deles está no cofre e o recovery é pela sessão), e o simulado também —
+   * nesses casos ela fica NULL e o recovery por intentId fecha com
+   * `recovery_not_bound`. O campo `credentialFingerprint` do body do cliente
+   * NUNCA é autoridade: a rota o ignora de propósito.
+   */
+  credentialFingerprint?: string | null;
 }
 
 export interface OrdemPedida {
@@ -237,6 +249,7 @@ export async function executarOrdemCex(
     cycleNumber: ctx.cycleNumber, conexaoId: ctx.conexaoId,
     strategyId: ctx.strategyId, strategyVersion: ctx.strategyVersion,
     certificateId: ctx.certificateId, strategyHash: ctx.strategyHash ?? null,
+    credentialFingerprint: ctx.credentialFingerprint ?? null,
   });
   if (!aberto.ok) {
     return { desfecho: "recusado", intentId: null,

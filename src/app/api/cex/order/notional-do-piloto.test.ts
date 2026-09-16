@@ -88,7 +88,12 @@ const BASE = {
   confirm: "I-CONFIRM-REAL-ORDER", apiKey: "k12345678", apiSecret: "s12345678",
 };
 
-beforeEach(() => espioes.executarOrdemCex.mockClear());
+beforeEach(() => {
+  espioes.executarOrdemCex.mockClear();
+  // ⚠️ A120: o ramo MANUAL calcula o fingerprint da credencial antes de chamar
+  // o executor — sem a env de HMAC ele falha fechado (500) de propósito.
+  process.env.CEX_RECOVERY_HMAC_KEY = "chave-hmac-de-teste-a120";
+});
 
 describe("A110 r3 — notionalUsd entregue ao executor", () => {
   it("⚠️⚠️ piloto autônomo, MARKET (sem price), referência no servidor ⇒ executor recebe o nocional calculado", async () => {

@@ -16,6 +16,7 @@ import { getSession } from "@/lib/auth/session";
 import { logSecurity, logError } from "@/lib/admin/track";
 import { recordEvent } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
+import { impressaoDaCredencial } from "@/lib/cex/fingerprint";
 import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
 import {
   type CexId, type CexCredentials, type CexOrderResponse, type CexOrderSide, type CexOrderType,
@@ -332,6 +333,38 @@ export async function POST(req: NextRequest) {
   };
 
   /**
+   * ⚠️⚠️ A120 — O VÍNCULO CREDENCIAL ↔ INTENT, calculado NO SERVIDOR.
+   *
+   * A ordem MANUAL REAL nasce com `credential_fingerprint` (HMAC da exchange
+   * canonica + NUL + apiKey, sob `CEX_RECOVERY_HMAC_KEY`): é o que permite ao
+   * recovery por intentId conferir que quem reconcilia é quem criou — antes
+   * disso, qualquer credencial válida reconciliava o intent de qualquer um.
+   *
+   * ⚠️ ENV AUSENTE → 500 ANTES DO EXECUTOR (e portanto ANTES de qualquer
+   * createOrder): uma ordem manual real incapaz de vínculo NÃO NASCE — sem o
+   * fingerprint gravado, o recovery futuro dela fecharia em
+   * `recovery_not_bound` e a ordem ficaria irreconciliável por desenho.
+   *
+   * ⚠️ SÓ O RAMO MANUAL REAL. Autopilot/DCA não recebem fingerprint (a
+   * credencial deles está no cofre e o recovery é pela sessão) e o simulado
+   * também não. E o campo `credentialFingerprint` do body, se vier, é
+   * IGNORADO: fingerprint apresentado pelo cliente é autoautorização.
+   */
+  let credentialFingerprint: string | null = null;
+  if (!ehAutopilot) {
+    try {
+      credentialFingerprint = impressaoDaCredencial(exchange, body.apiKey);
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "server_configuration_error",
+          detail: "o servidor nao consegue vincular a credencial ao intent; "
+            + "a ordem NAO foi enviada" },
+        { status: 500, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+  }
+
+  /**
    * ⚠️⚠️ ESTA ROTA NÃO EXECUTA MAIS NADA POR CONTA PRÓPRIA — achado A107.
    *
    * Ela chamava `placeCexOrder` direto, como o cron do DCA e os dois ramos do
@@ -370,7 +403,10 @@ export async function POST(req: NextRequest) {
         strategyId: estrategiaDoPiloto.id,
         strategyVersion: estrategiaDoPiloto.versao,
         certificateId: certificadoDoPiloto,
-        strategyHash: hashDoPiloto },
+        strategyHash: hashDoPiloto,
+        /** ⚠️ A120: null no piloto (credencial no cofre, recovery pela
+         *  sessão); a impressão do manual veio do SERVIDOR, nunca do body. */
+        credentialFingerprint },
       { exchangeId: exchange, symbol: body.symbol, side, type,
         qty: body.amount, price: type === "limit" ? body.price : null,
         /**
