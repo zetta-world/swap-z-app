@@ -246,14 +246,12 @@ export type AutopilotSessionRow = {
   max_trades_per_day:  number;
   allowed_symbols:     string[];
   lang:                string;
-  creds_cipher:        string;
   /**
-   * ⚠️ O elo com o COFRE (`cex_conexoes`), NULÁVEL durante a virada.
+   * ⚠️ O elo com o COFRE (`cex_conexoes`) — ÚNICO lugar onde o segredo mora.
    *
-   * T1: criado e preenchido por backfill. T2 (agora): a leitura prefere o
-   * cofre quando isto existe e cai em `creds_cipher` quando não, contando qual
-   * caminho serviu. T3: só com o contador em 100% no caminho novo, o
-   * `creds_cipher` sai. Ver §2 de `docs/PLANO-DCA-AUTOMATICO.md`.
+   * T3 concluído (achado A115, migration 0056): `creds_cipher`, a segunda
+   * cópia cifrada que esta tabela guardava, foi REMOVIDA (produção medida
+   * com 0 sessões). Sessão sem elo = erro explícito, sem fallback.
    */
   conexao_id:          string | null;
   is_active:           boolean;
@@ -750,7 +748,7 @@ export interface Database {
         Insert: Partial<AutopilotSessionRow> & {
           wallet_address: string; exchange_id: string; risk_mode: AutopilotRiskMode;
           max_trade_usd: number; daily_loss_stop_usd: number; max_trades_per_day: number;
-          creds_cipher: string; expires_at: string; last_reset_day: string;
+          expires_at: string; last_reset_day: string;
         };
         Update: Partial<AutopilotSessionRow>;
         Relationships: [];

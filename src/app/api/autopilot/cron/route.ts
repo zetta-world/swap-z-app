@@ -388,15 +388,14 @@ export async function POST(req: NextRequest) {
 
   const summary: Array<{ exchange: string; wallet: string; fired: number; skipped: string }> = [];
   /**
-   * ⚠️ O CONTADOR DA VIRADA DO COFRE (T2, `docs/PLANO-DCA-AUTOMATICO.md` §2).
+   * ⚠️ O CONTADOR DA ORIGEM DA CREDENCIAL (era o medidor da virada T2→T3).
    *
-   * Conta de onde cada credencial veio nesta passada. É ele — e só ele — que
-   * autoriza o T3 (remover `creds_cipher`): enquanto houver leitura por
-   * `sessao`, existe alguém que quebraria.
-   *
-   * ⚠️ E `erro` É O TERCEIRO ESTADO. Sem ele, uma sessão que falhou ao decifrar
-   * sumiria da conta, e "zero leituras pelo caminho velho" ficaria
-   * indistinguível de "as leituras nem aconteceram" — invariante nº 33.
+   * T3 concluído (A115): a segunda cópia do segredo saiu da tabela (migration
+   * 0056) e não existe mais caminho `sessao` — `credenciaisDaSessao` só
+   * devolve `cofre` ou LANÇA. O contador fica porque `erro` continua sendo um
+   * estado próprio: sem ele, uma sessão que falhou ao decifrar sumiria da
+   * conta, e "tudo pelo cofre" ficaria indistinguível de "as leituras nem
+   * aconteceram" — a invariante nº 33 que ele sempre existiu para proteger.
    */
   const origens = { cofre: 0, sessao: 0, erro: 0 };
 
@@ -439,7 +438,7 @@ export async function POST(req: NextRequest) {
   if (sessions.length > 0) {
     await recordEvent("cofre_origem_credencial", { meta: {
       ...origens,
-      why: "T2 da virada do cofre — enquanto `sessao` > 0, remover creds_cipher quebra alguém",
+      why: "T3 concluído (A115): a segunda cópia do segredo foi removida; `sessao` é estruturalmente impossível e deve ser sempre 0",
     } });
   }
 
@@ -581,12 +580,12 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   }
 
   /**
-   * ── 2. A credencial — LEITURA DUPLA (T2 do cofre) ──
+   * ── 2. A credencial — COFRE SÓ (T3 do cofre, A115) ──
    *
-   * Prefere `cex_conexoes`; cai em `creds_cipher` quando a sessão ainda não
-   * tem elo. A ORIGEM sobe no resultado porque é ela que o contador mede — e é
-   * o contador que autoriza remover o `creds_cipher` no T3. Sem medida, aquele
-   * passo seria chute.
+   * `creds_cipher` não existe mais: ou a sessão tem elo com `cex_conexoes` e
+   * o cofre responde, ou `credenciaisDaSessao` LANÇA e a passada desta
+   * sessão falha fechado. Não há fallback para uma segunda cópia — é isso
+   * que faz revogar no cofre revogar de verdade.
    */
   const { creds, origem } = await credenciaisDaSessao(s);
   const exchange = s.exchange_id as CexId;

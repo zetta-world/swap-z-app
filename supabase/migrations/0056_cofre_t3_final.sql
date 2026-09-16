@@ -1,0 +1,22 @@
+-- ═══════════════════════════════════════════════════════════════════════
+-- T3 DO COFRE: A SEGUNDA CÓPIA DO SEGREDO SAI DA TABELA — achado A115
+--
+-- ⚠️⚠️ POR QUE REMOVER, e por que AGORA. `autopilot_sessions.creds_cipher`
+-- (criada na 0004) guardava uma SEGUNDA cópia cifrada da chave da corretora,
+-- paralela ao cofre (`cex_conexoes`, 0031). Enquanto ela existiu, a leitura
+-- tinha um fallback: cofre ruim → caía na cópia local — e a propriedade que
+-- o cofre existe para dar (*uma cópia do segredo, um lugar para revogar*)
+-- deixava de valer exatamente quando o banco estava ruim. O Round 1 já
+-- fechou o fallback na leitura; esta migration fecha na ESTRUTURA.
+--
+-- ⚠️ MEDIDO EM PRODUÇÃO ANTES DE ESCREVER ISTO: 0 sessões em
+-- `autopilot_sessions`. Não há dado a migrar, ninguém cai — a arquitetura
+-- final fica simples: o segredo mora SÓ em `cex_conexoes`, a sessão guarda
+-- só o elo (`conexao_id`). Sem elo, `credenciaisDaSessao` erro explícito.
+--
+-- ⚠️ E O ARMAR MUDOU JUNTO (src/lib/autopilot/sessions.ts): se o cofre
+-- falhar, `armSession` FALHA e nenhuma sessão é armada. Acabou o "degrada
+-- e arma com segredo local" — não existe mais local para onde degradar.
+-- ═══════════════════════════════════════════════════════════════════════
+
+alter table public.autopilot_sessions drop column creds_cipher;

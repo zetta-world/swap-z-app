@@ -125,24 +125,24 @@ describe("③ A115 — o cofre é a fonte autoritativa, sem fallback silencioso"
     expect(corpo).toMatch(/if \(!c\.is_active\)[\s\S]{0,140}throw/);
   });
 
-  it("⚠️⚠️ e NÃO existe caminho do cofre para o segredo legado", () => {
+  it("⚠️⚠️ e NÃO existe caminho para o segredo legado — ele foi REMOVIDO (T3)", () => {
+    // T3 concluído: `creds_cipher` saiu da tabela (migration 0056) e
+    // `decryptSessionCreds` saiu do código. Sessão sem `conexao_id` é erro
+    // explícito, não fallback.
     const i = SESSOES.indexOf("export async function credenciaisDaSessao");
     const corpo = SESSOES.slice(i, SESSOES.indexOf("\nexport ", i + 10));
-    // Dentro do ramo `if (row.conexao_id)` não pode haver `decryptSessionCreds`.
-    const iRamo = corpo.indexOf("if (row.conexao_id)");
-    const iFimRamo = corpo.indexOf("return { creds: decryptSessionCreds(row)");
-    expect(iRamo).toBeGreaterThan(-1);
-    expect(iFimRamo).toBeGreaterThan(iRamo);
-    expect(corpo.slice(iRamo, iFimRamo)).not.toContain("decryptSessionCreds");
+    expect(corpo).not.toContain("decryptSessionCreds");
+    expect(corpo).not.toContain("creds_cipher");
+    expect(corpo).toMatch(/if \(!row\.conexao_id\)[\s\S]{0,300}throw/);
   });
 
-  it("⚠️ o caminho legado sobrevive SÓ para sessão sem `conexao_id`, e é medido", () => {
-    // Ele é explícito e contado (`origem: "sessao"`), não um `return` mudo de
-    // fim de função. Quando o contador zerar, `creds_cipher` sai da tabela.
+  it("⚠️ a ÚNICA origem possível é o cofre", () => {
+    // `origem: "sessao"` era o contador do caminho legado; com o T3 ele é
+    // estruturalmente impossível.
     const i = SESSOES.indexOf("export async function credenciaisDaSessao");
     const corpo = SESSOES.slice(i, SESSOES.indexOf("\nexport ", i + 10));
-    expect(corpo).toMatch(/origem: "sessao"/);
     expect(corpo).toMatch(/origem: "cofre"/);
+    expect(corpo).not.toMatch(/origem: "sessao"/);
   });
 
   it("⚠️⚠️ no DCA, falha de leitura NÃO encerra o plano como revogado", () => {

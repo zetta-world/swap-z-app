@@ -1,13 +1,13 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AutopilotSessionRow, AutopilotRunRow } from "@/lib/supabase/types";
-import { encryptJson, decryptJson } from "@/lib/crypto/secretbox";
 import { guardarConexao, lerConexaoPorId, decifrarConexao } from "@/lib/cex/conexoes";
 import { recordEvent } from "@/lib/admin/track";
 import type { CexCredentials } from "@/lib/cex/types";
 
 /**
- * Server-only data layer for background autopilot sessions. Encrypts CEX
- * credentials on write, decrypts on read, and exposes the small surface the
+ * Server-only data layer for background autopilot sessions. Since the T3
+ * (A115), credentials live ONLY in the vault (`cex_conexoes`) — the session
+ * stores just the `conexao_id` link. Exposes the small surface the
  * arm/disarm API and the cron worker need. Every function tolerates an
  * unconfigured backend by returning null/empty rather than throwing, matching
  * the rest of the app's degrade-gracefully posture.
@@ -40,33 +40,29 @@ export interface ArmSessionInput {
 }
 
 /**
- * Arm (or re-arm) a background session for this wallet+exchange. Encrypts the
- * credentials and upserts the row. Returns the session id, or null when the
- * backend is unconfigured.
+ * Arm (or re-arm) a background session for this wallet+exchange. Writes the
+ * credentials to the vault FIRST and THROWS if the vault fails (T3/A115: no
+ * vault, no session — there is no local copy to degrade to). Returns the
+ * session id, or null when the backend is unconfigured.
  */
 export async function armSession(input: ArmSessionInput): Promise<string | null> {
   const db = getSupabaseAdmin();
   if (!db) return null;
 
-  const credsCipher = encryptJson({
-    apiKey:     input.credentials.apiKey,
-    apiSecret:  input.credentials.apiSecret,
-    passphrase: input.credentials.passphrase ?? null,
-  });
-
   /**
-   * ⚠️⚠️ ESCRITA DUPLA — T2 da virada do cofre (`docs/PLANO-DCA-AUTOMATICO.md`).
+   * ⚠️⚠️⚠️ O SEGREDO TEM UM LUGAR SÓ — T3 do cofre concluído (achado A115).
    *
-   * A chave passa a viver TAMBÉM em `cex_conexoes`, que é o cofre que o DCA já
-   * usa. Sem isto, uma chave ROTACIONADA aqui deixaria o cofre desatualizado e
-   * o DCA operaria com a credencial velha — o pior tipo de bug, porque só
-   * aparece quando a corretora recusa e ninguém sabe por quê.
+   * A versão T2 gravava a credencial DUAS VEZES: aqui (em `creds_cipher`) e
+   * no cofre (`cex_conexoes`). Duas cópias é duas revogações necessárias,
+   * dois lugares para vazar, e um fallback que valia justamente quando o
+   * banco estava ruim. A coluna saiu na migration 0056 (produção medida com
+   * 0 sessões): a sessão guarda SÓ o elo `conexao_id`.
    *
-   * ⚠️ FALHA DEGRADA, NÃO DERRUBA. Se o cofre não gravar, a sessão é armada do
-   * mesmo jeito com `conexao_id` nulo, e a leitura cai no `creds_cipher` — que
-   * é exatamente o caminho antigo, ainda intacto. Derrubar o armar do
-   * autopilot por causa de uma tabela que nada lê ainda seria trocar um
-   * problema pequeno por um grande.
+   * ⚠️⚠️ FALHA DO COFRE = SESSÃO NÃO ARMA. Antes isto degradava: armava com
+   * `conexao_id` nulo e segredo local. Não existe mais local para onde
+   * degradar — e não existiria nem se quiséssemos, porque `creds_cipher` não
+   * existe mais. Se a credencial não entrou no cofre, NENHUMA sessão nasce
+   * apontando para segredo nenhum. Falha fechado, como o botão de parar.
    */
   const cofre = await guardarConexao({
     walletAddress: input.walletAddress,
@@ -75,9 +71,11 @@ export async function armSession(input: ArmSessionInput): Promise<string | null>
   });
   if (!cofre.ok) {
     await recordEvent("cofre_nao_gravou", { meta: {
-      why: "sessão armada SEM elo com o cofre — leitura vai cair no creds_cipher",
+      severity: "high",
+      why: "T3: cofre falhou → sessão NÃO armada (não existe mais cópia local para degradar)",
       exchange: input.exchangeId, erro: cofre.erro,
     } });
+    throw new Error(`armSession: cofre nao gravou — sessao nao armada (${cofre.erro})`);
   }
   const today = utcDayKey();
   const expiresAt = new Date(Date.now() + input.ttlHours * 3600_000).toISOString();
@@ -94,9 +92,7 @@ export async function armSession(input: ArmSessionInput): Promise<string | null>
       max_trades_per_day:  input.maxTradesPerDay,
       allowed_symbols:     input.allowedSymbols,
       lang:                input.lang,
-      creds_cipher:        credsCipher,
-      // `null` quando o cofre falhou: a leitura sabe cair no campo acima.
-      conexao_id:          cofre.ok ? cofre.id : null,
+      conexao_id:          cofre.id,
       key_permission:        input.keyPermission,
       key_permission_detail: input.keyPermissionDetail.slice(0, 300),
       key_checked_at:        new Date().toISOString(),
@@ -161,7 +157,7 @@ export async function disarmSession(
 export async function getSessionStatus(
   walletAddress: string,
   exchangeId: string,
-): Promise<Omit<AutopilotSessionRow, "creds_cipher"> | null> {
+): Promise<AutopilotSessionRow | null> {
   const db = getSupabaseAdmin();
   if (!db) return null;
   /**
@@ -183,10 +179,8 @@ export async function getSessionStatus(
     .eq("exchange_id", exchangeId)
     .maybeSingle();
   if (error) throw new Error(`getSessionStatus failed: ${error.message}`);
-  if (!data) return null;
-  const { creds_cipher: _omit, ...safe } = data;
-  void _omit;
-  return safe;
+  // Não há mais segredo na linha (T3): a visão pública É a linha.
+  return data ?? null;
 }
 
 /** All active, non-expired sessions — the cron's work queue. */
@@ -203,85 +197,50 @@ export async function listRunnableSessions(): Promise<AutopilotSessionRow[]> {
   return data ?? [];
 }
 
-/** Decrypt a session's stored credentials. Throws on tamper / missing key. */
-export function decryptSessionCreds(row: AutopilotSessionRow): CexCredentials {
-  const obj = decryptJson<{ apiKey: string; apiSecret: string; passphrase: string | null }>(row.creds_cipher);
-  return {
-    apiKey:     obj.apiKey,
-    apiSecret:  obj.apiSecret,
-    passphrase: obj.passphrase ?? undefined,
-  };
-}
-
-/** De onde a credencial veio nesta leitura. É o que o contador do T2 mede. */
-export type OrigemCredencial = "cofre" | "sessao";
+/** De onde a credencial veio nesta leitura. T3: existe UM lugar — o cofre. */
+export type OrigemCredencial = "cofre";
 
 /**
- * ⚠️⚠️ LEITURA DUPLA — T2 da virada do cofre.
+ * ⚠️⚠️⚠️ O COFRE É A ÚNICA FONTE — achado A115, o T3 concluído (Round 2).
  *
- * Prefere `cex_conexoes` quando a sessão tem elo; cai em `creds_cipher` quando
- * não tem, ou quando o cofre não devolve linha utilizável. Devolve DE ONDE
- * veio, porque é isso que autoriza o T3.
+ * A versão T2 tinha um FALLBACK: sessão sem elo no cofre lia o segredo de
+ * `creds_cipher`, a segunda cópia guardada na própria sessão. O Round 1 já
+ * tinha fechado o fallback PARA SESSÃO COM ELO; esta rodada removeu o ramo
+ * inteiro — e a coluna (migration 0056, produção medida com 0 sessões).
  *
- * ⚠️ O CONTADOR NÃO É ENFEITE. Sem ele, remover o `creds_cipher` é chute — e a
- * invariante nº 33 diz que "ninguém usou o caminho velho" e "meu contador está
- * quebrado" não podem ser a mesma tela.
+ * Agora NÃO EXISTE outro caminho, para nenhuma sessão:
  *
- * ⚠️ E A CONEXÃO REVOGADA NÃO CAI PARA TRÁS. Se o dono desligou a conexão no
- * cofre, a leitura FALHA em vez de usar a cópia antiga da sessão — senão
- * revogar não revogaria nada, que é o oposto do ponto do cofre.
- */
-/**
- * ⚠️⚠️⚠️ O COFRE É A FONTE AUTORITATIVA — achado A115, o T3 concluído.
- *
- * A versão anterior era esta:
- *
- *     if (row.conexao_id) {
- *       const c = await lerConexaoPorId(row.conexao_id);
- *       if (c && !c.is_active) throw new Error("revogada");
- *       if (c) return { creds: decifrarConexao(c), origem: "cofre" };
- *     }
- *     return { creds: decryptSessionCreds(row), origem: "sessao" };   // ← aqui
- *
- * Aquele último `return` era um FALLBACK SILENCIOSO. Uma sessão moderna, com
- * `conexao_id` preenchido, caía no segredo LEGADO de `autopilot_sessions`
- * sempre que a leitura do cofre não devolvesse linha — e "não devolveu linha"
- * incluía **falha de banco**. Ou seja: a propriedade que o cofre existe para
- * dar, *uma cópia do segredo e um lugar para revogar*, deixava de valer
- * exatamente quando o banco estava ruim.
- *
- * ⚠️ AGORA, COM `conexao_id`, NÃO EXISTE OUTRO CAMINHO:
- *
+ *     sem conexao_id     ERRO EXPLÍCITO (sessão pré-cofre não existe mais)
  *     revogada           BLOQUEIA
  *     não existe         BLOQUEIA
  *     não deu para ler   BLOQUEIA
  *     cofre ilegível     BLOQUEIA (o `decifrarConexao` lança, e deve lançar)
  *
- * ⚠️ O CAMINHO LEGADO SÓ SOBREVIVE PARA SESSÃO SEM `conexao_id` — as antigas,
- * armadas antes do cofre existir. Ele é EXPLÍCITO e MEDIDO (`origem: "sessao"`
- * sobe no resultado e o cron conta), não um `return` de fim de função. Quando o
- * contador zerar, `creds_cipher` sai da tabela e este ramo some.
+ * ⚠️ SE ALGUÉM REINTRODUZIR UM "CAMINHO ALTERNATIVO" aqui, o grep-guard de
+ * `cofre-t3.test.ts` quebra o build. Um lugar para revogar que tem outro
+ * lugar atrás dele não é um lugar para revogar.
  */
 export async function credenciaisDaSessao(
   row: AutopilotSessionRow,
 ): Promise<{ creds: CexCredentials; origem: OrigemCredencial }> {
-  if (row.conexao_id) {
-    const c = await lerConexaoPorId(row.conexao_id);
-    if (c === undefined) {
-      throw new Error("cofre: nao deu para ler a conexao — nenhuma ordem sai sobre duvida de credencial");
-    }
-    if (c === null) {
-      throw new Error("cofre: conexao inexistente para esta sessao — vinculo quebrado");
-    }
-    if (!c.is_active) {
-      throw new Error("cofre: conexão revogada pelo dono");
-    }
-    // ⚠️ `decifrarConexao` LANÇA em adulteração ou chave ausente. Não se
-    // captura aqui de propósito: cofre ilegível é bloqueio, não motivo para
-    // procurar o segredo em outro lugar.
-    return { creds: decifrarConexao(c), origem: "cofre" };
+  if (!row.conexao_id) {
+    throw new Error(
+      "sessão sem elo com o cofre (conexao_id nulo) — a segunda cópia do segredo foi removida no T3; rearma a sessão");
   }
-  return { creds: decryptSessionCreds(row), origem: "sessao" };
+  const c = await lerConexaoPorId(row.conexao_id);
+  if (c === undefined) {
+    throw new Error("cofre: nao deu para ler a conexao — nenhuma ordem sai sobre duvida de credencial");
+  }
+  if (c === null) {
+    throw new Error("cofre: conexao inexistente para esta sessao — vinculo quebrado");
+  }
+  if (!c.is_active) {
+    throw new Error("cofre: conexão revogada pelo dono");
+  }
+  // ⚠️ `decifrarConexao` LANÇA em adulteração ou chave ausente. Não se
+  // captura aqui de propósito: cofre ilegível é bloqueio, não motivo para
+  // procurar o segredo em outro lugar.
+  return { creds: decifrarConexao(c), origem: "cofre" };
 }
 
 /** Patch a session's mutable fields (counters, freeze, last_scan_at, error). */
