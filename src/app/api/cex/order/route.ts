@@ -186,6 +186,15 @@ export async function POST(req: NextRequest) {
   /** O hash vai ao executor: a autorização FINAL é no banco (A110, round 2). */
   let hashDoPiloto: string | null = null;
   /**
+   * ⚠️ O NOCIONAL REAL medido no servidor (A110, round 3). Ordem MARKET do
+   * piloto não tem `body.price` — sem repassar isto ao executor, o intent
+   * ficava com `requested_notional_usd` nulo e a autorização final do banco
+   * recusaria qualquer certificado com teto ("nocional não mensurável"), ou
+   * pior: passaria sem medida onde não houvesse teto. Nulo só quando NEM o
+   * preço de referência existe — nunca null=0.
+   */
+  let notionalRealDoPiloto: number | null = null;
+  /**
    * ⚠️ O ID DA SESSÃO DO PILOTO — ponto 9 do Round 2. Com ele no intent, o
    * recuperador global resolve a credencial PELA SESSÃO (cofre) se uma ordem
    * do navegador ficar UNKNOWN — sem duplicar segredo e sem quarentena errada.
@@ -295,6 +304,7 @@ export async function POST(req: NextRequest) {
     }
     certificadoDoPiloto = decisaoDoPiloto.certificadoId;
     hashDoPiloto = sessaoDoPiloto?.strategy_hash ?? null;
+    notionalRealDoPiloto = guard.realNotionalUsd ?? null;
     estrategiaDoPiloto = {
       id: sessaoDoPiloto?.strategy_id ?? null,
       versao: sessaoDoPiloto?.strategy_version ?? null,

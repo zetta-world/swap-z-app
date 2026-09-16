@@ -26,7 +26,7 @@ export interface BancoFalso {
   cliente: SupabaseClient<Database>;
   intents: Linha[];
   fills: Linha[];
-  /** Os certificados que a RPC `cex_autorizar_e_submeter` enxerga (A110 r2).
+  /** Os certificados que a RPC `cex_autorizar_e_submeter` enxerga (A110 r3).
    *  O teste os grava — e os REVOGA no meio do voo quando quer a janela. */
   certificados: Linha[];
   /** Falhas injetáveis, por operação, para exercitar o caminho de erro. */
@@ -82,14 +82,18 @@ export function bancoFalso(): BancoFalso {
     if (!it) return { data: null, error: { message: "intent nao existe" } };
 
     /**
-     * ⚠️ A AUTORIZAÇÃO FINAL (migration 0057, A110 round 2), reproduzida aqui
+     * ⚠️ A AUTORIZAÇÃO FINAL (migration 0060, A110 round 3), reproduzida aqui
      * para o teste do executor rodar sem banco. NÃO é uma segunda regra: a
      * legalidade da transição vem do mesmo `transicaoPermitida`, e a decisão
      * sobre o certificado vem do mesmo `avaliarCertificado` puro — a guarda
-     * estrutural lê o SQL da 0057 e confere que a RPC real existe e nasce
-     * fechada. O que este ramo acrescenta por cima do avaliador puro é o que
-     * a RPC confere e o precheck não pode: identidade do certificado contra o
-     * PRÓPRIO intent (strategy/versão) e o hash obrigatório.
+     * estrutural lê o SQL da 0060 e confere que a RPC real existe, nasce
+     * fechada e que a assinatura antiga foi apagada.
+     *
+     * ⚠️⚠️ ELA DERIVA TUDO DO INTENT — venue, símbolo, nocional e hash são
+     * lidos DA LINHA, exatamente como a RPC real faz sob `for update`. Ler
+     * `args.p_venue` (ou qualquer primo) aqui seria reabrir o caller
+     * mentiroso que o round 3 fechou; a quebra deliberada deste round foi
+     * exatamente essa, e o teste de caller mentiroso a pega.
      */
     if (nome === "cex_autorizar_e_submeter") {
       if (falhas.autorizacao) {
@@ -112,13 +116,15 @@ export function bancoFalso(): BancoFalso {
           return { data: { ok: false, porque: "certificado de outra estrategia ou versao" },
                    error: null };
         }
-        if (args.p_strategy_hash == null || args.p_strategy_hash !== cert.strategy_hash) {
+        // ⚠️ O hash vem DA LINHA do intent — ausente ou divergente, recusa.
+        if (it.strategy_hash == null || it.strategy_hash !== cert.strategy_hash) {
           return { data: { ok: false, porque: "strategy_hash nao confere" }, error: null };
         }
         // hash já conferido acima (no precheck ele é opcional; aqui, exigido)
         const v = avaliarCertificado(cert as unknown as CertificadoRow, {
-          venue: String(args.p_venue), symbol: String(args.p_symbol),
-          notionalUsd: args.p_notional == null ? null : Number(args.p_notional),
+          venue: String(it.exchange_id), symbol: String(it.symbol),
+          notionalUsd: it.requested_notional_usd == null
+            ? null : Number(it.requested_notional_usd),
           strategyHash: null,
         });
         if (!v.vale) return { data: { ok: false, porque: v.porque }, error: null };

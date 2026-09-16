@@ -28,6 +28,9 @@ export interface IntentRow {
   conexao_id: string | null;
   strategy_id: string | null;
   strategy_version: number | null;
+  /** ⚠️ O hash dos parâmetros, DURÁVEL desde a 0060 (A110 round 3): a
+   *  autorização final o lê DAQUI, nunca de parâmetro do caller. */
+  strategy_hash: string | null;
   certificate_id: string | null;
   exchange_id: string;
   symbol: string;
@@ -70,6 +73,8 @@ export interface PedidoDeIntent {
   conexaoId?: string | null;
   strategyId?: string | null;
   strategyVersion?: number | null;
+  /** O hash dos parâmetros — persistido na linha (A110 round 3). */
+  strategyHash?: string | null;
   certificateId?: string | null;
 }
 
@@ -113,6 +118,7 @@ export async function abrirIntent(
     conexao_id: p.conexaoId ?? null,
     strategy_id: p.strategyId ?? null,
     strategy_version: p.strategyVersion ?? null,
+    strategy_hash: p.strategyHash ?? null,
     certificate_id: p.certificateId ?? null,
   }).select("*").limit(1);
 
