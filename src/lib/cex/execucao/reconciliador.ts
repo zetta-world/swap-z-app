@@ -180,6 +180,18 @@ export async function reconciliarIntent(
       fee: t.fee, feeCurrency: t.feeCurrency, executedAt: t.executedAt,
     })));
     if (!ing.ok) {
+      /**
+       * ⚠️ A118: COBERTURA INCOMPLETA É ADIADO, não erro. `fetchMyTrades` é
+       * página única sem prova de completude; o banco recusou substituir o
+       * sintético por um fato menor. NADA foi deletado nem inserido — o
+       * intent permanece no estado em que está para a próxima passada (não
+       * marca FAILED, não abre RECONCILIATION_REQUIRED por uma página curta).
+       */
+      if (ing.adiado) {
+        return fim("segue_em_duvida",
+          intent.state === "SUBMITTING" ? "SUBMITTED" : intent.state,
+          `adiado: ${ing.porque}`);
+      }
       await transicionar(db, intent.id, "RECONCILIATION_REQUIRED",
         `ingestao de trades falhou: ${ing.porque}`.slice(0, 300));
       return fim("segue_em_duvida", "RECONCILIATION_REQUIRED", ing.porque);

@@ -51,11 +51,18 @@ export function bancoFalso(): BancoFalso {
 
   function recalcular(intentId: string) {
     const it = intents.find((i) => i.id === intentId)!;
-    const qty = somaDoLivro(intentId);
-    const quote = fills.filter((f) => f.intent_id === intentId)
-                       .reduce((t, f) => t + Number(f.quote_amount), 0);
+    const doIntent = fills.filter((f) => f.intent_id === intentId);
+    const qty = doIntent.reduce((t, f) => t + Number(f.qty), 0);
+    const quote = doIntent.reduce((t, f) => t + Number(f.quote_amount), 0);
+    // Mesma regra da RPC (0051): fee_total = nullif(sum(coalesce(fee,0)),0),
+    // fee_currency = max das moedas presentes (moeda única assumida — A118).
+    const fee = doIntent.reduce((t, f) => t + Number(f.fee ?? 0), 0);
+    const moedas = doIntent.map((f) => f.fee_currency)
+      .filter((m): m is string => typeof m === "string").sort();
     it.filled_qty = qty;
     it.filled_quote = quote;
+    it.fee_total = fee === 0 ? null : fee;
+    it.fee_currency = moedas.length > 0 ? moedas[moedas.length - 1] : (it.fee_currency ?? null);
     const estado = it.state as EstadoDoIntent;
     if (["SUBMITTED", "PARTIALLY_FILLED", "UNKNOWN", "CANCEL_PENDING",
          "RECONCILIATION_REQUIRED"].includes(estado)) {
@@ -141,16 +148,65 @@ export function bancoFalso(): BancoFalso {
       return { data: { ok: true, de, para }, error: null };
     }
 
+    /**
+     * A118 (migration 0059): a fee é CUMULATIVA como qty/quote — grava-se o
+     * DELTA por mesma moeda; qty parada com fee corrigida vira ajuste de
+     * qty ZERO; a dedupe key inclui o fee; moeda incompatível é exceção.
+     */
     if (nome === "cex_ingest_order_snapshot") {
       const estado = it.state as EstadoDoIntent;
       if (["CREATED", "AUTHORIZED", "RESERVED", "FAILED_PRE_SUBMIT"].includes(estado)) {
         return { data: null, error: { message: `snapshot contra intent em ${estado}` } };
       }
+      const mesmaOrdem = (f: Linha) =>
+        f.intent_id === it.id
+        && (f.external_order_id ?? null) === (args.p_external_order_id ?? null);
+      const sintDaOrdem = () => fills.filter((f) => mesmaOrdem(f) && f.sintetico);
+      // Moeda incompatível: fail-closed, sem somar moedas diferentes.
+      if (args.p_fee_currency != null) {
+        const outra = sintDaOrdem().find((f) =>
+          f.fee_currency != null && f.fee_currency !== args.p_fee_currency);
+        if (outra) {
+          return { data: null, error: { message:
+            `fee_currency incompativel na ordem ${args.p_external_order_id}: ` +
+            `livro tem ${outra.fee_currency}, snapshot traz ${args.p_fee_currency}` } };
+        }
+      }
       const ja = somaDoLivro(String(it.id));
       const cum = Number(args.p_cumulative_qty);
+      const feeJa = sintDaOrdem()
+        .filter((f) => (f.fee_currency ?? null) === (args.p_fee_currency ?? null))
+        .reduce((t, f) => t + Number(f.fee ?? 0), 0);
+      const feeDelta = args.p_fee == null ? null
+        : Math.max(Number(args.p_fee) - feeJa, 0);
+      const chave = `ordercum:${args.p_external_order_id ?? "?"}:${cum}:${args.p_fee ?? "-"}`;
+      const jaTemChave = () =>
+        fills.some((f) => f.exchange_id === it.exchange_id && f.dedupe_key === chave);
       if (!(cum > ja + 1e-12)) {
+        // Qty parada com fee corrigida: ajuste de qty zero (quote zero).
+        let inseridos = 0;
+        if (args.p_cumulative_qty != null && feeDelta != null && feeDelta > 0
+            && cum > ja - 1e-9 && !jaTemChave()) {
+          const avg = Number(args.p_avg_price);
+          const cq = Number(args.p_cumulative_quote);
+          const ultimo = [...fills].reverse().find((f) => mesmaOrdem(f));
+          const preco = avg > 0 ? avg
+            : (cq > 0 && cum > 0 ? cq / cum : Number(ultimo?.price ?? 0));
+          if (!(preco > 0)) {
+            return { data: null, error: { message: "ajuste de fee sem preco utilizavel" } };
+          }
+          fills.push({
+            id: `f${++seq}`, intent_id: it.id, exchange_id: it.exchange_id,
+            external_order_id: args.p_external_order_id, external_trade_id: null,
+            symbol: it.symbol, side: it.side, qty: 0, price: preco, quote_amount: 0,
+            fee: feeDelta, fee_currency: args.p_fee_currency ?? null,
+            executed_at: args.p_executed_at ?? null,
+            sintetico: true, dedupe_key: chave,
+          });
+          inseridos = 1;
+        }
         recalcular(String(it.id));
-        return { data: { inseridos: 0, regrediu: cum < ja - 1e-9 }, error: null };
+        return { data: { inseridos, regrediu: cum < ja - 1e-9 }, error: null };
       }
       const avg = Number(args.p_avg_price);
       const cq = Number(args.p_cumulative_quote);
@@ -158,13 +214,14 @@ export function bancoFalso(): BancoFalso {
       if (!(preco > 0)) {
         return { data: null, error: { message: "snapshot sem preco utilizavel" } };
       }
-      const chave = `ordercum:${args.p_external_order_id ?? "?"}:${cum}`;
-      if (!fills.some((f) => f.exchange_id === it.exchange_id && f.dedupe_key === chave)) {
+      if (!jaTemChave()) {
         fills.push({
           id: `f${++seq}`, intent_id: it.id, exchange_id: it.exchange_id,
           external_order_id: args.p_external_order_id, external_trade_id: null,
           symbol: it.symbol, side: it.side, qty: cum - ja, price: preco,
           quote_amount: Math.max(cq - Number(it.filled_quote), 0),
+          fee: feeDelta, fee_currency: args.p_fee_currency ?? null,
+          executed_at: args.p_executed_at ?? null,
           sintetico: true, dedupe_key: chave,
         });
       }
@@ -176,26 +233,52 @@ export function bancoFalso(): BancoFalso {
                        filled_qty: it.filled_qty, state: it.state }, error: null };
     }
 
+    /**
+     * A118 (migration 0059): GUARDA DE COBERTURA synthetic→real. fetchMyTrades
+     * é página única sem prova de completude — o sintético só é substituído
+     * quando o real (livro + lote novo) cobre o estimado. Lote parcial: nada
+     * é deletado, nada é inserido, retorno ok:false 'cobertura_incompleta'.
+     */
     if (nome === "cex_ingest_trades") {
       const estado = it.state as EstadoDoIntent;
       if (["CREATED", "AUTHORIZED", "RESERVED", "FAILED_PRE_SUBMIT"].includes(estado)) {
         return { data: null, error: { message: `fill contra intent em ${estado}` } };
       }
+      const daOrdem = (f: Linha) =>
+        f.intent_id === it.id
+        && (f.external_order_id ?? null) === (args.p_external_order_id ?? null);
+      const sint = fills.filter((f) => daOrdem(f) && f.sintetico)
+        .reduce((t, f) => t + Number(f.qty), 0);
+      let real = fills.filter((f) => daOrdem(f) && !f.sintetico)
+        .reduce((t, f) => t + Number(f.qty), 0);
+      const lote = (args.p_trades as Linha[]) ?? [];
+      for (const t of lote) {
+        const chaveT = `trade:${t.trade_id}`;
+        if (!fills.some((f) => f.exchange_id === it.exchange_id && f.dedupe_key === chaveT)) {
+          real += Number(t.qty);
+        }
+      }
+      if (real < sint - 1e-12) {
+        return { data: { ok: false, porque: "cobertura_incompleta",
+                         real, sintetico: sint }, error: null };
+      }
       // O sintético é estimativa; o trade é fato. O fato substitui.
       for (let i = fills.length - 1; i >= 0; i--) {
         const f = fills[i];
-        if (f.intent_id === it.id && f.sintetico
-            && f.external_order_id === args.p_external_order_id) fills.splice(i, 1);
+        if (daOrdem(f) && f.sintetico) fills.splice(i, 1);
       }
       let inseridos = 0;
-      for (const t of (args.p_trades as Linha[]) ?? []) {
+      for (const t of lote) {
         const chave = `trade:${t.trade_id}`;
         if (fills.some((f) => f.exchange_id === it.exchange_id && f.dedupe_key === chave)) continue;
         fills.push({
           id: `f${++seq}`, intent_id: it.id, exchange_id: it.exchange_id,
           external_order_id: args.p_external_order_id, external_trade_id: t.trade_id,
           symbol: it.symbol, side: it.side, qty: Number(t.qty), price: Number(t.price),
-          quote_amount: Number(t.quote), sintetico: false, dedupe_key: chave,
+          quote_amount: Number(t.quote),
+          fee: t.fee ?? null, fee_currency: t.fee_currency ?? null,
+          executed_at: t.executed_at ?? null,
+          sintetico: false, dedupe_key: chave,
         });
         inseridos++;
       }
@@ -203,7 +286,8 @@ export function bancoFalso(): BancoFalso {
         it.external_order_id = args.p_external_order_id;
       }
       recalcular(String(it.id));
-      return { data: { inseridos, filled_qty: it.filled_qty, state: it.state }, error: null };
+      return { data: { ok: true, inseridos, filled_qty: it.filled_qty,
+                       state: it.state }, error: null };
     }
 
     return { data: null, error: { message: `rpc desconhecida: ${nome}` } };
@@ -258,6 +342,7 @@ export function bancoFalso(): BancoFalso {
           }
           const linha: Linha = {
             id: `i${++seq}`, state: "CREATED", filled_qty: 0, filled_quote: 0,
+            fee_total: null, fee_currency: null,
             canceled_qty: 0, external_order_id: null, state_reason: null,
             created_at: new Date().toISOString(), reconcile_attempts: 0,
             last_reconciled_at: null, submitted_at: null, ...valores,

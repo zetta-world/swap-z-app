@@ -884,7 +884,9 @@ export interface Database {
       };
       cex_ingest_trades: {
         Args: { p_intent_id: string; p_external_order_id: string | null; p_trades: unknown };
-        Returns: { inseridos: number; filled_qty: number; state: CexIntentState };
+        /** A118 (0059): ok:false 'cobertura_incompleta' = adiado, nada gravado. */
+        Returns: { ok?: boolean; porque?: string; real?: number; sintetico?: number;
+                   inseridos: number; filled_qty: number; state: CexIntentState };
       };
       cex_ingest_order_snapshot: {
         Args: {
