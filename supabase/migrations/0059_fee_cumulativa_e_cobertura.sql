@@ -169,6 +169,19 @@
 --       versões do mesmo fato significam leitura corrompida, e decidir qual
 --       vale seria inventar execução.
 --
+-- 7. A123 (round 5) — DEDUPE COM ESCOPO DE INTENT. A trava era
+--    `unique (exchange_id, dedupe_key)` (0050) — GLOBAL na corretora: dois
+--    intents nossos na mesma venue podem carregar o mesmo id de trade (ids
+--    não são universalmente únicos — venues e símbolos diferentes colidem),
+--    e o segundo fill legítimo caía no `on conflict do nothing` e SUMIA do
+--    livro. Todos os `on conflict` e NOT EXISTS de dedupe passam a usar
+--    `intent_id` (a constraint nova é `cex_fills_intent_dedupe`, criada na
+--    0062 — PL/pgSQL planeja no primeiro uso, então a ordem 0059→0062 é
+--    segura). ⚠️ A COBERTURA NÃO MUDA DE ESCOPO (§27): dedupe persistente é
+--    por intent, mas a COBERTURA synthetic→real segue por (intent_id,
+--    external_order_id is not distinct from, incluindo null = não atribuído)
+--    — propriedades diferentes; uma ordem continua sem cobrir outra.
+--
 -- ACL: mesma disciplina da 0055 (A116) — REVOKE/GRANT repetidos aqui são
 -- idempotentes, e o CATALOGO de `rpcs-acl.test.ts` aponta estas duas funções
 -- para esta migration (regra: ACL file ≥ def file).
@@ -293,7 +306,7 @@ begin
         0, v_preco, 0, v_fee_delta, p_fee_currency, p_executed_at,
         true, v_chave
       )
-      on conflict (exchange_id, dedupe_key) do nothing;
+      on conflict (intent_id, dedupe_key) do nothing;
       v_ajuste := found;
     end if;
     perform public.cex_recalcular_intent(p_intent_id);
@@ -326,7 +339,7 @@ begin
     v_fee_delta, p_fee_currency, p_executed_at,
     true, v_chave
   )
-  on conflict (exchange_id, dedupe_key) do nothing;
+  on conflict (intent_id, dedupe_key) do nothing;
 
   if p_external_order_id is not null and v_intent.external_order_id is null then
     update public.cex_execution_intents set external_order_id = p_external_order_id
@@ -469,6 +482,9 @@ begin
   -- exchange_id) e uma ordem nunca cobre outra.
   -- ⚠️ O LOTE AQUI JÁ É O NORMALIZADO (A122): um item por trade_id, payload
   -- idêntico colapsado — duplicata intra-lote não infla v_novos.
+  -- ⚠️ DEDUPE POR INTENT (A123): "já persistido" é NESTE intent — outro
+  -- intent com o mesmo trade_id tem fill próprio e legítimo. A COBERTURA
+  -- segue por ordem (acima); o dedupe é por intent — propriedades distintas.
   -- ⚠️ SINTÉTICO NÃO ATRIBUÍDO (A121 round 4, achado b): o sintético gravado
   -- com external_order_id NULL (ACK sem id) é do MESMO INTENT e entra em
   -- v_sint e no delete — os trades que chegam com o id descoberto SÃO a
@@ -484,7 +500,7 @@ begin
   select coalesce(sum((t->>'qty')::numeric),0), count(*) into v_novos, v_qtd_novos
     from jsonb_array_elements(v_lote) t
    where not exists (select 1 from public.cex_fills f
-          where f.exchange_id = v_intent.exchange_id
+          where f.intent_id = p_intent_id
             and f.dedupe_key = 'trade:' || (t->>'trade_id'));
 
   if v_sint > 0 and v_novos < v_sint - 1e-12 then
@@ -518,7 +534,7 @@ begin
     if v_qtd_novos = 0 or exists (
         select 1 from jsonb_array_elements(v_lote) t
          where not exists (select 1 from public.cex_fills f
-                where f.exchange_id = v_intent.exchange_id
+                where f.intent_id = p_intent_id
                   and f.dedupe_key = 'trade:' || (t->>'trade_id'))
            and nullif(t->>'fee','') is null) then
       return jsonb_build_object('ok', false, 'porque', 'cobertura_fee_incompleta',
@@ -529,7 +545,7 @@ begin
           select nullif(t->>'fee_currency','') as moeda
             from jsonb_array_elements(v_lote) t
            where not exists (select 1 from public.cex_fills f
-                  where f.exchange_id = v_intent.exchange_id
+                  where f.intent_id = p_intent_id
                     and f.dedupe_key = 'trade:' || (t->>'trade_id'))
         ), moedas_sint as (
           select distinct f.fee_currency as moeda from public.cex_fills f
@@ -569,7 +585,7 @@ begin
       nullif(v_t->>'executed_at','')::timestamptz,
       false, 'trade:' || (v_t->>'trade_id')
     )
-    on conflict (exchange_id, dedupe_key) do nothing;
+    on conflict (intent_id, dedupe_key) do nothing;
     if found then v_inseridos := v_inseridos + 1; end if;
   end loop;
 

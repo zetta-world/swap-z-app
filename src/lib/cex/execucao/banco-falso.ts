@@ -200,8 +200,10 @@ export function bancoFalso(): BancoFalso {
       const feeDelta = args.p_fee == null ? null
         : Math.max(Number(args.p_fee) - feeJa, 0);
       const chave = `ordercum:${args.p_external_order_id ?? "?"}:${cum}:${args.p_fee ?? "-"}`;
+      // A123 (round 5): dedupe por INTENT, não por corretora — replay no
+      // mesmo intent é no-op, outro intent com a mesma chave persiste.
       const jaTemChave = () =>
-        fills.some((f) => f.exchange_id === it.exchange_id && f.dedupe_key === chave);
+        fills.some((f) => f.intent_id === it.id && f.dedupe_key === chave);
       if (!(cum > ja + 1e-12)) {
         // Qty parada com fee corrigida: ajuste de qty zero (quote zero).
         let inseridos = 0;
@@ -348,8 +350,10 @@ export function bancoFalso(): BancoFalso {
         return { data: { ok: false, porque: "trade_id_conflitante" }, error: null };
       }
       // (g) daqui em diante SÓ o lote normalizado: um item por trade_id.
+      // A123 (round 5): "já persistido" é NESTE intent — outro intent com o
+      // mesmo trade_id tem fill próprio e legítimo (dedupe por intent_id).
       const jaExiste = (t: Linha) =>
-        fills.some((f) => f.exchange_id === it.exchange_id
+        fills.some((f) => f.intent_id === it.id
                        && f.dedupe_key === `trade:${t.trade_id}`);
       const novos = lote.filter((t) => !jaExiste(t));
       const novosQty = novos.reduce((t, x) => t + Number(x.qty), 0);
@@ -381,7 +385,9 @@ export function bancoFalso(): BancoFalso {
       let inseridos = 0;
       for (const t of lote) {
         const chave = `trade:${t.trade_id}`;
-        if (fills.some((f) => f.exchange_id === it.exchange_id && f.dedupe_key === chave)) continue;
+        // A123: o conflito é por (intent_id, dedupe_key) — outro intent não
+        // bloqueia, replay no mesmo intent é no-op.
+        if (fills.some((f) => f.intent_id === it.id && f.dedupe_key === chave)) continue;
         fills.push({
           id: `f${++seq}`, intent_id: it.id, exchange_id: it.exchange_id,
           external_order_id: args.p_external_order_id, external_trade_id: t.trade_id,
