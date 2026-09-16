@@ -4,8 +4,8 @@
  * ⚠️⚠️ POR QUE ISTO EXISTE (09/08, auditoria da Fase 7).
  *
  * O autopilot em segundo plano guarda a credencial do cliente CIFRADA NO
- * SERVIDOR (`autopilot_sessions.creds_cipher`) para negociar com o navegador
- * fechado. Isso está divulgado na tela de armar, com bloco próprio — a
+ * SERVIDOR (no cofre `cex_conexoes`, único lugar desde o T3/A115) para
+ * negociar com o navegador fechado. Isso está divulgado na tela de armar, com bloco próprio — a
  * divulgação está correta e eu conferi antes de reclamar dela.
  *
  * O que NÃO está: o controle que torna esse risco aceitável — a chave ser
