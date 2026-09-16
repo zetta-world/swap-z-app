@@ -12,10 +12,32 @@
  *    3. kill-switch           imediatamente antes do envio, falha FECHADA
  *    4. credencial            ausente ou ilegível → nada sai
  *    5. reserva de risco      cota/orçamento, antes do envio
- *    6. SUBMITTING            gravado ANTES da chamada — o ponto sem volta
+ *    6. AUTORIZAÇÃO FINAL     certificado validado NO BANCO, numa transação
+ *                              junto à marcação SUBMITTING (A110, round 2)
  *    7. envio                 o único efeito externo
  *    8. SUBMITTED | UNKNOWN   nunca "falhou" sobre dúvida
  *    9. ingestão do que se sabe   ACK não é fill
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * A110, ROUND 2 — O CERTIFICADO É A AUTORIDADE FINAL, DENTRO DO EXECUTOR.
+ *
+ * O precheck das rotas (`avaliarCertificado`) continua onde está — é ele que
+ * dá o erro bom cedo (A113, política única). Mas ele decide num instante
+ * ANTERIOR ao envio: revogar o certificado entre a decisão da rota e o
+ * submit passava batido. Agora o passo 6 chama a RPC
+ * `cex_autorizar_e_submeter` (migration 0057), que relê o PRÓPRIO intent sob
+ * `for update`, valida o certificado no banco e marca SUBMITTING na mesma
+ * transação. A autorização final não é mais uma lembrança da rota.
+ *
+ * ⚠️ JANELA RESIDUAL, DECLARADA: uma revogação comitada DEPOIS do commit da
+ * RPC e ANTES do HTTP à corretora não é pega. Eliminar essa janela exigiria
+ * segurar o lock através de chamada externa — custo pior que o risco.
+ *
+ * ⚠️ EXCEÇÃO DOCUMENTADA — SELL/redução de risco NÃO exige certificado
+ * válido: prender a saída de uma estratégia revogada seria o mecanismo de
+ * segurança criando o perigo que existe para evitar. A isenção é da RPC e
+ * da constraint (0052), e é deliberada.
+ * ─────────────────────────────────────────────────────────────────────────
  *
  * ⚠️ O PASSO 6 É O QUE TORNA O CRASH RECUPERÁVEL. Se o processo morrer entre 6
  * e 8, o banco tem um intent em `SUBMITTING` com `client_order_id` — e o
@@ -59,6 +81,12 @@ export interface ContextoDeExecucao {
   strategyId?: string | null;
   strategyVersion?: number | null;
   certificateId?: string | null;
+  /**
+   * ⚠️ O HASH DOS PARÂMETROS COM QUE a estratégia vai rodar agora (A110,
+   * round 2). O intent não o guarda; quem chama o tem na mão da sessão.
+   * Compra autônoma real sem hash que case é recusada NO BANCO, no passo 6.
+   */
+  strategyHash?: string | null;
 }
 
 export interface OrdemPedida {
@@ -100,6 +128,9 @@ export type MotivoDeRecusa =
   | "sem_credencial"
   | "reserva_negada"
   | "nao_consegui_marcar_envio"
+  /** A RPC `cex_autorizar_e_submeter` recusou: certificado inválido no limiar
+   *  (A110, round 2), estado que não admite submissão, ou o próprio banco. */
+  | "autorizacao_recusada"
   | "recusada_pela_corretora";
 
 export type ResultadoDaExecucao =
@@ -117,11 +148,52 @@ export type ResultadoDaExecucao =
    */
   | { desfecho: "incerto"; intentId: string; porque: string };
 
+/** O pedido de autorização final — o que o intent NÃO guarda em si. */
+export interface PedidoDeAutorizacao {
+  strategyHash: string | null;
+  venue: string;
+  symbol: string;
+  notionalUsd: number | null;
+}
+
+export type ResultadoDaAutorizacao =
+  | { ok: true }
+  | { ok: false; porque: string };
+
+/**
+ * ⚠️ O SEAM DA AUTORIZAÇÃO FINAL (A110, round 2). O default é a RPC
+ * `cex_autorizar_e_submeter` (migration 0057); os testes injetam um falso que
+ * reproduz a mesma decisão. Nenhum outro caminho marca SUBMITTING a partir
+ * deste executor — autorização e ponto-sem-volta são a mesma passada.
+ */
+export type AutorizarSubmissao = (
+  db: SupabaseClient<Database>, intentId: string, pedido: PedidoDeAutorizacao,
+) => Promise<ResultadoDaAutorizacao>;
+
+/** A autorização de verdade: valida o certificado e marca SUBMITTING numa
+ *  transação só, no banco. */
+export const autorizarSubmissaoNoBanco: AutorizarSubmissao = async (db, intentId, p) => {
+  const { data, error } = await db.rpc("cex_autorizar_e_submeter", {
+    p_intent_id: intentId,
+    p_strategy_hash: p.strategyHash,
+    p_venue: p.venue,
+    p_symbol: p.symbol,
+    p_notional: p.notionalUsd,
+  });
+  if (error) return { ok: false, porque: error.message.slice(0, 200) };
+  const r = data as { ok?: boolean; porque?: string } | null;
+  if (!r || r.ok !== true) {
+    return { ok: false, porque: r?.porque ?? "autorizacao recusada pelo banco" };
+  }
+  return { ok: true };
+};
+
 export interface DependenciasDoExecutor {
   db: SupabaseClient<Database> | null;
   /** Injetados para o teste poder exercitar sem rede e sem banco. */
   enviar?: typeof enviarOrdemNaVenue;
   killSwitches?: typeof checarKillSwitches;
+  autorizarSubmissao?: AutorizarSubmissao;
   agora?: () => Date;
 }
 
@@ -210,16 +282,33 @@ export async function executarOrdemCex(
     return recusarPreEnvio("intent_nao_gravado", `RESERVED: ${res.porque}`);
   }
 
-  // ── 6. SUBMITTING — O PONTO SEM VOLTA ─────────────────────────────────
+  // ── 6. AUTORIZAÇÃO FINAL + SUBMITTING, NUMA TRANSAÇÃO — O PONTO SEM VOLTA
   /**
    * ⚠️⚠️ SE ESTA GRAVAÇÃO FALHAR, NÃO SE ENVIA. Enviar sem ter conseguido
    * registrar "estou enviando" é exatamente o buraco do A80: o processo morre
    * e o banco não tem como saber que houve uma tentativa.
+   *
+   * ⚠️⚠️ E AGORA A GRAVAÇÃO É TAMBÉM A AUTORIZAÇÃO (A110, round 2). A RPC
+   * `cex_autorizar_e_submeter` relê o PRÓPRIO intent sob `for update` e, para
+   * compra autônoma real, valida o certificado no banco — revogado, expirado,
+   * de outra estratégia/versão, hash divergente, venue ou símbolo fora do
+   * envelope, nocional acima do teto: recusa, e o intent NÃO transiciona.
+   * O kill-switch (passo 3) continua ANTES desta chamada, de propósito: o
+   * freio universal não depende de certificado nenhum.
+   *
+   * ⚠️ SELL É ISENTA POR DECISÃO DOCUMENTADA — ver o cabeçalho do arquivo e
+   * da migration 0057.
    */
-  const sub = await transicionar(db, intent.id, "SUBMITTING");
-  if (!sub.ok) {
+  const autorizar = deps.autorizarSubmissao ?? autorizarSubmissaoNoBanco;
+  const aut = await autorizar(db, intent.id, {
+    strategyHash: ctx.strategyHash ?? null,
+    venue: ordem.exchangeId,
+    symbol: ordem.symbol,
+    notionalUsd: ordem.notionalUsd ?? null,
+  });
+  if (!aut.ok) {
     if (reserva?.liberar) await reserva.liberar();
-    return recusarPreEnvio("nao_consegui_marcar_envio", `SUBMITTING: ${sub.porque}`);
+    return recusarPreEnvio("autorizacao_recusada", `autorizacao: ${aut.porque}`);
   }
 
   // ── 7. O ÚNICO EFEITO EXTERNO ─────────────────────────────────────────

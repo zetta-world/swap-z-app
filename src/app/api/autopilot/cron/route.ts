@@ -1048,7 +1048,11 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
           { origin: "autopilot_cron", autonomous: true,
             walletAddress: s.wallet_address, sessionId: s.id, conexaoId: s.conexao_id,
             strategyId: s.strategy_id, strategyVersion: s.strategy_version,
-            certificateId: decisao.certificadoId },
+            certificateId: decisao.certificadoId,
+            /** A110 round 2: a autorização FINAL acontece no banco, no passo 6
+             *  do executor — o hash é o que amarra o certificado aos parâmetros
+             *  com que esta sessão vai rodar agora. */
+            strategyHash: s.strategy_hash },
           { exchangeId: exchange, symbol: intent.symbol, side: "buy",
             type: intent.type, qty: intent.amount, price: intent.price ?? null,
             notionalUsd: buyNotional },
