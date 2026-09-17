@@ -8,8 +8,10 @@
  * e que o indeterminado NUNCA vira verde.
  *
  * Mapa: A124.1–A124.12 + §19/§34 (a recuperação do A80/A102 segue resolvendo)
- * + a guarda estrutural (§42) + A126.1–A126.6 (o escopo conexão materializa
- * as sessões da conexão) + a guarda §45.
+ * + a guarda estrutural (§42) + o bloco A126 REESCRITO pelo R8 (§66): o join
+ * `session→conexao` saiu — `conexao_id` direto materializa, session-only REAL
+ * é indeterminado, rearm C1→C2 não migra intent antigo de escopo, fingerprint
+ * segue. A guarda §45 inverteu de sinal: `autopilot_sessions` NÃO é lida aqui.
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -20,7 +22,6 @@ import {
 } from "@/lib/cex/execucao/reconciliador";
 import {
   resolverEscopoDaConta, ordensConhecidasNoEscopo, tradesNoLivroNoEscopo,
-  idsDeSessoesDaConexao,
 } from "@/lib/cex/execucao/escopo-de-conta";
 import type { IntentRow } from "@/lib/cex/execucao/intents";
 import type { LeituraDaOrdem, TradeDaVenue } from "@/lib/cex/execucao/venue-leitura";
@@ -70,15 +71,17 @@ function trade(tradeId: string, orderId: string | null): TradeDaVenue {
  * ⚠️ A125 — as duas coleções do contrato novo. A deriva lê `historico`
  * (account-wide); o settlement lê `tradesDaOrdem` (só a ordem alvo). Nas
  * fixtures abaixo os dois compartilham os MESMOS objetos quando o trade é da
- * ordem — como na leitura real, em que o subset é filtro do bruto.
+ * ordem — como na leitura real, em que o subset é filtro do bruto. A129 (R8):
+ * a qualidade da leitura viaja junto — zero registros inválidos aqui.
  */
+const HIST_LIMPO = { possivelmenteIncompleto: false,
+                     registrosInvalidos: { total: 0, porMotivo: {} } };
 const daOrdem = (ts: TradeDaVenue[]) =>
-  ({ tradesDaOrdem: ts,
-     historico: { trades: ts, possivelmenteIncompleto: false } });
+  ({ tradesDaOrdem: ts, historico: { trades: ts, ...HIST_LIMPO } });
 /** Trades EXTERNOS à ordem alvo: só o histórico os carrega (é o caso A125). */
 const soNoHistorico = (ts: TradeDaVenue[]) =>
   ({ tradesDaOrdem: [] as TradeDaVenue[],
-     historico: { trades: ts, possivelmenteIncompleto: false } });
+     historico: { trades: ts, ...HIST_LIMPO } });
 
 function reconciliar(b: BancoFalso, intent: IntentRow, leitura: LeituraDaOrdem,
                      tentativas = 0) {
@@ -138,13 +141,14 @@ describe("A124.3 — mesma conexão, sessões diferentes: SEM falso drift", () =
   });
 });
 
-describe("A124.4 — autopilot_browser: a sessão resolve para a conexão", () => {
-  it("⚠️ intent com session_id (conexao_id null) herda o escopo da conexão da sessão", async () => {
+describe("A124.4 — autopilot_browser (R8): conexao_id direto materializa; session-only NÃO herda", () => {
+  it("⚠️⚠️ o intent do browser com conexao_id gravado resolve para a conexão — sem ler a sessão", async () => {
+    // R8 (§67): o browser grava `conexao_id` no intent. O vínculo é a linha,
+    // não o join mutável session→conexao do R7.
     const b = bancoFalso();
-    b.sessoes.push({ id: "S-browser", conexao_id: "C1" });
     const iBrowser = plantarIntent(b, { id: "iBr", session_id: "S-browser",
+                                        conexao_id: "C1",
                                         origin: "autopilot_browser" });
-    // O resolver sozinho já prova a precedência: sessão → conexão C1.
     const r0 = await resolverEscopoDaConta(b.cliente, iBrowser);
     expect(r0).toEqual({ ok: true, escopo: { tipo: "conexao", conexaoId: "C1" } });
 
@@ -155,10 +159,10 @@ describe("A124.4 — autopilot_browser: a sessão resolve para a conexão", () =
     expect(estadoDe(b, "iBr")).not.toBe("QUARANTINED");
   });
 
-  it("⚠️⚠️ mas ordem de OUTRA conexão (C2) segue alheia para o browser de C1", async () => {
+  it("⚠️⚠️ ordem de OUTRA conexão (C2) segue alheia para o browser de C1", async () => {
     const b = bancoFalso();
-    b.sessoes.push({ id: "S-browser", conexao_id: "C1" });
     const iBrowser = plantarIntent(b, { id: "iBr", session_id: "S-browser",
+                                        conexao_id: "C1",
                                         origin: "autopilot_browser" });
     plantarIntent(b, { id: "iC2", conexao_id: "C2", external_order_id: "ORD-C2" });
     const r = await reconciliar(b, iBrowser, { tipo: "achada",
@@ -170,28 +174,43 @@ describe("A124.4 — autopilot_browser: a sessão resolve para a conexão", () =
   });
 });
 
-describe("A124.5 — sessão antiga sem conexao_id: fallback ESTREITO de sessão", () => {
-  it("⚠️ sessão inexistente no banco → escopo sessão; intent de S2 não explica S1", async () => {
+describe("A124.5 — session-only (R8 §65): INDETERMINADO, nunca herda a conexão da sessão", () => {
+  it("⚠️⚠️ a sessão S→C1 EXISTE e mesmo assim o intent session-only não entra no escopo de C1", async () => {
+    // R8 supera R7/A126 (§66): a sessão é mutável — rearm C1→C2 reescreve
+    // `autopilot_sessions.conexao_id`. Join por sessão migraria intents
+    // ANTIGOS para o escopo da conexão NOVA. Legacy session-only é
+    // indeterminado com motivo explícito — não é deriva, não é ok.
     const b = bancoFalso();
-    const iS1 = plantarIntent(b, { id: "iS1", session_id: "S-old" });
+    b.sessoes.push({ id: "S-old", conexao_id: "C1" });
+    const iS1 = plantarIntent(b, { id: "iS1", session_id: "S-old",
+                                   origin: "autopilot_browser" });
     const r0 = await resolverEscopoDaConta(b.cliente, iS1);
-    expect(r0).toEqual({ ok: true, escopo: { tipo: "sessao", sessionId: "S-old" } });
+    expect(r0.ok).toBe(false);
+    if (!r0.ok) expect(r0.porque).toContain("legacy session-only");
 
-    plantarIntent(b, { id: "iS2", session_id: "S2", external_order_id: "ORD-S2" });
+    // A ordem da PRÓPRIA conta (C1) não absolve: sem identidade histórica
+    // comprovada, a reconciliação não conclui nada — RECONCILIATION_REQUIRED.
+    plantarIntent(b, { id: "iC1", conexao_id: "C1", external_order_id: "ORD-C1" });
     const r = await reconciliar(b, iS1, { tipo: "achada",
       ordem: { id: "ORD-S1", status: "open", filled: 0, average: 0,
                cost: 0 } as never,
-      ...soNoHistorico([trade("T-S2", "ORD-S2")]) });
-    expect(r.desfecho).toBe("quarentena");
-    expect(estadoDe(b, "iS1")).toBe("QUARANTINED");
+      ...soNoHistorico([trade("T-C1", "ORD-C1")]) });
+    expect(r.desfecho).toBe("segue_em_duvida");
+    expect(r.estado).toBe("RECONCILIATION_REQUIRED");
+    expect(estadoDe(b, "iS1")).toBe("RECONCILIATION_REQUIRED");
   });
 
-  it("⚠️ sessão existente com conexao_id NULL → o mesmo fallback estreito", async () => {
+  it("⚠️ sessão inexistente ou sem conexao_id: o MESMO indeterminado — o resolver nem consulta o banco", async () => {
     const b = bancoFalso();
-    b.sessoes.push({ id: "S-old", conexao_id: null });
-    const iS1 = plantarIntent(b, { id: "iS1", session_id: "S-old" });
+    const iS1 = plantarIntent(b, { id: "iS1", session_id: "S-fantasma" });
     const r0 = await resolverEscopoDaConta(b.cliente, iS1);
-    expect(r0).toEqual({ ok: true, escopo: { tipo: "sessao", sessionId: "S-old" } });
+    expect(r0.ok).toBe(false);
+    if (!r0.ok) expect(r0.porque).toContain("legacy session-only");
+
+    b.sessoes.push({ id: "S-sem", conexao_id: null });
+    const iS2 = plantarIntent(b, { id: "iS2", session_id: "S-sem" });
+    const r1 = await resolverEscopoDaConta(b.cliente, iS2);
+    expect(r1.ok).toBe(false);
   });
 });
 
@@ -303,13 +322,16 @@ describe("A124.10 — sem identidade nenhuma: INDETERMINADO, nunca verde", () =>
 });
 
 describe("A124.11 — falha de leitura é INDETERMINADO, nunca Set vazio + verde", () => {
-  it("⚠️ erro ao ler a sessão → indeterminado (o intent não conclui nada)", async () => {
+  it("⚠️ session-only com o banco FORA: o resolver nem toca o banco — indeterminado por A127", async () => {
+    // R8 (§65): o resolver não lê `autopilot_sessions` em hipótese nenhuma —
+    // o intent session-only é indeterminado por desenho, com o banco são ou
+    // quebrado. Não há mais "falha ao resolver sessao".
     const b = bancoFalso();
     const iS = plantarIntent(b, { id: "iS", session_id: "S-x" });
     b.falhas.select = "banco fora do ar";
-    // O resolver sozinho já fecha: erro de leitura NUNCA vira escopo vazio.
     const r0 = await resolverEscopoDaConta(b.cliente, iS);
-    expect(r0).toEqual({ ok: false, porque: "falha ao resolver sessao" });
+    expect(r0.ok).toBe(false);
+    if (!r0.ok) expect(r0.porque).toContain("legacy session-only");
 
     const r = await reconciliar(b, iS, { tipo: "so_trades",
       ...daOrdem([trade("T1", "ORD-Q")]) });
@@ -406,71 +428,91 @@ function espiarChunksDeIntentsDosFills(b: BancoFalso): string[][] {
   return chunks;
 }
 
-describe("A126.1 — browser da MESMA conexão se reconhece (escopo conexão inclui sessões)", () => {
-  it("⚠️⚠️ o intent A (S1→C1, conexao NULL) explica o trade na reconciliação de B (S2→C1) — sem falso drift", async () => {
+/**
+ * ⚠️⚠️ BLOCO A126 REESCRITO PELO R8 (§66 — troca de hipótese, não perda de
+ * cobertura).
+ *
+ * O R7 materializava o escopo conexão como a UNIÃO `conexao_id = C1` +
+ * `session_id IN sessoes(C1)`, porque o browser gravava `session_id` com
+ * `conexao_id` NULL. A hipótese caiu: a sessão é MUTÁVEL (rearm C1→C2
+ * reescreve `autopilot_sessions.conexao_id`), então o join não é prova
+ * histórica de conta — e migrar intents antigos para o escopo da conexão
+ * nova é exatamente o ataque A127. O que vale agora:
+ *
+ *   · `conexao_id` gravado NO INTENT materializa (um braço só);
+ *   · session-only REAL → indeterminado (coberto em A124.4/A124.5 acima);
+ *   · rearm C1→C2 NÃO migra intent antigo de escopo;
+ *   · fingerprint segue funcionando (A124.6).
+ */
+describe("A126/R8 — conexao_id direto materializa (um braço só, sem sessão)", () => {
+  it("⚠️⚠️ dois intents da MESMA conexão se reconhecem pelo conexao_id gravado", async () => {
     const b = bancoFalso();
-    b.sessoes.push({ id: "S1", conexao_id: "C1" }, { id: "S2", conexao_id: "C1" });
-    // O browser grava session_id com conexao_id NULL (api/cex/order/route.ts).
-    // No baseline, o escopo de C1 era só `conexao_id = C1`: O-A sumia e a
-    // reconciliação de B acusava ACCOUNT_DRIFT na própria conta.
-    plantarIntent(b, { id: "iA", origin: "autopilot_browser", session_id: "S1",
-                       conexao_id: null, external_order_id: "O-A", state: "FILLED" });
+    plantarIntent(b, { id: "iA", origin: "autopilot_browser",
+                       conexao_id: "C1", external_order_id: "O-A" });
     const iB = plantarIntent(b, { id: "iB", origin: "autopilot_browser",
-                                  session_id: "S2", conexao_id: null });
-    // T-B (da ordem ORD-B que B acabou de descobrir) é explicado pelo
-    // idDescoberto; T-A (ordem O-A, do irmão A) SÓ é explicado se O-A entrar
-    // no escopo de C1 pelo braço de sessão — é ele que o break §43 derruba.
+                                  conexao_id: "C1" });
+    // T-B é a ordem descoberta (idDescoberto); T-A SÓ é explicado se O-A
+    // entrar no escopo de C1 pelo braço `conexao_id` — sem sessão nenhuma.
     const r = await reconciliar(b, iB, { tipo: "so_trades",
       tradesDaOrdem: [trade("T-B", "ORD-B")],
       historico: { trades: [trade("T-B", "ORD-B"), trade("T-A", "O-A")],
-                   possivelmenteIncompleto: false } });
+                   ...HIST_LIMPO } });
     expect(r.desfecho).toBe("resolvido");
     expect(estadoDe(b, "iB")).not.toBe("QUARANTINED");
   });
-});
 
-describe("A126.2 — browser de C1 NÃO enxerga a sessão de C2", () => {
-  it("⚠️⚠️ S1→C1 e S2→C2: a ordem O-A segue alheia na reconciliação de B → deriva", async () => {
+  it("⚠️⚠️ rearm C1→C2 NÃO migra o intent antigo: o escopo é o conexao_id GRAVADO (§66)", async () => {
+    // O intent I1 foi criado quando a conta era C1 e grava conexao_id=C1.
+    // A sessão S1 foi rearmada para C2 — e mesmo que I1 carregue
+    // session_id=S1, o escopo dele segue sendo C1: a ordem antiga O-A (de C1)
+    // continua explicada e nada migra para o escopo de C2.
     const b = bancoFalso();
-    b.sessoes.push({ id: "S1", conexao_id: "C1" }, { id: "S2", conexao_id: "C2" });
-    plantarIntent(b, { id: "iA", origin: "autopilot_browser", session_id: "S1",
-                       conexao_id: null, external_order_id: "O-A" });
-    const iB = plantarIntent(b, { id: "iB", origin: "autopilot_browser",
-                                  session_id: "S2", conexao_id: null });
-    const r = await reconciliar(b, iB, { tipo: "achada",
-      ordem: { id: "ORD-B", status: "open", filled: 0, average: 0,
-               cost: 0 } as never,
-      ...soNoHistorico([trade("T-A", "O-A")]) });
-    expect(r.desfecho).toBe("quarentena");
-    expect(estadoDe(b, "iB")).toBe("QUARANTINED");
-  });
-});
+    b.sessoes.push({ id: "S1", conexao_id: "C2" });   // S1 rearmada para C2
+    plantarIntent(b, { id: "iA", conexao_id: "C1", external_order_id: "O-A",
+                       state: "FILLED" });
+    plantarIntent(b, { id: "iNovoC2", conexao_id: "C2",
+                       external_order_id: "O-C2" });
+    const i1 = plantarIntent(b, { id: "i1", session_id: "S1", conexao_id: "C1" });
+    const r0 = await resolverEscopoDaConta(b.cliente, i1);
+    expect(r0).toEqual({ ok: true, escopo: { tipo: "conexao", conexaoId: "C1" } });
 
-describe("A126.3 — DCA direto (conexao_id=C1) + browser indireto (S1→C1) compartilham", () => {
-  it("⚠️ a ordem do dca_cron explica o trade na reconciliação do browser da mesma conta", async () => {
-    const b = bancoFalso();
-    b.sessoes.push({ id: "S1", conexao_id: "C1" });
-    plantarIntent(b, { id: "iDca", origin: "dca_cron", conexao_id: "C1",
-                       external_order_id: "ORD-DCA" });
-    const iBr = plantarIntent(b, { id: "iBr", origin: "autopilot_browser",
-                                   session_id: "S1", conexao_id: null });
-    // T-BR (ordem que o browser acabou de descobrir) é explicado pelo
-    // idDescoberto; T-DCA SÓ é explicado se a sessão S1 resolver para o
-    // escopo conexão C1, onde o braço direto enxerga o intent do dca_cron.
-    const r = await reconciliar(b, iBr, { tipo: "so_trades",
-      tradesDaOrdem: [trade("T-BR", "ORD-BR")],
-      historico: { trades: [trade("T-BR", "ORD-BR"), trade("T-DCA", "ORD-DCA")],
-                   possivelmenteIncompleto: false } });
+    // T-A (ordem de C1) é explicado; T-C2 (ordem de C2) seria ÓRFÃO no escopo
+    // de I1 — o rearm não o puxou para a conta nova.
+    const r = await reconciliar(b, i1, { tipo: "so_trades",
+      tradesDaOrdem: [trade("T-1", "ORD-1")],
+      historico: { trades: [trade("T-1", "ORD-1"), trade("T-A", "O-A")],
+                   ...HIST_LIMPO } });
     expect(r.desfecho).toBe("resolvido");
-    expect(estadoDe(b, "iBr")).not.toBe("QUARANTINED");
-  });
-});
+    expect(estadoDe(b, "i1")).not.toBe("QUARANTINED");
 
-describe("A126.4 — intent com conexao_id E session_id (S1→C1) aparece UMA vez", () => {
-  it("⚠️ a união dos braços faz dedup por intent.id — sem duplicação de order/intent/fill ids", async () => {
+    const rDeriva = await reconciliar(b,
+      plantarIntent(b, { id: "i1b", session_id: "S1", conexao_id: "C1" }),
+      { tipo: "achada",
+        ordem: { id: "ORD-1B", status: "open", filled: 0, average: 0,
+                 cost: 0 } as never,
+        ...soNoHistorico([trade("T-C2", "O-C2")]) });
+    expect(rDeriva.desfecho).toBe("quarentena");
+    expect(estadoDe(b, "i1b")).toBe("QUARANTINED");
+  });
+
+  it("⚠️ o fingerprint segue intacto: F1 materializa F1, e só F1", async () => {
     const b = bancoFalso();
-    b.sessoes.push({ id: "S1", conexao_id: "C1" });
-    // iD bate nos DOIS braços (conexao_id = C1 e session_id = S1, S1→C1).
+    plantarIntent(b, { id: "iF1", credential_fingerprint: "F1",
+                       external_order_id: "ORD-F1" });
+    plantarIntent(b, { id: "iF2", credential_fingerprint: "F2",
+                       external_order_id: "ORD-F2" });
+    const ordens = await ordensConhecidasNoEscopo(b.cliente,
+      { tipo: "fingerprint", fingerprint: "F1" }, "binance", "BTC/USDT", VELHO);
+    expect(ordens).toEqual(new Set(["ORD-F1"]));
+    const r0 = await resolverEscopoDaConta(b.cliente,
+      plantarIntent(b, { id: "iF1b", credential_fingerprint: "F1",
+                         session_id: "S-qualquer" }));
+    // fingerprint tem precedência sobre a sessão (e a sessão não é lida).
+    expect(r0).toEqual({ ok: true, escopo: { tipo: "fingerprint", fingerprint: "F1" } });
+  });
+
+  it("⚠️⚠️ um braço só: o intent aparece UMA vez no IN dos fills (não há união para deduplicar)", async () => {
+    const b = bancoFalso();
     plantarIntent(b, { id: "iD", conexao_id: "C1", session_id: "S1",
                        external_order_id: "ORD-D", state: "FILLED" });
     plantarFill(b, { intent_id: "iD", external_order_id: "ORD-D",
@@ -482,92 +524,44 @@ describe("A126.4 — intent com conexao_id E session_id (S1→C1) aparece UMA ve
     const trades = await tradesNoLivroNoEscopo(b.cliente,
       { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO);
     expect(trades).toEqual(new Set(["T-D"]));
-    // O ponto do dedup: sem ele, iD entraria DUAS vezes no IN dos fills
-    // (uma por braço). Com dedup, exatamente uma.
+    // Com UM braço, iD entra exatamente uma vez — por construção, sem dedup.
     expect(chunks.flat().filter((id) => id === "iD")).toHaveLength(1);
   });
-});
 
-describe("A126.5 — erro ao listar as sessões da conexão → INDETERMINADO (fail-closed)", () => {
-  it("⚠️⚠️ o braço direto até leria bem, mas a consulta inteira vai a undefined", async () => {
+  it("⚠️⚠️ erro na leitura dos intents do escopo → undefined (fail-closed, braço único)", async () => {
     const b = bancoFalso();
-    b.sessoes.push({ id: "S1", conexao_id: "C1" });
     plantarIntent(b, { id: "iDir", conexao_id: "C1", external_order_id: "ORD-DIRETA" });
-    plantarIntent(b, { id: "iBr", origin: "autopilot_browser", session_id: "S1",
-                       conexao_id: null, external_order_id: "ORD-BROWSER" });
-    // SÓ a leitura de autopilot_sessions falha; a tabela de intents está boa.
-    // Se o erro virasse "só o braço direto", o resultado seria
-    // Set{"ORD-DIRETA"} — declarar completo pela metade. Nunca.
-    b.falhas.selectNaTabela = { tabela: "autopilot_sessions",
-                                mensagem: "listar sessoes quebrou" };
+    b.falhas.selectNaTabela = { tabela: "cex_execution_intents",
+                                mensagem: "leitura quebrou" };
     const ordens = await ordensConhecidasNoEscopo(b.cliente,
       { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO);
     expect(ordens).toBeUndefined();
     const trades = await tradesNoLivroNoEscopo(b.cliente,
       { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO);
     expect(trades).toBeUndefined();
-    const sessoes = await idsDeSessoesDaConexao(b.cliente, "C1");
-    expect(sessoes).toBeUndefined();
   });
 });
 
-describe("A126.6 — paginação das SESSÕES da conexão", () => {
-  function plantarCincoSessoes(b: BancoFalso): void {
-    for (let n = 1; n <= 5; n++) {
-      b.sessoes.push({ id: `S${n}`, conexao_id: "C1" });
-      plantarIntent(b, { id: `iS${n}`, origin: "autopilot_browser",
-                         session_id: `S${n}`, conexao_id: null,
-                         external_order_id: `ORD-S${n}` });
-    }
-    // Ruído: sessão de OUTRA conexão não entra nem paginando.
-    b.sessoes.push({ id: "SX", conexao_id: "C2" });
-    plantarIntent(b, { id: "iSX", origin: "autopilot_browser", session_id: "SX",
-                       conexao_id: null, external_order_id: "ORD-SX" });
-  }
-
-  it("⚠️ pagina=2 com 5 sessões de C1: TODOS os intents de todas as sessões aparecem", async () => {
-    const b = bancoFalso();
-    plantarCincoSessoes(b);
-    // A listagem de sessões pagina até esgotar (2+2+1)...
-    const sessoes = await idsDeSessoesDaConexao(b.cliente, "C1", 2);
-    expect(sessoes).toEqual(["S1", "S2", "S3", "S4", "S5"]);
-    // ...e a materialização inteira também — nenhuma sessão fica de fora.
-    const r = await ordensConhecidasNoEscopo(b.cliente,
-      { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO, 2);
-    expect(r).toEqual(new Set(["ORD-S1", "ORD-S2", "ORD-S3", "ORD-S4", "ORD-S5"]));
-  });
-
-  it("⚠️⚠️ erro na 2ª página das sessões → undefined, NUNCA a 1ª página como completa", async () => {
-    // Duas instâncias: a falha é na 2ª leitura da tabela, e cada função faz
-    // a sua própria listagem paginada de sessões.
-    const b1 = bancoFalso();
-    plantarCincoSessoes(b1);
-    b1.falhas.selectNaTabela = { tabela: "autopilot_sessions", naChamada: 2,
-                                 mensagem: "caiu na 2a pagina de sessoes" };
-    const sessoes = await idsDeSessoesDaConexao(b1.cliente, "C1", 2);
-    expect(sessoes).toBeUndefined();
-
-    const b2 = bancoFalso();
-    plantarCincoSessoes(b2);
-    b2.falhas.selectNaTabela = { tabela: "autopilot_sessions", naChamada: 2,
-                                 mensagem: "caiu na 2a pagina de sessoes" };
-    const r = await ordensConhecidasNoEscopo(b2.cliente,
-      { tipo: "conexao", conexaoId: "C1" }, "binance", "BTC/USDT", VELHO, 2);
-    expect(r).toBeUndefined();
-  });
-});
-
-describe("§45 — guarda: a materialização de conexão consulta autopilot_sessions", () => {
+describe("§45 (R8) — guarda INVERTIDA: a materialização NÃO lê autopilot_sessions", () => {
   const ESCOPO = readFileSync("src/lib/cex/execucao/escopo-de-conta.ts", "utf8");
 
-  it("⚠️ autopilot_sessions é lida na MATERIALIZAÇÃO, não só no resolver", () => {
-    // Uma leitura no resolver (resolverEscopoDaConta) + uma na listagem das
-    // sessões da conexão (idsDeSessoesDaConexao). Se o braço de sessão sair
-    // da materialização, a contagem cai para 1 — e o A126.1 quebra junto
-    // (é o deliberate break §43).
-    const leituras = ESCOPO.match(/from\("autopilot_sessions"\)/g) ?? [];
-    expect(leituras.length).toBeGreaterThanOrEqual(2);
-    expect(ESCOPO).toMatch(/export async function idsDeSessoesDaConexao\(/);
+  it("⚠️⚠️ nenhuma consulta a autopilot_sessions, nenhum braço de sessão, variante sessao fora", () => {
+    // R8 supera R7/A126 (§66): a sessão é mutável e não é prova histórica.
+    // Se o join voltar, estes três sinais voltam juntos — e A124.5 quebra.
+    expect(ESCOPO).not.toContain('from("autopilot_sessions")');
+    expect(ESCOPO).not.toMatch(/idsDeSessoesDaConexao/);
+    expect(ESCOPO).not.toMatch(/tipo:\s*"sessao"/);
+    expect(ESCOPO).not.toMatch(/coluna:\s*"session_id"/);
+    // E o comentário que registra a superação está no arquivo.
+    expect(ESCOPO).toMatch(/R8 supera R7\/A126/);
+  });
+
+  it("⚠️⚠️ o resolver não consulta o banco: session-only é indeterminado por desenho", () => {
+    const i = ESCOPO.indexOf("export async function resolverEscopoDaConta");
+    const fim = ESCOPO.indexOf("\n}", i);
+    const corpo = ESCOPO.slice(i, fim);
+    expect(corpo).not.toMatch(/db\.from\(/);
+    expect(corpo).toMatch(/legacy session-only/);
   });
 });
 

@@ -202,7 +202,8 @@ describe("② guarda de cobertura synthetic→real (A118)", () => {
       // própria ordem — os mesmos objetos do settlement, como na leitura real.
       { tradeId: "T1", orderId: "ORD-1", qty: 2, price: 100, quote: 200,
         fee: 0.02, feeCurrency: "USDT", executedAt: null },
-    ], possivelmenteIncompleto: false } };
+    ], possivelmenteIncompleto: false,
+      registrosInvalidos: { total: 0, porMotivo: {} } } };
     const r = await reconciliarIntent({
       db: b.cliente, credenciais: async () => ({ apiKey: "k", apiSecret: "s" }),
       ler: vi.fn(async () => leitura),
@@ -590,7 +591,8 @@ describe("⑤ A121 — cobertura provada SÓ pelos NOVOS trades únicos (N≥S) 
       ], historico: { trades: [
         { tradeId: "T1", orderId: "ORD-1", qty: 5, price: 100, quote: 500,
           fee: trade.fee, feeCurrency: trade.feeCurrency, executedAt: null },
-      ], possivelmenteIncompleto: false } };
+      ], possivelmenteIncompleto: false,
+      registrosInvalidos: { total: 0, porMotivo: {} } } };
       const r = await reconciliarIntent({
         db: b.cliente, credenciais: async () => ({ apiKey: "k", apiSecret: "s" }),
         ler: vi.fn(async () => leitura),

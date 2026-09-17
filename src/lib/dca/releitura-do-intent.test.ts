@@ -80,7 +80,8 @@ describe("A117.1 — UNKNOWN→FILLED liquida com os números REAIS do livro", (
       // A125: settlement lê tradesDaOrdem; a deriva lê o histórico — aqui os
       // dois carregam os mesmos trades da própria ordem, como na leitura real.
       tradesDaOrdem: trades,
-      historico: { trades, possivelmenteIncompleto: false },
+      historico: { trades, possivelmenteIncompleto: false,
+               registrosInvalidos: { total: 0, porMotivo: {} } },
     });
     if (decisao.acao !== "liquidar") throw new Error(`esperava liquidar, veio ${decisao.acao}`);
     expect(decisao.status).toBe("feito");
@@ -101,6 +102,10 @@ describe("A117.2 — UNKNOWN→CANCELED falhou com custo ZERO", () => {
     await plantarIntent(banco, "UNKNOWN", 0.01);
     const decisao = await reconciliarEReler(banco, {
       tipo: "ausente_em_todos", consultados: ["fetchOrder", "fetchMyTrades"],
+      // R8/A125-ABSENCE: histórico limpo e confiável lido antes da ausência
+      // — é o que ainda autoriza o CANCELED (A102 preservado).
+      historico: { trades: [], possivelmenteIncompleto: false,
+                   registrosInvalidos: { total: 0, porMotivo: {} } },
     });
     if (decisao.acao !== "liquidar") throw new Error(`esperava liquidar, veio ${decisao.acao}`);
     expect(decisao.status).toBe("falhou");
@@ -123,7 +128,8 @@ describe("A117.4 — PARTIAL→CANCELED conta SÓ o executado", () => {
       ordem: { id: "ext-2", status: "canceled", filled: 0.004, average: 60_000,
                cost: 240 } as never,
       tradesDaOrdem: trades,
-      historico: { trades, possivelmenteIncompleto: false },
+      historico: { trades, possivelmenteIncompleto: false,
+               registrosInvalidos: { total: 0, porMotivo: {} } },
     });
     if (decisao.acao !== "liquidar") throw new Error(`esperava liquidar, veio ${decisao.acao}`);
     expect(decisao.status).toBe("feito");

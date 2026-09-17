@@ -60,34 +60,73 @@ export type VereditoDeDeriva =
   | { derivou: true; achado: AchadoDeDeriva };
 
 /**
+ * ⚠️⚠️ A128 (round 8): O VEREDITO DOS TRADES É TRI-STATE.
+ *
+ * O retorno binário antigo tinha um buraco: trade desconhecido SEM `orderId`
+ * era descartado pela análise (`continue`) e o veredito saía `derivou:false`
+ * — um "sem drift" fabricado sobre um trade que ninguém atribuiu. Agora:
+ *
+ *   · `deriva`        — há órfão: trade com `orderId` que NÃO é nosso;
+ *   · `indeterminado` — não há órfão, mas há trade sem `orderId`: não prova
+ *                       deriva (algumas venues não devolvem o campo) E não
+ *                       prova ok (o trade existe e ninguém o explicou);
+ *   · `ok`            — todo trade da janela foi explicado.
+ *
+ * ⚠️ PRECEDÊNCIA DA AGREGAÇÃO (§40): órfão > não-atribuído > ok. Um órfão à
+ * vista é deriva mesmo havendo não-atribuídos na mesma página.
+ */
+export type VereditoDeDerivaDeTrades =
+  | { tipo: "ok" }
+  | { tipo: "deriva"; achado: AchadoDeDeriva }
+  | { tipo: "indeterminado"; motivo: string; naoAtribuidos: TradeObservado[] };
+
+/**
  * Há trade na corretora que a Z-SWAP não consegue explicar?
  *
  * ⚠️ FUNÇÃO PURA. A decisão "esta conta ainda fecha?" precisa ser exercitável
  * sem corretora e sem banco.
  *
- * ⚠️ TRADE SEM `orderId` NÃO É DERIVA. Algumas venues não devolvem o id da
- * ordem no histórico de trades; acusar por ausência de campo transformaria uma
- * limitação de API num alarme de segurança, e o alarme que toca por engano é o
- * que ensina a ignorar alarme.
+ * ⚠️ A ORDEM DE DECISÃO POR TRADE (§38) é exata e nesta sequência:
+ *
+ *   (0) anterior à janela            → explicado (é de antes da sessão);
+ *   (1) `tradeId` já no nosso livro  → explicado (orderId dispensado, §38.1);
+ *   (2) `orderId` ausente            → NÃO ATRIBUÍDO: não acusa NEM absolve;
+ *   (3) `orderId` em ordens nossas   → explicado;
+ *   (4) senão                        → ÓRFÃO: deriva.
+ *
+ * ⚠️ TRADE SEM `orderId` NÃO É DERIVA — algumas venues não devolvem o id da
+ * ordem no histórico, e acusar por ausência de campo transformaria limitação
+ * de API em alarme de segurança. Mas TAMPOCO é "ok": o trade existe e ficou
+ * sem explicação. O veredito honesto é `indeterminado`, e quem chama decide
+ * com isso — fail-closed, nunca verde por omissão.
  */
 export function detectarDeriva(
   trades: readonly TradeObservado[], janela: JanelaDeAtribuicao,
-): VereditoDeDeriva {
+): VereditoDeDerivaDeTrades {
   const orfaos: TradeObservado[] = [];
+  const naoAtribuidos: TradeObservado[] = [];
   for (const t of trades) {
     if (t.executedAtMs != null && t.executedAtMs < janela.desdeMs) continue;
     if (janela.tradesNoLivro.has(t.tradeId)) continue;
     // Sem id de ordem não dá para atribuir NEM para acusar — ver o cabeçalho.
-    if (!t.orderId) continue;
+    if (!t.orderId) { naoAtribuidos.push(t); continue; }
     if (janela.ordensConhecidas.has(t.orderId)) continue;
     orfaos.push(t);
   }
-  if (orfaos.length === 0) return { derivou: false };
-  return { derivou: true, achado: {
-    motivo: "trade_nao_atribuivel",
-    detalhe: `${orfaos.length} trade(s) na corretora sem intent correspondente`,
-    tradesOrfaos: orfaos,
-  } };
+  if (orfaos.length > 0) {
+    return { tipo: "deriva", achado: {
+      motivo: "trade_nao_atribuivel",
+      detalhe: `${orfaos.length} trade(s) na corretora sem intent correspondente`,
+      tradesOrfaos: orfaos,
+    } };
+  }
+  if (naoAtribuidos.length > 0) {
+    return { tipo: "indeterminado",
+      motivo: `${naoAtribuidos.length} trade(s) sem id de ordem — `
+            + "nao da para atribuir nem absolver",
+      naoAtribuidos };
+  }
+  return { tipo: "ok" };
 }
 
 /**

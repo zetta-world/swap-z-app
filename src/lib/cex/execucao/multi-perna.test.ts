@@ -152,39 +152,45 @@ describe("③ Cenário J — trade externo na corretora (A103)", () => {
       ordensConhecidas: new Set(["ORD-NOSSA"]),
       tradesNoLivro: new Set(), desdeMs: 1000,
     });
-    expect(v.derivou).toBe(true);
-    if (v.derivou) expect(v.achado.motivo).toBe("trade_nao_atribuivel");
+    expect(v.tipo).toBe("deriva");
+    if (v.tipo === "deriva") expect(v.achado.motivo).toBe("trade_nao_atribuivel");
   });
 
-  it("⚠️ o gêmeo positivo: trade da NOSSA ordem não é deriva", () => {
+  it("⚠️ o gêmeo positivo: trade da NOSSA ordem é ok", () => {
     const v = detectarDeriva([t({ tradeId: "T1", orderId: "ORD-NOSSA" })], {
       ordensConhecidas: new Set(["ORD-NOSSA"]),
       tradesNoLivro: new Set(), desdeMs: 1000,
     });
-    expect(v.derivou).toBe(false);
+    expect(v.tipo).toBe("ok");
   });
 
-  it("⚠️ trade ANTERIOR à janela não é deriva — senão o alarme toca sempre", () => {
+  it("⚠️ trade ANTERIOR à janela é explicado — senão o alarme toca sempre", () => {
     const v = detectarDeriva([t({ tradeId: "T-VELHO", orderId: "X", executedAtMs: 500 })], {
       ordensConhecidas: new Set(), tradesNoLivro: new Set(), desdeMs: 1000,
     });
-    expect(v.derivou).toBe(false);
+    expect(v.tipo).toBe("ok");
   });
 
-  it("⚠️⚠️ trade SEM id de ordem não acusa — limitação de API não é alarme", () => {
+  it("⚠️⚠️ trade SEM id de ordem não acusa NEM absolve: INDETERMINADO (A128)", () => {
     // Algumas venues não devolvem o id da ordem no histórico. Acusar por
-    // ausência de campo é o alarme que ensina a ignorar alarme.
+    // ausência de campo é o alarme que ensina a ignorar alarme — mas o veredito
+    // antigo ABSOLVIA (`derivou:false`), e um "sem drift" sobre um trade que
+    // ninguém atribuiu é tão inventado quanto o alarme falso. O honesto é o
+    // terceiro estado: indeterminado, com os trades não atribuídos nomeados.
     const v = detectarDeriva([t({ tradeId: "T-SEM", orderId: null })], {
       ordensConhecidas: new Set(), tradesNoLivro: new Set(), desdeMs: 1000,
     });
-    expect(v.derivou).toBe(false);
+    expect(v.tipo).toBe("indeterminado");
+    if (v.tipo === "indeterminado") {
+      expect(v.naoAtribuidos.map((x) => x.tradeId)).toEqual(["T-SEM"]);
+    }
   });
 
-  it("trade já no nosso livro não é deriva", () => {
+  it("trade já no nosso livro é explicado (orderId dispensado)", () => {
     const v = detectarDeriva([t({ tradeId: "T1", orderId: "DESCONHECIDA" })], {
       ordensConhecidas: new Set(), tradesNoLivro: new Set(["T1"]), desdeMs: 1000,
     });
-    expect(v.derivou).toBe(false);
+    expect(v.tipo).toBe("ok");
   });
 });
 

@@ -163,10 +163,9 @@ describe("A125.1 — TZ (ordem alvo) + TM (manual externo) na MESMA página", ()
     const intent = plantarIntent(b, { id: "i1" });
     ex = montarExchange({
       ordem: ordemRaw("ORD-Z", 10),
-      // …e um trade SEM id de ordem (venue que não devolve `order`): a deriva
-      // não pode acusá-lo, mas o settlement TAMPOCO pode absorvê-lo.
-      trades: [tradeRaw("TZ", "ORD-Z", 10), tradeRaw("T-OUTRO", "ORD-OUTRA", 4),
-               tradeRaw("T-SEM-ORDEM", null, 7)],
+      // …e nada mais: o trade SEM id de ordem saiu daqui de propósito — R8/A128
+      // o torna INDETERMINADO (não acusa nem absolve), coberto à parte.
+      trades: [tradeRaw("TZ", "ORD-Z", 10), tradeRaw("T-OUTRO", "ORD-OUTRA", 4)],
     });
 
     const r = await reconciliar(b, intent);
@@ -174,7 +173,8 @@ describe("A125.1 — TZ (ordem alvo) + TM (manual externo) na MESMA página", ()
     expect(r.desfecho).toBe("resolvido");
     const livroI1 = b.intents.find((i) => i.id === "i1")!;
     expect(livroI1.state).toBe("FILLED");
-    // filled_qty sobe SÓ por TZ (10) — nem T-OUTRO (4) nem T-SEM-ORDEM (7).
+    // filled_qty sobe SÓ por TZ (10) — T-OUTRO (4) é da mesma conta mas de
+    // OUTRA ordem: explicado na deriva, NUNCA absorvido pelo settlement.
     expect(Number(livroI1.filled_qty)).toBe(10);
     const fills = fillsDe(b, "i1");
     expect(fills.map((f) => f.external_trade_id)).toEqual(["TZ"]);
@@ -369,17 +369,44 @@ describe("A125 — a normalização é ÚNICA e o slot é LAZY (§37/§38)", () 
     });
     expect(leitura.tipo).toBe("ausente_em_todos");
     expect(ex.fetchMyTrades).toHaveBeenCalledTimes(1);   // slot lazy, 1× no máximo
+    // §54 (R8): a ausência viaja COM o destino do histórico — aqui, lido e
+    // vazio DE VERDADE ([] com sucesso é fato, não ausência de leitura).
+    if (leitura.tipo !== "ausente_em_todos") throw new Error("inalcançável");
+    expect(leitura.historico).toEqual({ trades: [], possivelmenteIncompleto: false,
+      registrosInvalidos: { total: 0, porMotivo: {} } });
+  });
+
+  it("⚠️⚠️ §54: externalOrderId NULL — o histórico é buscado ANTES de declarar ausência", async () => {
+    // O buraco do baseline: sem id externo o caminho 1 era pulado e o slot
+    // lazy podia NUNCA rodar — a ausência saía sem ninguém ter olhado o
+    // histórico da conta. Agora o retorno de ausência executa
+    // `buscarHistorico()` antes, custe o que custar.
+    ex = montarExchange({
+      erroOrdem: new OrderNotFound("não tem"),
+      trades: [],
+      fechadas: [],
+    });
+    const leitura = await lerOrdemNaVenue("binance", CREDS, {
+      symbol: "BTC/USDT", externalOrderId: null, clientOrderId: "zsA125",
+    });
+    expect(leitura.tipo).toBe("ausente_em_todos");
+    expect(ex.fetchMyTrades).toHaveBeenCalledTimes(1);
+    if (leitura.tipo !== "ausente_em_todos") throw new Error("inalcançável");
+    expect(leitura.historico?.trades).toEqual([]);
   });
 });
 
-describe("§35 — COMBINADO A125×A126: dois browsers da MESMA conexão + manual externo", () => {
+describe("§35 — COMBINADO A125×escopo (R8): dois intents da MESMA conexão + manual externo", () => {
+  /**
+   * ⚠️ R8 supera R7/A126 (§66): o vínculo de conta é o `conexao_id` gravado
+   * NO INTENT — não mais o join pela sessão (mutável, não é prova histórica).
+   * O cenário combinado sobrevive intacto com os dois intents marcados C1.
+   */
   function plantarCenario() {
     const b = bancoFalso();
-    // Browser A: sessão S1 → conexão C1 (conexao_id NULL no intent, como a
-    // rota real grava), ordem O-A já liquidada, trade T-A no livro.
-    b.sessoes.push({ id: "S1", conexao_id: "C1" }, { id: "S2", conexao_id: "C1" });
-    plantarIntent(b, { id: "iA", origin: "autopilot_browser", session_id: "S1",
-                       conexao_id: null, external_order_id: "O-A", state: "FILLED" });
+    // Intent A: conexão C1, ordem O-A já liquidada, trade T-A no livro.
+    plantarIntent(b, { id: "iA", origin: "autopilot_browser",
+                       conexao_id: "C1", external_order_id: "O-A", state: "FILLED" });
     b.fills.push({
       id: "fA", intent_id: "iA", exchange_id: "binance",
       external_order_id: "O-A", external_trade_id: "T-A", client_order_id: null,
@@ -387,9 +414,9 @@ describe("§35 — COMBINADO A125×A126: dois browsers da MESMA conexão + manua
       fee: null, fee_currency: null, executed_at: VELHO, sintetico: false,
       dedupe_key: "kA", raw_hash: null, created_at: VELHO,
     });
-    // Browser B: sessão S2 → MESMA conexão C1, intent UNKNOWN a reconciliar.
+    // Intent B: MESMA conexão C1, UNKNOWN a reconciliar.
     const iB = plantarIntent(b, { id: "iB", origin: "autopilot_browser",
-                                  session_id: "S2", conexao_id: null });
+                                  conexao_id: "C1" });
     return { b, iB };
   }
 
@@ -404,7 +431,8 @@ describe("§35 — COMBINADO A125×A126: dois browsers da MESMA conexão + manua
     const r = await reconciliar(b, iB);
 
     // Exatamente UM órfão: T-MANUAL. T-B é a ordem descoberta (idDescoberto)
-    // e T-A é do irmão de conta — explicado pelo escopo conexão C1 via sessões.
+    // e T-A é do irmão de conta — explicado pelo escopo conexão C1 (R8: o
+    // `conexao_id` gravado no intent, sem join de sessão).
     // No baseline A126 isto era falso drift de T-A; no baseline A125 o manual
     // nem chegava ao detector. Os dois consertos, numa asserção.
     expect(r.desfecho).toBe("quarentena");

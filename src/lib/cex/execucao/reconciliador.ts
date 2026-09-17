@@ -179,29 +179,7 @@ export async function reconciliarIntent(
       return fim("quarentena", "QUARANTINED", atribuicao.motivo);
     }
     if (atribuicao.tipo === "indeterminado") {
-      /**
-       * ⚠️⚠️ A124: INDETERMINADO NUNCA VIRA VERDE. Não saber a conta (ou não
-       * conseguir LER o escopo) não é "sem drift": é "não conferi". Conduta
-       * fail-closed — esgotadas as tentativas, QUARENTENA com motivo próprio;
-       * antes disso, RECONCILIATION_REQUIRED e segue em dúvida. NUNCA
-       * CANCELED, NUNCA "resolvido", NUNCA fallback exchange-wide.
-       */
-      if (tentativas >= TENTATIVAS_ATE_QUARENTENA) {
-        await transicionar(db, intent.id, "QUARANTINED",
-          `atribuicao_indeterminada apos ${tentativas} tentativas: ${atribuicao.motivo}`
-            .slice(0, 300));
-        return fim("quarentena", "QUARANTINED", atribuicao.motivo);
-      }
-      // ⚠️ De SUBMITTING não há aresta direta para RECONCILIATION_REQUIRED
-      // (a máquina de estados manda SUBMITTING→UNKNOWN na dúvida) — faz o
-      // desvio em dois passos, como o caminho 4 já faz.
-      if (intent.state === "SUBMITTING") {
-        await transicionar(db, intent.id, "UNKNOWN",
-          `atribuicao indeterminada: ${atribuicao.motivo}`.slice(0, 300));
-      }
-      await transicionar(db, intent.id, "RECONCILIATION_REQUIRED",
-        `atribuicao indeterminada: ${atribuicao.motivo}`.slice(0, 300));
-      return fim("segue_em_duvida", "RECONCILIATION_REQUIRED", atribuicao.motivo);
+      return aplicarAtribuicaoIndeterminada(db, intent, tentativas, atribuicao);
     }
   }
 
@@ -290,6 +268,29 @@ export async function reconciliarIntent(
 
   // ── caminho 3: a corretora nega em todos os caminhos ──────────────────
   if (leitura.tipo === "ausente_em_todos") {
+    /**
+     * ⚠️⚠️ A125-ABSENCE (round 8, §55/§56): A INTEGRIDADE DA CONTA VEM
+     * ANTES DE QUALQUER CONCLUSÃO SOBRE A ORDEM. O `ausente_em_todos` agora
+     * carrega o histórico account-wide (ou `null` = a leitura falhou), e a
+     * pergunta "esta conta ainda fecha?" é respondida PRIMEIRO:
+     *
+     *   · deriva        → QUARENTENA (há atividade externa à vista);
+     *   · indeterminado → a MESMA política dos caminhos 1/2 — histórico
+     *     falhou, trade sem orderId ou registro inválido NUNCA viram
+     *     CANCELED: cancelar sobre uma conta que não conseguimos inspecionar
+     *     é o A125-ABSENCE;
+     *   · ok            → só então idade mínima → filled_qty → CANCELED
+     *     (§57: o A102 legítimo — histórico limpo e confiável, ordem velha,
+     *     zero executado — segue concluindo).
+     */
+    const atribuicao = await conferirDeriva(db, intent, leitura.historico, null);
+    if (atribuicao.tipo === "deriva") {
+      await transicionar(db, intent.id, "QUARANTINED", atribuicao.motivo.slice(0, 300));
+      return fim("quarentena", "QUARANTINED", atribuicao.motivo);
+    }
+    if (atribuicao.tipo === "indeterminado") {
+      return aplicarAtribuicaoIndeterminada(db, intent, tentativas, atribuicao);
+    }
     if (idadeMs < IDADE_MINIMA_PARA_CONCLUIR_AUSENCIA_MS) {
       // ⚠️ Cedo demais para concluir. A corretora pode não ter indexado ainda.
       return fim("segue_em_duvida", intent.state,
@@ -343,14 +344,21 @@ export type ResultadoDaAtribuicao =
  *
  * ⚠️⚠️ A125: A ENTRADA É O HISTÓRICO ACCOUNT-WIDE DO SÍMBOLO, não os trades
  * da ordem alvo — filtrar por ordem ANTES daqui escondia exatamente o trade
- * manual externo que esta checagem existe para encontrar. E a confiabilidade
- * da leitura faz parte do veredito:
+ * manual externo que esta checagem existe para encontrar.
  *
- *   · `historico === null` (a leitura account-wide falhou) → indeterminado;
- *   · observados vazio + leitura confiável → ok;
- *   · órfãos à vista → deriva (órfão visível é evidência, página cheia ou não);
- *   · sem órfãos + página possivelmente truncada → indeterminado: o
- *     truncamento pode ESCONDER órfãos, nunca absolver sobre o que não se viu.
+ * ⚠️⚠️ A128/A129 (round 8): A PRECEDÊNCIA DO VEREDITO é exata (§40/§47):
+ *
+ *   1. `historico === null` (a leitura account-wide falhou) → indeterminado;
+ *   2. órfão à vista → DERIVA — mesmo com página cheia ou registros
+ *      inválidos: o que se vê é evidência, e deriva comprovada vence tudo;
+ *   3. sem órfãos, com trades sem `orderId` → indeterminado: não atribuído
+ *      não é explicado, e "não sei de quem é" nunca absolve;
+ *   4. sem órfãos, com `registrosInvalidos.total > 0` → indeterminado: a
+ *      venue devolveu linhas que não lemos — um histórico parcialmente
+ *      ilegível não prova "sem drift";
+ *   5. sem órfãos, página possivelmente truncada → indeterminado: o
+ *      truncamento pode ESCONDER órfãos, nunca absolver o que não se viu;
+ *   6. só então → ok.
  */
 async function conferirDeriva(
   db: SupabaseClient<Database>, intent: IntentRow,
@@ -365,7 +373,7 @@ async function conferirDeriva(
   // ⚠️ Página NO LIMITE = completude não provada (§13B): sem órfãos à vista
   // isso é "não conferi tudo", NUNCA "sem drift".
   const confiavel = !historico.possivelmenteIncompleto;
-  if (historico.trades.length === 0) {
+  if (historico.trades.length === 0 && historico.registrosInvalidos.total === 0) {
     return confiavel
       ? { tipo: "ok" }
       : { tipo: "indeterminado", motivo: "pagina cheia — completude nao provada" };
@@ -398,14 +406,58 @@ async function conferirDeriva(
   const v = detectarDeriva(observados, {
     ordensConhecidas: nossas, tradesNoLivro: noLivro, desdeMs,
   });
-  if (v.derivou) {
+  if (v.tipo === "deriva") {
     // ⚠️ Órfão VISÍVEL é evidência — deriva mesmo com a página possivelmente
-    // truncada (o truncamento esconde órfãos, nunca absolve o que se vê).
+    // truncada ou com registros inválidos (§40: a deriva comprovada vence).
     return { tipo: "deriva", motivo: `ACCOUNT_DRIFT: ${v.achado.detalhe}` };
+  }
+  if (v.tipo === "indeterminado") {
+    // ⚠️ A128: trade sem `orderId` não prova deriva E não prova ok.
+    return { tipo: "indeterminado", motivo: v.motivo };
+  }
+  if (historico.registrosInvalidos.total > 0) {
+    // ⚠️ A129 (§47): a leitura veio com linhas que não conseguimos ler —
+    // "sem drift" sobre um histórico parcialmente ilegível seria inventado.
+    return { tipo: "indeterminado",
+      motivo: `historico com ${historico.registrosInvalidos.total} registro(s) `
+            + "invalidos — leitura parcialmente ilegivel" };
   }
   return confiavel
     ? { tipo: "ok" }
     : { tipo: "indeterminado", motivo: "pagina cheia — completude nao provada" };
+}
+
+/**
+ * ⚠️⚠️ A124/A128 (round 8): O BLOCO DO INDETERMINADO, fatorado UMA vez e
+ * compartilhado pelos caminhos 1, 2 e 3 (§55). INDETERMINADO NUNCA VIRA
+ * VERDE. Não saber a conta (ou não conseguir LER o escopo, ou não conseguir
+ * LER o histórico) não é "sem drift": é "não conferi". Conduta fail-closed —
+ * esgotadas as tentativas, QUARENTENA com motivo próprio; antes disso,
+ * RECONCILIATION_REQUIRED e segue em dúvida. NUNCA CANCELED, NUNCA
+ * "resolvido", NUNCA fallback exchange-wide.
+ */
+async function aplicarAtribuicaoIndeterminada(
+  db: SupabaseClient<Database>, intent: IntentRow, tentativas: number,
+  atribuicao: { tipo: "indeterminado"; motivo: string },
+): Promise<ResultadoDaReconciliacao> {
+  if (tentativas >= TENTATIVAS_ATE_QUARENTENA) {
+    await transicionar(db, intent.id, "QUARANTINED",
+      `atribuicao_indeterminada apos ${tentativas} tentativas: ${atribuicao.motivo}`
+        .slice(0, 300));
+    return { intentId: intent.id, desfecho: "quarentena",
+             estado: "QUARANTINED", detalhe: atribuicao.motivo };
+  }
+  // ⚠️ De SUBMITTING não há aresta direta para RECONCILIATION_REQUIRED
+  // (a máquina de estados manda SUBMITTING→UNKNOWN na dúvida) — faz o
+  // desvio em dois passos, como o caminho 4 já faz.
+  if (intent.state === "SUBMITTING") {
+    await transicionar(db, intent.id, "UNKNOWN",
+      `atribuicao indeterminada: ${atribuicao.motivo}`.slice(0, 300));
+  }
+  await transicionar(db, intent.id, "RECONCILIATION_REQUIRED",
+    `atribuicao indeterminada: ${atribuicao.motivo}`.slice(0, 300));
+  return { intentId: intent.id, desfecho: "segue_em_duvida",
+           estado: "RECONCILIATION_REQUIRED", detalhe: atribuicao.motivo };
 }
 
 /** Mapeia o status da corretora para o fim do intent, quando ele é conclusivo. */

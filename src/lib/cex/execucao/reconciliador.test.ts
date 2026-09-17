@@ -32,7 +32,9 @@ const CREDS = { apiKey: "k", apiSecret: "s" };
  * real (o subset é filtro, não renormalização).
  */
 const historicoCom = (trades: TradeDaVenue[]): HistoricoDoSimbolo =>
-  ({ trades, possivelmenteIncompleto: false });
+  ({ trades, possivelmenteIncompleto: false,
+     // A129 (R8): a qualidade da leitura viaja no histórico — zero inválidos.
+     registrosInvalidos: { total: 0, porMotivo: {} } });
 
 /** Cria um intent já em SUBMITTING ou UNKNOWN, como depois de um timeout. */
 function comIntent(estado: "SUBMITTING" | "UNKNOWN" | "SUBMITTED", opts: {
@@ -194,12 +196,18 @@ describe("③ Cenário C — o processo morreu depois do submit", () => {
 });
 
 describe("④ ausência NÃO conclui cedo demais", () => {
+  // A125-ABSENCE (R8): o `ausente_em_todos` carrega o histórico lido ANTES de
+  // declarar a ausência. Estas fixtures trazem histórico LIMPO e confiável —
+  // o único que ainda autoriza o fluxo idade→fill→CANCELED (A102 preservado).
+  const ausenteComHistoricoLimpo = (consultados: string[]): LeituraDaOrdem =>
+    ({ tipo: "ausente_em_todos", consultados, historico: historicoCom([]) });
+
   it("⚠️⚠️ intent novo e ordem 'ausente': segue em DÚVIDA, não cancela", async () => {
     // A corretora pode não ter indexado ainda. Declarar "nunca existiu" nessa
     // janela é o fantasma do A80 pelo caminho inverso.
     const { b, intent } = comIntent("UNKNOWN", { idadeMs: 5_000 });
     const r = await reconciliarIntent(
-      deps(b, { tipo: "ausente_em_todos", consultados: ["fetchOrder", "fetchClosedOrders"] }),
+      deps(b, ausenteComHistoricoLimpo(["fetchOrder", "fetchClosedOrders"])),
       intent);
     expect(r.desfecho).toBe("segue_em_duvida");
     expect(b.intents[0].state).toBe("UNKNOWN");
@@ -209,7 +217,7 @@ describe("④ ausência NÃO conclui cedo demais", () => {
     const { b, intent } = comIntent("UNKNOWN",
       { idadeMs: IDADE_MINIMA_PARA_CONCLUIR_AUSENCIA_MS + 10_000 });
     const r = await reconciliarIntent(
-      deps(b, { tipo: "ausente_em_todos", consultados: ["fetchOrder", "fetchClosedOrders"] }),
+      deps(b, ausenteComHistoricoLimpo(["fetchOrder", "fetchClosedOrders"])),
       intent);
     expect(r.desfecho).toBe("resolvido");
     expect(b.intents[0].state).toBe("CANCELED");
@@ -222,10 +230,25 @@ describe("④ ausência NÃO conclui cedo demais", () => {
       { idadeMs: IDADE_MINIMA_PARA_CONCLUIR_AUSENCIA_MS + 10_000 });
     b.intents[0].filled_qty = 4;
     const r = await reconciliarIntent(
-      deps(b, { tipo: "ausente_em_todos", consultados: ["fetchOrder"] }),
+      deps(b, ausenteComHistoricoLimpo(["fetchOrder"])),
       { ...intent, filled_qty: 4 } as IntentRow);
     expect(b.intents[0].state).toBe("RECONCILIATION_REQUIRED");
     expect(r.desfecho).toBe("segue_em_duvida");
+  });
+
+  it("⚠️⚠️ ausência com histórico NÃO LIDO (null) NUNCA vira CANCELED (§56)", async () => {
+    // A125-ABSENCE: a leitura account-wide falhou — cancelar sobre uma conta
+    // que não conseguimos inspecionar é o defeito que este round fecha.
+    const { b, intent } = comIntent("UNKNOWN",
+      { idadeMs: IDADE_MINIMA_PARA_CONCLUIR_AUSENCIA_MS + 10_000 });
+    const r = await reconciliarIntent(
+      deps(b, { tipo: "ausente_em_todos", consultados: ["fetchOrder"],
+                historico: null }),
+      intent);
+    expect(r.desfecho).toBe("segue_em_duvida");
+    expect(b.intents[0].state).toBe("RECONCILIATION_REQUIRED");
+    expect(Number(b.intents[0].filled_qty)).toBe(0);
+    expect(Number(b.intents[0].canceled_qty)).toBe(0);
   });
 });
 

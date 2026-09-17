@@ -59,7 +59,8 @@ const LEITURA_COM_TAXA: LeituraDaOrdem = {
   // A125: settlement lê tradesDaOrdem; a deriva lê o histórico account-wide —
   // aqui só há o trade da própria ordem, compartilhado pelas duas coleções.
   tradesDaOrdem: TRADES_A119,
-  historico: { trades: TRADES_A119, possivelmenteIncompleto: false },
+  historico: { trades: TRADES_A119, possivelmenteIncompleto: false,
+               registrosInvalidos: { total: 0, porMotivo: {} } },
 };
 
 async function reconciliar(banco: ReturnType<typeof bancoFalso>, leitura: LeituraDaOrdem) {
@@ -129,7 +130,8 @@ describe("A119.3 — replay da MESMA reconciliação não soma a taxa duas vezes
       ordem: { id: "ext-a119", status: "open", filled: 0.01, average: 61_000,
                cost: 610, fee: { cost: 0.61, currency: "USDT" } } as never,
       tradesDaOrdem: TRADES_A119,
-      historico: { trades: TRADES_A119, possivelmenteIncompleto: false },
+      historico: { trades: TRADES_A119, possivelmenteIncompleto: false,
+               registrosInvalidos: { total: 0, porMotivo: {} } },
     };
     const primeira = await reconciliar(banco, leituraParcial);
     expect(primeira.state).toBe("PARTIALLY_FILLED");

@@ -74,6 +74,18 @@ export interface HistoricoDoSimbolo {
    * vê continua sendo evidência; o que não se vê impede o "sem drift".
    */
   possivelmenteIncompleto: boolean;
+  /**
+   * ⚠️⚠️ A129 (round 8): A QUALIDADE DA LEITURA É PARTE DO HISTÓRICO. Linhas
+   * malformadas do bruto da venue NUNCA entram em `trades` (o settlement está
+   * protegido por construção), mas TAMBÉM nunca mais desaparecem em silêncio:
+   * são contadas e classificadas aqui — sem dado sensível, só o motivo. Um
+   * histórico com registros inválidos não prova "sem drift": quem julga é o
+   * reconciliador, e o veredito é indeterminado.
+   */
+  registrosInvalidos: {
+    total: number;
+    porMotivo: Partial<Record<MotivoDeNormalizacao, number>>;
+  };
 }
 
 export type LeituraDaOrdem =
@@ -97,18 +109,47 @@ export type LeituraDaOrdem =
    * ⚠️ A corretora respondeu e afirma NÃO TER esta ordem em NENHUM dos
    * caminhos consultados — incluindo o histórico. Só isto autoriza concluir
    * que nada executou, e mesmo assim quem chama decide o que fazer.
+   *
+   * ⚠️⚠️ §54 (round 8): a ausência só se declara com o destino do histórico
+   * CONHECIDO — `buscarHistorico()` roda ANTES deste retorno, custe o
+   * caminho que custar (inclusive quando `externalOrderId` é null e o
+   * caminho 1 foi pulado). `historico: null` = a leitura account-wide
+   * FALHOU: quem chama NÃO pode concluir CANCELED sobre uma conta que não
+   * conseguiu inspecionar (A125-ABSENCE).
    */
-  | { tipo: "ausente_em_todos"; consultados: string[] }
+  | { tipo: "ausente_em_todos"; consultados: string[];
+      historico: HistoricoDoSimbolo | null }
   /** Não deu para olhar. NÃO é "não existe". */
   | { tipo: "indeterminado"; porque: string; consultados: string[] };
 
-function normalizarTrade(raw: Record<string, unknown>): TradeDaVenue | null {
+/**
+ * ⚠️⚠️ A129: POR QUE UMA LINHA DO HISTÓRICO É RECUSADA — discriminado.
+ *
+ * O `null` silencioso antigo fazia a linha malformada DESAPARECER: nem trade,
+ * nem evidência. Agora o motivo volta com o veredito e alimenta
+ * `registrosInvalidos` — sem nunca carregar o dado sensível da linha.
+ */
+export type MotivoDeNormalizacao =
+  | "trade_id_ausente"
+  | "qty_invalida"
+  | "price_invalido";
+
+/**
+ * Normaliza UMA linha crua do `fetchMyTrades`. EXPORTADO (§46) para que a
+ * discriminação seja exercitável sem a venue. O inválido NUNCA vira trade:
+ * `{ ok:false, motivo }` é a única saída que não carrega um `TradeDaVenue`.
+ */
+export function normalizarTrade(
+  raw: Record<string, unknown>,
+): { ok: true; trade: TradeDaVenue } | { ok: false; motivo: MotivoDeNormalizacao } {
   const id = raw.id == null ? null : String(raw.id);
+  if (!id) return { ok: false, motivo: "trade_id_ausente" };
   const qty = Number(raw.amount);
+  if (!(qty > 0)) return { ok: false, motivo: "qty_invalida" };
   const price = Number(raw.price);
-  if (!id || !(qty > 0) || !(price > 0)) return null;
+  if (!(price > 0)) return { ok: false, motivo: "price_invalido" };
   const fee = raw.fee as { cost?: unknown; currency?: unknown } | undefined;
-  return {
+  return { ok: true, trade: {
     tradeId: id,
     orderId: raw.order == null ? null : String(raw.order),
     qty, price,
@@ -117,7 +158,7 @@ function normalizarTrade(raw: Record<string, unknown>): TradeDaVenue | null {
     feeCurrency: fee?.currency == null ? null : String(fee.currency),
     executedAt: typeof raw.timestamp === "number"
       ? new Date(raw.timestamp).toISOString() : null,
-  };
+  } };
 }
 
 /** `true` quando o erro do ccxt afirma que o endpoint não tem a ordem. */
@@ -165,8 +206,25 @@ export async function lerOrdemNaVenue(
       const raw = await exchange.fetchMyTrades(
         alvo.symbol, alvo.desdeMs ?? undefined, LIMITE_DA_PAGINA
       ) as unknown as Record<string, unknown>[];
-      const todos = raw.map(normalizarTrade).filter((t): t is TradeDaVenue => t !== null);
-      slotHistorico = { trades: todos, possivelmenteIncompleto: raw.length === LIMITE_DA_PAGINA };
+      /**
+       * ⚠️⚠️ A129 (§47): o bruto é PARTICIONADO. O inválido NUNCA entra em
+       * `trades` — o settlement está protegido por construção — mas é
+       * contado e classificado: a qualidade da leitura viaja no histórico.
+       */
+      const validos: TradeDaVenue[] = [];
+      const porMotivo: Partial<Record<MotivoDeNormalizacao, number>> = {};
+      let totalInvalidos = 0;
+      for (const r of raw) {
+        const n = normalizarTrade(r);
+        if (n.ok) validos.push(n.trade);
+        else {
+          totalInvalidos++;
+          porMotivo[n.motivo] = (porMotivo[n.motivo] ?? 0) + 1;
+        }
+      }
+      slotHistorico = { trades: validos,
+        possivelmenteIncompleto: raw.length === LIMITE_DA_PAGINA,
+        registrosInvalidos: { total: totalInvalidos, porMotivo } };
     } catch (e) {
       ultimoErro = (e as Error)?.message ?? String(e);
       slotHistorico = null;
@@ -253,9 +311,16 @@ export async function lerOrdemNaVenue(
    * ⚠️⚠️ SÓ DECLARA AUSÊNCIA QUEM CONSULTOU O HISTÓRICO E FOI NEGADO. Um
    * `OrderNotFound` isolado no `fetchOrder` não basta — é exatamente a
    * conclusão apressada que o A102 nomeia.
+   *
+   * ⚠️⚠️ §54: `buscarHistorico()` roda ANTES de declarar a ausência, SEMPRE
+   * — inclusive quando `externalOrderId` era null e o caminho 1 foi pulado
+   * (o slot lazy podia nunca ter rodado, e a ausência saía sem ninguém ter
+   * olhado o histórico da conta). A ausência viaja com o destino conhecido
+   * do histórico: o histórico em si, ou `null` = a leitura falhou.
    */
   if (negaram >= 2 && ultimoErro === null) {
-    return { tipo: "ausente_em_todos", consultados };
+    const historico = await buscarHistorico();
+    return { tipo: "ausente_em_todos", consultados, historico };
   }
   return { tipo: "indeterminado", consultados,
     porque: ultimoErro ?? "nenhum caminho respondeu de forma conclusiva" };

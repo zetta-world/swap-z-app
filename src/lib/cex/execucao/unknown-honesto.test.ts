@@ -62,7 +62,11 @@ describe("browser-autopilot: o intent carrega a sessão", () => {
       db: banco.cliente,
       elegivel: (i) => Boolean(i.session_id || i.conexao_id),
       credenciais: async () => CREDS,
-      ler: async () => ({ tipo: "ausente_em_todos", consultados: ["fetchOrder"] }),
+      ler: async () => ({ tipo: "ausente_em_todos", consultados: ["fetchOrder"],
+      // R8/A125-ABSENCE: ausência só conclui CANCELED com histórico limpo
+      // e confiável lido ANTES — a fixture declara esse histórico.
+      historico: { trades: [], possivelmenteIncompleto: false,
+                   registrosInvalidos: { total: 0, porMotivo: {} } } }),
     });
     // Foi OLHADO de verdade — não pulado.
     expect(r.resultados).toHaveLength(1);
@@ -113,7 +117,11 @@ describe("manual sem credencial persistida: nem reenvio, nem quarentena automát
       db: banco.cliente,
       elegivel: (i) => Boolean(i.session_id || i.conexao_id),
       credenciais: async () => CREDS, // até COM credencial disponível: não é dele
-      ler: async () => ({ tipo: "ausente_em_todos", consultados: ["fetchOrder"] }),
+      ler: async () => ({ tipo: "ausente_em_todos", consultados: ["fetchOrder"],
+      // R8/A125-ABSENCE: ausência só conclui CANCELED com histórico limpo
+      // e confiável lido ANTES — a fixture declara esse histórico.
+      historico: { trades: [], possivelmenteIncompleto: false,
+                   registrosInvalidos: { total: 0, porMotivo: {} } } }),
     });
     expect(r.resultados).toHaveLength(0);
     const depois = await intentPorId(banco.cliente, id);
