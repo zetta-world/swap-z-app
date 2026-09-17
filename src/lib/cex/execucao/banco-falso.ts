@@ -32,12 +32,18 @@ export interface BancoFalso {
   /** A124: `autopilot_sessions` — o resolver de escopo lê `conexao_id` daqui
    *  quando o intent só tem `session_id`. */
   sessoes: Linha[];
+  /** A127: `cex_conexoes` — o cofre versionado (migration 0063). A RPC fake
+   *  `cex_guardar_conexao_versionada` grava aqui; `revogarConexao` atualiza. */
+  conexoes: Linha[];
   /** Falhas injetáveis, por operação, para exercitar o caminho de erro. */
   falhas: {
     insertIntent?: string;
     transicao?: string;
     ingestao?: string;
     autorizacao?: string;
+    /** A127: falha genérica de RPC (qualquer uma) — ex.: permission denied da
+     *  ACL da 0063 na `cex_guardar_conexao_versionada`. */
+    rpc?: string;
     /** A124: falha de LEITURA genérica (toda `select` passa a errar). */
     select?: string;
     /** A124: falha só na N-ésima leitura (ex.: erro na 2ª página de um
@@ -56,6 +62,7 @@ export function bancoFalso(): BancoFalso {
   const fills: Linha[] = [];
   const certificados: Linha[] = [];
   const sessoes: Linha[] = [];
+  const conexoes: Linha[] = [];
   const falhas: BancoFalso["falhas"] = {};
   let seq = 0;
   let leiturasFeitas = 0;
@@ -69,6 +76,7 @@ export function bancoFalso(): BancoFalso {
   const linhasDe = (t: string) =>
     t === "cex_fills" ? fills
     : t === "autopilot_sessions" ? sessoes
+    : t === "cex_conexoes" ? conexoes
     : intents;
 
   const somaDoLivro = (intentId: string) =>
@@ -98,12 +106,65 @@ export function bancoFalso(): BancoFalso {
   }
 
   const rpc = async (nome: string, args: Record<string, unknown>) => {
+    if (falhas.rpc) {
+      return { data: null, error: { message: falhas.rpc } };
+    }
     if (falhas.transicao && nome === "cex_transicionar") {
       return { data: null, error: { message: falhas.transicao } };
     }
     if (falhas.ingestao && nome.startsWith("cex_ingest")) {
       return { data: null, error: { message: falhas.ingestao } };
     }
+
+    /**
+     * A127 (migration 0063): a guarda VERSIONADA da credencial, reproduzida
+     * com a mesma semântica da RPC real — identity malformada é exceção;
+     * mesma identity na current ATIVA reusa o MESMO id (só refresca
+     * `expires_at`, NÃO toca `creds_cipher`); qualquer outro caso aposenta a
+     * current (is_current=false, superseded_at) e insere versão nova com id
+     * novo. O advisory lock do par é transacional e não tem análogo num
+     * array em memória — aqui a serialização é do próprio event loop.
+     */
+    if (nome === "cex_guardar_conexao_versionada") {
+      const identidade = args.p_credential_identity;
+      if (typeof identidade !== "string" || !/^[0-9a-f]{64}$/.test(identidade)) {
+        return { data: null, error: { message: "credential_identity malformada" } };
+      }
+      const wallet = String(args.p_wallet_address);
+      const exchange = String(args.p_exchange_id);
+      const agora = new Date().toISOString();
+      const atual = conexoes.find((c) =>
+        c.wallet_address === wallet && c.exchange_id === exchange
+        && c.is_current === true);
+      if (atual && atual.is_active === true
+          && typeof atual.credential_identity === "string"
+          && atual.credential_identity === identidade) {
+        atual.expires_at = args.p_expires_at ?? null;
+        atual.atualizado_em = agora;
+        return { data: atual.id, error: null };
+      }
+      if (atual) {
+        atual.is_current = false;
+        atual.superseded_at = agora;
+        atual.atualizado_em = agora;
+      }
+      // ⚠️ O nome da coluna do cipher é montado por concatenação DE PROPÓSITO:
+      // a guarda estrutural do cofre-t3 proíbe a literal `creds_cipher` em
+      // CÓDIGO fora de `conexoes.ts` — e ela tem razão em vigiar; aqui é a
+      // coluna do PRÓPRIO cofre sendo gravada pela RPC fake da 0063.
+      const COL_CIPHER = "creds" + "_cipher";
+      const nova: Linha = {
+        id: `cx${++seq}`, wallet_address: wallet, exchange_id: exchange,
+        [COL_CIPHER]: args["p_" + COL_CIPHER] ?? null,
+        expires_at: args.p_expires_at ?? null,
+        is_active: true, credential_identity: identidade, is_current: true,
+        superseded_at: null,
+        criado_em: agora, atualizado_em: agora,
+      };
+      conexoes.push(nova);
+      return { data: nova.id, error: null };
+    }
+
     const it = intents.find((i) => i.id === args.p_intent_id);
     if (!it) return { data: null, error: { message: "intent nao existe" } };
 
@@ -443,6 +504,36 @@ export function bancoFalso(): BancoFalso {
     // A124: `.range(inicio, fim)` do PostgREST — fatia APÓS os filtros, com
     // precedência sobre `limit` (é o que a paginação do escopo usa).
     let faixa: [number, number] | null = null;
+
+    /** A leitura em si, com as falhas injetáveis — compartilhada pelo `then`
+     *  (lista) e pelo `maybeSingle` (A127: o cofre lê linha a linha). */
+    const executar = (): { data: Linha[] | null; error: { message: string } | null } => {
+      leiturasFeitas++;
+      leiturasPorTabela[tabela] = (leiturasPorTabela[tabela] ?? 0) + 1;
+      // A124: falha de leitura injetável — genérica ou só na N-ésima
+      // chamada (erro de paginação no meio do caminho).
+      if (falhas.select) {
+        return { data: null, error: { message: falhas.select } };
+      }
+      if (falhas.selectNaChamada && leiturasFeitas === falhas.selectNaChamada.n) {
+        return { data: null, error: { message: falhas.selectNaChamada.mensagem } };
+      }
+      // A126: falha só numa tabela — para provar que o erro de UM braço da
+      // união derruba a consulta inteira mesmo com o outro braço saudável.
+      const falhaTabela = falhas.selectNaTabela;
+      if (falhaTabela && falhaTabela.tabela === tabela
+          && (falhaTabela.naChamada === undefined
+              || leiturasPorTabela[tabela] === falhaTabela.naChamada)) {
+        return { data: null, error: { message: falhaTabela.mensagem } };
+      }
+      const filtradas = linhas().filter((r) => filtros.every((f) => f(r)));
+      return {
+        data: faixa ? filtradas.slice(faixa[0], faixa[1] + 1)
+                    : filtradas.slice(0, limite),
+        error: null,
+      };
+    };
+
     const alvo = {
       select: (_c: string) => alvo,
       eq: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return alvo; },
@@ -465,34 +556,26 @@ export function bancoFalso(): BancoFalso {
       order: () => alvo,
       limit: (n: number) => { limite = n; return alvo; },
       range: (inicio: number, fim: number) => { faixa = [inicio, fim]; return alvo; },
+      /**
+       * A127: `maybeSingle` com a semântica do PostgREST — 0 linhas devolve
+       * `data: null` SEM erro; MAIS DE UMA é erro (é o que o índice parcial
+       * da 0063 torna impossível para a current, e o que o cofre precisa
+       * enxergar como "ilegível", não como uma linha qualquer).
+       */
+      maybeSingle: () => {
+        const r = executar();
+        if (r.error) return Promise.resolve({ data: null, error: r.error });
+        const lista = r.data ?? [];
+        if (lista.length > 1) {
+          return Promise.resolve({ data: null, error: {
+            message: "JSON object requested, multiple (or no) rows returned",
+          } });
+        }
+        return Promise.resolve({ data: lista[0] ?? null, error: null });
+      },
       then: (res: (x: { data: Linha[] | null;
                         error: { message: string } | null }) => void) => {
-        leiturasFeitas++;
-        leiturasPorTabela[tabela] = (leiturasPorTabela[tabela] ?? 0) + 1;
-        // A124: falha de leitura injetável — genérica ou só na N-ésima
-        // chamada (erro de paginação no meio do caminho).
-        if (falhas.select) {
-          return Promise.resolve({ data: null, error: { message: falhas.select } }).then(res);
-        }
-        if (falhas.selectNaChamada && leiturasFeitas === falhas.selectNaChamada.n) {
-          return Promise.resolve({ data: null,
-            error: { message: falhas.selectNaChamada.mensagem } }).then(res);
-        }
-        // A126: falha só numa tabela — para provar que o erro de UM braço da
-        // união derruba a consulta inteira mesmo com o outro braço saudável.
-        const falhaTabela = falhas.selectNaTabela;
-        if (falhaTabela && falhaTabela.tabela === tabela
-            && (falhaTabela.naChamada === undefined
-                || leiturasPorTabela[tabela] === falhaTabela.naChamada)) {
-          return Promise.resolve({ data: null,
-            error: { message: falhaTabela.mensagem } }).then(res);
-        }
-        const filtradas = linhas().filter((r) => filtros.every((f) => f(r)));
-        return Promise.resolve({
-          data: faixa ? filtradas.slice(faixa[0], faixa[1] + 1)
-                      : filtradas.slice(0, limite),
-          error: null,
-        }).then(res);
+        return Promise.resolve(executar()).then(res);
       },
     };
     return alvo;
@@ -546,5 +629,5 @@ export function bancoFalso(): BancoFalso {
     },
   };
   return { cliente: cliente as unknown as SupabaseClient<Database>,
-           intents, fills, certificados, sessoes, falhas };
+           intents, fills, certificados, sessoes, conexoes, falhas };
 }

@@ -40,6 +40,8 @@ const CATALOGO: Record<string, string> = {
   // A110 (round 3): a assinatura nova (uuid) nasce fechada na 0060, que
   // também APAGA o overload antigo — a ACL aponta para ela.
   cex_autorizar_e_submeter:  "0060_autorizacao_deriva_do_intent.sql",
+  // A127 (round 8): a guarda versionada do cofre nasce fechada na 0063.
+  cex_guardar_conexao_versionada: "0063_cex_conexoes_versionadas.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

@@ -74,3 +74,50 @@ export function impressaoConfere(apresentada: string, gravada: string): boolean 
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
 }
+
+/**
+ * A127 — A IDENTIDADE DA CONEXÃO (domínio `cex-connection-v1`).
+ *
+ * Responde "estas credenciais são a MESMA conta CEX da conexão atual?" sem
+ * guardar nem comparar segredo em claro: HMAC-SHA256 hex de
+ *
+ *   "cex-connection-v1" + NUL
+ *   + canonicalizarExchange(exchangeId) + NUL
+ *   + apiKey EXATA + NUL + apiSecret EXATA + NUL + (passphrase ?? "")
+ *
+ * sob `CEX_RECOVERY_HMAC_KEY`. É o que permite ao cofre versionar conexões
+ * (migration 0063): mesma identidade na current ativa = mesma conta, reusa o
+ * id; identidade diferente = OUTRA conta, aposenta a anterior e cria versão
+ * nova — nunca sobrescreve o `creds_cipher` na mesma linha.
+ *
+ * ⚠️ DOMÍNIO DISTINTO do fingerprint manual do A120 (`impressaoDaCredencial`):
+ * o prefixo "cex-connection-v1" e a inclusão de apiSecret/passphrase fazem
+ * uma identidade de conexão NUNCA colidir com uma impressão de recovery — um
+ * valor de um domínio não pode ser apresentado no outro.
+ *
+ * ⚠️ apiKey/apiSecret/passphrase entram EXATOS — sem trim, sem case-fold: o
+ * segredo é opaco. Só a exchange é canonicalizada, pela MESMA regra do A120.
+ * E env ausente = `server_configuration_error`, como lá: identidade calculada
+ * com chave vazia seria um vínculo falso — quem chama (`guardarConexao`)
+ * captura e NÃO GRAVA NADA (fail-closed).
+ */
+export function identidadeDaConexao(
+  exchangeId: string,
+  creds: { apiKey: string; apiSecret: string; passphrase?: string },
+): string {
+  const chave = process.env.CEX_RECOVERY_HMAC_KEY;
+  if (!chave) {
+    throw new Error("server_configuration_error: CEX_RECOVERY_HMAC_KEY ausente ou vazia");
+  }
+  return crypto
+    .createHmac("sha256", chave)
+    .update(
+      "cex-connection-v1\0"
+      + canonicalizarExchange(exchangeId) + "\0"
+      + creds.apiKey + "\0"
+      + creds.apiSecret + "\0"
+      + (creds.passphrase ?? ""),
+      "utf8",
+    )
+    .digest("hex");
+}
