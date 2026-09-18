@@ -150,6 +150,7 @@ export type MotivoDeRecusa =
   /** A120-H: ordem MANUAL REAL sem `credentialFingerprint` (ou com ele
    *  malformado) — recusada ANTES de gravar intent: zero side effect. */
   | "fingerprint_ausente"
+  | "conexao_ausente"
   | "intent_nao_gravado"
   | "ja_existe_intent_vivo"
   | "kill_switch"
@@ -267,6 +268,12 @@ export async function executarOrdemCex(
           ? "ordem manual real sem fingerprint de credencial — sem vinculo ela seria irreconciliavel; nada foi gravado nem enviado"
           : "fingerprint de credencial malformado (esperado HMAC-SHA256 hex minusculo, 64 chars) — nada foi gravado nem enviado" };
     }
+  }
+
+  // ── 1.6. A127 — BROWSER REAL SEM SNAPSHOT DE CONEXÃO NÃO NASCE ───────
+  if (ctx.origin === "autopilot_browser" && ordem.simulated !== true && !ctx.conexaoId) {
+    return { desfecho: "recusado", motivo: "conexao_ausente", intentId: null,
+      porque: "autopilot_browser real sem conexao_id — nada foi gravado nem enviado" };
   }
 
   // ── 2. O INTENT DURÁVEL, ANTES DE TUDO ────────────────────────────────

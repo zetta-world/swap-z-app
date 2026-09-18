@@ -33,6 +33,7 @@ import type { AutopilotSessionRow, AutopilotRunRow, AutopilotPositionRow } from 
 import type { CexId, CexCredentials, CexOrder } from "@/lib/cex/types";
 import { recordEvent } from "@/lib/admin/track";
 import { taxaEmUsd } from "@/lib/cex/taxa";
+import { credenciaisDoIntentParaRecovery } from "@/lib/cex/conexoes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -470,24 +471,14 @@ export async function POST(req: NextRequest) {
       const r = await reconciliarPendentes({
         db: dbRec,
         /**
-         * ⚠️ INTENTS MANUAIS NÃO ENTRAM AQUI (ponto 9). Sem `session_id` e sem
-         * `conexao_id`, a credencial não existe em lugar nenhum do servidor —
-         * contar tentativa até a quarentena era alarme falso por desenho. Eles
-         * ficam UNKNOWN até a reconciliação INTERATIVA (o usuário reautentica).
-         * O do piloto do navegador agora carrega `session_id` e passa.
+         * ⚠️⚠️ A127: recovery automático só existe quando o PRÓPRIO intent
+         * snapshotou `conexao_id`. `session_id` é mutável (rearm C1→C2) e não
+         * é identidade histórica. Legacy session-only fica inelegível e não
+         * acumula tentativa/quarentena automática.
          */
-        elegivel: (intent) => Boolean(intent.session_id || intent.conexao_id),
-        credenciais: async (intent) => {
-          try {
-            const sessao = intent.session_id
-              ? todas.find((x) => x.id === intent.session_id) : undefined;
-            if (!sessao) return null;
-            return (await credenciaisDaSessao(sessao)).creds;
-          } catch {
-            // Cofre revogado ou ilegível NÃO é evidência sobre a ordem.
-            return null;
-          }
-        },
+        elegivel: (intent) => Boolean(intent.conexao_id),
+        credenciais: async (intent) =>
+          credenciaisDoIntentParaRecovery(dbRec, intent),
       });
       reconciliados = r.olhados;
       if (r.leituraFalhou) {

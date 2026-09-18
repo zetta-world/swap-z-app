@@ -17,6 +17,7 @@ import { logSecurity, logError } from "@/lib/admin/track";
 import { recordEvent } from "@/lib/admin/track";
 import { classifyCexError, sanitizeUpstreamMessage, statusForError } from "@/lib/cex/errors";
 import { impressaoDaCredencial } from "@/lib/cex/fingerprint";
+import { conexaoParaExecucao, decifrarConexao } from "@/lib/cex/conexoes";
 import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
 import {
   type CexId, type CexCredentials, type CexOrderResponse, type CexOrderSide, type CexOrderType,
@@ -59,8 +60,9 @@ interface OrderRequestBody {
 /**
  * POST /api/cex/order — place a market or limit order on the user's CEX.
  *
- * REAL FUNDS MOVE WHEN THIS SUCCEEDS. The credentials arrive in the body,
- * are used exactly once, and discarded. The server does not log the body,
+ * REAL FUNDS MOVE WHEN THIS SUCCEEDS. Manual credentials arrive in the body
+ * and are used exactly once; autopilot_browser uses the session vault connection
+ * (A127 binding) and never lets body credentials redefine that account. The server does not log the body,
  * does not echo the credentials in any error path, and does not persist
  * the order anywhere except as the response back to the client (the user's
  * own browser carries any order-history retention).
@@ -196,11 +198,13 @@ export async function POST(req: NextRequest) {
    */
   let notionalRealDoPiloto: number | null = null;
   /**
-   * ⚠️ O ID DA SESSÃO DO PILOTO — ponto 9 do Round 2. Com ele no intent, o
-   * recuperador global resolve a credencial PELA SESSÃO (cofre) se uma ordem
-   * do navegador ficar UNKNOWN — sem duplicar segredo e sem quarentena errada.
+   * ⚠️ O ID DA SESSÃO DO PILOTO — contexto operacional. A127: ele NÃO é mais
+   * autoridade de recovery; a identidade histórica vem de `conexao_id` gravado
+   * no próprio intent. A sessão pode ser rearmada para outra conexão.
    */
   let sessaoDoPilotoId: string | null = null;
+  let conexaoDoPilotoId: string | null = null;
+  let credenciaisDoPiloto: CexCredentials | null = null;
   if (ehAutopilot) {
     /**
      * ⚠️ TRAVA DE LIBERAÇÃO (Fase 7.2), no canal do NAVEGADOR.
@@ -311,6 +315,39 @@ export async function POST(req: NextRequest) {
       versao: sessaoDoPiloto?.strategy_version ?? null,
     };
     sessaoDoPilotoId = sessaoDoPiloto?.id ?? null;
+    conexaoDoPilotoId = sessaoDoPiloto?.conexao_id ?? null;
+
+    /**
+     * ⚠️⚠️ A127-BINDING: no piloto, a identidade histórica e a credencial do
+     * efeito externo nascem da MESMA versão do cofre. O body não é autoridade
+     * de conta neste ramo: C1 no intent com credential B no createOrder faria
+     * o recovery procurar a ordem na conta errada.
+     */
+    if (!conexaoDoPilotoId) {
+      return NextResponse.json(
+        { ok: false, error: "conexao_ausente",
+          detail: "sessao do piloto sem conexao_id — nenhuma ordem foi enviada" },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    const pronta = await conexaoParaExecucao(conexaoDoPilotoId, dbPolitica);
+    if (!pronta.ok) {
+      const status = pronta.motivo === "ilegivel" ? 503 : 409;
+      return NextResponse.json(
+        { ok: false, error: `conexao_${pronta.motivo}`,
+          detail: "a conexao da sessao nao pode criar nova ordem" },
+        { status, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    try {
+      credenciaisDoPiloto = decifrarConexao(pronta.conexao);
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "conexao_ilegivel",
+          detail: "nao foi possivel ler a credencial da conexao da sessao" },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
   }
 
   if (typeof body.apiKey !== "string" || body.apiKey.length < 8 || body.apiKey.length > 200) {
@@ -326,11 +363,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const creds: CexCredentials = {
+  const credsDoBody: CexCredentials = {
     apiKey:    body.apiKey,
     apiSecret: body.apiSecret,
     passphrase: body.passphrase,
   };
+  // A127-BINDING: autopilot_browser usa o cofre da conexão da sessão; manual
+  // continua usando exatamente a credencial apresentada pelo usuário.
+  const creds: CexCredentials = ehAutopilot ? credenciaisDoPiloto! : credsDoBody;
 
   /**
    * ⚠️⚠️ A120 — O VÍNCULO CREDENCIAL ↔ INTENT, calculado NO SERVIDOR.
@@ -346,7 +386,7 @@ export async function POST(req: NextRequest) {
    * `recovery_not_bound` e a ordem ficaria irreconciliável por desenho.
    *
    * ⚠️ SÓ O RAMO MANUAL REAL. Autopilot/DCA não recebem fingerprint (a
-   * credencial deles está no cofre e o recovery é pela sessão) e o simulado
+   * credencial deles está no cofre e o recovery é por `intent.conexao_id`) e o simulado
    * também não. E o campo `credentialFingerprint` do body, se vier, é
    * IGNORADO: fingerprint apresentado pelo cliente é autoautorização.
    */
@@ -396,16 +436,17 @@ export async function POST(req: NextRequest) {
         /**
          * ⚠️ O sessionId no intent (ponto 9): uma ordem do piloto que ficar
          * UNKNOWN é reconciliada pelo recuperador global com a credencial DA
-         * SESSÃO, via cofre. Ordem MANUAL continua sem sessão — a credencial
+         * CONEXÃO gravada no próprio intent. Ordem MANUAL continua sem sessão — a credencial
          * dela não é guardada, e ninguém pode reconciliá-la sem reautenticar.
          */
         sessionId: sessaoDoPilotoId,
+        conexaoId: conexaoDoPilotoId,
         strategyId: estrategiaDoPiloto.id,
         strategyVersion: estrategiaDoPiloto.versao,
         certificateId: certificadoDoPiloto,
         strategyHash: hashDoPiloto,
-        /** ⚠️ A120: null no piloto (credencial no cofre, recovery pela
-         *  sessão); a impressão do manual veio do SERVIDOR, nunca do body. */
+        /** ⚠️ A120: null no piloto (credencial no cofre, recovery por
+         *  conexao_id do intent); a impressão do manual veio do SERVIDOR, nunca do body. */
         credentialFingerprint },
       { exchangeId: exchange, symbol: body.symbol, side, type,
         qty: body.amount, price: type === "limit" ? body.price : null,

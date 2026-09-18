@@ -237,6 +237,9 @@ export async function credenciaisDaSessao(
   if (!c.is_active) {
     throw new Error("cofre: conexão revogada pelo dono");
   }
+  if (!c.is_current) {
+    throw new Error("cofre: conexão substituída por rotação — rearme a sessão");
+  }
   // ⚠️ `decifrarConexao` LANÇA em adulteração ou chave ausente. Não se
   // captura aqui de propósito: cofre ilegível é bloqueio, não motivo para
   // procurar o segredo em outro lugar.

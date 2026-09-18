@@ -5,7 +5,9 @@ import {
   planosVencidos, reservarCiclo, fecharCiclo, gravarPulo, avancarPlano,
   gastoHojeDaCarteira, type PlanoRow,
 } from "@/lib/dca/store";
-import { lerConexaoPorId, decifrarConexao } from "@/lib/cex/conexoes";
+import {
+  lerConexaoPorId, decifrarConexao, credenciaisDoIntentParaRecovery,
+} from "@/lib/cex/conexoes";
 import { executarOrdemCex } from "@/lib/cex/execucao/executor";
 import { intentVivoDoPlano, intentPorId } from "@/lib/cex/execucao/intents";
 import { reconciliarIntent } from "@/lib/cex/execucao/reconciliador";
@@ -316,7 +318,9 @@ async function processarPlano(
   if (vivo) {
     const rec = await reconciliarIntent({
       db: dbExec,
-      credenciais: async () => (conexao ? decifrarConexao(conexao) : null),
+      // A127: o pending usa a versão gravada NO INTENT. Mesmo se o plano for
+      // rearmado no futuro, a identidade histórica desta ordem não migra.
+      credenciais: async (intent) => credenciaisDoIntentParaRecovery(dbExec, intent),
     }, vivo);
     /**
      * ⚠️⚠️⚠️ RELER O MESMO INTENT, PELO ID — achado A117.
@@ -426,6 +430,17 @@ async function processarPlano(
     }
     return { plano: p.id, acao: decisao.contaComoFeito ? "reconciliado_comprou" : "reconciliado_sem_compra",
       detalhe: `${decisao.quantidade} por $${decisao.custoUsd.toFixed(2)}` };
+  }
+
+  /**
+   * ⚠️⚠️ A127 — RETIRED pode resolver a dúvida histórica acima, mas NÃO pode
+   * iniciar ciclo novo. Só chegamos aqui quando não há intent vivo pendente.
+   * Substituída não é revogada: o plano fica vivo, aguardando reconexão/rebind
+   * explícito, e não herda automaticamente outra conexão CURRENT.
+   */
+  if (!simulado && conexao && conexao.is_active && !conexao.is_current) {
+    return { plano: p.id, acao: "adiado",
+      detalhe: "conexao_substituida — requer_reconexao" };
   }
 
   const d = decidirCiclo({
