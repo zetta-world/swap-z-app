@@ -49,9 +49,13 @@ vi.mock("@/lib/autopilot/price-guard", async (importOriginal) => {
 });
 vi.mock("@/lib/autopilot/sessions", () => ({
   getSessionStatus: async () => ({
-    id: "sess-1", strategy_id: "estrat-1", strategy_version: 3,
+    id: "sess-1", conexao_id: "cx-1", strategy_id: "estrat-1", strategy_version: 3,
     allowed_symbols: null, strategy_hash: "h-1",
   }),
+}));
+vi.mock("@/lib/cex/conexoes", () => ({
+  conexaoParaExecucao: async () => ({ ok: true, conexao: { id: "cx-1" } }),
+  decifrarConexao: () => ({ apiKey: "VAULT-KEY-A", apiSecret: "VAULT-SECRET-A" }),
 }));
 vi.mock("@/lib/autopilot/certificado", () => ({
   certificadoVivo: async () => null,

@@ -118,10 +118,18 @@ describe("credenciaisDaSessao — a leitura (T3.3 a T3.7)", () => {
 
   it("T3.3 com elo e conexão ativa: lê do COFRE", async () => {
     const { credenciaisDaSessao } = await import("@/lib/autopilot/sessions");
-    lerConexaoPorId.mockResolvedValue({ id: "c1", is_active: true });
+    lerConexaoPorId.mockResolvedValue({ id: "c1", is_active: true, is_current: true });
     const r = await credenciaisDaSessao(linha("c1"));
     expect(r.origem).toBe("cofre");
     expect(r.creds.apiKey).toBe("K-COFRE");
+  });
+
+
+  it("A127.6 ⚠️⚠️ conexão RETIRED lança — nova BUY/SELL não usa versão substituída", async () => {
+    const { credenciaisDaSessao } = await import("@/lib/autopilot/sessions");
+    lerConexaoPorId.mockResolvedValue({ id: "c1", is_active: true, is_current: false });
+    await expect(credenciaisDaSessao(linha("c1"))).rejects.toThrow(/substituída|substituida/);
+    expect(decifrarConexao).not.toHaveBeenCalled();
   });
 
   it("T3.4 ⚠️⚠️ conexão REVOGADA lança — revogar tem de revogar de verdade", async () => {

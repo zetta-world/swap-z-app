@@ -713,3 +713,38 @@ describe("⑧ guarda estrutural — a RPC da 0060 deriva do intent e nasce FECHA
     expect(SQL).toMatch(/janela residual/);
   });
 });
+
+describe("A127.9 — executor fail-closed para browser real sem conexao_id", () => {
+  it("recusa ANTES do intent, reserva e createOrder", async () => {
+    const b = bancoFalso();
+    const enviar = venue({ tipo: "aceita", ordem: { id: "X" } as never });
+    const reservar = vi.fn(async () => ({ ok: true as const }));
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre },
+      { origin: "autopilot_browser", autonomous: true, sessionId: "S1", conexaoId: null },
+      { exchangeId: "binance", symbol: "BTC/USDT", side: "sell", type: "market", qty: 1 },
+      CREDS,
+      { reservar },
+    );
+    expect(r.desfecho).toBe("recusado");
+    if (r.desfecho === "recusado") expect(r.motivo).toBe("conexao_ausente");
+    expect(b.intents).toHaveLength(0);
+    expect(reservar).not.toHaveBeenCalled();
+    expect(enviar).not.toHaveBeenCalled();
+  });
+
+  it("simulado browser sem conexao_id preserva o contrato e não chama a venue", async () => {
+    const b = bancoFalso();
+    const enviar = venue({ tipo: "aceita", ordem: { id: "NAO-DEVE-SAIR" } as never });
+    const r = await executarOrdemCex(
+      { db: b.cliente, enviar, killSwitches: passaLivre },
+      { origin: "autopilot_browser", autonomous: true, sessionId: "S1", conexaoId: null },
+      { exchangeId: "binance", symbol: "BTC/USDT", side: "sell", type: "market",
+        qty: 1, simulated: true },
+      null,
+    );
+    expect(r.desfecho).toBe("submetido");
+    expect(b.intents).toHaveLength(1);
+    expect(enviar).not.toHaveBeenCalled();
+  });
+});
