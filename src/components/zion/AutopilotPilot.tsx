@@ -298,11 +298,29 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     // exiting a position the user already holds) — capping it would block
     // legitimate take-profit exits whose notional naturally exceeds the
     // buy-side cap once the position has grown.
+    //
+    // ⚠️ A131: a VENDA também não é autorizada aqui. O servidor confere a
+    // posse contra `autopilot_positions` e LIMITA a quantidade à posição do
+    // bot; o que esta tela tem é memória local, que pode estar adiantada ou
+    // atrasada em relação ao livro.
     if (intents.some((i) => i.side === "buy" && i.notionalUsd > fresh.maxTradeUsd))
                                                                  return rejectAll("exceeds per-trade cap (changed during countdown)");
     if (intents.some((i) => !fresh.allowedSymbols.includes(i.symbol.split("/")[0])))
                                                                  return rejectAll("symbol no longer allowed");
-    // A4: re-check the total-exposure cap against FRESH open positions.
+    /**
+     * A4: re-check the total-exposure cap against FRESH open positions.
+     *
+     * ⚠️⚠️ ISTO É PRÉ-FILTRO DE TELA, NÃO AUTORIZAÇÃO — A131.
+     *
+     * O store local pode estar vazio (aba nova, storage limpo) e ainda assim
+     * existir posição do bot no servidor. Quem autoriza é `/api/cex/order`,
+     * que lê `autopilot_positions` e aplica o teto de exposição do MODO DE
+     * RISCO da sessão — o mesmo do cron. Esta conta aqui só evita uma ida ao
+     * servidor quando a própria tela já sabe que não cabe.
+     *
+     * ⚠️ Ela pode ser MAIS conservadora que o servidor. Nunca mais permissiva:
+     * passar aqui não faz a ordem sair.
+     */
     const buyNotionalFire = intents.filter((i) => i.side === "buy").reduce((sum, i) => sum + i.notionalUsd, 0);
     if (buyNotionalFire > 0) {
       const exposureNow = Object.values(useAutopilotPositions.getState().positions)

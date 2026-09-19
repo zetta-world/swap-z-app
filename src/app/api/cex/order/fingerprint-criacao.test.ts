@@ -126,6 +126,30 @@ vi.mock("@/lib/autopilot/politica", () => ({
   }),
 }));
 
+/**
+ * ⚠️⚠️ O LIVRO DE POSIÇÕES DO SERVIDOR — A131 (Round 9).
+ *
+ * A rota passou a exigir inventário server-side para VENDER (posse do bot) e
+ * para COMPRAR (teto de exposição). Sem este fixture, todo cenário deste
+ * arquivo cairia na recusa nova — e o que ele mede é OUTRA coisa. A posse é
+ * exercitada em `a131-livro-unico.test.ts`.
+ */
+vi.mock("@/lib/autopilot/positions-server", () => ({
+  lerPosicaoDoBot: async () => ({
+    ok: true,
+    posicao: { id: "P1", session_id: "S1", base: "BTC", pair: "BTC/USDT",
+               base_amount: 5, cost_usd: 100, status: "open",
+               exit_order_id: null, exit_armed_at: null },
+  }),
+  getOpenServerPositions: async () => ({ ok: true, posicoes: [] }),
+}));
+vi.mock("@/lib/autopilot/projecao-de-posicao", () => ({
+  projetarEfeitoDoIntent: async () => ({
+    ok: true, motivo: "aplicado", aplicadoQty: 0, aplicadoQuote: 0,
+    custoRemovido: 0, fechou: false,
+  }),
+}));
+
 import { POST } from "@/app/api/cex/order/route";
 
 const BASE = {

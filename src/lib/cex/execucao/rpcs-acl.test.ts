@@ -42,6 +42,10 @@ const CATALOGO: Record<string, string> = {
   cex_autorizar_e_submeter:  "0060_autorizacao_deriva_do_intent.sql",
   // A127 (round 8): a guarda versionada do cofre nasce fechada na 0063.
   cex_guardar_conexao_versionada: "0063_cex_conexoes_versionadas.sql",
+  // A131-C (round 9): a projeção idempotente da posição nasce fechada na 0064.
+  // ⚠️ Esta trava ACHOU a função nova antes de qualquer humano — que é
+  // exatamente o que ela existe para fazer.
+  autopilot_projetar_efeito_do_intent: "0064_autopilot_projecao_de_posicao.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

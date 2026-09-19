@@ -25,12 +25,16 @@ import { getTierForWallet } from "@/lib/tier/check";
 import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
 import { quantoPodeVender, oQueSobrou } from "@/lib/autopilot/venda-limitada";
+import {
+  tetoDeExposicaoDoRisco, calcularExposicaoUsd,
+} from "@/lib/autopilot/inventario";
+import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { runAlertWatchdog } from "@/lib/admin/watchdog";
 import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import {
-  getOpenServerPositions, recordServerEntry, markServerExitArmed,
+  getOpenServerPositions, markServerExitArmed,
   closeServerPosition, reopenServerPosition, applySessionPnl, reduzirServerPosition,
 } from "@/lib/autopilot/positions-server";
 import type { AutopilotSessionRow, AutopilotRunRow, AutopilotPositionRow } from "@/lib/supabase/types";
@@ -71,7 +75,9 @@ const MAX_ORDERS_PER_RUN = 4;
 // Server-side total open-exposure cap per risk mode (mirrors the browser
 // presets in store/autopilot.ts). The cron never lets the sum of open
 // position cost exceed this (A4 server side).
-const RISK_EXPOSURE_USD: Record<string, number> = { conservador: 75, moderado: 200, agressivo: 400 };
+// ⚠️ A131: o teto por modo de risco mudou de endereço para
+// `inventario.ts`, para o navegador usar O MESMO número. Ele vivia só
+// aqui, e a tela tinha outro no Zustand.
 
 type RunRowT = Partial<AutopilotRunRow> & { wallet_address: string; exchange_id: string; status: string };
 
@@ -125,6 +131,66 @@ async function avisarTaxaNaoPrecificada(pair: unknown, aviso: { moeda: string; v
     why: "taxa em moeda que não é stable nem a base do par — subtraída como ZERO, "
       + "então o P&L realizado sai OTIMISTA e o stop de perda afrouxa",
   } });
+}
+
+/**
+ * ⚠️⚠️⚠️ A LIQUIDAÇÃO DA SAÍDA ARMADA APLICA DIRETO — E PRECISA DIZER ISSO.
+ *
+ * `settleArmedExits` resolve ordens colocadas numa passada ANTERIOR: ela
+ * pergunta à corretora, vê o preenchimento e reduz a posição na hora, porque o
+ * P&L realizado é calculado ali, contra a posição ANTES da redução. Mudar isso
+ * para esperar o livro de fills mudaria a semântica do stop de perda, que não
+ * é o que o Round 9 veio fazer.
+ *
+ * Só que a reconciliação passou a projetar vendas (A131-C). Sem avisar o
+ * marcador, ela veria `applied = 0` para este intent e reduziria a MESMA venda
+ * outra vez — o defeito que a projeção existe para impedir, criado por ela.
+ *
+ * Então a liquidação ABSORVE: grava no marcador o que ela acabou de aplicar,
+ * sem mover a posição. A projeção seguinte calcula `ledger − applied` e aplica
+ * só o que sobrar.
+ *
+ * ⚠️ FALHAR AQUI É BARULHENTO. Absorção perdida = redução dobrada mais tarde.
+ */
+async function absorverNaProjecao(
+  pos: AutopilotPositionRow, order: CexOrder, vendido: number,
+): Promise<void> {
+  const db = getSupabaseAdmin();
+  const ordemExterna = pos.exit_order_id;
+  if (!db || !ordemExterna) {
+    await recordEvent("autopilot_absorcao_nao_registrada", { meta: {
+      severity: "high", session: pos.session_id, base: pos.base,
+      porque: !db ? "sem banco" : "posicao armada sem exit_order_id",
+      why: "a liquidacao reduziu a posicao e o marcador nao soube. A "
+        + "reconciliacao pode reduzir a MESMA venda de novo.",
+    } });
+    return;
+  }
+  const { data, error } = await db
+    .from("cex_execution_intents")
+    .select("id")
+    .eq("exchange_id", pos.exchange_id)
+    .eq("external_order_id", ordemExterna)
+    .maybeSingle();
+  if (error || !data) {
+    await recordEvent("autopilot_absorcao_nao_registrada", { meta: {
+      severity: "high", session: pos.session_id, base: pos.base, ordem: ordemExterna,
+      porque: error ? error.message.slice(0, 160) : "intent nao encontrado por ordem externa",
+      why: "a liquidacao reduziu a posicao e o marcador nao soube. A "
+        + "reconciliacao pode reduzir a MESMA venda de novo.",
+    } });
+    return;
+  }
+  const quote = Number((order as unknown as { cost?: unknown }).cost);
+  const r = await projetarEfeitoDoIntent(data.id, {
+    jaAplicado: { qty: vendido, quote: Number.isFinite(quote) ? quote : 0 },
+  });
+  if (!r.ok && r.motivo !== "sem_posicao") {
+    await recordEvent("autopilot_absorcao_nao_registrada", { meta: {
+      severity: "high", session: pos.session_id, base: pos.base,
+      intent: data.id, motivo: r.motivo, porque: r.porque,
+    } });
+  }
 }
 
 /**
@@ -195,6 +261,8 @@ async function settleArmedExits(
             reason: "venue diz fechada e nao informa quanto saiu — posicao MANTIDA ate haver evidencia" });
           continue;
         }
+        // ⚠️ A131-C: o marcador soube antes de a posição mudar.
+        await absorverNaProjecao(pos, order, vendido);
         const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
         if (sobra.fecha) {
           await exigirGravacao(
@@ -223,6 +291,7 @@ async function settleArmedExits(
          */
         const jaVendido = Number(order.filled);
         if (jaVendido > 0) {
+          await absorverNaProjecao(pos, order, jaVendido);
           const { realized, aviso } = realizedFromSell(order, pos);
           if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
           if (realized !== null) {
@@ -507,6 +576,21 @@ export async function POST(req: NextRequest) {
         await recordEvent("reconciliacao_leitura_falhou", { meta: { severity: "high",
           why: "nao deu para listar intents pendentes. 'nenhum pendente' e 'nao consegui "
             + "olhar' sao coisas diferentes, e ordens em duvida ficam sem reconciliar.",
+        } });
+      }
+      /**
+       * ⚠️⚠️ A131-C: fill reconciliado cujo efeito NÃO entrou no livro de
+       * posições. O dinheiro está registrado em `cex_fills`; o que ficou para
+       * trás é a posse. Inventário incompleto não pode virar licença para
+       * comprar mais — por isso severidade alta e nome próprio.
+       */
+      const semProjecao = r.resultados.filter((x) => x.projecaoFalhou);
+      if (semProjecao.length > 0) {
+        await recordEvent("autopilot_projecao_de_posicao_falhou", { meta: { severity: "high",
+          quantos: semProjecao.length,
+          ids: semProjecao.map((x) => `${x.intentId}:${x.projecaoFalhou}`).slice(0, 10),
+          why: "o fill foi reconciliado e a posicao NAO foi atualizada. O bot pode "
+            + "nao saber que possui (ou que vendeu) o que ja executou.",
         } });
       }
       const emQuarentena = r.resultados.filter((x) => x.desfecho === "quarentena");
@@ -871,8 +955,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   const marketInd = await getMarketIndicators(s.allowed_symbols).catch(() => null);
   const regimeBy = new Map<string, string>();
   for (const ind of marketInd?.indicators ?? []) if (ind.regime) regimeBy.set(ind.symbol.toUpperCase(), ind.regime);
-  let   exposureUsd   = openPositions.reduce((sum, p) => sum + Number(p.cost_usd || 0), 0);
-  const maxExposureUsd = RISK_EXPOSURE_USD[s.risk_mode] ?? 200;
+  let   exposureUsd   = calcularExposicaoUsd(openPositions);
+  const maxExposureUsd = tetoDeExposicaoDoRisco(s.risk_mode);
   const ownedBases    = new Set(openPositions.map((p) => p.base.toUpperCase()));
 
   // ── 8. Scan (with open positions so ZION proposes exits) ──
@@ -1165,19 +1249,28 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
                 reason: "aceita sem preenchimento — posicao intacta ate reconciliar" });
               continue;
             }
+            /**
+             * ⚠️⚠️⚠️ A REDUÇÃO DURÁVEL PASSA PELA PRIMITIVA ÚNICA — A131-C/§25.
+             *
+             * Isto chamava `closeServerPosition`/`reduzirServerPosition` direto.
+             * Funcionava, e criava uma segunda regra de negócio: a
+             * reconciliação, ao projetar o MESMO intent depois, reduziria de
+             * novo. Agora quem escreve é a RPC 0064, por delta cumulativo
+             * (`ledger − applied`) — reconciliar dez vezes aplica uma.
+             *
+             * ⚠️ A conta em memória (`sobra`) continua existindo porque o teto
+             * de exposição DESTA passada precisa enxergar o que acabou de sair.
+             * Ela não grava nada.
+             */
             const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
-            if (sobra.fecha) {
-              await exigirGravacao(
-                await closeServerPosition(s.id, pos.base),
-                "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
-                { session: s.id, base: pos.base });
+            const projecao = await projetarEfeitoDoIntent(exec.intentId);
+            if (!projecao.ok) {
+              avisarRegistroPerdido(
+                "saida NAO projetada no livro — o bot segue achando que tem a bolsa que acabou de vender",
+                { session: s.id, base: pos.base, intent: exec.intentId, motivo: projecao.motivo });
+              posicaoPerdida = true;
+            } else if (projecao.fechou) {
               ownedBases.delete(base);
-            } else {
-              await exigirGravacao(
-                await reduzirServerPosition(s.id, pos.base, sobra.baseRestante, sobra.custoRestante),
-                "saida PARCIAL nao gravada — o banco segue dizendo que a bolsa inteira esta la, e a passada seguinte tenta vender de novo o que ja saiu",
-                { session: s.id, base: pos.base, resta: sobra.baseRestante });
-              // A base CONTINUA nas mãos do bot: sai de `ownedBases` só quando fecha.
             }
             exposureUsd = Math.max(0, exposureUsd - sobra.custoRemovido);
             logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: intent.symbol, side: "sell", volumeUsd: sobra.custoRemovido || null, pnlUsd: realized, status: "filled", route: "cron", ref: `${exchange}:${order.id}` });
@@ -1330,14 +1423,20 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
          * dez dias parada sem ninguem saber de que.
          */
         if (fillPrice > 0 && filledQty > 0) {
-          const gravou = await recordServerEntry({
-            sessionId: s.id, walletAddress: s.wallet_address, exchangeId: s.exchange_id,
-            pair: intent.symbol, entryPrice: fillPrice, baseAmount: filledQty, costUsd: spentUsd,
-            reasoning: card.summary?.slice(0, 300), entryLabel: card.title?.slice(0, 80),
-          });
-          if (!gravou.ok) {
+          /**
+           * ⚠️⚠️⚠️ A MESMA PRIMITIVA DOS OUTROS DOIS CAMINHOS — A131-C/§25.
+           *
+           * Isto era `recordServerEntry`, que somava com média a partir dos
+           * números que ESTA função calculou. Três caminhos abriam posição com
+           * três regras: cron aqui, navegador em lugar nenhum, fill tardio
+           * nunca. Agora todos chamam a RPC 0064, que lê `filled_qty`/
+           * `filled_quote` do LIVRO e aplica só o delta ainda não aplicado.
+           */
+          const projecao = await projetarEfeitoDoIntent(exec.intentId);
+          if (!projecao.ok) {
             avisarRegistroPerdido("posicao NAO gravada — o bot nunca vai sair deste trade sozinho", {
-              pair: intent.symbol, order_id: order.id, entry: fillPrice, qty: filledQty, erro: gravou.erro,
+              pair: intent.symbol, order_id: order.id, entry: fillPrice, qty: filledQty,
+              intent: exec.intentId, motivo: projecao.motivo,
             });
             posicaoPerdida = true;
           }

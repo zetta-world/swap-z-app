@@ -115,6 +115,30 @@ vi.mock("@/lib/cex/execucao/executor", () => ({
   executarOrdemCex: espioes.executarOrdemCex,
 }));
 
+/**
+ * ⚠️⚠️ O LIVRO DE POSIÇÕES DO SERVIDOR — A131 (Round 9).
+ *
+ * A rota passou a exigir inventário server-side para VENDER (posse do bot) e
+ * para COMPRAR (teto de exposição). Sem este fixture, todo cenário deste
+ * arquivo cairia na recusa nova — e o que ele mede é OUTRA coisa. A posse é
+ * exercitada em `a131-livro-unico.test.ts`.
+ */
+vi.mock("@/lib/autopilot/positions-server", () => ({
+  lerPosicaoDoBot: async () => ({
+    ok: true,
+    posicao: { id: "P1", session_id: "S1", base: "BTC", pair: "BTC/USDT",
+               base_amount: 5, cost_usd: 100, status: "open",
+               exit_order_id: null, exit_armed_at: null },
+  }),
+  getOpenServerPositions: async () => ({ ok: true, posicoes: [] }),
+}));
+vi.mock("@/lib/autopilot/projecao-de-posicao", () => ({
+  projetarEfeitoDoIntent: async () => ({
+    ok: true, motivo: "aplicado", aplicadoQty: 0, aplicadoQuote: 0,
+    custoRemovido: 0, fechou: false,
+  }),
+}));
+
 import { POST } from "@/app/api/cex/order/route";
 
 function reqDe(body: Record<string, unknown>): NextRequest {
@@ -139,15 +163,23 @@ beforeEach(() => {
 describe("A110 r3 — notionalUsd entregue ao executor", () => {
   it("⚠️⚠️ piloto autônomo, MARKET (sem price), referência no servidor ⇒ executor recebe o nocional calculado", async () => {
     const resp = await POST(reqDe({
-      ...BASE, type: "market", amount: 0.01, autopilot: true, maxNotionalUsd: 1_000,
+      /**
+       * ⚠️ A QUANTIDADE ENCOLHEU NO ROUND 9, e não é ajuste cosmético: a rota
+       * passou a conferir o TETO DE EXPOSIÇÃO do servidor (A131 §22), o mesmo
+       * que o cron usa — `moderado` = US$ 200. Uma compra de US$ 600 pelo
+       * navegador passava porque ninguém no servidor olhava exposição; agora
+       * ela é recusada, como já era no cron. O que este teste mede — de onde
+       * sai o `notionalUsd` — continua igual.
+       */
+      ...BASE, type: "market", amount: 0.001, autopilot: true, maxNotionalUsd: 1_000,
     }));
     expect(resp.status).toBe(200);
     expect(espioes.executarOrdemCex).toHaveBeenCalledTimes(1);
     const ordem = espioes.executarOrdemCex.mock.calls[0][2] as { notionalUsd?: number | null };
-    // 0.01 BTC × 60.000 USD de referência = 600 — NUNCA null aqui: seria
+    // 0.001 BTC × 60.000 USD de referência = 60 — NUNCA null aqui: seria
     // "nocional não mensurável" na autorização final e o certificado com teto
     // seria recusado (o defeito medido pelo revisor).
-    expect(ordem.notionalUsd).toBeCloseTo(600, 9);
+    expect(ordem.notionalUsd).toBeCloseTo(60, 9);
   });
 
   it("ordem MANUAL market segue inalterada: notionalUsd null (e nunca 0)", async () => {
@@ -159,12 +191,12 @@ describe("A110 r3 — notionalUsd entregue ao executor", () => {
 
   it("piloto LIMIT com price: o nocional do pedido (amount × price) prevalece", async () => {
     const resp = await POST(reqDe({
-      ...BASE, type: "limit", amount: 0.01, price: 59_000,
+      ...BASE, type: "limit", amount: 0.001, price: 59_000,
       autopilot: true, maxNotionalUsd: 1_000,
     }));
     expect(resp.status).toBe(200);
     const ordem = espioes.executarOrdemCex.mock.calls[0][2] as { notionalUsd?: number | null };
-    expect(ordem.notionalUsd).toBeCloseTo(590, 9);
+    expect(ordem.notionalUsd).toBeCloseTo(59, 9);
   });
 
   it("⚠️ guarda estrutural: a chamada do executor tem o fallback `?? notionalRealDoPiloto`", () => {
@@ -173,7 +205,11 @@ describe("A110 r3 — notionalUsd entregue ao executor", () => {
     // mande o nocional do piloto para a ordem manual.
     const fonte = readFileSync("src/app/api/cex/order/route.ts", "utf8");
     expect(fonte).toMatch(
-      /notionalUsd:\s*\(typeof body\.price === "number" \? body\.amount \* body\.price : null\)\s*\?\? notionalRealDoPiloto/);
+      // ⚠️ `body.amount` virou `quantidadeAutorizada` no A131: a quantidade
+      // que o servidor autoriza (limitada à posição do bot numa venda) é a
+      // que desce para o nocional — senão o teto seria conferido contra um
+      // número e a ordem sairia com outro.
+      /notionalUsd:\s*\(typeof body\.price === "number" \? quantidadeAutorizada \* body\.price : null\)\s*\?\? notionalRealDoPiloto/);
     expect(fonte).toMatch(/notionalRealDoPiloto = guard\.realNotionalUsd \?\? null/);
   });
 });

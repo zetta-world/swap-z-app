@@ -126,80 +126,23 @@ export async function lerPosicaoDoBot(
 }
 
 /**
- * Record (or average into) an entry after a BUY fills. Mirrors the browser
- * store's average-in: a second buy of the same base folds into one row at the
- * blended average cost.
+ * ⚠️⚠️⚠️ `recordServerEntry` VIVIA AQUI, E SAIU NO A131-C (Round 9).
+ *
+ * Ela abria/somava posição a partir dos números que o CALLER calculava, e era
+ * o caminho do cron imediato. O navegador não tinha caminho nenhum (gravava em
+ * `localStorage`), e o fill tardio não tinha nenhum — a reconciliação nunca
+ * tocou em `autopilot_positions`, apesar de o cron dizer por escrito "posicao
+ * abre na reconciliacao".
+ *
+ * Três regras para a mesma pergunta, uma delas inexistente. Agora existe uma:
+ * `projetarEfeitoDoIntent` (migration 0064), que lê `filled_qty`/`filled_quote`
+ * do LIVRO, calcula `ledger − applied` e aplica dentro de uma transação. Ela é
+ * idempotente por intent, o que `recordServerEntry` nunca poderia ser: somar
+ * com média não tem como saber se aquele fill já entrou.
+ *
+ * ⚠️ NÃO RESSUSCITAR. Um segundo escritor de posição é um segundo modelo de
+ * quanto o bot possui — que é exatamente o achado A131.
  */
-export async function recordServerEntry(p: {
-  sessionId:     string;
-  walletAddress: string;
-  exchangeId:    string;
-  pair:          string;
-  entryPrice:    number;
-  baseAmount:    number;
-  costUsd:       number;
-  reasoning?:    string;
-  entryLabel?:   string;
-}): Promise<Gravacao> {
-  const db = getSupabaseAdmin();
-  // ⚠️ Sem banco configurado isto e falha, nao "nada a fazer": a ordem ja
-  // existe na corretora e ninguem vai saber dela.
-  if (!db) return { ok: false, erro: "supabase nao configurado" };
-  const base = p.pair.split("/")[0].toUpperCase();
-
-  /**
-   * ⚠️⚠️ A LEITURA DE ANTES TAMBÉM FALHAVA ABERTA — A133, §6.
-   *
-   * Era `const { data: prev } = await ...`, com o `error` descartado. Falha de
-   * leitura virava "não existe posição" — e o ramo de baixo INSERE uma linha
-   * nova. Numa base onde o bot já tinha 0,5 BTC somado ao longo do dia, o
-   * upsert por `(session_id, base)` sobrescreveria o acumulado pelo tamanho da
-   * última compra: o livro passaria a dizer que o bot tem MENOS do que tem, e
-   * o resto viraria órfão que ninguém mais vende.
-   *
-   * Agora não se conclui nada de uma leitura que não aconteceu.
-   */
-  const anterior = await lerPosicaoDoBot(p.sessionId, base);
-  if (!anterior.ok) {
-    return { ok: false, erro: `leitura da posicao anterior falhou: ${anterior.porque}` };
-  }
-  const prev = anterior.posicao;
-
-  const nowIso = new Date().toISOString();
-  if (prev && prev.status !== "closed") {
-    const totalBase = Number(prev.base_amount) + p.baseAmount;
-    const totalCost = Number(prev.cost_usd) + p.costUsd;
-    const avgPrice  = totalBase > 0 ? totalCost / totalBase : p.entryPrice;
-    return comRetentativa(() => db.from("autopilot_positions").update({
-      entry_price: avgPrice,
-      base_amount: totalBase,
-      cost_usd:    totalCost,
-      reasoning:   p.reasoning ?? prev.reasoning,
-      entry_label: p.entryLabel ?? prev.entry_label,
-      status:      "open",       // re-open if it had an exit armed
-      updated_at:  nowIso,
-    }).eq("id", prev.id));
-  }
-
-  // Fresh position (or replacing a closed one).
-  return comRetentativa(() => db.from("autopilot_positions").upsert({
-    session_id:     p.sessionId,
-    wallet_address: p.walletAddress,
-    exchange_id:    p.exchangeId,
-    base,
-    pair:           p.pair.toUpperCase(),
-    entry_price:    p.entryPrice,
-    base_amount:    p.baseAmount,
-    cost_usd:       p.costUsd,
-    reasoning:      p.reasoning ?? null,
-    entry_label:    p.entryLabel ?? null,
-    status:         "open",
-    exit_order_id:  null,
-    exit_armed_at:  null,
-    entry_ts:       nowIso,
-    updated_at:     nowIso,
-  }, { onConflict: "session_id,base" }));
-}
 
 /**
  * Marca que existe ordem de saída pousada nesta posição.

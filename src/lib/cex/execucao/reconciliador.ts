@@ -21,6 +21,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
+import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
 import type { CexId, CexCredentials } from "@/lib/cex/types";
 import { lerOrdemNaVenue, type HistoricoDoSimbolo, type LeituraDaOrdem } from "@/lib/cex/execucao/venue-leitura";
 import {
@@ -65,6 +66,13 @@ export interface ResultadoDaReconciliacao {
    * não existe" e nunca FAILED.
    */
   leituraFalhou?: boolean;
+  /**
+   * ⚠️ A131-C: o motivo de a projeção no livro de posições não ter entrado.
+   * O dinheiro já se moveu e está no livro de EXECUÇÕES; o que ficou para
+   * trás é a POSIÇÃO. Quem chama registra em severidade alta — inventário
+   * incompleto não pode virar licença para comprar mais.
+   */
+  projecaoFalhou?: string;
 }
 
 export interface DependenciasDaReconciliacao {
@@ -84,6 +92,33 @@ export interface DependenciasDaReconciliacao {
    * reconciliação interativa (o usuário reautentica e consulta).
    */
   elegivel?: (intent: IntentRow) => boolean;
+  /**
+   * ⚠️⚠️ A131-C — A PROJEÇÃO DO FILL TARDIO NO LIVRO DE POSIÇÕES.
+   *
+   * O cron dizia por escrito, na linha da ordem aceita sem preenchimento:
+   * *"posicao abre na reconciliacao"*. Não abria: `reconciliarPendentes` nunca
+   * tocou em `autopilot_positions`. Uma limitada que preenchesse dez minutos
+   * depois ficava fora do livro para sempre — o bot não sabia que tinha
+   * comprado, o teto de exposição não contava aquele capital, e o ramo de
+   * venda nunca achava a posição para sair.
+   *
+   * Injetável para teste; o padrão é a RPC idempotente da 0064.
+   */
+  projetar?: (intentId: string) => Promise<{ ok: boolean; motivo?: string }>;
+}
+
+/**
+ * Este intent descreve inventário do BOT?
+ *
+ * ⚠️ MANUAL E SIMULADO FICAM DE FORA (§31). Projetar uma venda manual no livro
+ * do autopilot seria sequestrar patrimônio do dono para o mandato do robô — e
+ * a RPC confere isto de novo, do lado do banco.
+ */
+function projetavel(intent: IntentRow): boolean {
+  return !intent.simulated
+    && intent.autonomous === true
+    && (intent.origin === "autopilot_browser" || intent.origin === "autopilot_cron")
+    && Boolean(intent.session_id);
 }
 
 /**
@@ -505,7 +540,25 @@ export async function reconciliarPendentes(
      */
     if (deps.elegivel && !deps.elegivel(intent)) continue;
     try {
-      resultados.push(await reconciliarIntent(deps, intent));
+      const r = await reconciliarIntent(deps, intent);
+      /**
+       * ⚠️⚠️ A PROJEÇÃO VEM DEPOIS DA RECONCILIAÇÃO, SEMPRE QUE ELA RODA.
+       *
+       * Não só no desfecho "resolvido": um PARTIALLY_FILLED que cresceu também
+       * mudou o inventário, e ele continua em dúvida. A idempotência é do
+       * marcador — `ledger − applied` —, então chamar de mais é barato e
+       * chamar de menos perde o fato.
+       *
+       * ⚠️ Falha aqui NÃO derruba a reconciliação: o livro de execuções já
+       * registrou o que aconteceu. Ela vira sinal, e a passada seguinte tenta
+       * de novo (a RPC é retentável por construção).
+       */
+      if (projetavel(intent)) {
+        const projetar = deps.projetar ?? projetarEfeitoDoIntent;
+        const p = await projetar(intent.id);
+        if (!p.ok) r.projecaoFalhou = p.motivo ?? "erro";
+      }
+      resultados.push(r);
     } catch (e) {
       resultados.push({ intentId: intent.id, desfecho: "erro", estado: intent.state,
         detalhe: ((e as Error)?.message ?? String(e)).slice(0, 200) });

@@ -35,6 +35,11 @@ export interface BancoFalso {
   /** A127: `cex_conexoes` — o cofre versionado (migration 0063). A RPC fake
    *  `cex_guardar_conexao_versionada` grava aqui; `revogarConexao` atualiza. */
   conexoes: Linha[];
+  /** A131: `autopilot_positions` — o livro ÚNICO do que o bot possui. */
+  posicoes: Linha[];
+  /** A131-C: `autopilot_position_effects` — quanto de cada intent já entrou
+   *  na posição. É o marcador durável da migration 0064. */
+  efeitos: Linha[];
   /** Falhas injetáveis, por operação, para exercitar o caminho de erro. */
   falhas: {
     insertIntent?: string;
@@ -63,6 +68,8 @@ export function bancoFalso(): BancoFalso {
   const certificados: Linha[] = [];
   const sessoes: Linha[] = [];
   const conexoes: Linha[] = [];
+  const posicoes: Linha[] = [];
+  const efeitos: Linha[] = [];
   const falhas: BancoFalso["falhas"] = {};
   let seq = 0;
   let leiturasFeitas = 0;
@@ -494,6 +501,99 @@ export function bancoFalso(): BancoFalso {
                        state: it.state }, error: null };
     }
 
+    /**
+     * ⚠️⚠️⚠️ A131-C (migration 0064) — A PROJEÇÃO IDEMPOTENTE, reproduzida.
+     *
+     * Mesma ordem de decisões do SQL: origem → marcador → regressão → delta →
+     * posição → marcador. O teste estrutural em `a131-projecao.test.ts`
+     * confere que o SQL de verdade mantém cada uma destas guardas, para este
+     * falso não virar uma segunda regra de negócio (que é o achado A131).
+     */
+    if (nome === "autopilot_projetar_efeito_do_intent") {
+      const it = intents.find((i) => i.id === args.p_intent_id);
+      if (!it) return { data: { ok: false, motivo: "intent_inexistente" }, error: null };
+      if (it.simulated === true) return { data: { ok: false, motivo: "simulado" }, error: null };
+      const origem = String(it.origin);
+      if ((origem !== "autopilot_browser" && origem !== "autopilot_cron") || it.autonomous !== true) {
+        return { data: { ok: false, motivo: "origem_nao_autonoma", origin: origem }, error: null };
+      }
+      if (!it.session_id) return { data: { ok: false, motivo: "sem_sessao" }, error: null };
+
+      const base = String(it.symbol).split("/")[0].toUpperCase();
+      let efeito = efeitos.find((e) => e.intent_id === it.id);
+      if (!efeito) {
+        efeito = { intent_id: it.id, session_id: it.session_id, exchange_id: it.exchange_id,
+                   base, side: it.side, applied_qty: 0, applied_quote: 0,
+                   ledger_qty: 0, ledger_quote: 0 };
+        efeitos.push(efeito);
+      }
+      // Absorção do que a liquidação da saída armada já aplicou direto.
+      const jaQty = args.p_qty_ja_aplicada;
+      if (typeof jaQty === "number" && jaQty > Number(efeito.applied_qty)) {
+        efeito.applied_qty = jaQty;
+        efeito.applied_quote = Math.max(Number(efeito.applied_quote),
+          Number(args.p_quote_ja_aplicada ?? 0));
+      }
+
+      const EPS = 1e-12, RUIDO = 1e-9;
+      const noLivro = Number(it.filled_qty);
+      // ⚠️ Regressão mede o LIVRO contra o livro; o delta mede o livro contra
+      // o que já está DENTRO da posição (que a absorção pode ter adiantado).
+      if (noLivro < Number(efeito.ledger_qty) - EPS) {
+        return { data: { ok: false, motivo: "regressao",
+                         aplicado: Number(efeito.ledger_qty), no_livro: noLivro }, error: null };
+      }
+      const deltaQty = Math.max(noLivro - Number(efeito.applied_qty), 0);
+      const deltaQuote = Math.max(Number(it.filled_quote) - Number(efeito.applied_quote), 0);
+      if (deltaQty <= EPS) {
+        efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
+        efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+        return { data: { ok: true, motivo: "sem_delta", aplicado_qty: 0,
+                         aplicado_quote: 0, fechou: false }, error: null };
+      }
+
+      const pos = posicoes.find((x) => x.session_id === it.session_id && x.base === base);
+      let custoRemovido = 0, fechou = false;
+      if (it.side === "buy") {
+        if (pos) {
+          const qtd = Number(pos.base_amount) + deltaQty;
+          const custo = Number(pos.cost_usd) + deltaQuote;
+          pos.base_amount = qtd; pos.cost_usd = custo;
+          pos.entry_price = qtd > 0 ? custo / qtd : pos.entry_price;
+          pos.status = "open";
+        } else {
+          posicoes.push({ id: `pos${++seq}`, session_id: it.session_id,
+            wallet_address: it.wallet_address ?? "", exchange_id: it.exchange_id,
+            base, pair: String(it.symbol).toUpperCase(),
+            entry_price: deltaQty > 0 ? deltaQuote / deltaQty : 0,
+            base_amount: deltaQty, cost_usd: deltaQuote, status: "open",
+            exit_order_id: null, exit_armed_at: null });
+        }
+      } else {
+        if (!pos) {
+          return { data: { ok: false, motivo: "sem_posicao", base, delta_qty: deltaQty }, error: null };
+        }
+        const restante = Number(pos.base_amount) - deltaQty;
+        if (restante <= Number(pos.base_amount) * RUIDO) {
+          custoRemovido = Number(pos.cost_usd);
+          fechou = true;
+          posicoes.splice(posicoes.indexOf(pos), 1);
+        } else {
+          const custoRestante = Number(pos.cost_usd) * (restante / Number(pos.base_amount));
+          custoRemovido = Number(pos.cost_usd) - custoRestante;
+          pos.base_amount = restante; pos.cost_usd = custoRestante;
+          pos.status = "open"; pos.exit_order_id = null; pos.exit_armed_at = null;
+        }
+      }
+      efeito.applied_qty = Math.max(Number(efeito.applied_qty), noLivro);
+      efeito.applied_quote = Math.max(Number(efeito.applied_quote), Number(it.filled_quote));
+      efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
+      efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+      return { data: { ok: true, motivo: "aplicado", side: it.side, base,
+                       aplicado_qty: deltaQty, aplicado_quote: deltaQuote,
+                       custo_removido: custoRemovido, fechou }, error: null };
+    }
+
     return { data: null, error: { message: `rpc desconhecida: ${nome}` } };
   };
 
@@ -629,5 +729,5 @@ export function bancoFalso(): BancoFalso {
     },
   };
   return { cliente: cliente as unknown as SupabaseClient<Database>,
-           intents, fills, certificados, sessoes, conexoes, falhas };
+           intents, fills, certificados, sessoes, conexoes, posicoes, efeitos, falhas };
 }

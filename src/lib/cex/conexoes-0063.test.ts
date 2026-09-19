@@ -117,9 +117,23 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
   });
 
   it("e nenhuma OUTRA migration nova apareceu depois da 0062", () => {
+    /**
+     * ⚠️ A LISTA CRESCEU UMA VEZ, NO ROUND 9 (A131-C): `autopilot_positions`
+     * com `unique (session_id, base)` não consegue provar quanto de CADA
+     * intent já foi projetado na posição, e sem essa prova reconciliar duas
+     * vezes soma duas vezes. A 0064 cria o marcador.
+     *
+     * A trava continua sendo uma LISTA, não um padrão: migration nova sem
+     * decisão explícita quebra aqui, que é o ponto.
+     *
+     * ⚠️ NENHUMA DAS DUAS FOI APLICADA.
+     */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
       .sort();
-    expect(novas).toEqual(["0063_cex_conexoes_versionadas.sql"]);
+    expect(novas).toEqual([
+      "0063_cex_conexoes_versionadas.sql",
+      "0064_autopilot_projecao_de_posicao.sql",
+    ]);
   });
 });

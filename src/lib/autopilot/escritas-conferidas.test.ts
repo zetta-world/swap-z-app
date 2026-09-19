@@ -41,7 +41,7 @@ const semComentarios = (s: string) =>
 
 /** As funções que escrevem estado de posição ou de risco. */
 const ESCRITORAS = [
-  "recordServerEntry", "markServerExitArmed", "reopenServerPosition",
+  "markServerExitArmed", "reopenServerPosition",
   "closeServerPosition", "applySessionPnl",
 ];
 
@@ -58,7 +58,7 @@ describe("as escritoras devolvem SE gravaram", () => {
 describe("o cron CONFERE cada uma delas", () => {
   const codigo = semComentarios(CRON);
 
-  it.each(ESCRITORAS.filter((f) => f !== "recordServerEntry"))(
+  it.each(ESCRITORAS)(
     "toda chamada a %s passa por exigirGravacao", (fn) => {
       /**
        * ⚠️ Conta CHAMADAS, não presença. Bastar que `exigirGravacao` apareça

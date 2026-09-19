@@ -148,18 +148,33 @@ describe("③ e o cron REALMENTE usa as duas", () => {
      * INTEIRA, como se nada tivesse sido vendido. O que já executou é fato
      * imutável; só o remanescente volta.
      */
+    /**
+     * ⚠️ E NO ROUND 9 A ESCRITA DURÁVEL DE UM DELES MUDOU DE DONO (A131-C).
+     *
+     * A venda IMEDIATA a mercado não chama mais `reduzirServerPosition`: ela
+     * projeta pela RPC 0064, por delta cumulativo, para a reconciliação não
+     * reduzir a MESMA venda outra vez. `oQueSobrou` continua nos três
+     * caminhos — a conta em memória do teto de exposição desta passada — e as
+     * DUAS reduções diretas que sobraram são as da liquidação da saída armada,
+     * que age sobre a ordem lida na corretora antes de o livro ingerir.
+     */
     const chamadas = [...CRON.matchAll(/const sobra = oQueSobrou\(/g)].length;
     expect(chamadas, "mercado, settle da armada e cancelamento parcial").toBe(3);
-    expect([...CRON.matchAll(/reduzirServerPosition\(/g)].length).toBe(3);
-    expect([...CRON.matchAll(/if \(sobra\.fecha\) \{/g)].length).toBe(3);
+    expect([...CRON.matchAll(/reduzirServerPosition\(/g)].length,
+      "só a liquidação reduz direto; a venda imediata projeta").toBe(2);
+    expect([...CRON.matchAll(/if \(sobra\.fecha\) \{/g)].length).toBe(2);
+    // ⚠️ E a venda imediata projeta — senão ela não escreveria em lugar nenhum.
+    expect(CRON).toMatch(/const projecao = await projetarEfeitoDoIntent\(exec\.intentId\)/);
   });
 
   it("⚠️⚠️ a base só sai de `ownedBases` quando a posição FECHA", () => {
     // Removê-la numa saída parcial faria o resto sumir do mundo do bot.
+    // ⚠️ A131-C: quem afirma que fechou passou a ser a projeção, que decide
+    // dentro da transação que reduziu — e não mais a conta em memória.
     const i = CRON.indexOf("ownedBases.delete(base)");
     expect(i).toBeGreaterThan(0);
     const antes = CRON.slice(Math.max(0, i - 400), i);
-    expect(antes).toMatch(/if \(sobra\.fecha\) \{/);
+    expect(antes).toMatch(/else if \(projecao\.fechou\) \{/);
   });
 
   it("⚠️⚠️ uma saída JÁ ARMADA não recebe segunda ordem de venda", () => {

@@ -8,6 +8,11 @@ import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { regimeDaBase } from "@/lib/autopilot/regime";
 import { getSessionStatus, utcDayKey } from "@/lib/autopilot/sessions";
+import { getOpenServerPositions, lerPosicaoDoBot } from "@/lib/autopilot/positions-server";
+import {
+  avaliarVendaAutonoma, avaliarExposicaoParaEntrada, tetoDeExposicaoDoRisco,
+} from "@/lib/autopilot/inventario";
+import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
 import { reservaDaVagaDiaria } from "@/lib/autopilot/reserva-de-vaga";
 import {
   avaliarAutorizacaoDaSessaoParaExecucao, entradaAutorizadaNaSessao, tetoEfetivoDaOrdem,
@@ -206,7 +211,17 @@ export async function POST(req: NextRequest) {
    * autoridade de recovery; a identidade histórica vem de `conexao_id` gravado
    * no próprio intent. A sessão pode ser rearmada para outra conexão.
    */
+  /**
+   * ⚠️⚠️ A QUANTIDADE QUE O SERVIDOR AUTORIZA — A131.
+   *
+   * Nasce igual ao pedido e pode ser REDUZIDA pela posse do bot numa venda
+   * autônoma. Tudo daqui para baixo (guarda de nocional, política, executor,
+   * resposta) usa ela — `body.amount` deixa de ser a quantidade da ordem.
+   */
+  let quantidadeAutorizada = body.amount;
   let sessaoDoPilotoId: string | null = null;
+  /** A carteira do piloto, para a telemetria fora do ramo da sessão. */
+  let walletDoPiloto: string | null = null;
   let conexaoDoPilotoId: string | null = null;
   /** ⚠️ O dia UTC usado na reserva — o MESMO da autorização, não recalculado. */
   let hojeDoPiloto: string | null = null;
@@ -235,6 +250,7 @@ export async function POST(req: NextRequest) {
      * exatamente como estava: sem exigir login, aberta de propósito.
      */
     const sessao = await getSession();
+    walletDoPiloto = sessao?.sub ?? null;
     const automacao = await podeAutomatizar(sessao?.sub ?? "");
     if (!automacao.permitido) {
       return NextResponse.json(
@@ -337,6 +353,57 @@ export async function POST(req: NextRequest) {
     }
 
     const base = body.symbol.split(/[\/\-]/)[0];
+
+    /**
+     * ⚠️⚠️⚠️ O QUE O BOT POSSUI É O QUE O SERVIDOR DIZ — achado A131.
+     *
+     * Este ramo autorizava VENDA autônoma sem olhar inventário nenhum. O
+     * inventário do piloto existia em dois lugares: `autopilot_positions` (que
+     * só o cron lia) e o `localStorage` do navegador (que nada do servidor
+     * lia). O ataque cabe em três linhas:
+     *
+     *     posição do bot no servidor:  0,01 BTC
+     *     saldo do cliente na conta:   1,00 BTC
+     *     cartão pede:                 VENDER 0,50 BTC
+     *
+     * O cron limitava a 0,01 (`quantoPodeVender`); esta rota mandava 0,50 — e
+     * 0,49 BTC do PATRIMÔNIO DO DONO sairiam por um mandato que o bot não tem.
+     *
+     * ⚠️ A QUANTIDADE PASSA A SER `quantidadeAutorizada`, não `body.amount`.
+     * Ela desce para o guarda de nocional, para a política e para o executor —
+     * senão o teto seria conferido contra um número e a ordem sairia com outro.
+     *
+     * ⚠️ MANUAL NÃO ENTRA AQUI. Vender o próprio ativo é direito do dono; isto
+     * só vale para `autopilot_browser` (`ehAutopilot`).
+     */
+    if (side === "sell") {
+      const leituraDaPosicao = await lerPosicaoDoBot(sessaoDoPilotoId ?? "", base);
+      const posse = avaliarVendaAutonoma({ leitura: leituraDaPosicao, pedido: body.amount });
+      if (!posse.ok) {
+        logSecurity("a131_venda_sem_posse", {
+          route: "cex/order", symbol: body.symbol, motivo: posse.motivo,
+        }, "high");
+        return NextResponse.json(
+          { ok: false, error: "posse_do_bot", motivo: posse.motivo, detail: posse.porque },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      if (posse.limitada) {
+        /**
+         * ⚠️ NÃO É RUÍDO. É a diferença entre vender a posição do bot e vender
+         * a bolsa do dono — e o cron já registra o mesmo fato com nome
+         * próprio quando limita.
+         */
+        await recordEvent("autopilot_venda_limitada_a_posicao", { wallet: sessao?.sub, meta: {
+          canal: "browser", session: sessaoDoPilotoId, pair: body.symbol,
+          pedido: body.amount, naPosicao: posse.naPosicao, enviado: posse.qtd,
+          why: "o cartao pediu vender mais do que o bot comprou — o excedente seria "
+            + "moeda do proprio usuario, que o autopilot nao tem mandato para vender",
+        } });
+      }
+      quantidadeAutorizada = posse.qtd;
+    }
+
     const refPrice = await getReferencePriceUsd(base);
     /**
      * ⚠️⚠️⚠️ A130-B — O TETO É O DURÁVEL, NÃO O DO CORPO.
@@ -359,13 +426,55 @@ export async function POST(req: NextRequest) {
       tetoGlobalUsd: HARD_NOTIONAL_CEILING_USD,
       pedidoPeloClienteUsd: body.maxNotionalUsd,
     });
-    const guard = checkRealNotional({ side, baseAmount: body.amount, refPrice, maxTradeUsd: cap });
+    // ⚠️ A131: a quantidade conferida é a AUTORIZADA (limitada à posição do
+    // bot numa venda), nunca a pedida pelo corpo.
+    const guard = checkRealNotional({ side, baseAmount: quantidadeAutorizada, refPrice, maxTradeUsd: cap });
     if (!guard.ok) {
       logSecurity("notional_guard_block", { route: "cex/order", symbol: body.symbol, reason: guard.reason }, "high");
       return NextResponse.json(
         { ok: false, error: "notional_guard", detail: guard.reason },
         { status: 400 },
       );
+    }
+
+    /**
+     * ⚠️⚠️⚠️ A EXPOSIÇÃO TAMBÉM É DO SERVIDOR — A131 §22.
+     *
+     * O teto de exposição TOTAL do piloto vivia em dois lugares com dois
+     * números: `RISK_EXPOSURE_USD` no cron (lendo `autopilot_positions`) e um
+     * teto no Zustand do navegador (lendo `localStorage`). Uma aba com o store
+     * vazio enxergava exposição ZERO e comprava por cima de tudo que o cron já
+     * tinha comprado.
+     *
+     * ⚠️ DEPOIS DO GUARDA DE NOCIONAL, de propósito: o número que entra na
+     * conta é o REAL medido (`guard.realNotionalUsd`), e a recusa mais
+     * específica — "esta ordem é grande demais" — vem antes da mais geral —
+     * "a carteira do bot já está cheia".
+     *
+     * ⚠️ LIVRO ILEGÍVEL RECUSA (A133): `[]` por erro de banco faria a exposição
+     * parecer zero, que é a mesma mentira por outro caminho.
+     *
+     * ⚠️ O TETO É O DO MODO DE RISCO DA SESSÃO — o MESMO do cron. Isto muda
+     * comportamento: uma compra do navegador maior que o teto de exposição
+     * passava antes, porque ninguém no servidor olhava. Está declarado na
+     * entrega.
+     */
+    if (side === "buy") {
+      const livro = await getOpenServerPositions(sessaoDoPilotoId ?? "");
+      const exposicao = avaliarExposicaoParaEntrada({
+        leitura: livro,
+        novaEntradaUsd: guard.realNotionalUsd ?? Number.NaN,
+        tetoUsd: tetoDeExposicaoDoRisco(sessaoDoPiloto?.risk_mode),
+      });
+      if (!exposicao.ok) {
+        logSecurity("a131_exposicao_do_servidor", {
+          route: "cex/order", symbol: body.symbol, motivo: exposicao.motivo,
+        }, "high");
+        return NextResponse.json(
+          { ok: false, error: "exposicao_do_bot", motivo: exposicao.motivo, detail: exposicao.porque },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
     }
 
     /**
@@ -573,7 +682,7 @@ export async function POST(req: NextRequest) {
          *  conexao_id do intent); a impressão do manual veio do SERVIDOR, nunca do body. */
         credentialFingerprint },
       { exchangeId: exchange, symbol: body.symbol, side, type,
-        qty: body.amount, price: type === "limit" ? body.price : null,
+        qty: quantidadeAutorizada, price: type === "limit" ? body.price : null,
         /**
          * ⚠️ MARKET DO PILOTO NÃO TEM `body.price` — sem este fallback o
          * intent gravava `requested_notional_usd` NULL e a autorização final
@@ -583,7 +692,7 @@ export async function POST(req: NextRequest) {
          * inalterada (`notionalRealDoPiloto` é null fora do ramo do piloto),
          * e null nunca vira 0 — sem medida, sem número.
          */
-        notionalUsd: (typeof body.price === "number" ? body.amount * body.price : null)
+        notionalUsd: (typeof body.price === "number" ? quantidadeAutorizada * body.price : null)
           ?? notionalRealDoPiloto },
       creds,
       /**
@@ -659,8 +768,8 @@ export async function POST(req: NextRequest) {
                     id: final.external_order_id ?? final.id,
                     symbol: body.symbol, side, type,
                     status: "closed",
-                    amount: body.amount, filled,
-                    remaining: Math.max(body.amount - filled, 0),
+                    amount: quantidadeAutorizada, filled,
+                    remaining: Math.max(quantidadeAutorizada - filled, 0),
                     price: type === "limit" ? body.price : undefined,
                   },
                   filledImmediately: true,
@@ -717,6 +826,46 @@ export async function POST(req: NextRequest) {
     }
 
     /**
+     * ⚠️⚠️⚠️ O QUE O NAVEGADOR EXECUTOU ENTRA NO LIVRO DO SERVIDOR — A131.
+     *
+     * A compra do piloto era gravada em `localStorage` e em lugar nenhum do
+     * servidor. Na passada seguinte, o cron lia `autopilot_positions` vazio:
+     * `exposureUsd = 0`, `ownedBases` vazio. Dinheiro real comprado, e o dono
+     * do inventário não sabia. Daí saíam três coisas: compra nova por cima do
+     * teto de exposição, ausência de saída gerida pelo cron, e contexto errado
+     * para o ZION.
+     *
+     * ⚠️ VENDA TAMBÉM PROJETA. Uma saída executada aqui precisa REDUZIR a
+     * posição no servidor — senão o livro segue dizendo que o bot tem a bolsa
+     * que acabou de vender.
+     *
+     * ⚠️ NÚMEROS DO LIVRO, NUNCA DO PEDIDO (§21). A RPC lê `filled_qty` /
+     * `filled_quote` do intent; esta rota só passa o id. ACK sem preenchimento
+     * não abre posição nenhuma — a projeção aplica delta zero e a reconciliação
+     * abre quando (e se) executar.
+     *
+     * ⚠️ FALHA AQUI É BARULHENTA (§36). O dinheiro já se moveu e não dá para
+     * desfazer; o que não pode é passar por normal. A projeção é retentável: a
+     * reconciliação chama a MESMA RPC, que aplica o delta que faltar.
+     */
+    // ⚠️ Esta rota não emite ordem simulada — `simulated` nasce `false` no
+    // intent —, e a RPC recusa simulado de novo, do lado do banco (§31).
+    if (ehAutopilot && r.filledQty > 0) {
+      const projecao = await projetarEfeitoDoIntent(r.intentId);
+      if (!projecao.ok) {
+        logSecurity("a131_projecao_falhou", {
+          route: "cex/order", symbol: body.symbol, motivo: projecao.motivo,
+        }, "high");
+        await recordEvent("autopilot_projecao_de_posicao_falhou", { wallet: walletDoPiloto ?? undefined, meta: {
+          severity: "high", canal: "browser", session: sessaoDoPilotoId,
+          intent: r.intentId, motivo: projecao.motivo, porque: projecao.porque,
+          why: "a ordem EXECUTOU e o livro de posicoes nao registrou. O bot pode nao "
+            + "saber que possui (ou que vendeu) o que ja aconteceu na corretora.",
+        } });
+      }
+    }
+
+    /**
      * ⚠️ `filledImmediately` AGORA SAI DO LIVRO, não do ACK (achado A81).
      * Antes ele era `status === "closed" || (market && filled > 0)`; um ACK sem
      * preenchimento podia vir como "preenchido" para a tela.
@@ -728,9 +877,9 @@ export async function POST(req: NextRequest) {
         id: r.externalOrderId ?? r.intentId,
         symbol: body.symbol, side, type,
         status: r.state === "FILLED" ? "closed" : "open",
-        amount: body.amount,
+        amount: quantidadeAutorizada,
         filled: r.filledQty,
-        remaining: Math.max(body.amount - r.filledQty, 0),
+        remaining: Math.max(quantidadeAutorizada - r.filledQty, 0),
         price: type === "limit" ? body.price : undefined,
       },
       filledImmediately: r.state === "FILLED",
@@ -748,7 +897,7 @@ export async function POST(req: NextRequest) {
         filledImmediately: r.state === "FILLED",
         intentId: r.intentId,
         estado: r.state,
-        notional: typeof body.price === "number" ? body.amount * body.price : null,
+        notional: typeof body.price === "number" ? quantidadeAutorizada * body.price : null,
       },
     });
     return NextResponse.json(resp, {

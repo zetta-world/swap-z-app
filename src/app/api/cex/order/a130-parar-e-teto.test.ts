@@ -40,6 +40,16 @@ const estado = vi.hoisted(() => {
     /** A reserva concede? E quantas vezes foi pedida? */
     reservaConcede: true,
     reservas: 0,
+    /**
+     * ⚠️ O LIVRO DE POSIÇÕES DO SERVIDOR — A131 (Round 9). A rota passou a
+     * exigir posse para vender e exposição para comprar; aqui ele é generoso
+     * de propósito, porque o que este arquivo mede é a AUTORIZAÇÃO DA SESSÃO.
+     * A posse tem arquivo próprio (`a131-livro-unico.test.ts`).
+     */
+    posicao: { id: "P1", session_id: "S1", base: "BTC", pair: "BTC/USDT",
+               base_amount: 5, cost_usd: 100, status: "open",
+               exit_order_id: null as string | null, exit_armed_at: null },
+    posicoes: [] as Array<Record<string, unknown>>,
   };
 });
 
@@ -88,6 +98,16 @@ vi.mock("@/lib/autopilot/sessions", () => ({
       : { ok: false as const, motivo: "limite_diario" as const, porque: "teto" };
   },
   liberarTradeDaSessao: async () => true,
+}));
+vi.mock("@/lib/autopilot/positions-server", () => ({
+  lerPosicaoDoBot: async () => ({ ok: true, posicao: estado.posicao }),
+  getOpenServerPositions: async () => ({ ok: true, posicoes: estado.posicoes }),
+}));
+vi.mock("@/lib/autopilot/projecao-de-posicao", () => ({
+  projetarEfeitoDoIntent: async () => ({
+    ok: true, motivo: "aplicado", aplicadoQty: 0, aplicadoQuote: 0,
+    custoRemovido: 0, fechou: false,
+  }),
 }));
 vi.mock("@/lib/autopilot/certificado", () => ({ certificadoVivo: async () => null }));
 vi.mock("@/lib/autopilot/regime", () => ({ regimeDaBase: async () => "TRENDING_UP" }));

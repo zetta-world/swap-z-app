@@ -64,9 +64,7 @@ vi.mock("@/lib/supabase/server", () => ({
   },
 }));
 
-import {
-  getOpenServerPositions, lerPosicaoDoBot, recordServerEntry,
-} from "@/lib/autopilot/positions-server";
+import { getOpenServerPositions, lerPosicaoDoBot } from "@/lib/autopilot/positions-server";
 
 beforeEach(() => {
   estado.erroNaLeitura = null;
@@ -121,45 +119,42 @@ describe("A133.2 — sucesso com data vazio CONTINUA sendo zero posições", () 
   });
 });
 
-describe("A133.5 — `recordServerEntry` não conclui nada de leitura que falhou", () => {
-  it("⚠️⚠️ select anterior falha: ZERO escrita, e devolve erro", async () => {
-    /**
-     * O perigo concreto: o ramo de baixo faz UPSERT por `(session_id, base)`.
-     * Concluir "não existe posição" de uma leitura falha SOBRESCREVERIA o
-     * acumulado do dia pelo tamanho da última compra — o livro passaria a
-     * dizer que o bot tem menos do que tem, e o resto vira órfão.
-     */
-    estado.erroNaLeitura = { message: "timeout na leitura" };
-    const r = await recordServerEntry({
-      sessionId: "S1", walletAddress: "0xA", exchangeId: "binance",
-      pair: "BTC/USDT", entryPrice: 60_000, baseAmount: 0.01, costUsd: 600,
-    });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.erro).toContain("leitura da posicao anterior falhou");
-    expect(estado.escritas).toHaveLength(0);
+describe("A133.5 — nenhum read-before-write do livro conclui de leitura falha", () => {
+  /**
+   * ⚠️ ESTE BLOCO MUDOU DE ALVO NO A131-C, e a razão está escrita para a troca
+   * ser auditável.
+   *
+   * Ele media `recordServerEntry`: a função lia a posição anterior com
+   * `const { data: prev } = await ...`, descartando `error`, e concluía "não
+   * existe posição" de uma leitura que não aconteceu — o ramo de baixo então
+   * UPSERTAVA por `(session_id, base)`, sobrescrevendo o acumulado do dia pelo
+   * tamanho da última compra.
+   *
+   * O A133 consertou a leitura. O A131-C foi além e APAGOU a função: abrir
+   * posição passou a ser uma coisa só, `projetarEfeitoDoIntent`, que lê o
+   * intent e a posição DENTRO de uma transação, sob `for update`. Não existe
+   * mais janela entre ler e escrever — nem um segundo escritor para divergir.
+   */
+  const FONTE = readFileSync("src/lib/autopilot/positions-server.ts", "utf8");
+  const SQL = readFileSync("supabase/migrations/0064_autopilot_projecao_de_posicao.sql", "utf8");
+
+  it("⚠️⚠️ `recordServerEntry` não existe mais — era o segundo escritor", () => {
+    expect(FONTE).not.toMatch(/export async function recordServerEntry/);
+    expect(FONTE).toMatch(/NÃO RESSUSCITAR/);
   });
 
-  it("⚠️ o gêmeo positivo: leitura boa e vazia GRAVA a posição nova", async () => {
-    const r = await recordServerEntry({
-      sessionId: "S1", walletAddress: "0xA", exchangeId: "binance",
-      pair: "BTC/USDT", entryPrice: 60_000, baseAmount: 0.01, costUsd: 600,
-    });
-    expect(r).toEqual({ ok: true });
-    expect(estado.escritas).toHaveLength(1);
-    expect(estado.escritas[0].tipo).toBe("upsert");
+  it("⚠️⚠️ e o escritor que restou lê sob `for update`, na mesma transação", () => {
+    // A leitura-antes-da-escrita continua existindo; ela só deixou de ter
+    // janela e deixou de poder confundir erro com ausência.
+    expect(SQL).toMatch(/from public\.cex_execution_intents where id = p_intent_id for update/);
+    expect(SQL).toMatch(/where intent_id = p_intent_id for update/);
+    expect(SQL).toMatch(/where session_id = v_i\.session_id and base = v_base for update/);
   });
 
-  it("⚠️ e leitura boa com posição existente SOMA, em vez de sobrescrever", async () => {
-    estado.linhas = [{ id: "P1", base: "BTC", base_amount: 0.01, cost_usd: 600, status: "open" }];
-    const r = await recordServerEntry({
-      sessionId: "S1", walletAddress: "0xA", exchangeId: "binance",
-      pair: "BTC/USDT", entryPrice: 62_000, baseAmount: 0.01, costUsd: 620,
-    });
-    expect(r).toEqual({ ok: true });
-    expect(estado.escritas[0].tipo).toBe("update");
-    const patch = estado.escritas[0].payload as { base_amount: number; cost_usd: number };
-    expect(patch.base_amount).toBeCloseTo(0.02, 12);
-    expect(patch.cost_usd).toBeCloseTo(1_220, 12);
+  it("⚠️ nenhuma escritora do livro descarta `error` de um select", () => {
+    // `const { data: x } = await db...` sem `error` é o padrão que causou o
+    // achado. Ele não pode voltar neste arquivo.
+    expect(FONTE).not.toMatch(/const \{ data: \w+ \} = await db/);
   });
 });
 

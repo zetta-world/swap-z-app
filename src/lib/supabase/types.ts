@@ -925,6 +925,24 @@ export interface Database {
         Returns: { ok: boolean; de?: CexIntentState; para?: CexIntentState;
                    porque?: string };
       };
+      /**
+       * ⚠️⚠️ A PROJEÇÃO IDEMPOTENTE DA POSIÇÃO (migration 0064, A131-C).
+       *
+       * Recebe o id do intent e lê `filled_qty`/`filled_quote` da própria
+       * linha, sob `for update` — não há parâmetro para mentir sobre
+       * quantidade. Os dois opcionais ABSORVEM o que a liquidação da saída
+       * armada já aplicou direto, e nunca movem a posição.
+       */
+      autopilot_projetar_efeito_do_intent: {
+        Args: { p_intent_id: string;
+                p_qty_ja_aplicada?: number; p_quote_ja_aplicada?: number };
+        Returns: {
+          ok: boolean; motivo?: string; side?: "buy" | "sell"; base?: string;
+          aplicado_qty?: number; aplicado_quote?: number;
+          custo_removido?: number; fechou?: boolean;
+          aplicado?: number; no_livro?: number; origin?: string;
+        };
+      };
       cex_transicao_permitida: {
         Args: { p_de: CexIntentState; p_para: CexIntentState };
         Returns: boolean;
