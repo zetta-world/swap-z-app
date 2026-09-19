@@ -54,6 +54,10 @@ const estado = vi.hoisted(() => {
      * exatamente isto.
      */
     consultas: [] as Array<{ fn: string; sessionId: unknown; base?: unknown }>,
+    /** O que já está PROMETIDO a ordens em voo (A134/A135). */
+    reservadoQty: 0,
+    reservadoUsd: 0,
+    devolucoes: [] as Array<{ tipo: string; valor: number }>,
     /** Saídas marcadas como armadas NO SERVIDOR, e P&L realizado nele. */
     armadas: [] as unknown[][],
     pnl: [] as unknown[][],
@@ -116,20 +120,60 @@ vi.mock("@/lib/cex/conexoes", () => ({
   decifrarConexao: () => ({ apiKey: "K", apiSecret: "S" }),
 }));
 
-/** ⚠️ O LIVRO DO SERVIDOR — a única autoridade sobre o que o bot possui. */
+/**
+ * ⚠️ O LIVRO DO SERVIDOR — a única autoridade sobre o que o bot possui.
+ *
+ * ⚠️⚠️ E ELE AGORA É RESERVADO, NÃO SÓ LIDO (A134/A135). Este falso reproduz
+ * a decisão da RPC: posse indisponível, saída armada, limitação à posição, e
+ * o teto de exposição somando o que já está prometido.
+ */
+vi.mock("@/lib/autopilot/reserva-de-inventario", () => ({
+  reservarVendaDoBot: async (sessionId: string, base: string, pedido: number) => {
+    estado.consultas.push({ fn: "reservarVendaDoBot", sessionId, base });
+    if (estado.livroFalha) {
+      return { ok: false as const, motivo: "erro" as const, porque: estado.livroFalha };
+    }
+    const pos = estado.posicao as Record<string, unknown> | null;
+    if (!pos || pos.status === "closed" || !(Number(pos.base_amount) > 0)) {
+      return { ok: false as const, motivo: "sem_posicao" as const, porque: "sem posicao" };
+    }
+    if (pos.status === "exit_armed") {
+      return { ok: false as const, motivo: "saida_ja_armada" as const, porque: "ja armada" };
+    }
+    const disponivel = Number(pos.base_amount) - estado.reservadoQty;
+    if (disponivel <= 0) {
+      return { ok: false as const, motivo: "quantidade_ja_reservada" as const,
+               porque: "ja prometida" };
+    }
+    const qtd = Math.min(pedido, disponivel);
+    estado.reservadoQty += qtd;
+    return { ok: true as const, qtd, limitada: qtd < pedido, naPosicao: Number(pos.base_amount) };
+  },
+  liberarVendaDoBot: async (_s: string, _b: string, qtd: number) => {
+    estado.devolucoes.push({ tipo: "venda", valor: qtd });
+    estado.reservadoQty = Math.max(estado.reservadoQty - qtd, 0);
+  },
+  reservarExposicaoDoBot: async (sessionId: string, usd: number, teto: number) => {
+    estado.consultas.push({ fn: "reservarExposicaoDoBot", sessionId });
+    if (estado.livroFalha) {
+      return { ok: false as const, motivo: "erro" as const, porque: estado.livroFalha };
+    }
+    const exposicao = estado.posicoes
+      .filter((p) => p.status !== "closed")
+      .reduce((soma, p) => soma + Number(p.cost_usd ?? 0), 0);
+    if (exposicao + estado.reservadoUsd + usd > teto) {
+      return { ok: false as const, motivo: "teto_estourado" as const, porque: "teto" };
+    }
+    estado.reservadoUsd += usd;
+    return { ok: true as const, exposicaoUsd: exposicao,
+             reservadoUsd: estado.reservadoUsd, tetoUsd: teto };
+  },
+  liberarExposicaoDoBot: async (_s: string, usd: number) => {
+    estado.devolucoes.push({ tipo: "exposicao", valor: usd });
+    estado.reservadoUsd = Math.max(estado.reservadoUsd - usd, 0);
+  },
+}));
 vi.mock("@/lib/autopilot/positions-server", () => ({
-  lerPosicaoDoBot: async (sessionId: unknown, base: unknown) => {
-    estado.consultas.push({ fn: "lerPosicaoDoBot", sessionId, base });
-    return estado.livroFalha
-      ? { ok: false as const, porque: estado.livroFalha }
-      : { ok: true as const, posicao: estado.posicao };
-  },
-  getOpenServerPositions: async (sessionId: unknown) => {
-    estado.consultas.push({ fn: "getOpenServerPositions", sessionId });
-    return estado.livroFalha
-      ? { ok: false as const, porque: estado.livroFalha }
-      : { ok: true as const, posicoes: estado.posicoes };
-  },
   markServerExitArmed: async (...args: unknown[]) => {
     estado.armadas.push(args);
     return { ok: true as const };
@@ -177,6 +221,9 @@ beforeEach(() => {
   estado.livroFalha = null;
   estado.projecoes = [];
   estado.consultas = [];
+  estado.reservadoQty = 0;
+  estado.reservadoUsd = 0;
+  estado.devolucoes = [];
   estado.armadas = [];
   estado.pnl = [];
   estado.pnlOk = true;
@@ -266,7 +313,9 @@ describe("A131.4 — livro ilegível fecha os DOIS lados (A133)", () => {
     estado.livroFalha = "connection reset";
     const r = await POST(req({ side: "sell", amount: 0.001 }));
     expect(r.status).toBe(403);
-    expect((await r.json()).motivo).toBe("livro_ilegivel");
+    // ⚠️ O motivo mudou de nome no A134: a falha agora é da RESERVA, não da
+    // leitura — e continua fechando a venda.
+    expect((await r.json()).motivo).toBe("erro");
     expect(spies.enviar).not.toHaveBeenCalled();
   });
 
@@ -276,7 +325,7 @@ describe("A131.4 — livro ilegível fecha os DOIS lados (A133)", () => {
     expect(r.status).toBe(403);
     const corpo = await r.json();
     expect(corpo.error).toBe("exposicao_do_bot");
-    expect(corpo.motivo).toBe("livro_ilegivel");
+    expect(corpo.motivo).toBe("erro");
     expect(spies.enviar).not.toHaveBeenCalled();
     expect(bancoAtual!.intents).toHaveLength(0);
   });
@@ -400,7 +449,7 @@ describe("⚠️⚠️ a PERGUNTA, não só o veredito — achado da revisão ad
    */
   it("⚠️⚠️ a VENDA consulta o livro com o id REAL da sessão", async () => {
     await POST(req({ side: "sell", amount: 0.005 }));
-    const c = estado.consultas.find((x) => x.fn === "lerPosicaoDoBot");
+    const c = estado.consultas.find((x) => x.fn === "reservarVendaDoBot");
     expect(c, "a rota precisa consultar o livro na venda").toBeDefined();
     expect(c!.sessionId).toBe("S1");
     expect(c!.base).toBe("BTC");
@@ -408,7 +457,7 @@ describe("⚠️⚠️ a PERGUNTA, não só o veredito — achado da revisão ad
 
   it("⚠️⚠️ a COMPRA consulta a exposição com o id REAL da sessão", async () => {
     await POST(req({ side: "buy", amount: 0.2 }));
-    const c = estado.consultas.find((x) => x.fn === "getOpenServerPositions");
+    const c = estado.consultas.find((x) => x.fn === "reservarExposicaoDoBot");
     expect(c, "a rota precisa consultar a exposição na compra").toBeDefined();
     expect(c!.sessionId).toBe("S1");
   });
@@ -495,5 +544,87 @@ describe("o P&L da venda do navegador conta no stop do SERVIDOR", () => {
     const FONTE = (await import("node:fs")).readFileSync(
       "src/app/api/cex/order/route.ts", "utf8");
     expect(FONTE).toMatch(/projecao\.motivo === "aplicado"/);
+  });
+});
+
+describe("A134/A135 pela rota — duas ordens não cabem na mesma reserva", () => {
+  it("⚠️⚠️ posição 0,01 · DUAS vendas simultâneas de 0,01: UMA chega à corretora", async () => {
+    /**
+     * O teste que o auditor pediu, medido onde importa: quantas ordens
+     * atravessam até `enviarOrdemNaVenue`. Antes do A134 as duas atravessavam
+     * — as duas liam `base_amount = 0,01` e nenhuma reservava nada.
+     */
+    const [a, b] = await Promise.all([
+      POST(req({ side: "sell", amount: 0.01 })),
+      POST(req({ side: "sell", amount: 0.01 })),
+    ]);
+    expect(spies.enviar).toHaveBeenCalledTimes(1);
+    const vitoriosas = [a, b].filter((r) => r.status === 200);
+    expect(vitoriosas).toHaveLength(1);
+    const perdedora = [a, b].find((r) => r.status !== 200)!;
+    const corpo = await perdedora.json();
+    expect(corpo.error).toBe("posse_do_bot");
+    expect(corpo.motivo).toBe("quantidade_ja_reservada");
+  });
+
+  it("⚠️⚠️ exposição 190, teto 200 · DUAS compras simultâneas de 20: nenhuma passa", async () => {
+    estado.posicoes = [{ id: "P9", base: "ETH", cost_usd: 190, status: "open" }];
+    const [a, b] = await Promise.all([
+      POST(req({ side: "buy", amount: 0.2 })),
+      POST(req({ side: "buy", amount: 0.2 })),
+    ]);
+    for (const r of [a, b]) {
+      expect(r.status).toBe(403);
+      expect((await r.json()).error).toBe("exposicao_do_bot");
+    }
+    expect(spies.enviar).not.toHaveBeenCalled();
+  });
+
+  it("⚠️⚠️ exposição 170, teto 200 · DUAS compras de 20: só UMA reserva", async () => {
+    // 170 + 20 cabe; 170 + 20 + 20 não. A segunda vê o que a primeira
+    // prometeu, não só o que está no livro.
+    estado.posicoes = [{ id: "P9", base: "ETH", cost_usd: 170, status: "open" }];
+    const [a, b] = await Promise.all([
+      POST(req({ side: "buy", amount: 0.2 })),
+      POST(req({ side: "buy", amount: 0.2 })),
+    ]);
+    const recusadasPorExposicao = (await Promise.all([a, b].map(async (r) =>
+      r.status === 403 && (await r.json()).error === "exposicao_do_bot"))).filter(Boolean);
+    expect(recusadasPorExposicao).toHaveLength(1);
+    /**
+     * ⚠️ E a vencedora acaba DEVOLVENDO: a compra autônoma ainda atravessa a
+     * autorização final do A110 no banco (RPC 0060), que este fixture não
+     * monta, e a recusa é PROVADA — nada saiu. Devolver aí é o comportamento
+     * certo: a reserva não pode sobreviver a uma ordem que não existiu.
+     */
+    expect(estado.devolucoes.some((d) => d.tipo === "exposicao")).toBe(true);
+    expect(estado.reservadoUsd).toBeCloseTo(0, 9);
+  });
+
+  it("⚠️⚠️ recusa PROVADA devolve a reserva — a próxima venda passa", async () => {
+    // Sem isto, uma ordem recusada trancaria a posição até a reserva expirar.
+    spies.enviar.mockResolvedValueOnce({
+      tipo: "recusada", porque: "insufficient balance", codigo: "40004",
+    } as never);
+    const r = await POST(req({ side: "sell", amount: 0.01 }));
+    expect(r.status).not.toBe(200);
+    expect(estado.devolucoes.some((d) => d.tipo === "venda")).toBe(true);
+    expect(estado.reservadoQty).toBeCloseTo(0, 12);
+
+    // E a próxima venda passa, porque a bolsa voltou a estar livre.
+    const segunda = await POST(req({ side: "sell", amount: 0.01 }));
+    expect(segunda.status).toBe(200);
+  });
+
+  it("⚠️⚠️ DÚVIDA não devolve — devolver autorizaria a segunda venda", async () => {
+    /**
+     * INVARIANTE 4, agora também para o inventário: `incerta` significa que a
+     * ordem PODE estar viva na corretora. Soltar a bolsa aqui deixaria uma
+     * segunda venda sair para uma posição que talvez já esteja vendida.
+     */
+    spies.enviar.mockResolvedValueOnce({ tipo: "incerta", porque: "timeout" } as never);
+    await POST(req({ side: "sell", amount: 0.01 }));
+    expect(estado.devolucoes.some((d) => d.tipo === "venda")).toBe(false);
+    expect(estado.reservadoQty).toBeCloseTo(0.01, 12);
   });
 });

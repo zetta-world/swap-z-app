@@ -147,28 +147,27 @@ describe("③ e o cron REALMENTE usa as duas", () => {
      * CANCELADA depois de preenchimento parcial: ela reabria a posição
      * INTEIRA, como se nada tivesse sido vendido. O que já executou é fato
      * imutável; só o remanescente volta.
-     */
-    /**
-     * ⚠️ E NO ROUND 9 A ESCRITA DURÁVEL DE UM DELES MUDOU DE DONO (A131-C).
      *
-     * A venda IMEDIATA a mercado não chama mais `reduzirServerPosition`: ela
-     * projeta pela RPC 0064, por delta cumulativo, para a reconciliação não
-     * reduzir a MESMA venda outra vez. `oQueSobrou` continua nos três
-     * caminhos — a conta em memória do teto de exposição desta passada — e as
-     * DUAS reduções diretas que sobraram são as da liquidação da saída armada,
-     * que age sobre a ordem lida na corretora antes de o livro ingerir.
+     * ⚠️⚠️ E NO ROUND 9 A ESCRITA DURÁVEL SAIU DOS TRÊS (A131-C, depois A136).
+     *
+     * Primeiro a venda imediata passou a projetar pela RPC 0064 (delta
+     * cumulativo, para a reconciliação não reduzir a MESMA venda de novo).
+     * Depois a liquidação da saída armada também: ela escrevia a posição com
+     * `reduzirServerPosition`/`closeServerPosition` e o marcador com OUTRA
+     * operação — e qualquer ordem entre as duas quebrava exactly-once.
+     *
+     * `oQueSobrou` continua nos três caminhos, e o que ele faz agora é a conta
+     * EM MEMÓRIA: o teto de exposição desta passada e o texto da nota. Escrita
+     * durável, nenhuma.
      */
     const chamadas = [...CRON.matchAll(/const sobra = oQueSobrou\(/g)].length;
     expect(chamadas, "mercado, settle da armada e cancelamento parcial").toBe(3);
-    expect([...CRON.matchAll(/reduzirServerPosition\(/g)].length,
-      "só a liquidação reduz direto; a venda imediata projeta").toBe(2);
-    // ⚠️ Uma das duas virou ternário quando a absorção passou a acontecer
-    // DEPOIS da escrita (revisão adversarial): o que a trava mede é que os
-    // dois caminhos de liquidação decidem por `sobra.fecha`, não a sintaxe.
-    expect([...CRON.matchAll(/const gravou = sobra\.fecha|if \(sobra\.fecha\) \{/g)].length,
-      "settle preenchido e settle cancelado-com-parcial").toBe(2);
-    // ⚠️ E a venda imediata projeta — senão ela não escreveria em lugar nenhum.
+    expect([...CRON.matchAll(/reduzirServerPosition\(|closeServerPosition\(/g)].length,
+      "nenhuma escrita direta de posição sobrou no cron").toBe(0);
+    // A venda imediata projeta; a liquidação da armada é transacional.
     expect(CRON).toMatch(/const projecao = await projetarEfeitoDoIntent\(exec\.intentId\)/);
+    expect([...CRON.matchAll(/await liquidarNoLivro\(/g)].length,
+      "settle preenchido e settle cancelado-com-parcial").toBe(2);
   });
 
   it("⚠️⚠️ a base só sai de `ownedBases` quando a posição FECHA", () => {

@@ -136,3 +136,65 @@ export async function projecoesPendentes(
     return null;
   }
 }
+
+/**
+ * ⚠️⚠️⚠️ A LIQUIDAÇÃO DA SAÍDA ARMADA, NUMA TRANSAÇÃO SÓ — achado A136.
+ *
+ * Eram duas escritas: o marcador (para a reconciliação não reduzir de novo) e
+ * a posição. Qualquer ordem entre elas perdia:
+ *
+ *   marcador OK + posição falha → marcador diz "aplicado", a posição continua
+ *                                 cheia, e a reconciliação vê delta zero para
+ *                                 sempre: a venda nunca entra no livro;
+ *   posição OK + marcador falha → a posição já reduziu e o marcador ficou
+ *                                 atrás: a reconciliação reduz DE NOVO.
+ *
+ * Inverter a ordem só troca qual dos dois acontece — e telemetria alta não
+ * conserta exactly-once. Agora as duas viram uma (RPC da 0064).
+ *
+ * ⚠️ A QUANTIDADE VEM DA CORRETORA, e é a única que não vem do livro: a
+ * liquidação acontece ANTES de os fills serem ingeridos. O marcador guarda
+ * exatamente o que foi aplicado, e a projeção seguinte aplica só o que passar
+ * disso.
+ */
+export type ResultadoDaLiquidacao =
+  | { ok: true; motivo: "aplicado" | "sem_delta";
+      aplicadoQty: number; custoRemovido: number; fechou: boolean }
+  | { ok: false; motivo: string; porque: string };
+
+export async function liquidarSaidaArmada(
+  intentId: string, qtdVendida: number, quoteRecebido: number,
+  deps: DependenciasDaProjecao = {},
+): Promise<ResultadoDaLiquidacao> {
+  const args = {
+    p_intent_id: intentId,
+    p_qty_vendida: qtdVendida,
+    p_quote_recebido: Number.isFinite(quoteRecebido) ? quoteRecebido : 0,
+  };
+  let bruto: unknown;
+  try {
+    if (deps.chamarRpc) {
+      bruto = await deps.chamarRpc("autopilot_liquidar_saida_armada", args);
+    } else {
+      const db = getSupabaseAdmin();
+      if (!db) return { ok: false, motivo: "erro", porque: "supabase nao configurado" };
+      const { data, error } = await db.rpc("autopilot_liquidar_saida_armada", args);
+      if (error) return { ok: false, motivo: "erro", porque: error.message.slice(0, 200) };
+      bruto = data;
+    }
+  } catch (e) {
+    return { ok: false, motivo: "erro", porque: ((e as Error)?.message ?? String(e)).slice(0, 200) };
+  }
+  const r = (bruto ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    const motivo = typeof r.motivo === "string" ? r.motivo : "erro";
+    return { ok: false, motivo, porque: `liquidacao recusada: ${motivo}` };
+  }
+  return {
+    ok: true,
+    motivo: r.motivo === "sem_delta" ? "sem_delta" : "aplicado",
+    aplicadoQty: numero(r.aplicado_qty),
+    custoRemovido: numero(r.custo_removido),
+    fechou: r.fechou === true,
+  };
+}

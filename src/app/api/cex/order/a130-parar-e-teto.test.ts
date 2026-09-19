@@ -130,6 +130,17 @@ vi.mock("@/lib/cex/conexoes", () => ({
   decifrarConexao: () => { estado.decifrou++; return { apiKey: "K", apiSecret: "S" }; },
 }));
 
+vi.mock("@/lib/autopilot/reserva-de-inventario", () => ({
+  // ⚠️ A134/A135: a posse e a exposição passaram a ser RESERVADAS. Aqui elas
+  // concedem sempre — o que estes arquivos medem é outra coisa.
+  reservarVendaDoBot: async (_s: string, _b: string, qtd: number) =>
+    ({ ok: true, qtd, limitada: false, naPosicao: qtd }),
+  liberarVendaDoBot: async () => {},
+  reservarExposicaoDoBot: async () =>
+    ({ ok: true, exposicaoUsd: 0, reservadoUsd: 0, tetoUsd: 1_000_000 }),
+  liberarExposicaoDoBot: async () => {},
+}));
+
 import { POST } from "@/app/api/cex/order/route";
 
 function req(over: Record<string, unknown> = {}): NextRequest {

@@ -172,6 +172,82 @@ export function bancoFalso(): BancoFalso {
       return { data: nova.id, error: null };
     }
 
+    /**
+     * ⚠️⚠️ A134/A135 — AS RESERVAS DE INVENTÁRIO, reproduzidas.
+     *
+     * O ponto que importa é a SERIALIZAÇÃO: no Postgres é o `for update` na
+     * linha; aqui é o fato de cada chamada ler-e-escrever sem `await` no meio.
+     * O que os testes medem é a propriedade — duas concorrentes, uma passa.
+     */
+    const agoraMs = Date.now();
+    const JANELA_MS = 10 * 60_000;
+    if (nome === "autopilot_reservar_venda") {
+      const qty = Number(args.p_qty);
+      if (!(qty > 0)) return { data: { ok: false, motivo: "quantidade_invalida" }, error: null };
+      const base = String(args.p_base).toUpperCase();
+      const pos = posicoes.find((x) => x.session_id === args.p_session_id && x.base === base);
+      if (!pos || pos.status === "closed" || !(Number(pos.base_amount) > 0)) {
+        return { data: { ok: false, motivo: "sem_posicao" }, error: null };
+      }
+      if (pos.status === "exit_armed") {
+        return { data: { ok: false, motivo: "saida_ja_armada",
+                         ordem_armada: pos.exit_order_id }, error: null };
+      }
+      const venceu = !pos.reservado_ate || Number(pos.reservado_ate) < agoraMs;
+      const reservado = venceu ? 0 : Number(pos.reservado_qty ?? 0);
+      const disponivel = Number(pos.base_amount) - reservado;
+      if (disponivel <= 0) {
+        return { data: { ok: false, motivo: "quantidade_ja_reservada",
+                         na_posicao: pos.base_amount, reservado }, error: null };
+      }
+      const conceder = Math.min(qty, disponivel);
+      pos.reservado_qty = reservado + conceder;
+      pos.reservado_ate = agoraMs + JANELA_MS;
+      return { data: { ok: true, qtd: conceder, limitada: conceder < qty,
+                       na_posicao: pos.base_amount }, error: null };
+    }
+    if (nome === "autopilot_liberar_venda") {
+      const base = String(args.p_base).toUpperCase();
+      const pos = posicoes.find((x) => x.session_id === args.p_session_id && x.base === base);
+      if (pos) {
+        pos.reservado_qty = Math.max(Number(pos.reservado_qty ?? 0) - Number(args.p_qty ?? 0), 0);
+      }
+      return { data: { ok: true }, error: null };
+    }
+    if (nome === "autopilot_reservar_exposicao") {
+      const usd = Number(args.p_usd), teto = Number(args.p_teto);
+      if (!(usd > 0)) return { data: { ok: false, motivo: "nocional_nao_mensuravel" }, error: null };
+      if (!(teto > 0)) return { data: { ok: false, motivo: "teto_invalido" }, error: null };
+      const ses = sessoes.find((x) => x.id === args.p_session_id);
+      if (!ses) return { data: { ok: false, motivo: "sessao_inexistente" }, error: null };
+      const venceu = !ses.exposicao_reservada_ate || Number(ses.exposicao_reservada_ate) < agoraMs;
+      const reservado = venceu ? 0 : Number(ses.exposicao_reservada_usd ?? 0);
+      const exposicao = posicoes
+        .filter((x) => x.session_id === args.p_session_id && x.status !== "closed")
+        .reduce((soma, x) => soma + Number(x.cost_usd ?? 0), 0);
+      if (exposicao + reservado + usd > teto) {
+        return { data: { ok: false, motivo: "teto_estourado",
+                         exposicao, reservado, teto }, error: null };
+      }
+      ses.exposicao_reservada_usd = reservado + usd;
+      ses.exposicao_reservada_ate = agoraMs + JANELA_MS;
+      return { data: { ok: true, exposicao, reservado: reservado + usd, teto }, error: null };
+    }
+    if (nome === "autopilot_liberar_exposicao") {
+      const ses = sessoes.find((x) => x.id === args.p_session_id);
+      if (ses) {
+        ses.exposicao_reservada_usd =
+          Math.max(Number(ses.exposicao_reservada_usd ?? 0) - Number(args.p_usd ?? 0), 0);
+      }
+      return { data: { ok: true }, error: null };
+    }
+
+    /**
+     * ⚠️ DAQUI PARA BAIXO TODA RPC É POR INTENT — e a guarda abaixo recusa o
+     * que não existe. As reservas de inventário (acima) são por SESSÃO/BASE:
+     * passá-las por esta linha as fazia falhar com "intent nao existe", que
+     * foi exatamente o que aconteceu ao escrevê-las.
+     */
     const it = intents.find((i) => i.id === args.p_intent_id);
     if (!it) return { data: null, error: { message: "intent nao existe" } };
 
@@ -593,6 +669,16 @@ export function bancoFalso(): BancoFalso {
           pos.base_amount = restante; pos.cost_usd = custoRestante;
         }
       }
+      // ⚠️ A reserva vira efeito, na MESMA passagem que aplicou.
+      if (it.side === "sell" && pos) {
+        pos.reservado_qty = Math.max(Number(pos.reservado_qty ?? 0) - deltaQty, 0);
+      } else if (it.side === "buy") {
+        const ses = sessoes.find((x) => x.id === it.session_id);
+        if (ses) {
+          ses.exposicao_reservada_usd =
+            Math.max(Number(ses.exposicao_reservada_usd ?? 0) - deltaQuote, 0);
+        }
+      }
       efeito.applied_qty = Math.max(Number(efeito.applied_qty), noLivro);
       efeito.applied_quote = Math.max(Number(efeito.applied_quote), Number(it.filled_quote));
       efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
@@ -600,6 +686,61 @@ export function bancoFalso(): BancoFalso {
       return { data: { ok: true, motivo: "aplicado", side: it.side, base,
                        aplicado_qty: deltaQty, aplicado_quote: deltaQuote,
                        custo_removido: custoRemovido, fechou }, error: null };
+    }
+
+    /**
+     * ⚠️⚠️ A136 — a liquidação da saída armada, numa passagem só: posição e
+     * marcador avançam juntos ou não avançam.
+     */
+    if (nome === "autopilot_liquidar_saida_armada") {
+      const qty = Number(args.p_qty_vendida);
+      if (!(qty > 0)) return { data: { ok: false, motivo: "quantidade_invalida" }, error: null };
+      const it = intents.find((i) => i.id === args.p_intent_id);
+      if (!it) return { data: { ok: false, motivo: "intent_inexistente" }, error: null };
+      if (it.simulated === true) return { data: { ok: false, motivo: "simulado" }, error: null };
+      if (it.side !== "sell") return { data: { ok: false, motivo: "intent_nao_e_venda" }, error: null };
+      const origem = String(it.origin);
+      if ((origem !== "autopilot_browser" && origem !== "autopilot_cron") || it.autonomous !== true) {
+        return { data: { ok: false, motivo: "origem_nao_autonoma" }, error: null };
+      }
+      if (!it.session_id) return { data: { ok: false, motivo: "sem_sessao" }, error: null };
+
+      const base = String(it.symbol).replace(/-/g, "/").split("/")[0].toUpperCase();
+      let efeito = efeitos.find((e) => e.intent_id === it.id);
+      if (!efeito) {
+        efeito = { intent_id: it.id, session_id: it.session_id, exchange_id: it.exchange_id,
+                   base, side: it.side, applied_qty: 0, applied_quote: 0,
+                   ledger_qty: 0, ledger_quote: 0 };
+        efeitos.push(efeito);
+      }
+      const delta = qty - Number(efeito.applied_qty);
+      if (delta <= 1e-12) {
+        return { data: { ok: true, motivo: "sem_delta", aplicado_qty: 0,
+                         custo_removido: 0, fechou: false }, error: null };
+      }
+      const quote = Number(args.p_quote_recebido ?? 0);
+      const deltaQuote = Math.max(quote - Number(efeito.applied_quote), 0);
+      const pos = posicoes.find((x) => x.session_id === it.session_id && x.base === base);
+      if (!pos) return { data: { ok: false, motivo: "sem_posicao", base }, error: null };
+
+      let custoRemovido = 0, fechou = false;
+      const restante = Number(pos.base_amount) - delta;
+      if (restante <= Number(pos.base_amount) * 1e-9) {
+        custoRemovido = Number(pos.cost_usd);
+        fechou = true;
+        posicoes.splice(posicoes.indexOf(pos), 1);
+      } else {
+        const custoRestante = Number(pos.cost_usd) * (restante / Number(pos.base_amount));
+        custoRemovido = Number(pos.cost_usd) - custoRestante;
+        pos.base_amount = restante; pos.cost_usd = custoRestante;
+        pos.status = "open"; pos.exit_order_id = null; pos.exit_armed_at = null;
+        pos.reservado_qty = Math.max(Number(pos.reservado_qty ?? 0) - delta, 0);
+      }
+      efeito.applied_qty = Math.max(Number(efeito.applied_qty), qty);
+      efeito.applied_quote = Math.max(Number(efeito.applied_quote), quote);
+      return { data: { ok: true, motivo: "aplicado", aplicado_qty: delta,
+                       aplicado_quote: deltaQuote, custo_removido: custoRemovido,
+                       fechou, base }, error: null };
     }
 
     return { data: null, error: { message: `rpc desconhecida: ${nome}` } };

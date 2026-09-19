@@ -41,12 +41,34 @@ const semComentarios = (s: string) =>
 
 /** As funções que escrevem estado de posição ou de risco. */
 const ESCRITORAS = [
-  "markServerExitArmed", "reopenServerPosition",
-  "closeServerPosition", "applySessionPnl",
-  // ⚠️ FALTAVA, e a revisão adversarial do Round 9 achou: ela escreve estado
-  // de posição (a redução da saída parcial) e nunca esteve na trava.
-  "reduzirServerPosition",
+  "markServerExitArmed", "reopenServerPosition", "applySessionPnl",
 ];
+
+/**
+ * ⚠️⚠️ AS QUE SAÍRAM — e a trava agora é a AUSÊNCIA delas (A136, Round 9).
+ *
+ * `closeServerPosition` e `reduzirServerPosition` eram o último caminho
+ * paralelo de escrita de posição: a liquidação da saída armada escrevia a
+ * posição com uma, e o marcador com OUTRA operação. Qualquer ordem entre as
+ * duas quebrava exactly-once — marcador na frente, a venda nunca entra no
+ * livro; posição na frente, a reconciliação reduz de novo.
+ *
+ * Hoje quem faz as duas numa transação é `autopilot_liquidar_saida_armada`
+ * (migration 0064). Ressuscitar qualquer uma delas recria o problema.
+ */
+const APAGADAS = ["closeServerPosition", "reduzirServerPosition"];
+
+describe("⚠️⚠️ o caminho paralelo de escrita de posição não existe mais", () => {
+  const FONTE = readFileSync(join(process.cwd(), "src/lib/autopilot/positions-server.ts"), "utf8");
+  it.each(APAGADAS)("%s foi apagada — a liquidação é transacional agora", (fn) => {
+    expect(semComentarios(FONTE)).not.toMatch(new RegExp(`export async function ${fn}`));
+    expect(semComentarios(CRON)).not.toMatch(new RegExp(`await ${fn}\\(`));
+  });
+  it("⚠️ e a cicatriz de por que elas saíram continua escrita", () => {
+    expect(FONTE).toMatch(/NÃO RESSUSCITAR/);
+    expect(FONTE).toMatch(/A136/);
+  });
+});
 
 describe("as escritoras devolvem SE gravaram", () => {
   it.each(ESCRITORAS)("%s não devolve void", (fn) => {
@@ -76,12 +98,22 @@ describe("o cron CONFERE cada uma delas", () => {
     });
 
   it("o alerta carrega a CONSEQUÊNCIA, não só o nome da função", () => {
-    // "closeServerPosition falhou" não diz a ninguém o que fazer. "o teto de
-    // exposição conta capital que não está mais lá" diz.
+    /**
+     * "closeServerPosition falhou" não diz a ninguém o que fazer. "o teto de
+     * exposição conta capital que não está mais lá" diz.
+     *
+     * ⚠️ A quarta frase saiu com a função que a carregava (A136): quem escreve
+     * a redução agora é a RPC transacional, e a consequência dela está no
+     * evento `autopilot_liquidacao_nao_aplicada` — conferido logo abaixo.
+     */
     expect(codigo).toMatch(/o stop de perda diaria nao viu esta perda/);
     expect(codigo).toMatch(/vende duas vezes a mesma bolsa/);
     expect(codigo).toMatch(/nunca mais sai deste trade/);
-    expect(codigo).toMatch(/teto de exposicao conta capital que nao esta mais la/);
+  });
+
+  it("⚠️⚠️ e a liquidação que não entrou no livro tem nome e consequência", () => {
+    expect(CRON).toMatch(/autopilot_liquidacao_nao_aplicada/);
+    expect(CRON).toMatch(/A posicao segue dizendo que a bolsa esta la/);
   });
 });
 

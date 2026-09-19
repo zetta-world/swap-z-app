@@ -951,6 +951,36 @@ export interface Database {
         Args: { p_limite?: number };
         Returns: Array<{ intent_id: string }>;
       };
+      /**
+       * ⚠️ A134/A135/A136 (migration 0064): as reservas de inventário e a
+       * liquidação atômica da saída armada. Todas devolvem um veredito JSON —
+       * `ok:false` com motivo é recusa, não exceção.
+       */
+      autopilot_reservar_venda: {
+        Args: { p_session_id: string; p_base: string; p_qty: number };
+        Returns: { ok: boolean; motivo?: string; qtd?: number; limitada?: boolean;
+                   na_posicao?: number; reservado?: number; ordem_armada?: string };
+      };
+      autopilot_liberar_venda: {
+        Args: { p_session_id: string; p_base: string; p_qty: number };
+        Returns: { ok: boolean; motivo?: string };
+      };
+      autopilot_reservar_exposicao: {
+        Args: { p_session_id: string; p_usd: number; p_teto: number };
+        Returns: { ok: boolean; motivo?: string; exposicao?: number;
+                   reservado?: number; teto?: number };
+      };
+      autopilot_liberar_exposicao: {
+        Args: { p_session_id: string; p_usd: number };
+        Returns: { ok: boolean };
+      };
+      autopilot_liquidar_saida_armada: {
+        Args: { p_intent_id: string; p_qty_vendida: number; p_quote_recebido: number };
+        Returns: { ok: boolean; motivo?: string; aplicado_qty?: number;
+                   aplicado_quote?: number; custo_removido?: number;
+                   fechou?: boolean; base?: string };
+      };
+      autopilot_janela_de_reserva: { Args: Record<string, never>; Returns: string };
       cex_transicao_permitida: {
         Args: { p_de: CexIntentState; p_para: CexIntentState };
         Returns: boolean;

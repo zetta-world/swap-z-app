@@ -48,6 +48,13 @@ const CATALOGO: Record<string, string> = {
   autopilot_projetar_efeito_do_intent: "0064_autopilot_projecao_de_posicao.sql",
   // A varredura de pendências (FILLED é terminal) nasce fechada na mesma.
   autopilot_projecoes_pendentes: "0064_autopilot_projecao_de_posicao.sql",
+  // A134/A135/A136 (round 9): as reservas de inventário e a liquidação
+  // transacional da saída armada nascem fechadas na mesma 0064.
+  autopilot_reservar_venda: "0064_autopilot_projecao_de_posicao.sql",
+  autopilot_liberar_venda: "0064_autopilot_projecao_de_posicao.sql",
+  autopilot_reservar_exposicao: "0064_autopilot_projecao_de_posicao.sql",
+  autopilot_liberar_exposicao: "0064_autopilot_projecao_de_posicao.sql",
+  autopilot_liquidar_saida_armada: "0064_autopilot_projecao_de_posicao.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

@@ -216,6 +216,10 @@ describe("A132.5/A132.6 — ninguém conta duas vezes", () => {
   it("⚠️ uma vaga por ORDEM, não por cartão — multi-perna (§12)", () => {
     // `novaVaga()` cria uma reserva nova a cada execução; reservar 3 de
     // antemão contaria pernas que podem nunca sair.
-    expect(CRON).toMatch(/const novaVaga = \(\): VagaDiaria => reservaDaVagaDiaria\(s\.id, today\)/);
+    // ⚠️ A134/A135: `novaVaga` passou a compor a devolução das reservas de
+    // inventário — continua sendo UMA vaga por ordem, criada na hora.
+    expect(CRON).toMatch(/const novaVaga = \(\): VagaDiaria => \{/);
+    expect(CRON).toMatch(/const vaga = reservaDaVagaDiaria\(s\.id, today\);/);
+    expect(CRON).toMatch(/await vaga\.liberar\?\.\(\); await devolverReservasDaOrdem\(\);/);
   });
 });

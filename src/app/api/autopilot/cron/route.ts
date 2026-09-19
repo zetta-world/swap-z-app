@@ -29,15 +29,19 @@ import {
   tetoDeExposicaoDoRisco, calcularExposicaoUsd,
 } from "@/lib/autopilot/inventario";
 import {
-  projetarEfeitoDoIntent, projecoesPendentes,
+  projetarEfeitoDoIntent, projecoesPendentes, liquidarSaidaArmada,
 } from "@/lib/autopilot/projecao-de-posicao";
+import {
+  reservarVendaDoBot, liberarVendaDoBot,
+  reservarExposicaoDoBot, liberarExposicaoDoBot,
+} from "@/lib/autopilot/reserva-de-inventario";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { runAlertWatchdog } from "@/lib/admin/watchdog";
 import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import {
   getOpenServerPositions, markServerExitArmed,
-  closeServerPosition, reopenServerPosition, applySessionPnl, reduzirServerPosition,
+  reopenServerPosition, applySessionPnl,
 } from "@/lib/autopilot/positions-server";
 import type { AutopilotSessionRow, AutopilotRunRow, AutopilotPositionRow } from "@/lib/supabase/types";
 import type { CexId, CexCredentials, CexOrder } from "@/lib/cex/types";
@@ -136,37 +140,40 @@ async function avisarTaxaNaoPrecificada(pair: unknown, aviso: { moeda: string; v
 }
 
 /**
- * ⚠️⚠️⚠️ A LIQUIDAÇÃO DA SAÍDA ARMADA APLICA DIRETO — E PRECISA DIZER ISSO.
+ * ⚠️⚠️⚠️ A LIQUIDAÇÃO DA SAÍDA ARMADA — UMA TRANSAÇÃO, NÃO DUAS (A136).
  *
- * `settleArmedExits` resolve ordens colocadas numa passada ANTERIOR: ela
- * pergunta à corretora, vê o preenchimento e reduz a posição na hora, porque o
- * P&L realizado é calculado ali, contra a posição ANTES da redução. Mudar isso
- * para esperar o livro de fills mudaria a semântica do stop de perda, que não
- * é o que o Round 9 veio fazer.
+ * `settleArmedExits` resolve ordens colocadas numa passada ANTERIOR: pergunta
+ * à corretora, vê o preenchimento e aplica a redução na hora, porque o P&L
+ * realizado é calculado contra a posição ANTES dela.
  *
- * Só que a reconciliação passou a projetar vendas (A131-C). Sem avisar o
- * marcador, ela veria `applied = 0` para este intent e reduziria a MESMA venda
- * outra vez — o defeito que a projeção existe para impedir, criado por ela.
+ * A versão anterior fazia DUAS escritas — o marcador (para a reconciliação não
+ * reduzir de novo) e a posição — e qualquer ordem entre elas perdia:
  *
- * Então a liquidação ABSORVE: grava no marcador o que ela acabou de aplicar,
- * sem mover a posição. A projeção seguinte calcula `ledger − applied` e aplica
- * só o que sobrar.
+ *   marcador OK + posição falha → a reconciliação vê delta zero para sempre,
+ *                                 e a venda nunca entra no livro;
+ *   posição OK + marcador falha → a reconciliação reduz DE NOVO.
  *
- * ⚠️ FALHAR AQUI É BARULHENTO. Absorção perdida = redução dobrada mais tarde.
+ * Eu havia "consertado" invertendo a ordem, o que só troca qual dos dois
+ * acontece. O auditor apontou, e está certo: exactly-once não se resolve com
+ * telemetria. Agora é uma chamada só, e a posição e o marcador avançam juntos
+ * ou não avançam.
  */
-async function absorverNaProjecao(
+async function liquidarNoLivro(
   pos: AutopilotPositionRow, order: CexOrder, vendido: number,
-): Promise<void> {
+): Promise<{ aplicou: boolean; custoRemovido: number; fechou: boolean }> {
+  const nada = { aplicou: false, custoRemovido: 0, fechou: false };
   const db = getSupabaseAdmin();
   const ordemExterna = pos.exit_order_id;
-  if (!db || !ordemExterna) {
-    await recordEvent("autopilot_absorcao_nao_registrada", { meta: {
-      severity: "high", session: pos.session_id, base: pos.base,
-      porque: !db ? "sem banco" : "posicao armada sem exit_order_id",
-      why: "a liquidacao reduziu a posicao e o marcador nao soube. A "
-        + "reconciliacao pode reduzir a MESMA venda de novo.",
+  const avisar = async (porque: string, extra: Record<string, unknown> = {}) => {
+    await recordEvent("autopilot_liquidacao_nao_aplicada", { meta: {
+      severity: "high", session: pos.session_id, base: pos.base, porque, ...extra,
+      why: "a ordem de saida preencheu na corretora e o livro nao registrou. "
+        + "A posicao segue dizendo que a bolsa esta la.",
     } });
-    return;
+  };
+  if (!db || !ordemExterna) {
+    await avisar(!db ? "sem banco" : "posicao armada sem exit_order_id");
+    return nada;
   }
   const { data, error } = await db
     .from("cex_execution_intents")
@@ -175,32 +182,19 @@ async function absorverNaProjecao(
     .eq("external_order_id", ordemExterna)
     .maybeSingle();
   if (error || !data) {
-    await recordEvent("autopilot_absorcao_nao_registrada", { meta: {
-      severity: "high", session: pos.session_id, base: pos.base, ordem: ordemExterna,
-      porque: error ? error.message.slice(0, 160) : "intent nao encontrado por ordem externa",
-      why: "a liquidacao reduziu a posicao e o marcador nao soube. A "
-        + "reconciliacao pode reduzir a MESMA venda de novo.",
-    } });
-    return;
+    await avisar(error ? error.message.slice(0, 160) : "intent nao encontrado por ordem externa",
+      { ordem: ordemExterna });
+    return nada;
   }
   const quote = Number((order as unknown as { cost?: unknown }).cost);
-  const r = await projetarEfeitoDoIntent(data.id, {
-    jaAplicado: { qty: vendido, quote: Number.isFinite(quote) ? quote : 0 },
-  });
-  if (!r.ok && r.motivo !== "sem_posicao") {
-    await recordEvent("autopilot_absorcao_nao_registrada", { meta: {
-      severity: "high", session: pos.session_id, base: pos.base,
-      intent: data.id, motivo: r.motivo, porque: r.porque,
-    } });
+  const r = await liquidarSaidaArmada(data.id, vendido, Number.isFinite(quote) ? quote : 0);
+  if (!r.ok) {
+    await avisar(r.porque, { intent: data.id, motivo: r.motivo });
+    return nada;
   }
+  return { aplicou: r.motivo === "aplicado", custoRemovido: r.custoRemovido, fechou: r.fechou };
 }
 
-/**
- * Settle exits armed on a PRIOR run (A5): poll each exit_armed position's
- * order; a filled exit realizes P&L (fed atomically to the loss-stop) and
- * closes the position; a canceled/expired one reopens so a later scan can
- * re-arm. Returns the run-log rows and the total realized delta.
- */
 async function settleArmedExits(
   s: AutopilotSessionRow, creds: CexCredentials, exchange: CexId, today: string,
 ): Promise<{ rows: RunRowT[]; realizedDelta: number; livroLegivel: boolean }> {
@@ -274,16 +268,9 @@ async function settleArmedExits(
          * no livro, e nenhum caminho a repararia. Falhar antes de absorver
          * deixa o conserto possível — a reconciliação aplica o delta.
          */
-        const gravou = sobra.fecha
-          ? await exigirGravacao(
-              await closeServerPosition(s.id, pos.base),
-              "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
-              { session: s.id, base: pos.base })
-          : await exigirGravacao(
-              await reduzirServerPosition(s.id, pos.base, sobra.baseRestante, sobra.custoRestante),
-              "saida PARCIAL nao gravada — o banco segue dizendo que a bolsa inteira esta la, e a passada seguinte tenta vender de novo o que ja saiu",
-              { session: s.id, base: pos.base, resta: sobra.baseRestante });
-        if (gravou) await absorverNaProjecao(pos, order, vendido);
+        // ⚠️ A136: posição e marcador numa transação só. `sobra` continua
+        // sendo calculada porque a NOTA da passada fala do remanescente.
+        await liquidarNoLivro(pos, order, vendido);
         logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: pos.pair, side: "sell", volumeUsd: sobra.custoRemovido || null, pnlUsd: realized, status: "settled", route: "cron", ref: `${exchange}:${pos.exit_order_id}` });
         rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", order_type: "limit", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: realized !== null ? `exit settled, realized $${realized.toFixed(2)}${sobra.fecha ? "" : `, ${sobra.baseRestante} still held`}` : "exit settled" });
       } else if (st === "canceled" || st === "cancelled" || st === "expired") {
@@ -310,23 +297,12 @@ async function settleArmedExits(
               { session: s.id, base: pos.base, realized });
           }
           const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), jaVendido);
-          if (sobra.fecha) {
-            await exigirGravacao(
-              await closeServerPosition(s.id, pos.base),
-              "posicao NAO removida apos saida parcial cancelada que zerou a bolsa",
-              { session: s.id, base: pos.base });
-          } else {
-            await exigirGravacao(
-              await reduzirServerPosition(s.id, pos.base, sobra.baseRestante, sobra.custoRestante),
-              "remanescente NAO gravado — o livro segue dizendo que a bolsa inteira esta la",
-              { session: s.id, base: pos.base, resta: sobra.baseRestante });
-            await exigirGravacao(
-              await reopenServerPosition(s.id, pos.base),
-              "remanescente nao reaberto — fica exit_armed apontando para ordem morta",
-              { session: s.id, base: pos.base });
-          }
-          // ⚠️ Absorve DEPOIS de escrever (ver a nota no ramo preenchido).
-          await absorverNaProjecao(pos, order, jaVendido);
+          /**
+           * ⚠️ A136 aqui também: o que já executou é fato imutável, e a
+           * mesma transação que o aplica reabre o remanescente (a RPC volta o
+           * status para `open` e solta o elo com a ordem morta).
+           */
+          await liquidarNoLivro(pos, order, jaVendido);
           rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: `cancelada com ${jaVendido} ja vendido — so o remanescente reabre` });
         } else {
           await exigirGravacao(
@@ -1083,7 +1059,33 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
    * ⚠️ UMA POR ORDEM. Cada perna de um cartão multi-perna cria a sua; reservar
    * as três de antemão contaria vagas por pernas que podem nunca sair.
    */
-  const novaVaga = (): VagaDiaria => reservaDaVagaDiaria(s.id, today);
+  /**
+   * ⚠️⚠️ O QUE ESTA ORDEM PROMETEU E AINDA NÃO VIROU EFEITO (A134/A135).
+   *
+   * Vive por ITERAÇÃO do laço: cada intent reserva o seu, e a devolução entra
+   * na MESMA costura que já devolvia a vaga diária — só na recusa provada.
+   */
+  let reservaDeVenda: { base: string; qtd: number } | null = null;
+  let reservaDeExposicao: number | null = null;
+  const devolverReservasDaOrdem = async () => {
+    if (reservaDeVenda) {
+      await liberarVendaDoBot(s.id, reservaDeVenda.base, reservaDeVenda.qtd);
+      reservaDeVenda = null;
+    }
+    if (reservaDeExposicao != null) {
+      await liberarExposicaoDoBot(s.id, reservaDeExposicao);
+      reservaDeExposicao = null;
+    }
+  };
+
+  const novaVaga = (): VagaDiaria => {
+    const vaga = reservaDaVagaDiaria(s.id, today);
+    return {
+      ...vaga,
+      // ⚠️ Recusa PROVADA devolve as três; UNKNOWN não devolve nenhuma.
+      liberar: async () => { await vaga.liberar?.(); await devolverReservasDaOrdem(); },
+    };
+  };
   /**
    * Traduz a recusa da reserva para a bandeira que para a passada.
    *
@@ -1111,6 +1113,10 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     if (!intents) continue;
 
     for (const intent of intents) {
+      // ⚠️ As reservas são POR ORDEM. Sobrar estado de uma iteração faria a
+      // devolução da próxima soltar o que não era dela.
+      reservaDeVenda = null;
+      reservaDeExposicao = null;
       if (fired >= MAX_ORDERS_PER_RUN || remainingTrades <= 0 || !contadorConfiavel) break outer;
       if (frozenUntil === today) break outer;
 
@@ -1170,9 +1176,18 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
           });
           continue;
         }
-        const venda = quantoPodeVender(intent.amount, pos.base_amount);
+        /**
+         * ⚠️⚠️⚠️ RESERVA, NÃO SÓ CONFERÊNCIA — achado A134.
+         *
+         * `quantoPodeVender` continua sendo a regra de quanto é do bot, mas
+         * aplicá-la sobre `openPositions` (lido no começo da passada) é
+         * read-then-act: o navegador pode ter vendido no meio, e os dois
+         * mandam a mesma bolsa. A reserva é tomada dentro da transação que
+         * confere, e vale para os dois canais.
+         */
+        const venda = await reservarVendaDoBot(s.id, base, intent.amount);
         if (!venda.ok) {
-          pushRow(intent, "rejected", card.kind, { reason: `sell blocked: ${venda.porque}` });
+          pushRow(intent, "rejected", card.kind, { reason: `sell blocked: ${venda.porque}`.slice(0, 200) });
           continue;
         }
         if (venda.limitada) {
@@ -1186,11 +1201,15 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         }
         amount = venda.qtd;
         vendaDe = pos;
+        reservaDeVenda = { base, qtd: venda.qtd };
       }
 
       const refPrice = refPrices.get(base)?.priceUsd ?? null;
       const guard = checkRealNotional({ side: intent.side, baseAmount: amount, refPrice, maxTradeUsd: effectiveMaxTradeUsd });
       if (!guard.ok) {
+        // ⚠️ A venda já tinha reservado a quantidade: devolver aqui, senão a
+        // posição fica prometida a uma ordem que não vai existir.
+        await devolverReservasDaOrdem();
         pushRow(intent, "rejected", card.kind, { notional_usd: guard.realNotionalUsd ?? intent.notionalUsd, reason: guard.reason ?? "notional guard" });
         continue;
       }
@@ -1222,6 +1241,15 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
           );
 
           if (exec.desfecho === "recusado") {
+            /**
+             * ⚠️ DEVOLVE AQUI TAMBÉM, e não é redundante: o executor só chama
+             * `liberar` nos três pontos onde ELE reservou e provou que nada
+             * saiu. Uma recusa ANTES disso (kill-switch, credencial) nunca
+             * passaria por lá — e a posição ficaria prometida a uma ordem que
+             * não existe até a reserva expirar. Chamar duas vezes é inócuo: o
+             * estado é zerado na primeira.
+             */
+            await devolverReservasDaOrdem();
             anotarRecusaDaVaga(vagaDaVenda);
             pushRow(intent, "errored", card.kind, { reason: `${exec.motivo}: ${exec.porque}`.slice(0, 200) });
             continue;
@@ -1398,10 +1426,20 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
       // ── then the total-exposure cap (A4 server side), fire, and record the
       //    entry server-side (A5). ──
       const buyNotional = guard.realNotionalUsd ?? intent.notionalUsd;
-      if (exposureUsd + buyNotional > maxExposureUsd) {
-        pushRow(intent, "rejected", card.kind, { reason: `total exposure cap $${maxExposureUsd} would be exceeded` });
+      /**
+       * ⚠️⚠️⚠️ RESERVA, NÃO SÓ CONFERÊNCIA — achado A135.
+       *
+       * `exposureUsd` é a soma em memória do início da passada. Duas entradas
+       * concorrentes (cron↔navegador, ou duas pernas) leem o mesmo número e
+       * passam as duas. A reserva soma a exposição REAL e o que já está
+       * prometido, com a linha da sessão travada.
+       */
+      const exposicao = await reservarExposicaoDoBot(s.id, buyNotional, maxExposureUsd);
+      if (!exposicao.ok) {
+        pushRow(intent, "rejected", card.kind, { reason: exposicao.porque.slice(0, 200) });
         continue;
       }
+      reservaDeExposicao = buyNotional;
       try {
         /**
          * ⚠️⚠️ PASSA PELO EXECUTOR AUTORITATIVO (A107). Intent durável antes do
@@ -1427,6 +1465,9 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         );
 
         if (exec.desfecho === "recusado") {
+          // ⚠️ Idem: recusa anterior à reserva do executor não passa pelo
+          // `liberar` dele. Ver a nota no ramo da venda.
+          await devolverReservasDaOrdem();
           anotarRecusaDaVaga(vagaDaCompra);
           pushRow(intent, "errored", card.kind, { reason: `${exec.motivo}: ${exec.porque}`.slice(0, 200) });
           continue;

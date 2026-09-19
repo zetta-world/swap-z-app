@@ -283,6 +283,21 @@ begin
     end if;
   end if;
 
+  /**
+   * ⚠️ A RESERVA VIRA EFEITO. O que acabou de entrar na posição já não precisa
+   * ficar prometido: soltar aqui, na MESMA transação que aplicou, é o que
+   * impede a reserva de virar um bloqueio que ninguém desfaz.
+   */
+  if v_i.side = 'sell' then
+    update public.autopilot_positions
+       set reservado_qty = greatest(reservado_qty - v_delta_qty, 0)
+     where session_id = v_i.session_id and base = v_base;
+  else
+    update public.autopilot_sessions
+       set exposicao_reservada_usd = greatest(exposicao_reservada_usd - v_delta_quote, 0)
+     where id = v_i.session_id;
+  end if;
+
   update public.autopilot_position_effects
      set applied_qty   = greatest(applied_qty,  v_i.filled_qty),
          applied_quote = greatest(applied_quote, v_i.filled_quote),
@@ -302,6 +317,288 @@ comment on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, nu
   'A131-C: projeta em autopilot_positions o efeito AINDA NAO APLICADO de um '
   'intent autonomo, numa transacao, por delta cumulativo (ledger - applied). '
   'Idempotente por intent; regressao e venda sem posicao falham FECHADO.';
+
+-- ── 3-BIS. AS RESERVAS DE INVENTÁRIO (A134 / A135) ────────────────────────
+--
+-- ⚠️⚠️⚠️ CONFERIR NÃO É RESERVAR.
+--
+-- A posse e a exposição eram lidas, conferidas, e só depois a ordem saía —
+-- READ-THEN-ACT puro. Duas requisições simultâneas leem o MESMO estado e as
+-- duas passam:
+--
+--     posição do bot = 0,01 · duas vendas de 0,01 → saem 0,02, e 0,01 é do dono
+--     exposição 190, teto 200 · duas compras de 10 → 210 > 200
+--
+-- O teto DIÁRIO já era atômico (compare-and-swap, A132), e isso não substitui
+-- nada: havendo duas vagas no dia, as duas ordens passam pelo contador e se
+-- atropelam no inventário. São perguntas diferentes.
+--
+-- A reserva mora onde o dado mora, e é tomada DENTRO da transação que a
+-- confere — `for update` na linha, escrita no mesmo comando. Lock em memória
+-- não serve: cada invocação serverless é outro processo.
+alter table public.autopilot_positions
+  add column if not exists reservado_qty numeric not null default 0
+    check (reservado_qty >= 0);
+alter table public.autopilot_positions
+  add column if not exists reservado_ate timestamptz;
+
+alter table public.autopilot_sessions
+  add column if not exists exposicao_reservada_usd numeric not null default 0
+    check (exposicao_reservada_usd >= 0);
+alter table public.autopilot_sessions
+  add column if not exists exposicao_reservada_ate timestamptz;
+
+comment on column public.autopilot_positions.reservado_qty is
+  'A134: quantidade ja prometida a uma venda autonoma em voo. Expira em '
+  'reservado_ate — dai em diante quem guarda a posicao e o exit_armed/ledger.';
+comment on column public.autopilot_sessions.exposicao_reservada_usd is
+  'A135: capital ja prometido a uma compra autonoma em voo, somado a exposicao '
+  'real para conferir o teto do modo de risco. Expira em exposicao_reservada_ate.';
+
+-- ⚠️ A JANELA É CURTA DE PROPÓSITO. A reserva cobre o intervalo entre
+-- autorizar e a ordem EXISTIR. Depois disso quem descreve a realidade é o
+-- intent (e, para a venda, `exit_armed`). Uma reserva eterna de uma ordem que
+-- ficou UNKNOWN e nunca executou trancaria a posição para sempre.
+create or replace function public.autopilot_janela_de_reserva()
+returns interval language sql immutable as $$ select interval '10 minutes' $$;
+
+-- ── 3-BIS-a. RESERVAR QUANTIDADE PARA VENDA AUTÔNOMA (A134) ───────────────
+create or replace function public.autopilot_reservar_venda(
+  p_session_id uuid, p_base text, p_qty numeric
+) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp
+as $$
+declare
+  v_pos record; v_reservado numeric; v_disponivel numeric; v_conceder numeric;
+begin
+  if p_qty is null or not (p_qty > 0) then
+    return jsonb_build_object('ok', false, 'motivo', 'quantidade_invalida');
+  end if;
+  select * into v_pos from public.autopilot_positions
+   where session_id = p_session_id and base = upper(p_base) for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'sem_posicao');
+  end if;
+  if v_pos.status = 'closed' or not (v_pos.base_amount > 0) then
+    return jsonb_build_object('ok', false, 'motivo', 'sem_posicao');
+  end if;
+  -- ⚠️ Uma saída armada JÁ É uma ordem viva sobre esta bolsa.
+  if v_pos.status = 'exit_armed' then
+    return jsonb_build_object('ok', false, 'motivo', 'saida_ja_armada',
+      'ordem_armada', v_pos.exit_order_id);
+  end if;
+
+  -- Reserva vencida é reserva que não existe.
+  v_reservado := case
+    when v_pos.reservado_ate is null or v_pos.reservado_ate < now() then 0
+    else v_pos.reservado_qty end;
+  v_disponivel := v_pos.base_amount - v_reservado;
+  if v_disponivel <= 0 then
+    return jsonb_build_object('ok', false, 'motivo', 'quantidade_ja_reservada',
+      'na_posicao', v_pos.base_amount, 'reservado', v_reservado);
+  end if;
+
+  -- ⚠️ LIMITA, não recusa: pedir mais do que o bot tem é o caso do A131, e a
+  -- conduta é vender só o que é dele.
+  v_conceder := least(p_qty, v_disponivel);
+  update public.autopilot_positions
+     set reservado_qty = v_reservado + v_conceder,
+         reservado_ate = now() + public.autopilot_janela_de_reserva(),
+         updated_at    = now()
+   where id = v_pos.id;
+
+  return jsonb_build_object('ok', true, 'qtd', v_conceder,
+    'limitada', (v_conceder < p_qty), 'na_posicao', v_pos.base_amount);
+end; $$;
+
+-- ── 3-BIS-b. DEVOLVER A QUANTIDADE (só na recusa PROVADA) ─────────────────
+create or replace function public.autopilot_liberar_venda(
+  p_session_id uuid, p_base text, p_qty numeric
+) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp
+as $$
+declare v_pos record;
+begin
+  select * into v_pos from public.autopilot_positions
+   where session_id = p_session_id and base = upper(p_base) for update;
+  if not found then return jsonb_build_object('ok', true, 'motivo', 'sem_posicao'); end if;
+  update public.autopilot_positions
+     set reservado_qty = greatest(reservado_qty - coalesce(p_qty, 0), 0),
+         updated_at    = now()
+   where id = v_pos.id;
+  return jsonb_build_object('ok', true);
+end; $$;
+
+-- ── 3-BIS-c. RESERVAR CAPITAL PARA ENTRADA AUTÔNOMA (A135) ────────────────
+create or replace function public.autopilot_reservar_exposicao(
+  p_session_id uuid, p_usd numeric, p_teto numeric
+) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp
+as $$
+declare
+  v_s record; v_reservado numeric; v_exposicao numeric;
+begin
+  if p_usd is null or not (p_usd > 0) then
+    return jsonb_build_object('ok', false, 'motivo', 'nocional_nao_mensuravel');
+  end if;
+  if p_teto is null or not (p_teto > 0) then
+    return jsonb_build_object('ok', false, 'motivo', 'teto_invalido');
+  end if;
+  -- ⚠️ A LINHA DA SESSÃO É O PONTO DE SERIALIZAÇÃO. Duas compras concorrentes
+  -- disputam ESTE lock, então a segunda lê a exposição com a reserva da
+  -- primeira já dentro.
+  select * into v_s from public.autopilot_sessions where id = p_session_id for update;
+  if not found then return jsonb_build_object('ok', false, 'motivo', 'sessao_inexistente'); end if;
+
+  v_reservado := case
+    when v_s.exposicao_reservada_ate is null or v_s.exposicao_reservada_ate < now() then 0
+    else v_s.exposicao_reservada_usd end;
+
+  select coalesce(sum(cost_usd), 0) into v_exposicao
+    from public.autopilot_positions
+   where session_id = p_session_id and status <> 'closed';
+
+  if v_exposicao + v_reservado + p_usd > p_teto then
+    return jsonb_build_object('ok', false, 'motivo', 'teto_estourado',
+      'exposicao', v_exposicao, 'reservado', v_reservado, 'teto', p_teto);
+  end if;
+
+  update public.autopilot_sessions
+     set exposicao_reservada_usd = v_reservado + p_usd,
+         exposicao_reservada_ate = now() + public.autopilot_janela_de_reserva(),
+         updated_at              = now()
+   where id = p_session_id;
+
+  return jsonb_build_object('ok', true, 'exposicao', v_exposicao,
+    'reservado', v_reservado + p_usd, 'teto', p_teto);
+end; $$;
+
+create or replace function public.autopilot_liberar_exposicao(
+  p_session_id uuid, p_usd numeric
+) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp
+as $$
+begin
+  update public.autopilot_sessions
+     set exposicao_reservada_usd = greatest(exposicao_reservada_usd - coalesce(p_usd, 0), 0),
+         updated_at              = now()
+   where id = p_session_id;
+  return jsonb_build_object('ok', true);
+end; $$;
+
+-- ── 3-TER. A LIQUIDAÇÃO DA SAÍDA ARMADA, NUMA TRANSAÇÃO (A136) ────────────
+--
+-- ⚠️⚠️⚠️ ERAM DUAS ESCRITAS, E QUALQUER ORDEM DELAS PERDIA.
+--
+-- `settleArmedExits` lê a ordem na corretora e aplica a redução direto, porque
+-- o P&L realizado é calculado contra a posição AINDA INTEIRA. Ela precisava
+-- registrar isso no marcador para a reconciliação não reduzir de novo — e as
+-- duas escritas eram separadas:
+--
+--   marcador OK + posição falha  → marcador diz "aplicado", a posição continua
+--                                  cheia, e a reconciliação vê delta zero para
+--                                  sempre: a venda nunca entra no livro;
+--   posição OK + marcador falha  → a posição já reduziu e o marcador ficou
+--                                  atrás: a reconciliação reduz DE NOVO.
+--
+-- Inverter a ordem só troca qual dos dois cenários acontece. Telemetria alta
+-- não conserta exactly-once. Aqui as duas viram uma.
+--
+-- ⚠️ E ELA PODE TOCAR NUMA POSIÇÃO ARMADA — é a única que pode. A projeção
+-- pela reconciliação devolve `saida_em_liquidacao` justamente para deixar esta
+-- função ser a dona daquela redução.
+create or replace function public.autopilot_liquidar_saida_armada(
+  p_intent_id uuid,
+  -- ⚠️ O que a CORRETORA disse que saiu. É a única entrada de quantidade que
+  -- não vem do livro, e existe porque a liquidação acontece ANTES de os fills
+  -- serem ingeridos. O marcador guarda exatamente isto, e a projeção seguinte
+  -- aplica só o que passar daqui.
+  p_qty_vendida numeric,
+  p_quote_recebido numeric
+) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp
+as $$
+declare
+  v_i record; v_e record; v_pos record; v_base text;
+  v_delta numeric; v_delta_quote numeric;
+  v_restante numeric; v_custo_restante numeric; v_custo_removido numeric := 0;
+  v_fechou boolean := false;
+  v_eps constant numeric := 1e-12;
+  v_ruido constant numeric := 1e-9;
+begin
+  if p_qty_vendida is null or not (p_qty_vendida > 0) then
+    return jsonb_build_object('ok', false, 'motivo', 'quantidade_invalida');
+  end if;
+
+  select * into v_i from public.cex_execution_intents where id = p_intent_id for update;
+  if not found then return jsonb_build_object('ok', false, 'motivo', 'intent_inexistente'); end if;
+  if v_i.simulated then return jsonb_build_object('ok', false, 'motivo', 'simulado'); end if;
+  if v_i.side <> 'sell' then return jsonb_build_object('ok', false, 'motivo', 'intent_nao_e_venda'); end if;
+  if v_i.origin not in ('autopilot_browser', 'autopilot_cron') or v_i.autonomous is not true then
+    return jsonb_build_object('ok', false, 'motivo', 'origem_nao_autonoma');
+  end if;
+  if v_i.session_id is null then return jsonb_build_object('ok', false, 'motivo', 'sem_sessao'); end if;
+
+  v_base := upper(split_part(replace(v_i.symbol, '-', '/'), '/', 1));
+
+  insert into public.autopilot_position_effects
+    (intent_id, session_id, exchange_id, base, side)
+  values (p_intent_id, v_i.session_id, v_i.exchange_id, v_base, v_i.side)
+  on conflict (intent_id) do nothing;
+  select * into v_e from public.autopilot_position_effects
+   where intent_id = p_intent_id for update;
+
+  -- ⚠️ O delta é contra o que JÁ ENTROU na posição, venha de onde vier.
+  v_delta := p_qty_vendida - v_e.applied_qty;
+  if v_delta <= v_eps then
+    return jsonb_build_object('ok', true, 'motivo', 'sem_delta',
+      'aplicado_qty', 0, 'custo_removido', 0, 'fechou', false);
+  end if;
+  v_delta_quote := greatest(coalesce(p_quote_recebido, 0) - v_e.applied_quote, 0);
+
+  select * into v_pos from public.autopilot_positions
+   where session_id = v_i.session_id and base = v_base for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'sem_posicao', 'base', v_base);
+  end if;
+
+  v_restante := v_pos.base_amount - v_delta;
+  if v_restante <= v_pos.base_amount * v_ruido then
+    v_custo_removido := v_pos.cost_usd;
+    v_fechou := true;
+    delete from public.autopilot_positions where id = v_pos.id;
+  else
+    v_custo_restante := v_pos.cost_usd * (v_restante / v_pos.base_amount);
+    v_custo_removido := v_pos.cost_usd - v_custo_restante;
+    update public.autopilot_positions
+       set base_amount   = v_restante,
+           cost_usd      = v_custo_restante,
+           -- ⚠️ A ordem armada ACABOU de ser resolvida por quem chama (ela leu
+           -- a corretora). O remanescente precisa poder armar de novo — e este
+           -- é o único caminho que tem essa prova.
+           status        = 'open',
+           exit_order_id = null,
+           exit_armed_at = null,
+           reservado_qty = greatest(reservado_qty - v_delta, 0),
+           updated_at    = now()
+     where id = v_pos.id;
+  end if;
+
+  update public.autopilot_position_effects
+     set applied_qty   = greatest(applied_qty, p_qty_vendida),
+         applied_quote = greatest(applied_quote, coalesce(p_quote_recebido, 0)),
+         updated_at    = now()
+   where intent_id = p_intent_id;
+
+  return jsonb_build_object('ok', true, 'motivo', 'aplicado',
+    'aplicado_qty', v_delta, 'aplicado_quote', v_delta_quote,
+    'custo_removido', v_custo_removido, 'fechou', v_fechou, 'base', v_base);
+end; $$;
+
+comment on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric) is
+  'A136: reduz/fecha a posicao de uma saida armada E avanca o marcador na MESMA '
+  'transacao. Antes eram duas escritas, e qualquer ordem delas quebrava '
+  'exactly-once.';
 
 -- ── 4. AS PENDÊNCIAS — PORQUE `FILLED` É TERMINAL ─────────────────────────
 --
@@ -357,6 +654,35 @@ revoke all on function public.autopilot_projecoes_pendentes(int)
   from public, anon, authenticated;
 grant execute on function public.autopilot_projecoes_pendentes(int)
   to service_role;
+
+revoke all on function public.autopilot_reservar_venda(uuid, text, numeric)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_reservar_venda(uuid, text, numeric)
+  to service_role;
+
+revoke all on function public.autopilot_liberar_venda(uuid, text, numeric)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_liberar_venda(uuid, text, numeric)
+  to service_role;
+
+revoke all on function public.autopilot_reservar_exposicao(uuid, numeric, numeric)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_reservar_exposicao(uuid, numeric, numeric)
+  to service_role;
+
+revoke all on function public.autopilot_liberar_exposicao(uuid, numeric)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_liberar_exposicao(uuid, numeric)
+  to service_role;
+
+revoke all on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric)
+  to service_role;
+
+revoke all on function public.autopilot_janela_de_reserva()
+  from public, anon, authenticated;
+grant execute on function public.autopilot_janela_de_reserva() to service_role;
 
 -- ⚠️ A TABELA TAMBÉM: RLS ligada sem policies já fecha para anon/authenticated,
 -- mas o GRANT de tabela é outra porta. Ela nasce sem nenhum.

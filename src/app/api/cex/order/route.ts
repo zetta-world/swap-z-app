@@ -8,13 +8,13 @@ import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { regimeDaBase } from "@/lib/autopilot/regime";
 import { getSessionStatus, utcDayKey } from "@/lib/autopilot/sessions";
-import {
-  getOpenServerPositions, lerPosicaoDoBot, markServerExitArmed, applySessionPnl,
-} from "@/lib/autopilot/positions-server";
+import { markServerExitArmed, applySessionPnl } from "@/lib/autopilot/positions-server";
 import { taxaEmUsd } from "@/lib/cex/taxa";
+import { tetoDeExposicaoDoRisco } from "@/lib/autopilot/inventario";
 import {
-  avaliarVendaAutonoma, avaliarExposicaoParaEntrada, tetoDeExposicaoDoRisco,
-} from "@/lib/autopilot/inventario";
+  reservarVendaDoBot, liberarVendaDoBot,
+  reservarExposicaoDoBot, liberarExposicaoDoBot,
+} from "@/lib/autopilot/reserva-de-inventario";
 import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
 import { reservaDaVagaDiaria } from "@/lib/autopilot/reserva-de-vaga";
 import {
@@ -226,6 +226,27 @@ export async function POST(req: NextRequest) {
   let sessaoDoPilotoId: string | null = null;
   /** A carteira do piloto, para a telemetria fora do ramo da sessão. */
   let walletDoPiloto: string | null = null;
+  /**
+   * ⚠️⚠️ O QUE FOI PROMETIDO E AINDA NÃO VIROU ORDEM — A134/A135.
+   *
+   * A reserva é tomada ANTES do efeito externo. Toda recusa daí em diante tem
+   * de devolvê-la: uma reserva esquecida tranca a posição (ou o teto de
+   * exposição) da sessão até expirar. Só o desfecho INCERTO não devolve — a
+   * ordem pode estar viva, e devolver sobre dúvida autorizaria a segunda.
+   */
+  let reservaDeVendaEmVoo: { base: string; qtd: number } | null = null;
+  let reservaDeExposicaoEmVoo: number | null = null;
+
+  const devolverReservasEmVoo = async () => {
+    if (sessaoDoPilotoId && reservaDeVendaEmVoo) {
+      await liberarVendaDoBot(sessaoDoPilotoId, reservaDeVendaEmVoo.base, reservaDeVendaEmVoo.qtd);
+      reservaDeVendaEmVoo = null;
+    }
+    if (sessaoDoPilotoId && reservaDeExposicaoEmVoo != null) {
+      await liberarExposicaoDoBot(sessaoDoPilotoId, reservaDeExposicaoEmVoo);
+      reservaDeExposicaoEmVoo = null;
+    }
+  };
   let conexaoDoPilotoId: string | null = null;
   /** ⚠️ O dia UTC usado na reserva — o MESMO da autorização, não recalculado. */
   let hojeDoPiloto: string | null = null;
@@ -386,6 +407,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    /**
+     * Devolve o que foi prometido e responde a recusa.
+     *
+     * ⚠️ UMA PORTA SÓ. Espalhar `liberar...` por cada `return` é como se
+     * esquece um deles — e o esquecido tranca a posição da sessão até a
+     * reserva expirar.
+     */
+    const recusarLiberando = async (corpo: Record<string, unknown>, status: number) => {
+      await devolverReservasEmVoo();
+      return NextResponse.json(corpo,
+        { status, headers: { "Cache-Control": "no-store" } });
+    };
+
     const base = body.symbol.split(/[\/\-]/)[0];
 
     /**
@@ -411,8 +445,19 @@ export async function POST(req: NextRequest) {
      * só vale para `autopilot_browser` (`ehAutopilot`).
      */
     if (side === "sell") {
-      const leituraDaPosicao = await lerPosicaoDoBot(sessaoDoPilotoId, base);
-      const posse = avaliarVendaAutonoma({ leitura: leituraDaPosicao, pedido: body.amount });
+      /**
+       * ⚠️⚠️⚠️ E ELA É RESERVADA, NÃO SÓ CONFERIDA — achado A134.
+       *
+       * Ler a posição, decidir, e só depois mandar a ordem é READ-THEN-ACT:
+       * duas requisições simultâneas leem `base_amount = 0,01` e as DUAS são
+       * autorizadas a vender 0,01. O teto diário não salva — ele responde
+       * "quantas ordens cabem hoje", e havendo duas vagas as duas passam.
+       *
+       * A reserva é tomada DENTRO da transação que confere (0064, `for update`
+       * na linha da posição), e ela também LIMITA à posição do bot. Quem
+       * devolve é só a recusa PROVADA; UNKNOWN não devolve nada.
+       */
+      const posse = await reservarVendaDoBot(sessaoDoPilotoId, base, body.amount);
       if (!posse.ok) {
         logSecurity("a131_venda_sem_posse", {
           route: "cex/order", symbol: body.symbol, motivo: posse.motivo,
@@ -436,6 +481,7 @@ export async function POST(req: NextRequest) {
         } });
       }
       quantidadeAutorizada = posse.qtd;
+      reservaDeVendaEmVoo = { base, qtd: posse.qtd };
     }
 
     const refPrice = await getReferencePriceUsd(base);
@@ -465,10 +511,7 @@ export async function POST(req: NextRequest) {
     const guard = checkRealNotional({ side, baseAmount: quantidadeAutorizada, refPrice, maxTradeUsd: cap });
     if (!guard.ok) {
       logSecurity("notional_guard_block", { route: "cex/order", symbol: body.symbol, reason: guard.reason }, "high");
-      return NextResponse.json(
-        { ok: false, error: "notional_guard", detail: guard.reason },
-        { status: 400 },
-      );
+      return await recusarLiberando({ ok: false, error: "notional_guard", detail: guard.reason }, 400);
     }
 
     /**
@@ -494,21 +537,27 @@ export async function POST(req: NextRequest) {
      * entrega.
      */
     if (side === "buy") {
-      const livro = await getOpenServerPositions(sessaoDoPilotoId);
-      const exposicao = avaliarExposicaoParaEntrada({
-        leitura: livro,
-        novaEntradaUsd: guard.realNotionalUsd ?? Number.NaN,
-        tetoUsd: tetoDeExposicaoDoRisco(sessaoDoPiloto?.risk_mode),
-      });
+      /**
+       * ⚠️⚠️⚠️ E TAMBÉM É RESERVADA — achado A135.
+       *
+       * Somar as posições, comparar com o teto e só depois agir deixa duas
+       * compras concorrentes lerem a MESMA exposição: 190 + 10 e 190 + 10
+       * passam as duas, e o teto de 200 fecha em 210. A reserva soma a
+       * exposição REAL e o que já está prometido dentro da mesma transação,
+       * com a linha da sessão travada.
+       */
+      const entradaUsd = guard.realNotionalUsd ?? Number.NaN;
+      const exposicao = await reservarExposicaoDoBot(
+        sessaoDoPilotoId, entradaUsd, tetoDeExposicaoDoRisco(sessaoDoPiloto?.risk_mode));
       if (!exposicao.ok) {
         logSecurity("a131_exposicao_do_servidor", {
           route: "cex/order", symbol: body.symbol, motivo: exposicao.motivo,
         }, "high");
-        return NextResponse.json(
+        return await recusarLiberando(
           { ok: false, error: "exposicao_do_bot", motivo: exposicao.motivo, detail: exposicao.porque },
-          { status: 403, headers: { "Cache-Control": "no-store" } },
-        );
+          403);
       }
+      reservaDeExposicaoEmVoo = entradaUsd;
     }
 
     /**
@@ -545,12 +594,10 @@ export async function POST(req: NextRequest) {
       logSecurity("politica_bloqueou_piloto", {
         route: "cex/order", symbol: body.symbol, motivo: decisaoDoPiloto.motivo,
       }, "high");
-      return NextResponse.json(
+      return await recusarLiberando(
         { ok: false, error: "politica_de_estrategia",
           motivo: decisaoDoPiloto.motivo, detail: decisaoDoPiloto.porque,
-          politicaVersao: decisaoDoPiloto.versao },
-        { status: 403, headers: { "Cache-Control": "no-store" } },
-      );
+          politicaVersao: decisaoDoPiloto.versao }, 403);
     }
     certificadoDoPiloto = decisaoDoPiloto.certificadoId;
     hashDoPiloto = sessaoDoPiloto?.strategy_hash ?? null;
@@ -569,29 +616,23 @@ export async function POST(req: NextRequest) {
      * o recovery procurar a ordem na conta errada.
      */
     if (!conexaoDoPilotoId) {
-      return NextResponse.json(
+      return await recusarLiberando(
         { ok: false, error: "conexao_ausente",
-          detail: "sessao do piloto sem conexao_id — nenhuma ordem foi enviada" },
-        { status: 409, headers: { "Cache-Control": "no-store" } },
-      );
+          detail: "sessao do piloto sem conexao_id — nenhuma ordem foi enviada" }, 409);
     }
     const pronta = await conexaoParaExecucao(conexaoDoPilotoId, dbPolitica);
     if (!pronta.ok) {
       const status = pronta.motivo === "ilegivel" ? 503 : 409;
-      return NextResponse.json(
+      return await recusarLiberando(
         { ok: false, error: `conexao_${pronta.motivo}`,
-          detail: "a conexao da sessao nao pode criar nova ordem" },
-        { status, headers: { "Cache-Control": "no-store" } },
-      );
+          detail: "a conexao da sessao nao pode criar nova ordem" }, status);
     }
     try {
       credenciaisDoPiloto = decifrarConexao(pronta.conexao);
     } catch {
-      return NextResponse.json(
+      return await recusarLiberando(
         { ok: false, error: "conexao_ilegivel",
-          detail: "nao foi possivel ler a credencial da conexao da sessao" },
-        { status: 503, headers: { "Cache-Control": "no-store" } },
-      );
+          detail: "nao foi possivel ler a credencial da conexao da sessao" }, 503);
     }
   }
 
@@ -816,8 +857,27 @@ export async function POST(req: NextRequest) {
        * duas formas de gastar a mesma vaga: com 4/5, os dois passavam e o dia
        * fechava em 6. Agora é uma função só, chamada pelos dois.
        */
+      /**
+       * ⚠️⚠️ A DEVOLUÇÃO É DAS TRÊS JUNTAS — vaga do dia, posse e exposição.
+       *
+       * O executor chama `liberar` apenas onde PROVA que nada saiu. Era o
+       * lugar certo para a vaga diária desde o A130-B; com as reservas de
+       * inventário (A134/A135), é o lugar certo para elas também. E o
+       * silêncio no desfecho INCERTO vale para as três: devolver sobre dúvida
+       * autorizaria uma segunda ordem para um dinheiro que talvez já tenha
+       * saído.
+       */
       ehAutopilot && sessaoDoPilotoId
-        ? reservaDaVagaDiaria(sessaoDoPilotoId, hojeDoPiloto!)
+        ? (() => {
+            const vaga = reservaDaVagaDiaria(sessaoDoPilotoId, hojeDoPiloto!);
+            return {
+              reservar: vaga.reservar,
+              liberar: async () => {
+                await vaga.liberar?.();
+                await devolverReservasEmVoo();
+              },
+            };
+          })()
         : undefined,
     );
 
@@ -920,6 +980,13 @@ export async function POST(req: NextRequest) {
       );
     }
     if (r.desfecho === "recusado") {
+      /**
+       * ⚠️ DEVOLVE AQUI TAMBÉM. O executor só chama `liberar` nos três pontos
+       * onde ELE reservou e provou que nada saiu; uma recusa anterior a isso
+       * (kill-switch, credencial) não passa por lá, e a posição ficaria
+       * prometida a uma ordem que não existe. Chamar duas vezes é inócuo.
+       */
+      await devolverReservasEmVoo();
       /**
        * ⚠️ `reserva_negada` NÃO É 500 — achado da revisão adversarial.
        *

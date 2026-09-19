@@ -181,48 +181,32 @@ export async function reopenServerPosition(sessionId: string, base: string): Pro
 }
 
 /**
- * Reduz a posição depois de uma saída PARCIAL — o resto continua sendo gerido.
+ * ⚠️⚠️⚠️ `reduzirServerPosition` E `closeServerPosition` VIVIAM AQUI, E SAÍRAM
+ * NO A136 (Round 9).
  *
- * ⚠️⚠️ ANTES NÃO EXISTIA: qualquer venda com preenchimento > 0 chamava
- * `closeServerPosition` e apagava a linha inteira (achado A14). Vender US$ 100
+ * Elas eram as duas escritas que a liquidação da saída armada fazia depois de
+ * ler a ordem na corretora — e eram o ÚLTIMO caminho paralelo de escrita de
+ * posição. Enquanto existiram, o produto tinha duas formas de reduzir a mesma
+ * bolsa: a RPC idempotente (marcador + posição numa transação) e este par
+ * solto, cujo registro no marcador era uma SEGUNDA operação.
+ *
+ * Qualquer ordem entre as duas perdia:
+ *
+ *   marcador OK + posição falha → a reconciliação vê delta zero para sempre;
+ *   posição OK + marcador falha → a reconciliação reduz DE NOVO.
+ *
+ * Eu "consertei" invertendo a ordem, o que só troca qual cenário acontece. O
+ * auditor apontou que exactly-once não se resolve com telemetria, e está
+ * certo: `autopilot_liquidar_saida_armada` (0064) faz as duas numa transação.
+ *
+ * ⚠️ A cicatriz do A14 que `reduzirServerPosition` carregava continua valendo,
+ * e mora agora dentro da RPC: saída PARCIAL não apaga a linha. Vender US$ 100
  * de uma posição de US$ 500 fazia o bot acreditar que não tem nada — o resto
- * fica órfão na conta do cliente, nunca mais gerido nem vendido, e o teto de
- * exposição libera os US$ 500 inteiros, então ele ainda compra por cima.
+ * ficava órfão e o teto de exposição liberava os US$ 500 inteiros.
  *
- * ⚠️ Volta a `open` de propósito: a ordem de saída que estava armada acabou de
- * ser resolvida, e o que sobrou precisa poder armar de novo. Ficar
- * `exit_armed` apontando para ordem morta é a cicatriz de `reopenServerPosition`.
+ * ⚠️ NÃO RESSUSCITAR. Um segundo escritor de posição é um segundo modelo do
+ * que o bot possui, que é o achado A131.
  */
-export async function reduzirServerPosition(
-  sessionId: string, base: string, baseRestante: number, custoRestante: number,
-): Promise<Gravacao> {
-  const db = getSupabaseAdmin();
-  if (!db) return { ok: false, erro: "sem banco" };
-  return comRetentativa(() => db.from("autopilot_positions").update({
-    base_amount:   baseRestante,
-    cost_usd:      custoRestante,
-    status:        "open",
-    exit_order_id: null,
-    exit_armed_at: null,
-    updated_at:    new Date().toISOString(),
-  }).eq("session_id", sessionId).eq("base", base.toUpperCase()));
-}
-
-/**
- * Remove a posição depois que ela saiu / não é mais mantida.
- *
- * ⚠️ SE ISTO FALHAR CALADO, o banco segue dizendo que a bolsa existe. O teto de
- * exposição conta capital que não está mais lá, e o ramo de venda pode tentar
- * vender de novo o que já foi vendido.
- */
-export async function closeServerPosition(sessionId: string, base: string): Promise<Gravacao> {
-  const db = getSupabaseAdmin();
-  if (!db) return { ok: false, erro: "sem banco" };
-  return comRetentativa(() => db.from("autopilot_positions")
-    .delete()
-    .eq("session_id", sessionId)
-    .eq("base", base.toUpperCase()));
-}
 
 /**
  * Atomically add realized P&L to the session's pnl_today and trip the freeze
