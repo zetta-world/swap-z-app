@@ -33,6 +33,39 @@ const espioes = vi.hoisted(() => ({
 
 let bancoAtual: ReturnType<typeof bancoFalso> | null = null;
 
+/**
+ * ⚠️ A SESSÃO DO FIXTURE PRECISA SER LEGITIMAMENTE AUTORIZADA (A130).
+ *
+ * Estes testes afirmam o caminho FELIZ do piloto. Depois do A130, a rota exige
+ * autorização durável server-side — ativa, não expirada, não congelada, dentro
+ * do teto diário e com elo no cofre. Uma sessão de fixture sem esses campos é
+ * uma sessão PARADA, e o teste passaria a medir a recusa em vez do que ele diz
+ * medir. Completá-la NÃO afrouxa nada: o cenário de recusa tem testes próprios
+ * em `a130-sessao-autoriza.test.ts`.
+ *
+ * ⚠️ `vi.hoisted` porque as fábricas de `vi.mock` são içadas para o topo do
+ * arquivo e não enxergam `const` de módulo.
+ */
+const fixtureDaSessao = vi.hoisted(() => {
+  const utcDayKey = (d = new Date()) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  return {
+    utcDayKey,
+    /** ⚠️ A reserva do teto diário é server-side; no fixture ela concede. */
+    reservarTradeDaSessao: async () => ({ ok: true as const, tradesDepois: 1 }),
+    liberarTradeDaSessao: async () => true,
+    viva: {
+      is_active: true,
+      expires_at: new Date(Date.now() + 6 * 3_600_000).toISOString(),
+      frozen_until_day: null as string | null,
+      last_reset_day: utcDayKey(),
+      trades_today: 0,
+      max_trades_per_day: 10,
+      max_trade_usd: 1_000,
+    },
+  };
+});
+
 vi.mock("@/lib/rate-limit", () => ({
   rateLimitDurable: async () => ({ ok: true }),
   getClientId: () => "teste",
@@ -68,9 +101,13 @@ vi.mock("@/lib/autopilot/price-guard", async (importOriginal) => {
   return { ...real, getReferencePriceUsd: async () => 60_000 };
 });
 vi.mock("@/lib/autopilot/sessions", () => ({
+  utcDayKey: fixtureDaSessao.utcDayKey,
+  reservarTradeDaSessao: fixtureDaSessao.reservarTradeDaSessao,
+  liberarTradeDaSessao: fixtureDaSessao.liberarTradeDaSessao,
   getSessionStatus: async () => ({
     id: "sess-1", conexao_id: "cx-1", strategy_id: "estrat-1", strategy_version: 3,
     allowed_symbols: null, strategy_hash: "h-1",
+    ...fixtureDaSessao.viva,
   }),
 }));
 vi.mock("@/lib/cex/conexoes", () => ({

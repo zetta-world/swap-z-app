@@ -334,6 +334,125 @@ export async function bumpSessionTrades(walletAddress: string, exchangeId: strin
   return !error;
 }
 
+/**
+ * ⚠️⚠️⚠️ RESERVA UMA VAGA DO TETO DIÁRIO, ATOMICAMENTE — achado A130-B, §17.
+ *
+ * O `bump_session_trades` acima é um `UPDATE ... SET trades_today = trades_today
+ * + n` puro. O incremento em si é atômico, mas **não confere teto nenhum**. Com
+ * `trades_today = 4` e `max = 5`, duas requisições concorrentes leem `4 < 5`,
+ * as duas passam, e o contador termina em 6. O limite que o dono configurou
+ * vira sugestão sob concorrência — e o canal do navegador é justamente o que
+ * pode disparar duas vezes com um clique duplo.
+ *
+ * ⚠️ POR QUE COMPARE-AND-SWAP, E NÃO RPC NOVA. Uma função no banco resolveria
+ * com `where trades_today < max_trades_per_day`, mas RPC nova exige migration
+ * nova — e o §50 manda PARAR antes de criar migration no A130. O CAS resolve
+ * sem tocar no esquema:
+ *
+ *     update ... set trades_today = <lido+1>
+ *      where id = X and trades_today = <lido> and is_active and last_reset_day = <hoje>
+ *
+ * Em READ COMMITTED, quando duas transações disputam a MESMA linha, a segunda
+ * espera o lock e então **reavalia o WHERE contra a versão já atualizada**
+ * (EvalPlanQual). `trades_today = <lido>` deixa de casar e ela grava ZERO
+ * linhas. `.select("id")` faz a diferença ser visível: sem ele, "reservei" e
+ * "não reservei" voltariam idênticos — a cicatriz do A11 nesta mesma tabela.
+ *
+ * ⚠️ `last_reset_day` ENTRA NO WHERE de propósito. O contador só é zerado pela
+ * virada do dia do cron; reservar contra um `trades_today` de ontem contaria a
+ * vaga no balde errado. Dia diferente ⇒ nenhuma linha casa ⇒ `virou_o_dia`, e
+ * quem chama decide (aqui: recusa, porque a virada é do cron e é melhor perder
+ * um trade do que estourar o teto).
+ *
+ * ⚠️ TENTATIVAS: a corrida legítima (duas reservas simultâneas com vaga para
+ * ambas) falha o CAS uma vez e sucede na releitura. Três tentativas cobrem
+ * isso sem virar laço.
+ */
+export type ResultadoDaReserva =
+  | { ok: true; tradesDepois: number }
+  | { ok: false; motivo: "limite_diario" | "virou_o_dia" | "sessao_inativa" | "erro";
+      porque: string };
+
+export async function reservarTradeDaSessao(
+  sessionId: string,
+  hojeUtc: string,
+  tentativas = 3,
+): Promise<ResultadoDaReserva> {
+  const db = getSupabaseAdmin();
+  if (!db) return { ok: false, motivo: "erro", porque: "sem banco" };
+
+  for (let i = 0; i < tentativas; i++) {
+    const { data, error } = await db
+      .from("autopilot_sessions")
+      .select("trades_today, max_trades_per_day, is_active, last_reset_day")
+      .eq("id", sessionId)
+      .maybeSingle();
+    // ⚠️ Falha de leitura NÃO é "sem sessão": não reservar é a direção certa,
+    // mas o motivo precisa dizer que não deu para olhar.
+    if (error) return { ok: false, motivo: "erro", porque: error.message.slice(0, 160) };
+    if (!data) return { ok: false, motivo: "sessao_inativa", porque: "sessao nao encontrada" };
+    if (!data.is_active) {
+      return { ok: false, motivo: "sessao_inativa", porque: "sessao parada" };
+    }
+    if (data.last_reset_day !== hojeUtc) {
+      return { ok: false, motivo: "virou_o_dia",
+        porque: `contador e do dia ${data.last_reset_day}, hoje e ${hojeUtc} — `
+          + "a virada e do cron; nenhuma vaga reservada" };
+    }
+    const atual = Number(data.trades_today);
+    const teto  = Number(data.max_trades_per_day);
+    if (!(atual < teto)) {
+      return { ok: false, motivo: "limite_diario",
+        porque: `teto diario atingido: ${atual}/${teto}` };
+    }
+
+    const { data: gravadas, error: erroUpdate } = await db
+      .from("autopilot_sessions")
+      .update({ trades_today: atual + 1, updated_at: new Date().toISOString() })
+      .eq("id", sessionId)
+      .eq("is_active", true)
+      .eq("last_reset_day", hojeUtc)
+      // ⚠️ O CAS: só casa se ninguém mexeu no contador desde a leitura.
+      .eq("trades_today", atual)
+      .select("id");
+    if (erroUpdate) {
+      return { ok: false, motivo: "erro", porque: erroUpdate.message.slice(0, 160) };
+    }
+    if ((gravadas?.length ?? 0) > 0) return { ok: true, tradesDepois: atual + 1 };
+    // Ninguém casou: outra passada reservou primeiro. Relê e tenta de novo.
+  }
+  return { ok: false, motivo: "limite_diario",
+    porque: `concorrencia no contador apos ${tentativas} tentativas — vaga nao reservada` };
+}
+
+/**
+ * Devolve a vaga reservada.
+ *
+ * ⚠️⚠️ SÓ NA RECUSA PROVADA. O executor chama `liberar` em três pontos, todos
+ * com prova de que NADA saiu (reserva negada a jusante, autorização recusada,
+ * corretora respondeu "não") — e NUNCA em `UNKNOWN`. Devolver a vaga sobre
+ * dúvida autorizaria um segundo envio para um dinheiro que talvez já tenha
+ * saído: a INVARIANTE 4.
+ *
+ * ⚠️ Também é CAS. Se o contador andou entre a reserva e a devolução, a
+ * devolução não acontece — e não acontecer é o lado seguro: sobra uma vaga
+ * gasta, não uma vaga inventada.
+ */
+export async function liberarTradeDaSessao(
+  sessionId: string, hojeUtc: string, valorReservado: number,
+): Promise<boolean> {
+  const db = getSupabaseAdmin();
+  if (!db) return false;
+  const { data, error } = await db
+    .from("autopilot_sessions")
+    .update({ trades_today: Math.max(0, valorReservado - 1), updated_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("last_reset_day", hojeUtc)
+    .eq("trades_today", valorReservado)
+    .select("id");
+  return !error && (data?.length ?? 0) > 0;
+}
+
 /** Release the per-session lock so the next cron run can pick it up. */
 export async function releaseLock(id: string): Promise<void> {
   const db = getSupabaseAdmin();

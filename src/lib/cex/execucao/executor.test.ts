@@ -739,8 +739,18 @@ describe("A127.9 — executor fail-closed para browser real sem conexao_id", () 
     const r = await executarOrdemCex(
       { db: b.cliente, enviar, killSwitches: passaLivre },
       { origin: "autopilot_browser", autonomous: true, sessionId: "S1", conexaoId: null },
+      /**
+       * ⚠️ `precoDeReferencia` É OBRIGATÓRIO NUM SIMULADO A MERCADO, e a
+       * primeira versão deste teste não o passava: `simularOrdem` recusava com
+       * "simulado sem preco de referencia" — de propósito, porque simulação
+       * sem preço inventaria execução — e o teste falhava por um motivo que
+       * NADA tem a ver com o que ele afirma.
+       *
+       * O que ele afirma é que a guarda A127 (`conexao_ausente`) ISENTA o
+       * simulado. Com o preço no lugar, é exatamente isso que ele mede.
+       */
       { exchangeId: "binance", symbol: "BTC/USDT", side: "sell", type: "market",
-        qty: 1, simulated: true },
+        qty: 1, simulated: true, precoDeReferencia: 100 },
       null,
     );
     expect(r.desfecho).toBe("submetido");

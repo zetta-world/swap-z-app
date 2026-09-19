@@ -7,7 +7,12 @@ import { ehTerminal } from "@/lib/cex/execucao/estados";
 import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { regimeDaBase } from "@/lib/autopilot/regime";
-import { getSessionStatus } from "@/lib/autopilot/sessions";
+import {
+  getSessionStatus, utcDayKey, reservarTradeDaSessao, liberarTradeDaSessao,
+} from "@/lib/autopilot/sessions";
+import {
+  avaliarAutorizacaoDaSessaoParaExecucao, tetoEfetivoDaOrdem,
+} from "@/lib/autopilot/autorizacao-de-execucao";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
 import { podeAutomatizar } from "@/lib/autopilot/liberacao";
@@ -204,6 +209,10 @@ export async function POST(req: NextRequest) {
    */
   let sessaoDoPilotoId: string | null = null;
   let conexaoDoPilotoId: string | null = null;
+  /** ⚠️ O dia UTC usado na reserva — o MESMO da autorização, não recalculado. */
+  let hojeDoPiloto: string | null = null;
+  /** O contador APÓS a reserva, para a devolução por compare-and-swap. */
+  let vagaReservada: number | null = null;
   let credenciaisDoPiloto: CexCredentials | null = null;
   if (ehAutopilot) {
     /**
@@ -236,11 +245,94 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
+    /**
+     * ⚠️⚠️⚠️ A130 — A SESSÃO AUTORIZA, ANTES DE QUALQUER OUTRA COISA.
+     *
+     * Esta leitura acontecia mais abaixo, só para tirar `allowed_symbols` e a
+     * estratégia — e NADA conferia `is_active`, `expires_at` ou congelamento.
+     * O botão PARAR grava `is_active = false` e a LINHA fica; a rota seguia
+     * para `sessao.conexao_id` → conexão CURRENT → credencial do cofre → ordem.
+     * Sessão parada continuava comprando.
+     *
+     * ⚠️ E ELA VEM AGORA ANTES DO COFRE DE PROPÓSITO (§20): numa sessão sem
+     * autorização a credencial NEM CHEGA A SER DECIFRADA. Recusar depois de
+     * abrir o cofre seria recusar tarde.
+     */
+    let sessaoDoPiloto: Awaited<ReturnType<typeof getSessionStatus>> = null;
+    try {
+      sessaoDoPiloto = sessao?.sub ? await getSessionStatus(sessao.sub, exchange) : null;
+    } catch (e) {
+      /**
+       * ⚠️ FALHA DE LEITURA É RECUSA, não "sem sessão". `getSessionStatus`
+       * LANÇA quando o banco não responde (correção de 14/09). Engolir isso
+       * faria um Postgres intermitente virar licença para operar sem teto,
+       * sem lista de símbolos e sem certificado.
+       */
+      logSecurity("politica_sem_sessao_legivel", { route: "cex/order" }, "high");
+      return NextResponse.json(
+        { ok: false, error: "sessao_nao_legivel",
+          detail: (e as Error)?.message?.slice(0, 160) ?? "falha ao ler a sessao" },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    const agoraDaSessao = new Date();
+    const hojeUtc = utcDayKey(agoraDaSessao);
+    hojeDoPiloto = hojeUtc;
+    const autorizacao = avaliarAutorizacaoDaSessaoParaExecucao(
+      sessaoDoPiloto
+        ? {
+            ativa: sessaoDoPiloto.is_active,
+            expiraEm: sessaoDoPiloto.expires_at,
+            congeladaAte: sessaoDoPiloto.frozen_until_day,
+            /**
+             * ⚠️ A VIRADA DO DIA APLICADA AQUI. O contador só é zerado pela
+             * passada do cron; num dia novo o valor da linha é de ontem, e
+             * usá-lo cru bloquearia o piloto com um teto já cumprido.
+             */
+            tradesHoje: sessaoDoPiloto.last_reset_day === hojeUtc
+              ? sessaoDoPiloto.trades_today : 0,
+            maxTradesPorDia: sessaoDoPiloto.max_trades_per_day,
+            maxTradeUsd: sessaoDoPiloto.max_trade_usd,
+            conexaoId: sessaoDoPiloto.conexao_id,
+          }
+        : null,
+      agoraDaSessao,
+    );
+    if (!autorizacao.ok) {
+      logSecurity("a130_sessao_nao_autoriza", {
+        route: "cex/order", motivo: autorizacao.motivo,
+      }, "high");
+      return NextResponse.json(
+        { ok: false, error: "sessao_nao_autorizada",
+          motivo: autorizacao.motivo, detail: autorizacao.porque },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     const base = body.symbol.split(/[\/\-]/)[0];
     const refPrice = await getReferencePriceUsd(base);
-    const cap = typeof body.maxNotionalUsd === "number" && body.maxNotionalUsd > 0
-      ? body.maxNotionalUsd
-      : HARD_NOTIONAL_CEILING_USD;
+    /**
+     * ⚠️⚠️⚠️ A130-B — O TETO É O DURÁVEL, NÃO O DO CORPO.
+     *
+     * Isto era:
+     *
+     *     const cap = typeof body.maxNotionalUsd === "number" && body.maxNotionalUsd > 0
+     *       ? body.maxNotionalUsd : HARD_NOTIONAL_CEILING_USD;
+     *
+     * — e alimentava `checkRealNotional` E `avaliarDecisaoDeEstrategia`. O
+     * `max_trade_usd` da sessão, que o DONO configurou e está persistido, não
+     * entrava na conta: sessão a US$ 50 e corpo pedindo US$ 1.000 fazia o
+     * servidor avaliar contra 1.000.
+     *
+     * Agora vale o MENOR entre sessão, teto global e o que o corpo pediu — o
+     * cliente só consegue ser mais conservador, nunca se autorizar mais.
+     */
+    const cap = tetoEfetivoDaOrdem({
+      tetoDaSessaoUsd: autorizacao.tetoDaSessaoUsd,
+      tetoGlobalUsd: HARD_NOTIONAL_CEILING_USD,
+      pedidoPeloClienteUsd: body.maxNotionalUsd,
+    });
     const guard = checkRealNotional({ side, baseAmount: body.amount, refPrice, maxTradeUsd: cap });
     if (!guard.ok) {
       logSecurity("notional_guard_block", { route: "cex/order", symbol: body.symbol, reason: guard.reason }, "high");
@@ -263,24 +355,8 @@ export async function POST(req: NextRequest) {
      * `politicaVersao` volta na resposta justamente para a UI poder exibir POR
      * QUE, sem ter de reimplementar a regra para saber.
      */
+    // ⚠️ A sessão já foi lida e AUTORIZADA acima (A130) — uma leitura só.
     const dbPolitica = getSupabaseAdmin();
-    /**
-     * ⚠️ FALHA DE LEITURA DA SESSÃO É RECUSA, não "sem sessão". `getSessionStatus`
-     * LANÇA quando o banco não responde (correção de 14/09, e por bom motivo).
-     * Engolir isso aqui faria um Postgres intermitente virar licença para o
-     * piloto operar sem teto, sem lista de símbolos e sem certificado.
-     */
-    let sessaoDoPiloto: Awaited<ReturnType<typeof getSessionStatus>> = null;
-    try {
-      sessaoDoPiloto = sessao?.sub ? await getSessionStatus(sessao.sub, exchange) : null;
-    } catch (e) {
-      logSecurity("politica_sem_sessao_legivel", { route: "cex/order" }, "high");
-      return NextResponse.json(
-        { ok: false, error: "sessao_nao_legivel",
-          detail: (e as Error)?.message?.slice(0, 160) ?? "falha ao ler a sessao" },
-        { status: 503, headers: { "Cache-Control": "no-store" } },
-      );
-    }
     const cert = dbPolitica && sessaoDoPiloto?.strategy_id && sessaoDoPiloto.strategy_version
       ? (await certificadoVivo(dbPolitica, sessaoDoPiloto.strategy_id, sessaoDoPiloto.strategy_version)) ?? null
       : null;
@@ -315,7 +391,8 @@ export async function POST(req: NextRequest) {
       versao: sessaoDoPiloto?.strategy_version ?? null,
     };
     sessaoDoPilotoId = sessaoDoPiloto?.id ?? null;
-    conexaoDoPilotoId = sessaoDoPiloto?.conexao_id ?? null;
+    // ⚠️ Da AUTORIZAÇÃO, que já provou que ele existe (motivo `conexao_ausente`).
+    conexaoDoPilotoId = autorizacao.conexaoId;
 
     /**
      * ⚠️⚠️ A127-BINDING: no piloto, a identidade histórica e a credencial do
@@ -462,6 +539,42 @@ export async function POST(req: NextRequest) {
         notionalUsd: (typeof body.price === "number" ? body.amount * body.price : null)
           ?? notionalRealDoPiloto },
       creds,
+      /**
+       * ⚠️⚠️⚠️ A130-B §17 — A VAGA DO TETO DIÁRIO É RESERVADA, NÃO REPORTADA.
+       *
+       * O navegador contava o trade DEPOIS, num POST separado para
+       * `/api/autopilot/session/record-fire`. Três problemas de uma vez:
+       *
+       *   · a contagem dependia de o cliente mandar (aba fechada = não contou);
+       *   · `/api/cex/order` não conferia o teto ANTES de disparar;
+       *   · `bump_session_trades` é `trades_today = trades_today + n` sem teto,
+       *     então dois cliques simultâneos com 4/5 viravam 6.
+       *
+       * Agora a vaga é RESERVADA pelo servidor, atomicamente (compare-and-swap
+       * em `reservarTradeDaSessao`), na costura que o executor já tinha para
+       * isso — entre a autorização e o SUBMITTING.
+       *
+       * ⚠️ `liberar` SÓ RODA NA RECUSA PROVADA. O executor a chama em três
+       * pontos, todos com prova de que nada saiu, e NUNCA em `UNKNOWN`:
+       * devolver a vaga sobre dúvida autorizaria um segundo envio para um
+       * dinheiro que talvez já tenha saído (INVARIANTE 4).
+       *
+       * ⚠️ Ordem MANUAL não reserva nada — ela não tem sessão nem teto diário.
+       */
+      ehAutopilot && sessaoDoPilotoId
+        ? {
+            reservar: async () => {
+              const r = await reservarTradeDaSessao(sessaoDoPilotoId!, hojeDoPiloto!);
+              if (r.ok) { vagaReservada = r.tradesDepois; return { ok: true as const }; }
+              return { ok: false as const, porque: `${r.motivo}: ${r.porque}` };
+            },
+            liberar: async () => {
+              if (vagaReservada === null) return;
+              await liberarTradeDaSessao(sessaoDoPilotoId!, hojeDoPiloto!, vagaReservada);
+              vagaReservada = null;
+            },
+          }
+        : undefined,
     );
 
     if (r.desfecho === "incerto") {

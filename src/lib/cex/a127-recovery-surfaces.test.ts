@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { bancoFalso, type BancoFalso } from "@/lib/cex/execucao/banco-falso";
 import { guardarConexao, credenciaisDoIntentParaRecovery } from "@/lib/cex/conexoes";
-import { reconciliarPendentes } from "@/lib/cex/execucao/reconciliador";
+import { reconciliarPendentes, type DependenciasDaReconciliacao } from "@/lib/cex/execucao/reconciliador";
 import type { IntentRow } from "@/lib/cex/execucao/intents";
 import type { CexCredentials } from "@/lib/cex/types";
 
@@ -55,7 +55,13 @@ function plantar(b: BancoFalso, x: {
   });
 }
 
-function deps(b: BancoFalso, ler: ReturnType<typeof vi.fn>) {
+/**
+ * ⚠️ O `ler` CARREGA A ASSINATURA REAL. `ReturnType<typeof vi.fn>` é o mock
+ * genérico, que o `tsc` recusa em `DependenciasDaReconciliacao` — e um mock
+ * sem assinatura não prova nada sobre QUAL credencial a reconciliação usou.
+ */
+type LerNaVenue = NonNullable<DependenciasDaReconciliacao["ler"]>;
+function deps(b: BancoFalso, ler: LerNaVenue) {
   return {
     db: b.cliente,
     elegivel: (intent: IntentRow) => Boolean(intent.conexao_id),

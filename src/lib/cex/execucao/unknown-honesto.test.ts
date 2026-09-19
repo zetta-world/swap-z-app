@@ -51,8 +51,24 @@ describe("browser-autopilot: o intent carrega a sessão", () => {
     expect(ROTA).toMatch(/sessaoDoPilotoId = sessaoDoPiloto\?\.id \?\? null/);
   });
 
-  it("⚠️ o recuperador global é elegível por session_id OU conexao_id", () => {
-    expect(CRON).toMatch(/elegivel: \(intent\) => Boolean\(intent\.session_id \|\| intent\.conexao_id\)/);
+  it("⚠️⚠️ o recuperador global é elegível SÓ por conexao_id (A127, Módulo C)", () => {
+    /**
+     * ⚠️ ESTA TRAVA AFIRMAVA `session_id || conexao_id` — e o Módulo C mudou o
+     * critério de propósito, sem atualizá-la: ela chegou VERMELHA no
+     * checkpoint recebido.
+     *
+     * A razão da mudança (A127 §25/§26): a credencial de recovery sai de
+     * `intent.conexao_id`, NUNCA da sessão — a sessão é mutável e um rearme
+     * C1→C2 faria o recuperador procurar a ordem antiga na conta nova. Um
+     * intent legado só-com-sessão não tem identidade histórica comprovada e
+     * deixa de ser auto-reconciliado: fail-closed, por decisão.
+     *
+     * A trava passa a afirmar o critério NOVO — não foi afrouxada, foi
+     * corrigida para seguir a decisão que ela deveria estar protegendo.
+     */
+    expect(CRON).toMatch(/elegivel: \(intent\) => Boolean\(intent\.conexao_id\)/);
+    // ⚠️ E o critério antigo não sobreviveu em lugar nenhum do cron.
+    expect(CRON).not.toMatch(/intent\.session_id \|\| intent\.conexao_id/);
   });
 
   it("com sessão, o recuperador encontra credencial — o intent reconcilia", async () => {

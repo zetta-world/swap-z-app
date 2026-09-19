@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { bancoFalso } from "@/lib/cex/execucao/banco-falso";
 import type { RespostaDaVenue } from "@/lib/cex/execucao/venue-primitivo";
+import type { CexId, CexCredentials } from "@/lib/cex/types";
 import type { IntentRow } from "@/lib/cex/execucao/intents";
 
 const credenciais = vi.hoisted(() => ({
@@ -18,12 +19,57 @@ const estado = vi.hoisted(() => ({
   conexaoId: "C1" as string | null,
   aptidao: "current" as "current" | "retired" | "revoked" | "ilegivel",
 }));
+/**
+ * ⚠️ O ESPIÃO CARREGA A ASSINATURA REAL — sem ela `mock.calls[0][1]` é um
+ * índice fora de uma tupla vazia, e o `tsc` recusa. Um espião sem assinatura
+ * também não provaria NADA sobre QUAL credencial viajou, que é o ponto inteiro
+ * do A127-BINDING.
+ */
+type EnviarNaVenue = (
+  id: CexId,
+  creds: CexCredentials,
+  req: { symbol: string; side: "buy" | "sell"; type: "market" | "limit";
+         amount: number; price?: number | null; clientOrderId: string },
+) => Promise<RespostaDaVenue>;
 const spies = vi.hoisted(() => ({
-  enviar: vi.fn(async (): Promise<RespostaDaVenue> => ({
+  enviar: vi.fn<EnviarNaVenue>(async () => ({
     tipo: "aceita", ordem: { id: "EXT-A127", filled: 0, status: "open" } as never,
   })),
 }));
 let bancoAtual: ReturnType<typeof bancoFalso> | null = null;
+
+/**
+ * ⚠️ A SESSÃO DO FIXTURE PRECISA SER LEGITIMAMENTE AUTORIZADA (A130).
+ *
+ * Estes testes afirmam o caminho FELIZ do piloto. Depois do A130, a rota exige
+ * autorização durável server-side — ativa, não expirada, não congelada, dentro
+ * do teto diário e com elo no cofre. Uma sessão de fixture sem esses campos é
+ * uma sessão PARADA, e o teste passaria a medir a recusa em vez do que ele diz
+ * medir. Completá-la NÃO afrouxa nada: o cenário de recusa tem testes próprios
+ * em `a130-sessao-autoriza.test.ts`.
+ *
+ * ⚠️ `vi.hoisted` porque as fábricas de `vi.mock` são içadas para o topo do
+ * arquivo e não enxergam `const` de módulo.
+ */
+const fixtureDaSessao = vi.hoisted(() => {
+  const utcDayKey = (d = new Date()) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  return {
+    utcDayKey,
+    /** ⚠️ A reserva do teto diário é server-side; no fixture ela concede. */
+    reservarTradeDaSessao: async () => ({ ok: true as const, tradesDepois: 1 }),
+    liberarTradeDaSessao: async () => true,
+    viva: {
+      is_active: true,
+      expires_at: new Date(Date.now() + 6 * 3_600_000).toISOString(),
+      frozen_until_day: null as string | null,
+      last_reset_day: utcDayKey(),
+      trades_today: 0,
+      max_trades_per_day: 10,
+      max_trade_usd: 1_000,
+    },
+  };
+});
 
 vi.mock("@/lib/rate-limit", () => ({
   rateLimitDurable: async () => ({ ok: true }), getClientId: () => "teste",
@@ -49,10 +95,14 @@ vi.mock("@/lib/autopilot/price-guard", async (importOriginal) => {
   return { ...real, getReferencePriceUsd: async () => 100 };
 });
 vi.mock("@/lib/autopilot/sessions", () => ({
+  utcDayKey: fixtureDaSessao.utcDayKey,
+  reservarTradeDaSessao: fixtureDaSessao.reservarTradeDaSessao,
+  liberarTradeDaSessao: fixtureDaSessao.liberarTradeDaSessao,
   getSessionStatus: async () => ({
     id: "S1", conexao_id: estado.conexaoId,
     strategy_id: "estrat-1", strategy_version: 1,
     allowed_symbols: null, strategy_hash: "hash-1",
+    ...fixtureDaSessao.viva,
   }),
 }));
 vi.mock("@/lib/autopilot/certificado", () => ({ certificadoVivo: async () => null }));
@@ -102,17 +152,30 @@ describe("A127.9/A127.11 — browser snapshot e credential binding", () => {
     expect(intent.origin).toBe("autopilot_browser");
 
     expect(spies.enviar).toHaveBeenCalledTimes(1);
-    const creds = spies.enviar.mock.calls[0][1] as typeof credenciais.A;
+    const creds = spies.enviar.mock.calls[0]![1];
     expect(creds.apiKey).toBe(credenciais.A.apiKey);
     expect(creds.apiSecret).toBe(credenciais.A.apiSecret);
     expect(creds.apiKey).not.toBe(credenciais.B.apiKey);
   });
 
   it("browser real sem conexao_id: recusa antes de intent e createOrder", async () => {
+    /**
+     * ⚠️ O A130 PASSOU A RECUSAR ISTO UMA CAMADA ANTES, e melhor: a
+     * autorização da sessão roda ANTES do cofre, então a credencial nem chega
+     * a ser decifrada. A substância do A127 não mudou — zero intent, zero
+     * createOrder — e o MOTIVO continua nomeando a conexão ausente, agora
+     * dentro do envelope da autorização.
+     *
+     * A asserção fixa as duas coisas de propósito: se alguém trocar o envelope
+     * sem preservar o motivo, ou preservar o motivo e deixar a ordem sair,
+     * este teste acusa.
+     */
     estado.conexaoId = null;
     const r = await POST(req());
     expect(r.status).not.toBe(200);
-    expect((await r.json()).error).toBe("conexao_ausente");
+    const corpo = await r.json();
+    expect(corpo.error).toBe("sessao_nao_autorizada");
+    expect(corpo.motivo).toBe("conexao_ausente");
     expect(bancoAtual!.intents).toHaveLength(0);
     expect(spies.enviar).not.toHaveBeenCalled();
   });
