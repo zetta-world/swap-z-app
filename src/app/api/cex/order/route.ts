@@ -7,9 +7,8 @@ import { ehTerminal } from "@/lib/cex/execucao/estados";
 import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { regimeDaBase } from "@/lib/autopilot/regime";
-import {
-  getSessionStatus, utcDayKey, reservarTradeDaSessao, liberarTradeDaSessao,
-} from "@/lib/autopilot/sessions";
+import { getSessionStatus, utcDayKey } from "@/lib/autopilot/sessions";
+import { reservaDaVagaDiaria } from "@/lib/autopilot/reserva-de-vaga";
 import {
   avaliarAutorizacaoDaSessaoParaExecucao, entradaAutorizadaNaSessao, tetoEfetivoDaOrdem,
 } from "@/lib/autopilot/autorizacao-de-execucao";
@@ -211,8 +210,6 @@ export async function POST(req: NextRequest) {
   let conexaoDoPilotoId: string | null = null;
   /** ⚠️ O dia UTC usado na reserva — o MESMO da autorização, não recalculado. */
   let hojeDoPiloto: string | null = null;
-  /** O contador APÓS a reserva, para a devolução por compare-and-swap. */
-  let vagaReservada: number | null = null;
   let credenciaisDoPiloto: CexCredentials | null = null;
   if (ehAutopilot) {
     /**
@@ -611,19 +608,16 @@ export async function POST(req: NextRequest) {
        *
        * ⚠️ Ordem MANUAL não reserva nada — ela não tem sessão nem teto diário.
        */
+      /**
+       * ⚠️⚠️ A MESMA PRIMITIVA QUE O CRON USA — A132.
+       *
+       * Este fechamento era escrito aqui dentro, e o cron contava DEPOIS da
+       * ordem com `bumpSessionTrades` (soma sem conferir teto). Dois canais,
+       * duas formas de gastar a mesma vaga: com 4/5, os dois passavam e o dia
+       * fechava em 6. Agora é uma função só, chamada pelos dois.
+       */
       ehAutopilot && sessaoDoPilotoId
-        ? {
-            reservar: async () => {
-              const r = await reservarTradeDaSessao(sessaoDoPilotoId!, hojeDoPiloto!);
-              if (r.ok) { vagaReservada = r.tradesDepois; return { ok: true as const }; }
-              return { ok: false as const, porque: `${r.motivo}: ${r.porque}` };
-            },
-            liberar: async () => {
-              if (vagaReservada === null) return;
-              await liberarTradeDaSessao(sessaoDoPilotoId!, hojeDoPiloto!, vagaReservada);
-              vagaReservada = null;
-            },
-          }
+        ? reservaDaVagaDiaria(sessaoDoPilotoId, hojeDoPiloto!)
         : undefined,
     );
 

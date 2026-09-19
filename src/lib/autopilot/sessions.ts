@@ -305,34 +305,39 @@ export async function tryLockSession(id: string, ttlMs: number): Promise<boolean
 }
 
 /**
- * Atomically add to a session's trades_today (A1 write-back). Lets the browser
- * publish its own fires so the server counter reflects BOTH channels and can
- * be read back as the single authoritative daily count. No-op if no session
- * exists for the wallet+exchange.
+ * ⚠️⚠️⚠️ `bumpSessionTrades` VIVIA AQUI, E SAIU NO A132 (Round 9).
+ *
+ * Ela era o write-back do A1: somava `trades_today` DEPOIS que a ordem já
+ * existia na corretora, por `rpc("bump_session_trades")` — que é
+ * `trades_today = trades_today + n`, incremento atômico **sem conferir teto**.
+ *
+ * A cicatriz dela, que continua valendo como lição, era de OUTRO defeito: o
+ * RPC era disparado sem conferir `error`, e o cliente do Supabase RESOLVE com
+ * `{ error }` em vez de lançar. Se ele falhasse, o contador não subia e o
+ * limite diário DEIXAVA DE EXISTIR, em silêncio, pelo resto do dia (auditoria
+ * 23/08). Consertar isso não consertou o outro buraco — e o outro buraco era
+ * estrutural:
+ *
+ *     navegador lê 4 → reserva → 5
+ *     cron já tinha lido 4 → envia → soma → 6
+ *
+ * Teto de 5 fechando o dia em 6. Não havia conferência possível DEPOIS do
+ * efeito externo: quando a soma acontece, o dinheiro já saiu.
+ *
+ * O Round 8 trocou o navegador para `reservarTradeDaSessao` (compare-and-swap,
+ * ANTES do envio) e DECLAROU a corrida cron↔navegador como limitação
+ * conhecida. O A132 é o fim dela: o cron passou a usar a mesma reserva, pela
+ * mesma costura (`reservaDaVagaDiaria` → `ReservaDeRisco` do executor), e esta
+ * função deixou de ter caller. Mantê-la exportada seria manter uma arma
+ * carregada — um caminho que soma sem teto, a uma linha de distância de
+ * qualquer um que "só precise contar um trade".
+ *
+ * O RPC `bump_session_trades` (migration 0010) continua existindo no banco;
+ * nenhuma migration foi alterada para remover o que o código não chama mais.
+ *
+ * ⚠️ NÃO RESSUSCITAR. `escritas-conferidas.test.ts` tranca a ausência: nenhum
+ * arquivo de produção pode voltar a chamar este RPC para contar trade.
  */
-/**
- * ⚠️⚠️ DEVOLVE SE CONTOU — e antes engolia a falha (auditoria 23/08).
- *
- * Este contador E o limite de trades por dia que o usuario configurou. O cron
- * ja o incrementa LOGO APOS a ordem existir, de proposito, para sobreviver a
- * um timeout no meio da execucao — esse raciocinio estava certo.
- *
- * Mas o RPC era disparado sem conferir `error`, e o cliente do Supabase
- * RESOLVE com `{ error }` em vez de lancar. Se ele falhasse, o contador nao
- * subia e o limite diario simplesmente DEIXAVA DE EXISTIR, em silencio, pelo
- * resto do dia — a mesma classe do `engine.ts`, agora em dinheiro real.
- *
- * ⚠️ Nao da para desfazer a ordem que ja foi. O que da e nao mentir sobre ela
- * ter sido contada: quem chama trata o `false` como "perdi a conta", e o
- * caminho do dinheiro falha FECHADO a partir dali.
- */
-export async function bumpSessionTrades(walletAddress: string, exchangeId: string, n: number): Promise<boolean> {
-  const db = getSupabaseAdmin();
-  if (!db) return false;
-  if (n <= 0) return true;
-  const { error } = await db.rpc("bump_session_trades", { p_wallet: walletAddress, p_exchange: exchangeId, p_n: n });
-  return !error;
-}
 
 /**
  * ⚠️⚠️⚠️ RESERVA UMA VAGA DO TETO DIÁRIO, ATOMICAMENTE — achado A130-B, §17.

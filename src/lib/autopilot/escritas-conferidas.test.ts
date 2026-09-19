@@ -288,7 +288,8 @@ describe("o disparo do navegador é contado por quem age, uma vez só", () => {
   });
 
   it("⚠️⚠️ e quem conta é quem age: a rota da ordem RESERVA a vaga", () => {
-    expect(ORDEM).toMatch(/reservarTradeDaSessao\(/);
+    // ⚠️ A132: a reserva passou a ser a MESMA função que o cron chama.
+    expect(ORDEM).toMatch(/reservaDaVagaDiaria\(/);
   });
 
   it("⚠️ a cicatriz do A12 continua escrita onde ela aconteceu", () => {
@@ -298,19 +299,34 @@ describe("o disparo do navegador é contado por quem age, uma vez só", () => {
     expect(FIRE).toMatch(/A12/);
   });
 
-  it("⚠️ o cron confere TODAS as chamadas dele, quantas forem", () => {
+  it("⚠️⚠️ e o CRON não conta mais DEPOIS da ordem — A132", () => {
     /**
-     * ⚠️ ERAM DUAS E VIRARAM QUATRO. Compra e venda passaram a contar o trade
-     * também no caminho INCERTO (achado A104): a ordem pode estar viva na
-     * corretora, então o limite diário do usuário tem de registrá-la.
+     * ⚠️ ESTE TESTE MUDOU DE INVARIANTE NO ROUND 9, e o que ele dizia antes
+     * fica escrito aqui para a troca ser auditável em vez de silenciosa:
      *
-     * ⚠️ E A TRAVA DEIXOU DE FIXAR O NÚMERO. Fixar dois fez este teste quebrar
-     * quando o caminho da dúvida nasceu — e o que ele protege nunca foi a
-     * contagem: é que NENHUMA chamada fique sem conferência.
+     *     "o cron confere TODAS as chamadas dele, quantas forem" — e conferia,
+     *     uma a uma, que nenhuma `bumpSessionTrades` ficasse sem `if (!await`.
+     *
+     * A conferência estava certa e era insuficiente. O que ela não podia
+     * proteger é o que vinha ANTES: `bump_session_trades` é `trades_today + n`,
+     * sem conferir teto, e a soma acontece DEPOIS que o dinheiro saiu. Com 4/5,
+     * cron e navegador passavam juntos e o dia fechava em 6 (A132).
+     *
+     * Agora o cron RESERVA a vaga antes do envio, pela mesma primitiva do
+     * navegador. A trava passa a ser a AUSÊNCIA: contar depois é o defeito.
      */
-    const conferidas = [...semComentarios(CRON).matchAll(/if \(!await bumpSessionTrades\(/g)].length;
-    const chamadas = [...semComentarios(CRON).matchAll(/await bumpSessionTrades\(/g)].length;
-    expect(chamadas, "o cron precisa contar o trade em algum lugar").toBeGreaterThanOrEqual(2);
-    expect(conferidas, "toda chamada tem de ser conferida").toBe(chamadas);
+    const codigoDoCron = semComentarios(CRON);
+    expect(codigoDoCron).not.toMatch(/bumpSessionTrades/);
+    expect(codigoDoCron).not.toMatch(/bump_session_trades/);
+    expect(codigoDoCron).toMatch(/reservaDaVagaDiaria\(/);
+  });
+
+  it("⚠️⚠️ a função de somar sem conferir teto deixou de existir", () => {
+    // Mantê-la exportada seria manter uma arma carregada: um caminho que soma
+    // sem teto, a uma linha de quem "só precisa contar um trade".
+    const SESSOES = semComentarios(
+      readFileSync(join(process.cwd(), "src/lib/autopilot/sessions.ts"), "utf8"));
+    expect(SESSOES).not.toMatch(/export async function bumpSessionTrades/);
+    expect(SESSOES).not.toMatch(/bump_session_trades/);
   });
 });

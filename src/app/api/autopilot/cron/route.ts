@@ -3,8 +3,9 @@ import { timingSafeEqual } from "node:crypto";
 import {
   listRunnableSessions, credenciaisDaSessao, patchSession, recordRuns, utcDayKey,
   type OrigemCredencial,
-  tryLockSession, releaseLock, bumpSessionTrades,
+  tryLockSession, releaseLock,
 } from "@/lib/autopilot/sessions";
+import { reservaDaVagaDiaria, type VagaDiaria } from "@/lib/autopilot/reserva-de-vaga";
 import { runAutopilotCexScan, formatRegimeContext } from "@/lib/autopilot/scan";
 import { mapCardToCexIntents } from "@/lib/zion/card-mapping";
 import { fetchCexBalance, fetchCexOrderStatus } from "@/lib/cex/server";
@@ -931,6 +932,35 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   let contadorConfiavel = true;
   let posicaoPerdida    = false;
 
+  /**
+   * ⚠️⚠️⚠️ A VAGA DO DIA É RESERVADA ANTES DA ORDEM — A132.
+   *
+   * O cron contava DEPOIS, com `bumpSessionTrades` (`trades_today + n`, sem
+   * conferir teto), enquanto o navegador já reservava ANTES por
+   * compare-and-swap. Com 4/5, os dois canais passavam e o dia fechava em 6.
+   *
+   * Agora os dois chamam `reservaDaVagaDiaria`, e a reserva entra na costura
+   * `ReservaDeRisco` do executor: ela roda entre AUTHORIZED e SUBMITTING, e
+   * `liberar` só é chamada onde há PROVA de que nada saiu — nunca em UNKNOWN.
+   *
+   * ⚠️ UMA POR ORDEM. Cada perna de um cartão multi-perna cria a sua; reservar
+   * as três de antemão contaria vagas por pernas que podem nunca sair.
+   */
+  const novaVaga = (): VagaDiaria => reservaDaVagaDiaria(s.id, today);
+  /**
+   * Traduz a recusa da reserva para a bandeira que para a passada.
+   *
+   * ⚠️ `limite_diario` é parada LEGÍTIMA (o teto do usuário foi atingido);
+   * `erro`/`virou_o_dia`/`sessao_inativa` significam que não dá para confiar
+   * no contador — e seguir disparando seria operar sem limite.
+   */
+  const anotarRecusaDaVaga = (vaga: VagaDiaria) => {
+    const motivo = vaga.ultimoMotivo();
+    if (!motivo) return;
+    if (motivo === "limite_diario") { remainingTrades = 0; return; }
+    contadorConfiavel = false;
+  };
+
   const pushRow = (intent: { symbol: string; side: string; type: string; amount: number; price?: number; notionalUsd: number }, status: string, cardKind: string, extra: Partial<AutopilotRunRow> = {}) =>
     runRows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: intent.symbol, side: intent.side, order_type: intent.type, amount: intent.amount, price: intent.price ?? null, notional_usd: intent.notionalUsd, status, card_kind: cardKind, ...extra });
 
@@ -1037,6 +1067,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
            * timeout vira DÚVIDA — nunca "errored" com o livro afirmando o que
            * não sabe.
            */
+          const vagaDaVenda = novaVaga();
           const exec = await executarOrdemCex(
             { db: getSupabaseAdmin() },
             /** ⚠️ Venda não leva certificado — saída não precisa de licença. */
@@ -1047,9 +1078,12 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
               type: intent.type, qty: amount, price: intent.price ?? null,
               notionalUsd: guard.realNotionalUsd ?? intent.notionalUsd },
             creds,
+            // ⚠️ A132: a vaga é RESERVADA aqui dentro, antes do envio.
+            vagaDaVenda,
           );
 
           if (exec.desfecho === "recusado") {
+            anotarRecusaDaVaga(vagaDaVenda);
             pushRow(intent, "errored", card.kind, { reason: `${exec.motivo}: ${exec.porque}`.slice(0, 200) });
             continue;
           }
@@ -1060,11 +1094,10 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
            * ordem possivelmente viva" já aconteceu.
            */
           if (exec.desfecho === "incerto") {
+            // ⚠️ A132: a vaga JÁ foi consumida na reserva, e NÃO é devolvida em
+            // dúvida — devolvê-la autorizaria um segundo envio para uma ordem
+            // que talvez esteja viva (INVARIANTE 4).
             fired++; remainingTrades--;
-            if (!await bumpSessionTrades(s.wallet_address, s.exchange_id, 1)) {
-              contadorConfiavel = false;
-              avisarRegistroPerdido("contador diario nao subiu (venda incerta)", { pair: intent.symbol });
-            }
             avisarRegistroPerdido("VENDA INCERTA — a posicao NAO foi alterada", {
               pair: intent.symbol, intent: exec.intentId, porque: exec.porque,
               why: "reduzir a posicao agora e nao reduzir sao os dois erros possiveis. "
@@ -1086,17 +1119,10 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
             fee: exec.feeTotal != null && exec.feeCurrency
               ? { cost: exec.feeTotal, currency: exec.feeCurrency } : undefined,
           } as unknown as CexOrder;
+          // ⚠️ A132: nada de contar aqui. A vaga foi RESERVADA antes do envio,
+          // e contar de novo seria a conta dobrada que o Round 8 tirou do
+          // navegador.
           fired++; remainingTrades--;
-          // Conta a ordem NA HORA (ver a nota em "contador incremental" no fim
-          // desta função): a ordem já existe na corretora, então o limite diário
-          // do usuário precisa registrá-la antes de qualquer coisa poder falhar.
-          if (!await bumpSessionTrades(s.wallet_address, s.exchange_id, 1)) {
-            // ⚠️ Perdemos a conta do dia. A partir daqui o limite que o usuario
-            // configurou nao e mais confiavel, entao esta passada para de
-            // disparar — falha FECHADA na direcao certa.
-            contadorConfiavel = false;
-            avisarRegistroPerdido("contador diario nao subiu (venda)", { pair: intent.symbol, order_id: order.id });
-          }
           if (intent.type === "market") {
             const { realized, aviso } = realizedFromSell(order, pos);
             if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
@@ -1233,6 +1259,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
          * ⚠️⚠️ PASSA PELO EXECUTOR AUTORITATIVO (A107). Intent durável antes do
          * envio, kill-switch no limiar (A106), timeout vira DÚVIDA (A104).
          */
+        const vagaDaCompra = novaVaga();
         const exec = await executarOrdemCex(
           { db: getSupabaseAdmin() },
           { origin: "autopilot_cron", autonomous: true,
@@ -1247,9 +1274,12 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
             type: intent.type, qty: intent.amount, price: intent.price ?? null,
             notionalUsd: buyNotional },
           creds,
+          // ⚠️ A132: a vaga é RESERVADA aqui dentro, antes do envio.
+          vagaDaCompra,
         );
 
         if (exec.desfecho === "recusado") {
+          anotarRecusaDaVaga(vagaDaCompra);
           pushRow(intent, "errored", card.kind, { reason: `${exec.motivo}: ${exec.porque}`.slice(0, 200) });
           continue;
         }
@@ -1261,11 +1291,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
          * porque a ordem pode estar viva.
          */
         if (exec.desfecho === "incerto") {
+          // ⚠️ A132: vaga consumida na reserva, e NÃO devolvida em dúvida.
           fired++; remainingTrades--;
-          if (!await bumpSessionTrades(s.wallet_address, s.exchange_id, 1)) {
-            contadorConfiavel = false;
-            avisarRegistroPerdido("contador diario nao subiu (compra incerta)", { pair: intent.symbol });
-          }
           avisarRegistroPerdido("COMPRA INCERTA — posicao NAO gravada", {
             pair: intent.symbol, intent: exec.intentId, porque: exec.porque,
             why: "a ordem pode ter executado. A reconciliacao abre a posicao se ela existir.",
@@ -1275,11 +1302,9 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         }
 
         const order = { id: exec.externalOrderId ?? exec.intentId };
+        // ⚠️ A132: a vaga já foi reservada antes do envio. Contar aqui também
+        // seria a conta dobrada que o Round 8 tirou do navegador.
         fired++; remainingTrades--;
-        if (!await bumpSessionTrades(s.wallet_address, s.exchange_id, 1)) {
-          contadorConfiavel = false;
-          avisarRegistroPerdido("contador diario nao subiu (compra)", { pair: intent.symbol, order_id: order.id });
-        }
         /**
          * ⚠️⚠️ ACHADO A81, NA LINHA EXATA. Isto era:
          *

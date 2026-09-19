@@ -206,8 +206,14 @@ describe("⑧ a ligação: a rota usa o helper, e ANTES do cofre", () => {
   });
 
   it("⚠️ a vaga do teto diário é RESERVADA na costura do executor", () => {
-    expect(ROTA).toMatch(/reservarTradeDaSessao\(/);
-    expect(ROTA).toMatch(/liberarTradeDaSessao\(/);
+    // ⚠️ A132 (Round 9): a reserva e a devolução saíram do fechamento escrito
+    // na rota e viraram `reservaDaVagaDiaria` — a MESMA que o cron usa.
+    expect(ROTA).toMatch(/reservaDaVagaDiaria\(/);
+    const VAGA = semComentarios(readFileSync("src/lib/autopilot/reserva-de-vaga.ts", "utf8"));
+    // ⚠️ O CAS continua sendo o de sempre — só mudou de endereço. As duas
+    // primitivas são o default injetável, e é isso que roda em produção.
+    expect(VAGA).toMatch(/deps\.reservar \?\? reservarTradeDaSessao/);
+    expect(VAGA).toMatch(/deps\.liberar\s+\?\? liberarTradeDaSessao/);
   });
 });
 
@@ -275,29 +281,26 @@ describe("⑩ §17 — a corrida do teto diário, e o que foi feito", () => {
     expect(SESSOES).toMatch(/\.eq\("trades_today", valorReservado\)/);
   });
 
-  it("⚠️⚠️ LIMITAÇÃO DECLARADA: o cron continua usando `bumpSessionTrades`", () => {
+  it("⚠️⚠️ A LIMITAÇÃO DECLARADA NO ROUND 8 FOI FECHADA NO ROUND 9 (A132)", () => {
     /**
-     * O cron conta DEPOIS de disparar, como sempre fez, e ele serializa as
-     * sessões com `tryLockSession` — duas passadas não disputam a mesma linha.
-     * A corrida que o §17 nomeia é entre requisições do NAVEGADOR, e é essa
-     * que o CAS fecha.
+     * ⚠️ O texto anterior deste teste dizia, com todas as letras:
      *
-     * ⚠️ A CONSEQUÊNCIA ENTRE CANAIS, dita inteira: o cron incrementa sem
-     * conferir teto, então um disparo do cron no MESMO instante de uma reserva
-     * do navegador ainda pode fechar o dia UM trade acima do teto. O CAS do
-     * navegador não vê esse incremento — ele casa contra o valor que leu, e o
-     * cron escreve por cima com `+ n`.
+     *     "Uma corrida cron↔navegador no mesmo instante continua possível: o
+     *      cron incrementa sem conferir teto. Está RELATADA, não corrigida —
+     *      fechá-la exigiria RPC nova, e o §50 manda PARAR antes disso."
      *
-     * Fechá-la exigiria RPC nova (`update ... where trades_today < max`), e o
-     * §50 manda PARAR antes de criar migration. Fica RELATADA, não corrigida.
+     * O Round 9 fechou sem RPC nova: o cron passou a usar a MESMA reserva por
+     * compare-and-swap que o navegador já usava, na costura `ReservaDeRisco`
+     * do executor — antes do envio, e `liberar` só na recusa provada.
      *
-     * ⚠️ O QUE DEIXOU DE EXISTIR: o navegador não incrementa mais por
-     * `bumpSessionTrades`. A rota `record-fire` era o segundo escritor deste
-     * contador e virava CONTA DOBRADA depois da reserva — ver
-     * `escritas-conferidas.test.ts`.
+     * A trava agora é a convergência: os dois canais chamam a mesma primitiva,
+     * e nenhum deles soma depois.
      */
-    const CRON = readFileSync("src/app/api/autopilot/cron/route.ts", "utf8");
-    expect(CRON).toMatch(/bumpSessionTrades\(/);
+    const CRON = semComentarios(readFileSync("src/app/api/autopilot/cron/route.ts", "utf8"));
+    const ROTA_ORDEM = semComentarios(readFileSync("src/app/api/cex/order/route.ts", "utf8"));
+    expect(CRON).toMatch(/reservaDaVagaDiaria\(/);
+    expect(ROTA_ORDEM).toMatch(/reservaDaVagaDiaria\(/);
+    expect(CRON).not.toMatch(/bumpSessionTrades/);
     expect(CRON).toMatch(/tryLockSession\(/);
     const FIRE = readFileSync("src/app/api/autopilot/session/record-fire/route.ts", "utf8");
     expect(semComentarios(FIRE)).not.toMatch(/bumpSessionTrades/);
