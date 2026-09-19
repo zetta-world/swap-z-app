@@ -134,10 +134,28 @@ async function avisarTaxaNaoPrecificada(pair: unknown, aviso: { moeda: string; v
  */
 async function settleArmedExits(
   s: AutopilotSessionRow, creds: CexCredentials, exchange: CexId, today: string,
-): Promise<{ rows: RunRowT[]; realizedDelta: number }> {
+): Promise<{ rows: RunRowT[]; realizedDelta: number; livroLegivel: boolean }> {
   const rows: RunRowT[] = [];
   let realizedDelta = 0;
-  const armed = (await getOpenServerPositions(s.id)).filter((p) => p.status === "exit_armed" && p.exit_order_id);
+  /**
+   * ⚠️⚠️ A133 — livro ilegível não é "nenhuma saída armada".
+   *
+   * Antes isto era `(await getOpenServerPositions(s.id)).filter(...)`, e um
+   * erro de banco chegava como `[]`: a passada seguia adiante como se não
+   * houvesse saída viva nenhuma. O `livroLegivel` sobe para quem chama, que
+   * fecha a sessão para ENTRADAS novas — liquidar o que já está lá fora é
+   * recovery e pode esperar a próxima passada; comprar mais, não.
+   */
+  const leitura = await getOpenServerPositions(s.id);
+  if (!leitura.ok) {
+    await recordEvent("autopilot_livro_ilegivel", { wallet: s.wallet_address, meta: {
+      severity: "high", session: s.id, etapa: "settle", porque: leitura.porque,
+      why: "nao deu para ler autopilot_positions. Nenhuma saida armada foi liquidada "
+        + "nesta passada, e a sessao NAO abre entrada nova com inventario desconhecido.",
+    } });
+    return { rows, realizedDelta, livroLegivel: false };
+  }
+  const armed = leitura.posicoes.filter((p) => p.status === "exit_armed" && p.exit_order_id);
   for (const pos of armed) {
     try {
       const order = await fetchCexOrderStatus(exchange, creds, pos.exit_order_id!, pos.pair);
@@ -241,7 +259,7 @@ async function settleArmedExits(
       // still open → leave it armed for the next run
     } catch { /* transient — retry next run */ }
   }
-  return { rows, realizedDelta };
+  return { rows, realizedDelta, livroLegivel: true };
 }
 
 /** Compact "held=… entry=… now=… unrealized=…" context so ZION proposes exits. */
@@ -596,12 +614,22 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   // ── 3. Settle exits armed on a prior run (A5). A filled exit realizes P&L
   //      (fed atomically to the loss-stop) and can trip the freeze. ──
   const runRows: RunRowT[] = [];
+  let livroLegivelNoSettle = true;
   try {
     const settle = await settleArmedExits(s, creds, exchange, today);
     runRows.push(...settle.rows);
     pnlToday += settle.realizedDelta;
+    livroLegivelNoSettle = settle.livroLegivel;
     if (pnlToday <= -s.daily_loss_stop_usd) frozenUntil = today;
-  } catch { /* settle failure must not abort the session */ }
+  } catch {
+    /**
+     * ⚠️ A133: exceção aqui também é livro em dúvida. O `catch` existia para
+     * não derrubar a passada — mas "não derrubar" não pode virar "seguir
+     * comprando". A leitura do §7 abaixo confirma ou nega, e esta linha
+     * garante que uma exceção não passe por leitura bem-sucedida.
+     */
+    livroLegivelNoSettle = false;
+  }
 
   // ── 4. Freeze / cap gates (AFTER settling — a settle can trip the freeze) ──
   /**
@@ -764,7 +792,32 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
 
   // ── 7. Open positions + reference prices (guard + position context + cap) ──
   const refPrices     = await getCexSpotPrices(s.allowed_symbols);
-  const openPositions = await getOpenServerPositions(s.id);
+  /**
+   * ⚠️⚠️⚠️ O INVENTÁRIO É PRÉ-REQUISITO DA PASSADA — A133.
+   *
+   * Aqui nasciam `exposureUsd` e `ownedBases`. Com a leitura devolvendo `[]`
+   * em erro de banco, os dois viravam "o bot não tem nada": o teto de
+   * exposição liberava o valor inteiro de novo e o ramo de venda deixava de
+   * achar as posições que existem. Falha de leitura virava licença para
+   * comprar — e para esquecer o que já está comprado.
+   *
+   * Agora a passada PARA. Nada de scan, nada de ordem nova. A reconciliação de
+   * intents pendentes (recovery do que já saiu) roda fora desta função e
+   * continua acontecendo.
+   */
+  const leituraDoLivro = await getOpenServerPositions(s.id);
+  if (!leituraDoLivro.ok || !livroLegivelNoSettle) {
+    const porque = leituraDoLivro.ok ? "settle nao conseguiu ler o livro" : leituraDoLivro.porque;
+    await recordEvent("autopilot_livro_ilegivel", { wallet: s.wallet_address, meta: {
+      severity: "high", session: s.id, etapa: "inventario", porque,
+      why: "sem inventario nao se afirma exposicao nem posse. ZERO entrada nova nesta "
+        + "passada — 'nao consegui ler' nunca pode valer como 'o bot nao tem nada'.",
+    } });
+    await telemetria(s.id, { last_scan_at: nowIso, last_error: `position book unreadable: ${porque}`.slice(0, 300) });
+    if (runRows.length) await recordRuns(runRows);
+    return { origem, fired: 0, note: "position book unreadable — zero new entries" };
+  }
+  const openPositions = leituraDoLivro.posicoes;
   // D3 Executor: ADX trend regime per symbol — feeds the scan's context AND
   // the hard entry gate below. Fail-closed: if the fetch fails, the map stays
   // empty and every BUY is rejected (exits are never gated).

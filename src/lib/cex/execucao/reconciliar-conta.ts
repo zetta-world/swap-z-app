@@ -97,8 +97,16 @@ export interface DependenciasDaConta {
 /** A leitura de produção das posições: o que o bot ACHA que tem. */
 async function lerPosicoesDaProducao(sessaoId: string): Promise<PosicaoInterna[] | undefined> {
   try {
-    const rows = await getOpenServerPositions(sessaoId);
-    return rows.map((p) => ({
+    /**
+     * ⚠️⚠️ A133 — a leitura agora DIZ se falhou, e `undefined` significa
+     * exatamente isso aqui: `leitura_falhou` na etapa `posicoes`, que é o que
+     * este arquivo já documentava querer. Antes o erro chegava como `[]`, e
+     * "conta sem inventário" bate com QUALQUER saldo — a conferência passava
+     * dizendo `sem_drift`, que é a mentira mais cara possível neste ponto.
+     */
+    const leitura = await getOpenServerPositions(sessaoId);
+    if (!leitura.ok) return undefined;
+    return leitura.posicoes.map((p) => ({
       base: p.base.toUpperCase(),
       baseAmount: Number(p.base_amount),
       precoRef: Number(p.entry_price),

@@ -54,17 +54,75 @@ export async function comRetentativa(
   return { ok: false, erro: "inalcancavel" };
 }
 
+/**
+ * ⚠️⚠️⚠️ "ZERO POSIÇÕES" E "NÃO CONSEGUI LER" SÃO ESTADOS DIFERENTES — A133.
+ *
+ * Esta função devolvia `AutopilotPositionRow[]`, e devolvia `[]` para as duas
+ * coisas:
+ *
+ *     if (!db)    return [];
+ *     if (error)  return [];
+ *
+ * O caller não tinha como perguntar qual dos dois aconteceu. E o que ele faz
+ * com `[]` é operar: `exposureUsd` vira 0, `ownedBases` vira vazio, e o teto de
+ * exposição — o número que limita quanto dinheiro do dono fica exposto — passa
+ * a permitir comprar tudo de novo. Um Postgres intermitente virava licença.
+ *
+ * ⚠️ O PIOR É QUE O CONSERTO JÁ ESTAVA ESCRITO UMA CAMADA ACIMA.
+ * `reconciliar-conta.ts` documenta em letras maiúsculas que falha de leitura de
+ * posições é `leitura_falhou` e bloqueia ENTRADAS — mas quem engolia o erro era
+ * esta função, ANTES de ela poder decidir. É a família do A113 mais uma vez: a
+ * peça certa, com a cicatriz escrita, e um caminho que a contorna.
+ *
+ * ⚠️ SEM BANCO TAMBÉM É FALHA, não "não há posições". O livro é a autoridade
+ * sobre o que o bot possui; sem ele não se afirma inventário nenhum.
+ */
+export type LeituraDePosicoes =
+  | { ok: true; posicoes: AutopilotPositionRow[] }
+  | { ok: false; porque: string };
+
+export type LeituraDeUmaPosicao =
+  | { ok: true; posicao: AutopilotPositionRow | null }
+  | { ok: false; porque: string };
+
 /** All non-closed positions for a session (the held bag the cron manages). */
-export async function getOpenServerPositions(sessionId: string): Promise<AutopilotPositionRow[]> {
+export async function getOpenServerPositions(sessionId: string): Promise<LeituraDePosicoes> {
   const db = getSupabaseAdmin();
-  if (!db) return [];
+  if (!db) return { ok: false, porque: "supabase nao configurado" };
   const { data, error } = await db
     .from("autopilot_positions")
     .select("*")
     .eq("session_id", sessionId)
     .neq("status", "closed");
-  if (error) return [];
-  return data ?? [];
+  if (error) return { ok: false, porque: error.message.slice(0, 200) };
+  // ⚠️ `data` nulo sem erro é leitura vazia LEGÍTIMA — zero posições.
+  return { ok: true, posicoes: data ?? [] };
+}
+
+/**
+ * A posição do BOT numa base, para esta sessão — a resposta à única pergunta
+ * que autoriza venda autônoma: "quanto deste ativo pertence ao bot?".
+ *
+ * ⚠️ TRÊS RESPOSTAS, NÃO DUAS: existe, não existe, e não consegui ler. A
+ * terceira nunca pode se passar pela segunda — vender sem saber o que é do bot
+ * é vender patrimônio do dono (A131).
+ *
+ * ⚠️ INCLUI `closed` DE PROPÓSITO: quem chama precisa distinguir "posição
+ * fechada" de "nunca existiu", e o filtro de status é decisão de quem lê.
+ */
+export async function lerPosicaoDoBot(
+  sessionId: string, base: string,
+): Promise<LeituraDeUmaPosicao> {
+  const db = getSupabaseAdmin();
+  if (!db) return { ok: false, porque: "supabase nao configurado" };
+  const { data, error } = await db
+    .from("autopilot_positions")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("base", base.toUpperCase())
+    .maybeSingle();
+  if (error) return { ok: false, porque: error.message.slice(0, 200) };
+  return { ok: true, posicao: data ?? null };
 }
 
 /**
@@ -89,12 +147,23 @@ export async function recordServerEntry(p: {
   if (!db) return { ok: false, erro: "supabase nao configurado" };
   const base = p.pair.split("/")[0].toUpperCase();
 
-  const { data: prev } = await db
-    .from("autopilot_positions")
-    .select("*")
-    .eq("session_id", p.sessionId)
-    .eq("base", base)
-    .maybeSingle();
+  /**
+   * ⚠️⚠️ A LEITURA DE ANTES TAMBÉM FALHAVA ABERTA — A133, §6.
+   *
+   * Era `const { data: prev } = await ...`, com o `error` descartado. Falha de
+   * leitura virava "não existe posição" — e o ramo de baixo INSERE uma linha
+   * nova. Numa base onde o bot já tinha 0,5 BTC somado ao longo do dia, o
+   * upsert por `(session_id, base)` sobrescreveria o acumulado pelo tamanho da
+   * última compra: o livro passaria a dizer que o bot tem MENOS do que tem, e
+   * o resto viraria órfão que ninguém mais vende.
+   *
+   * Agora não se conclui nada de uma leitura que não aconteceu.
+   */
+  const anterior = await lerPosicaoDoBot(p.sessionId, base);
+  if (!anterior.ok) {
+    return { ok: false, erro: `leitura da posicao anterior falhou: ${anterior.porque}` };
+  }
+  const prev = anterior.posicao;
 
   const nowIso = new Date().toISOString();
   if (prev && prev.status !== "closed") {
