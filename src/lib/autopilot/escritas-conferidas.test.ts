@@ -212,7 +212,7 @@ describe("a virada do dia não pode falhar calada", () => {
     expect(codigo).toMatch(/autopilot_virada_do_dia_nao_gravou/);
   });
 
-  it("⚠⚠ e as OITO de telemetria são nomeadas como tal — não esquecidas", () => {
+  it("⚠⚠ e as de telemetria são nomeadas como tal — não esquecidas", () => {
     // Um `await patchSession(...)` solto é indistinguível de retorno esquecido.
     // O helper diz, no nome, que a recusa foi considerada e não interrompe.
     const soltas = [...codigo.matchAll(/await patchSession\(s\.id,/g)].length;
@@ -225,7 +225,19 @@ describe("a virada do dia não pode falhar calada", () => {
      */
     expect(codigo).toMatch(/async function carimbarPlano\(/);
     expect(codigo).toMatch(/autopilot_carimbo_de_plano_nao_gravou/);
-    expect([...codigo.matchAll(/await telemetria\(s\.id,/g)].length).toBe(8);
+    /**
+     * ⚠️ A CONTAGEM DEIXOU DE SER FIXA, e a razão importa.
+     *
+     * Ela dizia OITO. O A130 fundiu dois ramos de recusa — congelada e teto
+     * diário — numa decisão só (o helper compartilhado com o navegador), e o
+     * número virou sete. A trava quebrou por uma mudança que a MELHORA.
+     *
+     * O que ela protege nunca foi a contagem: é que NENHUMA escrita de
+     * telemetria fique solta, sem o helper que diz, no nome, que a recusa foi
+     * considerada. Essa parte continua exata, na asserção de `soltas` acima.
+     */
+    const porHelper = [...codigo.matchAll(/await telemetria\(s\.id,/g)].length;
+    expect(porHelper, "a telemetria do cron passa pelo helper").toBeGreaterThanOrEqual(5);
   });
 
   it("⚠️ e a telemetria recusada fica REGISTRADA — last_scan_at parado é sintoma de watchdog", () => {

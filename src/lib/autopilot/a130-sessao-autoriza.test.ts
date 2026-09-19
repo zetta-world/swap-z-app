@@ -208,3 +208,84 @@ describe("⑧ a ligação: a rota usa o helper, e ANTES do cofre", () => {
     expect(ROTA).toMatch(/liberarTradeDaSessao\(/);
   });
 });
+
+describe("⑨ §34/§35 — navegador e cron usam a MESMA política", () => {
+  const ROTA = semComentarios(readFileSync("src/app/api/cex/order/route.ts", "utf8"));
+  const CRON = semComentarios(readFileSync("src/app/api/autopilot/cron/route.ts", "utf8"));
+
+  it("⚠️⚠️ os DOIS canais chamam o helper — não há segunda cópia da regra", () => {
+    /**
+     * Antes do A130 o cron tinha a política escrita inline e o navegador não
+     * tinha nenhuma. Escrever uma segunda cópia na rota teria consertado o
+     * buraco e criado o defeito do A113 de novo, com outro nome.
+     */
+    expect(ROTA).toMatch(/avaliarAutorizacaoDaSessaoParaExecucao\(/);
+    expect(CRON).toMatch(/avaliarAutorizacaoDaSessaoParaExecucao\(/);
+  });
+
+  it("⚠️⚠️ e o cron não voltou a ter os `if` soltos que o helper substituiu", () => {
+    expect(CRON).not.toMatch(/if \(frozenUntil === today\) \{\s*alertIfNewlyFrozen/);
+    expect(CRON).not.toMatch(/if \(tradesToday >= s\.max_trades_per_day\) \{/);
+  });
+
+  it("⚠️ as notas históricas do cron foram preservadas ao pé da letra", () => {
+    // Elas são lidas por painel e por teste; trocá-las seria mudar o
+    // observável por causa de uma refatoração.
+    expect(CRON).toContain("frozen (daily loss-stop)");
+    expect(CRON).toContain("daily trade cap reached");
+  });
+});
+
+describe("⑩ §17 — a corrida do teto diário, e o que foi feito", () => {
+  const SESSOES = readFileSync("src/lib/autopilot/sessions.ts", "utf8");
+
+  it("⚠️⚠️ `bump_session_trades` NÃO confere teto — a corrida é real", () => {
+    /**
+     * A RPC 0010 é `update ... set trades_today = trades_today + n`. O
+     * incremento é atômico; a CONFERÊNCIA não existe. Com 4/5, duas requests
+     * simultâneas leem `4 < 5`, as duas passam, e o contador fecha em 6.
+     *
+     * Este teste FIXA o fato — para que ninguém conclua, lendo o nome da
+     * função, que ela protege o teto.
+     */
+    const RPC = readFileSync("supabase/migrations/0010_bump_session_trades.sql", "utf8");
+    expect(RPC).toMatch(/trades_today\s*=\s*trades_today\s*\+\s*p_n/);
+    expect(RPC).not.toMatch(/max_trades_per_day/);
+  });
+
+  it("⚠️⚠️ por isso a reserva do navegador é COMPARE-AND-SWAP", () => {
+    /**
+     * Sem migration nova (§50): o `UPDATE` só casa se o contador continuar no
+     * valor lido. Em READ COMMITTED, a segunda transação reavalia o WHERE
+     * contra a versão já atualizada e grava ZERO linhas — e `.select("id")`
+     * torna a diferença visível.
+     */
+    expect(SESSOES).toMatch(/export async function reservarTradeDaSessao/);
+    expect(SESSOES).toMatch(/\.eq\("trades_today", atual\)/);
+    expect(SESSOES).toMatch(/\.select\("id"\)/);
+    // ⚠️ E o dia entra no WHERE: reservar contra um contador de ontem contaria
+    // a vaga no balde errado.
+    expect(SESSOES).toMatch(/\.eq\("last_reset_day", hojeUtc\)/);
+  });
+
+  it("⚠️ a devolução também é CAS, e só na recusa provada", () => {
+    expect(SESSOES).toMatch(/export async function liberarTradeDaSessao/);
+    expect(SESSOES).toMatch(/\.eq\("trades_today", valorReservado\)/);
+  });
+
+  it("⚠️⚠️ LIMITAÇÃO DECLARADA: o cron continua usando `bumpSessionTrades`", () => {
+    /**
+     * O cron conta DEPOIS de disparar, como sempre fez, e ele serializa as
+     * sessões com `tryLockSession` — duas passadas não disputam a mesma linha.
+     * A corrida que o §17 nomeia é entre requisições do NAVEGADOR, e é essa
+     * que o CAS fecha.
+     *
+     * Uma corrida cron↔navegador no mesmo instante continua possível em tese:
+     * o cron incrementa sem conferir teto. Está relatado como limitação, não
+     * corrigido — fechá-la exigiria RPC nova, e o §50 manda parar antes disso.
+     */
+    const CRON = readFileSync("src/app/api/autopilot/cron/route.ts", "utf8");
+    expect(CRON).toMatch(/bumpSessionTrades\(/);
+    expect(CRON).toMatch(/tryLockSession\(/);
+  });
+});

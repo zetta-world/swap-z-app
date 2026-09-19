@@ -17,6 +17,7 @@ import { getMarketIndicators } from "@/lib/api/market-indicators";
 import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { decidirPelaAutorizacao, precisaRevalidar } from "@/lib/autopilot/tier-da-sessao";
+import { avaliarAutorizacaoDaSessaoParaExecucao } from "@/lib/autopilot/autorizacao-de-execucao";
 import { getTierForWallet } from "@/lib/tier/check";
 import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
@@ -601,16 +602,44 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   } catch { /* settle failure must not abort the session */ }
 
   // ── 4. Freeze / cap gates (AFTER settling — a settle can trip the freeze) ──
-  if (frozenUntil === today) {
-    alertIfNewlyFrozen();
+  /**
+   * ⚠️⚠️ A MESMA DECISÃO QUE O NAVEGADOR USA — achado A130, §34/§35.
+   *
+   * Estes dois `if` eram a política de autorização do CRON, escrita aqui; o
+   * canal do navegador não tinha nenhuma. Duas superfícies do MESMO produto
+   * com semânticas diferentes é a família do A113, e o conserto não podia ser
+   * escrever uma segunda cópia da regra na rota.
+   *
+   * ⚠️ O ESTADO É NORMALIZADO AQUI, não lido da linha: `frozenUntil` e
+   * `tradesToday` já passaram pela virada do dia desta passada. É por isso que
+   * o helper recebe valores em vez de ler sozinho — senão "os dois chamam a
+   * mesma função" viraria "os dois chamam com estados diferentes".
+   *
+   * ⚠️ `is_active`/`expires_at` já foram garantidos por `listRunnableSessions`;
+   * conferi-los de novo aqui é defesa em profundidade, não mudança.
+   */
+  const sessaoAutoriza = avaliarAutorizacaoDaSessaoParaExecucao({
+    ativa: s.is_active,
+    expiraEm: s.expires_at,
+    congeladaAte: frozenUntil,
+    tradesHoje: tradesToday,
+    maxTradesPorDia: s.max_trades_per_day,
+    maxTradeUsd: s.max_trade_usd,
+    conexaoId: s.conexao_id,
+  });
+  if (!sessaoAutoriza.ok) {
+    if (sessaoAutoriza.motivo === "sessao_congelada") alertIfNewlyFrozen();
     if (runRows.length) await recordRuns(runRows);
     await telemetria(s.id, { last_scan_at: nowIso, last_error: null });
-    return { origem, fired: 0, note: "frozen (daily loss-stop)" };
-  }
-  if (tradesToday >= s.max_trades_per_day) {
-    if (runRows.length) await recordRuns(runRows);
-    await telemetria(s.id, { last_scan_at: nowIso, last_error: null });
-    return { origem, fired: 0, note: "daily trade cap reached" };
+    /**
+     * ⚠️ As duas notas históricas são preservadas ao pé da letra — elas são
+     * lidas por painel e por teste, e trocá-las seria mudar o observável por
+     * causa de uma refatoração.
+     */
+    const nota = sessaoAutoriza.motivo === "sessao_congelada" ? "frozen (daily loss-stop)"
+               : sessaoAutoriza.motivo === "limite_diario"    ? "daily trade cap reached"
+               : `sessao nao autorizada: ${sessaoAutoriza.motivo}`;
+    return { origem, fired: 0, note: nota };
   }
 
   // ── 5. Read live balance ──
