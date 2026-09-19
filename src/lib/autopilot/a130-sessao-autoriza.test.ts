@@ -18,9 +18,10 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  avaliarAutorizacaoDaSessaoParaExecucao, tetoEfetivoDaOrdem,
+  avaliarAutorizacaoDaSessaoParaExecucao, entradaAutorizadaNaSessao, tetoEfetivoDaOrdem,
   type EstadoParaExecucao,
 } from "@/lib/autopilot/autorizacao-de-execucao";
+import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { utcDayKey } from "@/lib/autopilot/sessions";
 
 const semComentarios = (c: string) =>
@@ -37,6 +38,7 @@ const viva = (over: Partial<EstadoParaExecucao> = {}): EstadoParaExecucao => ({
   maxTradesPorDia: 5,
   maxTradeUsd: 100,
   conexaoId: "C1",
+  emQuarentena: false,
   ...over,
 });
 
@@ -280,12 +282,152 @@ describe("⑩ §17 — a corrida do teto diário, e o que foi feito", () => {
      * A corrida que o §17 nomeia é entre requisições do NAVEGADOR, e é essa
      * que o CAS fecha.
      *
-     * Uma corrida cron↔navegador no mesmo instante continua possível em tese:
-     * o cron incrementa sem conferir teto. Está relatado como limitação, não
-     * corrigido — fechá-la exigiria RPC nova, e o §50 manda parar antes disso.
+     * ⚠️ A CONSEQUÊNCIA ENTRE CANAIS, dita inteira: o cron incrementa sem
+     * conferir teto, então um disparo do cron no MESMO instante de uma reserva
+     * do navegador ainda pode fechar o dia UM trade acima do teto. O CAS do
+     * navegador não vê esse incremento — ele casa contra o valor que leu, e o
+     * cron escreve por cima com `+ n`.
+     *
+     * Fechá-la exigiria RPC nova (`update ... where trades_today < max`), e o
+     * §50 manda PARAR antes de criar migration. Fica RELATADA, não corrigida.
+     *
+     * ⚠️ O QUE DEIXOU DE EXISTIR: o navegador não incrementa mais por
+     * `bumpSessionTrades`. A rota `record-fire` era o segundo escritor deste
+     * contador e virava CONTA DOBRADA depois da reserva — ver
+     * `escritas-conferidas.test.ts`.
      */
     const CRON = readFileSync("src/app/api/autopilot/cron/route.ts", "utf8");
     expect(CRON).toMatch(/bumpSessionTrades\(/);
     expect(CRON).toMatch(/tryLockSession\(/);
+    const FIRE = readFileSync("src/app/api/autopilot/session/record-fire/route.ts", "utf8");
+    expect(semComentarios(FIRE)).not.toMatch(/bumpSessionTrades/);
+  });
+});
+
+describe("⑪ a QUARENTENA por deriva — achado da revisão adversarial", () => {
+  const ROTA = semComentarios(readFileSync("src/app/api/cex/order/route.ts", "utf8"));
+  const CRON = semComentarios(readFileSync("src/app/api/autopilot/cron/route.ts", "utf8"));
+
+  it("⚠️⚠️ sessão em quarentena: a ENTRADA é recusada", () => {
+    const d = entradaAutorizadaNaSessao({ emQuarentena: true });
+    expect(d.ok).toBe(false);
+    if (!d.ok) expect(d.motivo).toBe("sessao_em_quarentena");
+  });
+
+  it("⚠️ e sem quarentena a entrada passa — o gêmeo positivo", () => {
+    expect(entradaAutorizadaNaSessao({ emQuarentena: false }).ok).toBe(true);
+  });
+
+  it("⚠️⚠️ a quarentena NÃO entra na autorização de sessão — saída não se prende", () => {
+    /**
+     * Se ela entrasse ali, a mesma decisão que barra a compra barraria a
+     * VENDA — e um freio de segurança que tranca o cliente na posição cria o
+     * perigo que existe para evitar. O cron diz isso com todas as letras:
+     * "SAÍDAS/redução NUNCA são presas".
+     */
+    const d = avaliarAutorizacaoDaSessaoParaExecucao(viva({ emQuarentena: true }), AGORA);
+    expect(d.ok).toBe(true);
+  });
+
+  it("⚠️⚠️ os DOIS canais obedecem — era só o cron", () => {
+    /**
+     * `quarentena_em` é gravada por `reconciliar-conta.ts` e era lida só pelo
+     * cron. A `/api/cex/order` não sabia que a coluna existia: mesma sessão,
+     * mesma deriva, o cron parado e o navegador comprando. Família do A113.
+     */
+    expect(ROTA).toMatch(/entradaAutorizadaNaSessao\(/);
+    expect(CRON).toMatch(/entradaAutorizadaNaSessao\(/);
+    // E o `if` solto que ele substituiu no cron não voltou.
+    expect(CRON).not.toMatch(/if \(s\.quarentena_em\) \{/);
+  });
+
+  it("⚠️⚠️ e na rota o gate cerca a COMPRA, não a venda", () => {
+    const i = ROTA.indexOf("entradaAutorizadaNaSessao(");
+    expect(i).toBeGreaterThan(-1);
+    // A condição imediatamente acima da chamada é o lado da ordem.
+    expect(ROTA.slice(Math.max(0, i - 200), i)).toMatch(/if \(side === "buy"\)/);
+  });
+
+  it("⚠️ a recusa vem ANTES do cofre (§20)", () => {
+    const iQuarentena = ROTA.indexOf("entradaAutorizadaNaSessao(");
+    const iCofre = ROTA.indexOf("decifrarConexao(");
+    // ⚠️ AS DUAS PRESENÇAS PRIMEIRO. Sem isto, `-1 < iCofre` faria a ausência
+    // do gate PASSAR neste teste — que é exatamente o defeito a trancar.
+    expect(iQuarentena).toBeGreaterThan(-1);
+    expect(iCofre).toBeGreaterThan(-1);
+    expect(iQuarentena).toBeLessThan(iCofre);
+  });
+
+  it("⚠️ LIMITAÇÃO DECLARADA: o navegador herda o freio, não a perícia", () => {
+    /**
+     * O cron reconcilia a conta contra a corretora a cada passada e PODE
+     * gravar a quarentena. A rota do navegador só LÊ o que já está gravado —
+     * fazer a leitura de saldo no caminho quente da ordem seria outra decisão,
+     * com outro custo. Entre gravar e o navegador obedecer há, no pior caso, a
+     * janela de uma passada do cron.
+     */
+    const AUTZ = readFileSync("src/lib/autopilot/autorizacao-de-execucao.ts", "utf8");
+    expect(AUTZ).toMatch(/nao e a reconciliacao|NÃO É A RECONCILIAÇÃO/i);
+  });
+});
+
+describe("⑫ o teto durável ilegível é ZERO, não ausente", () => {
+  it("⚠️⚠️ `max_trade_usd` NaN não pode deixar o teto global valendo sozinho", () => {
+    // Fora do `Math.min`, o dado corrompido AMPLIARIA a autorização.
+    expect(tetoEfetivoDaOrdem({ tetoDaSessaoUsd: Number.NaN, tetoGlobalUsd: 5_000 })).toBe(0);
+  });
+
+  it("⚠️ negativo e zero também recusam tudo", () => {
+    expect(tetoEfetivoDaOrdem({ tetoDaSessaoUsd: -1, tetoGlobalUsd: 5_000 })).toBe(0);
+    expect(tetoEfetivoDaOrdem({ tetoDaSessaoUsd: 0, tetoGlobalUsd: 5_000 })).toBe(0);
+  });
+
+  it("⚠️ e o caminho normal continua sendo o MENOR dos três", () => {
+    expect(tetoEfetivoDaOrdem({
+      tetoDaSessaoUsd: 100, tetoGlobalUsd: 5_000, pedidoPeloClienteUsd: 40,
+    })).toBe(40);
+  });
+});
+
+describe("⑬ o teto por trade ALCANÇA a venda — correção de uma limitação que eu declarei errada", () => {
+  /**
+   * ⚠️⚠️ EU PUBLIQUEI UMA LIMITAÇÃO MAIS LARGA QUE O CÓDIGO.
+   *
+   * A entrega anterior dizia "a VENDA não é limitada pelo teto por trade",
+   * apoiada só num grep de `price-guard.ts`. Lá a isenção existe mesmo
+   * (`side === "buy" && realNotionalUsd > maxTradeUsd`), mas ela é de UM guarda
+   * — e não do caminho.
+   *
+   * `politica.ts` confere `ctx.notionalUsd > ctx.maxTradeUsd` para os DOIS
+   * lados, e a rota do navegador chama a política logo depois do price-guard,
+   * com o nocional REAL medido. Ou seja: a venda É limitada, por outro portão.
+   *
+   * O teste abaixo mede isso em vez de descrever — é funcional, não regex.
+   */
+  const ctx = (over: Record<string, unknown> = {}) => ({
+    canal: "browser" as const, side: "sell" as const, symbol: "BTC/USDT", base: "BTC",
+    regime: null, notionalUsd: 600, maxTradeUsd: 100,
+    allowedSymbols: null, autonomous: true, certificado: null,
+    venue: "binance", strategyHash: null, ...over,
+  });
+
+  it("⚠️⚠️ VENDA de US$ 600 com teto de sessão de US$ 100: RECUSADA", () => {
+    const d = avaliarDecisaoDeEstrategia(ctx());
+    expect(d.permite).toBe(false);
+    if (!d.permite) expect(d.motivo).toBe("acima_do_teto_da_sessao");
+  });
+
+  it("⚠️ o gêmeo: a mesma venda dentro do teto PASSA", () => {
+    // ⚠️ `regime: null` de propósito — a saída não depende de regime medido, e
+    // isso isola a causa da recusa acima no TETO, não na tendência.
+    const d = avaliarDecisaoDeEstrategia(ctx({ notionalUsd: 60 }));
+    expect(d.permite).toBe(true);
+  });
+
+  it("⚠️ a isenção do price-guard continua existindo — ela é de um guarda, não do caminho", () => {
+    const GUARDA = semComentarios(readFileSync("src/lib/autopilot/price-guard.ts", "utf8"));
+    expect(GUARDA).toMatch(/side === "buy" && realNotionalUsd > maxTradeUsd/);
+    // O teto GLOBAL vale para os dois lados, e isso não mudou.
+    expect(GUARDA).toMatch(/realNotionalUsd > AUTOPILOT_HARD_CEILING_USD/);
   });
 });

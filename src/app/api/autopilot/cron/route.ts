@@ -17,7 +17,9 @@ import { getMarketIndicators } from "@/lib/api/market-indicators";
 import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { decidirPelaAutorizacao, precisaRevalidar } from "@/lib/autopilot/tier-da-sessao";
-import { avaliarAutorizacaoDaSessaoParaExecucao } from "@/lib/autopilot/autorizacao-de-execucao";
+import {
+  avaliarAutorizacaoDaSessaoParaExecucao, entradaAutorizadaNaSessao,
+} from "@/lib/autopilot/autorizacao-de-execucao";
 import { getTierForWallet } from "@/lib/tier/check";
 import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
 import { checkRealNotional } from "@/lib/autopilot/price-guard";
@@ -626,6 +628,9 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     maxTradesPorDia: s.max_trades_per_day,
     maxTradeUsd: s.max_trade_usd,
     conexaoId: s.conexao_id,
+    // ⚠️ Lido aqui, decidido em `entradaAutorizadaNaSessao` — e SÓ sobre
+    // entradas. Ver o gate de compra na seção 5b.
+    emQuarentena: Boolean(s.quarentena_em),
   });
   if (!sessaoAutoriza.ok) {
     if (sessaoAutoriza.motivo === "sessao_congelada") alertIfNewlyFrozen();
@@ -686,7 +691,16 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
    *     numa posição. O gate mora no ramo de COMPRA, depois do de venda.
    */
   let entradasLiberadas = true;
-  if (s.quarentena_em) {
+  /**
+   * ⚠️ A MESMA FUNÇÃO QUE O NAVEGADOR USA — achado da revisão adversarial.
+   *
+   * Era `if (s.quarentena_em)` escrito aqui, e só aqui: a `/api/cex/order`
+   * seguia comprando com a sessão em quarentena. O veredito virou
+   * `entradaAutorizadaNaSessao`, chamado pelos dois canais; o CONSERTO da
+   * deriva (a reconciliação abaixo) continua sendo só do cron, que é quem tem
+   * a passada de 5 minutos para isso.
+   */
+  if (!entradaAutorizadaNaSessao({ emQuarentena: Boolean(s.quarentena_em) }).ok) {
     entradasLiberadas = false;
     // Dedup pelo Telegram: o evento já saiu no dia da deriva; repetir a cada 5
     // minutos afogaria o sinal. A quarentena continua valendo em silêncio.

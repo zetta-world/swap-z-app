@@ -11,7 +11,7 @@ import {
   getSessionStatus, utcDayKey, reservarTradeDaSessao, liberarTradeDaSessao,
 } from "@/lib/autopilot/sessions";
 import {
-  avaliarAutorizacaoDaSessaoParaExecucao, tetoEfetivoDaOrdem,
+  avaliarAutorizacaoDaSessaoParaExecucao, entradaAutorizadaNaSessao, tetoEfetivoDaOrdem,
 } from "@/lib/autopilot/autorizacao-de-execucao";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
@@ -295,6 +295,7 @@ export async function POST(req: NextRequest) {
             maxTradesPorDia: sessaoDoPiloto.max_trades_per_day,
             maxTradeUsd: sessaoDoPiloto.max_trade_usd,
             conexaoId: sessaoDoPiloto.conexao_id,
+            emQuarentena: Boolean(sessaoDoPiloto.quarentena_em),
           }
         : null,
       agoraDaSessao,
@@ -308,6 +309,34 @@ export async function POST(req: NextRequest) {
           motivo: autorizacao.motivo, detail: autorizacao.porque },
         { status: 403, headers: { "Cache-Control": "no-store" } },
       );
+    }
+
+    /**
+     * ⚠️⚠️⚠️ A QUARENTENA POR DERIVA — achado da revisão adversarial do A130.
+     *
+     * `reconciliar-conta.ts` grava `quarentena_em` quando o saldo real deixa de
+     * sustentar o inventário do bot. O cron obedecia e parava de comprar; ESTA
+     * ROTA não sabia que a coluna existia. Mesma sessão, mesma deriva: o cron
+     * parado e o piloto do navegador comprando.
+     *
+     * ⚠️ SÓ A COMPRA. A venda atravessa de propósito — quarentena não pode
+     * trancar o cliente numa posição, e é a mesma regra que o cron aplica
+     * ("SAÍDAS/redução NUNCA são presas").
+     *
+     * ⚠️ E CONTINUA ANTES DO COFRE (§20): recusa sem decifrar credencial.
+     */
+    if (side === "buy") {
+      const entrada = entradaAutorizadaNaSessao({
+        emQuarentena: Boolean(sessaoDoPiloto?.quarentena_em),
+      });
+      if (!entrada.ok) {
+        logSecurity("a130_entrada_em_quarentena", { route: "cex/order" }, "high");
+        return NextResponse.json(
+          { ok: false, error: "sessao_nao_autorizada",
+            motivo: entrada.motivo, detail: entrada.porque },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
     }
 
     const base = body.symbol.split(/[\/\-]/)[0];
@@ -391,6 +420,27 @@ export async function POST(req: NextRequest) {
       versao: sessaoDoPiloto?.strategy_version ?? null,
     };
     sessaoDoPilotoId = sessaoDoPiloto?.id ?? null;
+    /**
+     * ⚠️⚠️ SEM ID DE SESSÃO NÃO HÁ COMO RESERVAR A VAGA DO TETO DIÁRIO.
+     *
+     * A autorização acima já provou que existe uma sessão — a linha não pode
+     * chegar aqui sem chave primária. Mas a reserva é condicionada a este id, e
+     * uma versão anterior deste código a PULAVA em silêncio quando ele fosse
+     * nulo: o teto continuaria sendo CONFERIDO (leitura), e deixaria de ser
+     * RESERVADO (escrita). Sob concorrência, duas requisições com 4/5 passariam
+     * as duas.
+     *
+     * Achado meu, na revisão do próprio trabalho. Falha FECHADA: sem id, nada
+     * sai. Custa uma ordem perdida num estado que não deveria existir.
+     */
+    if (!sessaoDoPilotoId) {
+      logSecurity("a130_sessao_sem_id", { route: "cex/order" }, "high");
+      return NextResponse.json(
+        { ok: false, error: "sessao_nao_autorizada", motivo: "sessao_inexistente",
+          detail: "sessao do piloto sem identificador — a vaga do teto diario nao pode ser reservada" },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     // ⚠️ Da AUTORIZAÇÃO, que já provou que ele existe (motivo `conexao_ausente`).
     conexaoDoPilotoId = autorizacao.conexaoId;
 

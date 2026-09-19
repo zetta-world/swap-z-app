@@ -467,25 +467,25 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
 
     consumedRef.current.add(cardKey);
 
-    // A1 write-back: publish this card's fired legs to the server session(s)
-    // so the cron's trades_today reflects browser fires too. Counted per
-    // exchange; the endpoint no-ops if that exchange has no armed session.
-    if (serverDaily.hasSession) {
-      const firedByExchange = new Map<CexId, number>();
-      for (let i = 0; i < resolved.length; i++) {
-        if (results[i].status === "fulfilled") {
-          const ex = resolved[i].exchange;
-          firedByExchange.set(ex, (firedByExchange.get(ex) ?? 0) + 1);
-        }
-      }
-      for (const [ex, count] of firedByExchange) {
-        void fetch("/api/autopilot/session/record-fire", {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ exchangeId: ex, count }),
-        }).then(() => refreshServerDaily.current()).catch(() => {});
-      }
-    }
+    /**
+     * ⚠️⚠️ AQUI O NAVEGADOR CONTAVA O PRÓPRIO DISPARO — e isso virou CONTA DOBRADA.
+     *
+     * Era o write-back do A1: depois de disparar, o cliente publicava as pernas
+     * em `/api/autopilot/session/record-fire`, que fazia `bumpSessionTrades`.
+     * Fazia sentido enquanto o servidor não contava nada.
+     *
+     * Com o A130-B, `/api/cex/order` RESERVA a vaga do teto diário no momento
+     * em que age (compare-and-swap, antes do envio). O write-back passou a
+     * somar a MESMA perna outra vez: cada disparo do navegador consumia duas
+     * vagas, e um teto de 5 trades/dia virava 2,5 na prática.
+     *
+     * ⚠️ E CONTAR NO CLIENTE NUNCA FOI CONFIÁVEL: aba fechada entre o envio e o
+     * POST = disparo não contado. Quem conta agora é quem age.
+     *
+     * Resta só RELER o contador do servidor, para a tela mostrar o número que
+     * o servidor tem — ela exibe o veredito, não o produz.
+     */
+    if (serverDaily.hasSession) refreshServerDaily.current();
 
     if (allOk) {
       toast.success(`Autopilot fired ${intents.length === 1 ? "order" : "BOTH legs"}: ${summaries.join(" | ")}`);

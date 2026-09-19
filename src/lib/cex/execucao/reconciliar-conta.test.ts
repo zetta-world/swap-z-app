@@ -291,7 +291,27 @@ describe("J7 — o hook no cron do autopilot", () => {
   });
 
   it("⚠️⚠️ sessão já em quarentena nem reconcilia — entradas presas direto", () => {
-    expect(CRON).toMatch(/if \(s\.quarentena_em\) \{\s*entradasLiberadas = false/);
+    /**
+     * ⚠️ O `if (s.quarentena_em)` SAIU DAQUI — e não foi afrouxamento.
+     *
+     * A quarentena valia só no cron: a `/api/cex/order` do navegador seguia
+     * comprando na mesma sessão derivada (achado da revisão adversarial do
+     * A130). O veredito virou `entradaAutorizadaNaSessao`, chamado pelos DOIS
+     * canais; o cron continua tomando a MESMA decisão, no mesmo lugar, e
+     * continua pulando a reconciliação quando ela já está gravada.
+     *
+     * O que este teste fixa é o comportamento, não a sintaxe de antes: a
+     * coluna decide o ramo, o ramo prende as ENTRADAS, e a reconciliação fica
+     * no `else`.
+     */
+    expect(CRON).toMatch(
+      /if \(!entradaAutorizadaNaSessao\(\{ emQuarentena: Boolean\(s\.quarentena_em\) \}\)\.ok\) \{\s*entradasLiberadas = false/);
+    const iRamo = CRON.indexOf("entradaAutorizadaNaSessao({ emQuarentena");
+    const iRec = CRON.indexOf("reconciliarConta(");
+    expect(iRamo).toBeGreaterThan(-1);
+    // A reconciliação vem DEPOIS, no `else` — sessão em quarentena não relê a conta.
+    expect(iRamo).toBeLessThan(iRec);
+    expect(CRON.slice(iRamo, iRec)).toMatch(/\} else \{/);
   });
 
   it("⚠️⚠️ deriva e leitura falha prendem as ENTRADAS, e a deriva vira evento account_drift", () => {

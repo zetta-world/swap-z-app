@@ -69,6 +69,15 @@ export interface EstadoParaExecucao {
   /** O teto DURÁVEL por trade. Autoridade — ver `tetoEfetivoDaOrdem`. */
   maxTradeUsd: number;
   conexaoId: string | null;
+  /**
+   * ⚠️ A sessão está de quarentena por deriva de conta (`quarentena_em`)?
+   *
+   * Ele mora aqui, no estado NORMALIZADO, e não numa checagem solta de quem
+   * chama, justamente para que um canal novo não consiga esquecer de existir.
+   * Mas quem o LÊ é `entradaAutorizadaNaSessao`, não a autorização de sessão —
+   * a razão está no docblock dela.
+   */
+  emQuarentena: boolean;
 }
 
 export type AutorizacaoDeExecucao =
@@ -133,6 +142,15 @@ export function avaliarAutorizacaoDaSessaoParaExecucao(
       `teto diario atingido: ${estado.tradesHoje}/${estado.maxTradesPorDia}`);
   }
 
+  /**
+   * ⚠️ A QUARENTENA NÃO ENTRA AQUI, e isso é decisão escrita.
+   *
+   * Esta função vale para COMPRA E VENDA (ver o cabeçalho). A quarentena vale
+   * só para ENTRADAS — "o saldo real não sustenta o inventário" é motivo para
+   * parar de comprar, nunca para prender o cliente numa posição. Misturá-la
+   * neste veredito trancaria a saída junto. Ela tem a função ao lado.
+   */
+
   // ── 5. o elo com o cofre (A127) ───────────────────────────────────────
   /**
    * ⚠️ SESSÃO LEGADA SEM `conexao_id` NÃO OPERA (§31). Não se infere conexão
@@ -147,6 +165,45 @@ export function avaliarAutorizacaoDaSessaoParaExecucao(
   return { ok: true, conexaoId: estado.conexaoId,
     tetoDaSessaoUsd: estado.maxTradeUsd,
     tradesRestantesHoje: Math.max(0, estado.maxTradesPorDia - estado.tradesHoje) };
+}
+
+export type MotivoDaRecusaDeEntrada = "sessao_em_quarentena";
+
+export type AutorizacaoDeEntrada =
+  | { ok: true }
+  | { ok: false; motivo: MotivoDaRecusaDeEntrada; porque: string };
+
+/**
+ * ⚠️⚠️⚠️ A QUARENTENA VALIA SÓ NO CRON — achado da revisão adversarial do A130.
+ *
+ * `reconciliar-conta.ts` grava `quarentena_em` quando o saldo real deixa de
+ * sustentar o inventário do bot. O cron obedece (`if (s.quarentena_em)
+ * entradasLiberadas = false`) e para de COMPRAR sozinho até mão humana.
+ *
+ * ⚠️ O NAVEGADOR NÃO OBEDECIA. Mesma sessão, mesma carteira, mesma deriva: o
+ * cron parava de comprar e o piloto do navegador seguia comprando pela
+ * `/api/cex/order`. É, outra vez, a família do A113 — a peça certa, com a
+ * cicatriz escrita, obedecida num caminho e ignorada no outro. Por isso a
+ * decisão mudou de lugar: uma função, dois canais.
+ *
+ * ⚠️ SÓ ENTRADAS. Copiado do cron ao pé da letra, inclusive o motivo:
+ * "SAÍDAS/redução NUNCA são presas — quarentena não pode trancar o cliente
+ * numa posição."
+ *
+ * ⚠️ E ELA NÃO É A RECONCILIAÇÃO. O cron confere a conta contra a corretora a
+ * cada passada e PODE gravar a quarentena; esta função só LÊ o que já está
+ * gravado. O navegador herda o freio, não a perícia — a limitação está dita na
+ * entrega, em vez de virar uma paridade que não existe.
+ */
+export function entradaAutorizadaNaSessao(
+  estado: Pick<EstadoParaExecucao, "emQuarentena">,
+): AutorizacaoDeEntrada {
+  if (estado.emQuarentena) {
+    return { ok: false, motivo: "sessao_em_quarentena",
+      porque: "a conta esta em quarentena por deriva de inventario — "
+        + "zero compra autonoma ate conferencia humana; saidas seguem liberadas" };
+  }
+  return { ok: true };
 }
 
 /**
@@ -177,7 +234,16 @@ export function tetoEfetivoDaOrdem(args: {
   /** O que o corpo pediu. Só entra na conta se for positivo e finito. */
   pedidoPeloClienteUsd?: unknown;
 }): number {
-  const candidatos = [args.tetoDaSessaoUsd, args.tetoGlobalUsd];
+  /**
+   * ⚠️ TETO DURÁVEL ILEGÍVEL É TETO ZERO, não teto ausente.
+   *
+   * `max_trade_usd` chega de uma linha do banco. `NaN` ou negativo ali não pode
+   * cair fora do `Math.min` e deixar o teto GLOBAL valendo sozinho — seria o
+   * dado corrompido AMPLIANDO a autorização. Zero recusa qualquer ordem, que é
+   * a direção certa de falha para dinheiro que sai.
+   */
+  const durar = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0);
+  const candidatos = [durar(args.tetoDaSessaoUsd), durar(args.tetoGlobalUsd)];
   const doCliente = args.pedidoPeloClienteUsd;
   if (typeof doCliente === "number" && Number.isFinite(doCliente) && doCliente > 0) {
     candidatos.push(doCliente);

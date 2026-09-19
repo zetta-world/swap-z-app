@@ -33,6 +33,7 @@ const estado = vi.hoisted(() => {
       trades_today: 0,
       max_trades_per_day: 5,
       max_trade_usd: 100,
+      quarentena_em: null as string | null,
     },
     /** Quantas vezes o cofre foi DECIFRADO — §20 quer zero nas recusas. */
     decifrou: 0,
@@ -135,6 +136,7 @@ beforeEach(() => {
   estado.sessao.max_trades_per_day = 5;
   estado.sessao.max_trade_usd = 100;
   estado.sessao.last_reset_day = estado.utcDayKey();
+  estado.sessao.quarentena_em = null;
 });
 
 /** Recusou de verdade: nada gravado, nada enviado, cofre intocado. */
@@ -197,11 +199,13 @@ describe("A130-B.1 — o corpo não amplia o teto", () => {
   /**
    * ⚠️ AS ORDENS AQUI SÃO DE COMPRA, e isso não é detalhe.
    *
-   * `checkRealNotional` aplica o teto POR TRADE só a compras — vendas são
-   * isentas por decisão PRÉ-EXISTENTE ("são naturalmente limitadas pela bolsa
-   * do usuário"). O §15 manda preservar a lógica de preço/referência e trocar
-   * apenas a FONTE do teto inseguro, então essa isenção fica como está — e o
-   * teste logo abaixo a FIXA, para ela ser visível em vez de silenciosa.
+   * `checkRealNotional` aplica o teto POR TRADE só a compras — a isenção da
+   * venda é decisão PRÉ-EXISTENTE ("são naturalmente limitadas pela bolsa do
+   * usuário"), e o §15 manda preservá-la. Por isso os casos de teto aqui são
+   * de COMPRA: é nelas que aquele guarda decide.
+   *
+   * ⚠️ E A ISENÇÃO É DE UM GUARDA, NÃO DO CAMINHO — ver o teste no fim deste
+   * arquivo. `politica.ts` confere o teto nos dois lados.
    */
   it("⚠️⚠️ sessão 50, corpo 1000, compra de ~600: RECUSADA", async () => {
     // 6 × $100 de referência = $600 de nocional, contra teto de sessão de 50.
@@ -238,19 +242,77 @@ describe("A130-B.1 — o corpo não amplia o teto", () => {
     expect((await r.json()).error).toBe("notional_guard");
   });
 
-  it("⚠️⚠️ LIMITAÇÃO CONHECIDA: a VENDA não é limitada pelo teto por trade", () => {
+  it("⚠️⚠️ CORREÇÃO DE UMA LIMITAÇÃO QUE EU DECLAREI ERRADA — a venda TEM teto", () => {
     /**
-     * Este teste não celebra o comportamento — ele o DOCUMENTA onde dá para
-     * ver. `checkRealNotional` isenta `side === "sell"` do teto por trade desde
-     * antes do A130; o teto GLOBAL (`AUTOPILOT_HARD_CEILING_USD`) continua
-     * valendo para os dois lados.
+     * ⚠️ A entrega anterior dizia "a VENDA não é limitada pelo teto por trade".
+     * A afirmação era mais larga que o código, e apoiada só num grep.
      *
-     * Mudar isso é decisão de produto, fora do escopo do A130-B (§15), e está
-     * relatado como limitação conhecida na entrega.
+     * O que é verdade: `checkRealNotional` isenta `side === "sell"` do teto por
+     * trade — ISSO É UM GUARDA. O caminho tem outro: `politica.ts` confere
+     * `notionalUsd > maxTradeUsd` para os DOIS lados, e a rota a chama logo
+     * abaixo do price-guard, com o nocional REAL medido.
+     *
+     * A prova funcional está em `a130-sessao-autoriza.test.ts` ⑬ — aqui a
+     * política é mockada de propósito, então este arquivo não pode medi-la.
+     * O que ele fixa é a ORDEM: o price-guard não é o último portão.
      */
+    const ROTA = readFileSync("src/app/api/cex/order/route.ts", "utf8");
+    const iGuarda = ROTA.indexOf("checkRealNotional({");
+    const iPolitica = ROTA.indexOf("avaliarDecisaoDeEstrategia({");
+    expect(iGuarda).toBeGreaterThan(-1);
+    expect(iPolitica).toBeGreaterThan(iGuarda);
+    const POLITICA = readFileSync("src/lib/autopilot/politica.ts", "utf8");
+    // Sem `side ===` na linha do teto: ele vale para compra e venda.
+    expect(POLITICA).toMatch(/if \(ctx\.notionalUsd > ctx\.maxTradeUsd\) \{/);
+    // E o teto GLOBAL segue valendo para os dois lados, no price-guard.
     const GUARDA = readFileSync("src/lib/autopilot/price-guard.ts", "utf8");
-    expect(GUARDA).toMatch(/side === "buy" && realNotionalUsd > maxTradeUsd/);
     expect(GUARDA).toMatch(/realNotionalUsd > AUTOPILOT_HARD_CEILING_USD/);
+  });
+});
+
+describe("⚠️ achado da auto-revisão — sessão sem id não reserva, logo não opera", () => {
+  it("⚠️⚠️ sem id de sessão: ZERO ordem, em vez de teto conferido e não reservado", async () => {
+    /**
+     * A reserva da vaga é condicionada ao id da sessão. Uma versão anterior
+     * PULAVA a reserva quando ele fosse nulo: o teto seguia sendo CONFERIDO
+     * (leitura) e deixava de ser RESERVADO (escrita) — e sob concorrência duas
+     * requisições com 4/5 passariam as duas.
+     *
+     * A linha não deveria chegar sem chave primária. Falha FECHADA mesmo assim.
+     */
+    (estado.sessao as { id?: string }).id = undefined;
+    const r = await POST(req());
+    expect(r.status).not.toBe(200);
+    const corpo = await r.json();
+    expect(corpo.error).toBe("sessao_nao_autorizada");
+    expect(spies.enviar).not.toHaveBeenCalled();
+    expect(bancoAtual!.intents).toHaveLength(0);
+    expect(estado.reservas).toBe(0);
+    estado.sessao.id = "S1";
+  });
+});
+
+describe("a QUARENTENA por deriva, pela rota — achado da revisão adversarial", () => {
+  it("⚠️⚠️ sessão em quarentena: a COMPRA não sai, e o cofre nem abre", async () => {
+    (estado.sessao as { quarentena_em?: string | null }).quarentena_em =
+      new Date().toISOString();
+    const r = await POST(req({ side: "buy", amount: 0.1 }));
+    expect(r.status).not.toBe(200);
+    const corpo = await r.json();
+    expect(corpo.error).toBe("sessao_nao_autorizada");
+    expect(corpo.motivo).toBe("sessao_em_quarentena");
+    expect(bancoAtual!.intents).toHaveLength(0);
+    expect(spies.enviar).not.toHaveBeenCalled();
+    expect(estado.decifrou).toBe(0);
+    expect(estado.reservas).toBe(0);
+  });
+
+  it("⚠️⚠️ e a VENDA atravessa — quarentena não tranca o cliente na posição", async () => {
+    (estado.sessao as { quarentena_em?: string | null }).quarentena_em =
+      new Date().toISOString();
+    const r = await POST(req({ side: "sell" }));
+    expect(r.status).toBe(200);
+    expect(spies.enviar).toHaveBeenCalledTimes(1);
   });
 });
 
