@@ -164,6 +164,29 @@ Rodou em sessão separada, 22 vetores. O que ela achou e o que foi feito:
 `getSessionStatus` filtra por corretora — o `session_id` já é o escopo da
 venue. Reportado como não reproduzido.
 
+## 8-BIS. O adendo do auditor — três P0 de concorrência
+
+Lendo a branch, o auditor apontou que o Round 9 tinha trazido posse e exposição
+para o servidor e parado em **ler, conferir, agir**.
+
+| # | achado | conserto |
+|---|---|---|
+| **A134** | uma posição autorizava DUAS vendas concorrentes: as duas leem `base_amount = 0,01` e as duas mandam 0,01 — e 0,01 é do dono | `autopilot_reservar_venda`: a quantidade é tomada dentro da transação que confere (`for update` na posição) |
+| **A135** | o teto de exposição tinha a mesma forma: 190 + 10 e 190 + 10 passavam as duas num teto de 200 | `autopilot_reservar_exposicao`: soma a exposição real **e** o que já está prometido, com a linha da sessão travada |
+| **A136** | o marcador e a posição eram duas escritas na liquidação da saída armada. Marcador na frente: a reconciliação vê delta zero para sempre. Posição na frente: reduz de novo. **Eu havia "consertado" invertendo a ordem** — o que só escolhe qual dos dois acontece | `autopilot_liquidar_saida_armada`: uma transação |
+
+**Devolução das reservas:** só na recusa **provada** — inclusive nas que
+acontecem antes de o executor tomar a reserva dele (kill-switch, credencial), e
+que nunca passariam pelo `liberar` dele. `UNKNOWN` não devolve nada: a ordem
+pode estar viva, e soltar a bolsa autorizaria a segunda venda. E elas
+**expiram**, porque reserva que sobrevive a uma ordem que nunca existiu tranca
+a posição para sempre.
+
+**Efeito colateral do A136:** `closeServerPosition` e `reduzirServerPosition`
+ficaram sem caller — eram os últimos escritores paralelos de posição. Apagados,
+com a lápide que explica por quê (e com a cicatriz do A14 que uma delas
+carregava, que agora mora dentro da RPC).
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -181,11 +204,18 @@ específico, todas restauradas:
 | revisão: a projeção volta a pisar na saída armada | 2 |
 | revisão: o navegador volta a não armar no servidor | 1 |
 | revisão: o disfarce `?? ""` volta | 1 |
+| A134: a reserva volta a ser só conferência | 4 |
+| A135: a exposição ignora o que está prometido | 3 |
+| A136: o marcador avança sem a posição (meio efeito) | 1 |
+
+⚠️ A quebra do A136 **não foi detectada na primeira tentativa** — os testes
+cobriam a falha da transação inteira, não o meio efeito. O teste que faltava
+foi escrito antes de a quebra ser considerada detectada.
 
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3678/3678 (243 arquivos)     — baseline do R8 era 3586
+npx vitest run      3708/3708 (244 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo
@@ -199,14 +229,15 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 
 ## 11. Limitações declaradas
 
-1. **A liquidação da saída armada ainda escreve direto** e registra o que
-   aplicou. Se a absorção falhar (intent não encontrado pela ordem externa,
-   banco fora), sai `autopilot_absorcao_nao_registrada` em severidade alta — e
-   uma reconciliação posterior pode reduzir em dobro. É o único ponto do Round
-   9 em que a convergência é por registro, e não por construção.
-2. **Exposição e posse são read-then-act**, sem reserva. Duas pernas paralelas
-   do mesmo cartão (ou duas abas) podem ler a mesma exposição e passar as duas.
-   A vaga diária tem CAS; estas não. **Não corrigido, declarado.**
+1. **A liquidação da saída armada é transacional (A136)**, mas depende de achar
+   o intent pela ordem externa. Falhando essa leitura, sai
+   `autopilot_liquidacao_nao_aplicada` em severidade alta, a posição fica como
+   está, e a passada seguinte tenta de novo — sem meio efeito.
+2. **As reservas de inventário EXPIRAM em 10 minutos.** É o que impede uma
+   ordem que ficou `UNKNOWN` e nunca executou de trancar a posição para sempre.
+   Depois disso, quem guarda a bolsa é o `exit_armed` e o livro de execuções —
+   uma ordem em dúvida por mais de 10 minutos volta a ser um caso de
+   reconciliação, não de reserva.
 3. **Compra do navegador passou a respeitar o teto de exposição do modo de
    risco** (75/200/400). Antes passava porque nada no servidor olhava — pode
    recusar ordens que a tela mostrava como válidas.
@@ -231,6 +262,9 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 | A131-C | FIXED — PENDING INDEPENDENT RETEST |
 | A132 | FIXED — PENDING INDEPENDENT RETEST |
 | A133 | FIXED — PENDING INDEPENDENT RETEST |
+| A134 | FIXED — PENDING INDEPENDENT RETEST |
+| A135 | FIXED — PENDING INDEPENDENT RETEST |
+| A136 | FIXED — PENDING INDEPENDENT RETEST |
 | 0064 | CREATED LOCALLY — NOT APPLIED |
 
 Round 8 (A127/A128/A129/A125-ABSENCE/A130/A130-B): preservados, sem elevação
