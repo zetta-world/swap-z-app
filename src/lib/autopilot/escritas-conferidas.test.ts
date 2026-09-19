@@ -43,6 +43,9 @@ const semComentarios = (s: string) =>
 const ESCRITORAS = [
   "markServerExitArmed", "reopenServerPosition",
   "closeServerPosition", "applySessionPnl",
+  // ⚠️ FALTAVA, e a revisão adversarial do Round 9 achou: ela escreve estado
+  // de posição (a redução da saída parcial) e nunca esteve na trava.
+  "reduzirServerPosition",
 ];
 
 describe("as escritoras devolvem SE gravaram", () => {

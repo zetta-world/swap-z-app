@@ -45,6 +45,19 @@ const estado = vi.hoisted(() => {
     /** Chamadas de projeção: [intentId, jaAplicado?] */
     projecoes: [] as Array<{ intentId: string; jaAplicado?: unknown }>,
     projecaoOk: true,
+    /**
+     * ⚠️⚠️ COM QUE SESSÃO O LIVRO FOI CONSULTADO.
+     *
+     * A revisão adversarial achou que a rota lia o livro com `session_id = ""`
+     * — e NENHUM teste podia ver, porque todos os mocks ignoravam os
+     * argumentos. Medir o veredito sem medir a PERGUNTA deixa passar
+     * exatamente isto.
+     */
+    consultas: [] as Array<{ fn: string; sessionId: unknown; base?: unknown }>,
+    /** Saídas marcadas como armadas NO SERVIDOR, e P&L realizado nele. */
+    armadas: [] as unknown[][],
+    pnl: [] as unknown[][],
+    pnlOk: true,
   };
 });
 
@@ -105,12 +118,26 @@ vi.mock("@/lib/cex/conexoes", () => ({
 
 /** ⚠️ O LIVRO DO SERVIDOR — a única autoridade sobre o que o bot possui. */
 vi.mock("@/lib/autopilot/positions-server", () => ({
-  lerPosicaoDoBot: async () => estado.livroFalha
-    ? { ok: false as const, porque: estado.livroFalha }
-    : { ok: true as const, posicao: estado.posicao },
-  getOpenServerPositions: async () => estado.livroFalha
-    ? { ok: false as const, porque: estado.livroFalha }
-    : { ok: true as const, posicoes: estado.posicoes },
+  lerPosicaoDoBot: async (sessionId: unknown, base: unknown) => {
+    estado.consultas.push({ fn: "lerPosicaoDoBot", sessionId, base });
+    return estado.livroFalha
+      ? { ok: false as const, porque: estado.livroFalha }
+      : { ok: true as const, posicao: estado.posicao };
+  },
+  getOpenServerPositions: async (sessionId: unknown) => {
+    estado.consultas.push({ fn: "getOpenServerPositions", sessionId });
+    return estado.livroFalha
+      ? { ok: false as const, porque: estado.livroFalha }
+      : { ok: true as const, posicoes: estado.posicoes };
+  },
+  markServerExitArmed: async (...args: unknown[]) => {
+    estado.armadas.push(args);
+    return { ok: true as const };
+  },
+  applySessionPnl: async (...args: unknown[]) => {
+    estado.pnl.push(args);
+    return estado.pnlOk ? { ok: true as const } : { ok: false as const, erro: "db fora" };
+  },
 }));
 vi.mock("@/lib/autopilot/projecao-de-posicao", () => ({
   projetarEfeitoDoIntent: async (intentId: string, opts?: { jaAplicado?: unknown }) => {
@@ -149,6 +176,10 @@ beforeEach(() => {
   estado.posicoes = [];
   estado.livroFalha = null;
   estado.projecoes = [];
+  estado.consultas = [];
+  estado.armadas = [];
+  estado.pnl = [];
+  estado.pnlOk = true;
   estado.projecaoOk = true;
   estado.sessao.risk_mode = "moderado";
   estado.sessao.max_trade_usd = 1_000;
@@ -308,13 +339,23 @@ describe("A131.5/A131.6 — o que o navegador executou entra no livro", () => {
   });
 
   it("⚠️ e a COMPRA passa pela MESMA porta — trava estrutural", async () => {
-    // O caminho de compra não chega a 200 neste fixture (A110/RPC 0060), então
-    // a convergência é fixada onde ela mora: uma chamada só, para os dois lados.
+    /**
+     * O caminho de compra não chega a 200 neste fixture (A110/RPC 0060), então
+     * a convergência é fixada onde ela mora.
+     *
+     * ⚠️ E A TRAVA MUDOU DE FORMA: a revisão adversarial achou um SEGUNDO
+     * caminho que termina com dinheiro movido — o INCERTO que a reconciliação
+     * imediata prova ter executado — e que não projetava nada. Agora os dois
+     * chamam `projetarOuAvisar`, e `projetarEfeitoDoIntent` aparece uma vez só,
+     * dentro dela.
+     */
     const FONTE = (await import("node:fs")).readFileSync(
       "src/app/api/cex/order/route.ts", "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, " ");
-    expect(FONTE).toMatch(/if \(ehAutopilot && r\.filledQty > 0\) \{/);
     expect([...FONTE.matchAll(/projetarEfeitoDoIntent\(/g)]).toHaveLength(1);
+    expect([...FONTE.matchAll(/await projetarOuAvisar\(/g)].length,
+      "o preenchimento direto e o incerto-depois-provado").toBe(2);
+    expect(FONTE).toMatch(/if \(ehAutopilot && r\.filledQty > 0\) \{\s*await projetarOuAvisar/);
   });
 
   it("⚠️⚠️ ACK sem preenchimento NÃO projeta posição nenhuma", async () => {
@@ -344,5 +385,115 @@ describe("A131.5/A131.6 — o que o navegador executou entra no livro", () => {
       "src/app/api/cex/order/route.ts", "utf8");
     expect(FONTE).toMatch(/autopilot_projecao_de_posicao_falhou/);
     expect(FONTE).toMatch(/a131_projecao_falhou/);
+  });
+});
+
+describe("⚠️⚠️ a PERGUNTA, não só o veredito — achado da revisão adversarial", () => {
+  /**
+   * A rota lia o livro com `sessaoDoPilotoId ?? ""`, e a variável só era
+   * atribuída DEPOIS dos dois portões. Com `session_id = ""` numa coluna
+   * `uuid not null`, toda consulta erra — então o canal inteiro do navegador
+   * respondia `livro_ilegivel`, e a posse que o A131 mede nunca foi medida
+   * contra a sessão real.
+   *
+   * Nenhum teste via: todos os mocks ignoravam os argumentos. Estes não.
+   */
+  it("⚠️⚠️ a VENDA consulta o livro com o id REAL da sessão", async () => {
+    await POST(req({ side: "sell", amount: 0.005 }));
+    const c = estado.consultas.find((x) => x.fn === "lerPosicaoDoBot");
+    expect(c, "a rota precisa consultar o livro na venda").toBeDefined();
+    expect(c!.sessionId).toBe("S1");
+    expect(c!.base).toBe("BTC");
+  });
+
+  it("⚠️⚠️ a COMPRA consulta a exposição com o id REAL da sessão", async () => {
+    await POST(req({ side: "buy", amount: 0.2 }));
+    const c = estado.consultas.find((x) => x.fn === "getOpenServerPositions");
+    expect(c, "a rota precisa consultar a exposição na compra").toBeDefined();
+    expect(c!.sessionId).toBe("S1");
+  });
+
+  it("⚠️⚠️ e NUNCA com string vazia — o disfarce era o `?? \"\"`", async () => {
+    await POST(req({ side: "sell", amount: 0.005 }));
+    await POST(req({ side: "buy", amount: 0.2 }));
+    for (const c of estado.consultas) {
+      expect(c.sessionId, `${c.fn} recebeu um id vazio`).not.toBe("");
+      expect(c.sessionId).toBeTruthy();
+    }
+    const FONTE = (await import("node:fs")).readFileSync(
+      "src/app/api/cex/order/route.ts", "utf8");
+    expect(FONTE).not.toMatch(/sessaoDoPilotoId \?\? ""/);
+  });
+
+  it("⚠️ sem id de sessão, nada é consultado e nada sai", async () => {
+    (estado.sessao as { id?: string }).id = undefined;
+    const r = await POST(req({ side: "sell", amount: 0.005 }));
+    expect(r.status).toBe(403);
+    expect((await r.json()).motivo).toBe("sessao_inexistente");
+    expect(estado.consultas).toHaveLength(0);
+    expect(spies.enviar).not.toHaveBeenCalled();
+    estado.sessao.id = "S1";
+  });
+});
+
+describe("a saída do navegador fica armada NO SERVIDOR — achado da revisão", () => {
+  it("⚠️⚠️ limitada aceita e ainda viva: `markServerExitArmed` no livro", async () => {
+    /**
+     * O navegador marcava só no `localStorage`. O livro do servidor seguia
+     * `open` com a bolsa inteira — e tanto o cron quanto uma segunda aba
+     * podiam mandar outra venda da MESMA posição, que é o desfecho que
+     * `markServerExitArmed` teme por escrito.
+     */
+    spies.enviar.mockResolvedValueOnce({
+      tipo: "aceita", ordem: { id: "EXT-LIMIT", filled: 0, status: "open" } as never,
+    });
+    const r = await POST(req({ side: "sell", type: "limit", amount: 0.005, price: 100 }));
+    expect(r.status).toBe(200);
+    expect(estado.armadas).toHaveLength(1);
+    expect(estado.armadas[0][0]).toBe("S1");
+    expect(estado.armadas[0][1]).toBe("BTC");
+    expect(estado.armadas[0][2]).toBe("EXT-LIMIT");
+  });
+
+  it("⚠️ venda a MERCADO preenchida não arma nada — ela já reduziu", async () => {
+    await POST(req({ side: "sell", amount: 0.005 }));
+    expect(estado.armadas).toHaveLength(0);
+  });
+});
+
+describe("o P&L da venda do navegador conta no stop do SERVIDOR", () => {
+  it("⚠️⚠️ venda projetada realiza P&L na sessão — recebido − custo − taxa", async () => {
+    /**
+     * Antes, a venda do navegador REDUZIA a posição no servidor e registrava o
+     * resultado só no `localStorage`: a sessão que congela nunca via a perda.
+     * Pior que antes do Round 9, quando a posição ficava no livro e o cron
+     * acabava realizando.
+     */
+    await POST(req({ side: "sell", amount: 0.005 }));
+    expect(estado.pnl).toHaveLength(1);
+    expect(estado.pnl[0][0]).toBe("S1");
+    // O mock da projeção devolve aplicadoQuote 100 e custoRemovido 0.
+    expect(Number(estado.pnl[0][1])).toBeCloseTo(100, 9);
+  });
+
+  it("⚠️⚠️ P&L que não entra vira evento — o stop deixou de ver o resultado", async () => {
+    estado.pnlOk = false;
+    const r = await POST(req({ side: "sell", amount: 0.005 }));
+    expect(r.status).toBe(200);   // a ordem já saiu; não dá para desfazer
+    const FONTE = (await import("node:fs")).readFileSync(
+      "src/app/api/cex/order/route.ts", "utf8");
+    expect(FONTE).toMatch(/autopilot_pnl_nao_contabilizado/);
+  });
+
+  it("⚠️⚠️ COMPRA não realiza P&L nenhum", async () => {
+    await POST(req({ side: "buy", amount: 0.2 }));
+    expect(estado.pnl).toHaveLength(0);
+  });
+
+  it("⚠️⚠️ saída em liquidação NÃO realiza aqui — quem realiza é o settle", async () => {
+    // Contar dos dois lados seria contar o mesmo prejuízo duas vezes.
+    const FONTE = (await import("node:fs")).readFileSync(
+      "src/app/api/cex/order/route.ts", "utf8");
+    expect(FONTE).toMatch(/projecao\.motivo === "aplicado"/);
   });
 });

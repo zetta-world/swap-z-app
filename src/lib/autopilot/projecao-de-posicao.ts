@@ -27,12 +27,12 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type MotivoDaProjecao =
-  | "aplicado" | "sem_delta"
+  | "aplicado" | "sem_delta" | "saida_em_liquidacao"
   | "intent_inexistente" | "simulado" | "origem_nao_autonoma" | "sem_sessao"
   | "regressao" | "sem_posicao" | "erro";
 
 export type ResultadoDaProjecao =
-  | { ok: true; motivo: "aplicado" | "sem_delta";
+  | { ok: true; motivo: "aplicado" | "sem_delta" | "saida_em_liquidacao";
       aplicadoQty: number; aplicadoQuote: number; custoRemovido: number; fechou: boolean }
   | { ok: false; motivo: MotivoDaProjecao; porque: string };
 
@@ -95,10 +95,44 @@ export async function projetarEfeitoDoIntent(
   }
   return {
     ok: true,
-    motivo: r.motivo === "sem_delta" ? "sem_delta" : "aplicado",
+    motivo: r.motivo === "sem_delta" ? "sem_delta"
+          : r.motivo === "saida_em_liquidacao" ? "saida_em_liquidacao"
+          : "aplicado",
     aplicadoQty: numero(r.aplicado_qty),
     aplicadoQuote: numero(r.aplicado_quote),
     custoRemovido: numero(r.custo_removido),
     fechou: r.fechou === true,
   };
+}
+
+/**
+ * ⚠️⚠️⚠️ A VARREDURA DE PENDÊNCIAS — porque `FILLED` é TERMINAL.
+ *
+ * Achado da revisão adversarial: o comentário desta casa prometia que "a
+ * reconciliação aplica o delta que faltar" se a projeção falhasse. Falso para
+ * o caso mais comum — uma compra a mercado que preenche na hora vira `FILLED`,
+ * e `intentsParaReconciliar` só olha os NÃO-terminais. Ninguém voltava naquele
+ * intent: o bot comprava e nunca saberia que possui.
+ *
+ * ⚠️ MELHOR-ESFORÇO, E BARULHENTA. Falha de leitura não é "nada pendente":
+ * devolve `null`, e quem chama registra a diferença.
+ */
+export async function projecoesPendentes(
+  limite = 50, deps: DependenciasDaProjecao = {},
+): Promise<string[] | null> {
+  try {
+    if (deps.chamarRpc) {
+      const bruto = await deps.chamarRpc("autopilot_projecoes_pendentes", { p_limite: limite });
+      return (Array.isArray(bruto) ? bruto : [])
+        .map((l) => String((l as { intent_id?: unknown }).intent_id ?? ""))
+        .filter(Boolean);
+    }
+    const db = getSupabaseAdmin();
+    if (!db) return null;
+    const { data, error } = await db.rpc("autopilot_projecoes_pendentes", { p_limite: limite });
+    if (error) return null;
+    return (data ?? []).map((l) => String(l.intent_id)).filter(Boolean);
+  } catch {
+    return null;
+  }
 }

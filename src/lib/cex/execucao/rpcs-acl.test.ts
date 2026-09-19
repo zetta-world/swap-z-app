@@ -46,6 +46,8 @@ const CATALOGO: Record<string, string> = {
   // ⚠️ Esta trava ACHOU a função nova antes de qualquer humano — que é
   // exatamente o que ela existe para fazer.
   autopilot_projetar_efeito_do_intent: "0064_autopilot_projecao_de_posicao.sql",
+  // A varredura de pendências (FILLED é terminal) nasce fechada na mesma.
+  autopilot_projecoes_pendentes: "0064_autopilot_projecao_de_posicao.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

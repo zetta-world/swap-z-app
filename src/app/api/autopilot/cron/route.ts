@@ -28,7 +28,9 @@ import { quantoPodeVender, oQueSobrou } from "@/lib/autopilot/venda-limitada";
 import {
   tetoDeExposicaoDoRisco, calcularExposicaoUsd,
 } from "@/lib/autopilot/inventario";
-import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
+import {
+  projetarEfeitoDoIntent, projecoesPendentes,
+} from "@/lib/autopilot/projecao-de-posicao";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
 import { runAlertWatchdog } from "@/lib/admin/watchdog";
@@ -261,20 +263,27 @@ async function settleArmedExits(
             reason: "venue diz fechada e nao informa quanto saiu — posicao MANTIDA ate haver evidencia" });
           continue;
         }
-        // ⚠️ A131-C: o marcador soube antes de a posição mudar.
-        await absorverNaProjecao(pos, order, vendido);
         const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
-        if (sobra.fecha) {
-          await exigirGravacao(
-            await closeServerPosition(s.id, pos.base),
-            "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
-            { session: s.id, base: pos.base });
-        } else {
-          await exigirGravacao(
-            await reduzirServerPosition(s.id, pos.base, sobra.baseRestante, sobra.custoRestante),
-            "saida PARCIAL nao gravada — o banco segue dizendo que a bolsa inteira esta la, e a passada seguinte tenta vender de novo o que ja saiu",
-            { session: s.id, base: pos.base, resta: sobra.baseRestante });
-        }
+        /**
+         * ⚠️⚠️ A ABSORÇÃO VEM DEPOIS DA ESCRITA, e só se ela entrou — achado da
+         * revisão adversarial.
+         *
+         * Absorver primeiro adiantava o marcador para "já aplicado". Se a
+         * escrita falhasse (e ela devolve `{ok:false}`, não lança), a projeção
+         * seguinte responderia `sem_delta` PARA SEMPRE: a venda nunca entraria
+         * no livro, e nenhum caminho a repararia. Falhar antes de absorver
+         * deixa o conserto possível — a reconciliação aplica o delta.
+         */
+        const gravou = sobra.fecha
+          ? await exigirGravacao(
+              await closeServerPosition(s.id, pos.base),
+              "posicao NAO removida apos sair — o teto de exposicao conta capital que nao esta mais la, e o ramo de venda pode tentar vender de novo",
+              { session: s.id, base: pos.base })
+          : await exigirGravacao(
+              await reduzirServerPosition(s.id, pos.base, sobra.baseRestante, sobra.custoRestante),
+              "saida PARCIAL nao gravada — o banco segue dizendo que a bolsa inteira esta la, e a passada seguinte tenta vender de novo o que ja saiu",
+              { session: s.id, base: pos.base, resta: sobra.baseRestante });
+        if (gravou) await absorverNaProjecao(pos, order, vendido);
         logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: pos.pair, side: "sell", volumeUsd: sobra.custoRemovido || null, pnlUsd: realized, status: "settled", route: "cron", ref: `${exchange}:${pos.exit_order_id}` });
         rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", order_type: "limit", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: realized !== null ? `exit settled, realized $${realized.toFixed(2)}${sobra.fecha ? "" : `, ${sobra.baseRestante} still held`}` : "exit settled" });
       } else if (st === "canceled" || st === "cancelled" || st === "expired") {
@@ -291,7 +300,6 @@ async function settleArmedExits(
          */
         const jaVendido = Number(order.filled);
         if (jaVendido > 0) {
-          await absorverNaProjecao(pos, order, jaVendido);
           const { realized, aviso } = realizedFromSell(order, pos);
           if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
           if (realized !== null) {
@@ -317,6 +325,8 @@ async function settleArmedExits(
               "remanescente nao reaberto — fica exit_armed apontando para ordem morta",
               { session: s.id, base: pos.base });
           }
+          // ⚠️ Absorve DEPOIS de escrever (ver a nota no ramo preenchido).
+          await absorverNaProjecao(pos, order, jaVendido);
           rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: `cancelada com ${jaVendido} ja vendido — so o remanescente reabre` });
         } else {
           await exigirGravacao(
@@ -605,6 +615,49 @@ export async function POST(req: NextRequest) {
     }
   } catch (e) {
     await recordEvent("reconciliacao_falhou", { meta: { severity: "med",
+      erro: (e as Error)?.message?.slice(0, 200) ?? "erro",
+    } });
+  }
+
+  /**
+   * ⚠️⚠️⚠️ AS PROJEÇÕES QUE FICARAM PARA TRÁS — achado da revisão adversarial.
+   *
+   * A projeção acontece no instante em que o dinheiro se move, e pode falhar
+   * ali (banco fora, timeout). O comentário desta casa prometia que "a
+   * reconciliação aplica o delta que faltar" — e era FALSO para o caso mais
+   * comum: uma compra a mercado que preenche na hora vira `FILLED`, que é
+   * TERMINAL, e o recuperador de intents só olha os não-terminais. Ninguém
+   * voltava naquele intent.
+   *
+   * ⚠️ IDEMPOTENTE POR CONSTRUÇÃO: a RPC aplica `ledger − applied`, então
+   * varrer de novo o que já entrou não soma nada.
+   *
+   * ⚠️ MELHOR-ESFORÇO: isto não envia ordem nenhuma. Falha aqui não pode
+   * derrubar a passada — mas "não consegui olhar" e "nada pendente" saem
+   * diferentes, que é a regra nº 33 desta casa.
+   */
+  try {
+    const pendentes = await projecoesPendentes(50);
+    if (pendentes === null) {
+      await recordEvent("autopilot_projecoes_pendentes_ilegiveis", { meta: { severity: "med",
+        why: "nao deu para listar projecoes atrasadas. 'nenhuma pendente' e 'nao "
+          + "consegui olhar' sao coisas diferentes.",
+      } });
+    } else if (pendentes.length > 0) {
+      const falhas: string[] = [];
+      for (const id of pendentes) {
+        const r = await projetarEfeitoDoIntent(id);
+        if (!r.ok) falhas.push(`${id}:${r.motivo}`);
+      }
+      await recordEvent("autopilot_projecoes_recuperadas", { meta: {
+        severity: falhas.length > 0 ? "high" : "low",
+        tentadas: pendentes.length, falhas: falhas.slice(0, 10),
+        why: "fills autonomos cuja posicao ainda nao tinha entrado no livro. "
+          + "As que continuam falhando pedem mao humana — o dinheiro ja se moveu.",
+      } });
+    }
+  } catch (e) {
+    await recordEvent("autopilot_projecoes_pendentes_ilegiveis", { meta: { severity: "med",
       erro: (e as Error)?.message?.slice(0, 200) ?? "erro",
     } });
   }
@@ -1042,6 +1095,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     const motivo = vaga.ultimoMotivo();
     if (!motivo) return;
     if (motivo === "limite_diario") { remainingTrades = 0; return; }
+    // ⚠️ `contencao` entra aqui de propósito: não sabemos se a vaga existe, e
+    // insistir no mesmo instante é disputar a linha de novo.
     contadorConfiavel = false;
   };
 
@@ -1465,22 +1520,21 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
 
   if (frozenUntil === today) alertIfNewlyFrozen(); // a sell may have tripped it mid-run
   await recordRuns(runRows);
-  // CONTADOR INCREMENTAL (auditoria de dinheiro, 30/07).
-  //
-  // Antes o contador diário era somado UMA vez, aqui no fim da execução. O
-  // limite dentro de uma mesma passada era respeitado (remainingTrades vive em
-  // memória), mas se a função morresse depois de disparar e antes desta linha
-  // — timeout do serverless no meio de chamadas de corretora, que levam
-  // segundos cada — as ordens JÁ EXISTIAM na corretora e o contador nunca as
-  // via. A passada seguinte lia o número velho e liberava a cota diária
-  // inteira de novo.
-  //
-  // O limite de trades por dia é o que o usuário usa para limitar a própria
-  // exposição. Ele não pode depender da função chegar viva até o fim.
-  //
-  // Agora cada ordem é contada logo após existir. O RPC é relativo e atômico
-  // (o mesmo que o navegador usa), então somas concorrentes não se perdem — e
-  // pagar uma ida ao banco por ordem executada é barato no caminho do dinheiro.
+  /**
+   * ⚠️⚠️ O QUE ESTAVA ESCRITO AQUI DEIXOU DE SER VERDADE NO A132 — e ficava
+   * ao lado de uma chamada de telemetria, sem nada a ver com ela.
+   *
+   * O texto dizia: *"cada ordem é contada logo após existir. O RPC é relativo
+   * e atômico (o mesmo que o navegador usa)"*. Era a defesa do
+   * `bump_session_trades`, e a razão dela continua válida como lição: contar
+   * no fim da passada perdia as ordens quando o serverless morria no meio.
+   *
+   * Mas contar DEPOIS nunca pôde conferir teto — quando a soma acontece, o
+   * dinheiro já saiu. Agora a vaga é RESERVADA antes do envio, por
+   * compare-and-swap, pela mesma primitiva do navegador; o RPC relativo foi
+   * apagado. O comentário sobreviveu à sua própria função, que é a forma mais
+   * barata de mentir num arquivo.
+   */
   await telemetria(s.id, {
     last_scan_at: nowIso,
     last_error:   null,

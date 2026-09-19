@@ -519,7 +519,7 @@ export function bancoFalso(): BancoFalso {
       }
       if (!it.session_id) return { data: { ok: false, motivo: "sem_sessao" }, error: null };
 
-      const base = String(it.symbol).split("/")[0].toUpperCase();
+      const base = String(it.symbol).replace(/-/g, "/").split("/")[0].toUpperCase();
       let efeito = efeitos.find((e) => e.intent_id === it.id);
       if (!efeito) {
         efeito = { intent_id: it.id, session_id: it.session_id, exchange_id: it.exchange_id,
@@ -560,7 +560,8 @@ export function bancoFalso(): BancoFalso {
           const custo = Number(pos.cost_usd) + deltaQuote;
           pos.base_amount = qtd; pos.cost_usd = custo;
           pos.entry_price = qtd > 0 ? custo / qtd : pos.entry_price;
-          pos.status = "open";
+          // ⚠️ `status`/`exit_order_id` INTOCADOS: desarmar uma saída viva
+          // deixaria a ordem órfã, e o P&L dela nunca seria realizado.
         } else {
           posicoes.push({ id: `pos${++seq}`, session_id: it.session_id,
             wallet_address: it.wallet_address ?? "", exchange_id: it.exchange_id,
@@ -573,6 +574,13 @@ export function bancoFalso(): BancoFalso {
         if (!pos) {
           return { data: { ok: false, motivo: "sem_posicao", base, delta_qty: deltaQty }, error: null };
         }
+        // ⚠️ Saída armada pertence à liquidação, que realiza o P&L contra a
+        // posição AINDA INTEIRA. A projeção não toca.
+        if (pos.status === "exit_armed" && pos.exit_order_id) {
+          return { data: { ok: true, motivo: "saida_em_liquidacao", aplicado_qty: 0,
+                           aplicado_quote: 0, fechou: false, base,
+                           ordem_armada: pos.exit_order_id }, error: null };
+        }
         const restante = Number(pos.base_amount) - deltaQty;
         if (restante <= Number(pos.base_amount) * RUIDO) {
           custoRemovido = Number(pos.cost_usd);
@@ -581,8 +589,8 @@ export function bancoFalso(): BancoFalso {
         } else {
           const custoRestante = Number(pos.cost_usd) * (restante / Number(pos.base_amount));
           custoRemovido = Number(pos.cost_usd) - custoRestante;
+          // ⚠️ O parcial NÃO desarma nada — só quantidade e custo mudam.
           pos.base_amount = restante; pos.cost_usd = custoRestante;
-          pos.status = "open"; pos.exit_order_id = null; pos.exit_armed_at = null;
         }
       }
       efeito.applied_qty = Math.max(Number(efeito.applied_qty), noLivro);

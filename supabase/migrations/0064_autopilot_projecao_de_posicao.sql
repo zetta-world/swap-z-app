@@ -133,7 +133,12 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'sem_sessao');
   end if;
 
-  v_base := upper(split_part(v_i.symbol, '/', 1));
+  -- ⚠️ `BTC-USDT` E `BTC/USDT` SÃO O MESMO ATIVO. A rota aceita os dois
+  -- separadores (`split(/[\/\-]/)`), e derivar a base só por `/` criaria uma
+  -- linha `base = 'BTC-USDT'` que a checagem de posse nunca encontraria: o bot
+  -- ficaria com uma bolsa que não consegue vender, e duas linhas para o mesmo
+  -- ativo somando na exposição.
+  v_base := upper(split_part(replace(v_i.symbol, '-', '/'), '/', 1));
 
   insert into public.autopilot_position_effects
     (intent_id, session_id, exchange_id, base, side)
@@ -186,15 +191,25 @@ begin
 
   if v_i.side = 'buy' then
     if found then
+      /**
+       * ⚠️⚠️ A COMPRA NÃO MEXE NO `status` NEM EM `exit_order_id` — achado da
+       * revisão adversarial.
+       *
+       * A primeira versão punha `status = 'open'` ("uma compra nova reabre"),
+       * e deixava `exit_order_id`/`exit_armed_at` apontando para uma ordem de
+       * VENDA que continua viva na corretora. `settleArmedExits` filtra por
+       * `status = 'exit_armed'`: a ordem virava órfã, ninguém a liquidava, e o
+       * P&L dela nunca seria realizado.
+       *
+       * A saída armada cobre a quantidade que ela cobria; a nova entra por
+       * cima e o resto continua sendo liquidado por quem já o acompanha.
+       */
       update public.autopilot_positions
          set base_amount = base_amount + v_delta_qty,
              cost_usd    = cost_usd + v_delta_quote,
              entry_price = case when (base_amount + v_delta_qty) > 0
                                 then (cost_usd + v_delta_quote) / (base_amount + v_delta_qty)
                                 else entry_price end,
-             -- ⚠️ Uma compra nova reabre: a saída que estava armada não cobre
-             -- a quantidade que acabou de entrar.
-             status      = 'open',
              updated_at  = now()
        where id = v_pos.id;
     else
@@ -217,6 +232,32 @@ begin
       return jsonb_build_object('ok', false, 'motivo', 'sem_posicao',
         'base', v_base, 'delta_qty', v_delta_qty);
     end if;
+    /**
+     * ⚠️⚠️⚠️ SAÍDA ARMADA PERTENCE À LIQUIDAÇÃO — achado da revisão adversarial.
+     *
+     * `settleArmedExits` é o ÚNICO lugar do produto que realiza P&L de uma
+     * saída limitada: ele lê a ordem na corretora, chama `realizedFromSell`
+     * contra a posição AINDA INTEIRA e alimenta `apply_session_pnl` (que puxa
+     * o stop de perda diária). Se a projeção reduzir ou apagar a posição
+     * antes, a liquidação não a encontra mais — e o prejuízo do dia
+     * simplesmente não é contado. O dono descobre pelo extrato.
+     *
+     * ⚠️ E O PARCIAL ERA PIOR. A versão anterior limpava `status`/
+     * `exit_order_id` em TODA venda projetada, inclusive num
+     * `PARTIALLY_FILLED` cuja ordem continua trabalhando o restante: a passada
+     * seguinte via a posição `open` e armava uma SEGUNDA venda da mesma bolsa,
+     * com a primeira viva. É exatamente o desfecho que `markServerExitArmed`
+     * teme por escrito.
+     *
+     * Enquanto houver saída armada, a projeção NÃO TOCA na posição. A
+     * liquidação aplica a redução e ABSORVE o valor aqui — e o marcador
+     * continua sendo a prova de exactly-once.
+     */
+    if v_pos.status = 'exit_armed' and v_pos.exit_order_id is not null then
+      return jsonb_build_object('ok', true, 'motivo', 'saida_em_liquidacao',
+        'aplicado_qty', 0, 'aplicado_quote', 0, 'fechou', false,
+        'base', v_base, 'ordem_armada', v_pos.exit_order_id);
+    end if;
     v_restante := v_pos.base_amount - v_delta_qty;
     if v_restante <= v_pos.base_amount * v_ruido then
       -- Saída total: a mesma semântica de `closeServerPosition` (a linha sai).
@@ -228,14 +269,15 @@ begin
       -- P&L realizado e o custo que fica não contarem a mesma moeda duas vezes.
       v_custo_restante := v_pos.cost_usd * (v_restante / v_pos.base_amount);
       v_custo_removido := v_pos.cost_usd - v_custo_restante;
+      /**
+       * ⚠️ O PARCIAL NÃO DESARMA NADA. Só a quantidade e o custo mudam. Quem
+       * chegou aqui com posição armada já voltou lá em cima; e limpar o elo
+       * com uma ordem que pode estar viva é como nasce a segunda venda da
+       * mesma bolsa.
+       */
       update public.autopilot_positions
          set base_amount   = v_restante,
              cost_usd      = v_custo_restante,
-             -- A saída que estava armada acabou de ser resolvida; o
-             -- remanescente precisa poder armar de novo.
-             status        = 'open',
-             exit_order_id = null,
-             exit_armed_at = null,
              updated_at    = now()
        where id = v_pos.id;
     end if;
@@ -261,10 +303,59 @@ comment on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, nu
   'intent autonomo, numa transacao, por delta cumulativo (ledger - applied). '
   'Idempotente por intent; regressao e venda sem posicao falham FECHADO.';
 
--- ── 4. ACL — NASCE FECHADA (lição A116) ───────────────────────────────────
+-- ── 4. AS PENDÊNCIAS — PORQUE `FILLED` É TERMINAL ─────────────────────────
+--
+-- ⚠️⚠️⚠️ ACHADO DA REVISÃO ADVERSARIAL DO ROUND 9.
+--
+-- A projeção pode falhar no momento em que o dinheiro se move: banco fora,
+-- timeout, RPC ainda não aplicada. O comentário da rota prometia que "a
+-- reconciliação chama a MESMA RPC e aplica o delta que faltar" — e isso era
+-- FALSO para o caso mais comum: uma compra a mercado que preenche na hora vira
+-- `FILLED`, que é TERMINAL. `intentsParaReconciliar` só olha os NÃO-terminais.
+-- Ninguém voltava naquele intent. O bot comprava e nunca saberia que possui.
+--
+-- Esta função é a varredura que faltava: intents autônomos com execução no
+-- livro cuja projeção está atrasada (marcador ausente, ou `applied` abaixo do
+-- `filled_qty`). O cron chama, projeta cada um, e a idempotência do marcador
+-- garante que repetir não some nada.
+--
+-- ⚠️ JANELA CURTA DE PROPÓSITO: três dias. Mais que isso não é pendência de
+-- projeção, é inventário para conferir com mão humana — e varrer o histórico
+-- inteiro a cada 5 minutos seria um `seq scan` no caminho do dinheiro.
+create or replace function public.autopilot_projecoes_pendentes(p_limite int default 50)
+returns table (intent_id uuid)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select i.id
+    from public.cex_execution_intents i
+    left join public.autopilot_position_effects e on e.intent_id = i.id
+   where i.simulated = false
+     and i.autonomous = true
+     and i.origin in ('autopilot_browser', 'autopilot_cron')
+     and i.session_id is not null
+     and i.filled_qty > 0
+     and i.updated_at > now() - interval '3 days'
+     and (e.intent_id is null or i.filled_qty > e.applied_qty + 1e-12)
+   order by i.updated_at asc
+   limit greatest(coalesce(p_limite, 50), 0);
+$$;
+
+comment on function public.autopilot_projecoes_pendentes(int) is
+  'A131-C: intents autonomos com execucao no livro e projecao atrasada. '
+  'Existe porque FILLED e terminal e o recuperador de intents nao volta nele.';
+
+-- ── 5. ACL — NASCE FECHADA (lição A116) ───────────────────────────────────
 revoke all on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, numeric)
   from public, anon, authenticated;
 grant execute on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, numeric)
+  to service_role;
+
+revoke all on function public.autopilot_projecoes_pendentes(int)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_projecoes_pendentes(int)
   to service_role;
 
 -- ⚠️ A TABELA TAMBÉM: RLS ligada sem policies já fecha para anon/authenticated,

@@ -136,6 +136,8 @@ vi.mock("@/lib/autopilot/positions-server", () => ({
                exit_order_id: null, exit_armed_at: null },
   }),
   getOpenServerPositions: async () => ({ ok: true, posicoes: [] }),
+  markServerExitArmed: async () => ({ ok: true }),
+  applySessionPnl: async () => ({ ok: true }),
 }));
 vi.mock("@/lib/autopilot/projecao-de-posicao", () => ({
   projetarEfeitoDoIntent: async () => ({

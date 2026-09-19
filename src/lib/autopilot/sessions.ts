@@ -375,7 +375,8 @@ export async function tryLockSession(id: string, ttlMs: number): Promise<boolean
  */
 export type ResultadoDaReserva =
   | { ok: true; tradesDepois: number }
-  | { ok: false; motivo: "limite_diario" | "virou_o_dia" | "sessao_inativa" | "erro";
+  | { ok: false;
+      motivo: "limite_diario" | "virou_o_dia" | "sessao_inativa" | "erro" | "contencao";
       porque: string };
 
 export async function reservarTradeDaSessao(
@@ -426,7 +427,15 @@ export async function reservarTradeDaSessao(
     if ((gravadas?.length ?? 0) > 0) return { ok: true, tradesDepois: atual + 1 };
     // Ninguém casou: outra passada reservou primeiro. Relê e tenta de novo.
   }
-  return { ok: false, motivo: "limite_diario",
+  /**
+   * ⚠️ ISTO NÃO É "TETO ATINGIDO" — achado da revisão adversarial do Round 9.
+   *
+   * Três colisões seguidas no CAS significam contenção, não dia encerrado. O
+   * motivo `limite_diario` fazia o cron concluir "acabou a cota" e encerrar a
+   * passada, com o sinal errado no log. A recusa continua (nenhuma vaga foi
+   * reservada), mas ela agora diz o que aconteceu.
+   */
+  return { ok: false, motivo: "contencao",
     porque: `concorrencia no contador apos ${tentativas} tentativas — vaga nao reservada` };
 }
 

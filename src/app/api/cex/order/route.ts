@@ -8,7 +8,10 @@ import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { regimeDaBase } from "@/lib/autopilot/regime";
 import { getSessionStatus, utcDayKey } from "@/lib/autopilot/sessions";
-import { getOpenServerPositions, lerPosicaoDoBot } from "@/lib/autopilot/positions-server";
+import {
+  getOpenServerPositions, lerPosicaoDoBot, markServerExitArmed, applySessionPnl,
+} from "@/lib/autopilot/positions-server";
+import { taxaEmUsd } from "@/lib/cex/taxa";
 import {
   avaliarVendaAutonoma, avaliarExposicaoParaEntrada, tetoDeExposicaoDoRisco,
 } from "@/lib/autopilot/inventario";
@@ -29,7 +32,8 @@ import { impressaoDaCredencial } from "@/lib/cex/fingerprint";
 import { conexaoParaExecucao, decifrarConexao } from "@/lib/cex/conexoes";
 import { checkFeatureTier, denialResponse } from "@/lib/tier/enforce";
 import {
-  type CexId, type CexCredentials, type CexOrderResponse, type CexOrderSide, type CexOrderType,
+  type CexId, type CexCredentials, type CexOrder, type CexOrderResponse,
+  type CexOrderSide, type CexOrderType,
   SUPPORTED_CEX_IDS, CEX_META,
 } from "@/lib/cex/types";
 
@@ -352,6 +356,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    /**
+     * ⚠️⚠️⚠️ O ID DA SESSÃO NASCE AQUI, E NÃO DEPOIS DOS PORTÕES QUE O USAM.
+     *
+     * ⚠️ ACHADO DA REVISÃO ADVERSARIAL DO ROUND 9, e foi um defeito MEU, com a
+     * pior forma possível: a atribuição vivia lá embaixo, depois da política, e
+     * os dois portões do A131 liam a variável ainda `null` — com `?? ""` por
+     * cima. O livro era consultado com `session_id = ""`, que numa coluna
+     * `uuid not null` devolve erro de sintaxe. Ou seja: TODA venda autônoma do
+     * navegador respondia `livro_ilegivel`, TODA compra também, e a posse que o
+     * A131 existe para medir nunca foi medida contra a sessão real.
+     *
+     * ⚠️ E O `?? ""` ERA O DISFARCE. Ele transformava "não sei de que sessão
+     * estou falando" em uma consulta plausível. Sem ele, o TypeScript teria
+     * apontado o buraco.
+     *
+     * ⚠️ SEM ID NÃO SE OPERA. A autorização acima já provou que existe sessão —
+     * a linha não chega aqui sem chave primária. Mas posse, exposição e a
+     * reserva do teto diário são todas condicionadas a este id: falha FECHADA.
+     */
+    sessaoDoPilotoId = sessaoDoPiloto?.id ?? null;
+    if (!sessaoDoPilotoId) {
+      logSecurity("a130_sessao_sem_id", { route: "cex/order" }, "high");
+      return NextResponse.json(
+        { ok: false, error: "sessao_nao_autorizada", motivo: "sessao_inexistente",
+          detail: "sessao do piloto sem identificador — posse, exposicao e a vaga "
+            + "do teto diario nao podem ser conferidas" },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     const base = body.symbol.split(/[\/\-]/)[0];
 
     /**
@@ -377,7 +411,7 @@ export async function POST(req: NextRequest) {
      * só vale para `autopilot_browser` (`ehAutopilot`).
      */
     if (side === "sell") {
-      const leituraDaPosicao = await lerPosicaoDoBot(sessaoDoPilotoId ?? "", base);
+      const leituraDaPosicao = await lerPosicaoDoBot(sessaoDoPilotoId, base);
       const posse = avaliarVendaAutonoma({ leitura: leituraDaPosicao, pedido: body.amount });
       if (!posse.ok) {
         logSecurity("a131_venda_sem_posse", {
@@ -460,7 +494,7 @@ export async function POST(req: NextRequest) {
      * entrega.
      */
     if (side === "buy") {
-      const livro = await getOpenServerPositions(sessaoDoPilotoId ?? "");
+      const livro = await getOpenServerPositions(sessaoDoPilotoId);
       const exposicao = avaliarExposicaoParaEntrada({
         leitura: livro,
         novaEntradaUsd: guard.realNotionalUsd ?? Number.NaN,
@@ -525,28 +559,6 @@ export async function POST(req: NextRequest) {
       id: sessaoDoPiloto?.strategy_id ?? null,
       versao: sessaoDoPiloto?.strategy_version ?? null,
     };
-    sessaoDoPilotoId = sessaoDoPiloto?.id ?? null;
-    /**
-     * ⚠️⚠️ SEM ID DE SESSÃO NÃO HÁ COMO RESERVAR A VAGA DO TETO DIÁRIO.
-     *
-     * A autorização acima já provou que existe uma sessão — a linha não pode
-     * chegar aqui sem chave primária. Mas a reserva é condicionada a este id, e
-     * uma versão anterior deste código a PULAVA em silêncio quando ele fosse
-     * nulo: o teto continuaria sendo CONFERIDO (leitura), e deixaria de ser
-     * RESERVADO (escrita). Sob concorrência, duas requisições com 4/5 passariam
-     * as duas.
-     *
-     * Achado meu, na revisão do próprio trabalho. Falha FECHADA: sem id, nada
-     * sai. Custa uma ordem perdida num estado que não deveria existir.
-     */
-    if (!sessaoDoPilotoId) {
-      logSecurity("a130_sessao_sem_id", { route: "cex/order" }, "high");
-      return NextResponse.json(
-        { ok: false, error: "sessao_nao_autorizada", motivo: "sessao_inexistente",
-          detail: "sessao do piloto sem identificador — a vaga do teto diario nao pode ser reservada" },
-        { status: 403, headers: { "Cache-Control": "no-store" } },
-      );
-    }
     // ⚠️ Da AUTORIZAÇÃO, que já provou que ele existe (motivo `conexao_ausente`).
     conexaoDoPilotoId = autorizacao.conexaoId;
 
@@ -651,6 +663,85 @@ export async function POST(req: NextRequest) {
    * e é isso que o A106 pedia.
    */
   try {
+    /**
+     * ⚠️⚠️ UMA PORTA SÓ PARA PROJETAR, E ELA AVISA QUANDO FALHA.
+     *
+     * Dois caminhos desta rota terminam com dinheiro movido: o preenchimento
+     * direto e o INCERTO que a reconciliação imediata prova ter executado. Os
+     * dois passam por aqui — ter a projeção escrita só no primeiro foi
+     * exatamente o achado da revisão.
+     *
+     * ⚠️ FALHA NÃO DESFAZ NADA (§36). A ordem já existe na corretora. O que
+     * não pode é passar por normal: sai evento de severidade alta, e a
+     * varredura de pendências (`autopilot_projecoes_pendentes`) tenta de novo
+     * na passada seguinte do cron — porque `FILLED` é terminal e o recuperador
+     * de intents não volta nele.
+     */
+    const projetarOuAvisar = async (
+      intentId: string,
+      // ⚠️ A taxa vem de quem chama porque só ali o desfecho está estreitado —
+      // e ela é do LIVRO, não do corpo da requisição.
+      taxaDoLivro: { total: number | null; moeda: string | null } = { total: null, moeda: null },
+    ) => {
+      const projecao = await projetarEfeitoDoIntent(intentId);
+      if (projecao.ok) {
+        /**
+         * ⚠️⚠️⚠️ O P&L DA VENDA DO NAVEGADOR NÃO EXISTIA NO SERVIDOR — achado
+         * da revisão adversarial.
+         *
+         * O canal do navegador passou a REDUZIR a posição no servidor, mas o
+         * resultado dessa venda só era registrado no `localStorage`. A sessão
+         * do servidor — que é quem congela pelo stop de perda diária — nunca
+         * via o prejuízo. Pior que antes: antes a posição ficava no livro e o
+         * cron acabava realizando; agora ela some e o P&L não existia em lugar
+         * nenhum durável.
+         *
+         * ⚠️ A CONTA É A DE SEMPRE: recebido − custo removido − taxa. O custo
+         * removido vem da MESMA transação que reduziu (a RPC o devolve), e a
+         * taxa passa por `taxaEmUsd`, o conversor que o cron já usa.
+         *
+         * ⚠️ SÓ PARA VENDA COM REDUÇÃO APLICADA. `sem_delta` e
+         * `saida_em_liquidacao` não realizaram nada aqui — no segundo caso, a
+         * liquidação da saída armada é quem realiza, e contar dos dois lados
+         * seria contar o mesmo prejuízo duas vezes.
+         */
+        if (side === "sell" && projecao.motivo === "aplicado"
+            && projecao.aplicadoQty > 0 && sessaoDoPilotoId && hojeDoPiloto) {
+          const taxa = taxaEmUsd(
+            { fee: taxaDoLivro.total != null && taxaDoLivro.moeda
+                ? { cost: taxaDoLivro.total, currency: taxaDoLivro.moeda } : undefined } as CexOrder,
+            projecao.aplicadoQuote, projecao.aplicadoQty, body.symbol);
+          const realizado = projecao.aplicadoQuote - projecao.custoRemovido - taxa.usd;
+          const contou = await applySessionPnl(sessaoDoPilotoId, realizado, hojeDoPiloto);
+          if (!contou.ok) {
+            await recordEvent("autopilot_pnl_nao_contabilizado", { wallet: walletDoPiloto ?? undefined, meta: {
+              severity: "high", canal: "browser", session: sessaoDoPilotoId,
+              intent: intentId, realizado, erro: contou.erro,
+              why: "a venda saiu e o P&L nao entrou: o stop de perda diaria nao viu "
+                + "este resultado e pode nao puxar o freio hoje.",
+            } });
+          }
+          if (taxa.naoPrecificada) {
+            await recordEvent("autopilot_taxa_nao_precificada", { meta: {
+              pair: body.symbol, ...taxa.naoPrecificada,
+              why: "taxa em moeda que nao e stable nem a base do par — subtraida como "
+                + "ZERO, entao o P&L sai OTIMISTA e o stop de perda afrouxa",
+            } });
+          }
+        }
+        return;
+      }
+      logSecurity("a131_projecao_falhou", {
+        route: "cex/order", symbol: body.symbol, motivo: projecao.motivo,
+      }, "high");
+      await recordEvent("autopilot_projecao_de_posicao_falhou", { wallet: walletDoPiloto ?? undefined, meta: {
+        severity: "high", canal: "browser", session: sessaoDoPilotoId,
+        intent: intentId, motivo: projecao.motivo, porque: projecao.porque,
+        why: "a ordem EXECUTOU e o livro de posicoes nao registrou. O bot pode nao "
+          + "saber que possui (ou que vendeu) o que ja aconteceu na corretora.",
+      } });
+    };
+
     const r = await executarOrdemCex(
       { db: getSupabaseAdmin() },
       /**
@@ -761,6 +852,20 @@ export async function POST(req: NextRequest) {
                 await recordEvent("cex_order_reconciliada_na_hora", { meta: {
                   exchange, symbol: body.symbol, intentId: r.intentId, estado: final.state,
                 } });
+                /**
+                 * ⚠️⚠️⚠️ ESTE CAMINHO NÃO PROJETAVA — achado da revisão
+                 * adversarial, e o pior dos que ela achou.
+                 *
+                 * Aqui a ordem era INCERTA, a reconciliação imediata provou
+                 * que executou, e a função RETORNAVA. A projeção do fim da
+                 * rota nunca era alcançada, e `reconciliarIntent` (diferente
+                 * de `reconciliarPendentes`) não projeta. Pior: o intent agora
+                 * é FILLED, que é TERMINAL — o recuperador global não o olha
+                 * mais. Ordem executada, dinheiro movido, posição fora do
+                 * livro para sempre, sem um evento sequer.
+                 */
+                await projetarOuAvisar(r.intentId,
+                  { total: final.fee_total ?? null, moeda: final.fee_currency ?? null });
                 const filled = Number(final.filled_qty);
                 const resp: CexOrderResponse = {
                   ok: true, exchange,
@@ -815,8 +920,16 @@ export async function POST(req: NextRequest) {
       );
     }
     if (r.desfecho === "recusado") {
+      /**
+       * ⚠️ `reserva_negada` NÃO É 500 — achado da revisão adversarial.
+       *
+       * Ela quer dizer "o teto diário desta sessão não tem vaga agora" (ou que
+       * o contador virou o dia e só o cron o zera). É conflito de estado, não
+       * erro do servidor: 409, para o cliente não tratar como falha a repetir.
+       */
       const httpStatus = r.motivo === "kill_switch" ? 503
                        : r.motivo === "sem_banco" ? 503
+                       : r.motivo === "reserva_negada" ? 409
                        : r.motivo === "recusada_pela_corretora" ? 400 : 500;
       return NextResponse.json(
         { ok: false, error: r.motivo, detail: sanitizeUpstreamMessage(r.porque, body.apiKey),
@@ -851,16 +964,33 @@ export async function POST(req: NextRequest) {
     // ⚠️ Esta rota não emite ordem simulada — `simulated` nasce `false` no
     // intent —, e a RPC recusa simulado de novo, do lado do banco (§31).
     if (ehAutopilot && r.filledQty > 0) {
-      const projecao = await projetarEfeitoDoIntent(r.intentId);
-      if (!projecao.ok) {
-        logSecurity("a131_projecao_falhou", {
-          route: "cex/order", symbol: body.symbol, motivo: projecao.motivo,
-        }, "high");
-        await recordEvent("autopilot_projecao_de_posicao_falhou", { wallet: walletDoPiloto ?? undefined, meta: {
+      await projetarOuAvisar(r.intentId, { total: r.feeTotal, moeda: r.feeCurrency });
+    }
+
+    /**
+     * ⚠️⚠️⚠️ A SAÍDA DO NAVEGADOR TAMBÉM PRECISA FICAR ARMADA NO SERVIDOR —
+     * achado da revisão adversarial.
+     *
+     * `markServerExitArmed` documenta em maiúsculas o que acontece quando a
+     * marca não entra: *"a passada seguinte arma DE NOVO e vende duas vezes a
+     * mesma bolsa"*. O navegador marcava só no `localStorage` — o livro do
+     * servidor continuava `open` com a bolsa inteira, e tanto o cron quanto
+     * uma segunda aba podiam mandar outra venda da MESMA posição.
+     *
+     * ⚠️ SÓ QUANDO A ORDEM CONTINUA VIVA: limitada aceita sem preencher tudo.
+     * Preenchimento total já reduziu a posição pela projeção.
+     */
+    if (ehAutopilot && side === "sell" && type === "limit"
+        && sessaoDoPilotoId && r.externalOrderId
+        && r.filledQty < quantidadeAutorizada) {
+      const baseDaSaida = body.symbol.split(/[\/\-]/)[0];
+      const marcou = await markServerExitArmed(sessaoDoPilotoId, baseDaSaida, r.externalOrderId);
+      if (!marcou.ok) {
+        await recordEvent("autopilot_saida_nao_armada", { wallet: walletDoPiloto ?? undefined, meta: {
           severity: "high", canal: "browser", session: sessaoDoPilotoId,
-          intent: r.intentId, motivo: projecao.motivo, porque: projecao.porque,
-          why: "a ordem EXECUTOU e o livro de posicoes nao registrou. O bot pode nao "
-            + "saber que possui (ou que vendeu) o que ja aconteceu na corretora.",
+          base: baseDaSaida, ordem: r.externalOrderId, erro: marcou.erro,
+          why: "a ordem de venda esta viva na corretora e o livro nao sabe. A passada "
+            + "seguinte pode armar de novo e vender duas vezes a mesma bolsa.",
         } });
       }
     }

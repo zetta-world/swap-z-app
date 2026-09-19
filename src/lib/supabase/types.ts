@@ -943,6 +943,14 @@ export interface Database {
           aplicado?: number; no_livro?: number; origin?: string;
         };
       };
+      /**
+       * ⚠️ A131-C: intents autônomos cuja projeção está atrasada. Existe
+       * porque `FILLED` é terminal e o recuperador de intents não volta nele.
+       */
+      autopilot_projecoes_pendentes: {
+        Args: { p_limite?: number };
+        Returns: Array<{ intent_id: string }>;
+      };
       cex_transicao_permitida: {
         Args: { p_de: CexIntentState; p_para: CexIntentState };
         Returns: boolean;

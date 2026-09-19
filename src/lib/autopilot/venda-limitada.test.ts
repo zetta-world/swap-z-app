@@ -162,7 +162,11 @@ describe("③ e o cron REALMENTE usa as duas", () => {
     expect(chamadas, "mercado, settle da armada e cancelamento parcial").toBe(3);
     expect([...CRON.matchAll(/reduzirServerPosition\(/g)].length,
       "só a liquidação reduz direto; a venda imediata projeta").toBe(2);
-    expect([...CRON.matchAll(/if \(sobra\.fecha\) \{/g)].length).toBe(2);
+    // ⚠️ Uma das duas virou ternário quando a absorção passou a acontecer
+    // DEPOIS da escrita (revisão adversarial): o que a trava mede é que os
+    // dois caminhos de liquidação decidem por `sobra.fecha`, não a sintaxe.
+    expect([...CRON.matchAll(/const gravou = sobra\.fecha|if \(sobra\.fecha\) \{/g)].length,
+      "settle preenchido e settle cancelado-com-parcial").toBe(2);
     // ⚠️ E a venda imediata projeta — senão ela não escreveria em lugar nenhum.
     expect(CRON).toMatch(/const projecao = await projetarEfeitoDoIntent\(exec\.intentId\)/);
   });

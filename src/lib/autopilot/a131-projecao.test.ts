@@ -20,6 +20,9 @@ import { readFileSync } from "node:fs";
 import { bancoFalso } from "@/lib/cex/execucao/banco-falso";
 import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
 
+const SQL_0064 = readFileSync(
+  "supabase/migrations/0064_autopilot_projecao_de_posicao.sql", "utf8");
+
 let banco: ReturnType<typeof bancoFalso>;
 
 const chamar = (nome: string, args: Record<string, unknown>) =>
@@ -296,8 +299,102 @@ describe("a absorção da liquidação da saída armada", () => {
   });
 });
 
+describe("⚠️⚠️ SAÍDA ARMADA — achado da revisão adversarial", () => {
+  /**
+   * `settleArmedExits` é o ÚNICO lugar do produto que realiza P&L de uma saída
+   * limitada: lê a ordem na corretora, chama `realizedFromSell` contra a
+   * posição AINDA INTEIRA e alimenta `apply_session_pnl` (que puxa o stop de
+   * perda diária).
+   *
+   * A primeira versão da projeção reduzia/apagava a posição antes disso —
+   * então a liquidação não a encontrava mais e **o prejuízo do dia
+   * simplesmente não era contado**. E num PARCIAL era pior: ela limpava
+   * `status`/`exit_order_id` de uma ordem que continua trabalhando o
+   * restante, e a passada seguinte armava uma SEGUNDA venda da mesma bolsa.
+   */
+  async function comPosicaoArmada() {
+    const compra = intent();
+    setFill(compra, 0.01, 600);
+    await projetar(compra);
+    const pos = posicao()!;
+    pos.status = "exit_armed";
+    pos.exit_order_id = "EXT-ARMADA";
+    return pos;
+  }
+
+  it("⚠️⚠️ a projeção NÃO toca numa posição com saída armada", async () => {
+    const pos = await comPosicaoArmada();
+    const venda = intent({ side: "sell" });
+    setFill(venda, 0.004, 250);
+    const r = await projetar(venda);
+    expect(r.ok && r.motivo).toBe("saida_em_liquidacao");
+    expect(Number(pos.base_amount)).toBeCloseTo(0.01, 12);
+    expect(Number(pos.cost_usd)).toBeCloseTo(600, 9);
+  });
+
+  it("⚠️⚠️ e NÃO desarma a saída — a ordem continua viva na corretora", async () => {
+    const pos = await comPosicaoArmada();
+    const venda = intent({ side: "sell" });
+    setFill(venda, 0.004, 250);
+    await projetar(venda);
+    expect(pos.status).toBe("exit_armed");
+    expect(pos.exit_order_id).toBe("EXT-ARMADA");
+  });
+
+  it("⚠️⚠️ o marcador NÃO avança — a liquidação ainda vai aplicar", async () => {
+    // Avançar aqui faria a absorção seguinte achar que já estava aplicado, e a
+    // redução real nunca entraria no livro.
+    await comPosicaoArmada();
+    const venda = intent({ side: "sell" });
+    setFill(venda, 0.004, 250);
+    await projetar(venda);
+    const marcador = banco.efeitos.find((e) => e.intent_id === venda);
+    expect(Number(marcador?.applied_qty ?? 0)).toBe(0);
+  });
+
+  it("⚠️⚠️ depois que a liquidação absorve e desarma, a projeção volta a agir", async () => {
+    const pos = await comPosicaoArmada();
+    const venda = intent({ side: "sell" });
+    setFill(venda, 0.004, 250);
+    await projetar(venda);                       // saida_em_liquidacao
+
+    // A liquidação aplicou 0,004 direto e reabriu o remanescente:
+    pos.base_amount = 0.006; pos.cost_usd = 360;
+    pos.status = "open"; pos.exit_order_id = null;
+    await projetar(venda, { qty: 0.004, quote: 250 });
+
+    // E o que a corretora preencher A MAIS entra normalmente.
+    setFill(venda, 0.006, 380);
+    const r = await projetar(venda);
+    expect(r.ok && r.aplicadoQty).toBeCloseTo(0.002, 12);
+    expect(Number(pos.base_amount)).toBeCloseTo(0.004, 12);
+  });
+
+  it("⚠️⚠️ COMPRA sobre posição armada não desarma nada", async () => {
+    /**
+     * A versão anterior punha `status = 'open'` e deixava `exit_order_id`
+     * apontando para uma ordem de venda viva: `settleArmedExits` filtra por
+     * status, a ordem virava órfã e o P&L dela nunca seria realizado.
+     */
+    const pos = await comPosicaoArmada();
+    const compra2 = intent();
+    setFill(compra2, 0.005, 320);
+    const r = await projetar(compra2);
+    expect(r.ok && r.aplicadoQty).toBeCloseTo(0.005, 12);
+    expect(Number(pos.base_amount)).toBeCloseTo(0.015, 12);
+    expect(pos.status).toBe("exit_armed");
+    expect(pos.exit_order_id).toBe("EXT-ARMADA");
+  });
+
+  it("⚠️ `BTC-USDT` e `BTC/USDT` são o MESMO ativo", () => {
+    // Duas linhas para o mesmo ativo somariam na exposição e nenhuma seria
+    // encontrada pela checagem de posse.
+    expect(SQL_0064).toMatch(/split_part\(replace\(v_i\.symbol, '-', '\/'\), '\/', 1\)/);
+  });
+});
+
 describe("⚠️ o SQL de verdade mantém as mesmas guardas", () => {
-  const SQL = readFileSync("supabase/migrations/0064_autopilot_projecao_de_posicao.sql", "utf8");
+  const SQL = SQL_0064;
 
   it("⚠️⚠️ marcador por intent, com chave primária — um efeito, uma linha", () => {
     expect(SQL).toMatch(/create table if not exists public\.autopilot_position_effects/);
@@ -349,6 +446,23 @@ describe("⚠️ o SQL de verdade mantém as mesmas guardas", () => {
   it("⚠️⚠️ NENHUM backfill: histórico não é inventado (§38)", () => {
     expect(SQL).toMatch(/NENHUM BACKFILL/);
     expect(SQL).not.toMatch(/insert into public\.autopilot_position_effects\s*\([^)]*\)\s*select/i);
+  });
+
+  it("⚠️⚠️ saída armada pertence à liquidação, e o parcial não desarma", () => {
+    expect(SQL).toMatch(/if v_pos\.status = 'exit_armed' and v_pos\.exit_order_id is not null then/);
+    expect(SQL).toMatch(/'motivo', 'saida_em_liquidacao'/);
+    // O `update` do parcial não pode voltar a mexer em status/exit_order_id.
+    const iParcial = SQL.indexOf("set base_amount   = v_restante");
+    expect(iParcial).toBeGreaterThan(-1);
+    const bloco = SQL.slice(iParcial, iParcial + 400);
+    expect(bloco).not.toMatch(/exit_order_id = null/);
+    expect(bloco).not.toMatch(/status\s+= 'open'/);
+  });
+
+  it("⚠️⚠️ e a varredura de pendências existe, porque FILLED é terminal", () => {
+    expect(SQL).toMatch(/create or replace function public\.autopilot_projecoes_pendentes/);
+    expect(SQL).toMatch(/i\.filled_qty > e\.applied_qty \+ 1e-12/);
+    expect(SQL).toMatch(/revoke all on function public\.autopilot_projecoes_pendentes\(int\)/);
   });
 
   it("⚠️ e a 0063 não foi tocada para encaixar a 0064 (§45)", () => {
