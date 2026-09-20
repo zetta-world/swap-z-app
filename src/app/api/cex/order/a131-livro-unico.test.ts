@@ -58,6 +58,8 @@ const estado = vi.hoisted(() => {
     reservadoQty: 0,
     reservadoUsd: 0,
     reservasPorIntent: new Map<string, number>(),
+    tradesToday: 3,
+    devolucaoDaVagaFalha: false,
     devolucoes: [] as Array<{ tipo: string; valor: number }>,
     /** Saídas marcadas como armadas NO SERVIDOR, e P&L realizado nele. */
     armadas: [] as unknown[][],
@@ -106,8 +108,21 @@ vi.mock("@/lib/autopilot/price-guard", async (importOriginal) => {
 vi.mock("@/lib/autopilot/sessions", () => ({
   utcDayKey: estado.utcDayKey,
   getSessionStatus: async () => estado.sessao,
-  reservarTradeDaSessao: async () => ({ ok: true as const, tradesDepois: 1 }),
-  liberarTradeDaSessao: async () => true,
+  /**
+   * ⚠️ A141: a VAGA DIÁRIA é contabilizada aqui porque o que o achado mede é
+   * ela voltar quando a segunda etapa da reserva recusa. `trades_today` é o
+   * número que o usuário configurou — uma ordem que nunca existiu não pode
+   * comê-lo.
+   */
+  reservarTradeDaSessao: async () => {
+    estado.tradesToday += 1;
+    return { ok: true as const, tradesDepois: estado.tradesToday };
+  },
+  liberarTradeDaSessao: async () => {
+    if (!estado.devolucaoDaVagaFalha) estado.tradesToday -= 1;
+    estado.devolucoes.push({ tipo: "vaga", valor: 1 });
+    return !estado.devolucaoDaVagaFalha;
+  },
 }));
 vi.mock("@/lib/autopilot/certificado", () => ({ certificadoVivo: async () => null }));
 vi.mock("@/lib/autopilot/regime", () => ({ regimeDaBase: async () => "TRENDING_UP" }));
@@ -229,6 +244,8 @@ beforeEach(() => {
   estado.reservadoQty = 0;
   estado.reservadoUsd = 0;
   estado.reservasPorIntent.clear();
+  estado.tradesToday = 3;
+  estado.devolucaoDaVagaFalha = false;
   estado.devolucoes = [];
   estado.armadas = [];
   estado.pnl = [];
@@ -665,5 +682,76 @@ describe("A134/A135 pela rota — duas ordens não cabem na mesma reserva", () =
     await POST(req({ side: "sell", amount: 0.01 }));
     expect(estado.devolucoes.some((d) => d.tipo === "intent")).toBe(false);
     expect(estado.reservadoQty).toBeCloseTo(0.01, 12);
+  });
+});
+
+describe("A141 — a reserva composta não deixa meia reserva de pé", () => {
+  /**
+   * ⚠️ O ataque: a vaga diária é consumida, a segunda etapa recusa, e o
+   * executor NÃO chama `liberar` — do ponto de vista dele nada foi reservado.
+   * O caller devolvia só o inventário. ZERO ordem enviada e `trades_today` um
+   * a mais: um trade do dia comido por uma ordem que nunca existiu.
+   */
+  it("⚠️⚠️ A141.1 — compra: vaga passa, exposição recusa, vaga VOLTA", async () => {
+    /**
+     * ⚠️ O PRÉ-VOO PRECISA PASSAR para o achado existir: é a reserva DENTRO
+     * da costura que recusa, depois de a vaga diária já ter sido gasta.
+     * Livro com 170 (o pré-voo vê 170 + 20 = 190 ≤ 200) e outra ordem em voo
+     * segurando 20 (a reserva vê 210 > 200).
+     */
+    estado.posicoes = [{ id: "P9", base: "ETH", cost_usd: 170, status: "open" }];
+    estado.reservadoUsd = 20;
+    const r = await POST(req({ side: "buy", amount: 0.2 }));
+    expect(r.status).not.toBe(200);
+    expect(estado.tradesToday, "3, nunca 4").toBe(3);
+    expect(estado.devolucoes.some((d) => d.tipo === "vaga")).toBe(true);
+  });
+
+  it("⚠️⚠️ A141.2 — venda: vaga passa, posse recusa, vaga VOLTA", async () => {
+    // A bolsa inteira já está prometida a outra venda em voo.
+    estado.reservadoQty = 0.01;
+    const r = await POST(req({ side: "sell", amount: 0.01 }));
+    expect(r.status).not.toBe(200);
+    expect(estado.tradesToday).toBe(3);
+  });
+
+  it("⚠️⚠️ A141.3 — recusa PROVADA da corretora devolve tudo", async () => {
+    spies.enviar.mockResolvedValueOnce({
+      tipo: "recusada", porque: "insufficient balance", codigo: "40004",
+    } as never);
+    const r = await POST(req({ side: "sell", amount: 0.01 }));
+    expect(r.status).not.toBe(200);
+    expect(estado.tradesToday).toBe(3);
+    expect(estado.reservadoQty).toBeCloseTo(0, 12);
+  });
+
+  it("⚠️⚠️ A141.4 — UNKNOWN não devolve NADA", async () => {
+    spies.enviar.mockResolvedValueOnce({ tipo: "incerta", porque: "timeout" } as never);
+    await POST(req({ side: "sell", amount: 0.01 }));
+    expect(estado.tradesToday, "a vaga fica gasta: a ordem pode estar viva").toBe(4);
+    expect(estado.reservadoQty).toBeCloseTo(0.01, 12);
+  });
+
+  it("⚠️⚠️ A141.6 — rollback que falha no banco é BARULHENTO, não fingido", async () => {
+    estado.devolucaoDaVagaFalha = true;
+    estado.posicoes = [{ id: "P9", base: "ETH", cost_usd: 170, status: "open" }];
+    estado.reservadoUsd = 20;
+    const r = await POST(req({ side: "buy", amount: 0.2 }));
+    expect(r.status).not.toBe(200);
+    // A vaga NÃO voltou — e isso tem nome e severidade.
+    expect(estado.tradesToday).toBe(4);
+    const FONTE = (await import("node:fs")).readFileSync(
+      "src/app/api/cex/order/route.ts", "utf8");
+    expect(FONTE).toMatch(/autopilot_rollback_da_vaga_falhou/);
+    expect(FONTE).toMatch(/o usuario perdeu um trade do dia/);
+  });
+
+  it("⚠️ A141.5 — vaga negada nem chega a reservar inventário", async () => {
+    estado.sessao.trades_today = 5;
+    estado.sessao.max_trades_per_day = 5;
+    const r = await POST(req({ side: "sell", amount: 0.01 }));
+    expect(r.status).not.toBe(200);
+    expect(estado.consultas.some((c) => c.fn === "reservarVendaDoBot")).toBe(false);
+    estado.sessao.trades_today = 0;
   });
 });

@@ -308,11 +308,47 @@ describe("A139 — a saída armada tem identidade histórica", () => {
     expect(CRON).not.toMatch(/\.eq\("external_order_id", ordemExterna\)/);
   });
 
+  it("⚠️⚠️ A139-H1 — posição com ordem e intent SEM ordem: recusa", async () => {
+    /**
+     * ⚠️ HARDENING: a condição exigia os DOIS não-nulos para comparar, e uma
+     * posição armada em `EXT-1` com o intent sem `external_order_id` passava.
+     * Esse é justamente o estado de quem ainda não sabe qual ordem está lá
+     * fora — o pior momento para reduzir posição.
+     */
+    const venda = intent({ external_order_id: null });
+    posicao({ status: "exit_armed", exit_order_id: "EXT-1", exit_intent_id: venda });
+    const r = await liquidarSaidaArmada(venda, 0.004, 250, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.motivo).toBe("ordem_externa_divergente");
+    expect(Number(daPosicao()!.base_amount)).toBeCloseTo(0.01, 12);
+  });
+
+  it("⚠️⚠️ A139-H2 — posição SEM ordem e intent com ordem: recusa", async () => {
+    const venda = intent({ external_order_id: "EXT-1" });
+    posicao({ status: "exit_armed", exit_order_id: null, exit_intent_id: venda });
+    const r = await liquidarSaidaArmada(venda, 0.004, 250, deps);
+    expect(r.ok).toBe(false);
+  });
+
+  it("⚠️ A139-H3/H4 — iguais passam, diferentes recusam", async () => {
+    const venda = armada();                      // EXT-1 dos dois lados
+    expect((await liquidarSaidaArmada(venda, 0.004, 250, deps)).ok).toBe(true);
+
+    banco.posicoes.length = 0;
+    const outra = intent({ external_order_id: "EXT-2" });
+    posicao({ status: "exit_armed", exit_order_id: "EXT-1", exit_intent_id: outra });
+    const r = await liquidarSaidaArmada(outra, 0.004, 250, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.motivo).toBe("ordem_externa_divergente");
+  });
+
   it("⚠️ a RPC confere sessão, corretora e lado — tudo ou nada", () => {
     expect(SQL).toMatch(/if v_pos\.exit_intent_id is null then/);
     expect(SQL).toMatch(/if v_pos\.exit_intent_id <> p_intent_id then/);
     expect(SQL).toMatch(/if v_i\.exchange_id <> v_pos\.exchange_id then/);
     expect(SQL).toMatch(/if v_i\.side <> 'sell' then/);
+    // ⚠️ Hardening: `is distinct from` cobre null↔valor nos dois sentidos.
+    expect(SQL).toMatch(/if v_i\.external_order_id is distinct from v_pos\.exit_order_id then/);
     // A posição é achada por (sessão, base) — nunca por número de ordem.
     expect(SQL).not.toMatch(/where external_order_id = /);
   });
