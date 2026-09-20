@@ -327,7 +327,15 @@ describe("⚠️ o SQL sustenta as três propriedades", () => {
     expect(SQL).not.toMatch(/autopilot_janela_de_reserva/);
     expect(SQL).not.toMatch(/reservado_ate/);
     expect(SQL).toMatch(/create or replace function public\.autopilot_compromisso_vivo/);
-    expect(SQL).toMatch(/when p_estado in \('CANCELED', 'FAILED_PRE_SUBMIT'\) then 0/);
+    /**
+     * ⚠️ A144 partiu esta linha em duas faixas: `FAILED_PRE_SUBMIT` (nada
+     * chegou à corretora) segue sendo o zero incondicional, mas terminal COM
+     * preenchimento passou a comprometer o que EXECUTOU. O prazo continua
+     * não existindo — quem encerra é o estado, e agora também o fill.
+     */
+    expect(SQL).toMatch(/when p_estado = 'FAILED_PRE_SUBMIT' then 0/);
+    expect(SQL).toMatch(
+      /when p_estado in \('FILLED', 'CANCELED'\)\s*\n\s*then greatest\(coalesce\(p_executado, 0\) - coalesce\(p_aplicado, 0\), 0\)/);
   });
 
   it("⚠️⚠️ a liquidação faz posição E marcador na mesma função", () => {

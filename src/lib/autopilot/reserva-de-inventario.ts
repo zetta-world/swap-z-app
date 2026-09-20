@@ -30,9 +30,14 @@
  *
  * Agora a reserva nasce com o `intent_id` — o executor grava o intent ANTES da
  * costura de reserva, então há a quem pertencer. O compromisso vivo é
- * `greatest(reservado − aplicado, 0)` enquanto o intent puder preencher, e
- * ZERO quando ele está provadamente morto (`CANCELED`/`FAILED_PRE_SUBMIT`).
- * Não há prazo: quem encerra um compromisso é o estado do intent.
+ * `greatest(reservado − aplicado, 0)` enquanto o intent puder preencher. Não
+ * há prazo: quem encerra um compromisso é o estado do intent.
+ *
+ * ⚠️⚠️ E TERMINAL NÃO É SINÔNIMO DE ZERO — achado A144. Só
+ * `FAILED_PRE_SUBMIT` prova que nada saiu. Uma ordem `CANCELED` depois de
+ * preencher parcialmente executou de verdade: enquanto aquele fill não for
+ * projetado, ele continua comprometido — `greatest(executado − aplicado, 0)`.
+ * Zerar ali deixava a ordem seguinte vender uma bolsa que já saiu.
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";

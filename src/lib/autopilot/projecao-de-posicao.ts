@@ -30,7 +30,12 @@ export type MotivoDaProjecao =
   | "aplicado" | "sem_delta" | "saida_em_liquidacao"
   | "ajuste_sem_quantidade" | "posicao_ja_encerrada"
   | "intent_inexistente" | "simulado" | "origem_nao_autonoma" | "sem_sessao"
-  | "regressao" | "regressao_de_taxa" | "sem_posicao" | "erro";
+  | "regressao" | "regressao_de_taxa" | "sem_posicao"
+  /** ⚠️ A145: o recebido tardio de uma COMPRA não achou posição onde virar
+   *  base de custo. Marcar como aplicado aqui perderia o custo para sempre —
+   *  fail-closed visível, e um humano olha. */
+  | "sem_posicao_para_custo"
+  | "erro";
 
 export type ResultadoDaProjecao =
   | { ok: true;

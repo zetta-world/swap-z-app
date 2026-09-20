@@ -266,6 +266,39 @@ begin
       'aplicado', v_e.ledger_qty, 'no_livro', v_i.filled_qty);
   end if;
 
+  /**
+   * ⚠️⚠️⚠️ A REGRESSÃO DO RECEBIDO — auditoria SINTÉTICO → REAL do A145.
+   *
+   * `cex_ingest_trades` SUBSTITUI os fills sintéticos da ordem pelos reais
+   * (0059). Quando o sintético estimou ALTO — ACK diz `cost = 600`, os trades
+   * somam 580 — `filled_quote` CAI, com `filled_qty` parado.
+   *
+   * Nenhum `greatest()` desta função reclamava disso, e dois deles escondiam:
+   *
+   *     v_delta_quote := greatest(filled_quote − applied_quote, 0)   → 0
+   *     v_quote_novo  := greatest(applied_quote, filled_quote)       → 600
+   *
+   * Na VENDA o segundo é o estrago: o resultado do dia segue calculado sobre
+   * um recebido que não existiu, US$ 20 OTIMISTA — e é exatamente o número
+   * que alimenta o stop de perda diária. Um freio calibrado por um recebido
+   * inflado é um freio que não freia.
+   *
+   * ⚠️ POR QUE FAIL-CLOSED E NÃO CORREÇÃO AUTOMÁTICA. A conta acumulada do
+   * A142 saberia aplicar um delta negativo de P&L; a POSIÇÃO não sabe
+   * desfazer. Na compra, `cost_usd` já somou os 600 — devolvê-los exigiria
+   * saber quanto daquele custo ainda está na linha depois de vendas
+   * parciais, e a linha pode já ter sido apagada. Corrigir metade da conta é
+   * pior que parar: vira lucro artificial com aparência de conserto.
+   *
+   * O livro de EXECUÇÕES continua certo (é ele que regrediu, para a verdade).
+   * O que para é a PROJEÇÃO daquele intent, com evento de severidade alta —
+   * reconciliação de mão humana, como a regressão de quantidade e a de taxa.
+   */
+  if v_i.filled_quote < v_e.ledger_quote - v_eps then
+    return jsonb_build_object('ok', false, 'motivo', 'regressao_de_quote',
+      'aplicado', v_e.ledger_quote, 'no_livro', v_i.filled_quote);
+  end if;
+
   -- ⚠️ O DELTA É CONTRA `applied`: o que já está DENTRO da posição, tenha
   -- entrado pela projeção ou pela liquidação.
   v_delta_qty   := greatest(v_i.filled_qty   - v_e.applied_qty,   0);
@@ -337,6 +370,45 @@ begin
                updated_at       = now()
          where id = v_i.session_id;
       end if;
+    /**
+     * ⚠️⚠️⚠️ ACHADO A145 — O CUSTO DA COMPRA QUE CHEGOU ATRASADO.
+     *
+     * Este ramo tratava só a venda. Na compra ele avançava
+     * `applied_quote = greatest(applied_quote, filled_quote)` e ia embora:
+     * o marcador dizia "600 aplicados" e `autopilot_positions.cost_usd`
+     * continuava ZERO. É o caso comum, não o exótico — uma ordem aceita sem
+     * `cost` no ACK (a venue responde a quantidade e o dinheiro só aparece
+     * nos trades depois) entra no livro com `filled_qty` já cheio e
+     * `filled_quote` zerado. O `delta_qty` da passada seguinte é zero, e o
+     * recebido cai exatamente aqui.
+     *
+     * O estrago é PERMANENTE e silencioso: base de custo perdida para
+     * sempre. A exposição do teto conta menos capital do que existe (e o bot
+     * compra mais do que pode), e a venda futura calcula
+     * `recebido − 0 − taxa` — LUCRO INVENTADO do tamanho da compra.
+     *
+     * ⚠️ QUANTIDADE NÃO SE TOCA AQUI. `delta_qty` é zero por definição deste
+     * ramo; somar base seria inventar moeda.
+     *
+     * ⚠️⚠️ E SEM POSIÇÃO NÃO SE MARCA NADA COMO APLICADO. Se o custo não
+     * tiver onde entrar, avançar `applied_quote` faria a varredura de
+     * pendências responder `sem_delta` para sempre — o mesmo erro do A136,
+     * absorver antes da escrita. Fail-closed VISÍVEL, na mesma transação.
+     */
+    elsif v_i.side = 'buy' and v_delta_quote > v_eps then
+      select * into v_pos from public.autopilot_positions
+       where session_id = v_i.session_id and base = v_base for update;
+      if not found then
+        return jsonb_build_object('ok', false, 'motivo', 'sem_posicao_para_custo',
+          'base', v_base, 'delta_quote', v_delta_quote);
+      end if;
+      update public.autopilot_positions
+         set cost_usd    = cost_usd + v_delta_quote,
+             entry_price = case when base_amount > 0
+                                then (cost_usd + v_delta_quote) / base_amount
+                                else entry_price end,
+             updated_at  = now()
+       where id = v_pos.id;
     end if;
     update public.autopilot_position_effects
        set fee_aplicada_usd = v_taxa_total,
@@ -623,8 +695,12 @@ comment on column public.autopilot_positions.exit_intent_id is
 -- A versão anterior expirava a reserva em 10 minutos "para não trancar a
 -- posição". Só que o que ela trancava não era um fantasma: era uma ordem
 -- possivelmente VIVA. Quem encerra um compromisso é o estado do intent —
--- `CANCELED`/`FAILED_PRE_SUBMIT` provam que nada mais sai; `UNKNOWN`,
--- `SUBMITTED` e `PARTIALLY_FILLED` não provam nada e seguram o remanescente.
+-- `UNKNOWN`, `SUBMITTED` e `PARTIALLY_FILLED` não provam nada e seguram o
+-- remanescente reservado.
+--
+-- ⚠️ E O ESTADO TERMINAL NÃO ZERA SOZINHO (A144): só `FAILED_PRE_SUBMIT`
+-- prova que nada saiu. `CANCELED` e `FILLED` provam que nada mais SAI — o que
+-- já executou e ainda não foi projetado continua comprometido.
 
 -- ── 3-PRE. A TAXA ACUMULADA EM USD, DERIVADA DO LIVRO (A140) ──────────────
 --
@@ -666,20 +742,57 @@ comment on function public.autopilot_taxa_do_intent_em_usd(numeric, text, text, 
   'A140: taxa acumulada do intent em USD, derivada do livro. NULL = moeda nao '
   'precificavel — quem chama registra e o P&L sai otimista (politica declarada).';
 
--- ── 3-BIS-a. O COMPROMISSO VIVO DE UM INTENT (A137) ───────────────────────
+-- ── 3-BIS-a. O COMPROMISSO VIVO DE UM INTENT (A137 / A144) ────────────────
 --
 -- ⚠️ É a peça que substitui o prazo. Enquanto o intent puder preencher, o que
 -- ele reservou e ainda não virou posição continua comprometido. Provado morto,
 -- o compromisso é zero na mesma hora — sem esperar relógio nenhum.
+--
+-- ⚠️⚠️⚠️ ACHADO A144 — `CANCELED` NÃO QUER DIZER "NADA EXECUTOU".
+--
+-- A primeira versão mandava `CANCELED` e `FAILED_PRE_SUBMIT` para ZERO, os
+-- dois juntos, como se cancelar fosse desfazer. Uma ordem limitada que vendeu
+-- 0,004 de 0,01 e DEPOIS foi cancelada é terminal com fill — e o compromisso
+-- dela desabava para zero antes de a projeção aplicar aquele 0,004:
+--
+--     posição 0,01 · A reservou 0,01, preencheu 0,004, applied 0, CANCELED
+--     → compromisso 0 → B via 0,01 disponível → B vendia 0,01
+--     → 0,004 + 0,01 = 0,014 vendidos de uma bolsa de 0,01.
+--
+-- Do lado da compra o mesmo buraco furava o TETO: reserva de 40 com 30
+-- preenchido e cancelada liberava os 40 inteiros, e a entrada seguinte
+-- somava exposição sobre um capital que já saiu.
+--
+-- ⚠️ A REGRA CERTA TEM TRÊS FAIXAS, e a diferença entre elas é o que se
+-- PROVOU:
+--
+--   · `FAILED_PRE_SUBMIT` → a requisição não chegou à corretora. Zero, e é o
+--     único zero incondicional.
+--   · terminal (`FILLED`, `CANCELED`) → nada mais sai. A verdade final é o que
+--     EXECUTOU: `greatest(executado − aplicado, 0)`. Cancelada sem fill dá
+--     zero pela própria conta; `FILLED` já projetado, idem.
+--   · qualquer outro estado → ainda pode preencher, e o RESERVADO continua
+--     comprometido: `greatest(reservado − aplicado, 0)`.
+--
+-- ⚠️ `p_executado` é `filled_qty` na venda e `filled_quote` na compra — a
+-- mesma unidade de `p_aplicado` (`applied_qty` / `applied_quote`). Misturar
+-- as duas unidades aqui seria comparar BTC com dólar.
+drop function if exists public.autopilot_compromisso_vivo(numeric, numeric, text);
 create or replace function public.autopilot_compromisso_vivo(
-  p_reservado numeric, p_aplicado numeric, p_estado text
+  p_reservado numeric, p_aplicado numeric, p_estado text, p_executado numeric
 ) returns numeric
 language sql immutable as $$
   select case
-    when p_estado in ('CANCELED', 'FAILED_PRE_SUBMIT') then 0
+    when p_estado = 'FAILED_PRE_SUBMIT' then 0
+    when p_estado in ('FILLED', 'CANCELED')
+      then greatest(coalesce(p_executado, 0) - coalesce(p_aplicado, 0), 0)
     else greatest(coalesce(p_reservado, 0) - coalesce(p_aplicado, 0), 0)
   end
 $$;
+
+comment on function public.autopilot_compromisso_vivo(numeric, numeric, text, numeric) is
+  'A144: terminal com fill ainda compromete o que EXECUTOU e nao foi projetado. '
+  'CANCELED nao desfaz preenchimento parcial.';
 
 -- ── 3-BIS-b. RESERVAR QUANTIDADE PARA VENDA AUTÔNOMA (A134/A137) ──────────
 --
@@ -722,7 +835,9 @@ begin
   -- ⚠️ O QUE OUTROS INTENTS JÁ PROMETERAM. A linha da posição está travada, e
   -- esta soma roda dentro da mesma transação: duas reservas concorrentes se
   -- enfileiram, e a segunda vê a primeira.
-  select coalesce(sum(public.autopilot_compromisso_vivo(e.reservado_qty, e.applied_qty, i.state::text)), 0)
+  -- ⚠️ A144: na venda a unidade é BASE — `filled_qty` contra `applied_qty`.
+  select coalesce(sum(public.autopilot_compromisso_vivo(
+           e.reservado_qty, e.applied_qty, i.state::text, i.filled_qty)), 0)
     into v_comprometido
     from public.autopilot_position_effects e
     join public.cex_execution_intents i on i.id = e.intent_id
@@ -780,7 +895,10 @@ begin
     from public.autopilot_positions
    where session_id = v_i.session_id and status <> 'closed';
 
-  select coalesce(sum(public.autopilot_compromisso_vivo(e.reservado_usd, e.applied_quote, i.state::text)), 0)
+  -- ⚠️ A144: na compra a unidade é QUOTE — `filled_quote` contra
+  -- `applied_quote`. É o capital que já saiu e ainda não virou custo no livro.
+  select coalesce(sum(public.autopilot_compromisso_vivo(
+           e.reservado_usd, e.applied_quote, i.state::text, i.filled_quote)), 0)
     into v_comprometido
     from public.autopilot_position_effects e
     join public.cex_execution_intents i on i.id = e.intent_id
@@ -905,6 +1023,18 @@ begin
   if v_taxa_delta < -v_eps then
     return jsonb_build_object('ok', false, 'motivo', 'regressao_de_taxa',
       'aplicado', v_e.fee_aplicada_usd, 'no_livro', v_taxa_total);
+  end if;
+  /**
+   * ⚠️⚠️ A MESMA GUARDA DO RECEBIDO (auditoria sintético→real). Desde o A143
+   * `p_quote_recebido` vem do LIVRO, e o livro pode REGREDIR quando os trades
+   * reais substituem o sintético superestimado. Os dois `greatest(applied,
+   * recebido)` abaixo manteriam o P&L no valor antigo — otimista — e o stop
+   * de perda com ele. Divergência não se absorve: fail-closed.
+   */
+  if p_quote_recebido is not null
+     and p_quote_recebido < v_e.applied_quote - v_eps then
+    return jsonb_build_object('ok', false, 'motivo', 'regressao_de_quote',
+      'aplicado', v_e.applied_quote, 'no_livro', p_quote_recebido);
   end if;
   if v_delta <= v_eps and v_taxa_delta <= v_eps then
     return jsonb_build_object('ok', true, 'motivo', 'sem_delta',
@@ -1149,9 +1279,9 @@ revoke all on function public.autopilot_liquidar_saida_armada(uuid, numeric, num
 grant execute on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric)
   to service_role;
 
-revoke all on function public.autopilot_compromisso_vivo(numeric, numeric, text)
+revoke all on function public.autopilot_compromisso_vivo(numeric, numeric, text, numeric)
   from public, anon, authenticated;
-grant execute on function public.autopilot_compromisso_vivo(numeric, numeric, text)
+grant execute on function public.autopilot_compromisso_vivo(numeric, numeric, text, numeric)
   to service_role;
 
 -- ⚠️ A TABELA TAMBÉM: RLS ligada sem policies já fecha para anon/authenticated,

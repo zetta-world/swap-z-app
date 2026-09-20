@@ -30,8 +30,9 @@ import {
   avaliarVendaAutonoma, avaliarExposicaoParaEntrada,
 } from "@/lib/autopilot/inventario";
 import {
-  projetarEfeitoDoIntent, projecoesPendentes, liquidarSaidaArmada,
+  projetarEfeitoDoIntent, projecoesPendentes,
 } from "@/lib/autopilot/projecao-de-posicao";
+import { assentarELiquidarSaida } from "@/lib/autopilot/assentamento-da-saida";
 import {
   reservarVendaDoBot, reservarExposicaoDoBot, liberarReservaDoIntent,
 } from "@/lib/autopilot/reserva-de-inventario";
@@ -173,11 +174,25 @@ async function credenciaisDaSaidaArmada(
 }
 
 async function liquidarNoLivro(
-  pos: AutopilotPositionRow, order: CexOrder, vendido: number,
+  pos: AutopilotPositionRow, order: CexOrder, informado: number,
 ): Promise<{ aplicou: boolean; custoRemovido: number; fechou: boolean;
-             realizado: number; taxaNaoPrecificada: boolean }> {
+             realizado: number; taxaNaoPrecificada: boolean;
+             /**
+              * ⚠️⚠️ A143: o fato que a corretora contou NÃO entrou no livro de
+              * execuções. A saída segue armada (e a ingestão é idempotente,
+              * então a passada seguinte tenta de novo), mas esta sessão NÃO
+              * abre entrada nova nesta passada: o `pnl_today` que alimenta o
+              * stop de perda está incompleto, e um freio incompleto é pior
+              * que freio nenhum, porque tem cara de número.
+              */
+             fatosPendentes: boolean;
+             /** ⚠️ A143: a quantidade DO LIVRO com que a conta foi feita — é
+              *  ela que a nota da passada deve reportar, não a da resposta
+              *  HTTP. Zero quando nada foi liquidado. */
+             qty: number }> {
   const nada = { aplicou: false, custoRemovido: 0, fechou: false,
-                 realizado: 0, taxaNaoPrecificada: false };
+                 realizado: 0, taxaNaoPrecificada: false, fatosPendentes: false,
+                 qty: 0 };
   const avisar = async (porque: string, extra: Record<string, unknown> = {}) => {
     await recordEvent("autopilot_liquidacao_nao_aplicada", { meta: {
       severity: "high", session: pos.session_id, base: pos.base, porque, ...extra,
@@ -203,25 +218,52 @@ async function liquidarNoLivro(
       { ordem: pos.exit_order_id });
     return nada;
   }
-  const quote = Number((order as unknown as { cost?: unknown }).cost);
-  // ⚠️ A140: taxa e dia saíram daqui — a RPC os deriva do livro e do relógio
-  // do banco, para o caminho imediato e o recovery darem o mesmo número.
-  const r = await liquidarSaidaArmada(
-    intentDaSaida, vendido, Number.isFinite(quote) ? quote : 0);
-  if (!r.ok) {
-    await avisar(r.porque, { intent: intentDaSaida, motivo: r.motivo });
-    return nada;
+  /**
+   * ⚠️⚠️⚠️ ASSENTAR ANTES DE LIQUIDAR — achado A143.
+   *
+   * Aqui se passava `order.cost` e `Number(order.filled)` direto para a RPC,
+   * e a RPC deriva a TAXA do livro (A140, e com razão: a varredura de
+   * pendências não tem a resposta HTTP na mão). Só que `fetchCexOrderStatus`
+   * não escreve no livro: a linha do intent seguia `fee_total = null`, a
+   * taxa entrava como ZERO, e o prejuízo chegava ao `pnl_today` menor do que
+   * foi. Na mesma passada, o stop de perda não disparava e o cron comprava.
+   *
+   * ⚠️ E O CONSERTO NÃO É VOLTAR A PASSAR A TAXA DAQUI. É gravar o que a
+   * corretora disse, reler a linha durável, e liquidar com ela.
+   */
+  const desfecho = await assentarELiquidarSaida(
+    intentDaSaida, pos.exit_order_id ?? null, order, informado);
+  if (!desfecho.ok) {
+    await avisar(desfecho.porque, { intent: intentDaSaida, motivo: desfecho.motivo,
+      etapa: desfecho.etapa, informado });
+    /**
+     * ⚠️ FALHAR NO ASSENTAMENTO É DIFERENTE DE FALHAR NA LIQUIDAÇÃO. No
+     * primeiro caso o livro NÃO tem o fato, e nenhum outro caminho o terá
+     * nesta passada — a sessão fecha para entradas. No segundo o fato já está
+     * gravado, e a varredura de pendências volta nele.
+     */
+    return { ...nada, fatosPendentes: desfecho.etapa === "assentamento" };
   }
+  const r = desfecho.resultado;
   return { aplicou: r.motivo === "aplicado", custoRemovido: r.custoRemovido,
            fechou: r.fechou, realizado: r.realizado,
-           taxaNaoPrecificada: r.taxaNaoPrecificada };
+           taxaNaoPrecificada: r.taxaNaoPrecificada, fatosPendentes: false,
+           qty: desfecho.qty };
 }
 
 async function settleArmedExits(
   s: AutopilotSessionRow, creds: CexCredentials, exchange: CexId, today: string,
-): Promise<{ rows: RunRowT[]; realizedDelta: number; livroLegivel: boolean }> {
+): Promise<{ rows: RunRowT[]; realizedDelta: number; livroLegivel: boolean;
+             /**
+              * ⚠️⚠️ A143: uma saída cujo fato da corretora NÃO entrou no livro
+              * de execuções. O P&L desta passada está INCOMPLETO, então o stop
+              * de perda diária está frouxo — e a sessão não abre entrada nova
+              * enquanto isso. `null` = nenhuma pendência.
+              */
+             fatosNaoAssentados: string | null }> {
   const rows: RunRowT[] = [];
   let realizedDelta = 0;
+  let fatosNaoAssentados: string | null = null;
   /**
    * ⚠️⚠️ A133 — livro ilegível não é "nenhuma saída armada".
    *
@@ -238,7 +280,7 @@ async function settleArmedExits(
       why: "nao deu para ler autopilot_positions. Nenhuma saida armada foi liquidada "
         + "nesta passada, e a sessao NAO abre entrada nova com inventario desconhecido.",
     } });
-    return { rows, realizedDelta, livroLegivel: false };
+    return { rows, realizedDelta, livroLegivel: false, fatosNaoAssentados };
   }
   const armed = leitura.posicoes.filter((p) => p.status === "exit_armed" && p.exit_order_id);
   for (const pos of armed) {
@@ -300,15 +342,14 @@ async function settleArmedExits(
          * Agora, sem evidência de fill, NADA é liquidado — a posição segue
          * armada e a passada seguinte pergunta de novo.
          */
-        const vendido = Number(order.filled);
-        if (!(vendido > 0)) {
+        const informado = Number(order.filled);
+        if (!(informado > 0)) {
           rows.push({ session_id: s.id, wallet_address: s.wallet_address,
             exchange_id: s.exchange_id, symbol: pos.pair, side: "sell",
             order_type: "limit", status: "skipped", order_id: pos.exit_order_id,
             reason: "venue diz fechada e nao informa quanto saiu — posicao MANTIDA ate haver evidencia" });
           continue;
         }
-        const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
         /**
          * ⚠️⚠️ A ABSORÇÃO VEM DEPOIS DA ESCRITA, e só se ela entrou — achado da
          * revisão adversarial.
@@ -320,8 +361,32 @@ async function settleArmedExits(
          * deixa o conserto possível — a reconciliação aplica o delta.
          */
         // ⚠️ A136/A138: posição, marcador e P&L numa transação só. `sobra`
-        // continua sendo calculada porque a NOTA da passada fala do resto.
-        const liq = await liquidarNoLivro(pos, order, vendido);
+        // continua sendo calculada porque a NOTA da passada fala do resto —
+        // e desde o A143 ela sai do LIVRO, não da resposta HTTP.
+        const liq = await liquidarNoLivro(pos, order, informado);
+        if (liq.fatosPendentes) {
+          fatosNaoAssentados = `${pos.base}:${pos.exit_order_id ?? "?"}`;
+        }
+        /**
+         * ⚠️⚠️ NADA LIQUIDADO NÃO É "SETTLED" — achado da minha própria
+         * revisão do A143.
+         *
+         * A linha da passada dizia `status: "settled"` mesmo quando a
+         * liquidação recusava (o `realized` saía null e a nota virava um
+         * lacônico "exit settled"). O evento de severidade alta existe, mas o
+         * extrato que o dono lê afirmava o contrário dele. Com o A143 o caso
+         * deixou de ser raro: qualquer fato que não assenta cai aqui.
+         */
+        if (liq.qty <= 0) {
+          rows.push({ session_id: s.id, wallet_address: s.wallet_address,
+            exchange_id: s.exchange_id, symbol: pos.pair, side: "sell",
+            order_type: "limit", status: "skipped", order_id: pos.exit_order_id,
+            reason: "venue diz preenchida e o livro NAO registrou — posicao segue armada, "
+              + "sem P&L pela metade" });
+          continue;
+        }
+        const sobra = oQueSobrou(
+          Number(pos.base_amount), Number(pos.cost_usd || 0), liq.qty);
         if (liq.taxaNaoPrecificada) {
           await avisarTaxaNaoPrecificada(pos.pair,
             { moeda: String(order.fee?.currency ?? "?"), valor: Number(order.fee?.cost ?? 0) });
@@ -342,24 +407,47 @@ async function settleArmedExits(
          *
          * O que já executou é FATO IMUTÁVEL. Só o remanescente volta.
          */
-        const jaVendido = Number(order.filled);
-        if (jaVendido > 0) {
+        const jaInformado = Number(order.filled);
+        if (jaInformado > 0) {
           // ⚠️ A138: idem — P&L e posição na mesma transação da liquidação.
-
-          const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), jaVendido);
           /**
            * ⚠️ A136 aqui também: o que já executou é fato imutável, e a
            * mesma transação que o aplica reabre o remanescente (a RPC volta o
            * status para `open` e solta o elo com a ordem morta).
            */
-          const liqCancel = await liquidarNoLivro(pos, order, jaVendido);
+          const liqCancel = await liquidarNoLivro(pos, order, jaInformado);
+          if (liqCancel.fatosPendentes) {
+            fatosNaoAssentados = `${pos.base}:${pos.exit_order_id ?? "?"}`;
+          }
+          /**
+           * ⚠️⚠️ IDEM AQUI: sem nada liquidado, a posição NÃO reabre o
+           * remanescente e a linha não mente dizendo "settled". Reabrir
+           * agora, com o fill fora do livro, devolveria ao inventário uma
+           * bolsa que já saiu — o A101 pelo caminho inverso.
+           */
+          if (liqCancel.qty <= 0) {
+            rows.push({ session_id: s.id, wallet_address: s.wallet_address,
+              exchange_id: s.exchange_id, symbol: pos.pair, side: "sell",
+              status: "skipped", order_id: pos.exit_order_id,
+              reason: "cancelada com preenchimento que o livro NAO registrou — "
+                + "posicao segue armada ate o fato assentar" });
+            continue;
+          }
+          /**
+           * ⚠️ A SOBRA SAI DO LIVRO — A143. Ela era calculada sobre
+           * `order.filled` ANTES de a liquidação acontecer; agora vem da
+           * quantidade que realmente entrou na conta, e é ela que a nota da
+           * passada reporta como remanescente reaberto.
+           */
+          const sobra = oQueSobrou(
+            Number(pos.base_amount), Number(pos.cost_usd || 0), liqCancel.qty);
           if (liqCancel.taxaNaoPrecificada) {
             await avisarTaxaNaoPrecificada(pos.pair,
               { moeda: String(order.fee?.currency ?? "?"), valor: Number(order.fee?.cost ?? 0) });
           }
           const realized = liqCancel.aplicou ? liqCancel.realizado : null;
           realizedDelta += liqCancel.realizado;
-          rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: `cancelada com ${jaVendido} ja vendido — so o remanescente reabre` });
+          rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: `cancelada com ${liqCancel.qty} ja vendido (livro) — ${sobra.fecha ? "nada" : sobra.baseRestante} reabre` });
         } else {
           await exigirGravacao(
             await reopenServerPosition(s.id, pos.base),
@@ -387,7 +475,7 @@ async function settleArmedExits(
       } });
     }
   }
-  return { rows, realizedDelta, livroLegivel: true };
+  return { rows, realizedDelta, livroLegivel: true, fatosNaoAssentados };
 }
 
 /** Compact "held=… entry=… now=… unrealized=…" context so ZION proposes exits. */
@@ -832,11 +920,18 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   //      (fed atomically to the loss-stop) and can trip the freeze. ──
   const runRows: RunRowT[] = [];
   let livroLegivelNoSettle = true;
+  /**
+   * ⚠️⚠️ A143: uma saída cujo fato da corretora não chegou ao livro deixa o
+   * `pnl_today` INCOMPLETO — e é justamente ele que alimenta o stop de perda.
+   * Enquanto houver pendência assim, esta sessão não abre entrada nova.
+   */
+  let fatosNaoAssentados: string | null = null;
   try {
     const settle = await settleArmedExits(s, creds, exchange, today);
     runRows.push(...settle.rows);
     pnlToday += settle.realizedDelta;
     livroLegivelNoSettle = settle.livroLegivel;
+    fatosNaoAssentados = settle.fatosNaoAssentados;
     if (pnlToday <= -s.daily_loss_stop_usd) frozenUntil = today;
   } catch {
     /**
@@ -1023,12 +1118,22 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
    * continua acontecendo.
    */
   const leituraDoLivro = await getOpenServerPositions(s.id);
-  if (!leituraDoLivro.ok || !livroLegivelNoSettle) {
-    const porque = leituraDoLivro.ok ? "settle nao conseguiu ler o livro" : leituraDoLivro.porque;
+  /**
+   * ⚠️⚠️ A143 ENTRA AQUI, no MESMO portão. Livro ilegível e fato não assentado
+   * são perguntas diferentes com a mesma resposta: não se abre posição nova
+   * com a contabilidade do dia incompleta. O motivo sai discriminado porque
+   * o dono que lê o evento precisa saber QUAL dos dois aconteceu.
+   */
+  if (!leituraDoLivro.ok || !livroLegivelNoSettle || fatosNaoAssentados) {
+    const porque = !leituraDoLivro.ok ? leituraDoLivro.porque
+      : !livroLegivelNoSettle ? "settle nao conseguiu ler o livro"
+      : `fato da venue nao assentado no livro de execucoes (${fatosNaoAssentados})`;
     await recordEvent("autopilot_livro_ilegivel", { wallet: s.wallet_address, meta: {
       severity: "high", session: s.id, etapa: "inventario", porque,
       why: "sem inventario nao se afirma exposicao nem posse. ZERO entrada nova nesta "
-        + "passada — 'nao consegui ler' nunca pode valer como 'o bot nao tem nada'.",
+        + "passada — 'nao consegui ler' nunca pode valer como 'o bot nao tem nada'. "
+        + "E com fill da venue fora do livro, o pnl_today que alimenta o stop de "
+        + "perda esta incompleto: o freio existe no papel e nao no numero.",
     } });
     await telemetria(s.id, { last_scan_at: nowIso, last_error: `position book unreadable: ${porque}`.slice(0, 300) });
     if (runRows.length) await recordRuns(runRows);

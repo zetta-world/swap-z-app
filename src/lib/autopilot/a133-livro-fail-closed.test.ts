@@ -171,7 +171,13 @@ describe("A133.3/A133.4 — os callers distinguem os dois estados", () => {
   });
 
   it("⚠️⚠️ o cron PARA a passada quando o livro não pode ser lido", () => {
-    expect(CRON).toMatch(/if \(!leituraDoLivro\.ok \|\| !livroLegivelNoSettle\)/);
+    /**
+     * ⚠️ A143 acrescentou a TERCEIRA condição ao mesmo portão: fato da venue
+     * que não entrou no livro de execuções. O `pnl_today` fica incompleto, e
+     * o stop de perda com ele — a resposta é a mesma, zero entrada nova.
+     */
+    expect(CRON).toMatch(
+      /if \(!leituraDoLivro\.ok \|\| !livroLegivelNoSettle \|\| fatosNaoAssentados\)/);
     expect(CRON).toMatch(/position book unreadable — zero new entries/);
     expect(CRON).toMatch(/autopilot_livro_ilegivel/);
     // A parada vem ANTES do scan e de qualquer ordem.

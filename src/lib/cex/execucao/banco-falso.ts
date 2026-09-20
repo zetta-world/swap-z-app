@@ -181,7 +181,7 @@ export function bancoFalso(): BancoFalso {
      * reserva pertence a um intent, e o compromisso vivo é
      * `greatest(reservado − applied, 0)` enquanto ele puder preencher.
      */
-    const MORTOS = new Set(["CANCELED", "FAILED_PRE_SUBMIT"]);
+    const TERMINAIS = new Set(["FILLED", "CANCELED", "FAILED_PRE_SUBMIT"]);
     /**
      * ⚠️⚠️ A140 — a taxa acumulada em USD, derivada do LIVRO, e o dia do
      * "banco". Nenhum dos dois vem de quem chama: era isso que fazia o mesmo
@@ -210,9 +210,25 @@ export function bancoFalso(): BancoFalso {
         ses.frozen_until_day = hojeUtcDoBanco();
       }
     };
-    const compromissoVivo = (e: Linha, estado: unknown, campo: "reservado_qty" | "reservado_usd") => {
-      if (MORTOS.has(String(estado))) return 0;
-      const aplicado = campo === "reservado_qty" ? Number(e.applied_qty ?? 0) : Number(e.applied_quote ?? 0);
+    /**
+     * ⚠️⚠️ A144 — TERMINAL COM FILL AINDA COMPROMETE.
+     *
+     * A versão anterior jogava `CANCELED` junto com `FAILED_PRE_SUBMIT` para
+     * zero. Uma limitada que preencheu 0,004 e depois foi cancelada liberava
+     * a bolsa inteira antes de a projeção aplicar aquele 0,004 — e a ordem
+     * seguinte vendia mais do que existe. O que se provou é o que vale:
+     * terminal mede o EXECUTADO, não o reservado.
+     */
+    const compromissoVivo = (e: Linha, dono: Linha | undefined,
+                             campo: "reservado_qty" | "reservado_usd") => {
+      const estado = String(dono?.state ?? "");
+      if (estado === "FAILED_PRE_SUBMIT") return 0;
+      const venda = campo === "reservado_qty";
+      const aplicado = venda ? Number(e.applied_qty ?? 0) : Number(e.applied_quote ?? 0);
+      if (TERMINAIS.has(estado)) {
+        const executado = venda ? Number(dono?.filled_qty ?? 0) : Number(dono?.filled_quote ?? 0);
+        return Math.max(executado - aplicado, 0);
+      }
       return Math.max(Number(e[campo] ?? 0) - aplicado, 0);
     };
     const efeitoDe = (it: Linha, base: string) => {
@@ -255,7 +271,7 @@ export function bancoFalso(): BancoFalso {
                     && e.side === "sell" && e.intent_id !== it.id)
         .reduce((soma, e) => {
           const dono = intents.find((i) => i.id === e.intent_id);
-          return soma + compromissoVivo(e, dono?.state, "reservado_qty");
+          return soma + compromissoVivo(e, dono, "reservado_qty");
         }, 0);
       const disponivel = Number(pos.base_amount) - comprometido;
       if (disponivel <= 0) {
@@ -286,7 +302,7 @@ export function bancoFalso(): BancoFalso {
         .filter((e) => e.session_id === it.session_id && e.side === "buy" && e.intent_id !== it.id)
         .reduce((soma, e) => {
           const dono = intents.find((i) => i.id === e.intent_id);
-          return soma + compromissoVivo(e, dono?.state, "reservado_usd");
+          return soma + compromissoVivo(e, dono, "reservado_usd");
         }, 0);
       if (exposicao + comprometido + usd > teto) {
         return { data: { ok: false, motivo: "teto_estourado",
@@ -672,6 +688,18 @@ export function bancoFalso(): BancoFalso {
         return { data: { ok: false, motivo: "regressao",
                          aplicado: Number(efeito.ledger_qty), no_livro: noLivro }, error: null };
       }
+      /**
+       * ⚠️⚠️ AUDITORIA SINTÉTICO→REAL: o RECEBIDO também regride quando os
+       * trades reais substituem um sintético superestimado. Os `greatest()`
+       * abaixo o esconderiam, e na venda isso deixa o P&L (e o stop de perda)
+       * OTIMISTA. Divergência não se absorve.
+       */
+      const quoteNoLivro = Number(it.filled_quote ?? 0);
+      if (quoteNoLivro < Number(efeito.ledger_quote ?? 0) - EPS) {
+        return { data: { ok: false, motivo: "regressao_de_quote",
+                         aplicado: Number(efeito.ledger_quote),
+                         no_livro: quoteNoLivro }, error: null };
+      }
       const deltaQty = Math.max(noLivro - Number(efeito.applied_qty), 0);
       const deltaQuote = Math.max(Number(it.filled_quote) - Number(efeito.applied_quote), 0);
       // ⚠️ A140: a taxa acumulada tem delta próprio, e pode crescer SEM
@@ -702,6 +730,23 @@ export function bancoFalso(): BancoFalso {
                    - Number(efeito.pnl_aplicado_usd ?? 0);
           }
           if (semQtd !== 0) aplicarPnl(it.session_id, semQtd);
+        } else if (deltaQuote > EPS) {
+          /**
+           * ⚠️⚠️ A145: o RECEBIDO da compra que chegou depois vira BASE DE
+           * CUSTO. Sem isto o marcador dizia "aplicado" e `cost_usd` ficava
+           * zero para sempre: exposição subavaliada e lucro inventado na
+           * venda seguinte. Sem posição onde entrar, NADA é marcado.
+           */
+          const alvo = posicoes.find((x) => x.session_id === it.session_id && x.base === base);
+          if (!alvo) {
+            return { data: { ok: false, motivo: "sem_posicao_para_custo",
+                             base, delta_quote: deltaQuote }, error: null };
+          }
+          const custo = Number(alvo.cost_usd ?? 0) + deltaQuote;
+          alvo.cost_usd = custo;
+          // ⚠️ A QUANTIDADE NÃO MUDA — `deltaQty` é zero por definição.
+          alvo.entry_price = Number(alvo.base_amount) > 0
+            ? custo / Number(alvo.base_amount) : alvo.entry_price;
         }
         efeito.fee_aplicada_usd = taxaTotal;
         efeito.applied_quote = Math.max(Number(efeito.applied_quote ?? 0), Number(it.filled_quote ?? 0));
@@ -834,6 +879,14 @@ export function bancoFalso(): BancoFalso {
       if (taxaDeltaL < -1e-12) {
         return { data: { ok: false, motivo: "regressao_de_taxa",
                          aplicado: efeito.fee_aplicada_usd, no_livro: taxaTotalL }, error: null };
+      }
+      // ⚠️ A143/auditoria sintético→real: o recebido vem do LIVRO e o livro
+      // pode regredir. `greatest()` manteria o P&L otimista — fail-closed.
+      if (args.p_quote_recebido != null
+          && Number(args.p_quote_recebido) < Number(efeito.applied_quote ?? 0) - 1e-12) {
+        return { data: { ok: false, motivo: "regressao_de_quote",
+                         aplicado: efeito.applied_quote,
+                         no_livro: args.p_quote_recebido }, error: null };
       }
       if (delta <= 1e-12 && taxaDeltaL <= 1e-12) {
         return { data: { ok: true, motivo: "sem_delta", aplicado_qty: 0,
