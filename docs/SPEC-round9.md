@@ -252,6 +252,28 @@ não-nulos e diferentes": posição armada em `EXT-1` com intent sem
 `external_order_id` era exatamente o estado de quem não sabe qual ordem está
 lá fora, e passava.
 
+### A142 — o recebido também tem delta (achado da revisão sobre o A140)
+
+`filled_quote` cresce com `filled_qty` parado (ACK sem `cost` → o executor
+manda `cumulativeQuote = 0`; os trades reais trazem o valor depois). O P&L
+estava atrás de `v_delta_quote > 0`, então a posição fechava, o custo saía do
+livro e **nada** entrava no `pnl_today`; a chegada do recebido caía em
+`sem_delta`. A liquidação, no mesmo caso, lançava `0 − custo` e congelava o dia.
+
+```
+realizado_total = applied_quote − custo_removido_usd − fee_aplicada_usd
+delta           = realizado_total − pnl_aplicado_usd
+```
+
+Cinco watermarks, um contrato: `applied_qty`, `applied_quote`,
+`fee_aplicada_usd` e `custo_removido_usd` são as entradas; `pnl_aplicado_usd` é
+o que a conta produziu. **Sem recebido não se conta resultado** — a redução
+fica guardada em `custo_removido_usd` e espera o livro.
+
+Ramos novos: `ajuste_sem_quantidade` (recebido ou taxa chegando depois) e
+`posicao_ja_encerrada` (fill posterior ao fechamento pelo mesmo intent — receita
+sem custo novo, em vez de `sem_posicao` em laço).
+
 ## PARTE 3 — LIMITAÇÕES DECLARADAS
 
 1. **A liquidação da saída armada é transacional (A136), mas ainda depende de

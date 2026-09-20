@@ -230,6 +230,54 @@ P&L dentro da transação, elas eram o último escritor financeiro solto.
 que já foi descontado, e `pnl_aplicado_usd` é o que a conta produziu. Cada delta
 avança os quatro na mesma transação.
 
+## 8-QUINQUIES. A revisão adversarial achou um P0 dentro do próprio A140 — A142
+
+O A140 deu delta próprio à **taxa** e ninguém deu ao **recebido**.
+`filled_quote` cresce com `filled_qty` parado: a corretora nem sempre devolve
+`cost` no ACK, o executor manda `cumulativeQuote = 0`, e o valor real só chega
+com os trades. Com o P&L atrás de `v_delta_quote > 0`:
+
+```
+1ª projeção: qty 0,01 · quote 0  → posição FECHADA, US$ 600 de custo saem
+                                   do livro, e ZERO entra no pnl_today
+2ª projeção: quote 640 chega     → `sem_delta`
+```
+
+O resultado do dia sumia. Com o preço para o outro lado é o **prejuízo** que
+some, e o stop de perda nunca dispara. E a **mesma venda** descoberta pela
+liquidação dava `−600` (o `order.cost` virava 0 sem guarda) e **congelava a
+sessão o dia inteiro**: dois descobridores, duas respostas erradas.
+
+**O conserto foi parar de somar deltas independentes:**
+
+```
+realizado_total = applied_quote − custo_removido_usd − fee_aplicada_usd
+delta           = realizado_total − pnl_aplicado_usd
+```
+
+com o watermark novo `custo_removido_usd` e uma regra: **enquanto não houver
+recebido, não se conta resultado** — a redução fica guardada e espera. A ordem
+de chegada dos fatos deixou de importar.
+
+| # | achado | conserto |
+|---|---|---|
+| P0-1 | recebido sem delta: resultado some (ou infla) | conta acumulada + `custo_removido_usd` |
+| P0-2 | liquidação sem `cost` lançava `−custo` e congelava o dia | sem recebido, sem resultado |
+| P1-3 | freeze do fill tardio chegava uma passada atrasado | a varredura roda **antes** do laço de sessões |
+| P1-4 | fill posterior ao fechamento relistava `sem_posicao` por 3 dias | `posicao_ja_encerrada`: receita sem custo novo entra |
+| P2-5 | o aviso de CAS falho só existia num dos quatro pontos — **e a entrega afirmava o contrário** | o `liberar` composto avisa nos três do executor também |
+| P2-6 | teste do A141 fazia grep no fonte com `recordEvent` mockado como lambda vazia | `vi.fn()` e asserção no evento emitido |
+| P2-7 | a varredura descartava `realizado` e a bandeira de taxa opaca | registra os dois |
+| P2-9 | `markServerExitArmed` dizia OK sem casar linha | `.select("id")` |
+| P2-10 | `catch` mudo entre a escrita e o espelho em memória | `autopilot_settle_interrompido` |
+| — | `taxaEmUsd` importado sem chamada nos dois arquivos, com três comentários dizendo que a conversão "continua aqui" | imports e comentários removidos |
+| — | o falso não conferia `session_id` na liquidação, o SQL conferia | falso alinhado |
+
+⚠️ **Dois testes meus estavam fracos**: a trava do A141.6 fazia grep no fonte
+(com `recordEvent` como lambda vazia, trocar a chamada por um comentário
+mantinha o verde), e o mapeamento de motivos no wrapper caía em `"aplicado"`
+por padrão — foi isso que escondeu o ramo novo no primeiro teste do A142.
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -258,6 +306,8 @@ específico, todas restauradas:
 | A140: o freeze volta a depender do dia que o caller manda | 1 |
 | A141: o rollback intermediário da vaga some | 1 |
 | A139-H: volta a exigir os dois lados não-nulos | 2 |
+| A142: o recebido sai da decisão de delta | 2 |
+| A142: a liquidação sem recebido lança −custo | 1 |
 
 ⚠️ A quebra do A136 **não foi detectada na primeira tentativa** — os testes
 cobriam a falha da transação inteira, não o meio efeito. O teste que faltava
@@ -266,7 +316,7 @@ foi escrito antes de a quebra ser considerada detectada.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3747/3747 (246 arquivos)     — baseline do R8 era 3586
+npx vitest run      3753/3753 (246 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo
@@ -284,7 +334,12 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
    o intent pela ordem externa. Falhando essa leitura, sai
    `autopilot_liquidacao_nao_aplicada` em severidade alta, a posição fica como
    está, e a passada seguinte tenta de novo — sem meio efeito.
-2. **As reservas NÃO expiram (A137).** Um intent que fica `UNKNOWN` para sempre
+2. **O freeze de um fill descoberto pela reconciliação DESTA passada ainda
+   chega no tick seguinte.** A varredura passou a rodar antes das sessões, então
+   o que já está no livro entra antes de qualquer ordem nova; o que a
+   reconciliação do fim do tick descobrir espera ~5 minutos. Fechar isso exigiria
+   reordenar a passada inteira. **Declarado, não corrigido.**
+3. **As reservas NÃO expiram (A137).** Um intent que fica `UNKNOWN` para sempre
    segura o compromisso dele para sempre — e isso é deliberado: soltá-lo seria
    autorizar uma segunda ordem sobre um dinheiro que talvez já tenha saído. O
    que encerra o compromisso é o intent chegar a `CANCELED`/`FAILED_PRE_SUBMIT`,
@@ -330,6 +385,7 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 | A139-H | FIXED — PENDING INDEPENDENT RETEST |
 | A140 | FIXED — PENDING INDEPENDENT RETEST |
 | A141 | FIXED — PENDING INDEPENDENT RETEST |
+| A142 | FIXED — PENDING INDEPENDENT RETEST |
 | 0064 | CREATED LOCALLY — NOT APPLIED |
 
 Round 8 (A127/A128/A129/A125-ABSENCE/A130/A130-B): preservados, sem elevação
