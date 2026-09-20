@@ -33,14 +33,9 @@ export type MotivoDaProjecao =
 
 export type ResultadoDaProjecao =
   | { ok: true; motivo: "aplicado" | "sem_delta" | "saida_em_liquidacao";
-      aplicadoQty: number; aplicadoQuote: number; custoRemovido: number; fechou: boolean }
+      aplicadoQty: number; aplicadoQuote: number; custoRemovido: number;
+      fechou: boolean; realizado: number }
   | { ok: false; motivo: MotivoDaProjecao; porque: string };
-
-/** O que a liquidação da saída armada JÁ aplicou direto na posição. */
-export interface JaAplicadoPelaLiquidacao {
-  qty: number;
-  quote: number;
-}
 
 export interface DependenciasDaProjecao {
   /** Injetável para teste. Devolve o JSON da RPC ou lança. */
@@ -60,13 +55,12 @@ function numero(v: unknown): number {
  */
 export async function projetarEfeitoDoIntent(
   intentId: string,
-  opts: { jaAplicado?: JaAplicadoPelaLiquidacao } & DependenciasDaProjecao = {},
+  opts: { taxaUsd?: number; hoje?: string | null } & DependenciasDaProjecao = {},
 ): Promise<ResultadoDaProjecao> {
   const args = {
     p_intent_id: intentId,
-    ...(opts.jaAplicado
-      ? { p_qty_ja_aplicada: opts.jaAplicado.qty, p_quote_ja_aplicada: opts.jaAplicado.quote }
-      : {}),
+    p_taxa_usd: Number.isFinite(opts.taxaUsd ?? 0) ? (opts.taxaUsd ?? 0) : 0,
+    p_hoje: opts.hoje ?? null,
   };
 
   let bruto: unknown;
@@ -102,6 +96,7 @@ export async function projetarEfeitoDoIntent(
     aplicadoQuote: numero(r.aplicado_quote),
     custoRemovido: numero(r.custo_removido),
     fechou: r.fechou === true,
+    realizado: numero(r.pnl_realizado),
   };
 }
 
@@ -159,17 +154,25 @@ export async function projecoesPendentes(
  */
 export type ResultadoDaLiquidacao =
   | { ok: true; motivo: "aplicado" | "sem_delta";
-      aplicadoQty: number; custoRemovido: number; fechou: boolean }
+      aplicadoQty: number; custoRemovido: number; fechou: boolean; realizado: number }
   | { ok: false; motivo: string; porque: string };
 
 export async function liquidarSaidaArmada(
   intentId: string, qtdVendida: number, quoteRecebido: number,
+  /**
+   * ⚠️ A138: a taxa em USD e o dia UTC entram porque o P&L realizado é
+   * aplicado NA MESMA transação que reduz a posição. Era uma segunda escrita,
+   * e por isso não tinha exactly-once.
+   */
+  taxaUsd = 0, hoje: string | null = null,
   deps: DependenciasDaProjecao = {},
 ): Promise<ResultadoDaLiquidacao> {
   const args = {
     p_intent_id: intentId,
     p_qty_vendida: qtdVendida,
     p_quote_recebido: Number.isFinite(quoteRecebido) ? quoteRecebido : 0,
+    p_taxa_usd: Number.isFinite(taxaUsd) ? taxaUsd : 0,
+    p_hoje: hoje,
   };
   let bruto: unknown;
   try {
@@ -196,5 +199,6 @@ export async function liquidarSaidaArmada(
     aplicadoQty: numero(r.aplicado_qty),
     custoRemovido: numero(r.custo_removido),
     fechou: r.fechou === true,
+    realizado: numero(r.pnl_realizado),
   };
 }

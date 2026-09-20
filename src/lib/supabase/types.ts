@@ -334,6 +334,12 @@ export type AutopilotPositionRow = {
   entry_label:    string | null;
   status:         AutopilotPositionStatus;
   exit_order_id:  string | null;
+  /**
+   * ⚠️ A139: o intent EXATO da ordem de saída armada. A liquidação carrega a
+   * credencial por `intent.conexao_id` (A127), nunca pela sessão atual — e
+   * `external_order_id` não é identificador global da corretora.
+   */
+  exit_intent_id: string | null;
   exit_armed_at:  string | null;
   entry_ts:       string;
   updated_at:     string;
@@ -934,12 +940,11 @@ export interface Database {
        * armada já aplicou direto, e nunca movem a posição.
        */
       autopilot_projetar_efeito_do_intent: {
-        Args: { p_intent_id: string;
-                p_qty_ja_aplicada?: number; p_quote_ja_aplicada?: number };
+        Args: { p_intent_id: string; p_taxa_usd?: number; p_hoje?: string | null };
         Returns: {
           ok: boolean; motivo?: string; side?: "buy" | "sell"; base?: string;
           aplicado_qty?: number; aplicado_quote?: number;
-          custo_removido?: number; fechou?: boolean;
+          custo_removido?: number; fechou?: boolean; pnl_realizado?: number;
           aplicado?: number; no_livro?: number; origin?: string;
         };
       };
@@ -956,31 +961,31 @@ export interface Database {
        * liquidação atômica da saída armada. Todas devolvem um veredito JSON —
        * `ok:false` com motivo é recusa, não exceção.
        */
-      autopilot_reservar_venda: {
-        Args: { p_session_id: string; p_base: string; p_qty: number };
+      autopilot_reservar_venda_do_intent: {
+        Args: { p_intent_id: string; p_qty: number };
         Returns: { ok: boolean; motivo?: string; qtd?: number; limitada?: boolean;
-                   na_posicao?: number; reservado?: number; ordem_armada?: string };
+                   na_posicao?: number; comprometido?: number; ordem_armada?: string };
       };
-      autopilot_liberar_venda: {
-        Args: { p_session_id: string; p_base: string; p_qty: number };
-        Returns: { ok: boolean; motivo?: string };
-      };
-      autopilot_reservar_exposicao: {
-        Args: { p_session_id: string; p_usd: number; p_teto: number };
+      autopilot_reservar_exposicao_do_intent: {
+        Args: { p_intent_id: string; p_usd: number; p_teto: number };
         Returns: { ok: boolean; motivo?: string; exposicao?: number;
-                   reservado?: number; teto?: number };
+                   comprometido?: number; teto?: number };
       };
-      autopilot_liberar_exposicao: {
-        Args: { p_session_id: string; p_usd: number };
+      autopilot_liberar_reserva_do_intent: {
+        Args: { p_intent_id: string };
         Returns: { ok: boolean };
       };
       autopilot_liquidar_saida_armada: {
-        Args: { p_intent_id: string; p_qty_vendida: number; p_quote_recebido: number };
+        Args: { p_intent_id: string; p_qty_vendida: number; p_quote_recebido: number;
+                p_taxa_usd?: number; p_hoje?: string | null };
         Returns: { ok: boolean; motivo?: string; aplicado_qty?: number;
                    aplicado_quote?: number; custo_removido?: number;
-                   fechou?: boolean; base?: string };
+                   fechou?: boolean; base?: string; pnl_realizado?: number };
       };
-      autopilot_janela_de_reserva: { Args: Record<string, never>; Returns: string };
+      autopilot_compromisso_vivo: {
+        Args: { p_reservado: number; p_aplicado: number; p_estado: string };
+        Returns: number;
+      };
       cex_transicao_permitida: {
         Args: { p_de: CexIntentState; p_para: CexIntentState };
         Returns: boolean;

@@ -173,19 +173,48 @@ export function bancoFalso(): BancoFalso {
     }
 
     /**
-     * ⚠️⚠️ A134/A135 — AS RESERVAS DE INVENTÁRIO, reproduzidas.
+     * ⚠️⚠️ A134/A135/A137 — AS RESERVAS, reproduzidas COM DONO.
      *
-     * O ponto que importa é a SERIALIZAÇÃO: no Postgres é o `for update` na
-     * linha; aqui é o fato de cada chamada ler-e-escrever sem `await` no meio.
-     * O que os testes medem é a propriedade — duas concorrentes, uma passa.
+     * A primeira versão somava num contador agregado com prazo de validade.
+     * O prazo esquecia ordem viva, e o agregado deixava a projeção de uma
+     * ordem antiga consumir o compromisso de outra mais nova. Agora cada
+     * reserva pertence a um intent, e o compromisso vivo é
+     * `greatest(reservado − applied, 0)` enquanto ele puder preencher.
      */
-    const agoraMs = Date.now();
-    const JANELA_MS = 10 * 60_000;
-    if (nome === "autopilot_reservar_venda") {
+    const MORTOS = new Set(["CANCELED", "FAILED_PRE_SUBMIT"]);
+    const compromissoVivo = (e: Linha, estado: unknown, campo: "reservado_qty" | "reservado_usd") => {
+      if (MORTOS.has(String(estado))) return 0;
+      const aplicado = campo === "reservado_qty" ? Number(e.applied_qty ?? 0) : Number(e.applied_quote ?? 0);
+      return Math.max(Number(e[campo] ?? 0) - aplicado, 0);
+    };
+    const efeitoDe = (it: Linha, base: string) => {
+      let e = efeitos.find((x) => x.intent_id === it.id);
+      if (!e) {
+        e = { intent_id: it.id, session_id: it.session_id, exchange_id: it.exchange_id,
+              base, side: it.side, applied_qty: 0, applied_quote: 0,
+              ledger_qty: 0, ledger_quote: 0, reservado_qty: 0, reservado_usd: 0,
+              pnl_aplicado_usd: 0 };
+        efeitos.push(e);
+      }
+      return e;
+    };
+    const baseDo = (it: Linha) =>
+      String(it.symbol).replace(/-/g, "/").split("/")[0].toUpperCase();
+    const autonomo = (it: Linha) =>
+      it.simulated !== true && it.autonomous === true && Boolean(it.session_id)
+      && (String(it.origin) === "autopilot_browser" || String(it.origin) === "autopilot_cron");
+
+    if (nome === "autopilot_reservar_venda_do_intent") {
       const qty = Number(args.p_qty);
       if (!(qty > 0)) return { data: { ok: false, motivo: "quantidade_invalida" }, error: null };
-      const base = String(args.p_base).toUpperCase();
-      const pos = posicoes.find((x) => x.session_id === args.p_session_id && x.base === base);
+      const it = intents.find((i) => i.id === args.p_intent_id);
+      if (!it) return { data: { ok: false, motivo: "intent_inexistente" }, error: null };
+      if (it.simulated === true) return { data: { ok: false, motivo: "simulado" }, error: null };
+      if (it.side !== "sell") return { data: { ok: false, motivo: "intent_nao_e_venda" }, error: null };
+      if (!autonomo(it)) return { data: { ok: false, motivo: "origem_nao_autonoma" }, error: null };
+
+      const base = baseDo(it);
+      const pos = posicoes.find((x) => x.session_id === it.session_id && x.base === base);
       if (!pos || pos.status === "closed" || !(Number(pos.base_amount) > 0)) {
         return { data: { ok: false, motivo: "sem_posicao" }, error: null };
       }
@@ -193,52 +222,55 @@ export function bancoFalso(): BancoFalso {
         return { data: { ok: false, motivo: "saida_ja_armada",
                          ordem_armada: pos.exit_order_id }, error: null };
       }
-      const venceu = !pos.reservado_ate || Number(pos.reservado_ate) < agoraMs;
-      const reservado = venceu ? 0 : Number(pos.reservado_qty ?? 0);
-      const disponivel = Number(pos.base_amount) - reservado;
+      const comprometido = efeitos
+        .filter((e) => e.session_id === it.session_id && e.base === base
+                    && e.side === "sell" && e.intent_id !== it.id)
+        .reduce((soma, e) => {
+          const dono = intents.find((i) => i.id === e.intent_id);
+          return soma + compromissoVivo(e, dono?.state, "reservado_qty");
+        }, 0);
+      const disponivel = Number(pos.base_amount) - comprometido;
       if (disponivel <= 0) {
         return { data: { ok: false, motivo: "quantidade_ja_reservada",
-                         na_posicao: pos.base_amount, reservado }, error: null };
+                         na_posicao: pos.base_amount, comprometido }, error: null };
       }
       const conceder = Math.min(qty, disponivel);
-      pos.reservado_qty = reservado + conceder;
-      pos.reservado_ate = agoraMs + JANELA_MS;
+      efeitoDe(it, base).reservado_qty = conceder;
       return { data: { ok: true, qtd: conceder, limitada: conceder < qty,
                        na_posicao: pos.base_amount }, error: null };
     }
-    if (nome === "autopilot_liberar_venda") {
-      const base = String(args.p_base).toUpperCase();
-      const pos = posicoes.find((x) => x.session_id === args.p_session_id && x.base === base);
-      if (pos) {
-        pos.reservado_qty = Math.max(Number(pos.reservado_qty ?? 0) - Number(args.p_qty ?? 0), 0);
-      }
-      return { data: { ok: true }, error: null };
-    }
-    if (nome === "autopilot_reservar_exposicao") {
+
+    if (nome === "autopilot_reservar_exposicao_do_intent") {
       const usd = Number(args.p_usd), teto = Number(args.p_teto);
       if (!(usd > 0)) return { data: { ok: false, motivo: "nocional_nao_mensuravel" }, error: null };
       if (!(teto > 0)) return { data: { ok: false, motivo: "teto_invalido" }, error: null };
-      const ses = sessoes.find((x) => x.id === args.p_session_id);
+      const it = intents.find((i) => i.id === args.p_intent_id);
+      if (!it) return { data: { ok: false, motivo: "intent_inexistente" }, error: null };
+      if (it.side !== "buy") return { data: { ok: false, motivo: "intent_nao_e_compra" }, error: null };
+      if (!autonomo(it)) return { data: { ok: false, motivo: "origem_nao_autonoma" }, error: null };
+      const ses = sessoes.find((x) => x.id === it.session_id);
       if (!ses) return { data: { ok: false, motivo: "sessao_inexistente" }, error: null };
-      const venceu = !ses.exposicao_reservada_ate || Number(ses.exposicao_reservada_ate) < agoraMs;
-      const reservado = venceu ? 0 : Number(ses.exposicao_reservada_usd ?? 0);
+
       const exposicao = posicoes
-        .filter((x) => x.session_id === args.p_session_id && x.status !== "closed")
+        .filter((x) => x.session_id === it.session_id && x.status !== "closed")
         .reduce((soma, x) => soma + Number(x.cost_usd ?? 0), 0);
-      if (exposicao + reservado + usd > teto) {
+      const comprometido = efeitos
+        .filter((e) => e.session_id === it.session_id && e.side === "buy" && e.intent_id !== it.id)
+        .reduce((soma, e) => {
+          const dono = intents.find((i) => i.id === e.intent_id);
+          return soma + compromissoVivo(e, dono?.state, "reservado_usd");
+        }, 0);
+      if (exposicao + comprometido + usd > teto) {
         return { data: { ok: false, motivo: "teto_estourado",
-                         exposicao, reservado, teto }, error: null };
+                         exposicao, comprometido, teto }, error: null };
       }
-      ses.exposicao_reservada_usd = reservado + usd;
-      ses.exposicao_reservada_ate = agoraMs + JANELA_MS;
-      return { data: { ok: true, exposicao, reservado: reservado + usd, teto }, error: null };
+      efeitoDe(it, baseDo(it)).reservado_usd = usd;
+      return { data: { ok: true, exposicao, comprometido: comprometido + usd, teto }, error: null };
     }
-    if (nome === "autopilot_liberar_exposicao") {
-      const ses = sessoes.find((x) => x.id === args.p_session_id);
-      if (ses) {
-        ses.exposicao_reservada_usd =
-          Math.max(Number(ses.exposicao_reservada_usd ?? 0) - Number(args.p_usd ?? 0), 0);
-      }
+
+    if (nome === "autopilot_liberar_reserva_do_intent") {
+      const e = efeitos.find((x) => x.intent_id === args.p_intent_id);
+      if (e) { e.reservado_qty = 0; e.reservado_usd = 0; }
       return { data: { ok: true }, error: null };
     }
 
@@ -603,14 +635,6 @@ export function bancoFalso(): BancoFalso {
                    ledger_qty: 0, ledger_quote: 0 };
         efeitos.push(efeito);
       }
-      // Absorção do que a liquidação da saída armada já aplicou direto.
-      const jaQty = args.p_qty_ja_aplicada;
-      if (typeof jaQty === "number" && jaQty > Number(efeito.applied_qty)) {
-        efeito.applied_qty = jaQty;
-        efeito.applied_quote = Math.max(Number(efeito.applied_quote),
-          Number(args.p_quote_ja_aplicada ?? 0));
-      }
-
       const EPS = 1e-12, RUIDO = 1e-9;
       const noLivro = Number(it.filled_qty);
       // ⚠️ Regressão mede o LIVRO contra o livro; o delta mede o livro contra
@@ -669,23 +693,35 @@ export function bancoFalso(): BancoFalso {
           pos.base_amount = restante; pos.cost_usd = custoRestante;
         }
       }
-      // ⚠️ A reserva vira efeito, na MESMA passagem que aplicou.
-      if (it.side === "sell" && pos) {
-        pos.reservado_qty = Math.max(Number(pos.reservado_qty ?? 0) - deltaQty, 0);
-      } else if (it.side === "buy") {
-        const ses = sessoes.find((x) => x.id === it.session_id);
-        if (ses) {
-          ses.exposicao_reservada_usd =
-            Math.max(Number(ses.exposicao_reservada_usd ?? 0) - deltaQuote, 0);
+      /**
+       * ⚠️⚠️ A138: o P&L realizado entra na MESMA passagem que reduziu.
+       * Antes era uma segunda escrita, e por isso não tinha exactly-once.
+       */
+      let realizado = 0;
+      if (it.side === "sell" && deltaQuote > 0) {
+        realizado = deltaQuote - custoRemovido - Number(args.p_taxa_usd ?? 0);
+        if (realizado !== 0) {
+          const ses = sessoes.find((x) => x.id === it.session_id);
+          if (ses) {
+            const depois = Number(ses.pnl_today ?? 0) + realizado;
+            ses.pnl_today = depois;
+            if (depois <= -Number(ses.daily_loss_stop_usd ?? Infinity)) {
+              ses.frozen_until_day = args.p_hoje ?? ses.frozen_until_day;
+            }
+          }
         }
       }
+      // ⚠️ A reserva não precisa ser "solta": o compromisso vivo é
+      // `greatest(reservado − applied, 0)`, e `applied` acabou de crescer.
+      efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + realizado;
       efeito.applied_qty = Math.max(Number(efeito.applied_qty), noLivro);
       efeito.applied_quote = Math.max(Number(efeito.applied_quote), Number(it.filled_quote));
       efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
       efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
       return { data: { ok: true, motivo: "aplicado", side: it.side, base,
                        aplicado_qty: deltaQty, aplicado_quote: deltaQuote,
-                       custo_removido: custoRemovido, fechou }, error: null };
+                       custo_removido: custoRemovido, fechou,
+                       pnl_realizado: realizado }, error: null };
     }
 
     /**
@@ -699,29 +735,44 @@ export function bancoFalso(): BancoFalso {
       if (!it) return { data: { ok: false, motivo: "intent_inexistente" }, error: null };
       if (it.simulated === true) return { data: { ok: false, motivo: "simulado" }, error: null };
       if (it.side !== "sell") return { data: { ok: false, motivo: "intent_nao_e_venda" }, error: null };
-      const origem = String(it.origin);
-      if ((origem !== "autopilot_browser" && origem !== "autopilot_cron") || it.autonomous !== true) {
-        return { data: { ok: false, motivo: "origem_nao_autonoma" }, error: null };
-      }
-      if (!it.session_id) return { data: { ok: false, motivo: "sem_sessao" }, error: null };
+      if (!autonomo(it)) return { data: { ok: false, motivo: "origem_nao_autonoma" }, error: null };
 
-      const base = String(it.symbol).replace(/-/g, "/").split("/")[0].toUpperCase();
-      let efeito = efeitos.find((e) => e.intent_id === it.id);
-      if (!efeito) {
-        efeito = { intent_id: it.id, session_id: it.session_id, exchange_id: it.exchange_id,
-                   base, side: it.side, applied_qty: 0, applied_quote: 0,
-                   ledger_qty: 0, ledger_quote: 0 };
-        efeitos.push(efeito);
-      }
+      const base = baseDo(it);
+      // ⚠️ Marcador ANTES da posição: repetir é no-op, não erro.
+      const efeito = efeitoDe(it, base);
       const delta = qty - Number(efeito.applied_qty);
       if (delta <= 1e-12) {
         return { data: { ok: true, motivo: "sem_delta", aplicado_qty: 0,
-                         custo_removido: 0, fechou: false }, error: null };
+                         custo_removido: 0, fechou: false, pnl_realizado: 0 }, error: null };
       }
-      const quote = Number(args.p_quote_recebido ?? 0);
-      const deltaQuote = Math.max(quote - Number(efeito.applied_quote), 0);
       const pos = posicoes.find((x) => x.session_id === it.session_id && x.base === base);
       if (!pos) return { data: { ok: false, motivo: "sem_posicao", base }, error: null };
+
+      /**
+       * ⚠️⚠️ A139 — A IDENTIDADE DA SAÍDA É CONFERIDA, não adivinhada.
+       * `external_order_id` não é identificador global da corretora.
+       */
+      if (pos.status !== "exit_armed") {
+        return { data: { ok: false, motivo: "posicao_nao_armada", status: pos.status }, error: null };
+      }
+      if (!pos.exit_intent_id) {
+        return { data: { ok: false, motivo: "saida_sem_identidade",
+                         base, ordem_armada: pos.exit_order_id }, error: null };
+      }
+      if (pos.exit_intent_id !== it.id) {
+        return { data: { ok: false, motivo: "intent_nao_e_a_saida_armada",
+                         esperado: pos.exit_intent_id }, error: null };
+      }
+      if (it.exchange_id !== pos.exchange_id) {
+        return { data: { ok: false, motivo: "corretora_divergente" }, error: null };
+      }
+      if (pos.exit_order_id && it.external_order_id
+          && it.external_order_id !== pos.exit_order_id) {
+        return { data: { ok: false, motivo: "ordem_externa_divergente" }, error: null };
+      }
+
+      const quote = Number(args.p_quote_recebido ?? 0);
+      const deltaQuote = Math.max(quote - Number(efeito.applied_quote), 0);
 
       let custoRemovido = 0, fechou = false;
       const restante = Number(pos.base_amount) - delta;
@@ -734,13 +785,27 @@ export function bancoFalso(): BancoFalso {
         custoRemovido = Number(pos.cost_usd) - custoRestante;
         pos.base_amount = restante; pos.cost_usd = custoRestante;
         pos.status = "open"; pos.exit_order_id = null; pos.exit_armed_at = null;
-        pos.reservado_qty = Math.max(Number(pos.reservado_qty ?? 0) - delta, 0);
+        pos.exit_intent_id = null;
+      }
+
+      // ⚠️⚠️ A138: P&L na MESMA passagem.
+      const realizado = deltaQuote - custoRemovido - Number(args.p_taxa_usd ?? 0);
+      if (realizado !== 0) {
+        const ses = sessoes.find((x) => x.id === it.session_id);
+        if (ses) {
+          const depois = Number(ses.pnl_today ?? 0) + realizado;
+          ses.pnl_today = depois;
+          if (depois <= -Number(ses.daily_loss_stop_usd ?? Infinity)) {
+            ses.frozen_until_day = args.p_hoje ?? ses.frozen_until_day;
+          }
+        }
       }
       efeito.applied_qty = Math.max(Number(efeito.applied_qty), qty);
       efeito.applied_quote = Math.max(Number(efeito.applied_quote), quote);
+      efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + realizado;
       return { data: { ok: true, motivo: "aplicado", aplicado_qty: delta,
                        aplicado_quote: deltaQuote, custo_removido: custoRemovido,
-                       fechou, base }, error: null };
+                       fechou, base, pnl_realizado: realizado }, error: null };
     }
 
     return { data: null, error: { message: `rpc desconhecida: ${nome}` } };

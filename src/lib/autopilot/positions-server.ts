@@ -151,14 +151,33 @@ export async function lerPosicaoDoBot(
  * arma a saída DE NOVO. Duas ordens de venda para a mesma bolsa, e a segunda
  * tenta vender o que a primeira já vendeu.
  */
-export async function markServerExitArmed(sessionId: string, base: string, orderId: string): Promise<Gravacao> {
+/**
+ * ⚠️⚠️⚠️ E ELA GRAVA O INTENT DA SAÍDA — achado A139.
+ *
+ * Antes só o `exit_order_id` era guardado, e a liquidação redescobria o intent
+ * por `(exchange_id, external_order_id)`. Duas coisas erradas:
+ *
+ *   · `external_order_id` NÃO é identificador global da corretora — duas
+ *     contas podem trazer o mesmo número, e a ordem de uma seria atribuída à
+ *     posição da outra;
+ *   · a liquidação perguntava à venue com a credencial ATUAL da sessão. Uma
+ *     sessão rearmada de C1 para C2 iria perguntar a C2 por uma ordem que
+ *     nasceu em C1 — exatamente o que o A127 existe para impedir.
+ *
+ * O intent carrega `conexao_id` histórico. Guardando o id dele, a liquidação
+ * carrega a credencial CERTA e a RPC confere a identidade inteira.
+ */
+export async function markServerExitArmed(
+  sessionId: string, base: string, orderId: string, intentId: string,
+): Promise<Gravacao> {
   const db = getSupabaseAdmin();
   if (!db) return { ok: false, erro: "sem banco" };
   return comRetentativa(() => db.from("autopilot_positions").update({
-    status:        "exit_armed",
-    exit_order_id: orderId,
-    exit_armed_at: new Date().toISOString(),
-    updated_at:    new Date().toISOString(),
+    status:         "exit_armed",
+    exit_order_id:  orderId,
+    exit_intent_id: intentId,
+    exit_armed_at:  new Date().toISOString(),
+    updated_at:     new Date().toISOString(),
   }).eq("session_id", sessionId).eq("base", base.toUpperCase()));
 }
 
@@ -173,10 +192,11 @@ export async function reopenServerPosition(sessionId: string, base: string): Pro
   const db = getSupabaseAdmin();
   if (!db) return { ok: false, erro: "sem banco" };
   return comRetentativa(() => db.from("autopilot_positions").update({
-    status:        "open",
-    exit_order_id: null,
-    exit_armed_at: null,
-    updated_at:    new Date().toISOString(),
+    status:         "open",
+    exit_order_id:  null,
+    exit_intent_id: null,
+    exit_armed_at:  null,
+    updated_at:     new Date().toISOString(),
   }).eq("session_id", sessionId).eq("base", base.toUpperCase()));
 }
 
@@ -209,24 +229,28 @@ export async function reopenServerPosition(sessionId: string, base: string): Pro
  */
 
 /**
- * Atomically add realized P&L to the session's pnl_today and trip the freeze
- * if the daily loss-stop is crossed (apply_session_pnl does both in one
- * statement). `today` is the UTC day key set as frozen_until_day.
+ * ⚠️⚠️⚠️ `applySessionPnl` VIVIA AQUI, E SAIU NO A138 (Round 9).
+ *
+ * Ela somava o P&L realizado no `pnl_today` da sessão e puxava o freio do stop
+ * de perda diária — numa chamada SEPARADA da que reduzia a posição. A cicatriz
+ * que ela carregava continua valendo como lição:
+ *
+ *     "Falhar calado significa que o prejuízo NÃO FOI CONTADO. O stop que o
+ *      dono configurou deixa de existir naquele dia, sem nada na tela dizendo
+ *      — e ele só descobre pelo extrato da corretora."
+ *
+ * Conferir o retorno consertou o silêncio e não consertou o resto: sendo duas
+ * escritas, gravando o P&L e falhando a posição, a passada seguinte somava o
+ * MESMO resultado de novo; gravando a posição e falhando o P&L, o débito sumia
+ * sem ninguém para retentá-lo. Exactly-once não se resolve com telemetria.
+ *
+ * Hoje o resultado entra na MESMA transação que reduz a posição
+ * (`autopilot_projetar_efeito_do_intent` e `autopilot_liquidar_saida_armada`,
+ * migration 0064), e `autopilot_position_effects.pnl_aplicado_usd` guarda
+ * quanto DESTE intent já entrou. O RPC `apply_session_pnl` continua existindo
+ * no banco; nenhuma migration foi alterada para remover o que o código não
+ * chama mais.
+ *
+ * ⚠️ NÃO RESSUSCITAR. Um segundo escritor de P&L é um segundo modelo do
+ * resultado do dia — e o stop de perda depende dele estar certo.
  */
-export async function applySessionPnl(sessionId: string, deltaUsd: number, today: string): Promise<Gravacao> {
-  const db = getSupabaseAdmin();
-  if (!db) return { ok: false, erro: "sem banco" };
-  /**
-   * ⚠️⚠️ ESTA É A PIOR DAS QUATRO, e por isso ficou por último no comentário.
-   *
-   * Este RPC faz duas coisas numa instrução: soma o P&L realizado do dia E
-   * puxa o freio quando o stop de perda diária é cruzado.
-   *
-   * Falhar calado significa que o prejuízo NÃO FOI CONTADO. O stop que o dono
-   * configurou deixa de existir naquele dia, sem nada na tela dizendo — e ele
-   * só descobre pelo extrato da corretora. É a mesma cicatriz do contador
-   * diário de trades (#340), no freio que protege mais dinheiro.
-   */
-  return comRetentativa(() =>
-    db.rpc("apply_session_pnl", { p_id: sessionId, p_delta: deltaUsd, p_today: today }));
-}

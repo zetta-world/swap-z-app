@@ -27,13 +27,13 @@ import { checkRealNotional } from "@/lib/autopilot/price-guard";
 import { quantoPodeVender, oQueSobrou } from "@/lib/autopilot/venda-limitada";
 import {
   tetoDeExposicaoDoRisco, calcularExposicaoUsd,
+  avaliarVendaAutonoma, avaliarExposicaoParaEntrada,
 } from "@/lib/autopilot/inventario";
 import {
   projetarEfeitoDoIntent, projecoesPendentes, liquidarSaidaArmada,
 } from "@/lib/autopilot/projecao-de-posicao";
 import {
-  reservarVendaDoBot, liberarVendaDoBot,
-  reservarExposicaoDoBot, liberarExposicaoDoBot,
+  reservarVendaDoBot, reservarExposicaoDoBot, liberarReservaDoIntent,
 } from "@/lib/autopilot/reserva-de-inventario";
 import { logOperation, notifyTelegram } from "@/lib/admin/track";
 import { setCronHeartbeat } from "@/lib/admin/health";
@@ -41,7 +41,7 @@ import { runAlertWatchdog } from "@/lib/admin/watchdog";
 import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import {
   getOpenServerPositions, markServerExitArmed,
-  reopenServerPosition, applySessionPnl,
+  reopenServerPosition,
 } from "@/lib/autopilot/positions-server";
 import type { AutopilotSessionRow, AutopilotRunRow, AutopilotPositionRow } from "@/lib/supabase/types";
 import type { CexId, CexCredentials, CexOrder } from "@/lib/cex/types";
@@ -105,27 +105,18 @@ type RunRowT = Partial<AutopilotRunRow> & { wallet_address: string; exchange_id:
  * de perda afrouxa — a única pista de que o número na tela está errado A FAVOR
  * DA CASA. Agora o aviso volta como dado, e quem chama (que já é async) grava.
  */
-function realizedFromSell(order: CexOrder, pos: AutopilotPositionRow): {
-  realized: number | null;
-  aviso: { moeda: string; valor: number } | null;
-} {
-  const vazio = { realized: null, aviso: null } as const;
-  const filledQty = Number(order.filled ?? 0);
-  if (!(filledQty > 0)) return vazio;
-  const proceeds = Number(order.cost) > 0 ? Number(order.cost) : filledQty * Number(order.average ?? 0);
-  if (!(proceeds > 0)) return vazio;
-  const avgCost = Number(pos.base_amount) > 0 ? Number(pos.cost_usd) / Number(pos.base_amount) : 0;
-  if (!(avgCost > 0)) return vazio;
-  const costRemoved = avgCost * filledQty;
-  const taxa = taxaEmUsd(order, proceeds, filledQty, String(pos.pair ?? ""));
-  const realized = proceeds - costRemoved - taxa.usd;
-  return {
-    realized: Number.isFinite(realized) ? realized : null,
-    aviso: taxa.naoPrecificada
-      ? { moeda: taxa.naoPrecificada.moeda, valor: taxa.naoPrecificada.valor }
-      : null,
-  };
-}
+/**
+ * ⚠️⚠️ `realizedFromSell` VIVIA AQUI, E SAIU NO A138 (Round 9).
+ *
+ * Ela calculava `proceeds − custo médio × preenchido − taxa` contra a posição
+ * AINDA INTEIRA, e o resultado ia para `applySessionPnl` — outra escrita. A
+ * conta era a certa; o problema era ser duas.
+ *
+ * Hoje quem faz a conta é a transação que reduz a posição: ela já tem o custo
+ * removido (a outra metade da conta) e o marcador do intent. Daqui só sai a
+ * conversão da TAXA (`taxaEmUsd`), que é a única parte que o banco não tem
+ * como fazer — ela depende do preço da moeda em que a corretora cobrou.
+ */
 
 /**
  * Grava o aviso de taxa não precificada. ⚠️ AGUARDADO: na Vercel a função
@@ -158,12 +149,32 @@ async function avisarTaxaNaoPrecificada(pair: unknown, aviso: { moeda: string; v
  * telemetria. Agora é uma chamada só, e a posição e o marcador avançam juntos
  * ou não avançam.
  */
+/**
+ * A credencial com que se pergunta pela saída armada: a do INTENT que a criou.
+ *
+ * ⚠️ `credenciaisDoIntentParaRecovery` é a mesma porta que o recuperador usa
+ * (A127): ela resolve por `intent.conexao_id`, a versão do cofre daquele
+ * momento — nunca pela sessão atual.
+ */
+async function credenciaisDaSaidaArmada(
+  pos: AutopilotPositionRow,
+): Promise<CexCredentials | null> {
+  const db = getSupabaseAdmin();
+  if (!db || !pos.exit_intent_id) return null;
+  const { data, error } = await db
+    .from("cex_execution_intents")
+    .select("id, conexao_id")
+    .eq("id", pos.exit_intent_id)
+    .maybeSingle();
+  if (error || !data) return null;
+  return credenciaisDoIntentParaRecovery(db, data);
+}
+
 async function liquidarNoLivro(
   pos: AutopilotPositionRow, order: CexOrder, vendido: number,
-): Promise<{ aplicou: boolean; custoRemovido: number; fechou: boolean }> {
-  const nada = { aplicou: false, custoRemovido: 0, fechou: false };
-  const db = getSupabaseAdmin();
-  const ordemExterna = pos.exit_order_id;
+  taxaUsd: number, hoje: string,
+): Promise<{ aplicou: boolean; custoRemovido: number; fechou: boolean; realizado: number }> {
+  const nada = { aplicou: false, custoRemovido: 0, fechou: false, realizado: 0 };
   const avisar = async (porque: string, extra: Record<string, unknown> = {}) => {
     await recordEvent("autopilot_liquidacao_nao_aplicada", { meta: {
       severity: "high", session: pos.session_id, base: pos.base, porque, ...extra,
@@ -171,28 +182,33 @@ async function liquidarNoLivro(
         + "A posicao segue dizendo que a bolsa esta la.",
     } });
   };
-  if (!db || !ordemExterna) {
-    await avisar(!db ? "sem banco" : "posicao armada sem exit_order_id");
-    return nada;
-  }
-  const { data, error } = await db
-    .from("cex_execution_intents")
-    .select("id")
-    .eq("exchange_id", pos.exchange_id)
-    .eq("external_order_id", ordemExterna)
-    .maybeSingle();
-  if (error || !data) {
-    await avisar(error ? error.message.slice(0, 160) : "intent nao encontrado por ordem externa",
-      { ordem: ordemExterna });
+  /**
+   * ⚠️⚠️⚠️ O INTENT VEM DA POSIÇÃO, NÃO DE UMA BUSCA — achado A139.
+   *
+   * Isto procurava o intent por `(exchange_id, external_order_id)`. Esse
+   * número NÃO é identificador global da corretora: duas contas podem trazer
+   * o mesmo, e a ordem de uma seria atribuída à posição da outra. Agora o elo
+   * foi gravado ao ARMAR, e a RPC confere a identidade inteira.
+   *
+   * ⚠️ LEGADO SEM ELO NÃO É ADIVINHADO. Uma posição armada antes desta
+   * migration não tem `exit_intent_id` — e procurar por número de ordem é
+   * exatamente o que o achado proíbe. Vira caso de mão humana.
+   */
+  const intentDaSaida = pos.exit_intent_id;
+  if (!intentDaSaida) {
+    await avisar("posicao armada sem exit_intent_id (legado) — reconciliacao humana",
+      { ordem: pos.exit_order_id });
     return nada;
   }
   const quote = Number((order as unknown as { cost?: unknown }).cost);
-  const r = await liquidarSaidaArmada(data.id, vendido, Number.isFinite(quote) ? quote : 0);
+  const r = await liquidarSaidaArmada(
+    intentDaSaida, vendido, Number.isFinite(quote) ? quote : 0, taxaUsd, hoje);
   if (!r.ok) {
-    await avisar(r.porque, { intent: data.id, motivo: r.motivo });
+    await avisar(r.porque, { intent: intentDaSaida, motivo: r.motivo });
     return nada;
   }
-  return { aplicou: r.motivo === "aplicado", custoRemovido: r.custoRemovido, fechou: r.fechou };
+  return { aplicou: r.motivo === "aplicado", custoRemovido: r.custoRemovido,
+           fechou: r.fechou, realizado: r.realizado };
 }
 
 async function settleArmedExits(
@@ -221,18 +237,49 @@ async function settleArmedExits(
   const armed = leitura.posicoes.filter((p) => p.status === "exit_armed" && p.exit_order_id);
   for (const pos of armed) {
     try {
-      const order = await fetchCexOrderStatus(exchange, creds, pos.exit_order_id!, pos.pair);
+      /**
+       * ⚠️⚠️⚠️ A CREDENCIAL É A QUE CRIOU A ORDEM — achado A139 / A127.
+       *
+       * Isto consultava a venue com a credencial ATUAL da sessão. Uma sessão
+       * rearmada de C1 para C2 iria perguntar a C2 por uma ordem que nasceu em
+       * C1: conta errada, resposta errada — e, no melhor dos casos, "ordem não
+       * encontrada" virando conclusão sobre dinheiro.
+       *
+       * O intent da saída carrega `conexao_id` histórico, e é por ele que a
+       * credencial é carregada. Sem intent (legado) ou sem credencial
+       * recuperável, NÃO se pergunta: a posição fica como está e o evento diz
+       * que precisa de mão humana.
+       */
+      const credenciaisDaSaida = await credenciaisDaSaidaArmada(pos);
+      if (!credenciaisDaSaida) {
+        await recordEvent("autopilot_saida_sem_credencial_historica", { wallet: s.wallet_address, meta: {
+          severity: "high", session: s.id, base: pos.base, ordem: pos.exit_order_id,
+          intent: pos.exit_intent_id,
+          why: "a ordem de saida nasceu noutra versao do cofre (ou e legado sem elo). "
+            + "Perguntar com a credencial ATUAL seria perguntar na conta errada.",
+        } });
+        continue;
+      }
+      const order = await fetchCexOrderStatus(
+        exchange, credenciaisDaSaida, pos.exit_order_id!, pos.pair);
       const st = order.status?.toLowerCase() ?? "";
       if (st === "closed" || st === "filled") {
-        const { realized, aviso } = realizedFromSell(order, pos);
-        if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
-        if (realized !== null) {
-          realizedDelta += realized;
-          await exigirGravacao(
-            await applySessionPnl(s.id, realized, today),
-            "P&L realizado NAO contabilizado — o stop de perda diaria nao viu esta perda e pode nao puxar o freio hoje",
-            { session: s.id, base: pos.base, realized });
-        }
+        /**
+         * ⚠️⚠️⚠️ O P&L DEIXOU DE SER UMA SEGUNDA ESCRITA — achado A138.
+         *
+         * Era `realizedFromSell` + `applySessionPnl` aqui, e a redução da
+         * posição logo abaixo. Duas escritas sem nada que as amarrasse:
+         * gravando o P&L e falhando a redução, a passada seguinte somava o
+         * MESMO resultado de novo; gravando a redução e falhando o P&L, o
+         * débito sumia sem ninguém para retentá-lo.
+         *
+         * Agora a RPC de liquidação faz as duas — e o custo removido, que é
+         * metade da conta, sai da MESMA transação que o aplicou. Daqui só vai
+         * a taxa convertida, que continua sendo a conversão de sempre.
+         */
+        const taxaDaSaida = taxaEmUsd(order, Number(order.cost) > 0 ? Number(order.cost) : 0,
+          Number(order.filled ?? 0), String(pos.pair ?? ""));
+        if (taxaDaSaida.naoPrecificada) await avisarTaxaNaoPrecificada(pos.pair, taxaDaSaida.naoPrecificada);
         /**
          * ⚠⚠ IDEM AQUI (A14): uma ordem limitada pode fechar PARCIALMENTE
          * preenchida, e apagar a linha deixaria o resto órfão para sempre.
@@ -268,9 +315,11 @@ async function settleArmedExits(
          * no livro, e nenhum caminho a repararia. Falhar antes de absorver
          * deixa o conserto possível — a reconciliação aplica o delta.
          */
-        // ⚠️ A136: posição e marcador numa transação só. `sobra` continua
-        // sendo calculada porque a NOTA da passada fala do remanescente.
-        await liquidarNoLivro(pos, order, vendido);
+        // ⚠️ A136/A138: posição, marcador e P&L numa transação só. `sobra`
+        // continua sendo calculada porque a NOTA da passada fala do resto.
+        const liq = await liquidarNoLivro(pos, order, vendido, taxaDaSaida.usd, today);
+        const realized = liq.aplicou ? liq.realizado : null;
+        realizedDelta += liq.realizado;
         logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: pos.pair, side: "sell", volumeUsd: sobra.custoRemovido || null, pnlUsd: realized, status: "settled", route: "cron", ref: `${exchange}:${pos.exit_order_id}` });
         rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", order_type: "limit", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: realized !== null ? `exit settled, realized $${realized.toFixed(2)}${sobra.fecha ? "" : `, ${sobra.baseRestante} still held`}` : "exit settled" });
       } else if (st === "canceled" || st === "cancelled" || st === "expired") {
@@ -287,14 +336,11 @@ async function settleArmedExits(
          */
         const jaVendido = Number(order.filled);
         if (jaVendido > 0) {
-          const { realized, aviso } = realizedFromSell(order, pos);
-          if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
-          if (realized !== null) {
-            realizedDelta += realized;
-            await exigirGravacao(
-              await applySessionPnl(s.id, realized, today),
-              "P&L da saida parcial cancelada NAO contabilizado — o stop de perda nao viu esta perda",
-              { session: s.id, base: pos.base, realized });
+          // ⚠️ A138: idem — P&L e posição na mesma transação da liquidação.
+          const taxaDoCancelado = taxaEmUsd(order, Number(order.cost) > 0 ? Number(order.cost) : 0,
+            jaVendido, String(pos.pair ?? ""));
+          if (taxaDoCancelado.naoPrecificada) {
+            await avisarTaxaNaoPrecificada(pos.pair, taxaDoCancelado.naoPrecificada);
           }
           const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), jaVendido);
           /**
@@ -302,7 +348,10 @@ async function settleArmedExits(
            * mesma transação que o aplica reabre o remanescente (a RPC volta o
            * status para `open` e solta o elo com a ordem morta).
            */
-          await liquidarNoLivro(pos, order, jaVendido);
+          const liqCancel = await liquidarNoLivro(
+            pos, order, jaVendido, taxaDoCancelado.usd, today);
+          const realized = liqCancel.aplicou ? liqCancel.realizado : null;
+          realizedDelta += liqCancel.realizado;
           rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: `cancelada com ${jaVendido} ja vendido — so o remanescente reabre` });
         } else {
           await exigirGravacao(
@@ -1065,23 +1114,48 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
    * Vive por ITERAÇÃO do laço: cada intent reserva o seu, e a devolução entra
    * na MESMA costura que já devolvia a vaga diária — só na recusa provada.
    */
-  let reservaDeVenda: { base: string; qtd: number } | null = null;
-  let reservaDeExposicao: number | null = null;
+  /** Quanto esta entrada vai reservar; medido no pré-voo. */
+  let entradaReservavelUsd: number | null = null;
+  /** Quanto esta venda vai reservar; medido no pré-voo. */
+  let qtdReservavel: number | null = null;
+  /** O intent que prometeu algo e ainda não virou ordem. */
+  let intentComReserva: string | null = null;
   const devolverReservasDaOrdem = async () => {
-    if (reservaDeVenda) {
-      await liberarVendaDoBot(s.id, reservaDeVenda.base, reservaDeVenda.qtd);
-      reservaDeVenda = null;
-    }
-    if (reservaDeExposicao != null) {
-      await liberarExposicaoDoBot(s.id, reservaDeExposicao);
-      reservaDeExposicao = null;
-    }
+    if (!intentComReserva) return;
+    await liberarReservaDoIntent(intentComReserva);
+    intentComReserva = null;
   };
 
   const novaVaga = (): VagaDiaria => {
     const vaga = reservaDaVagaDiaria(s.id, today);
     return {
       ...vaga,
+      /**
+       * ⚠️⚠️⚠️ AS TRÊS RESERVAS, COM O INTENT NA MÃO — A134/A135/A137.
+       *
+       * O intent já existe quando a costura roda, e é a ele que o compromisso
+       * pertence. Reserva limitada é RECUSA: a linha já foi gravada com a
+       * quantidade, e conceder menos a faria mentir.
+       */
+      reservar: async (intentId: string) => {
+        const daVaga = await vaga.reservar(intentId);
+        if (!daVaga.ok) return daVaga;
+        intentComReserva = intentId;
+        if (qtdReservavel != null) {
+          const posse = await reservarVendaDoBot(intentId, qtdReservavel);
+          if (!posse.ok) return { ok: false as const, porque: `posse: ${posse.porque}` };
+          if (posse.limitada || posse.qtd + 1e-12 < qtdReservavel) {
+            return { ok: false as const,
+              porque: "posse: a bolsa foi prometida a outra venda entre a "
+                + "autorizacao e a reserva — nada sai" };
+          }
+        } else if (entradaReservavelUsd != null) {
+          const exp = await reservarExposicaoDoBot(
+            intentId, entradaReservavelUsd, maxExposureUsd);
+          if (!exp.ok) return { ok: false as const, porque: `exposicao: ${exp.porque}` };
+        }
+        return { ok: true as const };
+      },
       // ⚠️ Recusa PROVADA devolve as três; UNKNOWN não devolve nenhuma.
       liberar: async () => { await vaga.liberar?.(); await devolverReservasDaOrdem(); },
     };
@@ -1115,8 +1189,9 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     for (const intent of intents) {
       // ⚠️ As reservas são POR ORDEM. Sobrar estado de uma iteração faria a
       // devolução da próxima soltar o que não era dela.
-      reservaDeVenda = null;
-      reservaDeExposicao = null;
+      qtdReservavel = null;
+      entradaReservavelUsd = null;
+      intentComReserva = null;
       if (fired >= MAX_ORDERS_PER_RUN || remainingTrades <= 0 || !contadorConfiavel) break outer;
       if (frozenUntil === today) break outer;
 
@@ -1185,7 +1260,15 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
          * mandam a mesma bolsa. A reserva é tomada dentro da transação que
          * confere, e vale para os dois canais.
          */
-        const venda = await reservarVendaDoBot(s.id, base, intent.amount);
+        /**
+         * ⚠️⚠️ PRÉ-VOO: dimensiona, não autoriza (A137). A quantidade precisa
+         * ser decidida antes de o intent nascer; a reserva com dono acontece
+         * na costura do executor, com o id na mão.
+         */
+        const venda = avaliarVendaAutonoma({
+          leitura: { ok: true as const, posicao: pos },
+          pedido: intent.amount,
+        });
         if (!venda.ok) {
           pushRow(intent, "rejected", card.kind, { reason: `sell blocked: ${venda.porque}`.slice(0, 200) });
           continue;
@@ -1201,7 +1284,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         }
         amount = venda.qtd;
         vendaDe = pos;
-        reservaDeVenda = { base, qtd: venda.qtd };
+        qtdReservavel = venda.qtd;
       }
 
       const refPrice = refPrices.get(base)?.priceUsd ?? null;
@@ -1291,15 +1374,13 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
           // navegador.
           fired++; remainingTrades--;
           if (intent.type === "market") {
-            const { realized, aviso } = realizedFromSell(order, pos);
-            if (aviso) await avisarTaxaNaoPrecificada(pos.pair, aviso);
-            if (realized !== null) {
-              pnlToday += realized;
-              await exigirGravacao(
-                await applySessionPnl(s.id, realized, today),
-                "P&L realizado NAO contabilizado — o stop de perda diaria nao viu esta perda e pode nao puxar o freio hoje",
-                { session: s.id, base: pos.base, realized });
-              if (pnlToday <= -s.daily_loss_stop_usd) frozenUntil = today;
+            // ⚠️⚠️ A138: a conversão da taxa continua aqui; o P&L entra na
+            // MESMA transação da projeção, abaixo. Duas escritas sem nada que
+            // as amarrasse era o defeito.
+            const taxaDaVenda = taxaEmUsd(order, Number(order.cost) > 0 ? Number(order.cost) : 0,
+              Number(order.filled ?? 0), String(pos.pair ?? ""));
+            if (taxaDaVenda.naoPrecificada) {
+              await avisarTaxaNaoPrecificada(pos.pair, taxaDaVenda.naoPrecificada);
             }
             /**
              * ⚠⚠ SAÍDA PARCIAL NÃO APAGA A LINHA (A14). Antes, qualquer
@@ -1346,7 +1427,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
              * Ela não grava nada.
              */
             const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
-            const projecao = await projetarEfeitoDoIntent(exec.intentId);
+            const projecao = await projetarEfeitoDoIntent(exec.intentId,
+              { taxaUsd: taxaDaVenda.usd, hoje: today });
             if (!projecao.ok) {
               avisarRegistroPerdido(
                 "saida NAO projetada no livro — o bot segue achando que tem a bolsa que acabou de vender",
@@ -1355,12 +1437,21 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
             } else if (projecao.fechou) {
               ownedBases.delete(base);
             }
+            // ⚠️ O P&L já entrou no banco pela projeção; aqui só o espelho em
+            // memória, que decide o freeze DESTA passada.
+            if (projecao.ok) {
+              pnlToday += projecao.realizado;
+              if (pnlToday <= -s.daily_loss_stop_usd) frozenUntil = today;
+            }
             exposureUsd = Math.max(0, exposureUsd - sobra.custoRemovido);
+            const realized = projecao.ok ? projecao.realizado : null;
             logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: intent.symbol, side: "sell", volumeUsd: sobra.custoRemovido || null, pnlUsd: realized, status: "filled", route: "cron", ref: `${exchange}:${order.id}` });
             pushRow(intent, "fired", card.kind, { order_id: order.id, notional_usd: realized ?? guard.realNotionalUsd ?? intent.notionalUsd, reason: realized !== null ? `exit filled, realized $${realized.toFixed(2)}${sobra.fecha ? "" : `, ${sobra.baseRestante} still held`}` : "exit filled" });
           } else {
             await exigirGravacao(
-              await markServerExitArmed(s.id, pos.base, order.id),
+              // ⚠️ A139: o intent da saída vai junto — é ele que carrega a
+              // conexão histórica com que a liquidação vai perguntar.
+              await markServerExitArmed(s.id, pos.base, order.id, exec.intentId),
               "saida NAO marcada como armada — a passada seguinte arma DE NOVO e vende duas vezes a mesma bolsa",
               { session: s.id, base: pos.base, order_id: order.id });
             pushRow(intent, "fired", card.kind, { order_id: order.id, reason: "exit armed (limit)" });
@@ -1434,12 +1525,17 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
        * passam as duas. A reserva soma a exposição REAL e o que já está
        * prometido, com a linha da sessão travada.
        */
-      const exposicao = await reservarExposicaoDoBot(s.id, buyNotional, maxExposureUsd);
+      // ⚠️ PRÉ-VOO, como na venda. A reserva com dono é na costura (A137).
+      const exposicao = avaliarExposicaoParaEntrada({
+        leitura: { ok: true as const, posicoes: openPositions },
+        novaEntradaUsd: buyNotional,
+        tetoUsd: maxExposureUsd,
+      });
       if (!exposicao.ok) {
         pushRow(intent, "rejected", card.kind, { reason: exposicao.porque.slice(0, 200) });
         continue;
       }
-      reservaDeExposicao = buyNotional;
+      entradaReservavelUsd = buyNotional;
       try {
         /**
          * ⚠️⚠️ PASSA PELO EXECUTOR AUTORITATIVO (A107). Intent durável antes do

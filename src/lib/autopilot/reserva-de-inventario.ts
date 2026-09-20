@@ -17,10 +17,22 @@
  * o navegador e o cron nem rodam na mesma máquina. A reserva é tomada DENTRO
  * da transação que a confere, com `for update` na linha (migration 0064).
  *
- * ⚠️ E ELA EXPIRA. A reserva cobre o intervalo entre autorizar e a ordem
- * EXISTIR. Depois disso quem descreve a realidade é o intent — e, na venda, o
- * `exit_armed`. Uma reserva eterna de uma ordem que ficou UNKNOWN e nunca
- * executou trancaria a posição para sempre.
+ * ⚠️⚠️ E ELA TEM DONO: O INTENT — achado A137.
+ *
+ * A primeira versão somava num contador agregado com prazo de validade de dez
+ * minutos. As duas decisões estavam erradas:
+ *
+ *   · o prazo esquecia ordem VIVA. Uma limitada aceita sem preencher liberava
+ *     o compromisso dez minutos depois; a segunda entrada passava, e as duas
+ *     preenchiam — teto de 200 fechando em 210;
+ *   · sem dono, a projeção de uma ordem ANTIGA subtraía do agregado e podia
+ *     consumir o compromisso de outra mais NOVA.
+ *
+ * Agora a reserva nasce com o `intent_id` — o executor grava o intent ANTES da
+ * costura de reserva, então há a quem pertencer. O compromisso vivo é
+ * `greatest(reservado − aplicado, 0)` enquanto o intent puder preencher, e
+ * ZERO quando ele está provadamente morto (`CANCELED`/`FAILED_PRE_SUBMIT`).
+ * Não há prazo: quem encerra um compromisso é o estado do intent.
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -28,14 +40,16 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type MotivoDaRecusaDeReserva =
   | "sem_posicao" | "saida_ja_armada" | "quantidade_ja_reservada"
   | "quantidade_invalida" | "teto_estourado" | "nocional_nao_mensuravel"
-  | "teto_invalido" | "sessao_inexistente" | "erro";
+  | "teto_invalido" | "sessao_inexistente" | "intent_inexistente"
+  | "intent_nao_e_venda" | "intent_nao_e_compra" | "origem_nao_autonoma"
+  | "simulado" | "sem_sessao" | "erro";
 
 export type ReservaDeVenda =
   | { ok: true; qtd: number; limitada: boolean; naPosicao: number }
   | { ok: false; motivo: MotivoDaRecusaDeReserva; porque: string };
 
 export type ReservaDeExposicao =
-  | { ok: true; exposicaoUsd: number; reservadoUsd: number; tetoUsd: number }
+  | { ok: true; exposicaoUsd: number; comprometidoUsd: number; tetoUsd: number }
   | { ok: false; motivo: MotivoDaRecusaDeReserva; porque: string };
 
 export interface DependenciasDaReservaDeInventario {
@@ -52,7 +66,7 @@ async function rpc(
     const db = getSupabaseAdmin();
     if (!db) return { __erro: "supabase nao configurado" };
     const { data, error } = await db.rpc(
-      nome as "autopilot_reservar_venda", args as never) as
+      nome as "autopilot_reservar_venda_do_intent", args as never) as
       { data: unknown; error: { message: string } | null };
     // ⚠️ O cliente RESOLVE com `{ error }` — não lança. Sem esta linha, falha
     // de banco passaria por reserva concedida.
@@ -74,11 +88,11 @@ const motivoDe = (r: Record<string, unknown>): MotivoDaRecusaDeReserva =>
  * também impede a segunda venda concorrente.
  */
 export async function reservarVendaDoBot(
-  sessionId: string, base: string, pedido: number,
+  intentId: string, pedido: number,
   deps: DependenciasDaReservaDeInventario = {},
 ): Promise<ReservaDeVenda> {
-  const r = await rpc("autopilot_reservar_venda",
-    { p_session_id: sessionId, p_base: base, p_qty: pedido }, deps);
+  const r = await rpc("autopilot_reservar_venda_do_intent",
+    { p_intent_id: intentId, p_qty: pedido }, deps);
   if ("__erro" in r) {
     return { ok: false, motivo: "erro",
       porque: `nao deu para reservar a posicao: ${r.__erro} — sem reserva, `
@@ -102,20 +116,25 @@ function porqueDaVenda(motivo: MotivoDaRecusaDeReserva, r: Record<string, unknow
         + "uma segunda venda despejaria a mesma bolsa duas vezes";
     case "quantidade_ja_reservada":
       return `a posicao inteira ja esta prometida a outra venda em voo `
-        + `(${String(r.reservado ?? "?")} de ${String(r.na_posicao ?? "?")})`;
+        + `(${String(r.comprometido ?? "?")} de ${String(r.na_posicao ?? "?")})`;
     default:
       return `reserva de venda recusada: ${motivo}`;
   }
 }
 
-/** Devolve a quantidade reservada. ⚠️ SÓ na recusa PROVADA — nunca em UNKNOWN. */
-export async function liberarVendaDoBot(
-  sessionId: string, base: string, qtd: number,
-  deps: DependenciasDaReservaDeInventario = {},
+/**
+ * Devolve TUDO que este intent prometeu — quantidade e capital.
+ *
+ * ⚠️ SÓ NA RECUSA PROVADA, nunca em `UNKNOWN`: a ordem pode estar viva, e
+ * soltar a bolsa autorizaria uma segunda venda sobre o mesmo dinheiro.
+ *
+ * ⚠️ E SÓ O DESTE INTENT. Era isso que o contador agregado não sabia fazer: a
+ * devolução de um podia comer a reserva de outro.
+ */
+export async function liberarReservaDoIntent(
+  intentId: string, deps: DependenciasDaReservaDeInventario = {},
 ): Promise<void> {
-  if (!(qtd > 0)) return;
-  await rpc("autopilot_liberar_venda",
-    { p_session_id: sessionId, p_base: base, p_qty: qtd }, deps);
+  await rpc("autopilot_liberar_reserva_do_intent", { p_intent_id: intentId }, deps);
 }
 
 /**
@@ -126,11 +145,11 @@ export async function liberarVendaDoBot(
  * segunda lê a reserva da primeira.
  */
 export async function reservarExposicaoDoBot(
-  sessionId: string, entradaUsd: number, tetoUsd: number,
+  intentId: string, entradaUsd: number, tetoUsd: number,
   deps: DependenciasDaReservaDeInventario = {},
 ): Promise<ReservaDeExposicao> {
-  const r = await rpc("autopilot_reservar_exposicao",
-    { p_session_id: sessionId, p_usd: entradaUsd, p_teto: tetoUsd }, deps);
+  const r = await rpc("autopilot_reservar_exposicao_do_intent",
+    { p_intent_id: intentId, p_usd: entradaUsd, p_teto: tetoUsd }, deps);
   if ("__erro" in r) {
     return { ok: false, motivo: "erro",
       porque: `nao deu para reservar exposicao: ${r.__erro} — exposicao `
@@ -140,19 +159,11 @@ export async function reservarExposicaoDoBot(
     const motivo = motivoDe(r);
     return { ok: false, motivo,
       porque: motivo === "teto_estourado"
-        ? `exposicao ${String(r.exposicao ?? "?")} + reservado `
-          + `${String(r.reservado ?? "?")} + entrada ${entradaUsd} passa do teto `
+        ? `exposicao ${String(r.exposicao ?? "?")} + comprometido `
+          + `${String(r.comprometido ?? "?")} + entrada ${entradaUsd} passa do teto `
           + `${String(r.teto ?? tetoUsd)} do modo de risco desta sessao`
         : `reserva de exposicao recusada: ${motivo}` };
   }
   return { ok: true, exposicaoUsd: Number(r.exposicao),
-    reservadoUsd: Number(r.reservado), tetoUsd: Number(r.teto) };
-}
-
-/** Devolve o capital reservado. ⚠️ SÓ na recusa PROVADA. */
-export async function liberarExposicaoDoBot(
-  sessionId: string, usd: number, deps: DependenciasDaReservaDeInventario = {},
-): Promise<void> {
-  if (!(usd > 0)) return;
-  await rpc("autopilot_liberar_exposicao", { p_session_id: sessionId, p_usd: usd }, deps);
+    comprometidoUsd: Number(r.comprometido), tetoUsd: Number(r.teto) };
 }

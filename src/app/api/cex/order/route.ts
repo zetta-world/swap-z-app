@@ -8,13 +8,15 @@ import { avaliarDecisaoDeEstrategia } from "@/lib/autopilot/politica";
 import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { regimeDaBase } from "@/lib/autopilot/regime";
 import { getSessionStatus, utcDayKey } from "@/lib/autopilot/sessions";
-import { markServerExitArmed, applySessionPnl } from "@/lib/autopilot/positions-server";
+import { markServerExitArmed } from "@/lib/autopilot/positions-server";
 import { taxaEmUsd } from "@/lib/cex/taxa";
-import { tetoDeExposicaoDoRisco } from "@/lib/autopilot/inventario";
 import {
-  reservarVendaDoBot, liberarVendaDoBot,
-  reservarExposicaoDoBot, liberarExposicaoDoBot,
+  tetoDeExposicaoDoRisco, avaliarExposicaoParaEntrada, avaliarVendaAutonoma,
+} from "@/lib/autopilot/inventario";
+import {
+  reservarVendaDoBot, reservarExposicaoDoBot, liberarReservaDoIntent,
 } from "@/lib/autopilot/reserva-de-inventario";
+import { lerPosicaoDoBot, getOpenServerPositions } from "@/lib/autopilot/positions-server";
 import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
 import { reservaDaVagaDiaria } from "@/lib/autopilot/reserva-de-vaga";
 import {
@@ -227,25 +229,27 @@ export async function POST(req: NextRequest) {
   /** A carteira do piloto, para a telemetria fora do ramo da sessão. */
   let walletDoPiloto: string | null = null;
   /**
-   * ⚠️⚠️ O QUE FOI PROMETIDO E AINDA NÃO VIROU ORDEM — A134/A135.
+   * ⚠️⚠️ O CAPITAL QUE ESTA ENTRADA VAI RESERVAR — A135/A137.
    *
-   * A reserva é tomada ANTES do efeito externo. Toda recusa daí em diante tem
-   * de devolvê-la: uma reserva esquecida tranca a posição (ou o teto de
-   * exposição) da sessão até expirar. Só o desfecho INCERTO não devolve — a
-   * ordem pode estar viva, e devolver sobre dúvida autorizaria a segunda.
+   * O pré-voo mede; a reserva com dono acontece na costura do executor, com o
+   * intent na mão. Este número é o que ela vai pedir.
    */
-  let reservaDeVendaEmVoo: { base: string; qtd: number } | null = null;
-  let reservaDeExposicaoEmVoo: number | null = null;
+  let entradaReservavelUsd: number | null = null;
+  /** O teto do modo de risco DESTA sessão, medido no pré-voo. */
+  let tetoDeExposicaoUsd = 0;
+  /**
+   * ⚠️⚠️ O INTENT QUE PROMETEU ALGO E AINDA NÃO VIROU ORDEM — A137.
+   *
+   * Toda recusa depois da reserva tem de devolver o compromisso DELE (e de
+   * nenhum outro). Só o desfecho INCERTO não devolve: a ordem pode estar viva,
+   * e soltar a bolsa autorizaria uma segunda venda sobre o mesmo dinheiro.
+   */
+  let intentComReserva: string | null = null;
 
   const devolverReservasEmVoo = async () => {
-    if (sessaoDoPilotoId && reservaDeVendaEmVoo) {
-      await liberarVendaDoBot(sessaoDoPilotoId, reservaDeVendaEmVoo.base, reservaDeVendaEmVoo.qtd);
-      reservaDeVendaEmVoo = null;
-    }
-    if (sessaoDoPilotoId && reservaDeExposicaoEmVoo != null) {
-      await liberarExposicaoDoBot(sessaoDoPilotoId, reservaDeExposicaoEmVoo);
-      reservaDeExposicaoEmVoo = null;
-    }
+    if (!intentComReserva) return;
+    await liberarReservaDoIntent(intentComReserva);
+    intentComReserva = null;
   };
   let conexaoDoPilotoId: string | null = null;
   /** ⚠️ O dia UTC usado na reserva — o MESMO da autorização, não recalculado. */
@@ -457,7 +461,23 @@ export async function POST(req: NextRequest) {
        * na linha da posição), e ela também LIMITA à posição do bot. Quem
        * devolve é só a recusa PROVADA; UNKNOWN não devolve nada.
        */
-      const posse = await reservarVendaDoBot(sessaoDoPilotoId, base, body.amount);
+      /**
+       * ⚠️⚠️ ESTE É O PRÉ-VOO: ele DIMENSIONA, não autoriza — A137.
+       *
+       * A quantidade precisa ser decidida antes de o intent nascer (ele grava
+       * `requested_qty`), e nesse momento ainda não há id para a reserva
+       * pertencer a alguém. Então aqui se lê o livro, recusa-se o que já é
+       * recusável (sem posição, saída armada, livro ilegível) e limita-se o
+       * pedido à posição do bot — tudo ANTES do cofre (§20).
+       *
+       * ⚠️ A AUTORIZAÇÃO DE VERDADE É A RESERVA, na costura do executor, com o
+       * intent na mão. Se alguém prometer a bolsa entre este pré-voo e ela, a
+       * reserva recusa e NADA sai.
+       */
+      const posse = avaliarVendaAutonoma({
+        leitura: await lerPosicaoDoBot(sessaoDoPilotoId, base),
+        pedido: body.amount,
+      });
       if (!posse.ok) {
         logSecurity("a131_venda_sem_posse", {
           route: "cex/order", symbol: body.symbol, motivo: posse.motivo,
@@ -481,7 +501,6 @@ export async function POST(req: NextRequest) {
         } });
       }
       quantidadeAutorizada = posse.qtd;
-      reservaDeVendaEmVoo = { base, qtd: posse.qtd };
     }
 
     const refPrice = await getReferencePriceUsd(base);
@@ -546,9 +565,15 @@ export async function POST(req: NextRequest) {
        * exposição REAL e o que já está prometido dentro da mesma transação,
        * com a linha da sessão travada.
        */
+      // ⚠️ PRÉ-VOO, como na venda: recusa cedo o que já dá para recusar. A
+      // reserva com dono acontece na costura do executor (A137).
       const entradaUsd = guard.realNotionalUsd ?? Number.NaN;
-      const exposicao = await reservarExposicaoDoBot(
-        sessaoDoPilotoId, entradaUsd, tetoDeExposicaoDoRisco(sessaoDoPiloto?.risk_mode));
+      tetoDeExposicaoUsd = tetoDeExposicaoDoRisco(sessaoDoPiloto?.risk_mode);
+      const exposicao = avaliarExposicaoParaEntrada({
+        leitura: await getOpenServerPositions(sessaoDoPilotoId),
+        novaEntradaUsd: entradaUsd,
+        tetoUsd: tetoDeExposicaoUsd,
+      });
       if (!exposicao.ok) {
         logSecurity("a131_exposicao_do_servidor", {
           route: "cex/order", symbol: body.symbol, motivo: exposicao.motivo,
@@ -557,7 +582,7 @@ export async function POST(req: NextRequest) {
           { ok: false, error: "exposicao_do_bot", motivo: exposicao.motivo, detail: exposicao.porque },
           403);
       }
-      reservaDeExposicaoEmVoo = entradaUsd;
+      entradaReservavelUsd = entradaUsd;
     }
 
     /**
@@ -724,51 +749,38 @@ export async function POST(req: NextRequest) {
       // e ela é do LIVRO, não do corpo da requisição.
       taxaDoLivro: { total: number | null; moeda: string | null } = { total: null, moeda: null },
     ) => {
-      const projecao = await projetarEfeitoDoIntent(intentId);
+      const taxa = taxaEmUsd(
+        { fee: taxaDoLivro.total != null && taxaDoLivro.moeda
+            ? { cost: taxaDoLivro.total, currency: taxaDoLivro.moeda } : undefined } as CexOrder,
+        0, 0, body.symbol);
+      if (taxa.naoPrecificada) {
+        await recordEvent("autopilot_taxa_nao_precificada", { meta: {
+          pair: body.symbol, ...taxa.naoPrecificada,
+          why: "taxa em moeda que nao e stable nem a base do par — subtraida como "
+            + "ZERO, entao o P&L sai OTIMISTA e o stop de perda afrouxa",
+        } });
+      }
+      const projecao = await projetarEfeitoDoIntent(intentId,
+        { taxaUsd: taxa.usd, hoje: hojeDoPiloto });
       if (projecao.ok) {
         /**
-         * ⚠️⚠️⚠️ O P&L DA VENDA DO NAVEGADOR NÃO EXISTIA NO SERVIDOR — achado
-         * da revisão adversarial.
+         * ⚠️⚠️⚠️ O P&L ENTROU NA MESMA TRANSAÇÃO — achado A138.
          *
-         * O canal do navegador passou a REDUZIR a posição no servidor, mas o
-         * resultado dessa venda só era registrado no `localStorage`. A sessão
-         * do servidor — que é quem congela pelo stop de perda diária — nunca
-         * via o prejuízo. Pior que antes: antes a posição ficava no livro e o
-         * cron acabava realizando; agora ela some e o P&L não existia em lugar
-         * nenhum durável.
+         * Antes esta rota chamava `applySessionPnl` depois de a projeção
+         * reduzir a posição. Duas escritas sem nada que as amarrasse: a
+         * projeção podia suceder e o P&L falhar, e reprojetar devolvia
+         * `sem_delta` — o débito sumia, sem prova durável de que faltava.
+         * Agora a RPC aplica o resultado junto da redução, e o marcador
+         * guarda quanto DESTE intent já entrou no `pnl_today`.
          *
-         * ⚠️ A CONTA É A DE SEMPRE: recebido − custo removido − taxa. O custo
-         * removido vem da MESMA transação que reduziu (a RPC o devolve), e a
-         * taxa passa por `taxaEmUsd`, o conversor que o cron já usa.
-         *
-         * ⚠️ SÓ PARA VENDA COM REDUÇÃO APLICADA. `sem_delta` e
-         * `saida_em_liquidacao` não realizaram nada aqui — no segundo caso, a
-         * liquidação da saída armada é quem realiza, e contar dos dois lados
-         * seria contar o mesmo prejuízo duas vezes.
+         * ⚠️ A conversão da taxa continua aqui: ela é a única parte que o
+         * banco não tem como fazer (preço da moeda da taxa).
          */
-        if (side === "sell" && projecao.motivo === "aplicado"
-            && projecao.aplicadoQty > 0 && sessaoDoPilotoId && hojeDoPiloto) {
-          const taxa = taxaEmUsd(
-            { fee: taxaDoLivro.total != null && taxaDoLivro.moeda
-                ? { cost: taxaDoLivro.total, currency: taxaDoLivro.moeda } : undefined } as CexOrder,
-            projecao.aplicadoQuote, projecao.aplicadoQty, body.symbol);
-          const realizado = projecao.aplicadoQuote - projecao.custoRemovido - taxa.usd;
-          const contou = await applySessionPnl(sessaoDoPilotoId, realizado, hojeDoPiloto);
-          if (!contou.ok) {
-            await recordEvent("autopilot_pnl_nao_contabilizado", { wallet: walletDoPiloto ?? undefined, meta: {
-              severity: "high", canal: "browser", session: sessaoDoPilotoId,
-              intent: intentId, realizado, erro: contou.erro,
-              why: "a venda saiu e o P&L nao entrou: o stop de perda diaria nao viu "
-                + "este resultado e pode nao puxar o freio hoje.",
-            } });
-          }
-          if (taxa.naoPrecificada) {
-            await recordEvent("autopilot_taxa_nao_precificada", { meta: {
-              pair: body.symbol, ...taxa.naoPrecificada,
-              why: "taxa em moeda que nao e stable nem a base do par — subtraida como "
-                + "ZERO, entao o P&L sai OTIMISTA e o stop de perda afrouxa",
-            } });
-          }
+        if (projecao.motivo === "aplicado" && projecao.realizado !== 0) {
+          await recordEvent("autopilot_pnl_realizado", { wallet: walletDoPiloto ?? undefined, meta: {
+            canal: "browser", session: sessaoDoPilotoId, intent: intentId,
+            realizado: projecao.realizado,
+          } });
         }
         return;
       }
@@ -871,7 +883,40 @@ export async function POST(req: NextRequest) {
         ? (() => {
             const vaga = reservaDaVagaDiaria(sessaoDoPilotoId, hojeDoPiloto!);
             return {
-              reservar: vaga.reservar,
+              /**
+               * ⚠️⚠️⚠️ AS TRÊS RESERVAS, COM O INTENT NA MÃO — A134/A135/A137.
+               *
+               * A costura roda entre AUTHORIZED e SUBMITTING: o intent já
+               * existe, e é a ele que o compromisso pertence. Antes as
+               * reservas de inventário eram tomadas lá em cima, sem dono, num
+               * contador agregado com prazo — e o prazo esquecia ordem viva.
+               *
+               * ⚠️ RESERVA LIMITADA É RECUSA AQUI. O intent já foi gravado com
+               * a quantidade; conceder menos faria a linha mentir sobre o que
+               * saiu. Se alguém prometeu a bolsa entre o pré-voo e este
+               * instante, nada sai.
+               */
+              reservar: async (intentId: string) => {
+                const daVaga = await vaga.reservar(intentId);
+                if (!daVaga.ok) return daVaga;
+                intentComReserva = intentId;
+                if (side === "sell") {
+                  const posse = await reservarVendaDoBot(intentId, quantidadeAutorizada);
+                  if (!posse.ok) return { ok: false as const, porque: `posse: ${posse.porque}` };
+                  if (posse.limitada || posse.qtd + 1e-12 < quantidadeAutorizada) {
+                    return { ok: false as const,
+                      porque: "posse: a bolsa foi prometida a outra venda entre a "
+                        + "autorizacao e a reserva — nada sai" };
+                  }
+                } else if (entradaReservavelUsd != null) {
+                  const exposicao = await reservarExposicaoDoBot(
+                    intentId, entradaReservavelUsd, tetoDeExposicaoUsd);
+                  if (!exposicao.ok) {
+                    return { ok: false as const, porque: `exposicao: ${exposicao.porque}` };
+                  }
+                }
+                return { ok: true as const };
+              },
               liberar: async () => {
                 await vaga.liberar?.();
                 await devolverReservasEmVoo();
@@ -1051,7 +1096,9 @@ export async function POST(req: NextRequest) {
         && sessaoDoPilotoId && r.externalOrderId
         && r.filledQty < quantidadeAutorizada) {
       const baseDaSaida = body.symbol.split(/[\/\-]/)[0];
-      const marcou = await markServerExitArmed(sessaoDoPilotoId, baseDaSaida, r.externalOrderId);
+      // ⚠️ A139: grava o intent da saída, não só o número da ordem.
+      const marcou = await markServerExitArmed(
+        sessaoDoPilotoId, baseDaSaida, r.externalOrderId, r.intentId);
       if (!marcou.ok) {
         await recordEvent("autopilot_saida_nao_armada", { wallet: walletDoPiloto ?? undefined, meta: {
           severity: "high", canal: "browser", session: sessaoDoPilotoId,

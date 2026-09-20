@@ -40,9 +40,7 @@ const semComentarios = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/^(\s*)\/\/.*$/gm, "$1");
 
 /** As funções que escrevem estado de posição ou de risco. */
-const ESCRITORAS = [
-  "markServerExitArmed", "reopenServerPosition", "applySessionPnl",
-];
+const ESCRITORAS = ["markServerExitArmed", "reopenServerPosition"];
 
 /**
  * ⚠️⚠️ AS QUE SAÍRAM — e a trava agora é a AUSÊNCIA delas (A136, Round 9).
@@ -56,7 +54,15 @@ const ESCRITORAS = [
  * Hoje quem faz as duas numa transação é `autopilot_liquidar_saida_armada`
  * (migration 0064). Ressuscitar qualquer uma delas recria o problema.
  */
-const APAGADAS = ["closeServerPosition", "reduzirServerPosition"];
+const APAGADAS = [
+  "closeServerPosition", "reduzirServerPosition",
+  // ⚠️ A138 (Round 9): o P&L era a ÚLTIMA escrita financeira solta. Ele
+  // entrava numa chamada separada da que reduzia a posição — gravando um e
+  // falhando o outro, ou o resultado era somado duas vezes, ou o débito sumia.
+  // Hoje ele entra na mesma transação, e `pnl_aplicado_usd` guarda quanto
+  // deste intent já foi contado.
+  "applySessionPnl",
+];
 
 describe("⚠️⚠️ o caminho paralelo de escrita de posição não existe mais", () => {
   const FONTE = readFileSync(join(process.cwd(), "src/lib/autopilot/positions-server.ts"), "utf8");
@@ -106,7 +112,6 @@ describe("o cron CONFERE cada uma delas", () => {
      * a redução agora é a RPC transacional, e a consequência dela está no
      * evento `autopilot_liquidacao_nao_aplicada` — conferido logo abaixo.
      */
-    expect(codigo).toMatch(/o stop de perda diaria nao viu esta perda/);
     expect(codigo).toMatch(/vende duas vezes a mesma bolsa/);
     expect(codigo).toMatch(/nunca mais sai deste trade/);
   });

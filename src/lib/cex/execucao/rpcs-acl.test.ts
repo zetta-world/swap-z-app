@@ -50,10 +50,11 @@ const CATALOGO: Record<string, string> = {
   autopilot_projecoes_pendentes: "0064_autopilot_projecao_de_posicao.sql",
   // A134/A135/A136 (round 9): as reservas de inventário e a liquidação
   // transacional da saída armada nascem fechadas na mesma 0064.
-  autopilot_reservar_venda: "0064_autopilot_projecao_de_posicao.sql",
-  autopilot_liberar_venda: "0064_autopilot_projecao_de_posicao.sql",
-  autopilot_reservar_exposicao: "0064_autopilot_projecao_de_posicao.sql",
-  autopilot_liberar_exposicao: "0064_autopilot_projecao_de_posicao.sql",
+  // ⚠️ A137: as reservas passaram a pertencer ao INTENT — o contador agregado
+  // com prazo esquecia ordem viva e misturava o compromisso de dois intents.
+  autopilot_reservar_venda_do_intent: "0064_autopilot_projecao_de_posicao.sql",
+  autopilot_reservar_exposicao_do_intent: "0064_autopilot_projecao_de_posicao.sql",
+  autopilot_liberar_reserva_do_intent: "0064_autopilot_projecao_de_posicao.sql",
   autopilot_liquidar_saida_armada: "0064_autopilot_projecao_de_posicao.sql",
 };
 

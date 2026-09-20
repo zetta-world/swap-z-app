@@ -33,8 +33,8 @@ const chamar = (nome: string, args: Record<string, unknown>) =>
     return r.data;
   });
 
-const projetar = (intentId: string, jaAplicado?: { qty: number; quote: number }) =>
-  projetarEfeitoDoIntent(intentId, { jaAplicado, chamarRpc: chamar });
+const projetar = (intentId: string, opts: { taxaUsd?: number; hoje?: string } = {}) =>
+  projetarEfeitoDoIntent(intentId, { ...opts, chamarRpc: chamar });
 
 function intent(over: Record<string, unknown> = {}): string {
   const id = `i${banco.intents.length + 1}`;
@@ -267,38 +267,6 @@ describe("P10 — falha de banco na projeção não vira sucesso", () => {
   });
 });
 
-describe("a absorção da liquidação da saída armada", () => {
-  it("⚠️⚠️ o que a liquidação aplicou direto NÃO é aplicado de novo", async () => {
-    /**
-     * `settleArmedExits` reduz a posição a partir da ordem lida na corretora,
-     * antes de o livro de fills ter ingerido aquele preenchimento. Sem
-     * absorver, a reconciliação seguinte veria `applied = 0` e reduziria a
-     * MESMA venda outra vez.
-     */
-    const compra = intent(); setFill(compra, 0.01, 600); await projetar(compra);
-    // A liquidação já reduziu 0,004 direto na posição:
-    banco.posicoes[0].base_amount = 0.006;
-    banco.posicoes[0].cost_usd = 360;
-
-    const venda = intent({ side: "sell" });
-    const r1 = await projetar(venda, { qty: 0.004, quote: 250 });
-    expect(r1.ok && r1.motivo).toBe("sem_delta");
-    expect(Number(posicao()!.base_amount)).toBeCloseTo(0.006, 12);
-
-    // O livro alcança o mesmo número: continua sem delta.
-    setFill(venda, 0.004, 250);
-    const r2 = await projetar(venda);
-    expect(r2.ok && r2.motivo).toBe("sem_delta");
-    expect(Number(posicao()!.base_amount)).toBeCloseTo(0.006, 12);
-
-    // E o que a corretora preencher A MAIS entra normalmente.
-    setFill(venda, 0.006, 380);
-    const r3 = await projetar(venda);
-    expect(r3.ok && r3.aplicadoQty).toBeCloseTo(0.002, 12);
-    expect(Number(posicao()!.base_amount)).toBeCloseTo(0.004, 12);
-  });
-});
-
 describe("⚠️⚠️ SAÍDA ARMADA — achado da revisão adversarial", () => {
   /**
    * `settleArmedExits` é o ÚNICO lugar do produto que realiza P&L de uma saída
@@ -352,22 +320,28 @@ describe("⚠️⚠️ SAÍDA ARMADA — achado da revisão adversarial", () => 
     expect(Number(marcador?.applied_qty ?? 0)).toBe(0);
   });
 
-  it("⚠️⚠️ depois que a liquidação absorve e desarma, a projeção volta a agir", async () => {
+  it("⚠️⚠️ depois que a liquidação aplica e desarma, a projeção segue do ponto certo", async () => {
+    /**
+     * ⚠️ A ABSORÇÃO DEIXOU DE EXISTIR (A136/A139): a liquidação tem transação
+     * própria, que move a posição E o marcador. A projeção seguinte enxerga o
+     * `applied` que ela deixou e aplica só o que passar dele.
+     */
     const pos = await comPosicaoArmada();
-    const venda = intent({ side: "sell" });
+    const venda = intent({ side: "sell", external_order_id: "EXT-ARMADA" });
+    pos.exit_intent_id = venda;
     setFill(venda, 0.004, 250);
-    await projetar(venda);                       // saida_em_liquidacao
+    expect((await projetar(venda)).ok && true).toBe(true);   // saida_em_liquidacao
 
-    // A liquidação aplicou 0,004 direto e reabriu o remanescente:
-    pos.base_amount = 0.006; pos.cost_usd = 360;
-    pos.status = "open"; pos.exit_order_id = null;
-    await projetar(venda, { qty: 0.004, quote: 250 });
+    const { liquidarSaidaArmada } = await import("@/lib/autopilot/projecao-de-posicao");
+    const liq = await liquidarSaidaArmada(venda, 0.004, 250, 0, "2026-09-20", { chamarRpc: chamar });
+    expect(liq.ok && liq.aplicadoQty).toBeCloseTo(0.004, 12);
+    expect(Number(posicao()!.base_amount)).toBeCloseTo(0.006, 12);
 
-    // E o que a corretora preencher A MAIS entra normalmente.
+    // E o que a corretora preencher A MAIS entra pela projeção, sem repetir.
     setFill(venda, 0.006, 380);
     const r = await projetar(venda);
     expect(r.ok && r.aplicadoQty).toBeCloseTo(0.002, 12);
-    expect(Number(pos.base_amount)).toBeCloseTo(0.004, 12);
+    expect(Number(posicao()!.base_amount)).toBeCloseTo(0.004, 12);
   });
 
   it("⚠️⚠️ COMPRA sobre posição armada não desarma nada", async () => {
@@ -437,8 +411,8 @@ describe("⚠️ o SQL de verdade mantém as mesmas guardas", () => {
   it("⚠️⚠️ a RPC nasce FECHADA (A116) e a tabela também", () => {
     expect(SQL).toMatch(/security definer/);
     expect(SQL).toMatch(/set search_path = public, pg_temp/);
-    expect(SQL).toMatch(/revoke all on function public\.autopilot_projetar_efeito_do_intent\(uuid, numeric, numeric\)\s*\n?\s*from public, anon, authenticated;/);
-    expect(SQL).toMatch(/grant execute on function public\.autopilot_projetar_efeito_do_intent\(uuid, numeric, numeric\)\s*\n?\s*to service_role;/);
+    expect(SQL).toMatch(/revoke all on function public\.autopilot_projetar_efeito_do_intent\(uuid, numeric, text\)\s*\n?\s*from public, anon, authenticated;/);
+    expect(SQL).toMatch(/grant execute on function public\.autopilot_projetar_efeito_do_intent\(uuid, numeric, text\)\s*\n?\s*to service_role;/);
     expect(SQL).toMatch(/revoke all on table public\.autopilot_position_effects from public, anon, authenticated;/);
     expect(SQL).toMatch(/alter table public\.autopilot_position_effects enable row level security;/);
   });

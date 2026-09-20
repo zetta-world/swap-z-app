@@ -53,6 +53,34 @@ create table if not exists public.autopilot_position_effects (
   ledger_qty    numeric     not null default 0 check (ledger_qty    >= 0),
   ledger_quote  numeric     not null default 0 check (ledger_quote  >= 0),
 
+  -- ⚠️⚠️ A RESERVA MORA AQUI, E NÃO NUM CONTADOR AGREGADO — achado A137.
+  --
+  -- A primeira versão somava `reservado_qty` na POSIÇÃO e
+  -- `exposicao_reservada_usd` na SESSÃO, com prazo de validade. Duas coisas
+  -- erradas de uma vez:
+  --
+  --   · o prazo esquecia ordem VIVA. Uma limitada aceita sem preencher, dez
+  --     minutos depois, liberava o compromisso — a segunda entrada passava, e
+  --     as duas preenchiam: teto de 200 fechando em 210;
+  --   · sem dono, a projeção de uma ordem antiga subtraía do agregado e podia
+  --     consumir a reserva de OUTRA ordem mais nova.
+  --
+  -- Agora a reserva tem dono: o intent. O compromisso vivo de um intent é
+  -- `greatest(reservado − applied, 0)` enquanto ele puder preencher, e ZERO
+  -- quando ele está provadamente morto (`CANCELED`/`FAILED_PRE_SUBMIT`).
+  -- Não há prazo: o que encerra um compromisso é o estado do intent.
+  reservado_qty numeric     not null default 0 check (reservado_qty >= 0),
+  reservado_usd numeric     not null default 0 check (reservado_usd >= 0),
+
+  -- ⚠️⚠️ E O P&L TAMBÉM PRECISA DE EXACTLY-ONCE — achado A138.
+  --
+  -- A posição tinha marcador e o resultado não: o P&L era gravado numa
+  -- chamada separada. Gravando o P&L e falhando a posição, a passada seguinte
+  -- somava o MESMO resultado de novo; falhando o P&L e gravando a posição, o
+  -- débito sumia sem ninguém para retentá-lo. Este campo é o quanto DESTE
+  -- intent já entrou no `pnl_today` da sessão.
+  pnl_aplicado_usd numeric  not null default 0,
+
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
@@ -84,14 +112,12 @@ alter table public.autopilot_position_effects enable row level security;
 -- ── 3. A PROJEÇÃO ─────────────────────────────────────────────────────────
 create or replace function public.autopilot_projetar_efeito_do_intent(
   p_intent_id         uuid,
-  -- ⚠️⚠️ SÓ PARA A LIQUIDAÇÃO DA SAÍDA ARMADA. `settleArmedExits` aplica a
-  -- redução direto a partir da ordem lida na corretora, ANTES de o livro de
-  -- fills ter ingerido aquele preenchimento. Sem registrar isso aqui, a
-  -- reconciliação seguinte veria `applied = 0` e reduziria a MESMA venda de
-  -- novo. Estes parâmetros ABSORVEM o que já foi aplicado — eles nunca
-  -- movem a posição, só impedem a segunda aplicação.
-  p_qty_ja_aplicada   numeric default null,
-  p_quote_ja_aplicada numeric default null
+  -- ⚠️ A138: a taxa em USD e o dia UTC entram porque o P&L realizado é
+  -- aplicado NESTA transação. A conversão da taxa continua sendo a de sempre
+  -- (`taxaEmUsd`), feita por quem chama; o que muda é que o débito na sessão
+  -- deixou de ser uma segunda escrita.
+  p_taxa_usd          numeric default 0,
+  p_hoje              text default null
 ) returns jsonb
 language plpgsql
 security definer
@@ -108,6 +134,7 @@ declare
   v_custo_restante numeric;
   v_custo_removido numeric;
   v_fechou        boolean := false;
+  v_realizado     numeric := 0;
   v_eps  constant numeric := 1e-12;
   -- Ruído relativo de ponto flutuante ao vender "tudo": 0,1 − 0,1 pode deixar
   -- 1e-17. Mesma convenção de `oQueSobrou` em venda-limitada.ts.
@@ -149,17 +176,20 @@ begin
   select * into v_e from public.autopilot_position_effects
    where intent_id = p_intent_id for update;
 
-  -- Absorção do que a liquidação já aplicou direto (ver o comentário do
-  -- parâmetro). Não toca na posição — só no marcador.
-  if p_qty_ja_aplicada is not null and p_qty_ja_aplicada > v_e.applied_qty then
-    update public.autopilot_position_effects
-       set applied_qty   = p_qty_ja_aplicada,
-           applied_quote = greatest(applied_quote, coalesce(p_quote_ja_aplicada, 0)),
-           updated_at    = now()
-     where intent_id = p_intent_id;
-    select * into v_e from public.autopilot_position_effects
-     where intent_id = p_intent_id;
-  end if;
+  /**
+   * ⚠️⚠️ A ABSORÇÃO SAIU DAQUI (A136/A139).
+   *
+   * Havia dois parâmetros para a liquidação da saída armada registrar o que
+   * ela tinha aplicado direto. Eles existiam porque a liquidação escrevia a
+   * posição por fora; hoje ela tem transação própria
+   * (`autopilot_liquidar_saida_armada`), e esta função não precisa acreditar
+   * em número nenhum de quem chama: ela lê `filled_qty`/`filled_quote` da
+   * linha do intent.
+   *
+   * ⚠️ E as duas marcas d'água (`applied` × `ledger`) continuam, porque a
+   * liquidação ainda pode adiantar `applied` antes de os fills serem
+   * ingeridos — só que agora por uma transação que também move a posição.
+   */
 
   -- ── REGRESSÃO (§28): fail-closed, sem corromper a posição ──────────────
   -- ⚠️ CONTRA `ledger_qty`, não contra `applied_qty`: a absorção adianta o
@@ -284,36 +314,53 @@ begin
   end if;
 
   /**
-   * ⚠️ A RESERVA VIRA EFEITO. O que acabou de entrar na posição já não precisa
-   * ficar prometido: soltar aqui, na MESMA transação que aplicou, é o que
-   * impede a reserva de virar um bloqueio que ninguém desfaz.
+   * ⚠️⚠️ O P&L REALIZADO ENTRA AQUI, NA MESMA TRANSAÇÃO — achado A138.
+   *
+   * Ele era uma segunda escrita (`apply_session_pnl`), e por isso não tinha
+   * exactly-once: gravando o P&L e falhando a posição, a passada seguinte
+   * somava o mesmo resultado; gravando a posição e falhando o P&L, o débito
+   * sumia sem ninguém para retentá-lo. `pnl_aplicado_usd` é o quanto DESTE
+   * intent já entrou no `pnl_today`, e só o delta é aplicado.
+   *
+   * ⚠️ A conta é a de sempre: recebido − custo removido − taxa. Nenhum modelo
+   * contábil novo.
    */
-  if v_i.side = 'sell' then
-    update public.autopilot_positions
-       set reservado_qty = greatest(reservado_qty - v_delta_qty, 0)
-     where session_id = v_i.session_id and base = v_base;
-  else
-    update public.autopilot_sessions
-       set exposicao_reservada_usd = greatest(exposicao_reservada_usd - v_delta_quote, 0)
-     where id = v_i.session_id;
+  if v_i.side = 'sell' and v_delta_quote > 0 then
+    v_realizado := v_delta_quote - coalesce(v_custo_removido, 0) - coalesce(p_taxa_usd, 0);
+    if v_realizado <> 0 then
+      update public.autopilot_sessions
+         set pnl_today        = pnl_today + v_realizado,
+             frozen_until_day = case
+               when (pnl_today + v_realizado) <= -daily_loss_stop_usd
+                 then coalesce(p_hoje, frozen_until_day)
+               else frozen_until_day end,
+             updated_at       = now()
+       where id = v_i.session_id;
+    end if;
   end if;
 
+  -- ⚠️ A RESERVA NÃO PRECISA SER "SOLTA": o compromisso vivo é
+  -- `greatest(reservado − applied, 0)`, e `applied` acabou de crescer. Era o
+  -- contador agregado que exigia uma subtração — e era ela que podia comer a
+  -- reserva de outro intent (A137).
   update public.autopilot_position_effects
-     set applied_qty   = greatest(applied_qty,  v_i.filled_qty),
-         applied_quote = greatest(applied_quote, v_i.filled_quote),
-         ledger_qty    = greatest(ledger_qty,    v_i.filled_qty),
-         ledger_quote  = greatest(ledger_quote,  v_i.filled_quote),
-         updated_at    = now()
+     set applied_qty      = greatest(applied_qty,  v_i.filled_qty),
+         applied_quote    = greatest(applied_quote, v_i.filled_quote),
+         ledger_qty       = greatest(ledger_qty,    v_i.filled_qty),
+         ledger_quote     = greatest(ledger_quote,  v_i.filled_quote),
+         pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
+         updated_at       = now()
    where intent_id = p_intent_id;
 
   return jsonb_build_object(
     'ok', true, 'motivo', 'aplicado',
     'side', v_i.side, 'base', v_base,
     'aplicado_qty', v_delta_qty, 'aplicado_quote', v_delta_quote,
-    'custo_removido', coalesce(v_custo_removido, 0), 'fechou', v_fechou);
+    'custo_removido', coalesce(v_custo_removido, 0), 'fechou', v_fechou,
+    'pnl_realizado', v_realizado);
 end; $$;
 
-comment on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, numeric) is
+comment on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, text) is
   'A131-C: projeta em autopilot_positions o efeito AINDA NAO APLICADO de um '
   'intent autonomo, numa transacao, por delta cumulativo (ledger - applied). '
   'Idempotente por intent; regressao e venda sem posicao falham FECHADO.';
@@ -336,107 +383,125 @@ comment on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, nu
 -- A reserva mora onde o dado mora, e é tomada DENTRO da transação que a
 -- confere — `for update` na linha, escrita no mesmo comando. Lock em memória
 -- não serve: cada invocação serverless é outro processo.
+-- ⚠️⚠️⚠️ A SAÍDA ARMADA PRECISA DE IDENTIDADE HISTÓRICA — achado A139.
+--
+-- A posição guardava só `exit_order_id`, e a liquidação redescobria o intent
+-- por `(exchange_id, external_order_id)`. Dois problemas:
+--
+--   · `external_order_id` NÃO é identificador global da exchange — duas contas
+--     da mesma corretora podem trazer o mesmo número, e a busca atribuiria a
+--     ordem de uma à posição da outra;
+--   · a liquidação consultava a venue com a credencial ATUAL da sessão. Uma
+--     sessão rearmada de C1 para C2 iria perguntar a C2 por uma ordem que
+--     nasceu em C1 — exatamente o que o A127 existe para impedir.
+--
+-- O elo passa a ser o intent, que já carrega `conexao_id` histórico.
 alter table public.autopilot_positions
-  add column if not exists reservado_qty numeric not null default 0
-    check (reservado_qty >= 0);
-alter table public.autopilot_positions
-  add column if not exists reservado_ate timestamptz;
+  add column if not exists exit_intent_id uuid
+    references public.cex_execution_intents(id) on delete set null;
 
-alter table public.autopilot_sessions
-  add column if not exists exposicao_reservada_usd numeric not null default 0
-    check (exposicao_reservada_usd >= 0);
-alter table public.autopilot_sessions
-  add column if not exists exposicao_reservada_ate timestamptz;
+comment on column public.autopilot_positions.exit_intent_id is
+  'A139: o intent EXATO da ordem de saida armada. A liquidacao carrega a '
+  'credencial por intent.conexao_id (A127), nunca pela sessao atual.';
 
-comment on column public.autopilot_positions.reservado_qty is
-  'A134: quantidade ja prometida a uma venda autonoma em voo. Expira em '
-  'reservado_ate — dai em diante quem guarda a posicao e o exit_armed/ledger.';
-comment on column public.autopilot_sessions.exposicao_reservada_usd is
-  'A135: capital ja prometido a uma compra autonoma em voo, somado a exposicao '
-  'real para conferir o teto do modo de risco. Expira em exposicao_reservada_ate.';
+-- ⚠️⚠️ NÃO EXISTE MAIS PRAZO DE RESERVA, e a ausência é o conserto.
+--
+-- A versão anterior expirava a reserva em 10 minutos "para não trancar a
+-- posição". Só que o que ela trancava não era um fantasma: era uma ordem
+-- possivelmente VIVA. Quem encerra um compromisso é o estado do intent —
+-- `CANCELED`/`FAILED_PRE_SUBMIT` provam que nada mais sai; `UNKNOWN`,
+-- `SUBMITTED` e `PARTIALLY_FILLED` não provam nada e seguram o remanescente.
 
--- ⚠️ A JANELA É CURTA DE PROPÓSITO. A reserva cobre o intervalo entre
--- autorizar e a ordem EXISTIR. Depois disso quem descreve a realidade é o
--- intent (e, para a venda, `exit_armed`). Uma reserva eterna de uma ordem que
--- ficou UNKNOWN e nunca executou trancaria a posição para sempre.
-create or replace function public.autopilot_janela_de_reserva()
-returns interval language sql immutable as $$ select interval '10 minutes' $$;
+-- ── 3-BIS-a. O COMPROMISSO VIVO DE UM INTENT (A137) ───────────────────────
+--
+-- ⚠️ É a peça que substitui o prazo. Enquanto o intent puder preencher, o que
+-- ele reservou e ainda não virou posição continua comprometido. Provado morto,
+-- o compromisso é zero na mesma hora — sem esperar relógio nenhum.
+create or replace function public.autopilot_compromisso_vivo(
+  p_reservado numeric, p_aplicado numeric, p_estado text
+) returns numeric
+language sql immutable as $$
+  select case
+    when p_estado in ('CANCELED', 'FAILED_PRE_SUBMIT') then 0
+    else greatest(coalesce(p_reservado, 0) - coalesce(p_aplicado, 0), 0)
+  end
+$$;
 
--- ── 3-BIS-a. RESERVAR QUANTIDADE PARA VENDA AUTÔNOMA (A134) ───────────────
-create or replace function public.autopilot_reservar_venda(
-  p_session_id uuid, p_base text, p_qty numeric
+-- ── 3-BIS-b. RESERVAR QUANTIDADE PARA VENDA AUTÔNOMA (A134/A137) ──────────
+--
+-- ⚠️ RECEBE O INTENT, não a sessão solta: o executor grava o intent ANTES da
+-- costura de reserva, então a reserva nasce com dono. É o que impede a
+-- projeção de uma ordem antiga de consumir o compromisso de uma nova.
+create or replace function public.autopilot_reservar_venda_do_intent(
+  p_intent_id uuid, p_qty numeric
 ) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp
 as $$
 declare
-  v_pos record; v_reservado numeric; v_disponivel numeric; v_conceder numeric;
+  v_i record; v_pos record; v_base text;
+  v_comprometido numeric; v_disponivel numeric; v_conceder numeric;
 begin
   if p_qty is null or not (p_qty > 0) then
     return jsonb_build_object('ok', false, 'motivo', 'quantidade_invalida');
   end if;
+  select * into v_i from public.cex_execution_intents where id = p_intent_id for update;
+  if not found then return jsonb_build_object('ok', false, 'motivo', 'intent_inexistente'); end if;
+  if v_i.simulated then return jsonb_build_object('ok', false, 'motivo', 'simulado'); end if;
+  if v_i.side <> 'sell' then return jsonb_build_object('ok', false, 'motivo', 'intent_nao_e_venda'); end if;
+  if v_i.origin not in ('autopilot_browser', 'autopilot_cron') or v_i.autonomous is not true then
+    return jsonb_build_object('ok', false, 'motivo', 'origem_nao_autonoma');
+  end if;
+  if v_i.session_id is null then return jsonb_build_object('ok', false, 'motivo', 'sem_sessao'); end if;
+
+  v_base := upper(split_part(replace(v_i.symbol, '-', '/'), '/', 1));
+
   select * into v_pos from public.autopilot_positions
-   where session_id = p_session_id and base = upper(p_base) for update;
-  if not found then
+   where session_id = v_i.session_id and base = v_base for update;
+  if not found or v_pos.status = 'closed' or not (v_pos.base_amount > 0) then
     return jsonb_build_object('ok', false, 'motivo', 'sem_posicao');
   end if;
-  if v_pos.status = 'closed' or not (v_pos.base_amount > 0) then
-    return jsonb_build_object('ok', false, 'motivo', 'sem_posicao');
-  end if;
-  -- ⚠️ Uma saída armada JÁ É uma ordem viva sobre esta bolsa.
   if v_pos.status = 'exit_armed' then
     return jsonb_build_object('ok', false, 'motivo', 'saida_ja_armada',
       'ordem_armada', v_pos.exit_order_id);
   end if;
 
-  -- Reserva vencida é reserva que não existe.
-  v_reservado := case
-    when v_pos.reservado_ate is null or v_pos.reservado_ate < now() then 0
-    else v_pos.reservado_qty end;
-  v_disponivel := v_pos.base_amount - v_reservado;
+  -- ⚠️ O QUE OUTROS INTENTS JÁ PROMETERAM. A linha da posição está travada, e
+  -- esta soma roda dentro da mesma transação: duas reservas concorrentes se
+  -- enfileiram, e a segunda vê a primeira.
+  select coalesce(sum(public.autopilot_compromisso_vivo(e.reservado_qty, e.applied_qty, i.state::text)), 0)
+    into v_comprometido
+    from public.autopilot_position_effects e
+    join public.cex_execution_intents i on i.id = e.intent_id
+   where e.session_id = v_i.session_id and e.base = v_base and e.side = 'sell'
+     and e.intent_id <> p_intent_id;
+
+  v_disponivel := v_pos.base_amount - v_comprometido;
   if v_disponivel <= 0 then
     return jsonb_build_object('ok', false, 'motivo', 'quantidade_ja_reservada',
-      'na_posicao', v_pos.base_amount, 'reservado', v_reservado);
+      'na_posicao', v_pos.base_amount, 'comprometido', v_comprometido);
   end if;
 
-  -- ⚠️ LIMITA, não recusa: pedir mais do que o bot tem é o caso do A131, e a
-  -- conduta é vender só o que é dele.
+  -- ⚠️ LIMITA em vez de recusar (A131): vender só o que é do bot.
   v_conceder := least(p_qty, v_disponivel);
-  update public.autopilot_positions
-     set reservado_qty = v_reservado + v_conceder,
-         reservado_ate = now() + public.autopilot_janela_de_reserva(),
-         updated_at    = now()
-   where id = v_pos.id;
+
+  insert into public.autopilot_position_effects
+    (intent_id, session_id, exchange_id, base, side, reservado_qty)
+  values (p_intent_id, v_i.session_id, v_i.exchange_id, v_base, 'sell', v_conceder)
+  on conflict (intent_id) do update set reservado_qty = excluded.reservado_qty,
+                                        updated_at = now();
 
   return jsonb_build_object('ok', true, 'qtd', v_conceder,
     'limitada', (v_conceder < p_qty), 'na_posicao', v_pos.base_amount);
 end; $$;
 
--- ── 3-BIS-b. DEVOLVER A QUANTIDADE (só na recusa PROVADA) ─────────────────
-create or replace function public.autopilot_liberar_venda(
-  p_session_id uuid, p_base text, p_qty numeric
-) returns jsonb
-language plpgsql security definer set search_path = public, pg_temp
-as $$
-declare v_pos record;
-begin
-  select * into v_pos from public.autopilot_positions
-   where session_id = p_session_id and base = upper(p_base) for update;
-  if not found then return jsonb_build_object('ok', true, 'motivo', 'sem_posicao'); end if;
-  update public.autopilot_positions
-     set reservado_qty = greatest(reservado_qty - coalesce(p_qty, 0), 0),
-         updated_at    = now()
-   where id = v_pos.id;
-  return jsonb_build_object('ok', true);
-end; $$;
-
--- ── 3-BIS-c. RESERVAR CAPITAL PARA ENTRADA AUTÔNOMA (A135) ────────────────
-create or replace function public.autopilot_reservar_exposicao(
-  p_session_id uuid, p_usd numeric, p_teto numeric
+-- ── 3-BIS-c. RESERVAR CAPITAL PARA ENTRADA AUTÔNOMA (A135/A137) ───────────
+create or replace function public.autopilot_reservar_exposicao_do_intent(
+  p_intent_id uuid, p_usd numeric, p_teto numeric
 ) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp
 as $$
 declare
-  v_s record; v_reservado numeric; v_exposicao numeric;
+  v_i record; v_s record; v_comprometido numeric; v_exposicao numeric;
 begin
   if p_usd is null or not (p_usd > 0) then
     return jsonb_build_object('ok', false, 'motivo', 'nocional_nao_mensuravel');
@@ -444,45 +509,59 @@ begin
   if p_teto is null or not (p_teto > 0) then
     return jsonb_build_object('ok', false, 'motivo', 'teto_invalido');
   end if;
-  -- ⚠️ A LINHA DA SESSÃO É O PONTO DE SERIALIZAÇÃO. Duas compras concorrentes
-  -- disputam ESTE lock, então a segunda lê a exposição com a reserva da
-  -- primeira já dentro.
-  select * into v_s from public.autopilot_sessions where id = p_session_id for update;
-  if not found then return jsonb_build_object('ok', false, 'motivo', 'sessao_inexistente'); end if;
+  select * into v_i from public.cex_execution_intents where id = p_intent_id for update;
+  if not found then return jsonb_build_object('ok', false, 'motivo', 'intent_inexistente'); end if;
+  if v_i.simulated then return jsonb_build_object('ok', false, 'motivo', 'simulado'); end if;
+  if v_i.side <> 'buy' then return jsonb_build_object('ok', false, 'motivo', 'intent_nao_e_compra'); end if;
+  if v_i.origin not in ('autopilot_browser', 'autopilot_cron') or v_i.autonomous is not true then
+    return jsonb_build_object('ok', false, 'motivo', 'origem_nao_autonoma');
+  end if;
+  if v_i.session_id is null then return jsonb_build_object('ok', false, 'motivo', 'sem_sessao'); end if;
 
-  v_reservado := case
-    when v_s.exposicao_reservada_ate is null or v_s.exposicao_reservada_ate < now() then 0
-    else v_s.exposicao_reservada_usd end;
+  -- ⚠️ A LINHA DA SESSÃO É O PONTO DE SERIALIZAÇÃO das entradas concorrentes.
+  select * into v_s from public.autopilot_sessions where id = v_i.session_id for update;
+  if not found then return jsonb_build_object('ok', false, 'motivo', 'sessao_inexistente'); end if;
 
   select coalesce(sum(cost_usd), 0) into v_exposicao
     from public.autopilot_positions
-   where session_id = p_session_id and status <> 'closed';
+   where session_id = v_i.session_id and status <> 'closed';
 
-  if v_exposicao + v_reservado + p_usd > p_teto then
+  select coalesce(sum(public.autopilot_compromisso_vivo(e.reservado_usd, e.applied_quote, i.state::text)), 0)
+    into v_comprometido
+    from public.autopilot_position_effects e
+    join public.cex_execution_intents i on i.id = e.intent_id
+   where e.session_id = v_i.session_id and e.side = 'buy'
+     and e.intent_id <> p_intent_id;
+
+  if v_exposicao + v_comprometido + p_usd > p_teto then
     return jsonb_build_object('ok', false, 'motivo', 'teto_estourado',
-      'exposicao', v_exposicao, 'reservado', v_reservado, 'teto', p_teto);
+      'exposicao', v_exposicao, 'comprometido', v_comprometido, 'teto', p_teto);
   end if;
 
-  update public.autopilot_sessions
-     set exposicao_reservada_usd = v_reservado + p_usd,
-         exposicao_reservada_ate = now() + public.autopilot_janela_de_reserva(),
-         updated_at              = now()
-   where id = p_session_id;
+  insert into public.autopilot_position_effects
+    (intent_id, session_id, exchange_id, base, side, reservado_usd)
+  values (p_intent_id, v_i.session_id, v_i.exchange_id,
+          upper(split_part(replace(v_i.symbol, '-', '/'), '/', 1)), 'buy', p_usd)
+  on conflict (intent_id) do update set reservado_usd = excluded.reservado_usd,
+                                        updated_at = now();
 
   return jsonb_build_object('ok', true, 'exposicao', v_exposicao,
-    'reservado', v_reservado + p_usd, 'teto', p_teto);
+    'comprometido', v_comprometido + p_usd, 'teto', p_teto);
 end; $$;
 
-create or replace function public.autopilot_liberar_exposicao(
-  p_session_id uuid, p_usd numeric
+-- ── 3-BIS-d. DEVOLVER (só na recusa PROVADA) ──────────────────────────────
+--
+-- ⚠️ ZERA O COMPROMISSO DESTE INTENT, e de nenhum outro — era isso que o
+-- contador agregado não sabia fazer.
+create or replace function public.autopilot_liberar_reserva_do_intent(
+  p_intent_id uuid
 ) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp
 as $$
 begin
-  update public.autopilot_sessions
-     set exposicao_reservada_usd = greatest(exposicao_reservada_usd - coalesce(p_usd, 0), 0),
-         updated_at              = now()
-   where id = p_session_id;
+  update public.autopilot_position_effects
+     set reservado_qty = 0, reservado_usd = 0, updated_at = now()
+   where intent_id = p_intent_id;
   return jsonb_build_object('ok', true);
 end; $$;
 
@@ -511,16 +590,20 @@ create or replace function public.autopilot_liquidar_saida_armada(
   p_intent_id uuid,
   -- ⚠️ O que a CORRETORA disse que saiu. É a única entrada de quantidade que
   -- não vem do livro, e existe porque a liquidação acontece ANTES de os fills
-  -- serem ingeridos. O marcador guarda exatamente isto, e a projeção seguinte
-  -- aplica só o que passar daqui.
+  -- serem ingeridos.
   p_qty_vendida numeric,
-  p_quote_recebido numeric
+  p_quote_recebido numeric,
+  -- ⚠️ A138: taxa em USD e dia UTC — o P&L realizado entra NESTA transação.
+  p_taxa_usd numeric default 0,
+  p_hoje text default null
 ) returns jsonb
-language plpgsql security definer set search_path = public, pg_temp
+language plpgsql
+security definer
+set search_path = public, pg_temp
 as $$
 declare
   v_i record; v_e record; v_pos record; v_base text;
-  v_delta numeric; v_delta_quote numeric;
+  v_delta numeric; v_delta_quote numeric; v_realizado numeric := 0;
   v_restante numeric; v_custo_restante numeric; v_custo_removido numeric := 0;
   v_fechou boolean := false;
   v_eps constant numeric := 1e-12;
@@ -541,6 +624,12 @@ begin
 
   v_base := upper(split_part(replace(v_i.symbol, '-', '/'), '/', 1));
 
+  /**
+   * ⚠️ O MARCADOR VEM ANTES DA POSIÇÃO, e a ordem importa: repetir uma
+   * liquidação já aplicada é NO-OP, não erro. Depois que ela reduz, a posição
+   * deixa de estar armada — conferir o armamento primeiro faria a segunda
+   * chamada (uma retentativa legítima) parecer divergência.
+   */
   insert into public.autopilot_position_effects
     (intent_id, session_id, exchange_id, base, side)
   values (p_intent_id, v_i.session_id, v_i.exchange_id, v_base, v_i.side)
@@ -548,11 +637,10 @@ begin
   select * into v_e from public.autopilot_position_effects
    where intent_id = p_intent_id for update;
 
-  -- ⚠️ O delta é contra o que JÁ ENTROU na posição, venha de onde vier.
   v_delta := p_qty_vendida - v_e.applied_qty;
   if v_delta <= v_eps then
     return jsonb_build_object('ok', true, 'motivo', 'sem_delta',
-      'aplicado_qty', 0, 'custo_removido', 0, 'fechou', false);
+      'aplicado_qty', 0, 'custo_removido', 0, 'fechou', false, 'pnl_realizado', 0);
   end if;
   v_delta_quote := greatest(coalesce(p_quote_recebido, 0) - v_e.applied_quote, 0);
 
@@ -560,6 +648,40 @@ begin
    where session_id = v_i.session_id and base = v_base for update;
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'sem_posicao', 'base', v_base);
+  end if;
+
+  /**
+   * ⚠️⚠️⚠️ A IDENTIDADE DA SAÍDA É CONFERIDA AQUI — achado A139.
+   *
+   * A liquidação redescobria o intent por `(exchange_id, external_order_id)`,
+   * e `external_order_id` NÃO é identificador global: duas contas da mesma
+   * corretora podem trazer o mesmo número, e a ordem de uma seria atribuída à
+   * posição da outra. Agora o elo é o intent gravado ao ARMAR, e cada peça é
+   * conferida contra ele. Qualquer divergência: FALHA FECHADA.
+   *
+   * ⚠️ LEGADO SEM `exit_intent_id` NÃO É ADIVINHADO. Uma posição armada antes
+   * desta migration não tem elo — e procurar por número de ordem é exatamente
+   * o que o achado proíbe. Ela vira caso de reconciliação humana.
+   */
+  if v_pos.status <> 'exit_armed' then
+    return jsonb_build_object('ok', false, 'motivo', 'posicao_nao_armada',
+      'status', v_pos.status);
+  end if;
+  if v_pos.exit_intent_id is null then
+    return jsonb_build_object('ok', false, 'motivo', 'saida_sem_identidade',
+      'base', v_base, 'ordem_armada', v_pos.exit_order_id);
+  end if;
+  if v_pos.exit_intent_id <> p_intent_id then
+    return jsonb_build_object('ok', false, 'motivo', 'intent_nao_e_a_saida_armada',
+      'esperado', v_pos.exit_intent_id);
+  end if;
+  if v_i.exchange_id <> v_pos.exchange_id then
+    return jsonb_build_object('ok', false, 'motivo', 'corretora_divergente');
+  end if;
+  if v_pos.exit_order_id is not null
+     and v_i.external_order_id is not null
+     and v_i.external_order_id <> v_pos.exit_order_id then
+    return jsonb_build_object('ok', false, 'motivo', 'ordem_externa_divergente');
   end if;
 
   v_restante := v_pos.base_amount - v_delta;
@@ -571,31 +693,46 @@ begin
     v_custo_restante := v_pos.cost_usd * (v_restante / v_pos.base_amount);
     v_custo_removido := v_pos.cost_usd - v_custo_restante;
     update public.autopilot_positions
-       set base_amount   = v_restante,
-           cost_usd      = v_custo_restante,
+       set base_amount    = v_restante,
+           cost_usd       = v_custo_restante,
            -- ⚠️ A ordem armada ACABOU de ser resolvida por quem chama (ela leu
            -- a corretora). O remanescente precisa poder armar de novo — e este
            -- é o único caminho que tem essa prova.
-           status        = 'open',
-           exit_order_id = null,
-           exit_armed_at = null,
-           reservado_qty = greatest(reservado_qty - v_delta, 0),
-           updated_at    = now()
+           status         = 'open',
+           exit_order_id  = null,
+           exit_armed_at  = null,
+           exit_intent_id = null,
+           updated_at     = now()
      where id = v_pos.id;
   end if;
 
+  -- ⚠️⚠️ A138: o P&L realizado entra na MESMA transação que reduziu a posição.
+  v_realizado := v_delta_quote - v_custo_removido - coalesce(p_taxa_usd, 0);
+  if v_realizado <> 0 then
+    update public.autopilot_sessions
+       set pnl_today        = pnl_today + v_realizado,
+           frozen_until_day = case
+             when (pnl_today + v_realizado) <= -daily_loss_stop_usd
+               then coalesce(p_hoje, frozen_until_day)
+             else frozen_until_day end,
+           updated_at       = now()
+     where id = v_i.session_id;
+  end if;
+
   update public.autopilot_position_effects
-     set applied_qty   = greatest(applied_qty, p_qty_vendida),
-         applied_quote = greatest(applied_quote, coalesce(p_quote_recebido, 0)),
-         updated_at    = now()
+     set applied_qty      = greatest(applied_qty, p_qty_vendida),
+         applied_quote    = greatest(applied_quote, coalesce(p_quote_recebido, 0)),
+         pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
+         updated_at       = now()
    where intent_id = p_intent_id;
 
   return jsonb_build_object('ok', true, 'motivo', 'aplicado',
     'aplicado_qty', v_delta, 'aplicado_quote', v_delta_quote,
-    'custo_removido', v_custo_removido, 'fechou', v_fechou, 'base', v_base);
+    'custo_removido', v_custo_removido, 'fechou', v_fechou, 'base', v_base,
+    'pnl_realizado', v_realizado);
 end; $$;
 
-comment on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric) is
+comment on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric, numeric, text) is
   'A136: reduz/fecha a posicao de uma saida armada E avanca o marcador na MESMA '
   'transacao. Antes eram duas escritas, e qualquer ordem delas quebrava '
   'exactly-once.';
@@ -645,9 +782,9 @@ comment on function public.autopilot_projecoes_pendentes(int) is
   'Existe porque FILLED e terminal e o recuperador de intents nao volta nele.';
 
 -- ── 5. ACL — NASCE FECHADA (lição A116) ───────────────────────────────────
-revoke all on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, numeric)
+revoke all on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, text)
   from public, anon, authenticated;
-grant execute on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, numeric)
+grant execute on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, text)
   to service_role;
 
 revoke all on function public.autopilot_projecoes_pendentes(int)
@@ -655,34 +792,30 @@ revoke all on function public.autopilot_projecoes_pendentes(int)
 grant execute on function public.autopilot_projecoes_pendentes(int)
   to service_role;
 
-revoke all on function public.autopilot_reservar_venda(uuid, text, numeric)
+revoke all on function public.autopilot_reservar_venda_do_intent(uuid, numeric)
   from public, anon, authenticated;
-grant execute on function public.autopilot_reservar_venda(uuid, text, numeric)
+grant execute on function public.autopilot_reservar_venda_do_intent(uuid, numeric)
   to service_role;
 
-revoke all on function public.autopilot_liberar_venda(uuid, text, numeric)
+revoke all on function public.autopilot_reservar_exposicao_do_intent(uuid, numeric, numeric)
   from public, anon, authenticated;
-grant execute on function public.autopilot_liberar_venda(uuid, text, numeric)
+grant execute on function public.autopilot_reservar_exposicao_do_intent(uuid, numeric, numeric)
   to service_role;
 
-revoke all on function public.autopilot_reservar_exposicao(uuid, numeric, numeric)
+revoke all on function public.autopilot_liberar_reserva_do_intent(uuid)
   from public, anon, authenticated;
-grant execute on function public.autopilot_reservar_exposicao(uuid, numeric, numeric)
+grant execute on function public.autopilot_liberar_reserva_do_intent(uuid)
   to service_role;
 
-revoke all on function public.autopilot_liberar_exposicao(uuid, numeric)
+revoke all on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric, numeric, text)
   from public, anon, authenticated;
-grant execute on function public.autopilot_liberar_exposicao(uuid, numeric)
+grant execute on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric, numeric, text)
   to service_role;
 
-revoke all on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric)
+revoke all on function public.autopilot_compromisso_vivo(numeric, numeric, text)
   from public, anon, authenticated;
-grant execute on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric)
+grant execute on function public.autopilot_compromisso_vivo(numeric, numeric, text)
   to service_role;
-
-revoke all on function public.autopilot_janela_de_reserva()
-  from public, anon, authenticated;
-grant execute on function public.autopilot_janela_de_reserva() to service_role;
 
 -- ⚠️ A TABELA TAMBÉM: RLS ligada sem policies já fecha para anon/authenticated,
 -- mas o GRANT de tabela é outra porta. Ela nasce sem nenhum.

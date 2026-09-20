@@ -65,6 +65,12 @@ import { reservaDaVagaDiaria } from "@/lib/autopilot/reserva-de-vaga";
 
 const HOJE = "2026-09-19";
 
+/**
+ * ⚠️ A COSTURA PASSOU A RECEBER O ID DO INTENT (A137). A vaga diária não
+ * depende dele — quem depende são as reservas de inventário, que precisam de
+ * dono. A assinatura é a mesma para os dois canais.
+ */
+
 beforeEach(() => {
   estado.linha = { trades_today: 4, max_trades_per_day: 5, is_active: true, last_reset_day: HOJE };
   estado.updates = 0;
@@ -79,7 +85,7 @@ describe("A132.1 — cron e navegador concorrentes com 4/5", () => {
      */
     const navegador = reservaDaVagaDiaria("S1", HOJE);
     const cron      = reservaDaVagaDiaria("S1", HOJE);
-    const [a, b] = await Promise.all([navegador.reservar(), cron.reservar()]);
+    const [a, b] = await Promise.all([navegador.reservar("i-teste"), cron.reservar("i-teste")]);
 
     const passaram = [a, b].filter((r) => r.ok).length;
     expect(passaram, "duas ordens não podem caber na última vaga").toBe(1);
@@ -92,7 +98,7 @@ describe("A132.1 — cron e navegador concorrentes com 4/5", () => {
     estado.linha.trades_today = 3;
     const um   = reservaDaVagaDiaria("S1", HOJE);
     const dois = reservaDaVagaDiaria("S1", HOJE);
-    const [a, b] = await Promise.all([um.reservar(), dois.reservar()]);
+    const [a, b] = await Promise.all([um.reservar("i-teste"), dois.reservar("i-teste")]);
     expect([a.ok, b.ok]).toEqual([true, true]);
     expect(estado.linha.trades_today).toBe(5);
   });
@@ -102,7 +108,7 @@ describe("A132.2 — reserva negada: ZERO efeito externo", () => {
   it("⚠️⚠️ no teto, a reserva recusa e diz por quê", async () => {
     estado.linha.trades_today = 5;
     const vaga = reservaDaVagaDiaria("S1", HOJE);
-    const r = await vaga.reservar();
+    const r = await vaga.reservar("i-teste");
     expect(r.ok).toBe(false);
     expect(vaga.ultimoMotivo()).toBe("limite_diario");
     expect(vaga.vagaViva()).toBeNull();
@@ -114,14 +120,14 @@ describe("A132.2 — reserva negada: ZERO efeito externo", () => {
   it("⚠️ sessão parada também recusa — e o motivo NÃO é o teto", async () => {
     estado.linha.is_active = false;
     const vaga = reservaDaVagaDiaria("S1", HOJE);
-    expect((await vaga.reservar()).ok).toBe(false);
+    expect((await vaga.reservar("i-teste")).ok).toBe(false);
     expect(vaga.ultimoMotivo()).toBe("sessao_inativa");
   });
 
   it("⚠️ contador de ONTEM não é vaga de hoje", async () => {
     estado.linha.last_reset_day = "2026-09-18";
     const vaga = reservaDaVagaDiaria("S1", HOJE);
-    expect((await vaga.reservar()).ok).toBe(false);
+    expect((await vaga.reservar("i-teste")).ok).toBe(false);
     expect(vaga.ultimoMotivo()).toBe("virou_o_dia");
   });
 });
@@ -129,7 +135,7 @@ describe("A132.2 — reserva negada: ZERO efeito externo", () => {
 describe("A132.3/A132.4 — quando a vaga volta, e quando NÃO volta", () => {
   it("⚠️⚠️ recusa PROVADA devolve a vaga: 4 → 5 → 4", async () => {
     const vaga = reservaDaVagaDiaria("S1", HOJE);
-    expect((await vaga.reservar()).ok).toBe(true);
+    expect((await vaga.reservar("i-teste")).ok).toBe(true);
     expect(estado.linha.trades_today).toBe(5);
     await vaga.liberar!();
     expect(estado.linha.trades_today).toBe(4);
@@ -143,7 +149,7 @@ describe("A132.3/A132.4 — quando a vaga volta, e quando NÃO volta", () => {
      * segundo envio para um dinheiro que talvez já tenha saído.
      */
     const vaga = reservaDaVagaDiaria("S1", HOJE);
-    await vaga.reservar();
+    await vaga.reservar("i-teste");
     expect(estado.linha.trades_today).toBe(5);
     // (nenhuma chamada a liberar — é isso que o desfecho incerto faz)
     expect(estado.linha.trades_today).toBe(5);
@@ -160,7 +166,7 @@ describe("A132.3/A132.4 — quando a vaga volta, e quando NÃO volta", () => {
 
   it("⚠️ e a devolução também é CAS: contador que andou NÃO é desfeito", async () => {
     const vaga = reservaDaVagaDiaria("S1", HOJE);
-    await vaga.reservar();                      // 4 → 5
+    await vaga.reservar("i-teste");                      // 4 → 5
     estado.linha.trades_today = 6;              // outra ordem reservou depois
     await vaga.liberar!();
     // Sobra uma vaga gasta — que é o lado seguro. Inventar vaga, não.

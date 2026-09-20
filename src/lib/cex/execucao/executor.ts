@@ -141,7 +141,15 @@ export interface OrdemPedida {
  * tenha saído (INVARIANTE 4).
  */
 export interface ReservaDeRisco {
-  reservar: () => Promise<{ ok: true } | { ok: false; porque: string }>;
+  /**
+   * ⚠️⚠️ RECEBE O ID DO INTENT — achado A137.
+   *
+   * A costura roda entre AUTHORIZED e SUBMITTING, e nesse ponto o intent JÁ
+   * EXISTE no banco. Passar o id aqui é o que permite uma reserva com DONO:
+   * sem ele, as reservas de inventário viravam contador agregado com prazo, e
+   * a projeção de uma ordem antiga podia consumir o compromisso de outra nova.
+   */
+  reservar: (intentId: string) => Promise<{ ok: true } | { ok: false; porque: string }>;
   liberar?: () => Promise<void>;
 }
 
@@ -336,7 +344,7 @@ export async function executarOrdemCex(
 
   // ── 5. A RESERVA DE RISCO ─────────────────────────────────────────────
   if (reserva) {
-    const r = await reserva.reservar();
+    const r = await reserva.reservar(intent.id);
     if (!r.ok) return recusarPreEnvio("reserva_negada", r.porque);
   }
   const res = await transicionar(db, intent.id, "RESERVED");

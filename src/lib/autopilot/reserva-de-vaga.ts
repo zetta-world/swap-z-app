@@ -69,6 +69,8 @@ export function reservaDaVagaDiaria(
   let motivo: MotivoDaReservaNegada | null = null;
 
   return {
+    // ⚠️ A vaga do dia não depende do intent — mas a assinatura é a da
+    // costura, que passou a carregá-lo para as reservas de inventário (A137).
     reservar: async () => {
       const r = await reservar(sessionId, hojeUtc);
       if (r.ok) {
