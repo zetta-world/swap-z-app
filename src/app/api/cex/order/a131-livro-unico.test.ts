@@ -60,6 +60,7 @@ const estado = vi.hoisted(() => {
     reservasPorIntent: new Map<string, number>(),
     tradesToday: 3,
     devolucaoDaVagaFalha: false,
+    eventos: [] as Array<{ nome: string; payload?: unknown }>,
     devolucoes: [] as Array<{ tipo: string; valor: number }>,
     /** Saídas marcadas como armadas NO SERVIDOR, e P&L realizado nele. */
     armadas: [] as unknown[][],
@@ -95,7 +96,16 @@ vi.mock("@/lib/admin/kill-switches", () => ({
 vi.mock("@/lib/auth/session", () => ({ getSession: async () => ({ sub: "0xA131" }) }));
 vi.mock("@/lib/supabase/server", () => ({ getSupabaseAdmin: () => bancoAtual?.cliente ?? null }));
 vi.mock("@/lib/admin/track", () => ({
-  logSecurity: () => {}, logError: () => {}, recordEvent: async () => {},
+  logSecurity: () => {},
+  logError: () => {},
+  /**
+   * ⚠️ `vi.fn()`, NÃO uma lambda vazia — achado da revisão adversarial. Com a
+   * lambda, o único jeito de "provar" a telemetria era grep no fonte, e um
+   * comentário com as mesmas palavras mantinha o teste verde.
+   */
+  recordEvent: vi.fn(async (nome: string, payload?: unknown) => {
+    estado.eventos.push({ nome, payload });
+  }),
 }));
 vi.mock("@/lib/cex/execucao/venue-primitivo", () => ({ enviarOrdemNaVenue: spies.enviar }));
 vi.mock("@/lib/autopilot/liberacao", () => ({
@@ -246,6 +256,7 @@ beforeEach(() => {
   estado.reservasPorIntent.clear();
   estado.tradesToday = 3;
   estado.devolucaoDaVagaFalha = false;
+  estado.eventos = [];
   estado.devolucoes = [];
   estado.armadas = [];
   estado.pnl = [];
@@ -578,7 +589,10 @@ describe("o P&L da venda do navegador conta no stop do SERVIDOR", () => {
     // A RPC só realiza em venda; aqui a trava é estrutural.
     const SQL = (await import("node:fs")).readFileSync(
       "supabase/migrations/0064_autopilot_projecao_de_posicao.sql", "utf8");
-    expect(SQL).toMatch(/if v_i\.side = 'sell' and v_delta_quote > 0 then/);
+    // ⚠️ A142: a guarda virou `side = 'sell'` — o recebido tardio precisa
+    // entrar, e quem decide se há resultado é a conta acumulada.
+    expect(SQL).toMatch(/if v_i\.side = 'sell' then/);
+    expect(SQL).toMatch(/if v_quote_novo > 0 then/);
   });
 
   it("⚠️⚠️ saída em liquidação NÃO realiza aqui — quem realiza é o settle", async () => {
@@ -738,12 +752,13 @@ describe("A141 — a reserva composta não deixa meia reserva de pé", () => {
     estado.reservadoUsd = 20;
     const r = await POST(req({ side: "buy", amount: 0.2 }));
     expect(r.status).not.toBe(200);
-    // A vaga NÃO voltou — e isso tem nome e severidade.
+    // A vaga NÃO voltou — e isso tem nome, severidade e EVENTO EMITIDO.
     expect(estado.tradesToday).toBe(4);
-    const FONTE = (await import("node:fs")).readFileSync(
-      "src/app/api/cex/order/route.ts", "utf8");
-    expect(FONTE).toMatch(/autopilot_rollback_da_vaga_falhou/);
-    expect(FONTE).toMatch(/o usuario perdeu um trade do dia/);
+    const aviso = estado.eventos.find((e) => e.nome === "autopilot_rollback_da_vaga_falhou");
+    expect(aviso, "o evento precisa SAIR, não só existir no fonte").toBeDefined();
+    const meta = (aviso!.payload as { meta?: Record<string, unknown> })?.meta ?? {};
+    expect(meta.severity).toBe("high");
+    expect(String(meta.why ?? "")).toMatch(/perdeu um trade do dia/);
   });
 
   it("⚠️ A141.5 — vaga negada nem chega a reservar inventário", async () => {

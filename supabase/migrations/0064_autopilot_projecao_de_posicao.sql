@@ -93,15 +93,50 @@ create table if not exists public.autopilot_position_effects (
   -- ⚠️ O CONTRATO DOS QUATRO CAMPOS, escrito porque quatro watermarks sem
   -- contrato é como se volta a errar:
   --
-  --     applied_qty      quanto da QUANTIDADE do intent já está na posição
-  --     applied_quote    quanto do RECEBIDO/GASTO já está na posição
-  --     fee_aplicada_usd quanta TAXA (em USD) já foi descontada do P&L
-  --     pnl_aplicado_usd quanto RESULTADO já entrou no `pnl_today` da sessão
+  --     applied_qty        quanto da QUANTIDADE do intent já está na posição
+  --     applied_quote      quanto do RECEBIDO/GASTO já está na posição
+  --     fee_aplicada_usd   quanta TAXA (USD) já foi descontada do P&L
+  --     custo_removido_usd quanto CUSTO a posição já perdeu por este intent
+  --     pnl_aplicado_usd   quanto RESULTADO já entrou no `pnl_today`
   --
-  -- Os três primeiros são as entradas da conta; o quarto é o que ela produziu.
-  -- Cada delta aplicado avança os quatro na MESMA transação, e é por isso que
-  -- repetir uma projeção não move nada.
+  -- Os quatro primeiros são as entradas da conta; o último é o que ela
+  -- produziu. A conta é ACUMULADA, não somada por deltas independentes:
+  --
+  --     realizado_total = applied_quote − custo_removido_usd − fee_aplicada_usd
+  --     delta           = realizado_total − pnl_aplicado_usd
+  --
+  -- É isso que torna a ordem de chegada dos fatos irrelevante — quantidade
+  -- primeiro, recebido depois, taxa por último, tudo converge no mesmo número.
   fee_aplicada_usd numeric  not null default 0 check (fee_aplicada_usd >= 0),
+
+  -- ⚠️⚠️⚠️ E O CUSTO REMOVIDO TAMBÉM É WATERMARK — achado A142.
+  --
+  -- O A140 deu delta próprio à taxa e ninguém deu ao RECEBIDO. `filled_quote`
+  -- pode crescer com `filled_qty` PARADO: a corretora nem sempre devolve
+  -- `cost` no ACK, o executor manda `cumulativeQuote = 0`, e só quando
+  -- `cex_ingest_trades` traz os trades reais o recebido aparece. O P&L estava
+  -- atrás de `v_delta_quote > 0`, então:
+  --
+  --     1ª projeção: qty 0,01 · quote 0 → posição FECHADA, custo 600 sai do
+  --                  livro, e ZERO entra no `pnl_today`
+  --     2ª projeção: quote 640 chega, qty parada → `sem_delta`
+  --
+  -- Resultado: US$ 600 de custo somem e nenhum resultado é contado. Com o
+  -- preço para o outro lado, é o PREJUÍZO que some — e o stop de perda nunca
+  -- dispara.
+  --
+  -- O conserto é parar de somar deltas independentes e passar a calcular o
+  -- resultado ACUMULADO, comparando-o com o que já foi contado:
+  --
+  --     realizado_total = applied_quote − custo_removido_usd − fee_aplicada_usd
+  --     delta do P&L    = realizado_total − pnl_aplicado_usd
+  --
+  -- ⚠️ E O P&L SÓ É CONTADO QUANDO O RECEBIDO EXISTE. Enquanto `applied_quote`
+  -- for zero, a redução da posição fica registrada aqui e o resultado espera —
+  -- senão fechar a posição sem saber por quanto viraria um prejuízo de
+  -- `−custo` inteiro, que foi exatamente o segundo defeito deste achado.
+  custo_removido_usd numeric not null default 0 check (custo_removido_usd >= 0),
+
   pnl_aplicado_usd numeric  not null default 0,
 
   created_at    timestamptz not null default now(),
@@ -162,6 +197,9 @@ declare
   v_taxa_total    numeric;
   v_taxa_delta    numeric := 0;
   v_taxa_opaca    boolean := false;
+  v_custo_acum    numeric := 0;
+  v_quote_novo    numeric := 0;
+  v_realizado_total numeric := 0;
   v_hoje          text;
   v_eps  constant numeric := 1e-12;
   -- Ruído relativo de ponto flutuante ao vender "tudo": 0,1 − 0,1 pode deixar
@@ -258,7 +296,10 @@ begin
       'aplicado', v_e.fee_aplicada_usd, 'no_livro', v_taxa_total);
   end if;
 
-  if v_delta_qty <= v_eps and v_taxa_delta <= v_eps then
+  -- ⚠️⚠️ A142: o RECEBIDO entra na decisão. Ele cresce com a quantidade
+  -- parada (ACK sem `cost`, trades reais depois), e sem isto a chegada dele
+  -- caía em `sem_delta` — o resultado inteiro ia embora.
+  if v_delta_qty <= v_eps and v_taxa_delta <= v_eps and v_delta_quote <= v_eps then
     -- ⚠️ O LIVRO AVANÇOU SEM DELTA? Ainda assim é o novo piso da regressão.
     update public.autopilot_position_effects
        set ledger_qty   = greatest(ledger_qty,   v_i.filled_qty),
@@ -271,16 +312,70 @@ begin
   end if;
 
   /**
-   * ⚠️⚠️ AJUSTE SÓ DE TAXA (A140 §7): quantidade parada, taxa nova.
-   *
-   * O livro descobriu a taxa real DEPOIS — e o resultado do dia muda sem que
-   * nada tenha sido vendido a mais. Este ramo existe porque o caminho normal
-   * exige `delta_qty > 0` para tocar a posição, e aqui não há posição a tocar:
-   * só o P&L e os dois watermarks.
+   * ⚠️⚠️ AJUSTE SEM QUANTIDADE NOVA (A140 §7 e A142): o livro descobriu o
+   * RECEBIDO ou a TAXA depois, e o resultado do dia muda sem que nada tenha
+   * sido vendido a mais. Este ramo existe porque o caminho normal exige
+   * `delta_qty > 0` para tocar a posição, e aqui não há posição a tocar.
    */
   if v_delta_qty <= v_eps then
     if v_i.side = 'sell' then
-      v_realizado := -v_taxa_delta;
+      v_quote_novo := greatest(v_e.applied_quote, v_i.filled_quote);
+      v_custo_acum := v_e.custo_removido_usd;
+      -- ⚠️ Sem recebido não se conta resultado: a redução já está guardada em
+      -- `custo_removido_usd` e espera o quote chegar.
+      if v_quote_novo > 0 then
+        v_realizado_total := v_quote_novo - v_custo_acum - v_taxa_total;
+        v_realizado := v_realizado_total - v_e.pnl_aplicado_usd;
+      end if;
+      if v_realizado <> 0 then
+        v_hoje := (current_timestamp at time zone 'UTC')::date::text;
+        update public.autopilot_sessions
+           set pnl_today        = pnl_today + v_realizado,
+               frozen_until_day = case
+                 when (pnl_today + v_realizado) <= -daily_loss_stop_usd
+                   then v_hoje else frozen_until_day end,
+               updated_at       = now()
+         where id = v_i.session_id;
+      end if;
+    end if;
+    update public.autopilot_position_effects
+       set fee_aplicada_usd = v_taxa_total,
+           applied_quote    = greatest(applied_quote, v_i.filled_quote),
+           pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
+           ledger_qty       = greatest(ledger_qty,   v_i.filled_qty),
+           ledger_quote     = greatest(ledger_quote, v_i.filled_quote),
+           updated_at       = now()
+     where intent_id = p_intent_id;
+    return jsonb_build_object('ok', true, 'motivo', 'ajuste_sem_quantidade',
+      'aplicado_qty', 0, 'aplicado_quote', greatest(v_delta_quote, 0),
+      'fechou', false, 'pnl_realizado', v_realizado, 'taxa_delta', v_taxa_delta,
+      'taxa_nao_precificada', v_taxa_opaca);
+  end if;
+
+  select * into v_pos from public.autopilot_positions
+   where session_id = v_i.session_id and base = v_base for update;
+
+  /**
+   * ⚠️⚠️ POSIÇÃO JÁ FECHADA POR ESTE MESMO INTENT — achado A142 (P1-4).
+   *
+   * A liquidação fecha a posição com o que a CORRETORA disse ter saído; os
+   * trades reais podem trazer um pouco mais depois. A quantidade a mais não
+   * tem posição para reduzir — o custo inteiro já saiu — e voltar
+   * `sem_posicao` relistava o intent a cada cinco minutos por três dias, com
+   * evento de severidade alta, até a janela fechar sem nunca contar o
+   * resultado.
+   *
+   * O que sobra é receita sem custo novo, e a conta acumulada sabe lidar com
+   * isso. Só vale quando ESTE intent já aplicou algo — sem isso, `sem_posicao`
+   * continua sendo fail-closed de verdade.
+   */
+  if not found and v_i.side = 'sell' and v_e.applied_qty > 0 then
+    v_quote_novo := greatest(v_e.applied_quote, v_i.filled_quote);
+    if v_quote_novo > 0 then
+      v_realizado_total := v_quote_novo - v_e.custo_removido_usd - v_taxa_total;
+      v_realizado := v_realizado_total - v_e.pnl_aplicado_usd;
+    end if;
+    if v_realizado <> 0 then
       v_hoje := (current_timestamp at time zone 'UTC')::date::text;
       update public.autopilot_sessions
          set pnl_today        = pnl_today + v_realizado,
@@ -291,20 +386,19 @@ begin
        where id = v_i.session_id;
     end if;
     update public.autopilot_position_effects
-       set fee_aplicada_usd = v_taxa_total,
+       set applied_qty      = greatest(applied_qty,  v_i.filled_qty),
+           applied_quote    = greatest(applied_quote, v_i.filled_quote),
+           ledger_qty       = greatest(ledger_qty,    v_i.filled_qty),
+           ledger_quote     = greatest(ledger_quote,  v_i.filled_quote),
+           fee_aplicada_usd = greatest(fee_aplicada_usd, v_taxa_total),
            pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
-           ledger_qty       = greatest(ledger_qty,   v_i.filled_qty),
-           ledger_quote     = greatest(ledger_quote, v_i.filled_quote),
            updated_at       = now()
      where intent_id = p_intent_id;
-    return jsonb_build_object('ok', true, 'motivo', 'ajuste_de_taxa',
-      'aplicado_qty', 0, 'aplicado_quote', 0, 'fechou', false,
-      'pnl_realizado', v_realizado, 'taxa_delta', v_taxa_delta,
-      'taxa_nao_precificada', v_taxa_opaca);
+    return jsonb_build_object('ok', true, 'motivo', 'posicao_ja_encerrada',
+      'aplicado_qty', v_delta_qty, 'aplicado_quote', v_delta_quote,
+      'custo_removido', 0, 'fechou', false, 'pnl_realizado', v_realizado,
+      'taxa_delta', v_taxa_delta, 'taxa_nao_precificada', v_taxa_opaca);
   end if;
-
-  select * into v_pos from public.autopilot_positions
-   where session_id = v_i.session_id and base = v_base for update;
 
   if v_i.side = 'buy' then
     if found then
@@ -412,9 +506,26 @@ begin
    * ⚠️ A conta é a de sempre: recebido − custo removido − taxa. Nenhum modelo
    * contábil novo.
    */
-  if v_i.side = 'sell' and v_delta_quote > 0 then
-    -- ⚠️ TAXA POR DELTA (A140), não a acumulada inteira.
-    v_realizado := v_delta_quote - coalesce(v_custo_removido, 0) - v_taxa_delta;
+  if v_i.side = 'sell' then
+    /**
+     * ⚠️⚠️ A CONTA É ACUMULADA (A142), não uma soma de deltas independentes.
+     *
+     * Era `v_delta_quote − custo_removido − taxa_delta`, atrás de um
+     * `v_delta_quote > 0`. Quando o ACK não trazia `cost`, a posição era
+     * reduzida e o resultado NÃO entrava — e a chegada do recebido, depois,
+     * caía em `sem_delta`. O custo sumia da conta do dia.
+     *
+     * Com o acumulado, a ordem de chegada dos fatos deixa de importar: o que
+     * falta é sempre `realizado_total − pnl_aplicado`.
+     */
+    v_custo_acum := v_e.custo_removido_usd + coalesce(v_custo_removido, 0);
+    v_quote_novo := greatest(v_e.applied_quote, v_i.filled_quote);
+    -- ⚠️ Sem recebido não se conta resultado — fechar a posição sem saber por
+    -- quanto viraria um prejuízo de `−custo` inteiro.
+    if v_quote_novo > 0 then
+      v_realizado_total := v_quote_novo - v_custo_acum - v_taxa_total;
+      v_realizado := v_realizado_total - v_e.pnl_aplicado_usd;
+    end if;
     if v_realizado <> 0 then
       /**
        * ⚠️⚠️ O DIA É DO BANCO — achado A140 §11.
@@ -440,15 +551,18 @@ begin
   -- contador agregado que exigia uma subtração — e era ela que podia comer a
   -- reserva de outro intent (A137).
   update public.autopilot_position_effects
-     set applied_qty      = greatest(applied_qty,  v_i.filled_qty),
-         applied_quote    = greatest(applied_quote, v_i.filled_quote),
-         ledger_qty       = greatest(ledger_qty,    v_i.filled_qty),
-         ledger_quote     = greatest(ledger_quote,  v_i.filled_quote),
+     set applied_qty        = greatest(applied_qty,  v_i.filled_qty),
+         applied_quote      = greatest(applied_quote, v_i.filled_quote),
+         ledger_qty         = greatest(ledger_qty,    v_i.filled_qty),
+         ledger_quote       = greatest(ledger_quote,  v_i.filled_quote),
          -- ⚠️ A140: a taxa também é watermark. Sem isto, o próximo parcial
          -- desconta a acumulada inteira outra vez.
-         fee_aplicada_usd = greatest(fee_aplicada_usd, v_taxa_total),
-         pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
-         updated_at       = now()
+         fee_aplicada_usd   = greatest(fee_aplicada_usd, v_taxa_total),
+         -- ⚠️ A142: e o custo que saiu da posição, para o resultado poder ser
+         -- calculado quando o recebido chegar.
+         custo_removido_usd = custo_removido_usd + coalesce(v_custo_removido, 0),
+         pnl_aplicado_usd   = pnl_aplicado_usd + v_realizado,
+         updated_at         = now()
    where intent_id = p_intent_id;
 
   return jsonb_build_object(
@@ -746,7 +860,8 @@ declare
   v_restante numeric; v_custo_restante numeric; v_custo_removido numeric := 0;
   v_fechou boolean := false;
   v_taxa_total numeric; v_taxa_delta numeric := 0; v_taxa_opaca boolean := false;
-  v_hoje text;
+  v_custo_acum numeric := 0; v_quote_novo numeric := 0;
+  v_realizado_total numeric := 0; v_hoje text;
   v_eps constant numeric := 1e-12;
   v_ruido constant numeric := 1e-9;
 begin
@@ -797,22 +912,29 @@ begin
       'taxa_nao_precificada', v_taxa_opaca);
   end if;
   if v_delta <= v_eps then
-    -- ⚠️ Ajuste SÓ de taxa (A140 §7): nada a reduzir, e o P&L muda.
-    v_realizado := -v_taxa_delta;
-    v_hoje := (current_timestamp at time zone 'UTC')::date::text;
-    update public.autopilot_sessions
-       set pnl_today        = pnl_today + v_realizado,
-           frozen_until_day = case
-             when (pnl_today + v_realizado) <= -daily_loss_stop_usd
-               then v_hoje else frozen_until_day end,
-           updated_at       = now()
-     where id = v_i.session_id;
+    -- ⚠️ Ajuste sem quantidade (A140 §7 / A142): nada a reduzir, e o P&L muda.
+    v_quote_novo := greatest(v_e.applied_quote, coalesce(p_quote_recebido, 0));
+    if v_quote_novo > 0 then
+      v_realizado_total := v_quote_novo - v_e.custo_removido_usd - v_taxa_total;
+      v_realizado := v_realizado_total - v_e.pnl_aplicado_usd;
+    end if;
+    if v_realizado <> 0 then
+      v_hoje := (current_timestamp at time zone 'UTC')::date::text;
+      update public.autopilot_sessions
+         set pnl_today        = pnl_today + v_realizado,
+             frozen_until_day = case
+               when (pnl_today + v_realizado) <= -daily_loss_stop_usd
+                 then v_hoje else frozen_until_day end,
+             updated_at       = now()
+       where id = v_i.session_id;
+    end if;
     update public.autopilot_position_effects
        set fee_aplicada_usd = v_taxa_total,
+           applied_quote    = greatest(applied_quote, coalesce(p_quote_recebido, 0)),
            pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
            updated_at       = now()
      where intent_id = p_intent_id;
-    return jsonb_build_object('ok', true, 'motivo', 'ajuste_de_taxa',
+    return jsonb_build_object('ok', true, 'motivo', 'ajuste_sem_quantidade',
       'aplicado_qty', 0, 'custo_removido', 0, 'fechou', false,
       'pnl_realizado', v_realizado, 'taxa_delta', v_taxa_delta,
       'taxa_nao_precificada', v_taxa_opaca);
@@ -889,8 +1011,23 @@ begin
      where id = v_pos.id;
   end if;
 
-  -- ⚠️⚠️ A138/A140: P&L com taxa por DELTA, e o dia vem do banco.
-  v_realizado := v_delta_quote - v_custo_removido - v_taxa_delta;
+  /**
+   * ⚠️⚠️ A138/A140/A142: conta ACUMULADA, e o dia vem do banco.
+   *
+   * Era `v_delta_quote − v_custo_removido − v_taxa_delta`, INCONDICIONAL. A
+   * liquidação recebe o recebido da corretora, e ele chega `0` quando o ACK
+   * não traz `cost` (`order.cost` → `Number.isFinite(quote) ? quote : 0`).
+   * A conta virava `0 − 600 − 0` e a sessão levava um prejuízo de US$ 600 que
+   * não existiu — congelando o dia inteiro pelo stop de perda.
+   *
+   * Sem recebido, o custo removido fica GUARDADO e o resultado espera o livro.
+   */
+  v_custo_acum := v_e.custo_removido_usd + v_custo_removido;
+  v_quote_novo := greatest(v_e.applied_quote, coalesce(p_quote_recebido, 0));
+  if v_quote_novo > 0 then
+    v_realizado_total := v_quote_novo - v_custo_acum - v_taxa_total;
+    v_realizado := v_realizado_total - v_e.pnl_aplicado_usd;
+  end if;
   if v_realizado <> 0 then
     v_hoje := (current_timestamp at time zone 'UTC')::date::text;
     update public.autopilot_sessions
@@ -903,11 +1040,12 @@ begin
   end if;
 
   update public.autopilot_position_effects
-     set applied_qty      = greatest(applied_qty, p_qty_vendida),
-         applied_quote    = greatest(applied_quote, coalesce(p_quote_recebido, 0)),
-         fee_aplicada_usd = greatest(fee_aplicada_usd, v_taxa_total),
-         pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
-         updated_at       = now()
+     set applied_qty        = greatest(applied_qty, p_qty_vendida),
+         applied_quote      = greatest(applied_quote, coalesce(p_quote_recebido, 0)),
+         fee_aplicada_usd   = greatest(fee_aplicada_usd, v_taxa_total),
+         custo_removido_usd = custo_removido_usd + v_custo_removido,
+         pnl_aplicado_usd   = pnl_aplicado_usd + v_realizado,
+         updated_at         = now()
    where intent_id = p_intent_id;
 
   return jsonb_build_object('ok', true, 'motivo', 'aplicado',
@@ -962,6 +1100,8 @@ as $$
      -- substituem o sintético), e esse P&L também precisa entrar.
      and (e.intent_id is null
           or i.filled_qty > e.applied_qty + 1e-12
+          -- ⚠️ A142: o RECEBIDO pode chegar depois da quantidade.
+          or i.filled_quote > e.applied_quote + 1e-12
           or coalesce(public.autopilot_taxa_do_intent_em_usd(
                i.fee_total, i.fee_currency, i.symbol, i.filled_qty, i.filled_quote),
              e.fee_aplicada_usd) > e.fee_aplicada_usd + 1e-12)

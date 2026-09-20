@@ -9,7 +9,6 @@ import { certificadoVivo } from "@/lib/autopilot/certificado";
 import { regimeDaBase } from "@/lib/autopilot/regime";
 import { getSessionStatus, utcDayKey } from "@/lib/autopilot/sessions";
 import { markServerExitArmed } from "@/lib/autopilot/positions-server";
-import { taxaEmUsd } from "@/lib/cex/taxa";
 import {
   tetoDeExposicaoDoRisco, avaliarExposicaoParaEntrada, avaliarVendaAutonoma,
 } from "@/lib/autopilot/inventario";
@@ -770,8 +769,9 @@ export async function POST(req: NextRequest) {
          * Agora a RPC aplica o resultado junto da redução, e o marcador
          * guarda quanto DESTE intent já entrou no `pnl_today`.
          *
-         * ⚠️ A conversão da taxa continua aqui: ela é a única parte que o
-         * banco não tem como fazer (preço da moeda da taxa).
+         * ⚠️ E A CONVERSÃO DA TAXA SAIU DAQUI NO A140 — ela mora em
+         * `autopilot_taxa_do_intent_em_usd` (0064). Esta rota só registra
+         * quando o banco avisa que a moeda não dá para precificar.
          */
         if (projecao.motivo === "aplicado" && projecao.realizado !== 0) {
           await recordEvent("autopilot_pnl_realizado", { wallet: walletDoPiloto ?? undefined, meta: {
@@ -935,9 +935,29 @@ export async function POST(req: NextRequest) {
                 }
                 return { ok: true as const };
               },
+              /**
+               * ⚠️⚠️ E AQUI TAMBÉM AVISA — achado da revisão adversarial.
+               *
+               * O executor chama `liberar` nos três pontos de recusa PROVADA
+               * (RESERVED não gravou, autorização recusada, corretora disse
+               * não) e descarta o retorno. O aviso de CAS falho só existia no
+               * rollback do meio da reserva — nos outros três, um `false`
+               * (comum numa sessão movimentada, porque o CAS não casa se o
+               * contador andou) era silencioso, com a MESMA consequência: o
+               * usuário perdeu um trade do dia.
+               */
               liberar: async () => {
-                await vaga.liberar();
+                const devolveu = await vaga.liberar();
                 await devolverReservasEmVoo();
+                if (!devolveu) {
+                  await recordEvent("autopilot_rollback_da_vaga_falhou", {
+                    wallet: walletDoPiloto ?? undefined, meta: {
+                      severity: "high", canal: "browser", session: sessaoDoPilotoId,
+                      porque: "recusa provada apos a reserva",
+                      why: "nada foi enviado e a vaga diaria NAO voltou. O usuario "
+                        + "perdeu um trade do dia.",
+                    } });
+                }
               },
             };
           })()

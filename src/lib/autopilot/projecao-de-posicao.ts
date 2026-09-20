@@ -27,13 +27,15 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type MotivoDaProjecao =
-  | "aplicado" | "sem_delta" | "saida_em_liquidacao" | "ajuste_de_taxa"
+  | "aplicado" | "sem_delta" | "saida_em_liquidacao"
+  | "ajuste_sem_quantidade" | "posicao_ja_encerrada"
   | "intent_inexistente" | "simulado" | "origem_nao_autonoma" | "sem_sessao"
   | "regressao" | "regressao_de_taxa" | "sem_posicao" | "erro";
 
 export type ResultadoDaProjecao =
   | { ok: true;
-      motivo: "aplicado" | "sem_delta" | "saida_em_liquidacao" | "ajuste_de_taxa";
+      motivo: "aplicado" | "sem_delta" | "saida_em_liquidacao"
+            | "ajuste_sem_quantidade" | "posicao_ja_encerrada";
       aplicadoQty: number; aplicadoQuote: number; custoRemovido: number;
       fechou: boolean; realizado: number;
       /** ⚠️ A140: a taxa estava em moeda que não dá para precificar. O P&L
@@ -96,9 +98,15 @@ export async function projetarEfeitoDoIntent(
       porque: `projecao recusada: ${motivo}${r.no_livro !== undefined
         ? ` (aplicado ${String(r.aplicado)}, no livro ${String(r.no_livro)})` : ""}` };
   }
+  /**
+   * ⚠️ O MAPEAMENTO É EXPLÍCITO, e o default NÃO pode ser "aplicado": um
+   * motivo novo no banco chegando como "aplicado" aqui foi exatamente o que
+   * escondeu o `ajuste_sem_quantidade` no primeiro teste do A142.
+   */
   const motivo = r.motivo === "sem_delta" ? "sem_delta" as const
                : r.motivo === "saida_em_liquidacao" ? "saida_em_liquidacao" as const
-               : r.motivo === "ajuste_de_taxa" ? "ajuste_de_taxa" as const
+               : r.motivo === "ajuste_sem_quantidade" ? "ajuste_sem_quantidade" as const
+               : r.motivo === "posicao_ja_encerrada" ? "posicao_ja_encerrada" as const
                : "aplicado" as const;
   return {
     ok: true, motivo,
@@ -164,7 +172,7 @@ export async function projecoesPendentes(
  * disso.
  */
 export type ResultadoDaLiquidacao =
-  | { ok: true; motivo: "aplicado" | "sem_delta" | "ajuste_de_taxa";
+  | { ok: true; motivo: "aplicado" | "sem_delta" | "ajuste_sem_quantidade";
       aplicadoQty: number; custoRemovido: number; fechou: boolean;
       realizado: number; taxaNaoPrecificada: boolean }
   | { ok: false; motivo: string; porque: string };
@@ -201,7 +209,7 @@ export async function liquidarSaidaArmada(
   return {
     ok: true,
     motivo: r.motivo === "sem_delta" ? "sem_delta"
-          : r.motivo === "ajuste_de_taxa" ? "ajuste_de_taxa" : "aplicado",
+          : r.motivo === "ajuste_sem_quantidade" ? "ajuste_sem_quantidade" : "aplicado",
     aplicadoQty: numero(r.aplicado_qty),
     custoRemovido: numero(r.custo_removido),
     fechou: r.fechou === true,

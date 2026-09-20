@@ -17,7 +17,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { bancoFalso } from "@/lib/cex/execucao/banco-falso";
-import { projetarEfeitoDoIntent, projecoesPendentes } from "@/lib/autopilot/projecao-de-posicao";
+import {
+  projetarEfeitoDoIntent, projecoesPendentes, liquidarSaidaArmada,
+} from "@/lib/autopilot/projecao-de-posicao";
 
 const SQL = readFileSync("supabase/migrations/0064_autopilot_projecao_de_posicao.sql", "utf8");
 const HOJE_UTC = new Date().toISOString().slice(0, 10);
@@ -105,7 +107,8 @@ describe("A140.3 — ajuste SÓ de taxa chega ao P&L", () => {
     const linha = banco.intents.find((i) => i.id === venda)!;
     linha.fee_total = 2; linha.fee_currency = "USDT";
     const ajuste = await projetar(venda);
-    expect(ajuste.ok && ajuste.motivo).toBe("ajuste_de_taxa");
+    // ⚠️ O ramo passou a cobrir recebido E taxa (A142) — daí o nome.
+    expect(ajuste.ok && ajuste.motivo).toBe("ajuste_sem_quantidade");
     expect(ajuste.ok && ajuste.realizado).toBeCloseTo(-2, 9);
     expect(Number(daSessao().pnl_today)).toBeCloseTo(38, 9);
 
@@ -213,10 +216,22 @@ describe("⚠️ o SQL sustenta a conta", () => {
     expect(SQL).toMatch(/fee_aplicada_usd = greatest\(fee_aplicada_usd, v_taxa_total\)/);
   });
 
-  it("⚠️⚠️ o P&L desconta o DELTA da taxa, nunca a acumulada", () => {
-    expect(SQL).toMatch(/v_realizado := v_delta_quote - coalesce\(v_custo_removido, 0\) - v_taxa_delta;/);
-    expect(SQL).toMatch(/v_realizado := v_delta_quote - v_custo_removido - v_taxa_delta;/);
+  it("⚠️⚠️ o P&L é ACUMULADO, e a taxa entra por total — nunca somando deltas soltos", () => {
+    /**
+     * ⚠️ A FÓRMULA MUDOU NO A142, e o motivo está no lugar: somar deltas
+     * independentes deixava o recebido tardio de fora. A conta passou a ser
+     * `applied_quote − custo_removido − taxa`, comparada com o que já foi
+     * contado.
+     */
+    const acumuladas = [...SQL.matchAll(
+      /v_realizado_total := v_quote_novo - v_custo_acum - v_taxa_total;/g)].length;
+    expect(acumuladas, "projeção, ajuste sem quantidade e liquidação")
+      .toBeGreaterThanOrEqual(2);
+    expect(SQL).toMatch(/v_realizado := v_realizado_total - v_e\.pnl_aplicado_usd;/);
+    expect(SQL).toMatch(/custo_removido_usd = custo_removido_usd \+ /);
     expect(SQL).not.toMatch(/p_taxa_usd/);
+    // E nada de descontar a taxa acumulada inteira por delta.
+    expect(SQL).not.toMatch(/- v_taxa_delta;/);
   });
 
   it("⚠️⚠️ o dia do freeze vem do BANCO, e `p_hoje` não existe mais", () => {
@@ -230,5 +245,123 @@ describe("⚠️ o SQL sustenta a conta", () => {
   it("⚠️⚠️ a conversão da taxa nasce FECHADA (A116)", () => {
     expect(SQL).toMatch(/revoke all on function public\.autopilot_taxa_do_intent_em_usd\(numeric, text, text, numeric, numeric\)/);
     expect(SQL).toMatch(/grant execute on function public\.autopilot_taxa_do_intent_em_usd\(numeric, text, text, numeric, numeric\)\s*\n?\s*to service_role;/);
+  });
+});
+
+describe("A142 — o RECEBIDO também tem delta próprio", () => {
+  /**
+   * ⚠️⚠️⚠️ O ACHADO QUE A REVISÃO ADVERSARIAL ENCONTROU NO PRÓPRIO A140.
+   *
+   * O A140 deu delta à taxa e ninguém deu ao recebido. `filled_quote` cresce
+   * com `filled_qty` PARADO — a corretora nem sempre devolve `cost` no ACK, o
+   * executor manda `cumulativeQuote = 0`, e o valor real só aparece quando
+   * `cex_ingest_trades` traz os trades. O P&L estava atrás de
+   * `v_delta_quote > 0`:
+   *
+   *     1ª projeção: qty 0,01 · quote 0 → posição FECHADA, US$ 600 de custo
+   *                  saem do livro, e ZERO entra no `pnl_today`
+   *     2ª projeção: quote 640 chega, qty parada → `sem_delta`
+   *
+   * O resultado do dia desaparecia. Com o preço para o outro lado, é o
+   * PREJUÍZO que some — e o stop de perda nunca dispara.
+   */
+  it("⚠️⚠️ ACK sem `cost`: a posição fecha, o resultado ESPERA, e chega inteiro depois", async () => {
+    await posicaoDe600();
+    const venda = intent({ filled_qty: 0.01, filled_quote: 0, state: "FILLED" });
+
+    const p1 = await projetar(venda);
+    expect(p1.ok && p1.aplicadoQty).toBeCloseTo(0.01, 12);
+    expect(p1.ok && p1.fechou).toBe(true);
+    expect(p1.ok && p1.realizado, "sem recebido não se conta resultado").toBe(0);
+    expect(Number(daSessao().pnl_today)).toBe(0);
+    // ⚠️ E o custo removido fica GUARDADO, esperando o recebido.
+    expect(Number(marcador(venda).custo_removido_usd)).toBeCloseTo(600, 9);
+
+    // Os trades reais chegam: quantidade parada, recebido 640.
+    banco.intents.find((i) => i.id === venda)!.filled_quote = 640;
+    const p2 = await projetar(venda);
+    expect(p2.ok && p2.motivo).toBe("ajuste_sem_quantidade");
+    expect(p2.ok && p2.realizado, "640 − 600").toBeCloseTo(40, 9);
+    expect(Number(daSessao().pnl_today)).toBeCloseTo(40, 9);
+  });
+
+  it("⚠️⚠️ parcial com recebido zerado não infla o delta seguinte", async () => {
+    /**
+     * A variante que o revisor mediu: `applied_quote` ficava em 0, e o segundo
+     * delta trazia a receita INTEIRA contra metade do custo — US$ 300 somem.
+     */
+    await posicaoDe600();
+    const venda = intent({ filled_qty: 0.005, filled_quote: 0 });
+    await projetar(venda);
+    const linha = banco.intents.find((i) => i.id === venda)!;
+    linha.filled_qty = 0.01; linha.filled_quote = 1_280;
+    const p2 = await projetar(venda);
+    expect(p2.ok && p2.realizado, "1280 − 600, nunca 980").toBeCloseTo(680, 9);
+    expect(Number(daSessao().pnl_today)).toBeCloseTo(680, 9);
+  });
+
+  it("⚠️⚠️ a varredura enxerga recebido pendente", async () => {
+    // Sem isto o intent do primeiro caso nunca voltaria.
+    expect(SQL).toMatch(/or i\.filled_quote > e\.applied_quote \+ 1e-12/);
+  });
+
+  it("⚠️⚠️ liquidação sem `cost`: NÃO lança prejuízo de −custo inteiro", async () => {
+    /**
+     * `liquidarSaidaArmada` recebia `order.cost` e caía em 0 sem guarda; a
+     * conta `0 − 600 − 0` congelava a sessão o dia inteiro por um prejuízo
+     * que não existiu.
+     */
+    await posicaoDe600();
+    const venda = intent({ external_order_id: "ORD-1" });
+    const pos = banco.posicoes.find((x) => x.base === "BTC")!;
+    pos.status = "exit_armed"; pos.exit_order_id = "ORD-1"; pos.exit_intent_id = venda;
+
+    const liq = await liquidarSaidaArmada(venda, 0.01, 0, deps);
+    expect(liq.ok && liq.realizado, "sem recebido, sem resultado").toBe(0);
+    expect(Number(daSessao().pnl_today)).toBe(0);
+    expect(daSessao().frozen_until_day, "nada de congelar por prejuízo inventado").toBeNull();
+
+    // O livro traz o recebido depois, e aí sim o resultado entra.
+    const linha = banco.intents.find((i) => i.id === venda)!;
+    linha.filled_qty = 0.01; linha.filled_quote = 640;
+    const p = await projetar(venda);
+    expect(p.ok && p.realizado).toBeCloseTo(40, 9);
+  });
+
+  it("⚠️⚠️ fill que chega DEPOIS da posição fechada entra, em vez de repetir `sem_posicao`", async () => {
+    /**
+     * A liquidação fecha com o que a corretora disse (0,009); os trades reais
+     * trazem 0,010. A quantidade a mais não tem posição para reduzir — o custo
+     * inteiro já saiu — e `sem_posicao` relistava o intent a cada cinco
+     * minutos por três dias, sem nunca contar o resultado.
+     */
+    // A bolsa do bot era 0,009 (US$ 540); a ordem preencheu 0,010 de verdade —
+    // a liquidação fechou com o que a corretora disse, e o resto chega depois.
+    const compra = intent({ side: "buy", order_type: "market", state: "FILLED",
+                            filled_qty: 0.009, filled_quote: 540 });
+    await projetar(compra);
+    const venda = intent({ external_order_id: "ORD-2" });
+    const pos = banco.posicoes.find((x) => x.base === "BTC")!;
+    pos.status = "exit_armed"; pos.exit_order_id = "ORD-2"; pos.exit_intent_id = venda;
+    await liquidarSaidaArmada(venda, 0.009, 576, deps);
+    expect(banco.posicoes.find((x) => x.base === "BTC")).toBeUndefined();
+
+    const linha = banco.intents.find((i) => i.id === venda)!;
+    linha.filled_qty = 0.01; linha.filled_quote = 640;
+    const r = await projetar(venda);
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.motivo).toBe("posicao_ja_encerrada");
+    expect(Number(daSessao().pnl_today), "640 − 540").toBeCloseTo(100, 9);
+
+    // E repetir não soma de novo.
+    await projetar(venda);
+    expect(Number(daSessao().pnl_today)).toBeCloseTo(100, 9);
+  });
+
+  it("⚠️ sem posição e sem nada aplicado continua `sem_posicao` — fail-closed de verdade", async () => {
+    const venda = intent({ filled_qty: 0.004, filled_quote: 250, state: "FILLED" });
+    const r = await projetar(venda);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.motivo).toBe("sem_posicao");
   });
 });

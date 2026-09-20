@@ -172,13 +172,28 @@ export async function markServerExitArmed(
 ): Promise<Gravacao> {
   const db = getSupabaseAdmin();
   if (!db) return { ok: false, erro: "sem banco" };
-  return comRetentativa(() => db.from("autopilot_positions").update({
+  /**
+   * ⚠️⚠️ UPDATE QUE NÃO CASA LINHA NENHUMA RESOLVE SEM ERRO — achado da
+   * revisão adversarial, e a mesma cicatriz do A11 em `reservarTradeDaSessao`.
+   *
+   * Se uma projeção concorrente fechou a posição entre o envio e a marcação,
+   * "armar" virava um no-op bem-sucedido: a limitada fica viva na corretora,
+   * `exit_intent_id` não existe, e a liquidação nunca a vê. `.select("id")`
+   * torna a diferença visível.
+   */
+  const { data, error } = await db.from("autopilot_positions").update({
     status:         "exit_armed",
     exit_order_id:  orderId,
     exit_intent_id: intentId,
     exit_armed_at:  new Date().toISOString(),
     updated_at:     new Date().toISOString(),
-  }).eq("session_id", sessionId).eq("base", base.toUpperCase()));
+  }).eq("session_id", sessionId).eq("base", base.toUpperCase()).select("id");
+  if (error) return { ok: false, erro: error.message.slice(0, 200) };
+  if ((data?.length ?? 0) === 0) {
+    return { ok: false, erro: "nenhuma posicao casou — ela pode ter sido fechada "
+      + "entre o envio e a marcacao; a ordem de saida ficou sem elo" };
+  }
+  return { ok: true };
 }
 
 /**

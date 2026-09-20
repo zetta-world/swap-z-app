@@ -46,7 +46,6 @@ import {
 import type { AutopilotSessionRow, AutopilotRunRow, AutopilotPositionRow } from "@/lib/supabase/types";
 import type { CexId, CexCredentials, CexOrder } from "@/lib/cex/types";
 import { recordEvent } from "@/lib/admin/track";
-import { taxaEmUsd } from "@/lib/cex/taxa";
 import { credenciaisDoIntentParaRecovery } from "@/lib/cex/conexoes";
 
 export const runtime = "nodejs";
@@ -113,9 +112,12 @@ type RunRowT = Partial<AutopilotRunRow> & { wallet_address: string; exchange_id:
  * conta era a certa; o problema era ser duas.
  *
  * Hoje quem faz a conta é a transação que reduz a posição: ela já tem o custo
- * removido (a outra metade da conta) e o marcador do intent. Daqui só sai a
- * conversão da TAXA (`taxaEmUsd`), que é a única parte que o banco não tem
- * como fazer — ela depende do preço da moeda em que a corretora cobrou.
+ * removido (a outra metade da conta) e o marcador do intent.
+ *
+ * ⚠️ E A CONVERSÃO DA TAXA TAMBÉM FOI (A140). Este comentário dizia que ela
+ * "continua aqui, porque o banco não tem como fazer" — e ela mora em
+ * `autopilot_taxa_do_intent_em_usd` (0064) desde então. Um comentário que
+ * sobrevive à sua própria função é a mentira mais barata de um arquivo.
  */
 
 /**
@@ -367,7 +369,23 @@ async function settleArmedExits(
         }
       }
       // still open → leave it armed for the next run
-    } catch { /* transient — retry next run */ }
+    } catch (e) {
+      /**
+       * ⚠️⚠️ ESTE `catch` ERA MUDO — achado da revisão adversarial.
+       *
+       * Ele cobre o trecho entre a liquidação (que JÁ escreveu `pnl_today` e
+       * pode ter congelado a sessão) e o espelho em memória desta passada. Um
+       * throw no meio deixava o banco com o freio puxado e o cron disparando
+       * contra um stop que ele não enxerga — sem uma linha de log.
+       */
+      await recordEvent("autopilot_settle_interrompido", { wallet: s.wallet_address, meta: {
+        severity: "high", session: s.id,
+        erro: (e as Error)?.message?.slice(0, 200) ?? "erro",
+        why: "a liquidacao pode ter aplicado P&L no banco e o espelho desta "
+          + "passada nao acompanhou. O stop de perda pode estar acionado sem o "
+          + "cron saber.",
+      } });
+    }
   }
   return { rows, realizedDelta, livroLegivel: true };
 }
@@ -532,6 +550,80 @@ export async function POST(req: NextRequest) {
    */
   const origens = { cofre: 0, sessao: 0, erro: 0 };
 
+  /**
+   * ⚠️⚠️ A VARREDURA VEM ANTES DAS SESSÕES — achado da revisão adversarial.
+   *
+   * Ela rodava no fim do tick, depois de todas as sessões terem disparado. Um
+   * fill tardio que cruzava o stop de perda só congelava a sessão DEPOIS de
+   * ela ter operado a passada inteira: o freio chegava uma passada atrasado.
+   * Aplicar o que já está no livro antes de decidir é a ordem certa.
+   *
+   * ⚠️ O que a reconciliação DESTA passada descobrir continua esperando o tick
+   * seguinte — está declarado como limitação.
+   */
+  /**
+   * ⚠️⚠️⚠️ AS PROJEÇÕES QUE FICARAM PARA TRÁS — achado da revisão adversarial.
+   *
+   * A projeção acontece no instante em que o dinheiro se move, e pode falhar
+   * ali (banco fora, timeout). O comentário desta casa prometia que "a
+   * reconciliação aplica o delta que faltar" — e era FALSO para o caso mais
+   * comum: uma compra a mercado que preenche na hora vira `FILLED`, que é
+   * TERMINAL, e o recuperador de intents só olha os não-terminais. Ninguém
+   * voltava naquele intent.
+   *
+   * ⚠️ IDEMPOTENTE POR CONSTRUÇÃO: a RPC aplica `ledger − applied`, então
+   * varrer de novo o que já entrou não soma nada.
+   *
+   * ⚠️ MELHOR-ESFORÇO: isto não envia ordem nenhuma. Falha aqui não pode
+   * derrubar a passada — mas "não consegui olhar" e "nada pendente" saem
+   * diferentes, que é a regra nº 33 desta casa.
+   */
+  try {
+    const pendentes = await projecoesPendentes(50);
+    if (pendentes === null) {
+      await recordEvent("autopilot_projecoes_pendentes_ilegiveis", { meta: { severity: "med",
+        why: "nao deu para listar projecoes atrasadas. 'nenhuma pendente' e 'nao "
+          + "consegui olhar' sao coisas diferentes.",
+      } });
+    } else if (pendentes.length > 0) {
+      const falhas: string[] = [];
+      let realizadoNoRecovery = 0;
+      let taxasOpacas = 0;
+      for (const id of pendentes) {
+        const r = await projetarEfeitoDoIntent(id);
+        if (!r.ok) { falhas.push(`${id}:${r.motivo}`); continue; }
+        /**
+         * ⚠️ O RECOVERY TAMBÉM PRECISA DEIXAR RASTRO — achado da revisão.
+         *
+         * Os caminhos imediatos emitem `autopilot_pnl_realizado` e
+         * `autopilot_taxa_nao_precificada`; a varredura jogava tudo fora. O
+         * `pnl_today` ficava certo e o extrato que o dono lê, não — que é
+         * divergência imediata↔recovery na camada que ele enxerga.
+         */
+        realizadoNoRecovery += r.realizado;
+        if (r.taxaNaoPrecificada) taxasOpacas += 1;
+      }
+      if (realizadoNoRecovery !== 0 || taxasOpacas > 0) {
+        await recordEvent("autopilot_pnl_realizado", { meta: {
+          canal: "recovery", realizado: realizadoNoRecovery,
+          taxas_nao_precificadas: taxasOpacas,
+          why: "resultado de fills descobertos pela varredura. Taxa opaca entra "
+            + "como ZERO e o P&L sai OTIMISTA — o stop afrouxa.",
+        } });
+      }
+      await recordEvent("autopilot_projecoes_recuperadas", { meta: {
+        severity: falhas.length > 0 ? "high" : "low",
+        tentadas: pendentes.length, falhas: falhas.slice(0, 10),
+        why: "fills autonomos cuja posicao ainda nao tinha entrado no livro. "
+          + "As que continuam falhando pedem mao humana — o dinheiro ja se moveu.",
+      } });
+    }
+  } catch (e) {
+    await recordEvent("autopilot_projecoes_pendentes_ilegiveis", { meta: { severity: "med",
+      erro: (e as Error)?.message?.slice(0, 200) ?? "erro",
+    } });
+  }
+
   for (const s of sessions) {
     // A2: acquire the per-session lock so a still-running prior cron pass can't
     // double-process this session. TTL (3min) auto-releases a crashed/timed-out
@@ -645,49 +737,6 @@ export async function POST(req: NextRequest) {
     }
   } catch (e) {
     await recordEvent("reconciliacao_falhou", { meta: { severity: "med",
-      erro: (e as Error)?.message?.slice(0, 200) ?? "erro",
-    } });
-  }
-
-  /**
-   * ⚠️⚠️⚠️ AS PROJEÇÕES QUE FICARAM PARA TRÁS — achado da revisão adversarial.
-   *
-   * A projeção acontece no instante em que o dinheiro se move, e pode falhar
-   * ali (banco fora, timeout). O comentário desta casa prometia que "a
-   * reconciliação aplica o delta que faltar" — e era FALSO para o caso mais
-   * comum: uma compra a mercado que preenche na hora vira `FILLED`, que é
-   * TERMINAL, e o recuperador de intents só olha os não-terminais. Ninguém
-   * voltava naquele intent.
-   *
-   * ⚠️ IDEMPOTENTE POR CONSTRUÇÃO: a RPC aplica `ledger − applied`, então
-   * varrer de novo o que já entrou não soma nada.
-   *
-   * ⚠️ MELHOR-ESFORÇO: isto não envia ordem nenhuma. Falha aqui não pode
-   * derrubar a passada — mas "não consegui olhar" e "nada pendente" saem
-   * diferentes, que é a regra nº 33 desta casa.
-   */
-  try {
-    const pendentes = await projecoesPendentes(50);
-    if (pendentes === null) {
-      await recordEvent("autopilot_projecoes_pendentes_ilegiveis", { meta: { severity: "med",
-        why: "nao deu para listar projecoes atrasadas. 'nenhuma pendente' e 'nao "
-          + "consegui olhar' sao coisas diferentes.",
-      } });
-    } else if (pendentes.length > 0) {
-      const falhas: string[] = [];
-      for (const id of pendentes) {
-        const r = await projetarEfeitoDoIntent(id);
-        if (!r.ok) falhas.push(`${id}:${r.motivo}`);
-      }
-      await recordEvent("autopilot_projecoes_recuperadas", { meta: {
-        severity: falhas.length > 0 ? "high" : "low",
-        tentadas: pendentes.length, falhas: falhas.slice(0, 10),
-        why: "fills autonomos cuja posicao ainda nao tinha entrado no livro. "
-          + "As que continuam falhando pedem mao humana — o dinheiro ja se moveu.",
-      } });
-    }
-  } catch (e) {
-    await recordEvent("autopilot_projecoes_pendentes_ilegiveis", { meta: { severity: "med",
       erro: (e as Error)?.message?.slice(0, 200) ?? "erro",
     } });
   }
@@ -1185,10 +1234,23 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         }
         return { ok: true as const };
       },
-      // ⚠️ Recusa PROVADA devolve as três; UNKNOWN não devolve nenhuma.
+      /**
+       * ⚠️ Recusa PROVADA devolve as três; UNKNOWN não devolve nenhuma.
+       *
+       * ⚠️⚠️ E O CAS FALHO AVISA AQUI TAMBÉM. O executor chama isto nos três
+       * pontos de recusa provada e descarta o retorno — sem este evento, uma
+       * devolução que não aconteceu ficava invisível nos três.
+       */
       liberar: async () => {
         const devolveu = await vaga.liberar();
         await devolverReservasDaOrdem();
+        if (!devolveu) {
+          await recordEvent("autopilot_rollback_da_vaga_falhou", { wallet: s.wallet_address, meta: {
+            severity: "high", session: s.id, porque: "recusa provada apos a reserva",
+            why: "nada foi enviado e a vaga diaria NAO voltou. O usuario perdeu "
+              + "um trade do dia.",
+          } });
+        }
         return devolveu;
       },
     };
@@ -1407,9 +1469,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
           // navegador.
           fired++; remainingTrades--;
           if (intent.type === "market") {
-            // ⚠️⚠️ A138: a conversão da taxa continua aqui; o P&L entra na
-            // MESMA transação da projeção, abaixo. Duas escritas sem nada que
-            // as amarrasse era o defeito.
+            // ⚠️ A140: nem a taxa nem o dia saem daqui — a RPC os deriva do
+            // livro e do relógio do banco.
 
             /**
              * ⚠⚠ SAÍDA PARCIAL NÃO APAGA A LINHA (A14). Antes, qualquer
