@@ -1,4 +1,6 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/types";
 import type { AutopilotSessionRow, AutopilotRunRow } from "@/lib/supabase/types";
 import { guardarConexao, lerConexaoPorId, decifrarConexao } from "@/lib/cex/conexoes";
 import { recordEvent } from "@/lib/admin/track";
@@ -195,6 +197,57 @@ export async function listRunnableSessions(): Promise<AutopilotSessionRow[]> {
     .gt("expires_at", nowIso);
   if (error) throw new Error(`listRunnableSessions failed: ${error.message}`);
   return data ?? [];
+}
+
+/**
+ * ⚠️⚠️⚠️ AS BANDEIRAS DA SESSÃO, RELIDAS DEPOIS DO SETTLE — item 11.
+ *
+ * O cron carrega a linha UMA vez, no começo da passada
+ * (`listRunnableSessions`), e a passada ESCREVE nela: a liquidação da saída
+ * armada chama `autopilot_marcar_contabilidade`, que grava
+ * `contabilidade_incompleta_em`. O portão de entrada lia a cópia em MEMÓRIA
+ * e portanto o valor de ANTES — a bandeira levantada nesta passada só
+ * começava a valer na seguinte, cinco minutos depois, que é a cadência
+ * inteira de decisão do bot.
+ *
+ * O stop de perda já tinha contrapartida em memória por este mesmo motivo
+ * (`pnlToday += settle.realizedDelta`). A contabilidade não tinha — e um
+ * espelho em memória não bastaria aqui, porque a mesma coluna também é
+ * escrita pela varredura de pendências e pelo canal do navegador, fora desta
+ * função. A fonte de verdade é a linha.
+ *
+ * ⚠️ TRI-STATE, e falha é falha: `null` = não deu para ler. Quem chama NÃO
+ * abre entrada nova com as bandeiras desconhecidas — "não consegui ler" nunca
+ * pode valer como "não há bandeira".
+ */
+export interface BandeirasDaSessao {
+  quarentenaEm: string | null;
+  contabilidadeIncompletaEm: string | null;
+}
+
+export async function relerBandeirasDaSessao(
+  sessionId: string,
+  /** Injetável para teste; o padrão é o cliente de serviço. */
+  deps: { db?: SupabaseClient<Database> | null } = {},
+): Promise<BandeirasDaSessao | null> {
+  const db = deps.db ?? getSupabaseAdmin();
+  if (!db) return null;
+  const { data, error } = await db
+    .from("autopilot_sessions")
+    .select("quarentena_em, contabilidade_incompleta_em")
+    .eq("id", sessionId)
+    .maybeSingle();
+  // ⚠️ O cliente RESOLVE com `{ error }` — não lança. E linha ausente também
+  // é ausência de resposta sobre uma sessão que deveria existir.
+  if (error || !data) return null;
+  const linha = data as unknown as {
+    quarentena_em?: unknown; contabilidade_incompleta_em?: unknown;
+  };
+  return {
+    quarentenaEm: linha.quarentena_em == null ? null : String(linha.quarentena_em),
+    contabilidadeIncompletaEm: linha.contabilidade_incompleta_em == null
+      ? null : String(linha.contabilidade_incompleta_em),
+  };
 }
 
 /** De onde a credencial veio nesta leitura. T3: existe UM lugar — o cofre. */

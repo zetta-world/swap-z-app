@@ -757,10 +757,23 @@ export async function POST(req: NextRequest) {
       // relógio do banco. Esta rota só registra quando ela não é precificável.
       const projecao = await projetarEfeitoDoIntent(intentId);
       if (projecao.ok && projecao.taxaNaoPrecificada) {
+        /**
+         * ⚠️⚠️ `null` NÃO VIRA 0 NEM "?" NO REGISTRO. Uma taxa que a venue não
+         * reportou chegava ao painel como "0 na moeda ?" — quem investigasse
+         * leria "foi medida e é zero", o oposto do fato, e é justamente esse
+         * fato que mantém a sessão sem comprar.
+         */
+        const taxaAusente = taxaDoLivro.total == null;
         await recordEvent("autopilot_taxa_nao_precificada", { meta: {
-          pair: body.symbol, moeda: taxaDoLivro.moeda ?? "?", valor: taxaDoLivro.total ?? 0,
-          why: "taxa em moeda que nao e stable nem a base do par — subtraida como "
-            + "ZERO, entao o P&L sai OTIMISTA e o stop de perda afrouxa",
+          pair: body.symbol, moeda: taxaDoLivro.moeda ?? null,
+          valor: taxaDoLivro.total ?? null, taxa_ausente: taxaAusente,
+          why: taxaAusente
+            ? "a corretora NAO reportou taxa nesta ordem. Ela nao vale zero: o "
+              + "P&L realizado nao e afirmado como exato e a COMPRA autonoma "
+              + "fica presa ate a taxa chegar (contabilidade_incompleta)."
+            : "taxa em moeda que nao e stable nem a base do par — nao da para "
+              + "precificar sem inventar cotacao. O P&L realizado nao e afirmado "
+              + "como exato e a COMPRA autonoma fica presa.",
         } });
       }
       if (projecao.ok) {

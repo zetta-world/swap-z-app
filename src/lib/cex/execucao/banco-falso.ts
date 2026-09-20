@@ -188,17 +188,36 @@ export function bancoFalso(): BancoFalso {
      * preenchimento render P&L diferente conforme quem o descobrisse.
      */
     const ESTAVEIS = new Set(["USDT", "USDC", "USD", "BUSD", "DAI", "TUSD", "FDUSD"]);
-    const taxaEmUsdDoIntent = (it: Linha): number | null => {
-      const fee = Number(it.fee_total ?? 0);
-      if (!(fee > 0)) return 0;
-      const moeda = String(it.fee_currency ?? "").toUpperCase();
+    /**
+     * ⚠️⚠️⚠️ `NULL` NÃO É TAXA ZERO — patch final da matriz (item 11).
+     *
+     * A primeira linha do SQL era `when p_fee is null or p_fee <= 0 then 0`,
+     * e juntava dois fatos diferentes: taxa CONHECIDA e nula (0) com taxa
+     * AINDA NÃO CONHECIDA (null, a corretora não reportou). O segundo virava
+     * zero DENTRO do número que alimenta o stop de perda diária — "não
+     * medimos" virando "medimos zero" no ponto mais caro do produto.
+     *
+     * ⚠️ Escalar e exportado como RPC (abaixo) para poder ser exercitado
+     * exatamente como o SQL é, sem passar por uma linha de intent.
+     */
+    const converterTaxaEmUsd = (
+      fee: unknown, moedaCrua: unknown, symbol: unknown,
+      filledQty: unknown, filledQuote: unknown,
+    ): number | null => {
+      if (fee == null) return null;            // não medida
+      const valor = Number(fee);
+      if (!(valor > 0)) return 0;              // medida e nula
+      const moeda = String(moedaCrua ?? "").toUpperCase();
       if (!moeda) return null;
-      if (ESTAVEIS.has(moeda)) return fee;
-      const base = String(it.symbol).replace(/-/g, "/").split("/")[0].toUpperCase();
-      const qty = Number(it.filled_qty ?? 0), quote = Number(it.filled_quote ?? 0);
-      if (moeda === base && qty > 0 && quote > 0) return fee * (quote / qty);
+      if (ESTAVEIS.has(moeda)) return valor;
+      const base = String(symbol).replace(/-/g, "/").split("/")[0].toUpperCase();
+      const qty = Number(filledQty ?? 0), quote = Number(filledQuote ?? 0);
+      if (moeda === base && qty > 0 && quote > 0) return valor * (quote / qty);
       return null;
     };
+    const taxaEmUsdDoIntent = (it: Linha): number | null =>
+      converterTaxaEmUsd(it.fee_total, it.fee_currency, it.symbol,
+                         it.filled_qty, it.filled_quote);
     const hojeUtcDoBanco = () => new Date().toISOString().slice(0, 10);
     /**
      * ⚠️⚠️ INVARIANTE F — a opacidade da taxa vira BLOQUEIO DURÁVEL.
@@ -278,6 +297,14 @@ export function bancoFalso(): BancoFalso {
     const autonomo = (it: Linha) =>
       it.simulated !== true && it.autonomous === true && Boolean(it.session_id)
       && (String(it.origin) === "autopilot_browser" || String(it.origin) === "autopilot_cron");
+
+    if (nome === "autopilot_taxa_do_intent_em_usd") {
+      // ⚠️ Escalar, sem intent: é assim que o SQL a expõe, e é assim que o
+      // teste do item 11 a exercita.
+      return { data: converterTaxaEmUsd(args.p_fee, args.p_moeda, args.p_symbol,
+                                        args.p_filled_qty, args.p_filled_quote),
+               error: null };
+    }
 
     if (nome === "autopilot_reservar_venda_do_intent") {
       const qty = Number(args.p_qty);

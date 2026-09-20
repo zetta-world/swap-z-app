@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import {
   listRunnableSessions, credenciaisDaSessao, patchSession, recordRuns, utcDayKey,
+  relerBandeirasDaSessao,
   type OrigemCredencial,
   tryLockSession, releaseLock,
 } from "@/lib/autopilot/sessions";
@@ -125,11 +126,35 @@ type RunRowT = Partial<AutopilotRunRow> & { wallet_address: string; exchange_id:
  * Grava o aviso de taxa não precificada. ⚠️ AGUARDADO: na Vercel a função
  * congela depois da resposta, e este é o registro de que o P&L saiu otimista.
  */
-async function avisarTaxaNaoPrecificada(pair: unknown, aviso: { moeda: string; valor: number }) {
+/**
+ * ⚠️⚠️ O REGISTRO NÃO PODE REPETIR A CONFUSÃO QUE O PATCH DESFEZ.
+ *
+ * Isto gravava `valor: Number(order.fee?.cost ?? 0)` e
+ * `moeda: String(order.fee?.currency ?? "?")` — ou seja, uma taxa NÃO MEDIDA
+ * chegava ao painel como "0 na moeda ?". Quem investigasse por que a sessão
+ * parou de comprar leria "a taxa foi medida e é zero", que é o oposto do
+ * fato. Era a regra nº 33 violada dentro do próprio aviso que existe por
+ * causa dela.
+ *
+ * E o `why` descrevia só metade: depois do patch da conversão, o disparo
+ * dominante é "taxa ainda não conhecida", e a consequência deixou de ser
+ * apenas P&L otimista — é bloqueio de COMPRA autônoma.
+ */
+async function avisarTaxaNaoPrecificada(
+  pair: unknown, aviso: { moeda: string | null; valor: number | null },
+) {
+  const ausente = aviso.valor === null;
   await recordEvent("autopilot_taxa_nao_precificada", { meta: {
-    pair, moeda: aviso.moeda, valor: aviso.valor,
-    why: "taxa em moeda que não é stable nem a base do par — subtraída como ZERO, "
-      + "então o P&L realizado sai OTIMISTA e o stop de perda afrouxa",
+    pair,
+    // ⚠️ `null` é "a venue não disse", e sai como null — nunca como 0 / "?".
+    moeda: aviso.moeda, valor: aviso.valor, taxa_ausente: ausente,
+    why: ausente
+      ? "a corretora NAO reportou taxa nesta ordem. Ela nao vale zero: o P&L "
+        + "realizado nao e afirmado como exato e a COMPRA autonoma fica presa "
+        + "ate a taxa chegar (contabilidade_incompleta)."
+      : "taxa em moeda que nao e stable nem a base do par — nao da para "
+        + "precificar sem inventar cotacao. O P&L realizado nao e afirmado "
+        + "como exato e a COMPRA autonoma fica presa.",
   } });
 }
 
@@ -389,7 +414,8 @@ async function settleArmedExits(
           Number(pos.base_amount), Number(pos.cost_usd || 0), liq.qty);
         if (liq.taxaNaoPrecificada) {
           await avisarTaxaNaoPrecificada(pos.pair,
-            { moeda: String(order.fee?.currency ?? "?"), valor: Number(order.fee?.cost ?? 0) });
+            { moeda: order.fee?.currency == null ? null : String(order.fee.currency),
+              valor: typeof order.fee?.cost === "number" ? order.fee.cost : null });
         }
         const realized = liq.aplicou ? liq.realizado : null;
         realizedDelta += liq.realizado;
@@ -443,7 +469,8 @@ async function settleArmedExits(
             Number(pos.base_amount), Number(pos.cost_usd || 0), liqCancel.qty);
           if (liqCancel.taxaNaoPrecificada) {
             await avisarTaxaNaoPrecificada(pos.pair,
-              { moeda: String(order.fee?.currency ?? "?"), valor: Number(order.fee?.cost ?? 0) });
+              { moeda: order.fee?.currency == null ? null : String(order.fee.currency),
+              valor: typeof order.fee?.cost === "number" ? order.fee.cost : null });
           }
           const realized = liqCancel.aplicou ? liqCancel.realizado : null;
           realizedDelta += liqCancel.realizado;
@@ -943,6 +970,36 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     livroLegivelNoSettle = false;
   }
 
+  /**
+   * ⚠️⚠️⚠️ A LINHA É RELIDA AQUI — achado da verificação do patch da taxa.
+   *
+   * `s` foi carregado no começo da passada e a passada ESCREVEU nele: a
+   * liquidação da saída armada, logo acima, chama
+   * `autopilot_marcar_contabilidade` e grava `contabilidade_incompleta_em`.
+   * Ler `s.contabilidade_incompleta_em` aqui era ler o valor de ANTES — a
+   * bandeira levantada NESTA passada só passava a valer na seguinte, cinco
+   * minutos depois, e o cron comprava no meio.
+   *
+   * O stop de perda já tinha contrapartida em memória por este mesmo motivo
+   * (`pnlToday += settle.realizedDelta`, acima). Um espelho em memória não
+   * bastaria para a contabilidade: a mesma coluna é escrita pela varredura de
+   * pendências e pelo canal do navegador, fora desta função.
+   *
+   * ⚠️ E FALHA DE LEITURA FECHA. Sem as bandeiras, não se afirma que não há
+   * bandeira — zero entrada nova nesta passada.
+   */
+  const bandeiras = await relerBandeirasDaSessao(s.id);
+  if (!bandeiras) {
+    // ⚠️ O fechamento não precisa de linha própria: sem bandeiras, os dois
+    // portões abaixo recebem `contabilidadeIncompleta: true` e a entrada cai.
+    await recordEvent("autopilot_bandeiras_ilegiveis", { wallet: s.wallet_address, meta: {
+      severity: "high", session: s.id,
+      why: "nao deu para reler quarentena_em/contabilidade_incompleta_em depois do "
+        + "settle. ZERO entrada nova nesta passada — 'nao consegui ler' nunca "
+        + "vale como 'nao ha bandeira'.",
+    } });
+  }
+
   // ── 4. Freeze / cap gates (AFTER settling — a settle can trip the freeze) ──
   /**
    * ⚠️⚠️ A MESMA DECISÃO QUE O NAVEGADOR USA — achado A130, §34/§35.
@@ -970,9 +1027,14 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     conexaoId: s.conexao_id,
     // ⚠️ Lido aqui, decidido em `entradaAutorizadaNaSessao` — e SÓ sobre
     // entradas. Ver o gate de compra na seção 5b.
-    emQuarentena: Boolean(s.quarentena_em),
-    // ⚠️ Lido aqui, decidido em `entradaAutorizadaNaSessao` (invariante F).
-    contabilidadeIncompleta: Boolean(s.contabilidade_incompleta_em),
+    // ⚠️ Das bandeiras RELIDAS depois do settle, não da cópia do começo da
+    // passada. Quem as usa de verdade é `entradaAutorizadaNaSessao`, mas o
+    // estado normalizado é UM só — duas leituras diferentes da mesma sessão
+    // na mesma passada é a família do A113.
+    emQuarentena: bandeiras
+      ? Boolean(bandeiras.quarentenaEm) : Boolean(s.quarentena_em),
+    contabilidadeIncompleta: bandeiras
+      ? Boolean(bandeiras.contabilidadeIncompletaEm) : true,
   });
   if (!sessaoAutoriza.ok) {
     if (sessaoAutoriza.motivo === "sessao_congelada") alertIfNewlyFrozen();
@@ -1043,10 +1105,11 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
    * a passada de 5 minutos para isso.
    */
   const portaoDeEntrada = entradaAutorizadaNaSessao({
-    emQuarentena: Boolean(s.quarentena_em),
-    // ⚠️ Invariante F: lido da linha, não de uma bandeira desta passada — é o
-    // MESMO estado que o navegador enxerga.
-    contabilidadeIncompleta: Boolean(s.contabilidade_incompleta_em),
+    // ⚠️ Da linha RELIDA, e o `?? true` é a direção fechada quando ela falhou.
+    emQuarentena: bandeiras
+      ? Boolean(bandeiras.quarentenaEm) : Boolean(s.quarentena_em),
+    contabilidadeIncompleta: bandeiras
+      ? Boolean(bandeiras.contabilidadeIncompletaEm) : true,
   });
   if (!portaoDeEntrada.ok) {
     entradasLiberadas = false;
@@ -1060,7 +1123,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     if (portaoDeEntrada.motivo === "contabilidade_incompleta") {
       await recordEvent("autopilot_contabilidade_incompleta", { wallet: s.wallet_address, meta: {
         severity: "high", session: s.id,
-        desde: s.contabilidade_incompleta_em,
+        desde: bandeiras?.contabilidadeIncompletaEm ?? s.contabilidade_incompleta_em,
         why: "o P&L realizado desta sessao nao esta completo — taxa que nao da "
           + "para precificar em USD, ou custo removido sem o recebido que o "
           + "precifica. ZERO compra autonoma ate a contabilidade voltar a ser "
@@ -1648,7 +1711,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
             const projecao = await projetarEfeitoDoIntent(exec.intentId);
             if (projecao.ok && projecao.taxaNaoPrecificada) {
               await avisarTaxaNaoPrecificada(intent.symbol,
-                { moeda: exec.feeCurrency ?? "?", valor: exec.feeTotal ?? 0 });
+                // ⚠️ `null` é "a venue não disse", e sai como null.
+                { moeda: exec.feeCurrency ?? null, valor: exec.feeTotal ?? null });
             }
             if (!projecao.ok) {
               avisarRegistroPerdido(

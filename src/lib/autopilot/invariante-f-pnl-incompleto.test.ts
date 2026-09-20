@@ -25,9 +25,13 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { bancoFalso } from "@/lib/cex/execucao/banco-falso";
 import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
+import { ingerirSnapshotDaOrdem } from "@/lib/cex/execucao/intents";
+import { relerBandeirasDaSessao } from "@/lib/autopilot/sessions";
 import { assentarELiquidarSaida } from "@/lib/autopilot/assentamento-da-saida";
 import { reservarVendaDoBot } from "@/lib/autopilot/reserva-de-inventario";
-import { entradaAutorizadaNaSessao } from "@/lib/autopilot/autorizacao-de-execucao";
+import {
+  entradaAutorizadaNaSessao, avaliarAutorizacaoDaSessaoParaExecucao,
+} from "@/lib/autopilot/autorizacao-de-execucao";
 
 const SQL = readFileSync("supabase/migrations/0064_autopilot_projecao_de_posicao.sql", "utf8");
 const semComentarios = (c: string) =>
@@ -66,6 +70,7 @@ function intent(id: string, over: Record<string, unknown> = {}): string {
     external_order_id: null, ...over });
   return id;
 }
+const hojeUtc = () => new Date().toISOString().slice(0, 10);
 const aSessao = () => banco.sessoes.find((s) => s.id === "S1")!;
 const oEfeito = (id: string) => banco.efeitos.find((e) => e.intent_id === id);
 const oIntent = (id: string) => banco.intents.find((i) => i.id === id)!;
@@ -160,6 +165,166 @@ describe("F.1 — taxa não precificável marca a sessão e fecha a COMPRA", () 
   });
 });
 
+describe("F.0 — `NULL` não é taxa zero (patch final do item 11)", () => {
+  /**
+   * ⚠️⚠️⚠️ A ÚLTIMA LINHA QUE JUNTAVA DUAS COISAS DIFERENTES.
+   *
+   *     when p_fee is null or p_fee <= 0 then 0
+   *
+   * `p_fee = 0` é uma taxa CONHECIDA e nula. `p_fee IS NULL` é uma taxa AINDA
+   * NÃO CONHECIDA — a corretora não reportou. Devolver zero para o segundo é
+   * a regra nº 33 desta casa violada no ponto mais caro: "não medimos"
+   * virando "medimos zero" DENTRO do número que alimenta o stop de perda.
+   *
+   * A 0059 preserva a semântica certa do outro lado (fee null não inventa
+   * fee). Quem a perdia era esta conversão — a última coisa que o P&L
+   * realizado lê.
+   */
+  it("⚠️⚠️⚠️ O CENÁRIO DO PATCH: SELL com `fee_total` NULL não afirma P&L e prende a COMPRA", async () => {
+    sessao({ pnl_today: -49, daily_loss_stop_usd: 50 });
+    intent("i1", { side: "sell", external_order_id: "ORD-1" });
+    posicao({ base_amount: 0.01, cost_usd: 100, status: "exit_armed",
+              exit_order_id: "ORD-1", exit_intent_id: "i1" });
+    expect(portao().ok).toBe(true);
+
+    // A venue informa quantidade e recebido, e NÃO informa a taxa.
+    const r = await assentarELiquidarSaida("i1", "ORD-1",
+      { filled: 0.01, cost: 100, average: 10_000 }, 0.01, deps());
+    expect(r.ok, r.ok ? "" : `${r.etapa}/${r.motivo}: ${r.porque}`).toBe(true);
+    if (!r.ok) return;
+
+    /**
+     * ⚠️⚠️⚠️ O PORTÃO PRIMEIRO, de propósito. É ele que decide se sai dinheiro
+     * novo, e é ele que a quebra deliberada abre — a detecção tem de falar
+     * disso, não de uma bandeira intermediária.
+     */
+    const p = portao();
+    expect(p.ok, "com a taxa AUSENTE o portao de entrada NAO pode abrir").toBe(false);
+    if (!p.ok) expect(p.motivo).toBe("contabilidade_incompleta");
+    expect(aSessao().contabilidade_incompleta_em).toBeTruthy();
+    expect(oEfeito("i1")!.taxa_opaca).toBe(true);
+
+    // ⚠️ O livro tem quantidade e recebido; a taxa segue AUSENTE, não zero.
+    expect(Number(oIntent("i1").filled_qty)).toBeCloseTo(0.01, 12);
+    expect(Number(oIntent("i1").filled_quote)).toBeCloseTo(100, 10);
+    expect(oIntent("i1").fee_total).toBe(null);
+
+    // ⚠️⚠️ E O P&L EXATO NÃO É AFIRMADO. Antes do patch isto valia 0 e era
+    // tratado como número final: 100 − 100 − 0.
+    expect(r.resultado.taxaNaoPrecificada).toBe(true);
+    expect(Number(aSessao().pnl_today)).toBe(-49);
+    expect(aSessao().frozen_until_day).toBe(null);
+  });
+
+  it("⚠️⚠️⚠️ a taxa chega (2 USDT): delta −2, dia −51, freeze, bandeira limpa", async () => {
+    sessao({ pnl_today: -49, daily_loss_stop_usd: 50 });
+    intent("i1", { side: "sell", external_order_id: "ORD-1" });
+    posicao({ base_amount: 0.01, cost_usd: 100, status: "exit_armed",
+              exit_order_id: "ORD-1", exit_intent_id: "i1" });
+    await assentarELiquidarSaida("i1", "ORD-1",
+      { filled: 0.01, cost: 100, average: 10_000 }, 0.01, deps());
+    expect(portao().ok).toBe(false);
+
+    // ⚠️ PELA MESMA INGESTÃO de sempre — a taxa nunca é escrita à mão.
+    const ing = await ingerirSnapshotDaOrdem(banco.cliente, "i1", "ORD-1", {
+      cumulativeQty: 0.01, avgPrice: 10_000, cumulativeQuote: 100,
+      fee: 2, feeCurrency: "USDT", executedAt: null });
+    expect(ing.ok, ing.ok ? "" : ing.porque).toBe(true);
+    expect(Number(oIntent("i1").fee_total)).toBeCloseTo(2, 10);
+
+    const tardio = await projetarEfeitoDoIntent("i1", { chamarRpc: chamar });
+    expect(tardio.ok).toBe(true);
+    if (!tardio.ok) return;
+    expect(tardio.taxaNaoPrecificada).toBe(false);
+    // 100 recebidos − 100 de custo − 2 de taxa = −2.
+    expect(tardio.realizado).toBeCloseTo(-2, 10);
+    expect(Number(aSessao().pnl_today)).toBeCloseTo(-51, 10);
+    expect(aSessao().frozen_until_day).toBe(hojeUtc());
+
+    expect(oEfeito("i1")!.taxa_opaca).toBe(false);
+    expect(aSessao().contabilidade_incompleta_em).toBe(null);
+    /**
+     * ⚠️⚠️ A ENTRADA CONTINUA PRESA — agora pelo STOP DE PERDA, que é o
+     * certo. A diferença entre os dois freios é o ponto inteiro do achado:
+     * um é "não sei o número", o outro é "sei o número e ele diz pare".
+     */
+    expect(portao().ok).toBe(true);
+    const congelada = avaliarAutorizacaoDaSessaoParaExecucao({
+      ativa: true, expiraEm: new Date(Date.now() + 3_600_000).toISOString(),
+      congeladaAte: aSessao().frozen_until_day as string | null,
+      tradesHoje: 0, maxTradesPorDia: 5, maxTradeUsd: 1_000,
+      conexaoId: "C1", emQuarentena: false, contabilidadeIncompleta: false,
+    });
+    expect(congelada.ok).toBe(false);
+    if (!congelada.ok) expect(congelada.motivo).toBe("sessao_congelada");
+  });
+
+  it("⚠️⚠️ replay depois da taxa: ZERO P&L adicional", async () => {
+    sessao({ pnl_today: -49, daily_loss_stop_usd: 50 });
+    intent("i1", { side: "sell", external_order_id: "ORD-1" });
+    posicao({ base_amount: 0.01, cost_usd: 100, status: "exit_armed",
+              exit_order_id: "ORD-1", exit_intent_id: "i1" });
+    await assentarELiquidarSaida("i1", "ORD-1",
+      { filled: 0.01, cost: 100, average: 10_000 }, 0.01, deps());
+    await ingerirSnapshotDaOrdem(banco.cliente, "i1", "ORD-1", {
+      cumulativeQty: 0.01, avgPrice: 10_000, cumulativeQuote: 100,
+      fee: 2, feeCurrency: "USDT", executedAt: null });
+    await projetarEfeitoDoIntent("i1", { chamarRpc: chamar });
+    expect(Number(aSessao().pnl_today)).toBeCloseTo(-51, 10);
+
+    for (let i = 0; i < 3; i++) {
+      const r = await projetarEfeitoDoIntent("i1", { chamarRpc: chamar });
+      expect(r.ok && r.realizado).toBe(0);
+    }
+    expect(Number(aSessao().pnl_today)).toBeCloseTo(-51, 10);
+    expect(aSessao().contabilidade_incompleta_em).toBe(null);
+  });
+
+  it("⚠️⚠️ taxa CONHECIDA e nula continua valendo ZERO — não é o mesmo fato", async () => {
+    /**
+     * A regra tem dois lados. `null` fecha; `0` explícito NÃO pode fechar,
+     * senão o conserto viraria um freio permanente sobre um fato completo.
+     * A conversão é exercitada direto porque `cex_recalcular_intent` colapsa
+     * `sum(fee) = 0` em NULL — ver a limitação declarada na entrega.
+     */
+    const zero = await chamar("autopilot_taxa_do_intent_em_usd", {
+      p_fee: 0, p_moeda: "USDT", p_symbol: "BTC/USDT",
+      p_filled_qty: 0.01, p_filled_quote: 100 });
+    expect(zero).toBe(0);
+
+    const ausente = await chamar("autopilot_taxa_do_intent_em_usd", {
+      p_fee: null, p_moeda: null, p_symbol: "BTC/USDT",
+      p_filled_qty: 0.01, p_filled_quote: 100 });
+    expect(ausente).toBe(null);
+
+    const opaca = await chamar("autopilot_taxa_do_intent_em_usd", {
+      p_fee: 30, p_moeda: "DOGE", p_symbol: "BTC/USDT",
+      p_filled_qty: 0.01, p_filled_quote: 100 });
+    expect(opaca).toBe(null);
+
+    const estavel = await chamar("autopilot_taxa_do_intent_em_usd", {
+      p_fee: 2, p_moeda: "USDT", p_symbol: "BTC/USDT",
+      p_filled_qty: 0.01, p_filled_quote: 100 });
+    expect(estavel).toBe(2);
+  });
+
+  it("⚠️ o SQL separa os dois casos em linhas diferentes", () => {
+    /**
+     * ⚠️ O CORPO, não o comentário. A cicatriz cita a linha antiga por
+     * extenso — medir o arquivo inteiro faria a trava acusar a própria
+     * documentação do conserto.
+     */
+    const i = SQL.indexOf("create or replace function public.autopilot_taxa_do_intent_em_usd");
+    expect(i).toBeGreaterThan(-1);
+    const corpo = SQL.slice(SQL.indexOf("language sql immutable as $$", i),
+                            SQL.indexOf("$$;", i) + 3);
+    expect(corpo).toMatch(/when p_fee is null then null/);
+    expect(corpo).toMatch(/when p_fee <= 0 then 0/);
+    // A linha que juntava os dois não pode voltar.
+    expect(corpo).not.toMatch(/when p_fee is null or p_fee <= 0 then 0/);
+  });
+});
+
 describe("F.1-BIS — custo removido SEM recebido também é conta aberta", () => {
   /**
    * ⚠️⚠️⚠️ ACHADO RODANDO A MATRIZ FINAL (item 11 — loss-stop verdadeiro).
@@ -180,9 +345,14 @@ describe("F.1-BIS — custo removido SEM recebido também é conta aberta", () =
               exit_order_id: "ORD-1", exit_intent_id: "i1" });
     expect(portao().ok).toBe(true);
 
-    // ⚠️ A venue diz "preencheu 0,01" e não diz por quanto.
+    /**
+     * ⚠️ A TAXA AQUI É CONHECIDA (1 USDT) DE PROPÓSITO. É o que isola a
+     * segunda causa: sem taxa opaca no caminho, o que sobra a prender a
+     * compra é só o custo removido sem recebido.
+     */
     const r = await assentarELiquidarSaida("i1", "ORD-1",
-      { filled: 0.01, average: 10_000 }, 0.01, deps());
+      { filled: 0.01, average: 10_000, fee: { cost: 1, currency: "USDT" } },
+      0.01, deps());
     expect(r.ok, r.ok ? "" : `${r.etapa}/${r.motivo}: ${r.porque}`).toBe(true);
     if (!r.ok) return;
 
@@ -190,7 +360,8 @@ describe("F.1-BIS — custo removido SEM recebido também é conta aberta", () =
     expect(r.resultado.custoRemovido).toBeCloseTo(100, 10);
     expect(r.resultado.realizado).toBe(0);
     expect(Number(oEfeito("i1")!.custo_removido_usd)).toBeCloseTo(100, 10);
-    // ⚠️ E a taxa NÃO é o motivo aqui: o buraco existe com taxa limpa.
+    expect(Number(oEfeito("i1")!.applied_quote ?? 0)).toBe(0);
+    // ⚠️ E a taxa NÃO é o motivo aqui: o buraco existe com a taxa conhecida.
     expect(r.resultado.taxaNaoPrecificada).toBe(false);
     expect(oEfeito("i1")!.taxa_opaca).toBe(false);
 
@@ -208,20 +379,30 @@ describe("F.1-BIS — custo removido SEM recebido também é conta aberta", () =
     intent("i1", { side: "sell", external_order_id: "ORD-1" });
     posicao({ base_amount: 0.01, cost_usd: 100, status: "exit_armed",
               exit_order_id: "ORD-1", exit_intent_id: "i1" });
-    await assentarELiquidarSaida("i1", "ORD-1", { filled: 0.01, average: 10_000 }, 0.01, deps());
+    await assentarELiquidarSaida("i1", "ORD-1",
+      { filled: 0.01, average: 10_000, fee: { cost: 1, currency: "USDT" } },
+      0.01, deps());
     expect(portao().ok).toBe(false);
 
-    // A passada seguinte pergunta de novo e a venue agora informa o custo.
-    // A posição já foi fechada por este intent — é o ramo `posicao_ja_encerrada`.
-    Object.assign(oIntent("i1"), { filled_quote: 98 });
+    /**
+     * A passada seguinte pergunta de novo e a venue agora informa o custo —
+     * PELA MESMA INGESTÃO de sempre, nunca escrevendo `filled_quote` à mão.
+     * A posição já foi fechada por este intent: é o ramo `posicao_ja_encerrada`.
+     */
+    const ing = await ingerirSnapshotDaOrdem(banco.cliente, "i1", "ORD-1", {
+      cumulativeQty: 0.01, avgPrice: 9_800, cumulativeQuote: 98,
+      fee: 1, feeCurrency: "USDT", executedAt: null });
+    expect(ing.ok, ing.ok ? "" : ing.porque).toBe(true);
+    expect(Number(oIntent("i1").filled_quote)).toBeCloseTo(98, 10);
+
     const tardio = await projetarEfeitoDoIntent("i1", { chamarRpc: chamar });
     expect(tardio.ok).toBe(true);
     if (!tardio.ok) return;
 
-    // ⚠️ 98 recebidos − 100 de custo = −2, e o dia passa de −49 para −51.
-    expect(tardio.realizado).toBeCloseTo(-2, 10);
-    expect(Number(aSessao().pnl_today)).toBeCloseTo(-51, 10);
-    expect(aSessao().frozen_until_day).toBeTruthy();
+    // ⚠️ 98 recebidos − 100 de custo − 1 de taxa = −3; o dia vai de −49 a −52.
+    expect(tardio.realizado).toBeCloseTo(-3, 10);
+    expect(Number(aSessao().pnl_today)).toBeCloseTo(-52, 10);
+    expect(aSessao().frozen_until_day).toBe(hojeUtc());
     // ⚠️ A conta fechou: a bandeira de contabilidade some sozinha...
     expect(aSessao().contabilidade_incompleta_em).toBe(null);
     // ⚠️ ...e quem segura a compra agora é o STOP DE PERDA, que é o certo.
@@ -298,6 +479,84 @@ describe("F.2 — a liberação é DETERMINÁVEL, não temporizada", () => {
   });
 });
 
+describe("F.2-BIS — a bandeira desta passada vale NESTA passada", () => {
+  /**
+   * ⚠️⚠️⚠️ ACHADO DA VERIFICAÇÃO ADVERSARIAL DO PATCH DA TAXA.
+   *
+   * O cron carrega a linha da sessão UMA vez, no começo da passada, e a
+   * passada ESCREVE nela: `settleArmedExits` liquida a saída armada e a RPC
+   * grava `contabilidade_incompleta_em`. O portão de entrada lia
+   * `s.contabilidade_incompleta_em` da cópia em MEMÓRIA — o valor de ANTES.
+   * A bandeira levantada nesta passada só começava a valer na seguinte, cinco
+   * minutos depois, que é a cadência inteira de decisão do bot.
+   *
+   * O stop de perda já tinha contrapartida em memória por este mesmo motivo
+   * (`pnlToday += settle.realizedDelta`). A contabilidade não tinha — e antes
+   * do patch da conversão a leitura velha era inofensiva para este caso,
+   * porque `p_fee is null` virava 0 e a bandeira nunca subia.
+   */
+  it("⚠️⚠️⚠️ o banco JÁ tem a bandeira no instante em que a liquidação retorna", async () => {
+    sessao({ pnl_today: -49, daily_loss_stop_usd: 50 });
+    intent("i1", { side: "sell", external_order_id: "ORD-1" });
+    posicao({ base_amount: 0.01, cost_usd: 100, status: "exit_armed",
+              exit_order_id: "ORD-1", exit_intent_id: "i1" });
+
+    // A cópia que o cron carregou no começo da passada.
+    const copiaDaPassada = { ...aSessao() };
+    expect(copiaDaPassada.contabilidade_incompleta_em).toBe(null);
+
+    await assentarELiquidarSaida("i1", "ORD-1",
+      { filled: 0.01, cost: 100, average: 10_000 }, 0.01, deps());
+
+    // ⚠️ A cópia em memória continua dizendo que está tudo bem...
+    expect(copiaDaPassada.contabilidade_incompleta_em).toBe(null);
+    // ⚠️ ...e a LINHA já diz o contrário. Decidir pela cópia é decidir pelo
+    // passado, e é o que abria a compra na mesma passada.
+    expect(aSessao().contabilidade_incompleta_em).toBeTruthy();
+  });
+
+  it("⚠️⚠️ o cron RELÊ a linha antes do portão, e falha de leitura FECHA", () => {
+    // A releitura existe e acontece antes da decisão.
+    expect(CRON).toMatch(/const bandeiras = await relerBandeirasDaSessao\(s\.id\);/);
+    const iRelu = CRON.indexOf("relerBandeirasDaSessao(s.id)");
+    const iPortao = CRON.indexOf("const portaoDeEntrada = entradaAutorizadaNaSessao({");
+    expect(iRelu).toBeGreaterThan(-1);
+    expect(iPortao).toBeGreaterThan(iRelu);
+    // ⚠️ E ela vem DEPOIS do settle, que é quem levanta a bandeira.
+    expect(CRON.indexOf("await settleArmedExits(")).toBeLessThan(iRelu);
+    // ⚠️ Sem bandeiras, a contabilidade é tratada como INCOMPLETA.
+    expect(CRON).toMatch(/contabilidadeIncompleta: bandeiras\s*\n?\s*\?[^:]*:\s*true/);
+    expect(CRON).toMatch(/recordEvent\("autopilot_bandeiras_ilegiveis"/);
+    // ⚠️ A cópia em memória não decide mais a contabilidade.
+    expect(CRON).not.toMatch(/contabilidadeIncompleta: Boolean\(s\.contabilidade_incompleta_em\)/);
+  });
+
+  it("⚠️⚠️ a releitura é tri-state: erro de banco não vira 'sem bandeira'", async () => {
+    sessao({ contabilidade_incompleta_em: "2026-01-01T00:00:00.000Z" });
+    const boa = await relerBandeirasDaSessao("S1", { db: banco.cliente });
+    expect(boa).toEqual({ quarentenaEm: null,
+                          contabilidadeIncompletaEm: "2026-01-01T00:00:00.000Z" });
+
+    banco.falhas.select = "connection reset by peer";
+    expect(await relerBandeirasDaSessao("S1", { db: banco.cliente })).toBe(null);
+    banco.falhas.select = undefined;
+    // Sessão inexistente também é ausência de resposta, não ausência de bandeira.
+    expect(await relerBandeirasDaSessao("NAO-EXISTE", { db: banco.cliente })).toBe(null);
+  });
+});
+
+describe("F.4 — o registro não repete a confusão que o patch desfez", () => {
+  it("⚠️⚠️ taxa NÃO MEDIDA não é gravada como `0` na moeda `?`", () => {
+    for (const [nome, fonte] of [["cron", CRON], ["rota", ROTA]] as const) {
+      // O padrão antigo punha zero e "?" numa taxa que ninguém mediu.
+      expect(fonte, nome).not.toMatch(/moeda:[^,\n]*\?\?\s*"\?"/);
+      expect(fonte, nome).not.toMatch(/valor:[^,\n]*\?\?\s*0\b/);
+      // E o evento diz QUAL dos dois casos é.
+      expect(fonte, nome).toMatch(/taxa_ausente/);
+    }
+  });
+});
+
 describe("F.3 — os DOIS canais, a MESMA coluna", () => {
   it("⚠️⚠️ quarentena e contabilidade incompleta são fatos DIFERENTES", () => {
     expect(entradaAutorizadaNaSessao({
@@ -312,10 +571,18 @@ describe("F.3 — os DOIS canais, a MESMA coluna", () => {
   });
 
   it("⚠️⚠️⚠️ cron E navegador leem a MESMA coluna pelo MESMO portão", () => {
-    for (const [nome, fonte] of [["cron", CRON], ["rota", ROTA]] as const) {
-      expect(fonte, nome).toMatch(
-        /contabilidadeIncompleta: Boolean\([^)]*\.contabilidade_incompleta_em\)/);
-    }
+    /**
+     * ⚠️ As duas leituras são FRESCAS, cada uma à sua maneira: a rota carrega
+     * a sessão por requisição (`getSessionStatus`), e o cron RELÊ as bandeiras
+     * depois do settle — porque a passada dele escreve nelas.
+     */
+    expect(ROTA).toMatch(
+      /contabilidadeIncompleta: Boolean\([^)]*\.contabilidade_incompleta_em\)/);
+    expect(CRON).toMatch(/relerBandeirasDaSessao\(s\.id\)/);
+    expect(CRON).toMatch(/contabilidadeIncompleta: bandeiras/);
+    // ⚠️ E a coluna é de fato a que a releitura busca.
+    const SESSOES = readFileSync("src/lib/autopilot/sessions.ts", "utf8");
+    expect(SESSOES).toMatch(/\.select\("quarentena_em, contabilidade_incompleta_em"\)/);
     // ⚠️ E nenhum dos dois decide isso por conta própria — a regra é uma só.
     expect(CRON).not.toMatch(/if \(s\.contabilidade_incompleta_em\)/);
     expect(ROTA).not.toMatch(/if \([^)]*\.contabilidade_incompleta_em\)/);

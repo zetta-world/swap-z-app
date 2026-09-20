@@ -447,6 +447,73 @@ recebido chega, e a coluna é zerada na mesma transação da projeção. A bande
 mora no efeito justamente para que destravar um intent não destrave a sessão
 com outro ainda aberto.
 
+### Patch final do item 11 — `NULL` não é taxa zero
+
+A última linha que ainda juntava dois fatos diferentes:
+
+```sql
+when p_fee is null or p_fee <= 0 then 0
+```
+
+`p_fee = 0` é uma taxa **conhecida** e nula. `p_fee IS NULL` é uma taxa **ainda
+não conhecida** — a corretora não reportou. Devolver zero para o segundo é a
+regra nº 33 desta casa violada no ponto mais caro: *não medimos* virando
+*medimos zero* dentro do número que alimenta o stop de perda diária. A 0059
+preserva a semântica certa do outro lado (fee null não inventa fee); quem a
+perdia era esta conversão — a última coisa que o P&L realizado lê.
+
+```sql
+when p_fee is null then null      -- não medida: nada a converter, nada a afirmar
+when p_fee <= 0    then 0         -- medida e nula: fato conhecido
+```
+
+O resto da cadeia já estava pronta: `v_taxa_opaca` sobe, o resultado não é
+afirmado como exato, `autopilot_marcar_contabilidade` prende a **compra**
+autônoma nos dois canais, e a bandeira some sozinha quando a taxa chega.
+
+| momento | `fee_total` | P&L | `pnl_today` | portão de entrada |
+|---|---|---|---|---|
+| liquidação | `NULL` | não afirmado | −49 | **fechado** — `contabilidade_incompleta` |
+| taxa chega | `2 USDT` | delta −2 | −51, freeze hoje | fechado — agora pelo **loss-stop** |
+| replay | `2 USDT` | 0 | −51 | idem |
+
+A diferença entre os dois freios é o achado inteiro: um é *"não sei o
+número"*, o outro é *"sei o número e ele diz pare"*.
+
+### A verificação do patch achou um fail-open no próprio patch
+
+Uma rodada adversarial sobre a mudança (não uma auditoria nova) devolveu dez
+observações. Duas viraram conserto; o resto virou limitação declarada.
+
+**Consertado — a bandeira desta passada não valia nesta passada.** O cron
+carrega a linha da sessão UMA vez (`listRunnableSessions`) e a passada
+**escreve** nela: `settleArmedExits` → `autopilot_marcar_contabilidade` →
+`contabilidade_incompleta_em`. O portão de entrada lia
+`s.contabilidade_incompleta_em` da cópia em **memória** — o valor de antes. A
+bandeira levantada nesta passada só começava a valer na seguinte, cinco
+minutos depois, que é a cadência inteira de decisão do bot. O stop de perda já
+tinha contrapartida em memória por este mesmo motivo (`pnlToday +=
+settle.realizedDelta`); a contabilidade não tinha.
+
+Antes do patch da conversão a leitura velha era **inofensiva para este caso**,
+porque `p_fee is null` virava 0 e a bandeira nunca subia por taxa ausente. Foi
+o patch que a tornou alcançável.
+
+Conserto: `relerBandeirasDaSessao(s.id)` depois do settle, tri-state, servindo
+os **dois** portões da passada. Falha de leitura ⇒ `contabilidadeIncompleta:
+true` — não medimos ≠ não há bandeira. Um espelho em memória não bastaria: a
+mesma coluna é escrita pela varredura de pendências e pelo canal do navegador,
+fora daquela função.
+
+**Consertado — o registro repetia a confusão que o patch desfez.**
+`avisarTaxaNaoPrecificada` gravava `valor: Number(order.fee?.cost ?? 0)` e
+`moeda: String(order.fee?.currency ?? "?")`: uma taxa **não medida** chegava ao
+painel como *"0 na moeda ?"*. Quem investigasse por que a sessão parou de
+comprar leria "a taxa foi medida e é zero" — o oposto do fato, e é esse fato
+que mantém a sessão travada. Agora `null` sai como `null`, com
+`taxa_ausente: true` e um `why` que diz qual dos dois casos é. Três call sites
+(dois no cron, um na rota).
+
 ## PARTE 3 — LIMITAÇÕES DECLARADAS
 
 1. **A liquidação da saída armada é transacional (A136), mas ainda depende de
@@ -463,13 +530,50 @@ com outro ainda aberto.
    — `applySessionPnl`, `realizedFromSell`, `recordServerEntry`,
    `closeServerPosition`, `reduzirServerPosition` e `bumpSessionTrades` viraram
    lápides que quebram o `tsc` se alguém tentar ressuscitá-los.
-5. **A regressão de `filled_quote` não é corrigida automaticamente** (auditoria
+5. **Taxa que nunca chega trava a COMPRA autônoma sem soltura automática.**
+   Duas portas levam ao mesmo lugar, e a segunda é a comum:
+   (a) `cex_recalcular_intent` (0051/0059) grava
+   `fee_total = nullif(sum(coalesce(fee,0)), 0)`, então taxa **genuinamente
+   zero** chega como `NULL`; (b) `normalizeOrder` devolve `fee: undefined`
+   sempre que o payload da venue não traz `fee.cost` numérico — que é a forma
+   normal do `fetchOrder` de várias corretoras, onde a comissão só existe nos
+   *trades*. Em qualquer dos dois, o intent vira `FILLED`, que **não** está em
+   `PRECISAM_RECONCILIAR`: `ingerirTrades` nunca é alcançado para ele, e
+   `autopilot_projecoes_pendentes` não o relista (a cláusula da taxa é
+   `coalesce(fn(...), fee_aplicada_usd) > fee_aplicada_usd`, falsa com `NULL`).
+   `fee_total` fica `NULL` para sempre e a sessão não compra mais sozinha —
+   em nenhum dos dois canais — até um `UPDATE` manual.
+   É a direção FECHADA da falha, e é de propósito: o oposto foi exatamente o
+   que produziu o achado. Mas **não há soltura automática**, e isso é o que
+   falta para o invariante F ser completo. O conserto pedia buscar os *trades*
+   reais de um intent `FILLED` — fora do escopo deste patch.
+6. **`taxa_opaca` é bandeira, não supressão do número.** O P&L continua sendo
+   calculado e gravado em `pnl_today` com a taxa desconhecida valendo zero:
+   custo 149 / recebido 100 / `fee` `NULL` dá `pnl_today = −49` e
+   `frozen_until_day` null, quando a taxa real de 2 cruzaria o limiar de −50.
+   O que o bloqueio faz é barrar **compra**; o freeze do loss-stop — que
+   barraria compra **e** venda — não dispara, então a sessão segue vendendo
+   sozinha num dia que já deveria estar congelado. É o comportamento pedido
+   ("permitir recovery e saídas"), declarado aqui porque o número gravado não
+   é o número verdadeiro.
+7. **`fee_total` regredindo para `NULL` deixou de ser `regressao_de_taxa`.**
+   Antes caía em fail-closed visível com mão humana; agora cai no ramo opaco
+   (delta zero, taxa anterior preservada como watermark) e a sessão é marcada.
+   A direção é melhor no portão, mas o sinal "o livro regrediu a taxa"
+   desapareceu.
+8. **`saida_em_liquidacao` é o único retorno `ok:true` que não chama o
+   marcador.** Verificado: nada foi aplicado naquele ramo, então não há P&L
+   afirmado — e não chamar também não LIMPA bandeira anterior. O resíduo é
+   estreito: se uma liquidação anterior aplicou P&L com taxa conhecida e
+   depois `fee_total` regredir para `NULL`, a bandeira só volta na liquidação
+   seguinte.
+9. **A regressão de `filled_quote` não é corrigida automaticamente** (auditoria
    sintético→real). Ela para a projeção daquele intent até mão humana. É o
    preço declarado de não produzir lucro artificial com aparência de conserto.
-6. **O congelamento descoberto pela reconciliação DESTA passada ainda chega no
+10. **O congelamento descoberto pela reconciliação DESTA passada ainda chega no
    tick seguinte.** A varredura de pendências roda ANTES do laço de sessões e
    cobre o que já está no livro; o que a reconciliação descobrir depois dela
    espera cinco minutos.
-7. **`autopilot_compromisso_vivo` mudou de assinatura (A144).** A 0064 nunca
+11. **`autopilot_compromisso_vivo` mudou de assinatura (A144).** A 0064 nunca
    foi aplicada, então o `drop function` no topo dela é hipotético — mas está
    lá para o caso de um rascunho ter sido aplicado em algum ambiente.

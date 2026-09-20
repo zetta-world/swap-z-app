@@ -1264,13 +1264,46 @@ comment on column public.autopilot_positions.exit_intent_id is
 --   · qualquer outra          → NÃO se inventa preço. Devolve `null`, e quem
 --                               chama registra — o P&L sai otimista e o stop
 --                               afrouxa, que é a política declarada.
+--
+-- ⚠️⚠️⚠️ PATCH FINAL DA MATRIZ (item 11) — `NULL` NÃO É TAXA ZERO.
+--
+-- A primeira linha desta função dizia:
+--
+--     when p_fee is null or p_fee <= 0 then 0
+--
+-- e juntava dois fatos que não são o mesmo. `p_fee = 0` é uma taxa
+-- CONHECIDA e nula. `p_fee IS NULL` é uma taxa AINDA NÃO CONHECIDA — a
+-- corretora não reportou. Devolver 0 para o segundo caso é a regra nº 33
+-- desta casa violada no ponto mais caro: "não medimos" virando "medimos
+-- zero", dentro do número que alimenta o stop de perda diária.
+--
+-- A 0059 preserva a semântica certa do outro lado (`p_fee` null não inventa
+-- fee, não soma nada, não fecha a guarda de moeda). Quem a perdia era esta
+-- conversão — e ela é a última coisa que o P&L realizado lê.
+--
+-- ⚠️ O EFEITO É EXATAMENTE O INVARIANTE F. Com `null` devolvido, quem chama
+-- levanta `v_taxa_opaca`, o resultado NÃO é afirmado como exato, e
+-- `autopilot_marcar_contabilidade` prende a COMPRA autônoma nos dois canais.
+-- Quando a taxa chega (`fee_total = 2`, `USDT`), a conversão devolve 2, o
+-- delta de −2 entra no dia, e a bandeira some sozinha.
+--
+-- ⚠️⚠️ CONSEQUÊNCIA DECLARADA, E ELA É REAL: hoje `cex_recalcular_intent`
+-- grava `fee_total = nullif(sum(coalesce(fee,0)), 0)`. Uma ordem com taxa
+-- genuinamente ZERO chega aqui como NULL, indistinguível de "ainda não
+-- sei" — e passa a prender entradas novas até alguém intervir. É a direção
+-- FECHADA da falha, e é de propósito: o oposto (tratar desconhecido como
+-- zero) foi o que produziu este achado. Distinguir os dois exigiria mexer no
+-- `cex_recalcular_intent` da 0051/0059, que está fora do escopo deste patch.
 create or replace function public.autopilot_taxa_do_intent_em_usd(
   p_fee numeric, p_moeda text, p_symbol text,
   p_filled_qty numeric, p_filled_quote numeric
 ) returns numeric
 language sql immutable as $$
   select case
-    when p_fee is null or p_fee <= 0 then 0
+    -- ⚠️ NÃO MEDIDA. Nada a converter, e nada a afirmar.
+    when p_fee is null then null
+    -- ⚠️ MEDIDA E NULA — fato conhecido, entra como zero de verdade.
+    when p_fee <= 0 then 0
     when p_moeda is null or p_moeda = '' then null
     when upper(p_moeda) in ('USDT','USDC','USD','BUSD','DAI','TUSD','FDUSD') then p_fee
     when upper(p_moeda) = upper(split_part(replace(p_symbol, '-', '/'), '/', 1))
@@ -1281,8 +1314,10 @@ language sql immutable as $$
 $$;
 
 comment on function public.autopilot_taxa_do_intent_em_usd(numeric, text, text, numeric, numeric) is
-  'A140: taxa acumulada do intent em USD, derivada do livro. NULL = moeda nao '
-  'precificavel — quem chama registra e o P&L sai otimista (politica declarada).';
+  'A140 + item 11: taxa acumulada do intent em USD, derivada do livro. NULL = '
+  'taxa AINDA NAO CONHECIDA (fee_total null) OU moeda nao precificavel — nos '
+  'dois casos o P&L nao e afirmado como exato e a COMPRA autonoma fica presa. '
+  'Zero so quando a taxa e conhecida e nula.';
 
 -- ── 3-BIS-a. O COMPROMISSO VIVO DE UM INTENT (A137 / A144) ────────────────
 --

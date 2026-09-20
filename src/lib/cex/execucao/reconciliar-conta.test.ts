@@ -304,8 +304,15 @@ describe("J7 — o hook no cron do autopilot", () => {
      * coluna decide o ramo, o ramo prende as ENTRADAS, e a reconciliação fica
      * no `else`.
      */
+    /**
+     * ⚠️ A LINHA É RELIDA ANTES DO PORTÃO (achado da verificação do patch da
+     * taxa): `s` foi carregado no começo da passada e o settle escreveu nele.
+     * A quarentena continua decidindo o ramo — agora sobre o valor RELIDO, e
+     * com a leitura falha caindo para a cópia em memória.
+     */
+    expect(CRON).toMatch(/const bandeiras = await relerBandeirasDaSessao\(s\.id\);/);
     expect(CRON).toMatch(
-      /entradaAutorizadaNaSessao\(\{\s*emQuarentena: Boolean\(s\.quarentena_em\),[\s\S]{0,160}?\}\);\s*if \(!portaoDeEntrada\.ok\) \{\s*entradasLiberadas = false/);
+      /entradaAutorizadaNaSessao\(\{[\s\S]{0,260}?emQuarentena: bandeiras[\s\S]{0,200}?\}\);\s*if \(!portaoDeEntrada\.ok\) \{\s*entradasLiberadas = false/);
     const iRamo = CRON.indexOf("const portaoDeEntrada = entradaAutorizadaNaSessao({");
     const iRec = CRON.indexOf("reconciliarConta(");
     expect(iRamo).toBeGreaterThan(-1);

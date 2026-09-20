@@ -417,6 +417,78 @@ vira precificável, o recebido chega, e a coluna é zerada sozinha. A bandeira
 mora no efeito para que destravar um intent não destrave a sessão com outro
 ainda aberto.
 
+## 8-OCTIES. Patch final do item 11 — `NULL` não é taxa zero
+
+A última linha que ainda juntava dois fatos diferentes:
+
+```sql
+when p_fee is null or p_fee <= 0 then 0
+```
+
+`p_fee = 0` é taxa **conhecida** e nula; `p_fee IS NULL` é taxa **ainda não
+conhecida**. Devolver zero para a segunda é *"não medimos"* virando *"medimos
+zero"* dentro do número que alimenta o stop de perda diária. A 0059 preserva a
+semântica certa do outro lado — quem a perdia era esta conversão, a última
+coisa que o P&L realizado lê.
+
+O resto da cadeia já estava pronta desde o invariante F: `v_taxa_opaca` sobe, o
+resultado não é afirmado como exato, `autopilot_marcar_contabilidade` prende a
+COMPRA nos dois canais, e a bandeira some sozinha quando a taxa chega.
+
+| momento | `fee_total` | P&L | `pnl_today` | portão |
+|---|---|---|---|---|
+| liquidação | `NULL` | não afirmado | −49 | **fechado** (`contabilidade_incompleta`) |
+| taxa chega | `2 USDT` | delta −2 | −51, freeze | fechado (**loss-stop**) |
+| replay ×3 | `2 USDT` | 0 | −51 | idem |
+
+A diferença entre os dois freios é o achado inteiro: um é *"não sei o
+número"*, o outro é *"sei o número e ele diz pare"*.
+
+## 8-NONIES. A verificação do patch achou um fail-open no próprio patch
+
+Uma rodada adversarial **sobre a mudança** (não uma auditoria nova) devolveu
+dez observações. Duas viraram conserto; as outras, limitação declarada.
+
+### Consertado — a bandeira desta passada não valia nesta passada
+
+O cron carrega a linha da sessão UMA vez (`listRunnableSessions`) e a passada
+**escreve** nela: `settleArmedExits` → `autopilot_marcar_contabilidade` →
+`contabilidade_incompleta_em`. O portão de entrada lia a cópia em **memória** —
+o valor de antes. A bandeira levantada nesta passada só valia na seguinte,
+cinco minutos depois: o cron comprava no meio, com o P&L do dia sabidamente
+incompleto.
+
+O stop de perda já tinha contrapartida em memória por este motivo
+(`pnlToday += settle.realizedDelta`); a contabilidade não tinha. E antes do
+patch da conversão a leitura velha era inofensiva para este caso — `p_fee is
+null` virava 0 e a bandeira nunca subia. **Foi o patch que a tornou
+alcançável.**
+
+Conserto: `relerBandeirasDaSessao(s.id)` depois do settle, tri-state, servindo
+os **dois** portões. Falha de leitura ⇒ `contabilidadeIncompleta: true`. Um
+espelho em memória não bastaria: a mesma coluna é escrita pela varredura de
+pendências e pelo canal do navegador, fora daquela função.
+
+### Consertado — o registro repetia a confusão que o patch desfez
+
+`avisarTaxaNaoPrecificada` gravava `valor: Number(order.fee?.cost ?? 0)` e
+`moeda: String(order.fee?.currency ?? "?")`. Uma taxa **não medida** chegava ao
+painel como *"0 na moeda ?"* — quem investigasse leria "foi medida e é zero",
+o oposto do fato, e é esse fato que mantém a sessão travada. Agora `null` sai
+como `null`, com `taxa_ausente` e um `why` por caso. Três call sites.
+
+### Não consertado, declarado
+
+A trava sem soltura automática (venue que não reporta `fee` no `fetchOrder` —
+o caso comum, não o exótico), `taxa_opaca` como bandeira e não supressão do
+número, a perda do sinal `regressao_de_taxa` na direção `NULL`, e
+`saida_em_liquidacao` sem marcador. Todos na seção 11.
+
+⚠️ **A verificação não terminou.** Sete dos nove agentes morreram no limite de
+sessão, incluindo TODOS os refutadores. Os dez achados vieram de dois finders e
+foram conferidos à mão, um a um, contra o código — não por refutação
+independente. O auditor deve tratá-los como não-refutados.
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -458,6 +530,8 @@ específico, todas restauradas:
 | F: a taxa opaca deixa de marcar a sessão | 5 |
 | F: o portão volta a ignorar a contabilidade incompleta | 5 |
 | item 11: só a taxa opaca conta (custo sem recebido volta a liberar) | 2 |
+| item 11 (final): `NULL` volta a valer 0 — o portão abre | 4 |
+| item 11 (fail-open do patch): o portão volta a ler a cópia em memória | 1 |
 
 ⚠️ A quebra do A136 **não foi detectada na primeira tentativa** — os testes
 cobriam a falha da transação inteira, não o meio efeito. O teste que faltava
@@ -470,7 +544,7 @@ detecção: foi descartada e refeita válida antes de contar.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3806/3806 (249 arquivos)     — baseline do R8 era 3586
+npx vitest run      3815/3815 (249 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo
@@ -533,6 +607,28 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
     aplicada em algum ambiente, a 0064 é quem corrige — a 0059 fica como está,
     com a suposição antiga escrita nela (e um teste que exige que ela continue
     lá, para a troca ser auditável).
+13. **Taxa que nunca chega trava a COMPRA autônoma sem soltura automática.**
+    Duas portas, e a segunda é a comum: (a) `cex_recalcular_intent` grava
+    `fee_total = nullif(sum(coalesce(fee,0)), 0)`, então taxa genuinamente
+    zero vira `NULL`; (b) `normalizeOrder` devolve `fee: undefined` sempre que
+    o payload da venue não traz `fee.cost` numérico — a forma normal do
+    `fetchOrder` de várias corretoras. Em ambos o intent vira `FILLED`, que não
+    está em `PRECISAM_RECONCILIAR`, `ingerirTrades` nunca é alcançado, e
+    `autopilot_projecoes_pendentes` não o relista (`coalesce(fn(), aplicada) >
+    aplicada` é falso com `NULL`). A sessão não compra mais sozinha até um
+    `UPDATE` manual. Fail-closed de propósito — mas **sem soltura
+    automática**, e é isso que falta para o invariante F ser completo.
+14. **`taxa_opaca` é bandeira, não supressão do número.** `pnl_today` continua
+    recebendo o P&L com a taxa desconhecida valendo zero: custo 149 / recebido
+    100 / `fee` `NULL` dá −49 sem freeze, quando a taxa real de 2 cruzaria o
+    limiar de −50. A compra é barrada; a venda autônoma não, porque o freeze
+    não dispara. É o comportamento pedido ("permitir recovery e saídas"),
+    declarado porque o número gravado não é o verdadeiro.
+15. **`fee_total` regredindo para `NULL` deixou de ser `regressao_de_taxa`** —
+    o sinal de divergência sumiu, embora o portão tenha melhorado.
+16. **`saida_em_liquidacao` é o único `ok:true` sem marcador** — verificado
+    como estreito: nada foi aplicado ali, e não marcar também não limpa
+    bandeira anterior.
 12. **O bloqueio do invariante F não tem tela de admin.** Ele destrava sozinho
     quando a contabilidade volta a ser determinável; a "intervenção explícita"
     prevista é zerar
@@ -569,7 +665,9 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 | A145 | FIXED — PENDING INDEPENDENT RETEST |
 | Invariante Q | FIXED — PENDING INDEPENDENT RETEST |
 | Invariante F | FIXED — PENDING INDEPENDENT RETEST |
-| matriz item 11 | FIXED — PENDING INDEPENDENT RETEST |
+| matriz item 11 (custo sem recebido) | FIXED — PENDING INDEPENDENT RETEST |
+| matriz item 11 (taxa NULL ≠ zero) | FIXED — PENDING INDEPENDENT RETEST |
+| matriz item 11 (linha da sessão relida) | FIXED — PENDING INDEPENDENT RETEST |
 | auditoria sintético→real | FIXED — PENDING INDEPENDENT RETEST |
 | 0064 | CREATED LOCALLY — NOT APPLIED |
 
