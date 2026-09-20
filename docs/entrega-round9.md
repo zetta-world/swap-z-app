@@ -187,6 +187,36 @@ ficaram sem caller — eram os últimos escritores paralelos de posição. Apaga
 com a lápide que explica por quê (e com a cicatriz do A14 que uma delas
 carregava, que agora mora dentro da RPC).
 
+## 8-TER. Segundo adendo — A137, A138, A139
+
+O auditor leu a branch de novo e mostrou que as reservas que eu tinha acabado
+de criar estavam, elas mesmas, erradas — e que duas coisas que elas tocam não
+tinham exactly-once nenhum.
+
+| # | achado | conserto |
+|---|---|---|
+| **A137** | a reserva era um **contador agregado com prazo de 10 minutos**. O prazo esquecia ordem VIVA: uma limitada aceita sem preencher liberava o compromisso, a segunda entrada passava, e as duas preenchiam. E sem dono, projetar uma ordem antiga podia **comer o compromisso de outra mais nova** | a reserva pertence ao **intent**; compromisso vivo é `greatest(reservado − aplicado, 0)` enquanto ele puder preencher, e ZERO quando está provadamente morto. **Não há prazo** |
+| **A138** | o P&L era uma **segunda escrita**. Gravando o P&L e falhando a posição, a passada seguinte somava o mesmo resultado; gravando a posição e falhando o P&L, o débito sumia | o resultado entra na MESMA transação que reduz a posição, e `pnl_aplicado_usd` guarda quanto deste intent já entrou |
+| **A139** | a liquidação redescobria o intent por `external_order_id` — que **não é identificador global** — e perguntava à venue com a credencial **atual** da sessão, violando o A127 | `autopilot_positions.exit_intent_id`; a liquidação carrega a credencial por `intent.conexao_id` e a RPC confere a identidade inteira. Legado sem elo vira mão humana |
+
+**Consequência de desenho:** a costura do executor passou a receber o
+`intent_id` (ele já existe entre AUTHORIZED e SUBMITTING). A rota e o cron se
+dividiram em **pré-voo que DIMENSIONA** — a quantidade precisa existir antes do
+intent — e **reserva que AUTORIZA**. Reserva parcialmente concedida é recusa
+ali: a linha já foi gravada com a quantidade, e conceder menos a faria mentir.
+
+**E mais duas funções morreram:** `applySessionPnl` e `realizedFromSell`. Com o
+P&L dentro da transação, elas eram o último escritor financeiro solto.
+
+### Dois testes MEUS estavam fracos, e eu os reescrevi
+
+1. A trava da credencial histórica casava com a palavra
+   `credenciaisDoIntentParaRecovery` em qualquer lugar do cron — e o import do
+   **reconciliador** já a satisfazia. Ela passou **antes** do conserto existir.
+2. O teste de P&L comparava o `pnl_today` com o `realizado` que a própria
+   chamada devolvera. Um cálculo que ignorasse o marcador inflava os dois lados
+   e passava incólume. Agora os números são absolutos (20 + 20 = 40, nunca 360).
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -207,6 +237,9 @@ específico, todas restauradas:
 | A134: a reserva volta a ser só conferência | 4 |
 | A135: a exposição ignora o que está prometido | 3 |
 | A136: o marcador avança sem a posição (meio efeito) | 1 |
+| A137: ordem viva "expira" e o compromisso é esquecido | 3 |
+| A138: o P&L é calculado sobre o total, ignorando o marcador | 1 |
+| A139: a liquidação volta a usar a credencial da sessão | 1 |
 
 ⚠️ A quebra do A136 **não foi detectada na primeira tentativa** — os testes
 cobriam a falha da transação inteira, não o meio efeito. O teste que faltava
@@ -215,7 +248,7 @@ foi escrito antes de a quebra ser considerada detectada.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3708/3708 (244 arquivos)     — baseline do R8 era 3586
+npx vitest run      3725/3725 (245 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo
@@ -233,11 +266,19 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
    o intent pela ordem externa. Falhando essa leitura, sai
    `autopilot_liquidacao_nao_aplicada` em severidade alta, a posição fica como
    está, e a passada seguinte tenta de novo — sem meio efeito.
-2. **As reservas de inventário EXPIRAM em 10 minutos.** É o que impede uma
-   ordem que ficou `UNKNOWN` e nunca executou de trancar a posição para sempre.
-   Depois disso, quem guarda a bolsa é o `exit_armed` e o livro de execuções —
-   uma ordem em dúvida por mais de 10 minutos volta a ser um caso de
-   reconciliação, não de reserva.
+2. **As reservas NÃO expiram (A137).** Um intent que fica `UNKNOWN` para sempre
+   segura o compromisso dele para sempre — e isso é deliberado: soltá-lo seria
+   autorizar uma segunda ordem sobre um dinheiro que talvez já tenha saído. O
+   que encerra o compromisso é o intent chegar a `CANCELED`/`FAILED_PRE_SUBMIT`,
+   e quem o leva até lá é a reconciliação. **Um intent que a reconciliação nunca
+   resolve deixa a posição parcialmente travada** — o sintoma aparece como
+   recusa `quantidade_ja_reservada`, e o caminho é a quarentena de intents que
+   já existe (`TENTATIVAS_ATE_QUARENTENA`).
+3. **A conversão da taxa continua em TypeScript.** O P&L entra no banco pela
+   mesma transação da posição, mas o valor da taxa em USD é calculado antes
+   (`taxaEmUsd`) porque depende do preço da moeda em que a corretora cobrou.
+   Taxa em moeda não precificável continua entrando como ZERO, com evento —
+   o P&L sai otimista e o stop afrouxa, exatamente como antes.
 3. **Compra do navegador passou a respeitar o teto de exposição do modo de
    risco** (75/200/400). Antes passava porque nada no servidor olhava — pode
    recusar ordens que a tela mostrava como válidas.
@@ -265,6 +306,9 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 | A134 | FIXED — PENDING INDEPENDENT RETEST |
 | A135 | FIXED — PENDING INDEPENDENT RETEST |
 | A136 | FIXED — PENDING INDEPENDENT RETEST |
+| A137 | FIXED — PENDING INDEPENDENT RETEST |
+| A138 | FIXED — PENDING INDEPENDENT RETEST |
+| A139 | FIXED — PENDING INDEPENDENT RETEST |
 | 0064 | CREATED LOCALLY — NOT APPLIED |
 
 Round 8 (A127/A128/A129/A125-ABSENCE/A130/A130-B): preservados, sem elevação

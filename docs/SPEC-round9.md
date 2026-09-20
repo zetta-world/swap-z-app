@@ -178,6 +178,32 @@ Inverter a ordem só troca qual acontece. `autopilot_liquidar_saida_armada`
 `reduzirServerPosition` — os últimos escritores paralelos de posição — deixaram
 de ter caller e foram **apagados**, com lápide.
 
+### A137 / A138 / A139 — segundo adendo do auditor
+
+**A137 — a reserva tem dono.** Era contador agregado com TTL de 10 min. O TTL
+esquecia ordem viva; o agregado misturava compromissos. Agora:
+
+```sql
+autopilot_reservar_venda_do_intent(intent, qty)
+autopilot_reservar_exposicao_do_intent(intent, usd, teto)
+autopilot_liberar_reserva_do_intent(intent)
+autopilot_compromisso_vivo(reservado, aplicado, estado)
+  → 0 quando CANCELED/FAILED_PRE_SUBMIT, senão greatest(reservado − aplicado, 0)
+```
+
+A costura `ReservaDeRisco` passou a receber `intentId`. Pré-voo dimensiona;
+reserva autoriza. Concessão parcial na costura é **recusa**.
+
+**A138 — P&L na mesma transação.** `pnl_aplicado_usd` no marcador; a projeção e
+a liquidação aplicam `recebido(delta) − custo removido − taxa` e atualizam
+`pnl_today`/`frozen_until_day` junto da posição. `applySessionPnl` e
+`realizedFromSell` foram removidas.
+
+**A139 — identidade histórica da saída.** `autopilot_positions.exit_intent_id`;
+a liquidação resolve a credencial por `intent.conexao_id` (A127) e a RPC confere
+armado + mesmo intent + mesma corretora + mesmo `external_order_id`. Legado sem
+elo: `saida_sem_identidade`, fail-closed.
+
 ## PARTE 3 — LIMITAÇÕES DECLARADAS
 
 1. **A liquidação da saída armada é transacional (A136), mas ainda depende de
