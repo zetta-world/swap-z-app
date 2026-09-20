@@ -125,36 +125,17 @@ export async function projetarEfeitoDoIntent(
 }
 
 /**
- * ⚠️⚠️⚠️ A VARREDURA DE PENDÊNCIAS — porque `FILLED` é TERMINAL.
+ * ⚠️⚠️⚠️ LÁPIDE — `projecoesPendentes` FOI REMOVIDA no fechamento do Round 9.
  *
- * Achado da revisão adversarial: o comentário desta casa prometia que "a
- * reconciliação aplica o delta que faltar" se a projeção falhasse. Falso para
- * o caso mais comum — uma compra a mercado que preenche na hora vira `FILLED`,
- * e `intentsParaReconciliar` só olha os NÃO-terminais. Ninguém voltava naquele
- * intent: o bot comprava e nunca saberia que possui.
+ * Ela listava intents cuja PROJEÇÃO estava atrás do livro, e era cega para o
+ * caso em que o próprio LIVRO está incompleto (taxa que a venue não reportou).
+ * Um intent assim ficava fora de todo recovery e prendia a sessão para sempre.
  *
- * ⚠️ MELHOR-ESFORÇO, E BARULHENTA. Falha de leitura não é "nada pendente":
- * devolve `null`, e quem chama registra a diferença.
+ * A sucessora é `pendenciasFinanceiras` em
+ * `@/lib/autopilot/recuperacao-financeira`, que devolve também `precisaVenue`
+ * — e a RPC antiga é derrubada na 0064. Esta lápide existe para que qualquer
+ * caller esquecido quebre no `tsc` em vez de voltar a varrer meio problema.
  */
-export async function projecoesPendentes(
-  limite = 50, deps: DependenciasDaProjecao = {},
-): Promise<string[] | null> {
-  try {
-    if (deps.chamarRpc) {
-      const bruto = await deps.chamarRpc("autopilot_projecoes_pendentes", { p_limite: limite });
-      return (Array.isArray(bruto) ? bruto : [])
-        .map((l) => String((l as { intent_id?: unknown }).intent_id ?? ""))
-        .filter(Boolean);
-    }
-    const db = getSupabaseAdmin();
-    if (!db) return null;
-    const { data, error } = await db.rpc("autopilot_projecoes_pendentes", { p_limite: limite });
-    if (error) return null;
-    return (data ?? []).map((l) => String(l.intent_id)).filter(Boolean);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * ⚠️⚠️⚠️ A LIQUIDAÇÃO DA SAÍDA ARMADA, NUMA TRANSAÇÃO SÓ — achado A136.

@@ -57,7 +57,30 @@ describe("0063 — o fim do upsert no cofre", () => {
     expect(SQL).toMatch(reAssinatura);
     expect(SQL).toMatch(/language\s+plpgsql\s+security\s+definer\s+set\s+search_path\s*=\s*public\s*,\s*pg_temp/i);
     expect(SQL).toMatch(
-      /pg_advisory_xact_lock\s*\(\s*hashtext\s*\(\s*p_wallet_address\s*\|\|\s*E'\\0'\s*\|\|\s*p_exchange_id\s*\)\s*\)/i);
+      /**
+       * ⚠️⚠️⚠️ ERA `E'\\0'`, E A MIGRATION NÃO APLICAVA.
+       *
+       * PostgreSQL não aceita o byte NUL em `text`: a criação da função
+       * morria com `invalid byte sequence for encoding "UTF8": 0x00` e a
+       * cadeia parava na 0063 — 0064 nunca chegaria ao banco. Esta trava
+       * PINAVA o construto quebrado, e nenhum teste sobre o texto do SQL
+       * podia ver o problema: só apareceu aplicando a cadeia num PostgreSQL
+       * de verdade.
+       *
+       * O separador continua tendo de existir (para `('ab','c')` e
+       * `('a','bc')` não colidirem no mesmo lock) e continua tendo de ser
+       * impossível nos dois campos — só que agora é um que o banco consegue
+       * guardar.
+       */
+      /pg_advisory_xact_lock\s*\(\s*\n?\s*hashtext\s*\(\s*p_wallet_address\s*\|\|\s*E'\\x1F'\s*\|\|\s*p_exchange_id\s*\)\s*\)/i);
+    /**
+     * ⚠️ E o NUL não pode voltar: ele torna a migration inaplicável. A
+     * checagem é sobre o CÓDIGO, não sobre o comentário — a cicatriz cita a
+     * linha antiga por extenso, e medir o arquivo inteiro faria a trava
+     * acusar a própria documentação do conserto.
+     */
+    const semComentarios = SQL.replace(/^\s*--.*$/gm, "");
+    expect(semComentarios).not.toMatch(/E'\\0'/);
   });
 
   it("a RPC rejeita identity malformada e só reusa current ATIVA de identity IGUAL", () => {

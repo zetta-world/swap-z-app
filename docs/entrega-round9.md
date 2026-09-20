@@ -489,6 +489,48 @@ sessão, incluindo TODOS os refutadores. Os dez achados vieram de dois finders e
 foram conferidos à mão, um a um, contra o código — não por refutação
 independente. O auditor deve tratá-los como não-refutados.
 
+## 8-DECIES. Fechamento estrutural — e o banco real
+
+### DATABASE INTEGRATION TEST: **PASS**
+
+PostgreSQL 16.13 descartável (`initdb` local, porta 55432, socket em
+`/var/tmp/zswap-pg`). **Nunca produção.** Arnês versionado em
+`supabase/tests/`.
+
+**Achado que só o banco mostra:** a 0063 usava `E'\0'` como separador do
+advisory lock. PostgreSQL **não aceita NUL em `text`** — a criação da função
+morria e a cadeia **parava na 0063**. Havia uma trava de teste *pinando o
+construto quebrado*. Separador agora é `E'\x1F'`.
+
+| teste | prova |
+|---|---|
+| cadeia | **64/64** migrations aplicam limpo |
+| T1 | invariante Q: `qty=0` com `quote=100` aceito, `filled_quote` 0→100 |
+| T2 | `NULL`/`0`/`2 USDT`/moeda opaca distinguidos |
+| T3 | taxa ausente marca a contabilidade e **não** afirma P&L |
+| T4 | a pendência terminal **é encontrada**, `precisa_venue=true` |
+| T5 | trades trazem a taxa → delta −2, dia −51, freeze, bandeira limpa |
+| T6 | exactly-once sob replay ×3 |
+| T7 | 15 `security definer`, **todas** com `search_path` fixo |
+| T8 | 13 RPCs financeiras fechadas para `anon`/`authenticated` |
+| T9 | zero overload; a varredura antiga foi derrubada |
+| T10 | 5 tabelas com RLS default-deny e sem leitura anônima |
+| T11 / T11-BIS | `synthetic→real` preserva o recebido; o portão de quote segura sozinho |
+| T12 | regressão de qty e de quote acusadas, livro intacto |
+
+### CONCURRENCY INTEGRATION: **PASS**
+
+Transações **de verdade**, em processos separados, disputando a mesma linha:
+
+| cenário | resultado |
+|---|---|
+| duas SELL de 0,01 numa posição de 0,01 | A=0,01 · B recusa `quantidade_ja_reservada` · **total 0,01** |
+| duas BUY de 10 com exposição 190, teto 200 | D concede · E recusa `teto_estourado` · **nunca 210** |
+| liquidação × projeção do mesmo intent | LIQ aplica −2 · PROJ serializa e devolve `sem_delta` · **`pnl_today=−2`** |
+
+E a quebra que só o banco real prova: removendo o `for update` da reserva, as
+duas concorrentes concedem 0,01 → **total 0,02** numa bolsa de 0,01.
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -532,6 +574,25 @@ específico, todas restauradas:
 | item 11: só a taxa opaca conta (custo sem recebido volta a liberar) | 2 |
 | item 11 (final): `NULL` volta a valer 0 — o portão abre | 4 |
 | item 11 (fail-open do patch): o portão volta a ler a cópia em memória | 1 |
+| Q1: terminal incompleto sai do recovery | 8 |
+| Q2: `fee` NULL volta a zero | 4 |
+| Q3: o recebido tardio some | 10 |
+| Q4: `CANCELED` volta a zerar o compromisso | 2 |
+| Q5: a projeção perde o watermark `applied` | 1 |
+| Q6: o recovery usa a conexão ATUAL, não a histórica | 1 |
+| Q7: o portão volta a ler a sessão stale | 1 |
+| **Q8 (banco real): a reserva perde o `for update`** | total 0,02 numa bolsa de 0,01 |
+
+⚠️ **A Q5 não foi detectada na primeira tentativa, e o motivo importa.** A
+conta acumulada do A142 protege o P&L mesmo com o watermark errado, e TODOS os
+casos de convergência FECHAVAM a posição na primeira projeção — uma posição
+apagada não pode ser reduzida de novo. O estrago mora num PARCIAL que continua
+aberto, projetado mais de uma vez. O teste que faltava foi escrito antes de a
+quebra contar.
+
+⚠️ **E a primeira rodada inteira foi descartada**: o `tsc` base estava sujo por
+um erro de tipo no meu próprio arquivo de teste (o `vitest` não type-checa e
+passou verde). Sete veredictos anulados e refeitos com base limpa.
 
 ⚠️ A quebra do A136 **não foi detectada na primeira tentativa** — os testes
 cobriam a falha da transação inteira, não o meio efeito. O teste que faltava
@@ -544,7 +605,7 @@ detecção: foi descartada e refeita válida antes de contar.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3815/3815 (249 arquivos)     — baseline do R8 era 3586
+npx vitest run      3836/3836 (251 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo

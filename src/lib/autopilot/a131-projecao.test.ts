@@ -434,9 +434,16 @@ describe("⚠️ o SQL de verdade mantém as mesmas guardas", () => {
   });
 
   it("⚠️⚠️ e a varredura de pendências existe, porque FILLED é terminal", () => {
-    expect(SQL).toMatch(/create or replace function public\.autopilot_projecoes_pendentes/);
-    expect(SQL).toMatch(/i\.filled_qty > e\.applied_qty \+ 1e-12/);
-    expect(SQL).toMatch(/revoke all on function public\.autopilot_projecoes_pendentes\(int\)/);
+    /**
+     * ⚠️ A varredura mudou de nome E de alcance no fechamento do Round 9: ela
+     * já não pergunta só "a projeção está atrasada?", mas também "o LIVRO
+     * está incompleto?". A antiga é DERRUBADA de propósito — um nome vivo com
+     * semântica menor é convite para reintroduzir o buraco.
+     */
+    expect(SQL).toMatch(/create or replace function public\.autopilot_pendencias_financeiras/);
+    expect(SQL).toMatch(/a\.filled_qty   > a\.applied_qty   \+ 1e-12/);
+    expect(SQL).toMatch(/revoke all on function public\.autopilot_pendencias_financeiras\(int\)/);
+    expect(SQL).toMatch(/drop function if exists public\.autopilot_projecoes_pendentes\(int\);/);
   });
 
   it("⚠️ e a 0063 não foi tocada para encaixar a 0064 (§45)", () => {

@@ -30,9 +30,10 @@ import {
   tetoDeExposicaoDoRisco, calcularExposicaoUsd,
   avaliarVendaAutonoma, avaliarExposicaoParaEntrada,
 } from "@/lib/autopilot/inventario";
+import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
 import {
-  projetarEfeitoDoIntent, projecoesPendentes,
-} from "@/lib/autopilot/projecao-de-posicao";
+  pendenciasFinanceiras, recuperarPendenciaFinanceira,
+} from "@/lib/autopilot/recuperacao-financeira";
 import { assentarELiquidarSaida } from "@/lib/autopilot/assentamento-da-saida";
 import {
   reservarVendaDoBot, reservarExposicaoDoBot, liberarReservaDoIntent,
@@ -677,64 +678,76 @@ export async function POST(req: NextRequest) {
    * seguinte — está declarado como limitação.
    */
   /**
-   * ⚠️⚠️⚠️ AS PROJEÇÕES QUE FICARAM PARA TRÁS — achado da revisão adversarial.
+   * ⚠️⚠️⚠️ RECUPERAÇÃO FINANCEIRA TERMINAL — não só a projeção atrasada.
    *
-   * A projeção acontece no instante em que o dinheiro se move, e pode falhar
-   * ali (banco fora, timeout). O comentário desta casa prometia que "a
-   * reconciliação aplica o delta que faltar" — e era FALSO para o caso mais
-   * comum: uma compra a mercado que preenche na hora vira `FILLED`, que é
-   * TERMINAL, e o recuperador de intents só olha os não-terminais. Ninguém
-   * voltava naquele intent.
+   * A versão anterior varria `autopilot_projecoes_pendentes`, que comparava o
+   * LIVRO com a POSIÇÃO. Ela nunca enxergava o caso em que o próprio LIVRO
+   * está incompleto: `fee_total` NULL porque o `fetchOrder` da venue não traz
+   * comissão. O intent virava `FILLED` (terminal, fora de
+   * `PRECISAM_RECONCILIAR`), ninguém buscava os trades reais, a sessão ficava
+   * presa para COMPRA e NADA ia buscar o que faltava.
    *
-   * ⚠️ IDEMPOTENTE POR CONSTRUÇÃO: a RPC aplica `ledger − applied`, então
-   * varrer de novo o que já entrou não soma nada.
+   * Agora a varredura devolve `precisa_venue`: pendência de projeção resolve
+   * localmente; pendência de LIVRO vai à corretora com a credencial
+   * HISTÓRICA do intent e ingere os trades — que é o único caminho que traz a
+   * comissão dessas venues.
    *
-   * ⚠️ MELHOR-ESFORÇO: isto não envia ordem nenhuma. Falha aqui não pode
-   * derrubar a passada — mas "não consegui olhar" e "nada pendente" saem
-   * diferentes, que é a regra nº 33 desta casa.
+   * ⚠️ IDEMPOTENTE POR CONSTRUÇÃO: a projeção aplica `ledger − applied` e a
+   * ingestão deduplica por `dedupe_key`. Varrer de novo o que já entrou não
+   * soma nada.
+   *
+   * ⚠️ A PENDÊNCIA NÃO É FILA: é uma pergunta feita aos fatos duráveis. Ela
+   * "fecha" por deixar de ser verdadeira, nunca por alguém marcá-la — e é
+   * isso que a faz sobreviver a restart, deploy e cron perdido.
+   *
+   * ⚠️ MELHOR-ESFORÇO: isto não envia ordem nenhuma. Falha aqui não derruba a
+   * passada — mas "não consegui olhar" e "nada pendente" saem diferentes.
    */
   try {
-    const pendentes = await projecoesPendentes(50);
+    const pendentes = await pendenciasFinanceiras(50);
     if (pendentes === null) {
-      await recordEvent("autopilot_projecoes_pendentes_ilegiveis", { meta: { severity: "med",
-        why: "nao deu para listar projecoes atrasadas. 'nenhuma pendente' e 'nao "
-          + "consegui olhar' sao coisas diferentes.",
+      await recordEvent("autopilot_pendencias_ilegiveis", { meta: { severity: "med",
+        why: "nao deu para listar pendencias financeiras. 'nenhuma pendente' e "
+          + "'nao consegui olhar' sao coisas diferentes.",
       } });
     } else if (pendentes.length > 0) {
       const falhas: string[] = [];
       let realizadoNoRecovery = 0;
       let taxasOpacas = 0;
-      for (const id of pendentes) {
-        const r = await projetarEfeitoDoIntent(id);
-        if (!r.ok) { falhas.push(`${id}:${r.motivo}`); continue; }
+      let livroAtualizado = 0;
+      let idasAVenue = 0;
+      for (const p of pendentes) {
+        if (p.precisaVenue) idasAVenue += 1;
+        const r = await recuperarPendenciaFinanceira(p);
+        if (!r.ok) { falhas.push(`${p.intentId}:${p.motivo}:${r.motivo}`); continue; }
         /**
-         * ⚠️ O RECOVERY TAMBÉM PRECISA DEIXAR RASTRO — achado da revisão.
-         *
-         * Os caminhos imediatos emitem `autopilot_pnl_realizado` e
-         * `autopilot_taxa_nao_precificada`; a varredura jogava tudo fora. O
-         * `pnl_today` ficava certo e o extrato que o dono lê, não — que é
-         * divergência imediata↔recovery na camada que ele enxerga.
+         * ⚠️ O RECOVERY TAMBÉM PRECISA DEIXAR RASTRO. Os caminhos imediatos
+         * emitem `autopilot_pnl_realizado`; a varredura jogava tudo fora, e o
+         * `pnl_today` ficava certo com o extrato que o dono lê, não.
          */
         realizadoNoRecovery += r.realizado;
         if (r.taxaNaoPrecificada) taxasOpacas += 1;
+        if (r.etapa === "livro_atualizado") livroAtualizado += 1;
       }
       if (realizadoNoRecovery !== 0 || taxasOpacas > 0) {
         await recordEvent("autopilot_pnl_realizado", { meta: {
           canal: "recovery", realizado: realizadoNoRecovery,
           taxas_nao_precificadas: taxasOpacas,
-          why: "resultado de fills descobertos pela varredura. Taxa opaca entra "
-            + "como ZERO e o P&L sai OTIMISTA — o stop afrouxa.",
+          why: "resultado de fatos descobertos pela varredura financeira. Taxa "
+            + "que segue opaca NAO afirma P&L exato e mantem a COMPRA presa.",
         } });
       }
-      await recordEvent("autopilot_projecoes_recuperadas", { meta: {
+      await recordEvent("autopilot_recuperacao_financeira", { meta: {
         severity: falhas.length > 0 ? "high" : "low",
-        tentadas: pendentes.length, falhas: falhas.slice(0, 10),
-        why: "fills autonomos cuja posicao ainda nao tinha entrado no livro. "
-          + "As que continuam falhando pedem mao humana — o dinheiro ja se moveu.",
+        tentadas: pendentes.length, idas_a_venue: idasAVenue,
+        livro_atualizado: livroAtualizado, falhas: falhas.slice(0, 10),
+        why: "intents autonomos com efeito financeiro incompleto — projecao "
+          + "atrasada OU livro sem a taxa/recebido que a venue ainda nao deu. "
+          + "As que continuam falhando pedem mao humana: o dinheiro ja se moveu.",
       } });
     }
   } catch (e) {
-    await recordEvent("autopilot_projecoes_pendentes_ilegiveis", { meta: { severity: "med",
+    await recordEvent("autopilot_pendencias_ilegiveis", { meta: { severity: "med",
       erro: (e as Error)?.message?.slice(0, 200) ?? "erro",
     } });
   }

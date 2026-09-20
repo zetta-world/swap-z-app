@@ -18,8 +18,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { bancoFalso } from "@/lib/cex/execucao/banco-falso";
 import {
-  projetarEfeitoDoIntent, projecoesPendentes, liquidarSaidaArmada,
+  projetarEfeitoDoIntent, liquidarSaidaArmada,
 } from "@/lib/autopilot/projecao-de-posicao";
+import { pendenciasFinanceiras } from "@/lib/autopilot/recuperacao-financeira";
 
 const SQL = readFileSync("supabase/migrations/0064_autopilot_projecao_de_posicao.sql", "utf8");
 const HOJE_UTC = new Date().toISOString().slice(0, 10);
@@ -161,10 +162,16 @@ describe("A140.5/A140.7 — recovery tardio chega ao MESMO número", () => {
     const linha = banco.intents.find((i) => i.id === venda)!;
     linha.fee_total = 2; linha.fee_currency = "USDT";
     // A trava é sobre o SQL, porque a varredura é uma query.
-    expect(SQL).toMatch(/or coalesce\(public\.autopilot_taxa_do_intent_em_usd\(/);
-    expect(SQL).toMatch(/> e\.fee_aplicada_usd \+ 1e-12\)/);
+    /**
+     * ⚠️ A varredura virou `autopilot_pendencias_financeiras` no fechamento do
+     * Round 9 e calcula a taxa pendente numa CTE. A PROPRIEDADE é a mesma: a
+     * taxa do livro acima da já aplicada relista o intent.
+     */
+    expect(SQL).toMatch(/coalesce\(public\.autopilot_taxa_do_intent_em_usd\(/);
+    expect(SQL).toMatch(/c\.fee_aplicada\) > c\.fee_aplicada \+ 1e-12 as taxa_pendente/);
+    expect(SQL).toMatch(/or a\.taxa_pendente \)/);
     // E o wrapper devolve `null` quando não dá para olhar — nunca "nada pendente".
-    expect(await projecoesPendentes(10, { chamarRpc: async () => { throw new Error("db"); } }))
+    expect(await pendenciasFinanceiras(10, { chamarRpc: async () => { throw new Error("db"); } }))
       .toBeNull();
   });
 });
@@ -302,7 +309,7 @@ describe("A142 — o RECEBIDO também tem delta próprio", () => {
 
   it("⚠️⚠️ a varredura enxerga recebido pendente", async () => {
     // Sem isto o intent do primeiro caso nunca voltaria.
-    expect(SQL).toMatch(/or i\.filled_quote > e\.applied_quote \+ 1e-12/);
+    expect(SQL).toMatch(/a\.filled_quote > a\.applied_quote \+ 1e-12/);
   });
 
   it("⚠️⚠️ liquidação sem `cost`: NÃO lança prejuízo de −custo inteiro", async () => {

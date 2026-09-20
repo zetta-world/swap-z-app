@@ -514,6 +514,65 @@ que mantém a sessão travada. Agora `null` sai como `null`, com
 `taxa_ausente: true` e um `why` que diz qual dos dois casos é. Três call sites
 (dois no cron, um na rota).
 
+## PARTE 2-BIS — FECHAMENTO ESTRUTURAL DO NÚCLEO
+
+### O defeito que só um PostgreSQL de verdade mostra
+
+A 0063 usava `hashtext(wallet || E'\0' || exchange_id)` como chave do advisory
+lock. **PostgreSQL não aceita o byte NUL em `text`**: a criação da função
+morria com `invalid byte sequence for encoding "UTF8": 0x00`, e a cadeia
+**parava na 0063** — 0064 nunca chegaria ao banco. Havia até uma trava de
+teste *pinando o construto quebrado*, porque nenhum teste sobre o TEXTO do SQL
+pode ver isso. Separador agora é `E'\x1F'`: impossível nos dois campos e
+guardável. Com ele, **64/64 migrations aplicam** num PostgreSQL 16 limpo.
+
+### Terminal de ordem ≠ terminal de contabilidade
+
+Era a limitação declarada no HEAD anterior, e ela contradizia I9, I11 e I12 ao
+mesmo tempo:
+
+```
+venda executa numa venue cujo fetchOrder não traz comissão
+  → fee_total NULL → NULL não é zero → sessão para de COMPRAR
+  → intent vira FILLED, que não está em PRECISAM_RECONCILIAR
+  → ingerirTrades (único caminho da fee real) nunca é alcançado
+  → a varredura comparava LIVRO com POSIÇÃO, e o buraco estava no LIVRO
+  → sessão presa PARA SEMPRE, e nada vai buscar o que falta
+```
+
+Fail-closed **sem soltura** não é recovery: é uma parada permanente com
+aparência de segurança.
+
+**Uma definição só.** `autopilot_efeito_incompleto(side, taxa_opaca,
+custo_removido, applied_quote)` responde a pergunta *uma vez* e é usada pelos
+dois consumidores que precisavam concordar: o bloqueio de COMPRA da sessão e a
+elegibilidade ao recovery. Duas cópias divergiriam — e a divergência **é** o
+estado "presa sem ninguém buscar".
+
+**Uma varredura com dois braços.** `autopilot_pendencias_financeiras` devolve
+`precisa_venue`:
+
+| braço | condição | janela | ação |
+|---|---|---|---|
+| projeção atrasada | `filled > applied` (qty, quote ou fee) | 3 dias | projeta local |
+| **livro incompleto** | `autopilot_efeito_incompleto(...)` | **nenhuma** | vai à corretora |
+
+O segundo braço não tem janela de propósito: ele descreve sessões **presas**, o
+conjunto é pequeno por construção, e expirar em três dias seria condenar a
+sessão ao bloqueio eterno — o mesmo defeito com um relógio em cima.
+`autopilot_projecoes_pendentes` é **derrubada**: um nome vivo com semântica
+menor é convite para reintroduzir o buraco.
+
+**A pendência não é uma fila.** É uma pergunta feita aos fatos duráveis a cada
+passada. Ela fecha por **deixar de ser verdadeira**, nunca por alguém marcá-la
+— e é isso que a faz sobreviver a restart, deploy e cron perdido.
+
+`recuperarPendenciaFinanceira` executa os doze passos: intent durável →
+credencial **histórica** (`intent.conexao_id`) → venue → trades (que é onde a
+comissão vive) → snapshot como fallback → ingestão → projeção → P&L →
+loss-stop → contabilidade. Se a venue nunca expõe a taxa, **não se finge
+convergência**: a sessão segue sem comprar e a pendência segue sendo tentada.
+
 ## PARTE 3 — LIMITAÇÕES DECLARADAS
 
 1. **A liquidação da saída armada é transacional (A136), mas ainda depende de
@@ -530,7 +589,14 @@ que mantém a sessão travada. Agora `null` sai como `null`, com
    — `applySessionPnl`, `realizedFromSell`, `recordServerEntry`,
    `closeServerPosition`, `reduzirServerPosition` e `bumpSessionTrades` viraram
    lápides que quebram o `tsc` se alguém tentar ressuscitá-los.
-5. **Taxa que nunca chega trava a COMPRA autônoma sem soltura automática.**
+5. ~~**Taxa que nunca chega trava a COMPRA sem soltura automática.**~~
+   **RESOLVIDO** neste fechamento — `autopilot_pendencias_financeiras` +
+   `recuperarPendenciaFinanceira` buscam os trades na corretora com a
+   credencial histórica. O que permanece: se a venue **nunca** expõe a
+   comissão em endpoint nenhum, a sessão segue fail-closed para COMPRA. Isso
+   é o desfecho honesto, não um buraco — e agora é tentado a cada passada em
+   vez de sair do radar.
+6. **Taxa genuinamente ZERO continua indistinguível de desconhecida.**
    Duas portas levam ao mesmo lugar, e a segunda é a comum:
    (a) `cex_recalcular_intent` (0051/0059) grava
    `fee_total = nullif(sum(coalesce(fee,0)), 0)`, então taxa **genuinamente

@@ -959,12 +959,23 @@ export interface Database {
         };
       };
       /**
-       * ⚠️ A131-C: intents autônomos cuja projeção está atrasada. Existe
-       * porque `FILLED` é terminal e o recuperador de intents não volta nele.
+       * ⚠️⚠️ FECHAMENTO DO ROUND 9: intents autônomos com efeito financeiro
+       * incompleto. Substitui `autopilot_projecoes_pendentes`, que só via
+       * projeção atrasada e nunca o LIVRO incompleto — uma taxa que a venue
+       * não reportou deixava a sessão presa sem nada ir buscá-la.
+       *
+       * `precisa_venue` diz se basta projetar ou se é preciso perguntar à
+       * corretora com a credencial HISTÓRICA do intent.
        */
-      autopilot_projecoes_pendentes: {
+      autopilot_pendencias_financeiras: {
         Args: { p_limite?: number };
-        Returns: Array<{ intent_id: string }>;
+        Returns: Array<{ intent_id: string; motivo: string; precisa_venue: boolean }>;
+      };
+      /** ⚠️ A ÚNICA definição de "contabilidade incompleta" (0064). */
+      autopilot_efeito_incompleto: {
+        Args: { p_side: string; p_taxa_opaca: boolean;
+                p_custo_removido: number; p_applied_quote: number };
+        Returns: boolean;
       };
       /**
        * ⚠️ A134/A135/A136 (migration 0064): as reservas de inventário e a

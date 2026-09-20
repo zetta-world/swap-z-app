@@ -600,9 +600,19 @@ describe("F.3 — os DOIS canais, a MESMA coluna", () => {
     // `update` solto depois (a cicatriz do A136).
     expect([...SQL.matchAll(/perform public\.autopilot_marcar_contabilidade\(/g)])
       .toHaveLength(7);
-    // ⚠️ Os DOIS motivos derivados das LINHAS, nunca de um sinal do caller.
+    /**
+     * ⚠️⚠️ OS DOIS MOTIVOS MORAM NUMA FUNÇÃO SÓ. Eles decidem o bloqueio da
+     * sessão E a elegibilidade ao recovery financeiro; escrever a regra duas
+     * vezes criaria o estado em que a sessão está presa e nada vai buscar o
+     * que falta — a família do A113 no lugar mais caro.
+     */
     expect(SQL).toMatch(
-      /e\.side = 'sell' and e\.custo_removido_usd > 0\s*\n\s*and e\.applied_quote <= 0/);
+      /create or replace function public\.autopilot_efeito_incompleto/);
+    expect(SQL).toMatch(
+      /select coalesce\(p_taxa_opaca, false\)\s*\n\s*or \(p_side = 'sell'/);
+    // E os DOIS consumidores chamam a mesma função, nunca uma cópia da regra.
+    expect([...SQL.matchAll(/public\.autopilot_efeito_incompleto\(/g)].length)
+      .toBeGreaterThanOrEqual(3);
     // ⚠️ E a taxa NÃO virou zero silencioso: a conversão continua devolvendo
     // NULL para moeda não precificável.
     expect(SQL).toMatch(/when p_moeda is null or p_moeda = '' then null/);

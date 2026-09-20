@@ -231,6 +231,45 @@ comment on column public.autopilot_sessions.contabilidade_incompleta_em is
   'Bloqueia COMPRA autonoma nos dois canais; saidas e recovery seguem. '
   'Derivada das linhas de autopilot_position_effects — some sozinha.';
 
+-- ── F-2-BIS. O QUE É "CONTABILIDADE INCOMPLETA" — UMA DEFINIÇÃO SÓ ────────
+--
+-- ⚠️⚠️⚠️ ESTA PERGUNTA ERA RESPONDIDA EM DOIS LUGARES, e essa é a forma exata
+-- do A113: a mesma regra escrita duas vezes diverge na primeira correção. Ela
+-- decide (a) se a sessão pode COMPRAR e (b) se o intent entra no recovery
+-- financeiro. As duas respostas TÊM de ser a mesma, senão existe um estado em
+-- que a sessão está presa e nada vai buscar o que falta — que foi exatamente a
+-- limitação declarada no HEAD anterior.
+--
+-- Dois motivos, e os dois significam "não sei afirmar o P&L realizado":
+--
+--   · TAXA OPACA — a venda realizou e a taxa não dá para precificar em USD,
+--     por estar ausente (a venue não reportou) ou em moeda sem cotação.
+--   · CUSTO REMOVIDO SEM RECEBIDO — a posição reduziu, o custo saiu do livro,
+--     e a corretora ainda não disse por quanto. O A142 manda guardar e
+--     esperar; nessa janela o dia não contém o resultado de um trade FECHADO.
+create or replace function public.autopilot_efeito_incompleto(
+  p_side text, p_taxa_opaca boolean,
+  p_custo_removido numeric, p_applied_quote numeric
+) returns boolean
+language sql immutable as $$
+  select coalesce(p_taxa_opaca, false)
+      or (p_side = 'sell'
+          and coalesce(p_custo_removido, 0) > 0
+          and coalesce(p_applied_quote, 0) <= 0)
+$$;
+
+comment on function public.autopilot_efeito_incompleto(text, boolean, numeric, numeric) is
+  'Round 9 (fechamento): a UNICA definicao de contabilidade incompleta. Decide '
+  'o bloqueio de COMPRA da sessao E a elegibilidade ao recovery financeiro — '
+  'as duas respostas tem de ser a mesma.';
+
+-- ⚠️ O recovery financeiro varre por esta coluna sem janela de tempo (o
+-- conjunto é pequeno por construção: são sessões PRESAS). O índice parcial é
+-- o que torna isso barato.
+create index if not exists idx_autopilot_effects_incompletos
+  on public.autopilot_position_effects (session_id)
+  where taxa_opaca;
+
 -- ── F-3. MARCAR E DERIVAR, NUMA TRANSAÇÃO SÓ ──────────────────────────────
 --
 -- ⚠️ Chamada de dentro das RPCs de projeção e liquidação, na MESMA transação
@@ -277,9 +316,8 @@ begin
            when exists (
              select 1 from public.autopilot_position_effects e
               where e.session_id = p_session_id
-                and (e.taxa_opaca
-                     or (e.side = 'sell' and e.custo_removido_usd > 0
-                         and e.applied_quote <= 0)))
+                and public.autopilot_efeito_incompleto(
+                      e.side, e.taxa_opaca, e.custo_removido_usd, e.applied_quote))
              then coalesce(s.contabilidade_incompleta_em, now())
            else null end,
          updated_at = now()
@@ -1796,39 +1834,113 @@ comment on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeri
 -- ⚠️ JANELA CURTA DE PROPÓSITO: três dias. Mais que isso não é pendência de
 -- projeção, é inventário para conferir com mão humana — e varrer o histórico
 -- inteiro a cada 5 minutos seria um `seq scan` no caminho do dinheiro.
-create or replace function public.autopilot_projecoes_pendentes(p_limite int default 50)
-returns table (intent_id uuid)
+-- ⚠️⚠️⚠️ TERMINAL DE ORDEM NÃO É TERMINAL DE CONTABILIDADE.
+--
+-- `autopilot_projecoes_pendentes` (a versão anterior desta função) só sabia
+-- comparar o LIVRO com a POSIÇÃO: "o intent executou mais do que já foi
+-- projetado?". Ela nunca enxergava o caso em que o próprio LIVRO está
+-- incompleto — `fee_total` NULL porque o `fetchOrder` da venue não traz
+-- comissão, que é a forma normal de várias corretoras no ccxt.
+--
+-- O desfecho era um estado ABSORVENTE, e ele contradizia três invariantes de
+-- uma vez:
+--
+--   · o intent vira `FILLED`, que não está em `PRECISAM_RECONCILIAR` — o
+--     recuperador de intents nunca volta nele;
+--   · `ingerirTrades` (o único caminho que traz a fee real) só é alcançado de
+--     dentro daquele recuperador;
+--   · esta varredura não o relistava, porque `coalesce(taxa(...), aplicada) >
+--     aplicada` é FALSO quando a taxa é desconhecida.
+--
+-- Resultado: a sessão ficava bloqueada para COMPRA para sempre, e nada no
+-- sistema ia buscar o que faltava. Fail-closed sem soltura não é recovery —
+-- é uma parada permanente com aparência de segurança.
+--
+-- ⚠️ A FUNÇÃO AGORA RESPONDE DUAS PERGUNTAS, e a segunda é a que faltava:
+--
+--   `precisa_venue = false` → a projeção está atrás do livro. Basta projetar;
+--                             nenhuma chamada externa é necessária.
+--   `precisa_venue = true`  → o LIVRO está incompleto. Projetar de novo não
+--                             adianta: é preciso perguntar à corretora (com a
+--                             credencial HISTÓRICA do intent) e ingerir.
+--
+-- ⚠️⚠️ E OS DOIS BRAÇOS TÊM JANELAS DIFERENTES, de propósito. O braço da
+-- projeção mantém os três dias de sempre (é volume, e atrasar um dia não
+-- prende dinheiro). O braço da contabilidade incompleta NÃO tem janela: ele
+-- descreve sessões PRESAS, o conjunto é pequeno por construção, e deixá-lo
+-- expirar em três dias seria condenar a sessão ao bloqueio eterno — o mesmo
+-- defeito com um relógio em cima.
+create or replace function public.autopilot_pendencias_financeiras(
+  p_limite int default 50
+)
+returns table (intent_id uuid, motivo text, precisa_venue boolean)
 language sql
 stable
 security definer
 set search_path = public, pg_temp
 as $$
-  select i.id
-    from public.cex_execution_intents i
-    left join public.autopilot_position_effects e on e.intent_id = i.id
-   where i.simulated = false
-     and i.autonomous = true
-     and i.origin in ('autopilot_browser', 'autopilot_cron')
-     and i.session_id is not null
-     and i.filled_qty > 0
-     and i.updated_at > now() - interval '3 days'
-     -- ⚠️⚠️ A140: quantidade OU taxa pendente. `fee_total` pode crescer sem
-     -- quantidade nova (a 0059 permite o ajuste quando os trades reais
-     -- substituem o sintético), e esse P&L também precisa entrar.
-     and (e.intent_id is null
-          or i.filled_qty > e.applied_qty + 1e-12
-          -- ⚠️ A142: o RECEBIDO pode chegar depois da quantidade.
-          or i.filled_quote > e.applied_quote + 1e-12
-          or coalesce(public.autopilot_taxa_do_intent_em_usd(
-               i.fee_total, i.fee_currency, i.symbol, i.filled_qty, i.filled_quote),
-             e.fee_aplicada_usd) > e.fee_aplicada_usd + 1e-12)
-   order by i.updated_at asc
+  with candidatos as (
+    select i.id,
+           i.filled_qty, i.filled_quote, i.fee_total, i.fee_currency, i.symbol,
+           i.updated_at,
+           e.intent_id      as tem_efeito,
+           coalesce(e.applied_qty, 0)       as applied_qty,
+           coalesce(e.applied_quote, 0)     as applied_quote,
+           coalesce(e.fee_aplicada_usd, 0)  as fee_aplicada,
+           coalesce(e.custo_removido_usd,0) as custo_removido,
+           coalesce(e.taxa_opaca, false)    as taxa_opaca,
+           e.side           as efeito_side
+      from public.cex_execution_intents i
+      left join public.autopilot_position_effects e on e.intent_id = i.id
+     where i.simulated = false
+       and i.autonomous = true
+       and i.origin in ('autopilot_browser', 'autopilot_cron')
+       and i.session_id is not null
+       and i.filled_qty > 0
+  ), avaliados as (
+    select c.*,
+           public.autopilot_efeito_incompleto(
+             c.efeito_side, c.taxa_opaca, c.custo_removido, c.applied_quote
+           ) as livro_incompleto,
+           coalesce(public.autopilot_taxa_do_intent_em_usd(
+             c.fee_total, c.fee_currency, c.symbol, c.filled_qty, c.filled_quote),
+             c.fee_aplicada) > c.fee_aplicada + 1e-12 as taxa_pendente
+      from candidatos c
+  )
+  select a.id,
+         case
+           when a.tem_efeito is null                          then 'sem_marcador'
+           when a.filled_qty   > a.applied_qty   + 1e-12      then 'quantidade_pendente'
+           when a.filled_quote > a.applied_quote + 1e-12      then 'recebido_pendente'
+           when a.taxa_pendente                               then 'taxa_pendente'
+           when a.taxa_opaca                                  then 'taxa_desconhecida'
+           else 'resultado_sem_recebido'
+         end,
+         -- ⚠️ Só o LIVRO incompleto justifica gastar uma chamada na corretora.
+         a.livro_incompleto
+    from avaliados a
+   where
+     -- braço 1: a projeção está atrás do livro (janela de três dias)
+     ( a.updated_at > now() - interval '3 days'
+       and ( a.tem_efeito is null
+             or a.filled_qty   > a.applied_qty   + 1e-12
+             or a.filled_quote > a.applied_quote + 1e-12
+             or a.taxa_pendente ) )
+     -- braço 2: o LIVRO está incompleto — sem janela, porque prende dinheiro
+     or a.livro_incompleto
+   order by a.livro_incompleto desc, a.updated_at asc
    limit greatest(coalesce(p_limite, 50), 0);
 $$;
 
-comment on function public.autopilot_projecoes_pendentes(int) is
-  'A131-C: intents autonomos com execucao no livro e projecao atrasada. '
-  'Existe porque FILLED e terminal e o recuperador de intents nao volta nele.';
+comment on function public.autopilot_pendencias_financeiras(int) is
+  'Round 9 (fechamento): intents autonomos com efeito financeiro incompleto. '
+  'Substitui autopilot_projecoes_pendentes, que so via projecao atrasada e '
+  'nunca o LIVRO incompleto (fee que a venue nao reportou). `precisa_venue` '
+  'diz se basta projetar ou se e preciso perguntar a corretora.';
+
+-- ⚠️ A antiga sai de cena explicitamente: um nome vivo com semântica menor é
+-- convite para alguém voltar a chamá-la e reintroduzir o buraco.
+drop function if exists public.autopilot_projecoes_pendentes(int);
 
 -- ── 5. ACL — NASCE FECHADA (lição A116) ───────────────────────────────────
 revoke all on function public.autopilot_projetar_efeito_do_intent(uuid)
@@ -1841,9 +1953,14 @@ revoke all on function public.autopilot_taxa_do_intent_em_usd(numeric, text, tex
 grant execute on function public.autopilot_taxa_do_intent_em_usd(numeric, text, text, numeric, numeric)
   to service_role;
 
-revoke all on function public.autopilot_projecoes_pendentes(int)
+revoke all on function public.autopilot_pendencias_financeiras(int)
   from public, anon, authenticated;
-grant execute on function public.autopilot_projecoes_pendentes(int)
+grant execute on function public.autopilot_pendencias_financeiras(int)
+  to service_role;
+
+revoke all on function public.autopilot_efeito_incompleto(text, boolean, numeric, numeric)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_efeito_incompleto(text, boolean, numeric, numeric)
   to service_role;
 
 revoke all on function public.autopilot_reservar_venda_do_intent(uuid, numeric)

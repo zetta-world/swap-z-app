@@ -122,7 +122,21 @@ begin
 
   -- Serializa rotações do MESMO par: dois saves simultâneos não podem
   -- aposentar um ao outro e deixar o par sem current (ou com duas).
-  perform pg_advisory_xact_lock(hashtext(p_wallet_address || E'\0' || p_exchange_id));
+  --
+  -- ⚠️⚠️⚠️ O SEPARADOR ERA `E'\0'` E ESTA MIGRATION NÃO APLICAVA.
+  --
+  -- PostgreSQL não aceita o byte NUL em `text`: a própria criação da função
+  -- morria com `invalid byte sequence for encoding "UTF8": 0x00`, e a cadeia
+  -- parava aqui — 0063 e 0064 nunca chegariam ao banco. O defeito só apareceu
+  -- quando a cadeia foi aplicada num PostgreSQL de verdade; nenhum teste sobre
+  -- o texto do SQL podia vê-lo.
+  --
+  -- ⚠️ O QUE O SEPARADOR PRECISA SER. Ele existe para que `('ab','c')` e
+  -- `('a','bc')` não colidam no mesmo lock. Serve qualquer caractere que não
+  -- ocorra num endereço de carteira nem num id de corretora — e que o Postgres
+  -- CONSIGA guardar. `U+001F` (unit separator) atende aos dois.
+  perform pg_advisory_xact_lock(
+    hashtext(p_wallet_address || E'\x1F' || p_exchange_id));
 
   select * into v_atual
     from public.cex_conexoes

@@ -582,7 +582,7 @@ describe("o P&L da venda do navegador conta no stop do SERVIDOR", () => {
     const FONTE = (await import("node:fs")).readFileSync(
       "src/app/api/cex/order/route.ts", "utf8");
     expect(FONTE).toMatch(/autopilot_projecao_de_posicao_falhou/);
-    expect(FONTE).toMatch(/autopilot_projecoes_pendentes|projecoesPendentes/);
+    expect(FONTE).toMatch(/pendencias_financeiras|pendenciasFinanceiras|recupera/);
   });
 
   it("⚠️⚠️ COMPRA não realiza P&L nenhum", async () => {

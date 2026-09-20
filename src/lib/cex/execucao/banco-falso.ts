@@ -219,6 +219,11 @@ export function bancoFalso(): BancoFalso {
       converterTaxaEmUsd(it.fee_total, it.fee_currency, it.symbol,
                          it.filled_qty, it.filled_quote);
     const hojeUtcDoBanco = () => new Date().toISOString().slice(0, 10);
+    /** ⚠️ A MESMA regra que `autopilot_efeito_incompleto` — ver abaixo. */
+    const efeitoIncompletoDaLinha = (e: Linha) =>
+      e.taxa_opaca === true
+      || (e.side === "sell" && Number(e.custo_removido_usd ?? 0) > 0
+          && Number(e.applied_quote ?? 0) <= 0);
     /**
      * ⚠️⚠️ INVARIANTE F — a opacidade da taxa vira BLOQUEIO DURÁVEL.
      *
@@ -241,9 +246,7 @@ export function bancoFalso(): BancoFalso {
        *      NÃO contém o prejuízo de um trade já fechado.
        */
       const aindaOpaco = efeitos.some((x) => x.session_id === sessionId
-        && (x.taxa_opaca === true
-            || (x.side === "sell" && Number(x.custo_removido_usd ?? 0) > 0
-                && Number(x.applied_quote ?? 0) <= 0)));
+        && efeitoIncompletoDaLinha(x));
       // ⚠️ Preserva o INSTANTE original: a bandeira não se renova a cada passada.
       ses.contabilidade_incompleta_em = aindaOpaco
         ? (ses.contabilidade_incompleta_em ?? new Date().toISOString())
@@ -297,6 +300,66 @@ export function bancoFalso(): BancoFalso {
     const autonomo = (it: Linha) =>
       it.simulated !== true && it.autonomous === true && Boolean(it.session_id)
       && (String(it.origin) === "autopilot_browser" || String(it.origin) === "autopilot_cron");
+
+    /**
+     * ⚠️⚠️ A ÚNICA definição de contabilidade incompleta — espelho de
+     * `autopilot_efeito_incompleto`. Ela decide o bloqueio da sessão E a
+     * elegibilidade ao recovery financeiro: duas cópias divergiriam, e a
+     * divergência é exatamente a sessão presa sem ninguém buscar o que falta.
+     */
+    const efeitoIncompleto = (e: Linha | undefined) =>
+      Boolean(e) && efeitoIncompletoDaLinha(e!);
+
+    if (nome === "autopilot_efeito_incompleto") {
+      return { data: Boolean(args.p_taxa_opaca)
+        || (args.p_side === "sell" && Number(args.p_custo_removido ?? 0) > 0
+            && Number(args.p_applied_quote ?? 0) <= 0), error: null };
+    }
+
+    if (nome === "autopilot_pendencias_financeiras") {
+      /**
+       * ⚠️⚠️⚠️ TERMINAL DE ORDEM NÃO É TERMINAL DE CONTABILIDADE.
+       *
+       * Dois braços: projeção atrasada (barato, local) e LIVRO incompleto
+       * (precisa perguntar à corretora). O segundo é o que faltava — sem ele
+       * um `FILLED` com `fee_total` NULL ficava fora de todo recovery e
+       * prendia a sessão para sempre.
+       */
+      const EPSP = 1e-12;
+      const saida: Linha[] = [];
+      for (const it of intents) {
+        if (it.simulated === true || it.autonomous !== true) continue;
+        const origem = String(it.origin);
+        if (origem !== "autopilot_browser" && origem !== "autopilot_cron") continue;
+        if (!it.session_id) continue;
+        if (!(Number(it.filled_qty ?? 0) > 0)) continue;
+
+        const e = efeitos.find((x) => x.intent_id === it.id);
+        const appliedQty = Number(e?.applied_qty ?? 0);
+        const appliedQuote = Number(e?.applied_quote ?? 0);
+        const feeAplicada = Number(e?.fee_aplicada_usd ?? 0);
+        const lida = taxaEmUsdDoIntent(it);
+        const taxaPendente = (lida ?? feeAplicada) > feeAplicada + EPSP;
+        const livroIncompleto = efeitoIncompleto(e);
+        const projecaoAtrasada = !e
+          || Number(it.filled_qty ?? 0) > appliedQty + EPSP
+          || Number(it.filled_quote ?? 0) > appliedQuote + EPSP
+          || taxaPendente;
+        if (!projecaoAtrasada && !livroIncompleto) continue;
+
+        const motivo = !e ? "sem_marcador"
+          : Number(it.filled_qty ?? 0) > appliedQty + EPSP ? "quantidade_pendente"
+          : Number(it.filled_quote ?? 0) > appliedQuote + EPSP ? "recebido_pendente"
+          : taxaPendente ? "taxa_pendente"
+          : e.taxa_opaca === true ? "taxa_desconhecida"
+          : "resultado_sem_recebido";
+        saida.push({ intent_id: it.id, motivo, precisa_venue: livroIncompleto });
+      }
+      // ⚠️ O livro incompleto vem primeiro: ele é quem prende dinheiro.
+      saida.sort((a, b) => Number(b.precisa_venue) - Number(a.precisa_venue));
+      const lim = Math.max(Number(args.p_limite ?? 50), 0);
+      return { data: saida.slice(0, lim), error: null };
+    }
 
     if (nome === "autopilot_taxa_do_intent_em_usd") {
       // ⚠️ Escalar, sem intent: é assim que o SQL a expõe, e é assim que o
