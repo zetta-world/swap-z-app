@@ -39,6 +39,7 @@ const viva = (over: Partial<EstadoParaExecucao> = {}): EstadoParaExecucao => ({
   maxTradeUsd: 100,
   conexaoId: "C1",
   emQuarentena: false,
+  contabilidadeIncompleta: false,
   ...over,
 });
 
@@ -312,13 +313,13 @@ describe("⑪ a QUARENTENA por deriva — achado da revisão adversarial", () =>
   const CRON = semComentarios(readFileSync("src/app/api/autopilot/cron/route.ts", "utf8"));
 
   it("⚠️⚠️ sessão em quarentena: a ENTRADA é recusada", () => {
-    const d = entradaAutorizadaNaSessao({ emQuarentena: true });
+    const d = entradaAutorizadaNaSessao({ emQuarentena: true, contabilidadeIncompleta: false });
     expect(d.ok).toBe(false);
     if (!d.ok) expect(d.motivo).toBe("sessao_em_quarentena");
   });
 
   it("⚠️ e sem quarentena a entrada passa — o gêmeo positivo", () => {
-    expect(entradaAutorizadaNaSessao({ emQuarentena: false }).ok).toBe(true);
+    expect(entradaAutorizadaNaSessao({ emQuarentena: false, contabilidadeIncompleta: false }).ok).toBe(true);
   });
 
   it("⚠️⚠️ a quarentena NÃO entra na autorização de sessão — saída não se prende", () => {

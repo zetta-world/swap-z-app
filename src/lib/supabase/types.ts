@@ -294,6 +294,13 @@ export type AutopilotSessionRow = {
    */
   quarentena_motivo:   string | null;
   quarentena_em:       string | null;
+  /**
+   * ⚠️⚠️ INVARIANTE F (0064): desde quando a contabilidade desta sessão
+   * deixou de ser afirmável — o P&L realizado saiu sem uma taxa que não deu
+   * para precificar em USD. Bloqueia COMPRA autônoma nos DOIS canais; saídas
+   * e recovery seguem. Some sozinha quando a taxa volta a ser precificável.
+   */
+  contabilidade_incompleta_em: string | null;
   /** O snapshot da primeira reconciliação — declaração, não patrimônio. */
   saldo_baseline:      unknown;
   created_at:          string;
@@ -908,11 +915,13 @@ export interface Database {
       cex_ingest_order_snapshot: {
         Args: {
           p_intent_id: string; p_external_order_id: string | null;
-          p_cumulative_qty: number; p_avg_price: number; p_cumulative_quote: number;
+          p_cumulative_qty: number; p_avg_price: number;
+          /** ⚠️ Invariante Q: `null` = NÃO MEDIDO. Zero é afirmação. */
+          p_cumulative_quote: number | null;
           p_fee: number | null; p_fee_currency: string | null; p_executed_at: string | null;
         };
         Returns: { inseridos: number; regrediu: boolean;
-                   filled_qty?: number; state?: CexIntentState };
+                   filled_qty?: number; filled_quote?: number; state?: CexIntentState };
       };
       cex_recalcular_intent: { Args: { p_intent_id: string }; Returns: undefined };
       /**

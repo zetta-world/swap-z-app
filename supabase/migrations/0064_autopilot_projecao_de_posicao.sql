@@ -167,6 +167,531 @@ alter table public.autopilot_position_effects enable row level security;
 -- dado. Por isso a projeção nasce junto com a leitura do livro (Round 9) e
 -- não é retroativa.
 
+-- ══════════════════════════════════════════════════════════════════════════
+-- INVARIANTE F — P&L INCOMPLETO NÃO AUTORIZA ENTRADA
+--
+-- ⚠️⚠️⚠️ `autopilot_taxa_do_intent_em_usd` DEVOLVE NULL quando a taxa está numa
+-- moeda que não dá para precificar sem inventar cotação (a política do A140,
+-- e ela está certa: não se inventa preço). O que estava errado era o que
+-- acontecia DEPOIS:
+--
+--     v_taxa_opaca := true;
+--     v_taxa_total := v_e.fee_aplicada_usd;     -- na prática, ZERO
+--     ... realizado := recebido − custo − 0
+--
+-- e o resultado entrava em `pnl_today` como se fosse exato. A bandeira
+-- `taxa_nao_precificada` subia para quem chamava, virava um evento — e o cron
+-- seguia para a seção de entrada e COMPRAVA. Para um autopilot real isso é
+-- FAIL-OPEN: o stop de perda diária passa a ser calculado sobre um prejuízo
+-- menor do que o verdadeiro, e ninguém segura nada.
+--
+-- ⚠️ O FATO FINANCEIRO É PRESERVADO. A venda aconteceu, a posição reduziu, o
+-- custo saiu do livro, o P&L parcial (sem a taxa) entrou. O que NÃO se afirma
+-- é que aquele número está completo — e é por isso que ele deixa de autorizar
+-- risco NOVO.
+--
+-- ⚠️⚠️ O BLOQUEIO É DURÁVEL, e tem de ser: uma bandeira da passada do cron não
+-- alcança o navegador, que fala com a MESMA sessão pela `/api/cex/order`. É a
+-- família do A113 outra vez — a peça certa obedecida num canal e ignorada no
+-- outro. Por isso o estado mora no banco e os dois canais o leem pela mesma
+-- função (`entradaAutorizadaNaSessao`).
+--
+-- ⚠️ POR QUE NÃO REUSAR `quarentena_em`. Ela significa "a conta derivou do
+-- livro" e é conserto de outra natureza (reconciliação de inventário).
+-- Empilhar os dois num campo só faria o operador ler "deriva" onde há taxa
+-- opaca, e limpar um limparia o outro. São duas colunas porque são dois
+-- fatos; o bloqueio que produzem é o mesmo.
+--
+-- ⚠️ E A LIBERAÇÃO É DETERMINÁVEL, não temporizada: a bandeira por intent é
+-- recalculada a cada projeção/liquidação. Quando os trades reais trazem a
+-- taxa numa moeda precificável, `taxa_opaca` cai para false e a sessão
+-- destrava sozinha. Intervenção explícita = zerar a coluna da sessão à mão.
+-- ══════════════════════════════════════════════════════════════════════════
+
+-- ── F-1. A BANDEIRA POR INTENT ────────────────────────────────────────────
+--
+-- ⚠️ Por INTENT, não por sessão, porque é o intent que tem (ou não) taxa
+-- precificável. A sessão é DERIVADA disto — sem o marcador por intent,
+-- destravar por causa de um intent destravaria com outro ainda opaco.
+alter table public.autopilot_position_effects
+  add column if not exists taxa_opaca boolean not null default false;
+
+comment on column public.autopilot_position_effects.taxa_opaca is
+  'Invariante F: a taxa deste intent nao pode ser precificada em USD, entao o '
+  'P&L realizado dele NAO e exato. Enquanto houver um assim na sessao, zero '
+  'entrada autonoma nova.';
+
+-- ── F-2. O BLOQUEIO DURÁVEL DA SESSÃO ─────────────────────────────────────
+alter table public.autopilot_sessions
+  add column if not exists contabilidade_incompleta_em timestamptz;
+
+comment on column public.autopilot_sessions.contabilidade_incompleta_em is
+  'Invariante F: quando a contabilidade da sessao deixou de ser afirmavel — '
+  'taxa nao precificavel OU custo removido sem recebido para precifica-lo. '
+  'Bloqueia COMPRA autonoma nos dois canais; saidas e recovery seguem. '
+  'Derivada das linhas de autopilot_position_effects — some sozinha.';
+
+-- ── F-3. MARCAR E DERIVAR, NUMA TRANSAÇÃO SÓ ──────────────────────────────
+--
+-- ⚠️ Chamada de dentro das RPCs de projeção e liquidação, na MESMA transação
+-- que move o dinheiro. Um `update` separado depois seria mais uma escrita sem
+-- amarra — exatamente o que o A136 já custou caro.
+--
+-- ⚠️ `coalesce(contabilidade_incompleta_em, now())` preserva o INSTANTE
+-- original: a bandeira não se renova a cada passada, para que "desde quando"
+-- continue sendo uma informação verdadeira para quem for olhar.
+create or replace function public.autopilot_marcar_contabilidade(
+  p_intent_id uuid, p_session_id uuid, p_opaca boolean
+) returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  update public.autopilot_position_effects
+     set taxa_opaca = coalesce(p_opaca, false), updated_at = now()
+   where intent_id = p_intent_id;
+
+  /**
+   * ⚠️⚠️⚠️ SÃO DOIS MOTIVOS PARA A CONTA NÃO FECHAR, e o segundo foi achado
+   * rodando a matriz final (item 11).
+   *
+   *   1. TAXA OPACA — a venda realizou e a taxa não dá para precificar.
+   *   2. CUSTO REMOVIDO SEM RECEBIDO — a venda realizou, a posição reduziu, o
+   *      custo saiu do livro, e a corretora ainda não disse POR QUANTO. O A142
+   *      manda guardar o custo em `custo_removido_usd` e esperar o quote, o
+   *      que está certo: sem recebido não se inventa resultado. Só que, nessa
+   *      janela, `pnl_today` NÃO contém o prejuízo de um trade JÁ FECHADO.
+   *
+   * Medido: sessão em −49 com stop 50, venda com base de custo 100 e a venue
+   * reportando `filled` sem `cost` → `pnl_today` seguia −49, `frozen_until_day`
+   * null, portão de entrada ABERTO. O stop de perda estava frouxo por um
+   * prejuízo que o próprio livro já sabia existir.
+   *
+   * ⚠️ OS DOIS SÃO DETERMINÁVEIS e derivados das LINHAS, nunca de um sinal de
+   * quem chamou: a taxa vira precificável, o recebido chega — e a bandeira
+   * some sozinha na mesma transação.
+   */
+  update public.autopilot_sessions s
+     set contabilidade_incompleta_em = case
+           when exists (
+             select 1 from public.autopilot_position_effects e
+              where e.session_id = p_session_id
+                and (e.taxa_opaca
+                     or (e.side = 'sell' and e.custo_removido_usd > 0
+                         and e.applied_quote <= 0)))
+             then coalesce(s.contabilidade_incompleta_em, now())
+           else null end,
+         updated_at = now()
+   where s.id = p_session_id;
+end; $$;
+
+comment on function public.autopilot_marcar_contabilidade(uuid, uuid, boolean) is
+  'Invariante F: grava a opacidade da taxa DESTE intent e deriva o bloqueio da '
+  'sessao, na mesma transacao que aplicou o efeito.';
+
+revoke all on function public.autopilot_marcar_contabilidade(uuid, uuid, boolean)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_marcar_contabilidade(uuid, uuid, boolean)
+  to service_role;
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- INVARIANTE Q — O RECEBIDO TARDIO TEM DE ENTRAR NO LIVRO
+--
+-- ⚠️⚠️⚠️ A 0059 ESCREVEU A SUPOSIÇÃO ERRADA, POR EXTENSO:
+--
+--     "fill sem qty só existe para carregar correção de fee, nunca quote"
+--     check (qty > 0 or (qty = 0 and quote_amount = 0))
+--
+-- Ela vale para o mundo em que quantidade e dinheiro chegam juntos. O mundo
+-- real da ordem limitada não é esse: o ACK traz `filled` e NÃO traz `cost` (a
+-- venue só materializa o dinheiro quando os trades aparecem). A sequência
+-- honesta é
+--
+--     snapshot 1:  qty = 0,01   quote = (ausente)
+--     snapshot 2:  qty = 0,01   quote = 600
+--
+-- e o segundo caía no ramo "qty não cresceu", que só sabia tratar fee. O
+-- recebido era DESCARTADO: `filled_quote` ficava 0 para sempre. Todo o A143
+-- (assentar antes de liquidar) e todo o A145 (custo tardio da compra) leem
+-- `filled_quote` — os dois liam um zero que não é zero, é "não medido que
+-- virou medido e ninguém gravou".
+--
+-- ⚠️ A 0059 NÃO É ALTERADA. Ela já pode ter sido aplicada; a 0064 nunca foi.
+-- As duas RPCs são REDEFINIDAS aqui, com a mesma assinatura, e a constraint é
+-- refeita — é o que a 0064 pode fazer sem reescrever história.
+--
+-- ⚠️⚠️ "AUSENTE" NÃO É "ZERO", e aqui isso deixou de ser só um princípio:
+-- `p_cumulative_quote` agora é NULLABLE. Um ACK sem `cost` manda NULL e não
+-- move nada; um snapshot que manda 0 está AFIRMANDO zero recebido, e um livro
+-- com 600 tratará isso como REGRESSÃO. Quem chama traduz ausência em null —
+-- `Number.isFinite(custo) && custo > 0 ? custo : null`, nos três call sites.
+-- ══════════════════════════════════════════════════════════════════════════
+
+-- ── Q-1. A CONSTRAINT QUE PROIBIA O FATO ──────────────────────────────────
+--
+-- ⚠️ Um fill de qty ZERO passa a poder carregar quote. Ele continua exigindo
+-- `price > 0` (a coluna é `not null check (price > 0)`), e o preço gravado é
+-- o médio da ordem — para uma linha de ajuste ele é referência, não uma
+-- divisão de quote por qty que seria divisão por zero.
+alter table public.cex_fills drop constraint if exists cex_fills_qty_check;
+alter table public.cex_fills
+  add constraint cex_fills_qty_check check (qty >= 0);
+
+comment on constraint cex_fills_qty_check on public.cex_fills is
+  'Invariante Q: fill de qty zero carrega ajuste de fee E/OU de quote. A 0059 '
+  'proibia o segundo, e o recebido tardio da ordem limitada era descartado.';
+
+-- ── Q-2. SNAPSHOT: O RAMO "QTY NÃO CRESCEU" TAMBÉM VÊ O RECEBIDO ──────────
+--
+-- Redefinição integral da RPC da 0059. O que MUDOU, e só isto:
+--   · `p_cumulative_quote` NULL = não medido (antes, `coalesce(...,0)` fazia
+--     ausência virar afirmação de zero);
+--   · o ramo sem crescimento de qty calcula delta de QUOTE além do de fee, e
+--     grava UMA linha de ajuste com os dois;
+--   · a dedupe key do ajuste ganha prefixo próprio (`ordadj:`) e inclui o
+--     quote — replay idêntico é no-op, recebido corrigido é fato novo;
+--   · `regrediu` passa a cobrir a regressão de QUOTE medido, nos dois ramos.
+-- Tudo o mais (dedupe, fee cumulativa, guarda de moeda, regressão de qty,
+-- atomicidade) é a 0059 letra por letra.
+create or replace function public.cex_ingest_order_snapshot(
+  p_intent_id uuid,
+  p_external_order_id text,
+  p_cumulative_qty numeric,
+  p_avg_price numeric,
+  p_cumulative_quote numeric,
+  p_fee numeric,
+  p_fee_currency text,
+  p_executed_at timestamptz
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_intent public.cex_execution_intents%rowtype;
+  v_ja numeric; v_delta numeric; v_quote numeric; v_preco numeric;
+  v_fee_ja numeric; v_fee_delta numeric; v_moeda_livro text; v_incomp integer;
+  v_chave text; v_ajuste boolean := false;
+  v_quote_delta numeric; v_regrediu boolean;
+begin
+  select * into v_intent from public.cex_execution_intents
+   where id = p_intent_id for update;
+  if not found then raise exception 'intent % nao existe', p_intent_id; end if;
+  if v_intent.state in ('CREATED','AUTHORIZED','RESERVED','FAILED_PRE_SUBMIT') then
+    raise exception 'snapshot contra intent em % — estado pre-envio nao admite execucao', v_intent.state;
+  end if;
+
+  -- ⚠️ MOEDA DE FEE INCOMPATÍVEL É EXCEÇÃO, não conversão — e o NULL também
+  -- fecha (0059, sem mudança).
+  if p_fee is not null or p_fee_currency is not null then
+    select count(*), min(f.fee_currency) into v_incomp, v_moeda_livro
+      from public.cex_fills f
+     where f.intent_id = p_intent_id
+       and (f.external_order_id is not distinct from p_external_order_id
+            or f.external_order_id is null)
+       and f.fee is not null
+       and f.fee_currency is distinct from p_fee_currency;
+    if v_incomp > 0 then
+      raise exception 'fee_currency incompativel na ordem %: livro tem %, snapshot traz % — sem conversao inventada',
+        p_external_order_id, coalesce(v_moeda_livro, '(null)'), coalesce(p_fee_currency, '(null)');
+    end if;
+  end if;
+
+  select coalesce(sum(qty),0), coalesce(sum(quote_amount),0)
+    into v_ja, v_quote from public.cex_fills where intent_id = p_intent_id;
+
+  select coalesce(sum(f.fee),0) into v_fee_ja
+    from public.cex_fills f
+   where f.intent_id = p_intent_id
+     and (f.external_order_id is not distinct from p_external_order_id
+          or f.external_order_id is null)
+     and f.fee_currency is not distinct from p_fee_currency;
+  v_fee_delta := case when p_fee is null then null
+                      else greatest(p_fee - v_fee_ja, 0) end;
+
+  /**
+   * ⚠️⚠️ O DELTA DO RECEBIDO — e `null` NÃO É ZERO.
+   *
+   * Não medido não move nada e não acusa nada. Medido abaixo do livro é
+   * REGRESSÃO: ninguém "desrecebe" dinheiro, e o `greatest()` que a
+   * esconderia deixaria o P&L da venda otimista (a mesma família do
+   * `regressao_de_quote` das RPCs do autopilot, só que uma camada antes).
+   */
+  v_quote_delta := case when p_cumulative_quote is null then 0
+                        else greatest(p_cumulative_quote - v_quote, 0) end;
+  v_regrediu := (p_cumulative_qty is not null and p_cumulative_qty < v_ja - 1e-9)
+             or (p_cumulative_quote is not null and p_cumulative_quote < v_quote - 1e-9);
+
+  if p_cumulative_qty is null or p_cumulative_qty <= v_ja + 1e-12 then
+    /**
+     * ⚠️⚠️⚠️ AQUI ESTAVA O INVARIANTE Q. Este ramo só sabia tratar fee.
+     *
+     * A qty parou, mas o RECEBIDO e a TAXA podem ter sido descobertos depois
+     * — e a ordem limitada faz exatamente isso. Os dois entram numa linha só
+     * de ajuste (qty zero), porque são o MESMO fato: "a venue contou o resto
+     * da história desta ordem".
+     */
+    if p_cumulative_qty is not null and p_cumulative_qty > v_ja - 1e-9
+       and ((v_fee_delta is not null and v_fee_delta > 0) or v_quote_delta > 0) then
+      v_preco := case when p_avg_price > 0 then p_avg_price
+                      when p_cumulative_quote > 0 and p_cumulative_qty > 0
+                        then p_cumulative_quote / p_cumulative_qty
+                      else (select f.price from public.cex_fills f
+                             where f.intent_id = p_intent_id
+                               and f.external_order_id is not distinct from p_external_order_id
+                             order by f.created_at desc limit 1) end;
+      if v_preco is null or v_preco <= 0 then
+        raise exception 'ajuste sem preco utilizavel para a ordem %', p_external_order_id;
+      end if;
+      -- ⚠️ Prefixo próprio: o ajuste nunca colide com a chave do crescimento,
+      -- e o quote entra na chave para que um recebido CORRIGIDO seja fato novo.
+      v_chave := 'ordadj:' || coalesce(p_external_order_id,'?')
+                 || ':' || p_cumulative_qty::text
+                 || ':' || coalesce(p_fee::text,'-')
+                 || ':' || coalesce(p_cumulative_quote::text,'-');
+      insert into public.cex_fills (
+        intent_id, exchange_id, external_order_id, external_trade_id, client_order_id,
+        symbol, side, qty, price, quote_amount, fee, fee_currency, executed_at,
+        sintetico, dedupe_key
+      ) values (
+        p_intent_id, v_intent.exchange_id, p_external_order_id, null, v_intent.client_order_id,
+        v_intent.symbol, v_intent.side,
+        0, v_preco, v_quote_delta, v_fee_delta, p_fee_currency, p_executed_at,
+        true, v_chave
+      )
+      on conflict (intent_id, dedupe_key) do nothing;
+      v_ajuste := found;
+    end if;
+    perform public.cex_recalcular_intent(p_intent_id);
+    select * into v_intent from public.cex_execution_intents where id = p_intent_id;
+    return jsonb_build_object('inseridos', case when v_ajuste then 1 else 0 end,
+      'regrediu', v_regrediu, 'filled_qty', v_intent.filled_qty,
+      'filled_quote', v_intent.filled_quote, 'state', v_intent.state);
+  end if;
+
+  v_delta := p_cumulative_qty - v_ja;
+  v_preco := case when p_avg_price > 0 then p_avg_price
+                  when p_cumulative_quote > 0 and p_cumulative_qty > 0
+                    then p_cumulative_quote / p_cumulative_qty
+                  else null end;
+  if v_preco is null or v_preco <= 0 then
+    raise exception 'snapshot sem preco utilizavel para a ordem %', p_external_order_id;
+  end if;
+
+  -- ⚠️ A chave do CRESCIMENTO continua a da 0059.
+  v_chave := 'ordercum:' || coalesce(p_external_order_id,'?')
+             || ':' || p_cumulative_qty::text || ':' || coalesce(p_fee::text,'-');
+  insert into public.cex_fills (
+    intent_id, exchange_id, external_order_id, external_trade_id, client_order_id,
+    symbol, side, qty, price, quote_amount, fee, fee_currency, executed_at,
+    sintetico, dedupe_key
+  ) values (
+    p_intent_id, v_intent.exchange_id, p_external_order_id, null, v_intent.client_order_id,
+    v_intent.symbol, v_intent.side,
+    v_delta, v_preco, v_quote_delta,
+    v_fee_delta, p_fee_currency, p_executed_at,
+    true, v_chave
+  )
+  on conflict (intent_id, dedupe_key) do nothing;
+
+  if p_external_order_id is not null and v_intent.external_order_id is null then
+    update public.cex_execution_intents set external_order_id = p_external_order_id
+     where id = p_intent_id;
+  end if;
+
+  perform public.cex_recalcular_intent(p_intent_id);
+  select * into v_intent from public.cex_execution_intents where id = p_intent_id;
+  return jsonb_build_object('inseridos', 1, 'filled_qty', v_intent.filled_qty,
+                            'filled_quote', v_intent.filled_quote,
+                            'state', v_intent.state, 'regrediu', v_regrediu);
+end; $$;
+
+comment on function public.cex_ingest_order_snapshot(uuid, text, numeric, numeric, numeric, numeric, text, timestamptz) is
+  'Invariante Q (0064): o ramo sem crescimento de qty grava o delta de QUOTE '
+  'alem do de fee, e p_cumulative_quote NULL significa nao medido.';
+
+-- ── Q-3. TRADES: O SINTÉTICO QUE CARREGA RECEBIDO TAMBÉM É FATO ───────────
+--
+-- ⚠️⚠️ SEM ISTO, O CONSERTO ACIMA VAZARIA NA SUBSTITUIÇÃO.
+--
+-- A cobertura de quantidade da 0059 mede `sum(qty)` dos sintéticos. Um ajuste
+-- de quote tem qty ZERO: `v_sint = 0`, e um lote todo dedupado (`v_novos = 0`)
+-- passava na cobertura, apagava o ajuste e `filled_quote` desabava de 600
+-- para 0 — sem um único trade novo. É exatamente o buraco que a 0059 já havia
+-- tapado para a FEE (achado a, round 4); aqui ele é tapado para o RECEBIDO,
+-- com a MESMA forma: o gate dispara pela EXISTÊNCIA do sintético com quote, e
+-- o que libera a substituição é evidência nova explícita, não um número maior.
+--
+-- ⚠️ E O REAL MENOR CONTINUA SUBSTITUINDO. Trades novos que somam menos quote
+-- que o sintético são FATO e entram — a regressão resultante de
+-- `filled_quote` é pega pelas guardas `regressao_de_quote` da projeção e da
+-- liquidação, que falham fechado com o dinheiro já correto no livro de
+-- execuções. Recusar aqui deixaria o livro MENTINDO para sempre.
+create or replace function public.cex_ingest_trades(
+  p_intent_id uuid,
+  p_external_order_id text,
+  p_trades jsonb
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_intent public.cex_execution_intents%rowtype;
+  v_t jsonb; v_inseridos integer := 0;
+  v_sint numeric; v_novos numeric; v_qtd_novos integer;
+  v_lote jsonb; v_sem_id boolean;
+begin
+  select * into v_intent from public.cex_execution_intents
+   where id = p_intent_id for update;
+  if not found then raise exception 'intent % nao existe', p_intent_id; end if;
+
+  if v_intent.state in ('CREATED','AUTHORIZED','RESERVED','FAILED_PRE_SUBMIT') then
+    raise exception 'fill contra intent em % — estado pre-envio nao admite execucao', v_intent.state;
+  end if;
+
+  select coalesce(jsonb_agg(u.t order by u.ord)
+                  filter (where u.t->>'order' is null or u.t->>'order' = p_external_order_id),
+                  '[]'::jsonb),
+         coalesce(bool_or(nullif(u.t->>'trade_id','') is null), false)
+    into v_lote, v_sem_id
+    from jsonb_array_elements(coalesce(p_trades,'[]'::jsonb)) with ordinality as u(t, ord);
+  if v_sem_id then
+    return jsonb_build_object('ok', false, 'porque', 'trade_sem_id');
+  end if;
+
+  if exists (
+    select 1
+      from jsonb_array_elements(v_lote) a
+      join jsonb_array_elements(v_lote) b
+        on a->>'trade_id' = b->>'trade_id'
+     where (a->>'qty')::numeric   is distinct from (b->>'qty')::numeric
+        or (a->>'price')::numeric is distinct from (b->>'price')::numeric
+        or (a->>'quote')::numeric is distinct from (b->>'quote')::numeric
+        or nullif(a->>'fee','')::numeric
+           is distinct from nullif(b->>'fee','')::numeric
+        or nullif(a->>'fee_currency','')
+           is distinct from nullif(b->>'fee_currency','')
+        or coalesce(nullif(a->>'order',''), p_external_order_id)
+           is distinct from coalesce(nullif(b->>'order',''), p_external_order_id)
+        or nullif(a->>'executed_at','')
+           is distinct from nullif(b->>'executed_at','')) then
+    return jsonb_build_object('ok', false, 'porque', 'trade_id_conflitante');
+  end if;
+
+  select coalesce(jsonb_agg(d.t order by d.ord), '[]'::jsonb) into v_lote
+    from (select distinct on (e.t->>'trade_id') e.t as t, e.ord as ord
+            from jsonb_array_elements(v_lote) with ordinality as e(t, ord)
+           order by e.t->>'trade_id', e.ord) d;
+
+  select coalesce(sum(qty),0) into v_sint from public.cex_fills
+   where intent_id = p_intent_id and sintetico
+     and (external_order_id is not distinct from p_external_order_id
+          or external_order_id is null)
+     and exchange_id = v_intent.exchange_id;
+
+  select coalesce(sum((t->>'qty')::numeric),0), count(*) into v_novos, v_qtd_novos
+    from jsonb_array_elements(v_lote) t
+   where not exists (select 1 from public.cex_fills f
+          where f.intent_id = p_intent_id
+            and f.dedupe_key = 'trade:' || (t->>'trade_id'));
+
+  if v_sint > 0 and v_novos < v_sint - 1e-12 then
+    return jsonb_build_object('ok', false, 'porque', 'cobertura_incompleta',
+                              'novos', v_novos, 'sintetico', v_sint);
+  end if;
+
+  -- Cobertura de FEE (A121) — inalterada.
+  if exists (select 1 from public.cex_fills f
+         where f.intent_id = p_intent_id and f.sintetico
+           and (f.external_order_id is not distinct from p_external_order_id
+                or f.external_order_id is null)
+           and f.exchange_id = v_intent.exchange_id
+           and f.fee is not null) then
+    if v_qtd_novos = 0 or exists (
+        select 1 from jsonb_array_elements(v_lote) t
+         where not exists (select 1 from public.cex_fills f
+                where f.intent_id = p_intent_id
+                  and f.dedupe_key = 'trade:' || (t->>'trade_id'))
+           and nullif(t->>'fee','') is null) then
+      return jsonb_build_object('ok', false, 'porque', 'cobertura_fee_incompleta',
+                                'novos', v_novos, 'sintetico', v_sint);
+    end if;
+    if exists (
+        with novos as (
+          select nullif(t->>'fee_currency','') as moeda
+            from jsonb_array_elements(v_lote) t
+           where not exists (select 1 from public.cex_fills f
+                  where f.intent_id = p_intent_id
+                    and f.dedupe_key = 'trade:' || (t->>'trade_id'))
+        ), moedas_sint as (
+          select distinct f.fee_currency as moeda from public.cex_fills f
+           where f.intent_id = p_intent_id and f.sintetico
+             and (f.external_order_id is not distinct from p_external_order_id
+                  or f.external_order_id is null)
+             and f.exchange_id = v_intent.exchange_id
+             and f.fee is not null
+        )
+        select 1 from novos n
+         where not exists (select 1 from moedas_sint m
+                where m.moeda is not distinct from n.moeda)) then
+      return jsonb_build_object('ok', false, 'porque', 'fee_currency_incompativel',
+                                'novos', v_novos, 'sintetico', v_sint);
+    end if;
+  end if;
+
+  /**
+   * ⚠️⚠️ COBERTURA DE QUOTE (invariante Q) — a que faltava.
+   *
+   * Mesma forma do gate de fee: dispara pela EXISTÊNCIA de sintético com
+   * recebido, INDEPENDENTE de `v_sint > 0`, porque um ajuste de quote tem qty
+   * zero e não aparece naquela soma. Sem trade novo único, NADA é deletado e
+   * nada é inserido — o recebido é preservado até haver evidência substituta.
+   */
+  if v_qtd_novos = 0 and exists (
+       select 1 from public.cex_fills f
+        where f.intent_id = p_intent_id and f.sintetico
+          and (f.external_order_id is not distinct from p_external_order_id
+               or f.external_order_id is null)
+          and f.exchange_id = v_intent.exchange_id
+          and f.quote_amount > 0) then
+    return jsonb_build_object('ok', false, 'porque', 'cobertura_quote_incompleta',
+                              'novos', v_novos, 'sintetico', v_sint);
+  end if;
+
+  delete from public.cex_fills
+   where intent_id = p_intent_id and sintetico
+     and (external_order_id is not distinct from p_external_order_id
+          or external_order_id is null);
+
+  for v_t in select * from jsonb_array_elements(v_lote) loop
+    insert into public.cex_fills (
+      intent_id, exchange_id, external_order_id, external_trade_id, client_order_id,
+      symbol, side, qty, price, quote_amount, fee, fee_currency, executed_at,
+      sintetico, dedupe_key
+    ) values (
+      p_intent_id, v_intent.exchange_id, p_external_order_id,
+      v_t->>'trade_id', v_intent.client_order_id,
+      v_intent.symbol, v_intent.side,
+      (v_t->>'qty')::numeric, (v_t->>'price')::numeric, (v_t->>'quote')::numeric,
+      nullif(v_t->>'fee','')::numeric, nullif(v_t->>'fee_currency',''),
+      nullif(v_t->>'executed_at','')::timestamptz,
+      false, 'trade:' || (v_t->>'trade_id')
+    )
+    on conflict (intent_id, dedupe_key) do nothing;
+    if found then v_inseridos := v_inseridos + 1; end if;
+  end loop;
+
+  if p_external_order_id is not null and v_intent.external_order_id is null then
+    update public.cex_execution_intents set external_order_id = p_external_order_id
+     where id = p_intent_id;
+  end if;
+
+  perform public.cex_recalcular_intent(p_intent_id);
+  select * into v_intent from public.cex_execution_intents where id = p_intent_id;
+  return jsonb_build_object('ok', true, 'inseridos', v_inseridos,
+                            'filled_qty', v_intent.filled_qty,
+                            'filled_quote', v_intent.filled_quote,
+                            'state', v_intent.state);
+end; $$;
+
+comment on function public.cex_ingest_trades(uuid, text, jsonb) is
+  'Invariante Q (0064): sintetico que carrega RECEBIDO tambem e fato — sem '
+  'trade novo unico, a substituicao nao apaga o ajuste de quote.';
+
 -- ── 3. A PROJEÇÃO ─────────────────────────────────────────────────────────
 create or replace function public.autopilot_projetar_efeito_do_intent(
   -- ⚠️⚠️ NÃO RECEBE MAIS TAXA NEM DIA — achado A140.
@@ -339,6 +864,10 @@ begin
            ledger_quote = greatest(ledger_quote, v_i.filled_quote),
            updated_at   = now()
      where intent_id = p_intent_id;
+    -- ⚠️⚠️ INVARIANTE F: a opacidade da taxa DESTE intent e o bloqueio
+    -- derivado da sessão entram na MESMA transação que aplicou o efeito.
+    perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id,
+      v_taxa_opaca and v_i.side = 'sell' and coalesce(v_i.filled_qty, 0) > 0);
     return jsonb_build_object('ok', true, 'motivo', 'sem_delta',
       'aplicado_qty', 0, 'aplicado_quote', 0, 'fechou', false,
       'pnl_realizado', 0, 'taxa_nao_precificada', v_taxa_opaca);
@@ -418,6 +947,10 @@ begin
            ledger_quote     = greatest(ledger_quote, v_i.filled_quote),
            updated_at       = now()
      where intent_id = p_intent_id;
+    -- ⚠️⚠️ INVARIANTE F: a opacidade da taxa DESTE intent e o bloqueio
+    -- derivado da sessão entram na MESMA transação que aplicou o efeito.
+    perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id,
+      v_taxa_opaca and v_i.side = 'sell' and coalesce(v_i.filled_qty, 0) > 0);
     return jsonb_build_object('ok', true, 'motivo', 'ajuste_sem_quantidade',
       'aplicado_qty', 0, 'aplicado_quote', greatest(v_delta_quote, 0),
       'fechou', false, 'pnl_realizado', v_realizado, 'taxa_delta', v_taxa_delta,
@@ -466,6 +999,10 @@ begin
            pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
            updated_at       = now()
      where intent_id = p_intent_id;
+    -- ⚠️⚠️ INVARIANTE F: a opacidade da taxa DESTE intent e o bloqueio
+    -- derivado da sessão entram na MESMA transação que aplicou o efeito.
+    perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id,
+      v_taxa_opaca and v_i.side = 'sell' and coalesce(v_i.filled_qty, 0) > 0);
     return jsonb_build_object('ok', true, 'motivo', 'posicao_ja_encerrada',
       'aplicado_qty', v_delta_qty, 'aplicado_quote', v_delta_quote,
       'custo_removido', 0, 'fechou', false, 'pnl_realizado', v_realizado,
@@ -636,6 +1173,11 @@ begin
          pnl_aplicado_usd   = pnl_aplicado_usd + v_realizado,
          updated_at         = now()
    where intent_id = p_intent_id;
+
+  -- ⚠️⚠️ INVARIANTE F: a opacidade da taxa DESTE intent e o bloqueio
+  -- derivado da sessão entram na MESMA transação que aplicou o efeito.
+  perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id,
+    v_taxa_opaca and v_i.side = 'sell' and coalesce(v_i.filled_qty, 0) > 0);
 
   return jsonb_build_object(
     'ok', true, 'motivo', 'aplicado',
@@ -1037,6 +1579,9 @@ begin
       'aplicado', v_e.applied_quote, 'no_livro', p_quote_recebido);
   end if;
   if v_delta <= v_eps and v_taxa_delta <= v_eps then
+    -- ⚠️⚠️ INVARIANTE F (a liquidação é sempre de VENDA — conferido acima).
+    perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id,
+      v_taxa_opaca and coalesce(v_i.filled_qty, 0) > 0);
     return jsonb_build_object('ok', true, 'motivo', 'sem_delta',
       'aplicado_qty', 0, 'custo_removido', 0, 'fechou', false, 'pnl_realizado', 0,
       'taxa_nao_precificada', v_taxa_opaca);
@@ -1064,6 +1609,9 @@ begin
            pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
            updated_at       = now()
      where intent_id = p_intent_id;
+    -- ⚠️⚠️ INVARIANTE F (a liquidação é sempre de VENDA — conferido acima).
+    perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id,
+      v_taxa_opaca and coalesce(v_i.filled_qty, 0) > 0);
     return jsonb_build_object('ok', true, 'motivo', 'ajuste_sem_quantidade',
       'aplicado_qty', 0, 'custo_removido', 0, 'fechou', false,
       'pnl_realizado', v_realizado, 'taxa_delta', v_taxa_delta,
@@ -1177,6 +1725,10 @@ begin
          pnl_aplicado_usd   = pnl_aplicado_usd + v_realizado,
          updated_at         = now()
    where intent_id = p_intent_id;
+
+  -- ⚠️⚠️ INVARIANTE F (a liquidação é sempre de VENDA — conferido acima).
+  perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id,
+    v_taxa_opaca and coalesce(v_i.filled_qty, 0) > 0);
 
   return jsonb_build_object('ok', true, 'motivo', 'aplicado',
     'aplicado_qty', v_delta, 'aplicado_quote', v_delta_quote,

@@ -123,7 +123,15 @@ export async function assentarFatosDaSaida(
   const ingerir = deps.ingerir ?? ingerirSnapshotDaOrdem;
   const lerIntent = deps.lerIntent ?? intentPorId;
 
-  const custo = numeroOuZero(ordem.cost);
+  /**
+   * ⚠️⚠️ INVARIANTE Q: `cost` ausente vira `null`, não `0`.
+   *
+   * Mandar zero seria AFIRMAR que a ordem não recebeu nada — e, com o livro
+   * já carregando o recebido, isso vira regressão e fecha a passada por um
+   * silêncio da venue. Não medido não move e não acusa.
+   */
+  const custoBruto = Number(ordem.cost);
+  const custo = Number.isFinite(custoBruto) && custoBruto > 0 ? custoBruto : null;
   const medio = numeroOuZero(ordem.average);
   const taxa = typeof ordem.fee?.cost === "number" && Number.isFinite(ordem.fee.cost)
     ? ordem.fee.cost : null;

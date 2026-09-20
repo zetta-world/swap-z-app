@@ -443,7 +443,10 @@ export async function executarOrdemCex(
     const ing = await ingerirSnapshotDaOrdem(db, intent.id, idExterno, {
       cumulativeQty: executado,
       avgPrice: Number.isFinite(medio) && medio > 0 ? medio : 0,
-      cumulativeQuote: Number.isFinite(custo) && custo > 0 ? custo : 0,
+      // ⚠️ Invariante Q: ausência vira `null`, nunca `0`. Um ACK sem `cost`
+      // não afirma "recebeu zero" — ele não mediu, e o snapshot seguinte é
+      // quem traz o recebido (que agora ENTRA no livro).
+      cumulativeQuote: Number.isFinite(custo) && custo > 0 ? custo : null,
       fee: ordemExterna.fee?.cost ?? null,
       feeCurrency: ordemExterna.fee?.currency ?? null,
       executedAt: ordemExterna.timestamp

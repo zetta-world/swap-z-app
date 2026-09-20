@@ -200,6 +200,36 @@ export function bancoFalso(): BancoFalso {
       return null;
     };
     const hojeUtcDoBanco = () => new Date().toISOString().slice(0, 10);
+    /**
+     * ⚠️⚠️ INVARIANTE F — a opacidade da taxa vira BLOQUEIO DURÁVEL.
+     *
+     * A bandeira mora no efeito (por intent, que é quem tem ou não taxa
+     * precificável) e a sessão é DERIVADA dela: destravar por causa de um
+     * intent não pode destravar com outro ainda opaco. Espelha
+     * `autopilot_marcar_contabilidade`, na mesma passagem que aplicou.
+     */
+    const marcarContabilidade = (intentId: unknown, sessionId: unknown, opaca: boolean) => {
+      const e = efeitos.find((x) => x.intent_id === intentId);
+      if (e) e.taxa_opaca = opaca;
+      const ses = sessoes.find((x) => x.id === sessionId);
+      if (!ses) return;
+      /**
+       * ⚠️⚠️ DOIS MOTIVOS, não um (item 11 da matriz final):
+       *   1. taxa opaca — a venda realizou e a taxa não se precifica;
+       *   2. custo removido SEM recebido — a posição reduziu, o custo saiu do
+       *      livro, e a corretora ainda não disse por quanto. O A142 guarda o
+       *      custo e espera o quote (certo), mas nessa janela o `pnl_today`
+       *      NÃO contém o prejuízo de um trade já fechado.
+       */
+      const aindaOpaco = efeitos.some((x) => x.session_id === sessionId
+        && (x.taxa_opaca === true
+            || (x.side === "sell" && Number(x.custo_removido_usd ?? 0) > 0
+                && Number(x.applied_quote ?? 0) <= 0)));
+      // ⚠️ Preserva o INSTANTE original: a bandeira não se renova a cada passada.
+      ses.contabilidade_incompleta_em = aindaOpaco
+        ? (ses.contabilidade_incompleta_em ?? new Date().toISOString())
+        : null;
+    };
     const aplicarPnl = (sessionId: unknown, realizado: number) => {
       if (realizado === 0) return;
       const ses = sessoes.find((x) => x.id === sessionId);
@@ -237,7 +267,8 @@ export function bancoFalso(): BancoFalso {
         e = { intent_id: it.id, session_id: it.session_id, exchange_id: it.exchange_id,
               base, side: it.side, applied_qty: 0, applied_quote: 0,
               ledger_qty: 0, ledger_quote: 0, reservado_qty: 0, reservado_usd: 0,
-              fee_aplicada_usd: 0, custo_removido_usd: 0, pnl_aplicado_usd: 0 };
+              fee_aplicada_usd: 0, custo_removido_usd: 0, pnl_aplicado_usd: 0,
+              taxa_opaca: false };
         efeitos.push(e);
       }
       return e;
@@ -445,49 +476,73 @@ export function bancoFalso(): BancoFalso {
         .reduce((t, f) => t + Number(f.fee ?? 0), 0);
       const feeDelta = args.p_fee == null ? null
         : Math.max(Number(args.p_fee) - feeJa, 0);
-      const chave = `ordercum:${args.p_external_order_id ?? "?"}:${cum}:${args.p_fee ?? "-"}`;
+      /**
+       * ⚠️⚠️ INVARIANTE Q — `null` É NÃO MEDIDO, e o recebido tem delta.
+       *
+       * A 0059 escrevia por extenso "fill sem qty só existe para carregar
+       * correção de fee, nunca quote". O ACK de uma limitada traz `filled` e
+       * não traz `cost`: o recebido chega DEPOIS, com a qty parada, e caía
+       * neste ramo para ser descartado. `filled_quote` ficava zero para
+       * sempre — e é ele que o A143 e o A145 leem.
+       */
+      const cqBruto = args.p_cumulative_quote;
+      const cq = cqBruto == null ? null : Number(cqBruto);
+      // ⚠️ Mesma base do SQL: `sum(quote_amount) where intent_id = ...` — o
+      // livro INTEIRO do intent, como `ja` faz para a quantidade.
+      const quoteJa = fills.filter((f) => f.intent_id === it.id)
+        .reduce((t, f) => t + Number(f.quote_amount ?? 0), 0);
+      const quoteDelta = cq == null ? 0 : Math.max(cq - quoteJa, 0);
+      const regrediu = (args.p_cumulative_qty != null && cum < ja - 1e-9)
+                    || (cq != null && cq < quoteJa - 1e-9);
       // A123 (round 5): dedupe por INTENT, não por corretora — replay no
       // mesmo intent é no-op, outro intent com a mesma chave persiste.
-      const jaTemChave = () =>
-        fills.some((f) => f.intent_id === it.id && f.dedupe_key === chave);
+      const temChave = (k: string) =>
+        fills.some((f) => f.intent_id === it.id && f.dedupe_key === k);
       if (!(cum > ja + 1e-12)) {
-        // Qty parada com fee corrigida: ajuste de qty zero (quote zero).
+        // Qty parada: a fee E/OU o recebido podem ter sido descobertos depois.
+        // ⚠️ Chave própria (`ordadj:`), com o quote dentro: replay idêntico é
+        // no-op, recebido corrigido é fato novo.
+        const chaveAjuste = `ordadj:${args.p_external_order_id ?? "?"}:${cum}`
+          + `:${args.p_fee ?? "-"}:${cqBruto ?? "-"}`;
         let inseridos = 0;
-        if (args.p_cumulative_qty != null && feeDelta != null && feeDelta > 0
-            && cum > ja - 1e-9 && !jaTemChave()) {
+        if (args.p_cumulative_qty != null && cum > ja - 1e-9
+            && ((feeDelta != null && feeDelta > 0) || quoteDelta > 0)
+            && !temChave(chaveAjuste)) {
           const avg = Number(args.p_avg_price);
-          const cq = Number(args.p_cumulative_quote);
           const ultimo = [...fills].reverse().find((f) => mesmaOrdem(f));
           const preco = avg > 0 ? avg
-            : (cq > 0 && cum > 0 ? cq / cum : Number(ultimo?.price ?? 0));
+            : (cq != null && cq > 0 && cum > 0 ? cq / cum : Number(ultimo?.price ?? 0));
           if (!(preco > 0)) {
-            return { data: null, error: { message: "ajuste de fee sem preco utilizavel" } };
+            return { data: null, error: { message: "ajuste sem preco utilizavel" } };
           }
           fills.push({
             id: `f${++seq}`, intent_id: it.id, exchange_id: it.exchange_id,
             external_order_id: args.p_external_order_id, external_trade_id: null,
-            symbol: it.symbol, side: it.side, qty: 0, price: preco, quote_amount: 0,
+            symbol: it.symbol, side: it.side, qty: 0, price: preco,
+            quote_amount: quoteDelta,
             fee: feeDelta, fee_currency: args.p_fee_currency ?? null,
             executed_at: args.p_executed_at ?? null,
-            sintetico: true, dedupe_key: chave,
+            sintetico: true, dedupe_key: chaveAjuste,
           });
           inseridos = 1;
         }
         recalcular(String(it.id));
-        return { data: { inseridos, regrediu: cum < ja - 1e-9 }, error: null };
+        return { data: { inseridos, regrediu, filled_qty: it.filled_qty,
+                         filled_quote: it.filled_quote, state: it.state }, error: null };
       }
+      const chave = `ordercum:${args.p_external_order_id ?? "?"}:${cum}:${args.p_fee ?? "-"}`;
       const avg = Number(args.p_avg_price);
-      const cq = Number(args.p_cumulative_quote);
-      const preco = avg > 0 ? avg : (cq > 0 && cum > 0 ? cq / cum : 0);
+      const preco = avg > 0 ? avg
+        : (cq != null && cq > 0 && cum > 0 ? cq / cum : 0);
       if (!(preco > 0)) {
         return { data: null, error: { message: "snapshot sem preco utilizavel" } };
       }
-      if (!jaTemChave()) {
+      if (!temChave(chave)) {
         fills.push({
           id: `f${++seq}`, intent_id: it.id, exchange_id: it.exchange_id,
           external_order_id: args.p_external_order_id, external_trade_id: null,
           symbol: it.symbol, side: it.side, qty: cum - ja, price: preco,
-          quote_amount: Math.max(cq - Number(it.filled_quote), 0),
+          quote_amount: quoteDelta,
           fee: feeDelta, fee_currency: args.p_fee_currency ?? null,
           executed_at: args.p_executed_at ?? null,
           sintetico: true, dedupe_key: chave,
@@ -497,8 +552,8 @@ export function bancoFalso(): BancoFalso {
         it.external_order_id = args.p_external_order_id;
       }
       recalcular(String(it.id));
-      return { data: { inseridos: 1, regrediu: false,
-                       filled_qty: it.filled_qty, state: it.state }, error: null };
+      return { data: { inseridos: 1, regrediu, filled_qty: it.filled_qty,
+                       filled_quote: it.filled_quote, state: it.state }, error: null };
     }
 
     /**
@@ -622,6 +677,22 @@ export function bancoFalso(): BancoFalso {
                            novos: novosQty, sintetico: sint }, error: null };
         }
       }
+      /**
+       * ⚠️⚠️ COBERTURA DE QUOTE (invariante Q) — a que faltava.
+       *
+       * `sint` soma QTY, e um ajuste de recebido tem qty zero: um lote todo
+       * dedupado passava na cobertura, apagava o ajuste, e `filled_quote`
+       * desabava de 600 para 0 sem um único trade novo. Mesma forma do gate
+       * de fee: dispara pela EXISTÊNCIA do sintético com recebido.
+       *
+       * ⚠️ Real MENOR continua substituindo — o trade é fato, e a regressão
+       * resultante é pega pelas guardas `regressao_de_quote` do autopilot.
+       */
+      if (novos.length === 0
+          && sinteticoRows.some((f) => Number(f.quote_amount ?? 0) > 0)) {
+        return { data: { ok: false, porque: "cobertura_quote_incompleta",
+                         novos: novosQty, sintetico: sint }, error: null };
+      }
       // O sintético é estimativa; o trade é fato. O fato substitui (b: o
       // delete inclui os não atribuídos — NULL — e nunca outra ordem).
       for (let i = fills.length - 1; i >= 0; i--) {
@@ -677,7 +748,8 @@ export function bancoFalso(): BancoFalso {
         efeito = { intent_id: it.id, session_id: it.session_id, exchange_id: it.exchange_id,
                    base, side: it.side, applied_qty: 0, applied_quote: 0,
                    ledger_qty: 0, ledger_quote: 0, reservado_qty: 0,
-                   reservado_usd: 0, fee_aplicada_usd: 0, custo_removido_usd: 0, pnl_aplicado_usd: 0 };
+                   reservado_usd: 0, fee_aplicada_usd: 0, custo_removido_usd: 0,
+                   pnl_aplicado_usd: 0, taxa_opaca: false };
         efeitos.push(efeito);
       }
       const EPS = 1e-12, RUIDO = 1e-9;
@@ -716,6 +788,10 @@ export function bancoFalso(): BancoFalso {
       if (deltaQty <= EPS && taxaDelta <= EPS && deltaQuote <= EPS) {
         efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
         efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+        // ⚠️ Invariante F: a opacidade da taxa e o bloqueio derivado entram
+        // na MESMA passagem que aplicou o efeito.
+        marcarContabilidade(it.id, it.session_id,
+          taxaOpaca && it.side === "sell" && Number(it.filled_qty ?? 0) > 0);
         return { data: { ok: true, motivo: "sem_delta", aplicado_qty: 0,
                          aplicado_quote: 0, fechou: false, pnl_realizado: 0,
                          taxa_nao_precificada: taxaOpaca }, error: null };
@@ -753,6 +829,10 @@ export function bancoFalso(): BancoFalso {
         efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + semQtd;
         efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
         efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+        // ⚠️ Invariante F: a opacidade da taxa e o bloqueio derivado entram
+        // na MESMA passagem que aplicou o efeito.
+        marcarContabilidade(it.id, it.session_id,
+          taxaOpaca && it.side === "sell" && Number(it.filled_qty ?? 0) > 0);
         return { data: { ok: true, motivo: "ajuste_sem_quantidade", aplicado_qty: 0,
                          aplicado_quote: Math.max(deltaQuote, 0), fechou: false,
                          pnl_realizado: semQtd, taxa_delta: taxaDelta,
@@ -776,6 +856,10 @@ export function bancoFalso(): BancoFalso {
         efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + extra;
         efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
         efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+        // ⚠️ Invariante F: a opacidade da taxa e o bloqueio derivado entram
+        // na MESMA passagem que aplicou o efeito.
+        marcarContabilidade(it.id, it.session_id,
+          taxaOpaca && it.side === "sell" && Number(it.filled_qty ?? 0) > 0);
         return { data: { ok: true, motivo: "posicao_ja_encerrada", aplicado_qty: deltaQty,
                          aplicado_quote: deltaQuote, custo_removido: 0, fechou: false,
                          pnl_realizado: extra, taxa_delta: taxaDelta,
@@ -844,6 +928,9 @@ export function bancoFalso(): BancoFalso {
       efeito.applied_quote = Math.max(Number(efeito.applied_quote), Number(it.filled_quote));
       efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
       efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+      // ⚠️ Invariante F — ver acima.
+      marcarContabilidade(it.id, it.session_id,
+        taxaOpaca && it.side === "sell" && Number(it.filled_qty ?? 0) > 0);
       return { data: { ok: true, motivo: "aplicado", side: it.side, base,
                        aplicado_qty: deltaQty, aplicado_quote: deltaQuote,
                        custo_removido: custoRemovido, fechou,
@@ -889,6 +976,9 @@ export function bancoFalso(): BancoFalso {
                          no_livro: args.p_quote_recebido }, error: null };
       }
       if (delta <= 1e-12 && taxaDeltaL <= 1e-12) {
+        // ⚠️ Invariante F (a liquidação é sempre de VENDA).
+        marcarContabilidade(it.id, it.session_id,
+          taxaOpacaL && Number(it.filled_qty ?? 0) > 0);
         return { data: { ok: true, motivo: "sem_delta", aplicado_qty: 0,
                          custo_removido: 0, fechou: false, pnl_realizado: 0,
                          taxa_nao_precificada: taxaOpacaL }, error: null };
@@ -906,6 +996,9 @@ export function bancoFalso(): BancoFalso {
         efeito.fee_aplicada_usd = taxaTotalL;
         efeito.applied_quote = quoteNovo;
         efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + semQtd;
+        // ⚠️ Invariante F (a liquidação é sempre de VENDA).
+        marcarContabilidade(it.id, it.session_id,
+          taxaOpacaL && Number(it.filled_qty ?? 0) > 0);
         return { data: { ok: true, motivo: "ajuste_sem_quantidade", aplicado_qty: 0,
                          custo_removido: 0, fechou: false, pnl_realizado: semQtd,
                          taxa_delta: taxaDeltaL, taxa_nao_precificada: taxaOpacaL }, error: null };
@@ -972,6 +1065,9 @@ export function bancoFalso(): BancoFalso {
       efeito.custo_removido_usd = custoAcumL;
       efeito.fee_aplicada_usd = Math.max(Number(efeito.fee_aplicada_usd ?? 0), taxaTotalL);
       efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + realizado;
+      // ⚠️ Invariante F (a liquidação é sempre de VENDA).
+      marcarContabilidade(it.id, it.session_id,
+        taxaOpacaL && Number(it.filled_qty ?? 0) > 0);
       return { data: { ok: true, motivo: "aplicado", aplicado_qty: delta,
                        aplicado_quote: deltaQuote, custo_removido: custoRemovido,
                        fechou, base, pnl_realizado: realizado,

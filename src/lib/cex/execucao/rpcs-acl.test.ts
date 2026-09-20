@@ -55,6 +55,8 @@ const CATALOGO: Record<string, string> = {
   autopilot_reservar_venda_do_intent: "0064_autopilot_projecao_de_posicao.sql",
   autopilot_reservar_exposicao_do_intent: "0064_autopilot_projecao_de_posicao.sql",
   autopilot_liberar_reserva_do_intent: "0064_autopilot_projecao_de_posicao.sql",
+  // Invariante F: a bandeira durável de contabilidade incompleta.
+  autopilot_marcar_contabilidade: "0064_autopilot_projecao_de_posicao.sql",
   autopilot_liquidar_saida_armada: "0064_autopilot_projecao_de_posicao.sql",
 };
 

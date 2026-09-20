@@ -234,6 +234,9 @@ export async function ingerirTrades(
     // passada pode fechar a cobertura. Nunca divergência fatal.
     const adiado = r.porque === "cobertura_incompleta"
       || r.porque === "cobertura_fee_incompleta"
+      // ⚠️ Invariante Q: sintético que carrega RECEBIDO também é fato, e sem
+      // trade novo único a substituição não o apaga. Adiado, nunca fatal.
+      || r.porque === "cobertura_quote_incompleta"
       || r.porque === "fee_currency_incompativel";
     return { ok: false, porque: (r.porque ?? "ingestao recusada pelo banco").slice(0, 200),
              adiado };
@@ -245,7 +248,10 @@ export async function ingerirTrades(
 }
 
 export type ResultadoDeSnapshot =
-  | { ok: true; inseridos: number; regrediu: boolean; filledQty?: number; state?: EstadoDoIntent }
+  | { ok: true; inseridos: number; regrediu: boolean; filledQty?: number;
+      /** ⚠️ Invariante Q: o RECEBIDO durável depois da ingestão. Quem liquida
+       *  lê daqui (ou relendo a linha), nunca da resposta HTTP. */
+      filledQuote?: number; state?: EstadoDoIntent }
   | { ok: false; porque: string };
 
 /**
@@ -257,8 +263,18 @@ export type ResultadoDeSnapshot =
  */
 export async function ingerirSnapshotDaOrdem(
   db: SupabaseClient<Database>, intentId: string, externalOrderId: string | null,
-  s: { cumulativeQty: number; avgPrice: number; cumulativeQuote: number;
-       fee?: number | null; feeCurrency?: string | null; executedAt?: string | null },
+  s: {
+    cumulativeQty: number; avgPrice: number;
+    /**
+     * ⚠️⚠️ INVARIANTE Q — `null` É "NÃO MEDIDO", E É DIFERENTE DE ZERO.
+     *
+     * O ACK de uma limitada traz `filled` e NÃO traz `cost`. Mandar `0` ali é
+     * AFIRMAR que a ordem não recebeu nada — e, com o livro já em 600, isso
+     * passa a ser lido como REGRESSÃO (fail-closed) em vez de silêncio. Quem
+     * chama traduz ausência em `null`.
+     */
+    cumulativeQuote: number | null;
+    fee?: number | null; feeCurrency?: string | null; executedAt?: string | null },
 ): Promise<ResultadoDeSnapshot> {
   const { data, error } = await db.rpc("cex_ingest_order_snapshot", {
     p_intent_id: intentId,
@@ -271,10 +287,12 @@ export async function ingerirSnapshotDaOrdem(
     p_executed_at: s.executedAt ?? null,
   });
   if (error) return { ok: false, porque: error.message.slice(0, 200) };
-  const r = data as { inseridos?: number; regrediu?: boolean; filled_qty?: number; state?: string } | null;
+  const r = data as { inseridos?: number; regrediu?: boolean; filled_qty?: number;
+                      filled_quote?: number; state?: string } | null;
   return {
     ok: true, inseridos: Number(r?.inseridos ?? 0), regrediu: r?.regrediu === true,
     filledQty: r?.filled_qty === undefined ? undefined : Number(r.filled_qty),
+    filledQuote: r?.filled_quote === undefined ? undefined : Number(r.filled_quote),
     state: r?.state as EstadoDoIntent | undefined,
   };
 }

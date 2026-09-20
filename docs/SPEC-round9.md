@@ -359,6 +359,94 @@ taxa:
 O livro de EXECUÇÕES continua certo (é ele que regrediu, para a verdade). O
 que para é a PROJEÇÃO daquele intent, com evento de severidade alta.
 
+### Invariante Q — o recebido tardio tem de entrar no ledger
+
+O A143 manda assentar antes de liquidar, e assentar é
+`cex_ingest_order_snapshot`. A definição herdada da 0059 escreveu a suposição
+errada por extenso — *"fill sem qty só existe para carregar correção de fee,
+nunca quote"* — e a constraint a sustentava
+(`qty > 0 or (qty = 0 and quote_amount = 0)`).
+
+O mundo da ordem limitada não é esse:
+
+```
+snapshot 1:  qty = 0,01   quote = (ausente)      ← ACK: a venue não diz o custo
+snapshot 2:  qty = 0,01   quote = 600            ← os trades materializam
+```
+
+O segundo caía no ramo "qty não cresceu", que só sabia tratar fee. O recebido
+era **descartado**, e `filled_quote` ficava 0 para sempre — que é justamente o
+número que o A143 (liquidação) e o A145 (custo da compra) leem.
+
+**A 0059 não foi tocada.** Ela já pode ter sido aplicada; a 0064 nunca foi. As
+duas RPCs são redefinidas na 0064 com a mesma assinatura e a constraint é
+refeita para `qty >= 0`. O que mudou, e só isto:
+
+| | antes | agora |
+|---|---|---|
+| `p_cumulative_quote` null | `coalesce(…,0)` — ausência virava afirmação de zero | não medido: não move, não acusa |
+| ramo sem crescimento de qty | só delta de fee | delta de fee **e** de quote, numa linha só |
+| chave do ajuste | `ordercum:<ordem>:<qty>:<fee>` | `ordadj:<ordem>:<qty>:<fee>:<quote>` |
+| `regrediu` | só quantidade | quantidade **e** recebido medido |
+
+E o que foi preservado: dedupe, fee cumulativa, guarda de moeda, regressão de
+qty, atomicidade — e `synthetic→real`, com uma guarda nova simétrica à de fee.
+`v_sint` soma **qty**, e um ajuste de recebido tem qty zero: um lote todo
+dedupado passava na cobertura, o delete levava o ajuste junto e `filled_quote`
+desabava de 600 para 0 sem um único trade novo. `cobertura_quote_incompleta`
+fecha isso (ADIADO, nunca fatal). Trades reais somando **menos** continuam
+substituindo — o real é fato, e a regressão resultante é pega pelas guardas
+`regressao_de_quote`, com o livro de execuções já correto.
+
+### Invariante F — P&L incompleto não autoriza entrada
+
+`autopilot_taxa_do_intent_em_usd` devolve NULL para moeda não precificável — a
+política do A140, e ela está certa. O erro era o que vinha depois: a taxa
+entrava como zero, o resultado era afirmado como exato, a bandeira virava
+evento, e o cron **comprava**. Para um autopilot real isso é fail-OPEN sobre o
+stop de perda.
+
+Rodando a matriz final, o item 11 revelou um **segundo** motivo com a mesma
+forma: uma venda cujo custo saiu do livro e cujo recebido a venue ainda não
+informou. O A142 manda guardar em `custo_removido_usd` e esperar (certo), mas
+nessa janela `pnl_today` não contém o resultado de um trade **já fechado**.
+Medido: sessão em −49 com stop 50, base de custo 100, venue reportando `filled`
+sem `cost` → `pnl_today` seguia −49, `frozen_until_day` null, portão de entrada
+ABERTO.
+
+O bloqueio é **durável** porque precisa alcançar o navegador, que fala com a
+mesma sessão pela `/api/cex/order` — é a família do A113 outra vez. Duas
+colunas novas na 0064:
+
+- `autopilot_position_effects.taxa_opaca` — por intent, que é quem tem (ou não)
+  taxa precificável;
+- `autopilot_sessions.contabilidade_incompleta_em` — **derivada** das linhas de
+  efeito, nunca escrita por quem chama.
+
+```sql
+contabilidade_incompleta_em = case when exists (
+  select 1 from autopilot_position_effects e
+   where e.session_id = ?
+     and (e.taxa_opaca
+          or (e.side = 'sell' and e.custo_removido_usd > 0
+              and e.applied_quote <= 0)))
+  then coalesce(contabilidade_incompleta_em, now()) else null end
+```
+
+`autopilot_marcar_contabilidade` roda **dentro** das duas RPCs (sete pontos de
+retorno), na mesma transação que moveu o dinheiro — um `update` solto depois
+seria mais uma escrita sem amarra, que é o que o A136 já custou caro.
+
+**Por que não reusar `quarentena_em`:** ela significa "a conta derivou do
+livro". Empilhar os dois num campo só faria o operador ler "deriva" onde há
+conta pendente, e limpar um limparia o outro.
+
+**O bloqueio é só de ENTRADA** — saídas e recovery seguem, pela mesma razão da
+quarentena. E a liberação é **determinável**: a taxa vira precificável, o
+recebido chega, e a coluna é zerada na mesma transação da projeção. A bandeira
+mora no efeito justamente para que destravar um intent não destrave a sessão
+com outro ainda aberto.
+
 ## PARTE 3 — LIMITAÇÕES DECLARADAS
 
 1. **A liquidação da saída armada é transacional (A136), mas ainda depende de

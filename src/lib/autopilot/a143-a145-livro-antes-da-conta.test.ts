@@ -130,7 +130,7 @@ describe("A143 — o fato da corretora entra no LIVRO antes de virar conta", () 
       expiraEm: new Date(Date.now() + 3_600_000).toISOString(),
       congeladaAte: aSessao().frozen_until_day as string | null,
       tradesHoje: 0, maxTradesPorDia: 5, maxTradeUsd: 1_000,
-      conexaoId: "C1", emQuarentena: false,
+      conexaoId: "C1", emQuarentena: false, contabilidadeIncompleta: false,
     });
     expect(portao.ok).toBe(false);
     if (!portao.ok) expect(portao.motivo).toBe("sessao_congelada");

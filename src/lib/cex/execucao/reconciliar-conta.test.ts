@@ -305,8 +305,8 @@ describe("J7 — o hook no cron do autopilot", () => {
      * no `else`.
      */
     expect(CRON).toMatch(
-      /if \(!entradaAutorizadaNaSessao\(\{ emQuarentena: Boolean\(s\.quarentena_em\) \}\)\.ok\) \{\s*entradasLiberadas = false/);
-    const iRamo = CRON.indexOf("entradaAutorizadaNaSessao({ emQuarentena");
+      /entradaAutorizadaNaSessao\(\{\s*emQuarentena: Boolean\(s\.quarentena_em\),[\s\S]{0,160}?\}\);\s*if \(!portaoDeEntrada\.ok\) \{\s*entradasLiberadas = false/);
+    const iRamo = CRON.indexOf("const portaoDeEntrada = entradaAutorizadaNaSessao({");
     const iRec = CRON.indexOf("reconciliarConta(");
     expect(iRamo).toBeGreaterThan(-1);
     // A reconciliação vem DEPOIS, no `else` — sessão em quarentena não relê a conta.

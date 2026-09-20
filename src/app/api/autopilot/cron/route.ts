@@ -971,6 +971,8 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     // ⚠️ Lido aqui, decidido em `entradaAutorizadaNaSessao` — e SÓ sobre
     // entradas. Ver o gate de compra na seção 5b.
     emQuarentena: Boolean(s.quarentena_em),
+    // ⚠️ Lido aqui, decidido em `entradaAutorizadaNaSessao` (invariante F).
+    contabilidadeIncompleta: Boolean(s.contabilidade_incompleta_em),
   });
   if (!sessaoAutoriza.ok) {
     if (sessaoAutoriza.motivo === "sessao_congelada") alertIfNewlyFrozen();
@@ -1040,10 +1042,31 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
    * deriva (a reconciliação abaixo) continua sendo só do cron, que é quem tem
    * a passada de 5 minutos para isso.
    */
-  if (!entradaAutorizadaNaSessao({ emQuarentena: Boolean(s.quarentena_em) }).ok) {
+  const portaoDeEntrada = entradaAutorizadaNaSessao({
+    emQuarentena: Boolean(s.quarentena_em),
+    // ⚠️ Invariante F: lido da linha, não de uma bandeira desta passada — é o
+    // MESMO estado que o navegador enxerga.
+    contabilidadeIncompleta: Boolean(s.contabilidade_incompleta_em),
+  });
+  if (!portaoDeEntrada.ok) {
     entradasLiberadas = false;
-    // Dedup pelo Telegram: o evento já saiu no dia da deriva; repetir a cada 5
-    // minutos afogaria o sinal. A quarentena continua valendo em silêncio.
+    /**
+     * ⚠️ A quarentena já teve o evento dela no dia da deriva e segue em
+     * silêncio (repetir a cada 5 minutos afogaria o sinal). A contabilidade
+     * incompleta é NOVA e precisa aparecer: ela é a diferença entre o stop de
+     * perda estar apertado e estar frouxo, e quem lê o extrato tem de saber
+     * por que o bot parou de comprar.
+     */
+    if (portaoDeEntrada.motivo === "contabilidade_incompleta") {
+      await recordEvent("autopilot_contabilidade_incompleta", { wallet: s.wallet_address, meta: {
+        severity: "high", session: s.id,
+        desde: s.contabilidade_incompleta_em,
+        why: "o P&L realizado desta sessao nao esta completo — taxa que nao da "
+          + "para precificar em USD, ou custo removido sem o recebido que o "
+          + "precifica. ZERO compra autonoma ate a contabilidade voltar a ser "
+          + "determinavel; saidas e recovery seguem liberados.",
+      } });
+    }
   } else {
     const dbConta = getSupabaseAdmin();
     if (dbConta) {

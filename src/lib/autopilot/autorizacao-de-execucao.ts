@@ -78,6 +78,20 @@ export interface EstadoParaExecucao {
    * a razão está no docblock dela.
    */
   emQuarentena: boolean;
+  /**
+   * ⚠️⚠️ INVARIANTE F — A CONTABILIDADE DESTA SESSÃO É AFIRMÁVEL?
+   *
+   * `false` quando o P&L realizado de algum intent foi calculado sem uma taxa
+   * que não deu para precificar em USD (`autopilot_taxa_do_intent_em_usd`
+   * devolvendo null). O fato financeiro está preservado; o NÚMERO não está
+   * completo — e um `pnl_today` incompleto é justamente o que alimenta o stop
+   * de perda diária.
+   *
+   * ⚠️ É DURÁVEL (`autopilot_sessions.contabilidade_incompleta_em`), e tem de
+   * ser: uma bandeira da passada do cron não alcança o navegador, que fala
+   * com a MESMA sessão pela `/api/cex/order`.
+   */
+  contabilidadeIncompleta: boolean;
 }
 
 export type AutorizacaoDeExecucao =
@@ -167,7 +181,10 @@ export function avaliarAutorizacaoDaSessaoParaExecucao(
     tradesRestantesHoje: Math.max(0, estado.maxTradesPorDia - estado.tradesHoje) };
 }
 
-export type MotivoDaRecusaDeEntrada = "sessao_em_quarentena";
+export type MotivoDaRecusaDeEntrada =
+  | "sessao_em_quarentena"
+  /** ⚠️ Invariante F: P&L incompleto não autoriza risco novo. */
+  | "contabilidade_incompleta";
 
 export type AutorizacaoDeEntrada =
   | { ok: true }
@@ -196,12 +213,44 @@ export type AutorizacaoDeEntrada =
  * entrega, em vez de virar uma paridade que não existe.
  */
 export function entradaAutorizadaNaSessao(
-  estado: Pick<EstadoParaExecucao, "emQuarentena">,
+  estado: Pick<EstadoParaExecucao, "emQuarentena" | "contabilidadeIncompleta">,
 ): AutorizacaoDeEntrada {
   if (estado.emQuarentena) {
     return { ok: false, motivo: "sessao_em_quarentena",
       porque: "a conta esta em quarentena por deriva de inventario — "
         + "zero compra autonoma ate conferencia humana; saidas seguem liberadas" };
+  }
+  /**
+   * ⚠️⚠️⚠️ INVARIANTE F — P&L INCOMPLETO NÃO AUTORIZA ENTRADA.
+   *
+   * São DOIS motivos, e os dois deixam `pnl_today` dizendo menos prejuízo do
+   * que houve — que é exatamente o número do stop de perda diária:
+   *
+   *   · TAXA OPACA — a venda realizou e a taxa veio numa moeda que não dá
+   *     para precificar sem inventar cotação. A política do A140 é não
+   *     inventar, e está certa; o erro era o que vinha depois, com a taxa
+   *     entrando como ZERO e o resultado sendo afirmado como exato.
+   *   · CUSTO REMOVIDO SEM RECEBIDO — a posição reduziu, o custo saiu do
+   *     livro, e a corretora ainda não disse por quanto. O A142 manda guardar
+   *     e esperar (certo), mas nessa janela o dia não contém o resultado de um
+   *     trade JÁ FECHADO.
+   *
+   * Nos dois casos, seguir comprando é fail-OPEN sobre o freio.
+   *
+   * ⚠️ SÓ ENTRADAS, pela mesma razão da quarentena: saídas e recovery não
+   * podem ser presos — trancar o cliente numa posição por uma conta pendente
+   * seria trocar um risco por outro maior.
+   *
+   * ⚠️ E DESTRAVA SOZINHA quando a contabilidade volta a ser determinável: a
+   * taxa vira precificável, o recebido chega, e a coluna é zerada na mesma
+   * transação da projeção.
+   */
+  if (estado.contabilidadeIncompleta) {
+    return { ok: false, motivo: "contabilidade_incompleta",
+      porque: "o P&L realizado desta sessao nao esta completo (taxa nao "
+        + "precificavel, ou custo removido sem o recebido correspondente) — o "
+        + "stop de perda esta frouxo enquanto isso. Zero compra autonoma nova; "
+        + "saidas e recovery seguem liberados" };
   }
   return { ok: true };
 }

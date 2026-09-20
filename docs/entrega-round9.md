@@ -1,4 +1,4 @@
-# ENTREGA — ROUND 9 CIRÚRGICO (A131 … A145)
+# ENTREGA — ROUND 9 CIRÚRGICO (A131 … A145 + INVARIANTES Q e F)
 
 **Papel:** implementador. A certificação é do auditor independente.
 **Status máximo declarado:** `FIXED — PENDING INDEPENDENT RETEST`.
@@ -369,6 +369,54 @@ Nada liquidado deixou de virar linha `settled`. O extrato que o dono lê
 afirmava o contrário do evento de severidade alta emitido um instante antes —
 nos dois ramos (fechada e cancelada com parcial).
 
+## 8-SEPTIES. Fechamento da matriz — invariantes Q e F
+
+### Q — o recebido tardio tem de entrar no ledger
+
+O A143 assenta via `cex_ingest_order_snapshot`, e a definição herdada da 0059
+não registrava crescimento de `cumulative_quote` com `cumulative_qty` parada.
+Ela tratava ajuste de **fee**, não de **quote** — e escreveu a suposição por
+extenso: *"fill sem qty só existe para carregar correção de fee, nunca
+quote"*, com a constraint `qty > 0 or (qty = 0 and quote_amount = 0)` a
+sustentar.
+
+A ordem limitada real faz o contrário: ACK com `filled` e sem `cost`, custo
+depois. O segundo snapshot caía no ramo errado e o recebido era descartado —
+`filled_quote` ficava 0 para sempre, que é o número que o A143 e o A145 leem.
+
+**A 0059 não foi tocada** (ela pode já ter sido aplicada). A 0064 refaz a
+constraint (`qty >= 0`) e redefine `cex_ingest_order_snapshot` e
+`cex_ingest_trades` com a mesma assinatura. Preservados: dedupe, fee
+cumulativa, guarda de moeda, regressão de qty, atomicidade, synthetic→real.
+Acrescentados: `p_cumulative_quote` nullable (**ausente ≠ zero**), delta de
+quote no ramo sem crescimento, chave própria do ajuste (`ordadj:`), `regrediu`
+cobrindo o recebido, e `cobertura_quote_incompleta` — porque `v_sint` soma
+**qty** e um ajuste de recebido tem qty zero: sem ela, um lote todo dedupado
+apagava o ajuste e `filled_quote` desabava de 600 para 0 sem nenhum trade novo.
+
+### F — P&L incompleto não autoriza entrada
+
+Taxa em moeda não precificável virava zero na conta, o resultado era afirmado
+como exato, e o cron comprava. Fail-OPEN sobre o stop de perda.
+
+Rodando a matriz final, o item 11 revelou um **segundo** motivo idêntico em
+forma: venda cujo custo saiu do livro e cujo recebido a venue ainda não
+informou. Medido antes do conserto — sessão −49, stop 50, base de custo 100,
+venue com `filled` e sem `cost`: `pnl_today` seguia −49, `frozen_until_day`
+null, portão de entrada **aberto**.
+
+Duas colunas novas na 0064: `autopilot_position_effects.taxa_opaca` (por
+intent) e `autopilot_sessions.contabilidade_incompleta_em` (**derivada** das
+linhas de efeito, nunca escrita por quem chama).
+`autopilot_marcar_contabilidade` roda dentro das duas RPCs, em sete pontos de
+retorno, na mesma transação que moveu o dinheiro.
+
+O bloqueio é **durável** porque precisa alcançar o navegador; é **só de
+entrada** (saídas e recovery seguem); e a liberação é **determinável** — a taxa
+vira precificável, o recebido chega, e a coluna é zerada sozinha. A bandeira
+mora no efeito para que destravar um intent não destrave a sessão com outro
+ainda aberto.
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -405,6 +453,11 @@ específico, todas restauradas:
 | A145: o ramo de compra do ajuste sem quantidade some (falso) | 6 |
 | A145: o mesmo ramo some do SQL | 1 |
 | auditoria: as duas guardas de `regressao_de_quote` somem | 2 |
+| Q: o ajuste volta a não carregar recebido | 10 |
+| Q: a cobertura de quote na substituição some | 1 |
+| F: a taxa opaca deixa de marcar a sessão | 5 |
+| F: o portão volta a ignorar a contabilidade incompleta | 5 |
+| item 11: só a taxa opaca conta (custo sem recebido volta a liberar) | 2 |
 
 ⚠️ A quebra do A136 **não foi detectada na primeira tentativa** — os testes
 cobriam a falha da transação inteira, não o meio efeito. O teste que faltava
@@ -417,7 +470,7 @@ detecção: foi descartada e refeita válida antes de contar.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3778/3778 (247 arquivos)     — baseline do R8 era 3586
+npx vitest run      3806/3806 (249 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo
@@ -475,6 +528,16 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
    tick seguinte.** A varredura de pendências roda antes do laço de sessões e
    cobre o que já está no livro; o que a reconciliação descobrir depois dela
    espera cinco minutos.
+11. **A 0064 redefine duas RPCs da 0059** (`cex_ingest_order_snapshot` e
+    `cex_ingest_trades`) e refaz `cex_fills_qty_check`. Se a 0059 já estiver
+    aplicada em algum ambiente, a 0064 é quem corrige — a 0059 fica como está,
+    com a suposição antiga escrita nela (e um teste que exige que ela continue
+    lá, para a troca ser auditável).
+12. **O bloqueio do invariante F não tem tela de admin.** Ele destrava sozinho
+    quando a contabilidade volta a ser determinável; a "intervenção explícita"
+    prevista é zerar
+    `autopilot_sessions.contabilidade_incompleta_em` à mão. Não foi construída
+    interface para isso nesta rodada.
 10. **O A143 é provado no módulo, não na rota inteira.** O cron nunca foi
     harnessado nesta bancada: a sequência inteira foi extraída para
     `assentamento-da-saida.ts` e é exercitada contra o banco falso; o portão
@@ -504,6 +567,9 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 | A143 | FIXED — PENDING INDEPENDENT RETEST |
 | A144 | FIXED — PENDING INDEPENDENT RETEST |
 | A145 | FIXED — PENDING INDEPENDENT RETEST |
+| Invariante Q | FIXED — PENDING INDEPENDENT RETEST |
+| Invariante F | FIXED — PENDING INDEPENDENT RETEST |
+| matriz item 11 | FIXED — PENDING INDEPENDENT RETEST |
 | auditoria sintético→real | FIXED — PENDING INDEPENDENT RETEST |
 | 0064 | CREATED LOCALLY — NOT APPLIED |
 

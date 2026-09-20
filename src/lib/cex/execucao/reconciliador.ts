@@ -277,7 +277,8 @@ export async function reconciliarIntent(
       const snap = await ingerirSnapshotDaOrdem(db, intent.id, idOrdem, {
         cumulativeQty: executado,
         avgPrice: Number(o.average) > 0 ? Number(o.average) : 0,
-        cumulativeQuote: Number(o.cost) > 0 ? Number(o.cost) : 0,
+        // ⚠️ Invariante Q: ausência é `null`, nunca `0` — ver `intents.ts`.
+        cumulativeQuote: Number(o.cost) > 0 ? Number(o.cost) : null,
         fee: o.fee?.cost ?? null, feeCurrency: o.fee?.currency ?? null,
         executedAt: o.timestamp ? new Date(o.timestamp).toISOString() : null,
       });

@@ -337,6 +337,8 @@ export async function POST(req: NextRequest) {
             maxTradeUsd: sessaoDoPiloto.max_trade_usd,
             conexaoId: sessaoDoPiloto.conexao_id,
             emQuarentena: Boolean(sessaoDoPiloto.quarentena_em),
+            // ⚠️ Lido aqui, decidido em `entradaAutorizadaNaSessao` (invariante F).
+            contabilidadeIncompleta: Boolean(sessaoDoPiloto.contabilidade_incompleta_em),
           }
         : null,
       agoraDaSessao,
@@ -369,6 +371,9 @@ export async function POST(req: NextRequest) {
     if (side === "buy") {
       const entrada = entradaAutorizadaNaSessao({
         emQuarentena: Boolean(sessaoDoPiloto?.quarentena_em),
+        // ⚠️ Invariante F: o bloqueio é DURÁVEL justamente para alcançar este
+        // canal. O cron descobre a taxa opaca; o navegador herda o freio.
+        contabilidadeIncompleta: Boolean(sessaoDoPiloto?.contabilidade_incompleta_em),
       });
       if (!entrada.ok) {
         logSecurity("a130_entrada_em_quarentena", { route: "cex/order" }, "high");
