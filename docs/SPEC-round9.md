@@ -204,6 +204,54 @@ a liquidação resolve a credencial por `intent.conexao_id` (A127) e a RPC confe
 armado + mesmo intent + mesma corretora + mesmo `external_order_id`. Legado sem
 elo: `saida_sem_identidade`, fail-closed.
 
+### A140 / A141 / A139-H — patch cirúrgico final
+
+**A140 — a taxa é cumulativa, e o recovery não tem memória.**
+
+`fee_total` do intent é a taxa ACUMULADA (0059: o valor final independe do
+número de snapshots). A projeção descontava `p_taxa_usd` inteiro a cada
+parcial — 320/taxa 1 e depois 640/taxa 2 fechavam **37** em vez de 38 — e
+recebia esse número de quem chamava. A varredura de pendências não tinha como
+saber dele e projetava com taxa **zero**.
+
+| campo | o que é |
+|---|---|
+| `applied_qty` | quanto da QUANTIDADE já está na posição |
+| `applied_quote` | quanto do RECEBIDO/GASTO já está na posição |
+| `fee_aplicada_usd` | quanta TAXA (USD) já foi descontada do P&L |
+| `pnl_aplicado_usd` | quanto RESULTADO já entrou no `pnl_today` |
+
+```sql
+autopilot_taxa_do_intent_em_usd(fee, moeda, symbol, filled_qty, filled_quote)
+  → estável: o próprio valor
+  → moeda BASE: converte pelo preço do próprio fill
+  → qualquer outra: NULL (não se inventa preço; quem chama registra)
+```
+
+- `v_taxa_delta = v_taxa_total − fee_aplicada_usd`; negativo ⇒
+  `regressao_de_taxa`, fail-closed (aplicar seria lucro artificial);
+- taxa que cresce **sem quantidade nova** tem ramo próprio (`ajuste_de_taxa`),
+  porque a 0059 permite exatamente isso quando os trades reais substituem o
+  sintético — e `delta_qty = 0` jogava a taxa fora;
+- o dia do freeze é `(current_timestamp at time zone 'UTC')::date::text`,
+  **dentro** da transação. `p_hoje` deixou de existir: ele chegava `null` da
+  varredura e o `case` caía no `frozen_until_day` antigo — o stop não congelava;
+- `autopilot_projecoes_pendentes` seleciona por quantidade **ou** taxa pendente.
+
+`projetarEfeitoDoIntent(intentId)` e `liquidarSaidaArmada(intentId, qtd, quote)`
+não recebem mais nada financeiro.
+
+**A141 — rollback da reserva composta.** A composição gastava a vaga diária e,
+recusando na segunda etapa, devolvia `ok:false` com ela consumida — zero ordem
+enviada e `trades_today` um a mais. O rollback passou para dentro do `reservar`
+composto (os dois canais), e `liberar` **relata** se o CAS devolveu:
+`autopilot_rollback_da_vaga_falhou` em severidade alta quando não devolveu.
+
+**A139-H — null também é divergência.** `is distinct from` no lugar de "ambos
+não-nulos e diferentes": posição armada em `EXT-1` com intent sem
+`external_order_id` era exatamente o estado de quem não sabe qual ordem está
+lá fora, e passava.
+
 ## PARTE 3 — LIMITAÇÕES DECLARADAS
 
 1. **A liquidação da saída armada é transacional (A136), mas ainda depende de

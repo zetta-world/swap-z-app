@@ -217,6 +217,19 @@ P&L dentro da transação, elas eram o último escritor financeiro solto.
    chamada devolvera. Um cálculo que ignorasse o marcador inflava os dois lados
    e passava incólume. Agora os números são absolutos (20 + 20 = 40, nunca 360).
 
+## 8-QUATER. Patch cirúrgico final — A140, A141, A139-H
+
+| # | achado | conserto |
+|---|---|---|
+| **A140** | `fee_total` é CUMULATIVA (0059) e era descontada **inteira a cada parcial**: 320/taxa 1 + 640/taxa 2 fechava 37 em vez de 38. E o valor vinha de QUEM CHAMAVA — a varredura de recovery projetava com taxa **zero**, então o mesmo preenchimento rendia P&L diferente conforme quem o descobrisse. O dia do freeze também vinha de fora, e `null` fazia o stop de perda **não congelar** | watermark `fee_aplicada_usd`; a taxa é derivada do livro dentro do banco; o dia é o relógio do banco; ramo `ajuste_de_taxa` para taxa que cresce sem quantidade; `regressao_de_taxa` fail-closed; a varredura enxerga taxa pendente |
+| **A141** | a reserva composta gastava a vaga diária e, recusando na segunda etapa, devolvia só o inventário — **zero ordem enviada e `trades_today` um a mais** | rollback dentro do `reservar` composto, nos dois canais; `liberar` relata se o CAS devolveu, e falhar é evento de severidade alta |
+| **A139-H** | `external_order_id` só comparava quando os dois lados eram não-nulos — posição armada em `EXT-1` com intent sem ordem passava | `is distinct from` |
+
+**O contrato dos quatro watermarks** ficou escrito onde eles são declarados:
+`applied_qty` e `applied_quote` são as entradas da conta, `fee_aplicada_usd` é o
+que já foi descontado, e `pnl_aplicado_usd` é o que a conta produziu. Cada delta
+avança os quatro na mesma transação.
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -240,6 +253,11 @@ específico, todas restauradas:
 | A137: ordem viva "expira" e o compromisso é esquecido | 3 |
 | A138: o P&L é calculado sobre o total, ignorando o marcador | 1 |
 | A139: a liquidação volta a usar a credencial da sessão | 1 |
+| A140: cada parcial desconta a taxa acumulada inteira | 1 |
+| A140: o ajuste só de taxa é ignorado | 1 |
+| A140: o freeze volta a depender do dia que o caller manda | 1 |
+| A141: o rollback intermediário da vaga some | 1 |
+| A139-H: volta a exigir os dois lados não-nulos | 2 |
 
 ⚠️ A quebra do A136 **não foi detectada na primeira tentativa** — os testes
 cobriam a falha da transação inteira, não o meio efeito. O teste que faltava
@@ -248,7 +266,7 @@ foi escrito antes de a quebra ser considerada detectada.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3725/3725 (245 arquivos)     — baseline do R8 era 3586
+npx vitest run      3747/3747 (246 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo
@@ -274,11 +292,11 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
    resolve deixa a posição parcialmente travada** — o sintoma aparece como
    recusa `quantidade_ja_reservada`, e o caminho é a quarentena de intents que
    já existe (`TENTATIVAS_ATE_QUARENTENA`).
-3. **A conversão da taxa continua em TypeScript.** O P&L entra no banco pela
-   mesma transação da posição, mas o valor da taxa em USD é calculado antes
-   (`taxaEmUsd`) porque depende do preço da moeda em que a corretora cobrou.
-   Taxa em moeda não precificável continua entrando como ZERO, com evento —
-   o P&L sai otimista e o stop afrouxa, exatamente como antes.
+3. **A taxa em moeda não precificável continua entrando como ZERO**, agora com
+   bandeira explícita (`taxa_nao_precificada`) que sobe até a telemetria. O P&L
+   sai OTIMISTA e o stop de perda afrouxa — política pré-existente, preservada
+   e sinalizada. A conversão saiu do TypeScript e mora na 0064
+   (`autopilot_taxa_do_intent_em_usd`), com a mesma semântica de `taxaEmUsd`.
 3. **Compra do navegador passou a respeitar o teto de exposição do modo de
    risco** (75/200/400). Antes passava porque nada no servidor olhava — pode
    recusar ordens que a tela mostrava como válidas.
@@ -309,6 +327,9 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 | A137 | FIXED — PENDING INDEPENDENT RETEST |
 | A138 | FIXED — PENDING INDEPENDENT RETEST |
 | A139 | FIXED — PENDING INDEPENDENT RETEST |
+| A139-H | FIXED — PENDING INDEPENDENT RETEST |
+| A140 | FIXED — PENDING INDEPENDENT RETEST |
+| A141 | FIXED — PENDING INDEPENDENT RETEST |
 | 0064 | CREATED LOCALLY — NOT APPLIED |
 
 Round 8 (A127/A128/A129/A125-ABSENCE/A130/A130-B): preservados, sem elevação
