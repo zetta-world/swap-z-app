@@ -182,6 +182,34 @@ export function bancoFalso(): BancoFalso {
      * `greatest(reservado − applied, 0)` enquanto ele puder preencher.
      */
     const MORTOS = new Set(["CANCELED", "FAILED_PRE_SUBMIT"]);
+    /**
+     * ⚠️⚠️ A140 — a taxa acumulada em USD, derivada do LIVRO, e o dia do
+     * "banco". Nenhum dos dois vem de quem chama: era isso que fazia o mesmo
+     * preenchimento render P&L diferente conforme quem o descobrisse.
+     */
+    const ESTAVEIS = new Set(["USDT", "USDC", "USD", "BUSD", "DAI", "TUSD", "FDUSD"]);
+    const taxaEmUsdDoIntent = (it: Linha): number | null => {
+      const fee = Number(it.fee_total ?? 0);
+      if (!(fee > 0)) return 0;
+      const moeda = String(it.fee_currency ?? "").toUpperCase();
+      if (!moeda) return null;
+      if (ESTAVEIS.has(moeda)) return fee;
+      const base = String(it.symbol).replace(/-/g, "/").split("/")[0].toUpperCase();
+      const qty = Number(it.filled_qty ?? 0), quote = Number(it.filled_quote ?? 0);
+      if (moeda === base && qty > 0 && quote > 0) return fee * (quote / qty);
+      return null;
+    };
+    const hojeUtcDoBanco = () => new Date().toISOString().slice(0, 10);
+    const aplicarPnl = (sessionId: unknown, realizado: number) => {
+      if (realizado === 0) return;
+      const ses = sessoes.find((x) => x.id === sessionId);
+      if (!ses) return;
+      const depois = Number(ses.pnl_today ?? 0) + realizado;
+      ses.pnl_today = depois;
+      if (depois <= -Number(ses.daily_loss_stop_usd ?? Infinity)) {
+        ses.frozen_until_day = hojeUtcDoBanco();
+      }
+    };
     const compromissoVivo = (e: Linha, estado: unknown, campo: "reservado_qty" | "reservado_usd") => {
       if (MORTOS.has(String(estado))) return 0;
       const aplicado = campo === "reservado_qty" ? Number(e.applied_qty ?? 0) : Number(e.applied_quote ?? 0);
@@ -193,7 +221,7 @@ export function bancoFalso(): BancoFalso {
         e = { intent_id: it.id, session_id: it.session_id, exchange_id: it.exchange_id,
               base, side: it.side, applied_qty: 0, applied_quote: 0,
               ledger_qty: 0, ledger_quote: 0, reservado_qty: 0, reservado_usd: 0,
-              pnl_aplicado_usd: 0 };
+              fee_aplicada_usd: 0, pnl_aplicado_usd: 0 };
         efeitos.push(e);
       }
       return e;
@@ -632,7 +660,8 @@ export function bancoFalso(): BancoFalso {
       if (!efeito) {
         efeito = { intent_id: it.id, session_id: it.session_id, exchange_id: it.exchange_id,
                    base, side: it.side, applied_qty: 0, applied_quote: 0,
-                   ledger_qty: 0, ledger_quote: 0 };
+                   ledger_qty: 0, ledger_quote: 0, reservado_qty: 0,
+                   reservado_usd: 0, fee_aplicada_usd: 0, pnl_aplicado_usd: 0 };
         efeitos.push(efeito);
       }
       const EPS = 1e-12, RUIDO = 1e-9;
@@ -645,11 +674,34 @@ export function bancoFalso(): BancoFalso {
       }
       const deltaQty = Math.max(noLivro - Number(efeito.applied_qty), 0);
       const deltaQuote = Math.max(Number(it.filled_quote) - Number(efeito.applied_quote), 0);
-      if (deltaQty <= EPS) {
+      // ⚠️ A140: a taxa acumulada tem delta próprio, e pode crescer SEM
+      // quantidade nova (a 0059 permite o ajuste depois).
+      const taxaLida = taxaEmUsdDoIntent(it);
+      const taxaOpaca = taxaLida === null;
+      const taxaTotal = taxaOpaca ? Number(efeito.fee_aplicada_usd ?? 0) : taxaLida!;
+      const taxaDelta = taxaTotal - Number(efeito.fee_aplicada_usd ?? 0);
+      if (taxaDelta < -EPS) {
+        return { data: { ok: false, motivo: "regressao_de_taxa",
+                         aplicado: efeito.fee_aplicada_usd, no_livro: taxaTotal }, error: null };
+      }
+      if (deltaQty <= EPS && taxaDelta <= EPS) {
         efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
         efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
         return { data: { ok: true, motivo: "sem_delta", aplicado_qty: 0,
-                         aplicado_quote: 0, fechou: false }, error: null };
+                         aplicado_quote: 0, fechou: false, pnl_realizado: 0,
+                         taxa_nao_precificada: taxaOpaca }, error: null };
+      }
+      if (deltaQty <= EPS) {
+        // ⚠️ Ajuste SÓ de taxa: quantidade parada, resultado muda.
+        const soTaxa = it.side === "sell" ? -taxaDelta : 0;
+        if (soTaxa !== 0) aplicarPnl(it.session_id, soTaxa);
+        efeito.fee_aplicada_usd = taxaTotal;
+        efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + soTaxa;
+        efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
+        efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+        return { data: { ok: true, motivo: "ajuste_de_taxa", aplicado_qty: 0,
+                         aplicado_quote: 0, fechou: false, pnl_realizado: soTaxa,
+                         taxa_delta: taxaDelta, taxa_nao_precificada: taxaOpaca }, error: null };
       }
 
       const pos = posicoes.find((x) => x.session_id === it.session_id && x.base === base);
@@ -699,18 +751,11 @@ export function bancoFalso(): BancoFalso {
        */
       let realizado = 0;
       if (it.side === "sell" && deltaQuote > 0) {
-        realizado = deltaQuote - custoRemovido - Number(args.p_taxa_usd ?? 0);
-        if (realizado !== 0) {
-          const ses = sessoes.find((x) => x.id === it.session_id);
-          if (ses) {
-            const depois = Number(ses.pnl_today ?? 0) + realizado;
-            ses.pnl_today = depois;
-            if (depois <= -Number(ses.daily_loss_stop_usd ?? Infinity)) {
-              ses.frozen_until_day = args.p_hoje ?? ses.frozen_until_day;
-            }
-          }
-        }
+        // ⚠️ A140: taxa por DELTA, nunca a acumulada inteira.
+        realizado = deltaQuote - custoRemovido - taxaDelta;
+        aplicarPnl(it.session_id, realizado);
       }
+      efeito.fee_aplicada_usd = Math.max(Number(efeito.fee_aplicada_usd ?? 0), taxaTotal);
       // ⚠️ A reserva não precisa ser "solta": o compromisso vivo é
       // `greatest(reservado − applied, 0)`, e `applied` acabou de crescer.
       efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + realizado;
@@ -721,7 +766,8 @@ export function bancoFalso(): BancoFalso {
       return { data: { ok: true, motivo: "aplicado", side: it.side, base,
                        aplicado_qty: deltaQty, aplicado_quote: deltaQuote,
                        custo_removido: custoRemovido, fechou,
-                       pnl_realizado: realizado }, error: null };
+                       pnl_realizado: realizado, taxa_delta: taxaDelta,
+                       taxa_nao_precificada: taxaOpaca }, error: null };
     }
 
     /**
@@ -741,9 +787,27 @@ export function bancoFalso(): BancoFalso {
       // ⚠️ Marcador ANTES da posição: repetir é no-op, não erro.
       const efeito = efeitoDe(it, base);
       const delta = qty - Number(efeito.applied_qty);
-      if (delta <= 1e-12) {
+      const taxaLidaL = taxaEmUsdDoIntent(it);
+      const taxaOpacaL = taxaLidaL === null;
+      const taxaTotalL = taxaOpacaL ? Number(efeito.fee_aplicada_usd ?? 0) : taxaLidaL!;
+      const taxaDeltaL = taxaTotalL - Number(efeito.fee_aplicada_usd ?? 0);
+      if (taxaDeltaL < -1e-12) {
+        return { data: { ok: false, motivo: "regressao_de_taxa",
+                         aplicado: efeito.fee_aplicada_usd, no_livro: taxaTotalL }, error: null };
+      }
+      if (delta <= 1e-12 && taxaDeltaL <= 1e-12) {
         return { data: { ok: true, motivo: "sem_delta", aplicado_qty: 0,
-                         custo_removido: 0, fechou: false, pnl_realizado: 0 }, error: null };
+                         custo_removido: 0, fechou: false, pnl_realizado: 0,
+                         taxa_nao_precificada: taxaOpacaL }, error: null };
+      }
+      if (delta <= 1e-12) {
+        const soTaxa = -taxaDeltaL;
+        aplicarPnl(it.session_id, soTaxa);
+        efeito.fee_aplicada_usd = taxaTotalL;
+        efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + soTaxa;
+        return { data: { ok: true, motivo: "ajuste_de_taxa", aplicado_qty: 0,
+                         custo_removido: 0, fechou: false, pnl_realizado: soTaxa,
+                         taxa_delta: taxaDeltaL, taxa_nao_precificada: taxaOpacaL }, error: null };
       }
       const pos = posicoes.find((x) => x.session_id === it.session_id && x.base === base);
       if (!pos) return { data: { ok: false, motivo: "sem_posicao", base }, error: null };
@@ -766,9 +830,11 @@ export function bancoFalso(): BancoFalso {
       if (it.exchange_id !== pos.exchange_id) {
         return { data: { ok: false, motivo: "corretora_divergente" }, error: null };
       }
-      if (pos.exit_order_id && it.external_order_id
-          && it.external_order_id !== pos.exit_order_id) {
-        return { data: { ok: false, motivo: "ordem_externa_divergente" }, error: null };
+      // ⚠️ Hardening A139: null de qualquer lado TAMBÉM é divergência.
+      if ((it.external_order_id ?? null) !== (pos.exit_order_id ?? null)) {
+        return { data: { ok: false, motivo: "ordem_externa_divergente",
+                         na_posicao: pos.exit_order_id,
+                         no_intent: it.external_order_id }, error: null };
       }
 
       const quote = Number(args.p_quote_recebido ?? 0);
@@ -788,24 +854,17 @@ export function bancoFalso(): BancoFalso {
         pos.exit_intent_id = null;
       }
 
-      // ⚠️⚠️ A138: P&L na MESMA passagem.
-      const realizado = deltaQuote - custoRemovido - Number(args.p_taxa_usd ?? 0);
-      if (realizado !== 0) {
-        const ses = sessoes.find((x) => x.id === it.session_id);
-        if (ses) {
-          const depois = Number(ses.pnl_today ?? 0) + realizado;
-          ses.pnl_today = depois;
-          if (depois <= -Number(ses.daily_loss_stop_usd ?? Infinity)) {
-            ses.frozen_until_day = args.p_hoje ?? ses.frozen_until_day;
-          }
-        }
-      }
+      // ⚠️⚠️ A138/A140: P&L com taxa por delta, e o dia vem do banco.
+      const realizado = deltaQuote - custoRemovido - taxaDeltaL;
+      aplicarPnl(it.session_id, realizado);
       efeito.applied_qty = Math.max(Number(efeito.applied_qty), qty);
       efeito.applied_quote = Math.max(Number(efeito.applied_quote), quote);
+      efeito.fee_aplicada_usd = Math.max(Number(efeito.fee_aplicada_usd ?? 0), taxaTotalL);
       efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + realizado;
       return { data: { ok: true, motivo: "aplicado", aplicado_qty: delta,
                        aplicado_quote: deltaQuote, custo_removido: custoRemovido,
-                       fechou, base, pnl_realizado: realizado }, error: null };
+                       fechou, base, pnl_realizado: realizado,
+                       taxa_delta: taxaDeltaL, taxa_nao_precificada: taxaOpacaL }, error: null };
     }
 
     return { data: null, error: { message: `rpc desconhecida: ${nome}` } };

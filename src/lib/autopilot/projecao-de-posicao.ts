@@ -27,14 +27,18 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type MotivoDaProjecao =
-  | "aplicado" | "sem_delta" | "saida_em_liquidacao"
+  | "aplicado" | "sem_delta" | "saida_em_liquidacao" | "ajuste_de_taxa"
   | "intent_inexistente" | "simulado" | "origem_nao_autonoma" | "sem_sessao"
-  | "regressao" | "sem_posicao" | "erro";
+  | "regressao" | "regressao_de_taxa" | "sem_posicao" | "erro";
 
 export type ResultadoDaProjecao =
-  | { ok: true; motivo: "aplicado" | "sem_delta" | "saida_em_liquidacao";
+  | { ok: true;
+      motivo: "aplicado" | "sem_delta" | "saida_em_liquidacao" | "ajuste_de_taxa";
       aplicadoQty: number; aplicadoQuote: number; custoRemovido: number;
-      fechou: boolean; realizado: number }
+      fechou: boolean; realizado: number;
+      /** ⚠️ A140: a taxa estava em moeda que não dá para precificar. O P&L
+       *  saiu OTIMISTA — quem chama registra, e o stop afrouxa. */
+      taxaNaoPrecificada: boolean }
   | { ok: false; motivo: MotivoDaProjecao; porque: string };
 
 export interface DependenciasDaProjecao {
@@ -55,13 +59,18 @@ function numero(v: unknown): number {
  */
 export async function projetarEfeitoDoIntent(
   intentId: string,
-  opts: { taxaUsd?: number; hoje?: string | null } & DependenciasDaProjecao = {},
+  opts: DependenciasDaProjecao = {},
 ): Promise<ResultadoDaProjecao> {
-  const args = {
-    p_intent_id: intentId,
-    p_taxa_usd: Number.isFinite(opts.taxaUsd ?? 0) ? (opts.taxaUsd ?? 0) : 0,
-    p_hoje: opts.hoje ?? null,
-  };
+  /**
+   * ⚠️⚠️ SÓ O ID — achado A140.
+   *
+   * A taxa e o dia vinham daqui, e a varredura de pendências não tinha como
+   * saber deles: o mesmo preenchimento rendia P&L diferente conforme QUEM o
+   * descobrisse, e `hoje = null` fazia o freeze do stop de perda não
+   * acontecer. Os dois passaram para dentro do banco, que é a única
+   * autoridade que o caminho imediato e o recovery compartilham.
+   */
+  const args = { p_intent_id: intentId };
 
   let bruto: unknown;
   try {
@@ -87,16 +96,18 @@ export async function projetarEfeitoDoIntent(
       porque: `projecao recusada: ${motivo}${r.no_livro !== undefined
         ? ` (aplicado ${String(r.aplicado)}, no livro ${String(r.no_livro)})` : ""}` };
   }
+  const motivo = r.motivo === "sem_delta" ? "sem_delta" as const
+               : r.motivo === "saida_em_liquidacao" ? "saida_em_liquidacao" as const
+               : r.motivo === "ajuste_de_taxa" ? "ajuste_de_taxa" as const
+               : "aplicado" as const;
   return {
-    ok: true,
-    motivo: r.motivo === "sem_delta" ? "sem_delta"
-          : r.motivo === "saida_em_liquidacao" ? "saida_em_liquidacao"
-          : "aplicado",
+    ok: true, motivo,
     aplicadoQty: numero(r.aplicado_qty),
     aplicadoQuote: numero(r.aplicado_quote),
     custoRemovido: numero(r.custo_removido),
     fechou: r.fechou === true,
     realizado: numero(r.pnl_realizado),
+    taxaNaoPrecificada: r.taxa_nao_precificada === true,
   };
 }
 
@@ -153,26 +164,20 @@ export async function projecoesPendentes(
  * disso.
  */
 export type ResultadoDaLiquidacao =
-  | { ok: true; motivo: "aplicado" | "sem_delta";
-      aplicadoQty: number; custoRemovido: number; fechou: boolean; realizado: number }
+  | { ok: true; motivo: "aplicado" | "sem_delta" | "ajuste_de_taxa";
+      aplicadoQty: number; custoRemovido: number; fechou: boolean;
+      realizado: number; taxaNaoPrecificada: boolean }
   | { ok: false; motivo: string; porque: string };
 
 export async function liquidarSaidaArmada(
   intentId: string, qtdVendida: number, quoteRecebido: number,
-  /**
-   * ⚠️ A138: a taxa em USD e o dia UTC entram porque o P&L realizado é
-   * aplicado NA MESMA transação que reduz a posição. Era uma segunda escrita,
-   * e por isso não tinha exactly-once.
-   */
-  taxaUsd = 0, hoje: string | null = null,
   deps: DependenciasDaProjecao = {},
 ): Promise<ResultadoDaLiquidacao> {
+  // ⚠️ A140: taxa e dia saíram daqui — ver `projetarEfeitoDoIntent`.
   const args = {
     p_intent_id: intentId,
     p_qty_vendida: qtdVendida,
     p_quote_recebido: Number.isFinite(quoteRecebido) ? quoteRecebido : 0,
-    p_taxa_usd: Number.isFinite(taxaUsd) ? taxaUsd : 0,
-    p_hoje: hoje,
   };
   let bruto: unknown;
   try {
@@ -195,10 +200,12 @@ export async function liquidarSaidaArmada(
   }
   return {
     ok: true,
-    motivo: r.motivo === "sem_delta" ? "sem_delta" : "aplicado",
+    motivo: r.motivo === "sem_delta" ? "sem_delta"
+          : r.motivo === "ajuste_de_taxa" ? "ajuste_de_taxa" : "aplicado",
     aplicadoQty: numero(r.aplicado_qty),
     custoRemovido: numero(r.custo_removido),
     fechou: r.fechou === true,
     realizado: numero(r.pnl_realizado),
+    taxaNaoPrecificada: r.taxa_nao_precificada === true,
   };
 }

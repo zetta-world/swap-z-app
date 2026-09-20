@@ -118,7 +118,7 @@ describe("A137 — compromisso vivo não é esquecido por relógio", () => {
     // A antiga preenche tarde e é projetada.
     const linha = banco.intents.find((i) => i.id === antiga)!;
     linha.filled_qty = 0.01; linha.filled_quote = 620; linha.state = "FILLED";
-    await projetarEfeitoDoIntent(antiga, { chamarRpc: chamar, hoje: HOJE });
+    await projetarEfeitoDoIntent(antiga, { chamarRpc: chamar });
 
     // O compromisso da NOVA continua de pé, intacto.
     expect(Number(marcador(nova).reservado_qty)).toBeCloseTo(0.01, 12);
@@ -132,7 +132,7 @@ describe("A137 — compromisso vivo não é esquecido por relógio", () => {
     expect((await reservarVendaDoBot(parcial, 0.01, deps)).ok).toBe(true);
     const linha = banco.intents.find((i) => i.id === parcial)!;
     linha.filled_qty = 0.004; linha.filled_quote = 250;
-    await projetarEfeitoDoIntent(parcial, { chamarRpc: chamar, hoje: HOJE });
+    await projetarEfeitoDoIntent(parcial, { chamarRpc: chamar });
 
     // 0,004 viraram posição reduzida; 0,006 continuam prometidos.
     expect(Number(marcador(parcial).reservado_qty) - Number(marcador(parcial).applied_qty))
@@ -155,18 +155,20 @@ describe("A137 — compromisso vivo não é esquecido por relógio", () => {
 describe("A138 — o P&L entra exatamente uma vez", () => {
   async function posicaoComprada() {
     const compra = intent({ side: "buy", filled_qty: 0.01, filled_quote: 600, state: "FILLED" });
-    await projetarEfeitoDoIntent(compra, { chamarRpc: chamar, hoje: HOJE });
+    await projetarEfeitoDoIntent(compra, { chamarRpc: chamar });
   }
   const sessaoAtual = () => banco.sessoes.find((x) => x.id === "S1")!;
 
   it("⚠️⚠️ venda projetada soma o resultado UMA vez, e repetir não soma de novo", async () => {
     await posicaoComprada();
-    const venda = intent({ filled_qty: 0.01, filled_quote: 640, state: "FILLED" });
-    const primeira = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar, taxaUsd: 1, hoje: HOJE });
+    // ⚠️ A140: a taxa vem do LIVRO (`fee_total`/`fee_currency`), não do caller.
+    const venda = intent({ filled_qty: 0.01, filled_quote: 640, state: "FILLED",
+                           fee_total: 1, fee_currency: "USDT" });
+    const primeira = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar });
     expect(primeira.ok && primeira.realizado).toBeCloseTo(39, 9);   // 640 − 600 − 1
     expect(Number(sessaoAtual().pnl_today)).toBeCloseTo(39, 9);
 
-    const segunda = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar, taxaUsd: 1, hoje: HOJE });
+    const segunda = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar });
     expect(segunda.ok && segunda.motivo).toBe("sem_delta");
     expect(Number(sessaoAtual().pnl_today)).toBeCloseTo(39, 9);
   });
@@ -175,14 +177,14 @@ describe("A138 — o P&L entra exatamente uma vez", () => {
     await posicaoComprada();
     const venda = intent({ filled_qty: 0.01, filled_quote: 640, state: "FILLED" });
     banco.falhas.rpc = "deadlock detected";
-    const r = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar, hoje: HOJE });
+    const r = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar });
     expect(r.ok).toBe(false);
     expect(Number(sessaoAtual().pnl_today)).toBe(0);
     expect(Number(daPosicao()!.base_amount)).toBeCloseTo(0.01, 12);
 
     // E a retentativa aplica os dois, uma vez só.
     delete banco.falhas.rpc;
-    const retry = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar, hoje: HOJE });
+    const retry = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar });
     expect(retry.ok).toBe(true);
     expect(Number(sessaoAtual().pnl_today)).toBeCloseTo(40, 9);
     expect(daPosicao()).toBeUndefined();
@@ -202,13 +204,13 @@ describe("A138 — o P&L entra exatamente uma vez", () => {
      */
     await posicaoComprada();
     const venda = intent({ filled_qty: 0.005, filled_quote: 320, state: "PARTIALLY_FILLED" });
-    const primeira = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar, hoje: HOJE });
+    const primeira = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar });
     expect(primeira.ok && primeira.realizado).toBeCloseTo(20, 9);
     expect(Number(sessaoAtual().pnl_today)).toBeCloseTo(20, 9);
 
     const linha = banco.intents.find((i) => i.id === venda)!;
     linha.filled_qty = 0.01; linha.filled_quote = 640;
-    const segunda = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar, hoje: HOJE });
+    const segunda = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar });
     expect(segunda.ok && segunda.aplicadoQty).toBeCloseTo(0.005, 12);
     expect(segunda.ok && segunda.realizado, "o delta, nunca o recebido inteiro")
       .toBeCloseTo(20, 9);
@@ -218,18 +220,18 @@ describe("A138 — o P&L entra exatamente uma vez", () => {
   it("⚠️⚠️ prejuízo que cruza o stop CONGELA — uma vez", async () => {
     await posicaoComprada();
     const venda = intent({ filled_qty: 0.01, filled_quote: 500, state: "FILLED" });
-    const r = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar, hoje: HOJE });
+    const r = await projetarEfeitoDoIntent(venda, { chamarRpc: chamar });
     expect(r.ok && r.realizado).toBeCloseTo(-100, 9);
     expect(sessaoAtual().frozen_until_day).toBe(HOJE);
     const pnlDepois = Number(sessaoAtual().pnl_today);
 
-    await projetarEfeitoDoIntent(venda, { chamarRpc: chamar, hoje: HOJE });
+    await projetarEfeitoDoIntent(venda, { chamarRpc: chamar });
     expect(Number(sessaoAtual().pnl_today)).toBeCloseTo(pnlDepois, 9);
   });
 
   it("⚠️⚠️ a COMPRA não mexe no P&L", async () => {
     const compra = intent({ side: "buy", filled_qty: 0.01, filled_quote: 600, state: "FILLED" });
-    await projetarEfeitoDoIntent(compra, { chamarRpc: chamar, hoje: HOJE });
+    await projetarEfeitoDoIntent(compra, { chamarRpc: chamar });
     expect(Number(sessaoAtual().pnl_today)).toBe(0);
   });
 
@@ -248,14 +250,14 @@ describe("A139 — a saída armada tem identidade histórica", () => {
 
   it("⚠️⚠️ a liquidação aplica quando a identidade bate inteira", async () => {
     const venda = armada();
-    const r = await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps);
+    const r = await liquidarSaidaArmada(venda, 0.004, 250, deps);
     expect(r.ok && r.aplicadoQty).toBeCloseTo(0.004, 12);
   });
 
   it("⚠️⚠️ intent de OUTRA saída não liquida esta posição", async () => {
     armada();
     const outro = intent({ external_order_id: "EXT-2" });
-    const r = await liquidarSaidaArmada(outro, 0.004, 250, 0, HOJE, deps);
+    const r = await liquidarSaidaArmada(outro, 0.004, 250, deps);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.motivo).toBe("intent_nao_e_a_saida_armada");
     expect(Number(daPosicao()!.base_amount)).toBeCloseTo(0.01, 12);
@@ -269,7 +271,7 @@ describe("A139 — a saída armada tem identidade histórica", () => {
      */
     const venda = intent({ external_order_id: "EXT-DE-OUTRA-CONTA" });
     posicao({ status: "exit_armed", exit_order_id: "EXT-1", exit_intent_id: venda });
-    const r = await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps);
+    const r = await liquidarSaidaArmada(venda, 0.004, 250, deps);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.motivo).toBe("ordem_externa_divergente");
   });
@@ -277,7 +279,7 @@ describe("A139 — a saída armada tem identidade histórica", () => {
   it("⚠️⚠️ LEGADO sem `exit_intent_id` não é adivinhado — mão humana", async () => {
     const venda = intent({ external_order_id: "EXT-1" });
     posicao({ status: "exit_armed", exit_order_id: "EXT-1", exit_intent_id: null });
-    const r = await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps);
+    const r = await liquidarSaidaArmada(venda, 0.004, 250, deps);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.motivo).toBe("saida_sem_identidade");
     expect(Number(daPosicao()!.base_amount)).toBeCloseTo(0.01, 12);

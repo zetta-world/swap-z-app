@@ -226,6 +226,9 @@ describe("A132.5/A132.6 — ninguém conta duas vezes", () => {
     // inventário — continua sendo UMA vaga por ordem, criada na hora.
     expect(CRON).toMatch(/const novaVaga = \(\): VagaDiaria => \{/);
     expect(CRON).toMatch(/const vaga = reservaDaVagaDiaria\(s\.id, today\);/);
-    expect(CRON).toMatch(/await vaga\.liberar\?\.\(\); await devolverReservasDaOrdem\(\);/);
+    // ⚠️ A141: a devolução passou a RELATAR se a vaga voltou, e o rollback da
+    // segunda etapa mora dentro do `reservar`.
+    expect(CRON).toMatch(/const devolveu = await vaga\.liberar\(\);/);
+    expect(CRON).toMatch(/await devolverReservasDaOrdem\(\);/);
   });
 });

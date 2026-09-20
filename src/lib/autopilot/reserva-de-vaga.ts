@@ -34,6 +34,8 @@ import type { ReservaDeRisco } from "@/lib/cex/execucao/executor";
 export type MotivoDaReservaNegada = Extract<ResultadoDaReserva, { ok: false }>["motivo"];
 
 export interface VagaDiaria extends ReservaDeRisco {
+  /** ⚠️ `false` = o CAS não devolveu a vaga. Ver a nota em `liberar`. */
+  liberar: () => Promise<boolean>;
   /**
    * O motivo da ÚLTIMA recusa, ou `null` se a última tentativa deu certo.
    *
@@ -81,12 +83,20 @@ export function reservaDaVagaDiaria(
       motivo = r.motivo;
       return { ok: false as const, porque: `${r.motivo}: ${r.porque}` };
     },
+    /**
+     * ⚠️⚠️ DEVOLVE E DIZ SE DEVOLVEU — achado A141.
+     *
+     * Ela engolia o resultado do compare-and-swap e zerava o estado de
+     * qualquer jeito. Quem faz rollback precisa saber se ele aconteceu: uma
+     * vaga que não voltou é um trade a menos no dia do usuário, em silêncio.
+     */
     liberar: async () => {
       // ⚠️ Sem reserva viva não há o que devolver — e chamar assim mesmo
       // roubaria a vaga de OUTRA ordem que reservou depois.
-      if (vaga === null) return;
-      await liberar(sessionId, hojeUtc, vaga);
-      vaga = null;
+      if (vaga === null) return true;
+      const devolveu = await liberar(sessionId, hojeUtc, vaga);
+      if (devolveu) vaga = null;
+      return devolveu;
     },
     ultimoMotivo: () => motivo,
     vagaViva: () => vaga,

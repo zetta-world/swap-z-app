@@ -749,19 +749,16 @@ export async function POST(req: NextRequest) {
       // e ela é do LIVRO, não do corpo da requisição.
       taxaDoLivro: { total: number | null; moeda: string | null } = { total: null, moeda: null },
     ) => {
-      const taxa = taxaEmUsd(
-        { fee: taxaDoLivro.total != null && taxaDoLivro.moeda
-            ? { cost: taxaDoLivro.total, currency: taxaDoLivro.moeda } : undefined } as CexOrder,
-        0, 0, body.symbol);
-      if (taxa.naoPrecificada) {
+      // ⚠️ A140: a taxa é derivada do LIVRO dentro da RPC, e o dia vem do
+      // relógio do banco. Esta rota só registra quando ela não é precificável.
+      const projecao = await projetarEfeitoDoIntent(intentId);
+      if (projecao.ok && projecao.taxaNaoPrecificada) {
         await recordEvent("autopilot_taxa_nao_precificada", { meta: {
-          pair: body.symbol, ...taxa.naoPrecificada,
+          pair: body.symbol, moeda: taxaDoLivro.moeda ?? "?", valor: taxaDoLivro.total ?? 0,
           why: "taxa em moeda que nao e stable nem a base do par — subtraida como "
             + "ZERO, entao o P&L sai OTIMISTA e o stop de perda afrouxa",
         } });
       }
-      const projecao = await projetarEfeitoDoIntent(intentId,
-        { taxaUsd: taxa.usd, hoje: hojeDoPiloto });
       if (projecao.ok) {
         /**
          * ⚠️⚠️⚠️ O P&L ENTROU NA MESMA TRANSAÇÃO — achado A138.
@@ -900,25 +897,46 @@ export async function POST(req: NextRequest) {
                 const daVaga = await vaga.reservar(intentId);
                 if (!daVaga.ok) return daVaga;
                 intentComReserva = intentId;
+                /**
+                 * ⚠️⚠️⚠️ SE A SEGUNDA ETAPA RECUSA, A PRIMEIRA VOLTA — A141.
+                 *
+                 * A composição consumia a vaga do dia e, recusando a posse ou
+                 * a exposição, devolvia `ok:false` com ela JÁ GASTA. O
+                 * executor não chama `liberar` quando a reserva falha — do
+                 * ponto de vista dele nada foi reservado —, e o caller só
+                 * soltava o inventário. ZERO ordem enviada e `trades_today` um
+                 * a mais: um trade do dia comido por uma ordem inexistente.
+                 */
+                const desfazerVaga = async (porque: string) => {
+                  const devolveu = await vaga.liberar();
+                  await devolverReservasEmVoo();
+                  if (!devolveu) {
+                    await recordEvent("autopilot_rollback_da_vaga_falhou", {
+                      wallet: walletDoPiloto ?? undefined, meta: {
+                        severity: "high", canal: "browser", session: sessaoDoPilotoId,
+                        intent: intentId, porque,
+                        why: "a segunda etapa da reserva recusou e a vaga diaria NAO "
+                          + "voltou. Nenhuma ordem saiu, e o usuario perdeu um trade do dia.",
+                      } });
+                  }
+                  return { ok: false as const, porque };
+                };
                 if (side === "sell") {
                   const posse = await reservarVendaDoBot(intentId, quantidadeAutorizada);
-                  if (!posse.ok) return { ok: false as const, porque: `posse: ${posse.porque}` };
+                  if (!posse.ok) return desfazerVaga(`posse: ${posse.porque}`);
                   if (posse.limitada || posse.qtd + 1e-12 < quantidadeAutorizada) {
-                    return { ok: false as const,
-                      porque: "posse: a bolsa foi prometida a outra venda entre a "
-                        + "autorizacao e a reserva — nada sai" };
+                    return desfazerVaga("posse: a bolsa foi prometida a outra venda entre "
+                      + "a autorizacao e a reserva — nada sai");
                   }
                 } else if (entradaReservavelUsd != null) {
                   const exposicao = await reservarExposicaoDoBot(
                     intentId, entradaReservavelUsd, tetoDeExposicaoUsd);
-                  if (!exposicao.ok) {
-                    return { ok: false as const, porque: `exposicao: ${exposicao.porque}` };
-                  }
+                  if (!exposicao.ok) return desfazerVaga(`exposicao: ${exposicao.porque}`);
                 }
                 return { ok: true as const };
               },
               liberar: async () => {
-                await vaga.liberar?.();
+                await vaga.liberar();
                 await devolverReservasEmVoo();
               },
             };

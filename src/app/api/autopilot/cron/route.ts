@@ -172,9 +172,10 @@ async function credenciaisDaSaidaArmada(
 
 async function liquidarNoLivro(
   pos: AutopilotPositionRow, order: CexOrder, vendido: number,
-  taxaUsd: number, hoje: string,
-): Promise<{ aplicou: boolean; custoRemovido: number; fechou: boolean; realizado: number }> {
-  const nada = { aplicou: false, custoRemovido: 0, fechou: false, realizado: 0 };
+): Promise<{ aplicou: boolean; custoRemovido: number; fechou: boolean;
+             realizado: number; taxaNaoPrecificada: boolean }> {
+  const nada = { aplicou: false, custoRemovido: 0, fechou: false,
+                 realizado: 0, taxaNaoPrecificada: false };
   const avisar = async (porque: string, extra: Record<string, unknown> = {}) => {
     await recordEvent("autopilot_liquidacao_nao_aplicada", { meta: {
       severity: "high", session: pos.session_id, base: pos.base, porque, ...extra,
@@ -201,14 +202,17 @@ async function liquidarNoLivro(
     return nada;
   }
   const quote = Number((order as unknown as { cost?: unknown }).cost);
+  // ⚠️ A140: taxa e dia saíram daqui — a RPC os deriva do livro e do relógio
+  // do banco, para o caminho imediato e o recovery darem o mesmo número.
   const r = await liquidarSaidaArmada(
-    intentDaSaida, vendido, Number.isFinite(quote) ? quote : 0, taxaUsd, hoje);
+    intentDaSaida, vendido, Number.isFinite(quote) ? quote : 0);
   if (!r.ok) {
     await avisar(r.porque, { intent: intentDaSaida, motivo: r.motivo });
     return nada;
   }
   return { aplicou: r.motivo === "aplicado", custoRemovido: r.custoRemovido,
-           fechou: r.fechou, realizado: r.realizado };
+           fechou: r.fechou, realizado: r.realizado,
+           taxaNaoPrecificada: r.taxaNaoPrecificada };
 }
 
 async function settleArmedExits(
@@ -277,9 +281,7 @@ async function settleArmedExits(
          * metade da conta, sai da MESMA transação que o aplicou. Daqui só vai
          * a taxa convertida, que continua sendo a conversão de sempre.
          */
-        const taxaDaSaida = taxaEmUsd(order, Number(order.cost) > 0 ? Number(order.cost) : 0,
-          Number(order.filled ?? 0), String(pos.pair ?? ""));
-        if (taxaDaSaida.naoPrecificada) await avisarTaxaNaoPrecificada(pos.pair, taxaDaSaida.naoPrecificada);
+
         /**
          * ⚠⚠ IDEM AQUI (A14): uma ordem limitada pode fechar PARCIALMENTE
          * preenchida, e apagar a linha deixaria o resto órfão para sempre.
@@ -317,7 +319,11 @@ async function settleArmedExits(
          */
         // ⚠️ A136/A138: posição, marcador e P&L numa transação só. `sobra`
         // continua sendo calculada porque a NOTA da passada fala do resto.
-        const liq = await liquidarNoLivro(pos, order, vendido, taxaDaSaida.usd, today);
+        const liq = await liquidarNoLivro(pos, order, vendido);
+        if (liq.taxaNaoPrecificada) {
+          await avisarTaxaNaoPrecificada(pos.pair,
+            { moeda: String(order.fee?.currency ?? "?"), valor: Number(order.fee?.cost ?? 0) });
+        }
         const realized = liq.aplicou ? liq.realizado : null;
         realizedDelta += liq.realizado;
         logOperation({ walletAddress: s.wallet_address, kind: "autopilot_cex", chain: s.exchange_id, pair: pos.pair, side: "sell", volumeUsd: sobra.custoRemovido || null, pnlUsd: realized, status: "settled", route: "cron", ref: `${exchange}:${pos.exit_order_id}` });
@@ -337,19 +343,18 @@ async function settleArmedExits(
         const jaVendido = Number(order.filled);
         if (jaVendido > 0) {
           // ⚠️ A138: idem — P&L e posição na mesma transação da liquidação.
-          const taxaDoCancelado = taxaEmUsd(order, Number(order.cost) > 0 ? Number(order.cost) : 0,
-            jaVendido, String(pos.pair ?? ""));
-          if (taxaDoCancelado.naoPrecificada) {
-            await avisarTaxaNaoPrecificada(pos.pair, taxaDoCancelado.naoPrecificada);
-          }
+
           const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), jaVendido);
           /**
            * ⚠️ A136 aqui também: o que já executou é fato imutável, e a
            * mesma transação que o aplica reabre o remanescente (a RPC volta o
            * status para `open` e solta o elo com a ordem morta).
            */
-          const liqCancel = await liquidarNoLivro(
-            pos, order, jaVendido, taxaDoCancelado.usd, today);
+          const liqCancel = await liquidarNoLivro(pos, order, jaVendido);
+          if (liqCancel.taxaNaoPrecificada) {
+            await avisarTaxaNaoPrecificada(pos.pair,
+              { moeda: String(order.fee?.currency ?? "?"), valor: Number(order.fee?.cost ?? 0) });
+          }
           const realized = liqCancel.aplicou ? liqCancel.realizado : null;
           realizedDelta += liqCancel.realizado;
           rows.push({ session_id: s.id, wallet_address: s.wallet_address, exchange_id: s.exchange_id, symbol: pos.pair, side: "sell", status: "settled", order_id: pos.exit_order_id, notional_usd: realized ?? null, reason: `cancelada com ${jaVendido} ja vendido — so o remanescente reabre` });
@@ -1141,23 +1146,51 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
         const daVaga = await vaga.reservar(intentId);
         if (!daVaga.ok) return daVaga;
         intentComReserva = intentId;
+        /**
+         * ⚠️⚠️⚠️ SE A SEGUNDA ETAPA RECUSA, A PRIMEIRA VOLTA — achado A141.
+         *
+         * A composição reservava a vaga do dia e, recusando a posse ou a
+         * exposição, devolvia `ok:false` com a vaga JÁ CONSUMIDA. O executor
+         * não chama `liberar` quando a reserva falha (do ponto de vista dele,
+         * nada foi reservado), e o caller só soltava o inventário. Resultado:
+         * ZERO ordem enviada e `trades_today` um a mais — um trade do dia
+         * comido por uma ordem que nunca existiu.
+         *
+         * O rollback mora aqui porque é aqui que se sabe que houve meia
+         * reserva. Nenhum caller precisa lembrar.
+         */
+        const desfazerVaga = async (porque: string) => {
+          const devolveu = await vaga.liberar();
+          await devolverReservasDaOrdem();
+          if (!devolveu) {
+            await recordEvent("autopilot_rollback_da_vaga_falhou", { wallet: s.wallet_address, meta: {
+              severity: "high", session: s.id, intent: intentId, porque,
+              why: "a segunda etapa da reserva recusou e a vaga diaria NAO voltou. "
+                + "Nenhuma ordem saiu, e o usuario perdeu um trade do dia.",
+            } });
+          }
+          return { ok: false as const, porque };
+        };
         if (qtdReservavel != null) {
           const posse = await reservarVendaDoBot(intentId, qtdReservavel);
-          if (!posse.ok) return { ok: false as const, porque: `posse: ${posse.porque}` };
+          if (!posse.ok) return desfazerVaga(`posse: ${posse.porque}`);
           if (posse.limitada || posse.qtd + 1e-12 < qtdReservavel) {
-            return { ok: false as const,
-              porque: "posse: a bolsa foi prometida a outra venda entre a "
-                + "autorizacao e a reserva — nada sai" };
+            return desfazerVaga("posse: a bolsa foi prometida a outra venda entre a "
+              + "autorizacao e a reserva — nada sai");
           }
         } else if (entradaReservavelUsd != null) {
           const exp = await reservarExposicaoDoBot(
             intentId, entradaReservavelUsd, maxExposureUsd);
-          if (!exp.ok) return { ok: false as const, porque: `exposicao: ${exp.porque}` };
+          if (!exp.ok) return desfazerVaga(`exposicao: ${exp.porque}`);
         }
         return { ok: true as const };
       },
       // ⚠️ Recusa PROVADA devolve as três; UNKNOWN não devolve nenhuma.
-      liberar: async () => { await vaga.liberar?.(); await devolverReservasDaOrdem(); },
+      liberar: async () => {
+        const devolveu = await vaga.liberar();
+        await devolverReservasDaOrdem();
+        return devolveu;
+      },
     };
   };
   /**
@@ -1377,11 +1410,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
             // ⚠️⚠️ A138: a conversão da taxa continua aqui; o P&L entra na
             // MESMA transação da projeção, abaixo. Duas escritas sem nada que
             // as amarrasse era o defeito.
-            const taxaDaVenda = taxaEmUsd(order, Number(order.cost) > 0 ? Number(order.cost) : 0,
-              Number(order.filled ?? 0), String(pos.pair ?? ""));
-            if (taxaDaVenda.naoPrecificada) {
-              await avisarTaxaNaoPrecificada(pos.pair, taxaDaVenda.naoPrecificada);
-            }
+
             /**
              * ⚠⚠ SAÍDA PARCIAL NÃO APAGA A LINHA (A14). Antes, qualquer
              * preenchimento > 0 chamava `closeServerPosition`: vendida uma
@@ -1427,8 +1456,11 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
              * Ela não grava nada.
              */
             const sobra = oQueSobrou(Number(pos.base_amount), Number(pos.cost_usd || 0), vendido);
-            const projecao = await projetarEfeitoDoIntent(exec.intentId,
-              { taxaUsd: taxaDaVenda.usd, hoje: today });
+            const projecao = await projetarEfeitoDoIntent(exec.intentId);
+            if (projecao.ok && projecao.taxaNaoPrecificada) {
+              await avisarTaxaNaoPrecificada(intent.symbol,
+                { moeda: exec.feeCurrency ?? "?", valor: exec.feeTotal ?? 0 });
+            }
             if (!projecao.ok) {
               avisarRegistroPerdido(
                 "saida NAO projetada no livro — o bot segue achando que tem a bolsa que acabou de vender",

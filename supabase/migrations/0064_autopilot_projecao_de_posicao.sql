@@ -77,8 +77,31 @@ create table if not exists public.autopilot_position_effects (
   -- A posição tinha marcador e o resultado não: o P&L era gravado numa
   -- chamada separada. Gravando o P&L e falhando a posição, a passada seguinte
   -- somava o MESMO resultado de novo; falhando o P&L e gravando a posição, o
-  -- débito sumia sem ninguém para retentá-lo. Este campo é o quanto DESTE
-  -- intent já entrou no `pnl_today` da sessão.
+  -- débito sumia sem ninguém para retentá-lo.
+  --
+  -- ⚠️⚠️⚠️ E A TAXA É CUMULATIVA COMO O RESTO — achado A140.
+  --
+  -- `fee_total` do intent é a taxa ACUMULADA da ordem (0059: o valor final
+  -- independe do número de snapshots). Descontá-la inteira a cada parcial
+  -- cobra a mesma taxa duas vezes. Com US$ 600 de custo:
+  --
+  --     parcial 1: recebido 320, taxa acumulada 1 → +19
+  --     parcial 2: recebido 640, taxa acumulada 2 → delta +19 (total 38)
+  --
+  -- Sem watermark, o segundo parcial subtraía 2 de novo e fechava 37.
+  --
+  -- ⚠️ O CONTRATO DOS QUATRO CAMPOS, escrito porque quatro watermarks sem
+  -- contrato é como se volta a errar:
+  --
+  --     applied_qty      quanto da QUANTIDADE do intent já está na posição
+  --     applied_quote    quanto do RECEBIDO/GASTO já está na posição
+  --     fee_aplicada_usd quanta TAXA (em USD) já foi descontada do P&L
+  --     pnl_aplicado_usd quanto RESULTADO já entrou no `pnl_today` da sessão
+  --
+  -- Os três primeiros são as entradas da conta; o quarto é o que ela produziu.
+  -- Cada delta aplicado avança os quatro na MESMA transação, e é por isso que
+  -- repetir uma projeção não move nada.
+  fee_aplicada_usd numeric  not null default 0 check (fee_aplicada_usd >= 0),
   pnl_aplicado_usd numeric  not null default 0,
 
   created_at    timestamptz not null default now(),
@@ -111,13 +134,14 @@ alter table public.autopilot_position_effects enable row level security;
 
 -- ── 3. A PROJEÇÃO ─────────────────────────────────────────────────────────
 create or replace function public.autopilot_projetar_efeito_do_intent(
-  p_intent_id         uuid,
-  -- ⚠️ A138: a taxa em USD e o dia UTC entram porque o P&L realizado é
-  -- aplicado NESTA transação. A conversão da taxa continua sendo a de sempre
-  -- (`taxaEmUsd`), feita por quem chama; o que muda é que o débito na sessão
-  -- deixou de ser uma segunda escrita.
-  p_taxa_usd          numeric default 0,
-  p_hoje              text default null
+  -- ⚠️⚠️ NÃO RECEBE MAIS TAXA NEM DIA — achado A140.
+  --
+  -- A taxa vinha de quem chamava, e a varredura de pendências não tinha como
+  -- saber dela: o mesmo preenchimento rendia P&L diferente conforme quem o
+  -- descobrisse. O dia vinha de quem chamava, e `null` fazia o freeze do stop
+  -- de perda simplesmente não acontecer. Os dois agora saem do banco, que é
+  -- a única autoridade que todos os caminhos compartilham.
+  p_intent_id         uuid
 ) returns jsonb
 language plpgsql
 security definer
@@ -135,6 +159,10 @@ declare
   v_custo_removido numeric;
   v_fechou        boolean := false;
   v_realizado     numeric := 0;
+  v_taxa_total    numeric;
+  v_taxa_delta    numeric := 0;
+  v_taxa_opaca    boolean := false;
+  v_hoje          text;
   v_eps  constant numeric := 1e-12;
   -- Ruído relativo de ponto flutuante ao vender "tudo": 0,1 − 0,1 pode deixar
   -- 1e-17. Mesma convenção de `oQueSobrou` em venda-limitada.ts.
@@ -205,7 +233,32 @@ begin
   v_delta_qty   := greatest(v_i.filled_qty   - v_e.applied_qty,   0);
   v_delta_quote := greatest(v_i.filled_quote - v_e.applied_quote, 0);
 
-  if v_delta_qty <= v_eps then
+  /**
+   * ⚠️⚠️⚠️ A TAXA TEM DELTA PRÓPRIO — achado A140.
+   *
+   * `fee_total` é CUMULATIVA (0059). Descontá-la inteira a cada parcial cobra
+   * duas vezes. E ela pode crescer SEM quantidade nova: a 0059 permite ajuste
+   * de taxa depois, quando os trades reais substituem o sintético. Nesse caso
+   * `delta_qty` é zero e o P&L ainda precisa mudar — por isso o `sem_delta`
+   * abaixo confere as DUAS coisas.
+   */
+  v_taxa_total := public.autopilot_taxa_do_intent_em_usd(
+    v_i.fee_total, v_i.fee_currency, v_i.symbol, v_i.filled_qty, v_i.filled_quote);
+  if v_taxa_total is null then
+    -- ⚠️ Moeda não precificável: não se inventa preço, e não se finge que é
+    -- zero exato. A taxa não entra, e quem chama recebe a bandeira.
+    v_taxa_opaca := true;
+    v_taxa_total := v_e.fee_aplicada_usd;
+  end if;
+  v_taxa_delta := v_taxa_total - v_e.fee_aplicada_usd;
+  if v_taxa_delta < -v_eps then
+    -- ⚠️ REGRESSÃO DE TAXA: aplicar um delta negativo viraria LUCRO
+    -- artificial. Fail-closed, como a regressão de quantidade.
+    return jsonb_build_object('ok', false, 'motivo', 'regressao_de_taxa',
+      'aplicado', v_e.fee_aplicada_usd, 'no_livro', v_taxa_total);
+  end if;
+
+  if v_delta_qty <= v_eps and v_taxa_delta <= v_eps then
     -- ⚠️ O LIVRO AVANÇOU SEM DELTA? Ainda assim é o novo piso da regressão.
     update public.autopilot_position_effects
        set ledger_qty   = greatest(ledger_qty,   v_i.filled_qty),
@@ -213,7 +266,41 @@ begin
            updated_at   = now()
      where intent_id = p_intent_id;
     return jsonb_build_object('ok', true, 'motivo', 'sem_delta',
-      'aplicado_qty', 0, 'aplicado_quote', 0, 'fechou', false);
+      'aplicado_qty', 0, 'aplicado_quote', 0, 'fechou', false,
+      'pnl_realizado', 0, 'taxa_nao_precificada', v_taxa_opaca);
+  end if;
+
+  /**
+   * ⚠️⚠️ AJUSTE SÓ DE TAXA (A140 §7): quantidade parada, taxa nova.
+   *
+   * O livro descobriu a taxa real DEPOIS — e o resultado do dia muda sem que
+   * nada tenha sido vendido a mais. Este ramo existe porque o caminho normal
+   * exige `delta_qty > 0` para tocar a posição, e aqui não há posição a tocar:
+   * só o P&L e os dois watermarks.
+   */
+  if v_delta_qty <= v_eps then
+    if v_i.side = 'sell' then
+      v_realizado := -v_taxa_delta;
+      v_hoje := (current_timestamp at time zone 'UTC')::date::text;
+      update public.autopilot_sessions
+         set pnl_today        = pnl_today + v_realizado,
+             frozen_until_day = case
+               when (pnl_today + v_realizado) <= -daily_loss_stop_usd
+                 then v_hoje else frozen_until_day end,
+             updated_at       = now()
+       where id = v_i.session_id;
+    end if;
+    update public.autopilot_position_effects
+       set fee_aplicada_usd = v_taxa_total,
+           pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
+           ledger_qty       = greatest(ledger_qty,   v_i.filled_qty),
+           ledger_quote     = greatest(ledger_quote, v_i.filled_quote),
+           updated_at       = now()
+     where intent_id = p_intent_id;
+    return jsonb_build_object('ok', true, 'motivo', 'ajuste_de_taxa',
+      'aplicado_qty', 0, 'aplicado_quote', 0, 'fechou', false,
+      'pnl_realizado', v_realizado, 'taxa_delta', v_taxa_delta,
+      'taxa_nao_precificada', v_taxa_opaca);
   end if;
 
   select * into v_pos from public.autopilot_positions
@@ -326,14 +413,23 @@ begin
    * contábil novo.
    */
   if v_i.side = 'sell' and v_delta_quote > 0 then
-    v_realizado := v_delta_quote - coalesce(v_custo_removido, 0) - coalesce(p_taxa_usd, 0);
+    -- ⚠️ TAXA POR DELTA (A140), não a acumulada inteira.
+    v_realizado := v_delta_quote - coalesce(v_custo_removido, 0) - v_taxa_delta;
     if v_realizado <> 0 then
+      /**
+       * ⚠️⚠️ O DIA É DO BANCO — achado A140 §11.
+       *
+       * Ele vinha do caller, e `null` fazia o `case` cair no
+       * `frozen_until_day` antigo: o stop de perda cruzava e NÃO congelava. A
+       * varredura de pendências chamava exatamente assim. Agora fill imediato,
+       * fill tardio e recovery usam a mesma autoridade temporal.
+       */
+      v_hoje := (current_timestamp at time zone 'UTC')::date::text;
       update public.autopilot_sessions
          set pnl_today        = pnl_today + v_realizado,
              frozen_until_day = case
                when (pnl_today + v_realizado) <= -daily_loss_stop_usd
-                 then coalesce(p_hoje, frozen_until_day)
-               else frozen_until_day end,
+                 then v_hoje else frozen_until_day end,
              updated_at       = now()
        where id = v_i.session_id;
     end if;
@@ -348,6 +444,9 @@ begin
          applied_quote    = greatest(applied_quote, v_i.filled_quote),
          ledger_qty       = greatest(ledger_qty,    v_i.filled_qty),
          ledger_quote     = greatest(ledger_quote,  v_i.filled_quote),
+         -- ⚠️ A140: a taxa também é watermark. Sem isto, o próximo parcial
+         -- desconta a acumulada inteira outra vez.
+         fee_aplicada_usd = greatest(fee_aplicada_usd, v_taxa_total),
          pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
          updated_at       = now()
    where intent_id = p_intent_id;
@@ -357,10 +456,11 @@ begin
     'side', v_i.side, 'base', v_base,
     'aplicado_qty', v_delta_qty, 'aplicado_quote', v_delta_quote,
     'custo_removido', coalesce(v_custo_removido, 0), 'fechou', v_fechou,
-    'pnl_realizado', v_realizado);
+    'pnl_realizado', v_realizado, 'taxa_delta', v_taxa_delta,
+    'taxa_nao_precificada', v_taxa_opaca);
 end; $$;
 
-comment on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, text) is
+comment on function public.autopilot_projetar_efeito_do_intent(uuid) is
   'A131-C: projeta em autopilot_positions o efeito AINDA NAO APLICADO de um '
   'intent autonomo, numa transacao, por delta cumulativo (ledger - applied). '
   'Idempotente por intent; regressao e venda sem posicao falham FECHADO.';
@@ -411,6 +511,46 @@ comment on column public.autopilot_positions.exit_intent_id is
 -- possivelmente VIVA. Quem encerra um compromisso é o estado do intent —
 -- `CANCELED`/`FAILED_PRE_SUBMIT` provam que nada mais sai; `UNKNOWN`,
 -- `SUBMITTED` e `PARTIALLY_FILLED` não provam nada e seguram o remanescente.
+
+-- ── 3-PRE. A TAXA ACUMULADA EM USD, DERIVADA DO LIVRO (A140) ──────────────
+--
+-- ⚠️⚠️⚠️ A RECUPERAÇÃO NÃO PODE TER MEMÓRIA DA REQUISIÇÃO ORIGINAL.
+--
+-- A taxa em USD era calculada em TypeScript e passada como parâmetro. Quem
+-- chamava do caminho imediato tinha a resposta da corretora na mão; quem
+-- chamava da varredura de pendências, cinco minutos depois, não tinha — e
+-- projetava com taxa ZERO. O mesmo preenchimento produzia P&L diferente
+-- conforme QUEM o descobriu.
+--
+-- Agora a conversão mora aqui, sobre fatos duráveis (`fee_total`,
+-- `fee_currency`, `filled_qty`, `filled_quote` do intent). Fill imediato,
+-- fill tardio e recovery chegam ao mesmo número porque leem a mesma linha.
+--
+-- ⚠️ A SEMÂNTICA É A MESMA DO `taxaEmUsd` DE SEMPRE, inclusive a limitação:
+--   · moeda estável           → o valor é o próprio;
+--   · moeda BASE do par       → converte pelo preço médio do próprio fill;
+--   · qualquer outra          → NÃO se inventa preço. Devolve `null`, e quem
+--                               chama registra — o P&L sai otimista e o stop
+--                               afrouxa, que é a política declarada.
+create or replace function public.autopilot_taxa_do_intent_em_usd(
+  p_fee numeric, p_moeda text, p_symbol text,
+  p_filled_qty numeric, p_filled_quote numeric
+) returns numeric
+language sql immutable as $$
+  select case
+    when p_fee is null or p_fee <= 0 then 0
+    when p_moeda is null or p_moeda = '' then null
+    when upper(p_moeda) in ('USDT','USDC','USD','BUSD','DAI','TUSD','FDUSD') then p_fee
+    when upper(p_moeda) = upper(split_part(replace(p_symbol, '-', '/'), '/', 1))
+         and coalesce(p_filled_qty, 0) > 0 and coalesce(p_filled_quote, 0) > 0
+      then p_fee * (p_filled_quote / p_filled_qty)
+    else null
+  end
+$$;
+
+comment on function public.autopilot_taxa_do_intent_em_usd(numeric, text, text, numeric, numeric) is
+  'A140: taxa acumulada do intent em USD, derivada do livro. NULL = moeda nao '
+  'precificavel — quem chama registra e o P&L sai otimista (politica declarada).';
 
 -- ── 3-BIS-a. O COMPROMISSO VIVO DE UM INTENT (A137) ───────────────────────
 --
@@ -592,10 +732,9 @@ create or replace function public.autopilot_liquidar_saida_armada(
   -- não vem do livro, e existe porque a liquidação acontece ANTES de os fills
   -- serem ingeridos.
   p_qty_vendida numeric,
-  p_quote_recebido numeric,
-  -- ⚠️ A138: taxa em USD e dia UTC — o P&L realizado entra NESTA transação.
-  p_taxa_usd numeric default 0,
-  p_hoje text default null
+  p_quote_recebido numeric
+  -- ⚠️ A140: taxa e dia saíram dos parâmetros. Ela é derivada do livro e ele
+  -- do relógio do banco — o mesmo para liquidação, projeção e recovery.
 ) returns jsonb
 language plpgsql
 security definer
@@ -606,6 +745,8 @@ declare
   v_delta numeric; v_delta_quote numeric; v_realizado numeric := 0;
   v_restante numeric; v_custo_restante numeric; v_custo_removido numeric := 0;
   v_fechou boolean := false;
+  v_taxa_total numeric; v_taxa_delta numeric := 0; v_taxa_opaca boolean := false;
+  v_hoje text;
   v_eps constant numeric := 1e-12;
   v_ruido constant numeric := 1e-9;
 begin
@@ -638,9 +779,43 @@ begin
    where intent_id = p_intent_id for update;
 
   v_delta := p_qty_vendida - v_e.applied_qty;
-  if v_delta <= v_eps then
+  -- ⚠️ A140: a taxa acumulada vem do LIVRO, e tem delta próprio.
+  v_taxa_total := public.autopilot_taxa_do_intent_em_usd(
+    v_i.fee_total, v_i.fee_currency, v_i.symbol, v_i.filled_qty, v_i.filled_quote);
+  if v_taxa_total is null then
+    v_taxa_opaca := true;
+    v_taxa_total := v_e.fee_aplicada_usd;
+  end if;
+  v_taxa_delta := v_taxa_total - v_e.fee_aplicada_usd;
+  if v_taxa_delta < -v_eps then
+    return jsonb_build_object('ok', false, 'motivo', 'regressao_de_taxa',
+      'aplicado', v_e.fee_aplicada_usd, 'no_livro', v_taxa_total);
+  end if;
+  if v_delta <= v_eps and v_taxa_delta <= v_eps then
     return jsonb_build_object('ok', true, 'motivo', 'sem_delta',
-      'aplicado_qty', 0, 'custo_removido', 0, 'fechou', false, 'pnl_realizado', 0);
+      'aplicado_qty', 0, 'custo_removido', 0, 'fechou', false, 'pnl_realizado', 0,
+      'taxa_nao_precificada', v_taxa_opaca);
+  end if;
+  if v_delta <= v_eps then
+    -- ⚠️ Ajuste SÓ de taxa (A140 §7): nada a reduzir, e o P&L muda.
+    v_realizado := -v_taxa_delta;
+    v_hoje := (current_timestamp at time zone 'UTC')::date::text;
+    update public.autopilot_sessions
+       set pnl_today        = pnl_today + v_realizado,
+           frozen_until_day = case
+             when (pnl_today + v_realizado) <= -daily_loss_stop_usd
+               then v_hoje else frozen_until_day end,
+           updated_at       = now()
+     where id = v_i.session_id;
+    update public.autopilot_position_effects
+       set fee_aplicada_usd = v_taxa_total,
+           pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
+           updated_at       = now()
+     where intent_id = p_intent_id;
+    return jsonb_build_object('ok', true, 'motivo', 'ajuste_de_taxa',
+      'aplicado_qty', 0, 'custo_removido', 0, 'fechou', false,
+      'pnl_realizado', v_realizado, 'taxa_delta', v_taxa_delta,
+      'taxa_nao_precificada', v_taxa_opaca);
   end if;
   v_delta_quote := greatest(coalesce(p_quote_recebido, 0) - v_e.applied_quote, 0);
 
@@ -678,10 +853,18 @@ begin
   if v_i.exchange_id <> v_pos.exchange_id then
     return jsonb_build_object('ok', false, 'motivo', 'corretora_divergente');
   end if;
-  if v_pos.exit_order_id is not null
-     and v_i.external_order_id is not null
-     and v_i.external_order_id <> v_pos.exit_order_id then
-    return jsonb_build_object('ok', false, 'motivo', 'ordem_externa_divergente');
+  /**
+   * ⚠️⚠️ NULL TAMBÉM É DIVERGÊNCIA — hardening do A139.
+   *
+   * A condição exigia que os DOIS fossem não-nulos para comparar. Uma posição
+   * armada em `ABC` com o intent sem `external_order_id` passava — e é
+   * exatamente o estado de quem ainda não sabe qual ordem está lá fora. Uma
+   * saída ARMADA tem identidade ou não é liquidada: `is distinct from` cobre
+   * null↔valor nos dois sentidos.
+   */
+  if v_i.external_order_id is distinct from v_pos.exit_order_id then
+    return jsonb_build_object('ok', false, 'motivo', 'ordem_externa_divergente',
+      'na_posicao', v_pos.exit_order_id, 'no_intent', v_i.external_order_id);
   end if;
 
   v_restante := v_pos.base_amount - v_delta;
@@ -706,15 +889,15 @@ begin
      where id = v_pos.id;
   end if;
 
-  -- ⚠️⚠️ A138: o P&L realizado entra na MESMA transação que reduziu a posição.
-  v_realizado := v_delta_quote - v_custo_removido - coalesce(p_taxa_usd, 0);
+  -- ⚠️⚠️ A138/A140: P&L com taxa por DELTA, e o dia vem do banco.
+  v_realizado := v_delta_quote - v_custo_removido - v_taxa_delta;
   if v_realizado <> 0 then
+    v_hoje := (current_timestamp at time zone 'UTC')::date::text;
     update public.autopilot_sessions
        set pnl_today        = pnl_today + v_realizado,
            frozen_until_day = case
              when (pnl_today + v_realizado) <= -daily_loss_stop_usd
-               then coalesce(p_hoje, frozen_until_day)
-             else frozen_until_day end,
+               then v_hoje else frozen_until_day end,
            updated_at       = now()
      where id = v_i.session_id;
   end if;
@@ -722,6 +905,7 @@ begin
   update public.autopilot_position_effects
      set applied_qty      = greatest(applied_qty, p_qty_vendida),
          applied_quote    = greatest(applied_quote, coalesce(p_quote_recebido, 0)),
+         fee_aplicada_usd = greatest(fee_aplicada_usd, v_taxa_total),
          pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
          updated_at       = now()
    where intent_id = p_intent_id;
@@ -729,10 +913,11 @@ begin
   return jsonb_build_object('ok', true, 'motivo', 'aplicado',
     'aplicado_qty', v_delta, 'aplicado_quote', v_delta_quote,
     'custo_removido', v_custo_removido, 'fechou', v_fechou, 'base', v_base,
-    'pnl_realizado', v_realizado);
+    'pnl_realizado', v_realizado, 'taxa_delta', v_taxa_delta,
+    'taxa_nao_precificada', v_taxa_opaca);
 end; $$;
 
-comment on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric, numeric, text) is
+comment on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric) is
   'A136: reduz/fecha a posicao de uma saida armada E avanca o marcador na MESMA '
   'transacao. Antes eram duas escritas, e qualquer ordem delas quebrava '
   'exactly-once.';
@@ -772,7 +957,14 @@ as $$
      and i.session_id is not null
      and i.filled_qty > 0
      and i.updated_at > now() - interval '3 days'
-     and (e.intent_id is null or i.filled_qty > e.applied_qty + 1e-12)
+     -- ⚠️⚠️ A140: quantidade OU taxa pendente. `fee_total` pode crescer sem
+     -- quantidade nova (a 0059 permite o ajuste quando os trades reais
+     -- substituem o sintético), e esse P&L também precisa entrar.
+     and (e.intent_id is null
+          or i.filled_qty > e.applied_qty + 1e-12
+          or coalesce(public.autopilot_taxa_do_intent_em_usd(
+               i.fee_total, i.fee_currency, i.symbol, i.filled_qty, i.filled_quote),
+             e.fee_aplicada_usd) > e.fee_aplicada_usd + 1e-12)
    order by i.updated_at asc
    limit greatest(coalesce(p_limite, 50), 0);
 $$;
@@ -782,9 +974,14 @@ comment on function public.autopilot_projecoes_pendentes(int) is
   'Existe porque FILLED e terminal e o recuperador de intents nao volta nele.';
 
 -- ── 5. ACL — NASCE FECHADA (lição A116) ───────────────────────────────────
-revoke all on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, text)
+revoke all on function public.autopilot_projetar_efeito_do_intent(uuid)
   from public, anon, authenticated;
-grant execute on function public.autopilot_projetar_efeito_do_intent(uuid, numeric, text)
+grant execute on function public.autopilot_projetar_efeito_do_intent(uuid)
+  to service_role;
+
+revoke all on function public.autopilot_taxa_do_intent_em_usd(numeric, text, text, numeric, numeric)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_taxa_do_intent_em_usd(numeric, text, text, numeric, numeric)
   to service_role;
 
 revoke all on function public.autopilot_projecoes_pendentes(int)
@@ -807,9 +1004,9 @@ revoke all on function public.autopilot_liberar_reserva_do_intent(uuid)
 grant execute on function public.autopilot_liberar_reserva_do_intent(uuid)
   to service_role;
 
-revoke all on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric, numeric, text)
+revoke all on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric)
   from public, anon, authenticated;
-grant execute on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric, numeric, text)
+grant execute on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric)
   to service_role;
 
 revoke all on function public.autopilot_compromisso_vivo(numeric, numeric, text)

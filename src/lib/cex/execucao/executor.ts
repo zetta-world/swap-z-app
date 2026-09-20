@@ -150,7 +150,13 @@ export interface ReservaDeRisco {
    * a projeção de uma ordem antiga podia consumir o compromisso de outra nova.
    */
   reservar: (intentId: string) => Promise<{ ok: true } | { ok: false; porque: string }>;
-  liberar?: () => Promise<void>;
+  /**
+   * ⚠️ O RETORNO É IGNORADO AQUI DE PROPÓSITO — o executor não decide nada
+   * com ele. Quem devolve é que precisa saber se a devolução aconteceu (a
+   * vaga diária diz, para o rollback do A141 poder falhar barulhento), e por
+   * isso o tipo aceita qualquer coisa.
+   */
+  liberar?: () => Promise<unknown>;
 }
 
 export type MotivoDeRecusa =

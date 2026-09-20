@@ -33,8 +33,8 @@ const chamar = (nome: string, args: Record<string, unknown>) =>
     return r.data;
   });
 
-const projetar = (intentId: string, opts: { taxaUsd?: number; hoje?: string } = {}) =>
-  projetarEfeitoDoIntent(intentId, { ...opts, chamarRpc: chamar });
+const projetar = (intentId: string) =>
+  projetarEfeitoDoIntent(intentId, { chamarRpc: chamar });
 
 function intent(over: Record<string, unknown> = {}): string {
   const id = `i${banco.intents.length + 1}`;
@@ -333,7 +333,7 @@ describe("⚠️⚠️ SAÍDA ARMADA — achado da revisão adversarial", () => 
     expect((await projetar(venda)).ok && true).toBe(true);   // saida_em_liquidacao
 
     const { liquidarSaidaArmada } = await import("@/lib/autopilot/projecao-de-posicao");
-    const liq = await liquidarSaidaArmada(venda, 0.004, 250, 0, "2026-09-20", { chamarRpc: chamar });
+    const liq = await liquidarSaidaArmada(venda, 0.004, 250, { chamarRpc: chamar });
     expect(liq.ok && liq.aplicadoQty).toBeCloseTo(0.004, 12);
     expect(Number(posicao()!.base_amount)).toBeCloseTo(0.006, 12);
 
@@ -411,8 +411,8 @@ describe("⚠️ o SQL de verdade mantém as mesmas guardas", () => {
   it("⚠️⚠️ a RPC nasce FECHADA (A116) e a tabela também", () => {
     expect(SQL).toMatch(/security definer/);
     expect(SQL).toMatch(/set search_path = public, pg_temp/);
-    expect(SQL).toMatch(/revoke all on function public\.autopilot_projetar_efeito_do_intent\(uuid, numeric, text\)\s*\n?\s*from public, anon, authenticated;/);
-    expect(SQL).toMatch(/grant execute on function public\.autopilot_projetar_efeito_do_intent\(uuid, numeric, text\)\s*\n?\s*to service_role;/);
+    expect(SQL).toMatch(/revoke all on function public\.autopilot_projetar_efeito_do_intent\(uuid\)\s*\n?\s*from public, anon, authenticated;/);
+    expect(SQL).toMatch(/grant execute on function public\.autopilot_projetar_efeito_do_intent\(uuid\)\s*\n?\s*to service_role;/);
     expect(SQL).toMatch(/revoke all on table public\.autopilot_position_effects from public, anon, authenticated;/);
     expect(SQL).toMatch(/alter table public\.autopilot_position_effects enable row level security;/);
   });

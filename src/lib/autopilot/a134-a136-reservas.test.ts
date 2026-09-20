@@ -213,7 +213,7 @@ describe("A136 — marcador e posição avançam juntos, ou não avançam", () =
 
   it("⚠️⚠️ parcial: posição reduzida E marcador avançado na MESMA chamada", async () => {
     const venda = comSaidaArmada();
-    const r = await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps);
+    const r = await liquidarSaidaArmada(venda, 0.004, 250, deps);
     expect(r.ok && r.aplicadoQty).toBeCloseTo(0.004, 12);
     expect(Number(daPosicao()!.base_amount)).toBeCloseTo(0.006, 12);
     expect(Number(daPosicao()!.cost_usd)).toBeCloseTo(360, 9);
@@ -226,7 +226,7 @@ describe("A136 — marcador e posição avançam juntos, ou não avançam", () =
 
   it("⚠️⚠️ total: posição removida E marcador avançado juntos", async () => {
     const venda = comSaidaArmada();
-    const r = await liquidarSaidaArmada(venda, 0.01, 640, 0, HOJE, deps);
+    const r = await liquidarSaidaArmada(venda, 0.01, 640, deps);
     expect(r.ok && r.fechou).toBe(true);
     expect(r.ok && r.custoRemovido).toBeCloseTo(600, 9);
     expect(daPosicao()).toBeUndefined();
@@ -242,7 +242,7 @@ describe("A136 — marcador e posição avançam juntos, ou não avançam", () =
      */
     const venda = comSaidaArmada();
     banco.falhas.rpc = "deadlock detected";
-    const r = await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps);
+    const r = await liquidarSaidaArmada(venda, 0.004, 250, deps);
     expect(r.ok).toBe(false);
     expect(Number(daPosicao()!.base_amount)).toBeCloseTo(0.01, 12);
     expect(banco.efeitos).toHaveLength(0);
@@ -251,10 +251,10 @@ describe("A136 — marcador e posição avançam juntos, ou não avançam", () =
   it("⚠️⚠️ e a retentativa depois da falha converge EXATAMENTE uma vez", async () => {
     const venda = comSaidaArmada();
     banco.falhas.rpc = "deadlock detected";
-    expect((await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps)).ok).toBe(false);
+    expect((await liquidarSaidaArmada(venda, 0.004, 250, deps)).ok).toBe(false);
     delete banco.falhas.rpc;
-    expect((await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps)).ok).toBe(true);
-    const terceira = await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps);
+    expect((await liquidarSaidaArmada(venda, 0.004, 250, deps)).ok).toBe(true);
+    const terceira = await liquidarSaidaArmada(venda, 0.004, 250, deps);
     expect(terceira.ok && terceira.motivo).toBe("sem_delta");
     expect(Number(daPosicao()!.base_amount)).toBeCloseTo(0.006, 12);
   });
@@ -264,7 +264,7 @@ describe("A136 — marcador e posição avançam juntos, ou não avançam", () =
     banco.intents.find((i) => i.id === venda)!.filled_qty = 0.004;
     banco.intents.find((i) => i.id === venda)!.filled_quote = 250;
     const [liq, proj] = await Promise.all([
-      liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps),
+      liquidarSaidaArmada(venda, 0.004, 250, deps),
       projetarEfeitoDoIntent(venda, deps),
     ]);
     expect(liq.ok).toBe(true);
@@ -282,7 +282,7 @@ describe("A136 — marcador e posição avançam juntos, ou não avançam", () =
      * estava — é o que torna a retentativa possível.
      */
     const venda = intentDeVenda({ external_order_id: "EXT-ARMADA" });   // sem posição
-    const r = await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps);
+    const r = await liquidarSaidaArmada(venda, 0.004, 250, deps);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.motivo).toBe("sem_posicao");
     const marcador = banco.efeitos.find((e) => e.intent_id === venda);
@@ -291,7 +291,7 @@ describe("A136 — marcador e posição avançam juntos, ou não avançam", () =
 
     // E quando a posição aparece ARMADA com este intent, ela aplica normalmente.
     posicao({ status: "exit_armed", exit_order_id: "EXT-ARMADA", exit_intent_id: venda });
-    const segunda = await liquidarSaidaArmada(venda, 0.004, 250, 0, HOJE, deps);
+    const segunda = await liquidarSaidaArmada(venda, 0.004, 250, deps);
     expect(segunda.ok && segunda.aplicadoQty).toBeCloseTo(0.004, 12);
     expect(Number(daPosicao()!.base_amount)).toBeCloseTo(0.006, 12);
   });
@@ -299,9 +299,9 @@ describe("A136 — marcador e posição avançam juntos, ou não avançam", () =
   it("⚠️ manual e simulado não liquidam posição do bot", async () => {
     posicao({ status: "exit_armed", exit_order_id: "EXT-ARMADA" });
     const manual = intentDeVenda({ origin: "manual", autonomous: false });
-    expect((await liquidarSaidaArmada(manual, 0.004, 250, 0, HOJE, deps)).ok).toBe(false);
+    expect((await liquidarSaidaArmada(manual, 0.004, 250, deps)).ok).toBe(false);
     const simulado = intentDeVenda({ simulated: true });
-    expect((await liquidarSaidaArmada(simulado, 0.004, 250, 0, HOJE, deps)).ok).toBe(false);
+    expect((await liquidarSaidaArmada(simulado, 0.004, 250, deps)).ok).toBe(false);
     expect(Number(daPosicao()!.base_amount)).toBeCloseTo(0.01, 12);
   });
 });
@@ -343,7 +343,7 @@ describe("⚠️ o SQL sustenta as três propriedades", () => {
     for (const fn of ["autopilot_reservar_venda_do_intent\\(uuid, numeric\\)",
                       "autopilot_reservar_exposicao_do_intent\\(uuid, numeric, numeric\\)",
                       "autopilot_liberar_reserva_do_intent\\(uuid\\)",
-                      "autopilot_liquidar_saida_armada\\(uuid, numeric, numeric, numeric, text\\)"]) {
+                      "autopilot_liquidar_saida_armada\\(uuid, numeric, numeric\\)"]) {
       expect(SQL, fn).toMatch(new RegExp(`revoke all on function public\\.${fn}\\s*\\n?\\s*from public, anon, authenticated;`));
       expect(SQL, fn).toMatch(new RegExp(`grant execute on function public\\.${fn}\\s*\\n?\\s*to service_role;`));
     }

@@ -940,11 +940,12 @@ export interface Database {
        * armada já aplicou direto, e nunca movem a posição.
        */
       autopilot_projetar_efeito_do_intent: {
-        Args: { p_intent_id: string; p_taxa_usd?: number; p_hoje?: string | null };
+        Args: { p_intent_id: string };
         Returns: {
           ok: boolean; motivo?: string; side?: "buy" | "sell"; base?: string;
           aplicado_qty?: number; aplicado_quote?: number;
           custo_removido?: number; fechou?: boolean; pnl_realizado?: number;
+          taxa_delta?: number; taxa_nao_precificada?: boolean;
           aplicado?: number; no_livro?: number; origin?: string;
         };
       };
@@ -976,11 +977,16 @@ export interface Database {
         Returns: { ok: boolean };
       };
       autopilot_liquidar_saida_armada: {
-        Args: { p_intent_id: string; p_qty_vendida: number; p_quote_recebido: number;
-                p_taxa_usd?: number; p_hoje?: string | null };
+        Args: { p_intent_id: string; p_qty_vendida: number; p_quote_recebido: number };
         Returns: { ok: boolean; motivo?: string; aplicado_qty?: number;
                    aplicado_quote?: number; custo_removido?: number;
-                   fechou?: boolean; base?: string; pnl_realizado?: number };
+                   fechou?: boolean; base?: string; pnl_realizado?: number;
+                   taxa_delta?: number; taxa_nao_precificada?: boolean };
+      };
+      autopilot_taxa_do_intent_em_usd: {
+        Args: { p_fee: number | null; p_moeda: string | null; p_symbol: string;
+                p_filled_qty: number; p_filled_quote: number };
+        Returns: number | null;
       };
       autopilot_compromisso_vivo: {
         Args: { p_reservado: number; p_aplicado: number; p_estado: string };
