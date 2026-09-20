@@ -274,6 +274,91 @@ Ramos novos: `ajuste_sem_quantidade` (recebido ou taxa chegando depois) e
 `posicao_ja_encerrada` (fill posterior ao fechamento pelo mesmo intent — receita
 sem custo novo, em vez de `sem_posicao` em laço).
 
+### A143 — assentar antes de liquidar
+
+`settleArmedExits` perguntava à corretora e liquidava na sequência.
+`fetchCexOrderStatus` **não escreve no livro de execuções**, e desde o A140 a
+RPC deriva a taxa do livro. Resultado: a venue dizia `filled=0,01 · cost=580 ·
+fee=2` e a linha do intent seguia `filled_qty=0 · fee_total=null` — a taxa
+entrava como ZERO, o prejuízo chegava menor ao `pnl_today`, e o stop de perda
+diária não disparava **na mesma passada em que o cron compra**.
+
+A ordem agora é quatro passos, num módulo só
+(`src/lib/autopilot/assentamento-da-saida.ts`):
+
+```
+1. perguntar à corretora        (o cron, como sempre)
+2. ingerir o snapshot no livro  (cex_ingest_order_snapshot)
+3. confirmar RELENDO a linha    (intentPorId — o cliente resolve com {error})
+4. liquidar com os números DO LIVRO
+```
+
+A taxa **não** volta a ser autoridade do TypeScript: o passo 4 passa
+`filled_qty`/`filled_quote` duráveis, e a RPC deriva a taxa da mesma linha —
+caminho imediato e recovery chegam ao mesmo número.
+
+**Fail-closed com preço declarado.** Falhando o assentamento: saída fica
+ARMADA (a ingestão é idempotente por `dedupe_key`, a passada seguinte tenta de
+novo), ZERO P&L pela metade, evento em severidade alta, e a sessão **não abre
+entrada nova nesta passada** — `fatosNaoAssentados` entra no mesmo portão de
+`livroLegivelNoSettle`. Falhar na LIQUIDAÇÃO não fecha a sessão: o fato já
+está no livro e a varredura de pendências volta nele.
+
+### A144 — `CANCELED` não desfaz preenchimento parcial
+
+`autopilot_compromisso_vivo` mandava `CANCELED` e `FAILED_PRE_SUBMIT` para
+zero, juntos. Uma limitada que vendeu 0,004 de 0,01 e depois foi cancelada
+liberava a bolsa inteira antes de a projeção aplicar aquele fill — a ordem
+seguinte vendia 0,01 de uma posição que já tinha 0,006. Na compra o mesmo
+buraco furava o teto de exposição.
+
+```sql
+when p_estado = 'FAILED_PRE_SUBMIT' then 0                      -- nada saiu
+when p_estado in ('FILLED','CANCELED')                          -- nada mais SAI
+  then greatest(p_executado - p_aplicado, 0)
+else greatest(p_reservado - p_aplicado, 0)                      -- ainda preenche
+```
+
+`p_executado` é `filled_qty` na venda e `filled_quote` na compra — a mesma
+unidade de `p_aplicado`. A assinatura de três argumentos é derrubada com
+`drop function if exists` para não sobreviver como overload.
+
+### A145 — o custo da compra que chegou atrasado
+
+O ramo `ajuste_sem_quantidade` tratava só a venda. Numa COMPRA ele avançava
+`applied_quote` e ia embora: o marcador dizia "600 aplicados" e
+`autopilot_positions.cost_usd` continuava ZERO. É o caso comum — ACK sem
+`cost`, quantidade cheia, dinheiro só nos trades depois.
+
+Estrago permanente: exposição subavaliada (o bot compra mais do que pode) e a
+venda futura calculando `recebido − 0 − taxa`, lucro inventado do tamanho da
+compra. Agora o delta de quote entra em `cost_usd` (e em `entry_price`), **sem
+tocar em `base_amount`**, na mesma transação que marca o quote como aplicado.
+Sem posição onde entrar: `sem_posicao_para_custo`, fail-closed **visível**, e o
+marcador NÃO avança — absorver antes da escrita é o defeito do A136.
+
+### Auditoria obrigatória — sintético → real
+
+`cex_ingest_trades` substitui os fills sintéticos pelos reais. Quando o
+sintético estimou ALTO (ACK 600, trades 580), `filled_quote` CAI com
+`filled_qty` parado. Dois `greatest()` escondiam a queda, e na VENDA isso
+mantinha o resultado calculado sobre um recebido que não existiu — **US$ 20
+otimista**, exatamente o número que alimenta o stop de perda.
+
+Não é corrigido para baixo automaticamente: a conta acumulada do A142 saberia
+aplicar delta negativo de P&L, mas a POSIÇÃO não sabe desfazer (na compra o
+`cost_usd` já somou, e a linha pode já ter sido apagada). Corrigir metade da
+conta é pior que parar. Duas guardas novas, simétricas às de quantidade e
+taxa:
+
+| onde | condição | motivo |
+|------|----------|--------|
+| `autopilot_projetar_efeito_do_intent` | `filled_quote < ledger_quote` | `regressao_de_quote` |
+| `autopilot_liquidar_saida_armada` | `p_quote_recebido < applied_quote` | `regressao_de_quote` |
+
+O livro de EXECUÇÕES continua certo (é ele que regrediu, para a verdade). O
+que para é a PROJEÇÃO daquele intent, com evento de severidade alta.
+
 ## PARTE 3 — LIMITAÇÕES DECLARADAS
 
 1. **A liquidação da saída armada é transacional (A136), mas ainda depende de
@@ -286,5 +371,17 @@ sem custo novo, em vez de `sem_posicao` em laço).
 3. **A 0064 nunca foi aplicada.** O comportamento da RPC está provado contra o
    banco falso (que a reproduz) e por travas estruturais sobre o SQL. Não há
    execução real de Postgres nesta bancada.
-4. **P&L continua fora da projeção.** `applySessionPnl` e `realizedFromSell`
-   seguem como estão; o Round 9 uniu o livro de POSIÇÃO, não o de resultado.
+4. **O P&L entrou na projeção (A138) e os writers paralelos foram REMOVIDOS**
+   — `applySessionPnl`, `realizedFromSell`, `recordServerEntry`,
+   `closeServerPosition`, `reduzirServerPosition` e `bumpSessionTrades` viraram
+   lápides que quebram o `tsc` se alguém tentar ressuscitá-los.
+5. **A regressão de `filled_quote` não é corrigida automaticamente** (auditoria
+   sintético→real). Ela para a projeção daquele intent até mão humana. É o
+   preço declarado de não produzir lucro artificial com aparência de conserto.
+6. **O congelamento descoberto pela reconciliação DESTA passada ainda chega no
+   tick seguinte.** A varredura de pendências roda ANTES do laço de sessões e
+   cobre o que já está no livro; o que a reconciliação descobrir depois dela
+   espera cinco minutos.
+7. **`autopilot_compromisso_vivo` mudou de assinatura (A144).** A 0064 nunca
+   foi aplicada, então o `drop function` no topo dela é hipotético — mas está
+   lá para o caso de um rascunho ter sido aplicado em algum ambiente.

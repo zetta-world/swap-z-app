@@ -1,4 +1,4 @@
-# ENTREGA — ROUND 9 CIRÚRGICO (A131 + A131-C + A132 + A133)
+# ENTREGA — ROUND 9 CIRÚRGICO (A131 … A145)
 
 **Papel:** implementador. A certificação é do auditor independente.
 **Status máximo declarado:** `FIXED — PENDING INDEPENDENT RETEST`.
@@ -13,7 +13,7 @@ Nenhum finding está CLOSED. Nada foi aplicado, deployado ou mergeado.
 | Repositório | `zetta-world/swap-z-app` |
 | Branch | **`round9-surgical`** (publicada) |
 | Baseline | `83c50fe3acb8f019cd56ed2018f712cd0f2acf49` (Round 8 final) |
-| HEAD final | `c2f3d82` (+ este documento) |
+| HEAD final | `3b39e08` (+ este documento) |
 
 História **linear e preservada**: nenhum commit do Round 8 foi amendado,
 rebaseado ou reescrito. A branch carrega o Round 8 inteiro abaixo do Round 9.
@@ -27,12 +27,19 @@ rebaseado ou reescrito. A branch carrega o Round 8 inteiro abaixo do Round 9.
 | `1c97be2` | **A131 + A131-C** — livro único + projeção idempotente (migration 0064) |
 | `9ef7f12` | SPEC do Round 9 |
 | `c2f3d82` | correções da revisão adversarial |
+| `c3b9ac8` | **A134 + A135 + A136** — reservas atômicas, liquidação numa transação |
+| `319a973` | **A137 + A138 + A139** — reserva com dono, P&L exactly-once, saída com identidade |
+| `58529e8` | **A140** — taxa acumulada e P&L do recovery, exatamente uma vez |
+| `1f8547e` | **A141 + A139-H** — rollback da reserva composta, null é divergência |
+| `9293056` | **A142** — o recebido também tem delta |
+| `3b39e08` | **A143 + A144 + A145** — assentar antes de liquidar, terminal com fill compromete, custo tardio da compra |
+| `b20e025` `08a3b4d` `34f57f2` `577c587` `e22e50d` | documentação de cada adendo |
 
 ## 3. Diff
 
 ```
 git diff 83c50fe..HEAD --stat
- 28 arquivos · +3480 −260
+ 36 arquivos · +8581 −438
 ```
 
 Migrations:
@@ -278,6 +285,90 @@ de chegada dos fatos deixou de importar.
 mantinha o verde), e o mapeamento de motivos no wrapper caía em `"aplicado"`
 por padrão — foi isso que escondeu o ramo novo no primeiro teste do A142.
 
+## 8-SEXIES. Terceiro adendo — A143, A144, A145
+
+### A143 — a conta era feita sobre um livro que ninguém tinha escrito
+
+`settleArmedExits` perguntava à corretora e liquidava na sequência.
+`fetchCexOrderStatus` **não escreve** em `cex_execution_intents`, e desde o
+A140 a RPC deriva a taxa do LIVRO — e com razão, porque a varredura de
+pendências não tem a resposta HTTP na mão cinco minutos depois. Com o livro
+parado, essa taxa é ZERO:
+
+```
+venue:  filled=0,01 · cost=580 · fee=2
+livro:  filled_qty=0 · filled_quote=0 · fee_total=null
+conta:  580 − custo − 0      ← a taxa sumiu
+```
+
+O prejuízo chegava menor ao `pnl_today`, o stop de perda diária não disparava,
+e o cron seguia para a seção de entrada **na mesma passada**. O freio foi
+furado por um dado que existia e não tinha sido gravado.
+
+A ordem agora é: perguntar → **ingerir** (`cex_ingest_order_snapshot`) →
+**confirmar relendo a linha durável** → liquidar com `filled_qty`/
+`filled_quote` do livro. A taxa NÃO volta a ser autoridade do TypeScript. A
+sequência mora num módulo só (`src/lib/autopilot/assentamento-da-saida.ts`),
+para existir um caminho a testar em vez de uma ordem de chamadas reproduzida à
+mão dentro do cron.
+
+Falhando o assentamento: saída fica ARMADA, ZERO P&L pela metade, evento em
+severidade alta, e a sessão **não abre entrada nova nesta passada**
+(`fatosNaoAssentados` entra no mesmo portão de `livroLegivelNoSettle`).
+Falhar na LIQUIDAÇÃO não fecha a sessão — o fato já está no livro e a varredura
+de pendências volta nele.
+
+### A144 — `CANCELED` não desfaz preenchimento parcial
+
+`autopilot_compromisso_vivo` mandava `CANCELED` e `FAILED_PRE_SUBMIT` para
+zero, juntos:
+
+```
+posição 0,01 · A reservou 0,01, preencheu 0,004, applied 0, CANCELED
+→ compromisso 0 → B via 0,01 disponível → B vendia 0,01
+→ 0,004 + 0,01 = 0,014 vendidos de uma bolsa de 0,01
+```
+
+Na compra o mesmo buraco furava o teto: reserva de 40 com 30 preenchido e
+cancelada liberava os 40 inteiros. Três faixas agora — `FAILED_PRE_SUBMIT` é o
+único zero incondicional; terminal com fill mede o EXECUTADO; estado ainda
+preenchível mede o RESERVADO. Unidade certa em cada lado: `filled_qty` na
+venda, `filled_quote` na compra.
+
+### A145 — a base de custo da compra tardia era perdida para sempre
+
+O ramo `ajuste_sem_quantidade` tratava só a venda. Numa COMPRA ele avançava
+`applied_quote` e ia embora: marcador dizendo "600 aplicados" e `cost_usd`
+em ZERO. É o caso comum — ACK sem `cost`, quantidade cheia, dinheiro só nos
+trades depois. Exposição subavaliada (o bot compra mais do que pode) e a venda
+futura calculando `recebido − 0 − taxa`: lucro inventado do tamanho da compra.
+
+O delta de quote passou a entrar em `cost_usd` (e em `entry_price`) **sem
+tocar em `base_amount`**, na mesma transação que marca o quote como aplicado.
+Sem posição onde entrar: `sem_posicao_para_custo`, fail-closed **visível**, e o
+marcador NÃO avança.
+
+### Auditoria obrigatória — sintético → real
+
+`cex_ingest_trades` substitui os sintéticos pelos reais. Sintético ALTO (ACK
+600, trades 580) faz `filled_quote` CAIR com `filled_qty` parado, e dois
+`greatest()` escondiam a queda — na VENDA isso mantém o resultado calculado
+sobre um recebido que não existiu, **US$ 20 otimista**, que é exatamente o
+número do stop de perda.
+
+Não é corrigido para baixo automaticamente: a conta acumulada do A142 saberia
+aplicar delta negativo de P&L, mas a POSIÇÃO não sabe desfazer. Duas guardas
+novas, simétricas às de quantidade e taxa — `regressao_de_quote` na projeção
+(`filled_quote < ledger_quote`) e na liquidação
+(`p_quote_recebido < applied_quote`). O livro de EXECUÇÕES continua certo; o
+que para é a PROJEÇÃO daquele intent.
+
+### Da minha própria revisão
+
+Nada liquidado deixou de virar linha `settled`. O extrato que o dono lê
+afirmava o contrário do evento de severidade alta emitido um instante antes —
+nos dois ramos (fechada e cancelada com parcial).
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -308,15 +399,25 @@ específico, todas restauradas:
 | A139-H: volta a exigir os dois lados não-nulos | 2 |
 | A142: o recebido sai da decisão de delta | 2 |
 | A142: a liquidação sem recebido lança −custo | 1 |
+| A143: liquidar com a resposta HTTP, sem assentar | 5 |
+| A144: `CANCELED → 0` no banco falso | 2 |
+| A144: `CANCELED → 0` no SQL | 4 |
+| A145: o ramo de compra do ajuste sem quantidade some (falso) | 6 |
+| A145: o mesmo ramo some do SQL | 1 |
+| auditoria: as duas guardas de `regressao_de_quote` somem | 2 |
 
 ⚠️ A quebra do A136 **não foi detectada na primeira tentativa** — os testes
 cobriam a falha da transação inteira, não o meio efeito. O teste que faltava
 foi escrito antes de a quebra ser considerada detectada.
 
+⚠️ A primeira tentativa da quebra do A143 saiu com **type-check sujo**
+(`TS2774`, condição sempre verdadeira). Uma quebra que não compila não é
+detecção: foi descartada e refeita válida antes de contar.
+
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3753/3753 (246 arquivos)     — baseline do R8 era 3586
+npx vitest run      3778/3778 (247 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo
@@ -324,8 +425,8 @@ git diff --check    limpo
 git status --short  limpo
 ```
 
-Nenhum teste foi removido, pulado, comentado ou enfraquecido. Sete travas do
-Round 8 mudaram de invariante junto com o código — **cada uma com o texto
+Nenhum teste foi removido, pulado, comentado ou enfraquecido. Nove travas
+anteriores mudaram de invariante junto com o código — **cada uma com o texto
 anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 
 ## 11. Limitações declaradas
@@ -365,8 +466,22 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 6. **O comportamento da RPC está provado contra o banco falso** (que a
    reproduz) e por travas estruturais sobre o SQL. Não há Postgres nesta
    bancada: nenhuma linha da 0064 foi executada.
-7. **P&L continua fora da projeção.** O Round 9 uniu o livro de POSIÇÃO; o de
-   resultado segue como estava.
+7. **O P&L entrou na projeção (A138)** e os writers paralelos foram REMOVIDOS,
+   com lápides que quebram o `tsc` se alguém tentar ressuscitá-los.
+8. **A regressão de `filled_quote` não é corrigida automaticamente.** Ela PARA
+   a projeção daquele intent até mão humana. É o preço declarado de não
+   produzir lucro artificial com aparência de conserto.
+9. **O congelamento descoberto pela reconciliação DESTA passada ainda chega no
+   tick seguinte.** A varredura de pendências roda antes do laço de sessões e
+   cobre o que já está no livro; o que a reconciliação descobrir depois dela
+   espera cinco minutos.
+10. **O A143 é provado no módulo, não na rota inteira.** O cron nunca foi
+    harnessado nesta bancada: a sequência inteira foi extraída para
+    `assentamento-da-saida.ts` e é exercitada contra o banco falso; o portão
+    de entrada (`fatosNaoAssentados`) é provado por trava estrutural sobre o
+    fonte do cron, e o "ZERO compra" pelo MESMO
+    `avaliarAutorizacaoDaSessaoParaExecucao` que cron e navegador chamam,
+    alimentado com a linha da sessão DEPOIS da liquidação.
 
 ## 12. Status
 
@@ -386,6 +501,10 @@ anterior escrito no lugar**, para a troca ser auditável em vez de silenciosa.
 | A140 | FIXED — PENDING INDEPENDENT RETEST |
 | A141 | FIXED — PENDING INDEPENDENT RETEST |
 | A142 | FIXED — PENDING INDEPENDENT RETEST |
+| A143 | FIXED — PENDING INDEPENDENT RETEST |
+| A144 | FIXED — PENDING INDEPENDENT RETEST |
+| A145 | FIXED — PENDING INDEPENDENT RETEST |
+| auditoria sintético→real | FIXED — PENDING INDEPENDENT RETEST |
 | 0064 | CREATED LOCALLY — NOT APPLIED |
 
 Round 8 (A127/A128/A129/A125-ABSENCE/A130/A130-B): preservados, sem elevação
