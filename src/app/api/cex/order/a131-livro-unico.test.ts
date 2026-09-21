@@ -243,8 +243,41 @@ const POSICAO_DO_BOT = (over: Record<string, unknown> = {}) => ({
   exit_order_id: null, exit_armed_at: null, ...over,
 });
 
+/** Espelha `estado.sessao` na tabela que o portão financeiro relê. */
+function semearSessao(over: Record<string, unknown> = {}) {
+  if (!bancoAtual) return;
+  bancoAtual.sessoes.length = 0;
+  bancoAtual.sessoes.push({
+    id: estado.sessao.id,
+    wallet_address: "0xA131", exchange_id: "binance",
+    is_active: estado.sessao.is_active,
+    expires_at: estado.sessao.expires_at,
+    pnl_today: 0, daily_loss_stop_usd: 500,
+    frozen_until_day: estado.sessao.frozen_until_day,
+    last_reset_day: estado.sessao.last_reset_day,
+    trades_today: estado.sessao.trades_today,
+    max_trades_per_day: estado.sessao.max_trades_per_day,
+    max_trade_usd: estado.sessao.max_trade_usd,
+    conexao_id: estado.sessao.conexao_id,
+    quarentena_em: estado.sessao.quarentena_em,
+    contabilidade_incompleta_em: null,
+    risk_mode: estado.sessao.risk_mode,
+    ...over,
+  });
+}
+
 beforeEach(() => {
   bancoAtual = bancoFalso();
+  /**
+   * ⚠️⚠️ A SESSÃO TAMBÉM VIVE NO BANCO, e não só no mock de
+   * `getSessionStatus`. O portão financeiro do último instante RELÊ a linha
+   * antes de reservar — deixar o banco sem ela faria o arnês representar um
+   * mundo impossível (a rota enxerga a sessão, o banco não).
+   *
+   * `semearSessao` é chamado de novo pelos testes que mexem em `estado.sessao`
+   * depois do `beforeEach`.
+   */
+  semearSessao();
   spies.enviar.mockClear();
   estado.posicao = POSICAO_DO_BOT();
   estado.posicoes = [];
@@ -768,5 +801,98 @@ describe("A141 — a reserva composta não deixa meia reserva de pé", () => {
     expect(r.status).not.toBe(200);
     expect(estado.consultas.some((c) => c.fn === "reservarVendaDoBot")).toBe(false);
     estado.sessao.trades_today = 0;
+  });
+});
+
+/**
+ * ⚠️⚠️⚠️ O NAVEGADOR LIA UM SNAPSHOT — inconsistência do HEAD anterior.
+ *
+ * O relatório afirmava que `autorizarAumentoDeExposicao` lia o estado
+ * financeiro no instante de cada COMPRA "nos dois canais". Era verdade no
+ * cron e FALSO aqui: a rota chamava `avaliarRisco(estadoDaLinha(...))` sobre
+ * a linha capturada no começo da requisição, e entre aquela leitura e o envio
+ * passam preço, exposição, certificado, política, cofre, decrypt, gravação do
+ * intent e as reservas — todos com `await`.
+ *
+ * Nesse intervalo o cron ou o recovery podem aplicar P&L, congelar o dia ou
+ * levantar a contabilidade incompleta. Os testes abaixo mudam o BANCO no meio
+ * da requisição (pela costura de reserva, que roda entre AUTHORIZED e
+ * SUBMITTING) e exigem ZERO chamada à corretora.
+ */
+describe("o navegador relê o estado financeiro no instante da COMPRA", () => {
+  /**
+   * Muda o banco DEPOIS que a requisição começou e ANTES do portão financeiro.
+   * `cex_transicionar` (para AUTHORIZED) roda entre a gravação do intent e a
+   * costura de reserva — que é onde o portão vive.
+   */
+  function mudarOBancoDuranteARequisicao(patch: Record<string, unknown>) {
+    let jaMudou = false;
+    const original = bancoAtual!.cliente.rpc.bind(bancoAtual!.cliente);
+    (bancoAtual!.cliente as unknown as { rpc: unknown }).rpc =
+      async (nome: string, args: Record<string, unknown>) => {
+        if (!jaMudou && nome === "cex_transicionar") {
+          jaMudou = true;
+          Object.assign(bancoAtual!.sessoes[0], patch);
+        }
+        return original(nome as never, args as never);
+      };
+    return () => jaMudou;
+  }
+  const bloqueada = () =>
+    estado.eventos.some((e) => e.nome === "autopilot_entrada_bloqueada_no_instante");
+
+  it("browser_stale_session_recovery_freeze_blocks_buy", async () => {
+    // T0 — a requisição começa com a sessão saudável: −49, sem freeze.
+    semearSessao({ pnl_today: -49, daily_loss_stop_usd: 50, frozen_until_day: null });
+    // T1 — no meio da requisição, o recovery aplica −2 e congela o dia.
+    const mudou = mudarOBancoDuranteARequisicao({
+      pnl_today: -51, frozen_until_day: estado.utcDayKey(),
+    });
+
+    const r = await POST(req({ side: "buy", amount: 0.2 }));
+    expect(mudou(), "a corrida precisa ter acontecido").toBe(true);
+    // ⚠️ T2 — ZERO chamada à corretora, e o motivo é o estado de AGORA.
+    expect(spies.enviar).not.toHaveBeenCalled();
+    expect(r.status).toBeGreaterThanOrEqual(400);
+    expect(bloqueada(), "o portão do último instante tem de ter recusado").toBe(true);
+  });
+
+  it("browser_stale_session_contabilidade_incompleta_blocks_buy", async () => {
+    semearSessao({ pnl_today: 0, daily_loss_stop_usd: 500,
+                   contabilidade_incompleta_em: null });
+    const mudou = mudarOBancoDuranteARequisicao({
+      contabilidade_incompleta_em: new Date().toISOString(),
+    });
+
+    const r = await POST(req({ side: "buy", amount: 0.2 }));
+    expect(mudou()).toBe(true);
+    expect(spies.enviar).not.toHaveBeenCalled();
+    expect(r.status).toBeGreaterThanOrEqual(400);
+    expect(bloqueada()).toBe(true);
+  });
+
+  it("⚠️ controle positivo: estado saudável, a COMPRA ATRAVESSA o portão", async () => {
+    /**
+     * ⚠️ Neste fixture uma COMPRA nunca chega à venue: ela para na autorização
+     * final do A110 no banco (RPC 0060), que o arnês não monta. O que se mede
+     * aqui é que o portão financeiro NÃO é um "não" universal — a ordem
+     * saudável passa por ele e segue até a reserva e a autorização.
+     */
+    semearSessao({ pnl_today: 0, daily_loss_stop_usd: 500,
+                   frozen_until_day: null, contabilidade_incompleta_em: null });
+    await POST(req({ side: "buy", amount: 0.2 }));
+    expect(bloqueada(), "o portão não pode recusar um estado saudável").toBe(false);
+    // ⚠️ E ela avançou: a reserva foi tomada e depois devolvida pela recusa
+    // PROVADA da autorização — prova de que passou do portão.
+    expect(estado.devolucoes.some((d) => d.tipo === "intent")).toBe(true);
+  });
+
+  it("⚠️⚠️ a VENDA não é presa pelo portão — ela reduz risco", async () => {
+    semearSessao({ pnl_today: -49, daily_loss_stop_usd: 50,
+                   frozen_until_day: estado.utcDayKey(),
+                   contabilidade_incompleta_em: new Date().toISOString() });
+    // Congelada E com contabilidade incompleta; a saída não é barrada por ELE.
+    await POST(req({ side: "sell", amount: 0.005 }));
+    expect(bloqueada()).toBe(false);
   });
 });

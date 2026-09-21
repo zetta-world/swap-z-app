@@ -21,7 +21,9 @@ import { reservaDaVagaDiaria } from "@/lib/autopilot/reserva-de-vaga";
 import {
   avaliarAutorizacaoDaSessaoParaExecucao, entradaAutorizadaNaSessao, tetoEfetivoDaOrdem,
 } from "@/lib/autopilot/autorizacao-de-execucao";
-import { avaliarRisco, estadoDaLinha } from "@/lib/autopilot/estado-financeiro";
+import {
+  avaliarRisco, estadoDaLinha, autorizarAumentoDeExposicao,
+} from "@/lib/autopilot/estado-financeiro";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
 import { podeAutomatizar } from "@/lib/autopilot/liberacao";
@@ -934,6 +936,50 @@ export async function POST(req: NextRequest) {
                * instante, nada sai.
                */
               reservar: async (intentId: string) => {
+                /**
+                 * ⚠️⚠️⚠️ O PORTÃO FINANCEIRO AUTORITATIVO, NO ÚLTIMO INSTANTE.
+                 *
+                 * A rota já avalia o risco lá em cima, logo depois de
+                 * `getSessionStatus` — e isso continua valendo para recusar
+                 * cedo, sem decifrar credencial. Mas aquilo é um SNAPSHOT: do
+                 * ponto em que a linha foi lida até aqui passaram preço,
+                 * exposição, certificado, política, cofre, decrypt e a
+                 * gravação do intent, todos com `await`. Nesse intervalo o
+                 * cron ou o recovery podem ter aplicado P&L, congelado o dia
+                 * ou levantado a contabilidade incompleta — e o navegador
+                 * seguiria com o estado de antes.
+                 *
+                 * O relatório do round anterior afirmava que os dois canais
+                 * liam no instante da compra. Era verdade no cron e FALSO
+                 * aqui. Esta é a mesma primitiva que o cron usa, agora no
+                 * ponto mais tarde que ainda permite recusar sem ter enviado
+                 * nada: o intent já existe (durável), e o próximo passo é
+                 * SUBMITTING → `createOrder`.
+                 *
+                 * ⚠️ É UMA LEITURA, não um lock: nada de segurar transação
+                 * PostgreSQL durante HTTP externo. O que ela garante é que
+                 * nenhuma mudança financeira JÁ COMITADA seja ignorada por um
+                 * snapshot velho.
+                 *
+                 * ⚠️ SÓ A COMPRA. Venda e redução continuam passando — elas
+                 * diminuem risco, e prendê-las trancaria o cliente numa
+                 * posição por causa de um alarme nosso.
+                 */
+                if (side === "buy") {
+                  const risco = await autorizarAumentoDeExposicao(sessaoDoPilotoId!);
+                  if (!risco.ok) {
+                    logSecurity("a130_entrada_bloqueada_no_instante", {
+                      route: "cex/order", motivo: risco.motivo }, "high");
+                    await recordEvent("autopilot_entrada_bloqueada_no_instante", {
+                      wallet: walletDoPiloto ?? undefined, meta: {
+                        severity: "high", canal: "browser", session: sessaoDoPilotoId,
+                        intent: intentId, motivo: risco.motivo, porque: risco.porque,
+                        why: "o estado financeiro mudou no banco DEPOIS da leitura "
+                          + "desta requisicao. ZERO ordem enviada.",
+                      } });
+                    return { ok: false as const, porque: `risco: ${risco.porque}` };
+                  }
+                }
                 const daVaga = await vaga.reservar(intentId);
                 if (!daVaga.ok) return daVaga;
                 intentComReserva = intentId;

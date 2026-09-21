@@ -576,6 +576,37 @@ o stop dispara). Na **compra** não há aritmética possível, então fail-close
 com a divergência **gravada** em `autopilot_position_effects.divergencia`, que
 alimenta o bloqueio e a lista de pendências.
 
+## 8-DUODECIES. A paridade que o relatório afirmou e o código não tinha
+
+O commit anterior dizia que `autorizarAumentoDeExposicao` lia o estado
+financeiro **no instante de cada COMPRA, nos dois canais**. Era verdade no
+cron e **falso** no navegador: a rota chamava
+`avaliarRisco(estadoDaLinha(sessaoDoPiloto))` sobre a linha capturada no
+começo da requisição.
+
+Entre aquela leitura (`getSessionStatus`, linha ~305) e o envio (~835) passam
+preço, exposição, certificado, política, cofre, decrypt, gravação do intent e
+as reservas — todos com `await`. Nesse intervalo o cron ou o recovery podem
+aplicar P&L, congelar o dia ou levantar a contabilidade incompleta, e o
+navegador seguiria com o estado de antes.
+
+**Onde o portão passou a morar.** Não numa linha a mais logo depois da
+leitura, mas na costura de reserva — `reservar(intentId)`, que roda entre
+`AUTHORIZED` e `SUBMITTING`. É o ponto mais tarde que ainda permite recusar
+sem ter enviado nada: o intent durável já existe, e o passo seguinte é
+`createOrder`. É uma **leitura**, não um lock: nenhuma transação PostgreSQL
+fica aberta durante HTTP externo.
+
+A leitura inicial continua, e continua útil — ela recusa cedo, antes de
+decifrar credencial, e dá erro melhor ao usuário. O que ela deixou de ser é a
+autoridade final de risco.
+
+| | cron | navegador |
+|---|---|---|
+| portão | `autorizarAumentoDeExposicao(s.id)` antes de cada cartão de COMPRA | `autorizarAumentoDeExposicao(sessionId)` dentro de `reservar`, antes de SUBMITTING |
+| fonte | leitura fresca do banco | leitura fresca do banco |
+| saídas | não são presas | não são presas |
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -632,6 +663,13 @@ específico, todas restauradas:
 | CR-3: o cron volta a usar o snapshot pré-recovery | 1 |
 | CR-4: o gate volta a ser calculado só antes do laço | 1 |
 | CR-5: quem aplica o P&L deixa de carimbar o dia | 2 |
+| navegador: a leitura autoritativa vira snapshot memoizado | 2 |
+
+⚠️ A primeira tentativa desta última quebra (trocar a chamada por
+`avaliarRisco(estadoDaLinha(sessaoDoPiloto))`) saiu com **type-check sujo** —
+e por um motivo que vale registrar: naquele ponto do arquivo a variável do
+snapshot **nem está no escopo**. Refeita atacando a primitiva: a leitura vira
+memoizada, o que reproduz o defeito nos dois canais de uma vez.
 
 ⚠️ **Três das cinco quebras do retest foram descartadas na primeira
 tentativa**: uma com type-check sujo e duas que *não reproduziam o defeito* (o
@@ -663,7 +701,7 @@ detecção: foi descartada e refeita válida antes de contar.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3852/3852 (252 arquivos)     — baseline do R8 era 3586
+npx vitest run      3856/3856 (252 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo
