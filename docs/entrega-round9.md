@@ -607,6 +607,51 @@ autoridade final de risco.
 | fonte | leitura fresca do banco | leitura fresca do banco |
 | saídas | não são presas | não são presas |
 
+## 8-TERDECIES. A fronteira final — o blocker do retest
+
+O auditor independente fechou os cinco CR e o snapshot do navegador, e deixou
+**um** blocker: a autorização financeira final **não era atômica** com a
+transição para `SUBMITTING`.
+
+`cex_autorizar_e_submeter` é a autoridade final antes do efeito externo — ela
+trava o intent, confere o certificado inteiro e vira `SUBMITTING` numa
+transação só. **Só que não conhecia o estado financeiro da sessão.**
+
+```
+T0  precheck financeiro: pnl −49, sem freeze  → PASSA
+T1  recovery COMITA:     pnl −51, freeze = hoje
+T2  cex_autorizar_e_submeter  ← não olhava nada disso
+T3  SUBMITTING
+T4  createOrder
+```
+
+A janela ficou pequena depois das correções anteriores. **Pequena não é
+fechada**: a propriedade que um autopilot com dinheiro real precisa é
+categórica — se o loss-stop já foi atingido e **comitado** antes da
+autorização final, nenhuma COMPRA nova sai.
+
+**Conserto.** A RPC é redefinida na 0064 (a 0060 não é tocada — pode já ter
+sido aplicada) e passa a travar **o intent e a sessão** na mesma transação,
+conferindo, antes do `SUBMITTING`: sessão ativa, validade, congelamento, stop
+de perda **pelo número** (não só pela marca), contabilidade incompleta e
+quarentena.
+
+- **Ordem dos locks:** intent → sessão, a mesma de
+  `autopilot_reservar_exposicao_do_intent` e da cadeia projeção/liquidação →
+  `autopilot_aplicar_pnl`. Inverter criaria deadlock com elas.
+- **Nenhum lock atravessa HTTP:** a transação commita antes de o executor
+  chamar `createOrder`.
+- **Escopo:** só `autopilot_browser`/`autopilot_cron`. DCA também é
+  `autonomous` e não tem linha em `autopilot_sessions` — prendê-lo aqui
+  quebraria um produto para consertar o outro.
+- **Só a COMPRA.** Venda, redução e recovery atravessam.
+
+⚠️ E uma consequência que vale registrar: uma compra do autopilot **sem
+sessão** passou a ser recusada. Os testes do executor construíam exatamente
+esse estado como atalho; foram corrigidos para carregar a sessão, como
+produção carrega. Afrouxar o portão para acomodar o atalho seria abrir o
+buraco de volta.
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -664,6 +709,7 @@ específico, todas restauradas:
 | CR-4: o gate volta a ser calculado só antes do laço | 1 |
 | CR-5: quem aplica o P&L deixa de carimbar o dia | 2 |
 | navegador: a leitura autoritativa vira snapshot memoizado | 2 |
+| fronteira final: o estado financeiro sai da autorização final | 5 |
 
 ⚠️ A primeira tentativa desta última quebra (trocar a chamada por
 `avaliarRisco(estadoDaLinha(sessaoDoPiloto))`) saiu com **type-check sujo** —
@@ -701,7 +747,7 @@ detecção: foi descartada e refeita válida antes de contar.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3856/3856 (252 arquivos)     — baseline do R8 era 3586
+npx vitest run      3866/3866 (253 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo

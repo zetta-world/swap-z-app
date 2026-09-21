@@ -507,6 +507,61 @@ export function bancoFalso(): BancoFalso {
         return { data: { ok: false, porque: `estado ${de} nao admite submissao` }, error: null };
       }
       if (it.autonomous === true && it.side === "buy" && it.simulated !== true) {
+        /**
+         * ⚠️⚠️⚠️ O ESTADO FINANCEIRO ENTRA NA AUTORIZAÇÃO FINAL — blocker do
+         * retest independente.
+         *
+         * O precheck le o banco antes das reservas; entre ele e ESTA
+         * transacao ainda cabe um writer financeiro comitando (recovery
+         * aplicando P&L e congelando, projecao levantando a contabilidade,
+         * reconciliacao gravando quarentena). A janela era pequena — e
+         * pequena nao e fechada. A propriedade so e demonstravel se o estado
+         * financeiro for lido na MESMA transacao que vira SUBMITTING.
+         *
+         * ⚠️ Escopo: so as origens do autopilot. DCA tambem e `autonomous` e
+         * nao tem linha em `autopilot_sessions`.
+         */
+        const origem = String(it.origin);
+        if (origem === "autopilot_browser" || origem === "autopilot_cron") {
+          if (!it.session_id) {
+            return { data: { ok: false, porque: "compra autonoma do autopilot sem sessao" },
+                     error: null };
+          }
+          const ses = sessoes.find((x) => x.id === it.session_id);
+          if (!ses) {
+            return { data: { ok: false, porque: "sessao do piloto inexistente" }, error: null };
+          }
+          const hoje = hojeUtcDoBanco();
+          const virou = ses.last_reset_day === hoje;
+          const pnl = virou ? Number(ses.pnl_today ?? 0) : 0;
+          const freeze = virou ? ses.frozen_until_day : null;
+          const stop = Number(ses.daily_loss_stop_usd ?? 0);
+          if (ses.is_active === false) {
+            return { data: { ok: false, porque: "sessao do piloto PARADA" }, error: null };
+          }
+          if (ses.expires_at != null && Date.parse(String(ses.expires_at)) <= Date.now()) {
+            return { data: { ok: false, porque: "sessao do piloto expirada" }, error: null };
+          }
+          if (freeze === hoje) {
+            return { data: { ok: false, porque: "sessao congelada hoje pelo stop de perda diaria" },
+                     error: null };
+          }
+          // ⚠️ O NÚMERO, não só a marca: o freeze pode ter ficado para trás.
+          if (stop > 0 && pnl <= -stop) {
+            return { data: { ok: false,
+              porque: `stop de perda ja atingido: pnl_today ${pnl} contra ${stop}` },
+              error: null };
+          }
+          if (ses.contabilidade_incompleta_em != null) {
+            return { data: { ok: false,
+              porque: `contabilidade incompleta desde ${ses.contabilidade_incompleta_em}` },
+              error: null };
+          }
+          if (ses.quarentena_em != null) {
+            return { data: { ok: false, porque: "sessao em quarentena por deriva de inventario" },
+                     error: null };
+          }
+        }
         if (!it.certificate_id) {
           return { data: { ok: false, porque: "compra autonoma sem certificate_id" }, error: null };
         }

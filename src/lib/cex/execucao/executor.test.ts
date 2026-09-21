@@ -48,7 +48,7 @@ const venue = (r: RespostaDaVenue) => vi.fn<Enviar>(async () => r);
 
 describe("① Cenário A — a ordem executou e a resposta se perdeu", () => {
   it("⚠️⚠️ ECONNRESET depois do envio vira INCERTO, nunca falha", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "incerta", porque: "RequestTimeout: socket hang up" });
     const r = await executarOrdemCex(
       { db: b.cliente, enviar, killSwitches: passaLivre }, CTX, ORDEM, CREDS);
@@ -63,7 +63,7 @@ describe("① Cenário A — a ordem executou e a resposta se perdeu", () => {
   it("⚠️⚠️ e a RESERVA NÃO É LIBERADA na dúvida (INVARIANTE 4)", async () => {
     // Devolver a cota agora autorizaria um segundo envio para um dinheiro que
     // talvez já tenha saído — o retry destrutivo que o briefing proíbe.
-    const b = bancoFalso();
+    const b = comSessao();
     const liberar = vi.fn(async () => {});
     await executarOrdemCex(
       { db: b.cliente, enviar: venue({ tipo: "incerta", porque: "timeout" }), killSwitches: passaLivre },
@@ -73,7 +73,7 @@ describe("① Cenário A — a ordem executou e a resposta se perdeu", () => {
   });
 
   it("⚠️ o intent guarda o client_order_id — é o que a reconciliação pergunta", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "incerta", porque: "timeout" });
     await executarOrdemCex({ db: b.cliente, enviar, killSwitches: passaLivre }, CTX, ORDEM, CREDS);
     const coid = String(b.intents[0].client_order_id);
@@ -87,7 +87,7 @@ describe("② A81 — ACK de ordem NÃO é fill", () => {
   it("⚠️⚠️ aceita com filled=0 deixa filled_qty em ZERO e estado SUBMITTED", async () => {
     // O código antigo fazia `filled > 0 ? filled : intent.amount` em TRÊS
     // arquivos: um ACK sem preenchimento virava posição inteira.
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita",
       ordem: { id: "ORD-1", filled: 0, remaining: 10, amount: 10, status: "open",
                symbol: "BTC/USDT", side: "buy", type: "limit" } as never });
@@ -104,7 +104,7 @@ describe("② A81 — ACK de ordem NÃO é fill", () => {
 
   it("⚠️ o gêmeo positivo: fill de verdade ENTRA no livro", async () => {
     // Sem isto, um executor que nunca gravasse nada passaria no teste acima.
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita",
       ordem: { id: "ORD-2", filled: 4, average: 101, cost: 404, amount: 10,
                status: "open", symbol: "BTC/USDT", side: "buy", type: "limit" } as never });
@@ -121,7 +121,7 @@ describe("② A81 — ACK de ordem NÃO é fill", () => {
   });
 
   it("⚠️ preenchimento total fecha como FILLED, e só então", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita",
       ordem: { id: "ORD-3", filled: 10, average: 100, cost: 1000, amount: 10,
                status: "closed", symbol: "BTC/USDT", side: "buy", type: "limit" } as never });
@@ -134,7 +134,7 @@ describe("② A81 — ACK de ordem NÃO é fill", () => {
 
 describe("③ Cenário E — disable_cex é freio universal (A106)", () => {
   it("⚠️⚠️ com o interruptor ligado, ZERO chamada à corretora", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita", ordem: { id: "X" } as never });
     const r = await executarOrdemCex(
       { db: b.cliente, enviar,
@@ -151,7 +151,7 @@ describe("③ Cenário E — disable_cex é freio universal (A106)", () => {
   it("⚠️⚠️ falha ao LER o interruptor também bloqueia (INVARIANTE 9)", async () => {
     // `checarKillSwitches` com `dinheiro_sai` já devolve bloqueado quando não
     // consegue ler. Aqui o executor prova que respeita esse veredito.
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita", ordem: { id: "X" } as never });
     const r = await executarOrdemCex(
       { db: b.cliente, enviar,
@@ -162,7 +162,7 @@ describe("③ Cenário E — disable_cex é freio universal (A106)", () => {
   });
 
   it("⚠️ o gêmeo positivo: com o interruptor aberto, a ordem SAI", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita",
       ordem: { id: "OK", filled: 10, average: 100, cost: 1000 } as never });
     await executarOrdemCex({ db: b.cliente, enviar, killSwitches: passaLivre },
@@ -182,7 +182,7 @@ describe("④ sem banco e sem credencial, nada sai (INVARIANTE 9)", () => {
   });
 
   it("⚠️ o intent não gravou: ZERO chamada", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     b.falhas.insertIntent = "banco recusou";
     const enviar = venue({ tipo: "aceita", ordem: { id: "X" } as never });
     const r = await executarOrdemCex({ db: b.cliente, enviar, killSwitches: passaLivre },
@@ -192,7 +192,7 @@ describe("④ sem banco e sem credencial, nada sai (INVARIANTE 9)", () => {
   });
 
   it("⚠️ credencial ausente: ZERO chamada", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita", ordem: { id: "X" } as never });
     const r = await executarOrdemCex({ db: b.cliente, enviar, killSwitches: passaLivre },
       CTX, ORDEM, null);
@@ -205,7 +205,7 @@ describe("④ sem banco e sem credencial, nada sai (INVARIANTE 9)", () => {
     // inteiro: o processo morre e o banco não sabe que houve tentativa.
     // Desde o round 2 (A110) a marcação SUBMITTING acontece DENTRO da RPC
     // `cex_autorizar_e_submeter` — a falha injetável é a dela.
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita", ordem: { id: "X" } as never });
     b.falhas.autorizacao = "banco fora do ar";
     const r = await executarOrdemCex({ db: b.cliente, enviar, killSwitches: passaLivre },
@@ -218,7 +218,7 @@ describe("④ sem banco e sem credencial, nada sai (INVARIANTE 9)", () => {
 
 describe("⑤ a reserva de risco, e quando ela volta", () => {
   it("⚠️ reserva negada: ZERO chamada à corretora", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita", ordem: { id: "X" } as never });
     const r = await executarOrdemCex({ db: b.cliente, enviar, killSwitches: passaLivre },
       CTX, ORDEM, CREDS,
@@ -228,7 +228,7 @@ describe("⑤ a reserva de risco, e quando ela volta", () => {
   });
 
   it("⚠️⚠️ recusa PROVADA pela corretora libera a reserva — e só ela", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const liberar = vi.fn(async () => {});
     const r = await executarOrdemCex(
       { db: b.cliente, killSwitches: passaLivre,
@@ -246,7 +246,7 @@ describe("⑤ a reserva de risco, e quando ela volta", () => {
 
   it("a reserva roda ANTES do envio, não depois", async () => {
     const ordemDosPassos: string[] = [];
-    const b = bancoFalso();
+    const b = comSessao();
     await executarOrdemCex(
       { db: b.cliente, killSwitches: passaLivre,
         enviar: vi.fn(async () => { ordemDosPassos.push("envio");
@@ -259,7 +259,7 @@ describe("⑤ a reserva de risco, e quando ela volta", () => {
 
 describe("⑥ o simulado percorre o mesmo caminho", () => {
   it("⚠️ nenhuma chamada externa, e mesmo assim livro e estado completos", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita", ordem: { id: "NAO-DEVE-SAIR" } as never });
     const r = await executarOrdemCex({ db: b.cliente, enviar, killSwitches: passaLivre },
       CTX, { ...ORDEM, simulated: true }, null);
@@ -273,7 +273,7 @@ describe("⑥ o simulado percorre o mesmo caminho", () => {
   });
 
   it("⚠️ simulado sem preço NÃO inventa execução", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const r = await executarOrdemCex(
       { db: b.cliente, enviar: venue({ tipo: "aceita", ordem: { id: "X" } as never }),
         killSwitches: passaLivre },
@@ -318,8 +318,31 @@ const certVivo = (): Record<string, unknown> => ({
   valid_from: "2020-01-01T00:00:00Z", valid_until: null,
   revoked_at: null, revoked_reason: null,
 });
+const SESSAO_ID = "S1";
+/** A sessão saudável que uma compra autônoma precisa ter no banco. */
+const comSessao = () => {
+  const b = bancoFalso();
+  b.sessoes.push({
+    id: SESSAO_ID, wallet_address: "0xdono", exchange_id: "binance",
+    is_active: true, expires_at: new Date(Date.now() + 6 * 3600e3).toISOString(),
+    pnl_today: 0, daily_loss_stop_usd: 500, frozen_until_day: null,
+    last_reset_day: new Date().toISOString().slice(0, 10), trades_today: 0,
+    max_trades_per_day: 20, max_trade_usd: 1000, conexao_id: null,
+    quarentena_em: null, contabilidade_incompleta_em: null, risk_mode: "moderado",
+  });
+  return b;
+};
+
 const CTX_AUTO: ContextoDeExecucao = {
   origin: "autopilot_cron", autonomous: true, walletAddress: "0xdono",
+  /**
+   * ⚠️⚠️ A SESSÃO É OBRIGATÓRIA NUMA COMPRA DO AUTOPILOT desde o fechamento
+   * da fronteira final: `cex_autorizar_e_submeter` lê o estado financeiro da
+   * sessão na MESMA transação que vira SUBMITTING. Sem sessão não se afirma
+   * stop, freeze nem contabilidade — e o contexto do teste representava um
+   * estado que produção não deveria produzir.
+   */
+  sessionId: SESSAO_ID,
   strategyId: "estrategia-x", strategyVersion: 3, certificateId: CERT_ID,
   strategyHash: "hash-abc",
 };
@@ -329,7 +352,7 @@ const ACEITA = { tipo: "aceita" as const,
 describe("⑦ A110 round 2 — a autorização final é transacional, no banco", () => {
   it("H1 ⚠️ o gêmeo positivo: certificado VÁLIDO deixa a ordem sair", async () => {
     // Sem este, um executor que recusasse tudo passaria em H2–H9.
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -340,7 +363,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   });
 
   it("H2 ⚠️⚠️ certificado REVOGADO antes: ZERO createOrder", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push({ ...certVivo(), revoked_at: new Date().toISOString(),
                           revoked_reason: "estrategia degradada" });
     const enviar = venue(ACEITA);
@@ -362,7 +385,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
      * antes do submit, alguém revogou. A reserva de risco é o último gancho
      * antes do passo 6 — revogamos lá dentro, e a RPC tem de enxergar.
      */
-    const b = bancoFalso();
+    const b = comSessao();
     const cert = certVivo();
     b.certificados.push(cert);
     const enviar = venue(ACEITA);
@@ -380,7 +403,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
 
   it("H4 ⚠️ certificado de OUTRA estratégia: ZERO createOrder", async () => {
     // A FK garante que o certificate_id EXISTE; não que é desta estratégia.
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push({ ...certVivo(), strategy_id: "estrategia-alheia" });
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -390,7 +413,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   });
 
   it("H5 ⚠️ certificado de OUTRA versão: ZERO createOrder", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push({ ...certVivo(), strategy_version: 4 });
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -402,7 +425,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   it("H6 ⚠️⚠️ hash divergente — os parâmetros mudaram sob o certificado: ZERO createOrder", async () => {
     // Round 3: o hash do ctx é GRAVADO no intent na criação; a RPC o lê de
     // lá e o confere contra o certificado. Adulterado, não casa: recusa.
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -417,7 +440,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   it("H6b ⚠️⚠️ hash AUSENTE no intent — não medimos não passa: ZERO createOrder", async () => {
     // Uma compra autônoma real sem strategy_hash gravado (ctx veio sem ele)
     // não tem como provar que roda os parâmetros certificados.
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
     const { strategyHash: _omitido, ...ctxSemHash } = CTX_AUTO;
@@ -432,7 +455,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   });
 
   it("H7 ⚠️ venue fora do envelope certificado: ZERO createOrder", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -443,7 +466,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   });
 
   it("H8 ⚠️ símbolo fora do envelope certificado: ZERO createOrder", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -456,7 +479,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   it("H9 ⚠️⚠️ nocional ACIMA do teto da evidência: ZERO createOrder", async () => {
     // O certificado cobre trades até $2000; o pedido é $5000. Operar acima é
     // usar a evidência para outra coisa.
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -473,7 +496,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
      * para evitar. A saída passa pela MESMA RPC, que deliberadamente não a
      * valida para sell.
      */
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push({ ...certVivo(), revoked_at: new Date().toISOString(),
                           revoked_reason: "revogado — e a saida continua livre" });
     const enviar = venue(ACEITA);
@@ -487,7 +510,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   it("⚠️ o simulado autônomo SEM certificado também sai — nenhum dinheiro se move", async () => {
     // Mesma isenção da constraint da 0052: exigir certificado do simulado
     // pararia a única coisa que hoje pode rodar sem risco.
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita", ordem: { id: "NAO-DEVE-SAIR" } as never });
     const r = await executarOrdemCex(
       { db: b.cliente, enviar, killSwitches: passaLivre },
@@ -500,7 +523,7 @@ describe("⑦ A110 round 2 — a autorização final é transacional, no banco",
   it("⚠️ o kill-switch continua ANTES da autorização (A106 não regride)", async () => {
     // Mesmo com certificado válido, o freio universal fecha tudo — e nem
     // chega a consultar o certificado: a ordem dos passos é a correção.
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -528,7 +551,7 @@ describe("⑦b A110 round 3 — a autorização deriva DO INTENT, não do caller
   it("⚠️⚠️ a RPC é chamada com APENAS p_intent_id — não há parâmetro para mentir", async () => {
     // Espiona o transporte: se venue/símbolo/nocional/hash voltarem a viajar
     // como argumento, este teste quebra ANTES de qualquer outro.
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const rpcReal = b.cliente.rpc.bind(b.cliente) as unknown as (
       nome: string, args: Record<string, unknown>,
@@ -549,7 +572,7 @@ describe("⑦b A110 round 3 — a autorização deriva DO INTENT, não do caller
   });
 
   it("⚠️ a seam não carrega dados de caller: exatamente (db, intentId)", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const espiada = vi.fn(autorizarSubmissaoNoBanco);
     await executarOrdemCex(
       { db: b.cliente, enviar: venue(ACEITA), killSwitches: passaLivre,
@@ -567,10 +590,13 @@ describe("⑦b A110 round 3 — a autorização deriva DO INTENT, não do caller
      * É este teste que a quebra deliberada derruba — um banco que volte a
      * ler esses fatos dos argumentos (que não existem mais) recusa aqui.
      */
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     await b.cliente.from("cex_execution_intents").insert({
       id: "i-direto", client_order_id: "c-direto", origin: "autopilot_cron",
+      // ⚠️ Compra do autopilot sem sessão é recusada na fronteira final — a
+      // linha tem de carregar a sessão, como carrega em produção.
+      session_id: SESSAO_ID,
       autonomous: true, exchange_id: "binance", symbol: "BTC/USDT", side: "buy",
       order_type: "market", requested_qty: 10, requested_notional_usd: 1000,
       strategy_id: "estrategia-x", strategy_version: 3, strategy_hash: "hash-abc",
@@ -585,10 +611,11 @@ describe("⑦b A110 round 3 — a autorização deriva DO INTENT, não do caller
     // Não é um caller mentindo: é a prova de que a venue conferida é a da
     // linha. Um intent gravado com venue fora do envelope não passa, e nada
     // que o caller pudesse dizer mudaria isso.
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     await b.cliente.from("cex_execution_intents").insert({
       id: "i-kraken", client_order_id: "c-kraken", origin: "autopilot_cron",
+      session_id: SESSAO_ID,
       autonomous: true, exchange_id: "kraken", symbol: "BTC/USDT", side: "buy",
       order_type: "market", requested_qty: 10, requested_notional_usd: 1000,
       strategy_id: "estrategia-x", strategy_version: 3, strategy_hash: "hash-abc",
@@ -614,7 +641,7 @@ describe("⑦c A110 round 3 — market autônomo: o nocional DURÁVEL decide", (
   };
 
   it("⚠️ nocional persistido DENTRO do teto → autoriza e envia", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());   // teto 2000; pedido 1500
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -625,7 +652,7 @@ describe("⑦c A110 round 3 — market autônomo: o nocional DURÁVEL decide", (
   });
 
   it("⚠️⚠️ nocional persistido ACIMA do teto → ZERO createOrder", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -638,7 +665,7 @@ describe("⑦c A110 round 3 — market autônomo: o nocional DURÁVEL decide", (
   it("⚠️⚠️ nocional NULL com certificado com teto → ZERO createOrder (não medimos não passa)", async () => {
     // Sem referência de preço, a rota deixa null de propósito — e a recusa
     // do banco é o comportamento correto, não um acidente.
-    const b = bancoFalso();
+    const b = comSessao();
     b.certificados.push(certVivo());
     const enviar = venue(ACEITA);
     const r = await executarOrdemCex(
@@ -716,7 +743,7 @@ describe("⑧ guarda estrutural — a RPC da 0060 deriva do intent e nasce FECHA
 
 describe("A127.9 — executor fail-closed para browser real sem conexao_id", () => {
   it("recusa ANTES do intent, reserva e createOrder", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita", ordem: { id: "X" } as never });
     const reservar = vi.fn(async () => ({ ok: true as const }));
     const r = await executarOrdemCex(
@@ -734,7 +761,7 @@ describe("A127.9 — executor fail-closed para browser real sem conexao_id", () 
   });
 
   it("simulado browser sem conexao_id preserva o contrato e não chama a venue", async () => {
-    const b = bancoFalso();
+    const b = comSessao();
     const enviar = venue({ tipo: "aceita", ordem: { id: "NAO-DEVE-SAIR" } as never });
     const r = await executarOrdemCex(
       { db: b.cliente, enviar, killSwitches: passaLivre },

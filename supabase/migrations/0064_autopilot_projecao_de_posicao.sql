@@ -1976,6 +1976,229 @@ comment on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeri
   'transacao. Antes eram duas escritas, e qualquer ordem delas quebrava '
   'exactly-once.';
 
+-- ══════════════════════════════════════════════════════════════════════════
+-- A FRONTEIRA FINAL — O ESTADO FINANCEIRO NA MESMA TRANSAÇÃO DO SUBMITTING
+--
+-- ⚠️⚠️⚠️ BLOCKER DO RETEST INDEPENDENTE (I11/I12).
+--
+-- `cex_autorizar_e_submeter` era a autoridade final antes do efeito externo —
+-- ela trava o intent, confere o certificado inteiro e vira `SUBMITTING` numa
+-- transação só. Só que ela NÃO conhecia o estado financeiro da sessão.
+--
+-- O precheck (`autorizarAumentoDeExposicao`) lê o banco imediatamente antes
+-- das reservas, nos dois canais. Entre aquele `select` e esta transação ainda
+-- cabe um writer financeiro comitando:
+--
+--     T0  precheck: pnl −49, sem freeze → PASSA
+--     T1  recovery COMITA: pnl −51, freeze = hoje
+--     T2  cex_autorizar_e_submeter  ← não olhava nada disso
+--     T3  SUBMITTING
+--     T4  createOrder
+--
+-- A janela ficou pequena depois das correções anteriores. Pequena não é
+-- fechada, e a propriedade que um autopilot com dinheiro real precisa é
+-- categórica: se o loss-stop já foi atingido e COMITADO antes da autorização
+-- final, nenhuma COMPRA nova sai. Isso só é demonstrável se o estado
+-- financeiro for lido na MESMA transação que autoriza.
+--
+-- ⚠️ A 0060 NÃO É ALTERADA (ela pode já ter sido aplicada). A função é
+-- REDEFINIDA aqui, com a mesma assinatura — o mesmo padrão que a 0064 já usa
+-- para as RPCs da 0059.
+-- ══════════════════════════════════════════════════════════════════════════
+create or replace function public.cex_autorizar_e_submeter(
+  p_intent_id uuid
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_intent public.cex_execution_intents%rowtype;
+  v_cert   public.strategy_certificates%rowtype;
+  v_teto   numeric;
+  v_s      public.autopilot_sessions%rowtype;
+  v_hoje   text;
+  v_virou  boolean;
+  v_pnl    numeric;
+  v_freeze text;
+begin
+  -- ⚠️⚠️ O INTENT É A AUTORIDADE SOBRE TUDO. A RPC não acredita em parâmetro
+  -- NENHUM sobre a ordem: lê `autonomous`, `side`, `simulated`, `strategy_id`,
+  -- `strategy_version`, `certificate_id`, `exchange_id` (venue), `symbol`,
+  -- `requested_notional_usd` (nocional) e `strategy_hash` da própria linha,
+  -- sob lock. O caller não tem COMO mentir: a assinatura não recebe nada além
+  -- do id.
+  select * into v_intent from public.cex_execution_intents
+   where id = p_intent_id for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'intent nao existe');
+  end if;
+
+  if v_intent.state not in ('AUTHORIZED', 'RESERVED') then
+    return jsonb_build_object('ok', false,
+      'porque', 'estado ' || v_intent.state || ' nao admite submissao');
+  end if;
+
+  -- ── A VALIDAÇÃO — só entrada autônoma com dinheiro de verdade ─────────
+  -- Manual tem um humano como sujeito; simulado não move dinheiro; SELL é a
+  -- exceção documentada no cabeçalho. Todo o resto deste caminho exige
+  -- certificado VIVO e COERENTE, conferido aqui, não na rota.
+  if v_intent.autonomous and v_intent.side = 'buy' and not v_intent.simulated then
+    /**
+     * ⚠️⚠️⚠️ O ESTADO FINANCEIRO ENTRA NA AUTORIZAÇÃO FINAL — blocker do
+     * retest independente.
+     *
+     * O precheck financeiro (`autorizarAumentoDeExposicao`, nos dois canais)
+     * lê o banco imediatamente antes das reservas. Entre esse `select` e ESTA
+     * transação ainda cabe um writer financeiro: o recovery aplica P&L e
+     * congela o dia, a projeção levanta `contabilidade_incompleta_em`, a
+     * reconciliação grava quarentena. Tudo isso COMITA antes do SUBMITTING —
+     * e a autorização final não sabia de nada disso.
+     *
+     * A janela era pequena. Pequena não é fechada: a propriedade que o
+     * produto precisa é "se o loss-stop já foi atingido e COMITADO antes da
+     * autorização final, nenhuma BUY nova sai". Só dá para afirmar isso se o
+     * estado financeiro for lido na MESMA transação que vira RESERVED →
+     * SUBMITTING.
+     *
+     * ⚠️ ORDEM DOS LOCKS: intent (acima) → sessão. É a mesma ordem de
+     * `autopilot_reservar_exposicao_do_intent` e da cadeia
+     * projeção/liquidação → `autopilot_aplicar_pnl`. Inverter aqui criaria
+     * deadlock com elas.
+     *
+     * ⚠️ E O LOCK NÃO ATRAVESSA HTTP: esta transação COMMITA antes de o
+     * executor chamar `createOrder`.
+     *
+     * ⚠️ ESCOPO: só as origens do autopilot. DCA é `autonomous` também e não
+     * tem linha em `autopilot_sessions` — o gate financeiro dele é outro, e
+     * prendê-lo aqui seria quebrar um produto para consertar o outro.
+     */
+    if v_intent.origin in ('autopilot_browser', 'autopilot_cron') then
+      if v_intent.session_id is null then
+        return jsonb_build_object('ok', false,
+          'porque', 'compra autonoma do autopilot sem sessao — sem ela nao se afirma limite nenhum');
+      end if;
+      select * into v_s from public.autopilot_sessions
+       where id = v_intent.session_id for update;
+      if not found then
+        return jsonb_build_object('ok', false, 'porque', 'sessao do piloto inexistente');
+      end if;
+
+      -- ⚠️ Contador e congelamento de ONTEM não valem hoje. Quem carimba o
+      -- dia é `autopilot_aplicar_pnl`, junto do resultado.
+      v_hoje   := (current_timestamp at time zone 'UTC')::date::text;
+      v_virou  := v_s.last_reset_day is not distinct from v_hoje;
+      v_pnl    := case when v_virou then coalesce(v_s.pnl_today, 0) else 0 end;
+      v_freeze := case when v_virou then v_s.frozen_until_day else null end;
+
+      if not v_s.is_active then
+        return jsonb_build_object('ok', false, 'porque', 'sessao do piloto PARADA');
+      end if;
+      if v_s.expires_at is null or v_s.expires_at <= now() then
+        return jsonb_build_object('ok', false, 'porque', 'sessao do piloto expirada');
+      end if;
+      if v_freeze is not distinct from v_hoje then
+        return jsonb_build_object('ok', false,
+          'porque', 'sessao congelada hoje pelo stop de perda diaria');
+      end if;
+      -- ⚠️ O NÚMERO, não só a marca: o freeze pode ter ficado para trás.
+      if coalesce(v_s.daily_loss_stop_usd, 0) > 0
+         and v_pnl <= -v_s.daily_loss_stop_usd then
+        return jsonb_build_object('ok', false,
+          'porque', 'stop de perda ja atingido: pnl_today ' || v_pnl::text
+                    || ' contra ' || v_s.daily_loss_stop_usd::text);
+      end if;
+      if v_s.contabilidade_incompleta_em is not null then
+        return jsonb_build_object('ok', false,
+          'porque', 'contabilidade incompleta desde '
+                    || v_s.contabilidade_incompleta_em::text
+                    || ' — o P&L realizado nao e afirmavel');
+      end if;
+      if v_s.quarentena_em is not null then
+        return jsonb_build_object('ok', false,
+          'porque', 'sessao em quarentena por deriva de inventario');
+      end if;
+    end if;
+
+    if v_intent.certificate_id is null then
+      return jsonb_build_object('ok', false,
+        'porque', 'compra autonoma sem certificate_id — a constraint falhou ou foi contornada');
+    end if;
+
+    select * into v_cert from public.strategy_certificates
+     where id = v_intent.certificate_id;
+    if not found then
+      return jsonb_build_object('ok', false, 'porque', 'certificado inexistente');
+    end if;
+    -- ⚠️ INVARIANTE 14, agora no limiar: revogar fecha a torneira NA HORA,
+    -- não na próxima passada da rota.
+    if v_cert.revoked_at is not null then
+      return jsonb_build_object('ok', false,
+        'porque', 'certificado revogado em ' || v_cert.revoked_at::text);
+    end if;
+    if v_cert.valid_from > now() then
+      return jsonb_build_object('ok', false, 'porque', 'certificado ainda nao vigente');
+    end if;
+    if v_cert.valid_until is not null and v_cert.valid_until <= now() then
+      return jsonb_build_object('ok', false,
+        'porque', 'certificado expirou em ' || v_cert.valid_until::text);
+    end if;
+    -- ⚠️ O certificado é da MESMA estratégia/versão do intent? A FK garante
+    -- que o id existe; NÃO garante que aponta para a estratégia certa.
+    if v_cert.strategy_id is distinct from v_intent.strategy_id
+       or v_cert.strategy_version is distinct from v_intent.strategy_version then
+      return jsonb_build_object('ok', false,
+        'porque', 'certificado de outra estrategia ou versao');
+    end if;
+    -- ⚠️ O hash amarra o certificado ao conteúdo dos parâmetros. Agora ele
+    -- vem DO INTENT (gravado na criação, do ctx do caller legítimo) — ausente
+    -- ou divergente, a evidência é de outra hipótese, e não medimos não passa.
+    if v_intent.strategy_hash is null or v_intent.strategy_hash <> v_cert.strategy_hash then
+      return jsonb_build_object('ok', false, 'porque', 'strategy_hash nao confere');
+    end if;
+    -- ⚠️ VENUE E SÍMBOLO VÊM DO INTENT. O certificado é conferido contra o
+    -- que foi gravado antes de qualquer efeito externo — não contra o que
+    -- alguém afirmou no instante da submissão.
+    if not (v_intent.exchange_id = any(v_cert.allowed_venues)) then
+      return jsonb_build_object('ok', false,
+        'porque', 'venue ' || coalesce(v_intent.exchange_id, '?') || ' fora do certificado');
+    end if;
+    if not (v_intent.symbol = any(v_cert.allowed_symbols)) then
+      return jsonb_build_object('ok', false,
+        'porque', 'simbolo ' || coalesce(v_intent.symbol, '?') || ' fora do certificado');
+    end if;
+    -- ⚠️ O teto é o envelope da evidência, contra o nocional DURÁVEL do
+    -- intent. Com teto definido, nocional desconhecido NÃO passa — "não
+    -- medimos" nunca vira "cabe".
+    v_teto := nullif(v_cert.risk_limits ->> 'maxTradeUsd', '')::numeric;
+    if v_teto is not null and (v_intent.requested_notional_usd is null
+       or v_intent.requested_notional_usd > v_teto) then
+      return jsonb_build_object('ok', false,
+        'porque', 'nocional ' || coalesce(v_intent.requested_notional_usd::text, 'desconhecido')
+                  || ' acima do teto certificado ' || v_teto::text);
+    end if;
+  end if;
+
+  -- ── A SUBMISSÃO — mesma autoridade da `cex_transicionar` ──────────────
+  -- A legalidade da transição continua sendo decidida por UMA função. Esta
+  -- RPC não abre um segundo critério de máquina de estados.
+  if not public.cex_transicao_permitida(v_intent.state, 'SUBMITTING') then
+    return jsonb_build_object('ok', false, 'de', v_intent.state,
+      'porque', 'transicao proibida para SUBMITTING');
+  end if;
+
+  update public.cex_execution_intents
+     set state         = 'SUBMITTING',
+         submitting_at = now(),
+         updated_at    = now()
+   where id = p_intent_id;
+
+  return jsonb_build_object('ok', true, 'de', v_intent.state, 'para', 'SUBMITTING');
+end; $$;
+
+comment on function public.cex_autorizar_e_submeter(uuid) is
+  'Autorizacao final transacional (A110 round 3) + ESTADO FINANCEIRO DA SESSAO '
+  '(Round 9, blocker do retest): trava o intent E a sessao do piloto, confere '
+  'certificado, freeze, stop de perda pelo NUMERO, contabilidade incompleta e '
+  'quarentena, e so entao vira SUBMITTING. Fecha o TOCTOU entre o precheck '
+  'financeiro e o ponto sem volta. DCA/manual/simulado/SELL seguem isentos.';
+
 -- ── 4. AS PENDÊNCIAS — PORQUE `FILLED` É TERMINAL ─────────────────────────
 --
 -- ⚠️⚠️⚠️ ACHADO DA REVISÃO ADVERSARIAL DO ROUND 9.
