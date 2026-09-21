@@ -409,16 +409,24 @@ describe("F.1-BIS — custo removido SEM recebido também é conta aberta", () =
     expect(portao().ok).toBe(true);
   });
 
-  it("⚠️ compra com custo e sem recebido NÃO trava — o lado é a venda", async () => {
+  it("⚠️⚠️ CR-1: compra com quantidade e SEM custo conhecido TRAVA", async () => {
     sessao();
     intent("c1", { side: "buy", order_type: "market", state: "FILLED",
       filled_qty: 0.01, filled_quote: 0 });
     const r = await projetarEfeitoDoIntent("c1", { chamarRpc: chamar });
     expect(r.ok && r.motivo).toBe("aplicado");
-    // `custo_removido_usd` é zero numa compra — não há conta pendente.
-    expect(Number(oEfeito("c1")!.custo_removido_usd ?? 0)).toBe(0);
-    expect(aSessao().contabilidade_incompleta_em).toBe(null);
-    expect(portao().ok).toBe(true);
+    /**
+     * ⚠️⚠️ ESTE TESTE AFIRMAVA O CONTRÁRIO, e o retest independente mostrou
+     * por quê isso era um buraco (CR-1): a compra entrou QUANTIDADE na
+     * posição com `cost_usd` zero. O bot tem a bolsa e não sabe quanto pagou
+     * — o teto de exposição conta menos capital do que existe, e o
+     * compromisso da reserva desaba para zero. É contabilidade incompleta
+     * pela mesma razão que a taxa desconhecida é.
+     */
+    expect(Number(oEfeito("c1")!.applied_qty ?? 0)).toBeGreaterThan(0);
+    expect(Number(oEfeito("c1")!.applied_quote ?? 0)).toBe(0);
+    expect(aSessao().contabilidade_incompleta_em).toBeTruthy();
+    expect(portao().ok).toBe(false);
   });
 });
 
@@ -517,18 +525,37 @@ describe("F.2-BIS — a bandeira desta passada vale NESTA passada", () => {
 
   it("⚠️⚠️ o cron RELÊ a linha antes do portão, e falha de leitura FECHA", () => {
     // A releitura existe e acontece antes da decisão.
-    expect(CRON).toMatch(/const bandeiras = await relerBandeirasDaSessao\(s\.id\);/);
-    const iRelu = CRON.indexOf("relerBandeirasDaSessao(s.id)");
+    expect(CRON).toMatch(/const fresco = await lerEstadoFinanceiroDaSessao\(s\.id\);/);
+    const iRelu = CRON.indexOf("lerEstadoFinanceiroDaSessao(s.id)");
     const iPortao = CRON.indexOf("const portaoDeEntrada = entradaAutorizadaNaSessao({");
     expect(iRelu).toBeGreaterThan(-1);
     expect(iPortao).toBeGreaterThan(iRelu);
-    // ⚠️ E ela vem DEPOIS do settle, que é quem levanta a bandeira.
-    expect(CRON.indexOf("await settleArmedExits(")).toBeLessThan(iRelu);
-    // ⚠️ Sem bandeiras, a contabilidade é tratada como INCOMPLETA.
-    expect(CRON).toMatch(/contabilidadeIncompleta: bandeiras\s*\n?\s*\?[^:]*:\s*true/);
-    expect(CRON).toMatch(/recordEvent\("autopilot_bandeiras_ilegiveis"/);
-    // ⚠️ A cópia em memória não decide mais a contabilidade.
+    /**
+     * ⚠️⚠️ A leitura da sessão vem depois do RECOVERY global (que roda antes
+     * do laço) — mas o settle acontece DENTRO da sessão, depois dela. Quem
+     * cobre o que o settle escreve é o portão por COMPRA, que relê no
+     * instante da decisão. É essa a ordem que importa.
+     */
+    const iSettle = CRON.indexOf("await settleArmedExits(");
+    const iPorCompra = CRON.indexOf("autorizarAumentoDeExposicao(s.id)");
+    expect(iSettle).toBeGreaterThan(-1);
+    expect(iPorCompra, "o portão por COMPRA vem depois do settle")
+      .toBeGreaterThan(iSettle);
+    expect(CRON.indexOf("await pendenciasFinanceiras("))
+      .toBeLessThan(iRelu);
+    // ⚠️ Sem estado, a passada da sessão PARA — não se afirma limite nenhum.
+    expect(CRON).toMatch(/if \(!fresco\) \{/);
+    expect(CRON).toMatch(/recordEvent\("autopilot_estado_financeiro_ilegivel"/);
+    // ⚠️ A cópia em memória não decide mais nada financeiro.
     expect(CRON).not.toMatch(/contabilidadeIncompleta: Boolean\(s\.contabilidade_incompleta_em\)/);
+    expect(CRON).not.toMatch(/if \(s\.last_reset_day !== today\)/);
+    /**
+     * ⚠️⚠️ CR-3/CR-4: e o portão é REAVALIADO no instante de cada COMPRA,
+     * não uma vez antes do laço de cartões.
+     */
+    expect(CRON).toMatch(/const risco = await autorizarAumentoDeExposicao\(s\.id\);/);
+    expect(CRON.indexOf("autorizarAumentoDeExposicao(s.id)"))
+      .toBeGreaterThan(CRON.indexOf("let entradasLiberadas"));
   });
 
   it("⚠️⚠️ a releitura é tri-state: erro de banco não vira 'sem bandeira'", async () => {
@@ -578,11 +605,12 @@ describe("F.3 — os DOIS canais, a MESMA coluna", () => {
      */
     expect(ROTA).toMatch(
       /contabilidadeIncompleta: Boolean\([^)]*\.contabilidade_incompleta_em\)/);
-    expect(CRON).toMatch(/relerBandeirasDaSessao\(s\.id\)/);
-    expect(CRON).toMatch(/contabilidadeIncompleta: bandeiras/);
-    // ⚠️ E a coluna é de fato a que a releitura busca.
-    const SESSOES = readFileSync("src/lib/autopilot/sessions.ts", "utf8");
-    expect(SESSOES).toMatch(/\.select\("quarentena_em, contabilidade_incompleta_em"\)/);
+    expect(CRON).toMatch(/lerEstadoFinanceiroDaSessao\(s\.id\)/);
+    expect(CRON).toMatch(/contabilidadeIncompleta: Boolean\(fresco\.contabilidadeIncompletaEm\)/);
+    // ⚠️ E a coluna é de fato uma das que a leitura autoritativa busca.
+    const EST = readFileSync("src/lib/autopilot/estado-financeiro.ts", "utf8");
+    expect(EST).toMatch(/contabilidade_incompleta_em/);
+    expect(EST).toMatch(/quarentena_em/);
     // ⚠️ E nenhum dos dois decide isso por conta própria — a regra é uma só.
     expect(CRON).not.toMatch(/if \(s\.contabilidade_incompleta_em\)/);
     expect(ROTA).not.toMatch(/if \([^)]*\.contabilidade_incompleta_em\)/);
@@ -598,8 +626,20 @@ describe("F.3 — os DOIS canais, a MESMA coluna", () => {
       /grant execute on function public\.autopilot_marcar_contabilidade\(uuid, uuid, boolean\)\s*\n\s*to service_role;/);
     // ⚠️ Chamada de DENTRO das duas RPCs, na mesma transação — nunca um
     // `update` solto depois (a cicatriz do A136).
-    expect([...SQL.matchAll(/perform public\.autopilot_marcar_contabilidade\(/g)])
-      .toHaveLength(7);
+    /**
+     * ⚠️ O número cresceu no fechamento do CR-2: as recusas por divergência
+     * também marcam agora. O que a trava fixa é a PROPRIEDADE — o marcador é
+     * chamado de dentro das RPCs, em todo retorno que decide dinheiro, nunca
+     * por um `update` solto depois (a cicatriz do A136).
+     */
+    expect([...SQL.matchAll(/perform public\.autopilot_marcar_contabilidade\(/g)].length)
+      .toBeGreaterThanOrEqual(7);
+    // ⚠️ CR-5: e o P&L tem UM escritor, com a virada do dia dentro dele.
+    expect(SQL).toMatch(/create or replace function public\.autopilot_aplicar_pnl/);
+    expect(SQL).toMatch(/last_reset_day = v_hoje,/);
+    expect([...SQL.matchAll(/perform public\.autopilot_aplicar_pnl\(/g)].length)
+      .toBeGreaterThanOrEqual(4);
+    expect(SQL).not.toMatch(/set pnl_today\s+= pnl_today \+ v_realizado/);
     /**
      * ⚠️⚠️ OS DOIS MOTIVOS MORAM NUMA FUNÇÃO SÓ. Eles decidem o bloqueio da
      * sessão E a elegibilidade ao recovery financeiro; escrever a regra duas
@@ -608,8 +648,10 @@ describe("F.3 — os DOIS canais, a MESMA coluna", () => {
      */
     expect(SQL).toMatch(
       /create or replace function public\.autopilot_efeito_incompleto/);
-    expect(SQL).toMatch(
-      /select coalesce\(p_taxa_opaca, false\)\s*\n\s*or \(p_side = 'sell'/);
+    expect(SQL).toMatch(/select coalesce\(p_taxa_opaca, false\)/);
+    // CR-2: divergência registrada · CR-1: compra sem custo conhecido
+    expect(SQL).toMatch(/nullif\(coalesce\(p_divergencia, ''\), ''\) is not null/);
+    expect(SQL).toMatch(/p_side = 'buy'\s*\n\s*and coalesce\(p_applied_qty, 0\) > 0/);
     // E os DOIS consumidores chamam a mesma função, nunca uma cópia da regra.
     expect([...SQL.matchAll(/public\.autopilot_efeito_incompleto\(/g)].length)
       .toBeGreaterThanOrEqual(3);

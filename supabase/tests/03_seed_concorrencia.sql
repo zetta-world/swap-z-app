@@ -1,6 +1,7 @@
 \set ON_ERROR_STOP on
 delete from autopilot_position_effects where session_id='33333333-3333-3333-3333-333333333333';
 delete from autopilot_positions where session_id='33333333-3333-3333-3333-333333333333';
+delete from cex_fills where intent_id in (select id from cex_execution_intents where session_id='33333333-3333-3333-3333-333333333333');
 delete from cex_execution_intents where session_id='33333333-3333-3333-3333-333333333333';
 delete from autopilot_sessions where id='33333333-3333-3333-3333-333333333333';
 delete from strategy_certificates where strategy_id='conc';

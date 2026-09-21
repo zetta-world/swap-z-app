@@ -334,8 +334,15 @@ describe("⚠️ o SQL sustenta as três propriedades", () => {
      * não existindo — quem encerra é o estado, e agora também o fill.
      */
     expect(SQL).toMatch(/when p_estado = 'FAILED_PRE_SUBMIT' then 0/);
+    /**
+     * ⚠️ CR-1: terminal mede o executado SÓ quando o executado é conhecido.
+     * Na compra ele é dinheiro e chega depois — sem essa condição, uma BUY
+     * `FILLED` com `filled_quote` ainda 0 largava o compromisso inteiro.
+     */
     expect(SQL).toMatch(
-      /when p_estado in \('FILLED', 'CANCELED'\)\s*\n\s*then greatest\(coalesce\(p_executado, 0\) - coalesce\(p_aplicado, 0\), 0\)/);
+      /when p_estado in \('FILLED', 'CANCELED'\) and coalesce\(p_executado_conhecido, true\)\s*\n\s*then greatest\(coalesce\(p_executado, 0\) - coalesce\(p_aplicado, 0\), 0\)/);
+    expect(SQL).toMatch(
+      /not \(coalesce\(i\.filled_qty, 0\) > 0 and coalesce\(i\.filled_quote, 0\) <= 0\)/);
   });
 
   it("⚠️⚠️ a liquidação faz posição E marcador na mesma função", () => {

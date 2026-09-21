@@ -349,7 +349,16 @@ describe("⑪ a QUARENTENA por deriva — achado da revisão adversarial", () =>
     const i = ROTA.indexOf("entradaAutorizadaNaSessao(");
     expect(i).toBeGreaterThan(-1);
     // A condição imediatamente acima da chamada é o lado da ordem.
-    expect(ROTA.slice(Math.max(0, i - 200), i)).toMatch(/if \(side === "buy"\)/);
+    /**
+     * ⚠️ A rota ganhou DOIS gates de entrada (o portão único `avaliarRisco` e
+     * a quarentena), os dois dentro do mesmo `if (side === "buy")`. Procurar
+     * 200 caracteres atrás do segundo achava o primeiro. O que importa é a
+     * propriedade: ambos moram no ramo da COMPRA.
+     */
+    const iBuy = ROTA.indexOf('if (side === "buy") {');
+    expect(iBuy).toBeGreaterThan(-1);
+    expect(i).toBeGreaterThan(iBuy);
+    expect(ROTA.slice(iBuy, i)).not.toMatch(/side === "sell"/);
   });
 
   it("⚠️ a recusa vem ANTES do cofre (§20)", () => {

@@ -222,7 +222,12 @@ export function bancoFalso(): BancoFalso {
     /** ⚠️ A MESMA regra que `autopilot_efeito_incompleto` — ver abaixo. */
     const efeitoIncompletoDaLinha = (e: Linha) =>
       e.taxa_opaca === true
+      // ⚠️ CR-2: divergência vista é divergência que fica.
+      || Boolean(e.divergencia)
       || (e.side === "sell" && Number(e.custo_removido_usd ?? 0) > 0
+          && Number(e.applied_quote ?? 0) <= 0)
+      // ⚠️ CR-1: compra com quantidade aplicada e custo desconhecido.
+      || (e.side === "buy" && Number(e.applied_qty ?? 0) > 0
           && Number(e.applied_quote ?? 0) <= 0);
     /**
      * ⚠️⚠️ INVARIANTE F — a opacidade da taxa vira BLOQUEIO DURÁVEL.
@@ -252,14 +257,36 @@ export function bancoFalso(): BancoFalso {
         ? (ses.contabilidade_incompleta_em ?? new Date().toISOString())
         : null;
     };
+    /**
+     * ⚠️⚠️⚠️ CR-5 — A VIRADA DO DIA MORA AQUI DENTRO.
+     *
+     * O recovery aplicava −53 com freeze de hoje, e o laço de sessões, com um
+     * snapshot de ONTEM na mão, executava a virada e zerava tudo. O marcador
+     * seguia −53, então o replay devolvia zero: a perda ficava apagada de
+     * forma PERSISTENTE. Ordenar isso no TypeScript seria mais um acordo
+     * entre dois caminhos que já provaram divergir — quem escreve o P&L
+     * carimba o dia na mesma passagem.
+     */
     const aplicarPnl = (sessionId: unknown, realizado: number) => {
-      if (realizado === 0) return;
       const ses = sessoes.find((x) => x.id === sessionId);
       if (!ses) return;
-      const depois = Number(ses.pnl_today ?? 0) + realizado;
+      const hoje = hojeUtcDoBanco();
+      /**
+       * ⚠️ `last_reset_day` é `not null` no banco de verdade (a cadeia recusa
+       * a linha sem ele). Ausente aqui é seed de teste, não estado possível —
+       * simular uma virada por causa disso seria o falso mais AGRESSIVO que o
+       * banco, e testes provariam a coisa errada. Data diferente e real,
+       * essa sim vira o dia.
+       */
+      const viraDia = ses.last_reset_day != null && ses.last_reset_day !== hoje;
+      if (realizado === 0 && !viraDia) return;
+      const base = viraDia ? 0 : Number(ses.pnl_today ?? 0);
+      const depois = base + realizado;
       ses.pnl_today = depois;
+      if (viraDia) { ses.trades_today = 0; ses.frozen_until_day = null; }
+      ses.last_reset_day = hoje;
       if (depois <= -Number(ses.daily_loss_stop_usd ?? Infinity)) {
-        ses.frozen_until_day = hojeUtcDoBanco();
+        ses.frozen_until_day = hoje;
       }
     };
     /**
@@ -277,7 +304,16 @@ export function bancoFalso(): BancoFalso {
       if (estado === "FAILED_PRE_SUBMIT") return 0;
       const venda = campo === "reservado_qty";
       const aplicado = venda ? Number(e.applied_qty ?? 0) : Number(e.applied_quote ?? 0);
-      if (TERMINAIS.has(estado)) {
+      /**
+       * ⚠️⚠️ CR-1: terminal mede o EXECUTADO só quando o executado é
+       * conhecido. Na venda ele é quantidade (conhecida junto com o fill);
+       * na COMPRA é dinheiro, e ele chega depois. Uma BUY `FILLED` com
+       * `filled_quote` ainda 0 tinha o compromisso desabando para zero — e a
+       * entrada seguinte passava como se aquele capital não existisse.
+       */
+      const executadoConhecido = venda
+        || !(Number(dono?.filled_qty ?? 0) > 0 && Number(dono?.filled_quote ?? 0) <= 0);
+      if (TERMINAIS.has(estado) && executadoConhecido) {
         const executado = venda ? Number(dono?.filled_qty ?? 0) : Number(dono?.filled_quote ?? 0);
         return Math.max(executado - aplicado, 0);
       }
@@ -847,6 +883,8 @@ export function bancoFalso(): BancoFalso {
       // ⚠️ Regressão mede o LIVRO contra o livro; o delta mede o livro contra
       // o que já está DENTRO da posição (que a absorção pode ter adiantado).
       if (noLivro < Number(efeito.ledger_qty) - EPS) {
+        efeito.divergencia = "regressao_de_quantidade";   // ⚠️ CR-2: grava
+        marcarContabilidade(it.id, it.session_id, false);
         return { data: { ok: false, motivo: "regressao",
                          aplicado: Number(efeito.ledger_qty), no_livro: noLivro }, error: null };
       }
@@ -856,8 +894,16 @@ export function bancoFalso(): BancoFalso {
        * abaixo o esconderiam, e na venda isso deixa o P&L (e o stop de perda)
        * OTIMISTA. Divergência não se absorve.
        */
+      /**
+       * ⚠️⚠️ CR-2: na VENDA a queda do recebido é CORRIGIDA pela conta
+       * acumulada (o custo removido não muda; só a receita muda). Na COMPRA
+       * o recebido virou `cost_usd`, e devolvê-lo não é aritmética — aí sim
+       * fail-closed, com a divergência GRAVADA.
+       */
       const quoteNoLivro = Number(it.filled_quote ?? 0);
-      if (quoteNoLivro < Number(efeito.ledger_quote ?? 0) - EPS) {
+      if (quoteNoLivro < Number(efeito.ledger_quote ?? 0) - EPS && it.side === "buy") {
+        efeito.divergencia = "regressao_de_quote";
+        marcarContabilidade(it.id, it.session_id, false);
         return { data: { ok: false, motivo: "regressao_de_quote",
                          aplicado: Number(efeito.ledger_quote),
                          no_livro: quoteNoLivro }, error: null };
@@ -871,11 +917,17 @@ export function bancoFalso(): BancoFalso {
       const taxaTotal = taxaOpaca ? Number(efeito.fee_aplicada_usd ?? 0) : taxaLida!;
       const taxaDelta = taxaTotal - Number(efeito.fee_aplicada_usd ?? 0);
       if (taxaDelta < -EPS) {
+        efeito.divergencia = "regressao_de_taxa";   // ⚠️ CR-2: grava
+        marcarContabilidade(it.id, it.session_id, false);
         return { data: { ok: false, motivo: "regressao_de_taxa",
                          aplicado: efeito.fee_aplicada_usd, no_livro: taxaTotal }, error: null };
       }
       // ⚠️ A142: o RECEBIDO entra na decisão — ele cresce com a quantidade parada.
-      if (deltaQty <= EPS && taxaDelta <= EPS && deltaQuote <= EPS) {
+      // ⚠️ CR-2: e CAI também. `deltaQuote` é `max(livro − aplicado, 0)`, então
+      // uma queda virava zero e o atalho `sem_delta` engolia a correção.
+      const quoteMudou = it.side === "sell"
+        && Math.abs(Number(it.filled_quote ?? 0) - Number(efeito.applied_quote ?? 0)) > EPS;
+      if (deltaQty <= EPS && taxaDelta <= EPS && deltaQuote <= EPS && !quoteMudou) {
         efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
         efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
         // ⚠️ Invariante F: a opacidade da taxa e o bloqueio derivado entram
@@ -890,7 +942,7 @@ export function bancoFalso(): BancoFalso {
         // ⚠️ A142: ajuste sem quantidade — recebido OU taxa chegaram depois.
         let semQtd = 0;
         if (it.side === "sell") {
-          const quoteNovo = Math.max(Number(efeito.applied_quote ?? 0), Number(it.filled_quote ?? 0));
+          const quoteNovo = Number(it.filled_quote ?? 0);   // ⚠️ CR-2: o livro manda
           if (quoteNovo > 0) {
             semQtd = (quoteNovo - Number(efeito.custo_removido_usd ?? 0) - taxaTotal)
                    - Number(efeito.pnl_aplicado_usd ?? 0);
@@ -915,7 +967,9 @@ export function bancoFalso(): BancoFalso {
             ? custo / Number(alvo.base_amount) : alvo.entry_price;
         }
         efeito.fee_aplicada_usd = taxaTotal;
-        efeito.applied_quote = Math.max(Number(efeito.applied_quote ?? 0), Number(it.filled_quote ?? 0));
+        efeito.applied_quote = it.side === "sell" ? Number(it.filled_quote ?? 0)
+          : Math.max(Number(efeito.applied_quote ?? 0), Number(it.filled_quote ?? 0));
+        efeito.divergencia = null;
         efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + semQtd;
         efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
         efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
@@ -933,7 +987,7 @@ export function bancoFalso(): BancoFalso {
       // ⚠️ A142: a posição já foi encerrada por ESTE intent; o que sobra é
       // receita sem custo novo, e a conta acumulada sabe lidar com isso.
       if (!pos && it.side === "sell" && Number(efeito.applied_qty ?? 0) > 0) {
-        const quoteNovo = Math.max(Number(efeito.applied_quote ?? 0), Number(it.filled_quote ?? 0));
+        const quoteNovo = Number(it.filled_quote ?? 0);   // ⚠️ CR-2: o livro manda
         let extra = 0;
         if (quoteNovo > 0) {
           extra = (quoteNovo - Number(efeito.custo_removido_usd ?? 0) - taxaTotal)
@@ -1003,7 +1057,7 @@ export function bancoFalso(): BancoFalso {
       if (it.side === "sell") {
         // ⚠️ A142: conta ACUMULADA; sem recebido, o custo espera guardado.
         const custoAcum = Number(efeito.custo_removido_usd ?? 0) + custoRemovido;
-        const quoteNovo = Math.max(Number(efeito.applied_quote ?? 0), Number(it.filled_quote ?? 0));
+        const quoteNovo = Number(it.filled_quote ?? 0);   // ⚠️ CR-2: o livro manda
         if (quoteNovo > 0) {
           realizado = (quoteNovo - custoAcum - taxaTotal) - Number(efeito.pnl_aplicado_usd ?? 0);
         }
@@ -1015,7 +1069,9 @@ export function bancoFalso(): BancoFalso {
       // `greatest(reservado − applied, 0)`, e `applied` acabou de crescer.
       efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + realizado;
       efeito.applied_qty = Math.max(Number(efeito.applied_qty), noLivro);
-      efeito.applied_quote = Math.max(Number(efeito.applied_quote), Number(it.filled_quote));
+      efeito.applied_quote = it.side === "sell" ? Number(it.filled_quote ?? 0)
+        : Math.max(Number(efeito.applied_quote), Number(it.filled_quote));
+      efeito.divergencia = null;
       efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
       efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
       // ⚠️ Invariante F — ver acima.

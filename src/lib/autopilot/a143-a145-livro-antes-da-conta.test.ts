@@ -547,49 +547,68 @@ describe("A145 — o recebido tardio da compra vira base de custo", () => {
 // AUDITORIA OBRIGATÓRIA — SINTÉTICO → REAL
 // ═══════════════════════════════════════════════════════════════════════════
 describe("sintético → real: o recebido que REGRIDE não pode virar lucro", () => {
-  it("⚠️⚠️⚠️ projeção: `filled_quote` caindo é divergência, não ruído", async () => {
+  it("⚠️⚠️⚠️ CR-2: na VENDA o recebido que cai é CORRIGIDO, não esquecido", async () => {
     /**
-     * O ACK estimou 600; os trades reais somam 580. `filled_quote` CAI com
-     * `filled_qty` parado. Os dois `greatest()` desta função engoliriam a
-     * queda — e na VENDA isso mantém o resultado do dia calculado sobre um
-     * recebido que não existiu, US$ 20 OTIMISTA. O freio é justamente esse
-     * número.
+     * ⚠️⚠️ ESTE TESTE AFIRMAVA FAIL-CLOSED, e o retest independente mostrou o
+     * preço: a projeção recusava, e `pnl_today`, freeze, bandeira e lista de
+     * pendências ficavam exatamente como estavam. A divergência era detectada
+     * uma vez e esquecida — com o lucro otimista preservado.
+     *
+     * Na VENDA a correção é ARITMÉTICA: o custo removido não muda quando o
+     * recebido cai; só a receita muda. A conta acumulada do A142 produz o
+     * delta negativo sozinha.
      */
-    sessao();
-    posicao({ base_amount: 0.01, cost_usd: 500 });
+    sessao({ pnl_today: -30, daily_loss_stop_usd: 50 });
+    posicao({ base_amount: 0.01, cost_usd: 100 });
     intent("v1", { side: "sell", state: "FILLED", filled_qty: 0.01,
-      filled_quote: 600, external_order_id: "ORD-V1" });
+      filled_quote: 100, fee_total: 2, fee_currency: "USDT",
+      external_order_id: "ORD-V1" });
     const primeira = await projetarEfeitoDoIntent("v1", { chamarRpc: chamar });
-    expect(primeira.ok && primeira.realizado).toBeCloseTo(100, 10);
+    expect(primeira.ok && primeira.realizado).toBeCloseTo(-2, 10);
+    expect(Number(aSessao().pnl_today)).toBeCloseTo(-32, 10);
 
-    oIntent("v1").filled_quote = 580;
+    // Os trades reais dizem 80, não 100.
+    oIntent("v1").filled_quote = 80;
     const segunda = await projetarEfeitoDoIntent("v1", { chamarRpc: chamar });
-    expect(segunda.ok).toBe(false);
-    if (segunda.ok) return;
-    expect(segunda.motivo).toBe("regressao_de_quote");
-    // ⚠️ E o P&L não foi mexido nem para mais nem para menos: quem decide o
-    // conserto é mão humana, com o livro de execuções (que está certo) na mão.
-    expect(Number(aSessao().pnl_today)).toBeCloseTo(100, 10);
+    expect(segunda.ok, segunda.ok ? "" : segunda.porque).toBe(true);
+    if (!segunda.ok) return;
+    // 80 − 100 − 2 = −22, e −2 já estava aplicado ⇒ delta −20.
+    expect(segunda.realizado).toBeCloseTo(-20, 10);
+    // ⚠️ O resultado econômico verdadeiro, e o stop CRUZA.
+    expect(Number(aSessao().pnl_today)).toBeCloseTo(-52, 10);
+    expect(aSessao().frozen_until_day).toBe(hojeUtc());
   });
 
-  it("⚠️⚠️ liquidação: o recebido abaixo do já aplicado também fecha", async () => {
+  it("⚠️⚠️ CR-2: na COMPRA a queda fecha a porta E FICA REGISTRADA", async () => {
+    /**
+     * Na compra o recebido virou `cost_usd`; devolvê-lo exigiria saber quanto
+     * daquele custo ainda está na linha depois de vendas parciais, e a linha
+     * pode já ter sido apagada. Fail-closed — mas com a divergência GRAVADA,
+     * que é o que faltava.
+     */
     sessao({ pnl_today: 0 });
-    intent("i1", { state: "SUBMITTED", external_order_id: "ORD-1",
-      filled_qty: 0.01, filled_quote: 600, fee_total: null });
-    posicao({ base_amount: 0.01, cost_usd: 500, status: "exit_armed",
-              exit_order_id: "ORD-1", exit_intent_id: "i1" });
-    const um = await liquidarSaidaArmada("i1", 0.01, 600, { chamarRpc: chamar });
-    expect(um.ok && um.realizado).toBeCloseTo(100, 10);
+    intent("c1", { side: "buy", order_type: "market", state: "FILLED",
+      filled_qty: 0.01, filled_quote: 600, fee_total: 1, fee_currency: "USDT" });
+    await projetarEfeitoDoIntent("c1", { chamarRpc: chamar });
+    expect(Number(aPosicao()!.cost_usd)).toBeCloseTo(600, 10);
 
-    const dois = await liquidarSaidaArmada("i1", 0.01, 580, { chamarRpc: chamar });
-    expect(dois.ok).toBe(false);
-    if (!dois.ok) expect(dois.motivo).toBe("regressao_de_quote");
-    expect(Number(aSessao().pnl_today)).toBeCloseTo(100, 10);
+    oIntent("c1").filled_quote = 580;
+    const r = await projetarEfeitoDoIntent("c1", { chamarRpc: chamar });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.motivo).toBe("regressao_de_quote");
+    // ⚠️⚠️ O PONTO DO CR-2: a divergência NÃO cai no chão.
+    expect(oEfeito("c1")!.divergencia).toBe("regressao_de_quote");
+    expect(aSessao().contabilidade_incompleta_em).toBeTruthy();
   });
 
-  it("⚠️ o SQL carrega as duas guardas", () => {
-    expect(SQL).toMatch(/'motivo', 'regressao_de_quote'/);
-    expect(SQL).toMatch(/v_i\.filled_quote < v_e\.ledger_quote - v_eps/);
-    expect(SQL).toMatch(/p_quote_recebido < v_e\.applied_quote - v_eps/);
-  });
+  it("⚠️ o SQL sustenta os dois desfechos da regressão de quote", () => {
+    // venda: corrige (a guarda só dispara na compra)
+    expect(SQL).toMatch(
+      /if v_i\.filled_quote < v_e\.ledger_quote - v_eps and v_i\.side = 'buy' then/);
+    // e a recusa GRAVA a divergência
+    expect(SQL).toMatch(/set divergencia = 'regressao_de_quote'/);
+    expect(SQL).toMatch(/set divergencia = 'regressao_de_quantidade'/);
+    expect(SQL).toMatch(/set divergencia = 'regressao_de_taxa'/);
+});
 });

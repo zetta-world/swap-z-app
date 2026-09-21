@@ -242,11 +242,17 @@ describe("⚠️ o SQL sustenta a conta", () => {
   });
 
   it("⚠️⚠️ o dia do freeze vem do BANCO, e `p_hoje` não existe mais", () => {
+    /**
+     * ⚠️ O freeze saiu das quatro RPCs e virou UM escritor
+     * (`autopilot_aplicar_pnl`, CR-5), que também carimba o dia. A
+     * propriedade é a mesma e ficou mais forte: o dia vem do relógio do
+     * BANCO, e `p_hoje` continua não existindo.
+     */
     expect(SQL).not.toMatch(/p_hoje/);
-    const ocorrencias = [...SQL.matchAll(
-      /v_hoje := \(current_timestamp at time zone 'UTC'\)::date::text;/g)].length;
-    expect(ocorrencias, "projeção, ajuste de taxa e liquidação").toBeGreaterThanOrEqual(3);
-    expect(SQL).not.toMatch(/coalesce\(p_hoje, frozen_until_day\)/);
+    expect(SQL).toMatch(/v_hoje text := \(current_timestamp at time zone 'UTC'\)::date::text;/);
+    expect(SQL).toMatch(/when \(v_base \+ p_realizado\) <= -daily_loss_stop_usd then v_hoje/);
+    expect([...SQL.matchAll(/perform public\.autopilot_aplicar_pnl\(/g)].length)
+      .toBeGreaterThanOrEqual(4);
   });
 
   it("⚠️⚠️ a conversão da taxa nasce FECHADA (A116)", () => {

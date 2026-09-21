@@ -21,6 +21,7 @@ import { reservaDaVagaDiaria } from "@/lib/autopilot/reserva-de-vaga";
 import {
   avaliarAutorizacaoDaSessaoParaExecucao, entradaAutorizadaNaSessao, tetoEfetivoDaOrdem,
 } from "@/lib/autopilot/autorizacao-de-execucao";
+import { avaliarRisco, estadoDaLinha } from "@/lib/autopilot/estado-financeiro";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getReferencePriceUsd, checkRealNotional } from "@/lib/autopilot/price-guard";
 import { podeAutomatizar } from "@/lib/autopilot/liberacao";
@@ -369,6 +370,27 @@ export async function POST(req: NextRequest) {
      * ⚠️ E CONTINUA ANTES DO COFRE (§20): recusa sem decifrar credencial.
      */
     if (side === "buy") {
+      /**
+       * ⚠️⚠️⚠️ O MESMO PORTÃO ÚNICO DO CRON — §8 do fechamento.
+       *
+       * O cron passou a reler o estado financeiro no instante de cada COMPRA
+       * (CR-3/CR-4). Deixar este canal com uma avaliação própria seria a
+       * família do A113 de novo: a regra certa obedecida num caminho e uma
+       * variação dela no outro. `avaliarRisco` avalia sessão, validade,
+       * freeze, teto diário, conexão, quarentena, contabilidade E o stop de
+       * perda sobre o número durável — a linha aqui já é fresca, carregada
+       * por requisição.
+       */
+      const risco = avaliarRisco(
+        sessaoDoPiloto ? estadoDaLinha(sessaoDoPiloto) : null, agoraDaSessao);
+      if (!risco.ok) {
+        logSecurity("a130_entrada_bloqueada", { route: "cex/order", motivo: risco.motivo }, "high");
+        return NextResponse.json(
+          { ok: false, error: "sessao_nao_autorizada",
+            motivo: risco.motivo, detail: risco.porque },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       const entrada = entradaAutorizadaNaSessao({
         emQuarentena: Boolean(sessaoDoPiloto?.quarentena_em),
         // ⚠️ Invariante F: o bloqueio é DURÁVEL justamente para alcançar este

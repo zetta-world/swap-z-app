@@ -231,6 +231,28 @@ comment on column public.autopilot_sessions.contabilidade_incompleta_em is
   'Bloqueia COMPRA autonoma nos dois canais; saidas e recovery seguem. '
   'Derivada das linhas de autopilot_position_effects — some sozinha.';
 
+-- ── F-1-BIS. A DIVERGÊNCIA QUE NÃO PODE SER ESQUECIDA (CR-2) ──────────────
+--
+-- ⚠️⚠️⚠️ DETECTADA UMA VEZ, ESQUECIDA PARA SEMPRE.
+--
+-- A projeção devolvia `ok:false` com `regressao_de_quote`/`regressao`/
+-- `regressao_de_taxa` e ia embora. O retest independente reproduziu o preço
+-- disso: o livro regrediu, a projeção recusou, e `pnl_today`, `freeze`,
+-- `contabilidade_incompleta_em` e a lista de pendências ficaram todos como
+-- estavam. A sessão seguiu comprando com uma divergência conhecida e
+-- descartada — um erro financeiro que o sistema VIU e deixou cair no chão.
+--
+-- Agora a recusa GRAVA. A transação que recusa aplicar também marca o efeito,
+-- e a marca alimenta a mesma definição de contabilidade incompleta que
+-- bloqueia a COMPRA e relista o intent no recovery.
+alter table public.autopilot_position_effects
+  add column if not exists divergencia text;
+
+comment on column public.autopilot_position_effects.divergencia is
+  'CR-2: o motivo da ultima recusa por divergencia (regressao de qty/quote/ '
+  'taxa). Enquanto existir, a sessao NAO compra e o intent segue pendente — '
+  'detectar e esquecer era o defeito.';
+
 -- ── F-2-BIS. O QUE É "CONTABILIDADE INCOMPLETA" — UMA DEFINIÇÃO SÓ ────────
 --
 -- ⚠️⚠️⚠️ ESTA PERGUNTA ERA RESPONDIDA EM DOIS LUGARES, e essa é a forma exata
@@ -247,21 +269,45 @@ comment on column public.autopilot_sessions.contabilidade_incompleta_em is
 --   · CUSTO REMOVIDO SEM RECEBIDO — a posição reduziu, o custo saiu do livro,
 --     e a corretora ainda não disse por quanto. O A142 manda guardar e
 --     esperar; nessa janela o dia não contém o resultado de um trade FECHADO.
+--
+-- ⚠️⚠️⚠️ CR-1: A COMPRA TAMBÉM TEM CONTABILIDADE INCOMPLETA.
+--
+-- A primeira versão só descrevia a VENDA, e o retest independente mostrou o
+-- buraco: uma BUY que executou QUANTIDADE com o custo ainda desconhecido
+-- (`filled_quote` 0) não era "incompleta" para ninguém. Ela sumia do
+-- recovery, o compromisso dela caía a zero, e a entrada seguinte entrava como
+-- se aquele capital não existisse — 190 + 10 (custo que chega depois) + 10
+-- (reserva nova) = 210 num teto de 200.
+--
+-- Uma compra com quantidade aplicada e custo zero é exatamente o estado "o
+-- bot tem a bolsa e não sabe quanto pagou". Isso é contabilidade incompleta
+-- pela mesma razão que a taxa desconhecida é.
+drop function if exists public.autopilot_efeito_incompleto(text, boolean, numeric, numeric);
 create or replace function public.autopilot_efeito_incompleto(
   p_side text, p_taxa_opaca boolean,
-  p_custo_removido numeric, p_applied_quote numeric
+  p_custo_removido numeric, p_applied_quote numeric,
+  p_applied_qty numeric, p_divergencia text
 ) returns boolean
 language sql immutable as $$
   select coalesce(p_taxa_opaca, false)
+      -- ⚠️ CR-2: divergência vista é divergência que fica.
+      or nullif(coalesce(p_divergencia, ''), '') is not null
+      -- venda: reduziu a posição e o recebido ainda não chegou
       or (p_side = 'sell'
           and coalesce(p_custo_removido, 0) > 0
           and coalesce(p_applied_quote, 0) <= 0)
+      -- ⚠️ CR-1 — compra: entrou quantidade e o custo segue desconhecido
+      or (p_side = 'buy'
+          and coalesce(p_applied_qty, 0) > 0
+          and coalesce(p_applied_quote, 0) <= 0)
 $$;
 
-comment on function public.autopilot_efeito_incompleto(text, boolean, numeric, numeric) is
-  'Round 9 (fechamento): a UNICA definicao de contabilidade incompleta. Decide '
-  'o bloqueio de COMPRA da sessao E a elegibilidade ao recovery financeiro — '
-  'as duas respostas tem de ser a mesma.';
+comment on function public.autopilot_efeito_incompleto(text, boolean, numeric, numeric, numeric, text) is
+  'Round 9 (fechamento) + CR-1/CR-2: a UNICA definicao de contabilidade '
+  'incompleta — taxa opaca, divergencia registrada, venda com custo removido '
+  'sem recebido, e COMPRA com quantidade aplicada e custo desconhecido. '
+  'Decide o bloqueio de COMPRA da sessao E a elegibilidade ao recovery: as '
+  'duas respostas tem de ser a mesma.';
 
 -- ⚠️ O recovery financeiro varre por esta coluna sem janela de tempo (o
 -- conjunto é pequeno por construção: são sessões PRESAS). O índice parcial é
@@ -269,6 +315,76 @@ comment on function public.autopilot_efeito_incompleto(text, boolean, numeric, n
 create index if not exists idx_autopilot_effects_incompletos
   on public.autopilot_position_effects (session_id)
   where taxa_opaca;
+
+-- ── F-2-TER. O ÚNICO ESCRITOR DE `pnl_today` — COM A VIRADA DENTRO (CR-5) ─
+--
+-- ⚠️⚠️⚠️ A VIRADA DO DIA APAGAVA UM RESULTADO DE HOJE.
+--
+-- O retest independente reproduziu: sessão com `last_reset_day = ontem`, o
+-- recovery roda ANTES do laço de sessões e aplica −53 com freeze de hoje; o
+-- laço então recebe o snapshot VELHO (`last_reset_day` ainda ontem), executa
+-- a virada, e zera `pnl_today` e `frozen_until_day`. Pior: o marcador
+-- (`pnl_aplicado_usd`) continua −53, então o replay devolve zero — a perda
+-- fica apagada DE FORMA PERSISTENTE, e a COMPRA seguinte passa.
+--
+-- Ordenar as duas coisas no TypeScript seria mais um acordo de cavalheiros
+-- entre dois caminhos que já provaram divergir. A virada passou para DENTRO
+-- da transação que aplica o resultado: quem escreve o P&L também carimba o
+-- dia. Depois disso, qualquer virada posterior vê `last_reset_day = hoje` e
+-- não tem o que zerar.
+--
+-- ⚠️ E É UM ESCRITOR SÓ. Os quatro `update autopilot_sessions set pnl_today`
+-- espalhados pela projeção e pela liquidação viraram chamadas daqui — §14.
+create or replace function public.autopilot_aplicar_pnl(
+  p_session_id uuid, p_realizado numeric
+) returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hoje text := (current_timestamp at time zone 'UTC')::date::text;
+  v_s record;
+  v_base numeric;
+begin
+  if p_realizado is null then return; end if;
+
+  select * into v_s from public.autopilot_sessions where id = p_session_id for update;
+  if not found then return; end if;
+
+  -- ⚠️ A BASE DO DIA: se a linha ainda é de ontem, o dia começa em zero AQUI,
+  -- na mesma transação — nunca por um caminho que roda depois com um
+  -- snapshot velho na mão.
+  v_base := case when v_s.last_reset_day is distinct from v_hoje
+                 then 0 else coalesce(v_s.pnl_today, 0) end;
+
+  if p_realizado = 0 and v_s.last_reset_day is not distinct from v_hoje then
+    return;   -- nada a fazer, e não se toca na linha à toa
+  end if;
+
+  update public.autopilot_sessions
+     set pnl_today    = v_base + p_realizado,
+         trades_today = case when v_s.last_reset_day is distinct from v_hoje
+                             then 0 else trades_today end,
+         last_reset_day = v_hoje,
+         frozen_until_day = case
+           when (v_base + p_realizado) <= -daily_loss_stop_usd then v_hoje
+           -- ⚠️ Virou o dia: o congelamento de ONTEM não vale hoje.
+           when v_s.last_reset_day is distinct from v_hoje then null
+           else frozen_until_day end,
+         updated_at = now()
+   where id = p_session_id;
+end; $$;
+
+comment on function public.autopilot_aplicar_pnl(uuid, numeric) is
+  'CR-5: o UNICO escritor de pnl_today/frozen_until_day. A virada do dia '
+  'acontece DENTRO desta transacao, entao nenhuma virada posterior pode '
+  'apagar um resultado ja aplicado hoje.';
+
+revoke all on function public.autopilot_aplicar_pnl(uuid, numeric)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_aplicar_pnl(uuid, numeric)
+  to service_role;
 
 -- ── F-3. MARCAR E DERIVAR, NUMA TRANSAÇÃO SÓ ──────────────────────────────
 --
@@ -317,7 +433,8 @@ begin
              select 1 from public.autopilot_position_effects e
               where e.session_id = p_session_id
                 and public.autopilot_efeito_incompleto(
-                      e.side, e.taxa_opaca, e.custo_removido_usd, e.applied_quote))
+                      e.side, e.taxa_opaca, e.custo_removido_usd, e.applied_quote,
+                      e.applied_qty, e.divergencia))
              then coalesce(s.contabilidade_incompleta_em, now())
            else null end,
          updated_at = now()
@@ -764,6 +881,7 @@ declare
   v_quote_novo    numeric := 0;
   v_realizado_total numeric := 0;
   v_hoje          text;
+  v_quote_mudou   boolean := false;
   v_eps  constant numeric := 1e-12;
   -- Ruído relativo de ponto flutuante ao vender "tudo": 0,1 − 0,1 pode deixar
   -- 1e-17. Mesma convenção de `oQueSobrou` em venda-limitada.ts.
@@ -825,6 +943,12 @@ begin
   -- segundo de propósito, e compará-la com o livro acusaria regressão onde há
   -- apenas uma liquidação que chegou antes da ingestão dos fills.
   if v_i.filled_qty < v_e.ledger_qty - v_eps then
+    -- ⚠️ CR-2: a recusa GRAVA. Detectar e esquecer era o defeito.
+    update public.autopilot_position_effects
+       set divergencia = 'regressao_de_quantidade', updated_at = now()
+     where intent_id = p_intent_id;
+    perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id,
+      v_taxa_opaca and v_i.side = 'sell' and coalesce(v_i.filled_qty, 0) > 0);
     return jsonb_build_object('ok', false, 'motivo', 'regressao',
       'aplicado', v_e.ledger_qty, 'no_livro', v_i.filled_qty);
   end if;
@@ -857,7 +981,32 @@ begin
    * O que para é a PROJEÇÃO daquele intent, com evento de severidade alta —
    * reconciliação de mão humana, como a regressão de quantidade e a de taxa.
    */
-  if v_i.filled_quote < v_e.ledger_quote - v_eps then
+  /**
+   * ⚠️⚠️⚠️ CR-2 — A REGRESSÃO DO RECEBIDO TEM DOIS DESFECHOS, E O ANTIGO
+   * ERA O ERRADO PARA O CASO COMUM.
+   *
+   * Antes, QUALQUER queda de `filled_quote` fechava a porta e ia embora. O
+   * retest reproduziu o preço: sintético dizia 100, os trades reais disseram
+   * 80, a projeção recusou — e `pnl_today` ficou nos −32 de antes, sem
+   * freeze, sem bandeira, fora da lista de pendências. O resultado econômico
+   * verdadeiro era −52, e o stop de perda deveria ter disparado.
+   *
+   * ⚠️ NA VENDA A CORREÇÃO É ARITMÉTICA, e a conta acumulada do A142 já sabe
+   * fazê-la: o custo removido NÃO muda quando o recebido cai — só a receita
+   * muda. `realizado_total = recebido − custo − taxa` recalculado com o
+   * recebido MENOR produz um delta NEGATIVO, que é exatamente a correção.
+   * Recusar ali era preservar um lucro otimista em silêncio.
+   *
+   * ⚠️ NA COMPRA NÃO É. O recebido virou `cost_usd` na posição, e devolvê-lo
+   * exigiria saber quanto daquele custo ainda está na linha depois de vendas
+   * parciais — e a linha pode já ter sido apagada. Aí sim: fail-closed, com a
+   * divergência GRAVADA para não sumir do sistema.
+   */
+  if v_i.filled_quote < v_e.ledger_quote - v_eps and v_i.side = 'buy' then
+    update public.autopilot_position_effects
+       set divergencia = 'regressao_de_quote', updated_at = now()
+     where intent_id = p_intent_id;
+    perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id, false);
     return jsonb_build_object('ok', false, 'motivo', 'regressao_de_quote',
       'aplicado', v_e.ledger_quote, 'no_livro', v_i.filled_quote);
   end if;
@@ -887,7 +1036,12 @@ begin
   v_taxa_delta := v_taxa_total - v_e.fee_aplicada_usd;
   if v_taxa_delta < -v_eps then
     -- ⚠️ REGRESSÃO DE TAXA: aplicar um delta negativo viraria LUCRO
-    -- artificial. Fail-closed, como a regressão de quantidade.
+    -- artificial. Fail-closed, como a regressão de quantidade — e, desde o
+    -- CR-2, GRAVADA: uma divergência vista não pode cair no chão.
+    update public.autopilot_position_effects
+       set divergencia = 'regressao_de_taxa', updated_at = now()
+     where intent_id = p_intent_id;
+    perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id, false);
     return jsonb_build_object('ok', false, 'motivo', 'regressao_de_taxa',
       'aplicado', v_e.fee_aplicada_usd, 'no_livro', v_taxa_total);
   end if;
@@ -895,7 +1049,18 @@ begin
   -- ⚠️⚠️ A142: o RECEBIDO entra na decisão. Ele cresce com a quantidade
   -- parada (ACK sem `cost`, trades reais depois), e sem isto a chegada dele
   -- caía em `sem_delta` — o resultado inteiro ia embora.
-  if v_delta_qty <= v_eps and v_taxa_delta <= v_eps and v_delta_quote <= v_eps then
+  /**
+   * ⚠️⚠️ CR-2: O RECEBIDO QUE CAIU TAMBÉM É DELTA.
+   *
+   * `v_delta_quote` é `greatest(livro − aplicado, 0)`: uma QUEDA vira zero e
+   * o atalho `sem_delta` engolia a correção antes de qualquer conta. Na venda,
+   * qualquer diferença entre o livro e o aplicado é resultado a acertar — nos
+   * dois sentidos.
+   */
+  v_quote_mudou := v_i.side = 'sell'
+    and abs(coalesce(v_i.filled_quote, 0) - coalesce(v_e.applied_quote, 0)) > v_eps;
+  if v_delta_qty <= v_eps and v_taxa_delta <= v_eps and v_delta_quote <= v_eps
+     and not v_quote_mudou then
     -- ⚠️ O LIVRO AVANÇOU SEM DELTA? Ainda assim é o novo piso da regressão.
     update public.autopilot_position_effects
        set ledger_qty   = greatest(ledger_qty,   v_i.filled_qty),
@@ -919,7 +1084,9 @@ begin
    */
   if v_delta_qty <= v_eps then
     if v_i.side = 'sell' then
-      v_quote_novo := greatest(v_e.applied_quote, v_i.filled_quote);
+      -- ⚠️ CR-2: o LIVRO manda, inclusive quando cai. `greatest` aqui
+      -- preservaria a receita antiga e com ela um lucro que não existiu.
+      v_quote_novo := v_i.filled_quote;
       v_custo_acum := v_e.custo_removido_usd;
       -- ⚠️ Sem recebido não se conta resultado: a redução já está guardada em
       -- `custo_removido_usd` e espera o quote chegar.
@@ -927,16 +1094,8 @@ begin
         v_realizado_total := v_quote_novo - v_custo_acum - v_taxa_total;
         v_realizado := v_realizado_total - v_e.pnl_aplicado_usd;
       end if;
-      if v_realizado <> 0 then
-        v_hoje := (current_timestamp at time zone 'UTC')::date::text;
-        update public.autopilot_sessions
-           set pnl_today        = pnl_today + v_realizado,
-               frozen_until_day = case
-                 when (pnl_today + v_realizado) <= -daily_loss_stop_usd
-                   then v_hoje else frozen_until_day end,
-               updated_at       = now()
-         where id = v_i.session_id;
-      end if;
+    -- ⚠️ CR-5: um escritor só, e a virada do dia mora nele.
+    perform public.autopilot_aplicar_pnl(v_i.session_id, v_realizado);
     /**
      * ⚠️⚠️⚠️ ACHADO A145 — O CUSTO DA COMPRA QUE CHEGOU ATRASADO.
      *
@@ -979,8 +1138,11 @@ begin
     end if;
     update public.autopilot_position_effects
        set fee_aplicada_usd = v_taxa_total,
-           applied_quote    = greatest(applied_quote, v_i.filled_quote),
+           -- ⚠️ CR-2: acompanha o livro nos dois sentidos.
+           applied_quote    = case when v_i.side = 'sell' then v_i.filled_quote
+                                   else greatest(applied_quote, v_i.filled_quote) end,
            pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
+           divergencia      = null,
            ledger_qty       = greatest(ledger_qty,   v_i.filled_qty),
            ledger_quote     = greatest(ledger_quote, v_i.filled_quote),
            updated_at       = now()
@@ -1013,24 +1175,18 @@ begin
    * continua sendo fail-closed de verdade.
    */
   if not found and v_i.side = 'sell' and v_e.applied_qty > 0 then
-    v_quote_novo := greatest(v_e.applied_quote, v_i.filled_quote);
+    v_quote_novo := v_i.filled_quote;   -- ⚠️ CR-2: o livro manda
     if v_quote_novo > 0 then
       v_realizado_total := v_quote_novo - v_e.custo_removido_usd - v_taxa_total;
       v_realizado := v_realizado_total - v_e.pnl_aplicado_usd;
     end if;
-    if v_realizado <> 0 then
-      v_hoje := (current_timestamp at time zone 'UTC')::date::text;
-      update public.autopilot_sessions
-         set pnl_today        = pnl_today + v_realizado,
-             frozen_until_day = case
-               when (pnl_today + v_realizado) <= -daily_loss_stop_usd
-                 then v_hoje else frozen_until_day end,
-             updated_at       = now()
-       where id = v_i.session_id;
-    end if;
+    -- ⚠️ CR-5: um escritor só, e a virada do dia mora nele.
+    perform public.autopilot_aplicar_pnl(v_i.session_id, v_realizado);
     update public.autopilot_position_effects
        set applied_qty      = greatest(applied_qty,  v_i.filled_qty),
-           applied_quote    = greatest(applied_quote, v_i.filled_quote),
+           -- ⚠️ CR-2: na venda acompanha o livro nos DOIS sentidos.
+           applied_quote    = case when v_i.side = 'sell' then v_i.filled_quote
+                                   else greatest(applied_quote, v_i.filled_quote) end,
            ledger_qty       = greatest(ledger_qty,    v_i.filled_qty),
            ledger_quote     = greatest(ledger_quote,  v_i.filled_quote),
            fee_aplicada_usd = greatest(fee_aplicada_usd, v_taxa_total),
@@ -1182,14 +1338,8 @@ begin
        * varredura de pendências chamava exatamente assim. Agora fill imediato,
        * fill tardio e recovery usam a mesma autoridade temporal.
        */
-      v_hoje := (current_timestamp at time zone 'UTC')::date::text;
-      update public.autopilot_sessions
-         set pnl_today        = pnl_today + v_realizado,
-             frozen_until_day = case
-               when (pnl_today + v_realizado) <= -daily_loss_stop_usd
-                 then v_hoje else frozen_until_day end,
-             updated_at       = now()
-       where id = v_i.session_id;
+      -- ⚠️ CR-5: um escritor só, e a virada do dia mora nele.
+      perform public.autopilot_aplicar_pnl(v_i.session_id, v_realizado);
     end if;
   end if;
 
@@ -1199,7 +1349,9 @@ begin
   -- reserva de outro intent (A137).
   update public.autopilot_position_effects
      set applied_qty        = greatest(applied_qty,  v_i.filled_qty),
-         applied_quote      = greatest(applied_quote, v_i.filled_quote),
+         -- ⚠️ CR-2: na venda acompanha o livro nos DOIS sentidos.
+         applied_quote    = case when v_i.side = 'sell' then v_i.filled_quote
+                                 else greatest(applied_quote, v_i.filled_quote) end,
          ledger_qty         = greatest(ledger_qty,    v_i.filled_qty),
          ledger_quote       = greatest(ledger_quote,  v_i.filled_quote),
          -- ⚠️ A140: a taxa também é watermark. Sem isto, o próximo parcial
@@ -1392,20 +1544,38 @@ comment on function public.autopilot_taxa_do_intent_em_usd(numeric, text, text, 
 -- ⚠️ `p_executado` é `filled_qty` na venda e `filled_quote` na compra — a
 -- mesma unidade de `p_aplicado` (`applied_qty` / `applied_quote`). Misturar
 -- as duas unidades aqui seria comparar BTC com dólar.
+--
+-- ⚠️⚠️⚠️ CR-1 — TERMINAL COM O NÚMERO AINDA DESCONHECIDO NÃO LIBERA NADA.
+--
+-- A faixa "terminal mede o EXECUTADO" estava certa para a venda, onde o
+-- executado é QUANTIDADE e a quantidade é conhecida assim que há fill. Na
+-- COMPRA o executado é DINHEIRO (`filled_quote`), e ele chega DEPOIS: o
+-- retest independente reproduziu uma BUY `FILLED` com `filled_qty > 0` e
+-- `filled_quote` ainda 0, cujo compromisso desabou para zero. A entrada
+-- seguinte passou, o custo tardio chegou, e o teto de 200 virou 210.
+--
+-- Regra: terminal mede o executado SÓ quando o executado é conhecido. Com o
+-- número ainda desconhecido, o compromisso segue sendo o RESERVADO — que é a
+-- estimativa conservadora que já estava lá.
 drop function if exists public.autopilot_compromisso_vivo(numeric, numeric, text);
+drop function if exists public.autopilot_compromisso_vivo(numeric, numeric, text, numeric);
 create or replace function public.autopilot_compromisso_vivo(
-  p_reservado numeric, p_aplicado numeric, p_estado text, p_executado numeric
+  p_reservado numeric, p_aplicado numeric, p_estado text,
+  p_executado numeric,
+  -- ⚠️ `true` quando o executado desta unidade JÁ é conhecido. Na venda é
+  -- sempre (há fill ⇒ há quantidade); na compra, só depois do recebido.
+  p_executado_conhecido boolean
 ) returns numeric
 language sql immutable as $$
   select case
     when p_estado = 'FAILED_PRE_SUBMIT' then 0
-    when p_estado in ('FILLED', 'CANCELED')
+    when p_estado in ('FILLED', 'CANCELED') and coalesce(p_executado_conhecido, true)
       then greatest(coalesce(p_executado, 0) - coalesce(p_aplicado, 0), 0)
     else greatest(coalesce(p_reservado, 0) - coalesce(p_aplicado, 0), 0)
   end
 $$;
 
-comment on function public.autopilot_compromisso_vivo(numeric, numeric, text, numeric) is
+comment on function public.autopilot_compromisso_vivo(numeric, numeric, text, numeric, boolean) is
   'A144: terminal com fill ainda compromete o que EXECUTOU e nao foi projetado. '
   'CANCELED nao desfaz preenchimento parcial.';
 
@@ -1452,7 +1622,9 @@ begin
   -- enfileiram, e a segunda vê a primeira.
   -- ⚠️ A144: na venda a unidade é BASE — `filled_qty` contra `applied_qty`.
   select coalesce(sum(public.autopilot_compromisso_vivo(
-           e.reservado_qty, e.applied_qty, i.state::text, i.filled_qty)), 0)
+           e.reservado_qty, e.applied_qty, i.state::text, i.filled_qty,
+           -- na venda o executado é quantidade, conhecida junto com o fill
+           true)), 0)
     into v_comprometido
     from public.autopilot_position_effects e
     join public.cex_execution_intents i on i.id = e.intent_id
@@ -1513,7 +1685,11 @@ begin
   -- ⚠️ A144: na compra a unidade é QUOTE — `filled_quote` contra
   -- `applied_quote`. É o capital que já saiu e ainda não virou custo no livro.
   select coalesce(sum(public.autopilot_compromisso_vivo(
-           e.reservado_usd, e.applied_quote, i.state::text, i.filled_quote)), 0)
+           e.reservado_usd, e.applied_quote, i.state::text, i.filled_quote,
+           -- ⚠️ CR-1: na COMPRA o executado é dinheiro, e ele pode não ter
+           -- chegado. Executou quantidade sem recebido = custo DESCONHECIDO.
+           not (coalesce(i.filled_qty, 0) > 0 and coalesce(i.filled_quote, 0) <= 0)
+         )), 0)
     into v_comprometido
     from public.autopilot_position_effects e
     join public.cex_execution_intents i on i.id = e.intent_id
@@ -1646,11 +1822,10 @@ begin
    * recebido)` abaixo manteriam o P&L no valor antigo — otimista — e o stop
    * de perda com ele. Divergência não se absorve: fail-closed.
    */
-  if p_quote_recebido is not null
-     and p_quote_recebido < v_e.applied_quote - v_eps then
-    return jsonb_build_object('ok', false, 'motivo', 'regressao_de_quote',
-      'aplicado', v_e.applied_quote, 'no_livro', p_quote_recebido);
-  end if;
+  -- ⚠️ CR-2: a guarda de regressão de quote saiu daqui. A liquidação é de
+  -- VENDA, e na venda a queda do recebido é CORRIGIDA pela conta acumulada
+  -- (o custo removido não muda; só a receita muda). Fechar a porta aqui era
+  -- preservar receita que não existiu.
   if v_delta <= v_eps and v_taxa_delta <= v_eps then
     -- ⚠️⚠️ INVARIANTE F (a liquidação é sempre de VENDA — conferido acima).
     perform public.autopilot_marcar_contabilidade(p_intent_id, v_i.session_id,
@@ -1661,24 +1836,17 @@ begin
   end if;
   if v_delta <= v_eps then
     -- ⚠️ Ajuste sem quantidade (A140 §7 / A142): nada a reduzir, e o P&L muda.
-    v_quote_novo := greatest(v_e.applied_quote, coalesce(p_quote_recebido, 0));
+    v_quote_novo := v_i.filled_quote;   -- ⚠️ CR-2: o livro manda
     if v_quote_novo > 0 then
       v_realizado_total := v_quote_novo - v_e.custo_removido_usd - v_taxa_total;
       v_realizado := v_realizado_total - v_e.pnl_aplicado_usd;
     end if;
-    if v_realizado <> 0 then
-      v_hoje := (current_timestamp at time zone 'UTC')::date::text;
-      update public.autopilot_sessions
-         set pnl_today        = pnl_today + v_realizado,
-             frozen_until_day = case
-               when (pnl_today + v_realizado) <= -daily_loss_stop_usd
-                 then v_hoje else frozen_until_day end,
-             updated_at       = now()
-       where id = v_i.session_id;
-    end if;
+    -- ⚠️ CR-5: um escritor só, e a virada do dia mora nele.
+    perform public.autopilot_aplicar_pnl(v_i.session_id, v_realizado);
     update public.autopilot_position_effects
        set fee_aplicada_usd = v_taxa_total,
-           applied_quote    = greatest(applied_quote, coalesce(p_quote_recebido, 0)),
+           -- ⚠️ CR-2: o LIVRO manda — `p_quote_recebido` é vestigial.
+           applied_quote    = v_i.filled_quote,
            pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
            updated_at       = now()
      where intent_id = p_intent_id;
@@ -1774,25 +1942,18 @@ begin
    * Sem recebido, o custo removido fica GUARDADO e o resultado espera o livro.
    */
   v_custo_acum := v_e.custo_removido_usd + v_custo_removido;
-  v_quote_novo := greatest(v_e.applied_quote, coalesce(p_quote_recebido, 0));
+  v_quote_novo := v_i.filled_quote;   -- ⚠️ CR-2: o livro manda
   if v_quote_novo > 0 then
     v_realizado_total := v_quote_novo - v_custo_acum - v_taxa_total;
     v_realizado := v_realizado_total - v_e.pnl_aplicado_usd;
   end if;
-  if v_realizado <> 0 then
-    v_hoje := (current_timestamp at time zone 'UTC')::date::text;
-    update public.autopilot_sessions
-       set pnl_today        = pnl_today + v_realizado,
-           frozen_until_day = case
-             when (pnl_today + v_realizado) <= -daily_loss_stop_usd
-               then v_hoje else frozen_until_day end,
-           updated_at       = now()
-     where id = v_i.session_id;
-  end if;
+    -- ⚠️ CR-5: um escritor só, e a virada do dia mora nele.
+    perform public.autopilot_aplicar_pnl(v_i.session_id, v_realizado);
 
   update public.autopilot_position_effects
      set applied_qty        = greatest(applied_qty, p_qty_vendida),
-         applied_quote      = greatest(applied_quote, coalesce(p_quote_recebido, 0)),
+         -- ⚠️ CR-2: o LIVRO manda — `p_quote_recebido` é vestigial.
+         applied_quote      = v_i.filled_quote,
          fee_aplicada_usd   = greatest(fee_aplicada_usd, v_taxa_total),
          custo_removido_usd = custo_removido_usd + v_custo_removido,
          pnl_aplicado_usd   = pnl_aplicado_usd + v_realizado,
@@ -1889,6 +2050,7 @@ as $$
            coalesce(e.fee_aplicada_usd, 0)  as fee_aplicada,
            coalesce(e.custo_removido_usd,0) as custo_removido,
            coalesce(e.taxa_opaca, false)    as taxa_opaca,
+           e.divergencia    as divergencia,
            e.side           as efeito_side
       from public.cex_execution_intents i
       left join public.autopilot_position_effects e on e.intent_id = i.id
@@ -1900,7 +2062,8 @@ as $$
   ), avaliados as (
     select c.*,
            public.autopilot_efeito_incompleto(
-             c.efeito_side, c.taxa_opaca, c.custo_removido, c.applied_quote
+             c.efeito_side, c.taxa_opaca, c.custo_removido, c.applied_quote,
+             c.applied_qty, c.divergencia
            ) as livro_incompleto,
            coalesce(public.autopilot_taxa_do_intent_em_usd(
              c.fee_total, c.fee_currency, c.symbol, c.filled_qty, c.filled_quote),
@@ -1913,7 +2076,9 @@ as $$
            when a.filled_qty   > a.applied_qty   + 1e-12      then 'quantidade_pendente'
            when a.filled_quote > a.applied_quote + 1e-12      then 'recebido_pendente'
            when a.taxa_pendente                               then 'taxa_pendente'
+           when a.divergencia is not null                     then 'divergencia'
            when a.taxa_opaca                                  then 'taxa_desconhecida'
+           when a.efeito_side = 'buy'                         then 'custo_desconhecido'
            else 'resultado_sem_recebido'
          end,
          -- ⚠️ Só o LIVRO incompleto justifica gastar uma chamada na corretora.
@@ -1958,9 +2123,9 @@ revoke all on function public.autopilot_pendencias_financeiras(int)
 grant execute on function public.autopilot_pendencias_financeiras(int)
   to service_role;
 
-revoke all on function public.autopilot_efeito_incompleto(text, boolean, numeric, numeric)
+revoke all on function public.autopilot_efeito_incompleto(text, boolean, numeric, numeric, numeric, text)
   from public, anon, authenticated;
-grant execute on function public.autopilot_efeito_incompleto(text, boolean, numeric, numeric)
+grant execute on function public.autopilot_efeito_incompleto(text, boolean, numeric, numeric, numeric, text)
   to service_role;
 
 revoke all on function public.autopilot_reservar_venda_do_intent(uuid, numeric)
@@ -1983,9 +2148,9 @@ revoke all on function public.autopilot_liquidar_saida_armada(uuid, numeric, num
 grant execute on function public.autopilot_liquidar_saida_armada(uuid, numeric, numeric)
   to service_role;
 
-revoke all on function public.autopilot_compromisso_vivo(numeric, numeric, text, numeric)
+revoke all on function public.autopilot_compromisso_vivo(numeric, numeric, text, numeric, boolean)
   from public, anon, authenticated;
-grant execute on function public.autopilot_compromisso_vivo(numeric, numeric, text, numeric)
+grant execute on function public.autopilot_compromisso_vivo(numeric, numeric, text, numeric, boolean)
   to service_role;
 
 -- ⚠️ A TABELA TAMBÉM: RLS ligada sem policies já fecha para anon/authenticated,

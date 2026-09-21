@@ -531,6 +531,51 @@ Transações **de verdade**, em processos separados, disputando a mesma linha:
 E a quebra que só o banco real prova: removendo o `for update` da reserva, as
 duas concorrentes concedem 0,01 → **total 0,02** numa bolsa de 0,01.
 
+## 8-UNDECIES. Retest independente FAIL — os cinco CR
+
+O Codex reproduziu tudo o que a entrega anterior declarava (3836 testes, 64/64
+migrations, T1–T12, ACL, RLS, concorrência) **e** cinco falhas financeiras.
+Todas reproduzidas aqui antes de qualquer conserto.
+
+### A raiz comum de CR-3, CR-4 e CR-5
+
+O cron decidia dinheiro sobre **cópias do estado financeiro com idades
+diferentes**: `s` carregado antes do recovery, `pnlToday`/`frozenUntil` em
+memória, bandeiras relidas pela metade, `entradasLiberadas` calculado uma vez
+antes do laço de cartões — e o banco sendo escrito por projeção, liquidação e
+recovery no meio de tudo. O banco dizia uma coisa e a autorização usava outra.
+
+**Conserto estrutural:** `src/lib/autopilot/estado-financeiro.ts` passa a ser
+a única fonte de autorização de risco. `lerEstadoFinanceiroDaSessao` traz
+TODOS os campos que autorizam (ativa, validade, pnl, stop, freeze, dia,
+contador, teto, conexão, quarentena, contabilidade); `avaliarRisco` avalia
+todos numa ordem só, incluindo o stop de perda sobre o **número** durável e
+não só sobre a marca. `autorizarAumentoDeExposicao` lê **no instante** de cada
+COMPRA, e é chamada pelos DOIS canais. Os espelhos parciais foram removidos —
+o cron não lê mais nenhum campo financeiro do snapshot, e uma trava de teste
+garante isso (a única exceção é a linha de base do alerta "congelou agora",
+nomeada para não virar porta).
+
+E a virada do dia saiu do TypeScript: `autopilot_aplicar_pnl` (0064) é o
+**único** escritor de `pnl_today`/`frozen_until_day` e carimba
+`last_reset_day` na mesma transação. Uma virada posterior encontra o dia já
+carimbado e não tem o que zerar.
+
+### CR-1 · CR-2
+
+`autopilot_efeito_incompleto` ganhou duas faixas: **compra com quantidade
+aplicada e custo desconhecido** (era invisível: o compromisso desabava e o
+intent sumia do recovery) e **divergência registrada**. O compromisso vivo só
+mede o executado quando o executado é conhecido — na compra ele é dinheiro, e
+chega depois.
+
+E a regressão de quote deixou de ser esquecida. Na **venda** ela é **corrigida
+aritmeticamente** (o custo removido não muda; só a receita muda — a conta
+acumulada do A142 produz o delta negativo sozinha: −30 + 80 − 100 − 2 = −52, e
+o stop dispara). Na **compra** não há aritmética possível, então fail-closed —
+com a divergência **gravada** em `autopilot_position_effects.divergencia`, que
+alimenta o bloqueio e a lista de pendências.
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -582,6 +627,19 @@ específico, todas restauradas:
 | Q6: o recovery usa a conexão ATUAL, não a histórica | 1 |
 | Q7: o portão volta a ler a sessão stale | 1 |
 | **Q8 (banco real): a reserva perde o `for update`** | total 0,02 numa bolsa de 0,01 |
+| CR-1: BUY terminal sem quote volta a liberar a reserva | 2 |
+| CR-2: a regressão de quote deixa de marcar pendência | 1 |
+| CR-3: o cron volta a usar o snapshot pré-recovery | 1 |
+| CR-4: o gate volta a ser calculado só antes do laço | 1 |
+| CR-5: quem aplica o P&L deixa de carimbar o dia | 2 |
+
+⚠️ **Três das cinco quebras do retest foram descartadas na primeira
+tentativa**: uma com type-check sujo e duas que *não reproduziam o defeito* (o
+teste passava porque eu havia quebrado a coisa errada). A do CR-3 foi mais
+instrutiva: ela reconstruía `fresco` com os campos velhos, e a minha trava
+media a **atribuição** em vez da **origem** do valor — uma quebra mais
+esperta que o teste. A trava passou a proibir qualquer leitura financeira do
+snapshot.
 
 ⚠️ **A Q5 não foi detectada na primeira tentativa, e o motivo importa.** A
 conta acumulada do A142 protege o P&L mesmo com o watermark errado, e TODOS os
@@ -605,7 +663,7 @@ detecção: foi descartada e refeita válida antes de contar.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3836/3836 (251 arquivos)     — baseline do R8 era 3586
+npx vitest run      3852/3852 (252 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo

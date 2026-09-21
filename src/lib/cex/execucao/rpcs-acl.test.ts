@@ -57,6 +57,8 @@ const CATALOGO: Record<string, string> = {
   autopilot_liberar_reserva_do_intent: "0064_autopilot_projecao_de_posicao.sql",
   // Invariante F: a bandeira durável de contabilidade incompleta.
   autopilot_marcar_contabilidade: "0064_autopilot_projecao_de_posicao.sql",
+  // CR-5: o único escritor de pnl_today, com a virada do dia dentro.
+  autopilot_aplicar_pnl: "0064_autopilot_projecao_de_posicao.sql",
   autopilot_liquidar_saida_armada: "0064_autopilot_projecao_de_posicao.sql",
 };
 

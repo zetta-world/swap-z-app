@@ -310,9 +310,9 @@ describe("J7 — o hook no cron do autopilot", () => {
      * A quarentena continua decidindo o ramo — agora sobre o valor RELIDO, e
      * com a leitura falha caindo para a cópia em memória.
      */
-    expect(CRON).toMatch(/const bandeiras = await relerBandeirasDaSessao\(s\.id\);/);
+    expect(CRON).toMatch(/const fresco = await lerEstadoFinanceiroDaSessao\(s\.id\);/);
     expect(CRON).toMatch(
-      /entradaAutorizadaNaSessao\(\{[\s\S]{0,260}?emQuarentena: bandeiras[\s\S]{0,200}?\}\);\s*if \(!portaoDeEntrada\.ok\) \{\s*entradasLiberadas = false/);
+      /entradaAutorizadaNaSessao\(\{[\s\S]{0,260}?emQuarentena: Boolean\(fresco\.quarentenaEm\)[\s\S]{0,200}?\}\);\s*if \(!portaoDeEntrada\.ok\) \{\s*entradasLiberadas = false/);
     const iRamo = CRON.indexOf("const portaoDeEntrada = entradaAutorizadaNaSessao({");
     const iRec = CRON.indexOf("reconciliarConta(");
     expect(iRamo).toBeGreaterThan(-1);

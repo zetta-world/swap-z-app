@@ -25,7 +25,9 @@ import {
 } from "@/lib/autopilot/projecao-de-posicao";
 
 const SQL = readFileSync("supabase/migrations/0064_autopilot_projecao_de_posicao.sql", "utf8");
-const HOJE = "2026-09-20";
+// ⚠️ Derivado do relógio: uma data fixa vence e o teste passa a medir o
+// calendário em vez do invariante.
+const HOJE = new Date().toISOString().slice(0, 10);
 
 let banco: ReturnType<typeof bancoFalso>;
 const chamar = (nome: string, args: Record<string, unknown>) =>

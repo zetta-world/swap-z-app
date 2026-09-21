@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import {
   listRunnableSessions, credenciaisDaSessao, patchSession, recordRuns, utcDayKey,
-  relerBandeirasDaSessao,
   type OrigemCredencial,
   tryLockSession, releaseLock,
 } from "@/lib/autopilot/sessions";
@@ -34,6 +33,9 @@ import { projetarEfeitoDoIntent } from "@/lib/autopilot/projecao-de-posicao";
 import {
   pendenciasFinanceiras, recuperarPendenciaFinanceira,
 } from "@/lib/autopilot/recuperacao-financeira";
+import {
+  lerEstadoFinanceiroDaSessao, autorizarAumentoDeExposicao,
+} from "@/lib/autopilot/estado-financeiro";
 import { assentarELiquidarSaida } from "@/lib/autopilot/assentamento-da-saida";
 import {
   reservarVendaDoBot, reservarExposicaoDoBot, liberarReservaDoIntent,
@@ -882,7 +884,13 @@ interface ProcessResult { fired: number; note: string; origem?: OrigemCredencial
 async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   const nowIso = new Date().toISOString();
   const today = utcDayKey();
-  const wasFrozen = s.frozen_until_day === today;
+  /**
+   * ⚠️ A ÚNICA leitura financeira do snapshot, e ela NÃO decide nada: é a
+   * linha de base do alerta "congelou AGORA". Ela tem de ser de ANTES da
+   * passada — lida do estado pós-recovery, um congelamento causado pelo
+   * próprio recovery não geraria aviso nenhum.
+   */
+  const congeladaAntesDaPassada = s.frozen_until_day === today;
   /**
    * ⚠️⚠️ A ORDEM JA EXISTE NA CORRETORA — o registro e que falhou.
    * (auditoria do autopilot, 23/08)
@@ -903,16 +911,38 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
   };
 
   const alertIfNewlyFrozen = () => {
-    if (!wasFrozen) {
+    if (!congeladaAntesDaPassada) {
       notifyTelegram(`📉 <b>Autopilot frozen</b> — daily loss-stop hit.\nwallet ${s.wallet_address.slice(0, 8)}… · ${s.exchange_id}`, { dedupKey: `freeze:${s.id}` });
     }
   };
 
+  /**
+   * ⚠️⚠️⚠️ CR-3/CR-5 — O ESTADO FINANCEIRO É RELIDO AQUI, DEPOIS DO RECOVERY.
+   *
+   * `s` foi carregado ANTES da varredura financeira, e ela ESCREVE: aplica
+   * P&L, congela o dia, levanta a bandeira de contabilidade. Decidir a virada
+   * do dia e os tetos sobre `s` era decidir sobre o passado — o retest
+   * independente reproduziu tanto a COMPRA saindo com o banco já em −51 e
+   * congelado (CR-3) quanto a virada zerando um resultado de HOJE porque o
+   * snapshot dizia ONTEM (CR-5).
+   *
+   * ⚠️ Falha de leitura FECHA a passada: sem estado não se afirma limite.
+   */
+  const fresco = await lerEstadoFinanceiroDaSessao(s.id);
+  if (!fresco) {
+    await recordEvent("autopilot_estado_financeiro_ilegivel", { wallet: s.wallet_address, meta: {
+      severity: "high", session: s.id,
+      why: "nao deu para reler o estado financeiro depois do recovery. Sem ele nao "
+        + "se afirma stop, teto nem contabilidade — a passada desta sessao para.",
+    } });
+    return { origem: undefined, fired: 0, note: "estado financeiro ilegivel — sessao pulada" };
+  }
+
   // ── 1. Daily rollover ──
-  let tradesToday = s.trades_today;
-  let frozenUntil = s.frozen_until_day;
-  let pnlToday    = s.pnl_today;
-  if (s.last_reset_day !== today) {
+  let tradesToday = fresco.tradesToday;
+  let frozenUntil = fresco.frozenUntilDay;
+  let pnlToday    = fresco.pnlToday;
+  if (fresco.lastResetDay !== today) {
     tradesToday = 0;
     pnlToday    = 0;
     frozenUntil = frozenUntil === today ? frozenUntil : null;
@@ -933,6 +963,13 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
      * FALHA FECHADO: sem virada gravada, esta sessão não negocia. É a mesma
      * decisão do `contadorConfiavel` mais abaixo — perder a conta do dia
      * interrompe a passada — só que aqui na origem do contador.
+     */
+    /**
+     * ⚠️ CR-5: a condição veio da linha RELIDA, não do snapshot. E quem
+     * aplica P&L já carimba `last_reset_day` (0064,
+     * `autopilot_aplicar_pnl`), então um resultado de hoje aplicado pelo
+     * recovery faz esta virada nem acontecer — em vez de acontecer por cima
+     * dele.
      */
     const virou = await patchSession(s.id, { trades_today: 0, pnl_today: 0, last_reset_day: today, frozen_until_day: frozenUntil });
     if (!virou.ok) {
@@ -983,36 +1020,6 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     livroLegivelNoSettle = false;
   }
 
-  /**
-   * ⚠️⚠️⚠️ A LINHA É RELIDA AQUI — achado da verificação do patch da taxa.
-   *
-   * `s` foi carregado no começo da passada e a passada ESCREVEU nele: a
-   * liquidação da saída armada, logo acima, chama
-   * `autopilot_marcar_contabilidade` e grava `contabilidade_incompleta_em`.
-   * Ler `s.contabilidade_incompleta_em` aqui era ler o valor de ANTES — a
-   * bandeira levantada NESTA passada só passava a valer na seguinte, cinco
-   * minutos depois, e o cron comprava no meio.
-   *
-   * O stop de perda já tinha contrapartida em memória por este mesmo motivo
-   * (`pnlToday += settle.realizedDelta`, acima). Um espelho em memória não
-   * bastaria para a contabilidade: a mesma coluna é escrita pela varredura de
-   * pendências e pelo canal do navegador, fora desta função.
-   *
-   * ⚠️ E FALHA DE LEITURA FECHA. Sem as bandeiras, não se afirma que não há
-   * bandeira — zero entrada nova nesta passada.
-   */
-  const bandeiras = await relerBandeirasDaSessao(s.id);
-  if (!bandeiras) {
-    // ⚠️ O fechamento não precisa de linha própria: sem bandeiras, os dois
-    // portões abaixo recebem `contabilidadeIncompleta: true` e a entrada cai.
-    await recordEvent("autopilot_bandeiras_ilegiveis", { wallet: s.wallet_address, meta: {
-      severity: "high", session: s.id,
-      why: "nao deu para reler quarentena_em/contabilidade_incompleta_em depois do "
-        + "settle. ZERO entrada nova nesta passada — 'nao consegui ler' nunca "
-        + "vale como 'nao ha bandeira'.",
-    } });
-  }
-
   // ── 4. Freeze / cap gates (AFTER settling — a settle can trip the freeze) ──
   /**
    * ⚠️⚠️ A MESMA DECISÃO QUE O NAVEGADOR USA — achado A130, §34/§35.
@@ -1044,10 +1051,9 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     // passada. Quem as usa de verdade é `entradaAutorizadaNaSessao`, mas o
     // estado normalizado é UM só — duas leituras diferentes da mesma sessão
     // na mesma passada é a família do A113.
-    emQuarentena: bandeiras
-      ? Boolean(bandeiras.quarentenaEm) : Boolean(s.quarentena_em),
-    contabilidadeIncompleta: bandeiras
-      ? Boolean(bandeiras.contabilidadeIncompletaEm) : true,
+    // ⚠️ Do estado ÚNICO relido depois do recovery — nunca do snapshot.
+    emQuarentena: Boolean(fresco.quarentenaEm),
+    contabilidadeIncompleta: Boolean(fresco.contabilidadeIncompletaEm),
   });
   if (!sessaoAutoriza.ok) {
     if (sessaoAutoriza.motivo === "sessao_congelada") alertIfNewlyFrozen();
@@ -1119,10 +1125,9 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
    */
   const portaoDeEntrada = entradaAutorizadaNaSessao({
     // ⚠️ Da linha RELIDA, e o `?? true` é a direção fechada quando ela falhou.
-    emQuarentena: bandeiras
-      ? Boolean(bandeiras.quarentenaEm) : Boolean(s.quarentena_em),
-    contabilidadeIncompleta: bandeiras
-      ? Boolean(bandeiras.contabilidadeIncompletaEm) : true,
+    // ⚠️ Do estado ÚNICO relido depois do recovery — nunca do snapshot.
+    emQuarentena: Boolean(fresco.quarentenaEm),
+    contabilidadeIncompleta: Boolean(fresco.contabilidadeIncompletaEm),
   });
   if (!portaoDeEntrada.ok) {
     entradasLiberadas = false;
@@ -1136,7 +1141,7 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
     if (portaoDeEntrada.motivo === "contabilidade_incompleta") {
       await recordEvent("autopilot_contabilidade_incompleta", { wallet: s.wallet_address, meta: {
         severity: "high", session: s.id,
-        desde: bandeiras?.contabilidadeIncompletaEm ?? s.contabilidade_incompleta_em,
+        desde: fresco.contabilidadeIncompletaEm,
         why: "o P&L realizado desta sessao nao esta completo — taxa que nao da "
           + "para precificar em USD, ou custo removido sem o recebido que o "
           + "precifica. ZERO compra autonoma ate a contabilidade voltar a ser "
@@ -1794,6 +1799,34 @@ async function processSession(s: AutopilotSessionRow): Promise<ProcessResult> {
       if (!entradasLiberadas) {
         pushRow(intent, "rejected", card.kind, {
           reason: "conta em quarentena ou reconciliacao sem leitura confiavel — zero BUY autonomo (A103)" });
+        continue;
+      }
+
+      /**
+       * ⚠️⚠️⚠️ CR-3 / CR-4 — O PORTÃO ÚNICO, NO INSTANTE DA DECISÃO.
+       *
+       * `entradasLiberadas` é calculado UMA vez, antes do laço de cartões. O
+       * retest reproduziu o preço: um scan com VENDA e COMPRA, onde a venda
+       * levanta `contabilidade_incompleta_em` no banco e a compra seguinte
+       * usa o veredito de antes dela. O mesmo vale para o stop de perda que a
+       * própria passada acabou de cruzar.
+       *
+       * Aqui o estado é RELIDO e avaliado inteiro — sessão, validade, freeze,
+       * teto diário, conexão, quarentena, contabilidade e o stop de perda
+       * sobre o NÚMERO durável — imediatamente antes do efeito externo.
+       *
+       * ⚠️ SÓ A ENTRADA. Saída e redução continuam passando: elas diminuem
+       * risco e não dependem de afirmar um P&L que não se sabe.
+       */
+      const risco = await autorizarAumentoDeExposicao(s.id);
+      if (!risco.ok) {
+        pushRow(intent, "rejected", card.kind, {
+          reason: `entrada bloqueada pelo estado financeiro de agora: ${risco.motivo}` });
+        await recordEvent("autopilot_entrada_bloqueada_no_instante", { wallet: s.wallet_address, meta: {
+          severity: "high", session: s.id, motivo: risco.motivo, porque: risco.porque,
+          why: "o estado do banco mudou DEPOIS do portao da passada (recovery, venda "
+            + "do mesmo scan, ou stop cruzado). A decisao usa o estado de AGORA.",
+        } });
         continue;
       }
 
