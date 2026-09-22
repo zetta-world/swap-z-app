@@ -652,6 +652,49 @@ esse estado como atalho; foram corrigidos para carregar a sessão, como
 produção carrega. Afrouxar o portão para acomodar o atalho seria abrir o
 buraco de volta.
 
+## 8-QUATERDECIES. CRX-1 — a varredura só sabia perguntar "cresceu?"
+
+O retest independente fechou a fronteira final e encontrou **um** blocker: a
+redução durável do recebido **desaparecia da recuperação** depois de uma
+interrupção.
+
+```
+snapshot sintético  quote 100 · fee 2   → projeção aplica  → dia −32
+trades REAIS        quote  80 · fee 2   → ingeridos e comitados
+                                        → projeção NÃO é chamada (interrupção)
+varredura devolve   []                  → três ciclos de cron, dia segue −32
+BUY de 10           sai                 → com o stop de 50 já ultrapassado
+```
+
+**O cálculo já existia.** Desde o CR-2 a projeção corrige a queda do recebido
+numa venda — o teste diagnóstico do auditor confirmou os −20 ao chamá-la à
+mão. Quem não sabia era a **descoberta**: `autopilot_pendencias_financeiras`
+comparava o livro com o aplicado em **três cláusulas, as três na direção do
+crescimento**. Duas peças respondendo *"há trabalho pendente?"* com critérios
+diferentes — a família do A113 no lugar mais caro.
+
+**Conserto.** Uma pergunta só, `autopilot_projecao_pendente`, usada pela
+varredura — e ela pergunta **"diverge?"**, nos dois sentidos, com a marca
+d'água certa em cada um:
+
+| sentido | contra o quê | por quê |
+|---|---|---|
+| cresceu | `applied_*` | é o que já **entrou** na posição |
+| regrediu | `ledger_*` | é o que o **livro** já disse — e é o que a projeção compara |
+
+A distinção não é cosmética: a liquidação adianta `applied` **antes** da
+ingestão, de propósito (A136/A142). Medir a regressão contra `applied`
+encheria a varredura de pendências falsas.
+
+E a marca do livro passou a **acompanhar a correção** numa venda
+(`ledger_quote = filled_quote`). Sem isso a pendência nunca fecharia — e uma
+pendência eterna é a mesma doença pelo avesso: a sessão ficaria presa para
+sempre.
+
+Na mesma passada, duas cegueiras irmãs foram fechadas: **regressão de
+quantidade** e **de taxa** também não eram descobertas. Ambas caem em
+fail-closed com `divergencia` gravada.
+
 ## 9. Quebras deliberadas
 
 Oito, cada uma com type-check **limpo**, cada uma detectada por teste
@@ -710,6 +753,7 @@ específico, todas restauradas:
 | CR-5: quem aplica o P&L deixa de carimbar o dia | 2 |
 | navegador: a leitura autoritativa vira snapshot memoizado | 2 |
 | fronteira final: o estado financeiro sai da autorização final | 5 |
+| CRX-1: a varredura volta a perguntar só "cresceu?" | 4 |
 
 ⚠️ A primeira tentativa desta última quebra (trocar a chamada por
 `avaliarRisco(estadoDaLinha(sessaoDoPiloto))`) saiu com **type-check sujo** —
@@ -747,7 +791,7 @@ detecção: foi descartada e refeita válida antes de contar.
 ## 10. Validação no HEAD final
 
 ```
-npx vitest run      3866/3866 (253 arquivos)     — baseline do R8 era 3586
+npx vitest run      3872/3872 (254 arquivos)     — baseline do R8 era 3586
 npx tsc --noEmit    0 erros
 npm run lint        0 erros (145 avisos pré-existentes)
 npm run build       completo

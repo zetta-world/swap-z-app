@@ -374,20 +374,41 @@ export function bancoFalso(): BancoFalso {
         const appliedQty = Number(e?.applied_qty ?? 0);
         const appliedQuote = Number(e?.applied_quote ?? 0);
         const feeAplicada = Number(e?.fee_aplicada_usd ?? 0);
+        const ledgerQty = Number(e?.ledger_qty ?? 0);
+        const ledgerQuote = Number(e?.ledger_quote ?? 0);
+        const qty = Number(it.filled_qty ?? 0);
+        const quote = Number(it.filled_quote ?? 0);
         const lida = taxaEmUsdDoIntent(it);
         const taxaPendente = (lida ?? feeAplicada) > feeAplicada + EPSP;
+        /**
+         * ⚠️⚠️⚠️ CRX-1 — A PERGUNTA É "DIVERGE?", NÃO "CRESCEU?".
+         *
+         * A varredura comparava o livro com o aplicado em três cláusulas, as
+         * três na direção do crescimento. A projeção, desde o CR-2, sabe
+         * tratar a QUEDA do recebido — e ninguém a chamava, porque a
+         * descoberta era cega para esse sentido. Cada sentido tem a sua marca
+         * d'água: crescimento contra `applied_*`, regressão contra
+         * `ledger_*` (a liquidação adianta `applied` de propósito).
+         */
+        const regrediuQty = qty < ledgerQty - 1e-9;
+        const regrediuQuote = quote < ledgerQuote - 1e-9;
+        const regrediuTaxa = lida != null && lida < feeAplicada - EPSP;
         const livroIncompleto = efeitoIncompleto(e);
         const projecaoAtrasada = !e
-          || Number(it.filled_qty ?? 0) > appliedQty + EPSP
-          || Number(it.filled_quote ?? 0) > appliedQuote + EPSP
-          || taxaPendente;
+          || qty > appliedQty + EPSP
+          || quote > appliedQuote + EPSP
+          || taxaPendente || regrediuQty || regrediuQuote || regrediuTaxa;
         if (!projecaoAtrasada && !livroIncompleto) continue;
 
         const motivo = !e ? "sem_marcador"
-          : Number(it.filled_qty ?? 0) > appliedQty + EPSP ? "quantidade_pendente"
-          : Number(it.filled_quote ?? 0) > appliedQuote + EPSP ? "recebido_pendente"
+          : qty > appliedQty + EPSP ? "quantidade_pendente"
+          : quote > appliedQuote + EPSP ? "recebido_pendente"
           : taxaPendente ? "taxa_pendente"
+          : regrediuQuote ? "recebido_regrediu"
+          : regrediuQty ? "quantidade_regrediu"
+          : e.divergencia ? "divergencia"
           : e.taxa_opaca === true ? "taxa_desconhecida"
+          : e.side === "buy" ? "custo_desconhecido"
           : "resultado_sem_recebido";
         saida.push({ intent_id: it.id, motivo, precisa_venue: livroIncompleto });
       }
@@ -984,7 +1005,10 @@ export function bancoFalso(): BancoFalso {
         && Math.abs(Number(it.filled_quote ?? 0) - Number(efeito.applied_quote ?? 0)) > EPS;
       if (deltaQty <= EPS && taxaDelta <= EPS && deltaQuote <= EPS && !quoteMudou) {
         efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
-        efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+        // ⚠️ CRX-1: na venda a marca acompanha a correção, senão a pendência
+        // nunca converge — e pendência eterna é a mesma doença pelo avesso.
+        efeito.ledger_quote = it.side === "sell" ? Number(it.filled_quote ?? 0)
+          : Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
         // ⚠️ Invariante F: a opacidade da taxa e o bloqueio derivado entram
         // na MESMA passagem que aplicou o efeito.
         marcarContabilidade(it.id, it.session_id,
@@ -1027,7 +1051,10 @@ export function bancoFalso(): BancoFalso {
         efeito.divergencia = null;
         efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + semQtd;
         efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
-        efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+        // ⚠️ CRX-1: na venda a marca acompanha a correção, senão a pendência
+        // nunca converge — e pendência eterna é a mesma doença pelo avesso.
+        efeito.ledger_quote = it.side === "sell" ? Number(it.filled_quote ?? 0)
+          : Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
         // ⚠️ Invariante F: a opacidade da taxa e o bloqueio derivado entram
         // na MESMA passagem que aplicou o efeito.
         marcarContabilidade(it.id, it.session_id,
@@ -1054,7 +1081,10 @@ export function bancoFalso(): BancoFalso {
         efeito.fee_aplicada_usd = Math.max(Number(efeito.fee_aplicada_usd ?? 0), taxaTotal);
         efeito.pnl_aplicado_usd = Number(efeito.pnl_aplicado_usd ?? 0) + extra;
         efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
-        efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+        // ⚠️ CRX-1: na venda a marca acompanha a correção, senão a pendência
+        // nunca converge — e pendência eterna é a mesma doença pelo avesso.
+        efeito.ledger_quote = it.side === "sell" ? Number(it.filled_quote ?? 0)
+          : Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
         // ⚠️ Invariante F: a opacidade da taxa e o bloqueio derivado entram
         // na MESMA passagem que aplicou o efeito.
         marcarContabilidade(it.id, it.session_id,
@@ -1128,7 +1158,9 @@ export function bancoFalso(): BancoFalso {
         : Math.max(Number(efeito.applied_quote), Number(it.filled_quote));
       efeito.divergencia = null;
       efeito.ledger_qty = Math.max(Number(efeito.ledger_qty), noLivro);
-      efeito.ledger_quote = Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
+      // ⚠️ CRX-1: idem — a marca do livro segue o livro.
+      efeito.ledger_quote = it.side === "sell" ? Number(it.filled_quote ?? 0)
+        : Math.max(Number(efeito.ledger_quote), Number(it.filled_quote));
       // ⚠️ Invariante F — ver acima.
       marcarContabilidade(it.id, it.session_id,
         taxaOpaca && it.side === "sell" && Number(it.filled_qty ?? 0) > 0);

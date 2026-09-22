@@ -169,7 +169,14 @@ describe("A140.5/A140.7 — recovery tardio chega ao MESMO número", () => {
      */
     expect(SQL).toMatch(/coalesce\(public\.autopilot_taxa_do_intent_em_usd\(/);
     expect(SQL).toMatch(/c\.fee_aplicada\) > c\.fee_aplicada \+ 1e-12 as taxa_pendente/);
-    expect(SQL).toMatch(/or a\.taxa_pendente \)/);
+    /**
+     * ⚠️ A varredura passou a fazer UMA pergunta (`autopilot_projecao_pendente`,
+     * CRX-1) em vez de três cláusulas soltas. A propriedade é a mesma e ficou
+     * mais forte: a taxa do livro acima da aplicada relista o intent.
+     */
+    expect(SQL).toMatch(/or a\.projecao_pendente \)/);
+    expect(SQL).toMatch(
+      /coalesce\(p_taxa_usd, p_fee_aplicada, 0\) > coalesce\(p_fee_aplicada, 0\)/);
     // E o wrapper devolve `null` quando não dá para olhar — nunca "nada pendente".
     expect(await pendenciasFinanceiras(10, { chamarRpc: async () => { throw new Error("db"); } }))
       .toBeNull();
@@ -236,7 +243,22 @@ describe("⚠️ o SQL sustenta a conta", () => {
       .toBeGreaterThanOrEqual(2);
     expect(SQL).toMatch(/v_realizado := v_realizado_total - v_e\.pnl_aplicado_usd;/);
     expect(SQL).toMatch(/custo_removido_usd = custo_removido_usd \+ /);
-    expect(SQL).not.toMatch(/p_taxa_usd/);
+    /**
+     * ⚠️ A trava é sobre as RPCs que MOVEM DINHEIRO: nenhuma delas recebe a
+     * taxa como parâmetro — ela é derivada do livro (A140). O predicado puro
+     * `autopilot_projecao_pendente` (CRX-1) tem um `p_taxa_usd`, mas ele NÃO
+     * move nada: recebe o valor que `autopilot_taxa_do_intent_em_usd` acabou
+     * de derivar, e só responde "há trabalho pendente?". Medir o arquivo
+     * inteiro confundiria as duas coisas.
+     */
+    for (const fn of ["autopilot_projetar_efeito_do_intent",
+                      "autopilot_liquidar_saida_armada"]) {
+      const i = SQL.indexOf(`create or replace function public.${fn}`);
+      expect(i, fn).toBeGreaterThan(-1);
+      const corpo = SQL.slice(i, SQL.indexOf("end; $$;", i));
+      expect(corpo, `${fn} não pode receber taxa por parâmetro`)
+        .not.toMatch(/p_taxa/);
+    }
     // E nada de descontar a taxa acumulada inteira por delta.
     expect(SQL).not.toMatch(/- v_taxa_delta;/);
   });

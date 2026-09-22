@@ -316,6 +316,66 @@ create index if not exists idx_autopilot_effects_incompletos
   on public.autopilot_position_effects (session_id)
   where taxa_opaca;
 
+-- ── F-2-QUATER. HÁ TRABALHO PENDENTE? — UMA PERGUNTA SÓ (CRX-1) ──────────
+--
+-- ⚠️⚠️⚠️ A VARREDURA SÓ SABIA PERGUNTAR "CRESCEU?".
+--
+-- `autopilot_pendencias_financeiras` comparava o livro com o aplicado em três
+-- cláusulas, todas na direção do crescimento:
+--
+--     filled_qty   > applied_qty
+--     filled_quote > applied_quote
+--     taxa(livro)  > fee_aplicada
+--
+-- E a projeção, desde o CR-2, sabe tratar a QUEDA do recebido: na venda ela é
+-- corrigida aritmeticamente, na compra vira divergência fail-closed. Duas
+-- peças respondendo "há trabalho pendente?" com critérios diferentes — a
+-- família do A113 no lugar mais caro.
+--
+-- O retest independente provou o preço. Snapshot sintético diz quote 100, a
+-- projeção aplica e o dia fica em −32. Os trades REAIS chegam com 80 e o
+-- processo é interrompido antes da projeção. A varredura devolve `[]`: a
+-- quantidade não cresceu, a taxa não cresceu, e o recebido DIMINUIU. Três
+-- ciclos de cron depois, o dia segue −32 — quando o resultado verdadeiro é
+-- −52 — e uma COMPRA nova sai com o stop de 50 já ultrapassado.
+--
+-- ⚠️ A PERGUNTA HONESTA É "DIVERGE?", nos dois sentidos. E cada sentido tem a
+-- sua marca d'água:
+--
+--   · CRESCEU  → contra `applied_*`, que é o que já ENTROU na posição;
+--   · REGREDIU → contra `ledger_*`, a marca do que o LIVRO já disse. É o que
+--     a projeção compara, e usar `applied` aqui acusaria regressão onde há só
+--     uma liquidação que adiantou o marcador antes da ingestão (o desenho do
+--     A136/A142, de propósito).
+create or replace function public.autopilot_projecao_pendente(
+  p_filled_qty numeric, p_filled_quote numeric, p_taxa_usd numeric,
+  p_applied_qty numeric, p_applied_quote numeric, p_fee_aplicada numeric,
+  p_ledger_qty numeric, p_ledger_quote numeric
+) returns boolean
+language sql immutable as $$
+  select
+    -- ── cresceu: há delta a aplicar ──
+       coalesce(p_filled_qty, 0)   > coalesce(p_applied_qty, 0)   + 1e-12
+    or coalesce(p_filled_quote, 0) > coalesce(p_applied_quote, 0) + 1e-12
+    or coalesce(p_taxa_usd, p_fee_aplicada, 0) > coalesce(p_fee_aplicada, 0) + 1e-12
+    -- ── regrediu: correção (venda) ou divergência (compra), e as duas são
+    --    trabalho pendente. Era esta metade que faltava. ──
+    or coalesce(p_filled_qty, 0)   < coalesce(p_ledger_qty, 0)   - 1e-9
+    or coalesce(p_filled_quote, 0) < coalesce(p_ledger_quote, 0) - 1e-9
+    or (p_taxa_usd is not null and p_taxa_usd < coalesce(p_fee_aplicada, 0) - 1e-12)
+$$;
+
+comment on function public.autopilot_projecao_pendente(numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric) is
+  'CRX-1: a UNICA pergunta "ha trabalho de projecao pendente?". Cobre os DOIS '
+  'sentidos: crescimento contra applied_*, regressao contra ledger_* (que e o '
+  'que a projecao compara). So perguntar "cresceu?" perdia a correcao de um '
+  'recebido que caiu.';
+
+revoke all on function public.autopilot_projecao_pendente(numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric)
+  from public, anon, authenticated;
+grant execute on function public.autopilot_projecao_pendente(numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric)
+  to service_role;
+
 -- ── F-2-TER. O ÚNICO ESCRITOR DE `pnl_today` — COM A VIRADA DENTRO (CR-5) ─
 --
 -- ⚠️⚠️⚠️ A VIRADA DO DIA APAGAVA UM RESULTADO DE HOJE.
@@ -1064,7 +1124,8 @@ begin
     -- ⚠️ O LIVRO AVANÇOU SEM DELTA? Ainda assim é o novo piso da regressão.
     update public.autopilot_position_effects
        set ledger_qty   = greatest(ledger_qty,   v_i.filled_qty),
-           ledger_quote = greatest(ledger_quote, v_i.filled_quote),
+           ledger_quote = case when v_i.side = 'sell' then v_i.filled_quote
+                          else greatest(ledger_quote, v_i.filled_quote) end,
            updated_at   = now()
      where intent_id = p_intent_id;
     -- ⚠️⚠️ INVARIANTE F: a opacidade da taxa DESTE intent e o bloqueio
@@ -1144,7 +1205,11 @@ begin
            pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
            divergencia      = null,
            ledger_qty       = greatest(ledger_qty,   v_i.filled_qty),
-           ledger_quote     = greatest(ledger_quote, v_i.filled_quote),
+           -- ⚠️ CRX-1: na venda a marca do livro ACOMPANHA a correção. Fixá-la
+           -- no valor antigo deixaria a pendência de pé para sempre — e uma
+           -- pendência que nunca converge é a mesma doença por outro lado.
+           ledger_quote     = case when v_i.side = 'sell' then v_i.filled_quote
+                                   else greatest(ledger_quote, v_i.filled_quote) end,
            updated_at       = now()
      where intent_id = p_intent_id;
     -- ⚠️⚠️ INVARIANTE F: a opacidade da taxa DESTE intent e o bloqueio
@@ -1188,7 +1253,9 @@ begin
            applied_quote    = case when v_i.side = 'sell' then v_i.filled_quote
                                    else greatest(applied_quote, v_i.filled_quote) end,
            ledger_qty       = greatest(ledger_qty,    v_i.filled_qty),
-           ledger_quote     = greatest(ledger_quote,  v_i.filled_quote),
+           -- ⚠️ CRX-1: na venda a marca do livro acompanha a correção.
+           ledger_quote     = case when v_i.side = 'sell' then v_i.filled_quote
+                                   else greatest(ledger_quote, v_i.filled_quote) end,
            fee_aplicada_usd = greatest(fee_aplicada_usd, v_taxa_total),
            pnl_aplicado_usd = pnl_aplicado_usd + v_realizado,
            updated_at       = now()
@@ -2271,6 +2338,8 @@ as $$
            coalesce(e.applied_qty, 0)       as applied_qty,
            coalesce(e.applied_quote, 0)     as applied_quote,
            coalesce(e.fee_aplicada_usd, 0)  as fee_aplicada,
+           coalesce(e.ledger_qty, 0)        as ledger_qty,
+           coalesce(e.ledger_quote, 0)      as ledger_quote,
            coalesce(e.custo_removido_usd,0) as custo_removido,
            coalesce(e.taxa_opaca, false)    as taxa_opaca,
            e.divergencia    as divergencia,
@@ -2290,7 +2359,14 @@ as $$
            ) as livro_incompleto,
            coalesce(public.autopilot_taxa_do_intent_em_usd(
              c.fee_total, c.fee_currency, c.symbol, c.filled_qty, c.filled_quote),
-             c.fee_aplicada) > c.fee_aplicada + 1e-12 as taxa_pendente
+             c.fee_aplicada) > c.fee_aplicada + 1e-12 as taxa_pendente,
+           -- ⚠️ CRX-1: a pergunta única, nos DOIS sentidos.
+           public.autopilot_projecao_pendente(
+             c.filled_qty, c.filled_quote,
+             public.autopilot_taxa_do_intent_em_usd(
+               c.fee_total, c.fee_currency, c.symbol, c.filled_qty, c.filled_quote),
+             c.applied_qty, c.applied_quote, c.fee_aplicada,
+             c.ledger_qty, c.ledger_quote) as projecao_pendente
       from candidatos c
   )
   select a.id,
@@ -2299,6 +2375,8 @@ as $$
            when a.filled_qty   > a.applied_qty   + 1e-12      then 'quantidade_pendente'
            when a.filled_quote > a.applied_quote + 1e-12      then 'recebido_pendente'
            when a.taxa_pendente                               then 'taxa_pendente'
+           when a.filled_quote < a.ledger_quote - 1e-9        then 'recebido_regrediu'
+           when a.filled_qty   < a.ledger_qty   - 1e-9        then 'quantidade_regrediu'
            when a.divergencia is not null                     then 'divergencia'
            when a.taxa_opaca                                  then 'taxa_desconhecida'
            when a.efeito_side = 'buy'                         then 'custo_desconhecido'
@@ -2308,12 +2386,9 @@ as $$
          a.livro_incompleto
     from avaliados a
    where
-     -- braço 1: a projeção está atrás do livro (janela de três dias)
+     -- braço 1: o livro e a projeção DIVERGEM (janela de três dias)
      ( a.updated_at > now() - interval '3 days'
-       and ( a.tem_efeito is null
-             or a.filled_qty   > a.applied_qty   + 1e-12
-             or a.filled_quote > a.applied_quote + 1e-12
-             or a.taxa_pendente ) )
+       and ( a.tem_efeito is null or a.projecao_pendente ) )
      -- braço 2: o LIVRO está incompleto — sem janela, porque prende dinheiro
      or a.livro_incompleto
    order by a.livro_incompleto desc, a.updated_at asc
