@@ -60,6 +60,8 @@ const CATALOGO: Record<string, string> = {
   // CR-5: o único escritor de pnl_today, com a virada do dia dentro.
   autopilot_aplicar_pnl: "0064_autopilot_projecao_de_posicao.sql",
   autopilot_liquidar_saida_armada: "0064_autopilot_projecao_de_posicao.sql",
+  // A51 / Platform Closure: rearme preserva rails financeiros e nasce fechado.
+  autopilot_rearm_preserva_rails: "0065_autopilot_rearm_preserva_rails.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

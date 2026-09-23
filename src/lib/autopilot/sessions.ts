@@ -79,40 +79,62 @@ export async function armSession(input: ArmSessionInput): Promise<string | null>
     } });
     throw new Error(`armSession: cofre nao gravou — sessao nao armada (${cofre.erro})`);
   }
-  const today = utcDayKey();
   const expiresAt = new Date(Date.now() + input.ttlHours * 3600_000).toISOString();
 
-  const { data, error } = await db
-    .from("autopilot_sessions")
-    .upsert({
-      wallet_address:      input.walletAddress,
-      exchange_id:         input.exchangeId,
-      risk_mode:           input.riskMode,
-      market_type:         input.marketType,
-      max_trade_usd:       input.maxTradeUsd,
-      daily_loss_stop_usd: input.dailyLossStopUsd,
-      max_trades_per_day:  input.maxTradesPerDay,
-      allowed_symbols:     input.allowedSymbols,
-      lang:                input.lang,
-      conexao_id:          cofre.id,
-      key_permission:        input.keyPermission,
-      key_permission_detail: input.keyPermissionDetail.slice(0, 300),
-      key_checked_at:        new Date().toISOString(),
-      is_active:           true,
-      expires_at:          expiresAt,
-      // Reset counters on (re-)arm so a fresh session starts clean.
-      trades_today:        0,
-      pnl_today:           0,
-      last_reset_day:      today,
-      frozen_until_day:    null,
-      last_error:          null,
-      updated_at:          new Date().toISOString(),
-    }, { onConflict: "wallet_address,exchange_id" })
-    .select("id")
-    .single();
+  /**
+   * A51 — REARM NÃO É RESET FINANCEIRO.
+   *
+   * O antigo UPSERT sobrescrevia `trades_today`, `pnl_today`,
+   * `last_reset_day` e `frozen_until_day` a cada rearme. Isso permitia que uma
+   * simples rotação/reconexão de credencial reabrisse rails financeiros no
+   * mesmo dia. A decisão agora vive em UMA operação atômica no PostgreSQL:
+   * mesma data preserva os rails; data nova faz somente o rollover previsto.
+   */
+  type RearmRpcResult = {
+    data: string | null;
+    error: { message: string } | null;
+  };
+  type RearmRpc = (
+    fn: "autopilot_rearm_preserva_rails",
+    args: {
+      p_wallet_address: string;
+      p_exchange_id: string;
+      p_risk_mode: ArmSessionInput["riskMode"];
+      p_market_type: ArmSessionInput["marketType"];
+      p_max_trade_usd: number;
+      p_daily_loss_stop_usd: number;
+      p_max_trades_per_day: number;
+      p_allowed_symbols: string[];
+      p_lang: string;
+      p_conexao_id: string;
+      p_key_permission: ArmSessionInput["keyPermission"];
+      p_key_permission_detail: string;
+      p_expires_at: string;
+    },
+  ) => PromiseLike<RearmRpcResult>;
+
+  // `Database` ainda não conhece a RPC 0065 neste SHA; o cast fica local e
+  // estreito para não exigir regenerar o arquivo inteiro de tipos por uma só
+  // função. O contrato real é travado pela migration e pelos testes A51.
+  const rearmRpc = db.rpc.bind(db) as unknown as RearmRpc;
+  const { data, error } = await rearmRpc("autopilot_rearm_preserva_rails", {
+    p_wallet_address: input.walletAddress,
+    p_exchange_id: input.exchangeId,
+    p_risk_mode: input.riskMode,
+    p_market_type: input.marketType,
+    p_max_trade_usd: input.maxTradeUsd,
+    p_daily_loss_stop_usd: input.dailyLossStopUsd,
+    p_max_trades_per_day: input.maxTradesPerDay,
+    p_allowed_symbols: input.allowedSymbols,
+    p_lang: input.lang,
+    p_conexao_id: cofre.id,
+    p_key_permission: input.keyPermission,
+    p_key_permission_detail: input.keyPermissionDetail.slice(0, 300),
+    p_expires_at: expiresAt,
+  });
 
   if (error) throw new Error(`armSession failed: ${error.message}`);
-  return data?.id ?? null;
+  return data ?? null;
 }
 
 /**

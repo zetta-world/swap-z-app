@@ -206,7 +206,16 @@ describe("a rota de armar verifica ANTES de guardar", () => {
   it("o veredito é gravado na sessão, não só devolvido na resposta", () => {
     expect(rota).toContain("keyPermission:       permissao.veredito");
     const sessoes = semComentarios(readFileSync("src/lib/autopilot/sessions.ts", "utf8"));
-    expect(sessoes).toContain("key_permission:        input.keyPermission");
+    /**
+     * ⚠️ A GRAFIA MUDOU, A PROPRIEDADE NÃO. Até o A51 a sessão nascia de um
+     * UPSERT e a coluna aparecia literal (`key_permission: input.keyPermission`).
+     * O rearme virou a RPC `autopilot_rearm_preserva_rails` (0065), que recebe
+     * o veredito como parâmetro `p_key_permission`. O que esta trava garante
+     * continua sendo o mesmo: o veredito da chave ATRAVESSA para a escrita da
+     * sessão, em vez de morrer na resposta HTTP.
+     */
+    expect(sessoes).toContain("p_key_permission: input.keyPermission");
+    expect(sessoes).toContain("p_key_permission_detail: input.keyPermissionDetail");
   });
 
   /**

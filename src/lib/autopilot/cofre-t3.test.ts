@@ -41,9 +41,21 @@ vi.mock("@/lib/crypto/secretbox", () => ({
 }));
 vi.mock("@/lib/admin/track", () => ({ recordEvent: (a: unknown, b: unknown) => recordEvent(a, b) }));
 
-/** Banco falso mínimo para `armSession`: captura o payload do upsert. */
+/**
+ * Banco falso mínimo para `armSession`: captura o que foi escrito.
+ *
+ * ⚠️ A ESCRITA MUDOU DE FORMA, A PROPRIEDADE NÃO. Até o A51, `armSession`
+ * gravava a sessão por UPSERT e esta dobradura só media `upserts`. O rearme
+ * virou a RPC atômica `autopilot_rearm_preserva_rails` (migration 0065), que
+ * preserva os rails financeiros do dia. Se o falso continuasse cego para
+ * `rpc`, o T3.1 leria `upserts[0]` de um vetor vazio e morreria de
+ * `undefined` — barulho, não veredito. Ele registra os DOIS canais: o que a
+ * guarda persegue é "por onde o segredo poderia sair", e a resposta tem de
+ * valer para qualquer forma de escrita.
+ */
 function bancoDaSessao() {
   const upserts: Array<{ payload: Record<string, unknown>; opts: unknown }> = [];
+  const rpcs: Array<{ fn: string; args: Record<string, unknown> }> = [];
   const db = {
     from: (_t: string) => ({
       upsert: (payload: Record<string, unknown>, opts: unknown) => {
@@ -53,8 +65,12 @@ function bancoDaSessao() {
         };
       },
     }),
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      rpcs.push({ fn, args });
+      return { data: "s1", error: null };
+    },
   };
-  return { db, upserts };
+  return { db, upserts, rpcs };
 }
 let dbAtual: ReturnType<typeof bancoDaSessao> | null = null;
 vi.mock("@/lib/supabase/server", () => ({ getSupabaseAdmin: () => dbAtual?.db ?? null }));
@@ -86,12 +102,21 @@ describe("armSession — a escrita (T3.1, T3.2)", () => {
       walletAddress: "0xDONO", exchangeId: "binance",
       credentials: { apiKey: "CHAVE-SECRETA-K", apiSecret: "SEGREDO-S" },
     }));
-    // E o upsert da sessão NÃO carrega segredo nenhum — só o elo:
-    const { payload } = dbAtual!.upserts[0];
-    expect(payload.conexao_id).toBe("cx-1");
-    expect(payload).not.toHaveProperty("creds_cipher");
-    for (const v of Object.values(payload)) {
-      expect(JSON.stringify(v)).not.toContain("K");   // a apiKey não vaza para a sessão
+    // E a escrita da sessão NÃO carrega segredo nenhum — só o elo.
+    // Desde o A51 essa escrita é a RPC `autopilot_rearm_preserva_rails`.
+    const chamada = dbAtual!.rpcs.at(-1)!;
+    expect(chamada.fn).toBe("autopilot_rearm_preserva_rails");
+    expect(chamada.args.p_conexao_id).toBe("cx-1");
+    expect(chamada.args).not.toHaveProperty("creds_cipher");
+    /**
+     * ⚠️ O laço antigo varria o payload do upsert procurando a letra "K"
+     * solta. Ele não existe mais (a escrita virou RPC), e este laço mede o
+     * mesmo fato com os SEGREDOS INTEIROS — mais forte, e sem depender de um
+     * caractere aparecer por acaso noutro campo.
+     */
+    for (const v of Object.values(chamada.args)) {
+      expect(String(v)).not.toContain("SEGREDO-S");
+      expect(String(v)).not.toContain("CHAVE-SECRETA-K");
     }
   });
 
@@ -105,6 +130,7 @@ describe("armSession — a escrita (T3.1, T3.2)", () => {
     guardarConexao.mockResolvedValue({ ok: false, erro: "banco fora" });
     await expect(armSession(INPUT)).rejects.toThrow(/cofre nao gravou/);
     expect(dbAtual!.upserts).toHaveLength(0);        // zero sessão armada
+    expect(dbAtual!.rpcs).toHaveLength(0);           // nem pelo canal novo (A51)
     expect(recordEvent).toHaveBeenCalledWith("cofre_nao_gravou", expect.anything());
   });
 });
@@ -197,6 +223,10 @@ describe("guarda estrutural — o caminho legado não volta pelo fundo", () => {
       // A guarda-irmã do A115 em `capacidade.test.ts` cita o identificador
       // morto nas próprias asserções — não é referência viva.
       "src/lib/dca/capacidade.test.ts",
+      // A51/PC-2: este teste EXIGE que a migration 0065 não cite
+      // `creds_cipher`. Uma asserção de AUSÊNCIA é o oposto de uma
+      // referência viva — mas o grep não distingue os dois.
+      "src/lib/platform-closure-batch1.test.ts",
     ]);
     const vivos: string[] = [];
     const andar = (dir: string) => {
