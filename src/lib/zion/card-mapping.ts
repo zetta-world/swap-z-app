@@ -14,6 +14,7 @@
 import type { ActionCard } from "@/lib/zion/parse";
 import type { CexId, CexOrderSide, CexOrderType } from "@/lib/cex/types";
 import { SUPPORTED_CEX_IDS } from "@/lib/cex/types";
+import { normalizarDecimalFinanceiro } from "@/lib/format";
 
 /**
  * Curated whitelist of base symbols the autopilot is allowed to trade. The
@@ -55,6 +56,15 @@ export function normalizeSymbol(sym: string): string {
 
 const QUOTES_PREFERRED = ["USDT", "USDC", "FDUSD", "BUSD", "USD"];
 
+/** Convert financial text to a positive Number only after canonical locale normalization. */
+function parsePositiveFinancial(raw: unknown): number {
+  const lexical = String(raw ?? "").replace(/[^\d.,\s\u00A0\u202F]/g, "");
+  const normalized = normalizarDecimalFinanceiro(lexical);
+  if (normalized === null) return 0;
+  const n = Number(normalized);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /**
  * Pull a number out of a price string, robust to BOTH locale conventions.
  *
@@ -76,6 +86,10 @@ const QUOTES_PREFERRED = ["USDT", "USDC", "FDUSD", "BUSD", "USD"];
  *   - No separator → integer.
  *
  * Returns 0 for anything non-positive / unparseable (callers reject on 0).
+ *
+ * NOTE PC-1: analytical callers keep this historical parser for compatibility.
+ * Real-money card mapping below uses `parseExecutablePrice`, which fails closed
+ * on a materially ambiguous single separator.
  */
 export function parsePrice(raw: string): number {
   const s = String(raw).replace(/[^\d.,]/g, "").trim();
@@ -110,6 +124,11 @@ export function parsePrice(raw: string): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/** Money-executable price parser: ambiguous single separators fail closed. */
+function parseExecutablePrice(raw: string): number {
+  return parsePositiveFinancial(raw);
+}
+
 /**
  * Resolve a ZION card into one OR more CEX order intents.
  *   - null               → not mappable (caller skips the card).
@@ -132,13 +151,13 @@ export function mapCardToCexIntents(card: ActionCard): AutopilotIntent[] | null 
       const base = normalizeSymbol(leg.pair.split("/")[0]);
       if (!(AUTOPILOT_MAJOR_SYMBOLS as readonly string[]).includes(base)) return null;
     }
-    const seedUsd = card.from?.amount ? Number(card.from.amount) : NaN;
+    const seedUsd = card.from?.amount ? parsePositiveFinancial(card.from.amount) : NaN;
     if (!Number.isFinite(seedUsd) || seedUsd <= 0) return null;
 
     const intents: AutopilotIntent[] = [];
     for (const leg of legs) {
-      const priceNum = leg.price ? parsePrice(leg.price) : 0;
-      const baseAmount = leg.baseAmount ? parseFloat(String(leg.baseAmount).replace(/[, ]/g, "")) : 0;
+      const priceNum = leg.price ? parseExecutablePrice(leg.price) : 0;
+      const baseAmount = leg.baseAmount ? parsePositiveFinancial(leg.baseAmount) : 0;
       if (!Number.isFinite(baseAmount) || baseAmount <= 0) return null;
       intents.push({
         exchange,
@@ -164,10 +183,10 @@ export function mapCardToCexIntents(card: ActionCard): AutopilotIntent[] | null 
     if (!SUPPORTED_CEX_IDS.includes(exA) || !SUPPORTED_CEX_IDS.includes(exB)) return null;
     if (exA === exB) return null;
     if (a.side === b.side) return null;
-    const priceA = a.price ? parsePrice(a.price) : 0;
-    const priceB = b.price ? parsePrice(b.price) : 0;
+    const priceA = a.price ? parseExecutablePrice(a.price) : 0;
+    const priceB = b.price ? parseExecutablePrice(b.price) : 0;
     if (!priceA || !priceB) return null;
-    const notional = card.from?.amount ? Number(card.from.amount) : 0;
+    const notional = card.from?.amount ? parsePositiveFinancial(card.from.amount) : 0;
     if (!Number.isFinite(notional) || notional <= 0) return null;
     const buyPrice = a.side === "buy" ? priceA : priceB;
     const baseAmount = notional / buyPrice;
@@ -187,10 +206,10 @@ export function mapCardToCexIntent(card: ActionCard): AutopilotIntent | null {
     if (!card.cexLeg || !card.cexLeg.symbol || !card.cexLeg.side) return null;
     const baseSym = normalizeSymbol(card.cexLeg.symbol);
     if (!(AUTOPILOT_MAJOR_SYMBOLS as readonly string[]).includes(baseSym)) return null;
-    const priceNum = card.cexLeg.price ? parsePrice(card.cexLeg.price) : 0;
-    const notional = card.from?.amount ? Number(card.from.amount) : 0;
+    const priceNum = card.cexLeg.price ? parseExecutablePrice(card.cexLeg.price) : 0;
+    const notional = card.from?.amount ? parsePositiveFinancial(card.from.amount) : 0;
     if (!Number.isFinite(notional) || notional <= 0) return null;
-    const refPrice = priceNum || parsePrice(card.triggerPrice ?? card.entryPrice ?? "");
+    const refPrice = priceNum || parseExecutablePrice(card.triggerPrice ?? card.entryPrice ?? "");
     if (!refPrice) return null;
     const baseAmount = notional / refPrice;
     if (!Number.isFinite(baseAmount) || baseAmount <= 0) return null;
@@ -242,11 +261,11 @@ export function mapCardToCexIntent(card: ActionCard): AutopilotIntent | null {
   if (!(AUTOPILOT_MAJOR_SYMBOLS as readonly string[]).includes(baseSym)) return null;
   const symbol = `${baseSym}/${quoteSym}`;
 
-  const amount = card.from.amount ? Number(card.from.amount) : NaN;
+  const amount = card.from.amount ? parsePositiveFinancial(card.from.amount) : NaN;
   if (!Number.isFinite(amount) || amount <= 0) return null;
 
   const priceStr = card.entryPrice ?? card.triggerPrice ?? "";
-  const priceNum = parsePrice(priceStr);
+  const priceNum = parseExecutablePrice(priceStr);
 
   let baseAmount: number;
   let notionalUsd: number;

@@ -38,7 +38,7 @@
  *     stored server-side.
  */
 
-import { toBaseUnits as paraUnidadesBase } from "@/lib/format";
+import { normalizarDecimalFinanceiro, toBaseUnits as paraUnidadesBase } from "@/lib/format";
 import type { ActionCard } from "@/lib/zion/parse";
 import type { ChainId } from "@/lib/chains";
 import type { Hex } from "viem";
@@ -197,46 +197,43 @@ export function buildCowOrder(input: BuildOrderInput): BuiltOrder {
 
   const amountStr = card.from?.amount;
   if (!amountStr) throw new Error("CoW: card is missing from.amount");
-  const sellAmountUserUnits = parseFloat(String(amountStr).replace(/[, ]/g, ""));
-  if (!Number.isFinite(sellAmountUserUnits) || sellAmountUserUnits <= 0) {
-    throw new Error(`CoW: invalid from.amount "${amountStr}"`);
-  }
-
-  const triggerPrice = parsePrice(card.triggerPrice ?? card.entryPrice ?? "");
-  if (!triggerPrice) {
-    throw new Error("CoW: card is missing triggerPrice/entryPrice");
+  const amountNormalizado = normalizarDecimalFinanceiro(amountStr);
+  if (amountNormalizado === null) {
+    throw new Error(`CoW: invalid or ambiguous from.amount "${amountStr}"`);
   }
 
   /**
-   * ⚠️ A VENDA CONVERTE A PARTIR DA STRING ORIGINAL, não do `Number` parseado.
-   *
-   * Este é o valor que entra na assinatura EIP-712 — o que o solver vai tirar
-   * da carteira. Passar pelo `Number` primeiro joga fora dígitos que o usuário
-   * digitou, e a auditoria da ponte já custou caro exatamente aqui.
+   * MONEY-CRITICAL: derive the signed sellAmount from normalized TEXT. Neither
+   * sellAmount nor buyAmount may depend on IEEE-754 Number arithmetic.
    */
-  const sellAmountWei = paraUnidadesBase(String(amountStr).replace(/[\s,_]/g, ""), sellDecimals);
+  const sellAmountWei = paraUnidadesBase(amountNormalizado, sellDecimals);
   if (sellAmountWei === "0") throw new Error(`CoW: amount "${amountStr}" rounds to zero in base units`);
 
-  // Buy-amount in wei:
-  //   sell_*:    sellAmount × triggerPrice  (sell BASE for QUOTE at limit)
-  //   buy_limit: sellAmount ÷ triggerPrice  (spend QUOTE to acquire BASE at limit)
-  // We always submit kind="sell" — the buyAmount is the MIN the user
-  // will accept. CoW fills when market price ≥ this implied rate.
-  const isBuyLimit = card.kind === "buy_limit";
-  const buyAmountUserUnits = isBuyLimit
-    ? sellAmountUserUnits / triggerPrice
-    : sellAmountUserUnits * triggerPrice;
+  const price = parsePriceRatio(card.triggerPrice ?? card.entryPrice ?? "");
+  if (!price) {
+    throw new Error("CoW: missing, invalid, ambiguous, or zero triggerPrice/entryPrice");
+  }
+
   /**
-   * ⚠️ A COMPRA É CALCULADA, não digitada — vem de uma divisão ou multiplicação
-   * pelo preço-gatilho, então nasce `Number` e não há string original para
-   * preservar. `emStringFixa` a formata com as casas do token ANTES de
-   * converter, para que a conversão em si continue sendo a de string.
+   * CoW receives kind="sell", so `buyAmount` is a MINIMUM RECEIVE. The exact
+   * decimal price is represented as pn/pd and the already-fixed sellAmount in
+   * base units is the authority:
    *
-   * A precisão aqui é a do `Number` (~16 dígitos) e isso está DITO, em vez de
-   * um comentário prometendo o contrário. Como este é o MÍNIMO aceito pelo
-   * usuário, qualquer poeira o favorece: ele recebe pelo menos isto.
+   *   SELL LIMIT: ceil(S * pn * 10^bd / (pd * 10^sd))
+   *   BUY LIMIT:  ceil(S * pd * 10^bd / (pn * 10^sd))
+   *
+   * CEIL is intentional. Floor would lower the signed minimum receive by one
+   * base unit whenever there is a remainder, silently relaxing the user's
+   * price limit. All factors stay BigInt until the uint256 string is fixed.
    */
-  const buyAmountWei = paraUnidadesBase(emStringFixa(buyAmountUserUnits, buyDecimals), buyDecimals);
+  const isBuyLimit = card.kind === "buy_limit";
+  const buyAmountWei = calcularBuyAmountWeiExato({
+    sellAmountWei,
+    sellDecimals,
+    buyDecimals,
+    price,
+    isBuyLimit,
+  });
   if (buyAmountWei === "0") throw new Error("CoW: buy amount rounds to zero in base units");
 
   const validityDays = Math.max(1, Math.min(30, input.validityDays ?? 7));
@@ -259,6 +256,12 @@ export function buildCowOrder(input: BuildOrderInput): BuiltOrder {
     buyTokenBalance:   "erc20",
   };
 
+  // Display/meta is deliberately downstream of the exact signed payload.
+  // Number is allowed here because these values are non-authoritative UI text.
+  const sellAmountUserUnits = Number(amountNormalizado);
+  const buyAmountUserUnits = Number(buyAmountWei) / (10 ** buyDecimals);
+  const triggerPriceDisplay = Number(price.canonical);
+
   return {
     domain:      buildDomain(chain),
     types:       ORDER_TYPES,
@@ -269,7 +272,7 @@ export function buildCowOrder(input: BuildOrderInput): BuiltOrder {
       kind:        message.kind,
       sellAmount:  `${formatUserUnits(sellAmountUserUnits)} ${card.from?.symbol ?? ""}`.trim(),
       buyAmount:   `${formatUserUnits(buyAmountUserUnits)} ${card.to?.symbol ?? ""}`.trim(),
-      limitPrice:  formatLimitPrice(triggerPrice, card),
+      limitPrice:  formatLimitPrice(triggerPriceDisplay, card),
       expiresAt:   validTo * 1000,
     },
   };
@@ -390,46 +393,74 @@ export async function fetchCowOrderStatus(
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
-/**
- * Um `number` em string decimal de casa fixa, SEM notação exponencial.
- *
- * ⚠️⚠️ O QUE ISTO SUBSTITUIU, E POR QUE (auditoria de 24/08).
- *
- * Havia aqui um `toBaseUnits` local cujo comentário dizia:
- *
- *   "Uses BigInt-string arithmetic so we never lose precision"
- *
- * e cuja conta era `BigInt(Math.round(amount * 10 ** decimals))` — ponto
- * flutuante ANTES do BigInt. Medido, a 18 casas:
- *
- *   1234.5678  → 1234567800000000032768   (correto: …800000000000000000)
- *
- * ⚠️ SEJA JUSTO COM A ESCALA: a deriva é relativa ~1e-16, ou 3×10⁻¹⁴ token.
- * É poeira, e NÃO era o bug catastrófico da ponte. O defeito de verdade era o
- * COMENTÁRIO, que mandava o próximo leitor não olhar — e o fato de já existir
- * um `toBaseUnits` correto, em string, em `lib/format.ts`, escrito na
- * auditoria da ponte por este exato motivo. Duas convenções de conversão no
- * mesmo caminho de dinheiro é como a ponte quebrou.
- *
- * ⚠️ `toFixed` vira exponencial acima de 1e21, e exponencial é justamente o
- * que `paraUnidadesBase` recusa. Então o caso grande é tratado à mão.
- */
-function emStringFixa(n: number, decimals: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "0";
-  if (n < 1e21) return n.toFixed(Math.min(decimals, 100));
-  // Acima disto o `Number` já não tem casas decimais para perder: expande o
-  // expoente em dígitos e devolve o inteiro.
-  const [m, e] = n.toExponential(20).split("e");
-  const exp = Number(e);
-  const digitos = m.replace("-", "").replace(".", "");
-  return digitos.padEnd(exp + 1, "0").slice(0, exp + 1);
+interface DecimalRatio {
+  /** Plain canonical decimal with `.` as separator. */
+  canonical: string;
+  numerator: bigint;
+  denominator: bigint;
 }
 
-/** Pull a positive number out of a locale-formatted price string. */
-function parsePrice(raw: string): number {
-  const cleaned = String(raw).replace(/[^\d.,-]/g, "").replace(/,/g, "");
-  const n = parseFloat(cleaned);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+/** Convert a canonical decimal string into an exact base-10 rational. */
+function parseCanonicalDecimalRatio(canonical: string): DecimalRatio | null {
+  if (!/^\d+(?:\.\d+)?$/.test(canonical)) return null;
+  const [integer = "0", fraction = ""] = canonical.split(".");
+  const digits = (integer + fraction).replace(/^0+(?=\d)/, "") || "0";
+  return {
+    canonical,
+    numerator: BigInt(digits),
+    denominator: 10n ** BigInt(fraction.length),
+  };
+}
+
+/** Normalize a trigger price without ever reducing it to Number. */
+function parsePriceRatio(raw: string): DecimalRatio | null {
+  // Preserve the historical convenience of an optional leading "$", but do
+  // not strip arbitrary letters/symbols: exponent notation and garbage fail
+  // closed instead of being transformed into a different decimal.
+  const lexical = String(raw).trim().replace(/^\$\s*/, "");
+  if (!lexical || !/^[0-9.,\s\u00A0\u202F]+$/.test(lexical)) return null;
+  const canonical = normalizarDecimalFinanceiro(lexical);
+  if (canonical === null) return null;
+  const ratio = parseCanonicalDecimalRatio(canonical);
+  if (!ratio || ratio.numerator <= 0n) return null;
+  return ratio;
+}
+
+function potenciaDez(decimals: number): bigint {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error(`CoW: invalid token decimals ${decimals}`);
+  }
+  return 10n ** BigInt(decimals);
+}
+
+/**
+ * Exact ceil(n / d) for the non-negative integers used by CoW amounts.
+ * Floor is unsafe here because signed `buyAmount` is a minimum receive.
+ */
+function dividirComCeil(n: bigint, d: bigint): bigint {
+  if (n < 0n || d <= 0n) throw new Error("CoW: invalid exact-ratio division");
+  return (n + d - 1n) / d;
+}
+
+function calcularBuyAmountWeiExato(args: {
+  sellAmountWei: string;
+  sellDecimals: number;
+  buyDecimals: number;
+  price: DecimalRatio;
+  isBuyLimit: boolean;
+}): string {
+  const sellAmount = BigInt(args.sellAmountWei);
+  const sellScale = potenciaDez(args.sellDecimals);
+  const buyScale = potenciaDez(args.buyDecimals);
+
+  const numerator = args.isBuyLimit
+    ? sellAmount * args.price.denominator * buyScale
+    : sellAmount * args.price.numerator * buyScale;
+  const denominator = args.isBuyLimit
+    ? args.price.numerator * sellScale
+    : args.price.denominator * sellScale;
+
+  return dividirComCeil(numerator, denominator).toString();
 }
 
 function formatUserUnits(n: number): string {
