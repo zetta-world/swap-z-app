@@ -150,6 +150,11 @@
       "regions": [
         "gru1"
       ]
+    },
+    "src/app/api/dca/cron/route.ts": {
+      "regions": [
+        "gru1"
+      ]
     }
   }
 }
