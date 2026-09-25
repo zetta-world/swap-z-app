@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { decidirCiclo, tetoDoCiclo, type Intervalo } from "@/lib/dca/relogio";
 import {
-  planosVencidos, reservarCiclo, fecharCiclo, gravarPulo, avancarPlano,
-  gastoHojeDaCarteira, type PlanoRow,
+  planosVencidos, planosComIntentVivoParaRecovery, reservarCiclo, fecharCiclo,
+  gravarPulo, avancarPlano, gastoHojeDaCarteira, type PlanoRow,
 } from "@/lib/dca/store";
 import {
   lerConexaoPorId, decifrarConexao, credenciaisDoIntentParaRecovery,
@@ -15,6 +15,9 @@ import { decidirPeloIntent } from "@/lib/dca/liquidacao";
 import { decidirCapacidade, lerCapacidades, type EstadoDasCapacidades }
   from "@/lib/dca/capacidade";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
+import { fetchCexBalance } from "@/lib/cex/server";
+import { unidadeDca } from "@/lib/dca/unidade";
+import { comSaldoLivreDca } from "@/lib/dca/saldo";
 import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { setCronHeartbeat } from "@/lib/admin/health";
@@ -23,6 +26,7 @@ import { recordEvent, notifyTelegram } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CexId, CexOrder } from "@/lib/cex/types";
 import { taxaEmUsd } from "@/lib/cex/taxa";
+import { executarFilasDca } from "@/lib/dca/fila";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,61 +172,205 @@ export async function POST(req: NextRequest) {
 
 async function passada(): Promise<NextResponse> {
   const agoraIso = new Date().toISOString();
-  const { planos, truncado } = await planosVencidos(agoraIso);
-  if (truncado) {
-    // ⚠️ Corte silencioso lê-se como "vi tudo". Se um dia houver mais planos
-    // vencidos que o teto, o dono precisa saber que a fila não coube.
-    await avisar("mais planos vencidos que o teto da passada", { teto: 200 });
+  let contexto: Promise<[
+    Awaited<ReturnType<typeof lerLiberacao>>,
+    Awaited<ReturnType<typeof lerPilotos>>,
+    EstadoDasCapacidades,
+  ]> | null = null;
+
+  const rodada = await executarFilasDca({
+    lerAtivos: () => planosVencidos(agoraIso),
+    lerRecovery: () => planosComIntentVivoParaRecovery(),
+    processar: ({ plano, somenteRecovery }) => processarPlano(
+      plano, agoraIso, async () => {
+        // Contexto de NOVA entrada é lazy. Recovery-only não depende de
+        // capability/liberação para descobrir o que já aconteceu na venue.
+        contexto ??= Promise.all([
+          lerLiberacao("dca"),
+          lerPilotos("dca"),
+          lerCapacidades(getSupabaseAdmin()),
+        ]);
+        return contexto;
+      },
+      somenteRecovery,
+    ),
+    aoFalharProcessamento: (item, e) => ({
+      plano: item.plano.id,
+      acao: "erro",
+      detalhe: (e instanceof Error ? e.message : String(e)).slice(0, 120),
+    }),
+  });
+
+  if (!rodada.ok) {
+    // A86 vale para as DUAS fontes. Uma fila de recovery ilegível é tão
+    // perigosa quanto a fila ativa ilegível: processar só metade poderia abrir
+    // nova entrada enquanto uma side effect antiga está órfã.
+    await avisar("fila do DCA INDISPONIVEL — nenhuma execucao", {
+      origem: rodada.origem, erro: rodada.motivo, detalhe: rodada.detalhe ?? null,
+    });
+    return NextResponse.json({
+      ok: false, error: rodada.error, origem: rodada.origem,
+      motivo: rodada.motivo, processed: rodada.processed,
+    }, { status: rodada.status });
   }
 
-  /**
-   * ⚠️ O ESTADO É O DO DCA, não o do autopilot — e a falta deste argumento
-   * custou o primeiro teste real (25/08). O plano do dono foi barrado por uma
-   * chave que existe para segurar o robô de IA e que nunca foi criada.
-   */
-  const [liberacao, pilotos, capacidades] = await Promise.all([
-    lerLiberacao("dca"), lerPilotos("dca"),
-    /**
-     * ⚠️ AS DUAS CAPACIDADES, numa ida só, para a passada inteira (A112).
-     * Simulado e real são interruptores DIFERENTES, e o real nasce fechado.
-     */
-    lerCapacidades(getSupabaseAdmin()),
-  ]);
-
-  const resumo: Array<{ plano: string; acao: string; detalhe?: string }> = [];
-  for (const p of planos) {
-    try {
-      resumo.push(await processarPlano(p, agoraIso, liberacao, pilotos, capacidades));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      resumo.push({ plano: p.id, acao: "erro", detalhe: msg.slice(0, 120) });
-    }
+  if (rodada.truncado) {
+    await avisar("fila do DCA maior que o teto da passada", {
+      teto: 200,
+      why: "fila ativa ou de recovery foi truncada; o HTTP declara truncamento",
+    });
   }
 
-  return NextResponse.json({ ok: true, processed: planos.length, truncado, resumo });
+  return NextResponse.json({
+    ok: true, processed: rodada.processed, truncado: rodada.truncado, resumo: rodada.resumo,
+  }, { status: rodada.status });
 }
 
 type Liberacao = Awaited<ReturnType<typeof lerLiberacao>>;
 type Pilotos   = Awaited<ReturnType<typeof lerPilotos>>;
+type ContextoEntrada = [Liberacao, Pilotos, EstadoDasCapacidades];
+type DbExec = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
+type ResultadoPlano = { plano: string; acao: string; detalhe?: string };
+
+/**
+ * A58 — recovery é uma obrigação do INTENT, não uma permissão do status do
+ * plano. Esta função roda antes de capability/liberação/conexão de NOVA entrada
+ * e usa a conexão histórica do próprio intent. `null` significa que não há
+ * intent vivo; qualquer outro retorno encerra o processamento deste plano.
+ */
+async function recuperarIntentDoPlano(
+  p: PlanoRow, dbExec: DbExec,
+): Promise<ResultadoPlano | null> {
+  const vivo = await intentVivoDoPlano(dbExec, p.id);
+  if (vivo === undefined) {
+    return { plano: p.id, acao: "adiado", detalhe: "nao consegui ler intents pendentes" };
+  }
+  if (!vivo) return null;
+
+  const rec = await reconciliarIntent({
+    db: dbExec,
+    // A127: recovery usa intent.conexao_id; status/current do plano não migra a
+    // identidade histórica da ordem.
+    credenciais: async (intent) => credenciaisDoIntentParaRecovery(dbExec, intent),
+  }, vivo);
+
+  const cicloDoIntentVivo = Number(vivo.cycle_number);
+  const atual = await intentPorId(dbExec, vivo.id);
+  if (atual === undefined) {
+    await avisar("releitura do intent FALHOU — plano NAO avanca", {
+      plano: p.id, ciclo: cicloDoIntentVivo, intent: vivo.id,
+      why: "reconciliei e nao consegui reler o resultado; nada novo e autorizado",
+    });
+    return { plano: p.id, acao: "adiado", detalhe: "nao consegui reler o intent" };
+  }
+  if (atual === null) {
+    await recordEvent("dca_intent_sumiu", { wallet: p.wallet_address, meta: {
+      severity: "high", plano: p.id, ciclo: cicloDoIntentVivo, intent: vivo.id,
+      why: "o intent existia antes da reconciliacao e nao existe mais; plano nao avanca",
+    } });
+    notifyTelegram(`🔴 DCA — intent SUMIU do livro\nplano ${p.id} · intent ${vivo.id}`);
+    return { plano: p.id, acao: "adiado", detalhe: "intent sumiu do livro" };
+  }
+
+  const decisao = decidirPeloIntent(atual);
+  if (decisao.acao === "esperar") {
+    await avisar("ciclo de DCA em DUVIDA — plano NAO avanca ate reconciliar", {
+      plano: p.id, ciclo: Number(atual.cycle_number), intent: atual.id,
+      estado: rec.estado, porque: decisao.porque,
+      why: "a ordem pode ter executado; plano/status do usuario nao autoriza repeticao",
+    });
+    return { plano: p.id, acao: "em_duvida", detalhe: decisao.porque };
+  }
+  if (decisao.acao === "quarentena") {
+    await avisar("intent do DCA em QUARENTENA — mao humana", {
+      plano: p.id, ciclo: Number(atual.cycle_number), intent: atual.id, porque: decisao.porque,
+    });
+    return { plano: p.id, acao: "quarentena", detalhe: decisao.porque };
+  }
+
+  const ciclo = Number(atual.cycle_number);
+  const fechou = await fecharCiclo(p.id, ciclo, {
+    status: decisao.status, motivo: decisao.motivo ?? undefined,
+    orderId: decisao.orderId ?? undefined,
+    preco: decisao.precoMedio ?? undefined,
+    quantidade: decisao.quantidade || undefined,
+    custoUsd: decisao.custoUsd || undefined,
+    simulado: atual.simulated,
+    taxaUsd: atual.simulated ? null : atual.fee_total,
+  });
+  if (!fechou) {
+    await avisar("intent resolvido e ciclo NAO fechado — reconciliar a mao", {
+      plano: p.id, ciclo, intent: vivo.id,
+    });
+  }
+
+  const feitosAgora = p.ciclos_feitos + (decisao.contaComoFeito ? 1 : 0);
+  const puladosAgora = p.ciclos_pulados + (decisao.contaComoFeito ? 0 : 1);
+  const gastoAgora = Number(p.gasto_acumulado_usd) + decisao.custoUsd;
+  const acabouAgora = feitosAgora + puladosAgora >= p.ciclos_total;
+  const patch: Parameters<typeof avancarPlano>[1] = {
+    ciclosFeitos: feitosAgora, ciclosPulados: puladosAgora, gastoAcumulado: gastoAgora,
+  };
+
+  // Status escolhido pelo usuário é preservado durante recovery. Só um plano
+  // que AINDA está ativo pode ter relógio/status de conclusão atualizado aqui.
+  if (p.status === "ativo") {
+    patch.nextRunAt = new Date(Date.now() + 60_000).toISOString();
+    if (acabouAgora) {
+      patch.status = "completo";
+      patch.encerradoPor = "completo";
+    }
+  }
+
+  if (!await avancarPlano(p.id, patch)) {
+    await avisar("intent resolvido e plano NAO avancou — congela ate mao humana", {
+      plano: p.id, ciclo, intent: vivo.id,
+    });
+  }
+  return {
+    plano: p.id,
+    acao: decisao.contaComoFeito ? "reconciliado_comprou" : "reconciliado_sem_compra",
+    detalhe: `${decisao.quantidade} por $${decisao.custoUsd.toFixed(2)}`,
+  };
+}
 
 async function processarPlano(
-  p: PlanoRow, agoraIso: string, liberacao: Liberacao, pilotos: Pilotos,
-  capacidades: EstadoDasCapacidades,
-): Promise<{ plano: string; acao: string; detalhe?: string }> {
+  p: PlanoRow, agoraIso: string, obterContextoEntrada: () => Promise<ContextoEntrada>,
+  somenteRecovery = false,
+): Promise<ResultadoPlano> {
+  const dbExec = getSupabaseAdmin();
+  if (!dbExec) {
+    return { plano: p.id, acao: "adiado", detalhe: "sem banco para conferir intents" };
+  }
+
+  // A58 revisão: recovery PRIMEIRO, antes de qualquer gate que só faz sentido
+  // para risco novo. Assim pause/encerrar/completo não órfã SUBMITTING/UNKNOWN.
+  const recuperado = await recuperarIntentDoPlano(p, dbExec);
+  if (recuperado) return recuperado;
+  if (somenteRecovery) {
+    return { plano: p.id, acao: "sem_recovery", detalhe: `status_${p.status}` };
+  }
+  if (p.status !== "ativo") {
+    // Defesa em profundidade: fila de recovery jamais vira fonte de entrada.
+    return { plano: p.id, acao: "sem_nova_entrada", detalhe: `status_${p.status}` };
+  }
+
+  const [liberacao, pilotos, capacidades] = await obterContextoEntrada();
+
   /**
    * ⚠️ GATE PRÓPRIO, função compartilhada. `decidirAutomacao` é decisão PURA
    * sobre um estado lido do banco — o DCA passa o SEU estado. Abrir robô de IA
    * ao público e abrir poupança ao público são decisões diferentes.
    */
   /**
-   * ⚠️⚠️ A CAPACIDADE DO MODO, ANTES DE TUDO — achado A112.
+   * ⚠️⚠️ A CAPACIDADE DO MODO, ANTES DE QUALQUER NOVA ENTRADA — achado A112.
    *
    * `dca_liberado` foi aberto em 25/08 "para o primeiro teste SIMULADO" — a
    * justificativa está gravada ao lado dele em produção — e o MESMO
    * interruptor liberava o caminho REAL. Agora são duas capacidades, e a real
    * nasce FECHADA: ausência de `dca_real_liberado` é recusa.
    *
-   * ⚠️ E ELA VEM ANTES do gate de automação, de propósito: "este produto pode
+   * ⚠️ E ELA VEM antes do gate de automação de NOVA ENTRADA, de propósito: "este produto pode
    * mover dinheiro?" é pergunta anterior a "esta carteira pode automatizar?".
    */
   const capacidade = decidirCapacidade(
@@ -298,138 +446,18 @@ async function processarPlano(
     }
   }
 
-  /**
-   * ⚠️⚠️ A PRIMEIRA PERGUNTA DA PASSADA: SOBROU DÚVIDA DA VEZ ANTERIOR?
-   *
-   * Achados A104 e A105. O cron antigo fazia `submit → timeout → falhou →
-   * avança`, e a ordem podia ter executado. Agora um intent não-terminal deste
-   * plano BLOQUEIA tudo até a corretora responder: nada de ciclo novo, nada de
-   * avanço, nada de segunda ordem. Primeiro se descobre a verdade.
-   */
-  const dbExec = getSupabaseAdmin();
-  if (!dbExec) {
-    return { plano: p.id, acao: "adiado", detalhe: "sem banco para conferir intents" };
-  }
-  const vivo = await intentVivoDoPlano(dbExec, p.id);
-  if (vivo === undefined) {
-    // ⚠️ Falha de leitura NÃO é "nada pendente". Falha FECHADO.
-    return { plano: p.id, acao: "adiado", detalhe: "nao consegui ler intents pendentes" };
-  }
-  if (vivo) {
-    const rec = await reconciliarIntent({
-      db: dbExec,
-      // A127: o pending usa a versão gravada NO INTENT. Mesmo se o plano for
-      // rearmado no futuro, a identidade histórica desta ordem não migra.
-      credenciais: async (intent) => credenciaisDoIntentParaRecovery(dbExec, intent),
-    }, vivo);
-    /**
-     * ⚠️⚠️⚠️ RELER O MESMO INTENT, PELO ID — achado A117.
-     *
-     * A linha que estava aqui era o pior defeito do arquivo:
-     *
-     *     const atual = (await intentVivoDoPlano(dbExec, p.id)) ?? null;
-     *     const decisao = decidirPeloIntent(atual ?? { ...vivo, state: "FILLED" });
-     *
-     * `intentVivoDoPlano` só enxerga estados NÃO-terminais. O caminho feliz da
-     * reconciliação — a corretora confirmou, o livro fechou em FILLED — faz o
-     * intent SAIR dessa consulta, `atual` vinha `null`, e o `??` inventava um
-     * intent FILLED com os números do PEDIDO. Ou seja: exatamente quando a
-     * reconciliação FUNCIONAVA, o plano liquidava com `filled_qty = 0` virando
-     * "comprou tudo" — o A81 ressuscitado por um fallback sintético, uma linha
-     * abaixo do comentário que jura que "o que entra no ciclo é o que o livro
-     * tem".
-     *
-     * Estado sintético não existe mais aqui, em lugar nenhum: depois de
-     * reconciliar, relê-se o MESMO intent pelo id. `undefined` (falha de
-     * leitura) adia, fail-closed; `null` (a linha SUMIU) é incidente crítico —
-     * ninguém apaga intent — e também não avança.
-     *
-     * ⚠️⚠️ E DA RELEITURA EM DIANTE, TODO DADO DO INTENT VEM DE `atual` —
-     * achado A119. `vivo` é a fotografia PRÉ-reconciliação: a taxa, o modo e
-     * até o número do ciclo que ela carrega são anteriores ao que a corretora
-     * acabou de responder. Liquidar o ciclo com `vivo.fee_total` gravava a taxa
-     * VELHA (ou nenhuma) exatamente quando a reconciliação tinha acabado de
-     * trazer a verdadeira. `vivo` só presta, daqui para frente, para o `id`
-     * (é a chave da releitura) e para os ramos em que `atual` não existe —
-     * e mesmo neles, só o ciclo, capturado ANTES da releitura.
-     */
-    const cicloDoIntentVivo = Number(vivo.cycle_number);
-    const atual = await intentPorId(dbExec, vivo.id);
-    if (atual === undefined) {
-      await avisar("releitura do intent FALHOU — plano NAO avanca", {
-        plano: p.id, ciclo: cicloDoIntentVivo, intent: vivo.id,
-        why: "reconciliei e nao consegui reler o resultado. Avancar sobre leitura "
-          + "falha e o mesmo que avancar as cegas.",
-      });
-      return { plano: p.id, acao: "adiado", detalhe: "nao consegui reler o intent" };
-    }
-    if (atual === null) {
-      // ⚠️ A LINHA SUMIU DO LIVRO. Intents não se apagam — se não está lá,
-      // algo gravíssimo aconteceu, e o plano congela até mão humana.
-      await recordEvent("dca_intent_sumiu", { wallet: p.wallet_address, meta: {
-        severity: "high", plano: p.id, ciclo: cicloDoIntentVivo, intent: vivo.id,
-        why: "o intent existia antes da reconciliacao e NAO existe mais. Ninguem "
-          + "apaga intent — o plano NAO avanca ate mao humana.",
+  // A96 — o recovery acima vem primeiro de propósito: um intent histórico
+  // ETH/BTC continua reconciliável. Só uma NOVA execução real exige quote com
+  // unidade explicitamente USD-like.
+  const unidade = unidadeDca(p.symbol);
+  if (!simulado && !unidade.ok) {
+    if (await primeiraVezNaJanela(`quote_nao_usd:${p.id}:${unidade.quote ?? "?"}`, 3_600_000)) {
+      await recordEvent("dca_quote_nao_usd", { wallet: p.wallet_address, meta: {
+        plano: p.id, symbol: p.symbol, quote: unidade.quote ?? null,
+        why: "nova execucao REAL recusada: quote nao pertence a USD/USDT/USDC; recovery historico continua permitido",
       } });
-      notifyTelegram(`🔴 DCA — intent SUMIU do livro\nplano ${p.id} · intent ${vivo.id}`);
-      return { plano: p.id, acao: "adiado", detalhe: "intent sumiu do livro" };
     }
-    const decisao = decidirPeloIntent(atual);
-
-    if (decisao.acao === "esperar") {
-      await avisar("ciclo de DCA em DUVIDA — plano NAO avanca ate reconciliar", {
-        plano: p.id, ciclo: Number(atual.cycle_number), intent: atual.id,
-        estado: rec.estado, porque: decisao.porque,
-        why: "a ordem pode ter executado. Avancar o ciclo agora arriscaria comprar duas vezes.",
-      });
-      return { plano: p.id, acao: "em_duvida", detalhe: decisao.porque };
-    }
-    if (decisao.acao === "quarentena") {
-      await avisar("intent do DCA em QUARENTENA — mao humana", {
-        plano: p.id, ciclo: Number(atual.cycle_number), intent: atual.id, porque: decisao.porque,
-      });
-      return { plano: p.id, acao: "quarentena", detalhe: decisao.porque };
-    }
-
-    /**
-     * ⚠️ O CICLO FECHA COM O QUE O LIVRO TEM, não com o que foi pedido. É o
-     * achado A81 no caminho do DCA: `filled` ausente não vira "comprou tudo".
-     *
-     * ⚠️⚠️ E A TAXA TAMBÉM VEM DO LIVRO RELIDO (A119): `decidirPeloIntent` não
-     * devolve fee — o único caminho da taxa até o ciclo é `atual.fee_total`,
-     * lido DEPOIS da reconciliação. A fotografia velha (`vivo`) pré-datada
-     * gravaria taxa 0/null sobre um fill que já tinha taxa na corretora.
-     */
-    const ciclo = Number(atual.cycle_number);
-    const fechou = await fecharCiclo(p.id, ciclo, {
-      status: decisao.status, motivo: decisao.motivo ?? undefined,
-      orderId: decisao.orderId ?? undefined,
-      preco: decisao.precoMedio ?? undefined,
-      quantidade: decisao.quantidade || undefined,
-      custoUsd: decisao.custoUsd || undefined,
-      simulado: atual.simulated,
-      taxaUsd: atual.simulated ? null : atual.fee_total,
-    });
-    if (!fechou) {
-      await avisar("intent resolvido e ciclo NAO fechado — reconciliar a mao", {
-        plano: p.id, ciclo, intent: vivo.id,
-      });
-    }
-    const feitosAgora = p.ciclos_feitos + (decisao.contaComoFeito ? 1 : 0);
-    const puladosAgora = p.ciclos_pulados + (decisao.contaComoFeito ? 0 : 1);
-    const gastoAgora = Number(p.gasto_acumulado_usd) + decisao.custoUsd;
-    const acabouAgora = feitosAgora + puladosAgora >= p.ciclos_total;
-    if (!await avancarPlano(p.id, {
-      ciclosFeitos: feitosAgora, ciclosPulados: puladosAgora,
-      gastoAcumulado: gastoAgora, nextRunAt: new Date(Date.now() + 60_000).toISOString(),
-      ...(acabouAgora ? { status: "completo" as const, encerradoPor: "completo" } : {}),
-    })) {
-      await avisar("intent resolvido e plano NAO avancou — congela ate mao humana", {
-        plano: p.id, ciclo, intent: vivo.id,
-      });
-    }
-    return { plano: p.id, acao: decisao.contaComoFeito ? "reconciliado_comprou" : "reconciliado_sem_compra",
-      detalhe: `${decisao.quantidade} por $${decisao.custoUsd.toFixed(2)}` };
+    return { plano: p.id, acao: "adiado", detalhe: "quote_nao_usd_like — requer novo plano compativel" };
   }
 
   /**
@@ -493,7 +521,7 @@ async function processarPlano(
    * primeiro acabou de gastar. Um valor lido uma vez no início da passada
    * reabriria o furo dentro da própria passada.
    */
-  const gastoHoje = await gastoHojeDaCarteira(p.wallet_address);
+  const gastoHoje = await gastoHojeDaCarteira(p.wallet_address, p.modo);
   if (gastoHoje === null) {
     // ⚠️ FALHA FECHADO. Um erro de consulta — ou uma leitura que estourou o
     // teto e pode estar cortada — que virasse `0` abriria o teto diário
@@ -534,14 +562,62 @@ async function processarPlano(
     return { plano: p.id, acao: "adiado", detalhe: "sem preco de referencia" };
   }
 
+  // A97 — preflight adicional de saldo livre, na MESMA venue/conexão da
+  // execução. Não é atomicidade: a venue ainda pode recusar se o saldo mudar
+  // depois daqui. Para plano REAL a própria reserva fica DENTRO do callback
+  // autorizado por `comSaldoLivreDca`: leitura/quote/FREE falhou => zero reserva.
+  let reserva: Awaited<ReturnType<typeof reservarCiclo>>;
+  if (!simulado) {
+    if (!conexao || !unidade.ok) {
+      return { plano: p.id, acao: "adiado", detalhe: "saldo_precheck_sem_conexao_ou_unidade" };
+    }
+    if (conexao.exchange_id !== p.exchange_id) {
+      await avisar("conexao do plano aponta para outra venue — nenhuma ordem enviada", {
+        plano: p.id, conexao: conexao.id, venuePlano: p.exchange_id, venueConexao: conexao.exchange_id,
+      });
+      return { plano: p.id, acao: "adiado", detalhe: "conexao_venue_divergente" };
+    }
+
+    const gateSaldo = await comSaldoLivreDca({
+      quote: unidade.quote,
+      necessario: teto.valorUsd,
+      ler: () => fetchCexBalance(
+        p.exchange_id as CexId, decifrarConexao(conexao!), false,
+      ),
+      continuar: () => reservarCiclo(p.id, d.ciclo, d.agendadoPara),
+    });
+
+    if (!gateSaldo.ok) {
+      if (gateSaldo.motivo === "leitura_falhou") {
+        if (await primeiraVezNaJanela(`saldo_ilegivel:${p.id}`, 15 * 60_000)) {
+          await avisar("saldo FREE da quote ilegivel — nenhuma reserva/ordem", {
+            plano: p.id, quote: unidade.quote, erro: gateSaldo.detalhe,
+          });
+        }
+        return { plano: p.id, acao: "adiado", detalhe: "saldo_leitura_falhou" };
+      }
+
+      if (await primeiraVezNaJanela(`saldo_insuficiente:${p.id}:${gateSaldo.motivo}`, 15 * 60_000)) {
+        await recordEvent("dca_saldo_precheck_recusou", { wallet: p.wallet_address, meta: {
+          plano: p.id, quote: unidade.quote, motivo: gateSaldo.motivo,
+          free: "free" in gateSaldo ? gateSaldo.free ?? null : null,
+          necessario: teto.valorUsd,
+          why: "DCA real usa FREE, nunca TOTAL; leitura/quote/saldo insuficiente nao autoriza reserva nem BUY",
+        } });
+      }
+      return { plano: p.id, acao: "adiado", detalhe: `saldo_${gateSaldo.motivo}` };
+    }
+    reserva = gateSaldo.valor;
+  } else {
+    reserva = await reservarCiclo(p.id, d.ciclo, d.agendadoPara);
+  }
+
   /**
    * ⚠️⚠️ PASSO 1 DE TRÊS — A RESERVA. A ordem é INEGOCIÁVEL.
    *
-   * `ja_reservado` é resultado NORMAL, não erro: significa que outra passada
-   * está com este ciclo, e esta sai SEM GASTAR NADA. É a única garantia contra
-   * comprar duas vezes — o lock por sessão tem TTL e não basta.
+   * No REAL ela só é alcançada dentro do gate A97 acima. No SIMULADO segue
+   * direto, porque nenhum saldo de corretora é consumido.
    */
-  const reserva = await reservarCiclo(p.id, d.ciclo, d.agendadoPara);
   if (reserva === "ja_reservado") {
     /**
      * ⚠️ NORMAL UMA VEZ, SINTOMA SE INSISTE. Duas passadas concorrentes no

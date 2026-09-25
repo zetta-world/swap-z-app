@@ -9,6 +9,7 @@ import {
 } from "@/lib/dca/store";
 import { proximaJanela, type Intervalo } from "@/lib/dca/relogio";
 import { decidirCapacidade, lerCapacidades } from "@/lib/dca/capacidade";
+import { unidadeDca } from "@/lib/dca/unidade";
 /**
  * ⚠️ AS MESMAS FUNÇÕES PURAS DA AUDITORIA DE `/orders` (PR #347).
  *
@@ -177,6 +178,15 @@ export async function POST(req: NextRequest) {
 
   if (!exchangeId || !/^[A-Z0-9]{2,12}\/[A-Z0-9]{2,12}$/.test(symbol)) {
     return NextResponse.json({ ok: false, error: "par_invalido" }, { status: 400 });
+  }
+  // A96 — criação nova só nasce com quote cuja unidade é explicitamente
+  // USD-like. Isso vem ANTES de capacidade, verificação externa e cofre:
+  // ETH/BTC não pode guardar credencial/plano para depois chamar BTC de USD.
+  const unidade = unidadeDca(symbol);
+  if (!unidade.ok) {
+    return NextResponse.json({
+      ok: false, error: unidade.motivo, quote: unidade.quote ?? null,
+    }, { status: 400 });
   }
   if (!INTERVALOS.includes(intervalo)) {
     return NextResponse.json({ ok: false, error: "intervalo_invalido" }, { status: 400 });

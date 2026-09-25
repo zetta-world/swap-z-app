@@ -29,6 +29,7 @@ type Filtro = {
 } & Promise<Resposta<unknown[]>>;
 
 type ClienteCru = {
+  rpc: (fn: string, args: Record<string, unknown>) => Promise<Resposta<unknown>>;
   from: (t: never) => {
     select: (c: string) => Filtro;
     insert: (v: unknown) => {
@@ -83,18 +84,55 @@ export interface PlanoRow {
  * tudo" — a mesma trava `read-safety` que já me recusou dois PRs. Quem chama
  * recebe `truncado` e registra.
  */
-export async function planosVencidos(agoraIso: string, teto = 200): Promise<{ planos: PlanoRow[]; truncado: boolean }> {
+export type ResultadoFilaPlanosDca =
+  | { ok: true; planos: PlanoRow[]; truncado: boolean }
+  | { ok: false; erro: "sem_banco" | "consulta_falhou" | "retorno_invalido"; detalhe?: string };
+
+export type ResultadoPlanosVencidos = ResultadoFilaPlanosDca;
+export type ResultadoPlanosRecovery = ResultadoFilaPlanosDca;
+
+export async function planosVencidos(agoraIso: string, teto = 200): Promise<ResultadoPlanosVencidos> {
   const db = cru();
-  if (!db) return { planos: [], truncado: false };
+  // A86 — indisponibilidade não é fila vazia.
+  if (!db) return { ok: false, erro: "sem_banco" };
   const { data, error } = await db.from(PLANOS)
     .select("*")
     .eq("status", "ativo")
     .lte("next_run_at", agoraIso)
     .order("next_run_at", { ascending: true })
     .limit(teto + 1);
-  if (error || !Array.isArray(data)) return { planos: [], truncado: false };
+  if (error) {
+    return { ok: false, erro: "consulta_falhou", detalhe: error.message.slice(0, 200) };
+  }
+  if (!Array.isArray(data)) return { ok: false, erro: "retorno_invalido" };
   const linhas = data as PlanoRow[];
-  return { planos: linhas.slice(0, teto), truncado: linhas.length > teto };
+  return { ok: true, planos: linhas.slice(0, teto), truncado: linhas.length > teto };
+}
+
+/**
+ * A58 — fila INDEPENDENTE de recovery. Status do plano controla entrada nova,
+ * não o direito/dever de descobrir o que aconteceu com um intent que já
+ * cruzou SUBMITTING. A RPC da 0066 entrega planos de QUALQUER status que ainda
+ * tenham intent DCA vivo/QUARANTINED.
+ *
+ * A86 vale igual aqui: erro/DB ausente/retorno inválido nunca vira `[]`.
+ */
+export async function planosComIntentVivoParaRecovery(
+  teto = 200,
+): Promise<ResultadoPlanosRecovery> {
+  const db = cru();
+  if (!db) return { ok: false, erro: "sem_banco" };
+
+  const { data, error } = await db.rpc("dca_planos_com_intent_vivo_para_recovery", {
+    p_limite: teto + 1,
+  });
+  if (error) {
+    return { ok: false, erro: "consulta_falhou", detalhe: error.message.slice(0, 200) };
+  }
+  if (!Array.isArray(data)) return { ok: false, erro: "retorno_invalido" };
+
+  const linhas = data as PlanoRow[];
+  return { ok: true, planos: linhas.slice(0, teto), truncado: linhas.length > teto };
 }
 
 /**
@@ -365,10 +403,35 @@ async function idsDaCarteira(wallet: string, teto = 200): Promise<{ ids: string[
  * inteiro exatamente quando o banco está ruim. Quem chama trata `null` como
  * "não compra": falha FECHADO, como o `price-guard`.
  */
-export async function gastoHojeDaCarteira(wallet: string, teto = 2000): Promise<number | null> {
+export async function gastoHojeDaCarteira(
+  wallet: string, modo: ModoPlano, teto = 2000,
+): Promise<number | null> {
   const db = cru();
   if (!db) return null;
 
+  if (modo === "real") {
+    /**
+     * A59 — o teto REAL vem das autoridades duráveis da execução, não do
+     * fechamento best-effort de `dca_ciclos`. A RPC da 0066 conta:
+     *   · requested_notional_usd como PISO enquanto o intent está depois do
+     *     ponto sem volta e ainda inconclusivo; fill durável USD-like maior
+     *     eleva o compromisso para o maior valor conhecido;
+     *   · fills reais quando o intent terminou;
+     *   · FAILED_PRE_SUBMIT como zero.
+     * Qualquer unidade/NULL que impeça afirmar USD faz a RPC falhar e aqui
+     * vira `null` => o cron não compra.
+     */
+    const { data, error } = await db.rpc("dca_gasto_real_comprometido_hoje", {
+      p_wallet_address: wallet,
+    });
+    if (error) return null;
+    const valor = Number(data);
+    if (!Number.isFinite(valor) || valor < 0) return null;
+    return valor;
+  }
+
+  // Simulado não move dinheiro; preserva a contabilidade do extrato simulado
+  // sem fingir que ela é autoridade para risco real.
   const { ids, truncado } = await idsDaCarteira(wallet);
   if (truncado) return null;
   if (ids.length === 0) return 0;
@@ -378,11 +441,10 @@ export async function gastoHojeDaCarteira(wallet: string, teto = 2000): Promise<
     .select("custo_usd")
     .in("plano_id", ids)
     .eq("status", "feito")
+    .eq("simulado", true)
     .gte("executado_em", desde)
     .limit(teto + 1);
   if (error || !Array.isArray(data)) return null;
-  // ⚠️ Estourou o teto = leitura possivelmente cortada = não sei. Somar o que
-  // veio devolveria um gasto MENOR que o real, e o limite abriria.
   if (data.length > teto) return null;
 
   return (data as Array<{ custo_usd: number | null }>)

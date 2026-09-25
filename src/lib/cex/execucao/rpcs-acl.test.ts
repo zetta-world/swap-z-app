@@ -62,6 +62,13 @@ const CATALOGO: Record<string, string> = {
   autopilot_liquidar_saida_armada: "0064_autopilot_projecao_de_posicao.sql",
   // A51 / Platform Closure: rearme preserva rails financeiros e nasce fechado.
   autopilot_rearm_preserva_rails: "0065_autopilot_rearm_preserva_rails.sql",
+  // A58 / Platform Closure Batch 2: a fila de recovery do DCA independe do
+  // status do plano e nasce fechada na 0066.
+  // ⚠️ Esta trava ACHOU as duas funções novas do Batch 2 na primeira rodada
+  // completa da suíte — o pacote entrou sem registrá-las aqui.
+  dca_planos_com_intent_vivo_para_recovery: "0066_dca_safety_accounting.sql",
+  // A59: o teto diário REAL derivado de intents + fills nasce fechado na 0066.
+  dca_gasto_real_comprometido_hoje: "0066_dca_safety_accounting.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

@@ -152,10 +152,15 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * `frozen_until_day` — uma reconexão de credencial reabria os rails
      * financeiros do mesmo dia.
      *
+     * E uma TERCEIRA vez, no PLATFORM CLOSURE BATCH 2 (A58/A59): a 0066
+     * faz a autorização final do DCA reler o plano sob lock, cria a fila de
+     * recovery independente do status do plano e deriva o teto diário REAL de
+     * intents + fills. Não edita nenhuma migration anterior.
+     *
      * A trava continua sendo uma LISTA, não um padrão: migration nova sem
      * decisão explícita quebra aqui, que é o ponto.
      *
-     * ⚠️ NENHUMA DAS TRÊS FOI APLICADA.
+     * ⚠️ NENHUMA DAS QUATRO FOI APLICADA EM PRODUÇÃO.
      */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
@@ -164,6 +169,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0063_cex_conexoes_versionadas.sql",
       "0064_autopilot_projecao_de_posicao.sql",
       "0065_autopilot_rearm_preserva_rails.sql",
+      "0066_dca_safety_accounting.sql",
     ]);
   });
 });
