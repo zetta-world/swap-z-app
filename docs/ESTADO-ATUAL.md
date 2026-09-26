@@ -55,6 +55,25 @@
 > mudanças, têm que ir para produção sempre"*. Não existe mais entregar num PR
 > e esperar ordem para mergear — ver §3 e a §8.
 
+> ### ⚠️ LINHA `platform-closure` — FORA DA `main`, AGUARDANDO RETEST (26/09/2026)
+>
+> Nada desta linha está em produção. `round9-surgical` está congelada em
+> `798fe27`; `platform-closure` parte dela e carrega o **Batch 1** (PC-1/2/3,
+> migration 0065) e o **Batch 2** do DCA (A58/A59/A86/A96/A97, migration 0066).
+> **As migrations 0063–0066 NUNCA foram aplicadas em produção** — só em
+> PostgreSQL descartável. Status máximo: *pending independent retest*.
+>
+> | lição do Batch 2 | onde ficou escrita |
+> |---|---|
+> | pacote "validado" sem `tsc` completo nem PostgreSQL chegou com 4 defeitos | commits `21ac739`, `ff23612` |
+> | `psql -c` **não** interpola `:'var'` — o teste de concorrência nunca tinha rodado | `supabase/tests/13_dca_a58_concorrencia.sh` |
+> | `exception when others` aprova falha fechada pelo motivo ERRADO | `supabase/tests/12_dca_batch2.sql` |
+> | `abaixo_do_minimo` é terminal: o teto DIÁRIO não pode encerrar plano | `src/lib/dca/relogio.ts` |
+> | `pause_dca` pausa entrada nova, não o recovery do que já saiu | `src/app/api/dca/cron/route.ts` |
+>
+> Rodar o arnês SQL: `supabase/tests/README.md` (cluster descartável, papéis
+> `anon`/`authenticated`/`service_role` criados à mão, 0001→última em ordem).
+
 ---
 
 ## 1. Onde o projeto está
