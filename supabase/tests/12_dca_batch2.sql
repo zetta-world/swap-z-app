@@ -271,6 +271,11 @@ begin
     raise exception 'A59 partial com custo nao afirmavel deveria falhar fechado';
   exception when others then
     if sqlerrm = 'A59 partial com custo nao afirmavel deveria falhar fechado' then raise; end if;
+    -- ⚠️ Qualquer erro passava aqui (`when others`). Falha fechada pelo
+    -- motivo ERRADO não prova a guarda: exige-se a mensagem dela.
+    if sqlerrm not like '%tem fill sem custo afirmavel%' then
+      raise exception 'motivo errado para "A59 partial com custo nao afirmavel deveria falhar fechado": %', sqlerrm;
+    end if;
   end;
 
   -- Limpa a fixture fail-closed para os testes seguintes da mesma carteira.
@@ -317,6 +322,11 @@ begin
     raise exception 'A59 partial nao-USD nao deveria ser batizado como USD';
   exception when others then
     if sqlerrm = 'A59 partial nao-USD nao deveria ser batizado como USD' then raise; end if;
+    -- ⚠️ Qualquer erro passava aqui (`when others`). Falha fechada pelo
+    -- motivo ERRADO não prova a guarda: exige-se a mensagem dela.
+    if sqlerrm not like '%inconclusivo % com fill em quote nao USD-like: BTC%' then
+      raise exception 'motivo errado para "A59 partial nao-USD nao deveria ser batizado como USD": %', sqlerrm;
+    end if;
   end;
 end $$;
 
@@ -345,6 +355,11 @@ begin
     raise exception 'A59 NULL requested deveria falhar fechado';
   exception when others then
     if sqlerrm = 'A59 NULL requested deveria falhar fechado' then raise; end if;
+    -- ⚠️ Qualquer erro passava aqui (`when others`). Falha fechada pelo
+    -- motivo ERRADO não prova a guarda: exige-se a mensagem dela.
+    if sqlerrm not like '%em UNKNOWN sem requested_notional_usd valido%' then
+      raise exception 'motivo errado para "A59 NULL requested deveria falhar fechado": %', sqlerrm;
+    end if;
   end;
 end $$;
 
@@ -388,6 +403,11 @@ begin
     raise exception 'A96 terminal ETH/BTC nao deveria ser tratado como USD';
   exception when others then
     if sqlerrm = 'A96 terminal ETH/BTC nao deveria ser tratado como USD' then raise; end if;
+    -- ⚠️ Qualquer erro passava aqui (`when others`). Falha fechada pelo
+    -- motivo ERRADO não prova a guarda: exige-se a mensagem dela.
+    if sqlerrm not like '%intent DCA terminal % com quote nao USD-like: BTC%' then
+      raise exception 'motivo errado para "A96 terminal ETH/BTC nao deveria ser tratado como USD": %', sqlerrm;
+    end if;
   end;
 end $$;
 
