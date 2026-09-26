@@ -10,6 +10,8 @@
 >
 > **Status:** `CONTEXT RECONCILED — MASTER RELEASE LEDGER BUILT —
 > BATCH 2 RETEST VERIFIED — PRODUCTION SCHEMA READ (26/09) —
+> RELEASE PHASE 1 PASS — PHASE 2 FAIL → BATCH 3 (0067) → PASS WITH DELTA 0059→0067 —
+> PHASE 3 (HOSTED STAGING) INCOMPLETE: ROLLBACK/REBUILD PROOF MISSING —
 > PRODUCTION TRANSITION NOT STARTED`
 >
 > **Data:** 26/09/2026 · **Construtor:** sessão Claude (implementador) ·
@@ -29,6 +31,7 @@
 | `[VERCEL]` | Vercel, lido via API (somente leitura) |
 | `[RETEST]` | `docs/retest-independente-batch2-3123fb4.md` (auditor, verbatim) |
 | `[PROD]` | leitura **somente** do catálogo/history de produção, autorizada pelo dono em 26/09 (§Y) |
+| `[STAGING]` | medido no projeto Supabase de staging `nvbrzifyurslegudlhaz` (Release Phase 3, §Z) |
 | `[DONO]` | afirmado pelo dono no handoff, **não provado** por fonte primária |
 | `[NÃO PROVADO]` | sem fonte; tratar como desconhecido |
 
@@ -53,17 +56,19 @@
    autopilot real já em NO-GO. Detalhe em §Y.
 
 3. **O banco de produção está no nível 0058 (por conteúdo)** `[PROD]`:
-   0050–0054 aplicadas em 15/09, 0055–0058 em 16/09; **0059–0066 NÃO
-   aplicadas**. O history remoto **não segue a numeração do repositório**
+   0050–0054 aplicadas em 15/09, 0055–0058 em 16/09; **0059–0067 NÃO
+   aplicadas** (fingerprint `74e742469c9088012d87caa88468dc9e`, 864 objetos,
+   reconferido sem drift ao fim da Phase 3). O history remoto **não segue a numeração do repositório**
    (versões por data, nomes divergentes, quatro entradas que só existem em
    produção, uma delas colidindo com o nome da `0050`) — §Y.
 
-4. **Código certificado:** `3123fb4972cd0ea46a152e00c0bd1c625efb12e5`
-   (`platform-closure`) — Round 9 + Batch 1 + Batch 2, com o Batch 2 fechado por
-   retest independente **lido e conferido** `[RETEST][GIT]`. Commits posteriores
-   a `3123fb4` nesta branch são **somente documentação** (este ledger); o código
-   e as migrations são idênticos ao SHA certificado — conferir com
-   `git diff 3123fb4 HEAD -- . ':!docs'` (deve sair vazio).
+4. **Código certificado:** `691bfdc6917de621b59d1092eec3ceeeea5d8c90`
+   (`platform-closure`) — Round 9 + Batch 1 + Batch 2 + **Batch 3 (0067)**. O
+   Batch 2 foi fechado por retest independente **lido e conferido** em
+   `3123fb4` `[RETEST][GIT]`; o Batch 3 foi fechado por retest PASS em `691bfdc`
+   `[DONO]` (relatório do auditor fora do repositório). Commits posteriores a
+   `691bfdc` nesta branch são **somente documentação**; conferir com
+   `git diff 691bfdc HEAD -- . ':!docs'` (deve sair vazio).
 
 5. **Automação real: NO-GO.** DCA real, Pilot real, Autopilot real. O estado
    atual das capacidades em produção (`admin_kv`) **não foi lido** — tratar como
@@ -237,7 +242,20 @@ declaradas no commit `15b89c8`.
 
 ---
 
-## N. MASTER MIGRATION LEDGER 0001 → 0066
+## M-BIS. PLATFORM CLOSURE BATCH 3 — `6fded4c` → **`691bfdc`** — DB-ACL-FINANCIAL-TABLES
+
+| | |
+|---|---|
+| Status | **CLOSED — retest PASS em `691bfdc`** `[DONO]` (relatório do auditor fora do repositório) |
+| Origem | Release Phase 2: com os DEFAULT PRIVILEGES do Supabase reproduzidos (PG 17.6), o T10c de `02_acl_rls_substituicao.sql` reprovou em `autopilot_positions`; `anon` executou `truncate public.cex_fills` (transação revertida, banco descartável). RLS sem policies não cobre TRUNCATE/REFERENCES/TRIGGER |
+| Migration | **0067 criada** — só `revoke all on table … from public, anon, authenticated` nas 5 tabelas financeiras (`cex_execution_intents`, `cex_fills`, `cex_conexoes`, `autopilot_positions`, `autopilot_position_effects`). Não toca `service_role`, owner, RLS, policies, funções, dados nem default privileges |
+| Provas | `supabase/tests/14_acl_tabelas_financeiras.sql` (catálogo T14.1–T14.4 + comportamento T14.5–T14.6 exigindo `42501 permission denied for table`); guarda Vitest `src/lib/cex/acl-tabelas-financeiras.test.ts` (lista exata, só REVOKE, 0059–0066 pinadas por sha256); T10c inalterado |
+| Fingerprints | alvo 0066 `a214f542d5a714254674d388bdb58d3f` → alvo 0067 `e13840c5c6de8534ae8bd4f27c041a9b` (925 objetos; diferem só nas 4 linhas de ACL de tabela) |
+| CI | #975 SUCCESS `[CI]` |
+
+---
+
+## N. MASTER MIGRATION LEDGER 0001 → 0067
 
 > ✅ **Medido em 26/09 `[PROD]`: o delta do release é exatamente 0059 → 0066.**
 > Nenhuma das migrations editadas depois de criadas (0059, 0061, 0063–0066)
@@ -276,6 +294,11 @@ descartável do zero, 66/66, por implementador (16.13) e auditor (16.15).
 | 0064 | R9 | projeção de posição, P&L, autorização final, pendências financeiras | **NÃO** `[PROD]` | não consta | idem |
 | 0065 | B1 | rearm preserva rails (A51) | **NÃO** `[PROD]` | não consta | idem |
 | 0066 | B2 | DCA: auth relê o plano, fila de recovery, teto real | **NÃO** `[PROD]` | não consta | idem |
+| 0067 | B3 | ACL das 5 tabelas financeiras: `service_role` only (DB-ACL-FINANCIAL-TABLES) | **NÃO** `[PROD]` | não consta | idem |
+
+> **Staging hosted `[STAGING]` (Phase 3, §Z):** 0001→0067 aplicadas por
+> `apply_migration`, uma por arquivo, texto gravado **byte a byte** igual a
+> `691bfdc` (67/67); fingerprints 0058 = produção, 0066 = alvo, 0067 = alvo.
 
 **Se a 0063 falhar:** ela já falhou uma vez (o `E'\0'` original). Os arquivos
 não abrem transação própria; o replay é arquivo a arquivo — uma falha no meio
@@ -324,8 +347,8 @@ credenciais e providers — §U fases 3–6.
 
 | camada | produção hoje | certificado |
 |---|---|---|
-| código | `25fc4b0` (15/09) `[VERCEL]` | `3123fb4` |
-| banco | desconhecido de 0049 em diante; relato de até 0058 | 0001→0066 reproduzível do zero |
+| código | `25fc4b0` (15/09) `[VERCEL]` | `691bfdc` |
+| banco | nível 0058 por conteúdo `[PROD]` (fp `74e74246…`) | 0001→0067 reproduzível do zero — descartável (Phase 2) e hosted (Phase 3) |
 | capacidades reais | **não lidas** | NO-GO |
 
 ---
@@ -407,8 +430,8 @@ de produção que ainda não foi lido.
 |---|---|---|---|---|---|
 | **0 Freeze** | `3123fb4`, CI verde | congelar a linha; proteger `platform-closure` e `round9-surgical`; bundle + SHA256 | ref imutável; bundle verificado | nada muda | qualquer ref se move com código |
 | **1 Reconciliar history** — ⏳ **em parte feito (26/09, §Y)**: history lido; presença/ausência de 0050–0066 por marcador; P0 respondido. **Falta:** diff de CONTEÚDO (`prosrc`, ACL, constraints) de 0050–0058 vivas × repo | leitura de produção **autorizada** | ler `supabase_migrations` + catálogo (tabelas, colunas, funções, ACL, `prosrc`) e diffar contra 0001→0066 **por conteúdo**. **P0: `autopilot_sessions.creds_cipher` existe?** | tabela migration × {history, schema vivo, versão} | nada (somente leitura) | coluna ausente com `25fc4b0` no ar → incidente próprio, tratado antes de tudo |
-| **2 Replay descartável** | dump **só de schema** da produção | replay do zero **e** replay do delta pendente a partir do estado vivo | ambos verdes; arnês 01–13 verde | descartar cluster | qualquer migration falha |
-| **3 Supabase staging** | delta aprovado | staging a partir do schema reconciliado; aplicar o delta em transação | history = schema = repo | recriar staging | `MIGRATIONS_FAILED` |
+| **2 Replay descartável** — ✅ **feita (26/09)**: PG 17.6 com default privileges do Supabase; baseline = produção; FAIL no T10c → Batch 3 (0067) → PASS com delta 0059→0067 `[DONO]` | dump **só de schema** da produção | replay do zero **e** replay do delta pendente a partir do estado vivo | ambos verdes; arnês 01–13 verde | descartar cluster | qualquer migration falha |
+| **3 Supabase staging** — ⏳ **feita em parte (26/09, §Z)**: delta, ACL/RLS e regressão PASS no hosted; **faltam** concorrência 04/05/06/13, rebuild hosted independente e backup/restore | delta aprovado | staging a partir do schema reconciliado; aplicar o delta em transação | history = schema = repo | recriar staging | `MIGRATIONS_FAILED` |
 | **4 Vercel Preview** | billing resolvido; envs de staging | Preview do SHA certificado apontando para staging | READY no SHA certo | apagar Preview | SHA errado; env de produção vazando |
 | **5 HTTP/runtime** | Preview de pé | crons via HTTP com `CRON_SECRET`; rotas do navegador; recovery; timeout e restart forçados | 503 em fila ilegível; UNKNOWN sobrevive a restart; zero ordem sem SUBMITTING | — | ordem sem intent/SUBMITTING |
 | **6 Providers/canário** | credenciais de **teste** | venues em simulado → conta de teste com valor mínimo | fills reais ingeridos; P&L = extrato da venue | cancelar ordens | divergência livro × venue |
@@ -450,6 +473,13 @@ de produção que ainda não foi lido.
 22. **Banco nunca à frente do código que o usa** (o caso 0056 × `25fc4b0`).
 23. **CI verde exige histórico completo** (`fetch-depth: 0`) — verde em checkout
     raso é outra medida.
+24. **Tabela nova em `public` nasce aberta para anon/authenticated** (default
+    privileges do Supabase). Tabela financeira nasce com `revoke all … from
+    public, anon, authenticated` na MESMA migration (0064, 0067). RLS não cobre
+    TRUNCATE.
+25. **Prova de ACL por papel exige o papel real.** O `execute_sql` do MCP roda
+    como `supabase_read_only_user` e não assume `anon` — use `apply_migration`
+    com sentinela ou psql direto (§Z.4).
 
 ---
 
@@ -478,15 +508,19 @@ de produção que ainda não foi lido.
 ## X. STATUS FINAL
 
 **`CONTEXT RECONCILED — MASTER RELEASE LEDGER BUILT — BATCH 2 RETEST VERIFIED —
-PRODUCTION SCHEMA READ — PRODUCTION TRANSITION NOT STARTED`**
+PRODUCTION SCHEMA READ — RELEASE PHASES 1–2 PASS (DELTA 0059→0067) —
+PHASE 3 INCOMPLETE: ROLLBACK/REBUILD PROOF MISSING — PRODUCTION TRANSITION NOT STARTED`**
 
-Código: Round 9 + Batch 1 + Batch 2 fechados em `3123fb4`. Produção: roda
-`25fc4b0` sobre um banco no nível **0058**; `armSession` quebrado desde 16/09
-(0 sessões afetadas); delta do release = **0059 → 0066**, **não aplicar** fora
-do plano da §U.
+Código: Round 9 + Batch 1 + Batch 2 + Batch 3 fechados em `691bfdc`. Produção:
+roda `25fc4b0` sobre um banco no nível **0058**; `armSession` quebrado desde
+16/09 (0 sessões afetadas); delta do release = **0059 → 0067**, **não aplicar**
+fora do plano da §U.
 **DCA REAL = NO-GO · PILOT REAL = NO-GO · AUTOPILOT REAL = NO-GO.**
 
 O que destrava o início do release:
+0. **fechar a Phase 3 (§Z.6):** ensaio de backup/restore do staging e
+   concorrência 04/05/06/13 a partir de uma máquina com acesso PG direto; depois,
+   veredito do auditor;
 1. ~~autorização para ler o schema de produção~~ — **feito em 26/09 (§Y)**;
 2. o diff de conteúdo de 0050–0058 vivas × repo e o inventário das quatro
    entradas só-de-produção (restante da Fase 1);
@@ -556,3 +590,85 @@ só a função indisponível até lá.
    contra o repositório (presença já provada; versão não).
 2. Inventário das quatro entradas só-de-produção — o que criaram e se o
    repositório precisa delas para reproduzir o schema vivo.
+
+---
+
+## Z. RELEASE PHASES 1–3 — 26/09/2026
+
+Todas executadas pelo construtor, **sem tocar produção** (somente leitura) e
+**sem commit durante o teste**. Evidência bruta fica no scratchpad da sessão
+`[LOCAL]`; os números abaixo são os medidos.
+
+### Z.1 Phase 1 — reconciliação read-only do banco vivo — **PASS**
+Fingerprint de catálogo de produção (fp.sql md5 `48d9bbf0…`: funções, colunas,
+constraints, índices, RLS, ACL PUBLIC/anon/authenticated/service_role,
+policies, triggers, enums, views do schema `public`): **864 objetos,
+`74e742469c9088012d87caa88468dc9e`** `[PROD]`.
+
+### Z.2 Phase 2 — PostgreSQL 17.6 descartável, delta certificado — **FAIL → Batch 3**
+PG 17.6 compilado do tag `REL_17_6`, com bootstrap Supabase-like: papéis e
+`pg_default_acl` de `postgres`/`supabase_admin` iguais aos de produção. A
+baseline 0001→0058 do repositório reproduz **exatamente** o fingerprint de
+produção. Delta 0059→0066 → alvo `a214f542d5a714254674d388bdb58d3f` (925). O
+T10c reprovou (**DEFAULT ACL EXPOSURE**) → finding DB-ACL-FINANCIAL-TABLES →
+§M-BIS. Após a 0067, `e13840c5c6de8534ae8bd4f27c041a9b`; o dono registra
+**PASS WITH DELTA 0059→0067** `[DONO]`.
+
+### Z.3 Phase 3 — Supabase hosted staging — **INCOMPLETE: ROLLBACK/REBUILD PROOF MISSING**
+Veredito proposto pelo construtor; a decisão é do auditor.
+
+**Alvo** `[STAGING]`: projeto `nvbrzifyurslegudlhaz` (z-swap-staging, org
+própria, us-west-2, PG 17.6 aarch64, imagem 17.6.1.166), criado vazio em 26/09
+para esta fase. Produção `vuvvftdsfmagmtbovzgq` usada só para leitura.
+
+| prova | resultado |
+|---|---|
+| baseline 0001→0058 (`apply_migration`, 1 por arquivo) | 58/58 OK; texto gravado = `git show 691bfdc` (md5) 58/58; fp **= produção** (`74e74246…`, 864) |
+| atomicidade da ferramenta de release | migration temporária (CREATE + INSERT + ALTER `admin_kv` + `1/0`) → **revertida por inteiro**, nada no history |
+| achado reproduzido no estado 0066 | teste 14: `T14.1: anon tem SELECT em cex_execution_intents`; teste 02: `T10c: anon le autopilot_positions` |
+| delta 0059→0067 | 9/9 OK, texto byte a byte; fp após 0066 **= `a214f542…`**; após 0067 **= `e13840c5…`** |
+| testes 02 e 14 inteiros pós-0067 | **PASS** (T7–T12; T14.1–T14.6, incluindo o comportamento como anon/authenticated) |
+| regressão 01, 08, 09, 10, 11, 12 | **PASS** |
+| fixtures sintéticas (cofre versionado, rearme, compra, venda, DCA simulado, Celeiro especial, ACL com dados) | **PASS** — P&L da venda 4,945 = 55 − 50 − 0,055; nenhum dado de usuário clonado |
+| ensaio lógico de rollback/roll-forward da 0067 | `e13840c5…` → rollback lógico **= `a214f542…`** → roll-forward **= `e13840c5…`** |
+| produção inalterada | fp `74e74246…` (864); history termina em `20260916101528 0057_executor_autoriza_submissao` |
+| limpeza | history do staging = 67 (0001→0067), 0 temporárias; só as sementes das migrations (`admin_kv`=3, `tier_cache`=3) |
+
+### Z.4 Transporte usado na Phase 3 — e por quê
+- `mcp__Supabase__execute_sql` roda como **`supabase_read_only_user`**
+  (`pg_read_all_data` + `pg_monitor`, **sem** `SET ROLE anon`): serve para
+  catálogo, **não** para prova comportamental.
+- `apply_migration` roda como **`postgres`**. Testes, fixtures e ensaios rodaram
+  por ele com o corpo verbatim (sem `\set ON_ERROR_STOP on`; `begin;`/`rollback;`
+  de 12 e 14 retirados) e um `raise` **sentinela** final que força o rollback.
+  O sentinela só é alcançado se todos os blocos passaram; nada fica no banco
+  nem no history.
+- Não há PG direto a partir do contêiner da sessão (o proxy não repassa o
+  protocolo).
+
+### Z.5 Achados novos da Phase 3
+1. **Verificação pós-deploy por papel** (anon → 42501) **não funciona via
+   `execute_sql`** do MCP. Use `apply_migration` + sentinela, ou psql direto.
+2. **O fingerprint depende da ORDEM da ACL** (`string_agg … order by 1` ordena
+   por constante). Um rollback por GRANT simples deu `e6d0259b…` com direitos
+   idênticos; reconstruindo a ordem da plataforma, deu `a214f542…`. Não é falso
+   positivo de privilégio. Recomenda-se ao auditor uma versão insensível à
+   ordem no próximo ciclo do fp.sql; **não alterado** (o certificado vigente é
+   este).
+
+### Z.6 O que falta para fechar a Phase 3
+| lacuna | por que não foi feito daqui | como fechar |
+|---|---|---|
+| concorrência 04/05/06/13 no hosted | exige duas conexões simultâneas; não há PG direto | psql de uma máquina com acesso ao staging |
+| delta aplicado sobre dados pré-existentes, no hosted | exigiria gravar fixtures antes da 0059 (sujaria o history) | coberto só na Phase 2 |
+| rebuild hosted independente | criar 2º projeto/branch pede confirmação de custo | 2º projeto, 0001→0067, fp = `e13840c5…` |
+| **backup/restore (PITR/pg_dump)** | plano free sem PITR; sem PG direto para `pg_dump` | `pg_dump` do staging → restore em projeto limpo → fp = `e13840c5…` |
+
+⚠️ O **rollback de produção** continua sendo **SHA do app + PITR/restore** e
+continua **sem ensaio**. A 0059–0066 não é reversível por migration (não há
+down; a 0056 remove uma coluna).
+
+### Z.7 Segredos
+A senha do banco de staging foi enviada pelo chat. Não foi usada nem gravada, e
+o arquivo temporário foi triturado. **Ação do dono:** resetar a senha ou apagar
+o projeto `nvbrzifyurslegudlhaz` depois de fechar a §Z.6.

@@ -13,7 +13,11 @@
 > ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
-> **Última atualização:** 15/09/2026 — **a auditoria externa de 30 achados,
+> **Última atualização (linha `platform-closure`):** 26/09/2026 — Release
+> Phase 3 no staging hosted; ver o bloco `platform-closure` abaixo e
+> `docs/LEDGER-MESTRE-RELEASE.md` §Z.
+>
+> **Última atualização (`main`):** 15/09/2026 — **a auditoria externa de 30 achados,
 > fechada** (§5.27, PRs #419–#445). Antes disso: 08/09/2026, a leva do PR #410
 > (§5.26: sete telas afirmando sobre A o que só era verdade sobre B). E antes,
 > 31/08/2026,
@@ -55,13 +59,33 @@
 > mudanças, têm que ir para produção sempre"*. Não existe mais entregar num PR
 > e esperar ordem para mergear — ver §3 e a §8.
 
-> ### ⚠️ LINHA `platform-closure` — FORA DA `main`, AGUARDANDO RETEST (26/09/2026)
+> ### ⚠️ LINHA `platform-closure` — FORA DA `main`, CERTIFICADA EM `691bfdc` (26/09/2026)
 >
 > Nada desta linha está em produção. `round9-surgical` está congelada em
 > `798fe27`; `platform-closure` parte dela e carrega o **Batch 1** (PC-1/2/3,
-> migration 0065) e o **Batch 2** do DCA (A58/A59/A86/A96/A97, migration 0066).
-> **As migrations 0063–0066 NUNCA foram aplicadas em produção** — só em
-> PostgreSQL descartável. Status máximo: *pending independent retest*.
+> migration 0065), o **Batch 2** do DCA (A58/A59/A86/A96/A97, migration 0066) e
+> o **Batch 3** (0067: as 5 tabelas financeiras só para `service_role`).
+> Batch 2 fechado por retest em `3123fb4`; Batch 3 fechado por retest em `691bfdc`.
+> **As migrations 0059–0067 NUNCA foram aplicadas em produção.** Foram aplicadas em
+> PostgreSQL 17.6 descartável (Release Phase 2) e num **Supabase de staging**
+> (`nvbrzifyurslegudlhaz`, Release Phase 3).
+>
+> **Release Phase 3 (26/09) — INCOMPLETE: ROLLBACK/REBUILD PROOF MISSING.** No
+> hosted: baseline 0001→0058 = fingerprint de produção; 0066 e 0067 = alvos
+> certificados; achado pré-0067 reproduzido; testes 02/14/01/08–12 PASS;
+> `apply_migration` provado atômico; produção inalterada. **Faltam:**
+> backup/restore, rebuild hosted independente e concorrência 04/05/06/13 — as
+> três exigem acesso PG direto, que este contêiner não tem. Detalhe e plano em
+> `docs/LEDGER-MESTRE-RELEASE.md` §Z.
+>
+> ⚠️ **Armadilhas medidas na Phase 3:**
+> - `mcp__Supabase__execute_sql` roda como `supabase_read_only_user`: lê o
+>   catálogo, mas **não** prova ACL por papel (não assume `anon`) nem grava.
+>   Para isso, `apply_migration` (roda como `postgres`) com um `raise` sentinela
+>   no fim, que desfaz tudo.
+> - O fingerprint de catálogo é sensível à **ordem** da ACL.
+> - O staging é descartável: depois de fechar a §Z.6, **apagar o projeto** ou
+>   resetar a senha (ela passou pelo chat).
 >
 > | lição do Batch 2 | onde ficou escrita |
 > |---|---|
@@ -79,7 +103,7 @@
 > autopilot em produção falha desde 16/09**. Havia **0 sessões e 0 intents** —
 > nada quebrado, nenhum dinheiro em risco; só a função indisponível. O conserto
 > é o release (não há hotfix isolado). O banco está no nível **0058**; o delta
-> do release é **0059 → 0066**; o migration history NÃO segue a numeração do
+> do release é **0059 → 0067**; o migration history NÃO segue a numeração do
 > repo. Tudo em `docs/LEDGER-MESTRE-RELEASE.md` §Y.
 >
 > Rodar o arnês SQL: `supabase/tests/README.md` (cluster descartável, papéis
