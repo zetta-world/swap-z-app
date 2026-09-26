@@ -157,10 +157,16 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * recovery independente do status do plano e deriva o teto diário REAL de
      * intents + fills. Não edita nenhuma migration anterior.
      *
+     * E uma QUARTA vez, no PLATFORM CLOSURE BATCH 3 (DB-ACL-FINANCIAL-TABLES):
+     * a 0067 é só REVOKE — tira de PUBLIC/anon/authenticated os grants de
+     * tabela que os default privileges do Supabase deram às cinco tabelas
+     * financeiras. A Release Phase 2 achou isso pelo T10c; RLS não cobre
+     * TRUNCATE.
+     *
      * A trava continua sendo uma LISTA, não um padrão: migration nova sem
      * decisão explícita quebra aqui, que é o ponto.
      *
-     * ⚠️ NENHUMA DAS QUATRO FOI APLICADA EM PRODUÇÃO.
+     * ⚠️ NENHUMA DAS CINCO (0063–0067) FOI APLICADA EM PRODUÇÃO.
      */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
@@ -170,6 +176,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0064_autopilot_projecao_de_posicao.sql",
       "0065_autopilot_rearm_preserva_rails.sql",
       "0066_dca_safety_accounting.sql",
+      "0067_acl_tabelas_financeiras.sql",
     ]);
   });
 });
