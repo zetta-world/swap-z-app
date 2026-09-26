@@ -9,7 +9,8 @@
 > **O que NÃO é:** autorização de produção. Nada aqui ativa dinheiro real.
 >
 > **Status:** `CONTEXT RECONCILED — MASTER RELEASE LEDGER BUILT —
-> BATCH 2 RETEST VERIFIED — PRODUCTION TRANSITION NOT STARTED`
+> BATCH 2 RETEST VERIFIED — PRODUCTION SCHEMA READ (26/09) —
+> PRODUCTION TRANSITION NOT STARTED`
 >
 > **Data:** 26/09/2026 · **Construtor:** sessão Claude (implementador) ·
 > **Certificação:** auditor independente (relatórios próprios)
@@ -27,6 +28,7 @@
 | `[CI]` | GitHub Actions, lido via API |
 | `[VERCEL]` | Vercel, lido via API (somente leitura) |
 | `[RETEST]` | `docs/retest-independente-batch2-3123fb4.md` (auditor, verbatim) |
+| `[PROD]` | leitura **somente** do catálogo/history de produção, autorizada pelo dono em 26/09 (§Y) |
 | `[DONO]` | afirmado pelo dono no handoff, **não provado** por fonte primária |
 | `[NÃO PROVADO]` | sem fonte; tratar como desconhecido |
 
@@ -40,19 +42,21 @@
    código em produção e o código certificado: **90 commits, 153 arquivos,
    +36.859/−943** `[GIT]`.
 
-2. **⚠️ POSSÍVEL INCIDENTE VIVO — BANCO À FRENTE DO CÓDIGO.** Se 0055–0058
-   foram aplicadas em produção em 16/09 `[DONO]`, a **0056** executou
-   `alter table public.autopilot_sessions drop column creds_cipher`. O código em
-   produção (`25fc4b0`) ainda **escreve** essa coluna em `armSession`
-   (`src/lib/autopilot/sessions.ts:97`) e **lê** dela (`:208`) `[GIT]`. Armar
-   sessão de autopilot em produção falharia com "column does not exist". Os logs
-   do Vercel não cobrem 16/09 (retenção do plano) — **nem provado, nem
-   refutado.** É o item P0 da §U.
+2. **⚠️ INCIDENTE VIVO CONFIRMADO — BANCO À FRENTE DO CÓDIGO** `[PROD][GIT]`.
+   A **0056 foi aplicada em 16/09 10:14:30 UTC** e `autopilot_sessions.creds_cipher`
+   **não existe** em produção. O código em produção (`25fc4b0`) ainda
+   **escreve** essa coluna em `armSession` (`src/lib/autopilot/sessions.ts:97`)
+   e **lê** dela (`:208`): **armar autopilot em produção falha com "column does
+   not exist" desde 16/09.** Impacto medido: `autopilot_sessions` = **0 linhas**,
+   `cex_execution_intents` = **0 linhas** — nenhuma sessão quebrada, nenhuma
+   ordem órfã, nenhum dinheiro em risco. É indisponibilidade da função, com o
+   autopilot real já em NO-GO. Detalhe em §Y.
 
-3. **O banco de produção está em estado desconhecido de 0049 em diante.** Não
-   há prova primária no repositório de nenhuma migration aplicada depois de
-   0048; há relato `[DONO]` de 0055–0058; há contradição documental sobre 0059;
-   e cinco migrations foram **editadas depois de criadas** (§N).
+3. **O banco de produção está no nível 0058 (por conteúdo)** `[PROD]`:
+   0050–0054 aplicadas em 15/09, 0055–0058 em 16/09; **0059–0066 NÃO
+   aplicadas**. O history remoto **não segue a numeração do repositório**
+   (versões por data, nomes divergentes, quatro entradas que só existem em
+   produção, uma delas colidindo com o nome da `0050`) — §Y.
 
 4. **Código certificado:** `3123fb4972cd0ea46a152e00c0bd1c625efb12e5`
    (`platform-closure`) — Round 9 + Batch 1 + Batch 2, com o Batch 2 fechado por
@@ -135,7 +139,7 @@ própria no remoto, exceto `claude/swap-z-recovery-deploy-b7y2cw` = `d7741bb`).
 |---|---|
 | Achados | A116 (ACL das RPCs `SECURITY DEFINER`), A117 (DCA relê o MESMO intent), A112 (capacidade na criação), A110 r2 (certificado dentro do executor), A115 (cofre T3: `creds_cipher` removida), A103 (reconciliação de conta + quarentena), "Ponto 9" (UNKNOWN manual honesto) |
 | Migrations | **0055** ACL · **0056** cofre T3 (**DROP `creds_cipher`**) · **0057** executor autoriza submissão · **0058** quarentena de sessão |
-| Produção | "aplicadas em 16/09" `[DONO]` — **sem prova no repositório**; a 0056 só registra uma LEITURA de produção ("0 sessões") `[GIT]`. ⚠️ ver §0.2 |
+| Produção | **aplicadas em 16/09** `[PROD]` — history: 0055 10:14:17, 0056 10:14:30, **0058 10:15:03, 0057 10:15:28** (0058 antes da 0057). ⚠️ ver §0.2 |
 | Pré-condição | a 0055 revoga funções criadas na 0050/0051 — se ela está aplicada, **0050–0054 também estão** |
 
 ### E. ROUND 3 — `6b08172` → `1325bd3` (14 commits)
@@ -143,9 +147,11 @@ própria no remoto, exceto `claude/swap-z-recovery-deploy-b7y2cw` = `d7741bb`).
 Achados A118 (fee cumulativa + cobertura sintético→real), A119 (ciclo do DCA
 liquida com o intent RELIDO), A110 r3 (autorização deriva do intent), A103,
 A80/A102 (recovery por intentId). **0059 e 0060 criadas.**
-Produção: **contraditório** para 0059 — commit `e117cce` (R4) diz "nunca foi
-aplicada em produção"; `SPEC-round9.md:381` e `entrega-round9.md:387` dizem
-"pode já ter sido aplicada" `[GIT][DOC]`. 0060: `UNKNOWN`.
+Produção: **0059 e 0060 NÃO aplicadas** `[PROD]` — os corpos vivos de
+`cex_ingest_trades`/`cex_ingest_order_snapshot` não têm a lógica de cobertura
+da 0059, e não há `strategy_hash` em `cex_execution_intents` nem a auth de
+assinatura `(uuid)` da 0060. A contradição documental (`e117cce` "nunca" ×
+`SPEC-round9.md:381` "pode") fica resolvida: **nunca**.
 
 ### F. ROUND 4 — `1325bd3` → `1cb82ce` (7 commits)
 
@@ -233,6 +239,11 @@ declaradas no commit `15b89c8`.
 
 ## N. MASTER MIGRATION LEDGER 0001 → 0066
 
+> ✅ **Medido em 26/09 `[PROD]`: o delta do release é exatamente 0059 → 0066.**
+> Nenhuma das migrations editadas depois de criadas (0059, 0061, 0063–0066)
+> chegou à produção em versão nenhuma — o risco de "versão intermediária
+> aplicada" não se materializou.
+>
 > ⚠️ **NOME NO HISTORY NÃO PROVA CONTEÚDO.** Cinco migrations foram editadas
 > depois de criadas: **0059** (8 commits, R3→R5, todos em 16/09), **0061** (R4→R5),
 > **0063** (R8→R9), **0064** (13 commits no R9), **0066** (B2, só comentários)
@@ -248,23 +259,23 @@ descartável do zero, 66/66, por implementador (16.13) e auditor (16.15).
 | 0047 | pré-R1 | concessão de plano ≠ admin (A04) | UNKNOWN | UNKNOWN | verificar |
 | 0048 | pré-R1 | reverter genoma atômico (A06) | UNKNOWN | UNKNOWN | verificar |
 | 0049 | pré-R1 | saída por liquidação (A05) — **existia em produção antes do repo** | provável; UNKNOWN | **drift conhecido** | reconciliar history |
-| 0050 | R1 | intents + fills | UNKNOWN (implícita se 0055 aplicada) | UNKNOWN | verificar |
-| 0051 | R1 | RPCs de execução (transição, ingestão, recálculo) | UNKNOWN (idem) | UNKNOWN | verificar |
-| 0052 | R1 | certificado de estratégia | UNKNOWN | UNKNOWN | verificar |
-| 0053 | R1 | sessão carrega estratégia | UNKNOWN | UNKNOWN | verificar |
-| 0054 | R1 | tier da sessão revalidado | UNKNOWN | UNKNOWN | verificar |
-| 0055 | R2 | ACL das RPCs financeiras (A116) | relatado 16/09 `[DONO]`, **sem prova** | UNKNOWN | verificar |
-| 0056 | R2 | cofre T3 — **DROP `autopilot_sessions.creds_cipher`** | relatado `[DONO]`; **⚠️ incompatível com o código em produção** | UNKNOWN | **P0** |
-| 0057 | R2 | executor autoriza submissão | relatado `[DONO]` | UNKNOWN | verificar |
-| 0058 | R2 | quarentena de conta | relatado `[DONO]` | UNKNOWN | verificar |
-| 0059 | R3 (ed. R4, R5) | fee cumulativa + cobertura sintético→real | **contraditório** | se aplicada, **pode ser versão antiga** | comparar `prosrc` vivo × repo |
-| 0060 | R3 | autorização deriva do intent (`strategy_hash`, RPC(uuid), drop da assinatura antiga) | UNKNOWN | UNKNOWN | verificar |
-| 0061 | R4 (ed. R5) | fingerprint da credencial | UNKNOWN; se aplicada, **pode estar sem os CHECKs do R5** | UNKNOWN | verificar versão |
-| 0062 | R5 | dedupe de fills por intent | UNKNOWN | UNKNOWN | verificar |
-| 0063 | R8 (ed. R9) | conexões versionadas CURRENT/RETIRED/REVOKED | **NÃO** (declarado em todas as entregas; catálogo não lido) | não deve constar | só via staging (§U) |
-| 0064 | R9 | projeção de posição, P&L, autorização final, pendências financeiras | **NÃO** (declarado) | não deve constar | idem |
-| 0065 | B1 | rearm preserva rails (A51) | **NÃO** (declarado) | não deve constar | idem |
-| 0066 | B2 | DCA: auth relê o plano, fila de recovery, teto real | **NÃO** (declarado) | não deve constar | idem |
+| 0050 | R1 | intents + fills | **SIM, 15/09** `[PROD]` (`execucao_cex_intents_e_fills`) | versão por data; ⚠️ existe outra entrada `0050_celeiro_alavancado_geometria_medida` | diff de conteúdo |
+| 0051 | R1 | RPCs de execução (transição, ingestão, recálculo) | **SIM, 15/09** `[PROD]` (+ `execucao_cex_rls`, só em produção) | versão por data | diff de conteúdo |
+| 0052 | R1 | certificado de estratégia | **SIM, 15/09** `[PROD]` | versão por data | diff de conteúdo |
+| 0053 | R1 | sessão carrega estratégia | **SIM, 15/09** `[PROD]` | versão por data | diff de conteúdo |
+| 0054 | R1 | tier da sessão revalidado | **SIM, 15/09** `[PROD]` | versão por data | diff de conteúdo |
+| 0055 | R2 | ACL das RPCs financeiras (A116) | **SIM, 16/09** `[PROD]` | nome com prefixo `0055_` | diff de ACL |
+| 0056 | R2 | cofre T3 — **DROP `autopilot_sessions.creds_cipher`** | **SIM, 16/09** `[PROD]` — coluna ausente; **⚠️ quebra `armSession` do código em produção** | nome com prefixo | resolvido pelo release (§Y) |
+| 0057 | R2 | executor autoriza submissão | **SIM, 16/09** `[PROD]` — auth de 5 argumentos viva | aplicada **depois** da 0058 | diff de conteúdo |
+| 0058 | R2 | quarentena de conta | **SIM, 16/09** `[PROD]` — `quarentena_em` presente | nome com prefixo | diff de conteúdo |
+| 0059 | R3 (ed. R4, R5) | fee cumulativa + cobertura sintético→real | **NÃO** `[PROD]` — corpos vivos sem a cobertura | não consta | aplicar no release |
+| 0060 | R3 | autorização deriva do intent (`strategy_hash`, RPC(uuid), drop da assinatura antiga) | **NÃO** `[PROD]` | não consta | aplicar no release |
+| 0061 | R4 (ed. R5) | fingerprint da credencial | **NÃO** `[PROD]` — sem `credential_fingerprint` | não consta | aplicar no release |
+| 0062 | R5 | dedupe de fills por intent | **NÃO** `[PROD]` — `cex_fills_dedupe` ainda viva, `cex_fills_intent_dedupe` ausente | não consta | aplicar no release |
+| 0063 | R8 (ed. R9) | conexões versionadas CURRENT/RETIRED/REVOKED | **NÃO** `[PROD]` — `cex_conexoes` sem `credential_identity`/`is_current`/`superseded_at` | não consta | só via staging (§U) |
+| 0064 | R9 | projeção de posição, P&L, autorização final, pendências financeiras | **NÃO** `[PROD]` | não consta | idem |
+| 0065 | B1 | rearm preserva rails (A51) | **NÃO** `[PROD]` | não consta | idem |
+| 0066 | B2 | DCA: auth relê o plano, fila de recovery, teto real | **NÃO** `[PROD]` | não consta | idem |
 
 **Se a 0063 falhar:** ela já falhou uma vez (o `E'\0'` original). Os arquivos
 não abrem transação própria; o replay é arquivo a arquivo — uma falha no meio
@@ -293,7 +304,10 @@ corrigida); 12-BIS do R8 (A134–A136); A110 (R1→R2→R3); A120 (→A120-H).
 A80–A126 (R1–R7); A127–A130-B (R8).
 
 **OPEN:**
-- **P0-SKEW** — 0056 × código em produção (§0.2). `OPEN — NÃO PROVADO`.
+- **P0-SKEW** — 0056 × código em produção (§0.2). `OPEN — REPRODUCED`
+  `[PROD]`: coluna ausente; `armSession` de `25fc4b0` quebra; 0 sessões e
+  0 intents — indisponibilidade, sem dinheiro em risco. Resolvido pelo release
+  (código R2+ exige 0059+; hotfix isolado não é possível — §Y).
 - **R8-CORRIDA** — cron↔navegador pode fechar o dia um trade acima do teto
   (limitação declarada, não corrigida).
 - **CI-R9** — HEAD do R9 sem CI verde (ambiental; resolvido para frente pelo
@@ -319,7 +333,9 @@ credenciais e providers — §U fases 3–6.
 ## Q. SUPABASE / MIGRATION HISTORY
 
 - Produção: projeto `vuvvftdsfmagmtbovzgq` — **não tocado**.
-- **DB-BASELINE / MIGRATION HISTORY DRIFT: HIGH, OPEN.** Replay do repositório
+- **DB-BASELINE / MIGRATION HISTORY DRIFT: HIGH, OPEN — CONFIRMADO** `[PROD]`
+  (entradas só em produção, nome colidindo com a `0050`, versões por data —
+  §Y). Replay do repositório
   reproduzível **≠** history de produção reproduzível. Agravantes: drift da 0049;
   migrations editadas depois de criadas; Supabase branch de desenvolvimento em
   `MIGRATIONS_FAILED` `[DONO]`.
@@ -390,7 +406,7 @@ de produção que ainda não foi lido.
 | fase | entrada | ação futura | prova esperada | rollback | STOP |
 |---|---|---|---|---|---|
 | **0 Freeze** | `3123fb4`, CI verde | congelar a linha; proteger `platform-closure` e `round9-surgical`; bundle + SHA256 | ref imutável; bundle verificado | nada muda | qualquer ref se move com código |
-| **1 Reconciliar history** | leitura de produção **autorizada** | ler `supabase_migrations` + catálogo (tabelas, colunas, funções, ACL, `prosrc`) e diffar contra 0001→0066 **por conteúdo**. **P0: `autopilot_sessions.creds_cipher` existe?** | tabela migration × {history, schema vivo, versão} | nada (somente leitura) | coluna ausente com `25fc4b0` no ar → incidente próprio, tratado antes de tudo |
+| **1 Reconciliar history** — ⏳ **em parte feito (26/09, §Y)**: history lido; presença/ausência de 0050–0066 por marcador; P0 respondido. **Falta:** diff de CONTEÚDO (`prosrc`, ACL, constraints) de 0050–0058 vivas × repo | leitura de produção **autorizada** | ler `supabase_migrations` + catálogo (tabelas, colunas, funções, ACL, `prosrc`) e diffar contra 0001→0066 **por conteúdo**. **P0: `autopilot_sessions.creds_cipher` existe?** | tabela migration × {history, schema vivo, versão} | nada (somente leitura) | coluna ausente com `25fc4b0` no ar → incidente próprio, tratado antes de tudo |
 | **2 Replay descartável** | dump **só de schema** da produção | replay do zero **e** replay do delta pendente a partir do estado vivo | ambos verdes; arnês 01–13 verde | descartar cluster | qualquer migration falha |
 | **3 Supabase staging** | delta aprovado | staging a partir do schema reconciliado; aplicar o delta em transação | history = schema = repo | recriar staging | `MIGRATIONS_FAILED` |
 | **4 Vercel Preview** | billing resolvido; envs de staging | Preview do SHA certificado apontando para staging | READY no SHA certo | apagar Preview | SHA errado; env de produção vazando |
@@ -442,9 +458,13 @@ de produção que ainda não foi lido.
 1. ~~Relatório do retest do Batch 2 ausente~~ — **resolvido**: arquivado verbatim
    em `docs/retest-independente-batch2-3123fb4.md` (sha256
    `8e93eab80ab491634580d4c7e96e51cc591ce53fe6731eca644f328f7264927e`).
-2. 0055–0058 aplicadas em produção: sem prova primária.
-3. Estado da 0059: contraditório entre R4 e R9.
-4. Assimetria 0056 × código em produção: plausível, não provada.
+2. ~~0055–0058 aplicadas: sem prova~~ — **resolvido `[PROD]`**: aplicadas em 16/09.
+3. ~~0059 contraditória~~ — **resolvido `[PROD]`**: nunca aplicada.
+4. ~~Assimetria 0056 × código: não provada~~ — **confirmada `[PROD]`** (§0.2, §Y).
+4-BIS. **Novo:** o history de produção tem entradas sem migration no repo
+   (`execucao_cex_rls`, `indice_vitrine_das_mesas`,
+   `desfaz_indice_vitrine_sem_ganho_medido`,
+   `0050_celeiro_alavancado_geometria_medida`) — conteúdo **não inventariado**.
 5. Intervalo da auditoria pré-R1: #417–#446 `[GIT]` × #419–#445 `[DOC]`.
 6. `entrega-round9.md` cita HEAD `3b39e08` — desatualizado.
 7. HEAD do R9 sem CI verde (ambiental).
@@ -458,13 +478,81 @@ de produção que ainda não foi lido.
 ## X. STATUS FINAL
 
 **`CONTEXT RECONCILED — MASTER RELEASE LEDGER BUILT — BATCH 2 RETEST VERIFIED —
-PRODUCTION TRANSITION NOT STARTED`**
+PRODUCTION SCHEMA READ — PRODUCTION TRANSITION NOT STARTED`**
 
 Código: Round 9 + Batch 1 + Batch 2 fechados em `3123fb4`. Produção: roda
-`25fc4b0`, banco em estado não verificado, 0063–0066 **não aplicar**.
+`25fc4b0` sobre um banco no nível **0058**; `armSession` quebrado desde 16/09
+(0 sessões afetadas); delta do release = **0059 → 0066**, **não aplicar** fora
+do plano da §U.
 **DCA REAL = NO-GO · PILOT REAL = NO-GO · AUTOPILOT REAL = NO-GO.**
 
 O que destrava o início do release:
-1. autorização para **ler** o schema e o history de produção — primeiro, a
-   coluna `autopilot_sessions.creds_cipher`;
-2. a lista de definições do backlog do auditor.
+1. ~~autorização para ler o schema de produção~~ — **feito em 26/09 (§Y)**;
+2. o diff de conteúdo de 0050–0058 vivas × repo e o inventário das quatro
+   entradas só-de-produção (restante da Fase 1);
+3. a lista de definições do backlog do auditor;
+4. decisão do dono sobre o P0: aceitar a indisponibilidade de `armSession` até
+   o release (recomendado) ou outra via.
+
+---
+
+## Y. LEITURA DE PRODUÇÃO — 26/09/2026 `[PROD]`
+
+**Autorização:** do dono, em 26/09, para **ler** o schema de produção e
+conferir `creds_cipher`. **Somente leitura:** `SELECT` em
+`information_schema`/`pg_catalog`, `count(*)`, `md5(prosrc)` e a listagem do
+migration history, via Supabase MCP no projeto `vuvvftdsfmagmtbovzgq`. Nenhuma
+escrita, nenhuma DDL, nenhum dado de usuário lido além de contagens.
+
+### Y.1 O P0
+
+| pergunta | resposta medida |
+|---|---|
+| `autopilot_sessions.creds_cipher` existe? | **NÃO** |
+| a 0056 foi aplicada? | **SIM** — history `20260916101430 0056_cofre_t3_final` |
+| o código em produção depende da coluna? | **SIM** — `25fc4b0:src/lib/autopilot/sessions.ts:97` (escrita) e `:208` (leitura) |
+| sessões de autopilot existentes | **0** (0 ativas, 0 sem `conexao_id`; `max(updated_at)` nulo) |
+| intents de execução | **0** |
+| consequência | `armSession` em produção falha com "column does not exist" desde 16/09; nada existente quebrou; nenhuma ordem, nenhum dinheiro |
+
+**Por que não há hotfix isolado:** o `creds_cipher` sai do código no R2
+(`df2a62f`, A115). Todo código do R2 em diante depende também de migrations
+0059+ (R3 em diante), então "trocar o código sem trocar o banco" não existe —
+o conserto É o release. Com 0 sessões e autopilot real em NO-GO, o impacto é
+só a função indisponível até lá.
+
+### Y.2 Presença das migrations por marcador de schema
+
+| migration | marcador conferido | resultado |
+|---|---|---|
+| 0050–0054 | tabelas `cex_execution_intents`, `cex_fills`, `strategy_certificates`; colunas de estratégia/tier em `autopilot_sessions` | presentes |
+| 0055 | ACL das RPCs (history) | aplicada |
+| 0056 | `creds_cipher` ausente | aplicada |
+| 0057 | `cex_autorizar_e_submeter(p_intent_id, p_strategy_hash, p_venue, p_symbol, p_notional)` — 5 argumentos | aplicada |
+| 0058 | `autopilot_sessions.quarentena_em` | aplicada |
+| 0059 | corpo de `cex_ingest_trades` / `cex_ingest_order_snapshot` sem a lógica de cobertura (md5 `2962117121b95f5cdca83f5cbb5931a3` / `1e7e2ee97e9149b37549e144a6479f85`) | **não** |
+| 0060 | `cex_execution_intents.strategy_hash`; auth `(uuid)` | **não** |
+| 0061 | `cex_execution_intents.credential_fingerprint` | **não** |
+| 0062 | constraint `cex_fills_intent_dedupe` (vive a antiga `cex_fills_dedupe`) | **não** |
+| 0063 | `cex_conexoes.credential_identity` / `is_current` / `superseded_at` | **não** |
+| 0064 | `autopilot_sessions.contabilidade_incompleta_em`; `autopilot_position_effects` | **não** |
+| 0065 | `autopilot_rearm_preserva_rails` | **não** |
+| 0066 | `dca_gasto_real_comprometido_hoje` | **não** |
+
+### Y.3 O migration history remoto — divergência confirmada
+
+| fato | detalhe |
+|---|---|
+| versões | por **data** (`20260915173714`…), não pelo número do repositório, exceto `0001`, `0002` |
+| 0050–0054 | aplicadas 15/09 17:37–22:35 com os nomes do repo (`execucao_cex_intents_e_fills`, `execucao_cex_rpcs`, `certificado_de_estrategia`, `sessao_carrega_estrategia`, `tier_da_sessao_revalidado`) |
+| 0055–0058 | aplicadas 16/09 10:14–10:15 com prefixo numérico; **ordem real 0055, 0056, 0058, 0057** |
+| **só em produção** | `execucao_cex_rls` (15/09 18:04); `indice_vitrine_das_mesas` e `desfaz_indice_vitrine_sem_ganho_medido` (14/09); **`0050_celeiro_alavancado_geometria_medida`** (16/09 02:15) — nome **colide** com a `0050` do repositório, que é outra migration |
+| nomes divergentes | ex.: `admin_wallet_solana2` × `0003_admin_wallet_phantom`; `celeiro_motivo_saida_liquidacao` × `0049_celeiro_saida_por_liquidacao` |
+| consequência | aplicar "por número" não é seguro. O release aplica o **conteúdo** de 0059→0066 sobre o schema vivo, provado antes em banco descartável criado a partir desse schema (Fases 1–2) |
+
+### Y.4 O que falta da Fase 1
+
+1. Diff de **conteúdo** das funções, ACL e constraints vivas de 0050–0058
+   contra o repositório (presença já provada; versão não).
+2. Inventário das quatro entradas só-de-produção — o que criaram e se o
+   repositório precisa delas para reproduzir o schema vivo.

@@ -73,8 +73,14 @@
 >
 > **O mapa completo** — SHA de cada etapa, estado de cada migration em produção,
 > o que bloqueia o release e o plano dele — está em `docs/LEDGER-MESTRE-RELEASE.md`.
-> ⚠️ A produção roda `25fc4b0`; se as 0055–0058 foram aplicadas, a 0056 removeu
-> `autopilot_sessions.creds_cipher`, que esse código ainda usa — P0 do ledger.
+> ⚠️⚠️ **P0 CONFIRMADO em 26/09 (leitura autorizada do schema de produção):**
+> a 0056 foi aplicada em 16/09 e `autopilot_sessions.creds_cipher` não existe;
+> o código em produção (`25fc4b0`) ainda grava e lê essa coluna, então **armar
+> autopilot em produção falha desde 16/09**. Havia **0 sessões e 0 intents** —
+> nada quebrado, nenhum dinheiro em risco; só a função indisponível. O conserto
+> é o release (não há hotfix isolado). O banco está no nível **0058**; o delta
+> do release é **0059 → 0066**; o migration history NÃO segue a numeração do
+> repo. Tudo em `docs/LEDGER-MESTRE-RELEASE.md` §Y.
 >
 > Rodar o arnês SQL: `supabase/tests/README.md` (cluster descartável, papéis
 > `anon`/`authenticated`/`service_role` criados à mão, 0001→última em ordem).
