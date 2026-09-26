@@ -246,11 +246,28 @@ export function tetoDoCiclo(t: Tetos): { ok: true; valorUsd: number } | { ok: fa
   const valor = Math.min(naoNegativo(t.porCicloUsd), restanteOrcamento, restanteDiario, teto);
   if (valor <= 0) return { ok: false, motivo: "orcamento_esgotado" };
 
-  // ⚠️ Compara com o mínimo DEPOIS de aplicar os tetos: um ciclo que caberia no
-  // orçamento mas foi cortado pelo teto diário até virar poeira tem de ser
-  // recusado por "abaixo do mínimo", e não disparar uma ordem que a corretora
-  // vai rejeitar.
-  if (valor < naoNegativo(t.minimoUsd)) return { ok: false, motivo: "abaixo_do_minimo" };
+  // ⚠️ Compara com o mínimo DEPOIS de aplicar os tetos: um ciclo cortado até
+  // virar poeira não pode disparar uma ordem que a corretora vai rejeitar.
+  const minimo = naoNegativo(t.minimoUsd);
+  if (valor < minimo) {
+    /**
+     * ⚠️⚠️ MAS QUEM CORTOU DECIDE SE É FIM OU ESPERA (Batch 2, observação 4).
+     *
+     * `abaixo_do_minimo` é TERMINAL: o cron encerra o plano como `completo`.
+     * Isso só é verdade quando o corte vem do PRÓPRIO PLANO — o orçamento que
+     * sobrou (ou o valor por ciclo) já não alcança o mínimo, e o plano nunca
+     * mais consegue comprar.
+     *
+     * Quando quem cortou foi o teto DIÁRIO da carteira — outros planos, ou o
+     * compromisso inconclusivo que o A59 passou a contar — o plano não acabou:
+     * amanhã o teto reabre. Devolver `abaixo_do_minimo` aqui encerrava a
+     * poupança do cliente por causa do gasto de OUTRO plano no mesmo dia.
+     */
+    const doPlano = Math.min(naoNegativo(t.porCicloUsd), restanteOrcamento);
+    if (doPlano < minimo) return { ok: false, motivo: "abaixo_do_minimo" };
+    if (restanteDiario < minimo) return { ok: false, motivo: "teto_diario_carteira" };
+    return { ok: false, motivo: "teto_plataforma" };
+  }
 
   return { ok: true, valorUsd: valor };
 }

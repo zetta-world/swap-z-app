@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ getSupabaseAdmin: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ getSupabaseAdmin: mocks.getSupabaseAdmin }));
 
-import { planosComIntentVivoParaRecovery, planosVencidos } from "@/lib/dca/store";
+import { gastoHojeDaCarteira, planosComIntentVivoParaRecovery, planosVencidos } from "@/lib/dca/store";
 
 function dbComResposta(resposta: { data: unknown; error: null | { message: string; code?: string } }) {
   const chain: Record<string, unknown> = {};
@@ -73,5 +73,32 @@ describe("Batch 2 revisão / A58+A86 — fila de recovery independe do status", 
 
     mocks.getSupabaseAdmin.mockReturnValue(dbComRpc({ data: { nope: true }, error: null }));
     expect(await planosComIntentVivoParaRecovery()).toEqual({ ok: false, erro: "retorno_invalido" });
+  });
+});
+
+describe("A59 — gasto REAL: NULL da RPC nunca vira zero gasto", () => {
+  beforeEach(() => mocks.getSupabaseAdmin.mockReset());
+
+  it("NULL/vazio da RPC => null (o cron não compra)", async () => {
+    for (const data of [null, undefined, ""]) {
+      mocks.getSupabaseAdmin.mockReturnValue(dbComRpc({ data, error: null }));
+      expect(await gastoHojeDaCarteira("0xw", "real")).toBeNull();
+    }
+  });
+
+  it("zero MEDIDO continua zero, e número em texto é lido", async () => {
+    mocks.getSupabaseAdmin.mockReturnValue(dbComRpc({ data: 0, error: null }));
+    expect(await gastoHojeDaCarteira("0xw", "real")).toBe(0);
+    mocks.getSupabaseAdmin.mockReturnValue(dbComRpc({ data: "390", error: null }));
+    expect(await gastoHojeDaCarteira("0xw", "real")).toBe(390);
+  });
+
+  it("erro, negativo ou não-numérico => null", async () => {
+    mocks.getSupabaseAdmin.mockReturnValue(dbComRpc({ data: null, error: { message: "fail-closed" } }));
+    expect(await gastoHojeDaCarteira("0xw", "real")).toBeNull();
+    mocks.getSupabaseAdmin.mockReturnValue(dbComRpc({ data: -1, error: null }));
+    expect(await gastoHojeDaCarteira("0xw", "real")).toBeNull();
+    mocks.getSupabaseAdmin.mockReturnValue(dbComRpc({ data: "abc", error: null }));
+    expect(await gastoHojeDaCarteira("0xw", "real")).toBeNull();
   });
 });

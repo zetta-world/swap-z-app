@@ -425,6 +425,11 @@ export async function gastoHojeDaCarteira(
       p_wallet_address: wallet,
     });
     if (error) return null;
+    // ⚠️ NÃO MEDIMOS ≠ MEDIMOS ZERO (regra nº 33). `Number(null)` é 0 e
+    // `Number("")` também: um NULL da RPC viraria "nada gasto hoje" e abriria o
+    // teto inteiro. Hoje a RPC não devolve NULL — é exatamente por isso que o
+    // dia em que devolver não pode passar calado.
+    if (data === null || data === undefined || data === "") return null;
     const valor = Number(data);
     if (!Number.isFinite(valor) || valor < 0) return null;
     return valor;

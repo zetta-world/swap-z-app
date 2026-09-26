@@ -261,8 +261,22 @@ describe("tetoDoCiclo — o menor teto manda", () => {
   });
 
   it("o mínimo é conferido DEPOIS dos tetos, não antes", () => {
-    // Ciclo de 100 cabe no orçamento, mas o teto diário o corta para 2.
+    // Ciclo de 100 cabe no orçamento, mas o teto diário o corta para 2: não
+    // sai ordem. ⚠️ E o motivo é o TETO DIÁRIO, não `abaixo_do_minimo`: esta
+    // asserção esperava `abaixo_do_minimo`, que o cron trata como terminal e
+    // encerrava o plano como `completo` por causa do gasto do dia. O plano não
+    // acabou — amanhã o teto reabre.
     expect(tetoDoCiclo({ ...tetos, gastoHojeCarteiraUsd: 498 }))
+      .toEqual({ ok: false, motivo: "teto_diario_carteira" });
+  });
+
+  it("⚠️ teto de plataforma abaixo do mínimo também é espera, não fim", () => {
+    expect(tetoDoCiclo({ ...tetos, tetoPlataformaUsd: 3 }))
+      .toEqual({ ok: false, motivo: "teto_plataforma" });
+  });
+
+  it("⚠️ valor por ciclo abaixo do mínimo continua terminal — nunca vai comprar", () => {
+    expect(tetoDoCiclo({ ...tetos, porCicloUsd: 3 }))
       .toEqual({ ok: false, motivo: "abaixo_do_minimo" });
   });
 
