@@ -71,6 +71,11 @@
 > | `abaixo_do_minimo` é terminal: o teto DIÁRIO não pode encerrar plano | `src/lib/dca/relogio.ts` |
 > | `pause_dca` pausa entrada nova, não o recovery do que já saiu | `src/app/api/dca/cron/route.ts` |
 >
+> **O mapa completo** — SHA de cada etapa, estado de cada migration em produção,
+> o que bloqueia o release e o plano dele — está em `docs/LEDGER-MESTRE-RELEASE.md`.
+> ⚠️ A produção roda `25fc4b0`; se as 0055–0058 foram aplicadas, a 0056 removeu
+> `autopilot_sessions.creds_cipher`, que esse código ainda usa — P0 do ledger.
+>
 > Rodar o arnês SQL: `supabase/tests/README.md` (cluster descartável, papéis
 > `anon`/`authenticated`/`service_role` criados à mão, 0001→última em ordem).
 

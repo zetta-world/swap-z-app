@@ -1,0 +1,3 @@
+# Relatórios de auditor arquivados VERBATIM: o sha256 é a prova de integridade,
+# e o Markdown deles usa dois espaços no fim da linha como quebra. Não normalizar.
+docs/retest-independente-*.md -whitespace
