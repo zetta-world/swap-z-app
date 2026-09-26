@@ -8,55 +8,41 @@ const erro = (motivo: string) => ({ ok: false as const, erro: motivo });
 
 describe("Batch 2 revisão / A58 — recovery atravessa passadas", () => {
   it("auth -> pause -> UNKNOWN -> passada seguinte continua elegível a recovery e não cria ordem nova", async () => {
+    /**
+     * ⚠️ Esta versão contava `novosIntents`/`novasOrdens` incrementados pelo
+     * PRÓPRIO callback do teste — o resultado era comparado com ele mesmo.
+     * Agora mede só o que o orquestrador decide: em qual fila o plano chega,
+     * com qual bandeira, e quantas vezes. Que `somenteRecovery` nunca vira
+     * ordem é medido na rota real (`cron-queue-health.test.ts`).
+     */
     const plano: Plano = { id: "p1", status: "ativo" };
-    let intent: "nenhum" | "SUBMITTING" | "UNKNOWN" = "nenhum";
-    let novosIntents = 0;
-    let novasOrdens = 0;
-    let recoveries = 0;
 
-    // Passada 1: o plano estava ativo, a final auth venceu a corrida e marcou
-    // SUBMITTING; depois disso o usuário pausou e a chamada externa ficou UNKNOWN.
+    // Passada 1: plano ativo e vencido, só na fila ativa.
+    const p1 = vi.fn(async (_item: ItemFilaDca<Plano>) => "primeira");
     const primeira = await executarFilasDca({
       lerAtivos: async () => ok([plano]),
       lerRecovery: async () => ok([]),
-      processar: async ({ somenteRecovery }) => {
-        expect(somenteRecovery).toBe(false);
-        novosIntents += 1;
-        intent = "SUBMITTING";
-        novasOrdens += 1;
-        plano.status = "pausado";
-        intent = "UNKNOWN";
-        return "primeira";
-      },
+      processar: p1,
       aoFalharProcessamento: () => "erro",
     });
-    expect(primeira.ok).toBe(true);
-    expect(novosIntents).toBe(1);
-    expect(novasOrdens).toBe(1);
-    expect(plano.status).toBe("pausado");
-    expect(intent).toBe("UNKNOWN");
+    expect(primeira).toMatchObject({ ok: true, processed: 1 });
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0]?.[0]).toEqual({ plano, somenteRecovery: false });
 
-    // Passada 2: a fila normal está vazia porque o plano está pausado, mas a
-    // fila independente de recovery ainda o entrega. O processamento é marcado
-    // `somenteRecovery`, então nenhuma nova ordem pode nascer.
+    // Entre as passadas: a auth marcou SUBMITTING, o dono pausou, a venue
+    // ficou UNKNOWN. O plano sai da fila ativa e fica só na de recovery.
+    plano.status = "pausado";
+
+    const p2 = vi.fn(async (_item: ItemFilaDca<Plano>) => "reconciliado");
     const segunda = await executarFilasDca({
       lerAtivos: async () => ok([]),
-      lerRecovery: async () => ok(intent === "UNKNOWN" ? [plano] : []),
-      processar: async ({ plano: recebido, somenteRecovery }) => {
-        expect(recebido.status).toBe("pausado");
-        expect(somenteRecovery).toBe(true);
-        recoveries += 1;
-        intent = "nenhum";
-        return "reconciliado";
-      },
+      lerRecovery: async () => ok([plano]),
+      processar: p2,
       aoFalharProcessamento: () => "erro",
     });
-
-    expect(segunda).toMatchObject({ ok: true, status: 200, processed: 1 });
-    expect(recoveries).toBe(1);
-    expect(novosIntents).toBe(1); // nenhum intent novo na segunda passada
-    expect(novasOrdens).toBe(1);  // nenhuma ordem nova na segunda passada
-    expect(plano.status).toBe("pausado");
+    expect(segunda).toMatchObject({ ok: true, status: 200, processed: 1, resumo: ["reconciliado"] });
+    expect(p2).toHaveBeenCalledTimes(1);
+    expect(p2.mock.calls[0]?.[0]).toEqual({ plano: { id: "p1", status: "pausado" }, somenteRecovery: true });
   });
 
   it("deduplica plano que aparece simultaneamente na fila ativa e de recovery", async () => {

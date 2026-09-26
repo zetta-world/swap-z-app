@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
   recordEvent: vi.fn(async () => undefined),
   notifyTelegram: vi.fn(),
   soltarATrava: vi.fn(async () => undefined),
+  gates: vi.fn(async () => ({ pause_dca: false })),
+  decidirCapacidade: vi.fn(),
   db: null as unknown,
 }));
 
@@ -30,13 +32,13 @@ vi.mock("@/lib/cex/execucao/intents", () => ({
 }));
 vi.mock("@/lib/cex/execucao/reconciliador", () => ({ reconciliarIntent: h.reconciliarIntent }));
 vi.mock("@/lib/dca/liquidacao", () => ({ decidirPeloIntent: h.decidirPeloIntent }));
-vi.mock("@/lib/dca/capacidade", () => ({ decidirCapacidade: vi.fn(), lerCapacidades: vi.fn() }));
+vi.mock("@/lib/dca/capacidade", () => ({ decidirCapacidade: h.decidirCapacidade, lerCapacidades: vi.fn() }));
 vi.mock("@/lib/api/cex-spot", () => ({ getCexSpotPrices: vi.fn() }));
 vi.mock("@/lib/cex/server", () => ({ fetchCexBalance: vi.fn() }));
 vi.mock("@/lib/autopilot/liberacao", () => ({
   lerLiberacao: vi.fn(), lerPilotos: vi.fn(), decidirAutomacao: vi.fn(),
 }));
-vi.mock("@/lib/admin/gates", () => ({ getFlywheelGates: vi.fn(async () => ({ pause_dca: false })) }));
+vi.mock("@/lib/admin/gates", () => ({ getFlywheelGates: h.gates }));
 vi.mock("@/lib/admin/health", () => ({ setCronHeartbeat: vi.fn(async () => undefined) }));
 vi.mock("@/lib/dca/trava", () => ({
   pegarATrava: vi.fn(async () => "peguei"),
@@ -116,6 +118,7 @@ describe("Batch 2 revisão / A58+A86 — integração HTTP do cron", () => {
     process.env.CRON_SECRET = "batch2-a86-test";
     h.db = {};
     vi.clearAllMocks();
+    h.gates.mockResolvedValue({ pause_dca: false });
   });
 
   it("passada seguinte: plano pausado + UNKNOWN entra por recovery e não cria ordem nova", async () => {
@@ -169,6 +172,71 @@ describe("Batch 2 revisão / A58+A86 — integração HTTP do cron", () => {
       ok: false, error: "fila_indisponivel", origem: "recovery",
       motivo: "sem_banco", processed: 0,
     });
+    expect(h.executarOrdemCex).not.toHaveBeenCalled();
+    expect(h.soltarATrava).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Observação 7 do relatório do Batch 2: o primeiro teste de
+   * `fila-passada.test.ts` simula o estado dentro do próprio callback. Aqui a
+   * mesma propriedade é medida na ROTA REAL: plano pausado vindo SÓ da fila
+   * de recovery, sem intent vivo, não chega a nenhum gate de entrada.
+   */
+  it("plano pausado na fila de recovery SEM intent vivo => sem_recovery, zero entrada", async () => {
+    h.planosVencidos.mockResolvedValue({ ok: true, planos: [], truncado: false });
+    h.planosRecovery.mockResolvedValue({ ok: true, planos: [planoPausado], truncado: false });
+    h.intentVivoDoPlano.mockResolvedValue(null);
+
+    const res = await POST(req());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.resumo).toEqual([{ plano: planoPausado.id, acao: "sem_recovery", detalhe: "status_pausado" }]);
+    expect(h.reconciliarIntent).not.toHaveBeenCalled();
+    expect(h.decidirCapacidade).not.toHaveBeenCalled();
+    expect(h.executarOrdemCex).not.toHaveBeenCalled();
+  });
+
+  it("⚠️ pause_dca: o recovery RODA, a fila ativa nem é lida e nenhuma ordem nasce", async () => {
+    h.gates.mockResolvedValue({ pause_dca: true });
+    const planoAtivo = { ...planoPausado, id: "plano-ativo", status: "ativo" };
+    h.planosVencidos.mockResolvedValue({ ok: true, planos: [planoAtivo], truncado: false });
+    h.planosRecovery.mockResolvedValue({ ok: true, planos: [planoAtivo], truncado: false });
+    h.intentVivoDoPlano.mockResolvedValue({ ...intentUnknown, plan_id: planoAtivo.id });
+    h.reconciliarIntent.mockResolvedValue({ estado: "UNKNOWN" });
+    h.intentPorId.mockResolvedValue({ ...intentUnknown, plan_id: planoAtivo.id });
+    h.decidirPeloIntent.mockReturnValue({ acao: "esperar", porque: "ainda_em_duvida" });
+
+    const res = await POST(req());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, paused: true, processed: 1 });
+    expect(h.planosVencidos).not.toHaveBeenCalled();
+    expect(h.reconciliarIntent).toHaveBeenCalledTimes(1);
+    expect(h.executarOrdemCex).not.toHaveBeenCalled();
+  });
+
+  it("⚠️ pause_dca + plano ATIVO sem intent vivo => sem_recovery; nunca entrada nova", async () => {
+    h.gates.mockResolvedValue({ pause_dca: true });
+    const planoAtivo = { ...planoPausado, id: "plano-ativo", status: "ativo" };
+    h.planosRecovery.mockResolvedValue({ ok: true, planos: [planoAtivo], truncado: false });
+    h.intentVivoDoPlano.mockResolvedValue(null);
+
+    const res = await POST(req());
+    const body = await res.json();
+
+    expect(body.resumo).toEqual([{ plano: "plano-ativo", acao: "sem_recovery", detalhe: "status_ativo" }]);
+    expect(h.decidirCapacidade).not.toHaveBeenCalled();
+    expect(h.executarOrdemCex).not.toHaveBeenCalled();
+  });
+
+  it("pause_dca + fila de recovery ilegível => 503, como sem pausa (A86)", async () => {
+    h.gates.mockResolvedValue({ pause_dca: true });
+    h.planosRecovery.mockResolvedValue({ ok: false, erro: "consulta_falhou" });
+
+    const res = await POST(req());
+    expect(res.status).toBe(503);
     expect(h.executarOrdemCex).not.toHaveBeenCalled();
     expect(h.soltarATrava).toHaveBeenCalledTimes(1);
   });

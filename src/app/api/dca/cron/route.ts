@@ -121,11 +121,6 @@ export async function POST(req: NextRequest) {
   // não pode acusar "cron parado" — a causa real ficaria atrás de alarme errado.
   await setCronHeartbeat("dca");
 
-  const gates = await getFlywheelGates();
-  if (gates.pause_dca) {
-    return NextResponse.json({ ok: true, paused: true, processed: 0 });
-  }
-
   /**
    * ⚠⚠ UMA PASSADA POR VEZ — achado A20 da auditoria externa.
    *
@@ -171,6 +166,23 @@ export async function POST(req: NextRequest) {
 }
 
 async function passada(): Promise<NextResponse> {
+  /**
+   * ⚠️⚠️ A PAUSA DA CASA PARA ENTRADA NOVA, NÃO O RECOVERY (Batch 2, obs. 5).
+   *
+   * Antes, `pause_dca` devolvia aqui, antes de tudo — e com ele o recovery.
+   * Um intent em SUBMITTING/UNKNOWN no instante da pausa ficava órfão
+   * enquanto ela durasse: exatamente o que o A58 fechou para a pausa do
+   * PLANO, reaberto pela pausa da CASA. Pausar serve para parar de gastar;
+   * descobrir o que a corretora já fez com uma ordem que saiu não gasta nada
+   * — só lê a venue e fecha o livro.
+   *
+   * Então, pausado: a fila ATIVA não é lida. Todo plano chega só pela fila de
+   * recovery, logo como `somenteRecovery`, e o `processarPlano` sai antes de
+   * qualquer gate de entrada — nenhuma ordem nova pode nascer.
+   */
+  // Lido DEPOIS da trava (dentro de `passada`): a passada pausada também
+  // é uma passada — ela lê a fila de recovery e pode fechar livro.
+  const pausado = (await getFlywheelGates()).pause_dca === true;
   const agoraIso = new Date().toISOString();
   let contexto: Promise<[
     Awaited<ReturnType<typeof lerLiberacao>>,
@@ -179,7 +191,12 @@ async function passada(): Promise<NextResponse> {
   ]> | null = null;
 
   const rodada = await executarFilasDca({
-    lerAtivos: () => planosVencidos(agoraIso),
+    // Pausado: a fila ativa não é lida — sem ela nenhum plano chega como
+    // candidato a entrada nova. A de recovery é lida igual, e erro nela
+    // continua sendo 503 (A86).
+    lerAtivos: () => (pausado
+      ? Promise.resolve({ ok: true as const, planos: [] as PlanoRow[], truncado: false })
+      : planosVencidos(agoraIso)),
     lerRecovery: () => planosComIntentVivoParaRecovery(),
     processar: ({ plano, somenteRecovery }) => processarPlano(
       plano, agoraIso, async () => {
@@ -223,6 +240,7 @@ async function passada(): Promise<NextResponse> {
 
   return NextResponse.json({
     ok: true, processed: rodada.processed, truncado: rodada.truncado, resumo: rodada.resumo,
+    ...(pausado ? { paused: true } : {}),
   }, { status: rodada.status });
 }
 
@@ -254,6 +272,23 @@ async function recuperarIntentDoPlano(
     credenciais: async (intent) => credenciaisDoIntentParaRecovery(dbExec, intent),
   }, vivo);
 
+  /**
+   * ⚠️⚠️⚠️ RELER O MESMO INTENT, PELO ID — achado A117.
+   *
+   * A versão antiga fazia `(await intentVivoDoPlano(...)) ?? null` e, com o
+   * `null`, inventava `{ ...vivo, state: "FILLED" }`. `intentVivoDoPlano` só
+   * enxerga estados NÃO-terminais: exatamente quando a reconciliação
+   * FUNCIONAVA e o livro fechava em FILLED, o intent sumia da consulta e o
+   * plano liquidava com os números do PEDIDO — o A81 ressuscitado por um
+   * fallback sintético. Estado sintético não existe mais aqui: relê-se o
+   * MESMO intent pelo id; `undefined` (falha de leitura) adia, `null` (a
+   * linha sumiu) é incidente e também não avança.
+   *
+   * ⚠️⚠️ E DA RELEITURA EM DIANTE, TODO DADO VEM DE `atual` — achado A119.
+   * `vivo` é a fotografia PRÉ-reconciliação: a taxa dele é a velha (ou
+   * nenhuma). `vivo` só presta para o `id` e para o número do ciclo nos ramos
+   * em que `atual` não existe, capturado ANTES da releitura.
+   */
   const cicloDoIntentVivo = Number(vivo.cycle_number);
   const atual = await intentPorId(dbExec, vivo.id);
   if (atual === undefined) {
@@ -288,6 +323,11 @@ async function recuperarIntentDoPlano(
     return { plano: p.id, acao: "quarentena", detalhe: decisao.porque };
   }
 
+  /**
+   * ⚠️ O CICLO FECHA COM O QUE O LIVRO TEM, não com o que foi pedido (A81).
+   * ⚠️⚠️ E A TAXA TAMBÉM VEM DO LIVRO RELIDO (A119): `decidirPeloIntent` não
+   * devolve fee — o único caminho da taxa até o ciclo é `atual.fee_total`.
+   */
   const ciclo = Number(atual.cycle_number);
   const fechou = await fecharCiclo(p.id, ciclo, {
     status: decisao.status, motivo: decisao.motivo ?? undefined,
