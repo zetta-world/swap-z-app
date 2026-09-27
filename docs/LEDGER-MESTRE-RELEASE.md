@@ -12,9 +12,11 @@
 > BATCH 2 RETEST VERIFIED — PRODUCTION SCHEMA READ (26/09) —
 > RELEASE PHASE 1 PASS — PHASE 2 FAIL → BATCH 3 (0067) → PASS WITH DELTA 0059→0067 —
 > PHASE 3 (HOSTED STAGING) INCOMPLETE: ROLLBACK/REBUILD PROOF MISSING —
+> PHASE 3B IN PROGRESS: CONCURRENCY AND BACKUP GATES PROVED; P2 ATTEMPT 1 FAIL
+> (ACL MISMATCH, ROOT CAUSE FOUND) → KIT V3.3; P2 ATTEMPT 2 AT 0058 (BASELINE PENDING) —
 > PRODUCTION TRANSITION NOT STARTED`
 >
-> **Data:** 26/09/2026 · **Construtor:** sessão Claude (implementador) ·
+> **Data:** 26–27/09/2026 · **Construtor:** sessão Claude (implementador) ·
 > **Certificação:** auditor independente (relatórios próprios)
 >
 > **Quando atualizar:** a cada etapa que mude um SHA certificado, o estado de
@@ -32,6 +34,9 @@
 | `[RETEST]` | `docs/retest-independente-batch2-3123fb4.md` (auditor, verbatim) |
 | `[PROD]` | leitura **somente** do catálogo/history de produção, autorizada pelo dono em 26/09 (§Y) |
 | `[STAGING]` | medido no projeto Supabase de staging `nvbrzifyurslegudlhaz` (Release Phase 3, §Z) |
+| `[P2]` | medido pelo construtor no projeto Supabase descartável P2 da Phase 3B (§ZB) |
+| `[ACER]` | executado pelo dono na máquina Acer com o kit da Phase 3B; resultado relatado pelo dono/auditor, **não** reexecutado pelo construtor |
+| `[LAB]` | PostgreSQL 17.6 local descartável do construtor — **não** é staging, P2 nem produção |
 | `[DONO]` | afirmado pelo dono no handoff, **não provado** por fonte primária |
 | `[NÃO PROVADO]` | sem fonte; tratar como desconhecido |
 
@@ -431,7 +436,7 @@ de produção que ainda não foi lido.
 | **0 Freeze** | `3123fb4`, CI verde | congelar a linha; proteger `platform-closure` e `round9-surgical`; bundle + SHA256 | ref imutável; bundle verificado | nada muda | qualquer ref se move com código |
 | **1 Reconciliar history** — ⏳ **em parte feito (26/09, §Y)**: history lido; presença/ausência de 0050–0066 por marcador; P0 respondido. **Falta:** diff de CONTEÚDO (`prosrc`, ACL, constraints) de 0050–0058 vivas × repo | leitura de produção **autorizada** | ler `supabase_migrations` + catálogo (tabelas, colunas, funções, ACL, `prosrc`) e diffar contra 0001→0066 **por conteúdo**. **P0: `autopilot_sessions.creds_cipher` existe?** | tabela migration × {history, schema vivo, versão} | nada (somente leitura) | coluna ausente com `25fc4b0` no ar → incidente próprio, tratado antes de tudo |
 | **2 Replay descartável** — ✅ **feita (26/09)**: PG 17.6 com default privileges do Supabase; baseline = produção; FAIL no T10c → Batch 3 (0067) → PASS com delta 0059→0067 `[DONO]` | dump **só de schema** da produção | replay do zero **e** replay do delta pendente a partir do estado vivo | ambos verdes; arnês 01–13 verde | descartar cluster | qualquer migration falha |
-| **3 Supabase staging** — ⏳ **feita em parte (26/09, §Z)**: delta, ACL/RLS e regressão PASS no hosted; **faltam** concorrência 04/05/06/13, rebuild hosted independente e backup/restore | delta aprovado | staging a partir do schema reconciliado; aplicar o delta em transação | history = schema = repo | recriar staging | `MIGRATIONS_FAILED` |
+| **3 Supabase staging** — ⏳ **feita em parte (26/09, §Z; 3B em curso, §ZB)**: delta, ACL/RLS e regressão PASS no hosted; concorrência e backup real **provados na 3B**; **faltam** rebuild hosted independente e restore/rollback F→R→F no P2 | delta aprovado | staging a partir do schema reconciliado; aplicar o delta em transação | history = schema = repo | recriar staging | `MIGRATIONS_FAILED` |
 | **4 Vercel Preview** | billing resolvido; envs de staging | Preview do SHA certificado apontando para staging | READY no SHA certo | apagar Preview | SHA errado; env de produção vazando |
 | **5 HTTP/runtime** | Preview de pé | crons via HTTP com `CRON_SECRET`; rotas do navegador; recovery; timeout e restart forçados | 503 em fila ilegível; UNKNOWN sobrevive a restart; zero ordem sem SUBMITTING | — | ordem sem intent/SUBMITTING |
 | **6 Providers/canário** | credenciais de **teste** | venues em simulado → conta de teste com valor mínimo | fills reais ingeridos; P&L = extrato da venue | cancelar ordens | divergência livro × venue |
@@ -509,7 +514,8 @@ de produção que ainda não foi lido.
 
 **`CONTEXT RECONCILED — MASTER RELEASE LEDGER BUILT — BATCH 2 RETEST VERIFIED —
 PRODUCTION SCHEMA READ — RELEASE PHASES 1–2 PASS (DELTA 0059→0067) —
-PHASE 3 INCOMPLETE: ROLLBACK/REBUILD PROOF MISSING — PRODUCTION TRANSITION NOT STARTED`**
+PHASE 3 INCOMPLETE — PHASE 3B IN PROGRESS (A: CONCURRENCY PROVED · C: BACKUP PROVED ·
+B/RESTORE: P2 ATTEMPT 2 AT 0058, BASELINE PENDING) — PRODUCTION TRANSITION NOT STARTED`**
 
 Código: Round 9 + Batch 1 + Batch 2 + Batch 3 fechados em `691bfdc`. Produção:
 roda `25fc4b0` sobre um banco no nível **0058**; `armSession` quebrado desde
@@ -518,9 +524,9 @@ fora do plano da §U.
 **DCA REAL = NO-GO · PILOT REAL = NO-GO · AUTOPILOT REAL = NO-GO.**
 
 O que destrava o início do release:
-0. **fechar a Phase 3 (§Z.6):** ensaio de backup/restore do staging e
-   concorrência 04/05/06/13 a partir de uma máquina com acesso PG direto; depois,
-   veredito do auditor;
+0. **fechar a Phase 3 (§Z.6 → §ZB.6):** concorrência e backup real já provados
+   na 3B; faltam, no P2 da Attempt 2, `baseline` → `forward1` → `rollback` →
+   `forward2` → `final` e o veredito do auditor;
 1. ~~autorização para ler o schema de produção~~ — **feito em 26/09 (§Y)**;
 2. o diff de conteúdo de 0050–0058 vivas × repo e o inventário das quatro
    entradas só-de-produção (restante da Fase 1);
@@ -672,3 +678,155 @@ down; a 0056 remove uma coluna).
 A senha do banco de staging foi enviada pelo chat. Não foi usada nem gravada, e
 o arquivo temporário foi triturado. **Ação do dono:** resetar a senha ou apagar
 o projeto `nvbrzifyurslegudlhaz` depois de fechar a §Z.6.
+**Atualização 3B:** o dono rotacionou a senha do staging antes da 3B; o staging
+agora é **evidência certificada até a 0067** e **não** deve ser apagado nem
+alterado (§ZB).
+
+---
+
+## ZB. RELEASE PHASE 3B — DR / CONCORRÊNCIA / REBUILD HOSTED — 26–27/09/2026
+
+**Origem:** o veredito do auditor para a Phase 3 foi `INCOMPLETE — HOSTED DR/CONCURRENCY
+PROOF MISSING`. A 3B fecha só três gates: **A** concorrência hosted
+04/05/06/13; **B** rebuild hosted independente; **C** backup/restore real; e,
+junto, FORWARD → ROLLBACK → FORWARD.
+
+**Divisão de trabalho:**
+- **dono**, na máquina Acer, com o kit do construtor: conexão PG direta, dumps,
+  restores, fingerprints;
+- **construtor**: prepara os kits e aplica migrations no P2 via
+  `apply_migration`, uma por chamada;
+- **auditor**: certifica cada passo.
+
+**Escopo máximo:** `APPLICATION DATABASE RELEASE ROLLBACK/REBUILD PROVED`
+(`public` + `supabase_migrations`). **Nunca** "full Supabase disaster recovery".
+
+**Travas permanentes da 3B:**
+- produção `vuvvftdsfmagmtbovzgq`: zero escrita;
+- staging `nvbrzifyurslegudlhaz`: é evidência certificada até a 0067, não se
+  altera nem se apaga;
+- o P2 tem de ser diferente dos dois;
+- sem custo; sem `docker pull` nem `apt`;
+- senha nunca no chat, em argv ou em arquivo;
+- não se altera fp_v1, os checks, as migrations nem o teste 13;
+- zero migration 0068.
+
+### ZB.1 Gate A — concorrência hosted `[ACER]`
+| prova | resultado |
+|---|---|
+| conexão PG direta ao staging | **PASS** |
+| testes 04, 05 e 06 | **PASS** |
+| teste 13 original | **FAIL / INCONCLUSIVE ON HOSTED** — o teste supõe que 200 ms bastam para ordenar as sessões, e no hosted essa ordem não é determinística. O teste **não** foi alterado |
+| invariante A58 por trás do 13 | **PASS via SYNCHRONIZED LOCK-ORDER PROOF** |
+| limpeza das fixtures | **PASS** |
+
+### ZB.2 Gate C (parte 1) — backup real `[ACER]`
+- **Pasta:** `/home/zetta/zswap-phase3b-backup-20260926T193950Z` (no Acer; **não
+  apagar**).
+- **Dump:** `zswap-staging-0067.dump`, sha256
+  `82d8ebb17104f983ed37dec654fdfc997f11e12ba12179ae8543a8373adef30e`.
+- **Formato:** `pg_dump -Fc` de `public` + `supabase_migrations`; TOC com 456
+  entradas.
+
+### ZB.3 P2 Attempt 1 — `pjctaadtluofpfvhlley` — **FAIL** `[ACER]`
+Kit v3.2 (tgz `48056f79…`). O restore do dump real deu:
+
+| item | resultado |
+|---|---|
+| history | 67, conteúdo **MATCH** |
+| `admin_kv` / `tier_cache` | 3 / 3 |
+| fp_v1 | `925\|6fc00f13888718c43e26c20977431d00`, diferente de `e13840c5…` |
+| ACL/RLS | **DIVERGE** |
+| checks | FAIL |
+
+Veredito registrado pelo kit: `PHASE 3 FAIL — ROLLBACK RESTORE ACL MISMATCH`.
+Evidência preservada em `~/zswap-p2-evidencias-v32` (Acer); **não** reaproveitar
+como PASS.
+
+**Causa raiz (provada no `[LAB]`):**
+- Um projeto Supabase novo tem **default privileges da plataforma** para
+  `postgres` em `public`: ALL em tabelas e sequences, EXECUTE em funções, para
+  `anon`, `authenticated` e `service_role`.
+- O `pg_restore` cria os objetos como `postgres`, então eles já nascem abertos a
+  esses papéis.
+- O dump só emite ACL **relativa ao default nativo** (`acldefault`), e por isso
+  não traz `REVOKE … FROM anon/authenticated`.
+- Resultado: `cex_fills`, `autopilot_position_effects` e
+  `cex_autorizar_e_submeter` reabrem.
+- O procedimento v3.2 reproduzido no laboratório dá **exatamente**
+  `6fc00f13…`.
+
+### ZB.4 Kit v3.3 — o restore numa transação, sem ACL corretiva
+```
+psql --single-transaction -v ON_ERROR_STOP=1 \
+  -f sql/restore_10_neutraliza.sql \   # suspende SÓ os grants de anon/authenticated/service_role
+  -f <render do pg_restore -L toc -f> \ #   nos defaults de postgres em public, lidos do catálogo
+  -f sql/restore_30_confere.sql         # defaults == estado de antes, senão RAISE → tudo desfeito
+```
+
+**O que a v3.3 faz de diferente:**
+- **Quem devolve os defaults:** as `DEFAULT ACL` de `postgres` do próprio dump,
+  que o `pg_restore` executa por último. O filtro de TOC passa a **mantê-las**
+  (a v3.2 as excluía) e exclui só as de `supabase_admin`.
+- **O que fica intocado:**
+  - o default nativo (EXECUTE para PUBLIC em funções), porque o default por
+    schema **soma** ao `acldefault` global;
+  - os defaults de `supabase_admin`;
+  - todo objeto já existente. O script aborta se `public` não estiver vazio.
+- **Nenhum `REVOKE`/`GRANT` em objeto restaurado.** Nada é corrigido depois.
+- **Prova do render** (`bin/prova_render.sh`, sem banco), no dump real e no B0,
+  refeita antes de executar:
+  - nenhum BEGIN/COMMIT de nível superior;
+  - meta-comandos só `\restrict`/`\unrestrict`;
+  - exatamente 12 `ALTER DEFAULT PRIVILEGES FOR ROLE postgres … GRANT`;
+  - nada criado depois delas.
+- **Pasta de evidências nova:** `~/zswap-p2-evidencias-v33`. O kit recusa a v32.
+
+**Artefatos `[LOCAL]`:** `zswap-p2-kit-v3.3.tgz`
+`f284ef2c3fe58821c11cc0ea15a655d8071793203696a07272179165d7c17361` ·
+MANIFEST `b02219815023ac2da1d33450f98fa58a08c14e67959ef7f182e7c5d98c933769` ·
+scripts.txt `328c407a4573044203d8b01c6044792bbd31c705dad8e2c29f75b7c8bd4c8dce`.
+
+**Provas no `[LAB]`** (PG 17.6 de `REL_17_6`, papéis e default privileges iguais
+aos da plataforma):
+
+| prova | resultado |
+|---|---|
+| ciclo completo pelo próprio `p2kit.sh` | restore 925\|`e13840c5…` → baseline 864\|`74e74246…` → forward1 `e13840c5…` → rollback `74e74246…` (history 58, ACL == baseline) → forward2 `e13840c5…`; CONFERE OK nos dois restores |
+| N1: sem neutralização | `6fc00f13…` (reproduz a falha) |
+| N2: filtro v3.2 | CONFERE aborta; transação desfeita; `public` vazio |
+| N3 e N4 | abortam antes de alterar qualquer coisa |
+| render adulterado | recusado antes de tocar o banco |
+
+### ZB.5 P2 Attempt 2 — `vjxcbiyqrtvaiexarcrg` — **EM CURSO**
+**Projeto:** `z-swap-p2-dr`, org `gfhjpyfcqkdxvlidaaap`, us-east-1, PG 17.6
+(17.6.1.166).
+
+| passo | estado | fonte |
+|---|---|---|
+| P2-5A `wipe` | **PASS** | auditor `[DONO]` |
+| construtor 0001, 0002 | aplicadas pelo auditor; 0003 **bloqueada pelo safety layer do conector dele** antes de chegar ao banco | auditor `[DONO]` |
+| construtor 0003→0058 (27/09) | **PASS**: 56 × `apply_migration`, uma por chamada, conteúdo integral de `391c633`; zero falhas | `[P2]` |
+| history após a 0058 | **58**, última `0058_sessao_quarentena_conta`; ordem por `version` = ordem por nome; `nome\|md5(statements)` = arquivo em 58/58 (md5 da lista `fee012d57e112f08e92bcb1b237fdd41`); nenhuma linha ≥ 0059 | `[P2]` |
+| `baseline` (fp `74e74246…`, B0 + render provado) | **pendente** — do dono, no Acer, depois da auditoria | — |
+| constr. 0059→0067 → `forward1` → `rollback` → constr. 0059→0067 → `forward2` → `final` | **pendentes** | — |
+
+**Relatório ao auditor:** `RELATORIO-P2-ATTEMPT2-CONSTRUTOR-0058.md` `[LOCAL]`.
+
+### ZB.6 O que falta para fechar a 3B
+1. Aprovação do auditor para o passo 0003→0058 e depois `./p2kit.sh baseline`.
+2. Construtor 0059→0067 → `forward1` → `rollback` (restore v3.3 do B0) →
+   construtor 0059→0067 → `forward2` → `final`.
+3. Veredito do auditor. Só então dá para escrever
+   `APPLICATION DATABASE RELEASE ROLLBACK/REBUILD PROVED`.
+4. Depois: o dono apaga os P2 (`pjctaadtluofpfvhlley` e `vjxcbiyqrtvaiexarcrg`);
+   o staging e o backup do Acer ficam.
+
+### ZB.7 Registrado para depois — **não** mexer agora
+- **Security advisor do staging:** 42 INFO (RLS sem policy, que é o desenho) e
+  5 WARN `function_search_path_mutable`. Vão para **POST-RELEASE-HARDENING
+  REVIEW**.
+- **fp_v1 é o gate certificado.** O fp_v2 (insensível à ordem) é só evidência
+  suplementar; a versão fp-v2 fica para depois.
+- **Phase 4 (Vercel Preview):** **BLOCKED BY BILLING**. Os deploys estão
+  congelados; não testar nem contornar.

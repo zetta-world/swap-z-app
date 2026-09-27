@@ -13,9 +13,10 @@
 > ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
-> **Última atualização (linha `platform-closure`):** 26/09/2026 — Release
-> Phase 3 no staging hosted; ver o bloco `platform-closure` abaixo e
-> `docs/LEDGER-MESTRE-RELEASE.md` §Z.
+> **Última atualização (linha `platform-closure`):** 27/09/2026 — Release
+> Phase 3B em curso (concorrência e backup provados; P2 Attempt 2 no nível 0058,
+> baseline pendente); ver o bloco `platform-closure` abaixo e
+> `docs/LEDGER-MESTRE-RELEASE.md` §Z e §ZB.
 >
 > **Última atualização (`main`):** 15/09/2026 — **a auditoria externa de 30 achados,
 > fechada** (§5.27, PRs #419–#445). Antes disso: 08/09/2026, a leva do PR #410
@@ -78,14 +79,44 @@
 > três exigem acesso PG direto, que este contêiner não tem. Detalhe e plano em
 > `docs/LEDGER-MESTRE-RELEASE.md` §Z.
 >
-> ⚠️ **Armadilhas medidas na Phase 3:**
+> **Release Phase 3B (26–27/09) — IN PROGRESS.** Execução no **Acer do dono**
+> (PG direto), com kits do construtor; migrations no P2 aplicadas pelo construtor
+> via `apply_migration`, uma por chamada. Detalhe em `docs/LEDGER-MESTRE-RELEASE.md` §ZB.
+> - **Gate A (concorrência):** 04/05/06 PASS; o 13 original é FAIL/INCONCLUSIVE no
+>   hosted (supõe ordem de 200 ms), e a invariante A58 é **PASS** por prova
+>   sincronizada de ordem de lock. O teste 13 **não** foi alterado.
+> - **Gate C (backup):** dump real no Acer, em
+>   `/home/zetta/zswap-phase3b-backup-20260926T193950Z` (sha `82d8ebb1…`). **Não apagar.**
+> - **P2 Attempt 1** (`pjctaadtluofpfvhlley`): **FAIL — ROLLBACK RESTORE ACL
+>   MISMATCH** (fp `6fc00f13…`). Causa: os default privileges da plataforma
+>   reabrem os objetos que o `pg_restore` cria, e o dump não emite REVOKE contra
+>   eles. Correção no **kit v3.3**: neutraliza só os defaults da plataforma na mesma
+>   transação do restore, e as DEFAULT ACL do próprio dump os devolvem. **Sem ACL
+>   corretiva** depois do restore. Evidência em `~/zswap-p2-evidencias-v32`
+>   (preservar).
+> - **P2 Attempt 2** (`vjxcbiyqrtvaiexarcrg`): wipe PASS (auditor); construtor
+>   0001→0058 **PASS**. O history ficou em 58, última
+>   `0058_sessao_quarentena_conta`, e o conteúdo bate com a 391c633 em 58/58.
+>   **Próximo:** o dono roda `./p2kit.sh baseline` depois da auditoria; em seguida
+>   0059→0067 → forward1 → rollback → 0059→0067 → forward2 → final.
+> - **Phase 4 (Vercel Preview): BLOCKED BY BILLING.** Advisor do staging (42 INFO
+>   + 5 WARN search_path) → POST-RELEASE-HARDENING REVIEW, sem mexer agora.
+>
+> ⚠️ **Armadilhas medidas na Phase 3/3B:**
 > - `mcp__Supabase__execute_sql` roda como `supabase_read_only_user`: lê o
 >   catálogo, mas **não** prova ACL por papel (não assume `anon`) nem grava.
 >   Para isso, `apply_migration` (roda como `postgres`) com um `raise` sentinela
 >   no fim, que desfaz tudo.
 > - O fingerprint de catálogo é sensível à **ordem** da ACL.
-> - O staging é descartável: depois de fechar a §Z.6, **apagar o projeto** ou
->   resetar a senha (ela passou pelo chat).
+> - O staging (`nvbrzifyurslegudlhaz`) virou **evidência certificada até a 0067**:
+>   **não** apagar nem alterar. A senha foi rotacionada antes da 3B.
+> - **Restore em Supabase novo reabre ACL:** os default privileges de `postgres`
+>   em `public` dão ALL/EXECUTE a anon/authenticated/service_role para todo
+>   objeto criado, e o `pg_dump` não emite REVOKE contra eles. Um restore sem a
+>   neutralização da v3.3 **reabre as tabelas financeiras**.
+> - O safety layer do conector MCP do auditor bloqueou a 0003 (seed de carteira
+>   admin) antes de chegar ao banco; o `apply_migration` do construtor aplicou
+>   normalmente.
 >
 > | lição do Batch 2 | onde ficou escrita |
 > |---|---|
