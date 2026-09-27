@@ -98,7 +98,8 @@
 >   0001→0058 **PASS**; baseline 0058 + B0 **PASS** (certificado; fp_v1 `74e74246…`,
 >   B0 sha `84bd5827…`); construtor 0059→0067 **PASS** (27/09). O history ficou em
 >   67, última `0067_acl_tabelas_financeiras`, e o conteúdo bate com a 391c633 em
->   67/67. **Próximo:** o dono roda `./p2kit.sh forward1` depois da auditoria; em
+>   67/67. Relatório `RELATORIO-P2-ATTEMPT2-CONSTRUTOR-0067.md` entregue ao auditor
+>   (veredito pendente). **Próximo:** o dono roda `./p2kit.sh forward1` depois da auditoria; em
 >   seguida rollback → 0059→0067 → forward2 → final.
 > - **Phase 4 (Vercel Preview): BLOCKED BY BILLING.** Advisor do staging (42 INFO
 >   + 5 WARN search_path) → POST-RELEASE-HARDENING REVIEW, sem mexer agora.

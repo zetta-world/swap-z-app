@@ -815,7 +815,9 @@ aos da plataforma):
 | `forward1` → `rollback` → constr. 0059→0067 → `forward2` → `final` | **pendentes** — `forward1` do dono, no Acer, depois da auditoria | — |
 
 **Relatórios ao auditor:** `RELATORIO-P2-ATTEMPT2-CONSTRUTOR-0058.md` e
-`RELATORIO-P2-ATTEMPT2-CONSTRUTOR-0067.md` `[LOCAL]`.
+`RELATORIO-P2-ATTEMPT2-CONSTRUTOR-0067.md` `[LOCAL]` — os dois **entregues ao
+auditor** (via dono) em 27/09; o da 0067 cita o registro só-docs `5fd960b`.
+Veredito do auditor para 0059→0067: **pendente**.
 
 ### ZB.6 O que falta para fechar a 3B
 1. ~~0003→0058, `baseline`/B0~~ — **PASS**; ~~construtor 0059→0067~~ — **feito**
