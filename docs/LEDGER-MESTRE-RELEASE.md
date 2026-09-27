@@ -13,7 +13,7 @@
 > RELEASE PHASE 1 PASS — PHASE 2 FAIL → BATCH 3 (0067) → PASS WITH DELTA 0059→0067 —
 > PHASE 3 (HOSTED STAGING) INCOMPLETE: ROLLBACK/REBUILD PROOF MISSING —
 > PHASE 3B IN PROGRESS: CONCURRENCY AND BACKUP GATES PROVED; P2 ATTEMPT 1 FAIL
-> (ACL MISMATCH, ROOT CAUSE FOUND) → KIT V3.3; P2 ATTEMPT 2 AT 0058 (BASELINE PENDING) —
+> (ACL MISMATCH, ROOT CAUSE FOUND) → KIT V3.3; P2 ATTEMPT 2: BASELINE/B0 PASS, AT 0067 (FORWARD1 PENDING) —
 > PRODUCTION TRANSITION NOT STARTED`
 >
 > **Data:** 26–27/09/2026 · **Construtor:** sessão Claude (implementador) ·
@@ -515,7 +515,7 @@ de produção que ainda não foi lido.
 **`CONTEXT RECONCILED — MASTER RELEASE LEDGER BUILT — BATCH 2 RETEST VERIFIED —
 PRODUCTION SCHEMA READ — RELEASE PHASES 1–2 PASS (DELTA 0059→0067) —
 PHASE 3 INCOMPLETE — PHASE 3B IN PROGRESS (A: CONCURRENCY PROVED · C: BACKUP PROVED ·
-B/RESTORE: P2 ATTEMPT 2 AT 0058, BASELINE PENDING) — PRODUCTION TRANSITION NOT STARTED`**
+B/RESTORE: P2 ATTEMPT 2 BASELINE/B0 PASS, AT 0067, FORWARD1 PENDING) — PRODUCTION TRANSITION NOT STARTED`**
 
 Código: Round 9 + Batch 1 + Batch 2 + Batch 3 fechados em `691bfdc`. Produção:
 roda `25fc4b0` sobre um banco no nível **0058**; `armSession` quebrado desde
@@ -808,15 +808,21 @@ aos da plataforma):
 | construtor 0001, 0002 | aplicadas pelo auditor; 0003 **bloqueada pelo safety layer do conector dele** antes de chegar ao banco | auditor `[DONO]` |
 | construtor 0003→0058 (27/09) | **PASS**: 56 × `apply_migration`, uma por chamada, conteúdo integral de `391c633`; zero falhas | `[P2]` |
 | history após a 0058 | **58**, última `0058_sessao_quarentena_conta`; ordem por `version` = ordem por nome; `nome\|md5(statements)` = arquivo em 58/58 (md5 da lista `fee012d57e112f08e92bcb1b237fdd41`); nenhuma linha ≥ 0059 | `[P2]` |
-| `baseline` (fp `74e74246…`, B0 + render provado) | **pendente** — do dono, no Acer, depois da auditoria | — |
-| constr. 0059→0067 → `forward1` → `rollback` → constr. 0059→0067 → `forward2` → `final` | **pendentes** | — |
+| P2-5B `baseline` 0058 + B0 | **PASS** (certificado pelo auditor): history `58\|0058_sessao_quarentena_conta`; fp_v1 `864\|74e742469c9088012d87caa88468dc9e`; fp_v2 `864\|0893ef27f73bf3e535af25e905c4fb01`; `p2_B0_pre_delta.dump` sha256 `84bd58277c0628733a7d8d9f5ecc4957c5f603fe4b6b64aa5f08f764dbb0a745`; render B0 sha256 `7015ff10558b63e8d87bcd3f1b6574a987cc3e354c015777d59720d381bf091a` | `[ACER]` / auditor `[DONO]` |
+| construtor 0059 pelo auditor | **bloqueada pelo safety layer do conector dele** antes de chegar ao banco; 0060+ não tentadas | auditor `[DONO]` |
+| construtor 0059→0067 (27/09) | **PASS**: 9 × `apply_migration`, uma por chamada, conteúdo integral de `391c633` (a 0064, 129 198 bytes, numa chamada só); zero falhas | `[P2]` |
+| history após a 0067 | **67**, última `0067_acl_tabelas_financeiras`; ordem por `version` = ordem por nome; 0001–0058 inalterado (md5 da lista `fee012d5…`); 0059–0067 `nome\|md5(statements)` = arquivo 9/9; md5 da lista 0001–0067 `c52c5a86b031f94c4ba557c8fb39e6f8`; nenhuma linha ≥ 0068 | `[P2]` |
+| `forward1` → `rollback` → constr. 0059→0067 → `forward2` → `final` | **pendentes** — `forward1` do dono, no Acer, depois da auditoria | — |
 
-**Relatório ao auditor:** `RELATORIO-P2-ATTEMPT2-CONSTRUTOR-0058.md` `[LOCAL]`.
+**Relatórios ao auditor:** `RELATORIO-P2-ATTEMPT2-CONSTRUTOR-0058.md` e
+`RELATORIO-P2-ATTEMPT2-CONSTRUTOR-0067.md` `[LOCAL]`.
 
 ### ZB.6 O que falta para fechar a 3B
-1. Aprovação do auditor para o passo 0003→0058 e depois `./p2kit.sh baseline`.
-2. Construtor 0059→0067 → `forward1` → `rollback` (restore v3.3 do B0) →
-   construtor 0059→0067 → `forward2` → `final`.
+1. ~~0003→0058, `baseline`/B0~~ — **PASS**; ~~construtor 0059→0067~~ — **feito**
+   (27/09), aguardando auditoria.
+2. `./p2kit.sh forward1` (esperado: history 67 com conteúdo igual, fp_v1
+   `925|e13840c5…`, ACL/RLS == staging, checks sem FALHA) → `rollback` (restore
+   v3.3 do B0) → construtor 0059→0067 → `forward2` → `final`.
 3. Veredito do auditor. Só então dá para escrever
    `APPLICATION DATABASE RELEASE ROLLBACK/REBUILD PROVED`.
 4. Depois: o dono apaga os P2 (`pjctaadtluofpfvhlley` e `vjxcbiyqrtvaiexarcrg`);

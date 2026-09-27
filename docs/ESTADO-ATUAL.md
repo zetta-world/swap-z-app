@@ -14,8 +14,8 @@
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
 > **Última atualização (linha `platform-closure`):** 27/09/2026 — Release
-> Phase 3B em curso (concorrência e backup provados; P2 Attempt 2 no nível 0058,
-> baseline pendente); ver o bloco `platform-closure` abaixo e
+> Phase 3B em curso (concorrência e backup provados; P2 Attempt 2 com baseline/B0
+> PASS e no nível 0067, forward1 pendente); ver o bloco `platform-closure` abaixo e
 > `docs/LEDGER-MESTRE-RELEASE.md` §Z e §ZB.
 >
 > **Última atualização (`main`):** 15/09/2026 — **a auditoria externa de 30 achados,
@@ -95,10 +95,11 @@
 >   corretiva** depois do restore. Evidência em `~/zswap-p2-evidencias-v32`
 >   (preservar).
 > - **P2 Attempt 2** (`vjxcbiyqrtvaiexarcrg`): wipe PASS (auditor); construtor
->   0001→0058 **PASS**. O history ficou em 58, última
->   `0058_sessao_quarentena_conta`, e o conteúdo bate com a 391c633 em 58/58.
->   **Próximo:** o dono roda `./p2kit.sh baseline` depois da auditoria; em seguida
->   0059→0067 → forward1 → rollback → 0059→0067 → forward2 → final.
+>   0001→0058 **PASS**; baseline 0058 + B0 **PASS** (certificado; fp_v1 `74e74246…`,
+>   B0 sha `84bd5827…`); construtor 0059→0067 **PASS** (27/09). O history ficou em
+>   67, última `0067_acl_tabelas_financeiras`, e o conteúdo bate com a 391c633 em
+>   67/67. **Próximo:** o dono roda `./p2kit.sh forward1` depois da auditoria; em
+>   seguida rollback → 0059→0067 → forward2 → final.
 > - **Phase 4 (Vercel Preview): BLOCKED BY BILLING.** Advisor do staging (42 INFO
 >   + 5 WARN search_path) → POST-RELEASE-HARDENING REVIEW, sem mexer agora.
 >
@@ -115,8 +116,8 @@
 >   objeto criado, e o `pg_dump` não emite REVOKE contra eles. Um restore sem a
 >   neutralização da v3.3 **reabre as tabelas financeiras**.
 > - O safety layer do conector MCP do auditor bloqueou a 0003 (seed de carteira
->   admin) antes de chegar ao banco; o `apply_migration` do construtor aplicou
->   normalmente.
+>   admin) e, depois, a 0059, antes de chegar ao banco; o `apply_migration` do
+>   construtor aplicou as duas normalmente.
 >
 > | lição do Batch 2 | onde ficou escrita |
 > |---|---|
