@@ -19,6 +19,7 @@
 | `PLANO-ACAO-REVIEWS.md` | P0/P1/P2 dos reviews das 4 IAs (P2 parcialmente gated) |
 | `IDEIAS-ESTACIONADAS.md` | Índice central de ideias paradas + o que destrava cada uma |
 | `PLANO-BANCADA-DO-CLIENTE.md` | **Desenho novo (05/09)** — a bancada de testes DO CLIENTE. Não é o nosso laboratório aberto: é o trader escolhendo capital simulado, testando as estratégias da casa ou criando as dele, e medindo taxa e derrapagem. 🔴 nada construído; 4 decisões pendentes do dono |
+| `PLANO-MESTRE-AUDITORIA.md` | **Índice mestre da auditoria (27/09)** — FASE 0→33 (mapa do dinheiro → certificação por módulo → PDF final), estado reconciliado, trilha Release/DB anexa (3B CLOSED) e o PROD-CLONE LAB. Não confundir com o `PLANO-MESTRE.md` de lançamento |
 | `PLANO-MESTRE.md` | Roadmap de lançamento (fases A-E, NFT, Colosseum) |
 | `NFT-BRIEFING.md` | Supply/preços/decisões da coleção (aguarda §7 do founder) |
 | `TESTE-DINHEIRO-REAL.md` | Protocolo do teste com dinheiro real (pós-11/07) |
