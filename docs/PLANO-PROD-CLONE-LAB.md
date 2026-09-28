@@ -7,10 +7,12 @@
 > plano mestre é o Cofre CEX.
 >
 > **Status:** 🟡 **kit v1 pronto e ensaiado em ambiente sintético** (sem Docker,
-> sem nada real — §6). Nenhuma etapa rodou contra produção. L0–L7 🔴 aguardando o
-> gate do mural.
-> **Gate de início:** a construção/execução só começa depois de o dono confirmar
-> que o aviso no mural (CLAUDE.md) foi publicado por uma sessão autorizada.
+> sem nada real — §6). Nenhuma etapa rodou contra produção. L0–L7 🔴 aguardando a
+> auditoria do kit.
+> **Gates de início:**
+> - **Mural: PASS** — aviso publicado pelo dono, id `ee20b6a8-640b-4d65-a9aa-62e17765edf8`.
+> - **Auditoria do kit: pendente** — o auditor audita o kit (`zswap-lab-v1-scripts.txt`)
+>   antes de qualquer `lab.sh` no Acer; o kit exige `ZSWAP_LAB_LIBERADO=1`.
 >
 > **Decisões do dono/auditor (28/09):**
 > 1. Escopo = **banco + app local**.
@@ -150,8 +152,11 @@ Coletar:
   - Hoje: `25fc4b0` / `dpl_C1AgJfvQQt38iMTcbDvNVi7aqCQJ`.
 - **Produção, pelo banco:** history completo (versões, nomes, md5 dos
   statements), fingerprint `fp.sql` (esperado `864|74e742469c9088012d87caa88468dc9e`),
-  ACL/RLS canônico, `pg_default_acl` e contagens (sessões, intents, planos DCA,
-  conexões).
+  ACL/RLS canônico e `pg_default_acl` — só catálogo e history.
+  - ⚠️ **Nenhuma leitura de linhas de `public`, nem `COUNT(*)`** (sessões,
+    intents, planos DCA, conexões ficam de fora): contagem é leitura de dado, e a
+    autorização desta campanha é schema + `supabase_migrations.schema_migrations`.
+    Fidelidade estrutural não depende delas.
 - **Repositório:** SHA certificado do código, `691bfdc`. `platform-closure` depois
   dele é só documentação.
 
@@ -247,6 +252,10 @@ defeito não aparecer, o clone não é fiel e o lab para.
   produção volta a se comportar como produção (o P0 reaparece).
 - Registrar o que isso significa: `25fc4b0` já é incompatível com 0058 por causa
   do P0. O rollback **de app** tem limite e precisa estar escrito no runbook.
+- **Declaração obrigatória do L6** (o kit grava `l6_declaracao.txt`):
+  - **ROLLBACK FIDELITY = PROVED** — volta fielmente ao estado atual de produção;
+  - **SERVICE-RESTORING ROLLBACK = NOT PROVED** — o P0 de `creds_cipher` volta
+    junto. É evidência de fidelidade, não de recuperação funcional.
 
 ### L7 — Runbook do cutover
 Produto final do lab: a sequência exata, com os gates, as travas e o rollback,
@@ -262,21 +271,25 @@ para o release oficial quando a Vercel voltar. Esse runbook alimenta as FASES 29
 
 - venue falsa = **Binance spot** (o dono aceitou as recomendações do construtor).
 
+- mural: **PASS**, aviso `ee20b6a8-640b-4d65-a9aa-62e17765edf8`;
+- L0 sem nenhuma leitura de dados de `public` (nem contagens).
+
 **Pendente:**
-1. **Confirmação do aviso no mural.** Destrava a execução (`ZSWAP_LAB_MURAL_OK=1`).
-2. **ACHADO-AP-LOCK** (§6.1) — decisão do auditor.
+1. **Auditoria do kit pelo auditor.** Destrava a execução (`ZSWAP_LAB_LIBERADO=1`).
+2. **ACHADO-AP-LOCK** (§6.1) — OPEN.
 
 ## 5. Estado
 | etapa | status | evidência |
 |---|---|---|
-| kit v1 (sem execução real) | 🟢 pronto; ensaiado em ambiente sintético (§6) | scratchpad do construtor; tgz + scripts.txt para o auditor |
+| mural | 🟢 PASS | aviso `ee20b6a8-640b-4d65-a9aa-62e17765edf8` |
+| kit v1 (sem execução real) | 🟡 pronto e ensaiado em ambiente sintético (§6); **aguardando auditoria** | scratchpad do construtor; tgz + scripts.txt para o auditor |
 | L0 freeze | 🔴 | — |
 | L1 dump do schema | 🔴 | — |
 | L2 restore do clone | 🔴 | — |
 | L3 reproduzir o skew | 🔴 | — |
 | L4 ensaio do upgrade | 🔴 | — |
 | L5 chaos | 🔴 | — |
-| L6 rollback | 🔴 | — |
+| L6 rollback | 🔴 (esperado: fidelity PROVED · service-restoring NOT PROVED) | — |
 | L7 runbook | 🔴 | — |
 
 ## 6. Ensaio do kit em ambiente sintético (antes da entrega)
@@ -300,12 +313,23 @@ prod intacto + 9 com md5 do arquivo; arnês 8/8; INV-1…INV-12 e C1–C4 PASS c
 
 Negativos provados: segredo plantado no history → L1 descarta sem gravar; SHA
 implantado divergente → L0 FAIL; etapa fora de ordem → abortado; FAIL anterior →
-nada mais roda; kit adulterado → abortado; sem `ZSWAP_LAB_MURAL_OK=1` → abortado.
+nada mais roda; kit adulterado → abortado; sem a liberação (`ZSWAP_LAB_LIBERADO=1`; antes da correção de 28/09 o gate era do mural) → abortado.
 
 **O que só o Acer prova:** a imagem Supabase real, `docker compose`, o isolamento
 da rede `internal`, a leitura da produção real.
 
 ### 6.1 ACHADO-AP-LOCK — o lock do cron do autopilot nunca é adquirido
+
+| campo | valor (classificação do auditor, provisória) |
+|---|---|
+| Severidade | **HIGH** — funcional/disponibilidade |
+| Impacto financeiro imediato | fail-safe: nenhuma ordem enviada |
+| Impacto funcional | o Autopilot background não processa a sessão |
+| Regressão do release | **NÃO** |
+| Presente em produção | o código indica **SIM**; não provado no PostgREST hospedado |
+| Status | **OPEN** |
+| Bloqueia | certificação do Autopilot background; INV-10 real; GO de Autopilot/Pilot |
+| Não bloqueia | construção do clone; L0/L1/L2; prova estrutural 0058→0067 |
 
 `tryLockSession` (`src/lib/autopilot/sessions.ts`) faz
 `update(...).eq("id").or("locked_until.is.null,locked_until.lt.<agora>").select("id")`.
