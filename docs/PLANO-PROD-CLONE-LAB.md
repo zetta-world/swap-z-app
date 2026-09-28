@@ -11,8 +11,9 @@
 > auditoria do kit.
 > **Gates de início:**
 > - **Mural: PASS** — aviso publicado pelo dono, id `ee20b6a8-640b-4d65-a9aa-62e17765edf8`.
-> - **Auditoria do kit: pendente** — o auditor audita o kit (`zswap-lab-v1-scripts.txt`)
->   antes de qualquer `lab.sh` no Acer; o kit exige `ZSWAP_LAB_LIBERADO=1`.
+> - **Auditoria do kit:** 1ª auditoria = **PACKAGE AUDIT: FAIL — REVISION REQUIRED**
+>   (LAB-B01…B06, H01, disco). Rev. 2 corrigida e reensaiada do zero (§6.2);
+>   aguardando nova auditoria. O kit exige `ZSWAP_LAB_LIBERADO=1`.
 >
 > **Decisões do dono/auditor (28/09):**
 > 1. Escopo = **banco + app local**.
@@ -77,6 +78,17 @@
    com SHA256 de tudo no fim, como na 3B.
 8. Cada etapa tem gate **PASS/FAIL** registrado. Um FAIL bloqueia a etapa
    seguinte, e nada é corrigido para produzir o número esperado.
+   - Cadeia **real** obrigatória: `preflight → l0 → l1 → l2 → l3 → l4 → l5 → l6 → final`
+     (o `l6` exige o `l5`). O modo é gravado no `preflight`; misturar modos é recusado.
+   - `final` só diz **FINAL OK** com a cadeia completa e sem FAIL; senão empacota
+     a evidência e diz **FINAL FAIL** (rc 5) ou **FINAL INCOMPLETE** (rc 6).
+   - O log do próprio `final` fica fora do `EVIDENCIAS.sha256` (declarado em
+     `EVIDENCIAS.fora-do-manifesto.txt`); o manifesto confere depois do `final`.
+9. **Secret scan sem atalho na execução real:** `ZSWAP_LAB_SCAN_ALLOW` aborta o kit
+   fora do teste local.
+10. **Disco:** o `preflight` registra `df -h` e `docker system df` e para antes de
+    qualquer build com menos de 25 GiB livres para imagens e 5 GiB para o lab
+    (30 GiB no mesmo disco).
 
 ## 2. Onde roda
 
@@ -223,9 +235,14 @@ defeito não aparecer, o clone não é fiel e o lab para.
   - INV-5 os crons (autopilot, DCA, backtest, radar, celeiro) sem segredo → 401;
   - INV-6 kill-switch `disable_cex` → 503 e a venue não recebe nada;
   - INV-7 `armSession` funciona sem `creds_cipher` e a sessão nasce ligada ao cofre;
-  - INV-8 DCA **simulado** de ponta a ponta (ciclo executado) sem ordem na venue;
+  - INV-8 DCA **simulado** de ponta a ponta: cron 200 com `acao="simulou"`,
+    **exatamente 1 ciclo** do plano (`status='feito'`, `simulado=true`) e zero
+    ordens na venue — zero ciclos = FAIL;
   - INV-9 DCA real sem liberação → 403;
-  - INV-10 sem IA, o cron do autopilot não cai e nenhuma ordem sai;
+  - INV-10 sem IA, o cron do autopilot não cai e nenhuma ordem sai — **só é
+    avaliada se o tick alcança a sessão**; com o ACHADO-AP-LOCK ela é
+    **NOT EXERCISED** (nunca PASS) e o L4 diz "INV-1..9, INV-11 e INV-12 PASS;
+    INV-10 NOT EXERCISED — ACHADO-AP-LOCK OPEN";
   - INV-11 rate limit durável ativo (9ª chamada/minuto → 429);
   - INV-12 env ausente → fail-closed (`CEX_RECOVERY_HMAC_KEY` ausente → ordem
     recusada, venue intocada);
@@ -237,9 +254,11 @@ defeito não aparecer, o clone não é fiel e o lab para.
 - **C1** app morto (SIGKILL) com a ordem aceita e a resposta pendurada → após o
   restart o intent está em dúvida (nunca falha) e o recovery por `intentId`
   converge para FILLED com a quantidade da venue, com **um único envio**.
-- **C2** banco derrubado durante o cron do DCA → falha fechado, nada à venue;
-  banco de volta → o cron roda sem ciclo duplicado.
-- **C3** dois crons do DCA em paralelo → no máximo um ciclo, nunca duplicado.
+- **C2** banco derrubado durante o cron do DCA → **503 `trava_indisponivel`,
+  processed 0** (200 não satisfaz), nada à venue; banco de volta → o plano devido
+  executa **exatamente 1 ciclo** simulado (vazio ou duplicado = FAIL).
+- **C3** dois crons do DCA em paralelo sobre um plano devido → **exatamente 1
+  ciclo** efetivo (nunca 0, nunca 2).
 - **C4** resposta da venue truncada depois de aceitar → o intent nunca vira
   falha; o recovery converge.
 - Retry duplicado: a venue recusa `clientOrderId` repetido de ordem aberta
@@ -282,7 +301,7 @@ para o release oficial quando a Vercel voltar. Esse runbook alimenta as FASES 29
 | etapa | status | evidência |
 |---|---|---|
 | mural | 🟢 PASS | aviso `ee20b6a8-640b-4d65-a9aa-62e17765edf8` |
-| kit v1 (sem execução real) | 🟡 pronto e ensaiado em ambiente sintético (§6); **aguardando auditoria** | scratchpad do construtor; tgz + scripts.txt para o auditor |
+| kit v1 (sem execução real) | 🟡 rev. 2 reensaiada do zero (§6.2); **aguardando nova auditoria** (1ª: FAIL — REVISION REQUIRED) | scratchpad do construtor; tgz + scripts.txt + MANIFEST para o auditor |
 | L0 freeze | 🔴 | — |
 | L1 dump do schema | 🔴 | — |
 | L2 restore do clone | 🔴 | — |
@@ -346,3 +365,21 @@ O `tryLockSession` trata erro como `false`, e o cron relata
 - Não corrigido: o código certificado não muda no lab. O runner mede isso toda vez
   (`OBS ACHADO-AP-LOCK`). Confirmação no PostgREST hospedado e a decisão são do
   auditor.
+
+### 6.2 Rev. 2 — correções da 1ª auditoria do pacote, reensaiadas do zero
+
+| item | correção | prova no ensaio |
+|---|---|---|
+| LAB-B01 | `prod_setup <OUT>`: L0 usa `$LAB_EV`, L1 o tmpfs; OUT validado (absoluto, existente); o cliente Docker recusa OUT inválido | `test/pgclient-out.test.sh` PASS (e FAIL contra o kit anterior) |
+| LAB-B02 | `l6` real exige `l5`; modo gravado; `final` = OK / FAIL (rc 5) / INCOMPLETE (rc 6) | negativos: l6 sem l5 recusado; sem l6 → INCOMPLETE; FAIL → FINAL FAIL com pacote; cadeia sem l3 → INCOMPLETE; modos misturados recusados |
+| LAB-B03 | log corrente do `final` fora do manifesto, declarado | `sha256sum -c EVIDENCIAS.sha256` PASS depois do `final` |
+| LAB-B04 | INV-8 exige 200 + `simulou` + exatamente 1 ciclo `feito`/`simulado` | ciclo real executado; negativo (DCA simulado fechado → zero ciclos) = FAIL INV-8 |
+| LAB-B05 | C2: 503 `trava_indisponivel` + 1 ciclo após recovery; C3: exatamente 1 ciclo | PASS; negativos de zero ciclos = FAIL C2 / FAIL C3 |
+| LAB-B06 | INV-10 = NOT-EXERCISED enquanto AP-LOCK; veredito do L4 em `bin/veredito_inv.sh` | runtime: `NOT-EXERCISED INV-10`; L4: "INV-1..9, INV-11 e INV-12 PASS; INV-10 NOT EXERCISED — ACHADO-AP-LOCK OPEN" |
+| LAB-H01 | `ZSWAP_LAB_SCAN_ALLOW` aborta a execução real | negativo PASS |
+| disco | `df -h` + `docker system df` no preflight; mínimos 25/5/30 GiB | negativo: tmpfs de 1 GiB → preflight para antes de gerar segredos |
+
+Nota sobre os negativos de zero ciclos: "venue sem preço" **não** serve, porque o
+app guarda o preço de referência por 30 s (`fetch` com `revalidate: 30`); o
+negativo fecha o DCA simulado no `admin_kv` do clone e o cron responde
+`sem_capacidade`.
