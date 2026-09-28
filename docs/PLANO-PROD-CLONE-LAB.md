@@ -6,7 +6,9 @@
 > `docs/PLANO-MESTRE-AUDITORIA.md` (§0C). **Não é uma "FASE 4"** — a FASE 4 do
 > plano mestre é o Cofre CEX.
 >
-> **Status:** 🔴 não iniciado — plano e preparação do kit **sem execução**.
+> **Status:** 🟡 **kit v1 pronto e ensaiado em ambiente sintético** (sem Docker,
+> sem nada real — §6). Nenhuma etapa rodou contra produção. L0–L7 🔴 aguardando o
+> gate do mural.
 > **Gate de início:** a construção/execução só começa depois de o dono confirmar
 > que o aviso no mural (CLAUDE.md) foi publicado por uma sessão autorizada.
 >
@@ -52,14 +54,21 @@
    - nenhuma chave de IA de produção.
 
    Todo segredo do lab é gerado na hora (`openssl rand`).
-4. **Guarda de ambiente antes de subir o app.** O script recusa iniciar se:
-   - `SUPABASE_URL` não for `http://127.0.0.1:*`;
-   - qualquer env contiver `supabase.co`, `vuvvftdsfmagmtbovzgq` ou `nvbrzifyurslegudlhaz`;
-   - houver uma chave de CEX preenchida.
+4. **Guarda de ambiente antes de subir o app** (`bin/guarda_env.sh`). Recusa se:
+   - faltar o marcador `ZSWAP_LAB=1`;
+   - `SUPABASE_URL` não for o gateway local do lab (`http://gw:8000`, ou loopback);
+   - qualquer env contiver `supabase.co`, `vercel.app` ou o ref de produção,
+     staging ou dos P2;
+   - houver chave de IA, 0x, LI.FI, Telegram, Helius, Transak ou destino de taxa;
+   - houver credencial de CEX no env (a do lab vive só na venue e no runner);
+   - algum segredo do lab faltar ou for curto (< 32 caracteres);
+   - `TIER_GATES_ENABLED` não for `false` ou `ADMIN_WALLETS` estiver vazio.
 5. **Modos reais desligados:**
-   - DCA só `simulado`;
-   - `pause_*` e kill-switches ligados por padrão;
-   - Autopilot, Pilot e DCA real continuam **NO-GO**; o lab não muda isso.
+   - DCA **real** nunca é liberado (o runner prova o 403 — INV-9); o DCA
+     **simulado** é aberto só no `admin_kv` do clone, para os ciclos rodarem;
+   - kill-switches semeados em `false` (as mesmas sementes da 0006), e o INV-6
+     prova que ligá-los fecha a rota de ordem;
+   - Autopilot, Pilot e DCA real continuam **NO-GO** no produto; o lab não muda isso.
 6. **Staging e P2** não são tocados. O backup da 3B e as evidências
    `~/zswap-p2-evidencias-v33` ficam intactos.
 7. **Pasta de evidências própria** (`~/zswap-lab-evidencias-<timestamp>`),
@@ -74,16 +83,18 @@ Docker; ele prepara o kit e aplica o que for pedido.
 
 Componentes:
 
-- **Supabase CLI** com a stack local mínima. O app fala com o banco pelo
-  `supabase-js` (PostgREST atrás do gateway) e a auth é própria (JWT HS256),
-  então GoTrue não é necessário. Serviços excluídos (`-x`): studio, realtime,
-  storage, imgproxy, edge-runtime, logflare, vector, mailpit, supavisor e gotrue.
+- **`docker compose`** com a stack mínima (sem Supabase CLI — menos imagens,
+  nada que o app não use): `db`, `rest` (PostgREST), `gw` (gateway `/rest/v1`),
+  `venue`, `app` e `runner`. O app fala com o banco pelo `supabase-js`
+  (PostgREST atrás do gateway) e a auth é própria (JWT HS256), então GoTrue,
+  Kong, Studio, Realtime e Storage não são necessários.
   - Postgres **fixado** em `public.ecr.aws/supabase/postgres:17.6.1.127`, a
-    imagem que já está no Acer.
-  - ⚠️ Esta etapa **exige `docker pull`** das imagens da CLI, o que foi aceito
-    pelo dono na escolha "banco + app".
+    imagem que já está no Acer (o kit não a baixa).
+  - ⚠️ O `preflight` baixa `node:22-bookworm-slim` e `postgrest/postgrest:v12.2.12`,
+    o que foi aceito pelo dono na escolha "banco + app".
 - **Node 22** + `npm ci` do SHA em teste; app em `next build && next start`, sem
-  modo dev, para ficar mais próximo do runtime real.
+  modo dev. A imagem é construída de `git archive <SHA>` — a árvore exata do
+  commit — e grava o SHA dentro dela (`/app/.lab-sha`), conferido antes de subir.
 - **Rede fechada.** App, banco e venue falsa ficam numa rede Docker `internal`,
   sem rota para fora. O `npm ci` e o build acontecem antes, fora dessa rede.
   Qualquer chamada a exchange real, API pública de preço, RPC de chain ou IA
@@ -95,9 +106,10 @@ O app instancia o `ccxt` direto (`src/lib/cex/server.ts`, `execucao/venue-primit
 e **não tem ponto de injeção de venue**. Mudar o código para o lab alteraria o SHA
 que está sendo certificado, então a venue falsa entra pela rede:
 
-- **Resolução de nome.** Dentro da rede do lab, o hostname da exchange escolhida
-  (proposta: **Binance spot**, a venue principal do produto, `gru1`) resolve para
-  o contêiner da venue falsa (alias de rede).
+- **Resolução de nome.** Dentro da rede do lab, os hostnames da **Binance spot**
+  (escolhida) resolvem para o contêiner da venue falsa (alias de rede). Inclui
+  `data-api.binance.vision`, de onde o app lê o **preço de referência** — sem ele
+  o DCA simulado e o guard de notional falham fechado e nada seria exercitado.
 - **TLS.** A venue falsa serve HTTPS com um certificado de uma **CA de laboratório**
   gerada na hora. O app confia nela só por `NODE_EXTRA_CA_CERTS`, e só no lab.
 - **API.** A venue implementa o subconjunto da API que o `ccxt` realmente chama:
@@ -144,7 +156,8 @@ Coletar:
   dele é só documentação.
 
 **Gate:** tudo registrado com timestamp. Se produção mudou desde o §Y do ledger,
-o lab para e reconcilia antes de seguir.
+o lab para e reconcilia antes de seguir. A sessão é conferida como read-only
+(`show default_transaction_read_only = on`) antes da primeira leitura.
 
 ### L1 — Dump do schema de produção (somente leitura)
 - `pg_dump -Fc --schema-only -n public -n supabase_migrations`, na sessão read-only.
@@ -163,8 +176,10 @@ o lab para e reconcilia antes de seguir.
 - Procedimento **v3.3**: neutralizar só os defaults da plataforma, restaurar e
   conferir, tudo numa transação. Sem ele, as tabelas financeiras reabrem (lição
   da Attempt 1).
-- Sementes sintéticas mínimas: `admin_kv`, `tier_cache` e uma carteira de teste
-  admin.
+- Sementes sintéticas mínimas: os kill-switches de `admin_kv` (valores da 0006).
+  A carteira de teste é gerada pelo kit e entra por `ADMIN_WALLETS`;
+  `TIER_GATES_ENABLED=false` dispensa `tier_cache`.
+- Um **B0** do clone (dump completo) é tirado aqui, para o L6.
 
 **Gate:**
 - fp == `74e742469c9088012d87caa88468dc9e` (864);
@@ -186,35 +201,50 @@ defeito não aparecer, o clone não é fiel e o lab para.
   por transação, gravando o history com o conteúdo integral.
 - **Gates do banco:**
   - fp == `925|e13840c5c6de8534ae8bd4f27c041a9b`;
-  - arnês `supabase/tests` 01–14 verde. O T13 segue a regra do plano mestre: o
-    original não conta como PASS; vale a prova sincronizada.
+  - arnês SQL de `supabase/tests` do commit certificado (01, 02, 08–12, 14)
+    verde. Os de concorrência (04–06, 13) exigem processos locais ao banco e
+    ficaram provados na 3B (staging); não entram no lab v1;
+  - history: as linhas de produção **intactas** + 9 novas, cada uma com o md5
+    do arquivo.
+  - Depois do arnês, o clone volta a um **B1** (0067 limpo) pelo restore v3.3,
+    para o runtime não herdar fixtures.
 - Subir o app **do código certificado** (`691bfdc`).
-- **Gates do runtime:**
-  - build verde;
-  - smoke;
-  - crons DCA, autopilot, backtest e radar via HTTP;
-  - DCA **simulado** de ponta a ponta;
-  - `armSession` passa a funcionar sem `creds_cipher`;
-  - `pause_*` e kill-switches fecham os executores;
-  - env ausente → fail-closed (por exemplo, `CEX_RECOVERY_HMAC_KEY` ausente → ordem
-    manual real recusada);
-  - rate limit durável ativo;
-  - `anon` sem acesso às 5 tabelas financeiras pelo PostgREST local (a prova por
-    papel que o MCP não consegue fazer).
+- **Gates do runtime** (runner com login real por carteira; saída `PASS|FAIL|OBS`):
+  - INV-1 toda ordem que a venue viu tem intent persistido;
+  - INV-2 nenhum intent "falhou antes de enviar" com ordem existente na venue;
+  - INV-3 timeout pós-aceite → dúvida/aberto/FILLED, nunca falha, sem 5xx;
+  - INV-4 `anon` negado nas 5 tabelas financeiras pelo PostgREST local (a prova
+    por papel que o MCP não consegue fazer); `service_role` lê;
+  - INV-5 os crons (autopilot, DCA, backtest, radar, celeiro) sem segredo → 401;
+  - INV-6 kill-switch `disable_cex` → 503 e a venue não recebe nada;
+  - INV-7 `armSession` funciona sem `creds_cipher` e a sessão nasce ligada ao cofre;
+  - INV-8 DCA **simulado** de ponta a ponta (ciclo executado) sem ordem na venue;
+  - INV-9 DCA real sem liberação → 403;
+  - INV-10 sem IA, o cron do autopilot não cai e nenhuma ordem sai;
+  - INV-11 rate limit durável ativo (9ª chamada/minuto → 429);
+  - INV-12 env ausente → fail-closed (`CEX_RECOVERY_HMAC_KEY` ausente → ordem
+    recusada, venue intocada);
+  - cenários de ordem manual: aceite, recusa, timeout pós-aceite, parcial + fill
+    externo + recovery, `fetchOrder` × `myTrades` divergentes, "não existe" após
+    aceitar, fill atrasado, cancel externo, drift de saldo.
 
 ### L5 — Chaos (subconjunto viável localmente) · FASE 26
-- Banco derrubado no meio do cron.
-- Cron duplicado em paralelo.
-- Restart do app com intent em `SUBMITTING` → tem de virar `UNKNOWN` e
-  reconciliar, nunca `FAILED`.
-- Request duplicado.
-- Resposta de venue com campos ausentes.
-- ⚠️ A venue do caos é uma **venue falsa local**, sem exchange de verdade. O uso
-  de testnet é decisão pendente (§4).
+- **C1** app morto (SIGKILL) com a ordem aceita e a resposta pendurada → após o
+  restart o intent está em dúvida (nunca falha) e o recovery por `intentId`
+  converge para FILLED com a quantidade da venue, com **um único envio**.
+- **C2** banco derrubado durante o cron do DCA → falha fechado, nada à venue;
+  banco de volta → o cron roda sem ciclo duplicado.
+- **C3** dois crons do DCA em paralelo → no máximo um ciclo, nunca duplicado.
+- **C4** resposta da venue truncada depois de aceitar → o intent nunca vira
+  falha; o recovery converge.
+- Retry duplicado: a venue recusa `clientOrderId` repetido de ordem aberta
+  (provado contra o `ccxt` real); no app, o C1 prova que não há reenvio.
+- A venue do caos é a **venue falsa local**; testnet está fora desta campanha.
 
 ### L6 — Ensaio de rollback · FASES 26, 28
 - App de volta para `25fc4b0` e banco de volta para B0 (0058), com o restore v3.3
-  já provado na 3B.
+  já provado na 3B. Gates: fp, history e ACL/RLS == produção, e o app de
+  produção volta a se comportar como produção (o P0 reaparece).
 - Registrar o que isso significa: `25fc4b0` já é incompatível com 0058 por causa
   do P0. O rollback **de app** tem limite e precisa estar escrito no runbook.
 
@@ -230,15 +260,16 @@ para o release oficial quando a Vercel voltar. Esse runbook alimenta as FASES 29
 - sem chave de IA;
 - gate do mural antes da execução.
 
-**Pendentes:**
-1. **Exchange da venue falsa.** Proposta: Binance spot. Alternativa: Gate.io,
-   que tem API menor mas é menos central no produto.
-2. **Confirmação do aviso no mural.** Destrava a construção.
+- venue falsa = **Binance spot** (o dono aceitou as recomendações do construtor).
+
+**Pendente:**
+1. **Confirmação do aviso no mural.** Destrava a execução (`ZSWAP_LAB_MURAL_OK=1`).
+2. **ACHADO-AP-LOCK** (§6.1) — decisão do auditor.
 
 ## 5. Estado
 | etapa | status | evidência |
 |---|---|---|
-| kit (sem execução) | 🟡 em preparação | — |
+| kit v1 (sem execução real) | 🟢 pronto; ensaiado em ambiente sintético (§6) | scratchpad do construtor; tgz + scripts.txt para o auditor |
 | L0 freeze | 🔴 | — |
 | L1 dump do schema | 🔴 | — |
 | L2 restore do clone | 🔴 | — |
@@ -247,3 +278,47 @@ para o release oficial quando a Vercel voltar. Esse runbook alimenta as FASES 29
 | L5 chaos | 🔴 | — |
 | L6 rollback | 🔴 | — |
 | L7 runbook | 🔴 | — |
+
+## 6. Ensaio do kit em ambiente sintético (antes da entrega)
+
+Nada real: sem produção, sem staging, sem P2, sem Docker. No contêiner do
+construtor:
+
+- PostgreSQL 17.6 "tipo Supabase": `supabase_admin` superusuário, `postgres`
+  **não** superusuário, papéis `anon/authenticated/service_role/authenticator`,
+  default privileges da plataforma;
+- uma "produção" sintética em 0058 (migrations do commit certificado), com
+  history **datado**, 4 entradas só-de-prod e um dado de "usuário" plantado;
+- PostgREST 12.2.12, o gateway, a venue falsa e o app **buildado de `git archive`**
+  de `25fc4b0` e de `691bfdc`.
+
+Resultado: `preflight → l0 → l1 → l2 → l3 → l4 → l5 → l6 → final` **PASS**, na ordem:
+fp do clone == `864|74e742…`; o dado de "usuário" não aparece em nenhum export;
+P0 reproduzido com `25fc4b0`; forward 0059→0067 com fp `925|e13840c5…`, history de
+prod intacto + 9 com md5 do arquivo; arnês 8/8; INV-1…INV-12 e C1–C4 PASS com
+`691bfdc`; rollback ao B0 e P0 de volta com `25fc4b0`.
+
+Negativos provados: segredo plantado no history → L1 descarta sem gravar; SHA
+implantado divergente → L0 FAIL; etapa fora de ordem → abortado; FAIL anterior →
+nada mais roda; kit adulterado → abortado; sem `ZSWAP_LAB_MURAL_OK=1` → abortado.
+
+**O que só o Acer prova:** a imagem Supabase real, `docker compose`, o isolamento
+da rede `internal`, a leitura da produção real.
+
+### 6.1 ACHADO-AP-LOCK — o lock do cron do autopilot nunca é adquirido
+
+`tryLockSession` (`src/lib/autopilot/sessions.ts`) faz
+`update(...).eq("id").or("locked_until.is.null,locked_until.lt.<agora>").select("id")`.
+O PostgREST reaplica o filtro `or` no `SELECT` externo sobre o `RETURNING "id"`, e
+o Postgres responde `42703 column autopilot_sessions.locked_until does not exist`.
+O `tryLockSession` trata erro como `false`, e o cron relata
+`"locked (already running)"` sem nunca trabalhar a sessão.
+
+- Reproduzido no PostgREST 12.2.8, 12.2.12, 13.0.4 e 13.0.7 (SQL gerado capturado).
+- **Mesmo código em `25fc4b0` (produção) e `691bfdc` (certificado)** — não é
+  regressão do release.
+- Falha no sentido seguro (nenhuma ordem sai), mas a função fica morta — e o INV-10
+  ("sem IA o autopilot degrada") fica **não exercitado** enquanto isso existir.
+- Não corrigido: o código certificado não muda no lab. O runner mede isso toda vez
+  (`OBS ACHADO-AP-LOCK`). Confirmação no PostgREST hospedado e a decisão são do
+  auditor.
