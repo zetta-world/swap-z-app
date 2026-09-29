@@ -35,6 +35,17 @@ import type { Operacao } from "@/lib/bancada/motor";
 const BARRAS_DE_AQUECIMENTO = 200;
 
 /**
+ * Janela deliberada da BANCADA, não da função genérica de indicadores.
+ *
+ * A mesa recalcula um retrato por barra e precisa manter custo constante. O
+ * backtest de playbooks já usa a mesma largura pelo mesmo motivo. Manter este
+ * corte aqui evita mudar OBV/EMA/ATR/ADX/suporte de todos os outros chamadores
+ * de `computeIndicators` e torna a borda 400/401 parte explícita do contrato da
+ * bancada.
+ */
+export const JANELA_DE_INDICADORES_DA_MESA = 400;
+
+/**
  * ⚠️⚠️ O TETO DE BARRAS AVALIADAS, e ele é DECLARADO, não silencioso.
  *
  * Cada barra recalcula os indicadores sobre a fatia até ela — é o que impede o
@@ -118,6 +129,22 @@ export function ateOInstante<T extends { t: number }>(velas: ReadonlyArray<T>, t
 }
 
 /**
+ * A varredura incremental abaixo só é equivalente ao `filter(v.t <= t)` antigo
+ * quando o tempo não volta para trás. Validar uma vez mantém o caminho quente
+ * linear e transforma entrada fora do contrato em erro explícito, em vez de um
+ * retrato silenciosamente diferente.
+ */
+function exigirOrdemCronologica(nome: keyof VelasDaMesa, velas: ReadonlyArray<VelaComTempo>): void {
+  for (let i = 1; i < velas.length; i++) {
+    if (velas[i].t < velas[i - 1].t) {
+      throw new Error(
+        `mesa_real_serie_fora_de_ordem:${nome}:indice=${i}:anterior=${velas[i - 1].t}:atual=${velas[i].t}`,
+      );
+    }
+  }
+}
+
+/**
  * Roda o seletor da casa barra a barra.
  *
  * ⚠️⚠️ SEM LOOKAHEAD, POR CONSTRUÇÃO. Em cada barra `i` os indicadores são
@@ -135,6 +162,11 @@ export function rodarMesa(
   simbolo: string,
   custoIdaEVoltaPct: number,
 ): RodadaDaMesa {
+  exigirOrdemCronologica("h1", velas.h1);
+  exigirOrdemCronologica("h4", velas.h4);
+  exigirOrdemCronologica("d1", velas.d1);
+  exigirOrdemCronologica("w1", velas.w1);
+
   const h1 = velas.h1;
   const operacoes: Operacao[] = [];
   const porPlaybook: Record<string, number> = {};
@@ -177,7 +209,7 @@ export function rodarMesa(
     while (w1Ate < velas.w1.length && velas.w1[w1Ate].t <= t) w1AteCandles.push(w1Candles[w1Ate++]);
     const ind = computeIndicators(
       simbolo,
-      h1Ate,
+      h1Ate.slice(-JANELA_DE_INDICADORES_DA_MESA),
       h4AteCandles,
       d1AteCandles,
       w1AteCandles,

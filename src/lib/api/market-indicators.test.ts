@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { calcEMA, calcRSI, calcMACD, calcATR, calcADX, type Candle } from "@/lib/api/market-indicators";
+import {
+  calcEMA, calcRSI, calcMACD, calcATR, calcADX, computeIndicators, type Candle,
+} from "@/lib/api/market-indicators";
 import { checkRealNotional, NOTIONAL_TOLERANCE, AUTOPILOT_HARD_CEILING_USD } from "@/lib/autopilot/price-guard";
 
 /**
@@ -71,6 +73,25 @@ describe("calcADX (Wilder)", () => {
     const a = calcADX(candles)!;
     expect(a.adx).toBeGreaterThan(25);
     expect(a.plusDI).toBeGreaterThan(a.minusDI); // and it knows the DIRECTION
+  });
+});
+
+describe("computeIndicators — contrato de histórico completo", () => {
+  it("não corta silenciosamente a barra 401 no caminho genérico", () => {
+    const c1h: Candle[] = Array.from({ length: 401 }, (_, i) => {
+      const close = i === 0 ? 200 : 100 + i;
+      return { high: close + 1, low: close - 1, close, volume: 1 };
+    });
+
+    const completo = computeIndicators("FULL", c1h, [], [], []);
+    const ultimas400 = computeIndicators("CROPPED", c1h.slice(-400), [], [], []);
+
+    // OBV incorpora a queda da primeira para a segunda barra. Se o caminho
+    // genérico voltar a truncar em 400, os dois valores ficam iguais e este
+    // teste denuncia a mudança semântica em vez de tratá-la como performance.
+    expect(completo.obv).toBe(398);
+    expect(ultimas400.obv).toBe(399);
+    expect(completo.obv).not.toBe(ultimas400.obv);
   });
 });
 

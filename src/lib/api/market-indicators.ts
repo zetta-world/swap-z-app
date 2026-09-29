@@ -692,21 +692,14 @@ export function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], 
   };
   if (c1h.length < 52) return empty;
 
-  // O backtest por playbook já usa uma janela de 400 barras para impedir que o
-  // custo por retrato cresça com toda a idade da série. A mesa do cliente chama
-  // esta mesma função com prefixos crescentes; limitar aqui mantém os cálculos
-  // no contexto recente sem mudar as chamadas normais (CEX: 100, DEX: 300).
-  // O histórico diário/semanal permanece completo para o contexto de ciclo.
-  const hourly = c1h.length > 400 ? c1h.slice(-400) : c1h;
-
-  const closes = hourly.map((c) => c.close);
+  const closes = c1h.map((c) => c.close);
   const rsiArray = calcRSIArray(closes, 14);
   const rsi14   = rsiArray.length > 0 ? rsiArray[rsiArray.length - 1] : null;
   const ema20Arr = calcEMA(closes, 20);
   const ema50Arr = calcEMA(closes, 50);
   const macd    = calcMACD(closes);
-  const atr14   = calcATR(hourly, 14);
-  const adxRes  = calcADX(hourly, 14);
+  const atr14   = calcATR(c1h, 14);
+  const adxRes  = calcADX(c1h, 14);
   const ema20   = ema20Arr.length > 0 ? ema20Arr[ema20Arr.length - 1] : null;
   const ema50   = ema50Arr.length > 0 ? ema50Arr[ema50Arr.length - 1] : null;
   const price   = closes[closes.length - 1];
@@ -765,10 +758,10 @@ export function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], 
   else if (bears >= 2 && bulls === 0) alignment = "aligned_bear";
   else if (bulls > 0 && bears > 0) alignment = "conflict";
 
-  const obvResult = calcOBV(hourly);
-  const relVol = calcRelativeVolume(hourly, 20);
+  const obvResult = calcOBV(c1h);
+  const relVol = calcRelativeVolume(c1h, 20);
   const divergence = detectRSIDivergence(closes, rsiArray);
-  const srLevels = price !== null ? calcSupportResistance(hourly, price, 5) : { supports: [], resistances: [] };
+  const srLevels = price !== null ? calcSupportResistance(c1h, price, 5) : { supports: [], resistances: [] };
   const pivotLevels = calcDailyPivots(c1d);
 
   return {
