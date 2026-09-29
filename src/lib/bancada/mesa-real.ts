@@ -146,20 +146,41 @@ export function rodarMesa(
   const cortadaPeloTeto = total > MAX_BARRAS_AVALIADAS;
   const ultima = cortadaPeloTeto ? primeira + MAX_BARRAS_AVALIADAS : h1.length;
 
+  // Converta cada série uma única vez. A versão anterior remapeava todo o
+  // histórico já visto em cada barra e voltava a filtrar integralmente os três
+  // prazos maiores. Isso não mudava o retrato, mas acrescentava trabalho
+  // quadrático antes mesmo de os indicadores começarem a calcular.
+  const h1Candles = paraCandle(h1);
+  const h4Candles = paraCandle(velas.h4);
+  const d1Candles = paraCandle(velas.d1);
+  const w1Candles = paraCandle(velas.w1);
+  const h1Saida = h1.map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close }));
+  const h1Ate: Candle[] = h1Candles.slice(0, primeira);
+  const h4AteCandles: Candle[] = [];
+  const d1AteCandles: Candle[] = [];
+  const w1AteCandles: Candle[] = [];
+  let h4Ate = 0;
+  let d1Ate = 0;
+  let w1Ate = 0;
+
   let livreApartirDe = primeira;
   let barrasAvaliadas = 0;
 
   for (let i = primeira; i < ultima; i++) {
     barrasAvaliadas++;
+    h1Ate.push(h1Candles[i]);
     if (i < livreApartirDe) continue;
 
     const t = h1[i].t;
+    while (h4Ate < velas.h4.length && velas.h4[h4Ate].t <= t) h4AteCandles.push(h4Candles[h4Ate++]);
+    while (d1Ate < velas.d1.length && velas.d1[d1Ate].t <= t) d1AteCandles.push(d1Candles[d1Ate++]);
+    while (w1Ate < velas.w1.length && velas.w1[w1Ate].t <= t) w1AteCandles.push(w1Candles[w1Ate++]);
     const ind = computeIndicators(
       simbolo,
-      paraCandle(h1.slice(0, i + 1)),
-      paraCandle(ateOInstante(velas.h4, t)),
-      paraCandle(ateOInstante(velas.d1, t)),
-      paraCandle(ateOInstante(velas.w1, t)),
+      h1Ate,
+      h4AteCandles,
+      d1AteCandles,
+      w1AteCandles,
     );
 
     const tentativas = candidateAttempts(ind);
@@ -188,7 +209,7 @@ export function rodarMesa(
         opened_at: new Date(abertaEm).toISOString(),
         horizon_hours: plano.horizonHours,
       },
-      h1.slice(i + 1).map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close })),
+      h1Saida.slice(i + 1),
       undefined,
       ate,
       custoIdaEVoltaPct,
