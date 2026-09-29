@@ -14,7 +14,9 @@ let lastFault = null;
 let runId = null;
 let recoveryReadsBlocked = false;
 let blockedReadCount = 0;
-let successfulRecoveryReads = 0;
+let explicitRecoveryCallActive = false;
+let recoveryReadsDuringExplicitCall = 0;
+let recoveryReadsOutsideExplicitCall = 0;
 const ordersById = new Map();
 const ordersByClient = new Map();
 
@@ -93,7 +95,9 @@ function setFault(mode, nextRunId) {
   runId = nextRunId || null;
   recoveryReadsBlocked = false;
   blockedReadCount = 0;
-  successfulRecoveryReads = 0;
+  explicitRecoveryCallActive = false;
+  recoveryReadsDuringExplicitCall = 0;
+  recoveryReadsOutsideExplicitCall = 0;
   ordersById.clear();
   ordersByClient.clear();
   return true;
@@ -116,7 +120,8 @@ const server = https.createServer({ key, cert }, async (req, res) => {
   if (path === "/__control/state" && req.method === "GET") {
     return json(res, 200, {
       ok: true, faultMode, submitCount, lastFault, runId,
-      recoveryReadsBlocked, blockedReadCount, successfulRecoveryReads,
+      recoveryReadsBlocked, blockedReadCount, explicitRecoveryCallActive,
+      recoveryReadsDuringExplicitCall, recoveryReadsOutsideExplicitCall,
       orders: [...ordersById.values()].map((o) => ({
         orderId: o.orderId, clientOrderId: o.clientOrderId, status: o.status,
       })),
@@ -129,7 +134,7 @@ const server = https.createServer({ key, cert }, async (req, res) => {
       ? json(res, 200, { ok: true, faultMode, runId })
       : json(res, 400, { ok: false, error: "invalid_fault_mode" });
   }
-  if (path === "/__control/release-recovery" && req.method === "POST") {
+  if (path === "/__control/begin-explicit-recovery" && req.method === "POST") {
     const requestedRunId = u.searchParams.get("runId");
     if (!runId || requestedRunId !== runId) {
       return json(res, 409, { ok: false, error: "run_id_mismatch" });
@@ -138,7 +143,24 @@ const server = https.createServer({ key, cert }, async (req, res) => {
       return json(res, 409, { ok: false, error: "inline_reconciliation_not_observed" });
     }
     recoveryReadsBlocked = false;
-    return json(res, 200, { ok: true, runId, blockedReadCount });
+    explicitRecoveryCallActive = true;
+    return json(res, 200, {
+      ok: true, runId, blockedReadCount, explicitRecoveryCallActive,
+    });
+  }
+  if (path === "/__control/end-explicit-recovery" && req.method === "POST") {
+    const requestedRunId = u.searchParams.get("runId");
+    if (!runId || requestedRunId !== runId) {
+      return json(res, 409, { ok: false, error: "run_id_mismatch" });
+    }
+    if (!explicitRecoveryCallActive) {
+      return json(res, 409, { ok: false, error: "explicit_recovery_not_active" });
+    }
+    explicitRecoveryCallActive = false;
+    return json(res, 200, {
+      ok: true, runId, explicitRecoveryCallActive,
+      recoveryReadsDuringExplicitCall, recoveryReadsOutsideExplicitCall,
+    });
   }
 
   if (reconciliationRead(path, req.method)) {
@@ -150,7 +172,15 @@ const server = https.createServer({ key, cert }, async (req, res) => {
       });
     }
     if (lastFault === "accept_then_truncate_block_reconcile") {
-      successfulRecoveryReads += 1;
+      if (explicitRecoveryCallActive) {
+        recoveryReadsDuringExplicitCall += 1;
+      } else {
+        recoveryReadsOutsideExplicitCall += 1;
+        return json(res, 503, {
+          code: -1007,
+          msg: "Synthetic timeout: recovery read outside explicit recovery call",
+        });
+      }
     }
   }
 

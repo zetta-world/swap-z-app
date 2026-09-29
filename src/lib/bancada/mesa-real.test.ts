@@ -11,7 +11,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   rodarMesa, agregar, ateOInstante, paraCandle,
-  JANELA_DE_INDICADORES_DA_MESA, MAX_BARRAS_AVALIADAS, type VelasDaMesa,
+  MAX_BARRAS_AVALIADAS, type VelasDaMesa,
 } from "@/lib/bancada/mesa-real";
 import type { Candle } from "@/lib/api/market-indicators";
 import type { VelaComTempo } from "@/lib/mercado/velas";
@@ -71,10 +71,11 @@ describe("⚠️⚠️ nenhuma decisão enxerga o futuro", () => {
     // exata que esta base já pegou quatro vezes este mês.
     expect(chamadas.length).toBeGreaterThan(100);
 
-    // A fatia da barra `i` nunca passa da janela DECLARADA da bancada.
+    // A fatia da barra `i` preserva o prefixo COMPLETO de 691bfdc: exatamente
+    // `i + 1` velas, sem lookahead e sem truncamento semântico em 400.
     let esperado = 201;   // BARRAS_DE_AQUECIMENTO + 1
     for (const c of chamadas) {
-      expect(c.ultimo).toBe(Math.min(esperado, JANELA_DE_INDICADORES_DA_MESA));
+      expect(c.ultimo).toBe(esperado);
       esperado++;
     }
     espiao.mockRestore();
@@ -91,6 +92,7 @@ describe("equivalência da preparação otimizada", () => {
 
   it.each(casosDeBorda)("preserva a referência em %i barras (%s), inclusive nos múltiplos timeframes", async (n) => {
     const mod = await import("@/lib/api/market-indicators");
+    const playbooks = await import("@/lib/zion/playbooks");
     const original = mod.computeIndicators;
     const chamadas: Array<[Candle[], Candle[], Candle[], Candle[]]> = [];
     const espiao = vi.spyOn(mod, "computeIndicators").mockImplementation((sim, c1h, c4h, c1d, c1w) => {
@@ -102,8 +104,15 @@ describe("equivalência da preparação otimizada", () => {
       ]);
       return original(sim, c1h, c4h, c1d, c1w);
     });
+    // Este teste mede somente a preparação dos prefixos. Fixar "sem plano"
+    // impede que uma saída pule barras e esconda chamadas da comparação.
+    const seletor = vi.spyOn(playbooks, "candidateAttempts").mockReturnValue([
+      { def: { label: "fixture" }, plan: null, reason: "fixture sem plano" },
+    ] as never);
 
-    const entrada = velas(n, () => 100);
+    // Série determinística e não constante para também preservar OHLCV, não
+    // apenas o comprimento dos prefixos.
+    const entrada = velas(n, (i) => 100 + Math.sin(i / 13) * 4 + i * 0.01);
     try {
       const rodada = rodarMesa(entrada, "BTC", 0.40);
       expect(rodada.operacoes).toHaveLength(0);
@@ -113,16 +122,21 @@ describe("equivalência da preparação otimizada", () => {
         const i = 200 + chamada;
         const t = entrada.h1[i].t;
         const referencia: [Candle[], Candle[], Candle[], Candle[]] = [
-          paraCandle(entrada.h1.slice(
-            Math.max(0, i + 1 - JANELA_DE_INDICADORES_DA_MESA), i + 1,
-          )),
+          // Referência independente: é exatamente a construção de 691bfdc,
+          // sem reutilizar cursor, constante ou janela da implementação nova.
+          paraCandle(entrada.h1.slice(0, i + 1)),
           paraCandle(ateOInstante(entrada.h4, t)),
           paraCandle(ateOInstante(entrada.d1, t)),
           paraCandle(ateOInstante(entrada.w1, t)),
         ];
         expect(recebida).toEqual(referencia);
+        if ((n === 401 || n === 512) && i === n - 1) {
+          expect(recebida[0].length).toBe(n);
+          expect(recebida[0].length).toBeGreaterThan(400);
+        }
       });
     } finally {
+      seletor.mockRestore();
       espiao.mockRestore();
     }
   });

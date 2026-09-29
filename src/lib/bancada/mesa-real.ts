@@ -35,17 +35,6 @@ import type { Operacao } from "@/lib/bancada/motor";
 const BARRAS_DE_AQUECIMENTO = 200;
 
 /**
- * Janela deliberada da BANCADA, não da função genérica de indicadores.
- *
- * A mesa recalcula um retrato por barra e precisa manter custo constante. O
- * backtest de playbooks já usa a mesma largura pelo mesmo motivo. Manter este
- * corte aqui evita mudar OBV/EMA/ATR/ADX/suporte de todos os outros chamadores
- * de `computeIndicators` e torna a borda 400/401 parte explícita do contrato da
- * bancada.
- */
-export const JANELA_DE_INDICADORES_DA_MESA = 400;
-
-/**
  * ⚠️⚠️ O TETO DE BARRAS AVALIADAS, e ele é DECLARADO, não silencioso.
  *
  * Cada barra recalcula os indicadores sobre a fatia até ela — é o que impede o
@@ -209,7 +198,7 @@ export function rodarMesa(
     while (w1Ate < velas.w1.length && velas.w1[w1Ate].t <= t) w1AteCandles.push(w1Candles[w1Ate++]);
     const ind = computeIndicators(
       simbolo,
-      h1Ate.slice(-JANELA_DE_INDICADORES_DA_MESA),
+      h1Ate,
       h4AteCandles,
       d1AteCandles,
       w1AteCandles,
