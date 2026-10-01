@@ -1,5 +1,17 @@
 # ESTADO ATUAL — leia isto primeiro
 
+> **CURRENT AUTHORITY: `docs/START-HERE.md`**
+> **CLASSIFICATION: SUPPORTING_REFERENCE** (lições e armadilhas; o estado
+> atual NÃO está aqui). Não execute este documento como estado atual sem
+> consultar `docs/DOCUMENT-AUTHORITY.md`. Banner adicionado em 01/10/2026; o
+> conteúdo abaixo é histórico e não foi alterado.
+>
+> ⛔ **A regra de 31/08 "tudo vai para produção sempre" está FORMALMENTE
+> SUSPENSA** (decisão do dono, 01/10/2026). Nenhum commit, branch ou worktree
+> vai para produção automaticamente. Deploy só com: SHA explícito, marcado
+> `RELEASE_CANDIDATE` no ledger, com certificação PASS e autorização
+> explícita do dono. Ver `docs/AI-OPERATING-RULES.md` §6.
+
 > **O que é:** o ponto de retomada. `CLAUDE.md` diz como o repositório é
 > organizado; este documento diz **onde estamos agora**, o que está aberto, e o
 > que já custou caro aprender.

@@ -1,5 +1,21 @@
 # PLANO — EARLY ACCESS (Fase 1)
 
+> **CURRENT AUTHORITY: `docs/START-HERE.md`** · **CLASSIFICATION:
+> ACTIVE_PLAN** (só para early access). Não execute este documento como
+> estado atual sem consultar `docs/DOCUMENT-AUTHORITY.md`.
+>
+> **Status operacional (01/10/2026):**
+> - **Phase 1: COMMITTED_FEATURE_CHECKPOINT /
+>   `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`** (gate CLOSED, nada
+>   deployado). `PHASE1_RECERT=BLOCKED` (teste não determinístico do F-10,
+>   §15; correção no working tree, revisão 3). `CERTIFIED_FEATURE_SHA=NONE`.
+>   Ver `docs/CURRENT-STATE.md`.
+> - **Phase 2: BLOCKED_NOT_STARTED / `PHASE2_CODE_EXISTS=NO`.** É a
+>   NEXT_PHASE; o trabalho corrente é `CONTROL_PLANE_REVIEW_AND_PHASE1_RECERT`.
+>   Branch `early-access-phase2-email-double-optin-20261001`.
+>
+> O cabeçalho abaixo é o registro original da Fase 1.
+
 > **Status geral:** 🟡 Fase 1 implementada **localmente**, nada deployado.
 > **Base:** `43c484bd1fdc24cdbd8182914514d80d769deeb2` (runtime certificado
 > `0d21874` é ancestral) · branch `whitelist-fundraising-readiness-20261001`.

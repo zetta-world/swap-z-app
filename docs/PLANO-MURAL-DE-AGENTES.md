@@ -1,5 +1,12 @@
 # PLANO — o mural de agentes: dois cérebros, um repositório
 
+> **CURRENT AUTHORITY: `docs/START-HERE.md`** · **CLASSIFICATION:
+> HISTORICAL_EVIDENCE.** Não execute este documento como estado atual sem
+> consultar `docs/DOCUMENT-AUTHORITY.md`. O status "🔴 nada implementado"
+> abaixo está desatualizado: o mural foi implementado em #351 (`2e6271b`) e
+> #352 (`6dce334`), em `scripts/mural.mjs`, que usa credencial do Supabase
+> hospedado. Banner de 01/10/2026; o resto do texto é histórico.
+
 **Status: 🔴 desenhado, nada implementado** · 23/08.
 
 > **Em uma frase:** um quadro compartilhado no banco onde cada agente declara

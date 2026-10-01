@@ -118,7 +118,17 @@ describe("④ HMAC", () => {
     expect(decodificarSegredo(Buffer.alloc(48, 7).toString("base64")), "zeros").toBeNull();
     expect(decodificarSegredo(randomBytes(16).toString("base64")), "curto").toBeNull();
     expect(decodificarSegredo("não-é-base64!!!!".repeat(4)), "invalido").toBeNull();
-    expect(decodificarSegredo(randomBytes(48).toString("base64url")), "base64url").toBeNull();
+    // base64url é recusado. Cicatriz (EA-TEST-F10-FLAKY): o controle antigo era
+    // randomBytes(48).toString("base64url"), que em ~13,1% das vezes não tinha
+    // "-" nem "_" — e então era também base64 padrão canônico, aceito com razão.
+    // Agora: 48 bytes fixos, todos distintos (97 é ímpar → permutação mod 256),
+    // cujo base64url TEM "-"/"_"; o gêmeo em base64 padrão é aceito, então a
+    // recusa vem só do alfabeto.
+    const urlBytes = Buffer.from(Array.from({ length: 48 }, (_, i) => (i * 97 + 0xfb) & 0xff));
+    const comoUrl = urlBytes.toString("base64url");
+    expect(comoUrl).toMatch(/[-_]/);
+    expect(decodificarSegredo(urlBytes.toString("base64"))?.equals(urlBytes), "gemeo base64").toBe(true);
+    expect(decodificarSegredo(comoUrl), "base64url").toBeNull();
     expect(decodificarSegredo(""), "vazio").toBeNull();
     expect(decodificarSegredo(undefined), "ausente").toBeNull();
     // não canônico: 32 bytes → 44 chars com 1 "=", e o último caractere útil

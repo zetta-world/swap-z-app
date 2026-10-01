@@ -1,9 +1,40 @@
 # Índice de documentação
 
+> ## ▶ START HERE: [`docs/START-HERE.md`](START-HERE.md)
+>
+> | doc | função |
+> |---|---|
+> | [`START-HERE.md`](START-HERE.md) | **entrada**: leia primeiro |
+> | [`CURRENT-STATE.md`](CURRENT-STATE.md) | onde estamos **agora** |
+> | [`LAUNCH-READINESS-LEDGER.md`](LAUNCH-READINESS-LEDGER.md) | livro-razão: histórico certificado, append-only |
+> | [`DOCUMENT-AUTHORITY.md`](DOCUMENT-AUTHORITY.md) | qual documento vale |
+> | [`AUDIT-RECONCILIATION.md`](AUDIT-RECONCILIATION.md) | auditorias e registro único de findings |
+> | [`GIT-AND-WORKTREE-MAP.md`](GIT-AND-WORKTREE-MAP.md) | Git, branches e worktrees |
+> | [`RELEASE-CHAIN.md`](RELEASE-CHAIN.md) | cadeia de release (`RELEASE_CANDIDATE` = nenhum) |
+> | [`AI-OPERATING-RULES.md`](AI-OPERATING-RULES.md) | protocolo de trabalho (humano e IA) |
+>
+> ⚠️ A partir de 01/10/2026, a classificação de autoridade de cada documento
+> está em `DOCUMENT-AUTHORITY.md`. As seções "Vivos" e "Históricos" abaixo são
+> o índice antigo, preservado como referência.
+
+---
+
+> ## ⛔ LEGACY INDEX — HISTORICAL SNAPSHOT
+>
+> **DO NOT USE THIS SECTION TO DETERMINE CURRENT AUTHORITY.**
+> **CURRENT AUTHORITY IS [`DOCUMENT-AUTHORITY.md`](DOCUMENT-AUTHORITY.md) /
+> [`START-HERE.md`](START-HERE.md).**
+>
+> Tudo abaixo desta linha é o índice antigo (até 26/09), preservado como
+> histórico. "Vivo", "fonte de verdade" e "Leia PRIMEIRO" abaixo **não valem
+> mais**: `ESTADO-ATUAL.md` não é a entrada (é SUPPORTING_REFERENCE), e vários
+> planos marcados "vivo" são HISTORICAL_EVIDENCE. Banner da revisão 3,
+> 01/10/2026.
+
 > Um lugar só pra saber o que está VIVO (consultar/atualizar) e o que é
 > HISTÓRICO (contexto; não atualizar). Novo doc? Adiciona aqui. (R3.2)
 
-## 🟢 Vivos — fonte de verdade operacional
+## LEGACY — antigo índice "Vivos" (antes: "🟢 Vivos — fonte de verdade operacional")
 
 | Doc | O que é |
 |-----|---------|

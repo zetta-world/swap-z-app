@@ -1,5 +1,12 @@
 # PLANO — DCA AUTOMÁTICO (lado CEX)
 
+> **CURRENT AUTHORITY: `docs/START-HERE.md`** · **CLASSIFICATION:
+> HISTORICAL_EVIDENCE.** Não execute este documento como estado atual sem
+> consultar `docs/DOCUMENT-AUTHORITY.md`. O status "🔴 nada implementado"
+> abaixo está desatualizado: o DCA foi implementado em #348 (`628089e`) e
+> endurecido no Platform Closure B2 (`3123fb4`). O DCA **real** segue NO-GO.
+> Banner de 01/10/2026; o resto do texto é histórico.
+
 **Status: 🔴 desenhado, nada implementado** · 24/08/2026.
 
 > **O que é:** compras recorrentes que acontecem SOZINHAS, no horário, sem o
