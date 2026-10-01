@@ -13,7 +13,13 @@
 > ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
-> **Última atualização:** 15/09/2026 — **a auditoria externa de 30 achados,
+> **01/10/2026 — candidato pré-produção `0d21874` certificado em laboratório
+> local** (0 critical / 0 high; npm ci, build, suíte ×2, T13 estável, C1–C4,
+> secret audit, demo e egress PASS). Fora da `main`, na branch
+> `preprod-final-closure-20260930T131123Z`. O que foi provado e o que só o
+> dono autoriza estão em `docs/RELEASE-RUNBOOK.md`. **Nada foi deployado.**
+>
+> **Última atualização anterior:** 15/09/2026 — **a auditoria externa de 30 achados,
 > fechada** (§5.27, PRs #419–#445). Antes disso: 08/09/2026, a leva do PR #410
 > (§5.26: sete telas afirmando sobre A o que só era verdade sobre B). E antes,
 > 31/08/2026,
