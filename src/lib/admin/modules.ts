@@ -6,6 +6,7 @@ export type ModuleId =
   | "celeiro"
   | "alerts"
   | "growth"
+  | "early-access"
   | "wallets-kpi"
   | "tier-dist"
   | "autopilot-activity"
@@ -636,6 +637,21 @@ export const MODULE_REGISTRY: ModuleDef[] = [
     category: "crescimento",
     defaultEnabled: true,
     defaultOrder: 14,
+  },
+  {
+    /**
+     * ⚠️ NÃO É O MÓDULO `whitelist` (que é `ADMIN_WALLETS`, acesso ao painel).
+     * Esta é a lista PÚBLICA de interessados — `early_access_*`, migration
+     * 0068, docs/PLANO-EARLY-ACCESS.md. Os inscritos NÃO são `users` e não
+     * entram nas contagens de usuário/signup do GROWTH.
+     */
+    id: "early-access",
+    title: "EARLY ACCESS",
+    subtitle: "lista pública de interessados — triagem e export",
+    icon: "✉",
+    category: "crescimento",
+    defaultEnabled: true,
+    defaultOrder: 15,
   },
 ];
 

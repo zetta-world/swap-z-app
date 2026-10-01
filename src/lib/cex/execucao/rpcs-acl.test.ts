@@ -69,6 +69,12 @@ const CATALOGO: Record<string, string> = {
   dca_planos_com_intent_vivo_para_recovery: "0066_dca_safety_accounting.sql",
   // A59: o teto diário REAL derivado de intents + fills nasce fechado na 0066.
   dca_gasto_real_comprometido_hoje: "0066_dca_safety_accounting.sql",
+  // EARLY ACCESS Fase 1: as duas RPCs que escrevem na lista pública nascem
+  // fechadas na 0068 (REVOKE de public/anon/authenticated + GRANT só ao
+  // service_role). Fora do domínio financeiro, mesma regra.
+  // ⚠️ Esta trava ACHOU as duas na primeira rodada completa da suíte.
+  early_access_inscrever:    "0068_early_access.sql",
+  early_access_transicionar: "0068_early_access.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

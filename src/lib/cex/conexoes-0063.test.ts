@@ -163,10 +163,16 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * financeiras. A Release Phase 2 achou isso pelo T10c; RLS não cobre
      * TRUNCATE.
      *
+     * E uma QUINTA vez, no EARLY ACCESS Fase 1 (docs/PLANO-EARLY-ACCESS.md):
+     * a 0068 é ADITIVA e fora do domínio financeiro — três tabelas
+     * `early_access_*` novas, duas RPCs que nascem fechadas e o seed
+     * `disable_early_access=true`. Não toca em nenhuma tabela ou função
+     * anterior. Esta trava a achou na primeira rodada completa da suíte.
+     *
      * A trava continua sendo uma LISTA, não um padrão: migration nova sem
      * decisão explícita quebra aqui, que é o ponto.
      *
-     * ⚠️ NENHUMA DAS CINCO (0063–0067) FOI APLICADA EM PRODUÇÃO.
+     * ⚠️ NENHUMA DAS SEIS (0063–0068) FOI APLICADA EM PRODUÇÃO.
      */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
@@ -177,6 +183,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0065_autopilot_rearm_preserva_rails.sql",
       "0066_dca_safety_accounting.sql",
       "0067_acl_tabelas_financeiras.sql",
+      "0068_early_access.sql",
     ]);
   });
 });

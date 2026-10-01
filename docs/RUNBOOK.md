@@ -148,6 +148,41 @@ aritmética sobre volume anterior à cobrança existir.
 
 ---
 
+### Early access (FUTURO — nada disto está configurado)
+
+> ⚠️ Configuração **futura**. Nenhuma variável abaixo foi criada na Vercel e a
+> migration `0068_early_access.sql` **não foi aplicada** em banco hospedado.
+> Plano: `docs/PLANO-EARLY-ACCESS.md`.
+
+| Var | O que é | Default se ausente |
+|-----|---------|--------------------|
+| `EARLY_ACCESS_HMAC_SECRET` | Segredo do HMAC-SHA256 que pseudonimiza IP e email nos buckets de rate limit e em `early_access_*.ip_hmac`. **Formato obrigatório: base64 padrão canônico de ≥ 32 bytes aleatórios** (gerar com `openssl rand -base64 48`; o gate recusa texto que não seja base64 válido, que decodifique em < 32 bytes ou que tenha variedade trivial — ex.: `"a"` repetido). Só server-side (nunca `NEXT_PUBLIC_`). Trocar o segredo invalida a correlação com os HMACs antigos (os limites recomeçam) | **rota FECHADA** — o gate exige o segredo |
+
+**⚠️ PUBLIC_OPEN_BLOCKER=EMAIL_DOUBLE_OPT_IN.** Mesmo com as quatro condições
+abaixo, a rota **não deve ser aberta** antes da Fase 2 (verificação de email
+de verdade — ver `docs/PLANO-EARLY-ACCESS.md` §15).
+
+**Procedimento de abertura (futuro — exige o dono):** a rota só abre quando as
+**quatro** condições valem juntas; qualquer uma ausente mantém fechado.
+
+1. Texto jurídico **aprovado e publicado** de Termos de Uso e Política de
+   Privacidade → trocar `TERMS_VERSION`/`PRIVACY_VERSION` em
+   `src/lib/early-access/legal-versions.ts` (hoje `UNAPPROVED`) e deployar.
+   Formato obrigatório `^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$` (ex.: `tos-2026-11`);
+   `UNAPPROVED` é recusado em qualquer caixa, no código e no banco.
+2. Gerar o segredo com `openssl rand -base64 48` e configurar
+   `EARLY_ACCESS_HMAC_SECRET` no ambiente. Nunca commitar, nunca colar em
+   chat/issue/log.
+3. Aplicar a `0068` pelo fluxo normal de migrations (ela semeia
+   `disable_early_access=true` sem sobrescrever decisão existente).
+4. Gravar `admin_kv.disable_early_access = 'false'`. Qualquer outro valor,
+   linha ausente ou falha de leitura = **fechado**.
+
+**Fechar em incidente:** `disable_early_access = 'true'` — efeito imediato, sem
+deploy. Sinais no painel LOGS & SECURITY: `early_access_teto_global` (alto),
+`early_access_gravacao_falhou` (alto), `early_access_desbloqueio` (alto),
+`early_access_rate_email`, `early_access_rate_ip`, `early_access_sinal_robo`.
+
 ## 2. Crons (cron-job.org — fonte ÚNICA de agendamento)
 
 | Endpoint | Cadência | Auth | Stall alert |

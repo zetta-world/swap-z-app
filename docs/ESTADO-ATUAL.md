@@ -13,6 +13,24 @@
 > ⚠️ Os commits #343/#344 dizem **EINHERJAR**: era o nome da aba até 24/08.
 > Foi renomeada para **ÚLFHÉÐNAR** porque colidia com um tier pago — §5.4.
 >
+> **01/10/2026 — EARLY ACCESS PHASE 1 · LOCAL ONLY · CLOSED BY DEFAULT · NO
+> PRODUCTION DEPLOYMENT.** Branch `whitelist-fundraising-readiness-20261001`
+> sobre `43c484b`, **sem commit**. Lista PÚBLICA de interessados
+> (`early_access_*`, migration `0068`) — **não é** a whitelist de admin
+> (`ADMIN_WALLETS`) nem o funding rate de perp. A rota nasce e termina
+> **fechada**: `disable_early_access=true` semeado, versões legais
+> `UNAPPROVED`, `EARLY_ACCESS_HMAC_SECRET` inexistente. A 0068 **não foi
+> aplicada** em banco hospedado; provada só em Postgres descartável
+> (`supabase/tests/15_*`). Fundraising: namespace `fundraising_*` reservado,
+> **nada implementado**. Plano e status: `docs/PLANO-EARLY-ACCESS.md`;
+> decisões: `docs/WHITELIST-FUNDRAISING-DISCOVERY.md` §0.
+> ⚠️ **PUBLIC_OPEN_BLOCKER=EMAIL_DOUBLE_OPT_IN** (auditoria adversarial F-01):
+> sem verificação de email, quem envia primeiro um email grava dados e
+> consentimento em nome do titular. A rota NÃO abre antes da Fase 2 (provider,
+> token de uso único com expiração, consentimento confirmado pelo titular,
+> limpeza de não verificados, correção pelo titular, anti-enumeração mantida).
+> Hardening pós-auditoria aplicado: F-02/03/04/06/07/08/10/12 corrigidos.
+>
 > **01/10/2026 — candidato pré-produção `0d21874` certificado em laboratório
 > local** (0 critical / 0 high; npm ci, build, suíte ×2, T13 estável, C1–C4,
 > secret audit, demo e egress PASS). Fora da `main`, na branch

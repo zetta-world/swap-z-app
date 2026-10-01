@@ -23,6 +23,7 @@ import TierControlPanel   from "./panels/TierControlPanel";
 import AuditLogPanel      from "./panels/AuditLogPanel";
 import KillSwitchesPanel  from "./panels/KillSwitchesPanel";
 import WhitelistPanel         from "./panels/WhitelistPanel";
+import EarlyAccessPanel       from "./panels/EarlyAccessPanel";
 import SwapAllowlistPanel     from "./panels/SwapAllowlistPanel";
 import PlatformEventsPanel    from "./panels/PlatformEventsPanel";
 import BacktestPanel          from "./panels/BacktestPanel";
@@ -77,6 +78,7 @@ export const PANELS: Partial<Record<ModuleId, React.ReactNode>> = {
   "ulfhednar":          <UlfhednarPanel />,
   "alerts":             <AlertsPanel />,
   "growth":             <GrowthPanel />,
+  "early-access":       <EarlyAccessPanel />,
   "wallets-kpi":        <WalletsKpiPanel />,
   "tier-dist":          <TierDistPanel />,
   "autopilot-activity": <AutopilotPanel />,
