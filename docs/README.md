@@ -8,6 +8,8 @@
 | Doc | O que é |
 |-----|---------|
 | `ESTADO-ATUAL.md` | **Leia PRIMEIRO em sessao nova.** Onde o projeto esta, o que esta aberto, o ambiente, e o que ja custou caro aprender |
+| `LEDGER-MESTRE-RELEASE.md` | **Antes de QUALQUER passo rumo à produção.** Cadeia de custódia pré-R1 → Round 9 → Platform Closure: SHA de cada etapa, estado de cada migration 0001→0066 em produção, achados, e o plano de release (não executado) |
+| `retest-independente-batch2-3123fb4.md` | Relatório do auditor independente que fechou o Batch 2 — **verbatim, não editar** (sha256 `8e93eab8…`) |
 | `INVARIANTES-DE-MEDICAO.md` | **Ler ANTES de cada fase.** As 23 regras que qualquer medição respeita, cada uma com a cicatriz que a gerou |
 | `RUNBOOK.md` | Env vars, crons, playbooks de incidente |
 | `ARQUITETURA-IA.md` | Arquitetura completa dos agentes A/B/torneio/radar (+ Anexos) |

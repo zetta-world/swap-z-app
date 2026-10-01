@@ -9,7 +9,11 @@
  * sairia bonito, plausível, e com o nome da FREYJA em cima.
  */
 import { describe, it, expect, vi } from "vitest";
-import { rodarMesa, agregar, MAX_BARRAS_AVALIADAS, type VelasDaMesa } from "@/lib/bancada/mesa-real";
+import {
+  rodarMesa, agregar, ateOInstante, paraCandle,
+  MAX_BARRAS_AVALIADAS, type VelasDaMesa,
+} from "@/lib/bancada/mesa-real";
+import type { Candle } from "@/lib/api/market-indicators";
 import type { VelaComTempo } from "@/lib/mercado/velas";
 
 const H = 3_600_000;
@@ -67,7 +71,8 @@ describe("⚠️⚠️ nenhuma decisão enxerga o futuro", () => {
     // exata que esta base já pegou quatro vezes este mês.
     expect(chamadas.length).toBeGreaterThan(100);
 
-    // A fatia da barra `i` tem exatamente `i + 1` velas — nunca mais.
+    // A fatia da barra `i` preserva o prefixo COMPLETO de 691bfdc: exatamente
+    // `i + 1` velas, sem lookahead e sem truncamento semântico em 400.
     let esperado = 201;   // BARRAS_DE_AQUECIMENTO + 1
     for (const c of chamadas) {
       expect(c.ultimo).toBe(esperado);
@@ -75,6 +80,84 @@ describe("⚠️⚠️ nenhuma decisão enxerga o futuro", () => {
     }
     espiao.mockRestore();
   });
+});
+
+describe("equivalência da preparação otimizada", () => {
+  const casosDeBorda: Array<[number, string]> = [
+    [399, "menor que 400"],
+    [400, "exatamente 400"],
+    [401, "borda 401"],
+    [512, "maior que 400"],
+  ];
+
+  it.each(casosDeBorda)("preserva a referência em %i barras (%s), inclusive nos múltiplos timeframes", async (n) => {
+    const mod = await import("@/lib/api/market-indicators");
+    const playbooks = await import("@/lib/zion/playbooks");
+    const original = mod.computeIndicators;
+    const chamadas: Array<[Candle[], Candle[], Candle[], Candle[]]> = [];
+    const espiao = vi.spyOn(mod, "computeIndicators").mockImplementation((sim, c1h, c4h, c1d, c1w) => {
+      chamadas.push([
+        c1h.map((c) => ({ ...c })),
+        c4h.map((c) => ({ ...c })),
+        c1d.map((c) => ({ ...c })),
+        c1w.map((c) => ({ ...c })),
+      ]);
+      return original(sim, c1h, c4h, c1d, c1w);
+    });
+    // Este teste mede somente a preparação dos prefixos. Fixar "sem plano"
+    // impede que uma saída pule barras e esconda chamadas da comparação.
+    const seletor = vi.spyOn(playbooks, "candidateAttempts").mockReturnValue([
+      { def: { label: "fixture" }, plan: null, reason: "fixture sem plano" },
+    ] as never);
+
+    // Série determinística e não constante para também preservar OHLCV, não
+    // apenas o comprimento dos prefixos.
+    const entrada = velas(n, (i) => 100 + Math.sin(i / 13) * 4 + i * 0.01);
+    try {
+      const rodada = rodarMesa(entrada, "BTC", 0.40);
+      expect(rodada.operacoes).toHaveLength(0);
+      expect(chamadas).toHaveLength(Math.max(0, n - 200));
+
+      chamadas.forEach((recebida, chamada) => {
+        const i = 200 + chamada;
+        const t = entrada.h1[i].t;
+        const referencia: [Candle[], Candle[], Candle[], Candle[]] = [
+          // Referência independente: é exatamente a construção de 691bfdc,
+          // sem reutilizar cursor, constante ou janela da implementação nova.
+          paraCandle(entrada.h1.slice(0, i + 1)),
+          paraCandle(ateOInstante(entrada.h4, t)),
+          paraCandle(ateOInstante(entrada.d1, t)),
+          paraCandle(ateOInstante(entrada.w1, t)),
+        ];
+        expect(recebida).toEqual(referencia);
+        if ((n === 401 || n === 512) && i === n - 1) {
+          expect(recebida[0].length).toBe(n);
+          expect(recebida[0].length).toBeGreaterThan(400);
+        }
+      });
+    } finally {
+      seletor.mockRestore();
+      espiao.mockRestore();
+    }
+  });
+});
+
+describe("contrato de ordenação temporal", () => {
+  it("a série ordenada é determinística", () => {
+    const entrada = velas(420, (i) => 100 + Math.sin(i / 17));
+    expect(rodarMesa(entrada, "BTC", 0.40)).toEqual(rodarMesa(entrada, "BTC", 0.40));
+  });
+
+  it.each(["h1", "h4", "d1", "w1"] as const)(
+    "recusa %s fora de ordem em vez de mudar o retrato silenciosamente",
+    (timeframe) => {
+      const entrada = velas(420, (i) => 100 + i * 0.01);
+      const serieAlvo = entrada[timeframe];
+      [serieAlvo[1], serieAlvo[2]] = [serieAlvo[2], serieAlvo[1]];
+      expect(() => rodarMesa(entrada, "BTC", 0.40))
+        .toThrow(`mesa_real_serie_fora_de_ordem:${timeframe}`);
+    },
+  );
 });
 
 describe("o teto de barras é DECLARADO, nunca silencioso", () => {

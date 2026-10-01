@@ -1,13 +1,15 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/types";
 import type { AutopilotSessionRow, AutopilotRunRow } from "@/lib/supabase/types";
-import { encryptJson, decryptJson } from "@/lib/crypto/secretbox";
 import { guardarConexao, lerConexaoPorId, decifrarConexao } from "@/lib/cex/conexoes";
 import { recordEvent } from "@/lib/admin/track";
 import type { CexCredentials } from "@/lib/cex/types";
 
 /**
- * Server-only data layer for background autopilot sessions. Encrypts CEX
- * credentials on write, decrypts on read, and exposes the small surface the
+ * Server-only data layer for background autopilot sessions. Since the T3
+ * (A115), credentials live ONLY in the vault (`cex_conexoes`) — the session
+ * stores just the `conexao_id` link. Exposes the small surface the
  * arm/disarm API and the cron worker need. Every function tolerates an
  * unconfigured backend by returning null/empty rather than throwing, matching
  * the rest of the app's degrade-gracefully posture.
@@ -40,33 +42,29 @@ export interface ArmSessionInput {
 }
 
 /**
- * Arm (or re-arm) a background session for this wallet+exchange. Encrypts the
- * credentials and upserts the row. Returns the session id, or null when the
- * backend is unconfigured.
+ * Arm (or re-arm) a background session for this wallet+exchange. Writes the
+ * credentials to the vault FIRST and THROWS if the vault fails (T3/A115: no
+ * vault, no session — there is no local copy to degrade to). Returns the
+ * session id, or null when the backend is unconfigured.
  */
 export async function armSession(input: ArmSessionInput): Promise<string | null> {
   const db = getSupabaseAdmin();
   if (!db) return null;
 
-  const credsCipher = encryptJson({
-    apiKey:     input.credentials.apiKey,
-    apiSecret:  input.credentials.apiSecret,
-    passphrase: input.credentials.passphrase ?? null,
-  });
-
   /**
-   * ⚠️⚠️ ESCRITA DUPLA — T2 da virada do cofre (`docs/PLANO-DCA-AUTOMATICO.md`).
+   * ⚠️⚠️⚠️ O SEGREDO TEM UM LUGAR SÓ — T3 do cofre concluído (achado A115).
    *
-   * A chave passa a viver TAMBÉM em `cex_conexoes`, que é o cofre que o DCA já
-   * usa. Sem isto, uma chave ROTACIONADA aqui deixaria o cofre desatualizado e
-   * o DCA operaria com a credencial velha — o pior tipo de bug, porque só
-   * aparece quando a corretora recusa e ninguém sabe por quê.
+   * A versão T2 gravava a credencial DUAS VEZES: aqui (em `creds_cipher`) e
+   * no cofre (`cex_conexoes`). Duas cópias é duas revogações necessárias,
+   * dois lugares para vazar, e um fallback que valia justamente quando o
+   * banco estava ruim. A coluna saiu na migration 0056 (produção medida com
+   * 0 sessões): a sessão guarda SÓ o elo `conexao_id`.
    *
-   * ⚠️ FALHA DEGRADA, NÃO DERRUBA. Se o cofre não gravar, a sessão é armada do
-   * mesmo jeito com `conexao_id` nulo, e a leitura cai no `creds_cipher` — que
-   * é exatamente o caminho antigo, ainda intacto. Derrubar o armar do
-   * autopilot por causa de uma tabela que nada lê ainda seria trocar um
-   * problema pequeno por um grande.
+   * ⚠️⚠️ FALHA DO COFRE = SESSÃO NÃO ARMA. Antes isto degradava: armava com
+   * `conexao_id` nulo e segredo local. Não existe mais local para onde
+   * degradar — e não existiria nem se quiséssemos, porque `creds_cipher` não
+   * existe mais. Se a credencial não entrou no cofre, NENHUMA sessão nasce
+   * apontando para segredo nenhum. Falha fechado, como o botão de parar.
    */
   const cofre = await guardarConexao({
     walletAddress: input.walletAddress,
@@ -75,46 +73,68 @@ export async function armSession(input: ArmSessionInput): Promise<string | null>
   });
   if (!cofre.ok) {
     await recordEvent("cofre_nao_gravou", { meta: {
-      why: "sessão armada SEM elo com o cofre — leitura vai cair no creds_cipher",
+      severity: "high",
+      why: "T3: cofre falhou → sessão NÃO armada (não existe mais cópia local para degradar)",
       exchange: input.exchangeId, erro: cofre.erro,
     } });
+    throw new Error(`armSession: cofre nao gravou — sessao nao armada (${cofre.erro})`);
   }
-  const today = utcDayKey();
   const expiresAt = new Date(Date.now() + input.ttlHours * 3600_000).toISOString();
 
-  const { data, error } = await db
-    .from("autopilot_sessions")
-    .upsert({
-      wallet_address:      input.walletAddress,
-      exchange_id:         input.exchangeId,
-      risk_mode:           input.riskMode,
-      market_type:         input.marketType,
-      max_trade_usd:       input.maxTradeUsd,
-      daily_loss_stop_usd: input.dailyLossStopUsd,
-      max_trades_per_day:  input.maxTradesPerDay,
-      allowed_symbols:     input.allowedSymbols,
-      lang:                input.lang,
-      creds_cipher:        credsCipher,
-      // `null` quando o cofre falhou: a leitura sabe cair no campo acima.
-      conexao_id:          cofre.ok ? cofre.id : null,
-      key_permission:        input.keyPermission,
-      key_permission_detail: input.keyPermissionDetail.slice(0, 300),
-      key_checked_at:        new Date().toISOString(),
-      is_active:           true,
-      expires_at:          expiresAt,
-      // Reset counters on (re-)arm so a fresh session starts clean.
-      trades_today:        0,
-      pnl_today:           0,
-      last_reset_day:      today,
-      frozen_until_day:    null,
-      last_error:          null,
-      updated_at:          new Date().toISOString(),
-    }, { onConflict: "wallet_address,exchange_id" })
-    .select("id")
-    .single();
+  /**
+   * A51 — REARM NÃO É RESET FINANCEIRO.
+   *
+   * O antigo UPSERT sobrescrevia `trades_today`, `pnl_today`,
+   * `last_reset_day` e `frozen_until_day` a cada rearme. Isso permitia que uma
+   * simples rotação/reconexão de credencial reabrisse rails financeiros no
+   * mesmo dia. A decisão agora vive em UMA operação atômica no PostgreSQL:
+   * mesma data preserva os rails; data nova faz somente o rollover previsto.
+   */
+  type RearmRpcResult = {
+    data: string | null;
+    error: { message: string } | null;
+  };
+  type RearmRpc = (
+    fn: "autopilot_rearm_preserva_rails",
+    args: {
+      p_wallet_address: string;
+      p_exchange_id: string;
+      p_risk_mode: ArmSessionInput["riskMode"];
+      p_market_type: ArmSessionInput["marketType"];
+      p_max_trade_usd: number;
+      p_daily_loss_stop_usd: number;
+      p_max_trades_per_day: number;
+      p_allowed_symbols: string[];
+      p_lang: string;
+      p_conexao_id: string;
+      p_key_permission: ArmSessionInput["keyPermission"];
+      p_key_permission_detail: string;
+      p_expires_at: string;
+    },
+  ) => PromiseLike<RearmRpcResult>;
+
+  // `Database` ainda não conhece a RPC 0065 neste SHA; o cast fica local e
+  // estreito para não exigir regenerar o arquivo inteiro de tipos por uma só
+  // função. O contrato real é travado pela migration e pelos testes A51.
+  const rearmRpc = db.rpc.bind(db) as unknown as RearmRpc;
+  const { data, error } = await rearmRpc("autopilot_rearm_preserva_rails", {
+    p_wallet_address: input.walletAddress,
+    p_exchange_id: input.exchangeId,
+    p_risk_mode: input.riskMode,
+    p_market_type: input.marketType,
+    p_max_trade_usd: input.maxTradeUsd,
+    p_daily_loss_stop_usd: input.dailyLossStopUsd,
+    p_max_trades_per_day: input.maxTradesPerDay,
+    p_allowed_symbols: input.allowedSymbols,
+    p_lang: input.lang,
+    p_conexao_id: cofre.id,
+    p_key_permission: input.keyPermission,
+    p_key_permission_detail: input.keyPermissionDetail.slice(0, 300),
+    p_expires_at: expiresAt,
+  });
 
   if (error) throw new Error(`armSession failed: ${error.message}`);
-  return data?.id ?? null;
+  return data ?? null;
 }
 
 /**
@@ -161,7 +181,7 @@ export async function disarmSession(
 export async function getSessionStatus(
   walletAddress: string,
   exchangeId: string,
-): Promise<Omit<AutopilotSessionRow, "creds_cipher"> | null> {
+): Promise<AutopilotSessionRow | null> {
   const db = getSupabaseAdmin();
   if (!db) return null;
   /**
@@ -183,10 +203,8 @@ export async function getSessionStatus(
     .eq("exchange_id", exchangeId)
     .maybeSingle();
   if (error) throw new Error(`getSessionStatus failed: ${error.message}`);
-  if (!data) return null;
-  const { creds_cipher: _omit, ...safe } = data;
-  void _omit;
-  return safe;
+  // Não há mais segredo na linha (T3): a visão pública É a linha.
+  return data ?? null;
 }
 
 /** All active, non-expired sessions — the cron's work queue. */
@@ -203,45 +221,104 @@ export async function listRunnableSessions(): Promise<AutopilotSessionRow[]> {
   return data ?? [];
 }
 
-/** Decrypt a session's stored credentials. Throws on tamper / missing key. */
-export function decryptSessionCreds(row: AutopilotSessionRow): CexCredentials {
-  const obj = decryptJson<{ apiKey: string; apiSecret: string; passphrase: string | null }>(row.creds_cipher);
+/**
+ * ⚠️⚠️⚠️ AS BANDEIRAS DA SESSÃO, RELIDAS DEPOIS DO SETTLE — item 11.
+ *
+ * O cron carrega a linha UMA vez, no começo da passada
+ * (`listRunnableSessions`), e a passada ESCREVE nela: a liquidação da saída
+ * armada chama `autopilot_marcar_contabilidade`, que grava
+ * `contabilidade_incompleta_em`. O portão de entrada lia a cópia em MEMÓRIA
+ * e portanto o valor de ANTES — a bandeira levantada nesta passada só
+ * começava a valer na seguinte, cinco minutos depois, que é a cadência
+ * inteira de decisão do bot.
+ *
+ * O stop de perda já tinha contrapartida em memória por este mesmo motivo
+ * (`pnlToday += settle.realizedDelta`). A contabilidade não tinha — e um
+ * espelho em memória não bastaria aqui, porque a mesma coluna também é
+ * escrita pela varredura de pendências e pelo canal do navegador, fora desta
+ * função. A fonte de verdade é a linha.
+ *
+ * ⚠️ TRI-STATE, e falha é falha: `null` = não deu para ler. Quem chama NÃO
+ * abre entrada nova com as bandeiras desconhecidas — "não consegui ler" nunca
+ * pode valer como "não há bandeira".
+ */
+export interface BandeirasDaSessao {
+  quarentenaEm: string | null;
+  contabilidadeIncompletaEm: string | null;
+}
+
+export async function relerBandeirasDaSessao(
+  sessionId: string,
+  /** Injetável para teste; o padrão é o cliente de serviço. */
+  deps: { db?: SupabaseClient<Database> | null } = {},
+): Promise<BandeirasDaSessao | null> {
+  const db = deps.db ?? getSupabaseAdmin();
+  if (!db) return null;
+  const { data, error } = await db
+    .from("autopilot_sessions")
+    .select("quarentena_em, contabilidade_incompleta_em")
+    .eq("id", sessionId)
+    .maybeSingle();
+  // ⚠️ O cliente RESOLVE com `{ error }` — não lança. E linha ausente também
+  // é ausência de resposta sobre uma sessão que deveria existir.
+  if (error || !data) return null;
+  const linha = data as unknown as {
+    quarentena_em?: unknown; contabilidade_incompleta_em?: unknown;
+  };
   return {
-    apiKey:     obj.apiKey,
-    apiSecret:  obj.apiSecret,
-    passphrase: obj.passphrase ?? undefined,
+    quarentenaEm: linha.quarentena_em == null ? null : String(linha.quarentena_em),
+    contabilidadeIncompletaEm: linha.contabilidade_incompleta_em == null
+      ? null : String(linha.contabilidade_incompleta_em),
   };
 }
 
-/** De onde a credencial veio nesta leitura. É o que o contador do T2 mede. */
-export type OrigemCredencial = "cofre" | "sessao";
+/** De onde a credencial veio nesta leitura. T3: existe UM lugar — o cofre. */
+export type OrigemCredencial = "cofre";
 
 /**
- * ⚠️⚠️ LEITURA DUPLA — T2 da virada do cofre.
+ * ⚠️⚠️⚠️ O COFRE É A ÚNICA FONTE — achado A115, o T3 concluído (Round 2).
  *
- * Prefere `cex_conexoes` quando a sessão tem elo; cai em `creds_cipher` quando
- * não tem, ou quando o cofre não devolve linha utilizável. Devolve DE ONDE
- * veio, porque é isso que autoriza o T3.
+ * A versão T2 tinha um FALLBACK: sessão sem elo no cofre lia o segredo de
+ * `creds_cipher`, a segunda cópia guardada na própria sessão. O Round 1 já
+ * tinha fechado o fallback PARA SESSÃO COM ELO; esta rodada removeu o ramo
+ * inteiro — e a coluna (migration 0056, produção medida com 0 sessões).
  *
- * ⚠️ O CONTADOR NÃO É ENFEITE. Sem ele, remover o `creds_cipher` é chute — e a
- * invariante nº 33 diz que "ninguém usou o caminho velho" e "meu contador está
- * quebrado" não podem ser a mesma tela.
+ * Agora NÃO EXISTE outro caminho, para nenhuma sessão:
  *
- * ⚠️ E A CONEXÃO REVOGADA NÃO CAI PARA TRÁS. Se o dono desligou a conexão no
- * cofre, a leitura FALHA em vez de usar a cópia antiga da sessão — senão
- * revogar não revogaria nada, que é o oposto do ponto do cofre.
+ *     sem conexao_id     ERRO EXPLÍCITO (sessão pré-cofre não existe mais)
+ *     revogada           BLOQUEIA
+ *     não existe         BLOQUEIA
+ *     não deu para ler   BLOQUEIA
+ *     cofre ilegível     BLOQUEIA (o `decifrarConexao` lança, e deve lançar)
+ *
+ * ⚠️ SE ALGUÉM REINTRODUZIR UM "CAMINHO ALTERNATIVO" aqui, o grep-guard de
+ * `cofre-t3.test.ts` quebra o build. Um lugar para revogar que tem outro
+ * lugar atrás dele não é um lugar para revogar.
  */
 export async function credenciaisDaSessao(
   row: AutopilotSessionRow,
 ): Promise<{ creds: CexCredentials; origem: OrigemCredencial }> {
-  if (row.conexao_id) {
-    const c = await lerConexaoPorId(row.conexao_id);
-    if (c && !c.is_active) {
-      throw new Error("cofre: conexão revogada pelo dono");
-    }
-    if (c) return { creds: decifrarConexao(c), origem: "cofre" };
+  if (!row.conexao_id) {
+    throw new Error(
+      "sessão sem elo com o cofre (conexao_id nulo) — a segunda cópia do segredo foi removida no T3; rearma a sessão");
   }
-  return { creds: decryptSessionCreds(row), origem: "sessao" };
+  const c = await lerConexaoPorId(row.conexao_id);
+  if (c === undefined) {
+    throw new Error("cofre: nao deu para ler a conexao — nenhuma ordem sai sobre duvida de credencial");
+  }
+  if (c === null) {
+    throw new Error("cofre: conexao inexistente para esta sessao — vinculo quebrado");
+  }
+  if (!c.is_active) {
+    throw new Error("cofre: conexão revogada pelo dono");
+  }
+  if (!c.is_current) {
+    throw new Error("cofre: conexão substituída por rotação — rearme a sessão");
+  }
+  // ⚠️ `decifrarConexao` LANÇA em adulteração ou chave ausente. Não se
+  // captura aqui de propósito: cofre ilegível é bloqueio, não motivo para
+  // procurar o segredo em outro lugar.
+  return { creds: decifrarConexao(c), origem: "cofre" };
 }
 
 /** Patch a session's mutable fields (counters, freeze, last_scan_at, error). */
@@ -268,7 +345,9 @@ export async function patchSession(
   id: string,
   patch: Partial<Pick<AutopilotSessionRow,
     "trades_today" | "pnl_today" | "last_reset_day" | "frozen_until_day" |
-    "last_scan_at" | "last_error" | "is_active">>,
+    "last_scan_at" | "last_error" | "is_active" |
+    /** ⚠️ O carimbo do plano, revalidado com prazo pelo worker (achado A111). */
+    "tier_snapshot" | "tier_checked_at">>,
 ): Promise<{ ok: boolean; erro?: string }> {
   const db = getSupabaseAdmin();
   if (!db) return { ok: false, erro: "supabase nao configurado" };
@@ -301,33 +380,166 @@ export async function tryLockSession(id: string, ttlMs: number): Promise<boolean
 }
 
 /**
- * Atomically add to a session's trades_today (A1 write-back). Lets the browser
- * publish its own fires so the server counter reflects BOTH channels and can
- * be read back as the single authoritative daily count. No-op if no session
- * exists for the wallet+exchange.
+ * ⚠️⚠️⚠️ `bumpSessionTrades` VIVIA AQUI, E SAIU NO A132 (Round 9).
+ *
+ * Ela era o write-back do A1: somava `trades_today` DEPOIS que a ordem já
+ * existia na corretora, por `rpc("bump_session_trades")` — que é
+ * `trades_today = trades_today + n`, incremento atômico **sem conferir teto**.
+ *
+ * A cicatriz dela, que continua valendo como lição, era de OUTRO defeito: o
+ * RPC era disparado sem conferir `error`, e o cliente do Supabase RESOLVE com
+ * `{ error }` em vez de lançar. Se ele falhasse, o contador não subia e o
+ * limite diário DEIXAVA DE EXISTIR, em silêncio, pelo resto do dia (auditoria
+ * 23/08). Consertar isso não consertou o outro buraco — e o outro buraco era
+ * estrutural:
+ *
+ *     navegador lê 4 → reserva → 5
+ *     cron já tinha lido 4 → envia → soma → 6
+ *
+ * Teto de 5 fechando o dia em 6. Não havia conferência possível DEPOIS do
+ * efeito externo: quando a soma acontece, o dinheiro já saiu.
+ *
+ * O Round 8 trocou o navegador para `reservarTradeDaSessao` (compare-and-swap,
+ * ANTES do envio) e DECLAROU a corrida cron↔navegador como limitação
+ * conhecida. O A132 é o fim dela: o cron passou a usar a mesma reserva, pela
+ * mesma costura (`reservaDaVagaDiaria` → `ReservaDeRisco` do executor), e esta
+ * função deixou de ter caller. Mantê-la exportada seria manter uma arma
+ * carregada — um caminho que soma sem teto, a uma linha de distância de
+ * qualquer um que "só precise contar um trade".
+ *
+ * O RPC `bump_session_trades` (migration 0010) continua existindo no banco;
+ * nenhuma migration foi alterada para remover o que o código não chama mais.
+ *
+ * ⚠️ NÃO RESSUSCITAR. `escritas-conferidas.test.ts` tranca a ausência: nenhum
+ * arquivo de produção pode voltar a chamar este RPC para contar trade.
  */
+
 /**
- * ⚠️⚠️ DEVOLVE SE CONTOU — e antes engolia a falha (auditoria 23/08).
+ * ⚠️⚠️⚠️ RESERVA UMA VAGA DO TETO DIÁRIO, ATOMICAMENTE — achado A130-B, §17.
  *
- * Este contador E o limite de trades por dia que o usuario configurou. O cron
- * ja o incrementa LOGO APOS a ordem existir, de proposito, para sobreviver a
- * um timeout no meio da execucao — esse raciocinio estava certo.
+ * O `bump_session_trades` acima é um `UPDATE ... SET trades_today = trades_today
+ * + n` puro. O incremento em si é atômico, mas **não confere teto nenhum**. Com
+ * `trades_today = 4` e `max = 5`, duas requisições concorrentes leem `4 < 5`,
+ * as duas passam, e o contador termina em 6. O limite que o dono configurou
+ * vira sugestão sob concorrência — e o canal do navegador é justamente o que
+ * pode disparar duas vezes com um clique duplo.
  *
- * Mas o RPC era disparado sem conferir `error`, e o cliente do Supabase
- * RESOLVE com `{ error }` em vez de lancar. Se ele falhasse, o contador nao
- * subia e o limite diario simplesmente DEIXAVA DE EXISTIR, em silencio, pelo
- * resto do dia — a mesma classe do `engine.ts`, agora em dinheiro real.
+ * ⚠️ POR QUE COMPARE-AND-SWAP, E NÃO RPC NOVA. Uma função no banco resolveria
+ * com `where trades_today < max_trades_per_day`, mas RPC nova exige migration
+ * nova — e o §50 manda PARAR antes de criar migration no A130. O CAS resolve
+ * sem tocar no esquema:
  *
- * ⚠️ Nao da para desfazer a ordem que ja foi. O que da e nao mentir sobre ela
- * ter sido contada: quem chama trata o `false` como "perdi a conta", e o
- * caminho do dinheiro falha FECHADO a partir dali.
+ *     update ... set trades_today = <lido+1>
+ *      where id = X and trades_today = <lido> and is_active and last_reset_day = <hoje>
+ *
+ * Em READ COMMITTED, quando duas transações disputam a MESMA linha, a segunda
+ * espera o lock e então **reavalia o WHERE contra a versão já atualizada**
+ * (EvalPlanQual). `trades_today = <lido>` deixa de casar e ela grava ZERO
+ * linhas. `.select("id")` faz a diferença ser visível: sem ele, "reservei" e
+ * "não reservei" voltariam idênticos — a cicatriz do A11 nesta mesma tabela.
+ *
+ * ⚠️ `last_reset_day` ENTRA NO WHERE de propósito. O contador só é zerado pela
+ * virada do dia do cron; reservar contra um `trades_today` de ontem contaria a
+ * vaga no balde errado. Dia diferente ⇒ nenhuma linha casa ⇒ `virou_o_dia`, e
+ * quem chama decide (aqui: recusa, porque a virada é do cron e é melhor perder
+ * um trade do que estourar o teto).
+ *
+ * ⚠️ TENTATIVAS: a corrida legítima (duas reservas simultâneas com vaga para
+ * ambas) falha o CAS uma vez e sucede na releitura. Três tentativas cobrem
+ * isso sem virar laço.
  */
-export async function bumpSessionTrades(walletAddress: string, exchangeId: string, n: number): Promise<boolean> {
+export type ResultadoDaReserva =
+  | { ok: true; tradesDepois: number }
+  | { ok: false;
+      motivo: "limite_diario" | "virou_o_dia" | "sessao_inativa" | "erro" | "contencao";
+      porque: string };
+
+export async function reservarTradeDaSessao(
+  sessionId: string,
+  hojeUtc: string,
+  tentativas = 3,
+): Promise<ResultadoDaReserva> {
+  const db = getSupabaseAdmin();
+  if (!db) return { ok: false, motivo: "erro", porque: "sem banco" };
+
+  for (let i = 0; i < tentativas; i++) {
+    const { data, error } = await db
+      .from("autopilot_sessions")
+      .select("trades_today, max_trades_per_day, is_active, last_reset_day")
+      .eq("id", sessionId)
+      .maybeSingle();
+    // ⚠️ Falha de leitura NÃO é "sem sessão": não reservar é a direção certa,
+    // mas o motivo precisa dizer que não deu para olhar.
+    if (error) return { ok: false, motivo: "erro", porque: error.message.slice(0, 160) };
+    if (!data) return { ok: false, motivo: "sessao_inativa", porque: "sessao nao encontrada" };
+    if (!data.is_active) {
+      return { ok: false, motivo: "sessao_inativa", porque: "sessao parada" };
+    }
+    if (data.last_reset_day !== hojeUtc) {
+      return { ok: false, motivo: "virou_o_dia",
+        porque: `contador e do dia ${data.last_reset_day}, hoje e ${hojeUtc} — `
+          + "a virada e do cron; nenhuma vaga reservada" };
+    }
+    const atual = Number(data.trades_today);
+    const teto  = Number(data.max_trades_per_day);
+    if (!(atual < teto)) {
+      return { ok: false, motivo: "limite_diario",
+        porque: `teto diario atingido: ${atual}/${teto}` };
+    }
+
+    const { data: gravadas, error: erroUpdate } = await db
+      .from("autopilot_sessions")
+      .update({ trades_today: atual + 1, updated_at: new Date().toISOString() })
+      .eq("id", sessionId)
+      .eq("is_active", true)
+      .eq("last_reset_day", hojeUtc)
+      // ⚠️ O CAS: só casa se ninguém mexeu no contador desde a leitura.
+      .eq("trades_today", atual)
+      .select("id");
+    if (erroUpdate) {
+      return { ok: false, motivo: "erro", porque: erroUpdate.message.slice(0, 160) };
+    }
+    if ((gravadas?.length ?? 0) > 0) return { ok: true, tradesDepois: atual + 1 };
+    // Ninguém casou: outra passada reservou primeiro. Relê e tenta de novo.
+  }
+  /**
+   * ⚠️ ISTO NÃO É "TETO ATINGIDO" — achado da revisão adversarial do Round 9.
+   *
+   * Três colisões seguidas no CAS significam contenção, não dia encerrado. O
+   * motivo `limite_diario` fazia o cron concluir "acabou a cota" e encerrar a
+   * passada, com o sinal errado no log. A recusa continua (nenhuma vaga foi
+   * reservada), mas ela agora diz o que aconteceu.
+   */
+  return { ok: false, motivo: "contencao",
+    porque: `concorrencia no contador apos ${tentativas} tentativas — vaga nao reservada` };
+}
+
+/**
+ * Devolve a vaga reservada.
+ *
+ * ⚠️⚠️ SÓ NA RECUSA PROVADA. O executor chama `liberar` em três pontos, todos
+ * com prova de que NADA saiu (reserva negada a jusante, autorização recusada,
+ * corretora respondeu "não") — e NUNCA em `UNKNOWN`. Devolver a vaga sobre
+ * dúvida autorizaria um segundo envio para um dinheiro que talvez já tenha
+ * saído: a INVARIANTE 4.
+ *
+ * ⚠️ Também é CAS. Se o contador andou entre a reserva e a devolução, a
+ * devolução não acontece — e não acontecer é o lado seguro: sobra uma vaga
+ * gasta, não uma vaga inventada.
+ */
+export async function liberarTradeDaSessao(
+  sessionId: string, hojeUtc: string, valorReservado: number,
+): Promise<boolean> {
   const db = getSupabaseAdmin();
   if (!db) return false;
-  if (n <= 0) return true;
-  const { error } = await db.rpc("bump_session_trades", { p_wallet: walletAddress, p_exchange: exchangeId, p_n: n });
-  return !error;
+  const { data, error } = await db
+    .from("autopilot_sessions")
+    .update({ trades_today: Math.max(0, valorReservado - 1), updated_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("last_reset_day", hojeUtc)
+    .eq("trades_today", valorReservado)
+    .select("id");
+  return !error && (data?.length ?? 0) > 0;
 }
 
 /** Release the per-session lock so the next cron run can pick it up. */

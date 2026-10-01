@@ -2,12 +2,22 @@ import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { decidirCiclo, tetoDoCiclo, type Intervalo } from "@/lib/dca/relogio";
 import {
-  planosVencidos, reservarCiclo, fecharCiclo, gravarPulo, avancarPlano,
-  gastoHojeDaCarteira, type PlanoRow,
+  planosVencidos, planosComIntentVivoParaRecovery, reservarCiclo, fecharCiclo,
+  gravarPulo, avancarPlano, gastoHojeDaCarteira, type PlanoRow,
 } from "@/lib/dca/store";
-import { lerConexaoPorId, decifrarConexao } from "@/lib/cex/conexoes";
-import { placeCexOrder } from "@/lib/cex/server";
+import {
+  lerConexaoPorId, decifrarConexao, credenciaisDoIntentParaRecovery,
+} from "@/lib/cex/conexoes";
+import { executarOrdemCex } from "@/lib/cex/execucao/executor";
+import { intentVivoDoPlano, intentPorId } from "@/lib/cex/execucao/intents";
+import { reconciliarIntent } from "@/lib/cex/execucao/reconciliador";
+import { decidirPeloIntent } from "@/lib/dca/liquidacao";
+import { decidirCapacidade, lerCapacidades, type EstadoDasCapacidades }
+  from "@/lib/dca/capacidade";
 import { getCexSpotPrices } from "@/lib/api/cex-spot";
+import { fetchCexBalance } from "@/lib/cex/server";
+import { unidadeDca } from "@/lib/dca/unidade";
+import { comSaldoLivreDca } from "@/lib/dca/saldo";
 import { lerLiberacao, lerPilotos, decidirAutomacao } from "@/lib/autopilot/liberacao";
 import { getFlywheelGates } from "@/lib/admin/gates";
 import { setCronHeartbeat } from "@/lib/admin/health";
@@ -16,6 +26,7 @@ import { recordEvent, notifyTelegram } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CexId, CexOrder } from "@/lib/cex/types";
 import { taxaEmUsd } from "@/lib/cex/taxa";
+import { executarFilasDca } from "@/lib/dca/fila";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -110,11 +121,6 @@ export async function POST(req: NextRequest) {
   // não pode acusar "cron parado" — a causa real ficaria atrás de alarme errado.
   await setCronHeartbeat("dca");
 
-  const gates = await getFlywheelGates();
-  if (gates.pause_dca) {
-    return NextResponse.json({ ok: true, paused: true, processed: 0 });
-  }
-
   /**
    * ⚠⚠ UMA PASSADA POR VEZ — achado A20 da auditoria externa.
    *
@@ -160,45 +166,268 @@ export async function POST(req: NextRequest) {
 }
 
 async function passada(): Promise<NextResponse> {
-  const agoraIso = new Date().toISOString();
-  const { planos, truncado } = await planosVencidos(agoraIso);
-  if (truncado) {
-    // ⚠️ Corte silencioso lê-se como "vi tudo". Se um dia houver mais planos
-    // vencidos que o teto, o dono precisa saber que a fila não coube.
-    await avisar("mais planos vencidos que o teto da passada", { teto: 200 });
-  }
-
   /**
-   * ⚠️ O ESTADO É O DO DCA, não o do autopilot — e a falta deste argumento
-   * custou o primeiro teste real (25/08). O plano do dono foi barrado por uma
-   * chave que existe para segurar o robô de IA e que nunca foi criada.
+   * ⚠️⚠️ A PAUSA DA CASA PARA ENTRADA NOVA, NÃO O RECOVERY (Batch 2, obs. 5).
+   *
+   * Antes, `pause_dca` devolvia aqui, antes de tudo — e com ele o recovery.
+   * Um intent em SUBMITTING/UNKNOWN no instante da pausa ficava órfão
+   * enquanto ela durasse: exatamente o que o A58 fechou para a pausa do
+   * PLANO, reaberto pela pausa da CASA. Pausar serve para parar de gastar;
+   * descobrir o que a corretora já fez com uma ordem que saiu não gasta nada
+   * — só lê a venue e fecha o livro.
+   *
+   * Então, pausado: a fila ATIVA não é lida. Todo plano chega só pela fila de
+   * recovery, logo como `somenteRecovery`, e o `processarPlano` sai antes de
+   * qualquer gate de entrada — nenhuma ordem nova pode nascer.
    */
-  const [liberacao, pilotos] = await Promise.all([lerLiberacao("dca"), lerPilotos("dca")]);
+  // Lido DEPOIS da trava (dentro de `passada`): a passada pausada também
+  // é uma passada — ela lê a fila de recovery e pode fechar livro.
+  const pausado = (await getFlywheelGates()).pause_dca === true;
+  const agoraIso = new Date().toISOString();
+  let contexto: Promise<[
+    Awaited<ReturnType<typeof lerLiberacao>>,
+    Awaited<ReturnType<typeof lerPilotos>>,
+    EstadoDasCapacidades,
+  ]> | null = null;
 
-  const resumo: Array<{ plano: string; acao: string; detalhe?: string }> = [];
-  for (const p of planos) {
-    try {
-      resumo.push(await processarPlano(p, agoraIso, liberacao, pilotos));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      resumo.push({ plano: p.id, acao: "erro", detalhe: msg.slice(0, 120) });
-    }
+  const rodada = await executarFilasDca({
+    // Pausado: a fila ativa não é lida — sem ela nenhum plano chega como
+    // candidato a entrada nova. A de recovery é lida igual, e erro nela
+    // continua sendo 503 (A86).
+    lerAtivos: () => (pausado
+      ? Promise.resolve({ ok: true as const, planos: [] as PlanoRow[], truncado: false })
+      : planosVencidos(agoraIso)),
+    lerRecovery: () => planosComIntentVivoParaRecovery(),
+    processar: ({ plano, somenteRecovery }) => processarPlano(
+      plano, agoraIso, async () => {
+        // Contexto de NOVA entrada é lazy. Recovery-only não depende de
+        // capability/liberação para descobrir o que já aconteceu na venue.
+        contexto ??= Promise.all([
+          lerLiberacao("dca"),
+          lerPilotos("dca"),
+          lerCapacidades(getSupabaseAdmin()),
+        ]);
+        return contexto;
+      },
+      somenteRecovery,
+    ),
+    aoFalharProcessamento: (item, e) => ({
+      plano: item.plano.id,
+      acao: "erro",
+      detalhe: (e instanceof Error ? e.message : String(e)).slice(0, 120),
+    }),
+  });
+
+  if (!rodada.ok) {
+    // A86 vale para as DUAS fontes. Uma fila de recovery ilegível é tão
+    // perigosa quanto a fila ativa ilegível: processar só metade poderia abrir
+    // nova entrada enquanto uma side effect antiga está órfã.
+    await avisar("fila do DCA INDISPONIVEL — nenhuma execucao", {
+      origem: rodada.origem, erro: rodada.motivo, detalhe: rodada.detalhe ?? null,
+    });
+    return NextResponse.json({
+      ok: false, error: rodada.error, origem: rodada.origem,
+      motivo: rodada.motivo, processed: rodada.processed,
+    }, { status: rodada.status });
   }
 
-  return NextResponse.json({ ok: true, processed: planos.length, truncado, resumo });
+  if (rodada.truncado) {
+    await avisar("fila do DCA maior que o teto da passada", {
+      teto: 200,
+      why: "fila ativa ou de recovery foi truncada; o HTTP declara truncamento",
+    });
+  }
+
+  return NextResponse.json({
+    ok: true, processed: rodada.processed, truncado: rodada.truncado, resumo: rodada.resumo,
+    ...(pausado ? { paused: true } : {}),
+  }, { status: rodada.status });
 }
 
 type Liberacao = Awaited<ReturnType<typeof lerLiberacao>>;
 type Pilotos   = Awaited<ReturnType<typeof lerPilotos>>;
+type ContextoEntrada = [Liberacao, Pilotos, EstadoDasCapacidades];
+type DbExec = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
+type ResultadoPlano = { plano: string; acao: string; detalhe?: string };
+
+/**
+ * A58 — recovery é uma obrigação do INTENT, não uma permissão do status do
+ * plano. Esta função roda antes de capability/liberação/conexão de NOVA entrada
+ * e usa a conexão histórica do próprio intent. `null` significa que não há
+ * intent vivo; qualquer outro retorno encerra o processamento deste plano.
+ */
+async function recuperarIntentDoPlano(
+  p: PlanoRow, dbExec: DbExec,
+): Promise<ResultadoPlano | null> {
+  const vivo = await intentVivoDoPlano(dbExec, p.id);
+  if (vivo === undefined) {
+    return { plano: p.id, acao: "adiado", detalhe: "nao consegui ler intents pendentes" };
+  }
+  if (!vivo) return null;
+
+  const rec = await reconciliarIntent({
+    db: dbExec,
+    // A127: recovery usa intent.conexao_id; status/current do plano não migra a
+    // identidade histórica da ordem.
+    credenciais: async (intent) => credenciaisDoIntentParaRecovery(dbExec, intent),
+  }, vivo);
+
+  /**
+   * ⚠️⚠️⚠️ RELER O MESMO INTENT, PELO ID — achado A117.
+   *
+   * A versão antiga fazia `(await intentVivoDoPlano(...)) ?? null` e, com o
+   * `null`, inventava `{ ...vivo, state: "FILLED" }`. `intentVivoDoPlano` só
+   * enxerga estados NÃO-terminais: exatamente quando a reconciliação
+   * FUNCIONAVA e o livro fechava em FILLED, o intent sumia da consulta e o
+   * plano liquidava com os números do PEDIDO — o A81 ressuscitado por um
+   * fallback sintético. Estado sintético não existe mais aqui: relê-se o
+   * MESMO intent pelo id; `undefined` (falha de leitura) adia, `null` (a
+   * linha sumiu) é incidente e também não avança.
+   *
+   * ⚠️⚠️ E DA RELEITURA EM DIANTE, TODO DADO VEM DE `atual` — achado A119.
+   * `vivo` é a fotografia PRÉ-reconciliação: a taxa dele é a velha (ou
+   * nenhuma). `vivo` só presta para o `id` e para o número do ciclo nos ramos
+   * em que `atual` não existe, capturado ANTES da releitura.
+   */
+  const cicloDoIntentVivo = Number(vivo.cycle_number);
+  const atual = await intentPorId(dbExec, vivo.id);
+  if (atual === undefined) {
+    await avisar("releitura do intent FALHOU — plano NAO avanca", {
+      plano: p.id, ciclo: cicloDoIntentVivo, intent: vivo.id,
+      why: "reconciliei e nao consegui reler o resultado; nada novo e autorizado",
+    });
+    return { plano: p.id, acao: "adiado", detalhe: "nao consegui reler o intent" };
+  }
+  if (atual === null) {
+    await recordEvent("dca_intent_sumiu", { wallet: p.wallet_address, meta: {
+      severity: "high", plano: p.id, ciclo: cicloDoIntentVivo, intent: vivo.id,
+      why: "o intent existia antes da reconciliacao e nao existe mais; plano nao avanca",
+    } });
+    notifyTelegram(`🔴 DCA — intent SUMIU do livro\nplano ${p.id} · intent ${vivo.id}`);
+    return { plano: p.id, acao: "adiado", detalhe: "intent sumiu do livro" };
+  }
+
+  const decisao = decidirPeloIntent(atual);
+  if (decisao.acao === "esperar") {
+    await avisar("ciclo de DCA em DUVIDA — plano NAO avanca ate reconciliar", {
+      plano: p.id, ciclo: Number(atual.cycle_number), intent: atual.id,
+      estado: rec.estado, porque: decisao.porque,
+      why: "a ordem pode ter executado; plano/status do usuario nao autoriza repeticao",
+    });
+    return { plano: p.id, acao: "em_duvida", detalhe: decisao.porque };
+  }
+  if (decisao.acao === "quarentena") {
+    await avisar("intent do DCA em QUARENTENA — mao humana", {
+      plano: p.id, ciclo: Number(atual.cycle_number), intent: atual.id, porque: decisao.porque,
+    });
+    return { plano: p.id, acao: "quarentena", detalhe: decisao.porque };
+  }
+
+  /**
+   * ⚠️ O CICLO FECHA COM O QUE O LIVRO TEM, não com o que foi pedido (A81).
+   * ⚠️⚠️ E A TAXA TAMBÉM VEM DO LIVRO RELIDO (A119): `decidirPeloIntent` não
+   * devolve fee — o único caminho da taxa até o ciclo é `atual.fee_total`.
+   */
+  const ciclo = Number(atual.cycle_number);
+  const fechou = await fecharCiclo(p.id, ciclo, {
+    status: decisao.status, motivo: decisao.motivo ?? undefined,
+    orderId: decisao.orderId ?? undefined,
+    preco: decisao.precoMedio ?? undefined,
+    quantidade: decisao.quantidade || undefined,
+    custoUsd: decisao.custoUsd || undefined,
+    simulado: atual.simulated,
+    taxaUsd: atual.simulated ? null : atual.fee_total,
+  });
+  if (!fechou) {
+    await avisar("intent resolvido e ciclo NAO fechado — reconciliar a mao", {
+      plano: p.id, ciclo, intent: vivo.id,
+    });
+  }
+
+  const feitosAgora = p.ciclos_feitos + (decisao.contaComoFeito ? 1 : 0);
+  const puladosAgora = p.ciclos_pulados + (decisao.contaComoFeito ? 0 : 1);
+  const gastoAgora = Number(p.gasto_acumulado_usd) + decisao.custoUsd;
+  const acabouAgora = feitosAgora + puladosAgora >= p.ciclos_total;
+  const patch: Parameters<typeof avancarPlano>[1] = {
+    ciclosFeitos: feitosAgora, ciclosPulados: puladosAgora, gastoAcumulado: gastoAgora,
+  };
+
+  // Status escolhido pelo usuário é preservado durante recovery. Só um plano
+  // que AINDA está ativo pode ter relógio/status de conclusão atualizado aqui.
+  if (p.status === "ativo") {
+    patch.nextRunAt = new Date(Date.now() + 60_000).toISOString();
+    if (acabouAgora) {
+      patch.status = "completo";
+      patch.encerradoPor = "completo";
+    }
+  }
+
+  if (!await avancarPlano(p.id, patch)) {
+    await avisar("intent resolvido e plano NAO avancou — congela ate mao humana", {
+      plano: p.id, ciclo, intent: vivo.id,
+    });
+  }
+  return {
+    plano: p.id,
+    acao: decisao.contaComoFeito ? "reconciliado_comprou" : "reconciliado_sem_compra",
+    detalhe: `${decisao.quantidade} por $${decisao.custoUsd.toFixed(2)}`,
+  };
+}
 
 async function processarPlano(
-  p: PlanoRow, agoraIso: string, liberacao: Liberacao, pilotos: Pilotos,
-): Promise<{ plano: string; acao: string; detalhe?: string }> {
+  p: PlanoRow, agoraIso: string, obterContextoEntrada: () => Promise<ContextoEntrada>,
+  somenteRecovery = false,
+): Promise<ResultadoPlano> {
+  const dbExec = getSupabaseAdmin();
+  if (!dbExec) {
+    return { plano: p.id, acao: "adiado", detalhe: "sem banco para conferir intents" };
+  }
+
+  // A58 revisão: recovery PRIMEIRO, antes de qualquer gate que só faz sentido
+  // para risco novo. Assim pause/encerrar/completo não órfã SUBMITTING/UNKNOWN.
+  const recuperado = await recuperarIntentDoPlano(p, dbExec);
+  if (recuperado) return recuperado;
+  if (somenteRecovery) {
+    return { plano: p.id, acao: "sem_recovery", detalhe: `status_${p.status}` };
+  }
+  if (p.status !== "ativo") {
+    // Defesa em profundidade: fila de recovery jamais vira fonte de entrada.
+    return { plano: p.id, acao: "sem_nova_entrada", detalhe: `status_${p.status}` };
+  }
+
+  const [liberacao, pilotos, capacidades] = await obterContextoEntrada();
+
   /**
    * ⚠️ GATE PRÓPRIO, função compartilhada. `decidirAutomacao` é decisão PURA
    * sobre um estado lido do banco — o DCA passa o SEU estado. Abrir robô de IA
    * ao público e abrir poupança ao público são decisões diferentes.
    */
+  /**
+   * ⚠️⚠️ A CAPACIDADE DO MODO, ANTES DE QUALQUER NOVA ENTRADA — achado A112.
+   *
+   * `dca_liberado` foi aberto em 25/08 "para o primeiro teste SIMULADO" — a
+   * justificativa está gravada ao lado dele em produção — e o MESMO
+   * interruptor liberava o caminho REAL. Agora são duas capacidades, e a real
+   * nasce FECHADA: ausência de `dca_real_liberado` é recusa.
+   *
+   * ⚠️ E ELA VEM antes do gate de automação de NOVA ENTRADA, de propósito: "este produto pode
+   * mover dinheiro?" é pergunta anterior a "esta carteira pode automatizar?".
+   */
+  const capacidade = decidirCapacidade(
+    (p.modo === "real" ? "real" : "simulado"), capacidades);
+  if (!capacidade.permitido) {
+    if (await primeiraVezNaJanela(`sem_capacidade:${p.id}:${capacidade.causa}`, 3_600_000)) {
+      await recordEvent("dca_sem_capacidade", { wallet: p.wallet_address, meta: {
+        plano: p.id, modo: p.modo, causa: capacidade.causa,
+        why: p.modo === "real"
+          ? "DCA REAL exige `dca_real_liberado = true` em admin_kv. Ele nasce FECHADO "
+            + "de proposito: o interruptor antigo foi aberto para um teste SIMULADO."
+          : "DCA simulado exige `dca_simulado_liberado` (ou a chave legada `dca_liberado`).",
+      } });
+    }
+    return { plano: p.id, acao: "sem_capacidade", detalhe: capacidade.causa };
+  }
+
   const v = decidirAutomacao(p.wallet_address, liberacao, pilotos);
   if (!v.permitido) {
     /**
@@ -239,10 +468,47 @@ async function processarPlano(
   let conexao: Awaited<ReturnType<typeof lerConexaoPorId>> = null;
   if (!simulado) {
     conexao = await lerConexaoPorId(p.conexao_id ?? "");
-    if (!conexao || !conexao.is_active) {
+    /**
+     * ⚠️⚠️ TRÊS RESPOSTAS, TRÊS CONDUTAS — achado A115.
+     *
+     * `!conexao` cobria `null` e `undefined` juntos, e ENCERRAVA o plano como
+     * "conexao_revogada" nos dois. Ou seja: uma falha de leitura do banco
+     * matava um plano de poupança do cliente, com um motivo que dizia outra
+     * coisa. Fail-closed estava certo; destruir estado não.
+     */
+    if (conexao === undefined) {
+      // Não deu para olhar. Nada sai, e o plano continua vivo.
+      return { plano: p.id, acao: "adiado", detalhe: "cofre ilegivel — nada enviado" };
+    }
+    if (conexao === null || !conexao.is_active) {
       await avancarPlano(p.id, { status: "encerrado", encerradoPor: "conexao_revogada" });
       return { plano: p.id, acao: "encerrado", detalhe: "conexao_revogada" };
     }
+  }
+
+  // A96 — o recovery acima vem primeiro de propósito: um intent histórico
+  // ETH/BTC continua reconciliável. Só uma NOVA execução real exige quote com
+  // unidade explicitamente USD-like.
+  const unidade = unidadeDca(p.symbol);
+  if (!simulado && !unidade.ok) {
+    if (await primeiraVezNaJanela(`quote_nao_usd:${p.id}:${unidade.quote ?? "?"}`, 3_600_000)) {
+      await recordEvent("dca_quote_nao_usd", { wallet: p.wallet_address, meta: {
+        plano: p.id, symbol: p.symbol, quote: unidade.quote ?? null,
+        why: "nova execucao REAL recusada: quote nao pertence a USD/USDT/USDC; recovery historico continua permitido",
+      } });
+    }
+    return { plano: p.id, acao: "adiado", detalhe: "quote_nao_usd_like — requer novo plano compativel" };
+  }
+
+  /**
+   * ⚠️⚠️ A127 — RETIRED pode resolver a dúvida histórica acima, mas NÃO pode
+   * iniciar ciclo novo. Só chegamos aqui quando não há intent vivo pendente.
+   * Substituída não é revogada: o plano fica vivo, aguardando reconexão/rebind
+   * explícito, e não herda automaticamente outra conexão CURRENT.
+   */
+  if (!simulado && conexao && conexao.is_active && !conexao.is_current) {
+    return { plano: p.id, acao: "adiado",
+      detalhe: "conexao_substituida — requer_reconexao" };
   }
 
   const d = decidirCiclo({
@@ -295,7 +561,7 @@ async function processarPlano(
    * primeiro acabou de gastar. Um valor lido uma vez no início da passada
    * reabriria o furo dentro da própria passada.
    */
-  const gastoHoje = await gastoHojeDaCarteira(p.wallet_address);
+  const gastoHoje = await gastoHojeDaCarteira(p.wallet_address, p.modo);
   if (gastoHoje === null) {
     // ⚠️ FALHA FECHADO. Um erro de consulta — ou uma leitura que estourou o
     // teto e pode estar cortada — que virasse `0` abriria o teto diário
@@ -336,14 +602,62 @@ async function processarPlano(
     return { plano: p.id, acao: "adiado", detalhe: "sem preco de referencia" };
   }
 
+  // A97 — preflight adicional de saldo livre, na MESMA venue/conexão da
+  // execução. Não é atomicidade: a venue ainda pode recusar se o saldo mudar
+  // depois daqui. Para plano REAL a própria reserva fica DENTRO do callback
+  // autorizado por `comSaldoLivreDca`: leitura/quote/FREE falhou => zero reserva.
+  let reserva: Awaited<ReturnType<typeof reservarCiclo>>;
+  if (!simulado) {
+    if (!conexao || !unidade.ok) {
+      return { plano: p.id, acao: "adiado", detalhe: "saldo_precheck_sem_conexao_ou_unidade" };
+    }
+    if (conexao.exchange_id !== p.exchange_id) {
+      await avisar("conexao do plano aponta para outra venue — nenhuma ordem enviada", {
+        plano: p.id, conexao: conexao.id, venuePlano: p.exchange_id, venueConexao: conexao.exchange_id,
+      });
+      return { plano: p.id, acao: "adiado", detalhe: "conexao_venue_divergente" };
+    }
+
+    const gateSaldo = await comSaldoLivreDca({
+      quote: unidade.quote,
+      necessario: teto.valorUsd,
+      ler: () => fetchCexBalance(
+        p.exchange_id as CexId, decifrarConexao(conexao!), false,
+      ),
+      continuar: () => reservarCiclo(p.id, d.ciclo, d.agendadoPara),
+    });
+
+    if (!gateSaldo.ok) {
+      if (gateSaldo.motivo === "leitura_falhou") {
+        if (await primeiraVezNaJanela(`saldo_ilegivel:${p.id}`, 15 * 60_000)) {
+          await avisar("saldo FREE da quote ilegivel — nenhuma reserva/ordem", {
+            plano: p.id, quote: unidade.quote, erro: gateSaldo.detalhe,
+          });
+        }
+        return { plano: p.id, acao: "adiado", detalhe: "saldo_leitura_falhou" };
+      }
+
+      if (await primeiraVezNaJanela(`saldo_insuficiente:${p.id}:${gateSaldo.motivo}`, 15 * 60_000)) {
+        await recordEvent("dca_saldo_precheck_recusou", { wallet: p.wallet_address, meta: {
+          plano: p.id, quote: unidade.quote, motivo: gateSaldo.motivo,
+          free: "free" in gateSaldo ? gateSaldo.free ?? null : null,
+          necessario: teto.valorUsd,
+          why: "DCA real usa FREE, nunca TOTAL; leitura/quote/saldo insuficiente nao autoriza reserva nem BUY",
+        } });
+      }
+      return { plano: p.id, acao: "adiado", detalhe: `saldo_${gateSaldo.motivo}` };
+    }
+    reserva = gateSaldo.valor;
+  } else {
+    reserva = await reservarCiclo(p.id, d.ciclo, d.agendadoPara);
+  }
+
   /**
    * ⚠️⚠️ PASSO 1 DE TRÊS — A RESERVA. A ordem é INEGOCIÁVEL.
    *
-   * `ja_reservado` é resultado NORMAL, não erro: significa que outra passada
-   * está com este ciclo, e esta sai SEM GASTAR NADA. É a única garantia contra
-   * comprar duas vezes — o lock por sessão tem TTL e não basta.
+   * No REAL ela só é alcançada dentro do gate A97 acima. No SIMULADO segue
+   * direto, porque nenhum saldo de corretora é consumido.
    */
-  const reserva = await reservarCiclo(p.id, d.ciclo, d.agendadoPara);
   if (reserva === "ja_reservado") {
     /**
      * ⚠️ NORMAL UMA VEZ, SINTOMA SE INSISTE. Duas passadas concorrentes no
@@ -383,17 +697,74 @@ async function processarPlano(
      * ser confundido com o de uma ordem real é como um extrato simulado vira
      * evidência de compra que nunca houve.
      */
-    const order = simulado
-      ? { id: `simulado:${p.id.slice(0, 8)}:${d.ciclo}`, average: ref, filled: quantidade, cost: teto.valorUsd }
-      : (await placeCexOrder(
-          p.exchange_id as CexId,
-          decifrarConexao(conexao!),
-          { symbol: p.symbol, type: "market", side: "buy", amount: quantidade },
-        )).order;
+    /**
+     * ⚠️⚠️ AGORA QUEM EXECUTA É O EXECUTOR AUTORITATIVO — achado A107.
+     *
+     * O intent é gravado ANTES do envio, o kill-switch é conferido no limiar
+     * (A106 — este cron NUNCA consultava `disable_cex`), e um timeout vira
+     * DÚVIDA em vez de "falhou" (A104).
+     *
+     * ⚠️ O SIMULADO PERCORRE O MESMO CAMINHO. É a única linha que muda lá
+     * dentro, e é o que faz o teste sem dinheiro valer.
+     */
+    const exec = await executarOrdemCex(
+      { db: dbExec },
+      { origin: "dca_cron", autonomous: true, walletAddress: p.wallet_address,
+        planId: p.id, cycleNumber: d.ciclo, conexaoId: p.conexao_id },
+      { exchangeId: p.exchange_id as CexId, symbol: p.symbol, side: "buy",
+        type: "market", qty: quantidade, notionalUsd: teto.valorUsd,
+        simulated: simulado, precoDeReferencia: ref },
+      simulado ? null : decifrarConexao(conexao!),
+    );
 
-    const preco = Number(order.average) > 0 ? Number(order.average) : ref;
-    const qtd   = Number(order.filled)  > 0 ? Number(order.filled)  : quantidade;
-    const custo = Number(order.cost)    > 0 ? Number(order.cost)    : preco * qtd;
+    /**
+     * ⚠️⚠️ ACHADO A104, NO PONTO EXATO. Dúvida NÃO fecha o ciclo e NÃO avança o
+     * plano. O ciclo fica reservado e o intent fica em UNKNOWN; a passada
+     * seguinte reconcilia ANTES de qualquer coisa (ver o topo desta função).
+     */
+    if (exec.desfecho === "incerto") {
+      await avisar("ordem do DCA INCERTA — pode ter executado; plano NAO avanca", {
+        plano: p.id, ciclo: d.ciclo, intent: exec.intentId, porque: exec.porque,
+        why: "marcar como falhou e avancar arriscaria comprar de novo o que ja foi comprado.",
+      });
+      return { plano: p.id, acao: "em_duvida", detalhe: exec.porque.slice(0, 120) };
+    }
+
+    if (exec.desfecho === "recusado") {
+      /**
+       * ⚠️ RECUSA PROVADA: nada saiu. O ciclo conta como consumido — senão o
+       * plano congela recalculando o mesmo número para sempre (cicatriz 26/08).
+       */
+      if (!await fecharCiclo(p.id, d.ciclo, { status: "falhou", motivo: exec.porque.slice(0, 200), simulado })) {
+        await avisar("ordem recusada e ciclo nao marcado — fica preso em reservado", {
+          plano: p.id, ciclo: d.ciclo, erro: exec.porque.slice(0, 160),
+        });
+      }
+      if (!await avancarPlano(p.id, { ciclosPulados: pulados + 1, nextRunAt: d.proximoRunAt })) {
+        await avisar("ordem recusada e plano NAO avancou — congela ate mao humana", {
+          plano: p.id, ciclo: d.ciclo, erro: exec.porque.slice(0, 160),
+        });
+      }
+      return { plano: p.id, acao: "falhou", detalhe: exec.porque.slice(0, 120) };
+    }
+
+    /**
+     * ⚠️⚠️ ACHADO A81. Os números vêm do LIVRO (`exec.filledQty`), não do
+     * pedido. O código antigo fazia `Number(order.filled) > 0 ? ... : quantidade`
+     * — `filled` ausente virava "comprou tudo", e o plano gastava orçamento
+     * sobre uma compra que podia não ter acontecido.
+     */
+    if (exec.filledQty <= 0) {
+      // ACK sem preenchimento: a ordem está viva na corretora. Não fecha nada.
+      await avisar("ordem do DCA aceita e AINDA SEM preenchimento — plano NAO avanca", {
+        plano: p.id, ciclo: d.ciclo, intent: exec.intentId, estado: exec.state,
+      });
+      return { plano: p.id, acao: "em_duvida", detalhe: "aceita sem fill" };
+    }
+    const order = { id: exec.externalOrderId ?? exec.intentId };
+    const qtd   = exec.filledQty;
+    const custo = exec.filledQuote > 0 ? exec.filledQuote : ref * qtd;
+    const preco = custo / qtd;
 
     /**
      * ⚠️ A TAXA QUE A CORRETORA COBROU DE VERDADE (26/08).
@@ -412,9 +783,18 @@ async function processarPlano(
      * acabou de ser realizado. Uma consulta de preço a menos é uma fonte de
      * erro a menos.
      */
+    /**
+     * ⚠️ A TAXA VEM DO LIVRO, não de um objeto de ordem que já não existe. O
+     * executor ingere `fee`/`fee_currency` junto do fill, e `taxaEmUsd`
+     * continua sendo a única conta que sabe converter — inclusive o caso da
+     * taxa cobrada na moeda BASE, que não precisa de consulta de preço.
+     */
     const t = simulado
       ? { usd: null as number | null, naoPrecificada: null }
-      : taxaEmUsd(order as CexOrder, custo, qtd, p.symbol);
+      : taxaEmUsd(
+          { fee: exec.feeTotal != null && exec.feeCurrency
+              ? { cost: exec.feeTotal, currency: exec.feeCurrency } : undefined } as CexOrder,
+          custo, qtd, p.symbol);
     if (t.naoPrecificada) {
       await avisar("taxa do ciclo NAO precificada — a alicota real fica sem este ciclo", {
         plano: p.id, ciclo: d.ciclo, moeda: t.naoPrecificada.moeda, valor: t.naoPrecificada.valor,

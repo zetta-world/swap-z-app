@@ -63,7 +63,8 @@ describe("migrations — a numeração é a coordenação entre as sessões", ()
     const numeros = ARQUIVOS.map((f) => numeroDe(f)!).sort((a, b) => a - b);
     const buracos: string[] = [];
     for (let i = 1; i < numeros.length; i++) {
-      if (numeros[i] !== numeros[i - 1] + 1) {
+      const esperado = numeros[i - 1] + 1;
+      if (numeros[i] !== esperado) {
         buracos.push(`entre ${numeros[i - 1]} e ${numeros[i]}`);
       }
     }

@@ -27,9 +27,29 @@ import { useT, type MessageKey } from "@/lib/i18n";
  * A single card can produce one OR two intents:
  *   - One leg  → swap, buy_limit, sell_*, arbitrage_dex_cex (CEX side).
  *   - Two legs → arbitrage_cross_cex (BUY on cheap venue + SELL on
- *                expensive venue, atomic — both legs fire in parallel
- *                so price moves between them can't open one-sided
- *                directional risk).
+ *                expensive venue, fired in parallel).
+ *
+ * ⚠️⚠️⚠️ ESTA DESCRIÇÃO DIZIA "ATOMIC", E ERA FALSO.
+ *
+ * O texto era: *"atomic — both legs fire in parallel so price moves between
+ * them can't open one-sided directional risk"*. Disparar em paralelo NÃO é
+ * atomicidade. São duas chamadas a dois sistemas independentes, cada uma
+ * podendo falhar sozinha:
+ *
+ *     BUY executa, SELL falha    → exposição COMPRADA, sem hedge
+ *     BUY falha, SELL executa    → exposição VENDIDA, possivelmente a descoberto
+ *     triangular: perna 2 falha  → inventário preso na moeda intermediária
+ *
+ * O paralelismo reduz a JANELA entre as pernas; ele não elimina o caso de uma
+ * executar e a outra não — e é exatamente esse caso que "atomic" promete que
+ * não existe. O nome errado faz quem lê parar de procurar o resíduo.
+ *
+ * ⚠️ E NÃO EXISTE ROLLBACK. Trade em corretora não desfaz; "desfazer" é abrir
+ * ordem CONTRÁRIA, com preço próprio, custo próprio e chance própria de falhar.
+ * `src/lib/cex/execucao/multi-perna.ts` dá o vocabulário — exposição residual,
+ * compensação, quarentena — e a máquina de estados que nomeia cada desfecho.
+ *
+ * ⚠️ ARBITRAGEM AUTÔNOMA SEGUE NO-GO. Ter o vocabulário não é ter a prova.
  *
  * Why one banner instead of one per card: pros expect a clear single
  * "next action" they can intercept. Showing 5 simultaneous countdowns
@@ -278,11 +298,29 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
     // exiting a position the user already holds) — capping it would block
     // legitimate take-profit exits whose notional naturally exceeds the
     // buy-side cap once the position has grown.
+    //
+    // ⚠️ A131: a VENDA também não é autorizada aqui. O servidor confere a
+    // posse contra `autopilot_positions` e LIMITA a quantidade à posição do
+    // bot; o que esta tela tem é memória local, que pode estar adiantada ou
+    // atrasada em relação ao livro.
     if (intents.some((i) => i.side === "buy" && i.notionalUsd > fresh.maxTradeUsd))
                                                                  return rejectAll("exceeds per-trade cap (changed during countdown)");
     if (intents.some((i) => !fresh.allowedSymbols.includes(i.symbol.split("/")[0])))
                                                                  return rejectAll("symbol no longer allowed");
-    // A4: re-check the total-exposure cap against FRESH open positions.
+    /**
+     * A4: re-check the total-exposure cap against FRESH open positions.
+     *
+     * ⚠️⚠️ ISTO É PRÉ-FILTRO DE TELA, NÃO AUTORIZAÇÃO — A131.
+     *
+     * O store local pode estar vazio (aba nova, storage limpo) e ainda assim
+     * existir posição do bot no servidor. Quem autoriza é `/api/cex/order`,
+     * que lê `autopilot_positions` e aplica o teto de exposição do MODO DE
+     * RISCO da sessão — o mesmo do cron. Esta conta aqui só evita uma ida ao
+     * servidor quando a própria tela já sabe que não cabe.
+     *
+     * ⚠️ Ela pode ser MAIS conservadora que o servidor. Nunca mais permissiva:
+     * passar aqui não faz a ordem sair.
+     */
     const buyNotionalFire = intents.filter((i) => i.side === "buy").reduce((sum, i) => sum + i.notionalUsd, 0);
     if (buyNotionalFire > 0) {
       const exposureNow = Object.values(useAutopilotPositions.getState().positions)
@@ -447,25 +485,25 @@ export default function AutopilotPilot({ cards }: { cards: ActionCard[] }) {
 
     consumedRef.current.add(cardKey);
 
-    // A1 write-back: publish this card's fired legs to the server session(s)
-    // so the cron's trades_today reflects browser fires too. Counted per
-    // exchange; the endpoint no-ops if that exchange has no armed session.
-    if (serverDaily.hasSession) {
-      const firedByExchange = new Map<CexId, number>();
-      for (let i = 0; i < resolved.length; i++) {
-        if (results[i].status === "fulfilled") {
-          const ex = resolved[i].exchange;
-          firedByExchange.set(ex, (firedByExchange.get(ex) ?? 0) + 1);
-        }
-      }
-      for (const [ex, count] of firedByExchange) {
-        void fetch("/api/autopilot/session/record-fire", {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ exchangeId: ex, count }),
-        }).then(() => refreshServerDaily.current()).catch(() => {});
-      }
-    }
+    /**
+     * ⚠️⚠️ AQUI O NAVEGADOR CONTAVA O PRÓPRIO DISPARO — e isso virou CONTA DOBRADA.
+     *
+     * Era o write-back do A1: depois de disparar, o cliente publicava as pernas
+     * em `/api/autopilot/session/record-fire`, que fazia `bumpSessionTrades`.
+     * Fazia sentido enquanto o servidor não contava nada.
+     *
+     * Com o A130-B, `/api/cex/order` RESERVA a vaga do teto diário no momento
+     * em que age (compare-and-swap, antes do envio). O write-back passou a
+     * somar a MESMA perna outra vez: cada disparo do navegador consumia duas
+     * vagas, e um teto de 5 trades/dia virava 2,5 na prática.
+     *
+     * ⚠️ E CONTAR NO CLIENTE NUNCA FOI CONFIÁVEL: aba fechada entre o envio e o
+     * POST = disparo não contado. Quem conta agora é quem age.
+     *
+     * Resta só RELER o contador do servidor, para a tela mostrar o número que
+     * o servidor tem — ela exibe o veredito, não o produz.
+     */
+    if (serverDaily.hasSession) refreshServerDaily.current();
 
     if (allOk) {
       toast.success(`Autopilot fired ${intents.length === 1 ? "order" : "BOTH legs"}: ${summaries.join(" | ")}`);

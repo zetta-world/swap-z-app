@@ -246,14 +246,12 @@ export type AutopilotSessionRow = {
   max_trades_per_day:  number;
   allowed_symbols:     string[];
   lang:                string;
-  creds_cipher:        string;
   /**
-   * ⚠️ O elo com o COFRE (`cex_conexoes`), NULÁVEL durante a virada.
+   * ⚠️ O elo com o COFRE (`cex_conexoes`) — ÚNICO lugar onde o segredo mora.
    *
-   * T1: criado e preenchido por backfill. T2 (agora): a leitura prefere o
-   * cofre quando isto existe e cai em `creds_cipher` quando não, contando qual
-   * caminho serviu. T3: só com o contador em 100% no caminho novo, o
-   * `creds_cipher` sai. Ver §2 de `docs/PLANO-DCA-AUTOMATICO.md`.
+   * T3 concluído (achado A115, migration 0056): `creds_cipher`, a segunda
+   * cópia cifrada que esta tabela guardava, foi REMOVIDA (produção medida
+   * com 0 sessões). Sessão sem elo = erro explícito, sem fallback.
    */
   conexao_id:          string | null;
   is_active:           boolean;
@@ -267,12 +265,44 @@ export type AutopilotSessionRow = {
   /** Advisory lock (A2): the cron holds this until `now()` passes it. */
   locked_until:        string | null;
   /**
+   * ⚠️⚠️ A IDENTIDADE DA ESTRATÉGIA — achado A110. A sessão dizia "quanto" e
+   * "onde", nunca "o quê". `null` significa RECUSA: sem estratégia declarada e
+   * certificada, nenhuma entrada autônoma passa pelo motor de política.
+   */
+  strategy_id:         string | null;
+  strategy_version:    number | null;
+  /** O hash dos parâmetros COM QUE esta sessão roda — amarra ao certificado. */
+  strategy_hash:       string | null;
+  /**
+   * ⚠️ O PLANO CARIMBADO — achado A111. O tier era conferido UMA VEZ, ao armar,
+   * e a sessão dura horas. Vencido e sem resposta, só SAÍDAS passam.
+   */
+  tier_snapshot:       string | null;
+  tier_checked_at:     string | null;
+  /**
    * Veredito da chave no momento do armar (0021). NULL = sessão anterior à
    * verificação — ausência de medição, NÃO "segura".
    */
   key_permission:        "so_negocia" | "pode_sacar" | "nao_verificavel" | null;
   key_permission_detail: string | null;
   key_checked_at:        string | null;
+  /**
+   * ⚠️ A QUARENTENA DE CONTA — achado A103 (migration 0058). Preenchidos pela
+   * reconciliação de conta quando o saldo real não sustenta o inventário
+   * interno. Enquanto `quarentena_em` existir: zero BUY autônomo, saídas
+   * permitidas, até mão humana.
+   */
+  quarentena_motivo:   string | null;
+  quarentena_em:       string | null;
+  /**
+   * ⚠️⚠️ INVARIANTE F (0064): desde quando a contabilidade desta sessão
+   * deixou de ser afirmável — o P&L realizado saiu sem uma taxa que não deu
+   * para precificar em USD. Bloqueia COMPRA autônoma nos DOIS canais; saídas
+   * e recovery seguem. Some sozinha quando a taxa volta a ser precificável.
+   */
+  contabilidade_incompleta_em: string | null;
+  /** O snapshot da primeira reconciliação — declaração, não patrimônio. */
+  saldo_baseline:      unknown;
   created_at:          string;
   updated_at:          string;
 };
@@ -311,6 +341,12 @@ export type AutopilotPositionRow = {
   entry_label:    string | null;
   status:         AutopilotPositionStatus;
   exit_order_id:  string | null;
+  /**
+   * ⚠️ A139: o intent EXATO da ordem de saída armada. A liquidação carrega a
+   * credencial por `intent.conexao_id` (A127), nunca pela sessão atual — e
+   * `external_order_id` não é identificador global da corretora.
+   */
+  exit_intent_id: string | null;
   exit_armed_at:  string | null;
   entry_ts:       string;
   updated_at:     string;
@@ -560,6 +596,125 @@ export type LabCapitalLogRow = {
   changed_at:  string;
 };
 
+/**
+ * ⚠️⚠️ O INTENT DURÁVEL DE EXECUÇÃO EM CORRETORA — achados A80/A108/A109.
+ *
+ * Gravado ANTES do efeito externo. `filled_qty` e `filled_quote` são DERIVADOS
+ * da soma de `cex_fills` pela RPC `cex_recalcular_intent`: nunca escrever
+ * direto, nem daqui nem de lugar nenhum. Ver `supabase/migrations/0050`/`0051`.
+ */
+export type CexIntentState =
+  | "CREATED" | "AUTHORIZED" | "RESERVED" | "SUBMITTING" | "SUBMITTED"
+  | "PARTIALLY_FILLED" | "FILLED" | "CANCEL_PENDING" | "CANCELED"
+  | "UNKNOWN" | "RECONCILIATION_REQUIRED" | "QUARANTINED" | "FAILED_PRE_SUBMIT";
+
+export type CexExecutionIntentRow = {
+  id:                     string;
+  /** A chave de idempotência mandada à corretora. Única por construção. */
+  client_order_id:        string;
+  wallet_address:         string | null;
+  origin:                 string;
+  autonomous:             boolean;
+  session_id:             string | null;
+  plan_id:                string | null;
+  cycle_number:           number | null;
+  conexao_id:             string | null;
+  strategy_id:            string | null;
+  strategy_version:       number | null;
+  /** ⚠️ DURÁVEL desde a 0060: a autorização final o lê da linha, sob lock. */
+  strategy_hash:          string | null;
+  certificate_id:         string | null;
+  /** ⚠️ A120 (0061): HMAC da credencial que criou a ordem MANUAL REAL. O
+   *  recovery por intentId confere contra ele ANTES de tocar na venue. NULL
+   *  em históricos e em autopilot/DCA (credencial no cofre) — e null fecha:
+   *  `recovery_not_bound`. Nunca exposto, nunca atualizado. */
+  credential_fingerprint: string | null;
+  exchange_id:            string;
+  symbol:                 string;
+  side:                   "buy" | "sell";
+  order_type:             "market" | "limit";
+  requested_qty:          number;
+  limit_price:            number | null;
+  requested_notional_usd: number | null;
+  simulated:              boolean;
+  /** ⚠️ UNKNOWN ≠ FAILED_PRE_SUBMIT. UNKNOWN pode ter executado. */
+  state:                  CexIntentState;
+  state_reason:           string | null;
+  external_order_id:      string | null;
+  /** ⚠️ DERIVADO do livro. Nunca escrever direto. */
+  filled_qty:             number;
+  filled_quote:           number;
+  fee_total:              number | null;
+  fee_currency:           string | null;
+  /** ⚠️ Só o REMANESCENTE — o que já executou é fato imutável (A101). */
+  canceled_qty:           number;
+  created_at:             string;
+  authorized_at:          string | null;
+  submitting_at:          string | null;
+  submitted_at:           string | null;
+  terminal_at:            string | null;
+  last_reconciled_at:     string | null;
+  reconcile_attempts:     number;
+  updated_at:             string;
+};
+
+/**
+ * ⚠️ O LIVRO APPEND-ONLY DE EXECUÇÕES — achado A108.
+ *
+ * Um fill = uma linha, deduplicado por `(intent_id, dedupe_key)` NO BANCO
+ * (A123, migration 0062 — antes `(exchange_id, dedupe_key)`, global demais:
+ * um intent consumia a idempotência de outro).
+ * `sintetico` marca a linha derivada do acumulado da ordem, sem id de trade:
+ * ela é estimativa e cede lugar ao trade real quando ele chega.
+ */
+export type CexFillRow = {
+  id:                string;
+  intent_id:         string;
+  exchange_id:       string;
+  external_order_id: string | null;
+  external_trade_id: string | null;
+  client_order_id:   string | null;
+  symbol:            string;
+  side:              "buy" | "sell";
+  qty:               number;
+  price:             number;
+  quote_amount:      number;
+  fee:               number | null;
+  fee_currency:      string | null;
+  executed_at:       string | null;
+  sintetico:         boolean;
+  dedupe_key:        string;
+  raw_hash:          string | null;
+  created_at:        string;
+};
+
+/**
+ * ⚠️ CERTIFICADO POR VERSÃO DE ESTRATÉGIA — achado A110. Autorizar a carteira
+ * não é autorizar a estratégia. `strategy_hash` amarra o certificado ao
+ * conteúdo exato dos parâmetros: mudança silenciosa deixa de casar.
+ */
+export type StrategyCertificateRow = {
+  id:                  string;
+  strategy_id:         string;
+  strategy_version:    number;
+  strategy_hash:       string;
+  certificate_version: number;
+  evidence:            Record<string, unknown>;
+  sample_size:         number | null;
+  cost_assumptions:    Record<string, unknown> | null;
+  risk_limits:         Record<string, unknown>;
+  allowed_venues:      string[];
+  allowed_symbols:     string[];
+  valid_from:          string;
+  valid_until:         string | null;
+  /** ⚠️ Preenchido impede intent NOVO daquela estratégia (INVARIANTE 14). */
+  revoked_at:          string | null;
+  revoked_reason:      string | null;
+  created_at:          string;
+  created_by:          string | null;
+  notes:               string | null;
+};
+
 export interface Database {
   public: {
     Tables: {
@@ -576,6 +731,44 @@ export interface Database {
       platform_admins: { Row: PlatformAdminRow; Insert: Partial<PlatformAdminRow> & { wallet_address: string }; Update: Partial<PlatformAdminRow>; Relationships: [] };
       market_brain: { Row: MarketBrainRow; Insert: Partial<MarketBrainRow> & { symbol: string }; Update: Partial<MarketBrainRow>; Relationships: [] };
       operations: { Row: OperationRow; Insert: Partial<OperationRow> & { kind: string; status: string }; Update: Partial<OperationRow>; Relationships: [] };
+      cex_execution_intents: {
+        Row: CexExecutionIntentRow;
+        Insert: Partial<CexExecutionIntentRow> & {
+          client_order_id: string; origin: string; exchange_id: string; symbol: string;
+          side: "buy" | "sell"; order_type: "market" | "limit"; requested_qty: number;
+        };
+        /**
+         * ⚠️ `filled_qty`, `filled_quote` e `state` NÃO entram aqui de propósito.
+         * Eles saem da RPC, que os deriva do livro sob `for update`. Deixá-los
+         * atualizáveis daqui devolveria ao código a capacidade de afirmar
+         * execução sem fill — que é o achado A81 inteiro.
+         */
+        Update: Pick<Partial<CexExecutionIntentRow>,
+          "external_order_id" | "state_reason" | "last_reconciled_at" | "reconcile_attempts">;
+        Relationships: [];
+      };
+      strategy_certificates: {
+        Row: StrategyCertificateRow;
+        Insert: Partial<StrategyCertificateRow> & {
+          strategy_id: string; strategy_version: number; strategy_hash: string;
+          evidence: Record<string, unknown>; risk_limits: Record<string, unknown>;
+          allowed_venues: string[]; allowed_symbols: string[];
+        };
+        /** ⚠️ Revogar é a única edição esperada — e exige motivo (constraint). */
+        Update: Pick<Partial<StrategyCertificateRow>, "revoked_at" | "revoked_reason" | "notes">;
+        Relationships: [];
+      };
+      cex_fills: {
+        Row: CexFillRow;
+        Insert: Partial<CexFillRow> & {
+          intent_id: string; exchange_id: string; symbol: string;
+          side: "buy" | "sell"; qty: number; price: number; quote_amount: number;
+          dedupe_key: string;
+        };
+        /** ⚠️ Livro append-only: linha de fill não se edita. */
+        Update: never;
+        Relationships: [];
+      };
       zion_suggestions: {
         Row: ZionSuggestionRow;
         Insert: Partial<ZionSuggestionRow> & { symbol: string; kind: string; side: "buy" | "sell"; ref_price: number };
@@ -587,7 +780,7 @@ export interface Database {
         Insert: Partial<AutopilotSessionRow> & {
           wallet_address: string; exchange_id: string; risk_mode: AutopilotRiskMode;
           max_trade_usd: number; daily_loss_stop_usd: number; max_trades_per_day: number;
-          creds_cipher: string; expires_at: string; last_reset_day: string;
+          expires_at: string; last_reset_day: string;
         };
         Update: Partial<AutopilotSessionRow>;
         Relationships: [];
@@ -696,6 +889,132 @@ export interface Database {
       bump_session_trades: {
         Args: { p_wallet: string; p_exchange: string; p_n: number };
         Returns: undefined;
+      };
+      /**
+       * ⚠️ AS RPCs DO EXECUTOR (migration 0051). Elas são a ÚNICA porta por onde
+       * `filled_qty` muda: somar um fill exige ler o total e escrever o novo, e
+       * duas passadas concorrentes perderiam um fill. O corpo roda sob
+       * `for update` numa transação só.
+       */
+      cex_transicionar: {
+        Args: {
+          p_intent_id: string; p_para: CexIntentState;
+          p_motivo: string | null; p_external_order_id: string | null;
+        };
+        Returns: { ok: boolean; de?: CexIntentState; para?: CexIntentState;
+                   noop?: boolean; porque?: string };
+      };
+      cex_ingest_trades: {
+        Args: { p_intent_id: string; p_external_order_id: string | null; p_trades: unknown };
+        /** A118/A121 (0059): ok:false 'cobertura_incompleta' (e variantes de
+         *  fee) = adiado, nada gravado; A122 (0059): 'trade_sem_id' e
+         *  'trade_id_conflitante' = recusa fail-closed, nada gravado. */
+        Returns: { ok?: boolean; porque?: string; novos?: number; sintetico?: number;
+                   inseridos: number; filled_qty: number; state: CexIntentState };
+      };
+      cex_ingest_order_snapshot: {
+        Args: {
+          p_intent_id: string; p_external_order_id: string | null;
+          p_cumulative_qty: number; p_avg_price: number;
+          /** ⚠️ Invariante Q: `null` = NÃO MEDIDO. Zero é afirmação. */
+          p_cumulative_quote: number | null;
+          p_fee: number | null; p_fee_currency: string | null; p_executed_at: string | null;
+        };
+        Returns: { inseridos: number; regrediu: boolean;
+                   filled_qty?: number; filled_quote?: number; state?: CexIntentState };
+      };
+      cex_recalcular_intent: { Args: { p_intent_id: string }; Returns: undefined };
+      /**
+       * ⚠️ A AUTORIZAÇÃO FINAL DO EXECUTOR (migration 0057, A110 round 2).
+       * Valida o certificado NO BANCO e marca SUBMITTING na mesma transação —
+       * existência do certificate_id não é mais confundida com validade.
+       */
+      cex_autorizar_e_submeter: {
+        /**
+         * ⚠️ A110 ROUND 3 (migration 0060): a assinatura recebe APENAS o id.
+         * Venue, símbolo, nocional e hash são derivados DA LINHA do intent,
+         * sob `for update` — o caller não tem parâmetro para mentir. A
+         * assinatura antiga (uuid, text, text, text, numeric) foi APAGADA.
+         */
+        Args: { p_intent_id: string };
+        Returns: { ok: boolean; de?: CexIntentState; para?: CexIntentState;
+                   porque?: string };
+      };
+      /**
+       * ⚠️⚠️ A PROJEÇÃO IDEMPOTENTE DA POSIÇÃO (migration 0064, A131-C).
+       *
+       * Recebe o id do intent e lê `filled_qty`/`filled_quote` da própria
+       * linha, sob `for update` — não há parâmetro para mentir sobre
+       * quantidade. Os dois opcionais ABSORVEM o que a liquidação da saída
+       * armada já aplicou direto, e nunca movem a posição.
+       */
+      autopilot_projetar_efeito_do_intent: {
+        Args: { p_intent_id: string };
+        Returns: {
+          ok: boolean; motivo?: string; side?: "buy" | "sell"; base?: string;
+          aplicado_qty?: number; aplicado_quote?: number;
+          custo_removido?: number; fechou?: boolean; pnl_realizado?: number;
+          taxa_delta?: number; taxa_nao_precificada?: boolean;
+          aplicado?: number; no_livro?: number; origin?: string;
+        };
+      };
+      /**
+       * ⚠️⚠️ FECHAMENTO DO ROUND 9: intents autônomos com efeito financeiro
+       * incompleto. Substitui `autopilot_projecoes_pendentes`, que só via
+       * projeção atrasada e nunca o LIVRO incompleto — uma taxa que a venue
+       * não reportou deixava a sessão presa sem nada ir buscá-la.
+       *
+       * `precisa_venue` diz se basta projetar ou se é preciso perguntar à
+       * corretora com a credencial HISTÓRICA do intent.
+       */
+      autopilot_pendencias_financeiras: {
+        Args: { p_limite?: number };
+        Returns: Array<{ intent_id: string; motivo: string; precisa_venue: boolean }>;
+      };
+      /** ⚠️ A ÚNICA definição de "contabilidade incompleta" (0064). */
+      autopilot_efeito_incompleto: {
+        Args: { p_side: string; p_taxa_opaca: boolean;
+                p_custo_removido: number; p_applied_quote: number };
+        Returns: boolean;
+      };
+      /**
+       * ⚠️ A134/A135/A136 (migration 0064): as reservas de inventário e a
+       * liquidação atômica da saída armada. Todas devolvem um veredito JSON —
+       * `ok:false` com motivo é recusa, não exceção.
+       */
+      autopilot_reservar_venda_do_intent: {
+        Args: { p_intent_id: string; p_qty: number };
+        Returns: { ok: boolean; motivo?: string; qtd?: number; limitada?: boolean;
+                   na_posicao?: number; comprometido?: number; ordem_armada?: string };
+      };
+      autopilot_reservar_exposicao_do_intent: {
+        Args: { p_intent_id: string; p_usd: number; p_teto: number };
+        Returns: { ok: boolean; motivo?: string; exposicao?: number;
+                   comprometido?: number; teto?: number };
+      };
+      autopilot_liberar_reserva_do_intent: {
+        Args: { p_intent_id: string };
+        Returns: { ok: boolean };
+      };
+      autopilot_liquidar_saida_armada: {
+        Args: { p_intent_id: string; p_qty_vendida: number; p_quote_recebido: number };
+        Returns: { ok: boolean; motivo?: string; aplicado_qty?: number;
+                   aplicado_quote?: number; custo_removido?: number;
+                   fechou?: boolean; base?: string; pnl_realizado?: number;
+                   taxa_delta?: number; taxa_nao_precificada?: boolean };
+      };
+      autopilot_taxa_do_intent_em_usd: {
+        Args: { p_fee: number | null; p_moeda: string | null; p_symbol: string;
+                p_filled_qty: number; p_filled_quote: number };
+        Returns: number | null;
+      };
+      autopilot_compromisso_vivo: {
+        Args: { p_reservado: number; p_aplicado: number; p_estado: string };
+        Returns: number;
+      };
+      cex_transicao_permitida: {
+        Args: { p_de: CexIntentState; p_para: CexIntentState };
+        Returns: boolean;
       };
     };
   };

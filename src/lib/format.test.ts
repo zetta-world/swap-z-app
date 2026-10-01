@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toBaseUnits, fromBaseUnits } from "@/lib/format";
+import { normalizarDecimalFinanceiro, toBaseUnits, fromBaseUnits } from "@/lib/format";
 
 /**
  * ⚠️ O QUE ESTES TESTES PROTEGEM (auditoria da ponte, 23/08).
@@ -33,12 +33,12 @@ describe("toBaseUnits — os dois defeitos que a auditoria achou", () => {
     expect(toBaseUnits("9007199254740993", 0)).toBe("9007199254740993");
   });
 
-  it("converte os casos comuns exatamente como antes", () => {
+  it("converte casos comuns e fecha ambiguidade nova do PC-1", () => {
     expect(toBaseUnits("1.0", 18)).toBe("1000000000000000000");
     expect(toBaseUnits("0.5", 18)).toBe("500000000000000000");
     expect(toBaseUnits("0.1", 18)).toBe("100000000000000000");
     expect(toBaseUnits("1000000", 6)).toBe("1000000000000");
-    expect(toBaseUnits("1.005", 6)).toBe("1005000");
+    expect(toBaseUnits("1.005", 6)).toBe("0"); // ambíguo: 1.005 ou 1005
   });
 
   it("TRUNCA as casas excedentes, nunca arredonda para cima", () => {
@@ -101,5 +101,40 @@ describe("fromBaseUnits — a volta, para o botão de porcentagem", () => {
       expect(parte).toBeLessThan(saldo);
       expect(parte * 10_000n / bps).toBeLessThanOrEqual(saldo);
     }
+  });
+});
+
+
+describe("normalizarDecimalFinanceiro — PC-1 / A61-A62", () => {
+  it("normaliza vírgula/ponto decimal e milhares sem perder dígitos", () => {
+    expect(normalizarDecimalFinanceiro("0,5")).toBe("0.5");
+    expect(normalizarDecimalFinanceiro("0.5")).toBe("0.5");
+    expect(normalizarDecimalFinanceiro("3420,50")).toBe("3420.50");
+    expect(normalizarDecimalFinanceiro("3420.50")).toBe("3420.50");
+    expect(normalizarDecimalFinanceiro("3.420,50")).toBe("3420.50");
+    expect(normalizarDecimalFinanceiro("3,420.50")).toBe("3420.50");
+    expect(normalizarDecimalFinanceiro("0,0005")).toBe("0.0005");
+    expect(normalizarDecimalFinanceiro("0.0005")).toBe("0.0005");
+    expect(normalizarDecimalFinanceiro("1.000.000")).toBe("1000000");
+    expect(normalizarDecimalFinanceiro("1,000,000")).toBe("1000000");
+  });
+
+  it("falha fechado quando um separador único de três casas é ambíguo", () => {
+    expect(normalizarDecimalFinanceiro("3,420")).toBeNull();
+    expect(normalizarDecimalFinanceiro("3.420")).toBeNull();
+    expect(toBaseUnits("3,420", 6)).toBe("0");
+    expect(toBaseUnits("3.420", 6)).toBe("0");
+  });
+
+  it("preserva precisão textual antes de unidades-base", () => {
+    const raw = "9007199254740993,123456";
+    expect(normalizarDecimalFinanceiro(raw)).toBe("9007199254740993.123456");
+    expect(toBaseUnits(raw, 6)).toBe("9007199254740993123456");
+  });
+
+  it("fromBaseUnits torna decimal interno de três casas inequivocamente decimal", () => {
+    const text = fromBaseUnits(1005000n, 6);
+    expect(text).toBe("1.0050");
+    expect(toBaseUnits(text, 6)).toBe("1005000");
   });
 });

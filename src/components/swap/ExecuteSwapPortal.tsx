@@ -5,7 +5,7 @@ import { useAccount } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
 import ExecuteSwap from "./ExecuteSwap";
 import { useSwap } from "@/lib/store/swap";
-import { parseDecimalInput } from "@/lib/format";
+import { toBaseUnits } from "@/lib/format";
 import { useQuotes } from "@/lib/hooks/useQuotes";
 import type { QuoteSource } from "@/lib/api/quote-types";
 
@@ -34,11 +34,7 @@ export default function ExecuteSwapPortal() {
   // modal's "Pay" line is identical to the card's).
   const sellAmountBase = useMemo(() => {
     if (!fromToken) return "0";
-    const amt = parseDecimalInput(amountIn) ?? 0;
-    if (amt <= 0) return "0";
-    const [intPart, fracPart = ""] = amt.toString().split(".");
-    const fracPadded = (fracPart + "0".repeat(fromToken.decimals)).slice(0, fromToken.decimals);
-    return (intPart + fracPadded).replace(/^0+/, "") || "0";
+    return toBaseUnits(amountIn, fromToken.decimals);
   }, [amountIn, fromToken]);
 
   // We need at least one valid quote to know which source to fire. Pre-fetch

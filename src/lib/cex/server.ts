@@ -238,7 +238,7 @@ export async function fetchCexOrderbook(
 
 // ccxt's Order type is intentionally loose (every exchange returns slightly
 // different fields). We normalize down to our CexOrder schema.
-function normalizeOrder(raw: Record<string, unknown>): CexOrder {
+export function normalizeOrder(raw: Record<string, unknown>): CexOrder {
   const amount    = Number(raw.amount    ?? 0);
   const filled    = Number(raw.filled    ?? 0);
   const remaining = Number(raw.remaining ?? Math.max(0, amount - filled));
@@ -263,44 +263,32 @@ function normalizeOrder(raw: Record<string, unknown>): CexOrder {
 }
 
 /**
- * Place a single order. Market orders fill against the orderbook now;
- * limit orders sit at the book until matched or cancelled.
+ * ⚠️⚠️ `placeCexOrder` FOI REMOVIDO DAQUI — achados A80 e A107.
  *
- * REAL FUNDS MOVE WHEN THIS IS CALLED. The API route layer enforces a
- * "confirm" guard from the client side, but defense in depth — the v1
- * server is otherwise a thin pass-through to ccxt.createOrder.
+ * Ele era um pass-through para `ccxt.createOrder` chamado de QUATRO lugares:
+ * a rota manual, o cron do DCA e os dois ramos do cron do autopilot. Cada um
+ * com a sua semântica de sucesso, de falha e de registro; nenhum com estado
+ * durável antes do efeito externo; e nenhum com o kill-switch no limiar.
+ *
+ * A execução agora tem UMA autoridade:
+ *
+ *     src/lib/cex/execucao/executor.ts     decide
+ *     src/lib/cex/execucao/venue-primitivo.ts   fala com a corretora
+ *
+ * A guarda estrutural `autoridade-do-executor.test.ts` recusa qualquer outro
+ * arquivo que contenha `createOrder` ou importe o primitivo. Reintroduzir um
+ * atalho aqui quebra o teste, que é o objetivo.
+ *
+ * ⚠️ `instanciarExchange` e `normalizeOrder` continuam aqui e exportados: o
+ * primitivo os usa. Duplicá-los criaria duas normalizações que divergiriam na
+ * primeira correção — foi assim que a OKX quebrou no #441.
  */
-export async function placeCexOrder(
-  id: CexId,
-  creds: CexCredentials,
-  req: CexOrderRequest,
-): Promise<{ order: CexOrder; filledImmediately: boolean }> {
-  if (req.amount <= 0 || !Number.isFinite(req.amount)) {
-    throw new Error("Invalid amount.");
-  }
-  if (req.type === "limit" && (!req.price || !Number.isFinite(req.price) || req.price <= 0)) {
-    throw new Error("Limit orders require a positive price.");
-  }
-
+export async function instanciarExchange(
+  id: CexId, creds: CexCredentials,
+): Promise<Exchange> {
   const exchange = instantiate(id, creds);
   await syncTimeIfNeeded(exchange);
-  const raw = await exchange.createOrder(
-    req.symbol,
-    req.type,
-    req.side,
-    req.amount,
-    req.type === "limit" ? req.price : undefined,
-  ) as unknown as Record<string, unknown>;
-
-  const order = normalizeOrder(raw);
-
-  // Market orders typically come back "closed" immediately on ccxt; if not,
-  // we still treat any non-zero filled amount as immediate-fill for UX.
-  const filledImmediately =
-    order.status === "closed" ||
-    (order.type === "market" && order.filled > 0 && order.remaining === 0);
-
-  return { order, filledImmediately };
+  return exchange;
 }
 
 /** Cancel one specific order by exchange id + symbol. */

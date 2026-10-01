@@ -225,7 +225,9 @@ describe("a trava está nas TRÊS portas", () => {
    */
   it("na rota de ordem, a trava fica DENTRO do ramo de autopilot", () => {
     const src = semComentarios(readFileSync(arquivos.ordem, "utf8"));
-    const iRamo = src.indexOf("if (body.autopilot === true)");
+    // ⚠️ O ramo passou a ter nome (`ehAutopilot`) para a ORIGEM do intent
+    // poder distinguir os dois canais desta mesma rota. A trava segue a lógica.
+    const iRamo = src.indexOf("const ehAutopilot = body.autopilot === true;");
     const iTrava = src.indexOf("podeAutomatizar(");
     expect(iRamo).toBeGreaterThan(-1);
     expect(iTrava).toBeGreaterThan(iRamo);

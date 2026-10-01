@@ -40,10 +40,41 @@ const semComentarios = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/^(\s*)\/\/.*$/gm, "$1");
 
 /** As funções que escrevem estado de posição ou de risco. */
-const ESCRITORAS = [
-  "recordServerEntry", "markServerExitArmed", "reopenServerPosition",
-  "closeServerPosition", "applySessionPnl",
+const ESCRITORAS = ["markServerExitArmed", "reopenServerPosition"];
+
+/**
+ * ⚠️⚠️ AS QUE SAÍRAM — e a trava agora é a AUSÊNCIA delas (A136, Round 9).
+ *
+ * `closeServerPosition` e `reduzirServerPosition` eram o último caminho
+ * paralelo de escrita de posição: a liquidação da saída armada escrevia a
+ * posição com uma, e o marcador com OUTRA operação. Qualquer ordem entre as
+ * duas quebrava exactly-once — marcador na frente, a venda nunca entra no
+ * livro; posição na frente, a reconciliação reduz de novo.
+ *
+ * Hoje quem faz as duas numa transação é `autopilot_liquidar_saida_armada`
+ * (migration 0064). Ressuscitar qualquer uma delas recria o problema.
+ */
+const APAGADAS = [
+  "closeServerPosition", "reduzirServerPosition",
+  // ⚠️ A138 (Round 9): o P&L era a ÚLTIMA escrita financeira solta. Ele
+  // entrava numa chamada separada da que reduzia a posição — gravando um e
+  // falhando o outro, ou o resultado era somado duas vezes, ou o débito sumia.
+  // Hoje ele entra na mesma transação, e `pnl_aplicado_usd` guarda quanto
+  // deste intent já foi contado.
+  "applySessionPnl",
 ];
+
+describe("⚠️⚠️ o caminho paralelo de escrita de posição não existe mais", () => {
+  const FONTE = readFileSync(join(process.cwd(), "src/lib/autopilot/positions-server.ts"), "utf8");
+  it.each(APAGADAS)("%s foi apagada — a liquidação é transacional agora", (fn) => {
+    expect(semComentarios(FONTE)).not.toMatch(new RegExp(`export async function ${fn}`));
+    expect(semComentarios(CRON)).not.toMatch(new RegExp(`await ${fn}\\(`));
+  });
+  it("⚠️ e a cicatriz de por que elas saíram continua escrita", () => {
+    expect(FONTE).toMatch(/NÃO RESSUSCITAR/);
+    expect(FONTE).toMatch(/A136/);
+  });
+});
 
 describe("as escritoras devolvem SE gravaram", () => {
   it.each(ESCRITORAS)("%s não devolve void", (fn) => {
@@ -58,7 +89,7 @@ describe("as escritoras devolvem SE gravaram", () => {
 describe("o cron CONFERE cada uma delas", () => {
   const codigo = semComentarios(CRON);
 
-  it.each(ESCRITORAS.filter((f) => f !== "recordServerEntry"))(
+  it.each(ESCRITORAS)(
     "toda chamada a %s passa por exigirGravacao", (fn) => {
       /**
        * ⚠️ Conta CHAMADAS, não presença. Bastar que `exigirGravacao` apareça
@@ -73,12 +104,21 @@ describe("o cron CONFERE cada uma delas", () => {
     });
 
   it("o alerta carrega a CONSEQUÊNCIA, não só o nome da função", () => {
-    // "closeServerPosition falhou" não diz a ninguém o que fazer. "o teto de
-    // exposição conta capital que não está mais lá" diz.
-    expect(codigo).toMatch(/o stop de perda diaria nao viu esta perda/);
+    /**
+     * "closeServerPosition falhou" não diz a ninguém o que fazer. "o teto de
+     * exposição conta capital que não está mais lá" diz.
+     *
+     * ⚠️ A quarta frase saiu com a função que a carregava (A136): quem escreve
+     * a redução agora é a RPC transacional, e a consequência dela está no
+     * evento `autopilot_liquidacao_nao_aplicada` — conferido logo abaixo.
+     */
     expect(codigo).toMatch(/vende duas vezes a mesma bolsa/);
     expect(codigo).toMatch(/nunca mais sai deste trade/);
-    expect(codigo).toMatch(/teto de exposicao conta capital que nao esta mais la/);
+  });
+
+  it("⚠️⚠️ e a liquidação que não entrou no livro tem nome e consequência", () => {
+    expect(CRON).toMatch(/autopilot_liquidacao_nao_aplicada/);
+    expect(CRON).toMatch(/A posicao segue dizendo que a bolsa esta la/);
   });
 });
 
@@ -212,12 +252,32 @@ describe("a virada do dia não pode falhar calada", () => {
     expect(codigo).toMatch(/autopilot_virada_do_dia_nao_gravou/);
   });
 
-  it("⚠⚠ e as OITO de telemetria são nomeadas como tal — não esquecidas", () => {
+  it("⚠⚠ e as de telemetria são nomeadas como tal — não esquecidas", () => {
     // Um `await patchSession(...)` solto é indistinguível de retorno esquecido.
     // O helper diz, no nome, que a recusa foi considerada e não interrompe.
     const soltas = [...codigo.matchAll(/await patchSession\(s\.id,/g)].length;
     expect(soltas, "só a virada do dia chama patchSession direto").toBe(1);
-    expect([...codigo.matchAll(/await telemetria\(s\.id,/g)].length).toBe(8);
+    /**
+     * ⚠️ E O CARIMBO DE PLANO TEM HELPER PRÓPRIO (achado A111). Ele NÃO é
+     * telemetria: é fato de autorização, e a falha dele tem consequência
+     * diferente — a sessão revalida de novo e, persistindo, o prazo duro fecha
+     * as entradas. Usar `telemetria()` aqui seria mentir sobre o que a escrita é.
+     */
+    expect(codigo).toMatch(/async function carimbarPlano\(/);
+    expect(codigo).toMatch(/autopilot_carimbo_de_plano_nao_gravou/);
+    /**
+     * ⚠️ A CONTAGEM DEIXOU DE SER FIXA, e a razão importa.
+     *
+     * Ela dizia OITO. O A130 fundiu dois ramos de recusa — congelada e teto
+     * diário — numa decisão só (o helper compartilhado com o navegador), e o
+     * número virou sete. A trava quebrou por uma mudança que a MELHORA.
+     *
+     * O que ela protege nunca foi a contagem: é que NENHUMA escrita de
+     * telemetria fique solta, sem o helper que diz, no nome, que a recusa foi
+     * considerada. Essa parte continua exata, na asserção de `soltas` acima.
+     */
+    const porHelper = [...codigo.matchAll(/await telemetria\(s\.id,/g)].length;
+    expect(porHelper, "a telemetria do cron passa pelo helper").toBeGreaterThanOrEqual(5);
   });
 
   it("⚠️ e a telemetria recusada fica REGISTRADA — last_scan_at parado é sintoma de watchdog", () => {
@@ -226,55 +286,87 @@ describe("a virada do dia não pode falhar calada", () => {
 });
 
 /**
- * ⚠️⚠️ O CANAL DO NAVEGADOR — achado A12 (15/09).
+ * ⚠️⚠️ O CANAL DO NAVEGADOR — achado A12 (15/09), e o que mudou no A130-B.
  *
- * `bumpSessionTrades` devolve `boolean` e foi MUDADA de propósito para isso, com
- * a cicatriz escrita no cabeçalho dela: "DEVOLVE SE CONTOU — e antes engolia a
- * falha". O cron confere nos DOIS pontos onde chama.
+ * A rota `record-fire` era o write-back do A1: o navegador disparava a ordem e
+ * publicava o disparo aqui, para `bumpSessionTrades` somar ao `trades_today`.
+ * O defeito A12 era que o retorno da função — `boolean`, mudado de propósito
+ * para isso, com a cicatriz escrita no cabeçalho dela — era DESCARTADO dentro
+ * de um `try/catch` que nunca pegou nada (ela RESOLVE com `false`, não lança).
+ * Toda falha de banco devolvia `{ ok: true }` e o limite diário parava de
+ * contar aquele canal em silêncio, pelo resto do dia.
  *
- * A rota `record-fire`, por onde o navegador publica os próprios disparos, não
- * conferia — e ainda envolvia a chamada num `try/catch` que nunca rodou, porque
- * a função RESOLVE com `false` e não lança. Toda falha de banco devolvia
- * `{ ok: true }`, e o limite de trades por dia parava de contar aquele canal em
- * silêncio, pelo resto do dia.
+ * ⚠️⚠️ AGORA A ROTA NÃO CONTA MAIS — o A130-B tirou a contagem do cliente.
+ * `/api/cex/order` RESERVA a vaga no momento em que age; manter o write-back
+ * somaria a MESMA perna duas vezes (cada disparo do navegador consumia duas
+ * vagas de um teto de 5/dia). Estes testes mudaram de invariante junto com o
+ * código, e passam a FIXAR o novo: a rota não escreve, e o cliente não a chama.
  *
- * É a peça certa, com a cicatriz escrita, conferida num caminho e ignorada no
- * outro — pela décima primeira vez nesta auditoria.
+ * ⚠️ A ausência da chamada é a coisa que precisa de trava. Contar duas vezes
+ * não quebra nenhum teste de caminho feliz — some no número, não no fluxo.
  */
-describe("o disparo do navegador não pode dizer que contou sem ter contado", () => {
+describe("o disparo do navegador é contado por quem age, uma vez só", () => {
   const FIRE = readFileSync(join(process.cwd(), "src/app/api/autopilot/session/record-fire/route.ts"), "utf8");
   const codigo = semComentarios(FIRE);
+  const PILOTO = semComentarios(
+    readFileSync(join(process.cwd(), "src/components/zion/AutopilotPilot.tsx"), "utf8"));
+  const ORDEM = semComentarios(
+    readFileSync(join(process.cwd(), "src/app/api/cex/order/route.ts"), "utf8"));
 
-  it("⚠️⚠️ o retorno de `bumpSessionTrades` é LIDO", () => {
-    expect(codigo).toMatch(/const contou = await bumpSessionTrades\(session\.sub, exchangeId, count\)/);
-    expect(codigo).toMatch(/if \(!contou\)/);
+  it("⚠️⚠️ a rota NÃO chama mais `bumpSessionTrades` — seria a segunda contagem", () => {
+    expect(codigo).not.toMatch(/bumpSessionTrades/);
   });
 
-  it("⚠️⚠️ e a rota falha FECHADO — 500, não `ok: true`", () => {
-    const i = codigo.indexOf("if (!contou)");
-    expect(i).toBeGreaterThan(0);
-    const ramo = codigo.slice(i, codigo.indexOf("return NextResponse.json({ ok: true }", i));
-    expect(ramo).toMatch(/status: 500/);
+  it("⚠️⚠️ e ela não devolve `ok: true` para uma contagem que não fez", () => {
+    expect(codigo).not.toMatch(/ok: true/);
+    expect(codigo).toMatch(/contagem_no_servidor/);
+    expect(codigo).toMatch(/status: 409/);
   });
 
-  it("⚠️⚠️ o `try/catch` saiu — ele nunca pegou nada", () => {
-    // `bumpSessionTrades` resolve com `false`; não lança. O catch era teatro,
-    // e o `{ ok: true }` do try era a mentira.
-    expect(codigo).not.toMatch(/try \{\s*await bumpSessionTrades/);
-    expect(codigo).not.toMatch(/error: "bump_failed"/);
+  it("⚠️⚠️ o cliente parou de publicar o próprio disparo", () => {
+    expect(PILOTO).not.toMatch(/record-fire/);
   });
 
-  it("⚠️ e o evento carrega a CONSEQUÊNCIA, não só o nome do erro", () => {
-    // "bump_failed" não diz a ninguém o que fazer. "o seu limite de trades por
-    // dia deixou de contar este canal hoje" diz.
-    expect(FIRE).toMatch(/limite de trades por dia deixou de contar este canal hoje/);
-    expect(codigo).toMatch(/autopilot_disparo_nao_contado/);
+  it("⚠️⚠️ e quem conta é quem age: a rota da ordem RESERVA a vaga", () => {
+    // ⚠️ A132: a reserva passou a ser a MESMA função que o cron chama.
+    expect(ORDEM).toMatch(/reservaDaVagaDiaria\(/);
   });
 
-  it("⚠️ o cron continua conferindo as DUAS chamadas dele", () => {
-    const conferidas = [...semComentarios(CRON).matchAll(/if \(!await bumpSessionTrades\(/g)].length;
-    const chamadas = [...semComentarios(CRON).matchAll(/await bumpSessionTrades\(/g)].length;
-    expect(chamadas).toBe(2);
-    expect(conferidas).toBe(chamadas);
+  it("⚠️ a cicatriz do A12 continua escrita onde ela aconteceu", () => {
+    // Sem isto, a próxima pessoa que "reativar o write-back" não tem como
+    // saber por que ele saiu — nem que o `try/catch` de antes era teatro.
+    expect(FIRE).toMatch(/duas vezes/);
+    expect(FIRE).toMatch(/A12/);
+  });
+
+  it("⚠️⚠️ e o CRON não conta mais DEPOIS da ordem — A132", () => {
+    /**
+     * ⚠️ ESTE TESTE MUDOU DE INVARIANTE NO ROUND 9, e o que ele dizia antes
+     * fica escrito aqui para a troca ser auditável em vez de silenciosa:
+     *
+     *     "o cron confere TODAS as chamadas dele, quantas forem" — e conferia,
+     *     uma a uma, que nenhuma `bumpSessionTrades` ficasse sem `if (!await`.
+     *
+     * A conferência estava certa e era insuficiente. O que ela não podia
+     * proteger é o que vinha ANTES: `bump_session_trades` é `trades_today + n`,
+     * sem conferir teto, e a soma acontece DEPOIS que o dinheiro saiu. Com 4/5,
+     * cron e navegador passavam juntos e o dia fechava em 6 (A132).
+     *
+     * Agora o cron RESERVA a vaga antes do envio, pela mesma primitiva do
+     * navegador. A trava passa a ser a AUSÊNCIA: contar depois é o defeito.
+     */
+    const codigoDoCron = semComentarios(CRON);
+    expect(codigoDoCron).not.toMatch(/bumpSessionTrades/);
+    expect(codigoDoCron).not.toMatch(/bump_session_trades/);
+    expect(codigoDoCron).toMatch(/reservaDaVagaDiaria\(/);
+  });
+
+  it("⚠️⚠️ a função de somar sem conferir teto deixou de existir", () => {
+    // Mantê-la exportada seria manter uma arma carregada: um caminho que soma
+    // sem teto, a uma linha de quem "só precisa contar um trade".
+    const SESSOES = semComentarios(
+      readFileSync(join(process.cwd(), "src/lib/autopilot/sessions.ts"), "utf8"));
+    expect(SESSOES).not.toMatch(/export async function bumpSessionTrades/);
+    expect(SESSOES).not.toMatch(/bump_session_trades/);
   });
 });

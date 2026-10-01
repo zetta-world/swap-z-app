@@ -2,11 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { guardarConexao } from "@/lib/cex/conexoes";
+import { verificarChave, decidirArmar } from "@/lib/cex/permissoes";
 import {
   criarPlano, planosDaCarteira, planoDaCarteira, haMaisPlanos, ciclosDoPlano,
   avancarPlano, type ModoPlano,
 } from "@/lib/dca/store";
 import { proximaJanela, type Intervalo } from "@/lib/dca/relogio";
+import { decidirCapacidade, lerCapacidades } from "@/lib/dca/capacidade";
+import { unidadeDca } from "@/lib/dca/unidade";
 /**
  * ⚠️ AS MESMAS FUNÇÕES PURAS DA AUDITORIA DE `/orders` (PR #347).
  *
@@ -176,6 +179,15 @@ export async function POST(req: NextRequest) {
   if (!exchangeId || !/^[A-Z0-9]{2,12}\/[A-Z0-9]{2,12}$/.test(symbol)) {
     return NextResponse.json({ ok: false, error: "par_invalido" }, { status: 400 });
   }
+  // A96 — criação nova só nasce com quote cuja unidade é explicitamente
+  // USD-like. Isso vem ANTES de capacidade, verificação externa e cofre:
+  // ETH/BTC não pode guardar credencial/plano para depois chamar BTC de USD.
+  const unidade = unidadeDca(symbol);
+  if (!unidade.ok) {
+    return NextResponse.json({
+      ok: false, error: unidade.motivo, quote: unidade.quote ?? null,
+    }, { status: 400 });
+  }
   if (!INTERVALOS.includes(intervalo)) {
     return NextResponse.json({ ok: false, error: "intervalo_invalido" }, { status: 400 });
   }
@@ -209,9 +221,75 @@ export async function POST(req: NextRequest) {
    */
   let conexaoId: string | null = null;
   if (modo === "real") {
+    /**
+     * ⚠️⚠️⚠️ A CAPACIDADE, ANTES DE QUALQUER EFEITO — achado A112, na CRIAÇÃO.
+     *
+     * O cron já recusa plano real sem `dca_real_liberado` (fail-closed). Mas o
+     * cron é a ÚLTIMA porta; esta rota é a PRIMEIRA — e sem o check aqui, o
+     * cliente ENTREGA A CHAVE DA CORRETORA, ela é verificada contra a venue
+     * (chamada externa) e GRAVADA cifrada no cofre... para um plano que o cron
+     * vai recusar para sempre. Credencial guardada "para quando abrir" é
+     * exatamente o ativo que o cofre existe para não acumular sem motivo.
+     *
+     * O check é o MESMO caminho do cron (`lerCapacidades` + `decidirCapacidade`,
+     * sem fallback para a chave legada), e vem antes de `verificarChave`,
+     * `guardarConexao` e `criarPlano`: capacidade fechada → zero verificação
+     * externa, zero cofre, zero plano. `undefined` (não deu para ler) é
+     * FECHADO — criar plano real sobre leitura falha é operar às cegas.
+     */
+    const capacidade = decidirCapacidade("real", await lerCapacidades(getSupabaseAdmin()));
+    if (!capacidade.permitido) {
+      await recordEvent("dca_real_fechado", { wallet: session.sub, meta: {
+        exchangeId, symbol, causa: capacidade.causa,
+        why: "criacao de plano REAL recusada: dca_real_liberado nao esta 'true' em "
+          + "admin_kv (ou nao deu para ler). Ele nasce FECHADO de proposito — o "
+          + "interruptor antigo foi aberto para um teste SIMULADO. Nada foi "
+          + "verificado, gravado ou criado.",
+      } });
+      return NextResponse.json(
+        { ok: false, error: "dca_real_fechado", causa: capacidade.causa },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (!creds?.apiKey || !creds?.apiSecret) {
       return NextResponse.json({ ok: false, error: "credenciais_ausentes" }, { status: 400 });
     }
+    /**
+     * ⚠️⚠️⚠️ A CHAVE É VERIFICADA ANTES DE SER GUARDADA — achado A114.
+     *
+     * Esta rota chamava `guardarConexao` direto. A rota de armar o autopilot
+     * — o OUTRO produto que guarda chave no servidor para operar sozinho —
+     * chama `verificarChave` + `decidirArmar` desde 09/08. A peça certa,
+     * testada, com a cicatriz escrita, ligada num produto e ignorada no outro:
+     * é a família de defeito que esta auditoria mais encontrou, agora no
+     * caminho que guarda a credencial do cliente.
+     *
+     * ⚠️ CHAVE QUE PODE SACAR É RECUSADA para dinheiro real. Guardá-la no
+     * servidor coloca os fundos do cliente ao alcance de quem invadir o
+     * servidor — e um plano de DCA não precisa de saque para nada.
+     *
+     * ⚠️ NÃO VERIFICÁVEL SEGUE COM AVISO, e isto é a política EXISTENTE sendo
+     * preservada de propósito, não uma frouxidão nova: `decidirArmar` já
+     * decidiu esse caso para o autopilot, e inventar aqui um comportamento
+     * diferente criaria duas políticas para a mesma pergunta. O risco fica
+     * declarado: numa corretora cuja API não informa permissão, o cliente
+     * precisa conferir no painel dela.
+     */
+    const permissao = await verificarChave(exchangeId as CexId,
+      { apiKey: creds.apiKey, apiSecret: creds.apiSecret, passphrase: creds.passphrase });
+    const decisao = decidirArmar(permissao);
+    if (!decisao.permitido) {
+      await recordEvent("dca_chave_recusada", { wallet: session.sub, meta: {
+        exchange: exchangeId, veredito: permissao.veredito,
+        why: "chave com permissao de SAQUE recusada para DCA real — guarda-la no "
+          + "servidor colocaria os fundos ao alcance de quem invadir o servidor",
+      } });
+      return NextResponse.json(
+        { ok: false, error: "chave_pode_sacar", detalhe: decisao.motivo },
+        { status: 400 },
+      );
+    }
+
     const conexao = await guardarConexao({
       walletAddress: session.sub,
       exchangeId:    exchangeId as CexId,

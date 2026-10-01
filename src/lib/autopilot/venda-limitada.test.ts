@@ -125,9 +125,15 @@ describe("② a saída parcial deixa o resto EXISTINDO", () => {
  */
 describe("③ e o cron REALMENTE usa as duas", () => {
   it("⚠️⚠️ a ordem de venda leva a quantidade CORTADA, não a do cartão", () => {
-    expect(CRON).toMatch(/side: "sell", type: intent\.type, amount,/);
-    // `amount: intent.amount` na venda era o defeito inteiro.
-    expect(CRON).not.toMatch(/side: "sell", type: intent\.type, amount: intent\.amount/);
+    /**
+     * ⚠️ A ÂNCORA MUDOU DE FORMA, A PROPRIEDADE NÃO. A venda passou a ir pelo
+     * executor autoritativo (achado A107), então o pedido virou um objeto
+     * nomeado — mas continua tendo de levar `qty: amount`, a quantidade
+     * CORTADA pela posição, e nunca a do cartão do modelo.
+     */
+    expect(CRON).toMatch(/symbol: intent\.symbol, side: "sell",\s*\n?\s*type: intent\.type, qty: amount,/);
+    // `qty: intent.amount` na venda seria o defeito inteiro de volta.
+    expect(CRON).not.toMatch(/side: "sell",[\s\S]{0,80}qty: intent\.amount/);
   });
 
   it("⚠️⚠️ a guarda de nocional confere a quantidade ENVIADA", () => {
@@ -135,20 +141,43 @@ describe("③ e o cron REALMENTE usa as duas", () => {
     expect(CRON).toMatch(/checkRealNotional\(\{ side: intent\.side, baseAmount: amount,/);
   });
 
-  it("⚠️⚠️ os DOIS caminhos de liquidação tratam sobra — mercado e saída armada", () => {
+  it("⚠️⚠️ os TRÊS caminhos de liquidação tratam sobra", () => {
+    /**
+     * ⚠️ ERAM DOIS E VIRARAM TRÊS — achado A101. O terceiro é a saída armada
+     * CANCELADA depois de preenchimento parcial: ela reabria a posição
+     * INTEIRA, como se nada tivesse sido vendido. O que já executou é fato
+     * imutável; só o remanescente volta.
+     *
+     * ⚠️⚠️ E NO ROUND 9 A ESCRITA DURÁVEL SAIU DOS TRÊS (A131-C, depois A136).
+     *
+     * Primeiro a venda imediata passou a projetar pela RPC 0064 (delta
+     * cumulativo, para a reconciliação não reduzir a MESMA venda de novo).
+     * Depois a liquidação da saída armada também: ela escrevia a posição com
+     * `reduzirServerPosition`/`closeServerPosition` e o marcador com OUTRA
+     * operação — e qualquer ordem entre as duas quebrava exactly-once.
+     *
+     * `oQueSobrou` continua nos três caminhos, e o que ele faz agora é a conta
+     * EM MEMÓRIA: o teto de exposição desta passada e o texto da nota. Escrita
+     * durável, nenhuma.
+     */
     const chamadas = [...CRON.matchAll(/const sobra = oQueSobrou\(/g)].length;
-    expect(chamadas, "mercado e settle da armada precisam dos dois").toBe(2);
-    expect([...CRON.matchAll(/reduzirServerPosition\(/g)].length).toBe(2);
-    // E fechar passou a ser condicional nos dois.
-    expect([...CRON.matchAll(/if \(sobra\.fecha\) \{/g)].length).toBe(2);
+    expect(chamadas, "mercado, settle da armada e cancelamento parcial").toBe(3);
+    expect([...CRON.matchAll(/reduzirServerPosition\(|closeServerPosition\(/g)].length,
+      "nenhuma escrita direta de posição sobrou no cron").toBe(0);
+    // A venda imediata projeta; a liquidação da armada é transacional.
+    expect(CRON).toMatch(/const projecao = await projetarEfeitoDoIntent\(exec\.intentId\)/);
+    expect([...CRON.matchAll(/await liquidarNoLivro\(/g)].length,
+      "settle preenchido e settle cancelado-com-parcial").toBe(2);
   });
 
   it("⚠️⚠️ a base só sai de `ownedBases` quando a posição FECHA", () => {
     // Removê-la numa saída parcial faria o resto sumir do mundo do bot.
+    // ⚠️ A131-C: quem afirma que fechou passou a ser a projeção, que decide
+    // dentro da transação que reduziu — e não mais a conta em memória.
     const i = CRON.indexOf("ownedBases.delete(base)");
     expect(i).toBeGreaterThan(0);
     const antes = CRON.slice(Math.max(0, i - 400), i);
-    expect(antes).toMatch(/if \(sobra\.fecha\) \{/);
+    expect(antes).toMatch(/else if \(projecao\.fechou\) \{/);
   });
 
   it("⚠️⚠️ uma saída JÁ ARMADA não recebe segunda ordem de venda", () => {

@@ -118,6 +118,22 @@ export function ateOInstante<T extends { t: number }>(velas: ReadonlyArray<T>, t
 }
 
 /**
+ * A varredura incremental abaixo só é equivalente ao `filter(v.t <= t)` antigo
+ * quando o tempo não volta para trás. Validar uma vez mantém o caminho quente
+ * linear e transforma entrada fora do contrato em erro explícito, em vez de um
+ * retrato silenciosamente diferente.
+ */
+function exigirOrdemCronologica(nome: keyof VelasDaMesa, velas: ReadonlyArray<VelaComTempo>): void {
+  for (let i = 1; i < velas.length; i++) {
+    if (velas[i].t < velas[i - 1].t) {
+      throw new Error(
+        `mesa_real_serie_fora_de_ordem:${nome}:indice=${i}:anterior=${velas[i - 1].t}:atual=${velas[i].t}`,
+      );
+    }
+  }
+}
+
+/**
  * Roda o seletor da casa barra a barra.
  *
  * ⚠️⚠️ SEM LOOKAHEAD, POR CONSTRUÇÃO. Em cada barra `i` os indicadores são
@@ -135,6 +151,11 @@ export function rodarMesa(
   simbolo: string,
   custoIdaEVoltaPct: number,
 ): RodadaDaMesa {
+  exigirOrdemCronologica("h1", velas.h1);
+  exigirOrdemCronologica("h4", velas.h4);
+  exigirOrdemCronologica("d1", velas.d1);
+  exigirOrdemCronologica("w1", velas.w1);
+
   const h1 = velas.h1;
   const operacoes: Operacao[] = [];
   const porPlaybook: Record<string, number> = {};
@@ -146,20 +167,41 @@ export function rodarMesa(
   const cortadaPeloTeto = total > MAX_BARRAS_AVALIADAS;
   const ultima = cortadaPeloTeto ? primeira + MAX_BARRAS_AVALIADAS : h1.length;
 
+  // Converta cada série uma única vez. A versão anterior remapeava todo o
+  // histórico já visto em cada barra e voltava a filtrar integralmente os três
+  // prazos maiores. Isso não mudava o retrato, mas acrescentava trabalho
+  // quadrático antes mesmo de os indicadores começarem a calcular.
+  const h1Candles = paraCandle(h1);
+  const h4Candles = paraCandle(velas.h4);
+  const d1Candles = paraCandle(velas.d1);
+  const w1Candles = paraCandle(velas.w1);
+  const h1Saida = h1.map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close }));
+  const h1Ate: Candle[] = h1Candles.slice(0, primeira);
+  const h4AteCandles: Candle[] = [];
+  const d1AteCandles: Candle[] = [];
+  const w1AteCandles: Candle[] = [];
+  let h4Ate = 0;
+  let d1Ate = 0;
+  let w1Ate = 0;
+
   let livreApartirDe = primeira;
   let barrasAvaliadas = 0;
 
   for (let i = primeira; i < ultima; i++) {
     barrasAvaliadas++;
+    h1Ate.push(h1Candles[i]);
     if (i < livreApartirDe) continue;
 
     const t = h1[i].t;
+    while (h4Ate < velas.h4.length && velas.h4[h4Ate].t <= t) h4AteCandles.push(h4Candles[h4Ate++]);
+    while (d1Ate < velas.d1.length && velas.d1[d1Ate].t <= t) d1AteCandles.push(d1Candles[d1Ate++]);
+    while (w1Ate < velas.w1.length && velas.w1[w1Ate].t <= t) w1AteCandles.push(w1Candles[w1Ate++]);
     const ind = computeIndicators(
       simbolo,
-      paraCandle(h1.slice(0, i + 1)),
-      paraCandle(ateOInstante(velas.h4, t)),
-      paraCandle(ateOInstante(velas.d1, t)),
-      paraCandle(ateOInstante(velas.w1, t)),
+      h1Ate,
+      h4AteCandles,
+      d1AteCandles,
+      w1AteCandles,
     );
 
     const tentativas = candidateAttempts(ind);
@@ -188,7 +230,7 @@ export function rodarMesa(
         opened_at: new Date(abertaEm).toISOString(),
         horizon_hours: plano.horizonHours,
       },
-      h1.slice(i + 1).map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close })),
+      h1Saida.slice(i + 1),
       undefined,
       ate,
       custoIdaEVoltaPct,

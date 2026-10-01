@@ -51,6 +51,82 @@ export function shortenAddress(addr: string, head = 6, tail = 4) {
 }
 
 /**
+ * Canonical locale-aware parser for financial decimal text.
+ *
+ * Returns a plain decimal string using `.` as the decimal separator, or null
+ * when the input is invalid / materially ambiguous.
+ *
+ * Important: this function never passes the value through `Number`, so all
+ * user-supplied digits survive intact for subsequent base-unit conversion.
+ *
+ * Examples:
+ *   "0,5"       -> "0.5"
+ *   "3.420,50"  -> "3420.50"
+ *   "3,420.50"  -> "3420.50"
+ *   "1.000.000" -> "1000000"
+ *   "3,420"     -> null  (could be 3420 or 3.420)
+ */
+export function normalizarDecimalFinanceiro(raw: unknown): string | null {
+  if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "bigint") return null;
+
+  const source = String(raw)
+    .trim()
+    .replace(/[\s\u00A0\u202F]/g, "");
+  if (!source || !/^[0-9.,]+$/.test(source)) return null;
+
+  const normalizeInteger = (value: string): string => value.replace(/^0+(?=\d)/, "") || "0";
+  const validThousands = (value: string, sep: "." | ","): boolean => {
+    const groups = value.split(sep);
+    return groups.length > 1
+      && /^[1-9]\d{0,2}$/.test(groups[0] ?? "")
+      && groups.slice(1).every((group) => /^\d{3}$/.test(group));
+  };
+
+  const commaCount = (source.match(/,/g) ?? []).length;
+  const dotCount = (source.match(/\./g) ?? []).length;
+
+  if (commaCount > 0 && dotCount > 0) {
+    const decimalSep: "." | "," = source.lastIndexOf(",") > source.lastIndexOf(".") ? "," : ".";
+    const thousandsSep: "." | "," = decimalSep === "," ? "." : ",";
+    if ((decimalSep === "," ? commaCount : dotCount) !== 1) return null;
+
+    const splitAt = source.lastIndexOf(decimalSep);
+    const integerRaw = source.slice(0, splitAt);
+    const fraction = source.slice(splitAt + 1);
+    if (!fraction || !/^\d+$/.test(fraction)) return null;
+
+    let integer: string;
+    if (integerRaw.includes(thousandsSep)) {
+      if (!validThousands(integerRaw, thousandsSep)) return null;
+      integer = integerRaw.split(thousandsSep).join("");
+    } else {
+      if (!/^\d+$/.test(integerRaw)) return null;
+      integer = integerRaw;
+    }
+    return `${normalizeInteger(integer)}.${fraction}`;
+  }
+
+  const sep: "." | "," | null = commaCount > 0 ? "," : dotCount > 0 ? "." : null;
+  if (!sep) return /^\d+$/.test(source) ? normalizeInteger(source) : null;
+
+  const count = sep === "," ? commaCount : dotCount;
+  if (count > 1) {
+    if (!validThousands(source, sep)) return null;
+    return normalizeInteger(source.split(sep).join(""));
+  }
+
+  const [integerRaw = "", fraction = ""] = source.split(sep);
+  if (!/^\d+$/.test(integerRaw) || !/^\d+$/.test(fraction)) return null;
+
+  // One separator followed by exactly three digits is inherently ambiguous
+  // for a 1-3 digit non-zero integer prefix: "3,420" can mean 3420 or 3.420.
+  // Fail closed unless the left side itself rules out thousands notation.
+  if (fraction.length === 3 && /^[1-9]\d{0,2}$/.test(integerRaw)) return null;
+
+  return `${normalizeInteger(integerRaw)}.${fraction}`;
+}
+
+/**
  * "12.34" + decimals → unidades base, em STRING, sem passar por `Number`.
  *
  * ⚠️⚠️ POR QUE ISTO NÃO PODE TOCAR EM `Number` (auditoria da ponte, 23/08).
@@ -79,14 +155,14 @@ export function shortenAddress(addr: string, head = 6, tail = 4) {
  */
 export function toBaseUnits(input: string | null | undefined, decimals: number): string {
   if (typeof input !== "string") return "0";
-  // Separador de milhar e espaços que vêm de colagem; o resto tem de ser dígito.
-  const cleaned = input.replace(/[\s,_]/g, "");
-  if (cleaned === "" || cleaned === "." || !/^\d*(\.\d*)?$/.test(cleaned)) return "0";
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) return "0";
 
-  const [intRaw = "", fracRaw = ""] = cleaned.split(".");
+  const normalized = normalizarDecimalFinanceiro(input);
+  if (normalized === null) return "0";
+
+  const [intRaw = "0", fracRaw = ""] = normalized.split(".");
   const frac = fracRaw.slice(0, decimals).padEnd(decimals, "0");
-  const joined = ((intRaw || "0") + frac).replace(/^0+/, "");
+  const joined = (intRaw + frac).replace(/^0+/, "");
   return joined === "" ? "0" : joined;
 }
 
@@ -104,15 +180,19 @@ export function fromBaseUnits(raw: bigint, decimals: number): string {
   const neg = raw < 0n;
   const digits = (neg ? -raw : raw).toString().padStart(decimals + 1, "0");
   const int  = digits.slice(0, digits.length - decimals);
-  const frac = digits.slice(digits.length - decimals).replace(/0+$/, "");
+  let frac = digits.slice(digits.length - decimals).replace(/0+$/, "");
+  // `normalizarDecimalFinanceiro` correctly rejects "1.005" as ambiguous
+  // user text. `fromBaseUnits` is an internal producer, so make the generated
+  // decimal self-disambiguating without changing its numeric value.
+  if (frac.length === 3 && /^[1-9]\d{0,2}$/.test(int)) frac += "0";
   return `${neg ? "-" : ""}${int}${frac ? `.${frac}` : ""}`;
 }
 
-/** Convert "12.34" string input into a safe number, returns null if invalid */
+/** Convert locale-formatted decimal input into a safe number. */
 export function parseDecimalInput(s: string): number | null {
-  if (!s || s.trim() === "") return null;
-  const cleaned = s.replace(/,/g, "");
-  const n = Number(cleaned);
+  const normalized = normalizarDecimalFinanceiro(s);
+  if (normalized === null) return null;
+  const n = Number(normalized);
   if (!Number.isFinite(n) || n < 0) return null;
   return n;
 }

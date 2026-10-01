@@ -19,6 +19,28 @@ import type { CexId } from "@/lib/cex/types";
  * same record rather than creating a duplicate.
  *
  * Persisted to localStorage so it survives the very reload that motivated it.
+ *
+ * ⚠️⚠️⚠️ ISTO É CACHE DE TELA. A AUTORIDADE DE DINHEIRO É O SERVIDOR — A131.
+ *
+ * `public.autopilot_positions` é quem responde "o que o bot possui". Este
+ * store existe para renderizar rápido, lembrar o raciocínio do ZION e
+ * sobreviver a um reload — e NÃO pode decidir:
+ *
+ *   · se uma venda autônoma pode sair;
+ *   · quanto vender;
+ *   · quanta exposição ainda cabe;
+ *   · se a posição existe;
+ *   · de quem é o ativo.
+ *
+ * O achado que criou esta nota: havia DOIS livros para o mesmo piloto, e o
+ * canal que dispara dinheiro real consultava ESTE. Com 0,01 BTC de posição do
+ * bot e 1,00 BTC na conta do dono, um cartão pedindo vender 0,50 mandava 0,50
+ * — e 0,49 eram patrimônio que o autopilot não tem mandato para vender. O
+ * servidor agora limita (`avaliarVendaAutonoma`), e o teto de exposição do
+ * modo de risco é conferido lá também.
+ *
+ * ⚠️ DIVERGIU, O SERVIDOR GANHA. A tela pode ser mais conservadora; nunca mais
+ * permissiva.
  */
 
 export type PositionStatus = "open" | "exit_armed" | "closed";
