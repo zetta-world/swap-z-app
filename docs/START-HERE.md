@@ -12,6 +12,8 @@ Control plane criado em 01/10/2026 e reconciliado contra o Git local, os refs
 relatórios locais do laboratório. Revisão 3 (01/10/2026): correções da
 auditoria independente, round 1 (CP-01…CP-08). Revisão 4 (01/10/2026):
 round 2 (CP-09 atestação pós-recert, CP-10 terminologia de certificação).
+Revisão 5 (02/10/2026): C1 `f4af976` commitado; RECERT(C1)=FAIL
+(EA-TEST-HMAC-189-FLAKY); correção para o C1b no working tree.
 
 ---
 
@@ -50,9 +52,9 @@ PASS (`docs/AI-OPERATING-RULES.md` §7): `CERTIFIED_EXACT_SHA`. SHAs chamados
 |---|---|
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5`: **CERTIFIED_EXACT_SHA** (recert de runtime no laboratório local, PASS), não deployado |
 | EARLY_ACCESS_PHASE1_CHECKPOINT | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`: **COMMITTED_FEATURE_CHECKPOINT** (gate fechado) |
-| PHASE1_RECERT | **BLOCKED** (`RECERTIFIED_AT_COMMITTED_SHA=NO`; teste não determinístico do F-10, ver `CURRENT-STATE.md`) |
-| CERTIFIED_FEATURE_SHA | **NONE** (será o C1, se RECERT(C1)=PASS) |
-| CONTROL_PLANE_HEAD | **NOT_YET_COMMITTED** (control plane só no working tree; será o C2 de atestação) |
+| PHASE1_RECERT | **BLOCKED**: `9f2ddcb` FAIL (EA-TEST-F10-FLAKY); C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` **RECERT FAIL** (EA-TEST-HMAC-189-FLAKY). Ver `CURRENT-STATE.md` |
+| CERTIFIED_FEATURE_SHA | **NONE** (será o C1b, se RECERT(C1b)=PASS) |
+| CONTROL_PLANE_HEAD | **NOT_YET_COMMITTED** (não há C2; o control plane commitado no C1 não é atestação) |
 | RELEASE_CANDIDATE | **NONE** |
 
 **`CERTIFIED_FEATURE_SHA` não é necessariamente o `CONTROL_PLANE_HEAD`.** O
@@ -101,12 +103,15 @@ A Fase 2 só passa a `CURRENT_DEVELOPMENT` depois de **todas** estas coisas:
   (DEFERRED_EXTERNAL_PAYMENT) e do PR #447, que está DRAFT.
 - **Automação com dinheiro real está em NO-GO:** DCA real, Pilot real e
   Autopilot real.
-- **A recertificação da Fase 1 no `9f2ddcb` está BLOCKED.** O teste
-  `gate-hmac-referral.test.ts:121` falha em cerca de 13,1% das execuções
-  (EA-TEST-F10-FLAKY). Relatório:
-  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/reports/EARLY-ACCESS-PHASE1-RECERT-9f2ddcb-20261001.txt`.
-  A correção do teste existe **no working tree** (revisão 3, sem commit) e
-  ainda não foi recertificada.
+- **A recertificação da Fase 1 está BLOCKED.** No `9f2ddcb`, o teste
+  `gate-hmac-referral.test.ts:121` falhava em ~13,1% das execuções
+  (EA-TEST-F10-FLAKY, corrigido no C1). No C1 `f4af976`, o teste
+  `gate-hmac-referral.test.ts:157` falhou (~0,73% das execuções,
+  EA-TEST-HMAC-189-FLAKY). Relatórios:
+  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/reports/EARLY-ACCESS-PHASE1-RECERT-9f2ddcb-20261001.txt`,
+  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/reports/EARLY-ACCESS-PHASE1-C1-RECERT-f4af976-20261001.txt`.
+  A correção do segundo existe **no working tree** (revisão 5, sem commit) e
+  vai no commit candidato C1b.
 
 Lista completa: `docs/CURRENT-STATE.md` → OPEN_BLOCKERS.
 
@@ -160,17 +165,19 @@ commit posterior (C2).
 0. Review independente: round 1 (pacote v1) e round 2 (pacote v2) feitos;
    CP-01…CP-08 PASS, correção F10 PASS. CP-09/CP-10 corrigidos na revisão 4
    (working tree).
-1. **Commit candidato C1**, com autorização do dono: os docs do control plane
-   e a correção do teste EA-TEST-F10-FLAKY
-   (`src/lib/early-access/gate-hmac-referral.test.ts`, já no working tree).
-   Gera um SHA novo, filho de `9f2ddcb`.
-2. **Recertificar C1 inteiro, no SHA exato**: `npm ci`, build, type-check,
+1. ~~Commit candidato C1~~: feito, `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`
+   (control plane + correção EA-TEST-F10-FLAKY). **RECERT(C1)=FAIL** (ledger
+   L-018).
+2. **Commit candidato C1b**, com autorização do dono: a correção
+   EA-TEST-HMAC-189-FLAKY (`src/lib/early-access/gate-hmac-referral.test.ts`,
+   já no working tree) e os docs da revisão 5. Filho de `f4af976`.
+3. **Recertificar C1b inteiro, no SHA exato**: `npm ci`, build, type-check,
    lint, testes alvo, guardas, suíte completa e SQL T15. Se falhar: registrar
    o FAIL, sem atestação PASS, sem retry-to-pass, sem reclassificar;
-   corrigir, criar **C1b** e recertificar C1b inteiro.
-3. Se PASS: **commit de atestação C2**, só docs, registrando
-   `CERTIFIED_FEATURE_SHA=<C1>`, `RECERT_RESULT=PASS` e a evidência; provar
-   `git diff --stat <C1>..<C2> -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'`
+   corrigir, novo commit candidato, recert dele inteiro. Se PASS: **commit
+   de atestação C2**, só docs, registrando `CERTIFIED_FEATURE_SHA=<C1b>`,
+   `RECERT_RESULT=PASS` e a evidência; provar
+   `git diff --stat <C1b>..<C2> -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'`
    vazio. Daí `CONTROL_PLANE_HEAD=<C2>`.
 4. Escrever o plano da Fase 2 **antes de qualquer código**: uma seção nova em
    `docs/PLANO-EARLY-ACCESS.md` ou um `docs/PLANO-EARLY-ACCESS-FASE2.md` novo.
@@ -209,8 +216,9 @@ valem:
    `RELEASE-CHAIN.md`;
 5. não há delta de **produto** não autorizado: o último comando acima sai
    vazio, **ou** o delta é exatamente o autorizado e registrado no ledger
-   (hoje, o único autorizado é a correção do teste
-   `src/lib/early-access/gate-hmac-referral.test.ts`, EA-TEST-F10-FLAKY).
+   (hoje, o único arquivo de produto autorizado é o teste
+   `src/lib/early-access/gate-hmac-referral.test.ts`: EA-TEST-F10-FLAKY,
+   commitado no C1, e EA-TEST-HMAC-189-FLAKY, para o C1b).
 
 O control plane não usa "HEAD = `9f2ddcb`" nem "diff fora de `docs/` vazio"
 como regra: as duas se invalidariam com o próprio commit do control plane

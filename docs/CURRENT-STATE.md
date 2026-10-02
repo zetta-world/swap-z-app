@@ -9,6 +9,8 @@
 > (CP-01…CP-08) + correção do teste EA-TEST-F10-FLAKY no working tree.
 > Revisão 4: round 2 (CP-01…CP-08 e F10 PASS no review do pacote v2);
 > correções CP-09 (atestação C2) e CP-10 (terminologia).
+> Revisão 5 (02/10/2026): C1 `f4af976` commitado; RECERT(C1)=FAIL
+> (EA-TEST-HMAC-189-FLAKY); correção para o C1b no working tree (ledger L-018).
 
 ---
 
@@ -18,13 +20,14 @@
 | CURRENT_BRANCH | `early-access-phase2-email-double-optin-20261001`, **só local**, sem upstream | Git |
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`, "feat: add closed-by-default early access foundation", 01/10 17:08 −03 | Git |
 | PRODUCT_BASE_TREE | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | Git |
-| WORKTREE_HEAD_AT_LAST_MEASUREMENT | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` (01/10, revisão 3, antes de qualquer commit do control plane). **Snapshot informativo**: o HEAD muda legitimamente com commits de control plane; a regra de identidade está em `START-HERE.md` §10 | Git |
-| WORKING_TREE | sujo **por esta campanha**: control plane (8 docs novos, `AGENTS.md`, `CLAUDE.md`, `docs/README.md`, 4 banners) + **1 arquivo de teste** (`src/lib/early-access/gate-hmac-referral.test.ts`, EA-TEST-F10-FLAKY). Nenhum código de produto, nenhuma migration | `git status --short` |
+| WORKTREE_HEAD_AT_LAST_MEASUREMENT | `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` (02/10, revisão 5: o C1, tree `d214a354b75cafbd13d2882c94eec98c0e262a28`). **Snapshot informativo**: o HEAD muda legitimamente com commits de control plane; a regra de identidade está em `START-HERE.md` §10 | Git |
+| WORKING_TREE | sujo **pela correção do C1b**: docs do control plane (revisão 5) + **1 arquivo de teste** (`src/lib/early-access/gate-hmac-referral.test.ts`, EA-TEST-HMAC-189-FLAKY). Nenhum código de produto, nenhuma migration | `git status --short` |
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (tree `62ad70e36a8bcc57331297d8ce929f232fadad2c`): **CERTIFIED_EXACT_SHA** — RUNTIME RECERTIFICATION: PASS (local). É o único SHA com essa marca | `reports/recert-0d21874-20261001T010514Z/FINAL-RUNTIME-RECERTIFICATION.md`; `docs/RELEASE-RUNBOOK.md` |
 | EARLY_ACCESS_PHASE1_CHECKPOINT | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`: **COMMITTED_FEATURE_CHECKPOINT**. O dono o designou antes "certified feature checkpoint" (histórico, L-009); o control plane reserva `CERTIFIED` para recert exata em PASS | `docs/PLANO-EARLY-ACCESS.md` §14–§15; ledger L-009, L-016 |
-| PHASE1_RECERT | **BLOCKED.** `RECERTIFIED_AT_COMMITTED_SHA=NO` (ver abaixo) | `reports/EARLY-ACCESS-PHASE1-RECERT-9f2ddcb-20261001.txt` |
-| CERTIFIED_FEATURE_SHA | **NONE**. Vai ser o commit candidato C1 se RECERT(C1)=PASS | este documento |
-| CONTROL_PLANE_HEAD | **NOT_YET_COMMITTED** (control plane só no working tree). Vai ser o commit de atestação C2 (só docs). `CERTIFIED_FEATURE_SHA` ≠ necessariamente `CONTROL_PLANE_HEAD`; C2 nunca é CERTIFIED | `AI-OPERATING-RULES.md` §5.1 |
+| PHASE1_RECERT | **BLOCKED.** `9f2ddcb`: FAIL 1/123 (EA-TEST-F10-FLAKY). C1 `f4af976`: **RECERT(C1)=FAIL**, alvo EA 122/123 (EA-TEST-HMAC-189-FLAKY) | `reports/EARLY-ACCESS-PHASE1-RECERT-9f2ddcb-20261001.txt`; `reports/EARLY-ACCESS-PHASE1-C1-RECERT-f4af976-20261001.txt` |
+| CANDIDATE_SHA | C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (ledger L-018). Próximo candidato: **C1b** (ainda não existe) | Git; ledger L-018 |
+| CERTIFIED_FEATURE_SHA | **NONE**. Vai ser o C1b se RECERT(C1b)=PASS | este documento |
+| CONTROL_PLANE_HEAD | **NOT_YET_COMMITTED**: não há C2 (o C1 falhou na recert; o control plane commitado no C1 não é atestação). Vai ser o commit de atestação C2 (só docs) sobre o C1b. `CERTIFIED_FEATURE_SHA` ≠ necessariamente `CONTROL_PLANE_HEAD`; C2 nunca é CERTIFIED | `AI-OPERATING-RULES.md` §5.1 |
 | LIFECYCLE | branch → base → plano → implementação → auditoria → correções → pré-commit → **C1** → **recert exata de C1** → **atestação C2 (só docs)** → próxima fase | `AI-OPERATING-RULES.md` §5 |
 | RELEASE_CANDIDATE | **NONE** | `docs/RELEASE-CHAIN.md` |
 | CURRENT_WORK | **CONTROL_PLANE_REVIEW_AND_PHASE1_RECERT** | este documento |
@@ -76,13 +79,37 @@ a aceita. Taxa de falha: teórica (62/64)^64 = 13,1%; empírica 12,97% em
   recertificação**: ela acontece no SHA do commit candidato, completa (build,
   suíte, T15 inclusos).
 
+## Recertificação do C1 no SHA exato (02/10)
+
+C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`. Campanha válida:
+`recert-c1-f4af976-20261002T012205Z`, com limites fixos desde o início
+(`CONTAINER_MEMORY_LIMIT=2G`, `CONTAINER_MEMORY_SWAP_LIMIT=5G`,
+`NODE_OPTIONS=--max-old-space-size=1792`). Três campanhas anteriores do mesmo
+C1 não deram veredito (ABORTED, CLOSED_NONCOMPLIANT, ENVIRONMENT_BLOCKED_MEMORY;
+ledger L-018).
+
+| gate | resultado |
+|---|---|
+| identidade, ancestralidade, escopo, disco | PASS |
+| `npm ci --offline` (1665 pacotes, lock byte-idêntico) | PASS |
+| F10 ×100 | PASS 100/100 |
+| testes alvo de early access (7 arquivos) | **FAIL: 122/123** |
+| guardas, T15, type-check, lint, build, suíte completa | NOT_RUN (parada no 1º gate que falhou) |
+
+**Causa:** `gate-hmac-referral.test.ts:157`. Com o segredo de teste aleatório
+por processo, o controle negativo "o HMAC não contém '189'" falha em ≈ 0,73%
+das execuções (EA-TEST-HMAC-189-FLAKY). Defeito de teste; nenhum impacto de
+produto identificado. **Correção (revisão 5, autorizada, sem commit):**
+segredo de teste fixo e determinístico; só o arquivo de teste muda. Vai no
+commit candidato C1b, que precisa de recert completa no SHA exato.
+
 ## OPEN_BLOCKERS
 
 | id | bloqueia | estado |
 |---|---|---|
 | **F-01** EMAIL_DOUBLE_OPT_IN | abrir o gate público | OPEN_BLOCKER, trabalho da Fase 2 |
-| **EA-RECERT / EA-TEST-F10-FLAKY** | dar a Fase 1 por recertificada; promover qualquer SHA da linha EA | BLOCKED. Correção no working tree (revisão 3); faltam commit candidato + recert completa no SHA exato |
-| **CP-REVIEW** | commit do control plane; início da Fase 2 | round 1 e round 2 auditados (CP-01…CP-08 e F10 PASS; MANIFEST PASS, sem segredo). CP-09/CP-10 corrigidos na revisão 4 (working tree). Aguardando decisão do dono sobre o commit candidato C1 |
+| **EA-RECERT / EA-TEST-HMAC-189-FLAKY** | dar a Fase 1 por recertificada; promover qualquer SHA da linha EA | BLOCKED. RECERT(C1)=FAIL; correção no working tree (revisão 5); faltam commit C1b + recert completa no SHA exato de C1b. EA-TEST-F10-FLAKY: FIXED_NOT_RECERTIFIED (no C1) |
+| **CP-REVIEW** | commit do control plane; início da Fase 2 | round 1 e round 2 auditados (CP-01…CP-08 e F10 PASS; MANIFEST PASS, sem segredo). CP-09/CP-10 corrigidos na revisão 4. Control plane commitado no C1 `f4af976` (02/10); não há atestação C2 porque RECERT(C1)=FAIL |
 | **REL-AUTH** | qualquer push, merge, deploy ou migration hospedada | OWNER_DECISION (política de deploy formalizada) |
 | **VERCEL** | deploy, preview e check do PR | EXTERNAL_DEPENDENCY (pagamento) |
 | **P0-SKEW** | o autopilot em produção (função indisponível desde 16/09) | OPEN_BLOCKER de produção; só o release resolve (`LEDGER-MESTRE-RELEASE.md` §Y) |
@@ -125,15 +152,15 @@ permanecem sem fonte e não permitem conclusão. Tabela completa:
 
 ## NEXT_ACTION
 
-1. Decisão do dono: **commit candidato C1** (control plane + correção do teste
-   EA-TEST-F10-FLAKY). Review independente rounds 1 e 2 feitos; CP-09/CP-10
-   corrigidos na revisão 4.
-2. **Recertificação completa no SHA exato de C1** (npm ci, build, type-check,
-   lint, alvo, guardas, suíte completa, SQL T15).
-3. PASS → **commit de atestação C2**, só docs: `CERTIFIED_FEATURE_SHA=<C1>`,
+1. Decisão do dono: **commit candidato C1b** (correção EA-TEST-HMAC-189-FLAKY
+   + docs da revisão 5) sobre o C1 `f4af976`.
+2. **Recertificação completa no SHA exato de C1b** (npm ci, build, type-check,
+   lint, alvo, guardas, suíte completa, SQL T15), com os limites de memória
+   fixos desde o início.
+3. PASS → **commit de atestação C2**, só docs: `CERTIFIED_FEATURE_SHA=<C1b>`,
    `RECERT_RESULT=PASS`, evidência, e prova de diff de produto `C1..C2`
    vazio. Daí `CONTROL_PLANE_HEAD=<C2>`.
    FAIL → registrar o FAIL, sem atestação PASS, sem retry-to-pass; corrigir,
-   C1b, recert de C1b inteiro.
+   novo commit candidato, recert dele inteiro.
 4. Só então: o plano da Fase 2 (PHASE_BASE_SHA = C2) e a escolha do provider
    de email.

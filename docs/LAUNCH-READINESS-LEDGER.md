@@ -18,7 +18,7 @@
 
 ---
 
-## Visão das fases (snapshot derivado, revisão 4 de 01/10/2026; a fonte é a lista de entradas abaixo)
+## Visão das fases (snapshot derivado, atualizado em 02/10/2026 (L-018); a fonte é a lista de entradas abaixo)
 
 | fase | SHA | estado |
 |---|---|---|
@@ -31,8 +31,8 @@
 | Runtime certificado | `0d21874` | **CERTIFIED_EXACT_SHA** |
 | Docs baseline / PR #447 | `43c484b` | DOCS_BASELINE · `CERTIFIED_RUNTIME_ANCESTOR=0d21874` · `DELTA=DOCS_ONLY` · CI PASS · `EXACT_SHA_RECERTIFIED=NO` · PR DRAFT |
 | Laboratório local (4 stacks, boot) | — | LAB_ENV_VERIFIED (ambiente, não SHA) |
-| Control plane review + recert da Fase 1 | (working tree, sem commit) | **CURRENT_WORK** (L-016, L-017) · `CONTROL_PLANE_HEAD=NOT_YET_COMMITTED` |
-| Commit candidato C1 → recert exata → atestação C2 | — | NOT_STARTED (aguarda o dono) |
+| Control plane review + recert da Fase 1 | C1 `f4af976` | **CURRENT_WORK** (L-016, L-017, L-018) · `CONTROL_PLANE_HEAD=NOT_YET_COMMITTED` (não há C2) |
+| Commit candidato C1 → recert exata → atestação C2 | `f4af976` | **RECERT(C1)=FAIL** (EA-TEST-HMAC-189-FLAKY, L-018) → correção para **C1b** no working tree (sem commit) |
 | Early Access Fase 1 | `9f2ddcb` | **COMMITTED_FEATURE_CHECKPOINT** (o dono o designou "certified feature checkpoint" em L-009; termo reservado desde L-016) · **PHASE1_RECERT: BLOCKED** (L-013) · `CERTIFIED_FEATURE_SHA=NONE` |
 | Early Access Fase 2 | — | **BLOCKED_NOT_STARTED** · `PHASE2_CODE_EXISTS=NO` · NEXT_PHASE (L-016) |
 | Fundraising (`fundraising_*`) | — | NOT_STARTED (namespace reservado) |
@@ -251,3 +251,19 @@
 - **Validação:** só `git diff --check` (por instrução).
 - **Estado resultante:** `CERTIFIED_FEATURE_SHA=NONE` · `CONTROL_PLANE_HEAD=NOT_YET_COMMITTED` · `RELEASE_CANDIDATE=NONE`.
 - **Próxima dependência:** autorização do dono para o commit candidato C1 → recert exata → atestação C2.
+
+### L-018 · 2026-10-02 · C1 commitado; recert exata de C1 = FAIL; correção para C1b
+
+- **Estado:** **BLOCKED** (`RECERT(C1)=FAIL`); correção do C1b no working tree (**sem commit**)
+- **C1 (`CANDIDATE_SHA`):** `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` · tree `d214a354b75cafbd13d2882c94eec98c0e262a28` · pai `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` · "docs: establish launch control plane and deterministic early-access guard". Conteúdo: control plane (revisões 3–4) + correção EA-TEST-F10-FLAKY. Delta de produto (fora o teste F10) e de dependências: vazio.
+- **Campanhas de recert do C1** (todas fora do repo, `evidence/<campanha>/`, com MANIFEST.sha256):
+  - `recert-c1-f4af976-20261001T234721Z`: **ABORTED** — o host travou durante o `npm ci` sem teto de memória (3,7 GiB de RAM, 4 stacks no ar). Sem veredito.
+  - `recert-c1-f4af976-20261002T000108Z`: **CLOSED_NONCOMPLIANT** — o dono acrescentou garantias G1–G3 (releitura dos docs, saúde do host antes do `npm ci`, OOM = `ENVIRONMENT_BLOCKED_MEMORY` sem aumentar limite) depois que a campanha já tinha repetido o `npm ci` com mais swap. Resultados só informativos.
+  - `recert-c1-f4af976-20261002T005224Z`: **ENVIRONMENT_BLOCKED_MEMORY** no type-check (heap V8 padrão ≈ 1 GB num container de 2 GB; 0 erros TS). Gates 1–9 PASS.
+  - `recert-c1-f4af976-20261002T012205Z`: **FAIL** — limites fixos desde o início (`CONTAINER_MEMORY_LIMIT=2G`, `CONTAINER_MEMORY_SWAP_LIMIT=5G`, `NODE_OPTIONS=--max-old-space-size=1792`). PASS: identidade, ancestralidade, escopo, disco, `npm ci --offline` (1665 pacotes, lock byte-idêntico `8e9b5227…d38a`), F10 ×100 = 100/100. **FAIL: alvo EA 122/123.** NOT_RUN: guardas, T15, type-check, lint, build, suíte completa.
+- **Causa do FAIL:** `src/lib/early-access/gate-hmac-referral.test.ts:157` — controle negativo "o HMAC não contém '189'" sobre um HMAC de segredo aleatório por processo; taxa ≈ 0,73%. Defeito de teste **EA-TEST-HMAC-189-FLAKY** (`AUDIT-RECONCILIATION.md` §5.5). Os PASS anteriores desse teste foram passadas probabilísticas.
+- **Regra aplicada (`AI-OPERATING-RULES.md` §5.2):** sem atestação PASS, sem retry-to-pass, sem reclassificar. `CERTIFIED_FEATURE_SHA=NONE`. Não há C2.
+- **Relatório:** `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/reports/EARLY-ACCESS-PHASE1-C1-RECERT-f4af976-20261001.txt` (sha256 em `.sha256` ao lado); versão da campanha `…005224Z` preservada em `…f4af976-20261001.campaign-20261002T005224Z.txt`.
+- **Correção para C1b (autorizada pelo dono, 02/10):** só `src/lib/early-access/gate-hmac-referral.test.ts`: `SEGREDO_FALSO` fixo (48 bytes distintos `(i*61+0x2d)&0xff`, base64 canônico), HMAC do IP de teste conferido sem "189", mais checagem do IP literal. Varredura dos demais usos de aleatoriedade nos testes EA: nenhum outro controle com risco relevante (pior caso restante ≈ 3×10⁻¹⁷; as checagens de PII do `route.test.ts` usam valores com ".", impossível num hex). `hmac.ts`, `gate.ts`, rota e migrations intactos.
+- **Validação pré-commit (não é certificação):** evidência em `evidence/precommit-c1b-*/`.
+- **Próxima dependência:** commit candidato **C1b** autorizado pelo dono → recert completa no SHA exato de C1b (com os limites fixos acima) → se PASS, atestação C2.

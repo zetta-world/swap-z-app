@@ -37,8 +37,12 @@ import { gerarCodigo, gerarCandidatos, ALFABETO, TAMANHO } from "./referral";
 import { PAISES_ISO } from "./paises";
 import { REFERRAL_FORMATO } from "./validate";
 
-// Segredo FALSO gerado na hora (48 bytes aleatórios em base64, como o RUNBOOK manda).
-const SEGREDO_FALSO = randomBytes(48).toString("base64");
+// Segredo FALSO, FIXO: 48 bytes distintos (61 é ímpar → permutação mod 256) em
+// base64 canônico — o mesmo formato que o RUNBOOK manda gerar. Cicatriz
+// (EA-TEST-HMAC-189-FLAKY): era randomBytes(48) a cada processo, e o controle
+// negativo "o HMAC não contém '189'" falhava em ~0,73% das vezes (30 posições
+// × 16⁻³ num hex aleatório de 32). Fixo, todo HMAC daqui é reprodutível.
+const SEGREDO_FALSO = Buffer.from(Array.from({ length: 48 }, (_, i) => (i * 61 + 0x2d) & 0xff)).toString("base64");
 const APROVADO = { terms: "tos-1", privacy: "priv-1" };
 
 beforeEach(() => { banco.modo = "ok"; banco.valor = "false"; delete process.env.EARLY_ACCESS_HMAC_SECRET; });
@@ -154,6 +158,8 @@ describe("④ HMAC", () => {
     const a = ipHmac("189.40.1.2");
     expect(a).toMatch(/^[0-9a-f]{32}$/);
     expect(ipHmac("189.40.1.2")).toBe(a);
+    expect(a).not.toContain("189.40.1.2");
+    // com o segredo fixo este valor é constante e conferido sem "189"
     expect(a).not.toContain("189");
   });
   it("⚠️ separação de domínio: o mesmo valor dá HMACs diferentes para ip e email", () => {

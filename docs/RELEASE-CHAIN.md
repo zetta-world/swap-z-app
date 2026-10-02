@@ -29,6 +29,8 @@
 >
 > `LAST_CERTIFIED_RUNTIME=0d21874b4147bb8a0b232aa0abc2302471a720e5` ·
 > `CERTIFIED_FEATURE_SHA=NONE` · `CONTROL_PLANE_HEAD=NOT_YET_COMMITTED`.
+> C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (02/10, L-018);
+> próximo candidato: C1b.
 > `CERTIFIED_FEATURE_SHA` (o C1 recertificado) não é necessariamente o
 > `CONTROL_PLANE_HEAD` (o C2 de atestação, só docs, nunca CERTIFIED).
 
@@ -78,10 +80,13 @@
           PRODUCT_BASE_SHA · PHASE1_RECERT: BLOCKED — EA-TEST-F10-FLAKY
     │  control plane + correção do teste F10
     ▼
- C1 (ainda não existe)  CANDIDATE_SHA                             recert COMPLETA no SHA exato pendente
-    │  se RECERT(C1)=PASS: só docs (diff de produto C1..C2 vazio)
+ f4af976  C1 — CANDIDATE_SHA (control plane + F10)                RECERT FAIL (alvo EA 122/123, EA-TEST-HMAC-189-FLAKY)  DO NOT DEPLOY
+    │  correção EA-TEST-HMAC-189-FLAKY + docs revisão 5
     ▼
- C2 (ainda não existe)  CONTROL_PLANE_ATTESTATION_COMMIT          registra CERTIFIED_FEATURE_SHA=C1; C2 NÃO é CERTIFIED; DO NOT DEPLOY
+ C1b (ainda não existe)  CANDIDATE_SHA                            recert COMPLETA no SHA exato pendente
+    │  se RECERT(C1b)=PASS: só docs (diff de produto C1b..C2 vazio)
+    ▼
+ C2 (ainda não existe)  CONTROL_PLANE_ATTESTATION_COMMIT          registra CERTIFIED_FEATURE_SHA=C1b; C2 NÃO é CERTIFIED; DO NOT DEPLOY
     │  Early Access Fase 2 (double opt-in), PHASE_BASE_SHA = C2
     ▼
  (ainda não existe)                                               BLOCKED_NOT_STARTED
@@ -121,8 +126,9 @@ prova AP-LOCK hospedada (`RELEASE-RUNBOOK.md` §6–§7).
 | 17 | **Runtime certificado** | `0d21874` | `0d21874b4147bb8a0b232aa0abc2302471a720e5` | `62ad70e36a8bcc57331297d8ce929f232fadad2c` | worktree `recert-0d21874-…` (detached) | **CERTIFIED_EXACT_SHA** (lab local) | **RUNTIME RECERTIFICATION: PASS**; suíte 264/3971 ×2; 0 critical / 0 high | `43c484b` |
 | 18 | Docs baseline / PR #447 | `43c484b` | `43c484bd1fdc24cdbd8182914514d80d769deeb2` | `1c6505a6c6bd12ac06d2d3ef6eb9f9a0598814d7` | `origin/preprod-final-closure-20260930T131123Z` | DOCS_BASELINE · `CERTIFIED_RUNTIME_ANCESTOR=0d21874` · `DELTA=DOCS_ONLY` · `CI=PASS` · `EXACT_SHA_RECERTIFIED=NO` | CI 36838326106 + 36838252838 SUCCESS | `9f2ddcb` |
 | 19 | **Early Access Fase 1** | `9f2ddcb` | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | `early-access-phase2-email-double-optin-20261001`, `whitelist-fundraising-readiness-20261001` (ambos locais) | **COMMITTED_FEATURE_CHECKPOINT** (o dono o designou "certified feature checkpoint", L-009; `CERTIFIED` reservado desde L-016) | auditoria adversarial pré-hardening; **recert no SHA commitado: BLOCKED** (`reports/EARLY-ACCESS-PHASE1-RECERT-9f2ddcb-20261001.txt`: npm ci / type-check / lint / guardas PASS, alvo EA FAIL 1/123 por teste não determinístico, build/suíte/T15 NOT_RUN); sem CI | C1 (control plane + correção do teste F10, já no working tree) → recert completa no SHA exato → atestação C2 → Fase 2 |
-| 19b | C1 — commit candidato (control plane + teste F10) | — | — | — | `early-access-phase2-email-double-optin-20261001` | ainda não existe (working tree, revisões 3–4) | recert completa no SHA exato pendente; se PASS vira `CERTIFIED_FEATURE_SHA` | C2 |
-| 19c | C2 — commit de atestação (só docs) | — | — | — | idem | ainda não existe; só se RECERT(C1)=PASS | **nunca** CERTIFIED; prova: diff de produto `C1..C2` vazio; vira `CONTROL_PLANE_HEAD` | Fase 2 |
+| 19b | C1 — commit candidato (control plane + teste F10) | `f4af976` | `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` | `d214a354b75cafbd13d2882c94eec98c0e262a28` | `early-access-phase2-email-double-optin-20261001` (local) | CANDIDATE_SHA · **RECERT FAIL** · DO NOT DEPLOY | recert exata 02/10 (`recert-c1-f4af976-20261002T012205Z`): alvo EA 122/123 (EA-TEST-HMAC-189-FLAKY); `reports/EARLY-ACCESS-PHASE1-C1-RECERT-f4af976-20261001.txt`; ledger L-018 | C1b |
+| 19b′ | C1b — commit candidato (correção EA-TEST-HMAC-189-FLAKY + docs revisão 5) | — | — | — | idem | ainda não existe (working tree, revisão 5) | recert completa no SHA exato pendente; se PASS vira `CERTIFIED_FEATURE_SHA` | C2 |
+| 19c | C2 — commit de atestação (só docs) | — | — | — | idem | ainda não existe; só se RECERT(C1b)=PASS | **nunca** CERTIFIED; prova: diff de produto `C1b..C2` vazio; vira `CONTROL_PLANE_HEAD` | Fase 2 |
 | 20 | Early Access Fase 2 | — | — | — | `early-access-phase2-email-double-optin-20261001` | **BLOCKED_NOT_STARTED** · NEXT_PHASE · sem código | — | — |
 | ∞ | FINAL RELEASE CANDIDATE | — | — | — | — | NOT_STARTED | — | — |
 
