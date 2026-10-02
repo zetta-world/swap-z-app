@@ -21,16 +21,17 @@
 >
 > **Termos (revisões 3 e 4):** `CERTIFIED` só para SHA com recertificação no
 > SHA exato em PASS, sempre qualificado:
-> - `CERTIFIED_EXACT_SHA`: só `0d21874b4147bb8a0b232aa0abc2302471a720e5`;
+> - `CERTIFIED_EXACT_SHA`: `0d21874b4147bb8a0b232aa0abc2302471a720e5` (runtime) e
+>   `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (C1b, Early Access Fase 1; L-019);
 > - `CERTIFIED_RUNTIME_ANCESTOR`: o SHA não foi recertificado, mas um ancestral
 >   foi e o delta é conhecido (`43c484b`, `DELTA=DOCS_ONLY`);
 > - `HISTORICAL_CERTIFICATION_LEGACY`: chamado "certified" antes da revisão 3,
 >   sem prova de recert exata pelo critério atual (R9, PC-B1, PC-B2).
 >
 > `LAST_CERTIFIED_RUNTIME=0d21874b4147bb8a0b232aa0abc2302471a720e5` ·
-> `CERTIFIED_FEATURE_SHA=NONE` · `CONTROL_PLANE_HEAD=NOT_YET_COMMITTED`.
-> C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (02/10, L-018);
-> próximo candidato: C1b.
+> `CERTIFIED_FEATURE_SHA=f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (RECERT(C1b)=PASS, 02/10, L-019) ·
+> `CONTROL_PLANE_HEAD` = o commit C2 de atestação (só docs, **não** CERTIFIED).
+> C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (02/10, L-018).
 > `CERTIFIED_FEATURE_SHA` (o C1 recertificado) não é necessariamente o
 > `CONTROL_PLANE_HEAD` (o C2 de atestação, só docs, nunca CERTIFIED).
 
@@ -83,10 +84,10 @@
  f4af976  C1 — CANDIDATE_SHA (control plane + F10)                RECERT FAIL (alvo EA 122/123, EA-TEST-HMAC-189-FLAKY)  DO NOT DEPLOY
     │  correção EA-TEST-HMAC-189-FLAKY + docs revisão 5
     ▼
- C1b (ainda não existe)  CANDIDATE_SHA                            recert COMPLETA no SHA exato pendente
-    │  se RECERT(C1b)=PASS: só docs (diff de produto C1b..C2 vazio)
+ f1b4ec1  C1b — CANDIDATE_SHA (teste HMAC-189 + docs rev. 5)      RECERT PASS · CERTIFIED_EXACT_SHA · CERTIFIED_FEATURE_SHA  DO NOT DEPLOY*
+    │  só docs (diff de produto C1b..C2 vazio)
     ▼
- C2 (ainda não existe)  CONTROL_PLANE_ATTESTATION_COMMIT          registra CERTIFIED_FEATURE_SHA=C1b; C2 NÃO é CERTIFIED; DO NOT DEPLOY
+ C2 (o commit que traz L-019)  CONTROL_PLANE_ATTESTATION_COMMIT   registra CERTIFIED_FEATURE_SHA=f1b4ec1; C2 NÃO é CERTIFIED; DO NOT DEPLOY
     │  Early Access Fase 2 (double opt-in), PHASE_BASE_SHA = C2
     ▼
  (ainda não existe)                                               BLOCKED_NOT_STARTED
@@ -97,7 +98,9 @@
 ```
 
 `*` `0d21874`/`43c484b` são o **melhor candidato de runtime** que existe, mas
-**não** estão marcados `RELEASE_CANDIDATE`. Faltam a autorização do dono, a
+**não** estão marcados `RELEASE_CANDIDATE`. O C1b `f1b4ec1` também não: a
+recert dele é de feature (laboratório local), não satisfaz sozinha as regras do
+§3 (suíte ×2, arneses SQL 01–15, CI oficial, migrations, autorização). Faltam a autorização do dono, a
 leitura de migrations em produção, a Vercel (DEFERRED_EXTERNAL_PAYMENT) e a
 prova AP-LOCK hospedada (`RELEASE-RUNBOOK.md` §6–§7).
 
@@ -127,8 +130,8 @@ prova AP-LOCK hospedada (`RELEASE-RUNBOOK.md` §6–§7).
 | 18 | Docs baseline / PR #447 | `43c484b` | `43c484bd1fdc24cdbd8182914514d80d769deeb2` | `1c6505a6c6bd12ac06d2d3ef6eb9f9a0598814d7` | `origin/preprod-final-closure-20260930T131123Z` | DOCS_BASELINE · `CERTIFIED_RUNTIME_ANCESTOR=0d21874` · `DELTA=DOCS_ONLY` · `CI=PASS` · `EXACT_SHA_RECERTIFIED=NO` | CI 36838326106 + 36838252838 SUCCESS | `9f2ddcb` |
 | 19 | **Early Access Fase 1** | `9f2ddcb` | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | `early-access-phase2-email-double-optin-20261001`, `whitelist-fundraising-readiness-20261001` (ambos locais) | **COMMITTED_FEATURE_CHECKPOINT** (o dono o designou "certified feature checkpoint", L-009; `CERTIFIED` reservado desde L-016) | auditoria adversarial pré-hardening; **recert no SHA commitado: BLOCKED** (`reports/EARLY-ACCESS-PHASE1-RECERT-9f2ddcb-20261001.txt`: npm ci / type-check / lint / guardas PASS, alvo EA FAIL 1/123 por teste não determinístico, build/suíte/T15 NOT_RUN); sem CI | C1 (control plane + correção do teste F10, já no working tree) → recert completa no SHA exato → atestação C2 → Fase 2 |
 | 19b | C1 — commit candidato (control plane + teste F10) | `f4af976` | `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` | `d214a354b75cafbd13d2882c94eec98c0e262a28` | `early-access-phase2-email-double-optin-20261001` (local) | CANDIDATE_SHA · **RECERT FAIL** · DO NOT DEPLOY | recert exata 02/10 (`recert-c1-f4af976-20261002T012205Z`): alvo EA 122/123 (EA-TEST-HMAC-189-FLAKY); `reports/EARLY-ACCESS-PHASE1-C1-RECERT-f4af976-20261001.txt`; ledger L-018 | C1b |
-| 19b′ | C1b — commit candidato (correção EA-TEST-HMAC-189-FLAKY + docs revisão 5) | — | — | — | idem | ainda não existe (working tree, revisão 5) | recert completa no SHA exato pendente; se PASS vira `CERTIFIED_FEATURE_SHA` | C2 |
-| 19c | C2 — commit de atestação (só docs) | — | — | — | idem | ainda não existe; só se RECERT(C1b)=PASS | **nunca** CERTIFIED; prova: diff de produto `C1b..C2` vazio; vira `CONTROL_PLANE_HEAD` | Fase 2 |
+| 19b′ | C1b — commit candidato (correção EA-TEST-HMAC-189-FLAKY + docs revisão 5) | `f1b4ec1` | `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` | `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` | `early-access-phase2-email-double-optin-20261001` (local) | **CERTIFIED_EXACT_SHA** · `CERTIFIED_FEATURE_SHA` · DO NOT DEPLOY (não é RELEASE_CANDIDATE) | **RECERT(C1b)=PASS** 02/10, campanha `recert-c1b-f1b4ec1-20261002T095819Z`: ×100 100/100 · alvo EA 123/123 · guardas 264/264 · T15 22/22 · type-check · lint 0/145 · build exit 0 · suíte 271/4096; `reports/EARLY-ACCESS-PHASE1-C1B-RECERT-f1b4ec1-20261002.campaign-20261002T095819Z.txt`; ledger L-019 | C2 |
+| 19c | C2 — commit de atestação (só docs) | o commit que traz L-019 | — | — | idem | `CONTROL_PLANE_ATTESTATION_COMMIT` · `CONTROL_PLANE_HEAD` · **não** CERTIFIED · DO NOT DEPLOY | prova: diff de produto `f1b4ec1..C2` vazio (medido antes do commit; repetir depois) | Fase 2 (`PHASE_BASE_SHA` = SHA do C2) |
 | 20 | Early Access Fase 2 | — | — | — | `early-access-phase2-email-double-optin-20261001` | **BLOCKED_NOT_STARTED** · NEXT_PHASE · sem código | — | — |
 | ∞ | FINAL RELEASE CANDIDATE | — | — | — | — | NOT_STARTED | — | — |
 

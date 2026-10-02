@@ -10,6 +10,19 @@
 > Revisão 3 (01/10/2026): `CERTIFIED` reservado para SHA com recert exata em
 > PASS; `9f2ddcb` é COMMITTED_FEATURE_CHECKPOINT (CP-03). `docs/README.md`
 > ganhou banner LEGACY (CP-07).
+>
+> Revisão 4 (02/10/2026, atestação C2): a classificação documento a documento
+> do §2 continua sendo a de 01/10 sobre `9f2ddcb`. O estado mudou depois:
+> C1 `f4af976` teve **RECERT FAIL** (L-018). O C1b `f1b4ec1` recebeu
+> **exact-SHA RECERT PASS** (campanha `recert-c1b-f1b4ec1-20261002T095819Z`,
+> L-019) e é o
+> `CERTIFIED_FEATURE_SHA=f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`.
+> O C2 (o commit que traz esta revisão, `THIS_ATTESTATION_COMMIT`) é só
+> `CONTROL_PLANE_ATTESTATION_COMMIT` (só docs) e **não é
+> CERTIFIED**. A autoridade para o estado atual continua sendo
+> `START-HERE.md` + `CURRENT-STATE.md` + `LAUNCH-READINESS-LEDGER.md` +
+> `RELEASE-CHAIN.md`. Status de recert citado neste arquivo para `9f2ddcb`
+> é histórico.
 
 ## Classes
 
@@ -31,7 +44,7 @@
 
 | PATH | CLASSIFICATION | VALID_FROM | VALID_UNTIL / SUPERSEDED_BY | SUBJECT | CAN_BE_USED_AS_CURRENT_INSTRUCTION? |
 |---|---|---|---|---|---|
-| `docs/START-HERE.md` | AUTHORITATIVE | 01/10 (base `9f2ddcb`) | current | porta de entrada | **SIM** |
+| `docs/START-HERE.md` | AUTHORITATIVE | 01/10 (base `9f2ddcb`); commitado em `f4af976`/`f1b4ec1`; estado atualizado pela atestação C2 | current | porta de entrada | **SIM** |
 | `docs/CURRENT-STATE.md` | AUTHORITATIVE | idem | current (substituído a cada mudança de estado) | onde estamos agora | **SIM** |
 | `docs/AI-OPERATING-RULES.md` | AUTHORITATIVE | idem | current | método e regras para IA e humano | **SIM** |
 | `docs/RELEASE-CHAIN.md` | AUTHORITATIVE | idem | current | ancestralidade e status de cada SHA | **SIM** |
@@ -39,8 +52,8 @@
 | `docs/AUDIT-RECONCILIATION.md` | AUTHORITATIVE | idem | current (§5 append-only) | prova das correções + registro único de findings | **SIM** |
 | `docs/GIT-AND-WORKTREE-MAP.md` | AUTHORITATIVE | idem | current | worktrees, branches e refs | **SIM** |
 | `docs/DOCUMENT-AUTHORITY.md` | AUTHORITATIVE | idem | current | este arquivo | **SIM** |
-| `CLAUDE.md` (raiz) | AUTHORITATIVE (só o bloco "Claude Code Entry Point"); o resto é SUPPORTING_REFERENCE (mapa do código) | 01/10, revisão 2 (sem commit) | current | entrada automática do Claude Code → START-HERE | **SIM** (o bloco de entrada) |
-| `AGENTS.md` (raiz) | AUTHORITATIVE | 01/10, revisão 2 (sem commit) | current | entrada vendor-neutral para outros agentes → START-HERE | **SIM** |
+| `CLAUDE.md` (raiz) | AUTHORITATIVE (só o bloco "Claude Code Entry Point"); o resto é SUPPORTING_REFERENCE (mapa do código) | 01/10, revisão 2 (commitado em `f4af976`) | current | entrada automática do Claude Code → START-HERE | **SIM** (o bloco de entrada) |
+| `AGENTS.md` (raiz) | AUTHORITATIVE | 01/10, revisão 2 (commitado em `f4af976`) | current | entrada vendor-neutral para outros agentes → START-HERE | **SIM** |
 
 ## 2. Documentos existentes em `docs/` (87 arquivos)
 
@@ -91,7 +104,7 @@
 | `docs/PLANO-DERRAPAGEM.md` | HISTORICAL_EVIDENCE | f1c0b38 2026-08-17 | entregue | plano entregue | NÃO |
 | `docs/PLANO-DESCARTADAS.md` | HISTORICAL_EVIDENCE | f04f654 2026-08-17 | entregue | plano entregue | NÃO |
 | `docs/PLANO-DESKTOP.md` | HISTORICAL_EVIDENCE | ed412d3 2026-07-07 | — | rodada/relatório datado | NÃO |
-| `docs/PLANO-EARLY-ACCESS.md` | ACTIVE_PLAN | 9f2ddcb 2026-10-01 | cabeçalho "branch whitelist…/sem commit" desatualizado desde `9f2ddcb` · **banner + status operacional corrigido em 01/10 (Fase 1 COMMITTED_FEATURE_CHECKPOINT `9f2ddcb`, recert BLOCKED; Fase 2 BLOCKED_NOT_STARTED, sem código)** | early access Fase 1 (feita) + escopo da Fase 2 (§13–§15) | SIM — só para early access |
+| `docs/PLANO-EARLY-ACCESS.md` | ACTIVE_PLAN | 9f2ddcb 2026-10-01 | cabeçalho "branch whitelist…/sem commit" desatualizado desde `9f2ddcb` · **banner + status operacional corrigido em 01/10 (Fase 1 COMMITTED_FEATURE_CHECKPOINT `9f2ddcb`, recert BLOCKED; Fase 2 BLOCKED_NOT_STARTED, sem código)** · **status operacional atualizado em 02/10 (C2): Fase 1 CERTIFIED_EXACT_SHA `f1b4ec1`; o bloco de 01/10 fica como histórico** | early access Fase 1 (feita) + escopo da Fase 2 (§13–§15) | SIM — só para early access |
 | `docs/PLANO-ESCOLA-DE-TRADERS.md` | SUPPORTING_REFERENCE | 3c683f4 2026-08-02 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-FORA-DA-AMOSTRA.md` | SUPPORTING_REFERENCE | 8ca6f67 2026-08-14 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-HIBRIDO-MULTI-MODEL.md` | HISTORICAL_EVIDENCE | ae1e9f6 2026-07-01 | — | rodada/relatório datado | NÃO |
@@ -177,3 +190,6 @@
   `PLANO-DCA-AUTOMATICO.md` e `PLANO-MURAL-DE-AGENTES.md`, e o bloco START HERE
   em `README.md`. O conteúdo histórico foi preservado. As lacunas restantes
   estão em `CURRENT-STATE.md` e `AUDIT-RECONCILIATION.md` §5.6.
+- Na revisão 4 (02/10, atestação C2), o único documento antigo tocado foi o
+  bloco "Status operacional" de `PLANO-EARLY-ACCESS.md`: entrou o de 02/10 e o
+  de 01/10 ficou logo abaixo, marcado como histórico.

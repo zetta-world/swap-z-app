@@ -11,6 +11,8 @@
 > Revisão 4: certificação sempre qualificada (CP-10) — `CERTIFIED_EXACT_SHA`
 > (só `0d21874`), `CERTIFIED_RUNTIME_ANCESTOR`, `HISTORICAL_CERTIFICATION_LEGACY`;
 > ambiente usa `LAB_ENV_VERIFIED`.
+> Revisão 6 (02/10/2026): RECERT(C1b)=PASS; `CERTIFIED_EXACT_SHA` também
+> `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (Early Access Fase 1); §5.5 acrescida.
 
 ## Resposta curta (a longa está nas tabelas)
 
@@ -64,7 +66,7 @@ remoto por round (exceto R9), então a evidência é o corpo dos commits e os do
 | PC Batch 3 | `3123fb4` → `691bfdc` | 3 (`afe2665` docs + `.gitattributes`; `6fded4c` docs; `691bfdc` 0067 + testes) | DB-ACL-FINANCIAL-TABLES | 0067 | **INTEGRATED** | `supabase/tests/14`; "PASS WITH DELTA" `[DONO]` | staging rollback/rebuild INCOMPLETE |
 | Preprod | `691bfdc` → `16e4000` | 3 | estabilidade de backtest, achados da auditoria independente do preprod, harnesses, T13 estável | — | **INTEGRATED** | `reports/blocker-closure-20260929T111136Z/27-*` | HARNESS-001/002 |
 | Supply chain | `16e4000` → `0d21874` | 1 | GHSA-vcvr-r3jv-pc5j (next/og RCE, CRITICAL), axios HIGH, image-size, `@solana/spl-token` | — | **INTEGRATED** · CERTIFIED_EXACT_SHA (`0d21874`) | `docs/RELEASE-RUNBOOK.md` §2–§3 | 36 moderate / 1 low |
-| Early Access F1 | `43c484b` → `9f2ddcb` | 1 | F-01…F-16 (hardening F-02/03/04/06/07/08/10/12) | 0068 | **INTEGRATED** (é o PRODUCT_BASE_SHA; COMMITTED_FEATURE_CHECKPOINT) | `docs/PLANO-EARLY-ACCESS.md` §14–§15 | F-01 OPEN_BLOCKER; recert no SHA commitado **BLOCKED** (EA-TEST-F10-FLAKY, §5.5) |
+| Early Access F1 | `43c484b` → `9f2ddcb` | 1 | F-01…F-16 (hardening F-02/03/04/06/07/08/10/12) | 0068 | **INTEGRATED** (é o PRODUCT_BASE_SHA; COMMITTED_FEATURE_CHECKPOINT) | `docs/PLANO-EARLY-ACCESS.md` §14–§15 | F-01 OPEN_BLOCKER; recert no SHA commitado `9f2ddcb` BLOCKED (EA-TEST-F10-FLAKY, §5.5) → **RECERT(C1b)=PASS**: Fase 1 `CERTIFIED_EXACT_SHA` em `f1b4ec1` (§5.5, ledger L-019) |
 
 **"Round 0":** não existe nenhuma referência na árvore, nos commits ou nas
 branches. A auditoria de 30 achados é "pré-Round 1" (`LEDGER-MESTRE` §B).
@@ -292,6 +294,12 @@ hardening). Correção = commit `9f2ddcb`.
 | EA-RECERT (02/10, C1) | — | recert completa no SHA exato do C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **FAIL** no gate 7 (alvo EA 122/123) na campanha `recert-c1-f4af976-20261002T012205Z`. Campanhas anteriores do mesmo C1: ABORTED (travamento do host), CLOSED_NONCOMPLIANT, ENVIRONMENT_BLOCKED_MEMORY (ledger L-018) | **OPEN_BLOCKER** (para recertificar a Fase 1). `reports/EARLY-ACCESS-PHASE1-C1-RECERT-f4af976-20261001.txt` |
 | EA-TEST-F10-FLAKY (02/10) | LOW (teste) | correção commitada no C1 `f4af976`; F10 ×100 = 100/100 nas campanhas do C1 | **FIXED_NOT_RECERTIFIED** (o C1 não passou na recert por outro teste, EA-TEST-HMAC-189-FLAKY) |
 | **EA-TEST-HMAC-189-FLAKY** (novo, 02/10) | LOW (teste) | `gate-hmac-referral.test.ts:157`: com `SEGREDO_FALSO = randomBytes(48)` (novo a cada processo), o controle negativo `expect(ipHmac("189.40.1.2")).not.toContain("189")` falha quando o hex aleatório de 32 caracteres contém "189": ≈ 1−(1−1/4096)^30 ≈ 0,73% por execução. Observado: `7690eca58e689a18910205a410e57773`. Nenhum impacto de produto identificado (um HMAC com "189" não revela o IP; `hmac.ts` intacto) | **OPEN_BLOCKER** para a recert. Correção no working tree (02/10, autorizada pelo dono): `SEGREDO_FALSO` fixo (48 bytes distintos, `(i*61+0x2d)&0xff`), cujo HMAC do IP de teste foi conferido sem "189"; mais a checagem do IP literal. Só o arquivo de teste muda. Vai no commit candidato **C1b** |
+| EA-RECERT (02/10, C1b) | — | recert completa no SHA exato do C1b `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6`), campanha `recert-c1b-f1b4ec1-20261002T095819Z`: ×100 100/100 (25/25 cada), alvo EA 123/123, guardas 264/264, T15 22/22 (68 migrations), type-check, lint 0/0 e 0/145, build exit 0, suíte 271/4096 sem fail/skip/todo. Outras campanhas do C1b: `…092724Z` ENVIRONMENT_BLOCKED (memória do host); `…093950Z` **HARNESS_FAILURE** (`PRODUCT_VERDICT=NONE`, `SHA_VERDICT=NONE`: cache npm somente leitura → `ENOTCACHED`) | **CLOSED** · `RECERT(C1b)=PASS` · `CERTIFIED_EXACT_SHA` `f1b4ec1`. `reports/EARLY-ACCESS-PHASE1-C1B-RECERT-f1b4ec1-20261002.campaign-20261002T095819Z.txt`; ledger L-019 |
+| EA-TEST-F10-FLAKY (02/10, C1b) | LOW (teste) | correção do C1 mantida no C1b; o arquivo inteiro passou ×100 na recert do C1b | **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `f1b4ec1`)** |
+| EA-TEST-HMAC-189-FLAKY (02/10, C1b) | LOW (teste) | correção commitada no C1b `f1b4ec1` (segredo de teste fixo); arquivo inteiro ×100 = 100/100, alvo EA 123/123 | **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `f1b4ec1`)** |
+| HARNESS-NPM-RO-CACHE (02/10) | — (harness, fora do repo) | o npm 11.19 escreve no índice do cache a cada consulta; com o cache montado somente leitura, `npm ci --offline` dá `ENOTCACHED`. Afetou só a campanha `…093950Z` | **FIXED** no harness v2 (cópia gravável e descartável do cache; original provado intacto). Sem impacto de produto |
+| HARNESS_LABEL_BUG_G11 (02/10) | — (harness, fora do repo) | o laço do T15 sobrescreveu o índice do driver; o `RESULTS.env` gravou `IDENTITY` no lugar de `SQL_T15`. O resultado real veio do log bruto do T15 (22/22, 68 migrations, exit 0) | **OPEN_NONBLOCKING** — correção no harness v3 (variável local distinta) |
+| EA-BUILD-NEXT-WARN (02/10) | INFO | build do C1b: 3 avisos do Next.js 16.3.6 — convenção `middleware` obsoleta (usar `proxy`); Edge Runtime obsoleto; edge runtime desliga a geração estática da página. Baseline / convenção existente, não falhas. Build com `BUILD_NETWORK=BRIDGE`; o prerender acessou a API pública `api.llama.fi`, sem segredo (não é produção tocada) | **DEFERRED** (não corrigir agora) |
 
 ### 5.6 Documentação e governança
 
@@ -316,3 +324,4 @@ hardening). Correção = commit `9f2ddcb`.
 | CP-08 (review round 1) | "`EARLY_ACCESS_HMAC_SECRET` inexistente" afirmado sem medir o ambiente real | FIXED_NOT_RECERTIFIED (revisão 3: NOT_PROVIDED_OR_AUTHORIZED_FOR_THIS_LOCAL_CAMPAIGN / PRODUCTION_SECRET_STATE=NOT_VERIFIED) |
 | CP-09 (review round 2, 01/10) | registrar o resultado da recert gera um delta que precisa de commit; o ciclo não dizia qual | FIXED_NOT_RECERTIFIED (revisão 4: C1 candidato → recert exata → C2 atestação só docs; `AI-OPERATING-RULES.md` §5.1/§5.2) |
 | CP-10 (review round 2) | "CERTIFIED" sem qualificação para SHAs sem recert exata (`43c484b`, R9, PC-B1/B2) | FIXED_NOT_RECERTIFIED (revisão 4: CERTIFIED_EXACT_SHA / CERTIFIED_RUNTIME_ANCESTOR / HISTORICAL_CERTIFICATION_LEGACY) |
+| GOV-ENTRY, CP-01…CP-10 (02/10, C1b) | correções acima já commitadas antes da recert e presentes na árvore exata do C1b (`f1b4ec1`, tree `ab814e3`); não foram reauditadas, só ficaram cobertas pela recert exata que passou. `CERTIFIED_FEATURE_SHA=f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · `RECERT_CAMPAIGN=recert-c1b-f1b4ec1-20261002T095819Z` · `RECERT_VERDICT=PASS` (ledger L-019) | **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `f1b4ec1`)** · RECERTIFIED_BY_C1B_PASS. As linhas anteriores ficam como histórico |

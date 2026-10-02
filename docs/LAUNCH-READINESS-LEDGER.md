@@ -18,7 +18,7 @@
 
 ---
 
-## Visão das fases (snapshot derivado, atualizado em 02/10/2026 (L-018); a fonte é a lista de entradas abaixo)
+## Visão das fases (snapshot derivado, atualizado em 02/10/2026 (L-019); a fonte é a lista de entradas abaixo)
 
 | fase | SHA | estado |
 |---|---|---|
@@ -28,13 +28,14 @@
 | Platform Closure B1/B2 | `a5bdd61` / `3123fb4` | HISTORICAL_CERTIFICATION_LEGACY (B2 tem retest independente PASS, `docs/retest-independente-batch2-3123fb4.md`, mas não recert completa pelo critério atual) |
 | Platform Closure B3 (0067) | `691bfdc` | DONE (SUPERSEDED como candidato) |
 | Preprod blocker closure | `16e4000` | DONE |
-| Runtime certificado | `0d21874` | **CERTIFIED_EXACT_SHA** |
+| Runtime certificado | `0d21874` | **CERTIFIED_EXACT_SHA** (runtime) |
 | Docs baseline / PR #447 | `43c484b` | DOCS_BASELINE · `CERTIFIED_RUNTIME_ANCESTOR=0d21874` · `DELTA=DOCS_ONLY` · CI PASS · `EXACT_SHA_RECERTIFIED=NO` · PR DRAFT |
 | Laboratório local (4 stacks, boot) | — | LAB_ENV_VERIFIED (ambiente, não SHA) |
-| Control plane review + recert da Fase 1 | C1 `f4af976` | **CURRENT_WORK** (L-016, L-017, L-018) · `CONTROL_PLANE_HEAD=NOT_YET_COMMITTED` (não há C2) |
-| Commit candidato C1 → recert exata → atestação C2 | `f4af976` | **RECERT(C1)=FAIL** (EA-TEST-HMAC-189-FLAKY, L-018) → correção para **C1b** no working tree (sem commit) |
-| Early Access Fase 1 | `9f2ddcb` | **COMMITTED_FEATURE_CHECKPOINT** (o dono o designou "certified feature checkpoint" em L-009; termo reservado desde L-016) · **PHASE1_RECERT: BLOCKED** (L-013) · `CERTIFIED_FEATURE_SHA=NONE` |
-| Early Access Fase 2 | — | **BLOCKED_NOT_STARTED** · `PHASE2_CODE_EXISTS=NO` · NEXT_PHASE (L-016) |
+| Control plane review + recert da Fase 1 | C1 `f4af976` → C1b `f1b4ec1` → C2 | **DONE** (L-016…L-019) · `CONTROL_PLANE_HEAD` = o commit C2 que traz L-019 (`CONTROL_PLANE_ATTESTATION_COMMIT`, **não** CERTIFIED) |
+| Commit candidato C1 | `f4af976` | **RECERT(C1)=FAIL** (EA-TEST-HMAC-189-FLAKY, L-018) |
+| Commit candidato C1b | `f1b4ec1` | **RECERT(C1b)=PASS** · **CERTIFIED_EXACT_SHA** (campanha `recert-c1b-f1b4ec1-20261002T095819Z`, L-019) · `CERTIFIED_FEATURE_SHA=f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` |
+| Early Access Fase 1 | `9f2ddcb` (produto) · `f1b4ec1` (certificado) | `9f2ddcb`: **COMMITTED_FEATURE_CHECKPOINT** (histórico, L-009/L-016). Produto da Fase 1 **CERTIFIED_EXACT_SHA** em `f1b4ec1` (= `9f2ddcb` + control plane + 1 arquivo de teste; L-019) |
+| Early Access Fase 2 | — | **BLOCKED_NOT_STARTED** · `PHASE2_CODE_EXISTS=NO` · NEXT_PHASE (L-016). Pode partir de `PHASE_BASE_SHA` = C2 (L-019), depois do plano e da decisão do provider |
 | Fundraising (`fundraising_*`) | — | NOT_STARTED (namespace reservado) |
 | Deploy Vercel / produção | — | BLOCKED / DEFERRED (pagamento externo, dono) |
 | Automação real (DCA/Pilot/Autopilot) | — | BLOCKED (NO-GO) |
@@ -267,3 +268,36 @@
 - **Correção para C1b (autorizada pelo dono, 02/10):** só `src/lib/early-access/gate-hmac-referral.test.ts`: `SEGREDO_FALSO` fixo (48 bytes distintos `(i*61+0x2d)&0xff`, base64 canônico), HMAC do IP de teste conferido sem "189", mais checagem do IP literal. Varredura dos demais usos de aleatoriedade nos testes EA: nenhum outro controle com risco relevante (pior caso restante ≈ 3×10⁻¹⁷; as checagens de PII do `route.test.ts` usam valores com ".", impossível num hex). `hmac.ts`, `gate.ts`, rota e migrations intactos.
 - **Validação pré-commit (não é certificação):** evidência em `evidence/precommit-c1b-*/`.
 - **Próxima dependência:** commit candidato **C1b** autorizado pelo dono → recert completa no SHA exato de C1b (com os limites fixos acima) → se PASS, atestação C2.
+
+### L-019 · 2026-10-02 · C1b commitado; RECERT(C1b)=PASS no SHA exato; atestação C2
+
+- **Estado:** **DONE** · `RECERT(C1b)=PASS` · C1b = **CERTIFIED_EXACT_SHA**
+- **C1b (`CANDIDATE_SHA`):** `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` · pai C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` · "test: make early-access HMAC fixture deterministic". Conteúdo: a correção EA-TEST-HMAC-189-FLAKY (só `src/lib/early-access/gate-hmac-referral.test.ts`) + docs da revisão 5 (`AUDIT-RECONCILIATION.md`, `CURRENT-STATE.md`, este ledger, `RELEASE-CHAIN.md`, `START-HERE.md`). Fonte: Git.
+- **`CERTIFIED_FEATURE_SHA=f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`** · `CERTIFIED_FEATURE_TREE=ab814e3ba6369a8b66218a9accc76a18ca6f14f6`
+- **Campanhas de recert do C1b** (todas fora do repo, `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/<campanha>/`, cada uma com `MANIFEST.sha256`; nenhuma sobrescrita):
+  - `recert-c1b-f1b4ec1-20261002T092724Z`: **ENVIRONMENT_BLOCKED** — saúde do host antes do `npm ci`: `MemAvailable` 978076 kB < 1 GiB, sem OOM do kernel. Nenhum gate funcional rodou. Sem veredito de produto.
+  - `recert-c1b-f1b4ec1-20261002T093950Z`: **HARNESS_FAILURE** · `PRODUCT_VERDICT=NONE` · `SHA_VERDICT=NONE` (classificação do dono, 02/10). O driver gravou `FAIL` no gate do `npm ci` (`ENOTCACHED` no packument de `react`); esse rótulo bruto fica preservado no relatório da campanha. Causa, provada fora de campanha, em containers descartáveis: o npm 11.19 (make-fetch-happen) reescreve o bucket do índice do cache ao consultá-lo; com o cache montado **somente leitura**, a escrita falha e a consulta vira `ENOTCACHED`. Reproduz com cópia nova de `package*.json` e sem `node_modules`, e também com o cache intocado da era `0d21874`; passa (1665 pacotes) com os mesmos bytes do cache numa camada gravável descartável. O bucket do `react` foi reescrito às 01:22:38Z durante o `npm ci` da campanha `recert-c1-f4af976-20261002T012205Z`, que portanto rodou com cache gravável. Nenhum gate de teste rodou; o repo não mudou depois.
+  - `recert-c1b-f1b4ec1-20261002T095819Z`: **PASS** — a **única** campanha que estabelece `RECERT(C1b)=PASS`. Harness v2 = o mesmo driver, com o `npm ci` usando uma cópia gravável e descartável do cache (o original segue somente leitura e provado intacto) e a atestação do G1 lida de arquivo.
+- **Rótulos históricos preservados:** campanhas do C1 em L-018 (ABORTED, CLOSED_NONCOMPLIANT, ENVIRONMENT_BLOCKED_MEMORY, FAIL por EA-TEST-HMAC-189-FLAKY). O FAIL do C1 é real (defeito de teste) e **não** é reclassificado.
+- **Evidência da campanha PASS** (`recert-c1b-f1b4ec1-20261002T095819Z`, 09:58:19Z → 10:08:25Z; limites fixos desde o início: `--memory=2g`, `--memory-swap=5g` = total RAM+swap, ≈ 3G de swap utilizável, `NODE_OPTIONS=--max-old-space-size=1792`):
+  - control plane relido na campanha; identidade, ancestralidade `0d21874 → 43c484b → 9f2ddcb → f4af976 → f1b4ec1`, escopo exato do C1b (6 caminhos), delta de produto só o arquivo de teste, delta de dependências vazio (vs C1 e vs `0d21874`): PASS
+  - saúde do host: PASS · cache npm 1310/1310 · `npm ci --offline` (`--network none`) 1665 pacotes · lock byte-idêntico (`8e9b5227…dd38a`) · árvore rastreada limpa
+  - arquivo `gate-hmac-referral.test.ts` inteiro ×100 (cicatrizes EA-TEST-F10-FLAKY e EA-TEST-HMAC-189-FLAKY): **100/100 processos, 25/25 cada**
+  - alvo EA: **123/123** (7 arquivos; 0 fail/skip/todo) · guardas: **264/264** (7 arquivos)
+  - SQL T15 em PostgreSQL descartável (`supabase/postgres:17.6.1.127`, `--network none`, credencial descartável, container removido): **22/22**, **68 migrations** (0001→0068), psql exit 0
+  - type-check: **PASS** (0 erros; verificação suplementar sem cache incremental, também 0)
+  - lint do arquivo alterado: **0 erros / 0 avisos** · lint completo: **0 erros / 145 avisos** (= baseline)
+  - build: **PASS**, Next.js 16.3.6 (Turbopack), **exit 0**, **159 s**
+  - suíte completa: **271 arquivos, 4096 testes, 0 fail, 0 skip, 0 todo** (= baseline da Fase 1; delta 0)
+  - git final: HEAD/TREE inalterados, status CLEAN, `git diff --check` PASS
+  - stacks preservadas: **32 containers** com id/startedAt/restarts inalterados
+  - `PRODUCTION_TOUCHED=NO` · `VERCEL_TOUCHED=NO` · `SUPABASE_HOSTED_TOUCHED=NO`
+- **Relatório:** `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/reports/EARLY-ACCESS-PHASE1-C1B-RECERT-f1b4ec1-20261002.campaign-20261002T095819Z.txt` · sha256 `fcde688a00e89b63acc68e0736848067972d87e1b216fa3e4d559b9789b887ed`
+- **Evidência:** `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/recert-c1b-f1b4ec1-20261002T095819Z/` · `MANIFEST.sha256` sha256 `3cf5c7b30f21010eafff90ebe877bf76494e254dab3e3c0ea989d5b9aecf51ed` (37 arquivos)
+- **HARNESS_LABEL_BUG_G11:** o laço de espera do T15 usava uma variável `i` não local e sobrescreveu o índice do laço principal do driver. Efeito: o log do driver escreveu "END g02_identity" depois do G11, e o `RESULTS.env` gravou `IDENTITY` no lugar de `SQL_T15`. **Não alterou o resultado real.** A fonte autoritativa do gate é o log bruto do G11/T15 (`11-sql-t15.log`): 22/22, 68 migrations, exit 0. Correção futura: variável local distinta no harness v3. O harness fica fora do repo e não faz parte deste commit.
+- **Rede do build:** `BUILD_NETWORK=BRIDGE` (igual à recert certificada do `0d21874`; `next/font/google`). No prerender houve acesso à API pública `api.llama.fi`, sem segredo (só `.env.example` no worktree). Não é produção tocada. Todos os demais gates com `--network none`.
+- **Avisos do Next.js no build** (baseline / convenção existente, não falhas; não corrigidos agora): convenção `middleware` obsoleta (usar `proxy`); Edge Runtime obsoleto; edge runtime desliga a geração estática da página.
+- **Achados de teste:** EA-TEST-F10-FLAKY e EA-TEST-HMAC-189-FLAKY → **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `f1b4ec1`)** (`AUDIT-RECONCILIATION.md` §5.5).
+- **C2 (`CONTROL_PLANE_ATTESTATION_COMMIT`):** o commit que traz esta entrada, filho direto de `f1b4ec1`. Só `docs/**`. **C2 não é CERTIFIED.** Prova, medida antes do commit: `git diff f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'` vazio; `git diff --check` PASS. Depois do commit, repetir com `<C2>` no lugar do working tree e `git merge-base --is-ancestor f1b4ec1 <C2>`.
+- **Estado resultante:** `CERTIFIED_FEATURE_SHA=f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · `CONTROL_PLANE_HEAD=THIS_ATTESTATION_COMMIT` (o commit que traz esta entrada; SHA concreto via `git rev-parse`, não gravado aqui) · `C2_CERTIFIED=NO` · `RELEASE_CANDIDATE=NONE` · `EARLY_ACCESS_PHASE1=CERTIFIED_EXACT_SHA` (em `f1b4ec1`) · `EARLY_ACCESS_PHASE2=BLOCKED_NOT_STARTED`. Deploy de C2 continua proibido (`AI-OPERATING-RULES.md` §5.1, §6.1).
+- **Próxima dependência:** plano da Fase 2 escrito antes de qualquer código, com `PHASE_BASE_SHA` = SHA do C2 (`THIS_ATTESTATION_COMMIT`) registrado numa entrada nova; decisão do dono sobre o provider de email.

@@ -4,7 +4,19 @@
 > ACTIVE_PLAN** (só para early access). Não execute este documento como
 > estado atual sem consultar `docs/DOCUMENT-AUTHORITY.md`.
 >
-> **Status operacional (01/10/2026):**
+> **Status operacional (02/10/2026, atestação C2):**
+> - **Phase 1: CERTIFIED_EXACT_SHA /
+>   `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`** (C1b; gate CLOSED, nada
+>   deployado). `CERTIFIED_FEATURE_SHA=f1b4ec1…`, RECERT(C1b)=PASS
+>   (`recert-c1b-f1b4ec1-20261002T095819Z`, ledger L-019). O C1 `f4af976`
+>   teve RECERT FAIL (L-018). O C2 (atestação só docs) é
+>   `CONTROL_PLANE_ATTESTATION_COMMIT`, **não** é CERTIFIED; é o commit que
+>   traz este bloco (`CONTROL_PLANE_HEAD=THIS_ATTESTATION_COMMIT`). `RELEASE_CANDIDATE=NONE`. Ver `docs/CURRENT-STATE.md`.
+> - **Phase 2: BLOCKED_NOT_STARTED / `PHASE2_CODE_EXISTS=NO`.** É a
+>   NEXT_PHASE e parte do C2 (`PHASE_BASE_SHA` = SHA do C2). Branch
+>   `early-access-phase2-email-double-optin-20261001`.
+>
+> **Status operacional anterior (01/10/2026), histórico e superado pelo de cima:**
 > - **Phase 1: COMMITTED_FEATURE_CHECKPOINT /
 >   `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`** (gate CLOSED, nada
 >   deployado). `PHASE1_RECERT=BLOCKED` (teste não determinístico do F-10,

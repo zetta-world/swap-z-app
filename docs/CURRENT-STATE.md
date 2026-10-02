@@ -11,6 +11,8 @@
 > correções CP-09 (atestação C2) e CP-10 (terminologia).
 > Revisão 5 (02/10/2026): C1 `f4af976` commitado; RECERT(C1)=FAIL
 > (EA-TEST-HMAC-189-FLAKY); correção para o C1b no working tree (ledger L-018).
+> Revisão 6 (02/10/2026): C1b `f1b4ec1` commitado; **RECERT(C1b)=PASS** no SHA
+> exato; esta revisão é a atestação **C2**, só docs (ledger L-019).
 
 ---
 
@@ -20,19 +22,19 @@
 | CURRENT_BRANCH | `early-access-phase2-email-double-optin-20261001`, **só local**, sem upstream | Git |
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`, "feat: add closed-by-default early access foundation", 01/10 17:08 −03 | Git |
 | PRODUCT_BASE_TREE | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | Git |
-| WORKTREE_HEAD_AT_LAST_MEASUREMENT | `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` (02/10, revisão 5: o C1, tree `d214a354b75cafbd13d2882c94eec98c0e262a28`). **Snapshot informativo**: o HEAD muda legitimamente com commits de control plane; a regra de identidade está em `START-HERE.md` §10 | Git |
-| WORKING_TREE | sujo **pela correção do C1b**: docs do control plane (revisão 5) + **1 arquivo de teste** (`src/lib/early-access/gate-hmac-referral.test.ts`, EA-TEST-HMAC-189-FLAKY). Nenhum código de produto, nenhuma migration | `git status --short` |
-| LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (tree `62ad70e36a8bcc57331297d8ce929f232fadad2c`): **CERTIFIED_EXACT_SHA** — RUNTIME RECERTIFICATION: PASS (local). É o único SHA com essa marca | `reports/recert-0d21874-20261001T010514Z/FINAL-RUNTIME-RECERTIFICATION.md`; `docs/RELEASE-RUNBOOK.md` |
-| EARLY_ACCESS_PHASE1_CHECKPOINT | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`: **COMMITTED_FEATURE_CHECKPOINT**. O dono o designou antes "certified feature checkpoint" (histórico, L-009); o control plane reserva `CERTIFIED` para recert exata em PASS | `docs/PLANO-EARLY-ACCESS.md` §14–§15; ledger L-009, L-016 |
-| PHASE1_RECERT | **BLOCKED.** `9f2ddcb`: FAIL 1/123 (EA-TEST-F10-FLAKY). C1 `f4af976`: **RECERT(C1)=FAIL**, alvo EA 122/123 (EA-TEST-HMAC-189-FLAKY) | `reports/EARLY-ACCESS-PHASE1-RECERT-9f2ddcb-20261001.txt`; `reports/EARLY-ACCESS-PHASE1-C1-RECERT-f4af976-20261001.txt` |
-| CANDIDATE_SHA | C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (ledger L-018). Próximo candidato: **C1b** (ainda não existe) | Git; ledger L-018 |
-| CERTIFIED_FEATURE_SHA | **NONE**. Vai ser o C1b se RECERT(C1b)=PASS | este documento |
-| CONTROL_PLANE_HEAD | **NOT_YET_COMMITTED**: não há C2 (o C1 falhou na recert; o control plane commitado no C1 não é atestação). Vai ser o commit de atestação C2 (só docs) sobre o C1b. `CERTIFIED_FEATURE_SHA` ≠ necessariamente `CONTROL_PLANE_HEAD`; C2 nunca é CERTIFIED | `AI-OPERATING-RULES.md` §5.1 |
+| WORKTREE_HEAD_AT_LAST_MEASUREMENT | `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (02/10, revisão 6: o C1b, tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6`), medido antes do commit C2. **Snapshot informativo**: o HEAD muda legitimamente com commits de control plane; a regra de identidade está em `START-HERE.md` §10 | Git |
+| WORKING_TREE | limpo no C1b; a revisão 6 muda **só docs** (a atestação C2). Nenhum código, teste, migration ou `package*.json` | `git status --short`; `git diff f1b4ec1 -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'` vazio |
+| LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (tree `62ad70e36a8bcc57331297d8ce929f232fadad2c`): **CERTIFIED_EXACT_SHA** — RUNTIME RECERTIFICATION: PASS (local). Último runtime certificado; o outro SHA com `CERTIFIED_EXACT_SHA` é o C1b `f1b4ec1` (feature) | `reports/recert-0d21874-20261001T010514Z/FINAL-RUNTIME-RECERTIFICATION.md`; `docs/RELEASE-RUNBOOK.md` |
+| EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (= produto de `9f2ddcb` + control plane + 1 arquivo de teste). `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` segue **COMMITTED_FEATURE_CHECKPOINT** (histórico: o dono o designou "certified feature checkpoint", L-009) | ledger L-009, L-016, L-019 |
+| PHASE1_RECERT | **PASS** no C1b `f1b4ec1` (campanha `recert-c1b-f1b4ec1-20261002T095819Z`). Histórico: `9f2ddcb` FAIL 1/123 (EA-TEST-F10-FLAKY); C1 `f4af976` FAIL 122/123 (EA-TEST-HMAC-189-FLAKY) | `reports/EARLY-ACCESS-PHASE1-C1B-RECERT-f1b4ec1-20261002.campaign-20261002T095819Z.txt` (sha256 `fcde688a…87ed`); relatórios anteriores preservados |
+| CANDIDATE_SHA | C1b `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`: **RECERT PASS** (L-019). C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: RECERT FAIL (L-018) | Git; ledger L-018, L-019 |
+| CERTIFIED_FEATURE_SHA | **`f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`** · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` · **CERTIFIED_EXACT_SHA** | ledger L-019 |
+| CONTROL_PLANE_HEAD | o commit **C2** que traz esta revisão (`CONTROL_PLANE_ATTESTATION_COMMIT`, filho direto de `f1b4ec1`, só docs). **C2 não é CERTIFIED** e não pode ser deployado. `CERTIFIED_FEATURE_SHA` (C1b) ≠ `CONTROL_PLANE_HEAD` (C2) | `AI-OPERATING-RULES.md` §5.1; ledger L-019 |
 | LIFECYCLE | branch → base → plano → implementação → auditoria → correções → pré-commit → **C1** → **recert exata de C1** → **atestação C2 (só docs)** → próxima fase | `AI-OPERATING-RULES.md` §5 |
 | RELEASE_CANDIDATE | **NONE** | `docs/RELEASE-CHAIN.md` |
-| CURRENT_WORK | **CONTROL_PLANE_REVIEW_AND_PHASE1_RECERT** | este documento |
+| CURRENT_WORK | **PHASE1_RECERT_ATTESTED** (C2). Próximo trabalho: plano da Fase 2 | este documento |
 | NEXT_PHASE | **EARLY_ACCESS_PHASE2_EMAIL_DOUBLE_OPT_IN** | `docs/PLANO-EARLY-ACCESS.md` §13–§15 |
-| EARLY_ACCESS_PHASE2_STATUS | **BLOCKED_NOT_STARTED** · `PHASE2_CODE_EXISTS=NO`. Vira `CURRENT_DEVELOPMENT` só depois de: control plane aprovado e commitado; recert da Fase 1 PASS no SHA novo; plano da Fase 2 escrito; decisão do provider quando necessária | Git (nenhum código da Fase 2 no tree) |
+| EARLY_ACCESS_PHASE2_STATUS | **BLOCKED_NOT_STARTED** · `PHASE2_CODE_EXISTS=NO`. Feito: control plane commitado (C1/C1b) e recert da Fase 1 PASS (C1b). Falta: o plano da Fase 2 escrito (com `PHASE_BASE_SHA` = SHA do commit de atestação C2, `THIS_ATTESTATION_COMMIT`) e a decisão do provider de email | Git (nenhum código da Fase 2 no tree) |
 | PUBLIC_GATE | **CLOSED**, independente do segredo: `disable_early_access=true` semeado na 0068, versões legais `UNAPPROVED`, e requisitos fail-closed; o gate é um AND de 4 condições | `supabase/migrations/0068_early_access.sql`, `src/lib/early-access/gate.ts` |
 | EARLY_ACCESS_HMAC_SECRET | **NOT_PROVIDED_OR_AUTHORIZED_FOR_THIS_LOCAL_CAMPAIGN** (nenhum segredo real foi lido) | regra da campanha |
 | PRODUCTION_SECRET_STATE | **NOT_VERIFIED** (produção e Supabase/Vercel hospedados não foram inspecionados) | regra da campanha |
@@ -43,7 +45,7 @@
 | PR447 | **OPEN · DRAFT · não mergeado · MERGEABLE.** head `43c484bd1fdc24cdbd8182914514d80d769deeb2`, base `main`. CI `success` (runs 36838326106, 36838252838) | `gh pr view 447` + `gh run list`, 01/10 |
 | GITHUB_HAS_PRODUCT_BASE | **NÃO.** `9f2ddcb` não está em nenhum ref `origin/*`, então não há CI oficial para ele | `git branch -r --contains 9f2ddcb` vazio |
 | ACER_LAB | `LAB_ENV_VERIFIED` (ambiente, não SHA): 4 stacks 25/25 PASS, egress BLOCKED, `BOOT_RESILIENCE=PASS`, `UNATTENDED_BOOT=PASS` (boot 13:18, checado 14:40). **Não tocadas** pela recert | `state/unattended-boot-20261001T1557Z/evidence/post-reboot-unattended-20261001T173957Z.txt` |
-| ENTRYPOINTS | `CLAUDE.md` (integrado, topo), `AGENTS.md` (novo), `docs/README.md` (bloco START HERE + banner LEGACY no índice antigo) → `docs/START-HERE.md`. **Sem commit** | working tree |
+| ENTRYPOINTS | `CLAUDE.md` (integrado, topo), `AGENTS.md`, `docs/README.md` (bloco START HERE + banner LEGACY no índice antigo) → `docs/START-HERE.md`. Commitados no C1 `f4af976` | Git |
 
 ## Recertificação da Fase 1 no SHA commitado
 
@@ -103,13 +105,62 @@ produto identificado. **Correção (revisão 5, autorizada, sem commit):**
 segredo de teste fixo e determinístico; só o arquivo de teste muda. Vai no
 commit candidato C1b, que precisa de recert completa no SHA exato.
 
+## Recertificação do C1b no SHA exato (02/10): PASS
+
+C1b `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (tree
+`ab814e3ba6369a8b66218a9accc76a18ca6f14f6`). **Única campanha que estabelece
+`RECERT(C1b)=PASS`:** `recert-c1b-f1b4ec1-20261002T095819Z`, com limites fixos
+desde o início (`--memory=2g`; `--memory-swap=5g` = total RAM+swap, ≈ 3G de
+swap utilizável; `NODE_OPTIONS=--max-old-space-size=1792`).
+
+| gate | resultado |
+|---|---|
+| control plane relido, identidade, ancestralidade, escopo (6 caminhos), delta de produto (só o teste), delta de dependências (vazio) | PASS |
+| saúde do host | PASS |
+| cache npm 1310/1310 + `npm ci --offline` (`--network none`) | PASS: 1665 pacotes, lock byte-idêntico, árvore limpa |
+| `gate-hmac-referral.test.ts` inteiro ×100 | PASS: 100/100 processos, 25/25 cada |
+| alvo EA (7 arquivos) | PASS 123/123 |
+| guardas (7 arquivos) | PASS 264/264 |
+| SQL T15 (PostgreSQL descartável, `--network none`) | PASS 22/22, 68 migrations |
+| type-check | PASS (0 erros; também sem cache incremental) |
+| lint do arquivo alterado / lint completo | PASS 0/0 · 0 erros / 145 avisos (= baseline) |
+| build | PASS: Next.js 16.3.6, exit 0, 159 s |
+| suíte completa | PASS: 271 arquivos, 4096 testes, 0 fail / 0 skip / 0 todo |
+| git final · stacks preservadas | PASS: HEAD/TREE inalterados, status CLEAN, `diff --check` PASS · 32 containers inalterados |
+
+Produção, Vercel e Supabase hospedado: **não tocados**. Relatório:
+`/home/zetta/Documentos/ZETTA_WORLD/zswap-local/reports/EARLY-ACCESS-PHASE1-C1B-RECERT-f1b4ec1-20261002.campaign-20261002T095819Z.txt`
+(sha256 `fcde688a00e89b63acc68e0736848067972d87e1b216fa3e4d559b9789b887ed`).
+Evidência: `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/recert-c1b-f1b4ec1-20261002T095819Z/`
+(`MANIFEST.sha256` sha256 `3cf5c7b30f21010eafff90ebe877bf76494e254dab3e3c0ea989d5b9aecf51ed`).
+
+Outras campanhas do C1b, preservadas (ledger L-019):
+
+- `…092724Z`: **ENVIRONMENT_BLOCKED** (memória do host abaixo de 1 GiB antes do
+  `npm ci`; nenhum gate funcional rodou).
+- `…093950Z`: **HARNESS_FAILURE** · `PRODUCT_VERDICT=NONE` · `SHA_VERDICT=NONE`.
+  O npm 11.19 precisa escrever no índice do cache; com o cache montado somente
+  leitura, deu `ENOTCACHED`. A campanha PASS usou uma cópia gravável e
+  descartável do cache, e o repo não mudou.
+
+Notas da campanha PASS:
+
+- **HARNESS_LABEL_BUG_G11:** o laço do T15 sobrescreveu o índice do driver, e
+  o `RESULTS.env` gravou `IDENTITY` no lugar de `SQL_T15`. Não alterou o
+  resultado real; a fonte autoritativa é o log bruto do T15 (22/22, 68
+  migrations, exit 0). Correção no harness v3, fora do repo.
+- **`BUILD_NETWORK=BRIDGE`** (como na recert do `0d21874`, por causa do
+  `next/font/google`). No prerender houve acesso à API pública `api.llama.fi`,
+  sem segredo. Não é produção tocada.
+- **Avisos do Next.js no build** (baseline / convenção existente, não falhas):
+  convenção `middleware` obsoleta; Edge Runtime obsoleto; edge runtime desliga
+  a geração estática da página.
+
 ## OPEN_BLOCKERS
 
 | id | bloqueia | estado |
 |---|---|---|
 | **F-01** EMAIL_DOUBLE_OPT_IN | abrir o gate público | OPEN_BLOCKER, trabalho da Fase 2 |
-| **EA-RECERT / EA-TEST-HMAC-189-FLAKY** | dar a Fase 1 por recertificada; promover qualquer SHA da linha EA | BLOCKED. RECERT(C1)=FAIL; correção no working tree (revisão 5); faltam commit C1b + recert completa no SHA exato de C1b. EA-TEST-F10-FLAKY: FIXED_NOT_RECERTIFIED (no C1) |
-| **CP-REVIEW** | commit do control plane; início da Fase 2 | round 1 e round 2 auditados (CP-01…CP-08 e F10 PASS; MANIFEST PASS, sem segredo). CP-09/CP-10 corrigidos na revisão 4. Control plane commitado no C1 `f4af976` (02/10); não há atestação C2 porque RECERT(C1)=FAIL |
 | **REL-AUTH** | qualquer push, merge, deploy ou migration hospedada | OWNER_DECISION (política de deploy formalizada) |
 | **VERCEL** | deploy, preview e check do PR | EXTERNAL_DEPENDENCY (pagamento) |
 | **P0-SKEW** | o autopilot em produção (função indisponível desde 16/09) | OPEN_BLOCKER de produção; só o release resolve (`LEDGER-MESTRE-RELEASE.md` §Y) |
@@ -117,6 +168,11 @@ commit candidato C1b, que precisa de recert completa no SHA exato.
 | **AP-LOCK hosted** | fechar a disposição do PostgREST | OWNER_AUTH_REQUIRED (PASS local em PostgREST 14.17) |
 | **LEGAL / HMAC / 0068** | abrir o gate (além do F-01) | OWNER_DECISION: textos de Termos e Privacidade, segredo HMAC (estado em produção NOT_VERIFIED), aplicar a 0068 |
 | **REAL-AUTOMATION** | DCA, Pilot e Autopilot reais | NO-GO até os gates finais (`LEDGER-MESTRE-RELEASE.md` §0.5) |
+
+Fechados na revisão 6 (L-019): **EA-RECERT** (RECERT(C1b)=PASS),
+**EA-TEST-F10-FLAKY** e **EA-TEST-HMAC-189-FLAKY** (FIXED_CERTIFIED,
+`CERTIFIED_EXACT_SHA` `f1b4ec1`), **CP-REVIEW** (control plane commitado e
+atestado pelo C2).
 
 ## DEFERRED_FINDINGS (não bloqueiam a Fase 2)
 
@@ -149,18 +205,23 @@ permanecem sem fonte e não permitem conclusão. Tabela completa:
   pelo `.gitignore` e não aparece no `git status`.
 - `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/state/recert-ea1-9f2ddcb-20261001T213835Z/`:
   cópia verificada do cache npm (~1,8 GB) para uma recert futura.
+  Para o npm 11.19 ele precisa ser usado por uma **cópia gravável e
+  descartável** (o harness v2 copia para dentro do container); montado
+  somente leitura direto, dá `ENOTCACHED` (L-019).
+- Harness v2 da recert: `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/state/recert-c1b-f1b4ec1-20261002T095819Z/`
+  (fora do repo; o v3 deve declarar `local` a variável do laço do T15).
 
 ## NEXT_ACTION
 
-1. Decisão do dono: **commit candidato C1b** (correção EA-TEST-HMAC-189-FLAKY
-   + docs da revisão 5) sobre o C1 `f4af976`.
-2. **Recertificação completa no SHA exato de C1b** (npm ci, build, type-check,
-   lint, alvo, guardas, suíte completa, SQL T15), com os limites de memória
-   fixos desde o início.
-3. PASS → **commit de atestação C2**, só docs: `CERTIFIED_FEATURE_SHA=<C1b>`,
-   `RECERT_RESULT=PASS`, evidência, e prova de diff de produto `C1..C2`
-   vazio. Daí `CONTROL_PLANE_HEAD=<C2>`.
-   FAIL → registrar o FAIL, sem atestação PASS, sem retry-to-pass; corrigir,
-   novo commit candidato, recert dele inteiro.
-4. Só então: o plano da Fase 2 (PHASE_BASE_SHA = C2) e a escolha do provider
-   de email.
+1. Commit do C2 (esta revisão, só docs) sobre o C1b `f1b4ec1`, por decisão
+   do dono. O commit que traz esta revisão **é** o C2: `CONTROL_PLANE_HEAD` =
+   `THIS_ATTESTATION_COMMIT` (SHA concreto: `git rev-parse` desse commit; o C2 não guarda o
+   próprio SHA). Conferir com `git diff --stat f1b4ec1..<SHA do C2> -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'`
+   vazio e `git merge-base --is-ancestor f1b4ec1 <SHA do C2>`, registrados na
+   próxima entrada do ledger.
+2. Plano da Fase 2 **antes de qualquer código** (`START-HERE.md` §9 item 4),
+   com `PHASE_BASE_SHA` = SHA do C2 (`THIS_ATTESTATION_COMMIT`) registrado no ledger.
+3. Decisão do dono: provider de email (OWNER_DECISION; bloqueia a
+   implementação da Fase 2).
+4. Release continua bloqueado: `RELEASE_CANDIDATE=NONE`; C2 não é deployável
+   (`AI-OPERATING-RULES.md` §5.1, §6.1).
