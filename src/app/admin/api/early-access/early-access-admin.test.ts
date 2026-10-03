@@ -67,7 +67,7 @@ describe("① sem admin, nada roda", () => {
 
 describe("② lista", () => {
   it("parâmetro inválido é 400, nunca ignorado", async () => {
-    for (const q of ["status=verified", "limit=0", "limit=201", "offset=-1", "country=XX", "has_wallet=sim", "q=%27or%201"]) {
+    for (const q of ["status=verified", "limit=0", "limit=201", "offset=-1", "country=XX", "has_wallet=sim", "q=%27or%201", "verified=sim", "verified=true"]) {
       const r = await LISTA(get(`/admin/api/early-access?${q}`));
       expect(r.status, q).toBe(400);
     }
@@ -86,7 +86,7 @@ describe("② lista", () => {
 
 describe("③ transição", () => {
   it("sucesso: ator é o admin da sessão, e o espelho no audit vem DEPOIS", async () => {
-    const r = await TRANSICAO(post({ id: ID, to: "approved" }));
+    const r = await TRANSICAO(post({ id: ID, to: "approved", reason_code: "approved_verified" }));
     expect(await r.json()).toEqual({ ok: true, mudou: true, de: "pending", para: "approved" });
     expect(st.chamadas[0]).toContain('"admin:0xADMIN000000000000000000000000000000000001"');
     expect(st.audit).toHaveLength(1);
@@ -94,26 +94,66 @@ describe("③ transição", () => {
   });
   it("⚠️⚠️ falha de audit na RPC → transição falha, nada é espelhado", async () => {
     st.transicao = { ok: false, erro: "erro_banco" };
-    const r = await TRANSICAO(post({ id: ID, to: "blocked", reason: "spam" }));
+    const r = await TRANSICAO(post({ id: ID, to: "blocked", reason_code: "abuse" }));
     expect(r.status).toBe(503);
     expect(await r.json()).toEqual({ error: "erro_banco", mudou: false });
     expect(st.audit).toHaveLength(0);
   });
   it("transição proibida → 409; motivo ausente → 400", async () => {
     st.transicao = { ok: false, erro: "early_access_transicao_proibida" };
-    expect((await TRANSICAO(post({ id: ID, to: "approved" }))).status).toBe(409);
+    expect((await TRANSICAO(post({ id: ID, to: "approved", reason_code: "approved_verified" }))).status).toBe(409);
     st.transicao = { ok: false, erro: "early_access_motivo_obrigatorio" };
-    expect((await TRANSICAO(post({ id: ID, to: "rejected" }))).status).toBe(400);
+    expect((await TRANSICAO(post({ id: ID, to: "rejected", reason_code: "rejected_policy" }))).status).toBe(400);
+  });
+  it("⚠️ D-4 (Fase 2): aprovar sem email verificado → 409 com o código; nada espelhado no audit", async () => {
+    st.transicao = { ok: false, erro: "early_access_email_nao_verificado" };
+    const r = await TRANSICAO(post({ id: ID, to: "approved", reason_code: "approved_verified" }));
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({ error: "early_access_email_nao_verificado", mudou: false });
+    expect(st.audit).toHaveLength(0);
   });
   it("entrada inválida não chega à RPC", async () => {
-    for (const b of [{ id: "x", to: "approved" }, { id: ID, to: "converted" }, { id: ID, to: "approved", reason: 5 }]) {
+    for (const b of [{ id: "x", to: "approved", reason_code: "approved_verified" }, { id: ID, to: "converted", reason_code: "other" },
+                     { id: ID, to: "approved" }, { id: ID, to: "approved", reason_code: "spam livre" },
+                     { id: ID, to: "approved", reason_code: "other", note: 5 },
+                     { id: ID, to: "approved", reason_code: "other", note: "x".repeat(401) }]) {
       expect((await TRANSICAO(post(b))).status).toBe(400);
     }
     expect(st.chamadas).toEqual([]);
   });
+  it("⚠️⚠️ EA2-IA07: texto livre NUNCA chega ao admin_audit_log persistente — só o código controlado", async () => {
+    st.transicao = { ok: true, de: "pending", para: "blocked" };
+    const PII = "Joao da Silva joao@example.com +55 11 99999-0000";
+    const r = await TRANSICAO(post({ id: ID, to: "blocked", reason_code: "abuse", note: PII }));
+    expect(r.status).toBe(200);
+    // a nota vai SÓ para a RPC (registro da inscrição, apagado na purga)
+    expect(st.chamadas[0]).toContain(`"abuse — ${PII}"`);
+    // o log persistente recebe apenas de/para/código
+    expect(st.audit).toHaveLength(1);
+    expect(st.audit[0][3]).toEqual({ de: "pending", para: "blocked", motivo_codigo: "abuse" });
+    expect(JSON.stringify(st.audit)).not.toMatch(/Joao|joao@|99999/);
+  });
+  it("⚠️ EA2-IA07: o campo antigo `reason` (texto livre) e campos extras são RECUSADOS sem tocar a RPC nem o log", async () => {
+    for (const b of [{ id: ID, to: "blocked", reason: "Joao da Silva" },
+                     { id: ID, to: "blocked", reason_code: "abuse", reason: "Joao" },
+                     { id: ID, to: "blocked", reason_code: "abuse", motivo: "x" }]) {
+      expect((await TRANSICAO(post(b))).status).toBe(400);
+    }
+    expect(st.chamadas).toEqual([]);
+    expect(st.audit).toEqual([]);
+  });
+  it("EA2-IA07: sem nota, a RPC recebe só o código; todos os códigos válidos passam", async () => {
+    const { MOTIVOS } = await import("@/lib/early-access/estados");
+    for (const m of MOTIVOS) {
+      st.chamadas = []; st.audit = [];
+      await TRANSICAO(post({ id: ID, to: "approved", reason_code: m }));
+      expect(st.chamadas[0]).toContain(`"${m}"`);
+      expect(st.audit[0][3]).toEqual({ de: "pending", para: "approved", motivo_codigo: m });
+    }
+  });
   it("desbloqueio gera alerta de segurança alto", async () => {
     st.transicao = { ok: true, de: "blocked", para: "pending" };
-    await TRANSICAO(post({ id: ID, to: "pending", reason: "revisado" }));
+    await TRANSICAO(post({ id: ID, to: "pending", reason_code: "administrative_correction" }));
     expect(st.seguranca).toContainEqual(["early_access_desbloqueio", "high"]);
   });
 });
@@ -166,7 +206,11 @@ describe("④ export CSV", () => {
       expect(cab, proibida).not.toContain(proibida);
     }
     expect(cab).toEqual(["id", "created_at", "status", "country", "source", "utm_source", "utm_medium", "utm_campaign",
-      "email_verified_at", "wallet_verified_at", "converted_at", "marketing_opt_in"]);
+      "email_verified_at", "wallet_verified_at", "converted_at", "marketing_efetivo", "marketing_escolhido_em",
+      // EA2-IA04: elegibilidade (efetivo E não suprimido) + o estado de supressão, sempre juntos
+      "marketing_elegivel", "email_suppressed_at", "email_suppression_reason"]);
+    // EA2-A02: a declaração provisória nunca sai como se fosse consentimento
+    expect(cab).not.toContain("marketing_opt_in");
     for (const pii of ["cmd@x.com", "HYPERLINK", "0xABCDEF", "sinal_mesmo_ip", "Fulano"]) expect(csv).not.toContain(pii);
   });
   it("F-12: identidade=1 é opt-in separado do email", async () => {

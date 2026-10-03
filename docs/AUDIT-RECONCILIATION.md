@@ -66,7 +66,7 @@ remoto por round (exceto R9), então a evidência é o corpo dos commits e os do
 | PC Batch 3 | `3123fb4` → `691bfdc` | 3 (`afe2665` docs + `.gitattributes`; `6fded4c` docs; `691bfdc` 0067 + testes) | DB-ACL-FINANCIAL-TABLES | 0067 | **INTEGRATED** | `supabase/tests/14`; "PASS WITH DELTA" `[DONO]` | staging rollback/rebuild INCOMPLETE |
 | Preprod | `691bfdc` → `16e4000` | 3 | estabilidade de backtest, achados da auditoria independente do preprod, harnesses, T13 estável | — | **INTEGRATED** | `reports/blocker-closure-20260929T111136Z/27-*` | HARNESS-001/002 |
 | Supply chain | `16e4000` → `0d21874` | 1 | GHSA-vcvr-r3jv-pc5j (next/og RCE, CRITICAL), axios HIGH, image-size, `@solana/spl-token` | — | **INTEGRATED** · CERTIFIED_EXACT_SHA (`0d21874`) | `docs/RELEASE-RUNBOOK.md` §2–§3 | 36 moderate / 1 low |
-| Early Access F1 | `43c484b` → `9f2ddcb` | 1 | F-01…F-16 (hardening F-02/03/04/06/07/08/10/12) | 0068 | **INTEGRATED** (é o PRODUCT_BASE_SHA; COMMITTED_FEATURE_CHECKPOINT) | `docs/PLANO-EARLY-ACCESS.md` §14–§15 | F-01 OPEN_BLOCKER; recert no SHA commitado `9f2ddcb` BLOCKED (EA-TEST-F10-FLAKY, §5.5) → **RECERT(C1b)=PASS**: Fase 1 `CERTIFIED_EXACT_SHA` em `f1b4ec1` (§5.5, ledger L-019) |
+| Early Access F1 | `43c484b` → `9f2ddcb` | 1 | F-01…F-16 (hardening F-02/03/04/06/07/08/10/12) | 0068 | **INTEGRATED** (é o PRODUCT_BASE_SHA; COMMITTED_FEATURE_CHECKPOINT) | `docs/PLANO-EARLY-ACCESS.md` §14–§15 | F-01 OPEN_BLOCKER na Fase 1 (hoje: implementado no working tree da Fase 2, FIXED_NOT_RECERTIFIED, §5.5.1); recert no SHA commitado `9f2ddcb` BLOCKED (EA-TEST-F10-FLAKY, §5.5) → **RECERT(C1b)=PASS**: Fase 1 `CERTIFIED_EXACT_SHA` em `f1b4ec1` (§5.5, ledger L-019) |
 
 **"Round 0":** não existe nenhuma referência na árvore, nos commits ou nas
 branches. A auditoria de 30 achados é "pré-Round 1" (`LEDGER-MESTRE` §B).
@@ -267,7 +267,7 @@ hardening). Correção = commit `9f2ddcb`.
 
 | ID | sev. | descrição curta | estado |
 |---|---|---|---|
-| **F-01** | MEDIUM | sem prova de posse do email: terceiro grava dados e consentimento em nome do titular | **OPEN_BLOCKER** (abrir o gate) → Fase 2 |
+| **F-01** | MEDIUM | sem prova de posse do email: terceiro grava dados e consentimento em nome do titular | **OPEN_BLOCKER** (abrir o gate) → Fase 2 *(status de 01/10, histórico; atual: §5.5.1 — FIXED_NOT_RECERTIFIED, implementação fechada no working tree, não commitada nem certificada)* |
 | F-02 | LOW | filtro de robô consumia cotas compartilhadas | FIXED_NOT_RECERTIFIED |
 | F-03 | LOW | variantes do sentinela `UNAPPROVED` | FIXED_NOT_RECERTIFIED |
 | F-04 | LOW | `service_role` com INSERT em events/consents | FIXED_NOT_RECERTIFIED |
@@ -300,6 +300,76 @@ hardening). Correção = commit `9f2ddcb`.
 | HARNESS-NPM-RO-CACHE (02/10) | — (harness, fora do repo) | o npm 11.19 escreve no índice do cache a cada consulta; com o cache montado somente leitura, `npm ci --offline` dá `ENOTCACHED`. Afetou só a campanha `…093950Z` | **FIXED** no harness v2 (cópia gravável e descartável do cache; original provado intacto). Sem impacto de produto |
 | HARNESS_LABEL_BUG_G11 (02/10) | — (harness, fora do repo) | o laço do T15 sobrescreveu o índice do driver; o `RESULTS.env` gravou `IDENTITY` no lugar de `SQL_T15`. O resultado real veio do log bruto do T15 (22/22, 68 migrations, exit 0) | **OPEN_NONBLOCKING** — correção no harness v3 (variável local distinta) |
 | EA-BUILD-NEXT-WARN (02/10) | INFO | build do C1b: 3 avisos do Next.js 16.3.6 — convenção `middleware` obsoleta (usar `proxy`); Edge Runtime obsoleto; edge runtime desliga a geração estática da página. Baseline / convenção existente, não falhas. Build com `BUILD_NETWORK=BRIDGE`; o prerender acessou a API pública `api.llama.fi`, sem segredo (não é produção tocada) | **DEFERRED** (não corrigir agora) |
+
+### 5.5.1 Early Access Fase 2 — double opt-in (02/10, working tree, sem commit)
+
+Base `PHASE_BASE_SHA=74f37f50d12dae698f14b620914bc0ce5b0c639a` (ledger L-020/L-021/L-022). Auditoria adversarial
+**feita pela própria sessão de implementação (NÃO independente)**:
+`/home/zetta/Documentos/ZETTA_WORLD/zswap-local/reports/early-access-phase2-adversarial-audit-20261002.txt`
+(sha256 `10d1706adfbb0db50d5c082049239acabbe63c53014fa9e01d111a38f88dd2bf`). Veredito: PASS WITH FINDINGS
+(0 critical, 0 high, 2 medium, 4 low, 3 info). Nada aqui é certificação: falta C1 + recert exata.
+
+| ID | Severidade | O quê | Status |
+|---|---|---|---|
+| **F-01** | MEDIUM | sem prova de posse do email | **FIXED_NOT_RECERTIFIED** (código: 0069 + rotas + T16/16b; gate continua CLOSED) |
+| F-11 | INFO | código de indicação só para o titular verificado | **FIXED_NOT_RECERTIFIED** (só a resposta de `confirm` devolve o código) |
+| EA2-A01 | MEDIUM | reenvio no 6º–7º dia emitia token que sobrevivia à purga de 7 dias (contradiz D-3) | **FIXED_NOT_RECERTIFIED** (`ea_interno_emitir` suprime com `retencao` depois de 6 dias; T16.7b) |
+| EA2-A02 | MEDIUM | o consentimento de marketing confirmado é o DECLARADO por quem enviou; o titular só confirma tudo ou recusa (D-6 só corrige nome/país). Nenhum email de marketing existe nesta fase | ~~OWNER_DECISION~~ → decisão do dono 03/10 (L-023): declaração do formulário é PROVISÓRIA; consentimento efetivo só por escolha explícita do titular verificado; sem escolha = OPT-OUT. **FIXED_NOT_RECERTIFIED** (0069: `marketing_efetivo` + `marketing_escolhido_em` com CHECKs; `confirmar_email(…, p_marketing_opt_in default null)`; preview sem a declaração; export só com o efetivo; caixa desmarcada na página; T16.9/T16.9c) |
+| EA2-A03 | LOW | canal lateral de tempo (linhagem F-05): novo × duplicado pendente × verificado fazem trabalho de banco diferente (ms). A latência do provider fica escondida pelo `waitUntil` | ACCEPTED_RESIDUAL |
+| EA2-A04 | LOW | `display_name` escolhido por quem enviou aparece ao titular na página de confirmação (escapado; nunca no email) | ACCEPTED_RESIDUAL |
+| EA2-A05 | LOW | volume de reenvio por email: limites de banco fail-closed (10 min, 5/24 h, 600/h) + `ea:em` 3/24 h (fail-open); "não fui eu" zera os contadores do pedido (exige ação do titular) | ACCEPTED_RESIDUAL |
+| EA2-A06 | LOW | scanner de link que executa JS **e** clica botão poderia confirmar; GET é inerte | ACCEPTED_RESIDUAL |
+| EA2-A07 | INFO | `registrar_envio` pode marcar `sent` num token já superseded (corrida); sem efeito de segurança | ACCEPTED |
+| EA2-A08 | INFO | `ConfirmView` guarda o token por carregamento de página; navegação SPA para um 2º link reaproveitaria | ACCEPTED |
+| EA2-A09 | INFO | rate limit de `/verify` é `rateLimitDurable` (fail-open); força bruta inviável (256 bits) | ACCEPTED |
+| EA2-T15-ADAPT | — (teste) | T15 adaptado à 0069 (helper com a assinatura nova, contagem de funções 4→12, `email_verified_at` pelo dono antes das aprovações); nenhuma asserção removida; 22/22 | DOCUMENTED |
+
+### 5.5.2 Early Access Fase 2 — auditoria INDEPENDENTE (03/10) e rodada de correção (working tree, sem commit)
+
+Auditoria externa independente (ChatGPT) sobre o pacote
+`phase2-independent-audit-20261003T141825Z.tar.gz` (sha256
+`991199db95b40ef373a00c4b0c1cf5ec6227d86454f691066c5d3c123331086a`; cadeia do pacote verificada pelo
+auditor: hash, SHA256SUMS, bundle, reconstrução, 1 138 arquivos conferidos, 0068 intocada).
+**Veredito: FAIL · NOT_READY_FOR_C1** — 0 blocker, 0 high, 5 medium, 1 low. EA2-A02: nenhum bypass.
+Correções no working tree, ledger L-024. Nada aqui é certificação.
+
+| ID | Severidade | O quê | Status |
+|---|---|---|---|
+| EA2-IA01 | MEDIUM | falha permanente do Resend (400/401/403/422/resposta sem id) voltava à fila de retry: só o código era persistido | **FIXED_NOT_RECERTIFIED** — estado terminal explícito `dead`; `registrar_envio(…, p_transitorio)` obrigatório na falha; fila e `reemitir` só aceitam `failed`/`pending>5min`. Testes: `email.test.ts` (9 casos HTTP/rede), T16.19 |
+| EA2-IA02 | MEDIUM | `reemitir` revogava o token antes de `ea_interno_emitir`, que podia ser suprimida (teto global) → inscrição sem token | **FIXED_NOT_RECERTIFIED** — revogação só DENTRO da emissão bem-sucedida (motivo por parâmetro); suprimido = nada muda e o token segue na fila. Testes: T16.20 (teto esgotado → não encalha → com capacidade, reemissão determinística), 16b.2 (dois retries concorrentes) |
+| EA2-IA03 | MEDIUM | purga deixava `provider_message_id` em `early_access_webhook_eventos` (correlacionável no provider) | **FIXED_NOT_RECERTIFIED** — o webhook guarda só `evento_hash` (sha256 de mão única do `svix-id`) e não guarda `provider_message_id`; a única ligação mensagem→sujeito é `early_access_verificacoes`, apagada na purga. Teste: T16.21 |
+| EA2-IA04 | MEDIUM | export trazia `marketing_efetivo=true` sem o estado de supressão | **FIXED_NOT_RECERTIFIED** — coluna gerada `marketing_elegivel = marketing_efetivo AND email_suppressed_at IS NULL`; export leva elegível + `email_suppressed_at` + `email_suppression_reason`; consentimento histórico preservado. Testes: T16.22 (5 casos + coluna não gravável), export no `early-access-admin.test.ts` |
+| EA2-IA05 | MEDIUM | a confirmação gravava termos/privacidade como "consentimento" sem a UI dizer isso | **FIXED_NOT_RECERTIFIED** — botão "Confirmar e aceitar os Termos" + texto explícito (aceite dos Termos vX; ciência da Política vY); o POST devolve as versões apresentadas e a RPC recusa (`early_access_versao_divergente`, nada gravado) se não forem as da inscrição; `early_access_consents.declaracao` com CHECK (`aceite`/`ciencia`/`opt_in`/`opt_out`/`sem_escolha`/`provisoria`). Testes: T16.23, rota e validação |
+| EA2-IA06 | LOW | caixa de marketing nascia `false` e sempre enviava opt-out explícito | **FIXED_NOT_RECERTIFIED** — escolha tri-estado (rádio sim/não, sem seleção inicial; omitido = `sem_escolha`). Testes: rota (null/false/true), T16.24 |
+| EA2-A02 (reprova) | — | efetivo só com verificação + opt-in explícito | **REPROVEN** — T16.25 (invariante global, service_role sem escrita, provisória nunca efetiva), T16.9/9c, trava de fonte: `marketing_efetivo` tem UMA escrita no SQL inteiro |
+| ZION-PLAYBOOK-TIMEOUT-LOCAL | — | timeout de 5 s em `src/lib/zion/playbook-backtest.test.ts` sob carga (código sem diff) | KNOWN_EXISTING / LOAD_SENSITIVE — não tocado, não reclassificado |
+
+### 5.5.3 Early Access Fase 2 — SEGUNDA auditoria independente (03/10) e fechamento (working tree, sem commit)
+
+Pacote auditado: `phase2-second-independent-audit-20261003T164829Z.tar.gz` (sha256
+`d6695b78892e1f767fabedfb50ea0cb5043c4a706332b73c2f4a1a881f282b40`). Resultado: **EA2-IA01…IA06
+confirmados FIXED** pelo auditor; novos: 0 blocker, 0 high, **1 medium, 2 low**. Correções e
+auto-auditoria final completa no working tree (ledger L-025). Nada aqui é certificação.
+
+| ID | Severidade | O quê | Status |
+|---|---|---|---|
+| EA2-IA07 | MEDIUM | motivo de transição em texto livre ia ao `admin_audit_log` (persistente), que sobrevive à purga — PII digitada por engano ficaria | **FIXED_NOT_RECERTIFIED** — corpo `{id, to, reason_code, note?}`; `reason_code` ∈ lista fechada (`estados.ts` `MOTIVOS`); o log persistente recebe **só** `{de, para, motivo_codigo}`; a nota opcional vai só para `early_access_events.reason`/`status_reason` (apagados na purga); campo antigo `reason` e extras recusados; nenhuma RPC escreve `admin_audit_log`. Testes: `early-access-admin.test.ts` (PII na nota não chega ao log; código persiste; todos os códigos; campos legados recusados), T16.27, trava de fonte em `token.test.ts` |
+| EA2-IA08 | LOW | documentação contradizia o código corrigido (`send_status`, webhook, retry, elegibilidade, declarações, tri-estado) | **FIXED_NOT_RECERTIFIED** — `PLANO-EARLY-ACCESS-FASE2.md` reescrito como especificação final (versões anteriores preservadas nos pacotes de auditoria); cabeçalho da 0069 e índice do T16 atualizados; referências a seções inexistentes corrigidas; `RUNBOOK.md`, `CURRENT-STATE.md`, `START-HERE.md`, `DOCUMENT-AUTHORITY.md` alinhados. Entradas históricas do ledger intocadas |
+| EA2-IA09 | LOW | `sem_escolha` recebia `marketing_escolhido_em` | **FIXED_NOT_RECERTIFIED** — `marketing_escolhido_em = case when p_marketing_opt_in is null then null else now() end`; CHECKs preservados. Testes: T16.9 (sem escolha → NULL), T16.26 (três estados + invariante banco-inteiro), T16.9c/T16.25 inalterados |
+
+**Reprova de EA2-IA01…IA06:** T16.19–T16.24, 16b.2, `email.test.ts` ×9, rota/validação/export — todos PASS na árvore final.
+**EA2-A02:** REPROVEN (T16.25 banco-inteiro, T16.9/9c/26, trava "uma única escrita de `marketing_efetivo`").
+
+**Auto-auditoria final A–Q (implementador, 03/10):** canonicalização de email; inscrição/duplicado;
+ciclo do token (geração, hash, sem cru, TTL, uso único, reenvio, replay, limites, concorrência);
+confirmação (posse, versões, declarações, tri-estado); "não fui eu"/purga; retenção; máquina de
+envio (pending/sent/failed/dead); cron/retry; webhook (autenticação, idempotência, bounce,
+complaint, supressão, privacidade pós-purga); transições admin; export (autorização, email,
+consentimento, elegibilidade, supressão); gate de aprovação; anti-enumeração; RLS/grants;
+efeitos hosted (nenhum); docs × código; testes que provam invariantes. Achados novos corrigidos
+nesta rodada: cabeçalho da 0069 e índice do T16 desatualizados; referências a `§19` inexistente
+(rota `verify`, T16); duas frases imprecisas da especificação (`/verify` e saída do email do
+banco). **Nenhum defeito conhecido de Fase 2 remanescente; nenhuma decisão de dono pendente.**
 
 ### 5.6 Documentação e governança
 

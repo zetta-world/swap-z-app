@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { logSecurity } from "@/lib/admin/track";
 import { lerGateEarlyAccess } from "@/lib/early-access/gate";
@@ -7,6 +8,8 @@ import { validarInscricao, pareceRobo, LIMITE_CORPO_BYTES } from "@/lib/early-ac
 import { gerarCandidatos } from "@/lib/early-access/referral";
 import { inscrever } from "@/lib/early-access/store";
 import { lerCorpoLimitado, origemPermitida, ehJson } from "@/lib/early-access/request";
+import { gerarToken, hashToken } from "@/lib/early-access/token";
+import { enviarConfirmacao } from "@/lib/early-access/email/enviar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +31,13 @@ export const dynamic = "force-dynamic";
  *
  * ⚠️ NENHUM IP CRU NO BANCO. Os buckets de rate limit usam HMAC do IP e do
  * email; a linha da inscrição guarda só o HMAC do IP.
+ *
+ * ⚠️⚠️ FASE 2 — DOUBLE OPT-IN (F-01). Enviar o formulário NÃO prova posse do
+ * email. Um token de 256 bits é gerado AQUI, só o hash vai para a RPC, e o
+ * email com o link sai DEPOIS da resposta (`waitUntil`): a latência do
+ * provider não pode distinguir "email novo" de "já verificado". O token cru
+ * nunca é logado nem persistido. Quem decide se há envio (novo, reenvio dentro
+ * de cooldown/cap, verificado, bloqueado, suprimido) é a RPC (0069).
  *
  * ORDEM FINAL (F-02 da auditoria adversarial):
  *   tipo/tamanho → parse → gate → origem → validação → limite por IP →
@@ -111,11 +121,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   // 10. RPC — novo e duplicado respondem igual
-  const r = await inscrever(d, ipH, gerarCandidatos());
+  const token = gerarToken();
+  const r = await inscrever(d, ipH, gerarCandidatos(), hashToken(token));
   if (!r.ok) {
     logSecurity("early_access_gravacao_falhou", { erro: r.erro }, "high");
     return json({ ok: false, error: "unavailable" }, 503);
   }
+  // 11. email de confirmação — DEPOIS da resposta, e só se a RPC aceitou o hash.
+  //     A resposta é a mesma com ou sem envio.
+  if (r.envio) waitUntil(enviarConfirmacao({ email: d.email, locale: d.locale, token }));
   return aceito();
 }
 

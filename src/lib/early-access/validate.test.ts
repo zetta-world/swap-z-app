@@ -8,7 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   validarInscricao, normalizarEmail, normalizarNome, normalizarPais, normalizarCarteira,
-  normalizarReferral, normalizarUtm, pareceRobo, textoHumanoSeguro, UTM_MAX,
+  normalizarReferral, normalizarUtm, pareceRobo, textoHumanoSeguro, UTM_MAX, validarConfirmacao,
 } from "./validate";
 import { TERMS_VERSION, PRIVACY_VERSION, versaoAprovada, ehSentinela } from "./legal-versions";
 
@@ -220,5 +220,52 @@ describe("⑨ sinais de robô", () => {
   it("form_ms com tipo errado é erro de campo", () => {
     expect(validarInscricao(corpo({ form_ms: "5000" }), V)).toMatchObject({ ok: false, campo: "form_ms" });
     expect(validarInscricao(corpo({ form_ms: -1 }), V)).toMatchObject({ ok: false, campo: "form_ms" });
+  });
+});
+
+describe("⑦ Fase 2 — locale e corpo da confirmação", () => {
+  it("locale: en/pt/es/zh; ausente → en; outro → campo_invalido", () => {
+    for (const l of ["en", "pt", "es", "zh"]) {
+      const r = validarInscricao(corpo({ locale: l }), V);
+      expect(r.ok && r.dados.locale).toBe(l);
+    }
+    const sem = validarInscricao(corpo(), V);
+    expect(sem.ok && sem.dados.locale).toBe("en");
+    for (const l of ["fr", "PT", "", 5]) {
+      expect(validarInscricao(corpo({ locale: l }), V)).toMatchObject({ ok: false, campo: "locale" });
+    }
+  });
+  const TK = "D".repeat(42) + "A";
+  // EA2-IA05: as versões que a tela apresentou (obrigatórias em confirm)
+  const VC = { accept_terms_version: "tos-1", acknowledge_privacy_version: "priv-1" };
+  it("⚠️ EA2-IA05: confirm exige as DUAS versões apresentadas, no formato de versão", () => {
+    expect(validarConfirmacao({ token: TK, action: "confirm" })).toMatchObject({ ok: false, erro: "versao_legal", campo: "accept_terms_version" });
+    expect(validarConfirmacao({ token: TK, action: "confirm", accept_terms_version: "tos-1" }))
+      .toMatchObject({ ok: false, erro: "versao_legal", campo: "acknowledge_privacy_version" });
+    expect(validarConfirmacao({ token: TK, action: "confirm", accept_terms_version: "tos 1", acknowledge_privacy_version: "priv-1" }))
+      .toMatchObject({ ok: false, campo: "accept_terms_version" });
+    expect(validarConfirmacao({ token: TK, action: "preview", ...VC })).toMatchObject({ erro: "campo_desconhecido" });
+  });
+  it("confirmação: token no formato, ação fechada", () => {
+    expect(validarConfirmacao({ token: TK, action: "preview" })).toEqual({ ok: true, dados: {
+      token: TK, acao: "preview", displayName: null, country: null, marketingOptIn: null, versaoTermos: null, versaoPrivacidade: null } });
+    expect(validarConfirmacao({ token: TK, action: "aprovar" })).toMatchObject({ ok: false, campo: "action" });
+    expect(validarConfirmacao({ token: "x", action: "confirm" })).toMatchObject({ ok: false, campo: "token" });
+    expect(validarConfirmacao([])).toMatchObject({ ok: false, erro: "corpo_invalido" });
+  });
+  it("⚠️ D-6: só nome e país, só em confirm, pela MESMA normalização; email nunca", () => {
+    expect(validarConfirmacao({ token: TK, action: "confirm", display_name: "  Ana  ", country: "PT", ...VC }))
+      .toEqual({ ok: true, dados: { token: TK, acao: "confirm", displayName: "Ana", country: "PT", marketingOptIn: null,
+                                    versaoTermos: "tos-1", versaoPrivacidade: "priv-1" } });
+    // EA2-A02: escolha explícita, booleano literal, só em confirm
+    expect(validarConfirmacao({ token: TK, action: "confirm", marketing_opt_in: false, ...VC })).toMatchObject({ ok: true, dados: { marketingOptIn: false } });
+    expect(validarConfirmacao({ token: TK, action: "confirm", marketing_opt_in: true, ...VC })).toMatchObject({ ok: true, dados: { marketingOptIn: true } });
+    expect(validarConfirmacao({ token: TK, action: "confirm", marketing_opt_in: "on" })).toMatchObject({ ok: false, campo: "marketing_opt_in" });
+    expect(validarConfirmacao({ token: TK, action: "decline", marketing_opt_in: true })).toMatchObject({ erro: "campo_desconhecido" });
+    expect(validarConfirmacao({ token: TK, action: "confirm", email: "b@c.com" })).toMatchObject({ erro: "campo_desconhecido", campo: "email" });
+    expect(validarConfirmacao({ token: TK, action: "confirm", wallet_address: "x" })).toMatchObject({ erro: "campo_desconhecido" });
+    expect(validarConfirmacao({ token: TK, action: "decline", country: "PT" })).toMatchObject({ erro: "campo_desconhecido" });
+    expect(validarConfirmacao({ token: TK, action: "confirm", country: "XX" })).toMatchObject({ campo: "country" });
+    expect(validarConfirmacao({ token: TK, action: "confirm", display_name: "A" + RLO + "na" })).toMatchObject({ campo: "display_name" });
   });
 });

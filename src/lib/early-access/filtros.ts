@@ -39,6 +39,11 @@ export function lerFiltros(p: URLSearchParams): Filtros | { erro: string } {
     if (hw !== "1" && hw !== "0") return { erro: "has_wallet_invalido" };
     f.hasWallet = hw === "1";
   }
+  const ver = p.get("verified");
+  if (ver !== null && ver !== "") {
+    if (ver !== "1" && ver !== "0") return { erro: "verified_invalido" };
+    f.verified = ver === "1";
+  }
   const q = p.get("q");
   if (q !== null && q !== "") {
     const s = q.trim().toLowerCase();

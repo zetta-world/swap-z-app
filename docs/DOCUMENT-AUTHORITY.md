@@ -23,6 +23,13 @@
 > `START-HERE.md` + `CURRENT-STATE.md` + `LAUNCH-READINESS-LEDGER.md` +
 > `RELEASE-CHAIN.md`. Status de recert citado neste arquivo para `9f2ddcb`
 > é histórico.
+>
+> **Revisão 5 (03/10/2026, ledger L-026, EA2-IA10):** a Fase 2 do early access
+> está com a implementação **fechada no working tree, sem commit, sem C1, sem
+> recert, NOT_CERTIFIED**, gate CLOSED. `START-HERE.md` e `CURRENT-STATE.md`
+> foram reescritos (revisão 7) com seções atuais separadas de seções
+> **HISTÓRICO**. Menções a `THIS_ATTESTATION_COMMIT` neste arquivo referem-se
+> ao C2 da Fase 1 = `74f37f50d12dae698f14b620914bc0ce5b0c639a`.
 
 ## Classes
 
@@ -104,7 +111,8 @@
 | `docs/PLANO-DERRAPAGEM.md` | HISTORICAL_EVIDENCE | f1c0b38 2026-08-17 | entregue | plano entregue | NÃO |
 | `docs/PLANO-DESCARTADAS.md` | HISTORICAL_EVIDENCE | f04f654 2026-08-17 | entregue | plano entregue | NÃO |
 | `docs/PLANO-DESKTOP.md` | HISTORICAL_EVIDENCE | ed412d3 2026-07-07 | — | rodada/relatório datado | NÃO |
-| `docs/PLANO-EARLY-ACCESS.md` | ACTIVE_PLAN | 9f2ddcb 2026-10-01 | cabeçalho "branch whitelist…/sem commit" desatualizado desde `9f2ddcb` · **banner + status operacional corrigido em 01/10 (Fase 1 COMMITTED_FEATURE_CHECKPOINT `9f2ddcb`, recert BLOCKED; Fase 2 BLOCKED_NOT_STARTED, sem código)** · **status operacional atualizado em 02/10 (C2): Fase 1 CERTIFIED_EXACT_SHA `f1b4ec1`; o bloco de 01/10 fica como histórico** | early access Fase 1 (feita) + escopo da Fase 2 (§13–§15) | SIM — só para early access |
+| `docs/PLANO-EARLY-ACCESS.md` | ACTIVE_PLAN | 9f2ddcb 2026-10-01 | cabeçalho "branch whitelist…/sem commit" desatualizado desde `9f2ddcb` · **banner + status operacional corrigido em 01/10 (Fase 1 COMMITTED_FEATURE_CHECKPOINT `9f2ddcb`, recert BLOCKED; Fase 2 BLOCKED_NOT_STARTED, sem código)** · **status operacional atualizado em 02/10 (C2): Fase 1 CERTIFIED_EXACT_SHA `f1b4ec1`; o bloco de 01/10 fica como histórico** · **status operacional atualizado em 03/10 (L-026): Fase 2 fechada no working tree, NOT_CERTIFIED; blocos anteriores marcados HISTÓRICO** | early access Fase 1 (feita) + escopo da Fase 2 (§13–§15) | SIM — só para early access |
+| `docs/PLANO-EARLY-ACCESS-FASE2.md` | ACTIVE_PLAN | criado 2026-10-02 sobre `74f37f5` (L-020); **reescrito 2026-10-03 como especificação final** (L-025, EA2-IA08) | — | early access Fase 2: email double opt-in (F-01, F-11) — comportamento FINAL implementado (0069, código, testes); versões anteriores preservadas nos pacotes de auditoria | SIM, só para a Fase 2 do early access; o estado continua em `START-HERE.md`/`CURRENT-STATE.md` |
 | `docs/PLANO-ESCOLA-DE-TRADERS.md` | SUPPORTING_REFERENCE | 3c683f4 2026-08-02 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-FORA-DA-AMOSTRA.md` | SUPPORTING_REFERENCE | 8ca6f67 2026-08-14 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-HIBRIDO-MULTI-MODEL.md` | HISTORICAL_EVIDENCE | ae1e9f6 2026-07-01 | — | rodada/relatório datado | NÃO |

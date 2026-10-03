@@ -125,6 +125,8 @@ function Formulario({ termsVersion, privacyVersion }: { termsVersion: string; pr
       accept_terms: true, accept_privacy: true,
       terms_version: termsVersion, privacy_version: privacyVersion,
       marketing_opt_in: marketing, source: "early_access_page",
+      // Fase 2: idioma do email de confirmação
+      locale: lang,
       website: f.website, form_ms: inicio.current > 0 ? Date.now() - inicio.current : 0,
       ...capturarAtribuicao(),
     };

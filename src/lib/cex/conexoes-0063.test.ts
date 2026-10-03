@@ -172,7 +172,13 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * A trava continua sendo uma LISTA, não um padrão: migration nova sem
      * decisão explícita quebra aqui, que é o ponto.
      *
-     * ⚠️ NENHUMA DAS SEIS (0063–0068) FOI APLICADA EM PRODUÇÃO.
+     * E uma SEXTA vez, no EARLY ACCESS Fase 2 (docs/PLANO-EARLY-ACCESS-FASE2.md):
+     * a 0069 é ADITIVA e fora do domínio financeiro — o double opt-in de
+     * email (tabelas `early_access_verificacoes`, `_webhook_eventos`,
+     * `_purges`, colunas novas em signups, RPCs novas que nascem fechadas e a
+     * regra D-4 em `early_access_transicionar`). Não toca em nada financeiro.
+     *
+     * ⚠️ NENHUMA DAS SETE (0063–0069) FOI APLICADA EM PRODUÇÃO.
      */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
@@ -184,6 +190,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0066_dca_safety_accounting.sql",
       "0067_acl_tabelas_financeiras.sql",
       "0068_early_access.sql",
+      "0069_early_access_email_optin.sql",
     ]);
   });
 });

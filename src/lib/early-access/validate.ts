@@ -20,7 +20,9 @@
 import { normalizeEvmAddress } from "@/lib/auth/siwe";
 import { normalizeSolanaAddress } from "@/lib/auth/siws";
 import { paisValido } from "./paises";
-import { TERMS_VERSION, PRIVACY_VERSION, versaoAprovada } from "./legal-versions";
+import { TERMS_VERSION, PRIVACY_VERSION, versaoAprovada, FORMATO_VERSAO } from "./legal-versions";
+import { localeValido, type Locale } from "./email/templates";
+import { tokenValido } from "./token-formato";
 
 export const LIMITE_CORPO_BYTES = 4096;
 export const NOME_MIN = 2;
@@ -42,6 +44,8 @@ const CAMPOS = new Set([
   "landing_path", "referrer_host", "source",
   "accept_terms", "accept_privacy", "terms_version", "privacy_version", "marketing_opt_in",
   "website", "form_ms",
+  // Fase 2: idioma do email de confirmação (en/pt/es/zh). Ausente = en.
+  "locale",
 ]);
 
 export interface DadosInscricao {
@@ -64,6 +68,7 @@ export interface DadosInscricao {
   termsVersion:    string;
   privacyVersion:  string;
   marketingOptIn:  boolean;
+  locale:          Locale;
   /** Sinais anti-bot — não vão ao banco. */
   honeypot:        string;
   formMs:          number | null;
@@ -324,6 +329,10 @@ export function validarInscricao(
     return invalido("marketing_opt_in");
   }
 
+  const lc = strOpcional(o, "locale");
+  if (lc === false || (lc !== undefined && !localeValido(lc))) return invalido("locale");
+  const locale: Locale = lc === undefined ? "en" : (lc as Locale);
+
   // sinais anti-bot: tipo é validado; o JULGAMENTO fica com a rota
   const hp = strOpcional(o, "website");
   if (hp === false || (hp !== undefined && hp.length > HONEYPOT_MAX)) return invalido("website");
@@ -344,6 +353,7 @@ export function validarInscricao(
       landingPath, referrerHost, source,
       termsVersion: o.terms_version, privacyVersion: o.privacy_version,
       marketingOptIn: o.marketing_opt_in === true,
+      locale,
       honeypot: hp ?? "", formMs,
     },
   };
@@ -361,4 +371,85 @@ export const TEMPO_MINIMO_MS = 2_000;
 export function pareceRobo(d: Pick<DadosInscricao, "honeypot" | "formMs">): boolean {
   if (d.honeypot.trim() !== "") return true;
   return d.formMs === null || d.formMs < TEMPO_MINIMO_MS;
+}
+
+// ── confirmação de email (Fase 2) ──────────────────────────────────────────
+
+export const LIMITE_CORPO_CONFIRMACAO = 2048;
+export const ACOES_CONFIRMACAO = ["preview", "confirm", "decline"] as const;
+export type AcaoConfirmacao = (typeof ACOES_CONFIRMACAO)[number];
+
+export interface DadosConfirmacao {
+  token:       string;
+  acao:        AcaoConfirmacao;
+  /** D-6: só nome e país são corrigíveis, e só em `confirm`. `null` = mantém. */
+  displayName: string | null;
+  country:     string | null;
+  /** EA2-A02 / EA2-IA06: true = opt-in, false = opt-out, null (omitido) = sem escolha (= opt-out). */
+  marketingOptIn: boolean | null;
+  /**
+   * EA2-IA05: as versões que a TELA apresentou ao titular (vindas da preview),
+   * obrigatórias em `confirm`. O banco recusa se não forem as da inscrição.
+   */
+  versaoTermos:       string | null;
+  versaoPrivacidade:  string | null;
+}
+
+/**
+ * Corpo de `POST /api/early-access/verify`. Allowlist estrita: email NUNCA é
+ * campo daqui (mudar email exigiria nova prova de posse — D-6), e correção
+ * fora de `confirm` é campo desconhecido. Correção passa pela MESMA
+ * normalização canônica da inscrição.
+ */
+export function validarConfirmacao(corpo: unknown):
+  | { ok: true; dados: DadosConfirmacao }
+  | { ok: false; erro: ErroValidacao; campo?: string } {
+  if (typeof corpo !== "object" || corpo === null || Array.isArray(corpo)) return { ok: false, erro: "corpo_invalido" };
+  const o = corpo as Bruto;
+  const acao = o.action;
+  if (typeof acao !== "string" || !(ACOES_CONFIRMACAO as readonly string[]).includes(acao)) {
+    return { ok: false, erro: "campo_invalido", campo: "action" };
+  }
+  const permitidos = acao === "confirm"
+    ? ["token", "action", "display_name", "country", "marketing_opt_in",
+       "accept_terms_version", "acknowledge_privacy_version"]
+    : ["token", "action"];
+  for (const k of Object.keys(o)) {
+    if (!permitidos.includes(k)) return { ok: false, erro: "campo_desconhecido", campo: k.slice(0, 40) };
+  }
+  if (!tokenValido(o.token)) return { ok: false, erro: "campo_invalido", campo: "token" };
+  let displayName: string | null = null;
+  if (o.display_name !== undefined) {
+    if (typeof o.display_name !== "string") return { ok: false, erro: "campo_invalido", campo: "display_name" };
+    displayName = normalizarNome(o.display_name);
+    if (!displayName) return { ok: false, erro: "campo_invalido", campo: "display_name" };
+  }
+  let country: string | null = null;
+  if (o.country !== undefined) {
+    if (typeof o.country !== "string") return { ok: false, erro: "campo_invalido", campo: "country" };
+    country = normalizarPais(o.country);
+    if (!country) return { ok: false, erro: "campo_invalido", campo: "country" };
+  }
+  let marketingOptIn: boolean | null = null;
+  if (o.marketing_opt_in !== undefined) {
+    // literalmente true/false: nada de "on", 1, "yes"
+    if (typeof o.marketing_opt_in !== "boolean") return { ok: false, erro: "campo_invalido", campo: "marketing_opt_in" };
+    marketingOptIn = o.marketing_opt_in;
+  }
+  let versaoTermos: string | null = null;
+  let versaoPrivacidade: string | null = null;
+  if (acao === "confirm") {
+    // EA2-IA05: sem as versões apresentadas, não há declaração a registrar
+    if (typeof o.accept_terms_version !== "string" || !FORMATO_VERSAO.test(o.accept_terms_version)) {
+      return { ok: false, erro: "versao_legal", campo: "accept_terms_version" };
+    }
+    if (typeof o.acknowledge_privacy_version !== "string" || !FORMATO_VERSAO.test(o.acknowledge_privacy_version)) {
+      return { ok: false, erro: "versao_legal", campo: "acknowledge_privacy_version" };
+    }
+    versaoTermos = o.accept_terms_version;
+    versaoPrivacidade = o.acknowledge_privacy_version;
+  }
+  return { ok: true, dados: {
+    token: o.token, acao: acao as AcaoConfirmacao, displayName, country, marketingOptIn, versaoTermos, versaoPrivacidade,
+  } };
 }

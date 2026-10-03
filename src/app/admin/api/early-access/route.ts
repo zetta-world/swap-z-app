@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * GET               → { linhas, total, limit, offset, metricas, gate }
  * GET ?id=<uuid>    → { linha, eventos, consentimentos }
  *
- * Filtros: status, country, has_wallet (1|0), q (prefixo do email), limit
+ * Filtros: status, country, has_wallet (1|0), verified (1|0), q (prefixo do email), limit
  * (1–200, padrão 50), offset (≥0). Parâmetro inválido = 400, nunca ignorado
  * em silêncio — um filtro que "não pegou" mostraria a lista inteira como se
  * fosse o recorte pedido.

@@ -14,8 +14,9 @@ import type { Estado } from "./estados";
  *
  * ⚠️ NADA AQUI ESCREVE DIRETO NAS TABELAS DO EARLY ACCESS. A migration 0068 dá
  * ao `service_role` só SELECT em `early_access_signups`; toda escrita passa por
- * `early_access_inscrever` / `early_access_transicionar`, que fazem a mudança e
- * o evento de audit na MESMA transação.
+ * `early_access_inscrever` / `early_access_transicionar` (e, na Fase 2, as RPCs
+ * de verificação da 0069), que fazem a mudança e o evento de audit na MESMA
+ * transação. O token de verificação chega aqui só como HASH.
  *
  * ⚠️ NUNCA importar de componente cliente (trava `nao-vaza-para-o-cliente`).
  */
@@ -56,15 +57,18 @@ function cru(): ClienteCru | null {
 // ── inscrição ──────────────────────────────────────────────────────────────
 
 export type ResultadoInscricao =
-  | { ok: true; resultado: "criado" | "existente" }
+  | { ok: true; resultado: "criado" | "existente"; envio: boolean }
   | { ok: false; erro: "sem_banco" | "erro_banco" };
 
 /**
- * Chama a RPC. O RESULTADO É PARA LOG INTERNO: a rota pública responde igual
- * para "criado" e "existente" (anti-enumeração).
+ * Chama a RPC. O RESULTADO É PARA USO INTERNO: a rota pública responde igual
+ * para "criado" e "existente" (anti-enumeração). `envio` diz só se o banco
+ * aceitou o hash do token — e portanto se a rota deve mandar o email com o
+ * token cru que tem em memória (0069: cooldown, cap, verificado, bloqueado e
+ * suprimido devolvem `false`).
  */
 export async function inscrever(
-  d: DadosInscricao, ipHmac: string | null, candidatos: string[],
+  d: DadosInscricao, ipHmac: string | null, candidatos: string[], tokenHash: string | null,
 ): Promise<ResultadoInscricao> {
   const db = cru();
   if (!db) return { ok: false, erro: "sem_banco" };
@@ -91,12 +95,139 @@ export async function inscrever(
       p_privacy_version:    d.privacyVersion,
       p_marketing_opt_in:   d.marketingOptIn,
       p_ip_hmac:            ipHmac,
+      p_locale:             d.locale,
+      p_token_hash:         tokenHash,
     });
-    if (error || (data !== "criado" && data !== "existente")) return { ok: false, erro: "erro_banco" };
-    return { ok: true, resultado: data };
+    const r = data as { resultado?: unknown; envio?: unknown } | null;
+    if (error || !r || (r.resultado !== "criado" && r.resultado !== "existente") || typeof r.envio !== "boolean") {
+      return { ok: false, erro: "erro_banco" };
+    }
+    return { ok: true, resultado: r.resultado, envio: r.envio };
   } catch {
     return { ok: false, erro: "erro_banco" };
   }
+}
+
+// ── verificação de email (Fase 2, 0069) ─────────────────────────────────────
+//
+// ⚠️ Toda decisão (validade, TTL, uso único, um ativo por inscrição, cooldown,
+// purga) é da RPC. Aqui só há transporte e a conferência do FORMATO da
+// resposta: resposta inesperada vira erro, nunca "deu certo".
+
+/** Uma RPC que devolve um valor; exceção e erro viram `null` + `erro`. */
+async function rpc(fn: string, args: Record<string, unknown>): Promise<{ ok: true; data: unknown } | { ok: false }> {
+  const db = cru();
+  if (!db) return { ok: false };
+  try {
+    const { data, error } = await db.rpc(fn, args);
+    return error ? { ok: false } : { ok: true, data };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * EA2-IA01: falha leva a classificação EXPLÍCITA do adaptador. `transitorio:
+ * false` vira 'dead' no banco — terminal, nunca volta à fila de retry.
+ */
+export async function registrarEnvio(
+  tokenHash: string, ok: boolean, erro: string | null, providerId: string | null, transitorio: boolean | null,
+): Promise<boolean> {
+  const r = await rpc("early_access_registrar_envio", {
+    p_token_hash: tokenHash, p_ok: ok, p_erro: erro, p_provider_id: providerId, p_transitorio: transitorio,
+  });
+  return r.ok && r.data === true;
+}
+
+export async function pendentesDeEnvio(limite: number): Promise<string[] | null> {
+  const r = await rpc("early_access_pendentes_de_envio", { p_limite: limite });
+  if (!r.ok || !Array.isArray(r.data)) return null;
+  return r.data.filter((x): x is string => typeof x === "string");
+}
+
+/** Revoga o token que não chegou e grava o hash do próximo. Devolve para onde mandar. */
+export async function reemitir(id: string, tokenHash: string): Promise<{ email: string; locale: string } | null> {
+  const r = await rpc("early_access_reemitir", { p_id: id, p_token_hash: tokenHash });
+  const d = (r.ok ? r.data : null) as { email?: unknown; locale?: unknown } | null;
+  if (!d || typeof d.email !== "string" || typeof d.locale !== "string") return null;
+  return { email: d.email, locale: d.locale };
+}
+
+export interface PreviewToken {
+  display_name: string; country: string; terms_version: string; privacy_version: string;
+}
+
+export async function previewToken(tokenHash: string): Promise<{ ok: true; preview: PreviewToken | null } | { ok: false }> {
+  const r = await rpc("early_access_token_preview", { p_token_hash: tokenHash });
+  if (!r.ok) return { ok: false };
+  const p = r.data as Partial<PreviewToken> | null;
+  if (p === null) return { ok: true, preview: null };
+  if (typeof p !== "object" || typeof p.display_name !== "string" || typeof p.country !== "string"
+      || typeof p.terms_version !== "string" || typeof p.privacy_version !== "string") return { ok: false };
+  return { ok: true, preview: p as PreviewToken };
+}
+
+export type ResultadoConfirmacao =
+  | { ok: true; resultado: "confirmado"; referralCode: string }
+  | { ok: true; resultado: "ja_confirmado" | "invalido" }
+  | { ok: false; erro: "correcao_invalida" | "versao_divergente" | "erro_banco" };
+
+/**
+ * EA2-A02: `marketingOptIn` é a escolha EXPLÍCITA do titular na confirmação;
+ * `null` (sem escolha) = OPT-OUT no banco. A declaração do formulário nunca
+ * chega aqui.
+ */
+export async function confirmarEmail(
+  tokenHash: string,
+  /** EA2-IA05: as versões que a tela APRESENTOU (vindas da preview); o banco confere. */
+  versoes: { termos: string; privacidade: string },
+  displayName: string | null, country: string | null, ipHmac: string | null,
+  marketingOptIn: boolean | null,
+): Promise<ResultadoConfirmacao> {
+  const db = cru();
+  if (!db) return { ok: false, erro: "erro_banco" };
+  try {
+    const { data, error } = await db.rpc("early_access_confirmar_email", {
+      p_token_hash: tokenHash, p_versao_termos: versoes.termos, p_versao_privacidade: versoes.privacidade,
+      p_display_name: displayName, p_country: country, p_ip_hmac: ipHmac,
+      p_marketing_opt_in: marketingOptIn,
+    });
+    if (error) {
+      if (error.message.includes("early_access_correcao_invalida")) return { ok: false, erro: "correcao_invalida" };
+      if (error.message.includes("early_access_versao_divergente")) return { ok: false, erro: "versao_divergente" };
+      return { ok: false, erro: "erro_banco" };
+    }
+    const r = data as { resultado?: unknown; referral_code?: unknown } | null;
+    if (r?.resultado === "confirmado" && typeof r.referral_code === "string") {
+      return { ok: true, resultado: "confirmado", referralCode: r.referral_code };
+    }
+    if (r?.resultado === "ja_confirmado" || r?.resultado === "invalido") return { ok: true, resultado: r.resultado };
+    return { ok: false, erro: "erro_banco" };
+  } catch {
+    return { ok: false, erro: "erro_banco" };
+  }
+}
+
+export async function recusarEmail(tokenHash: string): Promise<"recusado" | "invalido" | null> {
+  const r = await rpc("early_access_recusar_email", { p_token_hash: tokenHash });
+  return r.ok && (r.data === "recusado" || r.data === "invalido") ? r.data : null;
+}
+
+export async function purgarNaoVerificados(limite: number): Promise<number | null> {
+  const r = await rpc("early_access_purgar_nao_verificados", { p_limite: limite });
+  return r.ok && typeof r.data === "number" && Number.isInteger(r.data) ? r.data : null;
+}
+
+export type ResultadoWebhook = "processado" | "duplicado" | "sem_alvo" | "ignorado";
+
+export async function registrarWebhook(
+  eventoId: string, tipo: string, providerMessageId: string | null,
+): Promise<ResultadoWebhook | null> {
+  const r = await rpc("early_access_registrar_webhook", {
+    p_evento_id: eventoId, p_tipo: tipo, p_provider_message_id: providerMessageId,
+  });
+  const ok = ["processado", "duplicado", "sem_alvo", "ignorado"];
+  return r.ok && typeof r.data === "string" && ok.includes(r.data) ? (r.data as ResultadoWebhook) : null;
 }
 
 // ── leitura (admin) ────────────────────────────────────────────────────────
@@ -105,7 +236,8 @@ export async function inscrever(
 export const COLUNAS_LISTA =
   "id, email_normalized, display_name, country, status, status_reason, wallet_address, wallet_chain, "
   + "wallet_verified_at, email_verified_at, converted_at, referral_code, referred_by_signup_id, "
-  + "referral_flag, utm_source, utm_medium, utm_campaign, source, marketing_opt_in, created_at, updated_at";
+  + "referral_flag, utm_source, utm_medium, utm_campaign, source, marketing_opt_in, created_at, updated_at, "
+  + "email_suppressed_at, email_suppression_reason, marketing_efetivo, marketing_escolhido_em, marketing_elegivel";
 
 export interface LinhaInscricao {
   id: string; email_normalized: string; display_name: string; country: string;
@@ -115,12 +247,26 @@ export interface LinhaInscricao {
   referral_code: string; referred_by_signup_id: string | null; referral_flag: string | null;
   utm_source: string | null; utm_medium: string | null; utm_campaign: string | null;
   source: string; marketing_opt_in: boolean; created_at: string; updated_at: string;
+  email_suppressed_at: string | null; email_suppression_reason: "bounced" | "complained" | null;
+  /**
+   * EA2-A02: `marketing_opt_in` acima é só a DECLARAÇÃO PROVISÓRIA do formulário
+   * — nunca base para envio. Consentimento de marketing que vale = `marketing_efetivo`
+   * (escolha explícita do titular verificado; sem escolha = false).
+   */
+  marketing_efetivo: boolean; marketing_escolhido_em: string | null;
+  /**
+   * EA2-IA04: o ÚNICO campo que autoriza marketing — consentimento efetivo E
+   * endereço não suprimido (bounce/complaint). Gerado pelo banco.
+   */
+  marketing_elegivel: boolean;
 }
 
 export interface Filtros {
   status?:    Estado;
   country?:   string;
   hasWallet?: boolean;
+  /** Email verificado (Fase 2). */
+  verified?:  boolean;
   /** Prefixo do email NORMALIZADO, já validado pela rota. */
   q?:         string;
   limit:      number;
@@ -138,6 +284,8 @@ function aplicarFiltros(c: Consulta, f: Omit<Filtros, "limit" | "offset">): Cons
   if (f.country) q = q.eq("country", f.country);
   if (f.hasWallet === true) q = q.not("wallet_address", "is", null);
   if (f.hasWallet === false) q = q.is("wallet_address", null);
+  if (f.verified === true) q = q.not("email_verified_at", "is", null);
+  if (f.verified === false) q = q.is("email_verified_at", null);
   if (f.q) q = q.like("email_normalized", `${escaparLike(f.q)}%`);
   return q;
 }
@@ -174,6 +322,8 @@ export async function detalhe(id: string): Promise<
 export interface Metricas {
   total: number; ultimas24h: number; ultimos7d: number;
   porStatus: Record<Estado, number>;
+  /** Fase 2: com posse de email provada / com envio suprimido (bounce/complaint). */
+  verificados: number; suprimidos: number;
 }
 
 export async function metricas(): Promise<{ ok: true; m: Metricas } | { ok: false; erro: string }> {
@@ -192,6 +342,8 @@ export async function metricas(): Promise<{ ok: true; m: Metricas } | { ok: fals
     contar((c) => c.eq("status", "approved")),
     contar((c) => c.eq("status", "rejected")),
     contar((c) => c.eq("status", "blocked")),
+    contar((c) => c.not("email_verified_at", "is", null)),
+    contar((c) => c.not("email_suppressed_at", "is", null)),
   ]);
   // ⚠️ Uma contagem que falhou NÃO vira zero: zero é informação, erro é falta dela.
   if (r.some((x) => x.error || typeof x.count !== "number")) return { ok: false, erro: "erro_banco" };
@@ -201,6 +353,7 @@ export async function metricas(): Promise<{ ok: true; m: Metricas } | { ok: fals
     m: {
       total: n[0], ultimas24h: n[1], ultimos7d: n[2],
       porStatus: { pending: n[3], approved: n[4], rejected: n[5], blocked: n[6] },
+      verificados: n[7], suprimidos: n[8],
     },
   };
 }
@@ -210,6 +363,8 @@ export async function metricas(): Promise<{ ok: true; m: Metricas } | { ok: fals
 export const ERROS_TRANSICAO = [
   "early_access_nao_encontrado", "early_access_transicao_proibida",
   "early_access_motivo_obrigatorio", "early_access_ja_convertido", "early_access_ator_obrigatorio",
+  // 0069 / D-4: aprovar exige email verificado
+  "early_access_email_nao_verificado",
 ] as const;
 export type ErroTransicao = (typeof ERROS_TRANSICAO)[number] | "sem_banco" | "erro_banco";
 

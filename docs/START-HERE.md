@@ -7,15 +7,10 @@
 > Planos antigos são histórico, mesmo quando dizem "status 🟢" ou "vivo".
 > O estado atual é definido AQUI e em `docs/CURRENT-STATE.md`.
 
-Control plane criado em 01/10/2026 e reconciliado contra o Git local, os refs
-`origin/*` (depois de `git fetch`), o GitHub (via `gh`, somente leitura) e os
-relatórios locais do laboratório. Revisão 3 (01/10/2026): correções da
-auditoria independente, round 1 (CP-01…CP-08). Revisão 4 (01/10/2026):
-round 2 (CP-09 atestação pós-recert, CP-10 terminologia de certificação).
-Revisão 5 (02/10/2026): C1 `f4af976` commitado; RECERT(C1)=FAIL
-(EA-TEST-HMAC-189-FLAKY); correção para o C1b no working tree.
-Revisão 6 (02/10/2026): C1b `f1b4ec1` commitado; **RECERT(C1b)=PASS** no SHA
-exato; esta revisão é a atestação C2 (só docs, ledger L-019).
+**Revisão 7 (03/10/2026, ledger L-026, achado EA2-IA10):** este arquivo foi
+reescrito para descrever SÓ o estado atual nas seções operacionais (§1–§10).
+Tudo o que valia antes da implementação da Fase 2 está no §11, marcado como
+HISTÓRICO. Revisões 1–6 (01–02/10): ver §11 e o ledger L-011…L-019.
 
 ---
 
@@ -26,49 +21,31 @@ por IA (ZION), execução em corretora (autopilot e DCA) e um painel admin tipo
 terminal. Stack: Next.js 16.3.6 · Supabase (Postgres) · Vercel. Mapa do código:
 `CLAUDE.md`.
 
-## 2. Qual é a base de produto e qual é o HEAD?
+## 2. Bases fixas e estado do HEAD
 
-O control plane separa dois conceitos. **A base de produto é fixa; o HEAD
-não é um invariante.** Commits de control plane (`CLAUDE.md`, `AGENTS.md`,
-`docs/**`) mudam o HEAD legitimamente, sem mudar o produto.
+**A base de produto é fixa; o HEAD não é um invariante** (commits de control
+plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 
 | | |
 |---|---|
-| PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` (último commit de **produto**) |
-| PRODUCT_BASE_TREE | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` |
+| PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` · tree `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` (Early Access Fase 1, último commit de produto) |
+| PHASE_BASE_SHA (Fase 2) | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (o C2 da Fase 1; registrado no ledger L-020 antes de qualquer código da Fase 2) |
+| HEAD atual | = PHASE_BASE_SHA (nenhum commit da Fase 2 ainda) |
 | EXPECTED_BRANCH | `early-access-phase2-email-double-optin-20261001` (só local, sem upstream) |
-| WORKTREE_HEAD_AT_LAST_MEASUREMENT | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` (01/10/2026, revisão 3, antes do commit do control plane). **Snapshot informativo, não regra** |
+| WORKING TREE | **NÃO limpo, de propósito:** contém a implementação da Fase 2, fechada e não commitada (ledger L-025/L-026). Veja §10 para provar que o delta é exatamente o autorizado |
 
-Quando a Fase 2 começar, ela registra um **PHASE_BASE_SHA** novo no ledger
-**antes** da implementação. A regra de identidade está no §10.
+## 3. Certificação
 
-## 3. Qual é o último checkpoint certificado?
-
-`CERTIFIED` fica reservado para SHA cuja **recertificação no SHA exato** esteja
-PASS (`docs/AI-OPERATING-RULES.md` §7): `CERTIFIED_EXACT_SHA`. SHAs chamados
-"certified" antes da revisão 3 sem essa prova são
-`HISTORICAL_CERTIFICATION_LEGACY`; `43c484b` é `CERTIFIED_RUNTIME_ANCESTOR`
-(ver `RELEASE-CHAIN.md`).
+`CERTIFIED` só para SHA com recertificação no SHA exato em PASS
+(`docs/AI-OPERATING-RULES.md` §7).
 
 | campo | valor |
 |---|---|
-| LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5`: **CERTIFIED_EXACT_SHA** (recert de runtime no laboratório local, PASS), não deployado |
-| EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (gate fechado). `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` segue COMMITTED_FEATURE_CHECKPOINT (histórico) |
-| PHASE1_RECERT | **PASS** no C1b `f1b4ec1` (campanha `recert-c1b-f1b4ec1-20261002T095819Z`). Histórico: `9f2ddcb` FAIL (EA-TEST-F10-FLAKY); C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` FAIL (EA-TEST-HMAC-189-FLAKY). Ver `CURRENT-STATE.md` |
-| CERTIFIED_FEATURE_SHA | **`f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`** · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` |
-| CONTROL_PLANE_HEAD | o commit **C2** que traz a revisão 6 (`CONTROL_PLANE_ATTESTATION_COMMIT`, só docs, **não** CERTIFIED, não deployável) |
+| LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5`: CERTIFIED_EXACT_SHA (lab local), não deployado |
+| EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` (`CERTIFIED_FEATURE_SHA`, L-019) |
+| CONTROL_PLANE_HEAD | `74f37f50d12dae698f14b620914bc0ce5b0c639a` (C2 da Fase 1, só docs, **não** CERTIFIED, não deployável) |
+| EARLY_ACCESS_PHASE2 | **NOT_CERTIFIED** — implementação fechada no working tree; sem commit, sem C1, sem recert |
 | RELEASE_CANDIDATE | **NONE** |
-
-**`CERTIFIED_FEATURE_SHA` não é necessariamente o `CONTROL_PLANE_HEAD`.** O
-primeiro é o commit candidato C1 cujo produto foi recertificado no SHA exato;
-o segundo é o commit de atestação C2 (só docs) por cima dele. C2 nunca é
-chamado `CERTIFIED`, e deploy de C2 segue proibido (`AI-OPERATING-RULES.md`
-§5.1).
-
-Histórico: o dono designou `9f2ddcb` como "certified feature checkpoint"
-antes da recertificação no SHA commitado. Essa designação fica registrada
-(ledger L-009), mas o control plane não chama o SHA de `CERTIFIED` enquanto a
-recert exata não der PASS.
 
 ## 4. Qual worktree usar?
 
@@ -76,155 +53,140 @@ recert exata não der PASS.
 /home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001
 ```
 
-⚠️ **`/home/zetta/swap-z-app` NÃO é o estado atual.** Está em
-`kimi/round2-audit-fixes` = `d7741bb`, o fim do Round 1 (15/09). Mapa completo
-das worktrees: `docs/GIT-AND-WORKTREE-MAP.md`.
+⚠️ **`/home/zetta/swap-z-app` NÃO é o estado atual** (está em
+`kimi/round2-audit-fixes` = `d7741bb`, fim do Round 1). Mapa completo:
+`docs/GIT-AND-WORKTREE-MAP.md`.
 
-## 5. Em que trabalho estamos, e qual é a próxima fase?
+## 5. Em que trabalho estamos?
 
 | campo | valor |
 |---|---|
-| CURRENT_WORK | **PHASE1_RECERT_ATTESTED** (C2); próximo: plano da Fase 2 |
-| NEXT_PHASE | **EARLY_ACCESS_PHASE2_EMAIL_DOUBLE_OPT_IN** |
-| EARLY_ACCESS_PHASE2_STATUS | **BLOCKED_NOT_STARTED** |
-| PHASE2_CODE_EXISTS | **NO** |
+| CURRENT_WORK | **EARLY_ACCESS_PHASE2_EMAIL_DOUBLE_OPT_IN** |
+| PHASE2_IMPLEMENTATION | **CLOSED_IN_WORKING_TREE** (L-025; controle de documentos fechado em L-026) |
+| PHASE2_CODE_EXISTS | **YES** — só no working tree (o produto COMMITADO continua o da Fase 1) |
+| PHASE2_COMMIT | **NONE** |
+| PHASE2_C1 | **NOT_CREATED** |
+| PHASE2_RECERT | **NOT_RUN** |
+| PHASE2_CERTIFICATION | **NOT_CERTIFIED** |
+| OWNER_PHASE2_PRODUCT_DECISIONS_PENDING | **NONE** (D-1…D-11 em L-021; EA2-A02 em L-023) |
+| EMAIL_PROVIDER_DECISION | **RESEND** (D-1; região de envio `sa-east-1`) |
+| ESPECIFICAÇÃO | `docs/PLANO-EARLY-ACCESS-FASE2.md` (comportamento final implementado) |
+| AUDITORIAS | própria (L-022) · 1ª independente FAIL → EA2-IA01…IA06 corrigidos (L-024) · 2ª independente → EA2-IA07…IA09 corrigidos (L-025) · verificação final → EA2-IA10 (control plane) corrigido (L-026) |
 
-A Fase 2 só passa a `CURRENT_DEVELOPMENT` depois de **todas** estas coisas:
-
-1. ~~control plane aprovado e commitado~~ (C1/C1b; atestado pelo C2);
-2. ~~recert da Fase 1 em PASS no SHA novo~~ (C1b `f1b4ec1`, L-019);
-3. plano da Fase 2 escrito, com `PHASE_BASE_SHA` = SHA do C2 (`THIS_ATTESTATION_COMMIT`);
-4. decisão do provider de email, quando a implementação depender dela.
+**Os status são distintos e não se implicam:** implementação fechada ≠
+commitada ≠ recertificada ≠ certificada ≠ deployada ≠ gate público aberto.
+Hoje só o primeiro vale.
 
 ## 6. O que está bloqueado?
 
-- **Abrir o gate público do early access está BLOQUEADO por F-01
-  (EMAIL_DOUBLE_OPT_IN).** O gate está CLOSED.
-- **O release para produção está BLOQUEADO.** Depende de autorização do dono,
-  de uma leitura das migrations em produção, da Vercel
-  (DEFERRED_EXTERNAL_PAYMENT) e do PR #447, que está DRAFT.
-- **Automação com dinheiro real está em NO-GO:** DCA real, Pilot real e
-  Autopilot real.
-- **A recertificação da Fase 1 está em PASS** no C1b
-  `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (ledger L-019). Os FAILs
-  anteriores ficam na história: `9f2ddcb` (EA-TEST-F10-FLAKY) e C1 `f4af976`
-  (EA-TEST-HMAC-189-FLAKY), ambos defeitos de teste, corrigidos e agora
-  FIXED_CERTIFIED em `f1b4ec1`. Relatório:
-  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/reports/EARLY-ACCESS-PHASE1-C1B-RECERT-f1b4ec1-20261002.campaign-20261002T095819Z.txt`.
+- **F-01 (EMAIL_DOUBLE_OPT_IN):** a implementação está **fechada no working
+  tree** (FIXED_NOT_RECERTIFIED). Ainda **não** está commitada, recertificada,
+  certificada nem em produção. Abrir o gate público continua bloqueado até: C1
+  + recert PASS + C2; texto jurídico aprovado (inclui D-9: o Resend na Política
+  de Privacidade); setup externo do domínio remetente (D-2); segredos
+  configurados; migrations 0068/0069 aplicadas; decisão do dono de abrir.
+- **Release para produção:** BLOQUEADO (autorização do dono, leitura das
+  migrations em produção, Vercel `DEFERRED_EXTERNAL_PAYMENT`, PR #447 DRAFT).
+- **Automação com dinheiro real:** NO-GO (DCA, Pilot e Autopilot reais).
 
 Lista completa: `docs/CURRENT-STATE.md` → OPEN_BLOCKERS.
 
 ## 7. O que não pode ser tocado?
 
 > ⛔ **Proibido: produção, Vercel, Supabase hospedado, credenciais reais,
-> push, merge, deploy, trade real e exposição pública.** Qualquer um deles
-> exige **autorização explícita do dono, na conversa corrente**.
+> push, merge, deploy, trade real, exposição pública e envio real de email.**
+> Qualquer um deles exige **autorização explícita do dono, na conversa corrente**.
 >
 > ⛔ **NUNCA FAZER DEPLOY DE WORKTREE OU BRANCH POR NOME.** Deploy só sai de um
 > SHA marcado `RELEASE_CANDIDATE` em `docs/RELEASE-CHAIN.md`. **Hoje nenhum
 > SHA tem essa marca.**
 >
 > ⛔ Não apagar branches nem worktrees. Não editar nem renomear documento
-> histórico. Nunca editar migration existente: correção é migration nova.
+> histórico. Nunca editar migration existente (correção é migration nova).
+> **Não limpar, stashar nem resetar o working tree da Fase 2.**
 >
-> ⛔ **POLÍTICA DE DEPLOY (decisão do dono, 01/10/2026).** A regra de 31/08
-> *"tudo vai para produção sempre"* está **FORMALMENTE SUSPENSA**. Nenhum
-> commit, branch ou worktree vai para produção automaticamente. Deploy só
-> quando houver as quatro coisas:
-> 1. um SHA explícito;
-> 2. esse SHA marcado `RELEASE_CANDIDATE` em `docs/RELEASE-CHAIN.md`;
-> 3. a certificação correspondente em PASS;
-> 4. autorização explícita do dono para aquele deploy.
->
-> Até lá: `PRODUCTION=UNTOUCHED` · `VERCEL=DEFERRED_EXTERNAL_PAYMENT`.
-> Ver `docs/AI-OPERATING-RULES.md` §6.
+> ⛔ **POLÍTICA DE DEPLOY (decisão do dono, 01/10/2026):** a regra de 31/08
+> *"tudo vai para produção sempre"* está **FORMALMENTE SUSPENSA**. Deploy só
+> com: SHA explícito + `RELEASE_CANDIDATE` + certificação PASS + autorização
+> explícita do dono. Até lá: `PRODUCTION=UNTOUCHED` ·
+> `VERCEL=DEFERRED_EXTERNAL_PAYMENT`. Ver `docs/AI-OPERATING-RULES.md` §6.
 
 ## 8. Quais documentos ler depois? (nesta ordem)
 
 1. `docs/AI-OPERATING-RULES.md`: o método. Obrigatório para IA.
 2. `docs/CURRENT-STATE.md`: onde estamos agora.
-3. `docs/RELEASE-CHAIN.md`: qual commit veio de qual.
-4. `docs/LAUNCH-READINESS-LEDGER.md`: as fases, a evidência e a próxima
-   dependência.
-5. `docs/PLANO-EARLY-ACCESS.md` §13–§15: o escopo da Fase 2 (F-01).
-6. Só se precisar: `docs/AUDIT-RECONCILIATION.md` (prova de que as correções
-   **conhecidas e identificáveis** estão na linha; A08/A09/A10/A17 seguem sem
-   fonte), `docs/DOCUMENT-AUTHORITY.md` (em qual documento confiar) e
-   `docs/GIT-AND-WORKTREE-MAP.md` (branches e worktrees).
+3. `docs/LAUNCH-READINESS-LEDGER.md` L-020…L-026: a Fase 2.
+4. `docs/PLANO-EARLY-ACCESS-FASE2.md`: a especificação final da Fase 2.
+5. `docs/AUDIT-RECONCILIATION.md` §5.5.1–§5.5.3: findings da Fase 2.
+6. `docs/RELEASE-CHAIN.md`: qual commit veio de qual.
+7. Só se precisar: `docs/DOCUMENT-AUTHORITY.md`, `docs/GIT-AND-WORKTREE-MAP.md`.
 
 ## 9. Qual é o próximo passo exato?
 
-Ciclo de vida obrigatório (`docs/AI-OPERATING-RULES.md` §5): branch/worktree
-→ base registrada → plano → implementação → auditoria → correções →
-validação pré-commit → **commit candidato C1** → **recert no SHA exato de
-C1** → **commit de atestação C2, só docs** → próxima fase. O SHA exato só
-existe depois do commit; o resultado da recert só pode ser registrado num
-commit posterior (C2).
+Ciclo de vida (`docs/AI-OPERATING-RULES.md` §5). A Fase 2 está entre os passos
+7 (validação pré-commit, feita) e 8 (C1). A sequência a partir de agora:
 
-0. Review independente: round 1 (pacote v1) e round 2 (pacote v2) feitos;
-   CP-01…CP-08 PASS, correção F10 PASS. CP-09/CP-10 corrigidos na revisão 4
-   (working tree).
-1. ~~Commit candidato C1~~: feito, `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`
-   (control plane + correção EA-TEST-F10-FLAKY). **RECERT(C1)=FAIL** (ledger
-   L-018).
-2. ~~Commit candidato C1b~~: feito, `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`.
-3. ~~Recertificar C1b inteiro, no SHA exato~~: **PASS** (campanha
-   `recert-c1b-f1b4ec1-20261002T095819Z`, L-019). **Commit de atestação C2**,
-   só docs (esta revisão), registrando `CERTIFIED_FEATURE_SHA=f1b4ec1…`,
-   `RECERT_RESULT=PASS` e a evidência; provar
-   `git diff --stat f1b4ec1..<SHA do C2> -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'`
-   vazio. `CONTROL_PLANE_HEAD` = `THIS_ATTESTATION_COMMIT`, o commit que traz a revisão 6
-   (SHA concreto: `git rev-parse`; o C2 não guarda o próprio SHA). O commit
-   do C2 é decisão do dono.
-4. Escrever o plano da Fase 2 **antes de qualquer código**: uma seção nova em
-   `docs/PLANO-EARLY-ACCESS.md` ou um `docs/PLANO-EARLY-ACCESS-FASE2.md` novo.
-   Registrar o PHASE_BASE_SHA (= C2) no ledger. O plano cobre:
-   - a escolha do provider de email (decisão do dono);
-   - o token de uso único, guardado como hash e com expiração;
-   - a rota de verificação;
-   - o consentimento confirmado no ato da verificação;
-   - a limpeza das inscrições não verificadas;
-   - a correção dos dados pelo próprio titular;
-   - a anti-enumeração preservada.
-5. Esperar o dono escolher o provider de email. Isso é OWNER_DECISION e
-   bloqueia a implementação.
+1. **Verificação independente final** do pacote de control plane (L-026).
+2. **Autorização do dono para o C1 da Fase 2.** Sem ela, nada é commitado.
+3. **C1** (commit candidato): o working tree da Fase 2 exatamente como
+   registrado em L-025/L-026.
+4. **Recertificação COMPLETA no SHA exato de C1:** `npm ci`, **build**,
+   type-check, lint, suíte completa, SQL 0001→0069 (T15, T16, T16b, 02, 14),
+   evidência fora do repo com `MANIFEST.sha256`. O build só roda aqui.
+   FAIL → registrar, corrigir, C1b, recert do C1b (sem retry-to-pass).
+5. **C2** (atestação só docs) **se e só se** a recert passar, registrando
+   `CERTIFIED_FEATURE_SHA=<C1>`.
 
-## 10. Como provar que estou no lugar certo?
+Conhecido e separado (não é da Fase 2): o timeout de carga de
+`src/lib/zion/playbook-backtest.test.ts` (ZION-PLAYBOOK-TIMEOUT-LOCAL).
+
+## 10. Como provar que estou no lugar certo? (estado ATUAL, Fase 2 não commitada)
 
 ```bash
 cd /home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001
 PRODUCT_BASE_SHA=9f2ddcbe45f9f93c9a33c331e31e32c45d410019
-pwd
-git branch --show-current   # esperado early-access-phase2-email-double-optin-20261001
-git rev-parse HEAD HEAD^{tree}   # registrar; NÃO é comparado com um valor fixo
+PHASE_BASE_SHA=74f37f50d12dae698f14b620914bc0ce5b0c639a
+git branch --show-current                      # early-access-phase2-email-double-optin-20261001
+git rev-parse HEAD HEAD^{tree}                 # hoje = PHASE_BASE_SHA / 5c93c05… (até existir o C1)
 git merge-base --is-ancestor "$PRODUCT_BASE_SHA" HEAD && echo OK-ANCESTOR
-git status --short          # esperado vazio (exceto durante uma campanha autorizada em curso)
-git log --oneline "$PRODUCT_BASE_SHA"..HEAD     # cada commit tem de estar explicado no ledger/RELEASE-CHAIN
-git diff --stat "$PRODUCT_BASE_SHA"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'
+git status --short                             # NÃO vazio: o delta da Fase 2 (ver abaixo)
+git diff --name-only HEAD; git ls-files --others --exclude-standard
+git diff --quiet HEAD -- supabase/migrations/0068_early_access.sql && echo 0068-INTOCADA
 ```
 
-Antes de existir código da Fase 2, a identidade é válida quando **todas**
-valem:
+A identidade é válida quando **todas** valem:
 
-1. a branch é a esperada;
-2. `PRODUCT_BASE_SHA` é ancestral do HEAD;
-3. a árvore de trabalho está limpa;
-4. todo commit posterior ao `PRODUCT_BASE_SHA` está explicado no ledger ou no
-   `RELEASE-CHAIN.md`;
-5. não há delta de **produto** não autorizado: o último comando acima sai
-   vazio, **ou** o delta é exatamente o autorizado e registrado no ledger
-   (hoje, o único arquivo de produto autorizado é o teste
-   `src/lib/early-access/gate-hmac-referral.test.ts`: EA-TEST-F10-FLAKY,
-   commitado no C1, e EA-TEST-HMAC-189-FLAKY, commitado no C1b `f1b4ec1`).
-
-O control plane não usa "HEAD = `9f2ddcb`" nem "diff fora de `docs/` vazio"
-como regra: as duas se invalidariam com o próprio commit do control plane
-(que toca `CLAUDE.md` e `AGENTS.md`).
-
-Depois do C2, a regra continua valendo com mais uma prova: o diff de produto
-`C1..C2` (mesma exclusão) sai vazio. Quando a Fase 2 começar, a referência
-passa a ser o **PHASE_BASE_SHA** (= C2) registrado no ledger antes da
-implementação.
+1. a branch é a esperada e `PRODUCT_BASE_SHA` é ancestral do HEAD;
+2. HEAD = `PHASE_BASE_SHA` (enquanto o C1 não existir) e todo commit posterior
+   ao `PRODUCT_BASE_SHA` está explicado no ledger / `RELEASE-CHAIN.md`;
+3. o working tree contém **exatamente** o delta da Fase 2 registrado no ledger
+   (L-025: arquivos de produto, 0069, testes; L-026: só docs) — conferível
+   contra o pacote de auditoria final listado em L-026 (patch e arquivos
+   untracked byte a byte);
+4. `0068`, `package*.json`, `.env*`, `vercel.json` e `src/lib/zion` sem diff.
 
 Qualquer outro resultado é mismatch: **ABORTAR**, reportar, e seguir
-`docs/AI-OPERATING-RULES.md` §1.
+`docs/AI-OPERATING-RULES.md` §1. **Não** "consertar" com checkout, reset,
+stash ou rebase.
+
+---
+
+## 11. HISTÓRICO (não são instruções atuais)
+
+> Tudo abaixo descreve estados e instruções que **já foram cumpridos ou
+> superados**. Mantido para rastreabilidade; não executar.
+
+- **Revisões 1–6 (01–02/10/2026):** criação do control plane sobre
+  `9f2ddcb` (L-011), correções dos reviews independentes (L-016, L-017),
+  política de deploy (L-012), recert da Fase 1: `9f2ddcb` FAIL
+  (EA-TEST-F10-FLAKY), C1 `f4af976` FAIL (EA-TEST-HMAC-189-FLAKY), C1b
+  `f1b4ec1` **PASS** (L-018, L-019); atestação C2 = `74f37f5` (L-019).
+- **Antes da Fase 2 começar**, este arquivo instruía: registrar o
+  `PHASE_BASE_SHA` = C2 (feito, L-020); escrever o plano da Fase 2 antes de
+  qualquer código (feito, L-020; hoje é a especificação final); esperar o dono
+  escolher o provider de email (feito: RESEND, L-021); e tratar a árvore
+  limpa e "nenhum código da Fase 2" como prova de identidade (não vale mais:
+  hoje a prova é o §10). Na época, `EARLY_ACCESS_PHASE2_STATUS` era
+  `BLOCKED_NOT_STARTED` e `PHASE2_CODE_EXISTS=NO`.
+- Detalhe completo dessas revisões: ledger L-011…L-019 e as versões anteriores
+  deste arquivo dentro dos pacotes de auditoria da Fase 2 (`PHASE2-DOCS.tar.gz`).

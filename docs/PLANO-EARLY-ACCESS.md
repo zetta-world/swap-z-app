@@ -4,7 +4,15 @@
 > ACTIVE_PLAN** (só para early access). Não execute este documento como
 > estado atual sem consultar `docs/DOCUMENT-AUTHORITY.md`.
 >
-> **Status operacional (02/10/2026, atestação C2):**
+> **Status operacional ATUAL (03/10/2026, ledger L-026):**
+> - **Phase 1:** inalterada — CERTIFIED_EXACT_SHA em
+>   `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`.
+> - **Phase 2:** implementação **CLOSED_IN_WORKING_TREE**, sem commit, C1 NÃO
+>   criado, recert NÃO rodada, **NOT_CERTIFIED**; gate CLOSED. Especificação e
+>   estado: `docs/PLANO-EARLY-ACCESS-FASE2.md`, `docs/CURRENT-STATE.md`. O F-01
+>   do §15 abaixo está implementado no working tree (FIXED_NOT_RECERTIFIED).
+>
+> **Status operacional de 02/10/2026 (atestação C2) — HISTÓRICO, superado pelo de cima:**
 > - **Phase 1: CERTIFIED_EXACT_SHA /
 >   `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`** (C1b; gate CLOSED, nada
 >   deployado). `CERTIFIED_FEATURE_SHA=f1b4ec1…`, RECERT(C1b)=PASS
@@ -243,7 +251,7 @@ Relatório: `zswap-local/reports/early-access-phase1-adversarial-audit-20261001.
 (fora do repo). Veredito original: PASS WITH FINDINGS (0 critical, 0 high,
 1 medium, 9 low).
 
-### PUBLIC_OPEN_BLOCKER=EMAIL_DOUBLE_OPT_IN (F-01, aberto)
+### PUBLIC_OPEN_BLOCKER=EMAIL_DOUBLE_OPT_IN (F-01, aberto) — *registro da auditoria de 01/10 (histórico); estado atual: implementado no working tree da Fase 2, FIXED_NOT_RECERTIFIED, ver `docs/PLANO-EARLY-ACCESS-FASE2.md`*
 
 Sem prova de posse do email, quem envia primeiro grava nome, país, carteira,
 handles, UTM e **consentimento** em nome do titular, e o titular não corrige

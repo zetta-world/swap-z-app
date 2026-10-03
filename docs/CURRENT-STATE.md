@@ -1,20 +1,146 @@
 # CURRENT STATE — onde estamos AGORA
 
 > Responde só "onde estamos agora?". Não é diário: o histórico vai para
-> `docs/LAUNCH-READINESS-LEDGER.md`. Ao mudar de estado, **substitua** este
-> arquivo e **acrescente** uma entrada no ledger.
+> `docs/LAUNCH-READINESS-LEDGER.md`. Ao mudar de estado, **substitua** as seções
+> atuais e **acrescente** uma entrada no ledger.
 >
-> **Medido em:** 01/10/2026, depois de `git fetch origin --tags --prune`.
-> Revisão 3: correções da auditoria independente do control plane, round 1
-> (CP-01…CP-08) + correção do teste EA-TEST-F10-FLAKY no working tree.
-> Revisão 4: round 2 (CP-01…CP-08 e F10 PASS no review do pacote v2);
-> correções CP-09 (atestação C2) e CP-10 (terminologia).
-> Revisão 5 (02/10/2026): C1 `f4af976` commitado; RECERT(C1)=FAIL
-> (EA-TEST-HMAC-189-FLAKY); correção para o C1b no working tree (ledger L-018).
-> Revisão 6 (02/10/2026): C1b `f1b4ec1` commitado; **RECERT(C1b)=PASS** no SHA
-> exato; esta revisão é a atestação **C2**, só docs (ledger L-019).
+> **Medido em:** 03/10/2026 (revisão 7, ledger L-026 — achado EA2-IA10 da
+> verificação independente final: este arquivo ainda trazia instruções de antes
+> da Fase 2). As seções atuais abaixo descrevem só o estado de hoje; tudo o que
+> valia nas revisões 3–6 está na seção final **HISTÓRICO**, inalterado.
 
 ---
+
+## Estado atual
+
+| campo | valor | fonte |
+|---|---|---|
+| CURRENT_WORKTREE | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001` | `git worktree list` |
+| CURRENT_BRANCH | `early-access-phase2-email-double-optin-20261001`, **só local**, sem upstream | Git |
+| PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`, "feat: add closed-by-default early access foundation", 01/10 17:08 −03 | Git |
+| PRODUCT_BASE_TREE | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | Git |
+| PHASE_BASE_SHA | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (C2 da Fase 1) | ledger L-020 |
+| HEAD | = PHASE_BASE_SHA (`74f37f5…`); nenhum commit da Fase 2 | Git, 03/10 |
+| WORKING_TREE | **NÃO limpo, de propósito:** a implementação da Fase 2, fechada e não commitada (27 arquivos rastreados alterados + 21 novos no fim da L-025, mais o delta só de docs da L-026). Byte a byte igual aos pacotes de auditoria listados em L-025/L-026 | Git; pacotes em `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/` |
+| LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (tree `62ad70e36a8bcc57331297d8ce929f232fadad2c`): **CERTIFIED_EXACT_SHA** — RUNTIME RECERTIFICATION: PASS (local). Último runtime certificado; o outro SHA com `CERTIFIED_EXACT_SHA` é o C1b `f1b4ec1` (feature) | `reports/recert-0d21874-20261001T010514Z/FINAL-RUNTIME-RECERTIFICATION.md`; `docs/RELEASE-RUNBOOK.md` |
+| EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (= produto de `9f2ddcb` + control plane + 1 arquivo de teste). `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` segue **COMMITTED_FEATURE_CHECKPOINT** (histórico: o dono o designou "certified feature checkpoint", L-009) | ledger L-009, L-016, L-019 |
+| CERTIFIED_FEATURE_SHA | **`f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`** · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` · **CERTIFIED_EXACT_SHA** | ledger L-019 |
+| CONTROL_PLANE_HEAD | `74f37f50d12dae698f14b620914bc0ce5b0c639a` (C2 da Fase 1, só docs; **não** CERTIFIED, não deployável) | ledger L-019, L-020 |
+| CURRENT_WORK | **EARLY_ACCESS_PHASE2_EMAIL_DOUBLE_OPT_IN** — implementação e control plane fechados no working tree; aguardando verificação independente final e autorização do C1 | ledger L-025, L-026 |
+| PHASE2_IMPLEMENTATION | **CLOSED_IN_WORKING_TREE** | L-025 |
+| PHASE2_CODE_EXISTS | **YES** (só no working tree; o produto commitado é o da Fase 1) | Git |
+| PHASE2_COMMIT | **NONE** | Git |
+| PHASE2_C1 | **NOT_CREATED** | Git |
+| PHASE2_RECERT | **NOT_RUN** | ledger |
+| PHASE2_CERTIFICATION | **NOT_CERTIFIED** | ledger |
+| EARLY_ACCESS_PHASE2_STATUS | **CURRENT_DEVELOPMENT** (fechada no working tree) · especificação final `docs/PLANO-EARLY-ACCESS-FASE2.md` | L-025, L-026 |
+| OWNER_PHASE2_PRODUCT_DECISIONS_PENDING | **NONE** (D-1…D-11 em L-021; EA2-A02 em L-023) | ledger |
+| EMAIL_PROVIDER_DECISION | **RESEND**, região de envio `sa-east-1` (D-1). Domínio remetente/SPF/DKIM/DMARC = setup externo (D-2), não decisão pendente | L-021 |
+| PHASE2_VALIDATION (pré-commit, não certificação) | type-check 0 · lint 0/145 (= baseline) · alvo EA 495/495 · SQL 0001→0069: T16 31/31, T16b 2/2, T15 22/22, 02 7/7, 14 6/6 · suíte 4203/4204 (1 FAIL = ZION-PLAYBOOK-TIMEOUT-LOCAL, `src/lib/zion` sem diff) · build reservado para a recert do C1 | L-025 |
+| KNOWN_PHASE2_DEFECTS | **0** (implementação e control plane) | L-025, L-026 |
+| RELEASE_CANDIDATE | **NONE** | `docs/RELEASE-CHAIN.md` |
+| PUBLIC_GATE | **CLOSED**: `disable_early_access=true` (seed da 0068), versões legais `UNAPPROVED`, sem segredo HMAC, sem provider de email configurado — o gate exige as 5 condições | `src/lib/early-access/gate.ts`, 0068 |
+| EARLY_ACCESS_HMAC_SECRET | **NOT_PROVIDED_OR_AUTHORIZED_FOR_THIS_LOCAL_CAMPAIGN** (nenhum segredo real foi lido) | regra da campanha |
+| PRODUCTION_SECRET_STATE | **NOT_VERIFIED** (produção e Supabase/Vercel hospedados não foram inspecionados) | regra da campanha |
+| AUDIT_RECONCILIATION | `KNOWN_MISSING_CORRECTIONS=0` · `UNKNOWN_FINDINGS=4` (A08/A09/A10/A17: SOURCE_NOT_FOUND, UNKNOWN_REQUIRES_REVIEW) | `docs/AUDIT-RECONCILIATION.md` |
+| DEPLOY_POLICY | **Regra de 31/08 FORMALMENTE SUSPENSA** (dono, 01/10). Deploy só com: SHA explícito + `RELEASE_CANDIDATE` + certificação PASS + autorização explícita do dono | `docs/AI-OPERATING-RULES.md` §6 |
+| PRODUCTION | **UNTOUCHED.** Código `25fc4b0fa55db72472c7ae00af42596209d7c362` (`main`), banco no nível **0058** por conteúdo. P0-SKEW: armar autopilot falha em produção desde 16/09 (0 sessões, 0 intents) | `docs/LEDGER-MESTRE-RELEASE.md` §0, §Y (`[VERCEL]` + `[PROD]` de 26/09). **Não reverificado em 01/10**: a regra é não tocar |
+| VERCEL | **DEFERRED_EXTERNAL_PAYMENT.** O check Vercel do PR #447 está em FAILURE (diferido) | relatórios `postreboot-*`, `fourstack-*` |
+| PR447 | **OPEN · DRAFT · não mergeado · MERGEABLE.** head `43c484bd1fdc24cdbd8182914514d80d769deeb2`, base `main`. CI `success` (runs 36838326106, 36838252838) | `gh pr view 447` + `gh run list`, 01/10 |
+| GITHUB_HAS_PRODUCT_BASE | **NÃO.** `9f2ddcb` não está em nenhum ref `origin/*`, então não há CI oficial para ele | `git branch -r --contains 9f2ddcb` vazio |
+| ACER_LAB | `LAB_ENV_VERIFIED` (ambiente, não SHA): 4 stacks 25/25 PASS, egress BLOCKED, `BOOT_RESILIENCE=PASS`, `UNATTENDED_BOOT=PASS` (boot 13:18, checado 14:40). **Não tocadas** pela recert | `state/unattended-boot-20261001T1557Z/evidence/post-reboot-unattended-20261001T173957Z.txt` |
+| LIFECYCLE | branch → base → plano → implementação → auditoria → correções → pré-commit → **C1** → **recert exata de C1** → **atestação C2 (só docs)** → próxima fase. A Fase 2 está entre pré-commit (feito) e C1 | `AI-OPERATING-RULES.md` §5 |
+
+**Os status não se implicam:** implementação fechada ≠ commitada ≠
+recertificada ≠ certificada ≠ deployada ≠ gate público aberto. Hoje só vale o
+primeiro.
+
+## OPEN_BLOCKERS
+
+| id | bloqueia | estado |
+|---|---|---|
+| **F-01** EMAIL_DOUBLE_OPT_IN | abrir o gate público | **implementação FECHADA no working tree** (FIXED_NOT_RECERTIFIED). Falta: C1 + recert PASS + C2; não está certificado nem em produção |
+| **PHASE2-C1** | qualquer certificação da Fase 2 | aguarda verificação independente final + **autorização do dono** para o C1 |
+| **REL-AUTH** | qualquer push, merge, deploy ou migration hospedada | OWNER_DECISION (política de deploy formalizada) |
+| **VERCEL** | deploy, preview e check do PR | EXTERNAL_DEPENDENCY (pagamento) |
+| **P0-SKEW** | o autopilot em produção (função indisponível desde 16/09) | OPEN_BLOCKER de produção; só o release resolve (`LEDGER-MESTRE-RELEASE.md` §Y) |
+| **MIG-READ** | aplicar 0059→0067 (+0068, 0069) | é preciso ler o `schema_migrations` de produção antes, com autorização (`RELEASE-RUNBOOK.md` §6.2) |
+| **AP-LOCK hosted** | fechar a disposição do PostgREST | OWNER_AUTH_REQUIRED (PASS local em PostgREST 14.17) |
+| **GATE-OPEN** | abrir o gate (além do F-01 certificado) | passos do dono, todos já decididos ou externos: textos de Termos e Privacidade aprovados (inclui D-9: Resend e transferência na Política), domínio remetente (D-2), segredos (HMAC, Resend, webhook) por mecanismo autorizado, aplicar 0068/0069, agendar o cron (D-8), gravar `disable_early_access=false` |
+| **REAL-AUTOMATION** | DCA, Pilot e Autopilot reais | NO-GO até os gates finais (`LEDGER-MESTRE-RELEASE.md` §0.5) |
+
+## DEFERRED_FINDINGS (não bloqueiam a Fase 2)
+
+F-05, F-09, F-13, F-14, F-15, F-16; R8-CORRIDA,
+HARNESS-001/002, 36 moderate / 1 low do `npm audit`, HOST-CRED-001, AUTOLOGIN.
+**A08, A09, A10 e A17 da auditoria externa:** SOURCE_NOT_FOUND depois da
+2ª busca forense; seguem UNKNOWN_REQUIRES_REVIEW. Nenhuma correção
+**conhecida e identificável** foi encontrada fora da linha; A08/A09/A10/A17
+permanecem sem fonte e não permitem conclusão. Tabela completa:
+`docs/AUDIT-RECONCILIATION.md` §5. (F-11, antes listado aqui como "escopo da
+Fase 2", está implementado no working tree da Fase 2: FIXED_NOT_RECERTIFIED.)
+
+## Lacunas de documentação
+
+- **Fechadas na revisão 2** (banner no topo, histórico preservado):
+  `ESTADO-ATUAL.md`, `PLANO-EARLY-ACCESS.md` (+ status operacional),
+  `PLANO-DCA-AUTOMATICO.md`, `PLANO-MURAL-DE-AGENTES.md`, `docs/README.md`
+  (bloco START HERE) e `CLAUDE.md` (entrada).
+- **Fechadas na revisão 3:** `docs/README.md` (banner LEGACY antes do índice
+  "Vivos"), `CLAUDE.md` (Next.js 16.3.6, regra fail-closed precisa, mural só
+  com autorização), status Fase 2 no banner de `PLANO-EARLY-ACCESS.md`.
+- **Abertas:**
+  - `WHITELIST-FUNDRAISING-DISCOVERY.md` ainda diz "Fase 1 não iniciada";
+    o `DOCUMENT-AUTHORITY.md` cobre isso.
+  - `LEDGER-MESTRE-RELEASE.md` ainda chama `3123fb4` de certificado.
+  - Os docs só de `origin/platform-closure` (DOC-PC-DIVERGE).
+
+## Artefatos locais (fora do Git)
+
+- `node_modules/` na worktree (ignorado; não aparece no `git status`).
+- Pacotes de auditoria da Fase 2 e evidência das validações:
+  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/phase2-*` e
+  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/state/precommit-ea2-*` (lista com hashes no ledger L-022…L-026).
+- Cache npm verificado e harness da recert da Fase 1: ver o artefato histórico abaixo.
+
+## NEXT_ACTION
+
+1. **Verificação independente final** do pacote de control plane (L-026).
+2. **Autorização do dono para o C1 da Fase 2.**
+3. **C1**: commit do working tree da Fase 2 exatamente como registrado (L-025/L-026).
+4. **Recertificação COMPLETA no SHA exato de C1** — `npm ci`, **build**, type-check, lint,
+   suíte completa, SQL 0001→0069 (T15, T16, T16b, 02, 14), evidência com `MANIFEST.sha256`.
+   FAIL → registrar, corrigir, C1b, recert do C1b.
+5. **C2** (atestação só docs) **se a recert passar**, com `CERTIFIED_FEATURE_SHA=<C1>`.
+6. Release continua bloqueado: `RELEASE_CANDIDATE=NONE`.
+
+---
+
+## HISTÓRICO (revisões 3–6, 01–02/10/2026 — NÃO são instruções atuais)
+
+> Tudo abaixo foi o estado/instrução **antes** da implementação da Fase 2 e
+> está cumprido ou superado. Mantido literalmente para rastreabilidade.
+
+### Cabeçalho anterior a esta revisão (revisões 3–6)
+
+> # CURRENT STATE — onde estamos AGORA
+>
+> > Responde só "onde estamos agora?". Não é diário: o histórico vai para
+> > `docs/LAUNCH-READINESS-LEDGER.md`. Ao mudar de estado, **substitua** este
+> > arquivo e **acrescente** uma entrada no ledger.
+> >
+> > **Medido em:** 01/10/2026, depois de `git fetch origin --tags --prune`.
+> > Revisão 3: correções da auditoria independente do control plane, round 1
+> > (CP-01…CP-08) + correção do teste EA-TEST-F10-FLAKY no working tree.
+> > Revisão 4: round 2 (CP-01…CP-08 e F10 PASS no review do pacote v2);
+> > correções CP-09 (atestação C2) e CP-10 (terminologia).
+> > Revisão 5 (02/10/2026): C1 `f4af976` commitado; RECERT(C1)=FAIL
+> > (EA-TEST-HMAC-189-FLAKY); correção para o C1b no working tree (ledger L-018).
+> > Revisão 6 (02/10/2026): C1b `f1b4ec1` commitado; **RECERT(C1b)=PASS** no SHA
+> > exato; esta revisão é a atestação **C2**, só docs (ledger L-019).
+
+
+### Tabela de estado anterior a esta revisão (revisão 6 + linhas atualizadas em L-022…L-025)
 
 | campo | valor | fonte |
 |---|---|---|
@@ -32,9 +158,9 @@
 | CONTROL_PLANE_HEAD | o commit **C2** que traz esta revisão (`CONTROL_PLANE_ATTESTATION_COMMIT`, filho direto de `f1b4ec1`, só docs). **C2 não é CERTIFIED** e não pode ser deployado. `CERTIFIED_FEATURE_SHA` (C1b) ≠ `CONTROL_PLANE_HEAD` (C2) | `AI-OPERATING-RULES.md` §5.1; ledger L-019 |
 | LIFECYCLE | branch → base → plano → implementação → auditoria → correções → pré-commit → **C1** → **recert exata de C1** → **atestação C2 (só docs)** → próxima fase | `AI-OPERATING-RULES.md` §5 |
 | RELEASE_CANDIDATE | **NONE** | `docs/RELEASE-CHAIN.md` |
-| CURRENT_WORK | **PHASE1_RECERT_ATTESTED** (C2). Próximo trabalho: plano da Fase 2 | este documento |
+| CURRENT_WORK | **EARLY_ACCESS_PHASE2 FECHADA no working tree, SEM commit, C1 NÃO criado** (03/10, L-025): auditoria própria (L-022) + duas auditorias independentes (L-024: EA2-IA01…IA06; L-025: EA2-IA07…IA09) corrigidas; `KNOWN_PHASE2_DEFECTS=0`; aguardando verificação independente final e autorização do C1. `PHASE_BASE_SHA=74f37f50d12dae698f14b620914bc0ce5b0c639a` | ledger L-020…L-025 |
 | NEXT_PHASE | **EARLY_ACCESS_PHASE2_EMAIL_DOUBLE_OPT_IN** | `docs/PLANO-EARLY-ACCESS.md` §13–§15 |
-| EARLY_ACCESS_PHASE2_STATUS | **BLOCKED_NOT_STARTED** · `PHASE2_CODE_EXISTS=NO`. Feito: control plane commitado (C1/C1b) e recert da Fase 1 PASS (C1b). Falta: o plano da Fase 2 escrito (com `PHASE_BASE_SHA` = SHA do commit de atestação C2, `THIS_ATTESTATION_COMMIT`) e a decisão do provider de email | Git (nenhum código da Fase 2 no tree) |
+| EARLY_ACCESS_PHASE2_STATUS | **CURRENT_DEVELOPMENT** · fechada no working tree, sem commit (L-025); especificação final em `docs/PLANO-EARLY-ACCESS-FASE2.md`. Histórico desta linha antes de 02/10: **BLOCKED_NOT_STARTED** · `PHASE2_CODE_EXISTS=NO`. Feito: control plane commitado (C1/C1b) e recert da Fase 1 PASS (C1b). Falta: o plano da Fase 2 escrito (com `PHASE_BASE_SHA` = SHA do commit de atestação C2, `THIS_ATTESTATION_COMMIT`) e a decisão do provider de email | Git (nenhum código da Fase 2 no tree) |
 | PUBLIC_GATE | **CLOSED**, independente do segredo: `disable_early_access=true` semeado na 0068, versões legais `UNAPPROVED`, e requisitos fail-closed; o gate é um AND de 4 condições | `supabase/migrations/0068_early_access.sql`, `src/lib/early-access/gate.ts` |
 | EARLY_ACCESS_HMAC_SECRET | **NOT_PROVIDED_OR_AUTHORIZED_FOR_THIS_LOCAL_CAMPAIGN** (nenhum segredo real foi lido) | regra da campanha |
 | PRODUCTION_SECRET_STATE | **NOT_VERIFIED** (produção e Supabase/Vercel hospedados não foram inspecionados) | regra da campanha |
@@ -47,7 +173,7 @@
 | ACER_LAB | `LAB_ENV_VERIFIED` (ambiente, não SHA): 4 stacks 25/25 PASS, egress BLOCKED, `BOOT_RESILIENCE=PASS`, `UNATTENDED_BOOT=PASS` (boot 13:18, checado 14:40). **Não tocadas** pela recert | `state/unattended-boot-20261001T1557Z/evidence/post-reboot-unattended-20261001T173957Z.txt` |
 | ENTRYPOINTS | `CLAUDE.md` (integrado, topo), `AGENTS.md`, `docs/README.md` (bloco START HERE + banner LEGACY no índice antigo) → `docs/START-HERE.md`. Commitados no C1 `f4af976` | Git |
 
-## Recertificação da Fase 1 no SHA commitado
+### Recertificação da Fase 1 no SHA commitado
 
 Campanha `recert-ea1-9f2ddcb-20261001T213835Z` (Node 24.21.0 / npm 11.19.0,
 mesmas imagens da recert de `0d21874`; testes com `--network none`).
@@ -81,7 +207,7 @@ a aceita. Taxa de falha: teórica (62/64)^64 = 13,1%; empírica 12,97% em
   recertificação**: ela acontece no SHA do commit candidato, completa (build,
   suíte, T15 inclusos).
 
-## Recertificação do C1 no SHA exato (02/10)
+### Recertificação do C1 no SHA exato (02/10)
 
 C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`. Campanha válida:
 `recert-c1-f4af976-20261002T012205Z`, com limites fixos desde o início
@@ -105,7 +231,7 @@ produto identificado. **Correção (revisão 5, autorizada, sem commit):**
 segredo de teste fixo e determinístico; só o arquivo de teste muda. Vai no
 commit candidato C1b, que precisa de recert completa no SHA exato.
 
-## Recertificação do C1b no SHA exato (02/10): PASS
+### Recertificação do C1b no SHA exato (02/10): PASS
 
 C1b `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (tree
 `ab814e3ba6369a8b66218a9accc76a18ca6f14f6`). **Única campanha que estabelece
@@ -156,7 +282,7 @@ Notas da campanha PASS:
   convenção `middleware` obsoleta; Edge Runtime obsoleto; edge runtime desliga
   a geração estática da página.
 
-## OPEN_BLOCKERS
+### OPEN_BLOCKERS anteriores a esta revisão
 
 | id | bloqueia | estado |
 |---|---|---|
@@ -174,32 +300,7 @@ Fechados na revisão 6 (L-019): **EA-RECERT** (RECERT(C1b)=PASS),
 `CERTIFIED_EXACT_SHA` `f1b4ec1`), **CP-REVIEW** (control plane commitado e
 atestado pelo C2).
 
-## DEFERRED_FINDINGS (não bloqueiam a Fase 2)
-
-F-05, F-09, F-11 (escopo da Fase 2), F-13, F-14, F-15, F-16; R8-CORRIDA,
-HARNESS-001/002, 36 moderate / 1 low do `npm audit`, HOST-CRED-001, AUTOLOGIN.
-**A08, A09, A10 e A17 da auditoria externa:** SOURCE_NOT_FOUND depois da
-2ª busca forense; seguem UNKNOWN_REQUIRES_REVIEW. Nenhuma correção
-**conhecida e identificável** foi encontrada fora da linha; A08/A09/A10/A17
-permanecem sem fonte e não permitem conclusão. Tabela completa:
-`docs/AUDIT-RECONCILIATION.md` §5.
-
-## Lacunas de documentação
-
-- **Fechadas na revisão 2** (banner no topo, histórico preservado):
-  `ESTADO-ATUAL.md`, `PLANO-EARLY-ACCESS.md` (+ status operacional),
-  `PLANO-DCA-AUTOMATICO.md`, `PLANO-MURAL-DE-AGENTES.md`, `docs/README.md`
-  (bloco START HERE) e `CLAUDE.md` (entrada).
-- **Fechadas na revisão 3:** `docs/README.md` (banner LEGACY antes do índice
-  "Vivos"), `CLAUDE.md` (Next.js 16.3.6, regra fail-closed precisa, mural só
-  com autorização), status Fase 2 no banner de `PLANO-EARLY-ACCESS.md`.
-- **Abertas:**
-  - `WHITELIST-FUNDRAISING-DISCOVERY.md` ainda diz "Fase 1 não iniciada";
-    o `DOCUMENT-AUTHORITY.md` cobre isso.
-  - `LEDGER-MESTRE-RELEASE.md` ainda chama `3123fb4` de certificado.
-  - Os docs só de `origin/platform-closure` (DOC-PC-DIVERGE).
-
-## Artefatos locais desta revisão (fora do Git)
+### Artefatos locais anteriores a esta revisão
 
 - `node_modules/` na worktree, criado pelo `npm ci` da recert. É ignorado
   pelo `.gitignore` e não aparece no `git status`.
@@ -211,7 +312,7 @@ permanecem sem fonte e não permitem conclusão. Tabela completa:
 - Harness v2 da recert: `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/state/recert-c1b-f1b4ec1-20261002T095819Z/`
   (fora do repo; o v3 deve declarar `local` a variável do laço do T15).
 
-## NEXT_ACTION
+### NEXT_ACTION anterior a esta revisão (cumprido: C2 = `74f37f5`; plano da Fase 2 escrito; provider decidido = RESEND)
 
 1. Commit do C2 (esta revisão, só docs) sobre o C1b `f1b4ec1`, por decisão
    do dono. O commit que traz esta revisão **é** o C2: `CONTROL_PLANE_HEAD` =

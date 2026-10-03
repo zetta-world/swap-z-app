@@ -73,8 +73,21 @@ const CATALOGO: Record<string, string> = {
   // fechadas na 0068 (REVOKE de public/anon/authenticated + GRANT só ao
   // service_role). Fora do domínio financeiro, mesma regra.
   // ⚠️ Esta trava ACHOU as duas na primeira rodada completa da suíte.
-  early_access_inscrever:    "0068_early_access.sql",
-  early_access_transicionar: "0068_early_access.sql",
+  // EARLY ACCESS Fase 2 (double opt-in): a 0069 RECRIA as duas acima (nova
+  // assinatura de `inscrever`; regra D-4 em `transicionar`) repetindo o
+  // REVOKE/GRANT — a regra ACL file ≥ def file passa a apontar para ela — e
+  // cria as RPCs de verificação, todas fechadas na mesma migration.
+  // ⚠️ Esta trava ACHOU as oito novas na primeira rodada da Fase 2.
+  early_access_inscrever:              "0069_early_access_email_optin.sql",
+  early_access_transicionar:           "0069_early_access_email_optin.sql",
+  early_access_registrar_envio:        "0069_early_access_email_optin.sql",
+  early_access_pendentes_de_envio:     "0069_early_access_email_optin.sql",
+  early_access_reemitir:               "0069_early_access_email_optin.sql",
+  early_access_token_preview:          "0069_early_access_email_optin.sql",
+  early_access_confirmar_email:        "0069_early_access_email_optin.sql",
+  early_access_recusar_email:          "0069_early_access_email_optin.sql",
+  early_access_purgar_nao_verificados: "0069_early_access_email_optin.sql",
+  early_access_registrar_webhook:      "0069_early_access_email_optin.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

@@ -48,8 +48,9 @@ const APROVADO = { terms: "tos-1", privacy: "priv-1" };
 beforeEach(() => { banco.modo = "ok"; banco.valor = "false"; delete process.env.EARLY_ACCESS_HMAC_SECRET; });
 afterEach(() => { delete process.env.EARLY_ACCESS_HMAC_SECRET; });
 
-describe("① decisão do gate — aberto só com as QUATRO condições", () => {
-  const base = { kv: { lido: true as const, valor: "false" }, ...APROVADO, segredo: true };
+describe("① decisão do gate — aberto só com as CINCO condições", () => {
+  // Fase 2: a 5ª condição é o envio de email configurado (`email`).
+  const base = { kv: { lido: true as const, valor: "false" }, ...APROVADO, segredo: true, email: true };
   it("tudo certo → aberto", () => {
     expect(decidirGate(base)).toEqual({ aberto: true, motivos: [] });
   });
@@ -74,6 +75,9 @@ describe("① decisão do gate — aberto só com as QUATRO condições", () => 
   });
   it("⚠️ sem segredo HMAC → fechado", () => {
     expect(decidirGate({ ...base, segredo: false }).motivos).toEqual(["segredo_ausente"]);
+  });
+  it("⚠️⚠️ Fase 2: sem envio de email configurado → fechado (sem prova de posse, sem coleta)", () => {
+    expect(decidirGate({ ...base, email: false }).motivos).toEqual(["email_nao_configurado"]);
   });
 });
 
@@ -102,7 +106,7 @@ describe("③ o gate REAL da Fase 1 está fechado", () => {
   it("sem segredo e com banco fora: todos os motivos aparecem", async () => {
     banco.modo = "erro";
     const g = await lerGateEarlyAccess();
-    expect(g.motivos).toEqual(expect.arrayContaining(["kv_leitura_falhou", "segredo_ausente"]));
+    expect(g.motivos).toEqual(expect.arrayContaining(["kv_leitura_falhou", "segredo_ausente", "email_nao_configurado"]));
   });
 });
 

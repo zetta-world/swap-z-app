@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ESTADOS, TRANSICOES, transicaoPermitida, exigeMotivo, transicoesDisponiveis, type Estado } from "./estados";
+import { ESTADOS, TRANSICOES, transicaoPermitida, exigeMotivo, transicoesDisponiveis, exigeEmailVerificado, type Estado } from "./estados";
 
 const SQL = readFileSync(join(process.cwd(), "supabase/migrations/0068_early_access.sql"), "utf8");
 
@@ -63,6 +63,13 @@ describe("② a matriz exigida", () => {
       ["rejected", "pending", true], ["rejected", "blocked", true], ["blocked", "pending", true],
     ];
     for (const [de, para, quer] of casos) expect(exigeMotivo(de, para), `${de}→${para}`).toBe(quer);
+  });
+  it("⚠️ D-4 (Fase 2): sem email verificado o painel NÃO oferece aprovar — e o padrão é não verificado", () => {
+    expect(exigeEmailVerificado("approved")).toBe(true);
+    for (const e of ["pending", "rejected", "blocked"] as const) expect(exigeEmailVerificado(e)).toBe(false);
+    expect(transicoesDisponiveis("pending", false)).toEqual(["rejected", "blocked"]);
+    expect(transicoesDisponiveis("pending", false, false)).toEqual(["rejected", "blocked"]);
+    expect(transicoesDisponiveis("pending", false, true)).toEqual(["approved", "rejected", "blocked"]);
   });
   it("convertido: approved→rejected some do painel; approved→blocked continua", () => {
     expect(transicoesDisponiveis("approved", true)).toEqual(["blocked"]);

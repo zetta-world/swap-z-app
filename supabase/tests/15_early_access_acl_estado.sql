@@ -31,6 +31,9 @@ begin;
 -- Helper de inscrição com padrões razoáveis (SECURITY INVOKER: roda com o
 -- papel corrente, então chamado após `set local role service_role` prova o
 -- caminho real da aplicação).
+-- 0069: a RPC ganhou `p_locale` e `p_token_hash` e devolve jsonb. O helper passa
+-- os dois como NULL (sem token: estes testes são do contrato da 0068) e lê
+-- `->>'resultado'`, que mantém os valores 'criado'/'existente' de antes.
 create function pg_temp.insc(
   p_email text, p_codigos text[], p_ref text default null,
   p_wallet text default null, p_chain text default null,
@@ -40,7 +43,7 @@ create function pg_temp.insc(
   select public.early_access_inscrever(
     p_email, 'Pessoa Teste', 'BR', p_wallet, p_chain, null, null, p_ref, p_codigos,
     p_utm, null, null, null, null, '/early-access', null, 'early_access_page',
-    p_terms, 'priv-2026-10', false, p_ip);
+    p_terms, 'priv-2026-10', false, p_ip, null, null)->>'resultado';
 $$;
 grant execute on function pg_temp.insc(text, text[], text, text, text, text, text, text) to service_role;
 
@@ -178,8 +181,10 @@ begin
     end if;
     n := n + 1;
   end loop;
-  if n <> 4 then raise exception 'T15.6: esperava 4 funcoes, achei %', n; end if;
-  raise notice 'T15.6 OK — 4 funcoes: EXECUTE so service_role, search_path fixo, RPCs DEFINER';
+  -- 0069: 4 da 0068 + 8 RPCs novas (inscrever e transicionar foram recriadas, não somadas).
+  -- As internas `ea_interno_*` não casam com 'early_access_%' e são conferidas no T16.3.
+  if n <> 12 then raise exception 'T15.6: esperava 12 funcoes (0068 + 0069), achei %', n; end if;
+  raise notice 'T15.6 OK — 12 funcoes: EXECUTE so service_role, search_path fixo, RPCs DEFINER';
 end $$;
 
 -- ── T15.7 ───────────────────────────────────────────────────────────────────
@@ -390,6 +395,15 @@ begin
   end;
   raise notice 'T15.13 OK — colisao de codigo tenta o proximo; todos colidindo falha explicitamente';
 end $$;
+
+-- 0069 (D-4): aprovar exige email verificado (CHECK + RPC). As inscrições que
+-- a T15.14/T15.14b/T15.15 aprovam recebem `email_verified_at` pelo DONO aqui;
+-- a recusa de aprovar sem verificação é provada no T16.12. Nenhuma asserção
+-- deste arquivo foi removida.
+reset role;
+update public.early_access_signups set email_verified_at = now()
+ where email_normalized in ('bia@example.com','davi@example.com','edu@example.com');
+set local role service_role;
 
 -- ── T15.14 ──────────────────────────────────────────────────────────────────
 do $$

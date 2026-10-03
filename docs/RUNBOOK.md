@@ -150,20 +150,39 @@ aritmética sobre volume anterior à cobrança existir.
 
 ### Early access (FUTURO — nada disto está configurado)
 
-> ⚠️ Configuração **futura**. Nenhuma variável abaixo foi criada na Vercel e a
-> migration `0068_early_access.sql` **não foi aplicada** em banco hospedado.
-> Plano: `docs/PLANO-EARLY-ACCESS.md`.
+> ⚠️ Configuração **futura**. Nenhuma variável abaixo foi criada na Vercel e as
+> migrations `0068_early_access.sql` e `0069_early_access_email_optin.sql`
+> **não foram aplicadas** em banco hospedado. Planos: `docs/PLANO-EARLY-ACCESS.md`
+> (Fase 1) e `docs/PLANO-EARLY-ACCESS-FASE2.md` (Fase 2, double opt-in).
 
 | Var | O que é | Default se ausente |
 |-----|---------|--------------------|
 | `EARLY_ACCESS_HMAC_SECRET` | Segredo do HMAC-SHA256 que pseudonimiza IP e email nos buckets de rate limit e em `early_access_*.ip_hmac`. **Formato obrigatório: base64 padrão canônico de ≥ 32 bytes aleatórios** (gerar com `openssl rand -base64 48`; o gate recusa texto que não seja base64 válido, que decodifique em < 32 bytes ou que tenha variedade trivial — ex.: `"a"` repetido). Só server-side (nunca `NEXT_PUBLIC_`). Trocar o segredo invalida a correlação com os HMACs antigos (os limites recomeçam) | **rota FECHADA** — o gate exige o segredo |
+| `EARLY_ACCESS_EMAIL_PROVIDER` | Fase 2 (D-1): único valor aceito `resend` | **gate FECHADO** (sem prova de posse de email, sem coleta) |
+| `EARLY_ACCESS_RESEND_API_KEY` | Chave da API do Resend (formato `re_…`), só server-side, **escopo só de envio** no domínio remetente. Nunca `NEXT_PUBLIC_`, nunca em log | **gate FECHADO** |
+| `EARLY_ACCESS_EMAIL_FROM` | Remetente no domínio verificado no Resend: `no-reply@<subdomínio>` ou `Nome <no-reply@<subdomínio>>` (CR/LF recusado) | **gate FECHADO** |
+| `EARLY_ACCESS_PUBLIC_BASE_URL` | Origem **https** pública do site, sem caminho (ex.: `https://<domínio>`). É a ÚNICA fonte do link do email — o `Host` da requisição nunca é usado | **gate FECHADO** |
+| `EARLY_ACCESS_RESEND_WEBHOOK_SECRET` | Segredo de assinatura do webhook (Svix, `whsec_…`), do painel do Resend | webhook responde 401 a tudo (nenhum estado muda) |
+| `CRON_SECRET` | já existe; também autentica `POST /api/early-access/cron` | cron do early access responde 401 |
 
-**⚠️ PUBLIC_OPEN_BLOCKER=EMAIL_DOUBLE_OPT_IN.** Mesmo com as quatro condições
-abaixo, a rota **não deve ser aberta** antes da Fase 2 (verificação de email
-de verdade — ver `docs/PLANO-EARLY-ACCESS.md` §15).
+**F-01 (EMAIL_DOUBLE_OPT_IN) está implementado em código na Fase 2** (gate
+CLOSED; certificação pendente — ver o ledger). O envio real exige ainda o
+setup externo D-2 e a revisão jurídica D-9 abaixo.
+
+**Pré-requisitos externos do envio real (D-2, dono — nada disto foi feito):**
+domínio/subdomínio remetente dedicado; SPF, DKIM e DMARC publicados; domínio
+verificado no Resend com **região de envio `sa-east-1`**; **click tracking e
+open tracking DESLIGADOS** no domínio (click tracking reescreve o link e
+levaria o token aos logs do provider); webhook do Resend apontando para
+`/api/early-access/webhook/resend` com os eventos `email.bounced` e
+`email.complained`. **D-9:** a Política de Privacidade precisa nomear o Resend
+e a transferência (o provider armazena dados nos EUA) antes de abrir.
+**D-11:** smoke de envio real só com autorização explícita do dono, fora da
+certificação.
 
 **Procedimento de abertura (futuro — exige o dono):** a rota só abre quando as
-**quatro** condições valem juntas; qualquer uma ausente mantém fechado.
+**cinco** condições valem juntas; qualquer uma ausente mantém fechado (a 5ª é
+o envio de email configurado — as quatro primeiras variáveis da Fase 2 acima).
 
 1. Texto jurídico **aprovado e publicado** de Termos de Uso e Política de
    Privacidade → trocar `TERMS_VERSION`/`PRIVACY_VERSION` em
@@ -173,17 +192,36 @@ de verdade — ver `docs/PLANO-EARLY-ACCESS.md` §15).
 2. Gerar o segredo com `openssl rand -base64 48` e configurar
    `EARLY_ACCESS_HMAC_SECRET` no ambiente. Nunca commitar, nunca colar em
    chat/issue/log.
-3. Aplicar a `0068` pelo fluxo normal de migrations (ela semeia
+3. Aplicar a `0068` e a `0069` pelo fluxo normal de migrations (a 0068 semeia
    `disable_early_access=true` sem sobrescrever decisão existente).
+3b. Configurar as variáveis de email da Fase 2 (acima) e o webhook.
 4. Gravar `admin_kv.disable_early_access = 'false'`. Qualquer outro valor,
    linha ausente ou falha de leitura = **fechado**.
+
+**Transições no painel admin (EA2-IA07):** escolha um **código** de motivo
+(`approved_verified`, `rejected_policy`, `duplicate`, `abuse`, `owner_request`,
+`administrative_correction`, `other`) e, se precisar, uma nota curta. Só o
+código vai para o `admin_audit_log` (persistente); a nota fica no registro da
+própria inscrição e é apagada se ela for purgada. A API recusa o campo antigo
+`reason` (texto livre).
 
 **Fechar em incidente:** `disable_early_access = 'true'` — efeito imediato, sem
 deploy. Sinais no painel LOGS & SECURITY: `early_access_teto_global` (alto),
 `early_access_gravacao_falhou` (alto), `early_access_desbloqueio` (alto),
 `early_access_rate_email`, `early_access_rate_ip`, `early_access_sinal_robo`.
+Fase 2: `early_access_envio_falhou` (alto quando `codigo=config`),
+`early_access_verify_banco_falhou` (alto), `early_access_webhook_banco_falhou`
+(alto), `early_access_purga_falhou` (alto), `early_access_webhook_assinatura_invalida`,
+`early_access_email_suprimido`, `early_access_recusado_pelo_titular`.
 
 ## 2. Crons (cron-job.org — fonte ÚNICA de agendamento)
+
+> **Early access (D-8): `POST /api/early-access/cron` está PREPARADO e NÃO
+> AGENDADO.** Quando o dono autorizar a etapa operacional: cron-job.org, a cada
+> 5 min, header `Authorization: Bearer <CRON_SECRET>`. Faz a purga de
+> inscrições não verificadas com mais de 7 dias (sempre, mesmo com o gate
+> fechado) e o retry de envio (só com o gate aberto). Resposta
+> `{ok, purgadas, reenviados, gate_aberto}`; 503 = falha de banco.
 
 | Endpoint | Cadência | Auth | Stall alert |
 |----------|----------|------|-------------|

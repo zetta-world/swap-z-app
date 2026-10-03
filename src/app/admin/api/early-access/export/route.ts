@@ -36,7 +36,15 @@ const TETO_EXPORT = 100_000;
 const BASE: (keyof LinhaInscricao)[] = [
   "id", "created_at", "status", "country", "source",
   "utm_source", "utm_medium", "utm_campaign",
-  "email_verified_at", "wallet_verified_at", "converted_at", "marketing_opt_in",
+  "email_verified_at", "wallet_verified_at", "converted_at",
+  // EA2-A02: só o consentimento EFETIVO do titular verificado. A declaração
+  // provisória do formulário (`marketing_opt_in`) NÃO sai no export — uma
+  // lista de envio montada com ela mandaria marketing sem consentimento.
+  "marketing_efetivo", "marketing_escolhido_em",
+  // EA2-IA04: consentimento ≠ entregabilidade. Só `marketing_elegivel`
+  // (efetivo E não suprimido, gerado pelo banco) autoriza envio; a supressão
+  // vai junto para que nenhuma lista pareça elegível depois de bounce/complaint.
+  "marketing_elegivel", "email_suppressed_at", "email_suppression_reason",
 ];
 const COM_EMAIL: (keyof LinhaInscricao)[] = ["email_normalized"];
 const COM_IDENTIDADE: (keyof LinhaInscricao)[] = ["display_name", "wallet_chain", "wallet_address"];

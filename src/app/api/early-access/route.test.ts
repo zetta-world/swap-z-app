@@ -19,8 +19,11 @@ const st = vi.hoisted(() => ({
   privacy: "priv-2026-10",
   limites: {} as Record<string, boolean>,
   buckets: [] as string[],
-  resultado: { ok: true, resultado: "criado" } as unknown,
+  resultado: { ok: true, resultado: "criado", envio: true } as unknown,
   inscrever: [] as unknown[][],
+  envios: [] as Array<{ email: string; locale: string; token: string }>,
+  waitUntil: 0,
+  ordem: [] as string[],
   seguranca: [] as Array<[string, Record<string, unknown>]>,
 }));
 
@@ -37,6 +40,12 @@ vi.mock("@/lib/early-access/gate", () => ({
 }));
 vi.mock("@/lib/early-access/store", () => ({
   inscrever: async (...a: unknown[]) => { st.inscrever.push(a); return st.resultado; },
+}));
+vi.mock("@vercel/functions", () => ({
+  waitUntil: (p: Promise<unknown>) => { st.waitUntil++; st.ordem.push("waitUntil"); void p; },
+}));
+vi.mock("@/lib/early-access/email/enviar", () => ({
+  enviarConfirmacao: async (a: { email: string; locale: string; token: string }) => { st.envios.push(a); },
 }));
 vi.mock("@/lib/rate-limit", () => ({
   getClientId: (h: Headers) => h.get("x-forwarded-for") ?? "anonymous",
@@ -82,7 +91,8 @@ async function resposta(r: Response) {
 beforeEach(() => {
   st.gateAberto = true; st.terms = "tos-2026-10"; st.privacy = "priv-2026-10";
   st.limites = {}; st.buckets = []; st.inscrever = []; st.seguranca = [];
-  st.resultado = { ok: true, resultado: "criado" };
+  st.resultado = { ok: true, resultado: "criado", envio: true };
+  st.envios = []; st.waitUntil = 0; st.ordem = [];
   process.env.EARLY_ACCESS_HMAC_SECRET = SEGREDO_FALSO;
 });
 
@@ -166,15 +176,17 @@ describe("④ anti-enumeração — a MESMA resposta", () => {
     return resposta(await POST(req(corpo(extra))));
   }
   it("⚠️⚠️ novo, duplicado, bloqueado, email estourado e robô respondem idêntico", async () => {
-    const novo       = await respostaCom(() => { st.resultado = { ok: true, resultado: "criado" }; });
-    const duplicado  = await respostaCom(() => { st.resultado = { ok: true, resultado: "existente" }; });
-    // bloqueado: na RPC é um email existente → "existente"
-    const bloqueado  = await respostaCom(() => { st.resultado = { ok: true, resultado: "existente" }; });
+    const novo       = await respostaCom(() => { st.resultado = { ok: true, resultado: "criado", envio: true }; });
+    // Fase 2: duplicado pendente com reenvio, verificado (sem envio) e dentro do cooldown
+    const duplicado  = await respostaCom(() => { st.resultado = { ok: true, resultado: "existente", envio: true }; });
+    const verificado = await respostaCom(() => { st.resultado = { ok: true, resultado: "existente", envio: false }; });
+    // bloqueado: na RPC é um email existente → "existente", sem envio
+    const bloqueado  = await respostaCom(() => { st.resultado = { ok: true, resultado: "existente", envio: false }; });
     const estourado  = await respostaCom(() => { st.limites = { "ea:em:": true }; });
     st.limites = {};
     const robo       = await respostaCom(() => {}, { website: "http://spam" });
     const rapido     = await respostaCom(() => {}, { form_ms: 300 });
-    for (const r of [duplicado, bloqueado, estourado, robo, rapido]) expect(r).toEqual(novo);
+    for (const r of [duplicado, verificado, bloqueado, estourado, robo, rapido]) expect(r).toEqual(novo);
   });
   it("email estourado e robô NÃO chamam a RPC", async () => {
     st.limites = { "ea:em:": true };
@@ -260,5 +272,58 @@ describe("⑦ fonte da rota", () => {
   });
   it("⚠️ não existe GET público", () => {
     expect(SRC).not.toMatch(/export\s+(async\s+)?function\s+GET/);
+  });
+});
+
+describe("⑧ Fase 2 — double opt-in na inscrição", () => {
+  it("⚠️⚠️ a RPC recebe SÓ o hash; o email sai com o token cru, depois da resposta (waitUntil)", async () => {
+    const r = await POST(req(corpo({ locale: "pt" })));
+    expect(r.status).toBe(202);
+    const [, , , hash] = st.inscrever[0] as [unknown, unknown, unknown, string];
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(st.waitUntil).toBe(1);
+    expect(st.envios).toHaveLength(1);
+    const e = st.envios[0];
+    expect(e.email).toBe("ana.souza@example.com");
+    expect(e.locale).toBe("pt");
+    expect(e.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const { hashToken } = await import("@/lib/early-access/token");
+    expect(hashToken(e.token)).toBe(hash);
+    expect(hash).not.toContain(e.token);
+  });
+  it("⚠️ RPC disse envio:false (verificado, bloqueado, cooldown, cap) → nenhum email, mesma resposta", async () => {
+    st.resultado = { ok: true, resultado: "existente", envio: false };
+    const r = await POST(req(corpo()));
+    expect(r.status).toBe(202);
+    expect(st.waitUntil).toBe(0);
+    expect(st.envios).toHaveLength(0);
+  });
+  it("robô, email estourado e falha de banco não enviam nada", async () => {
+    await POST(req(corpo({ website: "x" })));
+    st.limites = { "ea:em:": true };
+    await POST(req(corpo()));
+    st.limites = {};
+    st.resultado = { ok: false, erro: "erro_banco" };
+    await POST(req(corpo()));
+    expect(st.envios).toHaveLength(0);
+  });
+  it("⚠️ token novo a cada envio (nunca reaproveitado)", async () => {
+    await POST(req(corpo()));
+    await POST(req(corpo()));
+    expect(new Set(st.envios.map((e) => e.token)).size).toBe(2);
+  });
+  it("⚠️⚠️ nenhum evento de segurança carrega o token ou o hash", async () => {
+    st.limites = { "ea:em:": true };
+    await POST(req(corpo()));
+    st.limites = {};
+    st.resultado = { ok: false, erro: "erro_banco" };
+    await POST(req(corpo()));
+    const tudo = JSON.stringify(st.seguranca);
+    for (const a of st.inscrever) expect(tudo).not.toContain(String(a[3]));
+  });
+  it("locale fora da lista → 400; ausente → en", async () => {
+    expect((await POST(req(corpo({ locale: "fr" })))).status).toBe(400);
+    await POST(req(corpo()));
+    expect(st.envios[0].locale).toBe("en");
   });
 });

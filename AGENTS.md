@@ -14,12 +14,16 @@ and which document to trust is in `docs/DOCUMENT-AUTHORITY.md`.
    `AGENTS.md`, `docs/**`) legitimately move it. Identity is valid when the
    branch is the expected one, `PRODUCT_BASE_SHA`
    (`9f2ddcbe45f9f93c9a33c331e31e32c45d410019`) is an ancestor of HEAD, the
-   tree is clean, every commit after the base is explained in the ledger /
-   `RELEASE-CHAIN.md`, and there is no unauthorized **product** delta:
+   tree matches the state the ledger records, every commit after the base is
+   explained in the ledger / `RELEASE-CHAIN.md`, and there is no unauthorized
+   **product** delta:
    `git diff --stat "$PRODUCT_BASE_SHA"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'`.
-   Once Phase 2 starts, the reference is its `PHASE_BASE_SHA`, recorded in the
-   ledger before implementation. Details: `docs/START-HERE.md` §2 and §10. On
-   mismatch, **STOP** and report. Do not "fix" it with checkout, reset, stash
+   **Current campaign (Early Access Phase 2):** reference `PHASE_BASE_SHA`
+   `74f37f50d12dae698f14b620914bc0ce5b0c639a`; the Phase 2 implementation is
+   CLOSED but **uncommitted** in the working tree, so a dirty tree with exactly
+   the ledger-recorded Phase 2 delta (L-025/L-026) is EXPECTED — do not clean,
+   stash or reset it. Details: `docs/START-HERE.md` §2 and §10. On mismatch,
+   **STOP** and report. Do not "fix" it with checkout, reset, stash
    or rebase.
 2. **GitHub-dependent task?** Run `git fetch origin --tags --prune` first.
    Measure local refs and `origin/*` separately.
@@ -62,7 +66,8 @@ and which document to trust is in `docs/DOCUMENT-AUTHORITY.md`.
    reclassification; record the FAIL, fix, create **C1b** and recertify the
    **whole** C1b. Details: `docs/AI-OPERATING-RULES.md` §5.
 9. **Terminology:** "certified" must always be one of
-   `CERTIFIED_EXACT_SHA` (exact-SHA recert PASS — today only `0d21874`),
+   `CERTIFIED_EXACT_SHA` (exact-SHA recert PASS — today `0d21874` runtime and
+   `f1b4ec1` Early Access Phase 1; Phase 2 is NOT certified),
    `CERTIFIED_RUNTIME_ANCESTOR` (an ancestor was recertified, known delta) or
    `HISTORICAL_CERTIFICATION_LEGACY` (called certified before revision 3,
    no exact-SHA proof). Audit counts say `KNOWN_MISSING_CORRECTIONS` and

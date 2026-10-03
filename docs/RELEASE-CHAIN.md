@@ -87,10 +87,10 @@
  f1b4ec1  C1b — CANDIDATE_SHA (teste HMAC-189 + docs rev. 5)      RECERT PASS · CERTIFIED_EXACT_SHA · CERTIFIED_FEATURE_SHA  DO NOT DEPLOY*
     │  só docs (diff de produto C1b..C2 vazio)
     ▼
- C2 (o commit que traz L-019)  CONTROL_PLANE_ATTESTATION_COMMIT   registra CERTIFIED_FEATURE_SHA=f1b4ec1; C2 NÃO é CERTIFIED; DO NOT DEPLOY
-    │  Early Access Fase 2 (double opt-in), PHASE_BASE_SHA = C2
+ 74f37f5  C2 (o commit que traz L-019)  CONTROL_PLANE_ATTESTATION_COMMIT   registra CERTIFIED_FEATURE_SHA=f1b4ec1; C2 NÃO é CERTIFIED; DO NOT DEPLOY
+    │  Early Access Fase 2 (double opt-in), PHASE_BASE_SHA = 74f37f5 — implementação FECHADA no working tree, SEM commit (L-025/L-026)
     ▼
- (ainda não existe)                                               BLOCKED_NOT_STARTED
+ C1 da Fase 2 (ainda não existe; aguarda autorização do dono)    NOT_CREATED · RECERT NOT_RUN · NOT_CERTIFIED
     ▼
   …
     ▼
@@ -131,8 +131,8 @@ prova AP-LOCK hospedada (`RELEASE-RUNBOOK.md` §6–§7).
 | 19 | **Early Access Fase 1** | `9f2ddcb` | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | `early-access-phase2-email-double-optin-20261001`, `whitelist-fundraising-readiness-20261001` (ambos locais) | **COMMITTED_FEATURE_CHECKPOINT** (o dono o designou "certified feature checkpoint", L-009; `CERTIFIED` reservado desde L-016) | auditoria adversarial pré-hardening; **recert no SHA commitado: BLOCKED** (`reports/EARLY-ACCESS-PHASE1-RECERT-9f2ddcb-20261001.txt`: npm ci / type-check / lint / guardas PASS, alvo EA FAIL 1/123 por teste não determinístico, build/suíte/T15 NOT_RUN); sem CI | C1 (control plane + correção do teste F10, já no working tree) → recert completa no SHA exato → atestação C2 → Fase 2 |
 | 19b | C1 — commit candidato (control plane + teste F10) | `f4af976` | `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` | `d214a354b75cafbd13d2882c94eec98c0e262a28` | `early-access-phase2-email-double-optin-20261001` (local) | CANDIDATE_SHA · **RECERT FAIL** · DO NOT DEPLOY | recert exata 02/10 (`recert-c1-f4af976-20261002T012205Z`): alvo EA 122/123 (EA-TEST-HMAC-189-FLAKY); `reports/EARLY-ACCESS-PHASE1-C1-RECERT-f4af976-20261001.txt`; ledger L-018 | C1b |
 | 19b′ | C1b — commit candidato (correção EA-TEST-HMAC-189-FLAKY + docs revisão 5) | `f1b4ec1` | `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` | `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` | `early-access-phase2-email-double-optin-20261001` (local) | **CERTIFIED_EXACT_SHA** · `CERTIFIED_FEATURE_SHA` · DO NOT DEPLOY (não é RELEASE_CANDIDATE) | **RECERT(C1b)=PASS** 02/10, campanha `recert-c1b-f1b4ec1-20261002T095819Z`: ×100 100/100 · alvo EA 123/123 · guardas 264/264 · T15 22/22 · type-check · lint 0/145 · build exit 0 · suíte 271/4096; `reports/EARLY-ACCESS-PHASE1-C1B-RECERT-f1b4ec1-20261002.campaign-20261002T095819Z.txt`; ledger L-019 | C2 |
-| 19c | C2 — commit de atestação (só docs) | o commit que traz L-019 | — | — | idem | `CONTROL_PLANE_ATTESTATION_COMMIT` · `CONTROL_PLANE_HEAD` · **não** CERTIFIED · DO NOT DEPLOY | prova: diff de produto `f1b4ec1..C2` vazio (medido antes do commit; repetir depois) | Fase 2 (`PHASE_BASE_SHA` = SHA do C2) |
-| 20 | Early Access Fase 2 | — | — | — | `early-access-phase2-email-double-optin-20261001` | **BLOCKED_NOT_STARTED** · NEXT_PHASE · sem código | — | — |
+| 19c | C2 — commit de atestação (só docs) | `74f37f5` (o commit que traz L-019) | `74f37f50d12dae698f14b620914bc0ce5b0c639a` | `5c93c0512b74777724aae62f665b10feaa95f760` | idem | `CONTROL_PLANE_ATTESTATION_COMMIT` · `CONTROL_PLANE_HEAD` · **não** CERTIFIED · DO NOT DEPLOY | prova: diff de produto `f1b4ec1..C2` vazio (medido antes do commit; repetir depois) | Fase 2 (`PHASE_BASE_SHA` = SHA do C2) |
+| 20 | Early Access Fase 2 | — (sem commit) | — | — | `early-access-phase2-email-double-optin-20261001` (working tree sobre `74f37f5` = PHASE_BASE_SHA) | **CURRENT_DEVELOPMENT** · implementação **CLOSED_IN_WORKING_TREE** · C1 NOT_CREATED · RECERT NOT_RUN · **NOT_CERTIFIED** · DO NOT DEPLOY | validação pré-commit e auditorias: ledger L-022…L-026 | próximo: verificação independente final → autorização do C1 → recert exata (com build) → C2 |
 | ∞ | FINAL RELEASE CANDIDATE | — | — | — | — | NOT_STARTED | — | — |
 
 Provas rápidas:

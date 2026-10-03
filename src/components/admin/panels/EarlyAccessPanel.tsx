@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 import { useAdminConfirm } from "../useAdminConfirm";
-import { ESTADOS, transicoesDisponiveis, exigeMotivo, type Estado } from "@/lib/early-access/estados";
+import { ESTADOS, transicoesDisponiveis, MOTIVOS, NOTA_MAX, type Estado, type Motivo } from "@/lib/early-access/estados";
 import { UltimaRequisicao } from "@/lib/early-access/ultima-requisicao";
 
 /**
@@ -22,11 +22,15 @@ type Linha = {
   status: Estado; status_reason: string | null;
   wallet_address: string | null; wallet_chain: string | null;
   converted_at: string | null; email_verified_at: string | null;
+  email_suppressed_at: string | null; email_suppression_reason: string | null;
   referral_flag: string | null; utm_source: string | null; created_at: string;
 };
 type Evento = { id: string; kind: string; from_status: string | null; to_status: string | null; actor: string; reason: string | null; created_at: string };
 type Gate = { aberto: boolean; motivos: string[] };
-type Metricas = { total: number; ultimas24h: number; ultimos7d: number; porStatus: Record<Estado, number> };
+type Metricas = {
+  total: number; ultimas24h: number; ultimos7d: number; porStatus: Record<Estado, number>;
+  verificados: number; suprimidos: number;
+};
 
 const COR: Record<Estado, string> = {
   pending: "var(--adm-amber)", approved: "var(--adm-green)", rejected: "var(--adm-ink-3)", blocked: "var(--adm-red)",
@@ -38,6 +42,8 @@ export default function EarlyAccessPanel() {
   const [gate, setGate]       = useState<Gate | null>(null);
   const [m, setM]             = useState<Metricas | null>(null);
   const [status, setStatus]   = useState<"" | Estado>("");
+  // Fase 2: filtro por email verificado ("" = todos, "1" = sim, "0" = não)
+  const [verificado, setVerificado] = useState<"" | "1" | "0">("");
   // `qDigitado` é o campo; `q` é o filtro APLICADO (no Enter / BUSCAR).
   // Buscar a cada tecla dispararia uma requisição por caractere.
   const [qDigitado, setQDigitado] = useState("");
@@ -47,6 +53,8 @@ export default function EarlyAccessPanel() {
   const [loading, setLoading] = useState(true);
   const [aberta, setAberta]   = useState<string | null>(null);
   const [eventos, setEventos] = useState<Evento[]>([]);
+  // EA2-IA07: código controlado (vai ao log persistente) + nota (só no registro da inscrição)
+  const [codigo, setCodigo]   = useState<Motivo | "">("");
   const [motivo, setMotivo]   = useState("");
   const [aviso, setAviso]     = useState<string | null>(null);
   const realtime = useAdminRealtime();
@@ -77,6 +85,7 @@ export default function EarlyAccessPanel() {
     const ctl = new AbortController();
     const p = new URLSearchParams({ limit: "50" });
     if (status) p.set("status", status);
+    if (verificado) p.set("verified", verificado);
     if (q) p.set("q", q);
     fetch(`/admin/api/early-access?${p}`, { signal: ctl.signal })
       .then(async (res) => {
@@ -96,7 +105,7 @@ export default function EarlyAccessPanel() {
         setLoading(false);
       });
     return () => ctl.abort();
-  }, [status, q, recarga, aoVivo]);
+  }, [status, verificado, q, recarga, aoVivo]);
 
   useEffect(() => {
     if (!realtime) return;
@@ -119,23 +128,22 @@ export default function EarlyAccessPanel() {
 
   async function abrir(id: string) {
     if (aberta === id) { leituraEventos.cancelar(); setAberta(null); return; }
-    setAberta(id); setEventos([]); setMotivo(""); setAviso(null);
+    setAberta(id); setEventos([]); setMotivo(""); setCodigo(""); setAviso(null);
     await carregarEventos(id);
   }
 
   async function transicionar(l: Linha, para: Estado) {
-    if (exigeMotivo(l.status, para) && motivo.trim() === "") {
-      setAviso("esta transição exige motivo"); return;
-    }
+    // o código controlado é sempre obrigatório (e satisfaz a exigência de motivo da RPC)
+    if (codigo === "") { setAviso("escolha o código do motivo"); return; }
     const perigo = para === "blocked" || para === "rejected";
     if (!(await confirm(`${l.status.toUpperCase()} → ${para.toUpperCase()} para ${l.email_normalized}?`, perigo))) return;
     const res = await fetch("/admin/api/early-access/transition", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: l.id, to: para, reason: motivo.trim() || undefined }),
+      body: JSON.stringify({ id: l.id, to: para, reason_code: codigo, ...(motivo.trim() ? { note: motivo.trim() } : {}) }),
     });
     const j = await res.json().catch(() => ({}));
     if (res.ok && j.mudou === true) {
-      setAviso(`feito: ${j.de} → ${j.para}`); setMotivo("");
+      setAviso(`feito: ${j.de} → ${j.para}`); setMotivo(""); setCodigo("");
       recarregar(); await carregarEventos(l.id);
     } else {
       setAviso(`NÃO mudou: ${j.error ?? res.status}`);
@@ -154,12 +162,18 @@ export default function EarlyAccessPanel() {
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, marginBottom: 10, color: "var(--adm-ink-2)" }}>
           <span>total {m.total}</span><span>24h {m.ultimas24h}</span><span>7d {m.ultimos7d}</span>
           {ESTADOS.map((s) => <span key={s} style={{ color: COR[s] }}>{s} {m.porStatus[s]}</span>)}
+          <span>email ✓ {m.verificados}</span><span>suprimidos {m.suprimidos}</span>
         </div>
       )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <select className="adm-input" value={status} onChange={(e) => setStatus(e.target.value as "" | Estado)}>
           <option value="">todos</option>
           {ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className="adm-input" value={verificado} onChange={(e) => setVerificado(e.target.value as "" | "1" | "0")}>
+          <option value="">email: todos</option>
+          <option value="1">email verificado</option>
+          <option value="0">email não verificado</option>
         </select>
         <form onSubmit={(e) => { e.preventDefault(); setQ(qDigitado.trim().toLowerCase()); }} style={{ display: "flex", gap: 8 }}>
           <input className="adm-input" placeholder="prefixo do email" value={qDigitado} onChange={(e) => setQDigitado(e.target.value)} />
@@ -183,7 +197,8 @@ export default function EarlyAccessPanel() {
             <tbody>
               {linhas.map((l) => (
                 <FragmentoLinha key={l.id} l={l} aberta={aberta === l.id} eventos={aberta === l.id ? eventos : []}
-                  motivo={motivo} setMotivo={setMotivo} onAbrir={() => abrir(l.id)} onTransicionar={(p) => transicionar(l, p)} />
+                  motivo={motivo} setMotivo={setMotivo} codigo={codigo} setCodigo={setCodigo}
+                  onAbrir={() => abrir(l.id)} onTransicionar={(p) => transicionar(l, p)} />
               ))}
             </tbody>
           </table>
@@ -193,13 +208,15 @@ export default function EarlyAccessPanel() {
   );
 }
 
-function FragmentoLinha({ l, aberta, eventos, motivo, setMotivo, onAbrir, onTransicionar }: {
+function FragmentoLinha({ l, aberta, eventos, motivo, setMotivo, codigo, setCodigo, onAbrir, onTransicionar }: {
   l: Linha; aberta: boolean; eventos: Evento[]; motivo: string;
+  codigo: Motivo | ""; setCodigo: (c: Motivo | "") => void;
   setMotivo: (s: string) => void; onAbrir: () => void; onTransicionar: (p: Estado) => void;
 }) {
   const sinais = [
     l.wallet_address ? `carteira ${l.wallet_chain}` : null,
-    l.email_verified_at ? "email ✓" : null,
+    l.email_verified_at ? "email ✓" : "email não verificado",
+    l.email_suppressed_at ? `envio suprimido (${l.email_suppression_reason})` : null,
     l.converted_at ? "convertido" : null,
     l.referral_flag,
     l.utm_source ? `utm:${l.utm_source}` : null,
@@ -218,9 +235,13 @@ function FragmentoLinha({ l, aberta, eventos, motivo, setMotivo, onAbrir, onTran
         <tr>
           <td colSpan={6}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "6px 0" }}>
-              <input className="adm-input" placeholder="motivo operacional — obrigatório para rejeitar/bloquear/reverter; NÃO escreva dado pessoal" value={motivo}
-                onChange={(e) => setMotivo(e.target.value)} maxLength={500} style={{ minWidth: 260 }} />
-              {transicoesDisponiveis(l.status, l.converted_at !== null).map((p) => (
+              <select className="adm-input" value={codigo} onChange={(e) => setCodigo(e.target.value as Motivo | "")}>
+                <option value="">código do motivo…</option>
+                {MOTIVOS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <input className="adm-input" placeholder="nota opcional (some na purga; não vai ao log de admin)" value={motivo}
+                onChange={(e) => setMotivo(e.target.value)} maxLength={NOTA_MAX} style={{ minWidth: 260 }} />
+              {transicoesDisponiveis(l.status, l.converted_at !== null, l.email_verified_at !== null).map((p) => (
                 <button key={p} type="button" className="adm-btn" onClick={() => onTransicionar(p)} style={{ color: COR[p] }}>
                   → {p}
                 </button>

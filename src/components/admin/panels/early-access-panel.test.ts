@@ -46,6 +46,7 @@ describe("EarlyAccessPanel — leitura cancelável, sem setState no corpo do efe
 
   it("o realtime e a transição pedem releitura pelo contador, e ele está nas dependências", () => {
     expect(SRC).toMatch(/realtime\.subscribe\(\(scope\) => \{ if \(scope === "audit"\) recarregar\(\); \}\)/);
-    expect(SRC).toMatch(/\}, \[status, q, recarga, aoVivo\]\);/);
+    // Fase 2: o filtro `verificado` também é dependência (filtro que não relê = recorte mentiroso)
+    expect(SRC).toMatch(/\}, \[status, verificado, q, recarga, aoVivo\]\);/);
   });
 });
