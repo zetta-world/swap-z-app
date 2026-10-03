@@ -30,6 +30,10 @@
 > foram reescritos (revisão 7) com seções atuais separadas de seções
 > **HISTÓRICO**. Menções a `THIS_ATTESTATION_COMMIT` neste arquivo referem-se
 > ao C2 da Fase 1 = `74f37f50d12dae698f14b620914bc0ce5b0c639a`.
+>
+> **Revisão 6 (03/10/2026, L-027):** Fase 2 **CERTIFIED_EXACT_SHA** no C1
+> `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`, atestada no C2 (só docs, não CERTIFIED).
+> `START-HERE.md`/`CURRENT-STATE.md` em revisão 8.
 
 ## Classes
 

@@ -23,8 +23,9 @@ Compare com `docs/START-HERE.md` §2 e §10. O HEAD **não** é um valor fixo:
 commits de control plane (`CLAUDE.md`, `AGENTS.md`, `docs/**`) o mudam
 legitimamente. A referência fixa é o `PRODUCT_BASE_SHA`
 (`9f2ddcbe45f9f93c9a33c331e31e32c45d410019`) e, para a fase em curso, o
-`PHASE_BASE_SHA` registrado no ledger antes da implementação (hoje, Fase 2:
-`74f37f50d12dae698f14b620914bc0ce5b0c639a`, L-020).
+`PHASE_BASE_SHA` registrado no ledger antes da implementação (a Fase 2 usou
+`74f37f50d12dae698f14b620914bc0ce5b0c639a`, L-020, e está fechada desde L-027;
+a próxima fase parte do C2 da Fase 2).
 
 Delta de produto, com exclusão explícita do control plane:
 
@@ -36,7 +37,7 @@ git diff --stat "$PRODUCT_BASE_SHA"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGEN
 |---|---|
 | branch esperada; `PRODUCT_BASE_SHA` ancestral; árvore limpa; todo commit depois da base explicado no ledger/`RELEASE-CHAIN.md`; delta de produto vazio ou exatamente o autorizado no ledger | prosseguir; registrar o HEAD medido |
 | sem ancestralidade, commit sem explicação no ledger, ou delta de produto não autorizado | **ABORT** e reportar |
-| worktree suja que você não criou | **ABORT** e reportar; não fazer stash, reset ou checkout — **exceto** quando o `START-HERE.md` §10 declara uma campanha autorizada ainda não commitada e o delta confere exatamente com o registrado no ledger (hoje: a Fase 2, L-025/L-026): aí prossiga **sem** limpar nada |
+| worktree suja que você não criou | **ABORT** e reportar; não fazer stash, reset ou checkout — **exceto** quando o `START-HERE.md` §10 declara uma campanha autorizada ainda não commitada e o delta confere exatamente com o registrado no ledger: aí prossiga **sem** limpar nada (hoje não há nenhuma: a Fase 2 foi commitada, L-027) |
 
 > Não crie verificação que se invalida quando o próprio documento é
 > commitado (ex.: "HEAD = SHA fixo" ou "diff fora de `docs/` vazio" quando o
@@ -195,7 +196,7 @@ restritiva vence**, e o conflito vira OWNER_DECISION no ledger.
 
   | termo | significa | hoje |
   |---|---|---|
-  | `CERTIFIED_EXACT_SHA` | recertificação completa **naquele SHA exato** em PASS, com evidência | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (runtime) e `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (Early Access Fase 1, L-019); a Fase 2 **não** é certificada |
+  | `CERTIFIED_EXACT_SHA` | recertificação completa **naquele SHA exato** em PASS, com evidência | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (runtime) e `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (Early Access Fase 1, L-019) e `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (Early Access Fase 2, L-027) |
   | `CERTIFIED_RUNTIME_ANCESTOR` | o SHA não foi recertificado; um **ancestral** dele foi, e o delta é conhecido (ex.: só docs) | `43c484b` → ancestral `0d21874`, `DELTA=DOCS_ONLY` |
   | `HISTORICAL_CERTIFICATION_LEGACY` | chamado "certified" antes da revisão 3, sem prova de recert exata pelo critério atual. História preservada, não vale como certificação hoje | R9 `798fe27`, PC-B1 `a5bdd61`, PC-B2 `3123fb4` |
 

@@ -66,7 +66,7 @@ remoto por round (exceto R9), então a evidência é o corpo dos commits e os do
 | PC Batch 3 | `3123fb4` → `691bfdc` | 3 (`afe2665` docs + `.gitattributes`; `6fded4c` docs; `691bfdc` 0067 + testes) | DB-ACL-FINANCIAL-TABLES | 0067 | **INTEGRATED** | `supabase/tests/14`; "PASS WITH DELTA" `[DONO]` | staging rollback/rebuild INCOMPLETE |
 | Preprod | `691bfdc` → `16e4000` | 3 | estabilidade de backtest, achados da auditoria independente do preprod, harnesses, T13 estável | — | **INTEGRATED** | `reports/blocker-closure-20260929T111136Z/27-*` | HARNESS-001/002 |
 | Supply chain | `16e4000` → `0d21874` | 1 | GHSA-vcvr-r3jv-pc5j (next/og RCE, CRITICAL), axios HIGH, image-size, `@solana/spl-token` | — | **INTEGRATED** · CERTIFIED_EXACT_SHA (`0d21874`) | `docs/RELEASE-RUNBOOK.md` §2–§3 | 36 moderate / 1 low |
-| Early Access F1 | `43c484b` → `9f2ddcb` | 1 | F-01…F-16 (hardening F-02/03/04/06/07/08/10/12) | 0068 | **INTEGRATED** (é o PRODUCT_BASE_SHA; COMMITTED_FEATURE_CHECKPOINT) | `docs/PLANO-EARLY-ACCESS.md` §14–§15 | F-01 OPEN_BLOCKER na Fase 1 (hoje: implementado no working tree da Fase 2, FIXED_NOT_RECERTIFIED, §5.5.1); recert no SHA commitado `9f2ddcb` BLOCKED (EA-TEST-F10-FLAKY, §5.5) → **RECERT(C1b)=PASS**: Fase 1 `CERTIFIED_EXACT_SHA` em `f1b4ec1` (§5.5, ledger L-019) |
+| Early Access F1 | `43c484b` → `9f2ddcb` | 1 | F-01…F-16 (hardening F-02/03/04/06/07/08/10/12) | 0068 | **INTEGRATED** (é o PRODUCT_BASE_SHA; COMMITTED_FEATURE_CHECKPOINT) | `docs/PLANO-EARLY-ACCESS.md` §14–§15 | F-01 OPEN_BLOCKER na Fase 1 (hoje: FIXED_CERTIFIED, `CERTIFIED_EXACT_SHA` `53cd85a`, §5.5.4); recert no SHA commitado `9f2ddcb` BLOCKED (EA-TEST-F10-FLAKY, §5.5) → **RECERT(C1b)=PASS**: Fase 1 `CERTIFIED_EXACT_SHA` em `f1b4ec1` (§5.5, ledger L-019) |
 
 **"Round 0":** não existe nenhuma referência na árvore, nos commits ou nas
 branches. A auditoria de 30 achados é "pré-Round 1" (`LEDGER-MESTRE` §B).
@@ -267,7 +267,7 @@ hardening). Correção = commit `9f2ddcb`.
 
 | ID | sev. | descrição curta | estado |
 |---|---|---|---|
-| **F-01** | MEDIUM | sem prova de posse do email: terceiro grava dados e consentimento em nome do titular | **OPEN_BLOCKER** (abrir o gate) → Fase 2 *(status de 01/10, histórico; atual: §5.5.1 — FIXED_NOT_RECERTIFIED, implementação fechada no working tree, não commitada nem certificada)* |
+| **F-01** | MEDIUM | sem prova de posse do email: terceiro grava dados e consentimento em nome do titular | **OPEN_BLOCKER** (abrir o gate) → Fase 2 *(status de 01/10, histórico; atual: §5.5.4 — FIXED_CERTIFIED, `CERTIFIED_EXACT_SHA` `53cd85a`; não deployado)* |
 | F-02 | LOW | filtro de robô consumia cotas compartilhadas | FIXED_NOT_RECERTIFIED |
 | F-03 | LOW | variantes do sentinela `UNAPPROVED` | FIXED_NOT_RECERTIFIED |
 | F-04 | LOW | `service_role` com INSERT em events/consents | FIXED_NOT_RECERTIFIED |
@@ -370,6 +370,21 @@ efeitos hosted (nenhum); docs × código; testes que provam invariantes. Achados
 nesta rodada: cabeçalho da 0069 e índice do T16 desatualizados; referências a `§19` inexistente
 (rota `verify`, T16); duas frases imprecisas da especificação (`/verify` e saída do email do
 banco). **Nenhum defeito conhecido de Fase 2 remanescente; nenhuma decisão de dono pendente.**
+
+### 5.5.4 Early Access Fase 2 — C1, recertificação exata e atestação (03/10)
+
+Verificação independente final (ChatGPT) do pacote `phase2-control-plane-final-audit-20261003T174725Z.tar.gz`
+(sha256 `46779bf2fd7cdc3525a7c2daf5973b1fd10f4174656991592ec9127a52ba0d0a`): **PASS**. C1 `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` criado com
+autorização do dono; recert exata `recert-c1-53cd85a-v31-20261003T182216Z` **PASS** (L-027). Com isso:
+
+| ID | Status |
+|---|---|
+| F-01, F-11 | **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `53cd85a`)** |
+| EA2-A01, EA2-IA01…EA2-IA10 | **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `53cd85a`)** |
+| EA2-A02 (decisão do dono) | implementada e REPROVEN; **CERTIFIED_EXACT_SHA** `53cd85a` |
+| EA2-A03…A06, EA2-A07…A09 | ACCEPTED_RESIDUAL / ACCEPTED (inalterados) |
+| HARNESS-V3-G13-QUOTING (03/10) | — (harness, fora do repo): a campanha `recert-c1-53cd85a-20261003T180548Z` parou no G13 por caminho com `(` não citado no `/bin/sh`; **FAIL · HARNESS_FAILURE_G13_SHELL_QUOTING** (classificação pela evidência, **não** atribuída ao dono; sem veredito negativo do lint sobre produto); o ajuste 25→26 do x100 foi anterior e não foi a causa; corrigido no harness v3.1 (xargs -0) |
+| ZION-PLAYBOOK-TIMEOUT-LOCAL | KNOWN_EXISTING / LOAD_SENSITIVE — **passou** na recert do C1 (container; arquivo 29/29); `src/lib/zion` sem diff |
 
 ### 5.6 Documentação e governança
 

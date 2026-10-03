@@ -4,7 +4,8 @@
 > `docs/LAUNCH-READINESS-LEDGER.md`. Ao mudar de estado, **substitua** as seções
 > atuais e **acrescente** uma entrada no ledger.
 >
-> **Medido em:** 03/10/2026 (revisão 7, ledger L-026 — achado EA2-IA10 da
+> **Medido em:** 03/10/2026 (revisão 8, ledger L-027: Fase 2 certificada no C1 `53cd85a` e atestada
+> neste C2. Revisão 7, ledger L-026 — achado EA2-IA10 da
 > verificação independente final: este arquivo ainda trazia instruções de antes
 > da Fase 2). As seções atuais abaixo descrevem só o estado de hoje; tudo o que
 > valia nas revisões 3–6 está na seção final **HISTÓRICO**, inalterado.
@@ -20,24 +21,24 @@
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`, "feat: add closed-by-default early access foundation", 01/10 17:08 −03 | Git |
 | PRODUCT_BASE_TREE | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | Git |
 | PHASE_BASE_SHA | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (C2 da Fase 1) | ledger L-020 |
-| HEAD | = PHASE_BASE_SHA (`74f37f5…`); nenhum commit da Fase 2 | Git, 03/10 |
-| WORKING_TREE | **NÃO limpo, de propósito:** a implementação da Fase 2, fechada e não commitada (27 arquivos rastreados alterados + 21 novos no fim da L-025, mais o delta só de docs da L-026). Byte a byte igual aos pacotes de auditoria listados em L-025/L-026 | Git; pacotes em `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/` |
+| HEAD | o C2 da Fase 2 (`THIS_ATTESTATION_COMMIT`, só docs; filho direto do C1 `53cd85a`; SHA concreto via `git rev-parse HEAD`) | Git |
+| WORKING_TREE | **limpo** (Fase 2 commitada no C1, atestada no C2) | `git status --short` |
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (tree `62ad70e36a8bcc57331297d8ce929f232fadad2c`): **CERTIFIED_EXACT_SHA** — RUNTIME RECERTIFICATION: PASS (local). Último runtime certificado; o outro SHA com `CERTIFIED_EXACT_SHA` é o C1b `f1b4ec1` (feature) | `reports/recert-0d21874-20261001T010514Z/FINAL-RUNTIME-RECERTIFICATION.md`; `docs/RELEASE-RUNBOOK.md` |
 | EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (= produto de `9f2ddcb` + control plane + 1 arquivo de teste). `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` segue **COMMITTED_FEATURE_CHECKPOINT** (histórico: o dono o designou "certified feature checkpoint", L-009) | ledger L-009, L-016, L-019 |
-| CERTIFIED_FEATURE_SHA | **`f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e`** · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` · **CERTIFIED_EXACT_SHA** | ledger L-019 |
-| CONTROL_PLANE_HEAD | `74f37f50d12dae698f14b620914bc0ce5b0c639a` (C2 da Fase 1, só docs; **não** CERTIFIED, não deployável) | ledger L-019, L-020 |
-| CURRENT_WORK | **EARLY_ACCESS_PHASE2_EMAIL_DOUBLE_OPT_IN** — implementação e control plane fechados no working tree; aguardando verificação independente final e autorização do C1 | ledger L-025, L-026 |
-| PHASE2_IMPLEMENTATION | **CLOSED_IN_WORKING_TREE** | L-025 |
-| PHASE2_CODE_EXISTS | **YES** (só no working tree; o produto commitado é o da Fase 1) | Git |
-| PHASE2_COMMIT | **NONE** | Git |
-| PHASE2_C1 | **NOT_CREATED** | Git |
-| PHASE2_RECERT | **NOT_RUN** | ledger |
-| PHASE2_CERTIFICATION | **NOT_CERTIFIED** | ledger |
-| EARLY_ACCESS_PHASE2_STATUS | **CURRENT_DEVELOPMENT** (fechada no working tree) · especificação final `docs/PLANO-EARLY-ACCESS-FASE2.md` | L-025, L-026 |
+| CERTIFIED_FEATURE_SHA | **`53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** · tree `010a448c774247406cc9cc80cba34e8744426557` · **CERTIFIED_EXACT_SHA** (C1 da Fase 2; antes: `f1b4ec1`, Fase 1) | ledger L-027 |
+| CONTROL_PLANE_HEAD | o C2 da Fase 2 (`THIS_ATTESTATION_COMMIT`, só docs; **não** CERTIFIED, não deployável). `CERTIFIED_FEATURE_SHA` (C1) ≠ `CONTROL_PLANE_HEAD` (C2) | `AI-OPERATING-RULES.md` §5.1 |
+| CURRENT_WORK | **EARLY_ACCESS_PHASE2 FECHADA**: C1 certificado (recert exata PASS) e atestado no C2. Sem fase de produto em curso; próximos passos são decisões do dono (release, abertura) | ledger L-027 |
+| PHASE2_IMPLEMENTATION | **CLOSED** e commitada | L-027 |
+| PHASE2_CODE_EXISTS | **YES** (commitado no C1) | Git |
+| PHASE2_COMMIT | C1 `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` + C2 (atestação, só docs) | Git |
+| PHASE2_C1 | **CREATED** `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` · parent `74f37f50d12dae698f14b620914bc0ce5b0c639a` | Git |
+| PHASE2_RECERT | **PASS** — campanha `recert-c1-53cd85a-v31-20261003T182216Z` (MANIFEST sha256 `31e19f5b1a685b735caf334d000b358ffd49f42f69fc1a1c4c2744d9d0209983`). Campanha anterior `recert-c1-53cd85a-20261003T180548Z`: FAIL · HARNESS_FAILURE_G13_SHELL_QUOTING (classificação pela evidência; **não** atribuída ao dono) | evidência em `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/` |
+| PHASE2_CERTIFICATION | **CERTIFIED_EXACT_SHA** `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` | L-027 |
+| EARLY_ACCESS_PHASE2_STATUS | **CERTIFIED_EXACT_SHA** (C1) · atestada (C2) · não deployada · gate CLOSED · especificação `docs/PLANO-EARLY-ACCESS-FASE2.md` | L-027 |
 | OWNER_PHASE2_PRODUCT_DECISIONS_PENDING | **NONE** (D-1…D-11 em L-021; EA2-A02 em L-023) | ledger |
 | EMAIL_PROVIDER_DECISION | **RESEND**, região de envio `sa-east-1` (D-1). Domínio remetente/SPF/DKIM/DMARC = setup externo (D-2), não decisão pendente | L-021 |
-| PHASE2_VALIDATION (pré-commit, não certificação) | type-check 0 · lint 0/145 (= baseline) · alvo EA 495/495 · SQL 0001→0069: T16 31/31, T16b 2/2, T15 22/22, 02 7/7, 14 6/6 · suíte 4203/4204 (1 FAIL = ZION-PLAYBOOK-TIMEOUT-LOCAL, `src/lib/zion` sem diff) · build reservado para a recert do C1 | L-025 |
-| KNOWN_PHASE2_DEFECTS | **0** (implementação e control plane) | L-025, L-026 |
+| PHASE2_RECERT_RESULTS (certificação) | npm ci 1665 pacotes, lock idêntico · HMAC ×100 100/100 · alvo EA 230/230 · travas 265/265 · SQL 0001→0069: T15 22, T16 31, T16b 2/2, O2 7, T14 6 · type-check 0 · lint 37 arquivos da Fase 2 0/0, completo 0 erros/145 avisos (= baseline) · **build PASS** (Next.js 16.3.6) · **suíte completa 275 arquivos / 4204 testes, 0 falhas** · higiene/segredos PASS · git final limpo · stacks preservadas | `recert-c1-53cd85a-v31-20261003T182216Z` |
+| KNOWN_PHASE2_DEFECTS | **0** | L-025…L-027 |
 | RELEASE_CANDIDATE | **NONE** | `docs/RELEASE-CHAIN.md` |
 | PUBLIC_GATE | **CLOSED**: `disable_early_access=true` (seed da 0068), versões legais `UNAPPROVED`, sem segredo HMAC, sem provider de email configurado — o gate exige as 5 condições | `src/lib/early-access/gate.ts`, 0068 |
 | EARLY_ACCESS_HMAC_SECRET | **NOT_PROVIDED_OR_AUTHORIZED_FOR_THIS_LOCAL_CAMPAIGN** (nenhum segredo real foi lido) | regra da campanha |
@@ -49,18 +50,17 @@
 | PR447 | **OPEN · DRAFT · não mergeado · MERGEABLE.** head `43c484bd1fdc24cdbd8182914514d80d769deeb2`, base `main`. CI `success` (runs 36838326106, 36838252838) | `gh pr view 447` + `gh run list`, 01/10 |
 | GITHUB_HAS_PRODUCT_BASE | **NÃO.** `9f2ddcb` não está em nenhum ref `origin/*`, então não há CI oficial para ele | `git branch -r --contains 9f2ddcb` vazio |
 | ACER_LAB | `LAB_ENV_VERIFIED` (ambiente, não SHA): 4 stacks 25/25 PASS, egress BLOCKED, `BOOT_RESILIENCE=PASS`, `UNATTENDED_BOOT=PASS` (boot 13:18, checado 14:40). **Não tocadas** pela recert | `state/unattended-boot-20261001T1557Z/evidence/post-reboot-unattended-20261001T173957Z.txt` |
-| LIFECYCLE | branch → base → plano → implementação → auditoria → correções → pré-commit → **C1** → **recert exata de C1** → **atestação C2 (só docs)** → próxima fase. A Fase 2 está entre pré-commit (feito) e C1 | `AI-OPERATING-RULES.md` §5 |
+| LIFECYCLE | branch → base → plano → implementação → auditoria → correções → pré-commit → **C1** → **recert exata de C1** → **atestação C2 (só docs)** → próxima fase. A Fase 2 completou o ciclo | `AI-OPERATING-RULES.md` §5 |
 
 **Os status não se implicam:** implementação fechada ≠ commitada ≠
-recertificada ≠ certificada ≠ deployada ≠ gate público aberto. Hoje só vale o
-primeiro.
+recertificada ≠ certificada ≠ deployada ≠ gate público aberto. Hoje valem os
+quatro primeiros (no C1); **não** está deployada e o gate público está **fechado**.
 
 ## OPEN_BLOCKERS
 
 | id | bloqueia | estado |
 |---|---|---|
-| **F-01** EMAIL_DOUBLE_OPT_IN | abrir o gate público | **implementação FECHADA no working tree** (FIXED_NOT_RECERTIFIED). Falta: C1 + recert PASS + C2; não está certificado nem em produção |
-| **PHASE2-C1** | qualquer certificação da Fase 2 | aguarda verificação independente final + **autorização do dono** para o C1 |
+| **F-01** EMAIL_DOUBLE_OPT_IN | abrir o gate público | **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `53cd85a`)**. Não está em produção; abrir o gate depende dos passos do dono em GATE-OPEN e do release |
 | **REL-AUTH** | qualquer push, merge, deploy ou migration hospedada | OWNER_DECISION (política de deploy formalizada) |
 | **VERCEL** | deploy, preview e check do PR | EXTERNAL_DEPENDENCY (pagamento) |
 | **P0-SKEW** | o autopilot em produção (função indisponível desde 16/09) | OPEN_BLOCKER de produção; só o release resolve (`LEDGER-MESTRE-RELEASE.md` §Y) |
@@ -78,7 +78,7 @@ HARNESS-001/002, 36 moderate / 1 low do `npm audit`, HOST-CRED-001, AUTOLOGIN.
 **conhecida e identificável** foi encontrada fora da linha; A08/A09/A10/A17
 permanecem sem fonte e não permitem conclusão. Tabela completa:
 `docs/AUDIT-RECONCILIATION.md` §5. (F-11, antes listado aqui como "escopo da
-Fase 2", está implementado no working tree da Fase 2: FIXED_NOT_RECERTIFIED.)
+Fase 2", está FIXED_CERTIFIED: `CERTIFIED_EXACT_SHA` `53cd85a`.)
 
 ## Lacunas de documentação
 
@@ -105,18 +105,26 @@ Fase 2", está implementado no working tree da Fase 2: FIXED_NOT_RECERTIFIED.)
 
 ## NEXT_ACTION
 
-1. **Verificação independente final** do pacote de control plane (L-026).
-2. **Autorização do dono para o C1 da Fase 2.**
-3. **C1**: commit do working tree da Fase 2 exatamente como registrado (L-025/L-026).
-4. **Recertificação COMPLETA no SHA exato de C1** — `npm ci`, **build**, type-check, lint,
-   suíte completa, SQL 0001→0069 (T15, T16, T16b, 02, 14), evidência com `MANIFEST.sha256`.
-   FAIL → registrar, corrigir, C1b, recert do C1b.
-5. **C2** (atestação só docs) **se a recert passar**, com `CERTIFIED_FEATURE_SHA=<C1>`.
-6. Release continua bloqueado: `RELEASE_CANDIDATE=NONE`.
+A Fase 2 está **fechada** (C1 `53cd85a` CERTIFIED_EXACT_SHA + C2 de atestação). Nada é automático; tudo
+abaixo é decisão do dono:
 
----
+1. **Release** (push/PR/merge/deploy): exige marcar um SHA `RELEASE_CANDIDATE` com certificação PASS
+   e autorização explícita; inclui MIG-READ (ler o `schema_migrations` de produção) antes de aplicar
+   0059→0069. Hoje `RELEASE_CANDIDATE=NONE`.
+2. **Abrir o early access**: os passos de GATE-OPEN (jurídico/D-9, domínio/D-2, segredos, migrations,
+   cron/D-8, `disable_early_access=false`).
+3. **Próxima fase de produto**: parte do C2 como `PHASE_BASE_SHA`, com ledger novo antes de qualquer código.
 
-## HISTÓRICO (revisões 3–6, 01–02/10/2026 — NÃO são instruções atuais)
+## HISTÓRICO (NÃO são instruções atuais)
+
+### Revisão 7 (03/10/2026, L-026) — superada pela revisão 8
+
+Fase 2 fechada **no working tree, sem commit**; `PHASE2_COMMIT=NONE`, `PHASE2_C1=NOT_CREATED`,
+`PHASE2_RECERT=NOT_RUN`, `PHASE2_CERTIFICATION=NOT_CERTIFIED`; NEXT_ACTION era a verificação
+independente final → autorização do C1 → C1 → recert → C2. Tudo cumprido em L-027. O texto
+completo da revisão 7 está no pacote `phase2-control-plane-final-audit-20261003T174725Z.tar.gz`.
+
+### Revisões 3–6 (01–02/10/2026)
 
 > Tudo abaixo foi o estado/instrução **antes** da implementação da Fase 2 e
 > está cumprido ou superado. Mantido literalmente para rastreabilidade.

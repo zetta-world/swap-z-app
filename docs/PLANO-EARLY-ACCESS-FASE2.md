@@ -8,7 +8,7 @@
 > | PHASE_BASE_SHA | `74f37f50d12dae698f14b620914bc0ce5b0c639a` (C2 da Fase 1, só docs, **não** CERTIFIED) · tree `5c93c0512b74777724aae62f665b10feaa95f760` |
 > | CERTIFIED_FEATURE_SHA (Fase 1) | `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` |
 > | branch / worktree | `early-access-phase2-email-double-optin-20261001` · `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001` |
-> | STATUS | **CURRENT_DEVELOPMENT — implementação FECHADA no working tree, sem commit; C1 NÃO criado.** Pronta para verificação independente final (ledger L-025) |
+> | STATUS | **FECHADA — CERTIFIED_EXACT_SHA no C1 `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** (recert `recert-c1-53cd85a-v31-20261003T182216Z` PASS) e atestada no C2 (ledger L-027). Não deployada; gate CLOSED |
 > | RELEASE_CANDIDATE | NONE · gate público **CLOSED** |
 >
 > **Este documento descreve o comportamento FINAL implementado** (0069, código,
@@ -280,5 +280,5 @@ de aplicada.**
 | auditoria adversarial própria (L-022) | 🟢 |
 | 1ª auditoria independente → EA2-IA01…IA06 corrigidos (L-024) | 🟢 |
 | 2ª auditoria independente → EA2-IA07…IA09 corrigidos + auto-auditoria final (L-025) | 🟢 |
-| verificação independente final | ⏸️ |
-| C1 → recert completa no SHA exato (inclui **build**) → C2 | ⏸️ decisão do dono |
+| verificação independente final (EA2-IA10 corrigido, L-026) → PASS | 🟢 |
+| C1 `53cd85a` → recert completa no SHA exato (inclui **build**) PASS → C2 | 🟢 (L-027) |

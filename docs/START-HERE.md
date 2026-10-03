@@ -7,7 +7,7 @@
 > Planos antigos são histórico, mesmo quando dizem "status 🟢" ou "vivo".
 > O estado atual é definido AQUI e em `docs/CURRENT-STATE.md`.
 
-**Revisão 7 (03/10/2026, ledger L-026, achado EA2-IA10):** este arquivo foi
+**Revisão 8 (03/10/2026, ledger L-027): Fase 2 CERTIFIED_EXACT_SHA no C1 e atestada no C2.** Revisão 7 (L-026, EA2-IA10): este arquivo foi
 reescrito para descrever SÓ o estado atual nas seções operacionais (§1–§10).
 Tudo o que valia antes da implementação da Fase 2 está no §11, marcado como
 HISTÓRICO. Revisões 1–6 (01–02/10): ver §11 e o ledger L-011…L-019.
@@ -29,10 +29,10 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | | |
 |---|---|
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` · tree `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` (Early Access Fase 1, último commit de produto) |
-| PHASE_BASE_SHA (Fase 2) | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (o C2 da Fase 1; registrado no ledger L-020 antes de qualquer código da Fase 2) |
-| HEAD atual | = PHASE_BASE_SHA (nenhum commit da Fase 2 ainda) |
+| PHASE_BASE_SHA (Fase 2, histórico da fase) | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (o C2 da Fase 1; registrado no ledger L-020 antes de qualquer código da Fase 2) |
+| HEAD atual | o commit **C2 da Fase 2** (`THIS_ATTESTATION_COMMIT`, só docs, filho de C1; SHA concreto via `git rev-parse HEAD`) |
 | EXPECTED_BRANCH | `early-access-phase2-email-double-optin-20261001` (só local, sem upstream) |
-| WORKING TREE | **NÃO limpo, de propósito:** contém a implementação da Fase 2, fechada e não commitada (ledger L-025/L-026). Veja §10 para provar que o delta é exatamente o autorizado |
+| WORKING TREE | **limpo** (a Fase 2 está commitada em C1 e atestada em C2) |
 
 ## 3. Certificação
 
@@ -42,9 +42,10 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | campo | valor |
 |---|---|
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5`: CERTIFIED_EXACT_SHA (lab local), não deployado |
-| EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` (`CERTIFIED_FEATURE_SHA`, L-019) |
-| CONTROL_PLANE_HEAD | `74f37f50d12dae698f14b620914bc0ce5b0c639a` (C2 da Fase 1, só docs, **não** CERTIFIED, não deployável) |
-| EARLY_ACCESS_PHASE2 | **NOT_CERTIFIED** — implementação fechada no working tree; sem commit, sem C1, sem recert |
+| EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` (L-019) |
+| CERTIFIED_FEATURE_SHA (atual) | **`53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** (C1 da Fase 2; L-027). O anterior era `f1b4ec1` (Fase 1) |
+| CONTROL_PLANE_HEAD | o C2 da Fase 2 (`THIS_ATTESTATION_COMMIT`; só docs; **não** CERTIFIED, não deployável) |
+| EARLY_ACCESS_PHASE2 | **CERTIFIED_EXACT_SHA** em `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` · tree `010a448c774247406cc9cc80cba34e8744426557` (C1; recert `recert-c1-53cd85a-v31-20261003T182216Z` PASS, L-027) — **não** deployado; gate CLOSED |
 | RELEASE_CANDIDATE | **NONE** |
 
 ## 4. Qual worktree usar?
@@ -61,30 +62,30 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 
 | campo | valor |
 |---|---|
-| CURRENT_WORK | **EARLY_ACCESS_PHASE2_EMAIL_DOUBLE_OPT_IN** |
-| PHASE2_IMPLEMENTATION | **CLOSED_IN_WORKING_TREE** (L-025; controle de documentos fechado em L-026) |
-| PHASE2_CODE_EXISTS | **YES** — só no working tree (o produto COMMITADO continua o da Fase 1) |
-| PHASE2_COMMIT | **NONE** |
-| PHASE2_C1 | **NOT_CREATED** |
-| PHASE2_RECERT | **NOT_RUN** |
-| PHASE2_CERTIFICATION | **NOT_CERTIFIED** |
+| CURRENT_WORK | **EARLY_ACCESS_PHASE2 CERTIFIED (C1) e atestada (C2)** — fase fechada; próximo: decisões de release/abertura do dono |
+| PHASE2_IMPLEMENTATION | **CLOSED** e commitada em C1 |
+| PHASE2_CODE_EXISTS | **YES** — commitado em C1 |
+| PHASE2_COMMIT | C1 `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` + C2 (atestação, só docs) |
+| PHASE2_C1 | **CREATED** `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (parent `74f37f50d12dae698f14b620914bc0ce5b0c639a`) |
+| PHASE2_RECERT | **PASS** (`recert-c1-53cd85a-v31-20261003T182216Z`; MANIFEST sha256 `31e19f5b1a685b73…`). Campanha anterior `recert-c1-53cd85a-20261003T180548Z` = FAIL · HARNESS_FAILURE_G13_SHELL_QUOTING (classificação pela evidência; **não** atribuída ao dono) |
+| PHASE2_CERTIFICATION | **CERTIFIED_EXACT_SHA** `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` |
 | OWNER_PHASE2_PRODUCT_DECISIONS_PENDING | **NONE** (D-1…D-11 em L-021; EA2-A02 em L-023) |
 | EMAIL_PROVIDER_DECISION | **RESEND** (D-1; região de envio `sa-east-1`) |
 | ESPECIFICAÇÃO | `docs/PLANO-EARLY-ACCESS-FASE2.md` (comportamento final implementado) |
-| AUDITORIAS | própria (L-022) · 1ª independente FAIL → EA2-IA01…IA06 corrigidos (L-024) · 2ª independente → EA2-IA07…IA09 corrigidos (L-025) · verificação final → EA2-IA10 (control plane) corrigido (L-026) |
+| AUDITORIAS | própria (L-022) · 1ª independente → EA2-IA01…IA06 (L-024) · 2ª → EA2-IA07…IA09 (L-025) · verificação final → EA2-IA10 (L-026) · verificação final PASS + C1 + recert PASS + C2 (L-027) |
 
 **Os status são distintos e não se implicam:** implementação fechada ≠
 commitada ≠ recertificada ≠ certificada ≠ deployada ≠ gate público aberto.
-Hoje só o primeiro vale.
+Hoje valem os quatro primeiros (fechada, commitada, recertificada, certificada no C1);
+**não** está deployada e o gate público está **fechado**.
 
 ## 6. O que está bloqueado?
 
-- **F-01 (EMAIL_DOUBLE_OPT_IN):** a implementação está **fechada no working
-  tree** (FIXED_NOT_RECERTIFIED). Ainda **não** está commitada, recertificada,
-  certificada nem em produção. Abrir o gate público continua bloqueado até: C1
-  + recert PASS + C2; texto jurídico aprovado (inclui D-9: o Resend na Política
-  de Privacidade); setup externo do domínio remetente (D-2); segredos
-  configurados; migrations 0068/0069 aplicadas; decisão do dono de abrir.
+- **F-01 (EMAIL_DOUBLE_OPT_IN):** **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `53cd85a`)** — implementado,
+  commitado no C1 e recertificado. **Não** está em produção. Abrir o gate público continua bloqueado
+  até os passos do dono: texto jurídico aprovado (inclui D-9: Resend na Política de Privacidade),
+  domínio remetente (D-2), segredos configurados por mecanismo autorizado, migrations 0068/0069
+  aplicadas (exige release), agendar o cron (D-8) e a decisão de abrir.
 - **Release para produção:** BLOQUEADO (autorização do dono, leitura das
   migrations em produção, Vercel `DEFERRED_EXTERNAL_PAYMENT`, PR #447 DRAFT).
 - **Automação com dinheiro real:** NO-GO (DCA, Pilot e Autopilot reais).
@@ -103,7 +104,6 @@ Lista completa: `docs/CURRENT-STATE.md` → OPEN_BLOCKERS.
 >
 > ⛔ Não apagar branches nem worktrees. Não editar nem renomear documento
 > histórico. Nunca editar migration existente (correção é migration nova).
-> **Não limpar, stashar nem resetar o working tree da Fase 2.**
 >
 > ⛔ **POLÍTICA DE DEPLOY (decisão do dono, 01/10/2026):** a regra de 31/08
 > *"tudo vai para produção sempre"* está **FORMALMENTE SUSPENSA**. Deploy só
@@ -123,51 +123,34 @@ Lista completa: `docs/CURRENT-STATE.md` → OPEN_BLOCKERS.
 
 ## 9. Qual é o próximo passo exato?
 
-Ciclo de vida (`docs/AI-OPERATING-RULES.md` §5). A Fase 2 está entre os passos
-7 (validação pré-commit, feita) e 8 (C1). A sequência a partir de agora:
+A Fase 2 cumpriu o ciclo inteiro (`AI-OPERATING-RULES.md` §5): plano → implementação → auditorias
+→ correções → pré-commit → **C1 `53cd85a`** → **recert exata PASS** → **C2 (este commit de atestação)**.
+**A fase está FECHADA.** Nada é automático a partir daqui; cada item abaixo é decisão do dono:
 
-1. **Verificação independente final** do pacote de control plane (L-026).
-2. **Autorização do dono para o C1 da Fase 2.** Sem ela, nada é commitado.
-3. **C1** (commit candidato): o working tree da Fase 2 exatamente como
-   registrado em L-025/L-026.
-4. **Recertificação COMPLETA no SHA exato de C1:** `npm ci`, **build**,
-   type-check, lint, suíte completa, SQL 0001→0069 (T15, T16, T16b, 02, 14),
-   evidência fora do repo com `MANIFEST.sha256`. O build só roda aqui.
-   FAIL → registrar, corrigir, C1b, recert do C1b (sem retry-to-pass).
-5. **C2** (atestação só docs) **se e só se** a recert passar, registrando
-   `CERTIFIED_FEATURE_SHA=<C1>`.
+1. Release (push/PR/merge/deploy): exige marcar um SHA `RELEASE_CANDIDATE` com certificação PASS e
+   autorização explícita (`AI-OPERATING-RULES.md` §6.1). Hoje `RELEASE_CANDIDATE=NONE`.
+2. Abrir o early access: os passos do §6 (jurídico, domínio, segredos, migrations, cron, gate).
+3. Próxima fase de produto, partindo do C2 como `PHASE_BASE_SHA`.
 
 Conhecido e separado (não é da Fase 2): o timeout de carga de
-`src/lib/zion/playbook-backtest.test.ts` (ZION-PLAYBOOK-TIMEOUT-LOCAL).
+`src/lib/zion/playbook-backtest.test.ts` (ZION-PLAYBOOK-TIMEOUT-LOCAL) — passou na recert do C1
+(container, 6400 ms dentro do limite do arquivo); segue registrado como sensível a carga.
 
-## 10. Como provar que estou no lugar certo? (estado ATUAL, Fase 2 não commitada)
+## 10. Como provar que estou no lugar certo? (estado ATUAL: Fase 2 certificada no C1, atestada no C2)
 
 ```bash
 cd /home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001
-PRODUCT_BASE_SHA=9f2ddcbe45f9f93c9a33c331e31e32c45d410019
-PHASE_BASE_SHA=74f37f50d12dae698f14b620914bc0ce5b0c639a
+C1=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1
 git branch --show-current                      # early-access-phase2-email-double-optin-20261001
-git rev-parse HEAD HEAD^{tree}                 # hoje = PHASE_BASE_SHA / 5c93c05… (até existir o C1)
-git merge-base --is-ancestor "$PRODUCT_BASE_SHA" HEAD && echo OK-ANCESTOR
-git status --short                             # NÃO vazio: o delta da Fase 2 (ver abaixo)
-git diff --name-only HEAD; git ls-files --others --exclude-standard
-git diff --quiet HEAD -- supabase/migrations/0068_early_access.sql && echo 0068-INTOCADA
+git rev-parse HEAD HEAD^{tree} HEAD^           # HEAD = C2; HEAD^ = C1
+git merge-base --is-ancestor "$C1" HEAD && echo OK-ANCESTOR
+git status --short                             # vazio
+git diff --stat "$C1"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'   # vazio (C2 é só docs)
 ```
 
-A identidade é válida quando **todas** valem:
-
-1. a branch é a esperada e `PRODUCT_BASE_SHA` é ancestral do HEAD;
-2. HEAD = `PHASE_BASE_SHA` (enquanto o C1 não existir) e todo commit posterior
-   ao `PRODUCT_BASE_SHA` está explicado no ledger / `RELEASE-CHAIN.md`;
-3. o working tree contém **exatamente** o delta da Fase 2 registrado no ledger
-   (L-025: arquivos de produto, 0069, testes; L-026: só docs) — conferível
-   contra o pacote de auditoria final listado em L-026 (patch e arquivos
-   untracked byte a byte);
-4. `0068`, `package*.json`, `.env*`, `vercel.json` e `src/lib/zion` sem diff.
-
-Qualquer outro resultado é mismatch: **ABORTAR**, reportar, e seguir
-`docs/AI-OPERATING-RULES.md` §1. **Não** "consertar" com checkout, reset,
-stash ou rebase.
+Válido quando: branch esperada; C1 ancestral (pai direto) do HEAD; árvore limpa; diff de produto
+C1..HEAD vazio; todo commit posterior explicado no ledger. Qualquer outro resultado: **ABORTAR** e
+reportar (`AI-OPERATING-RULES.md` §1), sem checkout/reset/stash/rebase.
 
 ---
 
@@ -190,3 +173,6 @@ stash ou rebase.
   `BLOCKED_NOT_STARTED` e `PHASE2_CODE_EXISTS=NO`.
 - Detalhe completo dessas revisões: ledger L-011…L-019 e as versões anteriores
   deste arquivo dentro dos pacotes de auditoria da Fase 2 (`PHASE2-DOCS.tar.gz`).
+- **Revisão 7 (03/10/2026, L-026):** a Fase 2 estava fechada **no working tree, sem commit**; o
+  §10 provava identidade pelo delta não commitado; o próximo passo era a verificação final e a
+  autorização do C1. Cumprido em L-027.

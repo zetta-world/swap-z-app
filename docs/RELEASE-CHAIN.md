@@ -22,14 +22,15 @@
 > **Termos (revisões 3 e 4):** `CERTIFIED` só para SHA com recertificação no
 > SHA exato em PASS, sempre qualificado:
 > - `CERTIFIED_EXACT_SHA`: `0d21874b4147bb8a0b232aa0abc2302471a720e5` (runtime) e
->   `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (C1b, Early Access Fase 1; L-019);
+>   `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (C1b, Early Access Fase 1; L-019) e
+>   `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (C1, Early Access Fase 2; L-027);
 > - `CERTIFIED_RUNTIME_ANCESTOR`: o SHA não foi recertificado, mas um ancestral
 >   foi e o delta é conhecido (`43c484b`, `DELTA=DOCS_ONLY`);
 > - `HISTORICAL_CERTIFICATION_LEGACY`: chamado "certified" antes da revisão 3,
 >   sem prova de recert exata pelo critério atual (R9, PC-B1, PC-B2).
 >
 > `LAST_CERTIFIED_RUNTIME=0d21874b4147bb8a0b232aa0abc2302471a720e5` ·
-> `CERTIFIED_FEATURE_SHA=f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (RECERT(C1b)=PASS, 02/10, L-019) ·
+> `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (Fase 2, RECERT(C1)=PASS, 03/10, L-027; antes `f1b4ec1`, Fase 1, L-019) ·
 > `CONTROL_PLANE_HEAD` = o commit C2 de atestação (só docs, **não** CERTIFIED).
 > C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (02/10, L-018).
 > `CERTIFIED_FEATURE_SHA` (o C1 recertificado) não é necessariamente o
@@ -88,9 +89,12 @@
     │  só docs (diff de produto C1b..C2 vazio)
     ▼
  74f37f5  C2 (o commit que traz L-019)  CONTROL_PLANE_ATTESTATION_COMMIT   registra CERTIFIED_FEATURE_SHA=f1b4ec1; C2 NÃO é CERTIFIED; DO NOT DEPLOY
-    │  Early Access Fase 2 (double opt-in), PHASE_BASE_SHA = 74f37f5 — implementação FECHADA no working tree, SEM commit (L-025/L-026)
+    │  Early Access Fase 2 (double opt-in), PHASE_BASE_SHA = 74f37f5
     ▼
- C1 da Fase 2 (ainda não existe; aguarda autorização do dono)    NOT_CREATED · RECERT NOT_RUN · NOT_CERTIFIED
+ 53cd85a  C1 da Fase 2 — CANDIDATE_SHA                             RECERT PASS (recert-c1-53cd85a-v31-20261003T182216Z) · CERTIFIED_EXACT_SHA · CERTIFIED_FEATURE_SHA  DO NOT DEPLOY*
+    │  só docs (diff de produto C1..C2 vazio)
+    ▼
+ C2 da Fase 2 (o commit que traz L-027)  CONTROL_PLANE_ATTESTATION_COMMIT   registra CERTIFIED_FEATURE_SHA=53cd85a; NÃO é CERTIFIED; DO NOT DEPLOY
     ▼
   …
     ▼
@@ -132,7 +136,9 @@ prova AP-LOCK hospedada (`RELEASE-RUNBOOK.md` §6–§7).
 | 19b | C1 — commit candidato (control plane + teste F10) | `f4af976` | `f4af9764e4c773f1bba2821f6cbef9685cfeb59d` | `d214a354b75cafbd13d2882c94eec98c0e262a28` | `early-access-phase2-email-double-optin-20261001` (local) | CANDIDATE_SHA · **RECERT FAIL** · DO NOT DEPLOY | recert exata 02/10 (`recert-c1-f4af976-20261002T012205Z`): alvo EA 122/123 (EA-TEST-HMAC-189-FLAKY); `reports/EARLY-ACCESS-PHASE1-C1-RECERT-f4af976-20261001.txt`; ledger L-018 | C1b |
 | 19b′ | C1b — commit candidato (correção EA-TEST-HMAC-189-FLAKY + docs revisão 5) | `f1b4ec1` | `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` | `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` | `early-access-phase2-email-double-optin-20261001` (local) | **CERTIFIED_EXACT_SHA** · `CERTIFIED_FEATURE_SHA` · DO NOT DEPLOY (não é RELEASE_CANDIDATE) | **RECERT(C1b)=PASS** 02/10, campanha `recert-c1b-f1b4ec1-20261002T095819Z`: ×100 100/100 · alvo EA 123/123 · guardas 264/264 · T15 22/22 · type-check · lint 0/145 · build exit 0 · suíte 271/4096; `reports/EARLY-ACCESS-PHASE1-C1B-RECERT-f1b4ec1-20261002.campaign-20261002T095819Z.txt`; ledger L-019 | C2 |
 | 19c | C2 — commit de atestação (só docs) | `74f37f5` (o commit que traz L-019) | `74f37f50d12dae698f14b620914bc0ce5b0c639a` | `5c93c0512b74777724aae62f665b10feaa95f760` | idem | `CONTROL_PLANE_ATTESTATION_COMMIT` · `CONTROL_PLANE_HEAD` · **não** CERTIFIED · DO NOT DEPLOY | prova: diff de produto `f1b4ec1..C2` vazio (medido antes do commit; repetir depois) | Fase 2 (`PHASE_BASE_SHA` = SHA do C2) |
-| 20 | Early Access Fase 2 | — (sem commit) | — | — | `early-access-phase2-email-double-optin-20261001` (working tree sobre `74f37f5` = PHASE_BASE_SHA) | **CURRENT_DEVELOPMENT** · implementação **CLOSED_IN_WORKING_TREE** · C1 NOT_CREATED · RECERT NOT_RUN · **NOT_CERTIFIED** · DO NOT DEPLOY | validação pré-commit e auditorias: ledger L-022…L-026 | próximo: verificação independente final → autorização do C1 → recert exata (com build) → C2 |
+| 20 | Early Access Fase 2 — C1 | `53cd85a` | `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` | `010a448c774247406cc9cc80cba34e8744426557` | `early-access-phase2-email-double-optin-20261001` (local) | **CANDIDATE_SHA · RECERT PASS · CERTIFIED_EXACT_SHA · CERTIFIED_FEATURE_SHA** · DO NOT DEPLOY | `recert-c1-53cd85a-v31-20261003T182216Z` (MANIFEST `31e19f5b1a685b73…`); campanha `recert-c1-53cd85a-20261003T180548Z` = FAIL · HARNESS_FAILURE_G13_SHELL_QUOTING (classificação pela evidência; **não** atribuída ao dono) | L-027 |
+| 20x | C2 não autorizado (só docs, idêntico ao 20c exceto pela atribuição) | `6f9c10c` | `6f9c10cb87dbcd3dd6d2be93712c15e0fe228190` | `10c815587e498999bdb748b84771983634d009c9` | tag local `preserved/unauthorized-c2-superseded-6f9c10c` (fora do branch) | **UNAUTHORIZED_LOCAL_ATTESTATION_SUPERSEDED** · nunca enviado · DO NOT USE | substituído pelo 20c | L-027 |
+| 20c | Early Access Fase 2 — C2 (atestação, só docs; substituto autorizado) | o commit que traz L-027 | — | — | idem | `CONTROL_PLANE_ATTESTATION_COMMIT` · `CONTROL_PLANE_HEAD` · **não** CERTIFIED · DO NOT DEPLOY | prova: diff de produto `53cd85a..C2` vazio | — |
 | ∞ | FINAL RELEASE CANDIDATE | — | — | — | — | NOT_STARTED | — | — |
 
 Provas rápidas:
