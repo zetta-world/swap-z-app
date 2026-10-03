@@ -434,3 +434,13 @@
 - **RC:** `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO`. A seleção fica pendente até, no mínimo: R-01 resolvido; `CEX_RECOVERY_HMAC_KEY` presente com segurança; estado hospedado re-medido depois disso; seleção explícita do dono. Recomendação (≠ seleção): feature `53cd85a`.
 - **Nenhum** push, merge, deploy, escrita hospedada, mudança na Vercel, segredo hospedado, email real ou dinheiro real. Pilha/volumes do ensaio preservados.
 - **Próxima dependência:** resolução externa de R-01 e R-02 pelo dono → re-medição ao vivo → decisão de RC.
+
+### L-030 · 2026-10-03 · Trilha STRATEGY INTELLIGENCE & FORENSIC LEARNING documentada (só docs)
+
+- **Origem:** auditoria forense **só-leitura** sobre os dados do Supabase de produção, trazida pelo dono no programa PRE-VERCEL ACCELERATION (fonte dos números: **dono**; não re-medidos pelo agente que escreveu o documento). Nenhuma estratégia, genoma, parâmetro, linha de banco ou estado de produção foi modificado.
+- **Documento:** `docs/PLANO-STRATEGY-INTELLIGENCE-FORENSIC-LEARNING.md` (`ACTIVE_PLAN`, status `DOCUMENTED · NOT_YET_EXECUTING_STRATEGY_CHANGES`): snapshot do dataset (`paper_positions` 3497 · `celeiro_posicoes` 318 · `celeiro_fluxos` 2290 · `celeiro_mutacoes` 9 · `lab_runs` 100 · `lab_results` 100 · `bancada_operacao` 47 · `mercado_vela` 11651 · `lab_strategies` 29 — retrato da data, não totais imutáveis; nomes de tabela conferidos nas migrations), achados **FSL-01…FSL-10**, hipóteses **pré-registradas H1–H6** (não são regras), plano futuro **A–G** (não iniciado), padrão de sucesso (pré-registro → fora da amostra → custos → benchmark → amostra → repetibilidade → só então certificar).
+- **Ligações:** `DOCUMENT-AUTHORITY.md` (revisão 8, nova linha), `docs/README.md` (bloco de entrada), `CURRENT-STATE.md` (`STRATEGY_INTELLIGENCE_WORKSTREAM`). `PLANO-MESTRE.md` é SUPERSEDED e não foi editado.
+- **Invariantes:** `REAL_MONEY_AUTONOMY=NO` · `STRATEGY_CERTIFICATE=NO` · `PILOT_PERMISSION=NO`.
+- **Commit de control plane (só docs):** o commit que traz esta entrada (`THIS_CONTROL_PLANE_COMMIT`), filho de `762224843fa8d7e340416d05ac2a99488945d541`. **Não** CERTIFIED, **não** deployável. `CERTIFIED_FEATURE_SHA` segue `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`. Prova: diff de produto `53cd85a..`este vazio.
+- **Estado inalterado:** `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO` · `PUBLIC_GATE=CLOSED` · bloqueadores R-01/R-02 abertos. Nenhum push, merge, deploy, escrita hospedada, email ou dinheiro real.
+- **Próximo (programa PRE-VERCEL):** lane B de desenvolvimento local numa worktree/branch nova a partir deste commit; a lane de release (este branch) não recebe bytes de produto.

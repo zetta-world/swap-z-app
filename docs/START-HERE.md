@@ -30,7 +30,7 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 |---|---|
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` · tree `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` (Early Access Fase 1, último commit de produto) |
 | PHASE_BASE_SHA (Fase 2, histórico da fase) | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (o C2 da Fase 1; registrado no ledger L-020 antes de qualquer código da Fase 2) |
-| HEAD atual | o commit de control plane da **L-029** (`THIS_CONTROL_PLANE_COMMIT`, só docs, filho do C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`; SHA concreto via `git rev-parse HEAD`) |
+| HEAD atual | o commit de control plane da **L-030** (`THIS_CONTROL_PLANE_COMMIT`, só docs, filho do commit da L-029 `762224843fa8d7e340416d05ac2a99488945d541`, que é filho do C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`; SHA concreto via `git rev-parse HEAD`) |
 | EXPECTED_BRANCH | `early-access-phase2-email-double-optin-20261001` (só local, sem upstream) |
 | WORKING TREE | **limpo** (Fase 2 commitada em C1, atestada em C2; ensaio e reconciliação registrados no commit da L-029) |
 
@@ -44,7 +44,7 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5`: CERTIFIED_EXACT_SHA (lab local), não deployado |
 | EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` (L-019) |
 | CERTIFIED_FEATURE_SHA (atual) | **`53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** (C1 da Fase 2; L-027). O anterior era `f1b4ec1` (Fase 1) |
-| CONTROL_PLANE_HEAD | o commit da L-029 (`THIS_CONTROL_PLANE_COMMIT`; só docs; **não** CERTIFIED, não deployável). Anterior: C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` |
+| CONTROL_PLANE_HEAD | o commit da L-030 (`THIS_CONTROL_PLANE_COMMIT`; só docs; **não** CERTIFIED, não deployável). Anteriores: L-029 `762224843fa8d7e340416d05ac2a99488945d541` · C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` |
 | EARLY_ACCESS_PHASE2 | **CERTIFIED_EXACT_SHA** em `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` · tree `010a448c774247406cc9cc80cba34e8744426557` (C1; recert `recert-c1-53cd85a-v31-20261003T182216Z` PASS, L-027) — **não** deployado; gate CLOSED |
 | RELEASE_CANDIDATE | **NONE** · `RC_SELECTION_READY=NO` |
 
@@ -153,11 +153,13 @@ cd /home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-
 C1=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1
 C2=57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c
 git branch --show-current                      # early-access-phase2-email-double-optin-20261001
-git rev-parse HEAD HEAD^{tree} HEAD^           # HEAD = commit da L-029; HEAD^ = C2
+L029=762224843fa8d7e340416d05ac2a99488945d541
+git rev-parse HEAD HEAD^{tree} HEAD^           # HEAD = commit da L-030; HEAD^ = L029
 git merge-base --is-ancestor "$C1" HEAD && echo OK-ANCESTOR-C1
 git merge-base --is-ancestor "$C2" HEAD && echo OK-ANCESTOR-C2
+git merge-base --is-ancestor "$L029" HEAD && echo OK-ANCESTOR-L029
 git status --short                             # vazio
-git diff --stat "$C1"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'   # vazio (C2 e L-029 são só docs)
+git diff --stat "$C1"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'   # vazio (C2, L-029 e L-030 são só docs)
 ```
 
 Válido quando: branch esperada; C1 e C2 ancestrais do HEAD; árvore limpa; diff de produto C1..HEAD vazio;

@@ -16,6 +16,10 @@
 > ⚠️ A partir de 01/10/2026, a classificação de autoridade de cada documento
 > está em `DOCUMENT-AUTHORITY.md`. As seções "Vivos" e "Históricos" abaixo são
 > o índice antigo, preservado como referência.
+>
+> **Trilha documentada, não em execução (03/10/2026, L-030):**
+> [`PLANO-STRATEGY-INTELLIGENCE-FORENSIC-LEARNING.md`](PLANO-STRATEGY-INTELLIGENCE-FORENSIC-LEARNING.md) —
+> achados forenses FSL-01…10 e hipóteses pré-registradas H1–H6; nenhuma estratégia alterada.
 
 ---
 

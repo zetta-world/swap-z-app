@@ -38,6 +38,9 @@
 > **Revisão 7 (03/10/2026, L-029):** `RELEASE-RUNBOOK.md` passa à **revisão 2** (alvo `53cd85a`,
 > errata RB-01/RB-02; revisão 1 preservada como HISTÓRICO no próprio arquivo). `START-HERE.md`/`CURRENT-STATE.md`
 > em revisão 9 (ensaio PROD-CLONE CLOSED_PASS, reconciliação ao vivo CLOSED).
+>
+> **Revisão 8 (03/10/2026, L-030):** novo `ACTIVE_PLAN` `PLANO-STRATEGY-INTELLIGENCE-FORENSIC-LEARNING.md`
+> (trilha documentada; nenhuma mudança de estratégia em execução).
 
 ## Classes
 
@@ -144,6 +147,7 @@
 | `docs/PLANO-RESERVA-DE-MODELO.md` | HISTORICAL_EVIDENCE | 64af97f 2026-08-29 | entregue | plano entregue | NÃO |
 | `docs/PLANO-RUMO-AO-10.md` | HISTORICAL_EVIDENCE | 5a052d7 2026-07-02 | — | rodadas 1–3 pós-auditoria de julho (não são os Rounds R1–R9) | NÃO |
 | `docs/PLANO-STOP-E-ORFAOS.md` | HISTORICAL_EVIDENCE | 0187acc 2026-08-23 | entregue | plano entregue | NÃO |
+| `docs/PLANO-STRATEGY-INTELLIGENCE-FORENSIC-LEARNING.md` | ACTIVE_PLAN | criado 2026-10-03 (L-030), só docs | — | trilha STRATEGY INTELLIGENCE & FORENSIC LEARNING: achados forenses FSL-01…FSL-10 (auditoria só-leitura do dono) e hipóteses pré-registradas H1–H6; fases A–G **não iniciadas** | SIM — como registro de achados/hipóteses; **NÃO** autoriza nenhuma mudança de estratégia (`REAL_MONEY_AUTONOMY=NO`, `STRATEGY_CERTIFICATE=NO`, `PILOT_PERMISSION=NO`) |
 | `docs/PLANO-TAMANHO-E-REGIME.md` | SUPPORTING_REFERENCE | 51465a6 2026-08-21 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-TERMINAL-PRO.md` | SUPPORTING_REFERENCE | f722941 2026-08-31 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-TORNEIO-HONESTO.md` | HISTORICAL_EVIDENCE | 63501b8 2026-08-16 | entregue | plano entregue | NÃO |
