@@ -1,0 +1,7 @@
+{
+  "nota": "Estados medidos. baseline = produção congelada de 28/09, re-medida ao vivo em 03/10 (L-029). target = depois de 0059…0069 (ensaio L-028). fp = scripts/release/sql/fp_v1.sql.",
+  "fp_v1_sql_sha256": "5bcd74608b8192b61b0afd42498a8571f34a5c617cae1f32cf1b78662ef7b7be",
+  "baseline": { "fp_v1": "864|74e742469c9088012d87caa88468dc9e", "history_rows": 55, "history_max_text": "20260916101528", "public_tables": 41 },
+  "target":   { "fp_v1": "1118|1933659149a0cf3489ea8de56c848388", "history_rows": 66, "public_tables": 48,
+                "migrations": ["0059","0060","0061","0062","0063","0064","0065","0066","0067","0068","0069"] }
+}

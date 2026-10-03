@@ -1,0 +1,20 @@
+{
+  "versao": 1,
+  "alvo": "53cd85a2a86cc2f34d4234965ef3cf519ce7adc1",
+  "nota": "Só NOMES e comportamento na ausência, provados no código. Nenhum valor. Fonte de verdade para o check de auditoria admin, para scripts/release/check-env-names.mjs e para a trava server-env.test.ts.",
+  "variaveis": [
+    { "nome": "SUPABASE_URL",               "escopo": "release",     "evidencia": "src/lib/supabase/server.ts", "ausencia": "getSupabaseAdmin() devolve null: rotas de servidor degradam (auth 503) e o caminho de dinheiro falha fechado" },
+    { "nome": "SUPABASE_SERVICE_ROLE_KEY",  "escopo": "release",     "evidencia": "src/lib/supabase/server.ts", "ausencia": "idem SUPABASE_URL" },
+    { "nome": "AUTH_JWT_SECRET",            "escopo": "release",     "evidencia": "src/lib/auth/session.ts",    "ausencia": "sem sessão (valor com menos de 16 caracteres também conta como ausente)", "minimo": 16 },
+    { "nome": "CRON_SECRET",                "escopo": "release",     "evidencia": "src/app/api/early-access/cron/route.ts", "ausencia": "todos os crons respondem 401" },
+    { "nome": "ADMIN_WALLETS",              "escopo": "release",     "evidencia": "src/lib/admin/require.ts",   "ausencia": "ninguém é admin por ambiente" },
+    { "nome": "AUTOPILOT_ENC_KEY",          "escopo": "release",     "evidencia": "src/lib/crypto/secretbox.ts", "ausencia": "cifra de credencial indisponível (autopilot/conexões CEX desligados)" },
+    { "nome": "CEX_RECOVERY_HMAC_KEY",      "escopo": "release",     "evidencia": "src/lib/cex/fingerprint.ts", "ausencia": "lança server_configuration_error em /api/cex/order, /api/cex/order/status e cex/conexoes (R-02)", "novaNoAlvo": true },
+    { "nome": "EARLY_ACCESS_HMAC_SECRET",   "escopo": "public_gate", "evidencia": "src/lib/early-access/hmac.ts", "ausencia": "gate do early access fechado (condição 4)" },
+    { "nome": "EARLY_ACCESS_EMAIL_PROVIDER", "escopo": "public_gate", "evidencia": "src/lib/early-access/email/config.ts", "ausencia": "gate fechado (condição 5)" },
+    { "nome": "EARLY_ACCESS_RESEND_API_KEY", "escopo": "public_gate", "evidencia": "src/lib/early-access/email/config.ts", "ausencia": "gate fechado (condição 5)" },
+    { "nome": "EARLY_ACCESS_EMAIL_FROM",    "escopo": "public_gate", "evidencia": "src/lib/early-access/email/config.ts", "ausencia": "gate fechado (condição 5)" },
+    { "nome": "EARLY_ACCESS_PUBLIC_BASE_URL", "escopo": "public_gate", "evidencia": "src/lib/early-access/email/config.ts", "ausencia": "gate fechado (condição 5)" },
+    { "nome": "EARLY_ACCESS_RESEND_WEBHOOK_SECRET", "escopo": "public_gate", "evidencia": "src/lib/early-access/email/config.ts", "ausencia": "webhook recusa tudo (401)" }
+  ]
+}

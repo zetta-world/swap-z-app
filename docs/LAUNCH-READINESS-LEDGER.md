@@ -444,3 +444,11 @@
 - **Commit de control plane (só docs):** o commit que traz esta entrada (`THIS_CONTROL_PLANE_COMMIT`), filho de `762224843fa8d7e340416d05ac2a99488945d541`. **Não** CERTIFIED, **não** deployável. `CERTIFIED_FEATURE_SHA` segue `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`. Prova: diff de produto `53cd85a..`este vazio.
 - **Estado inalterado:** `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO` · `PUBLIC_GATE=CLOSED` · bloqueadores R-01/R-02 abertos. Nenhum push, merge, deploy, escrita hospedada, email ou dinheiro real.
 - **Próximo (programa PRE-VERCEL):** lane B de desenvolvimento local numa worktree/branch nova a partir deste commit; a lane de release (este branch) não recebe bytes de produto.
+
+### L-031 · 2026-10-03 · LANE B aberta: `pre-vercel-forward-20261003T234200Z` (desenvolvimento local, NÃO release)
+
+- **Base registrada antes de qualquer código:** `PHASE_BASE_SHA=d896ce29c68b5c298d8146b72f06722d0e9d7db1` · tree `aa5fdecdec20da1a67a7dd1ba01d286ab2365cc9` (commit da L-030, lane A).
+- **Worktree/branch:** `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/pre-vercel-forward-20261003T234200Z` · `pre-vercel-forward-20261003T234200Z` (só local, sem upstream).
+- **Lane A intocada:** `early-access-phase2-email-double-optin-20261001` segue em `d896ce2`; `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`; `RELEASE_CANDIDATE=NONE`.
+- **Plano:** `docs/PLANO-PRE-VERCEL-FORWARD.md` (inventário mestre A–F + itens desta rodada). Commits deste branch = `COMMITTED_FEATURE_CHECKPOINT`, não CERTIFIED, não deployáveis.
+- Proibido nesta lane: push, merge, deploy, escrita hospedada, Vercel, email real, transação on-chain, dinheiro real.

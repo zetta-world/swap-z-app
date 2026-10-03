@@ -33,6 +33,7 @@ import { checkExternalDeps } from "@/lib/admin/deps";
 import { runAttackSuite } from "@/lib/admin/attack";
 import { checkEvmAllowlistDrift } from "@/lib/admin/evm-probe";
 import { envNumber } from "@/lib/env-number";
+import { avaliarAmbiente } from "@/lib/release/server-env";
 import { reconcileWallets, liveDrifts, retiredDrifts, starvedWallets } from "@/lib/paper/reconcile";
 
 export type Severity = "critical" | "high" | "medium" | "low";
@@ -468,6 +469,27 @@ export interface AuditReport {
  *  aprovações cosméticas. É assim que auditoria vira teatro. */
 const WEIGHT: Record<Severity, number> = { critical: 8, high: 4, medium: 2, low: 1 };
 
+// ── 13. Variáveis de servidor que o release exige (só NOMES) ─────────────
+//
+// Reconciliação ao vivo de 03/10 (L-029, R-02): o alvo exigia
+// `CEX_RECOVERY_HMAC_KEY` e ela não estava no ambiente hospedado. Ler código
+// não revela o que o deploy tem; só o runtime sabe. Este check lista NOMES
+// presentes/ausentes — nunca valor, tamanho ou hash. Catálogo:
+// `src/lib/release/server-env.catalog.json`.
+export function checkRequiredServerEnv(env: Record<string, string | undefined> = process.env): AuditFinding {
+  const base = {
+    id: "required_server_env", name: "Variáveis de servidor exigidas pelo release presentes",
+    category: "config" as const, severity: "high" as const,
+    whyRuntime: "presença de segredo é estado do deploy; o código só sabe quais nomes exige",
+  };
+  const rel = avaliarAmbiente("release", env);
+  const gate = avaliarAmbiente("public_gate", env);
+  const gateNota = `abertura do early access: ${gate.presentes.length}/${gate.presentes.length + gate.ausentes.length} presentes (não bloqueia o release com gate fechado)`;
+  return rel.ausentes.length === 0
+    ? { ...base, pass: true, detail: `${rel.presentes.length}/${rel.presentes.length} exigidas presentes · ${gateNota}` }
+    : { ...base, pass: false, detail: `AUSENTES: ${rel.ausentes.join(", ")} · ${gateNota}` };
+}
+
 export function scoreFindings(findings: AuditFinding[]): Omit<AuditReport, "findings" | "ranAt" | "totalMs" | "totalCalls"> {
   // Inconclusivo NÃO conta como aprovado. Fingir que um teste que não rodou
   // passou é exatamente como uma auditoria mente sem mentir.
@@ -519,6 +541,7 @@ export async function runAudit(origin: string, browserEnv?: Record<string, strin
     timed(8, checkEvmAllowlistDrift),
     timed(0, () => checkBundleSync(browserEnv)),
     timed(0, checkRevenueGuards),
+    timed(0, () => checkRequiredServerEnv()),
     timed(2, checkWalletDrift),
   ]);
 
