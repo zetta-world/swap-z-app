@@ -386,6 +386,27 @@ autorização do dono; recert exata `recert-c1-53cd85a-v31-20261003T182216Z` **P
 | HARNESS-V3-G13-QUOTING (03/10) | — (harness, fora do repo): a campanha `recert-c1-53cd85a-20261003T180548Z` parou no G13 por caminho com `(` não citado no `/bin/sh`; **FAIL · HARNESS_FAILURE_G13_SHELL_QUOTING** (classificação pela evidência, **não** atribuída ao dono; sem veredito negativo do lint sobre produto); o ajuste 25→26 do x100 foi anterior e não foi a causa; corrigido no harness v3.1 (xargs -0) |
 | ZION-PLAYBOOK-TIMEOUT-LOCAL | KNOWN_EXISTING / LOAD_SENSITIVE — **passou** na recert do C1 (container; arquivo 29/29); `src/lib/zion` sem diff |
 
+### 5.5.5 Ensaio de release em PROD-CLONE e reconciliação ao vivo (03/10, L-028/L-029)
+
+Ensaio `release-rehearsal-20261003T194816Z` **CLOSED_PASS**; reconciliação só-leitura
+`live-readonly-reconciliation-20261003T221654Z` **CLOSED**. **Nenhum defeito de produto** encontrado;
+nenhuma correção de código. Achados:
+
+| ID | Severidade | Status |
+|---|---|---|
+| INC-RR-01 (ops) | HIGH (ops) | reboot do host Acer durante o ensaio, causado por build de imagem do agente **sem limite de memória**: `HOST_OPERATIONAL_REBOOT` · `AGENT_INDUCED_OOM` · `PRODUCT_DEFECT=NO` · ensaio recuperado. **Reconhecido pelo dono (OD-01); registro permanente.** Regra derivada: build pesado só com `docker run --memory=2g --memory-swap=5g` |
+| R-01 VERCEL-ACCOUNT-BLOCK (ao vivo) | BLOCKING (release) | produção responde HTTP 402 `DEPLOYMENT_DISABLED`; check do PR #447 "Account is blocked". EXTERNAL_DEPENDENCY (dono + provedor) |
+| R-02 CEX-RECOVERY-KEY-ABSENT (ao vivo) | BLOCKING (release) | `CEX_RECOVERY_HMAC_KEY` exigida pelo alvo (`src/lib/cex/fingerprint.ts`) e ausente na Vercel; deploy **não** pode prosseguir sem ela. OWNER_ACTION |
+| RB-01 (runbook do ensaio) | MEDIUM (doc) | dizia "nenhum segredo novo" — falso (R-02). **FIXED (docs)** em `RELEASE-RUNBOOK.md` revisão 2 |
+| RB-02 (runbook do ensaio e `RELEASE-RUNBOOK.md` revisão 1 §6.4) | MEDIUM (doc) | citava `DCA_PAUSE_GLOBAL` / kill-switch de autopilot por env — **não existem no código**. **FIXED (docs)**: revisão 2 lista só controles verificados por busca no código; errata anotada na revisão 1 |
+| RR-O-01 | LOW | `supabase/tests/16_…sql` T16.17h conta linhas do `early_access_webhook_eventos` inteiro; só roda em banco com tabelas EA vazias (precondição documentada). Backlog (mudar o teste exige novo C1) |
+| RR-O-02 | INFO | `supabase/tests/02_acl_rls_substituicao.sql` grava fixtures (modo commit); usar só em banco descartável |
+| RR-O-03 | INFO | nomenclatura das versões de migration no hospedado (`00xx` × timestamp) — decisão do dono (EG-05) |
+| RR-O-04 | INFO | rotas públicas do EA falham fechado com banco fora, em até ~20 s |
+| RR-O-05 | INFO | 0061, 0062, 0063, 0069 não reexecutáveis à mão; aplicar só pelo driver com pulo por versão |
+| RR-O-06 | INFO | produção sem DMARC em `zettaword.global` (afeta também o email atual) — pré-requisito de abertura do EA |
+| HARNESS H-01…H-17 | — | defeitos do harness do ensaio (fora do repo), todos preservados na evidência |
+
 ### 5.6 Documentação e governança
 
 | ID | descrição | estado |

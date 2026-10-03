@@ -18,9 +18,11 @@ and which document to trust is in `docs/DOCUMENT-AUTHORITY.md`.
    explained in the ledger / `RELEASE-CHAIN.md`, and there is no unauthorized
    **product** delta:
    `git diff --stat "$PRODUCT_BASE_SHA"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'`.
-   **Current state (L-027):** Early Access Phase 2 is CLOSED — C1
-   `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` is CERTIFIED_EXACT_SHA and HEAD is
-   its docs-only C2 attestation; the working tree is expected CLEAN. Details: `docs/START-HERE.md` §2 and §10. On mismatch,
+   **Current state (L-029):** Early Access Phase 2 is CLOSED — C1
+   `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` is CERTIFIED_EXACT_SHA; its docs-only C2 attestation is
+   `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`; HEAD is the docs-only L-029 control-plane commit on top of
+   C2 (local PROD-CLONE rehearsal CLOSED_PASS, live read-only reconciliation CLOSED, release blockers
+   R-01 Vercel / R-02 `CEX_RECOVERY_HMAC_KEY`); `RELEASE_CANDIDATE=NONE`; the working tree is expected CLEAN. Details: `docs/START-HERE.md` §2 and §10. On mismatch,
    **STOP** and report. Do not "fix" it with checkout, reset, stash
    or rebase.
 2. **GitHub-dependent task?** Run `git fetch origin --tags --prune` first.

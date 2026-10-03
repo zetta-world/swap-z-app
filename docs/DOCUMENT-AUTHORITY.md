@@ -34,6 +34,10 @@
 > **Revisão 6 (03/10/2026, L-027):** Fase 2 **CERTIFIED_EXACT_SHA** no C1
 > `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`, atestada no C2 (só docs, não CERTIFIED).
 > `START-HERE.md`/`CURRENT-STATE.md` em revisão 8.
+>
+> **Revisão 7 (03/10/2026, L-029):** `RELEASE-RUNBOOK.md` passa à **revisão 2** (alvo `53cd85a`,
+> errata RB-01/RB-02; revisão 1 preservada como HISTÓRICO no próprio arquivo). `START-HERE.md`/`CURRENT-STATE.md`
+> em revisão 9 (ensaio PROD-CLONE CLOSED_PASS, reconciliação ao vivo CLOSED).
 
 ## Classes
 
@@ -152,7 +156,7 @@
 | `docs/RELATORIO-27-07.zh.md` | HISTORICAL_EVIDENCE | 2a5e4b3 2026-07-27 | — | rodada/relatório datado | NÃO |
 | `docs/RELATORIO-TECNICO-27-07.md` | HISTORICAL_EVIDENCE | 4357e97 2026-07-27 | — | rodada/relatório datado | NÃO |
 | `docs/RELATORIO-TECNICO-27-07.zh.md` | HISTORICAL_EVIDENCE | 32535dc 2026-07-27 | — | rodada/relatório datado | NÃO |
-| `docs/RELEASE-RUNBOOK.md` | AUTHORITATIVE | 43c484b 2026-09-30 | vigente para o candidato `0d21874` | pacote de release do runtime certificado, gates, achados, o que só o dono autoriza | SIM — para o release de `0d21874`; não autoriza deploy |
+| `docs/RELEASE-RUNBOOK.md` | AUTHORITATIVE | commit da L-029, 2026-10-03 (revisão 2) | **revisão 2 vigente** para o alvo `53cd85a`; revisão 1 (`0d21874`) = HISTÓRICO no mesmo arquivo, com errata RB-02 | runbook de release com gate fechado: bloqueadores R-01/R-02, pré-condições, migrations, controles reais, smoke, rollback, pontos de espera | SIM — revisão 2; **não** autoriza deploy |
 | `docs/RUNBOOK.md` | SUPPORTING_REFERENCE | 9f2ddcb 2026-10-01 | — | env vars, crons, playbooks de incidente (+ config futura do early access) | SIM — para operação/env; não para estado |
 | `docs/SPEC-round9.md` | HISTORICAL_EVIDENCE | e4f6027 2026-09-20 | Round 9 fechado em `798fe27`; release → `RELEASE-RUNBOOK.md` | SPEC do Round 9 (A131–A133+) | NÃO |
 | `docs/TESTE-DA-TAXA-EVM.md` | SUPPORTING_REFERENCE | a188c27 2026-08-11 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |

@@ -24,6 +24,9 @@
 >
 > Revisão 6 (03/10/2026, L-027): Fase 2 commitada (C1 `53cd85a`, CERTIFIED_EXACT_SHA) e atestada
 > (C2); working tree limpo.
+>
+> Revisão 7 (03/10/2026, L-029): HEAD da worktree de trabalho = commit de control plane da L-029 (só docs),
+> filho do C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`. Nenhuma worktree nem branch nova; working tree limpo.
 > Estado atual: `START-HERE.md`, `CURRENT-STATE.md`, ledger e `RELEASE-CHAIN.md`.
 
 ---
@@ -32,7 +35,7 @@
 
 | caminho | HEAD (completo) | branch | classificação | papel |
 |---|---|---|---|---|
-| `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001` | o C2 da Fase 2 (03/10, revisão 6; filho do C1 `53cd85a`; SHA via `git rev-parse`) | `early-access-phase2-email-double-optin-20261001` | **CURRENT_WORK** (Fase 2 fechada) | Linha `9f2ddcb` → C1 `f4af976` (FAIL) → C1b `f1b4ec1` (CERTIFIED_EXACT_SHA, Fase 1) → C2 `74f37f5` → **C1 `53cd85a` (CERTIFIED_EXACT_SHA, Fase 2, L-027)** → C2 da Fase 2 (só docs, não CERTIFIED). Working tree **limpo**. **Única worktree onde se trabalha.** Tem `node_modules/` e `.next/` (gitignored). *(Linhas anteriores: revisão 4 HEAD `f1b4ec1`; revisão 5 HEAD `74f37f5` com a Fase 2 não commitada — histórico.)* |
+| `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001` | o commit da L-029 (03/10, revisão 7; só docs; filho do C2 `57d78eb`, neto do C1 `53cd85a`; SHA via `git rev-parse`) | `early-access-phase2-email-double-optin-20261001` | **CURRENT_WORK** (Fase 2 fechada) | Linha `9f2ddcb` → C1 `f4af976` (FAIL) → C1b `f1b4ec1` (CERTIFIED_EXACT_SHA, Fase 1) → C2 `74f37f5` → **C1 `53cd85a` (CERTIFIED_EXACT_SHA, Fase 2, L-027)** → C2 da Fase 2 `57d78eb` (só docs, não CERTIFIED) → commit da L-029 (só docs: ensaio + reconciliação ao vivo). Working tree **limpo**. **Única worktree onde se trabalha.** Tem `node_modules/` e `.next/` (gitignored). *(Linhas anteriores: revisão 4 HEAD `f1b4ec1`; revisão 5 HEAD `74f37f5` com a Fase 2 não commitada — histórico.)* |
 | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/whitelist-fundraising-readiness-20261001` | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` | `whitelist-fundraising-readiness-20261001` | **COMMITTED_FEATURE_CHECKPOINT** (Fase 1; recert de `9f2ddcb` BLOCKED) | Onde a Fase 1 foi feita e commitada. Congelar e não desenvolver aqui. A Fase 1 certificada é o C1b `f1b4ec1`, na worktree de trabalho. |
 | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/recert-0d21874-20261001T010514Z` | `0d21874b4147bb8a0b232aa0abc2302471a720e5` | detached | **CERTIFIED_EXACT_SHA** (era "CERTIFIED_BASE") | Árvore exata da recertificação do runtime. Referência de bytes. |
 | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/final-closure-20260930T131123Z` | `43c484bd1fdc24cdbd8182914514d80d769deeb2` | `preprod-final-closure-20260930T131123Z` (upstream origin, 0/0) | **DOCS_BASELINE** (era "CERTIFIED_BASE") · `CERTIFIED_RUNTIME_ANCESTOR=0d21874` · `DELTA=DOCS_ONLY` · `EXACT_SHA_RECERTIFIED=NO` | Head do PR #447. O código é o de `0d21874`, mais docs. |
@@ -52,7 +55,7 @@ caminhos forem arquivadas.
 
 | branch | SHA | upstream | observação |
 |---|---|---|---|
-| `early-access-phase2-email-double-optin-20261001` | C2 da Fase 2 (03/10, revisão 6; filho de `53cd85a`) | nenhum | CURRENT_WORK; **não existe no GitHub** |
+| `early-access-phase2-email-double-optin-20261001` | commit da L-029 (03/10, revisão 7; filho do C2 `57d78eb`) | nenhum | CURRENT_WORK; **não existe no GitHub** |
 | `whitelist-fundraising-readiness-20261001` | `9f2ddcb` | nenhum | Fase 1; **não existe no GitHub** |
 | `preprod-final-closure-20260930T131123Z` | `43c484b` | `origin/…` 0/0 | PR #447 |
 | `preprod-blocker-closure-20260929T111136Z` | `16e4000` | nenhum | histórico |

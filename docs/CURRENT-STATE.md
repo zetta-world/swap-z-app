@@ -4,8 +4,9 @@
 > `docs/LAUNCH-READINESS-LEDGER.md`. Ao mudar de estado, **substitua** as seções
 > atuais e **acrescente** uma entrada no ledger.
 >
-> **Medido em:** 03/10/2026 (revisão 8, ledger L-027: Fase 2 certificada no C1 `53cd85a` e atestada
-> neste C2. Revisão 7, ledger L-026 — achado EA2-IA10 da
+> **Medido em:** 03/10/2026 (revisão 9, ledger L-028/L-029: ensaio de release em PROD-CLONE local
+> CLOSED_PASS e reconciliação AO VIVO só-leitura CLOSED; produção medida ao vivo às ~22:20 UTC.
+> Revisão 8, L-027: Fase 2 certificada no C1 `53cd85a` e atestada no C2 `57d78eb`. Revisão 7, ledger L-026 — achado EA2-IA10 da
 > verificação independente final: este arquivo ainda trazia instruções de antes
 > da Fase 2). As seções atuais abaixo descrevem só o estado de hoje; tudo o que
 > valia nas revisões 3–6 está na seção final **HISTÓRICO**, inalterado.
@@ -21,13 +22,17 @@
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`, "feat: add closed-by-default early access foundation", 01/10 17:08 −03 | Git |
 | PRODUCT_BASE_TREE | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | Git |
 | PHASE_BASE_SHA | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (C2 da Fase 1) | ledger L-020 |
-| HEAD | o C2 da Fase 2 (`THIS_ATTESTATION_COMMIT`, só docs; filho direto do C1 `53cd85a`; SHA concreto via `git rev-parse HEAD`) | Git |
-| WORKING_TREE | **limpo** (Fase 2 commitada no C1, atestada no C2) | `git status --short` |
+| HEAD | o commit de control plane da L-029 (`THIS_CONTROL_PLANE_COMMIT`, só docs; filho do C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`, neto do C1 `53cd85a`; SHA concreto via `git rev-parse HEAD`) | Git |
+| WORKING_TREE | **limpo** (Fase 2 commitada no C1, atestada no C2; ensaio e reconciliação registrados no commit da L-029) | `git status --short` |
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (tree `62ad70e36a8bcc57331297d8ce929f232fadad2c`): **CERTIFIED_EXACT_SHA** — RUNTIME RECERTIFICATION: PASS (local). Último runtime certificado; o outro SHA com `CERTIFIED_EXACT_SHA` é o C1b `f1b4ec1` (feature) | `reports/recert-0d21874-20261001T010514Z/FINAL-RUNTIME-RECERTIFICATION.md`; `docs/RELEASE-RUNBOOK.md` |
 | EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (= produto de `9f2ddcb` + control plane + 1 arquivo de teste). `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` segue **COMMITTED_FEATURE_CHECKPOINT** (histórico: o dono o designou "certified feature checkpoint", L-009) | ledger L-009, L-016, L-019 |
 | CERTIFIED_FEATURE_SHA | **`53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** · tree `010a448c774247406cc9cc80cba34e8744426557` · **CERTIFIED_EXACT_SHA** (C1 da Fase 2; antes: `f1b4ec1`, Fase 1) | ledger L-027 |
-| CONTROL_PLANE_HEAD | o C2 da Fase 2 (`THIS_ATTESTATION_COMMIT`, só docs; **não** CERTIFIED, não deployável). `CERTIFIED_FEATURE_SHA` (C1) ≠ `CONTROL_PLANE_HEAD` (C2) | `AI-OPERATING-RULES.md` §5.1 |
-| CURRENT_WORK | **EARLY_ACCESS_PHASE2 FECHADA**: C1 certificado (recert exata PASS) e atestado no C2. Sem fase de produto em curso; próximos passos são decisões do dono (release, abertura) | ledger L-027 |
+| CONTROL_PLANE_HEAD | o commit da L-029 (`THIS_CONTROL_PLANE_COMMIT`, só docs; **não** CERTIFIED, não deployável). Anterior: C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` (atestação da Fase 2). `CERTIFIED_FEATURE_SHA` (C1) ≠ `CONTROL_PLANE_HEAD` | `AI-OPERATING-RULES.md` §5.1; L-029 |
+| CURRENT_WORK | **PRÉ-RC: aguardando resolução externa dos bloqueadores R-01 e R-02.** Fase 2 fechada (C1 certificado); ensaio de release local CLOSED_PASS (L-028); reconciliação ao vivo CLOSED (L-029). Nenhuma fase de produto em curso | L-027…L-029 |
+| LOCAL_PRODCLONE_REHEARSAL | **CLOSED_PASS** (`release-rehearsal-20261003T194816Z`): baseline, backup, restauração, 1º forward, migrations até 0069, boot, saúde, E2E do early access, smoke core, chaos, rollback, 2º forward, equivalência final, reconciliação, type-check, lint, build — todos PASS; suíte completa **4204/4204**; SQL T15/T16/T16b/O2/T14 PASS; RLS/ACL PASS; efeitos externos reais **0** | L-028 |
+| LIVE_READONLY_RECONCILIATION | **CLOSED** (`live-readonly-reconciliation-20261003T221654Z`) | L-029 |
+| INC-RR-01 | reboot do host Acer durante o ensaio: `HOST_OPERATIONAL_REBOOT` · `AGENT_INDUCED_OOM` · `PRODUCT_DEFECT=NO` · ensaio recuperado · **reconhecido pelo dono (OD-01), registro permanente** | L-028, L-029 |
+| RELEASE_RUNBOOK | `docs/RELEASE-RUNBOOK.md` **revisão 2** (alvo `53cd85a`), com errata **RB-01** (`CEX_RECOVERY_HMAC_KEY` obrigatória) e **RB-02** (`DCA_PAUSE_GLOBAL`/kill-switch de autopilot por env não existem) | L-029 |
 | PHASE2_IMPLEMENTATION | **CLOSED** e commitada | L-027 |
 | PHASE2_CODE_EXISTS | **YES** (commitado no C1) | Git |
 | PHASE2_COMMIT | C1 `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` + C2 (atestação, só docs) | Git |
@@ -40,14 +45,14 @@
 | PHASE2_RECERT_RESULTS (certificação) | npm ci 1665 pacotes, lock idêntico · HMAC ×100 100/100 · alvo EA 230/230 · travas 265/265 · SQL 0001→0069: T15 22, T16 31, T16b 2/2, O2 7, T14 6 · type-check 0 · lint 37 arquivos da Fase 2 0/0, completo 0 erros/145 avisos (= baseline) · **build PASS** (Next.js 16.3.6) · **suíte completa 275 arquivos / 4204 testes, 0 falhas** · higiene/segredos PASS · git final limpo · stacks preservadas | `recert-c1-53cd85a-v31-20261003T182216Z` |
 | KNOWN_PHASE2_DEFECTS | **0** | L-025…L-027 |
 | RELEASE_CANDIDATE | **NONE** | `docs/RELEASE-CHAIN.md` |
-| PUBLIC_GATE | **CLOSED**: `disable_early_access=true` (seed da 0068), versões legais `UNAPPROVED`, sem segredo HMAC, sem provider de email configurado — o gate exige as 5 condições | `src/lib/early-access/gate.ts`, 0068 |
+| PUBLIC_GATE | **CLOSED** — provado ao vivo (L-029): a superfície pública do early access não existe em produção (app `25fc4b0` sem a rota, banco sem tabelas EA, borda 402) e, no alvo, as 5 condições estão fechadas (`disable_early_access=true` pela 0068, versões `UNAPPROVED`, sem `EARLY_ACCESS_*` na Vercel) | L-029; `src/lib/early-access/gate.ts` |
 | EARLY_ACCESS_HMAC_SECRET | **NOT_PROVIDED_OR_AUTHORIZED_FOR_THIS_LOCAL_CAMPAIGN** (nenhum segredo real foi lido) | regra da campanha |
-| PRODUCTION_SECRET_STATE | **NOT_VERIFIED** (produção e Supabase/Vercel hospedados não foram inspecionados) | regra da campanha |
+| PRODUCTION_SECRET_STATE | **NOMES medidos ao vivo, valores nunca lidos** (L-029): 24 variáveis na Vercel; **`CEX_RECOVERY_HMAC_KEY` AUSENTE** (exigida pelo alvo → R-02); nenhuma `EARLY_ACCESS_*` | L-029 |
 | AUDIT_RECONCILIATION | `KNOWN_MISSING_CORRECTIONS=0` · `UNKNOWN_FINDINGS=4` (A08/A09/A10/A17: SOURCE_NOT_FOUND, UNKNOWN_REQUIRES_REVIEW) | `docs/AUDIT-RECONCILIATION.md` |
 | DEPLOY_POLICY | **Regra de 31/08 FORMALMENTE SUSPENSA** (dono, 01/10). Deploy só com: SHA explícito + `RELEASE_CANDIDATE` + certificação PASS + autorização explícita do dono | `docs/AI-OPERATING-RULES.md` §6 |
-| PRODUCTION | **UNTOUCHED.** Código `25fc4b0fa55db72472c7ae00af42596209d7c362` (`main`), banco no nível **0058** por conteúdo. P0-SKEW: armar autopilot falha em produção desde 16/09 (0 sessões, 0 intents) | `docs/LEDGER-MESTRE-RELEASE.md` §0, §Y (`[VERCEL]` + `[PROD]` de 26/09). **Não reverificado em 01/10**: a regra é não tocar |
-| VERCEL | **DEFERRED_EXTERNAL_PAYMENT.** O check Vercel do PR #447 está em FAILURE (diferido) | relatórios `postreboot-*`, `fourstack-*` |
-| PR447 | **OPEN · DRAFT · não mergeado · MERGEABLE.** head `43c484bd1fdc24cdbd8182914514d80d769deeb2`, base `main`. CI `success` (runs 36838326106, 36838252838) | `gh pr view 447` + `gh run list`, 01/10 |
+| PRODUCTION | **UNTOUCHED, medida ao vivo em 03/10 (L-029).** App `25fc4b0fa55db72472c7ae00af42596209d7c362` (deployment `dpl_C1AgJfvQQt38iMTcbDvNVi7aqCQJ`), **fora do ar: HTTP 402 `DEPLOYMENT_DISABLED`**. Banco: 55 linhas de histórico (nível 0058), 0068/0069 ausentes, fp `864\|74e742469c9088012d87caa88468dc9e` = captura de 28/09 → **drift do Supabase: NENHUM**. `LIVE_PAIR_STATUS=SAFE_KNOWN_SKEW` (P0 `creds_cipher`; 0 sessões, 0 conexões, 0 intents) | L-029 |
+| VERCEL | **BLOCKED_BY_ACCOUNT_PAYMENT** (R-01): todas as URLs respondem 402 `DEPLOYMENT_DISABLED`; check do PR #447 "Account is blocked" | L-029 |
+| PR447 | **OPEN · DRAFT · MERGEABLE · mergeState UNSTABLE** (03/10). head `43c484bd1fdc24cdbd8182914514d80d769deeb2` (ancestral do C1; **não** contém C1/C2), base `main`. CI `checks` success ×2; check Vercel FAIL (conta bloqueada). C1/C2 não estão em nenhum branch remoto | `gh pr view/checks 447`, L-029 |
 | GITHUB_HAS_PRODUCT_BASE | **NÃO.** `9f2ddcb` não está em nenhum ref `origin/*`, então não há CI oficial para ele | `git branch -r --contains 9f2ddcb` vazio |
 | ACER_LAB | `LAB_ENV_VERIFIED` (ambiente, não SHA): 4 stacks 25/25 PASS, egress BLOCKED, `BOOT_RESILIENCE=PASS`, `UNATTENDED_BOOT=PASS` (boot 13:18, checado 14:40). **Não tocadas** pela recert | `state/unattended-boot-20261001T1557Z/evidence/post-reboot-unattended-20261001T173957Z.txt` |
 | LIFECYCLE | branch → base → plano → implementação → auditoria → correções → pré-commit → **C1** → **recert exata de C1** → **atestação C2 (só docs)** → próxima fase. A Fase 2 completou o ciclo | `AI-OPERATING-RULES.md` §5 |
@@ -62,12 +67,48 @@ quatro primeiros (no C1); **não** está deployada e o gate público está **fec
 |---|---|---|
 | **F-01** EMAIL_DOUBLE_OPT_IN | abrir o gate público | **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `53cd85a`)**. Não está em produção; abrir o gate depende dos passos do dono em GATE-OPEN e do release |
 | **REL-AUTH** | qualquer push, merge, deploy ou migration hospedada | OWNER_DECISION (política de deploy formalizada) |
-| **VERCEL** | deploy, preview e check do PR | EXTERNAL_DEPENDENCY (pagamento) |
+| **R-01 VERCEL** | **o release com gate fechado** (e a produção já está fora do ar: 402) | BLOCKED — conta/pagamento da Vercel; dono + provedor |
+| **R-02 CEX_RECOVERY_HMAC_KEY** | **o release com gate fechado**: o alvo exige a variável; o deploy **não** pode prosseguir sem ela no ambiente hospedado | REQUIRED_BEFORE_DEPLOY · `CURRENT_HOSTED_STATE=ABSENT` · dono autoriza a alteração de env (valor nunca impresso/versionado) |
 | **P0-SKEW** | o autopilot em produção (função indisponível desde 16/09) | OPEN_BLOCKER de produção; só o release resolve (`LEDGER-MESTRE-RELEASE.md` §Y) |
-| **MIG-READ** | aplicar 0059→0067 (+0068, 0069) | é preciso ler o `schema_migrations` de produção antes, com autorização (`RELEASE-RUNBOOK.md` §6.2) |
+| **MIG-READ** | aplicar 0059→0069 | **leitura feita (L-029)**: 55 linhas, 0059–0069 ausentes; re-ler imediatamente antes da janela. Mecanismo/nomenclatura das versões no hospedado = decisão do dono (EG-05) |
 | **AP-LOCK hosted** | fechar a disposição do PostgREST | OWNER_AUTH_REQUIRED (PASS local em PostgREST 14.17) |
-| **GATE-OPEN** | abrir o gate (além do F-01 certificado) | passos do dono, todos já decididos ou externos: textos de Termos e Privacidade aprovados (inclui D-9: Resend e transferência na Política), domínio remetente (D-2), segredos (HMAC, Resend, webhook) por mecanismo autorizado, aplicar 0068/0069, agendar o cron (D-8), gravar `disable_early_access=false` |
+| **GATE-OPEN** | abrir o gate (além do F-01 certificado) — **não** bloqueia o release com gate fechado | passos do dono, todos já decididos ou externos: textos de Termos e Privacidade aprovados (inclui D-9: Resend e transferência na Política), domínio remetente (D-2), segredos (HMAC, Resend, webhook) por mecanismo autorizado, aplicar 0068/0069, agendar o cron (D-8), gravar `disable_early_access=false` |
 | **REAL-AUTOMATION** | DCA, Pilot e Autopilot reais | NO-GO até os gates finais (`LEDGER-MESTRE-RELEASE.md` §0.5) |
+
+## EXTERNAL_GATES (recalculados ao vivo, L-029)
+
+`READY=2 · NOT_READY=5 · BLOCKED=5 · DEFERRED=11 · NOT_PROVABLE=3`. Escopo: **REL** = bloqueia o
+release com gate fechado · **EA** = bloqueia a abertura do early access · **$** = bloqueia modos de
+dinheiro real · **ND** = diferido/não bloqueante.
+
+| id | gate | status | escopo |
+|---|---|---|---|
+| EG-01 | deploy do RC na Vercel | BLOCKED | REL |
+| EG-02 | re-medição ao vivo do banco | READY (03/10; repetir antes da janela) | REL |
+| EG-03 | backup/PITR hospedado e tempo de restauração | NOT_PROVABLE (painel) | REL (rollback B) |
+| EG-04 | identidade do deployment de produção | READY (`dpl_C1Ag…` = `25fc4b0`) | REL |
+| EG-05 | mecanismo/nomenclatura das migrations no hospedado | NOT_READY (decisão do dono) | REL |
+| EG-06 | pagamento/desbloqueio da Vercel (R-01) | BLOCKED | REL |
+| EG-07 | DNS/domínio próprio do Z-SWAP | DEFERRED | EA |
+| EG-08 | domínio remetente no Resend | DEFERRED | EA |
+| EG-09 | SPF | DEFERRED | EA |
+| EG-10 | DKIM | DEFERRED | EA |
+| EG-11 | DMARC (ausente até para o email atual) | DEFERRED | EA |
+| EG-12 | segredos `EARLY_ACCESS_*` / Resend | DEFERRED | EA |
+| EG-13 | seleção do RC | NOT_READY | REL |
+| EG-14 | aprovação jurídica (Termos/Privacidade, D-9) | BLOCKED | EA |
+| EG-15 | smoke de email real | BLOCKED | EA |
+| EG-16 | cron do early access no cron-job.org (D-8) | DEFERRED | EA |
+| EG-17 | abrir o early access | BLOCKED | EA |
+| EG-18 | push/PR/CI de C1–C2 | NOT_READY | REL |
+| EG-19 | canário com dinheiro real | DEFERRED | $ |
+| EG-20 | DCA real | DEFERRED | $ |
+| EG-21 | Pilot real | DEFERRED | $ |
+| EG-22 | Autopilot real | DEFERRED | $ |
+| EG-23 | P0 `creds_cipher` em produção | NOT_READY (resolvido pelo deploy do alvo) | ND (dormente) |
+| EG-24 | `CEX_RECOVERY_HMAC_KEY` na Vercel (R-02) | NOT_READY | REL |
+| EG-25 | agendamentos existentes no cron-job.org | NOT_PROVABLE | ND |
+| EG-26 | observabilidade hospedada (logs/alertas) | NOT_PROVABLE (app fora do ar) | ND (pós-deploy) |
 
 ## DEFERRED_FINDINGS (não bloqueiam a Fase 2)
 
@@ -105,17 +146,24 @@ Fase 2", está FIXED_CERTIFIED: `CERTIFIED_EXACT_SHA` `53cd85a`.)
 
 ## NEXT_ACTION
 
-A Fase 2 está **fechada** (C1 `53cd85a` CERTIFIED_EXACT_SHA + C2 de atestação). Nada é automático; tudo
-abaixo é decisão do dono:
+Nada é automático. `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO`.
 
-1. **Release** (push/PR/merge/deploy): exige marcar um SHA `RELEASE_CANDIDATE` com certificação PASS
-   e autorização explícita; inclui MIG-READ (ler o `schema_migrations` de produção) antes de aplicar
-   0059→0069. Hoje `RELEASE_CANDIDATE=NONE`.
-2. **Abrir o early access**: os passos de GATE-OPEN (jurídico/D-9, domínio/D-2, segredos, migrations,
-   cron/D-8, `disable_early_access=false`).
-3. **Próxima fase de produto**: parte do C2 como `PHASE_BASE_SHA`, com ledger novo antes de qualquer código.
+1. **Dono / provedores (externo):** resolver **R-01** (conta/pagamento da Vercel) e **R-02** (`CEX_RECOVERY_HMAC_KEY`
+   no ambiente de produção, por mecanismo autorizado, valor nunca impresso).
+2. **Re-medição ao vivo só-leitura** depois disso (mesmas consultas da L-029).
+3. **Seleção explícita do RC pelo dono.** Recomendação (≠ seleção): feature `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`;
+   qualquer SHA de deploy diferente dele precisa de certificação no SHA exato antes de ser RC.
+4. Depois: push/PR/merge e a janela de release conforme `docs/RELEASE-RUNBOOK.md` revisão 2.
+5. Separado: abrir o early access (GATE-OPEN) e modos de dinheiro real (NO-GO).
 
 ## HISTÓRICO (NÃO são instruções atuais)
+
+### Revisão 8 (03/10/2026, L-027) — superada pela revisão 9
+
+HEAD/CONTROL_PLANE_HEAD = C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`; produção **não** reverificada
+(`PRODUCTION_SECRET_STATE=NOT_VERIFIED`, VERCEL `DEFERRED_EXTERNAL_PAYMENT`, nível 0058 pela captura de
+26–29/09); MIG-READ pendente; NEXT_ACTION = decisões do dono (release, abertura, próxima fase).
+Cumprido/atualizado em L-028 (ensaio) e L-029 (medição ao vivo).
 
 ### Revisão 7 (03/10/2026, L-026) — superada pela revisão 8
 

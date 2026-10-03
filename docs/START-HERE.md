@@ -7,7 +7,7 @@
 > Planos antigos são histórico, mesmo quando dizem "status 🟢" ou "vivo".
 > O estado atual é definido AQUI e em `docs/CURRENT-STATE.md`.
 
-**Revisão 8 (03/10/2026, ledger L-027): Fase 2 CERTIFIED_EXACT_SHA no C1 e atestada no C2.** Revisão 7 (L-026, EA2-IA10): este arquivo foi
+**Revisão 9 (03/10/2026, ledger L-028/L-029): ensaio de release em PROD-CLONE local CLOSED_PASS e reconciliação AO VIVO só-leitura CLOSED; bloqueadores externos R-01 (Vercel) e R-02 (`CEX_RECOVERY_HMAC_KEY`).** Revisão 8 (L-027): Fase 2 CERTIFIED_EXACT_SHA no C1 e atestada no C2. Revisão 7 (L-026, EA2-IA10): este arquivo foi
 reescrito para descrever SÓ o estado atual nas seções operacionais (§1–§10).
 Tudo o que valia antes da implementação da Fase 2 está no §11, marcado como
 HISTÓRICO. Revisões 1–6 (01–02/10): ver §11 e o ledger L-011…L-019.
@@ -30,9 +30,9 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 |---|---|
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` · tree `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` (Early Access Fase 1, último commit de produto) |
 | PHASE_BASE_SHA (Fase 2, histórico da fase) | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (o C2 da Fase 1; registrado no ledger L-020 antes de qualquer código da Fase 2) |
-| HEAD atual | o commit **C2 da Fase 2** (`THIS_ATTESTATION_COMMIT`, só docs, filho de C1; SHA concreto via `git rev-parse HEAD`) |
+| HEAD atual | o commit de control plane da **L-029** (`THIS_CONTROL_PLANE_COMMIT`, só docs, filho do C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`; SHA concreto via `git rev-parse HEAD`) |
 | EXPECTED_BRANCH | `early-access-phase2-email-double-optin-20261001` (só local, sem upstream) |
-| WORKING TREE | **limpo** (a Fase 2 está commitada em C1 e atestada em C2) |
+| WORKING TREE | **limpo** (Fase 2 commitada em C1, atestada em C2; ensaio e reconciliação registrados no commit da L-029) |
 
 ## 3. Certificação
 
@@ -44,9 +44,9 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5`: CERTIFIED_EXACT_SHA (lab local), não deployado |
 | EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · tree `ab814e3ba6369a8b66218a9accc76a18ca6f14f6` (L-019) |
 | CERTIFIED_FEATURE_SHA (atual) | **`53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** (C1 da Fase 2; L-027). O anterior era `f1b4ec1` (Fase 1) |
-| CONTROL_PLANE_HEAD | o C2 da Fase 2 (`THIS_ATTESTATION_COMMIT`; só docs; **não** CERTIFIED, não deployável) |
+| CONTROL_PLANE_HEAD | o commit da L-029 (`THIS_CONTROL_PLANE_COMMIT`; só docs; **não** CERTIFIED, não deployável). Anterior: C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` |
 | EARLY_ACCESS_PHASE2 | **CERTIFIED_EXACT_SHA** em `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` · tree `010a448c774247406cc9cc80cba34e8744426557` (C1; recert `recert-c1-53cd85a-v31-20261003T182216Z` PASS, L-027) — **não** deployado; gate CLOSED |
-| RELEASE_CANDIDATE | **NONE** |
+| RELEASE_CANDIDATE | **NONE** · `RC_SELECTION_READY=NO` |
 
 ## 4. Qual worktree usar?
 
@@ -62,7 +62,10 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 
 | campo | valor |
 |---|---|
-| CURRENT_WORK | **EARLY_ACCESS_PHASE2 CERTIFIED (C1) e atestada (C2)** — fase fechada; próximo: decisões de release/abertura do dono |
+| CURRENT_WORK | **PRÉ-RC** — Fase 2 certificada (C1); ensaio de release local **CLOSED_PASS** (L-028); reconciliação ao vivo **CLOSED** (L-029); aguardando a resolução externa de **R-01** e **R-02** |
+| LOCAL_PRODCLONE_REHEARSAL | **CLOSED_PASS** (suíte 4204/4204; efeitos externos reais 0) — L-028 |
+| LIVE_READONLY_RECONCILIATION | **CLOSED** — produção `25fc4b0` fora do ar (402), banco sem drift desde 28/09 (55 linhas, 0068/0069 ausentes) — L-029 |
+| INC-RR-01 | `HOST_OPERATIONAL_REBOOT` · `AGENT_INDUCED_OOM` · `PRODUCT_DEFECT=NO` (reconhecido pelo dono, permanente) |
 | PHASE2_IMPLEMENTATION | **CLOSED** e commitada em C1 |
 | PHASE2_CODE_EXISTS | **YES** — commitado em C1 |
 | PHASE2_COMMIT | C1 `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` + C2 (atestação, só docs) |
@@ -86,8 +89,10 @@ Hoje valem os quatro primeiros (fechada, commitada, recertificada, certificada n
   até os passos do dono: texto jurídico aprovado (inclui D-9: Resend na Política de Privacidade),
   domínio remetente (D-2), segredos configurados por mecanismo autorizado, migrations 0068/0069
   aplicadas (exige release), agendar o cron (D-8) e a decisão de abrir.
-- **Release para produção:** BLOQUEADO (autorização do dono, leitura das
-  migrations em produção, Vercel `DEFERRED_EXTERNAL_PAYMENT`, PR #447 DRAFT).
+- **Release para produção (gate fechado):** BLOQUEADO por **R-01** (conta/pagamento da Vercel: produção
+  responde 402 `DEPLOYMENT_DISABLED`) e **R-02** (`CEX_RECOVERY_HMAC_KEY` ausente na Vercel e exigida
+  pelo alvo); além disso: seleção do RC e autorização do dono. Resend/domínio/jurídico **não** bloqueiam
+  este release — são pré-requisitos de abertura do early access.
 - **Automação com dinheiro real:** NO-GO (DCA, Pilot e Autopilot reais).
 
 Lista completa: `docs/CURRENT-STATE.md` → OPEN_BLOCKERS.
@@ -110,12 +115,16 @@ Lista completa: `docs/CURRENT-STATE.md` → OPEN_BLOCKERS.
 > com: SHA explícito + `RELEASE_CANDIDATE` + certificação PASS + autorização
 > explícita do dono. Até lá: `PRODUCTION=UNTOUCHED` ·
 > `VERCEL=DEFERRED_EXTERNAL_PAYMENT`. Ver `docs/AI-OPERATING-RULES.md` §6.
+>
+> **Medido ao vivo em 03/10/2026 (L-029):** a Vercel está `BLOCKED_BY_ACCOUNT_PAYMENT` — produção
+> responde HTTP 402 `DEPLOYMENT_DISABLED` (R-01). A política acima continua valendo sem alteração.
 
 ## 8. Quais documentos ler depois? (nesta ordem)
 
 1. `docs/AI-OPERATING-RULES.md`: o método. Obrigatório para IA.
 2. `docs/CURRENT-STATE.md`: onde estamos agora.
-3. `docs/LAUNCH-READINESS-LEDGER.md` L-020…L-026: a Fase 2.
+3. `docs/LAUNCH-READINESS-LEDGER.md` L-020…L-027 (Fase 2) e L-028/L-029 (ensaio e reconciliação ao vivo).
+   `docs/RELEASE-RUNBOOK.md` revisão 2: o runbook vigente.
 4. `docs/PLANO-EARLY-ACCESS-FASE2.md`: a especificação final da Fase 2.
 5. `docs/AUDIT-RECONCILIATION.md` §5.5.1–§5.5.3: findings da Fase 2.
 6. `docs/RELEASE-CHAIN.md`: qual commit veio de qual.
@@ -123,34 +132,37 @@ Lista completa: `docs/CURRENT-STATE.md` → OPEN_BLOCKERS.
 
 ## 9. Qual é o próximo passo exato?
 
-A Fase 2 cumpriu o ciclo inteiro (`AI-OPERATING-RULES.md` §5): plano → implementação → auditorias
-→ correções → pré-commit → **C1 `53cd85a`** → **recert exata PASS** → **C2 (este commit de atestação)**.
-**A fase está FECHADA.** Nada é automático a partir daqui; cada item abaixo é decisão do dono:
+Nada é automático. `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO`. A seleção do RC fica pendente até,
+no mínimo:
 
-1. Release (push/PR/merge/deploy): exige marcar um SHA `RELEASE_CANDIDATE` com certificação PASS e
-   autorização explícita (`AI-OPERATING-RULES.md` §6.1). Hoje `RELEASE_CANDIDATE=NONE`.
-2. Abrir o early access: os passos do §6 (jurídico, domínio, segredos, migrations, cron, gate).
-3. Próxima fase de produto, partindo do C2 como `PHASE_BASE_SHA`.
+1. **R-01** resolvido (conta/pagamento da Vercel) — dono + provedor;
+2. **R-02** resolvido (`CEX_RECOVERY_HMAC_KEY` presente com segurança no ambiente de produção) — dono;
+3. estado hospedado **re-medido** depois disso (só leitura, como na L-029);
+4. o dono **selecionar** o RC. Recomendação (≠ seleção): feature `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`.
+
+Separado: abrir o early access (§6) e modos de dinheiro real (NO-GO). Próxima fase de produto parte do
+`CONTROL_PLANE_HEAD` com ledger novo antes de qualquer código.
 
 Conhecido e separado (não é da Fase 2): o timeout de carga de
-`src/lib/zion/playbook-backtest.test.ts` (ZION-PLAYBOOK-TIMEOUT-LOCAL) — passou na recert do C1
-(container, 6400 ms dentro do limite do arquivo); segue registrado como sensível a carga.
+`src/lib/zion/playbook-backtest.test.ts` (ZION-PLAYBOOK-TIMEOUT-LOCAL) — passou na recert do C1 e no ensaio.
 
-## 10. Como provar que estou no lugar certo? (estado ATUAL: Fase 2 certificada no C1, atestada no C2)
+## 10. Como provar que estou no lugar certo? (estado ATUAL: control plane da L-029 sobre C2 sobre C1)
 
 ```bash
 cd /home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001
 C1=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1
+C2=57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c
 git branch --show-current                      # early-access-phase2-email-double-optin-20261001
-git rev-parse HEAD HEAD^{tree} HEAD^           # HEAD = C2; HEAD^ = C1
-git merge-base --is-ancestor "$C1" HEAD && echo OK-ANCESTOR
+git rev-parse HEAD HEAD^{tree} HEAD^           # HEAD = commit da L-029; HEAD^ = C2
+git merge-base --is-ancestor "$C1" HEAD && echo OK-ANCESTOR-C1
+git merge-base --is-ancestor "$C2" HEAD && echo OK-ANCESTOR-C2
 git status --short                             # vazio
-git diff --stat "$C1"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'   # vazio (C2 é só docs)
+git diff --stat "$C1"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'   # vazio (C2 e L-029 são só docs)
 ```
 
-Válido quando: branch esperada; C1 ancestral (pai direto) do HEAD; árvore limpa; diff de produto
-C1..HEAD vazio; todo commit posterior explicado no ledger. Qualquer outro resultado: **ABORTAR** e
-reportar (`AI-OPERATING-RULES.md` §1), sem checkout/reset/stash/rebase.
+Válido quando: branch esperada; C1 e C2 ancestrais do HEAD; árvore limpa; diff de produto C1..HEAD vazio;
+todo commit posterior explicado no ledger. Qualquer outro resultado: **ABORTAR** e reportar
+(`AI-OPERATING-RULES.md` §1), sem checkout/reset/stash/rebase.
 
 ---
 
@@ -158,6 +170,10 @@ reportar (`AI-OPERATING-RULES.md` §1), sem checkout/reset/stash/rebase.
 
 > Tudo abaixo descreve estados e instruções que **já foram cumpridos ou
 > superados**. Mantido para rastreabilidade; não executar.
+
+- **Revisão 8 (03/10/2026, L-027):** HEAD = C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` (HEAD^ = C1); release
+  bloqueado por "autorização, leitura das migrations, Vercel `DEFERRED_EXTERNAL_PAYMENT`, PR #447 DRAFT";
+  próximo passo = decisões do dono. Atualizado por L-028/L-029 (produção medida ao vivo; R-01/R-02).
 
 - **Revisões 1–6 (01–02/10/2026):** criação do control plane sobre
   `9f2ddcb` (L-011), correções dos reviews independentes (L-016, L-017),

@@ -31,7 +31,7 @@
 >
 > `LAST_CERTIFIED_RUNTIME=0d21874b4147bb8a0b232aa0abc2302471a720e5` ·
 > `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (Fase 2, RECERT(C1)=PASS, 03/10, L-027; antes `f1b4ec1`, Fase 1, L-019) ·
-> `CONTROL_PLANE_HEAD` = o commit C2 de atestação (só docs, **não** CERTIFIED).
+> `CONTROL_PLANE_HEAD` = o commit de control plane da L-029 (só docs, **não** CERTIFIED; filho do C2 de atestação `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`).
 > C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (02/10, L-018).
 > `CERTIFIED_FEATURE_SHA` (o C1 recertificado) não é necessariamente o
 > `CONTROL_PLANE_HEAD` (o C2 de atestação, só docs, nunca CERTIFIED).
@@ -95,6 +95,9 @@
     │  só docs (diff de produto C1..C2 vazio)
     ▼
  C2 da Fase 2 (o commit que traz L-027)  CONTROL_PLANE_ATTESTATION_COMMIT   registra CERTIFIED_FEATURE_SHA=53cd85a; NÃO é CERTIFIED; DO NOT DEPLOY
+    │  só docs: ensaio PROD-CLONE CLOSED_PASS (L-028) + reconciliação ao vivo CLOSED (L-029) + runbook revisão 2
+    ▼
+ commit da L-029  CONTROL_PLANE_HEAD (só docs)                     NÃO é CERTIFIED; DO NOT DEPLOY
     ▼
   …
     ▼
@@ -107,6 +110,11 @@ recert dele é de feature (laboratório local), não satisfaz sozinha as regras 
 §3 (suíte ×2, arneses SQL 01–15, CI oficial, migrations, autorização). Faltam a autorização do dono, a
 leitura de migrations em produção, a Vercel (DEFERRED_EXTERNAL_PAYMENT) e a
 prova AP-LOCK hospedada (`RELEASE-RUNBOOK.md` §6–§7).
+**Atualização L-029 (03/10, medido ao vivo):** leitura das migrations de produção **feita** (55 linhas,
+0059–0069 ausentes, sem drift desde 28/09). O release com gate fechado está bloqueado por **R-01** (Vercel
+`BLOCKED_BY_ACCOUNT_PAYMENT`, produção em 402) e **R-02** (`CEX_RECOVERY_HMAC_KEY` ausente na Vercel, exigida
+pelo alvo). `RC_SELECTION_READY=NO`; recomendação (≠ seleção) de feature: `53cd85a`. Runbook vigente:
+`RELEASE-RUNBOOK.md` revisão 2.
 
 ## 2. Nós da cadeia
 
@@ -139,6 +147,7 @@ prova AP-LOCK hospedada (`RELEASE-RUNBOOK.md` §6–§7).
 | 20 | Early Access Fase 2 — C1 | `53cd85a` | `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` | `010a448c774247406cc9cc80cba34e8744426557` | `early-access-phase2-email-double-optin-20261001` (local) | **CANDIDATE_SHA · RECERT PASS · CERTIFIED_EXACT_SHA · CERTIFIED_FEATURE_SHA** · DO NOT DEPLOY | `recert-c1-53cd85a-v31-20261003T182216Z` (MANIFEST `31e19f5b1a685b73…`); campanha `recert-c1-53cd85a-20261003T180548Z` = FAIL · HARNESS_FAILURE_G13_SHELL_QUOTING (classificação pela evidência; **não** atribuída ao dono) | L-027 |
 | 20x | C2 não autorizado (só docs, idêntico ao 20c exceto pela atribuição) | `6f9c10c` | `6f9c10cb87dbcd3dd6d2be93712c15e0fe228190` | `10c815587e498999bdb748b84771983634d009c9` | tag local `preserved/unauthorized-c2-superseded-6f9c10c` (fora do branch) | **UNAUTHORIZED_LOCAL_ATTESTATION_SUPERSEDED** · nunca enviado · DO NOT USE | substituído pelo 20c | L-027 |
 | 20c | Early Access Fase 2 — C2 (atestação, só docs; substituto autorizado) | o commit que traz L-027 | — | — | idem | `CONTROL_PLANE_ATTESTATION_COMMIT` · `CONTROL_PLANE_HEAD` · **não** CERTIFIED · DO NOT DEPLOY | prova: diff de produto `53cd85a..C2` vazio | — |
+| 20d | Registro do ensaio PROD-CLONE (CLOSED_PASS) + reconciliação ao vivo (CLOSED) + runbook revisão 2 (só docs) | o commit que traz L-029 | — | — | idem | control plane · **não** CERTIFIED · **não** atestação de recert · DO NOT DEPLOY · `CERTIFIED_FEATURE_SHA` segue `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` | prova: diff de produto `53cd85a..`este vazio; pai = `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` | RC pendente de R-01 (Vercel), R-02 (`CEX_RECOVERY_HMAC_KEY`), re-medição e seleção do dono |
 | ∞ | FINAL RELEASE CANDIDATE | — | — | — | — | NOT_STARTED | — | — |
 
 Provas rápidas:
