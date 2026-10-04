@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -37,7 +37,7 @@ describe("founders-sale: isolado de rede, chain e rotas", () => {
    * experiência completa precisa existir localmente; produção não tem a flag → 404). Qualquer outra rota/página
    * que importe a venda reprova.
    */
-  const PREVIA = join("src", "app", "(plataforma)", "founders-pass");
+  const PREVIA = join("src", "app", "(previa)", "founders-pass");
   it("só a rota de prévia (com porta) importa founders-sale ou o painel", () => {
     const usos = arquivos(join(RAIZ, "src/app"))
       .filter((p) => /founders-sale|components\/founders/.test(readFileSync(p, "utf8")))
@@ -46,10 +46,13 @@ describe("founders-sale: isolado de rede, chain e rotas", () => {
     const page = readFileSync(join(RAIZ, PREVIA, "page.tsx"), "utf8");
     expect(page).toMatch(/if \(!previaHabilitada\(\)\) notFound\(\);/);
     expect(readFileSync(join(RAIZ, PREVIA, "gate.ts"), "utf8")).toMatch(/process\.env\.FOUNDERS_SALE_PREVIEW === "1"/);
+    // HTTP 404 de verdade: nenhuma fronteira de loading acima da porta (senão o status sai 200 — L-038)
+    expect(existsSync(join(RAIZ, "src", "app", "(previa)", "loading.tsx"))).toBe(false);
+    expect(existsSync(join(RAIZ, PREVIA, "loading.tsx"))).toBe(false);
   });
 
   it("a porta fica FECHADA sem a flag e só abre com o valor exato \"1\"", async () => {
-    const { previaHabilitada } = await import("../../app/(plataforma)/founders-pass/gate");
+    const { previaHabilitada } = await import("../../app/(previa)/founders-pass/gate");
     const antes = process.env.FOUNDERS_SALE_PREVIEW;
     try {
       delete process.env.FOUNDERS_SALE_PREVIEW; expect(previaHabilitada()).toBe(false);

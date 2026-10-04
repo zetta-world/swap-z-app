@@ -26,7 +26,7 @@ function fontes(dir: string, out: Array<{ p: string; s: string }> = []) {
 const CODIGO = [
   ...fontes(join(RAIZ, "src/lib/founders-sale")),
   ...fontes(join(RAIZ, "src/components/founders")),
-  ...fontes(join(RAIZ, "src/app/(plataforma)/founders-pass")),
+  ...fontes(join(RAIZ, "src/app/(previa)/founders-pass")),
 ];
 const achados = (re: RegExp) => CODIGO.filter((f) => re.test(f.s)).map((f) => f.p);
 
