@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
-import { PLAN_TIERS } from "@/lib/pricing/plans";
+import { PLAN_TIERS, FOUNDERS_PRICE_STATUS, type FoundersPriceStatus } from "@/lib/pricing/plans";
 import type { Tier } from "@/lib/tier/types";
 
 export const runtime = "nodejs";
@@ -24,14 +24,14 @@ export interface FaixaHub {
   tier: Tier;
   deus: string; runa: string; epiteto: string;
   /** ⚠️ CADA FAIXA TEM DOIS PRODUTOS, e a tela precisa mostrar os dois.
-   *  O passe (NFT do deus) é compra única de 3 anos; a Hird (o guerreiro que
+   *  O passe (NFT do deus) é compra única com 36 meses de premium; a Hird (o guerreiro que
    *  SERVE aquele deus) é assinatura mensal. Mostrar só o passe escondia
    *  metade da oferta — e é justamente a metade recorrente. */
   carta: string;              /* arte do passe — /nft/* */
   guerreiro: string; guerreiroDesc: string; guerreiroRuna: string;
   avatar: string;             /* arte da Hird — /warriors/* */
   brasao: string;             /* brasão do deus servido — /tiers/* */
-  precoUsd: number; mensalUsd: number;
+  precoUsd: number; precoStatus: FoundersPriceStatus; mensalUsd: number;
   /** Carteiras nesta faixa hoje. */
   ativos: number;
   /** Quantas COMPRARAM o passe — o número que vira receita. */
@@ -64,7 +64,7 @@ export async function GET(): Promise<NextResponse> {
         guerreiro: p.warrior, guerreiroDesc: p.warriorDesc,
         guerreiroRuna: p.warriorRune, avatar: p.avatar ?? p.crest,
         brasao: p.crest,
-        precoUsd: p.usdTarget, mensalUsd: p.monthlyUsd,
+        precoUsd: p.usdTarget, precoStatus: FOUNDERS_PRICE_STATUS, mensalUsd: p.monthlyUsd,
         ativos: desta.length,
         compradas: desta.filter((l) => l.source === "nft").length,
         cortesia: desta.filter((l) => l.source === "admin").length,

@@ -10,7 +10,7 @@ interface Faixa {
   carta: string;
   guerreiro: string; guerreiroDesc: string; guerreiroRuna: string;
   avatar: string; brasao: string;
-  precoUsd: number; mensalUsd: number;
+  precoUsd: number; precoStatus?: string; mensalUsd: number;
   ativos: number; compradas: number; cortesia: number;
 }
 interface Ativacao { quando: string; carteira: string; tier: string; comprou: boolean }
@@ -88,7 +88,7 @@ export default function TierHubPanel() {
                 onMouseEnter={() => setFoco(i)}
               >
                 {/* ⚠️ AS DUAS ARTES, LADO A LADO. Cada faixa vende DOIS
-                    produtos: o passe (NFT do deus, compra única de 3 anos) e a
+                    produtos: o passe (NFT do deus, compra única, 36 meses de premium) e a
                     Hird (o guerreiro que serve aquele deus, mensal). Mostrar
                     só o passe escondia metade da oferta — e justamente a
                     metade recorrente, que é a que sustenta o negócio. */}
@@ -114,7 +114,7 @@ export default function TierHubPanel() {
                   <p className="hub-epiteto">{f.epiteto}</p>
 
                   <p className="hub-precos">
-                    <span className="passe">passe <b>{usd(f.precoUsd)}</b> <i>3 anos</i></span>
+                    <span className="passe">passe <b>{usd(f.precoUsd)}</b>{f.precoStatus !== "FINAL" ? <i title="OD-NFT-02: aguardando validação de demanda"> PROVISÓRIO</i> : null} <i>36 meses</i></span>
                     <span className="hird">
                       <span className="hub-runa-h" aria-hidden>{f.guerreiroRuna}</span>
                       {f.guerreiro} <b>{usd(f.mensalUsd)}</b><i>/mês</i>

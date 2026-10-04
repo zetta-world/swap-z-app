@@ -18,7 +18,7 @@ import type { Tier } from "@/lib/tier/types";
 import SignInButton from "@/components/auth/SignInButton";
 import PricingCard, { type TierConfig } from "./PricingCard";
 import FounderBenefits from "./FounderBenefits";
-import { PLAN_TIERS, usdToSol } from "@/lib/pricing/plans";
+import { PLAN_TIERS, usdToSol, precoPublicoUsd } from "@/lib/pricing/plans";
 
 /**
  * ⚠️⚠️ NENHUM PLANO ANUNCIA MODELO PRÓPRIO — e isto é conserto, não simplificação.
@@ -88,7 +88,11 @@ export default function PricingView({ modelo }: { modelo: string }) {
     const cfg = PLAN_TIERS.find((p) => p.tier === (tier.id as Tier));
     // ⚠️ O modelo entra AQUI, o mesmo para todo card — ver a nota em `TIERS`.
     if (!cfg) return { ...tier, modelo };
-    return { ...tier, modelo, priceUsd: cfg.usdTarget, priceSol: solUsd ? usdToSol(cfg.usdTarget, solUsd) : null };
+    // ⚠️ Preço PROVISÓRIO (OD-NFT-02) não aparece em superfície pública: sem preço final, o card
+    // mostra "preço em definição" (`priceKey`) e nenhuma conversão em reais/SOL desatualizada.
+    const publico = precoPublicoUsd(cfg);
+    if (publico === null) return { ...tier, modelo, fiatKey: undefined };
+    return { ...tier, modelo, priceUsd: publico, priceSol: solUsd ? usdToSol(publico, solUsd) : null };
   };
 
   // The seeded admin wallet (source='admin' in tier_cache) can switch plans

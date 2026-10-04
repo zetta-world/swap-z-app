@@ -5,16 +5,31 @@ import type { Tier } from "@/lib/tier/types";
  * and NORMAL (recurring, the warriors who serve the gods). Both `/pricing`
  * (launch) and the normal-plans page read from here.
  *
- * USD-PEGGED: `usdTarget` is the AUTHORITATIVE price. The SOL amount is derived
- * at runtime from the live SOL/USD rate (Pyth at mint, CoinGecko for display)
- * via usdToSol() — so if SOL moves, the real price in USD stays put (we never
- * lose money when SOL drops, and it never gets astronomical when SOL pumps).
+ * USD-ANCHORED: `usdTarget` is the owner's USD anchor (PROVISIONAL — see below). At the
+ * sale, the SOL amount is fixed per phase from a snapshotted SOL/USD reference
+ * (`founders-sale/preco.ts`), never re-priced continuously during a phase.
  */
 
-// Reference SOL/USD used ONLY to seed the initial usdTarget from the agreed SOL
-// amounts (1.5 / 4 / 30 SOL). ⚠️ CONFIRM at mint with the live rate. Runtime
-// display always uses the live rate, not this.
-export const SOL_USD_REF = 145;
+/**
+ * ⚠️ PREÇO DO PASSE = DECISÃO DO DONO, AINDA PROVISÓRIA (OD-NFT-02, 04/10/2026).
+ *
+ * $149 / $399 / $1.990 com supply pago 2.000 / 750 / 100 (`docs/FOUNDERS-NFT-OWNER-DECISIONS.md`).
+ * Enquanto `FOUNDERS_PRICE_STATUS` não for `FINAL` (só depois da validação de demanda, OD-NFT-21),
+ * NENHUMA superfície pública mostra esses números: `precoPublicoUsd` devolve `null` e a página diz
+ * "preço em definição". Superfícies internas (admin) podem mostrar o valor COM o rótulo PROVISÓRIO.
+ * O antigo `SOL_USD_REF = 145` (1,5 / 4 / 30 SOL) saiu: âncora em USD, pagamento em SOL com
+ * referência fotografada e congelada por fase (`src/lib/founders-sale/preco.ts`).
+ */
+export type FoundersPriceStatus = "PROVISIONAL_FOR_DEMAND_VALIDATION" | "FINAL";
+export const FOUNDERS_PRICE_STATUS: FoundersPriceStatus = "PROVISIONAL_FOR_DEMAND_VALIDATION";
+
+/** Preço que uma superfície PÚBLICA pode exibir. `null` enquanto o preço não for FINAL. */
+export function precoPublicoUsd(
+  plan: Pick<PlanTier, "usdTarget">,
+  status: FoundersPriceStatus = FOUNDERS_PRICE_STATUS,
+): number | null {
+  return status === "FINAL" ? plan.usdTarget : null;
+}
 
 /** Normal (warrior) recurring price = +30% vs the launch/NFT-holder rate —
  *  rewards launch buyers ("you're a god / Founder") and gives the recurring
@@ -23,14 +38,13 @@ export const NORMAL_PREMIUM = 1.3;
 
 export interface PlanTier {
   tier:          Tier;
-  usdTarget:     number;  // AUTHORITATIVE price (USD). Launch NFT = one-time.
-  supply:        number;  // NFT supply for the launch collection
+  usdTarget:     number;  // owner price (USD anchor), PROVISIONAL until FOUNDERS_PRICE_STATUS = FINAL
+  supply:        number;  // PAID-SALE supply of the launch collection (reserve is separate, OD-NFT-04)
   dailyAnalyses: number;  // mirrors TIER_DAILY_ANALYSES
   // Launch identity (gods)
   god:           string;
   rune:          string;
   epithet:       string;
-  solRef:        number;  // agreed SOL amount at launch (marketing reference)
   card:          string;  // NFT art path
   // Normal identity (the Hird — sworn warriors who serve the gods)
   warrior:       string;
@@ -46,18 +60,18 @@ export interface PlanTier {
 
 export const PLAN_TIERS: PlanTier[] = [
   {
-    tier: "pro", usdTarget: Math.round(1.5 * SOL_USD_REF), supply: 1500, dailyAnalyses: 10,
-    god: "Freyr", rune: "ᚠ", epithet: "Prosperity", solRef: 1.5, card: "/nft/pro.jpg",
+    tier: "pro", usdTarget: 149, supply: 2000, dailyAnalyses: 10,
+    god: "Freyr", rune: "ᚠ", epithet: "Prosperity", card: "/nft/pro.jpg",
     warrior: "Drengr", warriorDesc: "guerreiro de honra", warriorRune: "ᛞ", crest: "/tiers/freyr.png", monthlyUsd: 7.90, avatar: "/warriors/drengr.jpg",
   },
   {
-    tier: "trader", usdTarget: Math.round(4 * SOL_USD_REF), supply: 500, dailyAnalyses: 25,
-    god: "Thor", rune: "ᚦ", epithet: "Thunder Strike", solRef: 4, card: "/nft/trader.png",
+    tier: "trader", usdTarget: 399, supply: 750, dailyAnalyses: 25,
+    god: "Thor", rune: "ᚦ", epithet: "Thunder Strike", card: "/nft/trader.png",
     warrior: "Berserkr", warriorDesc: "guerreiro feroz", warriorRune: "ᛒ", crest: "/tiers/thor.png", monthlyUsd: 20.90, avatar: "/warriors/berserkr.jpg",
   },
   {
-    tier: "pilot", usdTarget: Math.round(30 * SOL_USD_REF), supply: 50, dailyAnalyses: 30,
-    god: "Odin", rune: "ᚨ", epithet: "Allfather", solRef: 30, card: "/nft/pilot.jpg",
+    tier: "pilot", usdTarget: 1990, supply: 100, dailyAnalyses: 30,
+    god: "Odin", rune: "ᚨ", epithet: "Allfather", card: "/nft/pilot.jpg",
     warrior: "Einherjar", warriorDesc: "escolhido de Valhalla", warriorRune: "ᛖ", crest: "/tiers/pilot.png", monthlyUsd: 159, avatar: "/warriors/einherjar.jpg",
   },
 ];
