@@ -177,7 +177,7 @@ describe("ciclo de transação (estados de UI)", () => {
   it("caminho feliz e eventos fora de ordem ignorados", () => {
     let s = proximoEstado("ocioso", "finalizada");
     expect(s).toBe("ocioso");
-    for (const e of ["iniciar", "assinou", "transmitida", "incluida", "finalizada"] as const) s = proximoEstado(s, e);
+    for (const e of ["iniciar", "preparado", "assinou", "transmitida", "incluida", "finalizada"] as const) s = proximoEstado(s, e);
     expect(s).toBe("confirmada");
     expect(proximoEstado("confirmada", "reiniciar")).toBe("confirmada");
   });
@@ -185,5 +185,8 @@ describe("ciclo de transação (estados de UI)", () => {
     expect(proximoEstado("assinando", "recusou_assinar")).toBe("rejeitada");
     expect(proximoEstado("enviada", "tempo_esgotado")).toBe("expirada");
     expect(proximoEstado("expirada", "reiniciar")).toBe("ocioso");
+    expect(proximoEstado("ocioso", "iniciar")).toBe("preparando");
+    expect(proximoEstado("preparando", "erro")).toBe("falhou");
+    expect(proximoEstado("preparando", "finalizada")).toBe("preparando");
   });
 });

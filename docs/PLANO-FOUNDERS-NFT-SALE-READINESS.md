@@ -44,16 +44,38 @@
 | `merkle.ts` | árvore de Merkle com **hash injetado** e codificação de folha injetada; prova e verificação; pares ordenados | chain (keccak × sha256 × outro) |
 | `alocacao.ts` | livro de reservas com teto de supply e teto por carteira, idempotência por chave, expiração, confirmação; serializado por fila (prova contra oversell em corrida) | preço, moeda, tetos concretos |
 | `mint-falso.ts` | provedor de mint **falso e determinístico** (id derivado da reserva; falhas transitória/permanente configuráveis; idempotente) | qualquer rede real |
-| `ciclo-tx.ts` | estados de UI do ciclo da transação (`ocioso → assinando → enviada → confirmando → confirmada / falhou / expirada / rejeitada`) | carteira/chain |
+| `ciclo-tx.ts` | estados do ciclo da transação (`ocioso → preparando → assinando → enviada → confirmando → confirmada / falhou / expirada / rejeitada`) | carteira/chain |
+| `relogio.ts` | relógio **autoritativo do servidor** (sincronização injetada + monotônico injetado; sem sync = `sem_hora`) e contagem para janela início/fim futura | horários |
+| `visao.ts` | modelo de visão: os **14 estados de UI** (precedência: tx → venda → contagem → elegibilidade), `podeMintar`, progresso (mintado/reservado/disponível; percentual só com aritmética honesta, arredondado para baixo; `indisponivel`/`inconsistente` em vez de número inventado), alocação abstrata (alocação/usado/restante/elegibilidade/prova) | supply, tetos |
+| `admin.ts` | camada de segurança do admin **local**: pedido → confirmação com frase exata, validade, segundo operador opcional, pausa/retomada, transição de fase, congelamento e identidade do snapshot (allowlist só abre com snapshot congelado); todo pedido/recusa/execução vira evidência `admin_audit` | quem são os operadores |
+| `evidencia.ts` | evidência imutável encadeada (sha256, JSON canônico, deep-freeze): `allowlist_snapshot`, `merkle_root`, `proof_version`, `sale_config_fingerprint`, `mock_tx_lifecycle`, `admin_audit`, `sold_out_reconciliation`; `verificarCadeia` detecta elo quebrado/conteúdo alterado | — |
+| `telemetria.ts` | esquema fechado dos 11 eventos (campos por evento, tipos estritos; hash só 16/64 hex — endereço cru de 40 hex é recusado; filtros de email/endereço/base58/prefixo de segredo) | provedor de analytics |
 
 Testes: oversell em corrida, teto por carteira, replay/duplo envio, pausa, esgotado, Merkle válido/inválido,
-determinismo de snapshot, matriz de transições.
+determinismo de snapshot, matriz de transições; relógio/contagem; os 14 estados alcançáveis e "confirmada sem
+id de transação" continua PENDING (**nenhum sucesso falso**); admin (frase, validade, reuso, segundo operador,
+snapshot); cadeia de evidência (adulteração); telemetria (PII recusada).
 
-## 4. Ainda não feito (A — pode ser feito localmente depois)
+### UI (`src/components/founders/`) — sem rota
 
-Esqueleto de UI (contagem regressiva, progresso, estados de elegibilidade, acessibilidade, responsivo),
-esquema de telemetria, formato de evidência da venda, modelo de segurança do admin. Nada disso exige decisão,
-mas também nada disso deve ir para uma rota pública antes das decisões do §2.
+| peça | o que é |
+|---|---|
+| `FoundersSalePanel.tsx` | painel só de apresentação, identidade Z-SWAP (vidro dourado/violeta, Syne/DM Mono, tokens do tema), `useT` com namespace `founders` nas 4 línguas |
+| `galeria.ts` | dados **falsos e fixos** dos 14 estados (supply/horário/alocação de exemplo — não são decisões) |
+| `founders-panel.test.ts` | render estático (sem DOM, sem rede) dos 14 estados × 4 línguas: sem chave crua, tradução real, botão só habilitado em ELIGIBLE/SALE_ACTIVE com motivo ligado por `aria-describedby`, região rotulada, `role=status` `aria-live=polite`, ícones `aria-hidden`, animação só `motion-safe:`, CONFIRMED só com referência, progresso sem percentual inventado |
+| `scripts/founders/a11y-galeria.mjs` | checagem em Chrome local (file://, rede bloqueada): 375/768/1280 px em en e zh (sem rolagem horizontal, sem texto cortado, alvo ≥ 44 px), teclado (Tab só nos botões habilitados, foco visível), árvore de acessibilidade via CDP (14 regiões nomeadas, 14 status polite, 12 botões desabilitados com descrição, progressbar com valuetext, ícones fora da árvore), `prefers-reduced-motion: reduce` zera animações |
+
+Resultado em 04/10 (lane B): **41 PASS / 0 FAIL**; evidência e screenshots em
+`zswap-local/evidence/pre-vercel-forward-20261003T234200Z/founders-ui/`.
+**Trava:** `isolamento.test.ts` falha se qualquer arquivo de `src/app` importar `founders-sale` ou
+`components/founders`, se outro componente usar o painel, ou se o painel fizer chamada de rede. A prévia é
+gerada fora do app (HTML estático), de propósito: nada disso vira rota antes das decisões do §2.
+
+## 4. Estado do trabalho independente de decisão (04/10)
+
+🟢 feito localmente: esqueleto de UI (14 estados), contagem, progresso, alocação, segurança do admin, telemetria,
+formato de evidência, acessibilidade/responsivo (§3). Nada disso está em rota. O que sobra **depende do dono**
+(§2) ou de provedor externo (carteira/chain/analytics) — ver §5.
 
 ## 5. O que destrava cada próximo passo
 

@@ -32,8 +32,18 @@ describe("founders-sale: isolado de rede, chain e rotas", () => {
     }
   });
 
-  it("nenhuma rota ou página importa founders-sale", () => {
-    const usos = arquivos(join(RAIZ, "src/app")).filter((p) => readFileSync(p, "utf8").includes("founders-sale"));
+  it("nenhuma rota ou página importa founders-sale nem o painel", () => {
+    const usos = arquivos(join(RAIZ, "src/app")).filter((p) => /founders-sale|components\/founders/.test(readFileSync(p, "utf8")));
     expect(usos).toEqual([]);
+  });
+
+  it("nenhum componente fora de components/founders usa o painel; o painel não fala com rede", () => {
+    const fora = arquivos(join(RAIZ, "src/components"))
+      .filter((p) => !p.includes(join("components", "founders")))
+      .filter((p) => /components\/founders|founders-sale/.test(readFileSync(p, "utf8")));
+    expect(fora).toEqual([]);
+    for (const p of arquivos(join(RAIZ, "src/components/founders"))) {
+      expect(/\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource/.test(readFileSync(p, "utf8")), p).toBe(false);
+    }
   });
 });
