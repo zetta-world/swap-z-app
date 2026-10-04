@@ -156,7 +156,9 @@ describe("janela de indicadores — custo constante e retrato recente", () => {
     // Margem generosa: o ponto é pegar uma REGRESSÃO para quadrático, não
     // cravar desempenho de máquina.
     expect(ms, `levou ${ms}ms — quadrático de novo?`).toBeLessThan(20_000);
-  });
+    // ZION-PLAYBOOK-TIMEOUT-LOCAL (L-032): o timeout PADRÃO do vitest (5 s) matava o teste antes
+    // da asserção de 20 s acima valer. O guarda de desempenho é a asserção, não o relógio do runner.
+  }, 30_000);
 
   it("a janela não impede o aquecimento de séries curtas", () => {
     // Antes de `INDICATOR_WINDOW` barras existirem, o retrato usa o que há.
@@ -361,7 +363,9 @@ describe("controle negativo — mercado sem vantagem não pode virar lucro", () 
     // (lookahead daria muito mais que isso), não cravar um valor.
     expect(medio, `expectância média ${medio.toFixed(2)}% num mercado sem padrão`).toBeLessThan(0.5);
     expect(medio).toBeGreaterThan(-5);
-  });
+    // ZION-PLAYBOOK-TIMEOUT-LOCAL (L-032): 5 backtests de 2.600 barras passaram de 5 s sob carga
+    // (5.342 ms medido). Asserções inalteradas; só o orçamento de tempo do runner é explícito.
+  }, 30_000);
 
   it("o custo de ida-e-volta É cobrado — o bruto zero não vira líquido zero", () => {
     // Um backtest que esquece o custo é o erro mais comum e o mais caro: ele

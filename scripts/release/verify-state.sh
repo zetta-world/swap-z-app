@@ -4,7 +4,7 @@
 #   PSQL='…' scripts/release/verify-state.sh baseline|target
 # Exit 0 = confere; 1 = diverge; 2 = uso.
 set -uo pipefail
-ESTADO=${1:?baseline|target}; [[ "$ESTADO" == baseline || "$ESTADO" == target ]] || exit 2
+ESTADO=${1:?baseline|target|lane_b_0070}; [[ "$ESTADO" == baseline || "$ESTADO" == target || "$ESTADO" == lane_b_0070 ]] || exit 2
 : "${PSQL:?defina PSQL}"
 AQUI=$(cd "$(dirname "$0")" && pwd)
 esp() { node -e "const e=require('$AQUI/expected.json')['$ESTADO'];console.log(e['$1'])"; }

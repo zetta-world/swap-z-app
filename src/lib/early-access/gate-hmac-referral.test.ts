@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { randomBytes } from "node:crypto";
 
 const banco = vi.hoisted(() => ({
-  modo: "ok" as "ok" | "ausente" | "erro" | "lanca" | "sem_banco",
+  modo: "ok" as "ok" | "ausente" | "erro" | "lanca" | "sem_banco" | "pendura",
   valor: "false" as unknown,
 }));
 
@@ -19,6 +19,7 @@ vi.mock("@/lib/supabase/server", () => ({
         select: () => ({
           eq: () => ({
             maybeSingle: async () => {
+              if (banco.modo === "pendura") return new Promise(() => { /* banco fora: nunca responde */ });
               if (banco.modo === "lanca") throw new Error("rede caiu");
               if (banco.modo === "erro") return { data: null, error: { message: "boom" } };
               if (banco.modo === "ausente") return { data: null, error: null };
@@ -92,6 +93,19 @@ describe("② leitura da chave — toda falha é 'não lido'", () => {
   it.each(["erro", "lanca", "sem_banco"] as const)("banco %s → lido:false", async (modo) => {
     banco.modo = modo;
     expect(await lerChaveGate()).toEqual({ lido: false });
+  });
+  it("RR-O-04: banco que não responde estoura o orçamento e FECHA rápido (lido:false)", async () => {
+    banco.modo = "pendura";
+    const t0 = Date.now();
+    expect(await lerChaveGate(50)).toEqual({ lido: false });
+    expect(Date.now() - t0).toBeLessThan(1_000);
+  });
+  it("RR-O-04: o orçamento padrão é curto (≤ 5 s) e não muda leitura que responde", async () => {
+    const { GATE_KV_TIMEOUT_MS } = await import("./gate");
+    expect(GATE_KV_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(GATE_KV_TIMEOUT_MS).toBeLessThanOrEqual(5_000);
+    banco.modo = "ok";
+    expect(await lerChaveGate()).toEqual({ lido: true, valor: "false" });
   });
 });
 

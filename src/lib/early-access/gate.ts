@@ -60,18 +60,38 @@ export function decidirGate(e: {
   return { aberto: motivos.length === 0, motivos };
 }
 
-/** Lê a chave. Nunca lança; qualquer falha é `lido: false`. */
-export async function lerChaveGate(): Promise<LeituraKv> {
+/**
+ * Orçamento da leitura da chave. Com o banco fora, a leitura levava até ~20 s
+ * para falhar (ensaio de 03/10, chaos X05, RR-O-04): o resultado já era
+ * FECHADO, mas a rota pública ficava pendurada. Estourar o orçamento é falha de
+ * leitura → `lido: false` → gate FECHADO. Só encurta o caminho para o mesmo
+ * resultado seguro; nunca abre nada.
+ */
+export const GATE_KV_TIMEOUT_MS = 3_000;
+
+/** Lê a chave. Nunca lança; qualquer falha (inclusive estourar o tempo) é `lido: false`. */
+export async function lerChaveGate(timeoutMs: number = GATE_KV_TIMEOUT_MS): Promise<LeituraKv> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const estouro = new Promise<LeituraKv>((resolve) => {
+    timer = setTimeout(() => resolve({ lido: false }), timeoutMs);
+  });
+  const leitura = (async (): Promise<LeituraKv> => {
+    try {
+      const db = getSupabaseAdmin();
+      if (!db) return { lido: false };
+      const { data, error } = await db
+        .from("admin_kv").select("value").eq("key", CHAVE_GATE).maybeSingle();
+      if (error) return { lido: false };
+      if (!data) return { lido: true, valor: null };
+      return { lido: true, valor: typeof data.value === "string" ? data.value : "" };
+    } catch {
+      return { lido: false };
+    }
+  })();
   try {
-    const db = getSupabaseAdmin();
-    if (!db) return { lido: false };
-    const { data, error } = await db
-      .from("admin_kv").select("value").eq("key", CHAVE_GATE).maybeSingle();
-    if (error) return { lido: false };
-    if (!data) return { lido: true, valor: null };
-    return { lido: true, valor: typeof data.value === "string" ? data.value : "" };
-  } catch {
-    return { lido: false };
+    return await Promise.race([leitura, estouro]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

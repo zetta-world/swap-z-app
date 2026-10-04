@@ -28,6 +28,11 @@ const mwCodigo = semComentarios(mw);
 // casasse com a prosa passaria com o código errado.
 const reqCodigo = semComentarios(readFileSync("src/lib/admin/require.ts", "utf8"));
 
+/** F-09: CHAMADA de `requireAdmin(` em código sem comentários — import ou menção não contam. */
+function chamaRequireAdmin(codigo: string): boolean {
+  return /\brequireAdmin\s*\(/.test(semComentarios(codigo));
+}
+
 describe("o middleware NÃO decide quem é admin", () => {
   /**
    * ⚠️ A TRAVA CENTRAL. Se `ADMIN_WALLETS` voltar a ser lido aqui, o portão
@@ -74,13 +79,25 @@ describe("toda superfície /admin é coberta por requireAdmin", () => {
 
   const arquivos = varrer("src/app/admin");
 
+  /**
+   * ⚠️ F-09 (01/10): a versão anterior aceitava `includes("requireAdmin")` — um
+   * arquivo que só IMPORTASSE a função (ou a citasse num comentário) passava
+   * como protegido sem chamá-la. Agora exige CHAMADA no código sem comentários.
+   */
+  it("F-09: importar ou comentar não conta como chamar", () => {
+    expect(chamaRequireAdmin(`import { requireAdmin } from "@/lib/admin/require";\nexport async function GET() { return 1; }`)).toBe(false);
+    expect(chamaRequireAdmin(`// await requireAdmin();\nexport async function GET() { return 1; }`)).toBe(false);
+    expect(chamaRequireAdmin(`/* requireAdmin() */ export const x = 1;`)).toBe(false);
+    expect(chamaRequireAdmin(`export async function GET() { const { wallet } = await requireAdmin(); return wallet; }`)).toBe(true);
+  });
+
   it("existem superfícies admin para conferir (o teste não passa por vazio)", () => {
     expect(arquivos.length).toBeGreaterThan(20);
   });
 
   it("cada uma chama requireAdmin, ou tem layout ancestral que chama", () => {
     /** Um arquivo é coberto por si mesmo ou por um `layout.tsx` acima dele. */
-    const chama = (f: string) => readFileSync(f, "utf8").includes("requireAdmin");
+    const chama = (f: string) => chamaRequireAdmin(readFileSync(f, "utf8"));
     const layoutsQueChamam = new Set(
       arquivos.filter((f) => f.endsWith("layout.tsx") && chama(f))
               .map((f) => f.replace(/\/layout\.tsx$/, "")),

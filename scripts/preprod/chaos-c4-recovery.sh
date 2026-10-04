@@ -182,6 +182,19 @@ recover_intent() {
       --data-binary @- "$APP_URL/api/cex/order/status" >"$out" 2>&1
 }
 
+# HARNESS-002: atrás do proxy (Caddy) o x-forwarded-for por rodada é SUBSTITUÍDO, todas as
+# rodadas caem no mesmo bucket de rate limit e a 9ª devolve 429. Isso é do harness, não do
+# produto: diagnostica e para com código próprio em vez de um `set -e` mudo.
+diagnose_rate_limit() {
+  local http=$1 n=$2
+  if [[ "$http" == 429 ]]; then
+    echo "HARNESS-002: 429 na rodada $n — o proxy em APP_URL substitui x-forwarded-for e as rodadas" >&2
+    echo "  compartilham o bucket cex_order. Rode contra a porta DIRETA do app de uma stack descartável" >&2
+    echo "  (publicar 127.0.0.1:<porta>->3000 só nessa stack) ou reduza C4_RUNS. Não é falha do produto." >&2
+    exit 4
+  fi
+}
+
 run_c4() {
   local n=$1 run_id base state submit_count orders_length client_order_id row intent client_id
   local before_status before_fills request_http request_json blocked_reads begin end final recovery_rc
@@ -199,6 +212,7 @@ run_c4() {
   post_order "$client_id" "$base-request.out"
   request_http=$(response_code "$base-request.out")
   request_json=$(response_body "$base-request.out")
+  diagnose_rate_limit "$request_http" "$n"
   [[ "$request_http" == 202 ]]
   assert_no_inline_fill "$request_json"
 

@@ -178,7 +178,15 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * `_purges`, colunas novas em signups, RPCs novas que nascem fechadas e a
      * regra D-4 em `early_access_transicionar`). Não toca em nada financeiro.
      *
-     * ⚠️ NENHUMA DAS SETE (0063–0069) FOI APLICADA EM PRODUÇÃO.
+     * E uma SÉTIMA vez, na LANE B pré-Vercel (finding F-14, L-033): a 0070 é
+     * só REVOKE — tira de PUBLIC/anon/authenticated os grants de tabela de
+     * `admin_kv`, `rate_limits` e `admin_audit_log` (KV de operação, buckets
+     * de limite, trilha do admin), no mesmo padrão da 0067. Medido na
+     * linhagem de produção: `anon` tinha TRUNCATE nas três. Não toca
+     * `service_role`, RLS, policies nem dados (teste 17).
+     *
+     * ⚠️ NENHUMA DAS OITO (0063–0070) FOI APLICADA EM PRODUÇÃO. A 0070 existe só
+     * na lane B (`pre-vercel-forward-*`); o alvo de release (C1 `53cd85a`) vai até a 0069.
      */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
@@ -191,6 +199,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0067_acl_tabelas_financeiras.sql",
       "0068_early_access.sql",
       "0069_early_access_email_optin.sql",
+      "0070_acl_tabelas_operacionais.sql",
     ]);
   });
 });
